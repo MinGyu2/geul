@@ -2,7 +2,7 @@
 
 Date: 2026-10-13
 Spec: [spec.md](./spec.md)
-Status: Revised draft — 2026-10-16 실제 저장소 검사, submodule 고정, 보안 게이트 로컬 구현·2차 재검토 완료(원격 브랜치 보호는 미설정). 앱 코드·엔진 통합은 미착수
+Status: Revised draft — 2026-10-16 실제 저장소 검사, submodule 고정, 보안 게이트 로컬 구현·2차 재검토 완료(원격 브랜치 보호는 미설정), Tauri/React 6영역 UI 기반(T004) 구현. 엔진 통합·문서 열기/저장은 미착수
 
 ## Summary
 WordCraft는 DOCX, rhwp는 HWP/HWPX 전용 엔진으로 독립 관리한다. Tauri 2 + React/TypeScript 6개 영역 UI에 문서별 어댑터, 공통 명령/상태 계층을 결합한다. 고급 리본보다 렌더·IME·선택·쓰기 무손실 검증과 공개 저장소 보안 게이트를 우선한다.
@@ -13,7 +13,7 @@ WordCraft는 DOCX, rhwp는 HWP/HWPX 전용 엔진으로 독립 관리한다. Tau
 - 공개 README 확인(2026-10-13): WordCraft는 `wordcraft-doc`, `wordcraft-docx`, `wordcraft-layout`, `wordcraft-render`, `wordcraft-engine`, `wordcraft-ui-egui`로 분리된 것으로 설명하며 Rust egui UI와 웹 WASM 앱을 제공한다. rhwp는 Rust/WASM, HWP/HWPX 렌더·편집·쓰기 경로를 설명한다. **구체적 API를 앱에서 호출해 본 것은 아니다.**
 - 라이선스 표기: WordCraft MIT OR Apache-2.0, rhwp MIT. 선택 커밋의 라이선스/서드파티 NOTICE/에셋을 다시 확인한다.
 - 고정 커밋(2026-10-16 검토): WordCraft `fc41918814f62645b6746ed68e71e8c2c2e85d6f`(`v0.7.0`), rhwp `1a76570e833917d15817415a53c09ad61ab3203f`(`v0.8.7`). 두 커밋의 라이선스 표기는 위와 일치함을 확인했다([docs/licenses/](../licenses/)). 상세 검토: [docs/upstream/](../upstream/), 편집 표면 결정: [editor-surface-decision.md](../architecture/editor-surface-decision.md).
-- 확인된 개발 환경(2026-10-16): Node 24, Rust 1.99(rhwp는 `rust-toolchain.toml`로 1.93.1 고정 — 호환성 미검증), Tauri CLI 2.11, Python 3.14. 앱 빌드 명령과 앱 설정은 아직 없음.
+- 확인된 개발 환경(2026-10-16): Node 24, npm 11, Rust 1.99(rhwp는 `rust-toolchain.toml`로 1.93.1 고정 — 호환성 미검증), Python 3.14, Linux WebKitGTK 2.54(webkit2gtk-4.1). 앱 의존성: tauri `=2.12.1`, tauri-build `=2.7.1`, @tauri-apps/cli 2.12.1, React 19.3.0, Vite 8.3.2, TypeScript 6.0.3(typescript-eslint가 6.1 미만만 지원), Vitest 5.0.3. 직접 의존성은 정확한 버전으로 고정하고 게시 후 14일 이상 지난 버전만 골랐다(전이 의존성은 lockfile로 고정하되 이 기준은 적용하지 못함). 앱 빌드·실행 명령은 README `개발 환경` 절.
 
 ## Constitution Check
 2026-10-16 검사: 저장소에 `AGENTS.md`나 constitution 문서가 없다. 계획 체계는 `docs/planning/`의 세 문서만 사용하며 Spec Kit 등 별도 계획 프레임워크는 사용하지 않는다.
@@ -85,32 +85,33 @@ save(session):
 - 보안 검사에서 토큰이 발견되면 실제 값을 로그에 그대로 출력하지 않고 파일·줄·유형·마스킹된 내용만 보고한다.
 
 ## Project Structure
-Proposed project-root layout (actual app not yet bootstrapped):
+Actual project-root layout (2026-10-16, T004 이후). `(예정)`은 아직 만들지 않은 경로다.
 ```
-unified-document-editor/
+geul/
 ├── docs/
 │   ├── planning/{spec.md,plan.md,tasks.md}  # single canonical planning set
-│   ├── architecture/
-│   ├── upstream/
-│   ├── licenses/
+│   ├── architecture/ upstream/ licenses/
 │   └── development/{security-policy.md,security-incident.md}
 ├── external/
 │   ├── wordcraft/                      # pinned Git submodule, DOCX
 │   └── rhwp/                           # pinned Git submodule, HWP/HWPX
-├── src/
-│   ├── components/{TitleBar,Ribbon,NavigationPanel,Editor,PropertiesPanel,StatusBar}/
-│   ├── ribbon/{Home,Insert,Draw,Design,Layout,HangulTools,References,Mailings,Review,View}/
-│   ├── language/{ko.json,en.json,index.ts}
-│   ├── commands/
-│   ├── adapters/
-│   └── settings/
-├── src-tauri/src/{commands,document,adapters,services}/
-├── tests/{fixtures,ui,integration,roundtrip,e2e}/
-├── scripts/check-sensitive-info.py
+├── src/                                # React + TypeScript UI
+│   ├── App.tsx                         # 6영역 조립, 단축키(Ctrl+F1), 패널 초점 처리
+│   ├── components/{TitleBar,Ribbon,NavigationPanel,Editor,PropertiesPanel,StatusBar,Splitter,CommandButton}/
+│   ├── ribbon/definitions.ts           # 공통 리본 탭·그룹·명령 정의(엔진 비의존)
+│   ├── commands/commands.ts            # UI 명령 실행 경계, 문서 명령은 모두 unavailable
+│   ├── language/{ko.json,index.ts}     # t(key) 경계. en.json·fallback·전환·복원은 T005 (예정)
+│   ├── hooks/                          # 배치 상태(reducer), 창 너비, roving focus
+│   ├── styles/app.css  assets/icons.tsx  test/setup.ts
+│   ├── adapters/ settings/ dialogs/    # (예정) T005/T006
+├── src-tauri/                          # Rust host: 명령(IPC) 없음, capability core:default, CSP
+│   ├── src/{main.rs,lib.rs}            # commands/ document/ adapters/ services/ 는 T006 이후 (예정)
+│   ├── capabilities/default.json  icons/  tauri.conf.json  Cargo.toml  Cargo.lock
+├── tests/{security,fixtures,e2e}/      # ui/ integration/ roundtrip/ 는 (예정)
+├── scripts/{check-sensitive-info.py,security-scan-ci.sh}
 ├── .github/workflows/security-scan.yml
-├── .gitleaks.toml
-├── .pre-commit-config.yaml
-└── .gitignore
+├── .gitleaks.toml  .pre-commit-config.yaml  .sensitive-info-allowlist  .gitignore
+└── package.json  package-lock.json  vite.config.ts  tsconfig.json  eslint.config.js  index.html
 ```
 - `.gitmodules`는 `git submodule add`로 생성했고, `external/wordcraft`와 `external/rhwp`는 검토한 커밋에 고정된 gitlink다(엔진 소스는 상위 저장소에 복사하지 않음). 보안 검사 구성: `scripts/check-sensitive-info.py`, `scripts/security-scan-ci.sh`, `tests/security/`, `.gitleaks.toml`, `.pre-commit-config.yaml`, `.github/workflows/security-scan.yml`.
 - `docs/planning/`은 명시적으로 사용자가 합의한 유일한 기준 경로다. Spec Kit 전용 디렉터리(`.specify/`, `specs/`)는 만들지 않는다.
@@ -133,7 +134,7 @@ unified-document-editor/
 - 기능 회귀: 상대 경로, 번역 누락, capability, Undo, 파일 충돌, 저장 실패, 필수 개체 보존과 원본 해시 비교.
 - 보안 회귀: stage 검사, CI 실패 판정, 첫 공개 이력 검사, 오탐 허용 사유, 토큰 로그 마스킹.
 - 실제 배포/OS 테스트: Windows/macOS/Linux 앱 실행·파일 열기/저장·PDF 출력; 서드파티 고지와 라이선스 재확인.
-- 현재 실제 프로젝트 코드 빌드, 실행 및 문서 왕복 테스트는 **NOT RUN**.
+- 앱 셸(T004): 타입 검사, ESLint, Vitest 31개, Vite 빌드, cargo fmt/check/clippy, Tauri 디버그 빌드, 실제 앱 WebDriver 스모크 테스트(21개 통과, 최소 높이 검사 1개는 창 관리자가 크기 변경을 반영하지 않아 건너뜀; Linux WebKitGTK, 번들 빌드와 개발 서버 모드)를 실행했다. Windows/macOS 실행과 엔진 빌드(L3), 문서 왕복 테스트(L4)는 **NOT RUN**. CI는 아직 보안 검사만 수행하며 프런트엔드·Rust 빌드 검사는 없다.
 - 보안 회귀(로컬)는 실행됨: 검사기 단위 테스트 43개, pre-commit 훅 차단, pre-push 훅 시뮬레이션 10개 시나리오, 누출 대응 시뮬레이션(결과는 tasks.md Verification Log). GitHub Actions는 커밋 `455c985`에서 1회 성공했고, 이후 로컬 커밋은 푸시하지 않아 **NOT RUN**.
 
 ## Risks and Tradeoffs

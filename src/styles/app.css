@@ -1,0 +1,630 @@
+/* geul 앱 화면. 색은 모두 토큰으로 정의하고 data-theme(system|light|dark)으로 전환한다. */
+
+:root {
+  color-scheme: light;
+  --font-ui: system-ui, -apple-system, "Segoe UI", "Noto Sans KR", "Apple SD Gothic Neo", "Malgun Gothic",
+    sans-serif;
+  --font-page: "Noto Serif KR", "Batang", "AppleMyungjo", Georgia, serif;
+
+  --chrome-bg: #f3f4f7;
+  --chrome-border: #dcdfe6;
+  --ribbon-bg: #fbfbfd;
+  --panel-bg: #f8f9fb;
+  --canvas-bg: #e6e8ee;
+  --page-bg: #ffffff;
+  --page-text: #1f2328;
+  --page-shadow: 0 1px 3px rgb(15 23 42 / 0.12), 0 8px 24px rgb(15 23 42 / 0.08);
+  --text: #1f2430;
+  --text-muted: #5c6475;
+  --text-subtle: #7a8193;
+  --accent: #2f5bd3;
+  --accent-soft: #e3eaff;
+  --accent-text: #1f45ad;
+  --hover: #e8eaf0;
+  --focus: #2f5bd3;
+  --badge-bg: #eef0f4;
+  --badge-text: #4d5566;
+  --statusbar-bg: #2f5bd3;
+  --statusbar-text: #ffffff;
+  --statusbar-hover: rgb(255 255 255 / 0.16);
+
+  --radius: 6px;
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    color-scheme: dark;
+    --chrome-bg: #1d2027;
+    --chrome-border: #343844;
+    --ribbon-bg: #23262e;
+    --panel-bg: #20232a;
+    --canvas-bg: #15171c;
+    --page-shadow: 0 1px 3px rgb(0 0 0 / 0.5), 0 8px 24px rgb(0 0 0 / 0.35);
+    --text: #e4e7ee;
+    --text-muted: #a7aebd;
+    --text-subtle: #8c93a3;
+    --accent: #7ea2ff;
+    --accent-soft: #2c3a63;
+    --accent-text: #b9cbff;
+    --hover: #2e323c;
+    --focus: #8fb0ff;
+    --badge-bg: #2e323c;
+    --badge-text: #c3c9d6;
+    --statusbar-bg: #263257;
+    --statusbar-text: #e4e9ff;
+  }
+}
+
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --chrome-bg: #1d2027;
+  --chrome-border: #343844;
+  --ribbon-bg: #23262e;
+  --panel-bg: #20232a;
+  --canvas-bg: #15171c;
+  --page-shadow: 0 1px 3px rgb(0 0 0 / 0.5), 0 8px 24px rgb(0 0 0 / 0.35);
+  --text: #e4e7ee;
+  --text-muted: #a7aebd;
+  --text-subtle: #8c93a3;
+  --accent: #7ea2ff;
+  --accent-soft: #2c3a63;
+  --accent-text: #b9cbff;
+  --hover: #2e323c;
+  --focus: #8fb0ff;
+  --badge-bg: #2e323c;
+  --badge-text: #c3c9d6;
+  --statusbar-bg: #263257;
+  --statusbar-text: #e4e9ff;
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+  margin: 0;
+}
+
+body {
+  overflow: hidden;
+  background: var(--chrome-bg);
+  color: var(--text);
+  font: 13px/1.45 var(--font-ui);
+  -webkit-font-smoothing: antialiased;
+}
+
+h1,
+h2,
+h3,
+p {
+  margin: 0;
+}
+
+button {
+  font: inherit;
+  color: inherit;
+}
+
+:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 1px;
+}
+
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+/* ---- 전체 배치: 제목 표시줄 / 리본 / 작업 영역 / 상태 표시줄 ---- */
+
+.app {
+  display: grid;
+  grid-template-rows: auto auto minmax(0, 1fr) auto;
+  height: 100%;
+  min-width: 0;
+}
+
+.workspace {
+  display: flex;
+  min-height: 0;
+  min-width: 0;
+  border-top: 1px solid var(--chrome-border);
+}
+
+/* ---- 명령 버튼 ---- */
+
+.command {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  border: 1px solid transparent;
+  border-radius: var(--radius);
+  background: transparent;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.command:hover:not([aria-disabled="true"]) {
+  background: var(--hover);
+}
+
+.command[aria-pressed="true"] {
+  background: var(--accent-soft);
+  color: var(--accent-text);
+  border-color: color-mix(in srgb, var(--accent) 35%, transparent);
+}
+
+.command[aria-disabled="true"] {
+  color: var(--text-subtle);
+  cursor: default;
+}
+
+.command[aria-disabled="true"] .icon {
+  opacity: 0.55;
+}
+
+.command--icon {
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  padding: 0;
+}
+
+.command--small {
+  height: 28px;
+  padding: 0 var(--space-2);
+}
+
+.command--large {
+  flex-direction: column;
+  justify-content: center;
+  gap: 2px;
+  min-width: 56px;
+  height: 64px;
+  padding: var(--space-1) var(--space-2);
+}
+
+.command--large .command__label {
+  font-size: 12px;
+}
+
+.icon {
+  flex: none;
+}
+
+/* ---- TitleBar ---- */
+
+.titlebar {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  height: 42px;
+  padding: 0 var(--space-3);
+  background: var(--chrome-bg);
+}
+
+.titlebar__brand {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-width: 0;
+}
+
+.titlebar__mark {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  border-radius: var(--radius);
+  background: var(--accent);
+  color: #ffffff;
+}
+
+.titlebar__name {
+  font-weight: 650;
+  letter-spacing: 0.01em;
+}
+
+.titlebar__document {
+  overflow: hidden;
+  color: var(--text-muted);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.titlebar__document::before {
+  content: "—";
+  margin-right: var(--space-2);
+  color: var(--text-subtle);
+}
+
+.titlebar__quick {
+  display: flex;
+  gap: 2px;
+  padding-left: var(--space-3);
+  border-left: 1px solid var(--chrome-border);
+}
+
+.titlebar__view {
+  display: flex;
+  gap: 2px;
+  margin-left: auto;
+}
+
+/* ---- Ribbon ---- */
+
+.ribbon {
+  background: var(--ribbon-bg);
+  border-top: 1px solid var(--chrome-border);
+}
+
+.ribbon__bar {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: 0 var(--space-2);
+  background: var(--chrome-bg);
+}
+
+.ribbon__tabs {
+  display: flex;
+  flex: 1;
+  min-width: 0;
+  overflow-x: auto;
+  scrollbar-width: thin;
+}
+
+.ribbon__tab {
+  position: relative;
+  flex: none;
+  height: 34px;
+  padding: 0 var(--space-3);
+  border: 0;
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+}
+
+.ribbon__tab:hover {
+  color: var(--text);
+}
+
+.ribbon__tab[aria-selected="true"] {
+  color: var(--accent-text);
+  font-weight: 600;
+}
+
+.ribbon__tab[aria-selected="true"]::after {
+  content: "";
+  position: absolute;
+  right: var(--space-3);
+  bottom: 0;
+  left: var(--space-3);
+  height: 2px;
+  border-radius: 2px;
+  background: var(--accent);
+}
+
+.ribbon--collapsed .ribbon__tab[aria-selected="true"]::after {
+  background: transparent;
+}
+
+.ribbon__collapse {
+  flex: none;
+}
+
+.ribbon__panel {
+  display: flex;
+  align-items: stretch;
+  gap: var(--space-3);
+  min-height: 96px;
+  padding: var(--space-1) var(--space-2);
+  overflow-x: auto;
+  border-top: 1px solid var(--chrome-border);
+}
+
+.ribbon__toolbar {
+  display: flex;
+  align-items: stretch;
+}
+
+.ribbon__group {
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  padding: 0 var(--space-3);
+  border-right: 1px solid var(--chrome-border);
+}
+
+.ribbon__group:first-child {
+  padding-left: var(--space-1);
+}
+
+.ribbon__group-commands {
+  display: flex;
+  flex-wrap: wrap;
+  align-content: flex-start;
+  align-items: center;
+  gap: 2px;
+  max-width: 320px;
+}
+
+.ribbon__group-label {
+  padding-top: 2px;
+  color: var(--text-subtle);
+  font-size: 11px;
+  text-align: center;
+  white-space: nowrap;
+}
+
+.ribbon__note {
+  align-self: center;
+  max-width: 260px;
+  color: var(--text-muted);
+  font-size: 12px;
+}
+
+/* ---- 패널 ---- */
+
+.panel {
+  display: flex;
+  flex: none;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  background: var(--panel-bg);
+}
+
+.panel--navigation {
+  width: var(--navigation-width);
+}
+
+.panel--properties {
+  width: var(--properties-width);
+}
+
+.panel__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  height: 40px;
+  padding: 0 var(--space-2) 0 var(--space-4);
+  border-bottom: 1px solid var(--chrome-border);
+}
+
+.panel__title {
+  font-size: 13px;
+  font-weight: 650;
+}
+
+.panel__body {
+  flex: 1;
+  min-height: 0;
+  padding: var(--space-3) var(--space-4);
+  overflow-y: auto;
+}
+
+.panel__section + .panel__section {
+  margin-top: var(--space-4);
+  padding-top: var(--space-4);
+  border-top: 1px solid var(--chrome-border);
+}
+
+.panel__section-title {
+  margin-bottom: var(--space-2);
+  color: var(--text-muted);
+  font-size: 11px;
+  font-weight: 650;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.panel__empty,
+.panel__note {
+  color: var(--text-muted);
+}
+
+.panel__note {
+  margin-top: var(--space-2);
+  font-size: 12px;
+}
+
+.format-table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.format-table th,
+.format-table td {
+  padding: var(--space-1) 0;
+  text-align: left;
+  vertical-align: middle;
+}
+
+.format-table thead th {
+  color: var(--text-subtle);
+  font-size: 11px;
+  font-weight: 500;
+}
+
+.format-table tbody th {
+  font-weight: 600;
+}
+
+.badge {
+  display: inline-block;
+  padding: 0 var(--space-2);
+  border-radius: 999px;
+  background: var(--badge-bg);
+  color: var(--badge-text);
+  font-size: 11px;
+  line-height: 20px;
+}
+
+/* ---- 크기 조절 핸들 ---- */
+
+.splitter {
+  position: relative;
+  flex: none;
+  width: 6px;
+  margin: 0 -3px;
+  z-index: 1;
+  cursor: col-resize;
+  touch-action: none;
+}
+
+.splitter::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 2px;
+  width: 1px;
+  background: var(--chrome-border);
+}
+
+.splitter:hover::after,
+.splitter:focus-visible::after {
+  left: 1px;
+  width: 4px;
+  background: var(--accent);
+}
+
+.splitter:focus-visible {
+  outline: none;
+}
+
+/* ---- Editor ---- */
+
+.editor {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  background: var(--canvas-bg);
+}
+
+.editor__notice {
+  display: flex;
+  flex: none;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--space-1) var(--space-3);
+  padding: var(--space-2) var(--space-4);
+  border-bottom: 1px solid var(--chrome-border);
+  background: var(--panel-bg);
+  color: var(--text-muted);
+}
+
+.editor__notice-title {
+  color: var(--text);
+  font-size: 13px;
+  font-weight: 650;
+}
+
+.editor__scroll {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+}
+
+/* 페이지가 들어갈 자리가 있으면 가운데, 없으면 왼쪽부터 놓고 가로 스크롤한다. */
+.editor__canvas {
+  width: max-content;
+  min-width: 100%;
+  padding: var(--space-4) 32px 48px;
+}
+
+.editor__page {
+  --zoom: 1;
+  width: calc(794px * var(--zoom));
+  height: calc(1123px * var(--zoom));
+  margin: 0 auto;
+  background: var(--page-bg);
+  box-shadow: var(--page-shadow);
+}
+
+/* ---- StatusBar ---- */
+
+.statusbar {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+  height: 28px;
+  padding: 0 var(--space-2) 0 var(--space-3);
+  background: var(--statusbar-bg);
+  color: var(--statusbar-text);
+  font-size: 12px;
+}
+
+.statusbar__item {
+  flex: none;
+  white-space: nowrap;
+}
+
+.statusbar__message {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.statusbar__zoom {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+
+.statusbar .command--icon {
+  width: 24px;
+  height: 22px;
+}
+
+.statusbar .command:hover:not([aria-disabled="true"]) {
+  background: var(--statusbar-hover);
+}
+
+.statusbar .command[aria-disabled="true"] {
+  color: inherit;
+}
+
+.statusbar :focus-visible {
+  outline-color: var(--statusbar-text);
+}
+
+.statusbar__zoom-value {
+  min-width: 3.5em;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+}
+
+@media (max-width: 1100px) {
+  .statusbar__engines,
+  .titlebar__document {
+    display: none;
+  }
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .command,
+  .ribbon__tab,
+  .splitter::after {
+    transition: background-color 120ms ease, color 120ms ease;
+  }
+}

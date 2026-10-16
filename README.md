@@ -2,8 +2,9 @@
 
 HWP/HWPX와 DOCX를 함께 다루는 오픈소스 데스크톱 워드프로세서 프로젝트입니다.
 
-> 상태: 초기 기반 구축 단계입니다. 아직 앱 코드(`src/`, `src-tauri/`)는 없으며, 문서 열기·편집·저장
-> 기능은 구현되지 않았습니다. 진행 상황은 [`docs/planning/tasks.md`](docs/planning/tasks.md)를 기준으로 합니다.
+> 상태: 초기 기반 구축 단계입니다. Tauri/React 6영역 화면(제목 표시줄, 리본, 탐색 창, 편집 영역, 속성 창,
+> 상태 표시줄)만 동작하며, **문서 열기·편집·저장은 아직 구현되지 않았습니다**(두 엔진 모두 통합 전).
+> 진행 상황은 [`docs/planning/tasks.md`](docs/planning/tasks.md)를 기준으로 합니다.
 
 ## 구성
 
@@ -37,6 +38,27 @@ git submodule status
 ```
 
 고정 버전과 갱신 절차는 [`external/README.md`](external/README.md)에 있습니다.
+
+## 개발 환경
+
+필요한 도구: Node.js 22 이상(npm), Rust 1.90 이상, Tauri 2의 플랫폼 의존성
+([Tauri 사전 준비](https://v2.tauri.app/start/prerequisites/), Linux는 WebKitGTK 4.1 등).
+지금의 앱은 엔진을 빌드하지 않으므로 submodule 없이도 실행됩니다.
+
+```sh
+npm ci                     # 잠금 파일(package-lock.json) 기준 설치
+npm run tauri dev          # 개발 서버(Vite, 포트 1420)와 데스크톱 앱 실행
+
+npm run typecheck          # TypeScript 검사
+npm run lint               # ESLint
+npm test                   # 컴포넌트·상호작용 테스트(Vitest + Testing Library)
+npm run build              # 프런트엔드 빌드(dist/)
+(cd src-tauri && cargo fmt --check && cargo clippy --locked -- -D warnings)
+
+# 실제 앱 스모크 테스트(Linux): tauri-driver와 WebKitWebDriver, 그래픽 세션 필요
+npm run tauri build -- --debug --no-bundle
+python3 tests/e2e/tauri_smoke.py --app src-tauri/target/debug/geul --driver <tauri-driver 경로>
+```
 
 ## 공개 저장소 보안 검사
 

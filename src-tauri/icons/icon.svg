@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024">
+  <!-- geul 앱 아이콘 원본. 이 프로젝트에서 직접 작성했다. PNG/ICO/ICNS는 `npm run tauri icon`으로 생성한다. -->
+  <rect x="64" y="64" width="896" height="896" rx="200" fill="#2f5bd3"/>
+  <path d="M332 232h268l124 124v436a40 40 0 0 1-40 40H332a40 40 0 0 1-40-40V272a40 40 0 0 1 40-40z" fill="#ffffff"/>
+  <path d="M600 232v124h124z" fill="#c9d6ff"/>
+  <g fill="none" stroke="#2f5bd3" stroke-width="40" stroke-linecap="round">
+    <path d="M396 476h232M396 580h232M396 684h140"/>
+  </g>
+</svg>

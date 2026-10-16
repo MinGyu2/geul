@@ -20,7 +20,7 @@ Repository context: 2026-10-16 실제 저장소 검사 완료(초기 상태: `do
 
 ## Phase 2: User Story 1 - 기본 UI와 다국어 (Priority: P1)
 Independent Test: 해당 User Story의 acceptance scenario와 실패 조건을 실제 실행으로 확인한다.
-- [ ] T004 [US1] Tauri/React 6영역 화면과 패널 인터랙션 구축 — `src/App.tsx`
+- [x] T004 [US1] Tauri/React 6영역 화면과 패널 인터랙션 구축 — `src/App.tsx`
 - [ ] T005 [US1] 번역 JSON·fallback·설정 복원 추가 — `src/language/`
 
 ## Phase 3: User Story 2 - 문서 기본 편집 (Priority: P1)
@@ -97,6 +97,12 @@ Independent Test: 해당 User Story의 acceptance scenario와 실패 조건을 �
 | T018 | 완료(재검증) | ① 글자만으로 된 15자 이하 값·`example`/`env.`/`<` 부분 문자열·서로 다른 글자 3개 이하 값을 자리표시자로 보고 통과(따옴표 안의 영문 단어 암호 등) ② 2 MiB 초과 파일 내용 검사를 건너뛰고 종료 코드 0 ③ `--staged`가 작업 트리의 예외 목록을 읽음(스테이징 안 된 예외가 스테이징된 비밀을 통과시킴), 넓은 glob·알 수 없는 규칙 허용 ④ 이메일 허용 도메인 접미사 일치(`evilexample.com`, 모든 `@anthropic.com`), 로컬 부분 `…noreply` 허용 ⑤ `/var/home`, `/mnt/c/Users` 미검출 ⑥ 이력 검사가 병합 커밋 내용·바이너리·바이너리 파일 이름을 보지 않음 ⑦ 스테이징 검사가 형식 변경(심볼릭 링크→파일, `T`)을 제외 ⑧ 바이너리·ZIP 문서를 검사 없이 통과. 모두 수정, 검사하지 못한 내용은 `uninspected-*`(종료 코드 1) 또는 종료 코드 2로 실패 | `python3 -m unittest discover -s tests/security -v` → 43개 통과(약 33초). 같은 테스트를 이전 검사기에 적용 → 54개 하위 사례 실패·2개 오류(결함 재현). 현재 저장소 `--all`(22개 파일)·`--history`(고유 파일 버전 25개) 통과. `gitleaks dir`(scripts/, tests/) 누출 없음. 커밋 `ce8f038`은 pre-commit 훅(스테이징 검사·회귀 테스트·Gitleaks) 통과 |
 | T019 | 부분 완료 — 로컬 게이트(L) 완료 | pre-push 훅이 추적 파일만 검사해 삭제된 비밀이 남은 이력을 통과시키던 문제 → `--history`와 Gitleaks 전체 이력 검사 추가(전체 이력 방식: pre-commit은 여러 ref 푸시 시 첫 ref 범위만 계산함을 소스로 확인). CI `concurrency`(`cancel-in-progress: true`)가 강제 푸시 시 앞선 실행을 취소할 수 있어 제거. 문서의 기본 브랜치 `main` → 실제 `master`, 필수 상태 검사 이름을 실제 check run 이름 `민감정보 검사`로 정정 | `tests/security/test-pre-push-hook.sh`(실제 훅 설치 후 `.git/hooks/pre-push` 직접 호출, `git push` 없음) → 10개 시나리오 통과: 깨끗한 이력 통과, 비밀 커밋 차단, 삭제 후에도 차단, 이력 정리 후 통과, 홈 경로 이력 차단, 다른 로컬 브랜치 비밀 차단, 두 번째 ref 비밀 차단, `python3` 없음 차단, gitleaks 없음 CI 실패, 로그에 원문 없음. `simulate-leak-response.sh` 종료 코드 0. `scripts/security-scan-ci.sh .` 통과. `actionlint` 1.7.12 오류 없음. `pre-commit validate-config` 통과 |
 | T019 | 원격 공개 게이트(R) 대기 | 저장소 관리자 작업. 체크리스트: [security-policy.md 5절](../development/security-policy.md#5-원격-저장소-설정-저장소-관리자) | GitHub 공개 API 읽기 전용 조회(2026-10-16): public, 기본 브랜치 `master`, 원격 `master` = `455c985`, `security-scan` push 실행 1회 성공(커밋 `455c985`, check run `민감정보 검사`). 브랜치 보호 없음(`protected: false`), ruleset 없음. 이 성공 기록은 `455c985`에 대한 것이며 이후 로컬 커밋은 푸시하지 않아 CI 결과가 없다 |
+
+### T004 앱 셸 (2026-10-16)
+
+| Task | 상태 | 산출물 | 실행한 검증과 결과 |
+|------|------|--------|--------------------|
+| T004 | 완료 | `package.json`·`package-lock.json`, `vite.config.ts`, `tsconfig.json`, `eslint.config.js`, `index.html`, `src/`(App, components 6영역 + Splitter·CommandButton, `ribbon/definitions.ts`, `commands/commands.ts`, `language/{ko.json,index.ts}`, hooks, styles, assets), `src-tauri/`(Cargo.toml·Cargo.lock, `src/{main,lib}.rs`, `tauri.conf.json`, `capabilities/default.json`, icons), `tests/e2e/tauri_smoke.py`, `.sensitive-info-allowlist`(아이콘 3건) | 선행 조건 T003 완료, T019(L) 통과 후 착수. `npm run typecheck`·`npm run lint` 오류 0; `npm test` → Vitest 31개 통과(6영역 렌더, 탐색·속성 창 숨기기/복원과 초점 이동, 키보드·포인터 크기 조절과 최소·최대, 좁은 창 최대 너비, 리본 접기·Ctrl+F1·탭 roving·도구 모음 화살표, 문서 명령 `aria-disabled`와 클릭 시 DOM 불변·이유 표시, 테마 전환, 확대/축소 한계, 번역 키 존재); `npm run build` 성공; `cargo fmt --check`, `cargo check`, `cargo clippy --locked --all-targets -- -D warnings` 통과; `npm run tauri build -- --debug --no-bundle` 성공; `tests/e2e/tauri_smoke.py`(tauri-driver 2.1.0 + WebKitWebDriver, Linux Wayland, WebKitGTK 2.54) → 실제 앱에서 21개 항목 통과·1개 건너뜀(앱 시작, 6영역 표시·배치 순서, 시작 창 960×900에서 가로 넘침 없음·편집 영역 360px 이상, 패널 숨기기·복원·초점, 리본 접기·Ctrl+F1, 키보드·포인터 크기 조절, 미지원 명령 비실행, 어두운 테마, Tab 도달). 건너뜀: WebDriver 창 크기 변경(960×600)을 타일링 창 관리자가 반영하지 않아 최소 높이 600px 배치는 실제 앱에서 확인하지 못함(좁은 창 계산은 Vitest로 확인). 번들 빌드와 개발 서버(Vite) 모드 모두 실행. `npm audit` 취약점 0. **범위 밖·미검증**: 문서 열기·편집·저장(엔진 미통합, 명령은 비활성 표시), ko/en 전환과 설정 복원(T005), Windows/macOS 실행(T016), CI의 프런트엔드·Rust 빌드 검사(아직 없음) |
 
 보안 검사 재실행 명령: `python3 scripts/check-sensitive-info.py --staged|--all|--history`,
 `scripts/security-scan-ci.sh .`(gitleaks 필요), `tests/security/simulate-leak-response.sh`,

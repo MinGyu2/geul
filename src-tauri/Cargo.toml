@@ -1,0 +1,18 @@
+[package]
+name = "geul"
+version = "0.1.0"
+description = "HWP/HWPX와 DOCX를 함께 다루는 데스크톱 워드프로세서"
+edition = "2021"
+rust-version = "1.90"
+publish = false
+
+[lib]
+# 데스크톱 전용. 모바일 대상(staticlib, cdylib)은 아직 지원하지 않는다.
+name = "geul_lib"
+crate-type = ["rlib"]
+
+[build-dependencies]
+tauri-build = { version = "=2.7.1", features = [] }
+
+[dependencies]
+tauri = { version = "=2.12.1", features = [] }
