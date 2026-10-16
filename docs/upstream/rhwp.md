@@ -46,7 +46,7 @@
 
 | 목적 | 후보 API | 비고 |
 |------|----------|------|
-| 형식 판별 | `rhwp::parser::detect_format(&[u8]) -> FileFormat` | 확장자와 헤더 불일치 처리(T006)에 사용 후보 |
+| 형식 판별 | `rhwp::parser::detect_format(&[u8]) -> FileFormat` | T006에서는 쓰지 않음: OLE 서명(앞 4바이트)만 보고 `Hwp`로 분류해 다른 OLE 문서와 구별하지 못함(L2, `src/parser/mod.rs`). 앱은 `src-tauri/src/document/`에서 FileHeader·필수 스트림까지 확인하며, HWPX 필수 항목(`Contents/content.hpf`, `Contents/header.xml`)과 암호 표식(`encryption-data`)은 rhwp와 같은 기준을 쓴다 |
 | 열기 | `DocumentCore::from_bytes(&[u8]) -> Result<DocumentCore, HwpError>`, `from_bytes_with_password` | |
 | 페이지 | `DocumentCore::page_count()` | |
 | 저장 | `export_hwp_native`, `export_hwpx_native`, `export_hwpx_native_with_report` 등 (`src/document_core/commands/document.rs`) | `*_with_report`는 손실 보고서(`ContentLossCode`: `BinaryContentEmptied`, `ControlOmitted`, `MetadataReduced`)를 함께 반환 → FR-006 `unsafe-save` 판정 근거 후보 |

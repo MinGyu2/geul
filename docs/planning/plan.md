@@ -2,7 +2,7 @@
 
 Date: 2026-10-13
 Spec: [spec.md](./spec.md)
-Status: Revised draft — 2026-10-16 실제 저장소 검사, submodule 고정, 보안 게이트 로컬 구현·2차 재검토 완료(원격 브랜치 보호는 미설정), Tauri/React 6영역 UI 기반(T004) 구현. 엔진 통합·문서 열기/저장은 미착수
+Status: Revised draft — 2026-10-16 실제 저장소 검사, submodule 고정, 보안 게이트 로컬 구현·2차 재검토 완료(원격 브랜치 보호는 미설정), Tauri/React 6영역 UI 기반(T004) 구현. 2026-10-17 T006: 문서 형식 판별·세션 기록·어댑터 계약 구현(엔진 연결 없음). 엔진 통합·화면에서 문서 열기·저장은 미착수
 
 ## Summary
 WordCraft는 DOCX, rhwp는 HWP/HWPX 전용 엔진으로 독립 관리한다. Tauri 2 + React/TypeScript 6개 영역 UI에 문서별 어댑터, 공통 명령/상태 계층을 결합한다. 고급 리본보다 렌더·IME·선택·쓰기 무손실 검증과 공개 저장소 보안 게이트를 우선한다.
@@ -40,6 +40,9 @@ Tauri desktop host (OS file dialogs / permissions / safe file writes)
     geul 프로세스의 변경이 보이지 않아 감지하지 못함(마지막에 쓴 값이 남음). 단일 인스턴스 강제나 Rust 쪽 잠금 저장소는 후속 결정
   CommandRegistry: stable command ids, per-engine capability, shortcut, selected-state
   DocumentController: session id, active format, revision, dirty flag, file fingerprint
+    (T006 소유 구분: Rust `src-tauri/src/document/`의 SessionRegistry가 형식 판별·엔진 배정·세션 ID·수명주기의
+     권한 있는 기록. React `src/adapters/sessions.ts`는 그 투영(목록·활성 선택)만 가지며 세션을 만들지 않는다.
+     dirty flag·file fingerprint는 편집·저장이 생기는 T009/T014에서 추가)
     +-- RhwpAdapter --> rhwp Core (HWP/HWPX, independent model + render surface)
     +-- WordCraftAdapter --> WordCraft Core (DOCX, independent model + render surface)
 ```
@@ -50,6 +53,8 @@ Tauri desktop host (OS file dialogs / permissions / safe file writes)
 
 ## Data Flow
 1. 파일을 선택→확장자와 파일 헤더 확인→DocumentController에서 엔진 결정→인코딩 오류를 명시적으로 처리한다.
+   (T006 정책: 확장자가 hwp·hwpx·docx가 아니면 내용을 읽지 않고 거부. 내용이 다른 지원 형식이면 `ExtensionMismatch`로
+   거부하고 내용대로 다시 해석해 열지 않는다. 확인 후 여는 흐름은 없다. 형식 판별은 엔진이 문서를 열 수 있다는 증거가 아니다)
 2. 열기 성공→세션과 문서 capability 조회→엔진별 EditorSurface 생성→리본 상태 표시.
 3. 리본/단축키 실행→capability 점검→선택 세션의 엔진 명령 실행→새 revision·selection 상태만 UI에 반영.
 4. 저장→저장 가능 여부/손실 위험 preflight→별도 임시 경로 작성→형식·문서 구조 검증→원본 디스크 fingerprint 재확인→안전한 교체→revision이 같을 때만 dirty 해제.
@@ -70,6 +75,41 @@ interface EditorAdapter {
 }
 ```
 - Error keys: `UnsupportedFormat`, `UnsupportedCommand`, `UnsafeSave`, `ParseFailure`, `SaveFailure`, `FileConflict`, `StaleSession`.
+
+### T006에서 구현한 계약 (2026-10-17)
+위 개념 계약과 달리 세션을 만드는 일(`open`·`close`)은 엔진 어댑터가 아니라 백엔드 SessionRegistry가 맡는다. 어댑터마다
+세션을 만들면 세션 기록이 둘이 되기 때문이다. 이 이름과 인자는 이 앱의 계약이며 rhwp·WordCraft API가 아니다.
+- IPC(`src-tauri/src/document/commands.rs`, `build.rs` 앱 매니페스트 + `capabilities/default.json`에서 이 네 명령만 허용):
+  `document_open(path) -> SessionInfo`, `document_close(sessionId) -> {sessionId, alreadyClosed}`,
+  `document_session(sessionId) -> SessionInfo`, `document_sessions() -> SessionInfo[]`.
+  `SessionInfo = {sessionId, format: hwp|hwpx|docx, engine: rhwp|wordcraft, revision, state: "identified", displayName}`(경로 없음).
+- 형식 판별(`detect.rs`, `ole.rs`, `package.rs`, `zip.rs`, `xml.rs`): HWP = OLE + `FileHeader`("HWP Document File", 주 버전 5,
+  암호·DRM 플래그 없음) + `DocInfo` + `BodyText`/`ViewText` + 모든 스트림의 끝 섹터가 파일 안에 있음. HWPX = ZIP +
+  `Contents/content.hpf` + `Contents/header.xml`(있으면 `mimetype` = `application/hwp+zip`, `META-INF/manifest.xml`에
+  `encryption-data`면 암호화). DOCX = ZIP + `[Content_Types].xml` + `_rels/.rels`의 officeDocument 대상 부분이 있고 내용 형식이
+  WordprocessingML 문서 본문(docm·dotx·XLSX 등은 거부). 두 표식이 함께 있으면 `Ambiguous`. rhwp `detect_format`은 모든 OLE를
+  HWP로 보므로 쓰지 않는다.
+- 자원 한계: 문서 512 MiB, ZIP 항목 20,000개·중앙 디렉터리 8 MiB·이름 4,096바이트, 판별용 XML 항목 1 MiB(선언 크기와
+  실제 압축 해제 모두), OLE 스트림 20,000개, 세션 64개, 동시 열기 8개. 문서 본문은 판별에 풀지 않는다.
+- 오류(`error.rs`, `src/adapters/contract.ts`): 위 키 중 `UnsupportedFormat`·`ParseFailure`·`StaleSession`을 쓰고,
+  결정적인 거부를 위해 `InvalidPath`·`Unreadable`·`ExtensionMismatch`·`Encrypted`·`ResourceLimit`·`AlreadyOpen`·
+  `UnknownSession`·`Internal`을 더했다. 프런트엔드는 `EngineUnavailable`(엔진 연결 전)·`Protocol`(계약 밖 응답)을 만든다.
+  `UnsupportedCommand`(T010), `UnsafeSave`·`SaveFailure`·`FileConflict`(T009/T014)는 해당 작업에서 추가한다. 오류에는 code와
+  고정된 세부 값만 있고 경로·문서 내용·운영체제 오류 문구는 없다.
+- 세션: ID는 1부터 늘고 다시 쓰지 않는다(발급한 적 있는 ID = `StaleSession`, 없는 ID = `UnknownSession`). 같은 파일(정규화
+  경로 또는 장치·inode)은 `AlreadyOpen`. 판별은 잠금 밖, 중복 확인·등록은 한 잠금 안. 되풀이한 닫기는 `alreadyClosed: true`.
+  상태는 `identified` 하나(엔진에 불러오지 않음). 판별이 끝나면 파일 핸들을 닫는다.
+- revision: 엔진 문서 모델의 판. 0에서 시작해 문서를 바꾸는 연산이 성공할 때만 늘고, 다시 그리기·선택으로는 늘지 않는다.
+  바꾸는 요청은 기대 revision을 담고 다르면 실행하지 않는다(`ExecuteRequest`). T006에는 바꾸는 연산이 없다.
+- 프런트엔드 투영(`sessions.ts`): 응답은 자기 sessionId 항목에만 반영(활성 문서와 무관), 목록에 없는 세션·낮은 revision·
+  형식이나 엔진이 바뀐 응답은 버림, 열기 완료는 가장 최근 열기이고 그동안 사용자가 다른 문서를 고르지 않았을 때만 활성화.
+- 엔진 어댑터(`engines.ts`): `capability`(지금은 모든 명령 `engine-not-integrated`), `load`·`execute`·`save`(T007/T008에서 구현,
+  지금은 아무것도 바꾸지 않고 `EngineUnavailable`). 렌더링·커서·선택·IME는 편집 표면마다 달라 PoC 결과로 정한다.
+- 경로 입력: 열기 대화상자가 없어 IPC로 경로를 받고 백엔드가 검사한다(절대 경로만, NUL·4,096바이트 초과 거부, 심볼릭 링크를
+  따라간 실제 파일의 이름·내용으로 판단, 일반 파일만, unix에서 O_NONBLOCK). 백엔드가 대화상자를 띄우는 흐름(T009)이 생기면
+  경로 입력을 다시 검토한다. UTF-8이 아닌 경로는 IPC 문자열로 보낼 수 없어 열 수 없다.
+- 미결정(T007): rhwp 1순위 표면(R-A)은 문서 모델이 WebView의 WASM에 있으므로, 그 엔진의 revision을 백엔드 기록에 어떻게
+  알릴지(저장 요청에 담기 등)를 T007에서 정한다. 판별한 뒤 엔진이 파일을 다시 읽을 때 그 사이 바뀌었는지도 그때 확인한다.
 - Tauri IPC에 보낼 것은 안정적인 커맨드/세션 ID와 경계 검사된 데이터이며 임의의 파일시스템 경로·셸 명령을 UI에서 그대로 신뢰하지 않는다.
 
 ## Algorithms and Pseudocode
@@ -83,6 +123,8 @@ execute(command, session):
   if capability(command, session) != supported: fail safely
   response = adapter.execute(session.id, command)
   if response.revision >= session.revision and active_session_matches(): update_ui()
+    # T006 정정: 응답은 response.sessionId 세션에만 반영한다. active_session_matches()로 거르면 비활성 문서의
+    # 응답을 잃으므로 쓰지 않는다. 활성 여부는 화면 표시만 정한다(src/adapters/sessions.ts)
 save(session):
   if unsafe_or_unsupported: block_with_reason()
   write_to_temp(); validate_readback_and_required_structure()
@@ -117,9 +159,13 @@ geul/
 │   ├── settings/{settings.ts,usePersistedSettings.ts}          # 버전 1 UI 설정 검사·저장·복원(T005)
 │   ├── hooks/                          # 배치 상태(reducer), 창 너비, roving focus
 │   ├── styles/app.css  assets/icons.tsx  test/setup.ts
-│   ├── adapters/ dialogs/              # (예정) T006 이후
-├── src-tauri/                          # Rust host: 명령(IPC) 없음, capability core:default, CSP
-│   ├── src/{main.rs,lib.rs}            # commands/ document/ adapters/ services/ 는 T006 이후 (예정)
+│   ├── adapters/{contract,backend,engines,sessions}.ts  # 세션 IPC 계약·검사, 클라이언트, 엔진 경계, 세션 투영(T006)
+│   ├── dialogs/                        # (예정)
+├── src-tauri/                          # Rust host: 문서 세션 명령 4개(T006)만 허용, capability core:default + allow-document-*, CSP
+│   ├── src/{main.rs,lib.rs}
+│   ├── src/document/                   # 형식 판별·세션 기록·IPC(T006). adapters/ services/ 는 T007 이후 (예정)
+│   ├── tests/document_fd_cleanup.rs    # 판별 후 파일 핸들 정리(Linux)
+│   ├── build.rs                        # 앱 명령 매니페스트(permissions/autogenerated/는 빌드 산출물, Git 무시)
 │   ├── capabilities/default.json  icons/  tauri.conf.json  Cargo.toml  Cargo.lock
 ├── tests/{security,fixtures,e2e}/      # ui/ integration/ roundtrip/ 는 (예정)
 ├── scripts/{check-sensitive-info.py,security-scan-ci.sh}
@@ -148,6 +194,9 @@ geul/
 - 기능 회귀: 상대 경로, 번역 누락, capability, Undo, 파일 충돌, 저장 실패, 필수 개체 보존과 원본 해시 비교.
 - 보안 회귀: stage 검사, CI 실패 판정, 첫 공개 이력 검사, 오탐 허용 사유, 토큰 로그 마스킹.
 - 실제 배포/OS 테스트: Windows/macOS/Linux 앱 실행·파일 열기/저장·PDF 출력; 서드파티 고지와 라이선스 재확인.
+- 문서 형식·세션(T006): Rust 단위 테스트(합성 OLE·ZIP 컨테이너, 손상·잘림·자원 한계·결정적 변형 입력), 파일 핸들 정리 통합
+  테스트, Vitest(계약 검사·클라이언트·어댑터·세션 투영의 순서 뒤바뀜과 활성 전환), 실제 앱 IPC 스모크. 합성 컨테이너는 판별
+  규칙 시험용이며 실제 문서 지원의 증거가 아니다(실제 문서는 T007/T008/T015). CI `quality`에 `cargo test --locked` 추가.
 - 앱 셸(T004): 타입 검사, ESLint, Vitest 31개, Vite 빌드, cargo fmt/check/clippy, Tauri 디버그 빌드, 실제 앱 WebDriver 스모크 테스트(21개 통과, 최소 높이 검사 1개는 창 관리자가 크기 변경을 반영하지 않아 건너뜀; Linux WebKitGTK, 번들 빌드와 개발 서버 모드)를 실행했다. Windows/macOS 실행과 엔진 빌드(L3), 문서 왕복 테스트(L4)는 **NOT RUN**. CI: `security-scan`(원격에서 `455c985`·`bc9e593` 실행 성공)과 `quality`(프런트엔드·Rust 검사, 2026-10-16 추가 — 로컬에서 같은 명령을 실행해 통과, GitHub에서는 **NOT RUN**). 엔진 빌드 검사는 T007/T008에서 추가한다.
 - 레이아웃 계산은 `computePanelLayout()` 하나가 그리는 너비와 크기 조절 범위를 함께 만든다. 실제 앱 최소 창(960×600) 검사는 타일링 창 관리자에서 창 크기 변경이 무시되므로 헤드리스 weston에서 실행한다.
 - 보안 회귀(로컬)는 실행됨: 검사기 단위 테스트 86개(2026-10-16 4차 검토 기준), pre-commit 훅 차단, pre-push 훅 시뮬레이션 10개 시나리오, 누출 대응 시뮬레이션(결과는 tasks.md Verification Log). GitHub Actions는 커밋 `455c985`에서 1회 성공했고, 이후 로컬 커밋은 푸시하지 않아 **NOT RUN**.

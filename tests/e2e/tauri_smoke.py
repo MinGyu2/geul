@@ -13,7 +13,8 @@
 패널 크기 조절(키보드·포인터), 지원하지 않는 명령의 비활성 동작, 테마 전환, 최소 창 크기에서의 배치,
 Tab 키로 닿는 주요 컨트롤, 설정 저장 후 앱 프로세스를 끝내고 다시 띄워 언어·화면 설정이 복원되는지(T005),
 더 새로운 버전의 저장값을 화면 설정 변경과 재시작 뒤에도 덮어쓰지 않는지(T005 리뷰 수정), 실행 중 같은
-프로세스의 localStorage에서 바뀐 저장값을 다음 화면 설정 변경이 덮어쓰지 않는지(T005 2차 안정화).
+프로세스의 localStorage에서 바뀐 저장값을 다음 화면 설정 변경이 덮어쓰지 않는지(T005 2차 안정화),
+문서 세션 IPC(T006: 형식 판별·엔진 배정·세션 ID·닫기·오류 계약, 화면의 문서 명령은 그대로 비활성).
 동시에 실행한 다른 geul 프로세스의 변경은 WebKitGTK에서 서로 보이지 않아 감지할 수 없으므로 검사하지 않는다.
 시나리오마다 빈 임시 XDG_DATA_HOME을 써서 첫 실행 상태로 시작하며 사용자의 실제 앱 데이터는 건드리지 않는다.
 실패하면 종료 코드 1.
@@ -32,9 +33,11 @@ import socket
 import subprocess
 import sys
 import tempfile
+import struct
 import time
 import urllib.error
 import urllib.request
+import zipfile
 from pathlib import Path
 
 ELEMENT = "element-6066-11e4-a52e-4f735466cecf"
@@ -505,6 +508,152 @@ def run_equivalent_restore(start_session, results: list[str]) -> None:
         driver.quit()
 
 
+# ---- T006: 문서 세션 IPC ----
+# 픽스처는 실행할 때 임시 디렉터리에 만드는 합성 컨테이너다(판별 규칙 시험용, 엔진이 열 수 있다는 증거가 아님).
+
+DOCX_MAIN = "application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"
+OFFICE_DOCUMENT = "http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument"
+
+
+def make_docx() -> bytes:
+    import io
+    out = io.BytesIO()
+    with zipfile.ZipFile(out, "w", zipfile.ZIP_DEFLATED) as package:
+        package.writestr("[Content_Types].xml",
+                         f'<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">'
+                         f'<Default Extension="xml" ContentType="application/xml"/>'
+                         f'<Override PartName="/word/document.xml" ContentType="{DOCX_MAIN}"/></Types>')
+        package.writestr("_rels/.rels",
+                         f'<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">'
+                         f'<Relationship Id="rId1" Type="{OFFICE_DOCUMENT}" Target="word/document.xml"/></Relationships>')
+        package.writestr("word/document.xml", "<w:document xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"/>")
+    return out.getvalue()
+
+
+def make_hwpx() -> bytes:
+    import io
+    out = io.BytesIO()
+    with zipfile.ZipFile(out, "w", zipfile.ZIP_DEFLATED) as package:
+        package.writestr(zipfile.ZipInfo("mimetype"), "application/hwp+zip", compress_type=zipfile.ZIP_STORED)
+        package.writestr("Contents/content.hpf", "<opf:package xmlns:opf=\"http://www.idpf.org/2007/opf/\"/>")
+        package.writestr("Contents/header.xml", "<hh:head xmlns:hh=\"http://www.hancom.co.kr/hwpml/2011/head\"/>")
+        package.writestr("Contents/section0.xml", "<hs:sec xmlns:hs=\"http://www.hancom.co.kr/hwpml/2011/section\"/>")
+    return out.getvalue()
+
+
+def make_hwp() -> bytes:
+    """CFB v3(512바이트 섹터). 스트림을 모두 4096바이트로 만들어 미니 스트림 없이 일반 섹터에 둔다."""
+    sector, free, end, fat_sector, no_stream = 512, 0xFFFFFFFF, 0xFFFFFFFE, 0xFFFFFFFD, 0xFFFFFFFF
+    header = bytearray(4096)
+    header[:17] = b"HWP Document File"
+    header[32:36] = bytes([0, 3, 0, 5])  # revision, build, minor, major
+    streams = {"FileHeader": bytes(header), "DocInfo": b"\x01" * 4096, "Section0": b"\x02" * 4096}
+    start = {"FileHeader": 3, "DocInfo": 11, "Section0": 19}  # 0: FAT, 1~2: 디렉터리
+    fat = [free] * 128
+    fat[0], fat[1], fat[2] = fat_sector, 2, end
+    for name, first in start.items():
+        for i in range(8):
+            fat[first + i] = first + i + 1 if i < 7 else end
+
+    def entry(name: str, kind: int, left=no_stream, right=no_stream, child=no_stream, first=end, size=0) -> bytes:
+        encoded = (name + "\0").encode("utf-16-le") if name else b""
+        return (encoded.ljust(64, b"\0") + struct.pack("<HBB3I", len(encoded), kind, 1, left, right, child)
+                + bytes(16) + bytes(4) + bytes(16) + struct.pack("<IQ", first, size))
+
+    directory = b"".join([
+        entry("Root Entry", 5, child=2),
+        entry("DocInfo", 2, first=start["DocInfo"], size=4096),
+        entry("BodyText", 1, left=1, right=3, child=4),  # 이름 길이 순: DocInfo < BodyText < FileHeader
+        entry("FileHeader", 2, first=start["FileHeader"], size=4096),
+        entry("Section0", 2, first=start["Section0"], size=4096),
+    ]).ljust(2 * sector, b"\0")
+    directory = directory[:5 * 128] + b"".join(entry("", 0) for _ in range(3))
+    head = (bytes.fromhex("D0CF11E0A1B11AE1") + bytes(16) + struct.pack("<HHHHH", 0x3E, 3, 0xFFFE, 9, 6) + bytes(6)
+            + struct.pack("<IIIIIIIII", 0, 1, 1, 0, 4096, end, 0, end, 0) + struct.pack("<I", 0) + struct.pack("<I", free) * 108)
+    body = struct.pack("<128I", *fat) + directory + streams["FileHeader"] + streams["DocInfo"] + streams["Section0"]
+    return head + body
+
+
+INVOKE = """
+return window.__TAURI_INTERNALS__.invoke(arguments[0], arguments[1])
+  .then((value) => ({ ok: value }), (error) => ({ err: error }));
+"""
+
+
+def run_document_sessions(start_session, results: list[str]) -> None:
+    """T006: 실제 앱의 IPC로 형식 판별·세션·오류 계약을 확인한다. 화면에서는 문서를 열지 않는다."""
+    with tempfile.TemporaryDirectory(prefix="geul-e2e-docs-") as folder:
+        root = Path(folder)
+        files = {
+            "report.docx": make_docx(), "plan.hwpx": make_hwpx(), "memo.hwp": make_hwp(),
+            "renamed.docx": make_hwpx(), "text.docx": b"plain text", "notes.txt": make_docx(),
+            "cut.docx": make_docx()[:40],
+        }
+        for name, data in files.items():
+            (root / name).write_bytes(data)
+        (root / "folder.docx").mkdir()
+        path = lambda name: str(root / name)
+        driver = start_session()
+        try:
+            wait_until(driver, "return document.querySelector('footer.statusbar') !== null", timeout=30)
+            call = lambda command, args=None: driver.js(INVOKE, command, args or {})
+            check(results, "문서 세션: 시작할 때 열린 세션 없음", call("document_sessions") == {"ok": []})
+
+            opened = [call("document_open", {"path": path(name)}) for name in ("report.docx", "plan.hwpx", "memo.hwp")]
+            expected = [
+                {"sessionId": 1, "format": "docx", "engine": "wordcraft", "revision": 0, "state": "identified", "displayName": "report.docx"},
+                {"sessionId": 2, "format": "hwpx", "engine": "rhwp", "revision": 0, "state": "identified", "displayName": "plan.hwpx"},
+                {"sessionId": 3, "format": "hwp", "engine": "rhwp", "revision": 0, "state": "identified", "displayName": "memo.hwp"},
+            ]
+            check(results, "문서 세션: DOCX→WordCraft, HWPX·HWP→rhwp, ID 1·2·3, revision 0, 경로 없음",
+                  opened == [{"ok": info} for info in expected], json.dumps(opened, ensure_ascii=False))
+
+            errors = {
+                "report.docx": {"code": "AlreadyOpen", "sessionId": 1},
+                "renamed.docx": {"code": "ExtensionMismatch", "declared": "docx", "detected": "hwpx"},
+                "text.docx": {"code": "UnsupportedFormat", "kind": "unknown"},
+                "notes.txt": {"code": "UnsupportedFormat", "kind": "extension"},
+                "cut.docx": {"code": "ParseFailure", "reason": "truncated"},
+                "folder.docx": {"code": "Unreadable", "reason": "not-a-file"},
+                "missing.docx": {"code": "Unreadable", "reason": "not-found"},
+            }
+            got = {name: call("document_open", {"path": path(name)}) for name in errors}
+            got["(상대 경로)"] = call("document_open", {"path": "report.docx"})
+            errors["(상대 경로)"] = {"code": "InvalidPath", "reason": "relative"}
+            check(results, "문서 세션: 중복·확장자 불일치·알 수 없는 내용·지원 외 확장자·잘림·디렉터리·없음·상대 경로 오류",
+                  got == {name: {"err": error} for name, error in errors.items()}, json.dumps(got, ensure_ascii=False))
+            check(results, "문서 세션: 응답·오류에 파일 경로가 없음",
+                  folder not in json.dumps([opened, got], ensure_ascii=False))
+
+            closing = [call("document_close", {"sessionId": 1}), call("document_close", {"sessionId": 1})]
+            check(results, "문서 세션: 닫기와 되풀이한 닫기",
+                  closing == [{"ok": {"sessionId": 1, "alreadyClosed": False}}, {"ok": {"sessionId": 1, "alreadyClosed": True}}],
+                  json.dumps(closing))
+            lookups = [call("document_session", {"sessionId": 1}), call("document_session", {"sessionId": 999}),
+                       call("document_session", {"sessionId": 2})]
+            check(results, "문서 세션: 닫힌 세션은 StaleSession, 발급 안 된 ID는 UnknownSession, 다른 세션은 그대로",
+                  lookups == [{"err": {"code": "StaleSession", "sessionId": 1}}, {"err": {"code": "UnknownSession", "sessionId": 999}},
+                              {"ok": expected[1]}], json.dumps(lookups, ensure_ascii=False))
+            listed = call("document_sessions")
+            check(results, "문서 세션: 남은 세션 목록", listed == {"ok": expected[1:]}, json.dumps(listed, ensure_ascii=False))
+            wrong_type = call("document_close", {"sessionId": "abc"})
+            check(results, "문서 세션: 형식이 틀린 인자는 거부하고 앱은 계속 응답",
+                  "err" in wrong_type and not isinstance(wrong_type["err"], dict) and call("document_sessions") == listed,
+                  json.dumps(wrong_type, ensure_ascii=False))
+            reopened = call("document_open", {"path": path("report.docx")})
+            check(results, "문서 세션: 닫은 파일을 다시 열면 새 ID", reopened.get("ok", {}).get("sessionId") == 4, json.dumps(reopened))
+
+            ui = driver.js("""
+              return {
+                bold: document.querySelector('button[data-command="format.bold"]')?.getAttribute('aria-disabled'),
+                empty: document.querySelector('main.editor')?.textContent.includes('열린 문서가 없습니다'),
+              };""")
+            check(results, "문서 세션: 세션을 만들어도 화면의 문서 명령은 비활성이고 편집 영역은 빈 상태",
+                  ui == {"bold": "true", "empty": True}, json.dumps(ui, ensure_ascii=False))
+        finally:
+            driver.quit()
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--app", required=True)
@@ -538,6 +687,9 @@ def main() -> int:
                     results += run(driver, args.screenshots)
                 finally:
                     driver.quit()
+        with tempfile.TemporaryDirectory(prefix="geul-e2e-") as data_home:
+            with tauri_driver(args.driver, args.port, data_home) as start_session:
+                run_document_sessions(lambda: start_session(), results)
         if not args.skip_restart:
             with tempfile.TemporaryDirectory(prefix="geul-e2e-") as data_home:
                 with tauri_driver(args.driver, args.port, data_home) as start_session:

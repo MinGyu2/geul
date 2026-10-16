@@ -54,7 +54,8 @@ npm run typecheck          # TypeScript 검사
 npm run lint               # ESLint
 npm test                   # 컴포넌트·상호작용 테스트(Vitest + Testing Library)
 npm run build              # 프런트엔드 빌드(dist/)
-(cd src-tauri && cargo fmt --check && cargo clippy --locked -- -D warnings)
+(cd src-tauri && cargo fmt --check && cargo clippy --locked --all-targets -- -D warnings)
+(cd src-tauri && cargo test --locked)   # 문서 형식 판별·세션 테스트(합성 컨테이너, T006)
 
 # CI(.github/workflows/quality.yml)도 위 프런트엔드·Rust 검사를 같은 명령으로 실행한다.
 

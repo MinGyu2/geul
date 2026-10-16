@@ -1028,6 +1028,11 @@ dependencies = [
 name = "geul"
 version = "0.1.0"
 dependencies = [
+ "cfb",
+ "flate2",
+ "libc",
+ "quick-xml",
+ "serde",
  "tauri",
  "tauri-build",
 ]
