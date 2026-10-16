@@ -106,8 +106,15 @@ CODE_SUFFIXES = {
 }
 DOC_SUFFIXES = {".md", ".mdx", ".markdown", ".rst", ".adoc"}
 
-ALLOWED_EMAIL_DOMAINS = ("example.com", "example.org", "example.net", "users.noreply.github.com")
-ALLOWED_EMAIL_LOCALS = ("noreply", "no-reply", "git")
+# 이메일 예외는 좁게 둔다. 로컬 부분(git, noreply 등)만으로는 허용하지 않는다(사설 도메인 주소가 빠져나감).
+# - 문서용 예약 도메인(RFC 2606/6761): example.com/.org/.net과 그 하위 도메인, .example/.invalid/.test 최상위 도메인
+# - GitHub가 공개용으로 발급하는 noreply 주소: <ID>+<사용자>@users.noreply.github.com (정확한 도메인만)
+# - 공개된 자동화 계정 주소(전체 주소 일치): SSH 원격 주소 git@github.com, GitHub 알림 noreply@github.com,
+#   커밋 트레일러 Co-Authored-By의 noreply@anthropic.com
+ALLOWED_EMAIL_DOMAINS = ("example.com", "example.org", "example.net")
+ALLOWED_EMAIL_EXACT_DOMAINS = ("users.noreply.github.com",)
+ALLOWED_EMAIL_TLDS = ("example", "invalid", "test")
+ALLOWED_EMAIL_ADDRESSES = ("git@github.com", "noreply@github.com", "noreply@anthropic.com")
 NON_EMAIL_SUFFIXES = (".png", ".jpg", ".jpeg", ".gif", ".svg", ".webp", ".ico")
 
 SENSITIVE_FILE_PATTERNS = [
@@ -297,7 +304,11 @@ def is_reference_or_placeholder(value: str, quoted: bool, kind: str) -> bool:
 
 def email_is_allowed(local: str, domain: str) -> bool:
     local, domain = local.lower(), domain.lower()
-    if local in ALLOWED_EMAIL_LOCALS or domain.endswith(NON_EMAIL_SUFFIXES):
+    if domain.endswith(NON_EMAIL_SUFFIXES):  # logo@2x.png 같은 파일 이름
+        return True
+    if f"{local}@{domain}" in ALLOWED_EMAIL_ADDRESSES or domain in ALLOWED_EMAIL_EXACT_DOMAINS:
+        return True
+    if domain.rsplit(".", 1)[-1] in ALLOWED_EMAIL_TLDS:
         return True
     return any(domain == allowed or domain.endswith("." + allowed) for allowed in ALLOWED_EMAIL_DOMAINS)
 
@@ -531,11 +542,18 @@ class ContentScanner:
             hits.add(Hit("uninspected-content", f"{EXTRA_RULES['uninspected-content']} "
                          f"(>{MAX_TEXT_BYTES >> 20} MiB)", 0, f"{error.size} bytes"))
             return
-        if stats.binary_at is not None:
+        if not self.accept_text(stats, where):
             hits.add(Hit("uninspected-binary", f"{EXTRA_RULES['uninspected-binary']}: 텍스트로 해석할 수 없는 내용"
                          f"(약 {stats.binary_at} 바이트 이후)", 0, name))
-        elif stats.bad:
+
+    def accept_text(self, stats: TextStats, where: str) -> bool:
+        """일반 파일·ZIP 항목·ZIP 주석이 함께 쓰는 텍스트 판정. 바이너리 증거가 있으면 False(호출자가 미검사로
+        보고), 고칠 수 있는 인코딩 오류만 있으면 경고를 남기고 True."""
+        if stats.binary_at is not None:
+            return False
+        if stats.bad:
             self.warnings.append(f"{where}: 잘못된 인코딩·제어 문자 {stats.bad}개를 대체 문자로 바꿔 검사함")
+        return True
 
     def scan_archive(self, stream: Iterator[bytes], where: str, hits: set[Hit]) -> None:
         with tempfile.SpooledTemporaryFile(max_size=8 << 20) as spool:
@@ -568,9 +586,12 @@ class ContentScanner:
             hits.add(Hit("uninspected-binary", f"압축 항목 수가 한도({MAX_ARCHIVE_ENTRIES})를 넘음", 0,
                          f"{len(entries)} entries"))
             return
-        if archive.comment:  # 압축 파일 주석(최대 64 KiB)도 텍스트로 검사한다
-            self.scan_text_stream(iter([archive.comment]), "utf-8", "data", f"{where}!(comment)", "(comment)",
-                                  hits, MAX_ARCHIVE_ENTRY_BYTES)
+        if archive.comment:  # 압축 파일 주석(최대 64 KiB)도 일반 텍스트와 같은 기준으로 검사한다
+            comment_where = f"{where}!(comment)"
+            stats = self.scan_text_stream(iter([archive.comment]), _text_encoding(archive.comment) or "utf-8",
+                                          "data", comment_where, "(comment)", hits, MAX_ARCHIVE_ENTRY_BYTES)
+            if _text_encoding(archive.comment) is None or not self.accept_text(stats, comment_where):
+                skipped.append("(comment)")
         total = 0
         for info in entries:
             # 항목 이름은 신뢰할 수 없는 입력이다. 출력할 때는 safe()가 비밀을 가리고 제어 문자를 이스케이프한다.
@@ -596,12 +617,13 @@ class ContentScanner:
                 if encoding is None or head.startswith(b"PK\x03\x04"):
                     skipped.append(name)
                     continue
+                entry_where = f"{where}!{name}"
                 try:
-                    stats = self.scan_text_stream(_prepend(head, chunks), encoding, "data", f"{where}!{name}",
+                    stats = self.scan_text_stream(_prepend(head, chunks), encoding, "data", entry_where,
                                                   name, hits, info.file_size)
                 except _TooLarge:
                     raise zipfile.BadZipFile("선언된 크기보다 큰 항목")
-                if stats.binary_at is not None:
+                if not self.accept_text(stats, entry_where):
                     skipped.append(name)
 
 
@@ -899,7 +921,10 @@ def scan_history(root: str, reader: BlobReader, scanner: ContentScanner, report:
               "--raw", "-z", "--no-renames", "--no-abbrev", "--no-color", "--diff-merges=first-parent",
               "--format=%x01%H")
     tokens = log.decode("utf-8", errors="surrogateescape").split("\0")
-    cache: dict[str, ScanResult | None] = {}
+    # 같은 blob이라도 경로에 따라 해석이 달라진다: 파일 종류(file_kind: 코드의 따옴표 없는 참조 허용 여부),
+    # 바이너리 발견 항목의 파일 이름, 경고에 쓰는 위치. 그래서 (blob, 경로)로 캐시한다. 같은 경로에서 같은 내용이
+    # 다시 나오는 경우(되돌린 커밋 등)는 다시 검사하지 않는다.
+    cache: dict[tuple[str, str], ScanResult | None] = {}
     commit = ""
     blobs = 0
     index = 0
@@ -918,14 +943,15 @@ def scan_history(root: str, reader: BlobReader, scanner: ContentScanner, report:
             continue
         location = f"{path}@{commit[:12]}"
         report.check_name(path, location)
-        if new_oid not in cache:
+        key = (new_oid, path)
+        if key not in cache:
             blobs += 1
             try:
-                cache[new_oid] = scanner.scan(reader.open(new_oid), path, location)
+                cache[key] = scanner.scan(reader.open(new_oid), path, location)
             except InspectionError as error:
                 errors.append(f"{location}: {error}")
-                cache[new_oid] = None
-        result = cache[new_oid]
+                cache[key] = None
+        result = cache[key]
         if result:
             report.add(path, location, result.hits, result.digest)
     return blobs
@@ -959,7 +985,7 @@ def main(argv: list[str] | None = None) -> int:
         report.allowlist = load_allowlist(root, selected, reader, errors, warnings)
         if selected == "history":
             blobs = scan_history(root, reader, scanner, report, errors)
-            scope = f"전체 Git 이력, 고유 파일 버전 {blobs}개"
+            scope = f"전체 Git 이력, 검사한 (파일 버전, 경로) {blobs}개"
         elif selected == "staged":
             entries = staged_entries(root)
             for entry in entries:

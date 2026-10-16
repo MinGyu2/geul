@@ -115,6 +115,14 @@ Independent Test: 해당 User Story의 acceptance scenario와 실패 조건을 �
 | T004 (CI) | 로컬 검증 완료, 원격 미실행 | `.github/workflows/quality.yml` 추가(커밋 `d4bd963`): 프런트엔드(`npm ci`, `typecheck`, `lint`, `test`, `build`), Rust(`src-tauri`에서 `cargo fmt --check`, `cargo check --locked --all-targets`, `cargo clippy --locked --all-targets -- -D warnings`, Rust 1.99.0 고정, `libwebkit2gtk-4.1-dev`), submodule 미사용, `contents: read`, 공식 액션 SHA 고정 | `actionlint` 1.7.12 오류 없음(shellcheck 미설치로 셸 단계 정적 검사는 안 됨). 로컬 클론(submodule 미초기화)에서 두 작업의 명령을 그대로 실행해 모두 통과(`dist/` 없이 Rust 검사 가능 확인). **GitHub Actions에서는 실행되지 않음**(푸시 금지) |
 | T019 | (L) 완료 유지, (R) 대기 | 원격 상태 재조회(읽기 전용): public, 기본 브랜치 `master`, 원격 `master`=`bc9e593`, 브랜치 보호·ruleset 없음, `security-scan`이 `455c985`·`bc9e593`에서 성공(check run `민감정보 검사`), `quality`는 원격에 없음. Secret scanning·Actions 토큰 권한은 관리자 인증이 필요해 확인 불가. 관리자 체크리스트 10항목 갱신: [security-policy.md 5절](../development/security-policy.md#5-원격-저장소-설정-저장소-관리자) | 로컬 게이트: `pre-commit run --hook-stage pre-push --all-files`, `scripts/security-scan-ci.sh .` 통과(최종 검증 기록 참고). 원격 설정은 변경하지 않음 |
 
+### 4차 검토 (2026-10-16, T018 검사기 지적 사항 3건)
+
+세 건 모두 이전 검사기(커밋 `b702792`)로 먼저 재현했다. 위 기록은 그대로 둔다.
+
+| Task | 상태 | 확인된 결함·변경 | 실행한 검증과 결과 |
+|------|------|------------------|--------------------|
+| T018 | 완료(재검증) | ① 이력 캐시: `scan_history()`가 결과를 blob OID로만 캐시. 같은 내용의 `app.py`(따옴표 없는 값은 코드 참조)와 `settings.ini`(리터럴)가 같은 blob이면 먼저 검사한 쪽 결과를 재사용해, 코드 파일이 먼저면 `settings.ini`의 비밀값을 놓치고(`--history` 종료 코드 0, `--all`은 1) 설정 파일이 먼저면 코드 파일을 잘못 보고함. 경고와 바이너리 발견 항목의 파일 이름도 첫 경로 것만 남음. → 캐시 키를 (blob, 경로)로 변경(경로가 파일 종류·파일 이름·경고 위치를 모두 결정) ② 이메일: 로컬 부분 `git`·`noreply`·`no-reply`이면 도메인과 관계없이 허용, `users.noreply.github.com`의 하위 도메인도 허용. → 전체 주소 일치(`git@github.com`, `noreply@github.com`, `noreply@anthropic.com`), 정확한 도메인 `users.noreply.github.com`, 예약 도메인 `example.com/.org/.net`(하위 도메인 포함)과 예약 최상위 도메인 `.example/.invalid/.test`만 허용(예약 최상위 도메인은 새로 허용 — 실제 주소가 될 수 없음). 출력 마스킹도 같은 기준 ③ ZIP 인코딩 경고: 일반 파일은 고칠 수 있는 인코딩 오류를 경고하지만 ZIP 항목은 `binary_at`만 보고 경고하지 않았고, ZIP 주석은 결과를 전혀 보지 않아 바이너리 주석도 통과. → 일반 파일·ZIP 항목·ZIP 주석이 같은 판정 함수(`accept_text()`)를 사용, 바이너리 주석은 `uninspected-binary` | `python3 -m unittest discover -s tests/security -v` → 86개 통과(새 18개: 이력 캐시 6, 이메일 6, ZIP 경고 6). 새 테스트를 이전 검사기에 적용 → 하위 사례 포함 23개 실패. `--staged`·`--all`·`--history` 통과, Gitleaks `dir`(scripts/, tests/) 누출 없음. 통합: `pre-commit run --all-files`, `pre-commit run --hook-stage pre-push --all-files`, `scripts/security-scan-ci.sh .`, `test-pre-push-hook.sh`(10개), `simulate-leak-response.sh` 모두 통과(로그에 가짜 비밀 원문 없음). 프런트엔드 `typecheck`·`lint`·`test`(40개)·`build` 통과. Rust·앱 코드는 바뀌지 않아 Rust 검사와 실제 앱 스모크 테스트는 다시 실행하지 않음. GitHub Actions에서는 실행되지 않음(푸시 전) |
+
 보안 검사 재실행 명령: `python3 scripts/check-sensitive-info.py --staged|--all|--history`,
 `scripts/security-scan-ci.sh .`(gitleaks 필요), `tests/security/simulate-leak-response.sh`,
 `tests/security/test-pre-push-hook.sh`(pre-commit 필요).

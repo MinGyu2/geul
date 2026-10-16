@@ -136,7 +136,7 @@ geul/
 - 실제 배포/OS 테스트: Windows/macOS/Linux 앱 실행·파일 열기/저장·PDF 출력; 서드파티 고지와 라이선스 재확인.
 - 앱 셸(T004): 타입 검사, ESLint, Vitest 31개, Vite 빌드, cargo fmt/check/clippy, Tauri 디버그 빌드, 실제 앱 WebDriver 스모크 테스트(21개 통과, 최소 높이 검사 1개는 창 관리자가 크기 변경을 반영하지 않아 건너뜀; Linux WebKitGTK, 번들 빌드와 개발 서버 모드)를 실행했다. Windows/macOS 실행과 엔진 빌드(L3), 문서 왕복 테스트(L4)는 **NOT RUN**. CI: `security-scan`(원격에서 `455c985`·`bc9e593` 실행 성공)과 `quality`(프런트엔드·Rust 검사, 2026-10-16 추가 — 로컬에서 같은 명령을 실행해 통과, GitHub에서는 **NOT RUN**). 엔진 빌드 검사는 T007/T008에서 추가한다.
 - 레이아웃 계산은 `computePanelLayout()` 하나가 그리는 너비와 크기 조절 범위를 함께 만든다. 실제 앱 최소 창(960×600) 검사는 타일링 창 관리자에서 창 크기 변경이 무시되므로 헤드리스 weston에서 실행한다.
-- 보안 회귀(로컬)는 실행됨: 검사기 단위 테스트 43개, pre-commit 훅 차단, pre-push 훅 시뮬레이션 10개 시나리오, 누출 대응 시뮬레이션(결과는 tasks.md Verification Log). GitHub Actions는 커밋 `455c985`에서 1회 성공했고, 이후 로컬 커밋은 푸시하지 않아 **NOT RUN**.
+- 보안 회귀(로컬)는 실행됨: 검사기 단위 테스트 86개(2026-10-16 4차 검토 기준), pre-commit 훅 차단, pre-push 훅 시뮬레이션 10개 시나리오, 누출 대응 시뮬레이션(결과는 tasks.md Verification Log). GitHub Actions는 커밋 `455c985`에서 1회 성공했고, 이후 로컬 커밋은 푸시하지 않아 **NOT RUN**.
 
 ## Risks and Tradeoffs
 - WordCraft의 egui 입력/렌더와 React WebView 연결이 핵심 기술 위험; 도입 전 PoC 실패 조건이 필요하다.

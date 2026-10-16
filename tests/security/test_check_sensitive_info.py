@@ -12,6 +12,7 @@ import hashlib
 import importlib.util
 import io
 import os
+import re
 import subprocess
 import sys
 import tempfile
@@ -911,6 +912,204 @@ class MissingTrackedFileTest(RepoTestCase):
             target.chmod(0o644)
         self.assert_exit(result, 2)
 
+
+
+ASSIGNMENT = j("pass", "word = ", "SecretWord_42") + "\n"  # 따옴표 없는 값: 코드에서는 참조, 설정 파일에서는 리터럴
+INVALID_TEXT = ("한글 텍스트 줄입니다.\n" * 20).encode() + b"caf\xe9 latin-1\n"
+
+
+def finding_keys(result: subprocess.CompletedProcess[str]) -> set[tuple[str, str]]:
+    keys = set()
+    for line in result.stdout.splitlines():
+        if ": [" in line:
+            location, rest = line.split(": [", 1)
+            path = re.sub(r"(?:@[0-9a-f]{12})?(?::\d+)?$", "", location)  # 경로@커밋:줄 → 경로
+            keys.add((path, rest.split("]", 1)[0]))
+    return keys
+
+
+class HistoryCacheContextTest(RepoTestCase):
+    """이력 검사가 blob OID만으로 결과를 캐시해 파일 종류·경로가 다른 같은 내용에 잘못된 결과를 쓰던 문제."""
+
+    def build(self, steps: list[dict[str, str | bytes]]) -> subprocess.CompletedProcess[str]:
+        for files in steps:
+            for name, content in files.items():
+                self.repo.stage(name, content)
+            self.repo.commit("step")
+        return self.repo.scan("--history")
+
+    def test_same_blob_in_code_and_config_file(self) -> None:
+        result = self.build([{"app.py": ASSIGNMENT, "settings.ini": ASSIGNMENT}])
+        self.assert_exit(result, 1)
+        self.assertEqual(finding_keys(result), {("settings.ini", "secret-assignment")})
+        self.assertEqual(finding_keys(self.repo.scan("--all")), {("settings.ini", "secret-assignment")})
+
+    def test_result_does_not_depend_on_traversal_order(self) -> None:
+        orders = {
+            "같은 커밋, 코드 파일 이름이 먼저": [{"app.py": ASSIGNMENT, "settings.ini": ASSIGNMENT}],
+            "같은 커밋, 설정 파일 이름이 먼저": [{"zz.py": ASSIGNMENT, "aa.ini": ASSIGNMENT}],
+            "설정 파일 커밋이 먼저": [{"settings.ini": ASSIGNMENT}, {"app.py": ASSIGNMENT}],
+            "코드 파일 커밋이 먼저": [{"app.py": ASSIGNMENT}, {"settings.ini": ASSIGNMENT}],
+        }
+        for label, steps in orders.items():
+            with self.subTest(order=label):
+                self.tearDown()
+                self.setUp()
+                result = self.build(steps)
+                self.assert_exit(result, 1)
+                config = "aa.ini" if "zz.py" in steps[0] else "settings.ini"
+                self.assertEqual(finding_keys(result), {(config, "secret-assignment")})
+
+    def test_warnings_name_each_path_with_the_same_content(self) -> None:
+        result = self.build([{"first.txt": INVALID_TEXT, "docs/second.txt": INVALID_TEXT}])
+        self.assert_exit(result, 0)
+        self.assertIn("경고: first.txt@", result.stderr)
+        self.assertIn("경고: docs/second.txt@", result.stderr)
+
+    def test_same_content_across_commits_and_paths(self) -> None:
+        secret = SYNTHETIC["private-ip"] + "\n"
+        self.build([{"cfg/net.ini": secret}, {"cfg/net.ini": "clean\n"}, {"cfg/net.ini": secret},
+                    {"cfg/copy.ini": secret}])
+        result = self.repo.scan("--history")
+        self.assert_exit(result, 1)
+        self.assertEqual(finding_keys(result), {("cfg/net.ini", "private-ip"), ("cfg/copy.ini", "private-ip")})
+        self.assertEqual(result.stdout.count("cfg/net.ini@"), 1)  # 같은 경로·같은 값은 한 번만 보고
+
+    def test_binary_diagnostics_belong_to_each_path(self) -> None:
+        blob = b"\x00\x01binary-payload"
+        result = self.build([{"first.bin": blob, "assets/second-image.png": blob}])
+        self.assert_exit(result, 1)
+        lines = [line for line in result.stdout.splitlines() if "[uninspected-binary]" in line]
+        self.assertEqual(len(lines), 2)
+        first = next(line for line in lines if line.startswith("first.bin@"))
+        second = next(line for line in lines if line.startswith("assets/second-image.png@"))
+        self.assertIn(f"(len={len('first.bin')})", first)
+        self.assertIn(f"(len={len('second-image.png')})", second)
+
+    def test_binary_approval_does_not_cover_same_content_at_other_path(self) -> None:
+        blob = b"\x00\x01binary-payload"
+        result = self.build([{".sensitive-info-allowlist": review_line("first.bin", blob), "first.bin": blob,
+                              "copy.bin": blob}])
+        self.assert_exit(result, 1)
+        self.assertEqual(finding_keys(result), {("copy.bin", "uninspected-binary")})
+
+
+PRIVATE_DOMAIN = j("private-company", ".co.kr")
+
+
+class EmailPolicyTest(RepoTestCase):
+    """이메일 예외가 로컬 부분(git, noreply, no-reply)만으로 임의 도메인을 허용하던 문제."""
+
+    def assert_detected_and_masked(self, result: subprocess.CompletedProcess[str], address: str) -> None:
+        self.assert_exit(result, 1)
+        self.assertIn("[email-address]", result.stdout)
+        output = result.stdout + result.stderr
+        self.assertNotIn(address, output)
+        self.assertNotIn(address.split("@", 1)[1], output)
+
+    def test_automation_local_parts_on_private_domains_are_detected(self) -> None:
+        for local in ("git", "noreply", "no-reply", "NoReply"):
+            address = f"{local}@{PRIVATE_DOMAIN}"
+            with self.subTest(address=local):
+                self.assert_detected_and_masked(self.scan_staged_file("a.txt", f"contact {address}\n"), address)
+
+    def test_lookalike_domains_are_detected(self) -> None:
+        for address in (j("git", "@", "github.com.evil.io"), j("noreply", "@", "evil-github.com"),
+                        j("dev", "@", "example.com.attacker.net"), j("dev", "@", "notexample.com"),
+                        j("1+u", "@", "users.noreply.github.com.evil.io"), j("1+u", "@", "x.users.noreply.github.com"),
+                        j("ops", "@", "invalid.co")):
+            with self.subTest(address=address):
+                self.assert_exit(self.scan_staged_file("a.txt", f"mail {address}\n"), 1)
+
+    def test_documented_exceptions_still_pass(self) -> None:
+        for address in ("git@github.com", "noreply@github.com", j("noreply", "@", "anthropic.com"),
+                        j("123+user", "@", "users.noreply.github.com"), "dev@example.com", "a@mail.example.org",
+                        "sim@example.net", "ci@build.invalid", "qa@host.test", "doc@site.example", "logo@2x.png"):
+            with self.subTest(address=address):
+                self.assert_exit(self.scan_staged_file("a.txt", f"mail {address}\n"), 0)
+
+    def test_email_in_repository_filename_is_detected_and_masked(self) -> None:
+        address = f"kim@{PRIVATE_DOMAIN}"
+        result = self.scan_staged_file(f"exports/{address}.txt", "clean\n")
+        self.assert_detected_and_masked(result, address)
+
+    def test_email_in_zip_entry_name_and_warning_is_masked(self) -> None:
+        address = f"noreply@{PRIVATE_DOMAIN}"
+        result = self.scan_staged_file("mail.docx", make_zip({f"word/{address}.xml": INVALID_TEXT}))
+        self.assert_detected_and_masked(result, address)
+        self.assertIn("경고: mail.docx!word/", result.stderr)  # 인코딩 경고의 위치도 마스킹되어 출력됨
+
+    def test_redaction_uses_the_same_policy(self) -> None:
+        module = load_scanner_module()
+        private = f"git@{PRIVATE_DOMAIN}"
+        self.assertNotIn(private, module.safe(f"remote {private}:repo.git"))
+        self.assertIn("git@github.com", module.safe("remote git@github.com:MinGyu2/geul.git"))
+
+
+class ZipEncodingWarningTest(RepoTestCase):
+    """ZIP 항목·주석의 고칠 수 있는 인코딩 오류가 일반 텍스트와 달리 경고 없이 넘어가던 문제."""
+
+    KOREAN = ("<w:t>한글 문서 본문입니다.</w:t>\n" * 30).encode()
+
+    def test_clean_entries_have_no_warning(self) -> None:
+        result = self.scan_staged_file("clean.docx", make_zip({"word/document.xml": self.KOREAN}))
+        self.assert_exit(result, 0)
+        self.assertNotIn("대체 문자", result.stderr)
+        self.assertNotIn("[uninspected-binary]", result.stdout)
+
+    def test_invalid_entry_warns_like_plain_text(self) -> None:
+        plain = self.scan_staged_file("plain.xml", INVALID_TEXT)
+        archived = self.scan_staged_file("doc.docx", make_zip({"word/document.xml": INVALID_TEXT}))
+        for result in (plain, archived):
+            self.assert_exit(result, 0)
+            self.assertIn("잘못된 인코딩·제어 문자 1개를 대체 문자로 바꿔 검사함", result.stderr)
+        self.assertIn("경고: doc.docx!word/document.xml:", archived.stderr)
+
+    def test_archive_comment_follows_the_same_policy(self) -> None:
+        def with_comment(comment: bytes) -> bytes:
+            buffer = io.BytesIO()
+            with zipfile.ZipFile(buffer, "w") as archive:
+                archive.writestr("word/document.xml", self.KOREAN)
+                archive.comment = comment
+            return buffer.getvalue()
+
+        result = self.scan_staged_file("c.docx", with_comment("검토 메모".encode() + b" caf\xe9"))
+        self.assert_exit(result, 0)
+        self.assertIn("경고: c.docx!(comment):", result.stderr)
+
+        result = self.scan_staged_file("c.docx", with_comment("깨끗한 주석".encode()))
+        self.assert_exit(result, 0)
+        self.assertNotIn("대체 문자", result.stderr)
+
+        result = self.scan_staged_file("c.docx", with_comment(random_binary(4000)))
+        self.assert_exit(result, 1)
+        self.assertIn("[uninspected-binary]", result.stdout)
+
+    def test_binary_entry_is_still_uninspected(self) -> None:
+        result = self.scan_staged_file("b.docx", make_zip({"word/document.xml": random_binary(20_000)}))
+        self.assert_exit(result, 1)
+        self.assertIn("[uninspected-binary]", result.stdout)
+        self.assertNotIn("대체 문자", result.stderr)
+
+    def test_only_the_faulty_entry_is_named(self) -> None:
+        result = self.scan_staged_file("m.docx", make_zip({"word/a.xml": self.KOREAN, "word/b.xml": INVALID_TEXT}))
+        self.assert_exit(result, 0)
+        self.assertIn("m.docx!word/b.xml:", result.stderr)
+        self.assertNotIn("word/a.xml", result.stderr)
+
+    def test_warning_location_is_sanitized(self) -> None:
+        entries = {
+            f"word/{SECRET_TOKEN}.xml": INVALID_TEXT,
+            "word/x\nFAKE: all clean\x1b[2J.xml": INVALID_TEXT,
+        }
+        result = self.scan_staged_file("w.docx", make_zip(entries))
+        self.assert_exit(result, 1)  # 항목 이름의 토큰은 발견 항목
+        output = result.stdout + result.stderr
+        self.assertNotIn(SECRET_TOKEN, output)
+        self.assertNotIn("\x1b", output)
+        self.assertFalse(any(line.startswith("FAKE") for line in output.splitlines()))
+        self.assertEqual(result.stderr.count("대체 문자"), 2)
+        self.assertIn("\\u000aFAKE", result.stderr)
 
 if __name__ == "__main__":
     unittest.main()
