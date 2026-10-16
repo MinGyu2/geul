@@ -2,10 +2,16 @@
 #
 # 설치:  pre-commit install        (pre-commit, pre-push 훅이 함께 설치된다)
 # 확인:  pre-commit run --all-files
+#        pre-commit run --hook-stage pre-push --all-files
 # 정책:  docs/development/security-policy.md
 #
 # 로컬 훅은 `--no-verify` 등으로 우회할 수 있으므로 CI(.github/workflows/security-scan.yml)가
 # 같은 검사를 다시 수행한다. 검사 규칙을 끄는 방식으로 실패를 해결하지 않는다.
+#
+# pre-push 검사는 푸시 범위가 아니라 모든 ref의 전체 이력을 검사한다. pre-commit은 여러 ref를 한 번에
+# 푸시할 때 첫 번째 ref의 범위만 계산하므로, 범위 기반 검사는 함께 푸시되는 다른 ref의 이력을 놓칠 수
+# 있다. 저장소가 작은 동안에는 전체 이력 검사가 가장 단순하고 빠짐이 없다. 그 대신 푸시하지 않는 로컬
+# 브랜치나 stash에 남은 비밀도 푸시를 막는다.
 
 default_install_hook_types: [pre-commit, pre-push]
 default_stages: [pre-commit]
@@ -38,9 +44,25 @@ repos:
         always_run: true
         stages: [pre-push]
 
+      - id: check-sensitive-info-history
+        name: 민감정보 검사 (푸시 전 전체 Git 이력)
+        entry: python3 scripts/check-sensitive-info.py --history
+        language: system
+        pass_filenames: false
+        always_run: true
+        stages: [pre-push]
+
   # 공식 Gitleaks 훅. Go가 없으면 pre-commit이 Go 도구 체인을 내려받아 빌드한다(최초 1회).
   - repo: https://github.com/gitleaks/gitleaks
     rev: v8.30.1 # 83d9cd684c87d95d656c1458ef04895a7f1cbd8e
     hooks:
       - id: gitleaks
         stages: [pre-commit]
+      # 같은 훅 환경을 쓰되 스테이징 대신 모든 ref의 전체 이력을 검사한다.
+      - id: gitleaks
+        alias: gitleaks-history
+        name: Gitleaks 전체 이력 검사 (푸시 전)
+        entry: gitleaks git --redact --no-banner --verbose
+        pass_filenames: false
+        always_run: true
+        stages: [pre-push]

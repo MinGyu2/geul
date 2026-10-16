@@ -44,7 +44,7 @@ git submodule status
 
 ```sh
 # pre-commit 설치 (예: uv tool install pre-commit 또는 pipx install pre-commit)
-pre-commit install
+pre-commit install   # 커밋 전: 스테이징된 내용, 푸시 전: 모든 ref의 전체 이력(자체 검사기 + Gitleaks)
 # 수동 실행
 python3 scripts/check-sensitive-info.py --staged   # 스테이징된 변경
 python3 scripts/check-sensitive-info.py --all      # 추적 중인 전체 파일

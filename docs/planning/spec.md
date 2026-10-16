@@ -1,7 +1,7 @@
 # Feature Specification: HWP/HWPX + DOCX 통합 오픈소스 워드프로세서
 
 Created: 2026-10-13
-Status: Revised draft — 대상 저장소 검사·submodule 고정 완료(2026-10-16), 기술 PoC 및 실제 문서 테스트는 미완료
+Status: Revised draft — 대상 저장소 검사·submodule 고정·로컬 보안 게이트 완료(2026-10-16), 원격 브랜치 보호·기술 PoC·실제 문서 테스트는 미완료
 Input: 기존에 합의한 WordCraft + rhwp 코어, Tauri/React 신규 UI, 6개 영역, 언어별 JSON, `external/` 및 `docs/planning/`, 공개 저장소 민감정보 사전 차단.
 
 ## User Scenarios & Testing

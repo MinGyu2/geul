@@ -7,9 +7,10 @@
 
 | 경로 | 결과 | 대응 |
 |------|------|------|
-| 훅 미설치 또는 `git commit --no-verify` | 로컬 검사 없이 커밋됨 | CI가 push/PR에서 다시 검사. 병합 차단은 필수 상태 검사 지정이 필요 |
+| 훅 미설치 또는 `git commit --no-verify` | 로컬 커밋 검사 없이 커밋됨 | pre-push 훅이 전체 이력을 다시 검사, CI가 push/PR에서 다시 검사. 병합 차단은 필수 상태 검사 지정이 필요 |
+| `git push --no-verify` | 푸시 전 검사 없이 공개됨 | CI는 탐지만 가능. 아래 2절 절차로 폐기·재발급 |
 | 다른 도구(웹 편집기, 다른 PC)에서 커밋 | 로컬 훅이 없음 | CI 검사, 브랜치 보호 |
-| CI 실행 전에 푸시 | 푸시 시점에 이미 공개됨 | CI는 탐지만 가능. 아래 절차로 폐기·재발급 |
+| CI 실행 전에 푸시 | 푸시 시점에 이미 공개됨 | CI는 탐지만 가능. 아래 절차로 폐기·재발급. 워크플로는 실행을 취소하지 않도록 concurrency 그룹을 두지 않음 |
 | 강제 푸시로 이력 덮어쓰기 | 이전 커밋이 포크·캐시·PR 참조에 남을 수 있음 | 강제 푸시 금지 규칙, 이력 정리 후에도 키 폐기 |
 | 최초 공개 시 기존 이력 전체 노출 | 과거 커밋의 비밀까지 공개됨 | 공개 전 전체 이력 검사(정책 4절) |
 | Submodule 업스트림 이력 | 상위 저장소 검사 범위 밖 | 업스트림 검토와 별도 공급망 점검 |
@@ -53,22 +54,21 @@ GitHub 지원 요청(캐시된 뷰 삭제)을 검토합니다.
 `tests/security/simulate-leak-response.sh`는 임시 저장소에서 다음 시나리오를 재현합니다. 실제 저장소와
 원격에는 아무것도 쓰지 않으며, 가짜 GitHub 토큰은 실행할 때마다 무작위로 만듭니다.
 
-1. 훅이 없는 저장소에서 가짜 토큰과 사용자 홈 경로를 포함한 커밋 생성 (`--no-verify` 우회와 같은 상태)
+1. 훅이 없는 저장소에서 가짜 토큰과 사용자 홈 경로를 포함한 커밋 생성 (훅 우회와 같은 상태)
 2. CI와 같은 `scripts/security-scan-ci.sh` 실행 → 실패해야 함, 로그에 원문이 없어야 함
 3. 파일만 삭제하는 커밋 → `--all`은 통과, `--history`는 계속 실패해야 함
 4. 공유되지 않은 브랜치를 버리고 reflog/gc 정리 → `--history`와 Gitleaks 통과
 
-실행 결과 (2026-10-16, Linux, Python 3.14.7, gitleaks 8.30.1):
+실행 결과 (2026-10-16 재실행, 검사기 수정 후, Linux, Python 3.14.7, gitleaks 8.30.1, 종료 코드 0):
 
 ```text
 $ GITLEAKS=<gitleaks 경로> tests/security/simulate-leak-response.sh
 == 2. CI와 같은 검사(PR 시뮬레이션) → 실패해야 함
 -- 종료 코드 1 (기대값과 일치)
 [통과] 검사기 회귀 테스트
-config.toml:1: [github-token] GitHub 토큰: ghp_***zf (len=40)
-config.toml:2: [home-path-unix] 사용자 홈 절대 경로(/home): sim-***89 (len=14)
+config.toml:1: [github-token] GitHub 토큰: ghp_***NJ (len=40)
+config.toml:2: [home-path-unix] 사용자 홈 절대 경로(/home): si*** (len=14)
 [실패] 추적 파일 민감정보 검사
-config.toml@3004cc6634ec:1: [github-token] GitHub 토큰: ghp_***zf (len=40)
 [실패] Git 이력 민감정보 검사
 RuleID:      github-pat
 [실패] Gitleaks 전체 이력 검사
@@ -79,8 +79,28 @@ RuleID:      github-pat
 == 4. 아직 공유되지 않은 브랜치에서 이력 재작성 → 이력 검사 통과
 -- 종료 코드 0 (기대값과 일치)      # --history
 -- 종료 코드 0 (기대값과 일치)      # gitleaks
-시뮬레이션 완료 (종료 코드 0)
 ```
 
-GitHub Actions에서의 실제 실행, 브랜치 보호 동작은 원격 푸시가 필요하므로 아직 확인하지 않았습니다
-(tasks.md T019 남은 항목).
+### pre-push 훅 시뮬레이션
+
+`tests/security/test-pre-push-hook.sh`는 임시 저장소에 `pre-commit install --hook-type pre-push`로 실제 훅을
+설치하고, `git push` 없이 Git과 같은 인자·표준 입력으로 `.git/hooks/pre-push`를 호출합니다.
+
+| # | 시나리오 | 기대 | 결과 (2026-10-16) |
+|---|----------|------|-------------------|
+| 1 | 깨끗한 저장소 | 통과 | 통과 |
+| 2 | 가짜 GitHub 토큰 커밋 | 차단 | 차단 (자체 검사기 `--all`·`--history`, Gitleaks 모두 실패) |
+| 3 | 다음 커밋에서 토큰 삭제 | 차단 | 차단 (`--history`, Gitleaks) |
+| 4 | 공유 전 이력 재작성 후 | 통과 | 통과 |
+| 5 | 사용자 홈 경로를 커밋했다가 삭제 | 차단 | 차단 (`home-path-unix`) |
+| 6 | 푸시하지 않는 다른 로컬 브랜치에 토큰 | 차단(전체 이력 정책) | 차단 |
+| 7 | 두 ref를 함께 푸시, 두 번째 ref에만 토큰 | 차단 | 차단 |
+| 8 | `python3`을 실행할 수 없음 | 차단 | 차단 (`Executable python3 not found`) |
+| 9 | CI 스크립트에 gitleaks 없음 | 실패 | 실패 |
+| 10 | 정리 후 깨끗한 이력 | 통과 | 통과 |
+
+로그 전체에서 가짜 토큰 원문과 가짜 사용자 이름이 나오지 않음을 확인했습니다.
+
+GitHub Actions는 커밋 `455c985` push에서 한 번 성공했습니다(2026-10-16 읽기 전용 조회). 이후 로컬 변경은
+푸시하지 않았으므로 CI 결과가 없습니다. 브랜치 보호와 필수 상태 검사는 설정되어 있지 않습니다
+(tasks.md T019 원격 공개 게이트, [security-policy.md 5절](security-policy.md#5-원격-저장소-설정-저장소-관리자)).

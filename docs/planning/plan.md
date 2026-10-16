@@ -2,7 +2,7 @@
 
 Date: 2026-10-13
 Spec: [spec.md](./spec.md)
-Status: Revised draft — 2026-10-16 실제 저장소 검사, submodule 고정, 보안 게이트 로컬 구현 완료. 앱 코드·엔진 통합은 미착수
+Status: Revised draft — 2026-10-16 실제 저장소 검사, submodule 고정, 보안 게이트 로컬 구현·2차 재검토 완료(원격 브랜치 보호는 미설정). 앱 코드·엔진 통합은 미착수
 
 ## Summary
 WordCraft는 DOCX, rhwp는 HWP/HWPX 전용 엔진으로 독립 관리한다. Tauri 2 + React/TypeScript 6개 영역 UI에 문서별 어댑터, 공통 명령/상태 계층을 결합한다. 고급 리본보다 렌더·IME·선택·쓰기 무손실 검증과 공개 저장소 보안 게이트를 우선한다.
@@ -17,6 +17,8 @@ WordCraft는 DOCX, rhwp는 HWP/HWPX 전용 엔진으로 독립 관리한다. Tau
 
 ## Constitution Check
 2026-10-16 검사: 저장소에 `AGENTS.md`나 constitution 문서가 없다. 계획 체계는 `docs/planning/`의 세 문서만 사용하며 Spec Kit 등 별도 계획 프레임워크는 사용하지 않는다.
+
+작업 흐름: `spec.md` → `plan.md` → `tasks.md` → 구현 → 테스트 → `tasks.md` 검증 기록 → 로컬 Git 커밋. 세 문서는 직접 수정하고, 기존 FR/SC/작업 ID는 유지한다.
 
 ## Architecture
 ```
@@ -117,7 +119,10 @@ unified-document-editor/
 ## Public Repository Security Policy
 - 최초 공개 전: 소스·문서·설정 및 이미 존재하는 Git 이력 전체에서 secret/path/private info 검사; 노출된 토큰 폐기/재발급.
 - 로컬 pre-commit: staged 콘텐츠 검사(가능한 즉시 실패), 비밀 값 마스킹, 최소 allowlist. 로컬 훅은 우회 가능함을 경고.
-- CI: Push/PR 검사, branch ruleset/필수 상태 검사, 권한 최소화. CI는 최초 푸시 이전의 유출을 차단하지 못함.
+- 로컬 pre-push: 추적 파일과 모든 ref의 전체 이력(자체 검사기 + Gitleaks). 나중 커밋에서 지운 비밀과 함께 푸시되는 다른 ref의 이력도 검사한다.
+- 예외 목록은 검사 대상과 같은 스냅샷(인덱스/추적 작업 트리/HEAD)에서 읽고, 사유 없는 예외·넓은 glob은 오류로 처리한다. 검사하지 못한 내용(바이너리, 한도 초과, 읽기 실패)은 통과로 보지 않는다.
+- CI: Push/PR 검사, branch ruleset/필수 상태 검사, 권한 최소화. CI는 최초 푸시 이전의 유출을 차단하지 못함. 기본 브랜치는 `master`(2026-10-16 확인)이며 필수 상태 검사 이름은 `민감정보 검사`.
+- 게이트 구분: 로컬 게이트(T019 L — 훅·CI 스크립트·시뮬레이션)는 앱 개발 전에, 원격 공개 게이트(T019 R — Actions 실행·브랜치 보호·필수 상태 검사)는 출시(T016) 전에 충족한다.
 - `C:\Users\<USER>\...`, `/Users/<USER>/...`, `/home/<USER>/...` 유형 사용자 홈 절대 경로 검출; 공용 시스템 경로와 repo 상대 경로는 허용. 예제 표기 `<USER>` 자체는 문서용 placeholder이므로 규칙에서 검토 후 허용 가능.
 - `.gitignore`는 이미 stage/commit된 파일이나 파일 내부 비밀을 검사하지 않는다. 전체 이력 검사와 새 커밋 검사는 별도다.
 - Gitleaks 및 홈 절대 경로용 프로젝트 검사기를 조합하고, CI/로컬 테스트에서 가짜 비밀을 검출하는 회귀 시나리오를 준비한다.
@@ -129,7 +134,7 @@ unified-document-editor/
 - 보안 회귀: stage 검사, CI 실패 판정, 첫 공개 이력 검사, 오탐 허용 사유, 토큰 로그 마스킹.
 - 실제 배포/OS 테스트: Windows/macOS/Linux 앱 실행·파일 열기/저장·PDF 출력; 서드파티 고지와 라이선스 재확인.
 - 현재 실제 프로젝트 코드 빌드, 실행 및 문서 왕복 테스트는 **NOT RUN**.
-- 보안 회귀(로컬)는 실행됨: 검사기 단위 테스트, pre-commit 훅 차단, 누출 대응 시뮬레이션(결과는 tasks.md Verification Log). GitHub Actions 실행은 원격 푸시 전이라 **NOT RUN**.
+- 보안 회귀(로컬)는 실행됨: 검사기 단위 테스트 43개, pre-commit 훅 차단, pre-push 훅 시뮬레이션 10개 시나리오, 누출 대응 시뮬레이션(결과는 tasks.md Verification Log). GitHub Actions는 커밋 `455c985`에서 1회 성공했고, 이후 로컬 커밋은 푸시하지 않아 **NOT RUN**.
 
 ## Risks and Tradeoffs
 - WordCraft의 egui 입력/렌더와 React WebView 연결이 핵심 기술 위험; 도입 전 PoC 실패 조건이 필요하다.
