@@ -831,6 +831,21 @@ class BinaryDetectionTest(RepoTestCase):
                 self.assert_exit(result, 1)
                 self.assertIn("[uninspected-binary]", result.stdout)
 
+    def test_known_binary_signatures_without_nul_are_rejected(self) -> None:
+        samples = {
+            "tiny.png": b"\x89PNG\r\n\x1a\nx",
+            "photo.jpg": b"\xff\xd8\xff\xe1Exif-like",
+            "anim.gif": b"GIF89a-like header",
+            "doc.pdf": b"%PDF-1.7\n% text-looking header\n",
+            "legacy.hwp": b"HWP Document File V3.00 \x1a\x01\x02\x03\x04\x05",
+            "data.gz": b"\x1f\x8b\x08\x08compressed",
+        }
+        for name, data in samples.items():
+            with self.subTest(file=name):
+                result = self.scan_staged_file(name, data)
+                self.assert_exit(result, 1)
+                self.assertIn("[uninspected-binary]", result.stdout)
+
     def test_secret_near_end_of_large_text_is_found(self) -> None:
         data = (self.KOREAN * 60_000 + SYNTHETIC["aws-access-key-id"] + "\n").encode()
         result = self.scan_staged_file("big.txt", data)

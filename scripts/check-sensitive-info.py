@@ -641,8 +641,49 @@ def _prepend(head: bytes, rest: Iterator[bytes]) -> Iterator[bytes]:
     yield from rest
 
 
+# 알려진 바이너리 형식의 시작 바이트. NUL이 없거나 앞부분이 ASCII여도(HWP 3.0, PDF 등) 바이너리로 본다.
+BINARY_SIGNATURES: list[tuple[bytes, str]] = [
+    (b"\xd0\xcf\x11\xe0\xa1\xb1\x1a\xe1", "OLE 복합 문서(HWP 5.0 등)"),
+    (b"HWP Document File", "HWP 3.0 문서"),
+    (b"\x89PNG\r\n\x1a\n", "PNG 이미지"),
+    (b"\xff\xd8\xff", "JPEG 이미지"),
+    (b"GIF87a", "GIF 이미지"),
+    (b"GIF89a", "GIF 이미지"),
+    (b"%PDF-", "PDF 문서"),
+    (b"\x7fELF", "ELF 실행 파일"),
+    (b"\x1f\x8b", "gzip 압축"),
+    (b"\xfd7zXZ\x00", "xz 압축"),
+    (b"\x28\xb5\x2f\xfd", "zstd 압축"),
+    (b"7z\xbc\xaf\x27\x1c", "7z 압축"),
+    (b"Rar!\x1a\x07", "RAR 압축"),
+    (b"wOFF", "WOFF 글꼴"),
+    (b"wOF2", "WOFF2 글꼴"),
+    (b"OTTO", "OpenType 글꼴"),
+    (b"icns", "ICNS 아이콘"),
+    (b"\xca\xfe\xba\xbe", "Java 클래스/Mach-O"),
+    (b"\xcf\xfa\xed\xfe", "Mach-O 실행 파일"),
+]
+
+
+def _binary_signature(head: bytes) -> str | None:
+    for signature, label in BINARY_SIGNATURES:
+        if head.startswith(signature):
+            return label
+    if head[:4] == b"RIFF" and head[8:12] in (b"WEBP", b"WAVE", b"AVI "):
+        return "RIFF 미디어"
+    if re.match(rb"BZh[1-9]1AY&SY", head):
+        return "bzip2 압축"
+    return None
+
+
 def _text_encoding(head: bytes) -> str | None:
-    """지원하는 텍스트 인코딩: UTF-8, UTF-8 BOM, BOM이 있는 UTF-16. 첫 구간에 NUL이 있으면 바이너리."""
+    """지원하는 텍스트 인코딩: UTF-8, UTF-8 BOM, BOM이 있는 UTF-16.
+
+    알려진 바이너리 형식이거나 첫 구간에 NUL이 있으면 None(바이너리). 나머지 바이너리 증거는
+    scan_text_stream()이 내용 전체에서 찾는다.
+    """
+    if _binary_signature(head):
+        return None
     if head.startswith(codecs.BOM_UTF8):
         return "utf-8-sig"
     if head.startswith((codecs.BOM_UTF16_LE, codecs.BOM_UTF16_BE)):
@@ -653,11 +694,7 @@ def _text_encoding(head: bytes) -> str | None:
 
 
 def _binary_kind(head: bytes) -> str:
-    if head.startswith(b"\xd0\xcf\x11\xe0\xa1\xb1\x1a\xe1"):
-        return "OLE 복합 문서(HWP 등)"
-    if head.startswith(b"\x89PNG"):
-        return "PNG 이미지"
-    return "바이너리"
+    return _binary_signature(head) or "바이너리"
 
 
 # ---------------------------------------------------------------------------
