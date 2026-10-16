@@ -1,7 +1,7 @@
 # Feature Specification: HWP/HWPX + DOCX 통합 오픈소스 워드프로세서
 
 Created: 2026-10-13
-Status: Revised draft — 기술 PoC, 대상 저장소 검사 및 실제 테스트는 미완료
+Status: Revised draft — 대상 저장소 검사·submodule 고정 완료(2026-10-16), 기술 PoC 및 실제 문서 테스트는 미완료
 Input: 기존에 합의한 WordCraft + rhwp 코어, Tauri/React 신규 UI, 6개 영역, 언어별 JSON, `external/` 및 `docs/planning/`, 공개 저장소 민감정보 사전 차단.
 
 ## User Scenarios & Testing
@@ -87,7 +87,7 @@ Acceptance Scenarios:
 
 ## Assumptions
 - WordCraft와 rhwp의 README는 현재 작업 방향의 참고 근거이나 앱 내 공개 API·입력·렌더링·저장 충실도는 통합 후 별도 검증 대상이다.
-- WordCraft README상 라이선스는 MIT OR Apache-2.0, rhwp README/Cargo.toml상 라이선스는 MIT로 표시된다. 실제 선택 커밋과 추가 자산/의존성의 조건을 확인한다.
+- WordCraft README상 라이선스는 MIT OR Apache-2.0, rhwp README/Cargo.toml상 라이선스는 MIT로 표시된다. 실제 선택 커밋과 추가 자산/의존성의 조건을 확인한다. (2026-10-16: 고정 커밋 기준 본체 라이선스 확인 완료, 앱 링크 범위의 전이 의존성 확인은 남음 — `docs/licenses/`)
 - Git submodule은 소스 관리 방식일 뿐 앱에서 로딩/링크가 자동 제공되지는 않는다.
 - 프로젝트 실명·상태 관리 라이브러리·실제 구성은 아직 결정하지 않았다.
 

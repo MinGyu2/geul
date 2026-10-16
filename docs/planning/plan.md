@@ -2,7 +2,7 @@
 
 Date: 2026-10-13
 Spec: [spec.md](./spec.md)
-Status: Revised draft, not yet verified against a real target checkout
+Status: Revised draft — 2026-10-16 실제 저장소 검사, submodule 고정, 보안 게이트 로컬 구현 완료. 앱 코드·엔진 통합은 미착수
 
 ## Summary
 WordCraft는 DOCX, rhwp는 HWP/HWPX 전용 엔진으로 독립 관리한다. Tauri 2 + React/TypeScript 6개 영역 UI에 문서별 어댑터, 공통 명령/상태 계층을 결합한다. 고급 리본보다 렌더·IME·선택·쓰기 무손실 검증과 공개 저장소 보안 게이트를 우선한다.
@@ -12,10 +12,11 @@ WordCraft는 DOCX, rhwp는 HWP/HWPX 전용 엔진으로 독립 관리한다. Tau
 - Two core repos: https://github.com/storytold/wordcraft, https://github.com/edwardkim/rhwp. HOP는 설계 참고만.
 - 공개 README 확인(2026-10-13): WordCraft는 `wordcraft-doc`, `wordcraft-docx`, `wordcraft-layout`, `wordcraft-render`, `wordcraft-engine`, `wordcraft-ui-egui`로 분리된 것으로 설명하며 Rust egui UI와 웹 WASM 앱을 제공한다. rhwp는 Rust/WASM, HWP/HWPX 렌더·편집·쓰기 경로를 설명한다. **구체적 API를 앱에서 호출해 본 것은 아니다.**
 - 라이선스 표기: WordCraft MIT OR Apache-2.0, rhwp MIT. 선택 커밋의 라이선스/서드파티 NOTICE/에셋을 다시 확인한다.
-- 대상 저장소의 Node/Rust toolchain, 실제 빌드 명령, 앱 설정, 사전 정책은 미검증.
+- 고정 커밋(2026-10-16 검토): WordCraft `fc41918814f62645b6746ed68e71e8c2c2e85d6f`(`v0.7.0`), rhwp `1a76570e833917d15817415a53c09ad61ab3203f`(`v0.8.7`). 두 커밋의 라이선스 표기는 위와 일치함을 확인했다([docs/licenses/](../licenses/)). 상세 검토: [docs/upstream/](../upstream/), 편집 표면 결정: [editor-surface-decision.md](../architecture/editor-surface-decision.md).
+- 확인된 개발 환경(2026-10-16): Node 24, Rust 1.99(rhwp는 `rust-toolchain.toml`로 1.93.1 고정 — 호환성 미검증), Tauri CLI 2.11, Python 3.14. 앱 빌드 명령과 앱 설정은 아직 없음.
 
 ## Constitution Check
-DEFERRED — 대상 통합 저장소의 `AGENTS.md`, constitution, Spec Kit 설치 및 실제 폴더/파일이 제공되지 않아 대조 불가.
+2026-10-16 검사: 저장소에 `AGENTS.md`나 constitution 문서가 없다. 계획 체계는 `docs/planning/`의 세 문서만 사용하며 Spec Kit 등 별도 계획 프레임워크는 사용하지 않는다.
 
 ## Architecture
 ```
@@ -109,8 +110,8 @@ unified-document-editor/
 ├── .pre-commit-config.yaml
 └── .gitignore
 ```
-- `.gitmodules`는 실제 `git submodule add` 과정에서 생성된다. `external/wordcraft`와 `external/rhwp`는 이번 산출물에 실제 소스가 포함되지 않는다.
-- `docs/planning/`은 명시적으로 사용자가 합의한 기준 경로이며, Spec Kit 전용 feature 하위 디렉터리가 필요한 경우에는 승인된 변환 사본을 사용한다.
+- `.gitmodules`는 `git submodule add`로 생성했고, `external/wordcraft`와 `external/rhwp`는 검토한 커밋에 고정된 gitlink다(엔진 소스는 상위 저장소에 복사하지 않음). 보안 검사 구성: `scripts/check-sensitive-info.py`, `scripts/security-scan-ci.sh`, `tests/security/`, `.gitleaks.toml`, `.pre-commit-config.yaml`, `.github/workflows/security-scan.yml`.
+- `docs/planning/`은 명시적으로 사용자가 합의한 유일한 기준 경로다. Spec Kit 전용 디렉터리(`.specify/`, `specs/`)는 만들지 않는다.
 - `external/` 아래에서는 코어를 직접 변경하지 않고 가능한 한 새 `src/` / `src-tauri/` 어댑터에서 대응한다.
 
 ## Public Repository Security Policy
@@ -128,6 +129,7 @@ unified-document-editor/
 - 보안 회귀: stage 검사, CI 실패 판정, 첫 공개 이력 검사, 오탐 허용 사유, 토큰 로그 마스킹.
 - 실제 배포/OS 테스트: Windows/macOS/Linux 앱 실행·파일 열기/저장·PDF 출력; 서드파티 고지와 라이선스 재확인.
 - 현재 실제 프로젝트 코드 빌드, 실행 및 문서 왕복 테스트는 **NOT RUN**.
+- 보안 회귀(로컬)는 실행됨: 검사기 단위 테스트, pre-commit 훅 차단, 누출 대응 시뮬레이션(결과는 tasks.md Verification Log). GitHub Actions 실행은 원격 푸시 전이라 **NOT RUN**.
 
 ## Risks and Tradeoffs
 - WordCraft의 egui 입력/렌더와 React WebView 연결이 핵심 기술 위험; 도입 전 PoC 실패 조건이 필요하다.

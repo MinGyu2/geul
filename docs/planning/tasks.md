@@ -7,16 +7,16 @@ Implementation model: Not specified
 Reasoning effort: Not specified
 Profile: balanced
 Selection basis: uncalibrated default
-Repository context: target repository not inspected; paths are proposals.
+Repository context: 2026-10-16 실제 저장소 검사 완료(초기 상태: `docs/planning/`만 존재). Phase 1 경로는 실제 파일, Phase 2 이후 경로는 제안.
 
 ## Phase 1: Setup
-- [ ] T017 실제 저장소 초기화·두 submodule 등록·고정 버전·기준본 확인 — `README.md`
-- [ ] T018 변경 파일/민감 홈 경로/테스트 토큰 차단 규칙 작성 및 fixture 검사 — `scripts/check-sensitive-info.py`
-- [ ] T019 PR CI와 최초 공개 전체 스캔/기록 점검 정책 추가 — `.github/workflows/security-scan.yml`
-- [ ] T020 Git 훅 우회/이력 노출/유출 시 키 폐기와 복구 절차 문서화 — `docs/development/security-incident.md`
-- [ ] T001 WordCraft 공개 API/렌더 계층/NOTICE/고정 커밋 검토 — `docs/upstream/wordcraft.md`
-- [ ] T002 rhwp HWP/HWPX 저장/렌더/입력 API와 라이선스 검토 — `docs/upstream/rhwp.md`
-- [ ] T003 엔진별 편집 표면/IME/렌더 경계와 PoC 중단 조건 명시 — `docs/architecture/editor-surface-decision.md`
+- [x] T017 실제 저장소 초기화·두 submodule 등록·고정 버전·기준본 확인 — `README.md`
+- [x] T018 변경 파일/민감 홈 경로/테스트 토큰 차단 규칙 작성 및 fixture 검사 — `scripts/check-sensitive-info.py`
+- [ ] T019 PR CI와 최초 공개 전체 스캔/기록 점검 정책 추가 — `.github/workflows/security-scan.yml` (부분 완료: 원격 검증 대기, 아래 검증 기록 참고)
+- [x] T020 Git 훅 우회/이력 노출/유출 시 키 폐기와 복구 절차 문서화 — `docs/development/security-incident.md`
+- [x] T001 WordCraft 공개 API/렌더 계층/NOTICE/고정 커밋 검토 — `docs/upstream/wordcraft.md`
+- [x] T002 rhwp HWP/HWPX 저장/렌더/입력 API와 라이선스 검토 — `docs/upstream/rhwp.md`
+- [x] T003 엔진별 편집 표면/IME/렌더 경계와 PoC 중단 조건 명시 — `docs/architecture/editor-surface-decision.md`
 
 ## Phase 2: User Story 1 - 기본 UI와 다국어 (Priority: P1)
 Independent Test: 해당 User Story의 acceptance scenario와 실패 조건을 실제 실행으로 확인한다.
@@ -70,6 +70,25 @@ Independent Test: 해당 User Story의 acceptance scenario와 실패 조건을 �
 | T014 | T009 | FR-006, FR-010, SC-004 | src-tauri/src/services/, tests/integration/save-failure/ | 쓰기 실패와 외부 수정에도 원본 불변 확인 | 쓰기 실패와 외부 수정에도 원본 불변 확인 성공 및 근거 기록 |
 | T015 | T012, T013, T014 | FR-011, SC-002, SC-004 | tests/roundtrip/, docs/quality-matrix.md | 텍스트/표/그림/수식/폰트 테스트 기록 | 텍스트/표/그림/수식/폰트 테스트 기록 성공 및 근거 기록 |
 | T016 | T015, T020 | FR-011, SC-005 | src-tauri/tauri.conf.json, docs/release-checklist.md | 각 환경 실제 실행 결과와 출고 체크리스트 | 각 환경 실제 실행 결과와 출고 체크리스트 성공 및 근거 기록 |
+
+## Verification Log
+
+검증은 2026-10-16(KST), Linux, git 2.55.0, Python 3.14.7, gitleaks 8.30.1, pre-commit 4.7.0 환경에서
+저장소 루트 기준으로 실행했다. 분석 작업(T001~T003)은 고정 커밋의 정적 검토이며 엔진 빌드·호출(L3)과
+문서 검증(L4)은 수행하지 않았다.
+
+| Task | 상태 | 산출물 | 실행한 검증과 결과 |
+|------|------|--------|--------------------|
+| T017 | 완료 | `.gitmodules`, `external/wordcraft`, `external/rhwp`, `external/README.md`, `README.md`, `.gitignore` | `git submodule status` → `1a76570e…3203f external/rhwp (v0.8.7)`, `fc419188…d6f external/wordcraft (v0.7.0)`; `git ls-files -s external` → 두 항목 모드 `160000`; `git check-ignore`로 무시/비무시 경로 확인(`docs/planning/`, `.gitmodules`, submodule 경로, lockfile, `.env.example` 비무시); 계획 기준본은 `docs/planning/` 3개 파일만 존재, 엔진 소스 복사본 없음 |
+| T018 | 완료 | `scripts/check-sensitive-info.py`, `tests/security/test_check_sensitive_info.py`, `.gitleaks.toml`, `.pre-commit-config.yaml` | `python3 -m unittest discover -s tests/security -v` → 12개 통과(가짜 토큰·홈 경로 20개 규칙 검출, 마스킹, 상대·시스템 경로 통과, 인덱스 기준 검사, 예외 사유 필수); `pre-commit install` 후 `.git/hooks/pre-commit`·`pre-push` 생성, `pre-commit run --all-files` 통과; 가짜 비밀을 스테이징한 상태에서 `.git/hooks/pre-commit` 실행 → 종료 코드 1로 차단 |
+| T019 | 부분 완료 | `.github/workflows/security-scan.yml`, `scripts/security-scan-ci.sh`, `docs/development/security-policy.md` | 로컬: 워크플로 YAML 파싱 확인, `scripts/security-scan-ci.sh .` 통과, PR 시뮬레이션(`tests/security/simulate-leak-response.sh`)에서 검사 실패 확인. **남은 항목**: GitHub Actions 실제 실행 결과, 브랜치 보호·필수 상태 검사 설정 확인 — 원격 푸시가 필요하며 이번 작업에서는 허용되지 않음 |
+| T020 | 완료 | `docs/development/security-incident.md`, `tests/security/simulate-leak-response.sh` | 임시 저장소 시뮬레이션 종료 코드 0: 훅 없는 커밋 → CI 검사 3종 실패(로그에 원문 없음) → 파일 삭제 후 `--all` 통과·`--history` 실패 → 이력 정리 후 `--history`·Gitleaks 통과 |
+| T001 | 완료 | `docs/upstream/wordcraft.md`, `docs/licenses/wordcraft.md` | 고정 커밋 `fc41918`의 `Cargo.toml`, `NOTICE`, `ATTRIBUTION.md`, `LICENSE-*`, 크레이트 소스 검토. 모듈·라이선스·기여자 고지·API 후보 표 작성(L1/L2) |
+| T002 | 완료 | `docs/upstream/rhwp.md`, `docs/licenses/rhwp.md` | 고정 커밋 `1a76570`의 `README.md`, `LICENSE`, `THIRD_PARTY_LICENSES.md`, `src/parser`, `src/serializer`, `src/wasm_api.rs` 검토. HWP/HWPX/HWP3/HML 읽기·쓰기 수준 구분(L1/L2) |
+| T003 | 완료 | `docs/architecture/editor-surface-decision.md`, `tests/fixtures/README.md` | 엔진별 1·2순위 편집 표면, PoC 실행 경로(P0~P2), 측정 항목, 중단 조건, 픽스처 정책 확정. PoC 자체는 T007/T008에서 실행 |
+
+보안 검사 재실행 명령: `python3 scripts/check-sensitive-info.py --staged|--all|--history`,
+`scripts/security-scan-ci.sh .`(gitleaks 필요), `tests/security/simulate-leak-response.sh`.
 
 ## Dependencies & Execution Order
 T017(프로젝트+submodule) → T018(로컬 사전 검사) → T019(PR CI/공개 전 정책) → T020(사고 대응). T001/T002는 T017 이후에 병렬 조사 가능하며 T003에서 기술 게이트를 결정한다. T007/T008을 통과하기 전에는 T010 이후의 고급 UI 구현을 확대하지 않는다. 보안 검사 훅은 초기 커밋 전에 활성화하고 외부 소스를 복제한 후에는 라이선스/공급망 위험을 별도 검토한다.

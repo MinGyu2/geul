@@ -1,0 +1,46 @@
+# 로컬 Git 훅 설정 (pre-commit 프레임워크)
+#
+# 설치:  pre-commit install        (pre-commit, pre-push 훅이 함께 설치된다)
+# 확인:  pre-commit run --all-files
+# 정책:  docs/development/security-policy.md
+#
+# 로컬 훅은 `--no-verify` 등으로 우회할 수 있으므로 CI(.github/workflows/security-scan.yml)가
+# 같은 검사를 다시 수행한다. 검사 규칙을 끄는 방식으로 실패를 해결하지 않는다.
+
+default_install_hook_types: [pre-commit, pre-push]
+default_stages: [pre-commit]
+fail_fast: false
+
+repos:
+  - repo: local
+    hooks:
+      - id: check-sensitive-info
+        name: 민감정보 검사 (스테이징된 내용)
+        entry: python3 scripts/check-sensitive-info.py --staged
+        language: system
+        pass_filenames: false
+        always_run: true
+        stages: [pre-commit]
+
+      - id: check-sensitive-info-tests
+        name: 민감정보 검사기 회귀 테스트
+        entry: python3 -m unittest discover -s tests/security
+        language: system
+        pass_filenames: false
+        files: ^(scripts/check-sensitive-info\.py|tests/security/)
+        stages: [pre-commit]
+
+      - id: check-sensitive-info-all
+        name: 민감정보 검사 (푸시 전 추적 파일 전체)
+        entry: python3 scripts/check-sensitive-info.py --all
+        language: system
+        pass_filenames: false
+        always_run: true
+        stages: [pre-push]
+
+  # 공식 Gitleaks 훅. Go가 없으면 pre-commit이 Go 도구 체인을 내려받아 빌드한다(최초 1회).
+  - repo: https://github.com/gitleaks/gitleaks
+    rev: v8.30.1 # 83d9cd684c87d95d656c1458ef04895a7f1cbd8e
+    hooks:
+      - id: gitleaks
+        stages: [pre-commit]

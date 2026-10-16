@@ -1,0 +1,51 @@
+# 공개 저장소 보안 검사.
+#
+# 로컬 pre-commit 훅은 우회될 수 있으므로 모든 push와 pull request에서 같은 검사를 다시 수행한다.
+# 이 검사는 이미 푸시된 비밀을 되돌리지 못한다. 최초 공개 전 검사와 누출 대응은
+# docs/development/security-policy.md, docs/development/security-incident.md를 따른다.
+#
+# 이 워크플로를 PR 병합 필수 상태 검사(required status check)로 지정해야 차단 효과가 생긴다.
+
+name: security-scan
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: security-scan-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  sensitive-info:
+    name: 민감정보 검사
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    env:
+      GITLEAKS_VERSION: 8.30.1
+      GITLEAKS_SHA256: 551f6fc83ea457d62a0d98237cbad105af8d557003051f41f3e7ca7b3f2470eb
+    steps:
+      - name: 저장소 체크아웃 (전체 이력, submodule 제외)
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          submodules: false
+          persist-credentials: false
+
+      - name: Gitleaks 설치 (버전 고정, SHA-256 검증)
+        run: |
+          set -euo pipefail
+          archive="gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz"
+          curl -sSfL -o "$RUNNER_TEMP/$archive" \
+            "https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}/${archive}"
+          echo "${GITLEAKS_SHA256}  $RUNNER_TEMP/$archive" | sha256sum -c -
+          mkdir -p "$RUNNER_TEMP/bin"
+          tar -xzf "$RUNNER_TEMP/$archive" -C "$RUNNER_TEMP/bin" gitleaks
+          echo "$RUNNER_TEMP/bin" >> "$GITHUB_PATH"
+
+      - name: 보안 검사 실행
+        run: scripts/security-scan-ci.sh .

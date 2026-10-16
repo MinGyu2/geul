@@ -1,0 +1,94 @@
+# ============================================================
+# Node.js / React / Vite
+# ============================================================
+
+/node_modules/
+/dist/
+/build/
+/out/
+/coverage/
+/.vite/
+/.nyc_output/
+
+*.tsbuildinfo
+
+# Frontend tests
+/playwright-report/
+/test-results/
+
+# ============================================================
+# Rust / Tauri
+# ============================================================
+
+/target/
+/src-tauri/target/
+
+**/*.rs.bk
+
+# ============================================================
+# Python tools
+# ============================================================
+
+__pycache__/
+*.py[cod]
+
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+.venv/
+venv/
+
+# ============================================================
+# Environment and credentials
+# ============================================================
+
+.env
+.env.*
+!.env.example
+!.env.*.example
+
+*.pem
+*.p12
+*.pfx
+*.key
+*.keystore
+*.jks
+
+*.mobileprovision
+*.provisionprofile
+
+# ============================================================
+# Logs / temporary files
+# ============================================================
+
+*.log
+*.tmp
+*.bak
+*.orig
+*.swp
+*.swo
+*.stackdump
+
+/.tmp/
+/tmp/
+
+# ============================================================
+# IDE / operating system
+# ============================================================
+
+.DS_Store
+Thumbs.db
+
+.idea/
+.vscode/
+
+# ============================================================
+# Local-only project files
+# ============================================================
+
+/local/
+/docs/private/
+/docs/internal/
+/tests/fixtures/private/
+/tests/fixtures/local/

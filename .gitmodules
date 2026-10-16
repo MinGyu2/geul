@@ -1,0 +1,8 @@
+[submodule "external/wordcraft"]
+	path = external/wordcraft
+	url = https://github.com/storytold/wordcraft.git
+	shallow = true
+[submodule "external/rhwp"]
+	path = external/rhwp
+	url = https://github.com/edwardkim/rhwp.git
+	shallow = true
