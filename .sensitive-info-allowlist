@@ -1,8 +1,13 @@
-# 민감정보 검사기 예외 목록. 형식: <rule-id> <경로 glob> -- <사유>
-# 규칙과 절차: docs/development/security-policy.md 6절. 예외는 파일 단위로 좁게 두고 사유를 남긴다.
+# 민감정보 검사기 예외 목록. 형식: <rule-id> <경로> [sha256=<64자리 16진수>] -- <사유>
+# 규칙과 절차: docs/development/security-policy.md 6절.
+# uninspected-binary 등 내용을 검사하지 못하는 규칙은 정확한 경로와 검토한 내용의 sha256에만 적용된다.
+# 파일 내용이 바뀌거나 다른 경로로 옮기면 예외가 더 이상 맞지 않으므로 다시 검토해 새 줄을 추가한다.
 
-# 앱 아이콘: src-tauri/icons/icon.svg(직접 작성)에서 `npm run tauri icon`(tauri-cli 2.12.1)으로 생성.
-# PNG 텍스트·EXIF 청크(tEXt/iTXt/zTXt/eXIf)와 경로 문자열이 없음을 2026-10-16에 확인했다.
-uninspected-binary src-tauri/icons/*.png -- 직접 만든 SVG에서 생성한 앱 아이콘, 메타데이터 없음 확인
-uninspected-binary src-tauri/icons/icon.ico -- 직접 만든 SVG에서 생성한 Windows 아이콘, 메타데이터 없음 확인
-uninspected-binary src-tauri/icons/icon.icns -- 직접 만든 SVG에서 생성한 macOS 아이콘, 메타데이터 없음 확인
+# 앱 아이콘: src-tauri/icons/icon.svg(직접 작성)에서 `npm run tauri icon`(tauri-cli 2.12.1)으로 생성(커밋 bc9e593).
+# 2026-10-16 재검토: 포함된 PNG의 청크가 IHDR/IDAT/IEND뿐이며(텍스트·EXIF 청크 없음) 경로 문자열이 없음.
+uninspected-binary src-tauri/icons/32x32.png sha256=11da56459d05556809e10202b9a6d09dea68637882ea19b4be51466478fa4a63 -- 직접 만든 SVG에서 생성한 앱 아이콘, PNG 청크 검토 완료
+uninspected-binary src-tauri/icons/128x128.png sha256=90506d137585e835a5063561ad0a25adbc473feeb3a127ddd9923d5db649bce7 -- 직접 만든 SVG에서 생성한 앱 아이콘, PNG 청크 검토 완료
+uninspected-binary src-tauri/icons/128x128@2x.png sha256=3124e9b3703fc8067dff6c4a17ccf34841005ea61bb83df6b6fb49ae3a179384 -- 직접 만든 SVG에서 생성한 앱 아이콘, PNG 청크 검토 완료
+uninspected-binary src-tauri/icons/icon.png sha256=1c41541a9c04bb052f6cbcac81ae15c54b858b87a059cdb08f09f47c96b95dc5 -- 직접 만든 SVG에서 생성한 앱 아이콘, PNG 청크 검토 완료
+uninspected-binary src-tauri/icons/icon.ico sha256=68b443b7c6413d53c18176122ebd4c9ab66a38a44885c9e03e2ca21bd573d15f -- 직접 만든 SVG에서 생성한 앱 아이콘, PNG 청크 검토 완료
+uninspected-binary src-tauri/icons/icon.icns sha256=501d96737b1a3a52874364ce6ed4198dd144998eb4c0260347e9a8b6d1adbd5b -- 직접 만든 SVG에서 생성한 앱 아이콘, PNG 청크 검토 완료

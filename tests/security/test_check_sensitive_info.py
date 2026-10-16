@@ -8,6 +8,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import importlib.util
 import io
 import os
@@ -81,6 +82,14 @@ CLEAN_TEXT = "\n".join([
     "주소: git@github.com:MinGyu2/geul.git, noreply@example.com, logo@2x.png",
     "날짜: 2026-10-16, 해시 sha256:551f6fc83ea457d62a0d98237cbad105",
 ])
+
+
+def sha256(data: bytes) -> str:
+    return hashlib.sha256(data).hexdigest()
+
+
+def review_line(path: str, data: bytes, rule: str = "uninspected-binary") -> str:
+    return f"{rule} {path} sha256={sha256(data)} -- 직접 검토한 테스트 바이너리\n"
 
 
 def make_zip(entries: dict[str, bytes | str]) -> bytes:
@@ -382,7 +391,7 @@ class LargeAndMalformedContentTest(RepoTestCase):
     def test_text_over_hard_limit_is_reported_not_skipped(self) -> None:
         module = load_scanner_module()
         module.MAX_TEXT_BYTES = 64
-        hits = module.ContentScanner([]).scan(iter([b"clean line\n" * 100]), "x.txt", "x.txt")
+        hits = module.ContentScanner([]).scan(iter([b"clean line\n" * 100]), "x.txt", "x.txt").hits
         self.assertEqual({hit.rule for hit in hits}, {"uninspected-content"})
 
 
@@ -399,9 +408,9 @@ class BinaryAndArchiveTest(RepoTestCase):
         self.assertIn("OLE", result.stdout)
 
         self.repo.reset_index()
-        self.repo.stage(".sensitive-info-allowlist",
-                        "uninspected-binary assets/*.png -- 직접 만든 아이콘, 메타데이터 검토 완료\n")
-        self.repo.stage("assets/icon.png", b"\x89PNG\r\n\x1a\n\x00\x00")
+        icon = b"\x89PNG\r\n\x1a\n\x00\x00"
+        self.repo.stage(".sensitive-info-allowlist", review_line("assets/icon.png", icon))
+        self.repo.stage("assets/icon.png", icon)
         self.assert_exit(self.repo.scan("--staged"), 0)
 
     def test_utf16_without_bom_is_not_silently_passed(self) -> None:
@@ -461,13 +470,13 @@ class BinaryAndArchiveTest(RepoTestCase):
     def test_archive_limits(self) -> None:
         module = load_scanner_module()
         module.MAX_ARCHIVE_ENTRIES = 2
-        hits = module.ContentScanner([]).scan(iter([make_zip({f"{i}.xml": "<x/>" for i in range(3)})]), "a.zip", "a")
+        hits = module.ContentScanner([]).scan(iter([make_zip({f"{i}.xml": "<x/>" for i in range(3)})]), "a.zip", "a").hits
         self.assertEqual({hit.rule for hit in hits}, {"uninspected-binary"})
 
         module = load_scanner_module()
         module.MAX_ARCHIVE_ENTRY_BYTES = 1000
         bomb = make_zip({"big.xml": "<x>" + "A" * 100_000 + "</x>"})  # 압축하면 작지만 풀면 큰 항목
-        hits = module.ContentScanner([]).scan(iter([bomb]), "a.zip", "a")
+        hits = module.ContentScanner([]).scan(iter([bomb]), "a.zip", "a").hits
         self.assertEqual({hit.rule for hit in hits}, {"uninspected-binary"})
 
 
@@ -612,6 +621,280 @@ class RelatedFalseNegativeTest(RepoTestCase):
         self.assert_exit(result, 1)
         self.assertIn("[uninspected-binary]", result.stdout)
         self.assertIn("[sensitive-file]", result.stdout)
+
+
+
+PNG_V1 = b"\x89PNG\r\n\x1a\n" + b"\x00" * 16 + b"reviewed-v1"
+PNG_V2 = b"\x89PNG\r\n\x1a\n" + b"\x00" * 16 + b"changed-v2"
+
+
+class BinaryExceptionTest(RepoTestCase):
+    """A1: 바이너리 예외는 정확한 경로와 검토한 내용(sha256)에만 적용된다."""
+
+    def test_exact_reviewed_binary_is_accepted(self) -> None:
+        self.repo.stage(".sensitive-info-allowlist", review_line("assets/logo.png", PNG_V1))
+        self.repo.stage("assets/logo.png", PNG_V1)
+        self.assert_exit(self.repo.scan("--staged"), 0)
+        self.repo.commit("reviewed")
+        self.assert_exit(self.repo.scan("--all"), 0)
+        self.assert_exit(self.repo.scan("--history"), 0)
+
+    def test_different_binary_at_same_path_is_rejected(self) -> None:
+        self.repo.stage(".sensitive-info-allowlist", review_line("assets/logo.png", PNG_V1))
+        self.repo.stage("assets/logo.png", PNG_V2)
+        result = self.repo.scan("--staged")
+        self.assert_exit(result, 1)
+        self.assertIn("assets/logo.png: [uninspected-binary]", result.stdout)
+
+    def test_wildcard_binary_exception_is_refused_and_new_file_not_covered(self) -> None:
+        self.repo.stage(".sensitive-info-allowlist", "uninspected-binary assets/*.png -- 예전 형식의 넓은 예외\n")
+        self.repo.stage("assets/new.png", PNG_V2)
+        result = self.repo.scan("--staged")
+        self.assert_exit(result, 2)
+        self.assertIn("정확한 경로", result.stderr)
+
+        self.repo.stage(".sensitive-info-allowlist", review_line("assets/logo.png", PNG_V1))
+        self.repo.stage("assets/logo.png", PNG_V1)
+        result = self.repo.scan("--staged")
+        self.assert_exit(result, 1)
+        self.assertIn("assets/new.png: [uninspected-binary]", result.stdout)
+        self.assertNotIn("assets/logo.png:", result.stdout)
+
+    def test_renamed_reviewed_binary_is_rejected(self) -> None:
+        self.repo.stage(".sensitive-info-allowlist", review_line("assets/logo.png", PNG_V1))
+        self.repo.stage("assets/renamed.png", PNG_V1)
+        self.assert_exit(self.repo.scan("--staged"), 1)
+
+    def test_modified_staged_binary_uses_index_content(self) -> None:
+        self.repo.stage(".sensitive-info-allowlist", review_line("assets/logo.png", PNG_V1))
+        self.repo.stage("assets/logo.png", PNG_V1)
+        self.repo.commit("reviewed")
+        self.repo.stage("assets/logo.png", PNG_V2)
+        self.repo.write("assets/logo.png", PNG_V1)  # 작업 트리는 검토한 내용, 인덱스는 다른 내용
+        self.assert_exit(self.repo.scan("--staged"), 1)
+        self.assert_exit(self.repo.scan("--all"), 0)  # --all은 작업 트리 내용을 검사한다
+
+        self.repo.stage("assets/logo.png", PNG_V1)
+        self.repo.write("assets/logo.png", PNG_V2)  # 반대로 작업 트리만 바뀜
+        self.assert_exit(self.repo.scan("--staged"), 0)
+        self.assert_exit(self.repo.scan("--all"), 1)
+
+    def test_wrong_or_malformed_sha256(self) -> None:
+        self.repo.stage("assets/logo.png", PNG_V1)
+        self.repo.stage(".sensitive-info-allowlist",
+                        f"uninspected-binary assets/logo.png sha256={'0' * 64} -- 다른 내용의 해시\n")
+        self.assert_exit(self.repo.scan("--staged"), 1)
+        for bad in ("sha256=" + "A" * 64, "sha256=" + "0" * 63, "sha1=" + "0" * 40):
+            with self.subTest(digest=bad):
+                self.repo.stage(".sensitive-info-allowlist", f"uninspected-binary assets/logo.png {bad} -- 형식 오류\n")
+                result = self.repo.scan("--staged")
+                self.assert_exit(result, 2)
+                self.assertIn("sha256", result.stderr)
+
+    def test_missing_reason_or_digest_is_rejected(self) -> None:
+        self.repo.stage("assets/logo.png", PNG_V1)
+        self.repo.stage(".sensitive-info-allowlist", f"uninspected-binary assets/logo.png sha256={sha256(PNG_V1)}\n")
+        self.assert_exit(self.repo.scan("--staged"), 2)
+        self.repo.stage(".sensitive-info-allowlist", "uninspected-binary assets/logo.png -- 해시 없는 예외\n")
+        result = self.repo.scan("--staged")
+        self.assert_exit(result, 2)
+        self.assertIn("sha256", result.stderr)
+
+    def test_history_versions_need_their_own_review(self) -> None:
+        self.repo.stage(".sensitive-info-allowlist", review_line("assets/logo.png", PNG_V1))
+        self.repo.stage("assets/logo.png", PNG_V1)
+        self.repo.commit("v1 reviewed")
+        self.repo.stage(".sensitive-info-allowlist", review_line("assets/logo.png", PNG_V2))
+        self.repo.stage("assets/logo.png", PNG_V2)
+        self.repo.commit("v2 reviewed, v1 entry dropped")
+        result = self.repo.scan("--history")
+        self.assert_exit(result, 1)  # 이력의 v1은 HEAD 예외 목록의 v2 승인을 물려받지 않는다
+        self.assertEqual(result.stdout.count("[uninspected-binary]"), 1)
+        self.assert_exit(self.repo.scan("--all"), 0)
+
+        self.repo.stage(".sensitive-info-allowlist",
+                        review_line("assets/logo.png", PNG_V1) + review_line("assets/logo.png", PNG_V2))
+        self.repo.commit("both versions reviewed")
+        self.assert_exit(self.repo.scan("--history"), 0)
+
+    def test_content_bound_rules_cover_archives_and_metadata(self) -> None:
+        archive = make_zip({"docProps/core.xml": "<dc:creator>Kim Minsu</dc:creator>"})
+        self.repo.stage("fixtures/doc.docx", archive)
+        self.repo.stage(".sensitive-info-allowlist", "document-metadata fixtures/*.docx -- 넓은 예외 시도\n")
+        self.assert_exit(self.repo.scan("--staged"), 2)
+        self.repo.stage(".sensitive-info-allowlist", review_line("fixtures/doc.docx", archive, "document-metadata"))
+        self.assert_exit(self.repo.scan("--staged"), 0)
+
+
+SECRET_TOKEN = SYNTHETIC["github-token"]
+SECRET_EMAIL = j("kim.minsu", "@", "corp-mail.co.kr")
+SECRET_USER = "alicesecretuser"
+
+
+class DiagnosticSanitizationTest(RepoTestCase):
+    """A2: 압축 항목 이름·경로·오류 메시지에 든 민감정보와 제어 문자가 그대로 출력되지 않는다."""
+
+    def assert_clean_output(self, result: subprocess.CompletedProcess[str]) -> None:
+        output = result.stdout + result.stderr
+        for value in (SECRET_TOKEN, SECRET_EMAIL, SECRET_USER, "kim.minsu"):
+            self.assertNotIn(value, output)
+        self.assertNotIn("\x1b", output)
+        self.assertNotIn("\r", output)
+        for line in output.splitlines():
+            self.assertFalse(line.startswith("FAKE"), f"가짜 줄 주입: {line!r}")
+
+    def test_sensitive_archive_entry_names_are_masked(self) -> None:
+        home = j("/", "home/", SECRET_USER, "/notes.xml")
+        entries = {
+            f"word/{SECRET_TOKEN}.xml": "<x/>",
+            f"media/{SECRET_EMAIL}.xml": "<x/>",
+            home: "<x/>",
+            "../" + SECRET_TOKEN + ".xml": "<x/>",
+            f"word/{SECRET_TOKEN}.png": b"\x89PNG\x00\x00",
+            "word/a\nFAKE: all clean\r.xml": "<w:t>" + SYNTHETIC["private-ip"] + "</w:t>",
+            "word/b\x1b[2J\x1b[31mred.xml": SYNTHETIC["private-ip"] + " sensitive-info: allow no-such-rule -- 경고 유도",
+        }
+        result = self.scan_staged_file("evil.docx", make_zip(entries))
+        self.assert_exit(result, 1)
+        self.assert_clean_output(result)
+        self.assertIn("[github-token]", result.stdout)
+        self.assertIn("[email-address]", result.stdout)
+        self.assertIn("[home-path-unix]", result.stdout)
+        self.assertIn("[archive-unsafe-path]", result.stdout)
+        self.assertIn("[uninspected-binary]", result.stdout)
+        self.assertIn("evil.docx!word/a\\u000aFAKE", result.stdout)  # 줄바꿈은 이스케이프되어 한 줄에 남는다
+        self.assertIn("\\u001b[2J", result.stderr)
+
+    def test_sensitive_repository_path_is_reported_and_masked(self) -> None:
+        result = self.scan_staged_file(f"config/{SECRET_TOKEN}.txt", "clean\n")
+        self.assert_exit(result, 1)
+        self.assertIn("[github-token]", result.stdout)
+        self.assert_clean_output(result)
+
+    def test_malformed_archive_entry_is_not_clean(self) -> None:
+        data = bytearray(make_zip({"word/document.xml": "<w:t>" + "hello " * 200 + "</w:t>"}))
+        data[30 + len("word/document.xml") + 4] ^= 0xFF  # 지역 헤더 뒤 압축 데이터 손상
+        result = self.scan_staged_file(f"{SECRET_TOKEN}.docx", bytes(data))
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("[uninspected-binary]", result.stdout)
+        self.assert_clean_output(result)
+
+    def test_safe_escapes_control_and_bidi_characters(self) -> None:
+        module = load_scanner_module()
+        text = module.safe("a\nb\rc\x1b[31md\u202ee\u2028f\x00")
+        self.assertNotRegex(text, "[\x00-\x1f\u202e\u2028]")
+        self.assertIn("\\u000a", text)
+
+
+def random_binary(size: int, seed: int = 7) -> bytes:
+    import random
+    generator = random.Random(seed)
+    return bytes(generator.randrange(1, 256) for _ in range(size))  # NUL 없음
+
+
+class BinaryDetectionTest(RepoTestCase):
+    """A3: 첫 8 KiB에 NUL이 없는 바이너리를 텍스트로 보고 통과시키던 문제."""
+
+    KOREAN = "한글 문서 편집기 개발 메모입니다. 표와 그림을 다룹니다.\n"
+
+    def test_valid_text_encodings_pass(self) -> None:
+        cases = {
+            "ko.md": self.KOREAN.encode("utf-8"),
+            "bom.txt": b"\xef\xbb\xbf" + self.KOREAN.encode("utf-8"),
+            "utf16.txt": self.KOREAN.encode("utf-16"),
+            "big-ko.txt": (self.KOREAN * 60_000).encode("utf-8"),  # 약 5 MiB
+        }
+        for name, data in cases.items():
+            with self.subTest(file=name):
+                result = self.scan_staged_file(name, data)
+                self.assert_exit(result, 0)
+                self.assertNotIn("대체 문자", result.stderr)
+
+    def test_slightly_invalid_utf8_is_scanned_with_warning(self) -> None:
+        data = self.KOREAN.encode("utf-8") * 20 + b"caf\xe9 latin-1 byte\n"
+        result = self.scan_staged_file("legacy.txt", data)
+        self.assert_exit(result, 0)
+        self.assertIn("대체 문자", result.stderr)
+
+    def test_binary_without_nul_in_first_sample_is_rejected(self) -> None:
+        result = self.scan_staged_file("blob.dat", random_binary(20_000))
+        self.assert_exit(result, 1)
+        self.assertIn("[uninspected-binary]", result.stdout)
+
+    def test_binary_after_text_prefix_is_rejected(self) -> None:
+        for name, data in {
+            "nul-later.txt": self.KOREAN.encode() * 400 + b"\x00\x01\x02" + self.KOREAN.encode(),
+            "blob-later.txt": self.KOREAN.encode() * 2000 + random_binary(70_000),
+        }.items():
+            with self.subTest(file=name):
+                result = self.scan_staged_file(name, data)
+                self.assert_exit(result, 1)
+                self.assertIn("[uninspected-binary]", result.stdout)
+
+    def test_secret_near_end_of_large_text_is_found(self) -> None:
+        data = (self.KOREAN * 60_000 + SYNTHETIC["aws-access-key-id"] + "\n").encode()
+        result = self.scan_staged_file("big.txt", data)
+        self.assert_exit(result, 1)
+        self.assertIn("[aws-access-key-id]", result.stdout)
+        self.assertNotIn("[uninspected-binary]", result.stdout)
+
+
+class MissingTrackedFileTest(RepoTestCase):
+    """A4: --all에서 추적 중인 파일을 읽지 못하면 통과로 보지 않는다."""
+
+    def setUp(self) -> None:
+        super().setUp()
+        self.repo.stage("keep.txt", "clean\n")
+        self.repo.stage("docs/gone.txt", "clean\n")
+        self.repo.commit("base")
+
+    def test_clean_repository_and_normal_file(self) -> None:
+        result = self.repo.scan("--all")
+        self.assert_exit(result, 0)
+        self.assertIn("추적 파일 2개", result.stdout)
+
+    def test_unstaged_deletion_is_incomplete(self) -> None:
+        (self.repo.root / "docs/gone.txt").unlink()
+        result = self.repo.scan("--all")
+        self.assert_exit(result, 2)
+        self.assertIn("docs/gone.txt", result.stderr)
+        self.assertIn("git rm", result.stderr)
+        self.assertNotIn(str(self.repo.root), result.stdout + result.stderr)
+
+    def test_unexpectedly_missing_directory_is_incomplete(self) -> None:
+        (self.repo.root / "docs/gone.txt").unlink()
+        (self.repo.root / "docs").rmdir()
+        self.assert_exit(self.repo.scan("--all"), 2)
+
+    def test_staged_deletion_passes(self) -> None:
+        self.repo.git("rm", "-q", "docs/gone.txt")
+        result = self.repo.scan("--all")
+        self.assert_exit(result, 0)
+        self.assertIn("추적 파일 1개", result.stdout)
+
+    def test_broken_symlink_is_scanned_by_target_text(self) -> None:
+        link = self.repo.root / "link"
+        link.symlink_to("no/such/target")
+        self.repo.git("add", "link")
+        self.assert_exit(self.repo.scan("--all"), 0)
+        link.unlink()
+        link.symlink_to(j("/", "home/", SECRET_USER, "/missing"))
+        self.repo.git("add", "link")
+        result = self.repo.scan("--all")
+        self.assert_exit(result, 1)
+        self.assertIn("link:1: [home-path-unix]", result.stdout)
+        self.assertNotIn(SECRET_USER, result.stdout + result.stderr)
+
+    def test_read_failure_is_incomplete(self) -> None:
+        if hasattr(os, "geteuid") and os.geteuid() == 0:
+            self.skipTest("root는 권한 검사를 우회함")
+        target = self.repo.root / "keep.txt"
+        target.chmod(0)
+        try:
+            result = self.repo.scan("--all")
+        finally:
+            target.chmod(0o644)
+        self.assert_exit(result, 2)
 
 
 if __name__ == "__main__":

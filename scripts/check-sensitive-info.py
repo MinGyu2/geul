@@ -21,7 +21,8 @@
 
 오탐 예외(검토 후에만 사용):
   - 같은 줄 주석: `sensitive-info: allow <rule-id> -- <사유>`
-  - `.sensitive-info-allowlist`: `<rule-id> <경로 glob> -- <사유>` (한 줄에 하나)
+  - `.sensitive-info-allowlist`: `<rule-id> <경로 glob> [sha256=<해시>] -- <사유>` (한 줄에 하나).
+    바이너리 등 검사하지 못한 내용의 예외는 정확한 경로와 검토한 내용의 sha256이 필요하다.
 사유가 없는 예외 주석은 무시되고 경고가 출력된다. 예외 목록의 형식 오류, 알 수 없는 규칙, 지나치게 넓은
 glob은 오류(종료 코드 2)다. Git submodule(gitlink) 내용은 상위 저장소 검사 대상이 아니며 업스트림
 검토에서 별도로 다룬다.
@@ -32,6 +33,7 @@ from __future__ import annotations
 import argparse
 import codecs
 import fnmatch
+import hashlib
 import io
 import os
 import re
@@ -53,6 +55,17 @@ MAX_ARCHIVE_ENTRIES = 4096
 MAX_ARCHIVE_ENTRY_BYTES = 64 << 20
 MAX_ARCHIVE_TOTAL_BYTES = 256 << 20
 MIN_REASON_CHARS = 4
+# 바이너리 판정: 64 KiB 구간마다 잘못된 인코딩·제어 문자가 10%를 넘거나(최소 8개), 파일 전체에서 1%를 넘거나,
+# UTF-8 텍스트에 NUL이 있으면 텍스트로 검사할 수 없는 내용으로 본다.
+BINARY_WINDOW_BYTES = 64 << 10
+BINARY_WINDOW_RATIO = 0.10
+BINARY_TOTAL_RATIO = 0.01
+BINARY_MIN_BAD = 8
+BAD_CHARS = re.compile(r"[\x00-\x08\x0e-\x1a\x1c-\x1f\x7f]")  # 탭·줄바꿈·VT·FF·CR·ESC는 텍스트로 인정
+BAD_CHARS_UTF16 = re.compile(r"[\x00-\x08\x0e-\x1a\x1c-\x1f\x7f\ue000-\uf8ff]")  # UTF-16은 사용자 영역 문자도 센다
+# 출력 직전에 이스케이프하는 문자: 제어 문자, 줄·문단 구분자, 방향 제어 등 표시되지 않는 서식 문자.
+UNSAFE_OUTPUT_CHARS = re.compile(r"[\x00-\x1f\x7f-\x9f\u061c\u200b-\u200f\u2028-\u202e\u2060-\u2069\ufeff]")
+MAX_OUTPUT_CHARS = 400
 
 ALLOWLIST_FILE = ".sensitive-info-allowlist"
 PRAGMA_RE = re.compile(r"sensitive-info:\s*allow\s+([a-z0-9-]+)(?:\s+--\s+(.*))?")
@@ -218,6 +231,35 @@ EXTRA_RULES = {
     "archive-unsafe-path": "압축 파일 내부의 위험한 경로",
 }
 RULE_IDS = {rule.id for rule in RULES} | set(EXTRA_RULES)
+# 내용을 검사하지 못했거나 직접 검토해야 하는 규칙. 예외는 정확한 경로와 검토한 내용의 sha256에만 적용한다.
+CONTENT_BOUND_RULES = {"uninspected-binary", "uninspected-content", "document-metadata", "archive-unsafe-path"}
+SHA256_RE = re.compile(r"sha256=([0-9a-f]{64})")
+
+
+def redact(text: str) -> str:
+    """출력할 문자열에서 규칙에 걸리는 부분을 마스킹한다(경로·압축 항목 이름·오류 메시지에 든 비밀 차단).
+
+    일치한 부분 전체를 가린다. 홈 경로만 사용자 이름 부분을 가려 `/home/<…>/` 모양을 남긴다.
+    """
+    for rule in RULES:
+        def replace(match: re.Match[str], rule: Rule = rule) -> str:
+            if finding_is_exempt(rule, match, "data"):
+                return match.group(0)
+            if rule.id.startswith("home-path"):
+                begin, end = match.start(1) - match.start(0), match.end(1) - match.start(0)
+                whole = match.group(0)
+                return whole[:begin] + f"<{mask(match.group(1))}>" + whole[end:]
+            return f"<{mask(match.group(0))}>"
+        text = rule.pattern.sub(replace, text)
+    return text
+
+
+def safe(text: str) -> str:
+    """모든 진단 출력의 단일 출구. 비밀을 가리고, 제어 문자를 \\uXXXX로 바꿔 가짜 줄을 만들 수 없게 한다."""
+    text = UNSAFE_OUTPUT_CHARS.sub(lambda m: f"\\u{ord(m.group(0)):04x}", redact(text))
+    if len(text) > MAX_OUTPUT_CHARS:
+        text = text[:MAX_OUTPUT_CHARS] + f"…(+{len(text) - MAX_OUTPUT_CHARS})"
+    return text
 
 
 class InspectionError(Exception):
@@ -277,8 +319,15 @@ def valid_reason(reason: str) -> bool:
     return len(COMMENT_CLOSERS.sub("", reason).strip()) >= MIN_REASON_CHARS
 
 
+@dataclass(frozen=True)
+class AllowEntry:
+    rule: str
+    glob: str
+    sha256: str | None
+
+
 class Allowlist:
-    def __init__(self, entries: list[tuple[str, str]], source: str):
+    def __init__(self, entries: list[AllowEntry], source: str):
         self.entries = entries
         self.source = source
 
@@ -295,21 +344,29 @@ class Allowlist:
 
     @classmethod
     def parse(cls, text: str, source: str, errors: list[str]) -> "Allowlist":
-        entries: list[tuple[str, str]] = []
+        entries: list[AllowEntry] = []
         for number, raw in enumerate(text.splitlines(), 1):
             line = raw.strip()
             if not line or line.startswith("#"):
                 continue
             where = f"{ALLOWLIST_FILE}:{number} ({source})"
+            usage = "`<rule-id> <경로> [sha256=<64자리 16진수>] -- <사유>`"
             spec, separator, reason = line.partition(" -- ")
             parts = spec.split()
             if not separator or not valid_reason(reason):
-                errors.append(f"{where}: 사유가 없거나 너무 짧음(`<rule-id> <glob> -- <사유>`)")
+                errors.append(f"{where}: 사유가 없거나 너무 짧음({usage})")
                 continue
-            if len(parts) != 2:
-                errors.append(f"{where}: 형식 오류(`<rule-id> <glob> -- <사유>`)")
+            if len(parts) not in (2, 3):
+                errors.append(f"{where}: 형식 오류({usage})")
                 continue
-            rule, glob = parts
+            rule, glob = parts[0], parts[1]
+            digest = None
+            if len(parts) == 3:
+                match = SHA256_RE.fullmatch(parts[2])
+                if not match:
+                    errors.append(f"{where}: sha256 형식 오류(소문자 16진수 64자리)")
+                    continue
+                digest = match.group(1)
             if rule not in RULE_IDS:
                 errors.append(f"{where}: 알 수 없는 규칙 ID '{rule}'")
                 continue
@@ -317,11 +374,16 @@ class Allowlist:
             if problem:
                 errors.append(f"{where}: 경로 glob '{glob}' 거부 — {problem}")
                 continue
-            entries.append((rule, glob))
+            if rule in CONTENT_BOUND_RULES and (digest is None or re.search(r"[*?\[]", glob)):
+                errors.append(f"{where}: '{rule}' 예외는 와일드카드 없는 정확한 경로와 검토한 내용의 "
+                              "sha256이 필요함(내용이 바뀌면 다시 검토)")
+                continue
+            entries.append(AllowEntry(rule, glob, digest))
         return cls(entries, source)
 
-    def allows(self, rule: str, path: str) -> bool:
-        return any(rule == r and fnmatch.fnmatchcase(path, g) for r, g in self.entries)
+    def allows(self, rule: str, path: str, digest: str | None) -> bool:
+        return any(rule == entry.rule and fnmatch.fnmatchcase(path, entry.glob)
+                   and (entry.sha256 is None or entry.sha256 == digest) for entry in self.entries)
 
 
 def pragma_allows(line: str, rule: str, where: str, warnings: list[str]) -> bool:
@@ -340,6 +402,29 @@ def pragma_allows(line: str, rule: str, where: str, warnings: list[str]) -> bool
 
 # ---------------------------------------------------------------------------
 # 내용 검사
+
+
+@dataclass
+class ScanResult:
+    hits: set[Hit]
+    digest: str  # 검사한 바이트 전체의 SHA-256. 내용 기반 예외(sha256=)는 이 값과 비교한다.
+
+
+@dataclass
+class TextStats:
+    total: int = 0
+    bad: int = 0  # 잘못된 인코딩(대체 문자)과 텍스트에 없어야 할 제어 문자 수
+    binary_at: int | None = None  # 바이너리 증거를 처음 본 구간의 시작 바이트
+
+
+def name_hits(name: str, subpath: str = "") -> set[Hit]:
+    """파일·압축 항목 이름에 든 비밀·경로·개인정보. 이름 안의 예외 주석은 인정하지 않는다."""
+    hits: set[Hit] = set()
+    for rule in RULES:
+        for match in rule.pattern.finditer(name):
+            if not finding_is_exempt(rule, match, "data"):
+                hits.add(Hit(rule.id, f"{rule.description}(이름)", 0, rule.value(match), subpath))
+    return hits
 
 
 class ContentScanner:
@@ -363,62 +448,94 @@ class ContentScanner:
                                  number, match.group(2).strip(), subpath))
 
     def scan_text_stream(self, chunks: Iterable[bytes], encoding: str, kind: str, where: str,
-                         subpath: str, hits: set[Hit], limit: int) -> None:
+                         subpath: str, hits: set[Hit], limit: int) -> TextStats:
+        """텍스트로 검사하면서 바이너리 증거(NUL, 잘못된 인코딩·제어 문자 비율)를 구간별로 센다."""
         decoder = codecs.getincrementaldecoder(encoding)(errors="replace")
+        bad_chars = BAD_CHARS_UTF16 if encoding == "utf-16" else BAD_CHARS
+        stats = TextStats()
         pending = ""
         number = 1
-        total = 0
         for chunk in chunks:
-            total += len(chunk)
-            if total > limit:
-                raise _TooLarge(total)
-            pending += decoder.decode(chunk)
-            lines = pending.split("\n")
-            pending = lines.pop()
-            for line in lines:
-                self.scan_line(line, number, kind, where, subpath, hits)
-                number += 1
-            while len(pending) > MAX_LINE_CHARS:
-                self.scan_line(pending[:MAX_LINE_CHARS], number, kind, where, subpath, hits)
-                pending = pending[MAX_LINE_CHARS - LINE_OVERLAP:]
-        pending += decoder.decode(b"", final=True)
+            for offset in range(0, len(chunk), BINARY_WINDOW_BYTES):
+                piece = chunk[offset:offset + BINARY_WINDOW_BYTES]
+                stats.total += len(piece)
+                if stats.total > limit:
+                    raise _TooLarge(stats.total)
+                text = decoder.decode(piece)
+                bad = text.count("\ufffd") + len(bad_chars.findall(text))
+                stats.bad += bad
+                if stats.binary_at is None and (
+                        (encoding != "utf-16" and b"\0" in piece)
+                        or (bad >= BINARY_MIN_BAD and bad > len(piece) * BINARY_WINDOW_RATIO)):
+                    stats.binary_at = stats.total - len(piece)
+                pending += text
+                lines = pending.split("\n")
+                pending = lines.pop()
+                for line in lines:
+                    self.scan_line(line, number, kind, where, subpath, hits)
+                    number += 1
+                while len(pending) > MAX_LINE_CHARS:
+                    self.scan_line(pending[:MAX_LINE_CHARS], number, kind, where, subpath, hits)
+                    pending = pending[MAX_LINE_CHARS - LINE_OVERLAP:]
+        tail = decoder.decode(b"", final=True)
+        stats.bad += tail.count("\ufffd")
+        pending += tail
         for line in pending.split("\n"):
             if line:
                 self.scan_line(line, number, kind, where, subpath, hits)
             number += 1
+        if (stats.binary_at is None and stats.bad >= BINARY_MIN_BAD
+                and stats.bad > stats.total * BINARY_TOTAL_RATIO):
+            stats.binary_at = 0
+        return stats
 
-    def scan(self, chunks: Iterator[bytes], path: str, where: str) -> set[Hit]:
-        """chunks는 끝까지 소비하지 않아도 된다(호출자가 남은 내용을 처리한다)."""
+    def scan(self, chunks: Iterator[bytes], path: str, where: str) -> ScanResult:
+        """내용을 끝까지 읽어 SHA-256을 계산한다. 검사를 일찍 멈춘 경우에도 나머지를 해시에 넣는다."""
+        hasher = hashlib.sha256()
+        source = _hashing(chunks, hasher)
         hits: set[Hit] = set()
+        self._scan(source, path, where, hits)
+        for _ in source:
+            pass
+        return ScanResult(hits, hasher.hexdigest())
+
+    def _scan(self, source: Iterator[bytes], path: str, where: str, hits: set[Hit]) -> None:
         head = b""
-        for chunk in chunks:
+        for chunk in source:
             head += chunk
             if len(head) >= SNIFF_BYTES:
                 break
-        stream = _prepend(head, chunks)
+        stream = _prepend(head, source)
         if head.startswith((b"PK\x03\x04", b"PK\x05\x06")):
             self.scan_archive(stream, where, hits)
-            return hits
+            return
         encoding = _text_encoding(head)
+        name = PurePosixPath(path).name
         if encoding is None:
-            hits.add(Hit("uninspected-binary", f"{EXTRA_RULES['uninspected-binary']}: {_binary_kind(head)}", 0,
-                         PurePosixPath(path).name))
-            return hits
+            hits.add(Hit("uninspected-binary", f"{EXTRA_RULES['uninspected-binary']}: {_binary_kind(head)}", 0, name))
+            return
+        kind = file_kind(path)
         try:
             if encoding == "utf-16":
                 # BOM만 보고 UTF-16으로 해석하면 BOM 뒤에 둔 ASCII 비밀이 깨져 보이므로 UTF-8로도 검사한다.
+                # 바이너리 판정은 UTF-16 해석 결과로 한다(UTF-16 텍스트는 UTF-8로 보면 NUL이 많다).
                 with tempfile.SpooledTemporaryFile(max_size=8 << 20) as spool:
-                    self.scan_text_stream(_tee(stream, spool), encoding, file_kind(path), where, "", hits,
-                                          MAX_TEXT_BYTES)
+                    stats = self.scan_text_stream(_tee(stream, spool), encoding, kind, where, "", hits,
+                                                  MAX_TEXT_BYTES)
                     spool.seek(0)
-                    self.scan_text_stream(iter(lambda: spool.read(CHUNK_BYTES), b""), "utf-8", file_kind(path),
-                                          where, "", hits, MAX_TEXT_BYTES)
+                    self.scan_text_stream(iter(lambda: spool.read(CHUNK_BYTES), b""), "utf-8", kind, where, "",
+                                          hits, MAX_TEXT_BYTES)
             else:
-                self.scan_text_stream(stream, encoding, file_kind(path), where, "", hits, MAX_TEXT_BYTES)
+                stats = self.scan_text_stream(stream, encoding, kind, where, "", hits, MAX_TEXT_BYTES)
         except _TooLarge as error:
             hits.add(Hit("uninspected-content", f"{EXTRA_RULES['uninspected-content']} "
                          f"(>{MAX_TEXT_BYTES >> 20} MiB)", 0, f"{error.size} bytes"))
-        return hits
+            return
+        if stats.binary_at is not None:
+            hits.add(Hit("uninspected-binary", f"{EXTRA_RULES['uninspected-binary']}: 텍스트로 해석할 수 없는 내용"
+                         f"(약 {stats.binary_at} 바이트 이후)", 0, name))
+        elif stats.bad:
+            self.warnings.append(f"{where}: 잘못된 인코딩·제어 문자 {stats.bad}개를 대체 문자로 바꿔 검사함")
 
     def scan_archive(self, stream: Iterator[bytes], where: str, hits: set[Hit]) -> None:
         with tempfile.SpooledTemporaryFile(max_size=8 << 20) as spool:
@@ -443,7 +560,7 @@ class ContentScanner:
                 return
             if skipped:
                 hits.add(Hit("uninspected-binary", f"압축 내부 바이너리·암호화 항목 {len(skipped)}개 미검사"
-                             f"(예: {', '.join(skipped[:3])})", 0, skipped[0]))
+                             f"(예: {', '.join(skipped[:3])})", 0, f"{len(skipped)} entries"))
 
     def _scan_entries(self, archive: zipfile.ZipFile, where: str, hits: set[Hit], skipped: list[str]) -> None:
         entries = archive.infolist()
@@ -456,7 +573,9 @@ class ContentScanner:
                                   hits, MAX_ARCHIVE_ENTRY_BYTES)
         total = 0
         for info in entries:
+            # 항목 이름은 신뢰할 수 없는 입력이다. 출력할 때는 safe()가 비밀을 가리고 제어 문자를 이스케이프한다.
             name = info.filename
+            hits |= name_hits(name, name)
             if (name.startswith("/") or "\\" in name or re.match(r"[A-Za-z]:", name)
                     or ".." in PurePosixPath(name).parts):
                 hits.add(Hit("archive-unsafe-path", EXTRA_RULES["archive-unsafe-path"], 0, name, name))
@@ -478,15 +597,23 @@ class ContentScanner:
                     skipped.append(name)
                     continue
                 try:
-                    self.scan_text_stream(_prepend(head, chunks), encoding, "data", f"{where}!{name}", name,
-                                          hits, info.file_size)
+                    stats = self.scan_text_stream(_prepend(head, chunks), encoding, "data", f"{where}!{name}",
+                                                  name, hits, info.file_size)
                 except _TooLarge:
                     raise zipfile.BadZipFile("선언된 크기보다 큰 항목")
+                if stats.binary_at is not None:
+                    skipped.append(name)
 
 
 class _TooLarge(Exception):
     def __init__(self, size: int):
         self.size = size
+
+
+def _hashing(chunks: Iterable[bytes], hasher: "hashlib._Hash") -> Iterator[bytes]:
+    for chunk in chunks:
+        hasher.update(chunk)
+        yield chunk
 
 
 def _limited_chunks(handle: io.BufferedIOBase, declared: int) -> Iterator[bytes]:
@@ -515,6 +642,7 @@ def _prepend(head: bytes, rest: Iterator[bytes]) -> Iterator[bytes]:
 
 
 def _text_encoding(head: bytes) -> str | None:
+    """지원하는 텍스트 인코딩: UTF-8, UTF-8 BOM, BOM이 있는 UTF-16. 첫 구간에 NUL이 있으면 바이너리."""
     if head.startswith(codecs.BOM_UTF8):
         return "utf-8-sig"
     if head.startswith((codecs.BOM_UTF16_LE, codecs.BOM_UTF16_BE)):
@@ -700,9 +828,10 @@ class Report:
     findings: list[Finding] = field(default_factory=list)
     seen: set[tuple[str, str, str]] = field(default_factory=set)
 
-    def add(self, path: str, location: str, hits: Iterable[Hit]) -> None:
+    def add(self, path: str, location: str, hits: Iterable[Hit], digest: str | None = None) -> None:
+        """digest는 이 경로에서 검사한 내용의 SHA-256(인덱스·작업 트리·이력 중 실제로 읽은 바이트)."""
         for hit in sorted(hits, key=lambda h: (h.subpath, h.line, h.rule, h.value)):
-            if self.allowlist.allows(hit.rule, path):
+            if self.allowlist.allows(hit.rule, path, digest):
                 continue
             key = (hit.rule, path + "!" + hit.subpath, hit.value)
             if key in self.seen:
@@ -712,6 +841,7 @@ class Report:
             self.findings.append(Finding(hit.rule, hit.description, where, hit.line, hit.value))
 
     def check_name(self, path: str, location: str) -> None:
+        self.add(path, location, name_hits(path))
         name = PurePosixPath(path).name
         if name.endswith(SAFE_FILE_SUFFIXES):
             return
@@ -732,7 +862,7 @@ def scan_history(root: str, reader: BlobReader, scanner: ContentScanner, report:
               "--raw", "-z", "--no-renames", "--no-abbrev", "--no-color", "--diff-merges=first-parent",
               "--format=%x01%H")
     tokens = log.decode("utf-8", errors="surrogateescape").split("\0")
-    cache: dict[str, set[Hit] | None] = {}
+    cache: dict[str, ScanResult | None] = {}
     commit = ""
     blobs = 0
     index = 0
@@ -758,9 +888,9 @@ def scan_history(root: str, reader: BlobReader, scanner: ContentScanner, report:
             except InspectionError as error:
                 errors.append(f"{location}: {error}")
                 cache[new_oid] = None
-        hits = cache[new_oid]
-        if hits:
-            report.add(path, location, hits)
+        result = cache[new_oid]
+        if result:
+            report.add(path, location, result.hits, result.digest)
     return blobs
 
 
@@ -778,7 +908,7 @@ def main(argv: list[str] | None = None) -> int:
     try:
         root = git(os.getcwd(), "rev-parse", "--show-toplevel").decode().strip()
     except (RuntimeError, FileNotFoundError) as error:
-        print(f"오류: Git 저장소를 찾을 수 없습니다: {error}", file=sys.stderr)
+        print(safe(f"오류: Git 저장소를 찾을 수 없습니다: {error}"), file=sys.stderr)
         return 2
 
     selected = "paths" if args.paths else "all" if args.all else "history" if args.history else "staged"
@@ -798,7 +928,8 @@ def main(argv: list[str] | None = None) -> int:
             for entry in entries:
                 report.check_name(entry.path, entry.path)
                 try:
-                    report.add(entry.path, entry.path, scanner.scan(reader.open(entry.oid), entry.path, entry.path))
+                    result = scanner.scan(reader.open(entry.oid), entry.path, entry.path)
+                    report.add(entry.path, entry.path, result.hits, result.digest)
                 except InspectionError as error:
                     errors.append(f"{entry.path}: {error}")
             scope = f"스테이징 파일 {len(entries)}개"
@@ -816,9 +947,12 @@ def main(argv: list[str] | None = None) -> int:
                     if chunks is None:
                         if selected == "paths":
                             raise InspectionError("파일이 없음")
-                        warnings.append(f"{path}: 작업 트리에 없어 내용 검사를 건너뜀(이력 검사 대상)")
-                        continue
-                    report.add(path, path, scanner.scan(chunks, path, path))
+                        # 인덱스에는 있지만 작업 트리에 없음(스테이징하지 않은 삭제 등). 스테이징한 삭제는
+                        # 추적 목록에서 이미 빠지므로 여기에 오지 않는다.
+                        raise InspectionError("추적 중인 파일이 작업 트리에 없음 — 삭제했다면 `git rm`으로 "
+                                              "스테이징하고, 아니면 복원한 뒤 다시 검사하세요")
+                    result = scanner.scan(chunks, path, path)
+                    report.add(path, path, result.hits, result.digest)
                 except InspectionError as error:
                     errors.append(f"{path}: {error}")
     except (RuntimeError, InspectionError) as error:
@@ -827,13 +961,13 @@ def main(argv: list[str] | None = None) -> int:
         reader.close()
 
     for warning in warnings:
-        print(f"경고: {warning}", file=sys.stderr)
+        print(safe(f"경고: {warning}"), file=sys.stderr)
     for finding in report.findings:
-        print(finding.render())
+        print(safe(finding.render()))
     sys.stdout.flush()
     if errors:
         for error in errors:
-            print(f"오류: {error}", file=sys.stderr)
+            print(safe(f"오류: {error}"), file=sys.stderr)
         print(f"\n검사를 완료하지 못했습니다 ({scope}). 검사하지 못한 내용이 있으므로 통과로 보지 않습니다.",
               file=sys.stderr)
         return 2

@@ -37,7 +37,8 @@
   - ZIP 안의 이미지·OLE 개체·암호화 항목, 손상된 ZIP(`invalid/truncated.*`), 바이너리 HWP는 내용을
     검사하지 못해 `uninspected-binary`로 보고하고 커밋을 막습니다.
 - 검사하지 못한 픽스처는 직접 검토한 뒤에만 `.sensitive-info-allowlist`에 파일 단위로 등록합니다.
-  예: `uninspected-binary tests/fixtures/hwp/basic-ko.hwp -- 프로젝트에서 생성, 본문·속성 검토 완료(PROVENANCE.md)`.
+  예: `uninspected-binary tests/fixtures/hwp/basic-ko.hwp sha256=<검토한 내용의 해시> -- 프로젝트에서 생성, 본문·속성 검토 완료(PROVENANCE.md)`.
+  예외는 정확한 경로와 내용 해시에만 적용되므로 픽스처를 다시 만들면 다시 검토해야 합니다.
   디렉터리 전체나 확장자 전체를 허용하는 넓은 예외는 쓰지 않습니다.
 - 의도적으로 깨진 문서와 암호화 문서는 내용 검사가 불가능하므로 생성 스크립트와 원본 픽스처를 함께 두고,
   깨진 파일은 원본에서 결정적으로 만들어지는지 리뷰에서 확인합니다.
