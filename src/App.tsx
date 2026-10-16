@@ -18,7 +18,7 @@ import { useViewportWidth } from "./hooks/useViewportWidth";
 import type { Language, Message } from "./language";
 import { LanguageProvider, useTranslation } from "./language/LanguageContext";
 import { canPersist, createLocalStorageStore, loadSettings, RESTORE_NOTICE, type SettingsStore } from "./settings/settings";
-import { usePersistedSettings } from "./settings/usePersistedSettings";
+import { usePersistedSettings, type NotSavedReason } from "./settings/usePersistedSettings";
 
 const defaultStore = createLocalStorageStore();
 
@@ -40,16 +40,25 @@ export default function App({ initialState, initialLanguage, settingsStore = def
   // 덮어쓰지 않는다). 첫 실행과 정상 복원은 "준비됨".
   const [message, setMessage] = useState<Message>(() => ({ key: RESTORE_NOTICE[boot.status] ?? "status.ready" }));
 
-  // 저장할 수 없는 상태(미지원 버전·읽기 실패)에서 설정을 바꾸면 그 이유를, 쓰기 실패면 저장 실패를 알린다.
-  const persist = canPersist(boot.status);
-  const notSavedKey = (!persist && RESTORE_NOTICE[boot.status]) || "settings.saveFailed";
-  const onNotSaved = useCallback(() => setMessage({ key: notSavedKey }), [notSavedKey]);
+  // 저장하지 못하면 이유를 알린다: 쓰기 실패, 실행 중 외부 변경(충돌), 시작할 때부터 쓰지 않는 상태(미지원 버전·읽기 실패).
+  const blockedNotice = RESTORE_NOTICE[boot.status] ?? "settings.saveFailed";
+  const onNotSaved = useCallback(
+    (reason: NotSavedReason) => setMessage({
+      key: reason === "conflict" ? "settings.conflict" : reason === "blocked" ? blockedNotice : "settings.saveFailed",
+    }),
+    [blockedNotice],
+  );
   // 다시 저장되면 남아 있는 저장 실패 알림만 지운다. 그 사이에 나온 다른 알림은 그대로 둔다.
   const onRecovered = useCallback(
     () => setMessage((current) => (current.key === "settings.saveFailed" ? { key: "status.ready" } : current)),
     [],
   );
-  usePersistedSettings(settingsStore, { language, layout }, { enabled: persist, onNotSaved, onRecovered });
+  usePersistedSettings(settingsStore, { language, layout }, {
+    baseline: boot.raw,
+    enabled: canPersist(boot.status),
+    onNotSaved,
+    onRecovered,
+  });
 
   // 화면에 그리기 전에 반영해 테마·언어가 바뀌는 깜박임을 막는다.
   useLayoutEffect(() => {

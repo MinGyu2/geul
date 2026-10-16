@@ -12,7 +12,9 @@
 검사 항목: 앱 시작, 6영역 표시와 배치 순서, 패널 숨기기·복원과 초점, 리본 접기(버튼·Ctrl+F1),
 패널 크기 조절(키보드·포인터), 지원하지 않는 명령의 비활성 동작, 테마 전환, 최소 창 크기에서의 배치,
 Tab 키로 닿는 주요 컨트롤, 설정 저장 후 앱 프로세스를 끝내고 다시 띄워 언어·화면 설정이 복원되는지(T005),
-더 새로운 버전의 저장값을 화면 설정 변경과 재시작 뒤에도 덮어쓰지 않는지(T005 리뷰 수정).
+더 새로운 버전의 저장값을 화면 설정 변경과 재시작 뒤에도 덮어쓰지 않는지(T005 리뷰 수정), 실행 중 같은
+프로세스의 localStorage에서 바뀐 저장값을 다음 화면 설정 변경이 덮어쓰지 않는지(T005 2차 안정화).
+동시에 실행한 다른 geul 프로세스의 변경은 WebKitGTK에서 서로 보이지 않아 감지할 수 없으므로 검사하지 않는다.
 시나리오마다 빈 임시 XDG_DATA_HOME을 써서 첫 실행 상태로 시작하며 사용자의 실제 앱 데이터는 건드리지 않는다.
 실패하면 종료 코드 1.
 """
@@ -25,6 +27,7 @@ import contextlib
 import json
 import os
 import shutil
+import signal
 import socket
 import subprocess
 import sys
@@ -139,6 +142,7 @@ return out;
 
 SKIPPED: list[str] = []
 APP = ""
+DRIVER_LOG: Path | None = None
 
 
 def check(results: list[str], name: str, condition: bool, detail: str = "") -> None:
@@ -301,7 +305,17 @@ def wait_app_exit(results: list[str], name: str) -> None:
         deadline = time.time() + 15
         while app_processes() and time.time() < deadline:
             time.sleep(0.2)
-        check(results, name, not app_processes())
+        remaining = app_processes()
+        check(results, name, not remaining, " ".join(f"pid={pid}({process_state(pid)})" for pid in remaining))
+
+
+def process_state(pid: int) -> str:
+    """실패 진단용: /proc/<pid>/stat의 상태와 부모 PID."""
+    try:
+        fields = Path(f"/proc/{pid}/stat").read_text().rsplit(")", 1)[1].split()
+        return f"state={fields[0]} ppid={fields[1]}"
+    except (OSError, IndexError):
+        return "사라짐"
 
 
 def run_restart(start_session, results: list[str]) -> None:
@@ -403,6 +417,36 @@ def run_future_version(start_session, results: list[str]) -> None:
         driver.quit()
 
 
+def run_external_change(start_session, results: list[str]) -> None:
+    """T005 2차 안정화: 실행 중 바뀐 저장값(같은 WebView 저장소에서 보이는 변경)을 덮어쓰지 않는지 확인한다."""
+    stored = "return localStorage.getItem('geul.settings')"
+    driver = start_session()
+    try:
+        wait_until(driver, "return document.querySelector('footer.statusbar') !== null", timeout=30)
+        driver.click('button[aria-label="테마: 시스템"]')  # → 밝게, 정상 저장
+        first = json.loads(driver.js(stored) or "null")
+        check(results, "외부 변경 검사: 앱이 먼저 정상 저장", first is not None and first["layout"]["theme"] == "light",
+              json.dumps(first))
+        driver.js("localStorage.setItem('geul.settings', arguments[0])", FUTURE_SETTINGS)  # 다른 쪽이 씀
+        driver.click('select.titlebar__language option[value="en"]')
+        wait_until(driver, "return document.documentElement.lang === 'en'", timeout=5)
+        driver.click('button[aria-label="Theme: Light"]')  # → 어둡게
+        status = driver.js("return document.querySelector('.statusbar__message').textContent")
+        check(results, "외부 변경 검사: 바뀐 저장값을 덮어쓰지 않고 충돌을 알림",
+              driver.js(stored) == FUTURE_SETTINGS and "changed elsewhere" in status
+              and driver.js("return document.documentElement.dataset.theme") == "dark", status)
+    finally:
+        driver.quit()
+    wait_app_exit(results, "외부 변경 검사: 앱 프로세스가 끝남")
+
+    driver = start_session()
+    try:
+        wait_until(driver, "return document.querySelector('footer.statusbar') !== null", timeout=30)
+        check(results, "외부 변경 검사: 재시작 후에도 바뀐 저장값이 바이트 그대로", driver.js(stored) == FUTURE_SETTINGS)
+    finally:
+        driver.quit()
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--app", required=True)
@@ -410,10 +454,12 @@ def main() -> int:
     parser.add_argument("--port", type=int, default=4444)
     parser.add_argument("--screenshots", type=Path)
     parser.add_argument("--skip-restart", action="store_true", help="설정 저장 후 재시작 검사를 건너뛴다")
+    parser.add_argument("--driver-log", type=Path, help="tauri-driver·WebKitWebDriver 출력을 덧붙여 쓸 파일(진단용)")
     args = parser.parse_args()
 
-    global APP
+    global APP, DRIVER_LOG
     APP = app = os.path.abspath(args.app)
+    DRIVER_LOG = args.driver_log
     if not os.access(app, os.X_OK):
         print(f"앱 실행 파일이 없습니다: {args.app}", file=sys.stderr)
         return 1
@@ -443,6 +489,9 @@ def main() -> int:
             with tempfile.TemporaryDirectory(prefix="geul-e2e-") as data_home:
                 with tauri_driver(args.driver, args.port, data_home) as start_session:
                     run_future_version(lambda: start_session(), results)
+            with tempfile.TemporaryDirectory(prefix="geul-e2e-") as data_home:
+                with tauri_driver(args.driver, args.port, data_home) as start_session:
+                    run_external_change(lambda: start_session(), results)
         else:
             SKIPPED.append("설정 저장 후 재시작 검사(--skip-restart)")
         print(f"\nTauri 스모크 테스트 통과: {len(results)}개 항목, 건너뜀 {len(SKIPPED)}개")
@@ -455,8 +504,8 @@ def main() -> int:
 @contextlib.contextmanager
 def tauri_driver(path: str, port: int, data_home: str):
     environment = {**os.environ, "XDG_DATA_HOME": data_home}
-    process = subprocess.Popen([path, "--port", str(port)], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
-                               env=environment)
+    log = open(DRIVER_LOG, "ab") if DRIVER_LOG else subprocess.DEVNULL
+    process = subprocess.Popen([path, "--port", str(port)], stdout=log, stderr=subprocess.STDOUT, env=environment)
     try:
         wait_port(port)
 
@@ -471,6 +520,40 @@ def tauri_driver(path: str, port: int, data_home: str):
             process.wait(timeout=10)
         except subprocess.TimeoutExpired:
             process.kill()
+        # 앱과 WebKit 보조 프로세스가 끝날 때까지 기다린다. 기다리지 않으면 다음 시나리오의 프로세스 종료 검사나
+        # 임시 데이터 디렉터리 삭제가 아직 저장소를 쓰는 프로세스와 겹친다. 그래도 남으면(세션이 비정상으로 끝나 앱이
+        # 고아가 된 경우) 이 시나리오의 임시 XDG_DATA_HOME을 가진 프로세스만 끝내고, 앞선 오류가 없으면 실패로 보고한다.
+        if DRIVER_LOG:
+            log.close()
+        remaining = wait_processes_gone(data_home, timeout=30)
+        if remaining:
+            detail = " ".join(f"pid={pid}({process_state(pid)})" for pid in remaining)
+            for pid in remaining:
+                with contextlib.suppress(OSError):
+                    os.kill(pid, signal.SIGTERM)
+            wait_processes_gone(data_home, timeout=10)
+            if sys.exc_info()[0] is None:
+                raise Failure(f"시나리오 종료 후에도 남은 프로세스(종료 요청함): {detail}")
+
+
+def wait_processes_gone(data_home: str, timeout: float) -> list[int]:
+    """이 시나리오의 XDG_DATA_HOME을 물려받은 프로세스(tauri-driver·앱·WebKit 보조 프로세스)가 끝나기를 기다린다."""
+    if not sys.platform.startswith("linux"):
+        return []
+    marker = f"XDG_DATA_HOME={data_home}".encode() + b"\0"
+    deadline = time.time() + timeout
+    while True:
+        pids = []
+        for entry in Path("/proc").iterdir():
+            if entry.name.isdigit():
+                try:
+                    if marker in (entry / "environ").read_bytes():
+                        pids.append(int(entry.name))
+                except OSError:
+                    continue
+        if not pids or time.time() >= deadline:
+            return pids
+        time.sleep(0.2)
 
 
 if __name__ == "__main__":

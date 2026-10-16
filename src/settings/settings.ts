@@ -10,6 +10,7 @@
 // - 읽을 때 항목별로 검사한다. 잘못된 항목만 기본값으로 바꾸고 나머지 올바른 항목은 유지한다.
 // - 더 새로운 버전(정수 version > 1)의 저장값과 읽지 못한 저장소는 덮어쓰지 않는다(canPersist). 이번 실행에서
 //   바꾼 설정은 메모리에만 적용된다. 이전 버전으로 바꾸거나 지우는 작업은 별도로 정의하기 전에는 하지 않는다.
+// - 진단 문구(issues)에는 항목 이름과 고정 문구만 넣는다. 저장된 값(버전 번호 포함)과 예외 문구는 넣지 않는다.
 import { DEFAULT_LANGUAGE, isLanguage, type Language, type MessageKey } from "../language";
 import { initialLayout, PANEL_LIMITS, THEMES, ZOOM_STEPS, type LayoutState, type Theme } from "../hooks/layoutState";
 
@@ -68,7 +69,7 @@ export function parseSettings(raw: string | null): ParsedSettings {
   }
   if (!isRecord(data)) return malformed("객체가 아님");
   if (Number.isInteger(data.version) && (data.version as number) > SETTINGS_VERSION) {
-    return { settings: DEFAULT_SETTINGS, status: "unsupported", issues: [`지원하지 않는 새 버전 ${String(data.version)}`] };
+    return { settings: DEFAULT_SETTINGS, status: "unsupported", issues: ["지원하지 않는 새 버전"] };
   }
   if (data.version !== SETTINGS_VERSION) return malformed("version 값이 올바르지 않음");
 
@@ -89,8 +90,11 @@ export function parseSettings(raw: string | null): ParsedSettings {
       return fallback;
     }
     const { min, max } = PANEL_LIMITS[name];
+    const normalized = Math.round(Math.min(max, Math.max(min, value)));
+    // 값이 바뀌었으면 한 번만 보고한다(범위 보정과 반올림이 함께 필요해도 하나).
     if (value < min || value > max) issues.push(`${name}Width 범위 밖(${min}~${max})으로 보정`);
-    return Math.round(Math.min(max, Math.max(min, value)));
+    else if (normalized !== value) issues.push(`${name}Width 정수로 반올림`);
+    return normalized;
   };
 
   const layout = isRecord(data.layout) ? data.layout : {};
@@ -165,13 +169,21 @@ export function createLocalStorageStore(key = SETTINGS_KEY): SettingsStore {
   };
 }
 
+export interface LoadedSettings extends ParsedSettings {
+  /**
+   * 시작할 때 저장소에 있던 그대로의 문자열(없으면 null). 이 앱이 저장소에 있다고 확인한 값이며, 쓰기 전 비교의
+   * 기준이 된다. 검사·보정한 settings와 같다고 가정하지 않는다. unreadable이면 null(쓰지 않으므로 쓰이지 않음).
+   */
+  raw: string | null;
+}
+
 /** 저장소에서 읽어 검사한다. 읽기 예외는 unreadable이 되며 앱을 멈추지 않는다(예외 내용은 담지 않는다). */
-export function loadSettings(store: SettingsStore): ParsedSettings {
+export function loadSettings(store: SettingsStore): LoadedSettings {
   let raw: string | null;
   try {
     raw = store.read();
   } catch {
-    return { settings: DEFAULT_SETTINGS, status: "unreadable", issues: ["저장소를 읽지 못함"] };
+    return { settings: DEFAULT_SETTINGS, status: "unreadable", issues: ["저장소를 읽지 못함"], raw: null };
   }
-  return parseSettings(raw);
+  return { ...parseSettings(raw), raw };
 }

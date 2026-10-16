@@ -151,3 +151,68 @@ describe("loadSettings", () => {
     expect(loadSettings(createLocalStorageStore()).status).toBe("unreadable");
   });
 });
+
+// ---- 2차 안정화(T005): 너비 정규화 분류(C), 진단 문구 정책(D) ----
+
+describe("너비 정규화(C)", () => {
+  const widths = (navigationWidth: unknown, propertiesWidth: unknown = PANEL_LIMITS.properties.initial) =>
+    parseSettings(stored({}, { navigationWidth, propertiesWidth }));
+
+  it("정수이고 범위 안이면 그대로 복원한다", () => {
+    const result = widths(240, 300);
+    expect(result.settings.layout).toMatchObject({ navigationWidth: 240, propertiesWidth: 300 });
+    expect(result.status).toBe("restored");
+    expect(result.issues).toEqual([]);
+  });
+
+  it("값이 바뀌면(반올림·범위 보정·기본값) recovered이고 항목마다 진단은 하나다", () => {
+    const cases: [unknown, unknown, number, number][] = [
+      [240.5, 280, 241, 280],
+      [420.4, 280, 420, 280],
+      [240, 300.6, 240, 301],
+      [10, 280, PANEL_LIMITS.navigation.min, 280],
+      [9000, 280, PANEL_LIMITS.navigation.max, 280],
+      [9000.7, 280, PANEL_LIMITS.navigation.max, 280], // 반올림과 범위 보정이 함께 필요해도 진단 하나
+      [240, 100.2, 240, PANEL_LIMITS.properties.min],
+      [240, 9999, 240, PANEL_LIMITS.properties.max],
+      ["300", 280, PANEL_LIMITS.navigation.initial, 280],
+      [240, null, 240, PANEL_LIMITS.properties.initial],
+    ];
+    for (const [nav, props, expectedNav, expectedProps] of cases) {
+      const result = widths(nav, props);
+      const label = JSON.stringify([nav, props]);
+      expect(result.settings.layout.navigationWidth, label).toBe(expectedNav);
+      expect(result.settings.layout.propertiesWidth, label).toBe(expectedProps);
+      expect(result.status, label).toBe("recovered");
+      expect(result.issues, label).toHaveLength(1);
+    }
+    const nonFinite = parseSettings(stored().replace('"navigationWidth":240', '"navigationWidth":1e999'));
+    expect(nonFinite.settings.layout.navigationWidth).toBe(PANEL_LIMITS.navigation.initial);
+    expect(nonFinite.status).toBe("recovered");
+    expect(nonFinite.issues).toHaveLength(1);
+  });
+});
+
+describe("진단 문구 정책(D): 저장된 값을 담지 않는다", () => {
+  it("미지원 정수 버전·아주 큰 버전·표식이 든 문자열 버전·깨진 JSON에서 저장값이 진단에 나오지 않는다", () => {
+    const marker = "synthetic-stored-marker";
+    const cases = [
+      stored({ version: 7 }),
+      stored({ version: 1e21 }),
+      stored({ version: `${marker}-2` }),
+      `{"version":1,"language":"${marker}`,
+      stored({ language: marker }, { theme: marker }),
+    ];
+    for (const raw of cases) {
+      const text = parseSettings(raw).issues.join(" ");
+      expect(text, raw).not.toContain(marker);
+      expect(text, raw).not.toMatch(/\d/); // 버전 번호 등 저장된 숫자도 넣지 않는다
+    }
+    expect(parseSettings(stored({ version: 1e21 })).status).toBe("unsupported");
+  });
+
+  it("읽기 예외 문구는 진단에 담지 않는다", () => {
+    const failing = { read: () => { throw new Error("synthetic-read-error-marker"); }, write: () => true };
+    expect(loadSettings(failing).issues.join(" ")).not.toContain("synthetic");
+  });
+});

@@ -151,5 +151,6 @@
   "settings.restore.recovered": "Some saved settings were invalid and were reset to defaults.",
   "settings.restore.malformed": "Saved settings could not be read, so defaults are used.",
   "settings.restore.unsupported": "Saved settings use a newer format and were left unchanged. Changes apply to this session only.",
-  "settings.restore.unreadable": "Settings storage could not be accessed, so defaults are used. Changes apply to this session only."
+  "settings.restore.unreadable": "Settings storage could not be accessed, so defaults are used. Changes apply to this session only.",
+  "settings.conflict": "Saved settings were changed elsewhere and were left unchanged. Changes apply to this session only."
 }
