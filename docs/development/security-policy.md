@@ -65,7 +65,9 @@ pre-push 단계는 푸시하는 커밋 범위만이 아니라 **모든 ref의 �
   나누어 검사). 256 MiB를 넘는 텍스트는 `uninspected-content`로 보고하고 실패합니다.
 - 지원하는 텍스트 인코딩은 UTF-8, UTF-8 BOM, BOM이 있는 UTF-16입니다. UTF-16 BOM이 있는 파일은 UTF-16과
   UTF-8로 모두 검사합니다.
-- 바이너리 판정은 첫 8 KiB만 보지 않고 내용 전체를 64 KiB 구간으로 나눠 봅니다. UTF-8 텍스트에 NUL이 있거나,
+- PNG·JPEG·GIF·PDF·HWP 3.0·OLE(HWP 5.0)·압축·글꼴·실행 파일처럼 알려진 시작 바이트를 가진 파일은 내용과
+  관계없이 바이너리로 판정합니다.
+- 그 밖의 바이너리 판정은 첫 8 KiB만 보지 않고 내용 전체를 64 KiB 구간으로 나눠 봅니다. UTF-8 텍스트에 NUL이 있거나,
   한 구간에서 잘못된 인코딩·제어 문자(탭·줄바꿈·CR·VT·FF·ESC 제외)가 10%를 넘거나(최소 8개), 파일 전체에서
   1%를 넘으면 `uninspected-binary`로 실패합니다. 텍스트 앞부분 뒤에 붙은 바이너리도 이렇게 찾습니다.
 - 그보다 적은 잘못된 바이트는 대체 문자로 바꿔 계속 검사하고 경고로 개수를 알립니다(조용히 버리지 않음).
@@ -144,37 +146,53 @@ PRE_COMMIT=<pre-commit 경로> GITLEAKS=<gitleaks 경로> tests/security/test-pr
 이 항목은 원격 설정이므로 로컬 작업에서 변경하거나 검증할 수 없습니다. 적용 여부는 tasks.md T019의
 원격 공개 게이트 항목으로 확인합니다.
 
-### 현재 상태 (2026-10-16, GitHub 공개 API 읽기 전용 조회)
+### 현재 상태 (2026-10-16 두 번째 조회, GitHub 공개 API 읽기 전용, 인증 없음)
 
-| 항목 | 상태 |
-|------|------|
-| 저장소 공개 여부 | public |
-| 기본 브랜치 | `master` (`GET /repos/MinGyu2/geul` → `default_branch`) |
-| 원격 `master` | `455c985` |
-| 브랜치 보호 | 없음 (`GET /repos/MinGyu2/geul/branches/master` → `protected: false`) |
-| 저장소 ruleset | 없음 (`GET .../rulesets`, `GET .../rules/branches/master` → `[]`) |
-| `security-scan` 실행 | 커밋 `455c985` push 이벤트 1회, 성공 (check run 이름 `민감정보 검사`) |
+| 항목 | 상태 | 근거 |
+|------|------|------|
+| 저장소 공개 여부 | public | `GET /repos/MinGyu2/geul` → `visibility` |
+| 기본 브랜치 | `master` | 같은 응답의 `default_branch` |
+| 원격 `master` | `bc9e593` | `GET .../branches/master`, `git ls-remote origin` |
+| 브랜치 보호 | 없음 | `GET .../branches/master` → `protected: false`, 필수 상태 검사 `enforcement_level: off` |
+| 저장소 ruleset | 없음 | `GET .../rulesets`, `GET .../rules/branches/master` → `[]` |
+| 원격 워크플로 | `security-scan`만 존재 | `GET .../actions/workflows` |
+| `security-scan` 실행 | `455c985`, `bc9e593` push 각 1회 성공 | `GET .../actions/runs` |
+| 확인된 check run 이름 | `민감정보 검사` (앱 `github-actions`) | `GET .../commits/bc9e593…/check-runs` |
+| `quality` 워크플로 | 원격에 없음(로컬 커밋, 푸시 전) — check run 이름 미확인 | — |
+| Secret scanning·push protection, Actions 기본 토큰 권한 | 확인 불가(관리자 인증 필요) | `GET .../branches/master/protection` → 401, `security_and_analysis` 필드 미노출 |
 
 기본 브랜치 이름은 바뀔 수 있으므로 설정 전에 다시 확인합니다:
 `git ls-remote --symref origin HEAD` 또는 `gh repo view --json defaultBranchRef`.
 
 ### 관리자 작업 체크리스트
 
-1. 기본 브랜치(현재 `master`)에 ruleset 또는 브랜치 보호 규칙을 만듭니다.
-   - 병합 전 pull request 필수
-   - 필수 상태 검사: `민감정보 검사` (GitHub Actions, 워크플로 `security-scan`의 job 이름)
-   - 병합 전 브랜치 최신화 요구(Require branches to be up to date)
-   - 강제 푸시 금지, 브랜치 삭제 금지
-   - 관리자 우회 허용 안 함(bypass 목록 비움)
-2. Settings → Code security에서 Secret scanning과 Push protection을 켭니다(공개 저장소에서 사용 가능).
-3. Settings → Actions → General에서 Workflow permissions를 "Read repository contents"로 둡니다.
-4. 적용 후 확인(읽기 전용):
-   - `GET /repos/MinGyu2/geul/rules/branches/master`에 `pull_request`, `required_status_checks`
-     (`민감정보 검사`), `non_fast_forward`, `deletion` 규칙이 보이는지
-   - 테스트 브랜치에서 가짜 비밀을 담은 PR을 열어 `민감정보 검사`가 실패하고 병합 버튼이 막히는지
-     (가짜 비밀은 `tests/security/simulate-leak-response.sh`처럼 실행 시 무작위로 만든 값을 사용하고,
-     확인 후 브랜치를 삭제합니다)
-5. 결과를 tasks.md T019 검증 기록에 남깁니다.
+아래는 모두 저장소 관리자 권한이 필요한 원격 설정입니다. 이 작업 세션에서는 실행하지 않았습니다.
+
+1. **기본 브랜치 보호**: Settings → Rules → Rulesets에서 대상 브랜치를 기본 브랜치(현재 `master`,
+   ruleset 대상 `~DEFAULT_BRANCH`)로 하는 branch ruleset을 만들고 Enforcement를 Active로 둡니다.
+2. **PR 필수**: "Require a pull request before merging"을 켭니다(개인 저장소라면 필요한 승인 수 0도 가능).
+3. **보안 검사 필수**: "Require status checks to pass"에 `민감정보 검사`(GitHub Actions)를 추가하고
+   "Require branches to be up to date before merging"을 켭니다. 이 이름은 실제 실행에서 확인한 값입니다.
+4. **품질 검사 필수(조건부)**: `quality` 워크플로를 푸시한 뒤 실제 실행이 성공했고 check run 이름이 보이면
+   필수 상태 검사에 추가합니다. 워크플로의 job 이름은 `프런트엔드 검사`, `Rust 검사`이지만 GitHub에서
+   실행된 적이 없으므로 **아직 확인된 이름이 아닙니다**. 실행 전에는 목록에 나타나지 않아 선택할 수 없습니다.
+5. **강제 푸시 금지**: "Block force pushes"(`non_fast_forward`)를 켭니다.
+6. **삭제 금지**: "Restrict deletions"(`deletion`)를 켭니다.
+7. **우회 없음**: Bypass list를 비워 관리자도 규칙을 따르게 합니다. 개인 계정 저장소에서 bypass 대상
+   선택지는 GitHub 요금제·저장소 종류에 따라 다를 수 있으므로 설정 화면에서 확인합니다.
+8. **비밀 노출 방지**: Settings → Code security(또는 Security)에서 Secret scanning과 Push protection을
+   켭니다. 공개 저장소에서는 무료로 제공되지만 메뉴 위치와 이름은 GitHub 화면에서 확인합니다.
+9. **Actions 토큰 권한 제한**: Settings → Actions → General → Workflow permissions를 "Read repository
+   contents and packages permissions"로 두고, "Allow GitHub Actions to create and approve pull requests"를
+   끕니다. 워크플로 파일도 `permissions: contents: read`만 선언합니다.
+10. **적용 후 확인(읽기 전용)**:
+    - `GET /repos/MinGyu2/geul/rules/branches/master`에 `pull_request`, `required_status_checks`
+      (`민감정보 검사`), `non_fast_forward`, `deletion` 규칙이 보이는지
+    - `GET /repos/MinGyu2/geul/branches/master`의 `protected`가 `true`인지
+    - 테스트 브랜치에서 가짜 비밀을 담은 PR을 열어 `민감정보 검사`가 실패하고 병합 버튼이 막히는지
+      (가짜 비밀은 `tests/security/simulate-leak-response.sh`처럼 실행 시 무작위로 만든 값을 사용하고,
+      확인 후 브랜치를 삭제합니다)
+    - 결과를 tasks.md T019 검증 기록의 원격 공개 게이트(R) 항목에 남깁니다.
 
 ## 6. 오탐 예외 절차
 

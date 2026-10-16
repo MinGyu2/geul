@@ -55,7 +55,10 @@ npm test                   # 컴포넌트·상호작용 테스트(Vitest + Testi
 npm run build              # 프런트엔드 빌드(dist/)
 (cd src-tauri && cargo fmt --check && cargo clippy --locked -- -D warnings)
 
+# CI(.github/workflows/quality.yml)도 위 프런트엔드·Rust 검사를 같은 명령으로 실행한다.
+
 # 실제 앱 스모크 테스트(Linux): tauri-driver와 WebKitWebDriver, 그래픽 세션 필요
+# 타일링 창 관리자에서는 최소 창 검사가 건너뛰어지므로 헤드리스 weston에서 실행한다(스크립트 설명 참고)
 npm run tauri build -- --debug --no-bundle
 python3 tests/e2e/tauri_smoke.py --app src-tauri/target/debug/geul --driver <tauri-driver 경로>
 ```
