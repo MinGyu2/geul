@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useReducer, useRef, useState, type CSSProperties } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useReducer, useRef, useState, type CSSProperties } from "react";
 import type { CommandContext } from "./commands/commands";
 import { Editor } from "./components/Editor/Editor";
 import { NavigationPanel } from "./components/NavigationPanel/NavigationPanel";
@@ -9,31 +9,67 @@ import { StatusBar } from "./components/StatusBar/StatusBar";
 import { TitleBar } from "./components/TitleBar/TitleBar";
 import {
   computePanelLayout,
-  initialLayout,
   layoutReducer,
   PANEL_LIMITS,
   type LayoutState,
   type SidePanel,
 } from "./hooks/layoutState";
 import { useViewportWidth } from "./hooks/useViewportWidth";
-import { t } from "./language";
+import type { Language, Message } from "./language";
+import { LanguageProvider, useTranslation } from "./language/LanguageContext";
+import { createLocalStorageStore, loadSettings, type SettingsStore } from "./settings/settings";
+import { usePersistedSettings } from "./settings/usePersistedSettings";
+
+const defaultStore = createLocalStorageStore();
 
 interface AppProps {
+  /**
+   * 테스트 주입용. 주면 저장된 값보다 우선한다(배치·언어 각각). 바뀐 값은 settingsStore에 저장된다.
+   */
   initialState?: LayoutState;
+  initialLanguage?: Language;
+  settingsStore?: SettingsStore;
 }
 
-export default function App({ initialState = initialLayout }: AppProps) {
-  const [layout, dispatch] = useReducer(layoutReducer, initialState);
-  const [message, setMessage] = useState(() => t("status.ready"));
+export default function App({ initialState, initialLanguage, settingsStore = defaultStore }: AppProps) {
+  // 처음 그리기 전에 한 번만 읽는다. 저장된 언어·배치로 첫 화면을 그리므로 기본값이 잠깐 보이지 않는다.
+  const [boot] = useState(() => loadSettings(settingsStore));
+  const [language, setLanguage] = useState<Language>(initialLanguage ?? boot.settings.language);
+  const [layout, dispatch] = useReducer(layoutReducer, initialState ?? boot.settings.layout);
+  const [message, setMessage] = useState<Message>({ key: "status.ready" });
+
+  const onWriteFailed = useCallback(() => setMessage({ key: "settings.saveFailed" }), []);
+  usePersistedSettings(settingsStore, { language, layout }, onWriteFailed);
+
+  // 화면에 그리기 전에 반영해 테마·언어가 바뀌는 깜박임을 막는다.
+  useLayoutEffect(() => {
+    document.documentElement.dataset.theme = layout.theme;
+  }, [layout.theme]);
+  useLayoutEffect(() => {
+    document.documentElement.lang = language;
+  }, [language]);
+
+  return (
+    <LanguageProvider language={language} onLanguageChange={setLanguage}>
+      <Workspace layout={layout} dispatch={dispatch} message={message} notify={setMessage} />
+    </LanguageProvider>
+  );
+}
+
+interface WorkspaceProps {
+  layout: LayoutState;
+  dispatch: CommandContext["dispatch"];
+  message: Message;
+  notify: (message: Message) => void;
+}
+
+function Workspace({ layout, dispatch, message, notify }: WorkspaceProps) {
+  const { t } = useTranslation();
   const viewportWidth = useViewportWidth();
   const navigationToggleRef = useRef<HTMLButtonElement>(null);
   const propertiesToggleRef = useRef<HTMLButtonElement>(null);
 
-  const context = useMemo<CommandContext>(() => ({ layout, dispatch, notify: setMessage }), [layout]);
-
-  useEffect(() => {
-    document.documentElement.dataset.theme = layout.theme;
-  }, [layout.theme]);
+  const context = useMemo<CommandContext>(() => ({ layout, dispatch, notify }), [layout, dispatch, notify]);
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
@@ -44,7 +80,7 @@ export default function App({ initialState = initialLayout }: AppProps) {
     };
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, []);
+  }, [dispatch]);
 
   // 패널 안의 닫기 버튼으로 숨기면 초점이 사라지므로 제목 표시줄의 해당 토글로 옮긴다.
   const closePanel = (panel: SidePanel) => {

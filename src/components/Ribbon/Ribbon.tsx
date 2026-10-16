@@ -2,7 +2,7 @@ import { useLayoutEffect, useRef, useState } from "react";
 import { Icon } from "../../assets/icons";
 import type { CommandContext } from "../../commands/commands";
 import { useRovingFocus } from "../../hooks/useRovingFocus";
-import { t } from "../../language";
+import { useTranslation } from "../../language/LanguageContext";
 import { RIBBON_TABS } from "../../ribbon/definitions";
 import { CommandButton } from "../CommandButton/CommandButton";
 
@@ -13,6 +13,7 @@ interface RibbonProps {
 const PANEL_ID = "ribbon-panel";
 
 export function Ribbon({ context }: RibbonProps) {
+  const { t } = useTranslation();
   const { layout, dispatch } = context;
   const collapsed = layout.ribbonCollapsed;
   const [activeId, setActiveId] = useState("home");

@@ -25,6 +25,11 @@ WordCraft는 DOCX, rhwp는 HWP/HWPX 전용 엔진으로 독립 관리한다. Tau
 Tauri desktop host (OS file dialogs / permissions / safe file writes)
   React UI: TitleBar | Ribbon | NavigationPanel | EditorSurface | PropertiesPanel | StatusBar
   LanguageManager: locale JSON; UI language independent of document text
+    (T005: App이 언어 상태를 소유하고 LanguageProvider가 `t()`를 내려 줌. 상태에는 번역 문자열 대신 Message(키+변수) 저장.
+     en.json이 기준 사전이며 빠지거나 빈 번역은 영어로, 영어에도 없으면 키를 표시하고 개발 빌드에서 경고)
+  SettingsStore: WebView localStorage `geul.settings` (version 1: language, 패널 표시·선호 너비, 리본, 테마, 배율).
+    처음 그리기 전에 읽어 항목별 검사(잘못된 항목만 기본값), 바뀔 때만 저장(시작 시 쓰지 않음),
+    저장 실패 시 이번 실행만 적용하고 상태 표시줄에 1회 알림. 창 크기로 줄어든 실제 너비는 저장하지 않음
   CommandRegistry: stable command ids, per-engine capability, shortcut, selected-state
   DocumentController: session id, active format, revision, dirty flag, file fingerprint
     +-- RhwpAdapter --> rhwp Core (HWP/HWPX, independent model + render surface)
@@ -100,10 +105,11 @@ geul/
 │   ├── components/{TitleBar,Ribbon,NavigationPanel,Editor,PropertiesPanel,StatusBar,Splitter,CommandButton}/
 │   ├── ribbon/definitions.ts           # 공통 리본 탭·그룹·명령 정의(엔진 비의존)
 │   ├── commands/commands.ts            # UI 명령 실행 경계, 문서 명령은 모두 unavailable
-│   ├── language/{ko.json,index.ts}     # t(key) 경계. en.json·fallback·전환·복원은 T005 (예정)
+│   ├── language/{en.json,ko.json,index.ts,LanguageContext.tsx}  # en 기준·fallback, 반응형 t()(T005)
+│   ├── settings/{settings.ts,usePersistedSettings.ts}          # 버전 1 UI 설정 검사·저장·복원(T005)
 │   ├── hooks/                          # 배치 상태(reducer), 창 너비, roving focus
 │   ├── styles/app.css  assets/icons.tsx  test/setup.ts
-│   ├── adapters/ settings/ dialogs/    # (예정) T005/T006
+│   ├── adapters/ dialogs/              # (예정) T006 이후
 ├── src-tauri/                          # Rust host: 명령(IPC) 없음, capability core:default, CSP
 │   ├── src/{main.rs,lib.rs}            # commands/ document/ adapters/ services/ 는 T006 이후 (예정)
 │   ├── capabilities/default.json  icons/  tauri.conf.json  Cargo.toml  Cargo.lock

@@ -7,6 +7,7 @@
   "titleBar.toggleNavigation": "탐색 창 표시",
   "titleBar.toggleProperties": "속성 창 표시",
   "titleBar.theme": "테마: {theme}",
+  "titleBar.language": "화면 언어",
 
   "theme.system": "시스템",
   "theme.light": "밝게",
@@ -18,7 +19,6 @@
   "ribbon.expand": "리본 펼치기",
   "ribbon.formatOnly.hwp": "HWP/HWPX 문서 전용 도구입니다.",
   "ribbon.formatOnly.docx": "DOCX 문서 전용 도구입니다.",
-
   "ribbon.tab.file": "파일",
   "ribbon.tab.home": "홈",
   "ribbon.tab.insert": "삽입",
@@ -31,7 +31,6 @@
   "ribbon.tab.review": "검토",
   "ribbon.tab.view": "보기",
   "ribbon.tab.help": "도움말",
-
   "ribbon.group.document": "문서",
   "ribbon.group.output": "출력",
   "ribbon.group.history": "편집 기록",
@@ -112,7 +111,6 @@
   "command.view.zoomIn": "확대",
   "command.view.zoomReset": "100%",
   "command.help.about": "geul 정보",
-
   "command.unavailable.noEngine": "{command}: 문서 엔진이 아직 연결되지 않아 사용할 수 없습니다.",
   "command.unavailable.hint": "사용할 수 없음 — 문서 엔진 연결 전",
   "command.about.message": "geul {version} — 화면 구성 단계입니다. 문서 열기·편집·저장은 아직 지원하지 않습니다.",
@@ -147,5 +145,7 @@
   "status.engines": "엔진: rhwp · WordCraft (통합 전)",
   "status.zoom": "확대/축소 {zoom}%",
   "status.zoomLevel": "확대/축소 비율",
-  "status.ready": "준비됨"
+  "status.ready": "준비됨",
+
+  "settings.saveFailed": "설정을 저장하지 못했습니다. 이번 실행 동안만 적용됩니다."
 }

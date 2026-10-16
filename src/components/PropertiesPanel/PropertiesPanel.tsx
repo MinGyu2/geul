@@ -1,5 +1,5 @@
 import { Icon } from "../../assets/icons";
-import { t } from "../../language";
+import { useTranslation } from "../../language/LanguageContext";
 
 interface PropertiesPanelProps {
   onClose: () => void;
@@ -13,6 +13,7 @@ const FORMATS = [
 ] as const;
 
 export function PropertiesPanel({ onClose }: PropertiesPanelProps) {
+  const { t } = useTranslation();
   return (
     <aside id="properties-panel" className="panel panel--properties" aria-labelledby="properties-title">
       <div className="panel__header">

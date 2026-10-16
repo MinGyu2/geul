@@ -1,7 +1,8 @@
 import type { Ref } from "react";
 import { Icon } from "../../assets/icons";
 import type { CommandContext } from "../../commands/commands";
-import { t } from "../../language";
+import { isLanguage, LANGUAGES } from "../../language";
+import { useTranslation } from "../../language/LanguageContext";
 import { CommandButton } from "../CommandButton/CommandButton";
 
 interface TitleBarProps {
@@ -14,6 +15,7 @@ const THEME_ICON = { system: "monitor", light: "sun", dark: "moon" } as const;
 
 export function TitleBar({ context, navigationToggleRef, propertiesToggleRef }: TitleBarProps) {
   const { layout, dispatch } = context;
+  const { t, language, setLanguage } = useTranslation();
   return (
     <header className="titlebar" aria-label={t("titleBar.label")}>
       <div className="titlebar__brand">
@@ -27,6 +29,19 @@ export function TitleBar({ context, navigationToggleRef, propertiesToggleRef }: 
         <CommandButton id="edit.redo" labelKey="command.edit.redo" icon="redo" context={context} variant="icon" />
       </div>
       <div className="titlebar__view" role="group" aria-label={t("ribbon.tab.view")}>
+        <select
+          className="titlebar__language"
+          aria-label={t("titleBar.language")}
+          title={t("titleBar.language")}
+          value={language}
+          onChange={(event) => {
+            if (isLanguage(event.target.value)) setLanguage(event.target.value);
+          }}
+        >
+          {LANGUAGES.map(({ code, nativeName }) => (
+            <option key={code} value={code} lang={code}>{nativeName}</option>
+          ))}
+        </select>
         <button
           ref={navigationToggleRef}
           type="button"

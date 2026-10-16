@@ -1,11 +1,12 @@
 import { Icon } from "../../assets/icons";
-import { t } from "../../language";
+import { useTranslation } from "../../language/LanguageContext";
 
 interface NavigationPanelProps {
   onClose: () => void;
 }
 
 export function NavigationPanel({ onClose }: NavigationPanelProps) {
+  const { t } = useTranslation();
   return (
     <aside id="navigation-panel" className="panel panel--navigation" aria-labelledby="navigation-title">
       <div className="panel__header">

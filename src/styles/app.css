@@ -265,6 +265,22 @@ button {
   margin-left: auto;
 }
 
+.titlebar__language {
+  height: 30px;
+  margin-right: var(--space-1);
+  padding: 0 var(--space-2);
+  border: 1px solid var(--chrome-border);
+  border-radius: var(--radius);
+  background: var(--ribbon-bg);
+  color: var(--text);
+  font: inherit;
+  cursor: pointer;
+}
+
+.titlebar__language:hover {
+  background: var(--hover);
+}
+
 /* ---- Ribbon ---- */
 
 .ribbon {

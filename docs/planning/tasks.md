@@ -21,7 +21,7 @@ Repository context: 2026-10-16 실제 저장소 검사 완료(초기 상태: `do
 ## Phase 2: User Story 1 - 기본 UI와 다국어 (Priority: P1)
 Independent Test: 해당 User Story의 acceptance scenario와 실패 조건을 실제 실행으로 확인한다.
 - [x] T004 [US1] Tauri/React 6영역 화면과 패널 인터랙션 구축 — `src/App.tsx`
-- [ ] T005 [US1] 번역 JSON·fallback·설정 복원 추가 — `src/language/`
+- [x] T005 [US1] 번역 JSON·fallback·설정 복원 추가 — `src/language/`
 
 ## Phase 3: User Story 2 - 문서 기본 편집 (Priority: P1)
 Independent Test: 해당 User Story의 acceptance scenario와 실패 조건을 실제 실행으로 확인한다.
@@ -122,6 +122,12 @@ Independent Test: 해당 User Story의 acceptance scenario와 실패 조건을 �
 | Task | 상태 | 확인된 결함·변경 | 실행한 검증과 결과 |
 |------|------|------------------|--------------------|
 | T018 | 완료(재검증) | ① 이력 캐시: `scan_history()`가 결과를 blob OID로만 캐시. 같은 내용의 `app.py`(따옴표 없는 값은 코드 참조)와 `settings.ini`(리터럴)가 같은 blob이면 먼저 검사한 쪽 결과를 재사용해, 코드 파일이 먼저면 `settings.ini`의 비밀값을 놓치고(`--history` 종료 코드 0, `--all`은 1) 설정 파일이 먼저면 코드 파일을 잘못 보고함. 경고와 바이너리 발견 항목의 파일 이름도 첫 경로 것만 남음. → 캐시 키를 (blob, 경로)로 변경(경로가 파일 종류·파일 이름·경고 위치를 모두 결정) ② 이메일: 로컬 부분 `git`·`noreply`·`no-reply`이면 도메인과 관계없이 허용, `users.noreply.github.com`의 하위 도메인도 허용. → 전체 주소 일치(`git@github.com`, `noreply@github.com`, `noreply@anthropic.com`), 정확한 도메인 `users.noreply.github.com`, 예약 도메인 `example.com/.org/.net`(하위 도메인 포함)과 예약 최상위 도메인 `.example/.invalid/.test`만 허용(예약 최상위 도메인은 새로 허용 — 실제 주소가 될 수 없음). 출력 마스킹도 같은 기준 ③ ZIP 인코딩 경고: 일반 파일은 고칠 수 있는 인코딩 오류를 경고하지만 ZIP 항목은 `binary_at`만 보고 경고하지 않았고, ZIP 주석은 결과를 전혀 보지 않아 바이너리 주석도 통과. → 일반 파일·ZIP 항목·ZIP 주석이 같은 판정 함수(`accept_text()`)를 사용, 바이너리 주석은 `uninspected-binary` | `python3 -m unittest discover -s tests/security -v` → 86개 통과(새 18개: 이력 캐시 6, 이메일 6, ZIP 경고 6). 새 테스트를 이전 검사기에 적용 → 하위 사례 포함 23개 실패. `--staged`·`--all`·`--history` 통과, Gitleaks `dir`(scripts/, tests/) 누출 없음. 통합: `pre-commit run --all-files`, `pre-commit run --hook-stage pre-push --all-files`, `scripts/security-scan-ci.sh .`, `test-pre-push-hook.sh`(10개), `simulate-leak-response.sh` 모두 통과(로그에 가짜 비밀 원문 없음). 프런트엔드 `typecheck`·`lint`·`test`(40개)·`build` 통과. Rust·앱 코드는 바뀌지 않아 Rust 검사와 실제 앱 스모크 테스트는 다시 실행하지 않음. GitHub Actions에서는 실행되지 않음(푸시 전) |
+
+### T005 다국어·설정 복원 (2026-10-16)
+
+| Task | 상태 | 산출물·변경 | 실행한 검증과 결과 |
+|------|------|-------------|--------------------|
+| T005 | 완료 | 확인한 설계 문제: `t()`가 한국어 사전을 고정으로 읽어 언어를 바꿔도 다시 그려지지 않음; 상태 표시줄 알림과 명령 알림이 번역된 문자열로 저장됨; 설정 저장 없음. 변경: `src/language/en.json`(기준 사전, 140키)·`ko.json`(같은 키), `index.ts`(`createTranslator`: 빠지거나 공백뿐인 번역 → 영어, 영어에도 없음 → 키 표시+진단, 빠진 변수 → 자리표시자 유지+진단, `{ key }` 변수 참조), `LanguageContext.tsx`(App이 언어를 소유, provider가 `t`·`format` 제공), 상태·명령 알림을 `Message`(키+변수)로 저장, `src/settings/`(버전 1 형식, 항목별 검사·보정, localStorage 저장소, 바뀔 때만 저장), 제목 표시줄 언어 선택(`<select>`, 한국어/English), `<html lang>`과 테마를 그리기 전 반영. 주입한 `initialState`·`initialLanguage`는 저장값보다 우선 | `npm run typecheck`·`npm run lint` 오류 0; `npm test` → Vitest 71개 통과(새 31개: 사전 3 — 키 일치·빈 값·자리표시자 일치, 번역 함수 6 — fallback·missing·변수 진단, 설정 검사 7, 저장소 3 — 실패 2 포함, App 통합 12 — 첫 실행 기본값과 시작 시 쓰기 없음, 영어 전환 시 모든 영역·접근성 이름·툴팁 갱신과 한국어 복귀, 알림 재번역, 다시 마운트 후 언어·패널·너비·리본·테마·배율 복원, 좁은 창에서 선호 너비 유지, 손상·일부 잘못된 저장값, 쓰기 실패, 주입 우선순위, 테스트 간 저장소 격리); `npm run build` 성공. **실제 앱 재시작**: `tests/e2e/tauri_smoke.py`가 빈 `XDG_DATA_HOME`에서 앱을 띄워 한국어 첫 실행 확인 → 영어·탐색 창 숨김·속성 창 너비 312·리본 접기·밝은 테마·110% 설정 → 세션 종료 후 첫 앱 프로세스가 끝났음을 `/proc`로 확인 → 새 프로세스에서 모두 복원됨. 헤드리스 weston에서 31개 통과(연속 4회 성공, 그 전 1회는 원인 미확인 WebDriver 연결 끊김으로 중단), 데스크톱 세션에서 26개 통과·최소 창 검사 1개 건너뜀. **미검증**: 비정상 종료(강제 종료) 직후의 저장 보존, Windows/macOS WebView의 localStorage 보존(T016) |
 
 보안 검사 재실행 명령: `python3 scripts/check-sensitive-info.py --staged|--all|--history`,
 `scripts/security-scan-ci.sh .`(gitleaks 필요), `tests/security/simulate-leak-response.sh`,

@@ -1,7 +1,8 @@
 import { forwardRef } from "react";
 import { Icon, type IconName } from "../../assets/icons";
 import { commandState, executeCommand, type CommandContext } from "../../commands/commands";
-import { t, type MessageKey } from "../../language";
+import type { MessageKey } from "../../language";
+import { useTranslation } from "../../language/LanguageContext";
 
 interface CommandButtonProps {
   id: string;
@@ -20,6 +21,7 @@ export const CommandButton = forwardRef<HTMLButtonElement, CommandButtonProps>(f
   { id, labelKey, icon, context, variant = "small", tabIndex },
   ref,
 ) {
+  const { t } = useTranslation();
   const label = t(labelKey);
   const state = commandState(id, context.layout);
   const unavailable = !state.available;
@@ -36,7 +38,7 @@ export const CommandButton = forwardRef<HTMLButtonElement, CommandButtonProps>(f
       aria-label={variant === "icon" ? label : undefined}
       title={title}
       tabIndex={tabIndex}
-      onClick={() => executeCommand(id, label, context)}
+      onClick={() => executeCommand(id, labelKey, context)}
     >
       <Icon name={icon} size={variant === "large" ? 24 : 18} />
       {variant !== "icon" && <span className="command__label">{label}</span>}

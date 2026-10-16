@@ -11,19 +11,23 @@
 
 검사 항목: 앱 시작, 6영역 표시와 배치 순서, 패널 숨기기·복원과 초점, 리본 접기(버튼·Ctrl+F1),
 패널 크기 조절(키보드·포인터), 지원하지 않는 명령의 비활성 동작, 테마 전환, 최소 창 크기에서의 배치,
-Tab 키로 닿는 주요 컨트롤. 실패하면 종료 코드 1.
+Tab 키로 닿는 주요 컨트롤, 설정 저장 후 앱 프로세스를 끝내고 다시 띄워 언어·화면 설정이 복원되는지(T005).
+시나리오마다 빈 임시 XDG_DATA_HOME을 써서 첫 실행 상태로 시작하며 사용자의 실제 앱 데이터는 건드리지 않는다.
+실패하면 종료 코드 1.
 """
 
 from __future__ import annotations
 
 import argparse
 import base64
+import contextlib
 import json
 import os
 import shutil
 import socket
 import subprocess
 import sys
+import tempfile
 import time
 import urllib.error
 import urllib.request
@@ -133,6 +137,7 @@ return out;
 
 
 SKIPPED: list[str] = []
+APP = ""
 
 
 def check(results: list[str], name: str, condition: bool, detail: str = "") -> None:
@@ -277,15 +282,85 @@ def run(driver: WebDriver, screenshots: Path | None) -> list[str]:
     return results
 
 
+def app_processes() -> list[int]:
+    """APP 실행 파일로 돌고 있는 프로세스 ID(Linux /proc)."""
+    pids = []
+    for entry in Path("/proc").iterdir():
+        if entry.name.isdigit():
+            try:
+                if os.readlink(entry / "exe") == APP:
+                    pids.append(int(entry.name))
+            except OSError:
+                continue
+    return pids
+
+
+def run_restart(start_session, results: list[str]) -> None:
+    """T005: 설정을 바꾼 뒤 앱 프로세스를 끝내고 새 프로세스에서 복원되는지 확인한다(실제 재시작)."""
+    driver = start_session()
+    try:
+        wait_until(driver, "return document.querySelector('footer.statusbar') !== null", timeout=30)
+        check(results, "재시작 검사: 첫 실행은 한국어", driver.js("return document.documentElement.lang") == "ko"
+              and driver.js("return document.querySelector('header.titlebar').getAttribute('aria-label')") == "제목 표시줄")
+        driver.click('select.titlebar__language option[value="en"]')
+        wait_until(driver, "return document.documentElement.lang === 'en'", timeout=5)
+        check(results, "언어 선택 즉시 영어로 전환",
+              driver.js("return document.querySelector('header.titlebar').getAttribute('aria-label')") == "Title bar"
+              and driver.js("return document.querySelector('.editor__notice-title').textContent") == "No document is open")
+        driver.click('button[aria-label="Close navigation pane"]')
+        driver.send_keys('.splitter[aria-controls="properties-panel"]', "ArrowLeft", "ArrowLeft")
+        driver.click("button.ribbon__collapse")
+        driver.click('button[aria-label="Theme: System"]')  # → Light
+        driver.click('footer.statusbar button[data-command="view.zoomIn"]')
+        saved = json.loads(driver.js("return localStorage.getItem('geul.settings')") or "null")
+        expected_layout = {"navigationVisible": False, "propertiesVisible": True, "navigationWidth": 240,
+                           "propertiesWidth": 312, "ribbonCollapsed": True, "theme": "light", "zoom": 110}
+        check(results, "변경한 설정이 저장소에 기록됨",
+              saved == {"version": 1, "language": "en", "layout": expected_layout}, json.dumps(saved))
+    finally:
+        driver.quit()  # 앱 프로세스 종료
+    if sys.platform.startswith("linux"):
+        deadline = time.time() + 15
+        while app_processes() and time.time() < deadline:
+            time.sleep(0.2)
+        check(results, "첫 앱 프로세스가 끝남(실제 재시작)", not app_processes())
+
+    driver = start_session()  # 같은 데이터 디렉터리로 새 앱 프로세스 시작
+    try:
+        wait_until(driver, "return document.querySelector('footer.statusbar') !== null", timeout=30)
+        state = driver.js("""
+          return {
+            lang: document.documentElement.lang,
+            theme: document.documentElement.dataset.theme,
+            title: document.querySelector('header.titlebar').getAttribute('aria-label'),
+            select: document.querySelector('select.titlebar__language').value,
+            navigation: document.querySelector('#navigation-panel') !== null,
+            ribbonPanel: document.querySelector('#ribbon-panel') !== null,
+            propertiesWidth: +document.querySelector('.splitter[aria-controls="properties-panel"]').getAttribute('aria-valuenow'),
+            zoom: document.querySelector('.statusbar__zoom-value').textContent,
+            status: document.querySelector('.statusbar__message').textContent,
+          };""")
+        check(results, "재시작 후 언어 복원(영어, html lang)",
+              state["lang"] == "en" and state["select"] == "en" and state["title"] == "Title bar"
+              and state["status"] == "Ready", json.dumps(state, ensure_ascii=False))
+        check(results, "재시작 후 패널·리본·테마·배율 복원",
+              not state["navigation"] and not state["ribbonPanel"] and state["theme"] == "light"
+              and state["propertiesWidth"] == 312 and state["zoom"] == "110%", json.dumps(state, ensure_ascii=False))
+    finally:
+        driver.quit()
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--app", required=True)
     parser.add_argument("--driver", default=shutil.which("tauri-driver") or "tauri-driver")
     parser.add_argument("--port", type=int, default=4444)
     parser.add_argument("--screenshots", type=Path)
+    parser.add_argument("--skip-restart", action="store_true", help="설정 저장 후 재시작 검사를 건너뛴다")
     args = parser.parse_args()
 
-    app = os.path.abspath(args.app)
+    global APP
+    APP = app = os.path.abspath(args.app)
     if not os.access(app, os.X_OK):
         print(f"앱 실행 파일이 없습니다: {args.app}", file=sys.stderr)
         return 1
@@ -295,25 +370,51 @@ def main() -> int:
     if args.screenshots:
         args.screenshots.mkdir(parents=True, exist_ok=True)
 
-    driver_process = subprocess.Popen([args.driver, "--port", str(args.port)], stdout=subprocess.DEVNULL,
-                                      stderr=subprocess.PIPE)
-    driver = WebDriver(f"http://127.0.0.1:{args.port}")
+    results: list[str] = []
     try:
-        wait_port(args.port)
-        driver.start(app)
-        results = run(driver, args.screenshots)
+        # 시나리오마다 빈 데이터 디렉터리(XDG_DATA_HOME)를 써서 첫 실행 상태로 시작하고,
+        # 사용자의 실제 앱 데이터(WebView 저장소)를 건드리지 않는다.
+        with tempfile.TemporaryDirectory(prefix="geul-e2e-") as data_home:
+            with tauri_driver(args.driver, args.port, data_home) as start_session:
+                driver = start_session()
+                try:
+                    results += run(driver, args.screenshots)
+                finally:
+                    driver.quit()
+        if not args.skip_restart:
+            with tempfile.TemporaryDirectory(prefix="geul-e2e-") as data_home:
+                with tauri_driver(args.driver, args.port, data_home) as start_session:
+                    run_restart(lambda: start_session(), results)
+                stored = [p for p in Path(data_home).rglob("*") if p.is_file()]
+                print(f"재시작 검사 데이터 디렉터리의 파일 {len(stored)}개(WebView 저장소)")
+        else:
+            SKIPPED.append("설정 저장 후 재시작 검사(--skip-restart)")
         print(f"\nTauri 스모크 테스트 통과: {len(results)}개 항목, 건너뜀 {len(SKIPPED)}개")
         return 0
     except Failure as error:
         print(f"[실패] {error}", file=sys.stderr)
         return 1
+
+
+@contextlib.contextmanager
+def tauri_driver(path: str, port: int, data_home: str):
+    environment = {**os.environ, "XDG_DATA_HOME": data_home}
+    process = subprocess.Popen([path, "--port", str(port)], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                               env=environment)
+    try:
+        wait_port(port)
+
+        def start_session() -> WebDriver:
+            driver = WebDriver(f"http://127.0.0.1:{port}")
+            driver.start(APP)
+            return driver
+        yield start_session
     finally:
-        driver.quit()
-        driver_process.terminate()
+        process.terminate()
         try:
-            driver_process.wait(timeout=10)
+            process.wait(timeout=10)
         except subprocess.TimeoutExpired:
-            driver_process.kill()
+            process.kill()
 
 
 if __name__ == "__main__":

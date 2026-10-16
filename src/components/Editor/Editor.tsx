@@ -1,5 +1,5 @@
 import type { CSSProperties } from "react";
-import { t } from "../../language";
+import { useTranslation } from "../../language/LanguageContext";
 
 interface EditorProps {
   zoom: number;
@@ -11,6 +11,7 @@ interface EditorProps {
  * docs/architecture/editor-surface-decision.md에 따라 T007/T008에서 페이지 자리에 붙인다.
  */
 export function Editor({ zoom }: EditorProps) {
+  const { t } = useTranslation();
   const pageStyle = { "--zoom": zoom / 100 } as CSSProperties;
   return (
     <main className="editor" aria-label={t("editor.label")}>
