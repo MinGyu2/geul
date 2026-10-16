@@ -19,7 +19,7 @@ export PYTHONDONTWRITEBYTECODE=1
 
 repo="$work/repo"
 mkdir -p "$repo"
-cp -R "$root/scripts" "$root/tests" "$root/.gitleaks.toml" "$repo/"
+cp -R "$root/scripts" "$root/tests" "$root/.gitignore" "$root/.gitleaks.toml" "$repo/"
 cd "$repo"
 git init -q -b main
 git add . && git commit -qm "기준 커밋"
