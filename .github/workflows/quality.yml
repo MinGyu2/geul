@@ -1,0 +1,102 @@
+# 앱 셸(T004) 품질 검사: 프런트엔드(타입·린트·테스트·빌드)와 Rust(서식·컴파일·clippy).
+#
+# 보안 검사(security-scan.yml)와 독립적으로 실행한다. 두 문서 엔진(external/rhwp, external/wordcraft)은
+# 아직 앱에 연결되지 않았으므로 submodule을 받지 않는다(rhwp는 수 GB). 엔진 빌드 검사는 T007/T008에서 추가한다.
+# 산출물 업로드·배포·원격 쓰기는 하지 않는다.
+
+name: quality
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  frontend:
+    name: 프런트엔드 검사
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - name: 저장소 체크아웃 (submodule 제외)
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          submodules: false
+          persist-credentials: false
+
+      - name: Node.js 설정
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: package-lock.json
+
+      - name: 의존성 설치 (package-lock.json 기준)
+        run: npm ci --no-fund --no-audit
+
+      - name: TypeScript 타입 검사
+        run: npm run typecheck
+
+      - name: ESLint
+        run: npm run lint
+
+      - name: Vitest
+        run: npm test
+
+      - name: 프런트엔드 빌드
+        run: npm run build
+
+  rust:
+    name: Rust 검사
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    env:
+      RUST_TOOLCHAIN: 1.99.0
+      CARGO_TERM_COLOR: never
+    defaults:
+      run:
+        working-directory: src-tauri
+    steps:
+      - name: 저장소 체크아웃 (submodule 제외)
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          submodules: false
+          persist-credentials: false
+
+      - name: Tauri Linux 의존성 설치 (WebKitGTK 4.1)
+        working-directory: .
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends libwebkit2gtk-4.1-dev pkg-config
+
+      - name: Rust 도구 체인 설치 (버전 고정)
+        run: |
+          set -euo pipefail
+          rustup toolchain install "$RUST_TOOLCHAIN" --profile minimal --component rustfmt --component clippy
+          rustup override set "$RUST_TOOLCHAIN"
+          rustc --version
+          cargo --version
+
+      - name: Cargo 캐시
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            ~/.cargo/registry/index/
+            ~/.cargo/registry/cache/
+            ~/.cargo/git/db/
+            src-tauri/target/
+          key: cargo-${{ runner.os }}-${{ env.RUST_TOOLCHAIN }}-${{ hashFiles('src-tauri/Cargo.lock') }}
+          restore-keys: |
+            cargo-${{ runner.os }}-${{ env.RUST_TOOLCHAIN }}-
+
+      - name: cargo fmt
+        run: cargo fmt --check
+
+      - name: cargo check
+        run: cargo check --locked --all-targets
+
+      - name: cargo clippy
+        run: cargo clippy --locked --all-targets -- -D warnings
