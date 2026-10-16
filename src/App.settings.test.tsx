@@ -342,7 +342,7 @@ describe("설정 복원 문제 알림", () => {
     expect(document.documentElement.lang).toBe("en");
     expect(screen.getByRole("status", { name: "Zoom level" })).toHaveTextContent("150%");
     expect(document.documentElement.dataset.theme).toBe("system");
-    expect(statusMessage()).toHaveTextContent("Some saved settings were invalid and were reset to defaults.");
+    expect(statusMessage()).toHaveTextContent("Some saved settings were adjusted or restored to defaults.");
     expect(attempts).toEqual([]);
     expect(current()).toBe(raw); // 시작할 때 덮어쓰지 않음
     await user.click(screen.getByRole("button", { name: "Theme: System" }));
@@ -387,9 +387,9 @@ describe("설정 복원 문제 알림", () => {
     const { store } = switchableStore(JSON.stringify({ version: 1, language: "ko", layout: { ...initialLayout, zoom: 7 } }));
     const user = userEvent.setup();
     render(<App settingsStore={store} />);
-    expect(statusMessage()).toHaveTextContent("저장된 설정 일부가 올바르지 않아 기본값으로 바꿨습니다.");
+    expect(statusMessage()).toHaveTextContent("저장된 설정 일부를 조정하거나 기본값으로 복구했습니다.");
     await user.selectOptions(screen.getByRole("combobox", { name: "화면 언어" }), "en");
-    expect(statusMessage()).toHaveTextContent("Some saved settings were invalid and were reset to defaults.");
+    expect(statusMessage()).toHaveTextContent("Some saved settings were adjusted or restored to defaults.");
   });
 
   it("StrictMode와 다시 그리기에서도 알림이 중복되거나 더 최근 알림을 덮어쓰지 않는다", async () => {
@@ -607,7 +607,7 @@ describe("소수 너비 복원(C)", () => {
     const { backing, attempts, client } = sharedBacking(raw);
     render(<App settingsStore={client()} />);
     expect(screen.getByRole("separator", { name: "탐색 창 너비 조절" })).toHaveAttribute("aria-valuenow", "241");
-    expect(statusMessage()).toHaveTextContent("저장된 설정 일부가 올바르지 않아 기본값으로 바꿨습니다.");
+    expect(statusMessage()).toHaveTextContent("저장된 설정 일부를 조정하거나 기본값으로 복구했습니다.");
     expect(attempts).toEqual([]);
     expect(backing.value).toBe(raw);
   });
@@ -748,5 +748,279 @@ describe("저장된 값이 화면·진단에 나오지 않음(D)", () => {
     }
     const logged = [...warn.mock.calls, ...error.mock.calls].flat().map(String).join(" ");
     expect(logged).not.toContain(marker);
+  });
+});
+
+// ---- 최종 정리(T005): 저장된 설정의 의미 동등성(A), 일부 복구 알림 문구(B) ----
+
+/** 들여쓰기·항목 순서만 다르게 쓴 올바른 버전 1 저장값(다른 도구나 사람이 고쳐 쓴 경우). */
+const prettyV1 = (layout: Record<string, unknown> = {}, extra: Record<string, unknown> = {}) =>
+  JSON.stringify({ version: 1, language: "ko", layout: { ...initialLayout, ...layout }, ...extra }, null, 2);
+const reorderedV1 = () => {
+  const layout = Object.fromEntries(Object.entries(initialLayout).reverse());
+  return JSON.stringify({ layout, language: "ko", version: 1 });
+};
+
+describe("저장된 설정의 의미 동등성(최종 정리 A)", () => {
+  /** 쓰기가 실패하는 동안 테마를 한 바퀴 돌려(시스템→밝게→어둡게→시스템) 시작 값으로 돌아온다. */
+  async function failThenReturn(user: ReturnType<typeof userEvent.setup>) {
+    await user.click(screen.getByRole("button", { name: "테마: 시스템" }));
+    expect(statusMessage()).toHaveTextContent("설정을 저장하지 못했습니다");
+    await user.click(screen.getByRole("button", { name: "테마: 밝게" }));
+    await user.click(screen.getByRole("button", { name: "테마: 어둡게" }));
+    expect(document.documentElement.dataset.theme).toBe("system");
+  }
+
+  it("A1·A10 들여쓴 버전 1: 쓰기 실패 뒤 저장된 값으로 돌아오면 다시 쓰지 않고 실패 알림을 지우며, 원문을 기준으로 외부 변경을 계속 감지한다", async () => {
+    setViewport(1400);
+    const raw = prettyV1();
+    const { backing, attempts, client } = sharedBacking(raw);
+    backing.writable = false;
+    const user = userEvent.setup();
+    render(<App settingsStore={client()} />);
+    expect(statusMessage()).toHaveTextContent("준비됨");
+    await failThenReturn(user);
+    expect(statusMessage()).toHaveTextContent("준비됨");
+    expect(attempts).toHaveLength(2); // 돌아온 값은 쓰지 않는다
+    expect(backing.value).toBe(raw); // 원문 그대로(압축 형식으로 다시 쓰지 않음)
+
+    // 원문 기준은 그대로다: 같은 설정을 압축 형식으로 바꿔 쓴 외부 변경도 충돌이다.
+    backing.writable = true;
+    backing.value = v1();
+    await user.click(screen.getByRole("button", { name: "테마: 시스템" }));
+    expect(statusMessage()).toHaveTextContent("저장된 설정이 다른 곳에서 바뀌어 그대로 두었습니다");
+    expect(attempts).toHaveLength(2);
+    expect(backing.value).toBe(v1());
+  });
+
+  it("A2 항목 순서가 다른 버전 1도 같은 설정이면 저장된 것으로 본다", async () => {
+    setViewport(1400);
+    const raw = reorderedV1();
+    const { backing, attempts, client } = sharedBacking(raw);
+    backing.writable = false;
+    const user = userEvent.setup();
+    render(<App settingsStore={client()} />);
+    await failThenReturn(user);
+    expect(statusMessage()).toHaveTextContent("준비됨");
+    expect(attempts).toHaveLength(2);
+    expect(backing.value).toBe(raw);
+  });
+
+  it("A3 모르는 항목이 있는 버전 1: 쓰기 전 확인이 실패한 뒤 같은 설정으로 돌아오면 쓰지 않아 모르는 항목이 지워지지 않는다", async () => {
+    setViewport(1400);
+    const raw = prettyV1({ density: "compact" }, { sync: { enabled: false } });
+    const { backing, attempts, client } = sharedBacking(raw);
+    const user = userEvent.setup();
+    render(<App settingsStore={client()} />);
+    backing.readable = false; // 쓰기 전 확인 실패: 쓰지 않고 실패로 알림
+    await user.selectOptions(screen.getByRole("combobox", { name: "화면 언어" }), "en");
+    expect(statusMessage()).toHaveTextContent("Settings could not be saved.");
+    backing.readable = true;
+    await user.selectOptions(screen.getByRole("combobox", { name: "Display language" }), "ko");
+    expect(statusMessage()).toHaveTextContent("준비됨");
+    expect(attempts).toEqual([]);
+    expect(backing.value).toBe(raw);
+  });
+
+  it("A3 모르는 항목이 있는 버전 1: 쓰기 실패 뒤 같은 설정으로 돌아오면 원문과 모르는 항목을 그대로 둔다", async () => {
+    setViewport(1400);
+    const raw = prettyV1({ density: "compact" }, { sync: { enabled: false } });
+    const { backing, attempts, client } = sharedBacking(raw);
+    backing.writable = false;
+    const user = userEvent.setup();
+    render(<App settingsStore={client()} />);
+    await failThenReturn(user);
+    expect(statusMessage()).toHaveTextContent("준비됨");
+    expect(attempts).toHaveLength(2);
+    expect(backing.value).toBe(raw);
+    expect(JSON.parse(backing.value!)).toMatchObject({ layout: { density: "compact" }, sync: { enabled: false } });
+  });
+
+  it("A4 알려진 항목 값이 하나라도 다르면 같은 설정으로 보지 않는다", async () => {
+    setViewport(1400);
+    const raw = prettyV1({ zoom: 150 });
+    const { backing, client } = sharedBacking(raw);
+    backing.writable = false;
+    const user = userEvent.setup();
+    render(<App settingsStore={client()} />);
+    await user.click(within(screen.getByRole("contentinfo")).getByRole("button", { name: "축소" })); // 150 → 125
+    expect(statusMessage()).toHaveTextContent("설정을 저장하지 못했습니다");
+    await user.click(screen.getByRole("button", { name: "테마: 시스템" }));
+    await user.click(screen.getByRole("button", { name: "테마: 밝게" }));
+    await user.click(screen.getByRole("button", { name: "테마: 어둡게" })); // 테마만 같아짐, 배율은 다름
+    expect(statusMessage()).toHaveTextContent("설정을 저장하지 못했습니다");
+    expect(backing.value).toBe(raw);
+  });
+
+  it("A5 형식이 올바르지 않은 저장값(version이 문자열)은 알려진 항목이 기본값과 같아도 저장된 것으로 보지 않는다", async () => {
+    setViewport(1400);
+    const raw = JSON.stringify({ version: "1", language: "ko", layout: initialLayout }, null, 2);
+    const { backing, client } = sharedBacking(raw);
+    backing.writable = false;
+    const user = userEvent.setup();
+    render(<App settingsStore={client()} />);
+    expect(statusMessage()).toHaveTextContent("저장된 설정을 읽을 수 없어 기본값으로 시작했습니다.");
+    await failThenReturn(user);
+    expect(statusMessage()).toHaveTextContent("설정을 저장하지 못했습니다");
+    expect(backing.value).toBe(raw);
+  });
+
+  it("A6 항목이 빠진 버전 1은 보정한 설정으로 돌아와도 저장된 것으로 보지 않는다", async () => {
+    setViewport(1400);
+    const withoutZoom = Object.fromEntries(Object.entries(initialLayout).filter(([key]) => key !== "zoom"));
+    const raw = JSON.stringify({ version: 1, language: "ko", layout: withoutZoom }, null, 2);
+    const { backing, client } = sharedBacking(raw);
+    backing.writable = false;
+    const user = userEvent.setup();
+    render(<App settingsStore={client()} />);
+    await failThenReturn(user);
+    expect(statusMessage()).toHaveTextContent("설정을 저장하지 못했습니다");
+    expect(backing.value).toBe(raw);
+  });
+
+  it("A7 저장값 없음: 기본값으로 돌아와도 기본값을 쓴 것으로 보지 않는다", async () => {
+    setViewport(1400);
+    const { backing, client } = sharedBacking(null);
+    backing.writable = false;
+    const user = userEvent.setup();
+    render(<App settingsStore={client()} />);
+    await failThenReturn(user);
+    expect(statusMessage()).toHaveTextContent("설정을 저장하지 못했습니다");
+    expect(backing.value).toBeNull();
+  });
+
+  it("A8 버전 2는 알려진 항목이 같아도 버전 1 설정과 같다고 보지 않고 쓰지 않는다", async () => {
+    setViewport(1400);
+    const raw = JSON.stringify({ version: 2, language: "ko", layout: initialLayout }, null, 2);
+    const { backing, attempts, client } = sharedBacking(raw);
+    const user = userEvent.setup();
+    render(<App settingsStore={client()} />);
+    await user.click(screen.getByRole("button", { name: "테마: 시스템" }));
+    await user.click(screen.getByRole("button", { name: "테마: 밝게" }));
+    await user.click(screen.getByRole("button", { name: "테마: 어둡게" }));
+    expect(statusMessage()).toHaveTextContent("저장된 설정이 더 새로운 버전의 형식이라 그대로 두었습니다");
+    expect(statusMessage()).not.toHaveTextContent("준비됨");
+    expect(attempts).toEqual([]);
+    expect(backing.value).toBe(raw);
+  });
+
+  it("A9 원문이 바뀌었으면 같은 설정을 들여 써 바꾼 것이라도 충돌로 보고 쓰지 않는다", async () => {
+    setViewport(1400);
+    const { backing, attempts, client } = sharedBacking(v1());
+    const user = userEvent.setup();
+    render(<App settingsStore={client()} />);
+    const external = prettyV1();
+    backing.value = external;
+    await user.click(screen.getByRole("button", { name: "테마: 시스템" }));
+    await user.click(screen.getByRole("button", { name: "테마: 밝게" }));
+    await user.click(screen.getByRole("button", { name: "테마: 어둡게" })); // 저장값과 같은 설정으로 돌아와도
+    expect(statusMessage()).toHaveTextContent("저장된 설정이 다른 곳에서 바뀌어 그대로 두었습니다");
+    expect(attempts).toEqual([]);
+    expect(backing.value).toBe(external);
+  });
+
+  it("A10 들여쓴 버전 1: 실패 뒤 다른 설정을 실제로 저장하면 알림을 지우고, 그 뒤로는 쓴 값을 기준으로 삼는다", async () => {
+    setViewport(1400);
+    const { backing, attempts, client } = sharedBacking(prettyV1());
+    backing.writable = false;
+    const user = userEvent.setup();
+    render(<App settingsStore={client()} />);
+    await user.click(screen.getByRole("button", { name: "테마: 시스템" }));
+    backing.writable = true;
+    await user.click(screen.getByRole("button", { name: "테마: 밝게" }));
+    expect(statusMessage()).toHaveTextContent("준비됨");
+    expect(backing.value).toBe(v1({ theme: "dark" }));
+    await user.click(screen.getByRole("button", { name: "테마: 어둡게" })); // 이어서 쓴다(충돌 아님)
+    expect(backing.value).toBe(v1());
+    expect(attempts).toHaveLength(3);
+  });
+
+  it("A11 같은 설정으로 돌아와도 그 사이에 나온 더 최근 알림은 지우지 않는다", async () => {
+    setViewport(1400);
+    const raw = prettyV1();
+    const { backing, client } = sharedBacking(raw);
+    backing.writable = false;
+    const user = userEvent.setup();
+    render(<App settingsStore={client()} />);
+    await user.click(screen.getByRole("button", { name: "테마: 시스템" }));
+    await user.click(screen.getByRole("button", { name: "굵게" }));
+    await user.click(screen.getByRole("button", { name: "테마: 밝게" }));
+    await user.click(screen.getByRole("button", { name: "테마: 어둡게" }));
+    expect(statusMessage()).toHaveTextContent("굵게: 문서 엔진이 아직 연결되지 않아 사용할 수 없습니다.");
+    expect(backing.value).toBe(raw);
+  });
+
+  it("A12 StrictMode와 다시 그리기에서도 같은 설정을 다시 쓰거나 알림을 반복하지 않는다", async () => {
+    setViewport(1400);
+    const raw = prettyV1();
+    const { backing, attempts, client } = sharedBacking(raw);
+    backing.writable = false;
+    const store = client();
+    const user = userEvent.setup();
+    const view = render(<StrictMode><App settingsStore={store} /></StrictMode>);
+    await failThenReturn(user);
+    for (let i = 0; i < 3; i += 1) view.rerender(<StrictMode><App settingsStore={store} /></StrictMode>);
+    await act(async () => { await new Promise((resolve) => setTimeout(resolve, 20)); });
+    expect(attempts).toHaveLength(2);
+    expect(screen.getAllByText("준비됨")).toHaveLength(1);
+    expect(screen.queryByText(/설정을 저장하지 못했습니다/)).toBeNull();
+    expect(backing.value).toBe(raw);
+  });
+});
+
+describe("일부 복구 알림 문구(최종 정리 B)", () => {
+  const recoveredKo = "저장된 설정 일부를 조정하거나 기본값으로 복구했습니다.";
+  const recoveredEn = "Some saved settings were adjusted or restored to defaults.";
+  const withoutZoom = Object.fromEntries(Object.entries(initialLayout).filter(([key]) => key !== "zoom"));
+
+  it("B1~B3 반올림·범위 보정·빠진 항목·잘못된 항목 모두 같은 일부 복구 알림이고, 시작할 때 쓰지 않는다", () => {
+    setViewport(1400);
+    const cases = [
+      v1({ navigationWidth: 240.5 }), // 반올림
+      v1({ propertiesWidth: 99999 }), // 범위 보정
+      v1({ navigationWidth: 1 }),
+      JSON.stringify({ version: 1, language: "ko", layout: withoutZoom }), // 빠진 항목
+      v1({ ribbonCollapsed: "yes" }), // 잘못된 항목
+    ];
+    for (const raw of cases) {
+      const { backing, attempts, client } = sharedBacking(raw);
+      const view = render(<App settingsStore={client()} />);
+      expect(statusMessage(), raw).toHaveTextContent(recoveredKo);
+      expect(screen.getAllByRole("status").find((e) => !e.hasAttribute("aria-label"))!.textContent, raw).toBe(recoveredKo);
+      expect(attempts, raw).toEqual([]);
+      expect(backing.value, raw).toBe(raw);
+      view.unmount();
+    }
+  });
+
+  it("B4 일부 복구 알림은 영어로 바꾸면 전체 문장이 바뀌고 다시 한국어로 돌아온다", async () => {
+    setViewport(1400);
+    const { client } = sharedBacking(v1({ propertiesWidth: 99999 }));
+    const user = userEvent.setup();
+    render(<App settingsStore={client()} />);
+    expect(statusMessage().textContent).toBe(recoveredKo);
+    await user.selectOptions(screen.getByRole("combobox", { name: "화면 언어" }), "en");
+    expect(statusMessage().textContent).toBe(recoveredEn);
+    await user.selectOptions(screen.getByRole("combobox", { name: "Display language" }), "ko");
+    expect(statusMessage().textContent).toBe(recoveredKo);
+  });
+
+  it("B5·B6 첫 실행·정상 복원은 준비됨, 형식 오류·미지원 버전·읽기 실패는 각자의 알림을 그대로 쓴다", () => {
+    setViewport(1400);
+    const cases: [SettingsStore, string][] = [
+      [sharedBacking(null).client(), "준비됨"],
+      [sharedBacking(v1()).client(), "준비됨"],
+      [sharedBacking(prettyV1()).client(), "준비됨"],
+      [sharedBacking("{corrupt").client(), "저장된 설정을 읽을 수 없어 기본값으로 시작했습니다."],
+      [sharedBacking(futureSettings).client(),
+        "저장된 설정이 더 새로운 버전의 형식이라 그대로 두었습니다. 바꾼 설정은 이번 실행 동안만 적용됩니다."],
+      [{ read: () => { throw new Error("synthetic-read-error-marker"); }, write: () => true },
+        "설정 저장소에 접근할 수 없어 기본값으로 시작했습니다. 바꾼 설정은 이번 실행 동안만 적용됩니다."],
+    ];
+    for (const [store, expected] of cases) {
+      const view = render(<App settingsStore={store} />);
+      expect(statusMessage().textContent).toBe(expected);
+      view.unmount();
+    }
   });
 });

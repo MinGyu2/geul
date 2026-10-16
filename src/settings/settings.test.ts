@@ -8,6 +8,7 @@ import {
   parseSettings,
   serializeSettings,
   SETTINGS_KEY,
+  storedSettingsMatch,
   type Settings,
 } from "./settings";
 
@@ -214,5 +215,58 @@ describe("진단 문구 정책(D): 저장된 값을 담지 않는다", () => {
   it("읽기 예외 문구는 진단에 담지 않는다", () => {
     const failing = { read: () => { throw new Error("synthetic-read-error-marker"); }, write: () => true };
     expect(loadSettings(failing).issues.join(" ")).not.toContain("synthetic");
+  });
+});
+
+// ---- 최종 정리(T005): 저장값과 현재 설정의 의미 동등성 ----
+
+describe("storedSettingsMatch", () => {
+  const serialized = serializeSettings(custom);
+  const object = JSON.parse(serialized) as { layout: Record<string, unknown> } & Record<string, unknown>;
+
+  it("공백·항목 순서·모르는 항목만 다른 올바른 버전 1은 같은 설정이다", () => {
+    const reordered = JSON.stringify({ layout: Object.fromEntries(Object.entries(object.layout).reverse()), language: "en", version: 1 });
+    for (const raw of [serialized, JSON.stringify(object, null, 2), reordered,
+                       stored({ sync: { enabled: false } }, { density: "compact" })]) {
+      expect(storedSettingsMatch(raw, serialized), raw).toBe(true);
+    }
+  });
+
+  it("알려진 항목 값이 하나라도 다르면 같지 않다", () => {
+    const changed: [Record<string, unknown>, Record<string, unknown>][] = [
+      [{ language: "ko" }, {}],
+      [{}, { navigationVisible: true }],
+      [{}, { propertiesVisible: false }],
+      [{}, { navigationWidth: 241 }],
+      [{}, { propertiesWidth: 401 }],
+      [{}, { ribbonCollapsed: false }],
+      [{}, { theme: "light" }],
+      [{}, { zoom: 175 }],
+    ];
+    for (const [top, layout] of changed) {
+      const raw = stored(top, layout);
+      expect(parseSettings(raw).status, raw).toBe("restored");
+      expect(storedSettingsMatch(raw, serialized), raw).toBe(false);
+    }
+  });
+
+  it("저장값 없음·형식 오류·일부 복구·미지원 버전은 보정한 설정이 같아도 같지 않다", () => {
+    const defaults = serializeSettings(DEFAULT_SETTINGS);
+    const withoutZoom = Object.fromEntries(Object.entries(initialLayout).filter(([key]) => key !== "zoom"));
+    const cases: (string | null)[] = [
+      null,
+      "{corrupt",
+      JSON.stringify({ version: "1", language: "ko", layout: initialLayout }),
+      JSON.stringify({ version: 1, language: "ko", layout: withoutZoom }),
+      JSON.stringify({ version: 1, language: "ko", layout: { ...initialLayout, theme: "neon" } }),
+      JSON.stringify({ version: 1, language: "ko", layout: { ...initialLayout, navigationWidth: initialLayout.navigationWidth + 0.4 } }),
+      JSON.stringify({ version: 1, language: "ko", layout: { ...initialLayout, propertiesWidth: 99999 } }),
+      JSON.stringify({ version: 2, language: "ko", layout: initialLayout }),
+    ];
+    for (const raw of cases) {
+      const normalized = serializeSettings(parseSettings(raw).settings); // 이 저장값을 읽어 화면에 그린 설정
+      expect(storedSettingsMatch(raw, normalized), String(raw)).toBe(false);
+    }
+    expect(storedSettingsMatch(null, defaults)).toBe(false);
   });
 });

@@ -110,8 +110,21 @@ export function parseSettings(raw: string | null): ParsedSettings {
       ribbonCollapsed: pick("ribbonCollapsed", layout.ribbonCollapsed, isBoolean, defaults.ribbonCollapsed),
       theme: pick("theme", layout.theme, isTheme, defaults.theme),
       zoom: pick("zoom", layout.zoom, isZoom, defaults.zoom),
-    },  };
+    },
+  };
   return { settings, status: issues.length > 0 ? "recovered" : "restored", issues };
+}
+
+/**
+ * 저장소의 원문 raw에 serialized(serializeSettings 결과)와 같은 설정이 이미 들어 있는가.
+ * 공백·항목 순서·모르는 항목의 차이는 무시한다. raw가 고칠 것 없는 버전 1(restored)이고 알려진 항목 값이 모두 같을
+ * 때만 true다. 저장값 없음·형식 오류·일부 복구·미지원 버전은 보정한 설정이 같아도 false다(저장소에는 그 설정이 없음).
+ * 원문이 바뀌었는지(충돌)는 판단하지 않는다. 호출하는 쪽이 원문 그대로 먼저 비교해야 한다.
+ */
+export function storedSettingsMatch(raw: string | null, serialized: string): boolean {
+  if (raw === serialized) return true;
+  const parsed = parseSettings(raw);
+  return parsed.status === "restored" && serializeSettings(parsed.settings) === serialized;
 }
 
 /** 저장 형식으로 바꾼다. 알려진 항목만 같은 순서로 쓰므로 같은 설정은 같은 문자열이 된다. */

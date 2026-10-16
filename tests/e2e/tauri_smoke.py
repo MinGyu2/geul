@@ -447,6 +447,64 @@ def run_external_change(start_session, results: list[str]) -> None:
         driver.quit()
 
 
+# 들여쓰고 모르는 항목을 넣은 올바른 버전 1 저장값(사람이나 다른 도구가 고쳐 쓴 경우). 다시 쓰지 않으면 바이트 그대로 남는다.
+PRETTY_SETTINGS = json.dumps({
+    "layout": {"zoom": 100, "theme": "system", "ribbonCollapsed": False, "propertiesWidth": 280, "navigationWidth": 240,
+               "propertiesVisible": True, "navigationVisible": True, "density": "compact"},
+    "language": "ko", "version": 1, "sync": {"enabled": False},
+}, indent=2)
+ADJUSTED_SETTINGS = json.dumps({"version": 1, "language": "ko", "layout": {"propertiesWidth": 99999}})
+ADJUSTED_NOTICE_KO = "저장된 설정 일부를 조정하거나 기본값으로 복구했습니다."
+
+
+def run_equivalent_restore(start_session, results: list[str]) -> None:
+    """T005 최종 정리: 들여쓴 저장값으로 돌아오면 다시 쓰지 않고 실패 알림을 지우는지, 일부 복구 문구를 확인한다."""
+    stored = "return localStorage.getItem('geul.settings')"
+    status = "return document.querySelector('.statusbar__message').textContent"
+    driver = start_session()
+    try:
+        wait_until(driver, "return document.querySelector('footer.statusbar') !== null", timeout=30)
+        driver.js("localStorage.setItem('geul.settings', arguments[0])", PRETTY_SETTINGS)
+    finally:
+        driver.quit()
+    wait_app_exit(results, "동등성 검사: 저장값을 넣은 앱 프로세스가 끝남")
+
+    driver = start_session()
+    try:
+        wait_until(driver, "return document.querySelector('footer.statusbar') !== null", timeout=30)
+        check(results, "동등성 검사: 들여쓴 버전 1을 알림 없이 복원", driver.js(status) == "준비됨", driver.js(status))
+        # 이 WebView에서만 쓰기가 실패하게 한다(저장소 용량 초과를 흉내 냄).
+        driver.js("Storage.prototype.setItem = () => { throw new DOMException('synthetic', 'QuotaExceededError'); }")
+        driver.click('button[aria-label="테마: 시스템"]')  # → 밝게, 쓰기 실패
+        failed = driver.js(status)
+        driver.click('button[aria-label="테마: 밝게"]')  # → 어둡게
+        driver.click('button[aria-label="테마: 어둡게"]')  # → 시스템(저장값과 같은 설정)
+        check(results, "동등성 검사: 저장값과 같은 설정으로 돌아오면 실패 알림을 지움",
+              "설정을 저장하지 못했습니다" in failed and driver.js(status) == "준비됨", f"{failed} / {driver.js(status)}")
+        check(results, "동등성 검사: 저장값(들여쓰기·모르는 항목)이 바이트 그대로", driver.js(stored) == PRETTY_SETTINGS)
+    finally:
+        driver.quit()
+    wait_app_exit(results, "동등성 검사: 두 번째 앱 프로세스가 끝남")
+
+    driver = start_session()
+    try:
+        wait_until(driver, "return document.querySelector('footer.statusbar') !== null", timeout=30)
+        check(results, "동등성 검사: 재시작 후에도 저장값이 바이트 그대로이고 알림 없음",
+              driver.js(stored) == PRETTY_SETTINGS and driver.js(status) == "준비됨", driver.js(status))
+        driver.js("localStorage.setItem('geul.settings', arguments[0])", ADJUSTED_SETTINGS)
+    finally:
+        driver.quit()
+    wait_app_exit(results, "동등성 검사: 세 번째 앱 프로세스가 끝남")
+
+    driver = start_session()
+    try:
+        wait_until(driver, "return document.querySelector('footer.statusbar') !== null", timeout=30)
+        check(results, "일부 복구 알림: 범위 보정·빠진 항목을 고친 문구로 알리고 시작할 때 쓰지 않음",
+              driver.js(status) == ADJUSTED_NOTICE_KO and driver.js(stored) == ADJUSTED_SETTINGS, driver.js(status))
+    finally:
+        driver.quit()
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--app", required=True)
@@ -492,6 +550,9 @@ def main() -> int:
             with tempfile.TemporaryDirectory(prefix="geul-e2e-") as data_home:
                 with tauri_driver(args.driver, args.port, data_home) as start_session:
                     run_external_change(lambda: start_session(), results)
+            with tempfile.TemporaryDirectory(prefix="geul-e2e-") as data_home:
+                with tauri_driver(args.driver, args.port, data_home) as start_session:
+                    run_equivalent_restore(lambda: start_session(), results)
         else:
             SKIPPED.append("설정 저장 후 재시작 검사(--skip-restart)")
         print(f"\nTauri 스모크 테스트 통과: {len(results)}개 항목, 건너뜀 {len(SKIPPED)}개")

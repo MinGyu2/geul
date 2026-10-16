@@ -1,5 +1,5 @@
 import { useEffect, useRef } from "react";
-import { serializeSettings, type Settings, type SettingsStore } from "./settings";
+import { serializeSettings, storedSettingsMatch, type Settings, type SettingsStore } from "./settings";
 
 /**
  * 저장하지 못한 이유.
@@ -25,8 +25,9 @@ interface PersistOptions {
  *
  * 저장소에 있다고 확인한 값(baseline: 시작 시 읽은 원문, 이후 쓰기에 성공한 값)과 화면의 현재 설정을 따로 둔다.
  * 시작할 때 보정·기본값으로 바꾼 설정은 저장소에 없으므로, 그 값으로 돌아와도 저장된 것으로 보지 않는다.
- * 쓰기 전에 저장소를 다시 읽어 baseline과 다르면 충돌로 보고 쓰지 않는다. 읽은 값이 이미 현재 설정과 같으면
- * 쓰지 않고 저장된 것으로 본다.
+ * 쓰기 전에 저장소를 다시 읽어 baseline과 원문 그대로 비교하고, 다르면 충돌로 보고 쓰지 않는다. 원문이 같고 그 값이
+ * 이미 현재 설정을 그대로 담은 올바른 버전 1이면(storedSettingsMatch: 공백·항목 순서·모르는 항목 차이는 무시) 쓰지
+ * 않고 저장된 것으로 본다. 이때 원문과 baseline은 그대로 둔다.
  *
  * 한계: localStorage에는 비교 후 쓰기(compare-and-swap)가 없어, 다시 읽은 뒤 쓰기 전 사이의 외부 변경은 막지
  * 못한다. 또 WebKitGTK에서는 동시에 실행 중인 다른 geul 프로세스의 변경이 이 프로세스의 localStorage에 보이지
@@ -56,7 +57,7 @@ export function usePersistedSettings(store: SettingsStore, settings: Settings, o
         blocked.current = true;
         return "conflict";
       }
-      if (current === serialized) return "saved";
+      if (storedSettingsMatch(current, serialized)) return "saved"; // 원문을 다시 쓰지 않는다(모르는 항목 보존)
       if (!store.write(serialized)) return "failed";
       baseline.current = serialized;
       return "saved";

@@ -34,6 +34,8 @@ Tauri desktop host (OS file dialogs / permissions / safe file writes)
     시작 시 알림. 더 새로운 버전(정수 version > 1)과 읽지 못한 저장소는 덮어쓰지 않음(이번 실행만 적용, 이전 버전으로 바꾸기·지우기 없음).
     저장소에 있다고 확인한 원문(시작 시 읽은 값, 이후 쓰기에 성공한 값)을 기준으로 두고, 쓰기 전에 다시 읽어 다르면 충돌로 보고
     이번 실행 동안 쓰지 않음(병합·덮어쓰기 없음). 보정·기본값으로 돌아온 것만으로는 저장된 것으로 보지 않음. 진단 문구에 저장값 없음.
+    원문이 같고 그 값이 고칠 것 없는 버전 1로서 현재 설정을 그대로 담으면(공백·항목 순서·모르는 항목 차이는 무시) 다시 쓰지 않고
+    저장된 것으로 봄(원문·모르는 항목과 비교 기준은 그대로). 원문 비교를 이 의미 비교로 대신하지 않음.
     한계: localStorage에 compare-and-swap이 없어 다시 읽기와 쓰기 사이의 변경은 막지 못하고, WebKitGTK에서는 동시에 실행한 다른
     geul 프로세스의 변경이 보이지 않아 감지하지 못함(마지막에 쓴 값이 남음). 단일 인스턴스 강제나 Rust 쪽 잠금 저장소는 후속 결정
   CommandRegistry: stable command ids, per-engine capability, shortcut, selected-state
