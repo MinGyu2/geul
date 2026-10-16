@@ -8,11 +8,10 @@ import { Splitter } from "./components/Splitter/Splitter";
 import { StatusBar } from "./components/StatusBar/StatusBar";
 import { TitleBar } from "./components/TitleBar/TitleBar";
 import {
-  effectivePanelWidths,
+  computePanelLayout,
   initialLayout,
   layoutReducer,
   PANEL_LIMITS,
-  panelMaxWidth,
   type LayoutState,
   type SidePanel,
 } from "./hooks/layoutState";
@@ -53,10 +52,11 @@ export default function App({ initialState = initialLayout }: AppProps) {
     (panel === "navigation" ? navigationToggleRef : propertiesToggleRef).current?.focus();
   };
 
-  const widths = effectivePanelWidths(layout, viewportWidth);
+  // 그리는 너비와 크기 조절 범위를 같은 계산에서 얻는다.
+  const panels = computePanelLayout(layout, viewportWidth);
   const workspaceStyle = {
-    "--navigation-width": `${widths.navigation}px`,
-    "--properties-width": `${widths.properties}px`,
+    "--navigation-width": `${panels.navigation.width}px`,
+    "--properties-width": `${panels.properties.width}px`,
   } as CSSProperties;
 
   const splitter = (panel: SidePanel) => (
@@ -64,9 +64,9 @@ export default function App({ initialState = initialLayout }: AppProps) {
       label={t(panel === "navigation" ? "navigation.resize" : "properties.resize")}
       controls={`${panel}-panel`}
       side={panel === "navigation" ? "left" : "right"}
-      value={widths[panel]}
-      min={PANEL_LIMITS[panel].min}
-      max={panelMaxWidth(layout, panel, viewportWidth)}
+      value={panels[panel].width}
+      min={panels[panel].min}
+      max={panels[panel].max}
       initial={PANEL_LIMITS[panel].initial}
       onResize={(width) => dispatch({ type: "resizePanel", panel, width })}
     />

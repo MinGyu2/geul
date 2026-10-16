@@ -82,14 +82,33 @@ export function layoutReducer(state: LayoutState, action: LayoutAction): LayoutS
   }
 }
 
+export interface PanelBounds {
+  visible: boolean;
+  /** 실제로 그리는 너비(숨김이면 0). 크기 조절 핸들의 aria-valuenow. */
+  width: number;
+  min: number;
+  /** 다른 패널의 실제 너비와 편집 영역 최소 너비를 뺀 최대 너비. 크기 조절 핸들의 aria-valuemax. */
+  max: number;
+}
+
+export interface PanelLayout {
+  navigation: PanelBounds;
+  properties: PanelBounds;
+  editorWidth: number;
+}
+
 /**
- * 창 너비가 좁을 때 실제로 그릴 패널 너비. 중앙 편집 영역이 EDITOR_MIN_WIDTH 이상이 되도록
- * 패널을 줄이되 각 패널의 최소 너비보다 작게 만들지는 않는다(창 최소 크기는 tauri.conf.json에서 보장).
+ * 화면 배치의 단일 계산. 그리는 너비와 크기 조절 범위를 같은 값에서 구하므로
+ * min <= width <= max가 항상 성립한다(지원하는 최소 창 너비 960px 이상에서 편집 영역도 360px 이상).
+ *
+ * 창이 좁으면 오른쪽 속성 창부터 최소 너비까지 줄이고, 그래도 모자라면 탐색 창을 줄인다.
+ * 사용자가 정한 너비(state)는 바꾸지 않으므로 창이 다시 넓어지면 원래 너비로 돌아간다.
  */
-export function effectivePanelWidths(state: LayoutState, viewportWidth: number) {
+export function computePanelLayout(state: LayoutState, viewportWidth: number): PanelLayout {
+  const viewport = Math.max(0, viewportWidth);
   let navigation = state.navigationVisible ? state.navigationWidth : 0;
   let properties = state.propertiesVisible ? state.propertiesWidth : 0;
-  let overflow = navigation + properties + EDITOR_MIN_WIDTH - viewportWidth;
+  let overflow = navigation + properties + EDITOR_MIN_WIDTH - viewport;
   if (overflow > 0 && properties > 0) {
     const reduced = Math.max(PANEL_LIMITS.properties.min, properties - overflow);
     overflow -= properties - reduced;
@@ -98,14 +117,17 @@ export function effectivePanelWidths(state: LayoutState, viewportWidth: number) 
   if (overflow > 0 && navigation > 0) {
     navigation = Math.max(PANEL_LIMITS.navigation.min, navigation - overflow);
   }
-  return { navigation, properties };
-}
+  const widths: Record<SidePanel, number> = { navigation, properties };
 
-/** 다른 패널과 편집 영역 최소 너비를 고려한 패널 최대 너비(크기 조절 핸들의 aria-valuemax). */
-export function panelMaxWidth(state: LayoutState, panel: SidePanel, viewportWidth: number): number {
-  const other = panel === "navigation"
-    ? (state.propertiesVisible ? state.propertiesWidth : 0)
-    : (state.navigationVisible ? state.navigationWidth : 0);
-  const { min, max } = PANEL_LIMITS[panel];
-  return Math.max(min, Math.min(max, viewportWidth - other - EDITOR_MIN_WIDTH));
+  const bounds = (panel: SidePanel, other: SidePanel): PanelBounds => {
+    const { min, max } = PANEL_LIMITS[panel];
+    const visible = panel === "navigation" ? state.navigationVisible : state.propertiesVisible;
+    const available = viewport - EDITOR_MIN_WIDTH - widths[other];
+    return { visible, width: widths[panel], min, max: Math.max(min, Math.min(max, available)) };
+  };
+  return {
+    navigation: bounds("navigation", "properties"),
+    properties: bounds("properties", "navigation"),
+    editorWidth: Math.max(0, viewport - navigation - properties),
+  };
 }

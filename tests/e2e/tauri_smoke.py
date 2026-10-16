@@ -3,6 +3,8 @@
 
 필요: 빌드된 앱(`npm run tauri build -- --debug --no-bundle`), tauri-driver 2.x, 플랫폼 WebDriver
 (Linux: WebKitWebDriver), 그래픽 세션(Wayland 또는 X11). 외부 Python 패키지는 쓰지 않는다.
+타일링 창 관리자는 창 크기 변경 요청을 무시하므로 최소 창 크기 검사를 건너뛴다. 이때는 헤드리스 weston
+(`weston --backend=headless --renderer=pixman --socket=<이름>`)을 띄우고 `WAYLAND_DISPLAY=<이름>`으로 실행한다.
 
     python3 tests/e2e/tauri_smoke.py --app src-tauri/target/debug/geul \\
         --driver <tauri-driver 경로> [--screenshots <디렉터리>]
@@ -28,8 +30,8 @@ import urllib.request
 from pathlib import Path
 
 ELEMENT = "element-6066-11e4-a52e-4f735466cecf"
-KEYS = {"Tab": "", "Enter": "", "ArrowLeft": "", "ArrowRight": "", "Control": "",
-        "F1": ""}
+KEYS = {"End": "\ue010", "Tab": "\ue004", "Enter": "\ue007", "ArrowLeft": "\ue012", "ArrowRight": "\ue014",
+        "Control": "\ue009", "F1": "\ue031"}  # WebDriver 특수 키 코드
 
 
 class Failure(Exception):
@@ -250,8 +252,26 @@ def run(driver: WebDriver, screenshots: Path | None) -> list[str]:
         return results
     check(results, "최소 창 크기에서 6영역 유지", all(small[n] and small[n]["visible"] for n in REGIONS),
           json.dumps(small))
+    print(f"최소 창 크기 요청 후 창 내용 크기: {viewport['w']}×{viewport['h']}")
     check(results, "최소 창 크기에서 가로 넘침 없음, 편집 영역 360px 이상",
           viewport["scrollW"] <= viewport["w"] and small["Editor"]["w"] >= 360, json.dumps(viewport))
+    check(results, "최소 창 크기에서 세로 넘침 없음, 상태 표시줄이 창 안에 있음",
+          viewport["scrollH"] <= viewport["h"] and small["StatusBar"]["y"] + small["StatusBar"]["h"] <= viewport["h"] + 1
+          and small["Editor"]["h"] > 100, json.dumps(small))
+
+    driver.send_keys('.splitter[aria-controls="navigation-panel"]', "End")
+    driver.send_keys('.splitter[aria-controls="properties-panel"]', "End")
+    time.sleep(0.2)
+    aria = driver.js("""
+      return [...document.querySelectorAll('.splitter')].map(s => {
+        const panel = document.getElementById(s.getAttribute('aria-controls'));
+        return {now: +s.getAttribute('aria-valuenow'), min: +s.getAttribute('aria-valuemin'),
+                max: +s.getAttribute('aria-valuemax'), actual: panel.getBoundingClientRect().width};
+      });""")
+    editor_width = driver.js(RECTS, {"Editor": "main.editor"})["Editor"]["w"]
+    check(results, "최소 창 크기에서 두 패널을 최대로 늘려도 aria 범위·실제 너비 일치, 편집 영역 360px 이상",
+          all(a["min"] <= a["now"] <= a["max"] and abs(a["actual"] - a["now"]) <= 1 for a in aria)
+          and editor_width >= 360 - 1, json.dumps({"aria": aria, "editor": editor_width}))
     if screenshots:
         driver.screenshot(screenshots / "03-min-size.png")
     return results

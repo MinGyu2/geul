@@ -125,6 +125,110 @@ describe("패널 크기 조절", () => {
   });
 });
 
+describe("좁은 창의 크기 조절 접근성 상태", () => {
+  const wide = { ...initialLayout, navigationWidth: 420, propertiesWidth: 460 };
+
+  function handles() {
+    const read = (name: string) => {
+      const handle = screen.getByRole("separator", { name });
+      return {
+        handle,
+        now: Number(handle.getAttribute("aria-valuenow")),
+        min: Number(handle.getAttribute("aria-valuemin")),
+        max: Number(handle.getAttribute("aria-valuemax")),
+      };
+    };
+    return { navigation: read("탐색 창 너비 조절"), properties: read("속성 창 너비 조절") };
+  }
+
+  function expectConsistent(viewport: number) {
+    const { navigation, properties } = handles();
+    for (const value of [navigation, properties]) {
+      expect(value.now).toBeGreaterThanOrEqual(value.min);
+      expect(value.now).toBeLessThanOrEqual(value.max);
+    }
+    const style = document.querySelector<HTMLElement>(".workspace")!.style;
+    expect(style.getPropertyValue("--navigation-width")).toBe(`${navigation.now}px`);
+    expect(style.getPropertyValue("--properties-width")).toBe(`${properties.now}px`);
+    expect(viewport - navigation.now - properties.now).toBeGreaterThanOrEqual(360);
+  }
+
+  function resizeWindow(width: number) {
+    act(() => {
+      Object.defineProperty(window, "innerWidth", { configurable: true, value: width });
+      window.dispatchEvent(new Event("resize"));
+    });
+  }
+
+  it("두 패널이 최대 너비인 상태로 960px 창에서 aria-valuenow가 범위를 넘지 않는다", () => {
+    Object.defineProperty(window, "innerWidth", { configurable: true, value: 960 });
+    render(<App initialState={wide} />);
+    expect(handles().navigation).toMatchObject({ now: 380, max: 380 });
+    expect(handles().properties).toMatchObject({ now: 220, min: 220, max: 220 });
+    expectConsistent(960);
+  });
+
+  it("넓은 창 → 좁은 창 → 넓은 창으로 바뀔 때 너비와 범위가 함께 바뀌고 원래 너비로 돌아온다", () => {
+    Object.defineProperty(window, "innerWidth", { configurable: true, value: 1600 });
+    render(<App initialState={wide} />);
+    expect(handles().navigation.now).toBe(420);
+    resizeWindow(960);
+    expect(handles().navigation).toMatchObject({ now: 380, max: 380 });
+    expectConsistent(960);
+    resizeWindow(1600);
+    expect(handles().navigation.now).toBe(420);
+    expect(handles().properties.now).toBe(460);
+    expectConsistent(1600);
+  });
+
+  it("좁은 창에서 키보드로 조절해도 범위를 넘지 않고 다른 패널이 남는 공간을 쓴다", async () => {
+    Object.defineProperty(window, "innerWidth", { configurable: true, value: 960 });
+    const user = userEvent.setup();
+    render(<App initialState={wide} />);
+    handles().navigation.handle.focus();
+    await user.keyboard("{ArrowRight}");
+    expect(handles().navigation.now).toBe(380);
+    await user.keyboard("{ArrowLeft}");
+    expect(handles().navigation.now).toBe(364);
+    expect(handles().properties.now).toBe(960 - 360 - 364);
+    expectConsistent(960);
+  });
+
+  it("좁은 창에서 포인터로 끌어도 범위 안에서 움직인다", () => {
+    Object.defineProperty(window, "innerWidth", { configurable: true, value: 960 });
+    render(<App initialState={wide} />);
+    const handle = handles().navigation.handle;
+    handle.setPointerCapture = () => undefined;
+    handle.hasPointerCapture = () => true;
+    handle.releasePointerCapture = () => undefined;
+    act(() => {
+      handle.dispatchEvent(new PointerEvent("pointerdown", { bubbles: true, button: 0, clientX: 380, pointerId: 1 }));
+      handle.dispatchEvent(new PointerEvent("pointermove", { bubbles: true, clientX: 600, pointerId: 1 }));
+    });
+    expect(handles().navigation.now).toBe(380);
+    act(() => {
+      handle.dispatchEvent(new PointerEvent("pointermove", { bubbles: true, clientX: 280, pointerId: 1 }));
+      handle.dispatchEvent(new PointerEvent("pointerup", { bubbles: true, clientX: 280, pointerId: 1 }));
+    });
+    expect(handles().navigation.now).toBe(280);
+    expect(handles().properties.now).toBe(320);
+    expectConsistent(960);
+  });
+
+  it("패널을 숨기고 되살려도 범위가 모순되지 않는다", async () => {
+    Object.defineProperty(window, "innerWidth", { configurable: true, value: 960 });
+    const user = userEvent.setup();
+    render(<App initialState={wide} />);
+    await user.click(screen.getByRole("button", { name: "속성 창 닫기" }));
+    const navigation = screen.getByRole("separator", { name: "탐색 창 너비 조절" });
+    expect(navigation).toHaveAttribute("aria-valuenow", "420");
+    expect(navigation).toHaveAttribute("aria-valuemax", "420");
+    expect(screen.getByRole("button", { name: "속성 창 표시" })).toHaveFocus();
+    await user.click(screen.getByRole("button", { name: "속성 창 표시" }));
+    expectConsistent(960);
+  });
+});
+
 describe("리본", () => {
   it("접기 버튼과 Ctrl+F1로 접고 펼친다", async () => {
     const { user } = setup();
