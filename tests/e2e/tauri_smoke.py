@@ -11,7 +11,8 @@
 
 검사 항목: 앱 시작, 6영역 표시와 배치 순서, 패널 숨기기·복원과 초점, 리본 접기(버튼·Ctrl+F1),
 패널 크기 조절(키보드·포인터), 지원하지 않는 명령의 비활성 동작, 테마 전환, 최소 창 크기에서의 배치,
-Tab 키로 닿는 주요 컨트롤, 설정 저장 후 앱 프로세스를 끝내고 다시 띄워 언어·화면 설정이 복원되는지(T005).
+Tab 키로 닿는 주요 컨트롤, 설정 저장 후 앱 프로세스를 끝내고 다시 띄워 언어·화면 설정이 복원되는지(T005),
+더 새로운 버전의 저장값을 화면 설정 변경과 재시작 뒤에도 덮어쓰지 않는지(T005 리뷰 수정).
 시나리오마다 빈 임시 XDG_DATA_HOME을 써서 첫 실행 상태로 시작하며 사용자의 실제 앱 데이터는 건드리지 않는다.
 실패하면 종료 코드 1.
 """
@@ -295,6 +296,14 @@ def app_processes() -> list[int]:
     return pids
 
 
+def wait_app_exit(results: list[str], name: str) -> None:
+    if sys.platform.startswith("linux"):
+        deadline = time.time() + 15
+        while app_processes() and time.time() < deadline:
+            time.sleep(0.2)
+        check(results, name, not app_processes())
+
+
 def run_restart(start_session, results: list[str]) -> None:
     """T005: 설정을 바꾼 뒤 앱 프로세스를 끝내고 새 프로세스에서 복원되는지 확인한다(실제 재시작)."""
     driver = start_session()
@@ -319,11 +328,7 @@ def run_restart(start_session, results: list[str]) -> None:
               saved == {"version": 1, "language": "en", "layout": expected_layout}, json.dumps(saved))
     finally:
         driver.quit()  # 앱 프로세스 종료
-    if sys.platform.startswith("linux"):
-        deadline = time.time() + 15
-        while app_processes() and time.time() < deadline:
-            time.sleep(0.2)
-        check(results, "첫 앱 프로세스가 끝남(실제 재시작)", not app_processes())
+    wait_app_exit(results, "첫 앱 프로세스가 끝남(실제 재시작)")
 
     driver = start_session()  # 같은 데이터 디렉터리로 새 앱 프로세스 시작
     try:
@@ -346,6 +351,54 @@ def run_restart(start_session, results: list[str]) -> None:
         check(results, "재시작 후 패널·리본·테마·배율 복원",
               not state["navigation"] and not state["ribbonPanel"] and state["theme"] == "light"
               and state["propertiesWidth"] == 312 and state["zoom"] == "110%", json.dumps(state, ensure_ascii=False))
+    finally:
+        driver.quit()
+
+
+# 더 새로운 앱 버전이 썼다고 가정한 저장값(모르는 항목 포함). 바이트 그대로 남아야 한다.
+FUTURE_SETTINGS = json.dumps({
+    "version": 2, "language": "en",
+    "layout": {"navigationVisible": False, "propertiesVisible": True, "navigationWidth": 300, "propertiesWidth": 300,
+               "ribbonCollapsed": True, "theme": "dark", "zoom": 150, "density": "compact"},
+    "sync": {"enabled": True},
+}, separators=(",", ":"))
+FUTURE_NOTICE_KO = "저장된 설정이 더 새로운 버전의 형식이라 그대로 두었습니다."
+
+
+def run_future_version(start_session, results: list[str]) -> None:
+    """T005 리뷰 수정: 미지원(더 새로운) 버전 저장값을 실제 앱에서 재시작 2회에 걸쳐 덮어쓰지 않는지 확인한다."""
+    stored = "return localStorage.getItem('geul.settings')"
+    driver = start_session()
+    try:
+        wait_until(driver, "return document.querySelector('footer.statusbar') !== null", timeout=30)
+        driver.js("localStorage.setItem('geul.settings', arguments[0])", FUTURE_SETTINGS)
+    finally:
+        driver.quit()
+    wait_app_exit(results, "미지원 버전 검사: 저장값을 넣은 앱 프로세스가 끝남")
+
+    driver = start_session()
+    try:
+        wait_until(driver, "return document.querySelector('footer.statusbar') !== null", timeout=30)
+        status = driver.js("return document.querySelector('.statusbar__message').textContent")
+        check(results, "미지원 버전: 시작 시 기본값(한국어)과 알림 표시",
+              driver.js("return document.documentElement.lang") == "ko" and FUTURE_NOTICE_KO in status, status)
+        driver.click('button[aria-label="테마: 시스템"]')  # → 밝게
+        driver.click('select.titlebar__language option[value="en"]')
+        wait_until(driver, "return document.documentElement.lang === 'en'", timeout=5)
+        check(results, "미지원 버전: 바꾼 설정은 이번 실행에 적용됨",
+              driver.js("return document.documentElement.dataset.theme") == "light")
+        check(results, "미지원 버전: 설정을 바꿔도 저장값이 바이트 그대로", driver.js(stored) == FUTURE_SETTINGS)
+    finally:
+        driver.quit()
+    wait_app_exit(results, "미지원 버전 검사: 두 번째 앱 프로세스가 끝남")
+
+    driver = start_session()
+    try:
+        wait_until(driver, "return document.querySelector('footer.statusbar') !== null", timeout=30)
+        status = driver.js("return document.querySelector('.statusbar__message').textContent")
+        check(results, "미지원 버전: 재시작 후에도 저장값이 그대로이고 다시 알림",
+              driver.js(stored) == FUTURE_SETTINGS and driver.js("return document.documentElement.lang") == "ko"
+              and FUTURE_NOTICE_KO in status, status)
     finally:
         driver.quit()
 
@@ -387,6 +440,9 @@ def main() -> int:
                     run_restart(lambda: start_session(), results)
                 stored = [p for p in Path(data_home).rglob("*") if p.is_file()]
                 print(f"재시작 검사 데이터 디렉터리의 파일 {len(stored)}개(WebView 저장소)")
+            with tempfile.TemporaryDirectory(prefix="geul-e2e-") as data_home:
+                with tauri_driver(args.driver, args.port, data_home) as start_session:
+                    run_future_version(lambda: start_session(), results)
         else:
             SKIPPED.append("설정 저장 후 재시작 검사(--skip-restart)")
         print(f"\nTauri 스모크 테스트 통과: {len(results)}개 항목, 건너뜀 {len(SKIPPED)}개")

@@ -2,7 +2,9 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { initialLayout, PANEL_LIMITS } from "../hooks/layoutState";
 import {
   createLocalStorageStore,
+  canPersist,
   DEFAULT_SETTINGS,
+  loadSettings,
   parseSettings,
   serializeSettings,
   SETTINGS_KEY,
@@ -21,12 +23,12 @@ function stored(overrides: Record<string, unknown> = {}, layout: Record<string, 
 
 describe("parseSettings", () => {
   it("저장된 값이 없으면 기본값을 쓰고 문제를 보고하지 않는다", () => {
-    expect(parseSettings(null)).toEqual({ settings: DEFAULT_SETTINGS, issues: [] });
+    expect(parseSettings(null)).toEqual({ settings: DEFAULT_SETTINGS, status: "absent", issues: [] });
     expect(DEFAULT_SETTINGS.language).toBe("ko");
   });
 
   it("저장 형식과 왕복해도 같은 설정이 된다", () => {
-    expect(parseSettings(serializeSettings(custom))).toEqual({ settings: custom, issues: [] });
+    expect(parseSettings(serializeSettings(custom))).toEqual({ settings: custom, status: "restored", issues: [] });
   });
 
   it("JSON 오류·객체가 아닌 값·지원하지 않는 버전은 기본값으로 돌아간다", () => {
@@ -84,18 +86,68 @@ describe("createLocalStorageStore", () => {
     expect(store.read()).toBe("value");
   });
 
-  it("저장소가 예외를 던져도 읽기는 null, 쓰기는 false를 반환한다", () => {
+  // 리뷰 수정: 읽기 실패를 "없음"(null)과 구별하도록 읽기는 예외를 던진다. loadSettings가 unreadable로 바꾼다.
+  it("저장소가 예외를 던지면 읽기는 예외를 전달하고, 쓰기는 false를 반환한다", () => {
     vi.spyOn(Storage.prototype, "getItem").mockImplementation(() => { throw new Error("denied"); });
     vi.spyOn(Storage.prototype, "setItem").mockImplementation(() => { throw new Error("quota"); });
     const store = createLocalStorageStore();
-    expect(store.read()).toBeNull();
+    expect(() => store.read()).toThrow();
     expect(store.write("value")).toBe(false);
   });
 
-  it("localStorage 접근 자체가 막혀도 동작한다", () => {
+  it("localStorage 접근 자체가 막혀도 읽기는 예외, 쓰기는 false다", () => {
     vi.spyOn(window, "localStorage", "get").mockImplementation(() => { throw new DOMException("blocked", "SecurityError"); });
     const store = createLocalStorageStore();
-    expect(store.read()).toBeNull();
+    expect(() => store.read()).toThrow();
     expect(store.write("value")).toBe(false);
+  });
+});
+
+// ---- 리뷰 수정(T005 후속): 복원 결과 구분 ----
+
+describe("복원 결과 구분(status)", () => {
+  it("없음·정상·일부 복구·형식 오류·미지원 버전을 구별한다", () => {
+    expect(parseSettings(null).status).toBe("absent");
+    expect(parseSettings(serializeSettings(custom)).status).toBe("restored");
+    expect(parseSettings(stored({ language: "jp" })).status).toBe("recovered");
+    expect(parseSettings(stored({}, { navigationWidth: 9000 })).status).toBe("recovered");
+    for (const raw of ["{not json", "[]", "null", "42", '"text"', stored({ version: "1" }), stored({ version: undefined }),
+                       stored({ version: 0 }), stored({ version: 1.5 }), stored({ version: -3 })]) {
+      expect(parseSettings(raw).status, raw).toBe("malformed");
+    }
+    for (const version of [2, 3, 99]) {
+      expect(parseSettings(stored({ version })).status).toBe("unsupported");
+    }
+  });
+
+  it("미지원 버전은 일반적인 항목 손상으로 취급하지 않는다(저장 금지)", () => {
+    expect(canPersist("unsupported")).toBe(false);
+    expect(canPersist("unreadable")).toBe(false);
+    for (const status of ["absent", "restored", "recovered", "malformed"] as const) expect(canPersist(status), status).toBe(true);
+  });
+
+  it("진단 문구에 저장된 값을 그대로 담지 않는다", () => {
+    const marked = stored({ version: "stored-marker-value" });
+    expect(parseSettings(marked).issues.join(" ")).not.toContain("stored-marker-value");
+  });
+});
+
+describe("loadSettings", () => {
+  afterEach(() => vi.restoreAllMocks());
+
+  it("읽기 실패는 첫 실행(absent)과 구별한다", () => {
+    const failing = { read: () => { throw new Error("denied"); }, write: () => true };
+    expect(loadSettings(failing)).toMatchObject({ status: "unreadable", settings: DEFAULT_SETTINGS });
+    expect(loadSettings({ read: () => null, write: () => true })).toMatchObject({ status: "absent", settings: DEFAULT_SETTINGS });
+  });
+
+  it("localStorage가 읽기 중 예외를 던지면 unreadable이다", () => {
+    vi.spyOn(Storage.prototype, "getItem").mockImplementation(() => { throw new Error("denied"); });
+    expect(loadSettings(createLocalStorageStore()).status).toBe("unreadable");
+  });
+
+  it("localStorage 접근 자체가 막히면 unreadable이다", () => {
+    vi.spyOn(window, "localStorage", "get").mockImplementation(() => { throw new DOMException("blocked", "SecurityError"); });
+    expect(loadSettings(createLocalStorageStore()).status).toBe("unreadable");
   });
 });

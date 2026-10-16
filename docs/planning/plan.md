@@ -29,7 +29,9 @@ Tauri desktop host (OS file dialogs / permissions / safe file writes)
      en.json이 기준 사전이며 빠지거나 빈 번역은 영어로, 영어에도 없으면 키를 표시하고 개발 빌드에서 경고)
   SettingsStore: WebView localStorage `geul.settings` (version 1: language, 패널 표시·선호 너비, 리본, 테마, 배율).
     처음 그리기 전에 읽어 항목별 검사(잘못된 항목만 기본값), 바뀔 때만 저장(시작 시 쓰지 않음),
-    저장 실패 시 이번 실행만 적용하고 상태 표시줄에 1회 알림. 창 크기로 줄어든 실제 너비는 저장하지 않음
+    저장 실패 시 이번 실행만 적용하고 상태 표시줄에 1회 알림(다시 저장되면 그 알림만 지움). 창 크기로 줄어든 실제 너비는 저장하지 않음.
+    복원 결과를 absent/restored/recovered/malformed/unsupported/unreadable로 구분해 첫 실행·정상 복원 외에는
+    시작 시 알림. 더 새로운 버전(정수 version > 1)과 읽지 못한 저장소는 덮어쓰지 않음(이번 실행만 적용, 이전 버전으로 바꾸기·지우기 없음)
   CommandRegistry: stable command ids, per-engine capability, shortcut, selected-state
   DocumentController: session id, active format, revision, dirty flag, file fingerprint
     +-- RhwpAdapter --> rhwp Core (HWP/HWPX, independent model + render surface)
