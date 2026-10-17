@@ -22,6 +22,8 @@
 // - 편집을 멈추면(failed) 백엔드에 ready·loading → failed 전이를 보낸다. 다시 불러오기는 그 전이의 결과를 먼저 확인한
 //   뒤에만 옛 모델을 놓고 document_load를 보낸다(백엔드가 아직 ready면 불러오기를 InvalidState로 거부하므로). 전이가
 //   오류면 한 번 다시 보내 확인하고, 그래도 확인하지 못하면 모델을 놓지 않은 채 그 오류로 끝낸다(`settleFailure`).
+//   불러오는 중 엔진이 실패해 보내는 `loading → failed` 전이도 같은 기록(`FailureTransition`)이다(6차): 전이가 거부돼
+//   백엔드가 loading에 남았을 수 있으면 다음 reload가 먼저 확인한다(`begin_load`는 identified·failed만 받음).
 // - 화면 bitmap 픽셀 예산(renderBudget.ts)은 그리는 배율에 대한 것이다. 배율·DPR 때문에 넘으면 엔진 실패가 아니라 표시
 //   한도(`renderLimit`)다: 그리지 않고 편집만 멈추며, 예산 안의 배율로 돌아오면 그대로 이어 간다(모델·revision 그대로).
 //   지원하는 가장 작은 배율로도 넘는 문서만 ready 전에 RenderLimit으로 거부한다(문서 손상과 구분).
@@ -389,11 +391,18 @@ export class RhwpEditorSession {
     return LOADED;
   }
 
+  /**
+   * 불러오기 중 엔진 단계가 실패했다: 이 시도의 `loading → failed` 전이를 보내고 결과를 기다린 뒤 failed로 둔다. 전이는
+   * 편집 중 실패와 같은 기록으로 남겨, 거부됐으면(백엔드가 아직 loading일 수 있음) 다음 reload가 settleFailure로 먼저
+   * 확인한다. 쓰지 못한 임시 문서는 부르는 쪽이 이미 놓았다.
+   */
   private async failLoading(epoch: number, generation: number, error: DocumentError): Promise<Result<null>> {
     if (!this.owns(epoch)) return { ok: false, error };
-    const failed = await this.backend.setState(this.sessionId, generation, "loading", "failed");
+    const failure = this.reportFailure(generation, "loading");
+    this.failure = failure;
+    const result = await failure.result;
     if (!this.owns(epoch)) return { ok: false, error };
-    if (failed.ok) this.sessions.applyUpdate(failed.value);
+    if (this.failure === failure && (result.ok || failureAcknowledged(result.error))) this.failure = null; // 확인됨
     this.setStatus({ kind: "failed", error });
     return { ok: false, error };
   }
@@ -852,17 +861,23 @@ export class RhwpEditorSession {
    */
   private markFailed(error: DocumentError) {
     if (this.status.kind === "failed" || this.disposed) return;
-    const info: SessionInfo | null = this.sessions.get(this.sessionId);
+    // 출발 상태는 이 편집 세션이 아는 단계로 정한다(투영은 refresh가 늦게 올 수 있음). ready 요청이 거부된 불러오기면 loading.
+    const from = this.status.kind === "loading" ? "loading" : "ready";
     this.status = { kind: "failed", error }; // 조합을 세기 전에: 확정을 보내지 않는다
     this.settleComposition();
-    this.failure = this.reportFailure(this.generation, info?.state === "loading" ? "loading" : "ready");
+    this.failure = this.reportFailure(this.generation, from);
     this.emit();
   }
 
-  /** failed 전이를 보낸다. 응답은 그 epoch일 때만 투영에 반영한다. */
+  /**
+   * failed 전이를 보낸다. 응답은 그 epoch일 때만 투영에 반영한다. 요청 Promise가 거부되면(전송 예외) Protocol 결과로
+   * 바꿔, 기다리는 쪽이 멈추거나 처리되지 않은 거부로 수명주기 정리를 건너뛰지 않게 한다(확인 안 됨 → 다음 reload가 다시 확인).
+   */
   private reportFailure(generation: number, from: "loading" | "ready"): FailureTransition {
     const epoch = this.epoch;
-    const result = this.backend.setState(this.sessionId, generation, from, "failed").then((failed) => {
+    const sent = this.backend.setState(this.sessionId, generation, from, "failed")
+      .catch((): Result<SessionInfo> => ({ ok: false, error: { code: "Protocol" } }));
+    const result = sent.then((failed) => {
       if (this.owns(epoch) && failed.ok) this.sessions.applyUpdate(failed.value);
       return failed;
     });

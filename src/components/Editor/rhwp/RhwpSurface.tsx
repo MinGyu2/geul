@@ -127,7 +127,8 @@ export function RhwpSurface({ session, zoom, imeContext }: RhwpSurfaceProps) {
 
   const focusInput = useCallback(() => inputRef.current?.focus({ preventScroll: true }), []);
   useEffect(() => {
-    if (session.editable) focusInput();
+    // 모달 확인 창(aria-modal)이 초점을 가진 동안에는 다시 편집 가능해져도(잠금 해제·늦게 끝난 불러오기) 초점을 가져가지 않는다.
+    if (session.editable && !document.activeElement?.closest("[aria-modal='true']")) focusInput();
   }, [session, session.editable, focusInput]);
 
   // ---- 키보드·IME ----

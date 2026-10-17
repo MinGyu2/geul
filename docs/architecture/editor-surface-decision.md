@@ -486,3 +486,62 @@ revision 회계(+9, 가가 +2)는 실제 키에서 중복·누락 없이 유지�
 preedit을 실제로 전달하는 데스크톱(GNOME/KDE의 ibus·fcitx5)·Windows/macOS는 이 환경에 없어 미검증이다. T007 체크박스는
 유지하며, T008 이후 작업은 시작하지 않았다.
 
+
+## T007 6차 안정화: 불러오기 실패 전이·IME 취소 수정 표시·확인 창 초점 (2026-10-18)
+
+검토 기준은 `74eef8bb0105d12162d7b5c504f76b7e8dc2c660`(브랜치 `master`, 작업 트리 깨끗, origin과 같음)이다. R-A·엔진 고정
+(`rhwp 1a76570`, `wordcraft fc41918`)과 앞선 다섯 번의 장치를 유지한다. Rust 코드·권한·CSP·의존성은 바꾸지 않았다.
+
+### 재현과 판정
+
+새 `sixthStabilization.test.tsx`(21개)를 먼저 기준 코드에 돌렸다: 처음 20개 중 10개가 지적한 원인으로 실패(P1 7개, P2-B 3개),
+P2-A 5개는 기존 동작 그대로 통과(정책 유지를 문서화하는 시험). 확인 창 교체 시험 1개는 수정 도중 발견한 결함의 회귀다.
+
+| 항목 | 판정 | 근거 | 수정 |
+|------|------|------|------|
+| P1 불러오기 실패의 `loading → failed` 전이 | CONFIRMED DEFECT | `failLoading()`이 전이를 직접 기다리고 결과를 버림. 전이가 `Protocol`·`InvalidState(loading)`·전송 예외로 끝나 Rust가 loading에 남아도 `this.failure`가 없어 다음 reload가 확인 없이 바로 `document_load`를 보냄(parse·render 단계 모두 재현). Rust `begin_load`는 identified·failed만 받으므로 InvalidState로 실패함. 요청 Promise가 거부되면 `load()`가 거부되어 상태가 loading에 멈춤 | `failLoading()`도 `reportFailure()`·`FailureTransition`을 쓴다. 성공·`InvalidState(failed)`·`StaleLoad`로 확인되면 기록을 바로 지우고(기존 정상 경로는 그대로 동기), 아니면 남겨 다음 reload가 `settleFailure()`로 먼저 확인한다(reload마다 재전송 1회, `InvalidState`의 실제 상태를 from으로). `reportFailure()`는 거부된 Promise를 `Protocol` 결과로 바꾼다. `markFailed()`의 from은 비동기 투영 대신 편집 세션의 단계(loading/ready)로 정한다 |
+| P2-A 취소한 조합의 `modified` | ACCEPTABLE POLICY(변경 안 함) | 고정 rhwp의 `insert_text_native`·`delete_text_native`는 구역의 원본 `raw_stream`을 버리고 문단을 다시 흐르게 한다(`text_editing.rs` 1491·1618행). 실제 샘플(`external/rhwp/samples`, 읽기만)에서 미리보기 한 글자를 넣고 지우면 글자·컨트롤은 200개 모두 같지만 원본 형식 내보내기 바이트가 HWP 113/120, HWPX 42/80개에서 달랐다(`tests/integration/rhwp/preedit_reversibility.mjs`). 저장소 픽스처는 rhwp가 만든 정규형이라 같게 보였을 뿐이다 | 취소한 조합이 엔진 호출을 한 번이라도 했으면 모델을 계속 미보존으로 보호한다(버리기 확인 유지). revision·pending은 늘지 않는다. 엔진 호출 없이 끝난 조합은 미보존으로 만들지 않는다. 텍스트 비교로 깨끗함을 추정하지 않는다 |
+| P2-B 확인 창 첫 초점 | CONFIRMED DEFECT | 계측(모든 `focus()` 호출 기록): 경쟁 핸들러는 없고, 확인 창이 DOM에 들어온 뒤에도 passive effect가 돌 때까지 초점이 편집 textarea에 남음(기준 코드 300회 중 10회 관측, 한 task 뒤 취소 버튼). 앱 scheduler 경로에서 탭·창 닫기 모두 "보이는 순간 초점 = TEXTAREA"를 결정적으로 재현. 그 사이의 키는 뒤의 문서로 간다. 또 확인 창이 열린 동안 표면이 다시 편집 가능해지면 autofocus가 초점을 가져감(재현) | 첫 초점을 layout effect(같은 commit)로 옮긴다. 복원은 passive cleanup 그대로이며, 여는 요소를 `Editor`가 가진 `focusReturnRef`로 이어받아 탭 → 창 닫기 교체 때 옛 창이 새 창의 초점을 빼앗지 않는다(첫 구현에서 기존 4차 시험으로 발견해 고침). 편집 표면 autofocus는 `aria-modal` 창이 초점을 가진 동안 양보한다 |
+| 5차 실험의 native 창 닫기 3/3 실패 | CONTRACT DEFICIENCY(시험기) | 변경을 하나씩 넣은 빌드로 A/B: 표면 양보만 넣은 빌드는 통과, 확인 창 변경 빌드는 승인 단계에서 `Session terminated without a reply`. 임시 Rust 기록(되돌림): 실패한 실행에서도 앱은 CloseRequested(막음)·`window_close_confirmed` 1회·Destroyed 1회로 기준 코드와 같았다. 창을 파괴하지 않는 진단 빌드(되돌림)에서 클릭→Rust는 두 빌드 모두 3–6 ms로 차이가 없었다. 시험기가 WebDriver `execute` 안에서 승인을 눌러 그 응답이 창 파괴와 몇 ms 차이로 경합한 것이다(WebKitWebDriver 안의 정확한 순서 차이는 확정하지 못함). 5차 문서의 "초점 복원이 승인 클릭 안에서 동기로 돌아서"라는 설명은 틀렸다(클릭은 discrete 갱신이라 passive effect도 그 안에서 동기로 돈다) | `fourth_stabilization.py` close 시나리오의 취소·승인을 실제 X11 포인터(xdotool, CSS px × devicePixelRatio)로 누르고 창 파괴를 X11에서 확인한다. 진행 중인 WebDriver 명령이 없어 경합이 구조적으로 없다. 단언은 그대로다 |
+
+### 수명주기와 데이터 보호
+
+- 불러오기: `loading`(백엔드 begin_load) → 엔진 실패 → 쓰지 못한 임시 문서 해제 → `loading → failed` 전이(기록) → 결과 확인
+  뒤 화면 failed. 확인되지 않은 전이는 다음 reload의 전제다. reload는 epoch를 올리거나 모델을 놓기 전에 전이를 한 번 다시
+  보내 확인하고, 확인하지 못하면 거짓 성공 없이 그 오류로 끝난다(다음 reload가 다시 확인, 반복 상한은 reload마다 1회).
+- 기다리는 중 닫으면 dispose가 epoch를 바꿔 늦은 응답은 투영·상태·모델에 반영되지 않고 reload는 `StaleSession`으로 끝난다.
+  같은 대기 중 reload 두 번은 같은 작업이다. `StaleLoad`는 더 새 시도의 상태를 고치지 않고 진행한다.
+- 지금 세대의 모델은 실패 경로가 놓지 않는다(해제는 `runLoad`의 지역 문서·`releaseDocument`뿐).
+- 실제 Rust 오류 모양 확인: 실제 앱에서 첫 전이 응답을 전송 오류로 바꾸고(Rust는 실제로 failed) reload하면 재전송이
+  Rust의 `InvalidState{state:"failed"}`로 확인되어 generation 2를 시작했다(`fifth_stabilization.py --scenario loading`).
+
+### 5차 정책·기록의 정정
+
+- 5차 기록의 확인 창 간헐 실패 원인 추정(passive effect 시점)은 계측으로 맞았다. 그러나 그 수정을 버린 이유(native 창 닫기
+  회귀)는 시험기의 경합이었다. 이전 기록은 그대로 두고 이 절에서 바로잡는다.
+
+### 6차 검증 기록
+
+| 검사 | 실제 결과 |
+|------|-----------|
+| 기준 코드에 새 `sixthStabilization.test.tsx` | 20개 중 10 실패·10 통과(위 표) |
+| `npm run typecheck`, `npm run lint`, `npm test -- --reporter=dot`, `npm run build` | 오류 없음, Vitest 329개(새 21개) |
+| 확인 창 초점 반복(같은 장비, 번갈아) | 계측 300회 ×3: 수정 0/900, 기준 13/900 실패. 전체 Vitest 20회: 수정 0/20, 기준 4/20 실패 |
+| `src-tauri`: `cargo fmt --check`, `cargo check --locked --all-targets`, `cargo clippy --locked --all-targets -- -D warnings`, `cargo test --locked` | 통과, 단위 51 + 통합 1(Rust 변경 없음) |
+| `VITE_GEUL_TEST_HOOKS=1 npm run tauri build -- --debug --no-bundle` | 통과(WASM commit `1a76570e`). 이후 소스 변경은 주석 한 곳뿐 |
+| `tests/e2e/tauri_smoke.py` | 62/62 |
+| `tests/integration/rhwp/rhwp_poc.py` | 64/64 ×3회. hit test 32/32·편차 0. p95(HWP/HWPX) 90/112, 102/80, 95/108 ms(≤150). 같은 부하(load avg 약 5.5)의 기준 빌드 95/82 ms(다른 1회는 기존 WebDriver 연결 끊김) — 입력 경로 변경 없음 |
+| `fourth_stabilization.py` / `--scenario dpi` | 22/22 / 13/13 |
+| `fourth_stabilization.py --scenario close --native-close`(Xvfb, 세션 D-Bus 필요) | 고친 시험기: 최종 소스 7/7회 통과(각 4/4), 기준 소스 3/3. 원래 시험기: 기준 3/3 통과, 확인 창 변경 빌드 승인 단계 실패(위 표의 원인) |
+| `fifth_stabilization.py` / `--scenario dpi` | 21/21(새 loading 2개 포함) / 8/8 |
+| `preedit_reversibility.mjs` | HWP 113/120, HWPX 42/80 바이트 다름(글자 200/200 같음) |
+
+환경 주의: Xvfb 실행에 세션 D-Bus가 없으면 WebKit 보조 프로세스가 남아 기준 코드도 close 시나리오 정리 단계에서 실패했다
+(3/3). 세션 D-Bus를 띄우면 통과한다. 이는 앱 회귀가 아니다.
+
+### 실제 한국어 IME 게이트(6차 재실행)
+
+같은 환경(Xvfb + WebKitGTK 2.54.1 + ibus 1.5.33 + ibus-hangul 1.5.5, 실제 xdotool 키)에서 **FAIL, 4/7**: preedit 표시·조합 중
+caret·조합 중 클릭은 FAIL(조합 중 이벤트가 페이지에 오지 않음), 확정 1회·revision(0→9)·가가·조합 중 ←는 PASS(HWP·HWPX 같음).
+창 초점 이동은 NOT RUN. T007은 체크하지 않고 T008 이후는 시작하지 않았다.
+

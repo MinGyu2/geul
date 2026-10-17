@@ -188,9 +188,48 @@ def failure_ordering(d, fixtures, scratch):
         check(f"{fmt}: new generation commits normally", p.status(d)["paragraphText"] == "z" + before)
 
 
+REJECT_LOADING_FAILURE = """window.__callbackMap=window.__TAURI_INTERNALS__.callbacks;
+  window.__oldGet=window.__callbackMap.get; window.__callbackKeys=new Set(window.__callbackMap.keys()); window.__rejected=0;
+  window.__callbackMap.get=function(id){
+    const fn=window.__oldGet.call(this,id);
+    if(!fn) return fn;
+    return data=>{
+      if(window.__rejected===0 && data && !Array.isArray(data) && data.state==='failed' && data.loadGeneration===1){
+        const errorId=[...this.keys()].find(k=>k!==id&&!window.__callbackKeys.has(k));
+        window.__rejected=1; window.__oldGet.call(this,errorId)('injected transport failure');
+      } else fn(data);
+    };
+  };"""
+
+
+def loading_failure_recovery(d, scratch):
+    """6차: 불러오기 중 엔진 실패의 loading → failed 응답을 전송 오류로 바꾼다(Rust는 실제로 failed로 바꿈). 다시 불러오기가
+    전이를 다시 보내 실제 Rust 오류(InvalidState failed)로 확인한 뒤에만 새 세대를 시작하는지 본다."""
+    broken = scratch / "loading-failure.hwpx"
+    broken.write_bytes(s.with_entry(s.make_hwpx(), "Contents/header.xml",
+                                    b'<hh:head xmlns:hh="http://www.hancom.co.kr/hwpml/2011/head"><broken'))
+    d.js(REJECT_LOADING_FAILURE)
+    st = p.open_document(d, broken, expected="failed")
+    record = backend(d, broken.name)
+    check("loading failure: engine failure shown while the transition response was lost (Rust failed, generation 1)",
+          st["status"] == "failed" and d.js("return window.__rejected") == 1 and record["state"] == "failed" and record["loadGeneration"] == 1,
+          json.dumps(record))
+    d.js("window.__callbackMap.get=window.__oldGet")
+    p.press_button(d, "[data-testid=rhwp-load]")
+    for _ in range(100):
+        record = backend(d, broken.name)
+        if record["loadGeneration"] == 2 and record["state"] == "failed":
+            break
+        time.sleep(0.1)
+    error = d.js("return document.querySelector('[data-testid=rhwp-error]')?.textContent ?? ''")
+    check("loading failure: reload confirms the transition with the real Rust InvalidState(failed) and starts generation 2",
+          record["loadGeneration"] == 2 and record["state"] == "failed" and "편집 엔진" in error and "상태가 아닙니다" not in error,
+          json.dumps([record, error], ensure_ascii=False))
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--scenario", choices=("all", "zoom", "ordering", "dpi"), default="all",
+    parser.add_argument("--scenario", choices=("all", "zoom", "ordering", "loading", "dpi"), default="all",
                         help="dpi: render-limit recovery on an actual DPR >= 2 compositor (weston --scale=2)")
     parser.add_argument("--app", required=True)
     parser.add_argument("--driver", required=True)
@@ -216,6 +255,8 @@ def main():
                         low_zoom_document(d, fixtures, scratch)
                     if args.scenario in ("all", "ordering"):
                         failure_ordering(d, fixtures, scratch)
+                    if args.scenario in ("all", "loading"):
+                        loading_failure_recovery(d, scratch)
                 finally:
                     try: d.quit()
                     except (s.Failure, OSError): pass

@@ -201,6 +201,14 @@ def native_close_request(window_id, library=None):
     finally: x.XCloseDisplay(display)
 
 
+def native_click(d, xdotool, window_id, css):
+    """앱 버튼을 X11 실제 포인터로 누른다(WebDriver 명령 밖). Xvfb에는 창 장식이 없어 창 원점 = 페이지 원점이고,
+    X 픽셀 = CSS px × devicePixelRatio다(실측 Xvfb DPR 1.04)."""
+    x, y = d.js("const r=document.querySelector(arguments[0]).getBoundingClientRect(), k=window.devicePixelRatio;"
+                " return [(r.left+r.width/2)*k, (r.top+r.height/2)*k]", css)
+    subprocess.run([xdotool, "mousemove", "--window", str(window_id), str(int(x)), str(int(y)), "click", "1"], check=True)
+
+
 def close_cases(d, xdotool, library):
     window_id = int(subprocess.check_output([xdotool, "search", "--name", "^geul$"], text=True).splitlines()[-1])
     before = p.status(d)["paragraphText"]
@@ -211,11 +219,15 @@ def close_cases(d, xdotool, library):
     p.smoke.wait_until(d, "return document.querySelector('[data-action=window]') !== null")
     native_close_request(window_id, library)
     check("native WM_DELETE_WINDOW: group discard dialog once, cancel focused", d.js("return document.querySelectorAll('[role=alertdialog]').length===1 && document.activeElement.dataset.testid==='discard-cancel'"))
-    p.press_button(d, "[data-testid=discard-cancel]")
+    native_click(d, xdotool, window_id, "[data-testid=discard-cancel]")
+    p.smoke.wait_until(d, "return document.querySelector('[role=alertdialog]') === null")
     check("native cancel keeps actual WASM model editable", p.status(d)["paragraphText"] == before and d.exists(".rhwp-input"))
     native_close_request(window_id, library)
     p.smoke.wait_until(d, "return document.querySelector('[data-action=window]') !== null")
-    p.press_button(d, "[data-testid=discard-confirm]")
+    # 승인은 이 창을 파괴한다. WebDriver 명령(execute) 안에서 누르면 그 응답과 창 파괴가 몇 ms 차이로 경합해 응답이 사라질 수
+    # 있다(6차 확인: 그 경우에도 앱의 Rust 창 이벤트는 CloseRequested·확정 1회·Destroyed 1회로 정상이었고 시험기만
+    # "Session terminated"). 그래서 실제 X11 포인터로 누르고(진행 중인 WebDriver 명령 없음) 창이 사라졌는지는 X11에서 본다.
+    native_click(d, xdotool, window_id, "[data-testid=discard-confirm]")
     for _ in range(50):
         if subprocess.run([xdotool, "getwindowname", str(window_id)], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL).returncode:
             check("native confirm destroys window without recursive close dialog", True)

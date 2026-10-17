@@ -1,6 +1,7 @@
 import {
   useCallback,
   useEffect,
+  useLayoutEffect,
   useReducer,
   useRef,
   useState,
@@ -8,6 +9,7 @@ import {
   type CSSProperties,
   type FormEvent,
   type KeyboardEvent,
+  type MutableRefObject,
 } from "react";
 import type { DocumentError, SessionId, SessionInfo } from "../../adapters/contract";
 import { EMPTY_SESSIONS, type SessionsState } from "../../adapters/sessions";
@@ -58,6 +60,8 @@ export function Editor({ zoom, workspace = null, notify }: EditorProps) {
   // IME 입력 문맥은 WebView에 하나다. 탭마다 표면이 바뀌어도 끊긴 조합 상태는 함께 쓴다(imeInput.ts).
   const [imeContext] = useState(() => new ImeContext());
   const discardTarget = discard && discard.action !== "window" && state.sessions.find((session) => session.sessionId === discard.sessionId);
+  // 확인 창이 닫힌 뒤 돌려줄 초점. 창이 다른 창으로 바뀌어도(탭 → 창 닫기) 처음 창을 연 요소를 이어받는다.
+  const discardFocusReturnRef = useRef<HTMLElement | null>(null);
   const closingWindow = useRef(false);
   const closeWindow = useCallback(async () => {
     if (!workspace?.windowClose || closingWindow.current) return;
@@ -138,7 +142,7 @@ export function Editor({ zoom, workspace = null, notify }: EditorProps) {
         </div>
       )}
       {discard && (discard.action === "window" || discardTarget) && (
-        <DiscardDialog key={discard.action === "window" ? "window" : `${discard.action}:${discard.sessionId}`} request={discard} onCancel={() => setDiscard(null)} onConfirm={confirmDiscard} />
+        <DiscardDialog key={discard.action === "window" ? "window" : `${discard.action}:${discard.sessionId}`} request={discard} focusReturnRef={discardFocusReturnRef} onCancel={() => setDiscard(null)} onConfirm={confirmDiscard} />
       )}
     </main>
   );
@@ -147,18 +151,32 @@ export function Editor({ zoom, workspace = null, notify }: EditorProps) {
 /**
  * 저장하지 않은 편집을 버릴지 묻는 확인 창(alertdialog). 처음 초점은 취소에 두고, Escape는 취소, Tab은 창 안에서만
  * 돈다. 닫히면 초점을 열기 전 요소로 돌려준다.
+ * 초점 순서(6차): 처음 초점은 창이 DOM에 들어오는 commit 안(layout effect)에서 옮긴다. passive effect로 옮기면 창이 보인 뒤
+ * 그 effect가 돌 때까지 초점이 뒤의 편집 입력에 남아 그 사이의 키가 문서로 간다(재현: 창이 보이는 순간 초점이 textarea).
+ * 닫힌 뒤의 복원은 전과 같이 passive cleanup에서 한다. 창이 다른 확인 창으로 바뀌면(탭 → 창 닫기) 옛 창은 복원하지 않고
+ * (새 창이 이미 가진 초점을 빼앗지 않음) 처음 연 요소를 `focusReturnRef`로 새 창에 넘긴다.
+ * (5차 실험의 native 창 닫기 실패는 앱 동작이 아니라 시험기가 WebDriver 명령 안에서 승인을 눌러 그 응답이 창 파괴와 경합한
+ * 것이었다: 6차에 Rust 창 이벤트를 기록해 CloseRequested·확정 1회·Destroyed 1회로 기준 코드와 같음을 확인.)
  */
-function DiscardDialog({ request, onCancel, onConfirm }: { request: DiscardRequest; onCancel: () => void; onConfirm: () => void }) {
+function DiscardDialog({ request, focusReturnRef, onCancel, onConfirm }: {
+  request: DiscardRequest;
+  focusReturnRef: MutableRefObject<HTMLElement | null>;
+  onCancel: () => void;
+  onConfirm: () => void;
+}) {
   const { t } = useTranslation();
   const cancelRef = useRef<HTMLButtonElement>(null);
   const confirmRef = useRef<HTMLButtonElement>(null);
-  useEffect(() => {
-    const opener = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+  useLayoutEffect(() => {
+    if (!focusReturnRef.current && document.activeElement instanceof HTMLElement) focusReturnRef.current = document.activeElement;
     cancelRef.current?.focus();
-    return () => {
-      if (opener?.isConnected) opener.focus({ preventScroll: true });
-    };
-  }, []);
+  }, [focusReturnRef]);
+  useEffect(() => () => {
+    if (document.querySelector("[role='alertdialog'][aria-modal='true']")) return; // 이어 열린 확인 창이 초점을 가진다
+    const opener = focusReturnRef.current;
+    focusReturnRef.current = null;
+    if (opener?.isConnected) opener.focus({ preventScroll: true });
+  }, [focusReturnRef]);
   const onKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
     if (event.key === "Escape") {
       event.preventDefault();
