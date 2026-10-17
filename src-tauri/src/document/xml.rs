@@ -1,14 +1,27 @@
-//! 판별에 필요한 작은 XML 항목(OPC 관계·내용 형식)만 읽는다.
+//! 판별에 필요한 작은 XML 항목(OPC 관계·내용 형식, HWPX manifest·content.hpf)만 읽는다.
 //!
 //! quick-xml은 미리 정의된 다섯 엔티티만 풀고 DTD의 사용자 엔티티는 확장하지 않는다(엔티티 폭탄 없음).
-//! 알 수 없는 엔티티·형식 오류·UTF-8/UTF-16이 아닌 인코딩은 오류로 본다.
+//! 알 수 없는 엔티티·형식 오류·UTF-8/UTF-16이 아닌 인코딩(BOM 또는 XML 선언)·선언하지 않은 이름공간 접두사·
+//! 루트가 하나가 아닌 문서는 오류로 본다. 요소는 이름공간 URI와 지역 이름으로 구별한다(접두사는 보지 않는다).
 
-use quick_xml::events::{BytesStart, Event};
-use quick_xml::reader::Reader;
+use quick_xml::events::{BytesRef, BytesStart, Event};
+use quick_xml::name::ResolveResult;
+use quick_xml::reader::NsReader;
 use quick_xml::XmlVersion;
+
+use super::package::part_name;
 
 #[derive(Debug, PartialEq, Eq)]
 pub struct Invalid;
+
+const OPC_RELATIONSHIPS: &str = "http://schemas.openxmlformats.org/package/2006/relationships";
+const OPC_CONTENT_TYPES: &str = "http://schemas.openxmlformats.org/package/2006/content-types";
+const ODF_MANIFEST: &str = "urn:oasis:names:tc:opendocument:xmlns:manifest:1.0";
+/// HWPX(한컴)는 끝에 `/`가 있는 이름을 쓰고, OPF(EPUB) 표준 이름에는 없다.
+const OPF: [&str; 2] = [
+    "http://www.idpf.org/2007/opf/",
+    "http://www.idpf.org/2007/opf",
+];
 
 /// UTF-8(BOM 있음/없음)과 BOM이 있는 UTF-16만 받는다.
 fn decode(bytes: &[u8]) -> Result<String, Invalid> {
@@ -31,51 +44,157 @@ fn decode(bytes: &[u8]) -> Result<String, Invalid> {
                 .map(|pair| u16::from_be_bytes(*pair))
                 .collect(),
         ),
+        [0xFF, 0xFE, ..] | [0xFE, 0xFF, ..] => Err(Invalid),
         _ => std::str::from_utf8(bytes)
             .map(str::to_owned)
             .map_err(|_| Invalid),
     }
 }
 
-/// 모든 시작·빈 요소를 (지역 이름, 속성 목록)으로 넘긴다.
-fn for_each_element(
-    bytes: &[u8],
-    mut visit: impl FnMut(&str, &[(String, String)]),
-) -> Result<(), Invalid> {
-    let text = decode(bytes)?;
-    let mut reader = Reader::from_str(&text);
-    loop {
-        match reader.read_event().map_err(|_| Invalid)? {
-            Event::Start(element) | Event::Empty(element) => {
-                let (name, attributes) = element_parts(&element)?;
-                visit(&name, &attributes);
-            }
-            Event::Eof => return Ok(()),
-            _ => {}
-        }
+/// 이름공간을 푼 요소. `depth`는 루트가 0이다.
+struct Element {
+    depth: usize,
+    namespace: Option<String>,
+    name: String,
+    /// (이름공간, 지역 이름, 값). 접두사 없는 속성은 이름공간이 없다.
+    attributes: Vec<(Option<String>, String, String)>,
+}
+
+impl Element {
+    fn is(&self, namespace: &str, name: &str) -> bool {
+        self.namespace.as_deref() == Some(namespace) && self.name == name
+    }
+
+    /// 접두사 없는 속성(OPC 속성은 모두 이름공간이 없다).
+    fn attribute(&self, name: &str) -> Option<&str> {
+        self.attributes
+            .iter()
+            .find(|(namespace, key, _)| namespace.is_none() && key == name)
+            .map(|(_, _, value)| value.as_str())
     }
 }
 
-fn element_parts(element: &BytesStart<'_>) -> Result<(String, Vec<(String, String)>), Invalid> {
-    let name = element.local_name().as_ref().to_owned();
+enum Node<'a> {
+    Element(&'a Element),
+    /// 공백이 아닌 문자 데이터(텍스트·CDATA·문자/엔티티 참조). 값은 넘기지 않는다.
+    Text,
+}
+
+fn namespace(resolved: ResolveResult<'_>) -> Result<Option<String>, Invalid> {
+    match resolved {
+        ResolveResult::Unbound => Ok(None),
+        ResolveResult::Bound(namespace) => Ok(Some(namespace.as_ref().to_owned())),
+        ResolveResult::Unknown(_) => Err(Invalid), // 선언하지 않은 접두사
+    }
+}
+
+fn element(
+    reader: &NsReader<&[u8]>,
+    start: &BytesStart<'_>,
+    depth: usize,
+) -> Result<Element, Invalid> {
+    let (resolved, local) = reader.resolver().resolve_element(start.name());
     let mut attributes = Vec::new();
-    for attribute in element.attributes() {
+    for attribute in start.attributes() {
         let attribute = attribute.map_err(|_| Invalid)?;
-        let key = attribute.key.local_name().as_ref().to_owned();
+        let (resolved, local) = reader.resolver().resolve_attribute(attribute.key);
         let value = attribute
             .normalized_value(XmlVersion::Implicit1_0)
             .map_err(|_| Invalid)?
             .into_owned();
-        attributes.push((key, value));
+        attributes.push((namespace(resolved)?, local.as_ref().to_owned(), value));
     }
-    Ok((name, attributes))
+    Ok(Element {
+        depth,
+        namespace: namespace(resolved)?,
+        name: local.as_ref().to_owned(),
+        attributes,
+    })
 }
 
-fn attribute<'a>(attributes: &'a [(String, String)], key: &str) -> Option<&'a str> {
-    attributes
-        .iter()
-        .find(|(name, _)| name == key)
-        .map(|(_, value)| value.as_str())
+/// 미리 정의된 엔티티와 올바른 문자 참조만 받는다.
+fn check_reference(reference: &BytesRef<'_>) -> Result<(), Invalid> {
+    if reference.is_char_ref() {
+        return match reference.resolve_char_ref() {
+            Ok(Some(_)) => Ok(()),
+            _ => Err(Invalid),
+        };
+    }
+    match reference.as_ref() {
+        "lt" | "gt" | "amp" | "apos" | "quot" => Ok(()),
+        _ => Err(Invalid),
+    }
+}
+
+/// 문서 전체를 읽으며 요소와 공백이 아닌 문자 데이터를 넘긴다. 루트가 정확히 하나이고 모든 요소가 닫혀야 한다.
+/// `doctype`이 거짓이면 DTD 선언을 거부한다(OPC는 DTD를 금지한다).
+fn walk(
+    bytes: &[u8],
+    doctype: bool,
+    mut visit: impl FnMut(Node<'_>) -> Result<(), Invalid>,
+) -> Result<(), Invalid> {
+    let text = decode(bytes)?;
+    let mut reader = NsReader::from_str(&text);
+    let mut depth = 0usize;
+    let mut roots = 0usize;
+    loop {
+        let event = reader.read_event().map_err(|_| Invalid)?;
+        match event {
+            Event::Start(ref start) | Event::Empty(ref start) => {
+                if depth == 0 {
+                    roots += 1;
+                    if roots > 1 {
+                        return Err(Invalid);
+                    }
+                }
+                visit(Node::Element(&element(&reader, start, depth)?))?;
+                if matches!(event, Event::Start(_)) {
+                    depth += 1;
+                }
+            }
+            Event::End(_) => depth = depth.checked_sub(1).ok_or(Invalid)?,
+            Event::Text(content) => {
+                if !content
+                    .as_ref()
+                    .bytes()
+                    .all(|byte| byte.is_ascii_whitespace())
+                {
+                    if depth == 0 {
+                        return Err(Invalid); // 루트 밖의 문자 데이터
+                    }
+                    visit(Node::Text)?;
+                }
+            }
+            Event::CData(_) => {
+                if depth == 0 {
+                    return Err(Invalid);
+                }
+                visit(Node::Text)?;
+            }
+            Event::GeneralRef(reference) => {
+                check_reference(&reference)?;
+                if depth == 0 {
+                    return Err(Invalid);
+                }
+                visit(Node::Text)?;
+            }
+            Event::Decl(declaration) => {
+                if let Some(encoding) = declaration.encoding() {
+                    let encoding = encoding.map_err(|_| Invalid)?;
+                    if !["utf-8", "utf-16"]
+                        .iter()
+                        .any(|name| encoding.eq_ignore_ascii_case(name))
+                    {
+                        return Err(Invalid);
+                    }
+                }
+            }
+            Event::DocType(_) if !doctype => return Err(Invalid),
+            Event::DocType(_) | Event::Comment(_) | Event::PI(_) => {}
+            Event::Eof if depth == 0 && roots == 1 => return Ok(()),
+            Event::Eof => return Err(Invalid),
+        }
+    }
 }
 
 #[derive(Debug, PartialEq, Eq)]
@@ -85,29 +204,43 @@ pub struct Relationship {
     pub external: bool,
 }
 
-/// `_rels/.rels` 같은 관계 항목의 `Relationship` 요소.
+/// `_rels/.rels` 같은 관계 항목. 루트는 OPC 관계 이름공간의 `Relationships`, 자식은 같은 이름공간의 빈
+/// `Relationship` 요소만 있어야 하고 `Id`는 겹치지 않는다(ECMA-376 Part 2 관계 스키마).
 pub fn relationships(bytes: &[u8]) -> Result<Vec<Relationship>, Invalid> {
     let mut found = Vec::new();
-    let mut missing = false;
-    for_each_element(bytes, |name, attributes| {
-        if name != "Relationship" {
-            return;
-        }
-        match (
-            attribute(attributes, "Type"),
-            attribute(attributes, "Target"),
-        ) {
-            (Some(kind), Some(target)) => found.push(Relationship {
-                kind: kind.to_owned(),
-                target: target.to_owned(),
-                external: attribute(attributes, "TargetMode") == Some("External"),
-            }),
-            _ => missing = true,
+    let mut ids = std::collections::HashSet::new();
+    walk(bytes, false, |node| {
+        let Node::Element(element) = node else {
+            return Err(Invalid);
+        };
+        match element.depth {
+            0 if element.is(OPC_RELATIONSHIPS, "Relationships") => Ok(()),
+            1 if element.is(OPC_RELATIONSHIPS, "Relationship") => {
+                let (Some(id), Some(kind), Some(target)) = (
+                    element.attribute("Id"),
+                    element.attribute("Type"),
+                    element.attribute("Target"),
+                ) else {
+                    return Err(Invalid);
+                };
+                let external = match element.attribute("TargetMode") {
+                    None | Some("Internal") => false,
+                    Some("External") => true,
+                    Some(_) => return Err(Invalid),
+                };
+                if !ids.insert(id.to_owned()) {
+                    return Err(Invalid);
+                }
+                found.push(Relationship {
+                    kind: kind.to_owned(),
+                    target: target.to_owned(),
+                    external,
+                });
+                Ok(())
+            }
+            _ => Err(Invalid),
         }
     })?;
-    if missing {
-        return Err(Invalid);
-    }
     Ok(found)
 }
 
@@ -120,7 +253,8 @@ pub struct ContentTypes {
 }
 
 impl ContentTypes {
-    /// 부분 이름(`/word/document.xml` 형식)의 내용 형식. OPC처럼 대소문자를 무시한다.
+    /// 부분 이름(`/word/document.xml` 형식)의 내용 형식. OPC처럼 대소문자를 무시하고, Override가 Default보다 앞선다.
+    /// 확장자는 마지막 경로 조각에서만 찾는다.
     pub fn of(&self, part_name: &str) -> Option<&str> {
         if let Some((_, kind)) = self
             .overrides
@@ -129,7 +263,8 @@ impl ContentTypes {
         {
             return Some(kind);
         }
-        let extension = part_name.rsplit_once('.').map(|(_, extension)| extension)?;
+        let segment = part_name.rsplit('/').next()?;
+        let extension = segment.rsplit_once('.').map(|(_, extension)| extension)?;
         self.defaults
             .iter()
             .find(|(name, _)| name.eq_ignore_ascii_case(extension))
@@ -137,25 +272,74 @@ impl ContentTypes {
     }
 }
 
-/// `[Content_Types].xml`의 `Default`·`Override` 요소.
+/// `[Content_Types].xml`. 루트는 OPC 내용 형식 이름공간의 `Types`, 자식은 같은 이름공간의 빈 `Default`·`Override`
+/// 요소만 있어야 한다. 같은 확장자의 Default나 같은 부분 이름의 Override가 둘이면(대소문자 무시) 어느 쪽을 따를지
+/// 정할 수 없으므로 거부한다.
 pub fn content_types(bytes: &[u8]) -> Result<ContentTypes, Invalid> {
     let mut types = ContentTypes::default();
-    let mut missing = false;
-    for_each_element(bytes, |name, attributes| {
-        let pair = match name {
-            "Default" => (attribute(attributes, "Extension"), &mut types.defaults),
-            "Override" => (attribute(attributes, "PartName"), &mut types.overrides),
-            _ => return,
+    walk(bytes, false, |node| {
+        let Node::Element(element) = node else {
+            return Err(Invalid);
         };
-        match (pair.0, attribute(attributes, "ContentType")) {
-            (Some(key), Some(kind)) => pair.1.push((key.to_owned(), kind.to_owned())),
-            _ => missing = true,
+        let kind = element
+            .attribute("ContentType")
+            .filter(|kind| !kind.is_empty());
+        let (key, list) = match element.depth {
+            0 if element.is(OPC_CONTENT_TYPES, "Types") => return Ok(()),
+            1 if element.is(OPC_CONTENT_TYPES, "Default") => (
+                element
+                    .attribute("Extension")
+                    .filter(|extension| !extension.is_empty() && !extension.contains(['.', '/'])),
+                &mut types.defaults,
+            ),
+            1 if element.is(OPC_CONTENT_TYPES, "Override") => (
+                element
+                    .attribute("PartName")
+                    .filter(|name| name.starts_with('/') && part_name(name).is_some()),
+                &mut types.overrides,
+            ),
+            _ => return Err(Invalid),
+        };
+        let (Some(key), Some(kind)) = (key, kind) else {
+            return Err(Invalid);
+        };
+        if list.iter().any(|(name, _)| name.eq_ignore_ascii_case(key)) {
+            return Err(Invalid);
         }
+        list.push((key.to_owned(), kind.to_owned()));
+        Ok(())
     })?;
-    if missing {
-        return Err(Invalid);
-    }
     Ok(types)
+}
+
+/// HWPX `META-INF/manifest.xml`(ODF manifest)이 항목 암호화를 선언하는지. 루트는 ODF manifest 이름공간의
+/// `manifest`여야 하고, 같은 이름공간의 `encryption-data` 요소가 있으면 암호화 문서다. 주석·텍스트·속성 값이나
+/// 다른 이름공간의 같은 이름은 표식이 아니다. ODF 1.0 manifest에는 DTD 선언이 있을 수 있어 받아들인다(확장하지 않음).
+pub fn odf_manifest_encrypted(bytes: &[u8]) -> Result<bool, Invalid> {
+    let mut encrypted = false;
+    walk(bytes, true, |node| {
+        if let Node::Element(element) = node {
+            if element.depth == 0 && !element.is(ODF_MANIFEST, "manifest") {
+                return Err(Invalid);
+            }
+            encrypted |= element.is(ODF_MANIFEST, "encryption-data");
+        }
+        Ok(())
+    })?;
+    Ok(encrypted)
+}
+
+/// HWPX `Contents/content.hpf`가 OPF 패키지 문서인지(루트가 OPF 이름공간의 `package`). 내용 목록은 엔진이 읽는다.
+pub fn opf_package(bytes: &[u8]) -> Result<(), Invalid> {
+    walk(bytes, true, |node| match node {
+        Node::Element(element)
+            if element.depth == 0
+                && !OPF.iter().any(|namespace| element.is(namespace, "package")) =>
+        {
+            Err(Invalid)
+        }
+        _ => Ok(()),
+    })
 }
 
 #[cfg(test)]
@@ -168,7 +352,7 @@ mod tests {
             <Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
               <!-- comment -->
               <Relationship Id="rId1" Type="t&amp;1" Target="word/document.xml"/>
-              <r:Relationship xmlns:r="x" Id="rId2" Type="ext" Target="https://example.invalid/" TargetMode="External"/>
+              <Relationship Id="rId2" Type="ext" Target="https://example.invalid/" TargetMode="External"/>
             </Relationships>"#;
         let found = relationships(rels).unwrap();
         assert_eq!(
@@ -181,25 +365,28 @@ mod tests {
         );
         assert!(found[1].external);
 
-        let types = content_types(br#"<Types><Default Extension="XML" ContentType="a"/><Override PartName="/Word/Document.xml" ContentType="b"/></Types>"#).unwrap();
+        let types = content_types(br#"<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="XML" ContentType="a"/><Override PartName="/Word/Document.xml" ContentType="b"/></Types>"#).unwrap();
         assert_eq!(types.of("/word/document.xml"), Some("b"));
         assert_eq!(types.of("/word/styles.xml"), Some("a"));
         assert_eq!(types.of("/word/image"), None);
+        assert_eq!(types.of("/word.xml/image"), None);
     }
 
     #[test]
     fn utf16_bom을_받고_다른_인코딩과_깨진_xml은_거부한다() {
-        let text = r#"<Types><Override PartName="/a.xml" ContentType="k"/></Types>"#;
+        let text = r#"<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Override PartName="/a.xml" ContentType="k"/></Types>"#;
         let mut le = vec![0xFF, 0xFE];
         le.extend(text.encode_utf16().flat_map(u16::to_le_bytes));
         assert_eq!(content_types(&le).unwrap().of("/a.xml"), Some("k"));
         let mut be = vec![0xFE, 0xFF];
         be.extend(text.encode_utf16().flat_map(u16::to_be_bytes));
         assert_eq!(content_types(&be).unwrap().of("/a.xml"), Some("k"));
+        le.pop();
+        assert_eq!(content_types(&le), Err(Invalid)); // 홀수 길이 UTF-16
 
         assert_eq!(content_types(&[0xC3, 0x28]), Err(Invalid));
         assert_eq!(
-            content_types(b"<Types><Override PartName=\"/a\"/></Types>"),
+            content_types(b"<Types xmlns=\"http://schemas.openxmlformats.org/package/2006/content-types\"><Override PartName=\"/a\"/></Types>"),
             Err(Invalid)
         );
         assert_eq!(
@@ -208,7 +395,7 @@ mod tests {
         );
         assert_eq!(
             relationships(
-                b"<Relationships><Relationship Type=\"&custom;\" Target=\"x\"/></Relationships>"
+                b"<Relationships xmlns=\"http://schemas.openxmlformats.org/package/2006/relationships\"><Relationship Id=\"a\" Type=\"&custom;\" Target=\"x\"/></Relationships>"
             ),
             Err(Invalid)
         );
@@ -219,5 +406,10 @@ mod tests {
         let bomb = br#"<?xml version="1.0"?><!DOCTYPE r [<!ENTITY a "aaaaaaaaaa"><!ENTITY b "&a;&a;&a;&a;&a;&a;&a;&a;&a;&a;">]>
             <Relationships><Relationship Type="&b;" Target="x"/></Relationships>"#;
         assert_eq!(relationships(bomb), Err(Invalid));
+        // DTD를 받는 manifest에서도 사용자 엔티티 참조는 오류다.
+        let manifest = br#"<!DOCTYPE m [<!ENTITY a "x">]><m:manifest xmlns:m="urn:oasis:names:tc:opendocument:xmlns:manifest:1.0">&a;</m:manifest>"#;
+        assert_eq!(odf_manifest_encrypted(manifest), Err(Invalid));
+        let manifest = br#"<!DOCTYPE manifest:manifest PUBLIC "-//OpenOffice.org//DTD Manifest 1.0//EN" "Manifest.dtd"><manifest:manifest xmlns:manifest="urn:oasis:names:tc:opendocument:xmlns:manifest:1.0"/>"#;
+        assert_eq!(odf_manifest_encrypted(manifest), Ok(false));
     }
 }

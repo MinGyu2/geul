@@ -17,6 +17,10 @@ pub struct ZipEntry {
     pub crc: Option<u32>,
     pub declared_size: Option<u32>,
     pub local_name: Option<String>,
+    /// 압축된 데이터 대신 쓸 바이트(손상 데이터 재현용).
+    pub body: Option<Vec<u8>>,
+    /// 로컬 헤더에만 쓸 플래그(중앙 디렉터리와 다르게).
+    pub local_flags: Option<u16>,
 }
 
 pub fn entry(name: &str, data: &[u8]) -> ZipEntry {
@@ -28,6 +32,8 @@ pub fn entry(name: &str, data: &[u8]) -> ZipEntry {
         crc: None,
         declared_size: None,
         local_name: None,
+        body: None,
+        local_flags: None,
     }
 }
 
@@ -49,7 +55,9 @@ pub fn zip(entries: &[ZipEntry], zip64: bool) -> Vec<u8> {
     let mut out = Vec::new();
     let mut central = Vec::new();
     for item in entries {
-        let body = if item.deflate {
+        let body = if let Some(body) = &item.body {
+            body.clone()
+        } else if item.deflate {
             let mut encoder = DeflateEncoder::new(Vec::new(), Compression::default());
             encoder.write_all(&item.data).unwrap();
             encoder.finish().unwrap()
@@ -63,7 +71,7 @@ pub fn zip(entries: &[ZipEntry], zip64: bool) -> Vec<u8> {
         let local_name = item.local_name.as_deref().unwrap_or(&item.name);
         out.extend(0x0403_4b50u32.to_le_bytes());
         out.extend(20u16.to_le_bytes());
-        out.extend(item.flags.to_le_bytes());
+        out.extend(item.local_flags.unwrap_or(item.flags).to_le_bytes());
         out.extend(method.to_le_bytes());
         out.extend([0u8; 4]); // 시각
         out.extend(crc.to_le_bytes());

@@ -202,7 +202,9 @@ fn 필수_항목이_없거나_잘못된_패키지는_구조_오류다() {
         zip(&entries, false)
     };
     assert_eq!(
-        detect_bytes(&with_rels("<Relationships/>")),
+        detect_bytes(&with_rels(&format!(
+            r#"<Relationships xmlns="{OPC_RELATIONSHIPS}"/>"#
+        ))),
         parse(None, ParseProblem::MissingPart)
     );
     assert_eq!(
@@ -214,14 +216,14 @@ fn 필수_항목이_없거나_잘못된_패키지는_구조_오류다() {
         parse(None, ParseProblem::InvalidPart)
     );
     let two = format!(
-        r#"<Relationships><Relationship Type="{OFFICE_DOCUMENT}" Target="word/document.xml"/><Relationship Type="{OFFICE_DOCUMENT}" Target="word/other.xml"/></Relationships>"#
+        r#"<Relationships xmlns="{OPC_RELATIONSHIPS}"><Relationship Id="rId1" Type="{OFFICE_DOCUMENT}" Target="word/document.xml"/><Relationship Id="rId2" Type="{OFFICE_DOCUMENT}" Target="word/other.xml"/></Relationships>"#
     );
     assert_eq!(
         detect_bytes(&with_rels(&two)),
         parse(None, ParseProblem::InvalidPart)
     );
     let external = format!(
-        r#"<Relationships><Relationship Type="{OFFICE_DOCUMENT}" Target="https://example.invalid/d.xml" TargetMode="External"/></Relationships>"#
+        r#"<Relationships xmlns="{OPC_RELATIONSHIPS}"><Relationship Id="rId1" Type="{OFFICE_DOCUMENT}" Target="https://example.invalid/d.xml" TargetMode="External"/></Relationships>"#
     );
     assert_eq!(
         detect_bytes(&with_rels(&external)),
@@ -229,7 +231,10 @@ fn 필수_항목이_없거나_잘못된_패키지는_구조_오류다() {
     );
 
     let mut no_type = docx_entries();
-    no_type[0] = entry("[Content_Types].xml", b"<Types/>");
+    no_type[0] = entry(
+        "[Content_Types].xml",
+        format!(r#"<Types xmlns="{OPC_CONTENT_TYPES}"/>"#).as_bytes(),
+    );
     assert_eq!(
         detect_bytes(&zip(&no_type, false)),
         parse(None, ParseProblem::InvalidPart)
@@ -341,7 +346,7 @@ fn 암호화와_drm_문서를_거부한다() {
     );
 
     let mut manifest = hwpx_entries();
-    manifest.push(entry("META-INF/manifest.xml", b"<odf:manifest><odf:file-entry full-path=\"Contents/header.xml\"><odf:encryption-data/></odf:file-entry></odf:manifest>"));
+    manifest.push(entry("META-INF/manifest.xml", format!("<odf:manifest xmlns:odf=\"{ODF_MANIFEST}\"><odf:file-entry full-path=\"Contents/header.xml\"><odf:encryption-data/></odf:file-entry></odf:manifest>").as_bytes()));
     assert_eq!(
         detect_bytes(&zip(&manifest, false)),
         Err(DocumentError::Encrypted {
@@ -349,7 +354,10 @@ fn 암호화와_drm_문서를_거부한다() {
         })
     );
     let mut plain_manifest = hwpx_entries();
-    plain_manifest.push(entry("META-INF/manifest.xml", b"<odf:manifest/>"));
+    plain_manifest.push(entry(
+        "META-INF/manifest.xml",
+        format!("<odf:manifest xmlns:odf=\"{ODF_MANIFEST}\"/>").as_bytes(),
+    ));
     assert_eq!(detect_bytes(&zip(&plain_manifest, false)), Ok(Format::Hwpx));
 
     let mut flagged = hwpx_entries();
@@ -900,4 +908,479 @@ fn 동시에_열어도_id가_겹치지_않고_같은_파일은_하나만_등록�
         .filter(|result| matches!(result, Err(DocumentError::AlreadyOpen { .. })))
         .count();
     assert_eq!(duplicates, 7);
+}
+
+// ---- T006 안정화: 리뷰 지적 A~D 회귀 ----
+
+const ODF_MANIFEST: &str = "urn:oasis:names:tc:opendocument:xmlns:manifest:1.0";
+const OPC_RELATIONSHIPS: &str = "http://schemas.openxmlformats.org/package/2006/relationships";
+const OPC_CONTENT_TYPES: &str = "http://schemas.openxmlformats.org/package/2006/content-types";
+
+fn hwpx_with(name: &str, item: ZipEntry) -> Vec<u8> {
+    let mut entries: Vec<_> = hwpx_entries()
+        .into_iter()
+        .filter(|entry| entry.name != name)
+        .collect();
+    entries.push(item);
+    zip(&entries, false)
+}
+
+fn hwpx_manifest(manifest: &[u8]) -> Result<Format, DocumentError> {
+    detect_bytes(&hwpx_with(
+        "META-INF/manifest.xml",
+        entry("META-INF/manifest.xml", manifest),
+    ))
+}
+
+fn utf16(text: &str, little: bool) -> Vec<u8> {
+    let mut bytes = if little {
+        vec![0xFF, 0xFE]
+    } else {
+        vec![0xFE, 0xFF]
+    };
+    bytes.extend(text.encode_utf16().flat_map(|unit| {
+        if little {
+            unit.to_le_bytes()
+        } else {
+            unit.to_be_bytes()
+        }
+    }));
+    bytes
+}
+
+/// A: 암호화 표식은 ODF manifest 이름공간의 `encryption-data` 요소일 때만 인정한다(부분 문자열이 아님).
+#[test]
+fn hwpx_manifest의_암호화_요소만_암호화로_본다() {
+    let encrypted = Err(DocumentError::Encrypted {
+        format: Some(Format::Hwpx),
+    });
+    let genuine = format!(
+        r#"<?xml version="1.0" encoding="UTF-8" standalone="yes" ?><odf:manifest xmlns:odf="{ODF_MANIFEST}"><odf:file-entry full-path="Contents/header.xml" media-type="text/xml"><odf:encryption-data checksum-type="sha256-1k" checksum="AA=="><odf:algorithm algorithm-name="http://www.w3.org/2001/04/xmlenc#aes256-cbc"/></odf:encryption-data></odf:file-entry></odf:manifest>"#
+    );
+    assert_eq!(hwpx_manifest(genuine.as_bytes()), encrypted);
+    // 접두사가 달라도(LibreOffice식 `manifest:`, 기본 이름공간) 같은 요소다.
+    for variant in [
+        format!(
+            r#"<manifest:manifest xmlns:manifest="{ODF_MANIFEST}"><manifest:file-entry manifest:full-path="a"><manifest:encryption-data/></manifest:file-entry></manifest:manifest>"#
+        ),
+        format!(
+            r#"<manifest xmlns="{ODF_MANIFEST}"><file-entry full-path="a"><encryption-data/></file-entry></manifest>"#
+        ),
+    ] {
+        assert_eq!(hwpx_manifest(variant.as_bytes()), encrypted, "{variant}");
+    }
+    // UTF-8 BOM, UTF-16 LE/BE로 쓴 manifest도 같은 결과(원래 부분 문자열 검사는 UTF-16을 놓침)
+    let mut bom = b"\xEF\xBB\xBF".to_vec();
+    bom.extend(genuine.as_bytes());
+    assert_eq!(hwpx_manifest(&bom), encrypted);
+    let genuine16 = genuine.replace("UTF-8", "UTF-16");
+    assert_eq!(hwpx_manifest(&utf16(&genuine16, true)), encrypted);
+    assert_eq!(hwpx_manifest(&utf16(&genuine16, false)), encrypted);
+
+    // 주석·텍스트·속성·CDATA·다른 이름공간의 같은 이름은 암호화 표식이 아니다.
+    for incidental in [
+        format!(
+            r#"<odf:manifest xmlns:odf="{ODF_MANIFEST}"><!-- encryption-data --><odf:file-entry full-path="Contents/header.xml"/></odf:manifest>"#
+        ),
+        format!(
+            r#"<odf:manifest xmlns:odf="{ODF_MANIFEST}"><odf:file-entry full-path="encryption-data.xml" media-type="encryption-data"/></odf:manifest>"#
+        ),
+        format!(
+            r#"<odf:manifest xmlns:odf="{ODF_MANIFEST}" xmlns:x="urn:example" x:encryption-data="1"><odf:file-entry full-path="a"/></odf:manifest>"#
+        ),
+        format!(
+            r#"<odf:manifest xmlns:odf="{ODF_MANIFEST}"><x:note xmlns:x="urn:example">encryption-data</x:note></odf:manifest>"#
+        ),
+        format!(
+            r#"<odf:manifest xmlns:odf="{ODF_MANIFEST}"><x:note xmlns:x="urn:example"><![CDATA[<odf:encryption-data/>]]></x:note></odf:manifest>"#
+        ),
+        format!(
+            r#"<odf:manifest xmlns:odf="{ODF_MANIFEST}"><x:encryption-data xmlns:x="urn:example"/></odf:manifest>"#
+        ),
+    ] {
+        assert_eq!(
+            hwpx_manifest(incidental.as_bytes()),
+            Ok(Format::Hwpx),
+            "{incidental}"
+        );
+    }
+    assert_eq!(
+        hwpx_manifest(format!(r#"<odf:manifest xmlns:odf="{ODF_MANIFEST}"/>"#).as_bytes()),
+        Ok(Format::Hwpx)
+    );
+
+    // 읽을 수 없는 manifest는 암호화 여부를 판단할 수 없으므로 통과시키지 않는다(구조 오류).
+    let invalid = parse(Some(Format::Hwpx), ParseProblem::InvalidPart);
+    for malformed in [
+        format!(r#"<odf:manifest xmlns:odf="{ODF_MANIFEST}"><odf:file-entry full-path="a">"#),
+        format!(r#"<odf:manifest xmlns:odf="{ODF_MANIFEST}"></odf:file-entry>"#),
+        "<odf:manifest><odf:file-entry><odf:encryption-data/></odf:file-entry></odf:manifest>"
+            .to_owned(), // 접두사 선언 없음
+        r#"<manifest xmlns="urn:example"><file-entry/></manifest>"#.to_owned(), // ODF manifest가 아님
+        format!(
+            r#"<?xml version="1.0" encoding="ISO-8859-1"?><odf:manifest xmlns:odf="{ODF_MANIFEST}"/>"#
+        ),
+        format!(
+            r#"<odf:manifest xmlns:odf="{ODF_MANIFEST}"/><odf:manifest xmlns:odf="{ODF_MANIFEST}"/>"#
+        ),
+        String::new(),
+    ] {
+        assert_eq!(hwpx_manifest(malformed.as_bytes()), invalid, "{malformed}");
+    }
+    assert_eq!(hwpx_manifest(&[0xFF, 0xFE, 0x3C]), invalid); // 홀수 길이 UTF-16
+                                                             // 크기 상한은 그대로다.
+    let mut huge = format!(r#"<odf:manifest xmlns:odf="{ODF_MANIFEST}">"#).into_bytes();
+    huge.resize(2 * 1024 * 1024, b' ');
+    assert_eq!(
+        hwpx_manifest(&huge),
+        Err(DocumentError::ResourceLimit {
+            limit: LimitKind::PartSize
+        })
+    );
+}
+
+/// B: DOCX로 인정하기 전에 패키지의 모든 항목에서 ZIP 암호화 플래그를 확인한다.
+#[test]
+fn docx의_어느_항목이든_zip_암호화면_암호화_문서다() {
+    let encrypted = Err(DocumentError::Encrypted {
+        format: Some(Format::Docx),
+    });
+    for (name, data) in [
+        ("word/media/image1.png", &b"\x89PNG"[..]),
+        ("docProps/core.xml", b"<cp:coreProperties/>"),
+        ("word/_rels/document.xml.rels", b"<Relationships/>"),
+    ] {
+        let mut entries = docx_entries();
+        let mut extra = entry(name, data);
+        extra.flags = 1;
+        entries.push(extra);
+        assert_eq!(detect_bytes(&zip(&entries, false)), encrypted, "{name}");
+        assert_eq!(
+            detect_bytes(&zip(&entries, true)),
+            encrypted,
+            "{name} zip64"
+        );
+    }
+    // 읽는 항목의 로컬 헤더와 중앙 디렉터리의 암호화 비트가 다르면 손상으로 본다.
+    let mut local_only = docx_entries();
+    local_only[0].local_flags = Some(1);
+    assert_eq!(
+        detect_bytes(&zip(&local_only, false)),
+        parse(None, ParseProblem::CorruptContainer)
+    );
+    // 읽지 않는 항목은 중앙 디렉터리 플래그로 판단한다(엔진의 ZIP 판독기도 중앙 디렉터리를 따른다).
+    let mut unread_local_only = docx_entries();
+    let mut media = entry("word/media/image1.png", b"\x89PNG");
+    media.local_flags = Some(1);
+    unread_local_only.push(media);
+    assert_eq!(
+        detect_bytes(&zip(&unread_local_only, false)),
+        Ok(Format::Docx)
+    );
+    // DOCX가 아닌 패키지는 암호화 항목이 있어도 형식 판정을 바꾸지 않는다.
+    let mut xlsx = vec![
+        entry(
+            "[Content_Types].xml",
+            content_types(
+                "xl/workbook.xml",
+                "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml",
+            )
+            .as_bytes(),
+        ),
+        entry("_rels/.rels", package_rels("xl/workbook.xml").as_bytes()),
+        entry("xl/workbook.xml", b"<x/>"),
+    ];
+    xlsx[2].flags = 1;
+    assert_eq!(
+        detect_bytes(&zip(&xlsx, false)),
+        unsupported(UnsupportedKind::OtherOoxml)
+    );
+    let mut other = entry("readme.txt", b"x");
+    other.flags = 1;
+    assert_eq!(
+        detect_bytes(&zip(&[other], false)),
+        unsupported(UnsupportedKind::OtherZip)
+    );
+    assert_eq!(detect_bytes(&docx()), Ok(Format::Docx));
+}
+
+/// C: HWPX 필수 항목(content.hpf, header.xml)은 있기만 하면 안 되고 압축 해제·크기·CRC가 맞아야 한다.
+#[test]
+fn hwpx_필수_항목의_손상을_거부한다() {
+    let corrupt = parse(Some(Format::Hwpx), ParseProblem::CorruptContainer);
+    for name in ["Contents/content.hpf", "Contents/header.xml"] {
+        let original = hwpx_entries()
+            .into_iter()
+            .find(|item| item.name == name)
+            .unwrap();
+        let mut crc = original.clone();
+        crc.crc = Some(0x1234_5678);
+        assert_eq!(detect_bytes(&hwpx_with(name, crc)), corrupt, "{name} crc");
+        let mut garbage = original.clone();
+        garbage.body = Some(vec![0xFF; 40]); // 올바른 deflate 스트림이 아님
+        assert_eq!(
+            detect_bytes(&hwpx_with(name, garbage)),
+            corrupt,
+            "{name} deflate"
+        );
+        let mut larger = original.clone();
+        larger.declared_size = Some(original.data.len() as u32 + 7);
+        assert_eq!(
+            detect_bytes(&hwpx_with(name, larger)),
+            corrupt,
+            "{name} size+"
+        );
+        let mut smaller = original.clone();
+        smaller.declared_size = Some(3);
+        assert_eq!(
+            detect_bytes(&hwpx_with(name, smaller)),
+            corrupt,
+            "{name} size-"
+        );
+        let mut local = original.clone();
+        local.local_name = Some(name.replace("Contents", "Contentz"));
+        assert_eq!(
+            detect_bytes(&hwpx_with(name, local)),
+            corrupt,
+            "{name} local"
+        );
+        let mut method = stored(name, &original.data);
+        method.body = Some(original.data[..original.data.len() - 1].to_vec());
+        assert_eq!(
+            detect_bytes(&hwpx_with(name, method)),
+            corrupt,
+            "{name} stored"
+        );
+    }
+    // content.hpf는 OPF 패키지 문서여야 한다(주 패키지 표식). header.xml의 XML 내용은 엔진이 검사한다.
+    let invalid = parse(Some(Format::Hwpx), ParseProblem::InvalidPart);
+    for hpf in [
+        "<opf:package xmlns:opf=\"http://www.idpf.org/2007/opf/\">",
+        "<package/>",
+        "<x:package xmlns:x=\"urn:example\"/>",
+        "not xml",
+    ] {
+        assert_eq!(
+            detect_bytes(&hwpx_with(
+                "Contents/content.hpf",
+                entry("Contents/content.hpf", hpf.as_bytes())
+            )),
+            invalid,
+            "{hpf}"
+        );
+    }
+    assert_eq!(
+        detect_bytes(&hwpx_with(
+            "Contents/content.hpf",
+            entry(
+                "Contents/content.hpf",
+                b"<package xmlns=\"http://www.idpf.org/2007/opf\" version=\"2.0\"><manifest/><spine/></package>"
+            )
+        )),
+        Ok(Format::Hwpx)
+    );
+    // 실제 문서의 header.xml은 1 MiB를 넘을 수 있다(rhwp 표본 최대 약 3.2 MB). 스트림으로 확인하므로 받아들인다.
+    let mut big_header = b"<hh:head xmlns:hh=\"http://www.hancom.co.kr/hwpml/2011/head\">".to_vec();
+    big_header.resize(3 * 1024 * 1024, b' ');
+    big_header.extend(b"</hh:head>");
+    assert_eq!(
+        detect_bytes(&hwpx_with(
+            "Contents/header.xml",
+            entry("Contents/header.xml", &big_header)
+        )),
+        Ok(Format::Hwpx)
+    );
+    // 선언 크기를 속인 압축 폭탄은 선언 크기 너머로 풀지 않고 손상으로 거부한다.
+    let mut bomb = entry("Contents/header.xml", &vec![b' '; 3 * 1024 * 1024]);
+    bomb.declared_size = Some(100);
+    assert_eq!(
+        detect_bytes(&hwpx_with("Contents/header.xml", bomb)),
+        corrupt
+    );
+    // 선언 크기가 확인 상한을 넘으면 풀지 않고 거부한다.
+    let mut declared_huge = entry("Contents/header.xml", b"<hh:head/>");
+    declared_huge.declared_size = Some(u32::MAX - 1);
+    assert_eq!(
+        detect_bytes(&hwpx_with("Contents/header.xml", declared_huge)),
+        Err(DocumentError::ResourceLimit {
+            limit: LimitKind::PartSize
+        })
+    );
+    // mimetype 없는 HWPX, ZIP64, 본문(section) 손상은 판별 범위 밖(엔진 몫)이라 그대로 인정한다.
+    let without_mimetype: Vec<_> = hwpx_entries()
+        .into_iter()
+        .filter(|item| item.name != "mimetype")
+        .collect();
+    assert_eq!(
+        detect_bytes(&zip(&without_mimetype, true)),
+        Ok(Format::Hwpx)
+    );
+    let mut section = entry("Contents/section0.xml", b"<hs:sec/>");
+    section.crc = Some(0);
+    assert_eq!(
+        detect_bytes(&hwpx_with("Contents/section0.xml", section)),
+        Ok(Format::Hwpx)
+    );
+}
+
+fn docx_with(name: &str, data: &str) -> Vec<u8> {
+    let mut entries = docx_entries();
+    for item in &mut entries {
+        if item.name == name {
+            *item = entry(name, data.as_bytes());
+        }
+    }
+    zip(&entries, false)
+}
+
+fn rels(body: &str) -> String {
+    format!(
+        r#"<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="{OPC_RELATIONSHIPS}">{body}</Relationships>"#
+    )
+}
+
+fn types(body: &str) -> String {
+    format!(
+        r#"<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Types xmlns="{OPC_CONTENT_TYPES}"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>{body}</Types>"#
+    )
+}
+
+/// D: OPC 관계·내용 형식 항목은 이름공간·루트·위치·중복을 확인한다.
+#[test]
+fn opc_관계와_내용_형식의_구조를_확인한다() {
+    let invalid = parse(None, ParseProblem::InvalidPart);
+    let main =
+        format!(r#"<Relationship Id="rId1" Type="{OFFICE_DOCUMENT}" Target="word/document.xml"/>"#);
+    let main_override =
+        format!(r#"<Override PartName="/word/document.xml" ContentType="{DOCX_MAIN}"/>"#);
+    assert_eq!(
+        detect_bytes(&docx_with("_rels/.rels", &rels(&main))),
+        Ok(Format::Docx)
+    );
+    assert_eq!(
+        detect_bytes(&docx_with("[Content_Types].xml", &types(&main_override))),
+        Ok(Format::Docx)
+    );
+
+    for bad_rels in [
+        // 루트 이름공간이 없거나 다름
+        format!(r#"<Relationships>{main}</Relationships>"#),
+        format!(r#"<Relationships xmlns="urn:example">{main}</Relationships>"#),
+        format!(r#"<Other xmlns="{OPC_RELATIONSHIPS}">{main}</Other>"#),
+        // 관계가 루트의 자식이 아님, 다른 이름공간의 관계 요소, 모르는 자식
+        rels(&format!(r#"<x:wrap xmlns:x="urn:example">{main}</x:wrap>"#)),
+        rels(&format!(
+            r#"<Relationship Id="rId9" Type="t" Target="a.xml">{main}</Relationship>"#
+        )),
+        format!(
+            r#"<Relationships xmlns="{OPC_RELATIONSHIPS}"><r:Relationship xmlns:r="urn:example" Id="rId1" Type="{OFFICE_DOCUMENT}" Target="word/document.xml"/></Relationships>"#
+        ),
+        rels(&format!(r#"{main}<Extra/>"#)),
+        rels(&format!(r#"{main}text"#)),
+        // Id 없음·중복, 잘못된 TargetMode, 접두사가 붙은 Type
+        rels(&format!(
+            r#"<Relationship Type="{OFFICE_DOCUMENT}" Target="word/document.xml"/>"#
+        )),
+        rels(&format!(
+            r#"{main}<Relationship Id="rId1" Type="t" Target="a.xml"/>"#
+        )),
+        rels(&format!(
+            r#"<Relationship Id="rId1" Type="{OFFICE_DOCUMENT}" Target="word/document.xml" TargetMode="Elsewhere"/>"#
+        )),
+        rels(&format!(
+            r#"<Relationship xmlns:x="urn:example" Id="rId1" x:Type="{OFFICE_DOCUMENT}" Target="word/document.xml"/>"#
+        )),
+        // 루트가 둘, DTD
+        format!(r#"{}{}"#, rels(&main), rels("")),
+        format!(
+            r#"<!DOCTYPE Relationships><Relationships xmlns="{OPC_RELATIONSHIPS}">{main}</Relationships>"#
+        ),
+        format!(
+            r#"<?xml version="1.0" encoding="windows-1252"?><Relationships xmlns="{OPC_RELATIONSHIPS}">{main}</Relationships>"#
+        ),
+    ] {
+        assert_eq!(
+            detect_bytes(&docx_with("_rels/.rels", &bad_rels)),
+            invalid,
+            "{bad_rels}"
+        );
+    }
+
+    for bad_types in [
+        format!(r#"<Types>{main_override}</Types>"#),
+        format!(r#"<Types xmlns="urn:example">{main_override}</Types>"#),
+        // 다른 이름공간의 Override, 모르는 자식, 중첩
+        types(&format!(
+            r#"<x:Override xmlns:x="urn:example" PartName="/word/document.xml" ContentType="{DOCX_MAIN}"/>"#
+        )),
+        types(&format!(r#"{main_override}<Extra/>"#)),
+        types(&format!(
+            r#"<Default Extension="xml" ContentType="application/xml">{main_override}</Default>"#
+        )),
+        // 같은 부분 이름의 Override 둘(대소문자 무시), 같은 확장자의 Default 둘
+        types(&format!(
+            r#"{main_override}<Override PartName="/WORD/document.xml" ContentType="application/vnd.ms-word.document.macroEnabled.main+xml"/>"#
+        )),
+        types(&format!(r#"{main_override}{main_override}"#)),
+        types(&format!(
+            r#"{main_override}<Default Extension="RELS" ContentType="application/xml"/>"#
+        )),
+        // 잘못된 부분 이름·빈 확장자
+        types(&format!(
+            r#"<Override PartName="word/document.xml" ContentType="{DOCX_MAIN}"/>"#
+        )),
+        types(&format!(
+            r#"{main_override}<Default Extension="" ContentType="application/xml"/>"#
+        )),
+        format!(r#"<!DOCTYPE Types><Types xmlns="{OPC_CONTENT_TYPES}">{main_override}</Types>"#),
+    ] {
+        assert_eq!(
+            detect_bytes(&docx_with("[Content_Types].xml", &bad_types)),
+            invalid,
+            "{bad_types}"
+        );
+    }
+
+    // 확장자는 마지막 경로 조각에서만 찾는다(`word.d/document`에는 확장자가 없다).
+    let mut odd = docx_entries();
+    odd[0] = entry(
+        "[Content_Types].xml",
+        types(&format!(
+            r#"<Default Extension="d/document" ContentType="{DOCX_MAIN}"/>"#
+        ))
+        .as_bytes(),
+    );
+    odd[1] = entry("_rels/.rels", package_rels("word.d/document").as_bytes());
+    odd[2] = entry("word.d/document", b"<w:document/>");
+    assert_eq!(detect_bytes(&zip(&odd, false)), invalid);
+
+    // 올바른 변형: 접두사를 쓴 OPC 이름공간, Default로만 정한 본문 형식, Strict 관계 형식, UTF-16, ZIP64
+    let prefixed_rels = format!(
+        r#"<pr:Relationships xmlns:pr="{OPC_RELATIONSHIPS}"><pr:Relationship Id="rId1" Type="{OFFICE_DOCUMENT}" Target="/word/document.xml"/></pr:Relationships>"#
+    );
+    let prefixed_types = format!(
+        r#"<ct:Types xmlns:ct="{OPC_CONTENT_TYPES}"><ct:Default Extension="xml" ContentType="{DOCX_MAIN}"/></ct:Types>"#
+    );
+    let mut entries = docx_entries();
+    entries[0] = entry("[Content_Types].xml", prefixed_types.as_bytes());
+    entries[1] = entry("_rels/.rels", prefixed_rels.as_bytes());
+    assert_eq!(detect_bytes(&zip(&entries, false)), Ok(Format::Docx));
+    let strict = rels(
+        r#"<Relationship Id="rId1" Type="http://purl.oclc.org/ooxml/officeDocument/relationships/officeDocument" Target="word/document.xml"/><Relationship Id="rId2" Type="http://schemas.openxmlformats.org/package/2006/relationships/metadata/core-properties" Target="docProps/core.xml"/><Relationship Id="rId3" Type="http://example.invalid/ext" Target="https://example.invalid/" TargetMode="External"/>"#,
+    );
+    assert_eq!(
+        detect_bytes(&docx_with("_rels/.rels", &strict)),
+        Ok(Format::Docx)
+    );
+    let mut utf16_entries = docx_entries();
+    utf16_entries[0] = entry(
+        "[Content_Types].xml",
+        &utf16(&types(&main_override).replace("UTF-8", "UTF-16"), true),
+    );
+    utf16_entries[1] = entry(
+        "_rels/.rels",
+        &utf16(&rels(&main).replace("UTF-8", "UTF-16"), false),
+    );
+    assert_eq!(detect_bytes(&zip(&utf16_entries, false)), Ok(Format::Docx));
+    assert_eq!(detect_bytes(&zip(&utf16_entries, true)), Ok(Format::Docx));
 }

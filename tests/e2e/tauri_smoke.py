@@ -541,6 +541,38 @@ def make_hwpx() -> bytes:
     return out.getvalue()
 
 
+def patch_entry(data: bytes, name: str, *, flags: int | None = None, crc: int | None = None) -> bytes:
+    """ZIP 항목의 로컬 헤더와 중앙 디렉터리 값을 함께 바꾼다(zipfile은 암호화 플래그를 직접 쓰지 않는다)."""
+    import io
+    out = bytearray(data)
+    info = zipfile.ZipFile(io.BytesIO(data)).getinfo(name)
+    central = data.find(b"PK\x01\x02")
+    while data[central + 46:central + 46 + len(name)] != name.encode():
+        central = data.find(b"PK\x01\x02", central + 4)
+    for at, flag_at, crc_at in ((info.header_offset, 6, 14), (central, 8, 16)):
+        if flags is not None:
+            out[at + flag_at:at + flag_at + 2] = struct.pack("<H", flags)
+        if crc is not None:
+            out[at + crc_at:at + crc_at + 4] = struct.pack("<I", crc)
+    return bytes(out)
+
+
+def with_entry(data: bytes, name: str, content: bytes) -> bytes:
+    """기존 패키지에 항목 하나를 더하거나 바꾼다."""
+    import io
+    source = zipfile.ZipFile(io.BytesIO(data))
+    out = io.BytesIO()
+    with zipfile.ZipFile(out, "w", zipfile.ZIP_DEFLATED) as package:
+        for info in source.infolist():
+            if info.filename != name:
+                package.writestr(info, source.read(info.filename))
+        package.writestr(name, content)
+    return out.getvalue()
+
+
+ODF_MANIFEST = "urn:oasis:names:tc:opendocument:xmlns:manifest:1.0"
+
+
 def make_hwp() -> bytes:
     """CFB v3(512바이트 섹터). 스트림을 모두 4096바이트로 만들어 미니 스트림 없이 일반 섹터에 둔다."""
     sector, free, end, fat_sector, no_stream = 512, 0xFFFFFFFF, 0xFFFFFFFE, 0xFFFFFFFD, 0xFFFFFFFF
@@ -642,6 +674,35 @@ def run_document_sessions(start_session, results: list[str]) -> None:
                   json.dumps(wrong_type, ensure_ascii=False))
             reopened = call("document_open", {"path": path("report.docx")})
             check(results, "문서 세션: 닫은 파일을 다시 열면 새 ID", reopened.get("ok", {}).get("sessionId") == 4, json.dumps(reopened))
+
+            # T006 안정화: manifest 요소 인식(A), DOCX 전체 항목 암호화 플래그(B), HWPX 필수 항목 무결성(C), OPC 이름공간(D)
+            stabilization = {
+                "comment.hwpx": with_entry(make_hwpx(), "META-INF/manifest.xml",
+                                           f'<odf:manifest xmlns:odf="{ODF_MANIFEST}"><!-- encryption-data --></odf:manifest>'.encode()),
+                "utf16.hwpx": with_entry(make_hwpx(), "META-INF/manifest.xml", b"\xff\xfe" + (
+                    f'<odf:manifest xmlns:odf="{ODF_MANIFEST}"><odf:file-entry full-path="Contents/header.xml">'
+                    f'<odf:encryption-data/></odf:file-entry></odf:manifest>').encode("utf-16-le")),
+                "crc.hwpx": patch_entry(make_hwpx(), "Contents/header.xml", crc=0x12345678),
+                "media.docx": patch_entry(with_entry(make_docx(), "word/media/image1.png", b"\x89PNG"),
+                                          "word/media/image1.png", flags=1),
+                "nons.docx": with_entry(make_docx(), "_rels/.rels",
+                                        f'<Relationships><Relationship Id="rId1" Type="{OFFICE_DOCUMENT}" '
+                                        f'Target="word/document.xml"/></Relationships>'.encode()),
+            }
+            for name, data in stabilization.items():
+                (root / name).write_bytes(data)
+            got = {name: call("document_open", {"path": path(name)}) for name in stabilization}
+            want = {
+                "comment.hwpx": {"ok": {"sessionId": 5, "format": "hwpx", "engine": "rhwp", "revision": 0,
+                                        "state": "identified", "displayName": "comment.hwpx"}},
+                "utf16.hwpx": {"err": {"code": "Encrypted", "format": "hwpx"}},
+                "crc.hwpx": {"err": {"code": "ParseFailure", "format": "hwpx", "reason": "corrupt-container"}},
+                "media.docx": {"err": {"code": "Encrypted", "format": "docx"}},
+                "nons.docx": {"err": {"code": "ParseFailure", "reason": "invalid-part"}},
+            }
+            check(results, "문서 세션: 주석 속 encryption-data는 암호화가 아니고 UTF-16 manifest의 암호화 요소·필수 항목 CRC 손상·"
+                  "DOCX 부가 항목 암호화·이름공간 없는 OPC 관계를 거부",
+                  got == want, json.dumps(got, ensure_ascii=False))
 
             ui = driver.js("""
               return {

@@ -15,8 +15,8 @@ fn open_descriptors() -> usize {
 /// 압축하지 않은 항목으로 만든 최소 DOCX(판별 규칙 시험용 합성 파일).
 fn stored_docx() -> Vec<u8> {
     let parts: [(&str, &[u8]); 3] = [
-        ("[Content_Types].xml", br#"<Types><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/></Types>"#),
-        ("_rels/.rels", br#"<Relationships><Relationship Id="r" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/></Relationships>"#),
+        ("[Content_Types].xml", br#"<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/></Types>"#),
+        ("_rels/.rels", br#"<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="r" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/></Relationships>"#),
         ("word/document.xml", b"<w:document/>"),
     ];
     let (mut out, mut central) = (Vec::new(), Vec::new());

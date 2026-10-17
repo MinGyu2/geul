@@ -5,10 +5,10 @@
 //!
 //! 방어: 항목 수·중앙 디렉터리 크기·이름 길이 상한, 여러 디스크로 나뉜 ZIP 거부, 대소문자만 다른 중복 이름
 //! 거부(판독기마다 다른 항목을 고르는 문제), 항목 범위가 중앙 디렉터리를 넘지 않는지 확인, 읽을 때 로컬 헤더
-//! 이름 대조·압축 해제 크기 상한(`take`)·선언 크기·CRC 확인.
+//! 이름·암호화 비트 대조·압축 해제 크기 상한(`take`)·선언 크기·CRC 확인. `verify`는 내용을 모으지 않고 같은 확인만 한다.
 
 use std::collections::HashSet;
-use std::io::{self, Read, Seek, SeekFrom};
+use std::io::{self, Read, Seek, SeekFrom, Write};
 
 use flate2::read::DeflateDecoder;
 use flate2::Crc;
@@ -320,6 +320,28 @@ impl Archive {
         entry: &Entry,
         max: u64,
     ) -> Result<Vec<u8>, ZipProblem> {
+        // 선언 크기는 아직 확인 전이므로 상한까지만 미리 잡는다.
+        let capacity = usize::try_from(entry.uncompressed_size.min(max)).unwrap_or(0);
+        self.extract(reader, entry, max, Vec::with_capacity(capacity))
+    }
+
+    /// 항목 하나를 `max` 바이트 안에서 풀며 크기와 CRC만 확인한다. 푼 내용은 메모리에 모으지 않는다.
+    pub fn verify<R: Read + Seek>(
+        &self,
+        reader: &mut R,
+        entry: &Entry,
+        max: u64,
+    ) -> Result<(), ZipProblem> {
+        self.extract(reader, entry, max, io::sink()).map(drop)
+    }
+
+    fn extract<R: Read + Seek, W: Write>(
+        &self,
+        reader: &mut R,
+        entry: &Entry,
+        max: u64,
+        out: W,
+    ) -> Result<W, ZipProblem> {
         if entry.is_encrypted() {
             return Err(ZipProblem::Encrypted);
         }
@@ -328,7 +350,8 @@ impl Archive {
             return Err(ZipProblem::PartSize);
         }
         let local = read_at(reader, entry.local_offset, LOCAL_LEN)?;
-        if le32(&local, 0) != LOCAL_SIG {
+        // 로컬 헤더의 암호화 비트가 중앙 디렉터리와 다르면 판독기마다 다르게 해석할 수 있다.
+        if le32(&local, 0) != LOCAL_SIG || (le16(&local, 6) ^ entry.flags) & 1 != 0 {
             return Err(ZipProblem::Corrupt);
         }
         let name_len = u64::from(le16(&local, 26));
@@ -341,30 +364,60 @@ impl Archive {
         if data_start + entry.compressed_size > self.directory_offset {
             return Err(ZipProblem::Corrupt);
         }
-        let compressed = read_at(reader, data_start, entry.compressed_size)?;
-        let data = match entry.method {
-            0 => compressed,
-            8 => {
-                let mut out = Vec::with_capacity(entry.uncompressed_size as usize);
-                DeflateDecoder::new(compressed.as_slice())
-                    .take(max + 1)
-                    .read_to_end(&mut out)
-                    .map_err(|_| ZipProblem::Corrupt)?;
-                if out.len() as u64 > max {
-                    return Err(ZipProblem::PartSize);
-                }
-                out
-            }
-            _ => return Err(ZipProblem::UnsupportedMethod),
+        reader
+            .seek(SeekFrom::Start(data_start))
+            .map_err(|_| ZipProblem::Io)?;
+        let compressed = reader.take(entry.compressed_size);
+        let mut checked = Checked {
+            out,
+            crc: Crc::new(),
+            len: 0,
         };
-        if data.len() as u64 != entry.uncompressed_size {
+        // 상한보다 1바이트 더 풀어 보면 상한을 넘는지 알 수 있다.
+        let copied = match entry.method {
+            0 if entry.compressed_size != entry.uncompressed_size => {
+                return Err(ZipProblem::Corrupt)
+            }
+            0 => io::copy(&mut compressed.take(max + 1), &mut checked),
+            8 => io::copy(
+                &mut DeflateDecoder::new(compressed).take(max + 1),
+                &mut checked,
+            ),
+            _ => return Err(ZipProblem::UnsupportedMethod),
+        }
+        .map_err(|error| match error.kind() {
+            // 압축 데이터 손상(flate2)·항목 범위 안에서 끝난 데이터
+            io::ErrorKind::InvalidInput
+            | io::ErrorKind::InvalidData
+            | io::ErrorKind::UnexpectedEof => ZipProblem::Corrupt,
+            _ => ZipProblem::Io,
+        })?;
+        if copied > max {
+            return Err(ZipProblem::PartSize);
+        }
+        if checked.len != entry.uncompressed_size || checked.crc.sum() != entry.crc32 {
             return Err(ZipProblem::Corrupt);
         }
-        let mut crc = Crc::new();
-        crc.update(&data);
-        if crc.sum() != entry.crc32 {
-            return Err(ZipProblem::Corrupt);
-        }
-        Ok(data)
+        Ok(checked.out)
+    }
+}
+
+/// 푼 데이터를 넘기면서 길이와 CRC를 센다.
+struct Checked<W> {
+    out: W,
+    crc: Crc,
+    len: u64,
+}
+
+impl<W: Write> Write for Checked<W> {
+    fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
+        let written = self.out.write(buf)?;
+        self.crc.update(&buf[..written]);
+        self.len += written as u64;
+        Ok(written)
+    }
+
+    fn flush(&mut self) -> io::Result<()> {
+        self.out.flush()
     }
 }

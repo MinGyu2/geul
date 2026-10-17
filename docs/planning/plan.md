@@ -2,7 +2,7 @@
 
 Date: 2026-10-13
 Spec: [spec.md](./spec.md)
-Status: Revised draft — 2026-10-16 실제 저장소 검사, submodule 고정, 보안 게이트 로컬 구현·2차 재검토 완료(원격 브랜치 보호는 미설정), Tauri/React 6영역 UI 기반(T004) 구현. 2026-10-17 T006: 문서 형식 판별·세션 기록·어댑터 계약 구현(엔진 연결 없음). 엔진 통합·화면에서 문서 열기·저장은 미착수
+Status: Revised draft — 2026-10-16 실제 저장소 검사, submodule 고정, 보안 게이트 로컬 구현·2차 재검토 완료(원격 브랜치 보호는 미설정), Tauri/React 6영역 UI 기반(T004) 구현. 2026-10-17 T006: 문서 형식 판별·세션 기록·어댑터 계약 구현(엔진 연결 없음), 같은 날 리뷰 지적 5건 안정화(판별 규칙·동시 판별 자리). 엔진 통합·화면에서 문서 열기·저장은 미착수
 
 ## Summary
 WordCraft는 DOCX, rhwp는 HWP/HWPX 전용 엔진으로 독립 관리한다. Tauri 2 + React/TypeScript 6개 영역 UI에 문서별 어댑터, 공통 명령/상태 계층을 결합한다. 고급 리본보다 렌더·IME·선택·쓰기 무손실 검증과 공개 저장소 보안 게이트를 우선한다.
@@ -85,12 +85,17 @@ interface EditorAdapter {
   `SessionInfo = {sessionId, format: hwp|hwpx|docx, engine: rhwp|wordcraft, revision, state: "identified", displayName}`(경로 없음).
 - 형식 판별(`detect.rs`, `ole.rs`, `package.rs`, `zip.rs`, `xml.rs`): HWP = OLE + `FileHeader`("HWP Document File", 주 버전 5,
   암호·DRM 플래그 없음) + `DocInfo` + `BodyText`/`ViewText` + 모든 스트림의 끝 섹터가 파일 안에 있음. HWPX = ZIP +
-  `Contents/content.hpf` + `Contents/header.xml`(있으면 `mimetype` = `application/hwp+zip`, `META-INF/manifest.xml`에
-  `encryption-data`면 암호화). DOCX = ZIP + `[Content_Types].xml` + `_rels/.rels`의 officeDocument 대상 부분이 있고 내용 형식이
-  WordprocessingML 문서 본문(docm·dotx·XLSX 등은 거부). 두 표식이 함께 있으면 `Ambiguous`. rhwp `detect_format`은 모든 OLE를
-  HWP로 보므로 쓰지 않는다.
+  `Contents/content.hpf`(풀어서 크기·CRC 확인, 루트가 OPF `package`) + `Contents/header.xml`(크기·CRC만 확인, XML 내용은 엔진 몫)
+  (있으면 `mimetype` = `application/hwp+zip`; `META-INF/manifest.xml`이 있으면 루트가 ODF manifest여야 하고 그 이름공간의
+  `encryption-data` 요소가 있으면 암호화, 읽을 수 없는 manifest는 `ParseFailure`). DOCX = ZIP + OPC 구조를 따르는
+  `[Content_Types].xml`·`_rels/.rels`(이름공간·루트·루트 바로 아래 위치·`Id`·Default/Override 중복 없음·DTD 없음) + officeDocument
+  대상 부분이 있고 내용 형식이 WordprocessingML 문서 본문(docm·dotx·XLSX 등은 거부). HWPX·DOCX 모두 ZIP 항목 하나라도 암호화
+  플래그가 있으면 `Encrypted`, 읽는 항목의 로컬 헤더와 중앙 디렉터리 암호화 비트가 다르면 손상. 두 표식이 함께 있으면 `Ambiguous`.
+  rhwp `detect_format`은 모든 OLE를 HWP로 보므로 쓰지 않는다. 판별은 선택한 컨테이너 불변식까지만 확인하며 본문·header.xml의
+  XML 내용, 엔진 불러오기(T007/T008), 저장 왕복 무결성(T009)을 보장하지 않는다.
 - 자원 한계: 문서 512 MiB, ZIP 항목 20,000개·중앙 디렉터리 8 MiB·이름 4,096바이트, 판별용 XML 항목 1 MiB(선언 크기와
-  실제 압축 해제 모두), OLE 스트림 20,000개, 세션 64개, 동시 열기 8개. 문서 본문은 판별에 풀지 않는다.
+  실제 압축 해제 모두), 크기·CRC만 확인하는 HWPX header.xml 64 MiB(내용을 모으지 않음), OLE 스트림 20,000개, 세션 64개, 동시
+  판별 8개(자리는 차단 작업이 끝날 때 돌려주므로 명령 future가 취소돼도 실행 중인 판별이 자리를 쥔다). 문서 본문은 판별에 풀지 않는다.
 - 오류(`error.rs`, `src/adapters/contract.ts`): 위 키 중 `UnsupportedFormat`·`ParseFailure`·`StaleSession`을 쓰고,
   결정적인 거부를 위해 `InvalidPath`·`Unreadable`·`ExtensionMismatch`·`Encrypted`·`ResourceLimit`·`AlreadyOpen`·
   `UnknownSession`·`Internal`을 더했다. 프런트엔드는 `EngineUnavailable`(엔진 연결 전)·`Protocol`(계약 밖 응답)을 만든다.
