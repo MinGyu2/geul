@@ -7,14 +7,20 @@
 // - 변경이 성공하면 pending을 1 늘리고, 확정은 한 번에 하나만 보낸다(base = 백엔드가 마지막으로 확인한 revision,
 //   count = 그 뒤 성공한 변경 수). 응답을 기다리는 동안의 변경은 다음 확정에 묶인다. 그래서 확정이 순서를 바꿔
 //   도착하거나 중복될 수 없고, revision은 성공한 변경마다 정확히 1씩 는다(다시 그리기·선택·실패한 변경은 확정 안 함).
+// - 불러오기 시도마다 백엔드가 번호(loadGeneration)를 주고, 그 시도의 상태 전이·확정은 이 번호를 함께 보낸다. 옛 시도의
+//   요청은 백엔드가 StaleLoad로 거부한다. 엔진이 문서를 읽고 페이지 정보까지 얻은 뒤에야 ready를 요청한다.
 // - 백엔드가 확정을 거부하면(RevisionMismatch·InvalidState) 모델이 기록과 어긋났다고 보고 세션을 failed로 돌린다.
 //   닫힌 세션(StaleSession·UnknownSession)이면 모델을 버린다. 엔진 편집 함수가 예외를 던지면 일부만 바뀌었을 수 있어
 //   편집을 멈추고 failed로 돌린다(읽기 전용 표시, 다시 불러오기 가능 — 확정하지 않은 편집은 버려진다).
+//   엔진 변경은 성공했는데 그 뒤 화면 갱신 준비(페이지 정보)·그리기가 실패하면, 변경은 이미 모델에 있으므로 세고
+//   (확정 대기열에 넣음) 편집을 멈춘다.
+// - 저장이 없으므로(T009) 편집한 모델(확정했거나 확정 대기·조합 중인 변경)은 닫기·다시 불러오기 전에 사용자가
+//   버리기를 명시해야 한다(`hasUnpreservedChanges`, `load({ discard })`).
 // - IME 조합 중에는 조합 문자열을 문서에 바로 넣어 보여 주고(rhwp-studio와 같은 방식), 조합이 끝날 때 한 번만 변경으로
 //   센다. 조합이 글자 없이 끝나면(취소) 넣었던 글자를 지우므로 변경이 아니다. 선택을 지우고 시작한 조합은 변경이다.
 // - 저장은 없다(T009). 내보내기 검사는 메모리에서만 내보내고 다시 열어 비교한다(파일을 쓰지 않음).
 import type { DocumentBackend } from "../../../adapters/backend";
-import type { DocumentError, SessionInfo } from "../../../adapters/contract";
+import type { DocumentError, Result, SessionInfo } from "../../../adapters/contract";
 import type { DocumentSessions } from "../../../adapters/sessions";
 import type { RhwpDocument, RhwpModule } from "./rhwpModule";
 import {
@@ -44,12 +50,18 @@ export interface PageSize {
 
 export interface RoundTripReport {
   format: "hwp" | "hwpx";
+  /** 끝까지 비교하지 못한 단계(null이면 비교까지 마침). */
+  failure: "export" | "reopen" | null;
   bytes: number;
+  /** 엔진의 손실 보고가 계약 모양({count, losses[]}, count = losses 수)인지. 아니면 lossCount는 -1. */
+  lossValid: boolean;
   lossCount: number;
   losses: unknown[];
   pagesEqual: boolean;
   textEqual: boolean;
   controlsEqual: boolean;
+  /** 손실 보고가 올바르고 0건이며 쪽 수·본문·컨트롤 배치가 모두 같을 때만 true. */
+  passed: boolean;
 }
 
 export interface LatencyStats {
@@ -59,7 +71,35 @@ export interface LatencyStats {
   max: number;
 }
 
-type Mutation = () => DocPosition;
+/** 엔진 모델을 바꾸고 새 커서(선택 없음) 또는 새 커서·선택 기준점을 돌려준다. */
+type Mutation = () => DocPosition | { caret: DocPosition; anchor: DocPosition };
+
+const LOADED = { ok: true, value: null } as const;
+
+/** 엔진 손실 보고(JSON)를 엄격히 읽는다. 모양이 다르면 null(통과로 보지 않음). */
+function parseLoss(json: string): { count: number; losses: unknown[] } | null {
+  let value: unknown;
+  try {
+    value = JSON.parse(json);
+  } catch {
+    return null;
+  }
+  if (typeof value !== "object" || value === null || Array.isArray(value)) return null;
+  const { count, losses } = value as { count?: unknown; losses?: unknown };
+  if (!Number.isSafeInteger(count) || (count as number) < 0 || !Array.isArray(losses)) return null;
+  return losses.length === count ? { count: count as number, losses } : null;
+}
+
+/** 문서의 페이지 크기 목록. 엔진 오류는 그대로 던진다(호출하는 쪽이 단계별 실패로 다룸). */
+function readPages(doc: RhwpDocument): PageSize[] {
+  const pages: PageSize[] = [];
+  const count = doc.pageCount();
+  for (let page = 0; page < count; page++) {
+    const info = JSON.parse(doc.getPageInfo(page)) as { width?: unknown; height?: unknown };
+    pages.push({ width: Number(info.width) || 0, height: Number(info.height) || 0 });
+  }
+  return pages;
+}
 
 const START: DocPosition = { section: 0, paragraph: 0, offset: 0 };
 const MAX_SAMPLES = 1000;
@@ -83,7 +123,12 @@ export class RhwpEditorSession {
   private committed = 0;
   private pending = 0;
   private committing = false;
-  private loadingPromise: Promise<void> | null = null;
+  /** 지금 모델을 만든 불러오기 시도 번호(백엔드가 준 값, 0 = 없음). */
+  private generation = 0;
+  /** 지금 모델을 불러온 뒤 문서를 바꾼 적이 있음(확정 여부와 무관, 실패해도 유지). */
+  private modified = false;
+  private loadingPromise: Promise<Result<null>> | null = null;
+  private closing = false;
   private disposed = false;
   private composition: { anchor: DocPosition; text: string; deletedSelection: boolean } | null = null;
   private readonly samples: number[] = [];
@@ -111,76 +156,135 @@ export class RhwpEditorSession {
   }
 
   get editable() {
-    return this.status.kind === "ready" && this.doc !== null;
+    return this.status.kind === "ready" && this.doc !== null && !this.closing;
+  }
+
+  /** 닫는 중에는 편집을 막는다(백엔드 닫기가 실패하면 false로 되돌려 다시 편집할 수 있다). */
+  setClosing(closing: boolean) {
+    if (this.closing === closing || this.disposed) return;
+    this.closing = closing;
+    this.emit();
   }
 
   get composing() {
     return this.composition !== null;
   }
 
+  /** 지금 조합 중인 글자(문서에 보이는 것). */
+  get compositionText() {
+    return this.composition?.text ?? "";
+  }
+
+  /** 지금 조합의 시작 위치. */
+  get compositionAnchor(): DocPosition | null {
+    return this.composition?.anchor ?? null;
+  }
+
+  /**
+   * 저장하지 않은 편집이 이 모델에 있음: 불러온 뒤 바꾼 적이 있거나, 확정을 기다리거나 보내는 중이거나, 조합 중.
+   * 저장 기능이 없으므로(T009) 닫기·다시 불러오기는 사용자가 버리기를 명시해야 한다.
+   */
+  get hasUnpreservedChanges() {
+    return this.doc !== null && (this.modified || this.pending > 0 || this.committing || this.composition !== null);
+  }
+
   get hasSelection() {
     return compare(this.anchor, this.caret) !== 0 || !sameContext(this.anchor, this.caret);
   }
 
-  /** 엔진에 문서를 불러온다(identified·failed에서). 동시에 두 번 부르면 같은 작업을 기다린다. */
-  load(): Promise<void> {
-    this.loadingPromise ??= this.runLoad().finally(() => {
-      this.loadingPromise = null;
+  /**
+   * 엔진에 문서를 불러온다(identified·failed에서). 동시에 두 번 부르면 같은 작업을 기다린다.
+   * 지금 모델에 저장하지 않은 편집이 있으면 `discard: true` 없이는 아무것도 하지 않고 UnpreservedChanges를 돌려준다.
+   */
+  load(options: { discard?: boolean } = {}): Promise<Result<null>> {
+    if (this.loadingPromise) return this.loadingPromise;
+    if (this.hasUnpreservedChanges && !options.discard) {
+      return Promise.resolve({ ok: false, error: { code: "UnpreservedChanges", sessionId: this.sessionId } });
+    }
+    const loading = this.runLoad().finally(() => {
+      if (this.loadingPromise === loading) this.loadingPromise = null;
     });
-    return this.loadingPromise;
+    this.loadingPromise = loading;
+    return loading;
   }
 
-  private async runLoad() {
-    if (this.disposed) return;
+  private async runLoad(): Promise<Result<null>> {
+    const closed = { ok: false, error: { code: "StaleSession", sessionId: this.sessionId } } as const;
+    if (this.disposed) return closed;
     this.releaseDocument();
+    this.generation = 0;
+    this.modified = false;
+    this.pending = 0;
+    this.lastRoundTrip = null;
+    this.pages = [];
     this.status = { kind: "loading" };
     this.firstPaintMs = null;
     this.emit();
-    const bytes = await this.backend.load(this.sessionId);
-    if (this.disposed) return;
+    const loaded = await this.backend.load(this.sessionId);
+    if (this.disposed) return closed;
     void this.sessions.refresh(this.sessionId); // loading(또는 실패 시 failed) 상태를 투영에 반영
-    if (!bytes.ok) {
-      this.setStatus({ kind: "failed", error: bytes.error });
-      return;
+    if (!loaded.ok) {
+      this.setStatus({ kind: "failed", error: loaded.error });
+      return loaded;
     }
+    const generation = loaded.value.generation;
     this.loadStartedAt = performance.now();
     let doc: RhwpDocument;
     try {
       this.module ??= await this.loadModule();
     } catch {
-      return this.failLoading({ code: "EngineFailure", engine: "rhwp", stage: "init" });
+      return this.failLoading(generation, { code: "EngineFailure", engine: "rhwp", stage: "init" });
     }
+    if (this.disposed) return closed;
     try {
-      doc = this.module.openDocument(bytes.value);
+      doc = this.module.openDocument(loaded.value.bytes);
     } catch {
-      return this.failLoading({ code: "EngineFailure", engine: "rhwp", stage: "parse" });
+      return this.failLoading(generation, { code: "EngineFailure", engine: "rhwp", stage: "parse" });
+    }
+    // ready를 요청하기 전에 화면에 필요한 정보(페이지 크기)를 모두 얻는다. 여기서 실패하면 ready가 되지 않는다.
+    let pages: PageSize[];
+    try {
+      pages = readPages(doc);
+    } catch {
+      doc.free();
+      return this.failLoading(generation, { code: "EngineFailure", engine: "rhwp", stage: "parse" });
     }
     if (this.disposed) {
       doc.free();
-      return;
+      return closed;
     }
-    const ready = await this.backend.setState(this.sessionId, "loading", "ready");
-    if (this.disposed || !ready.ok) {
+    const ready = await this.backend.setState(this.sessionId, generation, "loading", "ready");
+    if (this.disposed) {
       doc.free();
-      if (!this.disposed && !ready.ok) this.handleBackendRejection(ready.error);
-      return;
+      return closed;
+    }
+    if (!ready.ok) {
+      doc.free();
+      this.generation = generation;
+      this.handleBackendRejection(ready.error);
+      return { ok: false, error: ready.error };
     }
     this.doc = doc;
     this.text = new RhwpText(doc);
+    this.generation = generation;
     this.committed = ready.value.revision;
     this.pending = 0;
+    this.modified = false;
     this.caret = this.anchor = START;
     this.preferredX = -1;
-    this.refreshPages();
+    this.pages = pages;
+    this.modelVersion += 1;
     this.sessions.applyUpdate(ready.value);
     this.setStatus({ kind: "ready" });
+    return LOADED;
   }
 
-  private async failLoading(error: DocumentError) {
-    const failed = await this.backend.setState(this.sessionId, "loading", "failed");
-    if (this.disposed) return;
+  private async failLoading(generation: number, error: DocumentError): Promise<Result<null>> {
+    const failed = await this.backend.setState(this.sessionId, generation, "loading", "failed");
+    if (this.disposed) return { ok: false, error };
     if (failed.ok) this.sessions.applyUpdate(failed.value);
     this.setStatus({ kind: "failed", error });
+    return { ok: false, error };
   }
 
   private setStatus(status: EditorStatus) {
@@ -188,19 +292,9 @@ export class RhwpEditorSession {
     this.emit();
   }
 
-  private refreshPages() {
-    const doc = this.doc;
-    if (!doc) return;
-    const pages: PageSize[] = [];
-    const count = doc.pageCount();
-    for (let page = 0; page < count; page++) {
-      const info = JSON.parse(doc.getPageInfo(page)) as { width?: unknown; height?: unknown };
-      pages.push({ width: Number(info.width) || 0, height: Number(info.height) || 0 });
-    }
-    this.pages = pages;
-  }
-
-  /** 렌더링(표면이 부른다). 엔진 오류는 렌더 실패로만 알린다. */
+  /**
+   * 렌더링(표면이 부른다). 엔진이 그리지 못하면 빈 편집 영역을 정상처럼 두지 않고 편집을 멈춘다(render 단계 실패).
+   */
   renderPage(page: number, canvas: HTMLCanvasElement, scale: number): boolean {
     if (!this.doc) return false;
     try {
@@ -211,6 +305,7 @@ export class RhwpEditorSession {
       }
       return true;
     } catch {
+      if (this.status.kind === "ready") void this.markFailed({ code: "EngineFailure", engine: "rhwp", stage: "render" });
       return false;
     }
   }
@@ -239,32 +334,43 @@ export class RhwpEditorSession {
 
   // ---- 문서 변경 ----
 
-  /** 엔진 모델을 바꾼다. 성공하면 변경 1개를 확정 대기열에 넣는다. */
+  /**
+   * 엔진 모델을 바꾼다. 성공하면(count면) 변경 1개를 확정 대기열에 넣는다. 그 뒤의 화면 갱신 준비가 실패해도 변경은
+   * 이미 모델에 있으므로 센 채로 편집을 멈춘다.
+   */
   private mutate(apply: Mutation, count = true): boolean {
-    if (!this.editable) return false;
-    let next: DocPosition;
+    if (!this.editable || !this.doc) return false;
+    const doc = this.doc;
+    let next: ReturnType<Mutation>;
     try {
       next = apply();
     } catch {
       this.failEditing();
       return false;
     }
-    this.caret = this.anchor = next;
+    this.modified = true;
+    this.lastRoundTrip = null; // 이전 모델의 내보내기 검사 결과는 더 이상 이 모델의 것이 아니다
+    this.modelVersion += 1;
+    if ("caret" in next) {
+      this.caret = next.caret;
+      this.anchor = next.anchor;
+    } else this.caret = this.anchor = next;
     this.preferredX = -1;
-    this.modelChanged();
     if (count) this.recordMutation();
+    try {
+      this.pages = readPages(doc);
+    } catch {
+      void this.markFailed({ code: "EngineFailure", engine: "rhwp", stage: "render" });
+      return true;
+    }
+    this.emit();
     return true;
   }
 
   private recordMutation() {
+    this.modified = true;
     this.pending += 1;
     void this.flushCommits();
-  }
-
-  private modelChanged() {
-    this.refreshPages();
-    this.modelVersion += 1;
-    this.emit();
   }
 
   private deleteSelectionRaw(): DocPosition {
@@ -369,6 +475,23 @@ export class RhwpEditorSession {
     return committed;
   }
 
+  /**
+   * 이미 끝낸 위치(at)에 늦게 확정된 글자를 넣는다(조합 중 클릭 뒤 IME가 보낸 확정). 변경 하나로 세고, 커서·선택
+   * 기준점은 같은 문단의 그 위치 뒤에 있을 때만 넣은 글자만큼 민다(커서를 확정 위치로 옮기지 않음).
+   */
+  insertCommittedAt(at: DocPosition, text: string): boolean {
+    if (!text || this.composition) return false;
+    const length = charCount(text);
+    const shift = (position: DocPosition): DocPosition =>
+      sameContext(position, at) && paragraphOf(position) === paragraphOf(at) && position.offset >= at.offset
+        ? { ...position, offset: position.offset + length }
+        : position;
+    return this.mutate(() => {
+      this.text!.insert(at, text);
+      return { caret: shift(this.caret), anchor: shift(this.anchor) };
+    });
+  }
+
   // ---- 커서 이동 ----
 
   private moveTo(position: DocPosition, extend: boolean, keepPreferredX = false) {
@@ -455,7 +578,7 @@ export class RhwpEditorSession {
     try {
       while (this.pending > 0 && !this.disposed && this.status.kind === "ready") {
         const count = this.pending;
-        const result = await this.backend.commit(this.sessionId, this.committed, count);
+        const result = await this.backend.commit(this.sessionId, this.generation, this.committed, count);
         if (this.disposed) return;
         if (!result.ok) {
           this.handleBackendRejection(result.error);
@@ -476,6 +599,13 @@ export class RhwpEditorSession {
       this.dispose();
       return;
     }
+    if (error.code === "StaleLoad") {
+      // 이 모델은 더 새로운 불러오기 시도로 대체됐다. 그 시도의 상태를 건드리지 않고 편집만 멈춘다.
+      this.composition = null;
+      this.setStatus({ kind: "failed", error });
+      void this.sessions.refresh(this.sessionId);
+      return;
+    }
     void this.markFailed(error);
   }
 
@@ -483,47 +613,63 @@ export class RhwpEditorSession {
     void this.markFailed({ code: "EngineFailure", engine: "rhwp", stage: "edit" });
   }
 
-  /** 편집을 멈추고 세션을 failed로 돌린다. 모델은 표시용으로만 남긴다. */
+  /**
+   * 편집을 멈추고 세션을 failed로 돌린다. 모델은 표시용으로만 남긴다. 확정하지 못한 변경(pending)은 지우지 않는다:
+   * 그 편집은 모델에 있고 저장되지 않았으므로, 다시 불러오기·닫기 전에 버리기 확인이 필요하다.
+   */
   private async markFailed(error: DocumentError) {
+    if (this.status.kind === "failed" || this.disposed) return;
     this.composition = null;
-    this.pending = 0;
     this.setStatus({ kind: "failed", error });
     const info: SessionInfo | null = this.sessions.get(this.sessionId);
     const from = info?.state === "loading" ? "loading" : "ready";
-    const failed = await this.backend.setState(this.sessionId, from, "failed");
+    const failed = await this.backend.setState(this.sessionId, this.generation, from, "failed");
     if (!this.disposed && failed.ok) this.sessions.applyUpdate(failed.value);
   }
 
-  /** 메모리에서 원본 형식으로 내보내고 다시 열어 쪽 수·본문 텍스트·컨트롤 배치를 비교한다(파일을 쓰지 않음). */
+  /**
+   * 메모리에서 원본 형식으로 내보내고 다시 열어 쪽 수·본문 텍스트·컨트롤 배치를 비교한다(파일을 쓰지 않음).
+   * 손실 보고가 올바른 모양이고 0건이며 비교가 모두 같을 때만 passed. 실패해도 내보낸 객체·다시 연 문서는 놓는다.
+   * 결과는 지금 모델에 대한 것이며, 문서를 바꾸면 지운다.
+   */
   roundTrip(format: "hwp" | "hwpx"): RoundTripReport | null {
     const doc = this.doc;
     const module = this.module;
     if (!doc || !module) return null;
+    const report: RoundTripReport = {
+      format, failure: "export", bytes: 0, lossValid: false, lossCount: -1, losses: [],
+      pagesEqual: false, textEqual: false, controlsEqual: false, passed: false,
+    };
     let reopened: RhwpDocument | null = null;
     try {
+      let bytes: Uint8Array;
       const exported = format === "hwp" ? doc.exportHwpWithReport() : doc.exportHwpxWithReport();
-      const loss = JSON.parse(exported.contentLoss()) as { count?: number; losses?: unknown[] };
-      const bytes = exported.takeBytes();
-      exported.free();
+      try {
+        const loss = parseLoss(exported.contentLoss());
+        if (loss) Object.assign(report, { lossValid: true, lossCount: loss.count, losses: loss.losses });
+        bytes = exported.takeBytes();
+      } finally {
+        exported.free();
+      }
+      report.bytes = bytes.length;
+      report.failure = "reopen";
       reopened = module.openDocument(bytes);
       const controls = (d: RhwpDocument) => (d as unknown as { getControls(): string }).getControls();
       const textOf = (d: RhwpDocument) => (d as unknown as { getTextFileText(): string }).getTextFileText();
-      this.lastRoundTrip = {
-        format,
-        bytes: bytes.length,
-        lossCount: Number(loss.count ?? -1),
-        losses: loss.losses ?? [],
-        pagesEqual: reopened.pageCount() === doc.pageCount(),
-        textEqual: textOf(reopened) === textOf(doc),
-        controlsEqual: controls(reopened) === controls(doc),
-      };
+      report.pagesEqual = reopened.pageCount() === doc.pageCount();
+      report.textEqual = textOf(reopened) === textOf(doc);
+      report.controlsEqual = controls(reopened) === controls(doc);
+      report.failure = null;
     } catch {
-      this.lastRoundTrip = null;
+      // report.failure가 실패한 단계를 가리킨다.
     } finally {
       reopened?.free();
     }
+    report.passed = report.failure === null && report.lossValid && report.lossCount === 0
+      && report.pagesEqual && report.textEqual && report.controlsEqual;
+    this.lastRoundTrip = report;
     this.emit();
-    return this.lastRoundTrip;
+    return report;
   }
 
   /** 커서 위치를 짧은 문자열로(진단 표시용). 예: "0:3:5", 셀이면 "0:2:1@0/3/0". */

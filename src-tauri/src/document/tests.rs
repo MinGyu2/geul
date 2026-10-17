@@ -2169,6 +2169,14 @@ mod t007 {
     use crate::document::session::MAX_COMMIT_COUNT;
     use SessionState::{Failed, Identified, Loading, Ready};
 
+    /// 지금 불러오기 시도 번호(닫힌 세션이면 마지막으로 본 번호 대신 1).
+    fn generation(registry: &SessionRegistry, id: u64) -> u64 {
+        registry
+            .get(id)
+            .map(|info| info.load_generation)
+            .unwrap_or(1)
+    }
+
     fn registry_with(dir: &TempDir, name: &str, bytes: &[u8]) -> (SessionRegistry, u64) {
         let registry = SessionRegistry::default();
         let info = registry.register(identified(dir, name, bytes)).unwrap();
@@ -2193,24 +2201,28 @@ mod t007 {
             Err(DocumentError::InvalidState { state: Loading, .. })
         ));
         assert_eq!(
-            registry.commit(id, 0, 1),
+            registry.commit(id, generation(&registry, id), 0, 1),
             Err(DocumentError::InvalidState {
                 session_id: id,
                 state: Loading
             })
         );
-        let ready = registry.transition(id, Loading, Ready).unwrap();
+        let ready = registry
+            .transition(id, generation(&registry, id), Loading, Ready)
+            .unwrap();
         assert_eq!(
             (ready.state, ready.revision, ready.dirty, ready.sequence),
             (Ready, 0, false, 2)
         );
 
-        let one = registry.commit(id, 0, 1).unwrap();
+        let one = registry
+            .commit(id, generation(&registry, id), 0, 1)
+            .unwrap();
         assert_eq!((one.revision, one.dirty, one.sequence), (1, true, 3));
         // 같은 기준으로 다시 확정(중복)·옛 기준(순서 뒤바뀜)은 거부하고 revision을 바꾸지 않는다.
         for stale_base in [0, 5] {
             assert_eq!(
-                registry.commit(id, stale_base, 1),
+                registry.commit(id, generation(&registry, id), stale_base, 1),
                 Err(DocumentError::RevisionMismatch {
                     session_id: id,
                     revision: 1
@@ -2218,29 +2230,36 @@ mod t007 {
             );
         }
         assert_eq!(registry.get(id).unwrap(), one);
-        let three = registry.commit(id, 1, 2).unwrap();
+        let three = registry
+            .commit(id, generation(&registry, id), 1, 2)
+            .unwrap();
         assert_eq!((three.revision, three.sequence), (3, 4));
         for bad in [0, MAX_COMMIT_COUNT + 1] {
             assert_eq!(
-                registry.commit(id, 3, bad),
+                registry.commit(id, generation(&registry, id), 3, bad),
                 Err(DocumentError::InvalidRequest)
             );
         }
 
         // 모델을 잃으면 failed, 다시 불러오면 revision은 줄지 않고 그 판에서 깨끗하다.
         assert_eq!(
-            registry.transition(id, Ready, Failed).unwrap().state,
+            registry
+                .transition(id, generation(&registry, id), Ready, Failed)
+                .unwrap()
+                .state,
             Failed
         );
         assert_eq!(
-            registry.commit(id, 3, 1),
+            registry.commit(id, generation(&registry, id), 3, 1),
             Err(DocumentError::InvalidState {
                 session_id: id,
                 state: Failed
             })
         );
         registry.begin_load(id).unwrap();
-        let reloaded = registry.transition(id, Loading, Ready).unwrap();
+        let reloaded = registry
+            .transition(id, generation(&registry, id), Loading, Ready)
+            .unwrap();
         assert_eq!((reloaded.revision, reloaded.dirty), (3, false));
         assert!(reloaded.sequence > three.sequence);
     }
@@ -2258,14 +2277,14 @@ mod t007 {
             (Loading, Loading),
         ] {
             assert_eq!(
-                registry.transition(id, from, to),
+                registry.transition(id, generation(&registry, id), from, to),
                 Err(DocumentError::InvalidRequest),
                 "{from:?}->{to:?}"
             );
         }
         // 지금 상태와 다른 from
         assert_eq!(
-            registry.transition(id, Loading, Ready),
+            registry.transition(id, generation(&registry, id), Loading, Ready),
             Err(DocumentError::InvalidState {
                 session_id: id,
                 state: Identified
@@ -2277,8 +2296,11 @@ mod t007 {
         registry.begin_load(id).unwrap();
         registry.close(id).unwrap();
         let stale = Err(DocumentError::StaleSession { session_id: id });
-        assert_eq!(registry.transition(id, Loading, Ready), stale);
-        assert_eq!(registry.commit(id, 0, 1), stale);
+        assert_eq!(
+            registry.transition(id, generation(&registry, id), Loading, Ready),
+            stale
+        );
+        assert_eq!(registry.commit(id, generation(&registry, id), 0, 1), stale);
         assert!(matches!(
             registry.begin_load(id),
             Err(DocumentError::StaleSession { .. })
@@ -2304,18 +2326,20 @@ mod t007 {
             .session_id;
         for id in [a, b] {
             registry.begin_load(id).unwrap();
-            registry.transition(id, Loading, Ready).unwrap();
+            registry
+                .transition(id, generation(&registry, id), Loading, Ready)
+                .unwrap();
         }
-        registry.commit(a, 0, 2).unwrap();
+        registry.commit(a, generation(&registry, a), 0, 2).unwrap();
         assert_eq!(registry.get(b).unwrap().revision, 0);
         assert_eq!(
-            registry.commit(b, 2, 1),
+            registry.commit(b, generation(&registry, b), 2, 1),
             Err(DocumentError::RevisionMismatch {
                 session_id: b,
                 revision: 0
             })
         );
-        registry.commit(b, 0, 1).unwrap();
+        registry.commit(b, generation(&registry, b), 0, 1).unwrap();
         assert_eq!(
             (
                 registry.get(a).unwrap().revision,
@@ -2452,6 +2476,46 @@ mod t007 {
             json(DocumentError::InvalidRequest),
             r#"{"code":"InvalidRequest"}"#
         );
+    }
+
+    #[test]
+    fn 옛_불러오기_시도의_전이와_확정은_staleload로_거부한다() {
+        let dir = TempDir::new();
+        let (registry, id) = registry_with(&dir, "a.hwpx", &hwpx());
+        let first = registry.begin_load(id).unwrap().generation;
+        assert_eq!(first, 1);
+        registry.transition(id, first, Loading, Ready).unwrap();
+        registry.commit(id, first, 0, 1).unwrap();
+        registry.transition(id, first, Ready, Failed).unwrap();
+        let second = registry.begin_load(id).unwrap().generation;
+        assert_eq!(second, 2);
+        let stale = Err(DocumentError::StaleLoad {
+            session_id: id,
+            load_generation: 2,
+        });
+        // 옛 시도가 늦게 보낸 ready·failed·확정은 새 시도를 바꾸지 않는다.
+        assert_eq!(registry.transition(id, first, Loading, Ready), stale);
+        assert_eq!(registry.transition(id, first, Loading, Failed), stale);
+        let before = registry.get(id).unwrap();
+        assert_eq!((before.state, before.load_generation), (Loading, 2));
+        registry.transition(id, second, Loading, Ready).unwrap();
+        // 다시 불러온 모델에는 옛 모델의 변경이 없으므로 옛 시도의 확정은 받지 않는다(revision 1 그대로).
+        assert_eq!(registry.commit(id, first, 1, 1), stale);
+        let ready = registry.get(id).unwrap();
+        assert_eq!((ready.revision, ready.dirty), (1, false));
+        registry.commit(id, second, 1, 1).unwrap();
+        assert_eq!(
+            json(&DocumentError::StaleLoad {
+                session_id: 3,
+                load_generation: 2
+            }),
+            r#"{"code":"StaleLoad","sessionId":3,"loadGeneration":2}"#
+        );
+        assert!(json(&registry.get(id).unwrap()).contains(r#""loadGeneration":2"#));
+    }
+
+    fn json<T: serde::Serialize>(value: &T) -> String {
+        serde_json_like(value)
     }
 
     /// Tauri가 명령 결과를 직렬화하는 경로(`IpcResponse`)로 JSON을 얻는다.

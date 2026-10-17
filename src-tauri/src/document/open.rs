@@ -111,6 +111,8 @@ pub struct LoadSource {
     pub identity: FileIdentity,
     pub fingerprint: FileFingerprint,
     pub format: Format,
+    /// 이 불러오기 시도의 번호(`SessionInfo::load_generation`).
+    pub generation: u64,
 }
 
 fn read_problem(error: &io::Error) -> ReadProblem {

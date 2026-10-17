@@ -39,6 +39,11 @@ export interface SessionInfo {
   dirty: boolean;
   /** 백엔드 세션 기록이 바뀐 횟수. 더 작거나 같은 값의 응답은 늦게 온 것이다. */
   sequence: number;
+  /**
+   * 불러오기 시도 번호(0 = 아직 불러오지 않음). document_load마다 1씩 늘며, 상태 전이·확정은 이 번호를 함께 보내야 한다.
+   * 다른 번호의 요청은 `StaleLoad`로 거부된다(옛 시도가 새 시도의 상태를 바꾸지 못함).
+   */
+  loadGeneration: number;
 }
 
 export interface CloseOutcome {
@@ -65,6 +70,7 @@ export type BackendError =
   | { code: "AlreadyOpen" | "UnknownSession" | "StaleSession"; sessionId: SessionId }
   | { code: "InvalidState"; sessionId: SessionId; state: SessionState }
   | { code: "RevisionMismatch"; sessionId: SessionId; revision: number }
+  | { code: "StaleLoad"; sessionId: SessionId; loadGeneration: number }
   | { code: "FileChanged" }
   | { code: "InvalidRequest" }
   | { code: "Internal" };
@@ -80,12 +86,15 @@ export type EngineStage = "init" | "parse" | "render" | "edit" | "export";
  * - EngineUnavailable: 엔진이 아직 연결되지 않아 그 작업을 할 수 없음(WordCraft 전체, 두 엔진의 저장).
  * - EngineFailure: 연결한 엔진(WASM)이 그 단계에서 실패함. 엔진 메시지는 담지 않는다(문서 내용이 섞일 수 있음).
  * - Protocol: 응답이 계약과 맞지 않거나, 계약 밖의 거부(인자 형식 오류·권한 거부 등)를 받음.
+ * - UnpreservedChanges: 보존하지 않은 편집(확정했거나 확정 대기·조합 중인 변경)이 있어 닫기·다시 불러오기를 하지 않음.
+ *   저장 기능이 없으므로(T009) 사용자가 버리기를 명시적으로 고른 경우에만 진행한다.
  * 계획의 UnsupportedCommand(T010), UnsafeSave·SaveFailure·FileConflict(T009/T014)는 해당 작업에서 추가한다.
  */
 export type ClientError =
   | { code: "EngineUnavailable"; engine: EngineId; operation: EngineOperation }
   | { code: "EngineFailure"; engine: EngineId; stage: EngineStage }
-  | { code: "Protocol" };
+  | { code: "Protocol" }
+  | { code: "UnpreservedChanges"; sessionId: SessionId };
 
 export type DocumentError = BackendError | ClientError;
 
@@ -104,14 +113,14 @@ const hasOnly = (value: Fields, keys: readonly string[]) => Object.keys(value).e
 const isCount = (value: unknown): value is number => Number.isSafeInteger(value) && (value as number) >= 0;
 
 export function parseSessionInfo(value: unknown): SessionInfo | null {
-  const keys = ["sessionId", "format", "engine", "revision", "state", "displayName", "dirty", "sequence"];
+  const keys = ["sessionId", "format", "engine", "revision", "state", "displayName", "dirty", "sequence", "loadGeneration"];
   if (!isRecord(value) || !hasOnly(value, keys)) return null;
-  const { sessionId, format, engine, revision, state, displayName, dirty, sequence } = value;
+  const { sessionId, format, engine, revision, state, displayName, dirty, sequence, loadGeneration } = value;
   if (!isSessionId(sessionId) || !oneOf(DOCUMENT_FORMATS, format) || !oneOf(ENGINES, engine)) return null;
   if (ENGINE_FOR_FORMAT[format] !== engine) return null; // 라우팅 규칙과 어긋난 응답
-  if (!isCount(revision) || !oneOf(SESSION_STATES, state) || !isCount(sequence)) return null;
+  if (!isCount(revision) || !oneOf(SESSION_STATES, state) || !isCount(sequence) || !isCount(loadGeneration)) return null;
   if (typeof displayName !== "string" || typeof dirty !== "boolean") return null;
-  return { sessionId, format, engine, revision, state, displayName, dirty, sequence };
+  return { sessionId, format, engine, revision, state, displayName, dirty, sequence, loadGeneration };
 }
 
 export function parseCloseOutcome(value: unknown): CloseOutcome | null {
@@ -139,6 +148,7 @@ const ERROR_FIELDS: Record<
   StaleSession: { sessionId: "session" },
   InvalidState: { sessionId: "session", state: SESSION_STATES },
   RevisionMismatch: { sessionId: "session", revision: "count" },
+  StaleLoad: { sessionId: "session", loadGeneration: "count" },
   FileChanged: {},
   InvalidRequest: {},
   Internal: {},

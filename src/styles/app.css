@@ -658,6 +658,40 @@ button {
   color: var(--text-muted);
 }
 
+.discard-dialog__backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 20;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: var(--space-4);
+  background: rgb(0 0 0 / 0.35);
+}
+
+.discard-dialog {
+  max-width: 420px;
+  padding: var(--space-4);
+  border: 1px solid var(--chrome-border);
+  border-radius: 6px;
+  background: var(--panel-bg);
+  color: var(--text);
+  box-shadow: var(--page-shadow);
+  font-size: 13px;
+}
+
+.discard-dialog__title {
+  margin: 0 0 var(--space-2);
+  font-size: 14px;
+}
+
+.discard-dialog__actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--space-2);
+  margin-top: var(--space-3);
+}
+
 .editor__poc {
   font-size: 12px;
 }

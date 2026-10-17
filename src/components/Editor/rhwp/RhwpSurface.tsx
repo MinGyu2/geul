@@ -7,14 +7,15 @@
 //
 // 입력: 화면에 보이지 않는 textarea 하나가 키보드·IME를 받는다. 커서 위치로 옮겨 두어 IME 후보 창이 커서 옆에 뜬다.
 // React가 다시 그려도 같은 요소를 쓰므로 조합 상태·초점이 사라지지 않는다. 이벤트는 네이티브 리스너로 받는다.
-// - 조합: compositionstart → 조합 중 input마다 문서의 조합 범위를 textarea 값으로 바꿈 → compositionend에 최종값으로
-//   한 번 확정. 조합 직후 같은 글자로 오는 입력 이벤트(WebKit)는 무시한다(중복 삽입 방지).
-//   실측(WebKitGTK 2.54 + ibus-hangul, X11): 음절마다 compositionstart·compositionupdate 없이 input(isComposing=true)과
-//   compositionend만 온다. 그래서 시작 이벤트 없이 조합 중 입력이나 조합 끝이 오면 그 자리에서 조합을 시작한다.
-// - 조합 중 방향키 등은 조합이 끝난 뒤 처리하고, 조합 중 클릭은 지금 보이는 조합 글자를 확정한 뒤 이동한다.
+// - 조합 이벤트 해석(조합 하나는 끝이 한 번, 클릭·초점 잃음으로 끝낸 조합의 늦은 확정)은 imeInput.ts의 ImeInput이
+//   맡는다. 여기서는 DOM 이벤트를 넘기고 textarea를 비운다.
+// - 조합 중 방향키 등은 조합이 끝난 뒤 처리한다. 페이지를 누르면 ImeInput이 진행 중인 조합을 끝낸다. 페이지에 보이는
+//   조합이 있을 때만 textarea 초점을 뺐다가 돌려준다(IME가 그 조합을 버리게). 보이는 조합이 없으면 초점을 그대로 둔다:
+//   실측(WebKitGTK + ibus, sync mode)에서 초점을 빼면 IME가 클릭 때 내보내는 확정이 페이지에 오지 않아 음절이 사라졌다.
 // 응답 시간: 입력 이벤트 시각부터 바뀐 페이지를 다시 그린 뒤 두 번째 animation frame까지를 잰다(화면 반영의 상한).
 import { useCallback, useEffect, useLayoutEffect, useReducer, useRef, type CSSProperties } from "react";
 import { useTranslation } from "../../../language/LanguageContext";
+import { ImeInput } from "./imeInput";
 import type { RhwpEditorSession } from "./RhwpEditorSession";
 import type { PageRect } from "./rhwpText";
 
@@ -39,8 +40,8 @@ export function RhwpSurface({ session, zoom }: RhwpSurfaceProps) {
   const canvases = useRef(new Map<number, HTMLCanvasElement>());
   const pageBoxes = useRef(new Map<number, HTMLDivElement>());
   const inputAt = useRef<number | null>(null);
-  const lastComposed = useRef("");
   const pendingNavigation = useRef<KeyboardEvent | null>(null);
+  const ime = useRef<ImeInput | null>(null);
   const dragging = useRef(false);
   const rendered = useRef({ version: -1, scale: 0, pages: 0 });
 
@@ -99,6 +100,8 @@ export function RhwpSurface({ session, zoom }: RhwpSurfaceProps) {
   useEffect(() => {
     const input = inputRef.current;
     if (!input) return;
+    const controller = new ImeInput(session);
+    ime.current = controller;
     const mark = (event: Event) => {
       inputAt.current = event.timeStamp;
     };
@@ -126,6 +129,7 @@ export function RhwpSurface({ session, zoom }: RhwpSurfaceProps) {
       }
     };
     const onKeyDown = (event: KeyboardEvent) => {
+      controller.keyDown();
       if (event.ctrlKey || event.metaKey || event.altKey) return; // 단축키는 명령 레지스트리(T010) 몫
       if (event.isComposing || event.keyCode === 229) {
         if (NAVIGATION_KEYS.has(event.code) || NAVIGATION_KEYS.has(event.key)) pendingNavigation.current = event;
@@ -135,32 +139,21 @@ export function RhwpSurface({ session, zoom }: RhwpSurfaceProps) {
     };
     const onCompositionStart = (event: CompositionEvent) => {
       mark(event);
-      lastComposed.current = "";
-      session.beginComposition();
+      controller.compositionStart();
     };
     const onInput = (event: Event) => {
       mark(event);
-      if (session.composing || (event as InputEvent).isComposing) {
-        if (!session.composing) session.beginComposition(); // compositionstart 없이 온 조합
-        session.updateComposition(input.value);
-        return;
-      }
+      const { inputType = "", isComposing = false } = event as InputEvent;
+      const composing = session.composing || isComposing;
       const text = input.value;
-      input.value = "";
-      if (!text) return;
-      if (lastComposed.current && text === lastComposed.current) {
-        lastComposed.current = ""; // 조합이 끝난 직후 같은 글자로 다시 온 입력(중복 삽입 방지)
-        return;
-      }
-      lastComposed.current = "";
-      session.typeText(text);
+      if (!composing) input.value = "";
+      controller.input(text, inputType, isComposing);
     };
     const onCompositionEnd = (event: CompositionEvent) => {
       mark(event);
       const finalText = input.value || event.data || "";
-      if (!session.composing && finalText) session.beginComposition(); // 시작 이벤트 없이 확정만 온 조합
-      lastComposed.current = session.endComposition(finalText);
       input.value = "";
+      controller.compositionEnd(finalText);
       const pending = pendingNavigation.current;
       pendingNavigation.current = null;
       if (pending) handleKey(pending);
@@ -169,7 +162,14 @@ export function RhwpSurface({ session, zoom }: RhwpSurfaceProps) {
     input.addEventListener("compositionstart", onCompositionStart);
     input.addEventListener("input", onInput);
     input.addEventListener("compositionend", onCompositionEnd);
+    const onBlur = () => {
+      controller.blur();
+      input.value = "";
+    };
+    input.addEventListener("blur", onBlur);
     return () => {
+      input.removeEventListener("blur", onBlur);
+      ime.current = null;
       input.removeEventListener("keydown", onKeyDown);
       input.removeEventListener("compositionstart", onCompositionStart);
       input.removeEventListener("input", onInput);
@@ -188,9 +188,10 @@ export function RhwpSurface({ session, zoom }: RhwpSurfaceProps) {
     if (event.button !== 0 || !session.editable) return;
     event.preventDefault(); // 초점은 textarea에 둔다
     const input = inputRef.current;
-    if (session.composing && input) {
-      // 지금 보이는 조합 글자를 확정하고, IME가 늦게 보내는 확정 입력은 같은 글자라 무시된다.
-      lastComposed.current = session.endComposition(input.value);
+    // 진행 중인 조합을 끝낸다(보이면 그 자리에 확정, 아니면 늦게 오는 확정을 클릭 전 자리에 넣도록 기억).
+    const visible = session.composing;
+    ime.current?.pointerDown();
+    if (input && visible) {
       input.value = "";
       input.blur();
     }

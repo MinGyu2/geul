@@ -1,15 +1,21 @@
 #!/usr/bin/env python3
 """T007 rhwp HWP/HWPX 중앙 편집 PoC를 실제 Tauri 앱(WebKitGTK)에서 실행하고 측정한다.
 
-필요: 빌드된 앱(`npm run tauri build -- --debug --no-bundle`), `scripts/build-rhwp-wasm.sh` 산출물(public/rhwp/),
-tauri-driver 2.x, WebKitWebDriver, Node.js, 그래픽 세션(Wayland weston 또는 X11).
+필요: 검사 훅을 켠 앱 빌드(`VITE_GEUL_TEST_HOOKS=1 npm run tauri build -- --debug --no-bundle` — 커서 문단 글자를
+진단 속성으로 노출, 일반 빌드에는 없음), `scripts/build-rhwp-wasm.sh` 산출물(public/rhwp/), tauri-driver 2.x,
+WebKitWebDriver, Node.js, 그래픽 세션(Wayland weston 또는 X11).
 픽스처는 실행할 때 `tests/fixtures/rhwp/generate.mjs`로 임시 디렉터리에 만든다(저장소에 바이너리 없음).
 
     python3 tests/integration/rhwp/rhwp_poc.py --app src-tauri/target/debug/geul --driver <tauri-driver> \\
         [--report <결과 JSON>] [--screenshots <디렉터리>]
 
-    # 실제 한국어 IME(ibus-hangul, X11 + xdotool) 시나리오만:
-    python3 tests/integration/rhwp/rhwp_poc.py --app ... --driver ... --ime --xdotool <xdotool> --ibus <ibus>
+    # 실제 한국어 IME 게이트(X11 + ibus-hangul + xdotool, 실제 키 입력):
+    python3 tests/integration/rhwp/rhwp_poc.py --app ... --driver ... --ime --xdotool <xdotool> --ibus <ibus> \\
+        [--diagnostic-only]
+
+IME 게이트는 항목마다 PASS·FAIL·UNVERIFIED·NOT RUN을 출력한다. 필수 항목이 모두 PASS일 때만 종료 코드 0이고, FAIL이
+있으면 1, 실제 입력 환경이 없어 판단할 수 없으면(UNVERIFIED) 2다. `--diagnostic-only`는 관찰만 기록하고 종료 코드로
+게이트 결과를 나타내지 않는다(통과 증거가 아님). 합성 DOM 이벤트는 쓰지 않는다.
 
 측정은 화면에 그린 rhwp 페이지·커서(엔진의 getCursorRect)를 기준으로 한다. hit test 편차는 실제 포인터 클릭을 글자 경계
 사이 30%/70% 지점에 보내 얻은 커서 오프셋과 기대 오프셋의 차이(글자 수)다. 응답 시간은 입력 이벤트부터 바뀐 페이지를
@@ -49,6 +55,19 @@ def check(name: str, condition: bool, detail: str = "") -> None:
 
 def status(d) -> dict:
     return d.js(f"const e=document.querySelector('{STATUS}'); return e ? {{...e.dataset}} : null") or {}
+
+
+def require_test_hooks(d) -> None:
+    """검사 훅(커서 문단 글자 진단)이 있는 빌드인지 확인한다. 없으면 글자 비교 검사를 할 수 없으므로 멈춘다."""
+    if "paragraphText" not in status(d):
+        raise smoke.Failure("검사 훅이 없는 빌드입니다: VITE_GEUL_TEST_HOOKS=1로 앱을 빌드하세요")
+
+
+def confirm_discard(d, action: str) -> None:
+    """버리기 확인 창이 떴는지 보고 '버리기'를 누른다(앱 버튼은 DOM click)."""
+    smoke.wait_until(d, "const e=document.querySelector('[data-testid=discard-dialog]'); return e && e.dataset.action===arguments[0]"
+                     " && document.activeElement?.dataset.testid==='discard-cancel'", action, timeout=10)
+    press_button(d, "[data-testid=discard-confirm]")
 
 
 def wait_status(d, expected: str, timeout: float = 60) -> dict:
@@ -139,6 +158,7 @@ def scenario_load_render(d, fixtures: Path, shots: Path | None) -> None:
         fmt = name.split(".")[-1]
         info = open_document(d, fixtures / name)
         time.sleep(0.3)
+        require_test_hooks(d)
         st = status(d)
         pages = int(st.get("pages", "0"))
         first_paint = float(st.get("firstPaintMs") or "nan")
@@ -311,12 +331,18 @@ def scenario_revision(d, fmt: str) -> None:
     active = next(s for s in sessions if s["displayName"] == f"basic-ko.{fmt}")
     check(f"{fmt}: 백엔드 revision이 편집 세션의 변경 수와 같고 dirty", active["revision"] == int(status(d)["localRevision"]) and active["dirty"],
           json.dumps(active))
-    sid, rev = active["sessionId"], active["revision"]
-    stale = ipc(d, "document_commit", {"sessionId": sid, "baseRevision": max(0, rev - 1), "count": 1})
-    dup = ipc(d, "document_commit", {"sessionId": sid, "baseRevision": rev + 3, "count": 1})
+    sid, rev, gen = active["sessionId"], active["revision"], active["loadGeneration"]
+    stale = ipc(d, "document_commit", {"sessionId": sid, "loadGeneration": gen, "baseRevision": max(0, rev - 1), "count": 1})
+    dup = ipc(d, "document_commit", {"sessionId": sid, "loadGeneration": gen, "baseRevision": rev + 3, "count": 1})
     check(f"{fmt}: 옛·앞선 기준 revision의 확정은 RevisionMismatch로 거부되고 기록은 그대로",
           stale == {"err": {"code": "RevisionMismatch", "sessionId": sid, "revision": rev}} and dup == stale
           and ipc(d, "document_session", {"sessionId": sid})["ok"]["revision"] == rev, json.dumps([stale, dup]))
+    old_attempt = ipc(d, "document_commit", {"sessionId": sid, "loadGeneration": gen - 1, "baseRevision": rev, "count": 1})
+    old_transition = ipc(d, "document_set_state", {"sessionId": sid, "loadGeneration": gen - 1, "from": "ready", "to": "failed"})
+    after = ipc(d, "document_session", {"sessionId": sid})["ok"]
+    check(f"{fmt}: 다른 불러오기 시도 번호의 확정·상태 전이는 StaleLoad로 거부되고 기록은 그대로",
+          old_attempt == {"err": {"code": "StaleLoad", "sessionId": sid, "loadGeneration": gen}} and old_transition == old_attempt
+          and after["revision"] == rev and after["state"] == "ready", json.dumps([old_attempt, old_transition, after]))
     REPORT[fmt]["revisionBeforeExternal"] = rev
     _ = st
 
@@ -325,10 +351,17 @@ def scenario_roundtrip_ui(d, fmt: str) -> None:
     press_button(d, "[data-testid=rhwp-roundtrip]")
     smoke.wait_until(d, "return document.querySelector('[data-testid=rhwp-roundtrip-result]') !== null", timeout=30)
     r = d.js("return {...document.querySelector('[data-testid=rhwp-roundtrip-result]').dataset}")
-    check(f"{fmt}: 편집한 문서를 메모리에서 원본 형식으로 내보내고 다시 열어 쪽·텍스트·컨트롤 일치, 손실 보고 {r.get('lossCount')}건",
-          r.get("format") == fmt and r.get("pagesEqual") == "true" and r.get("textEqual") == "true" and r.get("controlsEqual") == "true",
+    check(f"{fmt}: 편집한 문서를 메모리에서 원본 형식으로 내보내고 다시 열어 쪽·텍스트·컨트롤 일치, 손실 보고가 올바른 모양이고 0건(통과)",
+          r.get("format") == fmt and r.get("passed") == "true" and r.get("lossValid") == "true" and r.get("lossCount") == "0"
+          and r.get("pagesEqual") == "true" and r.get("textEqual") == "true" and r.get("controlsEqual") == "true",
           json.dumps(r))
     REPORT[fmt]["roundTripInApp"] = r
+    # 검사한 뒤 문서를 바꾸면 이전 통과 결과를 보이지 않는다
+    click_paragraph_start(d)
+    press(d, "End")
+    press(d, "r")
+    check(f"{fmt}: 내보내기 검사 뒤 문서를 바꾸면 이전 통과 결과가 사라짐",
+          not d.exists("[data-testid=rhwp-roundtrip-result]"), json.dumps(status(d), ensure_ascii=False))
 
 
 def scenario_latency(d, fmt: str) -> None:
@@ -365,7 +398,8 @@ def scenario_sessions(d, fixtures: Path, scratch: Path) -> None:
           and status(d)["revision"] == str(hwpx["revision"]), json.dumps({k: v["revision"] for k, v in after.items()}))
     # 다른 쓰는 쪽이 확정하면(같은 기준) 편집기의 다음 확정이 어긋나 조용히 이어 가지 않고 failed
     sid = after["basic-ko.hwpx"]["sessionId"]
-    external = ipc(d, "document_commit", {"sessionId": sid, "baseRevision": after["basic-ko.hwpx"]["revision"], "count": 1})
+    external = ipc(d, "document_commit", {"sessionId": sid, "loadGeneration": after["basic-ko.hwpx"]["loadGeneration"],
+                                          "baseRevision": after["basic-ko.hwpx"]["revision"], "count": 1})
     click_paragraph_start(d)
     press(d, "q")
     time.sleep(0.6)
@@ -373,24 +407,38 @@ def scenario_sessions(d, fixtures: Path, scratch: Path) -> None:
     backend = ipc(d, "document_session", {"sessionId": sid})["ok"]
     check("다른 쓰는 쪽의 확정 뒤 편집기의 확정은 RevisionMismatch → 편집 중지(failed), 백엔드도 failed",
           "ok" in external and st["status"] == "failed" and backend["state"] == "failed", json.dumps([external, st.get("status"), backend]))
-    # 다시 불러오기: 파일 내용으로 돌아가고 revision은 줄지 않으며 깨끗함
+    check("편집한 뒤 실패한 문서는 저장되지 않았고 복구가 없다고 알림",
+          d.exists("[data-testid=rhwp-unpreserved-warning]"), json.dumps(st, ensure_ascii=False))
+    # 다시 불러오기: 편집한 모델을 버리는 것이므로 확인을 거친다. 취소하면 아무것도 바뀌지 않는다.
     press_button(d, "[data-testid=rhwp-load]")
+    smoke.wait_until(d, "return document.querySelector('[data-testid=discard-dialog]')?.dataset.action === 'reload'", timeout=10)
+    d.js("document.querySelector('[data-testid=discard-dialog]').dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',bubbles:true}))")
+    time.sleep(0.3)
+    kept = ipc(d, "document_session", {"sessionId": sid})["ok"]
+    check("다시 불러오기 확인을 취소(Escape)하면 창이 닫히고 세션·모델 그대로(failed)",
+          not d.exists("[data-testid=discard-dialog]") and status(d)["status"] == "failed" and kept["state"] == "failed", json.dumps(kept))
+    press_button(d, "[data-testid=rhwp-load]")
+    confirm_discard(d, "reload")
     st = wait_status(d, "ready")
     backend = ipc(d, "document_session", {"sessionId": sid})["ok"]
     check("failed에서 다시 불러오면 ready, revision 유지·dirty 아님(편집은 버려짐)",
           backend["state"] == "ready" and backend["revision"] == after["basic-ko.hwpx"]["revision"] + 1 and not backend["dirty"]
           and st["paragraphText"].startswith("한글 문단입니다."), json.dumps(backend))
 
-    # 확정을 기다리는 동안 닫기: 늦은 응답이 세션을 되살리지 않음
+    # 확정을 기다리는 동안 닫기: 확인 없이 버리지 않고, 버리기를 고르면 닫으며 늦은 응답이 세션을 되살리지 않음
     click_paragraph_start(d)
-    d.js("""const input=document.querySelector('.rhwp-input'); input.value='Z';
+    modified = d.js("""const input=document.querySelector('.rhwp-input'); input.value='Z';
             input.dispatchEvent(new InputEvent('input',{bubbles:true,data:'Z',inputType:'insertText'}));
-            [...document.querySelectorAll('.document-tab')].find(t=>t.textContent.includes('basic-ko.hwpx')).querySelector('.document-tab__close').click();""")
+            const tab=[...document.querySelectorAll('.document-tab')].find(t=>t.textContent.includes('basic-ko.hwpx'));
+            const marked = tab.querySelector('.document-tab__select').dataset.modified;
+            tab.querySelector('.document-tab__close').click(); return marked;""")
+    confirm_discard(d, "close")
     time.sleep(0.8)
     remaining = [s["displayName"] for s in ipc(d, "document_sessions")["ok"]]
     stale = ipc(d, "document_session", {"sessionId": sid})
-    check("편집 직후(확정 대기 중) 닫은 세션은 목록에서 사라지고 다시 나타나지 않음(StaleSession)",
-          "basic-ko.hwpx" not in remaining and stale == {"err": {"code": "StaleSession", "sessionId": sid}}, json.dumps([remaining, stale]))
+    check("편집 직후(확정 대기 중) 닫기는 수정 표시·버리기 확인을 거치고, 닫은 세션은 다시 나타나지 않음(StaleSession)",
+          modified == "true" and "basic-ko.hwpx" not in remaining and stale == {"err": {"code": "StaleSession", "sessionId": sid}},
+          json.dumps([modified, remaining, stale]))
 
     # 엔진이 읽지 못하는 문서: header.xml이 XML로 깨졌지만 CRC는 맞아 판별(T006)은 통과하고 rhwp가 실패 → failed,
     # 닫고 정상 문서를 열 수 있음. (참고: section0.xml이 깨진 HWPX는 rhwp가 빈 문서로 열어 버린다 — 보고서 참고)
@@ -432,57 +480,213 @@ def scenario_reopen_exported(d, exported: dict) -> None:
         path = Path(exported[fmt]["file"])
         st = open_document(d, path)
         text_ok = d.js("return document.querySelector('[data-testid=rhwp-status]').dataset.paragraphText").endswith("한글 입력 테스트")
-        check(f"{fmt}: 편집해 내보낸 파일(손실 보고 {exported[fmt]['contentLoss']['count']}건)을 앱에서 다시 열면 판별·불러오기 성공, 넣은 글자 유지",
-              st["status"] == "ready" and text_ok and exported[fmt]["equalToEdited"] and exported[fmt]["boldKept"], json.dumps(st, ensure_ascii=False))
+        check(f"{fmt}: 편집해 내보낸 파일(손실 보고 올바름·0건, 다시 열어 같음)을 앱에서 다시 열면 판별·불러오기 성공, 넣은 글자 유지",
+              st["status"] == "ready" and text_ok and exported[fmt]["passed"], json.dumps(st, ensure_ascii=False))
+
+
+# ---- 실제 한국어 IME 게이트 ----
+
+# (이름, 필수 여부). 필수 항목이 모두 PASS여야 IME 게이트 통과다.
+IME_ITEMS = [
+    ("조합 중 글자가 문서에 보임(preedit)", True),
+    ("조합 중 커서가 조합 글자 뒤에 있음", True),
+    ("확정 글자가 커서 위치에 정확히 한 번, 음절 누락 없음", True),
+    ("확정 음절·공백마다 revision 1(조합 중간은 확정 안 함)", True),
+    ("같은 음절을 연달아 확정해도 모두 남음", True),
+    ("조합 중 ←는 조합 글자를 그 자리에 확정한 뒤 이동", True),
+    ("조합 중 클릭: 조합 글자를 원래 자리에 한 번 확정하고 커서는 클릭한 곳", True),
+    ("조합 중 창 초점 이동 뒤 돌아옴", False),
+]
+GATE: dict[str, tuple[str, str]] = {}
+
+
+def gate(name: str, result: str, detail: str = "") -> None:
+    assert name in dict(IME_ITEMS) and result in ("PASS", "FAIL", "UNVERIFIED", "NOT RUN")
+    GATE[name] = (result, detail)
+    print(f"[{result}] {name}" + (f" — {detail}" if detail else ""), flush=True)
+
+
+def ime_environment(xdotool: str, ibus: str) -> str | None:
+    """실제 IME 입력을 보낼 수 있는지. 안 되면 이유(→ UNVERIFIED)."""
+    if not os.environ.get("DISPLAY"):
+        return "X11 DISPLAY 없음(xdotool 실제 키 입력 불가)"
+    if os.environ.get("GTK_IM_MODULE") != "ibus":
+        return "GTK_IM_MODULE=ibus가 아님(앱이 ibus 입력기를 쓰지 않음)"
+    for tool in (xdotool, ibus):
+        if not (Path(tool).exists() or shutil.which(tool)):
+            return f"{Path(tool).name} 없음"
+    return None
+
+
+EVENT_LOG = """window.__imeLog=[]; const i=document.querySelector('.rhwp-input');
+  for (const t of ['keydown','compositionstart','compositionupdate','compositionend','input','blur','focus'])
+    i.addEventListener(t, e => window.__imeLog.push([t, e.isComposing ?? null, e.inputType ?? null, (e.data ?? '').length]), true);"""
+
+
+def ime_counts(log: list) -> dict:
+    """이벤트 종류별 개수(글자 내용은 남기지 않음)."""
+    counts: dict[str, int] = {}
+    for event in log:
+        key = event[0] + ("(composing)" if event[0] == "input" and event[1] else "")
+        counts[key] = counts.get(key, 0) + 1
+    return counts
+
+
+def probe_plain_textarea(d, run, xdotool: str, window: str) -> dict:
+    """화면에 보이는 일반 textarea(앱의 숨긴 입력 설정과 무관)에서 같은 키로 조합 이벤트가 오는지 본다(원인 분리용)."""
+    d.js("""const p=document.createElement('textarea'); p.id='ime-probe';
+        p.style.cssText='position:fixed;left:20px;top:20px;width:240px;height:48px;z-index:9999;opacity:1;font-size:16px';
+        document.body.append(p); window.__probe=[];
+        for (const t of ['compositionstart','compositionupdate','compositionend','input'])
+          p.addEventListener(t, e => window.__probe.push([t, e.isComposing ?? null, (e.data ?? '').length]), true);
+        p.focus();""")
+    time.sleep(0.3)
+    run(xdotool, "type", "--window", window, "--delay", "120", "gk")
+    time.sleep(0.6)
+    during = d.js("const p=document.getElementById('ime-probe'); return {valueLength: [...p.value].length, log: window.__probe.slice()}")
+    run(xdotool, "key", "--window", window, "space")
+    time.sleep(0.5)
+    after = d.js("const p=document.getElementById('ime-probe'); const r={valueLength: [...p.value].length, log: window.__probe.slice()};"
+                 " p.remove(); return r")
+    return {"duringComposition": {"valueLength": during["valueLength"], "events": ime_counts(during["log"])},
+            "afterCommit": {"valueLength": after["valueLength"], "events": ime_counts(after["log"])}}
 
 
 def scenario_ime(d, fixtures: Path, xdotool: str, ibus: str) -> None:
+    reason = ime_environment(xdotool, ibus)
+    if reason:
+        for name, _ in IME_ITEMS:
+            gate(name, "UNVERIFIED", reason)
+        return
     run = lambda *a: subprocess.run(["env", "-u", "LD_LIBRARY_PATH", *a], capture_output=True, text=True)
+    REPORT["imeEnvironment"] = {
+        "ibusEngine": run(ibus, "engine").stdout.strip(),
+        "ibusVersion": run(ibus, "version").stdout.strip(),
+        "embedPreeditText": run("gsettings", "get", "org.freedesktop.ibus.general", "embed-preedit-text").stdout.strip() or "unknown",
+        "ibusSyncMode": os.environ.get("IBUS_ENABLE_SYNC_MODE", "unset"),
+    }
+    results: dict[str, list[tuple[str, str]]] = {name: [] for name, _ in IME_ITEMS}
+
+    def record(name: str, ok: bool, detail: str) -> None:
+        results[name].append(("PASS" if ok else "FAIL", detail))
+
     for name in ("basic-ko.hwp", "basic-ko.hwpx"):
         fmt = name.split(".")[-1]
         open_document(d, fixtures / name)
-        d.js("""window.__imeLog=[]; const i=document.querySelector('.rhwp-input');
-          for (const t of ['compositionstart','compositionupdate','compositionend','input'])
-            i.addEventListener(t, e => window.__imeLog.push([t, e.data ?? null, e.isComposing ?? null]), true);""")
+        require_test_hooks(d)
         window = run(xdotool, "search", "--name", "^geul").stdout.split()[-1]
         run(xdotool, "windowfocus", "--sync", window)
         run(ibus, "engine", "hangul")
+        if fmt == "hwp":
+            REPORT["imePlainTextareaProbe"] = probe_plain_textarea(d, run, xdotool, window)
+        d.js(EVENT_LOG)
         top = d.js("return window.outerHeight - window.innerHeight")
         origin = page_origin(d)
-        # 첫 문단 글자 끝 오른쪽 빈 곳 → 첫 문단 끝
-        run(xdotool, "mousemove", "--window", window, str(int(origin[0] + 600)), str(int(origin[1] + 139 + top)), "click", "1")
+        # 첫 문단 글자 끝 오른쪽 빈 곳 → 첫 문단 끝. 이 클릭의 mousedown 위치로 창 좌표↔페이지 좌표 차이를 잰다.
+        d.js("window.__down=null; window.addEventListener('mousedown', e => { window.__down=[e.clientX, e.clientY]; }, true)")
+        first = (int(origin[0] + 600), int(origin[1] + 139 + top))
+        run(xdotool, "mousemove", "--window", window, str(first[0]), str(first[1]), "click", "1")
         time.sleep(0.4)
+        down = d.js("return window.__down")
+        shift = (first[0] - down[0], first[1] - down[1]) if down else (0, top)
         before = status(d)
-        run(xdotool, "type", "--delay", "90", "gksrmf dlqfur xptmxm")
+        base_text, base_rev = before["paragraphText"], int(before["localRevision"])
+
+        # 1) 조합 중 표시: 'ㅎ+ㅏ'만 누르고(확정 안 함) 문서·커서를 본다
+        run(xdotool, "type", "--delay", "90", "gk")
+        time.sleep(0.6)
+        mid = status(d)
+        visible = mid["paragraphText"] == base_text + "하"
+        record("조합 중 글자가 문서에 보임(preedit)", visible and mid.get("composing") == "true",
+               f"{fmt}: composing={mid.get('composing')}, 문단 글자 수 {len(base_text)}→{len(mid['paragraphText'])}")
+        record("조합 중 커서가 조합 글자 뒤에 있음", visible and offset_of(mid["caret"]) == len(base_text) + 1,
+               f"{fmt}: caret={mid['caret']}, 기대 오프셋 {len(base_text) + 1}")
+
+        # 2) 이어서 입력해 '한글 입력 테스트'를 확정
+        run(xdotool, "type", "--delay", "90", "srmf dlqfur xptmxm")
         run(xdotool, "key", "End")
         time.sleep(0.8)
         after = status(d)
-        log = d.js("return window.__imeLog")
-        text = after["paragraphText"]
-        check(f"{fmt}: 실제 IME(ibus-hangul 두벌식)로 '한글 입력 테스트'가 커서 위치에 정확히 한 번 확정",
-              text == before["paragraphText"] + "한글 입력 테스트", text)
-        check(f"{fmt}: IME 확정 음절·공백마다 revision 1(조합 중간은 확정 안 함)",
-              int(after["localRevision"]) - int(before["localRevision"]) == 9, f"{before['localRevision']}→{after['localRevision']}")
-        updates = [e for e in log if e[0] in ("compositionstart", "compositionupdate")]
-        REPORT.setdefault(fmt, {})["ime"] = {"text": text, "events": len(log), "preeditEvents": len(updates)}
-        # 조합 중 화살표: 남은 음절(가)을 확정한 뒤 이동
+        record("확정 글자가 커서 위치에 정확히 한 번, 음절 누락 없음", after["paragraphText"] == base_text + "한글 입력 테스트",
+               f"{fmt}: 넣은 부분 {after['paragraphText'][len(base_text):]!r}")
+        record("확정 음절·공백마다 revision 1(조합 중간은 확정 안 함)", int(after["localRevision"]) - base_rev == 9,
+               f"{fmt}: {base_rev}→{after['localRevision']}")
+        REPORT.setdefault(fmt, {})["ime"] = {"events": ime_counts(d.js("return window.__imeLog"))}
+
+        # 3) 같은 음절 반복: '가가' (조합 끝 뒤 같은 글자를 중복으로 버리지 않음)
+        text0, rev0 = after["paragraphText"], int(after["localRevision"])
+        run(xdotool, "type", "--delay", "90", "rkrk")
+        run(xdotool, "key", "End")
+        time.sleep(0.8)
+        st = status(d)
+        record("같은 음절을 연달아 확정해도 모두 남음", st["paragraphText"] == text0 + "가가" and int(st["localRevision"]) - rev0 == 2,
+               f"{fmt}: 넣은 부분 {st['paragraphText'][len(text0):]!r}, revision +{int(st['localRevision']) - rev0}")
+
+        # 4) 조합 중 ←: 남은 음절(가)을 확정한 뒤 이동
+        text0 = st["paragraphText"]
         run(xdotool, "type", "--delay", "90", "rk")
         run(xdotool, "key", "Left")
         time.sleep(0.6)
         st = status(d)
-        check(f"{fmt}: 조합 중 ←는 조합 글자를 그 자리에 확정한 뒤 커서를 옮김",
-              st["paragraphText"].endswith("테스트가") and offset_of(st["caret"]) == len(st["paragraphText"]) - 1, json.dumps(st, ensure_ascii=False))
-        # 조합 중 클릭: 결과만 기록(아래 보고서 참고)
+        record("조합 중 ←는 조합 글자를 그 자리에 확정한 뒤 이동",
+               st["paragraphText"] == text0 + "가" and offset_of(st["caret"]) == len(st["paragraphText"]) - 1,
+               f"{fmt}: 넣은 부분 {st['paragraphText'][len(text0):]!r}, caret={st['caret']}")
+
+        # 5) 조합 중 클릭: 문단 끝에서 '하'를 조합하다 같은 줄 앞쪽(줄 처음에서 30%)을 클릭
+        run(xdotool, "key", "Home")
+        time.sleep(0.3)
+        line_start = caret_client(d)
+        run(xdotool, "key", "End")
+        time.sleep(0.3)
+        line_end = caret_client(d)
+        st = status(d)
+        text0, rev0 = st["paragraphText"], int(st["localRevision"])
+        target = (line_start[0] + (line_end[0] - line_start[0]) * 0.3, line_start[1] + line_start[2] / 2)
         run(xdotool, "type", "--delay", "90", "gk")
         time.sleep(0.3)
-        run(xdotool, "mousemove", "--window", window, str(int(origin[0] + 150)), str(int(origin[1] + 139 + top)), "click", "1")
-        time.sleep(0.6)
-        run(xdotool, "key", "End")
-        time.sleep(0.6)
+        mark = d.js("return window.__imeLog.length")
+        run(xdotool, "mousemove", "--window", window, str(int(target[0] + shift[0])), str(int(target[1] + shift[1])), "click", "1")
+        time.sleep(0.8)
         st = status(d)
-        REPORT[fmt]["ime"]["clickDuringComposition"] = st["paragraphText"]
-        REPORT[fmt]["ime"]["preedit"] = "none" if not updates else "present"
-        print(f"[기록] {fmt}: 조합 중 클릭 뒤 첫 문단 = {st['paragraphText']!r}, 조합 중 표시 이벤트 {len(updates)}개")
+        caret = st["caret"]
+        record("조합 중 클릭: 조합 글자를 원래 자리에 한 번 확정하고 커서는 클릭한 곳",
+               st["paragraphText"] == text0 + "하" and caret.split(":")[1] == before["caret"].split(":")[1] and "@" not in caret
+               and offset_of(caret) < len(text0) - 1 and int(st["localRevision"]) - rev0 == 1,
+               f"{fmt}: 넣은 부분 {st['paragraphText'][len(text0):]!r}, caret {caret}, revision +{int(st['localRevision']) - rev0},"
+               f" 클릭 뒤 이벤트 {ime_counts(d.js('return window.__imeLog.slice(arguments[0])', mark))}")
+        # 클릭 뒤 IME에 남았을 수 있는 음절을 다음 키(공백)로 내보내 어디에 확정되는지 기록한다(다음 문서로 넘어가지 않게).
+        clicked = st["caret"]
+        run(xdotool, "key", "space")
+        time.sleep(0.6)
+        flushed = status(d)
+        REPORT[fmt]["ime"]["afterClickNextKey"] = {
+            "caretBefore": clicked, "caretAfter": flushed["caret"],
+            "insertedAtClick": flushed["paragraphText"][offset_of(clicked):offset_of(flushed["caret"])],
+            "originalParagraphUnchanged": flushed["caret"].split(":")[1] != before["caret"].split(":")[1] or flushed["paragraphText"].endswith(text0[-3:]),
+        }
+        print(f"[기록] {fmt}: 클릭 뒤 다음 키에서 확정된 글자(클릭한 곳) = {REPORT[fmt]['ime']['afterClickNextKey']['insertedAtClick']!r}", flush=True)
+        REPORT[fmt]["ime"]["eventsTotal"] = ime_counts(d.js("return window.__imeLog"))
+
+    for name, _ in IME_ITEMS:
+        outcomes = results[name]
+        if not outcomes:
+            gate(name, "NOT RUN", "실제 창 초점 이동 시나리오는 이 검사에 없음(합성 이벤트 테스트만 있음)")
+        else:
+            gate(name, "PASS" if all(r == "PASS" for r, _ in outcomes) else "FAIL", "; ".join(detail for _, detail in outcomes))
+
+
+def ime_exit_code(diagnostic_only: bool) -> int:
+    mandatory = [name for name, required in IME_ITEMS if required]
+    statuses = [GATE.get(name, ("NOT RUN", ""))[0] for name in mandatory]
+    verdict = "PASS" if all(s == "PASS" for s in statuses) else "FAIL" if "FAIL" in statuses else "UNVERIFIED"
+    REPORT["imeGate"] = {"verdict": verdict, "items": {name: {"result": r, "detail": d} for name, (r, d) in GATE.items()},
+                         "diagnosticOnly": diagnostic_only}
+    print(f"\nIME 게이트: {verdict} (필수 {len(mandatory)}개 중 PASS {statuses.count('PASS')}, FAIL {statuses.count('FAIL')},"
+          f" UNVERIFIED/NOT RUN {len(statuses) - statuses.count('PASS') - statuses.count('FAIL')})")
+    if diagnostic_only:
+        print("[진단 전용] 종료 코드는 게이트 결과가 아니며, 이 실행은 통과 증거가 아니다.")
+        return 0
+    return {"PASS": 0, "FAIL": 1, "UNVERIFIED": 2}[verdict]
 
 
 def main() -> int:
@@ -493,7 +697,8 @@ def main() -> int:
     parser.add_argument("--report", type=Path)
     parser.add_argument("--screenshots", type=Path)
     parser.add_argument("--driver-log", type=Path)
-    parser.add_argument("--ime", action="store_true", help="실제 IME 시나리오만 실행(X11 + ibus-hangul + xdotool)")
+    parser.add_argument("--ime", action="store_true", help="실제 IME 게이트만 실행(X11 + ibus-hangul + xdotool)")
+    parser.add_argument("--diagnostic-only", action="store_true", help="IME 관찰만 기록(종료 코드가 게이트 결과가 아님)")
     parser.add_argument("--xdotool", default=shutil.which("xdotool") or "xdotool")
     parser.add_argument("--ibus", default=shutil.which("ibus") or "ibus")
     args = parser.parse_args()
@@ -501,6 +706,15 @@ def main() -> int:
     smoke.DRIVER_LOG = args.driver_log
     if args.screenshots:
         args.screenshots.mkdir(parents=True, exist_ok=True)
+    if args.ime:
+        reason = ime_environment(args.xdotool, args.ibus)
+        if reason:  # 실제 입력을 보낼 수 없으면 앱을 띄우지 않고 판단 불가로 끝낸다
+            for name, _ in IME_ITEMS:
+                gate(name, "UNVERIFIED", reason)
+            code = ime_exit_code(args.diagnostic_only)
+            if args.report:
+                args.report.write_text(json.dumps({"results": RESULTS, "measurements": REPORT}, ensure_ascii=False, indent=2))
+            return code
     try:
         with tempfile.TemporaryDirectory(prefix="geul-t007-") as scratch_dir:
             scratch = Path(scratch_dir)
@@ -508,9 +722,13 @@ def main() -> int:
             meta = json.loads(subprocess.run(["node", str(ROOT / "tests/fixtures/rhwp/generate.mjs"), str(fixtures)],
                                              check=True, capture_output=True, text=True).stdout)
             REPORT["fixtures"] = {"rhwpCommit": meta["rhwpCommit"], "contentLoss": meta["contentLoss"]}
-            exported = json.loads(subprocess.run(["node", str(ROOT / "tests/integration/rhwp/roundtrip.mjs"), str(fixtures),
-                                                  str(scratch / "exported")], check=True, capture_output=True, text=True).stdout)
+            node = subprocess.run(["node", str(ROOT / "tests/integration/rhwp/roundtrip.mjs"), str(fixtures), str(scratch / "exported")],
+                                  capture_output=True, text=True)
+            exported = json.loads(node.stdout)
             REPORT["exportedFiles"] = {f: {k: v for k, v in r.items() if k not in ("before", "after", "file")} for f, r in exported.items()}
+            if not args.ime:
+                check("Node 왕복(편집→원본 형식 내보내기→파일→다시 열기): 손실 보고가 올바른 모양이고 0건, 편집한 문서와 같음(HWP·HWPX)",
+                      node.returncode == 0 and all(r.get("passed") for r in exported.values()), json.dumps(REPORT["exportedFiles"]))
             with tempfile.TemporaryDirectory(prefix="geul-t007-data-") as data_home:
                 with smoke.tauri_driver(args.driver, args.port, data_home) as start:
                     d = start()
@@ -536,6 +754,8 @@ def main() -> int:
                             d.quit()
                         except smoke.Failure as error:  # 앞선 실패를 가리지 않는다
                             print(f"[참고] 세션 종료 실패: {error}", file=sys.stderr)
+        if args.ime:
+            return ime_exit_code(args.diagnostic_only)
         print(f"\nT007 rhwp PoC: {len(RESULTS)}개 항목 통과")
         return 0
     except (smoke.Failure, TimeoutError, OSError) as error:

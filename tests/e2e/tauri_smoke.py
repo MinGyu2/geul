@@ -665,9 +665,9 @@ def run_document_sessions(start_session, results: list[str]) -> None:
 
             opened = [call("document_open", {"path": path(name)}) for name in ("report.docx", "plan.hwpx", "memo.hwp")]
             expected = [
-                {"sessionId": 1, "format": "docx", "engine": "wordcraft", "revision": 0, "state": "identified", "displayName": "report.docx", "dirty": False, "sequence": 0},
-                {"sessionId": 2, "format": "hwpx", "engine": "rhwp", "revision": 0, "state": "identified", "displayName": "plan.hwpx", "dirty": False, "sequence": 0},
-                {"sessionId": 3, "format": "hwp", "engine": "rhwp", "revision": 0, "state": "identified", "displayName": "memo.hwp", "dirty": False, "sequence": 0},
+                {"sessionId": 1, "format": "docx", "engine": "wordcraft", "revision": 0, "state": "identified", "displayName": "report.docx", "dirty": False, "sequence": 0, "loadGeneration": 0},
+                {"sessionId": 2, "format": "hwpx", "engine": "rhwp", "revision": 0, "state": "identified", "displayName": "plan.hwpx", "dirty": False, "sequence": 0, "loadGeneration": 0},
+                {"sessionId": 3, "format": "hwp", "engine": "rhwp", "revision": 0, "state": "identified", "displayName": "memo.hwp", "dirty": False, "sequence": 0, "loadGeneration": 0},
             ]
             check(results, "문서 세션: DOCX→WordCraft, HWPX·HWP→rhwp, ID 1·2·3, revision 0, 경로 없음",
                   opened == [{"ok": info} for info in expected], json.dumps(opened, ensure_ascii=False))
@@ -726,7 +726,7 @@ def run_document_sessions(start_session, results: list[str]) -> None:
             got = {name: call("document_open", {"path": path(name)}) for name in stabilization}
             want = {
                 "comment.hwpx": {"ok": {"sessionId": 5, "format": "hwpx", "engine": "rhwp", "revision": 0,
-                                        "state": "identified", "displayName": "comment.hwpx", "dirty": False, "sequence": 0}},
+                                        "state": "identified", "displayName": "comment.hwpx", "dirty": False, "sequence": 0, "loadGeneration": 0}},
                 "utf16.hwpx": {"err": {"code": "Encrypted", "format": "hwpx"}},
                 "crc.hwpx": {"err": {"code": "ParseFailure", "format": "hwpx", "reason": "corrupt-container"}},
                 "media.docx": {"err": {"code": "Encrypted", "format": "docx"}},
@@ -750,7 +750,7 @@ def run_document_sessions(start_session, results: list[str]) -> None:
             got = {name: call("document_open", {"path": path(name)}) for name in second}
             opened_info = lambda session_id, name: {"ok": {"sessionId": session_id, "format": "docx", "engine": "wordcraft",
                                                            "revision": 0, "state": "identified", "displayName": name,
-                                                           "dirty": False, "sequence": 0}}
+                                                           "dirty": False, "sequence": 0, "loadGeneration": 0}}
             want = {
                 "mimetype.docx": opened_info(6, "mimetype.docx"),
                 "trailing.docx": {"err": {"code": "ParseFailure", "reason": "corrupt-container"}},

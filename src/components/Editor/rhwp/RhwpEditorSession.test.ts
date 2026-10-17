@@ -1,137 +1,8 @@
 import { describe, expect, it } from "vitest";
-import type { DocumentBackend } from "../../../adapters/backend";
-import type { DocumentError, Result, SessionInfo } from "../../../adapters/contract";
 import { DocumentSessions } from "../../../adapters/sessions";
 import { RhwpEditorSession } from "./RhwpEditorSession";
 import type { RhwpDocument, RhwpModule } from "./rhwpModule";
-
-// 본문 문단만 있는 가짜 rhwp 문서(글자 하나 = 가로 10px). 실제 엔진 동작은 tests/integration/rhwp/에서 확인한다.
-class FakeDocument {
-  paragraphs: string[];
-  freed = false;
-  failNext = false;
-  constructor(text: string[]) {
-    this.paragraphs = [...text];
-  }
-  private guard() {
-    if (this.failNext) {
-      this.failNext = false;
-      throw new Error("engine");
-    }
-  }
-  free() { this.freed = true; }
-  pageCount() { return 1; }
-  getPageInfo() { return JSON.stringify({ width: 800, height: 1000 }); }
-  getSourceFormat() { return "hwp"; }
-  renderPageToCanvas() {}
-  hitTest(_page: number, x: number, y: number) {
-    const paragraph = Math.min(this.paragraphs.length - 1, Math.max(0, Math.floor(y / 20)));
-    const offset = Math.min([...this.paragraphs[paragraph]!].length, Math.max(0, Math.round(x / 10)));
-    return JSON.stringify({ sectionIndex: 0, paragraphIndex: paragraph, charOffset: offset });
-  }
-  getCursorRect(_s: number, paragraph: number, offset: number) {
-    return JSON.stringify({ pageIndex: 0, x: offset * 10, y: paragraph * 20, height: 16 });
-  }
-  getParagraphCount() { return this.paragraphs.length; }
-  getParagraphLength(_s: number, paragraph: number) { return [...this.paragraphs[paragraph]!].length; }
-  getLineInfo(_s: number, paragraph: number) {
-    return JSON.stringify({ lineIndex: 0, lineCount: 1, charStart: 0, charEnd: this.getParagraphLength(0, paragraph) });
-  }
-  moveVertical(_s: number, paragraph: number, offset: number, delta: number) {
-    const target = Math.min(this.paragraphs.length - 1, Math.max(0, paragraph + delta));
-    const clamped = Math.min(offset, this.getParagraphLength(0, target));
-    return JSON.stringify({ sectionIndex: 0, paragraphIndex: target, charOffset: clamped, preferredX: offset * 10 });
-  }
-  getSelectionRects(_s: number, sp: number, so: number, ep: number, eo: number) {
-    return JSON.stringify([{ pageIndex: 0, x: so * 10, y: sp * 20, width: Math.max(0, (eo - so) * 10), height: ep === sp ? 16 : 36 }]);
-  }
-  getTextRange(_s: number, paragraph: number, offset: number, count: number) {
-    return [...this.paragraphs[paragraph]!].slice(offset, offset + count).join("");
-  }
-  insertText(_s: number, paragraph: number, offset: number, text: string) {
-    this.guard();
-    const chars = [...this.paragraphs[paragraph]!];
-    chars.splice(offset, 0, text);
-    this.paragraphs[paragraph] = chars.join("");
-    return "{}";
-  }
-  deleteText(_s: number, paragraph: number, offset: number, count: number) {
-    this.guard();
-    const chars = [...this.paragraphs[paragraph]!];
-    chars.splice(offset, count);
-    this.paragraphs[paragraph] = chars.join("");
-    return "{}";
-  }
-  deleteRange(_s: number, sp: number, so: number, ep: number, eo: number) {
-    this.guard();
-    const head = [...this.paragraphs[sp]!].slice(0, so).join("");
-    const tail = [...this.paragraphs[ep]!].slice(eo).join("");
-    this.paragraphs.splice(sp, ep - sp + 1, head + tail);
-    return "{}";
-  }
-  splitParagraph(_s: number, paragraph: number, offset: number) {
-    this.guard();
-    const chars = [...this.paragraphs[paragraph]!];
-    this.paragraphs.splice(paragraph, 1, chars.slice(0, offset).join(""), chars.slice(offset).join(""));
-    return "{}";
-  }
-  mergeParagraph(_s: number, paragraph: number) {
-    this.guard();
-    this.paragraphs.splice(paragraph - 1, 2, this.paragraphs[paragraph - 1]! + this.paragraphs[paragraph]!);
-    return "{}";
-  }
-  getTextFileText() { return this.paragraphs.join("\r\n"); }
-  getControls() { return "[]"; }
-  exportHwpWithReport() {
-    const text = this.paragraphs.join("\n");
-    return { contentLoss: () => JSON.stringify({ count: 0, losses: [] }), takeBytes: () => new TextEncoder().encode(text), free() {} };
-  }
-}
-
-type Call = { method: string; args: unknown[]; reply: (value: Result<unknown>) => void };
-
-function controlledBackend() {
-  const calls: Call[] = [];
-  const queue = (method: string) => (...args: unknown[]) => new Promise<Result<unknown>>((reply) => calls.push({ method, args, reply }));
-  const backend = {
-    open: queue("open"), close: queue("close"), session: queue("session"), sessions: queue("sessions"),
-    load: queue("load"), setState: queue("setState"), commit: queue("commit"),
-  } as unknown as DocumentBackend;
-  const take = (method: string) => {
-    const at = calls.findIndex((call) => call.method === method);
-    if (at < 0) throw new Error(`no ${method} call: ${calls.map((call) => call.method).join(",")}`);
-    return calls.splice(at, 1)[0]!;
-  };
-  return { backend, calls, take };
-}
-
-const ok = <T,>(value: T): Result<T> => ({ ok: true, value });
-const fail = (error: DocumentError): Result<never> => ({ ok: false, error });
-const flush = async () => {
-  for (let i = 0; i < 5; i++) await new Promise((resolve) => setTimeout(resolve, 0));
-};
-
-const base: SessionInfo = { sessionId: 1, format: "hwp", engine: "rhwp", revision: 0, state: "identified", displayName: "a.hwp", dirty: false, sequence: 0 };
-const info = (patch: Partial<SessionInfo>): SessionInfo => ({ ...base, ...patch });
-
-/** 열고 불러온 세션. 백엔드 응답은 테스트가 직접 준다. */
-async function readySession(text = ["가나다", "abc"]) {
-  const { backend, calls, take } = controlledBackend();
-  const sessions = new DocumentSessions(backend);
-  const opening = sessions.open("/a.hwp");
-  take("open").reply(ok(base));
-  await opening;
-  const doc = new FakeDocument(text);
-  const module: RhwpModule = { openDocument: () => doc as unknown as RhwpDocument };
-  const editor = new RhwpEditorSession(1, backend, sessions, async () => module);
-  const loading = editor.load();
-  take("load").reply(ok(new Uint8Array([1])));
-  await flush();
-  take("session").reply(ok(info({ state: "loading", sequence: 1 })));
-  take("setState").reply(ok(info({ state: "ready", sequence: 2 })));
-  await loading;
-  return { editor, doc, sessions, calls, take };
-}
+import { base, controlledBackend, fail, FakeDocument, flush, info, ok, loaded, readySession } from "./testing";
 
 describe("rhwp 편집 세션: 불러오기", () => {
   it("백엔드가 준 바이트로 엔진 문서를 만들고 ready를 확정한 뒤에야 편집할 수 있다", async () => {
@@ -158,21 +29,23 @@ describe("rhwp 편집 세션: 불러오기", () => {
     };
     const editor = new RhwpEditorSession(1, backend, sessions, async () => module);
     const first = editor.load();
-    take("load").reply(ok(new Uint8Array([1])));
+    take("load").reply(loaded());
     await flush();
     take("session").reply(ok(info({ state: "loading", sequence: 1 })));
     const failed = take("setState");
-    expect(failed.args).toEqual([1, "loading", "failed"]);
+    expect(failed.args).toEqual([1, 1, "loading", "failed"]);
     failed.reply(ok(info({ state: "failed", sequence: 2 })));
     await first;
     expect(editor.status).toEqual({ kind: "failed", error: { code: "EngineFailure", engine: "rhwp", stage: "parse" } });
     expect(editor.typeText("a")).toBe(false);
 
     const second = editor.load();
-    take("load").reply(ok(new Uint8Array([1])));
+    take("load").reply(loaded(new Uint8Array([1]), 2));
     await flush();
-    take("session").reply(ok(info({ state: "loading", sequence: 3 })));
-    take("setState").reply(ok(info({ state: "ready", sequence: 4 })));
+    take("session").reply(ok(info({ state: "loading", sequence: 3, loadGeneration: 2 })));
+    const ready = take("setState");
+    expect(ready.args).toEqual([1, 2, "loading", "ready"]); // 새 시도의 번호로만 전이한다
+    ready.reply(ok(info({ state: "ready", sequence: 4, loadGeneration: 2 })));
     await second;
     expect(editor.status).toEqual({ kind: "ready" });
   });
@@ -186,7 +59,7 @@ describe("rhwp 편집 세션: 불러오기", () => {
     const doc = new FakeDocument(["x"]);
     const editor = new RhwpEditorSession(1, backend, sessions, async () => ({ openDocument: () => doc as unknown as RhwpDocument }));
     const loading = editor.load();
-    take("load").reply(ok(new Uint8Array([1])));
+    take("load").reply(loaded());
     await flush();
     take("session").reply(ok(info({ state: "loading", sequence: 1 })));
     editor.dispose();
@@ -203,7 +76,7 @@ describe("rhwp 편집 세션: revision 확정", () => {
     const { editor, sessions, take, calls } = await readySession();
     expect(editor.typeText("한")).toBe(true);
     const first = take("commit");
-    expect(first.args).toEqual([1, 0, 1]);
+    expect(first.args).toEqual([1, 1, 0, 1]);
     // 첫 확정을 기다리는 동안 두 번 더 바꿈 → 다음 확정은 base 1, count 2 하나뿐(중복·순서 바뀜 없음)
     editor.typeText("글");
     editor.backspace();
@@ -211,7 +84,7 @@ describe("rhwp 편집 세션: revision 확정", () => {
     first.reply(ok(info({ state: "ready", revision: 1, dirty: true, sequence: 3 })));
     await flush();
     const second = take("commit");
-    expect(second.args).toEqual([1, 1, 2]);
+    expect(second.args).toEqual([1, 1, 1, 2]);
     second.reply(ok(info({ state: "ready", revision: 3, dirty: true, sequence: 4 })));
     await flush();
     expect(sessions.get(1)).toMatchObject({ revision: 3, dirty: true });
@@ -233,7 +106,7 @@ describe("rhwp 편집 세션: revision 확정", () => {
     expect(editor.typeText("x")).toBe(false);
     await flush();
     expect(editor.status).toEqual({ kind: "failed", error: { code: "EngineFailure", engine: "rhwp", stage: "edit" } });
-    expect(calls.map((call) => [call.method, call.args])).toEqual([["setState", [1, "ready", "failed"]]]);
+    expect(calls.map((call) => [call.method, call.args])).toEqual([["setState", [1, 1, "ready", "failed"]]]);
     expect(editor.localRevision).toBe(0);
   });
 
@@ -243,7 +116,7 @@ describe("rhwp 편집 세션: revision 확정", () => {
     take("commit").reply(fail({ code: "RevisionMismatch", sessionId: 1, revision: 5 }));
     await flush();
     expect(editor.status).toMatchObject({ kind: "failed", error: { code: "RevisionMismatch" } });
-    expect(take("setState").args).toEqual([1, "ready", "failed"]);
+    expect(take("setState").args).toEqual([1, 1, "ready", "failed"]);
     expect(editor.typeText("b")).toBe(false);
   });
 
@@ -285,7 +158,7 @@ describe("rhwp 편집 세션: IME 조합과 키보드", () => {
     expect(editor.compositionRects()).toHaveLength(1);
     expect(calls.filter((call) => call.method === "commit")).toEqual([]);
     expect(editor.endComposition("한")).toBe("한");
-    expect(take("commit").args).toEqual([1, 0, 1]);
+    expect(take("commit").args).toEqual([1, 1, 0, 1]);
     expect(doc.paragraphs[0]).toBe("한");
     expect(editor.caret).toMatchObject({ paragraph: 0, offset: 1 });
   });
@@ -316,7 +189,7 @@ describe("rhwp 편집 세션: IME 조합과 키보드", () => {
     editor.beginComposition();
     editor.endComposition("");
     expect(doc.paragraphs[0]).toBe("ad");
-    expect(take("commit").args).toEqual([1, 0, 1]);
+    expect(take("commit").args).toEqual([1, 1, 0, 1]);
   });
 
   it("Enter·Backspace·Delete·선택 삭제가 문단과 커서를 올바르게 바꾼다", async () => {
@@ -353,7 +226,7 @@ describe("rhwp 편집 세션: 내보내기 검사", () => {
     };
     const editor = new RhwpEditorSession(1, backend, sessions, async () => module);
     const loading = editor.load();
-    take("load").reply(ok(new TextEncoder().encode("가\nb")));
+    take("load").reply(loaded(new TextEncoder().encode("가\nb")));
     await flush();
     take("session").reply(ok(info({ state: "loading", sequence: 1 })));
     take("setState").reply(ok(info({ state: "ready", sequence: 2 })));

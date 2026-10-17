@@ -135,7 +135,8 @@ export class DocumentSessions {
     for (const session of result.value) {
       this.dispatch({ type: "opened", session, activate: false });
       if (session.state === "loading" || session.state === "ready") {
-        const failed = await this.backend.setState(session.sessionId, session.state, "failed");
+        // 목록을 받은 시도의 번호로만 돌린다. 그사이 새 불러오기가 시작됐으면 StaleLoad로 거부되어 그 시도를 건드리지 않는다.
+        const failed = await this.backend.setState(session.sessionId, session.loadGeneration, session.state, "failed");
         if (failed.ok) this.applyUpdate(failed.value);
         else if (failed.error.code === "StaleSession" || failed.error.code === "UnknownSession") {
           this.dispatch({ type: "closed", sessionId: session.sessionId });

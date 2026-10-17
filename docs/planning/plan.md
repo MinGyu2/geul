@@ -135,6 +135,13 @@ interface EditorAdapter {
   확정이 거부되면 편집을 멈추고 failed(조용한 분기 없음). IME 조합은 끝날 때 1번 센다.
 - 쓰기 명령 없음. 저장은 T009/T014. 편집 결과 확인은 메모리 내보내기·다시 열기 비교만.
 - `EngineAdapter`에서 `load`를 뺐다(불러오기·본문 입력은 편집 표면과 세션 수명주기 몫, 화면 명령·저장은 이 경계).
+- T007 안정화(같은 날, [editor-surface-decision.md "T007 안정화"](../architecture/editor-surface-decision.md#t007-안정화-리뷰-지적-재현과-수정-2026-10-17)):
+  불러오기 시도마다 백엔드가 번호를 준다(`SessionInfo.loadGeneration`, 0 = 불러온 적 없음, `document_load`마다 +1).
+  `document_load` 응답은 `시도 번호(u64 little-endian 8바이트) + 문서 바이트`이고, `document_set_state(sessionId,
+  loadGeneration, from, to)`·`document_commit(sessionId, loadGeneration, baseRevision, count)`는 그 번호가 지금 시도와
+  같을 때만 받는다(아니면 `StaleLoad{sessionId, loadGeneration}` — 옛 시도의 늦은 완료·실패·취소 가드가 새 시도를 바꾸지
+  못함). 편집기는 엔진이 문서를 읽고 페이지 정보까지 얻은 뒤에야 ready를 요청한다. 프런트엔드 오류 `UnpreservedChanges`:
+  저장이 없으므로 편집한 모델(확정했거나 확정 대기·조합 중)은 사용자가 버리기를 확인해야 닫거나 다시 불러온다.
 
 ## Algorithms and Pseudocode
 ```

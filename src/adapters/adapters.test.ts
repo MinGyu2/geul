@@ -5,7 +5,7 @@ import { adapterFor } from "./engines";
 import { DocumentSessions, EMPTY_SESSIONS, reduceSessions } from "./sessions";
 
 // Rust serde 직렬화 형식(src-tauri/src/document/)과 같은 값. 실제 IPC 응답은 tests/e2e/tauri_smoke.py가 확인한다.
-const base = { revision: 0, state: "identified", dirty: false, sequence: 0 } as const;
+const base = { revision: 0, state: "identified", dirty: false, sequence: 0, loadGeneration: 0 } as const;
 const docx: SessionInfo = { ...base, sessionId: 1, format: "docx", engine: "wordcraft", displayName: "a.docx" };
 const hwpx: SessionInfo = { ...base, sessionId: 2, format: "hwpx", engine: "rhwp", displayName: "b.hwpx" };
 const hwp: SessionInfo = { ...base, sessionId: 3, format: "hwp", engine: "rhwp", displayName: "c.hwp" };
@@ -21,6 +21,7 @@ describe("IPC 계약 검사", () => {
       { ...docx, sessionId: 0 }, { ...docx, sessionId: 1.5 }, { ...docx, sessionId: "1" },
       { ...docx, revision: -1 }, { ...docx, state: "done" }, { ...docx, displayName: 3 },
       { ...docx, dirty: "no" }, { ...docx, sequence: -1 }, { ...docx, sequence: undefined },
+      { ...docx, loadGeneration: -1 }, { ...docx, loadGeneration: 1.5 }, { ...docx, loadGeneration: undefined },
       { ...docx, path: "/somewhere/a.docx" }, // 경로 같은 계약 밖 필드
     ];
     for (const value of broken) expect(parseSessionInfo(value), JSON.stringify(value)).toBeNull();
@@ -41,6 +42,7 @@ describe("IPC 계약 검사", () => {
       { code: "StaleSession", sessionId: 1 },
       { code: "InvalidState", sessionId: 2, state: "loading" },
       { code: "RevisionMismatch", sessionId: 2, revision: 7 },
+      { code: "StaleLoad", sessionId: 3, loadGeneration: 2 },
       { code: "FileChanged" },
       { code: "InvalidRequest" },
       { code: "Internal" },
@@ -50,6 +52,7 @@ describe("IPC 계약 검사", () => {
       "denied", { code: "Nope" }, { code: "InvalidPath", reason: "weird" }, { code: "ExtensionMismatch", declared: "docx" },
       { code: "Internal", detail: "synthetic-detail-marker" }, { code: "ParseFailure", reason: "truncated", message: "os error 2" },
       { code: "toString" }, { code: "StaleSession", sessionId: -1 },
+      { code: "StaleLoad", sessionId: 3 }, { code: "StaleLoad", sessionId: 3, loadGeneration: "2" },
     ];
     for (const error of invalid) expect(parseBackendError(error), JSON.stringify(error)).toBeNull();
   });
@@ -294,10 +297,10 @@ describe("세션 투영", () => {
 });
 
 describe("T007 백엔드 클라이언트와 세션 투영", () => {
-  it("불러오기는 세션 ID만 보내고 원시 바이트를 받으며, 상태 전이·확정 응답은 그 세션 것이어야 한다", async () => {
+  it("불러오기는 세션 ID만 보내고 시도 번호(8바이트 LE)+원시 바이트를 받으며, 전이·확정은 그 번호를 보낸다", async () => {
     const calls: [string, unknown][] = [];
     const replies: Record<string, unknown> = {
-      document_load: new Uint8Array([1, 2, 3]).buffer,
+      document_load: new Uint8Array([7, 0, 0, 0, 0, 0, 0, 0, 1, 2, 3]).buffer,
       document_set_state: { ...hwpx, state: "ready", sequence: 2 },
       document_commit: { ...hwp, revision: 1, state: "ready", dirty: true, sequence: 3 }, // 다른 세션의 응답
     };
@@ -307,27 +310,38 @@ describe("T007 백엔드 클라이언트와 세션 투영", () => {
     };
     const backend = createTauriBackend(invoke);
     const loaded = await backend.load(2);
-    expect(loaded.ok && Array.from(loaded.value)).toEqual([1, 2, 3]);
-    expect(await backend.setState(2, "loading", "ready")).toEqual({ ok: true, value: { ...hwpx, state: "ready", sequence: 2 } });
-    expect(await backend.commit(2, 0, 1)).toEqual({ ok: false, error: { code: "Protocol" } });
+    expect(loaded.ok && loaded.value.generation).toBe(7);
+    expect(loaded.ok && Array.from(loaded.value.bytes)).toEqual([1, 2, 3]);
+    expect(await backend.setState(2, 7, "loading", "ready")).toEqual({ ok: true, value: { ...hwpx, state: "ready", sequence: 2 } });
+    expect(await backend.commit(2, 7, 0, 1)).toEqual({ ok: false, error: { code: "Protocol" } });
     expect(calls).toEqual([
       ["document_load", { sessionId: 2 }],
-      ["document_set_state", { sessionId: 2, from: "loading", to: "ready" }],
-      ["document_commit", { sessionId: 2, baseRevision: 0, count: 1 }],
+      ["document_set_state", { sessionId: 2, loadGeneration: 7, from: "loading", to: "ready" }],
+      ["document_commit", { sessionId: 2, loadGeneration: 7, baseRevision: 0, count: 1 }],
     ]);
-    replies.document_load = "not bytes";
-    expect(await backend.load(2)).toEqual({ ok: false, error: { code: "Protocol" } });
+    // 머리가 모자라거나, 시도 번호가 0이거나, JS 수로 정확히 나타낼 수 없으면 계약 위반
+    const header = (bytes: number[]) => new Uint8Array(bytes).buffer;
+    for (const bad of ["not bytes", header([1, 0, 0]), header([0, 0, 0, 0, 0, 0, 0, 0, 9]), header([0, 0, 0, 0, 0, 0, 0x20, 0])]) {
+      replies.document_load = bad;
+      expect(await backend.load(2)).toEqual({ ok: false, error: { code: "Protocol" } });
+    }
+    replies.document_load = header([1, 0, 0, 0, 0, 0, 0, 0]); // 빈 문서 바이트는 계약상 가능(엔진이 판단)
+    expect(await backend.load(2)).toEqual({ ok: true, value: { generation: 1, bytes: new Uint8Array(0) } });
+    replies.document_load = header([0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0x1f, 0, 5]); // 2^53 - 1: 가장 큰 정확한 값
+    expect(await backend.load(2)).toEqual({ ok: true, value: { generation: Number.MAX_SAFE_INTEGER, bytes: new Uint8Array([5]) } });
+    replies.document_load = header([0, 0, 0, 0, 1, 0, 0, 0]); // 2^32: 위 32비트도 읽는다
+    expect(await backend.load(2)).toEqual({ ok: true, value: { generation: 2 ** 32, bytes: new Uint8Array(0) } });
   });
 
   it("WebView가 다시 시작되면 남은 세션을 목록에 넣고 loading·ready 세션을 failed로 돌린다", async () => {
     const { backend, take } = controlledBackend();
     const sessions = new DocumentSessions(backend);
-    const ready = { ...hwpx, state: "ready", revision: 4, dirty: true, sequence: 6 } as const;
+    const ready = { ...hwpx, state: "ready", revision: 4, dirty: true, sequence: 6, loadGeneration: 3 } as const;
     const reconciling = sessions.reconcile();
     take("sessions").reply(ok([docx, ready]));
     await flush();
     const transition = take("setState", 2);
-    expect(transition.args).toEqual([2, "ready", "failed"]);
+    expect(transition.args).toEqual([2, 3, "ready", "failed"]); // 목록에서 본 시도의 번호로만
     transition.reply(ok({ ...ready, state: "failed", sequence: 7 }));
     await reconciling;
     expect(sessions.snapshot()).toEqual({ sessions: [docx, { ...ready, state: "failed", sequence: 7 }], activeId: 1 });

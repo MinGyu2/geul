@@ -1,5 +1,14 @@
-import { useEffect, useReducer, useState, useSyncExternalStore, type CSSProperties, type FormEvent } from "react";
-import type { DocumentError, SessionInfo } from "../../adapters/contract";
+import {
+  useEffect,
+  useReducer,
+  useRef,
+  useState,
+  useSyncExternalStore,
+  type CSSProperties,
+  type FormEvent,
+  type KeyboardEvent,
+} from "react";
+import type { DocumentError, SessionId, SessionInfo } from "../../adapters/contract";
 import { EMPTY_SESSIONS, type SessionsState } from "../../adapters/sessions";
 import type { Message, MessageKey } from "../../language";
 import { useTranslation } from "../../language/LanguageContext";
@@ -17,6 +26,20 @@ interface EditorProps {
 const NO_SUBSCRIBE = () => () => {};
 const NO_SESSIONS = () => EMPTY_SESSIONS;
 
+/**
+ * 자동 검사용 진단(커서 문단의 글자)을 DOM에 노출할지. 문서 내용이므로 일반 빌드에는 넣지 않고, 검사용 빌드
+ * (`VITE_GEUL_TEST_HOOKS=1 npm run build`, tests/integration/rhwp/rhwp_poc.py)에서만 켠다. 빌드 때 상수로 바뀌어
+ * 일반 빌드에서는 해당 코드가 빠진다.
+ */
+const TEST_HOOKS = import.meta.env.VITE_GEUL_TEST_HOOKS === "1";
+
+/** 저장하지 않은 편집을 버릴지 묻는 중인 작업. */
+interface DiscardRequest {
+  action: "close" | "reload";
+  sessionId: SessionId;
+  name: string;
+}
+
 /** 오류 code를 화면 문구 키로. 세부 값(경로·내용)은 보여 주지 않는다. */
 export function documentErrorMessage(error: DocumentError): Message {
   return { key: `document.error.${error.code}` as MessageKey };
@@ -33,9 +56,34 @@ export function Editor({ zoom, workspace = null, notify }: EditorProps) {
   const state: SessionsState = useSyncExternalStore(sessions?.subscribe ?? NO_SUBSCRIBE, sessions?.snapshot ?? NO_SESSIONS);
   const active = state.sessions.find((session) => session.sessionId === state.activeId) ?? null;
   const pageStyle = { "--zoom": zoom / 100 } as CSSProperties;
+  const [discard, setDiscard] = useState<DiscardRequest | null>(null);
+  const discardTarget = discard && state.sessions.find((session) => session.sessionId === discard.sessionId);
+
+  // 닫기·다시 불러오기: 저장하지 않은 편집이 있으면(UnpreservedChanges) 버릴지 묻고, 버리기를 고른 경우에만 진행한다.
+  const close = async (session: SessionInfo, confirmed = false) => {
+    if (!workspace) return;
+    const result = await workspace.close(session.sessionId, { discard: confirmed });
+    if (result.ok) return;
+    if (result.error.code === "UnpreservedChanges") setDiscard({ action: "close", sessionId: session.sessionId, name: session.displayName });
+    else notify?.(documentErrorMessage(result.error));
+  };
+  const reload = async (session: SessionInfo, confirmed = false) => {
+    const editor = workspace?.editorFor(session.sessionId);
+    if (!editor) return;
+    const result = await editor.load({ discard: confirmed });
+    if (!result.ok && result.error.code === "UnpreservedChanges") {
+      setDiscard({ action: "reload", sessionId: session.sessionId, name: session.displayName });
+    } else if (confirmed && result.ok) notify?.({ key: "document.discardedReloaded", vars: { name: session.displayName } });
+  };
+  const confirmDiscard = () => {
+    if (!discard || !discardTarget) return;
+    setDiscard(null);
+    void (discard.action === "close" ? close(discardTarget, true) : reload(discardTarget, true));
+  };
+
   return (
     <main className="editor" aria-label={t("editor.label")}>
-      {workspace && <DocumentBar workspace={workspace} state={state} notify={notify} />}
+      {workspace && <DocumentBar workspace={workspace} state={state} notify={notify} onClose={(session) => void close(session)} />}
       {active === null ? (
         <>
           <div className="editor__notice" role="note">
@@ -49,18 +97,86 @@ export function Editor({ zoom, workspace = null, notify }: EditorProps) {
           </div>
         </>
       ) : active.engine === "rhwp" && workspace ? (
-        <RhwpPanel key={active.sessionId} editor={workspace.editorFor(active.sessionId)} info={active} zoom={zoom} />
+        <RhwpPanel
+          key={active.sessionId}
+          editor={workspace.editorFor(active.sessionId)}
+          info={active}
+          zoom={zoom}
+          onReload={() => void reload(active)}
+        />
       ) : (
         <div className="editor__notice" role="note" data-testid="editor-unsupported">
           <h1 className="editor__notice-title">{t("editor.unsupportedTitle", { name: active.displayName })}</h1>
           <p>{t("editor.wordcraftPending")}</p>
         </div>
       )}
+      {discard && discardTarget && (
+        <DiscardDialog request={discard} onCancel={() => setDiscard(null)} onConfirm={confirmDiscard} />
+      )}
     </main>
   );
 }
 
-function DocumentBar({ workspace, state, notify }: { workspace: DocumentWorkspace; state: SessionsState; notify: ((message: Message) => void) | undefined }) {
+/**
+ * 저장하지 않은 편집을 버릴지 묻는 확인 창(alertdialog). 처음 초점은 취소에 두고, Escape는 취소, Tab은 창 안에서만
+ * 돈다. 닫히면 초점을 열기 전 요소로 돌려준다.
+ */
+function DiscardDialog({ request, onCancel, onConfirm }: { request: DiscardRequest; onCancel: () => void; onConfirm: () => void }) {
+  const { t } = useTranslation();
+  const cancelRef = useRef<HTMLButtonElement>(null);
+  const confirmRef = useRef<HTMLButtonElement>(null);
+  useEffect(() => {
+    const opener = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    cancelRef.current?.focus();
+    return () => {
+      if (opener?.isConnected) opener.focus({ preventScroll: true });
+    };
+  }, []);
+  const onKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
+    if (event.key === "Escape") {
+      event.preventDefault();
+      onCancel();
+    } else if (event.key === "Tab") {
+      const target = document.activeElement === cancelRef.current ? confirmRef.current : cancelRef.current;
+      event.preventDefault();
+      target?.focus();
+    }
+  };
+  return (
+    <div className="discard-dialog__backdrop">
+      <div
+        className="discard-dialog"
+        role="alertdialog"
+        aria-modal="true"
+        aria-labelledby="discard-dialog-title"
+        aria-describedby="discard-dialog-body"
+        data-testid="discard-dialog"
+        data-action={request.action}
+        onKeyDown={onKeyDown}
+      >
+        <h2 id="discard-dialog-title" className="discard-dialog__title">
+          {t(request.action === "close" ? "document.discard.closeTitle" : "document.discard.reloadTitle", { name: request.name })}
+        </h2>
+        <p id="discard-dialog-body">{t("document.discard.body")}</p>
+        <div className="discard-dialog__actions">
+          <button ref={cancelRef} type="button" className="document-bar__button" data-testid="discard-cancel" onClick={onCancel}>
+            {t("document.discard.cancel")}
+          </button>
+          <button ref={confirmRef} type="button" className="document-bar__button" data-testid="discard-confirm" onClick={onConfirm}>
+            {t(request.action === "close" ? "document.discard.closeConfirm" : "document.discard.reloadConfirm")}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function DocumentBar({ workspace, state, notify, onClose }: {
+  workspace: DocumentWorkspace;
+  state: SessionsState;
+  notify: ((message: Message) => void) | undefined;
+  onClose: (session: SessionInfo) => void;
+}) {
   const { t } = useTranslation();
   const [path, setPath] = useState("");
   const [busy, setBusy] = useState(false);
@@ -92,32 +208,53 @@ function DocumentBar({ workspace, state, notify }: { workspace: DocumentWorkspac
       </form>
       <div className="document-tabs" role="tablist" aria-label={t("document.tabs")}>
         {state.sessions.map((session) => (
-          <div key={session.sessionId} className="document-tab" data-active={session.sessionId === state.activeId}>
-            <button
-              type="button"
-              role="tab"
-              className="document-tab__select"
-              aria-selected={session.sessionId === state.activeId}
-              data-session={session.sessionId}
-              data-state={session.state}
-              onClick={() => workspace.sessions.select(session.sessionId)}
-            >
-              {session.dirty ? "● " : ""}{session.displayName}
-              <span className="document-tab__state">{t(`document.state.${session.state}` as MessageKey)}</span>
-            </button>
-            <button
-              type="button"
-              className="document-tab__close"
-              aria-label={t("document.close", { name: session.displayName })}
-              onClick={() => void workspace.close(session.sessionId).then((result) => {
-                if (!result.ok) notify?.(documentErrorMessage(result.error));
-              })}
-            >
-              ×
-            </button>
-          </div>
+          <DocumentTab
+            key={session.sessionId}
+            session={session}
+            active={session.sessionId === state.activeId}
+            editor={workspace.editorFor(session.sessionId)}
+            onSelect={() => workspace.sessions.select(session.sessionId)}
+            onClose={() => onClose(session)}
+          />
         ))}
       </div>
+    </div>
+  );
+}
+
+/**
+ * 문서 탭 하나. 수정 표시(●)는 백엔드 dirty뿐 아니라 아직 확정하지 않았거나 조합 중인 편집도 반영한다
+ * (백엔드 dirty가 false여도 저장하지 않은 편집이 있을 수 있음).
+ */
+function DocumentTab({ session, active, editor, onSelect, onClose }: {
+  session: SessionInfo;
+  active: boolean;
+  editor: RhwpEditorSession | null;
+  onSelect: () => void;
+  onClose: () => void;
+}) {
+  const { t } = useTranslation();
+  useEditorUpdates(editor);
+  const modified = session.dirty || (editor?.hasUnpreservedChanges ?? false);
+  return (
+    <div className="document-tab" data-active={active}>
+      <button
+        type="button"
+        role="tab"
+        className="document-tab__select"
+        aria-selected={active}
+        data-session={session.sessionId}
+        data-state={session.state}
+        data-modified={modified}
+        onClick={onSelect}
+      >
+        {modified ? <span aria-label={t("document.modified")}>● </span> : null}
+        {session.displayName}
+        <span className="document-tab__state">{t(`document.state.${session.state}` as MessageKey)}</span>
+      </button>
+      <button type="button" className="document-tab__close" aria-label={t("document.close", { name: session.displayName })} onClick={onClose}>
+        ×
+      </button>
     </div>
   );
 }
@@ -128,13 +265,14 @@ function useEditorUpdates(editor: RhwpEditorSession | null) {
   useEffect(() => editor?.subscribe(update), [editor]);
 }
 
-function RhwpPanel({ editor, info, zoom }: { editor: RhwpEditorSession | null; info: SessionInfo; zoom: number }) {
+function RhwpPanel({ editor, info, zoom, onReload }: { editor: RhwpEditorSession | null; info: SessionInfo; zoom: number; onReload: () => void }) {
   const { t } = useTranslation();
   useEditorUpdates(editor);
   if (!editor) return null;
   const status = editor.status;
   const latency = editor.latency();
   const roundTrip = editor.lastRoundTrip;
+  const unpreserved = editor.hasUnpreservedChanges;
   return (
     <>
       <div
@@ -152,7 +290,8 @@ function RhwpPanel({ editor, info, zoom }: { editor: RhwpEditorSession | null; i
         data-caret={RhwpEditorSession.positionKey(editor.caret)}
         data-selection={editor.hasSelection ? `${RhwpEditorSession.positionKey(editor.anchor)}|${RhwpEditorSession.positionKey(editor.caret)}` : ""}
         data-composing={editor.composing}
-        data-paragraph-text={editor.caretParagraphText()}
+        data-unpreserved={unpreserved}
+        data-paragraph-text={TEST_HOOKS ? editor.caretParagraphText() : undefined}
         data-pages={editor.pages.length}
       >
         <h1 className="editor__notice-title">{info.displayName}</h1>
@@ -160,14 +299,16 @@ function RhwpPanel({ editor, info, zoom }: { editor: RhwpEditorSession | null; i
         {status.kind === "failed" && (
           <>
             <p data-testid="rhwp-error">{t(documentErrorMessage(status.error).key)}</p>
-            <button type="button" className="document-bar__button" data-testid="rhwp-load" onClick={() => void editor.load()}>
+            {/* 편집한 모델이 남아 있으면 복구 기능이 없다는 것과 다시 불러오면 버려진다는 것을 숨기지 않는다. */}
+            {unpreserved && <p data-testid="rhwp-unpreserved-warning">{t("editor.rhwp.failedUnpreserved")}</p>}
+            <button type="button" className="document-bar__button" data-testid="rhwp-load" onClick={onReload}>
               {t("editor.rhwp.reload")}
             </button>
           </>
         )}
         {status.kind === "idle" && (
           // 엔진에 아직 불러오지 않은 세션(예: WebView를 다시 시작한 뒤 남은 세션). 자동으로 불러오지 않는다.
-          <button type="button" className="document-bar__button" data-testid="rhwp-load" onClick={() => void editor.load()}>
+          <button type="button" className="document-bar__button" data-testid="rhwp-load" onClick={onReload}>
             {t(info.state === "failed" ? "editor.rhwp.reload" : "editor.rhwp.load")}
           </button>
         )}
@@ -183,17 +324,22 @@ function RhwpPanel({ editor, info, zoom }: { editor: RhwpEditorSession | null; i
             >
               {t("editor.rhwp.roundTrip")}
             </button>
+            {/* 결과는 검사한 그 모델에 대한 것이다. 문서를 바꾸면 편집 세션이 지우므로 이전 통과가 남지 않는다. */}
             {roundTrip && (
               <output
                 data-testid="rhwp-roundtrip-result"
                 data-format={roundTrip.format}
+                data-passed={roundTrip.passed}
+                data-failure={roundTrip.failure ?? ""}
+                data-loss-valid={roundTrip.lossValid}
                 data-loss-count={roundTrip.lossCount}
                 data-pages-equal={roundTrip.pagesEqual}
                 data-text-equal={roundTrip.textEqual}
                 data-controls-equal={roundTrip.controlsEqual}
               >
                 {t("editor.rhwp.roundTripResult", {
-                  loss: roundTrip.lossCount,
+                  verdict: t(roundTrip.passed ? "editor.rhwp.roundTripPassed" : "editor.rhwp.roundTripFailed"),
+                  loss: roundTrip.lossValid ? roundTrip.lossCount : t("editor.rhwp.lossInvalid"),
                   same: roundTrip.textEqual && roundTrip.controlsEqual && roundTrip.pagesEqual ? "✓" : "✗",
                 })}
               </output>

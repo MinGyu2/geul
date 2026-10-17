@@ -49,6 +49,11 @@ pub enum DocumentError {
         session_id: SessionId,
         revision: u64,
     },
+    /// 지금 불러오기 시도가 아닌 옛 시도의 상태 전이·확정. `load_generation`은 지금 시도 번호다.
+    StaleLoad {
+        session_id: SessionId,
+        load_generation: u64,
+    },
     /// 판별한 뒤 파일이 바뀌거나 교체됨. 다시 열어야 한다.
     FileChanged,
     /// 계약에 맞지 않는 요청 값(허용하지 않는 상태 전이, 범위 밖 개수 등).

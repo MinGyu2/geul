@@ -21,6 +21,8 @@
 //!   는다. 다르면 아무것도 바꾸지 않고 `RevisionMismatch`(중복·순서 뒤바뀐 확정, 다른 쓰는 쪽)로 거부한다. 편집기는
 //!   이때 모델이 기록과 어긋났다고 보고 세션을 `failed`로 돌린다. 다시 그리기·선택·실패한 변경은 확정하지 않는다.
 //! - `dirty`는 `ready`가 된 뒤 확정한 변경이 있는지다(저장은 T009). 다시 불러오면 지금 revision을 기준으로 깨끗하다.
+//! - `load_generation`은 불러오기 시도 번호다(`begin_load`마다 1 증가). 상태 전이·변경 확정은 지금 시도의 번호를 담아야
+//!   하며, 다르면 `StaleLoad`로 거부한다(늦게 끝난 옛 시도·옛 모델의 확정이 새 시도를 바꾸지 못함).
 //! - `sequence`는 세션 기록이 바뀔 때마다(상태·revision) 1씩 는다. 프런트엔드는 더 작거나 같은 sequence의 응답을
 //!   버려, 늦게 도착한 응답이 새 상태를 덮지 못하게 한다.
 
@@ -60,6 +62,9 @@ pub struct SessionInfo {
     pub dirty: bool,
     /// 이 세션 기록이 바뀐 횟수(늦게 온 응답을 가려내는 데 쓴다).
     pub sequence: u64,
+    /// 엔진 불러오기 시도 번호. `begin_load`마다 1 늘고(0은 아직 불러온 적 없음), 상태 전이와 변경 확정은 지금
+    /// 시도의 번호를 담아야 한다. 늦게 끝난 옛 시도가 새 시도의 상태·revision을 바꾸지 못하게 한다.
+    pub load_generation: u64,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize)]
@@ -140,6 +145,7 @@ impl SessionRegistry {
             display_name: file.display_name,
             dirty: false,
             sequence: 0,
+            load_generation: 0,
         };
         inner.sessions.insert(
             session_id,
@@ -173,10 +179,12 @@ impl SessionRegistry {
         self.update(session_id, |session| match session.info.state {
             SessionState::Identified | SessionState::Failed => {
                 session.info.state = SessionState::Loading;
+                session.info.load_generation += 1;
                 Ok(LoadSource {
                     identity: session.identity.clone(),
                     fingerprint: session.fingerprint,
                     format: session.info.format,
+                    generation: session.info.load_generation,
                 })
             }
             state => Err(DocumentError::InvalidState { session_id, state }),
@@ -184,10 +192,12 @@ impl SessionRegistry {
         .map(|(source, _)| source)
     }
 
-    /// 상태 전이. 허용: `loading`→`ready`, `loading`→`failed`, `ready`→`failed`.
+    /// 상태 전이. 허용: `loading`→`ready`, `loading`→`failed`, `ready`→`failed`. `generation`이 지금 불러오기 시도가
+    /// 아니면 `StaleLoad`(늦게 끝난 옛 시도)로 거부하고 아무것도 바꾸지 않는다.
     pub fn transition(
         &self,
         session_id: SessionId,
+        generation: u64,
         from: SessionState,
         to: SessionState,
     ) -> Result<SessionInfo, DocumentError> {
@@ -199,6 +209,7 @@ impl SessionRegistry {
             return Err(DocumentError::InvalidRequest);
         }
         self.update(session_id, |session| {
+            Self::check_generation(session, session_id, generation)?;
             if session.info.state != from {
                 return Err(DocumentError::InvalidState {
                     session_id,
@@ -214,10 +225,37 @@ impl SessionRegistry {
         .map(|(_, info)| info)
     }
 
+    fn check_generation(
+        session: &Session,
+        session_id: SessionId,
+        generation: u64,
+    ) -> Result<(), DocumentError> {
+        if session.info.load_generation != generation {
+            return Err(DocumentError::StaleLoad {
+                session_id,
+                load_generation: session.info.load_generation,
+            });
+        }
+        Ok(())
+    }
+
+    /// 테스트용: 지금 불러오기 시도의 번호로 전이한다(WebView 재시작 뒤 맞춤과 같은 경로).
+    #[cfg(test)]
+    pub fn transition_any_generation(
+        &self,
+        session_id: SessionId,
+        from: SessionState,
+        to: SessionState,
+    ) -> Result<SessionInfo, DocumentError> {
+        let generation = self.get(session_id)?.load_generation;
+        self.transition(session_id, generation, from, to)
+    }
+
     /// 엔진 모델에서 성공한 변경 `count`개를 확정한다. 기준 revision이 지금 기록과 같고 `ready`일 때만.
     pub fn commit(
         &self,
         session_id: SessionId,
+        generation: u64,
         base_revision: u64,
         count: u64,
     ) -> Result<SessionInfo, DocumentError> {
@@ -225,6 +263,8 @@ impl SessionRegistry {
             return Err(DocumentError::InvalidRequest);
         }
         self.update(session_id, |session| {
+            // 다시 불러온 모델에는 옛 모델의 변경이 없으므로 옛 시도의 확정은 받지 않는다.
+            Self::check_generation(session, session_id, generation)?;
             if session.info.state != SessionState::Ready {
                 return Err(DocumentError::InvalidState {
                     session_id,
