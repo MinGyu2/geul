@@ -5,11 +5,14 @@
 //! WordCraft 연결은 T008, 파일 쓰기 서비스는 T009/T014에서 추가한다.
 
 pub mod document;
+mod window_close;
 
 pub fn run() {
     tauri::Builder::default()
         .manage(document::commands::DocumentState::default())
+        .on_window_event(window_close::on_window_event)
         .invoke_handler(tauri::generate_handler![
+            window_close::window_close_confirmed,
             document::commands::document_open,
             document::commands::document_close,
             document::commands::document_session,

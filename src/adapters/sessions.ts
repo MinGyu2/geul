@@ -109,8 +109,9 @@ export class DocumentSessions {
   }
 
   /** 백엔드 기록으로 세션 하나를 다시 읽는다. 닫힌 세션이면 목록에서 뺀다. */
-  async refresh(sessionId: SessionId): Promise<Result<SessionInfo>> {
+  async refresh(sessionId: SessionId, isCurrent: () => boolean = () => true): Promise<Result<SessionInfo>> {
     const result = await this.backend.session(sessionId);
+    if (!isCurrent()) return result; // 모델을 교체한 뒤 온 성공·닫힘 오류 모두 투영에 반영하지 않는다
     if (result.ok) this.applyUpdate(result.value);
     else if (result.error.code === "StaleSession" || result.error.code === "UnknownSession") this.dispatch({ type: "closed", sessionId });
     return result;

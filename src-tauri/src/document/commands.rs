@@ -18,7 +18,7 @@ use tauri::ipc::Response;
 use tauri::State;
 
 use super::error::{DocumentError, LimitKind};
-use super::open::{identify, read_identified, IdentifiedFile, Limits};
+use super::open::{identify, read_identified, IdentifiedFile, Limits, LoadSource};
 use super::session::{CloseOutcome, SessionId, SessionInfo, SessionRegistry, SessionState};
 
 pub const MAX_PENDING_OPENS: usize = 8;
@@ -80,6 +80,18 @@ impl DocumentState {
     /// 이 시도가 아직 지금 시도일 때만 `failed`로 돌린다. 읽는 동안 세션이 닫히거나 새 시도가 시작되면 바이트를
     /// 버리고 오류를 돌려준다. 성공하면 (시도 번호, 바이트).
     async fn load_bytes(&self, session_id: SessionId) -> Result<(u64, Vec<u8>), DocumentError> {
+        self.load_bytes_with(session_id, read_identified).await
+    }
+
+    // 읽기만 주입한다(등록·generation·가드·검증 경로는 동일). 테스트는 실제 파일 읽기를 gate 뒤에서 실행한다.
+    async fn load_bytes_with<F>(
+        &self,
+        session_id: SessionId,
+        read: F,
+    ) -> Result<(u64, Vec<u8>), DocumentError>
+    where
+        F: FnOnce(&LoadSource, &Limits) -> Result<Vec<u8>, DocumentError> + Send + 'static,
+    {
         let source = self.registry.begin_load(session_id)?;
         let generation = source.generation;
         let mut guard = LoadingGuard {
@@ -89,9 +101,7 @@ impl DocumentState {
             armed: true,
         };
         let limits = self.limits;
-        let bytes = self
-            .run_blocking(move || read_identified(&source, &limits))
-            .await?;
+        let bytes = self.run_blocking(move || read(&source, &limits)).await?;
         let info = self.registry.get(session_id)?;
         if info.load_generation != generation {
             return Err(DocumentError::StaleLoad {
@@ -430,18 +440,51 @@ mod tests {
         assert_eq!(pending(&state), 0);
     }
 
+    /// 파일 작업이 끝나기 전에만 취소·닫기·교체한다. 첫 poll 결과를 무시하면 빠른 파일 읽기가 이미
+    /// Ready여서 완료된 future를 다시 poll하거나 취소 가드가 전혀 동작하지 않는 거짓 검증이 된다.
+    fn gated_load(state: &DocumentState, id: SessionId) -> (LoadFuture<'_>, Sender<()>) {
+        let (release, released) = mpsc::channel();
+        let (started, started_rx) = mpsc::channel();
+        let mut load: LoadFuture<'_> =
+            Box::pin(state.load_bytes_with(id, move |source, limits| {
+                started.send(()).unwrap();
+                released
+                    .recv_timeout(WAIT)
+                    .expect("불러오기 gate 해제 안 됨");
+                read_identified(source, limits)
+            }));
+        assert!(load
+            .as_mut()
+            .poll(&mut Context::from_waker(Waker::noop()))
+            .is_pending());
+        wait_started(&started_rx, 1);
+        (load, release)
+    }
+
+    fn wait_no_pending(state: &DocumentState) {
+        let deadline = Instant::now() + WAIT;
+        while pending(state) != 0 {
+            assert!(
+                Instant::now() < deadline,
+                "불러오기 작업이 자리를 돌려주지 않음"
+            );
+            std::thread::yield_now();
+        }
+    }
+
     #[test]
     fn 기다리기를_그만둔_불러오기는_세션을_loading에_남기지_않는다() {
         let state = DocumentState::default();
         let dir = TempDir::new();
         let info = opened(&state, &dir, "a.hwpx", &hwpx());
-        let mut load: LoadFuture<'_> = Box::pin(state.load_bytes(info.session_id));
-        let _ = load.as_mut().poll(&mut Context::from_waker(Waker::noop()));
+        let (load, release) = gated_load(&state, info.session_id);
         assert_eq!(
             state.registry.get(info.session_id).unwrap().state,
             SessionState::Loading
         );
         drop(load);
+        release.send(()).unwrap();
+        wait_no_pending(&state);
         assert_eq!(
             state.registry.get(info.session_id).unwrap().state,
             SessionState::Failed
@@ -455,9 +498,9 @@ mod tests {
         let state = DocumentState::default();
         let dir = TempDir::new();
         let info = opened(&state, &dir, "a.hwp", &hwp());
-        let mut load: LoadFuture<'_> = Box::pin(state.load_bytes(info.session_id));
-        let _ = load.as_mut().poll(&mut Context::from_waker(Waker::noop()));
+        let (load, release) = gated_load(&state, info.session_id);
         state.registry.close(info.session_id).unwrap();
+        release.send(()).unwrap();
         assert_eq!(
             tauri::async_runtime::block_on(load),
             Err(DocumentError::StaleSession {
@@ -470,23 +513,36 @@ mod tests {
 
     #[test]
     fn 늦게_끝난_옛_불러오기는_새_불러오기의_상태를_바꾸지_않는다() {
-        let state = DocumentState::default();
-        let dir = TempDir::new();
-        let info = opened(&state, &dir, "a.hwpx", &hwpx());
-        let id = info.session_id;
-        // 불러오기 A가 진행 중일 때 (WebView 재시작 뒤 맞춤처럼) 세션이 failed가 되고, 새 불러오기 B가 시작된다.
-        let mut a: LoadFuture<'_> = Box::pin(state.load_bytes(id));
-        let _ = a.as_mut().poll(&mut Context::from_waker(Waker::noop()));
-        state
-            .registry
-            .transition_any_generation(id, SessionState::Loading, SessionState::Failed)
-            .unwrap();
-        let b = tauri::async_runtime::block_on(state.load_bytes(id));
-        assert!(b.is_ok());
-        assert_eq!(state.registry.get(id).unwrap().state, SessionState::Loading);
-        // A가 이제야 끝나거나 취소돼도 B의 loading을 failed로 바꾸면 안 된다.
-        drop(a);
-        assert_eq!(state.registry.get(id).unwrap().state, SessionState::Loading);
+        for complete in [false, true] {
+            let state = DocumentState::default();
+            let dir = TempDir::new();
+            let info = opened(&state, &dir, "a.hwpx", &hwpx());
+            let id = info.session_id;
+            let (a, release) = gated_load(&state, id);
+            state
+                .registry
+                .transition_any_generation(id, SessionState::Loading, SessionState::Failed)
+                .unwrap();
+            let b = tauri::async_runtime::block_on(state.load_bytes(id));
+            assert!(b.is_ok());
+            assert_eq!(state.registry.get(id).unwrap().state, SessionState::Loading);
+            // A가 늦게 완료되든 취소되든 B의 loading을 failed로 바꾸지 않는다.
+            if complete {
+                release.send(()).unwrap();
+                assert_eq!(
+                    tauri::async_runtime::block_on(a),
+                    Err(DocumentError::StaleLoad {
+                        session_id: id,
+                        load_generation: 2
+                    })
+                );
+            } else {
+                drop(a);
+                release.send(()).unwrap();
+            }
+            wait_no_pending(&state);
+            assert_eq!(state.registry.get(id).unwrap().state, SessionState::Loading);
+        }
     }
 
     #[test]

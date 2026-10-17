@@ -7,6 +7,8 @@
 // - 변경이 성공하면 pending을 1 늘리고, 확정은 한 번에 하나만 보낸다(base = 백엔드가 마지막으로 확인한 revision,
 //   count = 그 뒤 성공한 변경 수). 응답을 기다리는 동안의 변경은 다음 확정에 묶인다. 그래서 확정이 순서를 바꿔
 //   도착하거나 중복될 수 없고, revision은 성공한 변경마다 정확히 1씩 는다(다시 그리기·선택·실패한 변경은 확정 안 함).
+// - reload 시작·dispose마다 로컬 epoch를 바꾼다. commit dispatcher와 모든 비동기 응답은 그 epoch에만 속하며,
+//   옛 epoch의 결과·finally는 새 모델·대기열·확정 소유권·세션 투영을 바꾸지 않는다.
 // - 불러오기 시도마다 백엔드가 번호(loadGeneration)를 주고, 그 시도의 상태 전이·확정은 이 번호를 함께 보낸다. 옛 시도의
 //   요청은 백엔드가 StaleLoad로 거부한다. 엔진이 문서를 읽고(parse) 올바른 페이지 정보까지 얻은 뒤에야(render 준비)
 //   ready를 요청한다. 백엔드의 형식 판별은 컨테이너 확인일 뿐 문서 내용이 올바르다는 증거가 아니다.
@@ -26,6 +28,8 @@ import type { DocumentBackend } from "../../../adapters/backend";
 import type { DocumentError, Result, SessionInfo } from "../../../adapters/contract";
 import type { DocumentSessions } from "../../../adapters/sessions";
 import type { RhwpDocument, RhwpModule } from "./rhwpModule";
+import { bitmapPixels, checkRenderBudget, MAX_PAGE_EXTENT, MAX_RENDER_PIXELS } from "./renderBudget";
+export { MAX_PAGE_EXTENT } from "./renderBudget";
 import {
   charCount,
   compare,
@@ -104,8 +108,6 @@ function parseLoss(json: string): { count: number; losses: unknown[] } | null {
  * 페이지 한 변의 최대 길이(배율 1, CSS px). rhwp가 canvas 한 변에 허용하는 최대값(wasm_api.rs MAX_CANVAS_DIMENSION)과
  * 같다. 이보다 큰 페이지는 엔진이 100%로도 그리지 못하므로(배율을 낮춰 그림) 편집 가능한 표면으로 내놓지 않는다.
  */
-export const MAX_PAGE_EXTENT = 16_384;
-
 const isPageExtent = (value: unknown): value is number =>
   typeof value === "number" && Number.isFinite(value) && value > 0 && value <= MAX_PAGE_EXTENT;
 
@@ -115,16 +117,20 @@ const isPageExtent = (value: unknown): value is number =>
  *   할당은 엔진이 가진 페이지만큼이다(임의의 쪽 수 상한은 두지 않음).
  * - 쪽 정보는 JSON 객체이고 pageIndex가 그 쪽 번호, width·height가 유한한 양수(MAX_PAGE_EXTENT 이하)다. 0·빈 값으로
  *   바꿔 넣지 않는다.
+ * - 배율 1에서 per-canvas·전체 RGBA 픽셀 예산을 넘으면 ready 전에 거부한다.
  */
 function readPages(doc: RhwpDocument): PageSize[] {
   const count = doc.pageCount();
   if (!Number.isSafeInteger(count) || count < 1) throw new Error("page count");
   const pages: PageSize[] = [];
+  let pixels = 0;
   for (let page = 0; page < count; page++) {
     const info: unknown = JSON.parse(doc.getPageInfo(page));
     if (typeof info !== "object" || info === null || Array.isArray(info)) throw new Error("page info");
     const { pageIndex, width, height } = info as { pageIndex?: unknown; width?: unknown; height?: unknown };
     if (pageIndex !== page || !isPageExtent(width) || !isPageExtent(height)) throw new Error("page info");
+    pixels += bitmapPixels({ width, height }, 1);
+    if (pixels > MAX_RENDER_PIXELS) throw new Error("surface pixel budget");
     pages.push({ width, height });
   }
   return pages;
@@ -154,12 +160,15 @@ export class RhwpEditorSession {
   lastRoundTrip: RoundTripReport | null = null;
 
   private doc: RhwpDocument | null = null;
+  private readonly renderCanvases = new Set<HTMLCanvasElement>();
   private text: RhwpText | null = null;
   private module: RhwpModule | null = null;
   private preferredX = -1;
   private committed = 0;
   private pending = 0;
-  private committing = false;
+  private committingEpoch: number | null = null;
+  /** 로컬 비동기 작업 소유권. reload 시작(백엔드 응답 전)·dispose에서 무효화한다. */
+  private epoch = 0;
   /** 지금 모델을 만든 불러오기 시도 번호(백엔드가 준 값, 0 = 없음). */
   private generation = 0;
   /** 지금 모델을 불러온 뒤 문서를 바꾼 적이 있음(성공한 변경, 확정 여부와 무관, 실패해도 유지). */
@@ -226,7 +235,7 @@ export class RhwpEditorSession {
    */
   get hasUnpreservedChanges() {
     return this.doc !== null
-      && (this.modified || this.uncertain || this.pending > 0 || this.committing || this.composition !== null);
+      && (this.modified || this.uncertain || this.pending > 0 || this.committingEpoch === this.epoch || this.composition !== null);
   }
 
   /** 엔진 편집이 예외로 끝나 모델이 바뀌었는지 알 수 없음(성공한 변경과 구분). */
@@ -257,6 +266,8 @@ export class RhwpEditorSession {
   private async runLoad(): Promise<Result<null>> {
     const closed = { ok: false, error: { code: "StaleSession", sessionId: this.sessionId } } as const;
     if (this.disposed) return closed;
+    const epoch = ++this.epoch;
+    this.committingEpoch = null;
     this.releaseDocument();
     this.generation = 0;
     this.modified = false;
@@ -268,25 +279,26 @@ export class RhwpEditorSession {
     this.firstPaintMs = null;
     this.emit();
     const loaded = await this.backend.load(this.sessionId);
-    if (this.disposed) return closed;
-    void this.sessions.refresh(this.sessionId); // loading(또는 실패 시 failed) 상태를 투영에 반영
+    if (!this.owns(epoch)) return closed;
+    void this.sessions.refresh(this.sessionId, () => this.owns(epoch)); // loading(또는 실패 시 failed) 상태를 투영에 반영
     if (!loaded.ok) {
       this.setStatus({ kind: "failed", error: loaded.error });
       return loaded;
     }
     const generation = loaded.value.generation;
+    this.generation = generation;
     this.loadStartedAt = performance.now();
     let doc: RhwpDocument;
     try {
       this.module ??= await this.loadModule();
     } catch {
-      return this.failLoading(generation, { code: "EngineFailure", engine: "rhwp", stage: "init" });
+      return this.failLoading(epoch, generation, { code: "EngineFailure", engine: "rhwp", stage: "init" });
     }
-    if (this.disposed) return closed;
+    if (!this.owns(epoch)) return closed;
     try {
       doc = this.module.openDocument(loaded.value.bytes);
     } catch {
-      return this.failLoading(generation, { code: "EngineFailure", engine: "rhwp", stage: "parse" });
+      return this.failLoading(epoch, generation, { code: "EngineFailure", engine: "rhwp", stage: "parse" });
     }
     // ready를 요청하기 전에 화면에 필요한 정보(페이지 크기)를 모두 얻고 검사한다. 엔진이 문서를 읽었더라도 페이지
     // 정보가 없거나 잘못되면 그릴 준비가 안 된 것이므로(render 단계) ready가 되지 않는다.
@@ -295,14 +307,14 @@ export class RhwpEditorSession {
       pages = readPages(doc);
     } catch {
       doc.free();
-      return this.failLoading(generation, { code: "EngineFailure", engine: "rhwp", stage: "render" });
+      return this.failLoading(epoch, generation, { code: "EngineFailure", engine: "rhwp", stage: "render" });
     }
-    if (this.disposed) {
+    if (!this.owns(epoch)) {
       doc.free();
       return closed;
     }
     const ready = await this.backend.setState(this.sessionId, generation, "loading", "ready");
-    if (this.disposed) {
+    if (!this.owns(epoch)) {
       doc.free();
       return closed;
     }
@@ -327,9 +339,10 @@ export class RhwpEditorSession {
     return LOADED;
   }
 
-  private async failLoading(generation: number, error: DocumentError): Promise<Result<null>> {
+  private async failLoading(epoch: number, generation: number, error: DocumentError): Promise<Result<null>> {
+    if (!this.owns(epoch)) return { ok: false, error };
     const failed = await this.backend.setState(this.sessionId, generation, "loading", "failed");
-    if (this.disposed) return { ok: false, error };
+    if (!this.owns(epoch)) return { ok: false, error };
     if (failed.ok) this.sessions.applyUpdate(failed.value);
     this.setStatus({ kind: "failed", error });
     return { ok: false, error };
@@ -343,9 +356,31 @@ export class RhwpEditorSession {
   /**
    * 렌더링(표면이 부른다). 엔진이 그리지 못하면 빈 편집 영역을 정상처럼 두지 않고 편집을 멈춘다(render 단계 실패).
    */
-  renderPage(page: number, canvas: HTMLCanvasElement, scale: number): boolean {
-    if (!this.doc) return false;
+  prepareRendering(scale: number): boolean {
+    if (!this.doc || this.status.kind !== "ready") return false;
     try {
+      checkRenderBudget(this.pages, scale);
+      return true;
+    } catch {
+      this.releaseRendering();
+      void this.markFailed({ code: "EngineFailure", engine: "rhwp", stage: "render" });
+      return false;
+    }
+  }
+
+  /** zoom 교체·표면 해제·reload·닫기 때 이전 backing store를 새 할당 전에 놓는다. */
+  releaseRendering() {
+    for (const canvas of this.renderCanvases) {
+      canvas.width = 0;
+      canvas.height = 0;
+    }
+    this.renderCanvases.clear();
+  }
+
+  renderPage(page: number, canvas: HTMLCanvasElement, scale: number): boolean {
+    if (!this.prepareRendering(scale) || !this.doc) return false;
+    try {
+      this.renderCanvases.add(canvas);
       this.doc.renderPageToCanvas(page, canvas, scale);
       if (page === 0 && this.firstPaintMs === null) {
         this.firstPaintMs = performance.now() - this.loadStartedAt;
@@ -624,14 +659,20 @@ export class RhwpEditorSession {
 
   // ---- 확정·실패·정리 ----
 
+  private owns(epoch: number) {
+    return !this.disposed && this.epoch === epoch;
+  }
+
   private async flushCommits() {
-    if (this.committing) return;
-    this.committing = true;
+    const epoch = this.epoch;
+    const generation = this.generation;
+    if (this.committingEpoch === epoch) return;
+    this.committingEpoch = epoch;
     try {
-      while (this.pending > 0 && !this.disposed && this.status.kind === "ready") {
+      while (this.pending > 0 && this.owns(epoch) && this.status.kind === "ready") {
         const count = this.pending;
-        const result = await this.backend.commit(this.sessionId, this.generation, this.committed, count);
-        if (this.disposed) return;
+        const result = await this.backend.commit(this.sessionId, generation, this.committed, count);
+        if (!this.owns(epoch)) return;
         if (!result.ok) {
           this.handleBackendRejection(result.error);
           return;
@@ -642,7 +683,7 @@ export class RhwpEditorSession {
         this.emit();
       }
     } finally {
-      this.committing = false;
+      if (this.committingEpoch === epoch) this.committingEpoch = null;
     }
   }
 
@@ -655,7 +696,8 @@ export class RhwpEditorSession {
       // 이 모델은 더 새로운 불러오기 시도로 대체됐다. 그 시도의 상태를 건드리지 않고 편집만 멈춘다.
       this.composition = null;
       this.setStatus({ kind: "failed", error });
-      void this.sessions.refresh(this.sessionId);
+      const epoch = this.epoch;
+      void this.sessions.refresh(this.sessionId, () => this.owns(epoch));
       return;
     }
     void this.markFailed(error);
@@ -671,12 +713,14 @@ export class RhwpEditorSession {
    */
   private async markFailed(error: DocumentError) {
     if (this.status.kind === "failed" || this.disposed) return;
+    const epoch = this.epoch;
+    const generation = this.generation;
     this.composition = null;
     this.setStatus({ kind: "failed", error });
     const info: SessionInfo | null = this.sessions.get(this.sessionId);
     const from = info?.state === "loading" ? "loading" : "ready";
-    const failed = await this.backend.setState(this.sessionId, this.generation, from, "failed");
-    if (!this.disposed && failed.ok) this.sessions.applyUpdate(failed.value);
+    const failed = await this.backend.setState(this.sessionId, generation, from, "failed");
+    if (this.owns(epoch) && failed.ok) this.sessions.applyUpdate(failed.value);
   }
 
   /**
@@ -769,6 +813,7 @@ export class RhwpEditorSession {
   }
 
   private releaseDocument() {
+    this.releaseRendering();
     this.doc?.free();
     this.doc = null;
     this.text = null;
@@ -779,6 +824,8 @@ export class RhwpEditorSession {
   dispose() {
     if (this.disposed) return;
     this.disposed = true;
+    this.epoch += 1;
+    this.committingEpoch = null;
     this.releaseDocument();
     this.status = { kind: "closed" };
     this.emit();

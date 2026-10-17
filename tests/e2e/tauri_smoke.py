@@ -4,7 +4,7 @@
 필요: 빌드된 앱(`npm run tauri build -- --debug --no-bundle`), tauri-driver 2.x, 플랫폼 WebDriver
 (Linux: WebKitWebDriver), 그래픽 세션(Wayland 또는 X11). 외부 Python 패키지는 쓰지 않는다.
 타일링 창 관리자는 창 크기 변경 요청을 무시하므로 최소 창 크기 검사를 건너뛴다. 이때는 헤드리스 weston
-(`weston --backend=headless --renderer=pixman --socket=<이름>`)을 띄우고 `WAYLAND_DISPLAY=<이름>`으로 실행한다.
+(`weston --backend=headless --renderer=pixman --idle-time=0 --socket=<이름>`)을 띄우고 `WAYLAND_DISPLAY=<이름>`으로 실행한다.
 
     python3 tests/e2e/tauri_smoke.py --app src-tauri/target/debug/geul \\
         --driver <tauri-driver 경로> [--screenshots <디렉터리>]
@@ -479,6 +479,8 @@ def run_equivalent_restore(start_session, results: list[str]) -> None:
         # 이 WebView에서만 쓰기가 실패하게 한다(저장소 용량 초과를 흉내 냄).
         driver.js("Storage.prototype.setItem = () => { throw new DOMException('synthetic', 'QuotaExceededError'); }")
         driver.click('button[aria-label="테마: 시스템"]')  # → 밝게, 쓰기 실패
+        # 실패 알림도 React effect에서 바뀐다. 관측 전에 다음 설정으로 넘어가면 실패를 시험하지 못한다.
+        wait_until(driver, "return document.querySelector('.statusbar__message').textContent.includes('설정을 저장하지 못했습니다')", timeout=5)
         failed = driver.js(status)
         driver.click('button[aria-label="테마: 밝게"]')  # → 어둡게
         driver.click('button[aria-label="테마: 어둡게"]')  # → 시스템(저장값과 같은 설정)

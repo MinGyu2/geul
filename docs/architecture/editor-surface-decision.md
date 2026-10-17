@@ -244,3 +244,137 @@ FR-005 IME 게이트를 통과로 보지 않는다.
   있다면 keydown에서 원래 자리에 넣은 글자가 새 위치에 한 번 더 들어갈 수 있다. 키 뒤의 확정이 옛 조합인지 새 조합인지 페이지는
   구분할 수 없고, 같은 음절 반복(가가)을 버리지 않기 위해 추측해서 버리지 않는다. 이런 순서는 측정 환경에서 나오지 않았다.
 - 클릭 사이에 미리보기만 바꾸는 키를 친 경우(WebKitGTK는 keydown도 없음), 늦은 확정은 마지막 클릭 전 커서에 들어간다.
+
+## T007 4차 안정화: 비동기 소유권·IME 완료·자원 보호 (2026-10-17)
+
+검토 기준은 `7d5d635232e18d930572622e8d3e873493993219`이며 시작 작업 트리는 깨끗했다. R-A와 엔진 고정
+(`rhwp 1a76570`, `wordcraft fc41918`)을 유지한다. 저장·자동 저장·복구·T008 이후 기능은 추가하지 않는다.
+
+### 재현과 수정
+
+| 항목 | 판정 | 수정 전 관측과 원인 | 수정 |
+|------|------|-------------------|------|
+| P1-A 이전 세대 commit | CONFIRMED DEFECT | 보류한 성공 응답을 reload 뒤 전달하면 새 local revision이 1→0, 거부는 새 모델을 failed/closed로 바꿈. 공유 `committing` 때문에 새 세대 commit도 전송되지 않음 | backend `loadGeneration`과 별도로 reload 시작·dispose 때 로컬 `epoch` 무효화. 각 dispatcher가 epoch·generation을 캡처하고 응답 **처리 전** 소유권 확인. `committingEpoch`로 이전 finally도 현재 dispatcher를 해제하지 못함. 같은 세대 batching은 순차 유지 |
+| P1-B 완료 중복 | CONFIRMED DEFECT | `end(가) → input(가, insertFromComposition, false) → end(가)`가 가가·revision 2. 후속 input이 `ended`를 지움 | WebView의 공유 terminal 기록을 새 입력 경계까지 유지. 후속 input·중복 end가 기록을 소비해 지우지 않음. 빈 후속 composition input도 기록 유지; end의 data만 달라져도 새 트랜잭션으로 보지 않음 |
+| P1-C 정상 완료 뒤 탭 전환 | CONFIRMED DEFECT | A의 정상 완료 표식이 표면 내부에 있어, B로 온 늦은 input/end가 B의 선택을 지우고 하를 삽입 | `ImeContext`가 정상 terminal도 공유. `keydown`·`compositionstart`·새 조합 입력·일반 입력/붙여넣기를 경계로 해제. B의 독립된 같은 음절 보존. 완료된 interrupted 기록은 모델 참조를 갖지 않음 |
+| P2-A 창 닫기 | CONTRACT DEFICIENCY | 탭 닫기 보호만 있고 native 창 CloseRequested 보호 없음. 원래 Editor에서 새 window-close 회귀 7개 실패 | Rust가 `api.prevent_close()`로 동기 취소 후 `geul-close-requested` 통지. 모든 탭의 backend dirty·로컬 수정·pending·composition·uncertain을 확인하고 기존 alertdialog UX로 그룹 버리기. 취소는 모델 유지, 승인은 한 번만 `window_close_confirmed` → `Window.destroy()`(재귀 close 요청 없음) |
+| P2-B canvas | CONFIRMED DEFECT | 변 길이만 제한. 16384² RGBA는 한 장 약 1 GiB, 전체 쪽·zoom·DPR 합계에 제한 없음. 과대 metadata 4종과 고배율 1종이 원래 코드에서 정상 처리됨 | 쪽 수가 아닌 per-canvas·합계 픽셀 예산, load 100% 및 실제 scale 사전 검사, 초과 시 `EngineFailure(render)`·편집 중단. canvas 초기 크기 0, 재할당 전/표면 해제/reload/dispose 때 backing store를 0으로 놓음 |
+
+추가로 두 수명주기 경로를 재현했다. 창 종료 승인 뒤 진행 중인 탭 close가 실패하면 편집 잠금이 풀리던 경로는
+`windowClosing`을 보존한다. 첫 페이지 그리기의 알림이 React 갱신을 일으켜 나머지 페이지 RAF를 취소하던 경로는
+예약 작업은 실제 새 render·unmount에서만 취소한다. WebView가 RAF를 실행하지 않는 실제 다쪽 실행도 관측해,
+나머지 쪽은 frame clock에 의존하지 않는 다음 task로 그린다. 두 경우 모두 수정 전 실패하는 회귀를 확인했다.
+
+### 비동기·revision 계약
+
+Rust는 계속 committed revision의 권한자다. WASM 변경 성공 뒤 pending을 세고, 현재 epoch의 commit 성공에만 pending을
+빼고 Rust revision·세션 투영을 반영한다. 이전 epoch의 성공·StaleLoad·RevisionMismatch·InvalidState·닫힘 오류는 모두
+현재 상태에 영향을 주지 않는다. pending은 새 load에서 초기화되며 이전 요청이 미해결이어도 새 dispatcher가 전송한다.
+`markFailed`, load 실패 정리, editor에서 시작한 `refresh`도 소유권을 확인한다. dispose는 epoch를 무효화하고 모델·canvas를
+놓으며, 세션 투영의 기존 sequence·닫힘 필터도 유지한다. 부분 편집 예외는 uncertain·미보존 보호를 유지한다.
+
+### IME 경계와 한계
+
+terminal 기록은 WebView당 마지막 완료 문자열 하나이며 끝난 모델을 참조하지 않는다. 같은 글자라는 이유로 일반 입력이나
+붙여넣기를 막지 않는다. 새 조합 시작·키·조합 중 input은 독립된 입력 증거이므로 같은 음절도 받는다. 중단된 조합은 기존처럼
+원래 문서·위치에 최대 한 번 확정하며, 빈 끝은 취소다. 앱의 blur/detach/클릭 확정은 native IME가 끝났다는 증거로 쓰지 않는다.
+
+native transaction ID가 없으므로 새 입력 경계 없이 온 독립된 같은 확정과 중복 통지는 구별할 수 없다. 또 새 keydown 뒤
+도착한 옛 확정, 페이지가 전혀 받지 못한 preedit은 이 상태 기계만으로 격리할 수 없다. 서로 다른 문자열의 단독 composition
+input은 새 입력으로 다루며, 이를 네이티브 트랜잭션 식별의 증거로 주장하지 않는다. 합성 DOM 이벤트와 실제 native IME
+게이트를 분리한다. 실제 데스크톱의 preedit 전달 확인 전에는 완전한 native 격리나 T007 통과를 주장하지 않는다.
+
+### 렌더링 정책
+
+- per-canvas: 최대 `16 * 1024 * 1024` pixels(RGBA 64 MiB), 활성 표면 합계 `32 * 1024 * 1024` pixels(128 MiB).
+- rhwp는 scale을 0.25~12로 보정하고 최대 변 16384에 맞춰 더 낮춘 뒤 bitmap 변을 ceil한다. 같은 정규화를 계산하며,
+  `getPageInfo`의 소수 첫째 자리 반올림에 대비해 각 변에 1 CSS px 여유를 더한 보수적인 예산을 적용한다.
+- `readPages`는 100%에서 예산을 넘으면 ready 전에 모델을 놓는다. 편집 뒤 페이지 변경·zoom/DPR에서도 전체 workload를
+  먼저 검사한다. 초과하면 할당하지 않고 실패를 표시하며, 이미 수정한 모델은 계속 미보존 보호 대상이다.
+- 10쪽 제한은 없다. 12쪽 A4 문서는 예산 안에서 전체 canvas를 그리고, 46쪽 A4 합계처럼 예산을 넘는 문서는 거부한다.
+- offscreen 쪽도 그리는 현재 구조는 유지한다. 가상화는 도입하지 않았다. 높은 DPR/zoom 또는 많은 쪽 때문에 정상 문서도
+  거부될 수 있고, 큰 문서의 재그리기 비용은 남는다. 이 수치는 RGBA backing store 예산이며 WASM 모델·엔진 layout·GPU
+  복사본·브라우저 전체 RSS의 상한이나 OS의 즉시 메모리 회수 보장은 아니다.
+
+### 창 닫기 경계·권한
+
+`@tauri-apps/api` 2.12.4를 정확히 고정해 공식 event listen/unlisten을 사용한다. 기존 `core:default`가 event 권한을 포함하므로
+추가 core 권한은 없다([Tauri event API](https://v2.tauri.app/reference/javascript/api/namespaceevent/)). 새 앱 명령 권한은
+`allow-window-close-confirmed` 하나로 현재 창의 destroy만 허용한다. 파일 시스템·셸·저장 권한과 CSP는 바꾸지 않는다.
+
+JS listener가 아직 없거나 통지가 실패해도 Rust가 먼저 취소하므로 창은 남는다. 반복 close는 하나의 dialog·하나의 종료 요청으로
+합쳐진다. 기존 탭 dialog가 있으면 그룹 결정으로 바꾸며 탭 닫기를 임의 승인하지 않는다. 이때 기존 확인 버튼의 초점을
+이어받지 않도록 결정의 identity로 dialog를 다시 마운트하고 취소에 초점을 둔다(수정 전 회귀 시험 실패 확인). 승인 후 native destroy가 완료될 때까지
+편집을 잠근다. force-kill·crash·전원 단절은 이 경로로 보호할 수 없다.
+
+
+### 4차 검증 기록
+
+검사 명령의 작업 디렉터리는 별도 표시가 없으면 저장소 루트다. 합성 이벤트 검증은 native IME 통과 증거가 아니다.
+
+| 검사 | 실제 결과 |
+|------|-----------|
+| 기준 코드 `npm test -- --reporter=dot` | 234/234 |
+| 새 `fourthStabilization.test.tsx` | 43개 통과. 최초 P1 20개는 기준 구현에서 15 실패·5 통과; P2 canvas 5개·window close 7개도 기준 구현에서 실패. 추가 완료 표식/렌더 수명주기 회귀도 각 수정 전 실패 확인 |
+| `npm run typecheck`, `npm run lint`, `npm test -- --reporter=dot`, `npm run build` | 오류 없음, Vitest 277개 |
+| `src-tauri`: `cargo fmt --check`, `cargo check --locked --all-targets`, `cargo clippy --locked --all-targets -- -D warnings` | 통과 |
+| `src-tauri`: `cargo test --locked` | 단위 51개 + 파일 핸들 정리 통합 1개 통과 |
+| `VITE_GEUL_TEST_HOOKS=1 npm run tauri build -- --debug --no-bundle` | 통과(Rust debug host + production frontend + 고정 release WASM) |
+| `python3 tests/e2e/tauri_smoke.py --app src-tauri/target/debug/geul --driver <TAURI_DRIVER>` | 62/62, 건너뜀 0(T004~T006) |
+| `python3 tests/integration/rhwp/rhwp_poc.py --app src-tauri/target/debug/geul --driver <TAURI_DRIVER> --report <REPORT_JSON>` | 64/64. HWP/HWPX hit test 각각 32/32 정확, 최대 편차 0. 입력 표본 각각 86, p95 73/72 ms(150 ms 기준 유지), max 118/173 ms. 첫 페이지 693/32 ms |
+| `python3 tests/integration/rhwp/fourth_stabilization.py --app src-tauri/target/debug/geul --driver <TAURI_DRIVER>` | 22/22. 실제 WASM·Rust commit 응답만 보류/계약에 맞는 오류로 주입해 세대 격리 검증. DOM IME 3개는 합성. 실제 12쪽 전체 bitmap·46쪽 합계 거부·과대 페이지·zoom·release 포함 |
+| 같은 명령 `--scenario dpi` | `weston --scale=2`의 **실제 DPR 2** WebView: 13/13(HWP/HWPX 100%·200%). JS `devicePixelRatio` 덮어쓰기는 실제 고DPI 증거로 사용하지 않음 |
+| 같은 명령 `--scenario close --native-close --xdotool <XDOTOOL> --x11-library <LIBX11>` | Xvfb X11의 실제 GTK WM_DELETE_WINDOW: 4/4(기존 탭 확인창에서 전체 창 결정으로 전환·취소 초점·반복 요청 1회·취소 모델 유지·승인 종료·clean 즉시 종료) |
+
+보안 검증: `npm audit --json` 취약점 0, `python3 scripts/check-sensitive-info.py --staged` 24개,
+`--all` 115개, `--history` 기존 22개 commit의 302개 파일 버전/경로 통과.
+`GITLEAKS=<GITLEAKS> scripts/security-scan-ci.sh .`는 보안 회귀 86개·전체 파일·전체 이력·Gitleaks를 모두 통과했다.
+`pre-commit run`의 staged 민감정보·Gitleaks도 통과했다(검사기 소스 변경이 없어 hook의 회귀 시험은 skip, 위 CI에서 86개 실행).
+검사 규칙·CSP·기존 보안 기준은 변경하지 않았다.
+
+실제 앱 공통 환경은 Linux WebKitGTK 2.54.1, tauri-driver 2.0.4, weston 15.0.1 pixman(headless,
+`--idle-time=0`), `LIBGL_ALWAYS_SOFTWARE=1 WEBKIT_DISABLE_DMABUF_RENDERER=1`이다. 고DPI는 별도 scale 2 compositor,
+native close·IME는 Xvfb X11을 사용한다. `cargo test` 기본 빌드는 debug 실행 파일을 dev URL 방식으로 다시 만들 수 있으므로,
+실제 앱 검증 전에는 custom protocol을 사용하는 위 Tauri CLI build를 마지막에 실행했다.
+
+검증 중 관측한 불안정성과 시험기 수정:
+
+- 기존 T005 스모크가 실패 알림을 React effect 실행 전에 읽어 `준비됨 / 준비됨`으로 실패했다. 실패 알림을 **먼저 실제로
+  관측한 뒤** 설정을 되돌리도록 기다림을 추가했다. 복구/실패 기준은 그대로이며 최종 62개가 통과했다.
+- 오래 켜 둔 headless Weston에서 RAF가 예약된 채 실행되지 않고 WebDriver 입력 요청이 timeout 나는 것을 관측했다.
+  idle을 끈 새 compositor에서 전체 64개가 통과했다. canvas 자체는 frame clock이 멈춰도 예산 안에서 다음 task에 그린다.
+- 다른 실행의 WebKitWebDriver 연결 끊김도 관측했다. 모든 시도가 통과했다고 주장하지 않는다. X11의 WM 없는 WebDriver 포인터
+  시험은 최대 2글자 편차로 실패했고, 위 최종 hit test 0 결과는 idle을 끈 Wayland 실행의 결과다. 이 전송/환경 차이의 원인은
+  확정하지 않았으며 앱 좌표 변환이나 허용 편차를 바꾸지 않았다.
+- Rust 기존 테스트의 첫 poll 결과 무시도 확인했다. 완료된 future 재poll panic(닫기 시험)과 이미 끝난 작업을 취소했다고
+  가정한 실패(취소 시험, 기대 failed/실제 loading)를 각각 관측했다. 기준 코드의 한 테스트 30회에서는 재현되지 않았으나
+  현재 실행에서 두 경로가 실패했으므로 시험 계약 결함(`CONTRACT DEFICIENCY`)으로 고쳤다. 동일한 load 경로에서 읽기 함수만
+  주입하는 `load_bytes_with`를 두고 실제 파일 읽기를 channel gate 뒤에 실행한다. 첫 poll의 Pending을 확인한 뒤 취소·닫기·
+  새 generation 완료/취소를 검증하며, 남은 파일 작업도 기다린다. production에서는 기존 `read_identified`를 그대로 호출한다.
+  Rust의 상태·revision·generation 규칙은 바꾸지 않았다. 수정 후
+  `cargo test --locked --lib document::commands::tests`의 7개를 30회 반복해 210/210 통과했다.
+
+
+### 실제 한국어 IME 최종 게이트
+
+최신 입력/렌더 구현에서 `rhwp_poc.py --ime --ibus <IBUS> --xdotool <XDOTOOL>`를 다시 실행했다. 환경은
+Xvfb X11 + WebKitGTK 2.54.1 + ibus 1.5.33 + ibus-hangul 1.5.5 두벌식, preedit syllable·초기 hangul 모드,
+`use-event-forwarding=false`, 비동기 모드다. GTK ibus module cache와 engine component 경로를 명시하고 설정은 임시
+디렉터리로 분리했다. 초기 설정이 잘못돼 ASCII가 들어간 실행은 한국어 IME 검증으로 사용하지 않는다.
+
+| 필수 항목(변경 없음) | HWP | HWPX |
+|-------------------|-----|------|
+| 조합 중 글자가 문서에 보임(preedit) | FAIL | FAIL |
+| 조합 중 caret이 조합 글자 뒤 | FAIL | FAIL |
+| 확정 문자가 커서에 정확히 한 번·누락 없음 | PASS | PASS |
+| 확정 음절·공백마다 revision 1 | PASS(+9) | PASS(+9) |
+| 동일 음절 연속(가가) | PASS(+2) | PASS(+2) |
+| 조합 중 ← | PASS | PASS |
+| 조합 중 클릭 | FAIL(음절 사라짐) | FAIL(음절 사라짐) |
+
+결과는 **FAIL, 4/7 PASS**, 종료 코드 1이다. 조합 중 문단·caret이 변하지 않고 클릭 뒤 조합 이벤트도 없다. 정상 확정
+`한글 입력 테스트`·revision 9·가가·방향키의 통과를 실제 키 입력으로 확인했다. 선택 항목 창 초점 이동은 이번에 다른 X 창을
+주지 않아 NOT RUN이다. native 탭 전환 중 미전달 조합은 음절이 사라지는 현상을 기록했으며, 합성 DOM 테스트의 격리 성공을
+native preedit 문제 해결로 해석하지 않는다. preedit을 실제로 전달하는 데스크톱·Windows/macOS는 이번 환경에서 미검증이다.
+T007 체크박스는 유지하며 T008 이후 구현은 이번 작업에 포함하지 않는다. 의존성 표의 T008 선행은 T006이므로 별도 PoC의
+정책상 착수 가능성과 이번 요청의 명시적 T008 제외를 구분한다. T010 이후 고급 UI 확대 제한도 유지한다.

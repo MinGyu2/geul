@@ -149,6 +149,15 @@ interface EditorAdapter {
   (`getSourceFormat`)과 컨테이너 서명이 요청 형식일 때만 참이다. 클릭·초점 잃음·표면 사라짐으로 끊긴 IME 조합은 WebView에 하나인
   입력 문맥 상태(`ImeContext`)로 표면 사이에서 공유하며, 그 조합의 늦은 이벤트는 원래 문서·자리에 최대 한 번 확정된다.
 
+- T007 4차 안정화([상세 재현·계약·검증](../architecture/editor-surface-decision.md#t007-4차-안정화-비동기-소유권ime-완료자원-보호-2026-10-17)):
+  reload 시작·dispose마다 로컬 epoch를 무효화해 비동기 commit·상태·refresh와 dispatcher 소유권을 분리한다.
+  Rust의 `loadGeneration`·committed revision 권한은 그대로다. IME의 정상 완료 기록도 `ImeContext`에 두고 새 입력 경계까지
+  유지해 중복 끝·탭 사이 늦은 완료를 소비한다(실제 native preedit 미전달·transaction ID 부재의 한계는 별도).
+  Rust `CloseRequested`를 동기 취소한 뒤 모든 탭의 미보존 변경을 그룹 확인한다. `window_close_confirmed`는 현재 창만
+  destroy하며 파일 시스템·셸·저장 권한은 추가하지 않는다. canvas는 per-canvas 16M pixels(RGBA 64 MiB), 활성 표면 합계
+  32M pixels(128 MiB) 안에서만 할당하며 zoom·DPR을 반영한다. 나머지 쪽은 frame clock에 의존하지 않는 다음 task에 그리고,
+  모델 교체·새 렌더·표면 해제 때 이전 작업/bitmap을 무효화한다. T007 실제 IME의 필수 7개 기준은 바꾸지 않는다.
+
 ## Algorithms and Pseudocode
 ```
 open(path):

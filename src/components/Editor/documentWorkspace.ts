@@ -12,16 +12,19 @@ import type { CloseOutcome, Result, SessionId, SessionInfo } from "../../adapter
 import type { DocumentSessions } from "../../adapters/sessions";
 import { RhwpEditorSession } from "./rhwp/RhwpEditorSession";
 import { loadRhwpModule, type RhwpModule } from "./rhwp/rhwpModule";
+import type { WindowClosePort } from "./windowClose";
 
 export class DocumentWorkspace {
   private readonly editors = new Map<SessionId, RhwpEditorSession>();
   private readonly closing = new Map<SessionId, Promise<Result<CloseOutcome>>>();
   private started = false;
+  private windowClosing = false;
 
   constructor(
     readonly sessions: DocumentSessions,
     private readonly backend: DocumentBackend,
     private readonly loadModule: () => Promise<RhwpModule> = () => loadRhwpModule(),
+    readonly windowClose?: WindowClosePort,
   ) {
     sessions.subscribe(() => this.sync());
   }
@@ -46,9 +49,20 @@ export class DocumentWorkspace {
     let editor = this.editors.get(sessionId);
     if (!editor) {
       editor = new RhwpEditorSession(sessionId, this.backend, this.sessions, this.loadModule);
+      editor.setClosing(this.windowClosing);
       this.editors.set(sessionId, editor);
     }
     return editor;
+  }
+
+  /** 모든 탭을 함께 보호한다. backend dirty보다 앞선 pending·조합·uncertain도 포함한다. */
+  get hasUnpreservedChanges() {
+    return this.sessions.snapshot().sessions.some(info => info.dirty || this.editors.get(info.sessionId)?.hasUnpreservedChanges);
+  }
+
+  setWindowClosing(closing: boolean) {
+    this.windowClosing = closing;
+    for (const [id, editor] of this.editors) editor.setClosing(closing || this.closing.has(id));
   }
 
   /** 세션을 닫는다. 저장하지 않은 편집이 있으면 discard: true일 때만 닫는다. */
@@ -68,7 +82,7 @@ export class DocumentWorkspace {
     editor?.setClosing(true);
     // 성공(또는 이미 닫힘)이면 DocumentSessions가 목록에서 빼고, sync()가 편집 세션을 버린다.
     const result = await this.sessions.close(sessionId);
-    if (!result.ok && this.sessions.get(sessionId)) editor?.setClosing(false);
+    if (!result.ok && this.sessions.get(sessionId)) editor?.setClosing(this.windowClosing);
     return result;
   }
 

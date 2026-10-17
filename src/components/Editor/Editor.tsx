@@ -1,4 +1,5 @@
 import {
+  useCallback,
   useEffect,
   useReducer,
   useRef,
@@ -35,11 +36,7 @@ const NO_SESSIONS = () => EMPTY_SESSIONS;
 const TEST_HOOKS = import.meta.env.VITE_GEUL_TEST_HOOKS === "1";
 
 /** 저장하지 않은 편집을 버릴지 묻는 중인 작업. */
-interface DiscardRequest {
-  action: "close" | "reload";
-  sessionId: SessionId;
-  name: string;
-}
+type DiscardRequest = { action: "close" | "reload"; sessionId: SessionId; name: string } | { action: "window" };
 
 /** 오류 code를 화면 문구 키로. 세부 값(경로·내용)은 보여 주지 않는다. */
 export function documentErrorMessage(error: DocumentError): Message {
@@ -60,7 +57,31 @@ export function Editor({ zoom, workspace = null, notify }: EditorProps) {
   const [discard, setDiscard] = useState<DiscardRequest | null>(null);
   // IME 입력 문맥은 WebView에 하나다. 탭마다 표면이 바뀌어도 끊긴 조합 상태는 함께 쓴다(imeInput.ts).
   const [imeContext] = useState(() => new ImeContext());
-  const discardTarget = discard && state.sessions.find((session) => session.sessionId === discard.sessionId);
+  const discardTarget = discard && discard.action !== "window" && state.sessions.find((session) => session.sessionId === discard.sessionId);
+  const closingWindow = useRef(false);
+  const closeWindow = useCallback(async () => {
+    if (!workspace?.windowClose || closingWindow.current) return;
+    closingWindow.current = true;
+    workspace.setWindowClosing(true); // 승인 뒤 native destroy가 끝날 때까지 새 편집을 막는다
+    try {
+      await workspace.windowClose.close();
+    } catch {
+      closingWindow.current = false;
+      workspace.setWindowClosing(false);
+      notify?.({ key: "document.error.Protocol" });
+    }
+  }, [workspace, notify]);
+  useEffect(() => {
+    if (!workspace?.windowClose) return;
+    let stopped = false;
+    let unlisten: (() => void) | undefined;
+    void workspace.windowClose.listen(() => {
+      if (stopped || closingWindow.current) return;
+      if (workspace.hasUnpreservedChanges) setDiscard(current => current?.action === "window" ? current : { action: "window" });
+      else void closeWindow();
+    }).then(stop => { if (stopped) stop(); else unlisten = stop; }).catch(() => notify?.({ key: "document.error.Protocol" }));
+    return () => { stopped = true; unlisten?.(); };
+  }, [workspace, closeWindow, notify]);
 
   // 닫기·다시 불러오기: 저장하지 않은 편집이 있으면(UnpreservedChanges) 버릴지 묻고, 버리기를 고른 경우에만 진행한다.
   const close = async (session: SessionInfo, confirmed = false) => {
@@ -79,8 +100,10 @@ export function Editor({ zoom, workspace = null, notify }: EditorProps) {
     } else if (confirmed && result.ok) notify?.({ key: "document.discardedReloaded", vars: { name: session.displayName } });
   };
   const confirmDiscard = () => {
-    if (!discard || !discardTarget) return;
+    if (!discard) return;
     setDiscard(null);
+    if (discard.action === "window") { void closeWindow(); return; }
+    if (!discardTarget) return;
     void (discard.action === "close" ? close(discardTarget, true) : reload(discardTarget, true));
   };
 
@@ -114,8 +137,8 @@ export function Editor({ zoom, workspace = null, notify }: EditorProps) {
           <p>{t("editor.wordcraftPending")}</p>
         </div>
       )}
-      {discard && discardTarget && (
-        <DiscardDialog request={discard} onCancel={() => setDiscard(null)} onConfirm={confirmDiscard} />
+      {discard && (discard.action === "window" || discardTarget) && (
+        <DiscardDialog key={discard.action === "window" ? "window" : `${discard.action}:${discard.sessionId}`} request={discard} onCancel={() => setDiscard(null)} onConfirm={confirmDiscard} />
       )}
     </main>
   );
@@ -159,15 +182,15 @@ function DiscardDialog({ request, onCancel, onConfirm }: { request: DiscardReque
         onKeyDown={onKeyDown}
       >
         <h2 id="discard-dialog-title" className="discard-dialog__title">
-          {t(request.action === "close" ? "document.discard.closeTitle" : "document.discard.reloadTitle", { name: request.name })}
+          {request.action === "window" ? t("document.discard.windowTitle") : t(request.action === "close" ? "document.discard.closeTitle" : "document.discard.reloadTitle", { name: request.name })}
         </h2>
-        <p id="discard-dialog-body">{t("document.discard.body")}</p>
+        <p id="discard-dialog-body">{t(request.action === "window" ? "document.discard.windowBody" : "document.discard.body")}</p>
         <div className="discard-dialog__actions">
           <button ref={cancelRef} type="button" className="document-bar__button" data-testid="discard-cancel" onClick={onCancel}>
             {t("document.discard.cancel")}
           </button>
           <button ref={confirmRef} type="button" className="document-bar__button" data-testid="discard-confirm" onClick={onConfirm}>
-            {t(request.action === "close" ? "document.discard.closeConfirm" : "document.discard.reloadConfirm")}
+            {t(request.action === "window" ? "document.discard.windowConfirm" : request.action === "close" ? "document.discard.closeConfirm" : "document.discard.reloadConfirm")}
           </button>
         </div>
       </div>

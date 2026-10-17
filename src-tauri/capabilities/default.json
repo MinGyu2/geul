@@ -1,10 +1,11 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "default",
-  "description": "주 창의 권한. 기본 핵심 권한과 문서 세션 명령(T006 열기·닫기·조회, T007 바이트 읽기·상태 전이·revision 확정)만 허용한다. 파일 쓰기 명령은 없다. 파일 시스템·셸 플러그인 권한은 부여하지 않는다.",
+  "description": "주 창의 권한. 기본 핵심 권한과 문서 세션 명령(T006 열기·닫기·조회, T007 바이트 읽기·상태 전이·revision 확정)과 현재 창 종료 확인만 허용한다. 파일 쓰기 명령은 없다. 파일 시스템·셸 플러그인 권한은 부여하지 않는다.",
   "windows": ["main"],
   "permissions": [
     "core:default",
+    "allow-window-close-confirmed",
     "allow-document-open",
     "allow-document-close",
     "allow-document-session",

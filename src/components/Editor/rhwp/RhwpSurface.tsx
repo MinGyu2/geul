@@ -39,17 +39,19 @@ export function RhwpSurface({ session, zoom, imeContext }: RhwpSurfaceProps) {
   const { t } = useTranslation();
   useSessionUpdates(session);
   const scale = zoom / 100;
+  const ratio = window.devicePixelRatio || 1;
   const pagesRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const canvases = useRef(new Map<number, HTMLCanvasElement>());
   const pageBoxes = useRef(new Map<number, HTMLDivElement>());
   const inputAt = useRef<number | null>(null);
+  const renderTimer = useRef<number | null>(null);
   const pendingNavigation = useRef<KeyboardEvent | null>(null);
   const ime = useRef<ImeInput | null>(null);
   const [ownContext] = useState(() => new ImeContext());
   const context = imeContext ?? ownContext;
   const dragging = useRef(false);
-  const rendered = useRef({ version: -1, scale: 0, pages: 0 });
+  const rendered = useRef({ version: -1, scale: 0, ratio: 0, pages: 0 });
 
   const caret = session.caretRect();
   const selection = session.selectionRects();
@@ -57,17 +59,22 @@ export function RhwpSurface({ session, zoom, imeContext }: RhwpSurfaceProps) {
 
   // ---- 그리기 ----
   useLayoutEffect(() => {
-    const ratio = window.devicePixelRatio || 1;
     const last = rendered.current;
-    const all = last.scale !== scale || last.pages !== session.pages.length;
+    const all = last.scale !== scale || last.ratio !== ratio || last.pages !== session.pages.length;
     if (!all && last.version === session.modelVersion) {
       inputAt.current = null; // 문서를 바꾸지 않은 입력(이동·처음에서 Backspace)은 측정하지 않는다
       return;
     }
-    rendered.current = { version: session.modelVersion, scale, pages: session.pages.length };
-    // 커서가 있는 페이지를 먼저 그려 입력이 바로 보이게 하고, 나머지는 다음 frame에 그린다(조판이 뒤 페이지를 바꿀 수 있음).
-    const first = caret?.page ?? 0;
+    if (renderTimer.current !== null) window.clearTimeout(renderTimer.current);
+    renderTimer.current = null;
+    if (!session.prepareRendering(scale * ratio)) return;
+    session.releaseRendering(); // 이전 bitmap과 새 크기의 bitmap이 함께 예산을 넘지 않게 한다
+    rendered.current = { version: session.modelVersion, scale, ratio, pages: session.pages.length };
+    // 커서 쪽을 먼저 그리고 나머지는 다음 task에 그린다. WebView가 frame clock을 멈춰도 빈 쪽으로 남기지 않는다.
+    const first = session.caretRect()?.page ?? 0;
+    const version = session.modelVersion;
     const draw = (page: number) => {
+      if (session.modelVersion !== version) return; // 대기 중 모델이 교체·변경됐으면 이 작업은 무효다
       const canvas = canvases.current.get(page);
       if (canvas) session.renderPage(page, canvas, scale * ratio);
     };
@@ -78,9 +85,18 @@ export function RhwpSurface({ session, zoom, imeContext }: RhwpSurfaceProps) {
       requestAnimationFrame(() => requestAnimationFrame(() => session.recordLatency(performance.now() - started)));
     }
     const rest = session.pages.map((_, page) => page).filter((page) => page !== first);
-    const frame = requestAnimationFrame(() => rest.forEach(draw));
-    return () => cancelAnimationFrame(frame);
+    renderTimer.current = window.setTimeout(() => {
+      renderTimer.current = null;
+      rest.forEach(draw);
+    }, 0);
+    // 실제 새 render·unmount만 이 작업을 취소한다. firstPaint·commit 알림의 단순 React 갱신은 취소하지 않는다.
   });
+
+  useLayoutEffect(() => () => {
+    if (renderTimer.current !== null) window.clearTimeout(renderTimer.current);
+    renderTimer.current = null;
+    session.releaseRendering();
+  }, [session]);
 
   // ---- 커서 위치로 textarea 옮기기·보이게 하기 ----
   // 페이지 상자의 위치는 그린 뒤에야 알 수 있으므로 layout effect에서 직접 옮긴다(React 상태를 늘리지 않음).
@@ -237,6 +253,8 @@ export function RhwpSurface({ session, zoom, imeContext }: RhwpSurfaceProps) {
           >
             <canvas
               className="rhwp-page__canvas"
+              width={0}
+              height={0}
               style={{ width: size.width * scale, height: size.height * scale }}
               ref={(element) => {
                 if (element) canvases.current.set(page, element);
