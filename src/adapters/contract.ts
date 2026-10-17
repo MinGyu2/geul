@@ -19,10 +19,12 @@ export const ENGINE_FOR_FORMAT: Record<DocumentFormat, EngineId> = { hwp: "rhwp"
 export type SessionId = number;
 
 /**
- * 세션 수명주기. T006에는 형식만 확정한 "identified"뿐이며, 엔진에 문서를 불러왔다는 뜻이 아니다.
- * 엔진 불러오기 상태는 T007/T008에서 추가한다.
+ * 세션 수명주기(백엔드 `SessionState`). "identified"는 형식만 확정한 상태이며 엔진이 문서를 읽었다는 뜻이 아니다.
+ * "loading" → "ready"(엔진이 문서를 불러와 편집할 수 있음) | "failed"(불러오기 실패, 엔진 오류, WebView 재시작으로 모델을
+ * 잃음). "failed"에서는 다시 불러올 수 있다(확정하지 않은 편집은 없다).
  */
-export type SessionState = "identified";
+export const SESSION_STATES = ["identified", "loading", "ready", "failed"] as const;
+export type SessionState = (typeof SESSION_STATES)[number];
 
 export interface SessionInfo {
   sessionId: SessionId;
@@ -33,6 +35,10 @@ export interface SessionInfo {
   state: SessionState;
   /** 파일 이름(경로 없음). */
   displayName: string;
+  /** "ready"가 된 뒤 확정한 변경이 있음(저장은 T009). */
+  dirty: boolean;
+  /** 백엔드 세션 기록이 바뀐 횟수. 더 작거나 같은 값의 응답은 늦게 온 것이다. */
+  sequence: number;
 }
 
 export interface CloseOutcome {
@@ -57,18 +63,29 @@ export type BackendError =
   | { code: "ParseFailure"; format?: DocumentFormat; reason: ParseProblem }
   | { code: "ResourceLimit"; limit: LimitKind }
   | { code: "AlreadyOpen" | "UnknownSession" | "StaleSession"; sessionId: SessionId }
+  | { code: "InvalidState"; sessionId: SessionId; state: SessionState }
+  | { code: "RevisionMismatch"; sessionId: SessionId; revision: number }
+  | { code: "FileChanged" }
+  | { code: "InvalidRequest" }
   | { code: "Internal" };
 
 /** 어댑터 작업 중 엔진이 맡을 것(T007/T008에서 구현). */
 export type EngineOperation = "load" | "execute" | "save";
 
+/** 엔진 작업 단계(EngineFailure가 어디서 났는지). */
+export type EngineStage = "init" | "parse" | "render" | "edit" | "export";
+
 /**
  * 프런트엔드에서 만드는 오류.
- * - EngineUnavailable: 엔진이 아직 연결되지 않아 그 작업을 할 수 없음(T006의 모든 엔진 작업).
+ * - EngineUnavailable: 엔진이 아직 연결되지 않아 그 작업을 할 수 없음(WordCraft 전체, 두 엔진의 저장).
+ * - EngineFailure: 연결한 엔진(WASM)이 그 단계에서 실패함. 엔진 메시지는 담지 않는다(문서 내용이 섞일 수 있음).
  * - Protocol: 응답이 계약과 맞지 않거나, 계약 밖의 거부(인자 형식 오류·권한 거부 등)를 받음.
  * 계획의 UnsupportedCommand(T010), UnsafeSave·SaveFailure·FileConflict(T009/T014)는 해당 작업에서 추가한다.
  */
-export type ClientError = { code: "EngineUnavailable"; engine: EngineId; operation: EngineOperation } | { code: "Protocol" };
+export type ClientError =
+  | { code: "EngineUnavailable"; engine: EngineId; operation: EngineOperation }
+  | { code: "EngineFailure"; engine: EngineId; stage: EngineStage }
+  | { code: "Protocol" };
 
 export type DocumentError = BackendError | ClientError;
 
@@ -84,14 +101,17 @@ const oneOf = <T extends string>(values: readonly T[], value: unknown): value is
 const isSessionId = (value: unknown): value is SessionId => Number.isSafeInteger(value) && (value as number) >= 1;
 const hasOnly = (value: Fields, keys: readonly string[]) => Object.keys(value).every((key) => keys.includes(key));
 
+const isCount = (value: unknown): value is number => Number.isSafeInteger(value) && (value as number) >= 0;
+
 export function parseSessionInfo(value: unknown): SessionInfo | null {
-  if (!isRecord(value) || !hasOnly(value, ["sessionId", "format", "engine", "revision", "state", "displayName"])) return null;
-  const { sessionId, format, engine, revision, state, displayName } = value;
+  const keys = ["sessionId", "format", "engine", "revision", "state", "displayName", "dirty", "sequence"];
+  if (!isRecord(value) || !hasOnly(value, keys)) return null;
+  const { sessionId, format, engine, revision, state, displayName, dirty, sequence } = value;
   if (!isSessionId(sessionId) || !oneOf(DOCUMENT_FORMATS, format) || !oneOf(ENGINES, engine)) return null;
   if (ENGINE_FOR_FORMAT[format] !== engine) return null; // 라우팅 규칙과 어긋난 응답
-  if (!Number.isSafeInteger(revision) || (revision as number) < 0 || state !== "identified") return null;
-  if (typeof displayName !== "string") return null;
-  return { sessionId, format, engine, revision: revision as number, state, displayName };
+  if (!isCount(revision) || !oneOf(SESSION_STATES, state) || !isCount(sequence)) return null;
+  if (typeof displayName !== "string" || typeof dirty !== "boolean") return null;
+  return { sessionId, format, engine, revision, state, displayName, dirty, sequence };
 }
 
 export function parseCloseOutcome(value: unknown): CloseOutcome | null {
@@ -101,7 +121,10 @@ export function parseCloseOutcome(value: unknown): CloseOutcome | null {
   return { sessionId, alreadyClosed };
 }
 
-const ERROR_FIELDS: Record<BackendError["code"], Record<string, readonly string[] | "format" | "session" | "optional-format">> = {
+const ERROR_FIELDS: Record<
+  BackendError["code"],
+  Record<string, readonly string[] | "format" | "session" | "optional-format" | "count">
+> = {
   InvalidPath: { reason: ["empty", "relative", "too-long", "contains-nul"] },
   Unreadable: { reason: ["not-found", "permission-denied", "not-a-file", "io"] },
   UnsupportedFormat: {
@@ -114,6 +137,10 @@ const ERROR_FIELDS: Record<BackendError["code"], Record<string, readonly string[
   AlreadyOpen: { sessionId: "session" },
   UnknownSession: { sessionId: "session" },
   StaleSession: { sessionId: "session" },
+  InvalidState: { sessionId: "session", state: SESSION_STATES },
+  RevisionMismatch: { sessionId: "session", revision: "count" },
+  FileChanged: {},
+  InvalidRequest: {},
   Internal: {},
 };
 
@@ -127,6 +154,7 @@ export function parseBackendError(value: unknown): BackendError | null {
       rule === "format" ? oneOf(DOCUMENT_FORMATS, field)
       : rule === "optional-format" ? field === undefined || oneOf(DOCUMENT_FORMATS, field)
       : rule === "session" ? isSessionId(field)
+      : rule === "count" ? isCount(field)
       : oneOf(rule, field);
     if (!valid) return null;
   }

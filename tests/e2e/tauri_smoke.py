@@ -482,8 +482,13 @@ def run_equivalent_restore(start_session, results: list[str]) -> None:
         failed = driver.js(status)
         driver.click('button[aria-label="테마: 밝게"]')  # → 어둡게
         driver.click('button[aria-label="테마: 어둡게"]')  # → 시스템(저장값과 같은 설정)
+        # 알림은 클릭 뒤 React effect에서 약 10 ms 늦게 바뀐다(T007에서 측정, 수정 전 빌드도 같음). 한 번만 읽으면 시점에
+        # 따라 통과·실패가 갈리므로, 바뀔 때까지 짧게 기다린 뒤 판단한다(바뀌지 않으면 여전히 실패).
+        with contextlib.suppress(Failure):
+            wait_until(driver, "return document.querySelector('.statusbar__message').textContent === '준비됨'", timeout=5)
+        recovered = driver.js(status)
         check(results, "동등성 검사: 저장값과 같은 설정으로 돌아오면 실패 알림을 지움",
-              "설정을 저장하지 못했습니다" in failed and driver.js(status) == "준비됨", f"{failed} / {driver.js(status)}")
+              "설정을 저장하지 못했습니다" in failed and recovered == "준비됨", f"{failed} / {recovered}")
         check(results, "동등성 검사: 저장값(들여쓰기·모르는 항목)이 바이트 그대로", driver.js(stored) == PRETTY_SETTINGS)
     finally:
         driver.quit()
@@ -660,9 +665,9 @@ def run_document_sessions(start_session, results: list[str]) -> None:
 
             opened = [call("document_open", {"path": path(name)}) for name in ("report.docx", "plan.hwpx", "memo.hwp")]
             expected = [
-                {"sessionId": 1, "format": "docx", "engine": "wordcraft", "revision": 0, "state": "identified", "displayName": "report.docx"},
-                {"sessionId": 2, "format": "hwpx", "engine": "rhwp", "revision": 0, "state": "identified", "displayName": "plan.hwpx"},
-                {"sessionId": 3, "format": "hwp", "engine": "rhwp", "revision": 0, "state": "identified", "displayName": "memo.hwp"},
+                {"sessionId": 1, "format": "docx", "engine": "wordcraft", "revision": 0, "state": "identified", "displayName": "report.docx", "dirty": False, "sequence": 0},
+                {"sessionId": 2, "format": "hwpx", "engine": "rhwp", "revision": 0, "state": "identified", "displayName": "plan.hwpx", "dirty": False, "sequence": 0},
+                {"sessionId": 3, "format": "hwp", "engine": "rhwp", "revision": 0, "state": "identified", "displayName": "memo.hwp", "dirty": False, "sequence": 0},
             ]
             check(results, "문서 세션: DOCX→WordCraft, HWPX·HWP→rhwp, ID 1·2·3, revision 0, 경로 없음",
                   opened == [{"ok": info} for info in expected], json.dumps(opened, ensure_ascii=False))
@@ -721,7 +726,7 @@ def run_document_sessions(start_session, results: list[str]) -> None:
             got = {name: call("document_open", {"path": path(name)}) for name in stabilization}
             want = {
                 "comment.hwpx": {"ok": {"sessionId": 5, "format": "hwpx", "engine": "rhwp", "revision": 0,
-                                        "state": "identified", "displayName": "comment.hwpx"}},
+                                        "state": "identified", "displayName": "comment.hwpx", "dirty": False, "sequence": 0}},
                 "utf16.hwpx": {"err": {"code": "Encrypted", "format": "hwpx"}},
                 "crc.hwpx": {"err": {"code": "ParseFailure", "format": "hwpx", "reason": "corrupt-container"}},
                 "media.docx": {"err": {"code": "Encrypted", "format": "docx"}},
@@ -744,7 +749,8 @@ def run_document_sessions(start_session, results: list[str]) -> None:
                 (root / name).write_bytes(data)
             got = {name: call("document_open", {"path": path(name)}) for name in second}
             opened_info = lambda session_id, name: {"ok": {"sessionId": session_id, "format": "docx", "engine": "wordcraft",
-                                                           "revision": 0, "state": "identified", "displayName": name}}
+                                                           "revision": 0, "state": "identified", "displayName": name,
+                                                           "dirty": False, "sequence": 0}}
             want = {
                 "mimetype.docx": opened_info(6, "mimetype.docx"),
                 "trailing.docx": {"err": {"code": "ParseFailure", "reason": "corrupt-container"}},

@@ -2,7 +2,7 @@
 
 Date: 2026-10-13
 Spec: [spec.md](./spec.md)
-Status: Revised draft — 2026-10-16 실제 저장소 검사, submodule 고정, 보안 게이트 로컬 구현·2차 재검토 완료(원격 브랜치 보호는 미설정), Tauri/React 6영역 UI 기반(T004) 구현. 2026-10-17 T006: 문서 형식 판별·세션 기록·어댑터 계약 구현(엔진 연결 없음), 같은 날 리뷰 지적 5건 안정화(판별 규칙·동시 판별 자리)와 3건 2차 안정화(ZIP 무결성·mimetype 분류 순서), 3차 안정화(로컬 헤더 압축 방식 일치, 19바이트 mimetype 정책 명시). 엔진 통합·화면에서 문서 열기·저장은 미착수
+Status: Revised draft — 2026-10-16 실제 저장소 검사, submodule 고정, 보안 게이트 로컬 구현·2차 재검토 완료(원격 브랜치 보호는 미설정), Tauri/React 6영역 UI 기반(T004) 구현. 2026-10-17 T006: 문서 형식 판별·세션 기록·어댑터 계약 구현(엔진 연결 없음), 같은 날 리뷰 지적 5건 안정화(판별 규칙·동시 판별 자리)와 3건 2차 안정화(ZIP 무결성·mimetype 분류 순서), 3차 안정화(로컬 헤더 압축 방식 일치, 19바이트 mimetype 정책 명시). T007: rhwp R-A 편집 PoC 부분 통과(IME 조합 표시 미검증, 저장 없음). WordCraft 통합·열기 대화상자·저장은 미착수
 
 ## Summary
 WordCraft는 DOCX, rhwp는 HWP/HWPX 전용 엔진으로 독립 관리한다. Tauri 2 + React/TypeScript 6개 영역 UI에 문서별 어댑터, 공통 명령/상태 계층을 결합한다. 고급 리본보다 렌더·IME·선택·쓰기 무손실 검증과 공개 저장소 보안 게이트를 우선한다.
@@ -122,6 +122,19 @@ interface EditorAdapter {
 - 미결정(T007): rhwp 1순위 표면(R-A)은 문서 모델이 WebView의 WASM에 있으므로, 그 엔진의 revision을 백엔드 기록에 어떻게
   알릴지(저장 요청에 담기 등)를 T007에서 정한다. 판별한 뒤 엔진이 파일을 다시 읽을 때 그 사이 바뀌었는지도 그때 확인한다.
 - Tauri IPC에 보낼 것은 안정적인 커맨드/세션 ID와 경계 검사된 데이터이며 임의의 파일시스템 경로·셸 명령을 UI에서 그대로 신뢰하지 않는다.
+
+### T007에서 구현한 계약 (2026-10-17, rhwp R-A PoC)
+- 결과·측정·IME 한계는 [editor-surface-decision.md "T007 결과"](../architecture/editor-surface-decision.md#t007-결과-rhwp-r-a-poc-2026-10-17).
+- 세션 수명주기: `identified → loading → ready | failed`, `ready → failed`, `failed → loading`(다시 불러오기). `SessionInfo`에
+  `dirty`(ready 뒤 확정한 변경 있음)와 `sequence`(기록 변경 횟수, 늦은 응답을 버리는 기준)를 더함.
+- IPC 3개 추가(이 세 명령과 T006 네 명령만 허용): `document_load(sessionId) -> 원시 바이트`(경로 인자 없음, 판별한 파일과 같은지
+  장치·inode·크기·수정 시각과 다시 판별로 확인, 다르면 `FileChanged`), `document_set_state(sessionId, from, to)`,
+  `document_commit(sessionId, baseRevision, count)`(ready이고 기준이 같을 때만 revision += count, 아니면 `RevisionMismatch`/
+  `InvalidState`). 새 오류: `InvalidState`, `RevisionMismatch`, `FileChanged`, `InvalidRequest`, 프런트엔드 `EngineFailure`.
+- revision 권한은 백엔드 하나. WASM 모델을 바꾸는 것은 세션마다 하나인 편집 세션이며, 성공한 변경만 순서대로 묶어 확정한다.
+  확정이 거부되면 편집을 멈추고 failed(조용한 분기 없음). IME 조합은 끝날 때 1번 센다.
+- 쓰기 명령 없음. 저장은 T009/T014. 편집 결과 확인은 메모리 내보내기·다시 열기 비교만.
+- `EngineAdapter`에서 `load`를 뺐다(불러오기·본문 입력은 편집 표면과 세션 수명주기 몫, 화면 명령·저장은 이 경계).
 
 ## Algorithms and Pseudocode
 ```

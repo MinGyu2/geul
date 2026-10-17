@@ -5,9 +5,10 @@ import { adapterFor } from "./engines";
 import { DocumentSessions, EMPTY_SESSIONS, reduceSessions } from "./sessions";
 
 // Rust serde 직렬화 형식(src-tauri/src/document/)과 같은 값. 실제 IPC 응답은 tests/e2e/tauri_smoke.py가 확인한다.
-const docx: SessionInfo = { sessionId: 1, format: "docx", engine: "wordcraft", revision: 0, state: "identified", displayName: "a.docx" };
-const hwpx: SessionInfo = { sessionId: 2, format: "hwpx", engine: "rhwp", revision: 0, state: "identified", displayName: "b.hwpx" };
-const hwp: SessionInfo = { sessionId: 3, format: "hwp", engine: "rhwp", revision: 0, state: "identified", displayName: "c.hwp" };
+const base = { revision: 0, state: "identified", dirty: false, sequence: 0 } as const;
+const docx: SessionInfo = { ...base, sessionId: 1, format: "docx", engine: "wordcraft", displayName: "a.docx" };
+const hwpx: SessionInfo = { ...base, sessionId: 2, format: "hwpx", engine: "rhwp", displayName: "b.hwpx" };
+const hwp: SessionInfo = { ...base, sessionId: 3, format: "hwp", engine: "rhwp", displayName: "c.hwp" };
 
 describe("IPC 계약 검사", () => {
   it("세션 정보를 받아들이고, 라우팅 규칙과 어긋나거나 모양이 다른 응답은 거부한다", () => {
@@ -18,7 +19,8 @@ describe("IPC 계약 검사", () => {
       { ...hwp, engine: "wordcraft" },
       { ...docx, format: "doc" },
       { ...docx, sessionId: 0 }, { ...docx, sessionId: 1.5 }, { ...docx, sessionId: "1" },
-      { ...docx, revision: -1 }, { ...docx, state: "ready" }, { ...docx, displayName: 3 },
+      { ...docx, revision: -1 }, { ...docx, state: "done" }, { ...docx, displayName: 3 },
+      { ...docx, dirty: "no" }, { ...docx, sequence: -1 }, { ...docx, sequence: undefined },
       { ...docx, path: "/somewhere/a.docx" }, // 경로 같은 계약 밖 필드
     ];
     for (const value of broken) expect(parseSessionInfo(value), JSON.stringify(value)).toBeNull();
@@ -37,6 +39,10 @@ describe("IPC 계약 검사", () => {
       { code: "ResourceLimit", limit: "part-size" },
       { code: "AlreadyOpen", sessionId: 3 },
       { code: "StaleSession", sessionId: 1 },
+      { code: "InvalidState", sessionId: 2, state: "loading" },
+      { code: "RevisionMismatch", sessionId: 2, revision: 7 },
+      { code: "FileChanged" },
+      { code: "InvalidRequest" },
       { code: "Internal" },
     ];
     for (const error of valid) expect(parseBackendError(error)).toEqual(error);
@@ -100,10 +106,11 @@ describe("엔진 어댑터 경계", () => {
     }
   });
 
-  it("불러오기·명령·저장은 가짜 성공 없이 EngineUnavailable이고 세션을 바꾸지 않는다", async () => {
+  it("화면 명령·저장은 가짜 성공 없이 EngineUnavailable이고 세션을 바꾸지 않는다", async () => {
     const session = { ...hwpx };
     const adapter = adapterFor(session);
-    expect(await adapter.load(session)).toEqual({ ok: false, error: { code: "EngineUnavailable", engine: "rhwp", operation: "load" } });
+    // T007: 불러오기는 이 경계가 아니라 편집 표면과 세션 수명주기가 맡는다.
+    expect("load" in adapter).toBe(false);
     expect(await adapter.execute({ sessionId: 2, revision: 0, commandId: "format.bold" }))
       .toEqual({ ok: false, error: { code: "EngineUnavailable", engine: "rhwp", operation: "execute" } });
     expect(await adapterFor(docx).save(docx)).toEqual({ ok: false, error: { code: "EngineUnavailable", engine: "wordcraft", operation: "save" } });
@@ -127,7 +134,10 @@ function controlledBackend() {
     pending.push({ method, args, reply: resolve });
     return promise;
   };
-  const backend = { open: queue("open"), close: queue("close"), session: queue("session"), sessions: queue("sessions") } as unknown as DocumentBackend;
+  const backend = {
+    open: queue("open"), close: queue("close"), session: queue("session"), sessions: queue("sessions"),
+    load: queue("load"), setState: queue("setState"), commit: queue("commit"),
+  } as unknown as DocumentBackend;
   const take = (method: string, first?: unknown) => {
     const at = pending.findIndex((call) => call.method === method && (first === undefined || call.args[0] === first));
     return pending.splice(at, 1)[0]!;
@@ -200,11 +210,11 @@ describe("세션 투영", () => {
     const older = sessions.refresh(1);
     const newer = sessions.refresh(1);
     sessions.select(2); // 응답을 기다리는 동안 활성 문서를 바꿈
-    take("session", 1).reply(ok({ ...docx, revision: 2 }));
+    take("session", 1).reply(ok({ ...docx, revision: 2, sequence: 2 }));
     await older;
-    take("session", 1).reply(ok({ ...docx, revision: 1 })); // 늦게 도착한 옛 판
+    take("session", 1).reply(ok({ ...docx, revision: 1, sequence: 1 })); // 늦게 도착한 옛 판
     await newer;
-    expect(sessions.snapshot()).toEqual({ sessions: [{ ...docx, revision: 2 }, hwpx], activeId: 2 });
+    expect(sessions.snapshot()).toEqual({ sessions: [{ ...docx, revision: 2, sequence: 2 }, hwpx], activeId: 2 });
   });
 
   it("닫은 세션의 늦은 응답은 버리고, 하나를 닫아도 다른 세션은 그대로다", async () => {
@@ -221,10 +231,10 @@ describe("세션 투영", () => {
     take("close", 2).reply(ok({ sessionId: 2, alreadyClosed: false }));
     await closing;
     expect(sessions.snapshot()).toEqual({ sessions: [docx, hwp], activeId: 3 }); // 닫은 자리의 다음 문서
-    take("session", 2).reply(ok({ ...hwpx, revision: 5 }));
+    take("session", 2).reply(ok({ ...hwpx, revision: 5, sequence: 5 }));
     await late;
     expect(sessions.snapshot()).toEqual({ sessions: [docx, hwp], activeId: 3 });
-    sessions.applyUpdate({ ...hwpx, revision: 9 });
+    sessions.applyUpdate({ ...hwpx, revision: 9, sequence: 9 });
     expect(sessions.snapshot().sessions).toEqual([docx, hwp]);
   });
 
@@ -269,11 +279,57 @@ describe("세션 투영", () => {
 
   it("리듀서는 형식·엔진이 바뀐 응답과 목록에 없는 세션의 선택을 무시한다", () => {
     const state = reduceSessions(EMPTY_SESSIONS, { type: "opened", session: docx, activate: true });
-    expect(reduceSessions(state, { type: "updated", session: { ...docx, format: "hwpx", engine: "rhwp", revision: 3 } })).toBe(state);
+    expect(reduceSessions(state, { type: "updated", session: { ...docx, format: "hwpx", engine: "rhwp", revision: 3, sequence: 3 } })).toBe(state);
     expect(reduceSessions(state, { type: "selected", sessionId: 7 })).toBe(state);
     expect(reduceSessions(state, { type: "closed", sessionId: 7 })).toBe(state);
     expect(reduceSessions(state, { type: "closed", sessionId: 1 })).toEqual(EMPTY_SESSIONS);
-    const same = reduceSessions(state, { type: "updated", session: { ...docx } });
-    expect(same.sessions[0]).toEqual(docx); // 같은 판은 반영(상태 변화용)
+    // 같은 sequence는 이미 반영한 응답이므로 무시하고, 더 큰 sequence의 상태 변화는 반영한다(revision이 같아도).
+    expect(reduceSessions(state, { type: "updated", session: { ...docx, state: "loading" } })).toBe(state);
+    const loading = reduceSessions(state, { type: "updated", session: { ...docx, state: "loading", sequence: 1 } });
+    expect(loading.sessions[0]).toEqual({ ...docx, state: "loading", sequence: 1 });
+    // revision이 줄어드는 응답은 sequence가 커도 계약 위반이라 버린다.
+    const edited = reduceSessions(loading, { type: "updated", session: { ...docx, revision: 2, sequence: 3 } });
+    expect(reduceSessions(edited, { type: "updated", session: { ...docx, revision: 1, sequence: 4 } })).toBe(edited);
+  });
+});
+
+describe("T007 백엔드 클라이언트와 세션 투영", () => {
+  it("불러오기는 세션 ID만 보내고 원시 바이트를 받으며, 상태 전이·확정 응답은 그 세션 것이어야 한다", async () => {
+    const calls: [string, unknown][] = [];
+    const replies: Record<string, unknown> = {
+      document_load: new Uint8Array([1, 2, 3]).buffer,
+      document_set_state: { ...hwpx, state: "ready", sequence: 2 },
+      document_commit: { ...hwp, revision: 1, state: "ready", dirty: true, sequence: 3 }, // 다른 세션의 응답
+    };
+    const invoke: Invoke = async (command, args) => {
+      calls.push([command, args]);
+      return replies[command];
+    };
+    const backend = createTauriBackend(invoke);
+    const loaded = await backend.load(2);
+    expect(loaded.ok && Array.from(loaded.value)).toEqual([1, 2, 3]);
+    expect(await backend.setState(2, "loading", "ready")).toEqual({ ok: true, value: { ...hwpx, state: "ready", sequence: 2 } });
+    expect(await backend.commit(2, 0, 1)).toEqual({ ok: false, error: { code: "Protocol" } });
+    expect(calls).toEqual([
+      ["document_load", { sessionId: 2 }],
+      ["document_set_state", { sessionId: 2, from: "loading", to: "ready" }],
+      ["document_commit", { sessionId: 2, baseRevision: 0, count: 1 }],
+    ]);
+    replies.document_load = "not bytes";
+    expect(await backend.load(2)).toEqual({ ok: false, error: { code: "Protocol" } });
+  });
+
+  it("WebView가 다시 시작되면 남은 세션을 목록에 넣고 loading·ready 세션을 failed로 돌린다", async () => {
+    const { backend, take } = controlledBackend();
+    const sessions = new DocumentSessions(backend);
+    const ready = { ...hwpx, state: "ready", revision: 4, dirty: true, sequence: 6 } as const;
+    const reconciling = sessions.reconcile();
+    take("sessions").reply(ok([docx, ready]));
+    await flush();
+    const transition = take("setState", 2);
+    expect(transition.args).toEqual([2, "ready", "failed"]);
+    transition.reply(ok({ ...ready, state: "failed", sequence: 7 }));
+    await reconciling;
+    expect(sessions.snapshot()).toEqual({ sessions: [docx, { ...ready, state: "failed", sequence: 7 }], activeId: 1 });
   });
 });

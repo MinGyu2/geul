@@ -10,10 +10,16 @@
 //! - 확장자와 표시 이름은 정규화한 실제 파일의 이름을 쓴다(나중에 읽고 쓸 파일이 그 파일이므로).
 //!
 //! 파일 핸들은 판별이 끝나면 닫는다. 세션은 파일을 열어 두지 않는다.
+//!
+//! 엔진에 불러올 때(T007, `read_identified`)는 세션에 기록한 정규화 경로만 다시 연다(프런트엔드가 경로·내용을
+//! 바꿔 넣을 수 없다). 판별 때와 같은 파일(장치·inode)·크기·수정 시각인지 확인하고, 읽은 바이트를 다시 판별해
+//! 세션 형식과 같을 때만 그 바이트를 돌려준다. 확인한 바이트와 엔진에 넘기는 바이트가 같으므로 판별과 사용 사이에
+//! 파일이 바뀌어도(TOCTOU) 검사하지 않은 내용이 엔진에 들어가지 않으며, 바뀐 것은 `FileChanged`로 알린다.
 
 use std::fs::{self, File, Metadata, OpenOptions};
-use std::io;
+use std::io::{self, Cursor, Read};
 use std::path::{Path, PathBuf};
+use std::time::SystemTime;
 
 use super::detect::{detect_with, DEFAULT_ZIP_LIMITS};
 use super::error::{DocumentError, LimitKind, PathProblem, ReadProblem, UnsupportedKind};
@@ -57,12 +63,54 @@ impl FileIdentity {
     }
 }
 
+impl FileIdentity {
+    fn path(&self) -> &Path {
+        &self.path
+    }
+
+    /// 같은 파일 객체인지(unix는 장치·inode, 그 밖은 정규화 경로). 하드 링크 판단과 달리 경로가 같아도 inode가
+    /// 다르면(교체된 파일) 다르다.
+    fn same_object(&self, other: &FileIdentity) -> bool {
+        #[cfg(unix)]
+        {
+            self.device_inode == other.device_inode
+        }
+        #[cfg(not(unix))]
+        {
+            self.path == other.path
+        }
+    }
+}
+
+/// 판별할 때 본 파일 상태. 불러올 때 같은지 비교한다.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct FileFingerprint {
+    len: u64,
+    modified: Option<SystemTime>,
+}
+
+fn fingerprint(metadata: &Metadata) -> FileFingerprint {
+    FileFingerprint {
+        len: metadata.len(),
+        modified: metadata.modified().ok(),
+    }
+}
+
 /// 형식을 확정한 파일. 경로는 백엔드 안에만 둔다.
 #[derive(Debug)]
 pub struct IdentifiedFile {
     pub format: Format,
     pub display_name: String,
     pub identity: FileIdentity,
+    pub fingerprint: FileFingerprint,
+}
+
+/// 세션이 기억하는, 불러올 파일(T007).
+#[derive(Clone, Debug)]
+pub struct LoadSource {
+    pub identity: FileIdentity,
+    pub fingerprint: FileFingerprint,
+    pub format: Format,
 }
 
 fn read_problem(error: &io::Error) -> ReadProblem {
@@ -170,5 +218,46 @@ pub fn identify(path: &str, limits: &Limits) -> Result<IdentifiedFile, DocumentE
         format: detected,
         display_name,
         identity: identity(canonical, &opened),
+        fingerprint: fingerprint(&opened),
     })
+}
+
+/// 세션의 파일을 다시 열어, 판별한 파일·내용과 같을 때만 전체 바이트를 돌려준다.
+pub fn read_identified(source: &LoadSource, limits: &Limits) -> Result<Vec<u8>, DocumentError> {
+    let path = source.identity.path();
+    let mut file = open_read_only(path).map_err(|error| unreadable(&error))?;
+    let opened = file.metadata().map_err(|error| unreadable(&error))?;
+    if !opened.is_file() {
+        return Err(DocumentError::Unreadable {
+            reason: ReadProblem::NotAFile,
+        });
+    }
+    if !identity(path.to_path_buf(), &opened).same_object(&source.identity)
+        || fingerprint(&opened) != source.fingerprint
+    {
+        return Err(DocumentError::FileChanged);
+    }
+    let len = opened.len();
+    if len > limits.max_file_bytes {
+        return Err(DocumentError::ResourceLimit {
+            limit: LimitKind::FileSize,
+        });
+    }
+    let capacity = usize::try_from(len).map_err(|_| DocumentError::ResourceLimit {
+        limit: LimitKind::FileSize,
+    })?;
+    let mut bytes = Vec::with_capacity(capacity);
+    (&mut file)
+        .take(len + 1)
+        .read_to_end(&mut bytes)
+        .map_err(|error| unreadable(&error))?;
+    drop(file);
+    if bytes.len() as u64 != len {
+        return Err(DocumentError::FileChanged); // 읽는 동안 길이가 바뀜
+    }
+    // 수정 시각을 보존한 채 내용만 바뀌었을 수도 있으므로 엔진에 넘길 바이트를 다시 판별한다.
+    match detect_with(&mut Cursor::new(&bytes), len, &limits.zip) {
+        Ok(format) if format == source.format => Ok(bytes),
+        _ => Err(DocumentError::FileChanged),
+    }
 }

@@ -25,8 +25,8 @@ T006의 판별·세션 테스트는 이 디렉터리에 파일을 두지 않는�
 
 | 경로 | 내용 | 생성 방법(예정) |
 |------|------|-----------------|
-| `hwp/basic-ko.hwp` | 한·영 문단, 굵게, 2×2 표 | rhwp API로 생성 후 내보내기 |
-| `hwpx/basic-ko.hwpx` | 같은 내용 | rhwp API로 생성 후 내보내기 |
+| `hwp/basic-ko.hwp` | 한·영 문단, 굵게, 2×2 표 | **T007: 커밋하지 않고 실행할 때 생성** — `node tests/fixtures/rhwp/generate.mjs <출력 디렉터리>`(고정 커밋 rhwp WASM의 `createBlankDocument`·`insertText`·`applyCharFormat`·`createTable`·`exportHwpWithReport`) |
+| `hwpx/basic-ko.hwpx` | 같은 내용 | 같은 생성기의 `exportHwpxWithReport` |
 | `docx/basic-ko.docx` | 같은 내용 | WordCraft 엔진 명령으로 생성 후 저장 |
 | `invalid/hwp-bytes.docx` | HWP 바이트에 `.docx` 확장자 | 위 파일 복사·이름 변경 |
 | `invalid/truncated.hwpx`, `invalid/truncated.docx` | 중간에서 잘린 ZIP | 위 파일 잘라내기 |

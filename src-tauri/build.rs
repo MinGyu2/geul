@@ -5,6 +5,9 @@ fn main() {
         "document_close",
         "document_session",
         "document_sessions",
+        "document_load",
+        "document_set_state",
+        "document_commit",
     ]);
     tauri_build::try_build(tauri_build::Attributes::new().app_manifest(manifest))
         .expect("Tauri 빌드 설정을 만들지 못했습니다");

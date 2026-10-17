@@ -6,15 +6,20 @@
 //! - 판별(파일 읽기)은 차단 작업 스레드에서 하고, 동시에 실행하는 판별 수를 제한한다. 자리는 차단 작업이 끝날 때
 //!   돌려준다. 명령 future가 취소돼도 이미 시작한 차단 작업은 멈추지 않으므로, 자리를 future가 아니라 작업이 쥔다.
 //! - 셸 실행이나 임의 파일 시스템 접근 명령은 없다.
+//! - T007 엔진 불러오기·확정: `document_load`는 세션에 기록한 파일만 다시 읽어 판별 때와 같은지 확인한 바이트를
+//!   돌려준다(경로 인자 없음, 원시 바이트 응답). 읽기는 열기와 같은 동시 실행 상한을 쓴다. 명령 future가 끝나기 전에
+//!   버려지면 세션을 `loading`에 남기지 않고 `failed`로 돌린다. `document_set_state`·`document_commit`은
+//!   `SessionRegistry`의 상태 전이·revision 확정 규칙을 그대로 따른다. 쓰기 명령은 없다(저장은 T009).
 
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
 
+use tauri::ipc::Response;
 use tauri::State;
 
 use super::error::{DocumentError, LimitKind};
-use super::open::{identify, IdentifiedFile, Limits};
-use super::session::{CloseOutcome, SessionId, SessionInfo, SessionRegistry};
+use super::open::{identify, read_identified, IdentifiedFile, Limits};
+use super::session::{CloseOutcome, SessionId, SessionInfo, SessionRegistry, SessionState};
 
 pub const MAX_PENDING_OPENS: usize = 8;
 
@@ -47,19 +52,72 @@ impl DocumentState {
         Ok(pending)
     }
 
+    /// 파일을 읽는 작업을 차단 작업 스레드에서 실행한다. 자리는 작업이 끝날 때 돌려준다.
+    async fn run_blocking<T, F>(&self, work: F) -> Result<T, DocumentError>
+    where
+        T: Send + 'static,
+        F: FnOnce() -> Result<T, DocumentError> + Send + 'static,
+    {
+        let pending = self.begin_open()?;
+        tauri::async_runtime::spawn_blocking(move || {
+            let _pending = pending;
+            work()
+        })
+        .await
+        .map_err(|_| DocumentError::Internal)? // 작업 중 패닉은 내부 오류로만 알린다
+    }
+
     /// 판별(`identify`)을 차단 작업 스레드에서 실행하고 결과를 등록한다.
     async fn open_with<F>(&self, identify: F) -> Result<SessionInfo, DocumentError>
     where
         F: FnOnce() -> Result<IdentifiedFile, DocumentError> + Send + 'static,
     {
-        let pending = self.begin_open()?;
-        let identified = tauri::async_runtime::spawn_blocking(move || {
-            let _pending = pending;
-            identify()
-        })
-        .await
-        .map_err(|_| DocumentError::Internal)??; // 판별 중 패닉은 내부 오류로만 알린다
+        let identified = self.run_blocking(identify).await?;
         self.registry.register(identified)
+    }
+
+    /// 세션의 파일을 엔진에 넘길 바이트로 읽는다(`identified`·`failed` → `loading`). 실패하거나 끝나기 전에 버려지면
+    /// `failed`로 돌린다. 읽는 동안 세션이 닫히면 바이트를 버리고 그 오류를 돌려준다.
+    async fn load_bytes(&self, session_id: SessionId) -> Result<Vec<u8>, DocumentError> {
+        let source = self.registry.begin_load(session_id)?;
+        let mut guard = LoadingGuard {
+            registry: &self.registry,
+            session_id,
+            armed: true,
+        };
+        let limits = self.limits;
+        let bytes = self
+            .run_blocking(move || read_identified(&source, &limits))
+            .await?;
+        let info = self.registry.get(session_id)?;
+        if info.state != SessionState::Loading {
+            return Err(DocumentError::InvalidState {
+                session_id,
+                state: info.state,
+            });
+        }
+        guard.armed = false;
+        Ok(bytes)
+    }
+}
+
+/// 불러오기가 성공해 바이트를 넘기기 전에 끝나면(오류·future 취소) 세션을 `loading`에 남기지 않는다.
+struct LoadingGuard<'a> {
+    registry: &'a SessionRegistry,
+    session_id: SessionId,
+    armed: bool,
+}
+
+impl Drop for LoadingGuard<'_> {
+    fn drop(&mut self) {
+        if self.armed {
+            // 이미 닫혔거나 다른 상태면 바꾸지 않는다.
+            let _ = self.registry.transition(
+                self.session_id,
+                SessionState::Loading,
+                SessionState::Failed,
+            );
+        }
     }
 }
 
@@ -70,6 +128,35 @@ pub async fn document_open(
 ) -> Result<SessionInfo, DocumentError> {
     let limits = state.limits;
     state.open_with(move || identify(&path, &limits)).await
+}
+
+/// 세션의 문서 바이트(원시 응답). 경로는 받지 않는다.
+#[tauri::command]
+pub async fn document_load(
+    state: State<'_, DocumentState>,
+    session_id: SessionId,
+) -> Result<Response, DocumentError> {
+    state.load_bytes(session_id).await.map(Response::new)
+}
+
+#[tauri::command]
+pub fn document_set_state(
+    state: State<'_, DocumentState>,
+    session_id: SessionId,
+    from: SessionState,
+    to: SessionState,
+) -> Result<SessionInfo, DocumentError> {
+    state.registry.transition(session_id, from, to)
+}
+
+#[tauri::command]
+pub fn document_commit(
+    state: State<'_, DocumentState>,
+    session_id: SessionId,
+    base_revision: u64,
+    count: u64,
+) -> Result<SessionInfo, DocumentError> {
+    state.registry.commit(session_id, base_revision, count)
 }
 
 #[tauri::command]
@@ -104,7 +191,7 @@ mod tests {
     use std::time::{Duration, Instant};
 
     use super::*;
-    use crate::document::testutil::{docx, TempDir};
+    use crate::document::testutil::{docx, hwp, hwpx, TempDir};
     use crate::document::ReadProblem;
 
     type Open<'a> = Pin<Box<dyn Future<Output = Result<SessionInfo, DocumentError>> + 'a>>;
@@ -275,5 +362,79 @@ mod tests {
         assert_eq!(pending(&state), 0);
         assert_eq!(probe.peak.load(Ordering::Acquire), MAX_PENDING_OPENS);
         assert_eq!(state.registry.list().unwrap(), vec![opened]);
+    }
+
+    fn opened(state: &DocumentState, dir: &TempDir, name: &str, bytes: &[u8]) -> SessionInfo {
+        let path = dir.write(name, bytes).to_str().unwrap().to_owned();
+        tauri::async_runtime::block_on(state.open_with(move || identify(&path, &Limits::default())))
+            .unwrap()
+    }
+
+    #[test]
+    fn 불러오기는_세션의_파일_바이트를_돌려주고_실패하면_failed로_돌린다() {
+        let state = DocumentState::default();
+        let dir = TempDir::new();
+        let ok = opened(&state, &dir, "ok.hwpx", &hwpx());
+        let bytes = tauri::async_runtime::block_on(state.load_bytes(ok.session_id)).unwrap();
+        assert_eq!(bytes, hwpx());
+        assert_eq!(
+            state.registry.get(ok.session_id).unwrap().state,
+            SessionState::Loading
+        );
+        assert_eq!(pending(&state), 0);
+
+        let gone = opened(&state, &dir, "gone.hwpx", &hwpx());
+        std::fs::remove_file(dir.path().join("gone.hwpx")).unwrap();
+        assert_eq!(
+            tauri::async_runtime::block_on(state.load_bytes(gone.session_id)),
+            Err(DocumentError::Unreadable {
+                reason: ReadProblem::NotFound
+            })
+        );
+        assert_eq!(
+            state.registry.get(gone.session_id).unwrap().state,
+            SessionState::Failed
+        );
+        assert_eq!(pending(&state), 0);
+    }
+
+    #[test]
+    fn 기다리기를_그만둔_불러오기는_세션을_loading에_남기지_않는다() {
+        let state = DocumentState::default();
+        let dir = TempDir::new();
+        let info = opened(&state, &dir, "a.hwpx", &hwpx());
+        let mut load: Pin<Box<dyn Future<Output = Result<Vec<u8>, DocumentError>> + '_>> =
+            Box::pin(state.load_bytes(info.session_id));
+        let _ = load.as_mut().poll(&mut Context::from_waker(Waker::noop()));
+        assert_eq!(
+            state.registry.get(info.session_id).unwrap().state,
+            SessionState::Loading
+        );
+        drop(load);
+        assert_eq!(
+            state.registry.get(info.session_id).unwrap().state,
+            SessionState::Failed
+        );
+        // 다시 불러올 수 있다.
+        assert!(tauri::async_runtime::block_on(state.load_bytes(info.session_id)).is_ok());
+    }
+
+    #[test]
+    fn 불러오는_중에_닫은_세션은_되살아나지_않는다() {
+        let state = DocumentState::default();
+        let dir = TempDir::new();
+        let info = opened(&state, &dir, "a.hwp", &hwp());
+        let mut load: Pin<Box<dyn Future<Output = Result<Vec<u8>, DocumentError>> + '_>> =
+            Box::pin(state.load_bytes(info.session_id));
+        let _ = load.as_mut().poll(&mut Context::from_waker(Waker::noop()));
+        state.registry.close(info.session_id).unwrap();
+        assert_eq!(
+            tauri::async_runtime::block_on(load),
+            Err(DocumentError::StaleSession {
+                session_id: info.session_id
+            })
+        );
+        assert_eq!(state.registry.list().unwrap(), vec![]);
+        assert_eq!(pending(&state), 0);
     }
 }

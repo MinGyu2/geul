@@ -29,8 +29,10 @@ pub use detect::detect;
 pub use error::{
     DocumentError, LimitKind, ParseProblem, PathProblem, ReadProblem, UnsupportedKind,
 };
-pub use open::{identify, IdentifiedFile, Limits};
-pub use session::{CloseOutcome, SessionId, SessionInfo, SessionRegistry, SessionState};
+pub use open::{identify, read_identified, IdentifiedFile, Limits, LoadSource};
+pub use session::{
+    CloseOutcome, SessionId, SessionInfo, SessionRegistry, SessionState, MAX_COMMIT_COUNT,
+};
 
 /// 이 앱이 다루는 문서 형식. 확장자가 아니라 내용 검사로 확정한다.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize)]

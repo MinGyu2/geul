@@ -575,6 +575,165 @@ button {
   box-shadow: var(--page-shadow);
 }
 
+/* ---- 문서 막대·rhwp 편집 표면(T007) ---- */
+
+.document-bar {
+  display: flex;
+  flex: none;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2) var(--space-3);
+  padding: var(--space-2) var(--space-3);
+  border-bottom: 1px solid var(--chrome-border);
+  background: var(--panel-bg);
+}
+
+.document-bar__open {
+  display: flex;
+  flex: 1 1 320px;
+  gap: var(--space-2);
+  min-width: 0;
+}
+
+.document-bar__path {
+  flex: 1;
+  min-width: 0;
+  padding: 3px var(--space-2);
+  border: 1px solid var(--chrome-border);
+  border-radius: 4px;
+  background: var(--page-bg);
+  color: var(--text);
+  font: inherit;
+  font-size: 12px;
+}
+
+.document-bar__button {
+  padding: 3px var(--space-3);
+  border: 1px solid var(--chrome-border);
+  border-radius: 4px;
+  background: var(--panel-bg);
+  color: var(--text);
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.document-bar__button:disabled {
+  cursor: default;
+  opacity: 0.5;
+}
+
+.document-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1);
+}
+
+.document-tab {
+  display: flex;
+  align-items: center;
+  border: 1px solid var(--chrome-border);
+  border-radius: 4px;
+  background: var(--panel-bg);
+}
+
+.document-tab[data-active="true"] {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+}
+
+.document-tab__select,
+.document-tab__close {
+  padding: 2px var(--space-2);
+  border: 0;
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.document-tab__state {
+  margin-left: var(--space-1);
+  color: var(--text-muted);
+}
+
+.editor__poc {
+  font-size: 12px;
+}
+
+.rhwp-surface {
+  width: max-content;
+  min-width: 100%;
+  padding: var(--space-4) 32px 48px;
+}
+
+.rhwp-pages {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-4);
+}
+
+.rhwp-page {
+  position: relative;
+  flex: none;
+  background: #fff;
+  box-shadow: var(--page-shadow);
+  cursor: text;
+}
+
+.rhwp-page__canvas {
+  display: block;
+}
+
+.rhwp-caret {
+  position: absolute;
+  width: 2px;
+  margin-left: -1px;
+  background: #111;
+  pointer-events: none;
+  animation: rhwp-caret-blink 1.06s steps(1) infinite;
+}
+
+@keyframes rhwp-caret-blink {
+  50% {
+    opacity: 0;
+  }
+}
+
+.rhwp-selection {
+  position: absolute;
+  background: rgb(47 91 211 / 28%);
+  pointer-events: none;
+}
+
+.rhwp-composition {
+  position: absolute;
+  height: 2px;
+  background: #111;
+  pointer-events: none;
+}
+
+/* 키보드·IME 입력 받기용. 커서 위치에 두되 보이지 않게 한다(IME 후보 창 위치). */
+.rhwp-input {
+  position: absolute;
+  width: 2px;
+  padding: 0;
+  border: 0;
+  outline: none;
+  overflow: hidden;
+  resize: none;
+  opacity: 0;
+  color: transparent;
+  background: transparent;
+  caret-color: transparent;
+  white-space: pre;
+  /* 커서 위치에 겹쳐 있으므로 마우스는 페이지로 보낸다(커서 자리 클릭·드래그가 먹히지 않도록). */
+  pointer-events: none;
+}
+
 /* ---- StatusBar ---- */
 
 .statusbar {

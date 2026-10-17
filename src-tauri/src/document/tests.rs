@@ -2160,3 +2160,305 @@ fn 정확히_19바이트인_mimetype은_읽을_수_있을_때만_무시한다() 
     }
     assert!(failures.is_empty(), "{}", failures.join("\n"));
 }
+
+// ---- T007: 엔진 불러오기 수명주기·revision 확정·판별한 파일 다시 읽기 ----
+
+mod t007 {
+    use super::*;
+    use crate::document::open::read_identified;
+    use crate::document::session::MAX_COMMIT_COUNT;
+    use SessionState::{Failed, Identified, Loading, Ready};
+
+    fn registry_with(dir: &TempDir, name: &str, bytes: &[u8]) -> (SessionRegistry, u64) {
+        let registry = SessionRegistry::default();
+        let info = registry.register(identified(dir, name, bytes)).unwrap();
+        (registry, info.session_id)
+    }
+
+    #[test]
+    fn 수명주기와_revision은_백엔드_규칙대로만_바뀐다() {
+        let dir = TempDir::new();
+        let (registry, id) = registry_with(&dir, "a.hwpx", &hwpx());
+        let info = registry.get(id).unwrap();
+        assert_eq!(
+            (info.state, info.revision, info.dirty, info.sequence),
+            (Identified, 0, false, 0)
+        );
+
+        registry.begin_load(id).unwrap();
+        assert_eq!(registry.get(id).unwrap().state, Loading);
+        // 불러오는 중에 다시 불러오기·확정은 거부되고 아무것도 바꾸지 않는다.
+        assert!(matches!(
+            registry.begin_load(id),
+            Err(DocumentError::InvalidState { state: Loading, .. })
+        ));
+        assert_eq!(
+            registry.commit(id, 0, 1),
+            Err(DocumentError::InvalidState {
+                session_id: id,
+                state: Loading
+            })
+        );
+        let ready = registry.transition(id, Loading, Ready).unwrap();
+        assert_eq!(
+            (ready.state, ready.revision, ready.dirty, ready.sequence),
+            (Ready, 0, false, 2)
+        );
+
+        let one = registry.commit(id, 0, 1).unwrap();
+        assert_eq!((one.revision, one.dirty, one.sequence), (1, true, 3));
+        // 같은 기준으로 다시 확정(중복)·옛 기준(순서 뒤바뀜)은 거부하고 revision을 바꾸지 않는다.
+        for stale_base in [0, 5] {
+            assert_eq!(
+                registry.commit(id, stale_base, 1),
+                Err(DocumentError::RevisionMismatch {
+                    session_id: id,
+                    revision: 1
+                })
+            );
+        }
+        assert_eq!(registry.get(id).unwrap(), one);
+        let three = registry.commit(id, 1, 2).unwrap();
+        assert_eq!((three.revision, three.sequence), (3, 4));
+        for bad in [0, MAX_COMMIT_COUNT + 1] {
+            assert_eq!(
+                registry.commit(id, 3, bad),
+                Err(DocumentError::InvalidRequest)
+            );
+        }
+
+        // 모델을 잃으면 failed, 다시 불러오면 revision은 줄지 않고 그 판에서 깨끗하다.
+        assert_eq!(
+            registry.transition(id, Ready, Failed).unwrap().state,
+            Failed
+        );
+        assert_eq!(
+            registry.commit(id, 3, 1),
+            Err(DocumentError::InvalidState {
+                session_id: id,
+                state: Failed
+            })
+        );
+        registry.begin_load(id).unwrap();
+        let reloaded = registry.transition(id, Loading, Ready).unwrap();
+        assert_eq!((reloaded.revision, reloaded.dirty), (3, false));
+        assert!(reloaded.sequence > three.sequence);
+    }
+
+    #[test]
+    fn 허용하지_않는_전이와_닫힌_세션은_거부한다() {
+        let dir = TempDir::new();
+        let (registry, id) = registry_with(&dir, "a.hwp", &hwp());
+        for (from, to) in [
+            (Identified, Ready),
+            (Identified, Loading),
+            (Ready, Loading),
+            (Failed, Ready),
+            (Ready, Identified),
+            (Loading, Loading),
+        ] {
+            assert_eq!(
+                registry.transition(id, from, to),
+                Err(DocumentError::InvalidRequest),
+                "{from:?}->{to:?}"
+            );
+        }
+        // 지금 상태와 다른 from
+        assert_eq!(
+            registry.transition(id, Loading, Ready),
+            Err(DocumentError::InvalidState {
+                session_id: id,
+                state: Identified
+            })
+        );
+        assert_eq!(registry.get(id).unwrap().sequence, 0); // 거부는 기록을 바꾸지 않는다
+
+        // 불러오는 중에 닫으면 늦은 전이·확정·불러오기가 세션을 되살리지 못한다.
+        registry.begin_load(id).unwrap();
+        registry.close(id).unwrap();
+        let stale = Err(DocumentError::StaleSession { session_id: id });
+        assert_eq!(registry.transition(id, Loading, Ready), stale);
+        assert_eq!(registry.commit(id, 0, 1), stale);
+        assert!(matches!(
+            registry.begin_load(id),
+            Err(DocumentError::StaleSession { .. })
+        ));
+        assert_eq!(registry.list().unwrap(), vec![]);
+        assert!(matches!(
+            registry.begin_load(99),
+            Err(DocumentError::UnknownSession { session_id: 99 })
+        ));
+    }
+
+    #[test]
+    fn 세션별_revision은_서로_독립이다() {
+        let dir = TempDir::new();
+        let registry = SessionRegistry::default();
+        let a = registry
+            .register(identified(&dir, "a.hwp", &hwp()))
+            .unwrap()
+            .session_id;
+        let b = registry
+            .register(identified(&dir, "b.hwpx", &hwpx()))
+            .unwrap()
+            .session_id;
+        for id in [a, b] {
+            registry.begin_load(id).unwrap();
+            registry.transition(id, Loading, Ready).unwrap();
+        }
+        registry.commit(a, 0, 2).unwrap();
+        assert_eq!(registry.get(b).unwrap().revision, 0);
+        assert_eq!(
+            registry.commit(b, 2, 1),
+            Err(DocumentError::RevisionMismatch {
+                session_id: b,
+                revision: 0
+            })
+        );
+        registry.commit(b, 0, 1).unwrap();
+        assert_eq!(
+            (
+                registry.get(a).unwrap().revision,
+                registry.get(b).unwrap().revision
+            ),
+            (2, 1)
+        );
+    }
+
+    #[test]
+    fn 불러오기는_판별한_파일과_같은_바이트만_돌려준다() {
+        let dir = TempDir::new();
+        let original = hwpx();
+        let path = dir.write("doc.hwpx", &original);
+        let (registry, id) = {
+            let registry = SessionRegistry::default();
+            let id = registry
+                .register(identify(path_str(&path), &Limits::default()).unwrap())
+                .unwrap()
+                .session_id;
+            (registry, id)
+        };
+        let source = registry.begin_load(id).unwrap();
+        assert_eq!(
+            read_identified(&source, &Limits::default()),
+            Ok(original.clone())
+        );
+
+        // 크기가 바뀜(덧붙임)
+        let mut longer = original.clone();
+        longer.extend(b"tail");
+        std::fs::write(&path, &longer).unwrap();
+        assert_eq!(
+            read_identified(&source, &Limits::default()),
+            Err(DocumentError::FileChanged)
+        );
+
+        // 같은 크기·같은 수정 시각으로 내용만 바뀌어 더 이상 HWPX로 판별되지 않음
+        let modified = std::fs::metadata(&path).unwrap().modified().unwrap();
+        std::fs::write(&path, &original).unwrap();
+        let file = std::fs::File::options().write(true).open(&path).unwrap();
+        file.set_modified(modified).unwrap();
+        drop(file);
+        let source = {
+            registry.close(id).unwrap();
+            let id = registry
+                .register(identify(path_str(&path), &Limits::default()).unwrap())
+                .unwrap()
+                .session_id;
+            registry.begin_load(id).unwrap()
+        };
+        let stamp = std::fs::metadata(&path).unwrap().modified().unwrap();
+        let rewrite = |bytes: &[u8]| {
+            std::fs::write(&path, bytes).unwrap();
+            std::fs::File::options()
+                .write(true)
+                .open(&path)
+                .unwrap()
+                .set_modified(stamp)
+                .unwrap();
+        };
+        let mut garbled = original.clone();
+        let at = garbled.len() - 22;
+        garbled[at] ^= 0xFF; // 끝 레코드 서명
+        rewrite(&garbled);
+        assert_eq!(
+            read_identified(&source, &Limits::default()),
+            Err(DocumentError::FileChanged)
+        );
+        // 한계(의도): 같은 크기·수정 시각으로 바뀌었지만 여전히 같은 형식으로 판별되는 내용은 그 새 바이트를
+        // 돌려준다(판별은 문서 전체 해시를 남기지 않는다). 넘기는 바이트는 언제나 방금 판별한 바이트다.
+        let mut renamed = original.clone();
+        let at = renamed.len() - 30; // 선택 항목(section0.xml) 이름의 한 글자
+        renamed[at] ^= 0xFF;
+        rewrite(&renamed);
+        assert_eq!(read_identified(&source, &Limits::default()), Ok(renamed));
+
+        // 같은 경로를 다른 파일로 교체(inode가 바뀜)
+        std::fs::write(&path, &original).unwrap();
+        std::fs::File::options()
+            .write(true)
+            .open(&path)
+            .unwrap()
+            .set_modified(stamp)
+            .unwrap();
+        #[cfg(unix)]
+        {
+            let replacement = dir.write("replacement.hwpx", &original);
+            std::fs::File::options()
+                .write(true)
+                .open(&replacement)
+                .unwrap()
+                .set_modified(stamp)
+                .unwrap();
+            std::fs::rename(&replacement, &path).unwrap();
+            assert_eq!(
+                read_identified(&source, &Limits::default()),
+                Err(DocumentError::FileChanged)
+            );
+        }
+
+        // 지워짐
+        std::fs::remove_file(&path).unwrap();
+        assert_eq!(
+            read_identified(&source, &Limits::default()),
+            Err(DocumentError::Unreadable {
+                reason: ReadProblem::NotFound
+            })
+        );
+    }
+
+    #[test]
+    fn 새_오류와_상태의_직렬화_형식() {
+        let json = |error: DocumentError| serde_json_like(&error);
+        assert_eq!(
+            json(DocumentError::InvalidState {
+                session_id: 3,
+                state: Loading
+            }),
+            r#"{"code":"InvalidState","sessionId":3,"state":"loading"}"#
+        );
+        assert_eq!(
+            json(DocumentError::RevisionMismatch {
+                session_id: 3,
+                revision: 7
+            }),
+            r#"{"code":"RevisionMismatch","sessionId":3,"revision":7}"#
+        );
+        assert_eq!(
+            json(DocumentError::FileChanged),
+            r#"{"code":"FileChanged"}"#
+        );
+        assert_eq!(
+            json(DocumentError::InvalidRequest),
+            r#"{"code":"InvalidRequest"}"#
+        );
+    }
+
+    /// Tauri가 명령 결과를 직렬화하는 경로(`IpcResponse`)로 JSON을 얻는다.
+    fn serde_json_like<T: serde::Serialize>(value: &T) -> String {
+        match tauri::ipc::IpcResponse::body(value).unwrap() {
+            tauri::ipc::InvokeResponseBody::Json(json) => json,
+            tauri::ipc::InvokeResponseBody::Raw(_) => panic!("JSON이 아님"),
+        }
+    }
+}

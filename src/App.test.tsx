@@ -35,8 +35,10 @@ describe("6영역 레이아웃", () => {
     expect(within(main).getByRole("heading", { name: "열린 문서가 없습니다" })).toBeInTheDocument();
     expect(within(main).queryByRole("textbox")).not.toBeInTheDocument();
     expect(main.querySelector("[contenteditable]")).toBeNull();
-    const formats = within(screen.getByRole("complementary", { name: "속성" })).getAllByText("통합 전");
-    expect(formats).toHaveLength(3);
+    // T007: HWP/HWPX는 rhwp 편집 PoC(저장 없음), DOCX는 아직 통합 전이다.
+    const properties = within(screen.getByRole("complementary", { name: "속성" }));
+    expect(properties.getAllByText("편집 PoC(저장 없음)")).toHaveLength(2);
+    expect(properties.getAllByText("통합 전")).toHaveLength(1);
   });
 });
 

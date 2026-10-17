@@ -4,6 +4,8 @@
 
 /node_modules/
 /dist/
+# rhwp WASM 빌드 산출물(scripts/build-rhwp-wasm.sh, T007). 고정 커밋에서 다시 만든다.
+/public/rhwp/
 /build/
 /out/
 /coverage/

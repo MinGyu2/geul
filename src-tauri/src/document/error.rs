@@ -6,7 +6,7 @@
 
 use serde::Serialize;
 
-use super::session::SessionId;
+use super::session::{SessionId, SessionState};
 use super::Format;
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize)]
@@ -39,6 +39,20 @@ pub enum DocumentError {
     UnknownSession { session_id: SessionId },
     /// 이미 닫힌 세션.
     StaleSession { session_id: SessionId },
+    /// 세션이 그 요청을 받을 수 있는 상태가 아님(예: 불러오는 중에 다시 불러오기, 준비되지 않은 세션의 변경 확정).
+    InvalidState {
+        session_id: SessionId,
+        state: SessionState,
+    },
+    /// 변경 확정의 기준 revision이 백엔드 기록과 다름. `revision`은 지금 기록된 판이다.
+    RevisionMismatch {
+        session_id: SessionId,
+        revision: u64,
+    },
+    /// 판별한 뒤 파일이 바뀌거나 교체됨. 다시 열어야 한다.
+    FileChanged,
+    /// 계약에 맞지 않는 요청 값(허용하지 않는 상태 전이, 범위 밖 개수 등).
+    InvalidRequest,
     /// 내부 오류(세부 내용은 내보내지 않는다).
     Internal,
 }

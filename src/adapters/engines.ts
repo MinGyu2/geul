@@ -1,11 +1,11 @@
 // 엔진 어댑터 경계(T006). 엔진마다 문서 모델·렌더링·편집 이력을 따로 가진다(FR-004). 공통 문서 모델은 두지 않는다.
 //
 // 작업 구분:
-// - T006에서 동작: engine·formats, capability(모든 문서 명령을 "엔진 연결 전"으로 사용할 수 없다고 보고).
-// - T007(rhwp)/T008(WordCraft)에서 구현: load(엔진에 문서 불러오기), execute(문서 명령), save(원본 형식 저장).
-//   지금은 아무것도 바꾸지 않고 EngineUnavailable을 돌려준다(가짜 성공·가짜 문서 없음).
-// - 렌더링·커서·선택·IME는 편집 표면마다 다르므로(docs/architecture/editor-surface-decision.md) 이 계약에 넣지 않고
-//   T007/T008 PoC 결과로 정한다.
+// - 이 경계는 리본 등 화면 명령(T010 명령 레지스트리)과 저장(T009)을 엔진에 보내는 자리다. engine·formats,
+//   capability(모든 문서 명령을 "엔진 연결 전"으로 사용할 수 없다고 보고), execute·save(EngineUnavailable, 가짜 성공 없음).
+// - 엔진에 문서를 불러오기와 본문 입력(문자·삭제·문단 나누기·커서·선택·IME)은 편집 표면이 맡는다(T007 rhwp:
+//   src/components/Editor/rhwp/, 세션 수명주기는 DocumentSessions·백엔드). 그래서 T006의 load는 이 경계에서 뺐다.
+//   편집 표면도 변경을 백엔드에 revision으로 확정하므로 revision 권한은 하나다.
 // 이 메서드 이름과 인자는 이 앱의 계약이며 rhwp·WordCraft의 공개 API가 아니다.
 import { ENGINE_FOR_FORMAT, type DocumentFormat, type EngineId, type EngineOperation, type Result, type SessionId, type SessionInfo } from "./contract";
 
@@ -29,7 +29,6 @@ export interface EngineAdapter {
   readonly engine: EngineId;
   readonly formats: readonly DocumentFormat[];
   capability(session: SessionInfo, commandId: string): Capability;
-  load(session: SessionInfo): Promise<Result<SessionInfo>>;
   execute(request: ExecuteRequest): Promise<Result<RevisionResult>>;
   save(session: SessionInfo): Promise<Result<RevisionResult>>;
 }
@@ -45,7 +44,6 @@ function unintegratedAdapter(engine: EngineId): EngineAdapter {
     engine,
     formats,
     capability: () => NOT_INTEGRATED,
-    load: () => unavailable("load"),
     execute: () => unavailable("execute"),
     save: () => unavailable("save"),
   };

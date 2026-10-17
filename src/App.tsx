@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useReducer, useRef, useState, type CSSProperties } from "react";
 import type { CommandContext } from "./commands/commands";
+import type { DocumentWorkspace } from "./components/Editor/documentWorkspace";
 import { Editor } from "./components/Editor/Editor";
+import { createTauriWorkspace } from "./components/Editor/tauriWorkspace";
 import { NavigationPanel } from "./components/NavigationPanel/NavigationPanel";
 import { PropertiesPanel } from "./components/PropertiesPanel/PropertiesPanel";
 import { Ribbon } from "./components/Ribbon/Ribbon";
@@ -29,9 +31,13 @@ interface AppProps {
   initialState?: LayoutState;
   initialLanguage?: Language;
   settingsStore?: SettingsStore;
+  /** 테스트 주입용 문서 작업 공간. 주지 않으면 Tauri 앱에서만 만든다(T007). */
+  documentWorkspace?: DocumentWorkspace | null;
 }
 
-export default function App({ initialState, initialLanguage, settingsStore = defaultStore }: AppProps) {
+export default function App({ initialState, initialLanguage, settingsStore = defaultStore, documentWorkspace }: AppProps) {
+  const [documents] = useState(() => (documentWorkspace === undefined ? createTauriWorkspace() : documentWorkspace));
+  useEffect(() => documents?.start(), [documents]);
   // 처음 그리기 전에 한 번만 읽는다. 저장된 언어·배치로 첫 화면을 그리므로 기본값이 잠깐 보이지 않는다.
   const [boot] = useState(() => loadSettings(settingsStore));
   const [language, setLanguage] = useState<Language>(initialLanguage ?? boot.settings.language);
@@ -70,7 +76,7 @@ export default function App({ initialState, initialLanguage, settingsStore = def
 
   return (
     <LanguageProvider language={language} onLanguageChange={setLanguage}>
-      <Workspace layout={layout} dispatch={dispatch} message={message} notify={setMessage} />
+      <Workspace layout={layout} dispatch={dispatch} message={message} notify={setMessage} documents={documents} />
     </LanguageProvider>
   );
 }
@@ -80,9 +86,10 @@ interface WorkspaceProps {
   dispatch: CommandContext["dispatch"];
   message: Message;
   notify: (message: Message) => void;
+  documents: DocumentWorkspace | null;
 }
 
-function Workspace({ layout, dispatch, message, notify }: WorkspaceProps) {
+function Workspace({ layout, dispatch, message, notify, documents }: WorkspaceProps) {
   const { t } = useTranslation();
   const viewportWidth = useViewportWidth();
   const navigationToggleRef = useRef<HTMLButtonElement>(null);
@@ -142,7 +149,7 @@ function Workspace({ layout, dispatch, message, notify }: WorkspaceProps) {
             {splitter("navigation")}
           </>
         )}
-        <Editor zoom={layout.zoom} />
+        <Editor zoom={layout.zoom} workspace={documents} notify={notify} />
         {layout.propertiesVisible && (
           <>
             {splitter("properties")}

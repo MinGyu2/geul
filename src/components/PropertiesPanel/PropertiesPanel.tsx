@@ -5,11 +5,11 @@ interface PropertiesPanelProps {
   onClose: () => void;
 }
 
-// 형식별 담당 엔진(FR-004). 두 엔진은 독립적으로 연결되며 아직 어느 쪽도 통합되지 않았다.
+// 형식별 담당 엔진(FR-004). 두 엔진은 독립적으로 연결된다. rhwp는 T007 편집 PoC(저장 없음), WordCraft는 T008 전.
 const FORMATS = [
-  { format: "HWP", engine: "rhwp" },
-  { format: "HWPX", engine: "rhwp" },
-  { format: "DOCX", engine: "WordCraft" },
+  { format: "HWP", engine: "rhwp", status: "properties.format.editingPoc" },
+  { format: "HWPX", engine: "rhwp", status: "properties.format.editingPoc" },
+  { format: "DOCX", engine: "WordCraft", status: "properties.format.notIntegrated" },
 ] as const;
 
 export function PropertiesPanel({ onClose }: PropertiesPanelProps) {
@@ -39,11 +39,11 @@ export function PropertiesPanel({ onClose }: PropertiesPanelProps) {
               </tr>
             </thead>
             <tbody>
-              {FORMATS.map(({ format, engine }) => (
+              {FORMATS.map(({ format, engine, status }) => (
                 <tr key={format}>
                   <th scope="row">{format}</th>
                   <td>{engine}</td>
-                  <td><span className="badge">{t("properties.format.notIntegrated")}</span></td>
+                  <td><span className="badge">{t(status)}</span></td>
                 </tr>
               ))}
             </tbody>

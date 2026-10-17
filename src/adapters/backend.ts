@@ -1,7 +1,8 @@
-// 문서 세션 백엔드 클라이언트(T006). Tauri 명령 document_open·document_close·document_session·document_sessions를 부른다.
+// 문서 세션 백엔드 클라이언트. Tauri 명령 document_open·document_close·document_session·document_sessions(T006),
+// document_load·document_set_state·document_commit(T007)을 부른다.
 //
-// `invoke`는 주입한다(테스트는 가짜, 앱은 Tauri의 invoke). 지금은 화면에서 문서를 여는 흐름이 없어 앱이 이 클라이언트를
-// 쓰지 않는다. 열기 흐름(대화상자·편집 표면)을 붙이는 T007/T008/T009에서 연결한다.
+// `invoke`는 주입한다(테스트는 가짜, 앱은 Tauri의 invoke). document_load는 경로가 아니라 세션 ID만 보내고, 백엔드가
+// 판별한 파일을 다시 확인한 바이트를 원시 응답(ArrayBuffer)으로 받는다.
 import {
   parseBackendError,
   parseCloseOutcome,
@@ -10,6 +11,7 @@ import {
   type Result,
   type SessionId,
   type SessionInfo,
+  type SessionState,
 } from "./contract";
 
 export type Invoke = (command: string, args?: Record<string, unknown>) => Promise<unknown>;
@@ -20,6 +22,12 @@ export interface DocumentBackend {
   close(sessionId: SessionId): Promise<Result<CloseOutcome>>;
   session(sessionId: SessionId): Promise<Result<SessionInfo>>;
   sessions(): Promise<Result<SessionInfo[]>>;
+  /** 엔진에 넘길 문서 바이트(identified·failed → loading). */
+  load(sessionId: SessionId): Promise<Result<Uint8Array>>;
+  /** 상태 전이: loading→ready, loading→failed, ready→failed. */
+  setState(sessionId: SessionId, from: SessionState, to: SessionState): Promise<Result<SessionInfo>>;
+  /** 엔진 모델에서 성공한 변경 count개를 기준 revision 위에 확정한다. */
+  commit(sessionId: SessionId, baseRevision: number, count: number): Promise<Result<SessionInfo>>;
 }
 
 const PROTOCOL = { ok: false, error: { code: "Protocol" } } as const;
@@ -52,11 +60,21 @@ function parseList(value: unknown): SessionInfo[] | null {
   return new Set(ids).size === ids.length ? (sessions as SessionInfo[]) : null;
 }
 
+function parseBytes(value: unknown): Uint8Array | null {
+  if (value instanceof ArrayBuffer) return new Uint8Array(value);
+  return value instanceof Uint8Array ? value : null;
+}
+
 export function createTauriBackend(invoke: Invoke): DocumentBackend {
   return {
     open: (path) => call(invoke, "document_open", { path }, parseSessionInfo),
     close: (sessionId) => call(invoke, "document_close", { sessionId }, forSession(parseCloseOutcome, sessionId)),
     session: (sessionId) => call(invoke, "document_session", { sessionId }, forSession(parseSessionInfo, sessionId)),
     sessions: () => call(invoke, "document_sessions", undefined, parseList),
+    load: (sessionId) => call(invoke, "document_load", { sessionId }, parseBytes),
+    setState: (sessionId, from, to) =>
+      call(invoke, "document_set_state", { sessionId, from, to }, forSession(parseSessionInfo, sessionId)),
+    commit: (sessionId, baseRevision, count) =>
+      call(invoke, "document_commit", { sessionId, baseRevision, count }, forSession(parseSessionInfo, sessionId)),
   };
 }
