@@ -19,16 +19,26 @@
 //   수정한 모델처럼 보호한다(버리기 확인 없이 닫거나 다시 불러오지 않음).
 //   엔진 변경은 성공했는데 그 뒤 화면 갱신 준비(페이지 정보)·그리기가 실패하면, 변경은 이미 모델에 있으므로 세고
 //   (확정 대기열에 넣음) 편집을 멈춘다.
+// - 편집을 멈추면(failed) 백엔드에 ready·loading → failed 전이를 보낸다. 다시 불러오기는 그 전이의 결과를 먼저 확인한
+//   뒤에만 옛 모델을 놓고 document_load를 보낸다(백엔드가 아직 ready면 불러오기를 InvalidState로 거부하므로). 전이가
+//   오류면 한 번 다시 보내 확인하고, 그래도 확인하지 못하면 모델을 놓지 않은 채 그 오류로 끝낸다(`settleFailure`).
+// - 화면 bitmap 픽셀 예산(renderBudget.ts)은 그리는 배율에 대한 것이다. 배율·DPR 때문에 넘으면 엔진 실패가 아니라 표시
+//   한도(`renderLimit`)다: 그리지 않고 편집만 멈추며, 예산 안의 배율로 돌아오면 그대로 이어 간다(모델·revision 그대로).
+//   지원하는 가장 작은 배율로도 넘는 문서만 ready 전에 RenderLimit으로 거부한다(문서 손상과 구분).
 // - 저장이 없으므로(T009) 편집한 모델(확정했거나 확정 대기·조합 중인 변경)은 닫기·다시 불러오기 전에 사용자가
 //   버리기를 명시해야 한다(`hasUnpreservedChanges`, `load({ discard })`).
 // - IME 조합 중에는 조합 문자열을 문서에 바로 넣어 보여 주고(rhwp-studio와 같은 방식), 조합이 끝날 때 한 번만 변경으로
 //   센다. 조합이 글자 없이 끝나면(취소) 넣었던 글자를 지우므로 변경이 아니다. 선택을 지우고 시작한 조합은 변경이다.
+//   조합의 기록(지운 선택·조합 글자)은 엔진 호출이 성공한 뒤에만 바꾸므로, 세는 것은 성공한 엔진 변경뿐이다. 조합 중
+//   엔진 호출이 예외를 던지면 그 조합은 세지 않고 끝난다(uncertain). 편집이 다른 이유로 멈추면(화면 갱신 실패·백엔드
+//   거부) 그때까지 성공한 조합 변경을 한 번 센다. 끝난 조합은 다시 세지 않는다.
 // - 저장은 없다(T009). 내보내기 검사는 메모리에서만 내보내고 다시 열어 비교한다(파일을 쓰지 않음).
 import type { DocumentBackend } from "../../../adapters/backend";
 import type { DocumentError, Result, SessionInfo } from "../../../adapters/contract";
 import type { DocumentSessions } from "../../../adapters/sessions";
 import type { RhwpDocument, RhwpModule } from "./rhwpModule";
-import { bitmapPixels, checkRenderBudget, MAX_PAGE_EXTENT, MAX_RENDER_PIXELS } from "./renderBudget";
+import { ZOOM_STEPS } from "../../../hooks/layoutState";
+import { fitsRenderBudget, MAX_PAGE_EXTENT } from "./renderBudget";
 export { MAX_PAGE_EXTENT } from "./renderBudget";
 import {
   charCount,
@@ -88,7 +98,30 @@ export interface LatencyStats {
 /** 엔진 모델을 바꾸고 새 커서(선택 없음) 또는 새 커서·선택 기준점을 돌려준다. */
 type Mutation = () => DocPosition | { caret: DocPosition; anchor: DocPosition };
 
+/** 진행 중인 IME 조합. 필드는 엔진 호출이 성공한 뒤에만 바꾼다(모델에 실제로 있는 것). */
+interface Composition {
+  anchor: DocPosition;
+  /** 지금 모델의 조합 범위에 있는 글자. */
+  text: string;
+  /** 조합을 시작하며 선택을 지웠다(성공). */
+  deletedSelection: boolean;
+}
+
+/** 백엔드에 보낸 failed 전이 하나(markFailed). 다시 불러오기가 그 결과를 확인한다. */
+interface FailureTransition {
+  generation: number;
+  from: "loading" | "ready";
+  result: Promise<Result<SessionInfo>>;
+}
+
 const LOADED = { ok: true, value: null } as const;
+
+/** 지원하는 가장 작은 화면 배율(zoom 최소값, devicePixelRatio 1 기준). 이것으로도 예산을 넘으면 표시할 수 없다. */
+const MIN_DISPLAY_SCALE = ZOOM_STEPS[0] / 100;
+
+/** failed 전이가 거부됐지만 백엔드가 이미 이 불러오기 시도를 ready·loading으로 두지 않음(다시 불러와도 됨). */
+const failureAcknowledged = (error: DocumentError) =>
+  error.code === "StaleLoad" || (error.code === "InvalidState" && error.state === "failed");
 
 /** 엔진 손실 보고(JSON)를 엄격히 읽는다. 모양이 다르면 null(통과로 보지 않음). */
 function parseLoss(json: string): { count: number; losses: unknown[] } | null {
@@ -117,20 +150,17 @@ const isPageExtent = (value: unknown): value is number =>
  *   할당은 엔진이 가진 페이지만큼이다(임의의 쪽 수 상한은 두지 않음).
  * - 쪽 정보는 JSON 객체이고 pageIndex가 그 쪽 번호, width·height가 유한한 양수(MAX_PAGE_EXTENT 이하)다. 0·빈 값으로
  *   바꿔 넣지 않는다.
- * - 배율 1에서 per-canvas·전체 RGBA 픽셀 예산을 넘으면 ready 전에 거부한다.
+ * - bitmap 픽셀 예산은 여기서 보지 않는다(페이지 정보가 올바른지와 별개, 그리는 배율에 따라 다름).
  */
 function readPages(doc: RhwpDocument): PageSize[] {
   const count = doc.pageCount();
   if (!Number.isSafeInteger(count) || count < 1) throw new Error("page count");
   const pages: PageSize[] = [];
-  let pixels = 0;
   for (let page = 0; page < count; page++) {
     const info: unknown = JSON.parse(doc.getPageInfo(page));
     if (typeof info !== "object" || info === null || Array.isArray(info)) throw new Error("page info");
     const { pageIndex, width, height } = info as { pageIndex?: unknown; width?: unknown; height?: unknown };
     if (pageIndex !== page || !isPageExtent(width) || !isPageExtent(height)) throw new Error("page info");
-    pixels += bitmapPixels({ width, height }, 1);
-    if (pixels > MAX_RENDER_PIXELS) throw new Error("surface pixel budget");
     pages.push({ width, height });
   }
   return pages;
@@ -158,6 +188,11 @@ export class RhwpEditorSession {
   firstPaintMs: number | null = null;
   loadStartedAt = 0;
   lastRoundTrip: RoundTripReport | null = null;
+  /**
+   * 표면이 요청한 배율(zoom × devicePixelRatio)이 픽셀 예산을 넘어 그리지 않는 동안 그 배율, 아니면 null. 모델은 정상이며
+   * 편집만 멈춘다. 예산 안의 배율로 다시 그리면(prepareRendering) null로 돌아온다.
+   */
+  renderLimit: number | null = null;
 
   private doc: RhwpDocument | null = null;
   private readonly renderCanvases = new Set<HTMLCanvasElement>();
@@ -176,9 +211,11 @@ export class RhwpEditorSession {
   /** 엔진 편집 함수가 예외를 던져 모델이 일부만 바뀌었을 수 있음(성공한 변경으로 세지 않음). */
   private uncertain = false;
   private loadingPromise: Promise<Result<null>> | null = null;
+  /** 지금 모델의 실패를 백엔드에 알린 전이(다시 불러오기 전에 확인할 것). 확인했거나 보낸 적 없으면 null. */
+  private failure: FailureTransition | null = null;
   private closing = false;
   private disposed = false;
-  private composition: { anchor: DocPosition; text: string; deletedSelection: boolean } | null = null;
+  private composition: Composition | null = null;
   private readonly samples: number[] = [];
   private readonly listeners = new Set<() => void>();
 
@@ -204,7 +241,7 @@ export class RhwpEditorSession {
   }
 
   get editable() {
-    return this.status.kind === "ready" && this.doc !== null && !this.closing;
+    return this.status.kind === "ready" && this.doc !== null && !this.closing && this.renderLimit === null;
   }
 
   /** 닫는 중에는 편집을 막는다(백엔드 닫기가 실패하면 false로 되돌려 다시 편집할 수 있다). */
@@ -250,6 +287,7 @@ export class RhwpEditorSession {
   /**
    * 엔진에 문서를 불러온다(identified·failed에서). 동시에 두 번 부르면 같은 작업을 기다린다.
    * 지금 모델에 저장하지 않은 편집이 있으면 `discard: true` 없이는 아무것도 하지 않고 UnpreservedChanges를 돌려준다.
+   * 편집을 멈추며 보낸 failed 전이가 끝나지 않았으면 그 결과를 먼저 확인하고, 확인한 뒤에만 지금 모델을 놓는다.
    */
   load(options: { discard?: boolean } = {}): Promise<Result<null>> {
     if (this.loadingPromise) return this.loadingPromise;
@@ -266,14 +304,20 @@ export class RhwpEditorSession {
   private async runLoad(): Promise<Result<null>> {
     const closed = { ok: false, error: { code: "StaleSession", sessionId: this.sessionId } } as const;
     if (this.disposed) return closed;
+    if (this.failure) {
+      const settled = await this.settleFailure();
+      if (settled) return settled;
+    }
     const epoch = ++this.epoch;
     this.committingEpoch = null;
+    this.failure = null;
     this.releaseDocument();
     this.generation = 0;
     this.modified = false;
     this.uncertain = false;
     this.pending = 0;
     this.lastRoundTrip = null;
+    this.renderLimit = null;
     this.pages = [];
     this.status = { kind: "loading" };
     this.firstPaintMs = null;
@@ -308,6 +352,12 @@ export class RhwpEditorSession {
     } catch {
       doc.free();
       return this.failLoading(epoch, generation, { code: "EngineFailure", engine: "rhwp", stage: "render" });
+    }
+    // 큰 배율에서만 예산을 넘는 문서는 받아들이고 표면이 표시 한도로 다룬다. 가장 작은 배율로도 그릴 수 없으면 편집할
+    // 표면을 내놓을 수 없으므로 ready 전에 거부한다(올바른 문서이므로 엔진 실패와 구분).
+    if (!fitsRenderBudget(pages, MIN_DISPLAY_SCALE)) {
+      doc.free();
+      return this.failLoading(epoch, generation, { code: "RenderLimit" });
     }
     if (!this.owns(epoch)) {
       doc.free();
@@ -348,22 +398,80 @@ export class RhwpEditorSession {
     return { ok: false, error };
   }
 
+  /**
+   * 다시 불러오기의 전제: 편집을 멈추며 보낸 failed 전이(markFailed)의 결과를 확인해, 백엔드가 이 불러오기 시도를 더
+   * 이상 ready·loading으로 두지 않음을 안다. 응답 전이면 기다린다(먼저 document_load를 보내면 백엔드가 InvalidState로
+   * 거부한다). 성공·이미 failed(InvalidState failed)·StaleLoad(더 새 시도가 있음)면 null(진행). 전이가 다른 오류면
+   * (응답 유실·투영이 늦어 from이 어긋남 등) 이번 다시 불러오기에서 한 번만 전이를 다시 보내고, 그래도 확인하지 못하면 모델을 놓지 않은 채
+   * 그 오류로 끝낸다(다음 다시 불러오기가 다시 확인한다). 기다리는 동안 닫히면 닫힘으로 끝난다.
+   */
+  private async settleFailure(): Promise<Result<null> | null> {
+    const epoch = this.epoch;
+    for (let resent = false; this.failure; resent = true) {
+      const failure = this.failure;
+      const result = await failure.result;
+      if (!this.owns(epoch)) return { ok: false, error: { code: "StaleSession", sessionId: this.sessionId } };
+      if (result.ok || failureAcknowledged(result.error)) {
+        this.failure = null;
+        return null;
+      }
+      if (resent || result.error.code === "StaleSession" || result.error.code === "UnknownSession") {
+        this.handleBackendRejection(result.error); // 닫힌 세션이면 모델을 버린다
+        if (!this.disposed) this.setStatus({ kind: "failed", error: result.error });
+        return { ok: false, error: result.error };
+      }
+      // 백엔드가 지금 상태를 알려 줬으면(InvalidState ready·loading) 그 상태에서 전이한다(같은 어긋난 요청을 되풀이하지 않음).
+      const error = result.error;
+      const from = error.code === "InvalidState" && (error.state === "ready" || error.state === "loading") ? error.state : failure.from;
+      this.failure = this.reportFailure(failure.generation, from);
+    }
+    return null;
+  }
+
   private setStatus(status: EditorStatus) {
     this.status = status;
     this.emit();
   }
 
   /**
-   * 렌더링(표면이 부른다). 엔진이 그리지 못하면 빈 편집 영역을 정상처럼 두지 않고 편집을 멈춘다(render 단계 실패).
+   * 렌더링 준비(표면이 그리기 전에 부른다). scale은 그리는 배율(zoom × devicePixelRatio).
+   * - 예산 안이면 true(표시 한도였다면 풀어 편집을 이어 간다).
+   * - 이 배율로는 픽셀 예산을 넘으면 그리지 않고 이전 backing store를 놓은 뒤 표시 한도(renderLimit)로 편집을 멈춘다.
+   *   모델·revision·확정은 그대로다(엔진 실패가 아님). 한도에 들어가기 직전에 beforeLimit을 부른다(표면이 보이는 IME
+   *   조합을 그 자리에 확정할 수 있게).
+   * - 예산을 계산할 수 없으면(잘못된 배율 등) 빈 편집 영역을 정상처럼 두지 않고 편집을 멈춘다(render 단계 실패).
    */
-  prepareRendering(scale: number): boolean {
+  prepareRendering(scale: number, beforeLimit?: () => void): boolean {
     if (!this.doc || this.status.kind !== "ready") return false;
+    let fits: boolean;
     try {
-      checkRenderBudget(this.pages, scale);
-      return true;
+      fits = fitsRenderBudget(this.pages, scale);
     } catch {
       this.releaseRendering();
-      void this.markFailed({ code: "EngineFailure", engine: "rhwp", stage: "render" });
+      this.markFailed({ code: "EngineFailure", engine: "rhwp", stage: "render" });
+      return false;
+    }
+    if (!fits) {
+      this.releaseRendering();
+      if (this.renderLimit !== scale) {
+        if (this.renderLimit === null) beforeLimit?.();
+        this.renderLimit = scale;
+        this.emit();
+      }
+      return false;
+    }
+    if (this.renderLimit !== null) {
+      this.renderLimit = null;
+      this.emit();
+    }
+    return true;
+  }
+
+  /** 이 배율로 지금 쪽들을 예산 안에서 그릴 수 있는지(상태를 바꾸지 않음, 안내 문구용). */
+  fitsRendering(scale: number): boolean {
+    try {
+      return fitsRenderBudget(this.pages, scale);
+    } catch {
       return false;
     }
   }
@@ -388,7 +496,7 @@ export class RhwpEditorSession {
       }
       return true;
     } catch {
-      if (this.status.kind === "ready") void this.markFailed({ code: "EngineFailure", engine: "rhwp", stage: "render" });
+      if (this.status.kind === "ready") this.markFailed({ code: "EngineFailure", engine: "rhwp", stage: "render" });
       return false;
     }
   }
@@ -429,6 +537,8 @@ export class RhwpEditorSession {
     try {
       next = apply();
     } catch {
+      // 진행 중인 조합도 이 실패로 끝난다. 그 조합은 성공한 변경으로 세지 않는다(markFailed가 세지 않게 먼저 비움).
+      this.composition = null;
       this.uncertain = true;
       this.lastRoundTrip = null;
       this.modelVersion += 1;
@@ -447,7 +557,7 @@ export class RhwpEditorSession {
     try {
       this.pages = readPages(doc);
     } catch {
-      void this.markFailed({ code: "EngineFailure", engine: "rhwp", stage: "render" });
+      this.markFailed({ code: "EngineFailure", engine: "rhwp", stage: "render" });
       return true;
     }
     this.emit();
@@ -526,40 +636,67 @@ export class RhwpEditorSession {
 
   // ---- IME 조합 ----
 
+  /**
+   * 조합을 시작한다. 선택이 있으면 지운 뒤에(엔진 호출 성공) 조합이 생긴다. 지우기가 예외면 조합은 없다(uncertain).
+   * 지운 뒤 화면 갱신이 실패하면 markFailed가 이 조합(지운 것)을 변경 1개로 세고 끝낸다.
+   */
   beginComposition(): void {
     if (!this.editable || this.composition) return;
-    let deletedSelection = false;
-    if (this.hasSelection) {
-      if (!this.mutate(() => this.deleteSelectionRaw(), false)) return;
-      deletedSelection = true;
+    if (!this.hasSelection) {
+      this.composition = { anchor: this.caret, text: "", deletedSelection: false };
+      return;
     }
-    this.composition = { anchor: this.caret, text: "", deletedSelection };
+    this.mutate(() => {
+      const at = this.deleteSelectionRaw();
+      this.composition = { anchor: at, text: "", deletedSelection: true };
+      return at;
+    }, false);
   }
 
   /** 조합 문자열이 바뀌었다(입력 이벤트). 문서의 조합 범위를 새 문자열로 바꾼다. 변경으로 세지 않는다. */
   updateComposition(text: string): void {
     const composition = this.composition;
-    if (!composition || composition.text === text) return;
-    const ok = this.mutate(() => {
+    if (composition) this.replaceComposition(composition, text);
+  }
+
+  /**
+   * 문서의 조합 범위를 text로 바꾼다. 모델이 조합 기록과 맞으면 true: 바꿨거나, 같거나, 편집할 수 없는 동안이라 바꾸지
+   * 않음(모델에는 이전 조합 글자). 엔진 호출이 예외를 던지면 false: mutate가 이 조합을 세지 않고 끝내고 모델을
+   * uncertain으로 표시한다. 조합 글자 기록은 엔진 호출이 모두 성공한 뒤에만 바꾼다(그 뒤 화면 갱신이 실패해도 맞음).
+   */
+  private replaceComposition(composition: Composition, text: string): boolean {
+    if (composition.text === text || !this.editable) return true;
+    return this.mutate(() => {
       const current = charCount(composition.text);
       if (current > 0) this.text!.delete(composition.anchor, current);
       if (text) this.text!.insert(composition.anchor, text);
+      composition.text = text;
       return { ...composition.anchor, offset: composition.anchor.offset + charCount(text) };
     }, false);
-    if (ok) composition.text = text;
-    else this.composition = null;
   }
 
-  /** 조합이 끝났다. 최종 문자열(취소면 "")을 남기고, 문서가 바뀌었으면 변경 1개로 센다. */
+  /**
+   * 조합이 끝났다(확정, 취소면 ""). 최종 문자열로 바꾸고 조합을 정리한 뒤 문서에 남은 조합 글자를 돌려준다.
+   * - 성공: 문서가 바뀌었으면(글자를 남김 또는 선택을 지움) 변경 정확히 1개.
+   * - 취소: 넣었던 글자를 지운다. 선택을 지우고 시작했으면 그 지우기만 변경 1개.
+   * - 엔진 예외(실패·불확실): 세지 않고 ""(조합은 이미 끝남, 모델은 uncertain).
+   * 바꾼 뒤 화면 갱신이 실패해 편집이 멈췄으면 markFailed가 이미 이 조합을 셌으므로 다시 세지 않는다.
+   */
   endComposition(finalText: string): string {
     const composition = this.composition;
     if (!composition) return "";
-    this.updateComposition(finalText);
-    const committed = this.composition?.text ?? "";
-    this.composition = null;
-    if (committed !== "" || composition.deletedSelection) this.recordMutation();
+    if (!this.replaceComposition(composition, finalText)) return "";
+    if (this.composition === composition) this.settleComposition();
     this.emit();
-    return committed;
+    return composition.text;
+  }
+
+  /** 진행 중인 조합을 끝내고, 그 조합이 모델에 남긴 변경(모두 성공한 엔진 호출)이 있으면 1개로 센다. */
+  private settleComposition() {
+    const composition = this.composition;
+    if (!composition) return;
+    this.composition = null;
+    if (composition.text !== "" || composition.deletedSelection) this.recordMutation();
   }
 
   /**
@@ -694,33 +831,42 @@ export class RhwpEditorSession {
     }
     if (error.code === "StaleLoad") {
       // 이 모델은 더 새로운 불러오기 시도로 대체됐다. 그 시도의 상태를 건드리지 않고 편집만 멈춘다.
-      this.composition = null;
-      this.setStatus({ kind: "failed", error });
+      this.status = { kind: "failed", error };
+      this.settleComposition();
+      this.emit();
       const epoch = this.epoch;
       void this.sessions.refresh(this.sessionId, () => this.owns(epoch));
       return;
     }
-    void this.markFailed(error);
+    this.markFailed(error);
   }
 
   private failEditing() {
-    void this.markFailed({ code: "EngineFailure", engine: "rhwp", stage: "edit" });
+    this.markFailed({ code: "EngineFailure", engine: "rhwp", stage: "edit" });
   }
 
   /**
-   * 편집을 멈추고 세션을 failed로 돌린다. 모델은 표시용으로만 남긴다. 확정하지 못한 변경(pending)은 지우지 않는다:
-   * 그 편집은 모델에 있고 저장되지 않았으므로, 다시 불러오기·닫기 전에 버리기 확인이 필요하다.
+   * 편집을 멈추고 세션을 failed로 돌린다(백엔드 전이는 비동기, 다시 불러오기가 그 결과를 확인함). 모델은 표시용으로만
+   * 남긴다. 확정하지 못한 변경(pending)은 지우지 않는다: 그 편집은 모델에 있고 저장되지 않았으므로, 다시 불러오기·닫기
+   * 전에 버리기 확인이 필요하다. 진행 중인 조합은 여기서 끝나며, 그때까지 성공한 조합 변경은 1개로 센다(확정은 하지 않음).
    */
-  private async markFailed(error: DocumentError) {
+  private markFailed(error: DocumentError) {
     if (this.status.kind === "failed" || this.disposed) return;
-    const epoch = this.epoch;
-    const generation = this.generation;
-    this.composition = null;
-    this.setStatus({ kind: "failed", error });
     const info: SessionInfo | null = this.sessions.get(this.sessionId);
-    const from = info?.state === "loading" ? "loading" : "ready";
-    const failed = await this.backend.setState(this.sessionId, generation, from, "failed");
-    if (this.owns(epoch) && failed.ok) this.sessions.applyUpdate(failed.value);
+    this.status = { kind: "failed", error }; // 조합을 세기 전에: 확정을 보내지 않는다
+    this.settleComposition();
+    this.failure = this.reportFailure(this.generation, info?.state === "loading" ? "loading" : "ready");
+    this.emit();
+  }
+
+  /** failed 전이를 보낸다. 응답은 그 epoch일 때만 투영에 반영한다. */
+  private reportFailure(generation: number, from: "loading" | "ready"): FailureTransition {
+    const epoch = this.epoch;
+    const result = this.backend.setState(this.sessionId, generation, from, "failed").then((failed) => {
+      if (this.owns(epoch) && failed.ok) this.sessions.applyUpdate(failed.value);
+      return failed;
+    });
+    return { generation, from, result };
   }
 
   /**
@@ -826,6 +972,7 @@ export class RhwpEditorSession {
     this.disposed = true;
     this.epoch += 1;
     this.committingEpoch = null;
+    this.failure = null;
     this.releaseDocument();
     this.status = { kind: "closed" };
     this.emit();

@@ -124,9 +124,16 @@ def resource_cases(d, fixtures, scratch):
             raise s.Failure("pagePr fixture replacement failed")
         path = scratch / f"oversize-{name}.hwpx"
         path.write_bytes(s.with_entry(source, "Contents/section0.xml", changed.encode()))
-        st = p.open_document(d, path, expected="failed")
+        # 5차: 예산은 그리는 배율에 대한 것이다. 50%에서 그릴 수 있는 wide/tall은 100%에서 표시 한도(ready, 그리지 않음),
+        # 가장 작은 배율로도 넘는 near-limit만 ready 전에 RenderLimit으로 거부한다.
+        limited = name != "near-limit"
+        st = p.open_document(d, path, expected="ready" if limited else "failed")
         backend = p.ipc(d, "document_sessions")["ok"]
-        check(f"real WASM oversized {name}: fails before canvas allocation", st["status"] == "failed" and not d.exists("canvas.rhwp-page__canvas") and next(x for x in backend if x["displayName"] == path.name)["state"] == "failed")
+        state = next(x for x in backend if x["displayName"] == path.name)["state"]
+        if limited:
+            check(f"real WASM oversized {name}: 100% is a recoverable display limit without canvas allocation", st["status"] == "ready" and d.exists("[data-testid=rhwp-render-limit]") and not d.exists("canvas.rhwp-page__canvas") and state == "ready")
+        else:
+            check(f"real WASM oversized {name}: RenderLimit before canvas allocation", st["status"] == "failed" and not d.exists("canvas.rhwp-page__canvas") and state == "failed" and "화면 메모리 한도" in d.js("return document.querySelector('[data-testid=rhwp-error]').textContent"))
     # More than ten pages are allowed when the total pixel budget fits. A genuine many-page
     # HWPX with ordinary individual pages must still fail when their aggregate exceeds 128 MiB.
     import copy
@@ -156,8 +163,8 @@ def resource_cases(d, fixtures, scratch):
     check("real 12-page document remains editable within pixel budget", st["status"] == "ready" and st["pages"] == "12" and d.js("const cs=[...document.querySelectorAll('canvas')];return cs.length===12&&cs.every(c=>c.width>0&&c.height>0)&&cs.reduce((n,c)=>n+c.width*c.height,0)<=32*1024*1024"))
     many = scratch / "oversize-aggregate.hwpx"
     many.write_bytes(s.with_entry(source, "Contents/section0.xml", ET.tostring(root, encoding="utf-8")))
-    st = p.open_document(d, many, expected="failed")
-    check("real WASM aggregate of ordinary pages rejected before canvas allocation", st["status"] == "failed" and not d.exists("canvas.rhwp-page__canvas"))
+    st = p.open_document(d, many)
+    check("real WASM aggregate of ordinary pages: 100% display limit before canvas allocation (5차: 50%에서 표시)", st["status"] == "ready" and d.exists("[data-testid=rhwp-render-limit]") and not d.exists("canvas.rhwp-page__canvas"))
     p.select_tab(d, "terminal-B.hwp")
     d.js("window.__detachedCanvas=document.querySelector('canvas')")
     p.select_tab(d, "terminal-A.hwp")

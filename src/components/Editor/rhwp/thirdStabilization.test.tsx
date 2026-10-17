@@ -349,6 +349,7 @@ describe("P1-B 엔진 변경이 일부만 된 뒤 예외", () => {
     await flush();
     w.take("setState").reply(ok(info({ state: "failed", sequence: 3, loadGeneration: 1 })));
     const reloading = w.editor.load({ discard: true });
+    await flush(); // 5차: failed 전이 결과를 확인한 뒤에 불러온다
     w.take("load").reply(loaded(new Uint8Array([1]), 2));
     await flush();
     w.take("session").reply(ok(info({ state: "loading", sequence: 4, loadGeneration: 2 })));

@@ -16,6 +16,9 @@
 //   input)으로 닫힌다. 클릭 뒤 keydown이 먼저 오면 그 뒤 확정이 옛 조합인지 새 조합인지 페이지는 알 수 없으므로 새
 //   입력으로 다룬다(실측: 미리보기만 바꾸는 키는 keydown도 없다). blur()가 플랫폼 IME 조합을 바로 끝낸다고 가정하지
 //   않는다(늦은 이벤트는 위 규칙으로 처리).
+// - 조합이 끝 이벤트 없이 편집 세션 쪽에서 끝나면(엔진 예외·편집 중지) 그 조합의 늦은 이벤트도 끊긴 트랜잭션의 것이다
+//   (이미 끝남): 다시 불러온 모델이나 이어진 편집에 넣지 않는다. 끝의 완료 기록은 IME가 보낸 최종 글자로 남긴다(실패해
+//   문서에 남지 않았어도 같은 조합의 뒤따르는 알림을 소비).
 // - IME 입력 문맥은 WebView에 하나이므로 중단·정상 완료 기록은 편집 표면 사이에서 공유한다(ImeContext). 탭을 바꾼 뒤
 //   새 표면에 도착한 옛 조합의 늦은 확정은 새 문서에 넣지 않는다. 페이지가 받지 못한 조합(이벤트가 없음)은 이 규칙으로
 //   막을 수 없다(플랫폼 한계, editor-surface-decision.md).
@@ -81,6 +84,8 @@ export class ImeInput {
       this.context.terminal = null;
       if (!session.composing) session.beginComposition();
       session.updateComposition(text);
+      // 편집 세션이 조합을 끝냈다(엔진 예외·편집 중지·시작 실패): 이 조합의 나머지 이벤트는 끝난 트랜잭션의 것이다.
+      if (!session.composing) this.context.interrupted = { finalized: true, text: "" };
       return;
     }
     if (compositionType && this.context.terminal && (!text || this.context.terminal.text === text)) return;
@@ -95,8 +100,8 @@ export class ImeInput {
     const session = this.session;
 
     if (session.composing) {
-      const committed = session.endComposition(finalText);
-      this.context.terminal = { text: committed };
+      session.endComposition(finalText);
+      this.context.terminal = { text: finalText };
       return;
     }
     const interrupted = this.context.interrupted;
@@ -109,8 +114,8 @@ export class ImeInput {
     }
     if (this.context.terminal || !finalText) return; // 같은 조합의 중복 끝·빈 확정(취소)
     session.beginComposition(); // 시작·조합 입력 없이 확정만 온 조합
-    const committed = session.endComposition(finalText);
-    this.context.terminal = { text: committed };
+    session.endComposition(finalText);
+    this.context.terminal = { text: finalText };
   }
 
   /** 페이지를 누르기 직전(커서를 옮기기 전). */

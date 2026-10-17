@@ -2,7 +2,7 @@
 
 Date: 2026-10-13
 Spec: [spec.md](./spec.md)
-Status: Revised draft — 2026-10-16 실제 저장소 검사, submodule 고정, 보안 게이트 로컬 구현·2차 재검토 완료(원격 브랜치 보호는 미설정), Tauri/React 6영역 UI 기반(T004) 구현. 2026-10-17 T006: 문서 형식 판별·세션 기록·어댑터 계약 구현(엔진 연결 없음), 같은 날 리뷰 지적 5건 안정화(판별 규칙·동시 판별 자리)와 3건 2차 안정화(ZIP 무결성·mimetype 분류 순서), 3차 안정화(로컬 헤더 압축 방식 일치, 19바이트 mimetype 정책 명시). T007: rhwp R-A 편집 PoC 부분 통과(IME 조합 표시 미검증, 저장 없음). WordCraft 통합·열기 대화상자·저장은 미착수
+Status: Revised draft — 2026-10-16 실제 저장소 검사, submodule 고정, 보안 게이트 로컬 구현·2차 재검토 완료(원격 브랜치 보호는 미설정), Tauri/React 6영역 UI 기반(T004) 구현. 2026-10-17 T006: 문서 형식 판별·세션 기록·어댑터 계약 구현(엔진 연결 없음), 같은 날 리뷰 지적 5건 안정화(판별 규칙·동시 판별 자리)와 3건 2차 안정화(ZIP 무결성·mimetype 분류 순서), 3차 안정화(로컬 헤더 압축 방식 일치, 19바이트 mimetype 정책 명시). T007: rhwp R-A 편집 PoC 부분 통과(IME 조합 표시 미검증, 저장 없음), 2026-10-18 5차 안정화(실제 IME 게이트 FAIL 유지). WordCraft 통합·열기 대화상자·저장은 미착수
 
 ## Summary
 WordCraft는 DOCX, rhwp는 HWP/HWPX 전용 엔진으로 독립 관리한다. Tauri 2 + React/TypeScript 6개 영역 UI에 문서별 어댑터, 공통 명령/상태 계층을 결합한다. 고급 리본보다 렌더·IME·선택·쓰기 무손실 검증과 공개 저장소 보안 게이트를 우선한다.
@@ -157,6 +157,13 @@ interface EditorAdapter {
   destroy하며 파일 시스템·셸·저장 권한은 추가하지 않는다. canvas는 per-canvas 16M pixels(RGBA 64 MiB), 활성 표면 합계
   32M pixels(128 MiB) 안에서만 할당하며 zoom·DPR을 반영한다. 나머지 쪽은 frame clock에 의존하지 않는 다음 task에 그리고,
   모델 교체·새 렌더·표면 해제 때 이전 작업/bitmap을 무효화한다. T007 실제 IME의 필수 7개 기준은 바꾸지 않는다.
+- T007 5차 안정화([상세 재현·계약·검증](../architecture/editor-surface-decision.md#t007-5차-안정화-ime-확정-실패실패-전이-순서복구-가능한-표시-한도-2026-10-18)):
+  조합 기록은 엔진 호출이 성공한 뒤에만 바꾸고, 엔진 예외로 끝난 조합은 revision으로 세지 않는다(uncertain 보호 유지).
+  편집 중지 때 보낸 `ready·loading → failed` 전이는 시도마다 하나로 기록하며, reload는 그 결과를 확인한 뒤에만 옛 모델을
+  놓고 `document_load`를 보낸다(확인 실패면 모델 유지·오류 표시, 고정 지연·맹목 재시도 없음). bitmap 픽셀 예산(64 MiB/128 MiB
+  RGBA)은 그리는 배율에 적용하며, 배율·DPR 초과는 엔진 실패가 아닌 복구 가능한 표시 한도(편집만 멈춤, 배율을 낮추면
+  같은 모델로 이어 감)다. 가장 작은 배율(50%)로도 넘는 문서만 새 프런트엔드 오류 `RenderLimit`으로 ready 전에 거부한다.
+  Rust 계약·권한은 바꾸지 않았다. T007 실제 IME 필수 7개 기준과 FAIL 판정(4/7)은 그대로다.
 
 ## Algorithms and Pseudocode
 ```

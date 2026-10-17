@@ -342,6 +342,11 @@ describe("화면: 버리기 확인·수정 표시·진단", () => {
     expect(a.calls.some((call) => call.method === "load")).toBe(false);
     fireEvent.click(within(dialog).getByTestId("discard-confirm"));
     await act(flush);
+    // 5차: 백엔드가 ready → failed 전이를 확인하기 전에는 모델을 놓거나 불러오지 않는다.
+    expect(a.calls.some((call) => call.method === "load")).toBe(false);
+    expect(a.doc.freed).toBe(false);
+    a.take("setState").reply(ok(info({ state: "failed", sequence: 3, loadGeneration: 1 })));
+    await act(flush);
     expect(a.calls.some((call) => call.method === "load")).toBe(true);
     expect(a.doc.freed).toBe(true); // 버리기를 고른 뒤에만 이전 모델을 놓는다
   });

@@ -165,6 +165,8 @@
   "editor.rhwp.closed": "Closed document",
   "editor.rhwp.failedUnpreserved": "Edits made in this document were not saved and cannot be recovered. Reloading discards them.",
   "editor.rhwp.failedUncertain": "The editing engine failed during a change, so the document model may have been only partially changed. It may differ from what was shown; reloading discards this model.",
+  "editor.rhwp.renderLimit": "This document's pages cannot be drawn at the current zoom ({zoom}%) within the display memory limit. Lower the zoom to continue editing. Your edits are kept.",
+  "editor.rhwp.renderLimitMinimum": "This document's pages cannot be drawn at the current zoom ({zoom}%) within the display memory limit, not even at the smallest supported zoom. Your edits are kept, but editing cannot continue on this display.",
   "editor.rhwp.reload": "Reload from file",
   "editor.rhwp.load": "Load into the engine",
   "editor.rhwp.revision": "Revision {revision}",
@@ -214,5 +216,6 @@
   "document.error.EngineUnavailable": "The engine for this format is not connected yet.",
   "document.error.EngineFailure": "The editing engine reported an error.",
   "document.error.Protocol": "An internal communication error occurred.",
-  "document.error.UnpreservedChanges": "Not done because there are unsaved edits."
+  "document.error.UnpreservedChanges": "Not done because there are unsaved edits.",
+  "document.error.RenderLimit": "The document's pages are too large or too many to draw within the display memory limit (the document is not damaged)."
 }

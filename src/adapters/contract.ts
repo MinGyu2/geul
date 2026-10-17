@@ -88,13 +88,16 @@ export type EngineStage = "init" | "parse" | "render" | "edit" | "export";
  * - Protocol: 응답이 계약과 맞지 않거나, 계약 밖의 거부(인자 형식 오류·권한 거부 등)를 받음.
  * - UnpreservedChanges: 보존하지 않은 편집(확정했거나 확정 대기·조합 중인 변경)이 있어 닫기·다시 불러오기를 하지 않음.
  *   저장 기능이 없으므로(T009) 사용자가 버리기를 명시적으로 고른 경우에만 진행한다.
+ * - RenderLimit: 엔진은 문서를 올바르게 읽었지만, 지원하는 가장 작은 배율로도 화면 bitmap 픽셀 예산을 넘어 그릴 수 없음
+ *   (쪽이 너무 크거나 많음). 문서 손상(EngineFailure parse·render)과 구분한다. 배율만 큰 경우는 오류가 아니라 표시 한도다.
  * 계획의 UnsupportedCommand(T010), UnsafeSave·SaveFailure·FileConflict(T009/T014)는 해당 작업에서 추가한다.
  */
 export type ClientError =
   | { code: "EngineUnavailable"; engine: EngineId; operation: EngineOperation }
   | { code: "EngineFailure"; engine: EngineId; stage: EngineStage }
   | { code: "Protocol" }
-  | { code: "UnpreservedChanges"; sessionId: SessionId };
+  | { code: "UnpreservedChanges"; sessionId: SessionId }
+  | { code: "RenderLimit" };
 
 export type DocumentError = BackendError | ClientError;
 

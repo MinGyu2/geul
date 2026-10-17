@@ -1,10 +1,15 @@
 // T007은 전체 쪽을 그린다. 임의의 쪽 수 대신 실제 RGBA backing store의 픽셀 예산으로 제한한다.
 // 엔진/WASM·레이아웃·GPU 복사본 전체의 메모리 상한은 아니다.
+// 예산은 그리는 배율(zoom × devicePixelRatio)에 대한 것이다. 넘으면 RenderBudgetExceeded(문서 모델 손상이 아님)를 던지고,
+// 배율 값 자체가 잘못되면 일반 Error를 던진다.
 export const MAX_PAGE_EXTENT = 16_384;
 export const MAX_CANVAS_PIXELS = 16 * 1024 * 1024; // RGBA 64 MiB / canvas
 export const MAX_RENDER_PIXELS = 32 * 1024 * 1024; // RGBA 128 MiB / active surface
 
 interface Size { width: number; height: number }
+
+/** 이 배율로 그리면 per-canvas·전체 픽셀 예산을 넘는다(표시 한도). 엔진 오류·잘못된 페이지 정보와 구분한다. */
+export class RenderBudgetExceeded extends Error {}
 
 /** pinned rhwp wasm_api.rs normalize_canvas_scale + scaled_canvas_extent(ceil)와 같은 계산. */
 export function bitmapPixels(page: Size, requestedScale: number): number {
@@ -15,7 +20,7 @@ export function bitmapPixels(page: Size, requestedScale: number): number {
   const width = Math.min(MAX_PAGE_EXTENT, Math.ceil((page.width + 1) * scale));
   const height = Math.min(MAX_PAGE_EXTENT, Math.ceil((page.height + 1) * scale));
   const pixels = width * height;
-  if (pixels > MAX_CANVAS_PIXELS) throw Error("canvas pixel budget");
+  if (pixels > MAX_CANVAS_PIXELS) throw new RenderBudgetExceeded("canvas pixel budget");
   return pixels;
 }
 
@@ -23,6 +28,17 @@ export function checkRenderBudget(pages: readonly Size[], scale: number): void {
   let total = 0;
   for (const page of pages) {
     total += bitmapPixels(page, scale);
-    if (total > MAX_RENDER_PIXELS) throw Error("surface pixel budget");
+    if (total > MAX_RENDER_PIXELS) throw new RenderBudgetExceeded("surface pixel budget");
+  }
+}
+
+/** 예산을 넘는 것만 false. 배율이 잘못되는 등 다른 오류는 그대로 던진다. */
+export function fitsRenderBudget(pages: readonly Size[], scale: number): boolean {
+  try {
+    checkRenderBudget(pages, scale);
+    return true;
+  } catch (error) {
+    if (error instanceof RenderBudgetExceeded) return false;
+    throw error;
   }
 }

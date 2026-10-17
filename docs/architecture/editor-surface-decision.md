@@ -295,6 +295,8 @@ input은 새 입력으로 다루며, 이를 네이티브 트랜잭션 식별의 
 - offscreen 쪽도 그리는 현재 구조는 유지한다. 가상화는 도입하지 않았다. 높은 DPR/zoom 또는 많은 쪽 때문에 정상 문서도
   거부될 수 있고, 큰 문서의 재그리기 비용은 남는다. 이 수치는 RGBA backing store 예산이며 WASM 모델·엔진 layout·GPU
   복사본·브라우저 전체 RSS의 상한이나 OS의 즉시 메모리 회수 보장은 아니다.
+- (5차에서 바뀐 정책: 예산 초과를 배율에 대한 표시 한도로 다루고, 가장 작은 배율로도 넘는 문서만 ready 전에 거부한다.
+  [5차 렌더링 정책](#렌더링-한도와-복구) 참고. 위 기록은 4차 당시의 정책이다.)
 
 ### 창 닫기 경계·권한
 
@@ -378,3 +380,109 @@ Xvfb X11 + WebKitGTK 2.54.1 + ibus 1.5.33 + ibus-hangul 1.5.5 두벌식, preedit
 native preedit 문제 해결로 해석하지 않는다. preedit을 실제로 전달하는 데스크톱·Windows/macOS는 이번 환경에서 미검증이다.
 T007 체크박스는 유지하며 T008 이후 구현은 이번 작업에 포함하지 않는다. 의존성 표의 T008 선행은 T006이므로 별도 PoC의
 정책상 착수 가능성과 이번 요청의 명시적 T008 제외를 구분한다. T010 이후 고급 UI 확대 제한도 유지한다.
+
+
+## T007 5차 안정화: IME 확정 실패·실패 전이 순서·복구 가능한 표시 한도 (2026-10-18)
+
+검토 기준은 `29c1f01e46028b5d761d81a259063899f1a085aa`(브랜치 `master`, 작업 트리 깨끗)이며 R-A와 엔진 고정
+(`rhwp 1a76570`, `wordcraft fc41918`), 앞선 네 번의 안정화 장치(epoch·`committingEpoch`·`loadGeneration`·`ImeContext`·
+uncertain 보호·창 닫기 확인·픽셀 예산·backing store 해제)를 유지한다. 저장·자동 저장·복구·가상화·T008 이후 기능은 추가하지 않는다.
+
+### 재현과 수정
+
+새 `fifthStabilization.test.tsx`를 먼저 수정 전 구현에 돌렸다: 30개 중 22개가 지적한 원인으로 실패, 8개는 기존 계약대로 통과
+(정상 조합·취소 회계, 이미 끝난 전이 뒤 reload, 중복 reload 합치기, StaleLoad·늦은 sequence, 배율만 바꾸기, 진짜 그리기 예외).
+
+| 항목 | 판정 | 수정 전 관측과 원인 | 수정 |
+|------|------|-------------------|------|
+| P1-A 조합 확정 실패의 거짓 revision | CONFIRMED DEFECT | 선택을 지운 조합(`deletedSelection`)에서 마지막 글자 넣기가 예외를 던지면 `updateComposition()`이 조합을 버리지만 `endComposition()`이 남은 `deletedSelection`만 보고 `recordMutation()` → `localRevision` 0→1(확정 요청은 failed라 안 감). 같은 추론 때문에 반대 방향도 틀림: 넣기는 성공하고 페이지 정보 갱신이 실패하면 `markFailed`가 조합을 지워 성공한 변경을 세지 않음(0, `""` 반환). 선택 지우기 뒤 갱신이 실패하면 failed 상태에서 조합이 계속 열려 있음. 실패한 조합의 늦은 `compositionend`가 다시 불러온 새 모델에 `하`를 넣음 | 조합 기록(`Composition`)은 엔진 호출이 성공한 **mutation 안에서만** 바꾼다(선택 지우기 뒤 생성, 넣기 뒤 글자 갱신). 엔진 예외는 `mutate`가 조합을 세지 않고 끝내며(uncertain), 다른 이유로 편집이 멈추면(`markFailed`·StaleLoad) `settleComposition()`이 그때까지 성공한 조합 변경을 한 번 센다. `endComposition()`은 `replaceComposition()`의 명시적 결과(모델과 맞음/엔진 예외)로 성공·취소·실패를 가르고, 끝난 조합은 다시 세지 않는다. `ImeInput`은 세션 쪽에서 조합이 끝나면 그 조합의 늦은 이벤트를 끊긴 트랜잭션으로 소비하고, 완료 기록은 IME의 최종 글자로 남긴다 |
+| P1-B 실패 전이와 reload 경합 | CONTRACT DEFICIENCY | `markFailed()`는 화면을 곧바로 failed로 바꾸고 `ready → failed` 전이 응답을 기다리지 않는다. 그 응답 전에 reload하면 옛 모델을 놓고 `document_load`를 바로 보냄(제어 backend에서 전이 보류 중 `load` 호출 확인). Rust `begin_load`는 `ready`를 `InvalidState`로 거부하므로 IPC 처리 순서가 바뀌면 정당한 복구가 2차 실패가 된다. 실제 Tauri에서는 sync 명령인 `document_set_state`가 먼저 처리되어 이 실패를 관측하지 않았지만 순서는 계약으로 보장되지 않음 | `markFailed()`가 그 시도의 전이 하나(`FailureTransition`, 세대·from·결과 Promise)를 기록한다. `load()`는 기존처럼 미보존 변경을 먼저 확인하고(버리기 확인 전에는 아무것도 하지 않음), `runLoad()`는 **epoch를 바꾸거나 모델을 놓기 전에** 그 결과를 확인한다(`settleFailure`). 성공·`InvalidState(failed)`·`StaleLoad`면 진행, 그 밖의 오류(응답 유실 등)는 이번 reload에서 한 번만 다시 보낸다(백엔드가 알려 준 `InvalidState(ready/loading)`의 상태를 from으로 사용). 그래도 확인하지 못하면 성공을 보고하지 않고 모델·편집·버리기 보호를 그대로 둔 채 그 오류로 끝낸다. 기다리는 동안 닫히면 닫힘으로 끝나고 늦은 응답은 투영을 바꾸지 않는다. 같은 대기 중 두 reload는 같은 작업 하나다. 고정 지연·폴링·`InvalidState` 맹목 재시도는 쓰지 않는다 |
+| P2 배율·DPR 예산 초과의 치명적 실패 | CONFIRMED DEFECT | `prepareRendering(scale)`의 예산 초과가 `EngineFailure(render)`로 `markFailed` → 배율을 되돌려도 편집을 이어 갈 수 없고 다시 불러오기(버리기)만 남음. 처음 불러올 때도 100% 합계 초과를 엔진 실패로 표시해 올바른 문서와 손상 문서를 구분하지 않음 | 예산 검사(`fitsRenderBudget`, `RenderBudgetExceeded`)를 그리는 배율에만 적용한다. ready 모델에서 넘으면 표시 한도(`renderLimit`): 그리지 않고 이전 backing store를 놓은 뒤 편집만 멈추고, 쪽 대신 이유·배율·할 일을 알리는 `role=alert` 안내를 보인다. 보이는 조합은 한도 직전에 그 자리에 한 번 확정한다. 예산 안의 배율로 돌아오면 같은 모델로 다시 그리고 편집을 이어 간다(모델·revision·확정·dirty 그대로, 백엔드 전이 없음). `readPages()`는 페이지 정보의 올바름만 본다. 지원하는 가장 작은 배율(50%, DPR 1)로도 넘는 문서만 ready 전에 새 `ClientError` `RenderLimit`으로 거부한다(엔진 실패와 다른 문구). 진짜 WASM 그리기 예외는 계속 `EngineFailure(render)`다 |
+
+검증 중 함께 고친 것: 표면의 세션 구독을 `useEffect`에서 `useLayoutEffect`로 옮겼다. 처음 그리는 layout effect가 표시
+한도를 정하면서 내는 알림을 구독 전이라 놓쳐, 처음부터 예산을 넘는 문서가 빈 쪽으로 남던 것을 회귀 테스트로 확인했다.
+
+### 조합·revision 계약
+
+- 정상 조합: 끝날 때 문서가 바뀌었으면(글자를 남김 또는 선택을 지움) 변경 정확히 1개. 선택 없는 취소는 변경이 아니고,
+  선택을 지우고 취소하면 그 지우기만 1개(기존 계약 유지).
+- 엔진 호출이 예외를 던진 조합: 세지 않는다. pending·`localRevision`·Rust revision을 올리지 않으며 모델은 uncertain으로
+  보호된다(편집 중지, 닫기·reload는 버리기 확인 필요). 엔진에 되돌리기 보장이 없으므로 되돌림을 흉내 내지 않는다.
+- 변경 성공 뒤 화면 갱신 준비가 실패: 그 조합의 성공한 변경을 한 번 센다(확정은 보내지 않음, failed).
+- 끝난 조합의 중복 끝·늦은 확정·`insertCommittedAt`은 새 변경을 만들지 않는다(편집 불가 또는 끊긴 트랜잭션으로 소비).
+- 남은 한계: native transaction ID가 없으므로 새 입력 경계 뒤 도착한 옛 확정은 여전히 구별할 수 없다(4차 기록과 같음).
+
+### 실패 전이와 reload 순서
+
+```
+편집 중 실패(엔진·그리기·확정 거부) → status=failed(즉시, 편집 중지) + FailureTransition{generation, from, result}
+reload(discard 확인 뒤) → result 확인 ─ 성공·InvalidState(failed)·StaleLoad → epoch++ → 옛 모델·canvas 놓기 → document_load
+                                    └ 그 밖의 오류 → 한 번 다시 전이 ─ 확인 → 위와 같음
+                                                                  └ 실패 → failed(오류 표시), 모델 유지, 성공 알림 없음
+닫기 → dispose(epoch++) → 대기 중 reload는 StaleSession으로 끝남, 늦은 전이 응답은 무시
+```
+
+옛 모델을 놓는 시점은 (1) 사용자가 버리기를 확인했거나 미보존 변경이 없고 (2) 백엔드가 그 시도를 더 이상 ready·loading으로
+두지 않음을 확인한 뒤다. 새 모델과 옛 모델을 동시에 두지 않기 위해 `document_load` 전에 놓는다. 그 뒤 `document_load`가
+실패하면(예: `FileChanged`) Rust `LoadingGuard`가 세션을 failed로 돌리고 화면도 그 오류로 failed이며 다시 불러오기를 할 수 있다
+(버리기를 확인한 편집은 이미 버려졌고 성공으로 보고하지 않는다). 백엔드가 전이 요청에 영원히 답하지 않으면 reload도
+기다린다. IPC 응답 부재를 고정 시간으로 추정하지 않으며, 닫기는 계속 가능하다.
+
+### 렌더링 한도와 복구
+
+- 예산은 그대로다: per-canvas `16 * 1024 * 1024` pixels(RGBA 64 MiB), 활성 표면 합계 `32 * 1024 * 1024` pixels(128 MiB).
+  모든 그리기 전에 실제 배율(zoom × devicePixelRatio)로 검사하며 초과 bitmap은 할당하지 않는다.
+- 구분: 모델 손상·엔진 parse 실패(`EngineFailure parse`), 실제 WASM 그리기 예외와 잘못된 페이지 정보(`EngineFailure render`),
+  가장 작은 배율로도 그릴 수 없는 작업량(`RenderLimit`, ready 전 거부), 배율·DPR 때문인 초과(표시 한도, 복구 가능).
+- 배율 표시는 사용자가 고른 값 그대로이며 다른 배율로 몰래 그리지 않는다. 안내 문구가 그 배율을 그릴 수 없다고 말하고,
+  가장 작은 배율로도 안 되면(예: 고DPI) 배율을 낮추라고 하지 않는다. zoom 상태는 App 하나가 계속 소유한다.
+- 큰 문서: 100%에서만 넘는 문서(예: A4 46쪽, 16000×4096 px 한 쪽)는 이제 열리고 50%에서 편집할 수 있다. 50%·DPR 1로도
+  넘는 문서(예: 16383² px 한 쪽, A4 200쪽)는 열지 않는다. 가상화 없이 모든 쪽을 그리는 구조와 큰 문서의 재그리기 비용,
+  고DPI에서 더 낮은 한도는 그대로 남는다(T007 범위 밖).
+
+### 5차 검증 기록
+
+작업 디렉터리는 별도 표시가 없으면 저장소 루트다. 아래는 이번 실행의 결과이며 앞선 기록을 재사용하지 않았다.
+
+| 검사 | 실제 결과 |
+|------|-----------|
+| 수정 전 구현에 새 `fifthStabilization.test.tsx` | 30개 중 22 실패·8 통과(위 표의 원인) |
+| `npm run typecheck`, `npm run lint`, `npm test -- --reporter=dot`, `npm run build` | 오류 없음, Vitest 308개 통과(새 31개). 기존 테스트 중 옛 계약을 담은 것(전이 응답 전 reload, 예산 초과 = 실패)은 새 계약으로 바꾸고 단언은 유지·강화 |
+| Vitest 전체 반복(현재 36회·기준 코드 37회, 같은 장비에서 번갈아) | `stabilization.test.tsx`의 "Escape(취소)면 모델이 그대로다"가 현재 4/36, **기준 코드에서도 3/37** 간헐 실패(비율이 같아 이번 변경과 무관). 원인: 확인 창의 첫 초점이 passive `useEffect`라 `findByRole`이 창을 본 직후 아직 편집 textarea에 초점이 있을 수 있음. 실험으로 확인: 초점을 `useLayoutEffect`로 옮기면 0/20. 그러나 그 빌드에서 실제 Xvfb native close의 마지막 승인 단계가 3/3 실패(초점 복원이 승인 클릭 안에서 동기로 돌고 창이 WebDriver 응답 전에 사라짐; 원래 코드 빌드는 3/3 통과)해, 범위 밖 변경으로 보고 되돌렸다. 고치지 않음(별도 작업) |
+| `src-tauri`: `cargo fmt --check`, `cargo check --locked --all-targets`, `cargo clippy --locked --all-targets -- -D warnings`, `cargo test --locked` | 통과, 단위 51개 + 통합 1개(Rust 변경 없음) |
+| `VITE_GEUL_TEST_HOOKS=1 npm run tauri build -- --debug --no-bundle` | 통과(WASM `BUILD.json` commit `1a76570e`). 아래 실제 앱 결과는 최종 소스와 같은 앱 소스의 빌드에서 얻었다(그 뒤에는 시험 스크립트·문서만 바뀜; 위 초점 실험 빌드의 결과는 쓰지 않음) |
+| `python3 tests/e2e/tauri_smoke.py --app src-tauri/target/debug/geul --driver <TAURI_DRIVER>` | 62/62, 건너뜀 0(T004~T006) |
+| `python3 tests/integration/rhwp/rhwp_poc.py --app ... --driver ... --report <REPORT>` | 64/64. HWP/HWPX hit test 각각 32/32 정확·최대 편차 0, 입력 표본 각 86개 p95 83/77 ms(≤150), max 243/240 ms |
+| `python3 tests/integration/rhwp/fourth_stabilization.py --app ... --driver ...` | 22/22(과대 쪽 wide/tall·46쪽 합계는 새 정책대로 100% 표시 한도·canvas 없음, near-limit은 `RenderLimit`) |
+| 같은 명령 `--scenario dpi`(weston `--scale=2`, 실제 DPR 2) | 13/13 |
+| 같은 명령 `--scenario close --native-close`(Xvfb X11, IME 모듈 없음) | 4/4, 최종 소스 재빌드에서 다시 3회 모두 4/4 |
+| `python3 tests/integration/rhwp/fifth_stabilization.py --app ... --driver ...` | 19/19: 실제 키 편집 뒤 200% 한도(백엔드 ready·revision 그대로·canvas 0·입력 비활성)→100% 복귀 후 같은 모델 편집, 빠른 배율 변경, 46쪽 100% 한도→50% 46쪽 전부(10,263,244 px)·편집, 실제 그리기 예외는 엔진 실패, 실제 Rust 전이 응답을 보류하는 동안 reload가 새 세대를 시작하지 않고 응답 뒤 generation 2 ready·InvalidState 없음(HWP/HWPX) |
+| 같은 명령 `--scenario dpi`(실제 DPR 2) | 8/8: 50%(배율 1) 편집 → 100%(배율 2) 한도 → 50% 복귀·편집 |
+| 보안 | `npm audit` 취약점 0. `GITLEAKS=<GITLEAKS> scripts/security-scan-ci.sh .` 회귀 86개·추적 파일·이력·Gitleaks 통과. staged 검사는 커밋 때 pre-commit으로 실행 |
+
+환경: Linux, WebKitGTK 2.54.1, tauri-driver 2.x, weston 15.0.1 headless pixman `--idle-time=0`,
+`LIBGL_ALWAYS_SOFTWARE=1 WEBKIT_DISABLE_DMABUF_RENDERER=1`. native close·IME는 Xvfb 21.1.23 X11. HWP의 실제 표시 한도는
+바이너리 픽스처 크기를 바꾸지 않아 실제 앱에서는 HWPX로만 쟀다(HWP는 실제 앱 100/200% 정상 그리기·전이 순서, 한도는 결정적 시험).
+
+### 실제 한국어 IME 게이트(5차 재실행)
+
+`rhwp_poc.py --ime --ibus <IBUS> --xdotool <XDOTOOL>`, Xvfb X11 + WebKitGTK 2.54.1 + ibus 1.5.33 + ibus-hangul 1.5.5 두벌식,
+preedit syllable·초기 hangul 모드·`use-event-forwarding=false`·비동기 모드, 설정은 임시 디렉터리(keyfile). 실제 xdotool 키 입력이다.
+
+| 필수 항목(기준 변경 없음) | HWP | HWPX |
+|-------------------|-----|------|
+| 조합 중 글자가 문서에 보임(preedit) | FAIL(composing=false, 글자 수 15→15) | FAIL |
+| 조합 중 caret이 조합 글자 뒤 | FAIL(오프셋 15, 기대 16) | FAIL |
+| 확정 문자가 커서에 정확히 한 번·누락 없음 | PASS(`한글 입력 테스트`) | PASS |
+| 확정 음절·공백마다 revision 1 | PASS(0→9) | PASS(0→9) |
+| 동일 음절 연속(가가) | PASS(+2) | PASS(+2) |
+| 조합 중 ← | PASS | PASS |
+| 조합 중 클릭 | FAIL(넣은 글자 없음, revision +0, 클릭 뒤 이벤트 0) | FAIL |
+
+결과는 **FAIL, 4/7 PASS**, 종료 코드 1로 4차와 같다. 같은 WebView의 일반 textarea 탐침도 조합 중 이벤트 0개·값 0글자이고
+확정 때만 `input(composing)`·`compositionend`·`input`이 와서, 이 환경의 WebKitGTK가 preedit을 페이지에 전달하지 않는다는
+기존 관측과 같다. 이번 TypeScript 수정은 이 native 전달 문제를 고치지 않으며 그렇게 주장하지 않는다. 정상 확정의
+revision 회계(+9, 가가 +2)는 실제 키에서 중복·누락 없이 유지됐다. 선택 항목 창 초점 이동은 다른 X 창을 주지 않아 NOT RUN.
+preedit을 실제로 전달하는 데스크톱(GNOME/KDE의 ibus·fcitx5)·Windows/macOS는 이 환경에 없어 미검증이다. T007 체크박스는
+유지하며, T008 이후 작업은 시작하지 않았다.
+

@@ -51,15 +51,21 @@ async function reload(t: Awaited<ReturnType<typeof setup>>) {
   const doc = t.docs[0]!;
   vi.spyOn(doc, "renderPageToCanvas").mockImplementation(() => { throw Error("render"); });
   t.editor.renderPage(0, document.createElement("canvas"), 1);
-  const oldFailed = t.take("setState"); // 응답도 보류: markFailed continuation의 소유권 검증
+  const oldFailed = t.take("setState");
   const loading = t.editor.load({ discard: true });
+  await flush();
+  // 5차: 백엔드가 ready → failed 전이를 확인하기 전에는 옛 모델을 놓거나 document_load를 보내지 않는다.
+  expect(t.calls.some(c => c.method === "load")).toBe(false);
+  expect(doc.freed).toBe(false);
+  oldFailed.reply(ok(info({ state: "failed", loadGeneration: 1, sequence: 4 })));
+  await flush();
   t.take("load").reply(loaded(undefined, 2));
   await flush();
   const refresh = t.take("session");
   t.take("setState").reply(ok(info({ state: "ready", loadGeneration: 2, revision: 1, sequence: 6, dirty: true })));
   await loading;
   expect(t.editor.status.kind).toBe("ready");
-  return { oldFailed, refresh };
+  return { refresh };
 }
 
 async function answerCommits(calls: Call[], sessionId: number) {
@@ -126,12 +132,12 @@ describe("P1-A async generation ownership", () => {
       expect(t.editor.status.kind).toBe("ready");
     });
   }
-  it("ignores old markFailed and refresh responses including session removal", async () => {
+  // 5차: 옛 markFailed 응답은 reload가 먼저 기다린다(fifthStabilization.test.tsx). 늦은 옛 refresh는 여전히 무시한다.
+  it("ignores old refresh responses including session removal", async () => {
     const t = await setup(1, true);
     const refresh = t.take("session");
-    const { oldFailed } = await reload(t);
+    await reload(t);
     const projection = t.sessions.get(1);
-    oldFailed.reply(ok(info({ state: "failed", loadGeneration: 1, sequence: 4 })));
     refresh.reply(fail({ code: "StaleSession", sessionId: 1 }));
     await flush();
     expect(t.sessions.get(1)).toEqual(projection);
@@ -218,9 +224,11 @@ describe("P1-C normal terminal notifications shared across documents", () => {
 describe("P2-B bitmap resource budget", () => {
   for (const [name, pages, width, height] of [
     ["wide", 1, 16384, 4096], ["tall", 1, 4096, 16384],
-    ["near extent limit", 1, 16384, 16384], ["aggregate", 9, 2048, 2048],
+    ["near extent limit", 1, 16384, 16384], ["aggregate", 40, 2048, 2048],
   ] as const) {
-    it(`rejects valid metadata with unsafe 100% allocation: ${name}`, async () => {
+    // 5차: 예산은 그리는 배율에 대한 것이다. 지원하는 가장 작은 배율(50%)로도 넘는 문서만 ready 전에 거부한다
+    // (9 × 2048² 처럼 100%만 넘는 문서는 표시 한도로 연다: fifthStabilization.test.tsx).
+    it(`rejects valid metadata with unsafe allocation even at minimum zoom: ${name}`, async () => {
       const { backend, take } = controlledBackend();
       const sessions = new DocumentSessions(backend);
       const doc = new FakeDocument(["ab"]);
@@ -236,19 +244,27 @@ describe("P2-B bitmap resource budget", () => {
       expect(state.args).toEqual([1, 1, "loading", "failed"]);
       state.reply(ok(info({ state: "failed", loadGeneration: 1, sequence: 2 })));
       await loading;
-      expect(editor.status.kind).toBe("failed");
+      expect(editor.status).toEqual({ kind: "failed", error: { code: "RenderLimit" } });
       expect(doc.freed).toBe(true);
       expect(draw).not.toHaveBeenCalled();
     });
   }
-  it("refuses high-DPI unsafe zoom before drawing and preserves pending edit", async () => {
+  // 5차: 배율 초과는 엔진 실패가 아니라 복구할 수 있는 표시 한도다(그리지 않고 편집만 멈춤).
+  it("refuses high-DPI unsafe zoom before drawing as a recoverable limit and preserves pending edit", async () => {
     const t = await setup();
     t.editor.typeText("x");
     const draw = vi.spyOn(t.docs[0]!, "renderPageToCanvas");
     expect(t.editor.renderPage(0, document.createElement("canvas"), 8)).toBe(false);
     expect(draw).not.toHaveBeenCalled();
-    expect(t.editor.status.kind).toBe("failed");
+    expect(t.editor.status.kind).toBe("ready");
+    expect(t.editor.renderLimit).toBe(8);
+    expect(t.editor.editable).toBe(false);
     expect(t.editor.hasUnpreservedChanges).toBe(true);
+    expect(t.calls.some(call => call.method === "setState")).toBe(false);
+    expect(t.editor.renderPage(0, document.createElement("canvas"), 1)).toBe(true);
+    expect(draw).toHaveBeenCalledTimes(1);
+    expect(t.editor.editable).toBe(true);
+    expect(t.editor.localRevision).toBe(1);
   });
 });
 

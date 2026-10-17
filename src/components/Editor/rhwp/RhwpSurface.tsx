@@ -14,8 +14,13 @@
 // - 조합 중 방향키 등은 조합이 끝난 뒤 처리한다. 페이지를 누르면 ImeInput이 진행 중인 조합을 끝낸다. 페이지에 보이는
 //   조합이 있을 때만 textarea 초점을 뺐다가 돌려준다(IME가 그 조합을 버리게). 보이는 조합이 없으면 초점을 그대로 둔다:
 //   실측(WebKitGTK + ibus, sync mode)에서 초점을 빼면 IME가 클릭 때 내보내는 확정이 페이지에 오지 않아 음절이 사라졌다.
+// 표시 한도: 지금 배율 × devicePixelRatio로 그리면 픽셀 예산을 넘으면(세션의 renderLimit) 쪽을 그리지 않고 그 자리에
+// 이유와 할 일(배율 낮추기)을 알린다. 큰 bitmap을 할당하지 않고 이전 것도 놓으며, 편집은 멈춘다(보이는 조합은 한도에
+// 들어가기 직전에 그 자리에 확정). 배율 표시는 사용자가 고른 값 그대로이고 다른 배율로 몰래 그리지 않는다. 예산 안의
+// 배율로 돌아오면 같은 모델로 다시 그리고 편집을 이어 간다.
 // 응답 시간: 입력 이벤트 시각부터 바뀐 페이지를 다시 그린 뒤 두 번째 animation frame까지를 잰다(화면 반영의 상한).
 import { useCallback, useEffect, useLayoutEffect, useReducer, useRef, useState, type CSSProperties } from "react";
+import { ZOOM_STEPS } from "../../../hooks/layoutState";
 import { useTranslation } from "../../../language/LanguageContext";
 import { ImeContext, ImeInput } from "./imeInput";
 import type { RhwpEditorSession } from "./RhwpEditorSession";
@@ -30,9 +35,10 @@ interface RhwpSurfaceProps {
 
 const NAVIGATION_KEYS = new Set(["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown", "Home", "End", "Enter", "Tab", "Escape"]);
 
+/** 세션이 바뀔 때마다 다시 그린다. 그리기 layout effect보다 먼저 구독해, 처음 그릴 때의 상태 변화(표시 한도)도 받는다. */
 function useSessionUpdates(session: RhwpEditorSession) {
   const [, update] = useReducer((tick: number) => tick + 1, 0);
-  useEffect(() => session.subscribe(update), [session]);
+  useLayoutEffect(() => session.subscribe(update), [session]);
 }
 
 export function RhwpSurface({ session, zoom, imeContext }: RhwpSurfaceProps) {
@@ -67,7 +73,13 @@ export function RhwpSurface({ session, zoom, imeContext }: RhwpSurfaceProps) {
     }
     if (renderTimer.current !== null) window.clearTimeout(renderTimer.current);
     renderTimer.current = null;
-    if (!session.prepareRendering(scale * ratio)) return;
+    // 그리지 못했으면(표시 한도·실패) 다음 render에서 다시 확인한다. 한도에서 막 풀렸으면 쪽 canvas는 다음 commit에 생긴다.
+    const retry = () => {
+      rendered.current = { ...last, version: -1 };
+      inputAt.current = null;
+    };
+    if (!session.prepareRendering(scale * ratio, () => ime.current?.detach())) return retry();
+    if (canvases.current.size < session.pages.length) return retry();
     session.releaseRendering(); // 이전 bitmap과 새 크기의 bitmap이 함께 예산을 넘지 않게 한다
     rendered.current = { version: session.modelVersion, scale, ratio, pages: session.pages.length };
     // 커서 쪽을 먼저 그리고 나머지는 다음 task에 그린다. WebView가 frame clock을 멈춰도 빈 쪽으로 남기지 않는다.
@@ -235,10 +247,18 @@ export function RhwpSurface({ session, zoom, imeContext }: RhwpSurfaceProps) {
     left: rect.x * scale, top: rect.y * scale, width: rect.width * scale, height: rect.height * scale,
   });
 
+  const limited = session.renderLimit !== null;
+  // 가장 작은 배율로도 그릴 수 없으면 배율을 낮추라고 안내하지 않는다.
+  const minimum = limited && !session.fitsRendering((ZOOM_STEPS[0] / 100) * ratio);
   return (
     <div className="rhwp-surface">
       <div className="rhwp-pages" ref={pagesRef}>
-        {session.pages.map((size, page) => (
+        {limited && (
+          <p className="editor__notice rhwp-render-limit" role="alert" data-testid="rhwp-render-limit" data-minimum={minimum}>
+            {t(minimum ? "editor.rhwp.renderLimitMinimum" : "editor.rhwp.renderLimit", { zoom })}
+          </p>
+        )}
+        {!limited && session.pages.map((size, page) => (
           <div
             key={page}
             className="rhwp-page"
