@@ -49,6 +49,16 @@ impl Entry {
     pub fn is_encrypted(&self) -> bool {
         self.flags & 1 != 0
     }
+
+    /// 중앙 디렉터리가 선언한 압축 해제 크기.
+    pub fn uncompressed_size(&self) -> u64 {
+        self.uncompressed_size
+    }
+
+    #[cfg(test)]
+    pub fn name(&self) -> &[u8] {
+        &self.name
+    }
 }
 
 #[derive(Debug)]
@@ -335,22 +345,15 @@ impl Archive {
         self.extract(reader, entry, max, io::sink()).map(drop)
     }
 
-    fn extract<R: Read + Seek, W: Write>(
+    /// 로컬 헤더가 중앙 디렉터리 항목과 맞는지(서명·이름·암호화 비트) 확인하고 데이터 시작 위치를 돌려준다.
+    /// 암호화 비트는 어느 쪽이 1이든 다르면 손상이다(중앙 디렉터리를 따르는 판독기와 로컬 헤더를 따르는 스트리밍
+    /// 판독기가 같은 항목을 다르게 읽는다). 항목을 풀지 않으므로 암호화된 항목에도 쓸 수 있다.
+    pub fn check_local<R: Read + Seek>(
         &self,
         reader: &mut R,
         entry: &Entry,
-        max: u64,
-        out: W,
-    ) -> Result<W, ZipProblem> {
-        if entry.is_encrypted() {
-            return Err(ZipProblem::Encrypted);
-        }
-        // Deflate는 압축되지 않는 데이터에서 조금 커질 수 있다(64 KiB 블록마다 5바이트).
-        if entry.uncompressed_size > max || entry.compressed_size > max + max / 64 + 1024 {
-            return Err(ZipProblem::PartSize);
-        }
+    ) -> Result<u64, ZipProblem> {
         let local = read_at(reader, entry.local_offset, LOCAL_LEN)?;
-        // 로컬 헤더의 암호화 비트가 중앙 디렉터리와 다르면 판독기마다 다르게 해석할 수 있다.
         if le32(&local, 0) != LOCAL_SIG || (le16(&local, 6) ^ entry.flags) & 1 != 0 {
             return Err(ZipProblem::Corrupt);
         }
@@ -361,8 +364,32 @@ impl Archive {
             return Err(ZipProblem::Corrupt);
         }
         let data_start = entry.local_offset + LOCAL_LEN + name_len + extra_len;
-        if data_start + entry.compressed_size > self.directory_offset {
+        if data_start
+            .checked_add(entry.compressed_size)
+            .is_none_or(|end| end > self.directory_offset)
+        {
             return Err(ZipProblem::Corrupt);
+        }
+        Ok(data_start)
+    }
+
+    /// `read`와 `verify`가 함께 쓰는 판정. 순서: 로컬 헤더 일치(손상) → 암호화 → 크기 상한 → 풀기.
+    /// 압축 데이터는 선언한 압축 크기 범위가 정확히 하나의 deflate 스트림이어야 한다(뒤에 남은 바이트·이어 붙인
+    /// 스트림은 손상). 데이터 서술자는 압축 크기 범위 밖에 있으므로 영향이 없다.
+    fn extract<R: Read + Seek, W: Write>(
+        &self,
+        reader: &mut R,
+        entry: &Entry,
+        max: u64,
+        out: W,
+    ) -> Result<W, ZipProblem> {
+        let data_start = self.check_local(reader, entry)?;
+        if entry.is_encrypted() {
+            return Err(ZipProblem::Encrypted);
+        }
+        // Deflate는 압축되지 않는 데이터에서 조금 커질 수 있다(64 KiB 블록마다 5바이트).
+        if entry.uncompressed_size > max || entry.compressed_size > max + max / 64 + 1024 {
+            return Err(ZipProblem::PartSize);
         }
         reader
             .seek(SeekFrom::Start(data_start))
@@ -373,25 +400,32 @@ impl Archive {
             crc: Crc::new(),
             len: 0,
         };
-        // 상한보다 1바이트 더 풀어 보면 상한을 넘는지 알 수 있다.
-        let copied = match entry.method {
-            0 if entry.compressed_size != entry.uncompressed_size => {
-                return Err(ZipProblem::Corrupt)
-            }
-            0 => io::copy(&mut compressed.take(max + 1), &mut checked),
-            8 => io::copy(
-                &mut DeflateDecoder::new(compressed).take(max + 1),
-                &mut checked,
-            ),
-            _ => return Err(ZipProblem::UnsupportedMethod),
-        }
-        .map_err(|error| match error.kind() {
+        let corrupt = |error: io::Error| match error.kind() {
             // 압축 데이터 손상(flate2)·항목 범위 안에서 끝난 데이터
             io::ErrorKind::InvalidInput
             | io::ErrorKind::InvalidData
             | io::ErrorKind::UnexpectedEof => ZipProblem::Corrupt,
             _ => ZipProblem::Io,
-        })?;
+        };
+        // 상한보다 1바이트 더 풀어 보면 상한을 넘는지 알 수 있다.
+        let copied = match entry.method {
+            0 if entry.compressed_size != entry.uncompressed_size => {
+                return Err(ZipProblem::Corrupt)
+            }
+            0 => io::copy(&mut compressed.take(max + 1), &mut checked).map_err(corrupt)?,
+            8 => {
+                let mut decoder = DeflateDecoder::new(compressed);
+                let copied =
+                    io::copy(&mut (&mut decoder).take(max + 1), &mut checked).map_err(corrupt)?;
+                // flate2는 스트림 끝(마지막 블록)에서만 0을 돌려주고, 끝나기 전에 입력이 다하면 UnexpectedEof다.
+                // total_in은 해제기가 실제로 쓴 입력(미리 읽어 둔 버퍼가 아님)이므로 범위를 다 썼는지 알 수 있다.
+                if copied <= max && decoder.total_in() != entry.compressed_size {
+                    return Err(ZipProblem::Corrupt);
+                }
+                copied
+            }
+            _ => return Err(ZipProblem::UnsupportedMethod),
+        };
         if copied > max {
             return Err(ZipProblem::PartSize);
         }

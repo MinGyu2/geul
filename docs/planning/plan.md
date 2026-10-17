@@ -2,7 +2,7 @@
 
 Date: 2026-10-13
 Spec: [spec.md](./spec.md)
-Status: Revised draft — 2026-10-16 실제 저장소 검사, submodule 고정, 보안 게이트 로컬 구현·2차 재검토 완료(원격 브랜치 보호는 미설정), Tauri/React 6영역 UI 기반(T004) 구현. 2026-10-17 T006: 문서 형식 판별·세션 기록·어댑터 계약 구현(엔진 연결 없음), 같은 날 리뷰 지적 5건 안정화(판별 규칙·동시 판별 자리). 엔진 통합·화면에서 문서 열기·저장은 미착수
+Status: Revised draft — 2026-10-16 실제 저장소 검사, submodule 고정, 보안 게이트 로컬 구현·2차 재검토 완료(원격 브랜치 보호는 미설정), Tauri/React 6영역 UI 기반(T004) 구현. 2026-10-17 T006: 문서 형식 판별·세션 기록·어댑터 계약 구현(엔진 연결 없음), 같은 날 리뷰 지적 5건 안정화(판별 규칙·동시 판별 자리)와 3건 2차 안정화(ZIP 무결성·mimetype 분류 순서). 엔진 통합·화면에서 문서 열기·저장은 미착수
 
 ## Summary
 WordCraft는 DOCX, rhwp는 HWP/HWPX 전용 엔진으로 독립 관리한다. Tauri 2 + React/TypeScript 6개 영역 UI에 문서별 어댑터, 공통 명령/상태 계층을 결합한다. 고급 리본보다 렌더·IME·선택·쓰기 무손실 검증과 공개 저장소 보안 게이트를 우선한다.
@@ -90,7 +90,11 @@ interface EditorAdapter {
   `encryption-data` 요소가 있으면 암호화, 읽을 수 없는 manifest는 `ParseFailure`). DOCX = ZIP + OPC 구조를 따르는
   `[Content_Types].xml`·`_rels/.rels`(이름공간·루트·루트 바로 아래 위치·`Id`·Default/Override 중복 없음·DTD 없음) + officeDocument
   대상 부분이 있고 내용 형식이 WordprocessingML 문서 본문(docm·dotx·XLSX 등은 거부). HWPX·DOCX 모두 ZIP 항목 하나라도 암호화
-  플래그가 있으면 `Encrypted`, 읽는 항목의 로컬 헤더와 중앙 디렉터리 암호화 비트가 다르면 손상. 두 표식이 함께 있으면 `Ambiguous`.
+  플래그가 있으면 `Encrypted`. 판별이 읽거나 확인하는 항목(HWPX mimetype·manifest·content.hpf·header.xml, DOCX 내용 형식·패키지
+  관계·본문 부분)은 로컬 헤더와 중앙 디렉터리의 암호화 비트가 어느 방향으로든 다르면 손상이고 이 판정이 `Encrypted`보다 먼저다.
+  풀어 읽는 deflate 항목은 선언한 압축 크기 범위가 정확히 하나의 스트림이어야 한다(뒤에 남은 바이트는 손상). 두 표식이 함께
+  있으면 `Ambiguous`. `mimetype`은 HWPX 선언(19바이트)일 수 있을 때만 읽으므로 OPC 패키지의 관계없는 `mimetype`은 DOCX 판별에
+  영향이 없다.
   rhwp `detect_format`은 모든 OLE를 HWP로 보므로 쓰지 않는다. 판별은 선택한 컨테이너 불변식까지만 확인하며 본문·header.xml의
   XML 내용, 엔진 불러오기(T007/T008), 저장 왕복 무결성(T009)을 보장하지 않는다.
 - 자원 한계: 문서 512 MiB, ZIP 항목 20,000개·중앙 디렉터리 8 MiB·이름 4,096바이트, 판별용 XML 항목 1 MiB(선언 크기와

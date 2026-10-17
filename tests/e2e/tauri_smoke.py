@@ -573,6 +573,33 @@ def with_entry(data: bytes, name: str, content: bytes) -> bytes:
 ODF_MANIFEST = "urn:oasis:names:tc:opendocument:xmlns:manifest:1.0"
 
 
+def raw_zip(data: bytes, *, trailing: dict[str, bytes] | None = None,
+            flags: dict[str, tuple[int, int]] | None = None) -> bytes:
+    """`data`(ZIP)의 항목을 그대로 다시 쓰되, 지정한 항목의 압축 데이터 뒤에 바이트를 붙이거나(선언한 압축 크기에
+    포함) 중앙 디렉터리·로컬 헤더의 플래그를 따로 정한다. zipfile로는 만들 수 없는 손상 입력용이다."""
+    import io
+    import zlib
+    trailing, flags = trailing or {}, flags or {}
+    source = zipfile.ZipFile(io.BytesIO(data))
+    out, central = bytearray(), bytearray()
+    for info in source.infolist():
+        content = source.read(info.filename)
+        if info.compress_type == zipfile.ZIP_DEFLATED:
+            packer = zlib.compressobj(6, zlib.DEFLATED, -15)
+            body, method = packer.compress(content) + packer.flush(), 8
+        else:
+            body, method = content, 0
+        body += trailing.get(info.filename, b"")
+        central_flags, local_flags = flags.get(info.filename, (0, 0))
+        name, crc, offset = info.filename.encode(), zlib.crc32(content), len(out)
+        out += struct.pack("<IHHHIIIIHH", 0x04034B50, 20, local_flags, method, 0, crc, len(body), len(content),
+                           len(name), 0) + name + body
+        central += struct.pack("<IHHHHIIIIHHHHHII", 0x02014B50, 20, 20, central_flags, method, 0, crc, len(body),
+                               len(content), len(name), 0, 0, 0, 0, 0, offset) + name
+    count = len(source.infolist())
+    return bytes(out + central + struct.pack("<IHHHHIIH", 0x06054B50, 0, 0, count, count, len(central), len(out), 0))
+
+
 def make_hwp() -> bytes:
     """CFB v3(512바이트 섹터). 스트림을 모두 4096바이트로 만들어 미니 스트림 없이 일반 섹터에 둔다."""
     sector, free, end, fat_sector, no_stream = 512, 0xFFFFFFFF, 0xFFFFFFFE, 0xFFFFFFFD, 0xFFFFFFFF
@@ -702,6 +729,31 @@ def run_document_sessions(start_session, results: list[str]) -> None:
             }
             check(results, "문서 세션: 주석 속 encryption-data는 암호화가 아니고 UTF-16 manifest의 암호화 요소·필수 항목 CRC 손상·"
                   "DOCX 부가 항목 암호화·이름공간 없는 OPC 관계를 거부",
+                  got == want, json.dumps(got, ensure_ascii=False))
+
+            # T006 2차 안정화: 암호화 비트 불일치 우선순위(F), deflate 뒤 바이트(G), 관계없는 mimetype(H)
+            second = {
+                "mimetype.docx": with_entry(make_docx(), "mimetype", b"x" * 300),
+                "trailing.docx": raw_zip(make_docx(), trailing={"[Content_Types].xml": b"JUNK"}),
+                "plain.docx": raw_zip(make_docx()),
+                "flag.hwpx": raw_zip(make_hwpx(), flags={"Contents/header.xml": (1, 0),
+                                                         "Contents/section0.xml": (1, 1)}),
+                "locked.hwpx": raw_zip(make_hwpx(), flags={"Contents/section0.xml": (1, 1)}),
+            }
+            for name, data in second.items():
+                (root / name).write_bytes(data)
+            got = {name: call("document_open", {"path": path(name)}) for name in second}
+            opened_info = lambda session_id, name: {"ok": {"sessionId": session_id, "format": "docx", "engine": "wordcraft",
+                                                           "revision": 0, "state": "identified", "displayName": name}}
+            want = {
+                "mimetype.docx": opened_info(6, "mimetype.docx"),
+                "trailing.docx": {"err": {"code": "ParseFailure", "reason": "corrupt-container"}},
+                "plain.docx": opened_info(7, "plain.docx"),
+                "flag.hwpx": {"err": {"code": "ParseFailure", "format": "hwpx", "reason": "corrupt-container"}},
+                "locked.hwpx": {"err": {"code": "Encrypted", "format": "hwpx"}},
+            }
+            check(results, "문서 세션: 관계없는 큰 mimetype의 DOCX는 열리고, deflate 뒤에 남은 바이트와 필수 항목의 "
+                  "암호화 비트 불일치(다른 항목이 암호화돼 있어도)는 손상, 일관된 암호화는 Encrypted",
                   got == want, json.dumps(got, ensure_ascii=False))
 
             ui = driver.js("""

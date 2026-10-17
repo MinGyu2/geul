@@ -1384,3 +1384,415 @@ fn opc_관계와_내용_형식의_구조를_확인한다() {
     assert_eq!(detect_bytes(&zip(&utf16_entries, false)), Ok(Format::Docx));
     assert_eq!(detect_bytes(&zip(&utf16_entries, true)), Ok(Format::Docx));
 }
+
+// ---- T006 2차 안정화: 리뷰 지적 F~H 회귀 ----
+
+fn with_flags(mut item: ZipEntry, central: u16, local: u16) -> ZipEntry {
+    item.flags = central;
+    item.local_flags = Some(local);
+    item
+}
+
+fn replace(entries: &[ZipEntry], item: ZipEntry) -> Vec<ZipEntry> {
+    let mut entries: Vec<_> = entries
+        .iter()
+        .filter(|entry| entry.name != item.name)
+        .cloned()
+        .collect();
+    entries.push(item);
+    entries
+}
+
+fn named(entries: &[ZipEntry], name: &str) -> ZipEntry {
+    entries
+        .iter()
+        .find(|item| item.name == name)
+        .unwrap()
+        .clone()
+}
+
+/// F: 판별이 읽거나 확인하는 항목은 중앙 디렉터리와 로컬 헤더의 암호화 비트가 같아야 하고(어느 쪽이 1이든 불일치는
+/// 손상), 그 확인이 패키지 전체 암호화 검사보다 먼저다. 읽지 않는 부가 항목은 중앙 디렉터리 플래그를 따른다.
+#[test]
+fn 암호화_비트_불일치는_방향과_관계없이_손상이고_암호화보다_먼저다() {
+    let hwpx_corrupt = parse(Some(Format::Hwpx), ParseProblem::CorruptContainer);
+    let hwpx_encrypted = Err(DocumentError::Encrypted {
+        format: Some(Format::Hwpx),
+    });
+    let docx_encrypted = Err(DocumentError::Encrypted {
+        format: Some(Format::Docx),
+    });
+    let mut hwpx_base = hwpx_entries();
+    hwpx_base.push(entry(
+        "META-INF/manifest.xml",
+        format!(r#"<odf:manifest xmlns:odf="{ODF_MANIFEST}"/>"#).as_bytes(),
+    ));
+    // (중앙, 로컬) → 기대
+    let matrix = |consistent: Result<Format, DocumentError>,
+                  mismatch: Result<Format, DocumentError>,
+                  encrypted: Result<Format, DocumentError>| {
+        [
+            ((0, 0), consistent),
+            ((0, 1), mismatch.clone()),
+            ((1, 0), mismatch),
+            ((1, 1), encrypted),
+        ]
+    };
+    let mut cases = Vec::new();
+    for name in [
+        "mimetype",
+        "META-INF/manifest.xml",
+        "Contents/content.hpf",
+        "Contents/header.xml",
+    ] {
+        for (flags, expected) in matrix(
+            Ok(Format::Hwpx),
+            hwpx_corrupt.clone(),
+            hwpx_encrypted.clone(),
+        ) {
+            cases.push((hwpx_base.clone(), name, flags, expected));
+        }
+    }
+    for (flags, expected) in matrix(Ok(Format::Hwpx), Ok(Format::Hwpx), hwpx_encrypted.clone()) {
+        let expected = if flags == (1, 0) {
+            hwpx_encrypted.clone()
+        } else {
+            expected
+        };
+        cases.push((hwpx_base.clone(), "Contents/section0.xml", flags, expected));
+    }
+    for name in ["[Content_Types].xml", "_rels/.rels"] {
+        for (flags, expected) in matrix(
+            Ok(Format::Docx),
+            parse(None, ParseProblem::CorruptContainer),
+            Err(DocumentError::Encrypted { format: None }),
+        ) {
+            cases.push((docx_entries(), name, flags, expected));
+        }
+    }
+    // 본문 부분은 풀지 않지만 필수 부분이므로 로컬 헤더를 확인한다.
+    for (flags, expected) in matrix(
+        Ok(Format::Docx),
+        parse(Some(Format::Docx), ParseProblem::CorruptContainer),
+        docx_encrypted.clone(),
+    ) {
+        cases.push((docx_entries(), "word/document.xml", flags, expected));
+    }
+    let mut docx_media = docx_entries();
+    docx_media.push(entry("word/media/image1.png", b"\x89PNG"));
+    for (flags, expected) in [
+        ((0, 0), Ok(Format::Docx)),
+        ((0, 1), Ok(Format::Docx)),
+        ((1, 0), docx_encrypted.clone()),
+        ((1, 1), docx_encrypted.clone()),
+    ] {
+        cases.push((docx_media.clone(), "word/media/image1.png", flags, expected));
+    }
+
+    let mut failures = Vec::new();
+    for (base, name, (central, local), expected) in cases {
+        let entries = replace(&base, with_flags(named(&base, name), central, local));
+        for zip64 in [false, true] {
+            let got = detect_bytes(&zip(&entries, zip64));
+            if got != expected {
+                failures.push(format!(
+                    "{name} central={central} local={local} zip64={zip64}: got {got:?}, expected {expected:?}"
+                ));
+            }
+        }
+    }
+    // 우선순위: 다른 항목이 일관되게 암호화돼 있어도, 확인하는 필수 항목의 불일치는 손상이다.
+    for (base, flagged, broken, expected) in [
+        (
+            hwpx_base.clone(),
+            "Contents/section0.xml",
+            "Contents/header.xml",
+            hwpx_corrupt.clone(),
+        ),
+        (
+            docx_media.clone(),
+            "word/media/image1.png",
+            "word/document.xml",
+            parse(Some(Format::Docx), ParseProblem::CorruptContainer),
+        ),
+    ] {
+        let entries = replace(&base, with_flags(named(&base, flagged), 1, 1));
+        let entries = replace(&entries, with_flags(named(&entries, broken), 1, 0));
+        let got = detect_bytes(&zip(&entries, false));
+        if got != expected {
+            failures.push(format!(
+                "precedence {broken}: got {got:?}, expected {expected:?}"
+            ));
+        }
+    }
+    assert!(failures.is_empty(), "{}", failures.join("\n"));
+}
+
+/// G: deflate 스트림은 선언한 압축 데이터 범위를 정확히 다 써야 한다(뒤에 남은 바이트·이어 붙인 두 번째 스트림 거부).
+/// `read`와 `verify`는 같은 판정을 한다.
+#[test]
+fn deflate_스트림은_선언한_압축_범위를_정확히_소비해야_한다() {
+    use super::zip::{read_directory, ZipProblem};
+    let corrupt = parse(None, ParseProblem::CorruptContainer);
+    let types = content_types("word/document.xml", DOCX_MAIN);
+    let with_types = |item: ZipEntry| zip(&replace(&docx_entries(), item), false);
+    let base = || entry("[Content_Types].xml", types.as_bytes());
+    let stream = deflate(types.as_bytes());
+
+    let mut trailing = base();
+    trailing.body = Some([stream.clone(), b"JUNK".to_vec()].concat());
+    let mut concatenated = base();
+    concatenated.body = Some([stream.clone(), deflate(b"<!-- more -->")].concat());
+    let mut truncated = base();
+    truncated.body = Some(stream[..stream.len() - 3].to_vec());
+    let mut descriptor_inside = base();
+    descriptor_inside.data_descriptor = true;
+    descriptor_inside.compressed_size = Some(stream.len() as u32 + 16);
+    let mut wrong_size = base();
+    wrong_size.declared_size = Some(types.len() as u32 + 1);
+    let mut wrong_crc = base();
+    wrong_crc.crc = Some(0);
+    let mut descriptor = base();
+    descriptor.data_descriptor = true;
+    let mut stored_descriptor = stored("[Content_Types].xml", types.as_bytes());
+    stored_descriptor.data_descriptor = true;
+
+    let mut failures = Vec::new();
+    for (label, bytes, expected) in [
+        ("정확한 deflate", with_types(base()), Ok(Format::Docx)),
+        (
+            "stored",
+            with_types(stored("[Content_Types].xml", types.as_bytes())),
+            Ok(Format::Docx),
+        ),
+        ("데이터 서술자", with_types(descriptor), Ok(Format::Docx)),
+        (
+            "stored 데이터 서술자",
+            with_types(stored_descriptor),
+            Ok(Format::Docx),
+        ),
+        (
+            "뒤에 남은 바이트",
+            with_types(trailing.clone()),
+            corrupt.clone(),
+        ),
+        (
+            "이어 붙인 스트림",
+            with_types(concatenated.clone()),
+            corrupt.clone(),
+        ),
+        (
+            "잘린 스트림",
+            with_types(truncated.clone()),
+            corrupt.clone(),
+        ),
+        (
+            "서술자를 압축 크기에 포함",
+            with_types(descriptor_inside.clone()),
+            corrupt.clone(),
+        ),
+        (
+            "선언 크기 불일치",
+            with_types(wrong_size.clone()),
+            corrupt.clone(),
+        ),
+        ("CRC 불일치", with_types(wrong_crc.clone()), corrupt.clone()),
+    ] {
+        let got = detect_bytes(&bytes);
+        if got != expected {
+            failures.push(format!("{label}: got {got:?}, expected {expected:?}"));
+        }
+    }
+    // HWPX header.xml(내용을 모으지 않는 verify 경로)에서도 같다.
+    let header = named(&hwpx_entries(), "Contents/header.xml");
+    let mut header_trailing = header.clone();
+    header_trailing.body = Some([deflate(&header.data), vec![0; 9]].concat());
+    let got = detect_bytes(&zip(&replace(&hwpx_entries(), header_trailing), true));
+    if got != parse(Some(Format::Hwpx), ParseProblem::CorruptContainer) {
+        failures.push(format!("header.xml 뒤 바이트(verify, zip64): got {got:?}"));
+    }
+
+    // 빈 deflate 스트림은 올바르고, 길이 0인 압축 데이터는 deflate 스트림이 아니다. read와 verify는 같은 판정을 한다.
+    let mut empty_raw = entry("empty-raw", b"");
+    empty_raw.body = Some(Vec::new());
+    let items = vec![
+        entry("ok", types.as_bytes()),
+        entry("empty", b""),
+        empty_raw,
+        stored("stored", b"abc"),
+        ZipEntry {
+            name: "trailing".into(),
+            ..trailing
+        },
+        ZipEntry {
+            name: "concatenated".into(),
+            ..concatenated
+        },
+        ZipEntry {
+            name: "truncated".into(),
+            ..truncated
+        },
+        ZipEntry {
+            name: "wrong-size".into(),
+            ..wrong_size
+        },
+        ZipEntry {
+            name: "wrong-crc".into(),
+            ..wrong_crc
+        },
+    ];
+    let bytes = zip(&items, false);
+    let mut cursor = Cursor::new(&bytes);
+    let archive = read_directory(
+        &mut cursor,
+        bytes.len() as u64,
+        &ZipLimits {
+            max_entries: 100,
+            max_directory_bytes: 1 << 20,
+            max_name_bytes: 256,
+        },
+    )
+    .unwrap();
+    let expected: [Result<(), ZipProblem>; 9] = [
+        Ok(()),
+        Ok(()),
+        Err(ZipProblem::Corrupt),
+        Ok(()),
+        Err(ZipProblem::Corrupt),
+        Err(ZipProblem::Corrupt),
+        Err(ZipProblem::Corrupt),
+        Err(ZipProblem::Corrupt),
+        Err(ZipProblem::Corrupt),
+    ];
+    for (item, expected) in archive.entries().iter().zip(expected) {
+        let read = archive.read(&mut cursor, item, 1 << 20).map(drop);
+        let verify = archive.verify(&mut cursor, item, 1 << 20);
+        if read != verify || read != expected {
+            failures.push(format!(
+                "{:?}: read {read:?}, verify {verify:?}, expected {expected:?}",
+                String::from_utf8_lossy(item.name())
+            ));
+        }
+    }
+    assert!(failures.is_empty(), "{}", failures.join("\n"));
+}
+
+/// H: OPC 패키지의 `mimetype` 항목은 HWPX 선언(정확히 `application/hwp+zip`)일 수 있을 때만 읽는다. 크기가 다르면
+/// 읽지 않고도 HWPX 선언이 아님을 안다. HWPX 후보에서는 mimetype이 HWPX 선언이 아니면 정하지 않는다(`Ambiguous`).
+#[test]
+fn 관계없는_mimetype_항목은_docx_판별을_막지_않는다() {
+    let docx_with_mimetype = |item: ZipEntry| {
+        let mut entries = docx_entries();
+        entries.insert(0, item);
+        zip(&entries, false)
+    };
+    let mut corrupt_crc = stored("mimetype", b"text/plain");
+    corrupt_crc.crc = Some(0);
+    let mut unsupported_method = entry("mimetype", b"application/x-unrelated");
+    unsupported_method.body = Some(vec![0; 8]);
+    unsupported_method.compressed_size = Some(8);
+    let mut encrypted_other = stored("mimetype", b"application/x-unrelated-type");
+    encrypted_other.flags = 1;
+    let mut corrupt_hwpx_declaration = stored("mimetype", b"application/hwp+zip");
+    corrupt_hwpx_declaration.crc = Some(0);
+    let ambiguous = unsupported(UnsupportedKind::Ambiguous);
+
+    let mut failures = Vec::new();
+    let mut check = |label: &str, bytes: Vec<u8>, expected: Result<Format, DocumentError>| {
+        let got = detect_bytes(&bytes);
+        if got != expected {
+            failures.push(format!("{label}: got {got:?}, expected {expected:?}"));
+        }
+    };
+    check("DOCX", docx(), Ok(Format::Docx));
+    check(
+        "DOCX + 작은 mimetype",
+        docx_with_mimetype(stored("mimetype", b"text/plain")),
+        Ok(Format::Docx),
+    );
+    check(
+        "DOCX + 256바이트 넘는 mimetype",
+        docx_with_mimetype(entry("mimetype", &[b'x'; 300])),
+        Ok(Format::Docx),
+    );
+    check(
+        "DOCX + CRC 손상 mimetype",
+        docx_with_mimetype(corrupt_crc),
+        Ok(Format::Docx),
+    );
+    check(
+        "DOCX + 깨진 deflate mimetype",
+        docx_with_mimetype(unsupported_method),
+        Ok(Format::Docx),
+    );
+    check(
+        "DOCX + 암호화된 다른 mimetype",
+        docx_with_mimetype(encrypted_other),
+        Err(DocumentError::Encrypted {
+            format: Some(Format::Docx),
+        }),
+    );
+    // HWPX 선언일 수 있는 19바이트 mimetype은 읽어야 하고, 읽을 수 없으면 통과시키지 않는다.
+    check(
+        "DOCX + HWPX mimetype",
+        docx_with_mimetype(stored("mimetype", b"application/hwp+zip")),
+        ambiguous.clone(),
+    );
+    check(
+        "DOCX + 손상된 19바이트 mimetype",
+        docx_with_mimetype(corrupt_hwpx_declaration.clone()),
+        parse(None, ParseProblem::CorruptContainer),
+    );
+
+    let hwpx_with_mimetype = |item: Option<ZipEntry>| {
+        let mut entries: Vec<_> = hwpx_entries()
+            .into_iter()
+            .filter(|entry| entry.name != "mimetype")
+            .collect();
+        if let Some(item) = item {
+            entries.insert(0, item);
+        }
+        zip(&entries, false)
+    };
+    check("HWPX", hwpx(), Ok(Format::Hwpx));
+    check(
+        "HWPX mimetype 없음",
+        hwpx_with_mimetype(None),
+        Ok(Format::Hwpx),
+    );
+    check(
+        "HWPX + 다른 mimetype",
+        hwpx_with_mimetype(Some(stored("mimetype", b"application/zip"))),
+        ambiguous.clone(),
+    );
+    check(
+        "HWPX + 큰 다른 mimetype",
+        hwpx_with_mimetype(Some(entry("mimetype", &[b'x'; 300]))),
+        ambiguous.clone(),
+    );
+    check(
+        "HWPX + 손상된 19바이트 mimetype",
+        hwpx_with_mimetype(Some(corrupt_hwpx_declaration)),
+        parse(Some(Format::Hwpx), ParseProblem::CorruptContainer),
+    );
+    check(
+        "HWPX 선언만 있음",
+        zip(&[stored("mimetype", b"application/hwp+zip")], false),
+        parse(Some(Format::Hwpx), ParseProblem::MissingPart),
+    );
+    let mut both = hwpx_entries();
+    both.extend(docx_entries());
+    check("HWPX + OPC 표식", zip(&both, false), ambiguous.clone());
+    let mut big_mime_both: Vec<_> = both
+        .iter()
+        .filter(|entry| entry.name != "mimetype")
+        .cloned()
+        .collect();
+    big_mime_both.push(entry("mimetype", &[b'x'; 300]));
+    check(
+        "HWPX 항목 + OPC 표식 + 큰 mimetype",
+        zip(&big_mime_both, false),
+        ambiguous,
+    );
+    assert!(failures.is_empty(), "{}", failures.join("\n"));
+}

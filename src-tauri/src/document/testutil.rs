@@ -21,6 +21,10 @@ pub struct ZipEntry {
     pub body: Option<Vec<u8>>,
     /// 로컬 헤더에만 쓸 플래그(중앙 디렉터리와 다르게).
     pub local_flags: Option<u16>,
+    /// 압축 데이터 길이 대신 선언할 값(두 헤더 모두).
+    pub compressed_size: Option<u32>,
+    /// 데이터 서술자 사용(플래그 비트 3): 로컬 헤더의 CRC·크기를 0으로 두고 데이터 뒤에 서술자를 쓴다.
+    pub data_descriptor: bool,
 }
 
 pub fn entry(name: &str, data: &[u8]) -> ZipEntry {
@@ -34,7 +38,16 @@ pub fn entry(name: &str, data: &[u8]) -> ZipEntry {
         local_name: None,
         body: None,
         local_flags: None,
+        compressed_size: None,
+        data_descriptor: false,
     }
+}
+
+/// 원시 deflate 스트림(ZIP 압축 방식 8의 데이터).
+pub fn deflate(data: &[u8]) -> Vec<u8> {
+    let mut encoder = DeflateEncoder::new(Vec::new(), Compression::default());
+    encoder.write_all(data).unwrap();
+    encoder.finish().unwrap()
 }
 
 pub fn stored(name: &str, data: &[u8]) -> ZipEntry {
@@ -58,9 +71,7 @@ pub fn zip(entries: &[ZipEntry], zip64: bool) -> Vec<u8> {
         let body = if let Some(body) = &item.body {
             body.clone()
         } else if item.deflate {
-            let mut encoder = DeflateEncoder::new(Vec::new(), Compression::default());
-            encoder.write_all(&item.data).unwrap();
-            encoder.finish().unwrap()
+            deflate(&item.data)
         } else {
             item.data.clone()
         };
@@ -69,27 +80,39 @@ pub fn zip(entries: &[ZipEntry], zip64: bool) -> Vec<u8> {
         let method: u16 = if item.deflate { 8 } else { 0 };
         let offset = out.len() as u32;
         let local_name = item.local_name.as_deref().unwrap_or(&item.name);
+        let compressed = item.compressed_size.unwrap_or(body.len() as u32);
+        let descriptor: u16 = if item.data_descriptor { 1 << 3 } else { 0 };
         out.extend(0x0403_4b50u32.to_le_bytes());
         out.extend(20u16.to_le_bytes());
-        out.extend(item.local_flags.unwrap_or(item.flags).to_le_bytes());
+        out.extend((item.local_flags.unwrap_or(item.flags) | descriptor).to_le_bytes());
         out.extend(method.to_le_bytes());
         out.extend([0u8; 4]); // 시각
-        out.extend(crc.to_le_bytes());
-        out.extend((body.len() as u32).to_le_bytes());
-        out.extend(size.to_le_bytes());
+        if item.data_descriptor {
+            out.extend([0u8; 12]); // CRC·크기는 데이터 서술자에 있다
+        } else {
+            out.extend(crc.to_le_bytes());
+            out.extend(compressed.to_le_bytes());
+            out.extend(size.to_le_bytes());
+        }
         out.extend((local_name.len() as u16).to_le_bytes());
         out.extend(0u16.to_le_bytes());
         out.extend(local_name.as_bytes());
         out.extend(&body);
+        if item.data_descriptor {
+            out.extend(0x0807_4b50u32.to_le_bytes());
+            out.extend(crc.to_le_bytes());
+            out.extend(compressed.to_le_bytes());
+            out.extend(size.to_le_bytes());
+        }
 
         central.extend(0x0201_4b50u32.to_le_bytes());
         central.extend(20u16.to_le_bytes());
         central.extend(20u16.to_le_bytes());
-        central.extend(item.flags.to_le_bytes());
+        central.extend((item.flags | descriptor).to_le_bytes());
         central.extend(method.to_le_bytes());
         central.extend([0u8; 4]);
         central.extend(crc.to_le_bytes());
-        central.extend((body.len() as u32).to_le_bytes());
+        central.extend(compressed.to_le_bytes());
         central.extend(size.to_le_bytes());
         central.extend((item.name.len() as u16).to_le_bytes());
         central.extend(0u16.to_le_bytes()); // 확장 필드

@@ -9,6 +9,10 @@
 //!   officeDocument 대상 부분이 존재하며 그 내용 형식이 WordprocessingML 문서 본문이다. 다른 OOXML(XLSX·PPTX)이나
 //!   docm·dotx는 docx로 보지 않는다. 본문 부분은 풀지 않는다(엔진 몫, T008).
 //! - 암호화: HWPX·DOCX 모두 ZIP 항목 중 하나라도 중앙 디렉터리 암호화 플래그가 있으면 `Encrypted`(풀지 않는다).
+//!   판별이 읽거나 확인하는 항목(HWPX: mimetype·manifest·content.hpf·header.xml, DOCX: 내용 형식·패키지 관계·본문
+//!   부분)은 로컬 헤더와 중앙 디렉터리의 암호화 비트가 어느 방향으로든 다르면 손상(`corrupt-container`)이고, 이
+//!   확인이 패키지 전체 암호화 판정보다 먼저다. 읽지 않는 부가 항목은 중앙 디렉터리 플래그만 본다.
+//! - `mimetype`은 HWPX 선언(19바이트)일 수 있을 때만 읽는다. OPC 패키지의 관계없는 `mimetype`은 DOCX 판별에 쓰지 않는다.
 //! - 두 표식이 함께 있으면 하나로 정하지 않는다(`Ambiguous`).
 
 use std::io::{Read, Seek};
@@ -82,6 +86,14 @@ impl<R: Read + Seek> Package<'_, R> {
             .map_err(|problem| zip_error(format, problem))
     }
 
+    /// 풀지 않고 로컬 헤더와 중앙 디렉터리가 맞는지만 확인한다.
+    fn check_local(&mut self, format: Option<Format>, entry: &Entry) -> Result<(), DocumentError> {
+        self.archive
+            .check_local(self.reader, entry)
+            .map(drop)
+            .map_err(|problem| zip_error(format, problem))
+    }
+
     fn verify(
         &mut self,
         format: Option<Format>,
@@ -94,25 +106,37 @@ impl<R: Read + Seek> Package<'_, R> {
     }
 }
 
+/// 순서: 중앙 디렉터리의 이름으로 HWPX 항목과 OPC 표식을 보고, 둘 다 있으면 `Ambiguous`. 그다음 `mimetype`이
+/// HWPX 선언인지 판단한다. HWPX 선언은 정확히 `application/hwp+zip`(19바이트)이므로 선언 크기가 다르면 읽지 않고
+/// HWPX 선언이 아니라고 본다(OPC 패키지에 들어 있는 관계없는 큰·손상된 `mimetype`이 DOCX 판별을 막지 않음).
+/// 19바이트이면 읽어서 비교하고, 읽을 수 없으면 HWPX 선언이 아니라고 단정할 수 없으므로 오류로 거부한다.
 pub fn inspect<R: Read + Seek>(reader: &mut R, archive: &Archive) -> Result<Format, DocumentError> {
     let mut package = Package { reader, archive };
-    let mimetype = match archive.find("mimetype") {
-        Some(entry) => Some(package.read(None, entry, MAX_MIMETYPE_BYTES)?),
-        None => None,
-    };
-    let hwpx_mimetype = mimetype.as_deref() == Some(HWPX_MIMETYPE);
     let hwpx_parts = archive.find(HWPX_MANIFEST).is_some() && archive.find(HWPX_HEADER).is_some();
     let ooxml_parts = archive.find_ignore_case(CONTENT_TYPES).is_some()
         && archive.find_ignore_case(PACKAGE_RELATIONSHIPS).is_some();
-
-    if (hwpx_mimetype || hwpx_parts) && ooxml_parts {
+    if hwpx_parts && ooxml_parts {
         return Err(DocumentError::unsupported(UnsupportedKind::Ambiguous));
     }
-    if hwpx_parts && mimetype.is_some() && !hwpx_mimetype {
-        return Err(DocumentError::unsupported(UnsupportedKind::Ambiguous)); // 다른 패키지 형식을 선언함
-    }
-    if hwpx_mimetype || hwpx_parts {
+    let declared = match archive.find("mimetype") {
+        None => None,
+        Some(entry) if entry.uncompressed_size() != HWPX_MIMETYPE.len() as u64 => Some(false),
+        Some(entry) => {
+            let format = hwpx_parts.then_some(Format::Hwpx);
+            Some(package.read(format, entry, MAX_MIMETYPE_BYTES)? == HWPX_MIMETYPE)
+        }
+    };
+    if hwpx_parts {
+        if declared == Some(false) {
+            return Err(DocumentError::unsupported(UnsupportedKind::Ambiguous)); // 다른 패키지 형식을 선언함
+        }
         return inspect_hwpx(&mut package);
+    }
+    if declared == Some(true) {
+        if ooxml_parts {
+            return Err(DocumentError::unsupported(UnsupportedKind::Ambiguous));
+        }
+        return inspect_hwpx(&mut package); // 필수 항목 없음
     }
     if ooxml_parts {
         return inspect_ooxml(&mut package);
@@ -128,18 +152,23 @@ pub fn inspect<R: Read + Seek>(reader: &mut R, archive: &Archive) -> Result<Form
 fn inspect_hwpx<R: Read + Seek>(package: &mut Package<'_, R>) -> Result<Format, DocumentError> {
     let format = Some(Format::Hwpx);
     let archive = package.archive;
+    let manifest = archive.find(HWPX_ENCRYPTION_MANIFEST);
+    let (content, header) = (archive.find(HWPX_MANIFEST), archive.find(HWPX_HEADER));
+    // 판별이 읽는 항목의 메타데이터 손상이 패키지 전체 암호화 판정보다 먼저다.
+    for entry in [manifest, content, header].into_iter().flatten() {
+        package.check_local(format, entry)?;
+    }
     if archive.entries().iter().any(Entry::is_encrypted) {
         return Err(DocumentError::Encrypted { format });
     }
     let invalid = || DocumentError::parse(format, ParseProblem::InvalidPart);
-    if let Some(manifest) = archive.find(HWPX_ENCRYPTION_MANIFEST) {
+    if let Some(manifest) = manifest {
         let bytes = package.read(format, manifest, MAX_PART_BYTES)?;
         if xml::odf_manifest_encrypted(&bytes).map_err(|_| invalid())? {
             return Err(DocumentError::Encrypted { format });
         }
     }
-    let (Some(content), Some(header)) = (archive.find(HWPX_MANIFEST), archive.find(HWPX_HEADER))
-    else {
+    let (Some(content), Some(header)) = (content, header) else {
         return Err(DocumentError::parse(format, ParseProblem::MissingPart));
     };
     xml::opf_package(&package.read(format, content, MAX_PART_BYTES)?).map_err(|_| invalid())?;
@@ -183,12 +212,14 @@ fn inspect_ooxml<R: Read + Seek>(package: &mut Package<'_, R>) -> Result<Format,
     if !kind.eq_ignore_ascii_case(DOCX_MAIN) {
         return Err(DocumentError::unsupported(UnsupportedKind::OtherOoxml));
     }
-    if archive.find_ignore_case(&part).is_none() {
+    let Some(main) = archive.find_ignore_case(&part) else {
         return Err(DocumentError::parse(
             Some(Format::Docx),
             ParseProblem::MissingPart,
         ));
-    }
+    };
+    // 본문은 풀지 않지만(엔진 몫) 필수 부분이므로 로컬 헤더는 확인한다. 이 손상이 암호화 판정보다 먼저다.
+    package.check_local(Some(Format::Docx), main)?;
     // 관계·내용 형식 항목의 암호화는 위에서 읽을 때 `Encrypted { format: None }`으로 걸린다.
     if archive.entries().iter().any(Entry::is_encrypted) {
         return Err(DocumentError::Encrypted {
