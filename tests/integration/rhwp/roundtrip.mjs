@@ -5,7 +5,8 @@
 //
 // 사용법: node tests/integration/rhwp/roundtrip.mjs <픽스처 디렉터리> <출력 디렉터리>
 // 출력: <형식>-edited.<확장자>와 결과 JSON(표준 출력). 형식마다 `passed`는 손실 보고가 계약 모양({count, losses[]},
-// count = losses 수)이고 0건이며, 다시 연 문서가 편집한 문서와 같을 때만 true다. 하나라도 통과가 아니면 종료 코드 1.
+// count = losses 수)이고 0건이며, 다시 연 문서의 실제 형식이 요청한 형식이고(엔진 getSourceFormat + 내보낸 바이트의
+// 컨테이너 서명 — 확장자로 정하지 않음), 다시 연 문서가 편집한 문서와 같을 때만 true다. 하나라도 통과가 아니면 종료 코드 1.
 // 내보내기·다시 열기 중 예외가 나도 WASM 객체를 놓고 그 형식을 실패로 보고한다.
 import { readFileSync, writeFileSync, mkdirSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
@@ -30,6 +31,10 @@ const snapshot = (doc) => ({
   controls: JSON.parse(doc.getControls()).map(({ ctrlId, para, pos }) => ({ ctrlId, para, pos })),
   bold: JSON.parse(doc.getCharPropertiesAt(0, meta.content.bold.paragraph, 1)).bold ?? null,
 });
+
+/** 요청한 형식의 컨테이너 서명(HWP 5: CFB, HWPX: ZIP). rhwp getSourceFormat은 HWPX·HML이 아니면 모두 "hwp"다. */
+const SIGNATURES = { hwp: [0xd0, 0xcf, 0x11, 0xe0, 0xa1, 0xb1, 0x1a, 0xe1], hwpx: [0x50, 0x4b, 0x03, 0x04] };
+const hasSignature = (bytes, format) => SIGNATURES[format].every((byte, index) => bytes[index] === byte);
 
 /** 손실 보고를 엄격히 읽는다(앱의 RhwpEditorSession과 같은 규칙). 모양이 다르면 null. */
 function parseLoss(json) {
@@ -67,10 +72,13 @@ function roundTrip(format) {
     writeFileSync(file, bytes);
     result.failure = "reopen";
     reopened = new rhwp.HwpDocument(readFileSync(file));
+    const sourceFormat = reopened.getSourceFormat();
     const after = snapshot(reopened);
     Object.assign(result, {
       failure: null,
-      sourceFormat: reopened.getSourceFormat(),
+      sourceFormat,
+      signatureMatches: hasSignature(bytes, format),
+      formatEqual: sourceFormat === format && hasSignature(bytes, format),
       bytes: bytes.length,
       lossValid: loss !== null,
       contentLoss: loss ?? lossJson,
@@ -84,7 +92,8 @@ function roundTrip(format) {
       after,
       file,
     });
-    result.passed = result.lossValid && loss.count === 0 && result.insertedText && result.equalToEdited && result.boldKept;
+    result.passed = result.lossValid && loss.count === 0 && result.formatEqual && result.insertedText && result.equalToEdited
+      && result.boldKept;
   } catch (error) {
     result.error = error instanceof Error ? error.name : "unknown"; // 엔진 메시지는 문서 내용을 담을 수 있어 남기지 않는다
   } finally {

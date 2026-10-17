@@ -164,6 +164,7 @@
   "editor.rhwp.failed": "This document cannot be edited.",
   "editor.rhwp.closed": "Closed document",
   "editor.rhwp.failedUnpreserved": "Edits made in this document were not saved and cannot be recovered. Reloading discards them.",
+  "editor.rhwp.failedUncertain": "The editing engine failed during a change, so the document model may have been only partially changed. It may differ from what was shown; reloading discards this model.",
   "editor.rhwp.reload": "Reload from file",
   "editor.rhwp.load": "Load into the engine",
   "editor.rhwp.revision": "Revision {revision}",

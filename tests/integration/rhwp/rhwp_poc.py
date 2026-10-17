@@ -11,9 +11,10 @@ WebKitWebDriver, Node.js, 그래픽 세션(Wayland weston 또는 X11).
 
     # 실제 한국어 IME 게이트(X11 + ibus-hangul + xdotool, 실제 키 입력):
     python3 tests/integration/rhwp/rhwp_poc.py --app ... --driver ... --ime --xdotool <xdotool> --ibus <ibus> \\
-        [--diagnostic-only]
+        [--focus-window <다른 X 창 이름 정규식>] [--diagnostic-only]
 
-IME 게이트는 항목마다 PASS·FAIL·UNVERIFIED·NOT RUN을 출력한다. 필수 항목이 모두 PASS일 때만 종료 코드 0이고, FAIL이
+IME 게이트는 항목마다 PASS·FAIL·UNVERIFIED·NOT RUN을 출력한다. 선택 항목(창 초점 이동)은 `--focus-window`로 이미 떠 있는
+다른 X 창을 줄 때만 실행한다. 탭 전환 중 조합은 필수 항목이 아니라 관찰 기록(`[기록]`, 보고서 imeTabSwitch)이다. 필수 항목이 모두 PASS일 때만 종료 코드 0이고, FAIL이
 있으면 1, 실제 입력 환경이 없어 판단할 수 없으면(UNVERIFIED) 2다. `--diagnostic-only`는 관찰만 기록하고 종료 코드로
 게이트 결과를 나타내지 않는다(통과 증거가 아님). 합성 DOM 이벤트는 쓰지 않는다.
 
@@ -351,8 +352,10 @@ def scenario_roundtrip_ui(d, fmt: str) -> None:
     press_button(d, "[data-testid=rhwp-roundtrip]")
     smoke.wait_until(d, "return document.querySelector('[data-testid=rhwp-roundtrip-result]') !== null", timeout=30)
     r = d.js("return {...document.querySelector('[data-testid=rhwp-roundtrip-result]').dataset}")
-    check(f"{fmt}: 편집한 문서를 메모리에서 원본 형식으로 내보내고 다시 열어 쪽·텍스트·컨트롤 일치, 손실 보고가 올바른 모양이고 0건(통과)",
+    check(f"{fmt}: 편집한 문서를 메모리에서 원본 형식으로 내보내고 다시 열어 형식({fmt}, 엔진 판별·컨테이너 서명)·쪽·텍스트·컨트롤 일치, "
+          "손실 보고가 올바른 모양이고 0건(통과)",
           r.get("format") == fmt and r.get("passed") == "true" and r.get("lossValid") == "true" and r.get("lossCount") == "0"
+          and r.get("reopenedFormat") == fmt and r.get("formatEqual") == "true"
           and r.get("pagesEqual") == "true" and r.get("textEqual") == "true" and r.get("controlsEqual") == "true",
           json.dumps(r))
     REPORT[fmt]["roundTripInApp"] = r
@@ -449,6 +452,24 @@ def scenario_sessions(d, fixtures: Path, scratch: Path) -> None:
     check("판별은 통과했지만 엔진이 읽지 못한 문서는 가짜 문서 없이 failed(EngineFailure)",
           st["status"] == "failed" and d.exists("[data-testid=rhwp-error]") and not d.exists(".rhwp-page"), json.dumps(st, ensure_ascii=False))
     d.js("[...document.querySelectorAll('.document-tab')].find(t=>t.textContent.includes('engine-broken')).querySelector('.document-tab__close').click()")
+    time.sleep(0.4)
+
+    # 엔진은 읽지만 페이지 정보가 그릴 수 없는 값인 문서: 용지 너비를 1 HWPUNIT으로 바꾸면 rhwp getPageInfo의 width가 0이다.
+    # 너비 0인 쪽으로 ready가 되지 않고 failed여야 한다(페이지 정보 검사, render 단계).
+    import io
+    import re
+    import zipfile
+    source = (fixtures / "basic-ko.hwpx").read_bytes()
+    section = zipfile.ZipFile(io.BytesIO(source)).read("Contents/section0.xml").decode()
+    narrow_section = re.sub(r'(<hp:pagePr[^>]*?\bwidth=")\d+(")', r"\g<1>1\2", section, count=1)
+    narrow = scratch / "zero-width.hwpx"
+    narrow.write_bytes(smoke.with_entry(source, "Contents/section0.xml", narrow_section.encode()))
+    st = open_document(d, narrow, expected="failed")
+    check("엔진은 읽었지만 페이지 너비가 0인 문서(용지 너비 1 HWPUNIT)는 편집 가능(ready)이 아니라 failed",
+          narrow_section != section and st["status"] == "failed" and not d.exists(".rhwp-page")
+          and [x["state"] for x in ipc(d, "document_sessions")["ok"] if x["displayName"] == "zero-width.hwpx"] == ["failed"],
+          json.dumps(st, ensure_ascii=False))
+    d.js("[...document.querySelectorAll('.document-tab')].find(t=>t.textContent.includes('zero-width')).querySelector('.document-tab__close').click()")
     time.sleep(0.4)
     reopened = open_document(d, fixtures / "basic-ko.hwpx")
     check("실패한 문서를 닫은 뒤 정상 문서를 다시 열어 편집 가능", reopened["status"] == "ready", json.dumps(reopened))
@@ -552,7 +573,7 @@ def probe_plain_textarea(d, run, xdotool: str, window: str) -> dict:
             "afterCommit": {"valueLength": after["valueLength"], "events": ime_counts(after["log"])}}
 
 
-def scenario_ime(d, fixtures: Path, xdotool: str, ibus: str) -> None:
+def scenario_ime(d, fixtures: Path, xdotool: str, ibus: str, focus_window: str | None = None) -> None:
     reason = ime_environment(xdotool, ibus)
     if reason:
         for name, _ in IME_ITEMS:
@@ -667,12 +688,89 @@ def scenario_ime(d, fixtures: Path, xdotool: str, ibus: str) -> None:
         print(f"[기록] {fmt}: 클릭 뒤 다음 키에서 확정된 글자(클릭한 곳) = {REPORT[fmt]['ime']['afterClickNextKey']['insertedAtClick']!r}", flush=True)
         REPORT[fmt]["ime"]["eventsTotal"] = ime_counts(d.js("return window.__imeLog"))
 
+    # 마지막 문서(HWPX)가 활성 상태다. 탭 전환 중 조합(기록)과 창 초점 이동(선택 항목)을 실제 입력으로 본다.
+    scenario_ime_tab_switch(d, run, xdotool, window, shift)
+    if focus_window:
+        scenario_ime_focus(d, run, xdotool, window, focus_window, record)
+
     for name, _ in IME_ITEMS:
         outcomes = results[name]
         if not outcomes:
-            gate(name, "NOT RUN", "실제 창 초점 이동 시나리오는 이 검사에 없음(합성 이벤트 테스트만 있음)")
+            gate(name, "NOT RUN", "다른 X 창(--focus-window)을 주지 않아 실제 창 초점 이동을 실행하지 않음(합성 이벤트 테스트만 있음)")
         else:
             gate(name, "PASS" if all(r == "PASS" for r, _ in outcomes) else "FAIL", "; ".join(detail for _, detail in outcomes))
+
+
+def inserted_between(before: str, after: str) -> str:
+    """before에 없던, after에 새로 생긴 부분(앞뒤 공통 부분을 뺀 가운데)."""
+    start = 0
+    while start < min(len(before), len(after)) and before[start] == after[start]:
+        start += 1
+    end = 0
+    while end < min(len(before), len(after)) - start and before[-1 - end] == after[-1 - end]:
+        end += 1
+    return after[start:len(after) - end]
+
+
+def scenario_ime_tab_switch(d, run, xdotool: str, window: str, shift: tuple) -> None:
+    """HWPX 문단 끝에서 'ㅎㅏ'를 조합하다 실제 포인터로 HWP 탭을 누르고 공백을 친다. 조합한 음절이 어느 문서에 몇 번
+    들어갔는지 기록한다(필수 게이트 항목이 아님, 페이지가 받지 못한 조합은 앱이 막을 수 없는 플랫폼 경로)."""
+    select_tab(d, "basic-ko.hwp")
+    other_before = status(d)["paragraphText"]
+    select_tab(d, "basic-ko.hwpx")
+    run(xdotool, "key", "End")
+    time.sleep(0.3)
+    st = status(d)
+    text0, rev0, caret0 = st["paragraphText"], int(st["localRevision"]), st["caret"]
+    run(xdotool, "type", "--delay", "90", "gk")
+    time.sleep(0.3)
+    tab = d.js("const t=[...document.querySelectorAll('.document-tab__select')].find(t => t.textContent.includes('basic-ko.hwp')"
+               " && !t.textContent.includes('basic-ko.hwpx')); const r=t.getBoundingClientRect();"
+               " return [r.left + r.width/2, r.top + r.height/2]")
+    run(xdotool, "mousemove", "--window", window, str(int(tab[0] + shift[0])), str(int(tab[1] + shift[1])), "click", "1")
+    smoke.wait_until(d, "return document.querySelector('[data-testid=rhwp-status] h1')?.textContent === 'basic-ko.hwp'", timeout=10)
+    wait_status(d, "ready")
+    time.sleep(0.5)
+    run(xdotool, "key", "space")
+    time.sleep(0.6)
+    other_after = status(d)["paragraphText"]
+    select_tab(d, "basic-ko.hwpx")
+    st = status(d)
+    original = inserted_between(text0, st["paragraphText"])
+    other = inserted_between(other_before, other_after)
+    outcome = ("duplicated" if "하" in original and "하" in other else "keptInOriginal" if "하" in original
+               else "leakedToOtherDocument" if "하" in other else "lost")
+    REPORT["imeTabSwitch"] = {"outcome": outcome, "insertedInOriginal": original, "insertedInOther": other,
+                              "originalRevisionDelta": int(st["localRevision"]) - rev0, "originalCaretBefore": caret0,
+                              "originalCaretAfter": st["caret"]}
+    print(f"[기록] 탭 전환 중 조합(HWPX→HWP 탭 클릭→공백): {outcome}, 원래 문서에 {original!r}, 다른 문서에 {other!r}", flush=True)
+
+
+def scenario_ime_focus(d, run, xdotool: str, window: str, other_name: str, record) -> None:
+    """'ㅎㅏ'를 조합하다 다른 X 창으로 초점을 옮겼다가 돌아와 공백을 친다. 음절이 원래 자리에 한 번 남아야 한다."""
+    name = "조합 중 창 초점 이동 뒤 돌아옴"
+    other = run(xdotool, "search", "--name", other_name).stdout.split()
+    if not other:
+        return  # 결과 없음 → NOT RUN
+    run(xdotool, "windowfocus", "--sync", window)
+    run(xdotool, "key", "End")
+    time.sleep(0.3)
+    st = status(d)
+    text0, rev0 = st["paragraphText"], int(st["localRevision"])
+    run(xdotool, "type", "--delay", "90", "gk")
+    time.sleep(0.3)
+    run(xdotool, "windowfocus", "--sync", other[-1])
+    time.sleep(0.8)
+    away = status(d)
+    run(xdotool, "windowfocus", "--sync", window)
+    time.sleep(0.8)
+    run(xdotool, "key", "space")
+    time.sleep(0.6)
+    st = status(d)
+    record(name, st["paragraphText"] == text0 + "하 " and int(st["localRevision"]) - rev0 == 2
+           and offset_of(st["caret"]) == len(text0) + 2,
+           f"hwpx: 다른 창에 있는 동안 넣은 부분 {inserted_between(text0, away['paragraphText'])!r}, 돌아와 공백 뒤 넣은 부분"
+           f" {inserted_between(text0, st['paragraphText'])!r}, revision +{int(st['localRevision']) - rev0}")
 
 
 def ime_exit_code(diagnostic_only: bool) -> int:
@@ -701,6 +799,7 @@ def main() -> int:
     parser.add_argument("--diagnostic-only", action="store_true", help="IME 관찰만 기록(종료 코드가 게이트 결과가 아님)")
     parser.add_argument("--xdotool", default=shutil.which("xdotool") or "xdotool")
     parser.add_argument("--ibus", default=shutil.which("ibus") or "ibus")
+    parser.add_argument("--focus-window", help="창 초점 이동 항목에 쓸, 이미 떠 있는 다른 X 창의 이름(xdotool search --name)")
     args = parser.parse_args()
     smoke.APP = os.path.abspath(args.app)
     smoke.DRIVER_LOG = args.driver_log
@@ -727,15 +826,18 @@ def main() -> int:
             exported = json.loads(node.stdout)
             REPORT["exportedFiles"] = {f: {k: v for k, v in r.items() if k not in ("before", "after", "file")} for f, r in exported.items()}
             if not args.ime:
-                check("Node 왕복(편집→원본 형식 내보내기→파일→다시 열기): 손실 보고가 올바른 모양이고 0건, 편집한 문서와 같음(HWP·HWPX)",
-                      node.returncode == 0 and all(r.get("passed") for r in exported.values()), json.dumps(REPORT["exportedFiles"]))
+                check("Node 왕복(편집→원본 형식 내보내기→파일→다시 열기): 손실 보고가 올바른 모양이고 0건, 다시 연 형식이 요청한 형식, "
+                      "편집한 문서와 같음(HWP·HWPX)",
+                      node.returncode == 0 and set(exported) == {"hwp", "hwpx"}
+                      and all(r.get("passed") and r.get("formatEqual") and r.get("sourceFormat") == f for f, r in exported.items()),
+                      json.dumps(REPORT["exportedFiles"]))
             with tempfile.TemporaryDirectory(prefix="geul-t007-data-") as data_home:
                 with smoke.tauri_driver(args.driver, args.port, data_home) as start:
                     d = start()
                     try:
                         smoke.wait_until(d, "return document.querySelector('.document-bar') !== null", timeout=30)
                         if args.ime:
-                            scenario_ime(d, fixtures, args.xdotool, args.ibus)
+                            scenario_ime(d, fixtures, args.xdotool, args.ibus, args.focus_window)
                         else:
                             scenario_load_render(d, fixtures, args.screenshots)
                             for fmt in ("hwp", "hwpx"):

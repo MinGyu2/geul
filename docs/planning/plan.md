@@ -142,6 +142,12 @@ interface EditorAdapter {
   같을 때만 받는다(아니면 `StaleLoad{sessionId, loadGeneration}` — 옛 시도의 늦은 완료·실패·취소 가드가 새 시도를 바꾸지
   못함). 편집기는 엔진이 문서를 읽고 페이지 정보까지 얻은 뒤에야 ready를 요청한다. 프런트엔드 오류 `UnpreservedChanges`:
   저장이 없으므로 편집한 모델(확정했거나 확정 대기·조합 중)은 사용자가 버리기를 확인해야 닫거나 다시 불러온다.
+- T007 3차 안정화(같은 날, [editor-surface-decision.md "T007 3차 안정화"](../architecture/editor-surface-decision.md#t007-3차-안정화-2차-리뷰-지적-재현과-수정-2026-10-17)):
+  엔진 편집 함수가 예외를 던지면 모델이 일부만 바뀌었을 수 있으므로 그 변경은 revision으로 세지 않고 모델을 '알 수 없게 바뀜'으로
+  표시해 편집을 멈춘다(버리기 확인 대상). ready 조건에 페이지 정보 검사를 더했다(쪽 수 1 이상 정수, 쪽마다 `pageIndex` 일치,
+  width·height 유한 양수 ≤ 16384 px — 아니면 `EngineFailure(render)`). 내보내기 검사 `passed`는 다시 연 문서의 실제 형식
+  (`getSourceFormat`)과 컨테이너 서명이 요청 형식일 때만 참이다. 클릭·초점 잃음·표면 사라짐으로 끊긴 IME 조합은 WebView에 하나인
+  입력 문맥 상태(`ImeContext`)로 표면 사이에서 공유하며, 그 조합의 늦은 이벤트는 원래 문서·자리에 최대 한 번 확정된다.
 
 ## Algorithms and Pseudocode
 ```

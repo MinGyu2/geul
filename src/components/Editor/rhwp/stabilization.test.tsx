@@ -10,7 +10,7 @@ import { Editor } from "../Editor";
 import { RhwpEditorSession } from "./RhwpEditorSession";
 import type { RhwpDocument, RhwpModule } from "./rhwpModule";
 import { RhwpSurface } from "./RhwpSurface";
-import { base, controlledBackend, fail, FakeDocument, flush, info, ok, loaded, readySession } from "./testing";
+import { base, CFB_SIGNATURE, controlledBackend, fail, FakeDocument, flush, info, ok, loaded, readySession } from "./testing";
 
 async function mounted(text = ["ab", "cd"]) {
   const ready = await readySession(text);
@@ -435,7 +435,8 @@ describe("엔진 초기화·렌더·변경 뒤 실패", () => {
     expect(transition.args).toEqual([1, 1, "loading", "failed"]);
     transition.reply(ok(info({ state: "failed", sequence: 2 })));
     await l.done;
-    expect(l.editor.status).toMatchObject({ kind: "failed", error: { code: "EngineFailure", stage: "parse" } });
+    // 문서는 읽었지만 그릴 준비(페이지 정보)가 안 됨: parse가 아니라 render 단계(3차 안정화에서 구분).
+    expect(l.editor.status).toMatchObject({ kind: "failed", error: { code: "EngineFailure", stage: "render" } });
     expect(doc.freed).toBe(true);
   });
 
@@ -472,7 +473,7 @@ describe("내보내기 검사", () => {
     const freed = { exported: 0 };
     ready.doc.exportHwpWithReport = () => ({
       contentLoss: () => loss,
-      takeBytes: takeBytes ?? (() => new TextEncoder().encode("ab")),
+      takeBytes: takeBytes ?? (() => new Uint8Array([...CFB_SIGNATURE, 0x61, 0x62])),
       free: () => void (freed.exported += 1),
     });
     return { ...ready, freed };

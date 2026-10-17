@@ -8,10 +8,13 @@
 //   count = 그 뒤 성공한 변경 수). 응답을 기다리는 동안의 변경은 다음 확정에 묶인다. 그래서 확정이 순서를 바꿔
 //   도착하거나 중복될 수 없고, revision은 성공한 변경마다 정확히 1씩 는다(다시 그리기·선택·실패한 변경은 확정 안 함).
 // - 불러오기 시도마다 백엔드가 번호(loadGeneration)를 주고, 그 시도의 상태 전이·확정은 이 번호를 함께 보낸다. 옛 시도의
-//   요청은 백엔드가 StaleLoad로 거부한다. 엔진이 문서를 읽고 페이지 정보까지 얻은 뒤에야 ready를 요청한다.
+//   요청은 백엔드가 StaleLoad로 거부한다. 엔진이 문서를 읽고(parse) 올바른 페이지 정보까지 얻은 뒤에야(render 준비)
+//   ready를 요청한다. 백엔드의 형식 판별은 컨테이너 확인일 뿐 문서 내용이 올바르다는 증거가 아니다.
 // - 백엔드가 확정을 거부하면(RevisionMismatch·InvalidState) 모델이 기록과 어긋났다고 보고 세션을 failed로 돌린다.
-//   닫힌 세션(StaleSession·UnknownSession)이면 모델을 버린다. 엔진 편집 함수가 예외를 던지면 일부만 바뀌었을 수 있어
-//   편집을 멈추고 failed로 돌린다(읽기 전용 표시, 다시 불러오기 가능 — 확정하지 않은 편집은 버려진다).
+//   닫힌 세션(StaleSession·UnknownSession)이면 모델을 버린다. 엔진 편집 함수가 예외를 던지면 일부만 바뀌었을 수 있다
+//   (예: 선택 지우기는 됐고 넣기가 실패; 엔진은 되돌리기를 보장하지 않음). 그 변경은 성공으로 세거나 확정하지 않고
+//   (revision을 올리지 않음) 모델을 '알 수 없게 바뀜'(uncertain)으로 표시해 편집을 멈추고 failed로 돌린다. 이 모델은
+//   수정한 모델처럼 보호한다(버리기 확인 없이 닫거나 다시 불러오지 않음).
 //   엔진 변경은 성공했는데 그 뒤 화면 갱신 준비(페이지 정보)·그리기가 실패하면, 변경은 이미 모델에 있으므로 세고
 //   (확정 대기열에 넣음) 편집을 멈춘다.
 // - 저장이 없으므로(T009) 편집한 모델(확정했거나 확정 대기·조합 중인 변경)은 닫기·다시 불러오기 전에 사용자가
@@ -53,6 +56,13 @@ export interface RoundTripReport {
   /** 끝까지 비교하지 못한 단계(null이면 비교까지 마침). */
   failure: "export" | "reopen" | null;
   bytes: number;
+  /** 다시 연 문서에 엔진이 매긴 원본 형식(getSourceFormat). 묻지 못했으면 null. */
+  reopenedFormat: string | null;
+  /**
+   * 다시 연 문서가 요청한 형식인지: 엔진이 매긴 형식이 같고 내보낸 바이트가 그 형식의 컨테이너 서명으로 시작한다.
+   * (rhwp getSourceFormat은 HWPX·HML이 아닌 것을 모두 "hwp"라고 하므로 HWP 5 CFB 서명을 함께 본다.)
+   */
+  formatEqual: boolean;
   /** 엔진의 손실 보고가 계약 모양({count, losses[]}, count = losses 수)인지. 아니면 lossCount는 -1. */
   lossValid: boolean;
   lossCount: number;
@@ -60,7 +70,7 @@ export interface RoundTripReport {
   pagesEqual: boolean;
   textEqual: boolean;
   controlsEqual: boolean;
-  /** 손실 보고가 올바르고 0건이며 쪽 수·본문·컨트롤 배치가 모두 같을 때만 true. */
+  /** 손실 보고가 올바르고 0건이며 다시 연 형식과 쪽 수·본문·컨트롤 배치가 모두 같을 때만 true. */
   passed: boolean;
 }
 
@@ -90,16 +100,43 @@ function parseLoss(json: string): { count: number; losses: unknown[] } | null {
   return losses.length === count ? { count: count as number, losses } : null;
 }
 
-/** 문서의 페이지 크기 목록. 엔진 오류는 그대로 던진다(호출하는 쪽이 단계별 실패로 다룸). */
+/**
+ * 페이지 한 변의 최대 길이(배율 1, CSS px). rhwp가 canvas 한 변에 허용하는 최대값(wasm_api.rs MAX_CANVAS_DIMENSION)과
+ * 같다. 이보다 큰 페이지는 엔진이 100%로도 그리지 못하므로(배율을 낮춰 그림) 편집 가능한 표면으로 내놓지 않는다.
+ */
+export const MAX_PAGE_EXTENT = 16_384;
+
+const isPageExtent = (value: unknown): value is number =>
+  typeof value === "number" && Number.isFinite(value) && value > 0 && value <= MAX_PAGE_EXTENT;
+
+/**
+ * 문서의 페이지 크기 목록. 엔진 오류는 그대로 던지고, 계약에 맞지 않는 값도 던진다(호출하는 쪽이 단계별 실패로 다룸).
+ * - 쪽 수는 1 이상의 정수다(rhwp page_count는 빈 문서도 1을 돌려준다). 쪽마다 엔진에 실제로 묻으므로 쪽 수에 따른
+ *   할당은 엔진이 가진 페이지만큼이다(임의의 쪽 수 상한은 두지 않음).
+ * - 쪽 정보는 JSON 객체이고 pageIndex가 그 쪽 번호, width·height가 유한한 양수(MAX_PAGE_EXTENT 이하)다. 0·빈 값으로
+ *   바꿔 넣지 않는다.
+ */
 function readPages(doc: RhwpDocument): PageSize[] {
-  const pages: PageSize[] = [];
   const count = doc.pageCount();
+  if (!Number.isSafeInteger(count) || count < 1) throw new Error("page count");
+  const pages: PageSize[] = [];
   for (let page = 0; page < count; page++) {
-    const info = JSON.parse(doc.getPageInfo(page)) as { width?: unknown; height?: unknown };
-    pages.push({ width: Number(info.width) || 0, height: Number(info.height) || 0 });
+    const info: unknown = JSON.parse(doc.getPageInfo(page));
+    if (typeof info !== "object" || info === null || Array.isArray(info)) throw new Error("page info");
+    const { pageIndex, width, height } = info as { pageIndex?: unknown; width?: unknown; height?: unknown };
+    if (pageIndex !== page || !isPageExtent(width) || !isPageExtent(height)) throw new Error("page info");
+    pages.push({ width, height });
   }
   return pages;
 }
+
+/** 내보낸 바이트가 요청한 형식의 컨테이너 서명으로 시작하는지(HWP 5: CFB, HWPX: ZIP). */
+const SIGNATURES = {
+  hwp: [0xd0, 0xcf, 0x11, 0xe0, 0xa1, 0xb1, 0x1a, 0xe1],
+  hwpx: [0x50, 0x4b, 0x03, 0x04],
+} as const;
+const hasSignature = (bytes: Uint8Array, format: "hwp" | "hwpx") =>
+  SIGNATURES[format].every((byte, index) => bytes[index] === byte);
 
 const START: DocPosition = { section: 0, paragraph: 0, offset: 0 };
 const MAX_SAMPLES = 1000;
@@ -125,8 +162,10 @@ export class RhwpEditorSession {
   private committing = false;
   /** 지금 모델을 만든 불러오기 시도 번호(백엔드가 준 값, 0 = 없음). */
   private generation = 0;
-  /** 지금 모델을 불러온 뒤 문서를 바꾼 적이 있음(확정 여부와 무관, 실패해도 유지). */
+  /** 지금 모델을 불러온 뒤 문서를 바꾼 적이 있음(성공한 변경, 확정 여부와 무관, 실패해도 유지). */
   private modified = false;
+  /** 엔진 편집 함수가 예외를 던져 모델이 일부만 바뀌었을 수 있음(성공한 변경으로 세지 않음). */
+  private uncertain = false;
   private loadingPromise: Promise<Result<null>> | null = null;
   private closing = false;
   private disposed = false;
@@ -181,11 +220,18 @@ export class RhwpEditorSession {
   }
 
   /**
-   * 저장하지 않은 편집이 이 모델에 있음: 불러온 뒤 바꾼 적이 있거나, 확정을 기다리거나 보내는 중이거나, 조합 중.
+   * 저장하지 않은 편집이 이 모델에 있음: 불러온 뒤 바꾼 적이 있거나, 바뀌었는지 알 수 없거나(편집 중 엔진 예외),
+   * 확정을 기다리거나 보내는 중이거나, 조합 중.
    * 저장 기능이 없으므로(T009) 닫기·다시 불러오기는 사용자가 버리기를 명시해야 한다.
    */
   get hasUnpreservedChanges() {
-    return this.doc !== null && (this.modified || this.pending > 0 || this.committing || this.composition !== null);
+    return this.doc !== null
+      && (this.modified || this.uncertain || this.pending > 0 || this.committing || this.composition !== null);
+  }
+
+  /** 엔진 편집이 예외로 끝나 모델이 바뀌었는지 알 수 없음(성공한 변경과 구분). */
+  get hasUncertainChanges() {
+    return this.doc !== null && this.uncertain;
   }
 
   get hasSelection() {
@@ -214,6 +260,7 @@ export class RhwpEditorSession {
     this.releaseDocument();
     this.generation = 0;
     this.modified = false;
+    this.uncertain = false;
     this.pending = 0;
     this.lastRoundTrip = null;
     this.pages = [];
@@ -241,13 +288,14 @@ export class RhwpEditorSession {
     } catch {
       return this.failLoading(generation, { code: "EngineFailure", engine: "rhwp", stage: "parse" });
     }
-    // ready를 요청하기 전에 화면에 필요한 정보(페이지 크기)를 모두 얻는다. 여기서 실패하면 ready가 되지 않는다.
+    // ready를 요청하기 전에 화면에 필요한 정보(페이지 크기)를 모두 얻고 검사한다. 엔진이 문서를 읽었더라도 페이지
+    // 정보가 없거나 잘못되면 그릴 준비가 안 된 것이므로(render 단계) ready가 되지 않는다.
     let pages: PageSize[];
     try {
       pages = readPages(doc);
     } catch {
       doc.free();
-      return this.failLoading(generation, { code: "EngineFailure", engine: "rhwp", stage: "parse" });
+      return this.failLoading(generation, { code: "EngineFailure", engine: "rhwp", stage: "render" });
     }
     if (this.disposed) {
       doc.free();
@@ -336,7 +384,8 @@ export class RhwpEditorSession {
 
   /**
    * 엔진 모델을 바꾼다. 성공하면(count면) 변경 1개를 확정 대기열에 넣는다. 그 뒤의 화면 갱신 준비가 실패해도 변경은
-   * 이미 모델에 있으므로 센 채로 편집을 멈춘다.
+   * 이미 모델에 있으므로 센 채로 편집을 멈춘다. apply가 예외를 던지면 여러 엔진 호출 중 일부가 이미 모델을 바꿨을 수
+   * 있으므로 세지 않고(확정하지 않음) 모델을 uncertain으로 표시한 뒤 편집을 멈춘다.
    */
   private mutate(apply: Mutation, count = true): boolean {
     if (!this.editable || !this.doc) return false;
@@ -345,6 +394,9 @@ export class RhwpEditorSession {
     try {
       next = apply();
     } catch {
+      this.uncertain = true;
+      this.lastRoundTrip = null;
+      this.modelVersion += 1;
       this.failEditing();
       return false;
     }
@@ -628,8 +680,9 @@ export class RhwpEditorSession {
   }
 
   /**
-   * 메모리에서 원본 형식으로 내보내고 다시 열어 쪽 수·본문 텍스트·컨트롤 배치를 비교한다(파일을 쓰지 않음).
-   * 손실 보고가 올바른 모양이고 0건이며 비교가 모두 같을 때만 passed. 실패해도 내보낸 객체·다시 연 문서는 놓는다.
+   * 메모리에서 원본 형식으로 내보내고 다시 열어 형식·쪽 수·본문 텍스트·컨트롤 배치를 비교한다(파일을 쓰지 않음).
+   * 형식은 요청한 확장자가 아니라 다시 연 문서와 내보낸 바이트로 확인한다. 손실 보고가 올바른 모양이고 0건이며
+   * 비교가 모두 같을 때만 passed. 실패해도 내보낸 객체·다시 연 문서는 놓는다.
    * 결과는 지금 모델에 대한 것이며, 문서를 바꾸면 지운다.
    */
   roundTrip(format: "hwp" | "hwpx"): RoundTripReport | null {
@@ -637,7 +690,7 @@ export class RhwpEditorSession {
     const module = this.module;
     if (!doc || !module) return null;
     const report: RoundTripReport = {
-      format, failure: "export", bytes: 0, lossValid: false, lossCount: -1, losses: [],
+      format, failure: "export", bytes: 0, reopenedFormat: null, formatEqual: false, lossValid: false, lossCount: -1, losses: [],
       pagesEqual: false, textEqual: false, controlsEqual: false, passed: false,
     };
     let reopened: RhwpDocument | null = null;
@@ -654,6 +707,9 @@ export class RhwpEditorSession {
       report.bytes = bytes.length;
       report.failure = "reopen";
       reopened = module.openDocument(bytes);
+      const reopenedFormat: unknown = reopened.getSourceFormat();
+      report.reopenedFormat = typeof reopenedFormat === "string" ? reopenedFormat : null;
+      report.formatEqual = report.reopenedFormat === format && hasSignature(bytes, format);
       const controls = (d: RhwpDocument) => (d as unknown as { getControls(): string }).getControls();
       const textOf = (d: RhwpDocument) => (d as unknown as { getTextFileText(): string }).getTextFileText();
       report.pagesEqual = reopened.pageCount() === doc.pageCount();
@@ -665,7 +721,7 @@ export class RhwpEditorSession {
     } finally {
       reopened?.free();
     }
-    report.passed = report.failure === null && report.lossValid && report.lossCount === 0
+    report.passed = report.failure === null && report.lossValid && report.lossCount === 0 && report.formatEqual
       && report.pagesEqual && report.textEqual && report.controlsEqual;
     this.lastRoundTrip = report;
     this.emit();

@@ -8,20 +8,24 @@
 // 입력: 화면에 보이지 않는 textarea 하나가 키보드·IME를 받는다. 커서 위치로 옮겨 두어 IME 후보 창이 커서 옆에 뜬다.
 // React가 다시 그려도 같은 요소를 쓰므로 조합 상태·초점이 사라지지 않는다. 이벤트는 네이티브 리스너로 받는다.
 // - 조합 이벤트 해석(조합 하나는 끝이 한 번, 클릭·초점 잃음으로 끝낸 조합의 늦은 확정)은 imeInput.ts의 ImeInput이
-//   맡는다. 여기서는 DOM 이벤트를 넘기고 textarea를 비운다.
+//   맡는다. 여기서는 DOM 이벤트를 넘기고 textarea를 비운다. 끊긴 조합은 편집 표면 사이에서 공유하는 ImeContext에
+//   두므로(작업 공간이 하나를 넘겨 줌) 탭을 바꾼 뒤 도착한 옛 조합의 늦은 확정이 다른 문서에 들어가지 않는다. 표면이
+//   사라질 때(초점 잃음 이벤트가 없어도) 문서에 보이던 조합을 그 문서에 확정해, 조합 상태가 남아 다음 입력을 막지 않게 한다.
 // - 조합 중 방향키 등은 조합이 끝난 뒤 처리한다. 페이지를 누르면 ImeInput이 진행 중인 조합을 끝낸다. 페이지에 보이는
 //   조합이 있을 때만 textarea 초점을 뺐다가 돌려준다(IME가 그 조합을 버리게). 보이는 조합이 없으면 초점을 그대로 둔다:
 //   실측(WebKitGTK + ibus, sync mode)에서 초점을 빼면 IME가 클릭 때 내보내는 확정이 페이지에 오지 않아 음절이 사라졌다.
 // 응답 시간: 입력 이벤트 시각부터 바뀐 페이지를 다시 그린 뒤 두 번째 animation frame까지를 잰다(화면 반영의 상한).
-import { useCallback, useEffect, useLayoutEffect, useReducer, useRef, type CSSProperties } from "react";
+import { useCallback, useEffect, useLayoutEffect, useReducer, useRef, useState, type CSSProperties } from "react";
 import { useTranslation } from "../../../language/LanguageContext";
-import { ImeInput } from "./imeInput";
+import { ImeContext, ImeInput } from "./imeInput";
 import type { RhwpEditorSession } from "./RhwpEditorSession";
 import type { PageRect } from "./rhwpText";
 
 interface RhwpSurfaceProps {
   session: RhwpEditorSession;
   zoom: number;
+  /** WebView의 IME 문맥(편집 표면 사이에서 공유). 없으면 이 표면만의 문맥을 쓴다. */
+  imeContext?: ImeContext;
 }
 
 const NAVIGATION_KEYS = new Set(["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown", "Home", "End", "Enter", "Tab", "Escape"]);
@@ -31,7 +35,7 @@ function useSessionUpdates(session: RhwpEditorSession) {
   useEffect(() => session.subscribe(update), [session]);
 }
 
-export function RhwpSurface({ session, zoom }: RhwpSurfaceProps) {
+export function RhwpSurface({ session, zoom, imeContext }: RhwpSurfaceProps) {
   const { t } = useTranslation();
   useSessionUpdates(session);
   const scale = zoom / 100;
@@ -42,6 +46,8 @@ export function RhwpSurface({ session, zoom }: RhwpSurfaceProps) {
   const inputAt = useRef<number | null>(null);
   const pendingNavigation = useRef<KeyboardEvent | null>(null);
   const ime = useRef<ImeInput | null>(null);
+  const [ownContext] = useState(() => new ImeContext());
+  const context = imeContext ?? ownContext;
   const dragging = useRef(false);
   const rendered = useRef({ version: -1, scale: 0, pages: 0 });
 
@@ -100,7 +106,7 @@ export function RhwpSurface({ session, zoom }: RhwpSurfaceProps) {
   useEffect(() => {
     const input = inputRef.current;
     if (!input) return;
-    const controller = new ImeInput(session);
+    const controller = new ImeInput(session, context);
     ime.current = controller;
     const mark = (event: Event) => {
       inputAt.current = event.timeStamp;
@@ -169,13 +175,14 @@ export function RhwpSurface({ session, zoom }: RhwpSurfaceProps) {
     input.addEventListener("blur", onBlur);
     return () => {
       input.removeEventListener("blur", onBlur);
+      controller.detach();
       ime.current = null;
       input.removeEventListener("keydown", onKeyDown);
       input.removeEventListener("compositionstart", onCompositionStart);
       input.removeEventListener("input", onInput);
       input.removeEventListener("compositionend", onCompositionEnd);
     };
-  }, [session]);
+  }, [session, context]);
 
   // ---- 마우스 ----
   const pointer = (event: React.MouseEvent<HTMLDivElement>, page: number, extend: boolean) => {

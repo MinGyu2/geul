@@ -14,6 +14,7 @@ import type { Message, MessageKey } from "../../language";
 import { useTranslation } from "../../language/LanguageContext";
 import type { DocumentWorkspace } from "./documentWorkspace";
 import { RhwpEditorSession } from "./rhwp/RhwpEditorSession";
+import { ImeContext } from "./rhwp/imeInput";
 import { RhwpSurface } from "./rhwp/RhwpSurface";
 
 interface EditorProps {
@@ -57,6 +58,8 @@ export function Editor({ zoom, workspace = null, notify }: EditorProps) {
   const active = state.sessions.find((session) => session.sessionId === state.activeId) ?? null;
   const pageStyle = { "--zoom": zoom / 100 } as CSSProperties;
   const [discard, setDiscard] = useState<DiscardRequest | null>(null);
+  // IME 입력 문맥은 WebView에 하나다. 탭마다 표면이 바뀌어도 끊긴 조합 상태는 함께 쓴다(imeInput.ts).
+  const [imeContext] = useState(() => new ImeContext());
   const discardTarget = discard && state.sessions.find((session) => session.sessionId === discard.sessionId);
 
   // 닫기·다시 불러오기: 저장하지 않은 편집이 있으면(UnpreservedChanges) 버릴지 묻고, 버리기를 고른 경우에만 진행한다.
@@ -102,6 +105,7 @@ export function Editor({ zoom, workspace = null, notify }: EditorProps) {
           editor={workspace.editorFor(active.sessionId)}
           info={active}
           zoom={zoom}
+          imeContext={imeContext}
           onReload={() => void reload(active)}
         />
       ) : (
@@ -265,7 +269,13 @@ function useEditorUpdates(editor: RhwpEditorSession | null) {
   useEffect(() => editor?.subscribe(update), [editor]);
 }
 
-function RhwpPanel({ editor, info, zoom, onReload }: { editor: RhwpEditorSession | null; info: SessionInfo; zoom: number; onReload: () => void }) {
+function RhwpPanel({ editor, info, zoom, imeContext, onReload }: {
+  editor: RhwpEditorSession | null;
+  info: SessionInfo;
+  zoom: number;
+  imeContext: ImeContext;
+  onReload: () => void;
+}) {
   const { t } = useTranslation();
   useEditorUpdates(editor);
   if (!editor) return null;
@@ -291,6 +301,7 @@ function RhwpPanel({ editor, info, zoom, onReload }: { editor: RhwpEditorSession
         data-selection={editor.hasSelection ? `${RhwpEditorSession.positionKey(editor.anchor)}|${RhwpEditorSession.positionKey(editor.caret)}` : ""}
         data-composing={editor.composing}
         data-unpreserved={unpreserved}
+        data-uncertain={editor.hasUncertainChanges}
         data-paragraph-text={TEST_HOOKS ? editor.caretParagraphText() : undefined}
         data-pages={editor.pages.length}
       >
@@ -301,6 +312,8 @@ function RhwpPanel({ editor, info, zoom, onReload }: { editor: RhwpEditorSession
             <p data-testid="rhwp-error">{t(documentErrorMessage(status.error).key)}</p>
             {/* 편집한 모델이 남아 있으면 복구 기능이 없다는 것과 다시 불러오면 버려진다는 것을 숨기지 않는다. */}
             {unpreserved && <p data-testid="rhwp-unpreserved-warning">{t("editor.rhwp.failedUnpreserved")}</p>}
+            {/* 엔진 편집이 도중에 실패했으면 모델이 일부만 바뀌었을 수 있다는 것을 따로 알린다(성공한 편집과 구분). */}
+            {editor.hasUncertainChanges && <p data-testid="rhwp-uncertain-warning">{t("editor.rhwp.failedUncertain")}</p>}
             <button type="button" className="document-bar__button" data-testid="rhwp-load" onClick={onReload}>
               {t("editor.rhwp.reload")}
             </button>
@@ -329,6 +342,8 @@ function RhwpPanel({ editor, info, zoom, onReload }: { editor: RhwpEditorSession
               <output
                 data-testid="rhwp-roundtrip-result"
                 data-format={roundTrip.format}
+                data-reopened-format={roundTrip.reopenedFormat ?? ""}
+                data-format-equal={roundTrip.formatEqual}
                 data-passed={roundTrip.passed}
                 data-failure={roundTrip.failure ?? ""}
                 data-loss-valid={roundTrip.lossValid}
@@ -340,7 +355,7 @@ function RhwpPanel({ editor, info, zoom, onReload }: { editor: RhwpEditorSession
                 {t("editor.rhwp.roundTripResult", {
                   verdict: t(roundTrip.passed ? "editor.rhwp.roundTripPassed" : "editor.rhwp.roundTripFailed"),
                   loss: roundTrip.lossValid ? roundTrip.lossCount : t("editor.rhwp.lossInvalid"),
-                  same: roundTrip.textEqual && roundTrip.controlsEqual && roundTrip.pagesEqual ? "✓" : "✗",
+                  same: roundTrip.formatEqual && roundTrip.textEqual && roundTrip.controlsEqual && roundTrip.pagesEqual ? "✓" : "✗",
                 })}
               </output>
             )}
@@ -348,7 +363,7 @@ function RhwpPanel({ editor, info, zoom, onReload }: { editor: RhwpEditorSession
         )}
       </div>
       <div className="editor__scroll">
-        {status.kind === "ready" ? <RhwpSurface session={editor} zoom={zoom} /> : null}
+        {status.kind === "ready" ? <RhwpSurface session={editor} zoom={zoom} imeContext={imeContext} /> : null}
       </div>
     </>
   );

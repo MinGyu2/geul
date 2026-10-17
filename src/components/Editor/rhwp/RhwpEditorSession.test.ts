@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { DocumentSessions } from "../../../adapters/sessions";
 import { RhwpEditorSession } from "./RhwpEditorSession";
 import type { RhwpDocument, RhwpModule } from "./rhwpModule";
-import { base, controlledBackend, fail, FakeDocument, flush, info, ok, loaded, readySession } from "./testing";
+import { base, CFB_SIGNATURE, controlledBackend, fail, FakeDocument, flush, info, ok, loaded, readySession } from "./testing";
 
 describe("rhwp 편집 세션: 불러오기", () => {
   it("백엔드가 준 바이트로 엔진 문서를 만들고 ready를 확정한 뒤에야 편집할 수 있다", async () => {
@@ -221,8 +221,10 @@ describe("rhwp 편집 세션: 내보내기 검사", () => {
     const opening = sessions.open("/a.hwp");
     take("open").reply(ok(base));
     await opening;
+    // 불러오기 바이트는 본문 그대로, 내보낸 바이트는 HWP 컨테이너 서명(8바이트) 뒤에 본문이 있다(가짜 문서).
+    const body = (bytes: Uint8Array) => new TextDecoder().decode(bytes[0] === CFB_SIGNATURE[0] ? bytes.subarray(CFB_SIGNATURE.length) : bytes);
     const module: RhwpModule = {
-      openDocument: (bytes) => new FakeDocument(new TextDecoder().decode(bytes).split("\n").filter(Boolean).length ? new TextDecoder().decode(bytes).split("\n") : ["가"]) as unknown as RhwpDocument,
+      openDocument: (bytes) => new FakeDocument(body(bytes).split("\n").filter(Boolean).length ? body(bytes).split("\n") : ["가"]) as unknown as RhwpDocument,
     };
     const editor = new RhwpEditorSession(1, backend, sessions, async () => module);
     const loading = editor.load();
@@ -232,7 +234,9 @@ describe("rhwp 편집 세션: 내보내기 검사", () => {
     take("setState").reply(ok(info({ state: "ready", sequence: 2 })));
     await loading;
     const report = editor.roundTrip("hwp");
-    expect(report).toMatchObject({ format: "hwp", lossCount: 0, pagesEqual: true, textEqual: true, controlsEqual: true });
+    expect(report).toMatchObject({
+      format: "hwp", reopenedFormat: "hwp", formatEqual: true, lossCount: 0, pagesEqual: true, textEqual: true, controlsEqual: true, passed: true,
+    });
     expect(Object.keys(backend)).not.toContain("save");
   });
 });

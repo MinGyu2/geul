@@ -5,6 +5,8 @@ import { DocumentSessions } from "../../../adapters/sessions";
 import { RhwpEditorSession } from "./RhwpEditorSession";
 import type { RhwpDocument, RhwpModule } from "./rhwpModule";
 
+export const CFB_SIGNATURE = [0xd0, 0xcf, 0x11, 0xe0, 0xa1, 0xb1, 0x1a, 0xe1];
+
 // 본문 문단만 있는 가짜 rhwp 문서(글자 하나 = 가로 10px). 실제 엔진 동작은 tests/integration/rhwp/에서 확인한다.
 export class FakeDocument {
   paragraphs: string[];
@@ -21,7 +23,7 @@ export class FakeDocument {
   }
   free() { this.freed = true; }
   pageCount() { return 1; }
-  getPageInfo() { return JSON.stringify({ width: 800, height: 1000 }); }
+  getPageInfo(page: number) { return JSON.stringify({ pageIndex: page, width: 800, height: 1000 }); }
   getSourceFormat() { return "hwp"; }
   renderPageToCanvas() {}
   hitTest(_page: number, x: number, y: number) {
@@ -82,9 +84,11 @@ export class FakeDocument {
   }
   getTextFileText() { return this.paragraphs.join("\r\n"); }
   getControls() { return "[]"; }
+  /** HWP 5 컨테이너(CFB) 서명 + 본문(다시 열면 같은 가짜 문서가 "hwp"로 열린다). */
   exportHwpWithReport() {
-    const text = this.paragraphs.join("\n");
-    return { contentLoss: () => JSON.stringify({ count: 0, losses: [] }), takeBytes: () => new TextEncoder().encode(text), free() {} };
+    const text = new TextEncoder().encode(this.paragraphs.join("\n"));
+    const bytes = new Uint8Array([...CFB_SIGNATURE, ...text]);
+    return { contentLoss: () => JSON.stringify({ count: 0, losses: [] }), takeBytes: () => bytes, free() {} };
   }
 }
 
