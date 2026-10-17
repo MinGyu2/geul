@@ -25,6 +25,10 @@ pub struct ZipEntry {
     pub compressed_size: Option<u32>,
     /// 데이터 서술자 사용(플래그 비트 3): 로컬 헤더의 CRC·크기를 0으로 두고 데이터 뒤에 서술자를 쓴다.
     pub data_descriptor: bool,
+    /// 데이터는 그대로 두고 선언할 압축 방식(두 헤더 모두).
+    pub method: Option<u16>,
+    /// 로컬 헤더에만 쓸 압축 방식(중앙 디렉터리와 다르게).
+    pub local_method: Option<u16>,
 }
 
 pub fn entry(name: &str, data: &[u8]) -> ZipEntry {
@@ -40,6 +44,8 @@ pub fn entry(name: &str, data: &[u8]) -> ZipEntry {
         local_flags: None,
         compressed_size: None,
         data_descriptor: false,
+        method: None,
+        local_method: None,
     }
 }
 
@@ -77,7 +83,7 @@ pub fn zip(entries: &[ZipEntry], zip64: bool) -> Vec<u8> {
         };
         let crc = item.crc.unwrap_or_else(|| crc32(&item.data));
         let size = item.declared_size.unwrap_or(item.data.len() as u32);
-        let method: u16 = if item.deflate { 8 } else { 0 };
+        let method: u16 = item.method.unwrap_or(if item.deflate { 8 } else { 0 });
         let offset = out.len() as u32;
         let local_name = item.local_name.as_deref().unwrap_or(&item.name);
         let compressed = item.compressed_size.unwrap_or(body.len() as u32);
@@ -85,7 +91,7 @@ pub fn zip(entries: &[ZipEntry], zip64: bool) -> Vec<u8> {
         out.extend(0x0403_4b50u32.to_le_bytes());
         out.extend(20u16.to_le_bytes());
         out.extend((item.local_flags.unwrap_or(item.flags) | descriptor).to_le_bytes());
-        out.extend(method.to_le_bytes());
+        out.extend(item.local_method.unwrap_or(method).to_le_bytes());
         out.extend([0u8; 4]); // 시각
         if item.data_descriptor {
             out.extend([0u8; 12]); // CRC·크기는 데이터 서술자에 있다

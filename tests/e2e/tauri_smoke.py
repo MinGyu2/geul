@@ -756,6 +756,34 @@ def run_document_sessions(start_session, results: list[str]) -> None:
                   "암호화 비트 불일치(다른 항목이 암호화돼 있어도)는 손상, 일관된 암호화는 Encrypted",
                   got == want, json.dumps(got, ensure_ascii=False))
 
+            # T006 3차 안정화: 로컬 헤더 압축 방식 불일치(I), 정확히 19바이트인 mimetype 정책(J)
+            def local_method(data: bytes, name: str, method: int) -> bytes:
+                import io
+                out = bytearray(data)
+                at = zipfile.ZipFile(io.BytesIO(data)).getinfo(name).header_offset
+                out[at + 8:at + 10] = struct.pack("<H", method)
+                return bytes(out)
+
+            third = {
+                "method.docx": local_method(make_docx(), "[Content_Types].xml", 0),
+                "method.hwpx": local_method(make_hwpx(), "Contents/header.xml", 0),
+                "mime19.docx": with_entry(make_docx(), "mimetype", b"application/x-other"),
+                "mime19crc.docx": patch_entry(with_entry(make_docx(), "mimetype", b"application/x-other"),
+                                              "mimetype", crc=0),
+            }
+            for name, data in third.items():
+                (root / name).write_bytes(data)
+            got = {name: call("document_open", {"path": path(name)}) for name in third}
+            want = {
+                "method.docx": {"err": {"code": "ParseFailure", "reason": "corrupt-container"}},
+                "method.hwpx": {"err": {"code": "ParseFailure", "format": "hwpx", "reason": "corrupt-container"}},
+                "mime19.docx": opened_info(8, "mime19.docx"),
+                "mime19crc.docx": {"err": {"code": "ParseFailure", "reason": "corrupt-container"}},
+            }
+            check(results, "문서 세션: 필수 항목의 로컬 헤더 압축 방식 불일치는 손상, 읽을 수 있는 19바이트 다른 mimetype의 "
+                  "DOCX는 열리고 읽을 수 없는 19바이트 mimetype은 HWPX 선언 여부를 알 수 없어 거부",
+                  got == want, json.dumps(got, ensure_ascii=False))
+
             ui = driver.js("""
               return {
                 bold: document.querySelector('button[data-command="format.bold"]')?.getAttribute('aria-disabled'),
