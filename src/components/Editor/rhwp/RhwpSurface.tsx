@@ -36,6 +36,17 @@ interface RhwpSurfaceProps {
 
 /** 조합 계열 input: 글자는 data로만 읽는다(값에는 앞서 확정한 글자가 쌓여 있다). */
 const IME_INPUT_TYPES = new Set(["insertCompositionText", "insertFromComposition", "deleteCompositionText"]);
+/**
+ * data 없는 넣기에서 새로 들어온 글자: 바뀌기 전 값의 선택 앞(start 전)과 뒤(end 뒤)가 지금 값의 앞뒤에 그대로 있으면 그 사이.
+ * 바뀌기 전 상태가 없거나 앞뒤가 맞지 않으면(알 수 없는 편집) ""(넣지 않음). 쌓인 값을 새 글자로 보지 않는다.
+ */
+function insertedText(before: { value: string; start: number; end: number } | null, value: string): string {
+  if (!before) return "";
+  const head = before.value.slice(0, before.start);
+  const tail = before.value.slice(before.end);
+  if (value.length < head.length + tail.length || !value.startsWith(head) || !value.endsWith(tail)) return "";
+  return value.slice(head.length, value.length - tail.length);
+}
 /** 숨긴 textarea에 쌓인 값을 비우는 길이(조합이 없을 때만). */
 const TRIM_LENGTH = 256;
 /** 입력 중 커서 쪽이 아닌 쪽을 다시 그리기까지 기다리는 시간(새 입력이 오면 다시 기다림). */
@@ -69,6 +80,21 @@ export function RhwpSurface({ session, zoom, imeContext }: RhwpSurfaceProps) {
   const context = imeContext ?? ownContext;
   const dragging = useRef(false);
   const rendered = useRef({ version: -1, scale: 0, ratio: 0, pages: 0, sizes: "" });
+  /** 지금 모델로 아직 다시 그리지 않은 쪽(커서 쪽 밖, 그리기 예약됨). */
+  const stalePages = useRef(new Set<number>());
+  const drawStale = useRef<((page: number) => void) | null>(null);
+  /** 스크롤 영역에 조금이라도 보이는 쪽. */
+  const visiblePages = useCallback(() => {
+    const result = new Set<number>();
+    const scroller = pagesRef.current?.closest(".editor__scroll");
+    if (!scroller) return result;
+    const view = scroller.getBoundingClientRect();
+    for (const [page, box] of pageBoxes.current) {
+      const rect = box.getBoundingClientRect();
+      if (rect.bottom > view.top && rect.top < view.bottom && rect.right > view.left && rect.left < view.right) result.add(page);
+    }
+    return result;
+  }, []);
 
   const caret = session.caretRect();
   const selection = session.selectionRects();
@@ -105,37 +131,60 @@ export function RhwpSurface({ session, zoom, imeContext }: RhwpSurfaceProps) {
       if (canvas) session.renderPage(page, canvas, scale * ratio);
     };
     draw(first);
+    drawStale.current = draw;
     const started = inputAt.current;
     inputAt.current = null;
     if (started !== null) {
       requestAnimationFrame(() => requestAnimationFrame(() => session.recordLatency(performance.now() - started)));
     }
-    const rest = session.pages.map((_, page) => page).filter((page) => page !== first);
-    // 그림이 없는 쪽(새 쪽·놓은 bitmap)은 다음 task에 그린다. 이 배율의 그림이 이미 있는 쪽은 입력 중이면 입력이 멈춘 뒤
-    // (REST_DELAY_MS) 한 번에 다시 그린다: 키마다 모든 쪽을 다시 그리면 그만큼 입력이 밀린다. 새 변경이 오면 이 작업을
-    // 취소하고 다시 정하므로 마지막 모델로 그리며, 옛 작업은 version 검사로 새 모델을 덮지 않는다.
-    const blank = rest.filter((page) => !canvases.current.get(page)?.width);
-    const stale = rest.filter((page) => !blank.includes(page));
-    const later = started !== null && !all ? stale : [];
+    // 커서 쪽에서 가까운 쪽부터, 한 task에 한 쪽씩 그린다(8차: 30쪽을 한 task에 그리면 160 ms 넘게 입력을 막았다).
+    const rest = session.pages.map((_, page) => page).filter((page) => page !== first)
+      .sort((a, b) => Math.abs(a - first) - Math.abs(b - first));
+    // 그림이 없는 쪽(새 쪽·놓은 bitmap)과 화면에 보이는 쪽은 바로(다음 task부터) 그린다. 이 배율의 그림이 이미 있고 화면 밖인
+    // 쪽은 입력 중이면 입력이 멈춘 뒤(REST_DELAY_MS) 그린다: 키마다 모든 쪽을 다시 그리면 그만큼 입력이 밀린다. 기다리는 쪽이
+    // 스크롤로 보이게 되면 그때 바로 그린다(아래 scroll 처리). 새 변경이 오면 이 작업을 취소하고 다시 정하므로 마지막 모델로
+    // 그리며, 옛 작업은 version 검사로 새 모델을 덮지 않는다.
+    const visible = visiblePages();
+    const later = started !== null && !all
+      ? rest.filter((page) => canvases.current.get(page)?.width && !visible.has(page))
+      : [];
     const now = rest.filter((page) => !later.includes(page));
-    const schedule = (pages: number[], delay: number, next?: () => void) => {
+    stalePages.current = new Set(rest);
+    const queue = [...now.map((page) => [page, 0] as const), ...later.map((page, index) => [page, index === 0 ? REST_DELAY_MS : 0] as const)];
+    const step = (index: number) => {
+      const next = queue[index];
+      if (!next) return;
       renderTimer.current = window.setTimeout(() => {
         renderTimer.current = null;
-        pages.forEach(draw);
-        next?.();
-      }, delay);
+        if (stalePages.current.delete(next[0])) draw(next[0]);
+        step(index + 1);
+      }, next[1]);
     };
-    if (later.length === 0) schedule(now, 0);
-    else if (now.length === 0) schedule(later, REST_DELAY_MS);
-    else schedule(now, 0, () => schedule(later, REST_DELAY_MS));
+    step(0);
     // 실제 새 render·unmount만 이 작업을 취소한다. firstPaint·commit 알림의 단순 React 갱신은 취소하지 않는다.
   });
 
   useLayoutEffect(() => () => {
     if (renderTimer.current !== null) window.clearTimeout(renderTimer.current);
     renderTimer.current = null;
+    stalePages.current.clear();
+    drawStale.current = null;
     session.releaseRendering();
   }, [session]);
+
+  // 그리기를 기다리던 쪽이 스크롤로 보이게 되면 바로 그린다(입력이 이어져도 보이는 쪽이 옛 그림으로 남지 않게).
+  useEffect(() => {
+    const scroller = pagesRef.current?.closest(".editor__scroll");
+    if (!scroller) return;
+    const onScroll = () => {
+      if (stalePages.current.size === 0) return;
+      for (const page of visiblePages()) {
+        if (stalePages.current.delete(page)) drawStale.current?.(page);
+      }
+    };
+    scroller.addEventListener("scroll", onScroll, { passive: true });
+    return () => scroller.removeEventListener("scroll", onScroll);
+  }, [visiblePages]);
 
   // ---- 커서 위치로 textarea 옮기기·보이게 하기 ----
   // 페이지 상자의 위치는 그린 뒤에야 알 수 있으므로 layout effect에서 직접 옮긴다(React 상태를 늘리지 않음).
@@ -205,19 +254,34 @@ export function RhwpSurface({ session, zoom, imeContext }: RhwpSurfaceProps) {
     };
     // 글자는 이벤트(data)에서 읽는다: 조합 입력의 data는 지금 조합 문자열 전체, 확정·일반 입력은 넣은 글자다(실측
     // WebKitGTK 2.54 + ibus). 초점 있는 textarea의 값을 키마다 비우면 WebKitGTK가 입력기 문맥을 다시 맞추느라 frame마다
-    // 수십 ms를 써 실제 IME 입력이 밀렸다. 그래서 값은 쌓아 두고, 글자를 알려 주지 않는 입력(붙여넣기 등)만 값에서 읽고
-    // 비운다. 쌓인 값은 조합이 없을 때 가끔(TRIM_LENGTH) 비운다.
+    // 수십 ms를 써 실제 IME 입력이 밀렸다(7차). 그래서 값은 쌓아 두고 문서의 근거로 쓰지 않는다:
+    // - data가 없는 넣기(붙여넣기 등)는 beforeinput 때의 값·선택(바뀌기 전)과 지금 값을 비교해, 선택 앞뒤로 남은 부분 사이에
+    //   새로 들어온 글자만 넣는다(8차: 쌓인 값을 통째로 넣어 앞서 넣은 글자가 다시 들어가던 결함). 비교할 수 없으면 넣지 않는다.
+    // - 넣기가 아닌 입력(지우기·되돌리기·서식, 예: Ctrl+Backspace·Ctrl+X·Ctrl+Z)은 문서에 아무것도 넣지 않는다. 조합 중이
+    //   아니면 beforeinput에서 막아 숨긴 값이 어긋나지 않게 한다(T007 범위 밖의 네이티브 편집, 문서 지우기는 키로 처리).
+    // 쌓인 값은 조합이 없을 때 가끔(TRIM_LENGTH) 비운다.
+    let snapshot: { value: string; start: number; end: number } | null = null;
+    const onBeforeInput = (event: Event) => {
+      const { inputType = "", isComposing = false } = event as InputEvent;
+      const composing = session.composing || isComposing;
+      if (!composing && !IME_INPUT_TYPES.has(inputType) && !inputType.startsWith("insert")) {
+        event.preventDefault();
+        snapshot = null;
+        return;
+      }
+      snapshot = { value: input.value, start: input.selectionStart, end: input.selectionEnd };
+    };
     const onInput = (event: Event) => {
       mark(event);
       const { inputType = "", isComposing = false, data = null } = event as InputEvent;
       const composing = session.composing || isComposing;
+      const before = snapshot;
+      snapshot = null;
       let text: string;
       if (composing || IME_INPUT_TYPES.has(inputType)) text = data ?? "";
+      else if (!inputType.startsWith("insert")) text = "";
       else if (data !== null) text = data;
-      else {
-        text = input.value;
-        input.value = "";
-      }
+      else text = insertedText(before, input.value);
       controller.input(text, inputType, isComposing);
       if (!composing && !session.composing && input.value.length > TRIM_LENGTH) input.value = "";
     };
@@ -231,6 +295,7 @@ export function RhwpSurface({ session, zoom, imeContext }: RhwpSurfaceProps) {
     };
     input.addEventListener("keydown", onKeyDown);
     input.addEventListener("compositionstart", onCompositionStart);
+    input.addEventListener("beforeinput", onBeforeInput);
     input.addEventListener("input", onInput);
     input.addEventListener("compositionend", onCompositionEnd);
     const onBlur = () => {
@@ -244,6 +309,7 @@ export function RhwpSurface({ session, zoom, imeContext }: RhwpSurfaceProps) {
       ime.current = null;
       input.removeEventListener("keydown", onKeyDown);
       input.removeEventListener("compositionstart", onCompositionStart);
+      input.removeEventListener("beforeinput", onBeforeInput);
       input.removeEventListener("input", onInput);
       input.removeEventListener("compositionend", onCompositionEnd);
     };

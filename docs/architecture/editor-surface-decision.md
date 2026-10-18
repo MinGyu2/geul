@@ -768,3 +768,120 @@ dirty 영역이 필요). 다른 문서를 고친 채: 그 문서를 닫으면 71
 
 T007 체크박스는 그대로 둔다: 필수 IME 7개는 X11 + ibus에서 통과하고 한 문서 입력은 기준 안이지만, DPR 2와 다른 문서를 고친 채
 열어 둔 상태의 실제 IME 지연이 150 ms를 넘는다. GNOME/KDE·Wayland·fcitx5·Windows/macOS는 미검증이다.
+
+## T007 8차: 숨긴 입력 버퍼 정확성·남은 한국어 IME 성능 (2026-10-18)
+
+기준 `a15002b`(origin/master와 같음). 앞 절의 기록은 그대로 두고 이 절에 8차를 기록한다. 측정 환경은 7차와 같다(Xvfb X11 :78,
+WebKitGTK 2.54.1, GTK 3.24.52, ibus 1.5.33 + ibus-hangul 1.5.5, GPU 없음 `LIBGL_ALWAYS_SOFTWARE=1`·`WEBKIT_DISABLE_DMABUF_RENDERER=1`,
+xdotool 실제 키, 키 간격 120 ms, 문장 21키). 지연은 7차의 키→frame 정의(xdotool이 키를 보낸 시각부터 그 키의 상태가 처음 보인
+frame의 다음 frame까지) 그대로이고, 앱의 `data-latency-*` 정의는 바꾸지 않았다.
+
+### 재현과 판정
+
+| 항목 | 판정 | 수정 전 재현 | 원인 | 수정 |
+|------|------|-------------|------|------|
+| P1-A 쌓인 textarea 값과 `data` 없는 입력 | CONFIRMED DEFECT | 합성: 새 `inputBuffer.test.tsx` 17개 중 13개가 기준 코드에서 실패('a' 뒤 'bc' 붙여넣기 → 'aabc', 지우기·되돌리기 input이 쌓인 값을 넣음, 선택 붙여넣기가 엉뚱한 글자). 실제 WebView(`paste.py`, 실제 X 클립보드): WebKitGTK는 `insertFromPaste`에 `data`를 주므로 **중복 붙여넣기는 실제로는 재현되지 않음**. 대신 Ctrl+Backspace(`deleteWordBackward`, data 없음)가 쌓인 값을 새 글자로 **넣었고**(기준), 선택을 바꾸는 붙여넣기 결과가 틀렸다(기준 `…\nL2LQ`) | `data`가 없으면 textarea 값 전체를 새 입력으로 읽음 | 아래 "입력 해석" |
+| P1-B 다른 문서를 고친 채 열어 두면 느림 | CONFIRMED(원인 기전 확인, WebKit 내부 이유 미확인) | 통제 행렬: 다른 문서를 **한 번이라도 고치면** 느린 상태로 바뀌고 그 문서를 닫을 때까지 유지. 활성 Canvas를 얼리면 빠름 | WebKit은 Canvas 무효화 영역을 **잘라 내기 전(unclipped) 그린 사각형**으로 잡는다. rhwp 패치 그리기(`renderPagePatchToCanvasFilteredWithProfile`)는 쪽 배경을 **쪽 전체 `fillRect`**로 다시 칠하므로 7차의 그 자리 다시 그리기는 키마다 Canvas 전체를 다시 합성했다(실측: 50×50으로 잘라 낸 전체 fillRect 58 ms frame, 전체 칠하기 56 ms) | 바뀐 띠만 다시 그리고 그동안 fillRect를 띠 안으로 제한(아래). 다른 문서 상태에서 WebKit 전체 무효화가 왜 약 2배로 비싸지는지는 확인하지 못했다 |
+| P1-C DPR 2 | CONFIRMED(같은 기전) | 4배 픽셀의 Canvas 전체 다시 합성 | 위와 같음 | 위와 같음(bitmap 해상도는 그대로 DPR × 배율) |
+| P2 여러 쪽 나중 그리기 | CONFIRMED(실측 long task) | 입력이 아닌 그리기(처음·배율)는 커서 쪽 밖 모든 쪽을 한 task에: 12쪽 63–71 ms, 30쪽 144–164 ms. 입력 중 화면에 보이는 다른 쪽도 입력이 멈출 때까지 옛 그림 | 한 `setTimeout`에 모든 쪽 | 아래 "여러 쪽 그리기" |
+
+배제한 것(P1-B, 각각 측정): DOM 표시 글자, 탭 그리기, JS 시간, Canvas 연산 구성, 글꼴, RSS, Canvas 사각형, 입력기 초점 다시 잡기,
+CPU Canvas, 시간 누적. 버린 시도: 띠만 그리되 fillRect를 그대로 둔 것(8c) — 픽셀은 같지만 지연이 줄지 않았다(위 기전).
+
+### 입력 해석(`RhwpSurface`)
+
+- 숨긴 textarea는 IME가 쓰는 입력 버퍼일 뿐 문서의 근거가 아니다(7차처럼 키마다 비우지 않음 — 비우기가 실제 IME 지연의 원인이었다).
+- `beforeinput` 때 값과 선택(`selectionStart/End`)을 기억하고, `input`에서 글자는 이렇게 읽는다: 조합 중·조합 계열 inputType은
+  `data`; 조합이 아니고 `insert*`가 아니면(`delete*`·`history*`·`format*`) 아무것도 넣지 않으며 `beforeinput`을 막는다; `insert*`에
+  `data`가 있으면 `data`; 없으면 기억한 값의 선택 앞·뒤가 지금 값의 앞·뒤와 같을 때만 그 사이를 새 글자로 본다. 기억이 없거나 앞·뒤가
+  맞지 않으면 **넣지 않는다**(쌓인 값을 새 입력으로 보지 않는 안전한 미지원 처리).
+- 문서 선택은 textarea 선택과 무관하게 모델의 선택으로 바뀐다(`controller.input`). 지우기·되돌리기·잘라내기는 기존 키 처리(엔진
+  명령)만 쓰고 WebKit 기본 편집을 거치지 않는다. 실측: Ctrl+X·Ctrl+Z·Ctrl+Shift+Z는 WebKitGTK에서 input을 만들지 않고, Ctrl+Backspace는
+  `beforeinput`에서 막혀 문서가 그대로다.
+- 조합·revision 계약(7차)은 그대로다: 조합 하나 = 변경 하나, Rust가 revision 권한, 새 필드·Rust 변경 없음.
+- 한계(기존 동작): 여러 줄 붙여넣기는 문단을 나누지 않고 문단 안에 `\n`을 넣는다(기준과 같음).
+
+### 바뀐 띠만 다시 그리기(`paintDiff.ts`, `RhwpEditorSession.repaintInPlace`)
+
+- 고정 rhwp의 `getPageLayerTreeWithProfile(page, "screen", true, true)`(그리기가 그대로 재생하는 레이어 트리 JSON)를 요약해 Canvas마다
+  마지막으로 그린 것을 기억하고, 다음 그리기 때 비교한다. 노드 구조(종류·순서·층·잘라내기)가 다르면 쪽 전체, 같으면 잎마다 사라지거나
+  생긴 연산의 bbox(이전·지금 자리 모두, 위아래 여유 max(8, 높이))를 합친 쪽 너비 띠, 같으면 그리지 않는다. 모르는 노드·bbox 없는 연산·
+  읽기 실패는 쪽 전체. 7차에서 버린 "커서 사각형으로 짐작한 띠"와 달리 이 띠는 실제로 그린 입력의 차이라 표·뒤 문단이 움직인 경우를
+  포함한다.
+- 띠 위아래를 Canvas 픽셀 경계에 맞춘다(바깥쪽으로). 맞추지 않은 띠(8b)는 띠 끝 두 줄의 RGB가 달랐다.
+- 띠를 그리는 동안 그 Canvas 2D context의 `fillRect`를 띠와 겹치는 부분만 칠하게 바꾸고(지금 변환이 확대·이동일 때만, 아니면 그대로)
+  끝나면 돌려놓는다(`confineFills`). 잘라 낸 결과와 같은 픽셀이므로 그림은 같고 WebKit의 무효화 영역만 띠로 줄어든다.
+- 엔진 API가 없거나 거부하면 7차의 쪽 전체 그 자리 다시 그리기 → 원래 `renderPageToCanvas` 순서. bitmap 해상도는 줄이지 않았다.
+- 커서 쪽의 다시 그림 횟수는 기준과 같다(21키에 35). 앱 진단 카운터(`getContext` 횟수)는 띠마다 한 번 더 세어 70으로 보인다.
+- 비교의 범위(고정 rhwp 코드 확인): 패치 그리기는 같은 Canvas2D 레이어 트리를 재생하고 노드 bounds로 거르지 않으며(글자 연산만
+  잉크 범위로 거름), `clipKind`·`cacheHint`는 재생에 쓰이지 않는다. 그림 연산은 바이트를 빼도 bin-data 세대가 든 키가 남는다.
+  트리 밖의 그리기 설정(문단 부호·조판 부호 보이기)은 앱이 바꾸지 않는다 — 그 토글을 넣으면 쪽 전체를 다시 그려야 한다.
+
+### 여러 쪽 그리기(`RhwpSurface`)
+
+- 커서 쪽은 바로 그리고, 나머지는 커서 쪽에서 가까운 쪽부터 **한 task에 한 쪽**씩 그린다. 그림이 없는 쪽(새 쪽·놓은 bitmap)과 지금
+  화면에 보이는 쪽은 바로(다음 task부터), 이 배율의 그림이 있고 화면 밖인 쪽은 입력 중이면 입력이 200 ms 멈춘 뒤 그린다.
+- 기다리는 쪽이 스크롤로 보이게 되면 `.editor__scroll`의 scroll에서 바로 그린다. 새 변경은 기다리던 작업을 취소하고 다시 정하며,
+  옛 작업은 version 검사로 새 모델을 덮지 않는다. unmount는 작업을 취소하고 bitmap을 놓는다(기존).
+- 바뀌지 않은 쪽은 위 비교로 그리지 않으므로 나중 그리기의 비용도 줄었다. 쪽 virtualization은 하지 않았다(범위 밖).
+
+### 그리기 정확성(실제 엔진, 실제 IME 입력 뒤 그 자리 그림 vs 배율 90%→100% 처음부터 그림)
+
+| 경우 | RGB 차이 |
+|------|----------|
+| HWP·HWPX 본문, HWP 표 셀, HWPX 표 셀 긴 입력(줄 늘어남·표 아래 이동), HWP 긴 입력 | 0 |
+| DPR 2 본문, DPR 2 표 셀 긴 입력 | 0 |
+| 12쪽 HWPX 모든 쪽 | 0 |
+| 흐르는 글 6쪽(`flow200`), Enter 12번으로 뒤 쪽이 바뀜(마지막 쪽 바뀜 확인), DPR 1·2, 모든 쪽 | 0 |
+| 스크롤 중 입력(`probe10`): Enter 12번 직후 바뀐 마지막 쪽을 스크롤로 보이게 해 두 frame 뒤 잡음 | 0(마지막 키 뒤 106 ms, DPR 2 163 ms — 200 ms 나중 그리기 전). 대조 8d는 옛 그림(6,864 / 19,296 픽셀 다름) |
+
+다른 것은 Canvas 오른쪽·아래 끝 한 줄의 alpha뿐(1,992, DPR 2는 3,985 — 7차와 같은 수, 앞 절 참고)이고 쪽 배경은 늘 흰색이다.
+
+### 실제 한국어 IME 지연(p95, ms; 기준 그리기 = 8a: `a15002b` + 입력 해석 수정만)
+
+| 조건 | 기준 그리기 8a | 최종 | 판정(≤150) |
+|------|---------------|------|-----------|
+| HWP / HWPX 1쪽 | ~73 / ~73 | 49 / 57 (최대 52 / 63) | PASS |
+| **DPR 2**(`GDK_SCALE=2`) HWP / HWPX | **453 / 484** | 75 / 72 (최대 91 / 77) | PASS |
+| 표 셀 HWP / HWPX, DPR 2 HWPX 셀 | — | 61 / 65, 76 | PASS |
+| 배율 200% HWP / HWPX | — | 74 / 74 | PASS |
+| 12쪽 / 30쪽 HWPX | 72 / 75 | 58 / 62 | PASS |
+| **HWPX 입력, 고친 HWP 열어 둠** | **201** | 55, 56 | PASS |
+| **HWP 입력, 고친 HWPX 열어 둠**(반대) | **213** | 55, 54 | PASS |
+| **세 문서, 둘 고침** | **216** | 56 | PASS |
+| **A→B→A 전환 뒤** | **183** | 55, 58 | PASS |
+| 고친 다른 문서 + DPR 2 | — | 73 | PASS |
+
+마지막 키 뒤 보이기까지(최종): 1쪽 54–68 ms, DPR 2 57–64 ms. 모든 실행의 최종 글자·revision(+10)·다른 문서 내용이 맞았다.
+기록해 둘 느린 실행: 다른 작업의 빌드(rustc)가 돌던 동안 고친 다른 문서 상태에서 205 ms(load 4.6)·336 ms(load 12)가 나왔다. 같은
+부하의 한 문서 측정이 없어 비교할 수 없다. 합성 부하(바쁜 루프 8개, load 5.6)에서 반대 방향 상태는 126 ms였고, 같은 부하의 한 문서
+측정은 아래 WebDriver 끊김으로 얻지 못했다. 실제 GPU 데스크톱은 측정하지 못했다.
+
+long task(시간 8 ms 넘는 setTimeout 작업, 입력 중 12쪽 / 30쪽): 기준 그리기 처음 그리기 63–71 / 144–164 ms, 입력 뒤 나중 그리기
+22 / 53–60 ms → 최종 가장 긴 것 10 ms(두 경우 모두 하나).
+
+### 검증 기록(최종 소스)
+
+| 검사 | 실제 결과 |
+|------|-----------|
+| 새 테스트를 기준 코드에 | `inputBuffer.test.tsx` 17개 중 13 실패. `repaintScheduling.test.tsx`의 순서 3개는 이전(한 task 묶음) 스케줄러에서 실패 |
+| `npm run typecheck`, `npm run lint`, `npm test -- --reporter=dot`, `npm run build` | 오류 없음, Vitest 396개(18파일, 부하 중 5회 반복 통과) |
+| `src-tauri`: `cargo fmt --check`, `cargo check --locked --all-targets`, `cargo clippy --locked --all-targets -- -D warnings`, `cargo test --locked` | 통과, 단위 51 + 통합 1 |
+| `VITE_GEUL_TEST_HOOKS=1 npm run tauri build -- --debug --no-bundle` | 통과(`cargo test` 뒤 다시 빌드 — `cargo test`가 개발 서버용 바이너리로 덮어써 첫 weston 실행이 모두 화면 없이 실패했다. 다시 빌드한 바이너리는 측정한 것과 바이트가 같음. 주석만 고친 뒤의 마지막 빌드는 JS 묶음 해시가 같고(`index-DP_f4Iy2.js`) 그 바이너리로 스모크 62/62·IME 게이트를 다시 통과) |
+| `tests/e2e/tauri_smoke.py`(weston) | 62/62 |
+| `rhwp_poc.py`(weston) | 64/64 ×2 |
+| `fourth_stabilization.py` / `--scenario dpi` | 22/22 / 13/13 |
+| `fifth_stabilization.py` / `--scenario dpi` | 21/21 / 첫 실행 WebDriver 끊김, 다시 8/8 ×5(기준 바이너리도 8/8 ×5) |
+| `fourth_stabilization.py --scenario close --native-close`(Xvfb, IME 모듈 없음) | 4/4 ×2 |
+| `rhwp_poc.py --ime --focus-window '^wkprobe$'` | 필수 7/7 PASS, 선택 2개 PASS — 측정 바이너리 3회 + 마지막 빌드 1회 |
+| 실제 붙여넣기(`paste.py`, HWP·HWPX) | 'a' 뒤 'bc' → 'abc', 같은 'abc' 두 번 → 'abcabc', 한글 뒤 붙여넣기, Ctrl+Backspace·Ctrl+X·Ctrl+Z·Ctrl+Shift+Z 문서 그대로 — 모두 PASS |
+| `security-scan-ci.sh`(Gitleaks 포함) | 모두 통과 |
+
+WebDriver 끊김(`RemoteDisconnected`): 합성 부하 밖의 실제 앱 실행 약 90회 중 6회(최종 바이너리 5 — 그중 3회는 다른 작업의 빌드 중 —,
+대조 8d 1). 합성 CPU 부하(바쁜 루프)에서는 대부분의 실행에서 재현된다. 실행 기록: 끊길 때 WebKitWebDriver·tauri-driver가 먼저 사라지고 **앱은 살아 있었으며**(stderr 없음, 30초 뒤 시험
+정리의 SIGTERM으로 끝남), tauri-driver 기록은 WebKitWebDriver 쪽 연결의 "Connection reset by peer"다. 앱 충돌이 아니라 시험 중계의
+문제로 보이지만(keep-alive 경합은 가설) 원인은 확정하지 못했다.
+
+T007 체크박스는 그대로 둔다. 이 환경(Xvfb X11, 소프트웨어 렌더링)에서 필수 IME 7개와 한 문서·DPR 2·여러 문서 지연 기준을 모두
+통과했지만, (1) 큰 외부 부하에서의 여러 문서 느린 실행을 같은 부하의 한 문서와 비교하지 못했고, (2) 다른 문서 상태에서 WebKit의 전체
+무효화가 비싸지는 이유는 미확인이며(기전은 피했음), (3) 실제 GPU 데스크톱·Wayland·fcitx5·Windows/macOS는 미검증이다.

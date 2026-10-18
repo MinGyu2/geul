@@ -38,6 +38,7 @@
 import type { DocumentBackend } from "../../../adapters/backend";
 import type { DocumentError, Result, SessionInfo } from "../../../adapters/contract";
 import type { DocumentSessions } from "../../../adapters/sessions";
+import { changedBand, summarizeLayerTree, type PaintBox, type PaintedPage } from "./paintDiff";
 import type { RhwpDocument, RhwpModule } from "./rhwpModule";
 import { ZOOM_STEPS } from "../../../hooks/layoutState";
 import { fitsRenderBudget, MAX_PAGE_EXTENT } from "./renderBudget";
@@ -220,8 +221,8 @@ export class RhwpEditorSession {
   private composition: Composition | null = null;
   /** 앱이 먼저 끝낸 보이는 조합(클릭·초점 잃음·표면 사라짐). 글자는 모델에 있고, 입력기의 끝을 기다리며 아직 세지 않았다. */
   private provisional: Composition | null = null;
-  /** Canvas마다 마지막으로 그린 쪽·배율(그 자리 다시 그리기의 조건). 놓으면(releaseRendering) 지운다. */
-  private drawnAt = new WeakMap<HTMLCanvasElement, { page: number; scale: number }>();
+  /** Canvas마다 마지막으로 그린 쪽·배율·그리기 입력 요약(그 자리 다시 그리기의 조건과 바뀐 띠 비교). 놓은 Canvas(releaseRendering, 크기 0)는 쓰지 않고 전체 그리기로 다시 기록한다. */
+  private drawnAt = new WeakMap<HTMLCanvasElement, { page: number; scale: number; painted: PaintedPage | null }>();
   private readonly samples: number[] = [];
   private readonly listeners = new Set<() => void>();
 
@@ -503,8 +504,11 @@ export class RhwpEditorSession {
 
   renderPage(page: number, canvas: HTMLCanvasElement, scale: number): boolean {
     if (!this.prepareRendering(scale) || !this.doc) return false;
+    const doc = this.doc;
     try {
-      if (!this.repaintInPlace(this.doc, page, canvas, scale)) this.doc.renderPageToCanvas(page, canvas, scale);
+      const painted = this.paintedSummary(doc, page);
+      if (!this.repaintInPlace(doc, page, canvas, scale, painted)) doc.renderPageToCanvas(page, canvas, scale);
+      this.drawnAt.set(canvas, { page, scale, painted });
       this.renderCanvases.add(canvas);
       if (page === 0 && this.firstPaintMs === null) {
         this.firstPaintMs = performance.now() - this.loadStartedAt;
@@ -512,30 +516,56 @@ export class RhwpEditorSession {
       }
       return true;
     } catch {
+      this.drawnAt.delete(canvas);
       if (this.status.kind === "ready") this.markFailed({ code: "EngineFailure", engine: "rhwp", stage: "render" });
       return false;
     }
   }
 
+  /** 지금 모델의 그 쪽 그리기 입력 요약(비교용). 엔진이 주지 않거나 읽지 못하면 null(그때는 쪽 전체를 그림). */
+  private paintedSummary(doc: RhwpDocument, page: number): PaintedPage | null {
+    if (!doc.getPageLayerTreeWithProfile) return null;
+    try {
+      return summarizeLayerTree(doc.getPageLayerTreeWithProfile(page, "screen", true, true));
+    } catch {
+      return null;
+    }
+  }
+
   /**
-   * 이 배율로 이미 그린 같은 쪽 Canvas면 쪽 전체를 그 자리에서 다시 그린다(같은 페인트, Canvas 크기를 다시 정하지 않음).
+   * 이 배율로 이미 그린 같은 쪽 Canvas면 그 자리에서 다시 그린다(같은 페인트, Canvas 크기를 다시 정하지 않음).
    * `renderPageToCanvas`는 그릴 때마다 Canvas 크기를 다시 정해 bitmap을 새로 잡는데, 조합 키마다 그리면 그 비용이
-   * 실제 IME 입력 지연의 큰 몫이었다(WebKitGTK 소프트웨어 렌더링 실측). 조건이 맞지 않거나 엔진이 거부하면(그리기 전
-   * 예외) false를 돌려 원래의 전체 그리기를 쓴다. 진짜 그리기 실패는 그 전체 그리기에서 다시 드러난다.
+   * 실제 IME 입력 지연의 큰 몫이었다(7차). 8차: 마지막으로 그 Canvas에 그린 그리기 입력과 지금 입력을 비교해(paintDiff.ts)
+   * 바뀐 띠만 다시 그리고, 바뀐 것이 없으면 그리지 않는다. 비교할 수 없으면 쪽 전체. 조건이 맞지 않거나 엔진이 거부하면
+   * (그리기 전 예외) false를 돌려 원래의 전체 그리기를 쓴다. 진짜 그리기 실패는 그 전체 그리기에서 다시 드러난다.
    */
-  private repaintInPlace(doc: RhwpDocument, page: number, canvas: HTMLCanvasElement, scale: number): boolean {
+  private repaintInPlace(doc: RhwpDocument, page: number, canvas: HTMLCanvasElement, scale: number, painted: PaintedPage | null): boolean {
     const size = this.pages[page];
     const drawn = this.drawnAt.get(canvas);
     if (!doc.renderPagePatchToCanvasFilteredWithProfile || !size || !drawn || drawn.page !== page || drawn.scale !== scale
       || canvas.width === 0 || canvas.height === 0) {
-      this.drawnAt.set(canvas, { page, scale });
       return false;
     }
+    let rect: PaintBox = { x: 0, y: 0, width: size.width, height: size.height };
+    if (painted && drawn.painted) {
+      const band = changedBand(drawn.painted, painted, size.width, size.height);
+      if (band === null) return true; // 이 Canvas는 이미 지금 모델을 보여 준다
+      if (band !== "page") {
+        // 띠의 위아래를 Canvas 픽셀 경계에 맞춘다(바깥쪽으로). 소수 픽셀 경계에서는 지우기·다시 그리기가 그 줄을 일부만 덮어
+        // 앞뒤 픽셀이 섞였다(실측: 띠 끝 두 줄만 RGB가 다름).
+        const top = Math.floor(band.y * scale) / scale;
+        const bottom = Math.min(size.height, Math.ceil((band.y + band.height) * scale) / scale);
+        rect = { x: band.x, y: top, width: band.width, height: bottom - top };
+      }
+    }
+    const restore = rect.height < size.height ? confineFills(canvas, rect, scale) : null;
     try {
-      doc.renderPagePatchToCanvasFilteredWithProfile(page, canvas, scale, "all", "screen", 0, 0, size.width, size.height);
+      doc.renderPagePatchToCanvasFilteredWithProfile(page, canvas, scale, "all", "screen", rect.x, rect.y, rect.width, rect.height);
       return true;
     } catch {
       return false;
+    } finally {
+      restore?.();
     }
   }
 
@@ -1078,3 +1108,32 @@ export class RhwpEditorSession {
   }
 }
 
+/**
+ * 띠 다시 그리기 동안 그 Canvas의 fillRect를 띠와 겹치는 부분만 그리게 한다(돌려놓는 함수를 돌려줌).
+ * rhwp의 패치 그리기는 띠로 잘라 내고(clip) 그리지만 쪽 배경을 쪽 전체 fillRect로 다시 칠한다. WebKit은 잘라 낸 영역이 아니라
+ * 그린 사각형 전체를 바뀐 곳으로 보아(실측: 50×50으로 잘라 낸 전체 fillRect가 전체 칠하기와 같은 frame 비용) Canvas 전체를
+ * 다시 합성했다. 잘라 낸 결과와 같은 픽셀이므로(띠는 Canvas 픽셀 경계에 맞춤) 겹치는 부분만 칠한다. 지금 변환이 확대·이동이
+ * 아니면(회전·기울임) 그대로 칠한다.
+ */
+function confineFills(canvas: HTMLCanvasElement, band: PaintBox, scale: number): (() => void) | null {
+  const context = canvas.getContext("2d");
+  if (!context || typeof context.getTransform !== "function") return null;
+  const original = context.fillRect;
+  const device = { left: band.x * scale, top: band.y * scale, right: (band.x + band.width) * scale, bottom: (band.y + band.height) * scale };
+  context.fillRect = function (x: number, y: number, width: number, height: number) {
+    const m = this.getTransform();
+    if (m.b !== 0 || m.c !== 0 || m.a <= 0 || m.d <= 0) return original.call(this, x, y, width, height);
+    // 띠(Canvas 픽셀)를 지금 사용자 좌표로 옮겨 겹치는 부분만.
+    const left = Math.max(Math.min(x, x + width), (device.left - m.e) / m.a);
+    const right = Math.min(Math.max(x, x + width), (device.right - m.e) / m.a);
+    const top = Math.max(Math.min(y, y + height), (device.top - m.f) / m.d);
+    const bottom = Math.min(Math.max(y, y + height), (device.bottom - m.f) / m.d);
+    if (right <= left || bottom <= top) return;
+    original.call(this, left, top, right - left, bottom - top);
+  };
+  return () => {
+    // 인스턴스에 둔 것만 지운다(원래의 prototype 메서드로 돌아감).
+    delete (context as unknown as { fillRect?: unknown }).fillRect;
+    if (context.fillRect !== original) context.fillRect = original;
+  };
+}

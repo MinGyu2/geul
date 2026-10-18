@@ -67,6 +67,10 @@ async function mounted(pages = 1) {
 }
 
 const wait = (ms: number) => act(() => new Promise<void>((resolve) => setTimeout(resolve, ms)));
+/** 처음 그리기가 모든 쪽에 닿을 때까지(8차: 한 task에 한 쪽씩 그리므로 실행 부하에 따라 걸리는 시간이 다르다). */
+async function converged(doc: PaintingDocument) {
+  for (let i = 0; i < 400 && new Set(doc.draws.map((d) => d.page)).size < doc.pages; i++) await wait(5);
+}
 
 describe("조합 갱신의 그리기", () => {
   it("크기가 같은 쪽은 Canvas를 다시 잡지 않고 그 자리에서 다시 그린다(조합 키마다 bitmap 재할당 없음)", async () => {
@@ -94,7 +98,7 @@ describe("조합 갱신의 그리기", () => {
 
   it("여러 쪽: 입력 중에는 커서 쪽만 바로 그리고, 다른 쪽은 입력이 멈춘 뒤 마지막 모델로 한 번 그린다", async () => {
     const t = await mounted(3);
-    await wait(10);
+    await converged(t.doc);
     t.doc.draws = [];
     t.compose("ㅎ", true);
     t.compose("하");
@@ -109,7 +113,7 @@ describe("조합 갱신의 그리기", () => {
 
   it("입력이 아닌 그리기(처음 그리기)는 다른 쪽도 바로 그린다(빈 쪽을 남기지 않음)", async () => {
     const t = await mounted(3);
-    await wait(10);
+    await converged(t.doc);
     const pages = new Set(t.doc.draws.map((d) => d.page));
     expect([...pages].sort()).toEqual([0, 1, 2]);
     for (const canvas of t.view.container.querySelectorAll("canvas")) expect(canvas.width).toBe(800);
@@ -150,12 +154,17 @@ describe("숨긴 textarea 값", () => {
     expect(t.input.value).toBe("하가 ");
   });
 
-  it("글자를 알려 주지 않는 입력(붙여넣기, data 없음)은 값에서 읽고 비운다", async () => {
+  it("글자를 알려 주지 않는 입력(붙여넣기, data 없음)은 beforeinput 때의 값과 비교해 새 글자만 넣는다(8차)", async () => {
     const t = await mounted();
+    act(() => void t.input.dispatchEvent(new InputEvent("beforeinput", { inputType: "insertFromPaste", cancelable: true })));
     t.input.value = "abc";
     act(() => void t.input.dispatchEvent(new InputEvent("input", { inputType: "insertFromPaste", isComposing: false })));
     expect(t.editor.documentText()).toBe("abc가나다");
-    expect(t.input.value).toBe("");
+    expect(t.input.value).toBe("abc"); // 값은 비우지 않는다(문서의 근거가 아님)
+    // 바뀌기 전 상태(beforeinput)가 없으면 무엇이 새로 들어왔는지 모르므로 넣지 않는다(쌓인 값을 넣지 않음).
+    t.input.value = "abcd";
+    act(() => void t.input.dispatchEvent(new InputEvent("input", { inputType: "insertFromPaste", isComposing: false })));
+    expect(t.editor.documentText()).toBe("abc가나다");
   });
 
   it("쌓인 값은 조합이 없을 때 TRIM_LENGTH를 넘으면 비운다", async () => {

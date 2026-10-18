@@ -20,6 +20,8 @@ export interface RhwpDocument {
   getPageInfo(page: number): string;
   getSourceFormat(): string;
   renderPageToCanvas(page: number, canvas: HTMLCanvasElement, scale: number): void;
+  /** 그 쪽 그리기 입력(레이어 트리) JSON(고정 rhwp `getPageLayerTreeWithProfile`). 바뀐 곳을 정하는 데만 쓴다. */
+  getPageLayerTreeWithProfile?(page: number, profile: string, omitImageBytes: boolean, omitFontBytes: boolean): string;
   /**
    * 같은 크기로 이미 그린 Canvas의 page-space 사각형을 그 자리에서 다시 그린다(고정 rhwp `renderPagePatchToCanvasFilteredWithProfile`).
    * Canvas 크기를 다시 정하지 않는다(나머지 픽셀 유지). 크기·사각형이 맞지 않으면 그리기 전에 예외.

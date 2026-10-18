@@ -559,7 +559,8 @@ describe("P2: 배율·DPR 픽셀 예산 초과는 복구할 수 있는 표시 �
     expect(draws).toEqual([]);
     expect(view.getByTestId("rhwp-render-limit")).toBeTruthy();
     view.rerender(surface(50));
-    await act(flush);
+    // 커서 쪽 밖은 한 task에 한 쪽씩 그린다(8차): 모든 쪽이 그려질 때까지 기다린다.
+    for (let i = 0; i < 20 && draws.length < 46; i++) await act(flush);
     expect(draws).toHaveLength(46);
     expect(t.editor.editable).toBe(true);
     view.unmount();
