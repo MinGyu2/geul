@@ -2,7 +2,7 @@
 
 Date: 2026-10-13
 Spec: [spec.md](./spec.md)
-Status: Revised draft — 2026-10-16 실제 저장소 검사, submodule 고정, 보안 게이트 로컬 구현·2차 재검토 완료(원격 브랜치 보호는 미설정), Tauri/React 6영역 UI 기반(T004) 구현. 2026-10-17 T006: 문서 형식 판별·세션 기록·어댑터 계약 구현(엔진 연결 없음), 같은 날 리뷰 지적 5건 안정화(판별 규칙·동시 판별 자리)와 3건 2차 안정화(ZIP 무결성·mimetype 분류 순서), 3차 안정화(로컬 헤더 압축 방식 일치, 19바이트 mimetype 정책 명시). T007: rhwp R-A 편집 PoC 부분 통과(IME 조합 표시 미검증, 저장 없음), 2026-10-18 5·6차 안정화(실제 IME 게이트 FAIL 유지), IME 원인 규명(필수 7개 PASS)·7차·8차(입력 버퍼·DPR 2·여러 문서 지연, 체크 안 함). WordCraft 통합·열기 대화상자·저장은 미착수
+Status: Revised draft — 2026-10-16 실제 저장소 검사, submodule 고정, 보안 게이트 로컬 구현·2차 재검토 완료(원격 브랜치 보호는 미설정), Tauri/React 6영역 UI 기반(T004) 구현. 2026-10-17 T006: 문서 형식 판별·세션 기록·어댑터 계약 구현(엔진 연결 없음), 같은 날 리뷰 지적 5건 안정화(판별 규칙·동시 판별 자리)와 3건 2차 안정화(ZIP 무결성·mimetype 분류 순서), 3차 안정화(로컬 헤더 압축 방식 일치, 19바이트 mimetype 정책 명시). T007: rhwp R-A 편집 PoC 부분 통과(IME 조합 표시 미검증, 저장 없음), 2026-10-18 5·6차 안정화(실제 IME 게이트 FAIL 유지), IME 원인 규명(필수 7개 PASS)·7차·8차(입력 버퍼·DPR 2·여러 문서 지연)·9차(렌더 배율·바꾸기 입력·화면 변화, 체크 안 함). WordCraft 통합·열기 대화상자·저장은 미착수
 
 ## Summary
 WordCraft는 DOCX, rhwp는 HWP/HWPX 전용 엔진으로 독립 관리한다. Tauri 2 + React/TypeScript 6개 영역 UI에 문서별 어댑터, 공통 명령/상태 계층을 결합한다. 고급 리본보다 렌더·IME·선택·쓰기 무손실 검증과 공개 저장소 보안 게이트를 우선한다.
@@ -186,6 +186,11 @@ interface EditorAdapter {
   영역 대신 실제로 그린 입력의 차이), 그동안 Canvas fillRect를 띠 안으로 제한해 WebKit이 Canvas 전체를 다시 합성하지 않게 한다. 다른
   쪽은 한 task에 한 쪽, 보이는 쪽 먼저, 스크롤로 보이면 바로. 이 환경에서 DPR 2·여러 문서 p95 150 ms 안(픽셀 RGB 같음). Rust 계약 그대로.
   T007 미체크(외부 부하 비교·실제 데스크톱·다른 입력기 미검증).
+- T007 9차([상세](../architecture/editor-surface-decision.md#t007-9차-렌더-배율-정확성바꾸기-입력-안전성화면-변화-다시-그리기-2026-10-18)): 그 자리
+  다시 그리기(띠·fillRect 제한·쪽 전체 패치)는 고정 rhwp가 요청 배율을 그대로 쓸 때만 하고, 배율을 줄이는 쪽(한 변 16,384 px 초과)은
+  처음과 같은 전체 그리기. textarea 범위를 바꾸는 입력(`insertReplacementText`·`insertTranspose`)은 문서 범위를 정할 수 없어 받지 않는다.
+  기다리던 쪽은 scroll과 편집 영역 크기 변화(`ResizeObserver`) 때 바로 그린다. 같은 부하 비교: CPU 포화 때는 한 문서도 150 ms를 넘어
+  여러 문서 특유의 느려짐이 아니다(코드 변경 없음). T007 미체크.
 
 ## Algorithms and Pseudocode
 ```

@@ -33,7 +33,15 @@ async function mounted(text = ["가나다"]) {
     native("insertFromComposition", before + syllable, syllable, true);
     fire(new CompositionEvent("compositionend", { data: syllable }));
   };
-  return { ...t, view, input, native, type, paste, compose };
+  /** textarea 범위 바꾸기(예: 맞춤법 고치기). 바뀌기 전 beforeinput이 막혔는지 돌려준다(막혔으면 값도 그대로). */
+  const replace = (nextValue: string, data: string | null, { inputType = "insertReplacementText", isComposing = false } = {}) => {
+    const before = new InputEvent("beforeinput", { inputType, data, isComposing, cancelable: true });
+    fire(before);
+    if (!before.defaultPrevented) input.value = nextValue;
+    fire(new InputEvent("input", { inputType, data, isComposing }));
+    return before.defaultPrevented;
+  };
+  return { ...t, view, input, fire, native, type, paste, compose, replace };
 }
 
 describe("data 없는 input과 쌓인 textarea 값", () => {
@@ -86,12 +94,11 @@ describe("data 없는 input과 쌓인 textarea 값", () => {
     expect(t.editor.documentText()).toBe("Q가나다");
   });
 
-  it("data 없는 insertText·insertReplacementText도 새로 들어온 글자만", async () => {
+  it("data 없는 insertText도 새로 들어온 글자만", async () => {
     const t = await mounted();
     t.type("a");
     t.native("insertText", "ab", null);
-    t.native("insertReplacementText", "abz", null);
-    expect(t.editor.documentText()).toBe("abz가나다");
+    expect(t.editor.documentText()).toBe("ab가나다");
   });
 
   for (const inputType of ["deleteContentBackward", "deleteWordBackward", "deleteByCut", "historyUndo", "historyRedo"]) {
@@ -163,5 +170,138 @@ describe("붙여넣기와 다른 입력 경계", () => {
     expect(t.editor.awaitingCompositionEnd).toBe(false);
     expect(t.doc.paragraphs).toEqual(["ㅎ가나다", "abXYc"]);
     expect(t.editor.localRevision).toBe(2);
+  });
+});
+
+// 9차: textarea 범위를 바꾸는 input(insertReplacementText·insertTranspose)은 문서의 어느 범위인지 정할 수 없어 받지 않는다.
+// 실제 WebKitGTK 2.54 + ibus-hangul에서는 이 이벤트가 나오지 않았다(한자 변환도 조합 이벤트로 옴, editor-surface-decision.md "T007 9차").
+describe("textarea 범위 바꾸기", () => {
+  it("쌓인 글자의 일부를 바꾸는 data 있는 바꾸기: 막고, 문서에 덧붙이지 않으며, 다음 입력은 그대로", async () => {
+    const t = await mounted();
+    t.type("t"); t.type("e"); t.type("h");
+    const revision = t.editor.localRevision;
+    expect(t.replace("the", "the")).toBe(true);
+    expect(t.editor.documentText()).toBe("teh가나다");
+    expect(t.editor.localRevision).toBe(revision);
+    expect(t.input.value).toBe("teh");
+    t.type("!");
+    expect(t.editor.documentText()).toBe("teh!가나다");
+    expect(t.editor.localRevision).toBe(revision + 1);
+  });
+
+  it("data 없는 바꾸기도(끝에 붙는 모양이어도) 넣지 않는다", async () => {
+    const t = await mounted();
+    t.type("a"); t.type("b");
+    expect(t.replace("abz", null)).toBe(true);
+    expect(t.replace("the", null)).toBe(true);
+    expect(t.editor.documentText()).toBe("ab가나다");
+    t.paste("cd");
+    expect(t.editor.documentText()).toBe("abcd가나다");
+  });
+
+  it("insertTranspose(글자 바꿔 놓기)도 같다", async () => {
+    const t = await mounted();
+    t.type("a"); t.type("b");
+    expect(t.replace("ba", null, { inputType: "insertTranspose" })).toBe(true);
+    expect(t.editor.documentText()).toBe("ab가나다");
+  });
+
+  it("막히지 않고 값이 바뀌어도(취소 불가) 문서는 그대로이고, 다음 붙여넣기는 새 글자만", async () => {
+    const t = await mounted();
+    t.type("a");
+    act(() => void t.input.dispatchEvent(new InputEvent("input", { inputType: "insertReplacementText", data: "A" })));
+    t.input.value = "A";
+    expect(t.editor.documentText()).toBe("a가나다");
+    t.paste("bc");
+    expect(t.editor.documentText()).toBe("abc가나다");
+  });
+
+  it("한글 조합으로 확정한 글자를 바꾸는 바꾸기: 한 조합은 변경 하나로 남고 글자는 그대로", async () => {
+    const t = await mounted();
+    t.compose("한");
+    expect(t.editor.localRevision).toBe(1);
+    expect(t.replace("韓", "韓")).toBe(true);
+    expect(t.editor.documentText()).toBe("한가나다");
+    expect(t.editor.localRevision).toBe(1);
+    t.compose("글");
+    expect(t.editor.documentText()).toBe("한글가나다");
+    expect(t.editor.localRevision).toBe(2);
+  });
+
+  it("조합 중에 온 바꾸기는 조합을 바꾸지 않는다(조합은 끝까지 한 트랜잭션)", async () => {
+    const t = await mounted();
+    t.fire(new CompositionEvent("compositionstart", { data: "" }));
+    t.native("insertCompositionText", "하", "하", true);
+    expect(t.replace("x", "x", { isComposing: true })).toBe(false); // 조합 중에는 막지 않는다
+    expect(t.editor.composing).toBe(true);
+    expect(t.editor.documentText()).toBe("하가나다"); // 보이는 조합도 그대로
+    t.native("insertCompositionText", "한", "한", true);
+    t.native("deleteCompositionText", "", null, true);
+    t.fire(new CompositionEvent("compositionend", { data: "" }));
+    t.native("insertFromComposition", "한", "한", true);
+    t.fire(new CompositionEvent("compositionend", { data: "한" }));
+    expect(t.editor.documentText()).toBe("한가나다");
+    expect(t.editor.localRevision).toBe(1);
+  });
+
+  it("조합 중 클릭(입력기의 끝을 기다림) 뒤의 바꾸기는 기다림을 끝내지 않고, 뒤의 붙여넣기가 앞 조합을 센다", async () => {
+    const t = await mounted(["가나다", "abc"]);
+    t.input.value = "ㅎ";
+    t.fire(new CompositionEvent("compositionstart", { data: "" }));
+    t.fire(new InputEvent("input", { data: "ㅎ", inputType: "insertCompositionText", isComposing: true }));
+    const page = t.view.container.querySelector<HTMLDivElement>(".rhwp-page")!;
+    act(() => void page.dispatchEvent(new MouseEvent("mousedown", { bubbles: true, button: 0, clientX: 20, clientY: 25 })));
+    expect(t.editor.awaitingCompositionEnd).toBe(true);
+    t.replace("ㅎX", "X");
+    expect(t.editor.awaitingCompositionEnd).toBe(true);
+    expect(t.doc.paragraphs).toEqual(["ㅎ가나다", "abc"]);
+    t.paste("XY");
+    expect(t.doc.paragraphs).toEqual(["ㅎ가나다", "abXYc"]);
+    expect(t.editor.localRevision).toBe(2);
+  });
+
+  it("문서 선택이 있어도 선택을 지우거나 바꾸지 않는다", async () => {
+    const t = await mounted();
+    t.type("a");
+    t.editor.moveHorizontal(-1, true);
+    expect(t.replace("Q", "Q")).toBe(true);
+    expect(t.editor.documentText()).toBe("a가나다");
+    expect(t.editor.hasSelection).toBe(true);
+    t.paste("Q");
+    expect(t.editor.documentText()).toBe("Q가나다");
+  });
+
+  it("앞 확정이 응답을 기다리는 동안의 바꾸기는 확정 회계를 바꾸지 않는다", async () => {
+    const t = await mounted();
+    t.type("a");
+    t.replace("b", "b");
+    t.type("c");
+    expect(t.calls.filter((call) => call.method === "commit").map((call) => call.args[3])).toEqual([1]);
+    expect(t.editor.localRevision).toBe(2);
+    expect(t.editor.documentText()).toBe("ac가나다");
+  });
+
+  it("blur·focus 뒤와 표면을 다시 만든 뒤(탭 전환)의 바꾸기도 넣지 않는다", async () => {
+    const t = await mounted();
+    t.type("a");
+    act(() => t.input.blur());
+    act(() => t.input.focus());
+    expect(t.replace("x", "x")).toBe(true);
+    t.view.unmount();
+    const view = render(
+      <LanguageProvider language="ko" onLanguageChange={() => {}}>
+        <RhwpSurface session={t.editor} zoom={100} />
+      </LanguageProvider>,
+    );
+    const input = view.container.querySelector<HTMLTextAreaElement>(".rhwp-input")!;
+    const before = new InputEvent("beforeinput", { inputType: "insertReplacementText", data: "y", cancelable: true });
+    act(() => void input.dispatchEvent(before));
+    act(() => void input.dispatchEvent(new InputEvent("input", { inputType: "insertReplacementText", data: "y" })));
+    expect(before.defaultPrevented).toBe(true);
+    expect(t.editor.documentText()).toBe("a가나다");
+    act(() => void input.dispatchEvent(new InputEvent("beforeinput", { inputType: "insertText", data: "z", cancelable: true })));
+    input.value = "z";
+    act(() => void input.dispatchEvent(new InputEvent("input", { inputType: "insertText", data: "z" })));
+    expect(t.editor.documentText()).toBe("az가나다");
   });
 });

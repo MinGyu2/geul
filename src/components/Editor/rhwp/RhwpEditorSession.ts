@@ -41,7 +41,7 @@ import type { DocumentSessions } from "../../../adapters/sessions";
 import { changedBand, summarizeLayerTree, type PaintBox, type PaintedPage } from "./paintDiff";
 import type { RhwpDocument, RhwpModule } from "./rhwpModule";
 import { ZOOM_STEPS } from "../../../hooks/layoutState";
-import { fitsRenderBudget, MAX_PAGE_EXTENT } from "./renderBudget";
+import { drawsAtRequestedScale, fitsRenderBudget, MAX_PAGE_EXTENT } from "./renderBudget";
 export { MAX_PAGE_EXTENT } from "./renderBudget";
 import {
   charCount,
@@ -536,8 +536,9 @@ export class RhwpEditorSession {
    * 이 배율로 이미 그린 같은 쪽 Canvas면 그 자리에서 다시 그린다(같은 페인트, Canvas 크기를 다시 정하지 않음).
    * `renderPageToCanvas`는 그릴 때마다 Canvas 크기를 다시 정해 bitmap을 새로 잡는데, 조합 키마다 그리면 그 비용이
    * 실제 IME 입력 지연의 큰 몫이었다(7차). 8차: 마지막으로 그 Canvas에 그린 그리기 입력과 지금 입력을 비교해(paintDiff.ts)
-   * 바뀐 띠만 다시 그리고, 바뀐 것이 없으면 그리지 않는다. 비교할 수 없으면 쪽 전체. 조건이 맞지 않거나 엔진이 거부하면
-   * (그리기 전 예외) false를 돌려 원래의 전체 그리기를 쓴다. 진짜 그리기 실패는 그 전체 그리기에서 다시 드러난다.
+   * 바뀐 띠만 다시 그리고, 바뀐 것이 없으면 그리지 않는다. 비교할 수 없으면 쪽 전체. 조건이 맞지 않거나(9차: 엔진이 배율을
+   * 바꾸는 쪽 포함) 엔진이 거부하면(그리기 전 예외) false를 돌려 원래의 전체 그리기를 쓴다. 진짜 그리기 실패는 그 전체 그리기에서
+   * 다시 드러난다.
    */
   private repaintInPlace(doc: RhwpDocument, page: number, canvas: HTMLCanvasElement, scale: number, painted: PaintedPage | null): boolean {
     const size = this.pages[page];
@@ -546,17 +547,20 @@ export class RhwpEditorSession {
       || canvas.width === 0 || canvas.height === 0) {
       return false;
     }
+    const band = painted && drawn.painted ? changedBand(drawn.painted, painted, size.width, size.height) : "page";
+    if (band === null) return true; // 이 Canvas는 이미 지금 모델을 보여 준다
+    // 그 자리에서 다시 그리기는 엔진이 요청한 배율 그대로 그릴 때만(9차). 엔진이 배율을 줄이면(한 변이 16,384 px를 넘는 쪽) Canvas
+    // 변환이 요청 배율과 달라, 요청 배율로 맞춘 띠 경계·fillRect 제한이 실제로 잘라 낸 곳과 어긋났다(실측: 300×6000 쪽, 요청 4.16 →
+    // 엔진 2.73에서 띠 위쪽이 배경 없이 투명하게 남아 RGB 87,188 px가 다름). 쪽 전체 패치도 그 배율에서는 처음 그리기와 달랐다
+    // (300×9000, 엔진 1.82: 표 괘선 자리 9 px, 채널 차 최대 6, 원인 미확인). 그때는 처음 그리기와 같은 전체 그리기를 쓴다.
+    if (!drawsAtRequestedScale(size, scale)) return false;
     let rect: PaintBox = { x: 0, y: 0, width: size.width, height: size.height };
-    if (painted && drawn.painted) {
-      const band = changedBand(drawn.painted, painted, size.width, size.height);
-      if (band === null) return true; // 이 Canvas는 이미 지금 모델을 보여 준다
-      if (band !== "page") {
-        // 띠의 위아래를 Canvas 픽셀 경계에 맞춘다(바깥쪽으로). 소수 픽셀 경계에서는 지우기·다시 그리기가 그 줄을 일부만 덮어
-        // 앞뒤 픽셀이 섞였다(실측: 띠 끝 두 줄만 RGB가 다름).
-        const top = Math.floor(band.y * scale) / scale;
-        const bottom = Math.min(size.height, Math.ceil((band.y + band.height) * scale) / scale);
-        rect = { x: band.x, y: top, width: band.width, height: bottom - top };
-      }
+    if (band !== "page") {
+      // 띠의 위아래를 Canvas 픽셀 경계에 맞춘다(바깥쪽으로). 소수 픽셀 경계에서는 지우기·다시 그리기가 그 줄을 일부만 덮어
+      // 앞뒤 픽셀이 섞였다(실측: 띠 끝 두 줄만 RGB가 다름).
+      const top = Math.floor(band.y * scale) / scale;
+      const bottom = Math.min(size.height, Math.ceil((band.y + band.height) * scale) / scale);
+      rect = { x: band.x, y: top, width: band.width, height: bottom - top };
     }
     const restore = rect.height < size.height ? confineFills(canvas, rect, scale) : null;
     try {
@@ -1113,7 +1117,9 @@ export class RhwpEditorSession {
  * rhwp의 패치 그리기는 띠로 잘라 내고(clip) 그리지만 쪽 배경을 쪽 전체 fillRect로 다시 칠한다. WebKit은 잘라 낸 영역이 아니라
  * 그린 사각형 전체를 바뀐 곳으로 보아(실측: 50×50으로 잘라 낸 전체 fillRect가 전체 칠하기와 같은 frame 비용) Canvas 전체를
  * 다시 합성했다. 잘라 낸 결과와 같은 픽셀이므로(띠는 Canvas 픽셀 경계에 맞춤) 겹치는 부분만 칠한다. 지금 변환이 확대·이동이
- * 아니면(회전·기울임) 그대로 칠한다.
+ * 아니면(회전·기울임·뒤집기) 그대로 칠한다(잘라 내기가 같은 결과를 지킴).
+ * scale은 엔진이 실제로 그리는 배율이어야 한다: 띠(쪽 좌표) × scale이 엔진의 잘라 내기와 같은 Canvas 픽셀이 되는 조건이다.
+ * 그래서 엔진이 요청 배율을 그대로 쓸 때만 부른다(drawsAtRequestedScale, 9차). 돌려놓기는 그리기가 던져도 부른다(finally).
  */
 function confineFills(canvas: HTMLCanvasElement, band: PaintBox, scale: number): (() => void) | null {
   const context = canvas.getContext("2d");

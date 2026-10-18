@@ -37,6 +37,12 @@ interface RhwpSurfaceProps {
 /** 조합 계열 input: 글자는 data로만 읽는다(값에는 앞서 확정한 글자가 쌓여 있다). */
 const IME_INPUT_TYPES = new Set(["insertCompositionText", "insertFromComposition", "deleteCompositionText"]);
 /**
+ * 숨긴 textarea 안의 범위를 바꾸는 input(9차). 바꾸는 범위는 textarea의 것인데 textarea는 문서가 아니고 방향키·클릭으로 옮긴
+ * 문서 커서도 따르지 않아, 문서의 어느 범위를 바꿀지 정할 수 없다. 커서에 넣으면 원래 글자가 남은 채 덧붙는다(8차까지). 그래서
+ * 받지 않는다: 조합 중이 아니면 beforeinput에서 막고, 조합 중이어도 문서·조합에 넣지 않는다.
+ */
+const REPLACEMENT_INPUT_TYPES = new Set(["insertReplacementText", "insertTranspose"]);
+/**
  * data 없는 넣기에서 새로 들어온 글자: 바뀌기 전 값의 선택 앞(start 전)과 뒤(end 뒤)가 지금 값의 앞뒤에 그대로 있으면 그 사이.
  * 바뀌기 전 상태가 없거나 앞뒤가 맞지 않으면(알 수 없는 편집) ""(넣지 않음). 쌓인 값을 새 글자로 보지 않는다.
  */
@@ -172,18 +178,25 @@ export function RhwpSurface({ session, zoom, imeContext }: RhwpSurfaceProps) {
     session.releaseRendering();
   }, [session]);
 
-  // 그리기를 기다리던 쪽이 스크롤로 보이게 되면 바로 그린다(입력이 이어져도 보이는 쪽이 옛 그림으로 남지 않게).
+  // 그리기를 기다리던 쪽이 보이게 되면 바로 그린다(입력이 이어져도 보이는 쪽이 옛 그림으로 남지 않게). 보이는 쪽은 스크롤 영역의
+  // 스크롤 위치와 크기로 정해진다(쪽 크기·배율이 바뀌면 위의 그리기가 모든 쪽을 다시 정함). 스크롤 없이 영역만 커지는 경우(창 크기,
+  // 리본 접기, 옆 패널)도 받는다(9차 실측: 리본을 접어 보이게 된 쪽이 입력이 멈춘 뒤까지 251 ms 옛 그림이었다).
   useEffect(() => {
     const scroller = pagesRef.current?.closest(".editor__scroll");
     if (!scroller) return;
-    const onScroll = () => {
+    const onViewChange = () => {
       if (stalePages.current.size === 0) return;
       for (const page of visiblePages()) {
         if (stalePages.current.delete(page)) drawStale.current?.(page);
       }
     };
-    scroller.addEventListener("scroll", onScroll, { passive: true });
-    return () => scroller.removeEventListener("scroll", onScroll);
+    scroller.addEventListener("scroll", onViewChange, { passive: true });
+    const resize = typeof ResizeObserver === "undefined" ? null : new ResizeObserver(onViewChange);
+    resize?.observe(scroller);
+    return () => {
+      scroller.removeEventListener("scroll", onViewChange);
+      resize?.disconnect();
+    };
   }, [visiblePages]);
 
   // ---- 커서 위치로 textarea 옮기기·보이게 하기 ----
@@ -257,14 +270,15 @@ export function RhwpSurface({ session, zoom, imeContext }: RhwpSurfaceProps) {
     // 수십 ms를 써 실제 IME 입력이 밀렸다(7차). 그래서 값은 쌓아 두고 문서의 근거로 쓰지 않는다:
     // - data가 없는 넣기(붙여넣기 등)는 beforeinput 때의 값·선택(바뀌기 전)과 지금 값을 비교해, 선택 앞뒤로 남은 부분 사이에
     //   새로 들어온 글자만 넣는다(8차: 쌓인 값을 통째로 넣어 앞서 넣은 글자가 다시 들어가던 결함). 비교할 수 없으면 넣지 않는다.
-    // - 넣기가 아닌 입력(지우기·되돌리기·서식, 예: Ctrl+Backspace·Ctrl+X·Ctrl+Z)은 문서에 아무것도 넣지 않는다. 조합 중이
-    //   아니면 beforeinput에서 막아 숨긴 값이 어긋나지 않게 한다(T007 범위 밖의 네이티브 편집, 문서 지우기는 키로 처리).
+    // - 넣기가 아닌 입력(지우기·되돌리기·서식, 예: Ctrl+Backspace·Ctrl+X·Ctrl+Z)과 textarea 범위 바꾸기(insertReplacementText 등,
+    //   9차)는 문서에 아무것도 넣지 않는다. 조합 중이 아니면 beforeinput에서 막아 숨긴 값이 어긋나지 않게 한다(T007 범위 밖의
+    //   네이티브 편집, 문서 지우기는 키로 처리).
     // 쌓인 값은 조합이 없을 때 가끔(TRIM_LENGTH) 비운다.
     let snapshot: { value: string; start: number; end: number } | null = null;
     const onBeforeInput = (event: Event) => {
       const { inputType = "", isComposing = false } = event as InputEvent;
       const composing = session.composing || isComposing;
-      if (!composing && !IME_INPUT_TYPES.has(inputType) && !inputType.startsWith("insert")) {
+      if (!composing && (REPLACEMENT_INPUT_TYPES.has(inputType) || (!IME_INPUT_TYPES.has(inputType) && !inputType.startsWith("insert")))) {
         event.preventDefault();
         snapshot = null;
         return;
@@ -272,11 +286,12 @@ export function RhwpSurface({ session, zoom, imeContext }: RhwpSurfaceProps) {
       snapshot = { value: input.value, start: input.selectionStart, end: input.selectionEnd };
     };
     const onInput = (event: Event) => {
-      mark(event);
       const { inputType = "", isComposing = false, data = null } = event as InputEvent;
-      const composing = session.composing || isComposing;
       const before = snapshot;
       snapshot = null;
+      if (REPLACEMENT_INPUT_TYPES.has(inputType)) return; // 막지 못했어도(취소 불가) 문서는 그대로
+      mark(event);
+      const composing = session.composing || isComposing;
       let text: string;
       if (composing || IME_INPUT_TYPES.has(inputType)) text = data ?? "";
       else if (!inputType.startsWith("insert")) text = "";
