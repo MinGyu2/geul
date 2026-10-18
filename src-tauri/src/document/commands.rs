@@ -10,6 +10,9 @@
 //!   돌려준다(경로 인자 없음, 원시 바이트 응답 — 앞 8바이트는 불러오기 시도 번호). 읽기는 열기와 같은 동시 실행 상한을 쓴다. 명령 future가 끝나기 전에
 //!   버려지면 세션을 `loading`에 남기지 않고 `failed`로 돌린다. `document_set_state`·`document_commit`은
 //!   `SessionRegistry`의 상태 전이·revision 확정 규칙을 그대로 따른다. 쓰기 명령은 없다(저장은 T009).
+//! - T008: 이 세 명령은 문서 모델이 WebView에 있는 엔진(rhwp)의 세션만 받는다. WordCraft 세션은 모델·수명주기·revision을
+//!   백엔드(`crate::adapters::wordcraft`)가 직접 바꾸므로, 프런트엔드가 그 세션의 바이트를 받거나 상태·revision을 바꾸는
+//!   요청은 `InvalidRequest`로 거부한다(revision 권한이 둘이 되지 않게). 닫기는 그 세션의 엔진 모델도 놓는다.
 
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
@@ -20,14 +23,19 @@ use tauri::State;
 use super::error::{DocumentError, LimitKind};
 use super::open::{identify, read_identified, IdentifiedFile, Limits, LoadSource};
 use super::session::{CloseOutcome, SessionId, SessionInfo, SessionRegistry, SessionState};
+use super::Engine;
+use crate::adapters::wordcraft::WordcraftModels;
 
 pub const MAX_PENDING_OPENS: usize = 8;
 
 #[derive(Default)]
 pub struct DocumentState {
-    registry: SessionRegistry,
+    // 백엔드 엔진 작업(T008)이 차단 작업 스레드에서 확인·확정까지 하므로 함께 쥘 수 있게 Arc로 둔다.
+    registry: Arc<SessionRegistry>,
     limits: Limits,
     pending_opens: Arc<AtomicUsize>,
+    /// 백엔드가 가진 WordCraft 문서 모델(T008). 세션을 닫으면 놓는다.
+    wordcraft: WordcraftModels,
 }
 
 /// 진행 중인 판별 하나의 자리. 차단 작업과 함께 버려질 때(성공·실패·패닉, 작업이 시작되지 못한 경우 포함) 수를
@@ -41,6 +49,22 @@ impl Drop for PendingOpen {
 }
 
 impl DocumentState {
+    pub(crate) fn registry(&self) -> &Arc<SessionRegistry> {
+        &self.registry
+    }
+
+    pub(crate) fn wordcraft(&self) -> &WordcraftModels {
+        &self.wordcraft
+    }
+
+    /// 프런트엔드가 모델을 가진 엔진(rhwp)의 세션인지. 아니면 `InvalidRequest`(T008, 모듈 설명).
+    pub(crate) fn frontend_model(&self, session_id: SessionId) -> Result<(), DocumentError> {
+        match self.registry.get(session_id)?.engine {
+            Engine::Rhwp => Ok(()),
+            Engine::Wordcraft => Err(DocumentError::InvalidRequest),
+        }
+    }
+
     fn begin_open(&self) -> Result<PendingOpen, DocumentError> {
         let previous = self.pending_opens.fetch_add(1, Ordering::AcqRel);
         let pending = PendingOpen(self.pending_opens.clone());
@@ -53,7 +77,7 @@ impl DocumentState {
     }
 
     /// 파일을 읽는 작업을 차단 작업 스레드에서 실행한다. 자리는 작업이 끝날 때 돌려준다.
-    async fn run_blocking<T, F>(&self, work: F) -> Result<T, DocumentError>
+    pub(crate) async fn run_blocking<T, F>(&self, work: F) -> Result<T, DocumentError>
     where
         T: Send + 'static,
         F: FnOnce() -> Result<T, DocumentError> + Send + 'static,
@@ -79,7 +103,10 @@ impl DocumentState {
     /// 세션의 파일을 엔진에 넘길 바이트로 읽는다(`identified`·`failed` → `loading`). 실패하거나 끝나기 전에 버려지면
     /// 이 시도가 아직 지금 시도일 때만 `failed`로 돌린다. 읽는 동안 세션이 닫히거나 새 시도가 시작되면 바이트를
     /// 버리고 오류를 돌려준다. 성공하면 (시도 번호, 바이트).
-    async fn load_bytes(&self, session_id: SessionId) -> Result<(u64, Vec<u8>), DocumentError> {
+    pub(crate) async fn load_bytes(
+        &self,
+        session_id: SessionId,
+    ) -> Result<(u64, Vec<u8>), DocumentError> {
         self.load_bytes_with(session_id, read_identified).await
     }
 
@@ -94,12 +121,7 @@ impl DocumentState {
     {
         let source = self.registry.begin_load(session_id)?;
         let generation = source.generation;
-        let mut guard = LoadingGuard {
-            registry: &self.registry,
-            session_id,
-            generation,
-            armed: true,
-        };
+        let guard = LoadingGuard::arm(&self.registry, session_id, generation);
         let limits = self.limits;
         let bytes = self.run_blocking(move || read(&source, &limits)).await?;
         let info = self.registry.get(session_id)?;
@@ -115,7 +137,7 @@ impl DocumentState {
                 state: info.state,
             });
         }
-        guard.armed = false;
+        guard.disarm();
         Ok((generation, bytes))
     }
 }
@@ -130,12 +152,33 @@ fn load_response(generation: u64, bytes: Vec<u8>) -> Vec<u8> {
     framed
 }
 
-/// 불러오기가 성공해 바이트를 넘기기 전에 끝나면(오류·future 취소) 세션을 `loading`에 남기지 않는다.
-struct LoadingGuard<'a> {
+/// 불러오기가 성공해 바이트를 넘기기 전에 끝나면(오류·future 취소) 세션을 `loading`에 남기지 않는다. 백엔드가 엔진에
+/// 불러오는 경우(T008)에는 엔진이 문서를 읽고 `ready`로 전이할 때까지 같은 가드를 쓴다.
+pub(crate) struct LoadingGuard<'a> {
     registry: &'a SessionRegistry,
     session_id: SessionId,
     generation: u64,
     armed: bool,
+}
+
+impl<'a> LoadingGuard<'a> {
+    pub(crate) fn arm(
+        registry: &'a SessionRegistry,
+        session_id: SessionId,
+        generation: u64,
+    ) -> Self {
+        LoadingGuard {
+            registry,
+            session_id,
+            generation,
+            armed: true,
+        }
+    }
+
+    /// 불러오기가 끝까지 갔다(이 시도의 결과는 호출한 쪽이 정한다).
+    pub(crate) fn disarm(mut self) {
+        self.armed = false;
+    }
 }
 
 impl Drop for LoadingGuard<'_> {
@@ -167,6 +210,7 @@ pub async fn document_load(
     state: State<'_, DocumentState>,
     session_id: SessionId,
 ) -> Result<Response, DocumentError> {
+    state.frontend_model(session_id)?;
     let (generation, bytes) = state.load_bytes(session_id).await?;
     Ok(Response::new(load_response(generation, bytes)))
 }
@@ -179,6 +223,7 @@ pub fn document_set_state(
     from: SessionState,
     to: SessionState,
 ) -> Result<SessionInfo, DocumentError> {
+    state.frontend_model(session_id)?;
     state
         .registry
         .transition(session_id, load_generation, from, to)
@@ -192,6 +237,7 @@ pub fn document_commit(
     base_revision: u64,
     count: u64,
 ) -> Result<SessionInfo, DocumentError> {
+    state.frontend_model(session_id)?;
     state
         .registry
         .commit(session_id, load_generation, base_revision, count)
@@ -202,7 +248,10 @@ pub fn document_close(
     state: State<'_, DocumentState>,
     session_id: SessionId,
 ) -> Result<CloseOutcome, DocumentError> {
-    state.registry.close(session_id)
+    let outcome = state.registry.close(session_id)?;
+    // 기록에서 빠진 뒤에 놓는다. 그사이 끝난 엔진 작업은 확정(StaleSession)·상태 전이를 하지 못하고 결과를 버린다.
+    state.wordcraft.release(session_id);
+    Ok(outcome)
 }
 
 #[tauri::command]

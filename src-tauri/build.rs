@@ -9,6 +9,11 @@ fn main() {
         "document_load",
         "document_set_state",
         "document_commit",
+        "docx_load",
+        "docx_view",
+        "docx_edit",
+        "docx_render",
+        "docx_roundtrip",
     ]);
     tauri_build::try_build(tauri_build::Attributes::new().app_manifest(manifest))
         .expect("Tauri 빌드 설정을 만들지 못했습니다");

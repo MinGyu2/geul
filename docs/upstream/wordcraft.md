@@ -12,8 +12,8 @@
 |------|------|----------------|
 | L1 | 업스트림이 설명하는 기능 | README·크레이트 설명 기준으로 정리 |
 | L2 | 고정 커밋에서 공개 API 존재 확인 | 소스에서 시그니처 확인 (아래 표) |
-| L3 | 이 프로젝트에서 컴파일·호출 성공 | **미실시** (앱 크레이트 없음, T008에서 수행) |
-| L4 | 실제 문서로 동작 검증 | **미실시** (T008, T009, T015에서 수행) |
+| L3 | 이 프로젝트에서 컴파일·호출 성공 | **완료(T008)**: `src-tauri`가 `wordcraft-engine`을 path 의존성으로 링크(업스트림 수정 없음) |
+| L4 | 실제 문서로 동작 검증 | **부분(T008)**: 엔진 명령으로 만든 픽스처로 열기·배치·그리기·hit test·편집·메모리 왕복. 실제 사용자 문서·디스크 저장은 T009/T015 |
 
 ## 구조 (L1/L2)
 
@@ -63,7 +63,25 @@ Cargo 워크스페이스, `edition = "2024"`, `rust-version = "1.90"`, 모든 �
   없으므로 어댑터 경계에서 업스트림 타입 노출을 최소화합니다.
 - `wordcraft-ui-egui`, 앱 아이콘, ArtCraft 브랜드 파일은 재사용하지 않습니다(라이선스 문서 참고).
 
-## 다음 확인 (T003, T008)
+## T008에서 확인한 것 (2026-10-19, 고정 커밋 `fc41918`)
+
+- `io::open_bytes`/`save_bytes`, `Session::new`·`run`·`layout`·`rev`, `DocLayout::hit`·`caret_on`·`selection_rects`,
+  `render::render_page` + `Rendered::to_png`를 실제로 호출했다. 좌표는 pt(쪽 왼쪽 위), Letter 612×792pt, 100% 화면 = 1pt × 96/72 CSS px.
+  `Pos`는 `{story, path, off}`이며 `off`는 UTF-8 바이트다. `Session`은 `Send`라 Tauri 차단 작업 스레드에서 쓸 수 있다.
+- `caret.set`은 `{page, x, y}`로 hit test까지 한다. `text.insert`는 자동 고침·자동 서식을 적용하므로 IME 확정 글자는
+  `raw: true`로 넣는다. `text.tab`은 표 안에서 다음 셀로 가며 셀 내용을 선택하고, 마지막 셀에서는 행을 더한다(Word와 같음).
+- **`rev()`는 문서를 바꾸지 않은 “바꾸는 명령”에도 는다**(셀 사이 Tab, 문서 처음의 Backspace, 끝의 Delete). 앱 revision은
+  명령 앞뒤 문서 모델(`Document: PartialEq`)을 비교해 실제 변경만 센다.
+- **`Session::run`을 그대로 열면 파일 쓰기 권한이 된다**: `file.saveAs`(cmd/file.rs:55)·편지 병합(cmd/mailings.rs:658)·
+  `cmd/tools.rs:431` 등이 인자로 받은 경로에 쓴다. 앱은 허용한 연산 목록(`DocxOp`)만 명령 ID로 바꾼다.
+- 열기는 관대하다: 본문 XML이 중간에서 끊긴 DOCX를 오류 없이 끊긴 곳까지 읽어 연다(뒤 내용은 조용히 빠짐). 열기 성공을
+  무손실 근거로 쓰면 안 된다(T009 저장 판단). 시험: `adapters::wordcraft::tests::본문_xml이_끊긴_docx도_wordcraft는_끊긴_곳까지_읽어_연다`.
+- 글꼴: `FontDb::global()`은 정해진 폴더(Linux `/usr/share/fonts`, `/usr/local/share/fonts`, `~/.fonts`, `~/.local/share/fonts`)만
+  찾고 fontconfig를 쓰지 않는다. NixOS처럼 그 폴더가 없으면 한글이 빈 상자로 그려진다(편집 모델은 정상).
+- 성능(이 환경, 1쪽 픽스처): 릴리스 빌드에서 배치 1 ms 미만, 100% 쪽 래스터 약 3 ms + PNG 약 4 ms, 200% 약 13 ms. 최적화 없는
+  디버그 빌드는 키 입력 하나에 수백 ms라 `src-tauri`의 개발 프로필이 의존성을 최적화한다.
+
+## 다음 확인 (T003, T008 계획 당시)
 
 1. `src-tauri`에서 `wordcraft-engine`을 path 의존성으로 빌드 (L3)
 2. 직접 만든 DOCX 열기 → `render_page` → PNG, `hit`/`caret` 좌표 확인 (L4)

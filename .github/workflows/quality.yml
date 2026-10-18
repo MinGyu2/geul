@@ -1,7 +1,8 @@
 # 앱 셸(T004) 품질 검사: 프런트엔드(타입·린트·테스트·빌드)와 Rust(서식·컴파일·clippy).
 #
-# 보안 검사(security-scan.yml)와 독립적으로 실행한다. 두 문서 엔진(external/rhwp, external/wordcraft)은
-# 아직 앱에 연결되지 않았으므로 submodule을 받지 않는다(rhwp는 수 GB). 엔진 빌드 검사는 T007/T008에서 추가한다.
+# 보안 검사(security-scan.yml)와 독립적으로 실행한다. rhwp(external/rhwp, 수 GB)는 WebView의 WASM으로 실행할 때 불러오므로
+# (T007, scripts/build-rhwp-wasm.sh) 받지 않는다. WordCraft(external/wordcraft)는 Rust 백엔드가 path 의존성으로 링크하므로(T008)
+# Rust 작업만 그 submodule 하나를 고정 커밋으로 얕게 받는다. 프런트엔드 작업은 submodule이 필요 없다.
 # 산출물 업로드·배포·원격 쓰기는 하지 않는다.
 
 name: quality
@@ -72,6 +73,14 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends libwebkit2gtk-4.1-dev pkg-config
 
+      # T008: WordCraft 엔진을 링크한다. 부모 저장소 gitlink가 가리키는 고정 커밋만 받는다(rhwp는 받지 않음).
+      - name: WordCraft submodule (고정 커밋, 얕게)
+        working-directory: .
+        run: |
+          set -euo pipefail
+          git submodule update --init --depth 1 external/wordcraft
+          git submodule status external/wordcraft
+
       - name: Rust 도구 체인 설치 (버전 고정)
         run: |
           set -euo pipefail
@@ -101,5 +110,5 @@ jobs:
       - name: cargo clippy
         run: cargo clippy --locked --all-targets -- -D warnings
 
-      - name: cargo test (문서 형식 판별·세션, T006)
+      - name: cargo test (문서 형식 판별·세션 T006, WordCraft 어댑터 T008)
         run: cargo test --locked

@@ -999,3 +999,104 @@ T007 체크박스는 그대로 둔다. 이 환경에서 필수 IME 7개와 보�
 고쳤지만, (1) CPU를 채운 부하에서는 한 문서를 포함한 모든 장면이 150 ms를 넘고(이 환경의 소프트웨어 렌더링 한계로 보이나 실제 GPU
 데스크톱에서 확인하지 못함), (2) 실제 GPU 데스크톱·Wayland·fcitx5·Windows/macOS와 다른 플랫폼의 바꾸기 입력은 미검증이며, (3) 다른
 문서 상태에서 WebKit 전체 무효화가 비싸지는 이유(8차)와 축소된 배율에서 쪽 전체 패치가 다른 이유는 확인하지 못했다(둘 다 피했음).
+
+## T008 결과: WordCraft W-A PoC (2026-10-19)
+
+- 상태: **구현·이 환경의 게이트 통과(체크는 T007과 같은 기준으로 보류)**. W-A(백엔드의 네이티브 WordCraft 엔진)로 열기·렌더·커서·
+  선택·키보드·표 셀 이동·revision 확정·메모리 내보내기 검사·실제 한국어 IME를 실제 앱(WebKitGTK 2.54.1)에서 확인했다. 저장은 막아 둔다
+  (T009/T014). 실제 GPU 데스크톱·Wayland IME·fcitx5·Windows/macOS는 확인하지 못했다(아래 "남은 한계").
+- 업스트림 소스는 고치지 않았다. `src-tauri`가 고정 submodule `external/wordcraft`(v0.7.0, `fc41918`)의 `wordcraft-engine`을 path
+  의존성으로 링크한다(L3). 빌드 산출물은 submodule 밖(`CARGO_TARGET_DIR`)에 생기고, 빌드 뒤 submodule 작업 트리는 그대로다.
+- egui(`wordcraft-ui-egui`)는 쓰지 않는다(W-A 결정대로). 과제 계약의 "egui/WebView 연동"은 egui UI를 끼워 넣는 연동이 아니라
+  WebView 편집 표면과 백엔드 엔진의 연동으로 기록한다.
+
+### 설계 검토에서 정한 것
+
+| 문제 | 근거 | 결정(구현) | 검증 |
+|------|------|------------|------|
+| A. revision 권한 | T007의 `document_commit`·`document_set_state`·`document_load`는 프런트엔드가 모델을 가진다는 전제다. W-A 모델은 백엔드에 있어 이 명령을 쓰면 권한이 둘이 된다 | WordCraft 세션은 백엔드만 바꾼다. 새 명령 `docx_edit`가 모델 잠금 안에서 기준 revision 확인 → 실행 → 실제로 바뀐 연산 수만큼 확정을 한 번에 한다. 세 T007 명령은 WordCraft 세션에 `InvalidRequest` | Rust `편집은_기준_revision을…`, `프런트엔드_모델_명령은…`; 실제 앱: 옛 기준 `RevisionMismatch`, 옛 시도 `StaleLoad`, T007 명령 3개 `InvalidRequest` |
+| B. 명령 노출 범위 | WordCraft 명령에는 인자로 받은 경로에 쓰는 것이 있다(`cmd/file.rs:55`, `cmd/mailings.rs:658`, `cmd/tools.rs:431`). `Session::run`을 그대로 열면 IPC가 파일 쓰기 권한이 된다 | 허용한 연산 목록 `DocxOp`(글자 넣기·지우기·문단·표 Tab·이동·클릭/끌기·전체 선택·자리 기억·기억한 자리에 넣기·앞 넣기 고치기)만 받고 어댑터 안에서 명령 ID로 바꾼다. 알 수 없는 연산·필드는 역직렬화에서 거부, 글자는 제어 문자·U+FFFC·4096자 초과 거부, 한 요청 256개 | Rust `계약_밖의_요청은…`; 실제 앱: `{"op":"run","id":"file.saveAs"}` 거부, 파일 없음 |
+| C. 변경 수 | WordCraft `rev()`는 문서를 바꾸지 않은 "바꾸는 명령"에도 는다(셀 사이 Tab, 문서 처음 Backspace, 끝 Delete — 탐침 실측) | 바꾸는 명령 앞뒤 `Document`(PartialEq)를 비교해 실제로 바뀐 연산만 센다 | Rust `문서를_바꾸지_않은…`; 실제 앱: 이동·선택·셀 이동 Tab은 revision 그대로 |
+| D. 스레드 | Tauri 동기 명령은 주 스레드에서 돈다 | 모든 엔진 작업은 비동기 명령 + 차단 작업 스레드. 같은 세션 작업은 모델 잠금으로 차례로. 프런트엔드는 요청 하나씩 보내고 기다리는 동안의 입력은 다음 요청에 순서대로 묶는다 | Vitest `요청은 한 번에 하나…` |
+| E. 글자 그대로 | `text.insert`는 자동 고침·자동 서식을 적용한다 | `raw: true`로 넣는다(IME 확정 글자가 그대로 남음) | Rust `확정한_한글은…`(같은 음절·마침표 그대로) |
+| F. IME 조합 표시 | 엔진은 조합을 모른다(조합 처리는 `ui-egui`에만 있음) | 조합 중 글자는 모델에 넣지 않고 커서 자리에 겹쳐 그리며(배경으로 아래 글자를 가림, 밑줄), 커서 막대는 그 뒤에 둔다. 확정 글자만 `InsertText` 하나(조합 하나 = revision 하나, 취소는 연산 없음). 선택이 있을 때 시작한 조합은 시작할 때 선택을 지운다(따로 한 연산) | 실제 IME 게이트(아래) |
+| G. 조합 중 클릭의 좌표 | 겹침은 뒤 글자를 밀지 않으므로, 앱이 조합 글자를 먼저 넣은 뒤 지금 배치로 클릭을 찾으면 같은 줄 뒤쪽 클릭이 조합 길이만큼 어긋난다 | `Pointer.beforeInsert`: 바로 앞 넣기 전에 보이던 배치로 찾고 같은 문단의 그 뒤 자리를 넣은 만큼 민다. 입력기의 최종 글자가 다르면 `ReplaceInserted`(그 뒤 문서 변경이 없을 때만). 미리보기 없는 플랫폼의 늦은 확정은 클릭 직전 `Mark`로 백엔드에 기억한 자리에 `InsertAt` | Rust `조합_중_클릭은…`, `기억한_자리에…`, `앱이_먼저_확정한…`; Vitest(실제 WebKitGTK 순서 재생) |
+| H. IME 상태 기계 중복 | T007 `ImeInput`이 `Pick<RhwpEditorSession>`에 묶여 있었다 | `ImeSession` 계약(+`markCaret()`)으로 일반화하고, 숨긴 textarea 이벤트 해석은 `src/components/Editor/textInput.ts`로 옮겨(동작 같음) 두 표면이 같이 쓴다. `ImeContext`는 WebView에 하나라 엔진이 다른 탭 사이에도 같은 규칙 | 기존 rhwp Vitest 282개 그대로 통과, rhwp 실제 IME 게이트 9/9 PASS(아래) |
+| I. 수명주기 | 모델이 백엔드에 있다 | `docx_load`: 세션 파일을 T007과 같은 확인으로 읽고(`load_bytes`) 엔진이 읽은 뒤 모델을 넣고 `loading → ready`(실패·버려짐은 `failed`, 그사이 닫히면 모델을 빼고 `StaleSession`). 닫기는 기록에서 뺀 뒤 모델을 놓는다. 엔진 패닉은 `failed` + 모델 놓기 + `EngineFailure`. 사용자가 버리기를 확인한 다시 불러오기는 `reloadGeneration`으로 백엔드가 그 시도의 ready 모델을 버리고 새로 읽는다. WebView가 다시 시작되면 rhwp 세션만 failed로 돌리고 WordCraft 모델은 남아 편집 표면이 다시 붙는다 | Rust 수명주기 시험(불러오기·읽는 중 닫기·버려진 불러오기·엔진 실패·패닉·다시 불러오기); 실제 앱: WebView 다시 시작 뒤 편집 내용·revision 그대로, 닫기 확인, 다시 불러오기, 판별 뒤 파일이 바뀌면 `FileChanged` |
+| J. 그리기 비용 | 디버그 빌드의 WordCraft는 키 하나에 수백 ms(p95 약 380 ms) | 개발 프로필이 의존성을 최적화한다(`[profile.dev.package."*"] opt-level = 2`, WordCraft 워크스페이스와 같은 값). 백엔드는 쪽·배율마다 마지막 래스터를 기억하고 받는 쪽이 가진 판과 다른 줄의 띠만 PNG로 보내며(머리 24바이트), 화면 canvas에도 그 띠만 옮긴다(T007 8차와 같은 이유). canvas 크기는 바뀔 때만 다시 잡는다 | Rust `띠는_기준_판과…`, Vitest 띠 합성; 실제 앱 지연(아래) |
+| K. 열기의 관대함 | 본문 XML이 중간에서 끊긴 DOCX를 오류 없이 끊긴 곳까지 읽어 연다(뒤 내용은 조용히 빠짐) | 열기 성공을 무손실 근거로 쓰지 않는다 — T009 저장 판단의 입력으로 기록 | Rust `본문_xml이_끊긴_docx도…`(동작이 바뀌면 알림) |
+| L. 글꼴 | WordCraft는 정해진 폴더만 찾고 fontconfig를 쓰지 않는다. NixOS에서는 한글이 빈 상자 | 앱은 바꾸지 않는다(업스트림 또는 별도 결정). 시험기는 `--font-home`으로 앱 프로세스의 HOME을 한글 글꼴을 `.fonts`에 둔 임시 디렉터리로 바꿔 실행 | 스크린숏(한글·굵게·표) |
+| M. CI | `quality.yml` Rust 작업은 submodule을 받지 않는다 | Rust 작업만 `external/wordcraft`를 고정 커밋으로 얕게 받는다(23 MB, rhwp는 받지 않음) | GitHub에서는 **NOT RUN**(푸시하지 않음) |
+
+### 측정(실제 앱, 개발 빌드 + 검사 훅, 고정 픽스처 1쪽)
+
+픽스처는 `tests/fixtures/wordcraft/basic.rs`가 WordCraft 엔진 명령으로 만든 한·영 문단, 굵게, 2×2 표 문서다(T007과 같은 내용).
+실행: `tests/integration/wordcraft/wordcraft_poc.py`(33개 항목 모두 통과, 두 환경).
+
+| 항목 | Xvfb X11(DPR 1.041) | 헤드리스 weston(DPR 1) |
+|------|------|------|
+| 불러오기·첫 쪽 표시 | ready, 155 ms | ready, 174 ms |
+| 100%/200% 쪽 그림 | 850×1100 / 1699×2199(= CSS 크기 × DPR) | 816×1056 / 1632×2112 |
+| hit test(본문 12글자·셀 4글자, 경계 사이 30%/70% 실제 포인터 클릭 32회) | 최대 편차 1글자(31/32 정확) | 0글자(32/32 정확) |
+| 드래그·Shift 선택·Home/End·↑↓·Backspace/Delete·Enter·문단 합치기·표 Tab/Shift+Tab·셀 입력 | 통과 | 통과 |
+| 키 입력→화면 반영(입력마다, 키 간격 150 ms, 그 시나리오의 키 80개) p50 / p95 / 최대 | 35 / 56 / 507 ms | 28 / 47 / 56 ms |
+| 같은 실행의 키 표본 전체(시험기가 키마다 WebDriver로 상태를 물은 앞 시나리오 포함) p50 / p95 | 32 / 267 ms | 27 / 206 ms |
+| 메모리 내보내기 → 다시 읽기(편집 뒤) | 쪽·본문 글자·문서 모델 같음(통과) | 같음 |
+
+- 단계별(앱 안에서 잰 중앙값, Xvfb): 편집 IPC 3 ms, 100% 쪽 래스터+PNG 10 ms, PNG 디코드 10 ms, canvas 옮기기 2 ms. 띠로 바꾼 뒤 같은 실행의
+  전체 키 표본 중앙값이 67 → 39 ms가 됐다.
+- 측정하는 동안 같은 기계에서 다른 작업(다른 저장소의 `cargo test --release`)이 CPU 4코어를 쓰고 있었다(load average 4–8). 전체 표본의
+  p95가 큰 것은 그 경합과 시험기의 상태 질의가 WebView 주 스레드와 겹친 몫이다(같은 앱으로 키만 친 실행: p95 115–128 ms). T007 9차처럼
+  CPU를 채운 부하에서는 150 ms를 넘을 수 있다.
+
+### 한국어 IME(실제 ibus 1.5.33 + ibus-hangul 1.5.5 두벌식, Xvfb X11 + xdotool 실제 키, 3회 실행)
+
+| 항목 | 결과 |
+|------|------|
+| 조합 중 글자가 문서에 보임(커서 자리 겹침, 모델·revision 그대로) | PASS ×3 |
+| 조합 중 커서가 조합 글자 뒤에 있음 | PASS ×3 |
+| "한글 입력 테스트" 확정이 커서 위치에 정확히 한 번 | PASS ×3 |
+| 확정 음절·공백마다 revision 1(0→9) | PASS ×3 |
+| 같은 음절 연속 확정('가가') | PASS ×3 |
+| 조합 중 ← | PASS ×3 |
+| 조합 중 클릭: 원래 자리에 한 번, 커서는 클릭한 곳, 이어 친 공백·음절 정상 | PASS ×3 |
+| (선택) 조합 중 창 초점 이동 뒤 돌아옴(MiniBrowser 탐침 창) | PASS ×2 |
+| (선택) 조합 중 탭 전환(DOCX → DOCX): 원래 문서에 한 번, 다른 문서에 섞이지 않음 | PASS ×3 |
+
+같은 빌드로 T007 rhwp 실제 IME 게이트도 다시 돌려 9/9 PASS였다(공유한 `ImeInput`·`textInput.ts`의 회귀 확인).
+
+### 시험기에서 알게 된 것(앱 동작이 아님)
+
+- Xvfb의 devicePixelRatio 1.041에서 WebKitWebDriver 포인터 위치가 요청 값 ÷ 1.042에 떨어졌다(415.4 요청 → clientX 398). 시험기는 처음에
+  상태 표시줄을 한 번 눌러 비율을 잰다. weston(DPR 1)에서는 1.0.
+- 비IME 시나리오를 ibus-hangul이 켜진 채 돌리면 WebDriver의 ASCII 키가 한글로 조합된다('ab' → '뮤'). `GTK_IM_MODULE=gtk-im-context-simple`.
+- `cargo test`는 같은 대상 디렉터리의 `debug/geul`을 `custom-protocol` 없이 다시 빌드한다(개발 서버 주소를 열어 빈 화면). 앱 시험 전에
+  `tauri build`를 다시 한다.
+- WebKitWebDriver 연결이 가끔 끊겼다(앱·WebProcess는 살아 있음). 키마다 상태를 묻지 않도록 바꾼 뒤 재현되지 않았다(T007의 기록과 같은 현상).
+
+### 검증 기록(최종 소스)
+
+| 검사 | 결과 |
+|------|------|
+| `npm run typecheck`, `npm run lint`, `npm test` | 오류 없음, Vitest 462개(22파일, 기준 428 + 34) |
+| `src-tauri`: `cargo fmt --check`, `cargo clippy --locked --all-targets -- -D warnings`, `cargo test --locked` | 통과, 단위 78(기준 51 + 27) + 통합 1 |
+| `VITE_GEUL_TEST_HOOKS=1 npm run tauri build -- --debug --no-bundle` | 통과 |
+| `tests/e2e/tauri_smoke.py`(weston) | 62/62 |
+| `tests/integration/rhwp/rhwp_poc.py`(weston) | 64/64 |
+| `tests/integration/rhwp/rhwp_poc.py --ime --focus-window wkprobe`(Xvfb + ibus-hangul) | 필수 7/7 PASS, 선택 2/2 PASS |
+| `tests/integration/wordcraft/wordcraft_poc.py --font-home …`(Xvfb, weston, 최종 소스로 weston 재실행) | 33/33, 33/33, 33/33(키 반영 p95 59 ms) |
+| `tests/integration/wordcraft/wordcraft_poc.py --ime [--focus-window wkprobe]` | 필수 7/7 PASS 3회, 선택 창 초점 PASS 2회·탭 전환 PASS 3회 |
+| `python3 scripts/check-sensitive-info.py <바뀐 파일 42개>` | 통과 |
+| GitHub Actions(`quality.yml`의 WordCraft submodule 단계) | **NOT RUN**(푸시하지 않음) |
+
+### 남은 한계
+
+- 실제 GPU 데스크톱, Wayland IME, fcitx5, Windows/macOS는 확인하지 않았다(T007과 같음, 플랫폼 검증은 T016). 그래서 T008도 T007과 같은
+  기준으로 체크하지 않는다.
+- 조합 중 글자는 겹쳐 그리므로 뒤 글자를 밀지 않는다(가림). 줄 끝을 넘는 긴 조합은 쪽 밖으로 나갈 수 있다(조합은 한 음절이라 실측
+  문제는 없었다). 겹침 글꼴은 WebView 글꼴이라 문서 글꼴과 모양이 다를 수 있다.
+- 바꾸는 연산마다 문서 모델을 복제·비교하므로 큰 문서에서는 비용이 커진다(1쪽 픽스처만 측정). 큰 문서·여러 쪽 지연은 측정하지 않았다.
+- NixOS처럼 글꼴이 fontconfig로만 있는 시스템에서는 한글이 빈 상자로 그려진다(편집 모델은 정상). 앱 쪽 해결(fontconfig 경로를
+  WordCraft에 알려 주기 등)은 따로 정한다.
+- 열기의 관대함(K)은 T009 저장 판단에서 다뤄야 한다. 실행 취소·서식 명령은 T010이다.
+- 키 반영 지연은 같은 기계의 CPU 경합에 따라 꼬리가 길어진다(측정 표 참고).

@@ -33,20 +33,31 @@
 // - IME 입력 문맥은 WebView에 하나이므로 중단·정상 완료 기록은 편집 표면 사이에서 공유한다(ImeContext). 탭을 바꾼 뒤
 //   새 표면에 도착한 옛 조합의 늦은 확정은 새 문서에 넣지 않는다. 페이지가 받지 못한 조합(이벤트가 없음)은 이 규칙으로
 //   막을 수 없다(플랫폼 한계, editor-surface-decision.md).
-import type { RhwpEditorSession } from "./RhwpEditorSession";
-import type { DocPosition } from "./rhwpText";
+// - 이 규칙은 엔진과 무관하다(T008): rhwp 편집 세션(T007, 조합 글자를 문서 모델에 넣음)과 WordCraft 편집 세션(T008, 조합
+//   글자를 커서 자리에 겹쳐 그리고 확정만 백엔드에 보냄)이 같은 ImeSession 계약으로 쓴다. 세션 사이의 끊긴 조합도 같은
+//   ImeContext로 다룬다(자리 값은 그 자리를 만든 세션만 해석한다).
 
-type Session = Pick<
-  RhwpEditorSession,
-  | "composing" | "compositionText" | "compositionAnchor" | "caret"
-  | "beginComposition" | "updateComposition" | "endComposition" | "insertCommittedAt" | "resolveProvisional" | "typeText"
->;
+/** 조합을 받는 편집 세션. 자리(markCaret이 돌려준 값)는 그 세션의 insertCommittedAt에만 돌려준다. */
+export interface ImeSession {
+  readonly composing: boolean;
+  readonly compositionText: string;
+  /** 지금 커서 자리. 끊긴 조합의 늦은 확정을 넣을 자리로 기억한다(클릭 직전). */
+  markCaret(): unknown;
+  beginComposition(): void;
+  updateComposition(text: string): void;
+  endComposition(finalText: string, options?: { provisional?: boolean }): string;
+  insertCommittedAt(at: unknown, text: string): boolean;
+  resolveProvisional(finalText?: string): void;
+  typeText(text: string): boolean;
+}
+
+type Session = ImeSession;
 
 /** 끊긴 조합. finalized면 이미 확정(또는 취소)했고, 아니면 늦게 올 확정을 session의 anchor에 넣는다(text = 마지막 조합 입력).
  * visible은 페이지에 보이던 조합을 앱이 확정한 경우다: 입력기가 그 조합을 끝내며 보내는 꼬리(아래 ImeInput 설명)를 기다린다. */
 type Interrupted =
   | { finalized: true; text: string; visible?: VisibleTail }
-  | { finalized: false; session: Session; anchor: DocPosition; text: string; split?: true };
+  | { finalized: false; session: Session; anchor: unknown; text: string; split?: true };
 
 /** 앱이 먼저 끝낸 보이는 조합. 글자는 session 모델에 있고 아직 세지 않았다(session.resolveProvisional로 끝냄). */
 interface VisibleTail {
@@ -195,8 +206,8 @@ export class ImeInput {
     this.context.interrupted = terminal
       // 빈 끝 바로 뒤의 클릭: WebKitGTK는 확정을 빈 끝 + 확정 절반(insertFromComposition → 끝)으로 나눠 보낸다. 그 사이에
       // mousedown이 오면(실측) 확정 절반은 이 자리(빈 끝의 조합 자리)의 것이다. 그 사이 229 keydown은 이를 닫지 않는다.
-      ? { session: this.session, anchor: this.session.caret, finalized: false, text: "", split: true }
-      : { session: this.session, anchor: this.session.caret, finalized: false, text: "" };
+      ? { session: this.session, anchor: this.session.markCaret(), finalized: false, text: "", split: true }
+      : { session: this.session, anchor: this.session.markCaret(), finalized: false, text: "" };
   }
 
   /** textarea가 초점을 잃음. 조합 끝 없이 초점을 잃었으면 보이는 조합 글자를 그 자리에 확정한다. */

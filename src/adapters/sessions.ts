@@ -10,7 +10,9 @@
 //   다른 문서를 고르지 않았을 때뿐이다(늦게 끝난 이전 열기가 선택을 빼앗지 않음).
 // - 선택은 세션을 바꾸지 않으며 revision도 늘리지 않는다.
 // - WebView가 다시 시작되면(T007) 백엔드에는 세션이 남아 있지만 WASM 문서 모델은 사라진다. reconcile()은 시작할 때
-//   백엔드 목록을 받아 투영을 채우고, loading·ready 세션을 failed로 돌린다(모델이 없는 세션을 편집 가능으로 보이지 않음).
+//   백엔드 목록을 받아 투영을 채우고, rhwp의 loading·ready 세션을 failed로 돌린다(모델이 없는 세션을 편집 가능으로 보이지
+//   않음). WordCraft(T008) 세션은 모델이 백엔드에 있어 WebView가 다시 시작돼도 남으므로 그대로 둔다(백엔드도 프런트엔드의
+//   WordCraft 상태 전이를 받지 않는다). 편집 표면이 백엔드 보기를 다시 받아 이어 간다.
 // subscribe/snapshot은 useSyncExternalStore용이다.
 import type { DocumentBackend } from "./backend";
 import type { CloseOutcome, Result, SessionId, SessionInfo } from "./contract";
@@ -127,15 +129,15 @@ export class DocumentSessions {
   }
 
   /**
-   * 앱(WebView)이 시작할 때 한 번 부른다. 백엔드에 남은 세션을 목록에 넣고, 엔진 모델이 이 WebView에 없는 loading·ready
-   * 세션은 failed로 돌린다. 이미 목록에 있는 세션은 바꾸지 않는다.
+   * 앱(WebView)이 시작할 때 한 번 부른다. 백엔드에 남은 세션을 목록에 넣고, 엔진 모델이 이 WebView에 없는 rhwp의
+   * loading·ready 세션은 failed로 돌린다(WordCraft 모델은 백엔드에 남음). 이미 목록에 있는 세션은 바꾸지 않는다.
    */
   async reconcile(): Promise<Result<SessionInfo[]>> {
     const result = await this.backend.sessions();
     if (!result.ok) return result;
     for (const session of result.value) {
       this.dispatch({ type: "opened", session, activate: false });
-      if (session.state === "loading" || session.state === "ready") {
+      if (session.engine === "rhwp" && (session.state === "loading" || session.state === "ready")) {
         // 목록을 받은 시도의 번호로만 돌린다. 그사이 새 불러오기가 시작됐으면 StaleLoad로 거부되어 그 시도를 건드리지 않는다.
         const failed = await this.backend.setState(session.sessionId, session.loadGeneration, session.state, "failed");
         if (failed.ok) this.applyUpdate(failed.value);

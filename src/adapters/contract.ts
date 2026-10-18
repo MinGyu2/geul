@@ -71,6 +71,8 @@ export type BackendError =
   | { code: "InvalidState"; sessionId: SessionId; state: SessionState }
   | { code: "RevisionMismatch"; sessionId: SessionId; revision: number }
   | { code: "StaleLoad"; sessionId: SessionId; loadGeneration: number }
+  /** 백엔드가 모델을 가진 엔진(T008 WordCraft)이 그 단계에서 실패함. 엔진 메시지는 담지 않는다. */
+  | { code: "EngineFailure"; engine: EngineId; stage: BackendEngineStage }
   | { code: "FileChanged" }
   | { code: "InvalidRequest" }
   | { code: "Internal" };
@@ -80,11 +82,15 @@ export type EngineOperation = "load" | "execute" | "save";
 
 /** 엔진 작업 단계(EngineFailure가 어디서 났는지). */
 export type EngineStage = "init" | "parse" | "render" | "edit" | "export";
+/** 백엔드 엔진(T008 WordCraft)이 보내는 단계. */
+export const BACKEND_ENGINE_STAGES = ["parse", "render", "edit", "export"] as const;
+export type BackendEngineStage = (typeof BACKEND_ENGINE_STAGES)[number];
 
 /**
  * 프런트엔드에서 만드는 오류.
  * - EngineUnavailable: 엔진이 아직 연결되지 않아 그 작업을 할 수 없음(WordCraft 전체, 두 엔진의 저장).
  * - EngineFailure: 연결한 엔진(WASM)이 그 단계에서 실패함. 엔진 메시지는 담지 않는다(문서 내용이 섞일 수 있음).
+ *   백엔드 엔진(WordCraft)의 실패는 같은 모양으로 백엔드가 보낸다(BackendError).
  * - Protocol: 응답이 계약과 맞지 않거나, 계약 밖의 거부(인자 형식 오류·권한 거부 등)를 받음.
  * - UnpreservedChanges: 보존하지 않은 편집(확정했거나 확정 대기·조합 중인 변경)이 있어 닫기·다시 불러오기를 하지 않음.
  *   저장 기능이 없으므로(T009) 사용자가 버리기를 명시적으로 고른 경우에만 진행한다.
@@ -152,6 +158,7 @@ const ERROR_FIELDS: Record<
   InvalidState: { sessionId: "session", state: SESSION_STATES },
   RevisionMismatch: { sessionId: "session", revision: "count" },
   StaleLoad: { sessionId: "session", loadGeneration: "count" },
+  EngineFailure: { engine: ENGINES, stage: BACKEND_ENGINE_STAGES },
   FileChanged: {},
   InvalidRequest: {},
   Internal: {},

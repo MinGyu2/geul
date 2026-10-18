@@ -2,7 +2,7 @@
 
 Date: 2026-10-13
 Spec: [spec.md](./spec.md)
-Status: Revised draft — 2026-10-16 실제 저장소 검사, submodule 고정, 보안 게이트 로컬 구현·2차 재검토 완료(원격 브랜치 보호는 미설정), Tauri/React 6영역 UI 기반(T004) 구현. 2026-10-17 T006: 문서 형식 판별·세션 기록·어댑터 계약 구현(엔진 연결 없음), 같은 날 리뷰 지적 5건 안정화(판별 규칙·동시 판별 자리)와 3건 2차 안정화(ZIP 무결성·mimetype 분류 순서), 3차 안정화(로컬 헤더 압축 방식 일치, 19바이트 mimetype 정책 명시). T007: rhwp R-A 편집 PoC 부분 통과(IME 조합 표시 미검증, 저장 없음), 2026-10-18 5·6차 안정화(실제 IME 게이트 FAIL 유지), IME 원인 규명(필수 7개 PASS)·7차·8차(입력 버퍼·DPR 2·여러 문서 지연)·9차(렌더 배율·바꾸기 입력·화면 변화, 체크 안 함). WordCraft 통합·열기 대화상자·저장은 미착수
+Status: Revised draft — 2026-10-16 실제 저장소 검사, submodule 고정, 보안 게이트 로컬 구현·2차 재검토 완료(원격 브랜치 보호는 미설정), Tauri/React 6영역 UI 기반(T004) 구현. 2026-10-17 T006: 문서 형식 판별·세션 기록·어댑터 계약 구현(엔진 연결 없음), 같은 날 리뷰 지적 5건 안정화(판별 규칙·동시 판별 자리)와 3건 2차 안정화(ZIP 무결성·mimetype 분류 순서), 3차 안정화(로컬 헤더 압축 방식 일치, 19바이트 mimetype 정책 명시). T007: rhwp R-A 편집 PoC 부분 통과(IME 조합 표시 미검증, 저장 없음), 2026-10-18 5·6차 안정화(실제 IME 게이트 FAIL 유지), IME 원인 규명(필수 7개 PASS)·7차·8차(입력 버퍼·DPR 2·여러 문서 지연)·9차(렌더 배율·바꾸기 입력·화면 변화, 체크 안 함). 2026-10-19 T008: WordCraft W-A(백엔드 네이티브 엔진) 편집 PoC 구현, 이 환경(X11·weston)에서 렌더·hit test·키보드·지연·실제 IME 필수 7개 통과(T007과 같은 플랫폼 범위 때문에 체크 안 함). 열기 대화상자·저장은 미착수
 
 ## Summary
 WordCraft는 DOCX, rhwp는 HWP/HWPX 전용 엔진으로 독립 관리한다. Tauri 2 + React/TypeScript 6개 영역 UI에 문서별 어댑터, 공통 명령/상태 계층을 결합한다. 고급 리본보다 렌더·IME·선택·쓰기 무손실 검증과 공개 저장소 보안 게이트를 우선한다.
@@ -48,6 +48,7 @@ Tauri desktop host (OS file dialogs / permissions / safe file writes)
 ```
 - 에디터 화면은 두 엔진의 렌더/커서/입력 특성을 보존한 형식별 표면이다. React UI가 네이티브 Rust 엔진 내부 데이터 모델에 직접 접근하지 않는다.
 - WordCraft egui를 React로 재사용 가능하다고 가정하지 않는다. 이음매(이미지/scene/page raster+hit-test 또는 별도 편집 표면)를 PoC로 비교한다.
+  (T008: egui는 쓰지 않고 page raster + hit test(W-A)로 연결했다 — 아래 "T008에서 구현한 계약".)
 - Tauri 명령 권한/파일 접근 허용 범위는 최소화한다. 경로 입력은 상위 앱에서 검증한다.
 - 문서별 session ID+revision이 명령 응답과 렌더 이벤트에 포함되어 이전 세션 비동기 응답을 버린다.
 
@@ -191,6 +192,23 @@ interface EditorAdapter {
   처음과 같은 전체 그리기. textarea 범위를 바꾸는 입력(`insertReplacementText`·`insertTranspose`)은 문서 범위를 정할 수 없어 받지 않는다.
   기다리던 쪽은 scroll과 편집 영역 크기 변화(`ResizeObserver`) 때 바로 그린다. 같은 부하 비교: CPU 포화 때는 한 문서도 150 ms를 넘어
   여러 문서 특유의 느려짐이 아니다(코드 변경 없음). T007 미체크.
+
+### T008에서 구현한 계약 (2026-10-19, WordCraft W-A PoC)
+- 결과·측정·한계: [editor-surface-decision.md "T008 결과"](../architecture/editor-surface-decision.md#t008-결과-wordcraft-w-a-poc-2026-10-19).
+- WordCraft 문서 모델은 Rust 백엔드(`src-tauri/src/adapters/wordcraft/`)가 세션 ID + 불러오기 시도 번호로 가진다. `wordcraft-engine`을
+  고정 submodule의 path 의존성으로 링크한다(업스트림 수정 없음). 세션 기록(`SessionRegistry`)이 여전히 하나뿐인 권한이다.
+- IPC 5개 추가(T006·T007 명령과 함께 이것만 허용): `docx_load(sessionId, reloadGeneration?)`(identified·failed → loading →
+  ready|failed, `reloadGeneration`이면 그 시도의 ready 모델을 백엔드가 버리고 다시 읽음), `docx_view(sessionId, loadGeneration)`,
+  `docx_edit(sessionId, loadGeneration, baseRevision, ops)`(허용한 연산 `DocxOp`만, 모델 잠금 안에서 기준 확인 → 실행 → 실제로 바뀐
+  연산 수만큼 확정, 거부한 연산은 `rejected` 위치), `docx_render(sessionId, loadGeneration, revision, page, scale, base?)`(원시 응답:
+  머리 24바이트 + PNG, `base`를 주면 그 판과 다른 줄의 띠만), `docx_roundtrip(sessionId, loadGeneration, revision)`(메모리 안
+  내보내기·다시 읽기 비교, 디스크 쓰기 없음).
+- T007 명령 `document_load`·`document_set_state`·`document_commit`은 WordCraft 세션에 `InvalidRequest`(revision 권한이 둘이 되지
+  않게). `document_close`는 엔진 모델도 놓는다. 새 백엔드 오류 `EngineFailure{engine, stage: parse|render|edit|export}`(엔진 메시지 없음).
+- 프런트엔드: `src/adapters/docx.ts`(응답 검사), `src/components/Editor/wordcraft/`(편집 세션·표면). IME 조합은 엔진이 모르므로
+  커서 자리에 겹쳐 그리고 확정만 보낸다. T007 `ImeInput`은 `ImeSession` 계약으로 일반화해 두 엔진이 같이 쓰고, 숨긴 textarea
+  이벤트 해석은 `src/components/Editor/textInput.ts`로 옮겼다(동작 같음). WebView가 다시 시작되면 rhwp 세션만 failed로 돌린다.
+- 저장 없음(T009). 열기 성공은 무손실 근거가 아니다(끊긴 본문 XML도 열림 — T009 입력). 개발 프로필은 의존성을 최적화한다.
 
 ## Algorithms and Pseudocode
 ```

@@ -11,6 +11,11 @@ publish = false
 name = "geul_lib"
 crate-type = ["rlib"]
 
+# T008 DOCX 픽스처 생성기(저장소에 바이너리를 두지 않고 실행할 때 만든다, tests/fixtures/README.md).
+[[example]]
+name = "wordcraft_fixture"
+path = "../tests/fixtures/wordcraft/generate.rs"
+
 [build-dependencies]
 tauri-build = { version = "=2.7.1", features = [] }
 
@@ -22,6 +27,11 @@ cfb = "=0.14.0"
 flate2 = { version = "=1.1.10", default-features = false, features = ["rust_backend"] }
 quick-xml = { version = "=0.42.0", default-features = false }
 serde = { version = "=1.0.229", features = ["derive"] }
+# T008: WordCraft 엔진 명령 인자·응답(JSON). tauri 의존성 트리에 이미 있는 판이다.
+serde_json = "=1.0.154"
+# T008 W-A: DOCX 문서 모델·렌더를 백엔드가 가진다(editor-surface-decision.md). 업스트림 소스는 고치지 않고 고정한
+# submodule(external/wordcraft, v0.7.0)을 path 의존성으로 링크한다. 그래서 이 크레이트를 빌드하려면 그 submodule이 필요하다.
+wordcraft-engine = { path = "../external/wordcraft/crates/engine" }
 
 [target.'cfg(any(target_os = "linux", target_os = "dragonfly", target_os = "freebsd", target_os = "netbsd", target_os = "openbsd"))'.dependencies]
 # wry가 끈 WebView IME preedit을 되돌린다(src/ime.rs). tauri가 이미 쓰는 판이며 기능만 명시한다.
@@ -30,3 +40,8 @@ webkit2gtk = { version = "=2.0.2", features = ["v2_28"] }
 [target.'cfg(unix)'.dependencies]
 # 판별 중 FIFO 등 특수 파일에서 열기가 멈추지 않도록 O_NONBLOCK으로 연다.
 libc = "=0.2.190"
+
+# T008: WordCraft 엔진(배치·래스터·PNG)은 최적화 없이 빌드하면 키 입력 하나에 수백 ms가 걸린다(디버그 앱 실측 p95 약 380 ms).
+# 개발 빌드에서도 의존성만 최적화한다(WordCraft 워크스페이스의 [profile.dev.package."*"]와 같은 값). 이 크레이트는 그대로 디버그다.
+[profile.dev.package."*"]
+opt-level = 2

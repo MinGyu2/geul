@@ -44,7 +44,11 @@ git submodule status
 
 필요한 도구: Node.js 22 이상(npm), Rust 1.90 이상, Tauri 2의 플랫폼 의존성
 ([Tauri 사전 준비](https://v2.tauri.app/start/prerequisites/), Linux는 WebKitGTK 4.1 등).
-지금의 앱은 엔진을 빌드하지 않으므로 submodule 없이도 실행됩니다.
+Rust 백엔드는 WordCraft(DOCX, T008)를 path 의존성으로 링크하므로 빌드에 `external/wordcraft` submodule이 필요합니다
+(`git submodule update --init --depth 1 external/wordcraft`). rhwp(HWP/HWPX)는 WebView에서 WASM으로 불러오며
+(`scripts/build-rhwp-wasm.sh`, T007) 그 산출물이 없으면 HWP/HWPX 편집만 실패로 표시됩니다.
+WordCraft는 정해진 글꼴 폴더(`/usr/share/fonts`, `~/.fonts`, `~/.local/share/fonts` 등)만 찾습니다. 글꼴이 fontconfig로만
+있는 시스템(NixOS 등)에서는 한글이 빈 상자로 그려질 수 있습니다(시험 방법은 `tests/integration/wordcraft/wordcraft_poc.py`).
 
 ```sh
 npm ci                     # 잠금 파일(package-lock.json) 기준 설치
@@ -55,7 +59,7 @@ npm run lint               # ESLint
 npm test                   # 컴포넌트·상호작용 테스트(Vitest + Testing Library)
 npm run build              # 프런트엔드 빌드(dist/)
 (cd src-tauri && cargo fmt --check && cargo clippy --locked --all-targets -- -D warnings)
-(cd src-tauri && cargo test --locked)   # 문서 형식 판별·세션 테스트(합성 컨테이너, T006)
+(cd src-tauri && cargo test --locked)   # 문서 형식 판별·세션(T006), WordCraft 어댑터(T008) 테스트
 
 # CI(.github/workflows/quality.yml)도 위 프런트엔드·Rust 검사를 같은 명령으로 실행한다.
 
@@ -63,6 +67,10 @@ npm run build              # 프런트엔드 빌드(dist/)
 # 타일링 창 관리자에서는 최소 창 검사가 건너뛰어지므로 헤드리스 weston에서 실행한다(스크립트 설명 참고)
 npm run tauri build -- --debug --no-bundle
 python3 tests/e2e/tauri_smoke.py --app src-tauri/target/debug/geul --driver <tauri-driver 경로>
+
+# 편집 PoC(검사 훅 빌드 VITE_GEUL_TEST_HOOKS=1): rhwp(T007)·WordCraft(T008), --ime는 실제 한국어 IME 게이트
+python3 tests/integration/rhwp/rhwp_poc.py --app src-tauri/target/debug/geul --driver <tauri-driver 경로>
+python3 tests/integration/wordcraft/wordcraft_poc.py --app src-tauri/target/debug/geul --driver <tauri-driver 경로>
 ```
 
 ## 공개 저장소 보안 검사

@@ -2,20 +2,26 @@
 //
 // - 세션 목록·활성 선택은 DocumentSessions(백엔드 투영)이 가진다. 여기서는 rhwp 세션마다 편집 세션(WASM 모델)을
 //   하나만 만들고, 세션이 목록에서 사라지면(닫기·늦게 알게 된 닫힘) 그 모델을 버린다.
-// - 열기 → 판별(백엔드) → rhwp면 바로 엔진에 불러온다. DOCX(WordCraft)는 T008 전이라 불러오지 않는다.
+// - 열기 → 판별(백엔드) → 엔진에 바로 불러온다. rhwp는 WebView의 WASM(T007), DOCX(WordCraft)는 백엔드의 네이티브 엔진(T008,
+//   DocxEditorSession은 백엔드 모델의 편집 표면 상태만 가진다). 세션마다 편집 세션은 하나다.
 // - 닫기: 저장 기능이 없으므로(T009) 편집한 모델(확정했거나 확정 대기·조합 중인 변경)은 `discard: true` 없이 닫지
 //   않는다(UnpreservedChanges). 닫는 동안은 편집을 막고, 백엔드가 닫았다고 답한 뒤에(목록에서 빠질 때) 모델을 버린다.
 //   백엔드 닫기가 실패하면 모델을 그대로 두고 편집을 다시 허용한다. 같은 세션의 닫기를 되풀이하면 진행 중인 닫기
 //   하나를 기다린다(백엔드 닫기·정리는 한 번).
 import type { DocumentBackend } from "../../adapters/backend";
+import type { DocxBackend } from "../../adapters/docx";
 import type { CloseOutcome, Result, SessionId, SessionInfo } from "../../adapters/contract";
 import type { DocumentSessions } from "../../adapters/sessions";
 import { RhwpEditorSession } from "./rhwp/RhwpEditorSession";
 import { loadRhwpModule, type RhwpModule } from "./rhwp/rhwpModule";
 import type { WindowClosePort } from "./windowClose";
+import { DocxEditorSession, type DecodeImage } from "./wordcraft/DocxEditorSession";
+
+/** 엔진별 편집 세션(세션마다 하나). */
+export type EngineEditor = RhwpEditorSession | DocxEditorSession;
 
 export class DocumentWorkspace {
-  private readonly editors = new Map<SessionId, RhwpEditorSession>();
+  private readonly editors = new Map<SessionId, EngineEditor>();
   private readonly closing = new Map<SessionId, Promise<Result<CloseOutcome>>>();
   private started = false;
   private windowClosing = false;
@@ -25,6 +31,8 @@ export class DocumentWorkspace {
     private readonly backend: DocumentBackend,
     private readonly loadModule: () => Promise<RhwpModule> = () => loadRhwpModule(),
     readonly windowClose?: WindowClosePort,
+    private readonly docxBackend?: DocxBackend,
+    private readonly decodeImage?: DecodeImage,
   ) {
     sessions.subscribe(() => this.sync());
   }
@@ -38,17 +46,31 @@ export class DocumentWorkspace {
 
   async open(path: string): Promise<Result<SessionInfo>> {
     const result = await this.sessions.open(path);
-    if (result.ok && result.value.engine === "rhwp") void this.editorFor(result.value.sessionId)?.load();
+    if (result.ok) void this.anyEditorFor(result.value.sessionId)?.load();
     return result;
   }
 
   /** rhwp 세션의 편집 세션(없으면 만든다). 목록에 없거나 rhwp가 아니면 null. */
   editorFor(sessionId: SessionId): RhwpEditorSession | null {
+    const editor = this.anyEditorFor(sessionId);
+    return editor instanceof RhwpEditorSession ? editor : null;
+  }
+
+  /** WordCraft 세션의 편집 세션(없으면 만든다). 목록에 없거나 WordCraft가 아니거나 DOCX 백엔드가 없으면 null. */
+  docxEditorFor(sessionId: SessionId): DocxEditorSession | null {
+    const editor = this.anyEditorFor(sessionId);
+    return editor instanceof DocxEditorSession ? editor : null;
+  }
+
+  /** 세션 엔진의 편집 세션(없으면 만든다). */
+  anyEditorFor(sessionId: SessionId): EngineEditor | null {
     const info = this.sessions.get(sessionId);
-    if (!info || info.engine !== "rhwp") return null;
+    if (!info) return null;
     let editor = this.editors.get(sessionId);
     if (!editor) {
-      editor = new RhwpEditorSession(sessionId, this.backend, this.sessions, this.loadModule);
+      if (info.engine === "rhwp") editor = new RhwpEditorSession(sessionId, this.backend, this.sessions, this.loadModule);
+      else if (this.docxBackend) editor = new DocxEditorSession(sessionId, this.docxBackend, this.sessions, this.decodeImage);
+      else return null;
       editor.setClosing(this.windowClosing);
       this.editors.set(sessionId, editor);
     }
@@ -78,7 +100,7 @@ export class DocumentWorkspace {
     return closing;
   }
 
-  private async runClose(sessionId: SessionId, editor: RhwpEditorSession | null): Promise<Result<CloseOutcome>> {
+  private async runClose(sessionId: SessionId, editor: EngineEditor | null): Promise<Result<CloseOutcome>> {
     editor?.setClosing(true);
     // 성공(또는 이미 닫힘)이면 DocumentSessions가 목록에서 빼고, sync()가 편집 세션을 버린다.
     const result = await this.sessions.close(sessionId);

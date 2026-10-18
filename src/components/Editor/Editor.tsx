@@ -15,10 +15,12 @@ import type { DocumentError, SessionId, SessionInfo } from "../../adapters/contr
 import { EMPTY_SESSIONS, type SessionsState } from "../../adapters/sessions";
 import type { Message, MessageKey } from "../../language";
 import { useTranslation } from "../../language/LanguageContext";
-import type { DocumentWorkspace } from "./documentWorkspace";
+import type { DocumentWorkspace, EngineEditor } from "./documentWorkspace";
 import { RhwpEditorSession } from "./rhwp/RhwpEditorSession";
 import { ImeContext } from "./rhwp/imeInput";
 import { RhwpSurface } from "./rhwp/RhwpSurface";
+import type { DocxEditorSession } from "./wordcraft/DocxEditorSession";
+import { DocxSurface } from "./wordcraft/DocxSurface";
 
 interface EditorProps {
   zoom: number;
@@ -47,8 +49,8 @@ export function documentErrorMessage(error: DocumentError): Message {
 
 /**
  * 중앙 편집 영역. 열린 문서가 없으면 안내와 빈 페이지 자리표시자를 보여 준다.
- * T007: HWP/HWPX 세션은 rhwp WASM 편집 표면(R-A)을 붙이고, DOCX 세션은 WordCraft 연결(T008) 전이라 사용할 수 없다고
- * 표시한다. 문서 열기는 경로 입력(PoC, 열기 대화상자는 T009)이며 저장은 없다.
+ * HWP/HWPX 세션은 rhwp WASM 편집 표면(T007 R-A), DOCX 세션은 백엔드 WordCraft 엔진의 편집 표면(T008 W-A)을 붙인다.
+ * 문서 열기는 경로 입력(PoC, 열기 대화상자는 T009)이며 저장은 없다.
  */
 export function Editor({ zoom, workspace = null, notify }: EditorProps) {
   const { t } = useTranslation();
@@ -96,7 +98,7 @@ export function Editor({ zoom, workspace = null, notify }: EditorProps) {
     else notify?.(documentErrorMessage(result.error));
   };
   const reload = async (session: SessionInfo, confirmed = false) => {
-    const editor = workspace?.editorFor(session.sessionId);
+    const editor = workspace?.anyEditorFor(session.sessionId);
     if (!editor) return;
     const result = await editor.load({ discard: confirmed });
     if (!result.ok && result.error.code === "UnpreservedChanges") {
@@ -135,10 +137,18 @@ export function Editor({ zoom, workspace = null, notify }: EditorProps) {
           imeContext={imeContext}
           onReload={() => void reload(active)}
         />
+      ) : active.engine === "wordcraft" && workspace?.docxEditorFor(active.sessionId) ? (
+        <DocxPanel
+          key={active.sessionId}
+          editor={workspace.docxEditorFor(active.sessionId)!}
+          info={active}
+          zoom={zoom}
+          imeContext={imeContext}
+          onReload={() => void reload(active)}
+        />
       ) : (
         <div className="editor__notice" role="note" data-testid="editor-unsupported">
           <h1 className="editor__notice-title">{t("editor.unsupportedTitle", { name: active.displayName })}</h1>
-          <p>{t("editor.wordcraftPending")}</p>
         </div>
       )}
       {discard && (discard.action === "window" || discardTarget) && (
@@ -257,7 +267,7 @@ function DocumentBar({ workspace, state, notify, onClose }: {
             key={session.sessionId}
             session={session}
             active={session.sessionId === state.activeId}
-            editor={workspace.editorFor(session.sessionId)}
+            editor={workspace.anyEditorFor(session.sessionId)}
             onSelect={() => workspace.sessions.select(session.sessionId)}
             onClose={() => onClose(session)}
           />
@@ -274,7 +284,7 @@ function DocumentBar({ workspace, state, notify, onClose }: {
 function DocumentTab({ session, active, editor, onSelect, onClose }: {
   session: SessionInfo;
   active: boolean;
-  editor: RhwpEditorSession | null;
+  editor: EngineEditor | null;
   onSelect: () => void;
   onClose: () => void;
 }) {
@@ -317,7 +327,7 @@ function useSettledText(text: string): string {
 }
 
 /** 편집 세션이 바뀔 때마다(상태·커서·revision·측정) 다시 그린다. */
-function useEditorUpdates(editor: RhwpEditorSession | null) {
+function useEditorUpdates(editor: { subscribe(listener: () => void): () => void } | null) {
   const [, update] = useReducer((tick: number) => tick + 1, 0);
   useEffect(() => editor?.subscribe(update), [editor]);
 }
@@ -421,6 +431,111 @@ function RhwpPanel({ editor, info, zoom, imeContext, onReload }: {
       </div>
       <div className="editor__scroll">
         {status.kind === "ready" ? <RhwpSurface session={editor} zoom={zoom} imeContext={imeContext} /> : null}
+      </div>
+    </>
+  );
+}
+
+/**
+ * DOCX(WordCraft) 편집 패널(T008). 상태·진단 속성(검사·측정용)과 다시 불러오기·메모리 내보내기 검사를 보이고, ready면
+ * 편집 표면을 붙인다. WebView를 다시 시작한 뒤 백엔드에 모델이 남은 세션은 자동으로 다시 붙는다(백엔드 모델이 권한).
+ */
+function DocxPanel({ editor, info, zoom, imeContext, onReload }: {
+  editor: DocxEditorSession;
+  info: SessionInfo;
+  zoom: number;
+  imeContext: ImeContext;
+  onReload: () => void;
+}) {
+  const { t } = useTranslation();
+  useEditorUpdates(editor);
+  useEffect(() => {
+    if (editor.status.kind === "idle" && (info.state === "ready" || info.state === "loading")) void editor.resume();
+  }, [editor, info.state]);
+  const latency = editor.latency();
+  const revisionText = useSettledText(t("editor.docx.revision", { revision: info.revision }));
+  const latencyText = useSettledText(latency ? t("editor.docx.latency", { p95: latency.p95.toFixed(1), count: latency.count }) : "");
+  const status = editor.status;
+  const view = editor.view;
+  const roundTrip = editor.roundTripCurrent ? editor.lastRoundTrip : null;
+  const unpreserved = editor.hasUnpreservedChanges;
+  const mark = (flag: boolean) => (flag ? "✓" : "✗");
+  return (
+    <>
+      <div
+        className="editor__notice editor__poc"
+        role="status"
+        data-testid="docx-status"
+        data-status={status.kind}
+        data-revision={info.revision}
+        data-generation={editor.loadGeneration}
+        data-dirty={info.dirty}
+        data-first-paint-ms={editor.firstPaintMs === null ? "" : editor.firstPaintMs.toFixed(1)}
+        data-latency-count={latency?.count ?? 0}
+        data-latency-p50={latency ? latency.p50.toFixed(1) : ""}
+        data-latency-p95={latency ? latency.p95.toFixed(1) : ""}
+        data-latency-max={latency ? latency.max.toFixed(1) : ""}
+        data-latency-samples={TEST_HOOKS ? editor.latencySamples().map((ms) => ms.toFixed(1)).join(",") : undefined}
+        data-caret={view?.caretKey ?? ""}
+        data-selection={view && !view.collapsed ? `${view.anchorKey}|${view.caretKey}` : ""}
+        data-caret-offset={view?.caretOffset ?? ""}
+        data-in-table={view?.inTable ?? false}
+        data-composing={editor.composing}
+        data-composition={TEST_HOOKS ? editor.compositionText : undefined}
+        data-pending={editor.pendingOps}
+        data-rejected={editor.rejectedOps}
+        data-unpreserved={unpreserved}
+        data-paragraph-text={TEST_HOOKS ? view?.paragraphText ?? "" : undefined}
+        data-pages={view?.pages.length ?? 0}
+      >
+        <h1 className="editor__notice-title">{info.displayName}</h1>
+        <p>{t(`editor.docx.${status.kind}` as MessageKey)}</p>
+        {status.kind === "failed" && (
+          <>
+            <p data-testid="docx-error">{t(documentErrorMessage(status.error).key)}</p>
+            {unpreserved && <p data-testid="docx-unpreserved-warning">{t("editor.docx.failedUnpreserved")}</p>}
+            <button type="button" className="document-bar__button" data-testid="docx-load" onClick={onReload}>
+              {t("editor.docx.reload")}
+            </button>
+          </>
+        )}
+        {status.kind === "idle" && info.state !== "ready" && info.state !== "loading" && (
+          <button type="button" className="document-bar__button" data-testid="docx-load" onClick={onReload}>
+            {t(info.state === "failed" ? "editor.docx.reload" : "editor.docx.load")}
+          </button>
+        )}
+        {status.kind === "ready" && (
+          <>
+            <span>{revisionText}</span>
+            {latencyText && <span>{latencyText}</span>}
+            {editor.rejectedOps > 0 && <span>{t("editor.docx.rejected", { count: editor.rejectedOps })}</span>}
+            <button type="button" className="document-bar__button" data-testid="docx-roundtrip" onClick={() => void editor.roundTrip()}>
+              {t("editor.docx.roundTrip")}
+            </button>
+            {/* 결과는 검사한 판에 대한 것이다. 문서가 바뀌면 보이지 않는다. */}
+            {roundTrip && (
+              <output
+                data-testid="docx-roundtrip-result"
+                data-revision={roundTrip.revision}
+                data-passed={roundTrip.passed}
+                data-bytes={roundTrip.bytes}
+                data-pages-equal={roundTrip.pagesEqual}
+                data-text-equal={roundTrip.textEqual}
+                data-model-equal={roundTrip.modelEqual}
+              >
+                {t("editor.docx.roundTripResult", {
+                  verdict: t(roundTrip.passed ? "editor.docx.roundTripPassed" : "editor.docx.roundTripFailed"),
+                  pages: mark(roundTrip.pagesEqual),
+                  text: mark(roundTrip.textEqual),
+                  model: mark(roundTrip.modelEqual),
+                })}
+              </output>
+            )}
+          </>
+        )}
+      </div>
+      <div className="editor__scroll">
+        {status.kind === "ready" ? <DocxSurface session={editor} zoom={zoom} imeContext={imeContext} /> : null}
       </div>
     </>
   );

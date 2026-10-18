@@ -750,6 +750,18 @@ button {
   pointer-events: none;
 }
 
+/* DOCX(T008): 조합 중 글자. 모델을 바꾸지 않고 커서 자리에 겹쳐 그린다(아래 글자를 가림, 밑줄). */
+.docx-composition {
+  position: absolute;
+  padding-right: 1px;
+  white-space: pre;
+  color: #111;
+  background: #fff;
+  text-decoration: underline;
+  text-decoration-thickness: 2px;
+  pointer-events: none;
+}
+
 /* 키보드·IME 입력 받기용. 커서 위치에 두되 보이지 않게 한다(IME 후보 창 위치). */
 .rhwp-input {
   position: absolute;

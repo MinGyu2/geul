@@ -3,6 +3,7 @@
 // Tauri 2의 `window.__TAURI_INTERNALS__.invoke`는 @tauri-apps/api `core.invoke`가 감싸는 함수와 같아 문서 IPC는
 // 직접 쓴다. 창 닫기에는 공식 event API를 사용한다. 권한은 capabilities/default.json의 문서 명령·창 종료 확인에 한정한다.
 import { createTauriBackend, type Invoke } from "../../adapters/backend";
+import { createDocxBackend } from "../../adapters/docx";
 import { DocumentSessions } from "../../adapters/sessions";
 import { DocumentWorkspace } from "./documentWorkspace";
 import { tauriWindowClose } from "./windowClose";
@@ -16,5 +17,5 @@ export function createTauriWorkspace(): DocumentWorkspace | null {
   if (typeof internals?.invoke !== "function") return null;
   const invoke: Invoke = (command, args) => internals.invoke(command, args);
   const backend = createTauriBackend(invoke);
-  return new DocumentWorkspace(new DocumentSessions(backend), backend, undefined, tauriWindowClose);
+  return new DocumentWorkspace(new DocumentSessions(backend), backend, undefined, tauriWindowClose, createDocxBackend(invoke));
 }

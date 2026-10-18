@@ -7,6 +7,8 @@
 //
 // 입력: 화면에 보이지 않는 textarea 하나가 키보드·IME를 받는다. 커서 위치로 옮겨 두어 IME 후보 창이 커서 옆에 뜬다.
 // React가 다시 그려도 같은 요소를 쓰므로 조합 상태·초점이 사라지지 않는다. 이벤트는 네이티브 리스너로 받는다.
+// textarea 이벤트 해석(조합 계열 input·data 없는 넣기·바꾸기 입력 거부·쌓인 값 비우기)은 WordCraft 표면(T008)과 함께 쓰는
+// ../textInput.ts에 있다(T007에서 옮김, 동작 같음).
 // - 조합 이벤트 해석(조합 하나는 끝이 한 번, 클릭·초점 잃음으로 끝낸 조합의 늦은 확정)은 imeInput.ts의 ImeInput이
 //   맡는다. 여기서는 DOM 이벤트를 넘기고 textarea를 비운다. 끊긴 조합은 편집 표면 사이에서 공유하는 ImeContext에
 //   두므로(작업 공간이 하나를 넘겨 줌) 탭을 바꾼 뒤 도착한 옛 조합의 늦은 확정이 다른 문서에 들어가지 않는다. 표면이
@@ -23,6 +25,7 @@
 import { useCallback, useEffect, useLayoutEffect, useReducer, useRef, useState, type CSSProperties } from "react";
 import { ZOOM_STEPS } from "../../../hooks/layoutState";
 import { useTranslation } from "../../../language/LanguageContext";
+import { attachTextInput } from "../textInput";
 import { ImeContext, ImeInput } from "./imeInput";
 import type { RhwpEditorSession } from "./RhwpEditorSession";
 import type { PageRect } from "./rhwpText";
@@ -34,34 +37,11 @@ interface RhwpSurfaceProps {
   imeContext?: ImeContext;
 }
 
-/** 조합 계열 input: 글자는 data로만 읽는다(값에는 앞서 확정한 글자가 쌓여 있다). */
-const IME_INPUT_TYPES = new Set(["insertCompositionText", "insertFromComposition", "deleteCompositionText"]);
-/**
- * 숨긴 textarea 안의 범위를 바꾸는 input(9차). 바꾸는 범위는 textarea의 것인데 textarea는 문서가 아니고 방향키·클릭으로 옮긴
- * 문서 커서도 따르지 않아, 문서의 어느 범위를 바꿀지 정할 수 없다. 커서에 넣으면 원래 글자가 남은 채 덧붙는다(8차까지). 그래서
- * 받지 않는다: 조합 중이 아니면 beforeinput에서 막고, 조합 중이어도 문서·조합에 넣지 않는다.
- */
-const REPLACEMENT_INPUT_TYPES = new Set(["insertReplacementText", "insertTranspose"]);
-/**
- * data 없는 넣기에서 새로 들어온 글자: 바뀌기 전 값의 선택 앞(start 전)과 뒤(end 뒤)가 지금 값의 앞뒤에 그대로 있으면 그 사이.
- * 바뀌기 전 상태가 없거나 앞뒤가 맞지 않으면(알 수 없는 편집) ""(넣지 않음). 쌓인 값을 새 글자로 보지 않는다.
- */
-function insertedText(before: { value: string; start: number; end: number } | null, value: string): string {
-  if (!before) return "";
-  const head = before.value.slice(0, before.start);
-  const tail = before.value.slice(before.end);
-  if (value.length < head.length + tail.length || !value.startsWith(head) || !value.endsWith(tail)) return "";
-  return value.slice(head.length, value.length - tail.length);
-}
-/** 숨긴 textarea에 쌓인 값을 비우는 길이(조합이 없을 때만). */
-const TRIM_LENGTH = 256;
 /** 입력 중 커서 쪽이 아닌 쪽을 다시 그리기까지 기다리는 시간(새 입력이 오면 다시 기다림). */
 const REST_DELAY_MS = 200;
 const HIDDEN_UNDERLINE: CSSProperties = { left: 0, top: 0, width: 0, visibility: "hidden" };
 /** 조합 밑줄 자리: 조합이 없어도 하나(숨김)를 둔다. */
 const padComposition = (rects: PageRect[]): (PageRect | null)[] => (rects.length > 0 ? rects : [null]);
-
-const NAVIGATION_KEYS = new Set(["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown", "Home", "End", "Enter", "Tab", "Escape"]);
 
 /** 세션이 바뀔 때마다 다시 그린다. 그리기 layout effect보다 먼저 구독해, 처음 그릴 때의 상태 변화(표시 한도)도 받는다. */
 function useSessionUpdates(session: RhwpEditorSession) {
@@ -80,7 +60,6 @@ export function RhwpSurface({ session, zoom, imeContext }: RhwpSurfaceProps) {
   const pageBoxes = useRef(new Map<number, HTMLDivElement>());
   const inputAt = useRef<number | null>(null);
   const renderTimer = useRef<number | null>(null);
-  const pendingNavigation = useRef<KeyboardEvent | null>(null);
   const ime = useRef<ImeInput | null>(null);
   const [ownContext] = useState(() => new ImeContext());
   const context = imeContext ?? ownContext;
@@ -252,82 +231,14 @@ export function RhwpSurface({ session, zoom, imeContext }: RhwpSurfaceProps) {
         default: return false;
       }
     };
-    const onKeyDown = (event: KeyboardEvent) => {
-      controller.keyDown(event.isComposing || event.keyCode === 229);
-      if (event.ctrlKey || event.metaKey || event.altKey) return; // 단축키는 명령 레지스트리(T010) 몫
-      if (event.isComposing || event.keyCode === 229) {
-        if (NAVIGATION_KEYS.has(event.code) || NAVIGATION_KEYS.has(event.key)) pendingNavigation.current = event;
-        return;
-      }
-      if (handleKey(event)) event.preventDefault();
-    };
-    const onCompositionStart = (event: CompositionEvent) => {
-      mark(event);
-      controller.compositionStart();
-    };
-    // 글자는 이벤트(data)에서 읽는다: 조합 입력의 data는 지금 조합 문자열 전체, 확정·일반 입력은 넣은 글자다(실측
-    // WebKitGTK 2.54 + ibus). 초점 있는 textarea의 값을 키마다 비우면 WebKitGTK가 입력기 문맥을 다시 맞추느라 frame마다
-    // 수십 ms를 써 실제 IME 입력이 밀렸다(7차). 그래서 값은 쌓아 두고 문서의 근거로 쓰지 않는다:
-    // - data가 없는 넣기(붙여넣기 등)는 beforeinput 때의 값·선택(바뀌기 전)과 지금 값을 비교해, 선택 앞뒤로 남은 부분 사이에
-    //   새로 들어온 글자만 넣는다(8차: 쌓인 값을 통째로 넣어 앞서 넣은 글자가 다시 들어가던 결함). 비교할 수 없으면 넣지 않는다.
-    // - 넣기가 아닌 입력(지우기·되돌리기·서식, 예: Ctrl+Backspace·Ctrl+X·Ctrl+Z)과 textarea 범위 바꾸기(insertReplacementText 등,
-    //   9차)는 문서에 아무것도 넣지 않는다. 조합 중이 아니면 beforeinput에서 막아 숨긴 값이 어긋나지 않게 한다(T007 범위 밖의
-    //   네이티브 편집, 문서 지우기는 키로 처리).
-    // 쌓인 값은 조합이 없을 때 가끔(TRIM_LENGTH) 비운다.
-    let snapshot: { value: string; start: number; end: number } | null = null;
-    const onBeforeInput = (event: Event) => {
-      const { inputType = "", isComposing = false } = event as InputEvent;
-      const composing = session.composing || isComposing;
-      if (!composing && (REPLACEMENT_INPUT_TYPES.has(inputType) || (!IME_INPUT_TYPES.has(inputType) && !inputType.startsWith("insert")))) {
-        event.preventDefault();
-        snapshot = null;
-        return;
-      }
-      snapshot = { value: input.value, start: input.selectionStart, end: input.selectionEnd };
-    };
-    const onInput = (event: Event) => {
-      const { inputType = "", isComposing = false, data = null } = event as InputEvent;
-      const before = snapshot;
-      snapshot = null;
-      if (REPLACEMENT_INPUT_TYPES.has(inputType)) return; // 막지 못했어도(취소 불가) 문서는 그대로
-      mark(event);
-      const composing = session.composing || isComposing;
-      let text: string;
-      if (composing || IME_INPUT_TYPES.has(inputType)) text = data ?? "";
-      else if (!inputType.startsWith("insert")) text = "";
-      else if (data !== null) text = data;
-      else text = insertedText(before, input.value);
-      controller.input(text, inputType, isComposing);
-      if (!composing && !session.composing && input.value.length > TRIM_LENGTH) input.value = "";
-    };
-    const onCompositionEnd = (event: CompositionEvent) => {
-      mark(event);
-      const finalText = event.data ?? "";
-      controller.compositionEnd(finalText);
-      const pending = pendingNavigation.current;
-      pendingNavigation.current = null;
-      if (pending) handleKey(pending);
-    };
-    input.addEventListener("keydown", onKeyDown);
-    input.addEventListener("compositionstart", onCompositionStart);
-    input.addEventListener("beforeinput", onBeforeInput);
-    input.addEventListener("input", onInput);
-    input.addEventListener("compositionend", onCompositionEnd);
-    const onBlur = () => {
-      controller.blur();
-      input.value = "";
-    };
-    input.addEventListener("blur", onBlur);
-    return () => {
-      input.removeEventListener("blur", onBlur);
-      controller.detach();
-      ime.current = null;
-      input.removeEventListener("keydown", onKeyDown);
-      input.removeEventListener("compositionstart", onCompositionStart);
-      input.removeEventListener("beforeinput", onBeforeInput);
-      input.removeEventListener("input", onInput);
-      input.removeEventListener("compositionend", onCompositionEnd);
-    };
+    return attachTextInput(input, controller, {
+      composing: () => session.composing,
+      handleKey,
+      mark,
+      detached: () => {
+        ime.current = null;
+      },
+    });
   }, [session, context]);
 
   // ---- 마우스 ----

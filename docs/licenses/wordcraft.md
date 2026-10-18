@@ -32,6 +32,16 @@
   재사용하지 않습니다.
 - UI는 "WordCraft-inspired" 배치만 참고하며 WordCraft의 상표·명칭을 제품명으로 쓰지 않습니다.
 
+## T008에서 정한 링크 범위 (2026-10-19)
+
+- `src-tauri`가 `wordcraft-engine`을 path 의존성으로 링크한다. 그 결과 앱 바이너리에 들어가는 WordCraft 크레이트:
+  `wordcraft-engine`, `-doc`, `-docx`, `-docbin`, `-layout`, `-render`, `-fonts`(번들 OFL 글꼴 포함), `-geom`, `-metafile`,
+  `-pdf`, `-proof`(하이픈 패턴 포함), `-formats`. `wordcraft-ui-egui`·`-mcp`·`-zotero`·`-control-key`와 앱 바이너리는 링크하지 않는다.
+- 이 의존성으로 `src-tauri/Cargo.lock`에 새로 들어온 패키지 111개의 매니페스트 라이선스(`cargo metadata` 기준, 엔지니어링 검토):
+  모두 허용형 — MIT·Apache-2.0(단독 또는 둘 중 선택) 98개, BSD만 3개(`alloc-no-stdlib`·`tiny-skia-path` BSD-3-Clause,
+  `arrayref` BSD-2-Clause), 허용형 여럿 중 고르는 것 10개(모두 MIT 또는 Apache-2.0을 고를 수
+  있음, 예: `brotli-decompressor` BSD-3-Clause/MIT). 카피레프트 없음. BSD 계열은 배포물 고지에 저작권·조건 문구가 필요하다.
+
 ## 미확인 사항
 
-- 앱이 실제로 링크할 크레이트 범위와 그에 따른 전이 의존성 라이선스 목록 (T008, T016)
+- 배포물 고지 파일 생성(크레이트별 라이선스 텍스트·NOTICE·번들 글꼴 OFL 텍스트)과 다른 플랫폼 대상의 전이 의존성 차이 (T016)

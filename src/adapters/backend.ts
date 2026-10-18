@@ -42,7 +42,7 @@ export interface DocumentBackend {
 
 const PROTOCOL = { ok: false, error: { code: "Protocol" } } as const;
 
-async function call<T>(invoke: Invoke, command: string, args: Record<string, unknown> | undefined, parse: (value: unknown) => T | null): Promise<Result<T>> {
+export async function call<T>(invoke: Invoke, command: string, args: Record<string, unknown> | undefined, parse: (value: unknown) => T | null): Promise<Result<T>> {
   let value: unknown;
   try {
     value = await invoke(command, args);

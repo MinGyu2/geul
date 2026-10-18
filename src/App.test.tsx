@@ -35,10 +35,10 @@ describe("6영역 레이아웃", () => {
     expect(within(main).getByRole("heading", { name: "열린 문서가 없습니다" })).toBeInTheDocument();
     expect(within(main).queryByRole("textbox")).not.toBeInTheDocument();
     expect(main.querySelector("[contenteditable]")).toBeNull();
-    // T007: HWP/HWPX는 rhwp 편집 PoC(저장 없음), DOCX는 아직 통합 전이다.
+    // T007: HWP/HWPX는 rhwp 편집 PoC, T008: DOCX는 WordCraft 편집 PoC. 세 형식 모두 저장은 없다.
     const properties = within(screen.getByRole("complementary", { name: "속성" }));
-    expect(properties.getAllByText("편집 PoC(저장 없음)")).toHaveLength(2);
-    expect(properties.getAllByText("통합 전")).toHaveLength(1);
+    expect(properties.getAllByText("편집 PoC(저장 없음)")).toHaveLength(3);
+    expect(properties.queryByText("통합 전")).not.toBeInTheDocument();
   });
 });
 

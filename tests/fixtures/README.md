@@ -27,7 +27,7 @@ T006의 판별·세션 테스트는 이 디렉터리에 파일을 두지 않는�
 |------|------|-----------------|
 | `hwp/basic-ko.hwp` | 한·영 문단, 굵게, 2×2 표 | **T007: 커밋하지 않고 실행할 때 생성** — `node tests/fixtures/rhwp/generate.mjs <출력 디렉터리>`(고정 커밋 rhwp WASM의 `createBlankDocument`·`insertText`·`applyCharFormat`·`createTable`·`exportHwpWithReport`) |
 | `hwpx/basic-ko.hwpx` | 같은 내용 | 같은 생성기의 `exportHwpxWithReport` |
-| `docx/basic-ko.docx` | 같은 내용 | WordCraft 엔진 명령으로 생성 후 저장 |
+| `docx/basic-ko.docx` | 같은 내용 | **T008: 커밋하지 않고 실행할 때 생성** — Rust 시험은 `tests/fixtures/wordcraft/basic.rs`(`#[path]`로 포함), 실제 앱 시험은 `cargo run --manifest-path src-tauri/Cargo.toml --example wordcraft_fixture -- <출력 디렉터리>`(고정 커밋 WordCraft의 `blank_document`·`text.insert`(raw)·`select.range`·`format.bold`·`insert.table`·`text.tab`·`io::save_bytes`, 구조 검사 후 저장) |
 | `invalid/hwp-bytes.docx` | HWP 바이트에 `.docx` 확장자 | 위 파일 복사·이름 변경 |
 | `invalid/truncated.hwpx`, `invalid/truncated.docx` | 중간에서 잘린 ZIP | 위 파일 잘라내기 |
 | `encrypted/` | 암호화 문서 (테스트 전용 비밀번호를 README에 공개) | 엔진의 암호화 내보내기 |

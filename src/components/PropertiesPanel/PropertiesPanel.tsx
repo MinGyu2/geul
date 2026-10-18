@@ -5,11 +5,11 @@ interface PropertiesPanelProps {
   onClose: () => void;
 }
 
-// 형식별 담당 엔진(FR-004). 두 엔진은 독립적으로 연결된다. rhwp는 T007 편집 PoC(저장 없음), WordCraft는 T008 전.
+// 형식별 담당 엔진(FR-004). 두 엔진은 독립적으로 연결된다. rhwp는 T007, WordCraft는 T008 편집 PoC(둘 다 저장 없음).
 const FORMATS = [
   { format: "HWP", engine: "rhwp", status: "properties.format.editingPoc" },
   { format: "HWPX", engine: "rhwp", status: "properties.format.editingPoc" },
-  { format: "DOCX", engine: "WordCraft", status: "properties.format.notIntegrated" },
+  { format: "DOCX", engine: "WordCraft", status: "properties.format.editingPoc" },
 ] as const;
 
 export function PropertiesPanel({ onClose }: PropertiesPanelProps) {

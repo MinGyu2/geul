@@ -824,6 +824,11 @@ export class RhwpEditorSession {
     this.emit();
   }
 
+  /** 지금 커서 자리(ImeSession: 끊긴 조합의 늦은 확정을 넣을 자리로 기억). */
+  markCaret(): DocPosition {
+    return this.caret;
+  }
+
   /**
    * 이미 끝낸 위치(at)에 늦게 확정된 글자를 넣는다(조합 중 클릭 뒤 IME가 보낸 확정). 변경 하나로 세고, 커서·선택
    * 기준점은 같은 문단의 그 위치 뒤에 있을 때만 넣은 글자만큼 민다(커서를 확정 위치로 옮기지 않음).

@@ -21,13 +21,13 @@ mod zip;
 #[cfg(test)]
 mod tests;
 #[cfg(test)]
-mod testutil;
+pub(crate) mod testutil;
 
 use serde::Serialize;
 
 pub use detect::detect;
 pub use error::{
-    DocumentError, LimitKind, ParseProblem, PathProblem, ReadProblem, UnsupportedKind,
+    DocumentError, EngineStage, LimitKind, ParseProblem, PathProblem, ReadProblem, UnsupportedKind,
 };
 pub use open::{identify, read_identified, IdentifiedFile, Limits, LoadSource};
 pub use session::{

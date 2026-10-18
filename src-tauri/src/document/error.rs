@@ -7,7 +7,7 @@
 use serde::Serialize;
 
 use super::session::{SessionId, SessionState};
-use super::Format;
+use super::{Engine, Format};
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize)]
 #[serde(tag = "code", rename_all_fields = "camelCase")]
@@ -56,6 +56,9 @@ pub enum DocumentError {
     },
     /// 판별한 뒤 파일이 바뀌거나 교체됨. 다시 열어야 한다.
     FileChanged,
+    /// 백엔드가 모델을 가진 엔진(T008 WordCraft)이 그 단계에서 실패함. 엔진 메시지는 담지 않는다(문서 내용이 섞일 수
+    /// 있음). 형식 판별을 통과한 문서도 엔진이 열지 못할 수 있다.
+    EngineFailure { engine: Engine, stage: EngineStage },
     /// 계약에 맞지 않는 요청 값(허용하지 않는 상태 전이, 범위 밖 개수 등).
     InvalidRequest,
     /// 내부 오류(세부 내용은 내보내지 않는다).
@@ -112,6 +115,20 @@ pub enum ParseProblem {
     CorruptContainer,
     MissingPart,
     InvalidPart,
+}
+
+/// 엔진 작업 단계(프런트엔드 `EngineStage`의 부분 집합).
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum EngineStage {
+    /// 문서 바이트를 엔진 모델로 읽기.
+    Parse,
+    /// 쪽 배치·그리기.
+    Render,
+    /// 편집 명령.
+    Edit,
+    /// 메모리 안 내보내기·다시 읽기 검사.
+    Export,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
