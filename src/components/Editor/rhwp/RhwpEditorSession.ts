@@ -713,14 +713,34 @@ export class RhwpEditorSession {
    * 기준점은 같은 문단의 그 위치 뒤에 있을 때만 넣은 글자만큼 민다(커서를 확정 위치로 옮기지 않음).
    */
   insertCommittedAt(at: DocPosition, text: string): boolean {
-    if (!text || this.composition) return false;
-    const length = charCount(text);
+    return this.replaceCommittedAt(at, "", text);
+  }
+
+  /**
+   * 이미 확정해 at에 넣은 previous를 입력기가 늦게 알린 최종 글자 text로 바꾼다(보이던 조합을 클릭으로 확정한 뒤 입력기가
+   * 다른 글자로 끝낸 경우). 문서의 그 자리가 previous가 아니면 바꾸지 않는다. 변경 하나로 세고, 같은 문단의 그 위치 뒤
+   * 커서·선택 기준점은 길이 차이만큼 옮긴다. previous가 ""이면 insertCommittedAt과 같다.
+   */
+  replaceCommittedAt(at: DocPosition, previous: string, text: string): boolean {
+    if (previous === text || this.composition || !this.text) return false;
+    const removed = charCount(previous);
+    if (removed > 0) {
+      let current: string;
+      try {
+        current = this.text.text(at, removed);
+      } catch {
+        return false; // 읽기 실패: 아무것도 바꾸지 않았으므로 고치지 않는다
+      }
+      if (current !== previous) return false;
+    }
+    const delta = charCount(text) - removed;
     const shift = (position: DocPosition): DocPosition =>
-      sameContext(position, at) && paragraphOf(position) === paragraphOf(at) && position.offset >= at.offset
-        ? { ...position, offset: position.offset + length }
+      sameContext(position, at) && paragraphOf(position) === paragraphOf(at) && position.offset >= at.offset + removed
+        ? { ...position, offset: position.offset + delta }
         : position;
     return this.mutate(() => {
-      this.text!.insert(at, text);
+      if (removed > 0) this.text!.delete(at, removed);
+      if (text) this.text!.insert(at, text);
       return { caret: shift(this.caret), anchor: shift(this.anchor) };
     });
   }

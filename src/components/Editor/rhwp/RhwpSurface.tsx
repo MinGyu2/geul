@@ -11,9 +11,10 @@
 //   맡는다. 여기서는 DOM 이벤트를 넘기고 textarea를 비운다. 끊긴 조합은 편집 표면 사이에서 공유하는 ImeContext에
 //   두므로(작업 공간이 하나를 넘겨 줌) 탭을 바꾼 뒤 도착한 옛 조합의 늦은 확정이 다른 문서에 들어가지 않는다. 표면이
 //   사라질 때(초점 잃음 이벤트가 없어도) 문서에 보이던 조합을 그 문서에 확정해, 조합 상태가 남아 다음 입력을 막지 않게 한다.
-// - 조합 중 방향키 등은 조합이 끝난 뒤 처리한다. 페이지를 누르면 ImeInput이 진행 중인 조합을 끝낸다. 페이지에 보이는
-//   조합이 있을 때만 textarea 초점을 뺐다가 돌려준다(IME가 그 조합을 버리게). 보이는 조합이 없으면 초점을 그대로 둔다:
-//   실측(WebKitGTK + ibus, sync mode)에서 초점을 빼면 IME가 클릭 때 내보내는 확정이 페이지에 오지 않아 음절이 사라졌다.
+// - 조합 중 방향키 등은 조합이 끝난 뒤 처리한다. 페이지를 누르면 ImeInput이 진행 중인 조합을 끝낸다(보이면 그 자리에
+//   확정하고 입력기가 뒤이어 보내는 그 조합의 꼬리를 소비). textarea 값·초점은 건드리지 않는다: 실측(WebKitGTK 2.54 +
+//   ibus, preedit 사용)에서 조합 중 클릭 때 값을 비우고 blur/focus하면 그 뒤 모든 키가 keydown만 남기고 입력되지 않았다.
+//   입력기는 클릭에서 조합을 스스로 확정한다(ibus GTK 모듈). preedit 없을 때도 초점을 빼면 확정이 오지 않아 음절이 사라졌다.
 // 표시 한도: 지금 배율 × devicePixelRatio로 그리면 픽셀 예산을 넘으면(세션의 renderLimit) 쪽을 그리지 않고 그 자리에
 // 이유와 할 일(배율 낮추기)을 알린다. 큰 bitmap을 할당하지 않고 이전 것도 놓으며, 편집은 멈춘다(보이는 조합은 한도에
 // 들어가기 직전에 그 자리에 확정). 배율 표시는 사용자가 고른 값 그대로이고 다른 배율로 몰래 그리지 않는다. 예산 안의
@@ -164,7 +165,7 @@ export function RhwpSurface({ session, zoom, imeContext }: RhwpSurfaceProps) {
       }
     };
     const onKeyDown = (event: KeyboardEvent) => {
-      controller.keyDown();
+      controller.keyDown(event.isComposing || event.keyCode === 229);
       if (event.ctrlKey || event.metaKey || event.altKey) return; // 단축키는 명령 레지스트리(T010) 몫
       if (event.isComposing || event.keyCode === 229) {
         if (NAVIGATION_KEYS.has(event.code) || NAVIGATION_KEYS.has(event.key)) pendingNavigation.current = event;
@@ -223,14 +224,8 @@ export function RhwpSurface({ session, zoom, imeContext }: RhwpSurfaceProps) {
   const onMouseDown = (event: React.MouseEvent<HTMLDivElement>, page: number) => {
     if (event.button !== 0 || !session.editable) return;
     event.preventDefault(); // 초점은 textarea에 둔다
-    const input = inputRef.current;
     // 진행 중인 조합을 끝낸다(보이면 그 자리에 확정, 아니면 늦게 오는 확정을 클릭 전 자리에 넣도록 기억).
-    const visible = session.composing;
     ime.current?.pointerDown();
-    if (input && visible) {
-      input.value = "";
-      input.blur();
-    }
     pointer(event, page, event.shiftKey);
     dragging.current = true;
     const stop = () => {

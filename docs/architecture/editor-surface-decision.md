@@ -94,6 +94,8 @@ submodule 안에 생기지 않도록 `CARGO_TARGET_DIR`과 wasm-pack `--out-dir`
   실제 앱(Linux WebKitGTK 2.54)에서 동작하고 측정 기준을 넘었다. 한국어 IME는 확정 문자 1회 삽입은 확인했지만, 시험
   환경에서 조합 중 글자(preedit)가 페이지에 전달되지 않아 조합 표시와 "조합 중 클릭"은 통과하지 못했다(아래). R-B로
   바꿀 근거는 아니다(같은 WebView 입력 경로를 쓴다). 저장은 막아 둔다(T009/T014).
+- 2026-10-18 원인 규명: preedit이 오지 않은 원인은 wry의 `set_enable_preedit(false)`였다. 되돌린 뒤 실제 IME 필수 7개가
+  X11 + ibus-hangul에서 통과했다(아래 ["T007 한국어 IME 원인 규명과 해결"](#t007-한국어-ime-원인-규명과-해결-2026-10-18)). 이 절의 IME 기록은 당시 결과로 남긴다.
 - 빌드: `scripts/build-rhwp-wasm.sh`가 고정 커밋을 `wasm-pack --target web --release -- --locked`로 빌드한다(Rust 1.99,
   wasm-bindgen 0.2.127 = rhwp Cargo.lock 판, 약 17분, `rhwp_bg.wasm` 11.6 MB). 산출물은 `public/rhwp/`(Git 무시), cargo
   산출물은 `target/rhwp-wasm/`. 빌드 전후 submodule 작업 트리가 같은지 확인한다. 앱은 실행할 때 같은 출처 URL로 불러오므로
@@ -545,3 +547,120 @@ P2-A 5개는 기존 동작 그대로 통과(정책 유지를 문서화하는 시
 caret·조합 중 클릭은 FAIL(조합 중 이벤트가 페이지에 오지 않음), 확정 1회·revision(0→9)·가가·조합 중 ←는 PASS(HWP·HWPX 같음).
 창 초점 이동은 NOT RUN. T007은 체크하지 않고 T008 이후는 시작하지 않았다.
 
+
+## T007 한국어 IME 원인 규명과 해결 (2026-10-18)
+
+기준 `5e6c663`. 앞선 여섯 번의 기록(preedit FAIL)은 그대로 두고, 이 절에서 원인과 해결을 기록한다. 결론: **preedit을 막은 것은
+WebKitGTK가 아니라 wry였다.** wry 0.57.0은 WebView를 만들 때마다 `input_method_context().set_enable_preedit(false)`를 호출한다
+(`src/webkitgtk/mod.rs` 421–424행, 주석 "fcitx input editor can anchor at edit cursor position"). 이 호출이 있으면 WebKitGTK는
+조합 문자열을 페이지에 보내지 않고 확정만 보낸다. 실제 IME 게이트는 Linux X11 + ibus-hangul에서 **필수 7개 모두 PASS**(HWP·HWPX,
+비동기 5회·sync 1회)가 됐다. 다만 실제 IME 입력의 응답 지연이 이 환경에서 150 ms를 넘는 경우가 있어 T007은 체크하지 않는다(아래).
+
+### 탐침 비교(같은 Xvfb :78 + ibus 1.5.33 + ibus-hangul 1.5.5 두벌식 syllable, 실제 xdotool 키 'gk'→'s', 이어서 클릭)
+
+| 탐침 | 조합 중 이벤트 | 조합 글자 표시 | caret | 조합 중 클릭 | 실패 경계 |
+|------|----------------|----------------|-------|--------------|-----------|
+| 1. GTK3 `GtkTextView`(WebKit 없음) | native `preedit-changed` ㅎ→하→한 | 보임 | 조합 뒤 | 원래 자리에 '한' 확정 | 없음 |
+| 2. WebKitGTK 2.54.1 단독(webkit2gtk 2.0.2, tauri/tao/wry 없음, 기본값) | compositionstart·update ㅎ→하→한, `insertCompositionText`, native 신호 `preedit-changed` | textarea·contenteditable 모두 밑줄 표시(화면 캡처) | 조합 뒤 | mousedown 전에 '한' 확정, 그 뒤 입력 정상 | 없음 |
+| 2'. 같은 탐침 + `set_enable_preedit(false)`만 추가 | **0개**, native 신호 없음, 조합 키의 keydown 없음 | 안 보임 | 움직이지 않음 | **'한'이 사라짐** | WebView IM 문맥(설정) |
+| 2''. 2 + tao의 `IMContextSimple` 키 필터(tao 0.37.1과 같은 형태) | 2와 같음 | 2와 같음 | 2와 같음 | 2와 같음 | 영향 없음 |
+| 3. Tauri 앱의 보이는 textarea(기준 `5e6c663`) | 0개·값 0글자(앞선 기록) | 안 보임 | — | — | wry 설정 |
+| 3. 같은 탐침, 수정 빌드 | compositionstart 1·update 2·composing input 2, 조합 중 값 1글자 | 보임 | — | — | 없음 |
+| 4. 실제 rhwp 표면(숨긴 textarea → `ImeInput` → WASM → canvas), 수정 빌드 | 조합 입력마다 WASM 조합 범위 교체, revision 그대로 | 문서 안에 밑줄과 함께 보임(`*-ime-preedit.png`) | 조합 글자 뒤 | 아래 꼬리 처리로 원래 자리에 1회 | 없음 |
+
+2와 2'의 차이가 이 호출 하나뿐이므로 원인은 재현으로 확정했다. 수정 전 Tauri 앱의 증상(이벤트 0개, 조합 키의 keydown 없음,
+확정만 `insertFromComposition`, 클릭 때 음절 사라짐)은 2'와 같다.
+
+### 플랫폼 조사
+
+- 판: GTK 3.24.52, WebKitGTK 2.54.1(abi 4.1), Tauri 2.12.1, tauri-runtime-wry 2.12.2, wry 0.57.0, tao 0.37.1, webkit2gtk 크레이트 2.0.2,
+  ibus 1.5.33, ibus-hangul 1.5.5, Xvfb 21.1.23(창 관리자 없음), weston 15.0.1(headless pixman). 실제 GNOME/KDE 세션·fcitx5(설치 안 됨)·
+  Wayland의 ibus 실제 키 입력(xdotool이 Wayland에 키를 넣지 못함)은 이 장비에서 시험하지 못했다.
+- wry: 이 호출은 wry 0.29.0에서 fcitx5 후보 창 위치 문제(tauri-apps/tauri#5986, sway, 2023)를 피하려고 들어갔다. 이를 설정
+  가능하게 하는 wry PR #1724(2026-05, 열림·미병합)에는 같은 증상(한국어·일본어·중국어 조합 글자가 페이지에 오지 않음)과,
+  호출을 빼면 고쳐진다는 보고(GNOME Wayland + fcitx5 Mozc, X11 pinyin)가 있다. 메인테이너는 기본값을 켜는 쪽을 검토 중이다.
+- WebKit 146639(2015, IM이 키 없이 preedit 신호를 보내면 충돌, r186892에서 수정)·40518(2010, 클릭으로 끝난 조합의 확정이
+  mousedown 뒤에 와 새 입력란에 들어감, r65209 수정): 수정 시기가 2.54.1보다 훨씬 앞서고 이번 증상(이벤트 0개)과 다르다.
+  218148(preedit 모드에서 커서를 옮기면 후보 창 위치가 빈 사각형, 278261@main 2024-05 수정): preedit을 켜면 해당하는 경로이며,
+  수정 커밋이 2.46 분기보다 앞서 2.54.1에 들어 있을 것으로 본다(설치 라이브러리 소스로 확인하지는 않음). 이번 재현에는 관여하지 않는다.
+- 새로 확인한 WebKitGTK 동작(플랫폼, 앱 무관): 조합 중 **창 초점을 잃으면 같은 음절이 두 번 들어간다.** 단독 탐침(2)의 일반
+  textarea도 '하하'가 된다. WebView가 조합을 스스로 확정(`deleteCompositionText` → `insertFromComposition` → `compositionend`)한 뒤
+  입력기의 확정(native `committed` 신호는 1번)이 한 번 더 온다. upstream 보고 후보다.
+
+### 해결(선택: Tauri/WebKitGTK 연결의 좁은 설정 수정 + 실측 이벤트 순서에 맞춘 상태 기계 보정)
+
+- `src-tauri/src/ime.rs`: 페이지 로드 시작마다 `Webview::with_webview` → `PlatformWebview::inner()`(Tauri 2.12.1 공개 API) →
+  `input_method_context().set_enable_preedit(true)`. WebKitGTK 기본값으로 되돌릴 뿐 키 이벤트를 만들거나 번역하지 않고, 다른 앱의
+  입력을 가로채지 않는다. 권한·CSP 변경 없음. 의존성: tauri 트리에 이미 있는 `webkit2gtk =2.0.2`(기능 `v2_28`)를 Linux/BSD 대상
+  직접 의존성으로 올림 — `Cargo.lock`은 geul 의존성 목록 한 줄만 바뀌고 새 패키지 없음. 다른 플랫폼에서는 아무것도 하지 않는다.
+- 실제 preedit이 오자 드러난 결함과 수정(Vitest는 기록한 실제 순서를 재생, `nativeImeOrder.test.tsx` 13개 중 5개가 기준 코드에서 실패):
+
+| 결함(실측) | 원인 | 수정 |
+|------------|------|------|
+| 조합 중 클릭 뒤 **모든 키가 keydown만 남고 입력되지 않음**(공백도) | 클릭 때 textarea 값을 비우고 `blur()`/`focus()`(preedit 없는 플랫폼에서 IME가 조합을 버리게 하려던 것) | 클릭에서 textarea 값·초점을 건드리지 않는다. 입력기(ibus GTK 모듈)가 클릭에서 조합을 스스로 확정한다 |
+| mousedown이 입력기 확정보다 먼저 오면 확정 꼬리가 **클릭한 곳에 다시** 들어감 | WebKitGTK의 확정은 `deleteCompositionText` → 빈 `compositionend` → 229 keydown → `insertFromComposition` → `compositionend(글자)`로 나뉘어 오는데, 빈 끝·229 keydown이 끊긴 조합을 닫음 | 앱이 확정한 보이는 조합(클릭·blur·표면 사라짐)은 이 꼬리가 끝날 때까지 같은 트랜잭션. 입력기의 최종 글자가 다르면(페이지가 입력을 따라가지 못한 채 클릭) 원래 자리에서 고침(`replaceCommittedAt`, 변경 1개 더) |
+| 클릭이 빈 끝과 확정 절반 **사이**에 오면 음절이 클릭한 곳으로 감(게이트에서 관측) | 빈 끝(취소처럼 보임) 뒤 클릭은 "막 끝난 조합"으로 보고 아무것도 기억하지 않음 | 빈 끝 바로 뒤 클릭은 확정 절반을 빈 끝의 자리에 넣는다(그 사이 229 keydown은 닫지 않음). 실제 취소였으면 아무것도 넣지 않음 |
+| 창 초점 잃음에서 '하하' | 위 플랫폼 이중 확정 | WebView가 확정한 조합(조합 중 `insertFromComposition`) 직후, 조합 시작 없이 229 keydown만 지나 오는 같은 글자의 확정은 소비. 사용자가 다시 친 같은 음절은 compositionstart와 함께 오므로 남음. 다른 글자면 새 입력 |
+
+preedit 없는 플랫폼용 기존 규칙(시작 없는 조합 입력, 같은 음절 연속 확정, 클릭 뒤 키가 먼저 오면 새 입력 등)은 그대로이고 기존
+Vitest가 모두 통과한다. revision 권한(Rust)·epoch·`loadGeneration`·`ImeContext` 공유·취소한 조합의 미보존 보호는 바꾸지 않았다.
+
+### 시험기(`rhwp_poc.py --ime`) 정정
+
+- 고정 대기(0.3–0.8초) 뒤 상태를 읽던 것을 `settle()`로 바꿨다: 입력 이벤트 기록·편집 상태가 0.7초 동안 그대로일 때 판정하고,
+  30초 안에 끝나지 않으면 실패. 기다린 시간은 보고서 `imeDrain`에 남긴다. preedit이 오면 조합 키마다 문서가 바뀌므로 느린
+  환경에서는 페이지가 입력을 늦게 따라잡고, 고정 대기는 처리 전 상태를 읽어 잘못 FAIL했다. 판정 기준 7개는 바꾸지 않았다.
+  클릭 항목은 클릭 전에 페이지가 조합 중인지도 확인한다.
+- `xdotool search --name ^geul`의 마지막 창이 보이지 않는 창이라 초점을 되돌릴 때 `BadMatch`가 났다(선택 항목 "창 초점 이동"이
+  돌아와 친 공백을 잃음) → `--onlyvisible`. 창 초점이 돌아온 뒤 페이지 초점까지 기다린다(WM 없는 Xvfb에서 약 1초 늦음).
+- `--screenshots`를 주면 조합 중 화면(`hwp-ime-preedit.png`, `hwpx-ime-preedit.png`)을 남긴다.
+
+### 실제 한국어 IME 게이트(수정 빌드, Xvfb X11 + WebKitGTK 2.54.1 + ibus 1.5.33 + ibus-hangul 1.5.5, 실제 xdotool 키)
+
+| 항목 | HWP | HWPX |
+|------|-----|------|
+| 조합 중 글자가 문서에 보임(preedit) | PASS(composing, 15→16글자, 화면 캡처) | PASS |
+| 조합 중 커서가 조합 글자 뒤 | PASS(오프셋 16) | PASS |
+| 확정 글자 1회·누락 없음('한글 입력 테스트') | PASS | PASS |
+| 음절·공백마다 revision 1(0→9) | PASS | PASS |
+| 같은 음절 연속('가가', +2) | PASS | PASS |
+| 조합 중 ← | PASS | PASS |
+| 조합 중 클릭(원래 자리에 '하' 1회, 커서는 클릭한 곳, +1, 그 뒤 공백이 클릭한 곳에 들어감) | PASS | PASS |
+| (선택) 조합 중 창 초점 이동 뒤 돌아옴('하 ', +2) | — | PASS |
+
+비동기 모드 3회 연속, `IBUS_ENABLE_SYNC_MODE=1` 1회, 최종 바이너리 2회(`cargo test` 뒤 다시 빌드, 마지막은 최종 소스) 모두 **PASS 7/7**(종료 코드 0, load average 1.5–5.3). 탭 전환 중 조합(기록): 이전 'lost' →
+'keptInOriginal'(원래 문서에 '하', 다른 문서에는 공백만). 이 결과는 위 X11 + ibus 한 구성의 결과이며 GNOME/KDE 실제 세션,
+Wayland, fcitx5, Windows/macOS는 미검증이다.
+
+### 응답 지연(실제 IME, 같은 환경, GPU 없음 `LIBGL_ALWAYS_SOFTWARE=1`, 다른 작업의 빌드로 load average 2–7)
+
+| 빌드 | 문장('한글 입력 테스트 ', 21키) | 다시 그림 | 앱 p95(입력 이벤트→두 번째 frame) | 마지막 키 뒤 따라잡는 시간 |
+|------|-------------------------------|-----------|------------------------------------|----------------------------|
+| 기준(preedit 없음, 확정만) | 키 간격 약 50/129 ms | 9 | 91/94 ms | 0.2초 이하 |
+| 수정(조합 키마다 갱신) | 키 간격 약 50–129 ms, 7회 | 34 | **100–190 ms**(실행마다 크게 다름) | **0.9–2.7초** |
+
+모든 실행에서 최종 글자·revision은 맞았다(+10). 조합 키마다 rhwp 쪽 전체를 다시 그리므로 다시 그림이 약 3.8배이고, 이 환경의
+편집 한 번은 WebKit frame 2개(각 55–75 ms)를 쓴다(JS 쪽은 8–35 ms, rhwp 넣기·지우기는 각 0.4 ms). 상태 표시·캐럿 애니메이션·
+그림자·scrollIntoView·CPU canvas를 하나씩 바꿔 봐도 줄지 않았다. 확정 입력만 재는 기존 측정(`rhwp_poc.py`)은 p95 91/79 ms로
+기준을 지킨다. 실제 GPU 데스크톱에서의 지연은 측정하지 못했다. 조합 미리보기 다시 그리기 비용 줄이기(부분 다시 그리기 등)는
+별도 결정이 필요한 후속 작업이다.
+
+### 검증 기록
+
+| 검사 | 실제 결과 |
+|------|-----------|
+| 기준 코드에 새 `nativeImeOrder.test.tsx` | 실측 순서 13개 중 5개 실패(클릭 2, 빈 끝 뒤 클릭 1, 창 초점 2), 8개 통과. 14번째(`replaceCommittedAt` 보호)는 새 함수라 기준에 없음 |
+| `npm run typecheck`, `npm run lint`, `npm test -- --reporter=dot`, `npm run build` | 오류 없음, Vitest 343개(새 14개). act 경고 2개는 기준 코드에도 있음 |
+| `src-tauri`: `cargo fmt --check`, `cargo check --locked --all-targets`, `cargo clippy --locked --all-targets -- -D warnings`, `cargo test --locked` | 통과, 단위 51 + 통합 1 |
+| `VITE_GEUL_TEST_HOOKS=1 npm run tauri build -- --debug --no-bundle` | 통과(`cargo test` 뒤 마지막으로 다시 빌드) |
+| `tests/e2e/tauri_smoke.py`(weston) | 62/62(최종 소스에서 다시 62/62) |
+| `tests/integration/rhwp/rhwp_poc.py`(weston) | 1회 WebDriver 연결 끊김(기존 관측 현상, 32개 통과 뒤), 다시 64/64(p95 91/79 ms). 최종 소스 64/64, hit test 편차 0, p95(HWP/HWPX) 104/106 ms |
+| `fourth_stabilization.py` / `--scenario dpi`(scale 2) | 22/22 / 13/13(최종 소스에서 다시 같음) |
+| `fourth_stabilization.py --scenario close --native-close`(Xvfb, 세션 D-Bus, IME 모듈 없음) | 4/4 ×3, 최종 소스 4/4 ×2. ibus-hangul을 켠 채 실행하면 WebDriver 키가 한글 조합으로 바뀌어 기준 빌드도 같은 곳에서 실패(환경 설정) |
+| `fifth_stabilization.py` / `--scenario dpi` | 21/21 / 8/8(최종 소스에서 다시 같음) |
+| `rhwp_poc.py --ime` | 위 표(PASS 7/7 ×6, 선택 항목 PASS ×6, 마지막은 최종 소스) |
+| `preedit_reversibility.mjs` | NOT RUN(엔진·취소 정책 변경 없음) |
+| `GITLEAKS=… scripts/security-scan-ci.sh .`, `check-sensitive-info.py --all` | 모두 통과(보안 회귀 86개, 추적 파일 119개, 이력, Gitleaks) |
+
+T007 체크박스는 그대로 둔다: 필수 IME 7개는 이 X11 + ibus 구성에서 통과했지만, 실제 IME 입력의 지연이 150 ms 기준을 넘는 실행이
+있고(이 소프트웨어 렌더링·부하 환경), 실제 데스크톱 세션·fcitx5·Wayland는 미검증이다. 판단 근거: 위 표.

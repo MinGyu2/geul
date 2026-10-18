@@ -169,6 +169,12 @@ interface EditorAdapter {
   확인한다(전송 예외는 Protocol로). 취소한 조합은 rhwp 편집이 구역 원본 raw stream을 버려 내보내기가 달라지므로(실제 샘플
   155/200) 보수적으로 미보존을 유지한다. 확인 창 첫 초점은 같은 commit에서 옮기고 편집 표면 autofocus는 모달에 양보한다.
   5차의 native 창 닫기 "회귀"는 시험기 경합으로 정정했다. Rust·권한 변경 없음. 실제 IME 4/7 FAIL 그대로.
+- T007 한국어 IME 원인 규명([상세](../architecture/editor-surface-decision.md#t007-한국어-ime-원인-규명과-해결-2026-10-18)):
+  preedit이 페이지에 오지 않은 원인은 wry 0.57.0의 `set_enable_preedit(false)`였다(WebKitGTK 단독 탐침으로 재현). Linux에서
+  페이지 로드마다 WebKitGTK 기본값으로 되돌린다(`src-tauri/src/ime.rs`, Tauri `with_webview`, 권한·CSP 변경 없음). R-A는 그대로이며
+  편집 표면은 표준 DOM 조합 이벤트만 쓴다(native 브리지·R-B 불필요). 실측 WebKitGTK 확정 순서(빈 끝 + 확정 절반, 클릭·초점 잃음
+  꼬리, WebView 확정 뒤 입력기 이중 확정)에 맞춰 `ImeInput`을 보정했다. Rust revision 권한·세대 계약은 바꾸지 않았다. 실제 IME 필수
+  7개 PASS(X11 + ibus-hangul). 조합 키마다 다시 그려 실제 IME 입력 지연이 늘었다(이 환경 p95 100–190 ms) — T007 미체크, 후속 결정 필요.
 
 ## Algorithms and Pseudocode
 ```

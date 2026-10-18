@@ -13,7 +13,8 @@ WebKitWebDriver, Node.js, 그래픽 세션(Wayland weston 또는 X11).
     python3 tests/integration/rhwp/rhwp_poc.py --app ... --driver ... --ime --xdotool <xdotool> --ibus <ibus> \\
         [--focus-window <다른 X 창 이름 정규식>] [--diagnostic-only]
 
-IME 게이트는 항목마다 PASS·FAIL·UNVERIFIED·NOT RUN을 출력한다. 선택 항목(창 초점 이동)은 `--focus-window`로 이미 떠 있는
+IME 게이트는 실제 입력을 보낸 뒤 고정 시간이 아니라 페이지가 그 입력을 모두 처리할 때까지(settle: 입력 이벤트·편집 상태가
+잠시 그대로) 기다린 뒤 판정하고, 기다린 시간은 지연 증거로 보고서 imeDrain에 남긴다. 항목마다 PASS·FAIL·UNVERIFIED·NOT RUN을 출력한다. 선택 항목(창 초점 이동)은 `--focus-window`로 이미 떠 있는
 다른 X 창을 줄 때만 실행한다. 탭 전환 중 조합은 필수 항목이 아니라 관찰 기록(`[기록]`, 보고서 imeTabSwitch)이다. 필수 항목이 모두 PASS일 때만 종료 코드 0이고, FAIL이
 있으면 1, 실제 입력 환경이 없어 판단할 수 없으면(UNVERIFIED) 2다. `--diagnostic-only`는 관찰만 기록하고 종료 코드로
 게이트 결과를 나타내지 않는다(통과 증거가 아님). 합성 DOM 이벤트는 쓰지 않는다.
@@ -544,6 +545,28 @@ EVENT_LOG = """window.__imeLog=[]; const i=document.querySelector('.rhwp-input')
     i.addEventListener(t, e => window.__imeLog.push([t, e.isComposing ?? null, e.inputType ?? null, (e.data ?? '').length]), true);"""
 
 
+def settle(d, step: str, quiet: float = 0.7, timeout: float = 30.0) -> dict:
+    """실제 키·클릭을 페이지가 모두 처리할 때까지 기다린다: 입력 이벤트 기록·편집 상태(문단·커서·조합·revision)가 quiet초
+    동안 바뀌지 않으면 끝. 고정 대기는 느린 환경(소프트웨어 렌더링·CPU 경합)에서 처리 전 상태를 읽어 결과를 잘못 판정했다.
+    timeout 안에 끝나지 않으면 실패다. 마지막 변화까지 걸린 시간(입력을 보낸 뒤 페이지가 따라잡는 데 걸린 시간)은 지연
+    증거로 보고서 imeDrain에 남긴다(판정 기준을 바꾸지 않음)."""
+    start = time.monotonic()
+    last, changed = None, start
+    while True:
+        now = time.monotonic()
+        current = d.js("const e=document.querySelector('[data-testid=rhwp-status]'); const s=e ? e.dataset : {};"
+                       " return [(window.__imeLog || []).length, s.paragraphText, s.caret, s.composing, s.localRevision]")
+        if current != last:
+            last, changed = current, now
+        elif now - changed >= quiet:
+            break
+        if now - start > timeout:
+            raise smoke.Failure(f"입력 처리가 {timeout:.0f}초 안에 끝나지 않음({step})")
+        time.sleep(0.05)
+    REPORT.setdefault("imeDrain", []).append({"step": step, "seconds": round(changed - start, 2)})
+    return status(d)
+
+
 def ime_counts(log: list) -> dict:
     """이벤트 종류별 개수(글자 내용은 남기지 않음)."""
     counts: dict[str, int] = {}
@@ -573,7 +596,8 @@ def probe_plain_textarea(d, run, xdotool: str, window: str) -> dict:
             "afterCommit": {"valueLength": after["valueLength"], "events": ime_counts(after["log"])}}
 
 
-def scenario_ime(d, fixtures: Path, xdotool: str, ibus: str, focus_window: str | None = None) -> None:
+def scenario_ime(d, fixtures: Path, xdotool: str, ibus: str, focus_window: str | None = None,
+                 shots: Path | None = None) -> None:
     reason = ime_environment(xdotool, ibus)
     if reason:
         for name, _ in IME_ITEMS:
@@ -595,7 +619,8 @@ def scenario_ime(d, fixtures: Path, xdotool: str, ibus: str, focus_window: str |
         fmt = name.split(".")[-1]
         open_document(d, fixtures / name)
         require_test_hooks(d)
-        window = run(xdotool, "search", "--name", "^geul").stdout.split()[-1]
+        # 같은 이름의 X 창이 여럿이다(보이지 않는 창도 있음). 초점을 줄 수 있는 보이는 창을 고른다.
+        window = run(xdotool, "search", "--onlyvisible", "--name", "^geul").stdout.split()[-1]
         run(xdotool, "windowfocus", "--sync", window)
         run(ibus, "engine", "hangul")
         if fmt == "hwp":
@@ -615,8 +640,9 @@ def scenario_ime(d, fixtures: Path, xdotool: str, ibus: str, focus_window: str |
 
         # 1) 조합 중 표시: 'ㅎ+ㅏ'만 누르고(확정 안 함) 문서·커서를 본다
         run(xdotool, "type", "--delay", "90", "gk")
-        time.sleep(0.6)
-        mid = status(d)
+        mid = settle(d, f"{fmt}: ㅎㅏ")
+        if shots:  # 조합 중(확정 전) 화면: 문서 안의 조합 글자·밑줄·커서
+            d.screenshot(shots / f"{fmt}-ime-preedit.png")
         visible = mid["paragraphText"] == base_text + "하"
         record("조합 중 글자가 문서에 보임(preedit)", visible and mid.get("composing") == "true",
                f"{fmt}: composing={mid.get('composing')}, 문단 글자 수 {len(base_text)}→{len(mid['paragraphText'])}")
@@ -626,8 +652,7 @@ def scenario_ime(d, fixtures: Path, xdotool: str, ibus: str, focus_window: str |
         # 2) 이어서 입력해 '한글 입력 테스트'를 확정
         run(xdotool, "type", "--delay", "90", "srmf dlqfur xptmxm")
         run(xdotool, "key", "End")
-        time.sleep(0.8)
-        after = status(d)
+        after = settle(d, f"{fmt}: 한글 입력 테스트")
         record("확정 글자가 커서 위치에 정확히 한 번, 음절 누락 없음", after["paragraphText"] == base_text + "한글 입력 테스트",
                f"{fmt}: 넣은 부분 {after['paragraphText'][len(base_text):]!r}")
         record("확정 음절·공백마다 revision 1(조합 중간은 확정 안 함)", int(after["localRevision"]) - base_rev == 9,
@@ -638,8 +663,7 @@ def scenario_ime(d, fixtures: Path, xdotool: str, ibus: str, focus_window: str |
         text0, rev0 = after["paragraphText"], int(after["localRevision"])
         run(xdotool, "type", "--delay", "90", "rkrk")
         run(xdotool, "key", "End")
-        time.sleep(0.8)
-        st = status(d)
+        st = settle(d, f"{fmt}: 가가")
         record("같은 음절을 연달아 확정해도 모두 남음", st["paragraphText"] == text0 + "가가" and int(st["localRevision"]) - rev0 == 2,
                f"{fmt}: 넣은 부분 {st['paragraphText'][len(text0):]!r}, revision +{int(st['localRevision']) - rev0}")
 
@@ -647,39 +671,36 @@ def scenario_ime(d, fixtures: Path, xdotool: str, ibus: str, focus_window: str |
         text0 = st["paragraphText"]
         run(xdotool, "type", "--delay", "90", "rk")
         run(xdotool, "key", "Left")
-        time.sleep(0.6)
-        st = status(d)
+        st = settle(d, f"{fmt}: 가 + ←")
         record("조합 중 ←는 조합 글자를 그 자리에 확정한 뒤 이동",
                st["paragraphText"] == text0 + "가" and offset_of(st["caret"]) == len(st["paragraphText"]) - 1,
                f"{fmt}: 넣은 부분 {st['paragraphText'][len(text0):]!r}, caret={st['caret']}")
 
         # 5) 조합 중 클릭: 문단 끝에서 '하'를 조합하다 같은 줄 앞쪽(줄 처음에서 30%)을 클릭
         run(xdotool, "key", "Home")
-        time.sleep(0.3)
+        settle(d, f"{fmt}: Home")
         line_start = caret_client(d)
         run(xdotool, "key", "End")
-        time.sleep(0.3)
+        st = settle(d, f"{fmt}: End")
         line_end = caret_client(d)
-        st = status(d)
         text0, rev0 = st["paragraphText"], int(st["localRevision"])
         target = (line_start[0] + (line_end[0] - line_start[0]) * 0.3, line_start[1] + line_start[2] / 2)
         run(xdotool, "type", "--delay", "90", "gk")
-        time.sleep(0.3)
+        composing = settle(d, f"{fmt}: 클릭 전 ㅎㅏ").get("composing") == "true"  # 페이지가 조합 중일 때 누른다
         mark = d.js("return window.__imeLog.length")
         run(xdotool, "mousemove", "--window", window, str(int(target[0] + shift[0])), str(int(target[1] + shift[1])), "click", "1")
-        time.sleep(0.8)
-        st = status(d)
+        st = settle(d, f"{fmt}: 조합 중 클릭")
         caret = st["caret"]
         record("조합 중 클릭: 조합 글자를 원래 자리에 한 번 확정하고 커서는 클릭한 곳",
-               st["paragraphText"] == text0 + "하" and caret.split(":")[1] == before["caret"].split(":")[1] and "@" not in caret
+               composing and st["paragraphText"] == text0 + "하" and caret.split(":")[1] == before["caret"].split(":")[1] and "@" not in caret
                and offset_of(caret) < len(text0) - 1 and int(st["localRevision"]) - rev0 == 1,
-               f"{fmt}: 넣은 부분 {st['paragraphText'][len(text0):]!r}, caret {caret}, revision +{int(st['localRevision']) - rev0},"
+               f"{fmt}: 클릭 때 조합 중={composing}, 넣은 부분 {st['paragraphText'][len(text0):]!r}, caret {caret},"
+               f" revision +{int(st['localRevision']) - rev0},"
                f" 클릭 뒤 이벤트 {ime_counts(d.js('return window.__imeLog.slice(arguments[0])', mark))}")
         # 클릭 뒤 IME에 남았을 수 있는 음절을 다음 키(공백)로 내보내 어디에 확정되는지 기록한다(다음 문서로 넘어가지 않게).
         clicked = st["caret"]
         run(xdotool, "key", "space")
-        time.sleep(0.6)
-        flushed = status(d)
+        flushed = settle(d, f"{fmt}: 클릭 뒤 공백")
         REPORT[fmt]["ime"]["afterClickNextKey"] = {
             "caretBefore": clicked, "caretAfter": flushed["caret"],
             "insertedAtClick": flushed["paragraphText"][offset_of(clicked):offset_of(flushed["caret"])],
@@ -693,6 +714,11 @@ def scenario_ime(d, fixtures: Path, xdotool: str, ibus: str, focus_window: str |
     if focus_window:
         scenario_ime_focus(d, run, xdotool, window, focus_window, record)
 
+    drains = REPORT.get("imeDrain", [])
+    if drains:
+        slowest = max(drains, key=lambda item: item["seconds"])
+        print(f"[측정] 입력을 보낸 뒤 페이지가 따라잡는 데 걸린 시간: 최대 {slowest['seconds']:.2f}초({slowest['step']}), "
+              f"단계 {len(drains)}개(보고서 imeDrain). 판정은 처리가 끝난 뒤의 상태로 한다.", flush=True)
     for name, _ in IME_ITEMS:
         outcomes = results[name]
         if not outcomes:
@@ -719,21 +745,19 @@ def scenario_ime_tab_switch(d, run, xdotool: str, window: str, shift: tuple) -> 
     other_before = status(d)["paragraphText"]
     select_tab(d, "basic-ko.hwpx")
     run(xdotool, "key", "End")
-    time.sleep(0.3)
-    st = status(d)
+    st = settle(d, "탭 전환 전 End")
     text0, rev0, caret0 = st["paragraphText"], int(st["localRevision"]), st["caret"]
     run(xdotool, "type", "--delay", "90", "gk")
-    time.sleep(0.3)
+    settle(d, "탭 전환 전 ㅎㅏ")
     tab = d.js("const t=[...document.querySelectorAll('.document-tab__select')].find(t => t.textContent.includes('basic-ko.hwp')"
                " && !t.textContent.includes('basic-ko.hwpx')); const r=t.getBoundingClientRect();"
                " return [r.left + r.width/2, r.top + r.height/2]")
     run(xdotool, "mousemove", "--window", window, str(int(tab[0] + shift[0])), str(int(tab[1] + shift[1])), "click", "1")
     smoke.wait_until(d, "return document.querySelector('[data-testid=rhwp-status] h1')?.textContent === 'basic-ko.hwp'", timeout=10)
     wait_status(d, "ready")
-    time.sleep(0.5)
+    settle(d, "탭 전환 뒤")
     run(xdotool, "key", "space")
-    time.sleep(0.6)
-    other_after = status(d)["paragraphText"]
+    other_after = settle(d, "탭 전환 뒤 공백")["paragraphText"]
     select_tab(d, "basic-ko.hwpx")
     st = status(d)
     original = inserted_between(text0, st["paragraphText"])
@@ -749,24 +773,29 @@ def scenario_ime_tab_switch(d, run, xdotool: str, window: str, shift: tuple) -> 
 def scenario_ime_focus(d, run, xdotool: str, window: str, other_name: str, record) -> None:
     """'ㅎㅏ'를 조합하다 다른 X 창으로 초점을 옮겼다가 돌아와 공백을 친다. 음절이 원래 자리에 한 번 남아야 한다."""
     name = "조합 중 창 초점 이동 뒤 돌아옴"
-    other = run(xdotool, "search", "--name", other_name).stdout.split()
+    other = run(xdotool, "search", "--onlyvisible", "--name", other_name).stdout.split()
     if not other:
         return  # 결과 없음 → NOT RUN
     run(xdotool, "windowfocus", "--sync", window)
     run(xdotool, "key", "End")
-    time.sleep(0.3)
-    st = status(d)
+    st = settle(d, "초점 이동 전 End")
     text0, rev0 = st["paragraphText"], int(st["localRevision"])
     run(xdotool, "type", "--delay", "90", "gk")
-    time.sleep(0.3)
+    settle(d, "초점 이동 전 ㅎㅏ")
     run(xdotool, "windowfocus", "--sync", other[-1])
-    time.sleep(0.8)
-    away = status(d)
+    away = settle(d, "다른 창")
     run(xdotool, "windowfocus", "--sync", window)
-    time.sleep(0.8)
+    # X 초점이 돌아온 뒤 페이지 초점(focus 이벤트)은 늦게 온다(WM 없는 Xvfb 실측 약 1초). 돌아온 뒤에 친다.
+    returned = time.monotonic()
+    try:
+        smoke.wait_until(d, "return document.hasFocus() && !!document.activeElement?.classList.contains('rhwp-input')", timeout=10)
+    except smoke.Failure:
+        focus = d.js("const a=document.activeElement; return [document.hasFocus(), a ? a.tagName + '.' + a.className : null]")
+        raise smoke.Failure(f"창 초점이 돌아온 뒤 편집 입력에 초점이 오지 않음(hasFocus, activeElement = {focus})") from None
+    REPORT.setdefault("imeDrain", []).append({"step": "페이지 초점 돌아옴", "seconds": round(time.monotonic() - returned, 2)})
+    settle(d, "돌아옴")
     run(xdotool, "key", "space")
-    time.sleep(0.6)
-    st = status(d)
+    st = settle(d, "돌아와 공백")
     record(name, st["paragraphText"] == text0 + "하 " and int(st["localRevision"]) - rev0 == 2
            and offset_of(st["caret"]) == len(text0) + 2,
            f"hwpx: 다른 창에 있는 동안 넣은 부분 {inserted_between(text0, away['paragraphText'])!r}, 돌아와 공백 뒤 넣은 부분"
@@ -837,7 +866,7 @@ def main() -> int:
                     try:
                         smoke.wait_until(d, "return document.querySelector('.document-bar') !== null", timeout=30)
                         if args.ime:
-                            scenario_ime(d, fixtures, args.xdotool, args.ibus, args.focus_window)
+                            scenario_ime(d, fixtures, args.xdotool, args.ibus, args.focus_window, args.screenshots)
                         else:
                             scenario_load_render(d, fixtures, args.screenshots)
                             for fmt in ("hwp", "hwpx"):
