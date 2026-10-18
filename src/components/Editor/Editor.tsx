@@ -304,6 +304,18 @@ function DocumentTab({ session, active, editor, onSelect, onClose }: {
   );
 }
 
+/** 마지막으로 SETTLE_MS 동안 바뀌지 않은 글자(처음 값은 바로). 입력 중에는 이전 글자를 그대로 둔다. */
+const SETTLE_MS = 500;
+function useSettledText(text: string): string {
+  const [shown, setShown] = useState(text);
+  useEffect(() => {
+    if (text === shown) return;
+    const timer = window.setTimeout(() => setShown(text), SETTLE_MS);
+    return () => window.clearTimeout(timer);
+  }, [text, shown]);
+  return shown;
+}
+
 /** 편집 세션이 바뀔 때마다(상태·커서·revision·측정) 다시 그린다. */
 function useEditorUpdates(editor: RhwpEditorSession | null) {
   const [, update] = useReducer((tick: number) => tick + 1, 0);
@@ -319,9 +331,13 @@ function RhwpPanel({ editor, info, zoom, imeContext, onReload }: {
 }) {
   const { t } = useTranslation();
   useEditorUpdates(editor);
+  const latency = editor?.latency() ?? null;
+  // 진단 글자(판·입력 반영)는 입력이 멈춘 뒤에 바꾼다. 편집 영역 위의 글자를 키마다 바꾸면 WebKitGTK가 frame마다 다시
+  // 그려 실제 IME 입력이 밀렸다(소프트웨어 렌더링 실측). data-* 속성은 바로 바뀐다(검사·진단용).
+  const revisionText = useSettledText(t("editor.rhwp.revision", { revision: info.revision }));
+  const latencyText = useSettledText(latency ? t("editor.rhwp.latency", { p95: latency.p95.toFixed(1), count: latency.count }) : "");
   if (!editor) return null;
   const status = editor.status;
-  const latency = editor.latency();
   const roundTrip = editor.lastRoundTrip;
   const unpreserved = editor.hasUnpreservedChanges;
   return (
@@ -368,8 +384,8 @@ function RhwpPanel({ editor, info, zoom, imeContext, onReload }: {
         )}
         {status.kind === "ready" && (
           <>
-            <span>{t("editor.rhwp.revision", { revision: info.revision })}</span>
-            {latency && <span>{t("editor.rhwp.latency", { p95: latency.p95.toFixed(1), count: latency.count })}</span>}
+            <span>{revisionText}</span>
+            {latencyText && <span>{latencyText}</span>}
             <button
               type="button"
               className="document-bar__button"

@@ -218,6 +218,10 @@ export class RhwpEditorSession {
   private closing = false;
   private disposed = false;
   private composition: Composition | null = null;
+  /** 앱이 먼저 끝낸 보이는 조합(클릭·초점 잃음·표면 사라짐). 글자는 모델에 있고, 입력기의 끝을 기다리며 아직 세지 않았다. */
+  private provisional: Composition | null = null;
+  /** Canvas마다 마지막으로 그린 쪽·배율(그 자리 다시 그리기의 조건). 놓으면(releaseRendering) 지운다. */
+  private drawnAt = new WeakMap<HTMLCanvasElement, { page: number; scale: number }>();
   private readonly samples: number[] = [];
   private readonly listeners = new Set<() => void>();
 
@@ -249,6 +253,7 @@ export class RhwpEditorSession {
   /** 닫는 중에는 편집을 막는다(백엔드 닫기가 실패하면 false로 되돌려 다시 편집할 수 있다). */
   setClosing(closing: boolean) {
     if (this.closing === closing || this.disposed) return;
+    if (closing) this.settleProvisional(); // 닫는 동안 편집할 수 없다
     this.closing = closing;
     this.emit();
   }
@@ -274,7 +279,8 @@ export class RhwpEditorSession {
    */
   get hasUnpreservedChanges() {
     return this.doc !== null
-      && (this.modified || this.uncertain || this.pending > 0 || this.committingEpoch === this.epoch || this.composition !== null);
+      && (this.modified || this.uncertain || this.pending > 0 || this.committingEpoch === this.epoch || this.composition !== null
+        || this.provisional !== null);
   }
 
   /** 엔진 편집이 예외로 끝나 모델이 바뀌었는지 알 수 없음(성공한 변경과 구분). */
@@ -464,6 +470,7 @@ export class RhwpEditorSession {
       this.releaseRendering();
       if (this.renderLimit !== scale) {
         if (this.renderLimit === null) beforeLimit?.();
+        this.settleProvisional(); // 편집을 멈추므로 기다리지 않는다(고칠 수 없음): 보이던 조합을 지금 한 번 센다
         this.renderLimit = scale;
         this.emit();
       }
@@ -497,8 +504,8 @@ export class RhwpEditorSession {
   renderPage(page: number, canvas: HTMLCanvasElement, scale: number): boolean {
     if (!this.prepareRendering(scale) || !this.doc) return false;
     try {
+      if (!this.repaintInPlace(this.doc, page, canvas, scale)) this.doc.renderPageToCanvas(page, canvas, scale);
       this.renderCanvases.add(canvas);
-      this.doc.renderPageToCanvas(page, canvas, scale);
       if (page === 0 && this.firstPaintMs === null) {
         this.firstPaintMs = performance.now() - this.loadStartedAt;
         queueMicrotask(() => this.emit()); // 그리는 중이 아니라 다음에 상태 표시를 갱신
@@ -506,6 +513,28 @@ export class RhwpEditorSession {
       return true;
     } catch {
       if (this.status.kind === "ready") this.markFailed({ code: "EngineFailure", engine: "rhwp", stage: "render" });
+      return false;
+    }
+  }
+
+  /**
+   * 이 배율로 이미 그린 같은 쪽 Canvas면 쪽 전체를 그 자리에서 다시 그린다(같은 페인트, Canvas 크기를 다시 정하지 않음).
+   * `renderPageToCanvas`는 그릴 때마다 Canvas 크기를 다시 정해 bitmap을 새로 잡는데, 조합 키마다 그리면 그 비용이
+   * 실제 IME 입력 지연의 큰 몫이었다(WebKitGTK 소프트웨어 렌더링 실측). 조건이 맞지 않거나 엔진이 거부하면(그리기 전
+   * 예외) false를 돌려 원래의 전체 그리기를 쓴다. 진짜 그리기 실패는 그 전체 그리기에서 다시 드러난다.
+   */
+  private repaintInPlace(doc: RhwpDocument, page: number, canvas: HTMLCanvasElement, scale: number): boolean {
+    const size = this.pages[page];
+    const drawn = this.drawnAt.get(canvas);
+    if (!doc.renderPagePatchToCanvasFilteredWithProfile || !size || !drawn || drawn.page !== page || drawn.scale !== scale
+      || canvas.width === 0 || canvas.height === 0) {
+      this.drawnAt.set(canvas, { page, scale });
+      return false;
+    }
+    try {
+      doc.renderPagePatchToCanvasFilteredWithProfile(page, canvas, scale, "all", "screen", 0, 0, size.width, size.height);
+      return true;
+    } catch {
       return false;
     }
   }
@@ -541,6 +570,7 @@ export class RhwpEditorSession {
    */
   private mutate(apply: Mutation, count = true): boolean {
     if (!this.editable || !this.doc) return false;
+    this.settleProvisional(); // 기다리던 조합은 이 변경보다 먼저 끝난 변경이다
     const doc = this.doc;
     let next: ReturnType<Mutation>;
     try {
@@ -651,6 +681,7 @@ export class RhwpEditorSession {
    */
   beginComposition(): void {
     if (!this.editable || this.composition) return;
+    this.settleProvisional();
     if (!this.hasSelection) {
       this.composition = { anchor: this.caret, text: "", deletedSelection: false };
       return;
@@ -691,21 +722,72 @@ export class RhwpEditorSession {
    * - 엔진 예외(실패·불확실): 세지 않고 ""(조합은 이미 끝남, 모델은 uncertain).
    * 바꾼 뒤 화면 갱신이 실패해 편집이 멈췄으면 markFailed가 이미 이 조합을 셌으므로 다시 세지 않는다.
    */
-  endComposition(finalText: string): string {
+  endComposition(finalText: string, options: { provisional?: boolean } = {}): string {
     const composition = this.composition;
     if (!composition) return "";
     if (!this.replaceComposition(composition, finalText)) return "";
-    if (this.composition === composition) this.settleComposition();
+    if (this.composition === composition) {
+      if (options.provisional) {
+        // 앱이 먼저 끝낸 조합: 입력기의 최종 글자가 오면(resolveProvisional) 고친 뒤 이 조합 하나로 센다.
+        this.composition = null;
+        this.provisional = composition;
+      } else this.settleComposition();
+    }
     this.emit();
     return composition.text;
   }
 
   /** 진행 중인 조합을 끝내고, 그 조합이 모델에 남긴 변경(모두 성공한 엔진 호출)이 있으면 1개로 센다. */
   private settleComposition() {
+    this.settleProvisional();
     const composition = this.composition;
     if (!composition) return;
     this.composition = null;
     if (composition.text !== "" || composition.deletedSelection) this.recordMutation();
+  }
+
+  /** 기다리던 조합을 지금 모델 그대로(고치지 않고) 한 번 센다. 다른 변경·새 조합·편집 중지 전에 부른다. */
+  private settleProvisional() {
+    const provisional = this.provisional;
+    if (!provisional) return;
+    this.provisional = null;
+    if (provisional.text !== "" || provisional.deletedSelection) this.recordMutation();
+  }
+
+  /** 입력기의 끝을 기다리는 앱 확정 조합이 있음. */
+  get awaitingCompositionEnd() {
+    return this.provisional !== null;
+  }
+
+  /**
+   * 앱이 먼저 끝낸 조합을 입력기의 최종 글자로 끝낸다. 다르면 원래 자리의 글자를 고친다. 그 조합 전체를 변경 하나로 센다
+   * (조합 중 갱신과 같은 계약: 끝날 때 한 번). 고치기의 엔진 호출이 예외면 세지 않고 uncertain으로 보호한다(5차 정책).
+   * 편집할 수 없는 동안(표시 한도 등)이면 고치지 않고 모델 그대로 센다. finalText가 없으면 그대로 센다.
+   */
+  resolveProvisional(finalText?: string): void {
+    const provisional = this.provisional;
+    if (!provisional) return;
+    if (finalText !== undefined && finalText !== provisional.text && this.editable) {
+      this.provisional = null; // 고치는 동안(mutate) 다른 정리가 이 조합을 따로 세지 않게
+      const at = provisional.anchor;
+      const removed = charCount(provisional.text);
+      const delta = charCount(finalText) - removed;
+      const shift = (position: DocPosition): DocPosition =>
+        sameContext(position, at) && paragraphOf(position) === paragraphOf(at) && position.offset >= at.offset + removed
+          ? { ...position, offset: position.offset + delta }
+          : position;
+      const changed = this.mutate(() => {
+        if (removed > 0) this.text!.delete(at, removed);
+        if (finalText) this.text!.insert(at, finalText);
+        provisional.text = finalText;
+        return { caret: shift(this.caret), anchor: shift(this.anchor) };
+      }, false);
+      if (!changed) return; // 엔진 예외: mutate가 uncertain으로 표시하고 편집을 멈췄다(세지 않음)
+      // 고친 변경은 성공했다(그 뒤 화면 갱신이 실패해 편집이 멈췄어도 모델에 있으므로 센다, 확정은 보내지 않음).
+      this.provisional = provisional;
+    }
+    this.settleProvisional();
+    this.emit();
   }
 
   /**
@@ -713,34 +795,14 @@ export class RhwpEditorSession {
    * 기준점은 같은 문단의 그 위치 뒤에 있을 때만 넣은 글자만큼 민다(커서를 확정 위치로 옮기지 않음).
    */
   insertCommittedAt(at: DocPosition, text: string): boolean {
-    return this.replaceCommittedAt(at, "", text);
-  }
-
-  /**
-   * 이미 확정해 at에 넣은 previous를 입력기가 늦게 알린 최종 글자 text로 바꾼다(보이던 조합을 클릭으로 확정한 뒤 입력기가
-   * 다른 글자로 끝낸 경우). 문서의 그 자리가 previous가 아니면 바꾸지 않는다. 변경 하나로 세고, 같은 문단의 그 위치 뒤
-   * 커서·선택 기준점은 길이 차이만큼 옮긴다. previous가 ""이면 insertCommittedAt과 같다.
-   */
-  replaceCommittedAt(at: DocPosition, previous: string, text: string): boolean {
-    if (previous === text || this.composition || !this.text) return false;
-    const removed = charCount(previous);
-    if (removed > 0) {
-      let current: string;
-      try {
-        current = this.text.text(at, removed);
-      } catch {
-        return false; // 읽기 실패: 아무것도 바꾸지 않았으므로 고치지 않는다
-      }
-      if (current !== previous) return false;
-    }
-    const delta = charCount(text) - removed;
+    if (!text || this.composition) return false;
+    const length = charCount(text);
     const shift = (position: DocPosition): DocPosition =>
-      sameContext(position, at) && paragraphOf(position) === paragraphOf(at) && position.offset >= at.offset + removed
-        ? { ...position, offset: position.offset + delta }
+      sameContext(position, at) && paragraphOf(position) === paragraphOf(at) && position.offset >= at.offset
+        ? { ...position, offset: position.offset + length }
         : position;
     return this.mutate(() => {
-      if (removed > 0) this.text!.delete(at, removed);
-      if (text) this.text!.insert(at, text);
+      this.text!.insert(at, text);
       return { caret: shift(this.caret), anchor: shift(this.anchor) };
     });
   }
@@ -999,6 +1061,7 @@ export class RhwpEditorSession {
     this.doc = null;
     this.text = null;
     this.composition = null;
+    this.provisional = null;
   }
 
   /** 세션을 닫을 때. 모델을 버리고 이후의 늦은 응답은 무시한다. */

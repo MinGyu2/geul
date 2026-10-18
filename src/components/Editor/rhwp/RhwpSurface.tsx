@@ -34,6 +34,16 @@ interface RhwpSurfaceProps {
   imeContext?: ImeContext;
 }
 
+/** 조합 계열 input: 글자는 data로만 읽는다(값에는 앞서 확정한 글자가 쌓여 있다). */
+const IME_INPUT_TYPES = new Set(["insertCompositionText", "insertFromComposition", "deleteCompositionText"]);
+/** 숨긴 textarea에 쌓인 값을 비우는 길이(조합이 없을 때만). */
+const TRIM_LENGTH = 256;
+/** 입력 중 커서 쪽이 아닌 쪽을 다시 그리기까지 기다리는 시간(새 입력이 오면 다시 기다림). */
+const REST_DELAY_MS = 200;
+const HIDDEN_UNDERLINE: CSSProperties = { left: 0, top: 0, width: 0, visibility: "hidden" };
+/** 조합 밑줄 자리: 조합이 없어도 하나(숨김)를 둔다. */
+const padComposition = (rects: PageRect[]): (PageRect | null)[] => (rects.length > 0 ? rects : [null]);
+
 const NAVIGATION_KEYS = new Set(["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown", "Home", "End", "Enter", "Tab", "Escape"]);
 
 /** 세션이 바뀔 때마다 다시 그린다. 그리기 layout effect보다 먼저 구독해, 처음 그릴 때의 상태 변화(표시 한도)도 받는다. */
@@ -58,7 +68,7 @@ export function RhwpSurface({ session, zoom, imeContext }: RhwpSurfaceProps) {
   const [ownContext] = useState(() => new ImeContext());
   const context = imeContext ?? ownContext;
   const dragging = useRef(false);
-  const rendered = useRef({ version: -1, scale: 0, ratio: 0, pages: 0 });
+  const rendered = useRef({ version: -1, scale: 0, ratio: 0, pages: 0, sizes: "" });
 
   const caret = session.caretRect();
   const selection = session.selectionRects();
@@ -67,7 +77,8 @@ export function RhwpSurface({ session, zoom, imeContext }: RhwpSurfaceProps) {
   // ---- 그리기 ----
   useLayoutEffect(() => {
     const last = rendered.current;
-    const all = last.scale !== scale || last.ratio !== ratio || last.pages !== session.pages.length;
+    const sizes = session.pages.map((size) => `${size.width}x${size.height}`).join(",");
+    const all = last.scale !== scale || last.ratio !== ratio || last.pages !== session.pages.length || last.sizes !== sizes;
     if (!all && last.version === session.modelVersion) {
       inputAt.current = null; // 문서를 바꾸지 않은 입력(이동·처음에서 Backspace)은 측정하지 않는다
       return;
@@ -81,8 +92,10 @@ export function RhwpSurface({ session, zoom, imeContext }: RhwpSurfaceProps) {
     };
     if (!session.prepareRendering(scale * ratio, () => ime.current?.detach())) return retry();
     if (canvases.current.size < session.pages.length) return retry();
-    session.releaseRendering(); // 이전 bitmap과 새 크기의 bitmap이 함께 예산을 넘지 않게 한다
-    rendered.current = { version: session.modelVersion, scale, ratio, pages: session.pages.length };
+    // bitmap 크기가 바뀔 수 있으면(배율·DPR·쪽 수·쪽 크기) 이전 bitmap을 먼저 놓아 새 크기와 함께 예산을 넘지 않게 한다.
+    // 크기가 같으면 놓지 않고 그 자리에서 다시 그린다(편집마다 bitmap을 새로 잡지 않음).
+    if (all) session.releaseRendering();
+    rendered.current = { version: session.modelVersion, scale, ratio, pages: session.pages.length, sizes };
     // 커서 쪽을 먼저 그리고 나머지는 다음 task에 그린다. WebView가 frame clock을 멈춰도 빈 쪽으로 남기지 않는다.
     const first = session.caretRect()?.page ?? 0;
     const version = session.modelVersion;
@@ -98,10 +111,23 @@ export function RhwpSurface({ session, zoom, imeContext }: RhwpSurfaceProps) {
       requestAnimationFrame(() => requestAnimationFrame(() => session.recordLatency(performance.now() - started)));
     }
     const rest = session.pages.map((_, page) => page).filter((page) => page !== first);
-    renderTimer.current = window.setTimeout(() => {
-      renderTimer.current = null;
-      rest.forEach(draw);
-    }, 0);
+    // 그림이 없는 쪽(새 쪽·놓은 bitmap)은 다음 task에 그린다. 이 배율의 그림이 이미 있는 쪽은 입력 중이면 입력이 멈춘 뒤
+    // (REST_DELAY_MS) 한 번에 다시 그린다: 키마다 모든 쪽을 다시 그리면 그만큼 입력이 밀린다. 새 변경이 오면 이 작업을
+    // 취소하고 다시 정하므로 마지막 모델로 그리며, 옛 작업은 version 검사로 새 모델을 덮지 않는다.
+    const blank = rest.filter((page) => !canvases.current.get(page)?.width);
+    const stale = rest.filter((page) => !blank.includes(page));
+    const later = started !== null && !all ? stale : [];
+    const now = rest.filter((page) => !later.includes(page));
+    const schedule = (pages: number[], delay: number, next?: () => void) => {
+      renderTimer.current = window.setTimeout(() => {
+        renderTimer.current = null;
+        pages.forEach(draw);
+        next?.();
+      }, delay);
+    };
+    if (later.length === 0) schedule(now, 0);
+    else if (now.length === 0) schedule(later, REST_DELAY_MS);
+    else schedule(now, 0, () => schedule(later, REST_DELAY_MS));
     // 실제 새 render·unmount만 이 작업을 취소한다. firstPaint·commit 알림의 단순 React 갱신은 취소하지 않는다.
   });
 
@@ -177,18 +203,27 @@ export function RhwpSurface({ session, zoom, imeContext }: RhwpSurfaceProps) {
       mark(event);
       controller.compositionStart();
     };
+    // 글자는 이벤트(data)에서 읽는다: 조합 입력의 data는 지금 조합 문자열 전체, 확정·일반 입력은 넣은 글자다(실측
+    // WebKitGTK 2.54 + ibus). 초점 있는 textarea의 값을 키마다 비우면 WebKitGTK가 입력기 문맥을 다시 맞추느라 frame마다
+    // 수십 ms를 써 실제 IME 입력이 밀렸다. 그래서 값은 쌓아 두고, 글자를 알려 주지 않는 입력(붙여넣기 등)만 값에서 읽고
+    // 비운다. 쌓인 값은 조합이 없을 때 가끔(TRIM_LENGTH) 비운다.
     const onInput = (event: Event) => {
       mark(event);
-      const { inputType = "", isComposing = false } = event as InputEvent;
+      const { inputType = "", isComposing = false, data = null } = event as InputEvent;
       const composing = session.composing || isComposing;
-      const text = input.value;
-      if (!composing) input.value = "";
+      let text: string;
+      if (composing || IME_INPUT_TYPES.has(inputType)) text = data ?? "";
+      else if (data !== null) text = data;
+      else {
+        text = input.value;
+        input.value = "";
+      }
       controller.input(text, inputType, isComposing);
+      if (!composing && !session.composing && input.value.length > TRIM_LENGTH) input.value = "";
     };
     const onCompositionEnd = (event: CompositionEvent) => {
       mark(event);
-      const finalText = input.value || event.data || "";
-      input.value = "";
+      const finalText = event.data ?? "";
       controller.compositionEnd(finalText);
       const pending = pendingNavigation.current;
       pendingNavigation.current = null;
@@ -281,11 +316,15 @@ export function RhwpSurface({ session, zoom, imeContext }: RhwpSurfaceProps) {
             {selection.filter((rect) => rect.page === page).map((rect, index) => (
               <div key={`s${index}`} className="rhwp-selection" style={rectStyle(rect)} />
             ))}
-            {composition.filter((rect) => rect.page === page).map((rect, index) => (
+            {/* 조합 밑줄은 쪽마다 하나를 늘 두고 위치·보임만 바꾼다. 조합 키마다 요소를 만들고 지우면 WebKitGTK(소프트웨어
+                렌더링 실측)가 frame마다 수십 ms를 써 입력이 밀렸다. 모양만 바꾸는 것은 커서처럼 싸다. */}
+            {padComposition(composition.filter((rect) => rect.page === page)).map((rect, index) => (
               <div
                 key={`c${index}`}
                 className="rhwp-composition"
-                style={{ left: rect.x * scale, top: (rect.y + rect.height) * scale - 2, width: rect.width * scale }}
+                style={rect
+                  ? { left: rect.x * scale, top: (rect.y + rect.height) * scale - 2, width: rect.width * scale }
+                  : HIDDEN_UNDERLINE}
               />
             ))}
             {caret && caret.page === page && session.editable && (

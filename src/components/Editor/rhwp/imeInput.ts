@@ -39,7 +39,7 @@ import type { DocPosition } from "./rhwpText";
 type Session = Pick<
   RhwpEditorSession,
   | "composing" | "compositionText" | "compositionAnchor" | "caret"
-  | "beginComposition" | "updateComposition" | "endComposition" | "insertCommittedAt" | "replaceCommittedAt" | "typeText"
+  | "beginComposition" | "updateComposition" | "endComposition" | "insertCommittedAt" | "resolveProvisional" | "typeText"
 >;
 
 /** 끊긴 조합. finalized면 이미 확정(또는 취소)했고, 아니면 늦게 올 확정을 session의 anchor에 넣는다(text = 마지막 조합 입력).
@@ -48,11 +48,9 @@ type Interrupted =
   | { finalized: true; text: string; visible?: VisibleTail }
   | { finalized: false; session: Session; anchor: DocPosition; text: string; split?: true };
 
-/** 앱이 확정한 보이는 조합(session의 anchor에 committed를 넣었음). 입력기의 최종 글자가 다르면 그 자리에서 고친다. */
+/** 앱이 먼저 끝낸 보이는 조합. 글자는 session 모델에 있고 아직 세지 않았다(session.resolveProvisional로 끝냄). */
 interface VisibleTail {
   session: Session;
-  anchor: DocPosition;
-  committed: string;
   /** 꼬리에 빈 끝(입력기의 조합 지우기)이 왔다. */
   emptied?: boolean;
   /** 빈 끝 없이 확정 입력이 왔다: WebView가 스스로 확정했고 입력기의 확정이 한 번 더 올 수 있다. */
@@ -114,6 +112,12 @@ export class ImeInput {
       }
       // 조합 아닌 확정 입력(Safari 순서): 원래 자리에 한 번 넣고, 뒤따를 compositionend는 소비하도록 남겨 둔다.
       if (!interrupted.finalized && text) interrupted.session.insertCommittedAt(interrupted.anchor, text);
+      // 앱이 먼저 끝낸 보이는 조합이면 이 입력이 입력기의 최종 글자다: 원래 자리를 고치고 그 조합을 한 번 센다.
+      if (interrupted.finalized && interrupted.visible) {
+        if (!text) return; // 글자 없는 알림은 끝을 정하지 않는다
+        interrupted.visible.session.resolveProvisional(text);
+        this.context.terminal = { text };
+      }
       this.context.interrupted = { finalized: true, text: "" };
       return;
     }
@@ -158,10 +162,11 @@ export class ImeInput {
         interrupted.visible.emptied = true;
         return;
       }
-      const { session: owner, anchor, committed, confirmedByView } = interrupted.visible;
+      const { session: owner, confirmedByView } = interrupted.visible;
       this.context.interrupted = null;
-      // 입력기의 최종 글자가 앱이 확정한 글자와 다르면(페이지가 입력을 따라가지 못한 채 클릭) 원래 자리에서 고친다.
-      if (finalText !== committed) owner.replaceCommittedAt(anchor, committed, finalText);
+      // 입력기의 최종 글자로 끝낸다: 앱이 확정한 글자와 다르면(페이지가 입력을 따라가지 못한 채 클릭) 원래 자리에서 고치고,
+      // 그 조합 전체를 변경 하나로 센다.
+      owner.resolveProvisional(finalText);
       this.context.terminal = confirmedByView ? { text: finalText, confirmedByView } : { text: finalText };
       return;
     }
@@ -208,12 +213,11 @@ export class ImeInput {
   private finalizeVisible(): boolean {
     const session = this.session;
     if (!session.composing) return false;
-    const anchor = session.compositionAnchor;
     this.viewConfirming = false;
-    const committed = session.endComposition(session.compositionText);
+    const committed = session.endComposition(session.compositionText, { provisional: true });
     this.context.terminal = null;
-    this.context.interrupted = anchor && committed
-      ? { finalized: true, text: "", visible: { session, anchor, committed } }
+    this.context.interrupted = committed
+      ? { finalized: true, text: "", visible: { session } }
       : { finalized: true, text: "" };
     return true;
   }
@@ -222,6 +226,8 @@ export class ImeInput {
   private settleInterrupted() {
     const interrupted = this.context.interrupted;
     this.context.interrupted = null;
+    // 입력기의 끝 없이 새 입력이 시작됐다: 앱이 끝낸 조합을 모델 그대로 한 번 센다.
+    if (interrupted?.finalized && interrupted.visible) interrupted.visible.session.resolveProvisional();
     if (interrupted && !interrupted.finalized && interrupted.text) {
       interrupted.session.insertCommittedAt(interrupted.anchor, interrupted.text);
     }

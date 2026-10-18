@@ -175,6 +175,11 @@ interface EditorAdapter {
   편집 표면은 표준 DOM 조합 이벤트만 쓴다(native 브리지·R-B 불필요). 실측 WebKitGTK 확정 순서(빈 끝 + 확정 절반, 클릭·초점 잃음
   꼬리, WebView 확정 뒤 입력기 이중 확정)에 맞춰 `ImeInput`을 보정했다. Rust revision 권한·세대 계약은 바꾸지 않았다. 실제 IME 필수
   7개 PASS(X11 + ibus-hangul). 조합 키마다 다시 그려 실제 IME 입력 지연이 늘었다(이 환경 p95 100–190 ms) — T007 미체크, 후속 결정 필요.
+- T007 7차([상세](../architecture/editor-surface-decision.md#t007-7차-ime-성능조합-트랜잭션-무결성-2026-10-18)): 앱이 먼저 끝낸
+  보이는 조합은 입력기의 끝(또는 새 입력·편집 중지 경계)에서 변경 하나로 센다(조합 하나 = revision 하나, Rust 계약 그대로).
+  그리기 정책: 조합 밑줄 고정, 진단 글자는 입력이 멈춘 뒤, 숨긴 textarea 값은 키마다 비우지 않음(글자는 이벤트 data), 같은 크기의 쪽은
+  고정 rhwp 패치 API로 쪽 전체를 그 자리에서 다시 그림, 다른 쪽은 입력이 멈춘 뒤. 한 문서 실제 IME p95 약 70 ms. DPR 2·다른 문서 편집
+  상태는 150 ms 초과 — 부분 다시 그리기에는 엔진의 본문 dirty 영역이 필요(별도 결정). T007 미체크.
 
 ## Algorithms and Pseudocode
 ```

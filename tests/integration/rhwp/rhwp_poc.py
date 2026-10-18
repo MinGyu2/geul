@@ -518,6 +518,7 @@ IME_ITEMS = [
     ("조합 중 ←는 조합 글자를 그 자리에 확정한 뒤 이동", True),
     ("조합 중 클릭: 조합 글자를 원래 자리에 한 번 확정하고 커서는 클릭한 곳", True),
     ("조합 중 창 초점 이동 뒤 돌아옴", False),
+    ("조합 중 탭 전환: 조합은 원래 문서에 한 번, 다른 문서에 섞이지 않음", False),
 ]
 GATE: dict[str, tuple[str, str]] = {}
 
@@ -549,7 +550,8 @@ def settle(d, step: str, quiet: float = 0.7, timeout: float = 30.0) -> dict:
     """실제 키·클릭을 페이지가 모두 처리할 때까지 기다린다: 입력 이벤트 기록·편집 상태(문단·커서·조합·revision)가 quiet초
     동안 바뀌지 않으면 끝. 고정 대기는 느린 환경(소프트웨어 렌더링·CPU 경합)에서 처리 전 상태를 읽어 결과를 잘못 판정했다.
     timeout 안에 끝나지 않으면 실패다. 마지막 변화까지 걸린 시간(입력을 보낸 뒤 페이지가 따라잡는 데 걸린 시간)은 지연
-    증거로 보고서 imeDrain에 남긴다(판정 기준을 바꾸지 않음)."""
+    증거로 보고서 imeDrain에 남긴다(판정 기준을 바꾸지 않음). 한계: 입력기에 남은 이벤트가 없다는 증거는 아니다(플랫폼이
+    조합 트랜잭션 번호를 주지 않음). 그래서 늦은 이벤트가 나중에 드러나는지는 다음 입력 뒤의 상태로 따로 확인한다(조합 중 클릭)."""
     start = time.monotonic()
     last, changed = None, start
     while True:
@@ -691,16 +693,30 @@ def scenario_ime(d, fixtures: Path, xdotool: str, ibus: str, focus_window: str |
         run(xdotool, "mousemove", "--window", window, str(int(target[0] + shift[0])), str(int(target[1] + shift[1])), "click", "1")
         st = settle(d, f"{fmt}: 조합 중 클릭")
         caret = st["caret"]
-        record("조합 중 클릭: 조합 글자를 원래 자리에 한 번 확정하고 커서는 클릭한 곳",
-               composing and st["paragraphText"] == text0 + "하" and caret.split(":")[1] == before["caret"].split(":")[1] and "@" not in caret
-               and offset_of(caret) < len(text0) - 1 and int(st["localRevision"]) - rev0 == 1,
-               f"{fmt}: 클릭 때 조합 중={composing}, 넣은 부분 {st['paragraphText'][len(text0):]!r}, caret {caret},"
-               f" revision +{int(st['localRevision']) - rev0},"
-               f" 클릭 뒤 이벤트 {ime_counts(d.js('return window.__imeLog.slice(arguments[0])', mark))}")
-        # 클릭 뒤 IME에 남았을 수 있는 음절을 다음 키(공백)로 내보내 어디에 확정되는지 기록한다(다음 문서로 넘어가지 않게).
-        clicked = st["caret"]
+        clicked_ok = (composing and st["paragraphText"] == text0 + "하" and caret.split(":")[1] == before["caret"].split(":")[1]
+                      and "@" not in caret and offset_of(caret) < len(text0) - 1 and int(st["localRevision"]) - rev0 == 1)
+        clicked_detail = (f"{fmt}: 클릭 때 조합 중={composing}, 넣은 부분 {st['paragraphText'][len(text0):]!r}, caret {caret},"
+                          f" revision +{int(st['localRevision']) - rev0},"
+                          f" 클릭 뒤 이벤트 {ime_counts(d.js('return window.__imeLog.slice(arguments[0])', mark))}")
+        # 7차: 클릭 뒤 다음 입력까지 본다. 늦게 온 옛 조합의 확정이 다음 키에서야 나타나는 결함을 잡는다.
+        # 공백은 클릭한 곳에만 하나 들어가고(옛 음절이 다시 나타나지 않음, revision +1), 그 뒤 새 한글 조합도 그 자리에 한 번.
+        clicked, click_text, click_rev = st["caret"], st["paragraphText"], int(st["localRevision"])
+        at = offset_of(clicked)
         run(xdotool, "key", "space")
         flushed = settle(d, f"{fmt}: 클릭 뒤 공백")
+        space_ok = (flushed["paragraphText"] == click_text[:at] + " " + click_text[at:] and offset_of(flushed["caret"]) == at + 1
+                    and int(flushed["localRevision"]) - click_rev == 1)
+        run(xdotool, "type", "--delay", "90", "gk")
+        run(xdotool, "key", "space")
+        again = settle(d, f"{fmt}: 클릭 뒤 새 조합")
+        spaced = flushed["paragraphText"]
+        again_ok = (again["paragraphText"] == spaced[:at + 1] + "하 " + spaced[at + 1:] and offset_of(again["caret"]) == at + 3
+                    and int(again["localRevision"]) - int(flushed["localRevision"]) == 2 and again.get("composing") == "false")
+        record("조합 중 클릭: 조합 글자를 원래 자리에 한 번 확정하고 커서는 클릭한 곳",
+               clicked_ok and space_ok and again_ok,
+               f"{clicked_detail}; 클릭 뒤 공백 {'정상' if space_ok else '어긋남'}(넣은 부분 {inserted_between(click_text, flushed['paragraphText'])!r},"
+               f" revision +{int(flushed['localRevision']) - click_rev}); 이어 친 '하 ' {'정상' if again_ok else '어긋남'}"
+               f"(넣은 부분 {inserted_between(spaced, again['paragraphText'])!r}, revision +{int(again['localRevision']) - int(flushed['localRevision'])})")
         REPORT[fmt]["ime"]["afterClickNextKey"] = {
             "caretBefore": clicked, "caretAfter": flushed["caret"],
             "insertedAtClick": flushed["paragraphText"][offset_of(clicked):offset_of(flushed["caret"])],
@@ -710,7 +726,7 @@ def scenario_ime(d, fixtures: Path, xdotool: str, ibus: str, focus_window: str |
         REPORT[fmt]["ime"]["eventsTotal"] = ime_counts(d.js("return window.__imeLog"))
 
     # 마지막 문서(HWPX)가 활성 상태다. 탭 전환 중 조합(기록)과 창 초점 이동(선택 항목)을 실제 입력으로 본다.
-    scenario_ime_tab_switch(d, run, xdotool, window, shift)
+    scenario_ime_tab_switch(d, run, xdotool, window, shift, record)
     if focus_window:
         scenario_ime_focus(d, run, xdotool, window, focus_window, record)
 
@@ -722,7 +738,8 @@ def scenario_ime(d, fixtures: Path, xdotool: str, ibus: str, focus_window: str |
     for name, _ in IME_ITEMS:
         outcomes = results[name]
         if not outcomes:
-            gate(name, "NOT RUN", "다른 X 창(--focus-window)을 주지 않아 실제 창 초점 이동을 실행하지 않음(합성 이벤트 테스트만 있음)")
+            gate(name, "NOT RUN", "다른 X 창(--focus-window)을 주지 않아 실제 창 초점 이동을 실행하지 않음(합성 이벤트 테스트만 있음)"
+                 if "창 초점" in name else "실행하지 않음")
         else:
             gate(name, "PASS" if all(r == "PASS" for r, _ in outcomes) else "FAIL", "; ".join(detail for _, detail in outcomes))
 
@@ -738,7 +755,7 @@ def inserted_between(before: str, after: str) -> str:
     return after[start:len(after) - end]
 
 
-def scenario_ime_tab_switch(d, run, xdotool: str, window: str, shift: tuple) -> None:
+def scenario_ime_tab_switch(d, run, xdotool: str, window: str, shift: tuple, record=None) -> None:
     """HWPX 문단 끝에서 'ㅎㅏ'를 조합하다 실제 포인터로 HWP 탭을 누르고 공백을 친다. 조합한 음절이 어느 문서에 몇 번
     들어갔는지 기록한다(필수 게이트 항목이 아님, 페이지가 받지 못한 조합은 앱이 막을 수 없는 플랫폼 경로)."""
     select_tab(d, "basic-ko.hwp")
@@ -768,6 +785,9 @@ def scenario_ime_tab_switch(d, run, xdotool: str, window: str, shift: tuple) -> 
                               "originalRevisionDelta": int(st["localRevision"]) - rev0, "originalCaretBefore": caret0,
                               "originalCaretAfter": st["caret"]}
     print(f"[기록] 탭 전환 중 조합(HWPX→HWP 탭 클릭→공백): {outcome}, 원래 문서에 {original!r}, 다른 문서에 {other!r}", flush=True)
+    if record:  # 7차: 선택 항목(필수 7개와 별개). 원래 문서에 '하' 한 번, 다른 문서에는 공백만.
+        record("조합 중 탭 전환: 조합은 원래 문서에 한 번, 다른 문서에 섞이지 않음", original == "하" and other == " ",
+               f"{outcome}, 원래 문서에 {original!r}, 다른 문서에 {other!r}")
 
 
 def scenario_ime_focus(d, run, xdotool: str, window: str, other_name: str, record) -> None:
