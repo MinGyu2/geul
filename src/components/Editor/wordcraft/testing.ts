@@ -4,7 +4,7 @@
 // chain(앞 연산이 거부되면 건너뜀), DeleteSelection. 글자 하나 = 가로 10pt, 문단 하나 = 세로 20pt, 본문 왼쪽 위 (72, 72).
 // 실제 엔진 동작은 Rust 시험과 tests/integration/wordcraft/에서 확인한다.
 import type { DocumentBackend } from "../../../adapters/backend";
-import type { DocumentError, Result, SessionInfo } from "../../../adapters/contract";
+import type { DocumentError, Preservation, Result, SaveCheck, SaveOutcome, SessionInfo } from "../../../adapters/contract";
 import type { DocxBackend, DocxEdited, DocxOp, DocxRender, DocxRoundTrip, DocxState, DocxView } from "../../../adapters/docx";
 import { vi } from "vitest";
 import { DocumentSessions } from "../../../adapters/sessions";
@@ -57,6 +57,15 @@ export class FakeDocx implements DocxBackend {
   renderError: DocumentError | null = null;
   /** 그림 응답의 PNG를 이 바이트로 바꾼다(디코드 실패 흉내). */
   renderPng: Uint8Array | null = null;
+  /** 저장 사전 검사 결과(T009, 기본 safe)와 이 플랫폼에서 바꿀 수 있는지. */
+  preservation: Preservation = { outcome: "safe", findings: [] };
+  platformSupported = true;
+  /** 다음 저장을 이 오류로 거부한다(원본 그대로 흉내). */
+  saveError: DocumentError | null = null;
+  /** 백엔드처럼 원본에 대한 사전 검사를 기억한다(저장하면 지움). */
+  private preflighted = false;
+  /** 저장한 파일 내용(문단). */
+  saved: string[] | null = null;
   private held: (() => void)[] = [];
   private readonly original: string[];
   private cleanRevision = 0;
@@ -328,6 +337,38 @@ export class FakeDocx implements DocxBackend {
       return Promise.resolve({ ok: true, value: { revision, base, ...band } });
     }
     return Promise.resolve({ ok: true, value: { revision, base: null, y: 0, height: 1056, png: this.renderPng ?? new Uint8Array([revision, page]) } });
+  }
+
+  preflight(sessionId: number, generation: number): Promise<Result<SaveCheck>> {
+    this.calls.push({ method: "preflight", args: [sessionId, generation] });
+    return this.respond(() => {
+      const checked = this.check(sessionId, generation);
+      if (!checked.ok) return checked;
+      this.preflighted = true;
+      return { ok: true, value: { preservation: this.preservation, platformSupported: this.platformSupported } };
+    });
+  }
+
+  /** 백엔드 docx_save 계약: ready·같은 시도·같은 판, 사전 검사가 safe, 아니면 원본 그대로. 성공하면 그 판이 깨끗하다. */
+  save(sessionId: number, generation: number, revision: number): Promise<Result<SaveOutcome>> {
+    this.calls.push({ method: "save", args: [sessionId, generation, revision] });
+    return this.respond(() => {
+      const checked = this.check(sessionId, generation);
+      if (!checked.ok) return checked;
+      if (revision !== this.info.revision) return { ok: false, error: { code: "RevisionMismatch", sessionId, revision: this.info.revision } };
+      if (!this.preflighted) return { ok: false, error: { code: "UnsafeSave", preservation: { outcome: "unknown", findings: [{ code: "preflightMissing" }] } } };
+      if (this.preservation.outcome !== "safe") return { ok: false, error: { code: "UnsafeSave", preservation: this.preservation } };
+      if (this.saveError) {
+        const error = this.saveError;
+        this.saveError = null;
+        return { ok: false, error };
+      }
+      this.saved = [...this.paragraphs];
+      this.cleanRevision = revision;
+      this.preflighted = false;
+      this.update({});
+      return { ok: true, value: { session: { ...this.info }, bytes: 100, durable: true } };
+    });
   }
 
   roundTrip(sessionId: number, generation: number, revision: number): Promise<Result<DocxRoundTrip>> {

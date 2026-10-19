@@ -1,8 +1,10 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "default",
-  "description": "주 창의 권한. 기본 핵심 권한과 문서 세션 명령(T006 열기·닫기·조회, T007 바이트 읽기·상태 전이·revision 확정, T008 WordCraft 불러오기·보기·허용한 편집 연산·쪽 그림·메모리 안 왕복 검사)과 현재 창 종료 확인만 허용한다. 파일 쓰기 명령은 없다. 파일 시스템·셸 플러그인 권한은 부여하지 않는다.",
-  "windows": ["main"],
+  "description": "주 창의 권한. 기본 핵심 권한과 문서 세션 명령(T006 열기·닫기·조회, T007 바이트 읽기·상태 전이·revision 확정, T008 WordCraft 불러오기·보기·허용한 편집 연산·쪽 그림·메모리 안 왕복 검사, T009 원본 형식 저장: 사전 검사용 원본 읽기·보존 사전 검사·저장)과 현재 창 종료 확인만 허용한다. 저장은 세션에 기록한 원본 파일 하나를 검사 뒤 같은 형식으로 바꿀 뿐 경로를 받지 않는다. 파일 시스템·셸 플러그인 권한은 부여하지 않는다.",
+  "windows": [
+    "main"
+  ],
   "permissions": [
     "core:default",
     "allow-window-close-confirmed",
@@ -17,6 +19,11 @@
     "allow-docx-view",
     "allow-docx-edit",
     "allow-docx-render",
-    "allow-docx-roundtrip"
+    "allow-docx-roundtrip",
+    "allow-docx-preflight",
+    "allow-docx-save",
+    "allow-document-original",
+    "allow-document-preflight",
+    "allow-document-save"
   ]
 }

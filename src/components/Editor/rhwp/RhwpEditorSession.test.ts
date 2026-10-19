@@ -216,7 +216,7 @@ describe("rhwp 편집 세션: IME 조합과 키보드", () => {
 
 describe("rhwp 편집 세션: 내보내기 검사", () => {
   it("메모리에서 내보내고 다시 열어 비교하며 파일을 쓰지 않는다", async () => {
-    const { backend, take } = controlledBackend();
+    const { backend, take, calls } = controlledBackend();
     const sessions = new DocumentSessions(backend);
     const opening = sessions.open("/a.hwp");
     take("open").reply(ok(base));
@@ -237,6 +237,7 @@ describe("rhwp 편집 세션: 내보내기 검사", () => {
     expect(report).toMatchObject({
       format: "hwp", reopenedFormat: "hwp", formatEqual: true, lossCount: 0, pagesEqual: true, textEqual: true, controlsEqual: true, passed: true,
     });
-    expect(Object.keys(backend)).not.toContain("save");
+    // 메모리 검사는 저장 경로(T009의 원본 읽기·사전 검사·저장)를 부르지 않는다: 파일을 쓰지 않는다.
+    expect(calls.map((call) => call.method).filter((method) => ["original", "preflight", "save"].includes(method))).toEqual([]);
   });
 });

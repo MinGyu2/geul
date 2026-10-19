@@ -83,3 +83,10 @@
 1. `rhwp`를 path 의존성으로 빌드(네이티브) 및 `wasm-pack` 빌드 (L3)
 2. 직접 만든 HWP/HWPX 열기 → 렌더 → `hitTest`/`getCursorRect` → `insertText` → `export*WithReport` →
    재열기 비교 (L4)
+
+## T009 확인(2026-10-19, 고정 커밋 `1a76570`)
+
+- `exportHwp(x)WithReport().contentLoss()`는 `{schemaVersion:1, outputFormat, count, losses[]}`이며 직렬화가 스스로 안 손실(코드 3종)만
+  적는다. 업스트림 예제 HWP·HWPX 각 60개의 편집 없는 왕복에서 보고는 모두 0건이었지만, HWPX 57개는 본문 XML의 실제 요소가 바뀌거나
+  사라졌고 HWP 6개는 레코드·스트림이 달랐다. 그래서 앱은 보고서를 보존의 근거로 쓰지 않는다([save-preservation.md](../architecture/save-preservation.md)).
+- 잘린 HWPX 본문 XML을 rhwp는 오류 없이 거의 빈 문서로 연다.

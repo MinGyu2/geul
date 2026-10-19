@@ -35,8 +35,9 @@
 //   엔진 호출이 예외를 던지면 그 조합은 세지 않고 끝난다(uncertain). 편집이 다른 이유로 멈추면(화면 갱신 실패·백엔드
 //   거부) 그때까지 성공한 조합 변경을 한 번 센다. 끝난 조합은 다시 세지 않는다.
 // - 저장은 없다(T009). 내보내기 검사는 메모리에서만 내보내고 다시 열어 비교한다(파일을 쓰지 않음).
-import type { DocumentBackend } from "../../../adapters/backend";
-import type { DocumentError, Result, SessionInfo } from "../../../adapters/contract";
+import type { DocumentBackend, ReopenEvidence } from "../../../adapters/backend";
+import type { DocumentError, Result, SaveCheck, SaveOutcome, SessionInfo } from "../../../adapters/contract";
+import { blockedBy, type SaveCheckRecord, type SaveState } from "../saveState";
 import type { DocumentSessions } from "../../../adapters/sessions";
 import { changedBand, summarizeLayerTree, type PaintBox, type PaintedPage } from "./paintDiff";
 import type { RhwpDocument, RhwpModule } from "./rhwpModule";
@@ -191,6 +192,10 @@ export class RhwpEditorSession {
   firstPaintMs: number | null = null;
   loadStartedAt = 0;
   lastRoundTrip: RoundTripReport | null = null;
+  /** 마지막 저장 시도의 결과(T009, 화면 표시). */
+  saveState: SaveState = { kind: "idle" };
+  /** 이 원본에 대한 보존 사전 검사(T009). 다시 불러오거나 저장하면(원본이 바뀜) 버린다. */
+  saveCheck: SaveCheckRecord | null = null;
   /**
    * 표면이 요청한 배율(zoom × devicePixelRatio)이 픽셀 예산을 넘어 그리지 않는 동안 그 배율, 아니면 null. 모델은 정상이며
    * 편집만 멈춘다. 예산 안의 배율로 다시 그리면(prepareRendering) null로 돌아온다.
@@ -218,6 +223,7 @@ export class RhwpEditorSession {
   private failure: FailureTransition | null = null;
   private closing = false;
   private disposed = false;
+  private saving = false;
   private composition: Composition | null = null;
   /** 앱이 먼저 끝낸 보이는 조합(클릭·초점 잃음·표면 사라짐). 글자는 모델에 있고, 입력기의 끝을 기다리며 아직 세지 않았다. */
   private provisional: Composition | null = null;
@@ -274,9 +280,8 @@ export class RhwpEditorSession {
   }
 
   /**
-   * 저장하지 않은 편집이 이 모델에 있음: 불러온 뒤 바꾼 적이 있거나, 바뀌었는지 알 수 없거나(편집 중 엔진 예외),
-   * 확정을 기다리거나 보내는 중이거나, 조합 중.
-   * 저장 기능이 없으므로(T009) 닫기·다시 불러오기는 사용자가 버리기를 명시해야 한다.
+   * 저장하지 않은 편집이 이 모델에 있음: 불러온(또는 저장한) 뒤 바꾼 적이 있거나, 바뀌었는지 알 수 없거나(편집 중 엔진 예외),
+   * 확정을 기다리거나 보내는 중이거나, 조합 중. 닫기·다시 불러오기는 저장(T009)하거나 사용자가 버리기를 명시해야 한다.
    */
   get hasUnpreservedChanges() {
     return this.doc !== null
@@ -1012,9 +1017,28 @@ export class RhwpEditorSession {
    * 결과는 지금 모델에 대한 것이며, 문서를 바꾸면 지운다.
    */
   roundTrip(format: "hwp" | "hwpx"): RoundTripReport | null {
+    const result = this.exportAndCompare(format);
+    if (!result) return null;
+    this.lastRoundTrip = result.report;
+    this.emit();
+    return result.report;
+  }
+
+  /**
+   * 원본 형식으로 내보내고 다시 열어 비교한다(roundTrip·저장이 함께 씀). bytes·contentLoss(손실 보고 JSON 값, 읽지 못하면
+   * null)는 내보내기에 성공했을 때만. reopen은 다시 열어 비교한 네 값이다.
+   */
+  private exportAndCompare(format: "hwp" | "hwpx"): {
+    report: RoundTripReport;
+    bytes: Uint8Array | null;
+    contentLoss: unknown;
+    reopen: ReopenEvidence;
+  } | null {
     const doc = this.doc;
     const module = this.module;
     if (!doc || !module) return null;
+    let output: Uint8Array | null = null;
+    let contentLoss: unknown = null;
     const report: RoundTripReport = {
       format, failure: "export", bytes: 0, reopenedFormat: null, formatEqual: false, lossValid: false, lossCount: -1, losses: [],
       pagesEqual: false, textEqual: false, controlsEqual: false, passed: false,
@@ -1024,12 +1048,19 @@ export class RhwpEditorSession {
       let bytes: Uint8Array;
       const exported = format === "hwp" ? doc.exportHwpWithReport() : doc.exportHwpxWithReport();
       try {
-        const loss = parseLoss(exported.contentLoss());
+        const raw = exported.contentLoss();
+        const loss = parseLoss(raw);
         if (loss) Object.assign(report, { lossValid: true, lossCount: loss.count, losses: loss.losses });
+        try {
+          contentLoss = JSON.parse(raw);
+        } catch {
+          contentLoss = null; // 백엔드가 LossReportInvalid로 판정한다
+        }
         bytes = exported.takeBytes();
       } finally {
         exported.free();
       }
+      output = bytes;
       report.bytes = bytes.length;
       report.failure = "reopen";
       reopened = module.openDocument(bytes);
@@ -1049,9 +1080,122 @@ export class RhwpEditorSession {
     }
     report.passed = report.failure === null && report.lossValid && report.lossCount === 0 && report.formatEqual
       && report.pagesEqual && report.textEqual && report.controlsEqual;
-    this.lastRoundTrip = report;
+    const reopen: ReopenEvidence = {
+      formatEqual: report.failure === null && report.formatEqual,
+      pagesEqual: report.failure === null && report.pagesEqual,
+      textEqual: report.failure === null && report.textEqual,
+      controlsEqual: report.failure === null && report.controlsEqual,
+    };
+    return { report, bytes: output, contentLoss, reopen };
+  }
+
+  // ---- 저장(T009) ----
+
+  private setSave(state: SaveState) {
+    this.saveState = state;
     this.emit();
-    return report;
+  }
+
+  /** 지금 저장을 시작할 수 없는 이유(없으면 null). */
+  private saveBlocker(): DocumentError | null {
+    if (this.status.kind !== "ready" || !this.doc || !this.module || this.closing) return { code: "SaveNotReady", reason: "state" };
+    if (this.uncertain) return { code: "SaveNotReady", reason: "uncertain" };
+    if (this.composition || this.provisional) return { code: "SaveNotReady", reason: "composing" };
+    if (this.pending > 0 || this.committingEpoch === this.epoch) return { code: "SaveNotReady", reason: "pending" };
+    return null;
+  }
+
+  /**
+   * 보존 사전 검사: 백엔드가 확인한 원본 바이트를 새 WASM 문서로 열어(편집 모델과 무관) 편집 없이 같은 형식으로 내보내고,
+   * 그 출력과 손실 보고를 백엔드가 원본과 비교한다. 결과는 이 시도에 대해 기억한다.
+   */
+  async checkSave(): Promise<Result<SaveCheck>> {
+    const blocker = this.saveBlocker();
+    if (blocker && blocker.code === "SaveNotReady" && blocker.reason === "state") return { ok: false, error: blocker };
+    const module = this.module!;
+    const format = this.sessions.get(this.sessionId)?.format;
+    if (format !== "hwp" && format !== "hwpx") return { ok: false, error: { code: "SaveNotReady", reason: "state" } };
+    const { epoch, generation } = this;
+    const original = await this.backend.original(this.sessionId, generation);
+    if (!original.ok) return original;
+    if (!this.owns(epoch)) return { ok: false, error: { code: "StaleSession", sessionId: this.sessionId } };
+    let unedited: Uint8Array;
+    let contentLoss: unknown;
+    let fresh: RhwpDocument | null = null;
+    try {
+      fresh = module.openDocument(original.value);
+      const exported = format === "hwp" ? fresh.exportHwpWithReport() : fresh.exportHwpxWithReport();
+      try {
+        try {
+          contentLoss = JSON.parse(exported.contentLoss());
+        } catch {
+          contentLoss = null;
+        }
+        unedited = exported.takeBytes();
+      } finally {
+        exported.free();
+      }
+    } catch {
+      return { ok: false, error: { code: "EngineFailure", engine: "rhwp", stage: "export" } };
+    } finally {
+      fresh?.free();
+    }
+    const checked = await this.backend.preflight(this.sessionId, generation, unedited, contentLoss);
+    if (!this.owns(epoch)) return { ok: false, error: { code: "StaleSession", sessionId: this.sessionId } };
+    if (checked.ok) {
+      this.saveCheck = { generation, check: checked.value };
+      this.emit();
+    }
+    return checked;
+  }
+
+  /**
+   * 원본 형식으로 저장한다(T009). 확정한 판(백엔드 revision)만 저장한다: 확정을 기다리는 편집·조합·불확실한 모델이 있으면
+   * 시작하지 않는다. 이 원본의 사전 검사가 없으면 먼저 한다(safe가 아니면 저장하지 않음). 내보낸 뒤 다시 열어 비교한 결과와
+   * 손실 보고를 함께 보내고, 백엔드가 원본을 다시 확인해 교체한다. 저장 중에도 편집은 이어 갈 수 있으며, 그 편집은 저장한
+   * 판 뒤의 것이라 저장하지 않은 편집으로 남는다.
+   */
+  async save(): Promise<Result<SaveOutcome>> {
+    const fail = (error: DocumentError): Result<SaveOutcome> => {
+      if (this.owns(epoch)) this.setSave({ kind: "failed", error });
+      return { ok: false, error };
+    };
+    const epoch = this.epoch;
+    if (this.saving) return { ok: false, error: { code: "SaveInProgress", sessionId: this.sessionId } };
+    const blocker = this.saveBlocker();
+    if (blocker) return fail(blocker);
+    const format = this.sessions.get(this.sessionId)?.format;
+    if (format !== "hwp" && format !== "hwpx") return fail({ code: "SaveNotReady", reason: "state" });
+    this.saving = true;
+    try {
+      const generation = this.generation;
+      if (this.saveCheck?.generation !== generation) {
+        this.setSave({ kind: "checking" });
+        const checked = await this.checkSave();
+        if (!checked.ok) return fail(checked.error);
+      }
+      const blocked = blockedBy(this.saveCheck!.check);
+      if (blocked) return fail(blocked);
+      // 사전 검사를 기다리는 사이 편집이 있었을 수 있다: 지금 확정한 판으로 다시 확인한다.
+      const later = this.saveBlocker();
+      if (later) return fail(later);
+      const revision = this.committed;
+      this.setSave({ kind: "saving" });
+      const exported = this.exportAndCompare(format);
+      if (!exported?.bytes) return fail({ code: "SaveFailure", stage: "export" });
+      const result = await this.backend.save(this.sessionId, generation, revision, exported.bytes, exported.contentLoss, exported.reopen);
+      if (!this.owns(epoch)) return result;
+      if (!result.ok) return fail(result.error);
+      this.sessions.applyUpdate(result.value.session);
+      const changedSince = this.localRevision !== revision || this.composition !== null || this.provisional !== null;
+      // 저장한 판 뒤에 편집이 없으면 이 모델은 디스크의 파일과 같다(닫기·다시 불러오기에 버리기 확인이 필요 없음).
+      if (!changedSince) this.modified = false;
+      this.saveCheck = null; // 원본이 바뀌었다: 다음 저장은 새 원본으로 다시 검사한다
+      this.setSave({ kind: "saved", revision, durable: result.value.durable, changedSince });
+      return result;
+    } finally {
+      this.saving = false;
+    }
   }
 
   /** 커서 위치를 짧은 문자열로(진단 표시용). 예: "0:3:5", 셀이면 "0:2:1@0/3/0". */

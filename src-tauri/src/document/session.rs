@@ -25,6 +25,17 @@
 //!   하며, 다르면 `StaleLoad`로 거부한다(늦게 끝난 옛 시도·옛 모델의 확정이 새 시도를 바꾸지 못함).
 //! - `sequence`는 세션 기록이 바뀔 때마다(상태·revision) 1씩 는다. 프런트엔드는 더 작거나 같은 sequence의 응답을
 //!   버려, 늦게 도착한 응답이 새 상태를 덮지 못하게 한다.
+//!
+//! 저장(T009, `crate::services::save`):
+//! - 불러올 때 엔진에 넘긴 바이트의 해시를 기록한다(`record_content`). 저장은 디스크의 파일이 같은 객체·지문·해시일 때만
+//!   한다(아니면 `FileConflict` — 외부 수정을 덮어쓰지 않음).
+//! - 보존 사전 검사 결과는 그 원본 해시와 함께 둔다(`record_preflight`). 저장은 같은 원본의 결과가 `safe`일 때만.
+//! - `begin_save`는 `ready`·지금 시도 번호·지금 revision이고 저장 중이 아닐 때만 표를 준다(아니면 `InvalidState`·
+//!   `StaleLoad`·`RevisionMismatch`·`SaveInProgress`). 표는 버려지면(성공·실패·패닉) 저장 중 표시를 지운다.
+//! - 원본 교체(`finish_save`의 `publish`)는 이 기록의 잠금 안에서, 세션이 아직 있고 같은 시도·`ready`이며 저장 중
+//!   표시가 그 표의 것일 때만 실행한다. 그래서 그 사이 닫거나 다시 불러온 세션의 저장은 원본을 바꾸지 않는다.
+//! - 성공하면 깨끗한 판을 표의 revision으로 둔다: 그 사이 확정한 편집이 있으면(revision이 더 큼) dirty가 남는다. 파일
+//!   식별·지문·해시는 새 파일로 바꾸고, 사전 검사는 지운다(새 원본에 대해 다시 한다).
 
 use std::collections::BTreeMap;
 use std::sync::{Mutex, MutexGuard};
@@ -34,6 +45,7 @@ use serde::{Deserialize, Serialize};
 use super::error::{DocumentError, LimitKind};
 use super::open::{FileFingerprint, FileIdentity, IdentifiedFile, LoadSource};
 use super::{Engine, Format};
+use crate::services::save::preserve::Preservation;
 
 pub type SessionId = u64;
 
@@ -79,6 +91,50 @@ struct Session {
     identity: FileIdentity,
     fingerprint: FileFingerprint,
     clean_revision: u64,
+    /// 불러올 때 엔진에 넘긴 원본 바이트의 해시(T009).
+    content_hash: Option<u64>,
+    /// 보존 사전 검사 결과와 그 검사의 원본 해시(T009).
+    preflight: Option<(u64, Preservation)>,
+    /// 진행 중인 저장 표의 번호(T009).
+    saving: Option<u64>,
+}
+
+/// 원본 바이트의 해시(같은 실행 안의 변경 감지용, 보안 용도 아님).
+pub fn content_hash(bytes: &[u8]) -> u64 {
+    use std::hash::Hasher;
+    let mut hasher = std::hash::DefaultHasher::new();
+    hasher.write(bytes);
+    hasher.finish()
+}
+
+/// 저장·사전 검사가 다시 읽을 원본(T009).
+#[derive(Clone, Debug)]
+pub struct SaveSource {
+    pub load: LoadSource,
+    pub content_hash: u64,
+    pub preflight: Option<Preservation>,
+}
+
+/// 진행 중인 저장 하나(T009). 버려지면 저장 중 표시를 지운다.
+pub struct SaveTicket<'a> {
+    registry: &'a SessionRegistry,
+    pub session_id: SessionId,
+    pub generation: u64,
+    pub revision: u64,
+    pub source: SaveSource,
+    token: u64,
+}
+
+impl Drop for SaveTicket<'_> {
+    fn drop(&mut self) {
+        if let Ok(mut inner) = self.registry.lock() {
+            if let Some(session) = inner.sessions.get_mut(&self.session_id) {
+                if session.saving == Some(self.token) {
+                    session.saving = None;
+                }
+            }
+        }
+    }
 }
 
 /// 한 번에 확정할 수 있는 변경 수 상한(프런트엔드가 묶어 보내는 수).
@@ -86,6 +142,7 @@ pub const MAX_COMMIT_COUNT: u64 = 1 << 20;
 
 struct Inner {
     next_id: SessionId,
+    next_save: u64,
     sessions: BTreeMap<SessionId, Session>,
 }
 
@@ -107,6 +164,7 @@ impl SessionRegistry {
         SessionRegistry {
             inner: Mutex::new(Inner {
                 next_id: 1,
+                next_save: 1,
                 sessions: BTreeMap::new(),
             }),
             max_sessions,
@@ -154,6 +212,9 @@ impl SessionRegistry {
                 identity: file.identity,
                 fingerprint: file.fingerprint,
                 clean_revision: 0,
+                content_hash: None,
+                preflight: None,
+                saving: None,
             },
         );
         Ok(info)
@@ -283,6 +344,154 @@ impl SessionRegistry {
             Ok(())
         })
         .map(|(_, info)| info)
+    }
+
+    /// 이 시도에서 엔진에 넘긴 원본 바이트의 해시를 기록한다(T009). 옛 시도면 `StaleLoad`. sequence는 바꾸지 않는다.
+    pub fn record_content(
+        &self,
+        session_id: SessionId,
+        generation: u64,
+        hash: u64,
+    ) -> Result<(), DocumentError> {
+        let mut inner = self.lock()?;
+        let missing = Self::missing(&inner, session_id);
+        let session = inner.sessions.get_mut(&session_id).ok_or(missing)?;
+        Self::check_generation(session, session_id, generation)?;
+        session.content_hash = Some(hash);
+        Ok(())
+    }
+
+    fn ready_session(
+        inner: &mut Inner,
+        session_id: SessionId,
+        generation: u64,
+    ) -> Result<&mut Session, DocumentError> {
+        let missing = Self::missing(inner, session_id);
+        let session = inner.sessions.get_mut(&session_id).ok_or(missing)?;
+        Self::check_generation(session, session_id, generation)?;
+        if session.info.state != SessionState::Ready {
+            return Err(DocumentError::InvalidState {
+                session_id,
+                state: session.info.state,
+            });
+        }
+        Ok(session)
+    }
+
+    fn save_source(session: &Session, generation: u64) -> Result<SaveSource, DocumentError> {
+        // 불러온 바이트의 해시가 없으면(기록 전) 디스크와 비교할 근거가 없다.
+        let content_hash = session.content_hash.ok_or(DocumentError::InvalidState {
+            session_id: session.info.session_id,
+            state: session.info.state,
+        })?;
+        Ok(SaveSource {
+            load: LoadSource {
+                identity: session.identity.clone(),
+                fingerprint: session.fingerprint,
+                format: session.info.format,
+                generation,
+            },
+            content_hash,
+            preflight: session
+                .preflight
+                .as_ref()
+                .filter(|(hash, _)| *hash == content_hash)
+                .map(|(_, preservation)| preservation.clone()),
+        })
+    }
+
+    /// 사전 검사가 읽을 원본(T009): `ready`·지금 시도일 때.
+    pub fn preflight_source(
+        &self,
+        session_id: SessionId,
+        generation: u64,
+    ) -> Result<SaveSource, DocumentError> {
+        let mut inner = self.lock()?;
+        let session = Self::ready_session(&mut inner, session_id, generation)?;
+        Self::save_source(session, generation)
+    }
+
+    /// 사전 검사 결과를 그 원본 해시와 함께 기록한다(지금 원본이 그 해시일 때만, 아니면 `FileConflict`).
+    pub fn record_preflight(
+        &self,
+        session_id: SessionId,
+        generation: u64,
+        hash: u64,
+        preservation: Preservation,
+    ) -> Result<(), DocumentError> {
+        let mut inner = self.lock()?;
+        let session = Self::ready_session(&mut inner, session_id, generation)?;
+        if session.content_hash != Some(hash) {
+            return Err(DocumentError::FileConflict);
+        }
+        session.preflight = Some((hash, preservation));
+        Ok(())
+    }
+
+    /// 저장을 시작한다(T009, 모듈 설명).
+    pub fn begin_save(
+        &self,
+        session_id: SessionId,
+        generation: u64,
+        revision: u64,
+    ) -> Result<SaveTicket<'_>, DocumentError> {
+        let mut inner = self.lock()?;
+        let token = inner.next_save;
+        inner.next_save += 1;
+        let session = Self::ready_session(&mut inner, session_id, generation)?;
+        if session.info.revision != revision {
+            return Err(DocumentError::RevisionMismatch {
+                session_id,
+                revision: session.info.revision,
+            });
+        }
+        if session.saving.is_some() {
+            return Err(DocumentError::SaveInProgress { session_id });
+        }
+        let source = Self::save_source(session, generation)?;
+        session.saving = Some(token);
+        Ok(SaveTicket {
+            registry: self,
+            session_id,
+            generation,
+            revision,
+            source,
+            token,
+        })
+    }
+
+    /// 저장을 끝낸다: 잠금 안에서 세션·시도·상태·표를 다시 확인하고 `publish`(원본 교체)를 실행한다. `publish`는
+    /// 교체한 파일의 새 식별·지문을 돌려준다. 성공하면 깨끗한 판·파일 기록을 바꾼 세션 정보.
+    pub fn finish_save(
+        &self,
+        ticket: &SaveTicket<'_>,
+        new_hash: u64,
+        publish: impl FnOnce(
+            &FileIdentity,
+            &FileFingerprint,
+        ) -> Result<(FileIdentity, FileFingerprint), DocumentError>,
+    ) -> Result<SessionInfo, DocumentError> {
+        let mut inner = self.lock()?;
+        let session = Self::ready_session(&mut inner, ticket.session_id, ticket.generation)?;
+        if session.saving != Some(ticket.token) {
+            return Err(DocumentError::InvalidRequest);
+        }
+        if session.identity.path() != ticket.source.load.identity.path()
+            || session.fingerprint != ticket.source.load.fingerprint
+            || session.content_hash != Some(ticket.source.content_hash)
+        {
+            return Err(DocumentError::FileConflict);
+        }
+        let (identity, fingerprint) = publish(&session.identity, &session.fingerprint)?;
+        session.identity = identity;
+        session.fingerprint = fingerprint;
+        session.content_hash = Some(new_hash);
+        session.preflight = None;
+        session.clean_revision = ticket.revision;
+        session.saving = None;
+        session.info.sequence += 1;
+        session.info.dirty = session.info.revision != session.clean_revision;
+        Ok(session.info.clone())
     }
 
     fn missing(inner: &Inner, session_id: SessionId) -> DocumentError {

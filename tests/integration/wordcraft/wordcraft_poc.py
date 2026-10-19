@@ -684,6 +684,113 @@ def scenario_second_stabilization(d, fixtures: Path) -> None:
     select_tab(d, "basic-ko.docx")
 
 
+SAVE_RESULT = "[data-testid=docx-save-result]"
+
+
+def save_and_wait(d, timeout: float = 60) -> dict:
+    """저장 단추를 누르고 결과(saved·failed)가 나올 때까지 기다린다."""
+    press_button(d, "[data-testid=docx-save]")
+    smoke.wait_until(d, f"const e=document.querySelector('{SAVE_RESULT}'); return e && ['saved','failed'].includes(e.dataset.state)",
+                     timeout=timeout)
+    return d.js(f"return {{...document.querySelector('{SAVE_RESULT}').dataset}}")
+
+
+def type_keys(d, text: str) -> dict:
+    """ASCII 글자를 실제 키로 치고 백엔드 확정까지 기다린다."""
+    before = int(status(d)["revision"])
+    actions = []
+    for ch in text:
+        actions += [{"type": "keyDown", "value": ch}, {"type": "keyUp", "value": ch}]
+    perform(d, [{"type": "key", "id": "kbd", "actions": actions}])
+    smoke.wait_until(d, f"return Number(document.querySelector('{STATUS}').dataset.revision) >= arguments[0]", before + len(text), timeout=20)
+    return idle(d)
+
+
+def close_without_prompt(d, name: str) -> bool:
+    d.js("[...document.querySelectorAll('.document-tab__close')].find(b => b.getAttribute('aria-label').includes(arguments[0])).click()", name)
+    time.sleep(0.5)
+    if d.exists("[data-testid=discard-dialog]"):
+        press_button(d, "[data-testid=discard-cancel]")
+        return False
+    smoke.wait_until(d, "return ![...document.querySelectorAll('.document-tab__select')].some(t => t.textContent.includes(arguments[0]))",
+                     name, timeout=10)
+    return True
+
+
+def discard_close(d, name: str) -> None:
+    d.js("[...document.querySelectorAll('.document-tab__close')].find(b => b.getAttribute('aria-label').includes(arguments[0])).click()", name)
+    smoke.wait_until(d, "return document.querySelector('[data-testid=discard-dialog]')?.dataset.action === 'close'", timeout=10)
+    press_button(d, "[data-testid=discard-confirm]")
+    smoke.wait_until(d, "return ![...document.querySelectorAll('.document-tab__select')].some(t => t.textContent.includes(arguments[0]))",
+                     name, timeout=10)
+
+
+def scenario_save(d, fixtures: Path) -> None:
+    """T009: 실제 앱에서 DOCX 원본 형식 저장 → 파일 → 다시 열기, 막힌 저장·외부 수정은 원본 그대로."""
+    import zipfile
+    digest = lambda path: hashlib.sha256(path.read_bytes()).hexdigest()
+    path = fixtures / "save-basic.docx"
+    shutil.copy(fixtures / "basic-ko.docx", path)
+    original = digest(path)
+    open_document(d, path)
+    click_paragraph_start(d)
+    typed = type_keys(d, "T9")
+    check("docx: 편집 뒤 저장 전에는 파일이 그대로이고 저장하지 않은 편집으로 보임",
+          digest(path) == original and typed["dirty"] == "true" and typed["unpreserved"] == "true", brief(typed))
+    result = save_and_wait(d)
+    after = status(d)
+    with zipfile.ZipFile(path) as z:
+        valid = z.testzip() is None and "word/document.xml" in z.namelist()
+    check("docx: 사전 검사(편집 없는 WordCraft 왕복 safe)를 거쳐 원본 형식으로 저장하고 dirty가 풀림(파일이 바뀌고 ZIP이 올바름)",
+          result["state"] == "saved" and result["revision"] == after["revision"] and after["dirty"] == "false"
+          and after["unpreserved"] == "false" and digest(path) != original and valid, json.dumps({"result": result, "status": brief(after)}, ensure_ascii=False))
+    check("docx: 저장한 문서는 버리기 확인 없이 닫힘", close_without_prompt(d, path.name))
+    reopened = open_document(d, path)
+    click_paragraph_start(d)
+    text = status(d)["paragraphText"]
+    check("docx: 저장한 파일을 앱에서 다시 열면 넣은 글자가 있고 편집 가능", reopened["status"] == "ready" and text.startswith("T9"),
+          json.dumps({"status": reopened.get("status"), "start": text[:12]}, ensure_ascii=False))
+    # 외부 수정.
+    type_keys(d, "X")
+    changed = path.read_bytes() + b"\0"
+    path.write_bytes(changed)
+    result = save_and_wait(d)
+    check("docx: 연 뒤 파일이 바뀌면(외부 수정) FileConflict로 저장하지 않고 바뀐 파일을 덮어쓰지 않음",
+          result["state"] == "failed" and result["error"] == "FileConflict" and path.read_bytes() == changed, json.dumps(result))
+    discard_close(d, path.name)
+    # 엔진 왕복이 원본을 지키지 못하는 문서(합성 변형, 생성 픽스처에서 결정적으로 만든다).
+    def variant(name: str, change, extra: tuple[str, bytes] | None = None) -> Path:
+        target = fixtures / name
+        with zipfile.ZipFile(fixtures / "basic-ko.docx") as zin, zipfile.ZipFile(target, "w", zipfile.ZIP_DEFLATED) as zout:
+            for item in zin.infolist():
+                zout.writestr(item, change(item.filename, zin.read(item.filename)))
+            if extra:
+                zout.writestr(extra[0], extra[1])
+        return target
+    cases = [
+        ("WordCraft가 모르는 부분(customXml)이 있음", variant("save-custom.docx", lambda n, b: b, ("customXml/item1.xml", b'<root xmlns="urn:x"><v>1</v></root>')),
+         "unsafe", "partMissing:customXml/item1.xml"),
+        # 글자 요소 안에서 자른다(T008 J: WordCraft는 끊긴 곳까지 읽어 연다. 속성·UTF-8 가운데를 자르면 열지 않는다).
+        ("본문 XML이 잘림(WordCraft는 끊긴 곳까지 읽어 엶)",
+         variant("save-cut.docx", lambda n, b: b[: b.rfind(b"</w:t>", 0, len(b) * 2 // 3)] if n == "word/document.xml" else b),
+         "unknown", "originalMalformed:word/document.xml"),
+    ]
+    for label, target, outcome, finding in cases:
+        before = target.read_bytes()
+        st = open_document(d, target)
+        click_paragraph_start(d)
+        type_keys(d, "Z")
+        result = save_and_wait(d)
+        check(f"docx: {label} → 저장하지 않고({outcome}) 이유를 보이며 원본 그대로",
+              st["status"] == "ready" and result["state"] == "failed" and result["error"] == "UnsafeSave" and result["outcome"] == outcome
+              and finding in result["findings"].split(",") and target.read_bytes() == before and d.exists("[data-testid=save-findings]"),
+              json.dumps(result, ensure_ascii=False))
+        discard_close(d, target.name)
+    leftovers = [p.name for p in fixtures.iterdir() if p.name.startswith(".geul-save-")]
+    check("docx: 저장 시도 뒤 임시 파일(.geul-save-*.tmp)이 남지 않음", leftovers == [], json.dumps(leftovers))
+    select_tab(d, "basic-ko.docx")
+
+
 def scenario_restart_inactive_close(d, fixtures: Path) -> None:
     """P2-C: WebView를 다시 시작한 뒤 아직 보지 않은 dirty DOCX 탭도 버리기 확인 없이 닫지 않는다."""
     shutil.copy(fixtures / "basic-ko.docx", fixtures / "basic-ko-c.docx")
@@ -715,7 +822,7 @@ def scenario_webview_restart(d) -> None:
 
 def scenario_lifecycle(d, fixtures: Path, meta: dict, original_hash: str) -> None:
     path = fixtures / "basic-ko.docx"
-    check("docx: 편집해도 원본 파일 바이트는 그대로(저장 기능 없음)", hashlib.sha256(path.read_bytes()).hexdigest() == original_hash)
+    check("docx: 저장하지 않은 편집은 원본 파일 바이트를 바꾸지 않음", hashlib.sha256(path.read_bytes()).hexdigest() == original_hash)
     # 다시 불러오기: 편집한 모델을 버리는 것이므로 확인을 거친다(백엔드가 그 시도의 ready 모델을 버리고 파일에서 새로 읽음).
     gen0 = int(status(d)["generation"])
     d.js("[...document.querySelectorAll('.document-tab__close')].find(b => b.getAttribute('aria-label').includes('basic-ko.docx')).click()")
@@ -1052,6 +1159,7 @@ def main() -> int:
                             scenario_latency(d)
                             scenario_stabilization(d)
                             scenario_second_stabilization(d, fixtures)
+                            scenario_save(d, fixtures)
                             if args.screenshots:
                                 d.screenshot(args.screenshots / "docx-edited.png")
                             scenario_webview_restart(d)

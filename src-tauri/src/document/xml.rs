@@ -197,6 +197,136 @@ fn walk(
     }
 }
 
+/// 정규화한 XML 사건(T009 보존 비교). 이름은 이름공간 URI와 지역 이름이고(접두사 무시), 속성은 이름순, 문자 데이터는
+/// 참조를 풀어 이어 붙인 그대로다(공백도 같아야 한다). XML 선언은 넣지 않는다. 주석·처리 명령은 내용째 넣는다.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum Canonical {
+    Start {
+        namespace: Option<String>,
+        name: String,
+        attributes: Vec<(Option<String>, String, String)>,
+    },
+    End,
+    Text(String),
+    Comment(String),
+    Instruction(String),
+}
+
+/// 이름공간 선언 속성의 이름공간(quick-xml이 `xmlns:p`를 이렇게 푼다).
+const XMLNS: &str = "http://www.w3.org/2000/xmlns/";
+
+/// 정규화한 XML 사건 수 상한(한 부분).
+const MAX_CANONICAL_EVENTS: usize = 16_000_000;
+
+/// XML 문서 전체를 정규화한 사건 열로 읽는다. 형식 오류·DTD·알 수 없는 엔티티·선언하지 않은 접두사·루트가 하나가
+/// 아닌 문서·상한 초과는 `Invalid`(끝까지 읽지 못한 문서를 비교하지 않는다).
+pub fn canonical(bytes: &[u8]) -> Result<Vec<Canonical>, Invalid> {
+    let text = decode(bytes)?;
+    let mut reader = NsReader::from_str(&text);
+    let mut out: Vec<Canonical> = Vec::new();
+    let mut depth = 0usize;
+    let mut roots = 0usize;
+    let push_text = |out: &mut Vec<Canonical>, piece: &str| match out.last_mut() {
+        Some(Canonical::Text(text)) => text.push_str(piece),
+        _ => out.push(Canonical::Text(piece.to_owned())),
+    };
+    loop {
+        if out.len() > MAX_CANONICAL_EVENTS {
+            return Err(Invalid);
+        }
+        let event = reader.read_event().map_err(|_| Invalid)?;
+        match event {
+            Event::Start(ref start) | Event::Empty(ref start) => {
+                if depth == 0 {
+                    roots += 1;
+                    if roots > 1 {
+                        return Err(Invalid);
+                    }
+                }
+                let mut element = element(&reader, start, depth)?;
+                // 이름공간 선언은 접두사 선택이라 비교하지 않는다(요소·속성은 URI로 비교). 접두사를 값으로 쓰는 속성
+                // (`mc:Ignorable` 등)은 값 그대로 비교하므로 접두사가 바뀌면 다르다고 본다.
+                element.attributes.retain(|(namespace, name, _)| {
+                    namespace.as_deref() != Some(XMLNS) && !(namespace.is_none() && name == "xmlns")
+                });
+                element.attributes.sort();
+                out.push(Canonical::Start {
+                    namespace: element.namespace,
+                    name: element.name,
+                    attributes: element.attributes,
+                });
+                if matches!(event, Event::Start(_)) {
+                    depth += 1;
+                } else {
+                    out.push(Canonical::End);
+                }
+            }
+            Event::End(_) => {
+                depth = depth.checked_sub(1).ok_or(Invalid)?;
+                out.push(Canonical::End);
+            }
+            Event::Text(content) => {
+                let piece: &str = content.as_ref();
+                if depth == 0 {
+                    // 루트 밖에는 공백만 올 수 있고 비교하지 않는다.
+                    if !piece.bytes().all(|byte| byte.is_ascii_whitespace()) {
+                        return Err(Invalid);
+                    }
+                    continue;
+                }
+                push_text(&mut out, piece);
+            }
+            Event::CData(content) => {
+                if depth == 0 {
+                    return Err(Invalid);
+                }
+                let piece: &str = content.as_ref();
+                push_text(&mut out, piece);
+            }
+            Event::GeneralRef(reference) => {
+                check_reference(&reference)?;
+                if depth == 0 {
+                    return Err(Invalid);
+                }
+                let piece = match reference.resolve_char_ref() {
+                    Ok(Some(c)) => c.to_string(),
+                    _ => match reference.as_ref() {
+                        "lt" => "<".to_owned(),
+                        "gt" => ">".to_owned(),
+                        "amp" => "&".to_owned(),
+                        "apos" => "'".to_owned(),
+                        "quot" => "\"".to_owned(),
+                        _ => return Err(Invalid),
+                    },
+                };
+                push_text(&mut out, &piece);
+            }
+            Event::Decl(declaration) => {
+                if let Some(encoding) = declaration.encoding() {
+                    let encoding = encoding.map_err(|_| Invalid)?;
+                    if !["utf-8", "utf-16"]
+                        .iter()
+                        .any(|name| encoding.eq_ignore_ascii_case(name))
+                    {
+                        return Err(Invalid);
+                    }
+                }
+            }
+            Event::DocType(_) => return Err(Invalid),
+            Event::Comment(content) => {
+                let piece: &str = content.as_ref();
+                out.push(Canonical::Comment(piece.to_owned()));
+            }
+            Event::PI(content) => {
+                let piece: &str = content.as_ref();
+                out.push(Canonical::Instruction(piece.to_owned()));
+            }
+            Event::Eof if depth == 0 && roots == 1 => return Ok(out),
+            Event::Eof => return Err(Invalid),
+        }
+    }
+}
+
 #[derive(Debug, PartialEq, Eq)]
 pub struct Relationship {
     pub kind: String,

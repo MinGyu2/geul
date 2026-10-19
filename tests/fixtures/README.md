@@ -32,6 +32,21 @@ T006의 판별·세션 테스트는 이 디렉터리에 파일을 두지 않는�
 | `invalid/truncated.hwpx`, `invalid/truncated.docx` | 중간에서 잘린 ZIP | 위 파일 잘라내기 |
 | `encrypted/` | 암호화 문서 (테스트 전용 비밀번호를 README에 공개) | 엔진의 암호화 내보내기 |
 
+## 저장·재열기 시험 (T009)
+
+T009 시험도 바이너리를 커밋하지 않는다. 대표 문서는 위 생성기(rhwp `generate.mjs`, WordCraft `basic.rs`)로 실행할 때 만들고, 음성
+사례는 그 문서를 시험 코드가 결정적으로 고쳐 만든다(임시 디렉터리 안에서만):
+
+- `tests/roundtrip/roundtrip.py`(rhwp WASM + `cargo run --example save_check`): HWPX `Contents/section0.xml`을 2/3에서 자름, 본문에 모르는
+  요소(`hp:unknownGeulTest`)·`header.xml` 루트에 모르는 속성·manifest에 없는 부분(`Custom/geul-test.bin`)을 넣음, 손실 보고의
+  `count`를 바꿈·컨트롤 생략 손실을 적음, 다른 형식의 출력.
+- `src-tauri/src/services/save/tests.rs`: 합성 HWP(레코드를 직접 쓴 CFB: 문서 속성·글꼴·본문·그림·미리보기 스트림, 압축·보호 플래그),
+  합성 OPC·HWPX 패키지, WordCraft 픽스처와 Word식 변형(`w14`·`w:rsid`·`customXml`)·끊긴 본문 XML.
+- 실제 앱 시험(`tests/integration/rhwp/rhwp_poc.py`, `tests/integration/wordcraft/wordcraft_poc.py`의 저장 시나리오): 픽스처 복사본에 실제
+  키로 편집해 저장하고, 위와 같은 HWPX·DOCX 변형과 외부 수정(파일 끝에 1바이트)을 쓴다.
+- 업스트림 예제(`external/rhwp/samples/`)로 잰 왕복 통계는 로컬 탐색(무시된 탐침 시험 `hwp_비교_탐침`·`패키지_비교_탐침`)이며
+  자동 시험의 입력이 아니다.
+
 ## 픽스처 추가 규칙
 
 - 각 파일 옆 `PROVENANCE.md`(또는 이 README의 표)에 작성자·생성 방법·도구 버전·라이선스를 적습니다.

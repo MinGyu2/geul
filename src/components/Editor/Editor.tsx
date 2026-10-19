@@ -19,6 +19,7 @@ import type { DocumentWorkspace, EngineEditor } from "./documentWorkspace";
 import { RhwpEditorSession } from "./rhwp/RhwpEditorSession";
 import { ImeContext } from "./rhwp/imeInput";
 import { RhwpSurface } from "./rhwp/RhwpSurface";
+import { SaveControls } from "./SaveControls";
 import type { DocxEditorSession } from "./wordcraft/DocxEditorSession";
 import { DocxSurface } from "./wordcraft/DocxSurface";
 
@@ -50,7 +51,7 @@ export function documentErrorMessage(error: DocumentError): Message {
 /**
  * 중앙 편집 영역. 열린 문서가 없으면 안내와 빈 페이지 자리표시자를 보여 준다.
  * HWP/HWPX 세션은 rhwp WASM 편집 표면(T007 R-A), DOCX 세션은 백엔드 WordCraft 엔진의 편집 표면(T008 W-A)을 붙인다.
- * 문서 열기는 경로 입력(PoC, 열기 대화상자는 T009)이며 저장은 없다.
+ * 문서 열기는 경로 입력(PoC)이다. 저장(T009)은 보존 검사를 통과한 문서만 원본 형식으로 한다(SaveControls).
  */
 export function Editor({ zoom, workspace = null, notify }: EditorProps) {
   const { t } = useTranslation();
@@ -396,6 +397,7 @@ function RhwpPanel({ editor, info, zoom, imeContext, onReload }: {
           <>
             <span>{revisionText}</span>
             {latencyText && <span>{latencyText}</span>}
+            <SaveControls editor={editor} prefix="rhwp" />
             <button
               type="button"
               className="document-bar__button"
@@ -511,6 +513,7 @@ function DocxPanel({ editor, info, zoom, imeContext, onReload }: {
             <span>{revisionText}</span>
             {latencyText && <span>{latencyText}</span>}
             {editor.rejectedOps > 0 && <span>{t("editor.docx.rejected", { count: editor.rejectedOps })}</span>}
+            <SaveControls editor={editor} prefix="docx" />
             <button type="button" className="document-bar__button" data-testid="docx-roundtrip" onClick={() => void editor.roundTrip()}>
               {t("editor.docx.roundTrip")}
             </button>

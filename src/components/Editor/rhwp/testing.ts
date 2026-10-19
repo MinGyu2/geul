@@ -100,6 +100,7 @@ export function controlledBackend() {
   const backend = {
     open: queue("open"), close: queue("close"), session: queue("session"), sessions: queue("sessions"),
     load: queue("load"), setState: queue("setState"), commit: queue("commit"),
+    original: queue("original"), preflight: queue("preflight"), save: queue("save"),
   } as unknown as DocumentBackend;
   const take = (method: string) => {
     const at = calls.findIndex((call) => call.method === method);

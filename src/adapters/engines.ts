@@ -1,8 +1,10 @@
 // 엔진 어댑터 경계(T006). 엔진마다 문서 모델·렌더링·편집 이력을 따로 가진다(FR-004). 공통 문서 모델은 두지 않는다.
 //
 // 작업 구분:
-// - 이 경계는 리본 등 화면 명령(T010 명령 레지스트리)과 저장(T009)을 엔진에 보내는 자리다. engine·formats,
+// - 이 경계는 리본 등 화면 명령(T010 명령 레지스트리)을 엔진에 보내는 자리다. engine·formats,
 //   capability(모든 문서 명령을 "엔진 연결 전"으로 사용할 수 없다고 보고), execute·save(EngineUnavailable, 가짜 성공 없음).
+// - 원본 형식 저장(T009)은 이 경계를 거치지 않는다: 편집 세션(RhwpEditorSession·DocxEditorSession의 checkSave·save)이 엔진 출력을
+//   만들고 백엔드 저장 서비스(src-tauri/src/services/save/)가 검사·교체한다. 이 save는 T010에서 명령으로 묶을 때까지 쓰지 않는다.
 // - 엔진에 문서를 불러오기와 본문 입력(문자·삭제·문단 나누기·커서·선택·IME)은 편집 표면이 맡는다(T007 rhwp:
 //   src/components/Editor/rhwp/, 세션 수명주기는 DocumentSessions·백엔드). 그래서 T006의 load는 이 경계에서 뺐다.
 //   편집 표면도 변경을 백엔드에 revision으로 확정하므로 revision 권한은 하나다.

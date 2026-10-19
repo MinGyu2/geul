@@ -22,7 +22,9 @@ use tauri::State;
 
 use super::error::{DocumentError, LimitKind};
 use super::open::{identify, read_identified, IdentifiedFile, Limits, LoadSource};
-use super::session::{CloseOutcome, SessionId, SessionInfo, SessionRegistry, SessionState};
+use super::session::{
+    content_hash, CloseOutcome, SessionId, SessionInfo, SessionRegistry, SessionState,
+};
 use super::Engine;
 use crate::adapters::wordcraft::WordcraftModels;
 
@@ -55,6 +57,10 @@ impl DocumentState {
 
     pub(crate) fn wordcraft(&self) -> &WordcraftModels {
         &self.wordcraft
+    }
+
+    pub(crate) fn limits(&self) -> Limits {
+        self.limits
     }
 
     /// 프런트엔드가 모델을 가진 엔진(rhwp)의 세션인지. 아니면 `InvalidRequest`(T008, 모듈 설명).
@@ -137,6 +143,9 @@ impl DocumentState {
                 state: info.state,
             });
         }
+        // 저장(T009)은 디스크의 파일이 엔진에 넘긴 이 바이트와 같을 때만 원본을 바꾼다.
+        self.registry
+            .record_content(session_id, generation, content_hash(&bytes))?;
         guard.disarm();
         Ok((generation, bytes))
     }

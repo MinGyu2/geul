@@ -12,7 +12,11 @@
 //! - 다시 불러오기(`docx_load`의 `reload_generation`)는 사용자가 편집을 버리기로 한 뒤에만 프런트엔드가 보낸다. 그 시도의
 //!   `ready` 세션을 백엔드가 `failed`로 돌리고 모델을 놓은 뒤 처음부터 불러온다(`failed → loading`).
 //! - 응답과 오류에는 경로·엔진 메시지를 담지 않는다. 보기(`DocxView`)의 문단 글자는 편집 표면이 이미 그리는 문서 내용이다.
-//! - 파일 쓰기 명령은 없다. 저장 왕복 확인은 메모리 안 내보내기·다시 읽기(`docx_roundtrip`)뿐이다(저장은 T009).
+//! - 저장(T009): `docx_preflight`는 원본을 다시 읽어(같은 파일·지문·해시) 새 WordCraft 모델로 편집 없이 왕복한 출력과
+//!   부분마다 비교해 보존 판정을 기록한다. `docx_save`는 모델 잠금 안에서(기록의 revision이 요청한 판일 때) 내보내고
+//!   다시 읽은 모델이 편집 모델과 같은지 본 뒤, 저장 서비스(`crate::services::save::service::save`)가 검사·교체한다.
+//!   내보내기 중 엔진 패닉은 `SaveFailure{export}`로만 알리고 모델은 놓지 않는다(편집을 버리지 않음, 내보내기는 모델을
+//!   바꾸지 않는다). 경로 인자는 없고 원본 형식(DOCX)으로만 쓴다.
 
 use std::panic::{catch_unwind, AssertUnwindSafe};
 
@@ -23,7 +27,12 @@ use tauri::State;
 use super::engine::{validate, DocxModel, DocxOp, DocxView, RoundTrip};
 use crate::document::commands::{DocumentState, LoadingGuard};
 use crate::document::{
-    DocumentError, Engine, EngineStage, SessionId, SessionInfo, SessionRegistry, SessionState,
+    DocumentError, Engine, EngineStage, Format, SaveStage, SessionId, SessionInfo, SessionRegistry,
+    SessionState,
+};
+use crate::services::save::preserve::{Finding, FindingCode, Preservation};
+use crate::services::save::service::{
+    self, read_original, SaveCheck, SaveOutcome, PLATFORM_SUPPORTED,
 };
 
 /// 불러오기·보기 응답.
@@ -406,4 +415,110 @@ pub async fn docx_roundtrip(
     revision: u64,
 ) -> Result<DocxRoundTrip, DocumentError> {
     round_trip(&state, session_id, load_generation, revision).await
+}
+
+/// 저장 사전 검사(T009, 모듈 설명).
+pub(crate) async fn preflight(
+    state: &DocumentState,
+    session_id: SessionId,
+    generation: u64,
+) -> Result<SaveCheck, DocumentError> {
+    wordcraft_session(state.registry(), session_id)?;
+    let source = state.registry().preflight_source(session_id, generation)?;
+    let limits = state.limits();
+    let (preservation, hash) = state
+        .run_blocking(move || {
+            let original = read_original(&source, &limits)?;
+            let unedited = catch_unwind(AssertUnwindSafe(|| {
+                DocxModel::open(&original)
+                    .ok()
+                    .and_then(|model| model.export())
+            }))
+            .ok()
+            .flatten();
+            let preservation = match unedited {
+                Some(bytes) => service::preflight(Format::Docx, &original, &bytes, None),
+                None => Preservation::from_findings(vec![Finding::at(
+                    FindingCode::OriginalMalformed,
+                    "container",
+                )]),
+            };
+            Ok((preservation, source.content_hash))
+        })
+        .await?;
+    state
+        .registry()
+        .record_preflight(session_id, generation, hash, preservation.clone())?;
+    Ok(SaveCheck {
+        preservation,
+        platform_supported: PLATFORM_SUPPORTED,
+    })
+}
+
+/// 원본 형식 저장(T009, 모듈 설명).
+pub(crate) async fn save(
+    state: &DocumentState,
+    session_id: SessionId,
+    generation: u64,
+    revision: u64,
+) -> Result<SaveOutcome, DocumentError> {
+    let info = wordcraft_session(state.registry(), session_id)?;
+    check_ready(&info, generation)?;
+    let model =
+        state
+            .wordcraft()
+            .get(session_id, generation)
+            .ok_or(DocumentError::InvalidState {
+                session_id,
+                state: info.state,
+            })?;
+    let registry = state.registry().clone();
+    let limits = state.limits();
+    state
+        .run_blocking(move || {
+            let ticket = registry.begin_save(session_id, generation, revision)?;
+            let (output, reopen_equal) = {
+                let model = model.lock().map_err(|_| DocumentError::Internal)?;
+                // 편집은 모델 잠금 안에서 확정한다: 잠금을 쥔 지금 기록이 그 판이면 모델도 그 판이다.
+                let info = registry.get(session_id)?;
+                check_ready(&info, generation)?;
+                check_revision(&info, revision)?;
+                let exported = catch_unwind(AssertUnwindSafe(|| {
+                    model.export().map(|bytes| {
+                        let same = model.same_as(&bytes);
+                        (bytes, same)
+                    })
+                }));
+                match exported {
+                    Ok(Some(result)) => result,
+                    _ => {
+                        return Err(DocumentError::SaveFailure {
+                            stage: SaveStage::Export,
+                            io: None,
+                        })
+                    }
+                }
+            };
+            service::save(&registry, &ticket, &limits, &output, None, reopen_equal)
+        })
+        .await
+}
+
+#[tauri::command]
+pub async fn docx_preflight(
+    state: State<'_, DocumentState>,
+    session_id: SessionId,
+    load_generation: u64,
+) -> Result<SaveCheck, DocumentError> {
+    preflight(&state, session_id, load_generation).await
+}
+
+#[tauri::command]
+pub async fn docx_save(
+    state: State<'_, DocumentState>,
+    session_id: SessionId,
+    load_generation: u64,
+    revision: u64,
+) -> Result<SaveOutcome, DocumentError> {
+    save(&state, session_id, load_generation, revision).await
 }

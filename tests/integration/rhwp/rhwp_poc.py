@@ -506,6 +506,113 @@ def scenario_reopen_exported(d, exported: dict) -> None:
               st["status"] == "ready" and text_ok and exported[fmt]["passed"], json.dumps(st, ensure_ascii=False))
 
 
+SAVE_RESULT = "[data-testid=rhwp-save-result]"
+
+
+def save_and_wait(d, timeout: float = 60) -> dict:
+    """저장 단추를 누르고 결과(saved·failed)가 나올 때까지 기다린다."""
+    press_button(d, "[data-testid=rhwp-save]")
+    smoke.wait_until(d, f"const e=document.querySelector('{SAVE_RESULT}'); return e && ['saved','failed'].includes(e.dataset.state)",
+                     timeout=timeout)
+    return d.js(f"return {{...document.querySelector('{SAVE_RESULT}').dataset}}")
+
+
+def type_ascii(d, text: str) -> dict:
+    """ASCII 글자를 실제 키로 치고, 확정(로컬 판 = 백엔드 판)까지 기다린다."""
+    before = int(status(d)["revision"])
+    actions = []
+    for ch in text:
+        actions += [{"type": "keyDown", "value": ch}, {"type": "keyUp", "value": ch}]
+    perform(d, [{"type": "key", "id": "kbd", "actions": actions}])
+    smoke.wait_until(d, f"const e=document.querySelector('{STATUS}'); return e && Number(e.dataset.revision) >= arguments[0]"
+                     " && e.dataset.revision === e.dataset.localRevision", before + len(text), timeout=20)
+    return status(d)
+
+
+def close_tab(d, name: str) -> bool:
+    """탭을 닫는다. 버리기 확인 창이 뜨면 False(취소하고 남김)."""
+    d.js("[...document.querySelectorAll('.document-tab__close')].find(b => b.getAttribute('aria-label').includes(arguments[0])).click()", name)
+    time.sleep(0.5)
+    if d.exists("[data-testid=discard-dialog]"):
+        press_button(d, "[data-testid=discard-cancel]")
+        return False
+    smoke.wait_until(d, "return ![...document.querySelectorAll('.document-tab__select')].some(t => t.textContent.includes(arguments[0]))",
+                     name, timeout=10)
+    return True
+
+
+def rezip(source: Path, target: Path, change) -> None:
+    """HWPX 항목 순서·압축 방식을 지키며 다시 쓴다(시험용 결정적 변형)."""
+    import zipfile
+    with zipfile.ZipFile(source) as zin, zipfile.ZipFile(target, "w") as zout:
+        for item in zin.infolist():
+            zout.writestr(item, change(item.filename, zin.read(item.filename)))
+
+
+def scenario_save(d, fixtures: Path, scratch: Path) -> None:
+    """T009: 실제 앱에서 원본 형식 저장 → 파일 → 다시 열기, 막힌 저장·외부 수정은 원본 그대로."""
+    import hashlib
+    import zipfile
+    digest = lambda path: hashlib.sha256(path.read_bytes()).hexdigest()
+    for fmt in ("hwp", "hwpx"):
+        path = scratch / f"save-{fmt}.{fmt}"
+        shutil.copy(fixtures / f"basic-ko.{fmt}", path)
+        original = digest(path)
+        open_document(d, path)
+        click_paragraph_start(d)
+        typed = type_ascii(d, "T9")
+        check(f"{fmt}: 편집 뒤 저장 전에는 파일이 그대로이고 저장하지 않은 편집으로 보임",
+              digest(path) == original and typed["dirty"] == "true" and typed["unpreserved"] == "true", json.dumps(typed, ensure_ascii=False)[:300])
+        result = save_and_wait(d)
+        after = status(d)
+        valid = path.read_bytes()[:8] == bytes([0xD0, 0xCF, 0x11, 0xE0, 0xA1, 0xB1, 0x1A, 0xE1]) if fmt == "hwp" else zipfile.is_zipfile(path)
+        if fmt == "hwpx":
+            with zipfile.ZipFile(path) as z:
+                first = z.infolist()[0]
+                valid = valid and first.filename == "mimetype" and first.compress_type == zipfile.ZIP_STORED and z.testzip() is None
+        check(f"{fmt}: 사전 검사(편집 없는 왕복 safe)를 거쳐 원본 형식으로 저장하고 dirty가 풀림(파일이 바뀌고 컨테이너가 올바름)",
+              result["state"] == "saved" and result["revision"] == after["revision"] and after["dirty"] == "false"
+              and after["unpreserved"] == "false" and digest(path) != original and valid,
+              json.dumps({"result": result, "status": {k: after.get(k) for k in ("revision", "dirty", "unpreserved")}}, ensure_ascii=False))
+        check(f"{fmt}: 저장한 문서는 버리기 확인 없이 닫힘", close_tab(d, path.name))
+        reopened = open_document(d, path)
+        click_paragraph_start(d)
+        text = status(d)["paragraphText"]
+        check(f"{fmt}: 저장한 파일을 앱에서 다시 열면 넣은 글자가 있고 편집 가능", reopened["status"] == "ready" and text.startswith("T9"),
+              json.dumps({"status": reopened.get("status"), "start": text[:12]}, ensure_ascii=False))
+        # 외부 수정: 연 뒤 다른 프로그램이 파일을 바꾸면 덮어쓰지 않는다.
+        type_ascii(d, "X")
+        changed = path.read_bytes() + b"\0"
+        path.write_bytes(changed)
+        result = save_and_wait(d)
+        check(f"{fmt}: 연 뒤 파일이 바뀌면(외부 수정) FileConflict로 저장하지 않고 바뀐 파일을 덮어쓰지 않음",
+              result["state"] == "failed" and result["error"] == "FileConflict" and path.read_bytes() == changed, json.dumps(result))
+        d.js("[...document.querySelectorAll('.document-tab__close')].find(b => b.getAttribute('aria-label').includes(arguments[0])).click()", path.name)
+        confirm_discard(d, "close")
+    # HWPX 음성 사례: rhwp가 열지만 왕복이 원본을 지키지 못하는 문서는 막고 원본 그대로.
+    cases = [
+        ("본문 XML이 잘림(rhwp는 거의 빈 문서로 엶)", "cut", lambda n, b: b[: len(b) * 2 // 3] if n == "Contents/section0.xml" else b,
+         "unknown", "originalMalformed:Contents/section0.xml"),
+        ("rhwp가 모르는 요소가 있음", "unknown-element",
+         lambda n, b: b.replace(b"</hs:sec>", b'<hp:unknownGeulTest xmlns:hp="http://www.hancom.co.kr/hwpml/2011/paragraph"/></hs:sec>')
+         if n == "Contents/section0.xml" else b, "unsafe", "partChanged:Contents/section0.xml"),
+    ]
+    for label, name, change, outcome, finding in cases:
+        path = scratch / f"save-{name}.hwpx"
+        rezip(fixtures / "basic-ko.hwpx", path, change)
+        before = path.read_bytes()
+        st = open_document(d, path)
+        # 편집 없이 저장해도 사전 검사가 막아야 한다(잘린 문서는 rhwp가 거의 빈 문서로 열어 칠 자리가 없을 수 있다).
+        result = save_and_wait(d)
+        check(f"hwpx: {label} → 저장하지 않고({outcome}) 이유를 보이며 원본 그대로",
+              st["status"] == "ready" and result["state"] == "failed" and result["error"] == "UnsafeSave" and result["outcome"] == outcome
+              and finding in result["findings"].split(",") and path.read_bytes() == before
+              and d.exists("[data-testid=save-findings]"), json.dumps(result, ensure_ascii=False))
+        close_tab(d, path.name)
+    leftovers = [p.name for p in scratch.iterdir() if p.name.startswith(".geul-save-")]
+    check("저장 시도 뒤 임시 파일(.geul-save-*.tmp)이 남지 않음", leftovers == [], json.dumps(leftovers))
+
+
 # ---- 실제 한국어 IME 게이트 ----
 
 # (이름, 필수 여부). 필수 항목이 모두 PASS여야 IME 게이트 통과다.
@@ -900,6 +1007,7 @@ def main() -> int:
                                     d.screenshot(args.screenshots / f"{fmt}-edited.png")
                             scenario_sessions(d, fixtures, scratch)
                             scenario_reopen_exported(d, exported)
+                            scenario_save(d, fixtures, scratch)
                     finally:
                         try:
                             d.quit()

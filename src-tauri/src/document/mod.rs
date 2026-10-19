@@ -15,8 +15,8 @@ mod ole;
 mod open;
 mod package;
 mod session;
-mod xml;
-mod zip;
+pub(crate) mod xml;
+pub(crate) mod zip;
 
 #[cfg(test)]
 mod tests;
@@ -27,11 +27,16 @@ use serde::Serialize;
 
 pub use detect::detect;
 pub use error::{
-    DocumentError, EngineStage, LimitKind, ParseProblem, PathProblem, ReadProblem, UnsupportedKind,
+    DocumentError, EngineStage, IoProblem, LimitKind, ParseProblem, PathProblem, ReadProblem,
+    SaveStage, SaveUnsupportedReason, UnsupportedKind,
 };
-pub use open::{identify, read_identified, IdentifiedFile, Limits, LoadSource};
+pub(crate) use open::{describe_staged, unchanged};
+pub use open::{
+    identify, read_identified, FileFingerprint, FileIdentity, IdentifiedFile, Limits, LoadSource,
+};
 pub use session::{
-    CloseOutcome, SessionId, SessionInfo, SessionRegistry, SessionState, MAX_COMMIT_COUNT,
+    content_hash, CloseOutcome, SaveSource, SaveTicket, SessionId, SessionInfo, SessionRegistry,
+    SessionState, MAX_COMMIT_COUNT,
 };
 
 /// 이 앱이 다루는 문서 형식. 확장자가 아니라 내용 검사로 확정한다.

@@ -22,8 +22,11 @@
 //   · 앱이 먼저 확정한 보이는 조합(클릭·초점 잃음·표면 사라짐)은 그 자리에서 InsertText를 보내고, 바로 뒤 클릭은 넣기 전
 //     화면의 좌표로 자리를 찾는다(Pointer.beforeInsert). 입력기의 최종 글자가 다르면 ReplaceInserted로 고친다.
 //   · 클릭 직전 커서 자리는 백엔드에 Mark로 기억시키고(markCaret), 늦게 온 확정은 InsertAt으로 그 자리에 넣는다.
-// - 저장이 없으므로(T009) 확정한 편집(백엔드 dirty)·보내는 중·조합 중인 입력은 닫기·다시 불러오기 전에 사용자가 버리기를
+// - 저장하지 않은 확정 편집(백엔드 dirty)·보내는 중·조합 중인 입력은 닫기·다시 불러오기 전에 저장하거나 사용자가 버리기를
 //   명시해야 한다(`hasUnpreservedChanges`, `load({ discard })`).
+// - 저장(T009): 백엔드가 확정한 판(this.revision)만 저장한다. 보내는 중인 연산·조합이 있으면 시작하지 않는다. 이 원본의 보존
+//   사전 검사(docx_preflight)가 없으면 먼저 하고, safe가 아니면 저장하지 않는다. 교체·검사는 백엔드가 하고, 응답의 세션 정보
+//   (dirty)를 반영한다. 저장 중에도 편집은 이어 가며, 그 편집은 저장한 판 뒤의 것이라 dirty로 남는다.
 // - 글자 넣기·붙여넣기는 textOps.ts가 허용한 연산으로 바꾼다(여러 줄은 문단 나누기, 긴 글자는 4096자 조각). 넣을 수 없는
 //   글자·한도 초과·엔진이 일부 조각을 거부한 붙여넣기는 넣은 척하지 않고 inputNotice로 알린다(편집은 이어 감).
 // - 쪽 그림은 백엔드가 그린 PNG를 (시도 번호, revision, 배율)로 받아 쪽마다 화면 밖 canvas(래스터)에 둔다. 같은 배율의 앞 판을
@@ -56,10 +59,11 @@
 //   releaseRendering()으로 모두 놓는다(T007 rhwp와 같음). 백엔드 래스터 기억은 세션마다 4개(engine.rs MAX_RASTERS).
 import type { DocxBackend, DocxOp, DocxRender, DocxRoundTrip, DocxView, MoveTarget } from "../../../adapters/docx";
 import { MAX_DOCX_OPS } from "../../../adapters/docx";
-import type { DocumentError, Result, SessionInfo } from "../../../adapters/contract";
+import type { DocumentError, Result, SaveCheck, SaveOutcome, SessionInfo } from "../../../adapters/contract";
 import type { DocumentSessions } from "../../../adapters/sessions";
 import type { ImeSession } from "../rhwp/imeInput";
 import { textOps } from "./textOps";
+import { blockedBy, type SaveCheckRecord, type SaveState } from "../saveState";
 
 export type DocxStatus =
   | { kind: "idle" }
@@ -159,6 +163,11 @@ export class DocxEditorSession implements ImeSession {
   renderLimit: number | null = null;
   /** 넣지 못한 입력의 알림(다음 입력까지). */
   inputNotice: DocxInputNotice | null = null;
+  /** 마지막 저장 시도의 결과(T009, 화면 표시). */
+  saveState: SaveState = { kind: "idle" };
+  /** 이 원본에 대한 보존 사전 검사(T009). 다시 불러오거나 저장하면(원본이 바뀜) 버린다. */
+  saveCheck: SaveCheckRecord | null = null;
+  private saving = false;
 
   private generation = 0;
   private queue: DocxOp[] = [];
@@ -333,6 +342,8 @@ export class DocxEditorSession implements ImeSession {
     this.lastRoundTrip = null;
     this.rejectedOps = 0;
     this.firstPaintMs = null;
+    this.saveCheck = null;
+    this.saveState = { kind: "idle" };
     this.releaseRendering();
     return this.epoch;
   }
@@ -869,6 +880,70 @@ export class DocxEditorSession implements ImeSession {
     this.failures.clear();
     this.paintFailures.clear();
     this.wanted = new Set();
+  }
+
+  // ---- 저장(T009) ----
+
+  private setSave(state: SaveState) {
+    this.saveState = state;
+    this.emit();
+  }
+
+  private saveBlocker(): DocumentError | null {
+    if (this.status.kind !== "ready" || this.closing) return { code: "SaveNotReady", reason: "state" };
+    if (this.composition || this.provisional) return { code: "SaveNotReady", reason: "composing" };
+    if (this.busy) return { code: "SaveNotReady", reason: "pending" };
+    return null;
+  }
+
+  /** 보존 사전 검사(백엔드가 원본을 다시 읽어 편집 없는 WordCraft 왕복과 비교). 결과는 이 시도에 대해 기억한다. */
+  async checkSave(): Promise<Result<SaveCheck>> {
+    if (this.status.kind !== "ready") return { ok: false, error: { code: "SaveNotReady", reason: "state" } };
+    const { epoch, generation } = this;
+    const checked = await this.backend.preflight(this.sessionId, generation);
+    if (epoch !== this.epoch) return { ok: false, error: closedError(this.sessionId) };
+    if (checked.ok) {
+      this.saveCheck = { generation, check: checked.value };
+      this.emit();
+    }
+    return checked;
+  }
+
+  /** 원본 형식으로 저장한다(모듈 설명). */
+  async save(): Promise<Result<SaveOutcome>> {
+    const epoch = this.epoch;
+    const fail = (error: DocumentError): Result<SaveOutcome> => {
+      if (epoch === this.epoch) this.setSave({ kind: "failed", error });
+      return { ok: false, error };
+    };
+    if (this.saving) return { ok: false, error: { code: "SaveInProgress", sessionId: this.sessionId } };
+    const blocker = this.saveBlocker();
+    if (blocker) return fail(blocker);
+    this.saving = true;
+    try {
+      const generation = this.generation;
+      if (this.saveCheck?.generation !== generation) {
+        this.setSave({ kind: "checking" });
+        const checked = await this.checkSave();
+        if (!checked.ok) return fail(checked.error);
+      }
+      const blocked = blockedBy(this.saveCheck!.check);
+      if (blocked) return fail(blocked);
+      const later = this.saveBlocker();
+      if (later) return fail(later);
+      const revision = this.revision;
+      this.setSave({ kind: "saving" });
+      const result = await this.backend.save(this.sessionId, generation, revision);
+      if (epoch !== this.epoch) return result;
+      if (!result.ok) return fail(result.error);
+      this.sessions.applyUpdate(result.value.session);
+      this.saveCheck = null; // 원본이 바뀌었다: 다음 저장은 새 원본으로 다시 검사한다
+      const changedSince = this.revision !== revision || this.busy || this.composition !== null;
+      this.setSave({ kind: "saved", revision, durable: result.value.durable, changedSince });
+      return result;
+    } finally {
+      this.saving = false;
+    }
   }
 
   // ---- 검사 ----

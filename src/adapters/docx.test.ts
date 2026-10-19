@@ -73,7 +73,7 @@ describe("DOCX 응답 검사", () => {
 
   it("명령 이름·인자", async () => {
     const calls: [string, unknown][] = [];
-    const invoke = (command: string, args?: Record<string, unknown>) => {
+    const invoke = (command: string, args?: Record<string, unknown> | Uint8Array) => {
       calls.push([command, args]);
       if (command === "docx_render") return Promise.resolve(new Uint8Array([7, 0, 0, 0, 0, 0, 0, 0, ...Array(8).fill(0xff), 0, 0, 0, 0, 1, 0, 0, 0, 1]).buffer);
       return Promise.resolve({ session, view, applied: 1, rejected: [] });

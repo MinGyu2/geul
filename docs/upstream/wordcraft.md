@@ -86,3 +86,10 @@ Cargo 워크스페이스, `edition = "2024"`, `rust-version = "1.90"`, 모든 �
 1. `src-tauri`에서 `wordcraft-engine`을 path 의존성으로 빌드 (L3)
 2. 직접 만든 DOCX 열기 → `render_page` → PNG, `hit`/`caret` 좌표 확인 (L4)
 3. `Session::run("format.bold", ..)`, Undo, 저장 후 재열기 비교 (L4)
+
+## T009 확인(2026-10-19, 고정 커밋 `fc41918`)
+
+- `io::save_bytes`(DOCX)는 모델에서 패키지를 새로 만든다. 판독기는 모르는 표시를 건너뛰고(`crates/docx/src/lib.rs`), 다시 내보내는
+  XML은 모르는 이름공간의 요소·속성을 버린다(`crates/docx/src/xml.rs`). WordCraft가 쓴 문서는 편집 없는 왕복에서 부분마다 같았고,
+  Word식 패키지(`customXml`·`w14`·`w:rsid`)는 그 부분·속성을 잃었다. `docProps/app.xml`에는 `Words`·`Paragraphs` 통계를 쓴다.
+  앱의 저장 판정은 [save-preservation.md](../architecture/save-preservation.md).

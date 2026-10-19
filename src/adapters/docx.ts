@@ -6,7 +6,16 @@
 // - 수명주기·revision은 백엔드가 정한다. 응답의 세션 정보는 DocumentSessions.applyUpdate로 반영한다.
 // - 응답은 신뢰 경계를 넘어온 값이므로 모양을 검사하고, 맞지 않으면 Protocol 오류로 다룬다(backend.ts와 같음).
 import { call, type Invoke } from "./backend";
-import { parseSessionInfo, type Result, type SessionId, type SessionInfo } from "./contract";
+import {
+  parseSaveCheck,
+  parseSaveOutcome,
+  parseSessionInfo,
+  type Result,
+  type SaveCheck,
+  type SaveOutcome,
+  type SessionId,
+  type SessionInfo,
+} from "./contract";
 
 export interface DocxPage {
   width: number;
@@ -121,6 +130,10 @@ export interface DocxBackend {
   /** 쪽 그림. scale은 pt당 픽셀, base는 이미 가진 같은 배율 그림의 판(있으면 바뀐 띠만 받는다). */
   render(sessionId: SessionId, generation: number, revision: number, page: number, scale: number, base?: number): Promise<Result<DocxRender>>;
   roundTrip(sessionId: SessionId, generation: number, revision: number): Promise<Result<DocxRoundTrip>>;
+  /** 저장 사전 검사(T009): 백엔드가 원본을 다시 읽어 편집 없는 WordCraft 왕복과 비교하고 결과를 기억한다. */
+  preflight(sessionId: SessionId, generation: number): Promise<Result<SaveCheck>>;
+  /** 원본 형식 저장(T009): 그 판의 모델을 내보내 검사한 뒤 원본을 바꾼다. */
+  save(sessionId: SessionId, generation: number, revision: number): Promise<Result<SaveOutcome>>;
 }
 
 // ---- 응답 검사 ----
@@ -252,5 +265,11 @@ export function createDocxBackend(invoke: Invoke): DocxBackend {
       }),
     roundTrip: (sessionId, loadGeneration, revision) =>
       call(invoke, "docx_roundtrip", { sessionId, loadGeneration, revision }, (value) => parseDocxRoundTrip(value, sessionId, revision)),
+    preflight: (sessionId, loadGeneration) => call(invoke, "docx_preflight", { sessionId, loadGeneration }, parseSaveCheck),
+    save: (sessionId, loadGeneration, revision) =>
+      call(invoke, "docx_save", { sessionId, loadGeneration, revision }, (value) => {
+        const outcome = parseSaveOutcome(value);
+        return outcome?.session.sessionId === sessionId && outcome.session.revision >= revision ? outcome : null;
+      }),
   };
 }

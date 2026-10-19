@@ -742,6 +742,16 @@ impl DocxModel {
         Some(out)
     }
 
+    /// 지금 모델을 DOCX 바이트로 내보낸다(메모리 안, T009 저장의 출력). 실패하면 `None`(엔진 메시지는 버린다).
+    pub fn export(&self) -> Option<Vec<u8>> {
+        io::save_bytes(DOCX_NAME, &self.session.doc).ok()
+    }
+
+    /// 다른 바이트(저장 출력)를 다시 읽은 문서 모델이 지금 모델과 같은지(T009 저장 검증). 읽지 못하면 false.
+    pub fn same_as(&self, bytes: &[u8]) -> bool {
+        io::open_bytes(DOCX_NAME, bytes).is_ok_and(|doc| doc == self.session.doc)
+    }
+
     /// 지금 모델을 DOCX로 내보내 다시 읽고 비교한다(메모리 안, 디스크에 쓰지 않음). 내보내기·다시 읽기가 실패하면 `None`.
     pub fn round_trip(&mut self) -> Option<RoundTrip> {
         let bytes = io::save_bytes(DOCX_NAME, &self.session.doc).ok()?;

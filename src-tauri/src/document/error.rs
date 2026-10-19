@@ -8,6 +8,7 @@ use serde::Serialize;
 
 use super::session::{SessionId, SessionState};
 use super::{Engine, Format};
+use crate::services::save::preserve::Preservation;
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize)]
 #[serde(tag = "code", rename_all_fields = "camelCase")]
@@ -59,6 +60,21 @@ pub enum DocumentError {
     /// 백엔드가 모델을 가진 엔진(T008 WordCraft)이 그 단계에서 실패함. 엔진 메시지는 담지 않는다(문서 내용이 섞일 수
     /// 있음). 형식 판별을 통과한 문서도 엔진이 열지 못할 수 있다.
     EngineFailure { engine: Engine, stage: EngineStage },
+    /// 저장하면 원본의 내용이 바뀌거나 사라질 수 있거나(`unsafe`), 판단할 근거가 없다(`unknown`). 저장하지 않았고
+    /// 원본은 그대로다(T009). 근거는 코드와 패키지 안 부분 이름뿐이다.
+    UnsafeSave { preservation: Preservation },
+    /// 이 환경·파일에서는 원본을 안전하게 바꿀 수 없어 저장하지 않는다(원본 그대로).
+    SaveUnsupported { reason: SaveUnsupportedReason },
+    /// 저장 단계가 실패함. 원본은 그대로다(임시 파일은 지운다).
+    SaveFailure {
+        stage: SaveStage,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        io: Option<IoProblem>,
+    },
+    /// 불러온 뒤 디스크의 파일이 바뀌거나 교체됨(외부 수정). 저장하지 않았다(덮어쓰지 않음).
+    FileConflict,
+    /// 같은 세션의 저장이 이미 진행 중이다.
+    SaveInProgress { session_id: SessionId },
     /// 계약에 맞지 않는 요청 값(허용하지 않는 상태 전이, 범위 밖 개수 등).
     InvalidRequest,
     /// 내부 오류(세부 내용은 내보내지 않는다).
@@ -115,6 +131,42 @@ pub enum ParseProblem {
     CorruptContainer,
     MissingPart,
     InvalidPart,
+}
+
+/// 저장을 지원하지 않는 이유(T009).
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum SaveUnsupportedReason {
+    /// 원자적 교체를 검증한 플랫폼이 아니다(지금은 Linux만).
+    Platform,
+    /// 파일에 하드 링크가 여럿이다(교체하면 다른 이름은 옛 내용을 가리킨다).
+    HardLink,
+    /// 파일 소유자·그룹이 이 프로세스와 달라 교체하면 소유가 바뀐다.
+    Ownership,
+}
+
+/// 저장 단계.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum SaveStage {
+    /// 엔진 내보내기.
+    Export,
+    /// 출력 검증(형식·패키지·다시 열기).
+    Validate,
+    /// 임시 파일 쓰기·되읽기 확인.
+    Write,
+    /// 원본 교체.
+    Publish,
+}
+
+/// 저장 중 입출력 문제의 종류(운영체제 문구는 담지 않는다).
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum IoProblem {
+    PermissionDenied,
+    StorageFull,
+    ReadOnly,
+    Other,
 }
 
 /// 엔진 작업 단계(프런트엔드 `EngineStage`의 부분 집합).

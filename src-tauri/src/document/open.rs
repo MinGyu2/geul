@@ -64,7 +64,7 @@ impl FileIdentity {
 }
 
 impl FileIdentity {
-    fn path(&self) -> &Path {
+    pub(crate) fn path(&self) -> &Path {
         &self.path
     }
 
@@ -225,6 +225,28 @@ pub fn identify(path: &str, limits: &Limits) -> Result<IdentifiedFile, DocumentE
 }
 
 /// 세션의 파일을 다시 열어, 판별한 파일·내용과 같을 때만 전체 바이트를 돌려준다.
+/// 저장(T009): 교체할 임시 파일(`staged`)을 원본 이름(`target`, 정규화 경로)으로 게시한 뒤의 식별·지문. `rename`은
+/// inode·크기·수정 시각을 바꾸지 않으므로 교체 전에 구해 둔다(교체 뒤에 실패할 단계를 남기지 않음).
+pub(crate) fn describe_staged(
+    target: &Path,
+    staged: &Path,
+) -> Result<(FileIdentity, FileFingerprint), DocumentError> {
+    let metadata = std::fs::metadata(staged).map_err(|error| unreadable(&error))?;
+    Ok((
+        identity(target.to_path_buf(), &metadata),
+        fingerprint(&metadata),
+    ))
+}
+
+/// 저장(T009): 기록한 파일이 지금도 같은 객체(장치·inode)·같은 지문(크기·수정 시각)의 일반 파일인지. 내용은 보지 않는다.
+pub(crate) fn unchanged(recorded: &FileIdentity, expected: &FileFingerprint) -> bool {
+    std::fs::metadata(recorded.path()).is_ok_and(|metadata| {
+        metadata.is_file()
+            && identity(recorded.path().to_path_buf(), &metadata).same_object(recorded)
+            && fingerprint(&metadata) == *expected
+    })
+}
+
 pub fn read_identified(source: &LoadSource, limits: &Limits) -> Result<Vec<u8>, DocumentError> {
     let path = source.identity.path();
     let mut file = open_read_only(path).map_err(|error| unreadable(&error))?;

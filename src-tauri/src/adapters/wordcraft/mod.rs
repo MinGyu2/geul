@@ -12,6 +12,6 @@ pub mod engine;
 mod store;
 
 #[cfg(test)]
-mod tests;
+pub(crate) mod tests;
 
 pub use store::WordcraftModels;

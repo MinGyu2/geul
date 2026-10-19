@@ -14,6 +14,11 @@ fn main() {
         "docx_edit",
         "docx_render",
         "docx_roundtrip",
+        "docx_preflight",
+        "docx_save",
+        "document_original",
+        "document_preflight",
+        "document_save",
     ]);
     tauri_build::try_build(tauri_build::Attributes::new().app_manifest(manifest))
         .expect("Tauri 빌드 설정을 만들지 못했습니다");

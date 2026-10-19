@@ -2,7 +2,7 @@
 
 Date: 2026-10-13
 Spec: [spec.md](./spec.md)
-Status: Revised draft — 2026-10-16 실제 저장소 검사, submodule 고정, 보안 게이트 로컬 구현·2차 재검토 완료(원격 브랜치 보호는 미설정), Tauri/React 6영역 UI 기반(T004) 구현. 2026-10-17 T006: 문서 형식 판별·세션 기록·어댑터 계약 구현(엔진 연결 없음), 같은 날 리뷰 지적 5건 안정화(판별 규칙·동시 판별 자리)와 3건 2차 안정화(ZIP 무결성·mimetype 분류 순서), 3차 안정화(로컬 헤더 압축 방식 일치, 19바이트 mimetype 정책 명시). T007: rhwp R-A 편집 PoC 부분 통과(IME 조합 표시 미검증, 저장 없음), 2026-10-18 5·6차 안정화(실제 IME 게이트 FAIL 유지), IME 원인 규명(필수 7개 PASS)·7차·8차(입력 버퍼·DPR 2·여러 문서 지연)·9차(렌더 배율·바꾸기 입력·화면 변화, 체크 안 함). 2026-10-19 T008: WordCraft W-A(백엔드 네이티브 엔진) 편집 PoC 구현, 이 환경(X11·weston)에서 렌더·hit test·키보드·지연·실제 IME 필수 7개 통과(T007과 같은 플랫폼 범위 때문에 체크 안 함). 열기 대화상자·저장은 미착수
+Status: Revised draft — 2026-10-16 실제 저장소 검사, submodule 고정, 보안 게이트 로컬 구현·2차 재검토 완료(원격 브랜치 보호는 미설정), Tauri/React 6영역 UI 기반(T004) 구현. 2026-10-17 T006: 문서 형식 판별·세션 기록·어댑터 계약 구현(엔진 연결 없음), 같은 날 리뷰 지적 5건 안정화(판별 규칙·동시 판별 자리)와 3건 2차 안정화(ZIP 무결성·mimetype 분류 순서), 3차 안정화(로컬 헤더 압축 방식 일치, 19바이트 mimetype 정책 명시). T007: rhwp R-A 편집 PoC 부분 통과(IME 조합 표시 미검증, 저장 없음), 2026-10-18 5·6차 안정화(실제 IME 게이트 FAIL 유지), IME 원인 규명(필수 7개 PASS)·7차·8차(입력 버퍼·DPR 2·여러 문서 지연)·9차(렌더 배율·바꾸기 입력·화면 변화, 체크 안 함). 2026-10-19 T008: WordCraft W-A(백엔드 네이티브 엔진) 편집 PoC 구현, 이 환경(X11·weston)에서 렌더·hit test·키보드·지연·실제 IME 필수 7개 통과(T007과 같은 플랫폼 범위 때문에 체크 안 함). 열기 대화상자는 미착수. 2026-10-19 T009: 원본 형식 저장·보존 사전 검사 구현(Linux에서 검증, 보존 근거가 없으면 차단, 체크 안 함)
 
 ## Summary
 WordCraft는 DOCX, rhwp는 HWP/HWPX 전용 엔진으로 독립 관리한다. Tauri 2 + React/TypeScript 6개 영역 UI에 문서별 어댑터, 공통 명령/상태 계층을 결합한다. 고급 리본보다 렌더·IME·선택·쓰기 무손실 검증과 공개 저장소 보안 게이트를 우선한다.
@@ -214,6 +214,23 @@ interface EditorAdapter {
   IPC·권한·revision 계약 그대로). `InsertAt`·`ReplaceInserted`는 WordCraft 편집 스냅숏으로 원자적이다. 그림 실패는 숨기지 않고(3번 재시도 뒤
   표시·편집 멈춤), 화면 밖 래스터는 128 MiB 예산, 닫기는 백엔드 dirty도 확인한다. T007/T008 체크 정책은 그대로다.
 
+### T009에서 구현한 계약 (2026-10-19, 원본 형식 저장·보존 검사)
+- 결과·근거·한계: [save-preservation.md](../architecture/save-preservation.md). 원본 형식으로만 쓰고 경로를 받지 않는다(세션에 기록한
+  원본 파일 하나). 변환·다른 이름 저장·자동 저장 없음(FR-015).
+- **T009/T014 경계(모호함 정리)**: T009는 안전하다는 근거가 있을 때만 같은 디렉터리 임시 파일 → 검증 → 원자적 교체로 저장하고,
+  그 밖은 거부해 원본을 그대로 둔다. 원본을 직접 덮어쓰지 않는다. 교체 방식을 검증하지 않은 플랫폼(지금은 Linux 밖)은 저장하지
+  않는다. 남은 임시 파일 복구·정전 내구성 시험·Windows/macOS 교체·확장 속성 보존·복구 사본 관리는 T014다. Data Flow 5의 "제한된
+  저장(별도 사본)"은 T009에서 하지 않는다(검증할 수 없는 문서는 저장 차단).
+- 보존 판정 `safe | unsafe | unknown`(모르면 unsafe와 같이 차단)과 근거 코드 13개. 사전 검사는 원본과 편집 없는 엔진 왕복을 비교한다
+  (HWP 레코드, HWPX·DOCX 정규화 XML·바이트). 엔진 손실 보고(rhwp)는 엄격히 검사하지만 빈 보고서·열기 성공·글자 같음은 근거가 아니다.
+- 저장 검사: 손실 보고, 출력 형식 판별, 패키지 무결성(DOCX 내용 형식·관계 대상, HWPX `mimetype`·manifest), 편집이 바꾸는 부분
+  (HWP 본문·DocInfo 캐럿, HWPX section, DOCX 본문·app.xml 통계) 밖이 원본과 같음, 다시 열기 비교(rhwp는 프런트엔드, DOCX는 백엔드 모델).
+- `SessionRegistry`가 저장도 맡는다: 불러온 바이트 해시 기록, 사전 검사 결과를 원본 해시와 함께 기억, `begin_save`(ready·같은 시도·같은
+  판·저장 중 아님), 교체는 기록 잠금 안에서 세션·시도·지문을 다시 확인한 뒤, 성공하면 깨끗한 판 = 저장한 판(그 사이 편집은 dirty).
+- IPC 5개 추가: `document_original`·`document_preflight`·`document_save`(rhwp, 원시 프레임 `GSV1`), `docx_preflight`·`docx_save`.
+  새 백엔드 오류 `UnsafeSave`·`SaveUnsupported`·`SaveFailure`·`FileConflict`·`SaveInProgress`, 프런트엔드 `SaveNotReady`.
+- T009는 선행 T007·T008이 플랫폼 기준으로 미체크이고 교체를 Linux에서만 검증했으므로 체크하지 않는다.
+
 ## Algorithms and Pseudocode
 ```
 open(path):
@@ -227,7 +244,7 @@ execute(command, session):
   if response.revision >= session.revision and active_session_matches(): update_ui()
     # T006 정정: 응답은 response.sessionId 세션에만 반영한다. active_session_matches()로 거르면 비활성 문서의
     # 응답을 잃으므로 쓰지 않는다. 활성 여부는 화면 표시만 정한다(src/adapters/sessions.ts)
-save(session):
+save(session):   # T009 구현: src-tauri/src/services/save/service.rs
   if unsafe_or_unsupported: block_with_reason()
   write_to_temp(); validate_readback_and_required_structure()
   if original_changed_on_disk(): fail_as_conflict()

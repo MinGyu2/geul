@@ -55,9 +55,13 @@ impl Entry {
         self.uncompressed_size
     }
 
-    #[cfg(test)]
     pub fn name(&self) -> &[u8] {
         &self.name
+    }
+
+    /// 압축 방식(0 = 저장, 8 = deflate).
+    pub fn method(&self) -> u16 {
+        self.method
     }
 }
 

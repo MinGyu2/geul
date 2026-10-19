@@ -9,7 +9,8 @@ import { DocumentWorkspace } from "./documentWorkspace";
 import { tauriWindowClose } from "./windowClose";
 
 interface TauriInternals {
-  invoke: (command: string, args?: Record<string, unknown>) => Promise<unknown>;
+  /** args가 Uint8Array면 원시 요청 본문으로 보낸다(Tauri 2 IPC, 저장 요청 T009). */
+  invoke: (command: string, args?: Record<string, unknown> | Uint8Array) => Promise<unknown>;
 }
 
 export function createTauriWorkspace(): DocumentWorkspace | null {
