@@ -2409,12 +2409,19 @@ mod t007 {
             read_identified(&source, &Limits::default()),
             Err(DocumentError::FileChanged)
         );
-        // 한계(의도): 같은 크기·수정 시각으로 바뀌었지만 여전히 같은 형식으로 판별되는 내용은 그 새 바이트를
-        // 돌려준다(판별은 문서 전체 해시를 남기지 않는다). 넘기는 바이트는 언제나 방금 판별한 바이트다.
+        // 같은 크기·수정 시각으로 바뀌었지만 여전히 같은 형식으로 판별되는 내용: unix는 지문의 상태 변경 시각(ctime)이
+        // 달라 거부한다(T009 안정화). ctime이 없는 플랫폼의 한계(의도): 판별은 문서 전체 해시를 남기지 않으므로 그 새
+        // 바이트를 돌려준다. 넘기는 바이트는 언제나 방금 판별한 바이트다.
         let mut renamed = original.clone();
         let at = renamed.len() - 30; // 선택 항목(section0.xml) 이름의 한 글자
         renamed[at] ^= 0xFF;
         rewrite(&renamed);
+        #[cfg(unix)]
+        assert_eq!(
+            read_identified(&source, &Limits::default()),
+            Err(DocumentError::FileChanged)
+        );
+        #[cfg(not(unix))]
         assert_eq!(read_identified(&source, &Limits::default()), Ok(renamed));
 
         // 같은 경로를 다른 파일로 교체(inode가 바뀜)

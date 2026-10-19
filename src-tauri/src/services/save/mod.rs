@@ -3,8 +3,11 @@
 pub mod commands;
 pub mod hwp;
 pub mod loss;
+#[cfg(target_os = "linux")]
+mod metadata;
 pub mod package;
 pub mod preserve;
+pub mod preview;
 pub mod publish;
 pub mod service;
 

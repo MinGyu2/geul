@@ -78,7 +78,13 @@ def main() -> int:
             check(f"{fmt}: 편집한 출력을 다시 열면 형식·쪽 수·본문·컨트롤이 편집 모델과 같고 편집 글자가 있음",
                   all(reopened.values()) and info["editPresent"], {"reopen": reopened, **info})
             verdict = save_check("saved", fmt, str(original), str(edited), str(loss1), "true")
-            check(f"{fmt}: 편집한 저장 출력은 본문 밖이 원본과 같아 safe", verdict["outcome"] == "safe", verdict)
+            if fmt == "hwp":
+                # 고정 rhwp는 원본 PrvText(여기서는 편집 전 본문 글자)가 있으면 그대로 둔다(cfb_writer.rs supplement_preview).
+                # 편집 전 글자가 파일에 남으므로 막아야 한다(T009 안정화 F).
+                check("hwp: 편집한 저장 출력에 편집 전 미리보기 글자(PrvText)가 남으면 unsafe(previewStale)",
+                      verdict["outcome"] == "unsafe" and codes(verdict) == [("previewStale", "PrvText")], verdict)
+            else:
+                check(f"{fmt}: 편집한 저장 출력은 본문 밖이 원본과 같고 미리보기가 비어 safe", verdict["outcome"] == "safe", verdict)
             # 손실 보고 불일치·손실·다시 열기 불일치·형식 불일치.
             report = json.loads(loss1.read_text())
             tampered = tmp / f"tampered-{fmt}.json"

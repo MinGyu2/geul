@@ -219,9 +219,9 @@ interface EditorAdapter {
   원본 파일 하나). 변환·다른 이름 저장·자동 저장 없음(FR-015).
 - **T009/T014 경계(모호함 정리)**: T009는 안전하다는 근거가 있을 때만 같은 디렉터리 임시 파일 → 검증 → 원자적 교체로 저장하고,
   그 밖은 거부해 원본을 그대로 둔다. 원본을 직접 덮어쓰지 않는다. 교체 방식을 검증하지 않은 플랫폼(지금은 Linux 밖)은 저장하지
-  않는다. 남은 임시 파일 복구·정전 내구성 시험·Windows/macOS 교체·확장 속성 보존·복구 사본 관리는 T014다. Data Flow 5의 "제한된
+  않는다. 남은 임시 파일 복구·정전 내구성 시험·Windows/macOS 교체·확장 속성을 옮겨 보존하기·복구 사본 관리는 T014다. Data Flow 5의 "제한된
   저장(별도 사본)"은 T009에서 하지 않는다(검증할 수 없는 문서는 저장 차단).
-- 보존 판정 `safe | unsafe | unknown`(모르면 unsafe와 같이 차단)과 근거 코드 13개. 사전 검사는 원본과 편집 없는 엔진 왕복을 비교한다
+- 보존 판정 `safe | unsafe | unknown`(모르면 unsafe와 같이 차단)과 근거 코드 14개(안정화에서 `previewStale` 추가). 사전 검사는 원본과 편집 없는 엔진 왕복을 비교한다
   (HWP 레코드, HWPX·DOCX 정규화 XML·바이트). 엔진 손실 보고(rhwp)는 엄격히 검사하지만 빈 보고서·열기 성공·글자 같음은 근거가 아니다.
 - 저장 검사: 손실 보고, 출력 형식 판별, 패키지 무결성(DOCX 내용 형식·관계 대상, HWPX `mimetype`·manifest), 편집이 바꾸는 부분
   (HWP 본문·DocInfo 캐럿, HWPX section, DOCX 본문·app.xml 통계) 밖이 원본과 같음, 다시 열기 비교(rhwp는 프런트엔드, DOCX는 백엔드 모델).
@@ -230,6 +230,16 @@ interface EditorAdapter {
 - IPC 5개 추가: `document_original`·`document_preflight`·`document_save`(rhwp, 원시 프레임 `GSV1`), `docx_preflight`·`docx_save`.
   새 백엔드 오류 `UnsafeSave`·`SaveUnsupported`·`SaveFailure`·`FileConflict`·`SaveInProgress`, 프런트엔드 `SaveNotReady`.
 - T009는 선행 T007·T008이 플랫폼 기준으로 미체크이고 교체를 Linux에서만 검증했으므로 체크하지 않는다.
+
+### T009 구현 뒤 안정화 (2026-10-19, `93e6acf` 위)
+- 판정 강화: HWP 문서 속성은 정확히 26바이트일 때만 캐럿 12바이트 면제, 레코드 스트림은 바이트가 같아도 양쪽을 끝까지 읽음(깨진 원본
+  unknown), 비레코드 스트림은 바이트가 같아야 하고 BinData만 DocInfo 속성으로 저장 형태가 정해질 때 풀어서 비교, rhwp 형식은 손실
+  보고 필수·DOCX는 보고 거부.
+- 미리보기(`previewStale`): 본문을 바꾼 저장에서 원본 미리보기가 그대로면 내용이 없음을 증명해야 한다. 고정 rhwp는 HWP 원본
+  `PrvText`의 글자를 그대로 두므로 **편집한 HWP 저장은 막힌다**(검증한 재생성 수단 없음, 업스트림 변경 필요).
+- 교체 조건: 읽기 전용 원본(`read-only`), 교체로 잃을 확장 속성·ACL·inode 플래그·권한 비트(`metadata`)는 거부. 파일 지문에 ctime·권한·
+  소유·링크 수를 더해 저장 중 메타데이터 변경도 `FileConflict`. 디렉터리 fsync 실패는 게시됨·내구성 미확인으로 dirty를 남긴다.
+- 프런트엔드: 사전 검사 요청의 소유 번호로 겹친·늦은 결과를 버리고, 수동 검사의 진행·실패를 보이며, 저장 중 검사는 `SaveInProgress`.
 
 ## Algorithms and Pseudocode
 ```

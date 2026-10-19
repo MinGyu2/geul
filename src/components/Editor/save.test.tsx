@@ -250,3 +250,155 @@ describe("저장 단추와 결과", () => {
     act(() => {});
   });
 });
+
+// T009 안정화 H·I: 사전 검사 요청의 소유와 실패 표시, 내구성을 확인하지 못한 교체.
+const safeCheck = { preservation: { outcome: "safe" as const, findings: [] }, platformSupported: true };
+const unsafeCheck = { preservation: { outcome: "unsafe" as const, findings: [{ code: "partChanged" as const, part: "BinData/BIN0001.png" }] }, platformSupported: true };
+
+describe("저장 사전 검사의 순서와 표시(rhwp)", () => {
+  it("수동 검사가 실패하면 그 오류를 저장 결과 자리에 보인다", async () => {
+    const t = await rhwpSession();
+    const checking = t.editor.checkSave();
+    expect(t.editor.saveState).toEqual({ kind: "checking" });
+    t.take("original").reply({ ok: false, error: { code: "FileChanged" } });
+    expect(await checking).toEqual({ ok: false, error: { code: "FileChanged" } });
+    expect(t.editor.saveState).toEqual({ kind: "failed", error: { code: "FileChanged" } });
+    expect(t.editor.saveCheck).toBeNull();
+    // 백엔드 사전 검사 자체의 실패도.
+    const again = t.editor.checkSave();
+    t.take("original").reply(ok(new Uint8Array([1])));
+    await flushRhwp();
+    t.take("preflight").reply({ ok: false, error: { code: "SaveFailure", stage: "validate" } });
+    await again;
+    expect(t.editor.saveState).toEqual({ kind: "failed", error: { code: "SaveFailure", stage: "validate" } });
+  });
+
+  it.each(["옛 요청이 먼저", "옛 요청이 나중"])("겹친 수동 검사는 마지막 요청의 결과만 기억한다(%s 끝남)", async (order) => {
+    const t = await rhwpSession();
+    const first = t.editor.checkSave();
+    const second = t.editor.checkSave();
+    t.take("original").reply(ok(new Uint8Array([1])));
+    t.take("original").reply(ok(new Uint8Array([1])));
+    await flushRhwp();
+    const [older, newer] = [t.take("preflight"), t.take("preflight")];
+    if (order === "옛 요청이 먼저") {
+      older.reply(ok(unsafeCheck));
+      await first;
+      expect(t.editor.saveState).toEqual({ kind: "checking" }); // 옛 결과는 상태를 바꾸지 않는다
+      newer.reply(ok(safeCheck));
+      await second;
+    } else {
+      newer.reply(ok(safeCheck));
+      await second;
+      older.reply(ok(unsafeCheck));
+      await first;
+    }
+    expect(t.editor.saveCheck?.check).toEqual(safeCheck);
+    expect(t.editor.saveState).toEqual({ kind: "idle" });
+  });
+
+  it("저장 중에는 수동 검사를 하지 않고, 저장 전에 시작한 검사의 늦은 결과는 새 원본의 상태를 덮지 않는다", async () => {
+    const t = await rhwpSession();
+    const early = t.editor.checkSave(); // 저장 전 원본에 대한 검사(아직 응답 없음)
+    const saving = t.editor.save();
+    expect(await t.editor.checkSave()).toEqual({ ok: false, error: { code: "SaveInProgress", sessionId: 1 } });
+    t.take("original").reply(ok(new Uint8Array([1]))); // early
+    t.take("original").reply(ok(new Uint8Array([1]))); // save 안의 검사
+    await flushRhwp();
+    const earlyPreflight = t.take("preflight");
+    t.take("preflight").reply(ok(safeCheck));
+    await flushRhwp();
+    t.take("save").reply(ok({ session: info({ state: "ready", revision: 0, dirty: false, sequence: 3, loadGeneration: 1 }), bytes: 9, durable: true } satisfies SaveOutcome));
+    expect((await saving).ok).toBe(true);
+    expect(t.editor.saveState).toMatchObject({ kind: "saved", durable: true });
+    earlyPreflight.reply(ok(safeCheck)); // 옛 원본의 safe: 기억하면 다음 저장이 검사를 건너뛴다
+    await early;
+    expect(t.editor.saveCheck).toBeNull();
+    expect(t.editor.saveState).toMatchObject({ kind: "saved" });
+  });
+
+  it("닫은 뒤 도착한 검사 결과는 버린다", async () => {
+    const t = await rhwpSession();
+    const checking = t.editor.checkSave();
+    t.take("original").reply(ok(new Uint8Array([1])));
+    await flushRhwp();
+    t.editor.dispose();
+    t.take("preflight").reply(ok(safeCheck));
+    await checking;
+    expect(t.editor.saveCheck).toBeNull();
+  });
+
+  it("교체했지만 내구성을 확인하지 못하면 저장하지 않은 편집으로 남기고 원본이 그대로라고 하지 않는다", async () => {
+    const t = await rhwpSession();
+    t.editor.typeText("x");
+    await flushRhwp();
+    t.take("commit").reply(ok(info({ state: "ready", revision: 1, dirty: true, sequence: 3, loadGeneration: 1 })));
+    await flushRhwp();
+    const saving = t.editor.save();
+    t.take("original").reply(ok(new Uint8Array([1])));
+    await flushRhwp();
+    t.take("preflight").reply(ok(safeCheck));
+    await flushRhwp();
+    t.take("save").reply(ok({ session: info({ state: "ready", revision: 1, dirty: true, sequence: 4, loadGeneration: 1 }), bytes: 9, durable: false } satisfies SaveOutcome));
+    expect((await saving).ok).toBe(true);
+    expect(t.editor.saveState).toEqual({ kind: "saved", revision: 1, durable: false, changedSince: false });
+    expect(t.sessions.get(1)?.dirty).toBe(true);
+    expect(t.editor.hasUnpreservedChanges).toBe(true);
+    expect(t.editor.saveCheck).toBeNull(); // 디스크는 새 파일: 다음 저장은 다시 검사한다
+    const view = render(
+      <LanguageProvider language="ko" onLanguageChange={() => {}}>
+        <SaveControls editor={t.editor} prefix="rhwp" />
+      </LanguageProvider>,
+    );
+    const result = view.getByTestId("rhwp-save-result");
+    expect(result.dataset).toMatchObject({ state: "saved", synced: "false" });
+    expect(result.textContent).toContain("저장하지 않은 편집으로 남겨 둡니다");
+    expect(result.textContent).not.toContain("원본 파일은 바뀌지 않았습니다");
+  });
+});
+
+describe("저장 사전 검사의 순서와 표시(DOCX)", () => {
+  it("수동 검사 실패를 보이고, 다시 불러오면 진행 중이던 검사의 결과를 버린다", async () => {
+    const { editor, fake } = await readyDocx();
+    fake.preflightError = { code: "FileChanged" };
+    expect(await editor.checkSave()).toEqual({ ok: false, error: { code: "FileChanged" } });
+    expect(editor.saveState).toEqual({ kind: "failed", error: { code: "FileChanged" } });
+    fake.hold = true;
+    const checking = editor.checkSave();
+    fake.hold = false;
+    const reloading = editor.load({ discard: true });
+    await flush();
+    fake.release();
+    await reloading;
+    await checking;
+    await flush();
+    expect(editor.saveCheck).toBeNull();
+    expect(editor.saveState).toEqual({ kind: "idle" });
+  });
+
+  it("저장 중의 수동 검사는 SaveInProgress이고, 내구성을 확인하지 못한 저장은 dirty로 남는다", async () => {
+    const { editor, fake, sessions } = await readyDocx();
+    editor.typeText("가");
+    await flush();
+    fake.durable = false;
+    fake.hold = true;
+    const saving = editor.save();
+    expect(await editor.checkSave()).toEqual({ ok: false, error: { code: "SaveInProgress", sessionId: 1 } });
+    fake.release();
+    await flush();
+    fake.release();
+    await flush();
+    const result = await saving;
+    expect(result.ok && result.value.durable).toBe(false);
+    expect(fake.saved).toEqual(["가가나다", "abc"]);
+    expect(sessions.get(1)?.dirty).toBe(true);
+    expect(editor.hasUnpreservedChanges).toBe(true);
+    expect(editor.saveState).toMatchObject({ kind: "saved", durable: false });
+    // 다시 저장하면(새 원본으로 다시 검사) 내구성을 확인하고 깨끗해진다.
+    fake.hold = false;
+    fake.durable = true;
+    expect((await editor.save()).ok).toBe(true);
+    expect(preflights(fake.calls)).toHaveLength(2);
+    expect(sessions.get(1)?.dirty).toBe(false);
+  });
+});

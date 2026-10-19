@@ -62,6 +62,11 @@ export class FakeDocx implements DocxBackend {
   platformSupported = true;
   /** 다음 저장을 이 오류로 거부한다(원본 그대로 흉내). */
   saveError: DocumentError | null = null;
+  /** 다음 사전 검사를 이 오류로 거부한다(원본 읽기 실패 등 흉내). */
+  preflightError: DocumentError | null = null;
+  /** false면 저장이 교체는 하지만 내구성을 확인하지 못한다(백엔드처럼 깨끗한 판을 올리지 않고 dirty로 남김). */
+  durable = true;
+  private unconfirmed = false;
   /** 백엔드처럼 원본에 대한 사전 검사를 기억한다(저장하면 지움). */
   private preflighted = false;
   /** 저장한 파일 내용(문단). */
@@ -86,7 +91,7 @@ export class FakeDocx implements DocxBackend {
 
   private update(patch: Partial<SessionInfo>) {
     this.info = { ...this.info, ...patch, sequence: this.info.sequence + 1 };
-    this.info.dirty = this.info.revision !== this.cleanRevision;
+    this.info.dirty = this.info.revision !== this.cleanRevision || this.unconfirmed;
   }
 
   /** 지금 모델의 보기(백엔드 DocxView와 같은 모양). 키의 오프셋은 이 가짜에서는 문자 단위다. */
@@ -134,6 +139,7 @@ export class FakeDocx implements DocxBackend {
       this.caret = { p: 0, o: 0 };
       this.anchor = { p: 0, o: 0 };
       this.cleanRevision = this.info.revision;
+      this.unconfirmed = false;
       this.update({ state: "ready", loadGeneration: this.info.loadGeneration + 1 });
       return { ok: true, value: this.state() };
     });
@@ -344,6 +350,11 @@ export class FakeDocx implements DocxBackend {
     return this.respond(() => {
       const checked = this.check(sessionId, generation);
       if (!checked.ok) return checked;
+      if (this.preflightError) {
+        const error = this.preflightError;
+        this.preflightError = null;
+        return { ok: false, error };
+      }
       this.preflighted = true;
       return { ok: true, value: { preservation: this.preservation, platformSupported: this.platformSupported } };
     });
@@ -364,10 +375,11 @@ export class FakeDocx implements DocxBackend {
         return { ok: false, error };
       }
       this.saved = [...this.paragraphs];
-      this.cleanRevision = revision;
+      if (this.durable) this.cleanRevision = revision;
+      this.unconfirmed = !this.durable;
       this.preflighted = false;
       this.update({});
-      return { ok: true, value: { session: { ...this.info }, bytes: 100, durable: true } };
+      return { ok: true, value: { session: { ...this.info }, bytes: 100, durable: this.durable } };
     });
   }
 

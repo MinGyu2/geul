@@ -18,6 +18,7 @@ use crate::document::xml;
 use crate::document::zip::{self, ZipLimits, ZipProblem};
 
 use super::preserve::{Finding, FindingCode};
+use super::preview;
 
 /// 패키지 항목 수·이름·중앙 디렉터리·부분 하나·전체 압축 해제 상한.
 const LIMITS: ZipLimits = ZipLimits {
@@ -356,10 +357,73 @@ pub fn compare_saved_docx(original: &Package, output: &Package) -> Vec<Finding> 
             findings.push(Finding::at(FindingCode::PartChanged, APP));
         }
     }
+    // 본문을 바꿨는데 원본 썸네일이 그대로 남으면 편집 전 내용이 보인다. 그림 내용이 없음을 증명할 수 없으므로(JPEG·EMF
+    // 등) 썸네일이 있으면 막는다.
+    if original.get(BODY) != output.get(BODY) {
+        for name in thumbnails(original) {
+            if output
+                .get(&name)
+                .is_some_and(|data| original.get(&name) == Some(data))
+            {
+                findings.push(Finding::at(FindingCode::PreviewStale, &name));
+            }
+        }
+    }
     findings
 }
 
-/// HWPX 편집 저장 비교: 본문 부분을 빼고 원본과 같아야 한다.
+/// DOCX 썸네일 부분: 패키지 관계(`_rels/.rels`)의 thumbnail 대상과 관례 이름 `docProps/thumbnail.*`.
+fn thumbnails(package: &Package) -> Vec<String> {
+    const THUMBNAIL: &str = "/metadata/thumbnail";
+    let mut names: Vec<String> = package
+        .parts
+        .keys()
+        .filter(|name| name.starts_with("docProps/thumbnail"))
+        .cloned()
+        .collect();
+    if let Some(relationships) = package
+        .get("_rels/.rels")
+        .and_then(|bytes| xml::relationships(bytes).ok())
+    {
+        for relationship in relationships {
+            if !relationship.external && relationship.kind.ends_with(THUMBNAIL) {
+                if let Some(target) = resolve("_rels/.rels", &relationship.target) {
+                    if package.parts.contains_key(&target) && !names.contains(&target) {
+                        names.push(target);
+                    }
+                }
+            }
+        }
+    }
+    names
+}
+
+/// HWPX 편집 저장 비교: 본문 부분을 빼고 원본과 같아야 한다. 본문을 바꿨다면 원본 그대로 남는 `Preview/*`는 내용이
+/// 없음을 증명해야 한다(빈 글 미리보기, 한 색 PNG). 그 밖의 미리보기 부분은 증명할 수 없어 막는다.
 pub fn compare_saved_hwpx(original: &Package, output: &Package) -> Vec<Finding> {
-    compare(original, output, &hwpx_body)
+    let mut findings = compare(original, output, &hwpx_body);
+    let body = |package: &Package| -> Vec<(String, Vec<u8>)> {
+        package
+            .parts
+            .iter()
+            .filter(|(name, _)| hwpx_body(name))
+            .map(|(name, (_, data))| (name.clone(), data.clone()))
+            .collect()
+    };
+    if body(original) != body(output) {
+        for (name, (_, data)) in &original.parts {
+            if !name.starts_with("Preview/") || output.get(name) != Some(data.as_slice()) {
+                continue;
+            }
+            let empty = match name.as_str() {
+                "Preview/PrvText.txt" => preview::blank_utf8(data),
+                "Preview/PrvImage.png" => preview::uniform_png(data),
+                _ => false,
+            };
+            if !empty {
+                findings.push(Finding::at(FindingCode::PreviewStale, name));
+            }
+        }
+    }
+    findings
 }

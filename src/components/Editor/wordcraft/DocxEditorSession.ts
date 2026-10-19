@@ -168,6 +168,8 @@ export class DocxEditorSession implements ImeSession {
   /** 이 원본에 대한 보존 사전 검사(T009). 다시 불러오거나 저장하면(원본이 바뀜) 버린다. */
   saveCheck: SaveCheckRecord | null = null;
   private saving = false;
+  /** 사전 검사 요청의 소유 번호(T009 안정화, rhwp 세션과 같은 규칙): 새 검사·저장 성공·다시 불러오기·닫기마다 올린다. */
+  private checkSerial = 0;
 
   private generation = 0;
   private queue: DocxOp[] = [];
@@ -342,6 +344,7 @@ export class DocxEditorSession implements ImeSession {
     this.lastRoundTrip = null;
     this.rejectedOps = 0;
     this.firstPaintMs = null;
+    this.checkSerial += 1;
     this.saveCheck = null;
     this.saveState = { kind: "idle" };
     this.releaseRendering();
@@ -896,13 +899,29 @@ export class DocxEditorSession implements ImeSession {
     return null;
   }
 
-  /** 보존 사전 검사(백엔드가 원본을 다시 읽어 편집 없는 WordCraft 왕복과 비교). 결과는 이 시도에 대해 기억한다. */
+  /**
+   * 사용자가 요청한 보존 사전 검사. 저장 중이면 하지 않는다(`SaveInProgress`). 진행·실패를 저장 결과 자리에 보이며, 더 새
+   * 검사·저장·다시 불러오기·닫기가 있었으면 늦게 끝난 이 결과는 상태를 바꾸지 않는다.
+   */
   async checkSave(): Promise<Result<SaveCheck>> {
+    if (this.saving) return { ok: false, error: { code: "SaveInProgress", sessionId: this.sessionId } };
+    const { epoch } = this;
+    const serial = ++this.checkSerial;
+    this.setSave({ kind: "checking" });
+    const checked = await this.preflight(serial);
+    if (epoch === this.epoch && serial === this.checkSerial) {
+      this.setSave(checked.ok ? { kind: "idle" } : { kind: "failed", error: checked.error });
+    }
+    return checked;
+  }
+
+  /** 보존 사전 검사(백엔드가 원본을 다시 읽어 편집 없는 WordCraft 왕복과 비교). 결과는 `serial`이 아직 지금 요청일 때만 기억한다. */
+  private async preflight(serial: number): Promise<Result<SaveCheck>> {
     if (this.status.kind !== "ready") return { ok: false, error: { code: "SaveNotReady", reason: "state" } };
     const { epoch, generation } = this;
     const checked = await this.backend.preflight(this.sessionId, generation);
     if (epoch !== this.epoch) return { ok: false, error: closedError(this.sessionId) };
-    if (checked.ok) {
+    if (checked.ok && serial === this.checkSerial) {
       this.saveCheck = { generation, check: checked.value };
       this.emit();
     }
@@ -922,12 +941,14 @@ export class DocxEditorSession implements ImeSession {
     this.saving = true;
     try {
       const generation = this.generation;
-      if (this.saveCheck?.generation !== generation) {
+      let check = this.saveCheck?.generation === generation ? this.saveCheck.check : null;
+      if (!check) {
         this.setSave({ kind: "checking" });
-        const checked = await this.checkSave();
+        const checked = await this.preflight(++this.checkSerial);
         if (!checked.ok) return fail(checked.error);
+        check = checked.value;
       }
-      const blocked = blockedBy(this.saveCheck!.check);
+      const blocked = blockedBy(check);
       if (blocked) return fail(blocked);
       const later = this.saveBlocker();
       if (later) return fail(later);
@@ -937,7 +958,10 @@ export class DocxEditorSession implements ImeSession {
       if (epoch !== this.epoch) return result;
       if (!result.ok) return fail(result.error);
       this.sessions.applyUpdate(result.value.session);
-      this.saveCheck = null; // 원본이 바뀌었다: 다음 저장은 새 원본으로 다시 검사한다
+      // 원본이 바뀌었다(내구성을 확인하지 못했어도 교체는 됨, dirty는 백엔드가 남김): 다음 저장은 새 원본으로 다시 검사하고,
+      // 그 전에 시작한 검사의 늦은 결과도 버린다.
+      this.checkSerial += 1;
+      this.saveCheck = null;
       const changedSince = this.revision !== revision || this.busy || this.composition !== null;
       this.setSave({ kind: "saved", revision, durable: result.value.durable, changedSince });
       return result;

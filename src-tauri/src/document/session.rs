@@ -36,6 +36,9 @@
 //!   표시가 그 표의 것일 때만 실행한다. 그래서 그 사이 닫거나 다시 불러온 세션의 저장은 원본을 바꾸지 않는다.
 //! - 성공하면 깨끗한 판을 표의 revision으로 둔다: 그 사이 확정한 편집이 있으면(revision이 더 큼) dirty가 남는다. 파일
 //!   식별·지문·해시는 새 파일로 바꾸고, 사전 검사는 지운다(새 원본에 대해 다시 한다).
+//! - 교체는 됐지만 내구성(디렉터리 `fsync`)을 확인하지 못했으면(`Published::durable` false) 파일 기록은 새 파일로 바꾸되
+//!   (디스크에 지금 있는 것은 새 파일이다) 깨끗한 판은 올리지 않고 `unconfirmed`로 dirty를 남긴다: 닫기·다시 불러오기가
+//!   버리기를 확인하고, 다시 저장하면 새 파일을 원본으로 다시 확인해 교체·`fsync`한다. 다시 불러오면(디스크에서 읽음) 풀린다.
 
 use std::collections::BTreeMap;
 use std::sync::{Mutex, MutexGuard};
@@ -97,6 +100,22 @@ struct Session {
     preflight: Option<(u64, Preservation)>,
     /// 진행 중인 저장 표의 번호(T009).
     saving: Option<u64>,
+    /// 마지막 교체의 내구성을 확인하지 못함(T009 안정화): dirty로 남긴다.
+    unconfirmed: bool,
+}
+
+impl Session {
+    fn refresh_dirty(&mut self) {
+        self.info.dirty = self.info.revision != self.clean_revision || self.unconfirmed;
+    }
+}
+
+/// 원본 교체 결과(T009): 교체한 파일의 식별·지문과 디렉터리 `fsync`까지 됐는지.
+#[derive(Clone, Debug)]
+pub struct Published {
+    pub identity: FileIdentity,
+    pub fingerprint: FileFingerprint,
+    pub durable: bool,
 }
 
 /// 원본 바이트의 해시(같은 실행 안의 변경 감지용, 보안 용도 아님).
@@ -215,6 +234,7 @@ impl SessionRegistry {
                 content_hash: None,
                 preflight: None,
                 saving: None,
+                unconfirmed: false,
             },
         );
         Ok(info)
@@ -231,7 +251,7 @@ impl SessionRegistry {
         let session = inner.sessions.get_mut(&session_id).ok_or(missing)?;
         let value = change(session)?;
         session.info.sequence += 1;
-        session.info.dirty = session.info.revision != session.clean_revision;
+        session.refresh_dirty();
         Ok((value, session.info.clone()))
     }
 
@@ -280,6 +300,7 @@ impl SessionRegistry {
             session.info.state = to;
             if to == Ready {
                 session.clean_revision = session.info.revision;
+                session.unconfirmed = false;
             }
             Ok(())
         })
@@ -461,15 +482,12 @@ impl SessionRegistry {
     }
 
     /// 저장을 끝낸다: 잠금 안에서 세션·시도·상태·표를 다시 확인하고 `publish`(원본 교체)를 실행한다. `publish`는
-    /// 교체한 파일의 새 식별·지문을 돌려준다. 성공하면 깨끗한 판·파일 기록을 바꾼 세션 정보.
+    /// 교체한 파일의 새 식별·지문과 내구성을 돌려준다. 성공하면 파일 기록을 바꾼(내구성을 확인했으면 깨끗한 판도) 세션 정보.
     pub fn finish_save(
         &self,
         ticket: &SaveTicket<'_>,
         new_hash: u64,
-        publish: impl FnOnce(
-            &FileIdentity,
-            &FileFingerprint,
-        ) -> Result<(FileIdentity, FileFingerprint), DocumentError>,
+        publish: impl FnOnce(&FileIdentity, &FileFingerprint) -> Result<Published, DocumentError>,
     ) -> Result<SessionInfo, DocumentError> {
         let mut inner = self.lock()?;
         let session = Self::ready_session(&mut inner, ticket.session_id, ticket.generation)?;
@@ -482,15 +500,18 @@ impl SessionRegistry {
         {
             return Err(DocumentError::FileConflict);
         }
-        let (identity, fingerprint) = publish(&session.identity, &session.fingerprint)?;
-        session.identity = identity;
-        session.fingerprint = fingerprint;
+        let published = publish(&session.identity, &session.fingerprint)?;
+        session.identity = published.identity;
+        session.fingerprint = published.fingerprint;
         session.content_hash = Some(new_hash);
         session.preflight = None;
-        session.clean_revision = ticket.revision;
+        if published.durable {
+            session.clean_revision = ticket.revision;
+        }
+        session.unconfirmed = !published.durable;
         session.saving = None;
         session.info.sequence += 1;
-        session.info.dirty = session.info.revision != session.clean_revision;
+        session.refresh_dirty();
         Ok(session.info.clone())
     }
 

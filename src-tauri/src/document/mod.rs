@@ -30,13 +30,13 @@ pub use error::{
     DocumentError, EngineStage, IoProblem, LimitKind, ParseProblem, PathProblem, ReadProblem,
     SaveStage, SaveUnsupportedReason, UnsupportedKind,
 };
-pub(crate) use open::{describe_staged, unchanged};
+pub(crate) use open::{describe_published, unchanged};
 pub use open::{
     identify, read_identified, FileFingerprint, FileIdentity, IdentifiedFile, Limits, LoadSource,
 };
 pub use session::{
-    content_hash, CloseOutcome, SaveSource, SaveTicket, SessionId, SessionInfo, SessionRegistry,
-    SessionState, MAX_COMMIT_COUNT,
+    content_hash, CloseOutcome, Published, SaveSource, SaveTicket, SessionId, SessionInfo,
+    SessionRegistry, SessionState, MAX_COMMIT_COUNT,
 };
 
 /// 이 앱이 다루는 문서 형식. 확장자가 아니라 내용 검사로 확정한다.

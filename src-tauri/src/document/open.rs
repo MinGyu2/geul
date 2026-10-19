@@ -82,17 +82,32 @@ impl FileIdentity {
     }
 }
 
-/// 판별할 때 본 파일 상태. 불러올 때 같은지 비교한다.
+/// 판별할 때 본 파일 상태. 불러올 때·저장 직전에 같은지 비교한다. unix는 상태 변경 시각(ctime)·권한·소유·링크 수도
+/// 본다(T009 안정화): chmod·chown·링크 추가·확장 속성 변경은 내용·수정 시각을 그대로 두고 ctime을 바꾼다.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct FileFingerprint {
     len: u64,
     modified: Option<SystemTime>,
+    #[cfg(unix)]
+    status: (i64, i64, u32, u32, u32, u64),
 }
 
 fn fingerprint(metadata: &Metadata) -> FileFingerprint {
     FileFingerprint {
         len: metadata.len(),
         modified: metadata.modified().ok(),
+        #[cfg(unix)]
+        status: {
+            use std::os::unix::fs::MetadataExt;
+            (
+                metadata.ctime(),
+                metadata.ctime_nsec(),
+                metadata.mode(),
+                metadata.uid(),
+                metadata.gid(),
+                metadata.nlink(),
+            )
+        },
     }
 }
 
@@ -224,21 +239,21 @@ pub fn identify(path: &str, limits: &Limits) -> Result<IdentifiedFile, DocumentE
     })
 }
 
-/// 세션의 파일을 다시 열어, 판별한 파일·내용과 같을 때만 전체 바이트를 돌려준다.
-/// 저장(T009): 교체할 임시 파일(`staged`)을 원본 이름(`target`, 정규화 경로)으로 게시한 뒤의 식별·지문. `rename`은
-/// inode·크기·수정 시각을 바꾸지 않으므로 교체 전에 구해 둔다(교체 뒤에 실패할 단계를 남기지 않음).
-pub(crate) fn describe_staged(
+/// 저장(T009): 원본 이름(`target`, 정규화 경로)으로 게시한(또는 게시할) 임시 파일의 식별·지문. `metadata`는 그 파일을
+/// 연 핸들의 fstat이라 이름이 그 사이 다른 파일로 바뀌어도 이 저장이 쓴 inode의 값이다. `rename`은 ctime을 바꾸므로
+/// 게시 뒤의 fstat을 쓴다.
+pub(crate) fn describe_published(
     target: &Path,
-    staged: &Path,
-) -> Result<(FileIdentity, FileFingerprint), DocumentError> {
-    let metadata = std::fs::metadata(staged).map_err(|error| unreadable(&error))?;
-    Ok((
-        identity(target.to_path_buf(), &metadata),
-        fingerprint(&metadata),
-    ))
+    metadata: &Metadata,
+) -> (FileIdentity, FileFingerprint) {
+    (
+        identity(target.to_path_buf(), metadata),
+        fingerprint(metadata),
+    )
 }
 
-/// 저장(T009): 기록한 파일이 지금도 같은 객체(장치·inode)·같은 지문(크기·수정 시각)의 일반 파일인지. 내용은 보지 않는다.
+/// 저장(T009): 기록한 파일이 지금도 같은 객체(장치·inode)·같은 지문(크기·수정 시각·ctime·권한·소유·링크 수)의 일반
+/// 파일인지. 내용은 보지 않는다.
 pub(crate) fn unchanged(recorded: &FileIdentity, expected: &FileFingerprint) -> bool {
     std::fs::metadata(recorded.path()).is_ok_and(|metadata| {
         metadata.is_file()
@@ -247,6 +262,7 @@ pub(crate) fn unchanged(recorded: &FileIdentity, expected: &FileFingerprint) -> 
     })
 }
 
+/// 세션의 파일을 다시 열어, 판별한 파일·내용과 같을 때만 전체 바이트를 돌려준다.
 pub fn read_identified(source: &LoadSource, limits: &Limits) -> Result<Vec<u8>, DocumentError> {
     let path = source.identity.path();
     let mut file = open_read_only(path).map_err(|error| unreadable(&error))?;

@@ -94,6 +94,7 @@ export type PreservationOutcome = (typeof PRESERVATION_OUTCOMES)[number];
 export const FINDING_CODES = [
   "partMissing", "partAdded", "partChanged", "recordsChanged", "originalMalformed", "outputMalformed", "packageInvalid",
   "lossReported", "lossReportInvalid", "reopenMismatch", "limitExceeded", "unsupported", "preflightMissing",
+  "previewStale",
 ] as const;
 export type FindingCode = (typeof FINDING_CODES)[number];
 /** 판정 근거: 코드와 패키지 안 부분 이름(문서 본문이 아님). */
@@ -105,7 +106,7 @@ export interface Preservation {
   outcome: PreservationOutcome;
   findings: Finding[];
 }
-export const SAVE_UNSUPPORTED_REASONS = ["platform", "hard-link", "ownership"] as const;
+export const SAVE_UNSUPPORTED_REASONS = ["platform", "hard-link", "ownership", "read-only", "metadata"] as const;
 export type SaveUnsupportedReason = (typeof SAVE_UNSUPPORTED_REASONS)[number];
 export const SAVE_STAGES = ["export", "validate", "write", "publish"] as const;
 export type SaveStage = (typeof SAVE_STAGES)[number];

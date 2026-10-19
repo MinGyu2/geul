@@ -13,8 +13,8 @@ use serde_json::Value;
 use super::preserve::{Finding, FindingCode, Preservation};
 use super::{hwp, loss, package, publish};
 use crate::document::{
-    content_hash, describe_staged, detect, read_identified, unchanged, DocumentError, Format,
-    Limits, SaveSource, SaveTicket, SessionInfo, SessionRegistry,
+    content_hash, detect, read_identified, unchanged, DocumentError, Format, Limits, SaveSource,
+    SaveTicket, SessionInfo, SessionRegistry,
 };
 
 /// 저장 결과.
@@ -53,6 +53,16 @@ fn same_format(bytes: &[u8], format: Format) -> bool {
     detect(&mut Cursor::new(bytes), bytes.len() as u64).is_ok_and(|detected| detected == format)
 }
 
+/// 손실 보고 근거: rhwp 형식(HWP·HWPX)은 보고가 반드시 있어야 하고(없으면 unknown), DOCX는 보고를 받지 않는다(WordCraft는
+/// 보고를 만들지 않으므로 들어온 보고는 잘못된 요청이다, unknown).
+fn report_findings(format: Format, report: Option<&Value>) -> Vec<Finding> {
+    match (format, report) {
+        (Format::Hwp | Format::Hwpx, Some(report)) => loss::check(report, format),
+        (Format::Docx, None) => Vec::new(),
+        _ => vec![Finding::new(FindingCode::LossReportInvalid)],
+    }
+}
+
 /// 사전 검사: 원본과 편집 없는 엔진 출력을 비교한다(rhwp는 그 출력의 손실 보고도).
 pub fn preflight(
     format: Format,
@@ -60,10 +70,7 @@ pub fn preflight(
     unedited: &[u8],
     report: Option<&Value>,
 ) -> Preservation {
-    let mut findings = Vec::new();
-    if let Some(report) = report {
-        findings.extend(loss::check(report, format));
-    }
+    let mut findings = report_findings(format, report);
     if !same_format(unedited, format) {
         findings.push(Finding::at(FindingCode::OutputMalformed, "container"));
     }
@@ -92,10 +99,7 @@ pub fn check_saved(
     report: Option<&Value>,
     reopen_equal: bool,
 ) -> Preservation {
-    let mut findings = Vec::new();
-    if let Some(report) = report {
-        findings.extend(loss::check(report, format));
-    }
+    let mut findings = report_findings(format, report);
     if !reopen_equal {
         findings.push(Finding::new(FindingCode::ReopenMismatch));
     }
@@ -160,7 +164,8 @@ pub fn save(
     // 쓰는 동안 원본이 바뀌었는지 내용으로 다시 확인한다(같은 크기·수정 시각으로 바뀐 경우). 교체 직전의 객체·지문
     // 확인은 기록 잠금 안에서 한다.
     read_original(&ticket.source, limits)?;
-    let published = describe_staged(&target, staged.path())?;
+    #[cfg(test)]
+    publish::before_check(&target);
     let mut durable = false;
     let session = registry.finish_save(ticket, content_hash(output), |identity, fingerprint| {
         #[cfg(test)]
@@ -170,7 +175,8 @@ pub fn save(
         if !unchanged(identity, fingerprint) {
             return Err(DocumentError::FileConflict);
         }
-        durable = publish::publish(&mut staged, identity.path())?;
+        let published = publish::publish(&mut staged, identity.path())?;
+        durable = published.durable;
         Ok(published)
     })?;
     Ok(SaveOutcome {

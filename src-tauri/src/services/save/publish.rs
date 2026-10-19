@@ -6,9 +6,15 @@
 //!   원본 그대로). Windows `MoveFileEx`·macOS는 T014·T016에서 따로 확인한다.
 //! - 임시 파일은 `create_new`(이미 있으면 실패)로 만들고 원본의 권한 비트를 준다. 원본 소유자·그룹이 이 프로세스가
 //!   만든 파일과 다르면(교체하면 소유가 바뀜) 저장하지 않는다. 하드 링크가 여럿인 파일도 저장하지 않는다(교체하면 다른
-//!   이름이 옛 내용을 가리킨다). 확장 속성·ACL은 옮기지 않는다(확인할 수단이 없음, T014).
+//!   이름이 옛 내용을 가리킨다). 읽기 전용 원본(소유자 쓰기 비트 없음·커널이 쓰기 거부)도 바꾸지 않는다(`read-only`).
+//! - 확장 속성(ACL 포함)·inode 플래그·권한 비트는 옮기지 않고, 원본과 다 쓴 임시 파일에서 읽어 같을 때만 교체한다
+//!   (`metadata`: 다르거나 읽을 수 없으면 막음, `metadata.rs`).
 //! - 쓴 뒤 `fsync`하고 디스크에서 다시 읽어 보낸 바이트와 같은지 확인한다. 교체 뒤 디렉터리를 `fsync`한다. 디렉터리
-//!   `fsync`가 실패하면 교체는 이미 됐으므로 되돌리지 않고 `durable: false`로 알린다(정전 내구성은 T014).
+//!   `fsync`가 실패하면 교체는 이미 됐으므로 되돌리지 않고(옛 파일은 이미 없다) `durable: false`로 알린다. 세션은 파일
+//!   기록을 새 파일로 바꾸되 dirty로 남긴다(`session.rs`). 정전 내구성 자체는 T014.
+//! - 남는 경합: 교체 직전 확인(기록 잠금 안의 `unchanged`: inode·크기·수정 시각·ctime·권한·소유·링크 수)과 `rename`
+//!   사이에 다른 프로세스가 원본을 바꾸면 그 변경은 덮인다. POSIX에는 "이 inode일 때만 바꾸기"가 없어(`renameat2`의
+//!   `RENAME_EXCHANGE`로 바꾼 뒤 확인·되돌리기도 그 사이 읽는 쪽에 새 파일을 보인다) 이 창은 줄일 뿐 없앨 수 없다.
 //! - 실패하면(교체 전) 임시 파일을 지우고 원본은 건드리지 않는다. 프로세스가 중간에 끝나면 `.geul-save-*.tmp`가 남을 수
 //!   있다(원본은 그대로). 남은 임시 파일의 정리·복구는 T014다(다른 파일을 지우는 정리 규칙은 두지 않는다).
 
@@ -17,7 +23,9 @@ use std::io::{self, Read, Write};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
 
-use crate::document::{DocumentError, IoProblem, SaveStage, SaveUnsupportedReason};
+use crate::document::{
+    describe_published, DocumentError, IoProblem, Published, SaveStage, SaveUnsupportedReason,
+};
 
 static COUNTER: AtomicU64 = AtomicU64::new(0);
 /// 임시 파일 이름이 이미 있을 때 다음 이름으로 해 보는 횟수.
@@ -40,11 +48,30 @@ pub enum Fault {
     Rename(io::ErrorKind),
     /// 교체 직전에 원본이 바뀐 것처럼(외부 수정 흉내).
     BeforePublish,
+    /// 교체 뒤 디렉터리 `fsync` 실패.
+    DirSync,
+    /// 원본 메타데이터를 읽지 못함.
+    Inspect,
 }
+
+/// 시험용 훅(원본 경로를 받는다).
+#[cfg(test)]
+pub type Hook = Box<dyn Fn(&Path)>;
 
 #[cfg(test)]
 thread_local! {
     pub static FAULT: std::cell::Cell<Option<Fault>> = const { std::cell::Cell::new(None) };
+    /// 시험용: 임시 파일을 다 쓴 뒤·교체 직전 확인 전에 원본 경로로 부른다(저장 중 chmod·링크·xattr 변경 흉내).
+    pub static BEFORE_CHECK: std::cell::RefCell<Option<Hook>> = const { std::cell::RefCell::new(None) };
+}
+
+#[cfg(test)]
+pub fn before_check(target: &Path) {
+    BEFORE_CHECK.with(|hook| {
+        if let Some(hook) = hook.borrow().as_ref() {
+            hook(target);
+        }
+    });
 }
 
 #[cfg(test)]
@@ -68,9 +95,11 @@ fn failure(stage: SaveStage, error: &io::Error) -> DocumentError {
     }
 }
 
-/// 써 두고 아직 게시하지 않은 임시 파일. 게시하지 않고 버리면 지운다.
+/// 써 두고 아직 게시하지 않은 임시 파일. 게시하지 않고 버리면 지운다. `file`은 되읽기에 연 핸들로, 게시 뒤 이 저장이
+/// 쓴 inode를 이름과 상관없이 fstat하는 데 쓴다.
 pub struct Staged {
     path: PathBuf,
+    file: File,
     published: bool,
 }
 
@@ -82,9 +111,9 @@ impl Drop for Staged {
     }
 }
 
-impl Staged {
-    pub fn path(&self) -> &Path {
-        &self.path
+fn metadata_unsupported() -> DocumentError {
+    DocumentError::SaveUnsupported {
+        reason: SaveUnsupportedReason::Metadata,
     }
 }
 
@@ -93,14 +122,38 @@ impl Staged {
 pub fn stage(target: &Path, bytes: &[u8]) -> Result<Staged, DocumentError> {
     use std::os::unix::fs::{MetadataExt, OpenOptionsExt, PermissionsExt};
 
-    let original = fs::metadata(target).map_err(|error| failure(SaveStage::Write, &error))?;
+    use super::metadata;
+
+    // 원본을 읽기로만 연다(쓰기 열기는 닫을 때 바뀐 파일로 알려진다). 검사 뒤 FIFO로 바뀌어도 멈추지 않게 O_NONBLOCK.
+    let source = OpenOptions::new()
+        .read(true)
+        .custom_flags(libc::O_NONBLOCK | libc::O_NOFOLLOW)
+        .open(target)
+        .map_err(|error| failure(SaveStage::Write, &error))?;
+    let original = source
+        .metadata()
+        .map_err(|error| failure(SaveStage::Write, &error))?;
+    if !original.is_file() {
+        return Err(DocumentError::FileConflict);
+    }
     if original.nlink() > 1 {
         return Err(DocumentError::SaveUnsupported {
             reason: SaveUnsupportedReason::HardLink,
         });
     }
+    let mode = original.mode() & 0o7777;
+    if !metadata::writable(target, mode).map_err(|_| metadata_unsupported())? {
+        return Err(DocumentError::SaveUnsupported {
+            reason: SaveUnsupportedReason::ReadOnly,
+        });
+    }
+    #[cfg(test)]
+    if fault() == Some(Fault::Inspect) {
+        return Err(metadata_unsupported());
+    }
+    let attached = metadata::attached(&source).map_err(|_| metadata_unsupported())?;
+    drop(source);
     let dir = target.parent().ok_or(DocumentError::Internal)?;
-    let mode = original.permissions().mode() & 0o7777;
     #[cfg(test)]
     if let Some(Fault::Create(kind)) = fault() {
         return Err(failure(SaveStage::Write, &io::Error::from(kind)));
@@ -128,8 +181,12 @@ pub fn stage(target: &Path, bytes: &[u8]) -> Result<Staged, DocumentError> {
         Err(last)
     })()
     .map_err(|error| failure(SaveStage::Write, &error))?;
-    let staged = Staged {
+    // 지우기를 맡을 값을 먼저 만든다(아래에서 실패하면 임시 파일을 지운다). 되읽기 핸들은 아래에서 바꾼다.
+    let mut staged = Staged {
         path,
+        file: file
+            .try_clone()
+            .map_err(|error| failure(SaveStage::Write, &error))?,
         published: false,
     };
     let created = file
@@ -151,11 +208,17 @@ pub fn stage(target: &Path, bytes: &[u8]) -> Result<Staged, DocumentError> {
         file.sync_all()
     };
     write(&mut file).map_err(|error| failure(SaveStage::Write, &error))?;
+    // 교체로 잃을 메타데이터가 없는지: 다 쓴 임시 파일(권한 비트 포함)이 원본과 같아야 한다.
+    if metadata::attached(&file).map_err(|_| metadata_unsupported())? != attached {
+        return Err(metadata_unsupported());
+    }
     drop(file);
     // 디스크에서 다시 읽어 보낸 바이트와 같은지(쓰기 경로의 조용한 손상).
     let mut back = Vec::with_capacity(bytes.len());
-    File::open(&staged.path)
-        .and_then(|mut file| file.read_to_end(&mut back))
+    staged.file = File::open(&staged.path).map_err(|error| failure(SaveStage::Write, &error))?;
+    staged
+        .file
+        .read_to_end(&mut back)
         .map_err(|error| failure(SaveStage::Write, &error))?;
     #[cfg(test)]
     if fault() == Some(Fault::Verify) {
@@ -177,17 +240,37 @@ pub fn stage(_target: &Path, _bytes: &[u8]) -> Result<Staged, DocumentError> {
     })
 }
 
-/// 임시 파일로 원본을 바꾼다. 성공하면 디렉터리 `fsync`가 됐는지(내구성 확인)를 돌려준다.
-pub fn publish(staged: &mut Staged, target: &Path) -> Result<bool, DocumentError> {
+/// 임시 파일로 원본을 바꾼다. 교체 전에 실패하면 원본은 그대로다(`Err`). 교체가 되면 되돌리지 않고, 이 저장이 쓴
+/// inode의 식별·지문(교체 뒤 fstat, 실패하면 교체 전 값: 다음 저장이 충돌로 막힌다)과 디렉터리 `fsync`가 됐는지를
+/// 돌려준다.
+pub fn publish(staged: &mut Staged, target: &Path) -> Result<Published, DocumentError> {
+    let before = staged
+        .file
+        .metadata()
+        .map_err(|error| failure(SaveStage::Publish, &error))?;
     #[cfg(test)]
     if let Some(Fault::Rename(kind)) = fault() {
         return Err(failure(SaveStage::Publish, &io::Error::from(kind)));
     }
     fs::rename(&staged.path, target).map_err(|error| failure(SaveStage::Publish, &error))?;
     staged.published = true;
+    let after = staged.file.metadata().unwrap_or(before);
+    let (identity, fingerprint) = describe_published(target, &after);
+    #[cfg(test)]
+    if fault() == Some(Fault::DirSync) {
+        return Ok(Published {
+            identity,
+            fingerprint,
+            durable: false,
+        });
+    }
     let durable = target
         .parent()
         .and_then(|dir| File::open(dir).ok())
         .is_some_and(|dir| dir.sync_all().is_ok());
-    Ok(durable)
+    Ok(Published {
+        identity,
+        fingerprint,
+        durable,
+    })
 }

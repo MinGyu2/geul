@@ -197,6 +197,11 @@ export class RhwpEditorSession {
   /** 이 원본에 대한 보존 사전 검사(T009). 다시 불러오거나 저장하면(원본이 바뀜) 버린다. */
   saveCheck: SaveCheckRecord | null = null;
   /**
+   * 사전 검사 요청의 소유 번호(T009 안정화). 새 검사·저장 성공·다시 불러오기·닫기마다 올린다. 결과는 그 번호가 그대로일
+   * 때만 기억·표시한다(겹친 검사 중 늦게 끝난 옛 요청, 저장 전 원본에 대한 검사가 새 상태를 덮지 못함).
+   */
+  private checkSerial = 0;
+  /**
    * 표면이 요청한 배율(zoom × devicePixelRatio)이 픽셀 예산을 넘어 그리지 않는 동안 그 배율, 아니면 null. 모델은 정상이며
    * 편집만 멈춘다. 예산 안의 배율로 다시 그리면(prepareRendering) null로 돌아온다.
    */
@@ -325,6 +330,9 @@ export class RhwpEditorSession {
     const epoch = ++this.epoch;
     this.committingEpoch = null;
     this.failure = null;
+    this.checkSerial += 1;
+    this.saveCheck = null;
+    this.saveState = { kind: "idle" };
     this.releaseDocument();
     this.generation = 0;
     this.modified = false;
@@ -1106,10 +1114,26 @@ export class RhwpEditorSession {
   }
 
   /**
-   * 보존 사전 검사: 백엔드가 확인한 원본 바이트를 새 WASM 문서로 열어(편집 모델과 무관) 편집 없이 같은 형식으로 내보내고,
-   * 그 출력과 손실 보고를 백엔드가 원본과 비교한다. 결과는 이 시도에 대해 기억한다.
+   * 사용자가 요청한 보존 사전 검사. 저장 중이면 하지 않는다(`SaveInProgress`). 진행·실패를 저장 결과 자리에 보이며, 더 새
+   * 검사·저장·다시 불러오기·닫기가 있었으면 늦게 끝난 이 결과는 상태를 바꾸지 않는다.
    */
   async checkSave(): Promise<Result<SaveCheck>> {
+    if (this.saving) return { ok: false, error: { code: "SaveInProgress", sessionId: this.sessionId } };
+    const { epoch } = this;
+    const serial = ++this.checkSerial;
+    this.setSave({ kind: "checking" });
+    const checked = await this.preflight(serial);
+    if (this.owns(epoch) && serial === this.checkSerial) {
+      this.setSave(checked.ok ? { kind: "idle" } : { kind: "failed", error: checked.error });
+    }
+    return checked;
+  }
+
+  /**
+   * 보존 사전 검사: 백엔드가 확인한 원본 바이트를 새 WASM 문서로 열어(편집 모델과 무관) 편집 없이 같은 형식으로 내보내고,
+   * 그 출력과 손실 보고를 백엔드가 원본과 비교한다. 결과는 `serial`이 아직 지금 요청일 때만 이 시도에 대해 기억한다.
+   */
+  private async preflight(serial: number): Promise<Result<SaveCheck>> {
     const blocker = this.saveBlocker();
     if (blocker && blocker.code === "SaveNotReady" && blocker.reason === "state") return { ok: false, error: blocker };
     const module = this.module!;
@@ -1142,7 +1166,7 @@ export class RhwpEditorSession {
     }
     const checked = await this.backend.preflight(this.sessionId, generation, unedited, contentLoss);
     if (!this.owns(epoch)) return { ok: false, error: { code: "StaleSession", sessionId: this.sessionId } };
-    if (checked.ok) {
+    if (checked.ok && serial === this.checkSerial) {
       this.saveCheck = { generation, check: checked.value };
       this.emit();
     }
@@ -1169,12 +1193,14 @@ export class RhwpEditorSession {
     this.saving = true;
     try {
       const generation = this.generation;
-      if (this.saveCheck?.generation !== generation) {
+      let check = this.saveCheck?.generation === generation ? this.saveCheck.check : null;
+      if (!check) {
         this.setSave({ kind: "checking" });
-        const checked = await this.checkSave();
+        const checked = await this.preflight(++this.checkSerial);
         if (!checked.ok) return fail(checked.error);
+        check = checked.value;
       }
-      const blocked = blockedBy(this.saveCheck!.check);
+      const blocked = blockedBy(check);
       if (blocked) return fail(blocked);
       // 사전 검사를 기다리는 사이 편집이 있었을 수 있다: 지금 확정한 판으로 다시 확인한다.
       const later = this.saveBlocker();
@@ -1188,9 +1214,12 @@ export class RhwpEditorSession {
       if (!result.ok) return fail(result.error);
       this.sessions.applyUpdate(result.value.session);
       const changedSince = this.localRevision !== revision || this.composition !== null || this.provisional !== null;
-      // 저장한 판 뒤에 편집이 없으면 이 모델은 디스크의 파일과 같다(닫기·다시 불러오기에 버리기 확인이 필요 없음).
-      if (!changedSince) this.modified = false;
-      this.saveCheck = null; // 원본이 바뀌었다: 다음 저장은 새 원본으로 다시 검사한다
+      // 저장한 판 뒤에 편집이 없고 교체의 내구성까지 확인했으면 이 모델은 디스크의 파일과 같다(닫기·다시 불러오기에 버리기
+      // 확인이 필요 없음). 내구성을 확인하지 못했으면(교체는 됨) 저장하지 않은 편집으로 남긴다(백엔드도 dirty로 둔다).
+      if (!changedSince && result.value.durable) this.modified = false;
+      // 원본이 바뀌었다: 다음 저장은 새 원본으로 다시 검사한다. 그 전에 시작한 검사의 늦은 결과도 버린다.
+      this.checkSerial += 1;
+      this.saveCheck = null;
       this.setSave({ kind: "saved", revision, durable: result.value.durable, changedSince });
       return result;
     } finally {
@@ -1252,6 +1281,8 @@ export class RhwpEditorSession {
     if (this.disposed) return;
     this.disposed = true;
     this.epoch += 1;
+    this.checkSerial += 1;
+    this.saveCheck = null;
     this.committingEpoch = null;
     this.failure = null;
     this.releaseDocument();

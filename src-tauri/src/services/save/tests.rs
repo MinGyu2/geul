@@ -134,7 +134,8 @@ fn hwp_편집_없는_왕복은_레코드_수준에서_같을_때만_safe() {
         ],
     );
     assert_eq!(hwp::compare(&original, &original), vec![]);
-    // 압축 플래그만 다른 출력(레코드·데이터는 같음)도 같다.
+    // 압축 플래그만 다른 출력: 레코드 스트림은 풀어서 같으면 같지만, 헤더 플래그는 다르고 비레코드 스트림(BinData)은
+    // 한쪽만 압축된 바이트라 다르다(T009 안정화 D: 압축 여부가 스트림마다 정해지므로 풀어서 같다고 보지 않는다).
     let deflated = |data: &[u8]| crate::document::testutil::deflate(data);
     let (di, body) = (deflated(&docinfo(0, b"font")), deflated(&section("hello")));
     let compressed = hwp_doc(
@@ -149,8 +150,11 @@ fn hwp_편집_없는_왕복은_레코드_수준에서_같을_때만_safe() {
     let found = hwp::compare(&original, &compressed);
     assert_eq!(
         found,
-        vec![Finding::at(FindingCode::PartChanged, "FileHeader")],
-        "FileHeader 플래그가 다르면 다르다"
+        vec![
+            Finding::at(FindingCode::PartChanged, "FileHeader"),
+            Finding::at(FindingCode::PartChanged, "BinData/BIN0001.png"),
+        ],
+        "FileHeader 플래그와 압축이 바뀐 BinData는 다르다"
     );
     // 레코드·스트림 차이.
     let cases: [(Vec<u8>, FindingCode, &str); 5] = [
@@ -672,9 +676,15 @@ struct Docx {
 }
 
 fn open_docx(bytes: &[u8]) -> Docx {
+    open_docx_prepared(bytes, |_| {})
+}
+
+/// 불러오기 전에 파일을 `prepare`(권한·링크·확장 속성)한 DOCX 세션.
+fn open_docx_prepared(bytes: &[u8], prepare: impl FnOnce(&Path)) -> Docx {
     let state = DocumentState::default();
     let dir = TempDir::new();
     let path = dir.write("a.docx", bytes);
+    prepare(&path);
     let file = identify(path.to_str().unwrap(), &Limits::default()).unwrap();
     let info = state.registry().register(file).unwrap();
     let loaded = block_on(docx::load(&state, info.session_id, None)).expect("불러오기");
@@ -981,7 +991,11 @@ fn 저장은_세션마다_하나이고_표가_버려지면_다시_할_수_있다
     assert!(committed.dirty);
     let finished = registry
         .finish_save(&ticket, 7, |identity, fingerprint| {
-            Ok((identity.clone(), *fingerprint))
+            Ok(crate::document::Published {
+                identity: identity.clone(),
+                fingerprint: *fingerprint,
+                durable: true,
+            })
         })
         .unwrap();
     assert_eq!((finished.revision, finished.dirty), (2, true));
@@ -1010,7 +1024,11 @@ fn 저장_중_닫거나_다시_불러오거나_실패로_돌린_세션은_원본
     let publish = |identity: &crate::document::FileIdentity,
                    fingerprint: &crate::document::FileFingerprint| {
         publish_called.set(true);
-        Ok((identity.clone(), *fingerprint))
+        Ok(crate::document::Published {
+            identity: identity.clone(),
+            fingerprint: *fingerprint,
+            durable: true,
+        })
     };
     // 닫힘.
     let info = rhwp_session(&state, &dir, "a.hwp", &original);
@@ -1182,11 +1200,19 @@ fn 실제_권한_하드_링크_심볼릭_링크와_권한_비트() {
         let _ = std::fs::remove_file(doc.dir.path().join("probe"));
     }
     std::fs::set_permissions(doc.dir.path(), std::fs::Permissions::from_mode(0o755)).unwrap();
-    // 하드 링크가 둘인 파일.
+    // 불러온 뒤 하드 링크가 생긴 파일: 링크 수가 지문과 달라 외부 변경으로 막는다(T009 안정화).
     let mut doc = open_docx(&original);
     doc.edit(edits());
     doc.preflight().unwrap();
     std::fs::hard_link(&doc.path, doc.dir.path().join("other.docx")).unwrap();
+    assert_eq!(doc.save().err(), Some(DocumentError::FileConflict));
+    assert_eq!(doc.bytes(), original);
+    // 불러오기 전부터 하드 링크가 둘인 파일: 교체하면 다른 이름이 옛 내용을 가리키므로 막는다.
+    let mut doc = open_docx_prepared(&original, |path| {
+        std::fs::hard_link(path, path.with_extension("other")).unwrap()
+    });
+    doc.edit(edits());
+    doc.preflight().unwrap();
     assert_eq!(
         doc.save().err(),
         Some(DocumentError::SaveUnsupported {
@@ -1427,4 +1453,843 @@ fn 패키지_비교_탐침() {
         }
     }
     println!("{summary:#?}");
+}
+
+// ---- T009 안정화 ----
+
+/// 문서 속성 레코드(tag 16) 본문: 구역 수·시작 번호 6개·캐럿 3개, `extra`는 뒤에 붙는 바이트.
+fn properties(sections: u16, starts: [u16; 6], caret: [u32; 3], extra: &[u8]) -> Vec<u8> {
+    let mut out = sections.to_le_bytes().to_vec();
+    for start in starts {
+        out.extend_from_slice(&start.to_le_bytes());
+    }
+    for value in caret {
+        out.extend_from_slice(&value.to_le_bytes());
+    }
+    out.extend_from_slice(extra);
+    out
+}
+
+fn docinfo_with(properties: &[u8]) -> Vec<u8> {
+    [record(16, 0, properties), record(19, 1, b"font")].concat()
+}
+
+#[test]
+fn a_문서_속성은_26바이트의_캐럿_12바이트만_다를_수_있다() {
+    let base = properties(1, [1; 6], [0, 0, 0], b"");
+    let original = hwp_doc(0, &docinfo_with(&base), &section("hello"), &[]);
+    let saved = |props: &[u8]| {
+        hwp::compare_saved(
+            &original,
+            &hwp_doc(0, &docinfo_with(props), &section("hi"), &[]),
+        )
+    };
+    assert_eq!(
+        saved(&properties(1, [1; 6], [3, 7, 42], b"")),
+        vec![],
+        "캐럿만 다름"
+    );
+    let changed = vec![Finding::at(FindingCode::RecordsChanged, "DocInfo")];
+    assert_eq!(
+        saved(&properties(2, [1; 6], [3, 7, 42], b"")),
+        changed,
+        "구역 수"
+    );
+    assert_eq!(
+        saved(&properties(1, [1, 1, 1, 9, 1, 1], [0, 0, 0], b"")),
+        changed,
+        "시작 번호"
+    );
+    assert_eq!(
+        saved(&properties(1, [1; 6], [0, 0, 0], b"\x00\x00\x00\x00")),
+        changed,
+        "뒤에 붙은 바이트"
+    );
+    // 26바이트가 아닌 배치(뒤에 모르는 바이트가 있는 레코드)는 해석할 수 없으므로 캐럿도 면제하지 않는다.
+    let long = |caret: [u32; 3], tail: &[u8]| properties(1, [1; 6], caret, tail);
+    let original_long = hwp_doc(
+        0,
+        &docinfo_with(&long([0, 0, 0], b"ABCD")),
+        &section("hello"),
+        &[],
+    );
+    let saved_long = |props: &[u8]| {
+        hwp::compare_saved(
+            &original_long,
+            &hwp_doc(0, &docinfo_with(props), &section("hi"), &[]),
+        )
+    };
+    assert_eq!(
+        saved_long(&long([0, 0, 0], b"ABCX")),
+        changed,
+        "캐럿 바로 뒤 바이트 변경"
+    );
+    assert_eq!(
+        saved_long(&long([1, 2, 3], b"ABCD")),
+        changed,
+        "모르는 배치의 캐럿 면제 없음"
+    );
+    assert_eq!(saved_long(&long([0, 0, 0], b"ABCD")), vec![]);
+    // 짧은 레코드.
+    let short = hwp_doc(0, &docinfo_with(&[1, 0, 1, 0]), &section("hello"), &[]);
+    assert_eq!(
+        hwp::compare_saved(
+            &short,
+            &hwp_doc(0, &docinfo_with(&[1, 0, 2, 0]), &section("hi"), &[])
+        ),
+        changed
+    );
+    assert_eq!(
+        hwp::compare_saved(
+            &short,
+            &hwp_doc(0, &docinfo_with(&[1, 0, 1, 0]), &section("hi"), &[])
+        ),
+        vec![]
+    );
+}
+
+#[test]
+fn d_비레코드_스트림은_바이트가_같을_때만_같다() {
+    let deflate = crate::document::testutil::deflate;
+    let doc = |extra: &[(&str, &[u8])]| hwp_doc(0, &docinfo(0, b"font"), &section("hello"), extra);
+    let png = b"\x89PNG image bytes".to_vec();
+    let same = doc(&[("/BinData/BIN0001.png", &png)]);
+    assert_eq!(
+        hwp::compare(&same, &doc(&[("/BinData/BIN0001.png", &png)])),
+        vec![]
+    );
+    let packed = deflate(&png);
+    assert_eq!(
+        hwp::compare(
+            &doc(&[("/BinData/BIN0001.png", &packed)]),
+            &doc(&[("/BinData/BIN0001.png", &packed)])
+        ),
+        vec![]
+    );
+    let changed = vec![Finding::at(FindingCode::PartChanged, "BinData/BIN0001.png")];
+    // 한쪽만 압축: 같은 BinData 속성(DocInfo 그대로)이면 읽는 쪽은 둘을 다르게 읽는다.
+    assert_eq!(
+        hwp::compare(
+            &doc(&[("/BinData/BIN0001.png", &packed)]),
+            &doc(&[("/BinData/BIN0001.png", &png)])
+        ),
+        changed
+    );
+    assert_eq!(
+        hwp::compare(
+            &doc(&[("/BinData/BIN0001.png", &png)]),
+            &doc(&[("/BinData/BIN0001.png", &packed)])
+        ),
+        changed
+    );
+    // 압축하지 않은 데이터가 우연히 deflate로 풀리는 경우.
+    let looks = deflate(b"abc");
+    assert_eq!(
+        hwp::compare(
+            &doc(&[("/Scripts/X", &looks)]),
+            &doc(&[("/Scripts/X", b"abc")])
+        ),
+        vec![Finding::at(FindingCode::PartChanged, "Scripts/X")]
+    );
+    // 같은 내용의 다른 deflate 인코딩(압축 수준)도 바이트가 다르면 다르다고 본다(동치를 증명하지 않음).
+    let mut fast = flate2::write::DeflateEncoder::new(Vec::new(), flate2::Compression::fast());
+    std::io::Write::write_all(&mut fast, &png.repeat(50)).unwrap();
+    let fast = fast.finish().unwrap();
+    let best = {
+        let mut e = flate2::write::DeflateEncoder::new(Vec::new(), flate2::Compression::best());
+        std::io::Write::write_all(&mut e, &png.repeat(50)).unwrap();
+        e.finish().unwrap()
+    };
+    if fast != best {
+        assert_eq!(
+            hwp::compare(
+                &doc(&[("/BinData/BIN0001.png", &fast)]),
+                &doc(&[("/BinData/BIN0001.png", &best)])
+            ),
+            changed
+        );
+    }
+    // 깨진 압축 데이터.
+    assert_eq!(
+        hwp::compare(
+            &doc(&[("/BinData/BIN0001.png", b"\xff\xff\xff")]),
+            &doc(&[("/BinData/BIN0001.png", b"\xff\xff\xfe")])
+        ),
+        changed
+    );
+}
+
+/// DocInfo BIN_DATA 레코드(내장, 압축 속성 `compression`: 0 문서·1 압축·2 비압축·3 예약).
+fn bin_data(id: u16, extension: &str, compression: u16) -> Vec<u8> {
+    let mut body = (1u16 | (compression << 4)).to_le_bytes().to_vec();
+    body.extend_from_slice(&id.to_le_bytes());
+    body.extend_from_slice(&(extension.encode_utf16().count() as u16).to_le_bytes());
+    body.extend_from_slice(&utf16(extension));
+    record(18, 1, &body)
+}
+
+#[test]
+fn d_bindata는_속성으로_정한_저장_형태가_같을_때만_풀어서_비교한다() {
+    let deflate = crate::document::testutil::deflate;
+    let image = b"\x89PNG image bytes ".repeat(40);
+    let encode = |level: u32, data: &[u8]| {
+        let mut e = flate2::write::DeflateEncoder::new(Vec::new(), flate2::Compression::new(level));
+        std::io::Write::write_all(&mut e, data).unwrap();
+        e.finish().unwrap()
+    };
+    let (fast, best) = (encode(1, &image), encode(9, &image));
+    assert_ne!(fast, best, "시험 전제: 다른 인코딩");
+    let name = "BinData/BIN0001.png";
+    let path = "/BinData/BIN0001.png";
+    // flags: 문서 압축 플래그. 레코드 스트림은 플래그에 맞춰 압축한다.
+    let doc = |flags: u32, compression: u16, stream: &[u8]| {
+        let di = [docinfo(0, b"font"), bin_data(1, "png", compression)].concat();
+        let (di, body) = if flags & 1 != 0 {
+            (deflate(&di), deflate(&section("hello")))
+        } else {
+            (di, section("hello"))
+        };
+        hwp_doc(flags, &di, &body, &[(path, stream)])
+    };
+    let changed = vec![Finding::at(FindingCode::PartChanged, name)];
+    // 압축(속성 1, 또는 속성 0 + 압축 문서): 다른 인코딩도 끝까지 풀어 같으면 같다.
+    assert_eq!(hwp::compare(&doc(0, 1, &fast), &doc(0, 1, &best)), vec![]);
+    assert_eq!(hwp::compare(&doc(1, 0, &fast), &doc(1, 0, &best)), vec![]);
+    // 풀어서 다르면 다르다.
+    assert_eq!(
+        hwp::compare(&doc(0, 1, &fast), &doc(0, 1, &encode(9, b"other"))),
+        changed
+    );
+    // 비압축(속성 2, 또는 속성 0 + 비압축 문서): 바이트가 같아야 한다(풀리는 바이트라도 풀지 않는다).
+    assert_eq!(hwp::compare(&doc(0, 2, &fast), &doc(0, 2, &best)), changed);
+    assert_eq!(hwp::compare(&doc(0, 0, &fast), &doc(0, 0, &best)), changed);
+    assert_eq!(hwp::compare(&doc(1, 2, &image), &doc(1, 2, &fast)), changed);
+    // 예약 속성(3): 형태를 정할 수 없으므로 바이트 비교.
+    assert_eq!(hwp::compare(&doc(0, 3, &fast), &doc(0, 3, &best)), changed);
+    // 문서 플래그가 바뀌어 속성 0의 형태가 달라짐: 같은 내용이라도 다르다.
+    let found = hwp::compare(&doc(1, 0, &fast), &doc(0, 0, &image));
+    assert!(found.contains(&changed[0]), "{found:?}");
+    // 압축이어야 하는데 원본이 안 풀림: unknown. 출력이 안 풀리거나 뒤에 남는 바이트: unsafe.
+    assert_eq!(
+        hwp::compare(&doc(0, 1, b"\xff\xff"), &doc(0, 1, &best)),
+        vec![Finding::at(FindingCode::OriginalMalformed, name)]
+    );
+    assert_eq!(
+        hwp::compare(&doc(0, 1, &fast), &doc(0, 1, b"\xff\xff")),
+        vec![Finding::at(FindingCode::OutputMalformed, name)]
+    );
+    let trailing = [best.clone(), b"tail".to_vec()].concat();
+    assert_eq!(
+        hwp::compare(&doc(0, 1, &fast), &doc(0, 1, &trailing)),
+        vec![Finding::at(FindingCode::OutputMalformed, name)]
+    );
+    let mut truncated = best.clone();
+    truncated.truncate(best.len() / 2);
+    assert_eq!(
+        hwp::compare(&doc(0, 1, &fast), &doc(0, 1, &truncated)),
+        vec![Finding::at(FindingCode::OutputMalformed, name)]
+    );
+    // 한컴 꼬리(푼 내용의 CRC-32·길이 8바이트): 맞으면 받고, 맞지 않으면 원본을 해석할 수 없다.
+    let mut crc = flate2::Crc::new();
+    crc.update(&image);
+    let tail = [crc.sum().to_le_bytes(), (image.len() as u32).to_le_bytes()].concat();
+    let hancom = [fast.clone(), tail.clone()].concat();
+    assert_eq!(hwp::compare(&doc(0, 1, &hancom), &doc(0, 1, &best)), vec![]);
+    let mut wrong = tail.clone();
+    wrong[0] ^= 1;
+    assert_eq!(
+        hwp::compare(
+            &doc(0, 1, &[fast.clone(), wrong].concat()),
+            &doc(0, 1, &best)
+        ),
+        vec![Finding::at(FindingCode::OriginalMalformed, name)]
+    );
+    // 레코드 스트림도 같은 규칙: 꼬리가 맞으면 같고, 그 밖의 남는 바이트는 해석할 수 없다.
+    let records = |di_tail: &[u8]| {
+        let di = deflate(&docinfo(0, b"font"));
+        hwp_doc(
+            1,
+            &[di, di_tail.to_vec()].concat(),
+            &deflate(&section("hello")),
+            &[],
+        )
+    };
+    let mut crc = flate2::Crc::new();
+    crc.update(&docinfo(0, b"font"));
+    let di_tail = [
+        crc.sum().to_le_bytes(),
+        (docinfo(0, b"font").len() as u32).to_le_bytes(),
+    ]
+    .concat();
+    assert_eq!(hwp::compare(&records(&di_tail), &records(&[])), vec![]);
+    assert_eq!(
+        hwp::compare(&records(b"junk"), &records(&[])),
+        vec![Finding::at(FindingCode::OriginalMalformed, "DocInfo")]
+    );
+    assert_eq!(
+        hwp::compare(&records(&[]), &records(b"junk")),
+        vec![Finding::at(FindingCode::OutputMalformed, "DocInfo")]
+    );
+    // 속성이 가리키지 않는 이름(확장자 다름)은 바이트 비교.
+    let other = |stream: &[u8]| {
+        let di = [docinfo(0, b"font"), bin_data(1, "jpg", 1)].concat();
+        hwp_doc(0, &di, &section("hello"), &[(path, stream)])
+    };
+    assert_eq!(hwp::compare(&other(&fast), &other(&best)), changed);
+    // 같은 이름에 형태가 둘인 속성: 바이트 비교.
+    let twice = |stream: &[u8]| {
+        let di = [
+            docinfo(0, b"font"),
+            bin_data(1, "png", 1),
+            bin_data(1, "png", 2),
+        ]
+        .concat();
+        hwp_doc(0, &di, &section("hello"), &[(path, stream)])
+    };
+    assert_eq!(hwp::compare(&twice(&fast), &twice(&best)), changed);
+}
+
+#[test]
+fn e_같은_바이트의_깨진_레코드는_보존의_근거가_아니다() {
+    let mut broken = docinfo(0, b"font");
+    broken.truncate(broken.len() - 2);
+    let original = hwp_doc(0, &broken, &section("hello"), &[]);
+    let verdict = Preservation::from_findings(hwp::compare(&original, &original));
+    assert_eq!(
+        verdict.findings,
+        vec![Finding::at(FindingCode::OriginalMalformed, "DocInfo")]
+    );
+    assert_eq!(verdict.outcome, Outcome::Unknown);
+    let mut body = section("hello");
+    body.truncate(body.len() - 1);
+    let original = hwp_doc(0, &docinfo(0, b"font"), &body, &[]);
+    assert_eq!(
+        hwp::compare(&original, &original),
+        vec![Finding::at(
+            FindingCode::OriginalMalformed,
+            "BodyText/Section0"
+        )]
+    );
+    // 편집 저장: 원본 DocInfo가 깨졌으면 출력이 같아도 unknown.
+    let original = hwp_doc(0, &broken, &section("hello"), &[]);
+    let output = hwp_doc(0, &broken, &section("hello, edited"), &[]);
+    assert_eq!(
+        hwp::compare_saved(&original, &output),
+        vec![Finding::at(FindingCode::OriginalMalformed, "DocInfo")]
+    );
+    // 압축 플래그인데 같은 바이트가 deflate가 아님.
+    let original = hwp_doc(1, b"not deflate", b"not deflate", &[]);
+    assert!(codes(&hwp::compare(&original, &original)).contains(&FindingCode::OriginalMalformed));
+}
+
+/// 한 색(모든 픽셀이 같은) 또는 두 색 RGBA PNG.
+fn png(width: u32, height: u32, uniform: bool) -> Vec<u8> {
+    fn chunk(out: &mut Vec<u8>, kind: &[u8], data: &[u8]) {
+        out.extend_from_slice(&(data.len() as u32).to_be_bytes());
+        let mut crc = flate2::Crc::new();
+        crc.update(kind);
+        crc.update(data);
+        out.extend_from_slice(kind);
+        out.extend_from_slice(data);
+        out.extend_from_slice(&crc.sum().to_be_bytes());
+    }
+    let mut raw = Vec::new();
+    for y in 0..height {
+        raw.push(0);
+        for x in 0..width {
+            let ink = !uniform && x == width / 2 && y == height / 2;
+            raw.extend_from_slice(if ink {
+                &[0, 0, 0, 255]
+            } else {
+                &[255, 255, 255, 255]
+            });
+        }
+    }
+    let mut zlib = flate2::write::ZlibEncoder::new(Vec::new(), flate2::Compression::default());
+    std::io::Write::write_all(&mut zlib, &raw).unwrap();
+    let mut ihdr = width.to_be_bytes().to_vec();
+    ihdr.extend_from_slice(&height.to_be_bytes());
+    ihdr.extend_from_slice(&[8, 6, 0, 0, 0]);
+    let mut out = b"\x89PNG\r\n\x1a\n".to_vec();
+    chunk(&mut out, b"IHDR", &ihdr);
+    chunk(&mut out, b"IDAT", &zlib.finish().unwrap());
+    chunk(&mut out, b"IEND", b"");
+    out
+}
+
+fn utf16(text: &str) -> Vec<u8> {
+    text.encode_utf16().flat_map(u16::to_le_bytes).collect()
+}
+
+#[test]
+fn f_본문을_바꾼_hwp_저장은_내용이_없음을_증명한_미리보기만_그대로_둘_수_있다() {
+    let stale = vec![Finding::at(FindingCode::PreviewStale, "PrvText")];
+    let doc = |body: &str, prv_text: Option<&[u8]>, prv_image: Option<&[u8]>| {
+        let mut extra: Vec<(&str, &[u8])> = Vec::new();
+        if let Some(text) = prv_text {
+            extra.push(("/PrvText", text));
+        }
+        if let Some(image) = prv_image {
+            extra.push(("/PrvImage", image));
+        }
+        hwp_doc(0, &docinfo(0, b"font"), &section(body), &extra)
+    };
+    let blank_text = utf16("\r\n");
+    let blank_image = png(8, 4, true);
+    // 미리보기 없음·내용 없는 미리보기: 본문을 바꿔도 된다.
+    assert_eq!(
+        hwp::compare_saved(&doc("비밀 문장", None, None), &doc("공개", None, None)),
+        vec![]
+    );
+    assert_eq!(
+        hwp::compare_saved(
+            &doc("비밀", Some(&blank_text), Some(&blank_image)),
+            &doc("공개", Some(&blank_text), Some(&blank_image))
+        ),
+        vec![]
+    );
+    // 글자가 있는 미리보기: 지우거나 바꾼 본문이 미리보기에 남는다.
+    let text = utf16("비밀 문장");
+    for edited in ["", "다른 문장"] {
+        assert_eq!(
+            hwp::compare_saved(
+                &doc("비밀 문장", Some(&text), None),
+                &doc(edited, Some(&text), None)
+            ),
+            stale,
+            "{edited:?}"
+        );
+    }
+    // 그림이 있는(한 색이 아닌) 미리보기·해석할 수 없는 그림.
+    let image = png(8, 4, false);
+    assert_eq!(
+        hwp::compare_saved(&doc("a", None, Some(&image)), &doc("b", None, Some(&image))),
+        vec![Finding::at(FindingCode::PreviewStale, "PrvImage")]
+    );
+    let bmp = b"BM\x00\x00 not a png".to_vec();
+    assert_eq!(
+        hwp::compare_saved(&doc("a", None, Some(&bmp)), &doc("b", None, Some(&bmp))),
+        vec![Finding::at(FindingCode::PreviewStale, "PrvImage")]
+    );
+    // 본문이 그대로면 미리보기도 낡지 않았다.
+    assert_eq!(
+        hwp::compare_saved(
+            &doc("a", Some(&text), Some(&image)),
+            &doc("a", Some(&text), Some(&image))
+        ),
+        vec![]
+    );
+    // 편집 없는 사전 검사는 미리보기를 문제 삼지 않는다(본문이 같음).
+    assert_eq!(
+        hwp::compare(
+            &doc("a", Some(&text), Some(&image)),
+            &doc("a", Some(&text), Some(&image))
+        ),
+        vec![]
+    );
+}
+
+#[test]
+fn f_hwpx와_docx도_본문을_바꾼_저장은_미리보기가_비었음을_증명해야_한다() {
+    let with_preview = |section: &str, text: &[u8], image: &[u8]| {
+        let mut entries = hwpx_package(section, "<head/>", true, true);
+        entries.push(entry("Preview/PrvText.txt", text));
+        entries.push(entry("Preview/PrvImage.png", image));
+        pkg(&entries)
+    };
+    let blank = png(1, 1, true);
+    let original = with_preview("<sec><p>비밀</p></sec>", b"\r\n", &blank);
+    assert_eq!(
+        package::compare_saved_hwpx(
+            &original,
+            &with_preview("<sec><p>공개</p></sec>", b"\r\n", &blank)
+        ),
+        vec![]
+    );
+    let original = with_preview("<sec><p>비밀</p></sec>", "비밀".as_bytes(), &blank);
+    assert_eq!(
+        package::compare_saved_hwpx(
+            &original,
+            &with_preview("<sec><p>공개</p></sec>", "비밀".as_bytes(), &blank)
+        ),
+        vec![Finding::at(
+            FindingCode::PreviewStale,
+            "Preview/PrvText.txt"
+        )]
+    );
+    let inked = png(4, 4, false);
+    let original = with_preview("<sec><p>a</p></sec>", b"\r\n", &inked);
+    assert_eq!(
+        package::compare_saved_hwpx(
+            &original,
+            &with_preview("<sec><p>b</p></sec>", b"\r\n", &inked)
+        ),
+        vec![Finding::at(
+            FindingCode::PreviewStale,
+            "Preview/PrvImage.png"
+        )]
+    );
+    // DOCX 썸네일.
+    let doc = |text: &str| {
+        format!(
+            r#"<w:document xmlns:w="{W}"><w:body><w:p><w:r><w:t>{text}</w:t></w:r></w:p></w:body></w:document>"#
+        )
+    };
+    let thumb = |text: &str| {
+        pkg(&[
+            entry("word/document.xml", doc(text).as_bytes()),
+            entry("docProps/thumbnail.jpeg", b"\xff\xd8 jpeg"),
+        ])
+    };
+    assert_eq!(
+        package::compare_saved_docx(&thumb("비밀"), &thumb("공개")),
+        vec![Finding::at(
+            FindingCode::PreviewStale,
+            "docProps/thumbnail.jpeg"
+        )]
+    );
+    assert_eq!(
+        package::compare_saved_docx(&thumb("같음"), &thumb("같음")),
+        vec![]
+    );
+}
+
+#[test]
+fn g_rhwp_형식은_손실_보고가_반드시_있어야_하고_docx는_받지_않는다() {
+    let hwp = hwp_doc(0, &docinfo(0, b"font"), &section("hello"), &[]);
+    let invalid = Finding::new(FindingCode::LossReportInvalid);
+    let verdict = service::preflight(Format::Hwp, &hwp, &hwp, None);
+    assert_eq!(
+        (verdict.outcome, verdict.findings.contains(&invalid)),
+        (Outcome::Unknown, true)
+    );
+    let verdict = service::check_saved(Format::Hwp, &hwp, &hwp, None, true);
+    assert_eq!(
+        (verdict.outcome, verdict.findings.contains(&invalid)),
+        (Outcome::Unknown, true)
+    );
+    let hwpx = zip(&hwpx_package("<sec/>", "<head/>", true, true), false);
+    assert!(service::preflight(Format::Hwpx, &hwpx, &hwpx, None)
+        .findings
+        .contains(&invalid));
+    assert!(service::check_saved(Format::Hwpx, &hwpx, &hwpx, None, true)
+        .findings
+        .contains(&invalid));
+    assert!(service::preflight(Format::Hwp, &hwp, &hwp, Some(&report("hwp", json!([])))).is_safe());
+    // DOCX는 rhwp 보고서를 쓰지 않는다: 들어오면 계약 위반(unknown).
+    let docx = basic::basic_ko().unwrap();
+    assert!(service::preflight(Format::Docx, &docx, &docx, None).is_safe());
+    let verdict = service::preflight(Format::Docx, &docx, &docx, Some(&report("hwp", json!([]))));
+    assert_eq!(
+        (verdict.outcome, verdict.findings),
+        (Outcome::Unknown, vec![invalid])
+    );
+}
+
+/// 시험용: 확장 속성을 단다(파일 시스템이 지원하지 않으면 false).
+#[cfg(target_os = "linux")]
+fn set_xattr(path: &Path, name: &str, value: &[u8]) -> bool {
+    use std::os::unix::ffi::OsStrExt;
+    let path = std::ffi::CString::new(path.as_os_str().as_bytes()).unwrap();
+    let name = std::ffi::CString::new(name).unwrap();
+    // SAFETY: NUL로 끝나는 경로·이름, 값 포인터·길이 짝.
+    unsafe {
+        libc::setxattr(
+            path.as_ptr(),
+            name.as_ptr(),
+            value.as_ptr().cast(),
+            value.len(),
+            0,
+        ) == 0
+    }
+}
+
+/// 시험용: 저장 중(임시 파일을 다 쓴 뒤·교체 직전 확인 전)에 원본 경로로 `hook`을 부르며 저장한다(같은 스레드에서
+/// 서비스를 직접 부른다: 훅은 스레드 지역 값).
+fn save_hooked(doc: &Docx, hook: impl Fn(&Path) + 'static) -> Result<SaveOutcome, DocumentError> {
+    super::publish::BEFORE_CHECK.with(|cell| *cell.borrow_mut() = Some(Box::new(hook)));
+    let result = save_with_fault(doc, None);
+    super::publish::BEFORE_CHECK.with(|cell| *cell.borrow_mut() = None);
+    result
+}
+
+#[cfg(target_os = "linux")]
+#[test]
+fn b_읽기_전용_원본은_디렉터리에_쓸_수_있어도_바꾸지_않는다() {
+    use std::os::unix::fs::{MetadataExt, PermissionsExt};
+    let original = basic::basic_ko().unwrap();
+    let mode = |path: &Path| std::fs::metadata(path).unwrap().mode() & 0o7777;
+    let read_only = Some(DocumentError::SaveUnsupported {
+        reason: SaveUnsupportedReason::ReadOnly,
+    });
+    // 0444·0400·0464(소유자 쓰기 없음, 그룹 쓰기는 있음): 디렉터리는 쓸 수 있지만 원본은 그대로.
+    for bits in [0o444, 0o400, 0o464] {
+        let mut doc = open_docx_prepared(&original, |path| {
+            std::fs::set_permissions(path, std::fs::Permissions::from_mode(bits)).unwrap()
+        });
+        doc.edit(edits());
+        doc.preflight().unwrap();
+        assert_eq!(doc.save().err(), read_only, "{bits:o}");
+        assert_eq!((doc.bytes(), mode(&doc.path)), (original.clone(), bits));
+        assert_eq!(doc.leftovers(), Vec::<String>::new());
+        assert!(doc.state.registry().get(doc.info.session_id).unwrap().dirty);
+    }
+    // 0644는 바꾼다(권한 그대로).
+    let mut doc = open_docx_prepared(&original, |path| {
+        std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o644)).unwrap()
+    });
+    doc.edit(edits());
+    doc.preflight().unwrap();
+    assert!(!doc.save().unwrap().session.dirty);
+    assert_eq!(mode(&doc.path), 0o644);
+    // 저장 중에 읽기 전용으로 바뀜: 교체 직전 확인(권한·ctime)이 막는다.
+    let mut doc = open_docx(&original);
+    doc.edit(edits());
+    doc.preflight().unwrap();
+    let saved = save_hooked(&doc, |path| {
+        std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o444)).unwrap()
+    });
+    assert_eq!(saved.err(), Some(DocumentError::FileConflict));
+    assert_eq!((doc.bytes(), mode(&doc.path)), (original.clone(), 0o444));
+    assert_eq!(doc.leftovers(), Vec::<String>::new());
+    // 다른 그룹 소유(이 프로세스가 속한 보조 그룹으로 chgrp): 교체하면 그룹이 바뀌므로 막는다.
+    let primary = std::fs::metadata(&doc.path).unwrap().gid();
+    // SAFETY: 크기를 물은 뒤 그만큼의 버퍼로 다시 부른다.
+    let groups = unsafe {
+        let count = libc::getgroups(0, std::ptr::null_mut());
+        let mut groups = vec![0; count.max(0) as usize];
+        let got = libc::getgroups(count, groups.as_mut_ptr());
+        groups.truncate(got.max(0) as usize);
+        groups
+    };
+    match groups.into_iter().find(|group| *group != primary) {
+        Some(group) => {
+            let mut doc = open_docx_prepared(&original, |path| {
+                std::os::unix::fs::chown(path, None, Some(group)).unwrap()
+            });
+            doc.edit(edits());
+            doc.preflight().unwrap();
+            assert_eq!(
+                doc.save().err(),
+                Some(DocumentError::SaveUnsupported {
+                    reason: SaveUnsupportedReason::Ownership
+                })
+            );
+            assert_eq!(doc.bytes(), original);
+            assert_eq!(doc.leftovers(), Vec::<String>::new());
+        }
+        None => eprintln!("NOT RUN: 다른 그룹 소유(보조 그룹 없음)"),
+    }
+}
+
+#[cfg(target_os = "linux")]
+#[test]
+fn c_교체로_잃을_메타데이터가_있거나_저장_중_바뀌면_막는다() {
+    use std::os::unix::fs::PermissionsExt;
+    let original = basic::basic_ko().unwrap();
+    let metadata = Some(DocumentError::SaveUnsupported {
+        reason: SaveUnsupportedReason::Metadata,
+    });
+    let check = |doc: &Docx| {
+        assert_eq!(doc.bytes(), original);
+        assert_eq!(doc.leftovers(), Vec::<String>::new());
+    };
+    // 저장 중 원본의 권한·링크 수·확장 속성이 바뀜: 지문(ctime·mode·nlink)이 달라 충돌.
+    let probe = TempDir::new();
+    let xattr_supported = set_xattr(&probe.write("probe", b""), "user.geul-probe", b"");
+    let mut hooks: Vec<(&str, super::publish::Hook)> = vec![
+        (
+            "chmod",
+            Box::new(|path: &Path| {
+                std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o600)).unwrap()
+            }),
+        ),
+        (
+            "link",
+            Box::new(|path: &Path| std::fs::hard_link(path, path.with_extension("link")).unwrap()),
+        ),
+    ];
+    if xattr_supported {
+        hooks.push((
+            "xattr",
+            Box::new(|path: &Path| assert!(set_xattr(path, "user.geul-test", b"x"))),
+        ));
+    } else {
+        eprintln!("NOT RUN: 저장 중 확장 속성 변경(파일 시스템이 user xattr를 지원하지 않음)");
+    }
+    for (name, hook) in hooks {
+        let mut doc = open_docx(&original);
+        doc.edit(edits());
+        doc.preflight().unwrap();
+        let saved = save_hooked(&doc, hook);
+        assert_eq!(saved.err(), Some(DocumentError::FileConflict), "{name}");
+        assert_eq!(doc.bytes(), original, "{name}");
+        let left: Vec<String> = doc
+            .leftovers()
+            .into_iter()
+            .filter(|file| !file.ends_with(".link"))
+            .collect();
+        assert_eq!(left, Vec::<String>::new(), "{name}");
+    }
+    // 불러오기 전부터 확장 속성이 있는 원본: 새 파일에 없으므로 막는다.
+    if xattr_supported {
+        let mut doc = open_docx_prepared(&original, |path| {
+            assert!(set_xattr(path, "user.geul-tag", b"keep"))
+        });
+        doc.edit(edits());
+        doc.preflight().unwrap();
+        assert_eq!(doc.save().err(), metadata);
+        check(&doc);
+    } else {
+        eprintln!("NOT RUN: 원본 user xattr(파일 시스템이 지원하지 않음)");
+    }
+    // POSIX ACL(이름 붙은 사용자 항목): 새 파일에 없으므로 막는다.
+    let uid = std::fs::metadata(probe.path())
+        .map(|m| std::os::unix::fs::MetadataExt::uid(&m))
+        .unwrap();
+    let mut applied = false;
+    let mut doc = open_docx_prepared(&original, |path| {
+        applied = std::process::Command::new("setfacl")
+            .args(["-m", &format!("u:{uid}:r")])
+            .arg(path)
+            .status()
+            .is_ok_and(|status| status.success());
+    });
+    if applied {
+        doc.edit(edits());
+        doc.preflight().unwrap();
+        assert_eq!(doc.save().err(), metadata);
+        check(&doc);
+    } else {
+        eprintln!("NOT RUN: POSIX ACL(setfacl 없음 또는 파일 시스템 미지원)");
+    }
+    // 메타데이터를 읽지 못함: 막는다.
+    let mut doc = open_docx(&original);
+    doc.edit(edits());
+    doc.preflight().unwrap();
+    assert_eq!(save_with_fault(&doc, Some(Fault::Inspect)).err(), metadata);
+    check(&doc);
+    // 메타데이터가 없는(같은) 원본은 저장한다.
+    let mut doc = open_docx(&original);
+    doc.edit(edits());
+    doc.preflight().unwrap();
+    assert!(doc.save().is_ok());
+}
+
+/// 다시 불러오기 전 단계(편집기가 세션을 failed로 돌림).
+fn registry_fail(doc: &Docx) {
+    doc.state
+        .registry()
+        .transition(
+            doc.info.session_id,
+            doc.info.load_generation,
+            SessionState::Ready,
+            SessionState::Failed,
+        )
+        .unwrap();
+}
+
+#[test]
+fn i_교체_뒤_fsync_실패는_교체됨_내구성_미확인으로_남기고_다시_저장할_수_있다() {
+    let original = basic::basic_ko().unwrap();
+    let mut doc = open_docx(&original);
+    doc.edit(edits());
+    doc.preflight().unwrap();
+    let saved = save_with_fault(&doc, Some(Fault::DirSync)).unwrap();
+    // 교체는 됐다(되돌리지 않음): 디스크는 새 파일이고 임시 파일은 없다.
+    assert!(!saved.durable);
+    let written = doc.bytes();
+    assert_ne!(written, original);
+    assert_eq!(doc.leftovers(), Vec::<String>::new());
+    // 판은 그대로이고 dirty로 남는다(닫기·다시 불러오기가 버리기를 확인한다).
+    assert_eq!(saved.session.revision, doc.info.revision);
+    assert!(saved.session.dirty);
+    let registry = doc.state.registry();
+    assert!(registry.get(doc.info.session_id).unwrap().dirty);
+    // 기록은 새 파일을 원본으로 한다: 다시 검사·저장하면 충돌 없이 교체하고 깨끗해진다.
+    let check = doc.preflight().unwrap();
+    assert!(check.preservation.is_safe(), "{:?}", check.preservation);
+    let again = doc.save().unwrap();
+    assert!(again.durable);
+    assert!(!again.session.dirty);
+    assert_eq!(again.session.revision, doc.info.revision);
+    // 내구성 미확인 뒤 다시 불러오면(디스크에서 읽음) 깨끗하다.
+    let mut doc = open_docx(&original);
+    doc.edit(edits());
+    doc.preflight().unwrap();
+    assert!(!save_with_fault(&doc, Some(Fault::DirSync)).unwrap().durable);
+    registry_fail(&doc);
+    let reloaded = block_on(docx::load(&doc.state, doc.info.session_id, None)).unwrap();
+    assert!(!reloaded.session.dirty);
+}
+
+#[test]
+fn 안정화_오류와_근거의_직렬화_형식() {
+    fn json(value: &impl serde::Serialize) -> String {
+        serde_json::to_string(value).unwrap()
+    }
+    for (reason, name) in [
+        (SaveUnsupportedReason::ReadOnly, "read-only"),
+        (SaveUnsupportedReason::Metadata, "metadata"),
+    ] {
+        assert_eq!(
+            json(&DocumentError::SaveUnsupported { reason }),
+            format!(r#"{{"code":"SaveUnsupported","reason":"{name}"}}"#)
+        );
+    }
+    assert_eq!(
+        json(&Finding::at(FindingCode::PreviewStale, "PrvText")),
+        r#"{"code":"previewStale","part":"PrvText"}"#
+    );
+}
+
+#[test]
+fn f_한_색_png_증명은_글을_숨길_자리가_있으면_하지_않는다() {
+    use super::preview::{blank_utf16, blank_utf8, uniform_png};
+    let blank = png(6, 3, true);
+    assert!(uniform_png(&blank));
+    assert!(!uniform_png(&png(6, 3, false)));
+    // IHDR(8 + 25바이트) 뒤에 덩어리를 끼운다.
+    let with_chunk = |kind: &[u8], body: &[u8]| {
+        let mut chunk = (body.len() as u32).to_be_bytes().to_vec();
+        chunk.extend_from_slice(kind);
+        chunk.extend_from_slice(body);
+        chunk.extend_from_slice(&[0; 4]);
+        [&blank[..33], &chunk, &blank[33..]].concat()
+    };
+    assert!(uniform_png(&with_chunk(b"pHYs", &[0; 9])));
+    for kind in [b"tEXt", b"zTXt", b"iTXt", b"eXIf", b"prVt"] {
+        assert!(
+            !uniform_png(&with_chunk(kind, b"Comment\0secret")),
+            "{:?}",
+            std::str::from_utf8(kind)
+        );
+    }
+    // IEND 뒤 바이트.
+    assert!(!uniform_png(&[blank.clone(), b"secret".to_vec()].concat()));
+    // 픽셀보다 긴 압축 해제 내용, deflate 뒤 남는 바이트.
+    let rebuild = |raw: &[u8], tail: &[u8]| {
+        let mut zlib = flate2::write::ZlibEncoder::new(Vec::new(), flate2::Compression::default());
+        std::io::Write::write_all(&mut zlib, raw).unwrap();
+        let idat = [zlib.finish().unwrap(), tail.to_vec()].concat();
+        let mut out = blank[..33].to_vec();
+        out.extend_from_slice(&(idat.len() as u32).to_be_bytes());
+        out.extend_from_slice(b"IDAT");
+        out.extend_from_slice(&idat);
+        out.extend_from_slice(&[0; 4]);
+        out.extend_from_slice(&blank[blank.len() - 12..]);
+        out
+    };
+    let rows: Vec<u8> = (0..3)
+        .flat_map(|_| std::iter::once(0).chain([255u8; 24]))
+        .collect();
+    assert!(uniform_png(&rebuild(&rows, &[])));
+    assert!(!uniform_png(&rebuild(
+        &[rows.clone(), b"secret".to_vec()].concat(),
+        &[]
+    )));
+    assert!(!uniform_png(&rebuild(&rows, b"secret")));
+    // 글 미리보기: 공백·제어 문자뿐일 때만.
+    assert!(blank_utf16(&utf16(" \r\n\t")) && blank_utf8(b"\xEF\xBB\xBF\r\n"));
+    assert!(!blank_utf16(&utf16("a")) && !blank_utf16(&[0x20]) && !blank_utf8("가".as_bytes()));
 }

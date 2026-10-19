@@ -554,7 +554,25 @@ def scenario_save(d, fixtures: Path, scratch: Path) -> None:
     import hashlib
     import zipfile
     digest = lambda path: hashlib.sha256(path.read_bytes()).hexdigest()
-    for fmt in ("hwp", "hwpx"):
+    # HWP: 픽스처 PrvText에는 편집 전 본문 글자가 있고 고정 rhwp는 그것을 그대로 내보낸다(T009 안정화 F). 편집한 저장은
+    # 편집 전 글자를 파일에 남기므로 막고(previewStale) 원본·편집을 그대로 둔다.
+    path = scratch / "save-preview.hwp"
+    shutil.copy(fixtures / "basic-ko.hwp", path)
+    original = digest(path)
+    open_document(d, path)
+    click_paragraph_start(d)
+    type_ascii(d, "T9")
+    result = save_and_wait(d)
+    after = status(d)
+    shown = d.js(f"return document.querySelector('{SAVE_RESULT}').textContent")
+    check("hwp: 편집 전 글자가 남는 미리보기(PrvText)가 있으면 저장하지 않고(unsafe previewStale) 이유를 보이며 원본·편집 그대로",
+          result["state"] == "failed" and result["error"] == "UnsafeSave" and result["outcome"] == "unsafe"
+          and "previewStale:PrvText" in result["findings"].split(",") and digest(path) == original
+          and after["dirty"] == "true" and after["unpreserved"] == "true" and d.exists("[data-testid=save-findings]"),
+          json.dumps({"result": result, "dirty": after.get("dirty"), "shown": shown[:120]}, ensure_ascii=False))
+    d.js("[...document.querySelectorAll('.document-tab__close')].find(b => b.getAttribute('aria-label').includes(arguments[0])).click()", path.name)
+    confirm_discard(d, "close")
+    for fmt in ("hwpx",):
         path = scratch / f"save-{fmt}.{fmt}"
         shutil.copy(fixtures / f"basic-ko.{fmt}", path)
         original = digest(path)
@@ -565,11 +583,10 @@ def scenario_save(d, fixtures: Path, scratch: Path) -> None:
               digest(path) == original and typed["dirty"] == "true" and typed["unpreserved"] == "true", json.dumps(typed, ensure_ascii=False)[:300])
         result = save_and_wait(d)
         after = status(d)
-        valid = path.read_bytes()[:8] == bytes([0xD0, 0xCF, 0x11, 0xE0, 0xA1, 0xB1, 0x1A, 0xE1]) if fmt == "hwp" else zipfile.is_zipfile(path)
-        if fmt == "hwpx":
-            with zipfile.ZipFile(path) as z:
-                first = z.infolist()[0]
-                valid = valid and first.filename == "mimetype" and first.compress_type == zipfile.ZIP_STORED and z.testzip() is None
+        valid = zipfile.is_zipfile(path)
+        with zipfile.ZipFile(path) as z:
+            first = z.infolist()[0]
+            valid = valid and first.filename == "mimetype" and first.compress_type == zipfile.ZIP_STORED and z.testzip() is None
         check(f"{fmt}: 사전 검사(편집 없는 왕복 safe)를 거쳐 원본 형식으로 저장하고 dirty가 풀림(파일이 바뀌고 컨테이너가 올바름)",
               result["state"] == "saved" and result["revision"] == after["revision"] and after["dirty"] == "false"
               and after["unpreserved"] == "false" and digest(path) != original and valid,
