@@ -213,6 +213,8 @@
   "editor.save.unsupported.ownership": "파일 소유자가 달라 바꾸면 소유자가 바뀝니다.",
   "editor.save.unsupported.read-only": "원본 파일이 읽기 전용이라 바꾸지 않습니다.",
   "editor.save.unsupported.metadata": "파일의 확장 속성·접근 제어 목록(ACL)·파일 플래그를 새 파일에 그대로 둘 수 없거나 확인할 수 없어 바꾸지 않습니다.",
+  "editor.save.unsupported.shared-file": "이 파일은 다른 사용자(그룹·그 밖)도 쓸 수 있어, 검증한 내용이 바뀌지 않는다고 보장할 수 없으므로 바꾸지 않습니다.",
+  "editor.save.unsupported.shared-directory": "이 파일이 있는 폴더를 다른 사용자도 바꿀 수 있어(그룹·그 밖 쓰기, 다른 소유자, 접근 제어 목록), 검증한 파일이 그대로 게시된다고 보장할 수 없으므로 바꾸지 않습니다.",
   "editor.save.stage.export": "엔진이 문서를 내보내지 못했습니다.",
   "editor.save.stage.validate": "내보낸 문서를 검증하지 못했습니다.",
   "editor.save.stage.write": "임시 파일을 쓰거나 확인하지 못했습니다.",

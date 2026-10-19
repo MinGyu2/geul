@@ -285,13 +285,15 @@ export class RhwpEditorSession {
   }
 
   /**
-   * 저장하지 않은 편집이 이 모델에 있음: 불러온(또는 저장한) 뒤 바꾼 적이 있거나, 바뀌었는지 알 수 없거나(편집 중 엔진 예외),
-   * 확정을 기다리거나 보내는 중이거나, 조합 중. 닫기·다시 불러오기는 저장(T009)하거나 사용자가 버리기를 명시해야 한다.
+   * 저장하지 않은 편집이 있음: 백엔드 기록의 dirty(확정한 변경, 교체는 됐지만 내구성을 확인하지 못한 저장 — T009 3차 안정화,
+   * SessionRegistry가 정한다), 또는 이 모델에서 불러온(또는 저장한) 뒤 바꾼 적이 있거나, 바뀌었는지 알 수 없거나(편집 중
+   * 엔진 예외), 확정을 기다리거나 보내는 중이거나, 조합 중. 닫기·다시 불러오기는 저장(T009)하거나 사용자가 버리기를 명시해야
+   * 한다. DOCX 편집 세션·작업 공간과 같은 기준이다.
    */
   get hasUnpreservedChanges() {
-    return this.doc !== null
+    return (this.sessions.get(this.sessionId)?.dirty ?? false) || (this.doc !== null
       && (this.modified || this.uncertain || this.pending > 0 || this.committingEpoch === this.epoch || this.composition !== null
-        || this.provisional !== null);
+        || this.provisional !== null));
   }
 
   /** 엔진 편집이 예외로 끝나 모델이 바뀌었는지 알 수 없음(성공한 변경과 구분). */

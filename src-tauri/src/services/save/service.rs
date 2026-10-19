@@ -165,7 +165,7 @@ pub fn save(
     // 확인은 기록 잠금 안에서 한다.
     read_original(&ticket.source, limits)?;
     #[cfg(test)]
-    publish::before_check(&target);
+    publish::before_check(&target, &staged);
     let mut durable = false;
     let session = registry.finish_save(ticket, content_hash(output), |identity, fingerprint| {
         #[cfg(test)]

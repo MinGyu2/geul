@@ -30,6 +30,10 @@ const FLAG_COMPRESSED: u32 = 0x01;
 const FLAG_PASSWORD: u32 = 0x02;
 const FLAG_DISTRIBUTABLE: u32 = 0x04;
 const FLAG_DRM: u32 = 0x10;
+/// 보존을 판단할 수 있는 FileHeader 속성(T009 3차 안정화): 압축(0x01)·스크립트(0x08)만. 고정 rhwp `parser/header.rs`
+/// `FileHeaderFlags`가 아는 나머지(XML 서식 0x20, 문서 이력 0x40, 전자 서명 0x80, 공개키 암호 0x100, 인증서 0x200, 배포 준비
+/// 0x400)와 모르는 비트는 편집·다시 쓰기로 지킬 수 없거나(서명이 깨짐) 뜻을 모르므로 판단하지 않는다(unknown).
+const FLAGS_SUPPORTED: u32 = FLAG_COMPRESSED | 0x08;
 /// 스트림 수·스트림 하나·풀어낸 크기·레코드 수 상한.
 const MAX_STREAMS: usize = 20_000;
 const MAX_STREAM_BYTES: u64 = 256 * 1024 * 1024;
@@ -90,8 +94,19 @@ fn open(bytes: &[u8], side: Side) -> Result<Container, Finding> {
         .filter(|h| h.len() >= FILE_HEADER_LEN && h.starts_with(SIGNATURE))
         .cloned()
         .ok_or_else(|| malformed("FileHeader"))?;
+    // 고정 rhwp가 아는 배치는 정확히 256바이트다(`parser/header.rs` FILE_HEADER_SIZE). 더 긴 원본은 뒤 바이트의 뜻을 모르므로
+    // 판단하지 않고, 더 긴 출력은 올바르지 않다(그 바이트를 무시하지 않는다, T009 3차 안정화).
+    if header.len() != FILE_HEADER_LEN {
+        return Err(match side {
+            Side::Original => Finding::at(FindingCode::Unsupported, "FileHeader"),
+            Side::Output => malformed("FileHeader"),
+        });
+    }
     let flags = u32::from_le_bytes([header[36], header[37], header[38], header[39]]);
-    if header[35] != 5 || flags & (FLAG_PASSWORD | FLAG_DISTRIBUTABLE | FLAG_DRM) != 0 {
+    if header[35] != 5
+        || flags & (FLAG_PASSWORD | FLAG_DISTRIBUTABLE | FLAG_DRM) != 0
+        || flags & !FLAGS_SUPPORTED != 0
+    {
         return Err(Finding::at(FindingCode::Unsupported, "FileHeader"));
     }
     Ok(Container {
@@ -228,8 +243,25 @@ fn compare_stream(
     }
 }
 
+/// 레코드로 읽는 스트림: `DocInfo`와 `BodyText` 아래 전부(구역이 아닌 것도 레코드로 끝까지 읽어 비교한다).
 fn record_stream(name: &str) -> bool {
     name == "DocInfo" || name.starts_with("BodyText/")
+}
+
+/// 편집이 바꿀 수 있는 본문 구역 스트림: 고정 rhwp가 읽고 쓰는 `BodyText/Section<N>`(`parser/cfb_reader.rs`
+/// `format!("/BodyText/Section{}", index)` — N은 0이거나 0으로 시작하지 않는 10진수). 그 밖의 `BodyText` 아래 스트림
+/// (`Section01`·`SectionX`·하위 저장소 등)은 면제하지 않는다(T009 3차 안정화).
+fn section_stream(name: &str) -> bool {
+    name.strip_prefix("BodyText/Section")
+        .is_some_and(canonical_number)
+}
+
+/// 0이거나 0으로 시작하지 않는 10진수(9자리까지).
+pub(crate) fn canonical_number(text: &str) -> bool {
+    !text.is_empty()
+        && text.len() <= 9
+        && text.bytes().all(|b| b.is_ascii_digit())
+        && (text == "0" || !text.starts_with('0'))
 }
 
 /// 레코드 스트림의 압축을 푼다(컨테이너의 압축 플래그를 따른다).
@@ -337,7 +369,7 @@ fn compare_with(original: &[u8], output: &[u8], mode: Mode) -> Vec<Finding> {
                 }
             },
         };
-        if mode == Mode::Edited && name.starts_with("BodyText/") {
+        if mode == Mode::Edited && section_stream(name) {
             body_changed |= before_records != after_records;
             continue; // 본문 내용은 다시 열기 비교 몫
         }

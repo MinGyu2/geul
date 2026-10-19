@@ -106,7 +106,9 @@ export interface Preservation {
   outcome: PreservationOutcome;
   findings: Finding[];
 }
-export const SAVE_UNSUPPORTED_REASONS = ["platform", "hard-link", "ownership", "read-only", "metadata"] as const;
+export const SAVE_UNSUPPORTED_REASONS = [
+  "platform", "hard-link", "ownership", "read-only", "metadata", "shared-file", "shared-directory",
+] as const;
 export type SaveUnsupportedReason = (typeof SAVE_UNSUPPORTED_REASONS)[number];
 export const SAVE_STAGES = ["export", "validate", "write", "publish"] as const;
 export type SaveStage = (typeof SAVE_STAGES)[number];

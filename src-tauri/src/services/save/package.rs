@@ -341,9 +341,10 @@ fn same_except_statistics(before: &[u8], after: &[u8]) -> Option<bool> {
 
 /// HWPX 본문 부분(`Contents/section<N>.xml`): 편집이 바꾸는 부분이며 엔진 다시 열기가 확인한다.
 pub fn hwpx_body(name: &str) -> bool {
+    // 고정 rhwp가 쓰는 이름 `Contents/section{i}.xml`만(0으로 시작하는 번호 등은 본문으로 면제하지 않는다, T009 3차 안정화).
     name.strip_prefix("Contents/section")
         .and_then(|rest| rest.strip_suffix(".xml"))
-        .is_some_and(|number| !number.is_empty() && number.bytes().all(|b| b.is_ascii_digit()))
+        .is_some_and(super::hwp::canonical_number)
 }
 
 /// DOCX 편집 저장 비교: `word/document.xml`(본문, 엔진 다시 읽기가 확인)을 빼고 원본과 같아야 하며, `docProps/app.xml`은

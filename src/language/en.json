@@ -213,6 +213,8 @@
   "editor.save.unsupported.ownership": "The file has a different owner, which replacing it would change.",
   "editor.save.unsupported.read-only": "The original file is read-only, so it is not replaced.",
   "editor.save.unsupported.metadata": "The file's extended attributes, access control lists (ACLs) or file flags cannot be kept on the new file or cannot be verified, so it is not replaced.",
+  "editor.save.unsupported.shared-file": "Other users (group or others) can write this file, so the verified content cannot be guaranteed to stay unchanged; it is not replaced.",
+  "editor.save.unsupported.shared-directory": "Other users can change the folder that holds this file (group or other write, another owner, or an access control list), so the verified file cannot be guaranteed to be the one published; it is not replaced.",
   "editor.save.stage.export": "The engine could not export the document.",
   "editor.save.stage.validate": "The exported document could not be validated.",
   "editor.save.stage.write": "The temporary file could not be written or verified.",

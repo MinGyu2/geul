@@ -2006,7 +2006,10 @@ fn set_xattr(path: &Path, name: &str, value: &[u8]) -> bool {
 
 /// 시험용: 저장 중(임시 파일을 다 쓴 뒤·교체 직전 확인 전)에 원본 경로로 `hook`을 부르며 저장한다(같은 스레드에서
 /// 서비스를 직접 부른다: 훅은 스레드 지역 값).
-fn save_hooked(doc: &Docx, hook: impl Fn(&Path) + 'static) -> Result<SaveOutcome, DocumentError> {
+fn save_hooked(
+    doc: &Docx,
+    hook: impl Fn(&Path, &Path) + 'static,
+) -> Result<SaveOutcome, DocumentError> {
     super::publish::BEFORE_CHECK.with(|cell| *cell.borrow_mut() = Some(Box::new(hook)));
     let result = save_with_fault(doc, None);
     super::publish::BEFORE_CHECK.with(|cell| *cell.borrow_mut() = None);
@@ -2046,7 +2049,7 @@ fn b_읽기_전용_원본은_디렉터리에_쓸_수_있어도_바꾸지_않는�
     let mut doc = open_docx(&original);
     doc.edit(edits());
     doc.preflight().unwrap();
-    let saved = save_hooked(&doc, |path| {
+    let saved = save_hooked(&doc, |path, _| {
         std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o444)).unwrap()
     });
     assert_eq!(saved.err(), Some(DocumentError::FileConflict));
@@ -2100,19 +2103,21 @@ fn c_교체로_잃을_메타데이터가_있거나_저장_중_바뀌면_막는�
     let mut hooks: Vec<(&str, super::publish::Hook)> = vec![
         (
             "chmod",
-            Box::new(|path: &Path| {
+            Box::new(|path: &Path, _: &Path| {
                 std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o600)).unwrap()
             }),
         ),
         (
             "link",
-            Box::new(|path: &Path| std::fs::hard_link(path, path.with_extension("link")).unwrap()),
+            Box::new(|path: &Path, _: &Path| {
+                std::fs::hard_link(path, path.with_extension("link")).unwrap()
+            }),
         ),
     ];
     if xattr_supported {
         hooks.push((
             "xattr",
-            Box::new(|path: &Path| assert!(set_xattr(path, "user.geul-test", b"x"))),
+            Box::new(|path: &Path, _: &Path| assert!(set_xattr(path, "user.geul-test", b"x"))),
         ));
     } else {
         eprintln!("NOT RUN: 저장 중 확장 속성 변경(파일 시스템이 user xattr를 지원하지 않음)");
@@ -2231,6 +2236,8 @@ fn 안정화_오류와_근거의_직렬화_형식() {
     for (reason, name) in [
         (SaveUnsupportedReason::ReadOnly, "read-only"),
         (SaveUnsupportedReason::Metadata, "metadata"),
+        (SaveUnsupportedReason::SharedFile, "shared-file"),
+        (SaveUnsupportedReason::SharedDirectory, "shared-directory"),
     ] {
         assert_eq!(
             json(&DocumentError::SaveUnsupported { reason }),
@@ -2250,13 +2257,8 @@ fn f_한_색_png_증명은_글을_숨길_자리가_있으면_하지_않는다() 
     assert!(uniform_png(&blank));
     assert!(!uniform_png(&png(6, 3, false)));
     // IHDR(8 + 25바이트) 뒤에 덩어리를 끼운다.
-    let with_chunk = |kind: &[u8], body: &[u8]| {
-        let mut chunk = (body.len() as u32).to_be_bytes().to_vec();
-        chunk.extend_from_slice(kind);
-        chunk.extend_from_slice(body);
-        chunk.extend_from_slice(&[0; 4]);
-        [&blank[..33], &chunk, &blank[33..]].concat()
-    };
+    let with_chunk =
+        |kind: &[u8], body: &[u8]| [&blank[..33], &png_chunk(kind, body), &blank[33..]].concat();
     assert!(uniform_png(&with_chunk(b"pHYs", &[0; 9])));
     for kind in [b"tEXt", b"zTXt", b"iTXt", b"eXIf", b"prVt"] {
         assert!(
@@ -2272,13 +2274,12 @@ fn f_한_색_png_증명은_글을_숨길_자리가_있으면_하지_않는다() 
         let mut zlib = flate2::write::ZlibEncoder::new(Vec::new(), flate2::Compression::default());
         std::io::Write::write_all(&mut zlib, raw).unwrap();
         let idat = [zlib.finish().unwrap(), tail.to_vec()].concat();
-        let mut out = blank[..33].to_vec();
-        out.extend_from_slice(&(idat.len() as u32).to_be_bytes());
-        out.extend_from_slice(b"IDAT");
-        out.extend_from_slice(&idat);
-        out.extend_from_slice(&[0; 4]);
-        out.extend_from_slice(&blank[blank.len() - 12..]);
-        out
+        [
+            &blank[..33],
+            &png_chunk(b"IDAT", &idat),
+            &blank[blank.len() - 12..],
+        ]
+        .concat()
     };
     let rows: Vec<u8> = (0..3)
         .flat_map(|_| std::iter::once(0).chain([255u8; 24]))
@@ -2292,4 +2293,805 @@ fn f_한_색_png_증명은_글을_숨길_자리가_있으면_하지_않는다() 
     // 글 미리보기: 공백·제어 문자뿐일 때만.
     assert!(blank_utf16(&utf16(" \r\n\t")) && blank_utf8(b"\xEF\xBB\xBF\r\n"));
     assert!(!blank_utf16(&utf16("a")) && !blank_utf16(&[0x20]) && !blank_utf8("가".as_bytes()));
+}
+
+// ---- T009 3차 안정화 B·E: 검증한 임시 파일이 게시되는 파일이다(위협 모델: 이 사용자·root 밖의 사용자는 믿지 않음) ----
+
+/// 저장 앞뒤의 원본 바이트·권한과 남은 파일.
+#[cfg(target_os = "linux")]
+fn mode_of(path: &Path) -> u32 {
+    use std::os::unix::fs::MetadataExt;
+    std::fs::symlink_metadata(path).unwrap().mode() & 0o7777
+}
+
+#[cfg(target_os = "linux")]
+#[test]
+fn b_다른_사용자가_쓸_수_있는_원본_디렉터리는_저장하지_않고_sticky와_비공유는_저장한다() {
+    use std::os::unix::fs::PermissionsExt;
+    let original = basic::basic_ko().unwrap();
+    let set = |path: &Path, bits: u32| {
+        std::fs::set_permissions(path, std::fs::Permissions::from_mode(bits)).unwrap()
+    };
+    let unsupported = |reason| Some(DocumentError::SaveUnsupported { reason });
+    // 원본 권한: 소유자만 쓰면 저장하고 권한 그대로, 그룹·그 밖이 쓸 수 있으면 막는다.
+    for (bits, expected) in [
+        (0o600, None),
+        (0o644, None),
+        (0o664, unsupported(SaveUnsupportedReason::SharedFile)),
+        (0o646, unsupported(SaveUnsupportedReason::SharedFile)),
+        (0o666, unsupported(SaveUnsupportedReason::SharedFile)),
+    ] {
+        let mut doc = open_docx_prepared(&original, |path| set(path, bits));
+        doc.edit(edits());
+        doc.preflight().unwrap();
+        let saved = doc.save();
+        assert_eq!(saved.as_ref().err().cloned(), expected, "{bits:o}");
+        assert_eq!(mode_of(&doc.path), bits, "{bits:o}");
+        assert_eq!(doc.bytes() == original, expected.is_some(), "{bits:o}");
+        assert_eq!(doc.leftovers(), Vec::<String>::new(), "{bits:o}");
+    }
+    // 디렉터리 권한: 그룹·그 밖 쓰기(sticky 없음)는 막고, sticky(1777, 이 사용자 소유)·0700·0755는 저장한다.
+    for (bits, expected) in [
+        (0o700, None),
+        (0o755, None),
+        (0o1777, None),
+        (0o775, unsupported(SaveUnsupportedReason::SharedDirectory)),
+        (0o757, unsupported(SaveUnsupportedReason::SharedDirectory)),
+        (0o777, unsupported(SaveUnsupportedReason::SharedDirectory)),
+    ] {
+        let mut doc = open_docx_prepared(&original, |path| set(path.parent().unwrap(), bits));
+        doc.edit(edits());
+        doc.preflight().unwrap();
+        let saved = doc.save();
+        assert_eq!(saved.as_ref().err().cloned(), expected, "dir {bits:o}");
+        assert_eq!(doc.bytes() == original, expected.is_some(), "dir {bits:o}");
+        assert_eq!(doc.leftovers(), Vec::<String>::new(), "dir {bits:o}");
+        set(doc.dir.path(), 0o755);
+    }
+    // 디렉터리 접근 ACL(다른 사용자 항목): 막는다.
+    let uid = std::fs::metadata(TempDir::new().path())
+        .map(|m| std::os::unix::fs::MetadataExt::uid(&m))
+        .unwrap();
+    let mut applied = false;
+    let mut doc = open_docx_prepared(&original, |path| {
+        applied = std::process::Command::new("setfacl")
+            .args(["-m", &format!("u:{uid}:rwx")])
+            .arg(path.parent().unwrap())
+            .status()
+            .is_ok_and(|status| status.success());
+    });
+    if applied {
+        doc.edit(edits());
+        doc.preflight().unwrap();
+        assert_eq!(
+            doc.save().err(),
+            unsupported(SaveUnsupportedReason::SharedDirectory)
+        );
+        assert_eq!(doc.bytes(), original);
+        assert_eq!(doc.leftovers(), Vec::<String>::new());
+    } else {
+        eprintln!("NOT RUN: 디렉터리 ACL(setfacl 없음 또는 파일 시스템 미지원)");
+    }
+}
+
+#[cfg(target_os = "linux")]
+#[test]
+fn b_검증한_뒤_임시_파일이_바뀌거나_이름이_다른_것으로_바뀌면_게시하지_않고_남의_것은_지우지_않는다(
+) {
+    use std::io::Write;
+    let original = basic::basic_ko().unwrap();
+    let not_published = Some(DocumentError::SaveFailure {
+        stage: SaveStage::Publish,
+        io: None,
+    });
+    type Case = (&'static str, Box<dyn Fn(&Path, &Path)>, &'static [u8]);
+    let cases: Vec<Case> = vec![
+        // 같은 inode의 내용이 바뀜(검증 뒤 쓰기).
+        (
+            "modified",
+            Box::new(|_: &Path, staged: &Path| {
+                std::fs::OpenOptions::new()
+                    .append(true)
+                    .open(staged)
+                    .unwrap()
+                    .write_all(b"tail")
+                    .unwrap()
+            }),
+            b"",
+        ),
+        // 이름이 다른 일반 파일로 바뀜(검증한 inode가 아님): 그 파일은 남의 것이라 지우지 않는다.
+        (
+            "replaced",
+            Box::new(|_: &Path, staged: &Path| {
+                let other = staged.with_extension("other");
+                std::fs::write(&other, b"someone else").unwrap();
+                std::fs::rename(&other, staged).unwrap();
+            }),
+            b"someone else",
+        ),
+        // 이름이 심볼릭 링크로 바뀜: 링크도 지우지 않는다.
+        (
+            "symlink",
+            Box::new(|target: &Path, staged: &Path| {
+                std::fs::remove_file(staged).unwrap();
+                std::os::unix::fs::symlink(target.with_extension("elsewhere"), staged).unwrap();
+            }),
+            b"link",
+        ),
+        // 이름이 사라짐.
+        (
+            "removed",
+            Box::new(|_: &Path, staged: &Path| std::fs::remove_file(staged).unwrap()),
+            b"",
+        ),
+    ];
+    for (name, hook, kept) in cases {
+        let mut doc = open_docx(&original);
+        doc.edit(edits());
+        doc.preflight().unwrap();
+        assert_eq!(save_hooked(&doc, hook).err(), not_published, "{name}");
+        assert_eq!(doc.bytes(), original, "{name}: 원본 그대로");
+        let left = doc.leftovers();
+        match kept {
+            b"" => assert_eq!(
+                left,
+                Vec::<String>::new(),
+                "{name}: 이 저장의 임시 파일은 지운다"
+            ),
+            b"link" => {
+                assert_eq!(left.len(), 1, "{name}: {left:?}");
+                assert!(std::fs::symlink_metadata(doc.dir.path().join(&left[0]))
+                    .unwrap()
+                    .file_type()
+                    .is_symlink());
+            }
+            content => {
+                assert_eq!(left.len(), 1, "{name}: {left:?}");
+                assert_eq!(
+                    std::fs::read(doc.dir.path().join(&left[0])).unwrap(),
+                    content,
+                    "{name}: 남의 파일 그대로"
+                );
+            }
+        }
+        // 다시 저장할 수 있다(원본 기록 그대로).
+        for file in left {
+            std::fs::remove_file(doc.dir.path().join(file)).unwrap();
+        }
+        assert!(doc.save().is_ok(), "{name}");
+    }
+    // 저장 중 원본 이름이 다른 파일로 바뀜: 충돌, 바뀐 파일 그대로, 이 저장의 임시 파일은 지운다.
+    let mut doc = open_docx(&original);
+    doc.edit(edits());
+    doc.preflight().unwrap();
+    let saved = save_hooked(&doc, |target, _| {
+        let other = target.with_extension("swap");
+        std::fs::write(&other, b"replacement").unwrap();
+        std::fs::rename(&other, target).unwrap();
+    });
+    assert_eq!(saved.err(), Some(DocumentError::FileConflict));
+    assert_eq!(doc.bytes(), b"replacement");
+    assert_eq!(doc.leftovers(), Vec::<String>::new());
+}
+
+#[cfg(target_os = "linux")]
+#[test]
+fn b_게시한_파일은_검증한_inode와_내용이고_권한은_원본_그대로다() {
+    use std::os::unix::fs::{MetadataExt, PermissionsExt};
+    let original = basic::basic_ko().unwrap();
+    let mut doc = open_docx_prepared(&original, |path| {
+        std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o640)).unwrap()
+    });
+    doc.edit(edits());
+    doc.preflight().unwrap();
+    let seen = std::rc::Rc::new(std::cell::Cell::new((0u64, 0u64, 0u32)));
+    let record = seen.clone();
+    let saved = save_hooked(&doc, move |_, staged| {
+        let meta = std::fs::symlink_metadata(staged).unwrap();
+        record.set((meta.dev(), meta.ino(), meta.mode() & 0o7777));
+    })
+    .unwrap();
+    assert!(saved.durable);
+    let published = std::fs::symlink_metadata(&doc.path).unwrap();
+    let (dev, ino, staged_mode) = seen.get();
+    assert_eq!(
+        (published.dev(), published.ino()),
+        (dev, ino),
+        "검증한 임시 파일의 inode가 게시됨"
+    );
+    // 게시 전 임시 파일은 이 사용자만 쓸 수 있고, 게시한 파일은 원본 권한.
+    assert_eq!(staged_mode & 0o022, 0);
+    assert_eq!(published.mode() & 0o7777, 0o640);
+    let model = doc
+        .state
+        .wordcraft()
+        .get(doc.info.session_id, doc.info.load_generation)
+        .unwrap();
+    assert_eq!(doc.bytes(), model.lock().unwrap().export().unwrap());
+    assert_eq!(doc.leftovers(), Vec::<String>::new());
+}
+
+#[test]
+fn e_임시_파일을_만든_직후의_실패도_이_저장의_임시_파일만_지운다() {
+    let original = basic::basic_ko().unwrap();
+    let mut doc = open_docx(&original);
+    doc.edit(edits());
+    doc.preflight().unwrap();
+    // 다음 이름 하나를 미리 차지한다(남의 파일·중단된 저장): 그 파일은 그대로, 이 저장이 만든 파일은 지운다.
+    let taken = format!(
+        ".geul-save-{}-{}.tmp",
+        std::process::id(),
+        super::publish::next_name_number()
+    );
+    std::fs::write(doc.dir.path().join(&taken), b"earlier").unwrap();
+    assert_eq!(
+        save_with_fault(&doc, Some(Fault::AfterCreate)).err(),
+        Some(DocumentError::SaveFailure {
+            stage: SaveStage::Write,
+            io: Some(IoProblem::Other)
+        })
+    );
+    assert_eq!(doc.bytes(), original);
+    assert_eq!(doc.leftovers(), vec![taken.clone()]);
+    assert_eq!(
+        std::fs::read(doc.dir.path().join(&taken)).unwrap(),
+        b"earlier"
+    );
+    // 쓰기·되읽기·교체 실패도 이 저장의 파일만 지운다.
+    for fault in [
+        Fault::Write(std::io::ErrorKind::StorageFull),
+        Fault::Verify,
+        Fault::Rename(std::io::ErrorKind::PermissionDenied),
+    ] {
+        assert!(save_with_fault(&doc, Some(fault)).is_err(), "{fault:?}");
+        assert_eq!(doc.bytes(), original, "{fault:?}");
+        assert_eq!(doc.leftovers(), vec![taken.clone()], "{fault:?}");
+    }
+    // 성공한 게시는 게시한 파일을 지우지 않는다.
+    std::fs::remove_file(doc.dir.path().join(&taken)).unwrap();
+    assert!(doc.save().is_ok());
+    assert_ne!(doc.bytes(), original);
+    assert_eq!(doc.leftovers(), Vec::<String>::new());
+}
+
+#[cfg(target_os = "linux")]
+#[test]
+fn b_교체_직후_원본_이름이_이_저장의_파일이_아니면_내구성_미확인이고_다음_저장은_충돌이다() {
+    let original = basic::basic_ko().unwrap();
+    let mut doc = open_docx(&original);
+    doc.edit(edits());
+    doc.preflight().unwrap();
+    let saved = save_with_fault(&doc, Some(Fault::SwapAfterRename)).unwrap();
+    assert!(!saved.durable);
+    assert!(saved.session.dirty);
+    assert_eq!(doc.bytes(), b"swapped");
+    // 기록한 파일은 이 저장이 쓴 inode다: 이름의 파일은 다르므로 덮어쓰지 않는다.
+    assert_eq!(doc.preflight().err(), Some(DocumentError::FileConflict));
+    assert_eq!(doc.save().err(), Some(DocumentError::FileConflict));
+    assert_eq!(doc.bytes(), b"swapped");
+}
+
+// ---- T009 3차 안정화 C: 내용이 없는 미리보기의 증명은 PNG 전체가 엄격한 규칙을 만족할 때만 ----
+
+/// PNG 덩어리 하나(올바른 CRC).
+fn png_chunk(kind: &[u8], body: &[u8]) -> Vec<u8> {
+    let mut crc = flate2::Crc::new();
+    crc.update(kind);
+    crc.update(body);
+    [
+        &(body.len() as u32).to_be_bytes()[..],
+        kind,
+        body,
+        &crc.sum().to_be_bytes(),
+    ]
+    .concat()
+}
+
+/// IHDR 본문(8비트, 압축·필터·비월 0).
+fn ihdr(width: u32, height: u32, color: u8) -> Vec<u8> {
+    [
+        &width.to_be_bytes()[..],
+        &height.to_be_bytes(),
+        &[8, color, 0, 0, 0],
+    ]
+    .concat()
+}
+
+/// 흰색 RGBA `width`×`height`의 필터 0 줄들.
+fn white_rows(width: usize, height: usize) -> Vec<u8> {
+    (0..height)
+        .flat_map(|_| std::iter::once(0).chain(std::iter::repeat_n(255u8, width * 4)))
+        .collect()
+}
+
+fn zlib_of(raw: &[u8]) -> Vec<u8> {
+    let mut zlib = flate2::write::ZlibEncoder::new(Vec::new(), flate2::Compression::default());
+    std::io::Write::write_all(&mut zlib, raw).unwrap();
+    zlib.finish().unwrap()
+}
+
+fn png_of(chunks: &[Vec<u8>]) -> Vec<u8> {
+    [b"\x89PNG\r\n\x1a\n".to_vec(), chunks.concat()].concat()
+}
+
+#[test]
+fn c_미리보기_png는_구조_검사합_길이_순서가_모두_맞을_때만_한_색으로_증명한다() {
+    use super::preview::uniform_png;
+    let head = png_chunk(b"IHDR", &ihdr(4, 2, 6));
+    let data = png_chunk(b"IDAT", &zlib_of(&white_rows(4, 2)));
+    let end = png_chunk(b"IEND", b"");
+    let ok = png_of(&[head.clone(), data.clone(), end.clone()]);
+    assert!(uniform_png(&ok));
+    // RGB·회색조, 허용 보조 덩어리(정확한 길이·값, 한 번, IDAT 앞).
+    let rgb_rows: Vec<u8> = (0..2)
+        .flat_map(|_| std::iter::once(0).chain([7u8; 12]))
+        .collect();
+    assert!(uniform_png(&png_of(&[
+        png_chunk(b"IHDR", &ihdr(4, 2, 2)),
+        png_chunk(b"IDAT", &zlib_of(&rgb_rows)),
+        end.clone()
+    ])));
+    let srgb = png_chunk(b"sRGB", &[0]);
+    let gama = png_chunk(b"gAMA", &45455u32.to_be_bytes());
+    let phys = png_chunk(b"pHYs", &[0, 0, 0x0e, 0xc3, 0, 0, 0x0e, 0xc3, 1]);
+    assert!(uniform_png(&png_of(&[
+        head.clone(),
+        srgb.clone(),
+        gama.clone(),
+        phys.clone(),
+        data.clone(),
+        end.clone()
+    ])));
+    // 나눠 쓴 IDAT(이어져 있음).
+    let z = zlib_of(&white_rows(4, 2));
+    let (a, b) = z.split_at(z.len() / 2);
+    assert!(uniform_png(&png_of(&[
+        head.clone(),
+        png_chunk(b"IDAT", a),
+        png_chunk(b"IDAT", b),
+        end.clone()
+    ])));
+    let rejected: Vec<(&str, Vec<u8>)> = vec![
+        (
+            "IHDR 길이",
+            png_of(&[
+                png_chunk(b"IHDR", &[ihdr(4, 2, 6), vec![0]].concat()),
+                data.clone(),
+                end.clone(),
+            ]),
+        ),
+        (
+            "IHDR 너비 0",
+            png_of(&[
+                png_chunk(b"IHDR", &ihdr(0, 2, 6)),
+                data.clone(),
+                end.clone(),
+            ]),
+        ),
+        (
+            "IHDR 너비 2^31",
+            png_of(&[
+                png_chunk(b"IHDR", &ihdr(1 << 31, 1, 6)),
+                data.clone(),
+                end.clone(),
+            ]),
+        ),
+        (
+            "너무 큰 크기",
+            png_of(&[
+                png_chunk(b"IHDR", &ihdr(100_000, 100_000, 6)),
+                data.clone(),
+                end.clone(),
+            ]),
+        ),
+        (
+            "IHDR 압축 방법",
+            png_of(&[
+                png_chunk(b"IHDR", &[&ihdr(4, 2, 6)[..10], &[1, 0, 0]].concat()),
+                data.clone(),
+                end.clone(),
+            ]),
+        ),
+        (
+            "IHDR가 처음이 아님",
+            png_of(&[srgb.clone(), head.clone(), data.clone(), end.clone()]),
+        ),
+        (
+            "IHDR 두 번",
+            png_of(&[head.clone(), head.clone(), data.clone(), end.clone()]),
+        ),
+        (
+            "sRGB 길이 2",
+            png_of(&[
+                head.clone(),
+                png_chunk(b"sRGB", &[0, 0]),
+                data.clone(),
+                end.clone(),
+            ]),
+        ),
+        (
+            "sRGB 값 9",
+            png_of(&[
+                head.clone(),
+                png_chunk(b"sRGB", &[9]),
+                data.clone(),
+                end.clone(),
+            ]),
+        ),
+        (
+            "gAMA 길이 8",
+            png_of(&[
+                head.clone(),
+                png_chunk(b"gAMA", &[0, 0, 0xb1, 0x8f, 0, 0, 0, 0]),
+                data.clone(),
+                end.clone(),
+            ]),
+        ),
+        (
+            "pHYs 단위 7",
+            png_of(&[
+                head.clone(),
+                png_chunk(b"pHYs", &[0, 0, 0x0e, 0xc3, 0, 0, 0x0e, 0xc3, 7]),
+                data.clone(),
+                end.clone(),
+            ]),
+        ),
+        (
+            "pHYs 두 번",
+            png_of(&[
+                head.clone(),
+                phys.clone(),
+                phys.clone(),
+                data.clone(),
+                end.clone(),
+            ]),
+        ),
+        (
+            "보조 덩어리가 IDAT 뒤",
+            png_of(&[head.clone(), data.clone(), srgb.clone(), end.clone()]),
+        ),
+        (
+            "IDAT 사이 덩어리",
+            png_of(&[
+                head.clone(),
+                png_chunk(b"IDAT", a),
+                srgb.clone(),
+                png_chunk(b"IDAT", b),
+                end.clone(),
+            ]),
+        ),
+        (
+            "cHRM(32바이트 자유 값)",
+            png_of(&[
+                head.clone(),
+                png_chunk(b"cHRM", &[0; 32]),
+                data.clone(),
+                end.clone(),
+            ]),
+        ),
+        (
+            "bKGD",
+            png_of(&[
+                head.clone(),
+                png_chunk(b"bKGD", &[0; 6]),
+                data.clone(),
+                end.clone(),
+            ]),
+        ),
+        (
+            "tIME",
+            png_of(&[
+                head.clone(),
+                png_chunk(b"tIME", &[7, 232, 1, 1, 0, 0, 0]),
+                data.clone(),
+                end.clone(),
+            ]),
+        ),
+        (
+            "tEXt",
+            png_of(&[
+                head.clone(),
+                png_chunk(b"tEXt", b"Comment\0deleted"),
+                data.clone(),
+                end.clone(),
+            ]),
+        ),
+        (
+            "모르는 보조 덩어리",
+            png_of(&[
+                head.clone(),
+                png_chunk(b"geUl", b""),
+                data.clone(),
+                end.clone(),
+            ]),
+        ),
+        (
+            "IEND 길이",
+            png_of(&[head.clone(), data.clone(), png_chunk(b"IEND", b"x")]),
+        ),
+        ("IEND 없음", png_of(&[head.clone(), data.clone()])),
+        ("IEND 뒤 바이트", [ok.clone(), b"x".to_vec()].concat()),
+        ("잘림", ok[..ok.len() - 3].to_vec()),
+        (
+            "덩어리 길이가 끝을 넘음",
+            png_of(&[
+                head.clone(),
+                [&0x7fff_ffffu32.to_be_bytes()[..], b"IDAT"].concat(),
+            ]),
+        ),
+        (
+            "덩어리 길이 2^31 이상",
+            png_of(&[
+                head.clone(),
+                [&0xffff_fff0u32.to_be_bytes()[..], b"IDAT"].concat(),
+                end.clone(),
+            ]),
+        ),
+    ];
+    for (name, png) in &rejected {
+        assert!(!uniform_png(png), "{name}");
+    }
+    // CRC 하나만 틀림.
+    for at in [
+        head.len() - 1,
+        head.len() + data.len() - 1,
+        ok.len() - 1 - 8,
+    ] {
+        let mut bad = ok.clone();
+        bad[8 + at] ^= 1;
+        assert!(!uniform_png(&bad), "CRC at {at}");
+    }
+    // zlib: 머리 검사 값, 사전, 창 크기, Adler-32, deflate 뒤 바이트, 픽셀보다 긴·짧은 내용.
+    let with_zlib = |z: Vec<u8>| png_of(&[head.clone(), png_chunk(b"IDAT", &z), end.clone()]);
+    let good = zlib_of(&white_rows(4, 2));
+    let mut check = good.clone();
+    check[1] ^= 1;
+    let mut dict = good.clone();
+    dict[1] |= 0x20;
+    let mut adler = good.clone();
+    *adler.last_mut().unwrap() ^= 1;
+    let window = [&[0x88u8, 0x1c][..], &good[2..]].concat(); // CINFO 8(창 64 KiB, 규격 밖), FCHECK는 맞음
+    assert_eq!((0x88u16 * 256 + 0x1c) % 31, 0);
+    let tail = [&good[..good.len() - 4], b"xx", &good[good.len() - 4..]].concat();
+    for (name, z) in [
+        ("FCHECK", check),
+        ("FDICT", dict),
+        ("CINFO", window),
+        ("Adler-32", adler),
+        ("deflate 뒤 바이트", tail),
+        ("긴 내용", zlib_of(&[white_rows(4, 2), vec![0]].concat())),
+        ("짧은 내용", zlib_of(&white_rows(4, 1))),
+        (
+            "필터 5",
+            zlib_of(&[vec![5], vec![255; 16], vec![0], vec![255; 16]].concat()),
+        ),
+    ] {
+        assert!(!uniform_png(&with_zlib(z)), "{name}");
+    }
+    // 한 색이 아님.
+    let mut rows = white_rows(4, 2);
+    rows[3] = 0;
+    assert!(!uniform_png(&png_of(&[
+        head.clone(),
+        png_chunk(b"IDAT", &zlib_of(&rows)),
+        end.clone()
+    ])));
+}
+
+#[test]
+fn c_고정_rhwp가_만드는_빈_hwpx_미리보기는_그_바이트일_때만_받는다() {
+    use super::preview::{blank_utf16, blank_utf8, uniform_png, RHWP_BLANK_PREVIEW_PNG};
+    // 고정 rhwp `serializer/hwpx/static_assets.rs` PRV_IMAGE_PNG(68바이트): 1×1 회색조+알파, 투명 픽셀 하나. IDAT CRC와
+    // zlib Adler-32가 틀리다(실측). 엄격한 검사로는 받지 않지만, 정확히 이 바이트면 모든 바이트의 뜻을 안다.
+    assert_eq!(RHWP_BLANK_PREVIEW_PNG.len(), 68);
+    assert!(uniform_png(RHWP_BLANK_PREVIEW_PNG));
+    let mut changed = RHWP_BLANK_PREVIEW_PNG.to_vec();
+    changed[45] ^= 1; // IDAT 압축 내용 한 비트
+    assert!(!uniform_png(&changed));
+    assert!(!uniform_png(&[RHWP_BLANK_PREVIEW_PNG, b"x"].concat()));
+    // 글 미리보기: 공백·탭·줄바꿈(그리고 맨 앞 BOM)만. 그 밖의 제어 문자는 정보를 담을 수 있어 받지 않는다.
+    assert!(
+        blank_utf8(b"\r\n")
+            && blank_utf8(b"\xEF\xBB\xBF \t\r\n")
+            && blank_utf16(&utf16("\r\n"))
+            && blank_utf16(&utf16("\u{FEFF}  "))
+    );
+    for text in [
+        "\u{1}",
+        "\u{0}",
+        "\u{7}\r\n",
+        " \u{1F}",
+        "\u{200B}",
+        "\u{3000}",
+        " \u{FEFF}",
+    ] {
+        assert!(
+            !blank_utf16(&utf16(text)) && !blank_utf8(text.as_bytes()),
+            "{text:?}"
+        );
+    }
+}
+
+// ---- T009 3차 안정화 D·F: 편집 면제는 구역 스트림만, FileHeader는 전체 ----
+
+/// FileHeader 바이트를 직접 준 HWP(비압축).
+fn hwp_doc_header(header: &[u8], extra: &[(&str, &[u8])]) -> Vec<u8> {
+    let docinfo = docinfo(0, b"font");
+    let body = section("hello");
+    let mut streams: Vec<(&str, &[u8])> = vec![
+        ("/FileHeader", header),
+        ("/DocInfo", &docinfo),
+        ("/BodyText/Section0", &body),
+    ];
+    streams.extend_from_slice(extra);
+    crate::document::testutil::cfb(&streams)
+}
+
+#[test]
+fn d_편집_저장에서_바뀔_수_있는_본문은_bodytext_section_n뿐이다() {
+    let doc = |extra: &[(&str, &[u8])]| hwp_doc(0, &docinfo(0, b"font"), &section("hello"), extra);
+    let (a, b) = (section("first"), section("second"));
+    // 구역 스트림(Section0·Section12): 레코드로 끝까지 읽히면 내용은 다시 열기 몫.
+    assert_eq!(
+        hwp::compare_saved(
+            &doc(&[("/BodyText/Section12", &a)]),
+            &doc(&[("/BodyText/Section12", &b)])
+        ),
+        vec![]
+    );
+    assert_eq!(
+        hwp::compare_saved(
+            &hwp_doc(0, &docinfo(0, b"font"), &a, &[]),
+            &hwp_doc(0, &docinfo(0, b"font"), &b, &[])
+        ),
+        vec![]
+    );
+    // 구역이 아닌 BodyText 아래 스트림: 레코드로 읽되 면제하지 않는다(바뀌면 RecordsChanged).
+    for name in [
+        "BodyText/CustomData",
+        "BodyText/SectionX",
+        "BodyText/Section.xml",
+        "BodyText/Section01",
+        "BodyText/Sub/Section0",
+        "BodyText/Section",
+    ] {
+        let path = format!("/{name}");
+        assert_eq!(
+            hwp::compare_saved(&doc(&[(&path, &a)]), &doc(&[(&path, &b)])),
+            vec![Finding::at(FindingCode::RecordsChanged, name)],
+            "{name}"
+        );
+        // 같은 바이트라도 레코드가 깨졌으면 근거가 아니다(unknown).
+        assert_eq!(
+            hwp::compare_saved(&doc(&[(&path, b"\xff\xff")]), &doc(&[(&path, b"\xff\xff")])),
+            vec![Finding::at(FindingCode::OriginalMalformed, name)],
+            "{name}"
+        );
+    }
+    // 구역이 생기거나 빠짐.
+    assert_eq!(
+        hwp::compare_saved(&doc(&[]), &doc(&[("/BodyText/Section1", &a)])),
+        vec![Finding::at(FindingCode::PartAdded, "BodyText/Section1")]
+    );
+    assert_eq!(
+        hwp::compare_saved(&doc(&[("/BodyText/Section1", &a)]), &doc(&[])),
+        vec![Finding::at(FindingCode::PartMissing, "BodyText/Section1")]
+    );
+    // 구역이 아닌 스트림의 바뀜은 미리보기 낡음의 근거(본문 바뀜)가 아니다: 미리보기가 있어도 RecordsChanged 하나.
+    let text = utf16("미리보기");
+    assert_eq!(
+        hwp::compare_saved(
+            &doc(&[("/PrvText", &text), ("/BodyText/CustomData", &a)]),
+            &doc(&[("/PrvText", &text), ("/BodyText/CustomData", &b)])
+        ),
+        vec![Finding::at(
+            FindingCode::RecordsChanged,
+            "BodyText/CustomData"
+        )]
+    );
+}
+
+#[test]
+fn f_fileheader는_256바이트_전체를_비교하고_모르는_배치와_플래그는_판단하지_않는다() {
+    use crate::document::testutil::hwp_file_header;
+    let header = hwp_file_header(5, 0);
+    let same = hwp_doc_header(&header, &[]);
+    assert_eq!(hwp::compare(&same, &same), vec![]);
+    let unsupported = vec![Finding::at(FindingCode::Unsupported, "FileHeader")];
+    // 256바이트보다 긴 FileHeader: 바이트가 같아도, 뒤가 바뀌어도 판단하지 않는다(rhwp는 256바이트 배치만 안다).
+    let long = [header.clone(), vec![7; 44]].concat();
+    assert_eq!(
+        hwp::compare(&hwp_doc_header(&long, &[]), &hwp_doc_header(&long, &[])),
+        unsupported
+    );
+    let mut changed = long.clone();
+    changed[299] ^= 1;
+    assert_eq!(
+        hwp::compare(&hwp_doc_header(&long, &[]), &hwp_doc_header(&changed, &[])),
+        unsupported
+    );
+    // 출력만 길어짐: 출력이 올바르지 않다.
+    assert_eq!(
+        hwp::compare(&same, &hwp_doc_header(&long, &[])),
+        vec![Finding::at(FindingCode::OutputMalformed, "FileHeader")]
+    );
+    // 짧음·서명 틀림: 원본을 읽을 수 없다.
+    assert_eq!(
+        hwp::compare(&hwp_doc_header(&header[..200], &[]), &same),
+        vec![Finding::at(FindingCode::OriginalMalformed, "FileHeader")]
+    );
+    let mut signature = header.clone();
+    signature[0] = b'X';
+    assert_eq!(
+        hwp::compare(&hwp_doc_header(&signature, &[]), &same),
+        vec![Finding::at(FindingCode::OriginalMalformed, "FileHeader")]
+    );
+    // 예약 영역 바이트 하나만 달라도 다르다.
+    let mut reserved = header.clone();
+    reserved[200] = 1;
+    assert_eq!(
+        hwp::compare(&same, &hwp_doc_header(&reserved, &[])),
+        vec![Finding::at(FindingCode::PartChanged, "FileHeader")]
+    );
+    // 판 5가 아님.
+    let v4 = hwp_doc_header(&hwp_file_header(4, 0), &[]);
+    assert_eq!(hwp::compare(&v4, &v4), unsupported);
+    // 플래그: 압축(0x01)·스크립트(0x08)만 받는다. 암호·배포·DRM·XML 서식·문서 이력·전자 서명·공개키 암호·인증서·배포 준비·
+    // 모르는 비트는 판단하지 않는다(편집하면 서명이 깨지는 등 지킬 수 없는 속성).
+    let script = hwp_doc_header(&hwp_file_header(5, 0x08), &[]);
+    assert_eq!(hwp::compare(&script, &script), vec![]);
+    for flag in [
+        0x02,
+        0x04,
+        0x10,
+        0x20,
+        0x40,
+        0x80,
+        0x100,
+        0x200,
+        0x400,
+        0x800,
+        0x8000_0000,
+    ] {
+        let flagged = hwp_doc_header(&hwp_file_header(5, flag), &[]);
+        assert_eq!(hwp::compare(&flagged, &flagged), unsupported, "{flag:#x}");
+        assert_eq!(
+            hwp::compare_saved(&flagged, &flagged),
+            unsupported,
+            "{flag:#x}"
+        );
+    }
+    // 지원하는 플래그가 바뀜(압축 → 비압축): FileHeader가 다르다.
+    assert_eq!(
+        hwp::compare(&same, &hwp_doc_header(&hwp_file_header(5, 0x08), &[])),
+        vec![Finding::at(FindingCode::PartChanged, "FileHeader")]
+    );
+}
+
+#[test]
+fn d_hwpx_편집_면제도_rhwp가_쓰는_구역_이름만이다() {
+    assert!(
+        package::hwpx_body("Contents/section0.xml") && package::hwpx_body("Contents/section12.xml")
+    );
+    for name in [
+        "Contents/section01.xml",
+        "Contents/section.xml",
+        "Contents/sectionX.xml",
+        "Contents/section0.xml.bak",
+        "Contents/sub/section0.xml",
+    ] {
+        assert!(!package::hwpx_body(name), "{name}");
+    }
+    let with = |text: &str| {
+        let mut entries = hwpx_package("<sec/>", "<head/>", true, true);
+        entries.push(entry("Contents/section01.xml", text.as_bytes()));
+        pkg(&entries)
+    };
+    assert_eq!(
+        package::compare_saved_hwpx(&with("<a>1</a>"), &with("<a>2</a>")),
+        vec![Finding::at(
+            FindingCode::PartChanged,
+            "Contents/section01.xml"
+        )]
+    );
 }

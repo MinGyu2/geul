@@ -35,6 +35,9 @@ describe("저장 응답 검사", () => {
     // T009 안정화: 읽기 전용 원본, 교체로 잃을 메타데이터(확장 속성·ACL·플래그), 낡은 미리보기.
     expect(parseBackendError({ code: "SaveUnsupported", reason: "read-only" })).not.toBeNull();
     expect(parseBackendError({ code: "SaveUnsupported", reason: "metadata" })).not.toBeNull();
+    // T009 3차 안정화: 다른 사용자가 쓸 수 있는 원본·디렉터리.
+    expect(parseBackendError({ code: "SaveUnsupported", reason: "shared-file" })).not.toBeNull();
+    expect(parseBackendError({ code: "SaveUnsupported", reason: "shared-directory" })).not.toBeNull();
     expect(parsePreservation({ outcome: "unsafe", findings: [{ code: "previewStale", part: "PrvText" }] })).not.toBeNull();
     expect(parseBackendError({ code: "SaveUnsupported", reason: "nfs" })).toBeNull();
     expect(parseBackendError({ code: "SaveFailure", stage: "write", io: "storage-full" })).not.toBeNull();

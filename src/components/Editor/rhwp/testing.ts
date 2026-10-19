@@ -6,12 +6,16 @@ import { RhwpEditorSession } from "./RhwpEditorSession";
 import type { RhwpDocument, RhwpModule } from "./rhwpModule";
 
 export const CFB_SIGNATURE = [0xd0, 0xcf, 0x11, 0xe0, 0xa1, 0xb1, 0x1a, 0xe1];
+/** ZIP 지역 머리 서명(HWPX 컨테이너). */
+export const ZIP_SIGNATURE = [0x50, 0x4b, 0x03, 0x04];
 
 // 본문 문단만 있는 가짜 rhwp 문서(글자 하나 = 가로 10px). 실제 엔진 동작은 tests/integration/rhwp/에서 확인한다.
 export class FakeDocument {
   paragraphs: string[];
   freed = false;
   failNext = false;
+  /** 열었다고 알리는 원본 형식(`getSourceFormat`). */
+  format: "hwp" | "hwpx" = "hwp";
   constructor(text: string[]) {
     this.paragraphs = [...text];
   }
@@ -24,7 +28,7 @@ export class FakeDocument {
   free() { this.freed = true; }
   pageCount() { return 1; }
   getPageInfo(page: number) { return JSON.stringify({ pageIndex: page, width: 800, height: 1000 }); }
-  getSourceFormat() { return "hwp"; }
+  getSourceFormat(): string { return this.format; }
   renderPageToCanvas() {}
   hitTest(_page: number, x: number, y: number) {
     const paragraph = Math.min(this.paragraphs.length - 1, Math.max(0, Math.floor(y / 20)));
@@ -88,6 +92,12 @@ export class FakeDocument {
   exportHwpWithReport() {
     const text = new TextEncoder().encode(this.paragraphs.join("\n"));
     const bytes = new Uint8Array([...CFB_SIGNATURE, ...text]);
+    return { contentLoss: () => JSON.stringify({ count: 0, losses: [] }), takeBytes: () => bytes, free() {} };
+  }
+  /** HWPX 컨테이너(ZIP) 서명 + 본문. */
+  exportHwpxWithReport() {
+    const text = new TextEncoder().encode(this.paragraphs.join("\n"));
+    const bytes = new Uint8Array([...ZIP_SIGNATURE, ...text]);
     return { contentLoss: () => JSON.stringify({ count: 0, losses: [] }), takeBytes: () => bytes, free() {} };
   }
 }

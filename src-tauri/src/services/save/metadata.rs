@@ -98,6 +98,23 @@ fn inode_flags(file: &File) -> io::Result<Option<u32>> {
     Ok(Some(flags as u32))
 }
 
+/// POSIX 접근 ACL(`system.posix_acl_access`) 확장 속성 이름. 있으면 권한 비트 밖의 사용자·그룹 항목이 있다.
+const ACCESS_ACL: &[u8] = b"system.posix_acl_access";
+
+impl Attached {
+    /// 접근 ACL이 있는지(권한 비트 밖의 사용자·그룹에게 권한을 줄 수 있다).
+    pub fn has_access_acl(&self) -> bool {
+        self.xattrs
+            .as_ref()
+            .is_some_and(|xattrs| xattrs.contains_key(ACCESS_ACL))
+    }
+}
+
+/// 열린 파일·디렉터리에 접근 ACL이 있는지. 읽을 수 없으면 오류.
+pub fn has_access_acl(file: &File) -> io::Result<bool> {
+    Ok(xattrs(file)?.is_some_and(|xattrs| xattrs.contains_key(ACCESS_ACL)))
+}
+
 /// 열린 파일의 메타데이터. 읽을 수 없으면 오류(호출하는 쪽이 저장을 막는다).
 pub fn attached(file: &File) -> io::Result<Attached> {
     Ok(Attached {
