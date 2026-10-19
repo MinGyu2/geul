@@ -209,6 +209,10 @@ interface EditorAdapter {
   커서 자리에 겹쳐 그리고 확정만 보낸다. T007 `ImeInput`은 `ImeSession` 계약으로 일반화해 두 엔진이 같이 쓰고, 숨긴 textarea
   이벤트 해석은 `src/components/Editor/textInput.ts`로 옮겼다(동작 같음). WebView가 다시 시작되면 rhwp 세션만 failed로 돌린다.
 - 저장 없음(T009). 열기 성공은 무손실 근거가 아니다(끊긴 본문 XML도 열림 — T009 입력). 개발 프로필은 의존성을 최적화한다.
+- T008 안정화([상세](../architecture/editor-surface-decision.md#t008-안정화-붙여넣기그림-실패조합-선택래스터-예산복합-연산닫기-보호-2026-10-19)):
+  허용 연산에 `PasteText{text, chain}`(`\n` 문단·`\t` 탭 글자, 4096자 조각, 앞 조각 거부 시 건너뜀)·`DeleteSelection`을 더했다(그 밖의
+  IPC·권한·revision 계약 그대로). `InsertAt`·`ReplaceInserted`는 WordCraft 편집 스냅숏으로 원자적이다. 그림 실패는 숨기지 않고(3번 재시도 뒤
+  표시·편집 멈춤), 화면 밖 래스터는 128 MiB 예산, 닫기는 백엔드 dirty도 확인한다. T007/T008 체크 정책은 그대로다.
 
 ## Algorithms and Pseudocode
 ```

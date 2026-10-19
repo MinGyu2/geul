@@ -9,6 +9,8 @@
 // 모델을 바꾸지 않고 커서 자리에 겹쳐 보이며(배경을 칠해 아래 글자를 가림), 커서 막대는 조합 글자 뒤에 둔다. 확정 글자만
 // 백엔드로 간다.
 // 표시 한도: 지금 배율 × DPR로 그리면 그림 예산을 넘으면 그리지 않고 안내하며 편집을 멈춘다(배율을 낮추면 이어 감).
+// 그림 실패(T008 안정화): 다시 시도해도 지금 판을 그리지 못한 쪽은 그 쪽과 안내에 보이고(편집 멈춤), 다시 그리기를 고를 수 있다.
+// 넣지 못한 입력(넣을 수 없는 글자·한도 초과·엔진이 일부 거부)은 안내한다. 표면이 사라지면 쪽 그림(화면·화면 밖)을 놓는다.
 // 응답 시간(키 입력, T007과 같은 기준이며 문서를 바꾸지 않는 방향키도 센다. 마우스는 세지 않음): 입력 이벤트마다, 보내는 중인 연산이 없고 보이는 쪽 그림이 모두 지금 판이 되어 그린 뒤 두 번째 animation frame까지
 // (입력이 밀려 여러 입력이 한 화면에 함께 반영되면 각 입력의 대기를 따로 센다).
 import { useCallback, useEffect, useLayoutEffect, useReducer, useRef, useState, type CSSProperties } from "react";
@@ -91,6 +93,19 @@ export function DocxSurface({ session, zoom, imeContext }: DocxSurfaceProps) {
     }
   });
 
+  // 표면이 사라지면(탭 전환·닫기) 화면 canvas와 세션의 화면 밖 래스터를 놓는다(다시 보이면 새로 받는다, T007과 같음).
+  // layout effect 정리는 자식 canvas의 ref가 떨어지기 전에 돈다.
+  useLayoutEffect(() => {
+    const owned = canvases.current;
+    return () => {
+      for (const canvas of owned.values()) {
+        canvas.width = 0;
+        canvas.height = 0;
+      }
+      session.releaseRendering();
+    };
+  }, [session]);
+
   useEffect(() => {
     const scroller = pagesRef.current?.closest(".editor__scroll");
     if (!scroller) return;
@@ -170,6 +185,7 @@ export function DocxSurface({ session, zoom, imeContext }: DocxSurfaceProps) {
       composing: () => session.composing,
       handleKey,
       mark,
+      paragraphBreaks: true,
       detached: () => {
         ime.current = null;
       },
@@ -207,12 +223,27 @@ export function DocxSurface({ session, zoom, imeContext }: DocxSurfaceProps) {
   // 가장 작은 배율로도 그릴 수 없으면 배율을 낮추라고 안내하지 않는다.
   const minimum = limited && !session.fitsScale((ZOOM_STEPS[0] / 100) * CSS_PX_PER_PT * ratio);
   const editable = session.editable;
+  const failedPages = limited ? [] : session.renderFailedPages;
+  const notice = session.inputNotice;
   return (
     <div className="docx-surface rhwp-surface">
       <div className="docx-pages rhwp-pages" ref={pagesRef}>
         {limited && (
           <p className="editor__notice rhwp-render-limit" role="alert" data-testid="docx-render-limit" data-minimum={minimum}>
             {t(minimum ? "editor.docx.renderLimitMinimum" : "editor.docx.renderLimit", { zoom })}
+          </p>
+        )}
+        {failedPages.length > 0 && (
+          <div className="editor__notice rhwp-render-limit" role="alert" data-testid="docx-render-failed" data-pages={failedPages.join(",")}>
+            <p>{t("editor.docx.renderFailed", { pages: failedPages.map((page) => page + 1).join(", ") })}</p>
+            <button type="button" className="document-bar__button" data-testid="docx-render-retry" onClick={() => session.retryRendering()}>
+              {t("editor.docx.renderRetry")}
+            </button>
+          </div>
+        )}
+        {notice && (
+          <p className="editor__notice" role="status" data-testid="docx-input-notice" data-notice={notice}>
+            {t(`editor.docx.${notice}`)}
           </p>
         )}
         {!limited && pages.map((size, page) => {
@@ -223,6 +254,7 @@ export function DocxSurface({ session, zoom, imeContext }: DocxSurfaceProps) {
               data-page={page}
               data-revision={session.pageRevision(page) ?? ""}
               data-current={session.isCurrent(page, scale)}
+              data-render-failed={failedPages.includes(page) || undefined}
               ref={(element) => {
                 if (element) pageBoxes.current.set(page, element);
                 else pageBoxes.current.delete(page);

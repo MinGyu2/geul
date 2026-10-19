@@ -1100,3 +1100,56 @@ T007 체크박스는 그대로 둔다. 이 환경에서 필수 IME 7개와 보�
   WordCraft에 알려 주기 등)은 따로 정한다.
 - 열기의 관대함(K)은 T009 저장 판단에서 다뤄야 한다. 실행 취소·서식 명령은 T010이다.
 - 키 반영 지연은 같은 기계의 CPU 경합에 따라 꼬리가 길어진다(측정 표 참고).
+
+## T008 안정화: 붙여넣기·그림 실패·조합 선택·래스터 예산·복합 연산·닫기 보호 (2026-10-19)
+
+- 상태: **이 환경에서 구현·검증 완료(체크는 T007·T008과 같은 플랫폼 기준으로 보류)**. 기준 `99c9a4c`(master, 작업 트리 깨끗, submodule
+  rhwp `1a76570`·wordcraft `fc41918` 그대로). W-A·IPC 권한(`DocxOp` 목록만)·revision 권한(`SessionRegistry`)은 유지했다. 저장은 하지 않는다.
+- 수정 전 확인: 새 회귀 시험을 수정 전 구현에 먼저 돌렸다(Vitest 31개 중 26개 실패 — 그중 행동 근거가 있는 실패는 아래 표, 나머지는 새 API가
+  없어서). Rust는 `cfg(test)` 실패 주입(`DocxModel::fail_at`)만 먼저 넣어 3개 실패를 확인했다. 실제 앱도 수정 전 소스(`git archive 99c9a4c`)를
+  따로 빌드해 같은 탐침으로 비교했다(Xvfb X11, 실제 X11 클립보드).
+
+| 지적 | 판정 | 증거(수정 전) | 원인 | 수정 |
+|------|------|---------------|------|------|
+| P1-A 긴·여러 줄 입력 | CONFIRMED DEFECT | 실제 앱: 실제 클립보드로 `붙여 첫째\r\n붙여\t둘째\n붙여 셋째` Ctrl+V → `failed`, "잘못된 요청입니다."(revision 0). Vitest: LF·CRLF·CR·탭 → failed, 제어 문자도 보내고 failed | Rust `valid_text`가 `\n`·`\t`·4096자 초과를 거부(요청 전체 `InvalidRequest`)하는데 `typeText`가 받은 글자를 연산 하나로 보냄. 실측 WebKitGTK 2.54 붙여넣기는 `insertFromPaste` 하나(data 있음, CRLF→LF) | 새 연산 `PasteText{text, chain}`(`\n` = 문단, `\t` = 탭 글자, 4096자 이하, WordCraft `text.insert` 한 명령 = 실패 시 엔진이 되돌림)과 `textOps.ts`(CRLF·CR·U+2029 → `\n`, 유니코드 문자 경계 4096자 조각, 둘째 조각부터 `chain` — 앞 조각이 거부되면 같은 요청에서는 백엔드가, 다음 요청으로 넘어간 조각은 프런트엔드가 건너뜀). 그 밖의 제어 문자·U+FFFC·고립 서러게이트·1,048,576자(한 요청 = 256조각) 초과는 넣지 않고 안내(`inputNotice`), 일부 조각 거부는 "앞부분만 들어감" 안내. `InsertText`의 계약(한 문단, 탭·줄바꿈 없음)은 그대로. 한도(`MAX_TEXT_CHARS`·`MAX_OPS`)는 올리지 않음 |
+| P1-A 부수: 줄마다 나뉜 input | CONFIRMED DEFECT(실측) | 실제 앱: `execCommand('insertText', '첫째\n둘째\n셋째')`는 beforeinput 하나 뒤 줄마다 `insertText`·`insertParagraph`(data 없음) input이 옴 → 비교할 앞 상태가 없는 `insertParagraph`를 버려 줄이 합쳐짐 | `textInput.ts`가 data 없는 넣기를 beforeinput 때 값과만 비교 | `attachTextInput`의 `paragraphBreaks` 선택지(DOCX 표면만): data 없는 `insertParagraph`·`insertLineBreak`는 `\n` 하나. rhwp 동작은 그대로 |
+| P1-B 그림 실패 | CONFIRMED DEFECT | Vitest: 편집 뒤 지금 판 그림이 계속 `InvalidRequest`·PNG 디코드 실패여도 `ready`·편집 가능, 옛 그림(판 0)을 보인 채 요청마다 무제한 재요청. 세션을 잃은 `InvalidState`도 ready. canvas 문맥이 없으면 빈 래스터를 지금 판으로 표시. 띠 너비가 달라도 덮음 | `requestPages`가 `!result.ok`·디코드 실패를 조용히 버림, `getContext()?.` | 분류: 옛 시도·옛 판(편집 보내는 중의 `RevisionMismatch`)은 무시, 세션 오류(`StaleSession`·`UnknownSession`·`StaleLoad`·`InvalidState`·`EngineFailure`, 기다리는 연산 없는 `RevisionMismatch`)는 failed, 그 밖(백엔드 거부·`Protocol`·디코드·문맥 없음·크기 불일치)은 쪽 실패로 250·500 ms 간격 3번까지. 다 쓰면 그 쪽과 안내(`docx-render-failed`, 다시 그리기)에 보이고 편집을 멈춘다. 멈춤은 그 쪽이 지금 판으로 그려지거나 보이지 않게 될 때까지(아래 새 결함). 이미 failed면 늦은 그림 오류가 원래 오류를 덮지 않음. 바뀐 띠 최적화는 그대로 |
+| P1-B 부수: 멈춤 해제 | CONFIRMED DEFECT(새 시험에서 발견) | 조합 중 그림 실패로 편집이 멈출 때 보이던 조합을 확정 → 판이 바뀌어 실패 기록이 옛 판 것이 됨 → 편집 재개 → 같은 조합의 늦은 IME 이벤트가 새 조합으로 '하' 다음 '한'을 한 번 더 넣음 | 실패를 판마다 따로 셈 | 멈춘 쪽의 실패는 새 판으로 다시 시도하되 그려질 때까지 멈춤 유지 |
+| P1-C 선택 + 조합 취소 | ACCEPTABLE EXISTING POLICY(계약) + CONFIRMED DEFECT 2건 | 계약: 미리보기가 보인 뒤 취소하면 지운 선택은 남는다(T007 rhwp "선택을 지우고 취소하면 그 지우기만 1개", T008 결과 F) — 유지하고 회귀 시험·실제 IME 선택 항목 추가. 결함: ① 선택을 접는 연산(→)이 보내는 중일 때 조합을 시작하면 옛 보기(`collapsed=false`)로 Backspace를 보내 '가나다' → '가나마'(접은 뒤의 '다' 삭제). ② 미리보기 없이 끝난 빈 조합(compositionstart → compositionend(""))이 선택을 지움 | `beginComposition`이 응답 전 보기로 Backspace를 보냄 | 새 연산 `DeleteSelection`(백엔드가 실행할 때 선택이 있을 때만 지움, 없으면 변경 0). 조합 글자가 처음 보일 때 보이던 선택이 있으면 보냄. 확정만 온 조합은 `InsertText`가 그때 남은 선택을 바꿈(WordCraft 기본 `typing_replaces_selection`) |
+| P2-A 여러 쪽 메모리 | CONFIRMED DEFECT | 실제 앱(같은 탐침, 118쪽 스크롤): 수정 전 화면 canvas 118개 모두 유지 110,330,000 px(약 421 MiB RGBA, 같은 크기의 화면 밖 래스터가 따로 있음), WebKitWebProcess RSS 751 → 1,151 MB. Vitest: 120쪽 → 화면 밖 래스터 120개 103,403,520 px | 쪽 래스터 `Map`에 예산·놓기가 없음, 화면 canvas도 놓지 않음, 표면이 사라져도 유지 | 화면 밖 래스터 예산 `MAX_RETAINED_PIXELS` 32 Mi px(RGBA 128 MiB, T007 활성 표면 예산과 같음), 넘으면 지금 요청한(보이는·커서) 쪽이 아닌 것부터 오래 쓰지 않은 순으로 놓음(크기 0). 놓은 쪽의 화면 canvas도 다음 그리기에서 놓음. 표면 unmount(탭 전환·닫기) 때 모두 놓음(T007과 같음). 수정 뒤 같은 탐침: canvas 35개 32,725,000 px, RSS 515 → 510 MB. DOM 가상화는 하지 않음(0×0 canvas는 비용이 작음) |
+| P2-B 복합 연산 원자성 | CONTRACT DEFICIENCY(잠재) | 고정 WordCraft `select.range`는 위치를 `clamp`하므로 정상 입력으로는 실패하지 않는다(소스 확인). 실패를 주입하면 `InsertAt`·`ReplaceInserted`가 넣은 뒤 선택 되돌리기에서 거부 → `rejected [0]`·revision 0·dirty false인데 본문은 바뀜(Rust 3개 FAILED) | 여러 명령 사이에 되돌림이 없음 | WordCraft `Session::edit_snapshot`/`restore`(문서·선택·실행 취소 기록·dirty를 되돌리는 엔진 공개 계약, `session.rs` 확인)로 두 연산을 묶음. 스냅숏 복제는 이 두 연산(IME 예외 경로)에만 |
+| P2-C 닫기 보호 | CONTRACT DEFICIENCY | Vitest: 편집 세션 객체가 없는 dirty 세션(`reconcile` 뒤)의 `DocumentWorkspace.close()` → 확인 없이 닫음. 실제 UI는 탭 표시줄이 모든 탭의 편집 객체를 바로 만들어 이 틈이 거의 드러나지 않는다(소스 확인). 실제 앱 시나리오(WebView 다시 시작 뒤 보지 않은 dirty 탭 닫기)는 수정 뒤 앱에서 확인 창이 뜨는 회귀 항목으로만 실행했다(수정 전 앱에서는 실행하지 않음) | `close()`가 편집 객체의 `hasUnpreservedChanges`만 봄(작업 공간 전체 판정은 백엔드 dirty도 봄) | `close()`도 같은 기준(백엔드 기록의 dirty 또는 편집 객체의 보내는 중·조합 중·uncertain) |
+
+### 검증(최종 소스)
+
+| 검사 | 결과 |
+|------|------|
+| `npm run typecheck`, `npm run lint`, `npm test` | 오류 없음, Vitest 500개(24파일, 기준 462 + 38) |
+| `src-tauri`: `cargo fmt --check`, `cargo clippy --locked --all-targets -- -D warnings`, `cargo test --locked` | 통과, 단위 86(기준 78 + 8) + 통합 1, 측정 1개 `#[ignore]` |
+| `VITE_GEUL_TEST_HOOKS=1 npm run tauri build -- --debug --no-bundle` | 통과(`cargo test` 뒤 다시 빌드) |
+| `wordcraft_poc.py --font-home …`(Xvfb X11 DPR 1.041) | 44/44(기존 33 + 새 11: 표 셀 탭 글자, 줄마다 나뉜 input, 실제 클립보드 붙여넣기, 9,000자, 제어 문자 안내, 그림 실패 표시·멈춤, 다시 그리기, 실제 클립보드 262,144자 64조각 297쪽, 스크롤 뒤 canvas 예산, 다시 그림, 다시 시작 뒤 보지 않은 dirty 탭 닫기 확인) |
+| 같은 명령(헤드리스 weston DPR 1) | 43/43(실제 클립보드 항목은 키보드 seat가 없어 건너뜀, 여러 쪽은 4,000자 넣기 60번 122쪽) |
+| `tauri_smoke.py`(weston) · `rhwp_poc.py`(weston) | 62/62 · 64/64 |
+| `wordcraft_poc.py --ime`(Xvfb + ibus 1.5.33 + ibus-hangul 1.5.5, xdotool 실제 키) | 필수 7/7 PASS 4회, 선택: 탭 전환 PASS 4회, 창 초점 이동(gtk3-widget-factory 창) PASS 1회(1회는 다른 창을 주지 않았고 2회는 창 이름이 맞지 않아 NOT RUN), 새 선택 항목 "선택 위 조합 확정"·"선택 위 조합 취소(BackSpace로 비움)" PASS 4회 |
+| `rhwp_poc.py --ime`(같은 환경) | 필수 7/7 PASS 2회, 탭 전환 PASS 2회, 창 초점 PASS 1회 |
+| `check-sensitive-info.py <바뀐 파일 15개>` | 통과 |
+
+### 측정
+
+- 키 반영(키만 친 시나리오 80–81개, 간격 150 ms): Xvfb p50/p95/최대 36/54/407 ms, weston 32/47/63 ms(T008: 47–59 ms). 같은 실행의 전체
+  표본 p95 247·246 ms는 시험기가 WebDriver로 상태를 묻는 앞 시나리오가 섞인 값이다(T008: 206–267 ms). 실행 중 load average 1–6(다른 작업 있음).
+- 엔진(개발 빌드, `붙여넣기_한도_측정`): 1,048,576자 256조각 한 요청 넣기 0.36 s, 그 결과 683쪽 문서의 배치까지 3.1 s, 그 뒤 글자 하나 58 ms.
+  실제 앱: 실제 클립보드 262,144자(64조각, 4,096문단) 붙여넣기 → 화면 반영 2.6 s, 9,000자 0.55–0.82 s.
+- 여러 쪽 스크롤: 297쪽(Xvfb) 화면 canvas 35개 32,725,000 px, 122쪽(weston) 38개 32,744,448 px.
+
+### 남은 한계
+
+- execCommand처럼 줄마다 나뉜 input은 input마다 연산 하나다(연산마다 문서 모델 복제·비교). 줄이 아주 많을 때의 시간은 재지 않았다(실제
+  클립보드 붙여넣기는 input 하나라 조각 수만큼만). CRLF가 그 경로로 오면 WebKit이 `\r`을 글자로 남겨 빈 문단이 하나 더
+  생길 수 있다(execCommand 경로만).
+- 문단 나누기는 `text.insert`의 Enter 의미(빈 목록 항목에서 목록을 끝냄)다. WordCraft의 붙여넣기 의미(`paste_text`)는 IPC로 열지 않았다.
+- 시험기 수정: `idle()`이 창 높이로 보이는 쪽을 정해, 여러 쪽 문서에서 스크롤 영역 아래(앱이 그리지 않는 자리)에 걸친 쪽을 기다리다 시간
+  초과가 났다 → 앱과 같이 `.editor__scroll` 사각형으로. 넣기 뒤에는 revision이 바뀐 것을 본 뒤 기다린다(React 반영 전 상태를 읽던 경합).
+  WebKitWebDriver 연결 끊김(앱·WebProcess는 살아 있음)이 weston 실행 2번·Xvfb 1번 있었다(T008 기록과 같은 현상, 다시 실행해 통과).
+- 화면 canvas 2D 문맥 없음은 감지하지 않는다(화면 밖 래스터만). 백엔드 래스터 기억은 세션마다 4개(최대 4 × 64 MiB)이고 문서 수만큼 늘어난다.
+- 실제 GPU 데스크톱·Wayland IME·fcitx5·Windows/macOS는 확인하지 않았다(T007·T008과 같음). 그래서 체크박스 정책은 그대로다.

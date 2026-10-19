@@ -1,7 +1,8 @@
 // DOCX 편집 세션·표면 테스트용 가짜 백엔드(테스트에서만 가져다 쓴다). 백엔드(Rust adapters::wordcraft)의 계약을 흉내 낸다:
 // 시도 번호·ready·기준 revision 확인, 실제로 바뀐 연산만 revision, 거부한 연산은 없던 일, Mark/InsertAt, ReplaceInserted,
-// Pointer.beforeInsert. 글자 하나 = 가로 10pt, 문단 하나 = 세로 20pt, 본문 왼쪽 위 (72, 72). 실제 엔진 동작은 Rust 시험과
-// tests/integration/wordcraft/에서 확인한다.
+// Pointer.beforeInsert, 요청 검사(validate: 글자 길이·제어 문자, 위반이면 요청 전체 InvalidRequest), PasteText의 문단 나누기·
+// chain(앞 연산이 거부되면 건너뜀), DeleteSelection. 글자 하나 = 가로 10pt, 문단 하나 = 세로 20pt, 본문 왼쪽 위 (72, 72).
+// 실제 엔진 동작은 Rust 시험과 tests/integration/wordcraft/에서 확인한다.
 import type { DocumentBackend } from "../../../adapters/backend";
 import type { DocumentError, Result, SessionInfo } from "../../../adapters/contract";
 import type { DocxBackend, DocxEdited, DocxOp, DocxRender, DocxRoundTrip, DocxState, DocxView } from "../../../adapters/docx";
@@ -14,6 +15,22 @@ export const LINE = 20;
 
 type At = { p: number; o: number };
 const chars = (text: string) => [...text];
+/** 백엔드 MAX_TEXT_CHARS·MAX_OPS(engine.rs). */
+const MAX_TEXT = 4096;
+const MAX_OPS = 256;
+/** 백엔드 valid_text(engine.rs): 비어 있지 않고 4096자 이하, 제어 문자(Cc)·U+FFFC 없음. PasteText는 \n·\t만 허용. */
+const validText = (text: string, allowed = "") =>
+  text !== "" && chars(text).length <= MAX_TEXT && !chars(text).some((c) => (/\p{Cc}/u.test(c) && !allowed.includes(c)) || c === "\uFFFC");
+export function validOps(ops: DocxOp[]): boolean {
+  return ops.length > 0 && ops.length <= MAX_OPS && ops.every((op) => {
+    switch (op.op) {
+      case "insertText": case "insertAt": return validText(op.text);
+      case "pasteText": return validText(op.text, "\n\t");
+      case "replaceInserted": return validText(op.expected) && validText(op.text);
+      default: return true;
+    }
+  });
+}
 const cmp = (a: At, b: At) => (a.p - b.p) || (a.o - b.o);
 
 export const docxInfo = (patch: Partial<SessionInfo> = {}): SessionInfo => ({
@@ -31,6 +48,14 @@ export class FakeDocx implements DocxBackend {
   failNext: DocumentError | null = null;
   /** true면 edit 응답을 release()까지 붙잡는다. */
   hold = false;
+  /** 엔진이 거부하는 글자 넣기(InsertText·PasteText)의 글자(보호된 문서 등 흉내). */
+  refuseText: ((text: string) => boolean) | null = null;
+  /** 쪽 수(쪽마다 612×792pt, 커서·선택은 0쪽). */
+  pageCount = 1;
+  /** 그림 요청이 이 오류로 실패한다(그대로 둠, null이면 정상). */
+  renderError: DocumentError | null = null;
+  /** 그림 응답의 PNG를 이 바이트로 바꾼다(디코드 실패 흉내). */
+  renderPng: Uint8Array | null = null;
   private held: (() => void)[] = [];
   private readonly original: string[];
   private cleanRevision = 0;
@@ -66,7 +91,7 @@ export class FakeDocx implements DocxBackend {
       return [{ page: 0, x: MARGIN + start * CHAR, y: MARGIN + p * LINE, width: (end - start) * CHAR, height: 16 }];
     });
     return {
-      pages: [{ width: 612, height: 792 }],
+      pages: Array.from({ length: this.pageCount }, () => ({ width: 612, height: 792 })),
       caret: { page: 0, x: MARGIN + this.caret.o * CHAR, y: MARGIN + this.caret.p * LINE, height: 16 },
       selection, collapsed, inTable: false,
       caretKey: at(this.caret), anchorKey: at(this.anchor),
@@ -127,11 +152,13 @@ export class FakeDocx implements DocxBackend {
         return { ok: false, error };
       }
       if (baseRevision !== this.info.revision) return { ok: false, error: { code: "RevisionMismatch", sessionId, revision: this.info.revision } };
+      if (!validOps(ops)) return { ok: false, error: { code: "InvalidRequest" } };
       const rejected: number[] = [];
       let changed = 0;
       ops.forEach((op, index) => {
         const before = JSON.stringify(this.paragraphs);
-        if (!this.apply(op)) rejected.push(index);
+        const skipped = op.op === "pasteText" && op.chain && rejected.at(-1) === index - 1 && index > 0;
+        if (skipped || !this.apply(op)) rejected.push(index);
         else if (JSON.stringify(this.paragraphs) !== before) {
           changed += 1;
           this.engineRev += 1;
@@ -168,6 +195,7 @@ export class FakeDocx implements DocxBackend {
     const len = (p: number) => chars(this.paragraphs[p]!).length;
     switch (op.op) {
       case "insertText": {
+        if (this.refuseText?.(op.text)) return false;
         const before = [...this.paragraphs];
         this.deleteSelection();
         const at = { ...this.caret };
@@ -176,6 +204,24 @@ export class FakeDocx implements DocxBackend {
         this.last = { at, text: op.text, rev: this.engineRev + 1, before };
         return true;
       }
+      case "pasteText": {
+        if (this.refuseText?.(op.text)) return false;
+        this.deleteSelection();
+        op.text.split("\n").forEach((line, index) => {
+          if (index > 0) {
+            const list = chars(this.paragraphs[this.caret.p]!);
+            this.paragraphs.splice(this.caret.p, 1, list.slice(0, this.caret.o).join(""), list.slice(this.caret.o).join(""));
+            this.moveTo({ p: this.caret.p + 1, o: 0 }, false);
+          }
+          this.insert(this.caret, line);
+          this.moveTo({ p: this.caret.p, o: this.caret.o + chars(line).length }, false);
+        });
+        this.last = null;
+        return true;
+      }
+      case "deleteSelection":
+        this.deleteSelection();
+        return true;
       case "backspace":
         if (this.deleteSelection()) return true;
         if (this.caret.o > 0) {
@@ -270,15 +316,17 @@ export class FakeDocx implements DocxBackend {
     const checked = this.check(sessionId, generation);
     if (!checked.ok) return Promise.resolve(checked);
     if (revision !== this.info.revision) return Promise.resolve({ ok: false, error: { code: "RevisionMismatch", sessionId, revision: this.info.revision } });
+    if (this.renderError) return Promise.resolve({ ok: false, error: this.renderError });
+    if (page >= this.pageCount) return Promise.resolve({ ok: false, error: { code: "InvalidRequest" } });
     const key = `${page}:${scale}`;
     const known = this.rendered.get(key);
     this.rendered.set(key, revision);
     // 기준 판을 기억하면 바뀐 띠(커서 문단 줄)만, 같은 판이면 빈 띠, 아니면 쪽 전체.
     if (base !== undefined && base === known) {
-      const band = revision === base ? { y: 0, height: 0, png: new Uint8Array() } : { y: 100 + this.caret.p * 20, height: 20, png: new Uint8Array([revision, page, 1]) };
+      const band = revision === base ? { y: 0, height: 0, png: new Uint8Array() } : { y: 100 + this.caret.p * 20, height: 20, png: this.renderPng ?? new Uint8Array([revision, page, 1]) };
       return Promise.resolve({ ok: true, value: { revision, base, ...band } });
     }
-    return Promise.resolve({ ok: true, value: { revision, base: null, y: 0, height: 1056, png: new Uint8Array([revision, page]) } });
+    return Promise.resolve({ ok: true, value: { revision, base: null, y: 0, height: 1056, png: this.renderPng ?? new Uint8Array([revision, page]) } });
   }
 
   roundTrip(sessionId: number, generation: number, revision: number): Promise<Result<DocxRoundTrip>> {
@@ -308,9 +356,11 @@ export const flush = async () => {
   for (let i = 0; i < 8; i++) await new Promise((resolve) => setTimeout(resolve, 0));
 };
 
-/** 가짜 그림: 크기만 있는 ImageBitmap 대신(jsdom에는 없음). 띠(바이트 3개)는 높이 20. */
+/** 가짜 그림: 크기만 있는 ImageBitmap 대신(jsdom에는 없음). 띠(바이트 3개)는 높이 20. 빈 바이트·0xff로 시작하면 디코드 실패. */
 export const decodeFake = (png: Uint8Array) =>
-  Promise.resolve({ width: 816, height: png.length === 3 ? 20 : 1056, close() {}, bytes: [...png] } as unknown as ImageBitmap);
+  png.length === 0 || png[0] === 0xff
+    ? Promise.reject(new Error("decode"))
+    : Promise.resolve({ width: 816, height: png.length === 3 ? 20 : 1056, close() {}, bytes: [...png] } as unknown as ImageBitmap);
 
 /** drawImage 호출을 기록하는 가짜 canvas(jsdom에는 2D 문맥이 없음). */
 export function recordingCanvas() {
@@ -319,12 +369,12 @@ export function recordingCanvas() {
   return { canvas: canvas as unknown as HTMLCanvasElement, draws };
 }
 
-/** 열고 불러온 DOCX 편집 세션. */
+/** 열고 불러온 DOCX 편집 세션. 화면 밖 래스터는 2D 문맥이 있는 가짜 canvas다(jsdom canvas에는 문맥이 없어 그림 실패로 센다). */
 export async function readyDocx(text?: string[]) {
   const fake = new FakeDocx(text);
   const sessions = docxSessions(fake);
   await sessions.open("/a.docx");
-  const editor = new DocxEditorSession(1, fake, sessions, decodeFake);
+  const editor = new DocxEditorSession(1, fake, sessions, decodeFake, () => recordingCanvas().canvas);
   const result = await editor.load();
   if (!result.ok) throw new Error(JSON.stringify(result.error));
   return { fake, sessions, editor };

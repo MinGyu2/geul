@@ -81,9 +81,15 @@ export interface DocxRender {
 
 export type MoveTarget = "left" | "right" | "up" | "down" | "lineStart" | "lineEnd" | "docStart" | "docEnd";
 
-/** 허용한 편집·이동(백엔드 `DocxOp`). 좌표는 쪽 왼쪽 위 기준 pt. */
+/**
+ * 허용한 편집·이동(백엔드 `DocxOp`). 좌표는 쪽 왼쪽 위 기준 pt. insertText는 한 문단 안의 글자(탭·줄바꿈 없음), pasteText는 붙여넣은
+ * 글자 조각("\n" = 문단 나누기, "\t" = 탭 글자, chain이면 같은 요청의 바로 앞 연산이 거부됐을 때 백엔드가 건너뜀),
+ * deleteSelection은 선택이 있을 때만 지운다.
+ */
 export type DocxOp =
   | { op: "insertText"; text: string }
+  | { op: "pasteText"; text: string; chain: boolean }
+  | { op: "deleteSelection" }
   | { op: "backspace" }
   | { op: "deleteForward" }
   | { op: "newParagraph" }
@@ -97,6 +103,13 @@ export type DocxOp =
 
 /** 한 요청의 연산 수 상한(백엔드 MAX_OPS와 같음). */
 export const MAX_DOCX_OPS = 256;
+/** 한 연산의 글자 수 상한(유니코드 문자 단위, 백엔드 MAX_TEXT_CHARS와 같음). */
+export const MAX_DOCX_TEXT_CHARS = 4096;
+/**
+ * 붙여넣기 하나의 글자 수 상한(문자 단위) = 한 요청에 들어가는 조각만큼(1 Mi자). 조각마다 백엔드가 문서 모델을 복제·비교하므로
+ * 총량을 묶는다(측정: 개발 빌드 엔진에서 한도만큼 넣기 약 0.36 s, 그 결과 683쪽 문서의 배치 약 2.8 s).
+ */
+export const MAX_DOCX_PASTE_CHARS = MAX_DOCX_OPS * MAX_DOCX_TEXT_CHARS;
 /** docx_render 응답 머리 길이: revision u64, 기준 판 u64(모두 1이면 쪽 전체), 띠 첫 줄 u32, 줄 수 u32(LE). 백엔드와 같다. */
 export const RENDER_HEADER_LEN = 24;
 

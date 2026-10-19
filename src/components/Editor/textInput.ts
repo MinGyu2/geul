@@ -15,7 +15,16 @@ export interface TextInputHandlers {
   mark(event: Event): void;
   /** 리스너를 떼며 조합을 정리한 직후(controller.detach 뒤). */
   detached?(): void;
+  /**
+   * data 없는 문단 나누기 input(insertParagraph·insertLineBreak)을 앞 beforeinput 없이 와도 "\n" 하나로 넣는다(T008 안정화, DOCX
+   * 표면만). 실측 WebKitGTK 2.54: 줄바꿈이 있는 글자 넣기(execCommand insertText)는 beforeinput 하나 뒤에 insertText·insertParagraph
+   * input을 줄마다 나눠 보내, 비교할 앞 상태가 없는 insertParagraph가 버려졌다(줄이 합쳐짐). 끄면(rhwp) 동작은 그대로다.
+   */
+  paragraphBreaks?: boolean;
 }
+
+/** 문단 나누기 input(textarea에서는 둘 다 줄바꿈). */
+const PARAGRAPH_INPUT_TYPES = new Set(["insertParagraph", "insertLineBreak"]);
 
 /** 조합 계열 input: 글자는 data로만 읽는다(값에는 앞서 확정한 글자가 쌓여 있다). */
 export const IME_INPUT_TYPES = new Set(["insertCompositionText", "insertFromComposition", "deleteCompositionText"]);
@@ -88,6 +97,7 @@ export function attachTextInput(input: HTMLTextAreaElement, controller: ImeInput
     if (composing || IME_INPUT_TYPES.has(inputType)) text = data ?? "";
     else if (!inputType.startsWith("insert")) text = "";
     else if (data !== null) text = data;
+    else if (handlers.paragraphBreaks && PARAGRAPH_INPUT_TYPES.has(inputType)) text = "\n";
     else text = insertedText(before, input.value);
     controller.input(text, inputType, isComposing);
     if (!composing && !handlers.composing() && input.value.length > TRIM_LENGTH) input.value = "";

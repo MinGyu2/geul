@@ -101,9 +101,18 @@ def wait_status(d, expected: str, timeout: float = 60) -> dict:
 
 def idle(d, timeout: float = 30) -> dict:
     """보내는 중인 연산이 없고 보이는 쪽 그림이 지금 판일 때까지 기다린다."""
-    smoke.wait_until(d, f"const e=document.querySelector('{STATUS}'); return e && e.dataset.pending==='0'"
-                        " && [...document.querySelectorAll('.docx-page')].every(p => p.dataset.current==='true' || p.getBoundingClientRect().bottom < 0"
-                        " || p.getBoundingClientRect().top > innerHeight)", timeout=timeout)
+    # 보이는 쪽은 앱(DocxSurface.visiblePages)과 같이 스크롤 영역(.editor__scroll) 사각형으로 정한다. 창 높이(innerHeight)로 보면
+    # 스크롤 영역 아래(상태 표시줄 자리)에 걸친, 앱이 그리지 않는 쪽까지 기다린다(여러 쪽 문서에서 실측).
+    visible = ("const s=document.querySelector('.editor__scroll')?.getBoundingClientRect();"
+               " const shown=(p) => { const r=p.getBoundingClientRect(); return !s || (r.bottom > s.top && r.top < s.bottom); };")
+    try:
+        smoke.wait_until(d, f"{visible} const e=document.querySelector('{STATUS}'); return e && e.dataset.pending==='0'"
+                            " && [...document.querySelectorAll('.docx-page')].every(p => p.dataset.current==='true' || !shown(p))", timeout=timeout)
+    except smoke.Failure as error:
+        st = status(d)
+        stale = d.js(f"{visible} return [...document.querySelectorAll('.docx-page')].filter(p => p.dataset.current!=='true' && shown(p))"
+                     ".map(p => [p.dataset.page, p.dataset.revision, p.dataset.renderFailed ?? ''])")
+        raise smoke.Failure(f"{error} — 상태 {json.dumps({k: st.get(k) for k in ('status', 'revision', 'pending', 'renderFailed', 'pages')})}, 지금 판이 아닌 보이는 쪽 {stale}") from error
     return status(d)
 
 
@@ -382,6 +391,186 @@ def scenario_latency(d) -> None:
           count >= 70 and len(typed) >= 70 and p95 <= 150, json.dumps(REPORT["docx"]["latency"]))
 
 
+# ---- T008 안정화(붙여넣기·그림 실패·래스터 예산·닫기 보호) ----
+
+INPUT = ".docx-surface .rhwp-input"
+# WebKit 편집 명령으로 숨긴 textarea에 글자를 넣는다: WebKit이 실제 beforeinput/input을 만들고 앱의 입력 경로·IPC·Rust 엔진을 그대로
+# 지난다(합성 DOM 이벤트가 아님). 실측: 줄바꿈이 있으면 beforeinput 하나 뒤에 줄마다 insertText·insertParagraph input이 따로 온다.
+INSERT = """const i=document.querySelector(arguments[0]); i.focus(); return document.execCommand('insertText', false, arguments[1])"""
+CTRL = "\ue009"
+MAX_RETAINED_PIXELS = 32 * 1024 * 1024  # DocxEditorSession.MAX_RETAINED_PIXELS
+
+
+def insert_text(d, text: str, timeout: float = 120, changes: bool = True) -> dict:
+    """글자를 넣고, 화면 상태가 그 넣기를 반영할 때까지(revision이 바뀌거나 안내가 보임) 기다린 뒤 idle."""
+    before = status(d).get("revision")
+    if not d.js(INSERT, INPUT, text):
+        raise smoke.Failure("execCommand insertText 실패")
+    if changes:
+        smoke.wait_until(d, f"return document.querySelector('{STATUS}').dataset.revision !== arguments[0]", before, timeout=timeout)
+    else:
+        smoke.wait_until(d, f"return document.querySelector('{STATUS}').dataset.inputNotice !== ''", timeout=10)
+    time.sleep(0.3)
+    return idle(d, timeout=timeout)
+
+
+def brief(st: dict) -> str:
+    return json.dumps({k: st.get(k) for k in ("status", "revision", "caret", "paragraphText", "inputNotice", "renderFailed", "pending")},
+                      ensure_ascii=False)[:600]
+
+
+def chord(d, key: str) -> None:
+    perform(d, [{"type": "key", "id": "kbd", "actions": [{"type": "keyDown", "value": CTRL}, {"type": "keyDown", "value": key},
+                                                          {"type": "keyUp", "value": key}, {"type": "keyUp", "value": CTRL}]}])
+
+
+def clipboard_paste(d, text: str, timeout: float = 120) -> dict:
+    """실제 시스템 클립보드 붙여넣기: 페이지의 임시 textarea에서 Ctrl+C(WebKit 복사 → X11 CLIPBOARD), 편집 입력에서 Ctrl+V(WebKit 붙여넣기)."""
+    d.js("const t=document.createElement('textarea'); t.id='clip-src'; t.value=arguments[0]; document.body.appendChild(t); t.focus(); t.select();", text)
+    chord(d, "c")
+    time.sleep(0.3)
+    d.js("document.getElementById('clip-src').remove(); window.__paste=[]; const i=document.querySelector(arguments[0]);"
+         " i.addEventListener('input', e => window.__paste.push(e.inputType), {once: true}); i.focus()", INPUT)
+    before = status(d).get("revision")
+    chord(d, "v")
+    smoke.wait_until(d, "return window.__paste.length > 0", timeout=10)
+    smoke.wait_until(d, f"return document.querySelector('{STATUS}').dataset.revision !== arguments[0]", before, timeout=timeout)
+    time.sleep(0.3)
+    return idle(d, timeout=timeout)
+
+
+def scenario_stabilization(d) -> None:
+    # 표 셀의 탭 글자는 셀 이동이 아니다(아래 넣기로 표가 밀리기 전에, 고정 좌표로 누름).
+    click_cell(d, 0)
+    cell = status(d)
+    after = insert_text(d, "a\tb")
+    check("docx: 표 셀에 넣은 탭 글자는 셀 이동이 아니라 글자(같은 셀, revision +1)",
+          after["inTable"] == "true" and caret_path(after) == caret_path(cell) and after["paragraphText"].startswith("a\tb")
+          and int(after["revision"]) == int(cell["revision"]) + 1, json.dumps(after, ensure_ascii=False)[:300])
+    click_paragraph_start(d)
+    press(d, "End")  # 줄 끝(문단이 여러 줄이면 커서 뒤에 남은 글자가 있다)
+    st = status(d)
+    rev, tail = int(st["revision"]), st["paragraphText"][int(st["caretOffset"]):]
+    # P1-A 여러 줄·탭: 문단을 나누고 편집이 이어진다. WebKit이 줄마다 나눠 보내는 input(insertText·insertParagraph 5개)마다 연산 하나.
+    after = insert_text(d, "첫째 줄\n둘째\t줄\n셋째")
+    check("docx: 여러 줄·탭 글자 넣기(WebKit이 줄마다 나눈 input)는 문단을 나누고 편집이 이어짐(줄 잃지 않음, input마다 revision +1)",
+          after["status"] == "ready" and after["paragraphText"] == "셋째" + tail and int(after["revision"]) == rev + 5
+          and caret_path(after) == "2" and after.get("inputNotice") == "", brief(after) + f" (전 revision {rev})")
+    # 실제 클립보드 붙여넣기(X11만: 헤드리스 weston에는 키보드 seat가 없어 GTK 클립보드 단축키를 쓸 수 없음). CRLF·탭, input 하나.
+    if os.environ.get("DISPLAY") and not os.environ.get("WAYLAND_DISPLAY"):
+        click_paragraph_start(d)
+        press(d, "End")
+        st = status(d)
+        rev, tail = int(st["revision"]), st["paragraphText"][int(st["caretOffset"]):]
+        after = clipboard_paste(d, "붙여 첫째\r\n붙여\t둘째\n붙여 셋째")
+        check("docx: 실제 클립보드 붙여넣기(CRLF·LF·탭)는 문단을 나누고 붙여넣기 하나 = revision +1(편집이 이어짐)",
+              after["status"] == "ready" and after["paragraphText"] == "붙여 셋째" + tail and int(after["revision"]) == rev + 1
+              and d.js("return window.__paste[0]") == "insertFromPaste", brief(after) + f" (전 revision {rev})")
+        REPORT.setdefault("stabilization", {})["clipboardPaste"] = True
+    else:
+        print("[참고] 실제 클립보드 붙여넣기: X11이 아니어서 건너뜀(헤드리스 weston에 키보드 seat 없음)", flush=True)
+    click_paragraph_start(d)
+    press(d, "End")
+    after = status(d)
+    # 4096자 넘는 글자(한글·ASCII·이모지): 글자 경계 조각으로 모두, 순서대로.
+    long = ("한글ASCII😀𝄞" * 1000)[:9000]
+    rev, at = int(after["revision"]), int(after["caretOffset"])
+    head, tail = after["paragraphText"][:at], after["paragraphText"][at:]
+    started = time.monotonic()
+    after = insert_text(d, long)
+    REPORT.setdefault("stabilization", {})["long9000Ms"] = round((time.monotonic() - started) * 1000)
+    check("docx: 4096자를 넘는 글자(9,000자, 이모지 포함)는 조각으로 모두 순서대로 들어감(revision +3)",
+          after["status"] == "ready" and after["paragraphText"] == head + long + tail and int(after["revision"]) == rev + 3,
+          f"revision {rev}→{after['revision']}, 길이 {len(after['paragraphText'])}")
+    # 넣을 수 없는 제어 문자: 넣지 않고 알림, 편집은 이어 감.
+    rev = int(after["revision"])
+    after = insert_text(d, "a\u0007b", changes=False)
+    check("docx: 넣을 수 없는 제어 문자는 넣지 않고 알림(문서·revision 그대로, ready)",
+          after["status"] == "ready" and after.get("inputNotice") == "pasteUnsupported" and int(after["revision"]) == rev
+          and d.exists("[data-testid=docx-input-notice]"), json.dumps({k: after.get(k) for k in ("status", "inputNotice", "revision")}))
+
+    # P1-B 그림 실패: WebView의 PNG 디코드(createImageBitmap)를 실패시키고 편집 → 몇 번 다시 시도 뒤 실패를 보이며 편집을 멈춘다.
+    click_paragraph_start(d)
+    before = status(d)
+    d.js("window.__cib = window.createImageBitmap; window.createImageBitmap = () => Promise.reject(new Error('시험 주입'))")
+    perform(d, [{"type": "key", "id": "kbd", "actions": [{"type": "keyDown", "value": "x"}, {"type": "keyUp", "value": "x"}]}])
+    smoke.wait_until(d, f"return document.querySelector('{STATUS}')?.dataset.renderFailed !== ''", timeout=20)
+    failed = status(d)
+    shown = d.js("const p=document.querySelector('.docx-page'); return {alert: !!document.querySelector('[data-testid=docx-render-failed]'),"
+                 " current: p.dataset.current, marked: p.dataset.renderFailed, disabled: document.querySelector(arguments[0]).disabled}", INPUT)
+    check("docx: 편집 뒤 지금 판의 그림이 계속 실패하면 ready로 숨기지 않고 실패를 보이며 편집을 멈춤(편집한 내용은 미보존 보호)",
+          failed["status"] == "ready" and failed["renderFailed"] == "0" and int(failed["revision"]) == int(before["revision"]) + 1
+          and failed["unpreserved"] == "true" and shown["alert"] and shown["current"] == "false" and shown["marked"] == "true" and shown["disabled"],
+          json.dumps({"status": failed, "shown": shown}, ensure_ascii=False)[:500])
+    d.js("window.createImageBitmap = window.__cib")
+    press_button(d, "[data-testid=docx-render-retry]")
+    recovered = idle(d)
+    check("docx: 다시 그리기로 지금 판의 그림을 받아 편집을 이어 감",
+          recovered["renderFailed"] == "" and not d.exists("[data-testid=docx-render-failed]")
+          and not d.js("return document.querySelector(arguments[0]).disabled", INPUT), json.dumps(recovered, ensure_ascii=False)[:300])
+
+    # P2-A 여러 쪽: 여러 쪽 문서를 만들고 끝까지 스크롤한 뒤 화면 canvas가 잡은 픽셀을 잰다. X11이면 실제 클립보드로 262,144자(줄 64자마다
+    # 문단, input 하나 → 64조각)를 붙여 넣는다. execCommand로 같은 글자를 넣으면 WebKit이 줄마다 input을 나눠(8,192개 연산) 시험기 시간이
+    # 길어지므로, 그 밖의 환경에서는 한 줄 4,000자 넣기 60번으로 만든다.
+    click_paragraph_start(d)
+    press(d, "End")
+    rev = int(status(d)["revision"])
+    started = time.monotonic()
+    if os.environ.get("DISPLAY") and not os.environ.get("WAYLAND_DISPLAY"):
+        big = ("가나다라마바사 abcdefg " * 4)[:63] + "\n"
+        after = clipboard_paste(d, big * 4096, timeout=300)
+        expected, how = rev + 64, f"실제 클립보드 {len(big) * 4096:,}자(64조각)"
+    else:
+        for _ in range(60):
+            after = insert_text(d, ("가나다라마바사 abcdefg " * 300)[:4000], timeout=120)
+        expected, how = rev + 60, "4,000자 넣기 60번"
+    paste_ms = round((time.monotonic() - started) * 1000)
+    pages = int(after["pages"])
+    check(f"docx: {how}가 모두 들어가 여러 쪽 문서가 됨({pages}쪽, {paste_ms} ms)",
+          after["status"] == "ready" and int(after["revision"]) == expected and pages > 100, brief(after))
+    started = time.monotonic()
+    step = d.js("return document.querySelector('.editor__scroll').clientHeight")
+    total = d.js("return document.querySelector('.editor__scroll').scrollHeight")
+    top = 0
+    while top < total:
+        top += step
+        d.js("document.querySelector('.editor__scroll').scrollTop = arguments[0]", top)
+        idle(d, timeout=60)
+    measured = d.js("""const cs=[...document.querySelectorAll('.docx-page canvas')]; const live=cs.filter(c => c.width > 0);
+        const s=document.querySelector('.editor__scroll').getBoundingClientRect();
+        const visible=[...document.querySelectorAll('.docx-page')].filter(p => { const r=p.getBoundingClientRect(); return r.bottom > s.top && r.top < s.bottom; }).length;
+        return {canvases: cs.length, live: live.length, pixels: live.reduce((n, c) => n + c.width*c.height, 0), visible,
+                first: cs[0].width, pagePixels: live.length ? live[0].width*live[0].height : 0}""")
+    measured.update({"pages": pages, "scrollMs": round((time.monotonic() - started) * 1000), "pasteMs": paste_ms})
+    REPORT["stabilization"]["multiPage"] = measured
+    print(f"[측정] 여러 쪽 스크롤: {json.dumps(measured)}", flush=True)
+    check(f"docx: {pages}쪽을 끝까지 스크롤해도 화면 canvas 픽셀이 예산 안({measured['live']}개, {measured['pixels']:,} px)이고 지나간 쪽은 놓음",
+          measured["pixels"] <= MAX_RETAINED_PIXELS + measured["visible"] * measured["pagePixels"] and measured["first"] == 0
+          and measured["live"] < pages, json.dumps(measured))
+    d.js("document.querySelector('.editor__scroll').scrollTop = 0")
+    back = idle(d, timeout=60)
+    check("docx: 다시 처음으로 스크롤하면 놓았던 쪽을 다시 그림",
+          d.js("return document.querySelector('.docx-page').dataset.current === 'true' && document.querySelector('.docx-page canvas').width > 0"),
+          json.dumps(back, ensure_ascii=False)[:200])
+
+
+def scenario_restart_inactive_close(d, fixtures: Path) -> None:
+    """P2-C: WebView를 다시 시작한 뒤 아직 보지 않은 dirty DOCX 탭도 버리기 확인 없이 닫지 않는다."""
+    shutil.copy(fixtures / "basic-ko.docx", fixtures / "basic-ko-c.docx")
+    open_document(d, fixtures / "basic-ko-c.docx")  # 편집한 basic-ko.docx는 비활성 탭
+    d.js("location.reload()")
+    smoke.wait_until(d, "return document.querySelectorAll('.document-tab__close').length === 2", timeout=30)
+    d.js("[...document.querySelectorAll('.document-tab__close')].find(b => b.getAttribute('aria-label').includes('basic-ko.docx')).click()")
+    smoke.wait_until(d, "return document.querySelector('[data-testid=discard-dialog]')?.dataset.action === 'close'", timeout=10)
+    press_button(d, "[data-testid=discard-cancel]")
+    sessions = ipc(d, "document_sessions")["ok"]
+    check("docx: WebView 다시 시작 뒤 아직 보지 않은 dirty 탭도 닫기 전에 버리기를 확인(취소하면 세션 그대로)",
+          any(s["displayName"] == "basic-ko.docx" and s["dirty"] for s in sessions), json.dumps(sessions, ensure_ascii=False)[:300])
+    d.js("[...document.querySelectorAll('.document-tab__close')].find(b => b.getAttribute('aria-label').includes('basic-ko-c.docx')).click()")
+    smoke.wait_until(d, "return document.querySelectorAll('.document-tab__close').length === 1", timeout=10)
+    select_tab(d, "basic-ko.docx")
+
+
 def scenario_webview_restart(d) -> None:
     """WebView를 다시 시작해도 WordCraft 모델은 백엔드에 남아 편집 표면이 다시 붙는다(W-A)."""
     st = idle(d)
@@ -427,6 +616,9 @@ IME_ITEMS = [
     ("조합 중 클릭: 조합 글자를 원래 자리에 한 번 확정하고 커서는 클릭한 곳", True),
     ("조합 중 창 초점 이동 뒤 돌아옴", False),
     ("조합 중 탭 전환: 조합은 원래 문서에 한 번, 다른 문서에 섞이지 않음", False),
+    # T008 안정화 P1-C(선택 항목): 선택한 글자 위의 조합.
+    ("선택 위 조합 확정: 선택을 한 번 바꾸고 확정 글자는 한 번(선택 지우기·음절·공백마다 revision 1)", False),
+    ("선택 위 조합 취소(미리보기 뒤 BackSpace로 비움): 선택만 지워지고(계약) 조합 글자는 남지 않음", False),
 ]
 GATE: dict[str, tuple[str, str]] = {}
 
@@ -540,6 +732,30 @@ def scenario_ime(d, fixtures: Path, xdotool: str, ibus: str, focus_window: str |
     record("조합 중 ←는 조합 글자를 그 자리에 확정한 뒤 이동",
            st["paragraphText"] == text0 + "가" and int(st["caretOffset"]) == len(st["paragraphText"]) - 1,
            f"넣은 부분 {st['paragraphText'][len(text0):]!r}, caretOffset={st['caretOffset']}")
+
+    # 선택 항목(T008 안정화 P1-C): 선택한 두 글자 위에서 조합 → 확정, 그리고 미리보기 뒤 취소.
+    run(xdotool, "key", "End")
+    st = settle(d, "선택 전 End")
+    text0, rev0 = st["paragraphText"], int(st["revision"])
+    run(xdotool, "key", "shift+Left", "shift+Left")
+    selected = settle(d, "Shift+← ×2")
+    run(xdotool, "type", "--delay", "90", "gk")
+    run(xdotool, "key", "space")
+    st = settle(d, "선택 위 '하 '")
+    record("선택 위 조합 확정: 선택을 한 번 바꾸고 확정 글자는 한 번(선택 지우기·음절·공백마다 revision 1)",
+           selected.get("selection", "") != "" and st["paragraphText"] == text0[:-2] + "하 " and int(st["revision"]) - rev0 == 3,
+           f"선택 {selected.get('selection')!r}, 바뀐 끝 {st['paragraphText'][-6:]!r}, revision +{int(st['revision']) - rev0}")
+    text1, rev1 = st["paragraphText"], int(st["revision"])
+    run(xdotool, "key", "shift+Left", "shift+Left")
+    selected = settle(d, "Shift+← ×2 (취소)")
+    run(xdotool, "type", "--delay", "90", "g")
+    mid = settle(d, "선택 위 ㅎ")
+    run(xdotool, "key", "BackSpace")
+    st = settle(d, "ㅎ을 BackSpace로 지움")
+    record("선택 위 조합 취소(미리보기 뒤 BackSpace로 비움): 선택만 지워지고(계약) 조합 글자는 남지 않음",
+           selected.get("selection", "") != "" and mid.get("composing") == "true" and st.get("composing") == "false"
+           and st["paragraphText"] == text1[:-2] and int(st["revision"]) - rev1 == 1,
+           f"조합 중={mid.get('composing')}·{mid.get('composition')!r}, 끝 {st['paragraphText'][-6:]!r}, revision +{int(st['revision']) - rev1}")
 
     # 5) 조합 중 클릭: 문단 끝에서 '하'를 조합하다 같은 줄 앞쪽(줄 처음에서 30%)을 클릭
     run(xdotool, "key", "Home")
@@ -704,9 +920,11 @@ def main() -> int:
                             scenario_revision(d)
                             scenario_roundtrip_ui(d)
                             scenario_latency(d)
+                            scenario_stabilization(d)
                             if args.screenshots:
                                 d.screenshot(args.screenshots / "docx-edited.png")
                             scenario_webview_restart(d)
+                            scenario_restart_inactive_close(d, fixtures)
                             scenario_lifecycle(d, fixtures, meta, original_hash)
                     finally:
                         try:

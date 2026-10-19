@@ -484,6 +484,8 @@ function DocxPanel({ editor, info, zoom, imeContext, onReload }: {
         data-composition={TEST_HOOKS ? editor.compositionText : undefined}
         data-pending={editor.pendingOps}
         data-rejected={editor.rejectedOps}
+        data-input-notice={editor.inputNotice ?? ""}
+        data-render-failed={editor.renderFailedPages.join(",")}
         data-unpreserved={unpreserved}
         data-paragraph-text={TEST_HOOKS ? view?.paragraphText ?? "" : undefined}
         data-pages={view?.pages.length ?? 0}

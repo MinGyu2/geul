@@ -5,7 +5,8 @@
 // - 열기 → 판별(백엔드) → 엔진에 바로 불러온다. rhwp는 WebView의 WASM(T007), DOCX(WordCraft)는 백엔드의 네이티브 엔진(T008,
 //   DocxEditorSession은 백엔드 모델의 편집 표면 상태만 가진다). 세션마다 편집 세션은 하나다.
 // - 닫기: 저장 기능이 없으므로(T009) 편집한 모델(확정했거나 확정 대기·조합 중인 변경)은 `discard: true` 없이 닫지
-//   않는다(UnpreservedChanges). 닫는 동안은 편집을 막고, 백엔드가 닫았다고 답한 뒤에(목록에서 빠질 때) 모델을 버린다.
+//   않는다(UnpreservedChanges). 백엔드 기록의 dirty도 본다: 편집 세션 객체가 아직 없는 세션(WebView를 다시 시작한 뒤 아직
+//   보지 않은 DOCX 탭 — 모델은 백엔드에 남아 있음)도 같은 기준으로 보호한다(T008 안정화). 닫는 동안은 편집을 막고, 백엔드가 닫았다고 답한 뒤에(목록에서 빠질 때) 모델을 버린다.
 //   백엔드 닫기가 실패하면 모델을 그대로 두고 편집을 다시 허용한다. 같은 세션의 닫기를 되풀이하면 진행 중인 닫기
 //   하나를 기다린다(백엔드 닫기·정리는 한 번).
 import type { DocumentBackend } from "../../adapters/backend";
@@ -79,7 +80,12 @@ export class DocumentWorkspace {
 
   /** 모든 탭을 함께 보호한다. backend dirty보다 앞선 pending·조합·uncertain도 포함한다. */
   get hasUnpreservedChanges() {
-    return this.sessions.snapshot().sessions.some(info => info.dirty || this.editors.get(info.sessionId)?.hasUnpreservedChanges);
+    return this.sessions.snapshot().sessions.some(info => this.unpreserved(info.sessionId));
+  }
+
+  /** 세션 하나의 미보존 편집: 백엔드 기록의 dirty 또는 편집 세션의 보내는 중·조합 중·uncertain. */
+  private unpreserved(sessionId: SessionId): boolean {
+    return (this.sessions.get(sessionId)?.dirty ?? false) || (this.editors.get(sessionId)?.hasUnpreservedChanges ?? false);
   }
 
   setWindowClosing(closing: boolean) {
@@ -92,7 +98,7 @@ export class DocumentWorkspace {
     const inFlight = this.closing.get(sessionId);
     if (inFlight) return inFlight;
     const editor = this.editors.get(sessionId);
-    if (editor?.hasUnpreservedChanges && !options.discard) {
+    if (this.unpreserved(sessionId) && !options.discard) {
       return Promise.resolve({ ok: false, error: { code: "UnpreservedChanges", sessionId } });
     }
     const closing = this.runClose(sessionId, editor ?? null).finally(() => this.closing.delete(sessionId));

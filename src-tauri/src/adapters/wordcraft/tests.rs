@@ -1043,3 +1043,261 @@ fn 띠는_기준_판과_다른_줄만_정확히_덮는다() {
     // 다른 배율·쪽 크기의 기준은 쪽 전체.
     assert_eq!(m.render_page(0, 2.0, 1, Some(1)).unwrap().base, None);
 }
+
+// ---- T008 안정화: 여러 명령으로 된 연산의 원자성(P2-B) ----
+
+#[test]
+fn 기억한_자리_넣기에서_선택_되돌리기가_거부되면_문서도_그대로다() {
+    let mut m = model();
+    m.apply(&[
+        mv(MoveTarget::Right, false),
+        DocxOp::Mark { id: 1 },
+        mv(MoveTarget::Down, false),
+    ]);
+    let (body, caret) = (m.body_text(), m.view().caret_key);
+    // 넣기는 성공하고 그 뒤 선택 되돌리기(select.range)를 엔진이 거부한다(주입).
+    m.fail_at = Some(("select.range", 1));
+    let outcome = m.apply(&[DocxOp::InsertAt {
+        mark: 1,
+        text: "글".into(),
+    }]);
+    assert_eq!(
+        (outcome.applied, outcome.changed, outcome.rejected),
+        (0, 0, vec![0])
+    );
+    assert_eq!(m.body_text(), body, "거부한 연산은 문서를 바꾸지 않는다");
+    assert_eq!(m.view().caret_key, caret);
+    // 넣기 자체가 거부돼도 문서·선택 그대로.
+    m.apply(&[DocxOp::Mark { id: 2 }]);
+    m.fail_at = Some(("text.insert", 1));
+    let outcome = m.apply(&[DocxOp::InsertAt {
+        mark: 2,
+        text: "글".into(),
+    }]);
+    assert_eq!((outcome.changed, outcome.rejected), (0, vec![0]));
+    assert_eq!((m.body_text(), m.view().caret_key), (body, caret));
+}
+
+#[test]
+fn 앞_넣기_고치기에서_선택_되돌리기가_거부되면_문서도_그대로다() {
+    let mut m = model();
+    m.apply(&[insert("하")]);
+    let (body, caret) = (m.body_text(), m.view().caret_key);
+    // 첫 select.range는 고칠 범위 선택, 둘째가 고친 뒤 선택 되돌리기.
+    m.fail_at = Some(("select.range", 2));
+    let outcome = m.apply(&[DocxOp::ReplaceInserted {
+        expected: "하".into(),
+        text: "한".into(),
+    }]);
+    assert_eq!((outcome.changed, outcome.rejected), (0, vec![0]));
+    assert_eq!(m.body_text(), body);
+    assert_eq!(m.view().caret_key, caret);
+}
+
+#[test]
+fn 복합_연산이_거부되면_편집_요청은_revision과_문서가_어긋나지_않는다() {
+    let dir = TempDir::new();
+    let state = DocumentState::default();
+    let docx = loaded(&state, &dir);
+    let (id, generation) = (docx.session.session_id, docx.session.load_generation);
+    let model = state.wordcraft().get(id, generation).expect("모델");
+    let edit =
+        |base: u64, ops: Vec<DocxOp>| block_on(commands::edit(&state, id, generation, base, ops));
+    edit(0, vec![DocxOp::Mark { id: 1 }, mv(MoveTarget::Down, false)]).expect("표시");
+    let before = model.lock().unwrap().body_text();
+    model.lock().unwrap().fail_at = Some(("select.range", 1));
+    let edited = edit(
+        0,
+        vec![DocxOp::InsertAt {
+            mark: 1,
+            text: "글".into(),
+        }],
+    )
+    .expect("거부는 실패가 아님");
+    assert_eq!((edited.applied, edited.rejected), (0, vec![0]));
+    assert_eq!((edited.session.revision, edited.session.dirty), (0, false));
+    assert_eq!(
+        model.lock().unwrap().body_text(),
+        before,
+        "revision 0·dirty false인데 문서가 바뀌면 안 된다"
+    );
+}
+
+// ---- T008 안정화: 붙여넣기(P1-A)·조합의 선택 지우기(P1-C) ----
+
+fn paste(text: &str, chain: bool) -> DocxOp {
+    DocxOp::PasteText {
+        text: text.into(),
+        chain,
+    }
+}
+
+#[test]
+fn 붙여넣은_줄바꿈은_문단을_나누고_탭은_글자로_들어간다() {
+    let mut m = model();
+    let outcome = m.apply(&[paste("첫 줄\t1\n\n셋째 줄 😀𝄞 ASCII\n", false)]);
+    assert_eq!(
+        (outcome.applied, outcome.changed, outcome.rejected),
+        (1, 1, vec![]),
+        "조각 하나 = 명령 하나 = 변경 하나"
+    );
+    let lines: Vec<String> = m.body_text().lines().map(str::to_owned).collect();
+    assert_eq!(
+        &lines[..4],
+        [
+            "첫 줄\t1".to_owned(),
+            String::new(),
+            "셋째 줄 😀𝄞 ASCII".to_owned(),
+            basic::PARAGRAPHS[0].to_owned()
+        ]
+    );
+    // 커서는 붙여넣은 끝(넷째 문단 처음).
+    assert_eq!(
+        (m.view().caret_key, m.view().caret_offset),
+        ("body:3:0".into(), 0)
+    );
+    // 자동 고침이 없다(raw): 따옴표·대문자 그대로.
+    let mut m = model();
+    m.apply(&[paste("\"quote\" teh i\n", false)]);
+    assert!(m.body_text().starts_with("\"quote\" teh i\n"));
+}
+
+#[test]
+fn 표_셀에_붙여넣은_탭은_셀_이동이_아니라_글자다() {
+    let mut m = model();
+    let cell = DocxModel::body_pos(&[basic::TABLE_BLOCK, 0, 0, 0], 0);
+    let c = m.caret_of(&cell).unwrap();
+    m.apply(&[pointer(c.page as u32, c.x + 1.0, c.y + c.height / 2.0)]);
+    let outcome = m.apply(&[paste("a\tb", false)]);
+    assert_eq!(outcome.changed, 1);
+    let view = m.view();
+    assert!(view.in_table);
+    assert_eq!(
+        view.caret_key,
+        format!("body:{}.0.0.0:{}", basic::TABLE_BLOCK, "a\tb".len())
+    );
+    assert_eq!(view.paragraph_text, format!("a\tb{}", basic::CELLS[0]));
+}
+
+#[test]
+fn 앞_조각이_거부되면_chain_조각은_실행하지_않고_따로_친_입력은_실행한다() {
+    let mut m = model();
+    let before = m.body_text();
+    // 첫 조각의 text.insert를 엔진이 거부한다(주입).
+    m.fail_at = Some(("text.insert", 1));
+    let outcome = m.apply(&[
+        paste("가\n나", false),
+        paste("다", true),
+        paste("라", true),
+        insert("마"),
+        paste("바", true),
+    ]);
+    assert_eq!(
+        (outcome.applied, outcome.changed, outcome.rejected),
+        (2, 2, vec![0, 1, 2])
+    );
+    assert_eq!(m.body_text(), format!("마바{before}"));
+    // chain이어도 요청의 첫 연산이면(앞 조각은 앞 요청에서 성공) 실행한다.
+    assert_eq!(m.apply(&[paste("사", true)]).changed, 1);
+}
+
+#[test]
+fn 붙여넣기_조각의_검사() {
+    assert!(validate(&[paste("a\nb\tc", false)]));
+    assert!(validate(&[paste("\n", true)]));
+    assert!(validate(&[paste(&"😀".repeat(MAX_TEXT_CHARS), false)]));
+    for bad in ["", "a\r\nb", "a\rb", "\u{7}", "\u{0}", "\u{FFFC}", "\u{85}"] {
+        assert!(!validate(&[paste(bad, false)]), "{bad:?}");
+    }
+    assert!(!validate(&[paste(&"\n".repeat(MAX_TEXT_CHARS + 1), false)]));
+    // 일반 넣기의 계약은 그대로(한 문단, 탭·줄바꿈 없음).
+    assert!(!validate(&[insert("a\nb")]));
+    assert!(!validate(&[insert("\t")]));
+    let parse = |value: serde_json::Value| serde_json::from_value::<Vec<DocxOp>>(value);
+    assert_eq!(
+        parse(json!([{"op": "pasteText", "text": "a\n", "chain": true}, {"op": "pasteText", "text": "b"},
+                     {"op": "deleteSelection"}]))
+        .unwrap(),
+        vec![paste("a\n", true), paste("b", false), DocxOp::DeleteSelection]
+    );
+    assert!(parse(json!([{"op": "pasteText", "text": "a", "raw": false}])).is_err());
+}
+
+#[test]
+fn 선택_지우기는_선택이_있을_때만_문서를_바꾼다() {
+    let mut m = model();
+    assert_eq!(
+        m.apply(&[DocxOp::DeleteSelection]).changed,
+        0,
+        "선택 없음: 문서·revision 그대로(앞 글자를 지우지 않음)"
+    );
+    assert_eq!(m.view().paragraph_text, basic::PARAGRAPHS[0]);
+    let outcome = m.apply(&[
+        mv(MoveTarget::Right, true),
+        mv(MoveTarget::Right, true),
+        DocxOp::DeleteSelection,
+        insert("마"),
+    ]);
+    assert_eq!(outcome.changed, 2);
+    let expected: String = "마"
+        .chars()
+        .chain(basic::PARAGRAPHS[0].chars().skip(2))
+        .collect();
+    assert_eq!(m.view().paragraph_text, expected);
+    // 문단을 건너는 선택.
+    let outcome = m.apply(&[
+        mv(MoveTarget::DocStart, false),
+        mv(MoveTarget::Down, true),
+        DocxOp::DeleteSelection,
+    ]);
+    assert_eq!(outcome.changed, 1);
+    assert!(m.view().collapsed);
+}
+
+/// 측정(기본 실행에서 빠짐): 한도만큼의 붙여넣기 한 요청(256조각 × 4096자, 줄 64자마다 문단)의 엔진 시간.
+/// `cargo test --locked -- --ignored --nocapture 붙여넣기_한도`
+#[test]
+#[ignore]
+fn 붙여넣기_한도_측정() {
+    let line = format!(
+        "{}\n",
+        "가나다라마바사 abcdefg "
+            .repeat(4)
+            .chars()
+            .take(63)
+            .collect::<String>()
+    );
+    let text: String = line.repeat(MAX_TEXT_CHARS * MAX_OPS / 64);
+    let chars: Vec<char> = text.chars().collect();
+    let ops: Vec<DocxOp> = chars
+        .chunks(MAX_TEXT_CHARS)
+        .enumerate()
+        .map(|(index, chunk)| paste(&chunk.iter().collect::<String>(), index > 0))
+        .collect();
+    assert_eq!(ops.len(), MAX_OPS);
+    assert!(validate(&ops));
+    let mut m = model();
+    let started = std::time::Instant::now();
+    let outcome = m.apply(&ops);
+    let applied = started.elapsed();
+    let view = m.view();
+    let laid_out = started.elapsed();
+    let png = m
+        .render_png(view.caret.map_or(0, |c| c.page), 1.0)
+        .map(|p| p.len());
+    eprintln!(
+        "붙여넣기 {}자 {}조각: apply {:?}, apply+view(배치) {:?}, 쪽 {}개, 그림 {:?}",
+        chars.len(),
+        ops.len(),
+        applied,
+        laid_out,
+        view.pages.len(),
+        png
+    );
+    assert_eq!(outcome.changed, MAX_OPS as u64);
+    // 그 큰 문서에서 이어 친 글자 하나(편집 + 배치).
+    let started = std::time::Instant::now();
+    m.apply(&[insert("가")]);
+    m.view();
+    eprintln!("그 뒤 글자 하나: apply+view {:?}", started.elapsed());
+}

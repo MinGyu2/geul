@@ -6,6 +6,12 @@
 //! - 글자 넣기는 `raw`로 한다. 자동 고침·자동 서식은 넣은 글자를 바꾸므로(IME 확정 글자가 그대로 남지 않음) 쓰지 않는다.
 //! - 변경 수: WordCraft의 `rev()`는 문서를 바꾸지 않은 "바꾸는 명령"(표 셀 사이 Tab, 문서 처음의 Backspace, 끝의 Delete)
 //!   에도 는다(실측). 앱의 revision은 문서가 실제로 바뀐 연산만 세므로, 바꾸는 명령 앞뒤의 문서 모델을 비교한다.
+//! - 붙여넣기(T008 안정화): 여러 문단·탭·긴 글자는 `PasteText` 조각으로 받는다(`\n` = 문단 나누기, `\t` = 탭 글자, 조각마다
+//!   `MAX_TEXT_CHARS` 이하). 조각 하나는 WordCraft 명령 하나(`text.insert`, 실패하면 엔진이 되돌림)이고, `chain` 조각은 같은
+//!   요청의 바로 앞 연산이 거부됐으면 실행하지 않는다(앞 조각 없이 뒤 조각만 들어가 내용 순서가 어긋나지 않음).
+//! - 여러 명령으로 된 연산(`InsertAt`·`ReplaceInserted`)은 WordCraft 편집 스냅숏으로 묶는다: 중간 명령이 거부되면 문서·선택·
+//!   실행 취소 기록을 그 연산 전으로 돌린다(`Session::edit_snapshot`/`restore`). 그래서 거부한 연산은 문서를 바꾸지 않았고,
+//!   성공한 연산만 revision으로 센다.
 //! - 좌표는 WordCraft 쪽 좌표(pt, 쪽 왼쪽 위 기준)다. 화면 배율·DPR 변환은 프런트엔드가 한다.
 //! - 이 모듈은 패닉을 일으키지 않게 쓰지만, 엔진 안의 패닉은 호출하는 쪽(commands)이 잡아 세션을 failed로 돌린다.
 
@@ -48,10 +54,19 @@ const MAX_PAGE_SIDE_PT: f32 = 100_000.0;
     deny_unknown_fields
 )]
 pub enum DocxOp {
-    /// 커서(선택이 있으면 그 범위를 바꿔) 자리에 글자를 넣는다. IME 확정·일반 입력.
+    /// 커서(선택이 있으면 그 범위를 바꿔) 자리에 글자를 넣는다. IME 확정·일반 입력(한 문단 안, 탭·줄바꿈 없음).
     InsertText {
         text: String,
     },
+    /// 붙여넣은 글자 조각. `\n`은 문단 나누기, `\t`는 탭 글자다(표 셀 이동이 아님). `chain`이면 같은 요청의 바로 앞 연산이
+    /// 거부됐을 때 실행하지 않는다(같은 붙여넣기의 뒤 조각).
+    PasteText {
+        text: String,
+        #[serde(default)]
+        chain: bool,
+    },
+    /// 선택이 있으면 지운다(없으면 아무것도 하지 않음). IME 조합 글자가 처음 보일 때 선택을 바꾸기 시작한다.
+    DeleteSelection,
     Backspace,
     DeleteForward,
     NewParagraph,
@@ -122,11 +137,18 @@ impl MoveTarget {
     }
 }
 
-fn valid_text(text: &str) -> bool {
+/// 비어 있지 않고 `MAX_TEXT_CHARS` 이하이며, `allowed` 밖의 제어 문자와 U+FFFC가 없다.
+fn valid_chars(text: &str, allowed: &[char]) -> bool {
     // U+FFFC는 WordCraft가 개체 자리로 쓰는 글자라 직접 넣지 않는다.
     !text.is_empty()
         && text.chars().count() <= MAX_TEXT_CHARS
-        && !text.chars().any(|c| c.is_control() || c == '\u{FFFC}')
+        && !text
+            .chars()
+            .any(|c| (c.is_control() && !allowed.contains(&c)) || c == '\u{FFFC}')
+}
+
+fn valid_text(text: &str) -> bool {
+    valid_chars(text, &[])
 }
 
 /// 요청 전체를 실행 전에 검사한다. 하나라도 계약에 맞지 않으면 아무것도 실행하지 않는다.
@@ -135,6 +157,8 @@ pub fn validate(ops: &[DocxOp]) -> bool {
         && ops.len() <= MAX_OPS
         && ops.iter().all(|op| match op {
             DocxOp::InsertText { text } | DocxOp::InsertAt { text, .. } => valid_text(text),
+            // 줄바꿈은 프런트엔드가 `\n` 하나로 맞춘다(`\r`은 거부).
+            DocxOp::PasteText { text, .. } => valid_chars(text, &['\n', '\t']),
             DocxOp::ReplaceInserted { expected, text } => valid_text(expected) && valid_text(text),
             DocxOp::Pointer { x, y, .. } => {
                 x.is_finite()
@@ -236,6 +260,9 @@ pub struct DocxModel {
     last_insert: Option<LastInsert>,
     /// 쪽·배율마다 마지막으로 그린 래스터와 그 판(바뀐 띠만 보낼 때 비교 기준). 최근 것부터 MAX_RASTERS개.
     rasters: Vec<Raster>,
+    /// 시험용 실패 주입: 명령 `id`의 `n`번째 실행을 엔진이 거부한 것처럼 실행하지 않고 돌려준다(한 번).
+    #[cfg(test)]
+    pub fail_at: Option<(&'static str, usize)>,
 }
 
 /// 마지막으로 보낸 쪽 래스터.
@@ -293,6 +320,8 @@ impl DocxModel {
             marks: Vec::new(),
             last_insert: None,
             rasters: Vec::new(),
+            #[cfg(test)]
+            fail_at: None,
         };
         let layout = model.session.layout();
         let valid = |side: f32| side.is_finite() && side > 0.0 && side <= MAX_PAGE_SIDE_PT;
@@ -304,6 +333,15 @@ impl DocxModel {
 
     /// 명령 하나를 실행한다. 바꾸는 명령이면 문서가 실제로 바뀌었는지 돌려준다.
     fn run(&mut self, id: &str, params: Value) -> Result<bool, Rejected> {
+        #[cfg(test)]
+        if let Some((target, n)) = self.fail_at {
+            if target == id {
+                self.fail_at = (n > 1).then_some((target, n - 1));
+                if n <= 1 {
+                    return Err(Rejected);
+                }
+            }
+        }
         let mutates = self
             .session
             .registry
@@ -324,7 +362,8 @@ impl DocxModel {
         self.run("text.insert", json!({ "text": text, "raw": true }))
     }
 
-    /// 연산을 차례로 실행한다. 엔진이 거부한 연산은 건너뛰고 그 위치를 기록한다.
+    /// 연산을 차례로 실행한다. 엔진이 거부한 연산은 건너뛰고 그 위치를 기록한다. 바로 앞 연산이 거부된 `chain` 조각은 실행하지
+    /// 않고 거부로 기록한다.
     pub fn apply(&mut self, ops: &[DocxOp]) -> EditOutcome {
         let mut outcome = EditOutcome {
             applied: 0,
@@ -332,7 +371,15 @@ impl DocxModel {
             rejected: Vec::new(),
         };
         for (index, op) in ops.iter().enumerate() {
-            match self.apply_one(op) {
+            let broken = matches!(op, DocxOp::PasteText { chain: true, .. })
+                && index > 0
+                && outcome.rejected.last() == Some(&(index - 1));
+            let result = if broken {
+                Err(Rejected)
+            } else {
+                self.apply_one(op)
+            };
+            match result {
                 Ok(changed) => {
                     outcome.applied += 1;
                     outcome.changed += u64::from(changed);
@@ -346,6 +393,21 @@ impl DocxModel {
     fn apply_one(&mut self, op: &DocxOp) -> Result<bool, Rejected> {
         match op {
             DocxOp::InsertText { text } => self.insert_text(text),
+            DocxOp::PasteText { text, .. } => {
+                self.last_insert = None;
+                // WordCraft `text.insert`는 `\r`에서 문단을 나눈다(`\n`은 줄 바꿈 글자). 한 명령이므로 실패하면 엔진이 되돌린다.
+                self.run(
+                    "text.insert",
+                    json!({ "text": text.replace('\n', "\r"), "raw": true }),
+                )
+            }
+            DocxOp::DeleteSelection => {
+                if self.session.sel.is_collapsed() {
+                    Ok(false)
+                } else {
+                    self.run("text.backspace", json!({}))
+                }
+            }
             DocxOp::Backspace => self.run("text.backspace", json!({})),
             DocxOp::DeleteForward => self.run("text.delete", json!({})),
             DocxOp::NewParagraph => self.run("text.newParagraph", json!({})),
@@ -420,6 +482,20 @@ impl DocxModel {
         Some(pos)
     }
 
+    /// 여러 명령으로 된 연산을 하나로 실행한다. `work`가 거부되면(중간 명령 거부) WordCraft 편집 스냅숏으로 문서·선택·실행 취소
+    /// 기록·dirty를 그 전으로 돌린다(엔진 `Session::restore` 계약). 어댑터의 기억(`marks`·`last_insert`)은 스냅숏 밖이다.
+    fn atomic<T>(
+        &mut self,
+        work: impl FnOnce(&mut Self) -> Result<T, Rejected>,
+    ) -> Result<T, Rejected> {
+        let snapshot = self.session.edit_snapshot();
+        let result = work(self);
+        if result.is_err() {
+            self.session.restore(snapshot);
+        }
+        result
+    }
+
     /// 선택(기준점·커서)을 되돌리며, `at` 문단의 `from` 뒤 자리는 `map`으로 옮긴다.
     fn restore_selection(
         &mut self,
@@ -449,24 +525,20 @@ impl DocxModel {
             self.session.sel.anchor.clone(),
             self.session.sel.focus.clone(),
         );
-        self.run("caret.set", json!({ "pos": at }))?;
-        let changed = match self.insert_raw(text) {
-            Ok(changed) => changed,
-            Err(rejected) => {
-                let _ = self.select(&anchor, &focus);
-                return Err(rejected);
-            }
-        };
-        self.last_insert = None;
-        let length = text.len();
-        let from = at.off;
-        self.restore_selection(anchor, focus, &at, |off| {
-            if off >= from {
-                off.saturating_add(length)
-            } else {
-                off
-            }
+        let (from, length) = (at.off, text.len());
+        let changed = self.atomic(|model| {
+            model.run("caret.set", json!({ "pos": at }))?;
+            let changed = model.insert_raw(text)?;
+            model.restore_selection(anchor, focus, &at, |off| {
+                if off >= from {
+                    off.saturating_add(length)
+                } else {
+                    off
+                }
+            })?;
+            Ok(changed)
         })?;
+        self.last_insert = None;
         Ok(changed)
     }
 
@@ -485,25 +557,22 @@ impl DocxModel {
             self.session.sel.anchor.clone(),
             self.session.sel.focus.clone(),
         );
-        self.select(&start, &end)?;
-        let changed = match self.insert_raw(text) {
-            Ok(changed) => changed,
-            Err(rejected) => {
-                let _ = self.select(&anchor, &focus);
-                return Err(rejected);
-            }
-        };
-        self.last_insert = None;
         let (from, to, length) = (start.off, end.off, text.len());
-        self.restore_selection(anchor, focus, &start, |off| {
-            if off >= to {
-                (off - to).saturating_add(from).saturating_add(length)
-            } else if off > from {
-                from.saturating_add(length)
-            } else {
-                off
-            }
+        let changed = self.atomic(|model| {
+            model.select(&start, &end)?;
+            let changed = model.insert_raw(text)?;
+            model.restore_selection(anchor, focus, &start, |off| {
+                if off >= to {
+                    (off - to).saturating_add(from).saturating_add(length)
+                } else if off > from {
+                    from.saturating_add(length)
+                } else {
+                    off
+                }
+            })?;
+            Ok(changed)
         })?;
+        self.last_insert = None;
         Ok(changed)
     }
 
