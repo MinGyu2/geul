@@ -4,7 +4,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { DocxRender } from "../../../adapters/docx";
 import type { Result } from "../../../adapters/contract";
-import { DocxEditorSession, MAX_RENDER_ATTEMPTS, RENDER_RETRY_MS, type DecodeImage } from "./DocxEditorSession";
+import { DocxEditorSession, MAX_RENDER_ATTEMPTS, MAX_RETAINED_PIXELS, RENDER_RETRY_MS, type DecodeImage } from "./DocxEditorSession";
 import { decodeFake, docxSessions, FakeDocx, flush, recordingCanvas } from "./testing";
 
 const renders = (fake: FakeDocx) => fake.calls.filter((call) => call.method === "render");
@@ -503,5 +503,167 @@ describe("D 비동기 그림 경로의 예외", () => {
     requests.held[1]!.go();
     await flush();
     expect(editor.isCurrent(0, 1)).toBe(true);
+  });
+});
+
+// ---- T008 3차 안정화 ----
+
+describe("A(3차) 화면에 보임은 활성 화면 canvas에 실제로 옮긴 판이다", () => {
+  it("래스터가 지금 판이어도 화면 canvas에 옮기기 전에는 보이지 않고, 옮긴 뒤에야 보이며 첫 그림 시간도 그때 남는다", async () => {
+    const { editor } = await setup();
+    editor.requestPages([0], 1);
+    await flush();
+    expect(editor.isCurrent(0, 1)).toBe(true);
+    expect(editor.isShown(0, 1)).toBe(false);
+    expect(editor.firstPaintMs).toBeNull();
+    const screen = screenCanvas();
+    editor.paint(0, screen.canvas);
+    expect(editor.isShown(0, 1)).toBe(true);
+    expect(editor.isShown(0, 2)).toBe(false); // 다른 배율
+    expect(editor.firstPaintMs).not.toBeNull();
+  });
+
+  it("다른 canvas로 바뀌면 앞 canvas의 기록은 새 canvas가 보인다는 근거가 아니다(새 canvas에 옮긴 뒤에야 보임)", async () => {
+    const time = clock();
+    const { editor } = await setup();
+    editor.requestPages([0], 1);
+    await flush();
+    const first = screenCanvas();
+    editor.paint(0, first.canvas);
+    const second = screenCanvas();
+    second.set("null");
+    editor.paint(0, second.canvas);
+    expect(editor.isShown(0, 1)).toBe(false);
+    second.set("ok");
+    time.advance();
+    editor.paint(0, second.canvas);
+    expect(editor.isShown(0, 1)).toBe(true);
+    expect(second.draws).toHaveLength(1);
+  });
+
+  it("새 판의 띠를 받아도 화면에 옮기기 전에는 그 판이 보인다고 하지 않는다(띠만 옮기기는 그대로)", async () => {
+    const { editor, backings } = await setup();
+    editor.requestPages([0], 1);
+    await flush();
+    const screen = screenCanvas();
+    editor.paint(0, screen.canvas);
+    editor.typeText("가");
+    await flush();
+    editor.requestPages([0], 1);
+    await flush();
+    expect(editor.isCurrent(0, 1)).toBe(true);
+    expect(editor.isShown(0, 1)).toBe(false);
+    editor.paint(0, screen.canvas);
+    expect(editor.isShown(0, 1)).toBe(true);
+    expect(screen.draws.at(-1)).toEqual([backings[0]!.canvas, 0, 100, 816, 20, 0, 100, 816, 20]);
+  });
+
+  it("놓은 뒤 다시 받은 래스터는 옛 canvas 기록으로 보이지 않고, 새로 옮긴 뒤 보인다", async () => {
+    const { editor } = await setup();
+    editor.requestPages([0], 1);
+    await flush();
+    const old = screenCanvas();
+    editor.paint(0, old.canvas);
+    editor.releaseRendering();
+    expect(editor.isShown(0, 1)).toBe(false);
+    editor.requestPages([0], 1);
+    await flush();
+    expect(editor.isShown(0, 1)).toBe(false);
+    const fresh = screenCanvas();
+    editor.paint(0, fresh.canvas);
+    expect(editor.isShown(0, 1)).toBe(true);
+  });
+
+  it("보이지 않는 쪽의 화면 그리기 실패도 그 쪽을 보인다고 하지 않는다(편집은 멈추지 않음)", async () => {
+    const { editor, fake } = await setup();
+    fake.pageCount = 2;
+    editor.typeText("가");
+    await flush();
+    editor.requestPages([0, 1], 1);
+    await flush();
+    editor.requestPages([0], 1);
+    const screen = screenCanvas();
+    screen.set("drawThrows");
+    editor.paint(1, screen.canvas);
+    expect(editor.isShown(1, 1)).toBe(false);
+    expect(editor.editable).toBe(true);
+  });
+});
+
+describe("C(3차) 그림 경로의 정리·알림 예외", () => {
+  /** 크기를 0으로 놓을 때 예외를 내는 화면 밖 canvas. */
+  const brokenRelease = () => {
+    const draws: unknown[][] = [];
+    let width = 0;
+    let height = 0;
+    const canvas = {
+      get width() { return width; },
+      set width(value: number) { if (value === 0 && width > 0) throw new Error("release"); width = value; },
+      get height() { return height; },
+      set height(value: number) { if (value === 0 && height > 0) throw new Error("release"); height = value; },
+      getContext: () => ({ drawImage: (...args: unknown[]) => void draws.push(args) }),
+    };
+    return canvas as unknown as HTMLCanvasElement;
+  };
+
+  it("래스터 예산으로 놓다가 canvas가 예외를 내도 예산 밖의 래스터는 기억에서 빼고, 받은 쪽은 반영하고 알린다", async () => {
+    const { editor, fake } = await setup({ createCanvas: brokenRelease });
+    fake.pageCount = 45;
+    editor.typeText("가");
+    await flush();
+    const updates = vi.fn();
+    editor.subscribe(updates);
+    for (let page = 0; page < 45; page++) {
+      editor.requestPages([page], 1);
+      await flush();
+    }
+    expect(unhandled).toEqual([]);
+    expect(editor.isCurrent(44, 1)).toBe(true);
+    const held = Array.from({ length: 45 }, (_, page) => editor.pageRevision(page)).filter((revision) => revision !== null);
+    expect(held.length * 816 * 1056).toBeLessThanOrEqual(MAX_RETAINED_PIXELS);
+    expect(editor.pageRevision(0)).toBeNull();
+    expect(updates).toHaveBeenCalledTimes(45);
+  });
+
+  it("놓기(releaseRendering)는 canvas 하나가 예외를 내도 나머지·요청·실패 기록을 모두 놓고, 다시 요청하면 그린다", async () => {
+    const { editor, fake } = await setup({ createCanvas: brokenRelease });
+    fake.pageCount = 2;
+    editor.typeText("가");
+    await flush();
+    editor.requestPages([0, 1], 1);
+    await flush();
+    expect(() => editor.releaseRendering()).not.toThrow();
+    expect([editor.pageRevision(0), editor.pageRevision(1)]).toEqual([null, null]);
+    editor.requestPages([0, 1], 1);
+    await flush();
+    expect(editor.isCurrent(0, 1) && editor.isCurrent(1, 1)).toBe(true);
+  });
+
+  it("놓은 쪽의 화면 canvas를 비우다 예외가 나도 paint는 예외를 내지 않는다", async () => {
+    const { editor } = await setup();
+    const screen = brokenRelease();
+    screen.width = 816;
+    screen.height = 1056;
+    expect(() => editor.paint(0, screen)).not.toThrow();
+  });
+
+  it("알림 구독자 하나가 예외를 내도 다른 구독자는 알림을 받고 그림은 반영되며, 예외는 숨기지 않고 보고한다", async () => {
+    const reported: unknown[] = [];
+    vi.stubGlobal("reportError", (error: unknown) => void reported.push(error));
+    try {
+      const { editor } = await setup();
+      const boom = new Error("listener");
+      editor.subscribe(() => { throw boom; });
+      const updates = vi.fn();
+      editor.subscribe(updates);
+      editor.requestPages([0], 1);
+      await flush();
+      expect(editor.isCurrent(0, 1)).toBe(true);
+      expect(updates).toHaveBeenCalled();
+      expect(reported).toContain(boom);
+      expect(unhandled).toEqual([]);
+    } finally {
+      vi.unstubAllGlobals();
+    }
   });
 });

@@ -83,6 +83,8 @@ export function DocxSurface({ session, zoom, imeContext }: DocxSurfaceProps) {
 
   useLayoutEffect(() => {
     for (const [page, canvas] of canvases.current) session.paint(page, canvas);
+    // 쪽의 data-current는 그린 뒤의 화면 상태다(렌더 때 값은 그리기 전이라 쓰지 않음, 3차 안정화).
+    for (const [page, box] of pageBoxes.current) box.setAttribute("data-current", String(session.isShown(page, scale)));
     // 입력 반영 시간: 보내는 중인 입력이 없고 보이는 쪽 그림이 모두 지금 판으로 화면에 옮겨졌을 때.
     const started = inputAt.current;
     if (started.length > 0 && !session.busy && visiblePages().every((page) => session.isShown(page, scale))) {
@@ -100,8 +102,12 @@ export function DocxSurface({ session, zoom, imeContext }: DocxSurfaceProps) {
     const owned = canvases.current;
     return () => {
       for (const canvas of owned.values()) {
-        canvas.width = 0;
-        canvas.height = 0;
+        try {
+          canvas.width = 0;
+          canvas.height = 0;
+        } catch {
+          // 놓기는 할 수 있는 만큼만: 세션의 래스터는 아래에서 모두 놓는다.
+        }
       }
       session.releaseRendering();
     };
@@ -254,7 +260,6 @@ export function DocxSurface({ session, zoom, imeContext }: DocxSurfaceProps) {
               className="docx-page rhwp-page"
               data-page={page}
               data-revision={session.pageRevision(page) ?? ""}
-              data-current={session.isShown(page, scale)}
               data-render-failed={failedPages.includes(page) || undefined}
               ref={(element) => {
                 if (element) pageBoxes.current.set(page, element);

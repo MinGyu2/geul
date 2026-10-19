@@ -1212,3 +1212,40 @@ T007 체크박스는 그대로 둔다. 이 환경에서 필수 IME 7개와 보�
   키 없이 따로 문단 나누기를 보냄)로 만들면 그 문단 나누기도 넣지 않는다(그 `\r`이 이미 문단을 나눔). WebKitGTK 2.54 밖의 나누기 방식은 보지 않았다.
 - 거부한 복합 연산은 프런트엔드가 다시 보내지 않는다(거부 수만 보임). C1·C2 수정은 같은 요청의 뒤 연산과 엔진 계약을 위한 것이다.
 - 실제 GPU 데스크톱·Wayland IME·fcitx5·Windows/macOS는 확인하지 않았다(T007·T008과 같음). 체크박스 정책은 그대로다.
+
+## T008 3차 안정화: 화면에 보임·복합 연산 뒤 WordCraft 보조 상태·그림 경로의 정리 예외 (2026-10-19)
+
+- 상태: **이 환경에서 구현·검증 완료(체크는 T007·T008과 같은 플랫폼 기준으로 보류)**. 기준 `095237b`(master, 작업 트리 깨끗, submodule
+  rhwp `1a76570`·wordcraft `fc41918` 그대로). W-A·IPC 권한(`DocxOp` 목록, 새 연산 없음)·revision 권한·저장 없음은 그대로다.
+- 수정 전 확인: 새 Vitest 9개 중 8개, 새 Rust 시험 3개 중 2개가 수정 전 구현에서 실패했다(나머지는 바뀌지 않아야 하는 동작의 보호 시험).
+
+| 지적 | 판정 | 증거(수정 전) | 원인 | 수정 |
+|------|------|---------------|------|------|
+| A `isShown()`이 실제 화면 그리기를 보지 않음 | CONTRACT DEFICIENCY | Vitest: 래스터만 받고 화면 canvas에 옮기기 전, 새 판의 띠를 받고 옮기기 전, 놓은 뒤 다시 받은 래스터, 보이지 않는 쪽의 그리기 실패에서 모두 `isShown() = true`. 표면에서는 렌더 때 `data-current`를 계산하고 같은 동기 작업의 layout effect가 곧 그리므로, 실패하면 곧 다시 렌더되어 사용자·WebDriver가 어긋난 값을 볼 틈은 찾지 못했다(실제 앱 재현 없음) | 2차 안정화의 `isShown`이 `isCurrent && 실패 기록 없음`이고, canvas마다의 `painted` 기록을 보지 않음 | 쪽마다 활성 화면 canvas(`screens`, 표면이 마지막으로 `paint`에 준 canvas)를 두고, 그 canvas에 지금 래스터·판을 옮긴 기록이 있을 때만 보임. 다른 canvas·놓기 전 기록은 근거가 아님, 놓기(`releaseRendering`)가 활성 기록도 지움. 표면은 `data-current`를 렌더 때가 아니라 layout effect의 그리기 뒤에 쓴다(추가 렌더 없음). 띠만 옮기기·첫 그림 시간·키 반영 측정은 그대로(측정도 `isShown` 기준) |
+| B 복합 연산 뒤 WordCraft 보조 상태 | CONFIRMED DEFECT(주입으로만, `goal_x`) · 상태 차이(`pending`) | 고정 WordCraft 확인: `caret.set`은 `goal_x`·`pending`을 지우고(`cmd/caret.rs` `set`·`apply`), raw `text.insert`는 `goal_x`를 지운다(`cmd/mod.rs`). `select.range`는 선택만. `edit_snapshot`/`restore`는 둘 다 담지 않는다. Rust 주입: ↓로 짧은 문단에 내려온 뒤(지키는 x 있음) `InsertAt`·`ReplaceInserted`가 `text.insert`·`select.range`에서 거부되면, 다음 ↓가 대조 모델 `body:2:33` 대신 `body:2:3`(짧은 문단 끝의 x). `pending`(웹 주소 뒤 Enter의 자동 고침이 정함)은 거부 뒤 `None`으로 남지만, 그 뒤 글자 서식·문서·실행 취소 기록은 대조와 같았다(관측 차이 없음) | `restore`가 스냅숏 밖 상태를 되돌리지 않음 | `atomic()`이 거부했을 때만 `goal_x`·`pending`을 연산 전 값으로(성공하면 엔진이 정한 대로). `page_hint`는 이 명령들이 바꾸지 않고(`pos` 형식), `edit_marks`·`last_command`·`column`은 IPC로 열지 않은 명령(`edit.goBack`·`edit.repeat`·단 선택)만 읽으므로 되돌리지 않음. 세션 전체 복제 없음 |
+| C 그림 경로의 정리·알림 예외 | CONFIRMED DEFECT(주입) | Vitest: 래스터 예산으로 놓던 canvas가 크기 0에서 예외를 내면 `trimRasters`가 멈춰 예산 밖 래스터가 남음(45쪽에서 38,776,320 px > 33,554,432 px), 반영한 쪽의 알림도 빠짐. `releaseRendering()`·놓은 쪽의 `paint()`는 예외를 그대로 냄(요청·실패 기록을 놓지 못함). 구독자 하나의 예외가 다른 구독자 알림을 막고 마지막 `.catch`가 조용히 삼킴 | 정리를 보호하지 않고, 마지막 `.catch(() => {})`가 모든 예외를 숨김 | canvas 놓기는 할 수 있는 만큼만(`releaseCanvas`, 예외가 나도 기억에서는 뺌). 구독자마다 격리하고 예외는 `reportError`로 보고. `renderPage` 전체를 한 경계로: 기대하지 않은 예외는 보고하고, 지금 요청이며 그 쪽이 지금 판이 아니면 `unexpected` 실패로 셈(시도 수 같음, 옛 요청은 지금 상태를 바꾸지 않음). 마지막 `.catch`도 보고(처리되지 않은 거부 없음). `bitmap.close()` 예외는 앞 결과를 덮지 않고 보고 |
+
+### 검증(최종 소스)
+
+| 검사 | 결과 |
+|------|------|
+| `npm run typecheck`, `npm run lint`, `npm test`, `npm run build` | 오류 없음, Vitest 543개(26파일, 기준 534 + 9) |
+| `src-tauri`: `cargo fmt --check`, `cargo clippy --locked --all-targets -- -D warnings`, `cargo test --locked` | 통과, 단위 95(기준 92 + 3) + 통합 1, 측정 1개 `#[ignore]` |
+| `VITE_GEUL_TEST_HOOKS=1 npm run tauri build -- --debug --no-bundle` | 통과(최종 소스) |
+| `wordcraft_poc.py --font-home …`(Xvfb X11 DPR 1.041) | 52/52 — 첫 그림·편집 뒤 띠 그림·지금 판 화면 그리기(`data-current`는 이제 그린 뒤 값)·화면 canvas 문맥 없음과 회복·탭 전환과 돌아오기·놓은 뒤 다시 그림·문서 내용 유지 포함 |
+| 같은 명령(헤드리스 weston DPR 1) | 51/51(실제 클립보드 항목은 키보드 seat가 없어 건너뜀) |
+| `tauri_smoke.py`(weston) · `rhwp_poc.py`(weston) | 62/62 · 64/64 |
+| `wordcraft_poc.py --ime`(Xvfb + ibus 1.5.33 + ibus-hangul 1.5.5, xdotool 실제 키) | 필수 7/7 PASS 3회(선택 3항목도 PASS, 창 초점 NOT RUN) |
+| `rhwp_poc.py --ime`(같은 환경) | 필수 7/7 PASS 2회(탭 전환 PASS, 창 초점 NOT RUN) |
+
+- 실제 앱에서 주입한 것은 2차와 같은 화면 canvas 문맥 막기·디코드 붙잡기다. C의 정리 예외(크기 0 설정이 예외)와 구독자 예외는 Vitest 주입으로만
+  확인했다(실제 WebKit에서 그 setter가 예외를 내는 조건은 찾지 못함). 실제 GPU 프로세스 손실은 확인하지 않았다.
+- 측정: 키 반영 p95(키만 친 80–81개) Xvfb 55 ms, weston 46 ms(2차 54–71·46 ms). 여러 쪽 스크롤 297쪽 화면 canvas 35개 32,725,000 px,
+  122쪽 38개 32,744,448 px(128 MiB 예산 그대로). rhwp 키 반영 p95 30·29 ms. 모든 부하에서 150 ms를 보장하는 값이 아니다.
+
+### 남은 한계
+
+- `isShown`의 활성 canvas는 표면이 마지막으로 `paint`에 준 canvas다. 표면 밖에서 canvas를 바꾸고 `paint`를 부르지 않으면 앞 canvas를 기준으로 본다
+  (표면은 렌더마다 모든 쪽을 `paint`하므로 이 경로는 없다).
+- `pending` 되돌리기는 대조 모델과 상태를 맞추는 수정이다. 시험한 경로(웹 주소 뒤 Enter)에서는 수정 전에도 다음 글자 서식이 같았다.
+- 실제 GPU 데스크톱·Wayland IME·fcitx5·Windows/macOS는 확인하지 않았다(T007·T008과 같음). 체크박스 정책은 그대로다.

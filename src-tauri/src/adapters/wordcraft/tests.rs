@@ -1354,6 +1354,125 @@ fn 거부한_복합_연산과_뒤의_연산이_한_요청에_섞여도_revision�
     assert_eq!(model.lock().unwrap().adapter_state().0, Vec::<u32>::new());
 }
 
+// ---- T008 3차 안정화: 거부한 복합 연산과 스냅숏 밖의 WordCraft 편집 보조 상태 ----
+//
+// `Session::edit_snapshot`은 문서·선택·실행 취소 기록·dirty만 담는다. 복합 연산 안의 `caret.set`은 `goal_x`(세로 이동이 지키는 x)와
+// `pending`(다음 입력 서식)을, `text.insert`는 `goal_x`를 지운다(고정 WordCraft `cmd/caret.rs`·`cmd/mod.rs`). 거부한 연산 뒤 그다음
+// 허용 연산(↑↓·글자 넣기)이 대조 모델과 같게 움직이는지 본다.
+
+const LONG: &str = "가나다라마바사아자차카타파하";
+
+/// 긴 문단 · 짧은 문단("가") · 긴 문단을 문서 앞에 두고, 커서를 첫 문단 10번째 글자 뒤에 둔 모델.
+fn vertical_model() -> DocxModel {
+    let mut m = model();
+    m.apply(&[
+        DocxOp::NewParagraph,
+        DocxOp::NewParagraph,
+        DocxOp::NewParagraph,
+        mv(MoveTarget::DocStart, false),
+        insert(LONG),
+        mv(MoveTarget::Down, false),
+        insert("가"),
+        mv(MoveTarget::Down, false),
+        insert(LONG),
+        mv(MoveTarget::DocStart, false),
+    ]);
+    for _ in 0..10 {
+        m.apply(&[mv(MoveTarget::Right, false)]);
+    }
+    m
+}
+
+#[test]
+fn 거부한_복합_연산_뒤에도_세로_이동은_지키던_가로_자리로_간다() {
+    let cases: [(DocxOp, (&'static str, usize)); 4] = [
+        (insert_at(1, "글"), ("caret.set", 1)),
+        (insert_at(1, "글"), ("text.insert", 1)),
+        (insert_at(1, "글"), ("select.range", 1)),
+        (replace("하", "한"), ("select.range", 2)),
+    ];
+    for (op, target) in cases {
+        let (mut m, mut control) = (vertical_model(), vertical_model());
+        let setup = [
+            DocxOp::Mark { id: 1 },
+            insert("하"),
+            mv(MoveTarget::Down, false),
+        ];
+        m.apply(&setup);
+        control.apply(&setup);
+        // 짧은 문단 끝으로 내려와 있고, 지키는 x는 첫 문단 11번째 글자 자리다.
+        assert_eq!(m.view().caret_offset, 1, "{target:?}");
+        assert!(m.engine_aux().0.is_some(), "{target:?}");
+        m.fail_at = Some(target);
+        assert_eq!(
+            m.apply(std::slice::from_ref(&op)).rejected,
+            vec![0],
+            "{target:?}"
+        );
+        assert_eq!(observable(&mut m), observable(&mut control), "{target:?}");
+        assert_eq!(
+            m.engine_aux(),
+            control.engine_aux(),
+            "{target:?}: goal_x·pending·page_hint"
+        );
+        m.apply(&[mv(MoveTarget::Down, false)]);
+        control.apply(&[mv(MoveTarget::Down, false)]);
+        assert_eq!(
+            m.view().caret_key,
+            control.view().caret_key,
+            "{target:?}: 다음 ↓는 지키던 x로(짧은 문단 끝의 x가 아님)"
+        );
+        assert!(m.view().caret_offset > 5, "{target:?}");
+        assert_eq!(history(&mut m), history(&mut control), "{target:?}");
+    }
+}
+
+#[test]
+fn 거부한_복합_연산은_다음_입력_서식을_바꾸지_않는다() {
+    // 허용 연산만으로 다음 입력 서식(pending)을 만든다: 웹 주소 뒤 Enter는 자동 고침으로 링크가 되고 그 뒤 입력은 링크가 아니다.
+    let setup = [
+        DocxOp::Mark { id: 1 },
+        insert("www.example.com"),
+        DocxOp::NewParagraph,
+    ];
+    let (mut m, mut control) = (model(), model());
+    m.apply(&setup);
+    control.apply(&setup);
+    let pending = m.engine_aux().1;
+    assert!(
+        pending.is_some(),
+        "Enter의 자동 고침이 다음 입력 서식을 정함"
+    );
+    m.fail_at = Some(("select.range", 1));
+    assert_eq!(m.apply(&[insert_at(1, "글")]).rejected, vec![0]);
+    assert_eq!(m.engine_aux(), control.engine_aux());
+    m.apply(&[insert("x")]);
+    control.apply(&[insert("x")]);
+    assert_eq!(
+        m.char_props_before_caret(),
+        control.char_props_before_caret()
+    );
+    assert_eq!(observable(&mut m), observable(&mut control));
+    assert_eq!(history(&mut m), history(&mut control));
+}
+
+#[test]
+fn 성공한_복합_연산의_보조_상태는_그대로다() {
+    // 되돌림은 거부했을 때만: 성공한 기억한 자리 넣기·앞 넣기 고치기는 엔진이 정한 대로(caret.set·text.insert가 지운 goal_x) 둔다.
+    let mut m = vertical_model();
+    m.apply(&[
+        DocxOp::Mark { id: 1 },
+        insert("하"),
+        mv(MoveTarget::Down, false),
+    ]);
+    assert!(m.engine_aux().0.is_some());
+    assert_eq!(m.apply(&[replace("하", "한")]).changed, 1);
+    assert_eq!(m.engine_aux().0, None);
+    m.apply(&[mv(MoveTarget::Down, false)]);
+    assert_eq!(m.apply(&[insert_at(1, "글")]).changed, 1);
+    assert_eq!(m.engine_aux().0, None);
+}
+
 // ---- T008 안정화: 붙여넣기(P1-A)·조합의 선택 지우기(P1-C) ----
 
 fn paste(text: &str, chain: bool) -> DocxOp {

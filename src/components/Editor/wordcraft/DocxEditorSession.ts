@@ -45,6 +45,12 @@
 //   요청을 지우지 않음). 편집 모델의 epoch·불러오기 시도와 따로다: 그림 수명이 바뀌어도 편집·조합·revision은 그대로다.
 // - 그림 경로의 예외(T008 2차 안정화): 백엔드 호출 거부는 Protocol 거부로, 디코드 예외는 디코드 실패로, 화면 밖 canvas
 //   만들기·크기·문맥·그리기 예외는 그 래스터를 놓고 canvas 실패로 센다(처리되지 않은 거부 없음, 시도 수는 위와 같음).
+// - 화면에 보임(T008 3차 안정화): 래스터가 지금 판인 것(isCurrent)과 화면에 보이는 것(isShown)은 다르다. 쪽마다 표면이 마지막으로
+//   paint에 준 canvas가 그 쪽의 활성 화면 canvas이고, 그 canvas에 지금 래스터·판을 실제로 옮겼을 때만 보인다(다른 canvas의 기록,
+//   놓기 전 기록은 근거가 아님). 놓기는 활성 canvas 기록도 지운다.
+// - 정리·알림 예외(T008 3차 안정화): canvas 저장소 놓기(크기 0)는 할 수 있는 만큼만 하고 예외가 나도 기억에서 빼는 일을 막지
+//   않는다(래스터 예산). 구독자 하나의 예외는 다른 구독자 알림을 막지 않는다. 그 밖에 그림 요청 처리 중 기대하지 않은 예외는 지금
+//   요청이고 그 쪽이 지금 판이 아니면 그 쪽 실패로 세며(시도 수 같음), 어느 경우든 숨기지 않고 창의 오류 보고(reportError)로 넘긴다.
 // - 래스터 예산(T008 안정화): 화면 밖 래스터는 MAX_RETAINED_PIXELS까지 기억하고, 넘으면 지금 요청한(보이는) 쪽이 아닌 것부터
 //   오래 쓰지 않은 순으로 놓는다(canvas 크기 0). 놓은 쪽의 화면 canvas도 다음 그리기에서 놓는다. 표면이 사라지면
 //   releaseRendering()으로 모두 놓는다(T007 rhwp와 같음). 백엔드 래스터 기억은 세션마다 4개(engine.rs MAX_RASTERS).
@@ -65,8 +71,8 @@ export type DocxStatus =
 /** 넣지 못한 입력의 알림: 넣을 수 없는 글자, 한도 초과(넣지 않음), 엔진이 일부 조각을 거부함(앞부분만 들어감). */
 export type DocxInputNotice = "pasteUnsupported" | "pasteTooLarge" | "pasteIncomplete";
 
-/** 쪽 그림 실패의 원인: 백엔드 거부, PNG 디코드 실패, canvas 문맥 없음, 크기 불일치. */
-export type RenderFailureReason = "backend" | "decode" | "canvas" | "size";
+/** 쪽 그림 실패의 원인: 백엔드 거부, PNG 디코드 실패, canvas 문맥 없음, 크기 불일치, 기대하지 않은 예외. */
+export type RenderFailureReason = "backend" | "decode" | "canvas" | "size" | "unexpected";
 
 /** 쪽 하나의 래스터(그 판·배율의 쪽 전체 그림)와 그 위에 덮은 띠들. */
 interface PageRaster {
@@ -116,6 +122,28 @@ const RESUME_POLLS = 200;
 
 const closedError = (sessionId: number): DocumentError => ({ code: "StaleSession", sessionId });
 
+/** 처리하지 못한 예외를 숨기지 않고 창의 오류 보고로 넘긴다(처리되지 않은 거부가 아니며, 그림 상태를 바꾸지 않음). */
+function report(error: unknown) {
+  if (typeof reportError === "function") reportError(error);
+  else setTimeout(() => {
+    throw error;
+  });
+}
+
+/** canvas 저장소를 놓는다(크기 0). 할 수 있는 만큼만: 예외가 나면 그 canvas는 참조가 사라질 때 함께 놓인다. */
+function releaseCanvas(canvas: HTMLCanvasElement) {
+  try {
+    canvas.width = 0;
+  } catch {
+    // 너비를 바꿀 수 없음: 높이라도 놓아 본다.
+  }
+  try {
+    canvas.height = 0;
+  } catch {
+    // 아래 호출하는 쪽이 이 canvas를 기억에서 뺀다.
+  }
+}
+
 export class DocxEditorSession implements ImeSession {
   status: DocxStatus = { kind: "idle" };
   view: DocxView | null = null;
@@ -150,6 +178,8 @@ export class DocxEditorSession implements ImeSession {
   private readonly rasters = new Map<number, PageRaster>();
   /** canvas마다 마지막으로 옮긴 래스터와 그 판. */
   private readonly painted = new WeakMap<HTMLCanvasElement, { raster: PageRaster; revision: number }>();
+  /** 쪽마다 활성 화면 canvas(표면이 마지막으로 paint에 준 것). isShown은 이 canvas에 옮긴 기록만 본다. */
+  private readonly screens = new Map<number, HTMLCanvasElement>();
   /** 그림 수명(releaseRendering마다 늘어남). 그 전 수명에 보낸 요청의 결과는 쓰지 않는다. */
   private renderLife = 0;
   /** 보내는 중인 그림 요청(key → 그 요청). 끝난 요청은 자기 기록일 때만 지운다. */
@@ -177,8 +207,15 @@ export class DocxEditorSession implements ImeSession {
     return () => this.listeners.delete(listener);
   }
 
+  /** 구독자에게 알린다. 하나가 예외를 내도 나머지는 알림을 받고, 그 예외는 보고한다. */
   private emit() {
-    for (const listener of this.listeners) listener();
+    for (const listener of this.listeners) {
+      try {
+        listener();
+      } catch (error) {
+        report(error);
+      }
+    }
   }
 
   private get info(): SessionInfo | null {
@@ -519,9 +556,13 @@ export class DocxEditorSession implements ImeSession {
     return !!raster && raster.generation === this.generation && raster.revision === this.revision && raster.scale === scale;
   }
 
-  /** 쪽 그림이 지금 판이고 화면 canvas에 옮기다 실패하지 않았는지(보이는 쪽은 paint 뒤 화면에 보이는 판). */
+  /** 쪽 그림이 지금 판이고, 그 쪽의 활성 화면 canvas에 그 래스터·판을 실제로 옮겼는지(화면에 보이는 판). */
   isShown(page: number, scale: number): boolean {
-    return this.isCurrent(page, scale) && !this.paintFailures.has(page);
+    const raster = this.rasters.get(page);
+    const canvas = this.screens.get(page);
+    const shown = canvas && this.painted.get(canvas);
+    return this.isCurrent(page, scale) && !!raster && !!shown && shown.raster === raster && shown.revision === raster.revision
+      && !this.paintFailures.has(page);
   }
 
   /** 그림 실패의 비교 키(시도:판:배율). */
@@ -573,9 +614,7 @@ export class DocxEditorSession implements ImeSession {
       const request = {};
       this.rendering.set(key, request);
       void this.renderPage(page, { generation, revision, scale, base, failureKey })
-        .catch(() => {
-          // 실패를 처리하다 난 예외(알림 구독자 등): 이 요청만 끝낸다. 다시 시도 여부는 실패 기록이 정한다.
-        })
+        .catch(report) // 실패를 세다 난 예외: 숨기지 않는다(기록은 아래에서 이 요청 것만 지움)
         .finally(() => {
           if (this.rendering.get(key) === request) this.rendering.delete(key);
         });
@@ -590,20 +629,20 @@ export class DocxEditorSession implements ImeSession {
     const { generation, revision, scale, base, failureKey } = request;
     const { epoch, renderLife } = this;
     const live = () => epoch === this.epoch && renderLife === this.renderLife && this.status.kind === "ready";
-    let result: Result<DocxRender>;
-    try {
-      result = await this.backend.render(this.sessionId, generation, revision, page, scale, base);
-    } catch {
-      result = { ok: false, error: { code: "Protocol" } }; // IPC 호출 자체가 거부됨
-    }
-    if (!live()) return;
-    if (!result.ok) {
-      this.renderRejected(page, failureKey, revision, result.error);
-      return;
-    }
-    const { base: from, y, height, png } = result.value;
     let bitmap: ImageBitmap | null = null;
     try {
+      let result: Result<DocxRender>;
+      try {
+        result = await this.backend.render(this.sessionId, generation, revision, page, scale, base);
+      } catch {
+        result = { ok: false, error: { code: "Protocol" } }; // IPC 호출 자체가 거부됨
+      }
+      if (!live()) return;
+      if (!result.ok) {
+        this.renderRejected(page, failureKey, revision, result.error);
+        return;
+      }
+      const { base: from, y, height, png } = result.value;
       if (height > 0) {
         try {
           bitmap = await this.decode(png);
@@ -622,8 +661,16 @@ export class DocxEditorSession implements ImeSession {
         this.trimRasters();
         this.emit();
       } else if (applied !== "stale") this.renderFailed(page, failureKey, applied);
+    } catch (error) {
+      // 기대하지 않은 예외: 지금 요청인데 그 쪽이 지금 판이 아니면 그 쪽 실패로 센다(옛 요청은 지금 상태를 바꾸지 않음).
+      report(error);
+      if (live() && !this.isCurrent(page, scale)) this.renderFailed(page, failureKey, "unexpected");
     } finally {
-      bitmap?.close();
+      try {
+        bitmap?.close();
+      } catch (error) {
+        report(error); // 앞의 결과·오류를 덮지 않는다
+      }
     }
   }
 
@@ -675,10 +722,7 @@ export class DocxEditorSession implements ImeSession {
     let backing: HTMLCanvasElement | null = null;
     const drop = () => {
       if (this.rasters.get(page)?.backing === backing) this.rasters.delete(page);
-      if (backing) {
-        backing.width = 0;
-        backing.height = 0;
-      }
+      if (backing) releaseCanvas(backing);
     };
     try {
       if (from === null) {
@@ -707,11 +751,7 @@ export class DocxEditorSession implements ImeSession {
         context.drawImage(bitmap, 0, y);
       } else if (height !== 0) return "size";
     } catch {
-      try {
-        drop();
-      } catch {
-        this.rasters.delete(page); // 크기도 바꿀 수 없음: 기억에서만 뺀다
-      }
+      drop();
       return "canvas";
     }
     current.bands.push({ from, to: revision, y, height });
@@ -730,9 +770,8 @@ export class DocxEditorSession implements ImeSession {
       if (total <= MAX_RETAINED_PIXELS) break;
       if (this.wanted.has(page)) continue;
       total -= raster.width * raster.height;
-      raster.backing.width = 0;
-      raster.backing.height = 0;
       this.rasters.delete(page);
+      releaseCanvas(raster.backing);
     }
   }
 
@@ -742,13 +781,13 @@ export class DocxEditorSession implements ImeSession {
    * 처음 그린 시간을 남긴다. 옮기지 못하면(문맥 없음·예외) 화면 그리기 실패로 세고, 간격 뒤 같은 래스터를 다시 옮겨 본다.
    */
   paint(page: number, canvas: HTMLCanvasElement) {
+    this.screens.set(page, canvas);
     const raster = this.rasters.get(page);
     if (!raster) {
       // 놓은 쪽(래스터 예산·다시 불러오기): 화면 canvas의 그림도 놓는다.
       if (canvas.width !== 0 || canvas.height !== 0) {
-        canvas.width = 0;
-        canvas.height = 0;
         this.painted.delete(canvas);
+        releaseCanvas(canvas);
       }
       return;
     }
@@ -823,11 +862,9 @@ export class DocxEditorSession implements ImeSession {
    */
   releaseRendering() {
     this.renderLife += 1;
-    for (const raster of this.rasters.values()) {
-      raster.backing.width = 0;
-      raster.backing.height = 0;
-    }
+    for (const raster of this.rasters.values()) releaseCanvas(raster.backing);
     this.rasters.clear();
+    this.screens.clear();
     this.rendering.clear();
     this.failures.clear();
     this.paintFailures.clear();

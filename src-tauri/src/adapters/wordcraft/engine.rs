@@ -493,10 +493,14 @@ impl DocxModel {
         work: impl FnOnce(&mut Self) -> Result<T, Rejected>,
     ) -> Result<T, Rejected> {
         let snapshot = self.session.edit_snapshot();
+        // 스냅숏 밖이지만 복합 연산 안의 `caret.set`·`text.insert`가 지우고 그다음 허용 연산이 읽는 상태(T008 3차 안정화):
+        // 세로 이동이 지키는 x, 다음 입력 서식(WordCraft 실행 취소 기록도 함께 담는 값).
+        let aux = (self.session.goal_x, self.session.pending.clone());
         let recent = self.recent_insert().map(|last| last.rev);
         let result = work(self);
         if result.is_err() {
             self.session.restore(snapshot);
+            (self.session.goal_x, self.session.pending) = aux;
             let rev = self.session.rev();
             if let Some(last) = self
                 .last_insert
@@ -796,6 +800,33 @@ impl DocxModel {
             self.session.dirty,
             self.session.can_undo(),
         )
+    }
+
+    /// 시험용: 스냅숏 밖의 WordCraft 편집 보조 상태(세로 이동이 지키는 x, 다음 입력 서식, 쪽 힌트).
+    #[cfg(test)]
+    pub fn engine_aux(&self) -> (Option<f32>, Option<String>, usize) {
+        (
+            self.session.goal_x,
+            self.session.pending.as_ref().map(|p| format!("{p:?}")),
+            self.session.page_hint,
+        )
+    }
+
+    /// 시험용: 커서 바로 앞 글자의 서식(없으면 빈 글자).
+    #[cfg(test)]
+    pub fn char_props_before_caret(&self) -> String {
+        let focus = &self.session.sel.focus;
+        let Some(para) = self.session.doc.para_at(focus) else {
+            return String::new();
+        };
+        let Some(ch) = para
+            .text
+            .get(..focus.off)
+            .and_then(|head| head.chars().last())
+        else {
+            return String::new();
+        };
+        format!("{:?}", para.props_of_char(focus.off - ch.len_utf8()))
     }
 
     /// 시험용: WordCraft 실행 취소·다시 실행(IPC로는 열지 않음, T010).
