@@ -1123,6 +1123,237 @@ fn 복합_연산이_거부되면_편집_요청은_revision과_문서가_어긋�
     );
 }
 
+// ---- T008 2차 안정화: 거부한 복합 연산과 어댑터 기억(C1 자리 표시, C2 바로 앞 넣기) ----
+//
+// 불변식: 거부한 복합 연산은 문서·선택·실행 취소 기록·dirty뿐 아니라 그 뒤 편집의 뜻을 바꾸는 어댑터 기억(`marks`·`last_insert`)도
+// 바꾸지 않는다. 실패를 주입한 모델과, 같은 성공 연산만 실행한 대조 모델이 그 뒤 같은 연산에 같게 답하는지로 본다(WordCraft 판은
+// `restore`가 올리므로 비교하지 않는다).
+
+fn insert_at(mark: u32, text: &str) -> DocxOp {
+    DocxOp::InsertAt {
+        mark,
+        text: text.into(),
+    }
+}
+
+fn replace(expected: &str, text: &str) -> DocxOp {
+    DocxOp::ReplaceInserted {
+        expected: expected.into(),
+        text: text.into(),
+    }
+}
+
+/// 비교할 상태: 본문, 커서·기준점, 자리 표시, 고칠 수 있는 넣기, dirty, 실행 취소 가능.
+fn observable(m: &mut DocxModel) -> (String, String, String, Vec<u32>, Option<String>, bool, bool) {
+    let view = m.view();
+    let (marks, recent, _, dirty, undo) = m.adapter_state();
+    (
+        m.body_text(),
+        view.caret_key,
+        view.anchor_key,
+        marks,
+        recent,
+        dirty,
+        undo,
+    )
+}
+
+/// 실행 취소를 끝까지, 다시 실행을 끝까지 한 본문들(실행 취소 기록이 같은지).
+fn history(m: &mut DocxModel) -> Vec<String> {
+    let mut seen = vec![m.body_text()];
+    for _ in 0..8 {
+        if !m.undo_redo(false) {
+            break;
+        }
+        seen.push(m.body_text());
+    }
+    for _ in 0..8 {
+        if !m.undo_redo(true) {
+            break;
+        }
+        seen.push(m.body_text());
+    }
+    seen
+}
+
+#[test]
+fn 기억한_자리_넣기가_거부되면_자리_표시는_남고_같은_자리에_다시_넣을_수_있다() {
+    for target in [("caret.set", 1), ("text.insert", 1), ("select.range", 1)] {
+        let setup = [
+            mv(MoveTarget::Right, false),
+            mv(MoveTarget::Right, false),
+            DocxOp::Mark { id: 1 },
+            mv(MoveTarget::Down, false),
+        ];
+        let (mut m, mut control) = (model(), model());
+        m.apply(&setup);
+        control.apply(&setup);
+        let before = observable(&mut m);
+        m.fail_at = Some(target);
+        let outcome = m.apply(&[insert_at(1, "글")]);
+        assert_eq!(
+            (outcome.applied, outcome.changed, outcome.rejected),
+            (0, 0, vec![0]),
+            "{target:?}"
+        );
+        assert_eq!(
+            observable(&mut m),
+            before,
+            "{target:?}: 거부한 연산은 자리 표시도 쓰지 않음"
+        );
+        // 같은 자리 표시로 다시 넣으면(대조 모델의 첫 넣기와 같게) 클릭 전 자리에 한 번 들어간다.
+        assert_eq!(m.apply(&[insert_at(1, "글")]).changed, 1, "{target:?}");
+        assert_eq!(control.apply(&[insert_at(1, "글")]).changed, 1);
+        let p0 = basic::PARAGRAPHS[0];
+        let expected: String = p0
+            .chars()
+            .take(2)
+            .chain("글".chars())
+            .chain(p0.chars().skip(2))
+            .collect();
+        assert!(m.body_text().starts_with(&expected), "{target:?}");
+        assert_eq!(observable(&mut m), observable(&mut control), "{target:?}");
+        // 자리 표시는 한 번만 쓴다.
+        assert_eq!(m.apply(&[insert_at(1, "x")]).rejected, vec![0]);
+        assert_eq!(history(&mut m), history(&mut control), "{target:?}");
+    }
+}
+
+#[test]
+fn 앞_넣기_고치기가_거부되면_다시_고칠_수_있고_다른_최종_글자로도_고친다() {
+    let (mut m, mut control) = (model(), model());
+    m.apply(&[insert("하")]);
+    control.apply(&[insert("하")]);
+    let before = observable(&mut m);
+    let rev = m.adapter_state().2;
+    assert_eq!(before.4.as_deref(), Some("하"));
+    m.fail_at = Some(("select.range", 2)); // 고친 뒤 선택 되돌리기
+    assert_eq!(m.apply(&[replace("하", "한")]).rejected, vec![0]);
+    assert_eq!(
+        observable(&mut m),
+        before,
+        "문서가 넣은 직후 그대로이므로 그 넣기는 아직 고칠 수 있다"
+    );
+    assert!(
+        m.adapter_state().2 > rev,
+        "WordCraft restore는 판을 올린다(엔진 계약)"
+    );
+    // 같은 고치기를 다시 하거나, 입력기가 다른 최종 음절을 보내도 고친다.
+    let outcome = m.apply(&[replace("하", "할")]);
+    assert_eq!((outcome.changed, outcome.rejected), (1, vec![]));
+    control.apply(&[replace("하", "할")]);
+    assert_eq!(
+        m.view().paragraph_text,
+        format!("할{}", basic::PARAGRAPHS[0])
+    );
+    assert_eq!(observable(&mut m), observable(&mut control));
+    // 고친 뒤에는 다시 고치지 않는다(중복 고침 없음).
+    assert_eq!(m.apply(&[replace("할", "한")]).rejected, vec![0]);
+    assert_eq!(history(&mut m), history(&mut control));
+}
+
+#[test]
+fn 거부한_고치기_뒤라도_문서를_바꾼_연산이_있으면_앞_넣기는_고치지_않는다() {
+    let mut m = model();
+    m.apply(&[insert("가"), insert("하")]);
+    m.fail_at = Some(("select.range", 2));
+    assert_eq!(m.apply(&[replace("하", "한")]).rejected, vec![0]);
+    // 넣은 글자를 지웠다 같은 글자를 다른 연산으로 넣으면 그 넣기는 바로 앞 넣기가 아니다(Backspace가 끼어듦).
+    m.apply(&[DocxOp::Backspace]);
+    assert_eq!(m.adapter_state().1, None);
+    assert_eq!(m.apply(&[replace("하", "한")]).rejected, vec![0]);
+    assert!(m.body_text().starts_with("가한글"));
+    // 되돌린 실패 뒤 성공한 복합 연산(기억한 자리 넣기)도 앞 넣기를 끝낸다.
+    let mut other = model();
+    other.apply(&[DocxOp::Mark { id: 3 }, insert("하")]);
+    other.fail_at = Some(("select.range", 2));
+    assert_eq!(other.apply(&[replace("하", "한")]).rejected, vec![0]);
+    assert_eq!(other.apply(&[insert_at(3, "x")]).changed, 1);
+    assert_eq!(other.apply(&[replace("하", "한")]).rejected, vec![0]);
+}
+
+#[test]
+fn 거부한_기억한_자리_넣기는_앞_넣기의_고치기와_넣기_전_좌표를_막지_않는다() {
+    let (mut m, mut control) = (model(), model());
+    let setup = [DocxOp::Mark { id: 1 }, insert("하")];
+    m.apply(&setup);
+    control.apply(&setup);
+    m.fail_at = Some(("select.range", 1));
+    assert_eq!(m.apply(&[insert_at(1, "글")]).rejected, vec![0]);
+    assert_eq!(observable(&mut m), observable(&mut control));
+    // 넣기 전 화면의 클릭 좌표도 그대로 쓴다(Pointer.before_insert는 바로 앞 넣기의 배치를 씀).
+    let p0 = basic::PARAGRAPHS[0];
+    let target = model() // 넣기 전 화면
+        .caret_of(&DocxModel::body_pos(&[0], byte_at(p0, 5)))
+        .unwrap();
+    let click = DocxOp::Pointer {
+        page: 0,
+        x: target.x,
+        y: target.y + target.height / 2.0,
+        extend: false,
+        before_insert: true,
+    };
+    m.apply(std::slice::from_ref(&click));
+    control.apply(std::slice::from_ref(&click));
+    assert_eq!(
+        m.view().caret_offset,
+        6,
+        "넣기 전 화면의 5번째 경계 + 넣은 한 글자"
+    );
+    assert_eq!(m.apply(&[replace("하", "한")]).changed, 1);
+    control.apply(&[replace("하", "한")]);
+    assert_eq!(observable(&mut m), observable(&mut control));
+}
+
+#[test]
+fn 자리_표시_수_한도와_거부한_넣기() {
+    let mut m = model();
+    let marks: Vec<DocxOp> = (1..=9).map(|id| DocxOp::Mark { id }).collect();
+    m.apply(&marks);
+    let ids: Vec<u32> = (2..=9).collect();
+    assert_eq!(m.adapter_state().0, ids, "오래된 것(1)부터 버림");
+    assert_eq!(m.apply(&[insert_at(1, "x")]).rejected, vec![0]);
+    m.fail_at = Some(("select.range", 1));
+    assert_eq!(m.apply(&[insert_at(9, "x")]).rejected, vec![0]);
+    assert_eq!(
+        m.adapter_state().0,
+        ids,
+        "거부한 넣기는 자리 표시를 쓰지 않음"
+    );
+    assert_eq!(m.apply(&[insert_at(9, "x")]).changed, 1);
+    assert_eq!(m.adapter_state().0, (2..=8).collect::<Vec<u32>>());
+}
+
+#[test]
+fn 거부한_복합_연산과_뒤의_연산이_한_요청에_섞여도_revision과_기억이_맞다() {
+    let dir = TempDir::new();
+    let state = DocumentState::default();
+    let docx = loaded(&state, &dir);
+    let (id, generation) = (docx.session.session_id, docx.session.load_generation);
+    let model = state.wordcraft().get(id, generation).expect("모델");
+    let edit =
+        |base: u64, ops: Vec<DocxOp>| block_on(commands::edit(&state, id, generation, base, ops));
+    edit(0, vec![DocxOp::Mark { id: 5 }, mv(MoveTarget::Down, false)]).expect("표시");
+    model.lock().unwrap().fail_at = Some(("select.range", 1));
+    let edited = edit(0, vec![insert_at(5, "글"), insert("x"), replace("x", "y")])
+        .expect("거부는 실패가 아님");
+    assert_eq!(
+        (
+            edited.applied,
+            edited.rejected.clone(),
+            edited.session.revision
+        ),
+        (2, vec![0], 2)
+    );
+    assert!(edited.session.dirty);
+    assert!(edited.view.paragraph_text.starts_with('y'));
+    // 거부한 넣기의 자리 표시는 남아 다음 요청에서 쓸 수 있다.
+    let again = edit(2, vec![insert_at(5, "글")]).expect("다시 넣기");
+    assert_eq!((again.rejected, again.session.revision), (vec![], 3));
+    assert!(model.lock().unwrap().body_text().starts_with("글한글"));
+    assert_eq!(model.lock().unwrap().adapter_state().0, Vec::<u32>::new());
+}
+
 // ---- T008 안정화: 붙여넣기(P1-A)·조합의 선택 지우기(P1-C) ----
 
 fn paste(text: &str, chain: bool) -> DocxOp {

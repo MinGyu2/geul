@@ -10,6 +10,7 @@
 // 백엔드로 간다.
 // 표시 한도: 지금 배율 × DPR로 그리면 그림 예산을 넘으면 그리지 않고 안내하며 편집을 멈춘다(배율을 낮추면 이어 감).
 // 그림 실패(T008 안정화): 다시 시도해도 지금 판을 그리지 못한 쪽은 그 쪽과 안내에 보이고(편집 멈춤), 다시 그리기를 고를 수 있다.
+// 화면 canvas에 옮기지 못한 쪽(2차 안정화)도 같다. 쪽의 data-current는 화면에 지금 판을 옮겼는지다(화면 밖 래스터만이 아님).
 // 넣지 못한 입력(넣을 수 없는 글자·한도 초과·엔진이 일부 거부)은 안내한다. 표면이 사라지면 쪽 그림(화면·화면 밖)을 놓는다.
 // 응답 시간(키 입력, T007과 같은 기준이며 문서를 바꾸지 않는 방향키도 센다. 마우스는 세지 않음): 입력 이벤트마다, 보내는 중인 연산이 없고 보이는 쪽 그림이 모두 지금 판이 되어 그린 뒤 두 번째 animation frame까지
 // (입력이 밀려 여러 입력이 한 화면에 함께 반영되면 각 입력의 대기를 따로 센다).
@@ -82,9 +83,9 @@ export function DocxSurface({ session, zoom, imeContext }: DocxSurfaceProps) {
 
   useLayoutEffect(() => {
     for (const [page, canvas] of canvases.current) session.paint(page, canvas);
-    // 입력 반영 시간: 보내는 중인 입력이 없고 보이는 쪽 그림이 모두 지금 판일 때.
+    // 입력 반영 시간: 보내는 중인 입력이 없고 보이는 쪽 그림이 모두 지금 판으로 화면에 옮겨졌을 때.
     const started = inputAt.current;
-    if (started.length > 0 && !session.busy && visiblePages().every((page) => session.isCurrent(page, scale))) {
+    if (started.length > 0 && !session.busy && visiblePages().every((page) => session.isShown(page, scale))) {
       inputAt.current = [];
       requestAnimationFrame(() => requestAnimationFrame(() => {
         const now = performance.now();
@@ -253,7 +254,7 @@ export function DocxSurface({ session, zoom, imeContext }: DocxSurfaceProps) {
               className="docx-page rhwp-page"
               data-page={page}
               data-revision={session.pageRevision(page) ?? ""}
-              data-current={session.isCurrent(page, scale)}
+              data-current={session.isShown(page, scale)}
               data-render-failed={failedPages.includes(page) || undefined}
               ref={(element) => {
                 if (element) pageBoxes.current.set(page, element);

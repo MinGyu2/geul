@@ -554,6 +554,136 @@ def scenario_stabilization(d) -> None:
           json.dumps(back, ensure_ascii=False)[:200])
 
 
+def screen_hash(d) -> list:
+    """첫 쪽 화면 canvas의 크기와 픽셀 표본 해시(앱이 문맥을 막아 둔 동안에도 원래 getContext로 읽는다)."""
+    return d.js("""const c=document.querySelector('.docx-page canvas'); const g=window.__origGetContext || HTMLCanvasElement.prototype.getContext;
+        const x=g.call(c, '2d').getImageData(0, 0, c.width, c.height).data; let h=0; for (let k=0; k<x.length; k+=97) h=(h*31+x[k])|0;
+        return [c.width, c.height, h]""")
+
+
+def paragraphs_above(d, count: int) -> list[str]:
+    """커서 문단과 그 위 count개 문단의 글자(위에서부터). 위 방향키로 옮기며 읽는다(문서를 바꾸지 않음)."""
+    texts = [status(d)["paragraphText"]]
+    for _ in range(count):
+        press(d, "Up")
+        texts.insert(0, status(d)["paragraphText"])
+    return texts
+
+
+# 화면 밖 래스터(문서에 붙지 않은 canvas)를 세고, PNG 디코드(createImageBitmap)를 붙잡을 수 있게 한다. IPC(__TAURI_INTERNALS__.invoke)는
+# 바꿀 수 없어(writable false, 실측) 그림 응답 대신 디코드를 붙잡는다.
+RENDER_HOOKS = """window.__created=[]; window.__decodes=0; window.__closed=0; window.__heldDecode=[]; window.__holdDecode=false;
+  window.__origCreateElement=document.createElement; window.__origCIB=window.createImageBitmap;
+  document.createElement = function(tag, ...rest) { const e=window.__origCreateElement.call(document, tag, ...rest);
+    if (String(tag).toLowerCase()==='canvas') window.__created.push(e); return e; };
+  window.createImageBitmap = function(...args) { window.__decodes++;
+    const p=window.__origCIB.apply(window, args).then(b => { const close=b.close.bind(b); b.close=() => { window.__closed++; close(); }; return b; });
+    return window.__holdDecode ? new Promise((res, rej) => window.__heldDecode.push(() => p.then(res, rej))) : p; };"""
+RENDER_UNHOOK = """document.createElement=window.__origCreateElement; window.createImageBitmap=window.__origCIB;
+  if (window.__origGetContext) HTMLCanvasElement.prototype.getContext=window.__origGetContext; window.__created=[];"""
+
+
+def click_tab(d, name: str) -> None:
+    """탭만 고른다(그림을 기다리지 않음)."""
+    d.js("[...document.querySelectorAll('.document-tab__select')].find(t => t.textContent.replace(/^● /,'').startsWith(arguments[0])).click()", name)
+    smoke.wait_until(d, f"return document.querySelector('{STATUS} h1')?.textContent === arguments[0]", name, timeout=10)
+
+
+def scenario_second_stabilization(d, fixtures: Path) -> None:
+    """T008 2차 안정화: 줄마다 나뉜 CRLF 넣기, 화면 canvas 그리기 실패·회복, 그림을 기다리는 동안의 탭 전환."""
+    d.js("document.querySelector('.editor__scroll').scrollTop = 0")
+    idle(d)
+    # CRLF: WebKit은 execCommand('insertText', '가\r\n나')를 insertText '가\r' · insertParagraph · insertText '나' input으로 나눈다(실측).
+    # 문단 구조는 원래 글자와 같아야 한다(CRLF 하나 = 문단 나누기 하나, LF 둘 = 빈 줄 하나).
+    for name, text, lines, revisions in [
+        ("CRLF", "가\r\n나", ["가"], 2),
+        ("CRLF 빈 줄", "가\r\n\r\n나", ["가", ""], 3),
+        ("끝의 CRLF", "가\r\n", ["가"], 1),
+        ("LF 빈 줄", "가\n\n나", ["가", ""], 4),
+    ]:
+        click_paragraph_start(d)
+        st = status(d)
+        rev, path, tail = int(st["revision"]), int(caret_path(st)), st["paragraphText"]
+        after = insert_text(d, text)
+        last = ("나" if text.endswith("나") else "") + tail
+        got = paragraphs_above(d, len(lines))
+        check(f"docx: 줄마다 나뉜 {name} 글자 넣기는 원래 문단 구조 그대로(빈 문단이 더 생기지 않음, revision +{revisions})",
+              got == lines + [last] and int(caret_path(after)) == path + len(lines) and int(after["revision"]) == rev + revisions,
+              json.dumps({"got": got[:-1] + [got[-1][:20]], "path": [path, caret_path(after)], "revision": [rev, after["revision"]]}, ensure_ascii=False))
+
+    # 화면 canvas 2D 문맥 없음(문서에 붙은 canvas만, 화면 밖 래스터는 그대로): 지금 판으로 보이지 않고, 몇 번 다시 그려 본 뒤 실패를
+    # 보이며 편집을 멈춘다. 문맥이 돌아온 뒤 다시 그리기는 PNG를 다시 받지 않고 실제로 다시 그린다.
+    d.js(RENDER_HOOKS)
+    try:
+        click_paragraph_start(d)
+        before, st0 = screen_hash(d), status(d)
+        d.js("window.__origGetContext=HTMLCanvasElement.prototype.getContext; window.__nullCalls=0;"
+             " HTMLCanvasElement.prototype.getContext=function(...a) { if (this.isConnected) { window.__nullCalls++; return null; }"
+             " return window.__origGetContext.apply(this, a); }")
+        perform(d, [{"type": "key", "id": "kbd", "actions": [{"type": "keyDown", "value": "x"}, {"type": "keyUp", "value": "x"}]}])
+        smoke.wait_until(d, f"return document.querySelector('{STATUS}').dataset.renderFailed !== ''", timeout=20)
+        time.sleep(1.0)
+        failed = status(d)
+        shown = d.js("const p=document.querySelector('.docx-page'); return {current: p.dataset.current, revision: p.dataset.revision,"
+                     " marked: p.dataset.renderFailed ?? '', alert: !!document.querySelector('[data-testid=docx-render-failed]'),"
+                     " disabled: document.querySelector(arguments[0]).disabled, nullCalls: window.__nullCalls, decodes: window.__decodes}", INPUT)
+        during = screen_hash(d)
+        visible = len(failed["renderFailed"].split(","))
+        check("docx: 화면 canvas 문맥이 없으면 지금 판으로 표시하지 않고(첫 쪽 current false) 몇 번만 다시 그려 본 뒤 실패를 보이며 편집을 멈춤"
+              "(편집은 미보존 보호, ready 유지)",
+              failed["status"] == "ready" and int(failed["revision"]) == int(st0["revision"]) + 1 and failed["unpreserved"] == "true"
+              and shown["current"] == "false" and shown["revision"] == failed["revision"] and shown["marked"] == "true" and shown["alert"]
+              and shown["disabled"] and shown["nullCalls"] <= 3 * visible and during == before,
+              json.dumps({"status": brief(failed), "shown": shown, "screen": [before, during]}, ensure_ascii=False)[:600])
+        d.js("HTMLCanvasElement.prototype.getContext=window.__origGetContext")
+        press_button(d, "[data-testid=docx-render-retry]")
+        recovered = idle(d)
+        repainted = d.js("const p=document.querySelector('.docx-page'); return {current: p.dataset.current, decodes: window.__decodes,"
+                         " disabled: document.querySelector(arguments[0]).disabled}", INPUT)
+        after = screen_hash(d)
+        check("docx: 문맥이 돌아온 뒤 다시 그리기는 PNG를 다시 받지 않고 화면에 실제로 다시 그려 편집을 이어 감",
+              recovered["renderFailed"] == "" and repainted["current"] == "true" and not repainted["disabled"]
+              and repainted["decodes"] == shown["decodes"] and after != before,
+              json.dumps({"status": brief(recovered), "repainted": repainted, "screen": [before, after]}, ensure_ascii=False)[:500])
+
+        # 탭 전환: 다른 탭 표면이 쪽 전체 디코드를 기다리는 동안 원래 탭으로 돌아오면, 놓은 표면의 늦은 디코드는 화면 밖 래스터를 다시
+        # 만들지 않는다(그림은 닫음). 돌아온 탭은 지금 판을 그리고 편집한 내용·입력이 이어진다.
+        shutil.copy(fixtures / "basic-ko.docx", fixtures / "basic-ko-b.docx")
+        open_document(d, fixtures / "basic-ko-b.docx")
+        select_tab(d, "basic-ko.docx")
+        click_paragraph_start(d)
+        st1 = status(d)
+        d.js("window.__holdDecode=true; window.__created=[]")
+        click_tab(d, "basic-ko-b.docx")
+        smoke.wait_until(d, "return window.__heldDecode.length >= 1", timeout=10)
+        click_tab(d, "basic-ko.docx")
+        smoke.wait_until(d, "return window.__heldDecode.length >= 2", timeout=10)
+        closed = d.js("return window.__closed")
+        d.js("window.__heldDecode.shift()()")  # 놓은 탭(basic-ko-b.docx)의 늦은 디코드
+        time.sleep(1.0)
+        stale = d.js("return {live: window.__created.filter(c => !c.isConnected && c.width > 0).length, closed: window.__closed}")
+        d.js("window.__holdDecode=false; const g=window.__heldDecode; window.__heldDecode=[]; g.forEach(go => go())")
+        back = idle(d)
+        page = d.js("const p=document.querySelector('.docx-page'); return {current: p.dataset.current, revision: p.dataset.revision,"
+                    " width: p.querySelector('canvas').width}")
+        check("docx: 그림을 기다리는 동안 탭을 바꾸면 놓은 표면의 늦은 그림은 화면 밖 래스터를 다시 만들지 않고(그림은 닫음),"
+              " 돌아온 탭은 지금 판을 그리며 편집한 내용이 그대로",
+              stale["live"] == 0 and stale["closed"] == closed + 1 and back["status"] == "ready" and back["revision"] == st1["revision"]
+              and back["paragraphText"] == st1["paragraphText"] and page["current"] == "true" and page["revision"] == st1["revision"]
+              and page["width"] > 0, json.dumps({"stale": stale, "page": page, "status": brief(back)}, ensure_ascii=False)[:500])
+        before_typing = int(back["revision"])
+        perform(d, [{"type": "key", "id": "kbd", "actions": [{"type": "keyDown", "value": "w"}, {"type": "keyUp", "value": "w"}]}])
+        smoke.wait_until(d, f"return document.querySelector('{STATUS}').dataset.revision !== arguments[0]", str(before_typing), timeout=10)
+        typed = idle(d)
+        check("docx: 돌아온 탭에서 입력이 이어짐(revision +1, 커서 자리에 한 번)",
+              int(typed["revision"]) == before_typing + 1 and typed["paragraphText"] == "w" + st1["paragraphText"], brief(typed))
+    finally:
+        d.js(RENDER_UNHOOK)
+    d.js("[...document.querySelectorAll('.document-tab__close')].find(b => b.getAttribute('aria-label').includes('basic-ko-b.docx')).click()")
+    smoke.wait_until(d, "return document.querySelectorAll('.document-tab__close').length === 1", timeout=10)
+    select_tab(d, "basic-ko.docx")
+
+
 def scenario_restart_inactive_close(d, fixtures: Path) -> None:
     """P2-C: WebView를 다시 시작한 뒤 아직 보지 않은 dirty DOCX 탭도 버리기 확인 없이 닫지 않는다."""
     shutil.copy(fixtures / "basic-ko.docx", fixtures / "basic-ko-c.docx")
@@ -921,6 +1051,7 @@ def main() -> int:
                             scenario_roundtrip_ui(d)
                             scenario_latency(d)
                             scenario_stabilization(d)
+                            scenario_second_stabilization(d, fixtures)
                             if args.screenshots:
                                 d.screenshot(args.screenshots / "docx-edited.png")
                             scenario_webview_restart(d)

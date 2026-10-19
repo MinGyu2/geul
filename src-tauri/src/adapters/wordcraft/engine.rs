@@ -11,7 +11,8 @@
 //!   요청의 바로 앞 연산이 거부됐으면 실행하지 않는다(앞 조각 없이 뒤 조각만 들어가 내용 순서가 어긋나지 않음).
 //! - 여러 명령으로 된 연산(`InsertAt`·`ReplaceInserted`)은 WordCraft 편집 스냅숏으로 묶는다: 중간 명령이 거부되면 문서·선택·
 //!   실행 취소 기록을 그 연산 전으로 돌린다(`Session::edit_snapshot`/`restore`). 그래서 거부한 연산은 문서를 바꾸지 않았고,
-//!   성공한 연산만 revision으로 센다.
+//!   성공한 연산만 revision으로 센다. 스냅숏 밖인 어댑터 기억도 거부한 연산 전과 같다(T008 2차 안정화): 자리 표시는 성공한
+//!   뒤에만 쓰고, `restore`가 올린 WordCraft 판 때문에 그 전에 고칠 수 있던 바로 앞 넣기가 고칠 수 없게 되지 않는다.
 //! - 좌표는 WordCraft 쪽 좌표(pt, 쪽 왼쪽 위 기준)다. 화면 배율·DPR 변환은 프런트엔드가 한다.
 //! - 이 모듈은 패닉을 일으키지 않게 쓰지만, 엔진 안의 패닉은 호출하는 쪽(commands)이 잡아 세션을 failed로 돌린다.
 
@@ -483,15 +484,27 @@ impl DocxModel {
     }
 
     /// 여러 명령으로 된 연산을 하나로 실행한다. `work`가 거부되면(중간 명령 거부) WordCraft 편집 스냅숏으로 문서·선택·실행 취소
-    /// 기록·dirty를 그 전으로 돌린다(엔진 `Session::restore` 계약). 어댑터의 기억(`marks`·`last_insert`)은 스냅숏 밖이다.
+    /// 기록·dirty를 그 전으로 돌린다(엔진 `Session::restore` 계약). 어댑터의 기억(`marks`·`last_insert`)은 스냅숏 밖이므로
+    /// `work`는 그것을 바꾸지 않고(호출하는 쪽이 성공한 뒤에만 바꿈), 되돌린 뒤 여기서 맞춘다: `restore`는 WordCraft 판을 올리므로,
+    /// 연산 전에 고칠 수 있던 바로 앞 넣기는 그 판을 새 판으로 옮긴다. 문서가 스냅숏 그대로라 넣은 글자는 같은 자리에 있고,
+    /// 그 사이 다른 변경은 없다(판을 옮기는 것은 그 넣기가 연산 전에 유효했을 때뿐).
     fn atomic<T>(
         &mut self,
         work: impl FnOnce(&mut Self) -> Result<T, Rejected>,
     ) -> Result<T, Rejected> {
         let snapshot = self.session.edit_snapshot();
+        let recent = self.recent_insert().map(|last| last.rev);
         let result = work(self);
         if result.is_err() {
             self.session.restore(snapshot);
+            let rev = self.session.rev();
+            if let Some(last) = self
+                .last_insert
+                .as_mut()
+                .filter(|last| Some(last.rev) == recent)
+            {
+                last.rev = rev;
+            }
         }
         result
     }
@@ -514,12 +527,12 @@ impl DocxModel {
     }
 
     fn insert_at(&mut self, mark: u32, text: &str) -> Result<bool, Rejected> {
-        let index = self
+        let pos = self
             .marks
             .iter()
-            .position(|(id, _)| *id == mark)
+            .find(|(id, _)| *id == mark)
+            .map(|(_, pos)| pos.clone())
             .ok_or(Rejected)?;
-        let (_, pos) = self.marks.remove(index);
         let at = self.session.doc.clamp(&pos);
         let (anchor, focus) = (
             self.session.sel.anchor.clone(),
@@ -538,6 +551,8 @@ impl DocxModel {
             })?;
             Ok(changed)
         })?;
+        // 성공한 뒤에만 자리 표시를 쓴다(거부하면 문서가 그대로이므로 남겨 같은 자리에 다시 넣을 수 있다).
+        self.marks.retain(|(id, _)| *id != mark);
         self.last_insert = None;
         Ok(changed)
     }
@@ -769,6 +784,25 @@ impl DocxModel {
     #[cfg(test)]
     pub fn body_text(&self) -> String {
         self.session.doc.plain_text(StoryRef::Body)
+    }
+
+    /// 시험용: 어댑터의 기억(자리 표시 id, 아직 고칠 수 있는 바로 앞 넣기의 글자)과 WordCraft 판·dirty·실행 취소 가능 여부.
+    #[cfg(test)]
+    pub fn adapter_state(&self) -> (Vec<u32>, Option<String>, u64, bool, bool) {
+        (
+            self.marks.iter().map(|(id, _)| *id).collect(),
+            self.recent_insert().map(|last| last.text.clone()),
+            self.session.rev(),
+            self.session.dirty,
+            self.session.can_undo(),
+        )
+    }
+
+    /// 시험용: WordCraft 실행 취소·다시 실행(IPC로는 열지 않음, T010).
+    #[cfg(test)]
+    pub fn undo_redo(&mut self, redo: bool) -> bool {
+        let id = if redo { "edit.redo" } else { "edit.undo" };
+        self.session.run(id, &json!({})).is_ok()
     }
 
     /// 시험용: 지금 배치에서 위치의 커서 자리.

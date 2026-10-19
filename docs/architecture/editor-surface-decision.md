@@ -1146,10 +1146,69 @@ T007 체크박스는 그대로 둔다. 이 환경에서 필수 IME 7개와 보�
 
 - execCommand처럼 줄마다 나뉜 input은 input마다 연산 하나다(연산마다 문서 모델 복제·비교). 줄이 아주 많을 때의 시간은 재지 않았다(실제
   클립보드 붙여넣기는 input 하나라 조각 수만큼만). CRLF가 그 경로로 오면 WebKit이 `\r`을 글자로 남겨 빈 문단이 하나 더
-  생길 수 있다(execCommand 경로만).
+  생길 수 있다(execCommand 경로만, **2차 안정화에서 실측·고침**).
 - 문단 나누기는 `text.insert`의 Enter 의미(빈 목록 항목에서 목록을 끝냄)다. WordCraft의 붙여넣기 의미(`paste_text`)는 IPC로 열지 않았다.
 - 시험기 수정: `idle()`이 창 높이로 보이는 쪽을 정해, 여러 쪽 문서에서 스크롤 영역 아래(앱이 그리지 않는 자리)에 걸친 쪽을 기다리다 시간
   초과가 났다 → 앱과 같이 `.editor__scroll` 사각형으로. 넣기 뒤에는 revision이 바뀐 것을 본 뒤 기다린다(React 반영 전 상태를 읽던 경합).
   WebKitWebDriver 연결 끊김(앱·WebProcess는 살아 있음)이 weston 실행 2번·Xvfb 1번 있었다(T008 기록과 같은 현상, 다시 실행해 통과).
-- 화면 canvas 2D 문맥 없음은 감지하지 않는다(화면 밖 래스터만). 백엔드 래스터 기억은 세션마다 4개(최대 4 × 64 MiB)이고 문서 수만큼 늘어난다.
+- 화면 canvas 2D 문맥 없음은 감지하지 않는다(화면 밖 래스터만, **2차 안정화에서 고침**). 백엔드 래스터 기억은 세션마다 4개(최대 4 × 64 MiB)이고 문서 수만큼 늘어난다.
 - 실제 GPU 데스크톱·Wayland IME·fcitx5·Windows/macOS는 확인하지 않았다(T007·T008과 같음). 그래서 체크박스 정책은 그대로다.
+
+## T008 2차 안정화: 화면 canvas 그리기·그림 수명·복합 연산 뒤 어댑터 기억·CRLF (2026-10-19)
+
+- 상태: **이 환경에서 구현·검증 완료(체크는 T007·T008과 같은 플랫폼 기준으로 보류)**. 기준 `3f8a885`(master, 작업 트리 깨끗, submodule
+  rhwp `1a76570`·wordcraft `fc41918` 그대로). W-A·IPC 권한(`DocxOp` 목록, 새 연산 없음)·revision 권한(`SessionRegistry`)·저장 없음은 그대로다.
+- 수정 전 확인: 새 회귀 시험을 수정 전 구현에 먼저 돌렸다 — Vitest 세션 시험 23개 중 22개, 표면 시험 11개 중 6개 실패(나머지는 바뀌지 않아야
+  하는 동작의 보호 시험: LF·CR·붙여넣기·다시 불러오기). Rust 새 시험 6개 중 5개 실패(나머지 하나는 끼어든 변경이 앞 넣기를 끝내는 보호 시험).
+  실제 앱도 수정 전 소스로 따로 빌드해 같은 탐침으로 비교했다(Xvfb X11, WebKitGTK 2.54.1).
+
+| 지적 | 판정 | 증거(수정 전) | 원인 | 수정 |
+|------|------|---------------|------|------|
+| A 화면 canvas 거짓 성공 | CONFIRMED DEFECT | 실제 앱: 문서에 붙은 canvas의 `getContext`가 `null`을 주게 한 뒤 키 하나 → 쪽 `data-current=true`, 실패 표시 없음, 입력 가능, 화면 픽셀은 앞 판 그대로. 문맥을 되돌려도 다시 그리지 않음(같은 판이라 painted로 건너뜀). Vitest: `null`이면 `firstPaintMs`가 남고, `getContext`·`drawImage` 예외는 `paint()` 밖으로 나감 | `paint()`가 `context?.drawImage` 뒤 결과와 상관없이 painted·첫 그림 시간을 기록 | 실제로 옮긴 뒤에만 painted·`firstPaintMs`. 실패는 백엔드 그림 실패(`failures`)와 따로 `paintFailures`에 센다(그 래스터·판, PNG를 다시 받지 않음). 실패한 canvas는 다음에 쪽 전체를 옮김. 같은 간격(250·500 ms)·`MAX_RENDER_ATTEMPTS`번 뒤 그 쪽을 그리지 못했다고 보이며 편집을 멈추고(보이던 조합은 한 번 확정), 다시 그리기·새 판에서 다시 옮김. 보이지 않는 쪽의 실패는 세지 않음. 쪽 `data-current`와 키 반영 시간은 화면에 옮긴 판(`isShown`) 기준 |
+| B 놓은 뒤 늦은 그림 | CONFIRMED DEFECT | 실제 앱: 다른 탭 표면이 쪽 전체 PNG 디코드를 기다리는 동안 원래 탭으로 돌아온 뒤 그 디코드를 끝내면, 놓은 표면의 세션에 850×1100 화면 밖 래스터가 다시 생김(표면 없이 메모리 유지). 띠 응답은 기준 래스터가 없어 버려짐(그래서 첫 탐침의 편집 뒤 탭 전환은 재현되지 않음). Vitest: 응답 전·디코드 중 놓기 뒤 래스터 부활, 옛 요청의 `finally`가 같은 키의 새 요청 기록을 지워 중복 요청, 늦은 거부가 다시 들어온 표면의 요청을 미룸, 늦은 세션 오류가 편집기를 failed로 | `releaseRendering()`이 epoch을 바꾸지 않고(편집 모델 수명), 요청 기록이 키만 가진 `Set` | 그림 수명 `renderLife`(놓을 때마다 +1)와 요청마다 토큰(`Map<key, request>`, 끝나면 자기 것만 지움). 응답 뒤·디코드 뒤마다 같은 epoch·그림 수명·ready인지 확인, 아니면 래스터·실패·알림을 바꾸지 않고 버림(그림은 닫음). epoch·불러오기 시도·그림 수명은 따로이며 놓기는 편집·조합·revision을 바꾸지 않음. 래스터 예산·띠 최적화 그대로 |
+| C1 거부한 `InsertAt`의 자리 표시 | CONTRACT DEFICIENCY(주입으로만) | Rust 주입(`caret.set`·`text.insert`·`select.range` 거부): 문서·선택·실행 취소·dirty는 되돌아오지만 자리 표시가 사라져 같은 자리에 다시 넣기 거부 | 넣기 전에 `marks.remove` | 성공한 뒤에만 지움(거부하면 문서가 스냅숏 그대로라 그 자리의 뜻도 그대로). 프런트엔드는 거부한 연산을 다시 보내지 않으므로 사용자 경로에서 드러나지는 않았다 |
+| C2 거부한 복합 연산 뒤 `last_insert` | CONTRACT DEFICIENCY(주입으로만) | Rust 주입: `ReplaceInserted` 실패 → `restore`가 WordCraft `rev()`를 올려 넣은 직후 그대로인 글자를 더는 고칠 수 없음. 거부한 `InsertAt`도 앞 넣기의 고치기·`Pointer.before_insert`를 막음 | `restore`(엔진 계약: 판을 올림, `session.rs` 확인)와 판으로 유효성을 보는 `recent_insert` | `atomic()`이 되돌린 뒤, **연산 전에 유효했던** 앞 넣기만 그 판을 새 판으로 옮김(문서가 스냅숏과 같으므로 넣은 글자가 그 자리에 있고 사이 변경이 없음). 그 뒤 문서를 바꾼 연산·성공한 복합 연산은 여전히 앞 넣기를 끝냄(시험). 무조건 고쳐 쓰지 않음 |
+| D 비동기 그림 경로의 예외 | CONFIRMED DEFECT | Vitest: 화면 밖 canvas 만들기·크기·`getContext`·`drawImage` 예외, 백엔드 호출 거부(reject)가 처리되지 않은 거부(unhandledRejection)가 되고 그림 실패로 세지 않음. 띠를 덮다 난 예외는 반쯤 덮은 래스터를 남김 | `.then(...).finally(...)`에 거부 처리 없음, `applyRender`에 예외 처리 없음 | `renderPage()`: 백엔드 거부 → `Protocol` 거부로, 디코드(동기 예외 포함) → 디코드 실패, `applyRender` 예외 → 그 쪽 래스터를 놓고 canvas 실패(다음은 쪽 전체). 기록은 `finally`에서 한 번, 실패 처리 자체의 예외는 마지막 `catch`가 이 요청만 끝냄. 시도 수는 같음(끝없는 재시도 없음) |
+| CRLF 나뉜 input | CONFIRMED DEFECT(실측) | 실제 앱 `execCommand('insertText', …)`: `가\r\n나` → input `insertText "가\r"`·`insertParagraph`·`insertText "나"` → 빈 문단 하나 더. `\r\n\r\n`은 둘 더, 끝의 `\r\n`도 하나 더. LF·LF 둘·CR만(input 하나)·실제 클립보드 붙여넣기(input 하나)는 맞음 | WebKit이 `\n`에서만 줄을 나눠 `\r`이 앞 조각에 글자로 남고, `textOps`가 그 `\r`을 문단 나누기로 바꾼 뒤 `insertParagraph`도 `\n`이 됨 | DOCX `paragraphBreaks`에서 `\r`로 끝난 `insertText` input **바로 다음 input**인 `insertParagraph`는 넣지 않음(다른 input·키·조합 시작·초점 잃음이 사이에 오면 잊음). 처음에는 같은 디스패치(microtask까지)로 묶었으나 실제 WebKit은 나눈 input 사이에 microtask를 돌려(실측) 고쳐지지 않았다 → 이벤트 순서로. 빈 줄은 줄이지 않음(연속 줄바꿈을 지우는 추정 없음). rhwp 동작 그대로 |
+
+### 검증(최종 소스)
+
+| 검사 | 결과 |
+|------|------|
+| `npm run typecheck`, `npm run lint`, `npm test`, `npm run build` | 오류 없음, Vitest 534개(26파일, 기준 500 + 34) |
+| `src-tauri`: `cargo fmt --check`, `cargo clippy --locked --all-targets -- -D warnings`, `cargo test --locked` | 통과, 단위 92(기준 86 + 6) + 통합 1, 측정 1개 `#[ignore]` |
+| `VITE_GEUL_TEST_HOOKS=1 npm run tauri build -- --debug --no-bundle` | 통과(최종 소스) |
+| `wordcraft_poc.py --font-home …`(Xvfb X11 DPR 1.041) | 52/52(기존 44 + 새 8: CRLF·CRLF 빈 줄·끝의 CRLF·LF 빈 줄 문단 구조, 화면 canvas 문맥 없음 표시·멈춤, 다시 PNG 없이 다시 그림, 탭 전환 중 늦은 디코드가 래스터를 되살리지 않음·돌아온 탭 지금 판, 돌아온 탭 입력) 2회. 그 밖의 3회는 WebKitWebDriver 연결 끊김(아래) |
+| 같은 명령(헤드리스 weston DPR 1) | 51/51(실제 클립보드 항목은 키보드 seat가 없어 건너뜀) |
+| 같은 명령, 수정 전 소스로 빌드한 앱(Xvfb) | 새 CRLF 항목 실패(`["", "나x…"]`, revision +3, 빈 문단 하나 더) — 탐침(아래)과 같은 결과 |
+| `tauri_smoke.py`(weston) · `rhwp_poc.py`(weston) | 62/62 · 64/64 |
+| `wordcraft_poc.py --ime`(Xvfb + ibus 1.5.33 + ibus-hangul 1.5.5, xdotool 실제 키) | 필수 7/7 PASS 3회, 선택: 탭 전환·선택 위 조합 확정·선택 위 조합 취소 PASS 3회, 창 초점 이동 NOT RUN(다른 창을 주지 않음) |
+| `rhwp_poc.py --ime`(같은 환경, `textInput.ts`를 같이 씀) | 필수 7/7 PASS 2회, 탭 전환 PASS 2회, 창 초점 NOT RUN |
+
+실제 앱 탐침(수정 전·뒤 같은 스크립트, Xvfb): 화면 canvas 문맥 없음 — 수정 전 `current=true`·실패 표시 없음·입력 가능·화면 그대로·문맥을 되돌려도
+다시 그리지 않음 / 수정 뒤 `current=false`·실패 표시·입력 멈춤, 다시 그리기 시도 3번, 되돌린 뒤 다시 그리기로 화면이 실제로 바뀜. 탭 전환 중 늦은
+쪽 전체 디코드 — 수정 전 놓은 표면에 850×1100 래스터가 다시 생김 / 수정 뒤 0개(그림은 닫음). CRLF — 위 표.
+
+### 측정
+
+- 키 반영(키만 친 시나리오 80–81개, 간격 150 ms): 수정 뒤 Xvfb p95 54·55·57·59·71 ms(5번 실행), weston 46 ms. 같은 날 수정 전 소스 앱 Xvfb 55 ms.
+  1차 안정화 기록은 54·47 ms. 화면 그리기 경로에 더한 것은 쪽마다 Map 조회 하나와 try뿐이고 띠만 옮기기는 그대로다(화면 canvas가 실패한
+  뒤에만 쪽 전체). 키만 친 시나리오의 값이며 모든 부하에서 150 ms를 보장하지 않는다(같은 실행의 전체 표본 p95는 212–327 ms, 다른 작업과 겹침).
+- 여러 쪽 스크롤: 297쪽(Xvfb) 화면 canvas 35개 32,725,000 px, 122쪽(weston) 38개 32,744,448 px — 128 MiB 예산 그대로(1차 안정화와 같은 값).
+
+### 시험기·환경에서 알게 된 것(앱 동작이 아님)
+
+- 세션 D-Bus 없이 Xvfb·weston을 띄우면 GLib가 `dbus-launch --autolaunch`로 세션 버스를 띄워 시나리오 뒤에 남고, 시험기의 "남은 프로세스" 검사가
+  실패한다. 시험 실행을 `dbus-run-session`으로 감싸면 없다(시험 환경 보정).
+- WebKitWebDriver 연결 끊김(`Remote end closed connection`, 앱은 살아 있음): Xvfb 실행 7번 중 수정 뒤 앱 3번(297쪽 스크롤 2번, 시작 탐침 1번),
+  수정 전 앱 1번(지연 시나리오). 1차 안정화 기록(weston 2번·Xvfb 1번)과 같은 현상이며 수정 전 앱에서도 일어나 이번 수정 때문이라는 근거는 없다.
+- `__TAURI_INTERNALS__.invoke`는 바꿀 수 없어(writable false) 실제 앱에서는 IPC 응답 대신 PNG 디코드(`createImageBitmap`)를 붙잡아 늦은 응답을 재현했다.
+  백엔드 응답 자체를 붙잡는 경우는 Vitest로만 확인했다.
+
+### 남은 한계
+
+- 화면 canvas 실패 재현은 `getContext`를 막는 주입이다. 실제 GPU 프로세스 손실·메모리 부족에서 WebKit이 어떻게 실패하는지는 확인하지 않았다.
+- CRLF 규칙은 "`\r`로 끝난 `insertText` input 바로 다음 input인 `insertParagraph`"다. 같은 순서를 다른 경로(프로그램이 `\r`로 끝난 글자를 넣고
+  키 없이 따로 문단 나누기를 보냄)로 만들면 그 문단 나누기도 넣지 않는다(그 `\r`이 이미 문단을 나눔). WebKitGTK 2.54 밖의 나누기 방식은 보지 않았다.
+- 거부한 복합 연산은 프런트엔드가 다시 보내지 않는다(거부 수만 보임). C1·C2 수정은 같은 요청의 뒤 연산과 엔진 계약을 위한 것이다.
+- 실제 GPU 데스크톱·Wayland IME·fcitx5·Windows/macOS는 확인하지 않았다(T007·T008과 같음). 체크박스 정책은 그대로다.

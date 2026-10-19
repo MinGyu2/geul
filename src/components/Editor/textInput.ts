@@ -19,6 +19,10 @@ export interface TextInputHandlers {
    * data 없는 문단 나누기 input(insertParagraph·insertLineBreak)을 앞 beforeinput 없이 와도 "\n" 하나로 넣는다(T008 안정화, DOCX
    * 표면만). 실측 WebKitGTK 2.54: 줄바꿈이 있는 글자 넣기(execCommand insertText)는 beforeinput 하나 뒤에 insertText·insertParagraph
    * input을 줄마다 나눠 보내, 비교할 앞 상태가 없는 insertParagraph가 버려졌다(줄이 합쳐짐). 끄면(rhwp) 동작은 그대로다.
+   * 나눌 때 CRLF의 \r은 앞 조각 끝에 글자로 남는다(실측 2차 안정화: "가\r\n나" → insertText "가\r", insertParagraph, insertText "나",
+   * 문단 하나가 더 생김). 그 \r은 넣는 쪽(textOps)이 문단 나누기로 바꾸므로, 바로 다음 input으로 온 insertParagraph는 그 줄바꿈의
+   * 나머지 반이다(넣지 않음). WebKit은 나눈 input 사이에 microtask를 돌리므로(실측) 시간이 아니라 이벤트 순서로 정한다: 다른 input·
+   * 키·조합 시작·초점 잃음이 사이에 오면 잊는다. 빈 줄(LF 둘)은 그대로 둘이다.
    */
   paragraphBreaks?: boolean;
 }
@@ -53,7 +57,10 @@ const NAVIGATION_KEYS = new Set(["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDow
 export function attachTextInput(input: HTMLTextAreaElement, controller: ImeInput, handlers: TextInputHandlers): () => void {
   const { handleKey, mark } = handlers;
   let pendingNavigation: KeyboardEvent | null = null;
+  /** 바로 앞 input이 \r로 끝난 insertText였고 그 뒤 키·조합·초점 변화가 없다(paragraphBreaks). */
+  let afterCarriageReturn = false;
   const onKeyDown = (event: KeyboardEvent) => {
+    afterCarriageReturn = false;
     controller.keyDown(event.isComposing || event.keyCode === 229);
     if (event.ctrlKey || event.metaKey || event.altKey) return; // 단축키는 명령 레지스트리(T010) 몫
     if (event.isComposing || event.keyCode === 229) {
@@ -63,6 +70,7 @@ export function attachTextInput(input: HTMLTextAreaElement, controller: ImeInput
     if (handleKey(event)) event.preventDefault();
   };
   const onCompositionStart = (event: CompositionEvent) => {
+    afterCarriageReturn = false;
     mark(event);
     controller.compositionStart();
   };
@@ -90,6 +98,8 @@ export function attachTextInput(input: HTMLTextAreaElement, controller: ImeInput
     const { inputType = "", isComposing = false, data = null } = event as InputEvent;
     const before = snapshot;
     snapshot = null;
+    const crlf = afterCarriageReturn && inputType === "insertParagraph";
+    afterCarriageReturn = false;
     if (REPLACEMENT_INPUT_TYPES.has(inputType)) return; // 막지 못했어도(취소 불가) 문서는 그대로
     mark(event);
     const composing = handlers.composing() || isComposing;
@@ -97,8 +107,9 @@ export function attachTextInput(input: HTMLTextAreaElement, controller: ImeInput
     if (composing || IME_INPUT_TYPES.has(inputType)) text = data ?? "";
     else if (!inputType.startsWith("insert")) text = "";
     else if (data !== null) text = data;
-    else if (handlers.paragraphBreaks && PARAGRAPH_INPUT_TYPES.has(inputType)) text = "\n";
+    else if (handlers.paragraphBreaks && PARAGRAPH_INPUT_TYPES.has(inputType)) text = crlf ? "" : "\n";
     else text = insertedText(before, input.value);
+    afterCarriageReturn = !!handlers.paragraphBreaks && !composing && inputType === "insertText" && text.endsWith("\r");
     controller.input(text, inputType, isComposing);
     if (!composing && !handlers.composing() && input.value.length > TRIM_LENGTH) input.value = "";
   };
@@ -116,6 +127,7 @@ export function attachTextInput(input: HTMLTextAreaElement, controller: ImeInput
   input.addEventListener("input", onInput);
   input.addEventListener("compositionend", onCompositionEnd);
   const onBlur = () => {
+    afterCarriageReturn = false;
     controller.blur();
     input.value = "";
   };

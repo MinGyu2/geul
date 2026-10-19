@@ -35,10 +35,20 @@
 //   멈춤은 그 쪽이 지금 판으로 그려지거나 보이지 않게 될 때까지 이어진다: 멈추며 확정한 조합·보내던 편집으로 판이 바뀌어도
 //   풀리지 않고 새 판으로 다시 시도한다(풀리면 같은 조합의 늦은 IME 이벤트가 새 조합으로 한 번 더 들어감). retryRendering()은
 //   시도 수를 처음으로 돌린다.
+// - 화면 canvas 그리기(T008 2차 안정화): 화면 밖 래스터가 지금 판이어도 화면 canvas에 옮기지 못하면(문맥 없음·문맥이나
+//   drawImage 예외) 그 canvas는 그 판을 보인다고 기록하지 않고, 첫 그림 시간도 실제로 그린 때만 남긴다. 실패는 백엔드 그림
+//   실패와 따로 센다(PNG를 다시 받지 않고 같은 래스터를 다시 옮겨 봄). 같은 간격·MAX_RENDER_ATTEMPTS번까지 다시 그려 보고,
+//   그래도 못 그리면 그 쪽을 그리지 못했다고 보이며 편집을 멈춘다(멈춤은 그 쪽을 화면에 그리거나 보이지 않게 될 때까지).
+//   보이지 않는 쪽의 실패는 세지 않는다(다음 그리기에서 다시 옮김). 실패한 canvas는 다음에 쪽 전체를 옮긴다.
+// - 그림 수명(T008 2차 안정화): releaseRendering()은 그림 수명(renderLife)을 바꾼다. 그 전에 보낸 요청의 응답·디코드 결과는
+//   래스터·실패 상태·알림을 바꾸지 않고(받은 그림은 닫음), 끝난 요청은 자기 요청 기록만 지운다(놓은 뒤 같은 키로 다시 보낸
+//   요청을 지우지 않음). 편집 모델의 epoch·불러오기 시도와 따로다: 그림 수명이 바뀌어도 편집·조합·revision은 그대로다.
+// - 그림 경로의 예외(T008 2차 안정화): 백엔드 호출 거부는 Protocol 거부로, 디코드 예외는 디코드 실패로, 화면 밖 canvas
+//   만들기·크기·문맥·그리기 예외는 그 래스터를 놓고 canvas 실패로 센다(처리되지 않은 거부 없음, 시도 수는 위와 같음).
 // - 래스터 예산(T008 안정화): 화면 밖 래스터는 MAX_RETAINED_PIXELS까지 기억하고, 넘으면 지금 요청한(보이는) 쪽이 아닌 것부터
 //   오래 쓰지 않은 순으로 놓는다(canvas 크기 0). 놓은 쪽의 화면 canvas도 다음 그리기에서 놓는다. 표면이 사라지면
 //   releaseRendering()으로 모두 놓는다(T007 rhwp와 같음). 백엔드 래스터 기억은 세션마다 4개(engine.rs MAX_RASTERS).
-import type { DocxBackend, DocxOp, DocxRoundTrip, DocxView, MoveTarget } from "../../../adapters/docx";
+import type { DocxBackend, DocxOp, DocxRender, DocxRoundTrip, DocxView, MoveTarget } from "../../../adapters/docx";
 import { MAX_DOCX_OPS } from "../../../adapters/docx";
 import type { DocumentError, Result, SessionInfo } from "../../../adapters/contract";
 import type { DocumentSessions } from "../../../adapters/sessions";
@@ -140,7 +150,12 @@ export class DocxEditorSession implements ImeSession {
   private readonly rasters = new Map<number, PageRaster>();
   /** canvas마다 마지막으로 옮긴 래스터와 그 판. */
   private readonly painted = new WeakMap<HTMLCanvasElement, { raster: PageRaster; revision: number }>();
-  private readonly rendering = new Set<string>();
+  /** 그림 수명(releaseRendering마다 늘어남). 그 전 수명에 보낸 요청의 결과는 쓰지 않는다. */
+  private renderLife = 0;
+  /** 보내는 중인 그림 요청(key → 그 요청). 끝난 요청은 자기 기록일 때만 지운다. */
+  private readonly rendering = new Map<string, object>();
+  /** 쪽마다 화면 canvas 그리기의 실패(그 래스터·판에 대한 시도). 화면 밖 래스터의 실패(failures)와 따로 센다. */
+  private readonly paintFailures = new Map<number, { raster: PageRaster; revision: number; attempts: number; retryAt: number; blocking: boolean }>();
   /** 쪽마다 지금 판(key = 시도:판:배율) 그림의 실패. */
   private readonly failures = new Map<number, { key: string; attempts: number; retryAt: number; reason: RenderFailureReason; blocking: boolean }>();
   /** 마지막으로 그림을 요청한 쪽(보이는 쪽·커서 쪽, 래스터 예산에서 놓지 않음)과 배율. */
@@ -498,10 +513,15 @@ export class DocxEditorSession implements ImeSession {
     return this.rasters.get(page)?.revision ?? null;
   }
 
-  /** 쪽 그림이 지금 모델·배율의 것인지. */
+  /** 쪽 그림(화면 밖 래스터)이 지금 모델·배율의 것인지. */
   isCurrent(page: number, scale: number): boolean {
     const raster = this.rasters.get(page);
     return !!raster && raster.generation === this.generation && raster.revision === this.revision && raster.scale === scale;
+  }
+
+  /** 쪽 그림이 지금 판이고 화면 canvas에 옮기다 실패하지 않았는지(보이는 쪽은 paint 뒤 화면에 보이는 판). */
+  isShown(page: number, scale: number): boolean {
+    return this.isCurrent(page, scale) && !this.paintFailures.has(page);
   }
 
   /** 그림 실패의 비교 키(시도:판:배율). */
@@ -511,13 +531,15 @@ export class DocxEditorSession implements ImeSession {
 
   /** 다시 시도해도 그리지 못한(보이는) 쪽. 지금 판으로 그려질 때까지 편집을 멈춘다. */
   get renderFailedPages(): number[] {
-    if (this.failures.size === 0) return [];
-    return [...this.failures].filter(([, failure]) => failure.blocking).map(([page]) => page).sort((a, b) => a - b);
+    if (this.failures.size === 0 && this.paintFailures.size === 0) return [];
+    const pages = new Set<number>();
+    for (const map of [this.failures, this.paintFailures]) for (const [page, failure] of map) if (failure.blocking) pages.add(page);
+    return [...pages].sort((a, b) => a - b);
   }
 
-  /** 그리지 못한 쪽을 처음부터 다시 받는다(사용자가 다시 그리기를 고름). 그려질 때까지 편집은 멈춘 채다. */
+  /** 그리지 못한 쪽을 처음부터 다시 받고 화면에 다시 옮긴다(사용자가 다시 그리기를 고름). 그려질 때까지 편집은 멈춘 채다. */
   retryRendering() {
-    for (const failure of this.failures.values()) {
+    for (const failure of [...this.failures.values(), ...this.paintFailures.values()]) {
       failure.attempts = 0;
       failure.retryAt = 0;
     }
@@ -533,10 +555,10 @@ export class DocxEditorSession implements ImeSession {
     this.scale = scale;
     this.wanted = new Set(pages);
     // 보이지 않게 된 쪽의 실패는 잊는다(다시 보이면 그때의 판으로 새로 받는다).
-    for (const page of this.failures.keys()) if (!this.wanted.has(page)) this.failures.delete(page);
+    for (const map of [this.failures, this.paintFailures]) for (const page of map.keys()) if (!this.wanted.has(page)) map.delete(page);
     for (const page of pages) {
       if (this.isCurrent(page, scale)) continue;
-      const { generation, revision, epoch } = { generation: this.generation, revision: this.revision, epoch: this.epoch };
+      const { generation, revision } = { generation: this.generation, revision: this.revision };
       const failureKey = this.renderKey(scale);
       const failure = this.failures.get(page);
       if (failure && failure.key !== failureKey) {
@@ -548,35 +570,60 @@ export class DocxEditorSession implements ImeSession {
       const base = held && held.generation === generation && held.scale === scale ? held.revision : undefined;
       const key = `${generation}:${revision}:${page}:${scale}:${base ?? ""}`;
       if (this.rendering.has(key)) continue;
-      this.rendering.add(key);
-      void this.backend.render(this.sessionId, generation, revision, page, scale, base).then(async (result) => {
-        // 옛 시도·이미 멈춘 편집기(failed·closed: 그 원인을 늦은 그림 오류로 덮지 않음)의 응답은 버린다.
-        if (epoch !== this.epoch || this.status.kind !== "ready") return;
-        if (!result.ok) {
-          this.renderRejected(page, failureKey, revision, result.error);
-          return;
-        }
-        const { base: from, y, height, png } = result.value;
-        const bitmap = height > 0 ? await this.decode(png).catch(() => null) : null;
-        if (epoch !== this.epoch) {
-          bitmap?.close();
-          return;
-        }
-        if (height > 0 && !bitmap) {
-          this.renderFailed(page, failureKey, "decode");
-          return;
-        }
+      const request = {};
+      this.rendering.set(key, request);
+      void this.renderPage(page, { generation, revision, scale, base, failureKey })
+        .catch(() => {
+          // 실패를 처리하다 난 예외(알림 구독자 등): 이 요청만 끝낸다. 다시 시도 여부는 실패 기록이 정한다.
+        })
+        .finally(() => {
+          if (this.rendering.get(key) === request) this.rendering.delete(key);
+        });
+    }
+  }
+
+  /**
+   * 쪽 하나를 받아 래스터에 반영한다. 응답 뒤·디코드 뒤마다 이 요청이 아직 쓸모 있는지 본다: 옛 시도(epoch)·놓은 그림 수명·이미
+   * 멈춘 편집기(failed·closed: 그 원인을 늦은 그림 오류로 덮지 않음)의 결과는 래스터·실패 상태를 바꾸지 않고 버린다.
+   */
+  private async renderPage(page: number, request: { generation: number; revision: number; scale: number; base: number | undefined; failureKey: string }) {
+    const { generation, revision, scale, base, failureKey } = request;
+    const { epoch, renderLife } = this;
+    const live = () => epoch === this.epoch && renderLife === this.renderLife && this.status.kind === "ready";
+    let result: Result<DocxRender>;
+    try {
+      result = await this.backend.render(this.sessionId, generation, revision, page, scale, base);
+    } catch {
+      result = { ok: false, error: { code: "Protocol" } }; // IPC 호출 자체가 거부됨
+    }
+    if (!live()) return;
+    if (!result.ok) {
+      this.renderRejected(page, failureKey, revision, result.error);
+      return;
+    }
+    const { base: from, y, height, png } = result.value;
+    let bitmap: ImageBitmap | null = null;
+    try {
+      if (height > 0) {
         try {
-          const applied = this.applyRender(page, { generation, revision, scale, from, y, height, bitmap });
-          if (applied === "applied") {
-            if (this.failures.get(page)?.key === failureKey) this.failures.delete(page); // 멈춤도 풀린다
-            this.trimRasters();
-            this.emit();
-          } else if (applied !== "stale") this.renderFailed(page, failureKey, applied);
-        } finally {
-          bitmap?.close();
+          bitmap = await this.decode(png);
+        } catch {
+          bitmap = null;
         }
-      }).finally(() => this.rendering.delete(key));
+      }
+      if (!live()) return;
+      if (height > 0 && !bitmap) {
+        this.renderFailed(page, failureKey, "decode");
+        return;
+      }
+      const applied = this.applyRender(page, { generation, revision, scale, from, y, height, bitmap });
+      if (applied === "applied") {
+        if (this.failures.get(page)?.key === failureKey) this.failures.delete(page); // 멈춤도 풀린다
+        this.trimRasters();
+        this.emit();
+      } else if (applied !== "stale") this.renderFailed(page, failureKey, applied);
+    } finally {
+      bitmap?.close();
     }
   }
 
@@ -603,48 +650,70 @@ export class DocxEditorSession implements ImeSession {
     const blocking = attempts >= MAX_RENDER_ATTEMPTS || (previous?.blocking ?? false);
     this.failures.set(page, { key, attempts, reason, retryAt: performance.now() + delay, blocking });
     if (attempts < MAX_RENDER_ATTEMPTS) {
-      const epoch = this.epoch;
-      setTimeout(() => {
-        if (epoch === this.epoch) this.emit(); // 표면이 다시 요청한다
-      }, delay);
+      this.emitLater(delay); // 표면이 다시 요청한다
       return;
     }
     this.emit();
   }
 
+  /** 간격 뒤 알린다(같은 모델·그림 수명일 때만). 표면이 다시 요청하거나 다시 그린다. */
+  private emitLater(delay: number) {
+    const { epoch, renderLife } = this;
+    setTimeout(() => {
+      if (epoch === this.epoch && renderLife === this.renderLife) this.emit();
+    }, delay);
+  }
+
   /**
    * 받은 쪽 그림(전체 또는 띠)을 쪽 래스터에 반영한다. 옛 판이거나 띠의 기준 판이 지금 래스터가 아니면 버린다(stale, 다음 요청이
-   * 맞춘다). canvas 문맥이 없거나 크기가 맞지 않으면 반영하지 않고 실패로 알린다.
+   * 맞춘다). canvas 문맥이 없거나 크기가 맞지 않으면 반영하지 않고 실패로 알린다. canvas 만들기·크기·문맥·그리기가 예외를 내면
+   * 그 쪽 래스터를 놓는다(반쯤 덮었거나 크기를 바꿔 지워졌을 수 있음: 다음 요청은 쪽 전체를 받는다).
    */
   private applyRender(page: number, render: { generation: number; revision: number; scale: number; from: number | null; y: number; height: number; bitmap: ImageBitmap | null }): "applied" | "stale" | "canvas" | "size" {
     const { generation, revision, scale, from, y, height, bitmap } = render;
     const current = this.rasters.get(page);
-    if (from === null) {
-      if (!bitmap) return "size";
-      if (bitmap.height !== height || bitmap.width === 0) return "size";
-      if (current && current.generation === generation && current.scale === scale && current.revision >= revision) return "stale";
-      const backing = current?.backing ?? this.createCanvas();
-      if (backing.width !== bitmap.width) backing.width = bitmap.width;
-      if (backing.height !== bitmap.height) backing.height = bitmap.height;
-      const context = backing.getContext("2d");
-      if (!context) {
-        if (current) this.rasters.delete(page);
+    let backing: HTMLCanvasElement | null = null;
+    const drop = () => {
+      if (this.rasters.get(page)?.backing === backing) this.rasters.delete(page);
+      if (backing) {
         backing.width = 0;
         backing.height = 0;
-        return "canvas";
       }
-      context.drawImage(bitmap, 0, 0);
-      this.rasters.delete(page); // 최근에 쓴 것을 맨 뒤로(래스터 예산)
-      this.rasters.set(page, { generation, revision, scale, backing, width: bitmap.width, height: bitmap.height, bands: [], full: revision });
-      return "applied";
+    };
+    try {
+      if (from === null) {
+        if (!bitmap) return "size";
+        if (bitmap.height !== height || bitmap.width === 0) return "size";
+        if (current && current.generation === generation && current.scale === scale && current.revision >= revision) return "stale";
+        backing = current?.backing ?? this.createCanvas();
+        if (backing.width !== bitmap.width) backing.width = bitmap.width;
+        if (backing.height !== bitmap.height) backing.height = bitmap.height;
+        const context = backing.getContext("2d");
+        if (!context) {
+          drop();
+          return "canvas";
+        }
+        context.drawImage(bitmap, 0, 0);
+        this.rasters.delete(page); // 최근에 쓴 것을 맨 뒤로(래스터 예산)
+        this.rasters.set(page, { generation, revision, scale, backing, width: bitmap.width, height: bitmap.height, bands: [], full: revision });
+        return "applied";
+      }
+      if (!current || current.generation !== generation || current.scale !== scale || current.revision !== from) return "stale";
+      if (bitmap) {
+        if (bitmap.width !== current.width || bitmap.height !== height || y + height > current.height) return "size";
+        backing = current.backing;
+        const context = backing.getContext("2d");
+        if (!context) return "canvas";
+        context.drawImage(bitmap, 0, y);
+      } else if (height !== 0) return "size";
+    } catch {
+      try {
+        drop();
+      } catch {
+        this.rasters.delete(page); // 크기도 바꿀 수 없음: 기억에서만 뺀다
+      }
+      return "canvas";
     }
-    if (!current || current.generation !== generation || current.scale !== scale || current.revision !== from) return "stale";
-    if (bitmap) {
-      if (bitmap.width !== current.width || bitmap.height !== height || y + height > current.height) return "size";
-      const context = current.backing.getContext("2d");
-      if (!context) return "canvas";
-      context.drawImage(bitmap, 0, y);
-    } else if (height !== 0) return "size";
     current.bands.push({ from, to: revision, y, height });
     if (current.bands.length > MAX_BANDS) current.bands.shift();
     current.revision = revision;
@@ -669,7 +738,8 @@ export class DocxEditorSession implements ImeSession {
 
   /**
    * 쪽 래스터를 canvas에 옮긴다. 이 canvas가 같은 래스터의 앞 판을 보이고 있으면 그 뒤 바뀐 띠만 옮기고(키 하나에 Canvas 전체를
-   * 다시 합성하지 않음, T007의 띠 다시 그리기와 같은 이유), 아니면 전체를 옮긴다. 처음 그린 시간을 기록한다.
+   * 다시 합성하지 않음, T007의 띠 다시 그리기와 같은 이유), 아니면 전체를 옮긴다. 실제로 옮겼을 때만 그 판을 보인다고 기록하고
+   * 처음 그린 시간을 남긴다. 옮기지 못하면(문맥 없음·예외) 화면 그리기 실패로 세고, 간격 뒤 같은 래스터를 다시 옮겨 본다.
    */
   paint(page: number, canvas: HTMLCanvasElement) {
     const raster = this.rasters.get(page);
@@ -684,31 +754,75 @@ export class DocxEditorSession implements ImeSession {
     }
     const shown = this.painted.get(canvas);
     if (shown && shown.raster === raster && shown.revision === raster.revision) return;
-    const context = canvas.getContext("2d");
-    // 크기가 같으면 bitmap을 다시 잡지 않는다(width를 다시 넣으면 저장소를 새로 잡고 Canvas 전체를 다시 합성).
-    const resized = canvas.width !== raster.width || canvas.height !== raster.height;
-    if (canvas.width !== raster.width) canvas.width = raster.width;
-    if (canvas.height !== raster.height) canvas.height = raster.height;
-    const since = shown && shown.raster === raster && !resized && shown.revision >= raster.full
-      ? raster.bands.findIndex((band) => band.from === shown.revision)
-      : -1;
-    if (since >= 0) {
-      const bands = raster.bands.slice(since);
-      const top = Math.min(...bands.map((band) => band.y));
-      const bottom = Math.max(...bands.map((band) => band.y + band.height));
-      if (bottom > top) context?.drawImage(raster.backing, 0, top, raster.width, bottom - top, 0, top, raster.width, bottom - top);
-    } else {
-      context?.drawImage(raster.backing, 0, 0);
+    const failure = this.paintFailures.get(page);
+    const retrying = failure && failure.raster === raster && failure.revision === raster.revision;
+    // 같은 래스터·판을 이미 다 시도했거나 간격 전이면 기다린다(새 판이면 다시 시도한다).
+    if (retrying && (failure.attempts >= MAX_RENDER_ATTEMPTS || performance.now() < failure.retryAt)) return;
+    if (!this.copy(raster, canvas, shown)) {
+      this.painted.delete(canvas); // 지워졌거나 반쯤 옮겼을 수 있다: 다음에는 쪽 전체
+      this.paintFailed(page, raster);
+      return;
     }
     this.painted.set(canvas, { raster, revision: raster.revision });
+    let changed = this.paintFailures.delete(page); // 멈춤도 풀린다
     if (this.firstPaintMs === null) {
       this.firstPaintMs = performance.now() - this.loadStartedAt;
-      this.emit(); // 처음 한 번(진단 표시)
+      changed = true; // 처음 한 번(진단 표시)
+    }
+    if (changed) this.emit();
+  }
+
+  /** 래스터를 화면 canvas에 옮긴다(앞 판을 보이면 그 뒤 띠만). 문맥이 없거나 예외가 나면 false. */
+  private copy(raster: PageRaster, canvas: HTMLCanvasElement, shown: { raster: PageRaster; revision: number } | undefined): boolean {
+    try {
+      const context = canvas.getContext("2d");
+      if (!context) return false;
+      // 크기가 같으면 bitmap을 다시 잡지 않는다(width를 다시 넣으면 저장소를 새로 잡고 Canvas 전체를 다시 합성).
+      const resized = canvas.width !== raster.width || canvas.height !== raster.height;
+      if (canvas.width !== raster.width) canvas.width = raster.width;
+      if (canvas.height !== raster.height) canvas.height = raster.height;
+      const since = shown && shown.raster === raster && !resized && shown.revision >= raster.full
+        ? raster.bands.findIndex((band) => band.from === shown.revision)
+        : -1;
+      if (since >= 0) {
+        const bands = raster.bands.slice(since);
+        const top = Math.min(...bands.map((band) => band.y));
+        const bottom = Math.max(...bands.map((band) => band.y + band.height));
+        if (bottom > top) context.drawImage(raster.backing, 0, top, raster.width, bottom - top, 0, top, raster.width, bottom - top);
+      } else {
+        context.drawImage(raster.backing, 0, 0);
+      }
+      return true;
+    } catch {
+      return false;
     }
   }
 
-  /** 모든 쪽 래스터를 놓는다(표면이 사라짐·다시 불러오기). 다시 요청하면 쪽 전체를 새로 받는다. */
+  /**
+   * 쪽 래스터를 화면 canvas에 옮기지 못했다(PNG는 다시 받지 않음). 보이는 쪽만 센다: 간격을 두고 MAX_RENDER_ATTEMPTS번까지 다시
+   * 옮겨 보고, 다 쓰면 그리지 못한 쪽으로 보이며 편집을 멈춘다. 멈춘 뒤 판이 바뀌면 새 판으로 다시 시도하되 그릴 때까지 멈춘 채다.
+   */
+  private paintFailed(page: number, raster: PageRaster) {
+    if (!this.wanted.has(page)) return; // 보이지 않는 쪽: 다음 그리기에서 다시 옮긴다(멈추지 않음)
+    const previous = this.paintFailures.get(page);
+    const same = previous && previous.raster === raster && previous.revision === raster.revision;
+    const attempts = same ? previous.attempts + 1 : 1;
+    const stops = attempts >= MAX_RENDER_ATTEMPTS && !previous?.blocking;
+    // 편집을 멈추기 전에 보이는 조합은 그 자리에 확정한다(백엔드 그림 실패와 같음).
+    if (stops && this.composition) this.endComposition(this.composition.text);
+    const blocking = attempts >= MAX_RENDER_ATTEMPTS || (previous?.blocking ?? false);
+    const delay = RENDER_RETRY_MS * attempts;
+    this.paintFailures.set(page, { raster, revision: raster.revision, attempts, retryAt: performance.now() + delay, blocking });
+    if (attempts < MAX_RENDER_ATTEMPTS) this.emitLater(delay); // 표면이 다시 그린다
+    this.emit();
+  }
+
+  /**
+   * 모든 쪽 래스터를 놓는다(표면이 사라짐·다시 불러오기). 다시 요청하면 쪽 전체를 새로 받는다. 그림 수명을 바꿔 보내던 요청의 늦은
+   * 결과가 래스터를 다시 만들거나 실패로 세지 않게 한다(편집·조합·revision은 그대로).
+   */
   releaseRendering() {
+    this.renderLife += 1;
     for (const raster of this.rasters.values()) {
       raster.backing.width = 0;
       raster.backing.height = 0;
@@ -716,6 +830,7 @@ export class DocxEditorSession implements ImeSession {
     this.rasters.clear();
     this.rendering.clear();
     this.failures.clear();
+    this.paintFailures.clear();
     this.wanted = new Set();
   }
 

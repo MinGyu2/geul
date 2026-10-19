@@ -6,9 +6,10 @@ import { describe, expect, it, vi } from "vitest";
 import { LanguageProvider } from "../../../language/LanguageContext";
 import { MAX_RENDER_ATTEMPTS, RENDER_RETRY_MS } from "./DocxEditorSession";
 import { DocxSurface } from "./DocxSurface";
-import { flush, readyDocx } from "./testing";
+import { flush, readyDocx, stubScreenContext } from "./testing";
 
 async function mounted(text?: string[]) {
+  stubScreenContext(); // jsdom canvas에는 2D 문맥이 없다
   const t = await readyDocx(text);
   const view = render(
     <LanguageProvider language="ko" onLanguageChange={() => {}}>

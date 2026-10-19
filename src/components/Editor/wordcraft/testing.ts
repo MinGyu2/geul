@@ -6,6 +6,7 @@
 import type { DocumentBackend } from "../../../adapters/backend";
 import type { DocumentError, Result, SessionInfo } from "../../../adapters/contract";
 import type { DocxBackend, DocxEdited, DocxOp, DocxRender, DocxRoundTrip, DocxState, DocxView } from "../../../adapters/docx";
+import { vi } from "vitest";
 import { DocumentSessions } from "../../../adapters/sessions";
 import { DocxEditorSession } from "./DocxEditorSession";
 
@@ -367,6 +368,18 @@ export function recordingCanvas() {
   const draws: unknown[][] = [];
   const canvas = { width: 0, height: 0, getContext: () => ({ drawImage: (...args: unknown[]) => draws.push(args) }) };
   return { canvas: canvas as unknown as HTMLCanvasElement, draws };
+}
+
+/**
+ * 표면 시험의 화면 canvas 2D 문맥(jsdom canvas에는 문맥이 없어 화면 그리기 실패로 센다, T008 2차 안정화). 그린 것을 돌려준다.
+ * vi.spyOn이므로 시험이 끝나면 되돌린다(restoreMocks).
+ */
+export function stubScreenContext() {
+  const draws: { canvas: HTMLCanvasElement; args: unknown[] }[] = [];
+  vi.spyOn(HTMLCanvasElement.prototype, "getContext").mockImplementation(function (this: HTMLCanvasElement) {
+    return { drawImage: (...args: unknown[]) => void draws.push({ canvas: this, args }) } as unknown as CanvasRenderingContext2D;
+  } as unknown as HTMLCanvasElement["getContext"]);
+  return draws;
 }
 
 /** 열고 불러온 DOCX 편집 세션. 화면 밖 래스터는 2D 문맥이 있는 가짜 canvas다(jsdom canvas에는 문맥이 없어 그림 실패로 센다). */

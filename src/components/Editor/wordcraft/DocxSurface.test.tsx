@@ -5,11 +5,12 @@ import { describe, expect, it } from "vitest";
 import { LanguageProvider } from "../../../language/LanguageContext";
 import { DocxSurface } from "./DocxSurface";
 import { CSS_PX_PER_PT } from "./DocxEditorSession";
-import { CHAR, flush, LINE, MARGIN, readyDocx } from "./testing";
+import { CHAR, flush, LINE, MARGIN, readyDocx, stubScreenContext } from "./testing";
 
 type Step = ["key", boolean, string?] | ["start"] | ["input", string, string, boolean] | ["end", string];
 
 async function mounted(text?: string[]) {
+  stubScreenContext(); // jsdom canvas에는 2D 문맥이 없다
   const t = await readyDocx(text);
   const view = render(
     <LanguageProvider language="ko" onLanguageChange={() => {}}>
