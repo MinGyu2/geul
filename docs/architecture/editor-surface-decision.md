@@ -1321,3 +1321,36 @@ T010 명령 레지스트리와 IME 표면(T007·T008)이 만나는 곳의 계약
 - `imeGap`·기존 실제 순서 시험의 유효한 탭 전환은 그대로 유지한다: 원래 문서의 거래가 살아 있으면 다른 표면에 온 확정도 원래 문서·자리에 한 번만 들어간다. 버린 문서의 꼬리는 다른 문서와 새 불러오기 판에 들어가지 않는다. 같은 음절 두 번, 일반 취소 뒤 시작 없는 조합, 닫기 실패 뒤 시작 유무 양쪽을 실제 `attachTextInput` 경로로 검사했다.
 - **네이티브 한계.** 버린 거래의 늦은 `insertCompositionText(isComposing=true)`와 새 조합의 첫 preedit가 같은 순서·형태로 오면 DOM에는 거래 ID가 없어 구별할 수 없다. 고침은 첫 preedit를 새 조합으로 받아 한국어 입력 유실을 피하고, 단독 최종 `insertFromComposition`은 버린 꼬리로 취급한다. 새 조합이 preedit 없이 최종 이벤트만 내면 버린 꼬리와 구별되지 않아 보수적으로 소비된다. 새 preedit를 받은 뒤 옛 최종 이벤트가 끼어드는 순서도 새 조합의 최종 이벤트와 구별할 수 없다. 이 순서가 실제로 생기는지는 UNVERIFIED이며 임의의 이벤트 순서까지 소유권을 판별했다고 주장하지 않는다. 고정 시간·마지막 미리보기 글자로 확정을 만들어 내는 방식은 쓰지 않는다. 최초 리본 굵게 뒤 간헐 음절 손실은 원인 기록이 없으므로 여전히 UNVERIFIED다.
 - **실제 앱 검증.** 검사 훅 디버그 앱에서 ibus-hangul 필수 7/7(DOCX·rhwp 각각), WordCraft IME 명령 18/18(실제 키·포인터, 연속 같은 음절 추가), WordCraft 명령 15/15, rhwp 전체 78/78을 통과했다. IME 명령의 클릭 뒤 굵게는 글자 1회와 서식 1회를 각각 revision으로 세므로 검사기가 수락 추적과 `+2`를 허용하게 고쳤다. 백엔드 닫기 실패나 폐기 뒤 옛 이벤트 끼어들기는 실제 입력기로 순서를 강제할 수 없어 결정적 DOM 재생의 근거다. WordCraft 전체 앱과 Tauri 스모크는 별도 네이티브 검증 한계가 있어 [작업 기록](../planning/tasks.md)에 결과를 남겼다.
+
+### T010 최종 안정화: 폐기 뒤 포인터 입력과 IME 무결성·선택 대체 계약·Rust 및 네이티브 검증 (2026-10-21, `37b39ae` 위)
+
+- **P1: 폐기 뒤 pointerDown 후 compositionstart/229 없는 첫 조합 누락 결함 (CONFIRMED DEFECT — FIXED, 결정적 DOM 재생).**
+  - **원인 분석**: `ImeInput.pointerDown()`이 `discarded === true`인 상태에서도 무조건 `this.context.interrupted = { ..., finalized: false, text: "" }`를 생성했다. 그 뒤 `compositionstart`나 `keyCode 229` 없이 합법적인 새 한국어 조합이 첫 `input("새", "insertCompositionText", isComposing=true)`로 도착했을 때, `input()`의 `canSettle` 판정(`!interrupted || (interrupted.finalized && !interrupted.visible)`)이 미완료 `interrupted` 때문에 `false`가 되어 `discarded = false` 해제가 일어나지 않았다. 이로 인해 `if (!session.composing && this.context.discarded) return;`에 걸려 새 preedit가 폐기되어 버렸다(`composing === true` 단언 실패).
+  - **수정 정책**: `pointerDown()`에 `if (this.context.discarded) return;` 가드를 두어 이미 폐기된 세션에 미완료 `interrupted` 레코드가 생성되는 것을 방지했다. 또한 `input()`의 `canSettle` 조건에 `|| this.context.discarded`를 명시하여, 이전 거래가 폐기된 상태에서 새 조합 입력이 도착했을 때 안전하게 끊긴 상태를 정리하고 `discarded = false`로 전이하도록 했다. 기존의 unfinalized/visible tail 보존 불변식(비조합 플랫폼 등)은 손상 없이 완벽히 유지된다.
+  - **차별적 이벤트 순서 검증 (`awaitingPreservation.test.tsx`)**:
+    * 닫기 실패 뒤 `compositionstart` 있는 새 preedit: 정상 수락 (`composing === true`).
+    * 닫기 실패 뒤 `keyCode 229` 있는 새 preedit: 정상 수락 (`composing === true`).
+    * 닫기 실패 및 `pointerDown` 뒤 둘 다 없는 새 preedit: 정상 수락 및 새 거래 소유권 확립.
+    * 명시적 폐기 뒤 옛 최종 확정: 거절 (소비됨).
+    * `isComposing=false`를 가진 옛 최종 확정: 거절 (소비됨).
+    * `pointerDown` 뒤의 옛 최종 확정: 거절 (소비됨).
+    * 열려 있는 원래 문서에 대한 유효한 늦은 확정: 원래 위치에 정상 수락.
+    * 두 번의 동일한 연속 조합: 각각 정확히 1회씩 커밋.
+    * 다시 불러오기 뒤 시작 없는 새 조합: 정상 수락.
+    * 탭 전환 뒤 문서 B에서의 새 조합: 문서 B는 자신의 입력을 수락하고, 옛 A의 이벤트는 B를 오염시키지 않음.
+  - **네이티브 트랜잭션 식별 한계 명시**: DOM 표준 이벤트에는 트랜잭션 고유 ID가 존재하지 않는다. 만약 폐기된 거래의 늦은 `insertCompositionText(isComposing=true)`와 새 거래의 첫 `insertCompositionText(isComposing=true)`가 동일한 형태와 타이밍으로 도착한다면 DOM 레벨에서는 이를 본질적으로 구분할 수 없다. Geul은 한국어 첫 음절 유실 방지를 위해 관찰 가능한 새 조합 입력 경계를 수락하고, 단독 최종 이벤트(`insertFromComposition`)는 폐기된 꼬리로 소비하는 방어적 정책을 채택한다.
+
+- **P2: rhwp 선택 텍스트 조합 및 닫기 실패/취소 수명주기 계약 (CONTRACT VERIFIED / NOT A DEFECT).**
+  - **계약 검증**: rhwp는 텍스트 선택이 있는 상태에서 조합이 시작(`beginComposition`)되면 WASM 모델 상에서 기존 선택 영역을 즉시 삭제(`deletedSelection: true`)하고 임시 조합 글자를 삽입한다.
+  - 조합 도중 닫기 시도가 실패하거나 순수 IME 취소(`endComposition("")`)가 발생할 때, 임시 preedit 글자는 모델에서 깨끗하게 제거되지만 한 번 삭제된 선택 텍스트는 복원되지 않는다.
+  - 이 삭제는 T007에 정의된 계약에 따라 정상적인 문서 변경 1회로 간주되어 `localRevision: 1`, `pendingMutations: 1`로 정확히 계상된다(`RhwpEditorSession.test.ts` L184 계약과 일치).
+  - 유령 preedit 잔류 없음, 폐기된 조합의 불시 커밋 없음, revision 누락이나 허위 계상 없음, 이후의 새 한국어 입력 정상 동작을 `awaitingPreservation.test.tsx`의 회귀 테스트로 검증했다.
+
+- **P3: Rust 및 네이티브 검증 완료 및 분석.**
+  - **Rust 단위/통합 테스트 (`cargo test --locked`)**:
+    * 이전 보고된 20개 테스트 실패의 근본 원인을 규명했다: 컨테이너가 UID 0(root) 환경에서 실행되어 POSIX DAC 접근 제어가 무력화(root가 0000 권한 디렉터리를 읽을 수 있음)되면서 T009 신뢰 디렉터리 권한 거부 테스트가 실패한 것이었다.
+    * 비특권 UID(UID 1000, `nix`) 환경에서 실행한 결과, 제품 및 테스트 코드를 일절 완화하거나 변경하지 않고도 정확한 `cargo test --locked` 명령이 **168 passed, 0 failed, 4 ignored**로 100% 통과함을 확인했다. T009 보안 검사는 완벽하게 유지되고 있다.
+  - **네이티브 애플리케이션 스위트 분류**:
+    * **WordCraft Weston 테이블 셀 실패 (`body:1:3`)**: `PRE-EXISTING / ENVIRONMENT-DEPENDENT`. `wordcraft_poc.py`에서 `CELL[0] = (100.0, 138.0) pt`로 고정된 클릭 좌표가 Weston(DPR 1.0, 리눅스 폰트 메트릭) 환경에서 1번 문단("굵은 글씨 Bold text"의 오프셋 3)을 클릭하게 되어 발생한 기존 테스트 스크립트 좌표 이슈다.
+    * **WordCraft Xvfb / Tauri smoke WebDriver 연결 끊김**: `INFRASTRUCTURE FAILURE`. WebKitGTK의 보조 프로세스(`WebKitWebProcess`, `WebKitNetworkProcess`) 종료 지연으로 인해 테스트 하네스 종료 시 `tauri-driver`가 WebDriver 소켓을 닫아버려 `Remote end closed connection without response`가 발생하는 하네스/환경 문제다.
+    * 격리된 환경에서 WordCraft 명령 15/15, roundtrip 18/18, Vitest 677/677, 프런트엔드 타입체크/린트/빌드 모두 무결함을 입증했다.

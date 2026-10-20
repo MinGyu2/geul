@@ -183,7 +183,11 @@ export class ImeInput {
       // The first preedit is an input boundary even when compositionstart was omitted.
       // A still-owned interrupted transaction may also emit preedit; retain it until
       // its native end, but release an unanchored awaiting transaction.
-      if (!this.context.interrupted || (this.context.interrupted.finalized && !this.context.interrupted.visible)) {
+      const interrupted = this.context.interrupted;
+      const canSettle = !interrupted
+        || this.context.discarded
+        || (interrupted.finalized ? !interrupted.visible : !this.stillOwned(interrupted));
+      if (canSettle) {
         this.releaseAwaiting();
         this.settleInterrupted();
         this.context.terminal = null;
@@ -314,6 +318,7 @@ export class ImeInput {
   pointerDown(): void {
     this.syncOwner();
     if (this.finalizeVisible()) return;
+    if (this.context.discarded) return;
     const terminal = this.context.terminal;
     if (terminal && terminal.text) return; // 막 확정한 조합 뒤의 클릭
     // 끊긴 조합이 아직 끝나지 않았으면(확정했거나 그 조합의 입력이 이미 옴) 그 트랜잭션의 자리를 그대로 둔다.

@@ -316,7 +316,8 @@ describe("rhwp: 최종 글자를 기다리는 트랜잭션의 보존", () => {
 function inputSurface(editor: ImeSession, context: ImeContext) {
   const input = document.createElement("textarea");
   document.body.append(input);
-  const detach = attachTextInput(input, new ImeInput(editor, context), {
+  const ime = new ImeInput(editor, context);
+  const detach = attachTextInput(input, ime, {
     composing: () => editor.composing, handleKey: () => false, mark: () => {},
   });
   const fire = (event: Event) => input.dispatchEvent(event);
@@ -333,6 +334,8 @@ function inputSurface(editor: ImeSession, context: ImeContext) {
     },
     empty: () => fire(new CompositionEvent("compositionend", { data: "" })),
     ordinaryKey: () => fire(new KeyboardEvent("keydown", { key: "ArrowRight", code: "ArrowRight" })),
+    pointerDown: () => ime.pointerDown(),
+    preeditRaw: (text: string) => fire(new InputEvent("input", { inputType: "insertCompositionText", data: text, isComposing: true })),
     final: (text: string, composing = true) => {
       key229();
       fire(new InputEvent("input", { inputType: "insertFromComposition", data: text, isComposing: composing }));
@@ -377,6 +380,76 @@ describe("IME lifecycle ownership through real input path", () => {
     await flush();
     expect(t.fake.paragraphs[0]).toBe("새가나다");
     expect(t.sessions.get(1)).toMatchObject({ revision: 1, dirty: true });
+    surface.cleanup();
+  });
+
+  it("P1 reproduction (DOCX): failed close followed by pointerDown accepts no-start, no-229 composition", async () => {
+    const t = await docxWorkspace({ closeFails: true });
+    const context = new ImeContext();
+    const surface = inputSurface(t.editor, context);
+    surface.start(); surface.preedit("옛"); surface.empty();
+    expect(t.editor.awaitingCommit).toBe(true);
+    expect((await t.workspace.close(1, { discard: true })).ok).toBe(false);
+    expect(t.editor.editable).toBe(true);
+
+    // Step 8: invoke pointerDown
+    surface.pointerDown();
+
+    // Discriminating check: old final commit after pointerDown is rejected
+    surface.final("옛", false);
+    expect(t.fake.paragraphs[0]).toBe("가나다");
+
+    // Step 9 & 10: No compositionstart, no 229 keydown
+    // Step 11: First new preedit
+    surface.preeditRaw("새");
+
+    // Intermediate assertion immediately after step 11:
+    expect(t.editor.composing).toBe(true);
+    expect(context.owner?.session).toBe(t.editor);
+
+    // Step 12: Complete new composition
+    surface.final("새");
+    await flush();
+
+    expect(t.fake.paragraphs[0]).toBe("새가나다");
+    expect(t.sessions.get(1)).toMatchObject({ revision: 1, dirty: true });
+    expect(t.editor.editable).toBe(true);
+    surface.cleanup();
+  });
+
+  it("P1 reproduction (rhwp): failed close followed by pointerDown accepts no-start, no-229 composition", async () => {
+    const t = await hwpxWorkspace();
+    const context = new ImeContext();
+    const surface = inputSurface(t.editor, context);
+    surface.start(); surface.preedit("옛"); surface.empty();
+    expect(t.editor.awaitingCommit).toBe(true);
+    const closing = t.workspace.close(1, { discard: true });
+    t.take("close").reply({ ok: false, error: { code: "Protocol" } });
+    expect((await closing).ok).toBe(false);
+    expect(t.editor.editable).toBe(true);
+
+    // Step 8: invoke pointerDown
+    surface.pointerDown();
+
+    // Discriminating check: old final commit after pointerDown is rejected
+    surface.final("옛", false);
+    expect(t.doc.paragraphs[0]).toBe("가나다");
+
+    // Step 9 & 10: No compositionstart, no 229 keydown
+    // Step 11: First new preedit
+    surface.preeditRaw("새");
+
+    // Intermediate assertion immediately after step 11:
+    expect(t.editor.composing).toBe(true);
+    expect(context.owner?.session).toBe(t.editor);
+
+    // Step 12: Complete new composition
+    surface.final("새");
+    await flushRhwp();
+
+    expect(t.doc.paragraphs[0]).toBe("새가나다");
+    expect(t.editor.localRevision).toBe(1);
+    expect(t.editor.editable).toBe(true);
     surface.cleanup();
   });
 });
@@ -564,6 +637,83 @@ describe("active discard keeps earlier edits", () => {
     await flushRhwp();
     expect(t.doc.paragraphs[0]).toBe("새가나다");
     expect(t.editor.localRevision).toBe(1);
+    surface.cleanup();
+  });
+
+  it("P2: rhwp selected-text composition followed by failed close preserves selection deletion and accepts new input", async () => {
+    const t = await hwpxWorkspace();
+    const surface = inputSurface(t.editor, new ImeContext());
+    // Step 1: Select "나다" (from offset 1, select 2 chars)
+    t.editor.moveHorizontal(1, false);
+    t.editor.moveHorizontal(1, true);
+    t.editor.moveHorizontal(1, true);
+    expect(t.editor.hasSelection).toBe(true);
+
+    // Step 2 & 3: Begin Korean composition replacing selection
+    surface.start();
+    surface.preedit("새");
+    expect(t.doc.paragraphs[0]).toBe("가새");
+    expect(t.editor.composing).toBe(true);
+
+    // Step 4 & 5: Discard and Close, backend close fails
+    const closing = t.workspace.close(1, { discard: true });
+    t.take("close").reply({ ok: false, error: { code: "Protocol" } });
+    expect((await closing).ok).toBe(false);
+    expect(t.editor.editable).toBe(true);
+
+    // Step 6: Verify remaining model: preedit "새" removed, deleted selection "나다" remains deleted
+    expect(t.doc.paragraphs[0]).toBe("가");
+    expect(t.editor.composing).toBe(false);
+    expect(t.editor.localRevision).toBe(1);
+
+    // Commit for selection deletion mutation
+    const commit1 = t.take("commit");
+    expect(commit1.args).toEqual([1, 1, 0, 1]);
+    commit1.reply(okResult(hwpx({ state: "ready", revision: 1, dirty: true, sequence: 3, loadGeneration: 1 })));
+    await flushRhwp();
+    expect(t.sessions.get(1)).toMatchObject({ revision: 1, dirty: true });
+
+    // Step 7: Obsolete final event is rejected
+    surface.final("새", false);
+    expect(t.doc.paragraphs[0]).toBe("가");
+
+    // Step 8 & 9: Legitimate new composition works normally
+    surface.preedit("글");
+    expect(t.editor.composing).toBe(true);
+    surface.final("글");
+    await flushRhwp();
+    expect(t.doc.paragraphs[0]).toBe("가글");
+    expect(t.editor.localRevision).toBe(2);
+
+    const commit2 = t.take("commit");
+    expect(commit2.args).toEqual([1, 1, 1, 1]);
+    commit2.reply(okResult(hwpx({ state: "ready", revision: 2, dirty: true, sequence: 4, loadGeneration: 1 })));
+    await flushRhwp();
+    expect(t.sessions.get(1)).toMatchObject({ revision: 2, dirty: true });
+    surface.cleanup();
+  });
+
+  it("P2: rhwp selected-text composition followed by genuine cancellation deletes selection as 1 mutation", async () => {
+    const t = await hwpxWorkspace();
+    const surface = inputSurface(t.editor, new ImeContext());
+    t.editor.moveHorizontal(1, false);
+    t.editor.moveHorizontal(1, true);
+    t.editor.moveHorizontal(1, true);
+    surface.start();
+    surface.preedit("새");
+    expect(t.doc.paragraphs[0]).toBe("가새");
+
+    // Genuine cancellation (empty end)
+    surface.empty();
+    await flushRhwp();
+    expect(t.doc.paragraphs[0]).toBe("가");
+    expect(t.editor.localRevision).toBe(1);
+
+    const commit = t.take("commit");
+    expect(commit.args).toEqual([1, 1, 0, 1]);
+    commit.reply(okResult(hwpx({ state: "ready", revision: 1, dirty: true, sequence: 3, loadGeneration: 1 })));
+    await flushRhwp();
+    expect(t.sessions.get(1)).toMatchObject({ revision: 1, dirty: true });
     surface.cleanup();
   });
 });

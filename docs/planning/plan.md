@@ -337,6 +337,13 @@ interface EditorAdapter {
 - 세션이 닫기 시작·다시 불러오기·폐기에서 IME 거래 세대를 무효화한다. `ImeContext`는 원래 세션·세대를 확인해 버린 꼬리를 소비하고 시작 이벤트 없는 새 preedit는 새 거래로 받는다. 활성 rhwp 조합은 WASM 모델의 임시 글자를 삭제해 닫기 실패 뒤에도 남기지 않는다. [편집 표면 결정](../architecture/editor-surface-decision.md#t010-후속-ime-소유-세대와-닫기-실패-복구-2026-10-21-94110f9-위).
 - `SessionRegistry` 권한·WordCraft 실행 취소 기록·T009 보존/게시·`imeUnsettled` 장벽은 그대로다. 버린 꼬리의 첫 preedit와 새 조합의 첫 preedit가 DOM에서 같으면 구별할 수 없다는 한계를 기록한다. 처음 간헐 음절 손실 원인은 UNVERIFIED. T010은 rhwp 실행 취소·서식 SC-003이 남아 미체크다.
 
+### T010 최종 안정화: 포인터 상호작용 뒤 IME 무결성·선택 대체 계약·Rust 및 네이티브 검증 (2026-10-21, `37b39ae` 위)
+- 폐기 뒤 `pointerDown` 발생 후 `compositionstart`/`keyCode 229` 없는 첫 새 조합이 누락되던 결함 수정: `pointerDown`의 폐기 가드 및 `input`의 폐기 해제 로직 보정 ([편집 표면 결정](../architecture/editor-surface-decision.md#t010-최종-안정화-폐기-뒤-포인터-입력과-ime-무결성선택-대체-계약rust-및-네이티브-검증-2026-10-21-37b39ae-위)).
+- rhwp 선택 텍스트 대체 조합의 취소/폐기 시 T007 계약(선택 삭제 1회 변경 계산, 임시 글자 정리, 복원 없음) 및 저장 불변식 검증 완료.
+- Rust 미완료 검증의 원인 규명 및 해결: root(UID 0) DAC 무력화로 인한 실패였으며, 비특권 UID(UID 1000) 환경에서 `cargo test --locked` 168 통과 / 4 무시 확인.
+- 네이티브 실패 정확한 분류: WordCraft Weston 테이블 셀 실패(`PRE-EXISTING / ENVIRONMENT-DEPENDENT`, 좌표 불일치), WebDriver 끊김(`INFRASTRUCTURE FAILURE`, 종료 지연).
+- T010은 SC-003(rhwp 실행 취소 및 서식 지원) 요구사항이 남아 있으므로 미체크 상태를 유지한다.
+
 ## Algorithms and Pseudocode
 ```
 open(path):
