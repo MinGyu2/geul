@@ -400,7 +400,8 @@ fn thumbnails(package: &Package) -> Vec<String> {
 }
 
 /// HWPX 편집 저장 비교: 본문 부분을 빼고 원본과 같아야 한다. 본문을 바꿨다면 원본 그대로 남는 `Preview/*`는 내용이
-/// 없음을 증명해야 한다(빈 글 미리보기, 한 색 PNG). 그 밖의 미리보기 부분은 증명할 수 없어 막는다.
+/// 문서 내용과 무관함을 증명해야 한다(빈 값·고정 rhwp 빈 미리보기 상수와 바이트가 같음, `preview`). 그 밖의 미리보기 부분은
+/// 증명할 수 없어 막는다.
 pub fn compare_saved_hwpx(original: &Package, output: &Package) -> Vec<Finding> {
     let mut findings = compare(original, output, &hwpx_body);
     let body = |package: &Package| -> Vec<(String, Vec<u8>)> {
@@ -418,7 +419,7 @@ pub fn compare_saved_hwpx(original: &Package, output: &Package) -> Vec<Finding> 
             }
             let empty = match name.as_str() {
                 "Preview/PrvText.txt" => preview::blank_utf8(data),
-                "Preview/PrvImage.png" => preview::uniform_png(data),
+                "Preview/PrvImage.png" => preview::known_blank_png(data),
                 _ => false,
             };
             if !empty {

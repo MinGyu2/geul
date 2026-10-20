@@ -47,8 +47,8 @@ pub enum FindingCode {
     Unsupported,
     /// 이 원본에 대한 사전 검사 결과가 없다(검사 전이거나 원본이 바뀜).
     PreflightMissing,
-    /// 본문을 바꾼 저장인데 미리보기(HWP `PrvText`·`PrvImage`, HWPX `Preview/*`, DOCX 썸네일)가 원본 그대로이고 내용이
-    /// 없음을 증명할 수 없다(편집 전·지운 내용이 미리보기에 남을 수 있음).
+    /// 본문을 바꾼 저장인데 미리보기(HWP `PrvText`·`PrvImage`, HWPX `Preview/*`, DOCX 썸네일)가 원본 그대로이고 문서
+    /// 내용과 무관함을 증명할 수 없다(편집 전·지운 내용이 미리보기에 남을 수 있음).
     PreviewStale,
 }
 

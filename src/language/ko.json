@@ -240,7 +240,7 @@
   "editor.save.finding.limitExceeded": "{part}: 검사 한도를 넘습니다.",
   "editor.save.finding.unsupported": "{part}: 이 형식·보호 문서는 보존을 검사할 수 없습니다.",
   "editor.save.finding.preflightMissing": "이 원본에 대한 보존 검사 결과가 없습니다.",
-  "editor.save.finding.previewStale": "{part}: 본문을 바꾸면 원본의 미리보기에 편집 전 내용이 남습니다.",
+  "editor.save.finding.previewStale": "{part}: 본문을 바꾸면 원본의 미리보기가 그대로 남는데, 편집 전 내용을 담고 있지 않음을 확인할 수 없습니다.",
   "document.pathLabel": "열 문서의 절대 경로",
   "document.pathPlaceholder": "열 문서의 절대 경로(.hwp, .hwpx, .docx)",
   "document.open": "열기",

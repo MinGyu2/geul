@@ -7,13 +7,15 @@
 //! - `FileHeader` 256바이트,
 //! - 레코드 스트림(`DocInfo`, `BodyText/Section*`): 압축을 풀고 레코드(태그·수준·내용)를 끝까지 읽어 같은 열인지. 바이트가
 //!   같아도 양쪽을 끝까지 읽는다(같은 바이트의 깨진 레코드는 보존의 근거가 아니다, T009 안정화).
-//! - `BinData/BIN{XXXX}.{ext}` 중 DocInfo BIN_DATA 속성으로 저장 형태(압축 여부)가 양쪽에서 하나로 정해지는 스트림: 그
-//!   형태가 같고, 압축이면 양쪽이 끝까지(남는 바이트 없이) 풀려 같은 바이트, 비압축이면 바이트가 같아야 한다.
-//! - 그 밖의 스트림(속성으로 정할 수 없는 BinData·미리보기·스크립트·요약 정보 등): 저장한 바이트가 같아야 한다. 한쪽만
-//!   풀리는 쌍을 풀린 내용으로 같다고 보지 않는다(읽는 쪽이 압축 여부를 스트림 바이트로 정하지 않으므로, T009 안정화).
+//! - DocInfo BIN_DATA 선언이 가리키는 `BinData/BIN{XXXX}.{ext}`(이름은 대소문자 무시): 양쪽 선언의 저장 형태가 같고,
+//!   압축이면 **바이트가 같아도** 원본이 끝 블록까지(남는 바이트 없이) 풀려야 하며(같은 바이트의 깨진 스트림은 근거가
+//!   아니다, T009 4차 안정화 B) 출력도 풀려 같은 내용, 비압축이면 바이트가 같아야 한다. 형태를 정할 수 없는 선언(예약
+//!   압축 값, 형태가 다른 중복 선언)·해석할 수 없는 BIN_DATA 레코드·ASCII가 아닌 BinData 이름은 판단하지 않는다(unknown).
+//! - 그 밖의 스트림(선언이 없는 BinData — 엔진이 그대로 옮긴다 —, 미리보기·스크립트·요약 정보 등): 저장한 바이트가 같아야
+//!   한다. 한쪽만 풀리는 쌍을 풀린 내용으로 같다고 보지 않는다(읽는 쪽이 압축 여부를 스트림 바이트로 정하지 않으므로, T009 안정화).
 //!
 //! 섹터 배치처럼 스트림 내용이 아닌 차이는 같다고 본다. 암호·DRM·배포용 문서는 비교하지 않는다(unknown).
-//! 본문을 바꾼 저장에서 `PrvText`·`PrvImage`가 원본 그대로이면 내용이 없음을 증명해야 한다(`preview`).
+//! 본문을 바꾼 저장에서 `PrvText`·`PrvImage`가 원본 그대로이면 문서 내용과 무관함을 증명해야 한다(`preview`).
 //! 이 비교는 HWP 레코드 수준의 동일성이며 한컴 오피스에서 같게 보인다는 증거가 아니다.
 
 use std::collections::BTreeMap;
@@ -141,100 +143,193 @@ fn records(data: &[u8]) -> Option<Vec<Record<'_>>> {
     Some(out)
 }
 
-/// deflate를 끝까지 푼다. 뒤에 남는 바이트는 없거나, 한컴 오피스가 붙이는 8바이트 꼬리(푼 내용의 CRC-32·길이, gzip 꼬리와
-/// 같은 배치, 실측)로서 푼 내용과 맞아야 한다. 그 밖의 남는 바이트는 읽는 쪽마다 다르게 다룰 수 있어 받지 않는다.
-fn inflate(data: &[u8]) -> Option<Vec<u8>> {
+/// 스트림을 풀 수 없는 까닭.
+#[derive(Clone, Copy)]
+enum Unpack {
+    /// 끝 블록까지 풀리지 않거나 뒤에 받지 않는 바이트가 있다.
+    Malformed,
+    /// 풀어낸 크기가 상한을 넘는다(판단하지 않는다).
+    Limit,
+}
+
+impl Side {
+    /// 풀 수 없는 스트림의 근거: 깨졌으면 원본은 unknown·출력은 unsafe, 상한 초과는 어느 쪽이든 unknown.
+    fn unpack_finding(self, problem: Unpack, part: &str) -> Finding {
+        match problem {
+            Unpack::Malformed => Finding::at(self.malformed(), part),
+            Unpack::Limit => Finding::at(FindingCode::LimitExceeded, part),
+        }
+    }
+}
+
+#[cfg(test)]
+thread_local! {
+    /// 시험용: 풀어낸 크기 상한을 낮춘다(상한을 넘는 입력을 실제 크기로 만들지 않고 시험한다).
+    pub static INFLATE_LIMIT: std::cell::Cell<Option<u64>> = const { std::cell::Cell::new(None) };
+}
+
+fn inflate_limit() -> u64 {
+    #[cfg(test)]
+    if let Some(limit) = INFLATE_LIMIT.with(std::cell::Cell::get) {
+        return limit;
+    }
+    MAX_INFLATED_BYTES
+}
+
+/// deflate를 끝 블록까지 푼다(고정 flate2 1.1.10의 읽기는 끝 블록 전에 입력이 끝나면 `UnexpectedEof` 오류다 — 시험
+/// `b4_`가 잘린·끝 블록 없는 스트림으로 지킨다). 뒤에 남는 바이트는 없거나, 한컴 오피스가 붙이는 8바이트 꼬리(푼 내용의
+/// CRC-32·길이, gzip 꼬리와 같은 배치, 실측)로서 푼 내용과 맞아야 한다. 그 밖의 남는 바이트는 읽는 쪽마다 다르게 다룰 수
+/// 있어 받지 않는다.
+fn inflate(data: &[u8]) -> Result<Vec<u8>, Unpack> {
+    let limit = inflate_limit();
     let mut decoder = DeflateDecoder::new(data);
     let mut out = Vec::new();
     (&mut decoder)
-        .take(MAX_INFLATED_BYTES + 1)
+        .take(limit + 1)
         .read_to_end(&mut out)
-        .ok()?;
-    if out.len() as u64 > MAX_INFLATED_BYTES {
-        return None;
+        .map_err(|_| Unpack::Malformed)?;
+    if out.len() as u64 > limit {
+        return Err(Unpack::Limit);
     }
-    let tail = data.get(usize::try_from(decoder.total_in()).ok()?..)?;
+    let tail = usize::try_from(decoder.total_in())
+        .ok()
+        .and_then(|at| data.get(at..))
+        .ok_or(Unpack::Malformed)?;
     match tail.len() {
-        0 => Some(out),
+        0 => Ok(out),
         8 => {
             let mut crc = flate2::Crc::new();
             crc.update(&out);
             let size = (out.len() as u32).to_le_bytes();
-            (tail[..4] == crc.sum().to_le_bytes() && tail[4..] == size).then_some(out)
+            if tail[..4] == crc.sum().to_le_bytes() && tail[4..] == size {
+                Ok(out)
+            } else {
+                Err(Unpack::Malformed)
+            }
         }
-        _ => None,
+        _ => Err(Unpack::Malformed),
     }
 }
 
 /// HWPTAG_BIN_DATA(HWPTAG_BEGIN + 2).
 const TAG_BIN_DATA: u16 = 18;
+/// BinData 스트림 이름의 저장소 부분(대문자). CFB 이름은 대소문자를 가리지 않는다(`cfb` `compare_names`, 엔진도 그렇게 찾는다).
+const BIN_DATA_PREFIX: &str = "BINDATA/";
 
-/// BinData 스트림 이름 → 저장 형태(압축이면 true). DocInfo BIN_DATA 속성(비트 0–3 형식: 1 내장·2 저장소, 비트 4–5 압축:
-/// 0 문서 플래그를 따름·1 압축·2 비압축)과 FileHeader 압축 플래그로 정한다. 고정 rhwp의 읽기
-/// (`parser/mod.rs` `bin_data_stream_is_compressed`)·쓰기(`serializer/cfb_writer.rs` `find_bin_data_info_with_compress`)와
-/// 같은 규칙. 레코드를 해석할 수 없거나, 속성이 예약 값(3)이거나, 같은 이름에 형태가 둘이면 None(바이트 비교로 돌아감).
-fn bin_data_storage(container: &Container) -> BTreeMap<String, Option<bool>> {
+/// DocInfo BIN_DATA 선언으로 정한 BinData 스트림의 저장 형태.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Storage {
+    Compressed,
+    Stored,
+    /// 압축 값이 예약(3)이거나 같은 이름에 형태가 다른 선언이 둘 이상: 정할 수 없다(판단하지 않는다).
+    Undetermined,
+}
+
+/// BinData 스트림 이름(ASCII 대문자) → 저장 형태. DocInfo BIN_DATA 속성(비트 0–3 형식: 0 연결·1 내장·2 저장소, 비트 4–5
+/// 압축: 0 문서 플래그를 따름·1 압축·2 비압축)과 FileHeader 압축 플래그로 정한다. 고정 rhwp의 읽기
+/// (`parser/mod.rs` `bin_data_stream_is_compressed`, `parser/doc_info.rs` `parse_bin_data`)·쓰기(`serializer/cfb_writer.rs`
+/// `find_bin_data_info_with_compress`)와 같은 이름 규칙(`BIN{아이디:04X}.{확장자}`, 확장자가 없는 저장소는 `OLE`).
+///
+/// 선언 자체를 해석할 수 없으면(T009 4차 안정화 B) 어느 스트림을 어떻게 읽는지 정할 수 없으므로 근거를 돌려준다: 아이디·
+/// 확장자가 레코드 끝을 넘거나 확장자가 UTF-16이 아니면 그 쪽의 깨짐(`DocInfo`), 예약 형식(3–15)·ASCII가 아닌 확장자는
+/// `Unsupported`(엔진은 예약 형식을 연결로, 예약 압축 값을 문서 플래그로 읽지만 규격의 뜻이 아니다). DocInfo를 풀거나
+/// 레코드로 읽을 수 없으면 빈 표(그 근거는 레코드 비교가 낸다).
+fn bin_data_storage(
+    container: &Container,
+    side: Side,
+) -> Result<BTreeMap<String, Storage>, Finding> {
     let mut out = BTreeMap::new();
     let Some(data) = container
         .streams
         .get("DocInfo")
-        .and_then(|data| unpack(container, data))
+        .and_then(|data| unpack(container, data).ok())
     else {
-        return out;
+        return Ok(out);
     };
+    let malformed = || Finding::at(side.malformed(), "DocInfo");
+    let unsupported = || Finding::at(FindingCode::Unsupported, "DocInfo");
     for (tag, _, body) in records(&data).unwrap_or_default() {
-        if tag != TAG_BIN_DATA || body.len() < 6 {
+        if tag != TAG_BIN_DATA {
             continue;
         }
-        let attr = u16::from_le_bytes([body[0], body[1]]);
-        if !matches!(attr & 0x000F, 1 | 2) {
-            continue; // 연결(외부 파일)
+        let attr = u16::from_le_bytes(
+            body.get(..2)
+                .ok_or_else(malformed)?
+                .try_into()
+                .map_err(|_| malformed())?,
+        );
+        let kind = attr & 0x000F;
+        match kind {
+            0 => continue, // 연결(외부 파일): 스트림이 없다
+            1 | 2 => {}
+            _ => return Err(unsupported()),
         }
-        let id = u16::from_le_bytes([body[2], body[3]]);
-        let len = usize::from(u16::from_le_bytes([body[4], body[5]]));
-        let Some(units) = body.get(6..6 + len * 2) else {
-            continue;
+        let id = u16::from_le_bytes(
+            body.get(2..4)
+                .ok_or_else(malformed)?
+                .try_into()
+                .map_err(|_| malformed())?,
+        );
+        let extension = match body.get(4..6) {
+            // 규격의 저장소 선언에는 확장자가 없다: 엔진처럼 `OLE`.
+            None if kind == 2 && body.len() == 4 => "OLE".to_owned(),
+            None => return Err(malformed()),
+            Some(len) => {
+                let len = usize::from(u16::from_le_bytes([len[0], len[1]]));
+                let units: Vec<u16> = body
+                    .get(6..6 + len * 2)
+                    .ok_or_else(malformed)?
+                    .as_chunks::<2>()
+                    .0
+                    .iter()
+                    .map(|pair| u16::from_le_bytes(*pair))
+                    .collect();
+                String::from_utf16(&units).map_err(|_| malformed())?
+            }
         };
-        let units: Vec<u16> = units
-            .as_chunks::<2>()
-            .0
-            .iter()
-            .map(|pair| u16::from_le_bytes(*pair))
-            .collect();
-        let Ok(extension) = String::from_utf16(&units) else {
-            continue;
+        if !extension.is_ascii() {
+            return Err(unsupported());
+        }
+        let storage = match (attr >> 4) & 0x0003 {
+            0 if container.compressed => Storage::Compressed,
+            0 | 2 => Storage::Stored,
+            1 => Storage::Compressed,
+            _ => Storage::Undetermined,
         };
-        let compressed = match (attr >> 4) & 0x0003 {
-            0 => Some(container.compressed),
-            1 => Some(true),
-            2 => Some(false),
-            _ => None,
-        };
-        let name = format!("BinData/BIN{id:04X}.{extension}");
-        let entry = out.entry(name).or_insert(compressed);
-        if *entry != compressed {
-            *entry = None;
+        let name = format!("BinData/BIN{id:04X}.{extension}").to_ascii_uppercase();
+        let entry = out.entry(name).or_insert(storage);
+        if *entry != storage {
+            *entry = Storage::Undetermined;
         }
     }
-    out
+    Ok(out)
 }
 
-/// 비레코드 스트림 비교. `storage`는 양쪽 BinData 저장 형태(정해지면).
+/// 비레코드 스트림 비교. `storage`는 양쪽 BIN_DATA 선언으로 정한 저장 형태(선언이 없는 스트림은 None: 엔진이 그대로 옮기는
+/// 불투명 바이트라 바이트가 같아야 한다).
 fn compare_stream(
     name: &str,
     before: &[u8],
     after: &[u8],
-    storage: (Option<bool>, Option<bool>),
+    storage: (Option<Storage>, Option<Storage>),
 ) -> Option<Finding> {
     let changed = || Some(Finding::at(FindingCode::PartChanged, name));
     match storage {
-        (Some(a), Some(b)) if a != b => changed(),
-        (Some(true), Some(true)) if before != after => {
-            let Some(a) = inflate(before) else {
-                return Some(Finding::at(FindingCode::OriginalMalformed, name));
+        (a, b) if a != b => changed(),
+        (Some(Storage::Undetermined), _) => Some(Finding::at(FindingCode::Unsupported, name)),
+        (Some(Storage::Compressed), _) => {
+            // 압축으로 정해진 스트림은 바이트가 같아도 원본이 끝까지 풀려야 한다(같은 바이트의 깨진 스트림은 보존의 근거가
+            // 아니다, T009 4차 안정화 B). 같은 바이트면 출력도 방금 확인한 그 스트림이라 다시 풀지 않는다.
+            let a = match inflate(before) {
+                Ok(data) => data,
+                Err(problem) => return Some(Side::Original.unpack_finding(problem, name)),
             };
-            let Some(b) = inflate(after) else {
-                return Some(Finding::at(FindingCode::OutputMalformed, name));
+            if before == after {
+                return None;
+            }
+            let b = match inflate(after) {
+                Ok(data) => data,
+                Err(problem) => return Some(Side::Output.unpack_finding(problem, name)),
             };
             (a != b).then(|| Finding::at(FindingCode::PartChanged, name))
         }
@@ -265,11 +360,11 @@ pub(crate) fn canonical_number(text: &str) -> bool {
 }
 
 /// 레코드 스트림의 압축을 푼다(컨테이너의 압축 플래그를 따른다).
-fn unpack(container: &Container, data: &[u8]) -> Option<Vec<u8>> {
+fn unpack(container: &Container, data: &[u8]) -> Result<Vec<u8>, Unpack> {
     if container.compressed {
         inflate(data)
     } else {
-        Some(data.to_vec())
+        Ok(data.to_vec())
     }
 }
 
@@ -324,7 +419,20 @@ fn compare_with(original: &[u8], output: &[u8], mode: Mode) -> Vec<Finding> {
             findings.push(Finding::at(FindingCode::PartAdded, name));
         }
     }
-    let (bin_before, bin_after) = (bin_data_storage(&original), bin_data_storage(&output));
+    // 원본의 선언을 해석할 수 없으면 판정은 이미 unknown이다: 양쪽 다 선언 없이(불투명 바이트로) 비교한다.
+    let (bin_before, bin_after) = match bin_data_storage(&original, Side::Original) {
+        Ok(before) => match bin_data_storage(&output, Side::Output) {
+            Ok(after) => (before, after),
+            Err(finding) => {
+                findings.push(finding);
+                (before, BTreeMap::new())
+            }
+        },
+        Err(finding) => {
+            findings.push(finding);
+            (BTreeMap::new(), BTreeMap::new())
+        }
+    };
     let mut body_changed = false;
     for (name, before) in &original.streams {
         let Some(after) = output.streams.get(name) else {
@@ -335,16 +443,25 @@ fn compare_with(original: &[u8], output: &[u8], mode: Mode) -> Vec<Finding> {
             continue;
         }
         if !record_stream(name) {
-            let storage = (
-                bin_before.get(name).copied().flatten(),
-                bin_after.get(name).copied().flatten(),
-            );
+            let key = name.to_ascii_uppercase();
+            if key.starts_with(BIN_DATA_PREFIX) && !name.is_ascii() {
+                // ASCII가 아닌 BinData 이름은 CFB의 대소문자 규칙으로 어느 선언과 짝인지 확실히 정할 수 없다.
+                findings.push(Finding::at(FindingCode::Unsupported, name));
+                continue;
+            }
+            let storage = (bin_before.get(&key).copied(), bin_after.get(&key).copied());
             findings.extend(compare_stream(name, before, after, storage));
             continue;
         }
         // 레코드 스트림: 바이트가 같아도 양쪽을 끝까지 읽는다(원본이 깨졌으면 unknown, 출력이 깨졌으면 unsafe).
-        let before_data = unpack(&original, before);
-        let Some(before_records) = before_data.as_deref().and_then(records) else {
+        let before_data = match unpack(&original, before) {
+            Ok(data) => data,
+            Err(problem) => {
+                findings.push(Side::Original.unpack_finding(problem, name));
+                continue;
+            }
+        };
+        let Some(before_records) = records(&before_data) else {
             findings.push(Finding::at(FindingCode::OriginalMalformed, name));
             continue;
         };
@@ -352,9 +469,9 @@ fn compare_with(original: &[u8], output: &[u8], mode: Mode) -> Vec<Finding> {
             None // 같은 바이트·같은 압축: 위에서 읽은 것과 같다
         } else {
             match unpack(&output, after) {
-                Some(data) => Some(data),
-                None => {
-                    findings.push(Finding::at(FindingCode::OutputMalformed, name));
+                Ok(data) => Some(data),
+                Err(problem) => {
+                    findings.push(Side::Output.unpack_finding(problem, name));
                     continue;
                 }
             }
@@ -382,7 +499,7 @@ fn compare_with(original: &[u8], output: &[u8], mode: Mode) -> Vec<Finding> {
             findings.push(Finding::at(FindingCode::RecordsChanged, name));
         }
     }
-    // 본문을 바꾼 저장: 원본 그대로 남는 미리보기는 내용이 없음을 증명해야 한다(지운 글자가 남지 않게).
+    // 본문을 바꾼 저장: 원본 그대로 남는 미리보기는 문서 내용과 무관함을 증명해야 한다(지운 내용이 남지 않게).
     if body_changed {
         let stale = |name: &str, empty: fn(&[u8]) -> bool| {
             output
@@ -393,7 +510,7 @@ fn compare_with(original: &[u8], output: &[u8], mode: Mode) -> Vec<Finding> {
         if stale("PrvText", preview::blank_utf16) {
             findings.push(Finding::at(FindingCode::PreviewStale, "PrvText"));
         }
-        if stale("PrvImage", preview::uniform_png) {
+        if stale("PrvImage", preview::known_blank_png) {
             findings.push(Finding::at(FindingCode::PreviewStale, "PrvImage"));
         }
     }

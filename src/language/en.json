@@ -240,7 +240,7 @@
   "editor.save.finding.limitExceeded": "{part}: exceeds the check limits.",
   "editor.save.finding.unsupported": "{part}: preservation cannot be checked for this format or protected document.",
   "editor.save.finding.preflightMissing": "There is no preservation check result for this original.",
-  "editor.save.finding.previewStale": "{part}: if the body changes, the original's preview would still show the content before editing.",
+  "editor.save.finding.previewStale": "{part}: if the body changes, the original's preview is kept as is, and it cannot be confirmed that it holds no content from before editing.",
   "document.pathLabel": "Absolute path of the document to open",
   "document.pathPlaceholder": "Absolute path of a document (.hwp, .hwpx, .docx)",
   "document.open": "Open",

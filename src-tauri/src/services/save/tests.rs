@@ -726,9 +726,9 @@ impl Docx {
     fn bytes(&self) -> Vec<u8> {
         std::fs::read(&self.path).unwrap()
     }
-    /// 디렉터리에 남은 임시 파일(저장 실패 뒤 없어야 한다).
+    /// 원본 디렉터리에 남은 임시 파일(저장 실패 뒤 없어야 한다).
     fn leftovers(&self) -> Vec<String> {
-        std::fs::read_dir(self.dir.path())
+        std::fs::read_dir(self.path.parent().unwrap())
             .unwrap()
             .map(|e| e.unwrap().file_name().to_string_lossy().into_owned())
             .filter(|n| n != "a.docx")
@@ -1664,8 +1664,11 @@ fn d_bindata는_속성으로_정한_저장_형태가_같을_때만_풀어서_비
     assert_eq!(hwp::compare(&doc(0, 2, &fast), &doc(0, 2, &best)), changed);
     assert_eq!(hwp::compare(&doc(0, 0, &fast), &doc(0, 0, &best)), changed);
     assert_eq!(hwp::compare(&doc(1, 2, &image), &doc(1, 2, &fast)), changed);
-    // 예약 속성(3): 형태를 정할 수 없으므로 바이트 비교.
-    assert_eq!(hwp::compare(&doc(0, 3, &fast), &doc(0, 3, &best)), changed);
+    // 예약 속성(3): 형태를 정할 수 없으므로 판단하지 않는다(4차 안정화 B 전에는 바이트 비교라 같은 바이트면 safe).
+    assert_eq!(
+        hwp::compare(&doc(0, 3, &fast), &doc(0, 3, &best)),
+        vec![Finding::at(FindingCode::Unsupported, name)]
+    );
     // 문서 플래그가 바뀌어 속성 0의 형태가 달라짐: 같은 내용이라도 다르다.
     let found = hwp::compare(&doc(1, 0, &fast), &doc(0, 0, &image));
     assert!(found.contains(&changed[0]), "{found:?}");
@@ -1736,7 +1739,7 @@ fn d_bindata는_속성으로_정한_저장_형태가_같을_때만_풀어서_비
         hwp_doc(0, &di, &section("hello"), &[(path, stream)])
     };
     assert_eq!(hwp::compare(&other(&fast), &other(&best)), changed);
-    // 같은 이름에 형태가 둘인 속성: 바이트 비교.
+    // 같은 이름에 형태가 둘인 속성: 정할 수 없으므로 판단하지 않는다(4차 안정화 B 전에는 바이트 비교).
     let twice = |stream: &[u8]| {
         let di = [
             docinfo(0, b"font"),
@@ -1746,7 +1749,10 @@ fn d_bindata는_속성으로_정한_저장_형태가_같을_때만_풀어서_비
         .concat();
         hwp_doc(0, &di, &section("hello"), &[(path, stream)])
     };
-    assert_eq!(hwp::compare(&twice(&fast), &twice(&best)), changed);
+    assert_eq!(
+        hwp::compare(&twice(&fast), &twice(&best)),
+        vec![Finding::at(FindingCode::Unsupported, name)]
+    );
 }
 
 #[test]
@@ -1835,8 +1841,8 @@ fn f_본문을_바꾼_hwp_저장은_내용이_없음을_증명한_미리보기�
         hwp_doc(0, &docinfo(0, b"font"), &section(body), &extra)
     };
     let blank_text = utf16("\r\n");
-    let blank_image = png(8, 4, true);
-    // 미리보기 없음·내용 없는 미리보기: 본문을 바꿔도 된다.
+    let blank_image = super::preview::RHWP_BLANK_PREVIEW_PNG.to_vec();
+    // 미리보기 없음·내용과 무관한 미리보기(빈 값·엔진 상수): 본문을 바꿔도 된다.
     assert_eq!(
         hwp::compare_saved(&doc("비밀 문장", None, None), &doc("공개", None, None)),
         vec![]
@@ -1860,7 +1866,15 @@ fn f_본문을_바꾼_hwp_저장은_내용이_없음을_증명한_미리보기�
             "{edited:?}"
         );
     }
-    // 그림이 있는(한 색이 아닌) 미리보기·해석할 수 없는 그림.
+    // 한 색이어도 출처를 모르는 그림(4차 안정화 C 전에는 받음), 그림이 있는 미리보기, 해석할 수 없는 그림.
+    let uniform = png(8, 4, true);
+    assert_eq!(
+        hwp::compare_saved(
+            &doc("a", None, Some(&uniform)),
+            &doc("b", None, Some(&uniform))
+        ),
+        vec![Finding::at(FindingCode::PreviewStale, "PrvImage")]
+    );
     let image = png(8, 4, false);
     assert_eq!(
         hwp::compare_saved(&doc("a", None, Some(&image)), &doc("b", None, Some(&image))),
@@ -1897,7 +1911,7 @@ fn f_hwpx와_docx도_본문을_바꾼_저장은_미리보기가_비었음을_증
         entries.push(entry("Preview/PrvImage.png", image));
         pkg(&entries)
     };
-    let blank = png(1, 1, true);
+    let blank = super::preview::RHWP_BLANK_PREVIEW_PNG.to_vec();
     let original = with_preview("<sec><p>비밀</p></sec>", b"\r\n", &blank);
     assert_eq!(
         package::compare_saved_hwpx(
@@ -1917,6 +1931,31 @@ fn f_hwpx와_docx도_본문을_바꾼_저장은_미리보기가_비었음을_증
             "Preview/PrvText.txt"
         )]
     );
+    // 미리보기 항목이 없는 HWPX: 남는 것이 없다.
+    let bare = |section: &str| pkg(&hwpx_package(section, "<head/>", true, true));
+    assert_eq!(
+        package::compare_saved_hwpx(
+            &bare("<sec><p>비밀</p></sec>"),
+            &bare("<sec><p>공개</p></sec>")
+        ),
+        vec![]
+    );
+    // 한 색이어도 엔진 상수가 아닌 그림·공백 무늬 글(4차 안정화 C 전에는 받음).
+    for (text, image, part) in [
+        (&b"\r\n"[..], png(1, 1, true), "Preview/PrvImage.png"),
+        (&b"\r\n\r\n"[..], blank.clone(), "Preview/PrvText.txt"),
+        (&b" \t\r\n"[..], blank.clone(), "Preview/PrvText.txt"),
+    ] {
+        let original = with_preview("<sec><p>a</p></sec>", text, &image);
+        assert_eq!(
+            package::compare_saved_hwpx(
+                &original,
+                &with_preview("<sec><p>b</p></sec>", text, &image)
+            ),
+            vec![Finding::at(FindingCode::PreviewStale, part)],
+            "{part}"
+        );
+    }
     let inked = png(4, 4, false);
     let original = with_preview("<sec><p>a</p></sec>", b"\r\n", &inked);
     assert_eq!(
@@ -2251,48 +2290,36 @@ fn 안정화_오류와_근거의_직렬화_형식() {
 }
 
 #[test]
-fn f_한_색_png_증명은_글을_숨길_자리가_있으면_하지_않는다() {
-    use super::preview::{blank_utf16, blank_utf8, uniform_png};
+fn f_한_색_png도_글을_숨길_자리가_있는_구조도_엔진_상수가_아니면_받지_않는다() {
+    use super::preview::{blank_utf16, blank_utf8, known_blank_png};
+    // 4차 안정화 C: 한 색 PNG는 증명이 아니다(3차의 엄격한 검사가 받던 것도 받지 않는다).
     let blank = png(6, 3, true);
-    assert!(uniform_png(&blank));
-    assert!(!uniform_png(&png(6, 3, false)));
+    assert!(!known_blank_png(&blank));
+    assert!(!known_blank_png(&png(6, 3, false)));
     // IHDR(8 + 25바이트) 뒤에 덩어리를 끼운다.
     let with_chunk =
         |kind: &[u8], body: &[u8]| [&blank[..33], &png_chunk(kind, body), &blank[33..]].concat();
-    assert!(uniform_png(&with_chunk(b"pHYs", &[0; 9])));
-    for kind in [b"tEXt", b"zTXt", b"iTXt", b"eXIf", b"prVt"] {
+    for kind in [b"pHYs", b"tEXt", b"zTXt", b"iTXt", b"eXIf", b"prVt"] {
         assert!(
-            !uniform_png(&with_chunk(kind, b"Comment\0secret")),
+            !known_blank_png(&with_chunk(kind, b"Comment\0secret")),
             "{:?}",
             std::str::from_utf8(kind)
         );
     }
-    // IEND 뒤 바이트.
-    assert!(!uniform_png(&[blank.clone(), b"secret".to_vec()].concat()));
-    // 픽셀보다 긴 압축 해제 내용, deflate 뒤 남는 바이트.
-    let rebuild = |raw: &[u8], tail: &[u8]| {
-        let mut zlib = flate2::write::ZlibEncoder::new(Vec::new(), flate2::Compression::default());
-        std::io::Write::write_all(&mut zlib, raw).unwrap();
-        let idat = [zlib.finish().unwrap(), tail.to_vec()].concat();
-        [
-            &blank[..33],
-            &png_chunk(b"IDAT", &idat),
-            &blank[blank.len() - 12..],
-        ]
-        .concat()
-    };
-    let rows: Vec<u8> = (0..3)
-        .flat_map(|_| std::iter::once(0).chain([255u8; 24]))
-        .collect();
-    assert!(uniform_png(&rebuild(&rows, &[])));
-    assert!(!uniform_png(&rebuild(
-        &[rows.clone(), b"secret".to_vec()].concat(),
-        &[]
-    )));
-    assert!(!uniform_png(&rebuild(&rows, b"secret")));
-    // 글 미리보기: 공백·제어 문자뿐일 때만.
-    assert!(blank_utf16(&utf16(" \r\n\t")) && blank_utf8(b"\xEF\xBB\xBF\r\n"));
-    assert!(!blank_utf16(&utf16("a")) && !blank_utf16(&[0x20]) && !blank_utf8("가".as_bytes()));
+    assert!(!known_blank_png(
+        &[blank.clone(), b"secret".to_vec()].concat()
+    ));
+    // 글 미리보기: 빈 값과 `\r\n` 하나만(공백 무늬·BOM·제어 문자는 받지 않는다).
+    assert!(
+        blank_utf16(b"") && blank_utf16(&utf16("\r\n")) && blank_utf8(b"") && blank_utf8(b"\r\n")
+    );
+    for text in [" \r\n\t", "\u{FEFF}\r\n", "\r\n\r\n", " ", "\n", "a"] {
+        assert!(
+            !blank_utf16(&utf16(text)) && !blank_utf8(text.as_bytes()),
+            "{text:?}"
+        );
+    }
+    assert!(!blank_utf16(&[0x20]));
 }
 
 // ---- T009 3차 안정화 B·E: 검증한 임시 파일이 게시되는 파일이다(위협 모델: 이 사용자·root 밖의 사용자는 믿지 않음) ----
@@ -2615,18 +2642,19 @@ fn png_of(chunks: &[Vec<u8>]) -> Vec<u8> {
 }
 
 #[test]
-fn c_미리보기_png는_구조_검사합_길이_순서가_모두_맞을_때만_한_색으로_증명한다() {
-    use super::preview::uniform_png;
+fn c_미리보기_png는_구조가_올바른_한_색이어도_깨졌어도_엔진_상수가_아니면_받지_않는다() {
+    // 4차 안정화 C: 3차의 엄격한 구조 검사를 통과하던 한 색 PNG(첫 묶음)도, 깨진 PNG(나머지)도 받지 않는다.
+    use super::preview::known_blank_png;
     let head = png_chunk(b"IHDR", &ihdr(4, 2, 6));
     let data = png_chunk(b"IDAT", &zlib_of(&white_rows(4, 2)));
     let end = png_chunk(b"IEND", b"");
     let ok = png_of(&[head.clone(), data.clone(), end.clone()]);
-    assert!(uniform_png(&ok));
+    assert!(!known_blank_png(&ok));
     // RGB·회색조, 허용 보조 덩어리(정확한 길이·값, 한 번, IDAT 앞).
     let rgb_rows: Vec<u8> = (0..2)
         .flat_map(|_| std::iter::once(0).chain([7u8; 12]))
         .collect();
-    assert!(uniform_png(&png_of(&[
+    assert!(!known_blank_png(&png_of(&[
         png_chunk(b"IHDR", &ihdr(4, 2, 2)),
         png_chunk(b"IDAT", &zlib_of(&rgb_rows)),
         end.clone()
@@ -2634,7 +2662,7 @@ fn c_미리보기_png는_구조_검사합_길이_순서가_모두_맞을_때만_
     let srgb = png_chunk(b"sRGB", &[0]);
     let gama = png_chunk(b"gAMA", &45455u32.to_be_bytes());
     let phys = png_chunk(b"pHYs", &[0, 0, 0x0e, 0xc3, 0, 0, 0x0e, 0xc3, 1]);
-    assert!(uniform_png(&png_of(&[
+    assert!(!known_blank_png(&png_of(&[
         head.clone(),
         srgb.clone(),
         gama.clone(),
@@ -2645,7 +2673,7 @@ fn c_미리보기_png는_구조_검사합_길이_순서가_모두_맞을_때만_
     // 나눠 쓴 IDAT(이어져 있음).
     let z = zlib_of(&white_rows(4, 2));
     let (a, b) = z.split_at(z.len() / 2);
-    assert!(uniform_png(&png_of(&[
+    assert!(!known_blank_png(&png_of(&[
         head.clone(),
         png_chunk(b"IDAT", a),
         png_chunk(b"IDAT", b),
@@ -2829,7 +2857,7 @@ fn c_미리보기_png는_구조_검사합_길이_순서가_모두_맞을_때만_
         ),
     ];
     for (name, png) in &rejected {
-        assert!(!uniform_png(png), "{name}");
+        assert!(!known_blank_png(png), "{name}");
     }
     // CRC 하나만 틀림.
     for at in [
@@ -2839,7 +2867,7 @@ fn c_미리보기_png는_구조_검사합_길이_순서가_모두_맞을_때만_
     ] {
         let mut bad = ok.clone();
         bad[8 + at] ^= 1;
-        assert!(!uniform_png(&bad), "CRC at {at}");
+        assert!(!known_blank_png(&bad), "CRC at {at}");
     }
     // zlib: 머리 검사 값, 사전, 창 크기, Adler-32, deflate 뒤 바이트, 픽셀보다 긴·짧은 내용.
     let with_zlib = |z: Vec<u8>| png_of(&[head.clone(), png_chunk(b"IDAT", &z), end.clone()]);
@@ -2866,12 +2894,12 @@ fn c_미리보기_png는_구조_검사합_길이_순서가_모두_맞을_때만_
             zlib_of(&[vec![5], vec![255; 16], vec![0], vec![255; 16]].concat()),
         ),
     ] {
-        assert!(!uniform_png(&with_zlib(z)), "{name}");
+        assert!(!known_blank_png(&with_zlib(z)), "{name}");
     }
     // 한 색이 아님.
     let mut rows = white_rows(4, 2);
     rows[3] = 0;
-    assert!(!uniform_png(&png_of(&[
+    assert!(!known_blank_png(&png_of(&[
         head.clone(),
         png_chunk(b"IDAT", &zlib_of(&rows)),
         end.clone()
@@ -2880,22 +2908,42 @@ fn c_미리보기_png는_구조_검사합_길이_순서가_모두_맞을_때만_
 
 #[test]
 fn c_고정_rhwp가_만드는_빈_hwpx_미리보기는_그_바이트일_때만_받는다() {
-    use super::preview::{blank_utf16, blank_utf8, uniform_png, RHWP_BLANK_PREVIEW_PNG};
-    // 고정 rhwp `serializer/hwpx/static_assets.rs` PRV_IMAGE_PNG(68바이트): 1×1 회색조+알파, 투명 픽셀 하나. IDAT CRC와
-    // zlib Adler-32가 틀리다(실측). 엄격한 검사로는 받지 않지만, 정확히 이 바이트면 모든 바이트의 뜻을 안다.
-    assert_eq!(RHWP_BLANK_PREVIEW_PNG.len(), 68);
-    assert!(uniform_png(RHWP_BLANK_PREVIEW_PNG));
-    let mut changed = RHWP_BLANK_PREVIEW_PNG.to_vec();
-    changed[45] ^= 1; // IDAT 압축 내용 한 비트
-    assert!(!uniform_png(&changed));
-    assert!(!uniform_png(&[RHWP_BLANK_PREVIEW_PNG, b"x"].concat()));
-    // 글 미리보기: 공백·탭·줄바꿈(그리고 맨 앞 BOM)만. 그 밖의 제어 문자는 정보를 담을 수 있어 받지 않는다.
-    assert!(
-        blank_utf8(b"\r\n")
-            && blank_utf8(b"\xEF\xBB\xBF \t\r\n")
-            && blank_utf16(&utf16("\r\n"))
-            && blank_utf16(&utf16("\u{FEFF}  "))
+    use super::preview::{
+        blank_utf16, blank_utf8, known_blank_png, RHWP_BLANK_PREVIEW_PNG, RHWP_BLANK_PREVIEW_TEXT,
+    };
+    // 출처: 고정 rhwp `serializer/hwpx/static_assets.rs`의 `PRV_IMAGE_PNG`·`PRV_TEXT`와 바이트가 같다(68바이트 1×1
+    // 회색조+알파 투명, IDAT CRC와 zlib Adler-32가 틀림 — 실측). HWP 빈 글 미리보기는 blank2010 자산과 같다.
+    let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../external/rhwp/src");
+    let assets = std::fs::read_to_string(root.join("serializer/hwpx/static_assets.rs")).unwrap();
+    let array = assets
+        .split("pub const PRV_IMAGE_PNG: &[u8] = &[")
+        .nth(1)
+        .and_then(|rest| rest.split("];").next())
+        .unwrap();
+    let bytes: Vec<u8> = array
+        .split(|c: char| c == ',' || c.is_whitespace())
+        .filter_map(|token| token.strip_prefix("0x"))
+        .map(|hex| u8::from_str_radix(hex, 16).unwrap())
+        .collect();
+    assert_eq!(bytes, RHWP_BLANK_PREVIEW_PNG);
+    assert!(assets.contains(r#"pub const PRV_TEXT: &[u8] = b"\r\n";"#));
+    assert_eq!(RHWP_BLANK_PREVIEW_TEXT, b"\r\n");
+    assert_eq!(
+        std::fs::read(root.join("parser/hwpx/blank2010_assets/prvtext.bin")).unwrap(),
+        utf16("\r\n")
     );
+    assert_eq!(RHWP_BLANK_PREVIEW_PNG.len(), 68);
+    assert!(known_blank_png(RHWP_BLANK_PREVIEW_PNG));
+    // 한 바이트·한 비트라도 다르면(같은 그림으로 풀리더라도) 받지 않는다.
+    for at in [0, 20, 45, 52, 67] {
+        let mut changed = RHWP_BLANK_PREVIEW_PNG.to_vec();
+        changed[at] ^= 1;
+        assert!(!known_blank_png(&changed), "{at}");
+    }
+    assert!(!known_blank_png(&[RHWP_BLANK_PREVIEW_PNG, b"x"].concat()));
+    assert!(!known_blank_png(&RHWP_BLANK_PREVIEW_PNG[..67]));
+    // 글 미리보기: 빈 값·줄바꿈 하나만. 그 밖의 제어 문자는 물론 공백 무늬도 받지 않는다.
+    assert!(blank_utf8(b"\r\n") && blank_utf16(&utf16("\r\n")));
     for text in [
         "\u{1}",
         "\u{0}",
@@ -2904,6 +2952,8 @@ fn c_고정_rhwp가_만드는_빈_hwpx_미리보기는_그_바이트일_때만_�
         "\u{200B}",
         "\u{3000}",
         " \u{FEFF}",
+        "\u{FEFF}\r\n",
+        "  ",
     ] {
         assert!(
             !blank_utf16(&utf16(text)) && !blank_utf8(text.as_bytes()),
@@ -3094,4 +3144,1049 @@ fn d_hwpx_편집_면제도_rhwp가_쓰는_구역_이름만이다() {
             "Contents/section01.xml"
         )]
     );
+}
+
+// ---- T009 4차 안정화 B: 압축으로 정해진 BinData는 바이트가 같아도 끝까지 풀려야 한다 ----
+
+#[test]
+fn b4_압축으로_정해진_bindata는_바이트가_같아도_끝까지_풀려야_한다() {
+    let image = b"\x89PNG image bytes ".repeat(40);
+    let encode = |level: u32, data: &[u8]| {
+        let mut e = flate2::write::DeflateEncoder::new(Vec::new(), flate2::Compression::new(level));
+        std::io::Write::write_all(&mut e, data).unwrap();
+        e.finish().unwrap()
+    };
+    let (fast, best) = (encode(1, &image), encode(9, &image));
+    let name = "BinData/BIN0001.png";
+    // 압축 속성(`compression`)과 문서 압축 플래그(`flags`)로 BIN0001.png를 선언한 HWP. `stream_name`의 스트림을 둔다.
+    let doc_named = |flags: u32, records: &[Vec<u8>], stream_name: &str, stream: &[u8]| {
+        let mut di = docinfo(0, b"font");
+        for record in records {
+            di.extend_from_slice(record);
+        }
+        let (di, body) = if flags & 1 != 0 {
+            (
+                crate::document::testutil::deflate(&di),
+                crate::document::testutil::deflate(&section("hello")),
+            )
+        } else {
+            (di, section("hello"))
+        };
+        hwp_doc(flags, &di, &body, &[(stream_name, stream)])
+    };
+    let doc = |flags: u32, compression: u16, stream: &[u8]| {
+        doc_named(
+            flags,
+            &[bin_data(1, "png", compression)],
+            "/BinData/BIN0001.png",
+            stream,
+        )
+    };
+    let at = |code: FindingCode, part: &str| vec![Finding::at(code, part)];
+    let original_malformed = at(FindingCode::OriginalMalformed, name);
+    // 잘린 deflate(앞 절반), 끝 블록 표시(BFINAL) 없이 끝나는 저장 블록.
+    let truncated = fast[..fast.len() / 2].to_vec();
+    let unfinished = [&[0x00u8, 0x04, 0x00, 0xFB, 0xFF][..], b"data"].concat();
+    let mut crc = flate2::Crc::new();
+    crc.update(&image);
+    let tail = |crc_value: u32, len: u32| [crc_value.to_le_bytes(), len.to_le_bytes()].concat();
+    let hancom = [fast.clone(), tail(crc.sum(), image.len() as u32)].concat();
+    let bad_crc = [fast.clone(), tail(crc.sum() ^ 1, image.len() as u32)].concat();
+    let bad_len = [fast.clone(), tail(crc.sum(), image.len() as u32 + 1)].concat();
+    let junk = [fast.clone(), b"tail".to_vec()].concat();
+    let long_tail = [hancom.clone(), vec![0]].concat();
+    // BIN_DATA 레코드: 형식 비트(0–3)·압축 비트(4–5)를 직접 정한다.
+    let raw_bin = |attr: u16, rest: &[u8]| record(18, 1, &[&attr.to_le_bytes()[..], rest].concat());
+    type Case = (&'static str, Vec<u8>, Vec<u8>, Vec<Finding>);
+    let cases: Vec<Case> = vec![
+        // 1. 같은 바이트의 올바른 압축 BinData.
+        (
+            "identical-valid",
+            doc(0, 1, &fast),
+            doc(0, 1, &fast),
+            vec![],
+        ),
+        // 2·3. 같은 바이트의 깨진·잘린·끝나지 않은 deflate: 원본을 해석할 수 없다(unknown).
+        (
+            "identical-malformed",
+            doc(0, 1, b"\xff\xff"),
+            doc(0, 1, b"\xff\xff"),
+            original_malformed.clone(),
+        ),
+        (
+            "identical-truncated",
+            doc(0, 1, &truncated),
+            doc(0, 1, &truncated),
+            original_malformed.clone(),
+        ),
+        (
+            "identical-unfinished",
+            doc(0, 1, &unfinished),
+            doc(0, 1, &unfinished),
+            original_malformed.clone(),
+        ),
+        (
+            "identical-empty",
+            doc(0, 1, b""),
+            doc(0, 1, b""),
+            original_malformed.clone(),
+        ),
+        // 4. 같은 내용의 다른 deflate 표현: 같다.
+        ("equivalent", doc(0, 1, &fast), doc(0, 1, &best), vec![]),
+        // 5. 푼 내용이 다름.
+        (
+            "different",
+            doc(0, 1, &fast),
+            doc(0, 1, &encode(9, b"other")),
+            at(FindingCode::PartChanged, name),
+        ),
+        // 6·7. 한쪽만 깨짐.
+        (
+            "output-malformed",
+            doc(0, 1, &fast),
+            doc(0, 1, &truncated),
+            at(FindingCode::OutputMalformed, name),
+        ),
+        (
+            "original-malformed",
+            doc(0, 1, &truncated),
+            doc(0, 1, &fast),
+            original_malformed.clone(),
+        ),
+        (
+            "original-unfinished",
+            doc(0, 1, &unfinished),
+            doc(0, 1, &fast),
+            original_malformed.clone(),
+        ),
+        // 8·9·10. 한컴 8바이트 꼬리: 맞으면 받고, CRC·길이가 틀리거나 그 밖의 남는 바이트는 같은 바이트여도 받지 않는다.
+        (
+            "identical-hancom-tail",
+            doc(0, 1, &hancom),
+            doc(0, 1, &hancom),
+            vec![],
+        ),
+        (
+            "hancom-tail-vs-plain",
+            doc(0, 1, &hancom),
+            doc(0, 1, &best),
+            vec![],
+        ),
+        (
+            "identical-bad-crc",
+            doc(0, 1, &bad_crc),
+            doc(0, 1, &bad_crc),
+            original_malformed.clone(),
+        ),
+        (
+            "identical-bad-length",
+            doc(0, 1, &bad_len),
+            doc(0, 1, &bad_len),
+            original_malformed.clone(),
+        ),
+        (
+            "identical-junk-tail",
+            doc(0, 1, &junk),
+            doc(0, 1, &junk),
+            original_malformed.clone(),
+        ),
+        (
+            "identical-long-tail",
+            doc(0, 1, &long_tail),
+            doc(0, 1, &long_tail),
+            original_malformed.clone(),
+        ),
+        (
+            "output-bad-crc",
+            doc(0, 1, &fast),
+            doc(0, 1, &bad_crc),
+            at(FindingCode::OutputMalformed, name),
+        ),
+        // 12. 문서 압축 플래그를 따르는 속성(0): 압축 문서면 검사하고, 비압축(속성 2·비압축 문서의 0)은 불투명 바이트로 같다.
+        (
+            "default-compressed-malformed",
+            doc(1, 0, b"\xff\xff"),
+            doc(1, 0, b"\xff\xff"),
+            original_malformed.clone(),
+        ),
+        (
+            "explicit-stored",
+            doc(1, 2, b"\xff\xff"),
+            doc(1, 2, b"\xff\xff"),
+            vec![],
+        ),
+        (
+            "default-stored",
+            doc(0, 0, b"\xff\xff"),
+            doc(0, 0, b"\xff\xff"),
+            vec![],
+        ),
+        // 13. 예약 압축 값(3): 저장 형태를 정할 수 없다(unknown).
+        (
+            "reserved-compression",
+            doc(0, 3, &fast),
+            doc(0, 3, &fast),
+            at(FindingCode::Unsupported, name),
+        ),
+        // 14. 같은 이름의 선언이 둘: 형태가 같으면 그 형태로 검사, 다르면 정할 수 없다.
+        (
+            "duplicate-consistent",
+            doc_named(
+                0,
+                &[bin_data(1, "png", 1), bin_data(1, "png", 1)],
+                "/BinData/BIN0001.png",
+                b"\xff\xff",
+            ),
+            doc_named(
+                0,
+                &[bin_data(1, "png", 1), bin_data(1, "png", 1)],
+                "/BinData/BIN0001.png",
+                b"\xff\xff",
+            ),
+            original_malformed.clone(),
+        ),
+        (
+            "duplicate-conflicting",
+            doc_named(
+                0,
+                &[bin_data(1, "png", 1), bin_data(1, "png", 2)],
+                "/BinData/BIN0001.png",
+                &fast,
+            ),
+            doc_named(
+                0,
+                &[bin_data(1, "png", 1), bin_data(1, "png", 2)],
+                "/BinData/BIN0001.png",
+                &fast,
+            ),
+            at(FindingCode::Unsupported, name),
+        ),
+        // 15. 이름: CFB 이름은 대소문자를 가리지 않는다(엔진도 그렇게 찾는다). 선언이 없는 스트림(확장자 다름)은 엔진이
+        //     그대로 옮기는 불투명 바이트, 선언만 있고 스트림이 없으면 비교할 것이 없다.
+        (
+            "case-insensitive-name",
+            doc_named(
+                0,
+                &[bin_data(1, "PNG", 1)],
+                "/BinData/BIN0001.png",
+                b"\xff\xff",
+            ),
+            doc_named(
+                0,
+                &[bin_data(1, "PNG", 1)],
+                "/BinData/BIN0001.png",
+                b"\xff\xff",
+            ),
+            original_malformed.clone(),
+        ),
+        (
+            "undeclared-stream",
+            doc_named(
+                0,
+                &[bin_data(1, "jpg", 1)],
+                "/BinData/BIN0001.png",
+                b"\xff\xff",
+            ),
+            doc_named(
+                0,
+                &[bin_data(1, "jpg", 1)],
+                "/BinData/BIN0001.png",
+                b"\xff\xff",
+            ),
+            vec![],
+        ),
+        (
+            "declared-missing",
+            doc_named(
+                0,
+                &[bin_data(2, "png", 1)],
+                "/BinData/BIN0001.png",
+                b"\xff\xff",
+            ),
+            doc_named(
+                0,
+                &[bin_data(2, "png", 1)],
+                "/BinData/BIN0001.png",
+                b"\xff\xff",
+            ),
+            vec![],
+        ),
+        (
+            "non-ascii-name",
+            doc_named(
+                0,
+                &[bin_data(1, "png", 1)],
+                "/BinData/BIN0001.pñg",
+                b"\xff\xff",
+            ),
+            doc_named(
+                0,
+                &[bin_data(1, "png", 1)],
+                "/BinData/BIN0001.pñg",
+                b"\xff\xff",
+            ),
+            at(FindingCode::Unsupported, "BinData/BIN0001.pñg"),
+        ),
+        // 해석할 수 없는 BIN_DATA 레코드(확장자가 레코드 끝을 넘음·짝이 맞지 않는 UTF-16·예약 형식): 어느 스트림을 어떻게
+        // 읽는지 정할 수 없다.
+        (
+            "truncated-declaration",
+            doc_named(
+                0,
+                &[raw_bin(0x11, &[1, 0, 3, 0, b'p', 0])],
+                "/BinData/BIN0001.png",
+                &fast,
+            ),
+            doc_named(
+                0,
+                &[raw_bin(0x11, &[1, 0, 3, 0, b'p', 0])],
+                "/BinData/BIN0001.png",
+                &fast,
+            ),
+            at(FindingCode::OriginalMalformed, "DocInfo"),
+        ),
+        (
+            "invalid-utf16-declaration",
+            doc_named(
+                0,
+                &[raw_bin(0x11, &[1, 0, 1, 0, 0x00, 0xD8])],
+                "/BinData/BIN0001.png",
+                &fast,
+            ),
+            doc_named(
+                0,
+                &[raw_bin(0x11, &[1, 0, 1, 0, 0x00, 0xD8])],
+                "/BinData/BIN0001.png",
+                &fast,
+            ),
+            at(FindingCode::OriginalMalformed, "DocInfo"),
+        ),
+        (
+            "reserved-type",
+            doc_named(
+                0,
+                &[raw_bin(0x13, &[1, 0, 3, 0, b'p', 0, b'n', 0, b'g', 0])],
+                "/BinData/BIN0001.png",
+                &fast,
+            ),
+            doc_named(
+                0,
+                &[raw_bin(0x13, &[1, 0, 3, 0, b'p', 0, b'n', 0, b'g', 0])],
+                "/BinData/BIN0001.png",
+                &fast,
+            ),
+            at(FindingCode::Unsupported, "DocInfo"),
+        ),
+        // 저장소(OLE) 형식은 확장자가 없으면 엔진처럼 `OLE`로 정한다.
+        (
+            "storage-default-extension",
+            doc_named(
+                0,
+                &[raw_bin(0x12, &[1, 0])],
+                "/BinData/BIN0001.OLE",
+                b"\xff\xff",
+            ),
+            doc_named(
+                0,
+                &[raw_bin(0x12, &[1, 0])],
+                "/BinData/BIN0001.OLE",
+                b"\xff\xff",
+            ),
+            at(FindingCode::OriginalMalformed, "BinData/BIN0001.OLE"),
+        ),
+    ];
+    let mut wrong = Vec::new();
+    for (case, original, output, expected) in &cases {
+        let found = hwp::compare(original, output);
+        if &found != expected {
+            wrong.push(format!("{case}: {found:?} != {expected:?}"));
+        }
+        // 편집한 저장의 비교도 같은 규칙(본문 밖).
+        let saved = hwp::compare_saved(original, output);
+        if &saved != expected {
+            wrong.push(format!("{case} (saved): {saved:?} != {expected:?}"));
+        }
+    }
+    // 11. 풀어낸 크기 상한: 넘으면 어느 쪽이든 판단하지 않는다(unknown). 상한은 시험에서만 낮춘다.
+    hwp::INFLATE_LIMIT.with(|limit| limit.set(Some(image.len() as u64 - 1)));
+    let limited = [
+        (
+            "limit-identical",
+            hwp::compare(&doc(0, 1, &fast), &doc(0, 1, &fast)),
+        ),
+        (
+            "limit-original",
+            hwp::compare(&doc(0, 1, &fast), &doc(0, 1, &encode(9, b"small"))),
+        ),
+        (
+            "limit-output",
+            hwp::compare(&doc(0, 1, &encode(9, b"small")), &doc(0, 1, &fast)),
+        ),
+    ];
+    hwp::INFLATE_LIMIT.with(|limit| limit.set(None));
+    for (case, found) in limited {
+        if found != at(FindingCode::LimitExceeded, name) {
+            wrong.push(format!("{case}: {found:?}"));
+        }
+    }
+    // 레코드 스트림도 끝까지 끝나야 한다: 끝 블록 없이 끝난 DocInfo는 같은 바이트여도 unknown.
+    let unfinished_docinfo = |_: ()| {
+        let di = docinfo(0, b"font");
+        let mut stored = vec![0x00u8];
+        stored.extend_from_slice(&(di.len() as u16).to_le_bytes());
+        stored.extend_from_slice(&(!(di.len() as u16)).to_le_bytes());
+        stored.extend_from_slice(&di);
+        hwp_doc(
+            1,
+            &stored,
+            &crate::document::testutil::deflate(&section("hello")),
+            &[],
+        )
+    };
+    let found = hwp::compare(&unfinished_docinfo(()), &unfinished_docinfo(()));
+    if found != at(FindingCode::OriginalMalformed, "DocInfo") {
+        wrong.push(format!("unfinished-docinfo: {found:?}"));
+    }
+    let found = hwp::compare(&unfinished_docinfo(()), &doc(1, 0, &fast));
+    if !found.contains(&Finding::at(FindingCode::OriginalMalformed, "DocInfo")) {
+        wrong.push(format!("unfinished-docinfo vs valid: {found:?}"));
+    }
+    assert!(wrong.is_empty(), "{}", wrong.join("\n"));
+}
+
+// ---- T009 4차 안정화 A: 원본까지의 모든 상위 디렉터리를 다른 사용자가 바꿀 수 없어야 한다 ----
+
+/// 불러오기 전에 `dir` 아래 `relative`에 둔 DOCX 세션(상위 디렉터리를 시험마다 만든다).
+fn open_docx_in(dir: TempDir, relative: &str, bytes: &[u8]) -> Docx {
+    let path = dir.path().join(relative);
+    std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+    std::fs::write(&path, bytes).unwrap();
+    let state = DocumentState::default();
+    let file = identify(path.to_str().unwrap(), &Limits::default()).unwrap();
+    let info = state.registry().register(file).unwrap();
+    let loaded = block_on(docx::load(&state, info.session_id, None)).expect("불러오기");
+    Docx {
+        state,
+        dir,
+        path,
+        info: loaded.session,
+    }
+}
+
+/// 같은 부모 안의 두 디렉터리 항목을 맞바꾼다(그 부모에 쓸 수 있는 사용자가 할 수 있는 일).
+fn exchange(a: &Path, b: &Path) {
+    let parked = a.with_extension("parked");
+    std::fs::rename(a, &parked).unwrap();
+    std::fs::rename(b, a).unwrap();
+    std::fs::rename(&parked, b).unwrap();
+}
+
+/// 시험용 훅 자리(`publish`의 스레드 지역 값)와 거기 걸 훅들.
+type HookSlot = &'static std::thread::LocalKey<std::cell::RefCell<Option<super::publish::Hook>>>;
+type Hooks = Vec<(HookSlot, Box<dyn Fn(&Path, &Path)>)>;
+/// 경합 사례: 이름, 공유 디렉터리를 받아 훅을 만드는 함수, 기대 오류.
+type RaceCase = (&'static str, Box<dyn Fn(&Path) -> Hooks>, DocumentError);
+/// 미리보기 운반체: 이름, 바이트, 그 바이트에서 비밀을 꺼내는 함수.
+type Carrier = (&'static str, Vec<u8>, Box<dyn Fn(&[u8]) -> Vec<u8>>);
+
+/// 시험용 훅을 걸고 저장한다(같은 스레드). 훅이 불린 횟수를 돌려준다.
+fn save_with_hooks(doc: &Docx, hooks: Hooks) -> (Result<SaveOutcome, DocumentError>, usize) {
+    let calls = std::rc::Rc::new(std::cell::Cell::new(0usize));
+    let keys: Vec<_> = hooks.iter().map(|(key, _)| *key).collect();
+    for (key, hook) in hooks {
+        let calls = calls.clone();
+        key.with(|cell| {
+            *cell.borrow_mut() = Some(Box::new(move |a: &Path, b: &Path| {
+                calls.set(calls.get() + 1);
+                hook(a, b)
+            }))
+        });
+    }
+    let result = save_with_fault(doc, None);
+    for key in keys {
+        key.with(|cell| *cell.borrow_mut() = None);
+    }
+    (result, calls.get())
+}
+
+#[cfg(target_os = "linux")]
+#[test]
+fn a4_다른_사용자가_이름을_바꿀_수_있는_상위_디렉터리_아래의_원본은_저장하지_않는다() {
+    use super::publish::{AFTER_STAGE, BEFORE_CREATE, BEFORE_RENAME};
+    use std::os::unix::fs::PermissionsExt;
+    let original = basic::basic_ko().unwrap();
+    // root/shared(0777, sticky 없음)/docs(0700)/a.docx, 같은 부모의 root/shared/other(0755)/a.docx(남의 것).
+    let root = TempDir::new();
+    let shared = root.path().join("shared");
+    let docs = shared.join("docs");
+    let other = shared.join("other");
+    let mut doc = open_docx_in(root, "shared/docs/a.docx", &original);
+    std::fs::create_dir(&other).unwrap();
+    std::fs::write(other.join("a.docx"), b"unrelated").unwrap();
+    std::fs::set_permissions(&docs, std::fs::Permissions::from_mode(0o700)).unwrap();
+    std::fs::set_permissions(&shared, std::fs::Permissions::from_mode(0o777)).unwrap();
+    doc.edit(edits());
+    doc.preflight().unwrap();
+    // 다른 사용자(shared에 쓸 수 있다)가 docs와 other를 맞바꾸는 흉내: 임시 파일을 만들기 전, 임시 파일을 다 쓴 뒤
+    // (되돌림: 원본 다시 읽기·확인은 진짜 docs를 본다), 교체 직전.
+    let (d1, o1) = (docs.clone(), other.clone());
+    let (d2, o2) = (docs.clone(), other.clone());
+    let (d3, o3) = (docs.clone(), other.clone());
+    let (saved, calls) = save_with_hooks(
+        &doc,
+        vec![
+            (&BEFORE_CREATE, Box::new(move |_, _| exchange(&d1, &o1))),
+            (&AFTER_STAGE, Box::new(move |_, _| exchange(&d2, &o2))),
+            (&BEFORE_RENAME, Box::new(move |_, _| exchange(&d3, &o3))),
+        ],
+    );
+    // 관찰: 어느 디렉터리 객체의 a.docx가 바뀌었나(맞바꾼 횟수가 홀수면 docs 경로에 other가 있다).
+    let (real, unrelated) = if calls % 2 == 1 {
+        (other.join("a.docx"), docs.join("a.docx"))
+    } else {
+        (docs.join("a.docx"), other.join("a.docx"))
+    };
+    let observed = format!(
+        "saved={:?} hooks={calls} 원본_그대로={} 남의_파일_그대로={}",
+        saved.as_ref().map(|o| (o.durable, o.session.dirty)),
+        std::fs::read(&real).unwrap() == original,
+        std::fs::read(&unrelated).unwrap() == b"unrelated",
+    );
+    assert_eq!(
+        saved.as_ref().err(),
+        Some(&DocumentError::SaveUnsupported {
+            reason: SaveUnsupportedReason::SharedDirectory
+        }),
+        "{observed}"
+    );
+    assert_eq!(calls, 0, "임시 파일을 만들기 전에 거부: {observed}");
+    assert_eq!(std::fs::read(&doc.path).unwrap(), original);
+    assert_eq!(std::fs::read(other.join("a.docx")).unwrap(), b"unrelated");
+    assert_eq!(doc.leftovers(), Vec::<String>::new());
+    let others: Vec<_> = std::fs::read_dir(&other)
+        .unwrap()
+        .map(|e| e.unwrap().file_name())
+        .collect();
+    assert_eq!(others, vec![std::ffi::OsString::from("a.docx")]);
+    std::fs::set_permissions(&shared, std::fs::Permissions::from_mode(0o755)).unwrap();
+    doc.edit(edits());
+    assert!(doc.info.dirty);
+}
+
+/// 저장에 성공했으면 세션이 깨끗하고, 기록한 파일(새 inode·지문)이 디스크와 같아 사전 검사를 다시 할 수 있다.
+fn assert_published(doc: &mut Docx, saved: SaveOutcome, label: &str) {
+    assert!(saved.durable, "{label}");
+    assert!(!saved.session.dirty, "{label}");
+    doc.info = saved.session;
+    assert!(
+        doc.preflight()
+            .is_ok_and(|check| check.preservation.is_safe()),
+        "{label}: 기록한 지문이 게시한 파일과 같다"
+    );
+}
+
+#[cfg(target_os = "linux")]
+#[test]
+fn a4_상위_디렉터리는_권한과_acl로_다른_사용자가_항목을_바꿀_수_없을_때만_저장한다() {
+    use std::os::unix::fs::{MetadataExt, PermissionsExt};
+    let original = basic::basic_ko().unwrap();
+    let set = |path: &Path, bits: u32| {
+        std::fs::set_permissions(path, std::fs::Permissions::from_mode(bits)).unwrap()
+    };
+    let shared = Some(DocumentError::SaveUnsupported {
+        reason: SaveUnsupportedReason::SharedDirectory,
+    });
+    // 시험 디렉터리의 실제 상위(뿌리·임시 디렉터리)는 root나 이 사용자 소유다(root 소유 상위를 믿는 경우).
+    let probe = TempDir::new();
+    assert!(probe
+        .path()
+        .ancestors()
+        .skip(1)
+        .any(|dir| std::fs::metadata(dir).unwrap().uid() == 0));
+    // 원본에서 두 단계 위(level1) 권한: 소유자만 쓰기(0700·0755·0711·읽기 없는 0311), 이 사용자 소유 sticky(1777)는 저장,
+    // 그룹·그 밖 쓰기(sticky 없음)는 막는다.
+    for (bits, expected) in [
+        (0o700, None),
+        (0o755, None),
+        (0o711, None),
+        (0o311, None),
+        (0o1777, None),
+        (0o775, shared.clone()),
+        (0o770, shared.clone()),
+        (0o757, shared.clone()),
+        (0o777, shared.clone()),
+    ] {
+        let mut doc = open_docx_in(TempDir::new(), "level1/level2/a.docx", &original);
+        let level1 = doc.path.parent().unwrap().parent().unwrap().to_path_buf();
+        set(&level1, bits);
+        doc.edit(edits());
+        doc.preflight().unwrap();
+        let saved = doc.save();
+        assert_eq!(saved.as_ref().err(), expected.as_ref(), "{bits:o}");
+        assert_eq!(doc.bytes() == original, expected.is_some(), "{bits:o}");
+        assert_eq!(doc.leftovers(), Vec::<String>::new(), "{bits:o}");
+        match saved {
+            Ok(saved) => assert_published(&mut doc, saved, &format!("{bits:o}")),
+            Err(_) => assert!(doc.info.dirty, "{bits:o}: 거부한 저장은 dirty 그대로"),
+        }
+        set(&level1, 0o755);
+    }
+    // 상위의 접근 ACL: 다른 사용자에게 읽기·찾기만 주면 저장, 쓰기 항목이 있으면 마스크가 막아도(보수적) 막는다.
+    let acl = |path: &Path, spec: &str| {
+        std::process::Command::new("setfacl")
+            .args(["-m", spec])
+            .arg(path)
+            .status()
+            .is_ok_and(|status| status.success())
+    };
+    for (spec, expected) in [
+        ("u:65534:r-x", None),
+        ("g:65534:--x", None),
+        ("u:65534:rwx,m::r-x", shared.clone()),
+        ("u:65534:rwx", shared.clone()),
+    ] {
+        let mut doc = open_docx_in(TempDir::new(), "level1/level2/a.docx", &original);
+        let level1 = doc.path.parent().unwrap().parent().unwrap().to_path_buf();
+        if !acl(&level1, spec) {
+            eprintln!("NOT RUN: 상위 디렉터리 ACL {spec}(setfacl 없음 또는 파일 시스템 미지원)");
+            continue;
+        }
+        doc.edit(edits());
+        doc.preflight().unwrap();
+        let saved = doc.save();
+        assert_eq!(saved.as_ref().err(), expected.as_ref(), "{spec}");
+        assert_eq!(doc.bytes() == original, expected.is_some(), "{spec}");
+        assert_eq!(doc.leftovers(), Vec::<String>::new(), "{spec}");
+        if let Ok(saved) = saved {
+            assert_published(&mut doc, saved, spec);
+        }
+    }
+}
+
+#[cfg(target_os = "linux")]
+#[test]
+fn a4_믿는_경로가_저장_중_움직이면_확인한_디렉터리에서만_일하고_게시하지_않는다() {
+    use super::publish::{AFTER_STAGE, BEFORE_CREATE, BEFORE_RENAME};
+    let original = basic::basic_ko().unwrap();
+    let not_published = DocumentError::SaveFailure {
+        stage: SaveStage::Publish,
+        io: None,
+    };
+    let missing = DocumentError::Unreadable {
+        reason: crate::document::ReadProblem::NotFound,
+    };
+    // root/shared(0755)/docs(0700)/a.docx와 같은 부모의 root/shared/other(0755)/a.docx(남의 것). 믿는 쪽(이 사용자)의
+    // 경합 흉내: 위협 모델 밖이지만 결과는 정직해야 한다(다른 디렉터리에 게시하지 않고, 이 저장의 임시 파일만 지운다).
+    let cases: Vec<RaceCase> = vec![
+        (
+            "parent-moved-before-create",
+            Box::new(|shared: &Path| -> Hooks {
+                let (docs, moved) = (shared.join("docs"), shared.join("moved"));
+                vec![(
+                    &BEFORE_CREATE,
+                    Box::new(move |_, _| std::fs::rename(&docs, &moved).unwrap()),
+                )]
+            }),
+            missing.clone(),
+        ),
+        (
+            "parent-exchanged-before-create",
+            Box::new(|shared: &Path| -> Hooks {
+                let (docs, other) = (shared.join("docs"), shared.join("other"));
+                vec![(
+                    &BEFORE_CREATE,
+                    Box::new(move |_, _| exchange(&docs, &other)),
+                )]
+            }),
+            DocumentError::FileConflict,
+        ),
+        (
+            "exchanged-create-restored-exchanged-rename",
+            Box::new(|shared: &Path| -> Hooks {
+                let pair = || (shared.join("docs"), shared.join("other"));
+                let ((d1, o1), (d2, o2), (d3, o3)) = (pair(), pair(), pair());
+                vec![
+                    (&BEFORE_CREATE, Box::new(move |_, _| exchange(&d1, &o1))),
+                    (&AFTER_STAGE, Box::new(move |_, _| exchange(&d2, &o2))),
+                    (&BEFORE_RENAME, Box::new(move |_, _| exchange(&d3, &o3))),
+                ]
+            }),
+            not_published.clone(),
+        ),
+        (
+            "ancestor-moved-after-create",
+            Box::new(|shared: &Path| -> Hooks {
+                let (from, to) = (shared.to_path_buf(), shared.with_extension("moved"));
+                vec![(
+                    &AFTER_STAGE,
+                    Box::new(move |_, _| std::fs::rename(&from, &to).unwrap()),
+                )]
+            }),
+            missing.clone(),
+        ),
+        (
+            "ancestor-replaced-before-rename",
+            Box::new(|shared: &Path| -> Hooks {
+                let (from, to) = (shared.to_path_buf(), shared.with_extension("moved"));
+                vec![(
+                    &BEFORE_RENAME,
+                    Box::new(move |_, _| {
+                        std::fs::rename(&from, &to).unwrap();
+                        std::fs::create_dir_all(from.join("docs")).unwrap();
+                    }),
+                )]
+            }),
+            not_published.clone(),
+        ),
+    ];
+    for (name, hooks, expected) in cases {
+        let root = TempDir::new();
+        let base = root.path().to_path_buf();
+        let mut doc = open_docx_in(root, "shared/docs/a.docx", &original);
+        let shared = base.join("shared");
+        std::fs::create_dir(shared.join("other")).unwrap();
+        std::fs::write(shared.join("other/a.docx"), b"unrelated").unwrap();
+        doc.edit(edits());
+        doc.preflight().unwrap();
+        let (saved, _) = save_with_hooks(&doc, hooks(&shared));
+        assert_eq!(saved.err(), Some(expected), "{name}");
+        // 원본은 어디로 옮겨졌든 그대로, 남의 파일 그대로, 어느 디렉터리에도 임시 파일이 남지 않는다.
+        let mut originals = 0;
+        let mut unrelated = 0;
+        for dir in walk_dirs(&base) {
+            for entry in std::fs::read_dir(&dir).unwrap() {
+                let entry = entry.unwrap();
+                let file_name = entry.file_name().to_string_lossy().into_owned();
+                assert!(
+                    !file_name.starts_with(".geul-save-"),
+                    "{name}: {dir:?}/{file_name}"
+                );
+                if entry.file_type().unwrap().is_file() {
+                    let bytes = std::fs::read(entry.path()).unwrap();
+                    originals += usize::from(bytes == original);
+                    unrelated += usize::from(bytes == b"unrelated");
+                }
+            }
+        }
+        assert_eq!((originals, unrelated), (1, 1), "{name}");
+        assert!(doc.info.dirty, "{name}");
+    }
+    // 경로에 심볼릭 링크가 생긴 상위(불러온 정규화 경로가 바뀜): 같은 파일로 이어져도 따라가지 않고 충돌로 막는다.
+    let root = TempDir::new();
+    let base = root.path().to_path_buf();
+    let mut doc = open_docx_in(root, "shared/docs/a.docx", &original);
+    doc.edit(edits());
+    doc.preflight().unwrap();
+    std::fs::rename(base.join("shared/docs"), base.join("shared/real")).unwrap();
+    std::os::unix::fs::symlink("real", base.join("shared/docs")).unwrap();
+    assert_eq!(doc.save().err(), Some(DocumentError::FileConflict));
+    assert_eq!(
+        std::fs::read(base.join("shared/real/a.docx")).unwrap(),
+        original
+    );
+    assert_eq!(doc.leftovers(), Vec::<String>::new());
+    // 경로를 되돌리면 같은 세션으로 저장할 수 있다(기록한 원본 그대로).
+    std::fs::remove_file(base.join("shared/docs")).unwrap();
+    std::fs::rename(base.join("shared/real"), base.join("shared/docs")).unwrap();
+    let saved = doc.save().unwrap();
+    assert_published(&mut doc, saved, "restored");
+}
+
+/// `root` 아래 모든 디렉터리(자신 포함).
+fn walk_dirs(root: &Path) -> Vec<std::path::PathBuf> {
+    let mut out = vec![root.to_path_buf()];
+    let mut at = 0;
+    while at < out.len() {
+        for entry in std::fs::read_dir(&out[at]).unwrap() {
+            let entry = entry.unwrap();
+            if entry.file_type().unwrap().is_dir() {
+                out.push(entry.path());
+            }
+        }
+        at += 1;
+    }
+    out
+}
+
+/// 4차 안정화 A 다중 사용자 탐침(로컬, 기본 실행 안 함): 실제 다른 uid가 공유 상위 디렉터리(`GEUL_A4_SHARED`)의 `docs`·
+/// `other` 항목을 계속 맞바꾸는 동안 `docs/a.docx`를 `GEUL_A4_ROUNDS`번 편집·저장하고 결과를 센다. 공격 쪽은 `GEUL_A4_READY`를
+/// 기다려 시작하고 `GEUL_A4_STOP`이 생기면 원래 배치로 되돌린 뒤 `GEUL_A4_DONE`을 쓴다. 사용자 이름공간 실행 절차는
+/// `docs/architecture/save-preservation.md`.
+#[cfg(target_os = "linux")]
+#[test]
+#[ignore]
+fn a4_다중_사용자_탐침() {
+    use std::os::unix::fs::{MetadataExt, PermissionsExt};
+    let var = |name: &str| std::env::var(name).ok().map(std::path::PathBuf::from);
+    let (Some(shared), Some(ready), Some(stop), Some(done)) = (
+        var("GEUL_A4_SHARED"),
+        var("GEUL_A4_READY"),
+        var("GEUL_A4_STOP"),
+        var("GEUL_A4_DONE"),
+    ) else {
+        eprintln!("GEUL_A4_* 없음");
+        return;
+    };
+    let rounds: usize = std::env::var("GEUL_A4_ROUNDS")
+        .ok()
+        .and_then(|value| value.parse().ok())
+        .unwrap_or(200);
+    let original = basic::basic_ko().unwrap();
+    let (docs, other) = (shared.join("docs"), shared.join("other"));
+    // 공유 디렉터리에 만들 권한이 없으면(믿는 쪽 소유 0755 등) 실행 절차가 미리 만들어 준다.
+    std::fs::create_dir_all(&docs).unwrap();
+    std::fs::create_dir_all(&other).unwrap();
+    std::fs::set_permissions(&docs, std::fs::Permissions::from_mode(0o700)).unwrap();
+    std::fs::set_permissions(&other, std::fs::Permissions::from_mode(0o755)).unwrap();
+    let path = docs.join("a.docx");
+    std::fs::write(&path, &original).unwrap();
+    std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o644)).unwrap();
+    let docs_ino = std::fs::metadata(&docs).unwrap().ino();
+    let state = DocumentState::default();
+    let file = identify(path.to_str().unwrap(), &Limits::default()).unwrap();
+    let info = state.registry().register(file).unwrap();
+    let mut info = block_on(docx::load(&state, info.session_id, None))
+        .unwrap()
+        .session;
+    std::fs::write(&ready, b"").unwrap();
+    let mut tally = std::collections::BTreeMap::<String, usize>::new();
+    let mut last_saved = None;
+    for _ in 0..rounds {
+        info = block_on(docx::edit(
+            &state,
+            info.session_id,
+            info.load_generation,
+            info.revision,
+            vec![DocxOp::InsertText { text: "a".into() }],
+        ))
+        .unwrap()
+        .session;
+        if let Err(error) = block_on(docx::preflight(
+            &state,
+            info.session_id,
+            info.load_generation,
+        )) {
+            *tally.entry(format!("preflight {error:?}")).or_default() += 1;
+            continue;
+        }
+        match block_on(docx::save(
+            &state,
+            info.session_id,
+            info.load_generation,
+            info.revision,
+        )) {
+            Ok(outcome) => {
+                *tally
+                    .entry(format!("ok durable={}", outcome.durable))
+                    .or_default() += 1;
+                info = outcome.session;
+                let model = state
+                    .wordcraft()
+                    .get(info.session_id, info.load_generation)
+                    .unwrap();
+                last_saved = Some(model.lock().unwrap().export().unwrap());
+            }
+            Err(error) => *tally.entry(format!("{error:?}")).or_default() += 1,
+        }
+    }
+    std::fs::write(&stop, b"").unwrap();
+    for _ in 0..1000 {
+        if done.exists() {
+            break;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(10));
+    }
+    let attacker = std::fs::read_to_string(&done).unwrap_or_default();
+    // 디렉터리 객체로 판단한다(공격 쪽이 짝수 번 맞바꿔 원래 배치로 되돌렸어야 한다).
+    let (real, wrong) = if std::fs::metadata(&docs).unwrap().ino() == docs_ino {
+        (docs.clone(), other.clone())
+    } else {
+        (other.clone(), docs.clone())
+    };
+    let names = |dir: &Path| -> Vec<String> {
+        std::fs::read_dir(dir)
+            .unwrap()
+            .map(|entry| entry.unwrap().file_name().to_string_lossy().into_owned())
+            .collect()
+    };
+    let real_bytes = std::fs::read(real.join("a.docx")).unwrap();
+    eprintln!(
+        "A4PROBE tally={tally:?} real_dir_entries={:?} wrong_dir_entries={:?} real_is_original={} real_is_last_saved={} attacker={attacker}",
+        names(&real),
+        names(&wrong),
+        real_bytes == original,
+        last_saved.as_deref() == Some(real_bytes.as_slice()),
+    );
+}
+
+// ---- T009 4차 안정화 C: 남는 미리보기는 내용과 무관함이 증명된 엔진 상수일 때만 ----
+
+/// 비밀 8바이트를 담은, 지금까지의 "한 색 PNG·빈 글" 증명을 통과할 수 있는 미리보기들(정보 용량 시연, 합성 픽스처).
+fn preview_carriers(secret: &[u8; 8]) -> Vec<Carrier> {
+    let end = png_chunk(b"IEND", b"");
+    let gray = |rows: Vec<u8>, height: u32| {
+        png_of(&[
+            png_chunk(b"IHDR", &ihdr(1, height, 0)),
+            png_chunk(b"IDAT", &zlib_of(&rows)),
+            end.clone(),
+        ])
+    };
+    let bits: Vec<u8> = secret
+        .iter()
+        .flat_map(|byte| (0..8).rev().map(move |bit| (byte >> bit) & 1))
+        .collect();
+    // 1. 완전히 투명한 RGBA 픽셀의 RGB(1×1, 알파 0): 3바이트.
+    let transparent = png_of(&[
+        png_chunk(b"IHDR", &ihdr(1, 1, 6)),
+        png_chunk(b"IDAT", &zlib_of(&[0, secret[0], secret[1], secret[2], 0])),
+        end.clone(),
+    ]);
+    // 2. 허용 보조 덩어리의 값(pHYs 8바이트 + 단위 0).
+    let phys = png_of(&[
+        png_chunk(b"IHDR", &ihdr(1, 1, 0)),
+        png_chunk(b"pHYs", &[&secret[..], &[0]].concat()),
+        png_chunk(b"IDAT", &zlib_of(&[0, 255])),
+        end.clone(),
+    ]);
+    // 3. 같은 픽셀(1×64 흰색 회색조)의 줄 필터 선택: 줄마다 필터 0(비트 0)·2(비트 1).
+    let filtered: Vec<u8> = bits
+        .iter()
+        .enumerate()
+        .flat_map(|(row, bit)| {
+            let previous = if row == 0 { 0u8 } else { 255 };
+            if *bit == 0 {
+                [0u8, 255]
+            } else {
+                [2u8, 255u8.wrapping_sub(previous)]
+            }
+        })
+        .collect();
+    let filters = gray(filtered, 64);
+    // 4. 같은 픽셀(1×1 흰색)의 deflate 표현: 빈 저장 블록 머리의 채움 비트(블록마다 5비트, 읽는 쪽이 보지 않음).
+    let mut deflate = Vec::new();
+    for chunk in bits.chunks(5) {
+        let value = chunk.iter().fold(0u8, |acc, bit| (acc << 1) | bit) << (5 - chunk.len());
+        deflate.extend_from_slice(&[value << 3, 0x00, 0x00, 0xFF, 0xFF]);
+    }
+    deflate.extend_from_slice(&[0x01, 0x02, 0x00, 0xFD, 0xFF, 0, 255]);
+    let raw = [0u8, 255];
+    let (mut a, mut b) = (1u32, 0u32);
+    for byte in raw {
+        a = (a + u32::from(byte)) % 65521;
+        b = (b + a) % 65521;
+    }
+    let zlib = [
+        &[0x78u8, 0x01][..],
+        &deflate,
+        &((b << 16) | a).to_be_bytes(),
+    ]
+    .concat();
+    let padding = png_of(&[
+        png_chunk(b"IHDR", &ihdr(1, 1, 0)),
+        png_chunk(b"IDAT", &zlib),
+        end.clone(),
+    ]);
+    // 5. 빈 글 미리보기의 공백 무늬: 공백(0)·탭(1) 64글자 + 줄바꿈.
+    let whitespace: Vec<u8> = bits
+        .iter()
+        .map(|bit| if *bit == 0 { b' ' } else { b'\t' })
+        .chain(*b"\r\n")
+        .collect();
+    let idat = |png: &[u8]| -> Vec<u8> {
+        // IHDR(8 + 25바이트) 다음 덩어리들에서 IDAT 본문.
+        let mut at = 33;
+        let mut out = Vec::new();
+        while at + 8 <= png.len() {
+            let len = u32::from_be_bytes(png[at..at + 4].try_into().unwrap()) as usize;
+            if &png[at + 4..at + 8] == b"IDAT" {
+                out.extend_from_slice(&png[at + 8..at + 8 + len]);
+            }
+            at += 12 + len;
+        }
+        out
+    };
+    let to_bytes = |bits: Vec<u8>| -> Vec<u8> {
+        bits.chunks(8)
+            .map(|byte| byte.iter().fold(0u8, |acc, bit| (acc << 1) | bit))
+            .collect()
+    };
+    vec![
+        (
+            "transparent-rgb",
+            transparent,
+            Box::new(move |png: &[u8]| {
+                let mut raw = Vec::new();
+                std::io::Read::read_to_end(
+                    &mut flate2::read::ZlibDecoder::new(&idat(png)[..]),
+                    &mut raw,
+                )
+                .unwrap();
+                raw[1..4].to_vec()
+            }),
+        ),
+        (
+            "phys-values",
+            phys,
+            Box::new(|png: &[u8]| png[33 + 8..33 + 16].to_vec()),
+        ),
+        (
+            "row-filters",
+            filters,
+            Box::new(move |png: &[u8]| {
+                let mut raw = Vec::new();
+                std::io::Read::read_to_end(
+                    &mut flate2::read::ZlibDecoder::new(&idat(png)[..]),
+                    &mut raw,
+                )
+                .unwrap();
+                to_bytes(raw.chunks(2).map(|row| u8::from(row[0] == 2)).collect())
+            }),
+        ),
+        (
+            "deflate-padding",
+            padding,
+            Box::new(move |png: &[u8]| {
+                let stream = idat(png);
+                let bits: Vec<u8> = stream[2..]
+                    .chunks(5)
+                    .take_while(|block| block.len() == 5 && block[0] & 1 == 0)
+                    .flat_map(|block| (0..5).rev().map(move |bit| (block[0] >> (3 + bit)) & 1))
+                    .take(64)
+                    .collect();
+                to_bytes(bits)
+            }),
+        ),
+        (
+            "whitespace-text",
+            whitespace,
+            Box::new(move |text: &[u8]| {
+                to_bytes(text[..64].iter().map(|c| u8::from(*c == b'\t')).collect())
+            }),
+        ),
+    ]
+}
+
+#[test]
+fn c4_한_색_그림과_빈_글도_내용을_담을_수_있어_남는_미리보기는_엔진_상수만_받는다() {
+    use super::preview::{blank_utf16, blank_utf8, known_blank_png};
+    let secret = *b"SECRET-1";
+    let mut wrong = Vec::new();
+    for (name, carrier, extract) in preview_carriers(&secret) {
+        // 시연: 그 바이트에서 비밀을 다시 꺼낼 수 있다(전부 또는 앞부분).
+        let back = extract(&carrier);
+        assert!(
+            secret.starts_with(&back) && !back.is_empty(),
+            "{name}: {back:?}"
+        );
+        let accepted = if name == "whitespace-text" {
+            let utf16: Vec<u8> = carrier.iter().flat_map(|c| [*c, 0]).collect();
+            blank_utf8(&carrier) || blank_utf16(&utf16)
+        } else {
+            known_blank_png(&carrier)
+        };
+        if accepted {
+            wrong.push(format!("{name}: 내용이 없다고 받음"));
+        }
+    }
+    assert!(wrong.is_empty(), "{}", wrong.join("\n"));
 }
