@@ -278,6 +278,12 @@ interface EditorAdapter {
   판단하고, 선언한 배치가 실제 권한과 다르면 판단 불가다. 기본 시험 묶음에 판정·음성 대조 시험을 넣었다([상세](../architecture/save-preservation.md#다중-사용자-탐침-판정후속-강화-a)).
 - IPC·오류 분류·권한·프런트엔드 변경 없음. T007·T008·T009·T014 체크 정책은 그대로다.
 
+### T009 시험 기반 안정화 (2026-10-20, `20fb077` 위)
+- 다중 사용자 탐침의 측정(B): 재지 못한 디렉터리 목록·파일·표본은 빈 값·깨끗한 값이 아니라 "재지 못함"이다. 확인된 위반은 FAIL, 위반 없이
+  필수 측정이 없으면 INCONCLUSIVE, 모두 쟀을 때만 PASS. 수정 전에는 읽을 수 없는 디렉터리가 빈 목록으로 읽혀 숨긴 게시가 있어도 PASS였다.
+- 표지 난수(C): `getrandom`을 끝까지 채우고(짧은 읽기·EINTR), 실패하면 NOT-RUN. 플랫폼(A): Linux 전용 탐침·시험 도우미에 cfg를 붙였다(`libc`는
+  `cfg(unix)` 의존성, Apple 대상에는 `getrandom`이 없음). 시험 코드·문서만 바뀌었고 제품 동작은 그대로다([상세](../architecture/save-preservation.md#다중-사용자-탐침-판정후속-강화-a)).
+
 ## Algorithms and Pseudocode
 ```
 open(path):
