@@ -21,6 +21,7 @@ import { useTranslation } from "../../../language/LanguageContext";
 import { ImeContext, ImeInput } from "../rhwp/imeInput";
 import { attachTextInput } from "../textInput";
 import { CSS_PX_PER_PT, type DocxEditorSession } from "./DocxEditorSession";
+import { trace } from "../imeTrace";
 
 interface DocxSurfaceProps {
   session: DocxEditorSession;
@@ -211,6 +212,7 @@ export function DocxSurface({ session, zoom, imeContext }: DocxSurfaceProps) {
     event.preventDefault(); // 초점은 textarea에 둔다
     // 진행 중인 조합을 끝낸다(보이면 그 자리에 확정, 아니면 늦게 오는 확정을 클릭 전 자리에 넣도록 기억).
     ime.current?.pointerDown();
+    trace("ime:pointerDown", () => ime.current?.phase() ?? {});
     pointer(event, page, event.shiftKey);
     dragging.current = true;
     const stop = () => {

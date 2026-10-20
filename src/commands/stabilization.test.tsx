@@ -84,7 +84,7 @@ describe("P1-A 앱이 먼저 확정한 조합과 문서 명령", () => {
   it("입력기의 끝 없이 새 입력이 시작되면(keydown) 그 조합을 모델 그대로 끝내고 단축키를 받는다", async () => {
     const { editor, fake, ime } = await provisional();
     const { context } = contextFor(editor);
-    ime.keyDown(false); // Ctrl 누름: 새 입력의 시작(imeInput 규칙)
+    ime.keyDown(false); // 수식 키 없는 키(예: ←): 새 입력의 시작(imeInput 규칙). Ctrl 등은 textInput이 경계로 보내지 않는다(imeBoundary.test)
     expect(editor.snapshot().composing).toBe(false);
     expect(executeCommand("edit.undo", undefined, context)).toBe(true);
     await flush();
@@ -204,7 +204,8 @@ describe("P2-A 대기 예상과 엔진 결과(FakeDocx 흉내)", () => {
     await flush();
     fake.hold = true;
     expect(executeCommand("edit.undo", undefined, context)).toBe(true);
-    expect(editor.snapshot().queuedHistory).toEqual({ undo: true, redo: true });
+    // 실행 취소가 하나뿐인 아는 단계를 썼다: 다시 실행은 하나 생기고, 남은 실행 취소 단계는 응답 전에 모른다(마무리 안정화).
+    expect(editor.snapshot().queuedHistory).toEqual({ undo: "unknown", redo: "available" });
     expect(executeCommand("edit.redo", undefined, context)).toBe(true);
     await release(fake);
     expect(edits(fake).slice(1)).toEqual([[{ op: "undo" }], [{ op: "redo" }]]);

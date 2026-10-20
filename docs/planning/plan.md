@@ -314,6 +314,14 @@ interface EditorAdapter {
   없다. `protected`면 서식 명령 이유 `protected`, 엔진이 명령 연산을 거부하면 편집 표면 알림 `commandRejected`.
 - 레지스트리: ID 중복·종류 중복·리본과 다른 라벨을 덮어쓰지 않고 문제로 낸다(`COMMAND_PROBLEMS`, 시험).
 
+### T010 마무리 안정화 (2026-10-20, `86f5e84` 위)
+- 근거: [command-registry.md "T010 마무리 안정화"](../architecture/command-registry.md#t010-마무리-안정화-2026-10-20-86f5e84-위),
+  [editor-surface-decision.md](../architecture/editor-surface-decision.md#t010-마무리-안정화-ime-트랜잭션-경계와-명령-단추-초점-2026-10-20).
+- `queuedHistory`는 방향마다 `available`·`none`·`unknown`(대기 연산을 엔진 기록에 적용한 예상, 실행 취소·다시 실행이 아는 단계를 씀).
+  `unknown`이면 응답까지 기다린다(`pendingEdits`). IPC는 그대로다(엔진이 다시 실행 단계 수를 공개하지 않음).
+- IME: Ctrl·Meta·Alt 키는 IME 트랜잭션의 새 입력 경계가 아니다. 편집 입력에 초점이 있을 때 명령 단추는 mousedown에서 초점을 가져가지 않는다.
+- 진단: 검사 훅 빌드에서만 `window.__geulTrace`(글자 없는 이벤트·상태 추적).
+
 ## Algorithms and Pseudocode
 ```
 open(path):

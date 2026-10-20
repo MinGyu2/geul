@@ -2,8 +2,10 @@
 // 시도 번호·ready·기준 revision 확인, 실제로 바뀐 연산만 revision, 거부한 연산은 없던 일, Mark/InsertAt, ReplaceInserted,
 // Pointer.beforeInsert, 요청 검사(validate: 글자 길이·제어 문자, 위반이면 요청 전체 InvalidRequest), PasteText의 문단 나누기·
 // chain(앞 연산이 거부되면 건너뜀), DeleteSelection. 글자 하나 = 가로 10pt, 문단 하나 = 세로 20pt, 본문 왼쪽 위 (72, 72).
-// T010의 실행 취소·글자 서식도 흉내다: 기록은 바뀐 연산마다 앞 상태 하나(WordCraft의 타자 묶기는 흉내 내지 않음), 서식은 선택 범위
-// 키마다 켠 서식. 실제 엔진 동작은 Rust 시험과 tests/integration/wordcraft/에서 확인한다.
+// T010의 실행 취소·글자 서식도 흉내다. 기록은 WordCraft `Session::run`을 따라(마무리 안정화) 성공한 바꾸는 연산마다 앞 상태
+// 하나(문서가 그대로여도 — 커서만 둔 서식 등, 다음 입력 서식 포함)를 남기고 다시 실행 기록을 버리며, 이어 친 글자는 한 단계로
+// 묶고 이동·선택·실행 취소가 묶음을 닫는다. 서식은 선택 범위 키마다 켠 서식. 실제 엔진 동작은 Rust 시험과
+// tests/integration/wordcraft/에서 확인한다.
 import type { DocumentBackend } from "../../../adapters/backend";
 import type { DocumentError, Preservation, Result, SaveCheck, SaveOutcome, SessionInfo } from "../../../adapters/contract";
 import type {
@@ -19,7 +21,11 @@ export const LINE = 20;
 
 type At = { p: number; o: number };
 /** 실행 취소 기록 한 단계(흉내): 문단·서식·커서. */
-type FakeState = { paragraphs: string[]; styled: [string, DocxCharFormat[]][]; caret: At; anchor: At };
+type FakeState = { paragraphs: string[]; styled: [string, DocxCharFormat[]][]; caret: At; anchor: At; pending: DocxCharFormat[] };
+/** WordCraft에서 바꾸는 명령(`mutates`)으로 실행되는 연산. deleteSelection은 선택이 있을 때만 명령을 실행한다. */
+const ENGINE_MUTATING: ReadonlySet<DocxOp["op"]> = new Set<DocxOp["op"]>([
+  "insertText", "pasteText", "backspace", "deleteForward", "newParagraph", "tab", "insertAt", "replaceInserted", "format",
+]);
 const FORMATS: readonly DocxCharFormat[] = ["bold", "italic", "underline", "strikethrough"];
 const chars = (text: string) => [...text];
 /** 백엔드 MAX_TEXT_CHARS·MAX_OPS(engine.rs). */
@@ -92,6 +98,8 @@ export class FakeDocx implements DocxBackend {
   /** 서식을 준 선택 범위(`p:o-p:o`)마다 켠 서식, 선택이 없을 때 켠 다음 입력의 서식(T010 흉내). */
   private styled = new Map<string, Set<DocxCharFormat>>();
   private pendingFormat = new Set<DocxCharFormat>();
+  /** 이어 친 글자를 한 기록 단계로 묶는 중(WordCraft typing_open). */
+  private typingOpen = false;
 
   constructor(text: string[] = ["가나다", "abc"]) {
     this.paragraphs = [...text];
@@ -149,7 +157,7 @@ export class FakeDocx implements DocxBackend {
   private capture(): FakeState {
     return {
       paragraphs: [...this.paragraphs], styled: [...this.styled].map(([key, set]) => [key, [...set]]),
-      caret: { ...this.caret }, anchor: { ...this.anchor },
+      caret: { ...this.caret }, anchor: { ...this.anchor }, pending: [...this.pendingFormat],
     };
   }
 
@@ -158,7 +166,7 @@ export class FakeDocx implements DocxBackend {
     this.styled = new Map(state.styled.map(([key, flags]) => [key, new Set(flags)]));
     this.caret = { ...state.caret };
     this.anchor = { ...state.anchor };
-    this.pendingFormat.clear();
+    this.pendingFormat = new Set(state.pending);
     // 엔진처럼 되돌리면 표지·마지막 넣기 기억을 버린다(그 자리를 다시 쓰지 않음).
     this.marks.clear();
     this.last = null;
@@ -191,6 +199,7 @@ export class FakeDocx implements DocxBackend {
       // 새 엔진 모델: 기록·서식도 새로 시작한다(백엔드가 새 Session을 만듦).
       this.undoStack = [];
       this.redoStack = [];
+      this.typingOpen = false;
       this.styled.clear();
       this.pendingFormat.clear();
       this.cleanRevision = this.info.revision;
@@ -230,15 +239,21 @@ export class FakeDocx implements DocxBackend {
         const before = this.content();
         const state = this.capture();
         const skipped = op.op === "pasteText" && op.chain && rejected.at(-1) === index - 1 && index > 0;
-        if (skipped || !this.apply(op)) rejected.push(index);
-        else if (this.content() !== before) {
+        if (skipped || !this.apply(op)) {
+          rejected.push(index); // 엔진이 거부하면 기록도 그대로(Session::run이 되돌림)
+          return;
+        }
+        const contentChanged = this.content() !== before;
+        if (contentChanged) {
           changed += 1;
           this.engineRev += 1;
-          if (op.op !== "undo" && op.op !== "redo") {
-            this.undoStack.push(state);
-            this.redoStack = [];
-          }
         } else if (["backspace", "deleteForward", "newParagraph", "tab", "insertText"].includes(op.op)) this.engineRev += 1;
+        if (ENGINE_MUTATING.has(op.op) || (op.op === "deleteSelection" && contentChanged)) {
+          const typing = op.op === "insertText" || op.op === "pasteText";
+          if (!(typing && this.typingOpen)) this.undoStack.push(state);
+          this.redoStack = [];
+          this.typingOpen = typing;
+        } else if (op.op !== "mark") this.typingOpen = false;
       });
       if (changed > 0) this.update({ revision: this.info.revision + changed });
       return { ok: true, value: { ...this.state(), applied: ops.length - rejected.length, rejected } };

@@ -8,7 +8,8 @@
 // - 편집 명령은 편집할 수 있고(notReady) IME 트랜잭션이 끝났을 때(composing — 조합 중이거나 앱이 먼저 확정한 조합이 입력기의 최종
 //   글자를 기다리는 동안)만 한다. 보낼 편집이 있으면 같은 세션 대기열 뒤에 넣는다(엔진이 순서대로 실행). 실행 취소는 엔진 기록에
 //   단계가 있을 때, 다시 실행은 다시 실행 단계가 있을 때 한다. 대기 중인 연산이 있으면 그것을 엔진 기록에 적용한 예상
-//   (queuedHistory, 이동·선택·표지는 기록을 바꾸지 않음)으로 정한다. 엔진이 다시 확인하므로 예상이 어긋나도(엔진이 거부한 넣기 등)
+//   (queuedHistory, 이동·선택·표지는 기록을 바꾸지 않고, 실행 취소·다시 실행은 아는 단계를 쓴다)으로 정한다. 남은 단계를 엔진
+//   응답 전에 알 수 없으면(unknown) 응답까지 기다린다(pendingEdits). 엔진이 다시 확인하므로 예상이 어긋나도(엔진이 거부한 넣기 등)
 //   바뀌는 것이 없으면 아무것도 바꾸지 않는다.
 // - 서식은 문서 보호가 언제나 거부하는 상태(formatAccess "protected")면 protected. 편집 가능 영역만 허용하는 보호("regions")는
 //   선택이 영역 안인지 엔진만 판정하므로 보내고, 엔진이 거부하면 세션이 알린다.
@@ -46,9 +47,12 @@ export function documentCommandState(id: DocumentCommandId, snapshot: DocumentCo
   if (id === "edit.undo" || id === "edit.redo") {
     // 지원한다고 선언했는데 엔진이 기록을 알려 주지 않으면 하지 않는다(기록을 화면에서 만들지 않음).
     if (!snapshot.history) return unavailable("engineUnsupported");
-    const history = snapshot.queuedHistory ?? snapshot.history;
-    if (id === "edit.undo") return history.undo ? ENABLED : unavailable("nothingToUndo");
-    return history.redo ? ENABLED : unavailable("nothingToRedo");
+    const direction = id === "edit.undo" ? "undo" : "redo";
+    const step = snapshot.queuedHistory?.[direction] ?? (snapshot.history[direction] ? "available" : "none");
+    if (step === "available") return ENABLED;
+    // 앞선 실행 취소·다시 실행이 남은 단계를 썼는지 엔진 응답 전에는 모른다: 응답까지 기다린다(넘치는 요청을 보내지 않음).
+    if (step === "unknown") return unavailable("pendingEdits");
+    return unavailable(id === "edit.undo" ? "nothingToUndo" : "nothingToRedo");
   }
   const flag = FORMAT_FLAG[id];
   if (!flag || !snapshot.format) return unavailable("engineUnsupported");

@@ -71,7 +71,8 @@ describe("WordCraft 세션의 명령(가짜 백엔드 흉내)", () => {
     fake.release();
     await flush();
     expect(edits(fake)).toEqual([[{ op: "insertText", text: "한" }], [{ op: "insertText", text: "글" }, { op: "undo" }]]);
-    expect(fake.paragraphs[0]).toBe("한가나다");
+    // 이어 친 글자는 엔진 기록의 한 단계다(WordCraft 타자 묶기, 흉내도 마무리 안정화부터 따름): 실행 취소가 둘 다 되돌린다.
+    expect(fake.paragraphs[0]).toBe("가나다");
   });
 
   it("되돌릴 기록이 없으면 보내지 않고 이유를 알린다", async () => {

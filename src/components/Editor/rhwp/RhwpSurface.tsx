@@ -29,6 +29,7 @@ import { attachTextInput } from "../textInput";
 import { ImeContext, ImeInput } from "./imeInput";
 import type { RhwpEditorSession } from "./RhwpEditorSession";
 import type { PageRect } from "./rhwpText";
+import { trace } from "../imeTrace";
 
 interface RhwpSurfaceProps {
   session: RhwpEditorSession;
@@ -253,6 +254,7 @@ export function RhwpSurface({ session, zoom, imeContext }: RhwpSurfaceProps) {
     event.preventDefault(); // 초점은 textarea에 둔다
     // 진행 중인 조합을 끝낸다(보이면 그 자리에 확정, 아니면 늦게 오는 확정을 클릭 전 자리에 넣도록 기억).
     ime.current?.pointerDown();
+    trace("ime:pointerDown", () => ime.current?.phase() ?? {});
     pointer(event, page, event.shiftKey);
     dragging.current = true;
     const stop = () => {

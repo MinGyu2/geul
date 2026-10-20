@@ -44,7 +44,8 @@ T006의 자리표시자 `src/adapters/engines.ts`(`EngineAdapter`, 모든 명령
    안정화부터는 앱이 먼저 확정한 조합이 입력기의 최종 글자를 기다리는 동안도 포함).
 5. 실행 취소: 엔진 기록에 단계가 있음 → 아니면 `nothingToUndo`. 다시 실행: 다시 실행 단계가 있음 → 아니면 `nothingToRedo`. 대기 중인
    연산이 있으면 엔진 기록 대신 그 연산을 적용한 예상(`queuedHistory`, 안정화 — 처음 T010은 "대기 중이면 실행 취소 가능"이었음)으로
-   정한다. 엔진이 기록을 알려 주지 않으면(`history: null`) `engineUnsupported`.
+   정한다. 마무리 안정화부터 예상은 방향마다 `available`·`none`·`unknown`이고, 남은 단계를 응답 전에 모르면(`unknown`) `pendingEdits`로
+   응답까지 기다린다. 엔진이 기록을 알려 주지 않으면(`history: null`) `engineUnsupported`.
 6. 서식: 엔진이 서식 상태를 알려 주면 쓸 수 있고 눌림 = 그 상태. 아니면 `engineUnsupported`. 문서 보호가 언제나 거부하면
    (`formatAccess: "protected"`, 안정화) `protected`.
 
@@ -136,3 +137,48 @@ macOS는 Ctrl 대신 Cmd(이 빌드는 Linux만 확인). 단축키는 물리 키
 - rhwp hit test(HWP 본문 30%/70% 클릭 24회 중 15회 1–2글자 어긋남): 기준과 지금의 (기대, 결과) 15쌍이 같다 → **PRE-EXISTING,
   ENVIRONMENT-DEPENDENT**(소수 DPR 포인터, headless weston에서는 통과).
 - 스모크 시작 크기 가로 넘침(`scrollW` 1230 > `w` 1229): 기준과 지금이 같다 → **PRE-EXISTING, ENVIRONMENT-DEPENDENT**(weston 62/62).
+
+## T010 마무리 안정화 (2026-10-20, `86f5e84` 위)
+
+### B. 대기 중인 실행 취소·다시 실행 예상 — CONFIRMED DEFECT — FIXED
+
+- 재현(수정 전, Vitest·FakeDocx): 실행 취소 단계가 하나인 문서에서 응답을 붙잡고 실행 취소 3번·다시 실행 3번을 누르면 6번 모두
+  받아 대기열에 넣었다(넘치는 연산 5개). `queuedHistory`가 참·거짓만 들고 실행 취소·다시 실행이 단계를 쓰지 않았기 때문이다.
+- 엔진 근거(고정 WordCraft `Session`): 바꾸는 명령은 성공하면 문서가 그대로여도 기록 지점을 남기고 다시 실행 기록을 버린다(Rust 시험으로
+  고정: 문서 처음의 Backspace, 커서만 둔 서식). 이어 친 글자는 한 단계로 묶인다. 실패한 명령은 기록을 되돌린다. `undo_depth()`는
+  공개지만 다시 실행 단계 수는 공개되지 않고, 타자 묶기 때문에 대기 연산이 만들 단계 수를 앱이 정할 수 없다.
+- 결정(접근 B, IPC 바꾸지 않음): `DocxEditorSession.queuedHistory`가 방향마다 "알고 있는 최소 단계 수"와 "더 있을 수 있는지"만 센다.
+  엔진 보기에 단계가 있으면 최소 1(더 있을 수 있음). 바꾸는 연산은 실행 취소 최소 1·다시 실행 없음. 실행 취소는 아는 단계를 하나
+  쓰고 다시 실행을 하나 더한다(다시 실행은 반대). 이동·클릭·선택·표지는 바꾸지 않는다. 결과 `available`이면 받고, `unknown`이면
+  `pendingEdits`로 응답까지 기다리고, `none`이면 `nothingToUndo`/`nothingToRedo`. 그래서 대기 중인 편집 뒤의 실행 취소, 대기 중인
+  실행 취소 뒤의 다시 실행은 그대로 받고, 남은 단계를 모르는 두 번째 실행 취소는 받지 않는다. 엔진만 아는 결과(거부할 넣기 뒤의
+  실행 취소)는 받아도 엔진이 아무것도 바꾸지 않는다.
+- 흉내(FakeDocx)도 엔진 기록 규칙을 따르게 했다(성공한 바꾸는 연산마다 기록 지점, 타자 묶기, 다음 입력 서식 포함). 그 결과 기존
+  시험 하나(이어 친 두 글자 뒤 실행 취소)의 기대가 엔진처럼 "둘 다 되돌림"으로 바뀌었다.
+- 시험: `src/commands/history.test.tsx` 17가지(중간의 가용성·받음과 응답 뒤 모델·기록·revision), Rust `t010_…` 시험.
+
+### A. 리본 굵게 뒤 조합 음절 사라짐 — 원인 미확정(UNVERIFIED), 관련 경계 둘은 고침
+
+- 추적: 검사 훅 빌드에서만 켜지는 `imeTrace.ts`(`window.__geulTrace`, 최근 4000개)가 DOM 이벤트(종류·inputType·isComposing·229·글자
+  수), ImeInput 상태(조합·끊긴 트랜잭션·완료 기록), 편집 연산(종류·보냄·응답·revision·거부 수), 명령 판정을 글자 없이 남긴다.
+  `wordcraft_poc.py --ime-commands`가 창 쪽 누름·초점·키를 같은 순번으로 더하고, 사례마다 보고서에 쓴다(뒤에서 WebDriver가 끊겨도
+  앞 사례가 남음). `--rounds`·`--cpu-load`(진단용 CPU 경합)를 더했다.
+- 실제 ibus-hangul 1.5.5(IBus 1.5.33, WebKitGTK 2.54.1, X11 Xvfb) 결과:
+  - 수정 전 빌드: 사례 8개 1회 모두 통과. CPU 경합(바쁜 프로세스 4개)에서 사례 5개 통과 뒤 WebDriver 끊김(시험 환경, 앞 사례 추적은 남음).
+    리본 굵게만 되풀이한 탐침 40회(경합 4개) 모두 조합 중이었고 음절은 한 번씩 들어감.
+  - 수정 뒤 빌드: 사례 8개 × 2회 16/16, 탐침 40회(경합 4개) 40/40, 사라짐 없음.
+  - 처음 관찰된 사라짐(이전 안정화의 실행 하나, 추적 없음)은 다시 나오지 않았다. 원인은 확정하지 못했다.
+- 추적으로 재구성한 정상 순서(리본 굵게): `compositionend("")`(앱은 조합 취소로 끝냄) → 약 60 ms → `keydown 229` →
+  `insertFromComposition` → `compositionend("하")`(넣기) → mousedown·blur·단추 focusin → click → 명령. 빈 끝과 최종 글자 사이에는 음절이
+  입력기에만 있다. 사라진 결과(revision 0, 굵게 눌림, 조합·provisional 없음)와 맞는 가설은 둘이다: H1 그 사이에 초점이 단추로 옮겨 뒤
+  반쪽이 단추로 감, H2 입력기가 확정 대신 버림. 추적은 둘을 가른다(H1이면 누름 뒤 `win:keydown`이 `command:*` 대상, ime 참으로 남음).
+- 고친 것:
+  - 경계 A(CONFIRMED DEFECT — FIXED, 재생 시험): Ctrl·Meta·Alt 키가 앱이 먼저 확정한 조합을 입력기 꼬리 전에 닫아, 늦은 최종 글자가 한 번
+    더 들어갔다(재생: Ctrl+B → "하한", Ctrl+Z → "하하"). 수식 키 단축키는 이제 입력 경계가 아니다(textInput). 그동안 명령은 composing.
+  - 경계 C(완화, H1 노출 제거): 편집 입력에 초점이 있으면 `CommandButton`이 mousedown 기본 동작을 막아 초점을 지킨다. 실제 추적에서
+    리본·빠른 실행 누름의 `blur`가 1 → 0. 명령은 그대로 실행된다.
+  - 경계 B: provisional 동안 명령 거절(이전 안정화)은 경계 A 수정으로 단축키에서도 우회되지 않는다.
+  - 경계 D: 추적의 `docx:push`·`send`·`response`(거부 수·revision)로 음절이 어디서 사라졌는지 가를 수 있다(받지 못함/버림/거부/무효).
+- 남은 위험: H2(입력기가 버림)는 앱이 막을 수 없다(마지막 미리보기 글자를 넣는 것은 지어낸 입력이라 하지 않음). 문서 탭·탭 닫기 단추는
+  명령 단추가 아니어서 여전히 초점을 가져간다(실제 시험에서는 한 번씩 남음). 실제 입력에서 provisional 뒤 Ctrl 키가 꼬리보다 먼저
+  오는 순서는 만들지 못해 재생 시험으로만 확인했다.

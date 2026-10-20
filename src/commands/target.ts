@@ -9,6 +9,12 @@ import type { DocumentCommandId } from "./registry";
 
 export type CharFormatFlag = "bold" | "italic" | "underline" | "strikethrough";
 
+/**
+ * 대기 연산을 적용한 뒤 실행 취소(또는 다시 실행) 한 단계를 엔진이 가질지(T010 마무리 안정화): available = 적어도 한 단계가 있다고
+ * 안다, none = 없다고 안다, unknown = 엔진 응답 전에는 알 수 없다(엔진이 단계 수를 알려 주지 않고 타자는 한 단계로 묶이므로).
+ */
+export type QueuedStep = "available" | "none" | "unknown";
+
 /** 명령 가용성을 정하는 편집 세션의 지금 상태. */
 export interface DocumentCommandSnapshot {
   sessionId: SessionId;
@@ -28,12 +34,10 @@ export interface DocumentCommandSnapshot {
   /** 보내는 중이거나 보낼 연산이 있음(이동·선택 포함, 백엔드 확정 전). */
   pending: boolean;
   /**
-   * 보내는 중·보낼 연산을 엔진 기록(history)에 차례로 적용했을 때 예상하는 기록(T010 안정화 P2-A). 대기 연산이 없으면 null.
-   * 글자 넣기·지우기·서식 등 바꾸는 연산은 실행 취소 단계를 더하고 다시 실행 기록을 버리며(WordCraft는 성공한 바꾸는 명령마다
-   * 기록 지점을 남김), 실행 취소는 다시 실행 단계를, 다시 실행은 실행 취소 단계를 만든다. 이동·클릭·선택·표지는 바꾸지 않는다.
-   * 실제로 단계가 생겼는지는 엔진이 실행할 때 정한다(엔진이 거부한 연산은 단계를 만들지 않음). 앱이 따로 가진 기록이 아니다.
+   * 보내는 중·보낼 연산을 엔진 기록(history)에 차례로 적용한 예상(T010 안정화 P2-A, 마무리 안정화에서 단계를 소비하도록 고침). 대기
+   * 연산이 없으면 null. 앱이 따로 가진 기록이 아니라 엔진 보기의 기록에서 알 수 있는 것만 센다(DocxEditorSession.queuedHistory).
    */
-  queuedHistory: { undo: boolean; redo: boolean } | null;
+  queuedHistory: { undo: QueuedStep; redo: QueuedStep } | null;
   /** 저장 사전 검사·저장 중. */
   saving: boolean;
   /** 엔진의 실행 취소 기록. 엔진에 기록이 없으면 null. */

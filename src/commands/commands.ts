@@ -9,6 +9,7 @@ import type { LayoutAction, LayoutState, Theme } from "../hooks/layoutState";
 import { documentCommandState, ENABLED, unavailable, type CommandState } from "./capability";
 import { commandDefinition, isDocumentCommandId } from "./registry";
 import type { DocumentCommandTarget } from "./target";
+import { trace } from "../components/Editor/imeTrace";
 
 export type { CommandState, UnavailableReason } from "./capability";
 
@@ -102,6 +103,13 @@ export function executeCommand(id: string, labelKey: MessageKey | undefined, con
     return false;
   };
   const state = commandState(id, context);
+  trace("command:request", () => {
+    const snapshot = context.document?.snapshot();
+    return {
+      id, available: state.available, reason: state.available ? null : state.reason, modal: !!context.modal,
+      session: snapshot?.sessionId ?? null, composing: snapshot?.composing ?? null, pending: snapshot?.pending ?? null,
+    };
+  });
   if (!state.available) return reject(state);
   const ui = uiCommand(id);
   if (ui) {
@@ -109,7 +117,9 @@ export function executeCommand(id: string, labelKey: MessageKey | undefined, con
     return true;
   }
   if (!isDocumentCommandId(id) || !context.document) return reject(unavailable("notImplemented"));
-  if (context.document.execute(id).accepted) return true;
+  const accepted = context.document.execute(id).accepted;
+  trace("command:dispatch", () => ({ id, accepted }));
+  if (accepted) return true;
   // 세션이 다시 확인해 거절했다(그 사이 상태가 바뀜): 지금 이유를 알린다.
   const now = commandState(id, context);
   return reject(now.available ? unavailable("notReady") : now);

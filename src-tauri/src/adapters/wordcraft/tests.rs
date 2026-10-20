@@ -1983,6 +1983,12 @@ fn t010_문서를_바꾸지_않은_바꾸는_명령_뒤의_실행_취소는_revi
         "기록 지점 {had_step}"
     );
     assert_eq!(m.body_text(), original);
+    // 고정 WordCraft가 이 경우 기록 지점을 남기는지(마무리 안정화: 화면 예상·흉내의 근거로 고정).
+    assert!(
+        had_step,
+        "문서를 바꾸지 않은 바꾸는 명령도 기록 지점을 남김"
+    );
+    assert!(!m.view().history.undo && m.view().history.redo);
 }
 
 #[test]

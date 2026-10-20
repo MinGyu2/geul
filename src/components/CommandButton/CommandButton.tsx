@@ -18,6 +18,11 @@ interface CommandButtonProps {
 /**
  * 명령 하나를 실행하는 버튼. 사용할 수 없는 명령은 `aria-disabled`로 표시해 키보드 초점과 설명은 유지하되
  * 실행은 하지 않는다(누르면 상태 표시줄에 이유만 알린다).
+ *
+ * 편집 입력(.rhwp-input)에 초점이 있을 때 포인터로 누르면 초점을 가져가지 않는다(mousedown 기본 동작을 막음, T010 마무리 안정화
+ * 경계 C). 입력기는 누름에서 조합을 확정하며 그 확정을 두 반쪽(빈 끝 → 최종 글자)으로 보내는데(실측 WebKitGTK 2.54 + ibus-hangul),
+ * 그 사이 초점이 단추로 옮겨 가면 뒤 반쪽이 편집할 수 없는 단추로 가 음절이 사라질 수 있다. 초점이 편집 입력에 남으면 늦은 확정도
+ * 편집 입력의 IME 규칙(imeInput.ts)이 받는다. 클릭은 그대로 명령을 실행하고, 키보드 초점 이동(Tab)·활성화(Enter·Space)는 그대로다.
  */
 export const CommandButton = forwardRef<HTMLButtonElement, CommandButtonProps>(function CommandButton(
   { id, labelKey, icon, context, variant = "small", tabIndex },
@@ -42,6 +47,9 @@ export const CommandButton = forwardRef<HTMLButtonElement, CommandButtonProps>(f
       aria-label={variant === "icon" ? label : undefined}
       title={title}
       tabIndex={tabIndex}
+      onMouseDown={(event) => {
+        if (document.activeElement instanceof HTMLElement && document.activeElement.classList.contains("rhwp-input")) event.preventDefault();
+      }}
       onClick={() => executeCommand(id, labelKey, context)}
     >
       <Icon name={icon} size={variant === "large" ? 24 : 18} />

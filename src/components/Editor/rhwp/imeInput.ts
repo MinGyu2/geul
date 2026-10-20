@@ -81,6 +81,19 @@ export class ImeContext {
 const COMPOSITION_INPUT_TYPES = new Set(["insertFromComposition", "insertCompositionText"]);
 
 export class ImeInput {
+  /** 진단 추적용 상태(T010 마무리 안정화, imeTrace.ts). 글자는 담지 않는다. */
+  phase(): Record<string, string | boolean> {
+    const interrupted = this.context.interrupted;
+    const terminal = this.context.terminal;
+    return {
+      composing: this.session.composing,
+      interrupted: !interrupted ? "none"
+        : interrupted.finalized ? (interrupted.visible ? (interrupted.visible.emptied ? "visibleEmptied" : "visible") : "finalized")
+        : interrupted.split ? "split" : interrupted.text ? "anchoredText" : "anchored",
+      terminal: !terminal ? "none" : terminal.text ? (terminal.confirmedByView ? "textByView" : "text") : "empty",
+    };
+  }
+
   constructor(
     private readonly session: Session,
     private readonly context: ImeContext = new ImeContext(),

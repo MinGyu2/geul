@@ -4,6 +4,7 @@
 //   여기서는 DOM 이벤트를 넘기고 textarea 값을 다룬다. 엔진별 키(이동·지우기·표 Tab)는 표면이 handleKey로 준다.
 // - 조합 중(keyCode 229) 방향키 등은 조합이 끝난 뒤(compositionend) handleKey로 처리한다.
 // - 단축키(Ctrl·Meta·Alt)는 명령 레지스트리(T010) 몫이라 처리하지 않는다.
+import { keyKind, trace } from "./imeTrace";
 import type { ImeInput } from "./rhwp/imeInput";
 
 export interface TextInputHandlers {
@@ -60,9 +61,15 @@ export function attachTextInput(input: HTMLTextAreaElement, controller: ImeInput
   /** 바로 앞 input이 \r로 끝난 insertText였고 그 뒤 키·조합·초점 변화가 없다(paragraphBreaks). */
   let afterCarriageReturn = false;
   const onKeyDown = (event: KeyboardEvent) => {
+    trace("dom:keydown", () => ({ key: keyKind(event), composing: event.isComposing }));
     afterCarriageReturn = false;
+    // Ctrl·Meta·Alt를 누른 키(수식 키 자체 포함)는 명령 레지스트리(T010) 몫이고 IME 트랜잭션의 새 입력 경계가 아니다(T010 마무리
+    // 안정화 경계 A): 경계로 보면 앱이 먼저 확정한 조합이 입력기의 최종 글자 전에 끝나, 늦게 온 최종 글자가 새 입력으로 한 번 더
+    // 들어갔다(재생: Ctrl+B → "하한", Ctrl+Z → "하하"). 끝나지 않은 트랜잭션 동안 명령은 composing으로 거절되고, 트랜잭션은
+    // 입력기의 끝·새 조합·글자 입력·수식 키 없는 키로 끝난다.
+    if (event.ctrlKey || event.metaKey || event.altKey) return;
     controller.keyDown(event.isComposing || event.keyCode === 229);
-    if (event.ctrlKey || event.metaKey || event.altKey) return; // 단축키는 명령 레지스트리(T010) 몫
+    trace("ime:keyDown", () => controller.phase());
     if (event.isComposing || event.keyCode === 229) {
       if (NAVIGATION_KEYS.has(event.code) || NAVIGATION_KEYS.has(event.key)) pendingNavigation = event;
       return;
@@ -70,9 +77,11 @@ export function attachTextInput(input: HTMLTextAreaElement, controller: ImeInput
     if (handleKey(event)) event.preventDefault();
   };
   const onCompositionStart = (event: CompositionEvent) => {
+    trace("dom:compositionstart");
     afterCarriageReturn = false;
     mark(event);
     controller.compositionStart();
+    trace("ime:compositionStart", () => controller.phase());
   };
   // 글자는 이벤트(data)에서 읽는다: 조합 입력의 data는 지금 조합 문자열 전체, 확정·일반 입력은 넣은 글자다(실측
   // WebKitGTK 2.54 + ibus). 초점 있는 textarea의 값을 키마다 비우면 WebKitGTK가 입력기 문맥을 다시 맞추느라 frame마다
@@ -86,6 +95,7 @@ export function attachTextInput(input: HTMLTextAreaElement, controller: ImeInput
   let snapshot: { value: string; start: number; end: number } | null = null;
   const onBeforeInput = (event: Event) => {
     const { inputType = "", isComposing = false } = event as InputEvent;
+    trace("dom:beforeinput", () => ({ inputType, composing: isComposing, length: ((event as InputEvent).data ?? "").length }));
     const composing = handlers.composing() || isComposing;
     if (!composing && (REPLACEMENT_INPUT_TYPES.has(inputType) || (!IME_INPUT_TYPES.has(inputType) && !inputType.startsWith("insert")))) {
       event.preventDefault();
@@ -96,6 +106,7 @@ export function attachTextInput(input: HTMLTextAreaElement, controller: ImeInput
   };
   const onInput = (event: Event) => {
     const { inputType = "", isComposing = false, data = null } = event as InputEvent;
+    trace("dom:input", () => ({ inputType, composing: isComposing, length: (data ?? "").length }));
     const before = snapshot;
     snapshot = null;
     const crlf = afterCarriageReturn && inputType === "insertParagraph";
@@ -111,12 +122,15 @@ export function attachTextInput(input: HTMLTextAreaElement, controller: ImeInput
     else text = insertedText(before, input.value);
     afterCarriageReturn = !!handlers.paragraphBreaks && !composing && inputType === "insertText" && text.endsWith("\r");
     controller.input(text, inputType, isComposing);
+    trace("ime:input", () => controller.phase());
     if (!composing && !handlers.composing() && input.value.length > TRIM_LENGTH) input.value = "";
   };
   const onCompositionEnd = (event: CompositionEvent) => {
+    trace("dom:compositionend", () => ({ length: (event.data ?? "").length }));
     mark(event);
     const finalText = event.data ?? "";
     controller.compositionEnd(finalText);
+    trace("ime:compositionEnd", () => controller.phase());
     const pending = pendingNavigation;
     pendingNavigation = null;
     if (pending) handleKey(pending);
@@ -127,14 +141,17 @@ export function attachTextInput(input: HTMLTextAreaElement, controller: ImeInput
   input.addEventListener("input", onInput);
   input.addEventListener("compositionend", onCompositionEnd);
   const onBlur = () => {
+    trace("dom:blur");
     afterCarriageReturn = false;
     controller.blur();
+    trace("ime:blur", () => controller.phase());
     input.value = "";
   };
   input.addEventListener("blur", onBlur);
   return () => {
     input.removeEventListener("blur", onBlur);
     controller.detach();
+    trace("ime:detach", () => controller.phase());
     handlers.detached?.();
     input.removeEventListener("keydown", onKeyDown);
     input.removeEventListener("compositionstart", onCompositionStart);

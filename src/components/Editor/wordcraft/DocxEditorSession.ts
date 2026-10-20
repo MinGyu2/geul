@@ -68,10 +68,11 @@ import type { DocumentError, Result, SaveCheck, SaveOutcome, SessionInfo } from 
 import type { DocumentSessions } from "../../../adapters/sessions";
 import type { ImeSession } from "../rhwp/imeInput";
 import { textOps } from "./textOps";
+import { trace } from "../imeTrace";
 import { blockedBy, type SaveCheckRecord, type SaveState } from "../saveState";
 import { documentCommandState, FORMAT_FLAG } from "../../../commands/capability";
 import type { DocumentCommandId } from "../../../commands/registry";
-import type { CommandDispatch, DocumentCommandSnapshot, DocumentCommandTarget } from "../../../commands/target";
+import type { CommandDispatch, DocumentCommandSnapshot, DocumentCommandTarget, QueuedStep } from "../../../commands/target";
 
 export type DocxStatus =
   | { kind: "idle" }
@@ -410,6 +411,8 @@ export class DocxEditorSession implements ImeSession, DocumentCommandTarget {
 
   /** 연산들을 대기열에 순서대로 넣고 보낸다(한 입력의 조각들이 한 요청에 함께 가도록 한 번에). */
   private pushAll(ops: DocxOp[], settles = true): boolean {
+    trace("docx:push", () => ({ session: this.sessionId, ops: ops.map((op) => op.op).join(","), editable: this.editable,
+      settles, provisional: this.provisional !== null }));
     if (!this.editable) return false;
     if (settles) this.provisional = null;
     this.inputNotice = null;
@@ -430,7 +433,12 @@ export class DocxEditorSession implements ImeSession, DocumentCommandTarget {
     const batch = this.queue.splice(0, MAX_DOCX_OPS);
     this.inFlight = true;
     this.sending = batch;
+    trace("docx:send", () => ({ session: this.sessionId, generation: this.generation, base: this.revision,
+      ops: batch.map((op) => op.op).join(",") }));
     const result = await this.backend.edit(this.sessionId, this.generation, this.revision, batch);
+    trace("docx:response", () => ({ session: this.sessionId, stale: epoch !== this.epoch, ok: result.ok,
+      error: result.ok ? null : result.error.code, revision: result.ok ? result.value.session.revision : null,
+      applied: result.ok ? result.value.applied : null, rejected: result.ok ? result.value.rejected.length : null }));
     if (epoch !== this.epoch) return;
     this.inFlight = false;
     this.sending = [];
@@ -521,6 +529,7 @@ export class DocxEditorSession implements ImeSession, DocumentCommandTarget {
   }
 
   beginComposition(): void {
+    trace("docx:beginComposition", () => ({ session: this.sessionId, editable: this.editable, composing: this.composition !== null }));
     if (!this.editable || this.composition) return;
     this.provisional = null;
     this.composition = { text: "", shown: false };
@@ -544,6 +553,8 @@ export class DocxEditorSession implements ImeSession, DocumentCommandTarget {
     if (!this.composition) return "";
     this.composition = null;
     const inserted = finalText !== "" && this.push({ op: "insertText", text: finalText });
+    trace("docx:endComposition", () => ({ session: this.sessionId, length: [...finalText].length, inserted,
+      provisional: !!options.provisional }));
     if (inserted && options.provisional) {
       this.provisional = { text: finalText };
       this.pointerAfterInsert = true;
@@ -554,6 +565,9 @@ export class DocxEditorSession implements ImeSession, DocumentCommandTarget {
 
   resolveProvisional(finalText?: string): void {
     const provisional = this.provisional;
+    trace("docx:resolveProvisional", () => ({ session: this.sessionId, pending: provisional !== null,
+      finalLength: finalText === undefined ? null : [...finalText].length,
+      replace: provisional !== null && finalText !== undefined && finalText !== "" && finalText !== provisional.text }));
     if (!provisional) return;
     this.provisional = null;
     if (finalText !== undefined && finalText !== "" && finalText !== provisional.text) {
@@ -563,6 +577,8 @@ export class DocxEditorSession implements ImeSession, DocumentCommandTarget {
   }
 
   insertCommittedAt(at: unknown, text: string): boolean {
+    trace("docx:insertCommittedAt", () => ({ session: this.sessionId, length: [...text].length, composing: this.composition !== null,
+      mark: typeof at === "number" }));
     if (!text || this.composition || typeof at !== "number") return false;
     return this.push({ op: "insertAt", mark: at, text });
   }
@@ -926,17 +942,40 @@ export class DocxEditorSession implements ImeSession, DocumentCommandTarget {
     };
   }
 
-  /** 보내는 중·보낼 연산을 엔진 기록에 적용한 예상(DocumentCommandSnapshot.queuedHistory). 대기 연산이 없으면 null. */
-  private queuedHistory(): { undo: boolean; redo: boolean } | null {
+  /**
+   * 보내는 중·보낼 연산을 엔진 기록에 차례로 적용한 예상(DocumentCommandSnapshot.queuedHistory). 대기 연산이 없으면 null.
+   * 방향마다 "알고 있는 최소 단계 수"와 "그보다 더 있을 수 있는지"만 센다(엔진 보기는 단계가 있는지만 알려 주고, 타자는 한 단계로
+   * 묶이므로 단계 수를 앱이 정할 수 없다 — 기록을 따로 만들지 않음):
+   * - 엔진 보기에 단계가 있으면 최소 1, 더 있을 수 있음.
+   * - 바꾸는 연산: 실행 취소 단계가 적어도 하나(새 단계 또는 이어 친 묶음), 더 있을 수 있음. 다시 실행 기록은 버린다(성공하면
+   *   엔진이 버림. 엔진이 거부하면 남지만 그때는 응답 뒤 보기로 맞춘다 — 여기서는 없다고 보아 넘치는 다시 실행을 막는다).
+   * - 실행 취소: 아는 단계가 있으면 하나를 쓰고 다시 실행 단계를 하나 더한다. 아는 단계가 없고 더 있을 수만 있으면 결과를 모른다.
+   *   다시 실행도 같다(방향만 반대).
+   * - 이동·클릭·선택·표지는 기록을 바꾸지 않는다.
+   * 예상이 어긋나도(엔진이 거부한 넣기, 보호를 푸는 단계) 엔진이 다시 확인해 아무것도 바꾸지 않는다.
+   */
+  private queuedHistory(): { undo: QueuedStep; redo: QueuedStep } | null {
     const pending = [...this.sending, ...this.queue];
     if (pending.length === 0 || !this.view) return null;
-    let { undo, redo } = this.view.history;
+    const known = (available: boolean) => ({ min: available ? 1 : 0, more: available });
+    let undo = known(this.view.history.undo);
+    let redo = known(this.view.history.redo);
+    const step = (from: { min: number; more: boolean }, to: { min: number; more: boolean }) => {
+      if (from.min > 0) {
+        from.min -= 1;
+        to.min += 1;
+      } else if (from.more) {
+        to.more = true; // 썼는지 모른다: 반대 방향도 생겼을 수만 있다
+      }
+    };
     for (const { op } of pending) {
-      if (op === "undo") redo ||= undo;
-      else if (op === "redo") undo ||= redo;
-      else if (MUTATING_OPS.has(op)) [undo, redo] = [true, false];
+      if (op === "undo") step(undo, redo);
+      else if (op === "redo") step(redo, undo);
+      else if (MUTATING_OPS.has(op)) [undo, redo] = [{ min: Math.max(undo.min, 1), more: true }, known(false)];
     }
-    return { undo, redo };
+    const state = ({ min, more }: { min: number; more: boolean }): QueuedStep =>
+      min > 0 ? "available" : more ? "unknown" : "none";
+    return { undo: state(undo), redo: state(redo) };
   }
 
   /** 명령을 이 세션의 편집 경로에 넣는다. 지금 상태로 다시 확인해 할 수 없으면 아무것도 바꾸지 않는다. */

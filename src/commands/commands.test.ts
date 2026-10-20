@@ -11,7 +11,7 @@ import {
   shortcutLabel, type DocumentCommandId,
 } from "./registry";
 import { handleShortcut, isDocumentShortcutTarget } from "./shortcuts";
-import type { DocumentCommandSnapshot, DocumentCommandTarget } from "./target";
+import type { DocumentCommandSnapshot, DocumentCommandTarget, QueuedStep } from "./target";
 
 const DOCUMENT_IDS: DocumentCommandId[] = [
   "edit.undo", "edit.redo", "format.bold", "format.italic", "format.underline", "format.strikethrough", "file.save",
@@ -156,15 +156,16 @@ describe("가용성 결정", () => {
     expect(documentCommandState("edit.redo", snapshot())).toEqual({ available: false, reason: "nothingToRedo" });
     expect(documentCommandState("edit.undo", snapshot({ history: { undo: true, redo: false } }))).toEqual({ available: true });
     expect(documentCommandState("edit.redo", snapshot({ history: { undo: false, redo: true } }))).toEqual({ available: true });
-    // 기록에 단계를 더할 수 있는 연산이 대기 중이면 그 뒤에 실행 취소를 넣을 수 있다(엔진이 순서대로 실행). 이동·선택만 대기 중이면
-    // 아니다(안정화 P2-A). 다시 실행은 기록이 있어야 한다.
-    const queued = (undo: boolean, redo: boolean) => snapshot({ pending: true, queuedHistory: { undo, redo } });
-    expect(documentCommandState("edit.undo", queued(true, false))).toEqual({ available: true });
-    expect(documentCommandState("edit.undo", queued(false, false))).toEqual({ available: false, reason: "nothingToUndo" });
-    expect(documentCommandState("edit.redo", queued(true, false))).toMatchObject({ reason: "nothingToRedo" });
-    expect(documentCommandState("edit.redo", queued(false, true))).toEqual({ available: true });
+    // 대기 연산이 있으면 엔진 기록에 적용한 예상으로 정한다(안정화 P2-A). 남은 단계를 응답 전에 모르면(unknown) 기다린다(마무리 안정화).
+    const queued = (undo: QueuedStep, redo: QueuedStep) => snapshot({ pending: true, queuedHistory: { undo, redo } });
+    expect(documentCommandState("edit.undo", queued("available", "none"))).toEqual({ available: true });
+    expect(documentCommandState("edit.undo", queued("none", "none"))).toEqual({ available: false, reason: "nothingToUndo" });
+    expect(documentCommandState("edit.undo", queued("unknown", "none"))).toEqual({ available: false, reason: "pendingEdits" });
+    expect(documentCommandState("edit.redo", queued("available", "none"))).toMatchObject({ reason: "nothingToRedo" });
+    expect(documentCommandState("edit.redo", queued("none", "available"))).toEqual({ available: true });
+    expect(documentCommandState("edit.redo", queued("none", "unknown"))).toEqual({ available: false, reason: "pendingEdits" });
     // 대기 예상이 엔진 보기보다 앞선다(낡은 보기의 기록으로 정하지 않음).
-    expect(documentCommandState("edit.redo", snapshot({ history: { undo: true, redo: true }, queuedHistory: { undo: true, redo: false } })))
+    expect(documentCommandState("edit.redo", snapshot({ history: { undo: true, redo: true }, queuedHistory: { undo: "available", redo: "none" } })))
       .toMatchObject({ reason: "nothingToRedo" });
     // 문서 보호(안정화 P2-B): 언제나 거부하는 보호면 쓸 수 없고, 편집 가능 영역만 허용하면 엔진이 판정하도록 보낸다.
     expect(documentCommandState("format.bold", snapshot({ formatAccess: "protected" }))).toEqual({ available: false, reason: "protected" });
