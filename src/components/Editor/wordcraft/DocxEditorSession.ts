@@ -204,6 +204,8 @@ export class DocxEditorSession implements ImeSession, DocumentCommandTarget {
   private composition: { text: string; shown: boolean } | null = null;
   /** 앱이 먼저 확정한 조합(입력기의 최종 글자를 기다림). */
   private provisional: { text: string } | null = null;
+  /** 입력기의 빈 끝 뒤 최종 글자를 기다림(ImeInput이 정함, T010 IME 경계). 다시 불러오기·실패·닫기에서 버린다. */
+  private awaiting = false;
   /** 바로 앞에 보낸 연산이 앱이 확정한 조합의 넣기다(다음 클릭은 넣기 전 화면의 좌표). */
   private pointerAfterInsert = false;
   private nextMark = 1;
@@ -361,6 +363,7 @@ export class DocxEditorSession implements ImeSession, DocumentCommandTarget {
     this.sending = [];
     this.composition = null;
     this.provisional = null;
+    this.awaiting = false;
     this.pointerAfterInsert = false;
     this.inputNotice = null;
     this.view = null;
@@ -394,6 +397,7 @@ export class DocxEditorSession implements ImeSession, DocumentCommandTarget {
     this.sending = [];
     this.composition = null;
     this.provisional = null;
+    this.awaiting = false;
     if (error.code === "StaleSession" || error.code === "UnknownSession") {
       this.setStatus({ kind: "closed" });
       await this.sessions.refresh(this.sessionId);
@@ -521,6 +525,17 @@ export class DocxEditorSession implements ImeSession, DocumentCommandTarget {
 
   get compositionText() {
     return this.composition?.text ?? "";
+  }
+
+  get awaitingCommit() {
+    return this.awaiting;
+  }
+
+  setAwaitingCommit(awaiting: boolean): void {
+    if (this.awaiting === awaiting) return;
+    this.awaiting = awaiting;
+    trace("docx:awaitingCommit", () => ({ session: this.sessionId, awaiting }));
+    this.emit();
   }
 
   markCaret(): unknown {
@@ -936,7 +951,7 @@ export class DocxEditorSession implements ImeSession, DocumentCommandTarget {
     return {
       sessionId: this.sessionId, engine: this.engine, loadGeneration: this.generation, revision: this.revision,
       loaded: this.status.kind === "ready" && !this.closing, editable: this.editable,
-      composing: this.composition !== null || this.provisional !== null, pending: this.busy,
+      composing: this.composition !== null || this.provisional !== null || this.awaiting, pending: this.busy,
       queuedHistory: this.queuedHistory(), saving: this.saving,
       history: this.view?.history ?? null, format: this.view?.format ?? null, formatAccess: this.view?.formatAccess ?? null,
     };

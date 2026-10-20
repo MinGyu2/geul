@@ -182,3 +182,13 @@ macOS는 Ctrl 대신 Cmd(이 빌드는 Linux만 확인). 단축키는 물리 키
 - 남은 위험: H2(입력기가 버림)는 앱이 막을 수 없다(마지막 미리보기 글자를 넣는 것은 지어낸 입력이라 하지 않음). 문서 탭·탭 닫기 단추는
   명령 단추가 아니어서 여전히 초점을 가져간다(실제 시험에서는 한 번씩 남음). 실제 입력에서 provisional 뒤 Ctrl 키가 꼬리보다 먼저
   오는 순서는 만들지 못해 재생 시험으로만 확인했다.
+
+## T010 IME 트랜잭션 경계 (2026-10-20, `2baa18e` 위)
+
+| 항목 | 판정 | 근거 |
+|------|------|------|
+| 빈 끝과 최종 글자 사이의 명령 | CONFIRMED DEFECT — FIXED(재생 시험) | 수정 전 재생: Ctrl+Z가 앞선 편집을 먼저 되돌림, Ctrl+B·리본 굵게의 `format`이 넣기보다 먼저 감, 문서 전환·다시 불러오기 뒤 늦은 최종 글자가 다른 문서·새 모델에 들어감. 수정: 최종 글자 기다림([editor-surface-decision.md](editor-surface-decision.md#빈-끝과-최종-글자-사이-최종-글자-기다림-t010-ime-경계-2026-10-20-2baa18e-위)), 그동안 `composing`. `src/commands/imeGap.test.tsx` 9개(수정 전 처음 8개 중 6개 실패, 클릭 뒤 다시 불러오기 1개는 수정 중에 더함). |
+| 진단 추적 묶음 | CONTRACT DEFICIENCY — FIXED | 시험기가 `window.__geulTrace.records`에 직접 넣어 최대 개수를 넘을 수 있었다. 이제 앱의 하나뿐인 추가 함수(`appendRecord`, 시험기는 `window.__geulTraceRecord`)로만 넣고(같은 최대·순번·버린 수), 보고서는 사례마다 `traceComplete`·`traceMissing`으로 구간이 빠졌는지 보인다. WebDriver 연결 끊김은 `infrastructureFailure`·종료 코드 2(판단 불가)로 따로 적는다. |
+| 처음의 음절 사라짐 | UNVERIFIED | 재현 안 됨(이번 실제 2회 30/30 포함). 기다림은 H1(초점 이동) 외에 "최종 글자 전 명령 실행"이라는 다른 원인도 막지만, 그 관찰(revision 0)과 맞는지는 추적이 없어 모른다. H2(입력기가 버림)는 앱이 막을 수 없다. |
+
+가용성 규칙 4의 `composing`은 이제 조합 중, 앱이 먼저 확정한 조합(provisional), 빈 끝 뒤 최종 글자 기다림을 모두 뜻한다.

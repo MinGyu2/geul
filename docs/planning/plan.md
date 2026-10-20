@@ -322,6 +322,12 @@ interface EditorAdapter {
 - IME: Ctrl·Meta·Alt 키는 IME 트랜잭션의 새 입력 경계가 아니다. 편집 입력에 초점이 있을 때 명령 단추는 mousedown에서 초점을 가져가지 않는다.
 - 진단: 검사 훅 빌드에서만 `window.__geulTrace`(글자 없는 이벤트·상태 추적).
 
+### T010 IME 트랜잭션 경계 (2026-10-20, `2baa18e` 위)
+- 글자가 보이던 조합이 빈 끝으로 끝나면 그 세션은 최종 글자를 기다린다(`ImeSession.awaitingCommit`, 명령 `composing`에 포함). 최종
+  글자·새 입력(수식 키 없는 키·새 조합·일반 입력)으로 끝나고, 초점 잃음·표면 사라짐·클릭은 그 문서의 그 자리를 기억하며, 다시
+  불러오기·닫기 뒤의 늦은 최종 글자는 넣지 않는다. 근거: [editor-surface-decision.md](../architecture/editor-surface-decision.md).
+- 진단 추적은 하나뿐인 묶음 추가 함수로만 쌓고(시험기 포함), 보고서는 빠진 구간과 WebDriver 끊김(판단 불가)을 따로 보인다.
+
 ## Algorithms and Pseudocode
 ```
 open(path):

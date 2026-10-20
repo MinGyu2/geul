@@ -238,6 +238,8 @@ export class RhwpEditorSession implements DocumentCommandTarget {
   private composition: Composition | null = null;
   /** 앱이 먼저 끝낸 보이는 조합(클릭·초점 잃음·표면 사라짐). 글자는 모델에 있고, 입력기의 끝을 기다리며 아직 세지 않았다. */
   private provisional: Composition | null = null;
+  /** 입력기의 빈 끝 뒤 최종 글자를 기다림(ImeInput이 정함, T010 IME 경계). 모델을 놓으면(다시 불러오기·닫기) 버린다. */
+  private awaiting = false;
   /** Canvas마다 마지막으로 그린 쪽·배율·그리기 입력 요약(그 자리 다시 그리기의 조건과 바뀐 띠 비교). 놓은 Canvas(releaseRendering, 크기 0)는 쓰지 않고 전체 그리기로 다시 기록한다. */
   private drawnAt = new WeakMap<HTMLCanvasElement, { page: number; scale: number; painted: PaintedPage | null }>();
   private readonly samples: number[] = [];
@@ -278,6 +280,16 @@ export class RhwpEditorSession implements DocumentCommandTarget {
 
   get composing() {
     return this.composition !== null;
+  }
+
+  get awaitingCommit() {
+    return this.awaiting;
+  }
+
+  setAwaitingCommit(awaiting: boolean): void {
+    if (this.awaiting === awaiting) return;
+    this.awaiting = awaiting;
+    this.emit();
   }
 
   /** 지금 조합 중인 글자(문서에 보이는 것). */
@@ -1112,7 +1124,7 @@ export class RhwpEditorSession implements DocumentCommandTarget {
     return {
       sessionId: this.sessionId, engine: this.engine, loadGeneration: this.generation, revision: this.committed,
       loaded: this.status.kind === "ready" && this.doc !== null && !this.closing, editable: this.editable,
-      composing: this.composition !== null || this.provisional !== null,
+      composing: this.composition !== null || this.provisional !== null || this.awaiting,
       pending: this.pending > 0 || this.committingEpoch === this.epoch, queuedHistory: null,
       saving: this.saving, history: null, format: null, formatAccess: null,
     };
@@ -1302,6 +1314,7 @@ export class RhwpEditorSession implements DocumentCommandTarget {
     this.text = null;
     this.composition = null;
     this.provisional = null;
+    this.awaiting = false;
   }
 
   /** 세션을 닫을 때. 모델을 버리고 이후의 늦은 응답은 무시한다. */

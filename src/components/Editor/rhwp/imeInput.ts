@@ -36,6 +36,14 @@
 // - 이 규칙은 엔진과 무관하다(T008): rhwp 편집 세션(T007, 조합 글자를 문서 모델에 넣음)과 WordCraft 편집 세션(T008, 조합
 //   글자를 커서 자리에 겹쳐 그리고 확정만 백엔드에 보냄)이 같은 ImeSession 계약으로 쓴다. 세션 사이의 끊긴 조합도 같은
 //   ImeContext로 다룬다(자리 값은 그 자리를 만든 세션만 해석한다).
+// - 빈 끝 뒤 최종 글자 기다림(T010 IME 경계): 입력기는 확정을 빈 끝(조합 글자 지우기 → compositionend "")과 최종 글자(229 keydown
+//   → insertFromComposition → compositionend)로 나눠 보낸다(실측 WebKitGTK 2.54 + ibus-hangul, 약 60 ms 사이). 글자가 보이던 조합이
+//   빈 끝으로 끝나면 진짜 취소인지 확정의 앞 반쪽인지 그때는 모르므로, 그 세션을 "최종 글자를 기다림"으로 둔다
+//   (session.setAwaitingCommit). 그동안 명령은 조합 중으로 거절된다(최종 글자보다 먼저 실행되면 다음 입력 서식이 그 음절에 붙거나
+//   실행 취소가 앞선 편집을 되돌렸다). 기다림은 최종 글자가 오거나 새 입력이 시작되면(수식 키 없는 keydown·compositionstart·
+//   조합 계열이 아닌 input) 끝난다 — 진짜 취소 뒤에도 다음 키로 풀린다(시간 대기 없음). 기다리는 동안 초점을 잃거나 표면이 사라지면
+//   그 세션의 커서 자리를 기억해(markCaret) 늦은 최종 글자를 그 문서의 그 자리에 한 번 넣는다. 세션이 다시 불러오거나 닫히면
+//   (세션이 기다림을 버림) 늦은 최종 글자는 옛 트랜잭션의 것이므로 넣지 않는다.
 
 /** 조합을 받는 편집 세션. 자리(markCaret이 돌려준 값)는 그 세션의 insertCommittedAt에만 돌려준다. */
 export interface ImeSession {
@@ -49,6 +57,9 @@ export interface ImeSession {
   insertCommittedAt(at: unknown, text: string): boolean;
   resolveProvisional(finalText?: string): void;
   typeText(text: string): boolean;
+  /** 빈 끝 뒤 입력기의 최종 글자를 기다리는 중(ImeInput이 정하고, 세션은 다시 불러오기·닫기에서 거짓으로 되돌린다). */
+  readonly awaitingCommit: boolean;
+  setAwaitingCommit(awaiting: boolean): void;
 }
 
 type Session = ImeSession;
@@ -57,7 +68,7 @@ type Session = ImeSession;
  * visible은 페이지에 보이던 조합을 앱이 확정한 경우다: 입력기가 그 조합을 끝내며 보내는 꼬리(아래 ImeInput 설명)를 기다린다. */
 type Interrupted =
   | { finalized: true; text: string; visible?: VisibleTail }
-  | { finalized: false; session: Session; anchor: unknown; text: string; split?: true };
+  | { finalized: false; session: Session; anchor: unknown; text: string; split?: true; awaited?: true };
 
 /** 앱이 먼저 끝낸 보이는 조합. 글자는 session 모델에 있고 아직 세지 않았다(session.resolveProvisional로 끝냄). */
 interface VisibleTail {
@@ -76,6 +87,8 @@ export class ImeContext {
   interrupted: Interrupted | null = null;
   /** confirmedByView: WebView가 스스로 확정해 끝난 조합(입력기가 같은 조합을 한 번 더 확정할 수 있음). */
   terminal: { text: string; confirmedByView?: true } | null = null;
+  /** 빈 끝 뒤 최종 글자를 기다리는 세션(파일 머리 설명). */
+  awaiting: Session | null = null;
 }
 
 const COMPOSITION_INPUT_TYPES = new Set(["insertFromComposition", "insertCompositionText"]);
@@ -91,6 +104,8 @@ export class ImeInput {
         : interrupted.finalized ? (interrupted.visible ? (interrupted.visible.emptied ? "visibleEmptied" : "visible") : "finalized")
         : interrupted.split ? "split" : interrupted.text ? "anchoredText" : "anchored",
       terminal: !terminal ? "none" : terminal.text ? (terminal.confirmedByView ? "textByView" : "text") : "empty",
+      awaiting: !this.context.awaiting ? "none" : this.context.awaiting !== this.session ? "other"
+        : this.session.awaitingCommit ? "this" : "invalidated",
     };
   }
 
@@ -107,11 +122,16 @@ export class ImeInput {
     // 섞여 온다(새 입력이 아님).
     const interrupted = this.context.interrupted;
     if (ime && interrupted && (interrupted.finalized ? interrupted.visible : interrupted.split)) return;
+    // 최종 글자의 앞에도 229 keydown이 온다: 기다림을 끝내지 않는다.
+    if (ime && this.context.awaiting) return;
+    if (!ime) this.releaseAwaiting();
     this.settleInterrupted();
   }
 
   compositionStart(): void {
+    this.releaseAwaiting();
     this.settleInterrupted();
+    this.shown = false;
     this.context.terminal = null;
     this.viewConfirming = false;
     this.session.beginComposition();
@@ -119,12 +139,21 @@ export class ImeInput {
 
   /** 진행 중인 조합에 확정 입력(insertFromComposition)이 왔다: 입력기가 아니라 WebView가 조합을 확정하고 있다. */
   private viewConfirming = false;
+  /** 진행 중인 조합에 글자가 보인 적이 있다(빈 끝이 확정의 앞 반쪽일 수 있음). */
+  private shown = false;
 
   /** input 이벤트. text는 textarea 값(조합 중) 또는 입력된 글자. */
   input(text: string, inputType: string, isComposing: boolean): void {
     const session = this.session;
     const compositionType = COMPOSITION_INPUT_TYPES.has(inputType);
     const interrupted = this.context.interrupted;
+    const awaiting = this.context.awaiting;
+    if (!session.composing && awaiting && !awaiting.awaitingCommit && (isComposing || compositionType)) {
+      // 기다리던 세션이 다시 불러왔거나 닫혔다: 이 최종 글자는 옛 트랜잭션의 것이다(새 모델에 넣지 않고, 뒤따르는 끝도 소비).
+      this.context.awaiting = null;
+      this.context.interrupted = { finalized: true, text: "" };
+      return;
+    }
     if (!session.composing && interrupted && (isComposing || compositionType)) {
       // 끊긴 조합의 늦은 이벤트: 클릭한 자리·다른 문서에 넣지 않는다.
       if (isComposing) {
@@ -158,11 +187,13 @@ export class ImeInput {
       this.context.terminal = null;
       if (!session.composing) session.beginComposition();
       session.updateComposition(text);
+      if (text) this.shown = true;
       // 편집 세션이 조합을 끝냈다(엔진 예외·편집 중지·시작 실패): 이 조합의 나머지 이벤트는 끝난 트랜잭션의 것이다.
       if (!session.composing) this.context.interrupted = { finalized: true, text: "" };
       return;
     }
     if (compositionType && this.context.terminal && (!text || this.context.terminal.text === text)) return;
+    this.releaseAwaiting();
     this.settleInterrupted();
     this.context.terminal = null; // 일반 입력·붙여넣기는 글자가 같아도 새 입력이다
     if (!text) return;
@@ -174,9 +205,20 @@ export class ImeInput {
     const session = this.session;
 
     if (session.composing) {
+      const awaited = finalText === "" && this.shown;
       session.endComposition(finalText);
       this.context.terminal = this.viewConfirming && finalText ? { text: finalText, confirmedByView: true } : { text: finalText };
       this.viewConfirming = false;
+      this.shown = false;
+      if (awaited) this.beginAwaiting();
+      else if (finalText) this.releaseAwaiting();
+      return;
+    }
+    const awaiting = this.context.awaiting;
+    if (awaiting && !awaiting.awaitingCommit && finalText && !this.context.interrupted) {
+      // 기다리던 세션이 다시 불러왔거나 닫힌 뒤의 끝만 온 확정: 넣지 않는다.
+      this.context.awaiting = null;
+      this.context.terminal = { text: finalText };
       return;
     }
     const interrupted = this.context.interrupted;
@@ -196,7 +238,10 @@ export class ImeInput {
     }
     if (interrupted) {
       this.context.interrupted = null;
-      if (!interrupted.finalized && finalText) interrupted.session.insertCommittedAt(interrupted.anchor, finalText);
+      if (!interrupted.finalized && finalText && this.stillOwned(interrupted)) {
+        interrupted.session.insertCommittedAt(interrupted.anchor, finalText);
+      }
+      if (finalText) this.releaseAwaiting();
       // 이미 확정했든 지금 확정했든, 바로 뒤따르는 같은 글자의 조합 알림(Safari 순서)은 이 조합의 것이다.
       this.context.terminal = { text: finalText };
       return;
@@ -205,6 +250,7 @@ export class ImeInput {
     session.beginComposition(); // 시작·조합 입력 없이 확정만 온 조합
     session.endComposition(finalText);
     this.context.terminal = { text: finalText };
+    this.releaseAwaiting();
   }
 
   /** 페이지를 누르기 직전(커서를 옮기기 전). */
@@ -216,21 +262,53 @@ export class ImeInput {
     // 아무 증거가 없으면 이번 클릭 전 커서를 기억한다(마지막 클릭 기준, 클릭 사이 미리보기 키는 페이지가 모른다).
     const current = this.context.interrupted;
     if (current && (current.finalized || current.text)) return;
-    this.context.interrupted = terminal
+    // 빈 끝 뒤 최종 글자를 기다리는 중이면 그 트랜잭션의 자리다(그 세션이 다시 불러오면 넣지 않음).
+    const awaited = this.context.awaiting === this.session ? { awaited: true as const } : {};
+    this.context.interrupted = terminal || awaited.awaited
       // 빈 끝 바로 뒤의 클릭: WebKitGTK는 확정을 빈 끝 + 확정 절반(insertFromComposition → 끝)으로 나눠 보낸다. 그 사이에
       // mousedown이 오면(실측) 확정 절반은 이 자리(빈 끝의 조합 자리)의 것이다. 그 사이 229 keydown은 이를 닫지 않는다.
-      ? { session: this.session, anchor: this.session.markCaret(), finalized: false, text: "", split: true }
+      ? { session: this.session, anchor: this.session.markCaret(), finalized: false, text: "", split: true, ...awaited }
       : { session: this.session, anchor: this.session.markCaret(), finalized: false, text: "" };
   }
 
   /** textarea가 초점을 잃음. 조합 끝 없이 초점을 잃었으면 보이는 조합 글자를 그 자리에 확정한다. */
   blur(): void {
-    this.finalizeVisible();
+    if (!this.finalizeVisible()) this.anchorAwaiting();
   }
 
   /** 표면이 사라짐(탭 전환 등, 초점 잃음 이벤트가 없을 수 있음). 보이는 조합을 그 문서에 확정한다. */
   detach(): void {
-    this.finalizeVisible();
+    if (!this.finalizeVisible()) this.anchorAwaiting();
+  }
+
+  /** 빈 끝 뒤 최종 글자를 이 세션에서 기다린다. */
+  private beginAwaiting() {
+    this.releaseAwaiting();
+    this.context.awaiting = this.session;
+    this.session.setAwaitingCommit(true);
+  }
+
+  /** 기다림을 끝낸다(최종 글자가 왔거나 새 입력이 시작됨). */
+  private releaseAwaiting() {
+    const awaiting = this.context.awaiting;
+    this.context.awaiting = null;
+    if (awaiting?.awaitingCommit) awaiting.setAwaitingCommit(false);
+  }
+
+  /**
+   * 기다리는 동안 이 표면이 초점을 잃거나 사라진다: 최종 글자는 다른 표면에 도착하거나 오지 않을 수 있다. 지금 커서 자리를 기억해
+   * 늦은 최종 글자를 이 문서의 이 자리에 넣도록 끊긴 트랜잭션으로 둔다(229 keydown이 닫지 않게 split).
+   */
+  private anchorAwaiting() {
+    if (this.context.awaiting !== this.session || this.context.interrupted || !this.session.awaitingCommit) return;
+    this.context.interrupted = {
+      finalized: false, session: this.session, anchor: this.session.markCaret(), text: "", split: true, awaited: true,
+    };
+  }
+
+  /** 끊긴 트랜잭션이 아직 그 세션의 것인지(기다리던 세션이 다시 불러오거나 닫혔으면 아님). */
+  private stillOwned(interrupted: Extract<Interrupted, { finalized: false }>): boolean {
+    return !interrupted.awaited || interrupted.session.awaitingCommit;
   }
 
   /** 문서에 보이는 조합이 있으면 그 자리에 확정하고, 그 조합의 늦은 이벤트를 소비하도록 기록한다. */
@@ -252,7 +330,7 @@ export class ImeInput {
     this.context.interrupted = null;
     // 입력기의 끝 없이 새 입력이 시작됐다: 앱이 끝낸 조합을 모델 그대로 한 번 센다.
     if (interrupted?.finalized && interrupted.visible) interrupted.visible.session.resolveProvisional();
-    if (interrupted && !interrupted.finalized && interrupted.text) {
+    if (interrupted && !interrupted.finalized && interrupted.text && this.stillOwned(interrupted)) {
       interrupted.session.insertCommittedAt(interrupted.anchor, interrupted.text);
     }
   }

@@ -41,6 +41,7 @@ import subprocess
 import sys
 import tempfile
 import time
+import urllib.error
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[3]
@@ -1246,15 +1247,15 @@ def scenario_ime(d, fixtures: Path, xdotool: str, ibus: str, focus_window: str |
 
 
 # 창 쪽 이벤트(누름·초점·키)를 앱의 진단 추적(src/components/Editor/imeTrace.ts, 검사 훅 빌드의 window.__geulTrace)에 같은 순번으로
-# 더한다. 대상은 종류(편집 입력·명령 ID·탭·그 밖)만, 글자·경로는 남기지 않는다.
-TRACE_WINDOW = """if (!window.__geulWindowTrace) { window.__geulWindowTrace = true;
-  const store = () => (window.__geulTrace ??= {seq: 0, dropped: 0, records: []});
+# 더한다. 추가는 앱의 묶음 함수(window.__geulTraceRecord: 같은 최대 개수·순번·버린 수)로만 한다. 대상은 종류(편집 입력·명령 ID·탭·
+# 그 밖)만, 글자·경로는 남기지 않는다.
+TRACE_WINDOW = """if (!window.__geulWindowTrace && window.__geulTraceRecord) { window.__geulWindowTrace = true;
   const target = (e) => { const t = e.target; if (!(t instanceof Element)) return 'none';
     if (t.classList.contains('rhwp-input')) return 'editor-input';
     const c = t.closest('[data-command]'); if (c) return 'command:' + c.dataset.command;
     if (t.closest('.document-tab__close')) return 'tab-close'; if (t.closest('.document-tab__select')) return 'tab';
     if (t.closest('.docx-page')) return 'page'; return 'other:' + t.tagName.toLowerCase(); };
-  const push = (kind, detail) => { const s = store(); s.seq += 1; s.records.push([s.seq, Math.round(performance.now() * 10) / 10, kind, detail]); };
+  const push = (kind, detail) => window.__geulTraceRecord(kind, detail);
   for (const type of ['mousedown', 'mouseup', 'click', 'focusin', 'focusout'])
     window.addEventListener(type, (e) => push('win:' + type, {target: target(e), phase: e.eventPhase}), true);
   window.addEventListener('keydown', (e) => push('win:keydown', {target: target(e), ime: e.isComposing || e.keyCode === 229,
@@ -1262,8 +1263,13 @@ TRACE_WINDOW = """if (!window.__geulWindowTrace) { window.__geulWindowTrace = tr
 }"""
 
 
-def trace_since(d, seq: int) -> list:
-    return d.js("const s = window.__geulTrace; return s ? s.records.filter(r => r[0] > arguments[0]) : []", seq)
+def trace_since(d, seq: int) -> dict:
+    """seq 뒤의 기록과 그 구간이 온전한지(묶음이 넘쳐 앞부분을 버렸으면 complete 거짓, 버린 기록 수와 함께)."""
+    return d.js("const s = window.__geulTrace; if (!s) return {records: [], complete: false, missing: null, dropped: 0};"
+                " const records = s.records.filter(r => r[0] > arguments[0]);"
+                " const first = s.records.length ? s.records[0][0] : s.seq + 1;"
+                " const missing = Math.max(0, first - arguments[0] - 1);"
+                " return {records, complete: missing === 0, missing, dropped: s.dropped}", seq)
 
 
 def trace_seq(d) -> int:
@@ -1322,7 +1328,7 @@ def scenario_ime_commands(d, fixtures: Path, xdotool: str, ibus: str, rounds: in
     def message() -> str:
         return d.js("return document.querySelector('.statusbar__message')?.textContent ?? ''")
 
-    def start(name: str, others: tuple[str, ...] = ()) -> dict:
+    def start(name: str, others: tuple[str, ...] = (), history: bool = False, jamo: str = "gk") -> dict:
         for other in others:
             shutil.copy(fixtures / "basic-ko.docx", fixtures / other)
             open_document(d, fixtures / other)
@@ -1337,11 +1343,16 @@ def scenario_ime_commands(d, fixtures: Path, xdotool: str, ibus: str, rounds: in
         xclick(origin[0] + 150 * PT, origin[1] + PARA0_Y * PT)
         time.sleep(0.4)
         run(xdotool, "key", "End")  # 첫 문단 끝
+        if history:
+            # 실행 취소 기록이 있는 문서: 문단 나누기 한 단계(조합 전의 편집). 새 빈 문단에서 조합한다.
+            run(xdotool, "key", "Return")
+            settle(d, f"{name} 앞선 편집")
         base = settle(d, f"{name} 시작")
         seq = trace_seq(d)
-        run(xdotool, "type", "--delay", "90", "gk")
+        run(xdotool, "type", "--delay", "90", jamo)
         mid = settle(d, f"{name} 조합 중")
-        if mid.get("composing") != "true" or mid.get("composition") != "하":
+        expected = {"gk": "하", "g": "ㅎ"}[jamo]
+        if mid.get("composing") != "true" or mid.get("composition") != expected:
             raise smoke.Failure(f"조합을 시작하지 못함({name}): {brief(mid)}")
         return {"path": path, "text": base["paragraphText"], "revision": int(base["revision"]), "seq": seq, "name": name}
 
@@ -1350,8 +1361,14 @@ def scenario_ime_commands(d, fixtures: Path, xdotool: str, ibus: str, rounds: in
         st = settle(d, f"{case['name']} 끝")
         entry = {"revision": [case["revision"], int(st["revision"])], "composing": st.get("composing"),
                  "messageKind": "composing" if "조합" in message() else ("other" if message() else ""),
-                 "textDelta": len(st["paragraphText"]) - len(case["text"]), "rejectedOps": st.get("rejected"),
-                 "trace": trace_since(d, case["seq"]), **(extra or {})}
+                 "textDelta": len(st["paragraphText"]) - len(case["text"]), "rejectedOps": st.get("rejected"), **(extra or {})}
+        window = trace_since(d, case["seq"])
+        entry["trace"] = window["records"]
+        # 묶음이 넘쳐 이 사례 구간의 앞부분을 버렸으면 증거가 온전하지 않다고 남긴다(숨기지 않음).
+        entry["traceComplete"] = window["complete"]
+        entry["traceMissing"] = window["missing"]
+        if not window["complete"]:
+            print(f"[참고] {case['name']}: 진단 추적의 앞부분 {window['missing']}개가 묶음에서 빠짐(증거 불완전)", flush=True)
         # 앱 쪽 추적이 없으면(검사 훅 없는 빌드) 원인을 재구성할 수 없다: 시험기 오류로 알린다.
         if not any(str(record[2]).startswith(("dom:", "docx:")) for record in entry["trace"]):
             raise smoke.Failure(f"앱 진단 추적이 없음({case['name']}): VITE_GEUL_TEST_HOOKS=1 빌드가 필요하다")
@@ -1369,6 +1386,46 @@ def scenario_ime_commands(d, fixtures: Path, xdotool: str, ibus: str, rounds: in
 
     for round_ in range(rounds):
         tag = f"r{round_}"
+        # 실행 취소 기록이 있는 문서(앞선 문단 나누기): 명령이 확정보다 먼저 실행되면 앞선 편집을 되돌리거나 서식이 그 음절에 붙는다.
+        for name, act in ((f"history-ribbon-bold-{tag}", lambda: xclick(*client_center('[data-command="format.bold"]'))),
+                          (f"history-ctrl-b-{tag}", lambda: run(xdotool, "key", "ctrl+b"))):
+            case = start(name, history=True)
+            act()
+            st = finish(case)
+            pressed = command_button(d, "format.bold")["pressed"]
+            check(f"IME 명령(앞선 편집 있음): 조합 중 {name} → 새 문단에 음절 한 번(revision +1), 굵게는 확정 뒤 실행되거나 거절",
+                  once(st, case) and (pressed == "true" or "조합" in message()),
+                  json.dumps({"pressed": pressed, "status": brief(st)}, ensure_ascii=False))
+            discard_close(d, case["path"].name)
+        for name, act in ((f"history-quick-undo-{tag}", lambda: xclick(*client_center('.titlebar [data-command="edit.undo"]'))),
+                          (f"history-ctrl-z-{tag}", lambda: run(xdotool, "key", "ctrl+z"))):
+            case = start(name, history=True)
+            act()
+            st = finish(case)
+            undone, refused = undone_or_refused(st, case)
+            check(f"IME 명령(앞선 편집 있음): 조합 중 {name} → 확정한 음절을 되돌리거나(+2, 새 문단 그대로) 거절(+1) — 앞선 문단 나누기를 먼저 되돌리지 않음",
+                  st.get("composing") == "false" and (undone or refused),
+                  json.dumps({"undone": undone, "refused": refused, "status": brief(st)}, ensure_ascii=False))
+            discard_close(d, case["path"].name)
+        # 진짜 취소(ㅎ → BackSpace로 비움): 글자·revision을 만들지 않고, 다음 키로 명령을 다시 받는다.
+        case = start(f"cancel-{tag}", history=True, jamo="g")
+        run(xdotool, "key", "BackSpace")
+        st = finish(case)
+        check("IME 명령: 조합 취소(BackSpace) → 글자·revision을 만들지 않음", st["paragraphText"] == case["text"]
+              and int(st["revision"]) == case["revision"], brief(st))
+        run(xdotool, "key", "End")  # 새 입력의 시작(기다림을 끝냄)
+        run(xdotool, "key", "ctrl+z")
+        st = finish(case, {"after": "end+ctrl-z"})
+        check("IME 명령: 조합 취소 뒤 수식 키 없는 키를 누르면 Ctrl+Z가 앞선 편집(문단 나누기)을 되돌림(잠기지 않음)",
+              int(st["revision"]) == case["revision"] + 1 and st.get("composing") == "false", brief(st))
+        discard_close(d, case["path"].name)
+        case = start(f"cancel-then-type-{tag}", history=True, jamo="g")
+        run(xdotool, "key", "BackSpace")
+        run(xdotool, "type", "--delay", "90", "gk")
+        run(xdotool, "key", "End")
+        st = finish(case)
+        check("IME 명령: 조합 취소 뒤 새로 친 음절은 한 번(revision +1)", once(st, case), brief(st))
+        discard_close(d, case["path"].name)
         # 1) 리본 굵게(실제 포인터) / 3) Ctrl+B(실제 키): 음절 한 번, 굵게는 확정 뒤 실행되거나 조합 중이라 거절.
         for name, act in ((f"ribbon-bold-{tag}", lambda: xclick(*client_center('[data-command="format.bold"]'))),
                           (f"ctrl-b-{tag}", lambda: run(xdotool, "key", "ctrl+b"))):
@@ -1546,6 +1603,12 @@ def main() -> int:
             return ime_exit_code()
         print(f"\nT008 WordCraft PoC: {len(RESULTS)}개 항목 통과")
         return 0
+    except (ConnectionError, urllib.error.URLError) as error:
+        # WebDriver·tauri-driver 연결이 끊김: 앱·문서·IME 판정이 아니라 시험 환경 실패다(판단 불가, 종료 코드 2). 그때까지의 사례
+        # 결과·추적은 보고서에 남아 있다.
+        REPORT["infrastructureFailure"] = {"kind": type(error).__name__, "message": str(error)[:200]}
+        print(f"[시험 환경 실패] WebDriver 연결 끊김 — 앱·IME 판정 아님: {error}", file=sys.stderr)
+        return 2
     except (smoke.Failure, TimeoutError, OSError, subprocess.CalledProcessError) as error:
         import traceback
         traceback.print_exc()
