@@ -284,6 +284,7 @@ interface EditorAdapter {
 - 표지 난수(C): `getrandom`을 끝까지 채우고(짧은 읽기·EINTR), 실패하면 NOT-RUN. 플랫폼(A): Linux 전용 탐침·시험 도우미에 cfg를 붙였다(`libc`는
   `cfg(unix)` 의존성, Apple 대상에는 `getrandom`이 없음). 시험 코드·문서만 바뀌었고 제품 동작은 그대로다([상세](../architecture/save-preservation.md#다중-사용자-탐침-판정후속-강화-a)).
 - 시험 cfg 정리(`43f5972` 위): Linux 전용 시험에서만 쓰는 시험 도우미 13개에도 같은 cfg를 붙였다(시험 코드만, Windows·macOS 빌드는 NOT RUN).
+- 게시 모듈 cfg 정리(`8aa2686` 위): `publish.rs`에서 Linux 게시에서만 쓰는 가져오기·상수·도우미·검증 상태에 Linux cfg(동작 변경 없음, Linux 밖 `stage`·`publish`는 그대로 `SaveUnsupported{platform}`). cfg 모의 검사로 Linux 밖 쓰이지 않는 코드 0개, 실제 Windows·macOS 빌드는 NOT RUN(T016).
 
 ## Algorithms and Pseudocode
 ```

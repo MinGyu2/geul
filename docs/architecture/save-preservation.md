@@ -303,7 +303,17 @@ FAIL이 INCONCLUSIVE보다 앞선다(표지가 없어도 다른 디렉터리 게
 돈다. Windows·macOS 시험 빌드는 이 환경에 그 대상의 표준 라이브러리가 없어 실제로 컴파일하지 못했고(NOT RUN), 바뀐 시험 파일에서 Linux
 전용 기호를 쓰는 cfg 없는 항목이 없음을 정적으로 확인했다. 후속 cfg 정리(`43f5972` 위): Linux 전용 시험에서만 쓰는 도우미 13개(`walk_dirs`·`precreate_predictable`·`Squat`·
 `random_temp_name`·`dirty_now`, 그리고 같은 이유의 `save_hooked`·`open_docx_in`·`exchange`·`HookSlot`·`Hooks`·`RaceCase`·`save_with_hooks`·
-`assert_published`)에도 같은 cfg를 붙여, Linux 밖의 시험 빌드에서 쓰이지 않는 코드(dead_code 경고)가 남지 않게 했다(오류가 나는 기호는 없었음).
+`assert_published`)에도 같은 cfg를 붙여, Linux 밖의 시험 빌드에서 쓰이지 않는 코드(dead_code 경고)가 남지 않게 했다(오류가 나는 기호는 없었음). 제품 코드 cfg 정리(`8aa2686` 위, `publish.rs`): 원본 교체가 Linux에서만 동작하므로, Linux 함수에서만 쓰이는 가져오기
+(`OpenOptions`·`Read`·`Write`·`AtomicU64`·`Ordering`·`describe_published`·`IoProblem`·`SaveStage`, `std::io`는 시험이나 Linux)·임시 파일 이름
+상수와 도우미(`COUNTER`·`MAX_NAME_ATTEMPTS`·`NAME_RANDOM_BYTES`·`temp_name`)·오류 도우미(`io_problem`·`failure`·`metadata_unsupported`·
+`unsupported`·`not_published`)·검증 상태(`Snapshot`·`snapshot`·`Staged::verified`)·`same_inode`·`Staged::at_path`에 `cfg(target_os = "linux")`,
+그것을 쓰는 시험 원천(`NameSource`·`NAME_SOURCE`·`name_for`·`next_name_number`)에 `cfg(all(test, target_os = "linux"))`를 붙였다. 호출하는 곳이
+어느 대상에도 없는 `cfg(not(unix))` 대역(`same_inode`·`snapshot`·`at_path`)은 지웠다. Linux 밖의 `stage`·`publish`(`SaveUnsupported{platform}`),
+`Staged`(Linux 밖에서는 만들어지지 않음)·`Drop`(Linux 밖 `same_inode_at` 대역이 false라 지우지 않음)·시험 훅(`Fault`·`Hook`·`before_check`·
+`BEFORE_*`, 교차 플랫폼 `service.rs`가 씀)은 그대로다. 근거: `publish.rs`를 복사해 `target_os = "linux"`·`unix` cfg를 기능으로 바꾼 작은 크레이트를
+세 배치(Linux·unix지만 Linux 아님·unix 아님)에서 라이브러리·시험 모두 `clippy -D warnings`로 검사 — 수정 전 Linux 밖 두 배치에서 라이브러리 17개·
+시험 13개(쓰이지 않는 가져오기·코드), 수정 뒤 세 배치 모두 0개. 이것은 cfg 그래프 모의이며 실제 Windows·macOS 컴파일(표준 라이브러리·의존성)은
+여전히 NOT RUN이다. Linux 동작·시험(155 + 무시 4)은 그대로다.
 cfg 없는 시험에서 닿지 않는 cfg 없는 항목·cfg 있는 항목을 부르는 cfg 없는 항목·Linux 밖에서 쓰이지 않는 최상위 `use`가 0개임을 정적으로
 확인했다(호출 그래프 점검). Linux 시험 목록은 그대로(159개 = 155 + 무시 4)다. Windows·macOS는 여전히 NOT RUN이고, 설치된 wasm32 대상은 의존성
 `tao`가 그 플랫폼을 지원하지 않아 검사에 쓸 수 없었다. 제품 코드(`publish.rs`)의 Linux 밖 dead_code 가능성(`temp_name`·`COUNTER` 등, 저장이

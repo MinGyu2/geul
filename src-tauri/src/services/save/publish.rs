@@ -28,26 +28,38 @@
 //!   있다(원본은 그대로). 남은 임시 파일의 정리·복구는 T014다(다른 파일을 지우는 정리 규칙은 두지 않는다).
 
 use std::ffi::{CStr, CString};
-use std::fs::{self, File, OpenOptions};
-use std::io::{self, Read, Write};
+#[cfg(target_os = "linux")]
+use std::fs::OpenOptions;
+use std::fs::{self, File};
+#[cfg(any(test, target_os = "linux"))]
+use std::io;
+#[cfg(target_os = "linux")]
+use std::io::{Read, Write};
 use std::path::Path;
 #[cfg(test)]
 use std::path::PathBuf;
+#[cfg(target_os = "linux")]
 use std::sync::atomic::{AtomicU64, Ordering};
 
-use crate::document::{
-    describe_published, DocumentError, IoProblem, Published, SaveStage, SaveUnsupportedReason,
-};
+// 원본 교체는 Linux에서만 한다: 그 밖의 플랫폼에서는 `stage`·`publish`가 `SaveUnsupported{platform}`만 돌려주므로 아래의
+// Linux 표시가 붙은 가져오기·상수·도우미는 Linux 빌드에만 있다(쓰이지 않는 코드를 남기지 않게, 동작은 같음).
+#[cfg(target_os = "linux")]
+use crate::document::{describe_published, IoProblem, SaveStage};
+use crate::document::{DocumentError, Published, SaveUnsupportedReason};
 
+#[cfg(target_os = "linux")]
 static COUNTER: AtomicU64 = AtomicU64::new(0);
 /// 임시 파일 이름이 이미 있을 때 다음 이름으로 해 보는 횟수.
+#[cfg(target_os = "linux")]
 const MAX_NAME_ATTEMPTS: usize = 64;
 /// 임시 파일 이름의 무작위 부분(바이트, 128비트). 프로세스 번호·순번은 다른 사용자가 짐작할 수 있으므로(T009 후속 강화 B)
 /// 이름마다 운영체제 난수를 넣는다. 정상 동작에서 우연히 겹칠 확률은 무시할 만하다(이름 2^32개에서도 약 2^-65).
+#[cfg(target_os = "linux")]
 const NAME_RANDOM_BYTES: usize = 16;
 
 /// 임시 파일 이름: `.geul-save-{프로세스}-{순번}-{무작위 32 hex}.tmp`. 접두사·접미사는 남은 임시 파일을 알아보는 규칙(T014)과
 /// 같다. 순번은 같은 프로세스 안의 구분을 돕는 값일 뿐 미리 차지하는 것을 막는 근거가 아니다(그것은 무작위 부분).
+#[cfg(target_os = "linux")]
 fn temp_name(counter: u64, random: &[u8; NAME_RANDOM_BYTES]) -> String {
     let hex: String = random.iter().map(|byte| format!("{byte:02x}")).collect();
     format!(".geul-save-{}-{counter}-{hex}.tmp", std::process::id())
@@ -55,16 +67,16 @@ fn temp_name(counter: u64, random: &[u8; NAME_RANDOM_BYTES]) -> String {
 
 /// 시험용: 임시 파일 이름의 무작위 부분을 대신 정한다(순번을 받아 그 이름을 미리 만들어 충돌을 만들거나, 난수 실패를 흉내).
 /// 시험 빌드에만 있다(제품 빌드의 난수는 늘 운영체제에서 온다).
-#[cfg(test)]
+#[cfg(all(test, target_os = "linux"))]
 pub type NameSource = Box<dyn FnMut(u64, &mut [u8; NAME_RANDOM_BYTES]) -> io::Result<()>>;
 
-#[cfg(test)]
+#[cfg(all(test, target_os = "linux"))]
 thread_local! {
     pub static NAME_SOURCE: std::cell::RefCell<Option<NameSource>> = const { std::cell::RefCell::new(None) };
 }
 
 /// 시험용: 순번과 무작위 바이트로 만든 임시 파일 이름(제품 코드와 같은 규칙).
-#[cfg(test)]
+#[cfg(all(test, target_os = "linux"))]
 pub fn name_for(counter: u64, random: &[u8; NAME_RANDOM_BYTES]) -> String {
     temp_name(counter, random)
 }
@@ -103,7 +115,7 @@ fn fill_random(_counter: u64, buf: &mut [u8; NAME_RANDOM_BYTES]) -> io::Result<(
 }
 
 /// 시험용: 다음 임시 파일 이름의 번호.
-#[cfg(test)]
+#[cfg(all(test, target_os = "linux"))]
 pub fn next_name_number() -> u64 {
     COUNTER.load(Ordering::Relaxed)
 }
@@ -169,6 +181,7 @@ pub fn fault() -> Option<Fault> {
     FAULT.with(std::cell::Cell::get)
 }
 
+#[cfg(target_os = "linux")]
 fn io_problem(error: &io::Error) -> IoProblem {
     match error.kind() {
         io::ErrorKind::PermissionDenied => IoProblem::PermissionDenied,
@@ -178,6 +191,7 @@ fn io_problem(error: &io::Error) -> IoProblem {
     }
 }
 
+#[cfg(target_os = "linux")]
 fn failure(stage: SaveStage, error: &io::Error) -> DocumentError {
     DocumentError::SaveFailure {
         stage,
@@ -199,16 +213,18 @@ pub struct Staged {
     path: PathBuf,
     file: File,
     /// 검증을 마친 때의 상태(inode·크기·수정·상태 변경 시각·권한). 게시 직전에 같아야 한다.
+    #[cfg(target_os = "linux")]
     verified: Option<Snapshot>,
     published: bool,
 }
 
 /// 파일 상태 요약: 장치·inode, 크기, 수정 시각, 상태 변경 시각(ctime), 권한. 쓰기는 수정 시각·ctime을, chmod·chown·
 /// 확장 속성 변경은 ctime을 바꾼다(일반 프로세스는 ctime을 정할 수 없다).
+#[cfg(target_os = "linux")]
 type Snapshot = (u64, u64, u64, (i64, i64), (i64, i64), u32);
 
 /// 이름(`path`, 따라가지 않음)이 `held`와 같은 inode의 일반 파일인지.
-#[cfg(unix)]
+#[cfg(target_os = "linux")]
 fn same_inode(path: &Path, held: &fs::Metadata) -> bool {
     use std::os::unix::fs::MetadataExt;
     fs::symlink_metadata(path).is_ok_and(|named| {
@@ -216,18 +232,7 @@ fn same_inode(path: &Path, held: &fs::Metadata) -> bool {
     })
 }
 
-// 원본 교체는 Linux에서만 한다(`stage`가 그 밖에서는 거부): 아래는 그 밖의 플랫폼에서 빌드만 되게 하는 값이다.
-#[cfg(not(unix))]
-fn same_inode(_path: &Path, _held: &fs::Metadata) -> bool {
-    false
-}
-
-#[cfg(not(unix))]
-fn snapshot(metadata: &fs::Metadata) -> Snapshot {
-    (0, 0, metadata.len(), (0, 0), (0, 0), 0)
-}
-
-#[cfg(unix)]
+#[cfg(target_os = "linux")]
 fn snapshot(metadata: &fs::Metadata) -> Snapshot {
     use std::os::unix::fs::MetadataExt;
     (
@@ -299,7 +304,7 @@ impl Staged {
 
     /// 원본 경로의 부모(`target.parent()`, 사용자가 보는 경로)가 지금도 이 저장이 확인한 디렉터리(`dir`)인지. 디렉터리
     /// 핸들은 그 디렉터리 객체를 지킬 뿐 그것이 아직 그 경로에 있음을 보이지 않는다.
-    #[cfg(unix)]
+    #[cfg(target_os = "linux")]
     fn at_path(&self, target: &Path) -> bool {
         use std::os::unix::fs::MetadataExt;
         let (Some(parent), Ok(held)) = (target.parent(), self.dir.metadata()) else {
@@ -307,11 +312,6 @@ impl Staged {
         };
         fs::metadata(parent)
             .is_ok_and(|named| (named.dev(), named.ino()) == (held.dev(), held.ino()))
-    }
-
-    #[cfg(not(unix))]
-    fn at_path(&self, _target: &Path) -> bool {
-        false
     }
 }
 
@@ -328,17 +328,20 @@ impl Drop for Staged {
     }
 }
 
+#[cfg(target_os = "linux")]
 fn metadata_unsupported() -> DocumentError {
     DocumentError::SaveUnsupported {
         reason: SaveUnsupportedReason::Metadata,
     }
 }
 
+#[cfg(target_os = "linux")]
 fn unsupported(reason: SaveUnsupportedReason) -> DocumentError {
     DocumentError::SaveUnsupported { reason }
 }
 
 /// 게시하지 않았다(원본 그대로): 검증한 임시 파일이 게시 직전에 그대로가 아니다.
+#[cfg(target_os = "linux")]
 fn not_published() -> DocumentError {
     DocumentError::SaveFailure {
         stage: SaveStage::Publish,
