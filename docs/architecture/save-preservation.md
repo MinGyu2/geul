@@ -277,7 +277,10 @@ O_EXCL 우회는 아니고 저장 가용성 문제다(P2).
 | INCONCLUSIVE | 공격 쪽 완료 표지가 없거나 이번 실행의 무작위 표지(nonce)가 아님, 시도 0, 공유 상위인데 맞바꿈을 보지 못함·상위 확인까지 간 저장이 없음, 믿는 배치인데 맞바꿈이 일어남, 공격을 멈춘 뒤 배치가 돌아오지 않음, 저장 시도 없음, 선언한 배치(`GEUL_A4_LAYOUT`)가 공유 디렉터리의 실제 권한과 다름 |
 | NOT-RUN | 환경 변수(`GEUL_A4_SHARED·READY·STOP·DONE·LAYOUT·ROUNDS`)가 없음, 이전 실행의 표지 파일이 남아 있음, 시험 디렉터리를 준비하지 못함 |
 
-FAIL이 INCONCLUSIVE보다 앞선다(표지가 없어도 다른 디렉터리 게시는 실패).
+FAIL이 INCONCLUSIVE보다 앞선다(표지가 없어도 다른 디렉터리 게시는 실패). 측정은 피해자 쪽 값이다: 저장 결과와 거부 직후 레지스트리 dirty,
+회차마다 경로 `shared/docs`의 inode 표본, 끝난 뒤 inode로 찾은 원래 `docs`·`other`의 항목·원본 내용·inode, 남의 파일(inode·내용), 공격을
+멈춘 뒤 같은 세션의 사전 검사. 공격 쪽 보고는 이번 실행 표지가 맞을 때만 쓰고, 통과의 근거로는 시도 수만, 노출 수는 실패의 근거로만 쓴다.
+진단 줄에는 경로·문서 내용 없이 개수·오류 종류만 있다.
 
 **측정 무결성(시험 기반 안정화 B)**: 재지 못한 값은 깨끗한 관찰이 아니다. 수정 전에는 디렉터리 목록을 열지 못하면 빈 목록으로, 항목을
 읽다 난 오류는 버렸고, 경로 표본을 재지 못하면 "맞바꿈을 봄"으로 셌다. 그래서 다른 디렉터리를 읽을 수 없게(0311) 하면 그 안에 숨긴 게시가
@@ -301,9 +304,17 @@ FAIL이 INCONCLUSIVE보다 앞선다(표지가 없어도 다른 디렉터리 게
 운영체제 난수(`os_getrandom`)·실행(`ProbeRun`·`run_probe`·`report_probe`·`measure_dir`)·시험용 이름 원천 도우미(`with_names`, `std::os::unix`
 심볼릭 링크)와 그것을 쓰는 시험은 `cfg(target_os = "linux")`이다. 판정 함수·표지 해석·난수 채우기 순서(`fill_nonce`) 시험은 모든 플랫폼에서
 돈다. Windows·macOS 시험 빌드는 이 환경에 그 대상의 표준 라이브러리가 없어 실제로 컴파일하지 못했고(NOT RUN), 바뀐 시험 파일에서 Linux
-전용 기호를 쓰는 cfg 없는 항목이 없음을 정적으로 확인했다. 후속 cfg 정리(`43f5972` 위): Linux 전용 시험에서만 쓰는 도우미 13개(`walk_dirs`·`precreate_predictable`·`Squat`·
+전용 기호를 쓰는 cfg 없는 항목이 없음을 정적으로 확인했다.
+
+후속 cfg 정리(`43f5972` 위, `tests.rs`): Linux 전용 시험에서만 쓰는 도우미 13개(`walk_dirs`·`precreate_predictable`·`Squat`·
 `random_temp_name`·`dirty_now`, 그리고 같은 이유의 `save_hooked`·`open_docx_in`·`exchange`·`HookSlot`·`Hooks`·`RaceCase`·`save_with_hooks`·
-`assert_published`)에도 같은 cfg를 붙여, Linux 밖의 시험 빌드에서 쓰이지 않는 코드(dead_code 경고)가 남지 않게 했다(오류가 나는 기호는 없었음). 제품 코드 cfg 정리(`8aa2686` 위, `publish.rs`): 원본 교체가 Linux에서만 동작하므로, Linux 함수에서만 쓰이는 가져오기
+`assert_published`)에도 같은 cfg를 붙여, Linux 밖의 시험 빌드에서 쓰이지 않는 코드(dead_code 경고)가 남지 않게 했다(오류가 나는 기호는 없었음).
+cfg 없는 시험에서 닿지 않는 cfg 없는 항목·cfg 있는 항목을 부르는 cfg 없는 항목·Linux 밖에서 쓰이지 않는 최상위 `use`가 0개임을 정적으로
+확인했다(호출 그래프 점검). Linux 시험 목록은 그대로(159개 = 155 + 무시 4)다. Windows·macOS는 여전히 NOT RUN이고, 설치된 wasm32 대상은 의존성
+`tao`가 그 플랫폼을 지원하지 않아 검사에 쓸 수 없었다. 이 시점(`8aa2686`)에는 제품 코드(`publish.rs`)의 Linux 밖 dead_code 가능성(`temp_name`·`COUNTER` 등)을
+아직 확인하지 않았고, 다음 정리에서 다뤘다.
+
+게시 모듈 cfg 정리(`8aa2686` 위, `publish.rs`, 커밋 `c7d1a98`): 원본 교체가 Linux에서만 동작하므로, Linux 함수에서만 쓰이는 가져오기
 (`OpenOptions`·`Read`·`Write`·`AtomicU64`·`Ordering`·`describe_published`·`IoProblem`·`SaveStage`, `std::io`는 시험이나 Linux)·임시 파일 이름
 상수와 도우미(`COUNTER`·`MAX_NAME_ATTEMPTS`·`NAME_RANDOM_BYTES`·`temp_name`)·오류 도우미(`io_problem`·`failure`·`metadata_unsupported`·
 `unsupported`·`not_published`)·검증 상태(`Snapshot`·`snapshot`·`Staged::verified`)·`same_inode`·`Staged::at_path`에 `cfg(target_os = "linux")`,
@@ -313,14 +324,8 @@ FAIL이 INCONCLUSIVE보다 앞선다(표지가 없어도 다른 디렉터리 게
 `BEFORE_*`, 교차 플랫폼 `service.rs`가 씀)은 그대로다. 근거: `publish.rs`를 복사해 `target_os = "linux"`·`unix` cfg를 기능으로 바꾼 작은 크레이트를
 세 배치(Linux·unix지만 Linux 아님·unix 아님)에서 라이브러리·시험 모두 `clippy -D warnings`로 검사 — 수정 전 Linux 밖 두 배치에서 라이브러리 17개·
 시험 13개(쓰이지 않는 가져오기·코드), 수정 뒤 세 배치 모두 0개. 이것은 cfg 그래프 모의이며 실제 Windows·macOS 컴파일(표준 라이브러리·의존성)은
-여전히 NOT RUN이다. Linux 동작·시험(155 + 무시 4)은 그대로다.
-cfg 없는 시험에서 닿지 않는 cfg 없는 항목·cfg 있는 항목을 부르는 cfg 없는 항목·Linux 밖에서 쓰이지 않는 최상위 `use`가 0개임을 정적으로
-확인했다(호출 그래프 점검). Linux 시험 목록은 그대로(159개 = 155 + 무시 4)다. Windows·macOS는 여전히 NOT RUN이고, 설치된 wasm32 대상은 의존성
-`tao`가 그 플랫폼을 지원하지 않아 검사에 쓸 수 없었다. 제품 코드(`publish.rs`)의 Linux 밖 dead_code 가능성(`temp_name`·`COUNTER` 등, 저장이
-Linux 전용이라 생김)은 이번 범위 밖이며 확인하지 않았다. 측정은 피해자 쪽 값이다: 저장 결과와 거부 직후 레지스트리 dirty,
-회차마다 경로 `shared/docs`의 inode 표본, 끝난 뒤 inode로 찾은 원래 `docs`·`other`의 항목·원본 내용·inode, 남의 파일(inode·내용), 공격을
-멈춘 뒤 같은 세션의 사전 검사. 공격 쪽 보고는 이번 실행 표지가 맞을 때만 쓰고, 통과의 근거로는 시도 수만, 노출 수는 실패의 근거로만 쓴다.
-진단 줄에는 경로·문서 내용 없이 개수·오류 종류만 있다.
+여전히 NOT RUN이다. Linux 동작·시험(155 + 무시 4)은 그대로다. Windows·macOS 원본 교체는 계속 막혀 있다(`SaveUnsupported{platform}`): 실제 빌드·실행 검증은 T016, 플랫폼별 교체 구현과 그
+내구성·복구는 T014 몫이다.
 
 실행 절차(로컬, subuid·`newuidmap`이 있을 때): `unshare --user --map-users=0:<내 uid>:1 --map-users=1:<subuid 시작>:65536 (gid도 같게)
 --mount --pid --fork`로 들어가 tmpfs 뿌리를 만들고 `/nix`·`/dev`를 묶고 `/proc`을 올려 chroot한 뒤, 공유 디렉터리(`/work/shared`, 권한은
