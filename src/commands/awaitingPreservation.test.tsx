@@ -7,6 +7,7 @@ import type { Result, SaveOutcome, SessionInfo } from "../adapters/contract";
 import { DocumentSessions } from "../adapters/sessions";
 import { initialLayout } from "../hooks/layoutState";
 import { DocumentWorkspace } from "../components/Editor/documentWorkspace";
+import { attachTextInput } from "../components/Editor/textInput";
 import { ImeContext, ImeInput, type ImeSession } from "../components/Editor/rhwp/imeInput";
 import type { RhwpDocument, RhwpModule } from "../components/Editor/rhwp/rhwpModule";
 import { base, controlledBackend, FakeDocument, flush as flushRhwp, info, loaded, ok as okResult } from "../components/Editor/rhwp/testing";
@@ -308,5 +309,261 @@ describe("rhwp: 최종 글자를 기다리는 트랜잭션의 보존", () => {
     expect(t.editor.saveState).toMatchObject({ kind: "saved", changedSince: true });
     expect(t.editor.hasUnpreservedChanges).toBe(true);
     expect(await t.editor.load()).toEqual({ ok: false, error: { code: "UnpreservedChanges", sessionId: 1 } });
+  });
+});
+
+// Lifecycle replay uses the production textarea adapter, IME controller, editor session and workspace.
+function inputSurface(editor: ImeSession, context: ImeContext) {
+  const input = document.createElement("textarea");
+  document.body.append(input);
+  const detach = attachTextInput(input, new ImeInput(editor, context), {
+    composing: () => editor.composing, handleKey: () => false, mark: () => {},
+  });
+  const fire = (event: Event) => input.dispatchEvent(event);
+  const key229 = (isComposing = false) => {
+    const event = new KeyboardEvent("keydown", { isComposing });
+    Object.defineProperty(event, "keyCode", { value: 229 });
+    fire(event);
+  };
+  return {
+    start: () => fire(new CompositionEvent("compositionstart", { data: "" })),
+    preedit: (text: string) => {
+      key229(true);
+      fire(new InputEvent("input", { inputType: "insertCompositionText", data: text, isComposing: true }));
+    },
+    empty: () => fire(new CompositionEvent("compositionend", { data: "" })),
+    ordinaryKey: () => fire(new KeyboardEvent("keydown", { key: "ArrowRight", code: "ArrowRight" })),
+    final: (text: string, composing = true) => {
+      key229();
+      fire(new InputEvent("input", { inputType: "insertFromComposition", data: text, isComposing: composing }));
+      fire(new CompositionEvent("compositionend", { data: text }));
+    },
+    cleanup: () => { detach(); input.remove(); },
+  };
+}
+
+describe("IME lifecycle ownership through real input path", () => {
+  for (const explicitStart of [true, false]) {
+    it(`failed DOCX close accepts first new composition (${explicitStart ? "start" : "no start"})`, async () => {
+      const t = await docxWorkspace({ closeFails: true });
+      const context = new ImeContext();
+      const surface = inputSurface(t.editor, context);
+      surface.start(); surface.preedit("옛"); surface.empty();
+      expect(t.editor.awaitingCommit).toBe(true);
+      expect((await t.workspace.close(1, { discard: true })).ok).toBe(false);
+      expect(t.editor.editable).toBe(true);
+      if (explicitStart) surface.start();
+      surface.preedit("새");
+      expect(t.editor.composing).toBe(true);
+      surface.final("새");
+      await flush();
+      expect(t.fake.paragraphs[0]).toBe("새가나다");
+      expect(t.sessions.get(1)).toMatchObject({ revision: 1, dirty: true });
+      surface.cleanup();
+    });
+  }
+
+  it("failed DOCX close cancels active preview and rejects its late final", async () => {
+    const t = await docxWorkspace({ closeFails: true });
+    const context = new ImeContext();
+    const surface = inputSurface(t.editor, context);
+    surface.start(); surface.preedit("옛");
+    expect(t.editor.composing).toBe(true);
+    expect((await t.workspace.close(1, { discard: true })).ok).toBe(false);
+    expect(t.editor.composing).toBe(false);
+    surface.ordinaryKey(); // a navigation key cannot make the discarded native tail valid again
+    surface.final("옛");
+    surface.preedit("새"); surface.final("새");
+    await flush();
+    expect(t.fake.paragraphs[0]).toBe("새가나다");
+    expect(t.sessions.get(1)).toMatchObject({ revision: 1, dirty: true });
+    surface.cleanup();
+  });
+});
+
+describe("IME generation and shared-context replay", () => {
+  for (const composing of [true, false]) {
+    it(`reload consumes an old final (${composing}) and accepts a no-start composition`, async () => {
+      const t = await docxWorkspace();
+      const context = new ImeContext();
+      const surface = inputSurface(t.editor, context);
+      surface.start(); surface.preedit("옛"); surface.empty();
+      expect((await t.editor.load({ discard: true })).ok).toBe(true);
+      surface.final("옛", composing);
+      await flush();
+      expect(t.fake.paragraphs[0]).toBe("가나다");
+      expect(t.sessions.get(1)).toMatchObject({ revision: 0, dirty: false });
+      surface.preedit("새");
+      expect(t.editor.composing).toBe(true);
+      surface.final("새", composing);
+      await flush();
+      expect(t.fake.paragraphs[0]).toBe("새가나다");
+      expect(t.sessions.get(1)).toMatchObject({ revision: 1, dirty: true });
+      surface.cleanup();
+    });
+  }
+
+  it("closed A cannot commit into B; B's no-start preedit is accepted", async () => {
+    const t = await docxWorkspace({ two: true });
+    const context = new ImeContext();
+    const a = inputSurface(t.editor, context);
+    a.start(); a.preedit("옛"); a.empty();
+    expect((await t.workspace.close(1, { discard: true })).ok).toBe(true);
+    a.cleanup();
+    const b = t.workspace.docxEditorFor(2)!;
+    const bs = inputSurface(b, context);
+    bs.final("옛", false);
+    await flush();
+    expect(t.fakes.get(2)!.paragraphs).toEqual(["둘째"]);
+    bs.preedit("새");
+    expect(b.composing).toBe(true);
+    bs.final("새");
+    await flush();
+    expect(t.fakes.get(2)!.paragraphs).toEqual(["새둘째"]);
+    expect(t.sessions.get(2)).toMatchObject({ revision: 1, dirty: true });
+    bs.cleanup();
+  });
+
+  it("two identical syllables include a no-start second composition", async () => {
+    const t = await docxWorkspace();
+    const surface = inputSurface(t.editor, new ImeContext());
+    surface.start(); surface.preedit("하"); surface.final("하");
+    surface.preedit("하");
+    expect(t.editor.composing).toBe(true);
+    surface.final("하");
+    await flush();
+    expect(t.fake.paragraphs[0]).toBe("하하가나다");
+    expect(t.sessions.get(1)).toMatchObject({ revision: 2, dirty: true });
+    surface.cleanup();
+  });
+
+  it("window-close failure cancels active DOCX preview and recovers", async () => {
+    const t = await docxWorkspace();
+    const surface = inputSurface(t.editor, new ImeContext());
+    surface.start(); surface.preedit("옛");
+    expect(t.workspace.hasUnpreservedChanges).toBe(true);
+    t.workspace.setWindowClosing(true);
+    t.workspace.setWindowClosing(false);
+    expect(t.editor.composing).toBe(false);
+    surface.final("옛");
+    surface.preedit("새"); surface.final("새");
+    await flush();
+    expect(t.fake.paragraphs[0]).toBe("새가나다");
+    surface.cleanup();
+  });
+
+  it("failed rhwp close removes active WASM preedit before accepting new composition", async () => {
+    const t = await hwpxWorkspace();
+    const context = new ImeContext();
+    const surface = inputSurface(t.editor, context);
+    surface.start(); surface.preedit("옛");
+    expect(t.doc.paragraphs[0]).toBe("옛가나다");
+    const closing = t.workspace.close(1, { discard: true });
+    t.take("close").reply({ ok: false, error: { code: "Protocol" } });
+    expect((await closing).ok).toBe(false);
+    expect(t.editor.editable).toBe(true);
+    expect(t.doc.paragraphs[0]).toBe("가나다");
+    surface.final("옛", false);
+    expect(t.doc.paragraphs[0]).toBe("가나다");
+    surface.preedit("새");
+    expect(t.editor.composing).toBe(true);
+    surface.final("새");
+    await flushRhwp();
+    expect(t.doc.paragraphs[0]).toBe("새가나다");
+    expect(t.editor.localRevision).toBe(1);
+    const commit = t.take("commit");
+    expect(commit.args).toEqual([1, 1, 0, 1]); // discarded preview sent no revision
+    commit.reply(okResult(hwpx({ state: "ready", revision: 1, dirty: true, sequence: 3, loadGeneration: 1 })));
+    await flushRhwp();
+    expect(t.sessions.get(1)).toMatchObject({ revision: 1, dirty: true });
+    surface.cleanup();
+  });
+});
+
+describe("IME tail and cancellation edges", () => {
+  it("rhwp failed close after empty end accepts first no-start composition", async () => {
+    const t = await hwpxWorkspace();
+    const surface = inputSurface(t.editor, new ImeContext());
+    surface.start(); surface.preedit("옛"); surface.empty();
+    expect(t.editor.awaitingCommit).toBe(true);
+    const closing = t.workspace.close(1, { discard: true });
+    t.take("close").reply({ ok: false, error: { code: "Protocol" } });
+    expect((await closing).ok).toBe(false);
+    surface.preedit("새");
+    expect(t.editor.composing).toBe(true);
+    surface.final("새");
+    await flushRhwp();
+    expect(t.doc.paragraphs[0]).toBe("새가나다");
+    expect(t.editor.localRevision).toBe(1);
+    surface.cleanup();
+  });
+
+  it("anchored old final with isComposing=false cannot mutate a reloaded DOCX model", async () => {
+    const t = await docxWorkspace();
+    const context = new ImeContext();
+    const ime = new ImeInput(t.editor, context);
+    const surface = inputSurface(t.editor, context);
+    surface.start(); surface.preedit("옛"); surface.empty();
+    ime.pointerDown();
+    expect((await t.editor.load({ discard: true })).ok).toBe(true);
+    surface.final("옛", false);
+    await flush();
+    expect(t.fake.paragraphs[0]).toBe("가나다");
+    expect(t.sessions.get(1)).toMatchObject({ revision: 0, dirty: false });
+    surface.preedit("새"); surface.final("새");
+    await flush();
+    expect(t.fake.paragraphs[0]).toBe("새가나다");
+    surface.cleanup();
+  });
+
+  it("ordinary cancellation releases preservation without committing a preview", async () => {
+    const t = await docxWorkspace();
+    const surface = inputSurface(t.editor, new ImeContext());
+    surface.start(); surface.preedit("ㅎ"); surface.empty();
+    expect(t.editor.awaitingCommit).toBe(true);
+    surface.preedit("가"); // next composition has no compositionstart
+    expect(t.editor.awaitingCommit).toBe(false);
+    surface.final("가");
+    await flush();
+    expect(t.fake.paragraphs[0]).toBe("가가나다");
+    expect(t.sessions.get(1)).toMatchObject({ revision: 1, dirty: true });
+    surface.cleanup();
+  });
+});
+
+describe("active discard keeps earlier edits", () => {
+  it("failed DOCX close preserves a prior committed edit and only discards the active preview", async () => {
+    const t = await docxWorkspace({ closeFails: true });
+    t.editor.typeText("X");
+    await flush();
+    expect(t.sessions.get(1)).toMatchObject({ revision: 1, dirty: true });
+    const surface = inputSurface(t.editor, new ImeContext());
+    surface.start(); surface.preedit("옛");
+    expect((await t.workspace.close(1, { discard: true })).ok).toBe(false);
+    surface.final("옛", false);
+    await flush();
+    expect(t.fake.paragraphs[0]).toBe("X가나다");
+    surface.preedit("새"); surface.final("새");
+    await flush();
+    expect(t.fake.paragraphs[0]).toBe("X새가나다");
+    expect(t.sessions.get(1)).toMatchObject({ revision: 2, dirty: true });
+    surface.cleanup();
+  });
+
+  it("failed window close removes rhwp WASM preview and accepts the next composition", async () => {
+    const t = await hwpxWorkspace();
+    const surface = inputSurface(t.editor, new ImeContext());
+    surface.start(); surface.preedit("옛");
+    expect(t.workspace.hasUnpreservedChanges).toBe(true);
+    t.workspace.setWindowClosing(true);
+    t.workspace.setWindowClosing(false);
+    expect(t.editor.editable).toBe(true);
+    expect(t.doc.paragraphs[0]).toBe("가나다");
+    surface.final("옛", false);
+    surface.preedit("새"); surface.final("새");
+    await flushRhwp();
+    expect(t.doc.paragraphs[0]).toBe("새가나다");
+    expect(t.editor.localRevision).toBe(1);
+    surface.cleanup();
   });
 });

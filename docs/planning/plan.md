@@ -333,6 +333,10 @@ interface EditorAdapter {
   명령 `composing`에 같게 쓴다. 저장은 `SaveNotReady{composing}`(기존 오류), `file.save` 가용성도 `composing`. 버리기를 확인한 닫기·창
   닫기·다시 불러오기는 기다림을 버린다. IPC·백엔드 저장 경로는 그대로다.
 
+### T010 후속 IME 소유권·수명주기 (2026-10-21, `94110f9` 위)
+- 세션이 닫기 시작·다시 불러오기·폐기에서 IME 거래 세대를 무효화한다. `ImeContext`는 원래 세션·세대를 확인해 버린 꼬리를 소비하고 시작 이벤트 없는 새 preedit는 새 거래로 받는다. 활성 rhwp 조합은 WASM 모델의 임시 글자를 삭제해 닫기 실패 뒤에도 남기지 않는다. [편집 표면 결정](../architecture/editor-surface-decision.md#t010-후속-ime-소유-세대와-닫기-실패-복구-2026-10-21-94110f9-위).
+- `SessionRegistry` 권한·WordCraft 실행 취소 기록·T009 보존/게시·`imeUnsettled` 장벽은 그대로다. 버린 꼬리의 첫 preedit와 새 조합의 첫 preedit가 DOM에서 같으면 구별할 수 없다는 한계를 기록한다. 처음 간헐 음절 손실 원인은 UNVERIFIED. T010은 rhwp 실행 취소·서식 SC-003이 남아 미체크다.
+
 ## Algorithms and Pseudocode
 ```
 open(path):

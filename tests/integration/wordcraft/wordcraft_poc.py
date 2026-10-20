@@ -1354,7 +1354,8 @@ def scenario_ime_commands(d, fixtures: Path, xdotool: str, ibus: str, rounds: in
         expected = {"gk": "하", "g": "ㅎ"}[jamo]
         if mid.get("composing") != "true" or mid.get("composition") != expected:
             raise smoke.Failure(f"조합을 시작하지 못함({name}): {brief(mid)}")
-        return {"path": path, "text": base["paragraphText"], "revision": int(base["revision"]), "seq": seq, "name": name}
+        return {"path": path, "text": base["paragraphText"], "baseCaret": base["caret"],
+                "revision": int(base["revision"]), "seq": seq, "name": name}
 
     def finish(case: dict, extra: dict | None = None) -> dict:
         time.sleep(1.0)
@@ -1486,10 +1487,21 @@ def scenario_ime_commands(d, fixtures: Path, xdotool: str, ibus: str, rounds: in
         xclick(origin[0] + 100 * PT, origin[1] + PARA1_Y * PT)
         xclick(*client_center('[data-command="format.bold"]'))
         st = finish(case)
+        trace = REPORT["imeCommands"][case["name"]]["trace"]
+        accepted = any(r[2] == "command:dispatch" and r[3].get("id") == "format.bold" and r[3].get("accepted") is True for r in trace)
+        composing_refusal = any(r[2] == "command:request" and r[3].get("id") == "format.bold" and r[3].get("reason") == "composing" for r in trace)
+        origin = page_origin(d)  # 서식 실행 뒤 배치·스크롤이 바뀌었을 수 있다
         xclick(origin[0] + 100 * PT, origin[1] + PARA0_Y * PT)  # 첫 문단을 눌러 그 글자를 읽는다
-        first = settle(d, "click-then-bold 첫 문단")["paragraphText"]
+        first_status = settle(d, "click-then-bold 첫 문단")
+        first = first_status["paragraphText"]
+        revision = int(st["revision"])
+        formatted = revision == case["revision"] + 2 and accepted
+        refused = revision == case["revision"] + 1 and composing_refusal
         check("IME 명령: 조합 중 페이지 클릭 뒤 바로 리본 굵게 → 조합 글자는 원래 문단 끝에 한 번",
-              first == case["text"] + "하" and int(st["revision"]) == case["revision"] + 1, json.dumps({"status": brief(st)}, ensure_ascii=False))
+              first == case["text"] + "하" and (formatted or refused),
+              json.dumps({"status": brief(st), "baseCaret": case["baseCaret"], "firstCaret": first_status["caret"],
+                          "firstLengthDelta": len(first) - len(case["text"]), "firstMatches": first == case["text"] + "하",
+                          "formatted": formatted, "refused": refused}, ensure_ascii=False))
         discard_close(d, case["path"].name)
         # 6) 초점을 받지 않는 곳(상태 표시줄) 클릭 → 편집 입력 초점 잃음: 음절 한 번.
         case = start(f"blur-statusbar-{tag}")
@@ -1521,6 +1533,21 @@ def scenario_ime_commands(d, fixtures: Path, xdotool: str, ibus: str, rounds: in
               dialog and once(st, case), json.dumps({"dialog": dialog, "status": brief(st)}, ensure_ascii=False))
         if dialog:
             press_button(d, "[data-testid=discard-cancel]")
+        discard_close(d, case["path"].name)
+        # 실제 키로 같은 음절을 연속 조합한다. 첫 거래의 끝이 둘째 preedit을 삼키면 두 글자·revision이 맞지 않는다.
+        # Reload 뒤 옛 최종 이벤트는 네이티브 입력기에서 순서를 강제할 수 없으므로 결정적 DOM 재생으로 검사한다.
+        case = start(f"two-consecutive-{tag}")
+        run(xdotool, "key", "End")
+        first = settle(d, f"{case['name']} 첫 확정")
+        run(xdotool, "type", "--delay", "90", "gk")
+        second_preedit = settle(d, f"{case['name']} 둘째 조합")
+        run(xdotool, "key", "End")
+        st = finish(case, {"after": "two-native-compositions"})
+        check("IME 명령: 실제 연속 같은 음절 두 개가 각각 한 번씩 들어감(revision +2)",
+              once(first, case) and second_preedit.get("composing") == "true"
+              and st["paragraphText"] == case["text"] + "하하"
+              and int(st["revision"]) == case["revision"] + 2 and st.get("composing") == "false",
+              json.dumps({"first": brief(first), "secondPreedit": brief(second_preedit), "final": brief(st)}, ensure_ascii=False))
         discard_close(d, case["path"].name)
 
 

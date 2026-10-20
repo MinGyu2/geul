@@ -202,3 +202,7 @@ macOS는 Ctrl 대신 Cmd(이 빌드는 Linux만 확인). 단축키는 물리 키
 - 판정: 보존·수명주기 누락은 CONFIRMED DEFECT — FIXED(`src/commands/awaitingPreservation.test.tsx` 13개, 수정 전 처음 12개 중 8개 실패).
   자세한 것: [editor-surface-decision.md](editor-surface-decision.md#끝나지-않은-ime-트랜잭션과-보존수명주기-t010-2026-10-20-7680d92-위),
   [save-preservation.md](save-preservation.md#저장과-끝나지-않은-ime-입력t010-ime-경계-후속-7680d92-위).
+
+## T010 후속 IME 수명주기 (2026-10-21, `94110f9` 위)
+
+버리기 확인 뒤 닫기·창 닫기 또는 다시 불러오기는 해당 IME 거래의 세대를 무효화한다. 닫기가 실패해 편집이 돌아와도 버린 조합은 명령의 `composing` 장벽을 계속 붙들지 않으며, 시작 이벤트 없는 새 조합은 첫 preedit에서 정상적으로 `composing`이 된다. 아직 유효한 다른 문서의 거래는 계속 보호하고, 최종 확정은 원래 문서에만 넣는다. 명령 레지스트리·WordCraft 기록·가용성·모달 차단 정책은 바꾸지 않았다. 증거와 네이티브 이벤트 한계는 [editor-surface-decision.md](editor-surface-decision.md#t010-후속-ime-소유-세대와-닫기-실패-복구-2026-10-21-94110f9-위).

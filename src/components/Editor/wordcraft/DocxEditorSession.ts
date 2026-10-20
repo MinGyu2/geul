@@ -198,6 +198,8 @@ export class DocxEditorSession implements ImeSession, DocumentCommandTarget {
   /** 보내는 중인 요청의 연산(응답이 오면 비움). */
   private sending: DocxOp[] = [];
   private epoch = 0;
+  private imeSerial = 0;
+  get imeEpoch() { return this.imeSerial; }
   private closing = false;
   private disposed = false;
   /** 조합 중 글자. shown: 조합 글자가 한 번이라도 보였다(그때 보이던 선택을 지움). */
@@ -296,6 +298,8 @@ export class DocxEditorSession implements ImeSession, DocumentCommandTarget {
   setClosing(closing: boolean) {
     if (this.closing === closing || this.disposed) return;
     if (closing) {
+      this.imeSerial += 1;
+      if (this.composition) this.endComposition("");
       this.provisional = null;
       this.awaiting = false;
     }
@@ -373,6 +377,7 @@ export class DocxEditorSession implements ImeSession, DocumentCommandTarget {
 
   private reset(): number {
     this.epoch += 1;
+    this.imeSerial += 1;
     this.queue = [];
     this.inFlight = false;
     this.sending = [];

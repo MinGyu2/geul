@@ -223,6 +223,8 @@ export class RhwpEditorSession implements DocumentCommandTarget {
   private committingEpoch: number | null = null;
   /** 로컬 비동기 작업 소유권. reload 시작(백엔드 응답 전)·dispose에서 무효화한다. */
   private epoch = 0;
+  private imeSerial = 0;
+  get imeEpoch() { return this.imeSerial; }
   /** 지금 모델을 만든 불러오기 시도 번호(백엔드가 준 값, 0 = 없음). */
   private generation = 0;
   /** 지금 모델을 불러온 뒤 문서를 바꾼 적이 있음(성공한 변경, 확정 여부와 무관, 실패해도 유지). */
@@ -274,7 +276,10 @@ export class RhwpEditorSession implements DocumentCommandTarget {
   setClosing(closing: boolean) {
     if (this.closing === closing || this.disposed) return;
     if (closing) {
-      this.settleProvisional(); // 닫는 동안 편집할 수 없다
+      this.imeSerial += 1;
+      // preedit은 WASM 문서 모델에 있으므로 닫기 실패를 대비해 실제 범위를 지운다.
+      if (this.composition) this.endComposition("");
+      if (this.provisional) this.resolveProvisional("");
       // 사용자가 버리기를 확인했거나 버릴 것이 없을 때만 닫는다: 기다리던 최종 글자는 넣지 않는다(닫기가 실패해도 되살리지 않음).
       this.awaiting = false;
     }
@@ -359,6 +364,7 @@ export class RhwpEditorSession implements DocumentCommandTarget {
       if (settled) return settled;
     }
     const epoch = ++this.epoch;
+    this.imeSerial += 1;
     this.committingEpoch = null;
     this.failure = null;
     this.checkSerial += 1;
@@ -1334,6 +1340,7 @@ export class RhwpEditorSession implements DocumentCommandTarget {
     if (this.disposed) return;
     this.disposed = true;
     this.epoch += 1;
+    this.imeSerial += 1;
     this.checkSerial += 1;
     this.saveCheck = null;
     this.committingEpoch = null;

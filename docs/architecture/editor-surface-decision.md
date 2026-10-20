@@ -1311,3 +1311,13 @@ T010 명령 레지스트리와 IME 표면(T007·T008)이 만나는 곳의 계약
   보수적 정책, 이번에 바꾸지 않음).
 - **실측.** 실제 ibus-hangul에서 조합 'ㅎ'을 BackSpace로 지우면 기다림이 생기고 다음 키까지 남는다. 그동안 Ctrl+S는 조합 중으로 거절, 저장
   단추는 `SaveNotReady(composing)`, 탭 닫기는 버리기 확인을 띄우고 파일은 그대로였다. End 뒤 Ctrl+S는 보통처럼 저장했다(2회).
+
+### T010 후속: IME 소유 세대와 닫기 실패 복구 (2026-10-21, `94110f9` 위)
+
+- **CONFIRMED DEFECT — FIXED (결정적 DOM 재생).** 버리기 확인 뒤 닫기가 실패하면 세션의 `awaitingCommit`은 지워졌지만 공유 `ImeContext.awaiting`은 옛 세션을 가리켰다. `compositionstart` 없는 새 `insertCompositionText`가 옛 끝으로 소비돼 첫 preedit가 보이지 않았다. 수정 전 `composing === true` 단언이 `false`였다. 명시적 시작 변형은 수정 전에도 통과했다.
+- **CONFIRMED DEFECT — FIXED (결정적 DOM 재생).** 활성 조합 중 닫기가 실패하면 DOCX의 조합 상태가 남았고, rhwp의 임시 조합 글자는 WASM 모델에 남을 수 있었다. 닫기·창 닫기 전 활성 조합을 빈 끝으로 취소한다. rhwp는 `replaceComposition` 경로로 모델의 임시 범위를 실제로 지운 뒤 닫는 상태로 옮긴다. provisional도 빈 최종 글자로 원래 자리에서 지운다. 기존 선택 삭제·확정 편집은 되돌려 만들지 않는다. rhwp의 취소 뒤 `modified` 보수 정책은 유지한다.
+- **CONFIRMED DEFECT — FIXED (결정적 DOM 재생).** 폐기 뒤 탐색 키 하나가 버린 꼬리 표지를 지워 늦은 최종 입력이 문서에 들어갔다. 수정 전 문서 예상 `새가나다`/실제 `옛새가나다`; 새 조합의 관찰 가능한 시작까지 표지를 유지해 막았다.
+- 세션의 `imeEpoch`는 닫기 시작, 다시 불러오기, 폐기 때 바뀐다. 공유 문맥에는 진행 거래의 세션·세대만 소유권 표지로 두고, 늦은 `insertFromComposition`·끝을 버린 꼬리로 소비한다. `compositionstart` 없이 온 새 `insertCompositionText(isComposing=true)`는 새 조합의 관찰 가능한 경계다. 끊긴 자리·보이는 provisional도 생성 세대를 검사하며 `isComposing=false` 확정 경로도 같은 소유권 검사를 거친다. `SessionRegistry`의 세션·불러오기 세대·revision 권한은 그대로다.
+- `imeGap`·기존 실제 순서 시험의 유효한 탭 전환은 그대로 유지한다: 원래 문서의 거래가 살아 있으면 다른 표면에 온 확정도 원래 문서·자리에 한 번만 들어간다. 버린 문서의 꼬리는 다른 문서와 새 불러오기 판에 들어가지 않는다. 같은 음절 두 번, 일반 취소 뒤 시작 없는 조합, 닫기 실패 뒤 시작 유무 양쪽을 실제 `attachTextInput` 경로로 검사했다.
+- **네이티브 한계.** 버린 거래의 늦은 `insertCompositionText(isComposing=true)`와 새 조합의 첫 preedit가 같은 순서·형태로 오면 DOM에는 거래 ID가 없어 구별할 수 없다. 고침은 첫 preedit를 새 조합으로 받아 한국어 입력 유실을 피하고, 단독 최종 `insertFromComposition`은 버린 꼬리로 취급한다. 새 조합이 preedit 없이 최종 이벤트만 내면 버린 꼬리와 구별되지 않아 보수적으로 소비된다. 새 preedit를 받은 뒤 옛 최종 이벤트가 끼어드는 순서도 새 조합의 최종 이벤트와 구별할 수 없다. 이 순서가 실제로 생기는지는 UNVERIFIED이며 임의의 이벤트 순서까지 소유권을 판별했다고 주장하지 않는다. 고정 시간·마지막 미리보기 글자로 확정을 만들어 내는 방식은 쓰지 않는다. 최초 리본 굵게 뒤 간헐 음절 손실은 원인 기록이 없으므로 여전히 UNVERIFIED다.
+- **실제 앱 검증.** 검사 훅 디버그 앱에서 ibus-hangul 필수 7/7(DOCX·rhwp 각각), WordCraft IME 명령 18/18(실제 키·포인터, 연속 같은 음절 추가), WordCraft 명령 15/15, rhwp 전체 78/78을 통과했다. IME 명령의 클릭 뒤 굵게는 글자 1회와 서식 1회를 각각 revision으로 세므로 검사기가 수락 추적과 `+2`를 허용하게 고쳤다. 백엔드 닫기 실패나 폐기 뒤 옛 이벤트 끼어들기는 실제 입력기로 순서를 강제할 수 없어 결정적 DOM 재생의 근거다. WordCraft 전체 앱과 Tauri 스모크는 별도 네이티브 검증 한계가 있어 [작업 기록](../planning/tasks.md)에 결과를 남겼다.
