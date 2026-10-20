@@ -3,7 +3,8 @@
 //
 // 규칙(docs/architecture/command-registry.md):
 // - 열린 문서가 없으면 noDocument, 그 엔진이 지원하지 않으면 engineUnsupported(편집 세션에 보내지 않음).
-// - 저장은 불러온 세션이면 기존 저장 절차(T009)에 넘긴다. 조합·대기 중 편집·보존 판정은 그 절차가 검사하고 결과를 보인다.
+// - 저장은 불러온 세션이면 기존 저장 절차(T009)에 넘긴다. 끝나지 않은 IME 트랜잭션(composing)이면 그 절차도 거절하므로 같은
+//   이유(composing)로 쓸 수 없다고 보인다. 대기 중 편집·보존 판정은 그 절차가 검사하고 결과를 보인다.
 // - 확인 창(모달)이 열려 있으면 어떤 명령도 하지 않는다(dialogOpen, T010 안정화 P1-B).
 // - 편집 명령은 편집할 수 있고(notReady) IME 트랜잭션이 끝났을 때(composing — 조합 중이거나 앱이 먼저 확정한 조합이 입력기의 최종
 //   글자를 기다리는 동안)만 한다. 보낼 편집이 있으면 같은 세션 대기열 뒤에 넣는다(엔진이 순서대로 실행). 실행 취소는 엔진 기록에
@@ -40,7 +41,10 @@ export function documentCommandState(id: DocumentCommandId, snapshot: DocumentCo
   if (commandDefinition(id)?.engines?.[snapshot.engine]?.level !== "supported") return unavailable("engineUnsupported");
   if (id === "file.save") {
     if (!snapshot.loaded) return unavailable("notReady");
-    return snapshot.saving ? unavailable("saving") : ENABLED;
+    if (snapshot.saving) return unavailable("saving");
+    // 끝나지 않은 IME 트랜잭션(조합·provisional·최종 글자 기다림)은 저장 절차도 SaveNotReady{composing}으로 막는다: 가용성도 같게
+    // 보여 단축키·리본이 실패할 저장을 시작하지 않는다(T010 IME 경계 후속). 대기 편집·불확실 모델은 그대로 저장 절차가 판정한다.
+    return snapshot.composing ? unavailable("composing") : ENABLED;
   }
   if (!snapshot.editable) return unavailable("notReady");
   if (snapshot.composing) return unavailable("composing");

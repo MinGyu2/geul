@@ -328,6 +328,11 @@ interface EditorAdapter {
   불러오기·닫기 뒤의 늦은 최종 글자는 넣지 않는다. 근거: [editor-surface-decision.md](../architecture/editor-surface-decision.md).
 - 진단 추적은 하나뿐인 묶음 추가 함수로만 쌓고(시험기 포함), 보고서는 빠진 구간과 WebDriver 끊김(판단 불가)을 따로 보인다.
 
+### 끝나지 않은 IME 입력과 보존·수명주기 (2026-10-20, `7680d92` 위)
+- 두 편집 세션의 끝나지 않은 IME 트랜잭션(조합 중·provisional·최종 글자 기다림)을 저장하지 않은 편집·저장 시작·저장 뒤 `changedSince`·
+  명령 `composing`에 같게 쓴다. 저장은 `SaveNotReady{composing}`(기존 오류), `file.save` 가용성도 `composing`. 버리기를 확인한 닫기·창
+  닫기·다시 불러오기는 기다림을 버린다. IPC·백엔드 저장 경로는 그대로다.
+
 ## Algorithms and Pseudocode
 ```
 open(path):

@@ -192,3 +192,13 @@ macOS는 Ctrl 대신 Cmd(이 빌드는 Linux만 확인). 단축키는 물리 키
 | 처음의 음절 사라짐 | UNVERIFIED | 재현 안 됨(이번 실제 2회 30/30 포함). 기다림은 H1(초점 이동) 외에 "최종 글자 전 명령 실행"이라는 다른 원인도 막지만, 그 관찰(revision 0)과 맞는지는 추적이 없어 모른다. H2(입력기가 버림)는 앱이 막을 수 없다. |
 
 가용성 규칙 4의 `composing`은 이제 조합 중, 앱이 먼저 확정한 조합(provisional), 빈 끝 뒤 최종 글자 기다림을 모두 뜻한다.
+
+## 저장 가용성과 끝나지 않은 IME 입력 (2026-10-20, `7680d92` 위)
+
+- `file.save`는 불러왔고 저장 중이 아니어도 `composing`(조합 중·provisional·최종 글자 기다림)이면 `composing`으로 쓸 수 없다. 저장
+  절차도 같은 상태를 `SaveNotReady{composing}`으로 막으므로, 처음 T010처럼 명령을 받아 놓고 저장 절차가 실패로 보이는 대신 가용성에서
+  같은 이유로 거절한다(Ctrl+S는 기본 동작만 막고 이유를 알림). 대기 편집(`pending`)·불확실 모델은 그대로 저장 절차가 판정한다(잠깐인
+  상태라 가용성에 넣지 않음). 시험 `sessions.test.tsx`의 저장 사례 기대를 이 정책으로 바꿨다(저장하지 않는다는 판정은 같음).
+- 판정: 보존·수명주기 누락은 CONFIRMED DEFECT — FIXED(`src/commands/awaitingPreservation.test.tsx` 13개, 수정 전 처음 12개 중 8개 실패).
+  자세한 것: [editor-surface-decision.md](editor-surface-decision.md#끝나지-않은-ime-트랜잭션과-보존수명주기-t010-2026-10-20-7680d92-위),
+  [save-preservation.md](save-preservation.md#저장과-끝나지-않은-ime-입력t010-ime-경계-후속-7680d92-위).

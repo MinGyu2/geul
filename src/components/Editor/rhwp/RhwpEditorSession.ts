@@ -273,7 +273,11 @@ export class RhwpEditorSession implements DocumentCommandTarget {
   /** 닫는 중에는 편집을 막는다(백엔드 닫기가 실패하면 false로 되돌려 다시 편집할 수 있다). */
   setClosing(closing: boolean) {
     if (this.closing === closing || this.disposed) return;
-    if (closing) this.settleProvisional(); // 닫는 동안 편집할 수 없다
+    if (closing) {
+      this.settleProvisional(); // 닫는 동안 편집할 수 없다
+      // 사용자가 버리기를 확인했거나 버릴 것이 없을 때만 닫는다: 기다리던 최종 글자는 넣지 않는다(닫기가 실패해도 되살리지 않음).
+      this.awaiting = false;
+    }
     this.closing = closing;
     this.emit();
   }
@@ -310,8 +314,15 @@ export class RhwpEditorSession implements DocumentCommandTarget {
    */
   get hasUnpreservedChanges() {
     return (this.sessions.get(this.sessionId)?.dirty ?? false) || (this.doc !== null
-      && (this.modified || this.uncertain || this.pending > 0 || this.committingEpoch === this.epoch || this.composition !== null
-        || this.provisional !== null));
+      && (this.modified || this.uncertain || this.pending > 0 || this.committingEpoch === this.epoch || this.imeUnsettled));
+  }
+
+  /**
+   * 끝나지 않은 IME 트랜잭션: 조합 중, 앱이 먼저 확정한 조합(provisional), 빈 끝 뒤 입력기의 최종 글자를 기다림(awaiting, T010).
+   * modified와 따로 본다(저장이 modified를 지운 뒤에 시작한 기다림도 보호).
+   */
+  private get imeUnsettled() {
+    return this.composition !== null || this.provisional !== null || this.awaiting;
   }
 
   /** 엔진 편집이 예외로 끝나 모델이 바뀌었는지 알 수 없음(성공한 변경과 구분). */
@@ -1124,7 +1135,7 @@ export class RhwpEditorSession implements DocumentCommandTarget {
     return {
       sessionId: this.sessionId, engine: this.engine, loadGeneration: this.generation, revision: this.committed,
       loaded: this.status.kind === "ready" && this.doc !== null && !this.closing, editable: this.editable,
-      composing: this.composition !== null || this.provisional !== null || this.awaiting,
+      composing: this.imeUnsettled,
       pending: this.pending > 0 || this.committingEpoch === this.epoch, queuedHistory: null,
       saving: this.saving, history: null, format: null, formatAccess: null,
     };
@@ -1148,7 +1159,7 @@ export class RhwpEditorSession implements DocumentCommandTarget {
   private saveBlocker(): DocumentError | null {
     if (this.status.kind !== "ready" || !this.doc || !this.module || this.closing) return { code: "SaveNotReady", reason: "state" };
     if (this.uncertain) return { code: "SaveNotReady", reason: "uncertain" };
-    if (this.composition || this.provisional) return { code: "SaveNotReady", reason: "composing" };
+    if (this.imeUnsettled) return { code: "SaveNotReady", reason: "composing" };
     if (this.pending > 0 || this.committingEpoch === this.epoch) return { code: "SaveNotReady", reason: "pending" };
     return null;
   }
@@ -1253,7 +1264,8 @@ export class RhwpEditorSession implements DocumentCommandTarget {
       if (!this.owns(epoch)) return result;
       if (!result.ok) return fail(result.error);
       this.sessions.applyUpdate(result.value.session);
-      const changedSince = this.localRevision !== revision || this.composition !== null || this.provisional !== null;
+      // 저장하는 동안 시작해 아직 끝나지 않은 IME 트랜잭션(기다림 포함)의 글자는 이 저장에 없다.
+      const changedSince = this.localRevision !== revision || this.imeUnsettled;
       // 저장한 판 뒤에 편집이 없고 교체의 내구성까지 확인했으면 이 모델은 디스크의 파일과 같다(닫기·다시 불러오기에 버리기
       // 확인이 필요 없음). 내구성을 확인하지 못했으면(교체는 됨) 저장하지 않은 편집으로 남긴다(백엔드도 dirty로 둔다).
       if (!changedSince && result.value.durable) this.modified = false;

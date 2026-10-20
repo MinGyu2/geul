@@ -1419,6 +1419,35 @@ def scenario_ime_commands(d, fixtures: Path, xdotool: str, ibus: str, rounds: in
         check("IME 명령: 조합 취소 뒤 수식 키 없는 키를 누르면 Ctrl+Z가 앞선 편집(문단 나누기)을 되돌림(잠기지 않음)",
               int(st["revision"]) == case["revision"] + 1 and st.get("composing") == "false", brief(st))
         discard_close(d, case["path"].name)
+        # 기다림 동안의 보존(실제 취소로 기다림을 만든다 — 다음 키까지 남음): 저장·닫기·다시 불러오기가 그 입력을 버리지 않는다.
+        case = start(f"awaiting-preservation-{tag}", jamo="g")
+        run(xdotool, "key", "BackSpace")
+        st = finish(case)
+        awaiting = any(r[2] == "docx:awaitingCommit" and r[3]["awaiting"] for r in REPORT["imeCommands"][case["name"]]["trace"])
+        run(xdotool, "key", "ctrl+s")
+        time.sleep(0.5)
+        refused = "조합" in message()
+        press_button(d, "[data-testid=docx-save]")
+        smoke.wait_until(d, f"return document.querySelector('{SAVE_RESULT}')?.dataset.state === 'failed'", timeout=10)
+        result = d.js(f"return {{...document.querySelector('{SAVE_RESULT}').dataset}}")
+        d.js("document.querySelector('.document-tab__close').click()")
+        time.sleep(0.5)
+        dialog = d.exists("[data-testid=discard-dialog]")
+        if dialog:
+            press_button(d, "[data-testid=discard-cancel]")
+        check("IME 명령: 최종 글자를 기다리는 동안 Ctrl+S는 조합 중으로 거절, 저장 단추는 SaveNotReady(composing), 탭 닫기는 버리기 확인(파일·세션 그대로)",
+              awaiting and refused and result.get("error") == "SaveNotReady" and dialog and case["path"].read_bytes() == (fixtures / "basic-ko.docx").read_bytes(),
+              json.dumps({"awaiting": awaiting, "refused": refused, "result": result, "dialog": dialog}, ensure_ascii=False))
+        d.js(f"document.querySelector('{INPUT}').focus()")
+        run(xdotool, "key", "End")  # 새 입력의 시작 → 기다림 끝(진짜 취소였음)
+        time.sleep(0.4)
+        run(xdotool, "key", "ctrl+s")
+        smoke.wait_until(d, f"return ['saved','failed'].includes(document.querySelector('{SAVE_RESULT}')?.dataset.state) &&"
+                            f" document.querySelector('{SAVE_RESULT}').dataset.state === 'saved'", timeout=30)
+        st = finish(case, {"after": "end+ctrl-s"})
+        check("IME 명령: 취소가 끝나면(다음 키) Ctrl+S가 보통처럼 저장하고 글자·revision을 만들지 않음",
+              st["paragraphText"] == case["text"] and int(st["revision"]) == case["revision"] and st.get("dirty") == "false", brief(st))
+        close_without_prompt(d, case["path"].name)
         case = start(f"cancel-then-type-{tag}", history=True, jamo="g")
         run(xdotool, "key", "BackSpace")
         run(xdotool, "type", "--delay", "90", "gk")

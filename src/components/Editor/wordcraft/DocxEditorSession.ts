@@ -276,14 +276,29 @@ export class DocxEditorSession implements ImeSession, DocumentCommandTarget {
     return this.queue.length + (this.inFlight ? 1 : 0);
   }
 
-  /** 저장되지 않은 편집: 확정한 변경(백엔드 dirty), 보내는 중·보낼 입력, 조합 중·입력기 끝을 기다리는 조합. */
-  get hasUnpreservedChanges() {
-    return (this.info?.dirty ?? false) || this.busy || this.composition !== null || this.provisional !== null;
+  /**
+   * 끝나지 않은 IME 트랜잭션: 조합 중, 앱이 먼저 확정한 조합(provisional), 빈 끝 뒤 입력기의 최종 글자를 기다림(awaiting, T010).
+   * 문서 명령·저장은 이것이 끝날 때까지 하지 않고, 닫기·다시 불러오기는 사용자가 버리기를 확인해야 한다.
+   */
+  private get imeUnsettled() {
+    return this.composition !== null || this.provisional !== null || this.awaiting;
   }
 
+  /** 저장되지 않은 편집: 확정한 변경(백엔드 dirty), 보내는 중·보낼 입력, 끝나지 않은 IME 트랜잭션(위). */
+  get hasUnpreservedChanges() {
+    return (this.info?.dirty ?? false) || this.busy || this.imeUnsettled;
+  }
+
+  /**
+   * 닫는 중(사용자가 버리기를 확인했거나 버릴 것이 없을 때만 들어옴). 끝나지 않은 IME 트랜잭션은 버린다: 늦게 온 최종 글자는
+   * 넣지 않는다(닫기가 실패해 돌아와도 되살리지 않음 — 사용자가 버린 입력).
+   */
   setClosing(closing: boolean) {
     if (this.closing === closing || this.disposed) return;
-    if (closing) this.provisional = null;
+    if (closing) {
+      this.provisional = null;
+      this.awaiting = false;
+    }
     this.closing = closing;
     this.emit();
   }
@@ -951,7 +966,7 @@ export class DocxEditorSession implements ImeSession, DocumentCommandTarget {
     return {
       sessionId: this.sessionId, engine: this.engine, loadGeneration: this.generation, revision: this.revision,
       loaded: this.status.kind === "ready" && !this.closing, editable: this.editable,
-      composing: this.composition !== null || this.provisional !== null || this.awaiting, pending: this.busy,
+      composing: this.imeUnsettled, pending: this.busy,
       queuedHistory: this.queuedHistory(), saving: this.saving,
       history: this.view?.history ?? null, format: this.view?.format ?? null, formatAccess: this.view?.formatAccess ?? null,
     };
@@ -1015,7 +1030,7 @@ export class DocxEditorSession implements ImeSession, DocumentCommandTarget {
 
   private saveBlocker(): DocumentError | null {
     if (this.status.kind !== "ready" || this.closing) return { code: "SaveNotReady", reason: "state" };
-    if (this.composition || this.provisional) return { code: "SaveNotReady", reason: "composing" };
+    if (this.imeUnsettled) return { code: "SaveNotReady", reason: "composing" };
     if (this.busy) return { code: "SaveNotReady", reason: "pending" };
     return null;
   }
@@ -1083,7 +1098,8 @@ export class DocxEditorSession implements ImeSession, DocumentCommandTarget {
       // 그 전에 시작한 검사의 늦은 결과도 버린다.
       this.checkSerial += 1;
       this.saveCheck = null;
-      const changedSince = this.revision !== revision || this.busy || this.composition !== null;
+      // 저장한 판 뒤의 편집: 바뀐 판, 보내는 중·보낼 입력, 저장하는 동안 시작해 아직 끝나지 않은 IME 트랜잭션(그 글자는 이 저장에 없음).
+      const changedSince = this.revision !== revision || this.busy || this.imeUnsettled;
       this.setSave({ kind: "saved", revision, durable: result.value.durable, changedSince });
       return result;
     } finally {

@@ -131,16 +131,20 @@ describe("WordCraft 세션의 명령(가짜 백엔드 흉내)", () => {
     expect(edits(fake)).toHaveLength(1);
   });
 
-  it("저장 명령은 기존 저장 절차(사전 검사 → 저장)를 그대로 부르고, 그 절차의 검사가 조합 중 저장을 막는다", async () => {
+  it("저장 명령은 기존 저장 절차(사전 검사 → 저장)를 그대로 부르고, 조합 중에는 명령도 저장 절차도 저장하지 않는다", async () => {
     const { editor, fake } = await readyDocx();
     editor.typeText("가");
     await flush();
-    const { context } = contextFor(editor);
+    const { context, notices } = contextFor(editor);
     editor.beginComposition();
     editor.updateComposition("한");
-    expect(executeCommand("file.save", undefined, context)).toBe(true);
+    // T010 IME 경계 후속: 저장 절차가 막을 조합 중 저장은 가용성에서도 같은 이유로 막는다(처음 T010은 명령을 받아 저장 절차가 실패로 보였음).
+    expect(commandState("file.save", context)).toEqual({ available: false, reason: "composing" });
+    expect(executeCommand("file.save", undefined, context)).toBe(false);
+    expect(notices.map((notice) => notice.key)).toEqual(["command.unavailable.composing"]);
+    expect(await editor.save()).toEqual({ ok: false, error: { code: "SaveNotReady", reason: "composing" } }); // 저장 절차의 검사는 그대로
     await flush();
-    expect(fake.calls.filter((call) => call.method === "save")).toEqual([]);
+    expect(fake.calls.filter((call) => ["preflight", "save"].includes(call.method))).toEqual([]);
     expect(editor.saveState).toEqual({ kind: "failed", error: { code: "SaveNotReady", reason: "composing" } });
     editor.endComposition("한");
     await flush();
