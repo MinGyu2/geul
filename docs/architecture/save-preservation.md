@@ -301,7 +301,13 @@ FAIL이 INCONCLUSIVE보다 앞선다(표지가 없어도 다른 디렉터리 게
 운영체제 난수(`os_getrandom`)·실행(`ProbeRun`·`run_probe`·`report_probe`·`measure_dir`)·시험용 이름 원천 도우미(`with_names`, `std::os::unix`
 심볼릭 링크)와 그것을 쓰는 시험은 `cfg(target_os = "linux")`이다. 판정 함수·표지 해석·난수 채우기 순서(`fill_nonce`) 시험은 모든 플랫폼에서
 돈다. Windows·macOS 시험 빌드는 이 환경에 그 대상의 표준 라이브러리가 없어 실제로 컴파일하지 못했고(NOT RUN), 바뀐 시험 파일에서 Linux
-전용 기호를 쓰는 cfg 없는 항목이 없음을 정적으로 확인했다. 측정은 피해자 쪽 값이다: 저장 결과와 거부 직후 레지스트리 dirty,
+전용 기호를 쓰는 cfg 없는 항목이 없음을 정적으로 확인했다. 후속 cfg 정리(`43f5972` 위): Linux 전용 시험에서만 쓰는 도우미 13개(`walk_dirs`·`precreate_predictable`·`Squat`·
+`random_temp_name`·`dirty_now`, 그리고 같은 이유의 `save_hooked`·`open_docx_in`·`exchange`·`HookSlot`·`Hooks`·`RaceCase`·`save_with_hooks`·
+`assert_published`)에도 같은 cfg를 붙여, Linux 밖의 시험 빌드에서 쓰이지 않는 코드(dead_code 경고)가 남지 않게 했다(오류가 나는 기호는 없었음).
+cfg 없는 시험에서 닿지 않는 cfg 없는 항목·cfg 있는 항목을 부르는 cfg 없는 항목·Linux 밖에서 쓰이지 않는 최상위 `use`가 0개임을 정적으로
+확인했다(호출 그래프 점검). Linux 시험 목록은 그대로(159개 = 155 + 무시 4)다. Windows·macOS는 여전히 NOT RUN이고, 설치된 wasm32 대상은 의존성
+`tao`가 그 플랫폼을 지원하지 않아 검사에 쓸 수 없었다. 제품 코드(`publish.rs`)의 Linux 밖 dead_code 가능성(`temp_name`·`COUNTER` 등, 저장이
+Linux 전용이라 생김)은 이번 범위 밖이며 확인하지 않았다. 측정은 피해자 쪽 값이다: 저장 결과와 거부 직후 레지스트리 dirty,
 회차마다 경로 `shared/docs`의 inode 표본, 끝난 뒤 inode로 찾은 원래 `docs`·`other`의 항목·원본 내용·inode, 남의 파일(inode·내용), 공격을
 멈춘 뒤 같은 세션의 사전 검사. 공격 쪽 보고는 이번 실행 표지가 맞을 때만 쓰고, 통과의 근거로는 시도 수만, 노출 수는 실패의 근거로만 쓴다.
 진단 줄에는 경로·문서 내용 없이 개수·오류 종류만 있다.

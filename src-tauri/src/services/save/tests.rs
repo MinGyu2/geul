@@ -2050,6 +2050,7 @@ fn set_xattr(path: &Path, name: &str, value: &[u8]) -> bool {
 
 /// 시험용: 저장 중(임시 파일을 다 쓴 뒤·교체 직전 확인 전)에 원본 경로로 `hook`을 부르며 저장한다(같은 스레드에서
 /// 서비스를 직접 부른다: 훅은 스레드 지역 값).
+#[cfg(target_os = "linux")]
 fn save_hooked(
     doc: &Docx,
     hook: impl Fn(&Path, &Path) + 'static,
@@ -3564,6 +3565,7 @@ fn b4_압축으로_정해진_bindata는_바이트가_같아도_끝까지_풀려�
 // ---- T009 4차 안정화 A: 원본까지의 모든 상위 디렉터리를 다른 사용자가 바꿀 수 없어야 한다 ----
 
 /// 불러오기 전에 `dir` 아래 `relative`에 둔 DOCX 세션(상위 디렉터리를 시험마다 만든다).
+#[cfg(target_os = "linux")]
 fn open_docx_in(dir: TempDir, relative: &str, bytes: &[u8]) -> Docx {
     let path = dir.path().join(relative);
     std::fs::create_dir_all(path.parent().unwrap()).unwrap();
@@ -3581,6 +3583,7 @@ fn open_docx_in(dir: TempDir, relative: &str, bytes: &[u8]) -> Docx {
 }
 
 /// 같은 부모 안의 두 디렉터리 항목을 맞바꾼다(그 부모에 쓸 수 있는 사용자가 할 수 있는 일).
+#[cfg(target_os = "linux")]
 fn exchange(a: &Path, b: &Path) {
     let parked = a.with_extension("parked");
     std::fs::rename(a, &parked).unwrap();
@@ -3589,14 +3592,18 @@ fn exchange(a: &Path, b: &Path) {
 }
 
 /// 시험용 훅 자리(`publish`의 스레드 지역 값)와 거기 걸 훅들.
+#[cfg(target_os = "linux")]
 type HookSlot = &'static std::thread::LocalKey<std::cell::RefCell<Option<super::publish::Hook>>>;
+#[cfg(target_os = "linux")]
 type Hooks = Vec<(HookSlot, Box<dyn Fn(&Path, &Path)>)>;
 /// 경합 사례: 이름, 공유 디렉터리를 받아 훅을 만드는 함수, 기대 오류.
+#[cfg(target_os = "linux")]
 type RaceCase = (&'static str, Box<dyn Fn(&Path) -> Hooks>, DocumentError);
 /// 미리보기 운반체: 이름, 바이트, 그 바이트에서 비밀을 꺼내는 함수.
 type Carrier = (&'static str, Vec<u8>, Box<dyn Fn(&[u8]) -> Vec<u8>>);
 
 /// 시험용 훅을 걸고 저장한다(같은 스레드). 훅이 불린 횟수를 돌려준다.
+#[cfg(target_os = "linux")]
 fn save_with_hooks(doc: &Docx, hooks: Hooks) -> (Result<SaveOutcome, DocumentError>, usize) {
     let calls = std::rc::Rc::new(std::cell::Cell::new(0usize));
     let keys: Vec<_> = hooks.iter().map(|(key, _)| *key).collect();
@@ -3681,6 +3688,7 @@ fn a4_다른_사용자가_이름을_바꿀_수_있는_상위_디렉터리_아래
 }
 
 /// 저장에 성공했으면 세션이 깨끗하고, 기록한 파일(새 inode·지문)이 디스크와 같아 사전 검사를 다시 할 수 있다.
+#[cfg(target_os = "linux")]
 fn assert_published(doc: &mut Docx, saved: SaveOutcome, label: &str) {
     assert!(saved.durable, "{label}");
     assert!(!saved.session.dirty, "{label}");
@@ -3900,6 +3908,7 @@ fn a4_믿는_경로가_저장_중_움직이면_확인한_디렉터리에서만_�
 }
 
 /// `root` 아래 모든 디렉터리(자신 포함).
+#[cfg(target_os = "linux")]
 fn walk_dirs(root: &Path) -> Vec<std::path::PathBuf> {
     let mut out = vec![root.to_path_buf()];
     let mut at = 0;
@@ -4755,6 +4764,7 @@ fn c4_한_색_그림과_빈_글도_내용을_담을_수_있어_남는_미리보�
 // ---- T009 후속 강화 B: 임시 파일 이름은 미리 알 수 없어야 한다(sticky 디렉터리의 다른 사용자가 이름을 미리 차지하는 것) ----
 
 /// 다른 사용자가 프로세스 번호(`/proc`으로 보임)와 0부터 늘어나는 번호로 짐작할 수 있는 이름을 미리 만든다.
+#[cfg(target_os = "linux")]
 fn precreate_predictable(dir: &Path, count: u64) -> Vec<String> {
     let start = super::publish::next_name_number();
     (start..start + count)
@@ -4795,6 +4805,7 @@ fn h5_짐작할_수_있는_이름을_미리_차지해도_저장은_막히지_않
 
 /// 시험용 이름 원천이 후보마다 할 일: 그 이름에 남의 파일·심볼릭 링크를 미리 만들거나, 난수 실패를 흉내.
 #[derive(Clone, Copy)]
+#[cfg(target_os = "linux")]
 enum Squat {
     File(&'static [u8]),
     Link,
@@ -4836,6 +4847,7 @@ fn with_names<T>(
 }
 
 /// `.geul-save-{이 프로세스}-{순번}-{32 hex}.tmp`인지.
+#[cfg(target_os = "linux")]
 fn random_temp_name(name: &str) -> Option<&str> {
     let rest = name.strip_prefix(&format!(".geul-save-{}-", std::process::id()))?;
     let rest = rest.strip_suffix(".tmp")?;
@@ -4849,6 +4861,7 @@ fn random_temp_name(name: &str) -> Option<&str> {
 }
 
 /// 이 세션이 지금 dirty인지(레지스트리 기준).
+#[cfg(target_os = "linux")]
 fn dirty_now(doc: &Docx) -> bool {
     doc.state.registry().get(doc.info.session_id).unwrap().dirty
 }

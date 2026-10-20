@@ -283,6 +283,7 @@ interface EditorAdapter {
   필수 측정이 없으면 INCONCLUSIVE, 모두 쟀을 때만 PASS. 수정 전에는 읽을 수 없는 디렉터리가 빈 목록으로 읽혀 숨긴 게시가 있어도 PASS였다.
 - 표지 난수(C): `getrandom`을 끝까지 채우고(짧은 읽기·EINTR), 실패하면 NOT-RUN. 플랫폼(A): Linux 전용 탐침·시험 도우미에 cfg를 붙였다(`libc`는
   `cfg(unix)` 의존성, Apple 대상에는 `getrandom`이 없음). 시험 코드·문서만 바뀌었고 제품 동작은 그대로다([상세](../architecture/save-preservation.md#다중-사용자-탐침-판정후속-강화-a)).
+- 시험 cfg 정리(`43f5972` 위): Linux 전용 시험에서만 쓰는 시험 도우미 13개에도 같은 cfg를 붙였다(시험 코드만, Windows·macOS 빌드는 NOT RUN).
 
 ## Algorithms and Pseudocode
 ```
