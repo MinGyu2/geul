@@ -4,7 +4,8 @@
 //! - POSIX `rename`은 같은 파일 시스템 안에서 대상 이름을 원자적으로 바꾼다(읽는 쪽은 옛 파일이나 새 파일 하나를 본다).
 //!   이 동작을 이 프로젝트가 실제로 시험한 플랫폼은 Linux뿐이라 그 밖에서는 저장하지 않는다(`SaveUnsupported{platform}`,
 //!   원본 그대로). Windows `MoveFileEx`·macOS는 T014·T016에서 따로 확인한다.
-//! - 임시 파일은 O_CREAT|O_EXCL(이미 있으면 실패)로 만들고 원본의 권한 비트를 준다. 원본 소유자·그룹이 이 프로세스가
+//! - 임시 파일은 O_CREAT|O_EXCL(이미 있으면 실패)로, 운영체제 난수 128비트를 넣은 이름으로 만들고(다른 사용자가 이름을 미리
+//!   차지해 저장을 막지 못하게, T009 후속 강화 B) 원본의 권한 비트를 준다. 원본 소유자·그룹이 이 프로세스가
 //!   만든 파일과 다르면(교체하면 소유가 바뀜) 저장하지 않는다. 하드 링크가 여럿인 파일도 저장하지 않는다(교체하면 다른
 //!   이름이 옛 내용을 가리킨다). 읽기 전용 원본(소유자 쓰기 비트 없음·커널이 쓰기 거부)도 바꾸지 않는다(`read-only`).
 //! - 위협 모델(T009 3차 안정화): 이 사용자·root는 믿고 그 밖의 사용자는 믿지 않는다. 그들이 검증한 임시 파일의 내용을 바꿀 수
@@ -41,6 +42,65 @@ use crate::document::{
 static COUNTER: AtomicU64 = AtomicU64::new(0);
 /// 임시 파일 이름이 이미 있을 때 다음 이름으로 해 보는 횟수.
 const MAX_NAME_ATTEMPTS: usize = 64;
+/// 임시 파일 이름의 무작위 부분(바이트, 128비트). 프로세스 번호·순번은 다른 사용자가 짐작할 수 있으므로(T009 후속 강화 B)
+/// 이름마다 운영체제 난수를 넣는다. 정상 동작에서 우연히 겹칠 확률은 무시할 만하다(이름 2^32개에서도 약 2^-65).
+const NAME_RANDOM_BYTES: usize = 16;
+
+/// 임시 파일 이름: `.geul-save-{프로세스}-{순번}-{무작위 32 hex}.tmp`. 접두사·접미사는 남은 임시 파일을 알아보는 규칙(T014)과
+/// 같다. 순번은 같은 프로세스 안의 구분을 돕는 값일 뿐 미리 차지하는 것을 막는 근거가 아니다(그것은 무작위 부분).
+fn temp_name(counter: u64, random: &[u8; NAME_RANDOM_BYTES]) -> String {
+    let hex: String = random.iter().map(|byte| format!("{byte:02x}")).collect();
+    format!(".geul-save-{}-{counter}-{hex}.tmp", std::process::id())
+}
+
+/// 시험용: 임시 파일 이름의 무작위 부분을 대신 정한다(순번을 받아 그 이름을 미리 만들어 충돌을 만들거나, 난수 실패를 흉내).
+/// 시험 빌드에만 있다(제품 빌드의 난수는 늘 운영체제에서 온다).
+#[cfg(test)]
+pub type NameSource = Box<dyn FnMut(u64, &mut [u8; NAME_RANDOM_BYTES]) -> io::Result<()>>;
+
+#[cfg(test)]
+thread_local! {
+    pub static NAME_SOURCE: std::cell::RefCell<Option<NameSource>> = const { std::cell::RefCell::new(None) };
+}
+
+/// 시험용: 순번과 무작위 바이트로 만든 임시 파일 이름(제품 코드와 같은 규칙).
+#[cfg(test)]
+pub fn name_for(counter: u64, random: &[u8; NAME_RANDOM_BYTES]) -> String {
+    temp_name(counter, random)
+}
+
+/// 운영체제 난수(`getrandom(2)`, 플래그 없음: 엔트로피 풀이 준비될 때까지 기다린다)로 채운다. 실패하면 오류이고, 짐작할 수
+/// 있는 이름으로 대신하지 않는다(호출하는 쪽이 저장을 막는다).
+#[cfg(target_os = "linux")]
+fn fill_random(_counter: u64, buf: &mut [u8; NAME_RANDOM_BYTES]) -> io::Result<()> {
+    #[cfg(test)]
+    if let Some(result) = NAME_SOURCE.with(|source| {
+        source
+            .borrow_mut()
+            .as_mut()
+            .map(|source| source(_counter, buf))
+    }) {
+        return result;
+    }
+    let mut filled = 0;
+    while filled < buf.len() {
+        let rest = &mut buf[filled..];
+        // SAFETY: 포인터·길이는 buf의 남은 부분이다.
+        let got = unsafe { libc::getrandom(rest.as_mut_ptr().cast(), rest.len(), 0) };
+        if got < 0 {
+            let error = io::Error::last_os_error();
+            if error.kind() == io::ErrorKind::Interrupted {
+                continue;
+            }
+            return Err(error);
+        }
+        if got == 0 {
+            return Err(io::Error::other("getrandom returned no bytes"));
+        }
+        filled += got as usize;
+    }
+    Ok(())
+}
 
 /// 시험용: 다음 임시 파일 이름의 번호.
 #[cfg(test)]
@@ -429,16 +489,16 @@ pub fn stage(target: &Path, bytes: &[u8]) -> Result<Staged, DocumentError> {
     if let Some(Fault::Create(kind)) = fault() {
         return Err(failure(SaveStage::Write, &io::Error::from(kind)));
     }
-    // 이름이 이미 있으면(중단된 저장이 남긴 파일, 프로세스 번호 재사용, 심볼릭 링크) 그것을 건드리지 않고 다음 이름으로
-    // 한다(O_CREAT|O_EXCL: 있는 이름·링크를 따라가지 않는다). 확인한 디렉터리 핸들 기준으로 만든다.
+    // 이름이 이미 있으면(중단된 저장이 남긴 파일, 남이 미리 만든 파일·심볼릭 링크) 그것을 건드리지 않고 새 무작위 이름으로
+    // 한다(O_CREAT|O_EXCL: 있는 이름·링크를 따라가지 않는다). 확인한 디렉터리 핸들 기준으로 만든다. 난수를 얻지 못하면 만들지
+    // 않고 실패한다(원본 그대로).
     let mut created = None;
     let mut last = io::Error::from(io::ErrorKind::AlreadyExists);
     for _ in 0..MAX_NAME_ATTEMPTS {
-        let name = format!(
-            ".geul-save-{}-{}.tmp",
-            std::process::id(),
-            COUNTER.fetch_add(1, Ordering::Relaxed)
-        );
+        let counter = COUNTER.fetch_add(1, Ordering::Relaxed);
+        let mut random = [0u8; NAME_RANDOM_BYTES];
+        fill_random(counter, &mut random).map_err(|error| failure(SaveStage::Write, &error))?;
+        let name = temp_name(counter, &random);
         let c_name = CString::new(name.as_str()).map_err(|_| DocumentError::Internal)?;
         // 0600: 아래에서 원본 권한으로(umask와 무관하게) 맞춘다.
         match open_at(

@@ -1154,23 +1154,26 @@ fn 쓰기_권한_공간_되읽기_교체_외부_수정_실패는_원본을_보�
 #[test]
 fn 중단된_저장이_남긴_임시_파일은_지우거나_다시_쓰지_않고_원본만_바꾼다() {
     // 교체 전에 프로세스가 끝나면 `.geul-save-*.tmp`가 남을 수 있다(원본 그대로). 그 정리·복구는 T014이며, 다음 저장은 그 파일을
-    // 지우거나 덮어쓰지 않는다(create_new + 새 이름).
+    // 지우거나 덮어쓰지 않는다(O_EXCL + 새 이름). 시험용 이름 원천으로 처음 네 후보가 정확히 남은 파일과 겹치게 한다.
     let original = basic::basic_ko().unwrap();
     let mut doc = open_docx(&original);
     doc.edit(edits());
     doc.preflight().unwrap();
-    // 다음에 만들 이름 몇 개를 미리 차지해 이름 충돌을 만든다(시험을 하나씩 실행하면 반드시 충돌한다).
-    let next = super::publish::next_name_number();
-    let name = |n: u64| format!(".geul-save-{}-{n}.tmp", std::process::id());
-    for n in next..next + 4 {
-        std::fs::write(doc.dir.path().join(name(n)), b"interrupted").unwrap();
-    }
-    let saved = doc.save().unwrap();
+    let (saved, names) = with_names(
+        &doc,
+        |i| (i < 4).then_some(Squat::File(b"interrupted")),
+        || save_with_fault(&doc, None),
+    );
+    let saved = saved.unwrap();
     assert!(!saved.session.dirty);
+    assert_eq!(names.len(), 5, "네 번 겹치고 다섯 번째에 만듦");
     assert_ne!(doc.bytes(), original);
     // 남은 것은 미리 둔 네 파일뿐이고 내용도 그대로다.
-    let left = doc.leftovers();
-    assert_eq!(left.len(), 4, "{left:?}");
+    let mut left = doc.leftovers();
+    left.sort();
+    let mut squatted = names[..4].to_vec();
+    squatted.sort();
+    assert_eq!(left, squatted);
     assert!(left
         .iter()
         .all(|file| std::fs::read(doc.dir.path().join(file)).unwrap() == b"interrupted"));
@@ -2544,15 +2547,16 @@ fn e_임시_파일을_만든_직후의_실패도_이_저장의_임시_파일만_
     let mut doc = open_docx(&original);
     doc.edit(edits());
     doc.preflight().unwrap();
-    // 다음 이름 하나를 미리 차지한다(남의 파일·중단된 저장): 그 파일은 그대로, 이 저장이 만든 파일은 지운다.
-    let taken = format!(
-        ".geul-save-{}-{}.tmp",
-        std::process::id(),
-        super::publish::next_name_number()
+    // 첫 후보 이름을 미리 차지한다(남의 파일·중단된 저장): 그 파일은 그대로, 이 저장이 만든 파일은 지운다.
+    let (failed, names) = with_names(
+        &doc,
+        |i| (i == 0).then_some(Squat::File(b"earlier")),
+        || save_with_fault(&doc, Some(Fault::AfterCreate)),
     );
-    std::fs::write(doc.dir.path().join(&taken), b"earlier").unwrap();
+    let taken = names[0].clone();
+    assert_eq!(names.len(), 2);
     assert_eq!(
-        save_with_fault(&doc, Some(Fault::AfterCreate)).err(),
+        failed.err(),
         Some(DocumentError::SaveFailure {
             stage: SaveStage::Write,
             io: Some(IoProblem::Other)
@@ -3908,50 +3912,331 @@ fn walk_dirs(root: &Path) -> Vec<std::path::PathBuf> {
     out
 }
 
-/// 4차 안정화 A 다중 사용자 탐침(로컬, 기본 실행 안 함): 실제 다른 uid가 공유 상위 디렉터리(`GEUL_A4_SHARED`)의 `docs`·
-/// `other` 항목을 계속 맞바꾸는 동안 `docs/a.docx`를 `GEUL_A4_ROUNDS`번 편집·저장하고 결과를 센다. 공격 쪽은 `GEUL_A4_READY`를
-/// 기다려 시작하고 `GEUL_A4_STOP`이 생기면 원래 배치로 되돌린 뒤 `GEUL_A4_DONE`을 쓴다. 사용자 이름공간 실행 절차는
-/// `docs/architecture/save-preservation.md`.
+// ---- T009 후속 강화 A: 다중 사용자 탐침은 보안 불변식을 판정으로 강제한다 ----
+//
+// 탐침은 피해자 쪽에서 믿을 수 있는 값(저장 결과, 거부 뒤 레지스트리 dirty, 경로가 가리키는 디렉터리 inode의 표본, 끝난 뒤
+// inode로 찾은 두 디렉터리의 항목·내용, 남의 파일, 공격을 멈춘 뒤의 사전 검사)을 모으고 판정한다. 공격 쪽 보고는 이번 실행의
+// 무작위 표지(nonce)가 맞을 때만 쓰고, 공격 쪽 보고만으로 통과시키지 않는다(노출 보고는 실패의 근거로만 쓴다).
+
+/// 탐침 판정.
+#[derive(Debug, PartialEq, Eq)]
+enum ProbeVerdict {
+    /// 준비가 됐고 공격이 실제로 일어났으며 모든 불변식을 지켰다.
+    Pass,
+    /// 불변식이 깨졌다.
+    Fail(Vec<String>),
+    /// 실행했지만 판단할 수 없다(공격이 일어나지 않음, 동기화·측정 실패, 의도한 조건이 아님).
+    Inconclusive(Vec<String>),
+    /// 실행 조건이 없다(환경 변수·준비 실패).
+    NotRun(String),
+}
+
+/// 실행 배치: 공격 쪽이 `docs`·`other`를 맞바꿀 수 있는(믿지 않는 사용자가 쓸 수 있는 공유 상위) 배치인지.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum ProbeLayout {
+    /// 공유 상위에 그 밖 쓰기, sticky 없음: 저장은 모두 거부돼야 하고 공격(맞바꿈)이 관찰돼야 한다.
+    Swappable,
+    /// 믿는 쪽만 바꿀 수 있는 상위(0755 root·1777 sticky): 저장이 모두 되고 맞바꿈은 일어나지 않아야 한다.
+    Locked,
+}
+
+/// 저장 한 번의 결과(피해자 쪽 측정).
+#[derive(Debug, Clone)]
+enum ProbeSave {
+    /// 사전 검사가 실패(경로가 맞바뀐 때 등).
+    PreflightFailed,
+    /// 저장됨: 내구성, 저장 직후 세션 dirty.
+    Saved { durable: bool, dirty: bool },
+    /// 거부됨: 오류, 거부 직후 레지스트리 dirty.
+    Rejected { error: DocumentError, dirty: bool },
+}
+
+/// 공격 쪽 보고(이번 실행의 표지가 맞을 때만).
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+struct AttackerReport {
+    attempts: u64,
+    swaps: u64,
+    /// 공격 쪽이 읽을 수 있었던, 문서(ZIP) 내용이 든 파일 수.
+    readable_documents: u64,
+}
+
+/// 판정의 입력: 피해자 쪽 측정과 확인된 공격 쪽 보고.
+#[derive(Debug, Clone)]
+struct ProbeObservation {
+    layout: ProbeLayout,
+    saves: Vec<ProbeSave>,
+    /// 경로 `shared/docs`가 처음의 `docs` 디렉터리가 아닌 것을 본 표본 수.
+    swaps_seen: usize,
+    attacker: Option<AttackerReport>,
+    /// 공격을 멈춘 뒤 원래 배치로 돌아왔는지(`shared/docs`가 처음 `docs`).
+    restored: bool,
+    /// inode로 찾은 원래 `docs`·`other` 디렉터리의 항목.
+    real_entries: Vec<String>,
+    wrong_entries: Vec<String>,
+    real_is_original: bool,
+    real_inode_is_original: bool,
+    real_is_last_saved: bool,
+    sentinel_intact: bool,
+    /// 공격을 멈춘 뒤 같은 세션의 사전 검사가 기록한 원본과 맞는지(파일 식별·지문이 디스크와 같음).
+    final_preflight_ok: bool,
+}
+
+const PROBE_SENTINEL: &str = "unrelated.txt";
+
+fn probe_verdict(o: &ProbeObservation) -> ProbeVerdict {
+    let mut fail = Vec::new();
+    let mut unknown = Vec::new();
+    let saved: Vec<(bool, bool)> = o
+        .saves
+        .iter()
+        .filter_map(|s| match s {
+            ProbeSave::Saved { durable, dirty } => Some((*durable, *dirty)),
+            _ => None,
+        })
+        .collect();
+    let rejected_clean = o
+        .saves
+        .iter()
+        .filter(|s| matches!(s, ProbeSave::Rejected { dirty: false, .. }))
+        .count();
+    // 1·2·3·4: 다른 디렉터리에 게시·남은 임시 파일·남의 파일 변경·노출.
+    if o.wrong_entries.iter().any(|n| n != PROBE_SENTINEL) {
+        fail.push(format!(
+            "다른 디렉터리에 항목이 생김: {}",
+            o.wrong_entries.len() - 1
+        ));
+    }
+    if o.real_entries.iter().any(|n| n != "a.docx") || !o.real_entries.iter().any(|n| n == "a.docx")
+    {
+        fail.push(format!(
+            "원본 디렉터리 항목이 a.docx 하나가 아님: {}",
+            o.real_entries.len()
+        ));
+    }
+    if !o.sentinel_intact {
+        fail.push("남의 파일이 바뀌거나 사라짐".into());
+    }
+    if let Some(attacker) = &o.attacker {
+        if attacker.readable_documents > 0 {
+            fail.push(format!(
+                "공격 쪽이 문서 내용 파일을 읽음: {}",
+                attacker.readable_documents
+            ));
+        }
+    }
+    // 5·6·7·8: 원본 보호, 게시 식별, 내구성·dirty의 정직함.
+    if rejected_clean > 0 {
+        fail.push(format!("거부된 저장 뒤 dirty가 풀림: {rejected_clean}"));
+    }
+    if saved.is_empty() {
+        if !(o.real_is_original && o.real_inode_is_original) {
+            fail.push("저장이 하나도 되지 않았는데 원본이 바뀜".into());
+        }
+    } else {
+        if !o.real_is_last_saved {
+            fail.push("마지막으로 저장한 내용이 원본 경로에 없음".into());
+        }
+        if !o.final_preflight_ok {
+            fail.push("저장한 세션의 파일 기록이 원본 경로의 파일과 다름".into());
+        }
+    }
+    match o.layout {
+        ProbeLayout::Swappable => {
+            if !saved.is_empty() {
+                fail.push(format!(
+                    "믿지 않는 사용자가 바꿀 수 있는 상위 아래에서 저장됨: {}",
+                    saved.len()
+                ));
+            }
+            if o.swaps_seen == 0 {
+                unknown.push("피해자 쪽에서 맞바꿈을 한 번도 보지 못함".into());
+            }
+            let checked = o.saves.iter().any(|s| {
+                matches!(
+                    s,
+                    ProbeSave::Rejected {
+                        error: DocumentError::SaveUnsupported {
+                            reason: SaveUnsupportedReason::SharedDirectory
+                        },
+                        ..
+                    }
+                )
+            });
+            if !checked {
+                unknown.push("상위 디렉터리 확인까지 간 저장이 없음".into());
+            }
+        }
+        ProbeLayout::Locked => {
+            if saved.len() != o.saves.len() || saved.iter().any(|&(d, dirty)| !d || dirty) {
+                fail.push(format!(
+                    "믿는 배치에서 저장이 모두 durable·깨끗하지 않음: {}/{}",
+                    saved.iter().filter(|&&(d, dirty)| d && !dirty).count(),
+                    o.saves.len()
+                ));
+            }
+            if o.swaps_seen > 0 || o.attacker.as_ref().is_some_and(|a| a.swaps > 0) {
+                unknown.push("믿는 배치인데 맞바꿈이 일어남(실행 환경이 의도와 다름)".into());
+            }
+        }
+    }
+    // 9·10: 공격이 실제로 일어났고 표지가 이번 실행의 것인지.
+    match &o.attacker {
+        None => unknown.push("공격 쪽 완료 표지가 없거나 이번 실행의 것이 아님".into()),
+        Some(attacker) if attacker.attempts == 0 => unknown.push("공격 쪽 시도가 0번".into()),
+        Some(_) => {}
+    }
+    if !o.restored {
+        unknown.push("공격을 멈춘 뒤 원래 배치로 돌아오지 않음".into());
+    }
+    if o.saves.is_empty() {
+        unknown.push("저장을 한 번도 하지 않음".into());
+    }
+    if !fail.is_empty() {
+        ProbeVerdict::Fail(fail)
+    } else if !unknown.is_empty() {
+        ProbeVerdict::Inconclusive(unknown)
+    } else {
+        ProbeVerdict::Pass
+    }
+}
+
+/// 공격 쪽 완료 표지: `nonce=<이번 실행 값> attempts=<n> swaps=<n> readable=<n>`. 표지가 다르거나 모양이 틀리면 None.
+fn parse_attacker_report(text: &str, nonce: &str) -> Option<AttackerReport> {
+    let mut fields = std::collections::BTreeMap::new();
+    for part in text.split_whitespace() {
+        let (key, value) = part.split_once('=')?;
+        if fields.insert(key, value).is_some() {
+            return None;
+        }
+    }
+    if fields.len() != 4 || fields.get("nonce") != Some(&nonce) {
+        return None;
+    }
+    let number = |key: &str| fields.get(key)?.parse::<u64>().ok();
+    Some(AttackerReport {
+        attempts: number("attempts")?,
+        swaps: number("swaps")?,
+        readable_documents: number("readable")?,
+    })
+}
+
+/// 이번 실행의 표지(운영체제 난수 128비트, hex).
+fn probe_nonce() -> String {
+    let mut bytes = [0u8; 16];
+    // SAFETY: 포인터·길이는 bytes다.
+    let got = unsafe { libc::getrandom(bytes.as_mut_ptr().cast(), bytes.len(), 0) };
+    assert_eq!(got, 16, "난수");
+    bytes.iter().map(|b| format!("{b:02x}")).collect()
+}
+
+/// 탐침 실행 설정. `step`은 각 회차 전에 불리는 시험용 공격(같은 프로세스)이고, 실제 다중 사용자 실행에서는 아무것도 하지 않는다.
+struct ProbeRun<'a> {
+    shared: std::path::PathBuf,
+    rounds: usize,
+    layout: ProbeLayout,
+    ready: std::path::PathBuf,
+    stop: std::path::PathBuf,
+    done: std::path::PathBuf,
+    step: &'a mut dyn FnMut(usize),
+    /// 공격을 멈추고 판정 전에 부른다(시험용 위반 주입).
+    before_examine: &'a mut dyn FnMut(&Path, &Path),
+}
+
+/// 탐침을 실행하고 판정한다. 준비가 안 되면 `NotRun`.
 #[cfg(target_os = "linux")]
-#[test]
-#[ignore]
-fn a4_다중_사용자_탐침() {
+fn run_probe(run: ProbeRun<'_>) -> (ProbeVerdict, String) {
     use std::os::unix::fs::{MetadataExt, PermissionsExt};
-    let var = |name: &str| std::env::var(name).ok().map(std::path::PathBuf::from);
-    let (Some(shared), Some(ready), Some(stop), Some(done)) = (
-        var("GEUL_A4_SHARED"),
-        var("GEUL_A4_READY"),
-        var("GEUL_A4_STOP"),
-        var("GEUL_A4_DONE"),
-    ) else {
-        eprintln!("GEUL_A4_* 없음");
-        return;
-    };
-    let rounds: usize = std::env::var("GEUL_A4_ROUNDS")
-        .ok()
-        .and_then(|value| value.parse().ok())
-        .unwrap_or(200);
+    let ProbeRun {
+        shared,
+        rounds,
+        layout,
+        ready,
+        stop,
+        done,
+        step,
+        before_examine,
+    } = run;
+    for marker in [&ready, &stop, &done] {
+        if std::fs::symlink_metadata(marker).is_ok() {
+            return (
+                ProbeVerdict::NotRun("이전 실행의 표지 파일이 남아 있음".into()),
+                String::new(),
+            );
+        }
+    }
     let original = basic::basic_ko().unwrap();
     let (docs, other) = (shared.join("docs"), shared.join("other"));
-    // 공유 디렉터리에 만들 권한이 없으면(믿는 쪽 소유 0755 등) 실행 절차가 미리 만들어 준다.
-    std::fs::create_dir_all(&docs).unwrap();
-    std::fs::create_dir_all(&other).unwrap();
-    std::fs::set_permissions(&docs, std::fs::Permissions::from_mode(0o700)).unwrap();
-    std::fs::set_permissions(&other, std::fs::Permissions::from_mode(0o755)).unwrap();
+    let prepared = (|| -> std::io::Result<(u64, u64, u64)> {
+        // 공유 디렉터리에 만들 권한이 없으면(믿는 쪽 소유 0755 등) 실행 절차가 미리 만들어 준다.
+        std::fs::create_dir_all(&docs)?;
+        std::fs::create_dir_all(&other)?;
+        std::fs::set_permissions(&docs, std::fs::Permissions::from_mode(0o700))?;
+        std::fs::set_permissions(&other, std::fs::Permissions::from_mode(0o755))?;
+        if std::fs::read_dir(&docs)?.next().is_some() || std::fs::read_dir(&other)?.next().is_some()
+        {
+            return Err(std::io::Error::other("비어 있지 않은 시험 디렉터리"));
+        }
+        let path = docs.join("a.docx");
+        std::fs::write(&path, &original)?;
+        std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o644))?;
+        std::fs::write(other.join(PROBE_SENTINEL), b"unrelated")?;
+        Ok((
+            std::fs::metadata(&docs)?.ino(),
+            std::fs::metadata(&path)?.ino(),
+            std::fs::metadata(other.join(PROBE_SENTINEL))?.ino(),
+        ))
+    })();
+    // 선언한 배치가 실제 공유 디렉터리 권한과 맞는지 잰다(설정 실수를 보안 위반이나 통과로 읽지 않게).
+    let measured = std::fs::metadata(&shared).map(|m| {
+        if m.mode() & 0o022 != 0 && m.mode() & 0o1000 == 0 {
+            ProbeLayout::Swappable
+        } else {
+            ProbeLayout::Locked
+        }
+    });
+    if measured.as_ref().ok() != Some(&layout) {
+        return (
+            ProbeVerdict::Inconclusive(vec![format!(
+                "선언한 배치 {layout:?}가 공유 디렉터리 권한({:?})과 다름",
+                measured.ok()
+            )]),
+            String::new(),
+        );
+    }
+    let Ok((docs_ino, original_ino, sentinel_ino)) = prepared else {
+        return (
+            ProbeVerdict::NotRun(format!("준비 실패: {:?}", prepared.err().map(|e| e.kind()))),
+            String::new(),
+        );
+    };
     let path = docs.join("a.docx");
-    std::fs::write(&path, &original).unwrap();
-    std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o644)).unwrap();
-    let docs_ino = std::fs::metadata(&docs).unwrap().ino();
     let state = DocumentState::default();
-    let file = identify(path.to_str().unwrap(), &Limits::default()).unwrap();
+    let Ok(file) = identify(path.to_str().unwrap(), &Limits::default()) else {
+        return (
+            ProbeVerdict::NotRun("원본을 열 수 없음".into()),
+            String::new(),
+        );
+    };
     let info = state.registry().register(file).unwrap();
-    let mut info = block_on(docx::load(&state, info.session_id, None))
-        .unwrap()
-        .session;
-    std::fs::write(&ready, b"").unwrap();
-    let mut tally = std::collections::BTreeMap::<String, usize>::new();
+    let Ok(loaded) = block_on(docx::load(&state, info.session_id, None)) else {
+        return (
+            ProbeVerdict::NotRun("원본을 불러올 수 없음".into()),
+            String::new(),
+        );
+    };
+    let mut info = loaded.session;
+    let nonce = probe_nonce();
+    std::fs::write(&ready, &nonce).unwrap();
+    let docs_now = || std::fs::symlink_metadata(&docs).map(|m| m.ino()).ok();
+    let mut swaps_seen = 0;
+    let mut saves = Vec::new();
     let mut last_saved = None;
-    for _ in 0..rounds {
+    for round in 0..rounds {
+        step(round);
+        swaps_seen += (0..16)
+            .filter(|_| docs_now() != Some(docs_ino))
+            .count()
+            .min(1);
         info = block_on(docx::edit(
             &state,
             info.session_id,
@@ -3961,12 +4246,14 @@ fn a4_다중_사용자_탐침() {
         ))
         .unwrap()
         .session;
-        if let Err(error) = block_on(docx::preflight(
+        if block_on(docx::preflight(
             &state,
             info.session_id,
             info.load_generation,
-        )) {
-            *tally.entry(format!("preflight {error:?}")).or_default() += 1;
+        ))
+        .is_err()
+        {
+            saves.push(ProbeSave::PreflightFailed);
             continue;
         }
         match block_on(docx::save(
@@ -3976,9 +4263,10 @@ fn a4_다중_사용자_탐침() {
             info.revision,
         )) {
             Ok(outcome) => {
-                *tally
-                    .entry(format!("ok durable={}", outcome.durable))
-                    .or_default() += 1;
+                saves.push(ProbeSave::Saved {
+                    durable: outcome.durable,
+                    dirty: outcome.session.dirty,
+                });
                 info = outcome.session;
                 let model = state
                     .wordcraft()
@@ -3986,37 +4274,154 @@ fn a4_다중_사용자_탐침() {
                     .unwrap();
                 last_saved = Some(model.lock().unwrap().export().unwrap());
             }
-            Err(error) => *tally.entry(format!("{error:?}")).or_default() += 1,
+            Err(error) => {
+                let dirty = state.registry().get(info.session_id).unwrap().dirty;
+                saves.push(ProbeSave::Rejected { error, dirty });
+            }
         }
     }
     std::fs::write(&stop, b"").unwrap();
+    let mut attacker_text = None;
     for _ in 0..1000 {
-        if done.exists() {
-            break;
+        if let Ok(text) = std::fs::read_to_string(&done) {
+            if !text.is_empty() {
+                attacker_text = Some(text);
+                break;
+            }
         }
         std::thread::sleep(std::time::Duration::from_millis(10));
     }
-    let attacker = std::fs::read_to_string(&done).unwrap_or_default();
-    // 디렉터리 객체로 판단한다(공격 쪽이 짝수 번 맞바꿔 원래 배치로 되돌렸어야 한다).
-    let (real, wrong) = if std::fs::metadata(&docs).unwrap().ino() == docs_ino {
+    let attacker = attacker_text
+        .as_deref()
+        .and_then(|text| parse_attacker_report(text, &nonce));
+    let restored = docs_now() == Some(docs_ino);
+    // 디렉터리 객체(inode)로 원래 docs·other를 찾는다.
+    let (real, wrong) = if restored {
         (docs.clone(), other.clone())
     } else {
         (other.clone(), docs.clone())
     };
+    before_examine(&real, &wrong);
     let names = |dir: &Path| -> Vec<String> {
-        std::fs::read_dir(dir)
-            .unwrap()
-            .map(|entry| entry.unwrap().file_name().to_string_lossy().into_owned())
-            .collect()
+        let mut names: Vec<String> = std::fs::read_dir(dir)
+            .map(|entries| {
+                entries
+                    .filter_map(|e| e.ok())
+                    .map(|e| e.file_name().to_string_lossy().into_owned())
+                    .collect()
+            })
+            .unwrap_or_default();
+        names.sort();
+        names
     };
-    let real_bytes = std::fs::read(real.join("a.docx")).unwrap();
-    eprintln!(
-        "A4PROBE tally={tally:?} real_dir_entries={:?} wrong_dir_entries={:?} real_is_original={} real_is_last_saved={} attacker={attacker}",
-        names(&real),
-        names(&wrong),
-        real_bytes == original,
-        last_saved.as_deref() == Some(real_bytes.as_slice()),
+    let real_file = std::fs::symlink_metadata(real.join("a.docx")).ok();
+    let real_bytes = std::fs::read(real.join("a.docx")).unwrap_or_default();
+    let sentinel = std::fs::symlink_metadata(wrong.join(PROBE_SENTINEL)).ok();
+    let final_preflight_ok = restored
+        && block_on(docx::preflight(
+            &state,
+            info.session_id,
+            info.load_generation,
+        ))
+        .is_ok();
+    let observation = ProbeObservation {
+        layout,
+        saves,
+        swaps_seen,
+        attacker,
+        restored,
+        real_entries: names(&real),
+        wrong_entries: names(&wrong),
+        real_is_original: real_bytes == original,
+        real_inode_is_original: real_file.as_ref().is_some_and(|m| m.ino() == original_ino),
+        real_is_last_saved: last_saved.as_deref() == Some(real_bytes.as_slice()),
+        sentinel_intact: sentinel.is_some_and(|m| m.ino() == sentinel_ino && m.is_file())
+            && std::fs::read(wrong.join(PROBE_SENTINEL)).ok().as_deref() == Some(&b"unrelated"[..]),
+        final_preflight_ok,
+    };
+    let mut tally = std::collections::BTreeMap::<String, usize>::new();
+    for save in &observation.saves {
+        let key = match save {
+            ProbeSave::PreflightFailed => "preflight-failed".to_owned(),
+            ProbeSave::Saved { durable, dirty } => format!("saved durable={durable} dirty={dirty}"),
+            ProbeSave::Rejected { error, .. } => format!("{error:?}"),
+        };
+        *tally.entry(key).or_default() += 1;
+    }
+    // 진단: 경로·문서 내용 없이 개수·결과만.
+    let summary = format!(
+        "layout={:?} rounds={} tally={tally:?} swaps_seen={} attacker={:?} restored={} real_entries={} wrong_entries={}",
+        observation.layout,
+        rounds,
+        observation.swaps_seen,
+        observation.attacker,
+        observation.restored,
+        observation.real_entries.len(),
+        observation.wrong_entries.len(),
     );
+    (probe_verdict(&observation), summary)
+}
+
+/// 판정을 한 줄로 내고 PASS가 아니면 시험을 실패시킨다(실패·판단 불가·실행 안 됨을 통과로 보이지 않게). 실행 절차는 이 줄의
+/// `verdict=`로 PASS(0)·FAIL(1)·INCONCLUSIVE/NOT-RUN(2)을 구분한다.
+fn report_probe(verdict: &ProbeVerdict, summary: &str) {
+    let (label, reasons) = match verdict {
+        ProbeVerdict::Pass => ("PASS", Vec::new()),
+        ProbeVerdict::Fail(reasons) => ("FAIL", reasons.clone()),
+        ProbeVerdict::Inconclusive(reasons) => ("INCONCLUSIVE", reasons.clone()),
+        ProbeVerdict::NotRun(reason) => ("NOT-RUN", vec![reason.clone()]),
+    };
+    eprintln!("A4PROBE verdict={label} reasons={reasons:?} {summary}");
+    assert_eq!(label, "PASS", "A4PROBE verdict={label} reasons={reasons:?}");
+}
+
+/// 4차 안정화 A 다중 사용자 탐침(로컬, 기본 실행 안 함 — 실제 다른 uid가 필요하다): 다른 uid가 공유 상위 디렉터리
+/// (`GEUL_A4_SHARED`)의 `docs`·`other`를 계속 맞바꾸는 동안 `docs/a.docx`를 `GEUL_A4_ROUNDS`번 편집·저장하고 판정한다.
+/// `GEUL_A4_LAYOUT`은 `swappable`(그 밖 쓰기·sticky 없는 상위) 또는 `locked`(믿는 쪽만 바꿀 수 있는 상위). 공격 쪽은
+/// `GEUL_A4_READY`(이번 실행 표지)를 기다려 시작하고, `GEUL_A4_STOP`이 생기면 원래 배치로 되돌린 뒤 `GEUL_A4_DONE`에 표지와
+/// 시도·맞바꿈·읽은 문서 수를 쓴다. 명시적으로 실행했는데 조건이 없으면 NOT-RUN으로 실패한다(조용히 통과하지 않음). 사용자
+/// 이름공간 실행 절차는 `docs/architecture/save-preservation.md`.
+#[cfg(target_os = "linux")]
+#[test]
+#[ignore]
+fn a4_다중_사용자_탐침() {
+    let var = |name: &str| std::env::var(name).ok().map(std::path::PathBuf::from);
+    let layout = match std::env::var("GEUL_A4_LAYOUT").as_deref() {
+        Ok("swappable") => Some(ProbeLayout::Swappable),
+        Ok("locked") => Some(ProbeLayout::Locked),
+        _ => None,
+    };
+    let rounds = std::env::var("GEUL_A4_ROUNDS")
+        .ok()
+        .and_then(|value| value.parse::<usize>().ok())
+        .filter(|rounds| *rounds > 0);
+    let (Some(shared), Some(ready), Some(stop), Some(done), Some(layout), Some(rounds)) = (
+        var("GEUL_A4_SHARED"),
+        var("GEUL_A4_READY"),
+        var("GEUL_A4_STOP"),
+        var("GEUL_A4_DONE"),
+        layout,
+        rounds,
+    ) else {
+        report_probe(
+            &ProbeVerdict::NotRun(
+                "GEUL_A4_SHARED·READY·STOP·DONE·LAYOUT·ROUNDS가 모두 있어야 함".into(),
+            ),
+            "",
+        );
+        return;
+    };
+    let (verdict, summary) = run_probe(ProbeRun {
+        shared,
+        rounds,
+        layout,
+        ready,
+        stop,
+        done,
+        step: &mut |_| {},
+        before_examine: &mut |_, _| {},
+    });
+    report_probe(&verdict, &summary);
 }
 
 // ---- T009 4차 안정화 C: 남는 미리보기는 내용과 무관함이 증명된 엔진 상수일 때만 ----
@@ -4189,4 +4594,708 @@ fn c4_한_색_그림과_빈_글도_내용을_담을_수_있어_남는_미리보�
         }
     }
     assert!(wrong.is_empty(), "{}", wrong.join("\n"));
+}
+
+// ---- T009 후속 강화 B: 임시 파일 이름은 미리 알 수 없어야 한다(sticky 디렉터리의 다른 사용자가 이름을 미리 차지하는 것) ----
+
+/// 다른 사용자가 프로세스 번호(`/proc`으로 보임)와 0부터 늘어나는 번호로 짐작할 수 있는 이름을 미리 만든다.
+fn precreate_predictable(dir: &Path, count: u64) -> Vec<String> {
+    let start = super::publish::next_name_number();
+    (start..start + count)
+        .map(|n| {
+            let name = format!(".geul-save-{}-{n}.tmp", std::process::id());
+            std::fs::write(dir.join(&name), b"squatter").unwrap();
+            name
+        })
+        .collect()
+}
+
+#[cfg(target_os = "linux")]
+#[test]
+fn h5_짐작할_수_있는_이름을_미리_차지해도_저장은_막히지_않고_그_파일은_그대로다() {
+    use std::os::unix::fs::PermissionsExt;
+    let original = basic::basic_ko().unwrap();
+    let mut doc = open_docx(&original);
+    // sticky 1777(이 사용자 소유): 지원하는 배치. 다른 사용자도 여기에 자기 항목을 만들 수 있다.
+    std::fs::set_permissions(doc.dir.path(), std::fs::Permissions::from_mode(0o1777)).unwrap();
+    doc.edit(edits());
+    doc.preflight().unwrap();
+    let squatted = precreate_predictable(doc.dir.path(), 1024);
+    let saved = doc.save();
+    let outcome = saved.as_ref().map(|o| o.durable).map_err(Clone::clone);
+    std::fs::set_permissions(doc.dir.path(), std::fs::Permissions::from_mode(0o700)).unwrap();
+    assert!(outcome == Ok(true), "저장이 막힘: {outcome:?}");
+    assert_ne!(doc.bytes(), original);
+    // 미리 만든 파일은 하나도 지우거나 덮지 않았다.
+    let mut left = doc.leftovers();
+    left.sort();
+    let mut expected = squatted.clone();
+    expected.sort();
+    assert_eq!(left, expected);
+    assert!(squatted
+        .iter()
+        .all(|name| std::fs::read(doc.dir.path().join(name)).unwrap() == b"squatter"));
+}
+
+/// 시험용 이름 원천이 후보마다 할 일: 그 이름에 남의 파일·심볼릭 링크를 미리 만들거나, 난수 실패를 흉내.
+#[derive(Clone, Copy)]
+enum Squat {
+    File(&'static [u8]),
+    Link,
+    Fail,
+}
+
+/// 시험용 이름 원천을 걸고 `run`을 같은 스레드에서 실행한다. 후보 `i`번째에 `decide(i)`를 적용하고, 원천이 정한 후보 이름들을
+/// 돌려준다(무작위 부분은 결정적인 값, 이름에는 실제 순번이 들어간다).
+fn with_names<T>(
+    doc: &Docx,
+    decide: impl Fn(usize) -> Option<Squat> + 'static,
+    run: impl FnOnce() -> T,
+) -> (T, Vec<String>) {
+    let dir = doc.path.parent().unwrap().to_path_buf();
+    let names = std::rc::Rc::new(std::cell::RefCell::new(Vec::new()));
+    let seen = names.clone();
+    super::publish::NAME_SOURCE.with(|cell| {
+        *cell.borrow_mut() = Some(Box::new(move |counter, random| {
+            let index = seen.borrow().len();
+            *random = [0x5a ^ index as u8; 16];
+            let name = super::publish::name_for(counter, random);
+            seen.borrow_mut().push(name.clone());
+            match decide(index) {
+                Some(Squat::File(content)) => std::fs::write(dir.join(&name), content).unwrap(),
+                Some(Squat::Link) => {
+                    std::os::unix::fs::symlink(dir.join("victim-target"), dir.join(&name)).unwrap()
+                }
+                Some(Squat::Fail) => return Err(std::io::Error::other("no entropy")),
+                None => {}
+            }
+            Ok(())
+        }))
+    });
+    let result = run();
+    super::publish::NAME_SOURCE.with(|cell| *cell.borrow_mut() = None);
+    let names = names.borrow().clone();
+    (result, names)
+}
+
+/// `.geul-save-{이 프로세스}-{순번}-{32 hex}.tmp`인지.
+fn random_temp_name(name: &str) -> Option<&str> {
+    let rest = name.strip_prefix(&format!(".geul-save-{}-", std::process::id()))?;
+    let rest = rest.strip_suffix(".tmp")?;
+    let (counter, random) = rest.split_once('-')?;
+    (counter.bytes().all(|b| b.is_ascii_digit())
+        && random.len() == 32
+        && random
+            .bytes()
+            .all(|b| b.is_ascii_hexdigit() && !b.is_ascii_uppercase()))
+    .then_some(random)
+}
+
+/// 이 세션이 지금 dirty인지(레지스트리 기준).
+fn dirty_now(doc: &Docx) -> bool {
+    doc.state.registry().get(doc.info.session_id).unwrap().dirty
+}
+
+#[cfg(target_os = "linux")]
+#[test]
+fn h5_임시_파일_이름은_운영체제_난수로_정하고_충돌_소진_난수_실패는_원본을_지킨다() {
+    use std::os::unix::fs::{MetadataExt, PermissionsExt};
+    let original = basic::basic_ko().unwrap();
+    let write_failure = Some(DocumentError::SaveFailure {
+        stage: SaveStage::Write,
+        io: Some(IoProblem::Other),
+    });
+    // A·L. 제품 난수로 만든 이름, 검증한 그 inode가 게시된다.
+    let mut doc = open_docx(&original);
+    doc.edit(edits());
+    doc.preflight().unwrap();
+    let staged = std::rc::Rc::new(std::cell::RefCell::new((String::new(), 0u64)));
+    let record = staged.clone();
+    super::publish::BEFORE_RENAME.with(|cell| {
+        *cell.borrow_mut() = Some(Box::new(move |_, path: &Path| {
+            let ino = std::fs::symlink_metadata(path).unwrap().ino();
+            *record.borrow_mut() = (
+                path.file_name().unwrap().to_string_lossy().into_owned(),
+                ino,
+            );
+        }))
+    });
+    let saved = save_with_fault(&doc, None);
+    super::publish::BEFORE_RENAME.with(|cell| *cell.borrow_mut() = None);
+    assert!(saved.unwrap().durable);
+    let (name, ino) = staged.borrow().clone();
+    assert!(random_temp_name(&name).is_some(), "{name}");
+    assert_eq!(std::fs::metadata(&doc.path).unwrap().ino(), ino);
+    assert_eq!(doc.leftovers(), Vec::<String>::new());
+    // C. 같은 문서를 여러 번 저장해도 이름의 무작위 부분이 겹치지 않는다.
+    let randoms = std::rc::Rc::new(std::cell::RefCell::new(std::collections::HashSet::new()));
+    let record = randoms.clone();
+    super::publish::BEFORE_RENAME.with(|cell| {
+        *cell.borrow_mut() = Some(Box::new(move |_, path: &Path| {
+            let name = path.file_name().unwrap().to_string_lossy().into_owned();
+            record
+                .borrow_mut()
+                .insert(random_temp_name(&name).unwrap().to_owned());
+        }))
+    });
+    for round in 0..100 {
+        doc.info = doc.state.registry().get(doc.info.session_id).unwrap();
+        doc.edit(vec![DocxOp::InsertText { text: "a".into() }]);
+        doc.preflight().unwrap();
+        assert!(save_with_fault(&doc, None).is_ok(), "{round}");
+    }
+    super::publish::BEFORE_RENAME.with(|cell| *cell.borrow_mut() = None);
+    assert_eq!(randoms.borrow().len(), 100);
+    assert_eq!(doc.leftovers(), Vec::<String>::new());
+
+    // D·E·F·M. 첫 후보에 남의 파일, 둘째에 심볼릭 링크: 건드리지 않고 셋째 이름으로 저장한다.
+    let mut doc = open_docx(&original);
+    doc.edit(edits());
+    doc.preflight().unwrap();
+    std::fs::write(doc.dir.path().join("victim-target"), b"target").unwrap();
+    let (saved, names) = with_names(
+        &doc,
+        |i| match i {
+            0 => Some(Squat::File(b"someone else")),
+            1 => Some(Squat::Link),
+            _ => None,
+        },
+        || save_with_fault(&doc, None),
+    );
+    assert!(saved.unwrap().durable);
+    assert_eq!(names.len(), 3);
+    assert_eq!(
+        std::fs::read(doc.dir.path().join(&names[0])).unwrap(),
+        b"someone else"
+    );
+    assert!(std::fs::symlink_metadata(doc.dir.path().join(&names[1]))
+        .unwrap()
+        .file_type()
+        .is_symlink());
+    assert_eq!(
+        std::fs::read(doc.dir.path().join("victim-target")).unwrap(),
+        b"target"
+    );
+    assert!(
+        !doc.dir.path().join(&names[2]).exists(),
+        "게시해서 이름이 사라짐"
+    );
+    assert_ne!(doc.bytes(), original);
+
+    // G. 모든 후보(64개)가 이미 있음: 안전하게 실패하고, 남의 파일은 그대로, 원본·dirty 그대로.
+    let mut doc = open_docx(&original);
+    doc.edit(edits());
+    doc.preflight().unwrap();
+    let (failed, names) = with_names(
+        &doc,
+        |_| Some(Squat::File(b"squat")),
+        || save_with_fault(&doc, None),
+    );
+    assert_eq!(failed.err(), write_failure);
+    assert_eq!(names.len(), 64);
+    assert_eq!(doc.bytes(), original);
+    assert!(dirty_now(&doc));
+    let mut left = doc.leftovers();
+    left.sort();
+    let mut squatted = names.clone();
+    squatted.sort();
+    assert_eq!(left, squatted);
+    for name in &names {
+        std::fs::remove_file(doc.dir.path().join(name)).unwrap();
+    }
+
+    // H. 난수 실패: 처음부터, 한 번 겹친 뒤. 짐작할 수 있는 이름으로 대신하지 않고 만들지 않는다.
+    for (label, fail_at) in [("first", 0usize), ("after-collision", 1)] {
+        let (failed, names) = with_names(
+            &doc,
+            move |i| {
+                if i == fail_at {
+                    Some(Squat::Fail)
+                } else {
+                    Some(Squat::File(b"squat"))
+                }
+            },
+            || save_with_fault(&doc, None),
+        );
+        assert_eq!(failed.err(), write_failure, "{label}");
+        assert_eq!(names.len(), fail_at + 1, "{label}");
+        assert_eq!(doc.bytes(), original, "{label}");
+        assert!(dirty_now(&doc), "{label}");
+        let left = doc.leftovers();
+        assert_eq!(
+            left,
+            names[..fail_at].to_vec(),
+            "{label}: 겹친 남의 파일만 남음"
+        );
+        for name in left {
+            std::fs::remove_file(doc.dir.path().join(name)).unwrap();
+        }
+    }
+
+    // I·J·K·N. 만든 직후 실패, 검증 뒤 원본 바뀜, 교체 실패, 되읽기 실패: 이 저장의 임시 파일만 지우고 남의 파일은 둔다.
+    for fault in [
+        Fault::AfterCreate,
+        Fault::Verify,
+        Fault::BeforePublish,
+        Fault::Rename(std::io::ErrorKind::PermissionDenied),
+    ] {
+        let (failed, names) = with_names(
+            &doc,
+            |i| (i == 0).then_some(Squat::File(b"other")),
+            || save_with_fault(&doc, Some(fault)),
+        );
+        assert!(failed.is_err(), "{fault:?}");
+        assert_eq!(names.len(), 2, "{fault:?}");
+        assert_eq!(doc.bytes(), original, "{fault:?}");
+        assert!(dirty_now(&doc), "{fault:?}");
+        assert_eq!(doc.leftovers(), vec![names[0].clone()], "{fault:?}");
+        assert_eq!(
+            std::fs::read(doc.dir.path().join(&names[0])).unwrap(),
+            b"other"
+        );
+        std::fs::remove_file(doc.dir.path().join(&names[0])).unwrap();
+    }
+
+    // O·P. sticky 1777(이 사용자 소유)은 저장, sticky 없는 공유(0777)는 이름을 만들기 전에 막는다.
+    std::fs::set_permissions(doc.dir.path(), std::fs::Permissions::from_mode(0o1777)).unwrap();
+    let (saved, names) = with_names(&doc, |_| None, || save_with_fault(&doc, None));
+    assert!(saved.unwrap().durable);
+    assert_eq!(names.len(), 1);
+    let mut doc = open_docx(&original);
+    doc.edit(edits());
+    doc.preflight().unwrap();
+    std::fs::set_permissions(doc.dir.path(), std::fs::Permissions::from_mode(0o777)).unwrap();
+    let (failed, names) = with_names(&doc, |_| None, || save_with_fault(&doc, None));
+    std::fs::set_permissions(doc.dir.path(), std::fs::Permissions::from_mode(0o700)).unwrap();
+    assert_eq!(
+        failed.err(),
+        Some(DocumentError::SaveUnsupported {
+            reason: SaveUnsupportedReason::SharedDirectory
+        })
+    );
+    assert!(names.is_empty(), "이름을 만들기 전에 막음");
+    assert_eq!(doc.bytes(), original);
+    assert_eq!(doc.leftovers(), Vec::<String>::new());
+}
+
+#[cfg(target_os = "linux")]
+#[test]
+fn h5_동시에_저장하는_두_문서는_서로_다른_무작위_이름을_쓴다() {
+    // B. 두 스레드에서 동시에(제품 난수로) 저장한다. 각 스레드의 교체 직전 훅으로 이름을 모은다.
+    let original = basic::basic_ko().unwrap();
+    let barrier = std::sync::Arc::new(std::sync::Barrier::new(2));
+    let handles: Vec<_> = (0..2)
+        .map(|_| {
+            let original = original.clone();
+            let barrier = barrier.clone();
+            std::thread::spawn(move || {
+                let mut doc = open_docx(&original);
+                doc.edit(edits());
+                doc.preflight().unwrap();
+                let name = std::rc::Rc::new(std::cell::RefCell::new(String::new()));
+                let record = name.clone();
+                super::publish::BEFORE_RENAME.with(|cell| {
+                    *cell.borrow_mut() = Some(Box::new(move |_, path: &Path| {
+                        *record.borrow_mut() =
+                            path.file_name().unwrap().to_string_lossy().into_owned();
+                    }))
+                });
+                barrier.wait();
+                let saved = save_with_fault(&doc, None);
+                super::publish::BEFORE_RENAME.with(|cell| *cell.borrow_mut() = None);
+                assert!(saved.unwrap().durable);
+                assert_eq!(doc.leftovers(), Vec::<String>::new());
+                let name = name.borrow().clone();
+                random_temp_name(&name).unwrap().to_owned()
+            })
+        })
+        .collect();
+    let randoms: Vec<String> = handles.into_iter().map(|h| h.join().unwrap()).collect();
+    assert_ne!(randoms[0], randoms[1]);
+}
+
+/// 불변식을 모두 지킨 관찰(배치별). 판정 시험의 기준.
+fn clean_observation(layout: ProbeLayout) -> ProbeObservation {
+    let shared_rejection = ProbeSave::Rejected {
+        error: DocumentError::SaveUnsupported {
+            reason: SaveUnsupportedReason::SharedDirectory,
+        },
+        dirty: true,
+    };
+    let (saves, swaps_seen, real_is_original, real_is_last_saved) = match layout {
+        ProbeLayout::Swappable => (
+            vec![shared_rejection, ProbeSave::PreflightFailed],
+            3,
+            true,
+            false,
+        ),
+        ProbeLayout::Locked => (
+            vec![
+                ProbeSave::Saved {
+                    durable: true,
+                    dirty: false
+                };
+                2
+            ],
+            0,
+            false,
+            true,
+        ),
+    };
+    ProbeObservation {
+        layout,
+        saves,
+        swaps_seen,
+        attacker: Some(AttackerReport {
+            attempts: 10,
+            swaps: if layout == ProbeLayout::Swappable {
+                10
+            } else {
+                0
+            },
+            readable_documents: 0,
+        }),
+        restored: true,
+        real_entries: vec!["a.docx".into()],
+        wrong_entries: vec![PROBE_SENTINEL.into()],
+        real_is_original,
+        real_inode_is_original: real_is_original,
+        real_is_last_saved,
+        sentinel_intact: true,
+        final_preflight_ok: true,
+    }
+}
+
+#[test]
+fn a5_다중_사용자_탐침_판정은_위반을_실패로_조건_부족을_판단_불가로_낸다() {
+    let fail = |v: &ProbeVerdict| matches!(v, ProbeVerdict::Fail(_));
+    let unknown = |v: &ProbeVerdict| matches!(v, ProbeVerdict::Inconclusive(_));
+    for layout in [ProbeLayout::Swappable, ProbeLayout::Locked] {
+        assert_eq!(
+            probe_verdict(&clean_observation(layout)),
+            ProbeVerdict::Pass,
+            "{layout:?}"
+        );
+        type Inject = (&'static str, fn(&mut ProbeObservation));
+        let violations: [Inject; 9] = [
+            ("wrong-dir publish", |o| {
+                o.wrong_entries.push("a.docx".into())
+            }),
+            ("wrong-dir temp", |o| {
+                o.wrong_entries.push(".geul-save-1-2-ab.tmp".into())
+            }),
+            ("real-dir temp", |o| {
+                o.real_entries.push(".geul-save-1-2-ab.tmp".into())
+            }),
+            ("original missing", |o| o.real_entries.clear()),
+            ("sentinel", |o| o.sentinel_intact = false),
+            ("disclosure", |o| {
+                o.attacker.as_mut().unwrap().readable_documents = 1
+            }),
+            ("dirty cleared on rejection", |o| {
+                o.saves.push(ProbeSave::Rejected {
+                    error: DocumentError::FileConflict,
+                    dirty: false,
+                })
+            }),
+            ("stale record", |o| {
+                o.saves.push(ProbeSave::Saved {
+                    durable: true,
+                    dirty: false,
+                });
+                o.final_preflight_ok = false;
+            }),
+            ("content", |o| {
+                o.real_is_original = false;
+                o.real_inode_is_original = false;
+                o.real_is_last_saved = false;
+            }),
+        ];
+        for (name, inject) in violations {
+            let mut o = clean_observation(layout);
+            inject(&mut o);
+            assert!(
+                fail(&probe_verdict(&o)),
+                "{layout:?} {name}: {:?}",
+                probe_verdict(&o)
+            );
+        }
+    }
+    // 배치별 위반: 공유 상위 아래 저장(내구성 확인이어도), 믿는 배치에서 durable false·dirty.
+    let mut o = clean_observation(ProbeLayout::Swappable);
+    o.saves.push(ProbeSave::Saved {
+        durable: true,
+        dirty: false,
+    });
+    o.real_is_last_saved = true;
+    o.real_is_original = false;
+    assert!(fail(&probe_verdict(&o)));
+    for (durable, dirty) in [(false, true), (true, true), (false, false)] {
+        let mut o = clean_observation(ProbeLayout::Locked);
+        o.saves.push(ProbeSave::Saved { durable, dirty });
+        assert!(fail(&probe_verdict(&o)), "{durable} {dirty}");
+    }
+    // 판단 불가: 공격이 없음·표지 없음·시도 0·배치가 돌아오지 않음·맞바꿈을 못 봄·확인까지 간 저장 없음·저장 없음·믿는
+    // 배치에서 맞바꿈.
+    type Inject = (&'static str, ProbeLayout, fn(&mut ProbeObservation));
+    let inconclusive: [Inject; 8] = [
+        ("no report", ProbeLayout::Swappable, |o| o.attacker = None),
+        ("no attempts", ProbeLayout::Locked, |o| {
+            o.attacker.as_mut().unwrap().attempts = 0
+        }),
+        ("not restored", ProbeLayout::Swappable, |o| {
+            o.restored = false
+        }),
+        ("no swap seen", ProbeLayout::Swappable, |o| o.swaps_seen = 0),
+        ("never checked", ProbeLayout::Swappable, |o| {
+            o.saves = vec![ProbeSave::PreflightFailed]
+        }),
+        ("no saves", ProbeLayout::Locked, |o| {
+            o.saves.clear();
+            o.real_is_original = true;
+            o.real_inode_is_original = true;
+        }),
+        ("swap in locked", ProbeLayout::Locked, |o| o.swaps_seen = 1),
+        ("attacker swaps in locked", ProbeLayout::Locked, |o| {
+            o.attacker.as_mut().unwrap().swaps = 2
+        }),
+    ];
+    for (name, layout, inject) in inconclusive {
+        let mut o = clean_observation(layout);
+        inject(&mut o);
+        assert!(
+            unknown(&probe_verdict(&o)),
+            "{name}: {:?}",
+            probe_verdict(&o)
+        );
+    }
+    // 실패가 판단 불가보다 앞선다(공격 표지가 없어도 다른 디렉터리 게시는 실패).
+    let mut o = clean_observation(ProbeLayout::Swappable);
+    o.attacker = None;
+    o.wrong_entries.push("a.docx".into());
+    assert!(fail(&probe_verdict(&o)));
+    // 완료 표지: 이번 실행의 표지·정확한 모양만.
+    let nonce = "0123abcd";
+    assert_eq!(
+        parse_attacker_report("nonce=0123abcd attempts=5 swaps=4 readable=0\n", nonce),
+        Some(AttackerReport {
+            attempts: 5,
+            swaps: 4,
+            readable_documents: 0
+        })
+    );
+    for text in [
+        "nonce=ffff attempts=5 swaps=4 readable=0",
+        "nonce=0123abcd attempts=5 swaps=4",
+        "nonce=0123abcd attempts=5 swaps=4 readable=0 extra=1",
+        "nonce=0123abcd attempts=5 attempts=6 readable=0",
+        "nonce=0123abcd attempts=-1 swaps=4 readable=0",
+        "",
+    ] {
+        assert_eq!(parse_attacker_report(text, nonce), None, "{text}");
+    }
+}
+
+/// 같은 프로세스 안의 시험용 공격: 회차마다 `docs`·`other`를 맞바꾸고(공유 상위가 허락하면), 원래 `other` 디렉터리 객체에서
+/// 문서(ZIP) 내용이 든 파일을 센다. 멈춤 표지가 생기면 원래 배치로 되돌리고 완료 표지를 쓴다(`nonce`를 `answer`로 바꿔 쓸 수 있다).
+#[cfg(target_os = "linux")]
+fn in_process_probe(
+    shared: &Path,
+    layout: ProbeLayout,
+    swap: bool,
+    answer: fn(&str, u64, u64, u64) -> String,
+    before_examine: &mut dyn FnMut(&Path, &Path),
+) -> (ProbeVerdict, String) {
+    use std::os::unix::fs::MetadataExt;
+    use std::sync::atomic::{AtomicU64, Ordering};
+    use std::sync::Arc;
+    let markers = shared.parent().unwrap().join("markers");
+    std::fs::create_dir_all(&markers).unwrap();
+    let (ready, stop, done) = (
+        markers.join("ready"),
+        markers.join("stop"),
+        markers.join("done"),
+    );
+    let counts = Arc::new([AtomicU64::new(0), AtomicU64::new(0), AtomicU64::new(0)]);
+    let (docs, other) = (shared.join("docs"), shared.join("other"));
+    let responder = {
+        let (counts, ready, stop, done) =
+            (counts.clone(), ready.clone(), stop.clone(), done.clone());
+        let (docs, other) = (docs.clone(), other.clone());
+        std::thread::spawn(move || {
+            while !stop.exists() {
+                std::thread::sleep(std::time::Duration::from_millis(5));
+            }
+            if counts[1].load(Ordering::SeqCst) % 2 == 1 {
+                exchange(&docs, &other);
+                counts[1].fetch_add(1, Ordering::SeqCst);
+            }
+            let nonce = std::fs::read_to_string(&ready).unwrap_or_default();
+            let [a, s, r] = &*counts;
+            let text = answer(
+                &nonce,
+                a.load(Ordering::SeqCst),
+                s.load(Ordering::SeqCst),
+                r.load(Ordering::SeqCst),
+            );
+            std::fs::write(&done, text).unwrap();
+        })
+    };
+    let mut other_ino = None;
+    let mut step = |_round: usize| {
+        let other_ino = *other_ino.get_or_insert_with(|| std::fs::metadata(&other).unwrap().ino());
+        counts[0].fetch_add(1, Ordering::SeqCst);
+        if swap {
+            exchange(&docs, &other);
+            counts[1].fetch_add(1, Ordering::SeqCst);
+        }
+        // 원래 other 객체(지금 어느 이름이든)에서 문서 내용 파일을 센다.
+        for dir in [&docs, &other] {
+            if std::fs::metadata(dir).is_ok_and(|m| m.ino() == other_ino) {
+                for entry in std::fs::read_dir(dir).unwrap().flatten() {
+                    if std::fs::read(entry.path()).is_ok_and(|b| b.starts_with(b"PK")) {
+                        counts[2].fetch_add(1, Ordering::SeqCst);
+                    }
+                }
+            }
+        }
+    };
+    let result = run_probe(ProbeRun {
+        shared: shared.to_path_buf(),
+        rounds: 6,
+        layout,
+        ready,
+        stop,
+        done,
+        step: &mut step,
+        before_examine,
+    });
+    responder.join().unwrap();
+    result
+}
+
+#[cfg(target_os = "linux")]
+#[test]
+fn a5_탐침은_실제_저장_경로에서_통과하고_주입한_위반을_실패로_잡는다() {
+    use std::os::unix::fs::PermissionsExt;
+    let honest = |nonce: &str, a: u64, s: u64, r: u64| {
+        format!("nonce={nonce} attempts={a} swaps={s} readable={r}")
+    };
+    let set = |path: &Path, bits: u32| {
+        std::fs::set_permissions(path, std::fs::Permissions::from_mode(bits)).unwrap()
+    };
+    // 공유 상위(0777, 같은 uid가 공격을 흉내): 저장은 모두 거부되고 판정은 PASS.
+    let run = |layout: ProbeLayout,
+               swap: bool,
+               answer: fn(&str, u64, u64, u64) -> String,
+               inject: &mut dyn FnMut(&Path, &Path)| {
+        let root = TempDir::new();
+        let shared = root.path().join("shared");
+        std::fs::create_dir(&shared).unwrap();
+        set(
+            &shared,
+            if layout == ProbeLayout::Swappable {
+                0o777
+            } else {
+                0o755
+            },
+        );
+        let result = in_process_probe(&shared, layout, swap, answer, inject);
+        set(&shared, 0o755);
+        result
+    };
+    let (verdict, summary) = run(ProbeLayout::Swappable, true, honest, &mut |_, _| {});
+    assert_eq!(verdict, ProbeVerdict::Pass, "{summary}");
+    let (verdict, summary) = run(ProbeLayout::Locked, false, honest, &mut |_, _| {});
+    assert_eq!(verdict, ProbeVerdict::Pass, "{summary}");
+    // 음성 대조: 판정 직전에 위반을 디스크에 주입한다(측정 코드가 실제로 잡는지).
+    type Inject = (&'static str, fn(&Path, &Path));
+    let injections: [Inject; 4] = [
+        ("published into other", |_real, wrong| {
+            std::fs::copy(_real.join("a.docx"), wrong.join("a.docx"))
+                .map(|_| ())
+                .unwrap()
+        }),
+        ("leftover temp", |real, _| {
+            std::fs::write(real.join(".geul-save-1-1-00.tmp"), b"PK").unwrap()
+        }),
+        ("unrelated changed", |_, wrong| {
+            std::fs::write(wrong.join(PROBE_SENTINEL), b"changed").unwrap()
+        }),
+        ("original replaced", |real, _| {
+            let tmp = real.join("replacement");
+            std::fs::write(&tmp, b"PK replaced").unwrap();
+            std::fs::rename(&tmp, real.join("a.docx")).unwrap();
+        }),
+    ];
+    for (name, inject) in injections {
+        let (verdict, summary) = run(ProbeLayout::Swappable, true, honest, &mut |real, wrong| {
+            inject(real, wrong)
+        });
+        assert!(
+            matches!(verdict, ProbeVerdict::Fail(_)),
+            "{name}: {verdict:?} {summary}"
+        );
+    }
+    // 공격 쪽이 노출을 보고하면 실패.
+    let leaked = |nonce: &str, a: u64, s: u64, _: u64| {
+        format!("nonce={nonce} attempts={a} swaps={s} readable=1")
+    };
+    let (verdict, _) = run(ProbeLayout::Swappable, true, leaked, &mut |_, _| {});
+    assert!(matches!(verdict, ProbeVerdict::Fail(_)), "{verdict:?}");
+    // 판단 불가: 다른 실행의 표지, 공격이 맞바꾸지 않음(공유 상위인데 맞바꿈을 못 봄).
+    let foreign =
+        |_: &str, a: u64, s: u64, r: u64| format!("nonce=00 attempts={a} swaps={s} readable={r}");
+    let (verdict, _) = run(ProbeLayout::Swappable, true, foreign, &mut |_, _| {});
+    assert!(
+        matches!(verdict, ProbeVerdict::Inconclusive(_)),
+        "{verdict:?}"
+    );
+    let (verdict, _) = run(ProbeLayout::Swappable, false, honest, &mut |_, _| {});
+    assert!(
+        matches!(verdict, ProbeVerdict::Inconclusive(_)),
+        "{verdict:?}"
+    );
+    // 판단 불가: 선언한 배치가 실제 권한과 다름(0755인데 swappable이라 함).
+    let root = TempDir::new();
+    let shared = root.path().join("shared");
+    std::fs::create_dir(&shared).unwrap();
+    let markers = root.path().join("markers");
+    std::fs::create_dir(&markers).unwrap();
+    let (verdict, _) = run_probe(ProbeRun {
+        shared,
+        rounds: 2,
+        layout: ProbeLayout::Swappable,
+        ready: markers.join("ready"),
+        stop: markers.join("stop"),
+        done: markers.join("done"),
+        step: &mut |_| {},
+        before_examine: &mut |_, _| {},
+    });
+    assert!(
+        matches!(verdict, ProbeVerdict::Inconclusive(_)),
+        "{verdict:?}"
+    );
+    // 실행 안 됨: 이전 실행의 표지가 남아 있음.
+    let root = TempDir::new();
+    let shared = root.path().join("shared");
+    std::fs::create_dir(&shared).unwrap();
+    let markers = root.path().join("markers");
+    std::fs::create_dir(&markers).unwrap();
+    std::fs::write(
+        markers.join("done"),
+        b"nonce=old attempts=9 swaps=9 readable=0",
+    )
+    .unwrap();
+    let (verdict, _) = run_probe(ProbeRun {
+        shared,
+        rounds: 2,
+        layout: ProbeLayout::Swappable,
+        ready: markers.join("ready"),
+        stop: markers.join("stop"),
+        done: markers.join("done"),
+        step: &mut |_| {},
+        before_examine: &mut |_, _| {},
+    });
+    assert!(matches!(verdict, ProbeVerdict::NotRun(_)), "{verdict:?}");
 }
