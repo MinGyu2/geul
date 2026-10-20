@@ -19,6 +19,11 @@ export interface CommandContext {
   notify: (message: Message) => void;
   /** 활성 문서의 편집 세션(없으면 null). 문서 명령은 이 세션에만 간다. */
   document: DocumentCommandTarget | null;
+  /**
+   * 확인 창(모달)이 열려 있음(T010 안정화 P1-B). 그동안은 어떤 명령(문서·배치)도 실행하지 않는다. 창을 그리는 쪽(Editor)이
+   * 알린 상태이며 DOM의 aria-modal로 추측하지 않는다.
+   */
+  modal?: boolean;
 }
 
 interface UiCommand {
@@ -71,7 +76,8 @@ const UI_COMMANDS: Record<string, UiCommand> = {
 const uiCommand = (id: string): UiCommand | undefined =>
   Object.prototype.hasOwnProperty.call(UI_COMMANDS, id) ? UI_COMMANDS[id] : undefined;
 
-export function commandState(id: string, context: Pick<CommandContext, "layout" | "document">): CommandState {
+export function commandState(id: string, context: Pick<CommandContext, "layout" | "document" | "modal">): CommandState {
+  if (context.modal) return unavailable("dialogOpen");
   const ui = uiCommand(id);
   if (ui) return ui.state(context.layout);
   if (isDocumentCommandId(id)) return documentCommandState(id, context.document?.snapshot() ?? null);

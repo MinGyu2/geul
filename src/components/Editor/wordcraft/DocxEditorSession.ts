@@ -58,8 +58,10 @@
 //   오래 쓰지 않은 순으로 놓는다(canvas 크기 0). 놓은 쪽의 화면 canvas도 다음 그리기에서 놓는다. 표면이 사라지면
 //   releaseRendering()으로 모두 놓는다(T007 rhwp와 같음). 백엔드 래스터 기억은 세션마다 4개(engine.rs MAX_RASTERS).
 // - 명령(T010, src/commands/): 실행 취소·다시 실행·글자 서식은 같은 편집 대기열에 연산(undo·redo·format)으로 넣는다. 기록은
-//   백엔드의 WordCraft Session이 가지며(앱은 기록을 따로 두지 않음), 가용성·눌림은 엔진 보기(view.history·view.format)로 정한다.
-//   저장 명령은 아래 save()를 그대로 부른다.
+//   백엔드의 WordCraft Session이 가지며(앱은 기록을 따로 두지 않음), 가용성·눌림은 엔진 보기(view.history·view.format·
+//   view.formatAccess)로 정한다. 저장 명령은 아래 save()를 그대로 부른다. T010 안정화: 앱이 먼저 확정한 조합이 입력기의 최종
+//   글자를 기다리는 동안(provisional)은 조합 중과 같이 명령을 받지 않는다(그 사이 연산이 provisional을 지워 최종 글자로 고치지
+//   못했다). 엔진이 명령 연산을 거부하면 inputNotice "commandRejected"로 알린다.
 import type { DocxBackend, DocxOp, DocxRender, DocxRoundTrip, DocxView, MoveTarget } from "../../../adapters/docx";
 import { MAX_DOCX_OPS } from "../../../adapters/docx";
 import type { DocumentError, Result, SaveCheck, SaveOutcome, SessionInfo } from "../../../adapters/contract";
@@ -79,7 +81,18 @@ export type DocxStatus =
   | { kind: "closed" };
 
 /** 넣지 못한 입력의 알림: 넣을 수 없는 글자, 한도 초과(넣지 않음), 엔진이 일부 조각을 거부함(앞부분만 들어감). */
-export type DocxInputNotice = "pasteUnsupported" | "pasteTooLarge" | "pasteIncomplete";
+export type DocxInputNotice = "pasteUnsupported" | "pasteTooLarge" | "pasteIncomplete" | "commandRejected";
+
+/**
+ * 엔진에서 바꾸는 명령으로 실행되는 연산(T010 안정화 P2-A): 성공하면 실행 취소 지점을 남기고 다시 실행 기록을 버린다(WordCraft
+ * `Session::run`). 이동·클릭·선택·표지는 아니다. 실행 취소·다시 실행은 따로 다룬다(queuedHistory).
+ */
+const MUTATING_OPS: ReadonlySet<DocxOp["op"]> = new Set<DocxOp["op"]>([
+  "insertText", "pasteText", "deleteSelection", "backspace", "deleteForward", "newParagraph", "tab", "insertAt", "replaceInserted",
+  "format",
+]);
+/** 명령(T010)이 보낸 연산. 엔진이 거부하면(문서 보호 등) 알린다. */
+const COMMAND_OPS: ReadonlySet<DocxOp["op"]> = new Set<DocxOp["op"]>(["undo", "redo", "format"]);
 
 /** 쪽 그림 실패의 원인: 백엔드 거부, PNG 디코드 실패, canvas 문맥 없음, 크기 불일치, 기대하지 않은 예외. */
 export type RenderFailureReason = "backend" | "decode" | "canvas" | "size" | "unexpected";
@@ -181,6 +194,8 @@ export class DocxEditorSession implements ImeSession, DocumentCommandTarget {
   private generation = 0;
   private queue: DocxOp[] = [];
   private inFlight = false;
+  /** 보내는 중인 요청의 연산(응답이 오면 비움). */
+  private sending: DocxOp[] = [];
   private epoch = 0;
   private closing = false;
   private disposed = false;
@@ -342,6 +357,7 @@ export class DocxEditorSession implements ImeSession, DocumentCommandTarget {
     this.epoch += 1;
     this.queue = [];
     this.inFlight = false;
+    this.sending = [];
     this.composition = null;
     this.provisional = null;
     this.pointerAfterInsert = false;
@@ -374,6 +390,7 @@ export class DocxEditorSession implements ImeSession, DocumentCommandTarget {
   private async fail(error: DocumentError) {
     this.queue = [];
     this.inFlight = false;
+    this.sending = [];
     this.composition = null;
     this.provisional = null;
     if (error.code === "StaleSession" || error.code === "UnknownSession") {
@@ -412,9 +429,11 @@ export class DocxEditorSession implements ImeSession, DocumentCommandTarget {
     const epoch = this.epoch;
     const batch = this.queue.splice(0, MAX_DOCX_OPS);
     this.inFlight = true;
+    this.sending = batch;
     const result = await this.backend.edit(this.sessionId, this.generation, this.revision, batch);
     if (epoch !== this.epoch) return;
     this.inFlight = false;
+    this.sending = [];
     if (!result.ok) {
       await this.fail(result.error);
       return;
@@ -423,6 +442,8 @@ export class DocxEditorSession implements ImeSession, DocumentCommandTarget {
     this.view = result.value.view;
     this.rejectedOps += result.value.rejected.length;
     const rejected = new Set(result.value.rejected);
+    // 엔진이 명령(서식·실행 취소)을 거부했다(문서 보호 등): 그 연산은 없던 일이다. 했다고 보이지 않는다.
+    if (batch.some((op, index) => COMMAND_OPS.has(op.op) && rejected.has(index))) this.inputNotice = "commandRejected";
     if (batch.some((op, index) => op.op === "pasteText" && rejected.has(index))) {
       // 엔진이 붙여넣기 조각을 거부했다(그 뒤 chain 조각은 백엔드가 건너뜀): 앞부분만 들어갔다. 다음 요청으로 넘어간 같은
       // 붙여넣기의 남은 조각도 보내지 않는다(같은 붙여넣기의 조각은 이어져 있고, 새 붙여넣기의 첫 조각은 chain이 아니다).
@@ -899,9 +920,23 @@ export class DocxEditorSession implements ImeSession, DocumentCommandTarget {
     return {
       sessionId: this.sessionId, engine: this.engine, loadGeneration: this.generation, revision: this.revision,
       loaded: this.status.kind === "ready" && !this.closing, editable: this.editable,
-      composing: this.composition !== null, pending: this.busy, saving: this.saving,
-      history: this.view?.history ?? null, format: this.view?.format ?? null,
+      composing: this.composition !== null || this.provisional !== null, pending: this.busy,
+      queuedHistory: this.queuedHistory(), saving: this.saving,
+      history: this.view?.history ?? null, format: this.view?.format ?? null, formatAccess: this.view?.formatAccess ?? null,
     };
+  }
+
+  /** 보내는 중·보낼 연산을 엔진 기록에 적용한 예상(DocumentCommandSnapshot.queuedHistory). 대기 연산이 없으면 null. */
+  private queuedHistory(): { undo: boolean; redo: boolean } | null {
+    const pending = [...this.sending, ...this.queue];
+    if (pending.length === 0 || !this.view) return null;
+    let { undo, redo } = this.view.history;
+    for (const { op } of pending) {
+      if (op === "undo") redo ||= undo;
+      else if (op === "redo") undo ||= redo;
+      else if (MUTATING_OPS.has(op)) [undo, redo] = [true, false];
+    }
+    return { undo, redo };
   }
 
   /** 명령을 이 세션의 편집 경로에 넣는다. 지금 상태로 다시 확인해 할 수 없으면 아무것도 바꾸지 않는다. */

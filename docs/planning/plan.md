@@ -303,6 +303,17 @@ interface EditorAdapter {
 - 가용성 이유: `noDocument`·`notImplemented`·`engineUnsupported`·`notReady`·`composing`·`pendingEdits`·`saving`·`nothingToUndo`·
   `nothingToRedo`·`limit`(`command.unavailable.*` 알림, `command.reason.*` 단추 설명).
 
+### T010 안정화 (2026-10-20, `3cbac44` 위)
+- 결정·재현 근거: [command-registry.md "T010 안정화"](../architecture/command-registry.md#t010-안정화-2026-10-20-3cbac44-위).
+- IME: 앱이 먼저 확정한 조합이 입력기의 최종 글자를 기다리는 동안(provisional)도 `composing`이다. 그 사이 문서 명령은 거절하고
+  아무것도 바꾸지 않는다(그 명령이 provisional을 지워 최종 글자로 고치지 못하던 결함).
+- 모달: 확인 창이 열린 동안 명령 문맥 `modal`(Editor가 창의 표시를 알림)이면 문서·배치 명령 모두 `dialogOpen`. 단축키는 기본 동작만
+  막는다(Ctrl+F1 포함).
+- 실행 취소 가용성: 대기 연산을 엔진 기록에 적용한 예상(`queuedHistory`)으로 정한다(이동·선택·표지는 기록을 바꾸지 않음).
+- WordCraft IPC 보기에 `formatAccess`(`allowed`·`protected`·`regions`, 백엔드가 WordCraft 공개 보호 상태에서 정함)를 더했다. 새 IPC 명령은
+  없다. `protected`면 서식 명령 이유 `protected`, 엔진이 명령 연산을 거부하면 편집 표면 알림 `commandRejected`.
+- 레지스트리: ID 중복·종류 중복·리본과 다른 라벨을 덮어쓰지 않고 문제로 낸다(`COMMAND_PROBLEMS`, 시험).
+
 ## Algorithms and Pseudocode
 ```
 open(path):

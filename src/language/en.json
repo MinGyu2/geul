@@ -121,6 +121,8 @@
   "command.unavailable.nothingToUndo": "{command}: there is nothing to undo.",
   "command.unavailable.nothingToRedo": "{command}: there is nothing to redo.",
   "command.unavailable.limit": "{command}: limit reached.",
+  "command.unavailable.protected": "{command}: not allowed because this document is protected (restricted editing).",
+  "command.unavailable.dialogOpen": "{command}: close the dialog first, then try again.",
   "command.reason.noDocument": "No open document",
   "command.reason.notImplemented": "Not connected yet",
   "command.reason.engineUnsupported": "Not supported for this document format",
@@ -131,6 +133,8 @@
   "command.reason.nothingToUndo": "Nothing to undo",
   "command.reason.nothingToRedo": "Nothing to redo",
   "command.reason.limit": "Limit reached",
+  "command.reason.protected": "Restricted by document protection",
+  "command.reason.dialogOpen": "A dialog is open",
   "command.about.message": "geul {version} — UI layout stage. Opening, editing, and saving documents are not supported yet.",
 
   "navigation.label": "Navigation pane",
@@ -214,6 +218,7 @@
   "editor.docx.pasteUnsupported": "The pasted text contains characters that cannot be inserted (such as control characters), so nothing was inserted. The document is unchanged.",
   "editor.docx.pasteTooLarge": "The pasted text exceeds the amount that can be inserted at once (1,048,576 characters), so nothing was inserted. The document is unchanged.",
   "editor.docx.pasteIncomplete": "The engine refused part of the pasted text, so only the beginning was inserted. The rest is not in the document.",
+  "editor.docx.commandRejected": "The engine refused the command (for example, in a part of a protected document that cannot be edited). The document is unchanged.",
 
   "editor.save.button": "Save",
   "editor.save.check": "Check saving",

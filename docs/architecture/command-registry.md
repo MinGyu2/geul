@@ -7,13 +7,13 @@ FR-007(명령 레지스트리)과 SC-003(서식·실행 취소·미지원 명령
 
 | 파일 | 역할 |
 |------|------|
-| `src/commands/registry.ts` | 명령 정의 하나뿐인 표: 변하지 않는 ID, 번역 라벨 키, 단축키, 범위(전역·문서), 엔진별 지원(`supported`·`unsupported`). 리본에 있지만 연결하지 않은 명령은 `planned`. 단축키 정규화·충돌 검사. |
+| `src/commands/registry.ts` | 명령 정의 하나뿐인 표: 변하지 않는 ID, 번역 라벨 키, 단축키, 범위(전역·문서), 엔진별 지원(`supported`·`unsupported`). 리본에 있지만 연결하지 않은 명령은 `planned`. 단축키 정규화·충돌 검사, ID 중복·종류 중복·라벨 불일치 검사(`buildRegistry`·`COMMAND_PROBLEMS`, 안정화). |
 | `src/commands/target.ts` | 명령 대상 계약 `DocumentCommandTarget`(`snapshot()`, `execute(id)`)과 상태 `DocumentCommandSnapshot`. |
 | `src/commands/capability.ts` | 가용성 결정 `documentCommandState(id, snapshot)`(순수 함수). 화면과 세션이 같은 함수를 쓴다. |
 | `src/commands/commands.ts` | 실행 경계: 화면 배치 명령은 여기서, 문서 명령은 활성 편집 세션으로. 쓸 수 없으면 아무것도 바꾸지 않고 이유를 알린다. |
 | `src/commands/shortcuts.ts` | 창 keydown → 레지스트리 명령(IME·입력 칸 보호). |
 | `RhwpEditorSession`·`DocxEditorSession` | 명령 대상 구현. 명령은 각 세션의 기존 편집 경로(T007·T008)와 저장 절차(T009)로만 실행된다. |
-| `src-tauri/src/adapters/wordcraft/engine.rs` | 허용 연산에 `undo`·`redo`·`format{format}`, 보기에 `history{undo,redo}`·`format{bold,italic,underline,strikethrough}`. |
+| `src-tauri/src/adapters/wordcraft/engine.rs` | 허용 연산에 `undo`·`redo`·`format{format}`, 보기에 `history{undo,redo}`·`format{bold,italic,underline,strikethrough}`·`formatAccess`(안정화). |
 
 T006의 자리표시자 `src/adapters/engines.ts`(`EngineAdapter`, 모든 명령 `engine-not-integrated`, `EngineUnavailable`)는 실행 경로에서
 쓰이지 않았고 편집 세션과 다른 두 번째 엔진 경계였으므로 지웠다. 명령 대상은 편집 세션 자신이다.
@@ -39,10 +39,14 @@ T006의 자리표시자 `src/adapters/engines.ts`(`EngineAdapter`, 모든 명령
 2. 그 엔진이 지원하지 않음 → `engineUnsupported`(세션에 보내지 않음).
 3. `file.save`: 불러왔고 닫는 중이 아님(아니면 `notReady`), 저장 중이 아님(`saving`) → 세션의 `save()`. 조합·대기 편집·보존 판정은
    그 저장 절차(T009)가 검사하고 결과를 저장 결과 자리에 보인다(검사를 약하게 하지 않음).
-4. 편집 명령: 편집 가능(`notReady` — 불러오는 중·닫는 중·그림 예산 초과·그림 실패), 조합 중이 아님(`composing`).
-5. 실행 취소: 엔진 기록에 단계가 있거나 앞선 편집이 아직 대기 중(그 뒤에 넣음, 엔진이 순서대로 실행) → 아니면 `nothingToUndo`.
-   다시 실행: 엔진 기록에 단계가 있음 → 아니면 `nothingToRedo`. 엔진이 기록을 알려 주지 않으면(`history: null`) `engineUnsupported`.
-6. 서식: 엔진이 서식 상태를 알려 주면 쓸 수 있고 눌림 = 그 상태. 아니면 `engineUnsupported`.
+0. (안정화) 확인 창(모달)이 열려 있으면 모든 명령(문서·배치) → `dialogOpen`.
+4. 편집 명령: 편집 가능(`notReady` — 불러오는 중·닫는 중·그림 예산 초과·그림 실패), IME 트랜잭션이 끝남(`composing` — 조합 중이거나,
+   안정화부터는 앱이 먼저 확정한 조합이 입력기의 최종 글자를 기다리는 동안도 포함).
+5. 실행 취소: 엔진 기록에 단계가 있음 → 아니면 `nothingToUndo`. 다시 실행: 다시 실행 단계가 있음 → 아니면 `nothingToRedo`. 대기 중인
+   연산이 있으면 엔진 기록 대신 그 연산을 적용한 예상(`queuedHistory`, 안정화 — 처음 T010은 "대기 중이면 실행 취소 가능"이었음)으로
+   정한다. 엔진이 기록을 알려 주지 않으면(`history: null`) `engineUnsupported`.
+6. 서식: 엔진이 서식 상태를 알려 주면 쓸 수 있고 눌림 = 그 상태. 아니면 `engineUnsupported`. 문서 보호가 언제나 거부하면
+   (`formatAccess: "protected"`, 안정화) `protected`.
 
 세션의 `execute`는 실행 직전에 같은 함수로 다시 확인하고 맞지 않으면 아무것도 바꾸지 않는다(`accepted: false`). 엔진도 다시
 확인한다: 낡은 보기로 보낸 실행 취소라도 기록이 없으면 문서·revision이 그대로다.
@@ -72,8 +76,9 @@ macOS는 Ctrl 대신 Cmd(이 빌드는 Linux만 확인). 단축키는 물리 키
 - 문서 범위 단축키는 편집 표면의 숨긴 입력(`.rhwp-input`)이나 입력 칸 밖에서만 받는다. 경로 입력 칸의 Ctrl+Z·Ctrl+B는 그 칸 몫이다.
 - 레지스트리에 있는 단축키는 쓸 수 없어도 브라우저 기본 동작(숨긴 textarea의 되돌리기, 저장 대화상자)을 막고 이유만 알린다.
   Ctrl+C·Ctrl+V·Ctrl+X·Ctrl+A는 레지스트리에 없어 건드리지 않는다(붙여넣기는 T008 경로).
-- 조합 중에 리본 단추를 눌러도 `composing`으로 거절한다. 앱이 먼저 확정하고 입력기의 끝을 기다리는 조합(provisional)은 다른 편집과
-  같이 확정된 것으로 보고 그 뒤에 명령을 넣는다(T008 계약). 저장은 T009 절차가 provisional을 `SaveNotReady{composing}`으로 막는다.
+- 조합 중에 리본 단추를 눌러도 `composing`으로 거절한다. 처음 T010은 앱이 먼저 확정하고 입력기의 끝을 기다리는 조합(provisional)을
+  확정된 것으로 보고 그 뒤에 명령을 넣었으나, 그 명령이 provisional을 지워 입력기의 최종 글자로 고치지 못하는 결함이 있어 안정화에서
+  바꿨다(아래 "T010 안정화" P1-A). 저장은 T009 절차가 provisional을 `SaveNotReady{composing}`으로 막는다.
 
 ## 확인 방법과 한계
 
@@ -83,7 +88,51 @@ macOS는 Ctrl 대신 Cmd(이 빌드는 Linux만 확인). 단축키는 물리 키
   리본 단추 상태·revision·저장한 파일을 본다.
 - 흉내: Vitest의 `FakeDocx`(`src/components/Editor/wordcraft/testing.ts`)는 기록·서식을 흉내 낼 뿐이다. 그 시험은 명령이 어느 세션의
   어떤 경로로 가는지, 거절할 때 아무것도 바꾸지 않는지를 확인하며 엔진 동작의 증거가 아니다.
-- rhwp 실행 취소·서식은 하지 않는다(위). 실제 IME(ibus-hangul) 상태에서 단축키를 누르는 실제 입력 시험은 하지 않았다(조합 중 키를
-  보지 않는 규칙은 Vitest로만 확인).
+- rhwp 실행 취소·서식은 하지 않는다(위). 처음 T010에서는 실제 IME(ibus-hangul) 상태에서 단축키를 누르는 실제 입력 시험을 하지
+  않았다(안정화에서 `--ime-commands`로 더함, 아래).
 - 이미 있던 단위 연산(`backspace` 등)은 내부 태그 enum의 단위 변형이라 남는 필드를 거부하지 않는다(새 `undo`·`redo`는 빈 구조체 변형으로
   거부). 동작에는 영향이 없어 이번에 바꾸지 않았다.
+
+## T010 안정화 (2026-10-20, `3cbac44` 위)
+
+리뷰에서 나온 다섯 가설을 재현 → 수정 → 확인했다. 흉내(FakeDocx·jsdom) 재현과 실제 엔진·실제 앱 확인을 나눠 적는다.
+
+| 항목 | 판정 | 재현 근거(수정 전) | 수정 |
+|------|------|-------------------|------|
+| P1-A 앱이 먼저 확정한 조합과 명령 | CONFIRMED DEFECT — FIXED(흉내 순서) | Vitest: 조합 '하' → 초점 잃음(앱이 provisional로 확정) → 리본 굵게 → 입력기 꼬리 최종 '한'. 수정 전에는 굵게가 실행되고 `push`가 provisional을 지워 `ReplaceInserted`가 가지 않음: 문서 '하'(최종 글자 잃음). 실행 취소도 같은 때 실행됨. | 스냅숏 `composing` = 조합 중 또는 provisional(WordCraft·rhwp). 그동안 실행 취소·다시 실행·서식은 `composing`으로 거절(아무것도 바꾸지 않음). 입력기 꼬리가 오거나 새 입력이 시작되면(keydown 등, imeInput 규칙) 풀린다. 지연·강제 확정은 쓰지 않는다. |
+| P1-B 확인 창 뒤의 단축키 | CONFIRMED DEFECT — FIXED | Vitest(App, 열린 DOCX, 버리기 확인 창의 취소 단추에 초점): Ctrl+Z는 `undo`, Ctrl+B는 `format`, Ctrl+S는 사전 검사와 **저장까지**, Ctrl+F1은 리본 접기가 실행됨. 단추는 `isDocumentShortcutTarget`이 문서 대상으로 봄. | Editor가 확인 창 표시를 layout effect로 알리고(`onModalChange`), 명령 문맥 `modal`이면 모든 명령이 `dialogOpen`. 단축키는 기본 동작만 막고 실행·알림 없음(창 안 입력 칸이 생기면 그 칸의 Ctrl+Z는 칸이 처리). Ctrl+F1도 막는다: 모달 뒤 화면은 다룰 수 없는 상태이고 배치가 바뀌면 창이 닫힌 뒤 돌려줄 초점 자리가 사라질 수 있다. 포인터는 화면 전체를 덮는 배경이 막고, 닿더라도 `executeCommand`가 거절한다. |
+| P2-A 대기 작업과 실행 취소 가용성 | CONFIRMED DEFECT — FIXED | Vitest: 기록이 빈 문서에서 이동·선택·표지만 보내는 중이면 실행 취소가 쓸 수 있음으로 보임(`history.undo || pending`). | `queuedHistory`: 보내는 중(`sending`)·보낼 연산을 엔진 기록에 차례로 적용한 예상. 바꾸는 연산(넣기·지우기·서식 등)은 실행 취소 단계 +·다시 실행 기록 버림(WordCraft는 성공한 바꾸는 명령마다 기록 지점을 남김), 실행 취소는 다시 실행 단계, 다시 실행은 실행 취소 단계를 만든다. 이동·클릭·선택·표지는 바꾸지 않는다. 앱의 기록이 아니라 엔진 기록의 예상이며, 엔진이 거부한 넣기처럼 엔진만 아는 결과는 응답 뒤 보기로 맞춰진다. |
+| P2-B 보호된 DOCX의 서식 | CONTRACT DEFICIENCY — FIXED | 고정 WordCraft `Session::run`은 보호(`protect::check_before`, 비공개)가 막으면 서식을 거부하는데, T010 화면은 서식을 쓸 수 있다고 보였고 엔진 거부는 `rejectedOps`만 늘어 알림이 없었다. | 백엔드가 공개 `cmd::protect::state`에서 `formatAccess`(`allowed`·`protected`·`regions`)를 정해 보기에 담는다(IPC 보기 필드 하나, 새 명령 없음). `protected`면 화면이 `protected`로 막고, `regions`(편집 가능 영역만)는 선택이 영역 안인지 엔진만 판정하므로 보내고, 엔진이 명령 연산을 거부하면 `inputNotice: "commandRejected"`로 알린다(문서·revision·dirty·기록 그대로, 내용·경로 없음). 대응은 Rust 시험이 모드마다 실제 엔진 결과와 맞춘다. |
+| P3 명령 ID 중복 | CONTRACT DEFICIENCY — FIXED | 리본 원본의 중복은 기존 시험(`ribbon/definitions.test.ts`)이 이미 막았지만, `buildRegistry`는 같은 ID를 조용히 덮어썼고 배치·문서 명령 표 사이의 중복이나 리본과 다른 라벨은 검사하지 않았다. | `buildRegistry(tabs, layout, document)`가 처음 선언을 남기고 중복·종류 중복·라벨 불일치를 `problems`로 낸다. `COMMAND_PROBLEMS`가 비어 있어야 한다(시험, 일부러 넣은 중복으로도 확인). |
+
+보호 상태와 서식 가용성(고정 WordCraft, Rust 시험 `t010_보호_상태의_서식_가용성은_엔진_판정과_같다`, 파일로 내보내 다시 연 문서):
+
+| 보호 | `formatAccess` | 영역 안 선택 | 영역 밖 선택 | 커서만(다음 입력 서식) |
+|------|----------------|--------------|--------------|------------------------|
+| 없음 | allowed | 실행 | 실행 | 실행 |
+| 읽기 전용·메모만·양식(영역 없음) | protected | 거부 | 거부 | 거부 |
+| 읽기 전용·메모만 + 편집 가능 영역 | regions | 실행 | 거부 | 실행(영역 밖이 그대로) |
+| 변경 내용 추적 | allowed | 실행 | 실행 | 실행 |
+| 서식을 스타일로 제한(모드와 함께) | protected | 거부 | 거부 | 거부 |
+
+엔진 사실(Rust 시험으로 고정): 커서만 둔 서식은 문서를 바꾸지 않지만 엔진 기록 지점을 남기고, 그 실행 취소는 문서·revision을 그대로
+두고 다음 입력 서식만 되돌린다. 문서 처음의 Backspace처럼 문서를 바꾸지 않은 바꾸는 명령 뒤의 실행 취소도 revision으로 세지 않는다.
+
+### 실제 ibus-hangul 관찰(이 환경, X11 + ibus-hangul 1.5.5, WebKitGTK 2.54)
+
+- 조합 중 리본 단추를 누르면 GTK가 mousedown 전에 조합을 끝까지 확정했다(빈 끝 → `insertFromComposition` → 끝 → mousedown·blur,
+  기록한 8회 모두). 그래서 이 환경에서는 provisional이 생기지 않고, 굵게는 확정한 글자 뒤 커서에 실행된다. 조합 중 Ctrl+Z·Ctrl+B도
+  입력기가 먼저 확정한 뒤 Ctrl·Z keydown이 온다(조합 중 키 아님) → 확정한 음절을 엔진이 되돌린다(revision +2).
+- `wordcraft_poc.py --ime-commands`(리본 굵게, 빠른 실행 실행 취소, Ctrl+Z, 페이지 클릭 직후 리본 굵게): 네 번 중 세 번 4/4 통과, 한 번은
+  WebDriver 연결 끊김(시험 환경). 이 시나리오를 처음 맞추던 실행 하나에서 **리본 굵게 뒤 조합 음절이 사라진 결과(revision 0)가 한 번
+  나왔고**, 그 뒤 이벤트를 기록한 8회와 시나리오 세 번에서는 다시 나오지 않았다. 그 실행에는 이벤트 기록이 없어 원인을 확정하지
+  못했다. 가설: 입력기가 확정을 두 반쪽으로 보내는 사이에 초점이 단추로 옮겨 뒤 반쪽이 편집 입력에 닿지 않음 — 그렇다면 명령 계층이
+  아니라 T008 IME 표면의 한계이고 T010이 바꾼 경로가 아니다(UNVERIFIED, 남은 위험).
+- provisional이 실제로 생기는 순서(blur 뒤 꼬리)는 이 환경의 리본 클릭에서는 관찰하지 못했다. P1-A 수정은 T008에서 실측한 페이지
+  클릭·초점 잃음 순서를 흉내 낸 Vitest로 확인했다.
+
+### Xvfb 실패 비교(기준 `17c890e` 별도 worktree, 같은 Xvfb 1600×1200×24·DPR 1.04)
+
+- rhwp hit test(HWP 본문 30%/70% 클릭 24회 중 15회 1–2글자 어긋남): 기준과 지금의 (기대, 결과) 15쌍이 같다 → **PRE-EXISTING,
+  ENVIRONMENT-DEPENDENT**(소수 DPR 포인터, headless weston에서는 통과).
+- 스모크 시작 크기 가로 넘침(`scrollW` 1230 > `w` 1229): 기준과 지금이 같다 → **PRE-EXISTING, ENVIRONMENT-DEPENDENT**(weston 62/62).

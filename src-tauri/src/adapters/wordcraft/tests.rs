@@ -937,6 +937,7 @@ fn 응답_json은_계약의_모양이다() {
             "caretOffset",
             "collapsed",
             "format",
+            "formatAccess",
             "history",
             "inTable",
             "pages",
@@ -953,6 +954,7 @@ fn 응답_json은_계약의_모양이다() {
         value["view"]["format"],
         json!({"bold": false, "italic": false, "underline": false, "strikethrough": false})
     );
+    assert_eq!(value["view"]["formatAccess"], "allowed");
     assert!(value["view"]["caret"]
         .as_object()
         .unwrap()
@@ -1814,4 +1816,182 @@ fn t010_새_연산은_ipc_모양만_받는다() {
         assert_eq!(parse(bad.clone()), None, "{bad}");
     }
     assert!(validate(&[DocxOp::Undo {}, DocxOp::Redo {}]));
+}
+
+// ---- T010 안정화 ----
+
+/// 보호를 건 모델. `exception`이면 첫 두 글자를 모두가 편집할 수 있는 영역으로 둔다. DOCX로 내보내 다시 열어 파일에 담긴
+/// 보호로 시험한다(엔진 `review.restrict`, 고정 WordCraft).
+fn protected(mode: &str, formatting: bool, exception: bool) -> DocxModel {
+    let mut m = model();
+    if exception {
+        m.apply(&[mv(MoveTarget::Right, true), mv(MoveTarget::Right, true)]);
+        assert!(m.run_engine("review.restrict", json!({"exception": "add"})));
+    }
+    assert!(
+        m.run_engine(
+            "review.restrict",
+            json!({"mode": mode, "formatting": formatting})
+        ),
+        "{mode}"
+    );
+    DocxModel::open(&m.export().expect("내보내기")).expect("다시 열기")
+}
+
+/// 선택(처음 두 글자 또는 끝 두 글자)이나 커서만 두고 굵게를 보낸 결과와, 그 앞뒤 본문·서식·dirty·실행 취소 기록.
+fn bold_at(m: &mut DocxModel, place: &str) -> (bool, bool) {
+    let ops: Vec<DocxOp> = match place {
+        "start" => vec![
+            mv(MoveTarget::DocStart, false),
+            mv(MoveTarget::Right, true),
+            mv(MoveTarget::Right, true),
+        ],
+        "end" => vec![
+            mv(MoveTarget::DocEnd, false),
+            mv(MoveTarget::Left, true),
+            mv(MoveTarget::Left, true),
+        ],
+        _ => vec![mv(MoveTarget::DocEnd, false)],
+    };
+    m.apply(&ops);
+    let before = (
+        m.body_text(),
+        m.view().format,
+        m.adapter_state().3,
+        m.adapter_state().4,
+    );
+    let outcome = m.apply(&[format(super::engine::CharFormat::Bold)]);
+    let accepted = outcome.rejected.is_empty();
+    if !accepted {
+        // 거부: 문서·서식·dirty·실행 취소 기록 모두 그대로, revision으로 셀 변경 없음.
+        assert_eq!(outcome.changed, 0, "{place}");
+        let after = (
+            m.body_text(),
+            m.view().format,
+            m.adapter_state().3,
+            m.adapter_state().4,
+        );
+        assert_eq!(after, before, "{place}");
+    }
+    (accepted, outcome.changed == 1)
+}
+
+#[test]
+fn t010_보호_상태의_서식_가용성은_엔진_판정과_같다() {
+    use super::engine::FormatAccess::{Allowed, Protected, Regions};
+    // (모드, 서식 제한, 편집 가능 영역) → 보기의 가용성, (처음 두 글자, 끝 두 글자, 커서만) 굵게를 엔진이 받는지.
+    let cases = [
+        ("readOnly", false, false, Protected, [false, false, false]),
+        // 영역 안 선택만 문서를 바꿀 수 있고, 커서만 둔 서식은 문서를 바꾸지 않으므로(다음 입력 서식) 엔진이 받는다.
+        ("readOnly", false, true, Regions, [true, false, true]),
+        ("comments", false, false, Protected, [false, false, false]),
+        ("comments", false, true, Regions, [true, false, true]),
+        ("forms", false, false, Protected, [false, false, false]),
+        ("trackedChanges", false, false, Allowed, [true, true, true]),
+        (
+            "trackedChanges",
+            true,
+            false,
+            Protected,
+            [false, false, false],
+        ),
+        ("readOnly", true, true, Protected, [false, false, false]),
+    ];
+    let mut plain = model();
+    assert_eq!(plain.view().format_access, Allowed);
+    assert_eq!(
+        ["start", "end", "caret"].map(|place| bold_at(&mut plain, place).0),
+        [true; 3]
+    );
+    for (mode, formatting, exception, access, accepted) in cases {
+        let label = format!("{mode} formatting={formatting} exception={exception}");
+        let mut m = protected(mode, formatting, exception);
+        assert_eq!(m.view().format_access, access, "{label}");
+        let got = ["start", "end", "caret"].map(|place| bold_at(&mut m, place).0);
+        assert_eq!(got, accepted, "{label}");
+        // 가용성과 엔진 판정이 어긋나지 않는다: Protected는 어디서나 거부, Allowed는 어디서나 허용.
+        match access {
+            Protected => assert!(got.iter().all(|ok| !ok), "{label}"),
+            Allowed => assert!(got.iter().all(|ok| *ok), "{label}"),
+            Regions => assert!(got.iter().any(|ok| *ok), "{label}"),
+        }
+    }
+}
+
+#[test]
+fn t010_빈_기록에서_이동_선택_표지만_있으면_실행_취소는_아무것도_바꾸지_않는다() {
+    let mut m = model();
+    let original = m.body_text();
+    let outcome = m.apply(&[
+        mv(MoveTarget::Right, false),
+        mv(MoveTarget::Right, true),
+        DocxOp::SelectAll,
+        DocxOp::Mark { id: 3 },
+        DocxOp::Undo {},
+    ]);
+    assert_eq!(
+        (outcome.applied, outcome.changed, outcome.rejected),
+        (5, 0, vec![])
+    );
+    assert_eq!(m.body_text(), original);
+    assert!(!m.view().history.undo);
+}
+
+#[test]
+fn t010_엔진이_거부한_넣기_뒤의_실행_취소는_앞선_기록만_되돌린다() {
+    let mut m = model();
+    m.apply(&[insert("가")]);
+    let typed = m.body_text();
+    // 넣기가 엔진에서 거부되면(실패 주입) 기록이 늘지 않고, 같은 요청의 실행 취소는 앞선 "가"를 되돌린다.
+    m.fail_at = Some(("text.insert", 1));
+    let outcome = m.apply(&[mv(MoveTarget::Right, false), insert("뷁"), DocxOp::Undo {}]);
+    assert_eq!((outcome.changed, outcome.rejected), (1, vec![1]));
+    assert_ne!(m.body_text(), typed);
+    assert!(!m.body_text().contains('뷁'));
+    assert!(!m.view().history.undo);
+}
+
+#[test]
+fn t010_커서만_둔_서식은_문서를_바꾸지_않는_엔진_기록_단계를_만들고_되돌리면_다음_입력_서식만_돌아온다(
+) {
+    // 고정 WordCraft: 바꾸는 명령은 문서가 그대로여도 실행 취소 지점을 남긴다(다음 입력 서식을 함께 담음). 그래서 이 뒤의
+    // 실행 취소는 쓸 수 있고, 문서·revision은 그대로이며 다음 입력 서식만 되돌린다(화면 가용성 = 엔진 기록).
+    let mut m = model();
+    let original = m.body_text();
+    let bold = m.apply(&[format(super::engine::CharFormat::Bold)]);
+    assert_eq!(bold.changed, 0);
+    assert!(m.view().history.undo && m.view().format.bold);
+    let undone = m.apply(&[DocxOp::Undo {}]);
+    assert_eq!((undone.applied, undone.changed), (1, 0));
+    assert_eq!(m.body_text(), original);
+    assert!(!m.view().format.bold && !m.view().history.undo && m.view().history.redo);
+}
+
+#[test]
+fn t010_문서를_바꾸지_않은_바꾸는_명령_뒤의_실행_취소는_revision을_세지_않는다() {
+    // 문서 처음의 Backspace: 바꾸는 명령이지만 문서가 그대로다(revision으로 세지 않음, T008). 그 뒤 실행 취소도 문서를 바꾸지
+    // 않으면 revision으로 세지 않는다(엔진 기록 지점의 유무와 관계없이 화면 판정은 엔진 결과를 따른다).
+    let mut m = model();
+    let original = m.body_text();
+    let outcome = m.apply(&[mv(MoveTarget::DocStart, false), DocxOp::Backspace]);
+    assert_eq!(outcome.changed, 0);
+    let had_step = m.view().history.undo;
+    let undone = m.apply(&[DocxOp::Undo {}]);
+    assert_eq!(
+        (undone.applied, undone.changed),
+        (1, 0),
+        "기록 지점 {had_step}"
+    );
+    assert_eq!(m.body_text(), original);
+}
+
+#[test]
+fn t010_실제_앱_시험의_보호_픽스처는_파일에_보호를_담는다() {
+    use super::engine::FormatAccess::{Protected, Regions};
+    let mut read_only = DocxModel::open(&basic::protected_ko("readOnly", false).unwrap()).unwrap();
+    let mut regions = DocxModel::open(&basic::protected_ko("readOnly", true).unwrap()).unwrap();
+    assert_eq!(read_only.view().format_access, Protected);
+    assert_eq!(regions.view().format_access, Regions);
+    assert_eq!(bold_at(&mut regions, "start"), (true, true));
+    assert!(!bold_at(&mut regions, "end").0);
 }

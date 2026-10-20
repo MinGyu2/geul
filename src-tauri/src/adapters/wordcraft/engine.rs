@@ -247,6 +247,41 @@ pub struct DocxView {
     pub history: HistoryView,
     /// 선택(없으면 다음 입력)의 글자 서식(T010, WordCraft `format.state`). 선택 전체가 그 서식일 때 true.
     pub format: FormatView,
+    /// 문서 보호가 글자 서식 명령을 허용하는지(T010 안정화, WordCraft `review.restrict` 상태에서). 엔진이 실행할 때 다시 판정한다.
+    pub format_access: FormatAccess,
+}
+
+/// 문서 보호(Restrict Editing)에서 직접 글자 서식(`format.bold` 등)을 할 수 있는지.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub enum FormatAccess {
+    /// 보호 없음 또는 서식을 막지 않는 보호(변경 내용 추적).
+    Allowed,
+    /// 엔진이 언제나 거부한다(읽기 전용·양식·메모만, 편집 가능 영역 없음, 또는 서식을 스타일로 제한).
+    Protected,
+    /// 이 사용자가 편집할 수 있는 영역 안의 변경만 허용한다. 선택이 그 안인지는 엔진이 실행 뒤 비교로 판정한다.
+    Regions,
+}
+
+impl FormatAccess {
+    /// WordCraft 공개 보호 상태(`cmd::protect::state`)에서 정한다. 엔진의 `check_before`(비공개)가 직접 서식 명령에 하는 판정과
+    /// 같은 순서다: 서식 제한이면 거부, 읽기 전용·메모만은 편집 가능 영역이 있으면 영역 안만, 없으면 거부, 양식은 거부, 그 밖은 허용.
+    /// 이 대응은 시험(`보호_상태의_서식_가용성은_엔진_판정과_같다`)이 실제 엔진 결과와 맞춘다.
+    fn of(session: &Session) -> FormatAccess {
+        let state = wordcraft_engine::cmd::protect::state(session);
+        let Some(mode) = state.get("protection").and_then(Value::as_str) else {
+            return FormatAccess::Allowed;
+        };
+        if state.get("formatting").and_then(Value::as_bool) != Some(false) {
+            return FormatAccess::Protected;
+        }
+        let regions = state.get("exceptions").and_then(Value::as_u64).unwrap_or(0) > 0;
+        match mode {
+            "readOnly" | "comments" if regions => FormatAccess::Regions,
+            "readOnly" | "comments" | "forms" => FormatAccess::Protected,
+            _ => FormatAccess::Allowed,
+        }
+    }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
@@ -727,7 +762,14 @@ impl DocxModel {
             caret_offset,
             history,
             format,
+            format_access: FormatAccess::of(&self.session),
         }
+    }
+
+    /// 시험용: WordCraft 명령을 그대로 실행한다(보호 설정 등 시험 준비, IPC로는 열지 않음).
+    #[cfg(test)]
+    pub fn run_engine(&mut self, id: &str, params: Value) -> bool {
+        self.session.run(id, &params).is_ok()
     }
 
     /// 쪽 하나를 `scale`(pt당 픽셀)로 그린 래스터. 쪽이 없거나 배율·픽셀 예산 밖이면 `None`.

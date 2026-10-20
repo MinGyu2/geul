@@ -1112,8 +1112,9 @@ export class RhwpEditorSession implements DocumentCommandTarget {
     return {
       sessionId: this.sessionId, engine: this.engine, loadGeneration: this.generation, revision: this.committed,
       loaded: this.status.kind === "ready" && this.doc !== null && !this.closing, editable: this.editable,
-      composing: this.composition !== null, pending: this.pending > 0 || this.committingEpoch === this.epoch,
-      saving: this.saving, history: null, format: null,
+      composing: this.composition !== null || this.provisional !== null,
+      pending: this.pending > 0 || this.committingEpoch === this.epoch, queuedHistory: null,
+      saving: this.saving, history: null, format: null, formatAccess: null,
     };
   }
 

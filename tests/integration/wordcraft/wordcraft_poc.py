@@ -14,6 +14,9 @@
     # 실제 한국어 IME 게이트(X11 + ibus-hangul + xdotool, 실제 키 입력):
     python3 tests/integration/wordcraft/wordcraft_poc.py --app ... --driver ... --ime --xdotool <xdotool> --ibus <ibus>
 
+    # T010 안정화: 실제 조합 중 리본·빠른 실행 단추(실제 포인터)·Ctrl+Z(실제 키)(X11 + ibus-hangul + xdotool):
+    python3 tests/integration/wordcraft/wordcraft_poc.py --app ... --driver ... --ime-commands --xdotool <xdotool> --ibus <ibus>
+
 판정 기준과 항목 이름은 T007(tests/integration/rhwp/rhwp_poc.py)과 같다. IME 게이트는 실제 입력을 보낸 뒤 페이지가 그 입력을 모두
 처리할 때까지(입력 이벤트·편집 상태·보내는 중인 연산이 잠시 그대로) 기다린 뒤 판정하며 PASS·FAIL·UNVERIFIED·NOT RUN을 출력한다.
 필수 항목이 모두 PASS일 때만 종료 코드 0, FAIL이 있으면 1, 실제 입력 환경이 없으면 2. 합성 DOM 이벤트는 쓰지 않는다.
@@ -401,6 +404,7 @@ INPUT = ".docx-surface .rhwp-input"
 # 지난다(합성 DOM 이벤트가 아님). 실측: 줄바꿈이 있으면 beforeinput 하나 뒤에 줄마다 insertText·insertParagraph input이 따로 온다.
 INSERT = """const i=document.querySelector(arguments[0]); i.focus(); return document.execCommand('insertText', false, arguments[1])"""
 CTRL = "\ue009"
+F1 = "\ue031"
 MAX_RETAINED_PIXELS = 32 * 1024 * 1024  # DocxEditorSession.MAX_RETAINED_PIXELS
 
 
@@ -871,6 +875,82 @@ def scenario_commands(d, fixtures: Path) -> None:
     check("명령: 다시 열면 엔진이 읽은 굵게가 눌림으로 보이고 실행 취소 기록은 새로 시작",
           reopened["pressed"] == "true" and command_button(d, "edit.undo")["disabled"], json.dumps(reopened, ensure_ascii=False))
     check("명령: 서식을 보기만 한(이동만) 문서는 버리기 확인 없이 닫힘", close_without_prompt(d, path.name))
+    scenario_commands_modal(d, fixtures)
+    scenario_commands_protected(d, fixtures)
+
+
+def ribbon_shown(d) -> bool:
+    return d.js("return document.querySelector('[role=tabpanel]') !== null")
+
+
+def scenario_commands_modal(d, fixtures: Path) -> None:
+    """T010 안정화 P1-B: 버리기 확인 창이 열린 동안 실제 키 Ctrl+Z·Ctrl+B·Ctrl+S·Ctrl+F1은 문서·저장·배치를 바꾸지 않는다."""
+    path = fixtures / "commands-modal.docx"
+    shutil.copy(fixtures / "basic-ko.docx", path)
+    original = path.read_bytes()
+    open_document(d, path)
+    click_paragraph_start(d)
+    press(d, "Right", "Right", shift=True)
+    typed = type_keys(d, "Q")
+    d.js("[...document.querySelectorAll('.document-tab__close')].find(b => b.getAttribute('aria-label').includes(arguments[0])).click()", path.name)
+    smoke.wait_until(d, "return document.querySelector('[data-testid=discard-dialog]')?.dataset.action === 'close'", timeout=10)
+    focus = lambda: d.js("return document.activeElement?.dataset?.testid ?? document.activeElement?.className ?? ''")
+    before = {"focus": focus(), "ribbon": ribbon_shown(d)}
+    for key in ("z", "b", "s"):
+        chord(d, key)
+    chord(d, F1)
+    time.sleep(0.8)
+    st = idle(d)
+    save = d.js(f"return document.querySelector('{SAVE_RESULT}')?.dataset.state ?? ''")
+    after = {"focus": focus(), "ribbon": ribbon_shown(d), "dialog": d.exists("[data-testid=discard-dialog]")}
+    check("명령(모달): 확인 창이 열린 동안 Ctrl+Z·Ctrl+B·Ctrl+S·Ctrl+F1은 문서(revision·글자)·저장·리본을 바꾸지 않고 초점은 창 안",
+          st["revision"] == typed["revision"] and st["paragraphText"] == typed["paragraphText"] and save not in ("checking", "saving", "saved")
+          and path.read_bytes() == original and after == {**before, "dialog": True} and before["focus"] == "discard-cancel",
+          json.dumps({"before": before, "after": after, "save": save, "status": brief(st)}, ensure_ascii=False))
+    press_button(d, "[data-testid=discard-cancel]")
+    smoke.wait_until(d, "return !document.querySelector('[data-testid=discard-dialog]')", timeout=10)
+    d.js(f"document.querySelector('{INPUT}').focus()")
+    chord(d, "z")
+    st = wait_revision(d, int(typed["revision"]) + 1)
+    check("명령(모달): 창을 취소하면 문서 명령을 다시 받음(Ctrl+Z가 넣은 글자를 되돌림)", "Q" not in st["paragraphText"], brief(st))
+    discard_close(d, path.name)
+
+
+def scenario_commands_protected(d, fixtures: Path) -> None:
+    """T010 안정화 P2-B: 문서 보호(읽기 전용·편집 가능 영역)를 건 실제 DOCX에서 서식 명령의 가용성·거부."""
+    open_document(d, fixtures / "protected-readonly.docx")
+    click_paragraph_start(d)
+    press(d, "Right", "Right", shift=True)
+    st0 = idle(d)
+    bold = command_button(d, "format.bold")
+    chord(d, "b")
+    time.sleep(0.6)
+    st = idle(d)
+    message = d.js("return document.querySelector('.statusbar__message')?.textContent ?? ''")
+    check("명령(보호): 읽기 전용 문서는 굵게가 '문서 보호로 제한됨'으로 보이고 Ctrl+B가 문서·revision을 바꾸지 않고 이유를 알림",
+          bold["disabled"] and "문서 보호로 제한됨" in bold["title"] and st["revision"] == st0["revision"] and "문서 보호" in message
+          and command_button(d, "format.bold")["pressed"] is None, json.dumps({"bold": bold, "message": message}, ensure_ascii=False))
+    close_without_prompt(d, "protected-readonly.docx")
+    open_document(d, fixtures / "protected-regions.docx")
+    click_paragraph_start(d)
+    press(d, "Right", "Right", shift=True)
+    st0 = idle(d)
+    allowed = command_button(d, "format.bold")
+    chord(d, "b")
+    st = wait_revision(d, int(st0["revision"]) + 1)
+    check("명령(보호): 편집 가능 영역 안의 선택은 Ctrl+B가 엔진에서 실행됨(revision +1, 굵게 눌림)",
+          not allowed["disabled"] and command_button(d, "format.bold")["pressed"] == "true", brief(st))
+    press(d, "End")
+    press(d, "Left", "Left", shift=True)
+    st0 = idle(d)
+    chord(d, "b")
+    smoke.wait_until(d, f"return document.querySelector('{STATUS}').dataset.inputNotice === 'commandRejected'", timeout=10)
+    st = idle(d)
+    notice = d.js("return document.querySelector('[data-testid=docx-input-notice]')?.textContent ?? ''")
+    check("명령(보호): 영역 밖의 선택은 엔진이 거부해 문서·revision이 그대로이고 거부를 알림(내용·경로 없음)",
+          st["revision"] == st0["revision"] and st["paragraphText"] == st0["paragraphText"] and "거부" in notice
+          and "protected-regions" not in notice, json.dumps({"notice": notice, "status": brief(st)}, ensure_ascii=False))
+    discard_close(d, "protected-regions.docx")
 
 
 def scenario_restart_inactive_close(d, fixtures: Path) -> None:
@@ -1165,6 +1245,129 @@ def scenario_ime(d, fixtures: Path, xdotool: str, ibus: str, focus_window: str |
             gate(name, "PASS" if all(r == "PASS" for r, _ in outcomes) else "FAIL", "; ".join(x for _, x in outcomes))
 
 
+# 입력 textarea와 창의 이벤트 순서(글자 길이만, 내용은 남기지 않음). 조합 꼬리와 클릭·초점 이동의 순서를 보고서에 남긴다.
+IME_COMMAND_LOG = """window.__cmdLog=[]; const t0=performance.now(); const i=document.querySelector('.docx-surface .rhwp-input');
+const L=(k,e)=>window.__cmdLog.push([Math.round(performance.now()-t0), k, e.inputType ?? null, (e.data ?? '').length, e.isComposing ?? null]);
+if (!i.__cmdLogged) { i.__cmdLogged=true; for (const t of ['compositionstart','compositionend','input','blur']) i.addEventListener(t, e => L('ta:'+t, e), true); }
+if (!window.__cmdLogged) { window.__cmdLogged=true; for (const t of ['mousedown','click','keydown']) window.addEventListener(t, e => L('win:'+t, e), true); }"""
+
+
+def scenario_ime_commands(d, fixtures: Path, xdotool: str, ibus: str) -> None:
+    """T010 안정화 P1-A: 실제 ibus-hangul 조합 중 리본·빠른 실행 단추(실제 포인터)와 단축키(실제 키). 조합은 정확히 한 번 확정되거나
+    실행 취소로 되돌려지고, 명령은 조합이 끝난 상태에 실행되거나 조합 중이라는 이유로 거절된다(조합 글자를 잃거나 두 번 넣지 않음)."""
+    run = lambda *a: subprocess.run(["env", "-u", "LD_LIBRARY_PATH", *a], capture_output=True, text=True)
+    window = run(xdotool, "search", "--onlyvisible", "--name", "^geul").stdout.split()[-1]
+    run(xdotool, "windowfocus", "--sync", window)
+    run(ibus, "engine", "hangul")
+    top = d.js("return window.outerHeight - window.innerHeight")
+    # 창 좌표 = 페이지 좌표 × 비율 + 위치. 축마다 두 클릭의 mousedown으로 잰다(소수 DPR의 Xvfb에서 더하기만으로는 작은 리본 단추를
+    # 빗나갔다, 실측). 누른 요소의 명령 ID를 기록해 실제로 그 단추를 눌렀는지 본다.
+    d.js("window.__down=null; window.addEventListener('mousedown', e => { window.__down=[e.clientX, e.clientY,"
+         " e.target.closest('[data-command]')?.dataset.command ?? null]; }, true)")
+    scale, shift = [1.0, 1.0], [0.0, float(top)]
+
+    def xclick(x: float, y: float) -> list[float]:
+        sent = [x * scale[0] + shift[0], y * scale[1] + shift[1]]
+        run(xdotool, "mousemove", "--window", window, str(round(sent[0])), str(round(sent[1])), "click", "1")
+        return sent
+
+    def calibrate() -> None:
+        origin = page_origin(d)
+        marks = []
+        # 쪽 안의 두 곳(창이 좁으면 쪽 오른쪽은 속성 창에 가린다).
+        for x_pt, y_pt in ((100, PARA0_Y), (300, PARA1_Y)):
+            sent = xclick(origin[0] + x_pt * PT, origin[1] + y_pt * PT)
+            time.sleep(0.4)
+            marks.append((sent, d.js("return window.__down")))
+        (s0, d0), (s1, d1) = marks
+        for axis in (0, 1):
+            scale[axis] = (s1[axis] - s0[axis]) / (d1[axis] - d0[axis]) * scale[axis]
+            shift[axis] = s0[axis] - d0[axis] * scale[axis]
+        REPORT["imeCommandsPointer"] = {"scale": scale[:], "shift": shift[:]}
+
+    def pressed_on() -> str | None:
+        down = d.js("return window.__down")
+        return down[2] if down else None
+
+    def client_center(css: str) -> list[float]:
+        return d.js("const b=[...document.querySelectorAll(arguments[0])].find(e => e.getBoundingClientRect().width > 0);"
+                    " const r=b.getBoundingClientRect(); return [r.left + r.width/2, r.top + r.height/2]", css)
+
+    def start(name: str) -> dict:
+        path = fixtures / f"ime-cmd-{name}.docx"
+        shutil.copy(fixtures / "basic-ko.docx", path)
+        open_document(d, path)
+        d.js("[...document.querySelectorAll('[role=tab]')].find(t => t.textContent.trim() === '홈')?.click()")
+        origin = page_origin(d)
+        if "imeCommandsPointer" not in REPORT:
+            calibrate()
+        xclick(origin[0] + 150 * PT, origin[1] + PARA0_Y * PT)
+        time.sleep(0.4)
+        run(xdotool, "key", "End")  # 첫 문단 끝
+        base = settle(d, f"{name} 시작")
+        d.js(IME_COMMAND_LOG)
+        run(xdotool, "type", "--delay", "90", "gk")
+        mid = settle(d, f"{name} 조합 중")
+        if mid.get("composing") != "true" or mid.get("composition") != "하":
+            raise smoke.Failure(f"조합을 시작하지 못함({name}): {brief(mid)}, 누름 {d.js('return window.__down')},"
+                                f" 초점 {d.js('return document.activeElement?.className')}, 창 초점 {d.js('return document.hasFocus()')}")
+        return {"path": path, "text": base["paragraphText"], "revision": int(base["revision"])}
+
+    def message() -> str:
+        return d.js("return document.querySelector('.statusbar__message')?.textContent ?? ''")
+
+    def finish(name: str, base: dict) -> dict:
+        time.sleep(1.0)
+        st = settle(d, f"{name} 끝")
+        REPORT.setdefault("imeCommands", {})[name] = {"revision": [base["revision"], st["revision"]], "composing": st.get("composing"),
+                                                      "message": message()[:80], "events": d.js("return window.__cmdLog")}
+        return st
+
+    # 1) 조합 중 리본 굵게(실제 포인터): 조합 '하'가 한 번 들어가고, 굵게는 그 뒤 커서에 적용되거나 조합 중이라 거절된다.
+    base = start("ribbon-bold")
+    xclick(*client_center('[data-command="format.bold"]'))
+    st = finish("ribbon-bold", base)
+    if pressed_on() != "format.bold":
+        raise smoke.Failure(f"시험기가 굵게 단추를 누르지 못함: {d.js('return window.__down')}")
+    pressed = command_button(d, "format.bold")["pressed"]
+    check("IME 명령: 조합 중 리본 굵게 → 조합 글자는 한 번만(revision +1), 굵게는 확정 뒤 실행되거나 조합 중이라 거절",
+          st["paragraphText"] == base["text"] + "하" and int(st["revision"]) == base["revision"] + 1 and st.get("composing") == "false"
+          and (pressed == "true" or "조합" in message()), json.dumps({"pressed": pressed, "message": message(), "status": brief(st)}, ensure_ascii=False))
+    discard_close(d, base["path"].name)
+
+    # 2) 조합 중 빠른 실행의 실행 취소(실제 포인터) / 3) 조합 중 Ctrl+Z(실제 키): 확정한 뒤 되돌리거나(문서가 처음과 같고 revision +2),
+    #    조합 중이라 거절(조합 글자가 한 번 남음). 둘 다 아닌 결과(글자를 잃었는데 revision이 안 맞음, 두 번 들어감)는 실패.
+    for name, act in (("quick-undo", lambda: xclick(*client_center('.titlebar [data-command="edit.undo"]'))),
+                      ("ctrl-z", lambda: run(xdotool, "key", "ctrl+z"))):
+        base = start(name)
+        act()
+        st = finish(name, base)
+        if name == "quick-undo" and pressed_on() != "edit.undo":
+            raise smoke.Failure(f"시험기가 실행 취소 단추를 누르지 못함: {d.js('return window.__down')}")
+        undone = st["paragraphText"] == base["text"] and int(st["revision"]) == base["revision"] + 2
+        refused = st["paragraphText"] == base["text"] + "하" and int(st["revision"]) == base["revision"] + 1 and "조합" in message()
+        check(f"IME 명령: 조합 중 {name} → 조합을 확정한 뒤 엔진이 되돌리거나(+2) 조합 중이라 거절(+1, 글자 한 번)",
+              st.get("composing") == "false" and (undone or refused),
+              json.dumps({"undone": undone, "refused": refused, "message": message(), "status": brief(st)}, ensure_ascii=False))
+        discard_close(d, base["path"].name)
+
+    # 4) 조합 중 페이지의 다른 곳 클릭 바로 뒤 리본 굵게: 조합 글자는 원래 자리에 한 번(클릭한 곳이 아님), 고칠 정보를 잃지 않는다.
+    base = start("click-then-bold")
+    origin = page_origin(d)
+    xclick(origin[0] + 100 * PT, origin[1] + PARA1_Y * PT)
+    xclick(*client_center('[data-command="format.bold"]'))
+    st = finish("click-then-bold", base)
+    if pressed_on() != "format.bold":
+        raise smoke.Failure(f"시험기가 굵게 단추를 누르지 못함: {d.js('return window.__down')}")
+    origin = page_origin(d)
+    xclick(origin[0] + 100 * PT, origin[1] + PARA0_Y * PT)  # 첫 문단을 눌러 그 글자를 읽는다
+    first = settle(d, "click-then-bold 첫 문단")["paragraphText"]
+    check("IME 명령: 조합 중 페이지 클릭 뒤 바로 리본 굵게 → 조합 글자는 원래 문단 끝에 한 번, 다른 문단에 섞이지 않음",
+          first == base["text"] + "하" and int(st["revision"]) == base["revision"] + 1,
+          json.dumps({"first": first[-8:], "status": brief(st), "message": message()}, ensure_ascii=False))
+    discard_close(d, base["path"].name)
+
+
 def ime_exit_code() -> int:
     mandatory = [name for name, required in IME_ITEMS if required]
     statuses = [GATE.get(name, ("NOT RUN", ""))[0] for name in mandatory]
@@ -1206,6 +1409,8 @@ def main() -> int:
     parser.add_argument("--ibus", default=shutil.which("ibus") or "ibus")
     parser.add_argument("--focus-window", help="창 초점 이동 항목에 쓸, 이미 떠 있는 다른 X 창의 이름")
     parser.add_argument("--commands-only", action="store_true", help="T010 명령 시나리오만 실행")
+    parser.add_argument("--ime-commands", action="store_true",
+                        help="T010 안정화: 실제 IME 조합 중 리본·단축키 시나리오만 실행(X11 + ibus-hangul + xdotool)")
     args = parser.parse_args()
     smoke.APP = os.path.abspath(args.app)
     smoke.DRIVER_LOG = args.driver_log
@@ -1232,6 +1437,8 @@ def main() -> int:
                         wait_app(d)
                         if args.ime:
                             scenario_ime(d, fixtures, args.xdotool, args.ibus, args.focus_window, args.screenshots)
+                        elif args.ime_commands:
+                            scenario_ime_commands(d, fixtures, args.xdotool, args.ibus)
                         elif args.commands_only:
                             calibrate_pointer(d)
                             scenario_commands(d, fixtures)

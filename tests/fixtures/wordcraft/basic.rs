@@ -86,3 +86,21 @@ pub fn basic_ko() -> Result<Vec<u8>, String> {
     }
     io::save_bytes("basic-ko.docx", doc)
 }
+
+/// T010 안정화: 문서 보호(Restrict Editing)를 건 픽스처. 기본 픽스처를 읽어 `mode`(readOnly 등)로 보호하고, `exception`이면 첫
+/// 문단의 처음 두 글자를 모두가 편집할 수 있는 영역으로 둔다(엔진 `review.restrict`).
+pub fn protected_ko(mode: &str, exception: bool) -> Result<Vec<u8>, String> {
+    let doc = io::open_bytes("basic-ko.docx", &basic_ko()?)?;
+    let mut s = Session::new(doc);
+    if exception {
+        let end = byte_len(PARAGRAPHS[0], 2);
+        run(
+            &mut s,
+            "select.range",
+            json!({ "anchor": body(&[0], 0), "focus": body(&[0], end) }),
+        )?;
+        run(&mut s, "review.restrict", json!({ "exception": "add" }))?;
+    }
+    run(&mut s, "review.restrict", json!({ "mode": mode }))?;
+    io::save_bytes("protected.docx", &s.doc)
+}

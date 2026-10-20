@@ -11,6 +11,7 @@ const view = {
   caretKey: "body:0:0", anchorKey: "body:0:0", paragraphText: "가나", caretOffset: 0,
   history: { undo: false, redo: false },
   format: { bold: false, italic: false, underline: false, strikethrough: false },
+  formatAccess: "allowed",
 };
 const session = { sessionId: 3, format: "docx", engine: "wordcraft", revision: 2, state: "ready", displayName: "a.docx", dirty: true, sequence: 5, loadGeneration: 1 };
 
@@ -37,6 +38,10 @@ describe("DOCX 응답 검사", () => {
     expect(parseDocxView({ ...view, format: { bold: true, italic: false, underline: false } })).toBeNull();
     expect(parseDocxView({ ...view, format: { ...view.format, highlight: true } })).toBeNull();
     expect(parseDocxView({ ...view, format: { ...view.format, bold: "true" } })).toBeNull();
+    // 문서 보호의 서식 가용성(T010 안정화).
+    for (const access of ["allowed", "protected", "regions"]) expect(parseDocxView({ ...view, formatAccess: access })?.formatAccess).toBe(access);
+    for (const bad of ["readOnly", "", null, true]) expect(parseDocxView({ ...view, formatAccess: bad })).toBeNull();
+    expect(parseDocxView(without("formatAccess"))).toBeNull();
   });
 
   it("세션 정보는 요청한 WordCraft 세션의 것이어야 한다", () => {

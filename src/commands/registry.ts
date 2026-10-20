@@ -8,7 +8,7 @@
 //   Mod(Linux·Windows는 Ctrl, macOS는 Cmd)를 포함하거나 기능 키다(일반 글자 입력과 겹치지 않음). 같은 키를 둘이 쓰면 시험이 실패한다.
 import type { EngineId } from "../adapters/contract";
 import type { MessageKey } from "../language";
-import { RIBBON_TABS } from "../ribbon/definitions";
+import { RIBBON_TABS, type RibbonTabDefinition } from "../ribbon/definitions";
 
 /** 화면 배치·정보 명령(문서와 무관, src/commands/commands.ts의 UI 명령). */
 export type LayoutCommandId =
@@ -81,22 +81,52 @@ const LAYOUT_COMMANDS: Record<LayoutCommandId, Omit<CommandDefinition, "id" | "l
 
 const label = (id: string) => `command.${id}` as MessageKey;
 
-function buildRegistry(): ReadonlyMap<string, CommandDefinition> {
+type Declarations = Record<string, Omit<CommandDefinition, "id" | "labelKey" | "kind">>;
+
+/**
+ * 레지스트리를 만든다. 같은 ID를 두 번 선언하면 덮어쓰지 않고(처음 것을 둠) 문제로 적는다: 리본 안의 중복, 배치·문서 명령
+ * 표 사이의 중복, 리본이 연결한 명령과 다른 라벨로 선언한 경우. 문제는 비어 있어야 한다(시험).
+ */
+export function buildRegistry(
+  tabs: readonly RibbonTabDefinition[],
+  layout: Declarations,
+  document: Declarations,
+): { commands: ReadonlyMap<string, CommandDefinition>; problems: string[] } {
   const registry = new Map<string, CommandDefinition>();
+  const problems: string[] = [];
   // 리본에 있는 명령 모두(아직 연결하지 않은 것은 planned).
-  for (const command of RIBBON_TABS.flatMap((tab) => tab.groups.flatMap((group) => group.commands))) {
-    registry.set(command.id, { id: command.id, labelKey: command.labelKey, kind: "planned" });
+  for (const tab of tabs) {
+    for (const group of tab.groups) {
+      for (const command of group.commands) {
+        if (registry.has(command.id)) problems.push(`${command.id}: duplicate ribbon command (${tab.id}/${group.id})`);
+        else registry.set(command.id, { id: command.id, labelKey: command.labelKey, kind: "planned" });
+      }
+    }
   }
-  for (const [id, definition] of Object.entries(LAYOUT_COMMANDS)) {
-    registry.set(id, { id, labelKey: label(id), kind: "layout", ...definition });
-  }
-  for (const [id, definition] of Object.entries(DOCUMENT_COMMANDS)) {
-    registry.set(id, { id, labelKey: label(id), kind: "document", ...definition });
-  }
-  return registry;
+  const connected = new Set<string>();
+  const declare = (kind: "layout" | "document", declarations: Declarations) => {
+    for (const [id, definition] of Object.entries(declarations)) {
+      if (connected.has(id)) {
+        problems.push(`${id}: declared as more than one kind of command`);
+        continue;
+      }
+      connected.add(id);
+      const ribbon = registry.get(id);
+      if (ribbon && ribbon.labelKey !== label(id)) problems.push(`${id}: ribbon label ${ribbon.labelKey} differs from ${label(id)}`);
+      registry.set(id, { id, labelKey: label(id), kind, ...definition });
+    }
+  };
+  declare("layout", layout);
+  declare("document", document);
+  return { commands: registry, problems };
 }
 
-export const COMMANDS: ReadonlyMap<string, CommandDefinition> = buildRegistry();
+const BUILT = buildRegistry(RIBBON_TABS, LAYOUT_COMMANDS, DOCUMENT_COMMANDS);
+
+export const COMMANDS: ReadonlyMap<string, CommandDefinition> = BUILT.commands;
+
+/** 명령 정의 오류(중복 ID·다른 종류로 두 번 선언·리본과 다른 라벨). 비어 있어야 한다(시험). */
+export const COMMAND_PROBLEMS: readonly string[] = BUILT.problems;
 
 export function commandDefinition(id: string): CommandDefinition | undefined {
   return COMMANDS.get(id);

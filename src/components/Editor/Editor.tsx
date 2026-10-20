@@ -28,6 +28,11 @@ interface EditorProps {
   /** 문서 세션(Tauri 앱). 없으면(테스트·브라우저) 빈 편집 영역만 보인다. */
   workspace?: DocumentWorkspace | null;
   notify?: ((message: Message) => void) | undefined;
+  /**
+   * 확인 창(모달)이 열리고 닫힐 때 알린다(T010 안정화 P1-B). 그동안 명령 레지스트리는 단추·단축키의 어떤 명령도 실행하지 않는다.
+   * 창이 DOM에 들어가는 commit 안(layout effect)에서 알려, 창이 보인 뒤의 키가 명령으로 가는 틈이 없다.
+   */
+  onModalChange?: ((open: boolean) => void) | undefined;
 }
 
 const NO_SUBSCRIBE = () => () => {};
@@ -53,7 +58,7 @@ export function documentErrorMessage(error: DocumentError): Message {
  * HWP/HWPX 세션은 rhwp WASM 편집 표면(T007 R-A), DOCX 세션은 백엔드 WordCraft 엔진의 편집 표면(T008 W-A)을 붙인다.
  * 문서 열기는 경로 입력(PoC)이다. 저장(T009)은 보존 검사를 통과한 문서만 원본 형식으로 한다(SaveControls).
  */
-export function Editor({ zoom, workspace = null, notify }: EditorProps) {
+export function Editor({ zoom, workspace = null, notify, onModalChange }: EditorProps) {
   const { t } = useTranslation();
   const sessions = workspace?.sessions;
   const state: SessionsState = useSyncExternalStore(sessions?.subscribe ?? NO_SUBSCRIBE, sessions?.snapshot ?? NO_SESSIONS);
@@ -63,6 +68,11 @@ export function Editor({ zoom, workspace = null, notify }: EditorProps) {
   // IME 입력 문맥은 WebView에 하나다. 탭마다 표면이 바뀌어도 끊긴 조합 상태는 함께 쓴다(imeInput.ts).
   const [imeContext] = useState(() => new ImeContext());
   const discardTarget = discard && discard.action !== "window" && state.sessions.find((session) => session.sessionId === discard.sessionId);
+  const dialogShown = Boolean(discard && (discard.action === "window" || discardTarget));
+  useLayoutEffect(() => {
+    onModalChange?.(dialogShown);
+  }, [onModalChange, dialogShown]);
+  useLayoutEffect(() => () => onModalChange?.(false), [onModalChange]);
   // 확인 창이 닫힌 뒤 돌려줄 초점. 창이 다른 창으로 바뀌어도(탭 → 창 닫기) 처음 창을 연 요소를 이어받는다.
   const discardFocusReturnRef = useRef<HTMLElement | null>(null);
   const closingWindow = useRef(false);
@@ -152,7 +162,7 @@ export function Editor({ zoom, workspace = null, notify }: EditorProps) {
           <h1 className="editor__notice-title">{t("editor.unsupportedTitle", { name: active.displayName })}</h1>
         </div>
       )}
-      {discard && (discard.action === "window" || discardTarget) && (
+      {discard && dialogShown && (
         <DiscardDialog key={discard.action === "window" ? "window" : `${discard.action}:${discard.sessionId}`} request={discard} focusReturnRef={discardFocusReturnRef} onCancel={() => setDiscard(null)} onConfirm={confirmDiscard} />
       )}
     </main>

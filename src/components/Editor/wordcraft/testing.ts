@@ -6,7 +6,9 @@
 // 키마다 켠 서식. 실제 엔진 동작은 Rust 시험과 tests/integration/wordcraft/에서 확인한다.
 import type { DocumentBackend } from "../../../adapters/backend";
 import type { DocumentError, Preservation, Result, SaveCheck, SaveOutcome, SessionInfo } from "../../../adapters/contract";
-import type { DocxBackend, DocxCharFormat, DocxEdited, DocxOp, DocxRender, DocxRoundTrip, DocxState, DocxView } from "../../../adapters/docx";
+import type {
+  DocxBackend, DocxCharFormat, DocxEdited, DocxFormatAccess, DocxOp, DocxRender, DocxRoundTrip, DocxState, DocxView,
+} from "../../../adapters/docx";
 import { vi } from "vitest";
 import { DocumentSessions } from "../../../adapters/sessions";
 import { DocxEditorSession } from "./DocxEditorSession";
@@ -55,6 +57,9 @@ export class FakeDocx implements DocxBackend {
   hold = false;
   /** 엔진이 거부하는 글자 넣기(InsertText·PasteText)의 글자(보호된 문서 등 흉내). */
   refuseText: ((text: string) => boolean) | null = null;
+  /** 문서 보호의 서식 가용성(흉내). "protected"면 서식 연산을 엔진처럼 거부한다. refuseFormat이면 그 연산만 거부("regions" 밖 흉내). */
+  formatAccess: DocxFormatAccess = "allowed";
+  refuseFormat = false;
   /** 쪽 수(쪽마다 612×792pt, 커서·선택은 0쪽). */
   pageCount = 1;
   /** 그림 요청이 이 오류로 실패한다(그대로 둠, null이면 정상). */
@@ -123,6 +128,7 @@ export class FakeDocx implements DocxBackend {
       paragraphText: this.paragraphs[this.caret.p]!, caretOffset: this.caret.o,
       history: { undo: this.undoStack.length > 0, redo: this.redoStack.length > 0 },
       format: Object.fromEntries(FORMATS.map((flag) => [flag, this.currentFormat().has(flag)])) as DocxView["format"],
+      formatAccess: this.formatAccess,
     };
   }
 
@@ -333,6 +339,7 @@ export class FakeDocx implements DocxBackend {
         return true;
       }
       case "format": {
+        if (this.formatAccess === "protected" || this.refuseFormat) return false;
         if (cmp(this.caret, this.anchor) === 0) {
           if (!this.pendingFormat.delete(op.format)) this.pendingFormat.add(op.format);
           return true;

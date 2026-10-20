@@ -55,7 +55,14 @@ export interface DocxView {
   history: DocxHistory;
   /** 선택(없으면 다음 입력)의 글자 서식(T010). 선택 전체가 그 서식이면 true. */
   format: DocxFormat;
+  /**
+   * 문서 보호가 직접 글자 서식을 허용하는지(T010 안정화, 백엔드가 WordCraft 보호 상태에서 정함). protected는 엔진이 언제나
+   * 거부, regions는 편집 가능 영역 안의 변경만 엔진이 받는다(실행할 때 판정).
+   */
+  formatAccess: DocxFormatAccess;
 }
+
+export type DocxFormatAccess = "allowed" | "protected" | "regions";
 
 export interface DocxHistory {
   undo: boolean;
@@ -184,7 +191,9 @@ function parseRect(value: unknown): DocxRect | null {
 
 const VIEW_KEYS = [
   "pages", "caret", "selection", "collapsed", "inTable", "caretKey", "anchorKey", "paragraphText", "caretOffset", "history", "format",
+  "formatAccess",
 ];
+const FORMAT_ACCESS: readonly DocxFormatAccess[] = ["allowed", "protected", "regions"];
 const FORMAT_KEYS: readonly DocxCharFormat[] = ["bold", "italic", "underline", "strikethrough"];
 
 function parseHistory(value: unknown): DocxHistory | null {
@@ -206,7 +215,8 @@ export function parseDocxView(value: unknown): DocxView | null {
   const { pages, caret, selection, collapsed, inTable, caretKey, anchorKey, paragraphText, caretOffset } = value;
   const history = parseHistory(value.history);
   const format = parseFormat(value.format);
-  if (!history || !format) return null;
+  const formatAccess = FORMAT_ACCESS.find((access) => access === value.formatAccess);
+  if (!history || !format || !formatAccess) return null;
   if (!Array.isArray(pages) || pages.length === 0 || !Array.isArray(selection)) return null;
   const parsedPages = pages.map(parsePage);
   const parsedSelection = selection.map(parseRect);
@@ -222,7 +232,7 @@ export function parseDocxView(value: unknown): DocxView | null {
     pages: parsedPages as DocxPage[],
     caret: parsedCaret,
     selection: parsedSelection as DocxRect[],
-    collapsed, inTable, caretKey, anchorKey, paragraphText, caretOffset, history, format,
+    collapsed, inTable, caretKey, anchorKey, paragraphText, caretOffset, history, format, formatAccess,
   };
 }
 

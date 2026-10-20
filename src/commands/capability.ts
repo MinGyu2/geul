@@ -4,15 +4,20 @@
 // 규칙(docs/architecture/command-registry.md):
 // - 열린 문서가 없으면 noDocument, 그 엔진이 지원하지 않으면 engineUnsupported(편집 세션에 보내지 않음).
 // - 저장은 불러온 세션이면 기존 저장 절차(T009)에 넘긴다. 조합·대기 중 편집·보존 판정은 그 절차가 검사하고 결과를 보인다.
-// - 편집 명령은 편집할 수 있고(notReady) 조합 중이 아닐 때(composing)만 한다. 보낼 편집이 있으면 같은 세션 대기열 뒤에 넣는다
-//   (엔진이 순서대로 실행). 실행 취소는 엔진 기록에 단계가 있거나 앞선 편집이 아직 대기 중일 때, 다시 실행은 기록에 단계가
-//   있을 때만 한다. 엔진이 다시 확인하므로 낡은 보기로 보낸 요청도 바뀌는 것이 없으면 아무것도 바꾸지 않는다.
+// - 확인 창(모달)이 열려 있으면 어떤 명령도 하지 않는다(dialogOpen, T010 안정화 P1-B).
+// - 편집 명령은 편집할 수 있고(notReady) IME 트랜잭션이 끝났을 때(composing — 조합 중이거나 앱이 먼저 확정한 조합이 입력기의 최종
+//   글자를 기다리는 동안)만 한다. 보낼 편집이 있으면 같은 세션 대기열 뒤에 넣는다(엔진이 순서대로 실행). 실행 취소는 엔진 기록에
+//   단계가 있을 때, 다시 실행은 다시 실행 단계가 있을 때 한다. 대기 중인 연산이 있으면 그것을 엔진 기록에 적용한 예상
+//   (queuedHistory, 이동·선택·표지는 기록을 바꾸지 않음)으로 정한다. 엔진이 다시 확인하므로 예상이 어긋나도(엔진이 거부한 넣기 등)
+//   바뀌는 것이 없으면 아무것도 바꾸지 않는다.
+// - 서식은 문서 보호가 언제나 거부하는 상태(formatAccess "protected")면 protected. 편집 가능 영역만 허용하는 보호("regions")는
+//   선택이 영역 안인지 엔진만 판정하므로 보내고, 엔진이 거부하면 세션이 알린다.
 import { commandDefinition, type DocumentCommandId } from "./registry";
 import type { CharFormatFlag, DocumentCommandSnapshot } from "./target";
 
 export type UnavailableReason =
   | "noDocument" | "notImplemented" | "engineUnsupported" | "notReady" | "composing" | "pendingEdits" | "saving"
-  | "nothingToUndo" | "nothingToRedo" | "limit";
+  | "nothingToUndo" | "nothingToRedo" | "limit" | "protected" | "dialogOpen";
 
 export type CommandState =
   | { available: true; pressed?: boolean }
@@ -41,10 +46,12 @@ export function documentCommandState(id: DocumentCommandId, snapshot: DocumentCo
   if (id === "edit.undo" || id === "edit.redo") {
     // 지원한다고 선언했는데 엔진이 기록을 알려 주지 않으면 하지 않는다(기록을 화면에서 만들지 않음).
     if (!snapshot.history) return unavailable("engineUnsupported");
-    if (id === "edit.undo") return snapshot.history.undo || snapshot.pending ? ENABLED : unavailable("nothingToUndo");
-    return snapshot.history.redo ? ENABLED : unavailable("nothingToRedo");
+    const history = snapshot.queuedHistory ?? snapshot.history;
+    if (id === "edit.undo") return history.undo ? ENABLED : unavailable("nothingToUndo");
+    return history.redo ? ENABLED : unavailable("nothingToRedo");
   }
   const flag = FORMAT_FLAG[id];
   if (!flag || !snapshot.format) return unavailable("engineUnsupported");
+  if (snapshot.formatAccess === "protected") return unavailable("protected");
   return { available: true, pressed: snapshot.format[flag] };
 }

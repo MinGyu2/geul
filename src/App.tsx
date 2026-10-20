@@ -113,9 +113,11 @@ function Workspace({ layout, dispatch, message, notify, documents }: WorkspacePr
 
   // 명령 단추는 그릴 때마다 활성 편집 세션의 지금 상태로 가용성을 정한다(세션이 바뀌면 다시 그림).
   const activeEditor = useActiveDocument(documents);
+  // 확인 창이 열린 동안은 어떤 명령도 실행하지 않는다(T010 안정화 P1-B, Editor가 창의 표시를 알림).
+  const [modal, setModal] = useState(false);
   const context = useMemo<CommandContext>(
-    () => ({ layout, dispatch, notify, document: activeEditor }),
-    [layout, dispatch, notify, activeEditor],
+    () => ({ layout, dispatch, notify, document: activeEditor, modal }),
+    [layout, dispatch, notify, activeEditor, modal],
   );
 
   // 단축키(T010): 레지스트리가 정한 명령만. 최신 문맥을 쓰도록 ref로 넘긴다(리스너는 한 번만 붙임).
@@ -170,7 +172,7 @@ function Workspace({ layout, dispatch, message, notify, documents }: WorkspacePr
             {splitter("navigation")}
           </>
         )}
-        <Editor zoom={layout.zoom} workspace={documents} notify={notify} />
+        <Editor zoom={layout.zoom} workspace={documents} notify={notify} onModalChange={setModal} />
         {layout.propertiesVisible && (
           <>
             {splitter("properties")}

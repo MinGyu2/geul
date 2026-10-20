@@ -7,7 +7,7 @@ import { RIBBON_TABS } from "../ribbon/definitions";
 import { documentCommandState } from "./capability";
 import { commandState, executeCommand, type CommandContext } from "./commands";
 import {
-  COMMANDS, commandDefinition, commandForShortcut, eventShortcut, isDocumentCommandId, parseShortcut, SHORTCUT_PROBLEMS,
+  buildRegistry, COMMAND_PROBLEMS, COMMANDS, commandDefinition, commandForShortcut, eventShortcut, isDocumentCommandId, parseShortcut, SHORTCUT_PROBLEMS,
   shortcutLabel, type DocumentCommandId,
 } from "./registry";
 import { handleShortcut, isDocumentShortcutTarget } from "./shortcuts";
@@ -19,9 +19,10 @@ const DOCUMENT_IDS: DocumentCommandId[] = [
 
 const snapshot = (patch: Partial<DocumentCommandSnapshot> = {}): DocumentCommandSnapshot => ({
   sessionId: 1, engine: "wordcraft", loadGeneration: 1, revision: 0,
-  loaded: true, editable: true, composing: false, pending: false, saving: false,
+  loaded: true, editable: true, composing: false, pending: false, queuedHistory: null, saving: false,
   history: { undo: false, redo: false },
   format: { bold: false, italic: false, underline: false, strikethrough: false },
+  formatAccess: "allowed",
   ...patch,
 });
 
@@ -55,6 +56,29 @@ describe("명령 레지스트리", () => {
     for (const definition of COMMANDS.values()) expect(isMessageKey(definition.labelKey)).toBe(true);
     // 문서 명령은 두 엔진의 지원을 모두 밝힌다.
     for (const id of DOCUMENT_IDS) expect(Object.keys(commandDefinition(id)!.engines!).sort()).toEqual(["rhwp", "wordcraft"]);
+  });
+
+  it("명령 ID는 한 번만 선언된다: 중복은 덮어쓰지 않고 문제로 적는다(안정화 P3)", () => {
+    expect(COMMAND_PROBLEMS).toEqual([]);
+    const cmd = (id: string, labelKey = `command.${id}`) => ({ id, labelKey: labelKey as never, icon: "bold" as const });
+    const tabs = [
+      { id: "a", labelKey: "ribbon.tab.home" as never, groups: [{ id: "g1", labelKey: "ribbon.group.font" as never, commands: [cmd("x.one"), cmd("x.two")] }] },
+      { id: "b", labelKey: "ribbon.tab.file" as never, groups: [{ id: "g2", labelKey: "ribbon.group.font" as never, commands: [cmd("x.one", "command.other")] }] },
+    ];
+    const { commands, problems } = buildRegistry(tabs, { "x.two": {} }, { "x.two": {}, "x.three": {} });
+    expect(problems).toEqual([
+      "x.one: duplicate ribbon command (b/g2)",
+      "x.two: declared as more than one kind of command",
+    ]);
+    // 처음 선언이 남는다(나중 것이 조용히 덮지 않음).
+    expect(commands.get("x.one")).toMatchObject({ labelKey: "command.x.one", kind: "planned" });
+    expect(commands.get("x.two")?.kind).toBe("layout");
+    expect(commands.get("x.three")?.kind).toBe("document");
+    const mislabeled = buildRegistry([{ ...tabs[0]!, groups: [{ ...tabs[0]!.groups[0]!, commands: [cmd("x.four", "command.wrong")] }] }], { "x.four": {} }, {});
+    expect(mislabeled.problems).toEqual(["x.four: ribbon label command.wrong differs from command.x.four"]);
+    // 실제 리본 정의 자체에도 중복이 없다(덮어쓰기 전 원본 목록).
+    const ribbon = RIBBON_TABS.flatMap((tab) => tab.groups.flatMap((group) => group.commands.map((command) => command.id)));
+    expect(new Set(ribbon).size).toBe(ribbon.length);
   });
 
   it("엔진별 지원: WordCraft는 실행 취소·서식·저장, rhwp는 저장만", () => {
@@ -132,9 +156,20 @@ describe("가용성 결정", () => {
     expect(documentCommandState("edit.redo", snapshot())).toEqual({ available: false, reason: "nothingToRedo" });
     expect(documentCommandState("edit.undo", snapshot({ history: { undo: true, redo: false } }))).toEqual({ available: true });
     expect(documentCommandState("edit.redo", snapshot({ history: { undo: false, redo: true } }))).toEqual({ available: true });
-    // 보낼 편집이 있으면 그 뒤에 실행 취소를 넣을 수 있다(엔진이 순서대로 실행). 다시 실행은 기록이 있어야 한다.
-    expect(documentCommandState("edit.undo", snapshot({ pending: true }))).toEqual({ available: true });
-    expect(documentCommandState("edit.redo", snapshot({ pending: true }))).toMatchObject({ reason: "nothingToRedo" });
+    // 기록에 단계를 더할 수 있는 연산이 대기 중이면 그 뒤에 실행 취소를 넣을 수 있다(엔진이 순서대로 실행). 이동·선택만 대기 중이면
+    // 아니다(안정화 P2-A). 다시 실행은 기록이 있어야 한다.
+    const queued = (undo: boolean, redo: boolean) => snapshot({ pending: true, queuedHistory: { undo, redo } });
+    expect(documentCommandState("edit.undo", queued(true, false))).toEqual({ available: true });
+    expect(documentCommandState("edit.undo", queued(false, false))).toEqual({ available: false, reason: "nothingToUndo" });
+    expect(documentCommandState("edit.redo", queued(true, false))).toMatchObject({ reason: "nothingToRedo" });
+    expect(documentCommandState("edit.redo", queued(false, true))).toEqual({ available: true });
+    // 대기 예상이 엔진 보기보다 앞선다(낡은 보기의 기록으로 정하지 않음).
+    expect(documentCommandState("edit.redo", snapshot({ history: { undo: true, redo: true }, queuedHistory: { undo: true, redo: false } })))
+      .toMatchObject({ reason: "nothingToRedo" });
+    // 문서 보호(안정화 P2-B): 언제나 거부하는 보호면 쓸 수 없고, 편집 가능 영역만 허용하면 엔진이 판정하도록 보낸다.
+    expect(documentCommandState("format.bold", snapshot({ formatAccess: "protected" }))).toEqual({ available: false, reason: "protected" });
+    expect(documentCommandState("format.bold", snapshot({ formatAccess: "regions" }))).toEqual({ available: true, pressed: false });
+    expect(documentCommandState("edit.undo", snapshot({ formatAccess: "protected", history: { undo: true, redo: false } }))).toEqual({ available: true });
     expect(documentCommandState("format.bold", snapshot())).toEqual({ available: true, pressed: false });
     expect(documentCommandState("format.italic", snapshot({ format: { bold: false, italic: true, underline: false, strikethrough: false } })))
       .toEqual({ available: true, pressed: true });
