@@ -57,6 +57,9 @@
 // - 래스터 예산(T008 안정화): 화면 밖 래스터는 MAX_RETAINED_PIXELS까지 기억하고, 넘으면 지금 요청한(보이는) 쪽이 아닌 것부터
 //   오래 쓰지 않은 순으로 놓는다(canvas 크기 0). 놓은 쪽의 화면 canvas도 다음 그리기에서 놓는다. 표면이 사라지면
 //   releaseRendering()으로 모두 놓는다(T007 rhwp와 같음). 백엔드 래스터 기억은 세션마다 4개(engine.rs MAX_RASTERS).
+// - 명령(T010, src/commands/): 실행 취소·다시 실행·글자 서식은 같은 편집 대기열에 연산(undo·redo·format)으로 넣는다. 기록은
+//   백엔드의 WordCraft Session이 가지며(앱은 기록을 따로 두지 않음), 가용성·눌림은 엔진 보기(view.history·view.format)로 정한다.
+//   저장 명령은 아래 save()를 그대로 부른다.
 import type { DocxBackend, DocxOp, DocxRender, DocxRoundTrip, DocxView, MoveTarget } from "../../../adapters/docx";
 import { MAX_DOCX_OPS } from "../../../adapters/docx";
 import type { DocumentError, Result, SaveCheck, SaveOutcome, SessionInfo } from "../../../adapters/contract";
@@ -64,6 +67,9 @@ import type { DocumentSessions } from "../../../adapters/sessions";
 import type { ImeSession } from "../rhwp/imeInput";
 import { textOps } from "./textOps";
 import { blockedBy, type SaveCheckRecord, type SaveState } from "../saveState";
+import { documentCommandState, FORMAT_FLAG } from "../../../commands/capability";
+import type { DocumentCommandId } from "../../../commands/registry";
+import type { CommandDispatch, DocumentCommandSnapshot, DocumentCommandTarget } from "../../../commands/target";
 
 export type DocxStatus =
   | { kind: "idle" }
@@ -148,7 +154,8 @@ function releaseCanvas(canvas: HTMLCanvasElement) {
   }
 }
 
-export class DocxEditorSession implements ImeSession {
+export class DocxEditorSession implements ImeSession, DocumentCommandTarget {
+  readonly engine = "wordcraft" as const;
   status: DocxStatus = { kind: "idle" };
   view: DocxView | null = null;
   /** 백엔드가 확인한 판(마지막 응답). */
@@ -883,6 +890,31 @@ export class DocxEditorSession implements ImeSession {
     this.failures.clear();
     this.paintFailures.clear();
     this.wanted = new Set();
+  }
+
+  // ---- 명령(T010) ----
+
+  /** 명령 가용성을 정하는 지금 상태. 기록·서식은 마지막 응답의 엔진 보기다(보낼 편집 뒤에는 엔진이 다시 정한다). */
+  snapshot(): DocumentCommandSnapshot {
+    return {
+      sessionId: this.sessionId, engine: this.engine, loadGeneration: this.generation, revision: this.revision,
+      loaded: this.status.kind === "ready" && !this.closing, editable: this.editable,
+      composing: this.composition !== null, pending: this.busy, saving: this.saving,
+      history: this.view?.history ?? null, format: this.view?.format ?? null,
+    };
+  }
+
+  /** 명령을 이 세션의 편집 경로에 넣는다. 지금 상태로 다시 확인해 할 수 없으면 아무것도 바꾸지 않는다. */
+  execute(command: DocumentCommandId): CommandDispatch {
+    if (!documentCommandState(command, this.snapshot()).available) return { accepted: false };
+    if (command === "file.save") {
+      void this.save();
+      return { accepted: true };
+    }
+    const flag = FORMAT_FLAG[command];
+    const op: DocxOp | null = command === "edit.undo" ? { op: "undo" } : command === "edit.redo" ? { op: "redo" }
+      : flag ? { op: "format", format: flag } : null;
+    return { accepted: op !== null && this.push(op) };
   }
 
   // ---- 저장(T009) ----

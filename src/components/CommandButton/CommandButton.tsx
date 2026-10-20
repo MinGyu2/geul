@@ -1,6 +1,8 @@
 import { forwardRef } from "react";
 import { Icon, type IconName } from "../../assets/icons";
 import { commandState, executeCommand, type CommandContext } from "../../commands/commands";
+import { commandDefinition, shortcutLabel } from "../../commands/registry";
+import { isMac } from "../../commands/shortcuts";
 import type { MessageKey } from "../../language";
 import { useTranslation } from "../../language/LanguageContext";
 
@@ -23,10 +25,12 @@ export const CommandButton = forwardRef<HTMLButtonElement, CommandButtonProps>(f
 ) {
   const { t } = useTranslation();
   const label = t(labelKey);
-  const state = commandState(id, context.layout);
+  const state = commandState(id, context);
   const unavailable = !state.available;
   const pressed = state.available ? state.pressed : undefined;
-  const title = unavailable ? `${label} — ${t("command.unavailable.hint")}` : label;
+  const shortcut = commandDefinition(id)?.shortcuts?.[0];
+  const named = shortcut ? `${label} (${shortcutLabel(shortcut, isMac())})` : label;
+  const title = unavailable ? `${named} — ${t(`command.reason.${state.reason}` as MessageKey)}` : named;
   return (
     <button
       ref={ref}

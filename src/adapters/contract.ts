@@ -128,9 +128,6 @@ export interface SaveOutcome {
   durable: boolean;
 }
 
-/** 어댑터 작업 중 엔진이 맡을 것(T007/T008에서 구현). */
-export type EngineOperation = "load" | "execute" | "save";
-
 /** 엔진 작업 단계(EngineFailure가 어디서 났는지). */
 export type EngineStage = "init" | "parse" | "render" | "edit" | "export";
 /** 백엔드 엔진(T008 WordCraft)이 보내는 단계. */
@@ -139,7 +136,6 @@ export type BackendEngineStage = (typeof BACKEND_ENGINE_STAGES)[number];
 
 /**
  * 프런트엔드에서 만드는 오류.
- * - EngineUnavailable: 엔진이 아직 연결되지 않아 그 작업을 할 수 없음(WordCraft 전체, 두 엔진의 저장).
  * - EngineFailure: 연결한 엔진(WASM)이 그 단계에서 실패함. 엔진 메시지는 담지 않는다(문서 내용이 섞일 수 있음).
  *   백엔드 엔진(WordCraft)의 실패는 같은 모양으로 백엔드가 보낸다(BackendError).
  * - Protocol: 응답이 계약과 맞지 않거나, 계약 밖의 거부(인자 형식 오류·권한 거부 등)를 받음.
@@ -147,10 +143,10 @@ export type BackendEngineStage = (typeof BACKEND_ENGINE_STAGES)[number];
  *   하지 않음. 저장(T009)하거나 사용자가 버리기를 명시적으로 고른 경우에만 진행한다.
  * - RenderLimit: 엔진은 문서를 올바르게 읽었지만, 지원하는 가장 작은 배율로도 화면 bitmap 픽셀 예산을 넘어 그릴 수 없음
  *   (쪽이 너무 크거나 많음). 문서 손상(EngineFailure parse·render)과 구분한다. 배율만 큰 경우는 오류가 아니라 표시 한도다.
- * 저장 오류(UnsafeSave·SaveUnsupported·SaveFailure·FileConflict·SaveInProgress, T009)는 백엔드가 보낸다. UnsupportedCommand는 T010.
+ * 저장 오류(UnsafeSave·SaveUnsupported·SaveFailure·FileConflict·SaveInProgress, T009)는 백엔드가 보낸다. 명령을 쓸 수 없는 이유(엔진 미지원 등)는 오류가 아니라
+ * 명령 가용성으로 알린다(T010, src/commands/capability.ts).
  */
 export type ClientError =
-  | { code: "EngineUnavailable"; engine: EngineId; operation: EngineOperation }
   | { code: "EngineFailure"; engine: EngineId; stage: EngineStage }
   | { code: "Protocol" }
   | { code: "UnpreservedChanges"; sessionId: SessionId }

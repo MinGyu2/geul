@@ -5897,3 +5897,58 @@ fn c6_실제_난수로_만든_표지는_매번_다르고_난수_실패는_not_ru
     assert!(!markers.join("ready").exists());
     assert_eq!(std::fs::read_dir(&shared).unwrap().count(), 0);
 }
+
+// ---- T010: 명령(실행 취소·글자 서식)으로 바꾼 DOCX도 같은 보존 검사로 저장한다 ----
+
+#[cfg(target_os = "linux")]
+#[test]
+fn t010_굵게와_실행_취소로_바꾼_docx는_보존_검사를_통과해_저장되고_다시_열면_같다() {
+    use crate::adapters::wordcraft::engine::CharFormat;
+    let original = basic::basic_ko().unwrap();
+    // 첫 두 글자 굵게.
+    let mut doc = open_docx(&original);
+    doc.edit(vec![
+        DocxOp::Move {
+            to: MoveTarget::Right,
+            extend: true,
+        },
+        DocxOp::Move {
+            to: MoveTarget::Right,
+            extend: true,
+        },
+        DocxOp::Format {
+            format: CharFormat::Bold,
+        },
+    ]);
+    assert!(doc.info.dirty);
+    doc.preflight().unwrap();
+    let saved = doc.save().unwrap();
+    assert!(saved.durable && !saved.session.dirty);
+    let mut reopened = DocxModel::open(&doc.bytes()).unwrap();
+    reopened.apply(&[
+        DocxOp::Move {
+            to: MoveTarget::Right,
+            extend: true,
+        },
+        DocxOp::Move {
+            to: MoveTarget::Right,
+            extend: true,
+        },
+    ]);
+    assert!(reopened.view().format.bold, "저장한 파일에 굵게가 남음");
+    // 글자를 넣고 실행 취소: 본문이 원본과 같아져도 revision은 올랐으므로 dirty이며, 저장은 보존 검사를 거쳐 된다.
+    let mut doc = open_docx(&original);
+    doc.edit(vec![DocxOp::InsertText {
+        text: "취소".into(),
+    }]);
+    doc.edit(vec![DocxOp::Undo {}]);
+    assert!(doc.info.dirty);
+    assert_eq!(doc.info.revision, 2);
+    doc.preflight().unwrap();
+    let saved = doc.save().unwrap();
+    assert!(saved.durable && !saved.session.dirty);
+    assert_eq!(
+        DocxModel::open(&doc.bytes()).unwrap().body_text(),
+        DocxModel::open(&original).unwrap().body_text()
+    );
+}

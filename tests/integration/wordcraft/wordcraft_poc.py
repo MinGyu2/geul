@@ -8,6 +8,9 @@
     python3 tests/integration/wordcraft/wordcraft_poc.py --app <geul 디버그 바이너리> --driver <tauri-driver> \\
         [--report <결과 JSON>] [--screenshots <디렉터리>] [--font-home <디렉터리>]
 
+    # T010 명령 시나리오만(실제 키 입력의 Ctrl+B·Ctrl+Z·Ctrl+Y·Ctrl+S가 실제 WordCraft 엔진에 감):
+    python3 tests/integration/wordcraft/wordcraft_poc.py --app ... --driver ... --commands-only
+
     # 실제 한국어 IME 게이트(X11 + ibus-hangul + xdotool, 실제 키 입력):
     python3 tests/integration/wordcraft/wordcraft_poc.py --app ... --driver ... --ime --xdotool <xdotool> --ibus <ibus>
 
@@ -791,6 +794,85 @@ def scenario_save(d, fixtures: Path) -> None:
     select_tab(d, "basic-ko.docx")
 
 
+def command_button(d, command: str) -> dict:
+    """명령 단추(리본·빠른 실행)의 상태. 같은 명령의 단추가 여럿이면 모두 같은 상태여야 한다."""
+    states = d.js("return [...document.querySelectorAll('[data-command=\"' + arguments[0] + '\"]')]"
+                  ".map(b => ({disabled: b.getAttribute('aria-disabled') === 'true', pressed: b.getAttribute('aria-pressed'), title: b.title}))",
+                  command)
+    if not states or any(state != states[0] for state in states):
+        raise smoke.Failure(f"명령 단추 상태 없음·불일치: {command} {states}")
+    return states[0]
+
+
+def wait_revision(d, revision: int, timeout: float = 20) -> dict:
+    smoke.wait_until(d, f"return Number(document.querySelector('{STATUS}').dataset.revision) === arguments[0]", revision, timeout=timeout)
+    return idle(d)
+
+
+def document_xml(path: Path) -> str:
+    import zipfile
+    with zipfile.ZipFile(path) as z:
+        return z.read("word/document.xml").decode("utf-8")
+
+
+def scenario_commands(d, fixtures: Path) -> None:
+    """T010: 실제 앱·실제 WordCraft 엔진에서 단축키(실제 키 입력)·리본 명령이 엔진 기록·서식으로 동작하고 저장까지 이어진다."""
+    path = fixtures / "commands.docx"
+    shutil.copy(fixtures / "basic-ko.docx", path)
+    bold_runs = document_xml(path).count("<w:b/>")
+    open_document(d, path)
+    click_paragraph_start(d)
+    st0 = idle(d)
+    rev0, text0 = int(st0["revision"]), st0["paragraphText"]
+    undo0, bold0 = command_button(d, "edit.undo"), command_button(d, "format.bold")
+    check("명령: 새로 연 DOCX는 실행 취소할 기록이 없고(엔진 기록) 굵게는 쓸 수 있으며 눌리지 않음",
+          undo0["disabled"] and not bold0["disabled"] and bold0["pressed"] == "false", json.dumps([undo0, bold0], ensure_ascii=False))
+    press(d, "Right", "Right", shift=True)
+    chord(d, "b")
+    st = wait_revision(d, rev0 + 1)
+    bold = command_button(d, "format.bold")
+    check("명령: 선택 후 Ctrl+B → WordCraft format.bold가 문서를 바꿈(revision +1, 글자 그대로, 굵게 눌림, 실행 취소 가능)",
+          bold["pressed"] == "true" and st["paragraphText"] == text0 and not command_button(d, "edit.undo")["disabled"], brief(st))
+    chord(d, "z")
+    st = wait_revision(d, rev0 + 2)
+    check("명령: Ctrl+Z → 엔진 기록으로 서식을 되돌림(revision +1, 굵게 안 눌림, 다시 실행 가능)",
+          command_button(d, "format.bold")["pressed"] == "false" and not command_button(d, "edit.redo")["disabled"]
+          and st["paragraphText"] == text0, brief(st))
+    chord(d, "y")
+    st = wait_revision(d, rev0 + 3)
+    check("명령: Ctrl+Y → 엔진 기록으로 다시 실행(굵게 눌림)", command_button(d, "format.bold")["pressed"] == "true", brief(st))
+    press(d, "End")
+    typed = type_keys(d, "Q")
+    chord(d, "z")
+    st = wait_revision(d, int(typed["revision"]) + 1)
+    check("명령: 글자를 넣고 Ctrl+Z → 엔진이 넣은 글자를 되돌림(문단 글자가 처음과 같음)",
+          "Q" in typed["paragraphText"] and st["paragraphText"] == text0, json.dumps([brief(typed), brief(st)], ensure_ascii=False))
+    # 다른 입력 칸(경로 입력)의 Ctrl+B는 문서 명령이 아니다.
+    before = status(d)
+    d.js("document.querySelector('#document-path').focus()")
+    chord(d, "b")
+    time.sleep(0.5)
+    after = idle(d)
+    check("명령: 경로 입력 칸의 Ctrl+B는 문서를 바꾸지 않음", after["revision"] == before["revision"], brief(after))
+    # Ctrl+S: 편집 표면에서 저장 단축키 → 기존 저장 절차(사전 검사·검사·교체).
+    d.js(f"document.querySelector('{INPUT}').focus()")
+    chord(d, "s")
+    smoke.wait_until(d, f"const e=document.querySelector('{SAVE_RESULT}'); return e && ['saved','failed'].includes(e.dataset.state)", timeout=60)
+    result = d.js(f"return {{...document.querySelector('{SAVE_RESULT}').dataset}}")
+    saved_runs = document_xml(path).count("<w:b/>")
+    check("명령: Ctrl+S → 보존 검사를 거쳐 저장, 파일에 굵게가 들어감(<w:b/> 늘어남)",
+          result["state"] == "saved" and status(d)["dirty"] == "false" and saved_runs > bold_runs,
+          json.dumps({"result": result, "bold": [bold_runs, saved_runs]}))
+    check("명령: 저장한 문서는 버리기 확인 없이 닫힘", close_without_prompt(d, path.name))
+    open_document(d, path)
+    click_paragraph_start(d)
+    press(d, "Right", "Right", shift=True)
+    reopened = command_button(d, "format.bold")
+    check("명령: 다시 열면 엔진이 읽은 굵게가 눌림으로 보이고 실행 취소 기록은 새로 시작",
+          reopened["pressed"] == "true" and command_button(d, "edit.undo")["disabled"], json.dumps(reopened, ensure_ascii=False))
+    check("명령: 서식을 보기만 한(이동만) 문서는 버리기 확인 없이 닫힘", close_without_prompt(d, path.name))
+
+
 def scenario_restart_inactive_close(d, fixtures: Path) -> None:
     """P2-C: WebView를 다시 시작한 뒤 아직 보지 않은 dirty DOCX 탭도 버리기 확인 없이 닫지 않는다."""
     shutil.copy(fixtures / "basic-ko.docx", fixtures / "basic-ko-c.docx")
@@ -1123,6 +1205,7 @@ def main() -> int:
     parser.add_argument("--xdotool", default=shutil.which("xdotool") or "xdotool")
     parser.add_argument("--ibus", default=shutil.which("ibus") or "ibus")
     parser.add_argument("--focus-window", help="창 초점 이동 항목에 쓸, 이미 떠 있는 다른 X 창의 이름")
+    parser.add_argument("--commands-only", action="store_true", help="T010 명령 시나리오만 실행")
     args = parser.parse_args()
     smoke.APP = os.path.abspath(args.app)
     smoke.DRIVER_LOG = args.driver_log
@@ -1149,6 +1232,9 @@ def main() -> int:
                         wait_app(d)
                         if args.ime:
                             scenario_ime(d, fixtures, args.xdotool, args.ibus, args.focus_window, args.screenshots)
+                        elif args.commands_only:
+                            calibrate_pointer(d)
+                            scenario_commands(d, fixtures)
                         else:
                             calibrate_pointer(d)
                             scenario_load_render(d, fixtures, meta, args.screenshots)
@@ -1160,6 +1246,8 @@ def main() -> int:
                             scenario_stabilization(d)
                             scenario_second_stabilization(d, fixtures)
                             scenario_save(d, fixtures)
+                            scenario_commands(d, fixtures)
+                            select_tab(d, "basic-ko.docx")
                             if args.screenshots:
                                 d.screenshot(args.screenshots / "docx-edited.png")
                             scenario_webview_restart(d)

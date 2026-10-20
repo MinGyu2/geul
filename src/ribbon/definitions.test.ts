@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { commandState, isUiCommand } from "../commands/commands";
+import { isDocumentCommandId } from "../commands/registry";
 import { initialLayout } from "../hooks/layoutState";
 import { isMessageKey } from "../language";
 import { RIBBON_TABS } from "./definitions";
@@ -25,13 +26,13 @@ describe("리본 정의", () => {
     expect(new Set(ids).size).toBe(ids.length);
   });
 
-  it("화면 배치·정보 명령 외의 문서 명령은 모두 사용할 수 없다", () => {
+  it("열린 문서가 없으면 화면 배치·정보 명령 외에는 쓸 수 없다(연결한 문서 명령은 noDocument, 나머지는 notImplemented)", () => {
     const documentCommands = commands.filter((command) => !isUiCommand(command.id));
     expect(documentCommands.length).toBeGreaterThan(30);
     for (const command of documentCommands) {
-      expect(commandState(command.id, initialLayout)).toEqual({
+      expect(commandState(command.id, { layout: initialLayout, document: null })).toEqual({
         available: false,
-        reason: "command.unavailable.noEngine",
+        reason: isDocumentCommandId(command.id) ? "noDocument" : "notImplemented",
       });
     }
     expect(commands.filter((command) => isUiCommand(command.id)).map((command) => command.id.split(".")[0]))

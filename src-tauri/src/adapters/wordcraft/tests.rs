@@ -936,11 +936,22 @@ fn 응답_json은_계약의_모양이다() {
             "caretKey",
             "caretOffset",
             "collapsed",
+            "format",
+            "history",
             "inTable",
             "pages",
             "paragraphText",
             "selection"
         ]
+    );
+    // T010: 엔진 기록·서식(프런트엔드 parseDocxView가 정확히 이 키만 받는다).
+    assert_eq!(
+        value["view"]["history"],
+        json!({"undo": false, "redo": false})
+    );
+    assert_eq!(
+        value["view"]["format"],
+        json!({"bold": false, "italic": false, "underline": false, "strikethrough": false})
     );
     assert!(value["view"]["caret"]
         .as_object()
@@ -1650,4 +1661,157 @@ fn 붙여넣기_한도_측정() {
     m.apply(&[insert("가")]);
     m.view();
     eprintln!("그 뒤 글자 하나: apply+view {:?}", started.elapsed());
+}
+
+// ---- T010: 엔진이 가진 실행 취소·다시 실행과 글자 서식 ----
+
+fn format(format: super::engine::CharFormat) -> DocxOp {
+    DocxOp::Format { format }
+}
+
+#[test]
+fn t010_wordcraft는_edit_undo를_문서를_바꾸지_않는_명령으로_등록한다() {
+    // 어댑터가 `run`의 `mutates` 판단 대신 앞뒤 문서를 비교하는 이유(이 값이 바뀌면 이 시험이 알린다).
+    let session = wordcraft_engine::Session::new(
+        wordcraft_engine::io::open_bytes("document.docx", &fixture()).unwrap(),
+    );
+    for id in ["edit.undo", "edit.redo"] {
+        assert!(!session.registry.get(id).unwrap().mutates, "{id}");
+    }
+    assert!(session.registry.get("format.bold").unwrap().mutates);
+}
+
+#[test]
+fn t010_실행_취소와_다시_실행은_엔진_기록을_쓰고_바뀐_만큼_revision으로_센다() {
+    let mut m = model();
+    let original = m.body_text();
+    assert_eq!(
+        (m.view().history.undo, m.view().history.redo),
+        (false, false)
+    );
+    // 되돌릴 것이 없으면 아무것도 바뀌지 않는다(거부도 아님, revision 그대로).
+    let none = m.apply(&[DocxOp::Undo {}, DocxOp::Redo {}]);
+    assert_eq!((none.applied, none.changed, none.rejected), (2, 0, vec![]));
+    assert_eq!(m.body_text(), original);
+
+    let typed = m.apply(&[insert("가나"), DocxOp::NewParagraph, insert("다")]);
+    assert_eq!(typed.changed, 3);
+    let edited = m.body_text();
+    assert!(m.view().history.undo && !m.view().history.redo);
+
+    // 한 단계씩: "다", 문단 나누기, "가나"(엔진이 이어 친 글자를 한 단계로 묶음).
+    let mut seen = vec![m.body_text()];
+    loop {
+        let step = m.apply(&[DocxOp::Undo {}]);
+        assert_eq!((step.applied, step.rejected.len()), (1, 0));
+        if step.changed == 0 {
+            break;
+        }
+        assert_eq!(step.changed, 1);
+        seen.push(m.body_text());
+    }
+    assert_eq!(seen.last(), Some(&original));
+    assert!(!m.view().history.undo && m.view().history.redo);
+    // 다시 실행으로 편집한 본문까지 돌아온다.
+    let mut redone = 0;
+    while m.apply(&[DocxOp::Redo {}]).changed == 1 {
+        redone += 1;
+    }
+    assert_eq!(redone, seen.len() - 1);
+    assert_eq!(m.body_text(), edited);
+    // 새 편집은 다시 실행 기록을 버린다(엔진 규칙).
+    m.apply(&[DocxOp::Undo {}]);
+    m.apply(&[insert("라")]);
+    assert!(!m.view().history.redo);
+}
+
+#[test]
+fn t010_실행_취소는_어댑터의_자리_표시와_바로_앞_넣기를_버린다() {
+    let mut m = model();
+    m.apply(&[
+        mv(MoveTarget::Right, false),
+        DocxOp::Mark { id: 7 },
+        insert("가"),
+    ]);
+    let before = m.body_text();
+    let undone = m.apply(&[DocxOp::Undo {}]);
+    assert_eq!(undone.changed, 1);
+    // 옛 자리 표시·바로 앞 넣기로 고치는 연산은 거부되고 문서를 바꾸지 않는다.
+    let after_undo = m.body_text();
+    assert_ne!(after_undo, before);
+    let stale = m.apply(&[
+        DocxOp::InsertAt {
+            mark: 7,
+            text: "나".into(),
+        },
+        DocxOp::ReplaceInserted {
+            expected: "가".into(),
+            text: "다".into(),
+        },
+    ]);
+    assert_eq!((stale.changed, stale.rejected), (0, vec![0, 1]));
+    assert_eq!(m.body_text(), after_undo);
+}
+
+#[test]
+fn t010_글자_서식은_선택_범위에_켜고_끄며_서식_상태와_실행_취소를_보인다() {
+    use super::engine::CharFormat::{Bold, Italic, Strikethrough, Underline};
+    let mut m = model();
+    assert!(!m.view().format.bold);
+    // 선택(첫 두 글자)을 굵게: 문서가 바뀌고 선택의 서식이 굵게로 보인다.
+    let selected = m.apply(&[mv(MoveTarget::Right, true), mv(MoveTarget::Right, true)]);
+    assert_eq!(selected.changed, 0);
+    let bold = m.apply(&[format(Bold)]);
+    assert_eq!((bold.applied, bold.changed), (1, 1));
+    let view = m.view();
+    assert!(view.format.bold && !view.format.italic && view.history.undo);
+    // 다시 누르면 끈다.
+    assert_eq!(m.apply(&[format(Bold)]).changed, 1);
+    assert!(!m.view().format.bold);
+    type Flag = fn(&super::engine::FormatView) -> bool;
+    let cases: [(super::engine::CharFormat, Flag); 3] = [
+        (Italic, |v| v.italic),
+        (Underline, |v| v.underline),
+        (Strikethrough, |v| v.strikethrough),
+    ];
+    for (op, flag) in cases {
+        assert_eq!(m.apply(&[format(op)]).changed, 1, "{op:?}");
+        assert!(flag(&m.view().format), "{op:?}");
+    }
+    // 실행 취소는 서식 변경을 되돌린다.
+    assert_eq!(m.apply(&[DocxOp::Undo {}]).changed, 1);
+    assert!(!m.view().format.strikethrough && m.view().format.underline);
+}
+
+#[test]
+fn t010_선택이_없으면_서식은_다음_입력에만_적용되고_문서는_바뀌지_않는다() {
+    let mut m = model();
+    let original = m.body_text();
+    let collapsed = m.apply(&[format(super::engine::CharFormat::Bold)]);
+    assert_eq!((collapsed.applied, collapsed.changed), (1, 0));
+    assert_eq!(m.body_text(), original);
+    assert!(m.view().format.bold, "다음 입력 서식");
+    m.apply(&[insert("굵")]);
+    assert!(m.char_props_before_caret().contains("bold: Some(true)"));
+}
+
+#[test]
+fn t010_새_연산은_ipc_모양만_받는다() {
+    let parse = |value: serde_json::Value| serde_json::from_value::<DocxOp>(value).ok();
+    assert_eq!(parse(json!({"op": "undo"})), Some(DocxOp::Undo {}));
+    assert_eq!(parse(json!({"op": "redo"})), Some(DocxOp::Redo {}));
+    assert_eq!(
+        parse(json!({"op": "format", "format": "bold"})),
+        Some(format(super::engine::CharFormat::Bold))
+    );
+    for bad in [
+        json!({"op": "undo", "count": 2}),
+        json!({"op": "format"}),
+        json!({"op": "format", "format": "fontSize"}),
+        json!({"op": "format", "format": "bold", "value": true}),
+        json!({"op": "edit.undo"}),
+    ] {
+        assert_eq!(parse(bad.clone()), None, "{bad}");
+    }
+    assert!(validate(&[DocxOp::Undo {}, DocxOp::Redo {}]));
 }

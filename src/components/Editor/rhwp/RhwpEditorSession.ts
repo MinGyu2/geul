@@ -35,9 +35,14 @@
 //   엔진 호출이 예외를 던지면 그 조합은 세지 않고 끝난다(uncertain). 편집이 다른 이유로 멈추면(화면 갱신 실패·백엔드
 //   거부) 그때까지 성공한 조합 변경을 한 번 센다. 끝난 조합은 다시 세지 않는다.
 // - 저장은 없다(T009). 내보내기 검사는 메모리에서만 내보내고 다시 열어 비교한다(파일을 쓰지 않음).
+// - 명령(T010, src/commands/): 고정 rhwp에는 엔진이 가진 실행 취소 기록이 없고 글자 서식은 보존 검사가 저장을 막으므로, 이
+//   세션이 받는 문서 명령은 저장(save())뿐이다. 실행 취소 기록을 화면에서 따로 만들지 않는다(history: null).
 import type { DocumentBackend, ReopenEvidence } from "../../../adapters/backend";
 import type { DocumentError, Result, SaveCheck, SaveOutcome, SessionInfo } from "../../../adapters/contract";
 import { blockedBy, type SaveCheckRecord, type SaveState } from "../saveState";
+import { documentCommandState } from "../../../commands/capability";
+import type { DocumentCommandId } from "../../../commands/registry";
+import type { CommandDispatch, DocumentCommandSnapshot, DocumentCommandTarget } from "../../../commands/target";
 import type { DocumentSessions } from "../../../adapters/sessions";
 import { changedBand, summarizeLayerTree, type PaintBox, type PaintedPage } from "./paintDiff";
 import type { RhwpDocument, RhwpModule } from "./rhwpModule";
@@ -181,7 +186,8 @@ const hasSignature = (bytes: Uint8Array, format: "hwp" | "hwpx") =>
 const START: DocPosition = { section: 0, paragraph: 0, offset: 0 };
 const MAX_SAMPLES = 1000;
 
-export class RhwpEditorSession {
+export class RhwpEditorSession implements DocumentCommandTarget {
+  readonly engine = "rhwp" as const;
   status: EditorStatus = { kind: "idle" };
   pages: PageSize[] = [];
   caret: DocPosition = START;
@@ -1097,6 +1103,25 @@ export class RhwpEditorSession {
       controlsEqual: report.failure === null && report.controlsEqual,
     };
     return { report, bytes: output, contentLoss, reopen };
+  }
+
+  // ---- 명령(T010) ----
+
+  /** 명령 가용성을 정하는 지금 상태. 엔진 기록·서식 상태가 없다(null). */
+  snapshot(): DocumentCommandSnapshot {
+    return {
+      sessionId: this.sessionId, engine: this.engine, loadGeneration: this.generation, revision: this.committed,
+      loaded: this.status.kind === "ready" && this.doc !== null && !this.closing, editable: this.editable,
+      composing: this.composition !== null, pending: this.pending > 0 || this.committingEpoch === this.epoch,
+      saving: this.saving, history: null, format: null,
+    };
+  }
+
+  /** 명령을 이 세션에서 실행한다. 지금 상태로 다시 확인해 할 수 없으면(rhwp가 지원하지 않는 명령 포함) 아무것도 바꾸지 않는다. */
+  execute(command: DocumentCommandId): CommandDispatch {
+    if (command !== "file.save" || !documentCommandState(command, this.snapshot()).available) return { accepted: false };
+    void this.save();
+    return { accepted: true };
   }
 
   // ---- 저장(T009) ----

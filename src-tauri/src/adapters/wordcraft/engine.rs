@@ -108,6 +108,35 @@ pub enum DocxOp {
         expected: String,
         text: String,
     },
+    /// WordCraft 실행 취소·다시 실행(T010). 기록은 엔진(`Session`)이 가진다. 앱은 따로 기록하지 않는다. 필드 없는 구조체
+    /// 변형: 태그 붙은 단위 변형은 `deny_unknown_fields`가 모르는 필드를 거부하지 않는다(실측).
+    Undo {},
+    Redo {},
+    /// 글자 서식 켜고 끄기(T010): 선택이 있으면 그 범위, 없으면 다음 입력 서식(엔진이 정함).
+    Format {
+        format: CharFormat,
+    },
+}
+
+/// 앱이 여는 글자 서식(WordCraft `format.*` 중 고정된 것만).
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum CharFormat {
+    Bold,
+    Italic,
+    Underline,
+    Strikethrough,
+}
+
+impl CharFormat {
+    fn command(self) -> &'static str {
+        match self {
+            CharFormat::Bold => "format.bold",
+            CharFormat::Italic => "format.italic",
+            CharFormat::Underline => "format.underline",
+            CharFormat::Strikethrough => "format.strikethrough",
+        }
+    }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Deserialize)]
@@ -214,6 +243,24 @@ pub struct DocxView {
     pub paragraph_text: String,
     /// 커서의 문단 안 위치(문자 단위).
     pub caret_offset: usize,
+    /// WordCraft 실행 취소 기록(T010): 되돌릴·다시 할 단계가 있고 그 단계가 문서 보호를 풀지 않음.
+    pub history: HistoryView,
+    /// 선택(없으면 다음 입력)의 글자 서식(T010, WordCraft `format.state`). 선택 전체가 그 서식일 때 true.
+    pub format: FormatView,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
+pub struct HistoryView {
+    pub undo: bool,
+    pub redo: bool,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
+pub struct FormatView {
+    pub bold: bool,
+    pub italic: bool,
+    pub underline: bool,
+    pub strikethrough: bool,
 }
 
 /// 한 요청의 실행 결과.
@@ -440,7 +487,30 @@ impl DocxModel {
             }
             DocxOp::InsertAt { mark, text } => self.insert_at(*mark, text),
             DocxOp::ReplaceInserted { expected, text } => self.replace_inserted(expected, text),
+            DocxOp::Undo {} => self.undo_redo_step(false),
+            DocxOp::Redo {} => self.undo_redo_step(true),
+            DocxOp::Format { format } => self.run(format.command(), json!({})),
         }
+    }
+
+    /// WordCraft 실행 취소·다시 실행 한 단계(T010). 엔진은 `edit.undo`·`edit.redo`를 문서를 바꾸지 않는 명령(`pure`)으로
+    /// 등록하지만 실제로는 문서·선택을 바꾸므로(실측), `run`의 판단 대신 앞뒤 문서를 직접 비교해 revision을 정한다. 되돌릴
+    /// 단계가 없으면 아무것도 바꾸지 않는다(`Ok(false)`). 엔진이 거부하면(문서 보호를 푸는 단계) 거부다. 바뀐 문서에서는
+    /// 어댑터 기억(IME 늦은 확정의 자리 표시, 고칠 수 있는 바로 앞 넣기)의 위치가 맞지 않을 수 있으므로 버린다.
+    fn undo_redo_step(&mut self, redo: bool) -> Result<bool, Rejected> {
+        let available = if redo {
+            self.session.can_redo()
+        } else {
+            self.session.can_undo()
+        };
+        if !available {
+            return Ok(false);
+        }
+        let before = self.session.doc.clone();
+        self.run(if redo { "edit.redo" } else { "edit.undo" }, json!({}))?;
+        self.marks.clear();
+        self.last_insert = None;
+        Ok(before != self.session.doc)
     }
 
     fn insert_text(&mut self, text: &str) -> Result<bool, Rejected> {
@@ -622,6 +692,18 @@ impl DocxModel {
                 })
                 .collect()
         };
+        let history = HistoryView {
+            undo: self.session.can_undo() && !self.session.step_lifts_protection(false),
+            redo: self.session.can_redo() && !self.session.step_lifts_protection(true),
+        };
+        let state = wordcraft_engine::cmd::format::state(&self.session);
+        let flag = |key: &str| state.get(key).and_then(Value::as_bool).unwrap_or(false);
+        let format = FormatView {
+            bold: flag("bold"),
+            italic: flag("italic"),
+            underline: flag("underline"),
+            strikethrough: flag("strike"),
+        };
         let paragraph = self.session.doc.para_at(&sel.focus);
         let caret_offset = paragraph
             .and_then(|para| para.text.get(..sel.focus.off))
@@ -643,6 +725,8 @@ impl DocxModel {
             anchor_key: position_key(&sel.anchor),
             paragraph_text: paragraph.map(|para| para.plain_text()).unwrap_or_default(),
             caret_offset,
+            history,
+            format,
         }
     }
 

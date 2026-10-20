@@ -51,7 +51,19 @@ export interface DocxView {
   paragraphText: string;
   /** 커서의 문단 안 위치(문자 단위). */
   caretOffset: number;
+  /** WordCraft 실행 취소 기록(T010): 되돌릴·다시 할 단계가 있고 그 단계가 문서 보호를 풀지 않음. */
+  history: DocxHistory;
+  /** 선택(없으면 다음 입력)의 글자 서식(T010). 선택 전체가 그 서식이면 true. */
+  format: DocxFormat;
 }
+
+export interface DocxHistory {
+  undo: boolean;
+  redo: boolean;
+}
+
+export type DocxCharFormat = "bold" | "italic" | "underline" | "strikethrough";
+export type DocxFormat = Record<DocxCharFormat, boolean>;
 
 export interface DocxState {
   session: SessionInfo;
@@ -108,7 +120,12 @@ export type DocxOp =
   | { op: "selectAll" }
   | { op: "mark"; id: number }
   | { op: "insertAt"; mark: number; text: string }
-  | { op: "replaceInserted"; expected: string; text: string };
+  | { op: "replaceInserted"; expected: string; text: string }
+  /** 엔진(WordCraft Session) 기록의 한 단계 되돌리기·다시 실행(T010). 기록이 없으면 바뀌지 않는다. */
+  | { op: "undo" }
+  | { op: "redo" }
+  /** 선택의 글자 서식 켜고 끄기(선택이 없으면 다음 입력의 서식, T010). */
+  | { op: "format"; format: DocxCharFormat };
 
 /** 한 요청의 연산 수 상한(백엔드 MAX_OPS와 같음). */
 export const MAX_DOCX_OPS = 256;
@@ -165,11 +182,31 @@ function parseRect(value: unknown): DocxRect | null {
     : null;
 }
 
-const VIEW_KEYS = ["pages", "caret", "selection", "collapsed", "inTable", "caretKey", "anchorKey", "paragraphText", "caretOffset"];
+const VIEW_KEYS = [
+  "pages", "caret", "selection", "collapsed", "inTable", "caretKey", "anchorKey", "paragraphText", "caretOffset", "history", "format",
+];
+const FORMAT_KEYS: readonly DocxCharFormat[] = ["bold", "italic", "underline", "strikethrough"];
+
+function parseHistory(value: unknown): DocxHistory | null {
+  if (!isRecord(value) || !hasExactly(value, ["undo", "redo"])) return null;
+  const { undo, redo } = value;
+  return typeof undo === "boolean" && typeof redo === "boolean" ? { undo, redo } : null;
+}
+
+function parseFormat(value: unknown): DocxFormat | null {
+  if (!isRecord(value) || !hasExactly(value, FORMAT_KEYS)) return null;
+  const { bold, italic, underline, strikethrough } = value;
+  return [bold, italic, underline, strikethrough].every((flag) => typeof flag === "boolean")
+    ? { bold: bold as boolean, italic: italic as boolean, underline: underline as boolean, strikethrough: strikethrough as boolean }
+    : null;
+}
 
 export function parseDocxView(value: unknown): DocxView | null {
   if (!isRecord(value) || !hasExactly(value, VIEW_KEYS)) return null;
   const { pages, caret, selection, collapsed, inTable, caretKey, anchorKey, paragraphText, caretOffset } = value;
+  const history = parseHistory(value.history);
+  const format = parseFormat(value.format);
+  if (!history || !format) return null;
   if (!Array.isArray(pages) || pages.length === 0 || !Array.isArray(selection)) return null;
   const parsedPages = pages.map(parsePage);
   const parsedSelection = selection.map(parseRect);
@@ -185,7 +222,7 @@ export function parseDocxView(value: unknown): DocxView | null {
     pages: parsedPages as DocxPage[],
     caret: parsedCaret,
     selection: parsedSelection as DocxRect[],
-    collapsed, inTable, caretKey, anchorKey, paragraphText, caretOffset,
+    collapsed, inTable, caretKey, anchorKey, paragraphText, caretOffset, history, format,
   };
 }
 

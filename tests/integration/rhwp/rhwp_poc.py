@@ -9,6 +9,9 @@ WebKitWebDriver, Node.js, 그래픽 세션(Wayland weston 또는 X11).
     python3 tests/integration/rhwp/rhwp_poc.py --app src-tauri/target/debug/geul --driver <tauri-driver> \\
         [--report <결과 JSON>] [--screenshots <디렉터리>]
 
+    # T010 명령 시나리오만(지원하지 않는 Ctrl+Z·Ctrl+B 등은 아무것도 바꾸지 않음, Ctrl+S는 저장 절차):
+    python3 tests/integration/rhwp/rhwp_poc.py --app ... --driver ... --commands-only
+
     # 실제 한국어 IME 게이트(X11 + ibus-hangul + xdotool, 실제 키 입력):
     python3 tests/integration/rhwp/rhwp_poc.py --app ... --driver ... --ime --xdotool <xdotool> --ibus <ibus> \\
         [--focus-window <다른 X 창 이름 정규식>] [--diagnostic-only]
@@ -630,6 +633,66 @@ def scenario_save(d, fixtures: Path, scratch: Path) -> None:
     check("저장 시도 뒤 임시 파일(.geul-save-*.tmp)이 남지 않음", leftovers == [], json.dumps(leftovers))
 
 
+CTRL = "\ue009"
+
+
+def chord(d, key: str) -> None:
+    perform(d, [{"type": "key", "id": "kbd", "actions": [{"type": "keyDown", "value": CTRL}, {"type": "keyDown", "value": key},
+                                                          {"type": "keyUp", "value": key}, {"type": "keyUp", "value": CTRL}]}])
+
+
+def command_button(d, command: str) -> dict:
+    """명령 단추(리본·빠른 실행)의 상태. 같은 명령의 단추가 여럿이면 모두 같은 상태여야 한다."""
+    states = d.js("return [...document.querySelectorAll('[data-command=\"' + arguments[0] + '\"]')]"
+                  ".map(b => ({disabled: b.getAttribute('aria-disabled') === 'true', pressed: b.getAttribute('aria-pressed'), title: b.title}))",
+                  command)
+    if not states or any(state != states[0] for state in states):
+        raise smoke.Failure(f"명령 단추 상태 없음·불일치: {command} {states}")
+    return states[0]
+
+
+def scenario_commands(d, fixtures: Path, scratch: Path) -> None:
+    """T010: rhwp 문서에서 엔진이 지원하지 않는 명령(실행 취소·서식)은 실제 키·단추로도 아무것도 바꾸지 않고 이유를 알리며,
+    저장 단축키는 기존 저장 절차를 부른다."""
+    import hashlib
+    path = scratch / "commands.hwpx"
+    shutil.copy(fixtures / "basic-ko.hwpx", path)
+    original = hashlib.sha256(path.read_bytes()).hexdigest()
+    open_document(d, path)
+    click_paragraph_start(d)
+    before = type_ascii(d, "Q")
+    unsupported = ("edit.undo", "edit.redo", "format.bold", "format.italic", "format.underline", "format.strikethrough")
+    states = {command: command_button(d, command) for command in unsupported}
+    check("rhwp 명령: 실행 취소·다시 실행·서식 단추는 이 형식에서 지원하지 않음으로 보이고(설명에 이유) 저장은 쓸 수 있음",
+          all(state["disabled"] and "이 문서 형식에서 지원하지 않음" in state["title"] for state in states.values())
+          and not command_button(d, "file.save")["disabled"], json.dumps(states, ensure_ascii=False)[:600])
+    d.js("document.querySelector('.rhwp-input').focus()")
+    d.js("const m=document.querySelector('.statusbar__message'); if (m) m.dataset.before = m.textContent")
+    for key in ("z", "y", "b", "i", "u"):
+        chord(d, key)
+    time.sleep(0.8)
+    after = status(d)
+    message = d.js("return document.querySelector('.statusbar__message')?.textContent ?? ''")
+    keep = ("revision", "localRevision", "paragraphText", "caret", "dirty")
+    check("rhwp 명령: Ctrl+Z·Ctrl+Y·Ctrl+B·Ctrl+I·Ctrl+U는 모델·revision을 바꾸지 않고(가짜 성공 없음) 이유를 알림",
+          all(after.get(k) == before.get(k) for k in keep) and "이 문서 형식에서는 지원하지 않습니다" in message,
+          json.dumps({"before": {k: before.get(k) for k in keep}, "after": {k: after.get(k) for k in keep}, "message": message},
+                     ensure_ascii=False)[:600])
+    press_button(d, '[data-command="format.bold"]')
+    time.sleep(0.3)
+    clicked = status(d)
+    check("rhwp 명령: 리본의 굵게 단추를 눌러도 모델·revision이 그대로", all(clicked.get(k) == before.get(k) for k in keep))
+    d.js("document.querySelector('.rhwp-input').focus()")
+    chord(d, "s")
+    smoke.wait_until(d, f"const e=document.querySelector('{SAVE_RESULT}'); return e && ['saved','failed'].includes(e.dataset.state)", timeout=60)
+    result = d.js(f"return {{...document.querySelector('{SAVE_RESULT}').dataset}}")
+    saved = status(d)
+    check("rhwp 명령: Ctrl+S → 기존 저장 절차(사전 검사·검사·교체)로 저장하고 dirty가 풀림",
+          result["state"] == "saved" and saved["dirty"] == "false" and hashlib.sha256(path.read_bytes()).hexdigest() != original,
+          json.dumps(result, ensure_ascii=False))
+    check("rhwp 명령: 저장한 문서는 버리기 확인 없이 닫힘", close_tab(d, path.name))
+
+
 # ---- 실제 한국어 IME 게이트 ----
 
 # (이름, 필수 여부). 필수 항목이 모두 PASS여야 IME 게이트 통과다.
@@ -973,6 +1036,7 @@ def main() -> int:
     parser.add_argument("--xdotool", default=shutil.which("xdotool") or "xdotool")
     parser.add_argument("--ibus", default=shutil.which("ibus") or "ibus")
     parser.add_argument("--focus-window", help="창 초점 이동 항목에 쓸, 이미 떠 있는 다른 X 창의 이름(xdotool search --name)")
+    parser.add_argument("--commands-only", action="store_true", help="T010 명령 시나리오만 실행")
     args = parser.parse_args()
     smoke.APP = os.path.abspath(args.app)
     smoke.DRIVER_LOG = args.driver_log
@@ -1011,6 +1075,8 @@ def main() -> int:
                         smoke.wait_until(d, "return document.querySelector('.document-bar') !== null", timeout=30)
                         if args.ime:
                             scenario_ime(d, fixtures, args.xdotool, args.ibus, args.focus_window, args.screenshots)
+                        elif args.commands_only:
+                            scenario_commands(d, fixtures, scratch)
                         else:
                             scenario_load_render(d, fixtures, args.screenshots)
                             for fmt in ("hwp", "hwpx"):
@@ -1025,6 +1091,7 @@ def main() -> int:
                             scenario_sessions(d, fixtures, scratch)
                             scenario_reopen_exported(d, exported)
                             scenario_save(d, fixtures, scratch)
+                            scenario_commands(d, fixtures, scratch)
                     finally:
                         try:
                             d.quit()

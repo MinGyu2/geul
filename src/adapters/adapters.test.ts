@@ -1,7 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import { createTauriBackend, type DocumentBackend, type Invoke } from "./backend";
 import { parseBackendError, parseSessionInfo, type DocumentError, type Result, type SessionInfo } from "./contract";
-import { adapterFor } from "./engines";
 import { DocumentSessions, EMPTY_SESSIONS, reduceSessions } from "./sessions";
 
 // Rust serde 직렬화 형식(src-tauri/src/document/)과 같은 값. 실제 IPC 응답은 tests/e2e/tauri_smoke.py가 확인한다.
@@ -93,31 +92,6 @@ describe("Tauri 백엔드 클라이언트", () => {
     expect(await createTauriBackend(answer({ sessionId: 9, alreadyClosed: true })).close(1)).toEqual({ ok: false, error: { code: "Protocol" } });
     expect(await createTauriBackend(answer([docx, docx])).sessions()).toEqual({ ok: false, error: { code: "Protocol" } });
     expect(await createTauriBackend(answer(undefined)).open("/a.docx")).toEqual({ ok: false, error: { code: "Protocol" } });
-  });
-});
-
-describe("엔진 어댑터 경계", () => {
-  it("세션의 엔진으로 어댑터를 고르고, 엔진 연결 전에는 모든 명령을 사용할 수 없다고 보고한다", () => {
-    expect(adapterFor(docx).engine).toBe("wordcraft");
-    expect(adapterFor(hwpx).engine).toBe("rhwp");
-    expect(adapterFor(hwp).formats).toEqual(["hwp", "hwpx"]);
-    expect(adapterFor(docx).formats).toEqual(["docx"]);
-    for (const session of [docx, hwpx, hwp]) {
-      for (const command of ["format.bold", "file.save", "edit.undo"]) {
-        expect(adapterFor(session).capability(session, command)).toEqual({ state: "unavailable", reason: "engine-not-integrated" });
-      }
-    }
-  });
-
-  it("화면 명령·저장은 가짜 성공 없이 EngineUnavailable이고 세션을 바꾸지 않는다", async () => {
-    const session = { ...hwpx };
-    const adapter = adapterFor(session);
-    // T007: 불러오기는 이 경계가 아니라 편집 표면과 세션 수명주기가 맡는다.
-    expect("load" in adapter).toBe(false);
-    expect(await adapter.execute({ sessionId: 2, revision: 0, commandId: "format.bold" }))
-      .toEqual({ ok: false, error: { code: "EngineUnavailable", engine: "rhwp", operation: "execute" } });
-    expect(await adapterFor(docx).save(docx)).toEqual({ ok: false, error: { code: "EngineUnavailable", engine: "wordcraft", operation: "save" } });
-    expect(session).toEqual(hwpx);
   });
 });
 

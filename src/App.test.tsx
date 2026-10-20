@@ -294,7 +294,7 @@ describe("리본", () => {
   });
 });
 
-describe("지원하지 않는 문서 명령", () => {
+describe("열린 문서가 없을 때의 문서 명령", () => {
   it("저장·실행 취소·서식은 비활성으로 표시되고 눌러도 아무것도 바꾸지 않는다", async () => {
     const { user } = setup();
     const quick = screen.getByRole("group", { name: "빠른 실행" });
@@ -307,7 +307,7 @@ describe("지원하지 않는 문서 명령", () => {
 
     const before = document.body.innerHTML.replace(/<span class="statusbar__message".*?<\/span>/, "");
     await user.click(bold);
-    expect(statusMessage()).toHaveTextContent("굵게: 문서 엔진이 아직 연결되지 않아 사용할 수 없습니다.");
+    expect(statusMessage()).toHaveTextContent("굵게: 열린 문서가 없어 사용할 수 없습니다.");
     expect(bold).not.toHaveAttribute("aria-pressed");
     const after = document.body.innerHTML.replace(/<span class="statusbar__message".*?<\/span>/, "");
     expect(after).toBe(before);
@@ -321,7 +321,7 @@ describe("지원하지 않는 문서 명령", () => {
       expect(button).toHaveAttribute("aria-disabled", "true");
     }
     await user.click(within(toolbar).getByRole("button", { name: "열기" }));
-    expect(statusMessage()).toHaveTextContent("열기: 문서 엔진이 아직 연결되지 않아");
+    expect(statusMessage()).toHaveTextContent("열기: 아직 연결되지 않은 명령입니다.");
   });
 });
 

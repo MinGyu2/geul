@@ -2,10 +2,11 @@
 // 시도 번호·ready·기준 revision 확인, 실제로 바뀐 연산만 revision, 거부한 연산은 없던 일, Mark/InsertAt, ReplaceInserted,
 // Pointer.beforeInsert, 요청 검사(validate: 글자 길이·제어 문자, 위반이면 요청 전체 InvalidRequest), PasteText의 문단 나누기·
 // chain(앞 연산이 거부되면 건너뜀), DeleteSelection. 글자 하나 = 가로 10pt, 문단 하나 = 세로 20pt, 본문 왼쪽 위 (72, 72).
-// 실제 엔진 동작은 Rust 시험과 tests/integration/wordcraft/에서 확인한다.
+// T010의 실행 취소·글자 서식도 흉내다: 기록은 바뀐 연산마다 앞 상태 하나(WordCraft의 타자 묶기는 흉내 내지 않음), 서식은 선택 범위
+// 키마다 켠 서식. 실제 엔진 동작은 Rust 시험과 tests/integration/wordcraft/에서 확인한다.
 import type { DocumentBackend } from "../../../adapters/backend";
 import type { DocumentError, Preservation, Result, SaveCheck, SaveOutcome, SessionInfo } from "../../../adapters/contract";
-import type { DocxBackend, DocxEdited, DocxOp, DocxRender, DocxRoundTrip, DocxState, DocxView } from "../../../adapters/docx";
+import type { DocxBackend, DocxCharFormat, DocxEdited, DocxOp, DocxRender, DocxRoundTrip, DocxState, DocxView } from "../../../adapters/docx";
 import { vi } from "vitest";
 import { DocumentSessions } from "../../../adapters/sessions";
 import { DocxEditorSession } from "./DocxEditorSession";
@@ -15,6 +16,9 @@ export const CHAR = 10;
 export const LINE = 20;
 
 type At = { p: number; o: number };
+/** 실행 취소 기록 한 단계(흉내): 문단·서식·커서. */
+type FakeState = { paragraphs: string[]; styled: [string, DocxCharFormat[]][]; caret: At; anchor: At };
+const FORMATS: readonly DocxCharFormat[] = ["bold", "italic", "underline", "strikethrough"];
 const chars = (text: string) => [...text];
 /** 백엔드 MAX_TEXT_CHARS·MAX_OPS(engine.rs). */
 const MAX_TEXT = 4096;
@@ -77,6 +81,12 @@ export class FakeDocx implements DocxBackend {
   private marks = new Map<number, At>();
   private engineRev = 0;
   private last: { at: At; text: string; rev: number; before: string[] } | null = null;
+  /** 흉내 낸 엔진 기록(T010). */
+  private undoStack: FakeState[] = [];
+  private redoStack: FakeState[] = [];
+  /** 서식을 준 선택 범위(`p:o-p:o`)마다 켠 서식, 선택이 없을 때 켠 다음 입력의 서식(T010 흉내). */
+  private styled = new Map<string, Set<DocxCharFormat>>();
+  private pendingFormat = new Set<DocxCharFormat>();
 
   constructor(text: string[] = ["가나다", "abc"]) {
     this.paragraphs = [...text];
@@ -111,7 +121,41 @@ export class FakeDocx implements DocxBackend {
       selection, collapsed, inTable: false,
       caretKey: at(this.caret), anchorKey: at(this.anchor),
       paragraphText: this.paragraphs[this.caret.p]!, caretOffset: this.caret.o,
+      history: { undo: this.undoStack.length > 0, redo: this.redoStack.length > 0 },
+      format: Object.fromEntries(FORMATS.map((flag) => [flag, this.currentFormat().has(flag)])) as DocxView["format"],
     };
+  }
+
+  private rangeKey(): string {
+    const [from, to] = cmp(this.anchor, this.caret) <= 0 ? [this.anchor, this.caret] : [this.caret, this.anchor];
+    return `${from.p}:${from.o}-${to.p}:${to.o}`;
+  }
+
+  private currentFormat(): Set<DocxCharFormat> {
+    return cmp(this.caret, this.anchor) === 0 ? this.pendingFormat : (this.styled.get(this.rangeKey()) ?? new Set());
+  }
+
+  /** 문서 내용(문단·서식). 바뀌었는지 비교용. */
+  private content(): string {
+    return JSON.stringify([this.paragraphs, [...this.styled].map(([key, set]) => [key, [...set].sort()]).sort()]);
+  }
+
+  private capture(): FakeState {
+    return {
+      paragraphs: [...this.paragraphs], styled: [...this.styled].map(([key, set]) => [key, [...set]]),
+      caret: { ...this.caret }, anchor: { ...this.anchor },
+    };
+  }
+
+  private restore(state: FakeState) {
+    this.paragraphs = [...state.paragraphs];
+    this.styled = new Map(state.styled.map(([key, flags]) => [key, new Set(flags)]));
+    this.caret = { ...state.caret };
+    this.anchor = { ...state.anchor };
+    this.pendingFormat.clear();
+    // 엔진처럼 되돌리면 표지·마지막 넣기 기억을 버린다(그 자리를 다시 쓰지 않음).
+    this.marks.clear();
+    this.last = null;
   }
 
   private state(): DocxState {
@@ -138,6 +182,11 @@ export class FakeDocx implements DocxBackend {
       this.paragraphs = [...this.original];
       this.caret = { p: 0, o: 0 };
       this.anchor = { p: 0, o: 0 };
+      // 새 엔진 모델: 기록·서식도 새로 시작한다(백엔드가 새 Session을 만듦).
+      this.undoStack = [];
+      this.redoStack = [];
+      this.styled.clear();
+      this.pendingFormat.clear();
       this.cleanRevision = this.info.revision;
       this.unconfirmed = false;
       this.update({ state: "ready", loadGeneration: this.info.loadGeneration + 1 });
@@ -172,12 +221,17 @@ export class FakeDocx implements DocxBackend {
       const rejected: number[] = [];
       let changed = 0;
       ops.forEach((op, index) => {
-        const before = JSON.stringify(this.paragraphs);
+        const before = this.content();
+        const state = this.capture();
         const skipped = op.op === "pasteText" && op.chain && rejected.at(-1) === index - 1 && index > 0;
         if (skipped || !this.apply(op)) rejected.push(index);
-        else if (JSON.stringify(this.paragraphs) !== before) {
+        else if (this.content() !== before) {
           changed += 1;
           this.engineRev += 1;
+          if (op.op !== "undo" && op.op !== "redo") {
+            this.undoStack.push(state);
+            this.redoStack = [];
+          }
         } else if (["backspace", "deleteForward", "newParagraph", "tab", "insertText"].includes(op.op)) this.engineRev += 1;
       });
       if (changed > 0) this.update({ revision: this.info.revision + changed });
@@ -203,6 +257,7 @@ export class FakeDocx implements DocxBackend {
   }
 
   private moveTo(at: At, extend: boolean) {
+    if (cmp(at, this.caret) !== 0) this.pendingFormat.clear();
     this.caret = at;
     if (!extend) this.anchor = { ...at };
   }
@@ -265,6 +320,28 @@ export class FakeDocx implements DocxBackend {
         const list = chars(this.paragraphs[this.caret.p]!);
         this.paragraphs.splice(this.caret.p, 1, list.slice(0, this.caret.o).join(""), list.slice(this.caret.o).join(""));
         this.moveTo({ p: this.caret.p + 1, o: 0 }, false);
+        return true;
+      }
+      case "undo":
+      case "redo": {
+        // 기록이 없으면 엔진처럼 실행은 되지만 바뀌지 않는다.
+        const [from, to] = op.op === "undo" ? [this.undoStack, this.redoStack] : [this.redoStack, this.undoStack];
+        const state = from.pop();
+        if (!state) return true;
+        to.push(this.capture());
+        this.restore(state);
+        return true;
+      }
+      case "format": {
+        if (cmp(this.caret, this.anchor) === 0) {
+          if (!this.pendingFormat.delete(op.format)) this.pendingFormat.add(op.format);
+          return true;
+        }
+        const key = this.rangeKey();
+        const flags = new Set(this.styled.get(key));
+        if (!flags.delete(op.format)) flags.add(op.format);
+        if (flags.size > 0) this.styled.set(key, flags);
+        else this.styled.delete(key);
         return true;
       }
       case "tab":

@@ -106,6 +106,7 @@ interface EditorAdapter {
 - 오류(`error.rs`, `src/adapters/contract.ts`): 위 키 중 `UnsupportedFormat`·`ParseFailure`·`StaleSession`을 쓰고,
   결정적인 거부를 위해 `InvalidPath`·`Unreadable`·`ExtensionMismatch`·`Encrypted`·`ResourceLimit`·`AlreadyOpen`·
   `UnknownSession`·`Internal`을 더했다. 프런트엔드는 `EngineUnavailable`(엔진 연결 전)·`Protocol`(계약 밖 응답)을 만든다.
+  (T010: `EngineUnavailable`은 자리표시자 어댑터와 함께 지웠고, 쓸 수 없는 명령은 오류 코드가 아니라 명령 가용성 이유로 알린다.)
   `UnsupportedCommand`(T010), `UnsafeSave`·`SaveFailure`·`FileConflict`(T009/T014)는 해당 작업에서 추가한다. 오류에는 code와
   고정된 세부 값만 있고 경로·문서 내용·운영체제 오류 문구는 없다.
 - 세션: ID는 1부터 늘고 다시 쓰지 않는다(발급한 적 있는 ID = `StaleSession`, 없는 ID = `UnknownSession`). 같은 파일(정규화
@@ -117,6 +118,7 @@ interface EditorAdapter {
   형식이나 엔진이 바뀐 응답은 버림, 열기 완료는 가장 최근 열기이고 그동안 사용자가 다른 문서를 고르지 않았을 때만 활성화.
 - 엔진 어댑터(`engines.ts`): `capability`(지금은 모든 명령 `engine-not-integrated`), `load`·`execute`·`save`(T007/T008에서 구현,
   지금은 아무것도 바꾸지 않고 `EngineUnavailable`). 렌더링·커서·선택·IME는 편집 표면마다 달라 PoC 결과로 정한다.
+  (T010에서 지움: 명령 대상은 편집 세션 자신이다 — 아래 "T010에서 구현한 계약".)
 - 경로 입력: 열기 대화상자가 없어 IPC로 경로를 받고 백엔드가 검사한다(절대 경로만, NUL·4,096바이트 초과 거부, 심볼릭 링크를
   따라간 실제 파일의 이름·내용으로 판단, 일반 파일만, unix에서 O_NONBLOCK). 백엔드가 대화상자를 띄우는 흐름(T009)이 생기면
   경로 입력을 다시 검토한다. UTF-8이 아닌 경로는 IPC 문자열로 보낼 수 없어 열 수 없다.
@@ -285,6 +287,21 @@ interface EditorAdapter {
   `cfg(unix)` 의존성, Apple 대상에는 `getrandom`이 없음). 시험 코드·문서만 바뀌었고 제품 동작은 그대로다([상세](../architecture/save-preservation.md#다중-사용자-탐침-판정후속-강화-a)).
 - 시험 cfg 정리(`43f5972` 위): Linux 전용 시험에서만 쓰는 시험 도우미 13개에도 같은 cfg를 붙였다(시험 코드만, Windows·macOS 빌드는 NOT RUN).
 - 게시 모듈 cfg 정리(`8aa2686` 위): `publish.rs`에서 Linux 게시에서만 쓰는 가져오기·상수·도우미·검증 상태에 Linux cfg(동작 변경 없음, Linux 밖 `stage`·`publish`는 그대로 `SaveUnsupported{platform}`). cfg 모의 검사로 Linux 밖 쓰이지 않는 코드 0개, 실제 Windows·macOS 빌드는 NOT RUN(T016).
+
+### T010에서 구현한 계약 (2026-10-20, 명령 레지스트리·가용성·실행 취소)
+- 결정·근거·한계: [command-registry.md](../architecture/command-registry.md).
+- 레지스트리(`src/commands/registry.ts`): 명령마다 변하지 않는 ID, 번역 라벨 키, 단축키(물리 키 기준, 충돌·형식 오류는 시험 실패),
+  범위(전역·문서), 엔진별 지원. 리본의 나머지 명령은 `planned`(실행하지 않음). 리본 배치·상황별 탭은 T011.
+- 명령 대상(`DocumentCommandTarget`): `RhwpEditorSession`·`DocxEditorSession`이 구현한다(`snapshot()`, `execute(id)`). 활성 대상은
+  `DocumentSessions`의 활성 세션에서 고르고, 명령은 그 세션의 기존 편집 대기열(T008)·저장 절차(T009)로만 간다. 자리표시자
+  `EngineAdapter`(`engines.ts`)와 `EngineUnavailable`은 지웠다(공통 문서 모델·두 번째 엔진 경계 없음).
+- WordCraft IPC: `DocxOp`에 `undo`·`redo`·`format{format: bold|italic|underline|strikethrough}`(빈 구조체 변형, 남는 필드 거부),
+  `DocxView`에 `history{undo,redo}`·`format{bold,italic,underline,strikethrough}`. 실행 취소 기록은 엔진 `Session`의 것 하나이며, 되돌리기가
+  문서를 바꾸면 revision이 1 는다(백엔드가 실행 전후 문서 비교). 다시 불러오면 기록이 새로 시작한다.
+- rhwp: 엔진 실행 취소 기록이 없어 `edit.undo`·`edit.redo`, 보존 검사 때문에 `format.*`을 지원하지 않는다(실행하지 않고 이유를 알림).
+  저장(`file.save`, Ctrl+S)은 두 엔진 모두 지원한다.
+- 가용성 이유: `noDocument`·`notImplemented`·`engineUnsupported`·`notReady`·`composing`·`pendingEdits`·`saving`·`nothingToUndo`·
+  `nothingToRedo`·`limit`(`command.unavailable.*` 알림, `command.reason.*` 단추 설명).
 
 ## Algorithms and Pseudocode
 ```

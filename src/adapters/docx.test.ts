@@ -9,6 +9,8 @@ const view = {
   selection: [],
   collapsed: true, inTable: false,
   caretKey: "body:0:0", anchorKey: "body:0:0", paragraphText: "가나", caretOffset: 0,
+  history: { undo: false, redo: false },
+  format: { bold: false, italic: false, underline: false, strikethrough: false },
 };
 const session = { sessionId: 3, format: "docx", engine: "wordcraft", revision: 2, state: "ready", displayName: "a.docx", dirty: true, sequence: 5, loadGeneration: 1 };
 
@@ -22,6 +24,19 @@ describe("DOCX 응답 검사", () => {
     expect(parseDocxView({ ...view, caret: { page: 1, x: 0, y: 0, height: 1 } })).toBeNull(); // 없는 쪽
     expect(parseDocxView({ ...view, selection: [{ page: 0, x: 0, y: 0, width: -1, height: 1 }] })).toBeNull();
     expect(parseDocxView({ ...view, caretOffset: -1 })).toBeNull();
+  });
+
+  it("실행 취소 기록·글자 서식(T010)은 정해진 모양의 참·거짓만 받는다", () => {
+    const pressed = { ...view, history: { undo: true, redo: false }, format: { ...view.format, bold: true } };
+    expect(parseDocxView(pressed)).toEqual(pressed);
+    const without = (key: string) => Object.fromEntries(Object.entries(view).filter(([name]) => name !== key));
+    expect(parseDocxView(without("history"))).toBeNull();
+    expect(parseDocxView(without("format"))).toBeNull();
+    expect(parseDocxView({ ...view, history: { undo: 1, redo: false } })).toBeNull();
+    expect(parseDocxView({ ...view, history: { undo: true, redo: false, count: 2 } })).toBeNull();
+    expect(parseDocxView({ ...view, format: { bold: true, italic: false, underline: false } })).toBeNull();
+    expect(parseDocxView({ ...view, format: { ...view.format, highlight: true } })).toBeNull();
+    expect(parseDocxView({ ...view, format: { ...view.format, bold: "true" } })).toBeNull();
   });
 
   it("세션 정보는 요청한 WordCraft 세션의 것이어야 한다", () => {

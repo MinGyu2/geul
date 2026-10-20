@@ -1,6 +1,7 @@
-import { useCallback, useEffect, useLayoutEffect, useMemo, useReducer, useRef, useState, type CSSProperties } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useReducer, useRef, useState, useSyncExternalStore, type CSSProperties } from "react";
 import type { CommandContext } from "./commands/commands";
-import type { DocumentWorkspace } from "./components/Editor/documentWorkspace";
+import { handleShortcut } from "./commands/shortcuts";
+import type { DocumentWorkspace, EngineEditor } from "./components/Editor/documentWorkspace";
 import { Editor } from "./components/Editor/Editor";
 import { createTauriWorkspace } from "./components/Editor/tauriWorkspace";
 import { NavigationPanel } from "./components/NavigationPanel/NavigationPanel";
@@ -81,6 +82,21 @@ export default function App({ initialState, initialLanguage, settingsStore = def
   );
 }
 
+const NO_SUBSCRIBE = () => () => {};
+
+/**
+ * 활성 문서의 편집 세션(명령 대상). 활성 세션은 DocumentSessions(백엔드 투영)가 정하고, 편집 세션은 작업 공간이 세션마다 하나
+ * 만든다. 그 편집 세션이 바뀔 때(기록·서식·조합·저장 상태)마다 다시 그려 명령 가용성을 새로 정한다.
+ */
+function useActiveDocument(documents: DocumentWorkspace | null): EngineEditor | null {
+  const sessions = documents?.sessions;
+  const activeId = useSyncExternalStore(sessions?.subscribe ?? NO_SUBSCRIBE, () => sessions?.snapshot().activeId ?? null);
+  const editor = activeId === null ? null : (documents?.anyEditorFor(activeId) ?? null);
+  const [, update] = useReducer((tick: number) => tick + 1, 0);
+  useEffect(() => editor?.subscribe(update), [editor]);
+  return editor;
+}
+
 interface WorkspaceProps {
   layout: LayoutState;
   dispatch: CommandContext["dispatch"];
@@ -95,18 +111,23 @@ function Workspace({ layout, dispatch, message, notify, documents }: WorkspacePr
   const navigationToggleRef = useRef<HTMLButtonElement>(null);
   const propertiesToggleRef = useRef<HTMLButtonElement>(null);
 
-  const context = useMemo<CommandContext>(() => ({ layout, dispatch, notify }), [layout, dispatch, notify]);
+  // 명령 단추는 그릴 때마다 활성 편집 세션의 지금 상태로 가용성을 정한다(세션이 바뀌면 다시 그림).
+  const activeEditor = useActiveDocument(documents);
+  const context = useMemo<CommandContext>(
+    () => ({ layout, dispatch, notify, document: activeEditor }),
+    [layout, dispatch, notify, activeEditor],
+  );
 
+  // 단축키(T010): 레지스트리가 정한 명령만. 최신 문맥을 쓰도록 ref로 넘긴다(리스너는 한 번만 붙임).
+  const contextRef = useRef(context);
+  useLayoutEffect(() => {
+    contextRef.current = context;
+  }, [context]);
   useEffect(() => {
-    const onKeyDown = (event: KeyboardEvent) => {
-      if (event.ctrlKey && !event.altKey && !event.metaKey && event.key === "F1") {
-        event.preventDefault();
-        dispatch({ type: "toggleRibbon" });
-      }
-    };
+    const onKeyDown = (event: KeyboardEvent) => void handleShortcut(event, contextRef.current);
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [dispatch]);
+  }, []);
 
   // 패널 안의 닫기 버튼으로 숨기면 초점이 사라지므로 제목 표시줄의 해당 토글로 옮긴다.
   const closePanel = (panel: SidePanel) => {

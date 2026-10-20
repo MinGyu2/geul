@@ -33,7 +33,7 @@ function expectKorean({ ready = true } = {}) {
   expect(screen.getByRole("banner", { name: "제목 표시줄" })).toBeInTheDocument();
   expect(screen.getByRole("tab", { name: "홈" })).toBeInTheDocument();
   expect(screen.getByRole("group", { name: "글꼴" })).toBeInTheDocument();
-  expect(screen.getByRole("button", { name: "굵게" })).toHaveAttribute("title", "굵게 — 사용할 수 없음 — 문서 엔진 연결 전");
+  expect(screen.getByRole("button", { name: "굵게" })).toHaveAttribute("title", "굵게 (Ctrl+B) — 열린 문서 없음");
   expect(screen.getByRole("complementary", { name: "탐색" })).toBeInTheDocument();
   expect(screen.getByRole("heading", { name: "열린 문서가 없습니다" })).toBeInTheDocument();
   expect(screen.getByRole("complementary", { name: "속성" })).toBeInTheDocument();
@@ -47,7 +47,7 @@ function expectEnglish({ ready = true } = {}) {
   expect(screen.getByRole("tab", { name: "Home" })).toBeInTheDocument();
   expect(screen.getByRole("group", { name: "Font" })).toBeInTheDocument();
   expect(screen.getByRole("button", { name: "Bold" }))
-    .toHaveAttribute("title", "Bold — Unavailable — no document engine connected yet");
+    .toHaveAttribute("title", "Bold (Ctrl+B) — No open document");
   expect(screen.getByRole("complementary", { name: "Navigation" })).toBeInTheDocument();
   expect(screen.getByRole("heading", { name: "No document is open" })).toBeInTheDocument();
   expect(screen.getByRole("complementary", { name: "Properties" })).toBeInTheDocument();
@@ -88,9 +88,9 @@ describe("첫 실행과 언어 전환", () => {
     render(<App settingsStore={memoryStore().store} />);
     await user.click(screen.getByRole("button", { name: "굵게" }));
     const message = () => screen.getAllByRole("status").find((element) => !element.hasAttribute("aria-label"))!;
-    expect(message()).toHaveTextContent("굵게: 문서 엔진이 아직 연결되지 않아 사용할 수 없습니다.");
+    expect(message()).toHaveTextContent("굵게: 열린 문서가 없어 사용할 수 없습니다.");
     await user.selectOptions(screen.getByRole("combobox", { name: "화면 언어" }), "en");
-    expect(message()).toHaveTextContent("Bold: unavailable until a document engine is connected.");
+    expect(message()).toHaveTextContent("Bold: no document is open.");
     await user.click(screen.getByRole("tab", { name: "Help" }));
     await user.click(screen.getByRole("button", { name: "About geul" }));
     expect(message()).toHaveTextContent(/^geul \S+ — UI layout stage\./);
@@ -297,7 +297,7 @@ describe("미지원 버전 설정 보호", () => {
     await user.click(screen.getByRole("button", { name: "테마: 밝게" }));
     expect(attempts).toEqual([]);
     expect(current()).toBe(futureSettings);
-    expect(statusMessage()).toHaveTextContent("굵게: 문서 엔진이 아직 연결되지 않아 사용할 수 없습니다.");
+    expect(statusMessage()).toHaveTextContent("굵게: 열린 문서가 없어 사용할 수 없습니다.");
     expect(statusMessage()).not.toHaveTextContent("설정을 저장하지 못했습니다");
   });
 
@@ -402,7 +402,7 @@ describe("설정 복원 문제 알림", () => {
     view.rerender(<StrictMode><App settingsStore={store} /></StrictMode>);
     view.rerender(<StrictMode><App settingsStore={store} /></StrictMode>);
     await act(async () => { await new Promise((resolve) => setTimeout(resolve, 20)); });
-    expect(statusMessage()).toHaveTextContent("굵게: 문서 엔진이 아직 연결되지 않아 사용할 수 없습니다.");
+    expect(statusMessage()).toHaveTextContent("굵게: 열린 문서가 없어 사용할 수 없습니다.");
     expect(screen.queryByText(/저장된 설정을 읽을 수 없어/)).toBeNull();
     expect(attempts).toEqual([]);
   });
@@ -434,7 +434,7 @@ describe("저장 실패 알림", () => {
     await user.click(screen.getByRole("button", { name: "굵게" }));
     state.writable = true;
     await user.click(screen.getByRole("button", { name: "테마: 밝게" }));
-    expect(statusMessage()).toHaveTextContent("굵게: 문서 엔진이 아직 연결되지 않아 사용할 수 없습니다.");
+    expect(statusMessage()).toHaveTextContent("굵게: 열린 문서가 없어 사용할 수 없습니다.");
   });
 
   it("연속 실패는 한 번만 알리고, 성공 뒤의 새 실패는 다시 알린다", async () => {
@@ -946,7 +946,7 @@ describe("저장된 설정의 의미 동등성(최종 정리 A)", () => {
     await user.click(screen.getByRole("button", { name: "굵게" }));
     await user.click(screen.getByRole("button", { name: "테마: 밝게" }));
     await user.click(screen.getByRole("button", { name: "테마: 어둡게" }));
-    expect(statusMessage()).toHaveTextContent("굵게: 문서 엔진이 아직 연결되지 않아 사용할 수 없습니다.");
+    expect(statusMessage()).toHaveTextContent("굵게: 열린 문서가 없어 사용할 수 없습니다.");
     expect(backing.value).toBe(raw);
   });
 
