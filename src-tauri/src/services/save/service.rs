@@ -1,7 +1,7 @@
 //! 저장 절차(T009). Tauri와 무관한 함수라 시험이 직접 부른다(IPC는 `commands.rs`).
 //!
 //! 순서: 원본 다시 읽기(같은 파일·지문·해시, 아니면 `FileConflict`) → 사전 검사 결과가 그 원본에 대해 `safe`인지 →
-//! 출력 검사(손실 보고·형식 판별·패키지 무결성·편집 부분 밖이 원본과 같음, 다시 열기 비교는 호출하는 쪽) → 같은
+//! 출력 검사(손실 보고·형식 판별·패키지 무결성·편집 부분 밖이 원본과 같음·모양 참조 무결성, 다시 열기 비교는 호출하는 쪽) → 같은
 //! 디렉터리 임시 파일 쓰기·되읽기 → 원본 해시 다시 확인 → 기록 잠금 안에서 세션·지문 다시 확인 뒤 교체 → 깨끗한 판 기록.
 //! 어느 단계든 실패하면 원본은 바뀌지 않는다(교체가 마지막 단계).
 
@@ -90,7 +90,8 @@ pub fn preflight(
     Preservation::from_findings(findings)
 }
 
-/// 저장 출력 검사: 손실 보고(rhwp), 형식 판별, 패키지 무결성, 편집 부분 밖이 원본과 같음. 본문이 편집 모델과 같은지
+/// 저장 출력 검사: 손실 보고(rhwp), 형식 판별, 패키지 무결성, 편집 부분 밖이 원본과 같음, 본문의 모양 참조가 정의를
+/// 가리킴(HWP·HWPX). 본문이 편집 모델과 같은지
 /// (다시 열기)는 엔진을 가진 쪽이 따로 확인해 `reopen_equal`로 넘긴다.
 pub fn check_saved(
     format: Format,
@@ -116,6 +117,7 @@ pub fn check_saved(
             (Ok(before), Ok(after)) if format == Format::Hwpx => {
                 findings.extend(package::validate_hwpx(&before, &after));
                 findings.extend(package::compare_saved_hwpx(&before, &after));
+                findings.extend(package::validate_hwpx_references(&after));
             }
             (Ok(before), Ok(after)) => {
                 findings.extend(package::validate_docx(&after));

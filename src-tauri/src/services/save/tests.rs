@@ -95,14 +95,21 @@ fn record(tag: u16, level: u16, payload: &[u8]) -> Vec<u8> {
     out
 }
 
-/// 문서 속성(tag 16, 26바이트: 구역 수·시작 번호·캐럿) + 글꼴(tag 19).
+/// 문서 속성(tag 16, 26바이트: 구역 수·시작 번호·캐럿) + 글꼴(tag 19) + 글자 모양 하나(tag 21)·문단 모양 하나(tag 25):
+/// `section()`의 문단(모양 ID 0)이 가리킬 정의(T009 모양 참조 무결성).
 fn docinfo(caret: u32, font: &[u8]) -> Vec<u8> {
     let mut properties = vec![1, 0];
     properties.extend_from_slice(&[1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0]);
     properties.extend_from_slice(&0u32.to_le_bytes());
     properties.extend_from_slice(&0u32.to_le_bytes());
     properties.extend_from_slice(&caret.to_le_bytes());
-    [record(16, 0, &properties), record(19, 1, font)].concat()
+    [
+        record(16, 0, &properties),
+        record(19, 1, font),
+        record(21, 1, b"char shape"),
+        record(25, 1, b"para shape"),
+    ]
+    .concat()
 }
 
 fn section(text: &str) -> Vec<u8> {
@@ -1476,7 +1483,13 @@ fn properties(sections: u16, starts: [u16; 6], caret: [u32; 3], extra: &[u8]) ->
 }
 
 fn docinfo_with(properties: &[u8]) -> Vec<u8> {
-    [record(16, 0, properties), record(19, 1, b"font")].concat()
+    [
+        record(16, 0, properties),
+        record(19, 1, b"font"),
+        record(21, 1, b"char shape"),
+        record(25, 1, b"para shape"),
+    ]
+    .concat()
 }
 
 #[test]
@@ -5951,4 +5964,342 @@ fn t010_굵게와_실행_취소로_바꾼_docx는_보존_검사를_통과해_저
         DocxModel::open(&doc.bytes()).unwrap().body_text(),
         DocxModel::open(&original).unwrap().body_text()
     );
+}
+
+// ---- T009 모양 참조 무결성(T010 Phase 0 Stage B 결함 수정) ----
+
+/// 고정 rhwp 출력과 같은 이름공간·이름(`hh:charPr`·`hh:paraPr`, `hp:run`·`hp:p`)의 header. 글자 모양 id는 0·7·12(빈 번호가
+/// 있는 정상 header — id가 이어질 필요는 없다), 문단 모양 id는 0.
+const REF_HEADER: &str = r#"<hh:head xmlns:hh="http://www.hancom.co.kr/hwpml/2011/head"><hh:refList><hh:charProperties itemCnt="3"><hh:charPr id="0" height="1000"/><hh:charPr id="7" height="1000"><hh:bold/></hh:charPr><hh:charPr id="12" height="900"/></hh:charProperties><hh:paraProperties itemCnt="1"><hh:paraPr id="0"/></hh:paraProperties></hh:refList></hh:head>"#;
+
+/// 본문: 구역 정의 run, 글 run 둘, 표 셀 안 문단 run, 양식 글자 모양(고정 rhwp가 읽는 참조 자리 모두).
+fn ref_section(
+    secpr: &str,
+    body: &str,
+    second: &str,
+    cell: &str,
+    para: &str,
+    form: &str,
+) -> String {
+    format!(
+        r#"<hs:sec xmlns:hs="http://www.hancom.co.kr/hwpml/2011/section" xmlns:hp="http://www.hancom.co.kr/hwpml/2011/paragraph"><hp:p id="0" paraPrIDRef="{para}" styleIDRef="0"><hp:run charPrIDRef="{secpr}"><hp:secPr/></hp:run><hp:run charPrIDRef="{body}"><hp:t>a</hp:t></hp:run><hp:run charPrIDRef="{second}"><hp:t>b</hp:t></hp:run></hp:p><hp:p id="1" paraPrIDRef="0" styleIDRef="0"><hp:run charPrIDRef="0"><hp:tbl><hp:tr><hp:tc><hp:subList><hp:p id="2" paraPrIDRef="0" styleIDRef="0"><hp:run charPrIDRef="{cell}"><hp:t>c</hp:t></hp:run></hp:p></hp:subList></hp:tc></hp:tr></hp:tbl></hp:run></hp:p><hp:p id="3" paraPrIDRef="0" styleIDRef="0"><hp:run charPrIDRef="0"><hp:ctrl><hp:checkBtn><hp:formCharPr charPrIDRef="{form}"/></hp:checkBtn></hp:ctrl></hp:run></hp:p></hs:sec>"#
+    )
+}
+
+fn ref_pkg(section: &str, header: &str) -> Vec<ZipEntry> {
+    hwpx_package(section, header, true, true)
+}
+
+#[test]
+fn hwpx_모양_참조는_10진_숫자이고_header에_정의된_id여야_한다() {
+    let valid = ref_section("0", "7", "12", "0", "0", "0");
+    assert_eq!(
+        package::validate_hwpx_references(&pkg(&ref_pkg(&valid, REF_HEADER))),
+        vec![],
+        "있는 모양(빈 번호 뒤의 12 포함)"
+    );
+    let invalid = vec![Finding::at(
+        FindingCode::ReferenceInvalid,
+        "Contents/section0.xml",
+    )];
+    let bad_values = [
+        "9999",
+        "8",
+        "1",
+        "70000",
+        "abc",
+        "-1",
+        "",
+        "+7",
+        " 7",
+        "7 ",
+        "4294967296",
+    ];
+    for value in bad_values {
+        for (slot, section) in [
+            ("글 run", ref_section("0", value, "12", "0", "0", "0")),
+            ("둘째 글 run", ref_section("0", "7", value, "0", "0", "0")),
+            (
+                "구역 정의 run",
+                ref_section(value, "7", "12", "0", "0", "0"),
+            ),
+            ("표 셀 run", ref_section("0", "7", "12", value, "0", "0")),
+            (
+                "문단 paraPrIDRef",
+                ref_section("0", "7", "12", "0", value, "0"),
+            ),
+            (
+                "양식 글자 모양",
+                ref_section("0", "7", "12", "0", "0", value),
+            ),
+        ] {
+            assert_eq!(
+                package::validate_hwpx_references(&pkg(&ref_pkg(&section, REF_HEADER))),
+                invalid,
+                "{slot} = {value:?}"
+            );
+        }
+    }
+    // 문단 모양 이름공간은 글자 모양과 따로다: paraPr에는 7이 없다.
+    assert_eq!(
+        package::validate_hwpx_references(&pkg(&ref_pkg(
+            &ref_section("0", "7", "12", "0", "7", "0"),
+            REF_HEADER
+        ))),
+        invalid
+    );
+    // 엔진이 버리는 id(65535 초과)의 정의는 정의가 아니다.
+    let big = REF_HEADER.replace(r#"<hh:charPr id="12""#, r#"<hh:charPr id="70000""#);
+    assert_eq!(
+        package::validate_hwpx_references(&pkg(&ref_pkg(
+            &ref_section("0", "7", "70000", "0", "0", "0"),
+            &big
+        ))),
+        invalid
+    );
+}
+
+#[test]
+fn hwpx_정의를_정할_수_없는_header는_unknown이고_없는_header도_막는다() {
+    let section = ref_section("0", "7", "12", "0", "0", "0");
+    let unsupported = vec![Finding::at(FindingCode::Unsupported, "Contents/header.xml")];
+    for (label, header) in [
+        (
+            "id 없음",
+            REF_HEADER.replace(r#"<hh:charPr id="7""#, "<hh:charPr"),
+        ),
+        ("id 중복", REF_HEADER.replace(r#"id="12""#, r#"id="7""#)),
+        (
+            "숫자 아닌 id",
+            REF_HEADER.replace(r#"id="12""#, r#"id="x""#),
+        ),
+        (
+            "문단 모양 id 없음",
+            REF_HEADER.replace(r#"<hh:paraPr id="0"/>"#, "<hh:paraPr/>"),
+        ),
+    ] {
+        assert_eq!(
+            package::validate_hwpx_references(&pkg(&ref_pkg(&section, &header))),
+            unsupported,
+            "{label}"
+        );
+    }
+    let mut missing = ref_pkg(&section, REF_HEADER);
+    missing.retain(|e| e.name != "Contents/header.xml");
+    assert_eq!(
+        package::validate_hwpx_references(&pkg(&missing)),
+        unsupported
+    );
+    // 읽을 수 없는 header는 malformed_xml이 막는다(같은 까닭을 두 번 적지 않음).
+    assert_eq!(
+        package::validate_hwpx_references(&pkg(&ref_pkg(&section, "<hh:head>"))),
+        vec![]
+    );
+}
+
+#[test]
+fn hwpx_저장_검사는_없는_모양_참조를_막고_올바른_참조는_받는다() {
+    let original = zip(
+        &ref_pkg(&ref_section("0", "0", "0", "0", "0", "0"), REF_HEADER),
+        false,
+    );
+    let saved = |section: &str| {
+        let output = zip(&ref_pkg(section, REF_HEADER), false);
+        service::check_saved(
+            Format::Hwpx,
+            &original,
+            &output,
+            Some(&report("hwpx", json!([]))),
+            true,
+        )
+    };
+    // 있는 모양을 가리키는 본문 편집(기존 모양 재사용 서식과 같은 모양)은 safe.
+    assert!(saved(&ref_section("0", "7", "12", "0", "0", "0")).is_safe());
+    let rejected = saved(&ref_section("0", "9999", "0", "0", "0", "0"));
+    assert_eq!(rejected.outcome, Outcome::Unsafe);
+    assert_eq!(
+        rejected.findings,
+        vec![Finding::at(
+            FindingCode::ReferenceInvalid,
+            "Contents/section0.xml"
+        )]
+    );
+}
+
+/// 구역 스트림: 문단 머리(모양 ID `para`) + 글 + 글자 모양 열(`shapes`; None이면 레코드 없음). `level`은 중첩(표 셀 문단 등).
+fn ref_paragraph(level: u16, para: u16, shapes: Option<&[u8]>) -> Vec<u8> {
+    let mut header = vec![0u8; 22];
+    header[8..10].copy_from_slice(&para.to_le_bytes());
+    let mut out = [record(66, level, &header), record(67, level + 1, b"a\0")].concat();
+    if let Some(shapes) = shapes {
+        out.extend(record(68, level + 1, shapes));
+    }
+    out
+}
+
+fn shape_pairs(ids: &[u32]) -> Vec<u8> {
+    ids.iter()
+        .enumerate()
+        .flat_map(|(i, id)| [(i as u32).to_le_bytes(), id.to_le_bytes()].concat())
+        .collect()
+}
+
+#[test]
+fn hwp_본문의_모양_id는_docinfo_정의_수보다_작아야_하고_미리보기와_따로_판정한다() {
+    // DocInfo: 글자 모양 2개(ID 0·1), 문단 모양 1개(ID 0).
+    let info = [docinfo(0, b"font"), record(21, 1, b"second char shape")].concat();
+    let original = hwp_doc(
+        0,
+        &info,
+        &ref_paragraph(0, 0, Some(&shape_pairs(&[0]))),
+        &[],
+    );
+    let saved = |body: &[u8]| hwp::compare_saved(&original, &hwp_doc(0, &info, body, &[]));
+    let ok_body = [
+        ref_paragraph(0, 0, Some(&shape_pairs(&[0, 1]))),
+        ref_paragraph(2, 0, Some(&shape_pairs(&[1]))),
+        ref_paragraph(0, 0, None),
+    ]
+    .concat();
+    assert_eq!(
+        saved(&ok_body),
+        vec![],
+        "있는 모양·중첩 문단·글자 모양 열 없음"
+    );
+    let invalid = vec![Finding::at(
+        FindingCode::ReferenceInvalid,
+        "BodyText/Section0",
+    )];
+    let bad_shapes: [(&str, Vec<u8>); 6] = [
+        ("없는 글자 모양 9999", shape_pairs(&[0, 9999])),
+        ("정의 수와 같은 ID", shape_pairs(&[2])),
+        ("u32 최댓값", shape_pairs(&[u32::MAX])),
+        ("빈 열", Vec::new()),
+        (
+            "8의 배수가 아님",
+            [shape_pairs(&[0]), vec![0, 0, 0, 0]].concat(),
+        ),
+        ("한 쌍보다 짧음", vec![0, 0, 0, 0]),
+    ];
+    for (label, shapes) in &bad_shapes {
+        let body = [
+            ref_paragraph(0, 0, Some(&shape_pairs(&[0]))),
+            ref_paragraph(0, 0, Some(shapes)),
+        ]
+        .concat();
+        assert_eq!(saved(&body), invalid, "{label}");
+        // 표 셀 등 중첩 문단도 같은 스트림의 레코드다.
+        let nested = [
+            ref_paragraph(0, 0, Some(&shape_pairs(&[0]))),
+            ref_paragraph(2, 0, Some(shapes)),
+        ]
+        .concat();
+        assert_eq!(saved(&nested), invalid, "중첩 {label}");
+    }
+    assert_eq!(
+        saved(&ref_paragraph(0, 1, Some(&shape_pairs(&[0])))),
+        invalid,
+        "없는 문단 모양"
+    );
+    assert_eq!(
+        saved(&[record(66, 0, &[0; 9]), record(67, 1, b"a\0")].concat()),
+        invalid,
+        "문단 모양 ID 자리가 없는 문단 머리"
+    );
+    // 미리보기가 원본 그대로여도 참조 근거는 따로 나온다(previewStale에 기대지 않음).
+    let preview: [(&str, &[u8]); 1] = [("/PrvText", b"t\0e\0x\0t\0")];
+    let original_with_preview = hwp_doc(
+        0,
+        &info,
+        &ref_paragraph(0, 0, Some(&shape_pairs(&[0]))),
+        &preview,
+    );
+    let both = hwp::compare_saved(
+        &original_with_preview,
+        &hwp_doc(
+            0,
+            &info,
+            &ref_paragraph(0, 0, Some(&shape_pairs(&[9999]))),
+            &preview,
+        ),
+    );
+    assert_eq!(
+        both,
+        vec![
+            Finding::at(FindingCode::PreviewStale, "PrvText"),
+            Finding::at(FindingCode::ReferenceInvalid, "BodyText/Section0"),
+        ]
+    );
+    // 사전 검사(편집 없는 왕복)는 바이트 같음만 본다: 참조 검사는 편집한 저장에만.
+    assert_eq!(hwp::compare(&original, &original), vec![]);
+}
+
+#[test]
+fn 실제_저장_서비스는_없는_모양_참조의_hwpx를_게시하지_않고_원본을_지킨다() {
+    let state = DocumentState::default();
+    let dir = TempDir::new();
+    let original = zip(
+        &ref_pkg(&ref_section("0", "0", "0", "0", "0", "0"), REF_HEADER),
+        false,
+    );
+    let info = rhwp_session(&state, &dir, "a.hwpx", &original);
+    let registry = state.registry();
+    let (id, generation) = (info.session_id, info.load_generation);
+    let source = registry.preflight_source(id, generation).unwrap();
+    let read = service::read_original(&source, &Limits::default()).unwrap();
+    let check = service::preflight(
+        Format::Hwpx,
+        &read,
+        &original,
+        Some(&report("hwpx", json!([]))),
+    );
+    assert!(check.is_safe(), "{check:?}");
+    registry
+        .record_preflight(id, generation, source.content_hash, check)
+        .unwrap();
+    registry.commit(id, generation, 0, 1).unwrap();
+    let dangling = zip(
+        &ref_pkg(&ref_section("0", "0", "0", "9999", "0", "0"), REF_HEADER),
+        false,
+    );
+    let ticket = registry.begin_save(id, generation, 1).unwrap();
+    let error = service::save(
+        registry,
+        &ticket,
+        &Limits::default(),
+        &dangling,
+        Some(&report("hwpx", json!([]))),
+        true,
+    )
+    .unwrap_err();
+    drop(ticket);
+    assert!(
+        matches!(&error, DocumentError::UnsafeSave { preservation }
+            if preservation.findings == vec![Finding::at(FindingCode::ReferenceInvalid, "Contents/section0.xml")]),
+        "{error:?}"
+    );
+    assert_eq!(std::fs::read(dir.path().join("a.hwpx")).unwrap(), original);
+    let names: Vec<_> = std::fs::read_dir(dir.path())
+        .unwrap()
+        .map(|e| e.unwrap().file_name())
+        .collect();
+    assert_eq!(names.len(), 1, "임시 파일이 남지 않는다: {names:?}");
+    assert!(registry.get(id).unwrap().dirty);
+    // 올바른 참조로 고친 출력은 같은 세션에서 저장된다.
+    let valid = zip(
+        &ref_pkg(&ref_section("0", "7", "12", "0", "0", "0"), REF_HEADER),
+        false,
+    );
+    let ticket = registry.begin_save(id, generation, 1).unwrap();
+    let saved = service::save(
+        registry,
+        &ticket,
+        &Limits::default(),
+        &valid,
+        Some(&report("hwpx", json!([]))),
+        true,
+    )
+    .unwrap();
+    assert!(!saved.session.dirty);
+    assert_eq!(std::fs::read(dir.path().join("a.hwpx")).unwrap(), valid);
 }

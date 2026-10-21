@@ -88,21 +88,35 @@ HWPX_MUTATIONS = {
     "hwpx-b-header-duplicate-id": ("Contents/header.xml", lambda d: d.replace(b'<hh:charPr id="1"', b'<hh:charPr id="0"', 1), "unsafe"),
 }
 
-# 지금 동작(CURRENT): 사례 이름 → (check_saved 결과, service::save 성공 여부). save_inputs.mjs·위 사본과 짝.
+# 지금 동작(CURRENT): 사례 이름 → (check_saved 결과, service::save 성공 여부, 근거 [코드, 부분] 집합 — 정확히 같아야 한다).
+# save_inputs.mjs·위 사본과 짝. T009 모양 참조 무결성 수정(2026-10-22) 뒤의 동작: 고친 참조 사본은 `referenceInvalid`로 거부된다
+# (수정 전 기록은 이 파일의 git 이력과 evidence/save-service.json 이전 판에 있다 — 모두 safe·게시였다).
+PREVIEW_HWP = [["previewStale", "PrvText"], ["previewStale", "PrvImage"]]
+REF_HWPX = [["referenceInvalid", "Contents/section0.xml"]]
+REF_HWP = [["referenceInvalid", "BodyText/Section0"]]
+HEADER = [["partChanged", "Contents/header.xml"]]
+DOCINFO = [["recordsChanged", "DocInfo"]]
 CURRENT = {
-    "hwp-italic-body": ("unsafe", False), "hwp-bold-body": ("unsafe", False), "hwp-underline-cell": ("unsafe", False),
-    "hwp-text-body": ("unsafe", False), "hwp-italic-restored": ("safe", True),
-    "hwpx-italic-body": ("unsafe", False), "hwpx-bold-body": ("safe", True), "hwpx-underline-cell": ("unsafe", False),
-    "hwpx-text-body": ("safe", True), "hwpx-italic-restored": ("safe", True),
-    "hwpx-b-body-9999": ("safe", True), "hwpx-b-cell-9999": ("safe", True), "hwpx-b-body-hole-8": ("safe", True),
-    "hwpx-b-body-overflow-70000": ("safe", True), "hwpx-b-body-nonnumeric": ("safe", True),
-    "hwpx-b-body-negative": ("safe", True), "hwpx-b-secpr-run-9999": ("safe", True), "hwpx-b-parapr-9999": ("safe", True),
-    "hwpx-b-body-existing-7": ("safe", True), "hwpx-b-header-duplicate-id": ("unsafe", False),
-    "hwp-b-dangling-9999": ("unsafe", False), "hwp-b-nopreview-dangling-9999": ("safe", None),
-    "hwp-b-nopreview-edited": ("safe", None),
+    "hwp-italic-body": ("unsafe", False, DOCINFO + PREVIEW_HWP), "hwp-bold-body": ("unsafe", False, DOCINFO + PREVIEW_HWP),
+    "hwp-underline-cell": ("unsafe", False, DOCINFO + PREVIEW_HWP), "hwp-text-body": ("unsafe", False, PREVIEW_HWP),
+    "hwp-italic-restored": ("safe", True, []),
+    "hwpx-italic-body": ("unsafe", False, HEADER), "hwpx-bold-body": ("safe", True, []),
+    "hwpx-underline-cell": ("unsafe", False, HEADER), "hwpx-text-body": ("safe", True, []), "hwpx-italic-restored": ("safe", True, []),
+    **{name: ("unsafe", False, REF_HWPX) for name in [
+        "hwpx-b-body-9999", "hwpx-b-cell-9999", "hwpx-b-body-hole-8", "hwpx-b-body-overflow-70000", "hwpx-b-body-nonnumeric",
+        "hwpx-b-body-negative", "hwpx-b-secpr-run-9999", "hwpx-b-parapr-9999"]},
+    # header id 중복: header 보호(partChanged)에 더해 정의를 정할 수 없음(unsupported) → unknown(수정 전 unsafe). 둘 다 저장 차단.
+    "hwpx-b-body-existing-7": ("safe", True, []),
+    "hwpx-b-header-duplicate-id": ("unknown", False, HEADER + [["unsupported", "Contents/header.xml"]]),
+    "hwp-b-dangling-9999": ("unsafe", False, PREVIEW_HWP + REF_HWP), "hwp-b-nopreview-dangling-9999": ("unsafe", None, REF_HWP),
+    "hwp-b-nopreview-edited": ("safe", None, []),
 }
-DESIRED = {**{k: v[2] for k, v in HWPX_MUTATIONS.items()}, "hwp-b-dangling-9999": "unsafe",
-           "hwp-b-nopreview-dangling-9999": "unsafe", "hwp-b-nopreview-edited": "safe"}
+# 바라는 동작(DESIRED): 판정과, unsafe면 반드시 있어야 할 근거(다른 까닭의 거부가 참조 수정으로 보이지 않게).
+# 판정은 집합: 저장을 막는 unsafe·unknown 중 무엇이어야 하는지. header id 중복은 header 보호 근거가 반드시 있어야 한다.
+DESIRED = {**{k: ({v[2]}, REF_HWPX[0] if v[2] == "unsafe" else None) for k, v in HWPX_MUTATIONS.items()},
+           "hwpx-b-header-duplicate-id": ({"unsafe", "unknown"}, HEADER[0]),
+           "hwp-b-dangling-9999": ({"unsafe"}, REF_HWP[0]), "hwp-b-nopreview-dangling-9999": ({"unsafe"}, REF_HWP[0]),
+           "hwp-b-nopreview-edited": ({"safe"}, None)}
 
 
 def main() -> int:
@@ -188,15 +202,22 @@ def main() -> int:
             }
             rows.append(row)
             expected = CURRENT.get(name)
-            ok = expected is not None and checked == expected[0] and (expected[1] is None or saved == expected[1])
+            ok = expected is not None and checked == expected[0] and (expected[1] is None or saved == expected[1]) \
+                and sorted(row["findings"]) == sorted(expected[2])
+            # 거부된 저장의 근거는 check_saved와 같아야 한다(저장 서비스가 다른 까닭으로 거부한 것이 아님).
+            if r["mode"] == "save" and saved is False:
+                ok &= row["saveError"]["code"] == "UnsafeSave" and sorted(row["saveError"]["findings"]) == sorted(expected[2])
             # 저장이 거부됐으면 원본 바이트·디렉터리 목록이 그대로여야 하고, 성공했으면 출력과 같아야 한다.
             if r["mode"] == "save":
                 ok &= (row["replacedWithOutput"] if saved else row["originalUnchanged"])
                 ok &= r["dirBefore"] == r["dirAfter"] == ["doc." + case["fmt"]]
             if not ok:
                 current_fail.append(name)
-            if name in DESIRED and checked != DESIRED[name]:
-                desired_fail.append(name)
+            if name in DESIRED:
+                outcome, required = DESIRED[name]
+                if checked not in outcome or (required is not None and required not in row["findings"]) \
+                        or (required is not None and r["mode"] == "save" and (saved or required not in row["saveError"]["findings"])):
+                    desired_fail.append(name)
             print(f"[{'ok' if ok else 'CURRENT-MISMATCH'}] {name}: preflight={row['preflight']} checkSaved={checked} "
                   f"{row['findings']} save={row['save']} originalUnchanged={row['originalUnchanged']} reopen={r['reopenEqual']}")
         evidence = {
@@ -209,7 +230,7 @@ def main() -> int:
             args.evidence.write_text(text + "\n")
             print(f"wrote {args.evidence}")
     print(f"CURRENT 불일치 {len(current_fail)}건 {current_fail}")
-    print(f"DESIRED 미해결 회귀 {len(desired_fail)}건(바라는 판정과 다름, 수정 전이라 예상됨) {desired_fail}")
+    print(f"DESIRED 미해결 회귀 {len(desired_fail)}건(바라는 판정·근거와 다름) {desired_fail}")
     return 1 if current_fail or (args.strict_desired and desired_fail) else 0
 
 

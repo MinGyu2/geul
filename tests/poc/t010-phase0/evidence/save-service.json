@@ -974,20 +974,33 @@
     "controlsEqual": true
    },
    "preflight": "safe",
-   "checkSaved": "safe",
-   "findings": [],
-   "save": "published",
-   "saveError": null,
+   "checkSaved": "unsafe",
+   "findings": [
+    [
+     "referenceInvalid",
+     "Contents/section0.xml"
+    ]
+   ],
+   "save": "rejected",
+   "saveError": {
+    "code": "UnsafeSave",
+    "findings": [
+     [
+      "referenceInvalid",
+      "Contents/section0.xml"
+     ]
+    ]
+   },
    "sessionAfter": {
-    "dirty": false,
+    "dirty": true,
     "revision": 1,
     "state": "ready"
    },
    "originalSha256": "26d434b7b427149110751c6ef5b19e9ecb4818f3ba7eadfe201b5afd3de442a8",
-   "afterSha256": "d13573561798a356662a87b65c13cc5c54ef91e8c10de64c5e2c38b360ade7a7",
+   "afterSha256": "26d434b7b427149110751c6ef5b19e9ecb4818f3ba7eadfe201b5afd3de442a8",
    "outputSha256": "d13573561798a356662a87b65c13cc5c54ef91e8c10de64c5e2c38b360ade7a7",
-   "originalUnchanged": false,
-   "replacedWithOutput": true,
+   "originalUnchanged": true,
+   "replacedWithOutput": false,
    "dirBefore": [
     "doc.hwpx"
    ],
@@ -1063,20 +1076,33 @@
     "controlsEqual": true
    },
    "preflight": "safe",
-   "checkSaved": "safe",
-   "findings": [],
-   "save": "published",
-   "saveError": null,
+   "checkSaved": "unsafe",
+   "findings": [
+    [
+     "referenceInvalid",
+     "Contents/section0.xml"
+    ]
+   ],
+   "save": "rejected",
+   "saveError": {
+    "code": "UnsafeSave",
+    "findings": [
+     [
+      "referenceInvalid",
+      "Contents/section0.xml"
+     ]
+    ]
+   },
    "sessionAfter": {
-    "dirty": false,
+    "dirty": true,
     "revision": 1,
     "state": "ready"
    },
    "originalSha256": "26d434b7b427149110751c6ef5b19e9ecb4818f3ba7eadfe201b5afd3de442a8",
-   "afterSha256": "bdbb30d5887a6a27c4ff5c6a295700289593f127bafed8f947e796f4cef0cb35",
+   "afterSha256": "26d434b7b427149110751c6ef5b19e9ecb4818f3ba7eadfe201b5afd3de442a8",
    "outputSha256": "bdbb30d5887a6a27c4ff5c6a295700289593f127bafed8f947e796f4cef0cb35",
-   "originalUnchanged": false,
-   "replacedWithOutput": true,
+   "originalUnchanged": true,
+   "replacedWithOutput": false,
    "dirBefore": [
     "doc.hwpx"
    ],
@@ -1152,20 +1178,33 @@
     "controlsEqual": true
    },
    "preflight": "safe",
-   "checkSaved": "safe",
-   "findings": [],
-   "save": "published",
-   "saveError": null,
+   "checkSaved": "unsafe",
+   "findings": [
+    [
+     "referenceInvalid",
+     "Contents/section0.xml"
+    ]
+   ],
+   "save": "rejected",
+   "saveError": {
+    "code": "UnsafeSave",
+    "findings": [
+     [
+      "referenceInvalid",
+      "Contents/section0.xml"
+     ]
+    ]
+   },
    "sessionAfter": {
-    "dirty": false,
+    "dirty": true,
     "revision": 1,
     "state": "ready"
    },
    "originalSha256": "26d434b7b427149110751c6ef5b19e9ecb4818f3ba7eadfe201b5afd3de442a8",
-   "afterSha256": "5f557e8efa19953ce38eac8941affb8d3aff32c06ae7ac79baa2c22af0a1c98a",
+   "afterSha256": "26d434b7b427149110751c6ef5b19e9ecb4818f3ba7eadfe201b5afd3de442a8",
    "outputSha256": "5f557e8efa19953ce38eac8941affb8d3aff32c06ae7ac79baa2c22af0a1c98a",
-   "originalUnchanged": false,
-   "replacedWithOutput": true,
+   "originalUnchanged": true,
+   "replacedWithOutput": false,
    "dirBefore": [
     "doc.hwpx"
    ],
@@ -1241,20 +1280,33 @@
     "controlsEqual": true
    },
    "preflight": "safe",
-   "checkSaved": "safe",
-   "findings": [],
-   "save": "published",
-   "saveError": null,
+   "checkSaved": "unsafe",
+   "findings": [
+    [
+     "referenceInvalid",
+     "Contents/section0.xml"
+    ]
+   ],
+   "save": "rejected",
+   "saveError": {
+    "code": "UnsafeSave",
+    "findings": [
+     [
+      "referenceInvalid",
+      "Contents/section0.xml"
+     ]
+    ]
+   },
    "sessionAfter": {
-    "dirty": false,
+    "dirty": true,
     "revision": 1,
     "state": "ready"
    },
    "originalSha256": "26d434b7b427149110751c6ef5b19e9ecb4818f3ba7eadfe201b5afd3de442a8",
-   "afterSha256": "0f82cfe33656fef89d993c69a47065d1234cbfdf498e14cf5bb79b9191c7f72d",
+   "afterSha256": "26d434b7b427149110751c6ef5b19e9ecb4818f3ba7eadfe201b5afd3de442a8",
    "outputSha256": "0f82cfe33656fef89d993c69a47065d1234cbfdf498e14cf5bb79b9191c7f72d",
-   "originalUnchanged": false,
-   "replacedWithOutput": true,
+   "originalUnchanged": true,
+   "replacedWithOutput": false,
    "dirBefore": [
     "doc.hwpx"
    ],
@@ -1330,20 +1382,33 @@
     "controlsEqual": true
    },
    "preflight": "safe",
-   "checkSaved": "safe",
-   "findings": [],
-   "save": "published",
-   "saveError": null,
+   "checkSaved": "unsafe",
+   "findings": [
+    [
+     "referenceInvalid",
+     "Contents/section0.xml"
+    ]
+   ],
+   "save": "rejected",
+   "saveError": {
+    "code": "UnsafeSave",
+    "findings": [
+     [
+      "referenceInvalid",
+      "Contents/section0.xml"
+     ]
+    ]
+   },
    "sessionAfter": {
-    "dirty": false,
+    "dirty": true,
     "revision": 1,
     "state": "ready"
    },
    "originalSha256": "26d434b7b427149110751c6ef5b19e9ecb4818f3ba7eadfe201b5afd3de442a8",
-   "afterSha256": "b3ae0de7fe41c129d12dfbd58cbeba61fdbac27af632a1734f3b41d91a8c101b",
+   "afterSha256": "26d434b7b427149110751c6ef5b19e9ecb4818f3ba7eadfe201b5afd3de442a8",
    "outputSha256": "b3ae0de7fe41c129d12dfbd58cbeba61fdbac27af632a1734f3b41d91a8c101b",
-   "originalUnchanged": false,
-   "replacedWithOutput": true,
+   "originalUnchanged": true,
+   "replacedWithOutput": false,
    "dirBefore": [
     "doc.hwpx"
    ],
@@ -1419,20 +1484,33 @@
     "controlsEqual": true
    },
    "preflight": "safe",
-   "checkSaved": "safe",
-   "findings": [],
-   "save": "published",
-   "saveError": null,
+   "checkSaved": "unsafe",
+   "findings": [
+    [
+     "referenceInvalid",
+     "Contents/section0.xml"
+    ]
+   ],
+   "save": "rejected",
+   "saveError": {
+    "code": "UnsafeSave",
+    "findings": [
+     [
+      "referenceInvalid",
+      "Contents/section0.xml"
+     ]
+    ]
+   },
    "sessionAfter": {
-    "dirty": false,
+    "dirty": true,
     "revision": 1,
     "state": "ready"
    },
    "originalSha256": "26d434b7b427149110751c6ef5b19e9ecb4818f3ba7eadfe201b5afd3de442a8",
-   "afterSha256": "1097add5213720578a64c08a11685a0348becbd948e4dadcab6a44d746d09261",
+   "afterSha256": "26d434b7b427149110751c6ef5b19e9ecb4818f3ba7eadfe201b5afd3de442a8",
    "outputSha256": "1097add5213720578a64c08a11685a0348becbd948e4dadcab6a44d746d09261",
-   "originalUnchanged": false,
-   "replacedWithOutput": true,
+   "originalUnchanged": true,
+   "replacedWithOutput": false,
    "dirBefore": [
     "doc.hwpx"
    ],
@@ -1508,20 +1586,33 @@
     "controlsEqual": true
    },
    "preflight": "safe",
-   "checkSaved": "safe",
-   "findings": [],
-   "save": "published",
-   "saveError": null,
+   "checkSaved": "unsafe",
+   "findings": [
+    [
+     "referenceInvalid",
+     "Contents/section0.xml"
+    ]
+   ],
+   "save": "rejected",
+   "saveError": {
+    "code": "UnsafeSave",
+    "findings": [
+     [
+      "referenceInvalid",
+      "Contents/section0.xml"
+     ]
+    ]
+   },
    "sessionAfter": {
-    "dirty": false,
+    "dirty": true,
     "revision": 1,
     "state": "ready"
    },
    "originalSha256": "26d434b7b427149110751c6ef5b19e9ecb4818f3ba7eadfe201b5afd3de442a8",
-   "afterSha256": "7b67c0c77d2b17a9853aee56153f0d6e74b01fb31e0a4935135ee7fe06c781c3",
+   "afterSha256": "26d434b7b427149110751c6ef5b19e9ecb4818f3ba7eadfe201b5afd3de442a8",
    "outputSha256": "7b67c0c77d2b17a9853aee56153f0d6e74b01fb31e0a4935135ee7fe06c781c3",
-   "originalUnchanged": false,
-   "replacedWithOutput": true,
+   "originalUnchanged": true,
+   "replacedWithOutput": false,
    "dirBefore": [
     "doc.hwpx"
    ],
@@ -1597,20 +1688,33 @@
     "controlsEqual": true
    },
    "preflight": "safe",
-   "checkSaved": "safe",
-   "findings": [],
-   "save": "published",
-   "saveError": null,
+   "checkSaved": "unsafe",
+   "findings": [
+    [
+     "referenceInvalid",
+     "Contents/section0.xml"
+    ]
+   ],
+   "save": "rejected",
+   "saveError": {
+    "code": "UnsafeSave",
+    "findings": [
+     [
+      "referenceInvalid",
+      "Contents/section0.xml"
+     ]
+    ]
+   },
    "sessionAfter": {
-    "dirty": false,
+    "dirty": true,
     "revision": 1,
     "state": "ready"
    },
    "originalSha256": "26d434b7b427149110751c6ef5b19e9ecb4818f3ba7eadfe201b5afd3de442a8",
-   "afterSha256": "133dd79063fe99366964c390170ccf626f85e4c88b38b93b25473c59361f0a96",
+   "afterSha256": "26d434b7b427149110751c6ef5b19e9ecb4818f3ba7eadfe201b5afd3de442a8",
    "outputSha256": "133dd79063fe99366964c390170ccf626f85e4c88b38b93b25473c59361f0a96",
-   "originalUnchanged": false,
-   "replacedWithOutput": true,
+   "originalUnchanged": true,
+   "replacedWithOutput": false,
    "dirBefore": [
     "doc.hwpx"
    ],
@@ -1775,10 +1879,14 @@
     "controlsEqual": true
    },
    "preflight": "safe",
-   "checkSaved": "unsafe",
+   "checkSaved": "unknown",
    "findings": [
     [
      "partChanged",
+     "Contents/header.xml"
+    ],
+    [
+     "unsupported",
      "Contents/header.xml"
     ]
    ],
@@ -1788,6 +1896,10 @@
     "findings": [
      [
       "partChanged",
+      "Contents/header.xml"
+     ],
+     [
+      "unsupported",
       "Contents/header.xml"
      ]
     ]
@@ -1886,6 +1998,10 @@
     [
      "previewStale",
      "PrvImage"
+    ],
+    [
+     "referenceInvalid",
+     "BodyText/Section0"
     ]
    ],
    "save": "rejected",
@@ -1899,6 +2015,10 @@
      [
       "previewStale",
       "PrvImage"
+     ],
+     [
+      "referenceInvalid",
+      "BodyText/Section0"
      ]
     ]
    },
@@ -1987,8 +2107,13 @@
     "controlsEqual": true
    },
    "preflight": null,
-   "checkSaved": "safe",
-   "findings": [],
+   "checkSaved": "unsafe",
+   "findings": [
+    [
+     "referenceInvalid",
+     "BodyText/Section0"
+    ]
+   ],
    "save": "not-run",
    "saveError": null,
    "sessionAfter": null,
@@ -2138,15 +2263,5 @@
   }
  ],
  "currentMismatch": [],
- "unresolvedDesired": [
-  "hwpx-b-body-9999",
-  "hwpx-b-cell-9999",
-  "hwpx-b-body-hole-8",
-  "hwpx-b-body-overflow-70000",
-  "hwpx-b-body-nonnumeric",
-  "hwpx-b-body-negative",
-  "hwpx-b-secpr-run-9999",
-  "hwpx-b-parapr-9999",
-  "hwp-b-nopreview-dangling-9999"
- ]
+ "unresolvedDesired": []
 }

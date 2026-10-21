@@ -50,6 +50,9 @@ pub enum FindingCode {
     /// 본문을 바꾼 저장인데 미리보기(HWP `PrvText`·`PrvImage`, HWPX `Preview/*`, DOCX 썸네일)가 원본 그대로이고 문서
     /// 내용과 무관함을 증명할 수 없다(편집 전·지운 내용이 미리보기에 남을 수 있음).
     PreviewStale,
+    /// 출력 본문의 모양 참조(HWPX `charPrIDRef`·`paraPrIDRef`, HWP `PARA_HEADER`·`PARA_CHAR_SHAPE`의 모양 ID)가 형식에 맞지
+    /// 않거나 정의되지 않은 모양을 가리킨다(엔진은 기본 모양으로 말없이 대체한다).
+    ReferenceInvalid,
 }
 
 /// 판정 근거 하나.

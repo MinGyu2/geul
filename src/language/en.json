@@ -264,6 +264,7 @@
   "editor.save.finding.unsupported": "{part}: preservation cannot be checked for this format or protected document.",
   "editor.save.finding.preflightMissing": "There is no preservation check result for this original.",
   "editor.save.finding.previewStale": "{part}: if the body changes, the original's preview is kept as is, and it cannot be confirmed that it holds no content from before editing.",
+  "editor.save.finding.referenceInvalid": "{part}: the body refers to a character or paragraph shape that is not defined or is malformed (the editor may silently show a different shape).",
   "document.pathLabel": "Absolute path of the document to open",
   "document.pathPlaceholder": "Absolute path of a document (.hwp, .hwpx, .docx)",
   "document.open": "Open",

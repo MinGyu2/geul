@@ -514,6 +514,67 @@ fn compare_with(original: &[u8], output: &[u8], mode: Mode) -> Vec<Finding> {
             findings.push(Finding::at(FindingCode::PreviewStale, "PrvImage"));
         }
     }
+    if mode == Mode::Edited {
+        findings.extend(references(&output));
+    }
+    findings
+}
+
+const TAG_CHAR_SHAPE: u16 = 21;
+const TAG_PARA_SHAPE: u16 = 25;
+const TAG_PARA_HEADER: u16 = 66;
+const TAG_PARA_CHAR_SHAPE: u16 = 68;
+/// `PARA_HEADER`의 문단 모양 ID 자리: 글자 수(u32)·컨트롤 마스크(u32) 뒤 u16(고정 rhwp `parser/body_text.rs` `parse_para_header`).
+const PARA_HEADER_SHAPE_AT: usize = 8;
+
+/// 출력 본문의 모양 참조 무결성(T009, T010 Phase 0 Stage B 결함 수정): 모든 구역 스트림(표 셀·글상자 등 중첩 문단도 같은 스트림의
+/// 레코드)의 `PARA_HEADER` 문단 모양 ID와 `PARA_CHAR_SHAPE`(위치 u32·글자 모양 ID u32 쌍의 열) 글자 모양 ID가 출력 DocInfo의
+/// 정의 개수(`PARA_SHAPE`·`CHAR_SHAPE` 레코드 수 — HWP 5 모양 ID는 DocInfo 등장 순서의 번호, 고정 rhwp `parser/doc_info.rs`)보다
+/// 작아야 한다. 고정 rhwp는 없는 ID를 기본 모양으로 말없이 그린다. 미리보기 규칙과 따로 판정한다(`referenceInvalid`, unsafe).
+/// - 모양 ID 자리가 없는 `PARA_HEADER`, 비었거나 8의 배수가 아닌 `PARA_CHAR_SHAPE`(엔진은 남는 바이트를 버리고 빈 열은 기본
+///   모양으로 읽는다)도 맞지 않는 참조로 본다.
+/// - DocInfo·구역을 풀거나 읽을 수 없으면 비교(`compare_with`)가 이미 근거를 냈으므로 여기서는 더하지 않는다.
+fn references(output: &Container) -> Vec<Finding> {
+    let Some(docinfo) = output.streams.get("DocInfo") else {
+        return Vec::new();
+    };
+    let Ok(docinfo) = unpack(output, docinfo) else {
+        return Vec::new();
+    };
+    let Some(docinfo) = records(&docinfo) else {
+        return Vec::new();
+    };
+    let count = |tag: u16| docinfo.iter().filter(|r| r.0 == tag).count() as u64;
+    let (char_shapes, para_shapes) = (count(TAG_CHAR_SHAPE), count(TAG_PARA_SHAPE));
+    let mut findings = Vec::new();
+    for (name, data) in &output.streams {
+        if !section_stream(name) {
+            continue;
+        }
+        let Ok(data) = unpack(output, data) else {
+            continue;
+        };
+        let Some(section) = records(&data) else {
+            continue;
+        };
+        let invalid = section.iter().any(|(tag, _, body)| match *tag {
+            TAG_PARA_HEADER => body
+                .get(PARA_HEADER_SHAPE_AT..PARA_HEADER_SHAPE_AT + 2)
+                .is_none_or(|id| u64::from(u16::from_le_bytes([id[0], id[1]])) >= para_shapes),
+            TAG_PARA_CHAR_SHAPE => {
+                body.is_empty()
+                    || body.len() % 8 != 0
+                    || body.as_chunks::<8>().0.iter().any(|pair| {
+                        u64::from(u32::from_le_bytes([pair[4], pair[5], pair[6], pair[7]]))
+                            >= char_shapes
+                    })
+            }
+            _ => false,
+        });
+        if invalid {
+            findings.push(Finding::at(FindingCode::ReferenceInvalid, name));
+        }
+    }
     findings
 }
 

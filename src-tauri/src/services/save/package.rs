@@ -429,3 +429,110 @@ pub fn compare_saved_hwpx(original: &Package, output: &Package) -> Vec<Finding> 
     }
     findings
 }
+
+/// HWPX 글자·문단 모양 정의를 읽는 부분(고정 rhwp `parser/hwpx/reader.rs` `DOCUMENT_HEADER_PATH`).
+const HWPX_HEADER: &str = "Contents/header.xml";
+/// 고정 rhwp가 정의를 넣는 id 상한(`parser/hwpx/header.rs` `MAX_RESOURCE_ID`): 넘는 id의 정의는 말없이 버려진다.
+const HWPX_MAX_RESOURCE_ID: u32 = 65_535;
+/// 본문이 가리키는 모양 이름공간: (참조 속성, 정의 요소). 본문 어느 요소의 참조 속성이든 같은 이름공간을 가리킨다
+/// (고정 rhwp: `hp:run`·`hp:formCharPr`의 `charPrIDRef`, `hp:p`의 `paraPrIDRef`).
+const HWPX_SHAPE_REFERENCES: [(&str, &str); 2] =
+    [("charPrIDRef", "charPr"), ("paraPrIDRef", "paraPr")];
+
+/// 참조·정의 id의 글자 모양: 10진 숫자만(부호·공백·빈 값 없음), u32 범위. 고정 rhwp는 그 밖의 값을 말없이 0으로 읽는다
+/// (`parser/hwpx/utils.rs` `parse_u32`·`parse_u16`의 `unwrap_or(0)`)이므로 받지 않는다.
+fn hwpx_id(text: &str) -> Option<u32> {
+    if text.is_empty() || !text.bytes().all(|b| b.is_ascii_digit()) {
+        return None;
+    }
+    text.parse().ok()
+}
+
+/// header의 모양 정의 id 집합(요소 이름마다). 엔진이 정의를 정할 수 없는 모양(id가 없거나 숫자가 아님 — 엔진은 등장 순서나
+/// 0으로 넣는다 —, 같은 id가 둘 — 뒤의 것이 덮는다)이면 None: 참조가 무엇을 가리키는지 증명할 수 없다.
+fn hwpx_definitions(header: &[xml::Canonical]) -> Option<[std::collections::BTreeSet<u32>; 2]> {
+    let mut sets = [
+        std::collections::BTreeSet::new(),
+        std::collections::BTreeSet::new(),
+    ];
+    for event in header {
+        let xml::Canonical::Start {
+            name, attributes, ..
+        } = event
+        else {
+            continue;
+        };
+        let Some(slot) = HWPX_SHAPE_REFERENCES
+            .iter()
+            .position(|(_, element)| element == name)
+        else {
+            continue;
+        };
+        let id = attributes
+            .iter()
+            .find(|(ns, key, _)| ns.is_none() && key == "id")
+            .and_then(|(_, _, value)| hwpx_id(value))?;
+        if !sets[slot].insert(id) {
+            return None;
+        }
+    }
+    // 엔진이 버리는 id의 정의는 정의가 아니다(가리키면 기본 모양으로 대체된다).
+    for set in &mut sets {
+        set.retain(|id| *id <= HWPX_MAX_RESOURCE_ID);
+    }
+    Some(sets)
+}
+
+/// HWPX 출력의 모양 참조 무결성(T009, T010 Phase 0 Stage B 결함 수정): 출력 본문 부분(`Contents/section<N>.xml`, 표 셀·구역
+/// 정의 run 등 중첩 포함 모든 요소)의 `charPrIDRef`·`paraPrIDRef`가 10진 숫자이고 출력 header에 정의된 id를 가리켜야 한다.
+/// 고정 rhwp는 없는 id를 기본 모양으로, 숫자가 아닌 값을 0으로 말없이 바꿔 다시 열기 비교(쪽·글·컨트롤)로는 드러나지 않는다.
+/// - 맞지 않는 참조: `referenceInvalid`(unsafe, 부분 이름).
+/// - header가 없음·정의 id를 정할 수 없음: `unsupported`(unknown, `Contents/header.xml`) — 증명할 수 없으면 저장하지 않는다.
+///   읽을 수 없는 header·본문은 `validate_hwpx`가 이미 `outputMalformed`로 막는다.
+///
+/// id가 이어져야 한다고 요구하지 않는다(엔진은 id를 배열 위치로 쓰고 빈 번호는 정의가 아니다).
+pub fn validate_hwpx_references(output: &Package) -> Vec<Finding> {
+    let sections: Vec<(&String, &Vec<u8>)> = output
+        .parts
+        .iter()
+        .filter(|(name, _)| hwpx_body(name))
+        .map(|(name, (_, data))| (name, data))
+        .collect();
+    if sections.is_empty() {
+        return Vec::new();
+    }
+    let Some(header) = output.get(HWPX_HEADER) else {
+        return vec![Finding::at(FindingCode::Unsupported, HWPX_HEADER)];
+    };
+    // 읽을 수 없는 header는 malformed_xml(validate_hwpx)이 이미 `outputMalformed`로 막는다(같은 까닭을 두 번 적지 않음).
+    let Ok(header) = xml::canonical(header) else {
+        return Vec::new();
+    };
+    let Some(definitions) = hwpx_definitions(&header) else {
+        return vec![Finding::at(FindingCode::Unsupported, HWPX_HEADER)];
+    };
+    let mut findings = Vec::new();
+    for (name, data) in sections {
+        // 읽을 수 없는 본문은 malformed_xml(validate_hwpx)이 이미 막는다.
+        let Ok(events) = xml::canonical(data) else {
+            continue;
+        };
+        let invalid = events.iter().any(|event| {
+            let xml::Canonical::Start { attributes, .. } = event else {
+                return false;
+            };
+            attributes.iter().any(|(ns, key, value)| {
+                ns.is_none()
+                    && HWPX_SHAPE_REFERENCES.iter().zip(&definitions).any(
+                        |((attribute, _), set)| {
+                            key == attribute && !hwpx_id(value).is_some_and(|id| set.contains(&id))
+                        },
+                    )
+            })
+        });
+        if invalid {
+            findings.push(Finding::at(FindingCode::ReferenceInvalid, name));
+        }
+    }
+    findings
+}

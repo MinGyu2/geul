@@ -94,7 +94,7 @@ export type PreservationOutcome = (typeof PRESERVATION_OUTCOMES)[number];
 export const FINDING_CODES = [
   "partMissing", "partAdded", "partChanged", "recordsChanged", "originalMalformed", "outputMalformed", "packageInvalid",
   "lossReported", "lossReportInvalid", "reopenMismatch", "limitExceeded", "unsupported", "preflightMissing",
-  "previewStale",
+  "previewStale", "referenceInvalid",
 ] as const;
 export type FindingCode = (typeof FINDING_CODES)[number];
 /** 판정 근거: 코드와 패키지 안 부분 이름(문서 본문이 아님). */

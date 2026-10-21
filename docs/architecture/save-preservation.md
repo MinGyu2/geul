@@ -99,6 +99,20 @@ safe·플랫폼 지원일 때만:
   증명할 수 없으면 받지 않는 규칙이다. 그 밖의 `Preview/*`와 DOCX 썸네일(`docProps/thumbnail.*`, 패키지 관계의 thumbnail 대상)도 증명할 수
   없어 막는다. 근거 `previewStale`(unsafe; 화면 문구는 "편집 전 내용을 담고 있지 않음을 확인할 수 없음"). 미리보기가 바뀐 출력은 바뀐
   스트림·부분으로 unsafe다(재생성 내용을 검증하지 않음).
+- 모양 참조 무결성(2026-10-22, T010 Phase 0 Stage B 결함 수정): 편집 저장의 출력 본문은 정의된 모양만 가리켜야 한다. 고정 rhwp는 없는
+  모양을 기본 모양으로, 숫자가 아닌 HWPX 참조를 0으로 말없이 바꿔 다시 열기 비교(쪽·글·컨트롤)로는 드러나지 않으므로 판정이 따로 본다.
+  - HWPX(`package::validate_hwpx_references`): 출력 `Contents/section<N>.xml`의 **모든 요소**(글 run·구역 정의 run·표 셀 문단·양식
+    `formCharPr` 등)의 `charPrIDRef`·`paraPrIDRef`가 10진 숫자(부호·공백·빈 값 없음, u32)이고 출력 `Contents/header.xml`의 `charPr`·`paraPr`
+    `id`(이름공간마다 따로, 65535 이하 — 넘는 정의는 엔진이 버림)에 있어야 한다. 아니면 `referenceInvalid{section}`(unsafe). header가 없거나
+    정의 id를 정할 수 없으면(id 없음·숫자 아님·중복 — 엔진이 등장 순서·0으로 넣거나 덮어씀) `unsupported{Contents/header.xml}`(unknown).
+    읽을 수 없는 header는 기존 `outputMalformed`. id가 이어질 필요는 없다(빈 번호 뒤의 정의도 올바르다).
+  - HWP(`hwp::compare_saved` → `references`): 모든 구역 스트림(중첩 문단도 같은 스트림)의 `PARA_HEADER` 문단 모양 ID(오프셋 8, u16)와
+    `PARA_CHAR_SHAPE` 글자 모양 ID(쌍의 둘째 u32)가 출력 DocInfo의 `PARA_SHAPE`·`CHAR_SHAPE` 레코드 수보다 작아야 한다(HWP 5 모양 ID는
+    DocInfo 등장 번호). 모양 ID 자리가 없는 문단 머리, 비었거나 8의 배수가 아닌 `PARA_CHAR_SHAPE`도 `referenceInvalid{BodyText/Section<N>}`.
+    미리보기 규칙과 따로 나온다(`previewStale`에 기대지 않음, 미리보기 규칙은 그대로).
+  - 사전 검사(편집 없는 왕복)에는 더하지 않았다(그 출력은 원본과 같아야 한다). 업스트림 예제 1076개의 편집 없는 rhwp 출력에서 이 검사로 새로
+    막힌 문서는 없다(실측, `referenceInvalid` 0건). 범위 밖: 다른 참조 이름공간(`borderFillIDRef`·`styleIDRef`·`tabPrIDRef` 등), header 안의
+    참조(header는 원본과 같아야 하므로 원본의 것), 모양 정의 내용 자체의 올바름.
 - 손실 보고(G): rhwp 형식(HWP·HWPX)은 보고가 반드시 있어야 한다(없으면 `lossReportInvalid`, unknown). DOCX는 보고를 받지 않는다(들어오면
   `lossReportInvalid`).
 - HWPX·DOCX: 항목 이름 집합, XML 부분은 정규화한 사건 열(이름공간 URI·지역 이름·정렬한 속성·문자 데이터 그대로; 접두사·속성 순서·

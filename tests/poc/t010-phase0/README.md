@@ -20,13 +20,19 @@ Vitest는 별도 설정, Rust 시험은 `#[ignore]`이고 환경 변수가 없�
 |------|------|------|
 | `TMPDIR=… python3 tests/poc/t010-phase0/save_service.py --evidence tests/poc/t010-phase0/evidence/save-service.json` | Stage A·B: 진짜 서식 출력을 `SessionRegistry` → `service::preflight` → `record_preflight` → `commit` → `begin_save` → `service::save`에 넣고, 원본 사본 SHA-256·디렉터리 목록을 저장 전후 비교. Stage B 참조 공백 사본 | 진짜 WASM + 진짜 저장 서비스(`src-tauri/tests/t010_phase0_save_service.rs`) |
 | `TMPDIR=… python3 tests/poc/t010-phase0/check.py --out <JSON>` | Phase 0 A·B·D·E·F·G(`rhwp_phase0.mjs`) + `save_check` 판정 | 진짜 WASM + 진짜 판정 함수 |
-| `npx vitest run --config tests/poc/t010-phase0/vitest.config.ts` | Phase 0 C: 실제 WASM 문서의 세션 편집·조합 수명주기(세션 메서드 호출, 입력기 아님) | 진짜 WASM, 백엔드 시험 응답 |
+| `npx vitest run --config tests/poc/t010-phase0/vitest.config.ts` | Phase 0 C(`lifecycle.poc.test.ts` 9개): 세션 편집·조합 수명주기. Phase 1(`typing_groups.poc.test.ts` 13개): 타자 그룹과 백엔드 확정의 분리 — 세션을 바꾸지 않고 시험용 문서 감싸개가 기록 모델에 트랜잭션 시작을 알림(세션 메서드 호출, 입력기 아님, 제품 통합 아님) | 진짜 WASM, 백엔드 시험 응답 |
+| `TMPDIR=… node tests/poc/t010-phase0/history_boundary.mjs [--out evidence/history-boundary.json]` | Phase 1 기록 경계 18개: 고친 알고리즘(`history_model.mjs`)의 용량·보호·거부·실패 주입·이전 설계 반례(실제 WASM 13개), 무작위 불변식(흉내 엔진 4개 — 엔진 증거 아님), 깊이 식 산술 1개 | 진짜 WASM 스냅숏 + 흉내 엔진 |
 
-`save_service.py`의 종료 코드: 지금 동작(CURRENT 표)과 다르면 1. 바라는 동작(DESIRED)과 다른 것은 **미해결 회귀**로 따로 출력하고 종료
-코드에 넣지 않는다(`--strict-desired`면 넣는다 — 지금은 9건으로 실패한다).
+`save_service.py`의 종료 코드: 지금 동작(CURRENT 표 — 판정·저장 성공·**근거 코드와 부분까지 정확히**)과 다르면 1. 바라는 동작(DESIRED: 판정과
+반드시 있어야 할 근거, 거부된 저장은 그 근거로 거부)과 다르면 `--strict-desired`에서 1. 2026-10-22 T009 수정 뒤 두 표 모두 0건이다(수정 전에는
+DESIRED 9건 실패 — 재현 기록은 이 파일의 git 이력과 아래 Stage B 표).
 
-`evidence/`: `save-service.json`(위 명령의 정리된 결과, 경로는 `<tmp>`), `phase0-summary.json`(이전 Phase 0 실행의 A·B·C·G 요약을 임시
-디렉터리에서 옮긴 것, 문서 내용·경로 제거).
+변형 감지: `history_boundary.mjs`는 대상 보호를 지운 모델에서 "후보 없는 거부" 시험이 실패한다(확인함). "상한이 줄 때 보호" 시험은 그 시나리오에서
+가장 오래된 과거가 대상이 아니라 보호 없이도 통과한다(보호의 검출은 거부 시험이 맡는다). T009 정규 시험 3개(`hwpx_저장_검사는…`, `hwp_본문의…`,
+`실제_저장_서비스는…`)는 수정의 두 호출을 끄면 실패한다(확인함).
+
+`evidence/`: `save-service.json`(위 명령의 정리된 결과, 경로는 `<tmp>`, 2026-10-22 수정 뒤 실행), `history-boundary.json`(기록 경계 결과),
+`phase0-summary.json`(이전 Phase 0 실행의 A·B·C·G 요약을 임시 디렉터리에서 옮긴 것, 문서 내용·경로 제거).
 
 ## Stage A 결과: 실제 저장 서비스(2026-10-21)
 
@@ -44,12 +50,18 @@ Vitest는 별도 설정, Rust 시험은 `#[ignore]`이고 환경 변수가 없�
 거부는 `check_saved`가 unsafe일 때 `service::save`가 `publish::stage` **전에** 돌려준다(코드 순서, `service.rs`). 거부 뒤 작업 디렉터리 목록은
 `doc.<형식>` 하나뿐이고 원본 사본 SHA-256이 같다. 게시 사례는 교체 뒤 파일이 출력과 같고 세션이 깨끗해진다(내구성 확인).
 
-## Stage B 결과: 글자 모양 참조 무결성 공백
+## Stage B 결과: 글자 모양 참조 무결성 공백 — 2026-10-22 고침
 
-재현(VERIFIED): 엔진이 낸 HWPX 글자 편집 출력의 `Contents/section0.xml` 한 곳만 고친 사본을, 같은 엔진으로 다시 연 근거와 함께 실제
-`service::save`에 넣었다.
+**수정 뒤(VERIFIED, `save_service.py --strict-desired` 0건):** 아래 "게시"였던 고친 사본 8개(HWPX)는 모두 `referenceInvalid{Contents/section0.xml}`
+(unsafe)로 실제 `service::save`가 거부하고 원본 사본 SHA-256이 그대로다. HWP `hwp-b-dangling-9999`는 `previewStale` ×2와 **따로**
+`referenceInvalid{BodyText/Section0}`, 미리보기 없는 합성 쌍은 `referenceInvalid`만으로 unsafe. header id 중복은 `partChanged`에 더해
+`unsupported{Contents/header.xml}`(정의를 정할 수 없음)로 unknown(수정 전 unsafe, 둘 다 저장 차단). 대조(있는 모양 `7`, 굵게 재사용, 글자 넣기,
+복원)는 safe·게시 그대로. 규칙: [save-preservation.md](../../../docs/architecture/save-preservation.md) "모양 참조 무결성".
 
-| 고친 곳 | 판정 | 저장 | 엔진이 다시 열어 본 값 |
+수정 전 재현(VERIFIED, 2026-10-21·10-22 재실행): 엔진이 낸 HWPX 글자 편집 출력의 `Contents/section0.xml` 한 곳만 고친 사본을, 같은 엔진으로
+다시 연 근거와 함께 실제 `service::save`에 넣었다.
+
+| 고친 곳 | 판정(수정 전) | 저장(수정 전) | 엔진이 다시 열어 본 값 |
 |---------|------|------|------------------------|
 | 본문 글 run `charPrIDRef="9999"` | safe | **게시** | 열림, 다시 열기 네 값 참, `charShapeId` 9999, 서식은 엔진 기본값(없는 모양의 대체) |
 | 표 셀 run `9999` | safe | **게시** | 셀 `charShapeId` 9999, 기본값 |
@@ -72,13 +84,10 @@ HWP 대응: 같은 종류의 공백이 판정 함수에 있다(VERIFIED, 합성 
 safe다. 다만 실제 저장 경로로는 도달하지 않는다: 미리보기 없는 HWP는 엔진이 `PrvText`를 새로 만들어 사전 검사가 unsafe(`partAdded PrvText`,
 VERIFIED)이고, 미리보기가 있으면 본문을 바꾼 저장은 모두 `previewStale`이다. → **HWP는 확인된 판정 공백, 지금 저장 경로에서는 가려짐**.
 
-바라는 동작(미래 수정이 통과해야 할 시험): 위 표의 "게시"인 고친 사례 9개(대조 `7` 제외, HWP 합성 쌍 포함)가 unsafe(새 근거 코드,
-예: `referenceInvalid`)가 되고, 대조 `7`·글자 넣기·굵게 재사용은 safe로 남는다. `save_service.py --strict-desired`가 그 판정이다.
-
-수정 경계(INFERRED, 이 작업에서 구현하지 않음): `service::check_saved`의 HWPX 분기에서, 출력 header의 `charPr`/`paraPr` id 집합과 출력
-본문 모든 구역(표 셀·글상자 등 중첩 포함)의 `charPrIDRef`/`paraPrIDRef`를 맞추는 검사. 참조 값은 10진 정수여야 하고, 정의된 id여야
-한다(연속 번호는 요구하지 않는다 — 엔진은 id를 위치로 쓰지만 형식이 연속을 요구한다는 근거는 없다). 해석할 수 없으면 unsafe(fail-closed).
-HWP는 `DocInfo` CHAR_SHAPE 개수와 본문 `PARA_CHAR_SHAPE` ID 범위를 같은 원칙으로 본다.
+수정(2026-10-22): `package::validate_hwpx_references`(service `check_saved` HWPX 분기), `hwp::references`(`compare_saved` 편집 모드),
+근거 코드 `referenceInvalid`(`preserve.rs`·`src/adapters/contract.ts`·화면 문구). 정규 시험은 `src-tauri/src/services/save/tests.rs`의 5개(합성
+HWPX·HWP, 실제 `service::save`와 원본 보존). 오탐 확인: 업스트림 예제 1076개(`external/rhwp/samples`)의 편집 없는 rhwp 출력을 편집 저장 판정에
+넣어 `referenceInvalid` 0건(새로 막힌 문서 없음).
 
 ## Stage B5: HWP 미리보기 규칙
 
@@ -99,8 +108,8 @@ HWP는 `DocInfo` CHAR_SHAPE 개수와 본문 `PARA_CHAR_SHAPE` ID 범위를 같�
 
 | 단계 | 선행 조건 | 바뀔 곳 | 수용 시험 | 안전·성능 |
 |------|-----------|---------|-----------|-----------|
-| Phase 2 rhwp 실행 취소 | [rhwp-undo-redo.md](../../../docs/architecture/rhwp-undo-redo.md) 승인, 열린 질문 1·4 PoC | `RhwpEditorSession`, `rhwpModule.ts`(스냅숏 함수 타입), `target.ts`·`capability.ts`(한도 이유), 시험 | 설계 §11 표 전부(실제 WASM 세션·Rust·네이티브 ibus-hangul) | 참조 중 스냅숏을 엔진이 지우지 않음, 실행 취소 p95 ≤ 1.5초(WebView), 레지스트리는 아직 `unsupported` |
-| Phase 3A T009 참조 무결성 | Stage B 결과 승인 | `services/save/package.rs`(+ `hwp.rs`), `preserve.rs`(근거 코드), 시험 | `save_service.py --strict-desired` 통과, 기존 T009 시험·`roundtrip.py` 그대로 | 해석 불가 = unsafe, header 전체 허용 없음, 기존 규칙 완화 없음 |
+| Phase 2 rhwp 실행 취소 | [rhwp-undo-redo.md](../../../docs/architecture/rhwp-undo-redo.md)(2026-10-22 고침) 승인, 열린 질문 1·4 PoC | `RhwpEditorSession`, `rhwpModule.ts`(스냅숏 함수 타입), `target.ts`·`capability.ts`(한도 이유), 시험 | 설계 §11 표 전부(실제 WASM 세션·Rust·네이티브 ibus-hangul) | 참조 중 스냅숏을 엔진이 지우지 않음, 실행 취소 p95 ≤ 1.5초(WebView), 레지스트리는 아직 `unsupported` |
+| Phase 3A T009 참조 무결성 — **2026-10-22 완료** | Stage B 결과 승인 | `services/save/package.rs`(+ `hwp.rs`), `preserve.rs`(근거 코드), 시험 | `save_service.py --strict-desired` 통과, 기존 T009 시험·`roundtrip.py` 그대로 | 해석 불가 = unsafe, header 전체 허용 없음, 기존 규칙 완화 없음 |
 | Phase 3B HWPX 서식 | 3A 완료 | `package.rs`의 좁은 header 규칙(덧붙인 `charPr` + `itemCnt` +1만, 기존 정의·다른 속성 바이트 같음, 새 정의는 출력 본문에서 참조), 서식 명령 | Phase 0 F 음성 대조 4개가 계속 unsafe, 새 모양 기울임·밑줄·취소선이 게시되고 다시 열어 서식 같음(서식 비교를 다시 열기 근거에 추가) | 바뀐 header 부분은 덧붙임 하나뿐 |
 | Phase 3C HWP 서식 | 3B와 별개 | `hwp.rs` DocInfo 규칙(덧붙인 CHAR_SHAPE + `ID_MAPPINGS[9]`), 미리보기 | 미리보기 규칙을 풀 근거가 생기기 전에는 저장 불가가 맞는 결과. 모양 재사용 실패·고아 모양(Phase 0 D) 처리 | HWPX가 되어도 HWP를 준비됨으로 보지 않음 |
 | Phase 4 명령 켜기 | 2·3 해당 부분 완료 | `registry.ts`, 문서 | SC-003 rhwp 몫, 네이티브 앱 시험 | 검증한 명령만 `supported`, T010 체크는 그때 판정 |
