@@ -1098,6 +1098,10 @@ def main() -> int:
         REPORT["driverLost"] = error.diagnostic()
         print(f"통과한 항목 {len(RESULTS)}개(끊기기 전)", file=sys.stderr)
         return smoke.driver_lost_exit(error)
+    except smoke.CleanupFailure as error:
+        # 모든 항목 뒤 세션 삭제가 HTTP 오류 응답으로 실패: 정리 실패(2). 기능 실패 뒤라면 end_session이 원래 실패를 올린다.
+        REPORT["cleanupFailure"] = error.diagnostic()
+        return smoke.driver_lost_exit(error)
     except (smoke.Failure, TimeoutError, OSError) as error:
         import traceback
         traceback.print_exc()

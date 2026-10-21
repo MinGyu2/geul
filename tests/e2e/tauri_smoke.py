@@ -21,7 +21,8 @@ Tab 키로 닿는 주요 컨트롤, 설정 저장 후 앱 프로세스를 끝내
 (tauri-driver·WebKitWebDriver·앱·WebKit 보조 프로세스) 상태를 보이고 종류로 나눈다(T010 하네스 오류 처리 안정화): 이 세션에서
 살아 있는 것을 본 앱이 끊긴 뒤 없으면 앱 종료로 1, 앱은 있고 본 적 있는 WebProcess가 하나도 없으면 WebKit 보조 프로세스 종료로
 1(앱 충돌로 부르지 않음). 세션 시작 실패, tauri-driver·WebKitWebDriver 종료, 모두 살아 있는 끊김, 근거 부족은 2(통과로 세지
-않음). 모든 항목이 통과한 뒤 세션 삭제만 실패해도 정리 실패로 2다. 기능 검사가 먼저 실패했으면 세션 삭제 실패는 덧붙여 알리기만
+않음). 응답 읽기 시간 초과(TimeoutError)도 끊김과 같이 나눈다(다시 보내지 않음). 모든 항목이 통과한 뒤 세션 삭제만 실패해도
+(끊김·시간 초과·HTTP 오류 응답 모두) 정리 실패로 2다. 기능 검사가 먼저 실패했으면 세션 삭제 실패는 덧붙여 알리기만
 하고 원래 실패(종료 코드 1)를 그대로 보고한다.
 """
 
@@ -82,6 +83,10 @@ class DriverLost(Failure):
 
     def __init__(self, request: str, error: Exception):
         self.request = request
+        # 응답을 못 받은 까닭: 응답 읽기 시간 초과(urlopen이 TimeoutError를 그대로 올림), 연결 시간 초과(URLError로 감쌈), 그 밖의 연결 실패.
+        # 시간 초과한 요청은 서버에 닿았을 수 있어 다시 보내지 않는다.
+        self.transport = ("readTimeout" if isinstance(error, TimeoutError)
+                          else "connectTimeout" if isinstance(getattr(error, "reason", None), TimeoutError) else "connection")
         self.phase = {"POST /session": "sessionStart", "DELETE ": "sessionDeletion"}.get(request, "interaction")
         self.teardown = self.phase == "sessionDeletion"
         self.last_check = LAST_CHECK[0]
@@ -95,7 +100,8 @@ class DriverLost(Failure):
         alive = {p["comm"] for p in self.processes_after if p["state"] != "Z"}
         self.kind = self.classify(alive)
         self.exit_code, self.label = LOST_KINDS[self.kind]
-        super().__init__(f"WebDriver 연결 끊김({self.label}; {request.strip()}): {error} — "
+        what = "응답 시간 초과" if self.transport != "connection" else "연결 끊김"
+        super().__init__(f"WebDriver {what}({self.label}; {request.strip()}): {error} — "
                          f"마지막 통과 항목 {self.last_check or '없음'!r}, tauri-driver 종료 코드 {self.driver_exit}, "
                          f"이 세션에서 본 프로세스 {self.seen}, 1초 뒤 프로세스 {sorted(alive)}")
 
@@ -114,7 +120,7 @@ class DriverLost(Failure):
         return "insufficientEvidence"
 
     def diagnostic(self) -> dict:
-        return {"request": self.request, "phase": self.phase, "kind": self.kind, "exitCode": self.exit_code,
+        return {"request": self.request, "transport": self.transport, "phase": self.phase, "kind": self.kind, "exitCode": self.exit_code,
                 "lastCheck": self.last_check, "seen": self.seen, "tauriDriverExit": self.driver_exit, "processes": self.processes,
                 "processesAfter1s": self.processes_after, "listeners": self.listeners}
 
@@ -128,9 +134,25 @@ def webdriver_listeners() -> list[str]:
     return [" ".join(line.split()) for line in out.splitlines()]
 
 
-def driver_lost_exit(error: DriverLost) -> int:
-    """끊김의 종료 코드(LOST_KINDS): 앱 종료·WebKit 보조 프로세스 종료 1, 그 밖(시작·정리 실패, WebDriver 종료, 판단 불가) 2.
-    통과(0)로 바꾸지 않는다."""
+class CleanupFailure(Failure):
+    """세션 삭제(DELETE /session/<id>)에 HTTP 오류 응답이 옴. 응답은 왔으므로 끊김(DriverLost)이 아니지만, 기능 검사가 아니라 정리
+    실패라 종료 코드는 2다(앞선 오류가 있으면 end_session이 덧붙이기만 함). 상호작용 중의 HTTP 오류는 예전처럼 Failure(1)다."""
+
+    exit_code = 2
+    label = LOST_KINDS["cleanupFailure"][1]
+
+    def __init__(self, request: str, status: int, body: bytes):
+        self.request, self.status = request, status
+        super().__init__(f"WebDriver {request.strip()} (세션 삭제): HTTP {status} {body[:300]!r}")
+
+    def diagnostic(self) -> dict:
+        return {"request": self.request, "phase": "sessionDeletion", "kind": "cleanupFailure", "httpStatus": self.status,
+                "exitCode": self.exit_code}
+
+
+def driver_lost_exit(error: DriverLost | CleanupFailure) -> int:
+    """끊김·세션 삭제 실패의 종료 코드(LOST_KINDS): 앱 종료·WebKit 보조 프로세스 종료 1, 그 밖(시작·정리 실패, WebDriver 종료,
+    판단 불가) 2. 통과(0)로 바꾸지 않는다."""
     tag = "[실패]" if error.exit_code == 1 else "[시험 환경 실패]"
     print(f"{tag} {error.label}: {error}", file=sys.stderr)
     return error.exit_code
@@ -172,8 +194,10 @@ class WebDriver:
             with urllib.request.urlopen(request, timeout=60) as response:
                 value = json.loads(response.read() or b"{}").get("value")
         except urllib.error.HTTPError as error:
+            if method == "DELETE" and path == "":
+                raise CleanupFailure(f"{method} {path}", error.code, error.read()) from error
             raise Failure(f"WebDriver {method} {path}: {error.code} {error.read()[:300]!r}") from error
-        except (ConnectionError, urllib.error.URLError) as error:
+        except (ConnectionError, TimeoutError, urllib.error.URLError) as error:
             raise DriverLost(f"{method} {path}", error) from error
         note_lifecycle()
         return value
@@ -994,7 +1018,7 @@ def main() -> int:
             SKIPPED.append("설정 저장 후 재시작 검사(--skip-restart)")
         print(f"\nTauri 스모크 테스트 통과: {len(results)}개 항목, 건너뜀 {len(SKIPPED)}개")
         return 0
-    except DriverLost as error:
+    except (DriverLost, CleanupFailure) as error:
         print(f"통과한 항목 {CHECKS_PASSED[0]}개(끊기기 전)", file=sys.stderr)
         return driver_lost_exit(error)
     except Failure as error:

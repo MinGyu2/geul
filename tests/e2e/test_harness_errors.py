@@ -82,7 +82,7 @@ class Transport:
         if value is Transport.LOST:
             self.lost_at = len(self.requests) - 1
             raise ConnectionResetError(104, "Connection reset by peer")
-        if isinstance(value, urllib.error.HTTPError):
+        if isinstance(value, BaseException):  # HTTP 오류 응답, 읽기 시간 초과(urlopen이 그대로 올리는 TimeoutError) 등
             raise value
         return Response(json.dumps({"value": value}).encode())
 
@@ -442,6 +442,224 @@ class Classification(HarnessCase):
             driver.quit()
         self.assertEqual(caught.exception.kind, "cleanupFailure")
         self.assertEqual(driver.session, "")  # 다시 지우지 않음
+
+
+def http_error(code: int = 500) -> urllib.error.HTTPError:
+    return urllib.error.HTTPError("u", code, "Internal Server Error", {}, io.BytesIO(b'{"value":{"error":"unknown error"}}'))
+
+
+CLEANUP = {  # 세션 삭제(DELETE /session/S)의 결과
+    "ok": None,
+    "http500": lambda: http_error(500),
+    "timeout": lambda: TimeoutError("timed out"),  # 연결은 됐고 응답 읽기가 시간 초과(실측: urlopen이 URLError로 감싸지 않음)
+    "reset": lambda: Transport.LOST,
+}
+PROBE = "return 'probe'"  # 시나리오가 보내는 상호작용 요청
+
+
+class TransportTimeoutAndCleanup(HarnessCase):
+    """T010 전송 시간 초과·세션 삭제 HTTP 오류: 실제 WebDriver.call() 경로(가짜 urlopen)로 분류와 종료 코드를 본다."""
+
+    def transport(self, *, interaction=None, cleanup="ok") -> Transport:
+        """interaction: PROBE 요청의 결과(None이면 정상 응답, 아니면 그 예외), cleanup: CLEANUP 키."""
+        base = answering({PROBE: "probe", ".document-bar": True, "footer.statusbar": True})
+
+        def handler(method, path, body):
+            if method == "DELETE" and path == "/session/S" and CLEANUP[cleanup]:
+                return CLEANUP[cleanup]()
+            if interaction and body and PROBE in body.get("script", ""):
+                return interaction()
+            return base(method, path, body)
+        return self.use(Transport(handler, dead_after_loss=False))
+
+    def session_started(self) -> smoke.WebDriver:
+        driver = self.session()
+        driver.js(PROBE)
+        return driver
+
+    def test_A_delete_read_timeout_is_cleanup_failure(self):
+        """경우 A: 검사가 모두 통과한 뒤 DELETE 응답 읽기가 시간 초과 → 정리 실패(2), DELETE 한 번."""
+        transport = self.transport(cleanup="timeout")
+        driver = self.session_started()
+        with self.assertRaises(smoke.DriverLost) as caught:
+            smoke.end_session(driver)
+        error = caught.exception
+        self.assertIsInstance(error.__cause__, TimeoutError)
+        self.assertEqual((error.request, error.phase, error.kind, error.transport), ("DELETE ", "sessionDeletion", "cleanupFailure", "readTimeout"))
+        self.assertEqual(smoke.driver_lost_exit(error), 2)
+        self.assertEqual(transport.requests.count("DELETE /session/S"), 1)
+        smoke.end_session(driver)  # 세션은 이미 비움: 다시 지우지 않는다
+        self.assertEqual(transport.requests.count("DELETE /session/S"), 1)
+
+    def test_B_delete_http_500_is_cleanup_failure(self):
+        """경우 B: 검사 통과 뒤 DELETE가 HTTP 500 → 정리 실패(2), 상태 코드·요청 유지, 연결 끊김·앱 충돌로 부르지 않음."""
+        transport = self.transport(cleanup="http500")
+        driver = self.session_started()
+        with self.assertRaises(smoke.CleanupFailure) as caught:
+            smoke.end_session(driver)
+        error = caught.exception
+        self.assertNotIsInstance(error, smoke.DriverLost)
+        self.assertIsInstance(error.__cause__, urllib.error.HTTPError)
+        self.assertEqual((error.request, error.status, error.exit_code), ("DELETE ", 500, 2))
+        self.assertEqual(smoke.driver_lost_exit(error), 2)
+        self.assertIn("정리 실패(세션 삭제)", self.stderr.getvalue())
+        self.assertNotIn("앱 프로세스 종료", self.stderr.getvalue())
+        self.assertEqual(transport.requests.count("DELETE /session/S"), 1)
+
+    def test_http_500_during_interaction_stays_functional_failure(self):
+        self.transport(interaction=lambda: http_error(500))
+        driver = self.session()
+        with self.assertRaises(smoke.Failure) as caught:
+            driver.js(PROBE)
+        self.assertNotIsInstance(caught.exception, (smoke.DriverLost, smoke.CleanupFailure))
+        self.assertIn("500", str(caught.exception))
+
+    def test_C_interaction_read_timeout_is_inconclusive_transport(self):
+        """경우 C: POST /execute/sync 응답 읽기 시간 초과 → DriverLost(readTimeout), 모두 살아 있어 판단 불가(2), 다시 보내지 않음."""
+        transport = self.transport(interaction=lambda: TimeoutError("timed out"))
+        driver = self.session()
+        with self.assertRaises(smoke.DriverLost) as caught:
+            driver.js(PROBE)
+        error = caught.exception
+        self.assertNotIsInstance(error, smoke.ConditionTimeout)
+        self.assertIsInstance(error.__cause__, TimeoutError)
+        self.assertEqual((error.request, error.phase, error.kind, error.transport), ("POST /execute/sync", "interaction", "connectionLost", "readTimeout"))
+        self.assertEqual(smoke.driver_lost_exit(error), 2)
+        self.assertEqual(transport.requests.count("POST /session/S/execute/sync"), 1)
+
+    def test_session_create_read_timeout_is_startup_failure(self):
+        self.transport()
+        self.stack.enter_context(mock.patch.object(smoke.urllib.request, "urlopen", mock.Mock(side_effect=TimeoutError("timed out"))))
+        with self.assertRaises(smoke.DriverLost) as caught:
+            self.session()
+        self.assertEqual((caught.exception.phase, caught.exception.kind, caught.exception.exit_code), ("sessionStart", "startupFailure", 2))
+
+    def test_connect_timeout_wrapped_in_urlerror_is_timeout(self):
+        self.transport(interaction=lambda: urllib.error.URLError(TimeoutError("timed out")))
+        driver = self.session()
+        with self.assertRaises(smoke.DriverLost) as caught:
+            driver.js(PROBE)
+        self.assertEqual(caught.exception.transport, "connectTimeout")
+
+    def test_connection_reset_unchanged(self):
+        """경우 4: 연결 재설정은 예전 DriverLost 그대로(종류 connection)."""
+        self.transport(interaction=lambda: Transport.LOST)
+        driver = self.session()
+        with self.assertRaises(smoke.DriverLost) as caught:
+            driver.js(PROBE)
+        self.assertEqual((caught.exception.kind, caught.exception.transport, caught.exception.exit_code), ("connectionLost", "connection", 2))
+
+    def test_programming_error_is_not_transport(self):
+        """전송과 무관한 오류(예: 응답 JSON 깨짐)는 전송 실패로 바꾸지 않는다."""
+        self.transport()
+        self.stack.enter_context(mock.patch.object(smoke.urllib.request, "urlopen", lambda *a, **k: Response(b"not json")))
+        driver = smoke.WebDriver("http://127.0.0.1:4444")
+        with self.assertRaises(ValueError):
+            driver.js(PROBE)
+
+    def test_D_functional_failure_then_delete_timeout_keeps_original(self):
+        """경우 D: 기능 실패 뒤 DELETE 시간 초과 → 원래 예외 객체가 그대로(1), 정리 실패는 덧붙임."""
+        for cleanup in ("timeout", "http500"):
+            with self.subTest(cleanup=cleanup):
+                transport = self.transport(cleanup=cleanup)
+                driver = self.session_started()
+                original = smoke.Failure("기능 단언 실패")
+                with self.assertRaises(smoke.Failure) as caught:
+                    try:
+                        raise original
+                    finally:
+                        smoke.end_session(driver)
+                self.assertIs(caught.exception, original)
+                self.assertTrue(any("세션 종료도 실패" in n for n in original.__notes__))
+                self.assertEqual(transport.requests.count("DELETE /session/S"), 1)
+
+
+class EntryPointMatrix(HarnessCase):
+    """스모크·WordCraft·rhwp main()의 기능 단계 × 세션 삭제 결과 → 종료 코드(가짜 urlopen, 실제 WebDriver.call 경로)."""
+
+    CASES = [  # (기능, 세션 삭제, 종료 코드)
+        ("pass", "ok", 0), ("fail", "ok", 1), ("fail", "http500", 1), ("fail", "timeout", 1),
+        ("pass", "http500", 2), ("pass", "timeout", 2), ("pass", "reset", 2),
+        ("timeout", "ok", 2), ("timeout", "http500", 2), ("timeout", "timeout", 2),
+    ]
+
+    def scenario(self, functional):
+        def run(d, *_):
+            d.js(PROBE)
+            if functional == "fail":
+                raise smoke.Failure("기능 단언 실패(시험)")
+            return ["a"]
+        return run
+
+    @contextlib.contextmanager
+    def fake_tauri_driver(self, _path, _port, data_home):
+        smoke.ACTIVE.update(driver=self.driver_process, data_home=data_home)
+        try:
+            yield self.session
+        finally:
+            smoke.ACTIVE.clear()
+
+    def run_main(self, entry: str, functional: str) -> int:
+        exe = sys.executable
+        common = [mock.patch.object(smoke, "tauri_driver", self.fake_tauri_driver)]
+        if entry == "smoke":
+            patches = [mock.patch.object(sys, "argv", ["tauri_smoke.py", "--app", exe, "--driver", exe, "--skip-restart"]),
+                       mock.patch.object(smoke, "run", self.scenario(functional)),
+                       mock.patch.object(smoke, "run_document_sessions", lambda *_: None)]
+            main = smoke.main
+        elif entry == "wordcraft":
+            def fixtures(out):
+                out.mkdir(parents=True)
+                (out / "basic-ko.docx").write_bytes(b"x")
+                return {}
+            patches = [mock.patch.object(sys, "argv", ["wordcraft_poc.py", "--app", exe, "--driver", exe, "--commands-only"]),
+                       mock.patch.object(wordcraft, "generate_fixtures", fixtures),
+                       mock.patch.object(wordcraft, "calibrate_pointer", lambda _d: None),
+                       mock.patch.object(wordcraft, "scenario_commands", self.scenario(functional)),
+                       mock.patch.object(wordcraft, "RESULTS", [])]
+            main = wordcraft.main
+        else:
+            node = {"hwp": {"passed": True, "formatEqual": True, "sourceFormat": "hwp"},
+                    "hwpx": {"passed": True, "formatEqual": True, "sourceFormat": "hwpx"}}
+            fake_run = mock.Mock(side_effect=[mock.Mock(stdout=json.dumps({"rhwpCommit": "x", "contentLoss": []})),
+                                              mock.Mock(stdout=json.dumps(node), returncode=0)])
+            patches = [mock.patch.object(sys, "argv", ["rhwp_poc.py", "--app", exe, "--driver", exe, "--commands-only"]),
+                       mock.patch.object(rhwp.subprocess, "run", fake_run),
+                       mock.patch.object(rhwp, "scenario_commands", self.scenario(functional)),
+                       mock.patch.object(rhwp, "RESULTS", [])]
+            main = rhwp.main
+        with contextlib.ExitStack() as stack:
+            for patch in common + patches:
+                stack.enter_context(patch)
+            return main()
+
+    def test_matrix(self):
+        for entry in ("smoke", "wordcraft", "rhwp"):
+            for functional, cleanup, expected in self.CASES:
+                with self.subTest(entry=entry, functional=functional, cleanup=cleanup):
+                    self.stderr.seek(0)
+                    self.stderr.truncate()
+                    transport = TransportTimeoutAndCleanup.transport(
+                        self, interaction=(lambda: TimeoutError("timed out")) if functional == "timeout" else None, cleanup=cleanup)
+                    try:
+                        code = self.run_main(entry, functional)
+                    except BaseException as error:  # 처리되지 않은 예외도 계약 위반으로 본다
+                        self.fail(f"main()이 종료 코드 대신 {type(error).__name__}: {error}")
+                    err = self.stderr.getvalue()
+                    self.assertEqual(code, expected, err[-600:])
+                    self.assertEqual(transport.requests.count("DELETE /session/S"), 1)  # 정리는 한 번, 다시 보내지 않음
+                    probes = [r for r in transport.requests if r == "POST /session/S/execute/sync"]
+                    self.assertGreaterEqual(len(probes), 1)
+                    if functional == "fail":
+                        self.assertIn("기능 단언 실패(시험)", err)
+                    if functional == "timeout":
+                        self.assertIn("POST /execute/sync", err)  # 원래 전송 진단
+                        self.assertEqual(transport.requests[-1], "DELETE /session/S")  # 시간 초과 뒤 기능 요청 없음
+                    if cleanup != "ok" and functional != "pass":
+                        self.assertIn("[참고] 세션 종료도 실패", err)
+                    if functional == "pass" and cleanup != "ok":
+                        self.assertIn("정리 실패(세션 삭제)", err)
+                    self.assertNotIn("앱 프로세스 종료", err)
 
 
 if __name__ == "__main__":
