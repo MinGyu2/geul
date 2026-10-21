@@ -31,6 +31,7 @@ from __future__ import annotations
 import argparse
 import base64
 import contextlib
+import http.client
 import json
 import os
 import shutil
@@ -141,13 +142,31 @@ class CleanupFailure(Failure):
     exit_code = 2
     label = LOST_KINDS["cleanupFailure"][1]
 
-    def __init__(self, request: str, status: int, body: bytes):
-        self.request, self.status = request, status
-        super().__init__(f"WebDriver {request.strip()} (세션 삭제): HTTP {status} {body[:300]!r}")
+    def __init__(self, request: str, status: int, body: str, body_error: str | None):
+        self.request, self.status, self.body_error = request, status, body_error
+        super().__init__(f"WebDriver {request.strip()} (세션 삭제): HTTP {status} {body}")
 
     def diagnostic(self) -> dict:
         return {"request": self.request, "phase": "sessionDeletion", "kind": "cleanupFailure", "httpStatus": self.status,
-                "exitCode": self.exit_code}
+                "bodyReadError": self.body_error, "exitCode": self.exit_code}
+
+
+ERROR_BODY_LIMIT = 300  # HTTP 오류 응답 본문에서 진단에 남기는 앞부분(바이트)
+
+
+def _error_excerpt(error: urllib.error.HTTPError) -> tuple[str, str | None]:
+    """HTTP 오류 응답 본문의 앞부분(ERROR_BODY_LIMIT바이트까지만 읽음)과 읽기 실패 이름. 상태·헤더는 이미 받았으므로 본문 읽기가
+    멈추거나 끊겨도(TimeoutError·연결 오류 등 OSError, http.client 오류) 그 상태를 지우지 않고 읽은 데까지와 실패만 알린다."""
+    body, failed = b"", None
+    try:
+        while len(body) < ERROR_BODY_LIMIT:
+            chunk = error.read(ERROR_BODY_LIMIT - len(body))
+            if not chunk:
+                break
+            body += chunk
+    except (OSError, http.client.HTTPException) as read_error:
+        failed = type(read_error).__name__
+    return f"{body!r}" + (f" (본문 읽기 실패: {failed})" if failed else ""), failed
 
 
 def driver_lost_exit(error: DriverLost | CleanupFailure) -> int:
@@ -194,9 +213,10 @@ class WebDriver:
             with urllib.request.urlopen(request, timeout=60) as response:
                 value = json.loads(response.read() or b"{}").get("value")
         except urllib.error.HTTPError as error:
+            body, body_error = _error_excerpt(error)
             if method == "DELETE" and path == "":
-                raise CleanupFailure(f"{method} {path}", error.code, error.read()) from error
-            raise Failure(f"WebDriver {method} {path}: {error.code} {error.read()[:300]!r}") from error
+                raise CleanupFailure(f"{method} {path}", error.code, body, body_error) from error
+            raise Failure(f"WebDriver {method} {path}: {error.code} {body}") from error
         except (ConnectionError, TimeoutError, urllib.error.URLError) as error:
             raise DriverLost(f"{method} {path}", error) from error
         note_lifecycle()

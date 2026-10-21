@@ -448,11 +448,43 @@ def http_error(code: int = 500) -> urllib.error.HTTPError:
     return urllib.error.HTTPError("u", code, "Internal Server Error", {}, io.BytesIO(b'{"value":{"error":"unknown error"}}'))
 
 
+class Body:
+    """HTTP 오류 응답 본문 스트림. fail_after 바이트까지 주고 그 뒤 읽기는 fail(예: 상태·헤더 뒤 본문이 멈춤 → TimeoutError)."""
+
+    def __init__(self, data: bytes = b"", *, fail: BaseException | None = None, fail_after: int = 0):
+        self.data, self.fail, self.fail_after, self.pos = data, fail, fail_after, 0
+        self.requested: list = []
+
+    def read(self, amt=None):
+        self.requested.append(amt)
+        if self.fail is not None and (self.pos >= self.fail_after or amt is None or amt < 0):
+            raise self.fail  # 끝까지 읽기(read())는 멈춘 본문을 기다리다 실패하고, 그때까지 받은 바이트도 돌려주지 않는다(http.client와 같음)
+        limit = len(self.data) if amt is None or amt < 0 else self.pos + amt
+        if self.fail is not None:
+            limit = min(limit, self.fail_after)
+        chunk = self.data[self.pos:limit]
+        self.pos += len(chunk)
+        return chunk
+
+    def close(self):
+        pass
+
+
+def http_error_body(code: int, body: Body) -> urllib.error.HTTPError:
+    return urllib.error.HTTPError("http://127.0.0.1:4444/session/S", code, "Internal Server Error", {}, body)
+
+
+def stalled(code: int = 500) -> urllib.error.HTTPError:
+    """상태·헤더와 본문 앞 7바이트는 왔고 나머지 본문 읽기가 시간 초과."""
+    return http_error_body(code, Body(b'{"value":{"error":"unknown error"}}', fail=TimeoutError("timed out"), fail_after=7))
+
+
 CLEANUP = {  # 세션 삭제(DELETE /session/S)의 결과
     "ok": None,
     "http500": lambda: http_error(500),
     "timeout": lambda: TimeoutError("timed out"),  # 연결은 됐고 응답 읽기가 시간 초과(실측: urlopen이 URLError로 감싸지 않음)
     "reset": lambda: Transport.LOST,
+    "http500stall": stalled,  # HTTP 500, 본문 읽기 시간 초과
 }
 PROBE = "return 'probe'"  # 시나리오가 보내는 상호작용 요청
 
@@ -581,7 +613,9 @@ class EntryPointMatrix(HarnessCase):
         ("pass", "ok", 0), ("fail", "ok", 1), ("fail", "http500", 1), ("fail", "timeout", 1),
         ("pass", "http500", 2), ("pass", "timeout", 2), ("pass", "reset", 2),
         ("timeout", "ok", 2), ("timeout", "http500", 2), ("timeout", "timeout", 2),
+        ("pass", "http500stall", 2), ("fail", "http500stall", 1), ("http500stall", "ok", 1), ("http500stall", "http500stall", 1),
     ]
+    INTERACTION = {"timeout": lambda: TimeoutError("timed out"), "http500stall": stalled}
 
     def scenario(self, functional):
         def run(d, *_):
@@ -639,8 +673,7 @@ class EntryPointMatrix(HarnessCase):
                 with self.subTest(entry=entry, functional=functional, cleanup=cleanup):
                     self.stderr.seek(0)
                     self.stderr.truncate()
-                    transport = TransportTimeoutAndCleanup.transport(
-                        self, interaction=(lambda: TimeoutError("timed out")) if functional == "timeout" else None, cleanup=cleanup)
+                    transport = TransportTimeoutAndCleanup.transport(self, interaction=self.INTERACTION.get(functional), cleanup=cleanup)
                     try:
                         code = self.run_main(entry, functional)
                     except BaseException as error:  # 처리되지 않은 예외도 계약 위반으로 본다
@@ -652,6 +685,10 @@ class EntryPointMatrix(HarnessCase):
                     self.assertGreaterEqual(len(probes), 1)
                     if functional == "fail":
                         self.assertIn("기능 단언 실패(시험)", err)
+                    if functional == "http500stall":
+                        self.assertIn("/execute/sync: 500", err)  # 본문을 못 읽어도 HTTP 상태가 남은 기능 실패
+                        sent = [b for b in transport.bodies if b and PROBE in b.get("script", "")]
+                        self.assertEqual(len(sent), 1)  # 다시 보내지 않음
                     if functional == "timeout":
                         self.assertIn("POST /execute/sync", err)  # 원래 전송 진단
                         self.assertEqual(transport.requests[-1], "DELETE /session/S")  # 시간 초과 뒤 기능 요청 없음
@@ -660,6 +697,120 @@ class EntryPointMatrix(HarnessCase):
                     if functional == "pass" and cleanup != "ok":
                         self.assertIn("정리 실패(세션 삭제)", err)
                     self.assertNotIn("앱 프로세스 종료", err)
+
+
+class HttpErrorBody(TransportTimeoutAndCleanup):
+    """T010 HTTP 오류 본문 읽기: 상태를 받은 뒤 본문 읽기가 실패해도 상태·요청·단계를 잃지 않고, 본문은 정해진 만큼만 읽는다."""
+
+    def http(self, *, interaction=None, cleanup=None) -> Transport:
+        """interaction·cleanup: PROBE 요청·DELETE /session/S가 받을 HTTP 오류를 만드는 함수."""
+        base = answering({PROBE: "probe"})
+
+        def handler(method, path, body):
+            if method == "DELETE" and path == "/session/S" and cleanup:
+                return cleanup()
+            if interaction and body and PROBE in body.get("script", ""):
+                return interaction()
+            return base(method, path, body)
+        return self.use(Transport(handler, dead_after_loss=False))
+
+    def test_A_delete_500_body_timeout_is_cleanup_failure(self):
+        """필수 A: 검사 통과 뒤 DELETE가 HTTP 500, 본문 읽기 시간 초과 → CleanupFailure(2), 상태 500, 읽기 실패는 덧붙인 진단."""
+        transport = self.http(cleanup=stalled)
+        driver = self.session_started()
+        with self.assertRaises(smoke.CleanupFailure) as caught:
+            smoke.end_session(driver)
+        error = caught.exception
+        self.assertNotIsInstance(error, smoke.DriverLost)
+        self.assertIsInstance(error.__cause__, urllib.error.HTTPError)
+        self.assertEqual((error.request, error.status, error.body_error), ("DELETE ", 500, "TimeoutError"))
+        self.assertEqual(error.diagnostic()["kind"], "cleanupFailure")
+        self.assertEqual(error.diagnostic()["bodyReadError"], "TimeoutError")
+        self.assertIn("HTTP 500", str(error))
+        self.assertIn("본문 읽기 실패: TimeoutError", str(error))
+        self.assertIn('{"value', str(error))  # 읽은 앞부분은 남긴다
+        self.assertEqual(smoke.driver_lost_exit(error), 2)
+        self.assertEqual(transport.requests.count("DELETE /session/S"), 1)
+
+    def test_B_interaction_500_body_timeout_stays_functional_failure(self):
+        """필수 B: POST /execute/sync가 HTTP 500, 본문 읽기 시간 초과 → 기능 Failure(1), 500이 보이고 다시 보내지 않음."""
+        transport = self.http(interaction=stalled)
+        driver = self.session()
+        with self.assertRaises(smoke.Failure) as caught:
+            driver.js(PROBE)
+        error = caught.exception
+        self.assertNotIsInstance(error, (smoke.DriverLost, smoke.CleanupFailure))
+        self.assertIsInstance(error.__cause__, urllib.error.HTTPError)
+        self.assertIn("POST /execute/sync: 500", str(error))
+        self.assertIn("본문 읽기 실패: TimeoutError", str(error))
+        self.assertEqual(transport.requests.count("POST /session/S/execute/sync"), 1)
+
+    def test_C_functional_failure_then_cleanup_body_timeout_keeps_original(self):
+        """필수 C: 기능 실패 뒤 DELETE HTTP 500 본문 시간 초과 → 원래 예외 객체가 그대로(1), 정리 실패는 덧붙인 알림만."""
+        transport = self.http(cleanup=stalled)
+        driver = self.session_started()
+        original = smoke.Failure("기능 단언 실패")
+        with self.assertRaises(smoke.Failure) as caught:
+            try:
+                raise original
+            finally:
+                smoke.end_session(driver)
+        self.assertIs(caught.exception, original)
+        self.assertEqual(str(original), "기능 단언 실패")
+        self.assertTrue(any("세션 종료도 실패" in n and "HTTP 500" in n and "TimeoutError" in n for n in original.__notes__))
+        self.assertEqual(transport.requests.count("DELETE /session/S"), 1)
+
+    def body_case(self, body: Body) -> smoke.Failure:
+        self.http(interaction=lambda: http_error_body(500, body))
+        driver = self.session()
+        with self.assertRaises(smoke.Failure) as caught:
+            driver.js(PROBE)
+        self.assertNotIsInstance(caught.exception, smoke.DriverLost)
+        self.assertTrue(body.requested and all(isinstance(n, int) and 0 < n <= 300 for n in body.requested), body.requested)
+        return caught.exception
+
+    def test_small_body(self):
+        error = self.body_case(Body(b'{"value":{"error":"javascript error"}}'))
+        self.assertIn("javascript error", str(error))
+        self.assertNotIn("본문 읽기 실패", str(error))
+
+    def test_empty_body(self):
+        error = self.body_case(Body(b""))
+        self.assertIn("POST /execute/sync: 500 b''", str(error))
+
+    def test_large_body_reads_at_most_excerpt(self):
+        body = Body(b"x" * 100_000)
+        error = self.body_case(body)
+        self.assertEqual(body.pos, 300)  # 300바이트를 넘게 읽지 않는다(다 읽고 자르지 않음)
+        self.assertIn("x" * 300, str(error))
+        self.assertNotIn("x" * 301, str(error))
+
+    def test_body_connection_reset(self):
+        error = self.body_case(Body(b"abc", fail=ConnectionResetError(104, "Connection reset by peer"), fail_after=3))
+        self.assertIn("500 b'abc'", str(error))
+        self.assertIn("본문 읽기 실패: ConnectionResetError", str(error))
+
+    def test_delete_500_body_reset_is_cleanup_failure(self):
+        self.http(cleanup=lambda: http_error_body(500, Body(fail=ConnectionResetError(104, "reset"))))
+        driver = self.session_started()
+        with self.assertRaises(smoke.CleanupFailure) as caught:
+            smoke.end_session(driver)
+        self.assertEqual((caught.exception.status, caught.exception.body_error, caught.exception.exit_code), (500, "ConnectionResetError", 2))
+
+    def test_delete_500_readable_body_has_no_read_error(self):
+        self.http(cleanup=lambda: http_error(500))
+        driver = self.session_started()
+        with self.assertRaises(smoke.CleanupFailure) as caught:
+            smoke.end_session(driver)
+        self.assertIsNone(caught.exception.body_error)
+        self.assertIn("unknown error", str(caught.exception))
+
+    def test_body_programming_error_is_not_hidden(self):
+        """본문 스트림의 프로그래밍 오류(전송·읽기 오류가 아님)는 삼키지 않는다."""
+        self.http(interaction=lambda: http_error_body(500, Body(fail=AttributeError("bug"))))
+        driver = self.session()
+        with self.assertRaises(AttributeError):
+            driver.js(PROBE)
 
 
 if __name__ == "__main__":
