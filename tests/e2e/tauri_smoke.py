@@ -142,22 +142,26 @@ class CleanupFailure(Failure):
     exit_code = 2
     label = LOST_KINDS["cleanupFailure"][1]
 
-    def __init__(self, request: str, status: int, body: str, body_error: str | None):
-        self.request, self.status, self.body_error = request, status, body_error
+    def __init__(self, request: str, status: int, body: str, body_error: str | None, close_error: str | None = None):
+        self.request, self.status, self.body_error, self.close_error = request, status, body_error, close_error
         super().__init__(f"WebDriver {request.strip()} (세션 삭제): HTTP {status} {body}")
 
     def diagnostic(self) -> dict:
         return {"request": self.request, "phase": "sessionDeletion", "kind": "cleanupFailure", "httpStatus": self.status,
-                "bodyReadError": self.body_error, "exitCode": self.exit_code}
+                "bodyReadError": self.body_error, "closeError": self.close_error, "exitCode": self.exit_code}
 
 
 ERROR_BODY_LIMIT = 300  # HTTP 오류 응답 본문에서 진단에 남기는 앞부분(바이트)
 
 
-def _error_excerpt(error: urllib.error.HTTPError) -> tuple[str, str | None]:
-    """HTTP 오류 응답 본문의 앞부분(ERROR_BODY_LIMIT바이트까지만 읽음)과 읽기 실패 이름. 상태·헤더는 이미 받았으므로 본문 읽기가
-    멈추거나 끊겨도(TimeoutError·연결 오류 등 OSError, http.client 오류) 그 상태를 지우지 않고 읽은 데까지와 실패만 알린다."""
-    body, failed = b"", None
+def _error_excerpt(error: urllib.error.HTTPError) -> tuple[str, str | None, str | None]:
+    """HTTP 오류 응답 본문의 앞부분(ERROR_BODY_LIMIT바이트까지만 읽음)과 읽기·닫기 실패 이름. 상태·헤더는 이미 받았으므로 본문 읽기가
+    멈추거나 끊겨도(TimeoutError·연결 오류 등 OSError, http.client 오류) 그 상태를 지우지 않고 읽은 데까지와 실패만 알린다.
+    응답은 이 함수가 끝날 때 한 번 닫는다(남은 본문은 읽지 않음): 앞부분만 읽으면 응답·연결이 열린 채 남고, HTTPError는 예외의
+    원인(__cause__)으로 붙어 오래 살아 있기 때문이다. 닫기의 전송·자원 오류(OSError, http.client 오류)는 진단으로만 남긴다.
+    읽기의 프로그래밍 오류(예: AttributeError)는 그대로 올라가고, 그때의 닫기 실패는 그 오류에 덧붙이기만 한다. 앞선 오류 없이
+    닫기에서 난 프로그래밍 오류는 숨기지 않는다."""
+    body, failed, close_failed, pending = b"", None, None, None
     try:
         while len(body) < ERROR_BODY_LIMIT:
             chunk = error.read(ERROR_BODY_LIMIT - len(body))
@@ -166,7 +170,22 @@ def _error_excerpt(error: urllib.error.HTTPError) -> tuple[str, str | None]:
             body += chunk
     except (OSError, http.client.HTTPException) as read_error:
         failed = type(read_error).__name__
-    return f"{body!r}" + (f" (본문 읽기 실패: {failed})" if failed else ""), failed
+    except BaseException as read_bug:  # 올라가는 중인 읽기 오류(sys.exc_info()는 처리 중인 HTTPError를 가리켜 쓸 수 없음)
+        pending = read_bug
+        raise
+    finally:
+        try:
+            error.close()
+        except (OSError, http.client.HTTPException) as close_error:
+            close_failed = type(close_error).__name__
+            if pending is not None:
+                pending.add_note(f"HTTP {error.code} 오류 응답 닫기도 실패: {close_error!r}")
+        except Exception as close_error:
+            if pending is None:
+                raise
+            pending.add_note(f"HTTP {error.code} 오류 응답 닫기도 실패: {close_error!r}")
+    return (f"{body!r}" + (f" (본문 읽기 실패: {failed})" if failed else "")
+            + (f" (응답 닫기 실패: {close_failed})" if close_failed else "")), failed, close_failed
 
 
 def driver_lost_exit(error: DriverLost | CleanupFailure) -> int:
@@ -213,9 +232,9 @@ class WebDriver:
             with urllib.request.urlopen(request, timeout=60) as response:
                 value = json.loads(response.read() or b"{}").get("value")
         except urllib.error.HTTPError as error:
-            body, body_error = _error_excerpt(error)
+            body, body_error, close_error = _error_excerpt(error)
             if method == "DELETE" and path == "":
-                raise CleanupFailure(f"{method} {path}", error.code, body, body_error) from error
+                raise CleanupFailure(f"{method} {path}", error.code, body, body_error, close_error) from error
             raise Failure(f"WebDriver {method} {path}: {error.code} {body}") from error
         except (ConnectionError, TimeoutError, urllib.error.URLError) as error:
             raise DriverLost(f"{method} {path}", error) from error
