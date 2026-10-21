@@ -1,0 +1,673 @@
+{
+ "source": "T010 Phase 0 run on 65551e0 sources (rhwp 1a76570); copied from ephemeral scratch, contents/paths removed",
+ "reproducibility": "basic-ko rows: reproducible via rhwp_phase0.mjs/check.py; large-document rows used two private local documents (sizes only) and are NOT reproducible from the repository",
+ "engineChecksAB": [
+  {
+   "id": "A1-7 hwp: 여러 편집(넣기·나누기·합치기·지우기·셀·서식) 뒤 복원하면 본문·문단·런·셀·컨트롤·쪽 수가 처음과 같다",
+   "status": "CONFIRMED",
+   "detail": {
+    "restored": {
+     "ok": true,
+     "value": "{\"ok\":true}"
+    },
+    "mutatedDiffers": true,
+    "equal": true
+   }
+  },
+  {
+   "id": "A6 hwp: 복원한 문서의 내보내기 바이트가 편집 전 내보내기와 같다",
+   "status": "CONFIRMED",
+   "detail": {
+    "bytes": [
+     13312,
+     13312
+    ],
+    "charShapes": [
+     8,
+     8
+    ]
+   }
+  },
+  {
+   "id": "A6 hwp: 복원 뒤 내보내 다시 연 문서가 처음 상태와 같다",
+   "status": "CONFIRMED",
+   "detail": {}
+  },
+  {
+   "id": "A hwp: 없는 스냅숏 ID 복원은 오류이고 문서가 그대로다",
+   "status": "CONFIRMED",
+   "detail": {
+    "error": "렌더링 오류: 스냅샷 987654 없음"
+   }
+  },
+  {
+   "id": "A hwp: 버린 스냅숏 ID는 다시 복원할 수 없다",
+   "status": "CONFIRMED",
+   "detail": {
+    "error": "렌더링 오류: 스냅샷 0 없음"
+   }
+  },
+  {
+   "id": "A hwp: 다른 편집 사이 5개 시점 스냅숏을 뒤섞은 순서로 복원해도 각 시점과 같다(나누기·합치기·셀 포함)",
+   "status": "CONFIRMED",
+   "detail": [
+    {
+     "k": 2,
+     "ok": true,
+     "equal": true
+    },
+    {
+     "k": 0,
+     "ok": true,
+     "equal": true
+    },
+    {
+     "k": 4,
+     "ok": true,
+     "equal": true
+    },
+    {
+     "k": 1,
+     "ok": true,
+     "equal": true
+    },
+    {
+     "k": 3,
+     "ok": true,
+     "equal": true
+    }
+   ]
+  },
+  {
+   "id": "A1-7 hwpx: 여러 편집(넣기·나누기·합치기·지우기·셀·서식) 뒤 복원하면 본문·문단·런·셀·컨트롤·쪽 수가 처음과 같다",
+   "status": "CONFIRMED",
+   "detail": {
+    "restored": {
+     "ok": true,
+     "value": "{\"ok\":true}"
+    },
+    "mutatedDiffers": true,
+    "equal": true
+   }
+  },
+  {
+   "id": "A6 hwpx: 복원한 문서의 내보내기 바이트가 편집 전 내보내기와 같다",
+   "status": "CONFIRMED",
+   "detail": {
+    "bytes": [
+     8064,
+     8064
+    ],
+    "charShapes": [
+     8,
+     8
+    ]
+   }
+  },
+  {
+   "id": "A6 hwpx: 복원 뒤 내보내 다시 연 문서가 처음 상태와 같다",
+   "status": "CONFIRMED",
+   "detail": {}
+  },
+  {
+   "id": "A hwpx: 없는 스냅숏 ID 복원은 오류이고 문서가 그대로다",
+   "status": "CONFIRMED",
+   "detail": {
+    "error": "렌더링 오류: 스냅샷 987654 없음"
+   }
+  },
+  {
+   "id": "A hwpx: 버린 스냅숏 ID는 다시 복원할 수 없다",
+   "status": "CONFIRMED",
+   "detail": {
+    "error": "렌더링 오류: 스냅샷 0 없음"
+   }
+  },
+  {
+   "id": "A hwpx: 다른 편집 사이 5개 시점 스냅숏을 뒤섞은 순서로 복원해도 각 시점과 같다(나누기·합치기·셀 포함)",
+   "status": "CONFIRMED",
+   "detail": [
+    {
+     "k": 2,
+     "ok": true,
+     "equal": true
+    },
+    {
+     "k": 0,
+     "ok": true,
+     "equal": true
+    },
+    {
+     "k": 4,
+     "ok": true,
+     "equal": true
+    },
+    {
+     "k": 1,
+     "ok": true,
+     "equal": true
+    },
+    {
+     "k": 3,
+     "ok": true,
+     "equal": true
+    }
+   ]
+  },
+  {
+   "id": "B4: 상한+20개를 할당하면 가장 오래된 20개가 알림 없이 사라지고 나머지는 복원된다",
+   "status": "CONFIRMED",
+   "detail": {
+    "capacity": 100,
+    "evicted": 20,
+    "firstAlive": 20
+   }
+  },
+  {
+   "id": "B studio와 같은 여유 2: 기록 흉내(실행·되돌리기·다시 실행 ≈300단계)에서 참조 중인 스냅숏이 모두 복원되고 버린 뒤 남는 것이 없다",
+   "status": "CONFIRMED",
+   "detail": {
+    "label": "studio와 같은 여유 2",
+    "capacity": 100,
+    "budget": 98,
+    "peakLiveIds": 99,
+    "failures": [],
+    "failureCount": 0,
+    "referencedAtEnd": 19,
+    "unrestorableAtEnd": 0,
+    "restorableAfterDiscard": 0
+   }
+  },
+  {
+   "id": "B 여유 0(상한까지): 기록 흉내(실행·되돌리기·다시 실행 ≈300단계)에서 참조 중인 스냅숏이 모두 복원되고 버린 뒤 남는 것이 없다",
+   "status": "REFUTED",
+   "detail": {
+    "label": "여유 0(상한까지)",
+    "capacity": 100,
+    "budget": 100,
+    "peakLiveIds": 101,
+    "failures": [],
+    "failureCount": 0,
+    "referencedAtEnd": 21,
+    "unrestorableAtEnd": 0,
+    "restorableAfterDiscard": 0
+   }
+  },
+  {
+   "id": "B8: 참조 100개가 살아 있을 때 되돌리기의 after 저장(101번째)이 가장 오래된 참조를 알림 없이 지운다",
+   "status": "CONFIRMED",
+   "detail": {
+    "firstRestorableBefore": true,
+    "firstAfterExtra": {
+     "ok": false,
+     "error": "렌더링 오류: 스냅샷 0 없음"
+    }
+   }
+  }
+ ],
+ "performance": [
+  {
+   "label": "basic-ko(생성 픽스처)",
+   "fmt": "hwp",
+   "fileBytes": 13312,
+   "pages": null,
+   "openMs": 2.2,
+   "saveSnapshotMs": {
+    "n": 50,
+    "p50": 0.01,
+    "p95": 0.01,
+    "max": 0.03
+   },
+   "restoreSnapshotMs": {
+    "n": 20,
+    "p50": 0.34,
+    "p95": 0.37,
+    "max": 0.39
+   },
+   "insertTextMs": {
+    "n": 20,
+    "p50": 0.23,
+    "p95": 0.25,
+    "max": 0.26
+   },
+   "exportMs": 2.5,
+   "reopenMs": 2.3,
+   "wasmMemoryBytes": {
+    "beforeOpen": 5242880,
+    "afterOpen": 5242880,
+    "afterNSnapshots": 5242880,
+    "afterDiscardAndReallocate": 5242880
+   },
+   "perSnapshotGrowthBytesApprox": 0
+  },
+  {
+   "label": "basic-ko(생성 픽스처)",
+   "fmt": "hwpx",
+   "fileBytes": 8064,
+   "pages": null,
+   "openMs": 2,
+   "saveSnapshotMs": {
+    "n": 50,
+    "p50": 0.01,
+    "p95": 0.01,
+    "max": 0.02
+   },
+   "restoreSnapshotMs": {
+    "n": 20,
+    "p50": 0.32,
+    "p95": 0.34,
+    "max": 0.38
+   },
+   "insertTextMs": {
+    "n": 20,
+    "p50": 0.21,
+    "p95": 0.25,
+    "max": 0.25
+   },
+   "exportMs": 2.1,
+   "reopenMs": 2.1,
+   "wasmMemoryBytes": {
+    "beforeOpen": 5242880,
+    "afterOpen": 5242880,
+    "afterNSnapshots": 5242880,
+    "afterDiscardAndReallocate": 5242880
+   },
+   "perSnapshotGrowthBytesApprox": 0
+  },
+  {
+   "label": "큰 실제 문서 10.7MB",
+   "fmt": "hwp",
+   "fileBytes": 10687488,
+   "pages": null,
+   "openMs": 1185.3,
+   "saveSnapshotMs": {
+    "n": 10,
+    "p50": 24.57,
+    "p95": 30.37,
+    "max": 30.37
+   },
+   "restoreSnapshotMs": {
+    "n": 10,
+    "p50": 689.14,
+    "p95": 838.74,
+    "max": 838.74
+   },
+   "insertTextMs": {
+    "n": 20,
+    "p50": 2,
+    "p95": 2.12,
+    "max": 2.93
+   },
+   "exportMs": 1472.5,
+   "reopenMs": 1090.5,
+   "wasmMemoryBytes": {
+    "beforeOpen": 5242880,
+    "afterOpen": 53542912,
+    "afterNSnapshots": 136314880,
+    "afterDiscardAndReallocate": 146210816
+   },
+   "perSnapshotGrowthBytesApprox": 8277197
+  },
+  {
+   "label": "큰 실제 문서 13.6MB",
+   "fmt": "hwpx",
+   "fileBytes": 13639865,
+   "pages": null,
+   "openMs": 966.4,
+   "saveSnapshotMs": {
+    "n": 10,
+    "p50": 3.04,
+    "p95": 3.61,
+    "max": 3.61
+   },
+   "restoreSnapshotMs": {
+    "n": 10,
+    "p50": 622.15,
+    "p95": 659.81,
+    "max": 659.81
+   },
+   "insertTextMs": {
+    "n": 20,
+    "p50": 1.88,
+    "p95": 2.02,
+    "max": 2.41
+   },
+   "exportMs": 1311.1,
+   "reopenMs": 881.3,
+   "wasmMemoryBytes": {
+    "beforeOpen": 146210816,
+    "afterOpen": 146210816,
+    "afterNSnapshots": 146210816,
+    "afterDiscardAndReallocate": 146210816
+   },
+   "perSnapshotGrowthBytesApprox": 0
+  }
+ ],
+ "lifecycle": {
+  "C1": {
+   "before": {
+    "localRevision": 0,
+    "committed": 0,
+    "pending": 0,
+    "modified": false,
+    "uncertain": false,
+    "unpreserved": false,
+    "composing": false,
+    "awaitingEnd": false,
+    "modelVersion": 1
+   },
+   "sent": {
+    "localRevision": 1,
+    "committed": 0,
+    "pending": 1,
+    "modified": true,
+    "uncertain": false,
+    "unpreserved": true,
+    "composing": false,
+    "awaitingEnd": false,
+    "modelVersion": 2
+   },
+   "commitArgs": [
+    1,
+    1,
+    0,
+    1
+   ],
+   "after": {
+    "localRevision": 1,
+    "committed": 1,
+    "pending": 0,
+    "modified": true,
+    "uncertain": false,
+    "unpreserved": true,
+    "composing": false,
+    "awaitingEnd": false,
+    "modelVersion": 2
+   }
+  },
+  "C2": {
+   "steps": [
+    {
+     "step": "begin",
+     "localRevision": 0,
+     "committed": 0,
+     "pending": 0,
+     "modified": false,
+     "uncertain": false,
+     "unpreserved": true,
+     "composing": true,
+     "awaitingEnd": false,
+     "modelVersion": 1
+    },
+    {
+     "step": "update ㄱ",
+     "localRevision": 0,
+     "committed": 0,
+     "pending": 0,
+     "modified": true,
+     "uncertain": false,
+     "unpreserved": true,
+     "composing": true,
+     "awaitingEnd": false,
+     "modelVersion": 2
+    },
+    {
+     "step": "update 가",
+     "localRevision": 0,
+     "committed": 0,
+     "pending": 0,
+     "modified": true,
+     "uncertain": false,
+     "unpreserved": true,
+     "composing": true,
+     "awaitingEnd": false,
+     "modelVersion": 3
+    },
+    {
+     "step": "update 간",
+     "localRevision": 0,
+     "committed": 0,
+     "pending": 0,
+     "modified": true,
+     "uncertain": false,
+     "unpreserved": true,
+     "composing": true,
+     "awaitingEnd": false,
+     "modelVersion": 4
+    },
+    {
+     "step": "end",
+     "localRevision": 1,
+     "committed": 0,
+     "pending": 1,
+     "modified": true,
+     "uncertain": false,
+     "unpreserved": true,
+     "composing": false,
+     "awaitingEnd": false,
+     "modelVersion": 4
+    }
+   ],
+   "commits": [
+    [
+     1,
+     1,
+     0,
+     1
+    ]
+   ]
+  },
+  "C3": {
+   "before": {
+    "localRevision": 0,
+    "committed": 0,
+    "pending": 0,
+    "modified": false,
+    "uncertain": false,
+    "unpreserved": false,
+    "composing": false,
+    "awaitingEnd": false,
+    "modelVersion": 1
+   },
+   "during": {
+    "localRevision": 0,
+    "committed": 0,
+    "pending": 0,
+    "modified": true,
+    "uncertain": false,
+    "unpreserved": true,
+    "composing": true,
+    "awaitingEnd": false,
+    "modelVersion": 2
+   },
+   "after": {
+    "localRevision": 0,
+    "committed": 0,
+    "pending": 0,
+    "modified": true,
+    "uncertain": false,
+    "unpreserved": true,
+    "composing": false,
+    "awaitingEnd": false,
+    "modelVersion": 3
+   },
+   "commits": []
+  },
+  "C4": {
+   "before": {
+    "localRevision": 0,
+    "committed": 0,
+    "pending": 0,
+    "modified": false,
+    "uncertain": false,
+    "unpreserved": false,
+    "composing": false,
+    "awaitingEnd": false,
+    "modelVersion": 1
+   },
+   "afterBegin": {
+    "localRevision": 0,
+    "committed": 0,
+    "pending": 0,
+    "modified": true,
+    "uncertain": false,
+    "unpreserved": true,
+    "composing": true,
+    "awaitingEnd": false,
+    "modelVersion": 2
+   },
+   "after": {
+    "localRevision": 1,
+    "committed": 0,
+    "pending": 1,
+    "modified": true,
+    "uncertain": false,
+    "unpreserved": true,
+    "composing": false,
+    "awaitingEnd": false,
+    "modelVersion": 4
+   },
+   "commits": [
+    [
+     1,
+     1,
+     0,
+     1
+    ]
+   ]
+  },
+  "C5": {
+   "after": {
+    "localRevision": 1,
+    "committed": 0,
+    "pending": 1,
+    "modified": true,
+    "uncertain": false,
+    "unpreserved": true,
+    "composing": false,
+    "awaitingEnd": false,
+    "modelVersion": 3
+   },
+   "commits": [
+    [
+     1,
+     1,
+     0,
+     1
+    ]
+   ]
+  },
+  "C6": {
+   "provisional": {
+    "localRevision": 0,
+    "committed": 0,
+    "pending": 0,
+    "modified": true,
+    "uncertain": false,
+    "unpreserved": true,
+    "composing": false,
+    "awaitingEnd": true,
+    "modelVersion": 2
+   },
+   "after": {
+    "localRevision": 1,
+    "committed": 0,
+    "pending": 1,
+    "modified": true,
+    "uncertain": false,
+    "unpreserved": true,
+    "composing": false,
+    "awaitingEnd": false,
+    "modelVersion": 3
+   },
+   "commits": [
+    [
+     1,
+     1,
+     0,
+     1
+    ]
+   ]
+  },
+  "C7": {
+   "whilePending": {
+    "localRevision": 2,
+    "committed": 0,
+    "pending": 2,
+    "modified": true,
+    "uncertain": false,
+    "unpreserved": true,
+    "composing": false,
+    "awaitingEnd": false,
+    "modelVersion": 3
+   },
+   "firstArgs": [
+    1,
+    1,
+    0,
+    1
+   ],
+   "secondArgs": [
+    1,
+    1,
+    1,
+    1
+   ],
+   "after": {
+    "localRevision": 2,
+    "committed": 2,
+    "pending": 0,
+    "modified": true,
+    "uncertain": false,
+    "unpreserved": true,
+    "composing": false,
+    "awaitingEnd": false,
+    "modelVersion": 3
+   },
+   "remaining": []
+  },
+  "C8": {
+   "before": {
+    "localRevision": 1,
+    "committed": 0,
+    "pending": 1,
+    "modified": true,
+    "uncertain": false,
+    "unpreserved": true,
+    "composing": false,
+    "awaitingEnd": false,
+    "modelVersion": 2
+   },
+   "afterReload": {
+    "localRevision": 0,
+    "committed": 0,
+    "pending": 0,
+    "modified": false,
+    "uncertain": false,
+    "unpreserved": false,
+    "composing": false,
+    "awaitingEnd": false,
+    "modelVersion": 3
+   },
+   "docsOpened": 2,
+   "statusAfterDispose": {
+    "kind": "closed"
+   }
+  },
+  "Csnap": {
+   "changed": true,
+   "restoredEqual": true,
+   "sessionAfterRestore": {
+    "localRevision": 1,
+    "committed": 0,
+    "pending": 1,
+    "modified": true,
+    "uncertain": false,
+    "unpreserved": true,
+    "composing": false,
+    "awaitingEnd": false,
+    "modelVersion": 3
+   }
+  }
+ }
+}
