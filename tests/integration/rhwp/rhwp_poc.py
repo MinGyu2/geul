@@ -1093,14 +1093,15 @@ def main() -> int:
                             scenario_save(d, fixtures, scratch)
                             scenario_commands(d, fixtures, scratch)
                     finally:
-                        try:
-                            d.quit()
-                        except smoke.Failure as error:  # 앞선 실패를 가리지 않는다
-                            print(f"[참고] 세션 종료 실패: {error}", file=sys.stderr)
+                        smoke.end_session(d)  # 앞선 실패를 가리지 않고, 앞선 실패가 없으면 정리 실패도 보고한다
         if args.ime:
             return ime_exit_code(args.diagnostic_only)
         print(f"\nT007 rhwp PoC: {len(RESULTS)}개 항목 통과")
         return 0
+    except smoke.DriverLost as error:
+        REPORT["driverLost"] = error.diagnostic()
+        print(f"통과한 항목 {len(RESULTS)}개(끊기기 전)", file=sys.stderr)
+        return smoke.driver_lost_exit(error)
     except (smoke.Failure, TimeoutError, OSError) as error:
         import traceback
         traceback.print_exc()

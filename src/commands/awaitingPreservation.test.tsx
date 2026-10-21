@@ -243,6 +243,7 @@ async function hwpxWorkspace() {
   const doc = new FakeDocument(["가나다", "abc"]);
   doc.format = "hwpx";
   let first = true;
+  const docs = [doc];
   const module: RhwpModule = {
     openDocument: (bytes: Uint8Array) => {
       if (first) {
@@ -252,6 +253,7 @@ async function hwpxWorkspace() {
       const exported = bytes.length > 4 && bytes[0] === 0x50;
       const other = new FakeDocument(exported ? new TextDecoder().decode(bytes.subarray(4)).split("\n") : ["가나다", "abc"]);
       other.format = "hwpx";
+      docs.push(other);
       return other as unknown as RhwpDocument;
     },
   };
@@ -264,7 +266,8 @@ async function hwpxWorkspace() {
   take("setState").reply(okResult(hwpx({ state: "ready", sequence: 2, loadGeneration: 1 })));
   await loading;
   const ime = new ImeInput(editor as unknown as ImeSession, new ImeContext());
-  return { workspace, editor, sessions, doc, calls, take, ime };
+  // docs: 연 가짜 문서 차례(다시 불러온 뒤의 모델은 마지막 것).
+  return { workspace, editor, sessions, doc, docs, calls, take, ime };
 }
 
 describe("rhwp: 최종 글자를 기다리는 트랜잭션의 보존", () => {
@@ -382,76 +385,218 @@ describe("IME lifecycle ownership through real input path", () => {
     expect(t.sessions.get(1)).toMatchObject({ revision: 1, dirty: true });
     surface.cleanup();
   });
+});
 
-  it("P1 reproduction (DOCX): failed close followed by pointerDown accepts no-start, no-229 composition", async () => {
+// ---- P1 판별 회귀: 폐기 뒤 pointerDown → 시작·229·옛 꼬리 없이 첫 새 preedit ----
+// 37b39ae의 pointerDown은 폐기된 문맥에도 끝나지 않은 끊김 기록을 남겼고, 그 기록이 있으면 첫 새 insertCompositionText가
+// 폐기 표지를 풀지 못해 버려졌다. 229 keydown·compositionstart·옛 최종 입력은 그 기록을 먼저 지워 결함을 가리므로, 불변식 A
+// (새 조합 수락)의 순서에는 넣지 않는다. 불변식 B(옛 꼬리 거절)는 따로 확인한다. 모두 DOM 재생이며 실제 입력기 순서가 아니다.
+
+type Engine = "docx" | "rhwp";
+type Lifecycle = "failed close" | "reload";
+
+/** 엔진별 작업 공간: 폐기(닫기 실패·다시 불러오기), 모델 글자, 엔진에 보낸 확정과 revision 확인. */
+async function engineCase(engine: Engine) {
+  if (engine === "docx") {
     const t = await docxWorkspace({ closeFails: true });
+    return {
+      editor: t.editor,
+      text: () => t.fake.paragraphs[0],
+      moveRight: () => t.editor.move("right", false),
+      invalidate: async (lifecycle: Lifecycle) => {
+        const result = lifecycle === "failed close" ? await t.workspace.close(1, { discard: true }) : await t.editor.load({ discard: true });
+        expect(result.ok).toBe(lifecycle === "reload");
+        await flush();
+      },
+      /** 엔진에 보낸 넣기 글자와 문서 revision·dirty. */
+      expectCommitted: async (texts: string[]) => {
+        await flush();
+        const inserted = t.fake.calls.filter((call) => call.method === "edit")
+          .flatMap((call) => call.args[3] as { op: string; text?: string }[])
+          .filter((op) => op.op.startsWith("insert")).map((op) => op.text);
+        expect(inserted).toEqual(texts);
+        expect(t.sessions.get(1)).toMatchObject({ revision: texts.length, dirty: texts.length > 0 });
+      },
+    };
+  }
+  const t = await hwpxWorkspace();
+  let generation = 1;
+  return {
+    editor: t.editor,
+    text: () => t.docs.at(-1)!.paragraphs[0],
+    moveRight: () => t.editor.moveHorizontal(1, false),
+    invalidate: async (lifecycle: Lifecycle) => {
+      if (lifecycle === "failed close") {
+        const closing = t.workspace.close(1, { discard: true });
+        t.take("close").reply({ ok: false, error: { code: "Protocol" } });
+        expect((await closing).ok).toBe(false);
+        return;
+      }
+      const reloading = t.editor.load({ discard: true });
+      t.take("load").reply(loaded(undefined, 2));
+      await flushRhwp();
+      t.take("session").reply(okResult(hwpx({ state: "loading", sequence: 3, loadGeneration: 2 })));
+      t.take("setState").reply(okResult(hwpx({ state: "ready", sequence: 4, loadGeneration: 2 })));
+      expect((await reloading).ok).toBe(true);
+      expect(t.docs).toHaveLength(2);
+      generation = 2;
+    },
+    /** rhwp는 글자를 모델에 넣고 변경 수만 보낸다: 확정마다 revision 하나. */
+    expectCommitted: async (texts: string[]) => {
+      await flushRhwp();
+      expect(t.editor.localRevision).toBe(texts.length);
+      let revision = 0;
+      while (t.calls.some((call) => call.method === "commit")) {
+        const commit = t.take("commit");
+        expect(commit.args.slice(0, 3)).toEqual([1, generation, revision]);
+        revision += commit.args[3] as number;
+        commit.reply(okResult(hwpx({ state: "ready", revision, dirty: true, sequence: 9 + revision, loadGeneration: generation })));
+        await flushRhwp();
+      }
+      expect(revision).toBe(texts.length);
+      expect(t.sessions.get(1)).toMatchObject({ revision: texts.length, dirty: texts.length > 0 });
+    },
+  };
+}
+
+/** 빈 끝으로 끝나 최종 글자를 기다리는 옛 거래를 만들고 폐기한다. 폐기 뒤 세대가 바뀌었는지 확인한다. */
+async function discardedAwaiting(engine: Engine, lifecycle: Lifecycle) {
+  const t = await engineCase(engine);
+  const context = new ImeContext();
+  const surface = inputSurface(t.editor, context);
+  surface.start(); surface.preedit("옛"); surface.empty();
+  expect(t.editor.awaitingCommit).toBe(true);
+  expect(context.owner).toEqual({ session: t.editor, epoch: t.editor.imeEpoch });
+  const before = t.editor.imeEpoch;
+  await t.invalidate(lifecycle);
+  expect(t.editor.imeEpoch).not.toBe(before);
+  expect(t.editor.editable).toBe(true);
+  expect(t.editor.awaitingCommit).toBe(false);
+  expect(t.text()).toBe("가나다");
+  return { ...t, context, surface };
+}
+
+describe("P1 invariant A: first new composition after pointerDown on a discarded transaction", () => {
+  for (const engine of ["docx", "rhwp"] as const) {
+    for (const lifecycle of ["failed close", "reload"] as const) {
+      for (const boundary of ["none", "compositionstart"] as const) {
+        for (const completion of ["direct", "split"] as const) {
+          it(`${engine} ${lifecycle}: pointerDown → ${boundary === "none" ? "no start, no 229" : "compositionstart"} → first preedit (${completion} commit)`, async () => {
+            const t = await discardedAwaiting(engine, lifecycle);
+            t.surface.pointerDown();
+            if (boundary === "compositionstart") t.surface.start();
+            t.surface.preeditRaw("새");
+            // 첫 새 조합 직후(다른 이벤트 없음).
+            expect(t.editor.composing).toBe(true);
+            expect(t.context.owner).toEqual({ session: t.editor, epoch: t.editor.imeEpoch });
+            expect(t.context.discarded).toBe(false);
+            expect(t.context.interrupted).toBeNull();
+            if (completion === "direct") t.surface.final("새");
+            else { t.surface.empty(); t.surface.final("새"); } // 실측 순서: 빈 끝 → 229 → 최종 글자 → 끝
+            expect(t.editor.composing).toBe(false);
+            expect(t.editor.awaitingCommit).toBe(false);
+            await t.expectCommitted(["새"]);
+            expect(t.text()).toBe("새가나다");
+            expect(t.editor.editable).toBe(true);
+            t.surface.cleanup();
+          });
+        }
+      }
+    }
+  }
+
+  it("docx failed close: pointerDown on A, then B's no-start preedit on the shared context is accepted", async () => {
+    const t = await docxWorkspace({ closeFails: true, two: true });
     const context = new ImeContext();
-    const surface = inputSurface(t.editor, context);
-    surface.start(); surface.preedit("옛"); surface.empty();
-    expect(t.editor.awaitingCommit).toBe(true);
+    const a = inputSurface(t.editor, context);
+    a.start(); a.preedit("옛"); a.empty();
     expect((await t.workspace.close(1, { discard: true })).ok).toBe(false);
-    expect(t.editor.editable).toBe(true);
-
-    // Step 8: invoke pointerDown
-    surface.pointerDown();
-
-    // Discriminating check: old final commit after pointerDown is rejected
-    surface.final("옛", false);
-    expect(t.fake.paragraphs[0]).toBe("가나다");
-
-    // Step 9 & 10: No compositionstart, no 229 keydown
-    // Step 11: First new preedit
-    surface.preeditRaw("새");
-
-    // Intermediate assertion immediately after step 11:
-    expect(t.editor.composing).toBe(true);
-    expect(context.owner?.session).toBe(t.editor);
-
-    // Step 12: Complete new composition
-    surface.final("새");
+    a.pointerDown();
+    a.cleanup(); // 탭 전환
+    const b = t.workspace.docxEditorFor(2)!;
+    const bs = inputSurface(b, context);
+    bs.preeditRaw("새");
+    expect(b.composing).toBe(true);
+    expect(context.owner).toEqual({ session: b, epoch: b.imeEpoch });
+    expect(context.discarded).toBe(false);
+    bs.final("새");
     await flush();
-
-    expect(t.fake.paragraphs[0]).toBe("새가나다");
-    expect(t.sessions.get(1)).toMatchObject({ revision: 1, dirty: true });
-    expect(t.editor.editable).toBe(true);
-    surface.cleanup();
+    expect(t.fakes.get(2)!.paragraphs).toEqual(["새둘째"]);
+    expect(t.fake.paragraphs[0]).toBe("가나다");
+    expect(t.fake.calls.filter((call) => call.method === "edit")).toEqual([]);
+    expect(t.sessions.get(2)).toMatchObject({ revision: 1, dirty: true });
+    bs.cleanup();
   });
+});
 
-  it("P1 reproduction (rhwp): failed close followed by pointerDown accepts no-start, no-229 composition", async () => {
-    const t = await hwpxWorkspace();
-    const context = new ImeContext();
-    const surface = inputSurface(t.editor, context);
-    surface.start(); surface.preedit("옛"); surface.empty();
-    expect(t.editor.awaitingCommit).toBe(true);
-    const closing = t.workspace.close(1, { discard: true });
-    t.take("close").reply({ ok: false, error: { code: "Protocol" } });
-    expect((await closing).ok).toBe(false);
-    expect(t.editor.editable).toBe(true);
+describe("P1 invariant B: discarded old final after pointerDown is never committed", () => {
+  for (const engine of ["docx", "rhwp"] as const) {
+    for (const lifecycle of ["failed close", "reload"] as const) {
+      for (const composing of [true, false]) {
+        it(`${engine} ${lifecycle}: pointerDown → old final (isComposing=${composing}) → old compositionend`, async () => {
+          const t = await discardedAwaiting(engine, lifecycle);
+          t.surface.pointerDown();
+          t.surface.final("옛", composing); // 229 → insertFromComposition → compositionend("옛")
+          expect(t.editor.composing).toBe(false);
+          expect(t.editor.awaitingCommit).toBe(false);
+          await t.expectCommitted([]);
+          expect(t.text()).toBe("가나다");
+          expect(t.editor.editable).toBe(true);
+          // 옛 꼬리 뒤에도 문서는 새 입력을 받는다(불변식 A와 별개의 회복 확인: 명시적 시작).
+          t.surface.start(); t.surface.preedit("새"); t.surface.final("새");
+          await t.expectCommitted(["새"]);
+          expect(t.text()).toBe("새가나다");
+          t.surface.cleanup();
+        });
+      }
+    }
+  }
+});
 
-    // Step 8: invoke pointerDown
-    surface.pointerDown();
+describe("P1 boundaries that must stay valid on both engines", () => {
+  for (const engine of ["docx", "rhwp"] as const) {
+    it(`${engine}: a valid late final after pointerDown goes to the still-open original position once`, async () => {
+      const t = await engineCase(engine);
+      const context = new ImeContext();
+      const surface = inputSurface(t.editor, context);
+      surface.start(); surface.preedit("하"); surface.empty();
+      surface.pointerDown();
+      t.moveRight(); // 클릭이 커서를 옮김
+      expect(t.editor.composing).toBe(false);
+      expect(t.editor.awaitingCommit).toBe(true);
+      surface.final("하");
+      expect(t.editor.awaitingCommit).toBe(false);
+      await t.expectCommitted(["하"]);
+      expect(t.text()).toBe("하가나다");
+      surface.cleanup();
+    });
 
-    // Discriminating check: old final commit after pointerDown is rejected
-    surface.final("옛", false);
-    expect(t.doc.paragraphs[0]).toBe("가나다");
+    it(`${engine}: two identical consecutive syllables, the second without compositionstart`, async () => {
+      const t = await engineCase(engine);
+      const surface = inputSurface(t.editor, new ImeContext());
+      surface.start(); surface.preedit("하"); surface.final("하");
+      surface.preeditRaw("하");
+      expect(t.editor.composing).toBe(true);
+      surface.final("하");
+      await t.expectCommitted(["하", "하"]);
+      expect(t.text()).toBe("하하가나다");
+      surface.cleanup();
+    });
 
-    // Step 9 & 10: No compositionstart, no 229 keydown
-    // Step 11: First new preedit
-    surface.preeditRaw("새");
-
-    // Intermediate assertion immediately after step 11:
-    expect(t.editor.composing).toBe(true);
-    expect(context.owner?.session).toBe(t.editor);
-
-    // Step 12: Complete new composition
-    surface.final("새");
-    await flushRhwp();
-
-    expect(t.doc.paragraphs[0]).toBe("새가나다");
-    expect(t.editor.localRevision).toBe(1);
-    expect(t.editor.editable).toBe(true);
-    surface.cleanup();
-  });
+    it(`${engine}: ordinary IME cancellation then a no-start composition`, async () => {
+      const t = await engineCase(engine);
+      const surface = inputSurface(t.editor, new ImeContext());
+      surface.start(); surface.preedit("ㅎ"); surface.empty();
+      expect(t.editor.awaitingCommit).toBe(true);
+      surface.preeditRaw("가");
+      expect(t.editor.awaitingCommit).toBe(false);
+      expect(t.editor.composing).toBe(true);
+      surface.final("가");
+      await t.expectCommitted(["가"]);
+      expect(t.text()).toBe("가가나다");
+      surface.cleanup();
+    });
+  }
 });
 
 describe("IME generation and shared-context replay", () => {

@@ -41,7 +41,6 @@ import subprocess
 import sys
 import tempfile
 import time
-import urllib.error
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[3]
@@ -176,9 +175,12 @@ def click_page(d, x_pt: float, y_pt: float) -> None:
     idle(d)
 
 
-# 고정 픽스처(tests/fixtures/wordcraft/basic.rs, Letter 612×792pt, 여백 72pt)의 대략적인 자리(pt). 누른 뒤 커서 문단 경로로 확인한다.
+# 고정 픽스처(tests/fixtures/wordcraft/basic.rs, Letter 612×792pt, 여백 72pt)의 첫 문단 자리(pt). 첫 문단은 위 여백 바로 아래라 앞 편집과
+# 무관하다. 누른 뒤 커서 문단 경로로 확인한다.
 PARA0_Y, PARA1_Y = 80.0, 110.0
-CELL = {0: (100.0, 138.0), 1: (330.0, 138.0), 2: (100.0, 156.0), 3: (330.0, 156.0)}
+# T010 최종 검증 전의 고정 첫 셀 좌표(pt). 새 문서에서도 첫 셀 첫 줄 아래 끝(약 138.9pt)에서 1pt 안쪽이고, 앞 시나리오가 본문에 줄을
+# 더하면 표가 밀려 본문을 누른다(실측 `body:1:3`). 이제 누르지 않고 보고서의 비교 값으로만 남긴다.
+LEGACY_CELL0 = (100.0, 138.0)
 
 
 def click_paragraph_start(d) -> None:
@@ -186,9 +188,50 @@ def click_paragraph_start(d) -> None:
     press(d, "Home")
 
 
-def click_cell(d, cell: int) -> None:
-    click_page(d, *CELL[cell])
+def locate_first_cell(d) -> tuple[str, list[float]]:
+    """첫 표 첫 셀(행 0·열 0) 첫 줄의 엔진 자리(쪽 pt: 왼쪽, 위, 높이)를 실제 키 이동으로 잰다(포인터 없음).
+
+    첫 문단 처음에서 ↓로 다음 문단(표 바로 앞)에 간 뒤 →로 문서 순서를 따라 표의 첫 셀 처음에 들어가 커서 요소의 사각형을 읽는다.
+    커서 사각형은 엔진 배치(글꼴·앞 편집 반영)이므로 표가 어디로 밀렸든 그 셀을 가리킨다. 이동은 문서를 바꾸지 않는다(revision 그대로).
+    ↓만으로는 들어가지 않는다: 고정 WordCraft는 왼쪽 여백 자리에서 ↓하면 표를 건너 표 다음 문단으로 간다(실측 `body:1:0 → body:3:0`)."""
+    click_paragraph_start(d)
+    for _ in range(40):
+        if caret_path(status(d)) != "0":
+            break
+        press(d, "Down")
+    for _ in range(400):
+        st = status(d)
+        if st.get("inTable") == "true":
+            break
+        press(d, "Right")
+    else:
+        raise smoke.Failure(f"→로 표에 들어가지 못함: {status(d).get('caret')}")
+    path = caret_path(st)
+    if not path.endswith(".0.0.0") or st.get("caretOffset") != "0":
+        raise smoke.Failure(f"→로 들어간 자리가 표 첫 셀 처음이 아님: {st.get('caret')}")
+    origin = page_origin(d)
+    caret = caret_client(d)
+    if not caret:
+        raise smoke.Failure("첫 셀 커서 요소 없음")
+    return path, [(caret[0] - origin[0]) / PT, (caret[1] - origin[1]) / PT, caret[2] / PT]
+
+
+def click_cell(d, site: str) -> None:
+    """첫 표 첫 셀의 첫 줄 가운데 높이, 글자 시작 바로 오른쪽을 실제 포인터로 누르고 Home. 잰 셀이 아니면 실패다.
+
+    자리는 누르기 직전에 키 이동으로 잰다(locate_first_cell). 잰 뒤 커서를 첫 문단으로 돌려 놓고 누르므로, 누름이 셀을 맞히지 않으면
+    커서는 셀에 있지 않다. 보고서에 잰 자리와 예전 고정 좌표가 그 줄 안이었는지를 남긴다(환경 비교용)."""
+    path, (x, y, height) = locate_first_cell(d)
+    click_paragraph_start(d)
+    target = (x + 2.0, y + height / 2)
+    click_page(d, *target)
     press(d, "Home")
+    st = status(d)
+    REPORT.setdefault("tableTargets", []).append({
+        "site": site, "cellPath": path, "linePt": [round(x, 1), round(y, 1), round(height, 1)], "clickPt": [round(v, 1) for v in target],
+        "legacyInsideLine": y <= LEGACY_CELL0[1] <= y + height, "caret": st.get("caret")})
+    if caret_path(st) != path or st.get("inTable") != "true":
+        raise smoke.Failure(f"표 첫 셀을 누른 자리가 그 셀이 아님({site}): 기대 {path}, 실제 {st.get('caret')}, 줄 {[x, y, height]}pt")
 
 
 # ---- 시나리오 ----
@@ -243,7 +286,7 @@ def boundaries(d, count: int) -> list[list[float]]:
 
 def scenario_hit_test(d) -> None:
     deviations = []
-    for label, setup, count in (("본문", lambda: click_paragraph_start(d), 12), ("표 셀", lambda: click_cell(d, 0), 4)):
+    for label, setup, count in (("본문", lambda: click_paragraph_start(d), 12), ("표 셀", lambda: click_cell(d, "hitTest"), 4)):
         setup()
         start = status(d)
         if label == "표 셀":
@@ -305,7 +348,7 @@ def scenario_selection_keyboard(d) -> None:
     press(d, "Up")
     check("docx: ↓·↑로 다른 줄로 이동하고 돌아옴", caret_path({"caret": down}) != "0" and caret_path(status(d)) == "0", f"down={down}")
     rev_before_table = int(status(d)["revision"])
-    click_cell(d, 0)
+    click_cell(d, "tab")
     c0 = status(d)["caret"]
     press(d, "Tab")
     c1 = status(d)["caret"]
@@ -448,8 +491,8 @@ def clipboard_paste(d, text: str, timeout: float = 120) -> dict:
 
 
 def scenario_stabilization(d) -> None:
-    # 표 셀의 탭 글자는 셀 이동이 아니다(아래 넣기로 표가 밀리기 전에, 고정 좌표로 누름).
-    click_cell(d, 0)
+    # 표 셀의 탭 글자는 셀 이동이 아니다(셀 자리는 누르기 직전에 잰다).
+    click_cell(d, "tabCharacter")
     cell = status(d)
     after = insert_text(d, "a\tb")
     check("docx: 표 셀에 넣은 탭 글자는 셀 이동이 아니라 글자(같은 셀, revision +1)",
@@ -1487,20 +1530,39 @@ def scenario_ime_commands(d, fixtures: Path, xdotool: str, ibus: str, rounds: in
         xclick(origin[0] + 100 * PT, origin[1] + PARA1_Y * PT)
         xclick(*client_center('[data-command="format.bold"]'))
         st = finish(case)
+        pressed = command_button(d, "format.bold")["pressed"]  # 첫 문단을 누르기 전(누르면 다음 입력 서식이 풀린다)
         trace = REPORT["imeCommands"][case["name"]]["trace"]
         accepted = any(r[2] == "command:dispatch" and r[3].get("id") == "format.bold" and r[3].get("accepted") is True for r in trace)
         composing_refusal = any(r[2] == "command:request" and r[3].get("id") == "format.bold" and r[3].get("reason") == "composing" for r in trace)
+        # 서식 연산 자신이 바꾼 판: 보낸 기준 revision과 그 응답의 revision 차. 엔진 계약(Rust `t010_선택이_없으면_서식은_다음_입력에만_…`):
+        # 접힌 커서의 굵게는 다음 입력 서식만 정하고 문서를 바꾸지 않는다(0, 단추 눌림), 선택이 있으면 그 범위를 바꾼다(1).
+        sends = [i for i, r in enumerate(trace) if r[2] == "docx:send" and r[3].get("ops") == "format"]
+        format_changes = None
+        if len(sends) == 1:
+            reply = next((r for r in trace[sends[0]:] if r[2] == "docx:response"), None)
+            if reply and reply[3].get("ok"):
+                format_changes = reply[3]["revision"] - trace[sends[0]][3]["base"]
         origin = page_origin(d)  # 서식 실행 뒤 배치·스크롤이 바뀌었을 수 있다
         xclick(origin[0] + 100 * PT, origin[1] + PARA0_Y * PT)  # 첫 문단을 눌러 그 글자를 읽는다
         first_status = settle(d, "click-then-bold 첫 문단")
         first = first_status["paragraphText"]
+        # 굵게는 켜고 끄기다: 같은 자리를 다시 눌러 그 자리의 문서 서식(다음 입력 서식 없음)을 읽고, 굵게 뒤 단추 상태가 그와 반대인지 본다
+        # (실측: 이 자리 `body:1:7`의 서식은 이미 굵게라 접힌 커서의 굵게는 다음 입력 굵게를 끈다).
+        xclick(origin[0] + 100 * PT, origin[1] + PARA1_Y * PT)
+        same_spot = settle(d, "click-then-bold 같은 자리")
+        document_bold = command_button(d, "format.bold")["pressed"]
+        toggled = same_spot["caret"] == st["caret"] and pressed in ("true", "false") and pressed != document_bold
         revision = int(st["revision"])
-        formatted = revision == case["revision"] + 2 and accepted
-        refused = revision == case["revision"] + 1 and composing_refusal
+        collapsed = st.get("selection", "") == ""
+        formatted = (accepted and format_changes in (0, 1) and revision == case["revision"] + 1 + format_changes
+                     and (format_changes == 1 or (collapsed and toggled)))
+        refused = revision == case["revision"] + 1 and composing_refusal and not sends
         check("IME 명령: 조합 중 페이지 클릭 뒤 바로 리본 굵게 → 조합 글자는 원래 문단 끝에 한 번",
               first == case["text"] + "하" and (formatted or refused),
               json.dumps({"status": brief(st), "baseCaret": case["baseCaret"], "firstCaret": first_status["caret"],
                           "firstLengthDelta": len(first) - len(case["text"]), "firstMatches": first == case["text"] + "하",
+                          "formatChanges": format_changes, "collapsed": collapsed, "pressed": pressed, "documentBold": document_bold,
+                          "sameSpot": same_spot["caret"],
                           "formatted": formatted, "refused": refused}, ensure_ascii=False))
         discard_close(d, case["path"].name)
         # 6) 초점을 받지 않는 곳(상태 표시줄) 클릭 → 편집 입력 초점 잃음: 음절 한 번.
@@ -1567,6 +1629,8 @@ def wait_app(d, timeout: float = 30) -> None:
         try:
             smoke.wait_until(d, "return document.querySelector('.document-bar') !== null", timeout=max(1.0, deadline - time.monotonic()))
             return
+        except smoke.DriverLost:
+            raise  # 연결이 끊겼으면 다시 묻지 않는다
         except smoke.Failure:
             if time.monotonic() > deadline:
                 raise
@@ -1651,20 +1715,18 @@ def main() -> int:
                             scenario_restart_inactive_close(d, fixtures)
                             scenario_lifecycle(d, fixtures, meta, original_hash)
                     finally:
-                        try:
-                            d.quit()
-                        except smoke.Failure as error:
-                            print(f"[참고] 세션 종료 실패: {error}", file=sys.stderr)
+                        smoke.end_session(d)
         if args.ime:
             return ime_exit_code()
         print(f"\nT008 WordCraft PoC: {len(RESULTS)}개 항목 통과")
         return 0
-    except (ConnectionError, urllib.error.URLError) as error:
-        # WebDriver·tauri-driver 연결이 끊김: 앱·문서·IME 판정이 아니라 시험 환경 실패다(판단 불가, 종료 코드 2). 그때까지의 사례
-        # 결과·추적은 보고서에 남아 있다.
-        REPORT["infrastructureFailure"] = {"kind": type(error).__name__, "message": str(error)[:200]}
-        print(f"[시험 환경 실패] WebDriver 연결 끊김 — 앱·IME 판정 아님: {error}", file=sys.stderr)
-        return 2
+    except smoke.DriverLost as error:
+        # WebDriver 연결이 끊김(T010 최종 검증 P3): 끊긴 단계·마지막 통과 항목·프로세스 상태로 나눈다. 상호작용 중 앱·WebProcess가
+        # 사라졌으면 앱 충돌(1), 살아 있으면 판단 불가(2), 모든 항목 뒤 세션 삭제만 끊기면 정리 실패(2). 그때까지의 사례 결과·추적은
+        # 보고서에 남아 있다.
+        REPORT["driverLost"] = error.diagnostic()
+        print(f"통과한 항목 {len(RESULTS)}개(끊기기 전)", file=sys.stderr)
+        return smoke.driver_lost_exit(error)
     except (smoke.Failure, TimeoutError, OSError, subprocess.CalledProcessError) as error:
         import traceback
         traceback.print_exc()

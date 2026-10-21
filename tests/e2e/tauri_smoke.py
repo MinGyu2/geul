@@ -17,7 +17,9 @@ Tab 키로 닿는 주요 컨트롤, 설정 저장 후 앱 프로세스를 끝내
 문서 세션 IPC(T006: 형식 판별·엔진 배정·세션 ID·닫기·오류 계약, 화면의 문서 명령은 그대로 비활성).
 동시에 실행한 다른 geul 프로세스의 변경은 WebKitGTK에서 서로 보이지 않아 감지할 수 없으므로 검사하지 않는다.
 시나리오마다 빈 임시 XDG_DATA_HOME을 써서 첫 실행 상태로 시작하며 사용자의 실제 앱 데이터는 건드리지 않는다.
-실패하면 종료 코드 1.
+실패하면 종료 코드 1. WebDriver 연결이 응답 없이 끊기면(DriverLost) 끊긴 요청·마지막 통과 항목·그때 이 시나리오의 프로세스
+(tauri-driver·WebKitWebDriver·앱·WebKit 보조 프로세스) 상태를 보이고, 앱이나 WebProcess가 사라졌으면 앱 충돌로 1, 살아 있으면
+판단 불가로 2(통과로 세지 않음). 모든 항목이 통과한 뒤 세션 삭제만 끊겨도 정리 실패로 2다.
 """
 
 from __future__ import annotations
@@ -49,6 +51,64 @@ class Failure(Exception):
     pass
 
 
+class DriverLost(Failure):
+    """WebDriver 요청에 응답이 오지 않고 연결이 끊김(T010 최종 검증 P3). 어느 단계에서 끊겼는지와 그때의 프로세스 상태를 담는다.
+
+    단계는 요청으로 정한다: 세션 삭제(DELETE /session/<id>)는 정리, 나머지는 상호작용. 상호작용 중에 끊긴 뒤 앱이나 WebProcess가
+    없으면 시험 환경 실패가 아니라 앱 충돌로 본다(crashed). 세션 삭제는 앱을 끝내므로 그때 앱이 없는 것은 정상이다."""
+
+    def __init__(self, request: str, error: Exception):
+        self.request = request
+        self.teardown = request == "DELETE "
+        self.last_check = LAST_CHECK[0]
+        self.processes = owned_processes()
+        time.sleep(1.0)  # 막 끝나는 중인 프로세스를 살아 있다고 보지 않도록 한 번 더 본다
+        self.processes_after = owned_processes()
+        driver = ACTIVE.get("driver")
+        self.driver_exit = driver.poll() if driver else None
+        self.listeners = webdriver_listeners()
+        alive = {p["comm"] for p in self.processes_after if p["state"] != "Z"}
+        self.crashed = not self.teardown and not {"geul", "WebKitWebProces"} <= alive
+        super().__init__(f"WebDriver 연결 끊김({'세션 삭제' if self.teardown else '상호작용'} {request.strip()}): {error} — "
+                         f"마지막 통과 항목 {self.last_check or '없음'!r}, tauri-driver 종료 코드 {self.driver_exit}, "
+                         f"1초 뒤 프로세스 {sorted(alive)}")
+
+    def diagnostic(self) -> dict:
+        return {"request": self.request, "phase": "sessionDeletion" if self.teardown else "interaction", "lastCheck": self.last_check,
+                "crashed": self.crashed, "tauriDriverExit": self.driver_exit, "processes": self.processes,
+                "processesAfter1s": self.processes_after, "listeners": self.listeners}
+
+
+def webdriver_listeners() -> list[str]:
+    """끊김 진단용: WebDriver 포트(tauri-driver 4444·WebKitWebDriver 4445)에서 듣는 프로세스(ss가 있으면)."""
+    try:
+        out = subprocess.run(["ss", "-ltnpH", "sport = :4444 or sport = :4445"], capture_output=True, text=True, timeout=5).stdout
+    except (OSError, subprocess.SubprocessError):
+        return []
+    return [" ".join(line.split()) for line in out.splitlines()]
+
+
+def driver_lost_exit(error: DriverLost) -> int:
+    """끊김의 종료 코드: 앱 충돌 1, 그 밖(앱·WebProcess가 살아 있음, 또는 세션 삭제 단계) 판단 불가 2. 통과(0)로 바꾸지 않는다."""
+    if error.crashed:
+        print(f"[실패] 상호작용 중 WebDriver가 끊긴 뒤 앱 또는 WebProcess가 없음 — 앱 충돌로 본다: {error}", file=sys.stderr)
+        return 1
+    kind = "정리 실패(세션 삭제)" if error.teardown else "판단 불가(상호작용 중, 앱·WebProcess는 살아 있음)"
+    print(f"[시험 환경 실패] {kind}: {error}", file=sys.stderr)
+    return 2
+
+
+def end_session(driver: "WebDriver") -> None:
+    """finally에서 세션을 지운다. 앞선 오류가 있으면 그것을 가리지 않고 알리기만 하고, 없으면 정리 실패도 그대로 올린다."""
+    pending = sys.exc_info()[1]
+    try:
+        driver.quit()
+    except Failure as error:
+        if pending is None:
+            raise
+        print(f"[참고] 세션 종료 실패(앞선 오류를 그대로 보고함): {error}", file=sys.stderr)
+
+
 class WebDriver:
     def __init__(self, base: str):
         self.base = base
@@ -64,6 +124,8 @@ class WebDriver:
                 return json.loads(response.read() or b"{}").get("value")
         except urllib.error.HTTPError as error:
             raise Failure(f"WebDriver {method} {path}: {error.code} {error.read()[:300]!r}") from error
+        except (ConnectionError, urllib.error.URLError) as error:
+            raise DriverLost(f"{method} {path}", error) from error
 
     def start(self, app: str) -> None:
         caps = {"capabilities": {"alwaysMatch": {"tauri:options": {"application": app}}}}
@@ -146,12 +208,33 @@ return out;
 SKIPPED: list[str] = []
 APP = ""
 DRIVER_LOG: Path | None = None
+LAST_CHECK = [""]  # 마지막으로 통과한 항목(끊김 진단용)
+CHECKS_PASSED = [0]  # 통과한 항목 수(시나리오 함수가 결과를 돌려주기 전에 끊겨도 셈)
+ACTIVE: dict = {}  # 지금 시나리오의 tauri-driver 프로세스와 XDG_DATA_HOME(끊김 진단용)
+
+
+def owned_processes() -> list[dict]:
+    """지금 시나리오의 XDG_DATA_HOME을 물려받은 프로세스의 PID·이름·상태(Linux /proc). 명령줄·환경 값은 남기지 않는다."""
+    data_home = ACTIVE.get("data_home")
+    if not data_home or not sys.platform.startswith("linux"):
+        return []
+    found = []
+    for pid in pids_with(data_home):
+        try:
+            comm = Path(f"/proc/{pid}/comm").read_text().strip()
+            state = Path(f"/proc/{pid}/stat").read_text().rsplit(")", 1)[1].split()[0]
+        except (OSError, IndexError):
+            continue
+        found.append({"pid": pid, "comm": comm, "state": state})
+    return found
 
 
 def check(results: list[str], name: str, condition: bool, detail: str = "") -> None:
     if not condition:
         raise Failure(f"{name} 실패 {detail}".strip())
     results.append(name)
+    LAST_CHECK[0] = name
+    CHECKS_PASSED[0] += 1
     print(f"[통과] {name}")
 
 
@@ -858,6 +941,9 @@ def main() -> int:
             SKIPPED.append("설정 저장 후 재시작 검사(--skip-restart)")
         print(f"\nTauri 스모크 테스트 통과: {len(results)}개 항목, 건너뜀 {len(SKIPPED)}개")
         return 0
+    except DriverLost as error:
+        print(f"통과한 항목 {CHECKS_PASSED[0]}개(끊기기 전)", file=sys.stderr)
+        return driver_lost_exit(error)
     except Failure as error:
         print(f"[실패] {error}", file=sys.stderr)
         return 1
@@ -868,6 +954,7 @@ def tauri_driver(path: str, port: int, data_home: str):
     environment = {**os.environ, "XDG_DATA_HOME": data_home}
     log = open(DRIVER_LOG, "ab") if DRIVER_LOG else subprocess.DEVNULL
     process = subprocess.Popen([path, "--port", str(port)], stdout=log, stderr=subprocess.STDOUT, env=environment)
+    ACTIVE.update(driver=process, data_home=data_home)
     try:
         wait_port(port)
 
@@ -877,6 +964,7 @@ def tauri_driver(path: str, port: int, data_home: str):
             return driver
         yield start_session
     finally:
+        ACTIVE.clear()
         process.terminate()
         try:
             process.wait(timeout=10)
@@ -902,20 +990,26 @@ def wait_processes_gone(data_home: str, timeout: float) -> list[int]:
     """이 시나리오의 XDG_DATA_HOME을 물려받은 프로세스(tauri-driver·앱·WebKit 보조 프로세스)가 끝나기를 기다린다."""
     if not sys.platform.startswith("linux"):
         return []
-    marker = f"XDG_DATA_HOME={data_home}".encode() + b"\0"
     deadline = time.time() + timeout
     while True:
-        pids = []
-        for entry in Path("/proc").iterdir():
-            if entry.name.isdigit():
-                try:
-                    if marker in (entry / "environ").read_bytes():
-                        pids.append(int(entry.name))
-                except OSError:
-                    continue
+        pids = pids_with(data_home)
         if not pids or time.time() >= deadline:
             return pids
         time.sleep(0.2)
+
+
+def pids_with(data_home: str) -> list[int]:
+    """환경에 이 XDG_DATA_HOME이 있는 이 사용자의 프로세스(시나리오 소유)."""
+    marker = f"XDG_DATA_HOME={data_home}".encode() + b"\0"
+    pids = []
+    for entry in Path("/proc").iterdir():
+        if entry.name.isdigit():
+            try:
+                if marker in (entry / "environ").read_bytes():
+                    pids.append(int(entry.name))
+            except OSError:
+                continue
+    return pids
 
 
 if __name__ == "__main__":

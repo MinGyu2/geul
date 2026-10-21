@@ -344,6 +344,12 @@ interface EditorAdapter {
 - 네이티브 실패 정확한 분류: WordCraft Weston 테이블 셀 실패(`PRE-EXISTING / ENVIRONMENT-DEPENDENT`, 좌표 불일치), WebDriver 끊김(`INFRASTRUCTURE FAILURE`, 종료 지연).
 - T010은 SC-003(rhwp 실행 취소 및 서식 지원) 요구사항이 남아 있으므로 미체크 상태를 유지한다.
 
+### T010 최종 검증: P1 판별 회귀·표 셀 좌표·WebDriver 끊김 분류 (2026-10-21, `f27b80a` 위)
+- P1: `f27b80a`의 재현 시험은 수정 전에도 통과해 판별력이 없었다(옛 최종 확정의 229가 결함 조건을 지움). 시작·229·옛 꼬리 없는 순서의 불변식 A(새 조합 수락)와 따로 둔 불변식 B(옛 꼬리 거절)로 바꿨고, 같은 시험이 `37b39ae`에서 첫 새 조합 단언으로 실패(9개)·`f27b80a`에서 통과한다. 제품 코드는 그대로.
+- P2: WordCraft 표 셀 고정 좌표는 앞 편집에 따라 셀 줄 밖이 되는 PRE-EXISTING 시험기 결함이다(두 디스플레이·두 빌드에서 배치 같음). 시험기가 누르기 직전 키 이동으로 셀 자리를 재고 정확한 셀 경로를 단언한다.
+- P3: 이전의 "종료 지연" 분류를 정정한다 — 끊김은 상호작용 중이었고 그때 앱·WebProcess가 살아 있었다. 시험기가 단계·프로세스 상태로 앱 충돌(1)·판단 불가(2)·정리 실패(2)를 가르며 정리 실패를 통과로 삼키지 않는다. 원인은 WebKitWebDriver·tauri-driver 쪽 미확정(INFRASTRUCTURE FAILURE). `--ime-commands`의 클릭 뒤 굵게 판정을 엔진 서식 계약에 맞췄다(PRE-EXISTING 시험기 결함).
+- T010은 SC-003(rhwp 실행 취소·서식)이 남아 여전히 미체크다. [편집 표면 결정](../architecture/editor-surface-decision.md#t010-최종-검증-p1-판별-회귀표-셀-좌표webdriver-끊김-분류-2026-10-21-f27b80a-위).
+
 ## Algorithms and Pseudocode
 ```
 open(path):
