@@ -486,12 +486,19 @@ def stalled(code: int = 500) -> urllib.error.HTTPError:
     return http_error_body(code, Body(b'{"value":{"error":"unknown error"}}', fail=TimeoutError("timed out"), fail_after=7))
 
 
+def stalled_close_bug(code: int = 500) -> urllib.error.HTTPError:
+    """본문 앞 7바이트 뒤 읽기가 시간 초과하고, 응답 close()는 예상하지 못한 RuntimeError."""
+    return http_error_body(code, Body(b'{"value":{"error":"unknown error"}}', fail=TimeoutError("timed out"), fail_after=7,
+                                      close_fail=RuntimeError("close bug")))
+
+
 CLEANUP = {  # 세션 삭제(DELETE /session/S)의 결과
     "ok": None,
     "http500": lambda: http_error(500),
     "timeout": lambda: TimeoutError("timed out"),  # 연결은 됐고 응답 읽기가 시간 초과(실측: urlopen이 URLError로 감싸지 않음)
     "reset": lambda: Transport.LOST,
     "http500stall": stalled,  # HTTP 500, 본문 읽기 시간 초과
+    "closebug": stalled_close_bug,  # HTTP 500, 본문 읽기 시간 초과, 응답 닫기 RuntimeError
 }
 PROBE = "return 'probe'"  # 시나리오가 보내는 상호작용 요청
 
@@ -643,8 +650,9 @@ class EntryPointMatrix(WebDriverPaths):
         ("pass", "http500", 2), ("pass", "timeout", 2), ("pass", "reset", 2),
         ("timeout", "ok", 2), ("timeout", "http500", 2), ("timeout", "timeout", 2),
         ("pass", "http500stall", 2), ("fail", "http500stall", 1), ("http500stall", "ok", 1), ("http500stall", "http500stall", 1),
+        ("pass", "closebug", 2), ("fail", "closebug", 1), ("closebug", "ok", 1), ("closebug", "closebug", 1),
     ]
-    INTERACTION = {"timeout": lambda: TimeoutError("timed out"), "http500stall": stalled}
+    INTERACTION = {"timeout": lambda: TimeoutError("timed out"), "http500stall": stalled, "closebug": stalled_close_bug}
 
     def scenario(self, functional):
         def run(d, *_):
@@ -714,7 +722,10 @@ class EntryPointMatrix(WebDriverPaths):
                     self.assertGreaterEqual(len(probes), 1)
                     if functional == "fail":
                         self.assertIn("기능 단언 실패(시험)", err)
-                    if functional == "http500stall":
+                    if functional == "closebug":
+                        self.assertIn("/execute/sync: 500", err)
+                        self.assertIn("본문 읽기 실패: TimeoutError) (응답 닫기 실패: RuntimeError)", err)
+                    if functional in ("http500stall", "closebug"):
                         self.assertIn("/execute/sync: 500", err)  # 본문을 못 읽어도 HTTP 상태가 남은 기능 실패
                         sent = [b for b in transport.bodies if b and PROBE in b.get("script", "")]
                         self.assertEqual(len(sent), 1)  # 다시 보내지 않음
@@ -967,6 +978,81 @@ class HttpErrorStreamClose(WebDriverPaths):
         driver = self.session()
         with self.assertRaises(smoke.DriverLost):
             driver.js(PROBE)
+
+
+class HttpErrorReadClosePrecedence(WebDriverPaths):
+    """T010 HTTPError 읽기·닫기 오류 우선순위: 예상한 본문 읽기 실패를 이미 기록했으면 닫기의 예상 못 한 오류도 진단으로만 남기고
+    HTTP 분류를 지킨다. 읽기의 프로그래밍 오류가 올라가는 중이면 그것이 먼저, 읽기가 성공했으면 닫기 프로그래밍 오류는 숨기지 않는다."""
+
+    def run_call(self, body: Body, *, delete: bool):
+        if delete:
+            transport = self.http(cleanup=lambda: http_error_body(500, body))
+            driver = self.session_started()
+            with self.assertRaises(Exception) as caught:
+                smoke.end_session(driver)
+        else:
+            transport = self.http(interaction=lambda: http_error_body(500, body))
+            driver = self.session()
+            with self.assertRaises(Exception) as caught:
+                driver.js(PROBE)
+        return caught.exception, transport
+
+    def test_A_delete_read_timeout_close_runtime_error(self):
+        body = Body(b"abc", fail=TimeoutError("timed out"), fail_after=3, close_fail=RuntimeError("close bug"))
+        error, transport = self.run_call(body, delete=True)
+        self.assertIs(type(error), smoke.CleanupFailure)
+        diagnostic = error.diagnostic()
+        self.assertEqual((error.status, diagnostic["bodyReadError"], diagnostic["closeError"], diagnostic["kind"]),
+                         (500, "TimeoutError", "RuntimeError", "cleanupFailure"))
+        self.assertEqual(smoke.driver_lost_exit(error), 2)
+        self.assertIsInstance(error.__cause__, urllib.error.HTTPError)
+        self.assertEqual(body.closes, 1)
+        self.assertEqual(transport.requests.count("DELETE /session/S"), 1)
+
+    def test_B_interaction_read_timeout_close_runtime_error(self):
+        body = Body(b"abc", fail=TimeoutError("timed out"), fail_after=3, close_fail=RuntimeError("close bug"))
+        error, transport = self.run_call(body, delete=False)
+        self.assertIs(type(error), smoke.Failure)  # 기능 실패(1), DriverLost·CleanupFailure 아님
+        self.assertIn("POST /execute/sync: 500 b'abc' (본문 읽기 실패: TimeoutError) (응답 닫기 실패: RuntimeError)", str(error))
+        self.assertEqual(body.closes, 1)
+        self.assertEqual(sum(1 for b in transport.bodies if b and PROBE in b.get("script", "")), 1)  # 다시 보내지 않음
+
+    def test_reset_read_close_runtime_error(self):
+        body = Body(b"", fail=ConnectionResetError(104, "reset"), close_fail=RuntimeError("close bug"))
+        error, _ = self.run_call(body, delete=True)
+        self.assertEqual((type(error), error.status, error.body_error, error.close_error), (smoke.CleanupFailure, 500, "ConnectionResetError", "RuntimeError"))
+
+    def test_C_read_bug_close_runtime_error_keeps_read_bug(self):
+        bug = AttributeError("read bug")
+        body = Body(fail=bug, close_fail=RuntimeError("close bug"))
+        error, _ = self.run_call(body, delete=False)
+        self.assertIs(error, bug)
+        self.assertTrue(any("RuntimeError('close bug')" in n for n in error.__notes__))
+        self.assertEqual(body.closes, 1)
+
+    def test_D_read_ok_close_runtime_error_propagates(self):
+        body = Body(b"{}", close_fail=RuntimeError("close bug"))
+        error, _ = self.run_call(body, delete=True)
+        self.assertIs(type(error), RuntimeError)
+        self.assertNotIsInstance(error, (smoke.Failure, OSError))
+        self.assertIsInstance(error.__context__, urllib.error.HTTPError)
+        self.assertEqual(error.__context__.code, 500)
+        self.assertEqual(body.closes, 1)
+
+    def test_E_expected_close_failures_unchanged(self):
+        body = Body(b"ab", fail=TimeoutError("timed out"), fail_after=2, close_fail=ConnectionResetError(104, "reset"))
+        error, _ = self.run_call(body, delete=True)
+        self.assertEqual((type(error), error.status, error.body_error, error.close_error, error.exit_code),
+                         (smoke.CleanupFailure, 500, "TimeoutError", "ConnectionResetError", 2))
+        body = Body(b"{}", close_fail=OSError(5, "close failed"))
+        error, _ = self.run_call(body, delete=False)
+        self.assertIs(type(error), smoke.Failure)
+        self.assertIn("500 b'{}' (응답 닫기 실패: OSError)", str(error))
+        self.http(interaction=lambda: TimeoutError("timed out"))
+        driver = self.session()
+        with self.assertRaises(smoke.DriverLost) as caught:
+            driver.js(PROBE)
+        self.assertEqual(caught.exception.transport, "readTimeout")
 
 
 if __name__ == "__main__":

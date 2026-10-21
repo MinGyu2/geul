@@ -159,8 +159,9 @@ def _error_excerpt(error: urllib.error.HTTPError) -> tuple[str, str | None, str 
     멈추거나 끊겨도(TimeoutError·연결 오류 등 OSError, http.client 오류) 그 상태를 지우지 않고 읽은 데까지와 실패만 알린다.
     응답은 이 함수가 끝날 때 한 번 닫는다(남은 본문은 읽지 않음): 앞부분만 읽으면 응답·연결이 열린 채 남고, HTTPError는 예외의
     원인(__cause__)으로 붙어 오래 살아 있기 때문이다. 닫기의 전송·자원 오류(OSError, http.client 오류)는 진단으로만 남긴다.
-    읽기의 프로그래밍 오류(예: AttributeError)는 그대로 올라가고, 그때의 닫기 실패는 그 오류에 덧붙이기만 한다. 앞선 오류 없이
-    닫기에서 난 프로그래밍 오류는 숨기지 않는다."""
+    읽기의 프로그래밍 오류(예: AttributeError)는 그대로 올라가고, 그때의 닫기 실패는 그 오류에 덧붙이기만 한다. 예상한 본문 읽기
+    실패(시간 초과·연결 오류)를 이미 기록했으면 닫기의 예상 못 한 오류도 진단(닫기 실패 이름)으로만 남겨 HTTP 분류를 지킨다. 읽기가
+    성공했는데 닫기에서 난 프로그래밍 오류는 숨기지 않는다."""
     body, failed, close_failed, pending = b"", None, None, None
     try:
         while len(body) < ERROR_BODY_LIMIT:
@@ -181,9 +182,12 @@ def _error_excerpt(error: urllib.error.HTTPError) -> tuple[str, str | None, str 
             if pending is not None:
                 pending.add_note(f"HTTP {error.code} 오류 응답 닫기도 실패: {close_error!r}")
         except Exception as close_error:
-            if pending is None:
+            if pending is not None:
+                pending.add_note(f"HTTP {error.code} 오류 응답 닫기도 실패: {close_error!r}")
+            elif failed is not None:  # 예상한 본문 읽기 실패를 이미 기록함: 알던 HTTP 실패가 먼저, 닫기 오류는 진단으로
+                close_failed = type(close_error).__name__
+            else:
                 raise
-            pending.add_note(f"HTTP {error.code} 오류 응답 닫기도 실패: {close_error!r}")
     return (f"{body!r}" + (f" (본문 읽기 실패: {failed})" if failed else "")
             + (f" (응답 닫기 실패: {close_failed})" if close_failed else "")), failed, close_failed
 
