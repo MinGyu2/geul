@@ -114,6 +114,8 @@ def idle(d, timeout: float = 30) -> dict:
     try:
         smoke.wait_until(d, f"{visible} const e=document.querySelector('{STATUS}'); return e && e.dataset.pending==='0'"
                             " && [...document.querySelectorAll('.docx-page')].every(p => p.dataset.current==='true' || !shown(p))", timeout=timeout)
+    except smoke.DriverLost:
+        raise  # 끊긴 뒤에는 진단을 더 묻지 않는다(묻는 요청이 원래 끊김 진단을 덮음)
     except smoke.Failure as error:
         st = status(d)
         stale = d.js(f"{visible} return [...document.querySelectorAll('.docx-page')].filter(p => p.dataset.current!=='true' && shown(p))"
@@ -1721,9 +1723,9 @@ def main() -> int:
         print(f"\nT008 WordCraft PoC: {len(RESULTS)}개 항목 통과")
         return 0
     except smoke.DriverLost as error:
-        # WebDriver 연결이 끊김(T010 최종 검증 P3): 끊긴 단계·마지막 통과 항목·프로세스 상태로 나눈다. 상호작용 중 앱·WebProcess가
-        # 사라졌으면 앱 충돌(1), 살아 있으면 판단 불가(2), 모든 항목 뒤 세션 삭제만 끊기면 정리 실패(2). 그때까지의 사례 결과·추적은
-        # 보고서에 남아 있다.
+        # WebDriver 연결이 끊김(T010 최종 검증 P3, 하네스 오류 처리 안정화): 끊긴 단계·마지막 통과 항목·프로세스 상태로 나눈다
+        # (smoke.LOST_KINDS). 이 세션에서 본 앱이 없어지면 앱 종료(1), 앱은 있고 WebProcess가 없어지면 WebKit 보조 프로세스 종료(1),
+        # 시작·세션 삭제 실패·WebDriver 종료·모두 살아 있음·근거 부족은 2. 그때까지의 사례 결과·추적은 보고서에 남아 있다.
         REPORT["driverLost"] = error.diagnostic()
         print(f"통과한 항목 {len(RESULTS)}개(끊기기 전)", file=sys.stderr)
         return smoke.driver_lost_exit(error)

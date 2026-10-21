@@ -994,11 +994,7 @@ def scenario_ime_focus(d, run, xdotool: str, window: str, other_name: str, recor
     run(xdotool, "windowfocus", "--sync", window)
     # X 초점이 돌아온 뒤 페이지 초점(focus 이벤트)은 늦게 온다(WM 없는 Xvfb 실측 약 1초). 돌아온 뒤에 친다.
     returned = time.monotonic()
-    try:
-        smoke.wait_until(d, "return document.hasFocus() && !!document.activeElement?.classList.contains('rhwp-input')", timeout=10)
-    except smoke.Failure:
-        focus = d.js("const a=document.activeElement; return [document.hasFocus(), a ? a.tagName + '.' + a.className : null]")
-        raise smoke.Failure(f"창 초점이 돌아온 뒤 편집 입력에 초점이 오지 않음(hasFocus, activeElement = {focus})") from None
+    wait_input_focus(d)
     REPORT.setdefault("imeDrain", []).append({"step": "페이지 초점 돌아옴", "seconds": round(time.monotonic() - returned, 2)})
     settle(d, "돌아옴")
     run(xdotool, "key", "space")
@@ -1110,6 +1106,17 @@ def main() -> int:
     finally:
         if args.report:
             args.report.write_text(json.dumps({"results": RESULTS, "measurements": REPORT}, ensure_ascii=False, indent=2))
+
+
+def wait_input_focus(d, timeout: float = 10) -> None:
+    """페이지 초점이 편집 입력(.rhwp-input)에 돌아올 때까지. 오지 않으면 그때의 초점을 묻고 실패로 알린다."""
+    try:
+        smoke.wait_until(d, "return document.hasFocus() && !!document.activeElement?.classList.contains('rhwp-input')", timeout=timeout)
+    except smoke.DriverLost:
+        raise  # 끊긴 뒤에는 초점을 더 묻지 않는다(묻는 요청이 원래 끊김 진단을 덮음)
+    except smoke.Failure:
+        focus = d.js("const a=document.activeElement; return [document.hasFocus(), a ? a.tagName + '.' + a.className : null]")
+        raise smoke.Failure(f"창 초점이 돌아온 뒤 편집 입력에 초점이 오지 않음(hasFocus, activeElement = {focus})") from None
 
 
 def select_tab(d, name: str) -> None:

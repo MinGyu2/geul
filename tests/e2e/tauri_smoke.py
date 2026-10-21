@@ -18,8 +18,11 @@ Tab 키로 닿는 주요 컨트롤, 설정 저장 후 앱 프로세스를 끝내
 동시에 실행한 다른 geul 프로세스의 변경은 WebKitGTK에서 서로 보이지 않아 감지할 수 없으므로 검사하지 않는다.
 시나리오마다 빈 임시 XDG_DATA_HOME을 써서 첫 실행 상태로 시작하며 사용자의 실제 앱 데이터는 건드리지 않는다.
 실패하면 종료 코드 1. WebDriver 연결이 응답 없이 끊기면(DriverLost) 끊긴 요청·마지막 통과 항목·그때 이 시나리오의 프로세스
-(tauri-driver·WebKitWebDriver·앱·WebKit 보조 프로세스) 상태를 보이고, 앱이나 WebProcess가 사라졌으면 앱 충돌로 1, 살아 있으면
-판단 불가로 2(통과로 세지 않음). 모든 항목이 통과한 뒤 세션 삭제만 끊겨도 정리 실패로 2다.
+(tauri-driver·WebKitWebDriver·앱·WebKit 보조 프로세스) 상태를 보이고 종류로 나눈다(T010 하네스 오류 처리 안정화): 이 세션에서
+살아 있는 것을 본 앱이 끊긴 뒤 없으면 앱 종료로 1, 앱은 있고 본 적 있는 WebProcess가 하나도 없으면 WebKit 보조 프로세스 종료로
+1(앱 충돌로 부르지 않음). 세션 시작 실패, tauri-driver·WebKitWebDriver 종료, 모두 살아 있는 끊김, 근거 부족은 2(통과로 세지
+않음). 모든 항목이 통과한 뒤 세션 삭제만 실패해도 정리 실패로 2다. 기능 검사가 먼저 실패했으면 세션 삭제 실패는 덧붙여 알리기만
+하고 원래 실패(종료 코드 1)를 그대로 보고한다.
 """
 
 from __future__ import annotations
@@ -51,16 +54,38 @@ class Failure(Exception):
     pass
 
 
+class ConditionTimeout(Failure):
+    """wait_until의 조건이 제한 시간 안에 참이 되지 않음. 시간 초과만 견디는 곳은 이것만 잡는다(DriverLost·WebDriver 오류는 올라감)."""
+
+
+# 끊김을 나누는 데 쓰는 프로세스 이름(/proc comm, 15자로 잘림): 앱, WebKit 보조 프로세스(페이지), 플랫폼 WebDriver.
+LIFECYCLE = ("geul", "WebKitWebProces", "WebKitWebDriver")
+LOST_KINDS = {
+    "startupFailure": (2, "세션 시작 실패(앱 실행을 확인하기 전)"),
+    "cleanupFailure": (2, "정리 실패(세션 삭제)"),
+    "driverExited": (2, "WebDriver 프로세스(tauri-driver·WebKitWebDriver) 종료"),
+    "appExited": (1, "앱 프로세스 종료(이 세션에서 실행을 확인한 앱이 끊긴 뒤 없음)"),
+    "webProcessExited": (1, "WebKit 보조 프로세스 종료(앱은 살아 있음, 앱 충돌로 보지 않음)"),
+    "connectionLost": (2, "판단 불가(상호작용 중, 앱·WebProcess·WebDriver 모두 살아 있음)"),
+    "insufficientEvidence": (2, "판단 불가(프로세스 근거 부족)"),
+}
+
+
 class DriverLost(Failure):
     """WebDriver 요청에 응답이 오지 않고 연결이 끊김(T010 최종 검증 P3). 어느 단계에서 끊겼는지와 그때의 프로세스 상태를 담는다.
 
-    단계는 요청으로 정한다: 세션 삭제(DELETE /session/<id>)는 정리, 나머지는 상호작용. 상호작용 중에 끊긴 뒤 앱이나 WebProcess가
-    없으면 시험 환경 실패가 아니라 앱 충돌로 본다(crashed). 세션 삭제는 앱을 끝내므로 그때 앱이 없는 것은 정상이다."""
+    단계는 요청으로 정한다: 세션 만들기(POST /session)는 시작, 세션 삭제(DELETE /session/<id>)는 정리, 나머지는 상호작용.
+    상호작용 중의 끊김은 프로세스로 나눈다(kind, T010 하네스 오류 처리 안정화). 한 번 없다고 충돌로 보지 않고, 이 세션에서 살아
+    있는 것을 본(seen) 프로세스가 끊긴 1초 뒤에도 없을 때만 그 프로세스가 끝났다고 본다. 본 적이 없으면 근거 부족이다.
+    Failure를 물려받아 이것을 모르는 처리기도 통과(0)로 끝내지 않지만, 조건 시간 초과만 견디는 곳은 ConditionTimeout만 잡고,
+    Failure를 잡아 요청을 더 보내는 곳은 이것을 먼저 그대로 올린다(끊긴 뒤 요청이 원래 진단을 덮지 않게)."""
 
     def __init__(self, request: str, error: Exception):
         self.request = request
-        self.teardown = request == "DELETE "
+        self.phase = {"POST /session": "sessionStart", "DELETE ": "sessionDeletion"}.get(request, "interaction")
+        self.teardown = self.phase == "sessionDeletion"
         self.last_check = LAST_CHECK[0]
+        self.seen = sorted(ACTIVE.get("seen", ()))
         self.processes = owned_processes()
         time.sleep(1.0)  # 막 끝나는 중인 프로세스를 살아 있다고 보지 않도록 한 번 더 본다
         self.processes_after = owned_processes()
@@ -68,14 +93,29 @@ class DriverLost(Failure):
         self.driver_exit = driver.poll() if driver else None
         self.listeners = webdriver_listeners()
         alive = {p["comm"] for p in self.processes_after if p["state"] != "Z"}
-        self.crashed = not self.teardown and not {"geul", "WebKitWebProces"} <= alive
-        super().__init__(f"WebDriver 연결 끊김({'세션 삭제' if self.teardown else '상호작용'} {request.strip()}): {error} — "
+        self.kind = self.classify(alive)
+        self.exit_code, self.label = LOST_KINDS[self.kind]
+        super().__init__(f"WebDriver 연결 끊김({self.label}; {request.strip()}): {error} — "
                          f"마지막 통과 항목 {self.last_check or '없음'!r}, tauri-driver 종료 코드 {self.driver_exit}, "
-                         f"1초 뒤 프로세스 {sorted(alive)}")
+                         f"이 세션에서 본 프로세스 {self.seen}, 1초 뒤 프로세스 {sorted(alive)}")
+
+    def classify(self, alive: set[str]) -> str:
+        if self.phase != "interaction":
+            return "startupFailure" if self.phase == "sessionStart" else "cleanupFailure"
+        gone = {name for name in LIFECYCLE if name in self.seen and name not in alive}
+        if self.driver_exit is not None or "WebKitWebDriver" in gone:
+            return "driverExited"  # WebDriver가 끝나면 앱도 따라 끝날 수 있어 앱 종료보다 먼저 본다
+        if "geul" in gone:
+            return "appExited"
+        if "WebKitWebProces" in gone:
+            return "webProcessExited"
+        if set(LIFECYCLE) <= set(self.seen) and set(LIFECYCLE) <= alive:
+            return "connectionLost"
+        return "insufficientEvidence"
 
     def diagnostic(self) -> dict:
-        return {"request": self.request, "phase": "sessionDeletion" if self.teardown else "interaction", "lastCheck": self.last_check,
-                "crashed": self.crashed, "tauriDriverExit": self.driver_exit, "processes": self.processes,
+        return {"request": self.request, "phase": self.phase, "kind": self.kind, "exitCode": self.exit_code,
+                "lastCheck": self.last_check, "seen": self.seen, "tauriDriverExit": self.driver_exit, "processes": self.processes,
                 "processesAfter1s": self.processes_after, "listeners": self.listeners}
 
 
@@ -89,24 +129,33 @@ def webdriver_listeners() -> list[str]:
 
 
 def driver_lost_exit(error: DriverLost) -> int:
-    """끊김의 종료 코드: 앱 충돌 1, 그 밖(앱·WebProcess가 살아 있음, 또는 세션 삭제 단계) 판단 불가 2. 통과(0)로 바꾸지 않는다."""
-    if error.crashed:
-        print(f"[실패] 상호작용 중 WebDriver가 끊긴 뒤 앱 또는 WebProcess가 없음 — 앱 충돌로 본다: {error}", file=sys.stderr)
-        return 1
-    kind = "정리 실패(세션 삭제)" if error.teardown else "판단 불가(상호작용 중, 앱·WebProcess는 살아 있음)"
-    print(f"[시험 환경 실패] {kind}: {error}", file=sys.stderr)
-    return 2
+    """끊김의 종료 코드(LOST_KINDS): 앱 종료·WebKit 보조 프로세스 종료 1, 그 밖(시작·정리 실패, WebDriver 종료, 판단 불가) 2.
+    통과(0)로 바꾸지 않는다."""
+    tag = "[실패]" if error.exit_code == 1 else "[시험 환경 실패]"
+    print(f"{tag} {error.label}: {error}", file=sys.stderr)
+    return error.exit_code
 
 
 def end_session(driver: "WebDriver") -> None:
-    """finally에서 세션을 지운다. 앞선 오류가 있으면 그것을 가리지 않고 알리기만 하고, 없으면 정리 실패도 그대로 올린다."""
+    """finally에서 세션을 지운다. 앞선 오류가 있으면 세션 삭제의 어떤 실패도 그것을 가리지 않고 덧붙여 알리기만 하고(add_note),
+    없으면 정리 실패도 그대로 올린다."""
     pending = sys.exc_info()[1]
     try:
         driver.quit()
-    except Failure as error:
+    except Exception as error:
         if pending is None:
             raise
-        print(f"[참고] 세션 종료 실패(앞선 오류를 그대로 보고함): {error}", file=sys.stderr)
+        note = f"세션 종료도 실패(앞선 오류를 그대로 보고함): {error}"
+        pending.add_note(note)
+        print(f"[참고] {note}", file=sys.stderr)
+
+
+def note_lifecycle() -> None:
+    """이 세션에서 살아 있는 것을 본 프로세스 이름을 모은다(끊김 분류의 근거). 셋을 다 보면 더 보지 않는다."""
+    seen = ACTIVE.get("seen")
+    if seen is None or set(LIFECYCLE) <= seen:
+        return
+    seen.update(p["comm"] for p in owned_processes() if p["state"] != "Z" and p["comm"] in LIFECYCLE)
 
 
 class WebDriver:
@@ -121,14 +170,18 @@ class WebDriver:
         request = urllib.request.Request(url, data=data, method=method, headers={"Content-Type": "application/json"})
         try:
             with urllib.request.urlopen(request, timeout=60) as response:
-                return json.loads(response.read() or b"{}").get("value")
+                value = json.loads(response.read() or b"{}").get("value")
         except urllib.error.HTTPError as error:
             raise Failure(f"WebDriver {method} {path}: {error.code} {error.read()[:300]!r}") from error
         except (ConnectionError, urllib.error.URLError) as error:
             raise DriverLost(f"{method} {path}", error) from error
+        note_lifecycle()
+        return value
 
     def start(self, app: str) -> None:
         caps = {"capabilities": {"alwaysMatch": {"tauri:options": {"application": app}}}}
+        if "data_home" in ACTIVE:
+            ACTIVE["seen"] = set()  # 새 세션(새 앱 프로세스): 앞 세션에서 본 프로세스는 근거가 아니다
         value = self.call("POST", "/session", caps)
         self.session = value["sessionId"]
 
@@ -179,7 +232,7 @@ def wait_until(driver: WebDriver, script: str, *args, timeout: float = 10) -> No
         if driver.js(script, *args):
             return
         time.sleep(0.1)
-    raise Failure(f"조건을 만족하지 않음: {script}")
+    raise ConditionTimeout(f"조건을 만족하지 않음: {script}")
 
 
 REGIONS = {
@@ -210,7 +263,7 @@ APP = ""
 DRIVER_LOG: Path | None = None
 LAST_CHECK = [""]  # 마지막으로 통과한 항목(끊김 진단용)
 CHECKS_PASSED = [0]  # 통과한 항목 수(시나리오 함수가 결과를 돌려주기 전에 끊겨도 셈)
-ACTIVE: dict = {}  # 지금 시나리오의 tauri-driver 프로세스와 XDG_DATA_HOME(끊김 진단용)
+ACTIVE: dict = {}  # 지금 시나리오의 tauri-driver 프로세스·XDG_DATA_HOME·이 세션에서 본 프로세스 이름(끊김 진단용)
 
 
 def owned_processes() -> list[dict]:
@@ -427,7 +480,7 @@ def run_restart(start_session, results: list[str]) -> None:
         check(results, "변경한 설정이 저장소에 기록됨",
               saved == {"version": 1, "language": "en", "layout": expected_layout}, json.dumps(saved))
     finally:
-        driver.quit()  # 앱 프로세스 종료
+        end_session(driver)  # 앱 프로세스 종료
     wait_app_exit(results, "첫 앱 프로세스가 끝남(실제 재시작)")
 
     driver = start_session()  # 같은 데이터 디렉터리로 새 앱 프로세스 시작
@@ -452,7 +505,7 @@ def run_restart(start_session, results: list[str]) -> None:
               not state["navigation"] and not state["ribbonPanel"] and state["theme"] == "light"
               and state["propertiesWidth"] == 312 and state["zoom"] == "110%", json.dumps(state, ensure_ascii=False))
     finally:
-        driver.quit()
+        end_session(driver)
 
 
 # 더 새로운 앱 버전이 썼다고 가정한 저장값(모르는 항목 포함). 바이트 그대로 남아야 한다.
@@ -473,7 +526,7 @@ def run_future_version(start_session, results: list[str]) -> None:
         wait_until(driver, "return document.querySelector('footer.statusbar') !== null", timeout=30)
         driver.js("localStorage.setItem('geul.settings', arguments[0])", FUTURE_SETTINGS)
     finally:
-        driver.quit()
+        end_session(driver)
     wait_app_exit(results, "미지원 버전 검사: 저장값을 넣은 앱 프로세스가 끝남")
 
     driver = start_session()
@@ -489,7 +542,7 @@ def run_future_version(start_session, results: list[str]) -> None:
               driver.js("return document.documentElement.dataset.theme") == "light")
         check(results, "미지원 버전: 설정을 바꿔도 저장값이 바이트 그대로", driver.js(stored) == FUTURE_SETTINGS)
     finally:
-        driver.quit()
+        end_session(driver)
     wait_app_exit(results, "미지원 버전 검사: 두 번째 앱 프로세스가 끝남")
 
     driver = start_session()
@@ -500,7 +553,7 @@ def run_future_version(start_session, results: list[str]) -> None:
               driver.js(stored) == FUTURE_SETTINGS and driver.js("return document.documentElement.lang") == "ko"
               and FUTURE_NOTICE_KO in status, status)
     finally:
-        driver.quit()
+        end_session(driver)
 
 
 def run_external_change(start_session, results: list[str]) -> None:
@@ -522,7 +575,7 @@ def run_external_change(start_session, results: list[str]) -> None:
               driver.js(stored) == FUTURE_SETTINGS and "changed elsewhere" in status
               and driver.js("return document.documentElement.dataset.theme") == "dark", status)
     finally:
-        driver.quit()
+        end_session(driver)
     wait_app_exit(results, "외부 변경 검사: 앱 프로세스가 끝남")
 
     driver = start_session()
@@ -530,7 +583,7 @@ def run_external_change(start_session, results: list[str]) -> None:
         wait_until(driver, "return document.querySelector('footer.statusbar') !== null", timeout=30)
         check(results, "외부 변경 검사: 재시작 후에도 바뀐 저장값이 바이트 그대로", driver.js(stored) == FUTURE_SETTINGS)
     finally:
-        driver.quit()
+        end_session(driver)
 
 
 # 들여쓰고 모르는 항목을 넣은 올바른 버전 1 저장값(사람이나 다른 도구가 고쳐 쓴 경우). 다시 쓰지 않으면 바이트 그대로 남는다.
@@ -552,7 +605,7 @@ def run_equivalent_restore(start_session, results: list[str]) -> None:
         wait_until(driver, "return document.querySelector('footer.statusbar') !== null", timeout=30)
         driver.js("localStorage.setItem('geul.settings', arguments[0])", PRETTY_SETTINGS)
     finally:
-        driver.quit()
+        end_session(driver)
     wait_app_exit(results, "동등성 검사: 저장값을 넣은 앱 프로세스가 끝남")
 
     driver = start_session()
@@ -569,14 +622,14 @@ def run_equivalent_restore(start_session, results: list[str]) -> None:
         driver.click('button[aria-label="테마: 어둡게"]')  # → 시스템(저장값과 같은 설정)
         # 알림은 클릭 뒤 React effect에서 약 10 ms 늦게 바뀐다(T007에서 측정, 수정 전 빌드도 같음). 한 번만 읽으면 시점에
         # 따라 통과·실패가 갈리므로, 바뀔 때까지 짧게 기다린 뒤 판단한다(바뀌지 않으면 여전히 실패).
-        with contextlib.suppress(Failure):
+        with contextlib.suppress(ConditionTimeout):
             wait_until(driver, "return document.querySelector('.statusbar__message').textContent === '준비됨'", timeout=5)
         recovered = driver.js(status)
         check(results, "동등성 검사: 저장값과 같은 설정으로 돌아오면 실패 알림을 지움",
               "설정을 저장하지 못했습니다" in failed and recovered == "준비됨", f"{failed} / {recovered}")
         check(results, "동등성 검사: 저장값(들여쓰기·모르는 항목)이 바이트 그대로", driver.js(stored) == PRETTY_SETTINGS)
     finally:
-        driver.quit()
+        end_session(driver)
     wait_app_exit(results, "동등성 검사: 두 번째 앱 프로세스가 끝남")
 
     driver = start_session()
@@ -586,7 +639,7 @@ def run_equivalent_restore(start_session, results: list[str]) -> None:
               driver.js(stored) == PRETTY_SETTINGS and driver.js(status) == "준비됨", driver.js(status))
         driver.js("localStorage.setItem('geul.settings', arguments[0])", ADJUSTED_SETTINGS)
     finally:
-        driver.quit()
+        end_session(driver)
     wait_app_exit(results, "동등성 검사: 세 번째 앱 프로세스가 끝남")
 
     driver = start_session()
@@ -595,7 +648,7 @@ def run_equivalent_restore(start_session, results: list[str]) -> None:
         check(results, "일부 복구 알림: 범위 보정·빠진 항목을 고친 문구로 알리고 시작할 때 쓰지 않음",
               driver.js(status) == ADJUSTED_NOTICE_KO and driver.js(stored) == ADJUSTED_SETTINGS, driver.js(status))
     finally:
-        driver.quit()
+        end_session(driver)
 
 
 # ---- T006: 문서 세션 IPC ----
@@ -883,7 +936,7 @@ def run_document_sessions(start_session, results: list[str]) -> None:
             check(results, "문서 세션: 세션을 만들어도 화면의 문서 명령은 비활성이고 편집 영역은 빈 상태",
                   ui == {"bold": "true", "empty": True}, json.dumps(ui, ensure_ascii=False))
         finally:
-            driver.quit()
+            end_session(driver)
 
 
 def main() -> int:
@@ -918,7 +971,7 @@ def main() -> int:
                 try:
                     results += run(driver, args.screenshots)
                 finally:
-                    driver.quit()
+                    end_session(driver)
         with tempfile.TemporaryDirectory(prefix="geul-e2e-") as data_home:
             with tauri_driver(args.driver, args.port, data_home) as start_session:
                 run_document_sessions(lambda: start_session(), results)
