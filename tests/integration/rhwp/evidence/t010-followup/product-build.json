@@ -1,0 +1,55 @@
+{
+  "rows": [
+    {
+      "format": "hwp",
+      "ok": true,
+      "hookExposure": {
+        "trace": false,
+        "paragraphText": false,
+        "probe": false
+      },
+      "undo": {
+        "title": "실행 취소 (Ctrl+Z) — 이 문서 형식에서 지원하지 않음",
+        "pressed": null,
+        "disabled": true
+      },
+      "redo": {
+        "title": "다시 실행 (Ctrl+Y) — 이 문서 형식에서 지원하지 않음",
+        "pressed": null,
+        "disabled": true
+      },
+      "keyboardNoMutation": true,
+      "toolbarNoMutation": true
+    },
+    {
+      "format": "hwpx",
+      "ok": true,
+      "hookExposure": {
+        "trace": false,
+        "paragraphText": false,
+        "probe": false
+      },
+      "undo": {
+        "title": "실행 취소 (Ctrl+Z) — 이 문서 형식에서 지원하지 않음",
+        "pressed": null,
+        "disabled": true
+      },
+      "redo": {
+        "title": "다시 실행 (Ctrl+Y) — 이 문서 형식에서 지원하지 않음",
+        "pressed": null,
+        "disabled": true
+      },
+      "keyboardNoMutation": true,
+      "toolbarNoMutation": true
+    }
+  ],
+  "ordinaryBundle": [
+    {
+      "asset": "index-CuKnqcEd.js",
+      "testActivationMarkerAbsent": true,
+      "nativeProbeAbsent": true
+    }
+  ],
+  "ok": true,
+  "flags": "both test flags unset"
+}

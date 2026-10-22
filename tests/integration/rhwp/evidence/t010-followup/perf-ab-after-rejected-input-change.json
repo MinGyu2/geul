@@ -1,0 +1,2082 @@
+{
+ "note": "A/B after: offscreen deferral + REJECTED plain-insert beforeinput change (reverted)",
+ "rows": [
+  {
+   "sample": "basic-ko.hwp",
+   "pages": 1,
+   "fileBytes": 13312,
+   "zoom": 50,
+   "dpr": 1.04205322265625,
+   "control": "normal history",
+   "warmupGroups": 3,
+   "keyDelivery": "native X11 xdotool",
+   "contract": {
+    "groupStart": {
+     "n": 30,
+     "p50": 24,
+     "p95": 75,
+     "max": 79,
+     "timeouts": 0
+    },
+    "extend": {
+     "n": 30,
+     "p50": 27,
+     "p95": 36,
+     "max": 36,
+     "timeouts": 0
+    },
+    "undo": {
+     "n": 25,
+     "p50": 85,
+     "p95": 108,
+     "max": 140,
+     "timeouts": 0
+    },
+    "redo": {
+     "n": 20,
+     "p50": 108,
+     "p95": 190,
+     "max": 215,
+     "timeouts": 0
+    },
+    "afterUndo": {
+     "n": 5,
+     "p50": 128,
+     "p95": 136,
+     "max": 136,
+     "timeouts": 0
+    }
+   },
+   "gates": [
+    {
+     "gate": "D4",
+     "item": ".hwp: group-start key→frame p95 ≤50ms",
+     "result": "FAIL",
+     "detail": "{'n': 30, 'p50': 24, 'p95': 75, 'max': 79, 'timeouts': 0}"
+    },
+    {
+     "gate": "D4",
+     "item": ".hwp: Undo p95 ≤1500ms",
+     "result": "PASS",
+     "detail": "{'n': 25, 'p50': 85, 'p95': 108, 'max': 140, 'timeouts': 0}"
+    }
+   ],
+   "zeroWorkFrameFloorMs": {
+    "n": 30,
+    "p50": 41,
+    "p95": 51,
+    "max": 87,
+    "timeouts": 0
+   },
+   "groupStartAttribution": {
+    "keyToInputEvent": {
+     "n": 30,
+     "p50": 1,
+     "p95": 1,
+     "max": 1
+    },
+    "keyToRevisionObserved": {
+     "n": 30,
+     "p50": 10,
+     "p95": 14,
+     "max": 15
+    },
+    "observedToSecondRaf": {
+     "n": 30,
+     "p50": 14,
+     "p95": 60,
+     "max": 65
+    },
+    "engineTextMutationMs": {
+     "n": 30,
+     "p50": 1,
+     "p95": 1,
+     "max": 2
+    },
+    "paintSummaryMs": {
+     "n": 30,
+     "p50": 3,
+     "p95": 4,
+     "max": 5
+    },
+    "paintDrawMs": {
+     "n": 30,
+     "p50": 2,
+     "p95": 4,
+     "max": 4
+    },
+    "caretPageFirstDrawMs": {
+     "n": 30,
+     "p50": 5,
+     "p95": 7,
+     "max": 7
+    },
+    "fullRenderPageToCanvasInWindowMs": {
+     "n": 30,
+     "p50": 0,
+     "p95": 0,
+     "max": 0
+    },
+    "backendCommitAckMs(includes delivery)": {
+     "n": 30,
+     "p50": 10,
+     "p95": 14,
+     "max": 42
+    }
+   },
+   "worstGroupStartSamples": [
+    {
+     "keyToFrame": 79,
+     "at": {
+      "handlerEnd": 12,
+      "input": 1,
+      "observed": 14,
+      "raf1": 47,
+      "end": 79,
+      "key": 0
+     },
+     "spans": [
+      {
+       "name": "rhwp:text-mutation",
+       "at": 2,
+       "ms": 1,
+       "page": null
+      },
+      {
+       "name": "rhwp:revision-schedule",
+       "at": 2,
+       "ms": 0,
+       "page": null
+      },
+      {
+       "name": "rhwp:readPages",
+       "at": 2,
+       "ms": 0,
+       "page": null
+      },
+      {
+       "name": "rhwp:paint-summary",
+       "at": 8,
+       "ms": 3,
+       "page": 0
+      },
+      {
+       "name": "rhwp:paint-draw",
+       "at": 11,
+       "ms": 3,
+       "page": 0
+      },
+      {
+       "name": "rhwp:surface-first-draw",
+       "at": 11,
+       "ms": 6,
+       "page": 0
+      },
+      {
+       "name": "rhwp:commit-ack",
+       "at": 13,
+       "ms": 11,
+       "page": null
+      }
+     ],
+     "calls": {
+      "snapshotCapacity": {
+       "n": 2,
+       "ms": 0.0,
+       "firstAt": 1
+      },
+      "saveSnapshot": {
+       "n": 1,
+       "ms": 0.0,
+       "firstAt": 1
+      },
+      "insertText": {
+       "n": 1,
+       "ms": 1.0,
+       "firstAt": 1
+      },
+      "getPageInfo": {
+       "n": 1,
+       "ms": 0.0,
+       "firstAt": 2
+      },
+      "getPageLayerTreeWithProfile": {
+       "n": 1,
+       "ms": 2.0,
+       "firstAt": 5
+      },
+      "renderPagePatchToCanvasFilteredWithProfile": {
+       "n": 1,
+       "ms": 3.0,
+       "firstAt": 8
+      }
+     },
+     "busy": null
+    },
+    {
+     "keyToFrame": 75,
+     "at": {
+      "handlerEnd": 15,
+      "input": 1,
+      "observed": 15,
+      "raf1": 46,
+      "end": 75,
+      "key": 0
+     },
+     "spans": [
+      {
+       "name": "rhwp:text-mutation",
+       "at": 3,
+       "ms": 2,
+       "page": null
+      },
+      {
+       "name": "rhwp:revision-schedule",
+       "at": 3,
+       "ms": 0,
+       "page": null
+      },
+      {
+       "name": "rhwp:readPages",
+       "at": 3,
+       "ms": 0,
+       "page": null
+      },
+      {
+       "name": "rhwp:paint-summary",
+       "at": 9,
+       "ms": 3,
+       "page": 0
+      },
+      {
+       "name": "rhwp:paint-draw",
+       "at": 13,
+       "ms": 4,
+       "page": 0
+      },
+      {
+       "name": "rhwp:surface-first-draw",
+       "at": 13,
+       "ms": 7,
+       "page": 0
+      },
+      {
+       "name": "rhwp:commit-ack",
+       "at": 45,
+       "ms": 42,
+       "page": null
+      }
+     ],
+     "calls": {
+      "insertText": {
+       "n": 1,
+       "ms": 2.0,
+       "firstAt": 1
+      },
+      "getPageInfo": {
+       "n": 1,
+       "ms": 0.0,
+       "firstAt": 3
+      },
+      "getPageLayerTreeWithProfile": {
+       "n": 1,
+       "ms": 2.0,
+       "firstAt": 6
+      },
+      "renderPagePatchToCanvasFilteredWithProfile": {
+       "n": 1,
+       "ms": 4.0,
+       "firstAt": 9
+      }
+     },
+     "busy": null
+    },
+    {
+     "keyToFrame": 74,
+     "at": {
+      "handlerEnd": 12,
+      "input": 0,
+      "observed": 14,
+      "raf1": 44,
+      "end": 74,
+      "key": 0
+     },
+     "spans": [
+      {
+       "name": "rhwp:text-mutation",
+       "at": 2,
+       "ms": 1,
+       "page": null
+      },
+      {
+       "name": "rhwp:revision-schedule",
+       "at": 3,
+       "ms": 1,
+       "page": null
+      },
+      {
+       "name": "rhwp:readPages",
+       "at": 3,
+       "ms": 0,
+       "page": null
+      },
+      {
+       "name": "rhwp:paint-summary",
+       "at": 9,
+       "ms": 3,
+       "page": 0
+      },
+      {
+       "name": "rhwp:paint-draw",
+       "at": 11,
+       "ms": 2,
+       "page": 0
+      },
+      {
+       "name": "rhwp:surface-first-draw",
+       "at": 11,
+       "ms": 5,
+       "page": 0
+      },
+      {
+       "name": "rhwp:commit-ack",
+       "at": 12,
+       "ms": 10,
+       "page": null
+      }
+     ],
+     "calls": {
+      "snapshotCapacity": {
+       "n": 2,
+       "ms": 0.0,
+       "firstAt": 1
+      },
+      "saveSnapshot": {
+       "n": 1,
+       "ms": 0.0,
+       "firstAt": 1
+      },
+      "insertText": {
+       "n": 1,
+       "ms": 1.0,
+       "firstAt": 1
+      },
+      "getPageInfo": {
+       "n": 1,
+       "ms": 0.0,
+       "firstAt": 3
+      },
+      "getPageLayerTreeWithProfile": {
+       "n": 1,
+       "ms": 2.0,
+       "firstAt": 6
+      },
+      "renderPagePatchToCanvasFilteredWithProfile": {
+       "n": 1,
+       "ms": 2.0,
+       "firstAt": 9
+      }
+     },
+     "busy": null
+    }
+   ],
+   "threadCpuDuringTypingMs": {
+    "WebKitWebProces:main": 1650,
+    "WebKitWebProces:t Helper Thread": 730,
+    "WebKitWebProces:JITWorker": 580,
+    "WebKitWebProces:ReceiveQueue": 160,
+    "WebKitWebProces:WebKitWebProces": 80
+   },
+   "memory": {
+    "beforeOpen": {
+     "processes": [
+      {
+       "pid": 1267053,
+       "rssBytes": 254418944
+      }
+     ],
+     "aggregateRssBytes": 254418944,
+     "wasmBytes": 2949120,
+     "canvasPixels": 0,
+     "canvasCount": 0,
+     "owners": [],
+     "engineSurfaces": {
+      "externrefSlots": 1028,
+      "canvasPixels": 0,
+      "imageCount": 0,
+      "detachedCanvases": 0,
+      "canvasCount": 0,
+      "imagePixels": 0
+     },
+     "lastDisposal": null
+    },
+    "afterOpen": {
+     "processes": [
+      {
+       "pid": 1267053,
+       "rssBytes": 298250240
+      }
+     ],
+     "aggregateRssBytes": 298250240,
+     "wasmBytes": 3407872,
+     "canvasPixels": 242190,
+     "canvasCount": 1,
+     "owners": [
+      {
+       "discards": 0,
+       "nativeCapacity": 100,
+       "id": 1,
+       "saves": 3,
+       "live": 3
+      }
+     ],
+     "engineSurfaces": {
+      "externrefSlots": 1156,
+      "canvasPixels": 0,
+      "imageCount": 0,
+      "detachedCanvases": 0,
+      "canvasCount": 0,
+      "imagePixels": 0
+     },
+     "lastDisposal": null
+    },
+    "afterUndoRedo": {
+     "processes": [
+      {
+       "pid": 1267053,
+       "rssBytes": 338366464
+      }
+     ],
+     "aggregateRssBytes": 338366464,
+     "wasmBytes": 3932160,
+     "canvasPixels": 242190,
+     "canvasCount": 1,
+     "owners": [
+      {
+       "discards": 5,
+       "nativeCapacity": 100,
+       "id": 1,
+       "saves": 17,
+       "live": 12
+      }
+     ],
+     "engineSurfaces": {
+      "externrefSlots": 1156,
+      "canvasPixels": 0,
+      "imageCount": 0,
+      "detachedCanvases": 0,
+      "canvasCount": 0,
+      "imagePixels": 0
+     },
+     "lastDisposal": null
+    },
+    "afterClose": {
+     "processes": [
+      {
+       "pid": 1267053,
+       "rssBytes": 329981952
+      }
+     ],
+     "aggregateRssBytes": 329981952,
+     "wasmBytes": 3932160,
+     "canvasPixels": 0,
+     "canvasCount": 0,
+     "owners": [],
+     "engineSurfaces": {
+      "externrefSlots": 1156,
+      "canvasPixels": 0,
+      "imageCount": 0,
+      "detachedCanvases": 0,
+      "canvasCount": 0,
+      "imagePixels": 0
+     },
+     "lastDisposal": {
+      "liveAtFree": 12,
+      "discards": 5,
+      "id": 1,
+      "saves": 17
+     }
+    }
+   },
+   "frameGapDuringUndoRedoMs": {
+    "n": 318,
+    "p50": 18,
+    "p95": 60,
+    "max": 111,
+    "timeouts": 0
+   }
+  },
+  {
+   "sample": "basic-ko.hwpx",
+   "pages": 1,
+   "fileBytes": 8064,
+   "zoom": 50,
+   "dpr": 1.04205322265625,
+   "control": "normal history",
+   "warmupGroups": 3,
+   "keyDelivery": "native X11 xdotool",
+   "contract": {
+    "groupStart": {
+     "n": 30,
+     "p50": 25,
+     "p95": 75,
+     "max": 79,
+     "timeouts": 0
+    },
+    "extend": {
+     "n": 30,
+     "p50": 25,
+     "p95": 32,
+     "max": 35,
+     "timeouts": 0
+    },
+    "undo": {
+     "n": 25,
+     "p50": 81,
+     "p95": 125,
+     "max": 125,
+     "timeouts": 0
+    },
+    "redo": {
+     "n": 20,
+     "p50": 126,
+     "p95": 135,
+     "max": 148,
+     "timeouts": 0
+    },
+    "afterUndo": {
+     "n": 5,
+     "p50": 125,
+     "p95": 135,
+     "max": 135,
+     "timeouts": 0
+    }
+   },
+   "gates": [
+    {
+     "gate": "D4",
+     "item": ".hwpx: group-start key→frame p95 ≤50ms",
+     "result": "FAIL",
+     "detail": "{'n': 30, 'p50': 25, 'p95': 75, 'max': 79, 'timeouts': 0}"
+    },
+    {
+     "gate": "D4",
+     "item": ".hwpx: Undo p95 ≤1500ms",
+     "result": "PASS",
+     "detail": "{'n': 25, 'p50': 81, 'p95': 125, 'max': 125, 'timeouts': 0}"
+    }
+   ],
+   "zeroWorkFrameFloorMs": {
+    "n": 30,
+    "p50": 40,
+    "p95": 48,
+    "max": 135,
+    "timeouts": 0
+   },
+   "groupStartAttribution": {
+    "keyToInputEvent": {
+     "n": 30,
+     "p50": 1,
+     "p95": 4,
+     "max": 9
+    },
+    "keyToRevisionObserved": {
+     "n": 30,
+     "p50": 11,
+     "p95": 20,
+     "max": 21
+    },
+    "observedToSecondRaf": {
+     "n": 30,
+     "p50": 14,
+     "p95": 62,
+     "max": 64
+    },
+    "engineTextMutationMs": {
+     "n": 30,
+     "p50": 1,
+     "p95": 2,
+     "max": 2
+    },
+    "paintSummaryMs": {
+     "n": 30,
+     "p50": 3,
+     "p95": 4,
+     "max": 4
+    },
+    "paintDrawMs": {
+     "n": 30,
+     "p50": 2,
+     "p95": 3,
+     "max": 5
+    },
+    "caretPageFirstDrawMs": {
+     "n": 30,
+     "p50": 5,
+     "p95": 7,
+     "max": 8
+    },
+    "fullRenderPageToCanvasInWindowMs": {
+     "n": 30,
+     "p50": 0,
+     "p95": 0,
+     "max": 0
+    },
+    "backendCommitAckMs(includes delivery)": {
+     "n": 30,
+     "p50": 10,
+     "p95": 44,
+     "max": 44
+    }
+   },
+   "worstGroupStartSamples": [
+    {
+     "keyToFrame": 79,
+     "at": {
+      "handlerEnd": 14,
+      "input": 0,
+      "observed": 15,
+      "raf1": 47,
+      "end": 79,
+      "key": 0
+     },
+     "spans": [
+      {
+       "name": "rhwp:text-mutation",
+       "at": 2,
+       "ms": 1,
+       "page": null
+      },
+      {
+       "name": "rhwp:revision-schedule",
+       "at": 3,
+       "ms": 1,
+       "page": null
+      },
+      {
+       "name": "rhwp:readPages",
+       "at": 3,
+       "ms": 0,
+       "page": null
+      },
+      {
+       "name": "rhwp:paint-summary",
+       "at": 10,
+       "ms": 4,
+       "page": 0
+      },
+      {
+       "name": "rhwp:paint-draw",
+       "at": 13,
+       "ms": 3,
+       "page": 0
+      },
+      {
+       "name": "rhwp:surface-first-draw",
+       "at": 13,
+       "ms": 7,
+       "page": 0
+      },
+      {
+       "name": "rhwp:commit-ack",
+       "at": 46,
+       "ms": 44,
+       "page": null
+      }
+     ],
+     "calls": {
+      "snapshotCapacity": {
+       "n": 2,
+       "ms": 0.0,
+       "firstAt": 1
+      },
+      "saveSnapshot": {
+       "n": 1,
+       "ms": 0.0,
+       "firstAt": 1
+      },
+      "insertText": {
+       "n": 1,
+       "ms": 1.0,
+       "firstAt": 1
+      },
+      "getPageInfo": {
+       "n": 1,
+       "ms": 0.0,
+       "firstAt": 3
+      },
+      "getPageLayerTreeWithProfile": {
+       "n": 1,
+       "ms": 3.0,
+       "firstAt": 6
+      },
+      "renderPagePatchToCanvasFilteredWithProfile": {
+       "n": 1,
+       "ms": 3.0,
+       "firstAt": 10
+      }
+     },
+     "busy": null
+    },
+    {
+     "keyToFrame": 75,
+     "at": {
+      "handlerEnd": 11,
+      "input": 0,
+      "observed": 13,
+      "raf1": 44,
+      "end": 75,
+      "key": 0
+     },
+     "spans": [
+      {
+       "name": "rhwp:text-mutation",
+       "at": 1,
+       "ms": 1,
+       "page": null
+      },
+      {
+       "name": "rhwp:revision-schedule",
+       "at": 2,
+       "ms": 1,
+       "page": null
+      },
+      {
+       "name": "rhwp:readPages",
+       "at": 2,
+       "ms": 0,
+       "page": null
+      },
+      {
+       "name": "rhwp:paint-summary",
+       "at": 7,
+       "ms": 3,
+       "page": 0
+      },
+      {
+       "name": "rhwp:paint-draw",
+       "at": 10,
+       "ms": 3,
+       "page": 0
+      },
+      {
+       "name": "rhwp:surface-first-draw",
+       "at": 10,
+       "ms": 6,
+       "page": 0
+      },
+      {
+       "name": "rhwp:commit-ack",
+       "at": 11,
+       "ms": 10,
+       "page": null
+      }
+     ],
+     "calls": {
+      "snapshotCapacity": {
+       "n": 2,
+       "ms": 0.0,
+       "firstAt": 0
+      },
+      "saveSnapshot": {
+       "n": 1,
+       "ms": 0.0,
+       "firstAt": 0
+      },
+      "insertText": {
+       "n": 1,
+       "ms": 1.0,
+       "firstAt": 0
+      },
+      "getPageInfo": {
+       "n": 1,
+       "ms": 0.0,
+       "firstAt": 2
+      },
+      "getPageLayerTreeWithProfile": {
+       "n": 1,
+       "ms": 2.0,
+       "firstAt": 4
+      },
+      "renderPagePatchToCanvasFilteredWithProfile": {
+       "n": 1,
+       "ms": 3.0,
+       "firstAt": 7
+      }
+     },
+     "busy": null
+    },
+    {
+     "keyToFrame": 59,
+     "at": {
+      "handlerEnd": 15,
+      "input": 1,
+      "observed": 15,
+      "raf1": 48,
+      "end": 59,
+      "key": 0
+     },
+     "spans": [
+      {
+       "name": "rhwp:text-mutation",
+       "at": 2,
+       "ms": 1,
+       "page": null
+      },
+      {
+       "name": "rhwp:revision-schedule",
+       "at": 2,
+       "ms": 0,
+       "page": null
+      },
+      {
+       "name": "rhwp:readPages",
+       "at": 3,
+       "ms": 1,
+       "page": null
+      },
+      {
+       "name": "rhwp:paint-summary",
+       "at": 8,
+       "ms": 3,
+       "page": 0
+      },
+      {
+       "name": "rhwp:paint-draw",
+       "at": 11,
+       "ms": 3,
+       "page": 0
+      },
+      {
+       "name": "rhwp:surface-first-draw",
+       "at": 11,
+       "ms": 6,
+       "page": 0
+      },
+      {
+       "name": "rhwp:commit-ack",
+       "at": 46,
+       "ms": 44,
+       "page": null
+      }
+     ],
+     "calls": {
+      "insertText": {
+       "n": 1,
+       "ms": 1.0,
+       "firstAt": 1
+      },
+      "getPageInfo": {
+       "n": 1,
+       "ms": 0.0,
+       "firstAt": 2
+      },
+      "getPageLayerTreeWithProfile": {
+       "n": 1,
+       "ms": 1.0,
+       "firstAt": 5
+      },
+      "renderPagePatchToCanvasFilteredWithProfile": {
+       "n": 1,
+       "ms": 3.0,
+       "firstAt": 8
+      }
+     },
+     "busy": null
+    }
+   ],
+   "threadCpuDuringTypingMs": {
+    "WebKitWebProces:main": 1670,
+    "WebKitWebProces:t Helper Thread": 740,
+    "WebKitWebProces:JITWorker": 650,
+    "WebKitWebProces:ReceiveQueue": 160,
+    "WebKitWebProces:WebKitWebProces": 80
+   },
+   "memory": {
+    "beforeOpen": {
+     "processes": [
+      {
+       "pid": 1267918,
+       "rssBytes": 255254528
+      }
+     ],
+     "aggregateRssBytes": 255254528,
+     "wasmBytes": 2949120,
+     "canvasPixels": 0,
+     "canvasCount": 0,
+     "owners": [],
+     "engineSurfaces": {
+      "externrefSlots": 1028,
+      "canvasPixels": 0,
+      "imageCount": 0,
+      "detachedCanvases": 0,
+      "canvasCount": 0,
+      "imagePixels": 0
+     },
+     "lastDisposal": null
+    },
+    "afterOpen": {
+     "processes": [
+      {
+       "pid": 1267918,
+       "rssBytes": 298373120
+      }
+     ],
+     "aggregateRssBytes": 298373120,
+     "wasmBytes": 3342336,
+     "canvasPixels": 242190,
+     "canvasCount": 1,
+     "owners": [
+      {
+       "discards": 0,
+       "nativeCapacity": 100,
+       "id": 1,
+       "saves": 3,
+       "live": 3
+      }
+     ],
+     "engineSurfaces": {
+      "externrefSlots": 1156,
+      "canvasPixels": 0,
+      "imageCount": 0,
+      "detachedCanvases": 0,
+      "canvasCount": 0,
+      "imagePixels": 0
+     },
+     "lastDisposal": null
+    },
+    "afterUndoRedo": {
+     "processes": [
+      {
+       "pid": 1267918,
+       "rssBytes": 338964480
+      }
+     ],
+     "aggregateRssBytes": 338964480,
+     "wasmBytes": 3670016,
+     "canvasPixels": 242190,
+     "canvasCount": 1,
+     "owners": [
+      {
+       "discards": 5,
+       "nativeCapacity": 100,
+       "id": 1,
+       "saves": 17,
+       "live": 12
+      }
+     ],
+     "engineSurfaces": {
+      "externrefSlots": 1156,
+      "canvasPixels": 0,
+      "imageCount": 0,
+      "detachedCanvases": 0,
+      "canvasCount": 0,
+      "imagePixels": 0
+     },
+     "lastDisposal": null
+    },
+    "afterClose": {
+     "processes": [
+      {
+       "pid": 1267918,
+       "rssBytes": 332279808
+      }
+     ],
+     "aggregateRssBytes": 332279808,
+     "wasmBytes": 3670016,
+     "canvasPixels": 0,
+     "canvasCount": 0,
+     "owners": [],
+     "engineSurfaces": {
+      "externrefSlots": 1156,
+      "canvasPixels": 0,
+      "imageCount": 0,
+      "detachedCanvases": 0,
+      "canvasCount": 0,
+      "imagePixels": 0
+     },
+     "lastDisposal": {
+      "liveAtFree": 12,
+      "discards": 5,
+      "id": 1,
+      "saves": 17
+     }
+    }
+   },
+   "frameGapDuringUndoRedoMs": {
+    "n": 311,
+    "p50": 17,
+    "p95": 58,
+    "max": 69,
+    "timeouts": 0
+   }
+  },
+  {
+   "sample": "연구노트(화학).hwp",
+   "pages": 24,
+   "fileBytes": 11956736,
+   "zoom": 50,
+   "dpr": 1.04205322265625,
+   "control": "normal history",
+   "warmupGroups": 3,
+   "keyDelivery": "native X11 xdotool",
+   "contract": {
+    "groupStart": {
+     "n": 30,
+     "p50": 53,
+     "p95": 88,
+     "max": 184,
+     "timeouts": 0
+    },
+    "extend": {
+     "n": 30,
+     "p50": 45,
+     "p95": 129,
+     "max": 186,
+     "timeouts": 0
+    },
+    "undo": {
+     "n": 25,
+     "p50": 123,
+     "p95": 176,
+     "max": 249,
+     "timeouts": 0
+    },
+    "redo": {
+     "n": 20,
+     "p50": 112,
+     "p95": 131,
+     "max": 170,
+     "timeouts": 0
+    },
+    "afterUndo": {
+     "n": 5,
+     "p50": 89,
+     "p95": 91,
+     "max": 91,
+     "timeouts": 0
+    }
+   },
+   "gates": [
+    {
+     "gate": "D4",
+     "item": ".hwp: group-start key→frame p95 ≤50ms",
+     "result": "FAIL",
+     "detail": "{'n': 30, 'p50': 53, 'p95': 88, 'max': 184, 'timeouts': 0}"
+    },
+    {
+     "gate": "D4",
+     "item": ".hwp: Undo p95 ≤1500ms",
+     "result": "PASS",
+     "detail": "{'n': 25, 'p50': 123, 'p95': 176, 'max': 249, 'timeouts': 0}"
+    }
+   ],
+   "zeroWorkFrameFloorMs": {
+    "n": 30,
+    "p50": 40,
+    "p95": 62,
+    "max": 102,
+    "timeouts": 0
+   },
+   "groupStartAttribution": {
+    "keyToInputEvent": {
+     "n": 30,
+     "p50": 0,
+     "p95": 1,
+     "max": 2
+    },
+    "keyToRevisionObserved": {
+     "n": 30,
+     "p50": 14,
+     "p95": 26,
+     "max": 149
+    },
+    "observedToSecondRaf": {
+     "n": 30,
+     "p50": 35,
+     "p95": 46,
+     "max": 73
+    },
+    "engineTextMutationMs": {
+     "n": 30,
+     "p50": 2,
+     "p95": 3,
+     "max": 31
+    },
+    "paintSummaryMs": {
+     "n": 30,
+     "p50": 2,
+     "p95": 6,
+     "max": 59
+    },
+    "paintDrawMs": {
+     "n": 30,
+     "p50": 5,
+     "p95": 13,
+     "max": 17
+    },
+    "caretPageFirstDrawMs": {
+     "n": 30,
+     "p50": 6,
+     "p95": 15,
+     "max": 76
+    },
+    "fullRenderPageToCanvasInWindowMs": {
+     "n": 30,
+     "p50": 0,
+     "p95": 0,
+     "max": 0
+    },
+    "backendCommitAckMs(includes delivery)": {
+     "n": 30,
+     "p50": 40,
+     "p95": 74,
+     "max": 146
+    }
+   },
+   "worstGroupStartSamples": [
+    {
+     "keyToFrame": 184,
+     "at": {
+      "handlerEnd": 149,
+      "input": 1,
+      "observed": 149,
+      "raf1": 180,
+      "end": 184,
+      "key": 0
+     },
+     "spans": [
+      {
+       "name": "rhwp:text-mutation",
+       "at": 32,
+       "ms": 31,
+       "page": null
+      },
+      {
+       "name": "rhwp:revision-schedule",
+       "at": 32,
+       "ms": 0,
+       "page": null
+      },
+      {
+       "name": "rhwp:readPages",
+       "at": 33,
+       "ms": 1,
+       "page": null
+      },
+      {
+       "name": "rhwp:paint-summary",
+       "at": 130,
+       "ms": 59,
+       "page": 16
+      },
+      {
+       "name": "rhwp:paint-draw",
+       "at": 147,
+       "ms": 17,
+       "page": 16
+      },
+      {
+       "name": "rhwp:surface-first-draw",
+       "at": 147,
+       "ms": 76,
+       "page": 16
+      },
+      {
+       "name": "rhwp:commit-ack",
+       "at": 178,
+       "ms": 146,
+       "page": null
+      }
+     ],
+     "calls": {
+      "snapshotCapacity": {
+       "n": 2,
+       "ms": 0.0,
+       "firstAt": 1
+      },
+      "saveSnapshot": {
+       "n": 1,
+       "ms": 0.0,
+       "firstAt": 1
+      },
+      "insertText": {
+       "n": 1,
+       "ms": 31.0,
+       "firstAt": 1
+      },
+      "getPageInfo": {
+       "n": 24,
+       "ms": 1.0,
+       "firstAt": 32
+      },
+      "getPageLayerTreeWithProfile": {
+       "n": 1,
+       "ms": 40.0,
+       "firstAt": 71
+      },
+      "renderPagePatchToCanvasFilteredWithProfile": {
+       "n": 1,
+       "ms": 17.0,
+       "firstAt": 130
+      }
+     },
+     "busy": null
+    },
+    {
+     "keyToFrame": 88,
+     "at": {
+      "handlerEnd": 14,
+      "input": 0,
+      "observed": 15,
+      "raf1": 80,
+      "end": 88,
+      "key": 0
+     },
+     "spans": [
+      {
+       "name": "rhwp:text-mutation",
+       "at": 4,
+       "ms": 2,
+       "page": null
+      },
+      {
+       "name": "rhwp:revision-schedule",
+       "at": 4,
+       "ms": 0,
+       "page": null
+      },
+      {
+       "name": "rhwp:readPages",
+       "at": 4,
+       "ms": 0,
+       "page": null
+      },
+      {
+       "name": "rhwp:paint-summary",
+       "at": 7,
+       "ms": 1,
+       "page": 4
+      },
+      {
+       "name": "rhwp:paint-draw",
+       "at": 13,
+       "ms": 6,
+       "page": 4
+      },
+      {
+       "name": "rhwp:surface-first-draw",
+       "at": 13,
+       "ms": 7,
+       "page": 4
+      },
+      {
+       "name": "rhwp:paint-summary",
+       "at": 15,
+       "ms": 1,
+       "page": 3
+      },
+      {
+       "name": "rhwp:paint-draw",
+       "at": 15,
+       "ms": 0,
+       "page": 3
+      },
+      {
+       "name": "rhwp:commit-ack",
+       "at": 78,
+       "ms": 74,
+       "page": null
+      },
+      {
+       "name": "rhwp:paint-summary",
+       "at": 81,
+       "ms": 1,
+       "page": 2
+      },
+      {
+       "name": "rhwp:paint-draw",
+       "at": 81,
+       "ms": 0,
+       "page": 2
+      }
+     ],
+     "calls": {
+      "snapshotCapacity": {
+       "n": 2,
+       "ms": 0.0,
+       "firstAt": 1
+      },
+      "saveSnapshot": {
+       "n": 1,
+       "ms": 1.0,
+       "firstAt": 1
+      },
+      "insertText": {
+       "n": 1,
+       "ms": 1.0,
+       "firstAt": 2
+      },
+      "getPageInfo": {
+       "n": 24,
+       "ms": 0.0,
+       "firstAt": 4
+      },
+      "getPageLayerTreeWithProfile": {
+       "n": 3,
+       "ms": 1.0,
+       "firstAt": 6
+      },
+      "renderPagePatchToCanvasFilteredWithProfile": {
+       "n": 1,
+       "ms": 6.0,
+       "firstAt": 7
+      }
+     },
+     "busy": null
+    },
+    {
+     "keyToFrame": 63,
+     "at": {
+      "handlerEnd": 17,
+      "input": 1,
+      "observed": 17,
+      "raf1": 48,
+      "end": 63,
+      "key": 0
+     },
+     "spans": [
+      {
+       "name": "rhwp:text-mutation",
+       "at": 5,
+       "ms": 3,
+       "page": null
+      },
+      {
+       "name": "rhwp:revision-schedule",
+       "at": 6,
+       "ms": 1,
+       "page": null
+      },
+      {
+       "name": "rhwp:readPages",
+       "at": 6,
+       "ms": 0,
+       "page": null
+      },
+      {
+       "name": "rhwp:paint-summary",
+       "at": 13,
+       "ms": 4,
+       "page": 17
+      },
+      {
+       "name": "rhwp:paint-draw",
+       "at": 16,
+       "ms": 3,
+       "page": 17
+      },
+      {
+       "name": "rhwp:surface-first-draw",
+       "at": 16,
+       "ms": 7,
+       "page": 17
+      },
+      {
+       "name": "rhwp:commit-ack",
+       "at": 46,
+       "ms": 41,
+       "page": null
+      }
+     ],
+     "calls": {
+      "snapshotCapacity": {
+       "n": 2,
+       "ms": 0.0,
+       "firstAt": 1
+      },
+      "saveSnapshot": {
+       "n": 1,
+       "ms": 1.0,
+       "firstAt": 1
+      },
+      "insertText": {
+       "n": 1,
+       "ms": 3.0,
+       "firstAt": 2
+      },
+      "getPageInfo": {
+       "n": 24,
+       "ms": 0.0,
+       "firstAt": 6
+      },
+      "getPageLayerTreeWithProfile": {
+       "n": 1,
+       "ms": 3.0,
+       "firstAt": 9
+      },
+      "renderPagePatchToCanvasFilteredWithProfile": {
+       "n": 1,
+       "ms": 3.0,
+       "firstAt": 13
+      }
+     },
+     "busy": null
+    }
+   ],
+   "threadCpuDuringTypingMs": {
+    "WebKitWebProces:main": 7650,
+    "WebKitWebProces:JITWorker": 770,
+    "WebKitWebProces:t Helper Thread": 470,
+    "WebKitWebProces:ReceiveQueue": 220,
+    "WebKitWebProces:WebKitWebProces": 140
+   },
+   "memory": {
+    "beforeOpen": {
+     "processes": [
+      {
+       "pid": 1268629,
+       "rssBytes": 267517952
+      }
+     ],
+     "aggregateRssBytes": 267517952,
+     "wasmBytes": 2949120,
+     "canvasPixels": 0,
+     "canvasCount": 0,
+     "owners": [],
+     "engineSurfaces": {
+      "externrefSlots": 1028,
+      "canvasPixels": 0,
+      "imageCount": 0,
+      "detachedCanvases": 0,
+      "canvasCount": 0,
+      "imagePixels": 0
+     },
+     "lastDisposal": null
+    },
+    "afterOpen": {
+     "processes": [
+      {
+       "pid": 1268629,
+       "rssBytes": 871624704
+      }
+     ],
+     "aggregateRssBytes": 871624704,
+     "wasmBytes": 148832256,
+     "canvasPixels": 5570370,
+     "canvasCount": 24,
+     "owners": [
+      {
+       "discards": 0,
+       "nativeCapacity": 100,
+       "id": 1,
+       "saves": 3,
+       "live": 3
+      }
+     ],
+     "engineSurfaces": {
+      "externrefSlots": 1156,
+      "canvasPixels": 91372000,
+      "imageCount": 0,
+      "detachedCanvases": 20,
+      "canvasCount": 20,
+      "imagePixels": 0
+     },
+     "lastDisposal": null
+    },
+    "afterUndoRedo": {
+     "processes": [
+      {
+       "pid": 1268629,
+       "rssBytes": 1548582912
+      }
+     ],
+     "aggregateRssBytes": 1548582912,
+     "wasmBytes": 148832256,
+     "canvasPixels": 5812560,
+     "canvasCount": 24,
+     "owners": [
+      {
+       "discards": 9,
+       "nativeCapacity": 100,
+       "id": 1,
+       "saves": 28,
+       "live": 19
+      }
+     ],
+     "engineSurfaces": {
+      "externrefSlots": 1156,
+      "canvasPixels": 100819044,
+      "imageCount": 0,
+      "detachedCanvases": 21,
+      "canvasCount": 21,
+      "imagePixels": 0
+     },
+     "lastDisposal": null
+    },
+    "afterClose": {
+     "processes": [
+      {
+       "pid": 1268629,
+       "rssBytes": 1546203136
+      }
+     ],
+     "aggregateRssBytes": 1546203136,
+     "wasmBytes": 148832256,
+     "canvasPixels": 0,
+     "canvasCount": 0,
+     "owners": [],
+     "engineSurfaces": {
+      "externrefSlots": 1156,
+      "canvasPixels": 100819044,
+      "imageCount": 0,
+      "detachedCanvases": 21,
+      "canvasCount": 21,
+      "imagePixels": 0
+     },
+     "lastDisposal": {
+      "liveAtFree": 19,
+      "discards": 9,
+      "id": 1,
+      "saves": 28
+     }
+    }
+   },
+   "frameGapDuringUndoRedoMs": {
+    "n": 287,
+    "p50": 35,
+    "p95": 48,
+    "max": 105,
+    "timeouts": 0
+   }
+  },
+  {
+   "sample": "3249937_asset_management_rules.hwpx",
+   "pages": 60,
+   "fileBytes": 423622,
+   "zoom": 50,
+   "dpr": 1.04205322265625,
+   "control": "normal history",
+   "warmupGroups": 3,
+   "keyDelivery": "native X11 xdotool",
+   "contract": {
+    "groupStart": {
+     "n": 30,
+     "p50": 102,
+     "p95": 133,
+     "max": 386,
+     "timeouts": 0
+    },
+    "extend": {
+     "n": 30,
+     "p50": 97,
+     "p95": 156,
+     "max": 163,
+     "timeouts": 0
+    },
+    "undo": {
+     "n": 25,
+     "p50": 193,
+     "p95": 206,
+     "max": 239,
+     "timeouts": 0
+    },
+    "redo": {
+     "n": 20,
+     "p50": 193,
+     "p95": 264,
+     "max": 285,
+     "timeouts": 0
+    },
+    "afterUndo": {
+     "n": 5,
+     "p50": 131,
+     "p95": 134,
+     "max": 134,
+     "timeouts": 0
+    }
+   },
+   "gates": [
+    {
+     "gate": "D4",
+     "item": ".hwpx: group-start key→frame p95 ≤50ms",
+     "result": "FAIL",
+     "detail": "{'n': 30, 'p50': 102, 'p95': 133, 'max': 386, 'timeouts': 0}"
+    },
+    {
+     "gate": "D4",
+     "item": ".hwpx: Undo p95 ≤1500ms",
+     "result": "PASS",
+     "detail": "{'n': 25, 'p50': 193, 'p95': 206, 'max': 239, 'timeouts': 0}"
+    }
+   ],
+   "zeroWorkFrameFloorMs": {
+    "n": 30,
+    "p50": 43,
+    "p95": 451,
+    "max": 524,
+    "timeouts": 0
+   },
+   "groupStartAttribution": {
+    "keyToInputEvent": {
+     "n": 30,
+     "p50": 1,
+     "p95": 10,
+     "max": 108
+    },
+    "keyToRevisionObserved": {
+     "n": 30,
+     "p50": 62,
+     "p95": 72,
+     "max": 171
+    },
+    "observedToSecondRaf": {
+     "n": 30,
+     "p50": 39,
+     "p95": 61,
+     "max": 215
+    },
+    "engineTextMutationMs": {
+     "n": 30,
+     "p50": 27,
+     "p95": 29,
+     "max": 29
+    },
+    "paintSummaryMs": {
+     "n": 30,
+     "p50": 12,
+     "p95": 18,
+     "max": 22
+    },
+    "paintDrawMs": {
+     "n": 30,
+     "p50": 13,
+     "p95": 14,
+     "max": 14
+    },
+    "caretPageFirstDrawMs": {
+     "n": 30,
+     "p50": 24,
+     "p95": 27,
+     "max": 32
+    },
+    "fullRenderPageToCanvasInWindowMs": {
+     "n": 30,
+     "p50": 0,
+     "p95": 0,
+     "max": 0
+    },
+    "backendCommitAckMs(includes delivery)": {
+     "n": 30,
+     "p50": 61,
+     "p95": 69,
+     "max": 148
+    }
+   },
+   "worstGroupStartSamples": [
+    {
+     "keyToFrame": 386,
+     "at": {
+      "handlerEnd": 170,
+      "input": 108,
+      "observed": 171,
+      "raf1": 288,
+      "end": 386,
+      "key": 0
+     },
+     "spans": [
+      {
+       "name": "rhwp:text-mutation",
+       "at": 138,
+       "ms": 27,
+       "page": null
+      },
+      {
+       "name": "rhwp:revision-schedule",
+       "at": 139,
+       "ms": 1,
+       "page": null
+      },
+      {
+       "name": "rhwp:readPages",
+       "at": 140,
+       "ms": 1,
+       "page": null
+      },
+      {
+       "name": "rhwp:paint-summary",
+       "at": 155,
+       "ms": 10,
+       "page": 0
+      },
+      {
+       "name": "rhwp:paint-draw",
+       "at": 168,
+       "ms": 13,
+       "page": 0
+      },
+      {
+       "name": "rhwp:surface-first-draw",
+       "at": 168,
+       "ms": 23,
+       "page": 0
+      },
+      {
+       "name": "rhwp:commit-ack",
+       "at": 286,
+       "ms": 148,
+       "page": null
+      },
+      {
+       "name": "rhwp:paint-summary",
+       "at": 385,
+       "ms": 12,
+       "page": 1
+      },
+      {
+       "name": "rhwp:paint-draw",
+       "at": 385,
+       "ms": 0,
+       "page": 1
+      }
+     ],
+     "calls": {
+      "snapshotCapacity": {
+       "n": 2,
+       "ms": 0.0,
+       "firstAt": 109
+      },
+      "saveSnapshot": {
+       "n": 1,
+       "ms": 2.0,
+       "firstAt": 109
+      },
+      "insertText": {
+       "n": 1,
+       "ms": 27.0,
+       "firstAt": 111
+      },
+      "getPageInfo": {
+       "n": 60,
+       "ms": 1.0,
+       "firstAt": 139
+      },
+      "getPageLayerTreeWithProfile": {
+       "n": 2,
+       "ms": 15.0,
+       "firstAt": 145
+      },
+      "renderPagePatchToCanvasFilteredWithProfile": {
+       "n": 1,
+       "ms": 13.0,
+       "firstAt": 155
+      }
+     },
+     "busy": null
+    },
+    {
+     "keyToFrame": 133,
+     "at": {
+      "handlerEnd": 72,
+      "input": 10,
+      "observed": 72,
+      "raf1": 104,
+      "end": 133,
+      "key": 0
+     },
+     "spans": [
+      {
+       "name": "rhwp:text-mutation",
+       "at": 38,
+       "ms": 26,
+       "page": null
+      },
+      {
+       "name": "rhwp:revision-schedule",
+       "at": 39,
+       "ms": 1,
+       "page": null
+      },
+      {
+       "name": "rhwp:readPages",
+       "at": 40,
+       "ms": 1,
+       "page": null
+      },
+      {
+       "name": "rhwp:paint-summary",
+       "at": 57,
+       "ms": 13,
+       "page": 0
+      },
+      {
+       "name": "rhwp:paint-draw",
+       "at": 71,
+       "ms": 14,
+       "page": 0
+      },
+      {
+       "name": "rhwp:surface-first-draw",
+       "at": 71,
+       "ms": 27,
+       "page": 0
+      },
+      {
+       "name": "rhwp:commit-ack",
+       "at": 102,
+       "ms": 64,
+       "page": null
+      }
+     ],
+     "calls": {
+      "snapshotCapacity": {
+       "n": 2,
+       "ms": 0.0,
+       "firstAt": 10
+      },
+      "saveSnapshot": {
+       "n": 1,
+       "ms": 2.0,
+       "firstAt": 10
+      },
+      "insertText": {
+       "n": 1,
+       "ms": 26.0,
+       "firstAt": 12
+      },
+      "getPageInfo": {
+       "n": 60,
+       "ms": 1.0,
+       "firstAt": 39
+      },
+      "getPageLayerTreeWithProfile": {
+       "n": 1,
+       "ms": 9.0,
+       "firstAt": 44
+      },
+      "renderPagePatchToCanvasFilteredWithProfile": {
+       "n": 1,
+       "ms": 14.0,
+       "firstAt": 57
+      }
+     },
+     "busy": null
+    },
+    {
+     "keyToFrame": 124,
+     "at": {
+      "handlerEnd": 63,
+      "input": 0,
+      "observed": 63,
+      "raf1": 95,
+      "end": 124,
+      "key": 0
+     },
+     "spans": [
+      {
+       "name": "rhwp:text-mutation",
+       "at": 29,
+       "ms": 28,
+       "page": null
+      },
+      {
+       "name": "rhwp:revision-schedule",
+       "at": 29,
+       "ms": 0,
+       "page": null
+      },
+      {
+       "name": "rhwp:readPages",
+       "at": 30,
+       "ms": 1,
+       "page": null
+      },
+      {
+       "name": "rhwp:paint-summary",
+       "at": 48,
+       "ms": 13,
+       "page": 0
+      },
+      {
+       "name": "rhwp:paint-draw",
+       "at": 62,
+       "ms": 14,
+       "page": 0
+      },
+      {
+       "name": "rhwp:surface-first-draw",
+       "at": 62,
+       "ms": 27,
+       "page": 0
+      },
+      {
+       "name": "rhwp:commit-ack",
+       "at": 93,
+       "ms": 64,
+       "page": null
+      }
+     ],
+     "calls": {
+      "snapshotCapacity": {
+       "n": 2,
+       "ms": 0.0,
+       "firstAt": 0
+      },
+      "saveSnapshot": {
+       "n": 1,
+       "ms": 1.0,
+       "firstAt": 0
+      },
+      "insertText": {
+       "n": 1,
+       "ms": 28.0,
+       "firstAt": 1
+      },
+      "getPageInfo": {
+       "n": 60,
+       "ms": 1.0,
+       "firstAt": 29
+      },
+      "getPageLayerTreeWithProfile": {
+       "n": 1,
+       "ms": 9.0,
+       "firstAt": 35
+      },
+      "renderPagePatchToCanvasFilteredWithProfile": {
+       "n": 1,
+       "ms": 14.0,
+       "firstAt": 48
+      }
+     },
+     "busy": null
+    }
+   ],
+   "threadCpuDuringTypingMs": {
+    "WebKitWebProces:main": 13170,
+    "WebKitWebProces:JITWorker": 1120,
+    "WebKitWebProces:t Helper Thread": 600,
+    "WebKitWebProces:WebKitWebProces": 310,
+    "WebKitWebProces:HeapHelper": 310,
+    "WebKitWebProces:ReceiveQueue": 220
+   },
+   "memory": {
+    "beforeOpen": {
+     "processes": [
+      {
+       "pid": 1269293,
+       "rssBytes": 265662464
+      }
+     ],
+     "aggregateRssBytes": 265662464,
+     "wasmBytes": 2949120,
+     "canvasPixels": 0,
+     "canvasCount": 0,
+     "owners": [],
+     "engineSurfaces": {
+      "externrefSlots": 1028,
+      "canvasPixels": 0,
+      "imageCount": 0,
+      "detachedCanvases": 0,
+      "canvasCount": 0,
+      "imagePixels": 0
+     },
+     "lastDisposal": null
+    },
+    "afterOpen": {
+     "processes": [
+      {
+       "pid": 1269293,
+       "rssBytes": 466247680
+      }
+     ],
+     "aggregateRssBytes": 466247680,
+     "wasmBytes": 22740992,
+     "canvasPixels": 5570370,
+     "canvasCount": 60,
+     "owners": [
+      {
+       "discards": 0,
+       "nativeCapacity": 100,
+       "id": 1,
+       "saves": 3,
+       "live": 3
+      }
+     ],
+     "engineSurfaces": {
+      "externrefSlots": 1156,
+      "canvasPixels": 0,
+      "imageCount": 0,
+      "detachedCanvases": 0,
+      "canvasCount": 0,
+      "imagePixels": 0
+     },
+     "lastDisposal": null
+    },
+    "afterUndoRedo": {
+     "processes": [
+      {
+       "pid": 1269293,
+       "rssBytes": 591319040
+      }
+     ],
+     "aggregateRssBytes": 591319040,
+     "wasmBytes": 104595456,
+     "canvasPixels": 14531400,
+     "canvasCount": 60,
+     "owners": [
+      {
+       "discards": 5,
+       "nativeCapacity": 100,
+       "id": 1,
+       "saves": 38,
+       "live": 33
+      }
+     ],
+     "engineSurfaces": {
+      "externrefSlots": 1156,
+      "canvasPixels": 2035140,
+      "imageCount": 0,
+      "detachedCanvases": 2,
+      "canvasCount": 2,
+      "imagePixels": 0
+     },
+     "lastDisposal": null
+    },
+    "afterClose": {
+     "processes": [
+      {
+       "pid": 1269293,
+       "rssBytes": 592605184
+      }
+     ],
+     "aggregateRssBytes": 592605184,
+     "wasmBytes": 104595456,
+     "canvasPixels": 0,
+     "canvasCount": 0,
+     "owners": [],
+     "engineSurfaces": {
+      "externrefSlots": 1156,
+      "canvasPixels": 2035140,
+      "imageCount": 0,
+      "detachedCanvases": 2,
+      "canvasCount": 2,
+      "imagePixels": 0
+     },
+     "lastDisposal": {
+      "liveAtFree": 33,
+      "discards": 5,
+      "id": 1,
+      "saves": 38
+     }
+    }
+   },
+   "frameGapDuringUndoRedoMs": {
+    "n": 295,
+    "p50": 34,
+    "p95": 134,
+    "max": 141,
+    "timeouts": 0
+   }
+  }
+ ]
+}

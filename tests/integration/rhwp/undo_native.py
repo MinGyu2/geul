@@ -54,14 +54,19 @@ if (!window.__lat) {
     const tick = () => {
       if(!active)return;
       if (st()?.dataset.localRevision !== before) {
-        requestAnimationFrame(() => requestAnimationFrame(() => {
+        const observed=performance.now(); let raf1=null;
+        requestAnimationFrame(() => {raf1=performance.now(); requestAnimationFrame(() => {
           if(!active)return;
           const end=performance.now(); window.__lat.push([kind,end-key]);
+          // Timeline (attribution only; keyToFrame above is the unchanged contract value).
           window.__stages.push({kind,keyToFrame:end-key,inputToFrame:end-inputTime,delivery:delivered-inputTime,
             inputHandlerMs:handler?.end==null?null:handler.end-handler.start,
-            calls:calls?.slice(offset)||[],
-            trace:(window.__geulTrace?.records||[]).filter(r=>r[0]>seq && typeof r[3]?.ms==='number').map(r=>({name:r[2],ms:r[3].ms}))});
-        }));
+            at:{key:0,input:inputTime-key,handlerEnd:handler?.end==null?null:handler.end-key,observed:observed-key,raf1:raf1-key,end:end-key},
+            calls:(calls?.slice(offset)||[]).map(c=>({...c,at:c.at==null?null:c.at-key})),
+            trace:(window.__geulTrace?.records||[]).filter(r=>r[0]>seq && typeof r[3]?.ms==='number').map(r=>({name:r[2],ms:r[3].ms})),
+            timeline:(window.__geulTrace?.records||[]).filter(r=>r[0]>seq).map(r=>({name:r[2],at:r[1]-key,ms:typeof r[3]?.ms==='number'?r[3].ms:null,page:typeof r[3]?.page==='number'?r[3].page:null})),
+            busy:window.__busy?(window.__busy.gaps.filter(g=>g[0]+g[1]>key-500&&g[0]<end).map(g=>[g[0]-key,g[1]])):null});
+        });});
       } else if (performance.now() - key < 8000) requestAnimationFrame(tick);
       else window.__lat.push([kind, -1]);
     };
@@ -528,6 +533,75 @@ def stage_stats(samples):
     return result
 
 
+# Same RAF boundary as MEASURE with no input and no model work: the event "happens" in a timer task, the next RAF
+# plays the role of the revision-observing tick, then two more RAFs. Quantifies the contract's frame-wait floor only.
+FRAME_FLOOR = r"""
+const done = arguments[arguments.length - 1], out = [];
+const one = () => setTimeout(() => {
+  const start = performance.now();
+  requestAnimationFrame(() => requestAnimationFrame(() => requestAnimationFrame(() => {
+    out.push(performance.now() - start);
+    if (out.length < 30) setTimeout(one, 37 + (out.length * 7) % 23); else done(out);
+  })));
+}, 0);
+one();
+"""
+
+
+# Diagnostic only (--busy-probe): a self-reposting MessageChannel task records every gap > 8 ms in which this
+# page's event loop could not run a task (JS, rendering update, GC — any web-process main-thread work). It perturbs
+# scheduling, so its runs are never used for the contract value.
+BUSY_PROBE = r"""
+window.__busy={gaps:[],stop:false};const ch=new MessageChannel();let last=performance.now();
+ch.port1.onmessage=()=>{const t=performance.now();if(t-last>8)window.__busy.gaps.push([last,t-last]);last=t;
+  if(window.__busy.gaps.length>5000)window.__busy.gaps.shift();if(!window.__busy.stop)ch.port2.postMessage(0)};
+ch.port2.postMessage(0);
+"""
+
+
+def thread_cpu() -> dict:
+    """Per-thread CPU ticks (utime+stime) of this session's geul UI process and WebKit web processes."""
+    out={}
+    for pid in smoke.pids_with(smoke.ACTIVE["data_home"]):
+        try:
+            comm=Path(f"/proc/{pid}/comm").read_text().strip()
+            if not (comm.startswith("WebKitWebProces") or comm=="geul"):
+                continue
+            for task in Path(f"/proc/{pid}/task").iterdir():
+                stat=(task/"stat").read_text()
+                name=stat[stat.index("(")+1:stat.rindex(")")]
+                fields=stat[stat.rindex(")")+2:].split()
+                out[f"{comm}:{'main' if task.name==str(pid) else name}:{task.name}"]=int(fields[11])+int(fields[12])
+        except OSError:
+            continue
+    return out
+
+
+def cpu_delta(before: dict, after: dict) -> dict:
+    tick=os.sysconf("SC_CLK_TCK")
+    rows={}
+    for key,value in after.items():
+        proc,name,_=key.split(":",2)
+        ms=(value-before.get(key,0))*1000/tick
+        if ms>0: rows[f"{proc}:{name}"]=rows.get(f"{proc}:{name}",0)+ms
+    return dict(sorted(((k,round(v)) for k,v in rows.items()),key=lambda kv:-kv[1])[:12])
+
+
+def timeline_samples(raw):
+    """Per-sample attribution (numbers and span names only; no document content)."""
+    rows=[]
+    for s in raw:
+        calls={}
+        for c in s.get("calls",[]):
+            name=c["name"]
+            calls.setdefault(name,{"n":0,"ms":0.0,"firstAt":c.get("at")})
+            calls[name]["n"]+=1;calls[name]["ms"]=round(calls[name]["ms"]+c["ms"],2)
+        rows.append({"kind":s["kind"],"keyToFrame":round(s["keyToFrame"],1),"at":{k:(None if v is None else round(v,1)) for k,v in (s.get("at") or {}).items()},
+                     "calls":calls,"timeline":[{"name":t["name"],"at":round(t["at"],1),"ms":None if t["ms"] is None else round(t["ms"],2),"page":t.get("page")} for t in s.get("timeline",[])][:80],
+                     "busy":None if s.get("busy") is None else [[round(a,1),round(b,1)] for a,b in s["busy"]][:40]})
+    return rows
+
+
 def scenario_perf(d, path: Path, scratch: Path, control=False) -> None:
     """Same frame boundary as historical MEASURE; additionally report keydown and API stages."""
     copy = scratch / path.name
@@ -546,11 +620,14 @@ def scenario_perf(d, path: Path, scratch: Path, control=False) -> None:
     time.sleep(1)
     rss_open=memory_sample(d)
     d.js("window.__lat=null; window.__gaps=null;window.__rhwpProbe.calls=[];window.__geulTrace={seq:0,dropped:0,records:[]}")
+    if getattr(d,"busy_probe",False): d.js(BUSY_PROBE)
     d.js(MEASURE)
+    cpu0=thread_cpu()
     for _ in range(30):
         poc.press(d,"Right")
         d.js("window.__nextKind='groupStart'");poc.type_ascii(d,"a")
         d.js("window.__nextKind='extend'");poc.type_ascii(d,"b")
+    cpu_typing=cpu_delta(cpu0,thread_cpu())
     d.js("window.__gaps.length=0")
     if not control:
         for _ in range(20):
@@ -561,7 +638,9 @@ def scenario_perf(d, path: Path, scratch: Path, control=False) -> None:
     time.sleep(0.2)
     gaps=d.js("return window.__gaps.slice()")
     if control: undo_redo_gaps=[]
-    stages=stage_stats(d.js("return window.__stages"))
+    raw=d.js("return window.__stages")
+    stages=stage_stats(raw)
+    floor=d.call("POST","/execute/async",{"script":FRAME_FLOOR,"args":[]})
     if len(latencies(d).get("groupStart",[])) != 30:
         raise smoke.Failure("groupStart sample count mismatch; benchmark is invalid")
     lat=latencies(d);rss_ops=memory_sample(d)
@@ -571,10 +650,10 @@ def scenario_perf(d, path: Path, scratch: Path, control=False) -> None:
     session_spans={kind:pct([r["ms"] for r in spans if r["name"]==kind]) for kind in {r["name"] for r in spans}}
     row={"sample":path.name,"dpr":d.js("return window.devicePixelRatio"),"sessionSpansMs":session_spans,"control":"injected capacity refusal" if control else "normal history","fileBytes":path.stat().st_size,
          "pages":int(st["pages"]),"zoom":50,"warmupGroups":3,**{k:pct(v) for k,v in lat.items()},
-         "stages":stages,"frameGapDuringHistoryAndFollowingInputMs":pct(gaps),"frameGapDuringUndoRedoMs":pct(undo_redo_gaps),"memory":{"beforeOpen":rss0,"afterOpen":rss_open,"afterUndoRedo":rss_ops,"afterClose":rss_closed}}
+         "stages":stages,"timelineSamples":timeline_samples(raw),"busyProbe":getattr(d,"busy_probe",False),"threadCpuDuringTypingMs":cpu_typing,"zeroWorkFrameFloorMs":pct(floor),"frameGapDuringHistoryAndFollowingInputMs":pct(gaps),"frameGapDuringUndoRedoMs":pct(undo_redo_gaps),"memory":{"beforeOpen":rss0,"afterOpen":rss_open,"afterUndoRedo":rss_ops,"afterClose":rss_closed}}
     REPORT.setdefault("perf",[]).append(row)
     print("[측정]",json.dumps({k:row[k] for k in ("sample","pages","groupStart","extend","undo","redo") if k in row},ensure_ascii=False),flush=True)
-    if not control:
+    if not control and not getattr(d,"busy_probe",False):
         gate("D4",f"{path.suffix}: group-start key→frame p95 ≤50ms",row.get("groupStart",{}).get("p95",float('inf'))<=50 and row.get("groupStart",{}).get("timeouts",1)==0,str(row.get("groupStart")))
         gate("D4",f"{path.suffix}: Undo p95 ≤1500ms",row.get("undo",{}).get("p95",float('inf'))<=1500 and row.get("undo",{}).get("timeouts",1)==0,str(row.get("undo")))
 
@@ -911,6 +990,127 @@ def scenario_ime_gap(d,fixtures,xdotool,ibus):
              f"safe={safe}, native gap observed={observed}",outcome="INCONCLUSIVE" if safe and not observed else None)
 
 
+def own_engine_pids() -> list[int]:
+    """ibus-engine-hangul processes of this X display only (never the host user's input method)."""
+    display=os.environ.get("DISPLAY","")
+    pids=[]
+    for proc in Path("/proc").iterdir():
+        if not proc.name.isdigit(): continue
+        try:
+            if "ibus-engine-hangul" not in (proc/"cmdline").read_bytes().decode(errors="replace"): continue
+            env=(proc/"environ").read_bytes().split(b"\0")
+        except OSError:
+            continue
+        if f"DISPLAY={display}".encode() in env: pids.append(int(proc.name))
+    return pids
+
+
+def gap_order(records):
+    """Compact, content-free event order of one trial (kinds, lengths, awaiting state)."""
+    out=[]
+    for seq,_t,kind,detail in records:
+        detail=detail or {}
+        if kind=="dom:compositionend": out.append(f"end{detail.get('length')}")
+        elif kind=="dom:input" and "Composition" in str(detail.get("inputType")): out.append(f"{detail['inputType']}:{detail.get('length')}")
+        elif kind in ("dom:keydown",) and str(detail.get("key","")).startswith("mod:"): out.append(detail["key"])
+        elif kind=="command:request" and detail.get("id")=="edit.undo": out.append(f"undoReq:{detail.get('reason')}")
+        elif kind=="command:dispatch" and detail.get("id")=="edit.undo": out.append(f"undoDispatch:{detail.get('accepted')}")
+        elif kind=="ime:compositionEnd": out.append(f"awaiting:{detail.get('awaiting')}")
+    return out
+
+
+def scenario_ime_gap_matrix(d,fixtures,xdotool,ibus,rounds=1):
+    """Bounded native scheduling matrix for the empty-compositionend → Ctrl+Z → late final window (Stage B).
+
+    Every key and click is a real X11 event through ibus-hangul and WebKitGTK; nothing is injected into the DOM.
+    Timing is perturbed only externally: chord/press delays, a real pointer click, and briefly stopping this display's
+    ibus-engine-hangul process (SIGSTOP/SIGCONT) so that the IME's replies are genuinely late.
+    """
+    reason=poc.ime_environment(xdotool,ibus)
+    if reason:
+        gate("D2","native final-gap matrix",None,reason);return
+    run=lambda *a:subprocess.run(["env","-u","LD_LIBRARY_PATH",*a],check=True,capture_output=True,text=True)
+    specs=[("key",0),("key",1),("key",3),("key",8),("key",15),("earlyCtrl",0),("earlyCtrl",10),("earlyCtrl",30),
+           ("pointer",0),("pointer",2),("stall",15),("stall",40),("stall",120),("stallAfterCtrl",0),("stallAfterCtrl",5),
+           ("stallAfterCtrl",20),("pointerStall",20),("pointerStall",80)]
+    matrix=REPORT.setdefault("nativeFinalGapMatrix",{})
+    for fmt in ("hwp","hwpx"):
+        poc.open_document(d,fixtures/f"basic-ko.{fmt}");poc.click_paragraph_start(d)
+        window=run(xdotool,"search","--onlyvisible","--name","^geul").stdout.split()[-1]
+        run(xdotool,"windowfocus","--sync",window)
+        if run(ibus,"engine").stdout.strip()!="hangul":run(ibus,"engine","hangul")
+        if run(ibus,"engine").stdout.strip()!="hangul":raise smoke.Failure("ibus hangul engine not active")
+        engines=own_engine_pids()
+        if not engines: raise smoke.Failure("this display's ibus-engine-hangul process not found")
+        d.js("window.__gapMove=null;window.addEventListener('mousemove',e=>{window.__gapMove=[e.clientX,e.clientY]},true)")
+        run(xdotool,"mousemove","--window",window,"100","100");smoke.wait_until(d,"return window.__gapMove!==null")
+        one=d.js("return window.__gapMove");d.js("window.__gapMove=null")
+        run(xdotool,"mousemove","--window",window,"200","200");smoke.wait_until(d,"return window.__gapMove!==null")
+        two=d.js("return window.__gapMove")
+        scale=[100/(two[i]-one[i]) for i in (0,1)];origin=[100-one[i]*scale[i] for i in (0,1)]
+        base=status(d)["paragraphText"];rows=[];matrix[fmt]=rows
+        for _round in range(rounds):
+            for mode,amount in specs:
+                run(xdotool,"type","--delay","90","gk");run(xdotool,"key","End")
+                prefix=poc.settle(d,f"{fmt}: 앞 거래")
+                d.js("window.__geulTrace={seq:0,dropped:0,records:[]}")
+                run(xdotool,"type","--delay","90","rk")
+                stopped=False
+                try:
+                    if mode=="key":
+                        run(xdotool,"key","--delay",str(amount),"ctrl+z")
+                    elif mode=="earlyCtrl":
+                        run(xdotool,"keydown","ctrl");time.sleep(amount/1000);run(xdotool,"key","z");run(xdotool,"keyup","ctrl")
+                    elif mode in ("pointer","pointerStall"):
+                        point=poc.caret_client(d);point=[point[0],point[1]+point[2]/2]
+                        xy=[str(round(point[i]*scale[i]+origin[i])) for i in (0,1)]
+                        if mode=="pointerStall":
+                            for pid in engines: os.kill(pid,19)
+                            stopped=True
+                        run(xdotool,"mousemove","--window",window,*xy,"click","1","key","--delay",str(0 if mode=="pointerStall" else amount),"ctrl+z")
+                        if stopped: time.sleep(amount/1000)
+                    elif mode=="stall":
+                        for pid in engines: os.kill(pid,19)
+                        stopped=True
+                        run(xdotool,"key","ctrl+z");time.sleep(amount/1000)
+                    elif mode=="stallAfterCtrl":
+                        run(xdotool,"keydown","ctrl")
+                        for pid in engines: os.kill(pid,19)
+                        stopped=True
+                        time.sleep(amount/1000);run(xdotool,"key","z");time.sleep(0.03)
+                finally:
+                    if stopped:
+                        for pid in engines: os.kill(pid,18)
+                    if mode=="stallAfterCtrl": run(xdotool,"keyup","ctrl")
+                final=poc.settle(d,f"{fmt}: matrix {mode} {amount}")
+                if final.get("composing")=="true":
+                    run(xdotool,"key","End");final=poc.settle(d,f"{fmt}: matrix 나중 native 확정")
+                records=d.js("return window.__geulTrace")["records"]
+                empties=[r[0] for r in records if r[2]=="dom:compositionend" and r[3]["length"]==0]
+                finals=[r[0] for r in records if r[2]=="dom:input" and r[3]["inputType"]=="insertFromComposition" and r[3]["length"]>0]
+                gap=lambda seq:any(a<seq<b for a in empties for b in finals)
+                in_gap=any(gap(r[0]) and ((r[2]=="dom:keydown" and r[3].get("key")=="mod:KeyZ") or (r[2]=="command:request" and r[3]["id"]=="edit.undo")) for r in records)
+                accepted=any(r[2]=="command:dispatch" and r[3]["id"]=="edit.undo" and r[3]["accepted"] for r in records)
+                delta=int(final["localRevision"])-int(prefix["localRevision"])
+                text=final["paragraphText"];want=prefix["paragraphText"] if accepted else prefix["paragraphText"]+"가"
+                # Safe: exactly the old transaction kept, the new syllable either present once (Undo refused) or undone
+                # after it was final (accepted), never duplicated/lost, revision only forward, composition settled.
+                safe=text==want and delta==(2 if accepted else 1) and final.get("composing")!="true"
+                if not accepted:
+                    run(xdotool,"key","ctrl+z");after=poc.settle(d,f"{fmt}: matrix 나중 명시 Undo")
+                    safe=safe and after["paragraphText"]==prefix["paragraphText"]
+                run(xdotool,"key","ctrl+y");redone=poc.settle(d,f"{fmt}: matrix Redo")
+                safe=safe and redone["paragraphText"]==prefix["paragraphText"]+"가"
+                rows.append({"mode":mode,"amountMs":amount,"windowObserved":in_gap,"acceptedAfterFinal":accepted,"safe":safe,
+                             "revisionDelta":delta,"emptyEnds":len(empties),"finalInserts":len(finals),"order":gap_order(records)})
+                print("[matrix]",fmt,mode,amount,"window" if in_gap else "-","accepted" if accepted else "refused","safe" if safe else "UNSAFE",flush=True)
+                run(xdotool,"key","ctrl+z","ctrl+z");clean=poc.settle(d,f"{fmt}: matrix 정리")
+                if clean["paragraphText"]!=base:raise smoke.Failure("native final-gap matrix cleanup did not restore base")
+        safe=all(r["safe"] for r in rows);observed=any(r["windowObserved"] for r in rows)
+        gate("D2",f"{fmt}: native 순서 행렬({len(rows)}회) 빈 끝~late final 사이 Ctrl+Z",False if not safe else True if observed else None,
+             f"safe={safe}, window observed={observed}",outcome="INCONCLUSIVE" if safe and not observed else None)
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--app", required=True)
@@ -921,6 +1121,7 @@ def main() -> int:
     parser.add_argument("--driver-log", type=Path)
     parser.add_argument("--ime", action="store_true")
     parser.add_argument("--ime-gap", action="store_true")
+    parser.add_argument("--ime-gap-matrix", action="store_true", help="Stage B: native 순서 행렬(지연·포인터·입력기 정지), --cycles 회 반복")
     parser.add_argument("--render", action="store_true")
     parser.add_argument("--failure-safety", action="store_true")
     parser.add_argument("--cells", action="store_true")
@@ -932,6 +1133,8 @@ def main() -> int:
     parser.add_argument("--cycles", type=int, default=5)
     parser.add_argument("--perf-control", action="store_true")
     parser.add_argument("--perf", action="store_true", help="큰 공개 예제 성능만")
+    parser.add_argument("--busy-probe", action="store_true", help="진단 전용: 페이지 main-thread 정지 구간 기록(측정값 교란, 관문 판정에 쓰지 않음)")
+    parser.add_argument("--perf-only", help="성능 표본 하나만(파일 이름) — 문서마다 앱 세션을 따로 띄울 때")
     parser.add_argument("--xdotool", default=shutil.which("xdotool") or "xdotool")
     parser.add_argument("--ibus", default=shutil.which("ibus") or "ibus")
     args = parser.parse_args()
@@ -952,6 +1155,7 @@ def main() -> int:
                     try:
                         smoke.wait_until(d, "return document.querySelector('.document-bar') !== null", timeout=30)
                         native_probe.install(d)
+                        d.busy_probe=args.busy_probe
                         REPORT["attributionRequested"]=args.attribution
                         if args.native_keys:
                             if not os.environ.get("DISPLAY"):
@@ -965,6 +1169,8 @@ def main() -> int:
                             scenario_ime(d, fixtures, args.xdotool, args.ibus)
                         if args.ime_gap:
                             scenario_ime_gap(d,fixtures,args.xdotool,args.ibus)
+                        if args.ime_gap_matrix:
+                            scenario_ime_gap_matrix(d,fixtures,args.xdotool,args.ibus,args.cycles)
                         if args.cells:
                             for fmt in ("hwp", "hwpx"):
                                 scenario_cells(d, fixtures / f"basic-ko.{fmt}", fmt)
@@ -979,6 +1185,7 @@ def main() -> int:
                                 scenario_discard_failure_reload(d,fixtures / f"basic-ko.{fmt}",fmt)
                         if args.perf:
                             for path in (LARGE if args.large_only else [fixtures / "basic-ko.hwp",fixtures / "basic-ko.hwpx",*LARGE]):
+                                if args.perf_only and path.name != args.perf_only: continue
                                 scenario_perf(d, path, scratch,args.perf_control)
                         if args.lifecycle:
                             for path in LARGE:

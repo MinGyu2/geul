@@ -53,7 +53,7 @@ import('/rhwp/rhwp.js').then(async mod => {
         return value;
       } finally {
         if(name==='free' && completed) {p.disposals.push({id:doc.id,liveAtFree:doc.live.size,saves:doc.saves,discards:doc.discards});if(p.disposals.length>50)p.disposals.shift();docs.delete(doc.id);if(active===this) active=null;}
-        p.calls.push({name,ms:performance.now()-start});
+        p.calls.push({name,ms:performance.now()-start,at:start});
         if(p.calls.length>20000) p.calls.splice(0,10000);
       }
     };

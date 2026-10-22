@@ -490,3 +490,106 @@ Native 셀 시험은 이제 본문 편집→Undo를 먼저 수행해 이 재사�
 1. 그룹 시작 지연을 레이어 트리 생성·요약·렌더·frame 대기 단계별로 귀속하고 줄인다.
 2. 고정 엔진 전역 Canvas 캐시에 바이트 예산과 문서 닫기 release API를 추가한다. 이는 upstream 의존 작업이다.
 3. 빈 끝과 늦은 최종 글자 사이에 Ctrl+Z가 끼어드는 native 순서를 재현할 방법을 확보한다.
+
+## T010 후속: 응답성·native IME 경계·렌더러 캐시 (2026-10-22)
+
+증거: `tests/integration/rhwp/evidence/t010-followup/`([README](../../tests/integration/rhwp/evidence/t010-followup/README.md)).
+측정 계약(keydown → 로컬 revision 관측 RAF → RAF 둘)과 기준(그룹 시작 p95 ≤ 50 ms, Undo p95 ≤ 1500 ms)은 바꾸지 않았다.
+환경은 앞 절과 같다(Xvfb·소프트웨어 렌더링·배율 50 %, native xdotool 키, 문서마다 앱 세션 하나).
+
+### 지연 귀속
+
+시험 훅 빌드에서만 켜지는 구간 기록(`rhwp:paint-summary`·`rhwp:paint-draw`·`rhwp:surface-first-draw`)과 표본별 시각(입력 이벤트, 처리 끝,
+revision 관측, 첫 RAF, 끝)을 더했다. 계약 값(keyToFrame)은 그대로 두고 귀속은 따로 적는다.
+
+- **VERIFIED(60쪽 HWPX):** 처음 그리기를 입력이 끊어 아직 그림이 없는 화면 밖 쪽이 "그림 없는 쪽은 바로 그린다" 규칙으로 키 직후
+  한 task에 하나씩 전체 그리기(`renderPageToCanvas` 50~160 ms)됐다. 다음 키의 입력 이벤트가 그 뒤로 밀려 p95 158 ms 늦게 들어왔다
+  (커서는 0쪽, 그린 쪽은 47~59쪽).
+- **VERIFIED(60쪽 HWPX):** 남은 중앙값은 엔진 몫이 크다: 글자 넣기(`insertText`, 다시 조판) p50 27 ms, 커서 쪽 첫 그리기 24 ms
+  (레이어 트리 생성·직렬화 약 8 ms + JS 요약 약 4 ms + 띠 그리기 13 ms), 이어지는 frame 약 40 ms.
+- **VERIFIED:** 기록 끔 대조(capacity 거절 주입)의 지연이 정상 기록과 같다(60쪽 100/120 vs 105/128 ms). 스냅숏은 병목이 아니다.
+- **VERIFIED(작은 문서):** 꼬리(p95 약 75 ms)는 앱 JS가 끝난 뒤(약 12 ms) WebKit main thread가 약 30 ms 멈춘 frame 두 개다.
+  단일 변경 실험에서 Canvas 픽셀·엔진 띠 그리기·레이어 트리 요약·textarea/커서 이동·속성·단추 상태·IPC 하나는 그런 정지를 만들지 않았고,
+  합성 입력으로 앱 경로 전체(모델·React·그리기·확정 IPC)를 돌리면 생겼다. 원인 함수는 **UNVERIFIED**: native 표본 추출기가 필요한데
+  이 환경은 `ptrace_scope=1`이고 `perf`가 없다.
+- **VERIFIED:** 초점 있는 textarea·input 값을 **스크립트로** 바꾸면 길이와 관계없이 약 32 ms 멈춘다(contenteditable·선택만 바꾸기·
+  초점 없는 textarea는 0). native 타자는 그렇지 않았다(중앙 표본에 정지 없음). 그래서 조합 아닌 글자를 beforeinput에서 받는 입력 경로
+  변경을 시도했으나 A/B에서 이득이 없어 **되돌렸다**(T007/T008 입력 계약 그대로).
+- **VERIFIED:** 아무 일도 하지 않는 같은 3-RAF 사슬(타이머 task에서 시작)의 바닥은 작은 문서에서 p50 40, p95 약 50 ms다.
+  측정 계약 자체가 기준과 거의 같은 frame 대기를 포함한다. 기준을 바꾸지는 않았다.
+
+### 고친 것
+
+화면 밖 쪽 다시 그리기 정책 하나(`RhwpSurface.tsx`): 편집 뒤에는 보이는 쪽만 바로 그리고, 화면 밖 쪽은 그림이 없어도 입력이 멈춘 뒤
+(`REST_DELAY_MS`) 그린다. 모든 쪽을 새로 정할 때(처음·배율·DPR·쪽 수·쪽 크기)는 그대로 모두 바로 그린다. 스크롤·크기 변경으로 보이게
+된 쪽은 바로 그리고, 모델 version 검사·작업 취소는 그대로다. 회귀 시험(`repaintScheduling.test.tsx` "처음 그리기를 입력이 끊으면")은
+고치기 전 정책에서 실패(2·3·4쪽을 바로 그림)하고 고친 뒤 통과한다.
+
+| 문서 | 그룹 시작 p50/p95 처음→최종(ms) | 이어 쓰기 p95 | Undo p95 | 입력 이벤트 지연 p95 |
+|---|---:|---:|---:|---:|
+| 작은 HWP | 28/78 → 25/75 | 41 → 32 | 114 → 89 | 2 → 5 |
+| 작은 HWPX | 26/83 → 26/74 | 38 → 41 | 148 → 122 | 2 → 2 |
+| 24쪽 HWP | 57/124 → 55/68 | 63 → 162 | 127 → 128 | 93 → 2 |
+| 60쪽 HWPX | 107/446 → 105/128 | 155 → 124 | 199 → 196 | 158 → 30 |
+
+각 30표본(Undo 25), timeout 0. 한 번의 관측이며 실행 사이 변동이 크다(같은 소스의 60쪽 p95가 233~457 ms로 관측됨). 24쪽 이어 쓰기 p95는
+나빠 보이지만 HEAD 동작 빌드의 A/B 실행에서도 123 ms였고 기록 끔 대조도 159 ms라 이 변경에 귀속하지 않는다(**INFERRED**).
+**FAIL:** 그룹 시작 50 ms를 모든 문서에서 넘는다. Undo 1500 ms는 통과한다.
+
+### native IME 순서(Stage B)
+
+실제 키·클릭만 쓰는 행렬(`undo_native.py --ime-gap-matrix`): 조합 지연 5가지, Ctrl 먼저 누르기 3가지, 클릭 2가지, 이 화면의
+`ibus-engine-hangul` 프로세스를 15~120 ms 멈추기 3가지, Ctrl 뒤 멈추기 3가지, 클릭+멈추기 2가지 × 2회 × HWP/HWPX = 72회.
+**VERIFIED:** 72회 모두 순서가 같다: 빈 `compositionend` → 기다림 → `insertFromComposition` → 끝 → Ctrl keydown → Z keydown →
+Undo 수락(revision +2). 모두 안전(글자 중복·손실 없음, 앞 거래 보존, 뒤 Redo 복원). 목표 순서(빈 끝과 늦은 최종 글자 사이의 Ctrl+Z)는
+0/72(앞선 10회 포함 0/82). **INFERRED:** 이 판에서는 확정을 일으킨 수식 키의 DOM keydown이 입력기 확정 뒤에야 전달된다. 다른 플랫폼·
+입력기·판에서 그 순서가 생기는지는 **UNVERIFIED**이며 불가능하다고 보지 않는다. 코드 변경 없음(결함 재현 없음).
+
+### 렌더러 캐시(Stage C)
+
+고정 `web_canvas.rs`: `IMAGE_CACHE`(`HtmlImageElement`)와 `DECODED_CANVAS_CACHE`(디코드한 detached Canvas, 디코드 실패는 `None`
+음성 항목)는 WASM 스레드 전역이다. 키는 그림 바이트의 FNV-1a 64 해시 하나(길이·충돌 확인 없음)라 여러 문서가 같은 항목을 함께 쓴다.
+정리는 항목이 200개를 넘을 때 모두 지우는 것뿐이고 바이트 예산·문서 해제 API가 없다. 문서 닫기에서 지우면 다른 열린 문서의 항목도
+지우게 되므로 문서별 해제 대신 **전역 바이트 예산**을 택했다.
+
+별도 upstream 패치(`evidence/t010-followup/upstream-rhwp-bounded-image-cache.patch`, submodule 밖 clone, **통합하지 않음**):
+`surface_cache.rs`의 LRU(바이트 계상: Canvas `너비×높이×4`, 음성 항목 고정 64 B·개수 한도), 내보낼 때 Canvas 크기 0으로 즉시 해제,
+예산 1/4을 넘는 그림은 보관하지 않고 그린 뒤 해제, 같은 키 교체 시 이전 값 해제, 키에 길이와 표본 해시 추가, 공개 API
+`rendererCacheStats()`·`trimRendererCaches(maxBytes)`·`setRendererCacheBudget(...)`. 기본 예산 Canvas 256 MiB·이미지 64 MiB·각 256개.
+
+**VERIFIED(headless Chrome, 같은 WASM API, 픽셀 추정):** 이미지가 많은 공개 예제 5개를 3회씩 열고 모두 그리고 닫았을 때 고정 엔진은
+detached Canvas 96개·477.6 Mpx(RGBA 약 1.8 GiB)를 계속 붙잡았다. 패치는 12~13개·약 66 Mpx(≈ 예산)에 머물렀고, 두 문서를 함께 연 뒤
+하나를 닫고 `trimRendererCaches(0)`를 불러도 남은 문서의 모든 쪽 픽셀이 같았다(보존 0). 8 MiB 예산(모든 그림이 한도 초과)에서도 픽셀이
+같았다. 단점: 문서 하나의 작업 집합(약 380 MB)이 예산보다 크면 전체 쪽 그리기에서 LRU가 적중하지 못해(적중 0) 다시 그리기가 0.13 s →
+2.7 s가 된다. 통합 전에 예산 정책(예: 렌더 예산과 연동)이나 스캔 내성 정책이 필요하다. 패치의 독립 단위 시험 7/7.
+
+**VERIFIED(출하 앱, 고정 엔진):** 30사이클 수명주기에서 문서 핸들·스냅숏·쪽 Canvas는 모두 정리됐지만 전역 캐시의 detached Canvas
+21~23개(약 101~103 Mpx)가 닫은 뒤에도 남았다. WASM 메모리 high-water 141.9 MiB, RSS는 편집 사이클마다 늘다 자연히 줄었다(누수로 단정하지
+않음). **INCONCLUSIVE:** 출하 앱의 메모리 관문 — 패치는 통합되지 않았고 submodule 판 변경은 이 작업의 권한 밖이다.
+
+### 측정기 결함 수정
+
+`rhwp_poc.click_cell`: 앞 편집의 늦은 화면 변화(SETTLE_MS 500 ms 뒤 판 글자)가 쪽을 약 6.5 px 옮겨, 미리 잰 자리의 클릭이 아래 행 셀에
+들어갔다(HEAD 동작 빌드에서도 3회 중 2회). 쪽 Canvas 사각형이 0.7 s 그대로일 때 재고 바로 누르게 고친 뒤 두 빌드 모두 4/4회 6/6.
+기대값은 바꾸지 않았다.
+
+### 활성화 관문(최종 시험 빌드)
+
+| 관문 | 판정 | 근거 |
+|---|---|---|
+| D1 그리기·표 셀·여러 구역 | **PASS** | native 33/33(D1 31 + D5 2), 셀 6/6, 새 다시 그리기 회귀 시험 |
+| D2 native ibus-hangul | **INCONCLUSIVE** | 25/25, T007 7/7, T008 7/7, 순서 행렬 72/72 안전. 목표 순서는 native에서 한 번도 관측되지 않음 |
+| D3 저장 보존 | **PASS** | 실제 `service::save` Undo/Redo 13/13(위험 출력 게시 0, 원본 SHA 유지), T009 strict 23건 불일치 0 |
+| D4 성능·메모리 | **FAIL** | 그룹 시작 p95 75/74/68/128 ms > 50. 메모리: 출하 엔진의 전역 캐시 보존, 패치 미통합 |
+| D5 실패 안전성 | **PASS** | 폐기 예외 주입 native 2/2(render 실행 안), 기존 단위 시험 |
+
+일반 빌드(시험 플래그 없음): 번들 표지 0, HWP·HWPX `edit.undo`·`edit.redo` 비활성("이 문서 형식에서 지원하지 않음"), Ctrl+Z·도구 막대
+모두 문서를 바꾸지 않음, 시험 훅 노출 없음, e2e 62/62(건너뜀 0, Xvfb `-dpi 96`).
+
+**결정: production 활성화 NO-GO** (D2 INCONCLUSIVE, D4 FAIL). 다음:
+1. 60쪽 HWPX의 엔진 몫(`insertText` 다시 조판 27 ms, 레이어 트리 8 ms + 띠 그리기 13 ms)은 고정 rhwp 안이다: 바뀐 영역(damage)을
+   알려 주는 엔진 API가 있으면 앱의 레이어 트리 요약이 필요 없다. 시험: 같은 `undo_native.py --perf --native-keys` 표본.
+2. 작은 문서 frame 꼬리의 원인 함수: native 표본 추출기(perf/sysprof, ptrace 허용 환경)로 같은 실행을 잰다.
+3. 캐시 패치의 예산 정책을 정하고 upstream에 제안한 뒤, 판 갱신 승인 후 통합해 `lifecycle` 시나리오로 출하 앱의 보존 Canvas가 예산
+   이하인지 확인한다.
+4. D2: 다른 플랫폼·입력기에서 같은 행렬을 돌린다. 이 판에서 순서가 생기지 않는다는 것만으로 PASS로 올리지 않는다.

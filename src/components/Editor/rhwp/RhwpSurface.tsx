@@ -52,6 +52,7 @@ function useSessionUpdates(session: RhwpEditorSession) {
 
 export function RhwpSurface({ session, zoom, imeContext }: RhwpSurfaceProps) {
   const { t } = useTranslation();
+  trace("rhwp:surface-render");
   useSessionUpdates(session);
   const scale = zoom / 100;
   const ratio = window.devicePixelRatio || 1;
@@ -88,6 +89,7 @@ export function RhwpSurface({ session, zoom, imeContext }: RhwpSurfaceProps) {
 
   // ---- 그리기 ----
   useLayoutEffect(() => {
+    trace("rhwp:surface-effect");
     const last = rendered.current;
     const sizes = session.pages.map((size) => `${size.width}x${size.height}`).join(",");
     const all = last.scale !== scale || last.ratio !== ratio || last.pages !== session.pages.length || last.sizes !== sizes;
@@ -116,7 +118,9 @@ export function RhwpSurface({ session, zoom, imeContext }: RhwpSurfaceProps) {
       const canvas = canvases.current.get(page);
       if (canvas) session.renderPage(page, canvas, scale * ratio);
     };
+    const drawStarted = import.meta.env.VITE_GEUL_TEST_HOOKS === "1" ? performance.now() : 0;
     draw(first);
+    trace("rhwp:surface-first-draw", () => ({ page: first, ms: performance.now() - drawStarted }));
     drawStale.current = draw;
     const started = inputAt.current;
     inputAt.current = null;
@@ -126,16 +130,15 @@ export function RhwpSurface({ session, zoom, imeContext }: RhwpSurfaceProps) {
     // 커서 쪽에서 가까운 쪽부터, 한 task에 한 쪽씩 그린다(8차: 30쪽을 한 task에 그리면 160 ms 넘게 입력을 막았다).
     const rest = session.pages.map((_, page) => page).filter((page) => page !== first)
       .sort((a, b) => Math.abs(a - first) - Math.abs(b - first));
-    // 그림이 없는 쪽(새 쪽·놓은 bitmap)과 화면에 보이는 쪽은 바로(다음 task부터) 그린다. 이 배율의 그림이 이미 있고 화면 밖인
-    // 쪽은 입력 중이면 입력이 멈춘 뒤(REST_DELAY_MS) 그린다: 키마다 모든 쪽을 다시 그리면 그만큼 입력이 밀린다. 기다리는 쪽이
-    // 스크롤로 보이게 되면 그때 바로 그린다(아래 scroll 처리). 새 변경이 오면 이 작업을 취소하고 다시 정하므로 마지막 모델로
-    // 그리며, 옛 작업은 version 검사로 새 모델을 덮지 않는다.
+    // 모든 쪽을 새로 정할 때(처음·배율·DPR·쪽 수·쪽 크기)는 모든 쪽을 바로(다음 task부터) 그린다. 편집 뒤에는 화면에 보이는 쪽만
+    // 바로 그리고, 화면 밖 쪽은 입력이 멈춘 뒤(REST_DELAY_MS) 그린다: 키마다 모든 쪽을 다시 그리면 그만큼 입력이 밀린다. 아직
+    // 그림이 없는 화면 밖 쪽(처음 그리기를 입력이 끊은 쪽)도 같다(T010 실측 60쪽 HWPX: 키마다 그런 쪽을 하나씩 전체 그리기로
+    // 50~160 ms 그려 다음 키가 120~230 ms 늦게 들어왔다). 기다리는 쪽이 스크롤로 보이게 되면 그때 바로 그린다(아래 scroll 처리).
+    // 새 변경이 오면 이 작업을 취소하고 다시 정하므로 마지막 모델로 그리며, 옛 작업은 version 검사로 새 모델을 덮지 않는다.
     const visible = visiblePages();
     // Undo/Redo·명령도 모델 변경이다. DOM input 시각이 없다는 이유로 화면 밖 모든 쪽을 즉시 그리면
-    // 복원 직후 입력을 막는다. 이미 그린 화면 밖 쪽은 같은 버전 검사·scroll/resize 갱신 아래 쉬는 시간에 그린다.
-    const later = !all
-      ? rest.filter((page) => canvases.current.get(page)?.width && !visible.has(page))
-      : [];
+    // 복원 직후 입력을 막는다. 화면 밖 쪽은 같은 버전 검사·scroll/resize 갱신 아래 쉬는 시간에 그린다.
+    const later = !all ? rest.filter((page) => !visible.has(page)) : [];
     const now = rest.filter((page) => !later.includes(page));
     stalePages.current = new Set(rest);
     const queue = [...now.map((page) => [page, 0] as const), ...later.map((page, index) => [page, index === 0 ? REST_DELAY_MS : 0] as const)];

@@ -332,6 +332,24 @@ describe("여러 쪽 그리기 순서", () => {
     expect(late.every((d) => d.text === "abc가나다")).toBe(true);
   });
 
+  it("처음 그리기를 입력이 끊으면: 아직 그림이 없는 화면 밖 쪽도 바로 그리지 않고 쉬는 시간에, 보이면 바로 그린다", async () => {
+    const view = { top: 0, bottom: 1500 }; // 0·1쪽이 보임
+    layout(view);
+    const t = await mounted({ pages: 5 });
+    expect(pagesDrawn(t.doc.draws)).toEqual([0]); // 나머지는 아직 그림이 없다(다음 task부터)
+    t.doc.draws = [];
+    t.type("a"); // 처음 그리기 작업을 취소하고 다시 정한다
+    await wait(30);
+    // 보이는 쪽만 바로. 그림이 없는 화면 밖 쪽(2·3·4)을 키 직후 전체 그리기로 그리면 다음 키가 그만큼 늦는다(T010 실측).
+    expect(new Set(pagesDrawn(t.doc.draws))).toEqual(new Set([0, 1]));
+    view.top = 2000; view.bottom = 3500; // 2·3쪽이 보이게 됨
+    act(() => void t.scroller.dispatchEvent(new Event("scroll")));
+    expect(new Set(pagesDrawn(t.doc.draws))).toEqual(new Set([0, 1, 2, 3]));
+    for (let i = 0; i < 100 && !pagesDrawn(t.doc.draws).includes(4); i++) await wait(10);
+    const latest = (page: number) => t.doc.draws.filter((d) => d.page === page).at(-1)?.text;
+    expect([0, 1, 2, 3, 4].map(latest)).toEqual(Array(5).fill("a가나다")); // 화면 밖 쪽도 결국 마지막 모델로
+  });
+
   it("Undo/Redo도 보이는 쪽부터 그리고, 화면 밖 작업은 마지막 모델로 한 번만 수행", async () => {
     const view = { top: 0, bottom: 1500 };
     layout(view);

@@ -595,8 +595,12 @@ export class RhwpEditorSession implements DocumentCommandTarget {
     if (!this.prepareRendering(scale) || !this.doc) return false;
     const doc = this.doc;
     try {
+      const started = import.meta.env.VITE_GEUL_TEST_HOOKS === "1" ? performance.now() : 0;
       const painted = this.paintedSummary(doc, page);
+      trace("rhwp:paint-summary", () => ({ page, ms: performance.now() - started }));
+      const drawStarted = import.meta.env.VITE_GEUL_TEST_HOOKS === "1" ? performance.now() : 0;
       if (!this.repaintInPlace(doc, page, canvas, scale, painted)) doc.renderPageToCanvas(page, canvas, scale);
+      trace("rhwp:paint-draw", () => ({ page, ms: performance.now() - drawStarted }));
       this.drawnAt.set(canvas, { page, scale, painted });
       this.renderCanvases.add(canvas);
       if (page === 0 && this.firstPaintMs === null) {

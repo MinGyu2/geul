@@ -1,0 +1,1692 @@
+{
+ "environment": "headless Google Chrome 155 (not WebKitGTK), same rhwp WASM API; 5 public image-heavy samples (external/rhwp/samples/rnote, 23-24 pages, ~11-12 MB); scale 0.5; 3 open/render-all/close cycles per document",
+ "measurement": "retained engine canvases found through the WASM externref table; pixels are width*height of live canvases (RGBA estimate = x4); not a direct browser allocation measurement",
+ "pinned": {
+  "build": "pinned",
+  "ok": true,
+  "totalMs": 16668,
+  "rows": [
+   {
+    "cycle": 0,
+    "doc": 0,
+    "pages": 24,
+    "renderMs": 3038,
+    "canvases": 21,
+    "liveCanvases": 21,
+    "canvasPixels": 100819044,
+    "images": 0,
+    "imagePixels": 0,
+    "cache": null
+   },
+   {
+    "cycle": 0,
+    "doc": 1,
+    "pages": 23,
+    "renderMs": 2516,
+    "canvases": 39,
+    "liveCanvases": 39,
+    "canvasPixels": 191664458,
+    "images": 0,
+    "imagePixels": 0,
+    "cache": null
+   },
+   {
+    "cycle": 0,
+    "doc": 2,
+    "pages": 23,
+    "renderMs": 2593,
+    "canvases": 58,
+    "liveCanvases": 58,
+    "canvasPixels": 287583400,
+    "images": 0,
+    "imagePixels": 0,
+    "cache": null
+   },
+   {
+    "cycle": 0,
+    "doc": 3,
+    "pages": 23,
+    "renderMs": 2587,
+    "canvases": 77,
+    "liveCanvases": 77,
+    "canvasPixels": 382578296,
+    "images": 0,
+    "imagePixels": 0,
+    "cache": null
+   },
+   {
+    "cycle": 0,
+    "doc": 4,
+    "pages": 23,
+    "renderMs": 2759,
+    "canvases": 96,
+    "liveCanvases": 96,
+    "canvasPixels": 477573192,
+    "images": 0,
+    "imagePixels": 0,
+    "cache": null
+   },
+   {
+    "cycle": 1,
+    "doc": 0,
+    "pages": 24,
+    "renderMs": 136,
+    "canvases": 96,
+    "liveCanvases": 96,
+    "canvasPixels": 477573192,
+    "images": 0,
+    "imagePixels": 0,
+    "cache": null
+   },
+   {
+    "cycle": 1,
+    "doc": 1,
+    "pages": 23,
+    "renderMs": 123,
+    "canvases": 96,
+    "liveCanvases": 96,
+    "canvasPixels": 477573192,
+    "images": 0,
+    "imagePixels": 0,
+    "cache": null
+   },
+   {
+    "cycle": 1,
+    "doc": 2,
+    "pages": 23,
+    "renderMs": 129,
+    "canvases": 96,
+    "liveCanvases": 96,
+    "canvasPixels": 477573192,
+    "images": 0,
+    "imagePixels": 0,
+    "cache": null
+   },
+   {
+    "cycle": 1,
+    "doc": 3,
+    "pages": 23,
+    "renderMs": 137,
+    "canvases": 96,
+    "liveCanvases": 96,
+    "canvasPixels": 477573192,
+    "images": 0,
+    "imagePixels": 0,
+    "cache": null
+   },
+   {
+    "cycle": 1,
+    "doc": 4,
+    "pages": 23,
+    "renderMs": 131,
+    "canvases": 96,
+    "liveCanvases": 96,
+    "canvasPixels": 477573192,
+    "images": 0,
+    "imagePixels": 0,
+    "cache": null
+   },
+   {
+    "cycle": 2,
+    "doc": 0,
+    "pages": 24,
+    "renderMs": 140,
+    "canvases": 96,
+    "liveCanvases": 96,
+    "canvasPixels": 477573192,
+    "images": 0,
+    "imagePixels": 0,
+    "cache": null
+   },
+   {
+    "cycle": 2,
+    "doc": 1,
+    "pages": 23,
+    "renderMs": 124,
+    "canvases": 96,
+    "liveCanvases": 96,
+    "canvasPixels": 477573192,
+    "images": 0,
+    "imagePixels": 0,
+    "cache": null
+   },
+   {
+    "cycle": 2,
+    "doc": 2,
+    "pages": 23,
+    "renderMs": 132,
+    "canvases": 96,
+    "liveCanvases": 96,
+    "canvasPixels": 477573192,
+    "images": 0,
+    "imagePixels": 0,
+    "cache": null
+   },
+   {
+    "cycle": 2,
+    "doc": 3,
+    "pages": 23,
+    "renderMs": 131,
+    "canvases": 96,
+    "liveCanvases": 96,
+    "canvasPixels": 477573192,
+    "images": 0,
+    "imagePixels": 0,
+    "cache": null
+   },
+   {
+    "cycle": 2,
+    "doc": 4,
+    "pages": 23,
+    "renderMs": 134,
+    "canvases": 96,
+    "liveCanvases": 96,
+    "canvasPixels": 477573192,
+    "images": 0,
+    "imagePixels": 0,
+    "cache": null
+   }
+  ],
+  "shared": {
+   "samePixels": true,
+   "pages": 24,
+   "trimmed": false,
+   "afterClose": {
+    "canvases": 96,
+    "liveCanvases": 96,
+    "canvasPixels": 477573192,
+    "images": 0,
+    "imagePixels": 0,
+    "cache": null
+   },
+   "afterRerender": {
+    "canvases": 96,
+    "liveCanvases": 96,
+    "canvasPixels": 477573192,
+    "images": 0,
+    "imagePixels": 0,
+    "cache": null
+   }
+  },
+  "pressure": null,
+  "end": {
+   "canvases": 96,
+   "liveCanvases": 96,
+   "canvasPixels": 477573192,
+   "images": 0,
+   "imagePixels": 0,
+   "cache": null
+  }
+ },
+ "patched256MiB": {
+  "build": "patched",
+  "ok": true,
+  "totalMs": 60163,
+  "rows": [
+   {
+    "cycle": 0,
+    "doc": 0,
+    "pages": 24,
+    "renderMs": 3060,
+    "canvases": 13,
+    "liveCanvases": 13,
+    "canvasPixels": 66721280,
+    "images": 0,
+    "imagePixels": 0,
+    "cache": {
+     "decoded": {
+      "bytes": 266885120,
+      "entries": 13,
+      "evictions": 8,
+      "hits": 0,
+      "maxBytes": 268435456,
+      "maxEntries": 256,
+      "maxEntryBytes": 67108864,
+      "misses": 21,
+      "negativeEntries": 0,
+      "oversize": 0
+     },
+     "images": {
+      "bytes": 0,
+      "entries": 0,
+      "evictions": 0,
+      "hits": 0,
+      "maxBytes": 67108864,
+      "maxEntries": 256,
+      "maxEntryBytes": 16777216,
+      "misses": 0,
+      "negativeEntries": 0,
+      "oversize": 0
+     }
+    }
+   },
+   {
+    "cycle": 0,
+    "doc": 1,
+    "pages": 23,
+    "renderMs": 2803,
+    "canvases": 12,
+    "liveCanvases": 12,
+    "canvasPixels": 65123657,
+    "images": 0,
+    "imagePixels": 0,
+    "cache": {
+     "decoded": {
+      "bytes": 260494628,
+      "entries": 12,
+      "evictions": 29,
+      "hits": 0,
+      "maxBytes": 268435456,
+      "maxEntries": 256,
+      "maxEntryBytes": 67108864,
+      "misses": 41,
+      "negativeEntries": 0,
+      "oversize": 0
+     },
+     "images": {
+      "bytes": 0,
+      "entries": 0,
+      "evictions": 0,
+      "hits": 0,
+      "maxBytes": 67108864,
+      "maxEntries": 256,
+      "maxEntryBytes": 16777216,
+      "misses": 0,
+      "negativeEntries": 0,
+      "oversize": 0
+     }
+    }
+   },
+   {
+    "cycle": 0,
+    "doc": 2,
+    "pages": 23,
+    "renderMs": 2780,
+    "canvases": 12,
+    "liveCanvases": 12,
+    "canvasPixels": 65996341,
+    "images": 0,
+    "imagePixels": 0,
+    "cache": {
+     "decoded": {
+      "bytes": 263985364,
+      "entries": 12,
+      "evictions": 49,
+      "hits": 0,
+      "maxBytes": 268435456,
+      "maxEntries": 256,
+      "maxEntryBytes": 67108864,
+      "misses": 61,
+      "negativeEntries": 0,
+      "oversize": 0
+     },
+     "images": {
+      "bytes": 0,
+      "entries": 0,
+      "evictions": 0,
+      "hits": 0,
+      "maxBytes": 67108864,
+      "maxEntries": 256,
+      "maxEntryBytes": 16777216,
+      "misses": 0,
+      "negativeEntries": 0,
+      "oversize": 0
+     }
+    }
+   },
+   {
+    "cycle": 0,
+    "doc": 3,
+    "pages": 23,
+    "renderMs": 2775,
+    "canvases": 12,
+    "liveCanvases": 12,
+    "canvasPixels": 65097976,
+    "images": 0,
+    "imagePixels": 0,
+    "cache": {
+     "decoded": {
+      "bytes": 260391904,
+      "entries": 12,
+      "evictions": 69,
+      "hits": 0,
+      "maxBytes": 268435456,
+      "maxEntries": 256,
+      "maxEntryBytes": 67108864,
+      "misses": 81,
+      "negativeEntries": 0,
+      "oversize": 0
+     },
+     "images": {
+      "bytes": 0,
+      "entries": 0,
+      "evictions": 0,
+      "hits": 0,
+      "maxBytes": 67108864,
+      "maxEntries": 256,
+      "maxEntryBytes": 16777216,
+      "misses": 0,
+      "negativeEntries": 0,
+      "oversize": 0
+     }
+    }
+   },
+   {
+    "cycle": 0,
+    "doc": 4,
+    "pages": 23,
+    "renderMs": 2823,
+    "canvases": 12,
+    "liveCanvases": 12,
+    "canvasPixels": 65097976,
+    "images": 0,
+    "imagePixels": 0,
+    "cache": {
+     "decoded": {
+      "bytes": 260391904,
+      "entries": 12,
+      "evictions": 89,
+      "hits": 0,
+      "maxBytes": 268435456,
+      "maxEntries": 256,
+      "maxEntryBytes": 67108864,
+      "misses": 101,
+      "negativeEntries": 0,
+      "oversize": 0
+     },
+     "images": {
+      "bytes": 0,
+      "entries": 0,
+      "evictions": 0,
+      "hits": 0,
+      "maxBytes": 67108864,
+      "maxEntries": 256,
+      "maxEntryBytes": 16777216,
+      "misses": 0,
+      "negativeEntries": 0,
+      "oversize": 0
+     }
+    }
+   },
+   {
+    "cycle": 1,
+    "doc": 0,
+    "pages": 24,
+    "renderMs": 2791,
+    "canvases": 13,
+    "liveCanvases": 13,
+    "canvasPixels": 66721280,
+    "images": 0,
+    "imagePixels": 0,
+    "cache": {
+     "decoded": {
+      "bytes": 266885120,
+      "entries": 13,
+      "evictions": 109,
+      "hits": 0,
+      "maxBytes": 268435456,
+      "maxEntries": 256,
+      "maxEntryBytes": 67108864,
+      "misses": 122,
+      "negativeEntries": 0,
+      "oversize": 0
+     },
+     "images": {
+      "bytes": 0,
+      "entries": 0,
+      "evictions": 0,
+      "hits": 0,
+      "maxBytes": 67108864,
+      "maxEntries": 256,
+      "maxEntryBytes": 16777216,
+      "misses": 0,
+      "negativeEntries": 0,
+      "oversize": 0
+     }
+    }
+   },
+   {
+    "cycle": 1,
+    "doc": 1,
+    "pages": 23,
+    "renderMs": 2756,
+    "canvases": 12,
+    "liveCanvases": 12,
+    "canvasPixels": 65123657,
+    "images": 0,
+    "imagePixels": 0,
+    "cache": {
+     "decoded": {
+      "bytes": 260494628,
+      "entries": 12,
+      "evictions": 130,
+      "hits": 0,
+      "maxBytes": 268435456,
+      "maxEntries": 256,
+      "maxEntryBytes": 67108864,
+      "misses": 142,
+      "negativeEntries": 0,
+      "oversize": 0
+     },
+     "images": {
+      "bytes": 0,
+      "entries": 0,
+      "evictions": 0,
+      "hits": 0,
+      "maxBytes": 67108864,
+      "maxEntries": 256,
+      "maxEntryBytes": 16777216,
+      "misses": 0,
+      "negativeEntries": 0,
+      "oversize": 0
+     }
+    }
+   },
+   {
+    "cycle": 1,
+    "doc": 2,
+    "pages": 23,
+    "renderMs": 2781,
+    "canvases": 12,
+    "liveCanvases": 12,
+    "canvasPixels": 65996341,
+    "images": 0,
+    "imagePixels": 0,
+    "cache": {
+     "decoded": {
+      "bytes": 263985364,
+      "entries": 12,
+      "evictions": 150,
+      "hits": 0,
+      "maxBytes": 268435456,
+      "maxEntries": 256,
+      "maxEntryBytes": 67108864,
+      "misses": 162,
+      "negativeEntries": 0,
+      "oversize": 0
+     },
+     "images": {
+      "bytes": 0,
+      "entries": 0,
+      "evictions": 0,
+      "hits": 0,
+      "maxBytes": 67108864,
+      "maxEntries": 256,
+      "maxEntryBytes": 16777216,
+      "misses": 0,
+      "negativeEntries": 0,
+      "oversize": 0
+     }
+    }
+   },
+   {
+    "cycle": 1,
+    "doc": 3,
+    "pages": 23,
+    "renderMs": 2788,
+    "canvases": 12,
+    "liveCanvases": 12,
+    "canvasPixels": 65097976,
+    "images": 0,
+    "imagePixels": 0,
+    "cache": {
+     "decoded": {
+      "bytes": 260391904,
+      "entries": 12,
+      "evictions": 170,
+      "hits": 0,
+      "maxBytes": 268435456,
+      "maxEntries": 256,
+      "maxEntryBytes": 67108864,
+      "misses": 182,
+      "negativeEntries": 0,
+      "oversize": 0
+     },
+     "images": {
+      "bytes": 0,
+      "entries": 0,
+      "evictions": 0,
+      "hits": 0,
+      "maxBytes": 67108864,
+      "maxEntries": 256,
+      "maxEntryBytes": 16777216,
+      "misses": 0,
+      "negativeEntries": 0,
+      "oversize": 0
+     }
+    }
+   },
+   {
+    "cycle": 1,
+    "doc": 4,
+    "pages": 23,
+    "renderMs": 2773,
+    "canvases": 12,
+    "liveCanvases": 12,
+    "canvasPixels": 65097976,
+    "images": 0,
+    "imagePixels": 0,
+    "cache": {
+     "decoded": {
+      "bytes": 260391904,
+      "entries": 12,
+      "evictions": 190,
+      "hits": 0,
+      "maxBytes": 268435456,
+      "maxEntries": 256,
+      "maxEntryBytes": 67108864,
+      "misses": 202,
+      "negativeEntries": 0,
+      "oversize": 0
+     },
+     "images": {
+      "bytes": 0,
+      "entries": 0,
+      "evictions": 0,
+      "hits": 0,
+      "maxBytes": 67108864,
+      "maxEntries": 256,
+      "maxEntryBytes": 16777216,
+      "misses": 0,
+      "negativeEntries": 0,
+      "oversize": 0
+     }
+    }
+   },
+   {
+    "cycle": 2,
+    "doc": 0,
+    "pages": 24,
+    "renderMs": 2770,
+    "canvases": 13,
+    "liveCanvases": 13,
+    "canvasPixels": 66721280,
+    "images": 0,
+    "imagePixels": 0,
+    "cache": {
+     "decoded": {
+      "bytes": 266885120,
+      "entries": 13,
+      "evictions": 210,
+      "hits": 0,
+      "maxBytes": 268435456,
+      "maxEntries": 256,
+      "maxEntryBytes": 67108864,
+      "misses": 223,
+      "negativeEntries": 0,
+      "oversize": 0
+     },
+     "images": {
+      "bytes": 0,
+      "entries": 0,
+      "evictions": 0,
+      "hits": 0,
+      "maxBytes": 67108864,
+      "maxEntries": 256,
+      "maxEntryBytes": 16777216,
+      "misses": 0,
+      "negativeEntries": 0,
+      "oversize": 0
+     }
+    }
+   },
+   {
+    "cycle": 2,
+    "doc": 1,
+    "pages": 23,
+    "renderMs": 2741,
+    "canvases": 12,
+    "liveCanvases": 12,
+    "canvasPixels": 65123657,
+    "images": 0,
+    "imagePixels": 0,
+    "cache": {
+     "decoded": {
+      "bytes": 260494628,
+      "entries": 12,
+      "evictions": 231,
+      "hits": 0,
+      "maxBytes": 268435456,
+      "maxEntries": 256,
+      "maxEntryBytes": 67108864,
+      "misses": 243,
+      "negativeEntries": 0,
+      "oversize": 0
+     },
+     "images": {
+      "bytes": 0,
+      "entries": 0,
+      "evictions": 0,
+      "hits": 0,
+      "maxBytes": 67108864,
+      "maxEntries": 256,
+      "maxEntryBytes": 16777216,
+      "misses": 0,
+      "negativeEntries": 0,
+      "oversize": 0
+     }
+    }
+   },
+   {
+    "cycle": 2,
+    "doc": 2,
+    "pages": 23,
+    "renderMs": 2757,
+    "canvases": 12,
+    "liveCanvases": 12,
+    "canvasPixels": 65996341,
+    "images": 0,
+    "imagePixels": 0,
+    "cache": {
+     "decoded": {
+      "bytes": 263985364,
+      "entries": 12,
+      "evictions": 251,
+      "hits": 0,
+      "maxBytes": 268435456,
+      "maxEntries": 256,
+      "maxEntryBytes": 67108864,
+      "misses": 263,
+      "negativeEntries": 0,
+      "oversize": 0
+     },
+     "images": {
+      "bytes": 0,
+      "entries": 0,
+      "evictions": 0,
+      "hits": 0,
+      "maxBytes": 67108864,
+      "maxEntries": 256,
+      "maxEntryBytes": 16777216,
+      "misses": 0,
+      "negativeEntries": 0,
+      "oversize": 0
+     }
+    }
+   },
+   {
+    "cycle": 2,
+    "doc": 3,
+    "pages": 23,
+    "renderMs": 2780,
+    "canvases": 12,
+    "liveCanvases": 12,
+    "canvasPixels": 65097976,
+    "images": 0,
+    "imagePixels": 0,
+    "cache": {
+     "decoded": {
+      "bytes": 260391904,
+      "entries": 12,
+      "evictions": 271,
+      "hits": 0,
+      "maxBytes": 268435456,
+      "maxEntries": 256,
+      "maxEntryBytes": 67108864,
+      "misses": 283,
+      "negativeEntries": 0,
+      "oversize": 0
+     },
+     "images": {
+      "bytes": 0,
+      "entries": 0,
+      "evictions": 0,
+      "hits": 0,
+      "maxBytes": 67108864,
+      "maxEntries": 256,
+      "maxEntryBytes": 16777216,
+      "misses": 0,
+      "negativeEntries": 0,
+      "oversize": 0
+     }
+    }
+   },
+   {
+    "cycle": 2,
+    "doc": 4,
+    "pages": 23,
+    "renderMs": 2765,
+    "canvases": 12,
+    "liveCanvases": 12,
+    "canvasPixels": 65097976,
+    "images": 0,
+    "imagePixels": 0,
+    "cache": {
+     "decoded": {
+      "bytes": 260391904,
+      "entries": 12,
+      "evictions": 291,
+      "hits": 0,
+      "maxBytes": 268435456,
+      "maxEntries": 256,
+      "maxEntryBytes": 67108864,
+      "misses": 303,
+      "negativeEntries": 0,
+      "oversize": 0
+     },
+     "images": {
+      "bytes": 0,
+      "entries": 0,
+      "evictions": 0,
+      "hits": 0,
+      "maxBytes": 67108864,
+      "maxEntries": 256,
+      "maxEntryBytes": 16777216,
+      "misses": 0,
+      "negativeEntries": 0,
+      "oversize": 0
+     }
+    }
+   }
+  ],
+  "shared": {
+   "samePixels": true,
+   "pages": 24,
+   "trimmed": false,
+   "afterClose": {
+    "canvases": 12,
+    "liveCanvases": 12,
+    "canvasPixels": 65123657,
+    "images": 0,
+    "imagePixels": 0,
+    "cache": {
+     "decoded": {
+      "bytes": 260494628,
+      "entries": 12,
+      "evictions": 332,
+      "hits": 0,
+      "maxBytes": 268435456,
+      "maxEntries": 256,
+      "maxEntryBytes": 67108864,
+      "misses": 344,
+      "negativeEntries": 0,
+      "oversize": 0
+     },
+     "images": {
+      "bytes": 0,
+      "entries": 0,
+      "evictions": 0,
+      "hits": 0,
+      "maxBytes": 67108864,
+      "maxEntries": 256,
+      "maxEntryBytes": 16777216,
+      "misses": 0,
+      "negativeEntries": 0,
+      "oversize": 0
+     }
+    }
+   },
+   "afterRerender": {
+    "canvases": 13,
+    "liveCanvases": 13,
+    "canvasPixels": 66721280,
+    "images": 0,
+    "imagePixels": 0,
+    "cache": {
+     "decoded": {
+      "bytes": 266885120,
+      "entries": 13,
+      "evictions": 352,
+      "hits": 0,
+      "maxBytes": 268435456,
+      "maxEntries": 256,
+      "maxEntryBytes": 67108864,
+      "misses": 365,
+      "negativeEntries": 0,
+      "oversize": 0
+     },
+     "images": {
+      "bytes": 0,
+      "entries": 0,
+      "evictions": 0,
+      "hits": 0,
+      "maxBytes": 67108864,
+      "maxEntries": 256,
+      "maxEntryBytes": 16777216,
+      "misses": 0,
+      "negativeEntries": 0,
+      "oversize": 0
+     }
+    }
+   }
+  },
+  "pressure": {
+   "samePixels": true,
+   "state": {
+    "canvases": 0,
+    "liveCanvases": 0,
+    "canvasPixels": 0,
+    "images": 0,
+    "imagePixels": 0,
+    "cache": {
+     "decoded": {
+      "bytes": 0,
+      "entries": 0,
+      "evictions": 386,
+      "hits": 0,
+      "maxBytes": 8388608,
+      "maxEntries": 16,
+      "maxEntryBytes": 2097152,
+      "misses": 407,
+      "negativeEntries": 0,
+      "oversize": 21
+     },
+     "images": {
+      "bytes": 0,
+      "entries": 0,
+      "evictions": 0,
+      "hits": 0,
+      "maxBytes": 2097152,
+      "maxEntries": 16,
+      "maxEntryBytes": 524288,
+      "misses": 0,
+      "negativeEntries": 0,
+      "oversize": 0
+     }
+    }
+   },
+   "final": {
+    "canvases": 0,
+    "liveCanvases": 0,
+    "canvasPixels": 0,
+    "images": 0,
+    "imagePixels": 0,
+    "cache": {
+     "decoded": {
+      "bytes": 0,
+      "entries": 0,
+      "evictions": 386,
+      "hits": 0,
+      "maxBytes": 8388608,
+      "maxEntries": 16,
+      "maxEntryBytes": 2097152,
+      "misses": 428,
+      "negativeEntries": 0,
+      "oversize": 42
+     },
+     "images": {
+      "bytes": 0,
+      "entries": 0,
+      "evictions": 0,
+      "hits": 0,
+      "maxBytes": 2097152,
+      "maxEntries": 16,
+      "maxEntryBytes": 524288,
+      "misses": 0,
+      "negativeEntries": 0,
+      "oversize": 0
+     }
+    }
+   }
+  },
+  "end": {
+   "canvases": 0,
+   "liveCanvases": 0,
+   "canvasPixels": 0,
+   "images": 0,
+   "imagePixels": 0,
+   "cache": {
+    "decoded": {
+     "bytes": 0,
+     "entries": 0,
+     "evictions": 386,
+     "hits": 0,
+     "maxBytes": 268435456,
+     "maxEntries": 256,
+     "maxEntryBytes": 67108864,
+     "misses": 428,
+     "negativeEntries": 0,
+     "oversize": 42
+    },
+    "images": {
+     "bytes": 0,
+     "entries": 0,
+     "evictions": 0,
+     "hits": 0,
+     "maxBytes": 67108864,
+     "maxEntries": 256,
+     "maxEntryBytes": 16777216,
+     "misses": 0,
+     "negativeEntries": 0,
+     "oversize": 0
+    }
+   }
+  }
+ },
+ "patchedWithTrimAfterClose": {
+  "build": "patched",
+  "ok": true,
+  "totalMs": 60142,
+  "rows": [
+   {
+    "cycle": 0,
+    "doc": 0,
+    "pages": 24,
+    "renderMs": 3048,
+    "canvases": 13,
+    "liveCanvases": 13,
+    "canvasPixels": 66721280,
+    "images": 0,
+    "imagePixels": 0,
+    "cache": {
+     "decoded": {
+      "bytes": 266885120,
+      "entries": 13,
+      "evictions": 8,
+      "hits": 0,
+      "maxBytes": 268435456,
+      "maxEntries": 256,
+      "maxEntryBytes": 67108864,
+      "misses": 21,
+      "negativeEntries": 0,
+      "oversize": 0
+     },
+     "images": {
+      "bytes": 0,
+      "entries": 0,
+      "evictions": 0,
+      "hits": 0,
+      "maxBytes": 67108864,
+      "maxEntries": 256,
+      "maxEntryBytes": 16777216,
+      "misses": 0,
+      "negativeEntries": 0,
+      "oversize": 0
+     }
+    }
+   },
+   {
+    "cycle": 0,
+    "doc": 1,
+    "pages": 23,
+    "renderMs": 2787,
+    "canvases": 12,
+    "liveCanvases": 12,
+    "canvasPixels": 65123657,
+    "images": 0,
+    "imagePixels": 0,
+    "cache": {
+     "decoded": {
+      "bytes": 260494628,
+      "entries": 12,
+      "evictions": 29,
+      "hits": 0,
+      "maxBytes": 268435456,
+      "maxEntries": 256,
+      "maxEntryBytes": 67108864,
+      "misses": 41,
+      "negativeEntries": 0,
+      "oversize": 0
+     },
+     "images": {
+      "bytes": 0,
+      "entries": 0,
+      "evictions": 0,
+      "hits": 0,
+      "maxBytes": 67108864,
+      "maxEntries": 256,
+      "maxEntryBytes": 16777216,
+      "misses": 0,
+      "negativeEntries": 0,
+      "oversize": 0
+     }
+    }
+   },
+   {
+    "cycle": 0,
+    "doc": 2,
+    "pages": 23,
+    "renderMs": 2769,
+    "canvases": 12,
+    "liveCanvases": 12,
+    "canvasPixels": 65996341,
+    "images": 0,
+    "imagePixels": 0,
+    "cache": {
+     "decoded": {
+      "bytes": 263985364,
+      "entries": 12,
+      "evictions": 49,
+      "hits": 0,
+      "maxBytes": 268435456,
+      "maxEntries": 256,
+      "maxEntryBytes": 67108864,
+      "misses": 61,
+      "negativeEntries": 0,
+      "oversize": 0
+     },
+     "images": {
+      "bytes": 0,
+      "entries": 0,
+      "evictions": 0,
+      "hits": 0,
+      "maxBytes": 67108864,
+      "maxEntries": 256,
+      "maxEntryBytes": 16777216,
+      "misses": 0,
+      "negativeEntries": 0,
+      "oversize": 0
+     }
+    }
+   },
+   {
+    "cycle": 0,
+    "doc": 3,
+    "pages": 23,
+    "renderMs": 2756,
+    "canvases": 12,
+    "liveCanvases": 12,
+    "canvasPixels": 65097976,
+    "images": 0,
+    "imagePixels": 0,
+    "cache": {
+     "decoded": {
+      "bytes": 260391904,
+      "entries": 12,
+      "evictions": 69,
+      "hits": 0,
+      "maxBytes": 268435456,
+      "maxEntries": 256,
+      "maxEntryBytes": 67108864,
+      "misses": 81,
+      "negativeEntries": 0,
+      "oversize": 0
+     },
+     "images": {
+      "bytes": 0,
+      "entries": 0,
+      "evictions": 0,
+      "hits": 0,
+      "maxBytes": 67108864,
+      "maxEntries": 256,
+      "maxEntryBytes": 16777216,
+      "misses": 0,
+      "negativeEntries": 0,
+      "oversize": 0
+     }
+    }
+   },
+   {
+    "cycle": 0,
+    "doc": 4,
+    "pages": 23,
+    "renderMs": 2796,
+    "canvases": 12,
+    "liveCanvases": 12,
+    "canvasPixels": 65097976,
+    "images": 0,
+    "imagePixels": 0,
+    "cache": {
+     "decoded": {
+      "bytes": 260391904,
+      "entries": 12,
+      "evictions": 89,
+      "hits": 0,
+      "maxBytes": 268435456,
+      "maxEntries": 256,
+      "maxEntryBytes": 67108864,
+      "misses": 101,
+      "negativeEntries": 0,
+      "oversize": 0
+     },
+     "images": {
+      "bytes": 0,
+      "entries": 0,
+      "evictions": 0,
+      "hits": 0,
+      "maxBytes": 67108864,
+      "maxEntries": 256,
+      "maxEntryBytes": 16777216,
+      "misses": 0,
+      "negativeEntries": 0,
+      "oversize": 0
+     }
+    }
+   },
+   {
+    "cycle": 1,
+    "doc": 0,
+    "pages": 24,
+    "renderMs": 2768,
+    "canvases": 13,
+    "liveCanvases": 13,
+    "canvasPixels": 66721280,
+    "images": 0,
+    "imagePixels": 0,
+    "cache": {
+     "decoded": {
+      "bytes": 266885120,
+      "entries": 13,
+      "evictions": 109,
+      "hits": 0,
+      "maxBytes": 268435456,
+      "maxEntries": 256,
+      "maxEntryBytes": 67108864,
+      "misses": 122,
+      "negativeEntries": 0,
+      "oversize": 0
+     },
+     "images": {
+      "bytes": 0,
+      "entries": 0,
+      "evictions": 0,
+      "hits": 0,
+      "maxBytes": 67108864,
+      "maxEntries": 256,
+      "maxEntryBytes": 16777216,
+      "misses": 0,
+      "negativeEntries": 0,
+      "oversize": 0
+     }
+    }
+   },
+   {
+    "cycle": 1,
+    "doc": 1,
+    "pages": 23,
+    "renderMs": 2781,
+    "canvases": 12,
+    "liveCanvases": 12,
+    "canvasPixels": 65123657,
+    "images": 0,
+    "imagePixels": 0,
+    "cache": {
+     "decoded": {
+      "bytes": 260494628,
+      "entries": 12,
+      "evictions": 130,
+      "hits": 0,
+      "maxBytes": 268435456,
+      "maxEntries": 256,
+      "maxEntryBytes": 67108864,
+      "misses": 142,
+      "negativeEntries": 0,
+      "oversize": 0
+     },
+     "images": {
+      "bytes": 0,
+      "entries": 0,
+      "evictions": 0,
+      "hits": 0,
+      "maxBytes": 67108864,
+      "maxEntries": 256,
+      "maxEntryBytes": 16777216,
+      "misses": 0,
+      "negativeEntries": 0,
+      "oversize": 0
+     }
+    }
+   },
+   {
+    "cycle": 1,
+    "doc": 2,
+    "pages": 23,
+    "renderMs": 2744,
+    "canvases": 12,
+    "liveCanvases": 12,
+    "canvasPixels": 65996341,
+    "images": 0,
+    "imagePixels": 0,
+    "cache": {
+     "decoded": {
+      "bytes": 263985364,
+      "entries": 12,
+      "evictions": 150,
+      "hits": 0,
+      "maxBytes": 268435456,
+      "maxEntries": 256,
+      "maxEntryBytes": 67108864,
+      "misses": 162,
+      "negativeEntries": 0,
+      "oversize": 0
+     },
+     "images": {
+      "bytes": 0,
+      "entries": 0,
+      "evictions": 0,
+      "hits": 0,
+      "maxBytes": 67108864,
+      "maxEntries": 256,
+      "maxEntryBytes": 16777216,
+      "misses": 0,
+      "negativeEntries": 0,
+      "oversize": 0
+     }
+    }
+   },
+   {
+    "cycle": 1,
+    "doc": 3,
+    "pages": 23,
+    "renderMs": 2778,
+    "canvases": 12,
+    "liveCanvases": 12,
+    "canvasPixels": 65097976,
+    "images": 0,
+    "imagePixels": 0,
+    "cache": {
+     "decoded": {
+      "bytes": 260391904,
+      "entries": 12,
+      "evictions": 170,
+      "hits": 0,
+      "maxBytes": 268435456,
+      "maxEntries": 256,
+      "maxEntryBytes": 67108864,
+      "misses": 182,
+      "negativeEntries": 0,
+      "oversize": 0
+     },
+     "images": {
+      "bytes": 0,
+      "entries": 0,
+      "evictions": 0,
+      "hits": 0,
+      "maxBytes": 67108864,
+      "maxEntries": 256,
+      "maxEntryBytes": 16777216,
+      "misses": 0,
+      "negativeEntries": 0,
+      "oversize": 0
+     }
+    }
+   },
+   {
+    "cycle": 1,
+    "doc": 4,
+    "pages": 23,
+    "renderMs": 2785,
+    "canvases": 12,
+    "liveCanvases": 12,
+    "canvasPixels": 65097976,
+    "images": 0,
+    "imagePixels": 0,
+    "cache": {
+     "decoded": {
+      "bytes": 260391904,
+      "entries": 12,
+      "evictions": 190,
+      "hits": 0,
+      "maxBytes": 268435456,
+      "maxEntries": 256,
+      "maxEntryBytes": 67108864,
+      "misses": 202,
+      "negativeEntries": 0,
+      "oversize": 0
+     },
+     "images": {
+      "bytes": 0,
+      "entries": 0,
+      "evictions": 0,
+      "hits": 0,
+      "maxBytes": 67108864,
+      "maxEntries": 256,
+      "maxEntryBytes": 16777216,
+      "misses": 0,
+      "negativeEntries": 0,
+      "oversize": 0
+     }
+    }
+   },
+   {
+    "cycle": 2,
+    "doc": 0,
+    "pages": 24,
+    "renderMs": 2797,
+    "canvases": 13,
+    "liveCanvases": 13,
+    "canvasPixels": 66721280,
+    "images": 0,
+    "imagePixels": 0,
+    "cache": {
+     "decoded": {
+      "bytes": 266885120,
+      "entries": 13,
+      "evictions": 210,
+      "hits": 0,
+      "maxBytes": 268435456,
+      "maxEntries": 256,
+      "maxEntryBytes": 67108864,
+      "misses": 223,
+      "negativeEntries": 0,
+      "oversize": 0
+     },
+     "images": {
+      "bytes": 0,
+      "entries": 0,
+      "evictions": 0,
+      "hits": 0,
+      "maxBytes": 67108864,
+      "maxEntries": 256,
+      "maxEntryBytes": 16777216,
+      "misses": 0,
+      "negativeEntries": 0,
+      "oversize": 0
+     }
+    }
+   },
+   {
+    "cycle": 2,
+    "doc": 1,
+    "pages": 23,
+    "renderMs": 2741,
+    "canvases": 12,
+    "liveCanvases": 12,
+    "canvasPixels": 65123657,
+    "images": 0,
+    "imagePixels": 0,
+    "cache": {
+     "decoded": {
+      "bytes": 260494628,
+      "entries": 12,
+      "evictions": 231,
+      "hits": 0,
+      "maxBytes": 268435456,
+      "maxEntries": 256,
+      "maxEntryBytes": 67108864,
+      "misses": 243,
+      "negativeEntries": 0,
+      "oversize": 0
+     },
+     "images": {
+      "bytes": 0,
+      "entries": 0,
+      "evictions": 0,
+      "hits": 0,
+      "maxBytes": 67108864,
+      "maxEntries": 256,
+      "maxEntryBytes": 16777216,
+      "misses": 0,
+      "negativeEntries": 0,
+      "oversize": 0
+     }
+    }
+   },
+   {
+    "cycle": 2,
+    "doc": 2,
+    "pages": 23,
+    "renderMs": 2758,
+    "canvases": 12,
+    "liveCanvases": 12,
+    "canvasPixels": 65996341,
+    "images": 0,
+    "imagePixels": 0,
+    "cache": {
+     "decoded": {
+      "bytes": 263985364,
+      "entries": 12,
+      "evictions": 251,
+      "hits": 0,
+      "maxBytes": 268435456,
+      "maxEntries": 256,
+      "maxEntryBytes": 67108864,
+      "misses": 263,
+      "negativeEntries": 0,
+      "oversize": 0
+     },
+     "images": {
+      "bytes": 0,
+      "entries": 0,
+      "evictions": 0,
+      "hits": 0,
+      "maxBytes": 67108864,
+      "maxEntries": 256,
+      "maxEntryBytes": 16777216,
+      "misses": 0,
+      "negativeEntries": 0,
+      "oversize": 0
+     }
+    }
+   },
+   {
+    "cycle": 2,
+    "doc": 3,
+    "pages": 23,
+    "renderMs": 2795,
+    "canvases": 12,
+    "liveCanvases": 12,
+    "canvasPixels": 65097976,
+    "images": 0,
+    "imagePixels": 0,
+    "cache": {
+     "decoded": {
+      "bytes": 260391904,
+      "entries": 12,
+      "evictions": 271,
+      "hits": 0,
+      "maxBytes": 268435456,
+      "maxEntries": 256,
+      "maxEntryBytes": 67108864,
+      "misses": 283,
+      "negativeEntries": 0,
+      "oversize": 0
+     },
+     "images": {
+      "bytes": 0,
+      "entries": 0,
+      "evictions": 0,
+      "hits": 0,
+      "maxBytes": 67108864,
+      "maxEntries": 256,
+      "maxEntryBytes": 16777216,
+      "misses": 0,
+      "negativeEntries": 0,
+      "oversize": 0
+     }
+    }
+   },
+   {
+    "cycle": 2,
+    "doc": 4,
+    "pages": 23,
+    "renderMs": 2807,
+    "canvases": 12,
+    "liveCanvases": 12,
+    "canvasPixels": 65097976,
+    "images": 0,
+    "imagePixels": 0,
+    "cache": {
+     "decoded": {
+      "bytes": 260391904,
+      "entries": 12,
+      "evictions": 291,
+      "hits": 0,
+      "maxBytes": 268435456,
+      "maxEntries": 256,
+      "maxEntryBytes": 67108864,
+      "misses": 303,
+      "negativeEntries": 0,
+      "oversize": 0
+     },
+     "images": {
+      "bytes": 0,
+      "entries": 0,
+      "evictions": 0,
+      "hits": 0,
+      "maxBytes": 67108864,
+      "maxEntries": 256,
+      "maxEntryBytes": 16777216,
+      "misses": 0,
+      "negativeEntries": 0,
+      "oversize": 0
+     }
+    }
+   }
+  ],
+  "shared": {
+   "samePixels": true,
+   "pages": 24,
+   "trimmed": true,
+   "afterClose": {
+    "canvases": 0,
+    "liveCanvases": 0,
+    "canvasPixels": 0,
+    "images": 0,
+    "imagePixels": 0,
+    "cache": {
+     "decoded": {
+      "bytes": 0,
+      "entries": 0,
+      "evictions": 344,
+      "hits": 0,
+      "maxBytes": 268435456,
+      "maxEntries": 256,
+      "maxEntryBytes": 67108864,
+      "misses": 344,
+      "negativeEntries": 0,
+      "oversize": 0
+     },
+     "images": {
+      "bytes": 0,
+      "entries": 0,
+      "evictions": 0,
+      "hits": 0,
+      "maxBytes": 67108864,
+      "maxEntries": 256,
+      "maxEntryBytes": 16777216,
+      "misses": 0,
+      "negativeEntries": 0,
+      "oversize": 0
+     }
+    }
+   },
+   "afterRerender": {
+    "canvases": 13,
+    "liveCanvases": 13,
+    "canvasPixels": 66721280,
+    "images": 0,
+    "imagePixels": 0,
+    "cache": {
+     "decoded": {
+      "bytes": 266885120,
+      "entries": 13,
+      "evictions": 352,
+      "hits": 0,
+      "maxBytes": 268435456,
+      "maxEntries": 256,
+      "maxEntryBytes": 67108864,
+      "misses": 365,
+      "negativeEntries": 0,
+      "oversize": 0
+     },
+     "images": {
+      "bytes": 0,
+      "entries": 0,
+      "evictions": 0,
+      "hits": 0,
+      "maxBytes": 67108864,
+      "maxEntries": 256,
+      "maxEntryBytes": 16777216,
+      "misses": 0,
+      "negativeEntries": 0,
+      "oversize": 0
+     }
+    }
+   }
+  },
+  "pressure": {
+   "samePixels": true,
+   "state": {
+    "canvases": 0,
+    "liveCanvases": 0,
+    "canvasPixels": 0,
+    "images": 0,
+    "imagePixels": 0,
+    "cache": {
+     "decoded": {
+      "bytes": 0,
+      "entries": 0,
+      "evictions": 386,
+      "hits": 0,
+      "maxBytes": 8388608,
+      "maxEntries": 16,
+      "maxEntryBytes": 2097152,
+      "misses": 407,
+      "negativeEntries": 0,
+      "oversize": 21
+     },
+     "images": {
+      "bytes": 0,
+      "entries": 0,
+      "evictions": 0,
+      "hits": 0,
+      "maxBytes": 2097152,
+      "maxEntries": 16,
+      "maxEntryBytes": 524288,
+      "misses": 0,
+      "negativeEntries": 0,
+      "oversize": 0
+     }
+    }
+   },
+   "final": {
+    "canvases": 0,
+    "liveCanvases": 0,
+    "canvasPixels": 0,
+    "images": 0,
+    "imagePixels": 0,
+    "cache": {
+     "decoded": {
+      "bytes": 0,
+      "entries": 0,
+      "evictions": 386,
+      "hits": 0,
+      "maxBytes": 8388608,
+      "maxEntries": 16,
+      "maxEntryBytes": 2097152,
+      "misses": 428,
+      "negativeEntries": 0,
+      "oversize": 42
+     },
+     "images": {
+      "bytes": 0,
+      "entries": 0,
+      "evictions": 0,
+      "hits": 0,
+      "maxBytes": 2097152,
+      "maxEntries": 16,
+      "maxEntryBytes": 524288,
+      "misses": 0,
+      "negativeEntries": 0,
+      "oversize": 0
+     }
+    }
+   }
+  },
+  "end": {
+   "canvases": 0,
+   "liveCanvases": 0,
+   "canvasPixels": 0,
+   "images": 0,
+   "imagePixels": 0,
+   "cache": {
+    "decoded": {
+     "bytes": 0,
+     "entries": 0,
+     "evictions": 386,
+     "hits": 0,
+     "maxBytes": 268435456,
+     "maxEntries": 256,
+     "maxEntryBytes": 67108864,
+     "misses": 428,
+     "negativeEntries": 0,
+     "oversize": 42
+    },
+    "images": {
+     "bytes": 0,
+     "entries": 0,
+     "evictions": 0,
+     "hits": 0,
+     "maxBytes": 67108864,
+     "maxEntries": 256,
+     "maxEntryBytes": 16777216,
+     "misses": 0,
+     "negativeEntries": 0,
+     "oversize": 0
+    }
+   }
+  }
+ },
+ "patch": "upstream-rhwp-bounded-image-cache.patch (NOT integrated into geul; pinned submodule unchanged)"
+}

@@ -1,0 +1,23 @@
+{
+ "cwd": "repository root unless noted",
+ "rows": [
+  "typecheck exit=0 secs=6 |",
+  "lint exit=0 secs=7 |",
+  "vitest exit=0 secs=18 |  Test Files  40 passed (40)       Tests  779 passed (779)",
+  "wasm-vitest exit=0 secs=8 |  Test Files  2 passed | 2 skipped (4)       Tests  27 passed | 2 skipped (29)",
+  "phase0 exit=0 secs=5 |  Test Files  3 passed (3)       Tests  50 passed (50)",
+  "py-e2e exit=0 secs=0 | Ran 66 tests in 0.156s OK",
+  "py-security exit=0 secs=57 | Ran 86 tests in 57.063s OK",
+  "cargo-fmt exit=0 secs=1 |",
+  "cargo-clippy exit=0 secs=1 |",
+  "cargo-test exit=0 secs=5 | test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.04s test result: ok. 0 passed; 0 failed; 2 ignored; 0 measured; 0 filtered out; finished in 0.00s test result: ok. 0",
+  "undo-save exit=0 secs=18 | 불일치 0건 []",
+  "save-strict exit=0 secs=6 | CURRENT 불일치 0건 []",
+  "VERIFY_DONE",
+  "product-build exit=0 | env -u VITE_GEUL_TEST_HOOKS -u VITE_GEUL_TEST_RHWP_HISTORY npm run tauri build -- --debug --no-bundle; bundle markers 0",
+  "product-check exit=0 | product-build.json ok=true (hwp, hwpx)",
+  "e2e-smoke exit=0 | npm run test:e2e: 62 items, 0 skipped (Xvfb -dpi 96)",
+  "skips: tests/integration/rhwp vitest 2 files opt-in (history-perf GEUL_PERF; undo-save GEUL_UNDO_SAVE_OUT, exercised by undo_save.py); cargo ignored 4 unit + 2 integration (opt-in harness), not counted as PASS",
+  "cargo test --locked (src-tauri): 174 passed, 0 failed, 4 ignored (lib); 1 passed (integration); 2 ignored (phase0 integration, opt-in)"
+ ]
+}

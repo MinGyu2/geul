@@ -271,6 +271,20 @@ def click_cell(d, cell: int) -> None:
         if not g or not g.get("cellBounds"):
             raise smoke.Failure("목표 셀의 실제 경계가 없음")
         d.js("const s=document.querySelector('.editor__scroll'); s.scrollTop=0; s.scrollLeft=0")
+        # T010 후속: 바로 앞 편집의 늦은 화면 변화(판·지연 글자는 SETTLE_MS 500 ms 뒤 바뀜)가 쪽을 몇 px 옮기면, 앞서 잰 자리를
+        # 누른 클릭이 아래 행 셀에 들어갔다(실측 6.5 px, HEAD 동작 빌드에서도 6번 중 2번). 쪽 Canvas 사각형이 그 시간보다 길게
+        # 그대로일 때 자리를 재고 바로 누른다.
+        rect = "const c=document.querySelectorAll('.rhwp-page__canvas')[arguments[0]].getBoundingClientRect();return [c.left,c.top,c.width,c.height]"
+        last, since, deadline = None, time.monotonic(), time.monotonic() + 10
+        while time.monotonic() < deadline:
+            now = d.js(rect, g["pageIndex"])
+            if now != last:
+                last, since = now, time.monotonic()
+            elif time.monotonic() - since >= 0.7:
+                break
+            time.sleep(0.05)
+        else:
+            raise smoke.Failure("목표 셀 쪽의 화면 위치가 안정되지 않음")
         point = d.js("""const g=arguments[0], c=document.querySelectorAll('.rhwp-page__canvas')[g.pageIndex],r=c.getBoundingClientRect();
           return [r.left+(g.x+1)*r.width/g.page.width,r.top+(g.y+g.height/2)*r.height/g.page.height]""", g)
         click(d, *point)

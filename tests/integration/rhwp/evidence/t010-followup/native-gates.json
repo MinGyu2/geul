@@ -1,0 +1,423 @@
+{
+ "binary": "final test build (offscreen deferral + trace spans)",
+ "render": {
+  "summary": "33/33 (D1 31 + D5 2), --render --native-keys",
+  "gates": [
+   {
+    "gate": "D1",
+    "item": "hwp: 편집 전 실행 취소는 쓸 수 없음(되돌릴 것 없음)",
+    "result": "PASS",
+    "detail": "실행 취소 (Ctrl+Z) — 되돌릴 편집 없음"
+   },
+   {
+    "gate": "D1",
+    "item": "hwp: 편집이 Canvas 픽셀을 바꿈",
+    "result": "PASS",
+    "detail": ""
+   },
+   {
+    "gate": "D1",
+    "item": "hwp: Ctrl+Z 세 번(글자 묶음·나누기·글자) → 쪽 Canvas가 편집 전(쪽 전체 그리기)과 같은 내용",
+    "result": "PASS",
+    "detail": "변경=[True, True, True], 픽셀 차 {'strongPixels': 0, 'pixels': 1996, 'edgePixels': 1996, 'innerMaxDelta': 0, 'comparable': True, 'maxDelta': 10, 'same': True}"
+   },
+   {
+    "gate": "D1",
+    "item": "hwp: 더 되돌릴 것이 없으면 Ctrl+Z가 모델을 바꾸지 않고 단추는 비활성",
+    "result": "PASS",
+    "detail": ""
+   },
+   {
+    "gate": "D1",
+    "item": "hwp: Ctrl+Y·Ctrl+Shift+Z·Ctrl+Y → 쪽 Canvas가 편집 뒤(쪽 전체 그리기)와 같은 내용",
+    "result": "PASS",
+    "detail": "변경=[True, True, True], 픽셀 차 {'strongPixels': 0, 'pixels': 1996, 'edgePixels': 1996, 'innerMaxDelta': 0, 'comparable': True, 'maxDelta': 12, 'same': True}"
+   },
+   {
+    "gate": "D1",
+    "item": "hwp: 실행 취소 뒤 새 타자는 다시 실행을 버림",
+    "result": "PASS",
+    "detail": ""
+   },
+   {
+    "gate": "D1",
+    "item": "hwp: 선택이 있어도 Ctrl+Z가 직전 단계를 되돌림",
+    "result": "PASS",
+    "detail": ""
+   },
+   {
+    "gate": "D1",
+    "item": "hwp: 쪽이 늘어난 편집 1쪽을 되돌리면 쪽 수와 첫 쪽 Canvas가 편집 전과 같은 내용",
+    "result": "PASS",
+    "detail": "쪽 1→2→1, Ctrl+Z 45번, 픽셀 차 {'strongPixels': 0, 'pixels': 1996, 'edgePixels': 1996, 'innerMaxDelta': 0, 'comparable': True, 'maxDelta': 70, 'same': True}"
+   },
+   {
+    "gate": "D1",
+    "item": "hwp: 실제 포인터가 목표 셀 1 커서를 만듦",
+    "result": "PASS",
+    "detail": "0:2:0@0/1/0"
+   },
+   {
+    "gate": "D1",
+    "item": "hwp: 셀 넣기/나누기 Undo 두 번과 Redo 두 번의 정확한 글자·커서·Canvas",
+    "result": "PASS",
+    "detail": "undo pixels={'strongPixels': 0, 'pixels': 1996, 'edgePixels': 1996, 'innerMaxDelta': 0, 'comparable': True, 'maxDelta': 10, 'same': True}, redo pixels={'strongPixels': 0, 'pixels': 1996, 'edgePixels': 1996, 'innerMaxDelta': 0, 'comparable': True, 'maxDelta': 10, 'same': True}"
+   },
+   {
+    "gate": "D1",
+    "item": "hwp: 셀 편집 뒤 버리고 다시 열면 정확한 원본 셀·빈 기록·파일 SHA 보존",
+    "result": "PASS",
+    "detail": ""
+   },
+   {
+    "gate": "D1",
+    "item": "hwpx: 편집 전 실행 취소는 쓸 수 없음(되돌릴 것 없음)",
+    "result": "PASS",
+    "detail": "실행 취소 (Ctrl+Z) — 되돌릴 편집 없음"
+   },
+   {
+    "gate": "D1",
+    "item": "hwpx: 편집이 Canvas 픽셀을 바꿈",
+    "result": "PASS",
+    "detail": ""
+   },
+   {
+    "gate": "D1",
+    "item": "hwpx: Ctrl+Z 세 번(글자 묶음·나누기·글자) → 쪽 Canvas가 편집 전(쪽 전체 그리기)과 같은 내용",
+    "result": "PASS",
+    "detail": "변경=[True, True, True], 픽셀 차 {'strongPixels': 0, 'pixels': 1996, 'edgePixels': 1996, 'innerMaxDelta': 0, 'comparable': True, 'maxDelta': 10, 'same': True}"
+   },
+   {
+    "gate": "D1",
+    "item": "hwpx: 더 되돌릴 것이 없으면 Ctrl+Z가 모델을 바꾸지 않고 단추는 비활성",
+    "result": "PASS",
+    "detail": ""
+   },
+   {
+    "gate": "D1",
+    "item": "hwpx: Ctrl+Y·Ctrl+Shift+Z·Ctrl+Y → 쪽 Canvas가 편집 뒤(쪽 전체 그리기)와 같은 내용",
+    "result": "PASS",
+    "detail": "변경=[True, True, True], 픽셀 차 {'strongPixels': 0, 'pixels': 1996, 'edgePixels': 1996, 'innerMaxDelta': 0, 'comparable': True, 'maxDelta': 12, 'same': True}"
+   },
+   {
+    "gate": "D1",
+    "item": "hwpx: 실행 취소 뒤 새 타자는 다시 실행을 버림",
+    "result": "PASS",
+    "detail": ""
+   },
+   {
+    "gate": "D1",
+    "item": "hwpx: 선택이 있어도 Ctrl+Z가 직전 단계를 되돌림",
+    "result": "PASS",
+    "detail": ""
+   },
+   {
+    "gate": "D1",
+    "item": "hwpx: 쪽이 늘어난 편집 1쪽을 되돌리면 쪽 수와 첫 쪽 Canvas가 편집 전과 같은 내용",
+    "result": "PASS",
+    "detail": "쪽 1→2→1, Ctrl+Z 45번, 픽셀 차 {'strongPixels': 0, 'pixels': 1996, 'edgePixels': 1996, 'innerMaxDelta': 0, 'comparable': True, 'maxDelta': 70, 'same': True}"
+   },
+   {
+    "gate": "D1",
+    "item": "hwpx: 실제 포인터가 목표 셀 1 커서를 만듦",
+    "result": "PASS",
+    "detail": "0:2:0@0/1/0"
+   },
+   {
+    "gate": "D1",
+    "item": "hwpx: 셀 넣기/나누기 Undo 두 번과 Redo 두 번의 정확한 글자·커서·Canvas",
+    "result": "PASS",
+    "detail": "undo pixels={'strongPixels': 0, 'pixels': 1996, 'edgePixels': 1996, 'innerMaxDelta': 0, 'comparable': True, 'maxDelta': 9, 'same': True}, redo pixels={'strongPixels': 0, 'pixels': 1996, 'edgePixels': 1996, 'innerMaxDelta': 0, 'comparable': True, 'maxDelta': 10, 'same': True}"
+   },
+   {
+    "gate": "D1",
+    "item": "hwpx: 셀 편집 뒤 버리고 다시 열면 정확한 원본 셀·빈 기록·파일 SHA 보존",
+    "result": "PASS",
+    "detail": ""
+   },
+   {
+    "gate": "D1",
+    "item": "aift.hwp: 여러 구역 문서가 실제 앱에서 열리고 쪽 수가 엔진과 같음",
+    "result": "PASS",
+    "detail": "쪽 74, 구역 첫 쪽 [0, 2, 3]"
+   },
+   {
+    "gate": "D1",
+    "item": "aift.hwp: 뒤 구역 첫 쪽을 누르면 커서가 그 물리 쪽에 보임",
+    "result": "PASS",
+    "detail": "목표 2, 커서 쪽 2"
+   },
+   {
+    "gate": "D1",
+    "item": "aift.hwp: 뒤 구역 쪽의 넣기 → Ctrl+Z → 그 쪽 Canvas가 넣기 전과 같은 내용 → Ctrl+Y → 넣은 뒤와 같은 내용",
+    "result": "PASS",
+    "detail": "되돌림 {'strongPixels': 0, 'pixels': 998, 'edgePixels': 998, 'innerMaxDelta': 0, 'comparable': True, 'maxDelta': 17, 'same': True}, 다시 실행 {'strongPixels': 0, 'pixels': 976, 'edgePixels': 976, 'innerMaxDelta': 0, 'comparable': True, 'maxDelta': 2, 'same': True}, 커서 쪽 2"
+   },
+   {
+    "gate": "D1",
+    "item": "3249937_asset_management_rules.hwpx: 여러 구역 문서가 실제 앱에서 열리고 쪽 수가 엔진과 같음",
+    "result": "PASS",
+    "detail": "쪽 60, 구역 첫 쪽 [0, 50, 51]"
+   },
+   {
+    "gate": "D1",
+    "item": "3249937_asset_management_rules.hwpx: 뒤 구역 첫 쪽을 누르면 커서가 그 물리 쪽에 보임",
+    "result": "PASS",
+    "detail": "목표 50, 커서 쪽 50"
+   },
+   {
+    "gate": "D1",
+    "item": "3249937_asset_management_rules.hwpx: 뒤 구역 쪽의 넣기 → Ctrl+Z → 그 쪽 Canvas가 넣기 전과 같은 내용 → Ctrl+Y → 넣은 뒤와 같은 내용",
+    "result": "PASS",
+    "detail": "되돌림 {'strongPixels': 0, 'pixels': 21, 'edgePixels': 21, 'innerMaxDelta': 0, 'comparable': True, 'maxDelta': 11, 'same': True}, 다시 실행 {'strongPixels': 0, 'pixels': 0, 'edgePixels': 0, 'innerMaxDelta': 0, 'comparable': True, 'maxDelta': 0, 'same': True}, 커서 쪽 50"
+   },
+   {
+    "gate": "D1",
+    "item": "basic-ko.hwp: 실행 취소·다시 실행 뒤 닫고 다시 열면 기록이 비어 Ctrl+Z가 아무것도 바꾸지 않음",
+    "result": "PASS",
+    "detail": ""
+   },
+   {
+    "gate": "D5",
+    "item": "hwp: 실제 discard 뒤 예외 → uncertain, 편집/Undo/Save 차단·원본 SHA 보존",
+    "result": "PASS",
+    "detail": ""
+   },
+   {
+    "gate": "D1",
+    "item": "hwp: 불확실 실패 후 버리기/실제 reload → 새 세대·원본 텍스트·빈 기록·새 Canvas",
+    "result": "PASS",
+    "detail": ""
+   },
+   {
+    "gate": "D5",
+    "item": "hwpx: 실제 discard 뒤 예외 → uncertain, 편집/Undo/Save 차단·원본 SHA 보존",
+    "result": "PASS",
+    "detail": ""
+   },
+   {
+    "gate": "D1",
+    "item": "hwpx: 불확실 실패 후 버리기/실제 reload → 새 세대·원본 텍스트·빈 기록·새 Canvas",
+    "result": "PASS",
+    "detail": ""
+   }
+  ]
+ },
+ "cells": {
+  "summary": "6/6",
+  "gates": [
+   {
+    "gate": "D1",
+    "item": "hwp: 실제 포인터가 목표 셀 1 커서를 만듦",
+    "result": "PASS",
+    "detail": "0:2:0@0/1/0"
+   },
+   {
+    "gate": "D1",
+    "item": "hwp: 셀 넣기/나누기 Undo 두 번과 Redo 두 번의 정확한 글자·커서·Canvas",
+    "result": "PASS",
+    "detail": "undo pixels={'strongPixels': 0, 'pixels': 1996, 'edgePixels': 1996, 'innerMaxDelta': 0, 'comparable': True, 'maxDelta': 10, 'same': True}, redo pixels={'strongPixels': 0, 'pixels': 1996, 'edgePixels': 1996, 'innerMaxDelta': 0, 'comparable': True, 'maxDelta': 10, 'same': True}"
+   },
+   {
+    "gate": "D1",
+    "item": "hwp: 셀 편집 뒤 버리고 다시 열면 정확한 원본 셀·빈 기록·파일 SHA 보존",
+    "result": "PASS",
+    "detail": ""
+   },
+   {
+    "gate": "D1",
+    "item": "hwpx: 실제 포인터가 목표 셀 1 커서를 만듦",
+    "result": "PASS",
+    "detail": "0:2:0@0/1/0"
+   },
+   {
+    "gate": "D1",
+    "item": "hwpx: 셀 넣기/나누기 Undo 두 번과 Redo 두 번의 정확한 글자·커서·Canvas",
+    "result": "PASS",
+    "detail": "undo pixels={'strongPixels': 0, 'pixels': 1996, 'edgePixels': 1996, 'innerMaxDelta': 0, 'comparable': True, 'maxDelta': 9, 'same': True}, redo pixels={'strongPixels': 0, 'pixels': 1996, 'edgePixels': 1996, 'innerMaxDelta': 0, 'comparable': True, 'maxDelta': 10, 'same': True}"
+   },
+   {
+    "gate": "D1",
+    "item": "hwpx: 셀 편집 뒤 버리고 다시 열면 정확한 원본 셀·빈 기록·파일 SHA 보존",
+    "result": "PASS",
+    "detail": ""
+   }
+  ],
+  "harnessRaceFix": {
+   "defect": "click target computed before a late ~6.5 px layout shift; click hit the next table row (cell 3 instead of 1)",
+   "beforeFix": {
+    "headBehaviorBuild": "2 of 3 scenario runs had one missed pointer check (HWP or HWPX)",
+    "finalBuild": "1 of 3 dedicated runs, plus both earlier single runs (gate run and re-check), had one missed pointer check"
+   },
+   "afterFix": {
+    "headBehaviorBuild": "4/4 runs 6/6",
+    "finalBuild": "4/4 runs 6/6"
+   },
+   "change": "rhwp_poc.click_cell waits until the target page canvas rect is unchanged for 0.7 s (> SETTLE_MS 500) before measuring and clicking"
+  }
+ },
+ "ime": {
+  "summary": "25/25",
+  "gates": [
+   {
+    "gate": "D2",
+    "item": "hwp: 선택 없는 취소는 문서/판/기록을 만들지 않음",
+    "result": "PASS",
+    "detail": ""
+   },
+   {
+    "gate": "D2",
+    "item": "hwp: 부분 Backspace는 하를 잃지 않고 학으로 확정·Undo",
+    "result": "PASS",
+    "detail": ""
+   },
+   {
+    "gate": "D2",
+    "item": "hwp: 여러 자모를 모두 취소해도 revision/기록 추가 없음",
+    "result": "PASS",
+    "detail": ""
+   },
+   {
+    "gate": "D2",
+    "item": "hwp: 조합 중 Ctrl+Z가 조합을 깨지 않음",
+    "result": "PASS",
+    "detail": "조합 중=true, 결과 되돌림"
+   },
+   {
+    "gate": "D2",
+    "item": "hwp: 확정한 조합(한글) Ctrl+Z → 한 단계로 되돌림, Ctrl+Y → 정확히 복원",
+    "result": "PASS",
+    "detail": "넣은 글자 수 2, revision 6→7→8"
+   },
+   {
+    "gate": "D2",
+    "item": "hwp: 이어진 한글 음절은 한 단계, 앞 그룹과 경계 유지",
+    "result": "PASS",
+    "detail": "단계별 글자 수 [8, 2, 0]"
+   },
+   {
+    "gate": "D2",
+    "item": "hwp: 선택을 조합으로 바꾸다 취소 → 바로 Ctrl+Z가 선택 글자를 되살림",
+    "result": "PASS",
+    "detail": "선택=True, 취소 뒤 글자 수 0, Ctrl+Z 뒤 2 (model cancellation={'expectedLength': 15, 'actualLength': 15, 'equals': True, 'paragraph': 1, 'section': 0, 'revision': 19}, before={'equals': True, 'paragraph': 1, 'section': 0, 'expectedLength': 17, 'actualLength': 17})"
+   },
+   {
+    "gate": "D2",
+    "item": "hwp: 취소 직후 Undo의 Ctrl+Y/Ctrl+Shift+Z와 정확한 선택 복원",
+    "result": "PASS",
+    "detail": ""
+   },
+   {
+    "gate": "D2",
+    "item": "hwp: native 1ms Backspace→Ctrl+Z, 원래 선택/글자와 revision+2",
+    "result": "PASS",
+    "detail": ""
+   },
+   {
+    "gate": "D2",
+    "item": "hwp: 조합 중 클릭(앱 확정·늦은 최종 글자) 뒤 Ctrl+Z → 그 조합만 되돌리고 Ctrl+Y → 복원",
+    "result": "PASS",
+    "detail": "클릭 뒤 글자 수 +1"
+   },
+   {
+    "gate": "D2",
+    "item": "hwp: 조합 중 초점 잃음 뒤 돌아와 친 글자는 따로 된 단계(첫 Ctrl+Z가 뒤 글자만)",
+    "result": "PASS",
+    "detail": "초점 잃음 뒤 +1, 돌아온 뒤 +2, Ctrl+Z 뒤 +1 (초점 잃음은 입력 칸 blur — 창 초점 이동이 아님)"
+   },
+   {
+    "gate": "D2",
+    "item": "hwp: 빠른 연속 한글 → 음절 누락 없음, Ctrl+Z 한 번, Ctrl+Y 정확히",
+    "result": "PASS",
+    "detail": "넣은 글자 수 5"
+   },
+   {
+    "gate": "D2",
+    "item": "hwpx: 선택 없는 취소는 문서/판/기록을 만들지 않음",
+    "result": "PASS",
+    "detail": ""
+   },
+   {
+    "gate": "D2",
+    "item": "hwpx: 부분 Backspace는 하를 잃지 않고 학으로 확정·Undo",
+    "result": "PASS",
+    "detail": ""
+   },
+   {
+    "gate": "D2",
+    "item": "hwpx: 여러 자모를 모두 취소해도 revision/기록 추가 없음",
+    "result": "PASS",
+    "detail": ""
+   },
+   {
+    "gate": "D2",
+    "item": "hwpx: 조합 중 Ctrl+Z가 조합을 깨지 않음",
+    "result": "PASS",
+    "detail": "조합 중=true, 결과 되돌림"
+   },
+   {
+    "gate": "D2",
+    "item": "hwpx: 확정한 조합(한글) Ctrl+Z → 한 단계로 되돌림, Ctrl+Y → 정확히 복원",
+    "result": "PASS",
+    "detail": "넣은 글자 수 2, revision 6→7→8"
+   },
+   {
+    "gate": "D2",
+    "item": "hwpx: 이어진 한글 음절은 한 단계, 앞 그룹과 경계 유지",
+    "result": "PASS",
+    "detail": "단계별 글자 수 [8, 2, 0]"
+   },
+   {
+    "gate": "D2",
+    "item": "hwpx: 선택을 조합으로 바꾸다 취소 → 바로 Ctrl+Z가 선택 글자를 되살림",
+    "result": "PASS",
+    "detail": "선택=True, 취소 뒤 글자 수 0, Ctrl+Z 뒤 2 (model cancellation={'expectedLength': 15, 'actualLength': 15, 'equals': True, 'paragraph': 1, 'section': 0, 'revision': 19}, before={'equals': True, 'paragraph': 1, 'section': 0, 'expectedLength': 17, 'actualLength': 17})"
+   },
+   {
+    "gate": "D2",
+    "item": "hwpx: 취소 직후 Undo의 Ctrl+Y/Ctrl+Shift+Z와 정확한 선택 복원",
+    "result": "PASS",
+    "detail": ""
+   },
+   {
+    "gate": "D2",
+    "item": "hwpx: native 1ms Backspace→Ctrl+Z, 원래 선택/글자와 revision+2",
+    "result": "PASS",
+    "detail": ""
+   },
+   {
+    "gate": "D2",
+    "item": "hwpx: 조합 중 클릭(앱 확정·늦은 최종 글자) 뒤 Ctrl+Z → 그 조합만 되돌리고 Ctrl+Y → 복원",
+    "result": "PASS",
+    "detail": "클릭 뒤 글자 수 +1"
+   },
+   {
+    "gate": "D2",
+    "item": "hwpx: 조합 중 초점 잃음 뒤 돌아와 친 글자는 따로 된 단계(첫 Ctrl+Z가 뒤 글자만)",
+    "result": "PASS",
+    "detail": "초점 잃음 뒤 +1, 돌아온 뒤 +2, Ctrl+Z 뒤 +1 (초점 잃음은 입력 칸 blur — 창 초점 이동이 아님)"
+   },
+   {
+    "gate": "D2",
+    "item": "hwpx: 빠른 연속 한글 → 음절 누락 없음, Ctrl+Z 한 번, Ctrl+Y 정확히",
+    "result": "PASS",
+    "detail": "넣은 글자 수 5"
+   },
+   {
+    "gate": "D2",
+    "item": "실행 취소·다시 실행 뒤 닫고 다시 열면 Ctrl+Z가 아무것도 바꾸지 않음",
+    "result": "PASS",
+    "detail": ""
+   }
+  ]
+ },
+ "t007LegacyIme": {
+  "summary": "IME gate PASS 7/7 (real auxiliary focus window)"
+ },
+ "t008LegacyIme": {
+  "summary": "IME gate PASS 7/7 (real auxiliary focus window)"
+ },
+ "e2eSmoke": {
+  "summary": "62 items, 0 skipped (product build, Xvfb -dpi 96)"
+ }
+}
