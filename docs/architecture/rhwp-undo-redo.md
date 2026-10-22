@@ -593,3 +593,60 @@ detached Canvas 96개·477.6 Mpx(RGBA 약 1.8 GiB)를 계속 붙잡았다. 패�
 3. 캐시 패치의 예산 정책을 정하고 upstream에 제안한 뒤, 판 갱신 승인 후 통합해 `lifecycle` 시나리오로 출하 앱의 보존 Canvas가 예산
    이하인지 확인한다.
 4. D2: 다른 플랫폼·입력기에서 같은 행렬을 돌린다. 이 판에서 순서가 생기지 않는다는 것만으로 PASS로 올리지 않는다.
+
+## T010 캐시 보강: 렌더러 이미지 캐시 교정·예산 정책·지연 귀속·native IME 환경 (2026-10-23)
+
+활성화하지 않았다(레지스트리 그대로). 고정 rhwp·submodule 판·WordCraft는 바꾸지 않았고, 렌더러 캐시는 별도 upstream checkout의
+**검토용 패치**로만 고쳤다(geul 미통합). 증거: `tests/integration/rhwp/evidence/t010-cache-hardening/`(README.md, PATCH-README.md).
+
+### 렌더러 캐시 패치의 결함과 교정
+
+앞선 후속의 캐시 패치(`t010-followup/upstream-rhwp-bounded-image-cache.patch`)를 실제 WASM 렌더러로 브라우저에서 돌려(생성
+fixture 12 시나리오, Chrome 155·WebKitGTK 2.54.1) 세 결함을 재현했다.
+
+- A: 로드 뒤 크기가 한 항목 한도를 넘는 그림(SVG 2400×2400)을 그리기 직전 `resize`가 내보내며 같은 `HtmlImageElement`(clone은 같은
+  DOM 객체)의 `src`를 비워, 그 그리기가 빈 그림이었다. 예산 압박에서 번갈아 그린 두 쪽도 빈 그림.
+- B: 자른 그림 경로는 비용을 갱신하지 않아 인코딩 길이(30 KB)로 남았다(실제 디코드 160 KB).
+- C: 한도를 넘는 비동기 그림은 보관하지 않거나 바로 내보냈고, 로드 중 다시 그리면 새 요소가 앞 로드를 취소했다. 끝났다는 알림이
+  없다. (두 브라우저 모두 같은 data URL을 다시 만들면 바로 그릴 수 있어 "영영 안 보임"은 아니었고, 고정 엔진도 첫 그리기는 빈 그림.)
+
+교정(`upstream-rhwp-bounded-image-cache-v2.patch`): 비용 갱신을 그리기에서 load 이벤트로 옮기고(캐시는 handle을 돌려준 뒤 그리기가
+끝날 때까지 바뀌지 않음), 로드 중 항목은 예산·trim으로 내보내지 않으며 다시 만들지 않고, 로드 뒤 한도를 넘는 그림은 다음 자리
+요구·trim에서 가장 먼저 나가는 일시 항목, 실패는 음성 항목, 두 그리기 경로는 같은 함수. `setRendererImageLoadListener`가 로드가 끝나면
+그리기 밖에서 호스트를 부른다(렌더러는 스스로 그리지 않음 — 닫힌·바뀐 문서에 늦게 그리지 않게). 교정판은 두 브라우저 모두 고정
+엔진과 픽셀이 50/50 같고, 원 패치는 Chrome 4·WebKitGTK 3 그리기가 달랐다(빈 그림). Rust 단위 12/12.
+
+### 예산 정책
+
+공개 이미지 많은 표본(23–24쪽, 디코드 약 380 MB)은 문서 하나가 기본 예산 256 MiB보다 크다. geul은 바뀌지 않은 쪽·띠를 다시
+그리지 않으므로(paintDiff) 문서 전체 다시 그리기는 열기·배율·DPR·쪽 수 변화 때만 온다. 그 접근 기록으로 정책을 오프라인 비교해
+디코드 Canvas 캐시에 입장 제한(TinyLFU 축약: 내보낼 항목보다 자주 요청된 것만 들임, 요청 수 aging)을 골랐다. 브라우저 이미지
+캐시에는 쓰지 않는다(들이지 않으면 비동기 로드 뒤 그릴 것이 없음). Chrome 실측(3회, 데워진 전체 다시 그리기 중앙값):
+
+| 예산 | 고정(무제한) | 원 패치(LRU) | 교정 |
+|---|---|---|---|
+| 128 MiB | 54 ms | 2536 ms | 1446 ms |
+| 256 MiB | | 2354 ms | 773 ms |
+| 384 MiB | | 2352 ms | 154 ms |
+| 512 MiB | | 56 ms | 56 ms |
+
+예산보다 큰 작업 집합에서 교정판도 고정 엔진보다 느리다(256 MiB에서 약 14배). 두 문서를 함께 열면 합친 작업 집합(약 760 MB)이
+512 MiB도 넘어 두 번째 문서 다시 그리기가 1.1 s(고정 52 ms). 기본 예산은 올리지 않았다. 통합 때는 호스트가 장치 메모리에 따라 예산을
+정하고(데스크톱 384–512 MiB), 문서 닫기·메모리 압박에 `trimRendererCaches`를 부르는 방식을 권한다 — 남은 결정.
+
+### WebView 지연 귀속(제품 변경 없음)
+
+시험 훅 빌드에 `rhwp:layer-json` 구간을 더해 쪽 그리기 요약을 엔진 JSON과 JS 요약으로 나눴다. 60쪽 HWPX 묶음 시작: 엔진 텍스트
+변경 26 ms + 엔진 layer JSON 7 ms + JS 요약 4–5 ms + 엔진 띠 그리기 12 ms, p95 121 ms(FAIL). 작은 문서는 아무 일도 하지 않는 RAF
+사슬의 p95(50–71 ms)에 묶여 있다(77 ms, FAIL). geul JS 몫을 모두 없애도 기준에 닿지 않으므로 제품 코드는 바꾸지 않았다. 필요한
+upstream 일: 편집 뒤 바뀐 쪽·영역을 알려 주는 damage API, layer tree를 한 번 만들어 요약·그리기에 함께 쓰기, 텍스트 변경의 부분
+재배치.
+
+### native IME 순서(D2)
+
+입력기 환경을 바꿨다: `IBUS_ENABLE_SYNC_MODE=1`·`2`, ibus-hangul `use-event-forwarding=true`, 기본값(각 36회, 합 144회)과 최종 관문의 기본 행렬 72회, 합 216회.
+모두 안전, 목표 순서(빈 끝 → Ctrl+Z → 늦은 확정) 0회(누적 0/298). 새 관찰기: 빈 compositionend에서 MessageChannel task를 걸면, 늦은 확정은 그
+task보다 늘 먼저 왔다(128/128). 그 사이에 오는 keydown은 Ctrl 자신의 입력기 처리 keydown(`Unidentified`)뿐이었다 — 이 WebKitGTK·ibus
+경로에서는 Z keydown이 그 사이에 들어올 수 없다는 근거(INFERRED, 다른 플랫폼 미확인). sync mode에서는 빈 끝 없이 확정이 두 번 오는
+새 순서(sync mode마다 포인터 변형 8회 — hwp·hwpx 각 4)가 보였고 글자·revision은 맞았다. 결정적 시뮬레이션(`cancellationBoundary.test.ts`, `imeBoundary.test.tsx`)이
+목표 순서의 처리를 계속 확인한다. 결함이 드러나지 않아 IME 제품 코드는 바꾸지 않았다. D2는 INCONCLUSIVE로 남는다.

@@ -619,7 +619,10 @@ export class RhwpEditorSession implements DocumentCommandTarget {
   private paintedSummary(doc: RhwpDocument, page: number): PaintedPage | null {
     if (!doc.getPageLayerTreeWithProfile) return null;
     try {
-      return summarizeLayerTree(doc.getPageLayerTreeWithProfile(page, "screen", true, true));
+      const started = import.meta.env.VITE_GEUL_TEST_HOOKS === "1" ? performance.now() : 0;
+      const json = doc.getPageLayerTreeWithProfile(page, "screen", true, true);
+      trace("rhwp:layer-json", () => ({ page, ms: performance.now() - started, chars: json.length }));
+      return summarizeLayerTree(json);
     } catch {
       return null;
     }

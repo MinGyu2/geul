@@ -1019,6 +1019,32 @@ def gap_order(records):
     return out
 
 
+# 빈 compositionend가 온 뒤 늦은 확정(insertFromComposition)이 그 dispatch 안에서 오는지(다른 task가 끼어들 수 없음)를
+# 본다. 빈 끝에서 MessageChannel task를 걸고, 확정이 올 때 그 task가 이미 돌았는지 기록한다(돌지 않았으면 키 입력 task도
+# 그 사이에 끼어들지 못했다). 관찰만 하며 이벤트를 만들지 않는다.
+FINAL_TASK_PROBE = r"""
+window.__gapTasks = [];
+if (!window.__gapTaskInstalled) {
+  window.__gapTaskInstalled = true;
+  document.addEventListener('compositionend', (e) => {
+    if (e.data !== '') return;
+    const rec = { endAt: performance.now(), task: false, finalAt: null, finalAfterTask: null, keyBeforeFinal: null };
+    window.__gapTasks.push(rec);
+    const ch = new MessageChannel(); ch.port1.onmessage = () => { rec.task = true; }; ch.port2.postMessage(0);
+  }, true);
+  document.addEventListener('input', (e) => {
+    if (e.inputType !== 'insertFromComposition' || !e.data) return;
+    const rec = window.__gapTasks.at(-1);
+    if (rec && rec.finalAt === null) { rec.finalAt = performance.now() - rec.endAt; rec.finalAfterTask = rec.task; }
+  }, true);
+  document.addEventListener('keydown', (e) => {
+    const rec = window.__gapTasks.at(-1);
+    if (rec && rec.finalAt === null && rec.keyBeforeFinal === null) rec.keyBeforeFinal = e.code;
+  }, true);
+}
+"""
+
+
 def scenario_ime_gap_matrix(d,fixtures,xdotool,ibus,rounds=1):
     """Bounded native scheduling matrix for the empty-compositionend → Ctrl+Z → late final window (Stage B).
 
@@ -1034,6 +1060,8 @@ def scenario_ime_gap_matrix(d,fixtures,xdotool,ibus,rounds=1):
            ("pointer",0),("pointer",2),("stall",15),("stall",40),("stall",120),("stallAfterCtrl",0),("stallAfterCtrl",5),
            ("stallAfterCtrl",20),("pointerStall",20),("pointerStall",80)]
     matrix=REPORT.setdefault("nativeFinalGapMatrix",{})
+    REPORT["nativeFinalGapEnvironment"]={"ibusSyncMode":os.environ.get("IBUS_ENABLE_SYNC_MODE","unset"),
+                                         "hangulEventForwarding":os.environ.get("GEUL_IBUS_FORWARDING","false")}
     for fmt in ("hwp","hwpx"):
         poc.open_document(d,fixtures/f"basic-ko.{fmt}");poc.click_paragraph_start(d)
         window=run(xdotool,"search","--onlyvisible","--name","^geul").stdout.split()[-1]
@@ -1053,7 +1081,7 @@ def scenario_ime_gap_matrix(d,fixtures,xdotool,ibus,rounds=1):
             for mode,amount in specs:
                 run(xdotool,"type","--delay","90","gk");run(xdotool,"key","End")
                 prefix=poc.settle(d,f"{fmt}: 앞 거래")
-                d.js("window.__geulTrace={seq:0,dropped:0,records:[]}")
+                d.js("window.__geulTrace={seq:0,dropped:0,records:[]}");d.js(FINAL_TASK_PROBE)
                 run(xdotool,"type","--delay","90","rk")
                 stopped=False
                 try:
@@ -1102,7 +1130,8 @@ def scenario_ime_gap_matrix(d,fixtures,xdotool,ibus,rounds=1):
                 run(xdotool,"key","ctrl+y");redone=poc.settle(d,f"{fmt}: matrix Redo")
                 safe=safe and redone["paragraphText"]==prefix["paragraphText"]+"가"
                 rows.append({"mode":mode,"amountMs":amount,"windowObserved":in_gap,"acceptedAfterFinal":accepted,"safe":safe,
-                             "revisionDelta":delta,"emptyEnds":len(empties),"finalInserts":len(finals),"order":gap_order(records)})
+                             "revisionDelta":delta,"emptyEnds":len(empties),"finalInserts":len(finals),"order":gap_order(records),
+                             "finalDispatch":d.js("return window.__gapTasks")})
                 print("[matrix]",fmt,mode,amount,"window" if in_gap else "-","accepted" if accepted else "refused","safe" if safe else "UNSAFE",flush=True)
                 run(xdotool,"key","ctrl+z","ctrl+z");clean=poc.settle(d,f"{fmt}: matrix 정리")
                 if clean["paragraphText"]!=base:raise smoke.Failure("native final-gap matrix cleanup did not restore base")

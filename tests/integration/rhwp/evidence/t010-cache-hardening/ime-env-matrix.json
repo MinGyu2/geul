@@ -1,0 +1,4730 @@
+{
+ "class": "NATIVE OBSERVED: real X11 keys/clicks through ibus-hangul 1.5.5 + ibus 1.5.33 + WebKitGTK 2.54.1 (Xvfb). 18 timing variants × hwp/hwpx per environment; environment axes new this round: IBUS_ENABLE_SYNC_MODE=1/2, hangul use-event-forwarding=true, plus default with the new dispatch probe.",
+ "probe": "at an empty compositionend a MessageChannel task is posted; finalBeforePostedTask counts finals dispatched before that task ran (no other task, e.g. a Ctrl+Z keydown, can interleave). 'Unidentified' is the IME-filtered (229) keydown of the Ctrl press itself.",
+ "environments": {
+  "default": {
+   "environment": {
+    "ibusSyncMode": "unset",
+    "hangulEventForwarding": "false"
+   },
+   "trials": 36,
+   "safe": true,
+   "windowObserved": 0,
+   "emptyEnds": 36,
+   "finalBeforePostedTask": 36,
+   "keydownBetweenEmptyEndAndFinal": [
+    "Unidentified"
+   ],
+   "trialsWithTwoFinalInserts": 0,
+   "rows": {
+    "hwp": [
+     {
+      "mode": "key",
+      "amountMs": 0,
+      "windowObserved": false,
+      "acceptedAfterFinal": true,
+      "safe": true,
+      "revisionDelta": 2,
+      "emptyEnds": 1,
+      "finalInserts": 1,
+      "order": [
+       "insertCompositionText:1",
+       "insertCompositionText:1",
+       "deleteCompositionText:0",
+       "end0",
+       "awaiting:this",
+       "insertFromComposition:1",
+       "end1",
+       "awaiting:none",
+       "mod:ControlLeft",
+       "mod:KeyZ",
+       "undoReq:None",
+       "undoDispatch:True"
+      ],
+      "finalDispatch": [
+       {
+        "task": true,
+        "keyBeforeFinal": "Unidentified",
+        "finalAfterTask": false,
+        "endAt": 3487,
+        "finalAt": 23
+       }
+      ]
+     },
+     {
+      "mode": "key",
+      "amountMs": 1,
+      "windowObserved": false,
+      "acceptedAfterFinal": true,
+      "safe": true,
+      "revisionDelta": 2,
+      "emptyEnds": 1,
+      "finalInserts": 1,
+      "order": [
+       "insertCompositionText:1",
+       "insertCompositionText:1",
+       "deleteCompositionText:0",
+       "end0",
+       "awaiting:this",
+       "insertFromComposition:1",
+       "end1",
+       "awaiting:none",
+       "mod:ControlLeft",
+       "mod:KeyZ",
+       "undoReq:None",
+       "undoDispatch:True"
+      ],
+      "finalDispatch": [
+       {
+        "task": true,
+        "keyBeforeFinal": "Unidentified",
+        "finalAfterTask": false,
+        "endAt": 7800,
+        "finalAt": 15
+       }
+      ]
+     },
+     {
+      "mode": "key",
+      "amountMs": 3,
+      "windowObserved": false,
+      "acceptedAfterFinal": true,
+      "safe": true,
+      "revisionDelta": 2,
+      "emptyEnds": 1,
+      "finalInserts": 1,
+      "order": [
+       "insertCompositionText:1",
+       "insertCompositionText:1",
+       "deleteCompositionText:0",
+       "end0",
+       "awaiting:this",
+       "insertFromComposition:1",
+       "end1",
+       "awaiting:none",
+       "mod:ControlLeft",
+       "mod:KeyZ",
+       "undoReq:None",
+       "undoDispatch:True"
+      ],
+      "finalDispatch": [
+       {
+        "task": true,
+        "keyBeforeFinal": "Unidentified",
+        "finalAfterTask": false,
+        "endAt": 12151,
+        "finalAt": 11
+       }
+      ]
+     },
+     {
+      "mode": "key",
+      "amountMs": 8,
+      "windowObserved": false,
+      "acceptedAfterFinal": true,
+      "safe": true,
+      "revisionDelta": 2,
+      "emptyEnds": 1,
+      "finalInserts": 1,
+      "order": [
+       "insertCompositionText:1",
+       "insertCompositionText:1",
+       "deleteCompositionText:0",
+       "end0",
+       "awaiting:this",
+       "insertFromComposition:1",
+       "end1",
+       "awaiting:none",
+       "mod:ControlLeft",
+       "mod:KeyZ",
+       "undoReq:None",
+       "undoDispatch:True"
+      ],
+      "finalDispatch": [
+       {
+        "task": true,
+        "keyBeforeFinal": "Unidentified",
+        "finalAfterTask": false,
+        "endAt": 16551,
+        "finalAt": 15
+       }
+      ]
+     },
+     {
+      "mode": "key",
+      "amountMs": 15,
+      "windowObserved": false,
+      "acceptedAfterFinal": true,
+      "safe": true,
+      "revisionDelta": 2,
+      "emptyEnds": 1,
+      "finalInserts": 1,
+      "order": [
+       "insertCompositionText:1",
+       "insertCompositionText:1",
+       "deleteCompositionText:0",
+       "end0",
+       "awaiting:this",
+       "insertFromComposition:1",
+       "end1",
+       "awaiting:none",
+       "mod:ControlLeft",
+       "mod:KeyZ",
+       "undoReq:None",
+       "undoDispatch:True"
+      ],
+      "finalDispatch": [
+       {
+        "task": true,
+        "keyBeforeFinal": "Unidentified",
+        "finalAfterTask": false,
+        "endAt": 20935,
+        "finalAt": 15
+       }
+      ]
+     },
+     {
+      "mode": "earlyCtrl",
+      "amountMs": 0,
+      "windowObserved": false,
+      "acceptedAfterFinal": true,
+      "safe": true,
+      "revisionDelta": 2,
+      "emptyEnds": 1,
+      "finalInserts": 1,
+      "order": [
+       "insertCompositionText:1",
+       "insertCompositionText:1",
+       "deleteCompositionText:0",
+       "end0",
+       "awaiting:this",
+       "insertFromComposition:1",
+       "end1",
+       "awaiting:none",
+       "mod:ControlLeft",
+       "mod:KeyZ",
+       "undoReq:None",
+       "undoDispatch:True"
+      ],
+      "finalDispatch": [
+       {
+        "task": true,
+        "keyBeforeFinal": "Unidentified",
+        "finalAfterTask": false,
+        "endAt": 25282,
+        "finalAt": 14
+       }
+      ]
+     },
+     {
+      "mode": "earlyCtrl",
+      "amountMs": 10,
+      "windowObserved": false,
+      "acceptedAfterFinal": true,
+      "safe": true,
+      "revisionDelta": 2,
+      "emptyEnds": 1,
+      "finalInserts": 1,
+      "order": [
+       "insertCompositionText:1",
+       "insertCompositionText:1",
+       "deleteCompositionText:0",
+       "end0",
+       "awaiting:this",
+       "insertFromComposition:1",
+       "end1",
+       "awaiting:none",
+       "mod:ControlLeft",
+       "mod:KeyZ",
+       "undoReq:None",
+       "undoDispatch:True"
+      ],
+      "finalDispatch": [
+       {
+        "task": true,
+        "keyBeforeFinal": "Unidentified",
+        "finalAfterTask": false,
+        "endAt": 29656,
+        "finalAt": 15
+       }
+      ]
+     },
+     {
+      "mode": "earlyCtrl",
+      "amountMs": 30,
+      "windowObserved": false,
+      "acceptedAfterFinal": true,
+      "safe": true,
+      "revisionDelta": 2,
+      "emptyEnds": 1,
+      "finalInserts": 1,
+      "order": [
+       "insertCompositionText:1",
+       "insertCompositionText:1",
+       "deleteCompositionText:0",
+       "end0",
+       "awaiting:this",
+       "insertFromComposition:1",
+       "end1",
+       "awaiting:none",
+       "mod:ControlLeft",
+       "mod:KeyZ",
+       "undoReq:None",
+       "undoDispatch:True"
+      ],
+      "finalDispatch": [
+       {
+        "task": true,
+        "keyBeforeFinal": "Unidentified",
+        "finalAfterTask": false,
+        "endAt": 34058,
+        "finalAt": 15
+       }
+      ]
+     },
+     {
+      "mode": "pointer",
+      "amountMs": 0,
+      "windowObserved": false,
+      "acceptedAfterFinal": true,
+      "safe": true,
+      "revisionDelta": 2,
+      "emptyEnds": 1,
+      "finalInserts": 1,
+      "order": [
+       "insertCompositionText:1",
+       "insertCompositionText:1",
+       "deleteCompositionText:0",
+       "end0",
+       "awaiting:none",
+       "insertFromComposition:1",
+       "end1",
+       "awaiting:none",
+       "mod:ControlLeft",
+       "mod:KeyZ",
+       "undoReq:None",
+       "undoDispatch:True"
+      ],
+      "finalDispatch": [
+       {
+        "task": true,
+        "keyBeforeFinal": "Unidentified",
+        "finalAfterTask": false,
+        "endAt": 38419,
+        "finalAt": 13
+       }
+      ]
+     },
+     {
+      "mode": "pointer",
+      "amountMs": 2,
+      "windowObserved": false,
+      "acceptedAfterFinal": true,
+      "safe": true,
+      "revisionDelta": 2,
+      "emptyEnds": 1,
+      "finalInserts": 1,
+      "order": [
+       "insertCompositionText:1",
+       "insertCompositionText:1",
+       "deleteCompositionText:0",
+       "end0",
+       "awaiting:this",
+       "insertFromComposition:1",
+       "end1",
+       "awaiting:none",
+       "mod:ControlLeft",
+       "mod:KeyZ",
+       "undoReq:None",
+       "undoDispatch:True"
+      ],
+      "finalDispatch": [
+       {
+        "task": true,
+        "keyBeforeFinal": "Unidentified",
+        "finalAfterTask": false,
+        "endAt": 42700,
+        "finalAt": 25
+       }
+      ]
+     },
+     {
+      "mode": "stall",
+      "amountMs": 15,
+      "windowObserved": false,
+      "acceptedAfterFinal": true,
+      "safe": true,
+      "revisionDelta": 2,
+      "emptyEnds": 1,
+      "finalInserts": 1,
+      "order": [
+       "insertCompositionText:1",
+       "insertCompositionText:1",
+       "deleteCompositionText:0",
+       "end0",
+       "awaiting:this",
+       "insertFromComposition:1",
+       "end1",
+       "awaiting:none",
+       "mod:ControlLeft",
+       "mod:KeyZ",
+       "undoReq:None",
+       "undoDispatch:True"
+      ],
+      "finalDispatch": [
+       {
+        "task": true,
+        "keyBeforeFinal": "Unidentified",
+        "finalAfterTask": false,
+        "endAt": 47156,
+        "finalAt": 23
+       }
+      ]
+     },
+     {
+      "mode": "stall",
+      "amountMs": 40,
+      "windowObserved": false,
+      "acceptedAfterFinal": true,
+      "safe": true,
+      "revisionDelta": 2,
+      "emptyEnds": 1,
+      "finalInserts": 1,
+      "order": [
+       "insertCompositionText:1",
+       "insertCompositionText:1",
+       "deleteCompositionText:0",
+       "end0",
+       "awaiting:this",
+       "insertFromComposition:1",
+       "end1",
+       "awaiting:none",
+       "mod:ControlLeft",
+       "mod:KeyZ",
+       "undoReq:None",
+       "undoDispatch:True"
+      ],
+      "finalDispatch": [
+       {
+        "task": true,
+        "keyBeforeFinal": "Unidentified",
+        "finalAfterTask": false,
+        "endAt": 51516,
+        "finalAt": 23
+       }
+      ]
+     },
+     {
+      "mode": "stall",
+      "amountMs": 120,
+      "windowObserved": false,
+      "acceptedAfterFinal": true,
+      "safe": true,
+      "revisionDelta": 2,
+      "emptyEnds": 1,
+      "finalInserts": 1,
+      "order": [
+       "insertCompositionText:1",
+       "insertCompositionText:1",
+       "deleteCompositionText:0",
+       "end0",
+       "awaiting:this",
+       "insertFromComposition:1",
+       "end1",
+       "awaiting:none",
+       "mod:ControlLeft",
+       "mod:KeyZ",
+       "undoReq:None",
+       "undoDispatch:True"
+      ],
+      "finalDispatch": [
+       {
+        "task": true,
+        "keyBeforeFinal": "Unidentified",
+        "finalAfterTask": false,
+        "endAt": 55956,
+        "finalAt": 13
+       }
+      ]
+     },
+     {
+      "mode": "stallAfterCtrl",
+      "amountMs": 0,
+      "windowObserved": false,
+      "acceptedAfterFinal": true,
+      "safe": true,
+      "revisionDelta": 2,
+      "emptyEnds": 1,
+      "finalInserts": 1,
+      "order": [
+       "insertCompositionText:1",
+       "insertCompositionText:1",
+       "deleteCompositionText:0",
+       "end0",
+       "awaiting:this",
+       "insertFromComposition:1",
+       "end1",
+       "awaiting:none",
+       "mod:ControlLeft",
+       "mod:KeyZ",
+       "undoReq:None",
+       "undoDispatch:True"
+      ],
+      "finalDispatch": [
+       {
+        "task": true,
+        "keyBeforeFinal": "Unidentified",
+        "finalAfterTask": false,
+        "endAt": 60351,
+        "finalAt": 22
+       }
+      ]
+     },
+     {
+      "mode": "stallAfterCtrl",
+      "amountMs": 5,
+      "windowObserved": false,
+      "acceptedAfterFinal": true,
+      "safe": true,
+      "revisionDelta": 2,
+      "emptyEnds": 1,
+      "finalInserts": 1,
+      "order": [
+       "insertCompositionText:1",
+       "insertCompositionText:1",
+       "deleteCompositionText:0",
+       "end0",
+       "awaiting:this",
+       "insertFromComposition:1",
+       "end1",
+       "awaiting:none",
+       "mod:ControlLeft",
+       "mod:KeyZ",
+       "undoReq:None",
+       "undoDispatch:True"
+      ],
+      "finalDispatch": [
+       {
+        "task": true,
+        "keyBeforeFinal": "Unidentified",
+        "finalAfterTask": false,
+        "endAt": 64747,
+        "finalAt": 22
+       }
+      ]
+     },
+     {
+      "mode": "stallAfterCtrl",
+      "amountMs": 20,
+      "windowObserved": false,
+      "acceptedAfterFinal": true,
+      "safe": true,
+      "revisionDelta": 2,
+      "emptyEnds": 1,
+      "finalInserts": 1,
+      "order": [
+       "insertCompositionText:1",
+       "insertCompositionText:1",
+       "deleteCompositionText:0",
+       "end0",
+       "awaiting:this",
+       "insertFromComposition:1",
+       "end1",
+       "awaiting:none",
+       "mod:ControlLeft",
+       "mod:KeyZ",
+       "undoReq:None",
+       "undoDispatch:True"
+      ],
+      "finalDispatch": [
+       {
+        "task": true,
+        "keyBeforeFinal": "Unidentified",
+        "finalAfterTask": false,
+        "endAt": 69165,
+        "finalAt": 22
+       }
+      ]
+     },
+     {
+      "mode": "pointerStall",
+      "amountMs": 20,
+      "windowObserved": false,
+      "acceptedAfterFinal": true,
+      "safe": true,
+      "revisionDelta": 2,
+      "emptyEnds": 1,
+      "finalInserts": 1,
+      "order": [
+       "insertCompositionText:1",
+       "insertCompositionText:1",
+       "deleteCompositionText:0",
+       "end0",
+       "awaiting:this",
+       "insertFromComposition:1",
+       "end1",
+       "awaiting:none",
+       "mod:ControlLeft",
+       "mod:KeyZ",
+       "undoReq:None",
+       "undoDispatch:True"
+      ],
+      "finalDispatch": [
+       {
+        "task": true,
+        "keyBeforeFinal": "Unidentified",
+        "finalAfterTask": false,
+        "endAt": 73420,
+        "finalAt": 23
+       }
+      ]
+     },
+     {
+      "mode": "pointerStall",
+      "amountMs": 80,
+      "windowObserved": false,
+      "acceptedAfterFinal": true,
+      "safe": true,
+      "revisionDelta": 2,
+      "emptyEnds": 1,
+      "finalInserts": 1,
+      "order": [
+       "insertCompositionText:1",
+       "insertCompositionText:1",
+       "deleteCompositionText:0",
+       "end0",
+       "awaiting:this",
+       "insertFromComposition:1",
+       "end1",
+       "awaiting:none",
+       "mod:ControlLeft",
+       "mod:KeyZ",
+       "undoReq:None",
+       "undoDispatch:True"
+      ],
+      "finalDispatch": [
+       {
+        "task": true,
+        "keyBeforeFinal": "Unidentified",
+        "finalAfterTask": false,
+        "endAt": 77768,
+        "finalAt": 24
+       }
+      ]
+     }
+    ],
+    "hwpx": [
+     {
+      "mode": "key",
+      "amountMs": 0,
+      "windowObserved": false,
+      "acceptedAfterFinal": true,
+      "safe": true,
+      "revisionDelta": 2,
+      "emptyEnds": 1,
+      "finalInserts": 1,
+      "order": [
+       "insertCompositionText:1",
+       "insertCompositionText:1",
+       "deleteCompositionText:0",
+       "end0",
+       "awaiting:this",
+       "insertFromComposition:1",
+       "end1",
+       "awaiting:none",
+       "mod:ControlLeft",
+       "mod:KeyZ",
+       "undoReq:None",
+       "undoDispatch:True"
+      ],
+      "finalDispatch": [
+       {
+        "task": true,
+        "keyBeforeFinal": "Unidentified",
+        "finalAfterTask": false,
+        "endAt": 83307,
+        "finalAt": 12
+       }
+      ]
+     },
+     {
+      "mode": "key",
+      "amountMs": 1,
+      "windowObserved": false,
+      "acceptedAfterFinal": true,
+      "safe": true,
+      "revisionDelta": 2,
+      "emptyEnds": 1,
+      "finalInserts": 1,
+      "order": [
+       "insertCompositionText:1",
+       "insertCompositionText:1",
+       "deleteCompositionText:0",
+       "end0",
+       "awaiting:this",
+       "insertFromComposition:1",
+       "end1",
+       "awaiting:none",
+       "mod:ControlLeft",
+       "mod:KeyZ",
+       "undoReq:None",
+       "undoDispatch:True"
+      ],
+      "finalDispatch": [
+       {
+        "task": true,
+        "keyBeforeFinal": "Unidentified",
+        "finalAfterTask": false,
+        "endAt": 87624,
+        "finalAt": 12
+       }
+      ]
+     },
+     {
+      "mode": "key",
+      "amountMs": 3,
+      "windowObserved": false,
+      "acceptedAfterFinal": true,
+      "safe": true,
+      "revisionDelta": 2,
+      "emptyEnds": 1,
+      "finalInserts": 1,
+      "order": [
+       "insertCompositionText:1",
+       "insertCompositionText:1",
+       "deleteCompositionText:0",
+       "end0",
+       "awaiting:this",
+       "insertFromComposition:1",
+       "end1",
+       "awaiting:none",
+       "mod:ControlLeft",
+       "mod:KeyZ",
+       "undoReq:None",
+       "undoDispatch:True"
+      ],
+      "finalDispatch": [
+       {
+        "task": true,
+        "keyBeforeFinal": "Unidentified",
+        "finalAfterTask": false,
+        "endAt": 91907,
+        "finalAt": 13
+       }
+      ]
+     },
+     {
+      "mode": "key",
+      "amountMs": 8,
+      "windowObserved": false,
+      "acceptedAfterFinal": true,
+      "safe": true,
+      "revisionDelta": 2,
+      "emptyEnds": 1,
+      "finalInserts": 1,
+      "order": [
+       "insertCompositionText:1",
+       "insertCompositionText:1",
+       "deleteCompositionText:0",
+       "end0",
+       "awaiting:this",
+       "insertFromComposition:1",
+       "end1",
+       "awaiting:none",
+       "mod:ControlLeft",
+       "mod:KeyZ",
+       "undoReq:None",
+       "undoDispatch:True"
+      ],
+      "finalDispatch": [
+       {
+        "task": true,
+        "keyBeforeFinal": "Unidentified",
+        "finalAfterTask": false,
+        "endAt": 96175,
+        "finalAt": 13
+       }
+      ]
+     },
+     {
+      "mode": "key",
+      "amountMs": 15,
+      "windowObserved": false,
+      "acceptedAfterFinal": true,
+      "safe": true,
+      "revisionDelta": 2,
+      "emptyEnds": 1,
+      "finalInserts": 1,
+      "order": [
+       "insertCompositionText:1",
+       "insertCompositionText:1",
+       "deleteCompositionText:0",
+       "end0",
+       "awaiting:this",
+       "insertFromComposition:1",
+       "end1",
+       "awaiting:none",
+       "mod:ControlLeft",
+       "mod:KeyZ",
+       "undoReq:None",
+       "undoDispatch:True"
+      ],
+      "finalDispatch": [
+       {
+        "task": true,
+        "keyBeforeFinal": "Unidentified",
+        "finalAfterTask": false,
+        "endAt": 100464,
+        "finalAt": 13
+       }
+      ]
+     },
+     {
+      "mode": "earlyCtrl",
+      "amountMs": 0,
+      "windowObserved": false,
+      "acceptedAfterFinal": true,
+      "safe": true,
+      "revisionDelta": 2,
+      "emptyEnds": 1,
+      "finalInserts": 1,
+      "order": [
+       "insertCompositionText:1",
+       "insertCompositionText:1",
+       "deleteCompositionText:0",
+       "end0",
+       "awaiting:this",
+       "insertFromComposition:1",
+       "end1",
+       "awaiting:none",
+       "mod:ControlLeft",
+       "mod:KeyZ",
+       "undoReq:None",
+       "undoDispatch:True"
+      ],
+      "finalDispatch": [
+       {
+        "task": true,
+        "keyBeforeFinal": "Unidentified",
+        "finalAfterTask": false,
+        "endAt": 104673,
+        "finalAt": 12
+       }
+      ]
+     },
+     {
+      "mode": "earlyCtrl",
+      "amountMs": 10,
+      "windowObserved": false,
+      "acceptedAfterFinal": true,
+      "safe": true,
+      "revisionDelta": 2,
+      "emptyEnds": 1,
+      "finalInserts": 1,
+      "order": [
+       "insertCompositionText:1",
+       "insertCompositionText:1",
+       "deleteCompositionText:0",
+       "end0",
+       "awaiting:this",
+       "insertFromComposition:1",
+       "end1",
+       "awaiting:none",
+       "mod:ControlLeft",
+       "mod:KeyZ",
+       "undoReq:None",
+       "undoDispatch:True"
+      ],
+      "finalDispatch": [
+       {
+        "task": true,
+        "keyBeforeFinal": "Unidentified",
+        "finalAfterTask": false,
+        "endAt": 109012,
+        "finalAt": 12
+       }
+      ]
+     },
+     {
+      "mode": "earlyCtrl",
+      "amountMs": 30,
+      "windowObserved": false,
+      "acceptedAfterFinal": true,
+      "safe": true,
+      "revisionDelta": 2,
+      "emptyEnds": 1,
+      "finalInserts": 1,
+      "order": [
+       "insertCompositionText:1",
+       "insertCompositionText:1",
+       "deleteCompositionText:0",
+       "end0",
+       "awaiting:this",
+       "insertFromComposition:1",
+       "end1",
+       "awaiting:none",
+       "mod:ControlLeft",
+       "mod:KeyZ",
+       "undoReq:None",
+       "undoDispatch:True"
+      ],
+      "finalDispatch": [
+       {
+        "task": true,
+        "keyBeforeFinal": "Unidentified",
+        "finalAfterTask": false,
+        "endAt": 113383,
+        "finalAt": 12
+       }
+      ]
+     },
+     {
+      "mode": "pointer",
+      "amountMs": 0,
+      "windowObserved": false,
+      "acceptedAfterFinal": true,
+      "safe": true,
+      "revisionDelta": 2,
+      "emptyEnds": 1,
+      "finalInserts": 1,
+      "order": [
+       "insertCompositionText:1",
+       "insertCompositionText:1",
+       "deleteCompositionText:0",
+       "end0",
+       "awaiting:none",
+       "insertFromComposition:1",
+       "end1",
+       "awaiting:none",
+       "mod:ControlLeft",
+       "mod:KeyZ",
+       "undoReq:None",
+       "undoDispatch:True"
+      ],
+      "finalDispatch": [
+       {
+        "task": true,
+        "keyBeforeFinal": "Unidentified",
+        "finalAfterTask": false,
+        "endAt": 117799,
+        "finalAt": 9
+       }
+      ]
+     },
+     {
+      "mode": "pointer",
+      "amountMs": 2,
+      "windowObserved": false,
+      "acceptedAfterFinal": true,
+      "safe": true,
+      "revisionDelta": 2,
+      "emptyEnds": 1,
+      "finalInserts": 1,
+      "order": [
+       "insertCompositionText:1",
+       "insertCompositionText:1",
+       "deleteCompositionText:0",
+       "end0",
+       "awaiting:this",
+       "insertFromComposition:1",
+       "end1",
+       "awaiting:none",
+       "mod:ControlLeft",
+       "mod:KeyZ",
+       "undoReq:None",
+       "undoDispatch:True"
+      ],
+      "finalDispatch": [
+       {
+        "task": true,
+        "keyBeforeFinal": "Unidentified",
+        "finalAfterTask": false,
+        "endAt": 122068,
+        "finalAt": 23
+       }
+      ]
+     },
+     {
+      "mode": "stall",
+      "amountMs": 15,
+      "windowObserved": false,
+      "acceptedAfterFinal": true,
+      "safe": true,
+      "revisionDelta": 2,
+      "emptyEnds": 1,
+      "finalInserts": 1,
+      "order": [
+       "insertCompositionText:1",
+       "insertCompositionText:1",
+       "deleteCompositionText:0",
+       "end0",
+       "awaiting:this",
+       "insertFromComposition:1",
+       "end1",
+       "awaiting:none",
+       "mod:ControlLeft",
+       "mod:KeyZ",
+       "undoReq:None",
+       "undoDispatch:True"
+      ],
+      "finalDispatch": [
+       {
+        "task": true,
+        "keyBeforeFinal": "Unidentified",
+        "finalAfterTask": false,
+        "endAt": 126416,
+        "finalAt": 20
+       }
+      ]
+     },
+     {
+      "mode": "stall",
+      "amountMs": 40,
+      "windowObserved": false,
+      "acceptedAfterFinal": true,
+      "safe": true,
+      "revisionDelta": 2,
+      "emptyEnds": 1,
+      "finalInserts": 1,
+      "order": [
+       "insertCompositionText:1",
+       "insertCompositionText:1",
+       "deleteCompositionText:0",
+       "end0",
+       "awaiting:this",
+       "insertFromComposition:1",
+       "end1",
+       "awaiting:none",
+       "mod:ControlLeft",
+       "mod:KeyZ",
+       "undoReq:None",
+       "undoDispatch:True"
+      ],
+      "finalDispatch": [
+       {
+        "task": true,
+        "keyBeforeFinal": "Unidentified",
+        "finalAfterTask": false,
+        "endAt": 130692,
+        "finalAt": 20
+       }
+      ]
+     },
+     {
+      "mode": "stall",
+      "amountMs": 120,
+      "windowObserved": false,
+      "acceptedAfterFinal": true,
+      "safe": true,
+      "revisionDelta": 2,
+      "emptyEnds": 1,
+      "finalInserts": 1,
+      "order": [
+       "insertCompositionText:1",
+       "insertCompositionText:1",
+       "deleteCompositionText:0",
+       "end0",
+       "awaiting:this",
+       "insertFromComposition:1",
+       "end1",
+       "awaiting:none",
+       "mod:ControlLeft",
+       "mod:KeyZ",
+       "undoReq:None",
+       "undoDispatch:True"
+      ],
+      "finalDispatch": [
+       {
+        "task": true,
+        "keyBeforeFinal": "Unidentified",
+        "finalAfterTask": false,
+        "endAt": 135076,
+        "finalAt": 14
+       }
+      ]
+     },
+     {
+      "mode": "stallAfterCtrl",
+      "amountMs": 0,
+      "windowObserved": false,
+      "acceptedAfterFinal": true,
+      "safe": true,
+      "revisionDelta": 2,
+      "emptyEnds": 1,
+      "finalInserts": 1,
+      "order": [
+       "insertCompositionText:1",
+       "insertCompositionText:1",
+       "deleteCompositionText:0",
+       "end0",
+       "awaiting:this",
+       "insertFromComposition:1",
+       "end1",
+       "awaiting:none",
+       "mod:ControlLeft",
+       "mod:KeyZ",
+       "undoReq:None",
+       "undoDispatch:True"
+      ],
+      "finalDispatch": [
+       {
+        "task": true,
+        "keyBeforeFinal": "Unidentified",
+        "finalAfterTask": false,
+        "endAt": 139467,
+        "finalAt": 19
+       }
+      ]
+     },
+     {
+      "mode": "stallAfterCtrl",
+      "amountMs": 5,
+      "windowObserved": false,
+      "acceptedAfterFinal": true,
+      "safe": true,
+      "revisionDelta": 2,
+      "emptyEnds": 1,
+      "finalInserts": 1,
+      "order": [
+       "insertCompositionText:1",
+       "insertCompositionText:1",
+       "deleteCompositionText:0",
+       "end0",
+       "awaiting:this",
+       "insertFromComposition:1",
+       "end1",
+       "awaiting:none",
+       "mod:ControlLeft",
+       "mod:KeyZ",
+       "undoReq:None",
+       "undoDispatch:True"
+      ],
+      "finalDispatch": [
+       {
+        "task": true,
+        "keyBeforeFinal": "Unidentified",
+        "finalAfterTask": false,
+        "endAt": 143856,
+        "finalAt": 20
+       }
+      ]
+     },
+     {
+      "mode": "stallAfterCtrl",
+      "amountMs": 20,
+      "windowObserved": false,
+      "acceptedAfterFinal": true,
+      "safe": true,
+      "revisionDelta": 2,
+      "emptyEnds": 1,
+      "finalInserts": 1,
+      "order": [
+       "insertCompositionText:1",
+       "insertCompositionText:1",
+       "deleteCompositionText:0",
+       "end0",
+       "awaiting:this",
+       "insertFromComposition:1",
+       "end1",
+       "awaiting:none",
+       "mod:ControlLeft",
+       "mod:KeyZ",
+       "undoReq:None",
+       "undoDispatch:True"
+      ],
+      "finalDispatch": [
+       {
+        "task": true,
+        "keyBeforeFinal": "Unidentified",
+        "finalAfterTask": false,
+        "endAt": 148249,
+        "finalAt": 20
+       }
+      ]
+     },
+     {
+      "mode": "pointerStall",
+      "amountMs": 20,
+      "windowObserved": false,
+      "acceptedAfterFinal": true,
+      "safe": true,
+      "revisionDelta": 2,
+      "emptyEnds": 1,
+      "finalInserts": 1,
+      "order": [
+       "insertCompositionText:1",
+       "insertCompositionText:1",
+       "deleteCompositionText:0",
+       "end0",
+       "awaiting:this",
+       "insertFromComposition:1",
+       "end1",
+       "awaiting:none",
+       "mod:ControlLeft",
+       "mod:KeyZ",
+       "undoReq:None",
+       "undoDispatch:True"
+      ],
+      "finalDispatch": [
+       {
+        "task": true,
+        "keyBeforeFinal": "Unidentified",
+        "finalAfterTask": false,
+        "endAt": 152613,
+        "finalAt": 21
+       }
+      ]
+     },
+     {
+      "mode": "pointerStall",
+      "amountMs": 80,
+      "windowObserved": false,
+      "acceptedAfterFinal": true,
+      "safe": true,
+      "revisionDelta": 2,
+      "emptyEnds": 1,
+      "finalInserts": 1,
+      "order": [
+       "insertCompositionText:1",
+       "insertCompositionText:1",
+       "deleteCompositionText:0",
+       "end0",
+       "awaiting:this",
+       "insertFromComposition:1",
+       "end1",
+       "awaiting:none",
+       "mod:ControlLeft",
+       "mod:KeyZ",
+       "undoReq:None",
+       "undoDispatch:True"
+      ],
+      "finalDispatch": [
+       {
+        "task": true,
+        "keyBeforeFinal": "Unidentified",
+        "finalAfterTask": false,
+        "endAt": 156984,
+        "finalAt": 21
+       }
+      ]
+     }
+    ]
+   }
+  },
+  "sync1": {
+   "environment": {
+    "ibusSyncMode": "1",
+    "hangulEventForwarding": "false"
+   },
+   "trials": 36,
+   "safe": true,
+   "windowObserved": 0,
+   "emptyEnds": 28,
+   "finalBeforePostedTask": 28,
+   "keydownBetweenEmptyEndAndFinal": [
+    "Unidentified"
+   ],
+   "trialsWithTwoFinalInserts": 8,
+   "rows": {
+    "hwp": [
+     {
+      "mode": "key",
+      "amountMs": 0,
+      "windowObserved": false,
+      "acceptedAfterFinal": true,
+      "safe": true,
+      "revisionDelta": 2,
+      "emptyEnds": 1,
+      "finalInserts": 1,
+      "order": [
+       "insertCompositionText:1",
+       "insertCompositionText:1",
+       "deleteCompositionText:0",
+       "end0",
+       "awaiting:this",
+       "insertFromComposition:1",
+       "end1",
+       "awaiting:none",
+       "mod:ControlLeft",
+       "mod:KeyZ",
+       "undoReq:None",
+       "undoDispatch:True"
+      ],
+      "finalDispatch": [
+       {
+        "task": true,
+        "keyBeforeFinal": "Unidentified",
+        "finalAfterTask": false,
+        "endAt": 3414,
+        "finalAt": 21
+       }
+      ]
+     },
+     {
+      "mode": "key",
+      "amountMs": 1,
+      "windowObserved": false,
+      "acceptedAfterFinal": true,
+      "safe": true,
+      "revisionDelta": 2,
+      "emptyEnds": 1,
+      "finalInserts": 1,
+      "order": [
+       "insertCompositionText:1",
+       "insertCompositionText:1",
+       "deleteCompositionText:0",
+       "end0",
+       "awaiting:this",
+       "insertFromComposition:1",
+       "end1",
+       "awaiting:none",
+       "mod:ControlLeft",
+       "mod:KeyZ",
+       "undoReq:None",
+       "undoDispatch:True"
+      ],
+      "finalDispatch": [
+       {
+        "task": true,
+        "keyBeforeFinal": "Unidentified",
+        "finalAfterTask": false,
+        "endAt": 7678,
+        "finalAt": 15
+       }
+      ]
+     },
+     {
+      "mode": "key",
+      "amountMs": 3,
+      "windowObserved": false,
+      "acceptedAfterFinal": true,
+      "safe": true,
+      "revisionDelta": 2,
+      "emptyEnds": 1,
+      "finalInserts": 1,
+      "order": [
+       "insertCompositionText:1",
+       "insertCompositionText:1",
+       "deleteCompositionText:0",
+       "end0",
+       "awaiting:this",
+       "insertFromComposition:1",
+       "end1",
+       "awaiting:none",
+       "mod:ControlLeft",
+       "mod:KeyZ",
+       "undoReq:None",
+       "undoDispatch:True"
+      ],
+      "finalDispatch": [
+       {
+        "task": true,
+        "keyBeforeFinal": "Unidentified",
+        "finalAfterTask": false,
+        "endAt": 11985,
+        "finalAt": 20
+       }
+      ]
+     },
+     {
+      "mode": "key",
+      "amountMs": 8,
+      "windowObserved": false,
+      "acceptedAfterFinal": true,
+      "safe": true,
+      "revisionDelta": 2,
+      "emptyEnds": 1,
+      "finalInserts": 1,
+      "order": [
+       "insertCompositionText:1",
+       "insertCompositionText:1",
+       "deleteCompositionText:0",
+       "end0",
+       "awaiting:this",
+       "insertFromComposition:1",
+       "end1",
+       "awaiting:none",
+       "mod:ControlLeft",
+       "mod:KeyZ",
+       "undoReq:None",
+       "undoDispatch:True"
+      ],
+      "finalDispatch": [
+       {
+        "task": true,
+        "keyBeforeFinal": "Unidentified",
+        "finalAfterTask": false,
+        "endAt": 16459,
+        "finalAt": 15
+       }
+      ]
+     },
+     {
+      "mode": "key",
+      "amountMs": 15,
+      "windowObserved": false,
+      "acceptedAfterFinal": true,
+      "safe": true,
+      "revisionDelta": 2,
+      "emptyEnds": 1,
+      "finalInserts": 1,
+      "order": [
+       "insertCompositionText:1",
+       "insertCompositionText:1",
+       "deleteCompositionText:0",
+       "end0",
+       "awaiting:this",
+       "insertFromComposition:1",
+       "end1",
+       "awaiting:none",
+       "mod:ControlLeft",
+       "mod:KeyZ",
+       "undoReq:None",
+       "undoDispatch:True"
+      ],
+      "finalDispatch": [
+       {
+        "task": true,
+        "keyBeforeFinal": "Unidentified",
+        "finalAfterTask": false,
+        "endAt": 20882,
+        "finalAt": 15
+       }
+      ]
+     },
+     {
+      "mode": "earlyCtrl",
+      "amountMs": 0,
+      "windowObserved": false,
+      "acceptedAfterFinal": true,
+      "safe": true,
+      "revisionDelta": 2,
+      "emptyEnds": 1,
+      "finalInserts": 1,
+      "order": [
+       "insertCompositionText:1",
+       "insertCompositionText:1",
+       "deleteCompositionText:0",
+       "end0",
+       "awaiting:this",
+       "insertFromComposition:1",
+       "end1",
+       "awaiting:none",
+       "mod:ControlLeft",
+       "mod:KeyZ",
+       "undoReq:None",
+       "undoDispatch:True"
+      ],
+      "finalDispatch": [
+       {
+        "task": true,
+        "keyBeforeFinal": "Unidentified",
+        "finalAfterTask": false,
+        "endAt": 25305,
+        "finalAt": 11
+       }
+      ]
+     },
+     {
+      "mode": "earlyCtrl",
+      "amountMs": 10,
+      "windowObserved": false,
+      "acceptedAfterFinal": true,
+      "safe": true,
+      "revisionDelta": 2,
+      "emptyEnds": 1,
+      "finalInserts": 1,
+      "order": [
+       "insertCompositionText:1",
+       "insertCompositionText:1",
+       "deleteCompositionText:0",
+       "end0",
+       "awaiting:this",
+       "insertFromComposition:1",
+       "end1",
+       "awaiting:none",
+       "mod:ControlLeft",
+       "mod:KeyZ",
+       "undoReq:None",
+       "undoDispatch:True"
+      ],
+      "finalDispatch": [
+       {
+        "task": true,
+        "keyBeforeFinal": "Unidentified",
+        "finalAfterTask": false,
+        "endAt": 29697,
+        "finalAt": 15
+       }
+      ]
+     },
+     {
+      "mode": "earlyCtrl",
+      "amountMs": 30,
+      "windowObserved": false,
+      "acceptedAfterFinal": true,
+      "safe": true,
+      "revisionDelta": 2,
+      "emptyEnds": 1,
+      "finalInserts": 1,
+      "order": [
+       "insertCompositionText:1",
+       "insertCompositionText:1",
+       "deleteCompositionText:0",
+       "end0",
+       "awaiting:this",
+       "insertFromComposition:1",
+       "end1",
+       "awaiting:none",
+       "mod:ControlLeft",
+       "mod:KeyZ",
+       "undoReq:None",
+       "undoDispatch:True"
+      ],
+      "finalDispatch": [
+       {
+        "task": true,
+        "keyBeforeFinal": "Unidentified",
+        "finalAfterTask": false,
+        "endAt": 34055,
+        "finalAt": 16
+       }
+      ]
+     },
+     {
+      "mode": "pointer",
+      "amountMs": 0,
+      "windowObserved": false,
+      "acceptedAfterFinal": true,
+      "safe": true,
+      "revisionDelta": 2,
+      "emptyEnds": 0,
+      "finalInserts": 2,
+      "order": [
+       "insertCompositionText:1",
+       "insertCompositionText:1",
+       "deleteCompositionText:0",
+       "insertFromComposition:1",
+       "end1",
+       "awaiting:none",
+       "insertFromComposition:1",
+       "end1",
+       "awaiting:none",
+       "mod:ControlLeft",
+       "mod:KeyZ",
+       "undoReq:None",
+       "undoDispatch:True"
+      ],
+      "finalDispatch": []
+     },
+     {
+      "mode": "pointer",
+      "amountMs": 2,
+      "windowObserved": false,
+      "acceptedAfterFinal": true,
+      "safe": true,
+      "revisionDelta": 2,
+      "emptyEnds": 0,
+      "finalInserts": 2,
+      "order": [
+       "insertCompositionText:1",
+       "insertCompositionText:1",
+       "deleteCompositionText:0",
+       "insertFromComposition:1",
+       "end1",
+       "awaiting:none",
+       "insertFromComposition:1",
+       "end1",
+       "awaiting:none",
+       "mod:ControlLeft",
+       "mod:KeyZ",
+       "undoReq:None",
+       "undoDispatch:True"
+      ],
+      "finalDispatch": []
+     },
+     {
+      "mode": "stall",
+      "amountMs": 15,
+      "windowObserved": false,
+      "acceptedAfterFinal": true,
+      "safe": true,
+      "revisionDelta": 2,
+      "emptyEnds": 1,
+      "finalInserts": 1,
+      "order": [
+       "insertCompositionText:1",
+       "insertCompositionText:1",
+       "deleteCompositionText:0",
+       "end0",
+       "awaiting:this",
+       "insertFromComposition:1",
+       "end1",
+       "awaiting:none",
+       "mod:ControlLeft",
+       "mod:KeyZ",
+       "undoReq:None",
+       "undoDispatch:True"
+      ],
+      "finalDispatch": [
+       {
+        "task": true,
+        "keyBeforeFinal": "Unidentified",
+        "finalAfterTask": false,
+        "endAt": 47358,
+        "finalAt": 22
+       }
+      ]
+     },
+     {
+      "mode": "stall",
+      "amountMs": 40,
+      "windowObserved": false,
+      "acceptedAfterFinal": true,
+      "safe": true,
+      "revisionDelta": 2,
+      "emptyEnds": 1,
+      "finalInserts": 1,
+      "order": [
+       "insertCompositionText:1",
+       "insertCompositionText:1",
+       "deleteCompositionText:0",
+       "end0",
+       "awaiting:this",
+       "insertFromComposition:1",
+       "end1",
+       "awaiting:none",
+       "mod:ControlLeft",
+       "mod:KeyZ",
+       "undoReq:None",
+       "undoDispatch:True"
+      ],
+      "finalDispatch": [
+       {
+        "task": true,
+        "keyBeforeFinal": "Unidentified",
+        "finalAfterTask": false,
+        "endAt": 51857,
+        "finalAt": 22
+       }
+      ]
+     },
+     {
+      "mode": "stall",
+      "amountMs": 120,
+      "windowObserved": false,
+      "acceptedAfterFinal": true,
+      "safe": true,
+      "revisionDelta": 2,
+      "emptyEnds": 1,
+      "finalInserts": 1,
+      "order": [
+       "insertCompositionText:1",
+       "insertCompositionText:1",
+       "deleteCompositionText:0",
+       "end0",
+       "awaiting:this",
+       "insertFromComposition:1",
+       "end1",
+       "awaiting:none",
+       "mod:ControlLeft",
+       "mod:KeyZ",
+       "undoReq:None",
+       "undoDispatch:True"
+      ],
+      "finalDispatch": [
+       {
+        "task": true,
+        "keyBeforeFinal": "Unidentified",
+        "finalAfterTask": false,
+        "endAt": 56431,
+        "finalAt": 23
+       }
+      ]
+     },
+     {
+      "mode": "stallAfterCtrl",
+      "amountMs": 0,
+      "windowObserved": false,
+      "acceptedAfterFinal": true,
+      "safe": true,
+      "revisionDelta": 2,
+      "emptyEnds": 1,
+      "finalInserts": 1,
+      "order": [
+       "insertCompositionText:1",
+       "insertCompositionText:1",
+       "deleteCompositionText:0",
+       "end0",
+       "awaiting:this",
+       "insertFromComposition:1",
+       "end1",
+       "awaiting:none",
+       "mod:ControlLeft",
+       "mod:KeyZ",
+       "undoReq:None",
+       "undoDispatch:True"
+      ],
+      "finalDispatch": [
+       {
+        "task": true,
+        "keyBeforeFinal": "Unidentified",
+        "finalAfterTask": false,
+        "endAt": 60893,
+        "finalAt": 22
+       }
+      ]
+     },
+     {
+      "mode": "stallAfterCtrl",
+      "amountMs": 5,
+      "windowObserved": false,
+      "acceptedAfterFinal": true,
+      "safe": true,
+      "revisionDelta": 2,
+      "emptyEnds": 1,
+      "finalInserts": 1,
+      "order": [
+       "insertCompositionText:1",
+       "insertCompositionText:1",
+       "deleteCompositionText:0",
+       "end0",
+       "awaiting:this",
+       "insertFromComposition:1",
+       "end1",
+       "awaiting:none",
+       "mod:ControlLeft",
+       "mod:KeyZ",
+       "undoReq:None",
+       "undoDispatch:True"
+      ],
+      "finalDispatch": [
+       {
+        "task": true,
+        "keyBeforeFinal": "Unidentified",
+        "finalAfterTask": false,
+        "endAt": 65385,
+        "finalAt": 22
+       }
+      ]
+     },
+     {
+      "mode": "stallAfterCtrl",
+      "amountMs": 20,
+      "windowObserved": false,
+      "acceptedAfterFinal": true,
+      "safe": true,
+      "revisionDelta": 2,
+      "emptyEnds": 1,
+      "finalInserts": 1,
+      "order": [
+       "insertCompositionText:1",
+       "insertCompositionText:1",
+       "deleteCompositionText:0",
+       "end0",
+       "awaiting:this",
+       "insertFromComposition:1",
+       "end1",
+       "awaiting:none",
+       "mod:ControlLeft",
+       "mod:KeyZ",
+       "undoReq:None",
+       "undoDispatch:True"
+      ],
+      "finalDispatch": [
+       {
+        "task": true,
+        "keyBeforeFinal": "Unidentified",
+        "finalAfterTask": false,
+        "endAt": 69948,
+        "finalAt": 23
+       }
+      ]
+     },
+     {
+      "mode": "pointerStall",
+      "amountMs": 20,
+      "windowObserved": false,
+      "acceptedAfterFinal": true,
+      "safe": true,
+      "revisionDelta": 2,
+      "emptyEnds": 0,
+      "finalInserts": 2,
+      "order": [
+       "insertCompositionText:1",
+       "insertCompositionText:1",
+       "deleteCompositionText:0",
+       "insertFromComposition:1",
+       "end1",
+       "awaiting:none",
+       "insertFromComposition:1",
+       "end1",
+       "awaiting:none",
+       "mod:ControlLeft",
+       "mod:KeyZ",
+       "undoReq:None",
+       "undoDispatch:True"
+      ],
+      "finalDispatch": []
+     },
+     {
+      "mode": "pointerStall",
+      "amountMs": 80,
+      "windowObserved": false,
+      "acceptedAfterFinal": true,
+      "safe": true,
+      "revisionDelta": 2,
+      "emptyEnds": 0,
+      "finalInserts": 2,
+      "order": [
+       "insertCompositionText:1",
+       "insertCompositionText:1",
+       "deleteCompositionText:0",
+       "insertFromComposition:1",
+       "end1",
+       "awaiting:none",
+       "insertFromComposition:1",
+       "end1",
+       "awaiting:none",
+       "mod:ControlLeft",
+       "mod:KeyZ",
+       "undoReq:None",
+       "undoDispatch:True"
+      ],
+      "finalDispatch": []
+     }
+    ],
+    "hwpx": [
+     {
+      "mode": "key",
+      "amountMs": 0,
+      "windowObserved": false,
+      "acceptedAfterFinal": true,
+      "safe": true,
+      "revisionDelta": 2,
+      "emptyEnds": 1,
+      "finalInserts": 1,
+      "order": [
+       "insertCompositionText:1",
+       "insertCompositionText:1",
+       "deleteCompositionText:0",
+       "end0",
+       "awaiting:this",
+       "insertFromComposition:1",
+       "end1",
+       "awaiting:none",
+       "mod:ControlLeft",
+       "mod:KeyZ",
+       "undoReq:None",
+       "undoDispatch:True"
+      ],
+      "finalDispatch": [
+       {
+        "task": true,
+        "keyBeforeFinal": "Unidentified",
+        "finalAfterTask": false,
+        "endAt": 84612,
+        "finalAt": 17
+       }
+      ]
+     },
+     {
+      "mode": "key",
+      "amountMs": 1,
+      "windowObserved": false,
+      "acceptedAfterFinal": true,
+      "safe": true,
+      "revisionDelta": 2,
+      "emptyEnds": 1,
+      "finalInserts": 1,
+      "order": [
+       "insertCompositionText:1",
+       "insertCompositionText:1",
+       "deleteCompositionText:0",
+       "end0",
+       "awaiting:this",
+       "insertFromComposition:1",
+       "end1",
+       "awaiting:none",
+       "mod:ControlLeft",
+       "mod:KeyZ",
+       "undoReq:None",
+       "undoDispatch:True"
+      ],
+      "finalDispatch": [
+       {
+        "task": true,
+        "keyBeforeFinal": "Unidentified",
+        "finalAfterTask": false,
+        "endAt": 89031,
+        "finalAt": 13
+       }
+      ]
+     },
+     {
+      "mode": "key",
+      "amountMs": 3,
+      "windowObserved": false,
+      "acceptedAfterFinal": true,
+      "safe": true,
+      "revisionDelta": 2,
+      "emptyEnds": 1,
+      "finalInserts": 1,
+      "order": [
+       "insertCompositionText:1",
+       "insertCompositionText:1",
+       "deleteCompositionText:0",
+       "end0",
+       "awaiting:this",
+       "insertFromComposition:1",
+       "end1",
+       "awaiting:none",
+       "mod:ControlLeft",
+       "mod:KeyZ",
+       "undoReq:None",
+       "undoDispatch:True"
+      ],
+      "finalDispatch": [
+       {
+        "task": true,
+        "keyBeforeFinal": "Unidentified",
+        "finalAfterTask": false,
+        "endAt": 93453,
+        "finalAt": 13
+       }
+      ]
+     },
+     {
+      "mode": "key",
+      "amountMs": 8,
+      "windowObserved": false,
+      "acceptedAfterFinal": true,
+      "safe": true,
+      "revisionDelta": 2,
+      "emptyEnds": 1,
+      "finalInserts": 1,
+      "order": [
+       "insertCompositionText:1",
+       "insertCompositionText:1",
+       "deleteCompositionText:0",
+       "end0",
+       "awaiting:this",
+       "insertFromComposition:1",
+       "end1",
+       "awaiting:none",
+       "mod:ControlLeft",
+       "mod:KeyZ",
+       "undoReq:None",
+       "undoDispatch:True"
+      ],
+      "finalDispatch": [
+       {
+        "task": true,
+        "keyBeforeFinal": "Unidentified",
+        "finalAfterTask": false,
+        "endAt": 97978,
+        "finalAt": 14
+       }
+      ]
+     },
+     {
+      "mode": "key",
+      "amountMs": 15,
+      "windowObserved": false,
+      "acceptedAfterFinal": true,
+      "safe": true,
+      "revisionDelta": 2,
+      "emptyEnds": 1,
+      "finalInserts": 1,
+      "order": [
+       "insertCompositionText:1",
+       "insertCompositionText:1",
+       "deleteCompositionText:0",
+       "end0",
+       "awaiting:this",
+       "insertFromComposition:1",
+       "end1",
+       "awaiting:none",
+       "mod:ControlLeft",
+       "mod:KeyZ",
+       "undoReq:None",
+       "undoDispatch:True"
+      ],
+      "finalDispatch": [
+       {
+        "task": true,
+        "keyBeforeFinal": "Unidentified",
+        "finalAfterTask": false,
+        "endAt": 102433,
+        "finalAt": 18
+       }
+      ]
+     },
+     {
+      "mode": "earlyCtrl",
+      "amountMs": 0,
+      "windowObserved": false,
+      "acceptedAfterFinal": true,
+      "safe": true,
+      "revisionDelta": 2,
+      "emptyEnds": 1,
+      "finalInserts": 1,
+      "order": [
+       "insertCompositionText:1",
+       "insertCompositionText:1",
+       "deleteCompositionText:0",
+       "end0",
+       "awaiting:this",
+       "insertFromComposition:1",
+       "end1",
+       "awaiting:none",
+       "mod:ControlLeft",
+       "mod:KeyZ",
+       "undoReq:None",
+       "undoDispatch:True"
+      ],
+      "finalDispatch": [
+       {
+        "task": true,
+        "keyBeforeFinal": "Unidentified",
+        "finalAfterTask": false,
+        "endAt": 107015,
+        "finalAt": 15
+       }
+      ]
+     },
+     {
+      "mode": "earlyCtrl",
+      "amountMs": 10,
+      "windowObserved": false,
+      "acceptedAfterFinal": true,
+      "safe": true,
+      "revisionDelta": 2,
+      "emptyEnds": 1,
+      "finalInserts": 1,
+      "order": [
+       "insertCompositionText:1",
+       "insertCompositionText:1",
+       "deleteCompositionText:0",
+       "end0",
+       "awaiting:this",
+       "insertFromComposition:1",
+       "end1",
+       "awaiting:none",
+       "mod:ControlLeft",
+       "mod:KeyZ",
+       "undoReq:None",
+       "undoDispatch:True"
+      ],
+      "finalDispatch": [
+       {
+        "task": true,
+        "keyBeforeFinal": "Unidentified",
+        "finalAfterTask": false,
+        "endAt": 111506,
+        "finalAt": 14
+       }
+      ]
+     },
+     {
+      "mode": "earlyCtrl",
+      "amountMs": 30,
+      "windowObserved": false,
+      "acceptedAfterFinal": true,
+      "safe": true,
+      "revisionDelta": 2,
+      "emptyEnds": 1,
+      "finalInserts": 1,
+      "order": [
+       "insertCompositionText:1",
+       "insertCompositionText:1",
+       "deleteCompositionText:0",
+       "end0",
+       "awaiting:this",
+       "insertFromComposition:1",
+       "end1",
+       "awaiting:none",
+       "mod:ControlLeft",
+       "mod:KeyZ",
+       "undoReq:None",
+       "undoDispatch:True"
+      ],
+      "finalDispatch": [
+       {
+        "task": true,
+        "keyBeforeFinal": "Unidentified",
+        "finalAfterTask": false,
+        "endAt": 115993,
+        "finalAt": 15
+       }
+      ]
+     },
+     {
+      "mode": "pointer",
+      "amountMs": 0,
+      "windowObserved": false,
+      "acceptedAfterFinal": true,
+      "safe": true,
+      "revisionDelta": 2,
+      "emptyEnds": 0,
+      "finalInserts": 2,
+      "order": [
+       "insertCompositionText:1",
+       "insertCompositionText:1",
+       "deleteCompositionText:0",
+       "insertFromComposition:1",
+       "end1",
+       "awaiting:none",
+       "insertFromComposition:1",
+       "end1",
+       "awaiting:none",
+       "mod:ControlLeft",
+       "mod:KeyZ",
+       "undoReq:None",
+       "undoDispatch:True"
+      ],
+      "finalDispatch": []
+     },
+     {
+      "mode": "pointer",
+      "amountMs": 2,
+      "windowObserved": false,
+      "acceptedAfterFinal": true,
+      "safe": true,
+      "revisionDelta": 2,
+      "emptyEnds": 0,
+      "finalInserts": 2,
+      "order": [
+       "insertCompositionText:1",
+       "insertCompositionText:1",
+       "deleteCompositionText:0",
+       "insertFromComposition:1",
+       "end1",
+       "awaiting:none",
+       "insertFromComposition:1",
+       "end1",
+       "awaiting:none",
+       "mod:ControlLeft",
+       "mod:KeyZ",
+       "undoReq:None",
+       "undoDispatch:True"
+      ],
+      "finalDispatch": []
+     },
+     {
+      "mode": "stall",
+      "amountMs": 15,
+      "windowObserved": false,
+      "acceptedAfterFinal": true,
+      "safe": true,
+      "revisionDelta": 2,
+      "emptyEnds": 1,
+      "finalInserts": 1,
+      "order": [
+       "insertCompositionText:1",
+       "insertCompositionText:1",
+       "deleteCompositionText:0",
+       "end0",
+       "awaiting:this",
+       "insertFromComposition:1",
+       "end1",
+       "awaiting:none",
+       "mod:ControlLeft",
+       "mod:KeyZ",
+       "undoReq:None",
+       "undoDispatch:True"
+      ],
+      "finalDispatch": [
+       {
+        "task": true,
+        "keyBeforeFinal": "Unidentified",
+        "finalAfterTask": false,
+        "endAt": 129601,
+        "finalAt": 23
+       }
+      ]
+     },
+     {
+      "mode": "stall",
+      "amountMs": 40,
+      "windowObserved": false,
+      "acceptedAfterFinal": true,
+      "safe": true,
+      "revisionDelta": 2,
+      "emptyEnds": 1,
+      "finalInserts": 1,
+      "order": [
+       "insertCompositionText:1",
+       "insertCompositionText:1",
+       "deleteCompositionText:0",
+       "end0",
+       "awaiting:this",
+       "insertFromComposition:1",
+       "end1",
+       "awaiting:none",
+       "mod:ControlLeft",
+       "mod:KeyZ",
+       "undoReq:None",
+       "undoDispatch:True"
+      ],
+      "finalDispatch": [
+       {
+        "task": true,
+        "keyBeforeFinal": "Unidentified",
+        "finalAfterTask": false,
+        "endAt": 134199,
+        "finalAt": 25
+       }
+      ]
+     },
+     {
+      "mode": "stall",
+      "amountMs": 120,
+      "windowObserved": false,
+      "acceptedAfterFinal": true,
+      "safe": true,
+      "revisionDelta": 2,
+      "emptyEnds": 1,
+      "finalInserts": 1,
+      "order": [
+       "insertCompositionText:1",
+       "insertCompositionText:1",
+       "deleteCompositionText:0",
+       "end0",
+       "awaiting:this",
+       "insertFromComposition:1",
+       "end1",
+       "awaiting:none",
+       "mod:ControlLeft",
+       "mod:KeyZ",
+       "undoReq:None",
+       "undoDispatch:True"
+      ],
+      "finalDispatch": [
+       {
+        "task": true,
+        "keyBeforeFinal": "Unidentified",
+        "finalAfterTask": false,
+        "endAt": 138808,
+        "finalAt": 31
+       }
+      ]
+     },
+     {
+      "mode": "stallAfterCtrl",
+      "amountMs": 0,
+      "windowObserved": false,
+      "acceptedAfterFinal": true,
+      "safe": true,
+      "revisionDelta": 2,
+      "emptyEnds": 1,
+      "finalInserts": 1,
+      "order": [
+       "insertCompositionText:1",
+       "insertCompositionText:1",
+       "deleteCompositionText:0",
+       "end0",
+       "awaiting:this",
+       "insertFromComposition:1",
+       "end1",
+       "awaiting:none",
+       "mod:ControlLeft",
+       "mod:KeyZ",
+       "undoReq:None",
+       "undoDispatch:True"
+      ],
+      "finalDispatch": [
+       {
+        "task": true,
+        "keyBeforeFinal": "Unidentified",
+        "finalAfterTask": false,
+        "endAt": 143224,
+        "finalAt": 32
+       }
+      ]
+     },
+     {
+      "mode": "stallAfterCtrl",
+      "amountMs": 5,
+      "windowObserved": false,
+      "acceptedAfterFinal": true,
+      "safe": true,
+      "revisionDelta": 2,
+      "emptyEnds": 1,
+      "finalInserts": 1,
+      "order": [
+       "insertCompositionText:1",
+       "insertCompositionText:1",
+       "deleteCompositionText:0",
+       "end0",
+       "awaiting:this",
+       "insertFromComposition:1",
+       "end1",
+       "awaiting:none",
+       "mod:ControlLeft",
+       "mod:KeyZ",
+       "undoReq:None",
+       "undoDispatch:True"
+      ],
+      "finalDispatch": [
+       {
+        "task": true,
+        "keyBeforeFinal": "Unidentified",
+        "finalAfterTask": false,
+        "endAt": 147745,
+        "finalAt": 32
+       }
+      ]
+     },
+     {
+      "mode": "stallAfterCtrl",
+      "amountMs": 20,
+      "windowObserved": false,
+      "acceptedAfterFinal": true,
+      "safe": true,
+      "revisionDelta": 2,
+      "emptyEnds": 1,
+      "finalInserts": 1,
+      "order": [
+       "insertCompositionText:1",
+       "insertCompositionText:1",
+       "deleteCompositionText:0",
+       "end0",
+       "awaiting:this",
+       "insertFromComposition:1",
+       "end1",
+       "awaiting:none",
+       "mod:ControlLeft",
+       "mod:KeyZ",
+       "undoReq:None",
+       "undoDispatch:True"
+      ],
+      "finalDispatch": [
+       {
+        "task": true,
+        "keyBeforeFinal": "Unidentified",
+        "finalAfterTask": false,
+        "endAt": 152266,
+        "finalAt": 22
+       }
+      ]
+     },
+     {
+      "mode": "pointerStall",
+      "amountMs": 20,
+      "windowObserved": false,
+      "acceptedAfterFinal": true,
+      "safe": true,
+      "revisionDelta": 2,
+      "emptyEnds": 0,
+      "finalInserts": 2,
+      "order": [
+       "insertCompositionText:1",
+       "insertCompositionText:1",
+       "deleteCompositionText:0",
+       "insertFromComposition:1",
+       "end1",
+       "awaiting:none",
+       "insertFromComposition:1",
+       "end1",
+       "awaiting:none",
+       "mod:ControlLeft",
+       "mod:KeyZ",
+       "undoReq:None",
+       "undoDispatch:True"
+      ],
+      "finalDispatch": []
+     },
+     {
+      "mode": "pointerStall",
+      "amountMs": 80,
+      "windowObserved": false,
+      "acceptedAfterFinal": true,
+      "safe": true,
+      "revisionDelta": 2,
+      "emptyEnds": 0,
+      "finalInserts": 2,
+      "order": [
+       "insertCompositionText:1",
+       "insertCompositionText:1",
+       "deleteCompositionText:0",
+       "insertFromComposition:1",
+       "end1",
+       "awaiting:none",
+       "insertFromComposition:1",
+       "end1",
+       "awaiting:none",
+       "mod:ControlLeft",
+       "mod:KeyZ",
+       "undoReq:None",
+       "undoDispatch:True"
+      ],
+      "finalDispatch": []
+     }
+    ]
+   }
+  },
+  "sync2": {
+   "environment": {
+    "ibusSyncMode": "2",
+    "hangulEventForwarding": "false"
+   },
+   "trials": 36,
+   "safe": true,
+   "windowObserved": 0,
+   "emptyEnds": 28,
+   "finalBeforePostedTask": 28,
+   "keydownBetweenEmptyEndAndFinal": [
+    "Unidentified"
+   ],
+   "trialsWithTwoFinalInserts": 8,
+   "rows": {
+    "hwp": [
+     {
+      "mode": "key",
+      "amountMs": 0,
+      "windowObserved": false,
+      "acceptedAfterFinal": true,
+      "safe": true,
+      "revisionDelta": 2,
+      "emptyEnds": 1,
+      "finalInserts": 1,
+      "order": [
+       "insertCompositionText:1",
+       "insertCompositionText:1",
+       "deleteCompositionText:0",
+       "end0",
+       "awaiting:this",
+       "insertFromComposition:1",
+       "end1",
+       "awaiting:none",
+       "mod:KeyZ",
+       "undoReq:None",
+       "undoDispatch:True",
+       "mod:ControlLeft"
+      ],
+      "finalDispatch": [
+       {
+        "task": true,
+        "keyBeforeFinal": "Unidentified",
+        "finalAfterTask": false,
+        "endAt": 3711,
+        "finalAt": 24
+       }
+      ]
+     },
+     {
+      "mode": "key",
+      "amountMs": 1,
+      "windowObserved": false,
+      "acceptedAfterFinal": true,
+      "safe": true,
+      "revisionDelta": 2,
+      "emptyEnds": 1,
+      "finalInserts": 1,
+      "order": [
+       "insertCompositionText:1",
+       "insertCompositionText:1",
+       "deleteCompositionText:0",
+       "end0",
+       "awaiting:this",
+       "insertFromComposition:1",
+       "end1",
+       "awaiting:none",
+       "mod:KeyZ",
+       "undoReq:None",
+       "undoDispatch:True",
+       "mod:ControlLeft"
+      ],
+      "finalDispatch": [
+       {
+        "task": true,
+        "keyBeforeFinal": "Unidentified",
+        "finalAfterTask": false,
+        "endAt": 8214,
+        "finalAt": 16
+       }
+      ]
+     },
+     {
+      "mode": "key",
+      "amountMs": 3,
+      "windowObserved": false,
+      "acceptedAfterFinal": true,
+      "safe": true,
+      "revisionDelta": 2,
+      "emptyEnds": 1,
+      "finalInserts": 1,
+      "order": [
+       "insertCompositionText:1",
+       "insertCompositionText:1",
+       "deleteCompositionText:0",
+       "end0",
+       "awaiting:this",
+       "insertFromComposition:1",
+       "end1",
+       "awaiting:none",
+       "mod:KeyZ",
+       "undoReq:None",
+       "undoDispatch:True",
+       "mod:ControlLeft"
+      ],
+      "finalDispatch": [
+       {
+        "task": true,
+        "keyBeforeFinal": "Unidentified",
+        "finalAfterTask": false,
+        "endAt": 12686,
+        "finalAt": 17
+       }
+      ]
+     },
+     {
+      "mode": "key",
+      "amountMs": 8,
+      "windowObserved": false,
+      "acceptedAfterFinal": true,
+      "safe": true,
+      "revisionDelta": 2,
+      "emptyEnds": 1,
+      "finalInserts": 1,
+      "order": [
+       "insertCompositionText:1",
+       "insertCompositionText:1",
+       "deleteCompositionText:0",
+       "end0",
+       "awaiting:this",
+       "insertFromComposition:1",
+       "end1",
+       "awaiting:none",
+       "mod:ControlLeft",
+       "mod:KeyZ",
+       "undoReq:None",
+       "undoDispatch:True"
+      ],
+      "finalDispatch": [
+       {
+        "task": true,
+        "keyBeforeFinal": "Unidentified",
+        "finalAfterTask": false,
+        "endAt": 17050,
+        "finalAt": 15
+       }
+      ]
+     },
+     {
+      "mode": "key",
+      "amountMs": 15,
+      "windowObserved": false,
+      "acceptedAfterFinal": true,
+      "safe": true,
+      "revisionDelta": 2,
+      "emptyEnds": 1,
+      "finalInserts": 1,
+      "order": [
+       "insertCompositionText:1",
+       "insertCompositionText:1",
+       "deleteCompositionText:0",
+       "end0",
+       "awaiting:this",
+       "insertFromComposition:1",
+       "end1",
+       "awaiting:none",
+       "mod:ControlLeft",
+       "mod:KeyZ",
+       "undoReq:None",
+       "undoDispatch:True"
+      ],
+      "finalDispatch": [
+       {
+        "task": true,
+        "keyBeforeFinal": "Unidentified",
+        "finalAfterTask": false,
+        "endAt": 21884,
+        "finalAt": 15
+       }
+      ]
+     },
+     {
+      "mode": "earlyCtrl",
+      "amountMs": 0,
+      "windowObserved": false,
+      "acceptedAfterFinal": true,
+      "safe": true,
+      "revisionDelta": 2,
+      "emptyEnds": 1,
+      "finalInserts": 1,
+      "order": [
+       "insertCompositionText:1",
+       "insertCompositionText:1",
+       "deleteCompositionText:0",
+       "end0",
+       "awaiting:this",
+       "insertFromComposition:1",
+       "end1",
+       "awaiting:none",
+       "mod:ControlLeft",
+       "mod:KeyZ",
+       "undoReq:None",
+       "undoDispatch:True"
+      ],
+      "finalDispatch": [
+       {
+        "task": true,
+        "keyBeforeFinal": "Unidentified",
+        "finalAfterTask": false,
+        "endAt": 26395,
+        "finalAt": 17
+       }
+      ]
+     },
+     {
+      "mode": "earlyCtrl",
+      "amountMs": 10,
+      "windowObserved": false,
+      "acceptedAfterFinal": true,
+      "safe": true,
+      "revisionDelta": 2,
+      "emptyEnds": 1,
+      "finalInserts": 1,
+      "order": [
+       "insertCompositionText:1",
+       "insertCompositionText:1",
+       "deleteCompositionText:0",
+       "end0",
+       "awaiting:this",
+       "insertFromComposition:1",
+       "end1",
+       "awaiting:none",
+       "mod:ControlLeft",
+       "mod:KeyZ",
+       "undoReq:None",
+       "undoDispatch:True"
+      ],
+      "finalDispatch": [
+       {
+        "task": true,
+        "keyBeforeFinal": "Unidentified",
+        "finalAfterTask": false,
+        "endAt": 30752,
+        "finalAt": 17
+       }
+      ]
+     },
+     {
+      "mode": "earlyCtrl",
+      "amountMs": 30,
+      "windowObserved": false,
+      "acceptedAfterFinal": true,
+      "safe": true,
+      "revisionDelta": 2,
+      "emptyEnds": 1,
+      "finalInserts": 1,
+      "order": [
+       "insertCompositionText:1",
+       "insertCompositionText:1",
+       "deleteCompositionText:0",
+       "end0",
+       "awaiting:this",
+       "insertFromComposition:1",
+       "end1",
+       "awaiting:none",
+       "mod:ControlLeft",
+       "mod:KeyZ",
+       "undoReq:None",
+       "undoDispatch:True"
+      ],
+      "finalDispatch": [
+       {
+        "task": true,
+        "keyBeforeFinal": "Unidentified",
+        "finalAfterTask": false,
+        "endAt": 35304,
+        "finalAt": 17
+       }
+      ]
+     },
+     {
+      "mode": "pointer",
+      "amountMs": 0,
+      "windowObserved": false,
+      "acceptedAfterFinal": true,
+      "safe": true,
+      "revisionDelta": 2,
+      "emptyEnds": 0,
+      "finalInserts": 2,
+      "order": [
+       "insertCompositionText:1",
+       "insertCompositionText:1",
+       "deleteCompositionText:0",
+       "insertFromComposition:1",
+       "end1",
+       "awaiting:none",
+       "insertFromComposition:1",
+       "end1",
+       "awaiting:none",
+       "mod:KeyZ",
+       "undoReq:None",
+       "undoDispatch:True",
+       "mod:ControlLeft"
+      ],
+      "finalDispatch": []
+     },
+     {
+      "mode": "pointer",
+      "amountMs": 2,
+      "windowObserved": false,
+      "acceptedAfterFinal": true,
+      "safe": true,
+      "revisionDelta": 2,
+      "emptyEnds": 0,
+      "finalInserts": 2,
+      "order": [
+       "insertCompositionText:1",
+       "insertCompositionText:1",
+       "deleteCompositionText:0",
+       "insertFromComposition:1",
+       "end1",
+       "awaiting:none",
+       "insertFromComposition:1",
+       "end1",
+       "awaiting:none",
+       "mod:KeyZ",
+       "undoReq:None",
+       "undoDispatch:True",
+       "mod:ControlLeft"
+      ],
+      "finalDispatch": []
+     },
+     {
+      "mode": "stall",
+      "amountMs": 15,
+      "windowObserved": false,
+      "acceptedAfterFinal": true,
+      "safe": true,
+      "revisionDelta": 2,
+      "emptyEnds": 1,
+      "finalInserts": 1,
+      "order": [
+       "insertCompositionText:1",
+       "insertCompositionText:1",
+       "deleteCompositionText:0",
+       "end0",
+       "awaiting:this",
+       "insertFromComposition:1",
+       "end1",
+       "awaiting:none",
+       "mod:KeyZ",
+       "undoReq:None",
+       "undoDispatch:True",
+       "mod:ControlLeft"
+      ],
+      "finalDispatch": [
+       {
+        "task": true,
+        "keyBeforeFinal": "Unidentified",
+        "finalAfterTask": false,
+        "endAt": 48711,
+        "finalAt": 28
+       }
+      ]
+     },
+     {
+      "mode": "stall",
+      "amountMs": 40,
+      "windowObserved": false,
+      "acceptedAfterFinal": true,
+      "safe": true,
+      "revisionDelta": 2,
+      "emptyEnds": 1,
+      "finalInserts": 1,
+      "order": [
+       "insertCompositionText:1",
+       "insertCompositionText:1",
+       "deleteCompositionText:0",
+       "end0",
+       "awaiting:this",
+       "insertFromComposition:1",
+       "end1",
+       "awaiting:none",
+       "mod:KeyZ",
+       "undoReq:None",
+       "undoDispatch:True",
+       "mod:ControlLeft"
+      ],
+      "finalDispatch": [
+       {
+        "task": true,
+        "keyBeforeFinal": "Unidentified",
+        "finalAfterTask": false,
+        "endAt": 53278,
+        "finalAt": 25
+       }
+      ]
+     },
+     {
+      "mode": "stall",
+      "amountMs": 120,
+      "windowObserved": false,
+      "acceptedAfterFinal": true,
+      "safe": true,
+      "revisionDelta": 2,
+      "emptyEnds": 1,
+      "finalInserts": 1,
+      "order": [
+       "insertCompositionText:1",
+       "insertCompositionText:1",
+       "deleteCompositionText:0",
+       "end0",
+       "awaiting:this",
+       "insertFromComposition:1",
+       "end1",
+       "awaiting:none",
+       "mod:KeyZ",
+       "undoReq:None",
+       "undoDispatch:True",
+       "mod:ControlLeft"
+      ],
+      "finalDispatch": [
+       {
+        "task": true,
+        "keyBeforeFinal": "Unidentified",
+        "finalAfterTask": false,
+        "endAt": 57943,
+        "finalAt": 23
+       }
+      ]
+     },
+     {
+      "mode": "stallAfterCtrl",
+      "amountMs": 0,
+      "windowObserved": false,
+      "acceptedAfterFinal": true,
+      "safe": true,
+      "revisionDelta": 2,
+      "emptyEnds": 1,
+      "finalInserts": 1,
+      "order": [
+       "insertCompositionText:1",
+       "insertCompositionText:1",
+       "deleteCompositionText:0",
+       "end0",
+       "awaiting:this",
+       "insertFromComposition:1",
+       "end1",
+       "awaiting:none",
+       "mod:ControlLeft",
+       "mod:KeyZ",
+       "undoReq:None",
+       "undoDispatch:True"
+      ],
+      "finalDispatch": [
+       {
+        "task": true,
+        "keyBeforeFinal": "Unidentified",
+        "finalAfterTask": false,
+        "endAt": 62391,
+        "finalAt": 23
+       }
+      ]
+     },
+     {
+      "mode": "stallAfterCtrl",
+      "amountMs": 5,
+      "windowObserved": false,
+      "acceptedAfterFinal": true,
+      "safe": true,
+      "revisionDelta": 2,
+      "emptyEnds": 1,
+      "finalInserts": 1,
+      "order": [
+       "insertCompositionText:1",
+       "insertCompositionText:1",
+       "deleteCompositionText:0",
+       "end0",
+       "awaiting:this",
+       "insertFromComposition:1",
+       "end1",
+       "awaiting:none",
+       "mod:ControlLeft",
+       "mod:KeyZ",
+       "undoReq:None",
+       "undoDispatch:True"
+      ],
+      "finalDispatch": [
+       {
+        "task": true,
+        "keyBeforeFinal": "Unidentified",
+        "finalAfterTask": false,
+        "endAt": 66980,
+        "finalAt": 23
+       }
+      ]
+     },
+     {
+      "mode": "stallAfterCtrl",
+      "amountMs": 20,
+      "windowObserved": false,
+      "acceptedAfterFinal": true,
+      "safe": true,
+      "revisionDelta": 2,
+      "emptyEnds": 1,
+      "finalInserts": 1,
+      "order": [
+       "insertCompositionText:1",
+       "insertCompositionText:1",
+       "deleteCompositionText:0",
+       "end0",
+       "awaiting:this",
+       "insertFromComposition:1",
+       "end1",
+       "awaiting:none",
+       "mod:ControlLeft",
+       "mod:KeyZ",
+       "undoReq:None",
+       "undoDispatch:True"
+      ],
+      "finalDispatch": [
+       {
+        "task": true,
+        "keyBeforeFinal": "Unidentified",
+        "finalAfterTask": false,
+        "endAt": 71522,
+        "finalAt": 23
+       }
+      ]
+     },
+     {
+      "mode": "pointerStall",
+      "amountMs": 20,
+      "windowObserved": false,
+      "acceptedAfterFinal": true,
+      "safe": true,
+      "revisionDelta": 2,
+      "emptyEnds": 0,
+      "finalInserts": 2,
+      "order": [
+       "insertCompositionText:1",
+       "insertCompositionText:1",
+       "deleteCompositionText:0",
+       "insertFromComposition:1",
+       "end1",
+       "awaiting:none",
+       "insertFromComposition:1",
+       "end1",
+       "awaiting:none",
+       "mod:KeyZ",
+       "undoReq:None",
+       "undoDispatch:True",
+       "mod:ControlLeft"
+      ],
+      "finalDispatch": []
+     },
+     {
+      "mode": "pointerStall",
+      "amountMs": 80,
+      "windowObserved": false,
+      "acceptedAfterFinal": true,
+      "safe": true,
+      "revisionDelta": 2,
+      "emptyEnds": 0,
+      "finalInserts": 2,
+      "order": [
+       "insertCompositionText:1",
+       "insertCompositionText:1",
+       "deleteCompositionText:0",
+       "insertFromComposition:1",
+       "end1",
+       "awaiting:none",
+       "insertFromComposition:1",
+       "end1",
+       "awaiting:none",
+       "mod:KeyZ",
+       "undoReq:None",
+       "undoDispatch:True",
+       "mod:ControlLeft"
+      ],
+      "finalDispatch": []
+     }
+    ],
+    "hwpx": [
+     {
+      "mode": "key",
+      "amountMs": 0,
+      "windowObserved": false,
+      "acceptedAfterFinal": true,
+      "safe": true,
+      "revisionDelta": 2,
+      "emptyEnds": 1,
+      "finalInserts": 1,
+      "order": [
+       "insertCompositionText:1",
+       "insertCompositionText:1",
+       "deleteCompositionText:0",
+       "end0",
+       "awaiting:this",
+       "insertFromComposition:1",
+       "end1",
+       "awaiting:none",
+       "mod:KeyZ",
+       "undoReq:None",
+       "undoDispatch:True",
+       "mod:ControlLeft"
+      ],
+      "finalDispatch": [
+       {
+        "task": true,
+        "keyBeforeFinal": "Unidentified",
+        "finalAfterTask": false,
+        "endAt": 86366,
+        "finalAt": 14
+       }
+      ]
+     },
+     {
+      "mode": "key",
+      "amountMs": 1,
+      "windowObserved": false,
+      "acceptedAfterFinal": true,
+      "safe": true,
+      "revisionDelta": 2,
+      "emptyEnds": 1,
+      "finalInserts": 1,
+      "order": [
+       "insertCompositionText:1",
+       "insertCompositionText:1",
+       "deleteCompositionText:0",
+       "end0",
+       "awaiting:this",
+       "insertFromComposition:1",
+       "end1",
+       "awaiting:none",
+       "mod:KeyZ",
+       "undoReq:None",
+       "undoDispatch:True",
+       "mod:ControlLeft"
+      ],
+      "finalDispatch": [
+       {
+        "task": true,
+        "keyBeforeFinal": "Unidentified",
+        "finalAfterTask": false,
+        "endAt": 90775,
+        "finalAt": 14
+       }
+      ]
+     },
+     {
+      "mode": "key",
+      "amountMs": 3,
+      "windowObserved": false,
+      "acceptedAfterFinal": true,
+      "safe": true,
+      "revisionDelta": 2,
+      "emptyEnds": 1,
+      "finalInserts": 1,
+      "order": [
+       "insertCompositionText:1",
+       "insertCompositionText:1",
+       "deleteCompositionText:0",
+       "end0",
+       "awaiting:this",
+       "insertFromComposition:1",
+       "end1",
+       "awaiting:none",
+       "mod:KeyZ",
+       "undoReq:None",
+       "undoDispatch:True",
+       "mod:ControlLeft"
+      ],
+      "finalDispatch": [
+       {
+        "task": true,
+        "keyBeforeFinal": "Unidentified",
+        "finalAfterTask": false,
+        "endAt": 95194,
+        "finalAt": 13
+       }
+      ]
+     },
+     {
+      "mode": "key",
+      "amountMs": 8,
+      "windowObserved": false,
+      "acceptedAfterFinal": true,
+      "safe": true,
+      "revisionDelta": 2,
+      "emptyEnds": 1,
+      "finalInserts": 1,
+      "order": [
+       "insertCompositionText:1",
+       "insertCompositionText:1",
+       "deleteCompositionText:0",
+       "end0",
+       "awaiting:this",
+       "insertFromComposition:1",
+       "end1",
+       "awaiting:none",
+       "mod:ControlLeft",
+       "mod:KeyZ",
+       "undoReq:None",
+       "undoDispatch:True"
+      ],
+      "finalDispatch": [
+       {
+        "task": true,
+        "keyBeforeFinal": "Unidentified",
+        "finalAfterTask": false,
+        "endAt": 99719,
+        "finalAt": 27
+       }
+      ]
+     },
+     {
+      "mode": "key",
+      "amountMs": 15,
+      "windowObserved": false,
+      "acceptedAfterFinal": true,
+      "safe": true,
+      "revisionDelta": 2,
+      "emptyEnds": 1,
+      "finalInserts": 1,
+      "order": [
+       "insertCompositionText:1",
+       "insertCompositionText:1",
+       "deleteCompositionText:0",
+       "end0",
+       "awaiting:this",
+       "insertFromComposition:1",
+       "end1",
+       "awaiting:none",
+       "mod:ControlLeft",
+       "mod:KeyZ",
+       "undoReq:None",
+       "undoDispatch:True"
+      ],
+      "finalDispatch": [
+       {
+        "task": true,
+        "keyBeforeFinal": "Unidentified",
+        "finalAfterTask": false,
+        "endAt": 104047,
+        "finalAt": 15
+       }
+      ]
+     },
+     {
+      "mode": "earlyCtrl",
+      "amountMs": 0,
+      "windowObserved": false,
+      "acceptedAfterFinal": true,
+      "safe": true,
+      "revisionDelta": 2,
+      "emptyEnds": 1,
+      "finalInserts": 1,
+      "order": [
+       "insertCompositionText:1",
+       "insertCompositionText:1",
+       "deleteCompositionText:0",
+       "end0",
+       "awaiting:this",
+       "insertFromComposition:1",
+       "end1",
+       "awaiting:none",
+       "mod:ControlLeft",
+       "mod:KeyZ",
+       "undoReq:None",
+       "undoDispatch:True"
+      ],
+      "finalDispatch": [
+       {
+        "task": true,
+        "keyBeforeFinal": "Unidentified",
+        "finalAfterTask": false,
+        "endAt": 108504,
+        "finalAt": 13
+       }
+      ]
+     },
+     {
+      "mode": "earlyCtrl",
+      "amountMs": 10,
+      "windowObserved": false,
+      "acceptedAfterFinal": true,
+      "safe": true,
+      "revisionDelta": 2,
+      "emptyEnds": 1,
+      "finalInserts": 1,
+      "order": [
+       "insertCompositionText:1",
+       "insertCompositionText:1",
+       "deleteCompositionText:0",
+       "end0",
+       "awaiting:this",
+       "insertFromComposition:1",
+       "end1",
+       "awaiting:none",
+       "mod:ControlLeft",
+       "mod:KeyZ",
+       "undoReq:None",
+       "undoDispatch:True"
+      ],
+      "finalDispatch": [
+       {
+        "task": true,
+        "keyBeforeFinal": "Unidentified",
+        "finalAfterTask": false,
+        "endAt": 113005,
+        "finalAt": 15
+       }
+      ]
+     },
+     {
+      "mode": "earlyCtrl",
+      "amountMs": 30,
+      "windowObserved": false,
+      "acceptedAfterFinal": true,
+      "safe": true,
+      "revisionDelta": 2,
+      "emptyEnds": 1,
+      "finalInserts": 1,
+      "order": [
+       "insertCompositionText:1",
+       "insertCompositionText:1",
+       "deleteCompositionText:0",
+       "end0",
+       "awaiting:this",
+       "insertFromComposition:1",
+       "end1",
+       "awaiting:none",
+       "mod:ControlLeft",
+       "mod:KeyZ",
+       "undoReq:None",
+       "undoDispatch:True"
+      ],
+      "finalDispatch": [
+       {
+        "task": true,
+        "keyBeforeFinal": "Unidentified",
+        "finalAfterTask": false,
+        "endAt": 117306,
+        "finalAt": 15
+       }
+      ]
+     },
+     {
+      "mode": "pointer",
+      "amountMs": 0,
+      "windowObserved": false,
+      "acceptedAfterFinal": true,
+      "safe": true,
+      "revisionDelta": 2,
+      "emptyEnds": 0,
+      "finalInserts": 2,
+      "order": [
+       "insertCompositionText:1",
+       "insertCompositionText:1",
+       "deleteCompositionText:0",
+       "insertFromComposition:1",
+       "end1",
+       "awaiting:none",
+       "insertFromComposition:1",
+       "end1",
+       "awaiting:none",
+       "mod:KeyZ",
+       "undoReq:None",
+       "undoDispatch:True",
+       "mod:ControlLeft"
+      ],
+      "finalDispatch": []
+     },
+     {
+      "mode": "pointer",
+      "amountMs": 2,
+      "windowObserved": false,
+      "acceptedAfterFinal": true,
+      "safe": true,
+      "revisionDelta": 2,
+      "emptyEnds": 0,
+      "finalInserts": 2,
+      "order": [
+       "insertCompositionText:1",
+       "insertCompositionText:1",
+       "deleteCompositionText:0",
+       "insertFromComposition:1",
+       "end1",
+       "awaiting:none",
+       "insertFromComposition:1",
+       "end1",
+       "awaiting:none",
+       "mod:KeyZ",
+       "undoReq:None",
+       "undoDispatch:True",
+       "mod:ControlLeft"
+      ],
+      "finalDispatch": []
+     },
+     {
+      "mode": "stall",
+      "amountMs": 15,
+      "windowObserved": false,
+      "acceptedAfterFinal": true,
+      "safe": true,
+      "revisionDelta": 2,
+      "emptyEnds": 1,
+      "finalInserts": 1,
+      "order": [
+       "insertCompositionText:1",
+       "insertCompositionText:1",
+       "deleteCompositionText:0",
+       "end0",
+       "awaiting:this",
+       "insertFromComposition:1",
+       "end1",
+       "awaiting:none",
+       "mod:KeyZ",
+       "undoReq:None",
+       "undoDispatch:True",
+       "mod:ControlLeft"
+      ],
+      "finalDispatch": [
+       {
+        "task": true,
+        "keyBeforeFinal": "Unidentified",
+        "finalAfterTask": false,
+        "endAt": 130626,
+        "finalAt": 27
+       }
+      ]
+     },
+     {
+      "mode": "stall",
+      "amountMs": 40,
+      "windowObserved": false,
+      "acceptedAfterFinal": true,
+      "safe": true,
+      "revisionDelta": 2,
+      "emptyEnds": 1,
+      "finalInserts": 1,
+      "order": [
+       "insertCompositionText:1",
+       "insertCompositionText:1",
+       "deleteCompositionText:0",
+       "end0",
+       "awaiting:this",
+       "insertFromComposition:1",
+       "end1",
+       "awaiting:none",
+       "mod:KeyZ",
+       "undoReq:None",
+       "undoDispatch:True",
+       "mod:ControlLeft"
+      ],
+      "finalDispatch": [
+       {
+        "task": true,
+        "keyBeforeFinal": "Unidentified",
+        "finalAfterTask": false,
+        "endAt": 135127,
+        "finalAt": 23
+       }
+      ]
+     },
+     {
+      "mode": "stall",
+      "amountMs": 120,
+      "windowObserved": false,
+      "acceptedAfterFinal": true,
+      "safe": true,
+      "revisionDelta": 2,
+      "emptyEnds": 1,
+      "finalInserts": 1,
+      "order": [
+       "insertCompositionText:1",
+       "insertCompositionText:1",
+       "deleteCompositionText:0",
+       "end0",
+       "awaiting:this",
+       "insertFromComposition:1",
+       "end1",
+       "awaiting:none",
+       "mod:KeyZ",
+       "undoReq:None",
+       "undoDispatch:True",
+       "mod:ControlLeft"
+      ],
+      "finalDispatch": [
+       {
+        "task": true,
+        "keyBeforeFinal": "Unidentified",
+        "finalAfterTask": false,
+        "endAt": 139535,
+        "finalAt": 16
+       }
+      ]
+     },
+     {
+      "mode": "stallAfterCtrl",
+      "amountMs": 0,
+      "windowObserved": false,
+      "acceptedAfterFinal": true,
+      "safe": true,
+      "revisionDelta": 2,
+      "emptyEnds": 1,
+      "finalInserts": 1,
+      "order": [
+       "insertCompositionText:1",
+       "insertCompositionText:1",
+       "deleteCompositionText:0",
+       "end0",
+       "awaiting:this",
+       "insertFromComposition:1",
+       "end1",
+       "awaiting:none",
+       "mod:ControlLeft",
+       "mod:KeyZ",
+       "undoReq:None",
+       "undoDispatch:True"
+      ],
+      "finalDispatch": [
+       {
+        "task": true,
+        "keyBeforeFinal": "Unidentified",
+        "finalAfterTask": false,
+        "endAt": 143915,
+        "finalAt": 21
+       }
+      ]
+     },
+     {
+      "mode": "stallAfterCtrl",
+      "amountMs": 5,
+      "windowObserved": false,
+      "acceptedAfterFinal": true,
+      "safe": true,
+      "revisionDelta": 2,
+      "emptyEnds": 1,
+      "finalInserts": 1,
+      "order": [
+       "insertCompositionText:1",
+       "insertCompositionText:1",
+       "deleteCompositionText:0",
+       "end0",
+       "awaiting:this",
+       "insertFromComposition:1",
+       "end1",
+       "awaiting:none",
+       "mod:ControlLeft",
+       "mod:KeyZ",
+       "undoReq:None",
+       "undoDispatch:True"
+      ],
+      "finalDispatch": [
+       {
+        "task": true,
+        "keyBeforeFinal": "Unidentified",
+        "finalAfterTask": false,
+        "endAt": 148389,
+        "finalAt": 20
+       }
+      ]
+     },
+     {
+      "mode": "stallAfterCtrl",
+      "amountMs": 20,
+      "windowObserved": false,
+      "acceptedAfterFinal": true,
+      "safe": true,
+      "revisionDelta": 2,
+      "emptyEnds": 1,
+      "finalInserts": 1,
+      "order": [
+       "insertCompositionText:1",
+       "insertCompositionText:1",
+       "deleteCompositionText:0",
+       "end0",
+       "awaiting:this",
+       "insertFromComposition:1",
+       "end1",
+       "awaiting:none",
+       "mod:ControlLeft",
+       "mod:KeyZ",
+       "undoReq:None",
+       "undoDispatch:True"
+      ],
+      "finalDispatch": [
+       {
+        "task": true,
+        "keyBeforeFinal": "Unidentified",
+        "finalAfterTask": false,
+        "endAt": 152889,
+        "finalAt": 23
+       }
+      ]
+     },
+     {
+      "mode": "pointerStall",
+      "amountMs": 20,
+      "windowObserved": false,
+      "acceptedAfterFinal": true,
+      "safe": true,
+      "revisionDelta": 2,
+      "emptyEnds": 0,
+      "finalInserts": 2,
+      "order": [
+       "insertCompositionText:1",
+       "insertCompositionText:1",
+       "deleteCompositionText:0",
+       "insertFromComposition:1",
+       "end1",
+       "awaiting:none",
+       "insertFromComposition:1",
+       "end1",
+       "awaiting:none",
+       "mod:KeyZ",
+       "undoReq:None",
+       "undoDispatch:True",
+       "mod:ControlLeft"
+      ],
+      "finalDispatch": []
+     },
+     {
+      "mode": "pointerStall",
+      "amountMs": 80,
+      "windowObserved": false,
+      "acceptedAfterFinal": true,
+      "safe": true,
+      "revisionDelta": 2,
+      "emptyEnds": 0,
+      "finalInserts": 2,
+      "order": [
+       "insertCompositionText:1",
+       "insertCompositionText:1",
+       "deleteCompositionText:0",
+       "insertFromComposition:1",
+       "end1",
+       "awaiting:none",
+       "insertFromComposition:1",
+       "end1",
+       "awaiting:none",
+       "mod:KeyZ",
+       "undoReq:None",
+       "undoDispatch:True",
+       "mod:ControlLeft"
+      ],
+      "finalDispatch": []
+     }
+    ]
+   }
+  },
+  "fwd": {
+   "environment": {
+    "ibusSyncMode": "unset",
+    "hangulEventForwarding": "true"
+   },
+   "trials": 36,
+   "safe": true,
+   "windowObserved": 0,
+   "emptyEnds": 36,
+   "finalBeforePostedTask": 36,
+   "keydownBetweenEmptyEndAndFinal": [
+    "Unidentified"
+   ],
+   "trialsWithTwoFinalInserts": 0,
+   "rows": {
+    "hwp": [
+     {
+      "mode": "key",
+      "amountMs": 0,
+      "windowObserved": false,
+      "acceptedAfterFinal": true,
+      "safe": true,
+      "revisionDelta": 2,
+      "emptyEnds": 1,
+      "finalInserts": 1,
+      "order": [
+       "insertCompositionText:1",
+       "insertCompositionText:1",
+       "deleteCompositionText:0",
+       "end0",
+       "awaiting:this",
+       "insertFromComposition:1",
+       "end1",
+       "awaiting:none",
+       "mod:ControlLeft",
+       "mod:KeyZ",
+       "undoReq:None",
+       "undoDispatch:True"
+      ],
+      "finalDispatch": [
+       {
+        "task": true,
+        "keyBeforeFinal": "Unidentified",
+        "finalAfterTask": false,
+        "endAt": 3715,
+        "finalAt": 22
+       }
+      ]
+     },
+     {
+      "mode": "key",
+      "amountMs": 1,
+      "windowObserved": false,
+      "acceptedAfterFinal": true,
+      "safe": true,
+      "revisionDelta": 2,
+      "emptyEnds": 1,
+      "finalInserts": 1,
+      "order": [
+       "insertCompositionText:1",
+       "insertCompositionText:1",
+       "deleteCompositionText:0",
+       "end0",
+       "awaiting:this",
+       "insertFromComposition:1",
+       "end1",
+       "awaiting:none",
+       "mod:ControlLeft",
+       "mod:KeyZ",
+       "undoReq:None",
+       "undoDispatch:True"
+      ],
+      "finalDispatch": [
+       {
+        "task": true,
+        "keyBeforeFinal": "Unidentified",
+        "finalAfterTask": false,
+        "endAt": 8101,
+        "finalAt": 16
+       }
+      ]
+     },
+     {
+      "mode": "key",
+      "amountMs": 3,
+      "windowObserved": false,
+      "acceptedAfterFinal": true,
+      "safe": true,
+      "revisionDelta": 2,
+      "emptyEnds": 1,
+      "finalInserts": 1,
+      "order": [
+       "insertCompositionText:1",
+       "insertCompositionText:1",
+       "deleteCompositionText:0",
+       "end0",
+       "awaiting:this",
+       "insertFromComposition:1",
+       "end1",
+       "awaiting:none",
+       "mod:ControlLeft",
+       "mod:KeyZ",
+       "undoReq:None",
+       "undoDispatch:True"
+      ],
+      "finalDispatch": [
+       {
+        "task": true,
+        "keyBeforeFinal": "Unidentified",
+        "finalAfterTask": false,
+        "endAt": 12630,
+        "finalAt": 20
+       }
+      ]
+     },
+     {
+      "mode": "key",
+      "amountMs": 8,
+      "windowObserved": false,
+      "acceptedAfterFinal": true,
+      "safe": true,
+      "revisionDelta": 2,
+      "emptyEnds": 1,
+      "finalInserts": 1,
+      "order": [
+       "insertCompositionText:1",
+       "insertCompositionText:1",
+       "deleteCompositionText:0",
+       "end0",
+       "awaiting:this",
+       "insertFromComposition:1",
+       "end1",
+       "awaiting:none",
+       "mod:ControlLeft",
+       "mod:KeyZ",
+       "undoReq:None",
+       "undoDispatch:True"
+      ],
+      "finalDispatch": [
+       {
+        "task": true,
+        "keyBeforeFinal": "Unidentified",
+        "finalAfterTask": false,
+        "endAt": 17062,
+        "finalAt": 13
+       }
+      ]
+     },
+     {
+      "mode": "key",
+      "amountMs": 15,
+      "windowObserved": false,
+      "acceptedAfterFinal": true,
+      "safe": true,
+      "revisionDelta": 2,
+      "emptyEnds": 1,
+      "finalInserts": 1,
+      "order": [
+       "insertCompositionText:1",
+       "insertCompositionText:1",
+       "deleteCompositionText:0",
+       "end0",
+       "awaiting:this",
+       "insertFromComposition:1",
+       "end1",
+       "awaiting:none",
+       "mod:ControlLeft",
+       "mod:KeyZ",
+       "undoReq:None",
+       "undoDispatch:True"
+      ],
+      "finalDispatch": [
+       {
+        "task": true,
+        "keyBeforeFinal": "Unidentified",
+        "finalAfterTask": false,
+        "endAt": 21641,
+        "finalAt": 15
+       }
+      ]
+     },
+     {
+      "mode": "earlyCtrl",
+      "amountMs": 0,
+      "windowObserved": false,
+      "acceptedAfterFinal": true,
+      "safe": true,
+      "revisionDelta": 2,
+      "emptyEnds": 1,
+      "finalInserts": 1,
+      "order": [
+       "insertCompositionText:1",
+       "insertCompositionText:1",
+       "deleteCompositionText:0",
+       "end0",
+       "awaiting:this",
+       "insertFromComposition:1",
+       "end1",
+       "awaiting:none",
+       "mod:ControlLeft",
+       "mod:KeyZ",
+       "undoReq:None",
+       "undoDispatch:True"
+      ],
+      "finalDispatch": [
+       {
+        "task": true,
+        "keyBeforeFinal": "Unidentified",
+        "finalAfterTask": false,
+        "endAt": 26063,
+        "finalAt": 15
+       }
+      ]
+     },
+     {
+      "mode": "earlyCtrl",
+      "amountMs": 10,
+      "windowObserved": false,
+      "acceptedAfterFinal": true,
+      "safe": true,
+      "revisionDelta": 2,
+      "emptyEnds": 1,
+      "finalInserts": 1,
+      "order": [
+       "insertCompositionText:1",
+       "insertCompositionText:1",
+       "deleteCompositionText:0",
+       "end0",
+       "awaiting:this",
+       "insertFromComposition:1",
+       "end1",
+       "awaiting:none",
+       "mod:ControlLeft",
+       "mod:KeyZ",
+       "undoReq:None",
+       "undoDispatch:True"
+      ],
+      "finalDispatch": [
+       {
+        "task": true,
+        "keyBeforeFinal": "Unidentified",
+        "finalAfterTask": false,
+        "endAt": 30635,
+        "finalAt": 14
+       }
+      ]
+     },
+     {
+      "mode": "earlyCtrl",
+      "amountMs": 30,
+      "windowObserved": false,
+      "acceptedAfterFinal": true,
+      "safe": true,
+      "revisionDelta": 2,
+      "emptyEnds": 1,
+      "finalInserts": 1,
+      "order": [
+       "insertCompositionText:1",
+       "insertCompositionText:1",
+       "deleteCompositionText:0",
+       "end0",
+       "awaiting:this",
+       "insertFromComposition:1",
+       "end1",
+       "awaiting:none",
+       "mod:ControlLeft",
+       "mod:KeyZ",
+       "undoReq:None",
+       "undoDispatch:True"
+      ],
+      "finalDispatch": [
+       {
+        "task": true,
+        "keyBeforeFinal": "Unidentified",
+        "finalAfterTask": false,
+        "endAt": 35058,
+        "finalAt": 11
+       }
+      ]
+     },
+     {
+      "mode": "pointer",
+      "amountMs": 0,
+      "windowObserved": false,
+      "acceptedAfterFinal": true,
+      "safe": true,
+      "revisionDelta": 2,
+      "emptyEnds": 1,
+      "finalInserts": 1,
+      "order": [
+       "insertCompositionText:1",
+       "insertCompositionText:1",
+       "deleteCompositionText:0",
+       "end0",
+       "awaiting:none",
+       "insertFromComposition:1",
+       "end1",
+       "awaiting:none",
+       "mod:ControlLeft",
+       "mod:KeyZ",
+       "undoReq:None",
+       "undoDispatch:True"
+      ],
+      "finalDispatch": [
+       {
+        "task": true,
+        "keyBeforeFinal": "Unidentified",
+        "finalAfterTask": false,
+        "endAt": 39645,
+        "finalAt": 12
+       }
+      ]
+     },
+     {
+      "mode": "pointer",
+      "amountMs": 2,
+      "windowObserved": false,
+      "acceptedAfterFinal": true,
+      "safe": true,
+      "revisionDelta": 2,
+      "emptyEnds": 1,
+      "finalInserts": 1,
+      "order": [
+       "insertCompositionText:1",
+       "insertCompositionText:1",
+       "deleteCompositionText:0",
+       "end0",
+       "awaiting:this",
+       "insertFromComposition:1",
+       "end1",
+       "awaiting:none",
+       "mod:ControlLeft",
+       "mod:KeyZ",
+       "undoReq:None",
+       "undoDispatch:True"
+      ],
+      "finalDispatch": [
+       {
+        "task": true,
+        "keyBeforeFinal": "Unidentified",
+        "finalAfterTask": false,
+        "endAt": 44074,
+        "finalAt": 26
+       }
+      ]
+     },
+     {
+      "mode": "stall",
+      "amountMs": 15,
+      "windowObserved": false,
+      "acceptedAfterFinal": true,
+      "safe": true,
+      "revisionDelta": 2,
+      "emptyEnds": 1,
+      "finalInserts": 1,
+      "order": [
+       "insertCompositionText:1",
+       "insertCompositionText:1",
+       "deleteCompositionText:0",
+       "end0",
+       "awaiting:this",
+       "insertFromComposition:1",
+       "end1",
+       "awaiting:none",
+       "mod:ControlLeft",
+       "mod:KeyZ",
+       "undoReq:None",
+       "undoDispatch:True"
+      ],
+      "finalDispatch": [
+       {
+        "task": true,
+        "keyBeforeFinal": "Unidentified",
+        "finalAfterTask": false,
+        "endAt": 48694,
+        "finalAt": 23
+       }
+      ]
+     },
+     {
+      "mode": "stall",
+      "amountMs": 40,
+      "windowObserved": false,
+      "acceptedAfterFinal": true,
+      "safe": true,
+      "revisionDelta": 2,
+      "emptyEnds": 1,
+      "finalInserts": 1,
+      "order": [
+       "insertCompositionText:1",
+       "insertCompositionText:1",
+       "deleteCompositionText:0",
+       "end0",
+       "awaiting:this",
+       "insertFromComposition:1",
+       "end1",
+       "awaiting:none",
+       "mod:ControlLeft",
+       "mod:KeyZ",
+       "undoReq:None",
+       "undoDispatch:True"
+      ],
+      "finalDispatch": [
+       {
+        "task": true,
+        "keyBeforeFinal": "Unidentified",
+        "finalAfterTask": false,
+        "endAt": 53113,
+        "finalAt": 25
+       }
+      ]
+     },
+     {
+      "mode": "stall",
+      "amountMs": 120,
+      "windowObserved": false,
+      "acceptedAfterFinal": true,
+      "safe": true,
+      "revisionDelta": 2,
+      "emptyEnds": 1,
+      "finalInserts": 1,
+      "order": [
+       "insertCompositionText:1",
+       "insertCompositionText:1",
+       "deleteCompositionText:0",
+       "end0",
+       "awaiting:this",
+       "insertFromComposition:1",
+       "end1",
+       "awaiting:none",
+       "mod:ControlLeft",
+       "mod:KeyZ",
+       "undoReq:None",
+       "undoDispatch:True"
+      ],
+      "finalDispatch": [
+       {
+        "task": true,
+        "keyBeforeFinal": "Unidentified",
+        "finalAfterTask": false,
+        "endAt": 57721,
+        "finalAt": 18
+       }
+      ]
+     },
+     {
+      "mode": "stallAfterCtrl",
+      "amountMs": 0,
+      "windowObserved": false,
+      "acceptedAfterFinal": true,
+      "safe": true,
+      "revisionDelta": 2,
+      "emptyEnds": 1,
+      "finalInserts": 1,
+      "order": [
+       "insertCompositionText:1",
+       "insertCompositionText:1",
+       "deleteCompositionText:0",
+       "end0",
+       "awaiting:this",
+       "insertFromComposition:1",
+       "end1",
+       "awaiting:none",
+       "mod:ControlLeft",
+       "mod:KeyZ",
+       "undoReq:None",
+       "undoDispatch:True"
+      ],
+      "finalDispatch": [
+       {
+        "task": true,
+        "keyBeforeFinal": "Unidentified",
+        "finalAfterTask": false,
+        "endAt": 62149,
+        "finalAt": 29
+       }
+      ]
+     },
+     {
+      "mode": "stallAfterCtrl",
+      "amountMs": 5,
+      "windowObserved": false,
+      "acceptedAfterFinal": true,
+      "safe": true,
+      "revisionDelta": 2,
+      "emptyEnds": 1,
+      "finalInserts": 1,
+      "order": [
+       "insertCompositionText:1",
+       "insertCompositionText:1",
+       "deleteCompositionText:0",
+       "end0",
+       "awaiting:this",
+       "insertFromComposition:1",
+       "end1",
+       "awaiting:none",
+       "mod:ControlLeft",
+       "mod:KeyZ",
+       "undoReq:None",
+       "undoDispatch:True"
+      ],
+      "finalDispatch": [
+       {
+        "task": true,
+        "keyBeforeFinal": "Unidentified",
+        "finalAfterTask": false,
+        "endAt": 66740,
+        "finalAt": 25
+       }
+      ]
+     },
+     {
+      "mode": "stallAfterCtrl",
+      "amountMs": 20,
+      "windowObserved": false,
+      "acceptedAfterFinal": true,
+      "safe": true,
+      "revisionDelta": 2,
+      "emptyEnds": 1,
+      "finalInserts": 1,
+      "order": [
+       "insertCompositionText:1",
+       "insertCompositionText:1",
+       "deleteCompositionText:0",
+       "end0",
+       "awaiting:this",
+       "insertFromComposition:1",
+       "end1",
+       "awaiting:none",
+       "mod:ControlLeft",
+       "mod:KeyZ",
+       "undoReq:None",
+       "undoDispatch:True"
+      ],
+      "finalDispatch": [
+       {
+        "task": true,
+        "keyBeforeFinal": "Unidentified",
+        "finalAfterTask": false,
+        "endAt": 71062,
+        "finalAt": 24
+       }
+      ]
+     },
+     {
+      "mode": "pointerStall",
+      "amountMs": 20,
+      "windowObserved": false,
+      "acceptedAfterFinal": true,
+      "safe": true,
+      "revisionDelta": 2,
+      "emptyEnds": 1,
+      "finalInserts": 1,
+      "order": [
+       "insertCompositionText:1",
+       "insertCompositionText:1",
+       "deleteCompositionText:0",
+       "end0",
+       "awaiting:this",
+       "insertFromComposition:1",
+       "end1",
+       "awaiting:none",
+       "mod:ControlLeft",
+       "mod:KeyZ",
+       "undoReq:None",
+       "undoDispatch:True"
+      ],
+      "finalDispatch": [
+       {
+        "task": true,
+        "keyBeforeFinal": "Unidentified",
+        "finalAfterTask": false,
+        "endAt": 75484,
+        "finalAt": 28
+       }
+      ]
+     },
+     {
+      "mode": "pointerStall",
+      "amountMs": 80,
+      "windowObserved": false,
+      "acceptedAfterFinal": true,
+      "safe": true,
+      "revisionDelta": 2,
+      "emptyEnds": 1,
+      "finalInserts": 1,
+      "order": [
+       "insertCompositionText:1",
+       "insertCompositionText:1",
+       "deleteCompositionText:0",
+       "end0",
+       "awaiting:this",
+       "insertFromComposition:1",
+       "end1",
+       "awaiting:none",
+       "mod:ControlLeft",
+       "mod:KeyZ",
+       "undoReq:None",
+       "undoDispatch:True"
+      ],
+      "finalDispatch": [
+       {
+        "task": true,
+        "keyBeforeFinal": "Unidentified",
+        "finalAfterTask": false,
+        "endAt": 80029,
+        "finalAt": 25
+       }
+      ]
+     }
+    ],
+    "hwpx": [
+     {
+      "mode": "key",
+      "amountMs": 0,
+      "windowObserved": false,
+      "acceptedAfterFinal": true,
+      "safe": true,
+      "revisionDelta": 2,
+      "emptyEnds": 1,
+      "finalInserts": 1,
+      "order": [
+       "insertCompositionText:1",
+       "insertCompositionText:1",
+       "deleteCompositionText:0",
+       "end0",
+       "awaiting:this",
+       "insertFromComposition:1",
+       "end1",
+       "awaiting:none",
+       "mod:ControlLeft",
+       "mod:KeyZ",
+       "undoReq:None",
+       "undoDispatch:True"
+      ],
+      "finalDispatch": [
+       {
+        "task": true,
+        "keyBeforeFinal": "Unidentified",
+        "finalAfterTask": false,
+        "endAt": 85656,
+        "finalAt": 15
+       }
+      ]
+     },
+     {
+      "mode": "key",
+      "amountMs": 1,
+      "windowObserved": false,
+      "acceptedAfterFinal": true,
+      "safe": true,
+      "revisionDelta": 2,
+      "emptyEnds": 1,
+      "finalInserts": 1,
+      "order": [
+       "insertCompositionText:1",
+       "insertCompositionText:1",
+       "deleteCompositionText:0",
+       "end0",
+       "awaiting:this",
+       "insertFromComposition:1",
+       "end1",
+       "awaiting:none",
+       "mod:ControlLeft",
+       "mod:KeyZ",
+       "undoReq:None",
+       "undoDispatch:True"
+      ],
+      "finalDispatch": [
+       {
+        "task": true,
+        "keyBeforeFinal": "Unidentified",
+        "finalAfterTask": false,
+        "endAt": 90079,
+        "finalAt": 16
+       }
+      ]
+     },
+     {
+      "mode": "key",
+      "amountMs": 3,
+      "windowObserved": false,
+      "acceptedAfterFinal": true,
+      "safe": true,
+      "revisionDelta": 2,
+      "emptyEnds": 1,
+      "finalInserts": 1,
+      "order": [
+       "insertCompositionText:1",
+       "insertCompositionText:1",
+       "deleteCompositionText:0",
+       "end0",
+       "awaiting:this",
+       "insertFromComposition:1",
+       "end1",
+       "awaiting:none",
+       "mod:ControlLeft",
+       "mod:KeyZ",
+       "undoReq:None",
+       "undoDispatch:True"
+      ],
+      "finalDispatch": [
+       {
+        "task": true,
+        "keyBeforeFinal": "Unidentified",
+        "finalAfterTask": false,
+        "endAt": 94446,
+        "finalAt": 10
+       }
+      ]
+     },
+     {
+      "mode": "key",
+      "amountMs": 8,
+      "windowObserved": false,
+      "acceptedAfterFinal": true,
+      "safe": true,
+      "revisionDelta": 2,
+      "emptyEnds": 1,
+      "finalInserts": 1,
+      "order": [
+       "insertCompositionText:1",
+       "insertCompositionText:1",
+       "deleteCompositionText:0",
+       "end0",
+       "awaiting:this",
+       "insertFromComposition:1",
+       "end1",
+       "awaiting:none",
+       "mod:ControlLeft",
+       "mod:KeyZ",
+       "undoReq:None",
+       "undoDispatch:True"
+      ],
+      "finalDispatch": [
+       {
+        "task": true,
+        "keyBeforeFinal": "Unidentified",
+        "finalAfterTask": false,
+        "endAt": 98877,
+        "finalAt": 13
+       }
+      ]
+     },
+     {
+      "mode": "key",
+      "amountMs": 15,
+      "windowObserved": false,
+      "acceptedAfterFinal": true,
+      "safe": true,
+      "revisionDelta": 2,
+      "emptyEnds": 1,
+      "finalInserts": 1,
+      "order": [
+       "insertCompositionText:1",
+       "insertCompositionText:1",
+       "deleteCompositionText:0",
+       "end0",
+       "awaiting:this",
+       "insertFromComposition:1",
+       "end1",
+       "awaiting:none",
+       "mod:ControlLeft",
+       "mod:KeyZ",
+       "undoReq:None",
+       "undoDispatch:True"
+      ],
+      "finalDispatch": [
+       {
+        "task": true,
+        "keyBeforeFinal": "Unidentified",
+        "finalAfterTask": false,
+        "endAt": 103270,
+        "finalAt": 14
+       }
+      ]
+     },
+     {
+      "mode": "earlyCtrl",
+      "amountMs": 0,
+      "windowObserved": false,
+      "acceptedAfterFinal": true,
+      "safe": true,
+      "revisionDelta": 2,
+      "emptyEnds": 1,
+      "finalInserts": 1,
+      "order": [
+       "insertCompositionText:1",
+       "insertCompositionText:1",
+       "deleteCompositionText:0",
+       "end0",
+       "awaiting:this",
+       "insertFromComposition:1",
+       "end1",
+       "awaiting:none",
+       "mod:ControlLeft",
+       "mod:KeyZ",
+       "undoReq:None",
+       "undoDispatch:True"
+      ],
+      "finalDispatch": [
+       {
+        "task": true,
+        "keyBeforeFinal": "Unidentified",
+        "finalAfterTask": false,
+        "endAt": 107561,
+        "finalAt": 13
+       }
+      ]
+     },
+     {
+      "mode": "earlyCtrl",
+      "amountMs": 10,
+      "windowObserved": false,
+      "acceptedAfterFinal": true,
+      "safe": true,
+      "revisionDelta": 2,
+      "emptyEnds": 1,
+      "finalInserts": 1,
+      "order": [
+       "insertCompositionText:1",
+       "insertCompositionText:1",
+       "deleteCompositionText:0",
+       "end0",
+       "awaiting:this",
+       "insertFromComposition:1",
+       "end1",
+       "awaiting:none",
+       "mod:ControlLeft",
+       "mod:KeyZ",
+       "undoReq:None",
+       "undoDispatch:True"
+      ],
+      "finalDispatch": [
+       {
+        "task": true,
+        "keyBeforeFinal": "Unidentified",
+        "finalAfterTask": false,
+        "endAt": 111796,
+        "finalAt": 13
+       }
+      ]
+     },
+     {
+      "mode": "earlyCtrl",
+      "amountMs": 30,
+      "windowObserved": false,
+      "acceptedAfterFinal": true,
+      "safe": true,
+      "revisionDelta": 2,
+      "emptyEnds": 1,
+      "finalInserts": 1,
+      "order": [
+       "insertCompositionText:1",
+       "insertCompositionText:1",
+       "deleteCompositionText:0",
+       "end0",
+       "awaiting:this",
+       "insertFromComposition:1",
+       "end1",
+       "awaiting:none",
+       "mod:ControlLeft",
+       "mod:KeyZ",
+       "undoReq:None",
+       "undoDispatch:True"
+      ],
+      "finalDispatch": [
+       {
+        "task": true,
+        "keyBeforeFinal": "Unidentified",
+        "finalAfterTask": false,
+        "endAt": 116053,
+        "finalAt": 14
+       }
+      ]
+     },
+     {
+      "mode": "pointer",
+      "amountMs": 0,
+      "windowObserved": false,
+      "acceptedAfterFinal": true,
+      "safe": true,
+      "revisionDelta": 2,
+      "emptyEnds": 1,
+      "finalInserts": 1,
+      "order": [
+       "insertCompositionText:1",
+       "insertCompositionText:1",
+       "deleteCompositionText:0",
+       "end0",
+       "awaiting:none",
+       "insertFromComposition:1",
+       "end1",
+       "awaiting:none",
+       "mod:ControlLeft",
+       "mod:KeyZ",
+       "undoReq:None",
+       "undoDispatch:True"
+      ],
+      "finalDispatch": [
+       {
+        "task": true,
+        "keyBeforeFinal": "Unidentified",
+        "finalAfterTask": false,
+        "endAt": 120490,
+        "finalAt": 10
+       }
+      ]
+     },
+     {
+      "mode": "pointer",
+      "amountMs": 2,
+      "windowObserved": false,
+      "acceptedAfterFinal": true,
+      "safe": true,
+      "revisionDelta": 2,
+      "emptyEnds": 1,
+      "finalInserts": 1,
+      "order": [
+       "insertCompositionText:1",
+       "insertCompositionText:1",
+       "deleteCompositionText:0",
+       "end0",
+       "awaiting:this",
+       "insertFromComposition:1",
+       "end1",
+       "awaiting:none",
+       "mod:ControlLeft",
+       "mod:KeyZ",
+       "undoReq:None",
+       "undoDispatch:True"
+      ],
+      "finalDispatch": [
+       {
+        "task": true,
+        "keyBeforeFinal": "Unidentified",
+        "finalAfterTask": false,
+        "endAt": 124786,
+        "finalAt": 25
+       }
+      ]
+     },
+     {
+      "mode": "stall",
+      "amountMs": 15,
+      "windowObserved": false,
+      "acceptedAfterFinal": true,
+      "safe": true,
+      "revisionDelta": 2,
+      "emptyEnds": 1,
+      "finalInserts": 1,
+      "order": [
+       "insertCompositionText:1",
+       "insertCompositionText:1",
+       "deleteCompositionText:0",
+       "end0",
+       "awaiting:this",
+       "insertFromComposition:1",
+       "end1",
+       "awaiting:none",
+       "mod:ControlLeft",
+       "mod:KeyZ",
+       "undoReq:None",
+       "undoDispatch:True"
+      ],
+      "finalDispatch": [
+       {
+        "task": true,
+        "keyBeforeFinal": "Unidentified",
+        "finalAfterTask": false,
+        "endAt": 129313,
+        "finalAt": 24
+       }
+      ]
+     },
+     {
+      "mode": "stall",
+      "amountMs": 40,
+      "windowObserved": false,
+      "acceptedAfterFinal": true,
+      "safe": true,
+      "revisionDelta": 2,
+      "emptyEnds": 1,
+      "finalInserts": 1,
+      "order": [
+       "insertCompositionText:1",
+       "insertCompositionText:1",
+       "deleteCompositionText:0",
+       "end0",
+       "awaiting:this",
+       "insertFromComposition:1",
+       "end1",
+       "awaiting:none",
+       "mod:ControlLeft",
+       "mod:KeyZ",
+       "undoReq:None",
+       "undoDispatch:True"
+      ],
+      "finalDispatch": [
+       {
+        "task": true,
+        "keyBeforeFinal": "Unidentified",
+        "finalAfterTask": false,
+        "endAt": 133602,
+        "finalAt": 27
+       }
+      ]
+     },
+     {
+      "mode": "stall",
+      "amountMs": 120,
+      "windowObserved": false,
+      "acceptedAfterFinal": true,
+      "safe": true,
+      "revisionDelta": 2,
+      "emptyEnds": 1,
+      "finalInserts": 1,
+      "order": [
+       "insertCompositionText:1",
+       "insertCompositionText:1",
+       "deleteCompositionText:0",
+       "end0",
+       "awaiting:this",
+       "insertFromComposition:1",
+       "end1",
+       "awaiting:none",
+       "mod:ControlLeft",
+       "mod:KeyZ",
+       "undoReq:None",
+       "undoDispatch:True"
+      ],
+      "finalDispatch": [
+       {
+        "task": true,
+        "keyBeforeFinal": "Unidentified",
+        "finalAfterTask": false,
+        "endAt": 137966,
+        "finalAt": 15
+       }
+      ]
+     },
+     {
+      "mode": "stallAfterCtrl",
+      "amountMs": 0,
+      "windowObserved": false,
+      "acceptedAfterFinal": true,
+      "safe": true,
+      "revisionDelta": 2,
+      "emptyEnds": 1,
+      "finalInserts": 1,
+      "order": [
+       "insertCompositionText:1",
+       "insertCompositionText:1",
+       "deleteCompositionText:0",
+       "end0",
+       "awaiting:this",
+       "insertFromComposition:1",
+       "end1",
+       "awaiting:none",
+       "mod:ControlLeft",
+       "mod:KeyZ",
+       "undoReq:None",
+       "undoDispatch:True"
+      ],
+      "finalDispatch": [
+       {
+        "task": true,
+        "keyBeforeFinal": "Unidentified",
+        "finalAfterTask": false,
+        "endAt": 142488,
+        "finalAt": 26
+       }
+      ]
+     },
+     {
+      "mode": "stallAfterCtrl",
+      "amountMs": 5,
+      "windowObserved": false,
+      "acceptedAfterFinal": true,
+      "safe": true,
+      "revisionDelta": 2,
+      "emptyEnds": 1,
+      "finalInserts": 1,
+      "order": [
+       "insertCompositionText:1",
+       "insertCompositionText:1",
+       "deleteCompositionText:0",
+       "end0",
+       "awaiting:this",
+       "insertFromComposition:1",
+       "end1",
+       "awaiting:none",
+       "mod:ControlLeft",
+       "mod:KeyZ",
+       "undoReq:None",
+       "undoDispatch:True"
+      ],
+      "finalDispatch": [
+       {
+        "task": true,
+        "keyBeforeFinal": "Unidentified",
+        "finalAfterTask": false,
+        "endAt": 146920,
+        "finalAt": 25
+       }
+      ]
+     },
+     {
+      "mode": "stallAfterCtrl",
+      "amountMs": 20,
+      "windowObserved": false,
+      "acceptedAfterFinal": true,
+      "safe": true,
+      "revisionDelta": 2,
+      "emptyEnds": 1,
+      "finalInserts": 1,
+      "order": [
+       "insertCompositionText:1",
+       "insertCompositionText:1",
+       "deleteCompositionText:0",
+       "end0",
+       "awaiting:this",
+       "insertFromComposition:1",
+       "end1",
+       "awaiting:none",
+       "mod:ControlLeft",
+       "mod:KeyZ",
+       "undoReq:None",
+       "undoDispatch:True"
+      ],
+      "finalDispatch": [
+       {
+        "task": true,
+        "keyBeforeFinal": "Unidentified",
+        "finalAfterTask": false,
+        "endAt": 151382,
+        "finalAt": 27
+       }
+      ]
+     },
+     {
+      "mode": "pointerStall",
+      "amountMs": 20,
+      "windowObserved": false,
+      "acceptedAfterFinal": true,
+      "safe": true,
+      "revisionDelta": 2,
+      "emptyEnds": 1,
+      "finalInserts": 1,
+      "order": [
+       "insertCompositionText:1",
+       "insertCompositionText:1",
+       "deleteCompositionText:0",
+       "end0",
+       "awaiting:this",
+       "insertFromComposition:1",
+       "end1",
+       "awaiting:none",
+       "mod:ControlLeft",
+       "mod:KeyZ",
+       "undoReq:None",
+       "undoDispatch:True"
+      ],
+      "finalDispatch": [
+       {
+        "task": true,
+        "keyBeforeFinal": "Unidentified",
+        "finalAfterTask": false,
+        "endAt": 155809,
+        "finalAt": 24
+       }
+      ]
+     },
+     {
+      "mode": "pointerStall",
+      "amountMs": 80,
+      "windowObserved": false,
+      "acceptedAfterFinal": true,
+      "safe": true,
+      "revisionDelta": 2,
+      "emptyEnds": 1,
+      "finalInserts": 1,
+      "order": [
+       "insertCompositionText:1",
+       "insertCompositionText:1",
+       "deleteCompositionText:0",
+       "end0",
+       "awaiting:this",
+       "insertFromComposition:1",
+       "end1",
+       "awaiting:none",
+       "mod:ControlLeft",
+       "mod:KeyZ",
+       "undoReq:None",
+       "undoDispatch:True"
+      ],
+      "finalDispatch": [
+       {
+        "task": true,
+        "keyBeforeFinal": "Unidentified",
+        "finalAfterTask": false,
+        "endAt": 160212,
+        "finalAt": 26
+       }
+      ]
+     }
+    ]
+   }
+  }
+ }
+}
