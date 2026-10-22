@@ -332,6 +332,39 @@ describe("여러 쪽 그리기 순서", () => {
     expect(late.every((d) => d.text === "abc가나다")).toBe(true);
   });
 
+  it("Undo/Redo도 보이는 쪽부터 그리고, 화면 밖 작업은 마지막 모델로 한 번만 수행", async () => {
+    const view = { top: 0, bottom: 1500 };
+    layout(view);
+    const t = await mounted({ pages: 4 });
+    await converged(t.doc);
+    t.type("a"); await wait(260);
+    vi.useFakeTimers(); t.doc.draws = [];
+    act(() => { expect(t.editor.undo()).toBe(true); });
+    advance(30);
+    expect(new Set(pagesDrawn(t.doc.draws))).toEqual(new Set([0, 1]));
+    expect(t.doc.draws.every(d => d.text === "가나다")).toBe(true);
+    // Undo된 모델을 화면 밖 쪽에도 실제로 그린 뒤 Redo한다. 이미 같은 픽셀이면 재그리기를 생략하는
+    // paint cache의 정상 동작을 강제로 호출하게 만들지 않는다.
+    let early=t.doc.draws.length;
+    view.top=2000;view.bottom=3500;
+    act(() => void t.scroller.dispatchEvent(new Event("scroll")));
+    expect(pagesDrawn(t.doc.draws.slice(early))).toEqual([2,3]);
+    expect(t.doc.draws.slice(early).every(d => d.text === "가나다")).toBe(true);
+    view.top=0;view.bottom=1500;
+    act(() => void t.scroller.dispatchEvent(new Event("scroll")));
+    t.doc.draws=[];
+    act(() => { expect(t.editor.redo()).toBe(true); });
+    advance(30);
+    expect(new Set(pagesDrawn(t.doc.draws))).toEqual(new Set([0, 1]));
+    early=t.doc.draws.length;
+    view.top=2000;view.bottom=3500;
+    act(() => void t.scroller.dispatchEvent(new Event("scroll")));
+    expect(pagesDrawn(t.doc.draws.slice(early))).toEqual([2,3]);
+    expect(t.doc.draws.slice(early).every(d => d.text === "a가나다")).toBe(true);
+    advance(260);
+    expect(t.doc.draws.length).toBe(early+2); // 옛 Undo 작업·중복 늦은 그리기 없음
+  });
+
   it("그리기를 기다리던 쪽이 스크롤로 보이게 되면 바로 그린다", async () => {
     const view = { top: 0, bottom: 1500 };
     layout(view);

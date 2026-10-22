@@ -11,6 +11,7 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { DocumentSessions } from "../../../src/adapters/sessions";
 import { RhwpEditorSession } from "../../../src/components/Editor/rhwp/RhwpEditorSession";
 import type { RhwpDocument, RhwpModule } from "../../../src/components/Editor/rhwp/rhwpModule";
+import { ImeInput } from "../../../src/components/Editor/rhwp/imeInput";
 import { base, controlledBackend, flush, info, loaded, ok } from "../../../src/components/Editor/rhwp/testing";
 
 const ROOT = resolve(__dirname, "../../..");
@@ -158,6 +159,60 @@ describe.each(["hwp", "hwpx"] as const)("실제 WASM 세션 실행 취소(%s)", 
     expect(s.editor.redo()).toBe(true);
     expect(s.state().text).toBe(typed);
     s.editor.dispose();
+  });
+
+  it("native 취소 trace 재생: 같은 셀/본문 모델에서 선택 복원과 late-tail 거부, revision은 증가", async () => {
+    const s = await open(fmt);
+    const original = s.state().text;
+    s.editor.moveHorizontal(1, true); s.editor.moveHorizontal(1, true);
+    const ime = new ImeInput(s.editor);
+    ime.compositionStart(); ime.input("ㄱ", "insertCompositionText", true);
+    ime.input("", "deleteCompositionText", true); ime.compositionEnd("");
+    expect(s.editor.undo()).toBe(false);
+    ime.keyUp("Backspace", 8, false, false);
+    const revision = s.editor.localRevision;
+    expect(s.editor.undo()).toBe(true);
+    expect(s.state().text).toBe(original);
+    expect(s.editor.localRevision).toBe(revision + 1);
+    expect(s.editor.caret.offset - s.editor.anchor.offset).toBe(2);
+    ime.input("간", "insertFromComposition", true); ime.compositionEnd("간");
+    expect(s.state().text).toBe(original);
+    expect(s.editor.redo()).toBe(true);
+    expect(s.state().text).not.toBe(original);
+    s.editor.dispose();
+  });
+
+  it.each(["reserve", "redo", "cancel", "release"] as const)("실제 WASM %s 폐기 후 예외: uncertain·편집/저장 차단", async boundary => {
+    const s = await open(fmt);
+    if (boundary === "reserve") {
+      for (let k=0;k<50;k++) { s.editor.typeText("x");s.editor.endHistoryGroup(); }
+      s.doc().snapshotCapacity=()=>52;
+    } else s.editor.typeText("x");
+    if (boundary === "redo") s.editor.undo();
+    if (boundary === "cancel") {s.editor.endHistoryGroup();s.editor.beginComposition();s.editor.updateComposition("가");}
+    const original=s.doc().discardSnapshot.bind(s.doc());
+    s.doc().discardSnapshot=id=>{original(id);throw new Error("injected exception after actual discard");};
+    if (boundary === "release") (s.editor as unknown as {dropHistory(r:"unavailable"):void}).dropHistory("unavailable");
+    else if (boundary === "cancel") s.editor.endComposition("");
+    else s.editor.typeText("y");
+    expect(s.editor.status.kind).toBe("failed");expect(s.editor.hasUncertainChanges).toBe(true);
+    expect(s.editor.snapshot().history).toBeNull();
+    const text=s.state().text;
+    expect(s.editor.typeText("unsafe")).toBe(false);expect(s.editor.undo()).toBe(false);
+    expect((await s.editor.save()).ok).toBe(false);expect(s.state().text).toBe(text);
+    s.editor.dispose();
+  });
+
+  it("본문 Undo 뒤 셀로 이동한 새 편집: 같은 snapshot 재사용도 셀 caret/선택 checkpoint 갱신", async () => {
+    const s=await open(fmt);
+    s.editor.typeText("body");expect(s.editor.undo()).toBe(true);
+    const at={section:0,paragraph:2,offset:1,cell:{parentParagraph:2,control:0,cell:1,cellParagraph:0}};
+    (s.editor as unknown as {moveTo(p:unknown,e:boolean):void}).moveTo(at,false);
+    const original=s.state();
+    s.editor.typeText("셀");s.editor.enter();
+    expect(s.editor.undo()).toBe(true);expect(s.editor.undo()).toBe(true);
+    expect(s.state()).toEqual(original);expect(s.editor.caret).toEqual(at);expect(s.editor.anchor).toEqual(at);
+    expect(s.editor.redo()).toBe(true);expect(s.editor.redo()).toBe(true);s.editor.dispose();
   });
 
   it("상한 경계: 그룹 60개(깊이 50) — 50단계만 되돌리고 가장 오래된 남은 상태가 정확히 그 시점", async () => {

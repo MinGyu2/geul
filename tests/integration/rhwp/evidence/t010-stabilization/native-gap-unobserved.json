@@ -1,0 +1,6721 @@
+{
+  "results": [],
+  "gates": [
+    {
+      "gate": "D2",
+      "item": "hwp: 실제 빈 끝~late final 사이 Ctrl+Z 거절·앞 거래 보존·나중 Undo/Redo",
+      "result": "INCONCLUSIVE",
+      "detail": "safe=True, native gap observed=False"
+    },
+    {
+      "gate": "D2",
+      "item": "hwpx: 실제 빈 끝~late final 사이 Ctrl+Z 거절·앞 거래 보존·나중 Undo/Redo",
+      "result": "INCONCLUSIVE",
+      "detail": "safe=True, native gap observed=False"
+    }
+  ],
+  "measurements": {
+    "fixtureSha256": {
+      "basic-ko.hwp": "57c901cc394abf6f58f4838315d1ea2c5ecf8a03d9934d3fc098fd8be6e6e12f",
+      "basic-ko.hwpx": "26d434b7b427149110751c6ef5b19e9ecb4818f3ba7eadfe201b5afd3de442a8"
+    },
+    "attributionRequested": false,
+    "nativeFinalGap": {
+      "hwp": [
+        {
+          "mode": "key",
+          "delayMs": 0,
+          "commandInGap": false,
+          "chordInGap": false,
+          "acceptedAfterFinal": true,
+          "safe": true,
+          "revisionDelta": 2,
+          "trace": {
+            "records": [
+              [
+                1,
+                2714,
+                "dom:keydown",
+                {
+                  "composing": false,
+                  "keyCode": 229,
+                  "key": "ime"
+                }
+              ],
+              [
+                2,
+                2714,
+                "ime:keyDown",
+                {
+                  "interrupted": "none",
+                  "composing": false,
+                  "session": 1,
+                  "historyTransaction": false,
+                  "discarded": false,
+                  "provisional": false,
+                  "terminal": "none",
+                  "pendingCommit": false,
+                  "historyRedo": 0,
+                  "epoch": 1,
+                  "awaiting": "none",
+                  "historyUndo": 1,
+                  "generation": 1,
+                  "revision": 1
+                }
+              ],
+              [
+                3,
+                2715,
+                "dom:compositionstart",
+                null
+              ],
+              [
+                4,
+                2715,
+                "ime:compositionStart",
+                {
+                  "interrupted": "none",
+                  "composing": true,
+                  "session": 1,
+                  "historyTransaction": false,
+                  "discarded": false,
+                  "provisional": false,
+                  "terminal": "none",
+                  "pendingCommit": false,
+                  "historyRedo": 0,
+                  "epoch": 1,
+                  "awaiting": "none",
+                  "historyUndo": 1,
+                  "generation": 1,
+                  "revision": 1
+                }
+              ],
+              [
+                5,
+                2715,
+                "dom:beforeinput",
+                {
+                  "composing": true,
+                  "length": 1,
+                  "inputType": "insertCompositionText"
+                }
+              ],
+              [
+                6,
+                2717,
+                "dom:input",
+                {
+                  "composing": true,
+                  "length": 1,
+                  "inputType": "insertCompositionText"
+                }
+              ],
+              [
+                7,
+                2718,
+                "rhwp:text-mutation",
+                {
+                  "ms": 1
+                }
+              ],
+              [
+                8,
+                2718,
+                "rhwp:readPages",
+                {
+                  "ms": 0
+                }
+              ],
+              [
+                9,
+                2718,
+                "ime:input",
+                {
+                  "interrupted": "none",
+                  "composing": true,
+                  "session": 1,
+                  "historyTransaction": true,
+                  "discarded": false,
+                  "provisional": false,
+                  "terminal": "none",
+                  "pendingCommit": false,
+                  "historyRedo": 0,
+                  "epoch": 1,
+                  "awaiting": "none",
+                  "historyUndo": 1,
+                  "generation": 1,
+                  "revision": 1
+                }
+              ],
+              [
+                10,
+                2834,
+                "dom:keyup",
+                {
+                  "composing": true,
+                  "keyCode": 82,
+                  "code": "KeyR",
+                  "key": "char"
+                }
+              ],
+              [
+                11,
+                2834,
+                "ime:keyUp",
+                {
+                  "interrupted": "none",
+                  "composing": true,
+                  "session": 1,
+                  "historyTransaction": true,
+                  "discarded": false,
+                  "provisional": false,
+                  "terminal": "none",
+                  "pendingCommit": false,
+                  "historyRedo": 0,
+                  "epoch": 1,
+                  "awaiting": "none",
+                  "historyUndo": 1,
+                  "generation": 1,
+                  "revision": 1
+                }
+              ],
+              [
+                12,
+                2936,
+                "dom:keydown",
+                {
+                  "composing": true,
+                  "keyCode": 229,
+                  "key": "ime"
+                }
+              ],
+              [
+                13,
+                2936,
+                "ime:keyDown",
+                {
+                  "interrupted": "none",
+                  "composing": true,
+                  "session": 1,
+                  "historyTransaction": true,
+                  "discarded": false,
+                  "provisional": false,
+                  "terminal": "none",
+                  "pendingCommit": false,
+                  "historyRedo": 0,
+                  "epoch": 1,
+                  "awaiting": "none",
+                  "historyUndo": 1,
+                  "generation": 1,
+                  "revision": 1
+                }
+              ],
+              [
+                14,
+                2943,
+                "dom:beforeinput",
+                {
+                  "composing": true,
+                  "length": 1,
+                  "inputType": "insertCompositionText"
+                }
+              ],
+              [
+                15,
+                2944,
+                "dom:input",
+                {
+                  "composing": true,
+                  "length": 1,
+                  "inputType": "insertCompositionText"
+                }
+              ],
+              [
+                16,
+                2946,
+                "rhwp:text-mutation",
+                {
+                  "ms": 2
+                }
+              ],
+              [
+                17,
+                2946,
+                "rhwp:readPages",
+                {
+                  "ms": 0
+                }
+              ],
+              [
+                18,
+                2946,
+                "ime:input",
+                {
+                  "interrupted": "none",
+                  "composing": true,
+                  "session": 1,
+                  "historyTransaction": true,
+                  "discarded": false,
+                  "provisional": false,
+                  "terminal": "none",
+                  "pendingCommit": false,
+                  "historyRedo": 0,
+                  "epoch": 1,
+                  "awaiting": "none",
+                  "historyUndo": 1,
+                  "generation": 1,
+                  "revision": 1
+                }
+              ],
+              [
+                19,
+                3010,
+                "dom:keyup",
+                {
+                  "composing": true,
+                  "keyCode": 75,
+                  "code": "KeyK",
+                  "key": "char"
+                }
+              ],
+              [
+                20,
+                3010,
+                "ime:keyUp",
+                {
+                  "interrupted": "none",
+                  "composing": true,
+                  "session": 1,
+                  "historyTransaction": true,
+                  "discarded": false,
+                  "provisional": false,
+                  "terminal": "none",
+                  "pendingCommit": false,
+                  "historyRedo": 0,
+                  "epoch": 1,
+                  "awaiting": "none",
+                  "historyUndo": 1,
+                  "generation": 1,
+                  "revision": 1
+                }
+              ],
+              [
+                21,
+                3015,
+                "dom:keydown",
+                {
+                  "composing": true,
+                  "keyCode": 229,
+                  "key": "ime"
+                }
+              ],
+              [
+                22,
+                3015,
+                "ime:keyDown",
+                {
+                  "interrupted": "none",
+                  "composing": true,
+                  "session": 1,
+                  "historyTransaction": true,
+                  "discarded": false,
+                  "provisional": false,
+                  "terminal": "none",
+                  "pendingCommit": false,
+                  "historyRedo": 0,
+                  "epoch": 1,
+                  "awaiting": "none",
+                  "historyUndo": 1,
+                  "generation": 1,
+                  "revision": 1
+                }
+              ],
+              [
+                23,
+                3017,
+                "dom:beforeinput",
+                {
+                  "composing": true,
+                  "length": 0,
+                  "inputType": "deleteCompositionText"
+                }
+              ],
+              [
+                24,
+                3018,
+                "dom:input",
+                {
+                  "composing": true,
+                  "length": 0,
+                  "inputType": "deleteCompositionText"
+                }
+              ],
+              [
+                25,
+                3020,
+                "rhwp:text-mutation",
+                {
+                  "ms": 2
+                }
+              ],
+              [
+                26,
+                3020,
+                "rhwp:readPages",
+                {
+                  "ms": 0
+                }
+              ],
+              [
+                27,
+                3020,
+                "ime:input",
+                {
+                  "interrupted": "none",
+                  "composing": true,
+                  "session": 1,
+                  "historyTransaction": true,
+                  "discarded": false,
+                  "provisional": false,
+                  "terminal": "none",
+                  "pendingCommit": false,
+                  "historyRedo": 0,
+                  "epoch": 1,
+                  "awaiting": "none",
+                  "historyUndo": 1,
+                  "generation": 1,
+                  "revision": 1
+                }
+              ],
+              [
+                28,
+                3029,
+                "dom:compositionend",
+                {
+                  "length": 0
+                }
+              ],
+              [
+                29,
+                3029,
+                "ime:compositionEnd",
+                {
+                  "interrupted": "none",
+                  "composing": false,
+                  "session": 1,
+                  "historyTransaction": false,
+                  "discarded": false,
+                  "provisional": false,
+                  "terminal": "empty",
+                  "pendingCommit": false,
+                  "historyRedo": 0,
+                  "epoch": 1,
+                  "awaiting": "this",
+                  "historyUndo": 1,
+                  "generation": 1,
+                  "revision": 1
+                }
+              ],
+              [
+                30,
+                3043,
+                "dom:keydown",
+                {
+                  "composing": false,
+                  "keyCode": 229,
+                  "key": "ime"
+                }
+              ],
+              [
+                31,
+                3043,
+                "ime:keyDown",
+                {
+                  "interrupted": "none",
+                  "composing": false,
+                  "session": 1,
+                  "historyTransaction": false,
+                  "discarded": false,
+                  "provisional": false,
+                  "terminal": "none",
+                  "pendingCommit": false,
+                  "historyRedo": 0,
+                  "epoch": 1,
+                  "awaiting": "this",
+                  "historyUndo": 1,
+                  "generation": 1,
+                  "revision": 1
+                }
+              ],
+              [
+                32,
+                3043,
+                "dom:beforeinput",
+                {
+                  "composing": true,
+                  "length": 1,
+                  "inputType": "insertFromComposition"
+                }
+              ],
+              [
+                33,
+                3044,
+                "dom:input",
+                {
+                  "composing": true,
+                  "length": 1,
+                  "inputType": "insertFromComposition"
+                }
+              ],
+              [
+                34,
+                3045,
+                "rhwp:text-mutation",
+                {
+                  "ms": 1
+                }
+              ],
+              [
+                35,
+                3045,
+                "rhwp:readPages",
+                {
+                  "ms": 0
+                }
+              ],
+              [
+                36,
+                3045,
+                "ime:input",
+                {
+                  "interrupted": "none",
+                  "composing": true,
+                  "session": 1,
+                  "historyTransaction": true,
+                  "discarded": false,
+                  "provisional": false,
+                  "terminal": "none",
+                  "pendingCommit": false,
+                  "historyRedo": 0,
+                  "epoch": 1,
+                  "awaiting": "this",
+                  "historyUndo": 1,
+                  "generation": 1,
+                  "revision": 1
+                }
+              ],
+              [
+                37,
+                3054,
+                "dom:compositionend",
+                {
+                  "length": 1
+                }
+              ],
+              [
+                38,
+                3055,
+                "rhwp:revision-schedule",
+                {
+                  "ms": 1
+                }
+              ],
+              [
+                39,
+                3055,
+                "ime:compositionEnd",
+                {
+                  "interrupted": "none",
+                  "composing": false,
+                  "session": 1,
+                  "historyTransaction": false,
+                  "discarded": false,
+                  "provisional": false,
+                  "terminal": "text",
+                  "pendingCommit": true,
+                  "historyRedo": 0,
+                  "epoch": 1,
+                  "awaiting": "none",
+                  "historyUndo": 2,
+                  "generation": 1,
+                  "revision": 2
+                }
+              ],
+              [
+                40,
+                3122,
+                "dom:keydown",
+                {
+                  "composing": false,
+                  "keyCode": 17,
+                  "key": "mod:ControlLeft"
+                }
+              ],
+              [
+                41,
+                3123,
+                "rhwp:commit-ack",
+                {
+                  "session": 1,
+                  "ms": 69,
+                  "generation": 1
+                }
+              ],
+              [
+                42,
+                3189,
+                "dom:keydown",
+                {
+                  "composing": false,
+                  "keyCode": 90,
+                  "key": "mod:KeyZ"
+                }
+              ],
+              [
+                43,
+                3190,
+                "command:request",
+                {
+                  "reason": null,
+                  "composing": false,
+                  "session": 1,
+                  "modal": false,
+                  "id": "edit.undo",
+                  "available": true,
+                  "pending": false
+                }
+              ],
+              [
+                44,
+                3194,
+                "rhwp:revision-schedule",
+                {
+                  "ms": 0
+                }
+              ],
+              [
+                45,
+                3194,
+                "rhwp:readPages",
+                {
+                  "ms": 0
+                }
+              ],
+              [
+                46,
+                3194,
+                "command:dispatch",
+                {
+                  "id": "edit.undo",
+                  "accepted": true
+                }
+              ],
+              [
+                47,
+                3317,
+                "dom:keyup",
+                {
+                  "composing": false,
+                  "keyCode": 17,
+                  "code": "ControlLeft",
+                  "key": "mod:ControlLeft"
+                }
+              ],
+              [
+                48,
+                3317,
+                "ime:keyUp",
+                {
+                  "interrupted": "none",
+                  "composing": false,
+                  "session": 1,
+                  "historyTransaction": false,
+                  "discarded": false,
+                  "provisional": false,
+                  "terminal": "text",
+                  "pendingCommit": true,
+                  "historyRedo": 1,
+                  "epoch": 1,
+                  "awaiting": "none",
+                  "historyUndo": 1,
+                  "generation": 1,
+                  "revision": 3
+                }
+              ],
+              [
+                49,
+                3318,
+                "rhwp:commit-ack",
+                {
+                  "session": 1,
+                  "ms": 124,
+                  "generation": 1
+                }
+              ],
+              [
+                50,
+                3377,
+                "dom:keyup",
+                {
+                  "composing": false,
+                  "keyCode": 90,
+                  "code": "KeyZ",
+                  "key": "char"
+                }
+              ],
+              [
+                51,
+                3378,
+                "ime:keyUp",
+                {
+                  "interrupted": "none",
+                  "composing": false,
+                  "session": 1,
+                  "historyTransaction": false,
+                  "discarded": false,
+                  "provisional": false,
+                  "terminal": "text",
+                  "pendingCommit": false,
+                  "historyRedo": 1,
+                  "epoch": 1,
+                  "awaiting": "none",
+                  "historyUndo": 1,
+                  "generation": 1,
+                  "revision": 3
+                }
+              ]
+            ],
+            "seq": 51,
+            "dropped": 0
+          }
+        },
+        {
+          "mode": "key",
+          "delayMs": 1,
+          "commandInGap": false,
+          "chordInGap": false,
+          "acceptedAfterFinal": true,
+          "safe": true,
+          "revisionDelta": 2,
+          "trace": {
+            "records": [
+              [
+                1,
+                6881,
+                "dom:keydown",
+                {
+                  "composing": false,
+                  "keyCode": 229,
+                  "key": "ime"
+                }
+              ],
+              [
+                2,
+                6881,
+                "ime:keyDown",
+                {
+                  "interrupted": "none",
+                  "composing": false,
+                  "session": 1,
+                  "historyTransaction": false,
+                  "discarded": false,
+                  "provisional": false,
+                  "terminal": "none",
+                  "pendingCommit": false,
+                  "historyRedo": 0,
+                  "epoch": 1,
+                  "awaiting": "none",
+                  "historyUndo": 1,
+                  "generation": 1,
+                  "revision": 7
+                }
+              ],
+              [
+                3,
+                6881,
+                "dom:compositionstart",
+                null
+              ],
+              [
+                4,
+                6881,
+                "ime:compositionStart",
+                {
+                  "interrupted": "none",
+                  "composing": true,
+                  "session": 1,
+                  "historyTransaction": false,
+                  "discarded": false,
+                  "provisional": false,
+                  "terminal": "none",
+                  "pendingCommit": false,
+                  "historyRedo": 0,
+                  "epoch": 1,
+                  "awaiting": "none",
+                  "historyUndo": 1,
+                  "generation": 1,
+                  "revision": 7
+                }
+              ],
+              [
+                5,
+                6882,
+                "dom:beforeinput",
+                {
+                  "composing": true,
+                  "length": 1,
+                  "inputType": "insertCompositionText"
+                }
+              ],
+              [
+                6,
+                6883,
+                "dom:input",
+                {
+                  "composing": true,
+                  "length": 1,
+                  "inputType": "insertCompositionText"
+                }
+              ],
+              [
+                7,
+                6884,
+                "rhwp:text-mutation",
+                {
+                  "ms": 1
+                }
+              ],
+              [
+                8,
+                6884,
+                "rhwp:readPages",
+                {
+                  "ms": 0
+                }
+              ],
+              [
+                9,
+                6884,
+                "ime:input",
+                {
+                  "interrupted": "none",
+                  "composing": true,
+                  "session": 1,
+                  "historyTransaction": true,
+                  "discarded": false,
+                  "provisional": false,
+                  "terminal": "none",
+                  "pendingCommit": false,
+                  "historyRedo": 0,
+                  "epoch": 1,
+                  "awaiting": "none",
+                  "historyUndo": 1,
+                  "generation": 1,
+                  "revision": 7
+                }
+              ],
+              [
+                10,
+                6998,
+                "dom:keyup",
+                {
+                  "composing": true,
+                  "keyCode": 82,
+                  "code": "KeyR",
+                  "key": "char"
+                }
+              ],
+              [
+                11,
+                6998,
+                "ime:keyUp",
+                {
+                  "interrupted": "none",
+                  "composing": true,
+                  "session": 1,
+                  "historyTransaction": true,
+                  "discarded": false,
+                  "provisional": false,
+                  "terminal": "none",
+                  "pendingCommit": false,
+                  "historyRedo": 0,
+                  "epoch": 1,
+                  "awaiting": "none",
+                  "historyUndo": 1,
+                  "generation": 1,
+                  "revision": 7
+                }
+              ],
+              [
+                12,
+                7102,
+                "dom:keydown",
+                {
+                  "composing": true,
+                  "keyCode": 229,
+                  "key": "ime"
+                }
+              ],
+              [
+                13,
+                7102,
+                "ime:keyDown",
+                {
+                  "interrupted": "none",
+                  "composing": true,
+                  "session": 1,
+                  "historyTransaction": true,
+                  "discarded": false,
+                  "provisional": false,
+                  "terminal": "none",
+                  "pendingCommit": false,
+                  "historyRedo": 0,
+                  "epoch": 1,
+                  "awaiting": "none",
+                  "historyUndo": 1,
+                  "generation": 1,
+                  "revision": 7
+                }
+              ],
+              [
+                14,
+                7107,
+                "dom:beforeinput",
+                {
+                  "composing": true,
+                  "length": 1,
+                  "inputType": "insertCompositionText"
+                }
+              ],
+              [
+                15,
+                7108,
+                "dom:input",
+                {
+                  "composing": true,
+                  "length": 1,
+                  "inputType": "insertCompositionText"
+                }
+              ],
+              [
+                16,
+                7109,
+                "rhwp:text-mutation",
+                {
+                  "ms": 1
+                }
+              ],
+              [
+                17,
+                7110,
+                "rhwp:readPages",
+                {
+                  "ms": 1
+                }
+              ],
+              [
+                18,
+                7110,
+                "ime:input",
+                {
+                  "interrupted": "none",
+                  "composing": true,
+                  "session": 1,
+                  "historyTransaction": true,
+                  "discarded": false,
+                  "provisional": false,
+                  "terminal": "none",
+                  "pendingCommit": false,
+                  "historyRedo": 0,
+                  "epoch": 1,
+                  "awaiting": "none",
+                  "historyUndo": 1,
+                  "generation": 1,
+                  "revision": 7
+                }
+              ],
+              [
+                19,
+                7172,
+                "dom:keyup",
+                {
+                  "composing": true,
+                  "keyCode": 75,
+                  "code": "KeyK",
+                  "key": "char"
+                }
+              ],
+              [
+                20,
+                7172,
+                "ime:keyUp",
+                {
+                  "interrupted": "none",
+                  "composing": true,
+                  "session": 1,
+                  "historyTransaction": true,
+                  "discarded": false,
+                  "provisional": false,
+                  "terminal": "none",
+                  "pendingCommit": false,
+                  "historyRedo": 0,
+                  "epoch": 1,
+                  "awaiting": "none",
+                  "historyUndo": 1,
+                  "generation": 1,
+                  "revision": 7
+                }
+              ],
+              [
+                21,
+                7176,
+                "dom:keydown",
+                {
+                  "composing": true,
+                  "keyCode": 229,
+                  "key": "ime"
+                }
+              ],
+              [
+                22,
+                7176,
+                "ime:keyDown",
+                {
+                  "interrupted": "none",
+                  "composing": true,
+                  "session": 1,
+                  "historyTransaction": true,
+                  "discarded": false,
+                  "provisional": false,
+                  "terminal": "none",
+                  "pendingCommit": false,
+                  "historyRedo": 0,
+                  "epoch": 1,
+                  "awaiting": "none",
+                  "historyUndo": 1,
+                  "generation": 1,
+                  "revision": 7
+                }
+              ],
+              [
+                23,
+                7178,
+                "dom:beforeinput",
+                {
+                  "composing": true,
+                  "length": 0,
+                  "inputType": "deleteCompositionText"
+                }
+              ],
+              [
+                24,
+                7178,
+                "dom:input",
+                {
+                  "composing": true,
+                  "length": 0,
+                  "inputType": "deleteCompositionText"
+                }
+              ],
+              [
+                25,
+                7179,
+                "rhwp:text-mutation",
+                {
+                  "ms": 1
+                }
+              ],
+              [
+                26,
+                7179,
+                "rhwp:readPages",
+                {
+                  "ms": 0
+                }
+              ],
+              [
+                27,
+                7179,
+                "ime:input",
+                {
+                  "interrupted": "none",
+                  "composing": true,
+                  "session": 1,
+                  "historyTransaction": true,
+                  "discarded": false,
+                  "provisional": false,
+                  "terminal": "none",
+                  "pendingCommit": false,
+                  "historyRedo": 0,
+                  "epoch": 1,
+                  "awaiting": "none",
+                  "historyUndo": 1,
+                  "generation": 1,
+                  "revision": 7
+                }
+              ],
+              [
+                28,
+                7187,
+                "dom:compositionend",
+                {
+                  "length": 0
+                }
+              ],
+              [
+                29,
+                7187,
+                "ime:compositionEnd",
+                {
+                  "interrupted": "none",
+                  "composing": false,
+                  "session": 1,
+                  "historyTransaction": false,
+                  "discarded": false,
+                  "provisional": false,
+                  "terminal": "empty",
+                  "pendingCommit": false,
+                  "historyRedo": 0,
+                  "epoch": 1,
+                  "awaiting": "this",
+                  "historyUndo": 1,
+                  "generation": 1,
+                  "revision": 7
+                }
+              ],
+              [
+                30,
+                7199,
+                "dom:keydown",
+                {
+                  "composing": false,
+                  "keyCode": 229,
+                  "key": "ime"
+                }
+              ],
+              [
+                31,
+                7199,
+                "ime:keyDown",
+                {
+                  "interrupted": "none",
+                  "composing": false,
+                  "session": 1,
+                  "historyTransaction": false,
+                  "discarded": false,
+                  "provisional": false,
+                  "terminal": "none",
+                  "pendingCommit": false,
+                  "historyRedo": 0,
+                  "epoch": 1,
+                  "awaiting": "this",
+                  "historyUndo": 1,
+                  "generation": 1,
+                  "revision": 7
+                }
+              ],
+              [
+                32,
+                7200,
+                "dom:beforeinput",
+                {
+                  "composing": true,
+                  "length": 1,
+                  "inputType": "insertFromComposition"
+                }
+              ],
+              [
+                33,
+                7200,
+                "dom:input",
+                {
+                  "composing": true,
+                  "length": 1,
+                  "inputType": "insertFromComposition"
+                }
+              ],
+              [
+                34,
+                7201,
+                "rhwp:text-mutation",
+                {
+                  "ms": 1
+                }
+              ],
+              [
+                35,
+                7201,
+                "rhwp:readPages",
+                {
+                  "ms": 0
+                }
+              ],
+              [
+                36,
+                7201,
+                "ime:input",
+                {
+                  "interrupted": "none",
+                  "composing": true,
+                  "session": 1,
+                  "historyTransaction": true,
+                  "discarded": false,
+                  "provisional": false,
+                  "terminal": "none",
+                  "pendingCommit": false,
+                  "historyRedo": 0,
+                  "epoch": 1,
+                  "awaiting": "this",
+                  "historyUndo": 1,
+                  "generation": 1,
+                  "revision": 7
+                }
+              ],
+              [
+                37,
+                7209,
+                "dom:compositionend",
+                {
+                  "length": 1
+                }
+              ],
+              [
+                38,
+                7210,
+                "rhwp:revision-schedule",
+                {
+                  "ms": 1
+                }
+              ],
+              [
+                39,
+                7210,
+                "ime:compositionEnd",
+                {
+                  "interrupted": "none",
+                  "composing": false,
+                  "session": 1,
+                  "historyTransaction": false,
+                  "discarded": false,
+                  "provisional": false,
+                  "terminal": "text",
+                  "pendingCommit": true,
+                  "historyRedo": 0,
+                  "epoch": 1,
+                  "awaiting": "none",
+                  "historyUndo": 2,
+                  "generation": 1,
+                  "revision": 8
+                }
+              ],
+              [
+                40,
+                7272,
+                "dom:keydown",
+                {
+                  "composing": false,
+                  "keyCode": 17,
+                  "key": "mod:ControlLeft"
+                }
+              ],
+              [
+                41,
+                7273,
+                "rhwp:commit-ack",
+                {
+                  "session": 1,
+                  "ms": 64,
+                  "generation": 1
+                }
+              ],
+              [
+                42,
+                7333,
+                "dom:keydown",
+                {
+                  "composing": false,
+                  "keyCode": 90,
+                  "key": "mod:KeyZ"
+                }
+              ],
+              [
+                43,
+                7333,
+                "command:request",
+                {
+                  "reason": null,
+                  "composing": false,
+                  "session": 1,
+                  "modal": false,
+                  "id": "edit.undo",
+                  "available": true,
+                  "pending": false
+                }
+              ],
+              [
+                44,
+                7335,
+                "rhwp:revision-schedule",
+                {
+                  "ms": 0
+                }
+              ],
+              [
+                45,
+                7335,
+                "rhwp:readPages",
+                {
+                  "ms": 0
+                }
+              ],
+              [
+                46,
+                7335,
+                "command:dispatch",
+                {
+                  "id": "edit.undo",
+                  "accepted": true
+                }
+              ],
+              [
+                47,
+                7449,
+                "dom:keyup",
+                {
+                  "composing": false,
+                  "keyCode": 17,
+                  "code": "ControlLeft",
+                  "key": "mod:ControlLeft"
+                }
+              ],
+              [
+                48,
+                7449,
+                "ime:keyUp",
+                {
+                  "interrupted": "none",
+                  "composing": false,
+                  "session": 1,
+                  "historyTransaction": false,
+                  "discarded": false,
+                  "provisional": false,
+                  "terminal": "text",
+                  "pendingCommit": true,
+                  "historyRedo": 1,
+                  "epoch": 1,
+                  "awaiting": "none",
+                  "historyUndo": 1,
+                  "generation": 1,
+                  "revision": 9
+                }
+              ],
+              [
+                49,
+                7450,
+                "rhwp:commit-ack",
+                {
+                  "session": 1,
+                  "ms": 115,
+                  "generation": 1
+                }
+              ],
+              [
+                50,
+                7503,
+                "dom:keyup",
+                {
+                  "composing": false,
+                  "keyCode": 90,
+                  "code": "KeyZ",
+                  "key": "char"
+                }
+              ],
+              [
+                51,
+                7503,
+                "ime:keyUp",
+                {
+                  "interrupted": "none",
+                  "composing": false,
+                  "session": 1,
+                  "historyTransaction": false,
+                  "discarded": false,
+                  "provisional": false,
+                  "terminal": "text",
+                  "pendingCommit": false,
+                  "historyRedo": 1,
+                  "epoch": 1,
+                  "awaiting": "none",
+                  "historyUndo": 1,
+                  "generation": 1,
+                  "revision": 9
+                }
+              ]
+            ],
+            "seq": 51,
+            "dropped": 0
+          }
+        },
+        {
+          "mode": "key",
+          "delayMs": 5,
+          "commandInGap": false,
+          "chordInGap": false,
+          "acceptedAfterFinal": true,
+          "safe": true,
+          "revisionDelta": 2,
+          "trace": {
+            "records": [
+              [
+                1,
+                11151,
+                "dom:keydown",
+                {
+                  "composing": false,
+                  "keyCode": 229,
+                  "key": "ime"
+                }
+              ],
+              [
+                2,
+                11151,
+                "ime:keyDown",
+                {
+                  "interrupted": "none",
+                  "composing": false,
+                  "session": 1,
+                  "historyTransaction": false,
+                  "discarded": false,
+                  "provisional": false,
+                  "terminal": "none",
+                  "pendingCommit": false,
+                  "historyRedo": 0,
+                  "epoch": 1,
+                  "awaiting": "none",
+                  "historyUndo": 1,
+                  "generation": 1,
+                  "revision": 13
+                }
+              ],
+              [
+                3,
+                11152,
+                "dom:compositionstart",
+                null
+              ],
+              [
+                4,
+                11152,
+                "ime:compositionStart",
+                {
+                  "interrupted": "none",
+                  "composing": true,
+                  "session": 1,
+                  "historyTransaction": false,
+                  "discarded": false,
+                  "provisional": false,
+                  "terminal": "none",
+                  "pendingCommit": false,
+                  "historyRedo": 0,
+                  "epoch": 1,
+                  "awaiting": "none",
+                  "historyUndo": 1,
+                  "generation": 1,
+                  "revision": 13
+                }
+              ],
+              [
+                5,
+                11152,
+                "dom:beforeinput",
+                {
+                  "composing": true,
+                  "length": 1,
+                  "inputType": "insertCompositionText"
+                }
+              ],
+              [
+                6,
+                11154,
+                "dom:input",
+                {
+                  "composing": true,
+                  "length": 1,
+                  "inputType": "insertCompositionText"
+                }
+              ],
+              [
+                7,
+                11155,
+                "rhwp:text-mutation",
+                {
+                  "ms": 1
+                }
+              ],
+              [
+                8,
+                11155,
+                "rhwp:readPages",
+                {
+                  "ms": 0
+                }
+              ],
+              [
+                9,
+                11155,
+                "ime:input",
+                {
+                  "interrupted": "none",
+                  "composing": true,
+                  "session": 1,
+                  "historyTransaction": true,
+                  "discarded": false,
+                  "provisional": false,
+                  "terminal": "none",
+                  "pendingCommit": false,
+                  "historyRedo": 0,
+                  "epoch": 1,
+                  "awaiting": "none",
+                  "historyUndo": 1,
+                  "generation": 1,
+                  "revision": 13
+                }
+              ],
+              [
+                10,
+                11268,
+                "dom:keyup",
+                {
+                  "composing": true,
+                  "keyCode": 82,
+                  "code": "KeyR",
+                  "key": "char"
+                }
+              ],
+              [
+                11,
+                11268,
+                "ime:keyUp",
+                {
+                  "interrupted": "none",
+                  "composing": true,
+                  "session": 1,
+                  "historyTransaction": true,
+                  "discarded": false,
+                  "provisional": false,
+                  "terminal": "none",
+                  "pendingCommit": false,
+                  "historyRedo": 0,
+                  "epoch": 1,
+                  "awaiting": "none",
+                  "historyUndo": 1,
+                  "generation": 1,
+                  "revision": 13
+                }
+              ],
+              [
+                12,
+                11371,
+                "dom:keydown",
+                {
+                  "composing": true,
+                  "keyCode": 229,
+                  "key": "ime"
+                }
+              ],
+              [
+                13,
+                11371,
+                "ime:keyDown",
+                {
+                  "interrupted": "none",
+                  "composing": true,
+                  "session": 1,
+                  "historyTransaction": true,
+                  "discarded": false,
+                  "provisional": false,
+                  "terminal": "none",
+                  "pendingCommit": false,
+                  "historyRedo": 0,
+                  "epoch": 1,
+                  "awaiting": "none",
+                  "historyUndo": 1,
+                  "generation": 1,
+                  "revision": 13
+                }
+              ],
+              [
+                14,
+                11376,
+                "dom:beforeinput",
+                {
+                  "composing": true,
+                  "length": 1,
+                  "inputType": "insertCompositionText"
+                }
+              ],
+              [
+                15,
+                11378,
+                "dom:input",
+                {
+                  "composing": true,
+                  "length": 1,
+                  "inputType": "insertCompositionText"
+                }
+              ],
+              [
+                16,
+                11379,
+                "rhwp:text-mutation",
+                {
+                  "ms": 1
+                }
+              ],
+              [
+                17,
+                11379,
+                "rhwp:readPages",
+                {
+                  "ms": 0
+                }
+              ],
+              [
+                18,
+                11379,
+                "ime:input",
+                {
+                  "interrupted": "none",
+                  "composing": true,
+                  "session": 1,
+                  "historyTransaction": true,
+                  "discarded": false,
+                  "provisional": false,
+                  "terminal": "none",
+                  "pendingCommit": false,
+                  "historyRedo": 0,
+                  "epoch": 1,
+                  "awaiting": "none",
+                  "historyUndo": 1,
+                  "generation": 1,
+                  "revision": 13
+                }
+              ],
+              [
+                19,
+                11442,
+                "dom:keyup",
+                {
+                  "composing": true,
+                  "keyCode": 75,
+                  "code": "KeyK",
+                  "key": "char"
+                }
+              ],
+              [
+                20,
+                11442,
+                "ime:keyUp",
+                {
+                  "interrupted": "none",
+                  "composing": true,
+                  "session": 1,
+                  "historyTransaction": true,
+                  "discarded": false,
+                  "provisional": false,
+                  "terminal": "none",
+                  "pendingCommit": false,
+                  "historyRedo": 0,
+                  "epoch": 1,
+                  "awaiting": "none",
+                  "historyUndo": 1,
+                  "generation": 1,
+                  "revision": 13
+                }
+              ],
+              [
+                21,
+                11447,
+                "dom:keydown",
+                {
+                  "composing": true,
+                  "keyCode": 229,
+                  "key": "ime"
+                }
+              ],
+              [
+                22,
+                11447,
+                "ime:keyDown",
+                {
+                  "interrupted": "none",
+                  "composing": true,
+                  "session": 1,
+                  "historyTransaction": true,
+                  "discarded": false,
+                  "provisional": false,
+                  "terminal": "none",
+                  "pendingCommit": false,
+                  "historyRedo": 0,
+                  "epoch": 1,
+                  "awaiting": "none",
+                  "historyUndo": 1,
+                  "generation": 1,
+                  "revision": 13
+                }
+              ],
+              [
+                23,
+                11449,
+                "dom:beforeinput",
+                {
+                  "composing": true,
+                  "length": 0,
+                  "inputType": "deleteCompositionText"
+                }
+              ],
+              [
+                24,
+                11449,
+                "dom:input",
+                {
+                  "composing": true,
+                  "length": 0,
+                  "inputType": "deleteCompositionText"
+                }
+              ],
+              [
+                25,
+                11450,
+                "rhwp:text-mutation",
+                {
+                  "ms": 0
+                }
+              ],
+              [
+                26,
+                11450,
+                "rhwp:readPages",
+                {
+                  "ms": 0
+                }
+              ],
+              [
+                27,
+                11450,
+                "ime:input",
+                {
+                  "interrupted": "none",
+                  "composing": true,
+                  "session": 1,
+                  "historyTransaction": true,
+                  "discarded": false,
+                  "provisional": false,
+                  "terminal": "none",
+                  "pendingCommit": false,
+                  "historyRedo": 0,
+                  "epoch": 1,
+                  "awaiting": "none",
+                  "historyUndo": 1,
+                  "generation": 1,
+                  "revision": 13
+                }
+              ],
+              [
+                28,
+                11459,
+                "dom:compositionend",
+                {
+                  "length": 0
+                }
+              ],
+              [
+                29,
+                11460,
+                "ime:compositionEnd",
+                {
+                  "interrupted": "none",
+                  "composing": false,
+                  "session": 1,
+                  "historyTransaction": false,
+                  "discarded": false,
+                  "provisional": false,
+                  "terminal": "empty",
+                  "pendingCommit": false,
+                  "historyRedo": 0,
+                  "epoch": 1,
+                  "awaiting": "this",
+                  "historyUndo": 1,
+                  "generation": 1,
+                  "revision": 13
+                }
+              ],
+              [
+                30,
+                11473,
+                "dom:keydown",
+                {
+                  "composing": false,
+                  "keyCode": 229,
+                  "key": "ime"
+                }
+              ],
+              [
+                31,
+                11473,
+                "ime:keyDown",
+                {
+                  "interrupted": "none",
+                  "composing": false,
+                  "session": 1,
+                  "historyTransaction": false,
+                  "discarded": false,
+                  "provisional": false,
+                  "terminal": "none",
+                  "pendingCommit": false,
+                  "historyRedo": 0,
+                  "epoch": 1,
+                  "awaiting": "this",
+                  "historyUndo": 1,
+                  "generation": 1,
+                  "revision": 13
+                }
+              ],
+              [
+                32,
+                11474,
+                "dom:beforeinput",
+                {
+                  "composing": true,
+                  "length": 1,
+                  "inputType": "insertFromComposition"
+                }
+              ],
+              [
+                33,
+                11474,
+                "dom:input",
+                {
+                  "composing": true,
+                  "length": 1,
+                  "inputType": "insertFromComposition"
+                }
+              ],
+              [
+                34,
+                11475,
+                "rhwp:text-mutation",
+                {
+                  "ms": 1
+                }
+              ],
+              [
+                35,
+                11475,
+                "rhwp:readPages",
+                {
+                  "ms": 0
+                }
+              ],
+              [
+                36,
+                11475,
+                "ime:input",
+                {
+                  "interrupted": "none",
+                  "composing": true,
+                  "session": 1,
+                  "historyTransaction": true,
+                  "discarded": false,
+                  "provisional": false,
+                  "terminal": "none",
+                  "pendingCommit": false,
+                  "historyRedo": 0,
+                  "epoch": 1,
+                  "awaiting": "this",
+                  "historyUndo": 1,
+                  "generation": 1,
+                  "revision": 13
+                }
+              ],
+              [
+                37,
+                11483,
+                "dom:compositionend",
+                {
+                  "length": 1
+                }
+              ],
+              [
+                38,
+                11483,
+                "rhwp:revision-schedule",
+                {
+                  "ms": 0
+                }
+              ],
+              [
+                39,
+                11483,
+                "ime:compositionEnd",
+                {
+                  "interrupted": "none",
+                  "composing": false,
+                  "session": 1,
+                  "historyTransaction": false,
+                  "discarded": false,
+                  "provisional": false,
+                  "terminal": "text",
+                  "pendingCommit": true,
+                  "historyRedo": 0,
+                  "epoch": 1,
+                  "awaiting": "none",
+                  "historyUndo": 2,
+                  "generation": 1,
+                  "revision": 14
+                }
+              ],
+              [
+                40,
+                11550,
+                "dom:keydown",
+                {
+                  "composing": false,
+                  "keyCode": 17,
+                  "key": "mod:ControlLeft"
+                }
+              ],
+              [
+                41,
+                11550,
+                "rhwp:commit-ack",
+                {
+                  "session": 1,
+                  "ms": 67,
+                  "generation": 1
+                }
+              ],
+              [
+                42,
+                11612,
+                "dom:keydown",
+                {
+                  "composing": false,
+                  "keyCode": 90,
+                  "key": "mod:KeyZ"
+                }
+              ],
+              [
+                43,
+                11612,
+                "command:request",
+                {
+                  "reason": null,
+                  "composing": false,
+                  "session": 1,
+                  "modal": false,
+                  "id": "edit.undo",
+                  "available": true,
+                  "pending": false
+                }
+              ],
+              [
+                44,
+                11614,
+                "rhwp:revision-schedule",
+                {
+                  "ms": 1
+                }
+              ],
+              [
+                45,
+                11614,
+                "rhwp:readPages",
+                {
+                  "ms": 0
+                }
+              ],
+              [
+                46,
+                11614,
+                "command:dispatch",
+                {
+                  "id": "edit.undo",
+                  "accepted": true
+                }
+              ],
+              [
+                47,
+                11727,
+                "dom:keyup",
+                {
+                  "composing": false,
+                  "keyCode": 17,
+                  "code": "ControlLeft",
+                  "key": "mod:ControlLeft"
+                }
+              ],
+              [
+                48,
+                11727,
+                "ime:keyUp",
+                {
+                  "interrupted": "none",
+                  "composing": false,
+                  "session": 1,
+                  "historyTransaction": false,
+                  "discarded": false,
+                  "provisional": false,
+                  "terminal": "text",
+                  "pendingCommit": true,
+                  "historyRedo": 1,
+                  "epoch": 1,
+                  "awaiting": "none",
+                  "historyUndo": 1,
+                  "generation": 1,
+                  "revision": 15
+                }
+              ],
+              [
+                49,
+                11728,
+                "rhwp:commit-ack",
+                {
+                  "session": 1,
+                  "ms": 114,
+                  "generation": 1
+                }
+              ],
+              [
+                50,
+                11781,
+                "dom:keyup",
+                {
+                  "composing": false,
+                  "keyCode": 90,
+                  "code": "KeyZ",
+                  "key": "char"
+                }
+              ],
+              [
+                51,
+                11781,
+                "ime:keyUp",
+                {
+                  "interrupted": "none",
+                  "composing": false,
+                  "session": 1,
+                  "historyTransaction": false,
+                  "discarded": false,
+                  "provisional": false,
+                  "terminal": "text",
+                  "pendingCommit": false,
+                  "historyRedo": 1,
+                  "epoch": 1,
+                  "awaiting": "none",
+                  "historyUndo": 1,
+                  "generation": 1,
+                  "revision": 15
+                }
+              ]
+            ],
+            "seq": 51,
+            "dropped": 0
+          }
+        },
+        {
+          "mode": "pointer",
+          "delayMs": 0,
+          "commandInGap": false,
+          "chordInGap": false,
+          "acceptedAfterFinal": true,
+          "safe": true,
+          "revisionDelta": 2,
+          "trace": {
+            "records": [
+              [
+                1,
+                15418,
+                "dom:keydown",
+                {
+                  "composing": false,
+                  "keyCode": 229,
+                  "key": "ime"
+                }
+              ],
+              [
+                2,
+                15418,
+                "ime:keyDown",
+                {
+                  "interrupted": "none",
+                  "composing": false,
+                  "session": 1,
+                  "historyTransaction": false,
+                  "discarded": false,
+                  "provisional": false,
+                  "terminal": "none",
+                  "pendingCommit": false,
+                  "historyRedo": 0,
+                  "epoch": 1,
+                  "awaiting": "none",
+                  "historyUndo": 1,
+                  "generation": 1,
+                  "revision": 19
+                }
+              ],
+              [
+                3,
+                15418,
+                "dom:compositionstart",
+                null
+              ],
+              [
+                4,
+                15418,
+                "ime:compositionStart",
+                {
+                  "interrupted": "none",
+                  "composing": true,
+                  "session": 1,
+                  "historyTransaction": false,
+                  "discarded": false,
+                  "provisional": false,
+                  "terminal": "none",
+                  "pendingCommit": false,
+                  "historyRedo": 0,
+                  "epoch": 1,
+                  "awaiting": "none",
+                  "historyUndo": 1,
+                  "generation": 1,
+                  "revision": 19
+                }
+              ],
+              [
+                5,
+                15419,
+                "dom:beforeinput",
+                {
+                  "composing": true,
+                  "length": 1,
+                  "inputType": "insertCompositionText"
+                }
+              ],
+              [
+                6,
+                15421,
+                "dom:input",
+                {
+                  "composing": true,
+                  "length": 1,
+                  "inputType": "insertCompositionText"
+                }
+              ],
+              [
+                7,
+                15422,
+                "rhwp:text-mutation",
+                {
+                  "ms": 1
+                }
+              ],
+              [
+                8,
+                15422,
+                "rhwp:readPages",
+                {
+                  "ms": 0
+                }
+              ],
+              [
+                9,
+                15422,
+                "ime:input",
+                {
+                  "interrupted": "none",
+                  "composing": true,
+                  "session": 1,
+                  "historyTransaction": true,
+                  "discarded": false,
+                  "provisional": false,
+                  "terminal": "none",
+                  "pendingCommit": false,
+                  "historyRedo": 0,
+                  "epoch": 1,
+                  "awaiting": "none",
+                  "historyUndo": 1,
+                  "generation": 1,
+                  "revision": 19
+                }
+              ],
+              [
+                10,
+                15534,
+                "dom:keyup",
+                {
+                  "composing": true,
+                  "keyCode": 82,
+                  "code": "KeyR",
+                  "key": "char"
+                }
+              ],
+              [
+                11,
+                15534,
+                "ime:keyUp",
+                {
+                  "interrupted": "none",
+                  "composing": true,
+                  "session": 1,
+                  "historyTransaction": true,
+                  "discarded": false,
+                  "provisional": false,
+                  "terminal": "none",
+                  "pendingCommit": false,
+                  "historyRedo": 0,
+                  "epoch": 1,
+                  "awaiting": "none",
+                  "historyUndo": 1,
+                  "generation": 1,
+                  "revision": 19
+                }
+              ],
+              [
+                12,
+                15637,
+                "dom:keydown",
+                {
+                  "composing": true,
+                  "keyCode": 229,
+                  "key": "ime"
+                }
+              ],
+              [
+                13,
+                15637,
+                "ime:keyDown",
+                {
+                  "interrupted": "none",
+                  "composing": true,
+                  "session": 1,
+                  "historyTransaction": true,
+                  "discarded": false,
+                  "provisional": false,
+                  "terminal": "none",
+                  "pendingCommit": false,
+                  "historyRedo": 0,
+                  "epoch": 1,
+                  "awaiting": "none",
+                  "historyUndo": 1,
+                  "generation": 1,
+                  "revision": 19
+                }
+              ],
+              [
+                14,
+                15642,
+                "dom:beforeinput",
+                {
+                  "composing": true,
+                  "length": 1,
+                  "inputType": "insertCompositionText"
+                }
+              ],
+              [
+                15,
+                15644,
+                "dom:input",
+                {
+                  "composing": true,
+                  "length": 1,
+                  "inputType": "insertCompositionText"
+                }
+              ],
+              [
+                16,
+                15645,
+                "rhwp:text-mutation",
+                {
+                  "ms": 1
+                }
+              ],
+              [
+                17,
+                15645,
+                "rhwp:readPages",
+                {
+                  "ms": 0
+                }
+              ],
+              [
+                18,
+                15645,
+                "ime:input",
+                {
+                  "interrupted": "none",
+                  "composing": true,
+                  "session": 1,
+                  "historyTransaction": true,
+                  "discarded": false,
+                  "provisional": false,
+                  "terminal": "none",
+                  "pendingCommit": false,
+                  "historyRedo": 0,
+                  "epoch": 1,
+                  "awaiting": "none",
+                  "historyUndo": 1,
+                  "generation": 1,
+                  "revision": 19
+                }
+              ],
+              [
+                19,
+                15712,
+                "dom:keyup",
+                {
+                  "composing": true,
+                  "keyCode": 75,
+                  "code": "KeyK",
+                  "key": "char"
+                }
+              ],
+              [
+                20,
+                15712,
+                "ime:keyUp",
+                {
+                  "interrupted": "none",
+                  "composing": true,
+                  "session": 1,
+                  "historyTransaction": true,
+                  "discarded": false,
+                  "provisional": false,
+                  "terminal": "none",
+                  "pendingCommit": false,
+                  "historyRedo": 0,
+                  "epoch": 1,
+                  "awaiting": "none",
+                  "historyUndo": 1,
+                  "generation": 1,
+                  "revision": 19
+                }
+              ],
+              [
+                21,
+                15716,
+                "ime:pointerDown",
+                {
+                  "interrupted": "visible",
+                  "composing": false,
+                  "session": 1,
+                  "historyTransaction": true,
+                  "discarded": false,
+                  "provisional": true,
+                  "terminal": "none",
+                  "pendingCommit": false,
+                  "historyRedo": 0,
+                  "epoch": 1,
+                  "awaiting": "none",
+                  "historyUndo": 1,
+                  "generation": 1,
+                  "revision": 19
+                }
+              ],
+              [
+                22,
+                15729,
+                "dom:keydown",
+                {
+                  "composing": true,
+                  "keyCode": 229,
+                  "key": "ime"
+                }
+              ],
+              [
+                23,
+                15729,
+                "ime:keyDown",
+                {
+                  "interrupted": "visible",
+                  "composing": false,
+                  "session": 1,
+                  "historyTransaction": true,
+                  "discarded": false,
+                  "provisional": true,
+                  "terminal": "none",
+                  "pendingCommit": false,
+                  "historyRedo": 0,
+                  "epoch": 1,
+                  "awaiting": "none",
+                  "historyUndo": 1,
+                  "generation": 1,
+                  "revision": 19
+                }
+              ],
+              [
+                24,
+                15731,
+                "dom:beforeinput",
+                {
+                  "composing": true,
+                  "length": 0,
+                  "inputType": "deleteCompositionText"
+                }
+              ],
+              [
+                25,
+                15732,
+                "dom:input",
+                {
+                  "composing": true,
+                  "length": 0,
+                  "inputType": "deleteCompositionText"
+                }
+              ],
+              [
+                26,
+                15732,
+                "ime:input",
+                {
+                  "interrupted": "visible",
+                  "composing": false,
+                  "session": 1,
+                  "historyTransaction": true,
+                  "discarded": false,
+                  "provisional": true,
+                  "terminal": "none",
+                  "pendingCommit": false,
+                  "historyRedo": 0,
+                  "epoch": 1,
+                  "awaiting": "none",
+                  "historyUndo": 1,
+                  "generation": 1,
+                  "revision": 19
+                }
+              ],
+              [
+                27,
+                15732,
+                "dom:compositionend",
+                {
+                  "length": 0
+                }
+              ],
+              [
+                28,
+                15732,
+                "ime:compositionEnd",
+                {
+                  "interrupted": "visibleEmptied",
+                  "composing": false,
+                  "session": 1,
+                  "historyTransaction": true,
+                  "discarded": false,
+                  "provisional": true,
+                  "terminal": "none",
+                  "pendingCommit": false,
+                  "historyRedo": 0,
+                  "epoch": 1,
+                  "awaiting": "none",
+                  "historyUndo": 1,
+                  "generation": 1,
+                  "revision": 19
+                }
+              ],
+              [
+                29,
+                15743,
+                "dom:keydown",
+                {
+                  "composing": false,
+                  "keyCode": 229,
+                  "key": "ime"
+                }
+              ],
+              [
+                30,
+                15743,
+                "ime:keyDown",
+                {
+                  "interrupted": "visibleEmptied",
+                  "composing": false,
+                  "session": 1,
+                  "historyTransaction": true,
+                  "discarded": false,
+                  "provisional": true,
+                  "terminal": "none",
+                  "pendingCommit": false,
+                  "historyRedo": 0,
+                  "epoch": 1,
+                  "awaiting": "none",
+                  "historyUndo": 1,
+                  "generation": 1,
+                  "revision": 19
+                }
+              ],
+              [
+                31,
+                15743,
+                "dom:beforeinput",
+                {
+                  "composing": true,
+                  "length": 1,
+                  "inputType": "insertFromComposition"
+                }
+              ],
+              [
+                32,
+                15744,
+                "dom:input",
+                {
+                  "composing": true,
+                  "length": 1,
+                  "inputType": "insertFromComposition"
+                }
+              ],
+              [
+                33,
+                15744,
+                "ime:input",
+                {
+                  "interrupted": "visibleEmptied",
+                  "composing": false,
+                  "session": 1,
+                  "historyTransaction": true,
+                  "discarded": false,
+                  "provisional": true,
+                  "terminal": "none",
+                  "pendingCommit": false,
+                  "historyRedo": 0,
+                  "epoch": 1,
+                  "awaiting": "none",
+                  "historyUndo": 1,
+                  "generation": 1,
+                  "revision": 19
+                }
+              ],
+              [
+                34,
+                15744,
+                "dom:compositionend",
+                {
+                  "length": 1
+                }
+              ],
+              [
+                35,
+                15745,
+                "rhwp:revision-schedule",
+                {
+                  "ms": 0
+                }
+              ],
+              [
+                36,
+                15745,
+                "ime:compositionEnd",
+                {
+                  "interrupted": "none",
+                  "composing": false,
+                  "session": 1,
+                  "historyTransaction": false,
+                  "discarded": false,
+                  "provisional": false,
+                  "terminal": "text",
+                  "pendingCommit": true,
+                  "historyRedo": 0,
+                  "epoch": 1,
+                  "awaiting": "none",
+                  "historyUndo": 2,
+                  "generation": 1,
+                  "revision": 20
+                }
+              ],
+              [
+                37,
+                15773,
+                "dom:keydown",
+                {
+                  "composing": false,
+                  "keyCode": 17,
+                  "key": "mod:ControlLeft"
+                }
+              ],
+              [
+                38,
+                15774,
+                "rhwp:commit-ack",
+                {
+                  "session": 1,
+                  "ms": 29,
+                  "generation": 1
+                }
+              ],
+              [
+                39,
+                15799,
+                "dom:keydown",
+                {
+                  "composing": false,
+                  "keyCode": 90,
+                  "key": "mod:KeyZ"
+                }
+              ],
+              [
+                40,
+                15799,
+                "command:request",
+                {
+                  "reason": null,
+                  "composing": false,
+                  "session": 1,
+                  "modal": false,
+                  "id": "edit.undo",
+                  "available": true,
+                  "pending": false
+                }
+              ],
+              [
+                41,
+                15801,
+                "rhwp:revision-schedule",
+                {
+                  "ms": 1
+                }
+              ],
+              [
+                42,
+                15801,
+                "rhwp:readPages",
+                {
+                  "ms": 0
+                }
+              ],
+              [
+                43,
+                15801,
+                "command:dispatch",
+                {
+                  "id": "edit.undo",
+                  "accepted": true
+                }
+              ],
+              [
+                44,
+                15887,
+                "dom:keyup",
+                {
+                  "composing": false,
+                  "keyCode": 17,
+                  "code": "ControlLeft",
+                  "key": "mod:ControlLeft"
+                }
+              ],
+              [
+                45,
+                15887,
+                "ime:keyUp",
+                {
+                  "interrupted": "none",
+                  "composing": false,
+                  "session": 1,
+                  "historyTransaction": false,
+                  "discarded": false,
+                  "provisional": false,
+                  "terminal": "text",
+                  "pendingCommit": true,
+                  "historyRedo": 1,
+                  "epoch": 1,
+                  "awaiting": "none",
+                  "historyUndo": 1,
+                  "generation": 1,
+                  "revision": 21
+                }
+              ],
+              [
+                46,
+                15888,
+                "rhwp:commit-ack",
+                {
+                  "session": 1,
+                  "ms": 88,
+                  "generation": 1
+                }
+              ],
+              [
+                47,
+                15947,
+                "dom:keyup",
+                {
+                  "composing": false,
+                  "keyCode": 90,
+                  "code": "KeyZ",
+                  "key": "char"
+                }
+              ],
+              [
+                48,
+                15947,
+                "ime:keyUp",
+                {
+                  "interrupted": "none",
+                  "composing": false,
+                  "session": 1,
+                  "historyTransaction": false,
+                  "discarded": false,
+                  "provisional": false,
+                  "terminal": "text",
+                  "pendingCommit": false,
+                  "historyRedo": 1,
+                  "epoch": 1,
+                  "awaiting": "none",
+                  "historyUndo": 1,
+                  "generation": 1,
+                  "revision": 21
+                }
+              ]
+            ],
+            "seq": 48,
+            "dropped": 0
+          }
+        },
+        {
+          "mode": "pointer",
+          "delayMs": 1,
+          "commandInGap": false,
+          "chordInGap": false,
+          "acceptedAfterFinal": true,
+          "safe": true,
+          "revisionDelta": 2,
+          "trace": {
+            "records": [
+              [
+                1,
+                19476,
+                "dom:keydown",
+                {
+                  "composing": false,
+                  "keyCode": 229,
+                  "key": "ime"
+                }
+              ],
+              [
+                2,
+                19476,
+                "ime:keyDown",
+                {
+                  "interrupted": "none",
+                  "composing": false,
+                  "session": 1,
+                  "historyTransaction": false,
+                  "discarded": false,
+                  "provisional": false,
+                  "terminal": "none",
+                  "pendingCommit": false,
+                  "historyRedo": 0,
+                  "epoch": 1,
+                  "awaiting": "none",
+                  "historyUndo": 1,
+                  "generation": 1,
+                  "revision": 25
+                }
+              ],
+              [
+                3,
+                19476,
+                "dom:compositionstart",
+                null
+              ],
+              [
+                4,
+                19476,
+                "ime:compositionStart",
+                {
+                  "interrupted": "none",
+                  "composing": true,
+                  "session": 1,
+                  "historyTransaction": false,
+                  "discarded": false,
+                  "provisional": false,
+                  "terminal": "none",
+                  "pendingCommit": false,
+                  "historyRedo": 0,
+                  "epoch": 1,
+                  "awaiting": "none",
+                  "historyUndo": 1,
+                  "generation": 1,
+                  "revision": 25
+                }
+              ],
+              [
+                5,
+                19476,
+                "dom:beforeinput",
+                {
+                  "composing": true,
+                  "length": 1,
+                  "inputType": "insertCompositionText"
+                }
+              ],
+              [
+                6,
+                19478,
+                "dom:input",
+                {
+                  "composing": true,
+                  "length": 1,
+                  "inputType": "insertCompositionText"
+                }
+              ],
+              [
+                7,
+                19479,
+                "rhwp:text-mutation",
+                {
+                  "ms": 1
+                }
+              ],
+              [
+                8,
+                19479,
+                "rhwp:readPages",
+                {
+                  "ms": 0
+                }
+              ],
+              [
+                9,
+                19479,
+                "ime:input",
+                {
+                  "interrupted": "none",
+                  "composing": true,
+                  "session": 1,
+                  "historyTransaction": true,
+                  "discarded": false,
+                  "provisional": false,
+                  "terminal": "none",
+                  "pendingCommit": false,
+                  "historyRedo": 0,
+                  "epoch": 1,
+                  "awaiting": "none",
+                  "historyUndo": 1,
+                  "generation": 1,
+                  "revision": 25
+                }
+              ],
+              [
+                10,
+                19544,
+                "dom:keyup",
+                {
+                  "composing": true,
+                  "keyCode": 82,
+                  "code": "KeyR",
+                  "key": "char"
+                }
+              ],
+              [
+                11,
+                19544,
+                "ime:keyUp",
+                {
+                  "interrupted": "none",
+                  "composing": true,
+                  "session": 1,
+                  "historyTransaction": true,
+                  "discarded": false,
+                  "provisional": false,
+                  "terminal": "none",
+                  "pendingCommit": false,
+                  "historyRedo": 0,
+                  "epoch": 1,
+                  "awaiting": "none",
+                  "historyUndo": 1,
+                  "generation": 1,
+                  "revision": 25
+                }
+              ],
+              [
+                12,
+                19600,
+                "dom:keydown",
+                {
+                  "composing": true,
+                  "keyCode": 229,
+                  "key": "ime"
+                }
+              ],
+              [
+                13,
+                19600,
+                "ime:keyDown",
+                {
+                  "interrupted": "none",
+                  "composing": true,
+                  "session": 1,
+                  "historyTransaction": true,
+                  "discarded": false,
+                  "provisional": false,
+                  "terminal": "none",
+                  "pendingCommit": false,
+                  "historyRedo": 0,
+                  "epoch": 1,
+                  "awaiting": "none",
+                  "historyUndo": 1,
+                  "generation": 1,
+                  "revision": 25
+                }
+              ],
+              [
+                14,
+                19604,
+                "dom:beforeinput",
+                {
+                  "composing": true,
+                  "length": 1,
+                  "inputType": "insertCompositionText"
+                }
+              ],
+              [
+                15,
+                19606,
+                "dom:input",
+                {
+                  "composing": true,
+                  "length": 1,
+                  "inputType": "insertCompositionText"
+                }
+              ],
+              [
+                16,
+                19607,
+                "rhwp:text-mutation",
+                {
+                  "ms": 1
+                }
+              ],
+              [
+                17,
+                19607,
+                "rhwp:readPages",
+                {
+                  "ms": 0
+                }
+              ],
+              [
+                18,
+                19607,
+                "ime:input",
+                {
+                  "interrupted": "none",
+                  "composing": true,
+                  "session": 1,
+                  "historyTransaction": true,
+                  "discarded": false,
+                  "provisional": false,
+                  "terminal": "none",
+                  "pendingCommit": false,
+                  "historyRedo": 0,
+                  "epoch": 1,
+                  "awaiting": "none",
+                  "historyUndo": 1,
+                  "generation": 1,
+                  "revision": 25
+                }
+              ],
+              [
+                19,
+                19676,
+                "dom:keyup",
+                {
+                  "composing": true,
+                  "keyCode": 75,
+                  "code": "KeyK",
+                  "key": "char"
+                }
+              ],
+              [
+                20,
+                19676,
+                "ime:keyUp",
+                {
+                  "interrupted": "none",
+                  "composing": true,
+                  "session": 1,
+                  "historyTransaction": true,
+                  "discarded": false,
+                  "provisional": false,
+                  "terminal": "none",
+                  "pendingCommit": false,
+                  "historyRedo": 0,
+                  "epoch": 1,
+                  "awaiting": "none",
+                  "historyUndo": 1,
+                  "generation": 1,
+                  "revision": 25
+                }
+              ],
+              [
+                21,
+                19687,
+                "dom:keydown",
+                {
+                  "composing": true,
+                  "keyCode": 229,
+                  "key": "ime"
+                }
+              ],
+              [
+                22,
+                19687,
+                "ime:keyDown",
+                {
+                  "interrupted": "none",
+                  "composing": true,
+                  "session": 1,
+                  "historyTransaction": true,
+                  "discarded": false,
+                  "provisional": false,
+                  "terminal": "none",
+                  "pendingCommit": false,
+                  "historyRedo": 0,
+                  "epoch": 1,
+                  "awaiting": "none",
+                  "historyUndo": 1,
+                  "generation": 1,
+                  "revision": 25
+                }
+              ],
+              [
+                23,
+                19689,
+                "dom:beforeinput",
+                {
+                  "composing": true,
+                  "length": 0,
+                  "inputType": "deleteCompositionText"
+                }
+              ],
+              [
+                24,
+                19689,
+                "dom:input",
+                {
+                  "composing": true,
+                  "length": 0,
+                  "inputType": "deleteCompositionText"
+                }
+              ],
+              [
+                25,
+                19690,
+                "rhwp:text-mutation",
+                {
+                  "ms": 0
+                }
+              ],
+              [
+                26,
+                19690,
+                "rhwp:readPages",
+                {
+                  "ms": 0
+                }
+              ],
+              [
+                27,
+                19690,
+                "ime:input",
+                {
+                  "interrupted": "none",
+                  "composing": true,
+                  "session": 1,
+                  "historyTransaction": true,
+                  "discarded": false,
+                  "provisional": false,
+                  "terminal": "none",
+                  "pendingCommit": false,
+                  "historyRedo": 0,
+                  "epoch": 1,
+                  "awaiting": "none",
+                  "historyUndo": 1,
+                  "generation": 1,
+                  "revision": 25
+                }
+              ],
+              [
+                28,
+                19697,
+                "dom:compositionend",
+                {
+                  "length": 0
+                }
+              ],
+              [
+                29,
+                19697,
+                "ime:compositionEnd",
+                {
+                  "interrupted": "none",
+                  "composing": false,
+                  "session": 1,
+                  "historyTransaction": false,
+                  "discarded": false,
+                  "provisional": false,
+                  "terminal": "empty",
+                  "pendingCommit": false,
+                  "historyRedo": 0,
+                  "epoch": 1,
+                  "awaiting": "this",
+                  "historyUndo": 1,
+                  "generation": 1,
+                  "revision": 25
+                }
+              ],
+              [
+                30,
+                19700,
+                "ime:pointerDown",
+                {
+                  "interrupted": "split",
+                  "composing": false,
+                  "session": 1,
+                  "historyTransaction": false,
+                  "discarded": false,
+                  "provisional": false,
+                  "terminal": "empty",
+                  "pendingCommit": false,
+                  "historyRedo": 0,
+                  "epoch": 1,
+                  "awaiting": "this",
+                  "historyUndo": 1,
+                  "generation": 1,
+                  "revision": 25
+                }
+              ],
+              [
+                31,
+                19719,
+                "dom:keydown",
+                {
+                  "composing": false,
+                  "keyCode": 229,
+                  "key": "ime"
+                }
+              ],
+              [
+                32,
+                19720,
+                "ime:keyDown",
+                {
+                  "interrupted": "split",
+                  "composing": false,
+                  "session": 1,
+                  "historyTransaction": false,
+                  "discarded": false,
+                  "provisional": false,
+                  "terminal": "none",
+                  "pendingCommit": false,
+                  "historyRedo": 0,
+                  "epoch": 1,
+                  "awaiting": "this",
+                  "historyUndo": 1,
+                  "generation": 1,
+                  "revision": 25
+                }
+              ],
+              [
+                33,
+                19720,
+                "dom:beforeinput",
+                {
+                  "composing": true,
+                  "length": 1,
+                  "inputType": "insertFromComposition"
+                }
+              ],
+              [
+                34,
+                19720,
+                "dom:input",
+                {
+                  "composing": true,
+                  "length": 1,
+                  "inputType": "insertFromComposition"
+                }
+              ],
+              [
+                35,
+                19720,
+                "ime:input",
+                {
+                  "interrupted": "split",
+                  "composing": false,
+                  "session": 1,
+                  "historyTransaction": false,
+                  "discarded": false,
+                  "provisional": false,
+                  "terminal": "none",
+                  "pendingCommit": false,
+                  "historyRedo": 0,
+                  "epoch": 1,
+                  "awaiting": "this",
+                  "historyUndo": 1,
+                  "generation": 1,
+                  "revision": 25
+                }
+              ],
+              [
+                36,
+                19721,
+                "dom:compositionend",
+                {
+                  "length": 1
+                }
+              ],
+              [
+                37,
+                19722,
+                "rhwp:text-mutation",
+                {
+                  "ms": 1
+                }
+              ],
+              [
+                38,
+                19723,
+                "rhwp:revision-schedule",
+                {
+                  "ms": 1
+                }
+              ],
+              [
+                39,
+                19723,
+                "rhwp:readPages",
+                {
+                  "ms": 0
+                }
+              ],
+              [
+                40,
+                19723,
+                "ime:compositionEnd",
+                {
+                  "interrupted": "none",
+                  "composing": false,
+                  "session": 1,
+                  "historyTransaction": false,
+                  "discarded": false,
+                  "provisional": false,
+                  "terminal": "text",
+                  "pendingCommit": true,
+                  "historyRedo": 0,
+                  "epoch": 1,
+                  "awaiting": "none",
+                  "historyUndo": 2,
+                  "generation": 1,
+                  "revision": 26
+                }
+              ],
+              [
+                41,
+                19798,
+                "dom:keydown",
+                {
+                  "composing": false,
+                  "keyCode": 17,
+                  "key": "mod:ControlLeft"
+                }
+              ],
+              [
+                42,
+                19798,
+                "rhwp:commit-ack",
+                {
+                  "session": 1,
+                  "ms": 76,
+                  "generation": 1
+                }
+              ],
+              [
+                43,
+                19863,
+                "dom:keydown",
+                {
+                  "composing": false,
+                  "keyCode": 90,
+                  "key": "mod:KeyZ"
+                }
+              ],
+              [
+                44,
+                19863,
+                "command:request",
+                {
+                  "reason": null,
+                  "composing": false,
+                  "session": 1,
+                  "modal": false,
+                  "id": "edit.undo",
+                  "available": true,
+                  "pending": false
+                }
+              ],
+              [
+                45,
+                19864,
+                "rhwp:revision-schedule",
+                {
+                  "ms": 0
+                }
+              ],
+              [
+                46,
+                19865,
+                "rhwp:readPages",
+                {
+                  "ms": 1
+                }
+              ],
+              [
+                47,
+                19865,
+                "command:dispatch",
+                {
+                  "id": "edit.undo",
+                  "accepted": true
+                }
+              ],
+              [
+                48,
+                19982,
+                "dom:keyup",
+                {
+                  "composing": false,
+                  "keyCode": 17,
+                  "code": "ControlLeft",
+                  "key": "mod:ControlLeft"
+                }
+              ],
+              [
+                49,
+                19982,
+                "ime:keyUp",
+                {
+                  "interrupted": "none",
+                  "composing": false,
+                  "session": 1,
+                  "historyTransaction": false,
+                  "discarded": false,
+                  "provisional": false,
+                  "terminal": "text",
+                  "pendingCommit": true,
+                  "historyRedo": 1,
+                  "epoch": 1,
+                  "awaiting": "none",
+                  "historyUndo": 1,
+                  "generation": 1,
+                  "revision": 27
+                }
+              ],
+              [
+                50,
+                19983,
+                "rhwp:commit-ack",
+                {
+                  "session": 1,
+                  "ms": 119,
+                  "generation": 1
+                }
+              ],
+              [
+                51,
+                20041,
+                "dom:keyup",
+                {
+                  "composing": false,
+                  "keyCode": 90,
+                  "code": "KeyZ",
+                  "key": "char"
+                }
+              ],
+              [
+                52,
+                20041,
+                "ime:keyUp",
+                {
+                  "interrupted": "none",
+                  "composing": false,
+                  "session": 1,
+                  "historyTransaction": false,
+                  "discarded": false,
+                  "provisional": false,
+                  "terminal": "text",
+                  "pendingCommit": false,
+                  "historyRedo": 1,
+                  "epoch": 1,
+                  "awaiting": "none",
+                  "historyUndo": 1,
+                  "generation": 1,
+                  "revision": 27
+                }
+              ]
+            ],
+            "seq": 52,
+            "dropped": 0
+          }
+        }
+      ],
+      "hwpx": [
+        {
+          "mode": "key",
+          "delayMs": 0,
+          "commandInGap": false,
+          "chordInGap": false,
+          "acceptedAfterFinal": true,
+          "safe": true,
+          "revisionDelta": 2,
+          "trace": {
+            "records": [
+              [
+                1,
+                24475,
+                "dom:keydown",
+                {
+                  "composing": false,
+                  "keyCode": 229,
+                  "key": "ime"
+                }
+              ],
+              [
+                2,
+                24475,
+                "ime:keyDown",
+                {
+                  "interrupted": "none",
+                  "composing": false,
+                  "session": 2,
+                  "historyTransaction": false,
+                  "discarded": false,
+                  "provisional": false,
+                  "terminal": "none",
+                  "pendingCommit": false,
+                  "historyRedo": 0,
+                  "epoch": 1,
+                  "awaiting": "none",
+                  "historyUndo": 1,
+                  "generation": 1,
+                  "revision": 1
+                }
+              ],
+              [
+                3,
+                24475,
+                "dom:compositionstart",
+                null
+              ],
+              [
+                4,
+                24475,
+                "ime:compositionStart",
+                {
+                  "interrupted": "none",
+                  "composing": true,
+                  "session": 2,
+                  "historyTransaction": false,
+                  "discarded": false,
+                  "provisional": false,
+                  "terminal": "none",
+                  "pendingCommit": false,
+                  "historyRedo": 0,
+                  "epoch": 1,
+                  "awaiting": "none",
+                  "historyUndo": 1,
+                  "generation": 1,
+                  "revision": 1
+                }
+              ],
+              [
+                5,
+                24476,
+                "dom:beforeinput",
+                {
+                  "composing": true,
+                  "length": 1,
+                  "inputType": "insertCompositionText"
+                }
+              ],
+              [
+                6,
+                24478,
+                "dom:input",
+                {
+                  "composing": true,
+                  "length": 1,
+                  "inputType": "insertCompositionText"
+                }
+              ],
+              [
+                7,
+                24479,
+                "rhwp:text-mutation",
+                {
+                  "ms": 1
+                }
+              ],
+              [
+                8,
+                24479,
+                "rhwp:readPages",
+                {
+                  "ms": 0
+                }
+              ],
+              [
+                9,
+                24479,
+                "ime:input",
+                {
+                  "interrupted": "none",
+                  "composing": true,
+                  "session": 2,
+                  "historyTransaction": true,
+                  "discarded": false,
+                  "provisional": false,
+                  "terminal": "none",
+                  "pendingCommit": false,
+                  "historyRedo": 0,
+                  "epoch": 1,
+                  "awaiting": "none",
+                  "historyUndo": 1,
+                  "generation": 1,
+                  "revision": 1
+                }
+              ],
+              [
+                10,
+                24592,
+                "dom:keyup",
+                {
+                  "composing": true,
+                  "keyCode": 82,
+                  "code": "KeyR",
+                  "key": "char"
+                }
+              ],
+              [
+                11,
+                24592,
+                "ime:keyUp",
+                {
+                  "interrupted": "none",
+                  "composing": true,
+                  "session": 2,
+                  "historyTransaction": true,
+                  "discarded": false,
+                  "provisional": false,
+                  "terminal": "none",
+                  "pendingCommit": false,
+                  "historyRedo": 0,
+                  "epoch": 1,
+                  "awaiting": "none",
+                  "historyUndo": 1,
+                  "generation": 1,
+                  "revision": 1
+                }
+              ],
+              [
+                12,
+                24694,
+                "dom:keydown",
+                {
+                  "composing": true,
+                  "keyCode": 229,
+                  "key": "ime"
+                }
+              ],
+              [
+                13,
+                24695,
+                "ime:keyDown",
+                {
+                  "interrupted": "none",
+                  "composing": true,
+                  "session": 2,
+                  "historyTransaction": true,
+                  "discarded": false,
+                  "provisional": false,
+                  "terminal": "none",
+                  "pendingCommit": false,
+                  "historyRedo": 0,
+                  "epoch": 1,
+                  "awaiting": "none",
+                  "historyUndo": 1,
+                  "generation": 1,
+                  "revision": 1
+                }
+              ],
+              [
+                14,
+                24699,
+                "dom:beforeinput",
+                {
+                  "composing": true,
+                  "length": 1,
+                  "inputType": "insertCompositionText"
+                }
+              ],
+              [
+                15,
+                24700,
+                "dom:input",
+                {
+                  "composing": true,
+                  "length": 1,
+                  "inputType": "insertCompositionText"
+                }
+              ],
+              [
+                16,
+                24702,
+                "rhwp:text-mutation",
+                {
+                  "ms": 1
+                }
+              ],
+              [
+                17,
+                24702,
+                "rhwp:readPages",
+                {
+                  "ms": 0
+                }
+              ],
+              [
+                18,
+                24702,
+                "ime:input",
+                {
+                  "interrupted": "none",
+                  "composing": true,
+                  "session": 2,
+                  "historyTransaction": true,
+                  "discarded": false,
+                  "provisional": false,
+                  "terminal": "none",
+                  "pendingCommit": false,
+                  "historyRedo": 0,
+                  "epoch": 1,
+                  "awaiting": "none",
+                  "historyUndo": 1,
+                  "generation": 1,
+                  "revision": 1
+                }
+              ],
+              [
+                19,
+                24769,
+                "dom:keyup",
+                {
+                  "composing": true,
+                  "keyCode": 75,
+                  "code": "KeyK",
+                  "key": "char"
+                }
+              ],
+              [
+                20,
+                24769,
+                "ime:keyUp",
+                {
+                  "interrupted": "none",
+                  "composing": true,
+                  "session": 2,
+                  "historyTransaction": true,
+                  "discarded": false,
+                  "provisional": false,
+                  "terminal": "none",
+                  "pendingCommit": false,
+                  "historyRedo": 0,
+                  "epoch": 1,
+                  "awaiting": "none",
+                  "historyUndo": 1,
+                  "generation": 1,
+                  "revision": 1
+                }
+              ],
+              [
+                21,
+                24774,
+                "dom:keydown",
+                {
+                  "composing": true,
+                  "keyCode": 229,
+                  "key": "ime"
+                }
+              ],
+              [
+                22,
+                24774,
+                "ime:keyDown",
+                {
+                  "interrupted": "none",
+                  "composing": true,
+                  "session": 2,
+                  "historyTransaction": true,
+                  "discarded": false,
+                  "provisional": false,
+                  "terminal": "none",
+                  "pendingCommit": false,
+                  "historyRedo": 0,
+                  "epoch": 1,
+                  "awaiting": "none",
+                  "historyUndo": 1,
+                  "generation": 1,
+                  "revision": 1
+                }
+              ],
+              [
+                23,
+                24776,
+                "dom:beforeinput",
+                {
+                  "composing": true,
+                  "length": 0,
+                  "inputType": "deleteCompositionText"
+                }
+              ],
+              [
+                24,
+                24776,
+                "dom:input",
+                {
+                  "composing": true,
+                  "length": 0,
+                  "inputType": "deleteCompositionText"
+                }
+              ],
+              [
+                25,
+                24777,
+                "rhwp:text-mutation",
+                {
+                  "ms": 1
+                }
+              ],
+              [
+                26,
+                24777,
+                "rhwp:readPages",
+                {
+                  "ms": 0
+                }
+              ],
+              [
+                27,
+                24777,
+                "ime:input",
+                {
+                  "interrupted": "none",
+                  "composing": true,
+                  "session": 2,
+                  "historyTransaction": true,
+                  "discarded": false,
+                  "provisional": false,
+                  "terminal": "none",
+                  "pendingCommit": false,
+                  "historyRedo": 0,
+                  "epoch": 1,
+                  "awaiting": "none",
+                  "historyUndo": 1,
+                  "generation": 1,
+                  "revision": 1
+                }
+              ],
+              [
+                28,
+                24784,
+                "dom:compositionend",
+                {
+                  "length": 0
+                }
+              ],
+              [
+                29,
+                24785,
+                "ime:compositionEnd",
+                {
+                  "interrupted": "none",
+                  "composing": false,
+                  "session": 2,
+                  "historyTransaction": false,
+                  "discarded": false,
+                  "provisional": false,
+                  "terminal": "empty",
+                  "pendingCommit": false,
+                  "historyRedo": 0,
+                  "epoch": 1,
+                  "awaiting": "this",
+                  "historyUndo": 1,
+                  "generation": 1,
+                  "revision": 1
+                }
+              ],
+              [
+                30,
+                24797,
+                "dom:keydown",
+                {
+                  "composing": false,
+                  "keyCode": 229,
+                  "key": "ime"
+                }
+              ],
+              [
+                31,
+                24797,
+                "ime:keyDown",
+                {
+                  "interrupted": "none",
+                  "composing": false,
+                  "session": 2,
+                  "historyTransaction": false,
+                  "discarded": false,
+                  "provisional": false,
+                  "terminal": "none",
+                  "pendingCommit": false,
+                  "historyRedo": 0,
+                  "epoch": 1,
+                  "awaiting": "this",
+                  "historyUndo": 1,
+                  "generation": 1,
+                  "revision": 1
+                }
+              ],
+              [
+                32,
+                24797,
+                "dom:beforeinput",
+                {
+                  "composing": true,
+                  "length": 1,
+                  "inputType": "insertFromComposition"
+                }
+              ],
+              [
+                33,
+                24798,
+                "dom:input",
+                {
+                  "composing": true,
+                  "length": 1,
+                  "inputType": "insertFromComposition"
+                }
+              ],
+              [
+                34,
+                24799,
+                "rhwp:text-mutation",
+                {
+                  "ms": 1
+                }
+              ],
+              [
+                35,
+                24799,
+                "rhwp:readPages",
+                {
+                  "ms": 0
+                }
+              ],
+              [
+                36,
+                24799,
+                "ime:input",
+                {
+                  "interrupted": "none",
+                  "composing": true,
+                  "session": 2,
+                  "historyTransaction": true,
+                  "discarded": false,
+                  "provisional": false,
+                  "terminal": "none",
+                  "pendingCommit": false,
+                  "historyRedo": 0,
+                  "epoch": 1,
+                  "awaiting": "this",
+                  "historyUndo": 1,
+                  "generation": 1,
+                  "revision": 1
+                }
+              ],
+              [
+                37,
+                24807,
+                "dom:compositionend",
+                {
+                  "length": 1
+                }
+              ],
+              [
+                38,
+                24808,
+                "rhwp:revision-schedule",
+                {
+                  "ms": 1
+                }
+              ],
+              [
+                39,
+                24808,
+                "ime:compositionEnd",
+                {
+                  "interrupted": "none",
+                  "composing": false,
+                  "session": 2,
+                  "historyTransaction": false,
+                  "discarded": false,
+                  "provisional": false,
+                  "terminal": "text",
+                  "pendingCommit": true,
+                  "historyRedo": 0,
+                  "epoch": 1,
+                  "awaiting": "none",
+                  "historyUndo": 2,
+                  "generation": 1,
+                  "revision": 2
+                }
+              ],
+              [
+                40,
+                24877,
+                "dom:keydown",
+                {
+                  "composing": false,
+                  "keyCode": 17,
+                  "key": "mod:ControlLeft"
+                }
+              ],
+              [
+                41,
+                24877,
+                "rhwp:commit-ack",
+                {
+                  "session": 2,
+                  "ms": 70,
+                  "generation": 1
+                }
+              ],
+              [
+                42,
+                24942,
+                "dom:keydown",
+                {
+                  "composing": false,
+                  "keyCode": 90,
+                  "key": "mod:KeyZ"
+                }
+              ],
+              [
+                43,
+                24942,
+                "command:request",
+                {
+                  "reason": null,
+                  "composing": false,
+                  "session": 2,
+                  "modal": false,
+                  "id": "edit.undo",
+                  "available": true,
+                  "pending": false
+                }
+              ],
+              [
+                44,
+                24944,
+                "rhwp:revision-schedule",
+                {
+                  "ms": 1
+                }
+              ],
+              [
+                45,
+                24944,
+                "rhwp:readPages",
+                {
+                  "ms": 0
+                }
+              ],
+              [
+                46,
+                24944,
+                "command:dispatch",
+                {
+                  "id": "edit.undo",
+                  "accepted": true
+                }
+              ],
+              [
+                47,
+                25063,
+                "dom:keyup",
+                {
+                  "composing": false,
+                  "keyCode": 17,
+                  "code": "ControlLeft",
+                  "key": "mod:ControlLeft"
+                }
+              ],
+              [
+                48,
+                25063,
+                "ime:keyUp",
+                {
+                  "interrupted": "none",
+                  "composing": false,
+                  "session": 2,
+                  "historyTransaction": false,
+                  "discarded": false,
+                  "provisional": false,
+                  "terminal": "text",
+                  "pendingCommit": true,
+                  "historyRedo": 1,
+                  "epoch": 1,
+                  "awaiting": "none",
+                  "historyUndo": 1,
+                  "generation": 1,
+                  "revision": 3
+                }
+              ],
+              [
+                49,
+                25063,
+                "rhwp:commit-ack",
+                {
+                  "session": 2,
+                  "ms": 120,
+                  "generation": 1
+                }
+              ],
+              [
+                50,
+                25122,
+                "dom:keyup",
+                {
+                  "composing": false,
+                  "keyCode": 90,
+                  "code": "KeyZ",
+                  "key": "char"
+                }
+              ],
+              [
+                51,
+                25122,
+                "ime:keyUp",
+                {
+                  "interrupted": "none",
+                  "composing": false,
+                  "session": 2,
+                  "historyTransaction": false,
+                  "discarded": false,
+                  "provisional": false,
+                  "terminal": "text",
+                  "pendingCommit": false,
+                  "historyRedo": 1,
+                  "epoch": 1,
+                  "awaiting": "none",
+                  "historyUndo": 1,
+                  "generation": 1,
+                  "revision": 3
+                }
+              ]
+            ],
+            "seq": 51,
+            "dropped": 0
+          }
+        },
+        {
+          "mode": "key",
+          "delayMs": 1,
+          "commandInGap": false,
+          "chordInGap": false,
+          "acceptedAfterFinal": true,
+          "safe": true,
+          "revisionDelta": 2,
+          "trace": {
+            "records": [
+              [
+                1,
+                28646,
+                "dom:keydown",
+                {
+                  "composing": false,
+                  "keyCode": 229,
+                  "key": "ime"
+                }
+              ],
+              [
+                2,
+                28646,
+                "ime:keyDown",
+                {
+                  "interrupted": "none",
+                  "composing": false,
+                  "session": 2,
+                  "historyTransaction": false,
+                  "discarded": false,
+                  "provisional": false,
+                  "terminal": "none",
+                  "pendingCommit": false,
+                  "historyRedo": 0,
+                  "epoch": 1,
+                  "awaiting": "none",
+                  "historyUndo": 1,
+                  "generation": 1,
+                  "revision": 7
+                }
+              ],
+              [
+                3,
+                28647,
+                "dom:compositionstart",
+                null
+              ],
+              [
+                4,
+                28647,
+                "ime:compositionStart",
+                {
+                  "interrupted": "none",
+                  "composing": true,
+                  "session": 2,
+                  "historyTransaction": false,
+                  "discarded": false,
+                  "provisional": false,
+                  "terminal": "none",
+                  "pendingCommit": false,
+                  "historyRedo": 0,
+                  "epoch": 1,
+                  "awaiting": "none",
+                  "historyUndo": 1,
+                  "generation": 1,
+                  "revision": 7
+                }
+              ],
+              [
+                5,
+                28647,
+                "dom:beforeinput",
+                {
+                  "composing": true,
+                  "length": 1,
+                  "inputType": "insertCompositionText"
+                }
+              ],
+              [
+                6,
+                28649,
+                "dom:input",
+                {
+                  "composing": true,
+                  "length": 1,
+                  "inputType": "insertCompositionText"
+                }
+              ],
+              [
+                7,
+                28650,
+                "rhwp:text-mutation",
+                {
+                  "ms": 1
+                }
+              ],
+              [
+                8,
+                28650,
+                "rhwp:readPages",
+                {
+                  "ms": 0
+                }
+              ],
+              [
+                9,
+                28650,
+                "ime:input",
+                {
+                  "interrupted": "none",
+                  "composing": true,
+                  "session": 2,
+                  "historyTransaction": true,
+                  "discarded": false,
+                  "provisional": false,
+                  "terminal": "none",
+                  "pendingCommit": false,
+                  "historyRedo": 0,
+                  "epoch": 1,
+                  "awaiting": "none",
+                  "historyUndo": 1,
+                  "generation": 1,
+                  "revision": 7
+                }
+              ],
+              [
+                10,
+                28764,
+                "dom:keyup",
+                {
+                  "composing": true,
+                  "keyCode": 82,
+                  "code": "KeyR",
+                  "key": "char"
+                }
+              ],
+              [
+                11,
+                28764,
+                "ime:keyUp",
+                {
+                  "interrupted": "none",
+                  "composing": true,
+                  "session": 2,
+                  "historyTransaction": true,
+                  "discarded": false,
+                  "provisional": false,
+                  "terminal": "none",
+                  "pendingCommit": false,
+                  "historyRedo": 0,
+                  "epoch": 1,
+                  "awaiting": "none",
+                  "historyUndo": 1,
+                  "generation": 1,
+                  "revision": 7
+                }
+              ],
+              [
+                12,
+                28820,
+                "dom:keydown",
+                {
+                  "composing": true,
+                  "keyCode": 229,
+                  "key": "ime"
+                }
+              ],
+              [
+                13,
+                28820,
+                "ime:keyDown",
+                {
+                  "interrupted": "none",
+                  "composing": true,
+                  "session": 2,
+                  "historyTransaction": true,
+                  "discarded": false,
+                  "provisional": false,
+                  "terminal": "none",
+                  "pendingCommit": false,
+                  "historyRedo": 0,
+                  "epoch": 1,
+                  "awaiting": "none",
+                  "historyUndo": 1,
+                  "generation": 1,
+                  "revision": 7
+                }
+              ],
+              [
+                14,
+                28822,
+                "dom:beforeinput",
+                {
+                  "composing": true,
+                  "length": 1,
+                  "inputType": "insertCompositionText"
+                }
+              ],
+              [
+                15,
+                28824,
+                "dom:input",
+                {
+                  "composing": true,
+                  "length": 1,
+                  "inputType": "insertCompositionText"
+                }
+              ],
+              [
+                16,
+                28825,
+                "rhwp:text-mutation",
+                {
+                  "ms": 1
+                }
+              ],
+              [
+                17,
+                28825,
+                "rhwp:readPages",
+                {
+                  "ms": 0
+                }
+              ],
+              [
+                18,
+                28825,
+                "ime:input",
+                {
+                  "interrupted": "none",
+                  "composing": true,
+                  "session": 2,
+                  "historyTransaction": true,
+                  "discarded": false,
+                  "provisional": false,
+                  "terminal": "none",
+                  "pendingCommit": false,
+                  "historyRedo": 0,
+                  "epoch": 1,
+                  "awaiting": "none",
+                  "historyUndo": 1,
+                  "generation": 1,
+                  "revision": 7
+                }
+              ],
+              [
+                19,
+                28890,
+                "dom:keyup",
+                {
+                  "composing": true,
+                  "keyCode": 75,
+                  "code": "KeyK",
+                  "key": "char"
+                }
+              ],
+              [
+                20,
+                28890,
+                "ime:keyUp",
+                {
+                  "interrupted": "none",
+                  "composing": true,
+                  "session": 2,
+                  "historyTransaction": true,
+                  "discarded": false,
+                  "provisional": false,
+                  "terminal": "none",
+                  "pendingCommit": false,
+                  "historyRedo": 0,
+                  "epoch": 1,
+                  "awaiting": "none",
+                  "historyUndo": 1,
+                  "generation": 1,
+                  "revision": 7
+                }
+              ],
+              [
+                21,
+                28891,
+                "dom:keydown",
+                {
+                  "composing": true,
+                  "keyCode": 229,
+                  "key": "ime"
+                }
+              ],
+              [
+                22,
+                28891,
+                "ime:keyDown",
+                {
+                  "interrupted": "none",
+                  "composing": true,
+                  "session": 2,
+                  "historyTransaction": true,
+                  "discarded": false,
+                  "provisional": false,
+                  "terminal": "none",
+                  "pendingCommit": false,
+                  "historyRedo": 0,
+                  "epoch": 1,
+                  "awaiting": "none",
+                  "historyUndo": 1,
+                  "generation": 1,
+                  "revision": 7
+                }
+              ],
+              [
+                23,
+                28895,
+                "dom:beforeinput",
+                {
+                  "composing": true,
+                  "length": 0,
+                  "inputType": "deleteCompositionText"
+                }
+              ],
+              [
+                24,
+                28896,
+                "dom:input",
+                {
+                  "composing": true,
+                  "length": 0,
+                  "inputType": "deleteCompositionText"
+                }
+              ],
+              [
+                25,
+                28896,
+                "rhwp:text-mutation",
+                {
+                  "ms": 0
+                }
+              ],
+              [
+                26,
+                28896,
+                "rhwp:readPages",
+                {
+                  "ms": 0
+                }
+              ],
+              [
+                27,
+                28896,
+                "ime:input",
+                {
+                  "interrupted": "none",
+                  "composing": true,
+                  "session": 2,
+                  "historyTransaction": true,
+                  "discarded": false,
+                  "provisional": false,
+                  "terminal": "none",
+                  "pendingCommit": false,
+                  "historyRedo": 0,
+                  "epoch": 1,
+                  "awaiting": "none",
+                  "historyUndo": 1,
+                  "generation": 1,
+                  "revision": 7
+                }
+              ],
+              [
+                28,
+                28904,
+                "dom:compositionend",
+                {
+                  "length": 0
+                }
+              ],
+              [
+                29,
+                28904,
+                "ime:compositionEnd",
+                {
+                  "interrupted": "none",
+                  "composing": false,
+                  "session": 2,
+                  "historyTransaction": false,
+                  "discarded": false,
+                  "provisional": false,
+                  "terminal": "empty",
+                  "pendingCommit": false,
+                  "historyRedo": 0,
+                  "epoch": 1,
+                  "awaiting": "this",
+                  "historyUndo": 1,
+                  "generation": 1,
+                  "revision": 7
+                }
+              ],
+              [
+                30,
+                28915,
+                "dom:keydown",
+                {
+                  "composing": false,
+                  "keyCode": 229,
+                  "key": "ime"
+                }
+              ],
+              [
+                31,
+                28915,
+                "ime:keyDown",
+                {
+                  "interrupted": "none",
+                  "composing": false,
+                  "session": 2,
+                  "historyTransaction": false,
+                  "discarded": false,
+                  "provisional": false,
+                  "terminal": "none",
+                  "pendingCommit": false,
+                  "historyRedo": 0,
+                  "epoch": 1,
+                  "awaiting": "this",
+                  "historyUndo": 1,
+                  "generation": 1,
+                  "revision": 7
+                }
+              ],
+              [
+                32,
+                28915,
+                "dom:beforeinput",
+                {
+                  "composing": true,
+                  "length": 1,
+                  "inputType": "insertFromComposition"
+                }
+              ],
+              [
+                33,
+                28916,
+                "dom:input",
+                {
+                  "composing": true,
+                  "length": 1,
+                  "inputType": "insertFromComposition"
+                }
+              ],
+              [
+                34,
+                28917,
+                "rhwp:text-mutation",
+                {
+                  "ms": 1
+                }
+              ],
+              [
+                35,
+                28917,
+                "rhwp:readPages",
+                {
+                  "ms": 0
+                }
+              ],
+              [
+                36,
+                28917,
+                "ime:input",
+                {
+                  "interrupted": "none",
+                  "composing": true,
+                  "session": 2,
+                  "historyTransaction": true,
+                  "discarded": false,
+                  "provisional": false,
+                  "terminal": "none",
+                  "pendingCommit": false,
+                  "historyRedo": 0,
+                  "epoch": 1,
+                  "awaiting": "this",
+                  "historyUndo": 1,
+                  "generation": 1,
+                  "revision": 7
+                }
+              ],
+              [
+                37,
+                28925,
+                "dom:compositionend",
+                {
+                  "length": 1
+                }
+              ],
+              [
+                38,
+                28925,
+                "rhwp:revision-schedule",
+                {
+                  "ms": 0
+                }
+              ],
+              [
+                39,
+                28925,
+                "ime:compositionEnd",
+                {
+                  "interrupted": "none",
+                  "composing": false,
+                  "session": 2,
+                  "historyTransaction": false,
+                  "discarded": false,
+                  "provisional": false,
+                  "terminal": "text",
+                  "pendingCommit": true,
+                  "historyRedo": 0,
+                  "epoch": 1,
+                  "awaiting": "none",
+                  "historyUndo": 2,
+                  "generation": 1,
+                  "revision": 8
+                }
+              ],
+              [
+                40,
+                28991,
+                "dom:keydown",
+                {
+                  "composing": false,
+                  "keyCode": 17,
+                  "key": "mod:ControlLeft"
+                }
+              ],
+              [
+                41,
+                28992,
+                "rhwp:commit-ack",
+                {
+                  "session": 2,
+                  "ms": 67,
+                  "generation": 1
+                }
+              ],
+              [
+                42,
+                29055,
+                "dom:keydown",
+                {
+                  "composing": false,
+                  "keyCode": 90,
+                  "key": "mod:KeyZ"
+                }
+              ],
+              [
+                43,
+                29055,
+                "command:request",
+                {
+                  "reason": null,
+                  "composing": false,
+                  "session": 2,
+                  "modal": false,
+                  "id": "edit.undo",
+                  "available": true,
+                  "pending": false
+                }
+              ],
+              [
+                44,
+                29056,
+                "rhwp:revision-schedule",
+                {
+                  "ms": 0
+                }
+              ],
+              [
+                45,
+                29057,
+                "rhwp:readPages",
+                {
+                  "ms": 1
+                }
+              ],
+              [
+                46,
+                29057,
+                "command:dispatch",
+                {
+                  "id": "edit.undo",
+                  "accepted": true
+                }
+              ],
+              [
+                47,
+                29174,
+                "dom:keyup",
+                {
+                  "composing": false,
+                  "keyCode": 17,
+                  "code": "ControlLeft",
+                  "key": "mod:ControlLeft"
+                }
+              ],
+              [
+                48,
+                29174,
+                "ime:keyUp",
+                {
+                  "interrupted": "none",
+                  "composing": false,
+                  "session": 2,
+                  "historyTransaction": false,
+                  "discarded": false,
+                  "provisional": false,
+                  "terminal": "text",
+                  "pendingCommit": true,
+                  "historyRedo": 1,
+                  "epoch": 1,
+                  "awaiting": "none",
+                  "historyUndo": 1,
+                  "generation": 1,
+                  "revision": 9
+                }
+              ],
+              [
+                49,
+                29174,
+                "rhwp:commit-ack",
+                {
+                  "session": 2,
+                  "ms": 118,
+                  "generation": 1
+                }
+              ],
+              [
+                50,
+                29231,
+                "dom:keyup",
+                {
+                  "composing": false,
+                  "keyCode": 90,
+                  "code": "KeyZ",
+                  "key": "char"
+                }
+              ],
+              [
+                51,
+                29231,
+                "ime:keyUp",
+                {
+                  "interrupted": "none",
+                  "composing": false,
+                  "session": 2,
+                  "historyTransaction": false,
+                  "discarded": false,
+                  "provisional": false,
+                  "terminal": "text",
+                  "pendingCommit": false,
+                  "historyRedo": 1,
+                  "epoch": 1,
+                  "awaiting": "none",
+                  "historyUndo": 1,
+                  "generation": 1,
+                  "revision": 9
+                }
+              ]
+            ],
+            "seq": 51,
+            "dropped": 0
+          }
+        },
+        {
+          "mode": "key",
+          "delayMs": 5,
+          "commandInGap": false,
+          "chordInGap": false,
+          "acceptedAfterFinal": true,
+          "safe": true,
+          "revisionDelta": 2,
+          "trace": {
+            "records": [
+              [
+                1,
+                32857,
+                "dom:keydown",
+                {
+                  "composing": false,
+                  "keyCode": 229,
+                  "key": "ime"
+                }
+              ],
+              [
+                2,
+                32857,
+                "ime:keyDown",
+                {
+                  "interrupted": "none",
+                  "composing": false,
+                  "session": 2,
+                  "historyTransaction": false,
+                  "discarded": false,
+                  "provisional": false,
+                  "terminal": "none",
+                  "pendingCommit": false,
+                  "historyRedo": 0,
+                  "epoch": 1,
+                  "awaiting": "none",
+                  "historyUndo": 1,
+                  "generation": 1,
+                  "revision": 13
+                }
+              ],
+              [
+                3,
+                32857,
+                "dom:compositionstart",
+                null
+              ],
+              [
+                4,
+                32857,
+                "ime:compositionStart",
+                {
+                  "interrupted": "none",
+                  "composing": true,
+                  "session": 2,
+                  "historyTransaction": false,
+                  "discarded": false,
+                  "provisional": false,
+                  "terminal": "none",
+                  "pendingCommit": false,
+                  "historyRedo": 0,
+                  "epoch": 1,
+                  "awaiting": "none",
+                  "historyUndo": 1,
+                  "generation": 1,
+                  "revision": 13
+                }
+              ],
+              [
+                5,
+                32857,
+                "dom:beforeinput",
+                {
+                  "composing": true,
+                  "length": 1,
+                  "inputType": "insertCompositionText"
+                }
+              ],
+              [
+                6,
+                32859,
+                "dom:input",
+                {
+                  "composing": true,
+                  "length": 1,
+                  "inputType": "insertCompositionText"
+                }
+              ],
+              [
+                7,
+                32860,
+                "rhwp:text-mutation",
+                {
+                  "ms": 0
+                }
+              ],
+              [
+                8,
+                32860,
+                "rhwp:readPages",
+                {
+                  "ms": 0
+                }
+              ],
+              [
+                9,
+                32861,
+                "ime:input",
+                {
+                  "interrupted": "none",
+                  "composing": true,
+                  "session": 2,
+                  "historyTransaction": true,
+                  "discarded": false,
+                  "provisional": false,
+                  "terminal": "none",
+                  "pendingCommit": false,
+                  "historyRedo": 0,
+                  "epoch": 1,
+                  "awaiting": "none",
+                  "historyUndo": 1,
+                  "generation": 1,
+                  "revision": 13
+                }
+              ],
+              [
+                10,
+                32974,
+                "dom:keyup",
+                {
+                  "composing": true,
+                  "keyCode": 82,
+                  "code": "KeyR",
+                  "key": "char"
+                }
+              ],
+              [
+                11,
+                32974,
+                "ime:keyUp",
+                {
+                  "interrupted": "none",
+                  "composing": true,
+                  "session": 2,
+                  "historyTransaction": true,
+                  "discarded": false,
+                  "provisional": false,
+                  "terminal": "none",
+                  "pendingCommit": false,
+                  "historyRedo": 0,
+                  "epoch": 1,
+                  "awaiting": "none",
+                  "historyUndo": 1,
+                  "generation": 1,
+                  "revision": 13
+                }
+              ],
+              [
+                12,
+                33030,
+                "dom:keydown",
+                {
+                  "composing": true,
+                  "keyCode": 229,
+                  "key": "ime"
+                }
+              ],
+              [
+                13,
+                33030,
+                "ime:keyDown",
+                {
+                  "interrupted": "none",
+                  "composing": true,
+                  "session": 2,
+                  "historyTransaction": true,
+                  "discarded": false,
+                  "provisional": false,
+                  "terminal": "none",
+                  "pendingCommit": false,
+                  "historyRedo": 0,
+                  "epoch": 1,
+                  "awaiting": "none",
+                  "historyUndo": 1,
+                  "generation": 1,
+                  "revision": 13
+                }
+              ],
+              [
+                14,
+                33032,
+                "dom:beforeinput",
+                {
+                  "composing": true,
+                  "length": 1,
+                  "inputType": "insertCompositionText"
+                }
+              ],
+              [
+                15,
+                33034,
+                "dom:input",
+                {
+                  "composing": true,
+                  "length": 1,
+                  "inputType": "insertCompositionText"
+                }
+              ],
+              [
+                16,
+                33035,
+                "rhwp:text-mutation",
+                {
+                  "ms": 1
+                }
+              ],
+              [
+                17,
+                33035,
+                "rhwp:readPages",
+                {
+                  "ms": 0
+                }
+              ],
+              [
+                18,
+                33035,
+                "ime:input",
+                {
+                  "interrupted": "none",
+                  "composing": true,
+                  "session": 2,
+                  "historyTransaction": true,
+                  "discarded": false,
+                  "provisional": false,
+                  "terminal": "none",
+                  "pendingCommit": false,
+                  "historyRedo": 0,
+                  "epoch": 1,
+                  "awaiting": "none",
+                  "historyUndo": 1,
+                  "generation": 1,
+                  "revision": 13
+                }
+              ],
+              [
+                19,
+                33101,
+                "dom:keyup",
+                {
+                  "composing": true,
+                  "keyCode": 75,
+                  "code": "KeyK",
+                  "key": "char"
+                }
+              ],
+              [
+                20,
+                33101,
+                "ime:keyUp",
+                {
+                  "interrupted": "none",
+                  "composing": true,
+                  "session": 2,
+                  "historyTransaction": true,
+                  "discarded": false,
+                  "provisional": false,
+                  "terminal": "none",
+                  "pendingCommit": false,
+                  "historyRedo": 0,
+                  "epoch": 1,
+                  "awaiting": "none",
+                  "historyUndo": 1,
+                  "generation": 1,
+                  "revision": 13
+                }
+              ],
+              [
+                21,
+                33102,
+                "dom:keydown",
+                {
+                  "composing": true,
+                  "keyCode": 229,
+                  "key": "ime"
+                }
+              ],
+              [
+                22,
+                33102,
+                "ime:keyDown",
+                {
+                  "interrupted": "none",
+                  "composing": true,
+                  "session": 2,
+                  "historyTransaction": true,
+                  "discarded": false,
+                  "provisional": false,
+                  "terminal": "none",
+                  "pendingCommit": false,
+                  "historyRedo": 0,
+                  "epoch": 1,
+                  "awaiting": "none",
+                  "historyUndo": 1,
+                  "generation": 1,
+                  "revision": 13
+                }
+              ],
+              [
+                23,
+                33107,
+                "dom:beforeinput",
+                {
+                  "composing": true,
+                  "length": 0,
+                  "inputType": "deleteCompositionText"
+                }
+              ],
+              [
+                24,
+                33107,
+                "dom:input",
+                {
+                  "composing": true,
+                  "length": 0,
+                  "inputType": "deleteCompositionText"
+                }
+              ],
+              [
+                25,
+                33108,
+                "rhwp:text-mutation",
+                {
+                  "ms": 1
+                }
+              ],
+              [
+                26,
+                33108,
+                "rhwp:readPages",
+                {
+                  "ms": 0
+                }
+              ],
+              [
+                27,
+                33108,
+                "ime:input",
+                {
+                  "interrupted": "none",
+                  "composing": true,
+                  "session": 2,
+                  "historyTransaction": true,
+                  "discarded": false,
+                  "provisional": false,
+                  "terminal": "none",
+                  "pendingCommit": false,
+                  "historyRedo": 0,
+                  "epoch": 1,
+                  "awaiting": "none",
+                  "historyUndo": 1,
+                  "generation": 1,
+                  "revision": 13
+                }
+              ],
+              [
+                28,
+                33115,
+                "dom:compositionend",
+                {
+                  "length": 0
+                }
+              ],
+              [
+                29,
+                33115,
+                "ime:compositionEnd",
+                {
+                  "interrupted": "none",
+                  "composing": false,
+                  "session": 2,
+                  "historyTransaction": false,
+                  "discarded": false,
+                  "provisional": false,
+                  "terminal": "empty",
+                  "pendingCommit": false,
+                  "historyRedo": 0,
+                  "epoch": 1,
+                  "awaiting": "this",
+                  "historyUndo": 1,
+                  "generation": 1,
+                  "revision": 13
+                }
+              ],
+              [
+                30,
+                33128,
+                "dom:keydown",
+                {
+                  "composing": false,
+                  "keyCode": 229,
+                  "key": "ime"
+                }
+              ],
+              [
+                31,
+                33128,
+                "ime:keyDown",
+                {
+                  "interrupted": "none",
+                  "composing": false,
+                  "session": 2,
+                  "historyTransaction": false,
+                  "discarded": false,
+                  "provisional": false,
+                  "terminal": "none",
+                  "pendingCommit": false,
+                  "historyRedo": 0,
+                  "epoch": 1,
+                  "awaiting": "this",
+                  "historyUndo": 1,
+                  "generation": 1,
+                  "revision": 13
+                }
+              ],
+              [
+                32,
+                33128,
+                "dom:beforeinput",
+                {
+                  "composing": true,
+                  "length": 1,
+                  "inputType": "insertFromComposition"
+                }
+              ],
+              [
+                33,
+                33129,
+                "dom:input",
+                {
+                  "composing": true,
+                  "length": 1,
+                  "inputType": "insertFromComposition"
+                }
+              ],
+              [
+                34,
+                33130,
+                "rhwp:text-mutation",
+                {
+                  "ms": 1
+                }
+              ],
+              [
+                35,
+                33130,
+                "rhwp:readPages",
+                {
+                  "ms": 0
+                }
+              ],
+              [
+                36,
+                33130,
+                "ime:input",
+                {
+                  "interrupted": "none",
+                  "composing": true,
+                  "session": 2,
+                  "historyTransaction": true,
+                  "discarded": false,
+                  "provisional": false,
+                  "terminal": "none",
+                  "pendingCommit": false,
+                  "historyRedo": 0,
+                  "epoch": 1,
+                  "awaiting": "this",
+                  "historyUndo": 1,
+                  "generation": 1,
+                  "revision": 13
+                }
+              ],
+              [
+                37,
+                33137,
+                "dom:compositionend",
+                {
+                  "length": 1
+                }
+              ],
+              [
+                38,
+                33138,
+                "rhwp:revision-schedule",
+                {
+                  "ms": 1
+                }
+              ],
+              [
+                39,
+                33138,
+                "ime:compositionEnd",
+                {
+                  "interrupted": "none",
+                  "composing": false,
+                  "session": 2,
+                  "historyTransaction": false,
+                  "discarded": false,
+                  "provisional": false,
+                  "terminal": "text",
+                  "pendingCommit": true,
+                  "historyRedo": 0,
+                  "epoch": 1,
+                  "awaiting": "none",
+                  "historyUndo": 2,
+                  "generation": 1,
+                  "revision": 14
+                }
+              ],
+              [
+                40,
+                33207,
+                "dom:keydown",
+                {
+                  "composing": false,
+                  "keyCode": 17,
+                  "key": "mod:ControlLeft"
+                }
+              ],
+              [
+                41,
+                33207,
+                "rhwp:commit-ack",
+                {
+                  "session": 2,
+                  "ms": 70,
+                  "generation": 1
+                }
+              ],
+              [
+                42,
+                33270,
+                "dom:keydown",
+                {
+                  "composing": false,
+                  "keyCode": 90,
+                  "key": "mod:KeyZ"
+                }
+              ],
+              [
+                43,
+                33271,
+                "command:request",
+                {
+                  "reason": null,
+                  "composing": false,
+                  "session": 2,
+                  "modal": false,
+                  "id": "edit.undo",
+                  "available": true,
+                  "pending": false
+                }
+              ],
+              [
+                44,
+                33272,
+                "rhwp:revision-schedule",
+                {
+                  "ms": 0
+                }
+              ],
+              [
+                45,
+                33272,
+                "rhwp:readPages",
+                {
+                  "ms": 0
+                }
+              ],
+              [
+                46,
+                33272,
+                "command:dispatch",
+                {
+                  "id": "edit.undo",
+                  "accepted": true
+                }
+              ],
+              [
+                47,
+                33391,
+                "dom:keyup",
+                {
+                  "composing": false,
+                  "keyCode": 17,
+                  "code": "ControlLeft",
+                  "key": "mod:ControlLeft"
+                }
+              ],
+              [
+                48,
+                33392,
+                "ime:keyUp",
+                {
+                  "interrupted": "none",
+                  "composing": false,
+                  "session": 2,
+                  "historyTransaction": false,
+                  "discarded": false,
+                  "provisional": false,
+                  "terminal": "text",
+                  "pendingCommit": true,
+                  "historyRedo": 1,
+                  "epoch": 1,
+                  "awaiting": "none",
+                  "historyUndo": 1,
+                  "generation": 1,
+                  "revision": 15
+                }
+              ],
+              [
+                49,
+                33392,
+                "rhwp:commit-ack",
+                {
+                  "session": 2,
+                  "ms": 120,
+                  "generation": 1
+                }
+              ],
+              [
+                50,
+                33449,
+                "dom:keyup",
+                {
+                  "composing": false,
+                  "keyCode": 90,
+                  "code": "KeyZ",
+                  "key": "char"
+                }
+              ],
+              [
+                51,
+                33449,
+                "ime:keyUp",
+                {
+                  "interrupted": "none",
+                  "composing": false,
+                  "session": 2,
+                  "historyTransaction": false,
+                  "discarded": false,
+                  "provisional": false,
+                  "terminal": "text",
+                  "pendingCommit": false,
+                  "historyRedo": 1,
+                  "epoch": 1,
+                  "awaiting": "none",
+                  "historyUndo": 1,
+                  "generation": 1,
+                  "revision": 15
+                }
+              ]
+            ],
+            "seq": 51,
+            "dropped": 0
+          }
+        },
+        {
+          "mode": "pointer",
+          "delayMs": 0,
+          "commandInGap": false,
+          "chordInGap": false,
+          "acceptedAfterFinal": true,
+          "safe": true,
+          "revisionDelta": 2,
+          "trace": {
+            "records": [
+              [
+                1,
+                37002,
+                "dom:keydown",
+                {
+                  "composing": false,
+                  "keyCode": 229,
+                  "key": "ime"
+                }
+              ],
+              [
+                2,
+                37002,
+                "ime:keyDown",
+                {
+                  "interrupted": "none",
+                  "composing": false,
+                  "session": 2,
+                  "historyTransaction": false,
+                  "discarded": false,
+                  "provisional": false,
+                  "terminal": "none",
+                  "pendingCommit": false,
+                  "historyRedo": 0,
+                  "epoch": 1,
+                  "awaiting": "none",
+                  "historyUndo": 1,
+                  "generation": 1,
+                  "revision": 19
+                }
+              ],
+              [
+                3,
+                37003,
+                "dom:compositionstart",
+                null
+              ],
+              [
+                4,
+                37003,
+                "ime:compositionStart",
+                {
+                  "interrupted": "none",
+                  "composing": true,
+                  "session": 2,
+                  "historyTransaction": false,
+                  "discarded": false,
+                  "provisional": false,
+                  "terminal": "none",
+                  "pendingCommit": false,
+                  "historyRedo": 0,
+                  "epoch": 1,
+                  "awaiting": "none",
+                  "historyUndo": 1,
+                  "generation": 1,
+                  "revision": 19
+                }
+              ],
+              [
+                5,
+                37003,
+                "dom:beforeinput",
+                {
+                  "composing": true,
+                  "length": 1,
+                  "inputType": "insertCompositionText"
+                }
+              ],
+              [
+                6,
+                37005,
+                "dom:input",
+                {
+                  "composing": true,
+                  "length": 1,
+                  "inputType": "insertCompositionText"
+                }
+              ],
+              [
+                7,
+                37006,
+                "rhwp:text-mutation",
+                {
+                  "ms": 1
+                }
+              ],
+              [
+                8,
+                37006,
+                "rhwp:readPages",
+                {
+                  "ms": 0
+                }
+              ],
+              [
+                9,
+                37006,
+                "ime:input",
+                {
+                  "interrupted": "none",
+                  "composing": true,
+                  "session": 2,
+                  "historyTransaction": true,
+                  "discarded": false,
+                  "provisional": false,
+                  "terminal": "none",
+                  "pendingCommit": false,
+                  "historyRedo": 0,
+                  "epoch": 1,
+                  "awaiting": "none",
+                  "historyUndo": 1,
+                  "generation": 1,
+                  "revision": 19
+                }
+              ],
+              [
+                10,
+                37120,
+                "dom:keyup",
+                {
+                  "composing": true,
+                  "keyCode": 82,
+                  "code": "KeyR",
+                  "key": "char"
+                }
+              ],
+              [
+                11,
+                37120,
+                "ime:keyUp",
+                {
+                  "interrupted": "none",
+                  "composing": true,
+                  "session": 2,
+                  "historyTransaction": true,
+                  "discarded": false,
+                  "provisional": false,
+                  "terminal": "none",
+                  "pendingCommit": false,
+                  "historyRedo": 0,
+                  "epoch": 1,
+                  "awaiting": "none",
+                  "historyUndo": 1,
+                  "generation": 1,
+                  "revision": 19
+                }
+              ],
+              [
+                12,
+                37219,
+                "dom:keydown",
+                {
+                  "composing": true,
+                  "keyCode": 229,
+                  "key": "ime"
+                }
+              ],
+              [
+                13,
+                37219,
+                "ime:keyDown",
+                {
+                  "interrupted": "none",
+                  "composing": true,
+                  "session": 2,
+                  "historyTransaction": true,
+                  "discarded": false,
+                  "provisional": false,
+                  "terminal": "none",
+                  "pendingCommit": false,
+                  "historyRedo": 0,
+                  "epoch": 1,
+                  "awaiting": "none",
+                  "historyUndo": 1,
+                  "generation": 1,
+                  "revision": 19
+                }
+              ],
+              [
+                14,
+                37221,
+                "dom:beforeinput",
+                {
+                  "composing": true,
+                  "length": 1,
+                  "inputType": "insertCompositionText"
+                }
+              ],
+              [
+                15,
+                37223,
+                "dom:input",
+                {
+                  "composing": true,
+                  "length": 1,
+                  "inputType": "insertCompositionText"
+                }
+              ],
+              [
+                16,
+                37223,
+                "rhwp:text-mutation",
+                {
+                  "ms": 0
+                }
+              ],
+              [
+                17,
+                37224,
+                "rhwp:readPages",
+                {
+                  "ms": 1
+                }
+              ],
+              [
+                18,
+                37224,
+                "ime:input",
+                {
+                  "interrupted": "none",
+                  "composing": true,
+                  "session": 2,
+                  "historyTransaction": true,
+                  "discarded": false,
+                  "provisional": false,
+                  "terminal": "none",
+                  "pendingCommit": false,
+                  "historyRedo": 0,
+                  "epoch": 1,
+                  "awaiting": "none",
+                  "historyUndo": 1,
+                  "generation": 1,
+                  "revision": 19
+                }
+              ],
+              [
+                19,
+                37294,
+                "dom:keyup",
+                {
+                  "composing": true,
+                  "keyCode": 75,
+                  "code": "KeyK",
+                  "key": "char"
+                }
+              ],
+              [
+                20,
+                37294,
+                "ime:keyUp",
+                {
+                  "interrupted": "none",
+                  "composing": true,
+                  "session": 2,
+                  "historyTransaction": true,
+                  "discarded": false,
+                  "provisional": false,
+                  "terminal": "none",
+                  "pendingCommit": false,
+                  "historyRedo": 0,
+                  "epoch": 1,
+                  "awaiting": "none",
+                  "historyUndo": 1,
+                  "generation": 1,
+                  "revision": 19
+                }
+              ],
+              [
+                21,
+                37294,
+                "ime:pointerDown",
+                {
+                  "interrupted": "visible",
+                  "composing": false,
+                  "session": 2,
+                  "historyTransaction": true,
+                  "discarded": false,
+                  "provisional": true,
+                  "terminal": "none",
+                  "pendingCommit": false,
+                  "historyRedo": 0,
+                  "epoch": 1,
+                  "awaiting": "none",
+                  "historyUndo": 1,
+                  "generation": 1,
+                  "revision": 19
+                }
+              ],
+              [
+                22,
+                37306,
+                "dom:keydown",
+                {
+                  "composing": true,
+                  "keyCode": 229,
+                  "key": "ime"
+                }
+              ],
+              [
+                23,
+                37306,
+                "ime:keyDown",
+                {
+                  "interrupted": "visible",
+                  "composing": false,
+                  "session": 2,
+                  "historyTransaction": true,
+                  "discarded": false,
+                  "provisional": true,
+                  "terminal": "none",
+                  "pendingCommit": false,
+                  "historyRedo": 0,
+                  "epoch": 1,
+                  "awaiting": "none",
+                  "historyUndo": 1,
+                  "generation": 1,
+                  "revision": 19
+                }
+              ],
+              [
+                24,
+                37308,
+                "dom:beforeinput",
+                {
+                  "composing": true,
+                  "length": 0,
+                  "inputType": "deleteCompositionText"
+                }
+              ],
+              [
+                25,
+                37309,
+                "dom:input",
+                {
+                  "composing": true,
+                  "length": 0,
+                  "inputType": "deleteCompositionText"
+                }
+              ],
+              [
+                26,
+                37309,
+                "ime:input",
+                {
+                  "interrupted": "visible",
+                  "composing": false,
+                  "session": 2,
+                  "historyTransaction": true,
+                  "discarded": false,
+                  "provisional": true,
+                  "terminal": "none",
+                  "pendingCommit": false,
+                  "historyRedo": 0,
+                  "epoch": 1,
+                  "awaiting": "none",
+                  "historyUndo": 1,
+                  "generation": 1,
+                  "revision": 19
+                }
+              ],
+              [
+                27,
+                37309,
+                "dom:compositionend",
+                {
+                  "length": 0
+                }
+              ],
+              [
+                28,
+                37309,
+                "ime:compositionEnd",
+                {
+                  "interrupted": "visibleEmptied",
+                  "composing": false,
+                  "session": 2,
+                  "historyTransaction": true,
+                  "discarded": false,
+                  "provisional": true,
+                  "terminal": "none",
+                  "pendingCommit": false,
+                  "historyRedo": 0,
+                  "epoch": 1,
+                  "awaiting": "none",
+                  "historyUndo": 1,
+                  "generation": 1,
+                  "revision": 19
+                }
+              ],
+              [
+                29,
+                37318,
+                "dom:keydown",
+                {
+                  "composing": false,
+                  "keyCode": 229,
+                  "key": "ime"
+                }
+              ],
+              [
+                30,
+                37318,
+                "ime:keyDown",
+                {
+                  "interrupted": "visibleEmptied",
+                  "composing": false,
+                  "session": 2,
+                  "historyTransaction": true,
+                  "discarded": false,
+                  "provisional": true,
+                  "terminal": "none",
+                  "pendingCommit": false,
+                  "historyRedo": 0,
+                  "epoch": 1,
+                  "awaiting": "none",
+                  "historyUndo": 1,
+                  "generation": 1,
+                  "revision": 19
+                }
+              ],
+              [
+                31,
+                37319,
+                "dom:beforeinput",
+                {
+                  "composing": true,
+                  "length": 1,
+                  "inputType": "insertFromComposition"
+                }
+              ],
+              [
+                32,
+                37319,
+                "dom:input",
+                {
+                  "composing": true,
+                  "length": 1,
+                  "inputType": "insertFromComposition"
+                }
+              ],
+              [
+                33,
+                37319,
+                "ime:input",
+                {
+                  "interrupted": "visibleEmptied",
+                  "composing": false,
+                  "session": 2,
+                  "historyTransaction": true,
+                  "discarded": false,
+                  "provisional": true,
+                  "terminal": "none",
+                  "pendingCommit": false,
+                  "historyRedo": 0,
+                  "epoch": 1,
+                  "awaiting": "none",
+                  "historyUndo": 1,
+                  "generation": 1,
+                  "revision": 19
+                }
+              ],
+              [
+                34,
+                37319,
+                "dom:compositionend",
+                {
+                  "length": 1
+                }
+              ],
+              [
+                35,
+                37320,
+                "rhwp:revision-schedule",
+                {
+                  "ms": 1
+                }
+              ],
+              [
+                36,
+                37320,
+                "ime:compositionEnd",
+                {
+                  "interrupted": "none",
+                  "composing": false,
+                  "session": 2,
+                  "historyTransaction": false,
+                  "discarded": false,
+                  "provisional": false,
+                  "terminal": "text",
+                  "pendingCommit": true,
+                  "historyRedo": 0,
+                  "epoch": 1,
+                  "awaiting": "none",
+                  "historyUndo": 2,
+                  "generation": 1,
+                  "revision": 20
+                }
+              ],
+              [
+                37,
+                37347,
+                "dom:keydown",
+                {
+                  "composing": false,
+                  "keyCode": 17,
+                  "key": "mod:ControlLeft"
+                }
+              ],
+              [
+                38,
+                37347,
+                "rhwp:commit-ack",
+                {
+                  "session": 2,
+                  "ms": 28,
+                  "generation": 1
+                }
+              ],
+              [
+                39,
+                37371,
+                "dom:keydown",
+                {
+                  "composing": false,
+                  "keyCode": 90,
+                  "key": "mod:KeyZ"
+                }
+              ],
+              [
+                40,
+                37371,
+                "command:request",
+                {
+                  "reason": null,
+                  "composing": false,
+                  "session": 2,
+                  "modal": false,
+                  "id": "edit.undo",
+                  "available": true,
+                  "pending": false
+                }
+              ],
+              [
+                41,
+                37372,
+                "rhwp:revision-schedule",
+                {
+                  "ms": 0
+                }
+              ],
+              [
+                42,
+                37372,
+                "rhwp:readPages",
+                {
+                  "ms": 0
+                }
+              ],
+              [
+                43,
+                37372,
+                "command:dispatch",
+                {
+                  "id": "edit.undo",
+                  "accepted": true
+                }
+              ],
+              [
+                44,
+                37460,
+                "dom:keyup",
+                {
+                  "composing": false,
+                  "keyCode": 17,
+                  "code": "ControlLeft",
+                  "key": "mod:ControlLeft"
+                }
+              ],
+              [
+                45,
+                37460,
+                "ime:keyUp",
+                {
+                  "interrupted": "none",
+                  "composing": false,
+                  "session": 2,
+                  "historyTransaction": false,
+                  "discarded": false,
+                  "provisional": false,
+                  "terminal": "text",
+                  "pendingCommit": true,
+                  "historyRedo": 1,
+                  "epoch": 1,
+                  "awaiting": "none",
+                  "historyUndo": 1,
+                  "generation": 1,
+                  "revision": 21
+                }
+              ],
+              [
+                46,
+                37461,
+                "rhwp:commit-ack",
+                {
+                  "session": 2,
+                  "ms": 89,
+                  "generation": 1
+                }
+              ],
+              [
+                47,
+                37523,
+                "dom:keyup",
+                {
+                  "composing": false,
+                  "keyCode": 90,
+                  "code": "KeyZ",
+                  "key": "char"
+                }
+              ],
+              [
+                48,
+                37523,
+                "ime:keyUp",
+                {
+                  "interrupted": "none",
+                  "composing": false,
+                  "session": 2,
+                  "historyTransaction": false,
+                  "discarded": false,
+                  "provisional": false,
+                  "terminal": "text",
+                  "pendingCommit": false,
+                  "historyRedo": 1,
+                  "epoch": 1,
+                  "awaiting": "none",
+                  "historyUndo": 1,
+                  "generation": 1,
+                  "revision": 21
+                }
+              ]
+            ],
+            "seq": 48,
+            "dropped": 0
+          }
+        },
+        {
+          "mode": "pointer",
+          "delayMs": 1,
+          "commandInGap": false,
+          "chordInGap": false,
+          "acceptedAfterFinal": true,
+          "safe": true,
+          "revisionDelta": 2,
+          "trace": {
+            "records": [
+              [
+                1,
+                41122,
+                "dom:keydown",
+                {
+                  "composing": false,
+                  "keyCode": 229,
+                  "key": "ime"
+                }
+              ],
+              [
+                2,
+                41122,
+                "ime:keyDown",
+                {
+                  "interrupted": "none",
+                  "composing": false,
+                  "session": 2,
+                  "historyTransaction": false,
+                  "discarded": false,
+                  "provisional": false,
+                  "terminal": "none",
+                  "pendingCommit": false,
+                  "historyRedo": 0,
+                  "epoch": 1,
+                  "awaiting": "none",
+                  "historyUndo": 1,
+                  "generation": 1,
+                  "revision": 25
+                }
+              ],
+              [
+                3,
+                41122,
+                "dom:compositionstart",
+                null
+              ],
+              [
+                4,
+                41122,
+                "ime:compositionStart",
+                {
+                  "interrupted": "none",
+                  "composing": true,
+                  "session": 2,
+                  "historyTransaction": false,
+                  "discarded": false,
+                  "provisional": false,
+                  "terminal": "none",
+                  "pendingCommit": false,
+                  "historyRedo": 0,
+                  "epoch": 1,
+                  "awaiting": "none",
+                  "historyUndo": 1,
+                  "generation": 1,
+                  "revision": 25
+                }
+              ],
+              [
+                5,
+                41122,
+                "dom:beforeinput",
+                {
+                  "composing": true,
+                  "length": 1,
+                  "inputType": "insertCompositionText"
+                }
+              ],
+              [
+                6,
+                41124,
+                "dom:input",
+                {
+                  "composing": true,
+                  "length": 1,
+                  "inputType": "insertCompositionText"
+                }
+              ],
+              [
+                7,
+                41125,
+                "rhwp:text-mutation",
+                {
+                  "ms": 1
+                }
+              ],
+              [
+                8,
+                41125,
+                "rhwp:readPages",
+                {
+                  "ms": 0
+                }
+              ],
+              [
+                9,
+                41125,
+                "ime:input",
+                {
+                  "interrupted": "none",
+                  "composing": true,
+                  "session": 2,
+                  "historyTransaction": true,
+                  "discarded": false,
+                  "provisional": false,
+                  "terminal": "none",
+                  "pendingCommit": false,
+                  "historyRedo": 0,
+                  "epoch": 1,
+                  "awaiting": "none",
+                  "historyUndo": 1,
+                  "generation": 1,
+                  "revision": 25
+                }
+              ],
+              [
+                10,
+                41193,
+                "dom:keyup",
+                {
+                  "composing": true,
+                  "keyCode": 82,
+                  "code": "KeyR",
+                  "key": "char"
+                }
+              ],
+              [
+                11,
+                41193,
+                "ime:keyUp",
+                {
+                  "interrupted": "none",
+                  "composing": true,
+                  "session": 2,
+                  "historyTransaction": true,
+                  "discarded": false,
+                  "provisional": false,
+                  "terminal": "none",
+                  "pendingCommit": false,
+                  "historyRedo": 0,
+                  "epoch": 1,
+                  "awaiting": "none",
+                  "historyUndo": 1,
+                  "generation": 1,
+                  "revision": 25
+                }
+              ],
+              [
+                12,
+                41253,
+                "dom:keydown",
+                {
+                  "composing": true,
+                  "keyCode": 229,
+                  "key": "ime"
+                }
+              ],
+              [
+                13,
+                41253,
+                "ime:keyDown",
+                {
+                  "interrupted": "none",
+                  "composing": true,
+                  "session": 2,
+                  "historyTransaction": true,
+                  "discarded": false,
+                  "provisional": false,
+                  "terminal": "none",
+                  "pendingCommit": false,
+                  "historyRedo": 0,
+                  "epoch": 1,
+                  "awaiting": "none",
+                  "historyUndo": 1,
+                  "generation": 1,
+                  "revision": 25
+                }
+              ],
+              [
+                14,
+                41255,
+                "dom:beforeinput",
+                {
+                  "composing": true,
+                  "length": 1,
+                  "inputType": "insertCompositionText"
+                }
+              ],
+              [
+                15,
+                41257,
+                "dom:input",
+                {
+                  "composing": true,
+                  "length": 1,
+                  "inputType": "insertCompositionText"
+                }
+              ],
+              [
+                16,
+                41258,
+                "rhwp:text-mutation",
+                {
+                  "ms": 1
+                }
+              ],
+              [
+                17,
+                41258,
+                "rhwp:readPages",
+                {
+                  "ms": 0
+                }
+              ],
+              [
+                18,
+                41258,
+                "ime:input",
+                {
+                  "interrupted": "none",
+                  "composing": true,
+                  "session": 2,
+                  "historyTransaction": true,
+                  "discarded": false,
+                  "provisional": false,
+                  "terminal": "none",
+                  "pendingCommit": false,
+                  "historyRedo": 0,
+                  "epoch": 1,
+                  "awaiting": "none",
+                  "historyUndo": 1,
+                  "generation": 1,
+                  "revision": 25
+                }
+              ],
+              [
+                19,
+                41331,
+                "dom:keyup",
+                {
+                  "composing": true,
+                  "keyCode": 75,
+                  "code": "KeyK",
+                  "key": "char"
+                }
+              ],
+              [
+                20,
+                41331,
+                "ime:keyUp",
+                {
+                  "interrupted": "none",
+                  "composing": true,
+                  "session": 2,
+                  "historyTransaction": true,
+                  "discarded": false,
+                  "provisional": false,
+                  "terminal": "none",
+                  "pendingCommit": false,
+                  "historyRedo": 0,
+                  "epoch": 1,
+                  "awaiting": "none",
+                  "historyUndo": 1,
+                  "generation": 1,
+                  "revision": 25
+                }
+              ],
+              [
+                21,
+                41341,
+                "dom:keydown",
+                {
+                  "composing": true,
+                  "keyCode": 229,
+                  "key": "ime"
+                }
+              ],
+              [
+                22,
+                41341,
+                "ime:keyDown",
+                {
+                  "interrupted": "none",
+                  "composing": true,
+                  "session": 2,
+                  "historyTransaction": true,
+                  "discarded": false,
+                  "provisional": false,
+                  "terminal": "none",
+                  "pendingCommit": false,
+                  "historyRedo": 0,
+                  "epoch": 1,
+                  "awaiting": "none",
+                  "historyUndo": 1,
+                  "generation": 1,
+                  "revision": 25
+                }
+              ],
+              [
+                23,
+                41343,
+                "dom:beforeinput",
+                {
+                  "composing": true,
+                  "length": 0,
+                  "inputType": "deleteCompositionText"
+                }
+              ],
+              [
+                24,
+                41344,
+                "dom:input",
+                {
+                  "composing": true,
+                  "length": 0,
+                  "inputType": "deleteCompositionText"
+                }
+              ],
+              [
+                25,
+                41345,
+                "rhwp:text-mutation",
+                {
+                  "ms": 1
+                }
+              ],
+              [
+                26,
+                41345,
+                "rhwp:readPages",
+                {
+                  "ms": 0
+                }
+              ],
+              [
+                27,
+                41345,
+                "ime:input",
+                {
+                  "interrupted": "none",
+                  "composing": true,
+                  "session": 2,
+                  "historyTransaction": true,
+                  "discarded": false,
+                  "provisional": false,
+                  "terminal": "none",
+                  "pendingCommit": false,
+                  "historyRedo": 0,
+                  "epoch": 1,
+                  "awaiting": "none",
+                  "historyUndo": 1,
+                  "generation": 1,
+                  "revision": 25
+                }
+              ],
+              [
+                28,
+                41353,
+                "dom:compositionend",
+                {
+                  "length": 0
+                }
+              ],
+              [
+                29,
+                41353,
+                "ime:compositionEnd",
+                {
+                  "interrupted": "none",
+                  "composing": false,
+                  "session": 2,
+                  "historyTransaction": false,
+                  "discarded": false,
+                  "provisional": false,
+                  "terminal": "empty",
+                  "pendingCommit": false,
+                  "historyRedo": 0,
+                  "epoch": 1,
+                  "awaiting": "this",
+                  "historyUndo": 1,
+                  "generation": 1,
+                  "revision": 25
+                }
+              ],
+              [
+                30,
+                41356,
+                "ime:pointerDown",
+                {
+                  "interrupted": "split",
+                  "composing": false,
+                  "session": 2,
+                  "historyTransaction": false,
+                  "discarded": false,
+                  "provisional": false,
+                  "terminal": "empty",
+                  "pendingCommit": false,
+                  "historyRedo": 0,
+                  "epoch": 1,
+                  "awaiting": "this",
+                  "historyUndo": 1,
+                  "generation": 1,
+                  "revision": 25
+                }
+              ],
+              [
+                31,
+                41374,
+                "dom:keydown",
+                {
+                  "composing": false,
+                  "keyCode": 229,
+                  "key": "ime"
+                }
+              ],
+              [
+                32,
+                41374,
+                "ime:keyDown",
+                {
+                  "interrupted": "split",
+                  "composing": false,
+                  "session": 2,
+                  "historyTransaction": false,
+                  "discarded": false,
+                  "provisional": false,
+                  "terminal": "none",
+                  "pendingCommit": false,
+                  "historyRedo": 0,
+                  "epoch": 1,
+                  "awaiting": "this",
+                  "historyUndo": 1,
+                  "generation": 1,
+                  "revision": 25
+                }
+              ],
+              [
+                33,
+                41375,
+                "dom:beforeinput",
+                {
+                  "composing": true,
+                  "length": 1,
+                  "inputType": "insertFromComposition"
+                }
+              ],
+              [
+                34,
+                41375,
+                "dom:input",
+                {
+                  "composing": true,
+                  "length": 1,
+                  "inputType": "insertFromComposition"
+                }
+              ],
+              [
+                35,
+                41375,
+                "ime:input",
+                {
+                  "interrupted": "split",
+                  "composing": false,
+                  "session": 2,
+                  "historyTransaction": false,
+                  "discarded": false,
+                  "provisional": false,
+                  "terminal": "none",
+                  "pendingCommit": false,
+                  "historyRedo": 0,
+                  "epoch": 1,
+                  "awaiting": "this",
+                  "historyUndo": 1,
+                  "generation": 1,
+                  "revision": 25
+                }
+              ],
+              [
+                36,
+                41376,
+                "dom:compositionend",
+                {
+                  "length": 1
+                }
+              ],
+              [
+                37,
+                41377,
+                "rhwp:text-mutation",
+                {
+                  "ms": 1
+                }
+              ],
+              [
+                38,
+                41377,
+                "rhwp:revision-schedule",
+                {
+                  "ms": 0
+                }
+              ],
+              [
+                39,
+                41377,
+                "rhwp:readPages",
+                {
+                  "ms": 0
+                }
+              ],
+              [
+                40,
+                41377,
+                "ime:compositionEnd",
+                {
+                  "interrupted": "none",
+                  "composing": false,
+                  "session": 2,
+                  "historyTransaction": false,
+                  "discarded": false,
+                  "provisional": false,
+                  "terminal": "text",
+                  "pendingCommit": true,
+                  "historyRedo": 0,
+                  "epoch": 1,
+                  "awaiting": "none",
+                  "historyUndo": 2,
+                  "generation": 1,
+                  "revision": 26
+                }
+              ],
+              [
+                41,
+                41455,
+                "dom:keydown",
+                {
+                  "composing": false,
+                  "keyCode": 17,
+                  "key": "mod:ControlLeft"
+                }
+              ],
+              [
+                42,
+                41455,
+                "rhwp:commit-ack",
+                {
+                  "session": 2,
+                  "ms": 78,
+                  "generation": 1
+                }
+              ],
+              [
+                43,
+                41523,
+                "dom:keydown",
+                {
+                  "composing": false,
+                  "keyCode": 90,
+                  "key": "mod:KeyZ"
+                }
+              ],
+              [
+                44,
+                41523,
+                "command:request",
+                {
+                  "reason": null,
+                  "composing": false,
+                  "session": 2,
+                  "modal": false,
+                  "id": "edit.undo",
+                  "available": true,
+                  "pending": false
+                }
+              ],
+              [
+                45,
+                41525,
+                "rhwp:revision-schedule",
+                {
+                  "ms": 1
+                }
+              ],
+              [
+                46,
+                41525,
+                "rhwp:readPages",
+                {
+                  "ms": 0
+                }
+              ],
+              [
+                47,
+                41525,
+                "command:dispatch",
+                {
+                  "id": "edit.undo",
+                  "accepted": true
+                }
+              ],
+              [
+                48,
+                41649,
+                "dom:keyup",
+                {
+                  "composing": false,
+                  "keyCode": 17,
+                  "code": "ControlLeft",
+                  "key": "mod:ControlLeft"
+                }
+              ],
+              [
+                49,
+                41649,
+                "ime:keyUp",
+                {
+                  "interrupted": "none",
+                  "composing": false,
+                  "session": 2,
+                  "historyTransaction": false,
+                  "discarded": false,
+                  "provisional": false,
+                  "terminal": "text",
+                  "pendingCommit": true,
+                  "historyRedo": 1,
+                  "epoch": 1,
+                  "awaiting": "none",
+                  "historyUndo": 1,
+                  "generation": 1,
+                  "revision": 27
+                }
+              ],
+              [
+                50,
+                41650,
+                "rhwp:commit-ack",
+                {
+                  "session": 2,
+                  "ms": 126,
+                  "generation": 1
+                }
+              ],
+              [
+                51,
+                41712,
+                "dom:keyup",
+                {
+                  "composing": false,
+                  "keyCode": 90,
+                  "code": "KeyZ",
+                  "key": "char"
+                }
+              ],
+              [
+                52,
+                41712,
+                "ime:keyUp",
+                {
+                  "interrupted": "none",
+                  "composing": false,
+                  "session": 2,
+                  "historyTransaction": false,
+                  "discarded": false,
+                  "provisional": false,
+                  "terminal": "text",
+                  "pendingCommit": false,
+                  "historyRedo": 1,
+                  "epoch": 1,
+                  "awaiting": "none",
+                  "historyUndo": 1,
+                  "generation": 1,
+                  "revision": 27
+                }
+              ]
+            ],
+            "seq": 52,
+            "dropped": 0
+          }
+        }
+      ]
+    }
+  },
+  "scope": "Actual ibus events and physical X11 keys/pointer only; all trials safe but no Ctrl+Z delivery was observed strictly between empty compositionend and final insert. Not a PASS for the mandatory native timing window."
+}

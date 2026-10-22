@@ -1,0 +1,114 @@
+[
+  {
+    "cwd": ".",
+    "command": [
+      "npm",
+      "run",
+      "typecheck"
+    ],
+    "exitCode": 0,
+    "elapsedSeconds": 5.0,
+    "summary": [],
+    "log": "<tmp>/geul-t010-final-frontend-0.log"
+  },
+  {
+    "cwd": ".",
+    "command": [
+      "npm",
+      "run",
+      "lint"
+    ],
+    "exitCode": 0,
+    "elapsedSeconds": 8.1,
+    "summary": [],
+    "log": "<tmp>/geul-t010-final-frontend-1.log"
+  },
+  {
+    "cwd": ".",
+    "command": [
+      "npm",
+      "test"
+    ],
+    "exitCode": 0,
+    "elapsedSeconds": 18.4,
+    "summary": [
+      "Test Files  40 passed (40)",
+      "Tests  778 passed (778)"
+    ],
+    "log": "<tmp>/geul-t010-final-frontend-2.log"
+  },
+  {
+    "cwd": ".",
+    "command": [
+      "npx",
+      "vitest",
+      "run",
+      "--config",
+      "tests/integration/rhwp/vitest.config.ts"
+    ],
+    "exitCode": 0,
+    "elapsedSeconds": 8.8,
+    "summary": [
+      "Test Files  2 passed | 2 skipped (4)",
+      "Tests  27 passed | 2 skipped (29)"
+    ],
+    "log": "<tmp>/geul-t010-final-frontend-3.log"
+  },
+  {
+    "cwd": ".",
+    "command": [
+      "npx",
+      "vitest",
+      "run",
+      "--config",
+      "tests/poc/t010-phase0/vitest.config.ts"
+    ],
+    "exitCode": 0,
+    "elapsedSeconds": 4.2,
+    "summary": [
+      "Test Files  3 passed (3)",
+      "Tests  50 passed (50)"
+    ],
+    "log": "<tmp>/geul-t010-final-frontend-4.log"
+  },
+  {
+    "cwd": ".",
+    "command": [
+      "python3",
+      "-m",
+      "unittest",
+      "discover",
+      "-s",
+      "tests/e2e",
+      "-p",
+      "test_*.py"
+    ],
+    "exitCode": 0,
+    "elapsedSeconds": 0.5,
+    "summary": [
+      "Ran 66 tests in 0.191s",
+      "OK"
+    ],
+    "log": "<tmp>/geul-t010-final-frontend-5.log"
+  },
+  {
+    "cwd": ".",
+    "command": [
+      "python3",
+      "-m",
+      "unittest",
+      "discover",
+      "-s",
+      "tests/security",
+      "-p",
+      "test_*.py"
+    ],
+    "exitCode": 0,
+    "elapsedSeconds": 55.5,
+    "summary": [
+      "Ran 86 tests in 55.306s",
+      "OK"
+    ],
+    "log": "<tmp>/geul-t010-final-frontend-6.log"
+  }
+]

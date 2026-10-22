@@ -44,6 +44,10 @@
 //   조합 계열이 아닌 input) 끝난다 — 진짜 취소 뒤에도 다음 키로 풀린다(시간 대기 없음). 기다리는 동안 초점을 잃거나 표면이 사라지면
 //   그 세션의 커서 자리를 기억해(markCaret) 늦은 최종 글자를 그 문서의 그 자리에 한 번 넣는다. 세션이 다시 불러오거나 닫히면
 //   (세션이 기다림을 버림) 늦은 최종 글자는 옛 트랜잭션의 것이므로 넣지 않는다.
+// - rhwp 취소 경계(T010 후속): 이 WebKitGTK/ibus-hangul의 Backspace 취소는 deleteCompositionText → 빈 compositionend 뒤
+//   keyup(Backspace, keyCode 8, isComposing=false)을 보낸다. 같은 소유 세션·세대에서 다른 입력/포인터/초점 변화 없이 이 경계를
+//   받은 경우만 rhwp가 기다림을 끝낸다. 빈 끝만 왔거나 활성 조합/provisional이면 계속 보호한다. Ctrl+Z는 기다림을 해제하지 않고
+//   예약하지도 않는다. 타이머도 없다. 취소된 옛 최종 입력·끝은 새 입력 경계까지 소비한다. WordCraft는 이 경계에 참여하지 않는다.
 // - 닫기·다시 불러오기·폐기 뒤에는 세션 IME 세대가 바뀐다. 공유 문맥은 옛 거래의 단독 최종 입력·끝을 소비한다. 시작 이벤트 없이
 //   오는 새 insertCompositionText(isComposing=true)는 새 조합의 경계로 받는다. 늦은 옛 preedit와 새 첫 preedit가 DOM에서 같으면
 //   구별할 수 없고, 시작/preedit 없이 최종 입력만 오는 새 거래도 버린 꼬리와 구별할 수 없어 보수적으로 소비한다.
@@ -53,6 +57,9 @@ export interface ImeSession {
   /** 닫기·다시 불러오기·폐기로 무효화되는 IME 거래의 세대. */
   readonly imeEpoch: number;
   readonly composing: boolean;
+  /** rhwp만: 관측한 WebKitGTK 취소 keyup 경계를 확인한다. WordCraft 계약은 바꾸지 않는다. */
+  confirmCompositionCancellation?(): boolean;
+  imeDiagnostics?(): Record<string, string | number | boolean>;
   readonly compositionText: string;
   /** 지금 커서 자리. 끊긴 조합의 늦은 확정을 넣을 자리로 기억한다(클릭 직전). */
   markCaret(): unknown;
@@ -118,6 +125,7 @@ export class ImeInput {
     this.context.discarded = true;
     this.shown = false;
     this.viewConfirming = false;
+    this.cancellationEnd = false;
   }
 
   private claim(): void {
@@ -126,10 +134,12 @@ export class ImeInput {
   }
 
   /** 진단 추적용 상태(T010 마무리 안정화, imeTrace.ts). 글자는 담지 않는다. */
-  phase(): Record<string, string | boolean> {
+  phase(): Record<string, string | number | boolean> {
     const interrupted = this.context.interrupted;
     const terminal = this.context.terminal;
     return {
+      ...this.session.imeDiagnostics?.(),
+      epoch: this.session.imeEpoch,
       composing: this.session.composing,
       interrupted: !interrupted ? "none"
         : interrupted.finalized ? (interrupted.visible ? (interrupted.visible.emptied ? "visibleEmptied" : "visible") : "finalized")
@@ -149,6 +159,7 @@ export class ImeInput {
   /** keydown. ime는 입력기가 처리 중인 키(keyCode 229 또는 isComposing)다. */
   keyDown(ime = false): void {
     this.syncOwner();
+    this.cancellationEnd = false;
     // WebView가 스스로 확정한 조합 뒤 입력기가 같은 조합을 다시 확정할 때도 그 앞에 229 keydown이 온다.
     if (!(ime && this.context.terminal?.confirmedByView)) this.context.terminal = null;
     // 보이는 조합을 앱이 확정한 뒤 입력기가 그 조합을 끝내는 꼬리, 빈 끝과 확정 절반 사이의 클릭 뒤에도 229 keydown이
@@ -161,8 +172,27 @@ export class ImeInput {
     this.settleInterrupted();
   }
 
+  /**
+   * WebKitGTK/ibus-hangul 취소의 관측 경계: deleteCompositionText → 빈 끝 → 조합 아닌 Backspace keyup.
+   * 확정 앞 반쪽에는 이 keyup이 없다. 다른 이벤트가 끼거나 초점/소유권이 바뀌면 증거를 버린다.
+   * 명령 도착이나 시간 경과는 취소의 증거가 아니다. 늦은 옛 확정은 새 입력 경계까지 소비한다.
+   */
+  keyUp(code: string, keyCode: number, isComposing: boolean, modified: boolean): void {
+    this.syncOwner();
+    const cancellation = this.cancellationEnd;
+    this.cancellationEnd = false;
+    if (!cancellation || code !== "Backspace" || keyCode !== 8 || isComposing || modified
+      || this.context.awaiting !== this.session || this.context.interrupted
+      || this.context.owner?.session !== this.session || this.context.owner.epoch !== this.session.imeEpoch
+      || !this.session.confirmCompositionCancellation?.()) return;
+    this.releaseAwaiting();
+    this.context.terminal = { text: "" };
+    this.context.discarded = true;
+  }
+
   compositionStart(): void {
     this.syncOwner();
+    this.cancellationEnd = false;
     this.releaseAwaiting();
     this.settleInterrupted();
     this.shown = false;
@@ -176,10 +206,14 @@ export class ImeInput {
   private viewConfirming = false;
   /** 진행 중인 조합에 글자가 보인 적이 있다(빈 끝이 확정의 앞 반쪽일 수 있음). */
   private shown = false;
+  private deletedPreedit = false;
+  private cancellationEnd = false;
 
   /** input 이벤트. text는 textarea 값(조합 중) 또는 입력된 글자. */
   input(text: string, inputType: string, isComposing: boolean): void {
     this.syncOwner();
+    this.cancellationEnd = false;
+    this.deletedPreedit = this.session.composing && inputType === "deleteCompositionText" && !text;
     const session = this.session;
     const compositionType = COMPOSITION_INPUT_TYPES.has(inputType);
     // WebKitGTK may start a fresh composition with input alone. A new preedit is its
@@ -262,6 +296,7 @@ export class ImeInput {
 
   compositionEnd(finalText: string): void {
     this.syncOwner();
+    this.cancellationEnd = false;
     const session = this.session;
     if (this.context.discarded && !session.composing) return;
 
@@ -271,7 +306,10 @@ export class ImeInput {
       this.context.terminal = this.viewConfirming && finalText ? { text: finalText, confirmedByView: true } : { text: finalText };
       this.viewConfirming = false;
       this.shown = false;
-      if (awaited) this.beginAwaiting();
+      if (awaited) {
+        this.beginAwaiting();
+        this.cancellationEnd = this.deletedPreedit;
+      }
       else {
         if (finalText) this.releaseAwaiting();
         this.context.owner = null;
@@ -322,6 +360,7 @@ export class ImeInput {
   /** 페이지를 누르기 직전(커서를 옮기기 전). */
   pointerDown(): void {
     this.syncOwner();
+    this.cancellationEnd = false;
     if (this.finalizeVisible()) return;
     if (this.context.discarded) return;
     const terminal = this.context.terminal;
@@ -343,6 +382,7 @@ export class ImeInput {
   /** textarea가 초점을 잃음. 조합 끝 없이 초점을 잃었으면 보이는 조합 글자를 그 자리에 확정한다. */
   blur(): void {
     this.syncOwner();
+    this.cancellationEnd = false;
     if (!this.finalizeVisible()) this.anchorAwaiting();
     this.session.endHistoryGroup?.();
   }
@@ -350,6 +390,7 @@ export class ImeInput {
   /** 표면이 사라짐(탭 전환 등, 초점 잃음 이벤트가 없을 수 있음). 보이는 조합을 그 문서에 확정한다. */
   detach(): void {
     this.syncOwner();
+    this.cancellationEnd = false;
     if (!this.finalizeVisible()) this.anchorAwaiting();
     this.session.endHistoryGroup?.();
   }

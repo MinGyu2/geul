@@ -349,3 +349,144 @@ WebView 응답성·실제 그리기까지의 지연과 여러 쪽의 큰 HWPX(�
 계약(예: 기다림 중 Ctrl+Z를 기다림이 끝난 뒤로 미루기 — 즉시 거절 대신 — 를 IME 경계 계약을 깨지 않게 설계·네이티브 검증), (2) 큰 문서의 그룹 시작
 스냅숏 지연(타자 경로 밖으로 옮기거나 그룹 시작 판정을 바꾸는 설계)과 WebKitWebProcess 메모리 유지(WASM 선형 메모리는 줄지 않음 — INFERRED)의
 측정·대책, (3) 표 셀 클릭 시나리오의 원인 확인.
+
+## T010 후속 안정화 (2026-10-22, activation은 계속 NO-GO)
+
+이 절은 위 Phase 2의 실패를 출발점으로 한 후속 작업이다. 과거 증거는 그대로 보존하고,
+새 증거는 `tests/integration/rhwp/evidence/t010-stabilization/`에 분리한다. T010 완료 및 T011 의존성을 바꾸지 않는다.
+
+### IME 취소 경계
+
+**VERIFIED:** 실제 WebKitGTK 2.54.1 + ibus-hangul에서 HWP/HWPX 모두 기존 실패를 재현했다(13 PASS / 2 FAIL).
+조합 Backspace의 keydown은 `Unidentified/229`라 그것만으로는 확정의 앞 반쪽과 취소를 구별하지 못했다.
+추가 관측에서는 `deleteCompositionText → compositionend("") → keyup(Backspace, keyCode=8, isComposing=false)`가 확인됐다.
+
+rhwp만 이 마지막 경계를 받는다. 같은 IME 소유 세션/세대이고, 삭제 입력 뒤 빈 끝을 받았으며, 다른 입력·포인터·초점 변화가
+없고, 활성 조합/provisional/실패 상태가 아닐 때만 awaiting을 해제한다. 그 뒤 옛 조합의 최종 입력과 끝은 새 입력 경계까지 소비한다.
+새 preedit와 소유 세대 무효화 규칙은 기존 계약을 유지한다. WordCraft는 이 경계에 참여하지 않는다.
+
+Undo 요청 자체는 기다림을 해제하지 않는다. 확정 앞 반쪽에는 계속 `composing`으로 거절하며, 명령 의도를 예약하지 않는다.
+따라서 중복 실행·다른 탭/새 세대/다음 편집에서 뒤늦게 실행되는 Undo는 없다. 타이머나 강제 확정도 없다.
+취소를 입증하는 keyup이 없는 플랫폼/순서는 기존의 최종 입력 또는 새 입력 경계를 기다리며, 시간만으로 안전하다고 판단하지 않는다.
+
+**VERIFIED:** native 후속 21/21에는 HWP/HWPX의 선택 없는 취소, 선택 대체 취소, 한 native 호출의 1ms Backspace→Ctrl+Z,
+정확한 선택/본문 복원, revision 증가, Ctrl+Y/Ctrl+Shift+Z, 빠른 음절, 클릭과 blur 뒤 확정이 포함된다.
+가짜 엔진/합성 DOM 회귀와 실제 WASM 재생은 별도 증거이며 native 통과로 합산하지 않는다.
+초기 후속 시험의 17/19는 중간 DOM 상태를 너무 일찍 읽거나 실제 선택 문단 1 대신 문단 0을 조회한 시험기 오류였다.
+실패 기록을 보존하고, 기다림을 추가하는 대신 실제 선택 문단의 WASM 동등성을 compositionend에서 기록하도록 수정했다.
+
+### 표 포인터
+
+**VERIFIED:** 원본 fixture를 엔진에 직접 질의하면 기존 `(410,182)`는 유효한 셀 위치였다.
+하지만 Xvfb의 fractional DPR 약 1.042에서 WebKitWebDriver가 요청한 viewport `(682,487)`를 실제 DOM `(654,467)`로 보냈다.
+앱의 Canvas-local → engine 변환은 받은 이벤트 좌표에 맞게 동작했으며, 그 좌표는 앞 문단을 가리켰다.
+
+시험기는 클릭 없는 두 포인터 이동으로 실제 전달 배율을 확인하고, 살아 있는 문서의 셀 caret/bounds와 Canvas DOM 사각형으로 목표를 정한다.
+화면 밖 쪽을 가운데 맞춰 셀이 toolbar 아래로 들어가는 경우도 제거했다. 엔진 hitTest, parsePosition, 비표/중첩 구조 거부는 바꾸지 않았다.
+셀 진입을 먼저 확인하고 나서 삽입/셀 문단 분리, Undo 두 번, Redo 두 번의 정확한 글자/커서와 Canvas를 비교한다.
+HWP의 보존 정책 때문에 변경본을 저장 가능한 것으로 가정하지 않는다. 버리고 다시 열어 원본 셀과 파일 SHA가 유지되는지 확인한다.
+
+### 응답성
+
+**VERIFIED:** Undo/Redo는 DOM input 시각이 없어 화면 밖 쪽까지 즉시 그리던 경로였다.
+새 회귀가 이를 재현했고, 기존 타자 입력의 offscreen 지연 정책을 모든 모델 변경에 적용했다.
+이미 그린 화면 밖 쪽만 지연하며, 커서 쪽·보이는 쪽·새 bitmap은 즉시, 스크롤/resize로 나타난 쪽도 즉시 그린다.
+모델 version 검사와 작업 취소를 유지한다. 스냅숏을 늦게 찍거나 상태/검증을 생략하지 않는다.
+
+같은 Xvfb/소프트웨어 renderer/배율50%, native xdotool, warm-up3그룹, 시작/이어쓰기 각각30표본의 관측이다.
+측정은 keydown timestamp부터 로컬 revision을 관측한 frame 뒤 두 RAF까지로 유지하고, 기존 input timestamp 구간도 따로 기록했다.
+실제 하드웨어 presentation timestamp가 아닌 상한 측정이다. 과거 211ms(다른 입력 전달·표본 수)와 직접 개선율을 계산하지 않는다.
+
+| 문서 | 그룹 시작 p95 전→후(ms) | Undo p95 전→후(ms) | Redo p95 전→후(ms) |
+|---|---:|---:|---:|
+| 작은 HWP | 76→79 | 88→88 | 132→132 |
+| 작은 HWPX | 72→73 | 90→85 | 129→127 |
+| 12MB/24쪽 HWP | 116→84 | 278→144 | 237→114 |
+| 60쪽/표24개 HWPX | 535→291 | 298→197 | 310→248 |
+
+Undo는25표본, Redo는20표본이다. 한 번의 비교 관측을 모든 부하에 대한 보장이나 통계적 유의성으로 확대하지 않는다.
+**FAIL:** 그룹 시작 절대 기준50ms는 여전히 미달한다. Undo1500ms는 이 표본에서 통과한다.
+기록을 쓰지 못하도록 capacity 거절을 주입한 대조에서도 큰 문서의 시작 p95는115/245ms였다.
+이것은 합성 비활성 대조이며 엔진의 실제 상한100이 줄었다는 증거가 아니다.
+
+추가 계측은 위 비교와 별도다. **VERIFIED:** 전체 성공 `readPages()`와 revision 요청의 동기 스케줄링 p95는 각각1ms였다.
+24/60쪽 문서의 compound mutation p95는3/27ms, JS에서 관측한 backend 확정 왕복 p95는52/97ms였다.
+왕복에는 JS delivery 대기가 포함되며 Rust CPU 시간으로 해석하지 않는다. snapshot API 구간도 약1ms로,
+복제만을 병목으로 단정할 근거가 없다. 레이어 트리 생성/직렬화·요약·렌더·WebView frame 대기가 남는다.
+
+측정기의 중복 리스너로 표본이60/90으로 불어난 실행은 무효로 보존했다. 정리 함수와 정확한30표본 검사를 추가했다.
+추가 IPC monkeypatch에서 호출이 관측되지 않은 0은 비용0의 증거로 사용하지 않고, 세션 안의 직접 계측으로 대체했다.
+이전 before frame-gap 필드에는 Undo 뒤 새 입력도 포함돼 있었으므로 그 이름을 실제 구간으로 바로잡았다.
+같은 범위로 비교한 큰 HWP frame-gap p95는110→47ms, HWPX는142→131ms다. 순수 Undo/Redo 구간은 after에서 별도로 잰다.
+
+### 메모리
+
+**VERIFIED:** 같은 WebProcess PID에서 두 큰 문서 각각 open-only/기록 없는 편집 대조/UndoRedo를5회씩, 총30사이클 측정했다.
+닫은 뒤2초, 각 모드 마지막에는10초까지 확인했다. 문서 핸들·문서에 속한 snapshot API 참조·화면 Canvas는 정리됐다.
+문서를 놓을 때는 snapshot별 discard 대신 엔진 문서 `free()`가 저장소를 함께 놓는다. WASM 선형 메모리는 편집 뒤114.9MiB에서 유지됐다.
+
+기록 없는 HWP 편집 대조도 닫은 뒤 RSS가982→1076→1171→1276→1364MiB로 증가했다.
+뒤 사이클/문서에서는 자연 감소도 발생했고, 같은 PID의 마지막 HWPX 닫기10초 뒤는 약834MiB였다.
+스냅숏 누수나 단순 RSS 합산 오류로 단정할 수 없다. 다른 앱의 PID는 합산하지 않았다.
+
+추가9사이클에서는 문서를 닫고도 WASM externref가 detached decoding Canvas21개, 100,819,044px를 참조했다.
+픽셀당4바이트로 환산하면 약385MiB이며 실제 WebKit 할당량을 직접 잰 값은 아니다.
+고정 엔진 `web_canvas.rs`의 전역 `DECODED_CANVAS_CACHE`/`IMAGE_CACHE`가 문서와 별도 수명이다.
+예열 뒤 참조 수는 일정했지만 RSS 증가는 계속 관측됐다. 따라서 캐시만으로 추가 RSS 증가를 모두 설명한 것은 아니다.
+캐시는 개수 기준으로 정리하지만 바이트 예산·문서 닫기 시 release API는 확인되지 않았다.
+
+**INCONCLUSIVE:** 반복 조건에서 모든 RSS가 재사용 가능한 high-water로 안정됐다는 판정, 전역 renderer/heap 잔류의 전체 원인.
+문서 참조 정리 하위 검사의 PASS를 메모리 activation PASS로 승격하지 않는다. 강제 GC나 앱 전체 reload를 해결책으로 넣지 않았다.
+이 캐시를 직접 수정하거나 비공개 WASM 참조를 강제로 지우지 않았다. 공개 lifecycle/byte-budget API는 pinned engine의 별도 의존 작업이다.
+
+### 폐기 예외 안전성
+
+**VERIFIED:** 기존 `discard()`는 예외를 삼켜 broken만 표시했고 호출자가 snapshot 할당/편집을 계속했다.
+reserve, redo 무효화, 취소 cleanup, release, commit 뒤 eviction의 실패 주입이 수정 전 실패했다.
+이제 `HistoryFailure("discard-failed", true)`로 전이를 중단하며, 세션은 history를 먼저 분리하고 uncertain으로 편집/저장을 막는다.
+새로 바꾼 모델의 round-trip 근거와 render version도 무효화한다. commit 뒤 실패는 이미 일어난 변경과 pending을 지우지 않는다.
+`release()`는 finally에서 ID/체크포인트를 비워 재폐기를 막고, 남은 엔진 저장소는 문서 free에 맡긴다.
+엔진 호출 전 capacity 거절 및 찾기 전 missing-ID 오류와, 효과를 보장할 수 없는 폐기 예외는 구분한다.
+
+실제 WASM에서도 실제 discard를 수행한 다음 예외를 주입해 세션의 편집/저장 차단을 확인한다.
+제품 registry와 실행 직전 검증은 그대로이며, production Undo/Redo 및 rhwp 글자 서식 네 가지는 활성화하지 않았다.
+
+### 전체 시나리오에서 추가로 발견한 체크포인트 재사용 결함
+
+**VERIFIED:** 표 진입을 고친 뒤 전체 native 실행은31/33으로, 셀 Undo의 커서 두 사례가 실제로 실패했다.
+앞선 본문 편집을 Undo하면 현재 내용의 스냅숏 ID가 이미 존재한다. 그 뒤 셀로 이동해 새 편집을 시작할 때
+`begin()`은 내용 스냅숏을 재사용하면서 예전 본문 caret 체크포인트까지 그대로 사용했다.
+따라서 Canvas와 문서 내용은 맞지만, 새 셀 편집을 Undo한 커서가 본문으로 돌아왔다.
+
+새 비연장 트랜잭션은 같은 내용의 snapshot을 그대로 쓰면서 **현재 편집 시작 caret/selection 체크포인트**를 새로 잡는다.
+내용을 복제하거나 스냅숏을 추가하지 않는다. 취소한 트랜잭션은 이전 체크포인트로 돌려 기존 Redo 의미를 유지한다.
+가짜 문서2개와 실제 WASM HWP/HWPX2개 회귀가 수정 전 실패했고, 수정 후 통과했다.
+선택 없는 IME 취소가 기존 Redo 체크포인트를 바꾸지 않는 회귀도 추가했다.
+Native 셀 시험은 이제 본문 편집→Undo를 먼저 수행해 이 재사용 경로를 반드시 거친다.
+최종 native 재실행 결과는 아래 최종 검증 표로 판단한다.
+
+### 최종 검증과 활성화 관문 (2026-10-22)
+
+같은 소스 상태에서 다시 실행한 결과다. 증거는 `tests/integration/rhwp/evidence/t010-stabilization/`의 `render-after`·`cells-after`·
+`ime-after`·`native-gap-unobserved`·`undo-save`·`save-preservation`·`perf-after`·`lifecycle*`·`product-build`·`verification-*`이다.
+
+| 관문 | 판정 | 근거 |
+|---|---|---|
+| D1 WebView 그리기·커서(표 셀 포함) | **PASS** | native 31/31, 셀 진입 6/6. 체크포인트 재사용 결함 수정 전 31/33은 보존 |
+| D2 native ibus-hangul | **INCONCLUSIVE** | 취소 경계 포함 25/25 PASS. 다만 빈 `compositionend`와 늦은 최종 글자 사이에 Ctrl+Z가 실제로 끼어든 순서는 10회 시도에서 관측하지 못했다. 결정적 가짜/WASM 시험은 별도 PASS이며 native 통과로 합산하지 않는다 |
+| D3 저장 보존 | **PASS** | 실제 `service::save` Undo 13/13, T009 strict 23/23 |
+| D4 성능·메모리 | **FAIL** | 그룹 시작 p95가 모든 표본에서 50ms 초과(큰 문서 84·291ms). 메모리는 문서 소유 해제 PASS, 전역 캐시·RSS 증가는 INCONCLUSIVE |
+| D5 폐기 예외 안전성 | **PASS** | 실제 discard 뒤 예외 주입 2/2: uncertain, 편집·Undo·저장 차단, 원본 SHA 보존 |
+
+일반 빌드(시험 플래그 둘 다 없음) 확인:
+- 번들에 시험 활성화 표지와 native probe가 없다.
+- 실제 앱에서 HWP·HWPX의 `edit.undo`·`edit.redo`는 비활성이고 "이 문서 형식에서 지원하지 않음"으로 표시된다.
+- Ctrl+Z와 도구 막대 단추 모두 문서를 바꾸지 않는다.
+- 시험 훅(trace, paragraph text, probe)은 노출되지 않는다.
+- 기존 native e2e smoke는 62/62 PASS다. 단, 이 결과는 Xvfb `-dpi 96`에서 얻었다. 기본 DPI의 Xvfb(배율 약 1.042)에서는 시작 화면 가로 넘침 검사가 1px(`scrollWidth` 1229 > 1228) 차이로 실패한다. 이번 변경은 CSS를 바꾸지 않았으므로 환경 배율 문제로 본다(INFERRED, 이전 커밋에서 같은 조건 재실행은 하지 않음).
+
+**결정: production 활성화 NO-GO.** D4 FAIL과 D2 INCONCLUSIVE가 남는다. 제품 registry의 rhwp `edit.undo`·`edit.redo`는 `unsupported`를 유지한다.
+다음 작업:
+1. 그룹 시작 지연을 레이어 트리 생성·요약·렌더·frame 대기 단계별로 귀속하고 줄인다.
+2. 고정 엔진 전역 Canvas 캐시에 바이트 예산과 문서 닫기 release API를 추가한다. 이는 upstream 의존 작업이다.
+3. 빈 끝과 늦은 최종 글자 사이에 Ctrl+Z가 끼어드는 native 순서를 재현할 방법을 확보한다.

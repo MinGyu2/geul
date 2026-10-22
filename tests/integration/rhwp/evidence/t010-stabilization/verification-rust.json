@@ -1,0 +1,63 @@
+[
+  {
+    "cwd": "src-tauri",
+    "command": [
+      "cargo",
+      "fmt",
+      "--check"
+    ],
+    "exitCode": 0,
+    "elapsedSeconds": 0.5,
+    "summary": [],
+    "log": "<tmp>/geul-t010-final-rust-0.log"
+  },
+  {
+    "cwd": "src-tauri",
+    "command": [
+      "cargo",
+      "check",
+      "--locked",
+      "--all-targets"
+    ],
+    "exitCode": 0,
+    "elapsedSeconds": 4.4,
+    "summary": [],
+    "log": "<tmp>/geul-t010-final-rust-1.log"
+  },
+  {
+    "cwd": "src-tauri",
+    "command": [
+      "cargo",
+      "clippy",
+      "--locked",
+      "--all-targets",
+      "--",
+      "-D",
+      "warnings"
+    ],
+    "exitCode": 0,
+    "elapsedSeconds": 0.5,
+    "summary": [],
+    "log": "<tmp>/geul-t010-final-rust-2.log"
+  },
+  {
+    "cwd": "src-tauri",
+    "command": [
+      "cargo",
+      "test",
+      "--locked"
+    ],
+    "exitCode": 0,
+    "elapsedSeconds": 4.9,
+    "summary": [
+      "test document::tests::암호화_비트_불일치는_방향과_관계없이_손상이고_암호화보다_먼저다 ... ok",
+      "test document::tests::압축_방식_불일치는_방향과_관계없이_손상이다 ... ok",
+      "test result: ok. 174 passed; 0 failed; 4 ignored; 0 measured; 0 filtered out; finished in 4.07s",
+      "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s",
+      "test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.04s",
+      "test result: ok. 0 passed; 0 failed; 2 ignored; 0 measured; 0 filtered out; finished in 0.00s",
+      "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s"
+    ],
+    "log": "<tmp>/geul-t010-final-rust-3.log"
+  }
+]

@@ -421,3 +421,95 @@ describe("RhwpEditorSession 실행 취소 통합(가짜 문서)", () => {
 });
 
 void FakeDocument;
+
+
+describe("스냅숏 폐기 예외의 실패 계약", () => {
+  function failing(depth = 2) {
+    const e = engine();
+    let fails = false;
+    const calls: number[] = [];
+    const h = new RhwpHistory({ ...e, snapshotCapacity: () => e.capacity, discardSnapshot(id) {
+      calls.push(id);
+      if (fails) throw new Error("RuntimeError: unreachable");
+      e.discardSnapshot(id);
+    } }, depth);
+    return { e, h, calls, fail: () => { fails = true; } };
+  }
+  it.each(["reserve", "redo", "cancel", "release", "commit"] as const)("%s: 폐기 실패는 즉시 중단·typed uncertain, 같은 ID 재폐기 없음", (boundary) => {
+    const { e, h, calls, fail } = failing();
+    group(h, e, 0);
+    let operation: () => void;
+    if (boundary === "reserve") {
+      group(h, e, 1);
+      e.capacity = 4; // 현재 limit=2: 새 그룹을 찍으려면 과거를 먼저 버림
+      operation = () => h.begin("other", null, () => null);
+    } else if (boundary === "redo") {
+      group(h, e, 1); h.undo(() => null);
+      h.begin("other", null, () => null); e.edit(3);
+      operation = () => h.commit("end");
+    } else if (boundary === "cancel") {
+      h.begin("other", null, () => null);
+      operation = () => h.cancel();
+    } else if (boundary === "release") operation = () => h.release(true);
+    else {
+      group(h, e, 1); h.begin("other", null, () => null); e.edit(3);
+      operation = () => h.commit("end");
+    }
+    fail();
+    expect(operation).toThrow(expect.objectContaining({ kind: "discard-failed", uncertain: true }));
+    expect(h.state).toBe("broken");
+    expect([h.canUndo, h.canRedo]).toEqual([false, false]);
+    const attempts = [...calls];
+    h.release(true); h.release(false);
+    expect(calls).toEqual(attempts);
+    expect(h.live).toBe(0);
+  });
+
+  it.each(["reserve", "commit", "redo", "cancel", "drop"] as const)("세션 %s: 안전하지 않은 편집·저장 차단, stale 검사 무효화", async (boundary) => {
+    const s = await readySession(["abc"]);
+    if (boundary === "reserve" || boundary === "commit") {
+      for (let k = 0; k < 50; k++) { s.editor.typeText("x"); s.editor.endHistoryGroup(); }
+    } else s.editor.typeText("x");
+    if (boundary === "redo") s.editor.undo();
+    if (boundary === "cancel") { s.editor.endHistoryGroup(); s.editor.beginComposition(); s.editor.updateComposition("가"); }
+    if (boundary === "reserve") s.doc.snapshotCapacity = () => 52;
+    s.doc.discardSnapshot = () => { throw new Error("RuntimeError: unreachable"); };
+    const before = s.doc.paragraphs[0];
+    if (boundary === "cancel") expect(() => s.editor.endComposition("")).not.toThrow();
+    else if (boundary === "drop") expect(() => (s.editor as unknown as { dropHistory(r: "unavailable"): void }).dropHistory("unavailable")).not.toThrow();
+    else expect(() => s.editor.typeText("y")).not.toThrow();
+    expect(s.editor.status.kind).toBe("failed");
+    expect(s.editor.editable).toBe(false);
+    expect(s.editor.snapshot().history).toBeNull();
+    expect(s.editor.lastRoundTrip).toBeNull();
+    expect(s.editor.typeText("unsafe")).toBe(false);
+    expect(s.editor.undo()).toBe(false);
+    if (boundary === "reserve" || boundary === "drop") expect(s.doc.paragraphs[0]).toBe(before);
+    expect((await s.editor.save()).ok).toBe(false);
+    s.editor.dispose();
+    expect(s.doc.freed).toBe(true);
+  });
+});
+
+it.each([false,true])("Undo 뒤 같은 내용 스냅숏 재사용: 새 편집의 커서/선택을 before로 갱신(selection=%s)", async selected => {
+  const {editor,doc}=await readySession(["abc"]);
+  editor.typeText("x");expect(editor.undo()).toBe(true);
+  editor.moveHorizontal(1,false);if(selected)editor.moveHorizontal(1,true);
+  const caret={...editor.caret},anchor={...editor.anchor};
+  editor.typeText("y");expect(editor.undo()).toBe(true);
+  expect(doc.paragraphs).toEqual(["abc"]);
+  expect(editor.caret).toEqual(caret);expect(editor.anchor).toEqual(anchor);
+  expect(editor.redo()).toBe(true);editor.dispose();
+});
+
+
+it("snapshot 재사용 뒤 선택 없는 IME 취소는 기존 Redo/checkpoint를 바꾸지 않음", async () => {
+  const {editor,doc}=await readySession(["abc"]);
+  editor.typeText("x");expect(editor.undo()).toBe(true);
+  editor.moveHorizontal(1,false);
+  editor.beginComposition();editor.updateComposition("가");editor.endComposition("");
+  expect(doc.paragraphs).toEqual(["abc"]);expect(editor.localRevision).toBe(2);
+  expect(editor.redo()).toBe(true);expect(editor.undo()).toBe(true);
+  expect(doc.paragraphs).toEqual(["abc"]);expect(editor.caret.offset).toBe(0);
+  editor.dispose();
+});

@@ -1,0 +1,20 @@
+[
+  {
+    "scenario": "t007-focus",
+    "exitCode": 0,
+    "elapsedSeconds": 43.7,
+    "summary": [
+      "IME 게이트: PASS (필수 7개 중 PASS 7, FAIL 0, UNVERIFIED/NOT RUN 0)"
+    ],
+    "log": "<tmp>/geul-t010-t007-focus-final-run.log"
+  },
+  {
+    "scenario": "t008-focus",
+    "exitCode": 0,
+    "elapsedSeconds": 35.4,
+    "summary": [
+      "IME 게이트: PASS (필수 7개 중 PASS 7, FAIL 0)"
+    ],
+    "log": "<tmp>/geul-t010-t008-focus-final-run.log"
+  }
+]

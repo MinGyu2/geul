@@ -114,12 +114,16 @@ export class HistoryRefused extends Error {
 
 /** 엔진 스냅숏 호출이 실패함. uncertain이면 엔진이 문서를 바꿨는지 알 수 없다(trap): 세션이 편집을 멈춘다. */
 export class HistoryFailure extends Error {
-  constructor(readonly kind: "snapshot-failed" | "snapshot-missing" | "restore-failed", readonly uncertain: boolean) {
+  constructor(readonly kind: "snapshot-failed" | "snapshot-missing" | "restore-failed" | "discard-failed", readonly uncertain: boolean) {
     super(kind);
   }
 }
 
-interface Pending { captured: boolean; extending: boolean; kind: HistoryKind; start: string | null }
+interface Pending {
+  captured: boolean; extending: boolean; kind: HistoryKind; start: string | null;
+  /** 같은 내용의 기존 snapshot을 쓰더라도 이번 편집의 before caret은 새로 잡는다. 취소하면 되돌린다. */
+  previousCheckpoint: { id: number; value: Checkpoint | null } | null;
+}
 
 export class RhwpHistory {
   private states: (number | null)[] = [null];
@@ -205,6 +209,7 @@ export class RhwpHistory {
     } catch {
       // discard는 Result가 없다: 던졌다면 엔진을 믿을 수 없다. 문서를 놓을 때 스냅숏도 함께 사라진다.
       this.state = "broken";
+      throw new HistoryFailure("discard-failed", true);
     }
   }
 
@@ -250,18 +255,28 @@ export class RhwpHistory {
    * (조합 갱신·provisional 고치기는 그 조합의 트랜잭션이다). checkpoint는 지금 상태를 찍게 되면 함께 둘 커서.
    */
   begin(kind: HistoryKind, start: string | null, checkpoint: () => Checkpoint | null) {
-    if (this.state !== "ok" || this.pending) return;
+    if (this.state !== "ok") throw new HistoryRefused("unavailable");
+    if (this.pending) return;
     const group = this.group;
     const extending = group !== null && start !== null && EXTENDABLE.has(kind) && group.kind === kind && group.end === start
       && this.now() - group.at <= HISTORY_IDLE_MS;
     let captured = false;
+    let previousCheckpoint: Pending["previousCheckpoint"] = null;
     if (!extending && this.states[this.cursor] === null) {
       // 지금 상태 = 새 그룹의 before. 다시 실행 기록이 있으면 지금 상태는 이미 찍혀 있다(실행 취소가 찍음).
       this.reserve(1, new Set(), ["past"]);
       this.states[this.cursor] = this.save(checkpoint());
       captured = true;
+    } else if (!extending) {
+      // Undo/Redo 뒤에는 지금 내용의 snapshot이 이미 있다. 내용은 같아도 그 뒤의 이동/선택으로
+      // 편집 시작 위치가 달라진다: 새 branch를 Undo하면 이번 before로 돌아가야 한다.
+      const id = this.states[this.cursor];
+      if (id !== null && id !== undefined) {
+        previousCheckpoint = { id, value: this.checkpoints.get(id) ?? null };
+        this.checkpoints.set(id, checkpoint());
+      }
     }
-    this.pending = { captured, extending, kind, start };
+    this.pending = { captured, extending, kind, start, previousCheckpoint };
   }
 
   /** 세션이 변경 1개를 셌다(recordMutation). 열린 트랜잭션이 기록 단계가 된다(이어 쓰기면 같은 단계). end = 끝 자리 열쇠. */
@@ -289,6 +304,10 @@ export class RhwpHistory {
     const pending = this.pending;
     if (!pending) return;
     this.pending = null;
+    if (pending.previousCheckpoint) {
+      const { id, value } = pending.previousCheckpoint;
+      this.checkpoints.set(id, value);
+    }
     this.breakAfterCommit = false; // 그룹은 이미 끊겼다(아래 boundary가 group을 비움)
     if (pending.captured) {
       const id = this.states[this.cursor];
@@ -349,13 +368,17 @@ export class RhwpHistory {
 
   /** 기록을 비운다. discard면 참조 ID를 엔진에서도 버린다(엔진을 믿을 수 있을 때만; 문서를 곧 놓으면 함께 사라진다). */
   release(discard: boolean) {
-    if (discard && this.state === "ok") for (const id of this.referenced()) this.discard(id);
-    this.states = [null];
-    this.cursor = 0;
-    this.pending = null;
-    this.group = null;
-    this.breakAfterCommit = false;
-    this.checkpoints.clear();
-    this.state = "broken";
+    try {
+      if (discard && this.state === "ok") for (const id of this.referenced()) this.discard(id);
+    } finally {
+      // 실패한 ID도 재시도하지 않는다. trap 뒤 남은 저장소는 문서 free()가 소유한다.
+      this.states = [null];
+      this.cursor = 0;
+      this.pending = null;
+      this.group = null;
+      this.breakAfterCommit = false;
+      this.checkpoints.clear();
+      this.state = "broken";
+    }
   }
 }

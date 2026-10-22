@@ -1,0 +1,630 @@
+{
+  "hwp": {
+    "records": [
+      [
+        1,
+        3237,
+        "keydown",
+        {
+          "composing": false,
+          "keyCode": 229,
+          "code": "Unidentified",
+          "ctrl": false
+        }
+      ],
+      [
+        2,
+        3237,
+        "dom:keydown",
+        {
+          "composing": false,
+          "key": "ime"
+        }
+      ],
+      [
+        3,
+        3237,
+        "ime:keyDown",
+        {
+          "terminal": "none",
+          "composing": false,
+          "discarded": false,
+          "awaiting": "none",
+          "interrupted": "none"
+        }
+      ],
+      [
+        4,
+        3238,
+        "dom:compositionstart",
+        null
+      ],
+      [
+        5,
+        3240,
+        "ime:compositionStart",
+        {
+          "terminal": "none",
+          "composing": true,
+          "discarded": false,
+          "awaiting": "none",
+          "interrupted": "none"
+        }
+      ],
+      [
+        6,
+        3249,
+        "dom:beforeinput",
+        {
+          "composing": true,
+          "length": 1,
+          "inputType": "insertCompositionText"
+        }
+      ],
+      [
+        7,
+        3251,
+        "dom:input",
+        {
+          "composing": true,
+          "length": 1,
+          "inputType": "insertCompositionText"
+        }
+      ],
+      [
+        8,
+        3252,
+        "ime:input",
+        {
+          "terminal": "none",
+          "composing": true,
+          "discarded": false,
+          "awaiting": "none",
+          "interrupted": "none"
+        }
+      ],
+      [
+        9,
+        3369,
+        "keyup",
+        {
+          "composing": true,
+          "keyCode": 82,
+          "code": "KeyR",
+          "ctrl": false
+        }
+      ],
+      [
+        10,
+        3476,
+        "keydown",
+        {
+          "composing": true,
+          "keyCode": 229,
+          "code": "Unidentified",
+          "ctrl": false
+        }
+      ],
+      [
+        11,
+        3476,
+        "dom:keydown",
+        {
+          "composing": true,
+          "key": "ime"
+        }
+      ],
+      [
+        12,
+        3476,
+        "ime:keyDown",
+        {
+          "terminal": "none",
+          "composing": true,
+          "discarded": false,
+          "awaiting": "none",
+          "interrupted": "none"
+        }
+      ],
+      [
+        13,
+        3479,
+        "dom:beforeinput",
+        {
+          "composing": true,
+          "length": 0,
+          "inputType": "deleteCompositionText"
+        }
+      ],
+      [
+        14,
+        3480,
+        "dom:input",
+        {
+          "composing": true,
+          "length": 0,
+          "inputType": "deleteCompositionText"
+        }
+      ],
+      [
+        15,
+        3481,
+        "ime:input",
+        {
+          "terminal": "none",
+          "composing": true,
+          "discarded": false,
+          "awaiting": "none",
+          "interrupted": "none"
+        }
+      ],
+      [
+        16,
+        3490,
+        "dom:compositionend",
+        {
+          "length": 0
+        }
+      ],
+      [
+        17,
+        3491,
+        "ime:compositionEnd",
+        {
+          "terminal": "empty",
+          "composing": false,
+          "discarded": false,
+          "awaiting": "this",
+          "interrupted": "none"
+        }
+      ],
+      [
+        18,
+        3607,
+        "keyup",
+        {
+          "composing": false,
+          "keyCode": 8,
+          "code": "Backspace",
+          "ctrl": false
+        }
+      ],
+      [
+        19,
+        4321,
+        "keydown",
+        {
+          "composing": false,
+          "keyCode": 17,
+          "code": "ControlLeft",
+          "ctrl": true
+        }
+      ],
+      [
+        20,
+        4321,
+        "dom:keydown",
+        {
+          "composing": false,
+          "key": "mod:ControlLeft"
+        }
+      ],
+      [
+        21,
+        4331,
+        "keydown",
+        {
+          "composing": false,
+          "keyCode": 90,
+          "code": "KeyZ",
+          "ctrl": true
+        }
+      ],
+      [
+        22,
+        4331,
+        "dom:keydown",
+        {
+          "composing": false,
+          "key": "mod:KeyZ"
+        }
+      ],
+      [
+        23,
+        4332,
+        "command:request",
+        {
+          "reason": "composing",
+          "composing": true,
+          "session": 1,
+          "modal": false,
+          "id": "edit.undo",
+          "available": false,
+          "pending": false
+        }
+      ],
+      [
+        24,
+        4338,
+        "keyup",
+        {
+          "composing": false,
+          "keyCode": 17,
+          "code": "ControlLeft",
+          "ctrl": true
+        }
+      ],
+      [
+        25,
+        4341,
+        "keyup",
+        {
+          "composing": false,
+          "keyCode": 90,
+          "code": "KeyZ",
+          "ctrl": false
+        }
+      ]
+    ],
+    "seq": 25,
+    "dropped": 0
+  },
+  "hwpx": {
+    "records": [
+      [
+        1,
+        7764,
+        "keydown",
+        {
+          "composing": false,
+          "keyCode": 229,
+          "code": "Unidentified",
+          "ctrl": false
+        }
+      ],
+      [
+        2,
+        7764,
+        "keydown",
+        {
+          "composing": false,
+          "keyCode": 229,
+          "code": "Unidentified",
+          "ctrl": false
+        }
+      ],
+      [
+        3,
+        7765,
+        "dom:keydown",
+        {
+          "composing": false,
+          "key": "ime"
+        }
+      ],
+      [
+        4,
+        7765,
+        "ime:keyDown",
+        {
+          "terminal": "none",
+          "composing": false,
+          "discarded": false,
+          "awaiting": "none",
+          "interrupted": "none"
+        }
+      ],
+      [
+        5,
+        7765,
+        "dom:compositionstart",
+        null
+      ],
+      [
+        6,
+        7766,
+        "ime:compositionStart",
+        {
+          "terminal": "none",
+          "composing": true,
+          "discarded": false,
+          "awaiting": "none",
+          "interrupted": "none"
+        }
+      ],
+      [
+        7,
+        7773,
+        "dom:beforeinput",
+        {
+          "composing": true,
+          "length": 1,
+          "inputType": "insertCompositionText"
+        }
+      ],
+      [
+        8,
+        7775,
+        "dom:input",
+        {
+          "composing": true,
+          "length": 1,
+          "inputType": "insertCompositionText"
+        }
+      ],
+      [
+        9,
+        7776,
+        "ime:input",
+        {
+          "terminal": "none",
+          "composing": true,
+          "discarded": false,
+          "awaiting": "none",
+          "interrupted": "none"
+        }
+      ],
+      [
+        10,
+        7885,
+        "keyup",
+        {
+          "composing": true,
+          "keyCode": 82,
+          "code": "KeyR",
+          "ctrl": false
+        }
+      ],
+      [
+        11,
+        7885,
+        "keyup",
+        {
+          "composing": true,
+          "keyCode": 82,
+          "code": "KeyR",
+          "ctrl": false
+        }
+      ],
+      [
+        12,
+        7979,
+        "keydown",
+        {
+          "composing": true,
+          "keyCode": 229,
+          "code": "Unidentified",
+          "ctrl": false
+        }
+      ],
+      [
+        13,
+        7979,
+        "keydown",
+        {
+          "composing": true,
+          "keyCode": 229,
+          "code": "Unidentified",
+          "ctrl": false
+        }
+      ],
+      [
+        14,
+        7979,
+        "dom:keydown",
+        {
+          "composing": true,
+          "key": "ime"
+        }
+      ],
+      [
+        15,
+        7979,
+        "ime:keyDown",
+        {
+          "terminal": "none",
+          "composing": true,
+          "discarded": false,
+          "awaiting": "none",
+          "interrupted": "none"
+        }
+      ],
+      [
+        16,
+        7982,
+        "dom:beforeinput",
+        {
+          "composing": true,
+          "length": 0,
+          "inputType": "deleteCompositionText"
+        }
+      ],
+      [
+        17,
+        7982,
+        "dom:input",
+        {
+          "composing": true,
+          "length": 0,
+          "inputType": "deleteCompositionText"
+        }
+      ],
+      [
+        18,
+        7983,
+        "ime:input",
+        {
+          "terminal": "none",
+          "composing": true,
+          "discarded": false,
+          "awaiting": "none",
+          "interrupted": "none"
+        }
+      ],
+      [
+        19,
+        7992,
+        "dom:compositionend",
+        {
+          "length": 0
+        }
+      ],
+      [
+        20,
+        7992,
+        "ime:compositionEnd",
+        {
+          "terminal": "empty",
+          "composing": false,
+          "discarded": false,
+          "awaiting": "this",
+          "interrupted": "none"
+        }
+      ],
+      [
+        21,
+        8098,
+        "keyup",
+        {
+          "composing": false,
+          "keyCode": 8,
+          "code": "Backspace",
+          "ctrl": false
+        }
+      ],
+      [
+        22,
+        8098,
+        "keyup",
+        {
+          "composing": false,
+          "keyCode": 8,
+          "code": "Backspace",
+          "ctrl": false
+        }
+      ],
+      [
+        23,
+        8787,
+        "keydown",
+        {
+          "composing": false,
+          "keyCode": 17,
+          "code": "ControlLeft",
+          "ctrl": true
+        }
+      ],
+      [
+        24,
+        8787,
+        "keydown",
+        {
+          "composing": false,
+          "keyCode": 17,
+          "code": "ControlLeft",
+          "ctrl": true
+        }
+      ],
+      [
+        25,
+        8787,
+        "dom:keydown",
+        {
+          "composing": false,
+          "key": "mod:ControlLeft"
+        }
+      ],
+      [
+        26,
+        8799,
+        "keydown",
+        {
+          "composing": false,
+          "keyCode": 90,
+          "code": "KeyZ",
+          "ctrl": true
+        }
+      ],
+      [
+        27,
+        8799,
+        "keydown",
+        {
+          "composing": false,
+          "keyCode": 90,
+          "code": "KeyZ",
+          "ctrl": true
+        }
+      ],
+      [
+        28,
+        8799,
+        "dom:keydown",
+        {
+          "composing": false,
+          "key": "mod:KeyZ"
+        }
+      ],
+      [
+        29,
+        8799,
+        "command:request",
+        {
+          "reason": "composing",
+          "composing": true,
+          "session": 2,
+          "modal": false,
+          "id": "edit.undo",
+          "available": false,
+          "pending": false
+        }
+      ],
+      [
+        30,
+        8804,
+        "keyup",
+        {
+          "composing": false,
+          "keyCode": 17,
+          "code": "ControlLeft",
+          "ctrl": true
+        }
+      ],
+      [
+        31,
+        8804,
+        "keyup",
+        {
+          "composing": false,
+          "keyCode": 17,
+          "code": "ControlLeft",
+          "ctrl": true
+        }
+      ],
+      [
+        32,
+        8808,
+        "keyup",
+        {
+          "composing": false,
+          "keyCode": 90,
+          "code": "KeyZ",
+          "ctrl": false
+        }
+      ],
+      [
+        33,
+        8808,
+        "keyup",
+        {
+          "composing": false,
+          "keyCode": 90,
+          "code": "KeyZ",
+          "ctrl": false
+        }
+      ]
+    ],
+    "seq": 33,
+    "dropped": 0
+  }
+}

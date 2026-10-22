@@ -131,7 +131,9 @@ export function RhwpSurface({ session, zoom, imeContext }: RhwpSurfaceProps) {
     // 스크롤로 보이게 되면 그때 바로 그린다(아래 scroll 처리). 새 변경이 오면 이 작업을 취소하고 다시 정하므로 마지막 모델로
     // 그리며, 옛 작업은 version 검사로 새 모델을 덮지 않는다.
     const visible = visiblePages();
-    const later = started !== null && !all
+    // Undo/Redo·명령도 모델 변경이다. DOM input 시각이 없다는 이유로 화면 밖 모든 쪽을 즉시 그리면
+    // 복원 직후 입력을 막는다. 이미 그린 화면 밖 쪽은 같은 버전 검사·scroll/resize 갱신 아래 쉬는 시간에 그린다.
+    const later = !all
       ? rest.filter((page) => canvases.current.get(page)?.width && !visible.has(page))
       : [];
     const now = rest.filter((page) => !later.includes(page));

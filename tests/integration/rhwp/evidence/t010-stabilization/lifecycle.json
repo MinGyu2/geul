@@ -1,0 +1,2383 @@
+{
+  "results": [],
+  "gates": [
+    {
+      "gate": "D4",
+      "item": "openClose cycle0: 닫은 document/snapshot/Canvas 소유 해제",
+      "result": "PASS",
+      "detail": ""
+    },
+    {
+      "gate": "D4",
+      "item": "openClose cycle1: 닫은 document/snapshot/Canvas 소유 해제",
+      "result": "PASS",
+      "detail": ""
+    },
+    {
+      "gate": "D4",
+      "item": "openClose cycle2: 닫은 document/snapshot/Canvas 소유 해제",
+      "result": "PASS",
+      "detail": ""
+    },
+    {
+      "gate": "D4",
+      "item": "openClose cycle3: 닫은 document/snapshot/Canvas 소유 해제",
+      "result": "PASS",
+      "detail": ""
+    },
+    {
+      "gate": "D4",
+      "item": "openClose cycle4: 닫은 document/snapshot/Canvas 소유 해제",
+      "result": "PASS",
+      "detail": ""
+    },
+    {
+      "gate": "D4",
+      "item": "editCapacityRefusalControl cycle0: 닫은 document/snapshot/Canvas 소유 해제",
+      "result": "PASS",
+      "detail": ""
+    },
+    {
+      "gate": "D4",
+      "item": "editCapacityRefusalControl cycle1: 닫은 document/snapshot/Canvas 소유 해제",
+      "result": "PASS",
+      "detail": ""
+    },
+    {
+      "gate": "D4",
+      "item": "editCapacityRefusalControl cycle2: 닫은 document/snapshot/Canvas 소유 해제",
+      "result": "PASS",
+      "detail": ""
+    },
+    {
+      "gate": "D4",
+      "item": "editCapacityRefusalControl cycle3: 닫은 document/snapshot/Canvas 소유 해제",
+      "result": "PASS",
+      "detail": ""
+    },
+    {
+      "gate": "D4",
+      "item": "editCapacityRefusalControl cycle4: 닫은 document/snapshot/Canvas 소유 해제",
+      "result": "PASS",
+      "detail": ""
+    },
+    {
+      "gate": "D4",
+      "item": "undoRedo cycle0: 닫은 document/snapshot/Canvas 소유 해제",
+      "result": "PASS",
+      "detail": ""
+    },
+    {
+      "gate": "D4",
+      "item": "undoRedo cycle1: 닫은 document/snapshot/Canvas 소유 해제",
+      "result": "PASS",
+      "detail": ""
+    },
+    {
+      "gate": "D4",
+      "item": "undoRedo cycle2: 닫은 document/snapshot/Canvas 소유 해제",
+      "result": "PASS",
+      "detail": ""
+    },
+    {
+      "gate": "D4",
+      "item": "undoRedo cycle3: 닫은 document/snapshot/Canvas 소유 해제",
+      "result": "PASS",
+      "detail": ""
+    },
+    {
+      "gate": "D4",
+      "item": "undoRedo cycle4: 닫은 document/snapshot/Canvas 소유 해제",
+      "result": "PASS",
+      "detail": ""
+    },
+    {
+      "gate": "D4",
+      "item": "openClose cycle0: 닫은 document/snapshot/Canvas 소유 해제",
+      "result": "PASS",
+      "detail": ""
+    },
+    {
+      "gate": "D4",
+      "item": "openClose cycle1: 닫은 document/snapshot/Canvas 소유 해제",
+      "result": "PASS",
+      "detail": ""
+    },
+    {
+      "gate": "D4",
+      "item": "openClose cycle2: 닫은 document/snapshot/Canvas 소유 해제",
+      "result": "PASS",
+      "detail": ""
+    },
+    {
+      "gate": "D4",
+      "item": "openClose cycle3: 닫은 document/snapshot/Canvas 소유 해제",
+      "result": "PASS",
+      "detail": ""
+    },
+    {
+      "gate": "D4",
+      "item": "openClose cycle4: 닫은 document/snapshot/Canvas 소유 해제",
+      "result": "PASS",
+      "detail": ""
+    },
+    {
+      "gate": "D4",
+      "item": "editCapacityRefusalControl cycle0: 닫은 document/snapshot/Canvas 소유 해제",
+      "result": "PASS",
+      "detail": ""
+    },
+    {
+      "gate": "D4",
+      "item": "editCapacityRefusalControl cycle1: 닫은 document/snapshot/Canvas 소유 해제",
+      "result": "PASS",
+      "detail": ""
+    },
+    {
+      "gate": "D4",
+      "item": "editCapacityRefusalControl cycle2: 닫은 document/snapshot/Canvas 소유 해제",
+      "result": "PASS",
+      "detail": ""
+    },
+    {
+      "gate": "D4",
+      "item": "editCapacityRefusalControl cycle3: 닫은 document/snapshot/Canvas 소유 해제",
+      "result": "PASS",
+      "detail": ""
+    },
+    {
+      "gate": "D4",
+      "item": "editCapacityRefusalControl cycle4: 닫은 document/snapshot/Canvas 소유 해제",
+      "result": "PASS",
+      "detail": ""
+    },
+    {
+      "gate": "D4",
+      "item": "undoRedo cycle0: 닫은 document/snapshot/Canvas 소유 해제",
+      "result": "PASS",
+      "detail": ""
+    },
+    {
+      "gate": "D4",
+      "item": "undoRedo cycle1: 닫은 document/snapshot/Canvas 소유 해제",
+      "result": "PASS",
+      "detail": ""
+    },
+    {
+      "gate": "D4",
+      "item": "undoRedo cycle2: 닫은 document/snapshot/Canvas 소유 해제",
+      "result": "PASS",
+      "detail": ""
+    },
+    {
+      "gate": "D4",
+      "item": "undoRedo cycle3: 닫은 document/snapshot/Canvas 소유 해제",
+      "result": "PASS",
+      "detail": ""
+    },
+    {
+      "gate": "D4",
+      "item": "undoRedo cycle4: 닫은 document/snapshot/Canvas 소유 해제",
+      "result": "PASS",
+      "detail": ""
+    }
+  ],
+  "measurements": {
+    "fixtureSha256": {
+      "basic-ko.hwp": "57c901cc394abf6f58f4838315d1ea2c5ecf8a03d9934d3fc098fd8be6e6e12f",
+      "basic-ko.hwpx": "26d434b7b427149110751c6ef5b19e9ecb4818f3ba7eadfe201b5afd3de442a8"
+    },
+    "keyDelivery": "native X11 xdotool",
+    "lifecycle": [
+      {
+        "sample": "large-24.hwp",
+        "cyclesPerMode": 5,
+        "stabilizationSeconds": 2,
+        "rows": [
+          {
+            "mode": "openClose",
+            "cycle": 0,
+            "before": {
+              "processes": [
+                {
+                  "pid": 1112597,
+                  "rssBytes": 260513792
+                }
+              ],
+              "aggregateRssBytes": 260513792,
+              "canvasCount": 0,
+              "wasmBytes": 2949120,
+              "owners": [],
+              "canvasPixels": 0,
+              "lastDisposal": null
+            },
+            "opened": {
+              "processes": [
+                {
+                  "pid": 1112597,
+                  "rssBytes": 461287424
+                }
+              ],
+              "aggregateRssBytes": 461287424,
+              "canvasCount": 24,
+              "wasmBytes": 60358656,
+              "owners": [
+                {
+                  "discards": 0,
+                  "nativeCapacity": 100,
+                  "id": 1,
+                  "saves": 0,
+                  "live": 0
+                }
+              ],
+              "canvasPixels": 1937520,
+              "lastDisposal": null
+            },
+            "closed": {
+              "processes": [
+                {
+                  "pid": 1112597,
+                  "rssBytes": 516251648
+                }
+              ],
+              "aggregateRssBytes": 516251648,
+              "canvasCount": 0,
+              "wasmBytes": 60358656,
+              "owners": [],
+              "canvasPixels": 0,
+              "lastDisposal": {
+                "liveAtFree": 0,
+                "discards": 0,
+                "id": 1,
+                "saves": 0
+              }
+            }
+          },
+          {
+            "mode": "openClose",
+            "cycle": 1,
+            "before": {
+              "processes": [
+                {
+                  "pid": 1112597,
+                  "rssBytes": 516268032
+                }
+              ],
+              "aggregateRssBytes": 516268032,
+              "canvasCount": 0,
+              "wasmBytes": 60358656,
+              "owners": [],
+              "canvasPixels": 0,
+              "lastDisposal": {
+                "liveAtFree": 0,
+                "discards": 0,
+                "id": 1,
+                "saves": 0
+              }
+            },
+            "opened": {
+              "processes": [
+                {
+                  "pid": 1112597,
+                  "rssBytes": 614035456
+                }
+              ],
+              "aggregateRssBytes": 614035456,
+              "canvasCount": 24,
+              "wasmBytes": 82640896,
+              "owners": [
+                {
+                  "discards": 0,
+                  "nativeCapacity": 100,
+                  "id": 2,
+                  "saves": 0,
+                  "live": 0
+                }
+              ],
+              "canvasPixels": 3148470,
+              "lastDisposal": {
+                "liveAtFree": 0,
+                "discards": 0,
+                "id": 1,
+                "saves": 0
+              }
+            },
+            "closed": {
+              "processes": [
+                {
+                  "pid": 1112597,
+                  "rssBytes": 656207872
+                }
+              ],
+              "aggregateRssBytes": 656207872,
+              "canvasCount": 0,
+              "wasmBytes": 82640896,
+              "owners": [],
+              "canvasPixels": 0,
+              "lastDisposal": {
+                "liveAtFree": 0,
+                "discards": 0,
+                "id": 2,
+                "saves": 0
+              }
+            }
+          },
+          {
+            "mode": "openClose",
+            "cycle": 2,
+            "before": {
+              "processes": [
+                {
+                  "pid": 1112597,
+                  "rssBytes": 656207872
+                }
+              ],
+              "aggregateRssBytes": 656207872,
+              "canvasCount": 0,
+              "wasmBytes": 82640896,
+              "owners": [],
+              "canvasPixels": 0,
+              "lastDisposal": {
+                "liveAtFree": 0,
+                "discards": 0,
+                "id": 2,
+                "saves": 0
+              }
+            },
+            "opened": {
+              "processes": [
+                {
+                  "pid": 1112597,
+                  "rssBytes": 666476544
+                }
+              ],
+              "aggregateRssBytes": 666476544,
+              "canvasCount": 24,
+              "wasmBytes": 82640896,
+              "owners": [
+                {
+                  "discards": 0,
+                  "nativeCapacity": 100,
+                  "id": 3,
+                  "saves": 0,
+                  "live": 0
+                }
+              ],
+              "canvasPixels": 3632850,
+              "lastDisposal": {
+                "liveAtFree": 0,
+                "discards": 0,
+                "id": 2,
+                "saves": 0
+              }
+            },
+            "closed": {
+              "processes": [
+                {
+                  "pid": 1112597,
+                  "rssBytes": 730374144
+                }
+              ],
+              "aggregateRssBytes": 730374144,
+              "canvasCount": 0,
+              "wasmBytes": 82640896,
+              "owners": [],
+              "canvasPixels": 0,
+              "lastDisposal": {
+                "liveAtFree": 0,
+                "discards": 0,
+                "id": 3,
+                "saves": 0
+              }
+            }
+          },
+          {
+            "mode": "openClose",
+            "cycle": 3,
+            "before": {
+              "processes": [
+                {
+                  "pid": 1112597,
+                  "rssBytes": 730378240
+                }
+              ],
+              "aggregateRssBytes": 730378240,
+              "canvasCount": 0,
+              "wasmBytes": 82640896,
+              "owners": [],
+              "canvasPixels": 0,
+              "lastDisposal": {
+                "liveAtFree": 0,
+                "discards": 0,
+                "id": 3,
+                "saves": 0
+              }
+            },
+            "opened": {
+              "processes": [
+                {
+                  "pid": 1112597,
+                  "rssBytes": 727130112
+                }
+              ],
+              "aggregateRssBytes": 727130112,
+              "canvasCount": 24,
+              "wasmBytes": 82640896,
+              "owners": [
+                {
+                  "discards": 0,
+                  "nativeCapacity": 100,
+                  "id": 4,
+                  "saves": 0,
+                  "live": 0
+                }
+              ],
+              "canvasPixels": 3632850,
+              "lastDisposal": {
+                "liveAtFree": 0,
+                "discards": 0,
+                "id": 3,
+                "saves": 0
+              }
+            },
+            "closed": {
+              "processes": [
+                {
+                  "pid": 1112597,
+                  "rssBytes": 746467328
+                }
+              ],
+              "aggregateRssBytes": 746467328,
+              "canvasCount": 0,
+              "wasmBytes": 82640896,
+              "owners": [],
+              "canvasPixels": 0,
+              "lastDisposal": {
+                "liveAtFree": 0,
+                "discards": 0,
+                "id": 4,
+                "saves": 0
+              }
+            }
+          },
+          {
+            "mode": "openClose",
+            "cycle": 4,
+            "before": {
+              "processes": [
+                {
+                  "pid": 1112597,
+                  "rssBytes": 746319872
+                }
+              ],
+              "aggregateRssBytes": 746319872,
+              "canvasCount": 0,
+              "wasmBytes": 82640896,
+              "owners": [],
+              "canvasPixels": 0,
+              "lastDisposal": {
+                "liveAtFree": 0,
+                "discards": 0,
+                "id": 4,
+                "saves": 0
+              }
+            },
+            "opened": {
+              "processes": [
+                {
+                  "pid": 1112597,
+                  "rssBytes": 753790976
+                }
+              ],
+              "aggregateRssBytes": 753790976,
+              "canvasCount": 24,
+              "wasmBytes": 82640896,
+              "owners": [
+                {
+                  "discards": 0,
+                  "nativeCapacity": 100,
+                  "id": 5,
+                  "saves": 0,
+                  "live": 0
+                }
+              ],
+              "canvasPixels": 3632850,
+              "lastDisposal": {
+                "liveAtFree": 0,
+                "discards": 0,
+                "id": 4,
+                "saves": 0
+              }
+            },
+            "closed": {
+              "processes": [
+                {
+                  "pid": 1112597,
+                  "rssBytes": 768380928
+                }
+              ],
+              "aggregateRssBytes": 768380928,
+              "canvasCount": 0,
+              "wasmBytes": 82640896,
+              "owners": [],
+              "canvasPixels": 0,
+              "lastDisposal": {
+                "liveAtFree": 0,
+                "discards": 0,
+                "id": 5,
+                "saves": 0
+              }
+            },
+            "closedAfter10s": {
+              "processes": [
+                {
+                  "pid": 1112597,
+                  "rssBytes": 758226944
+                }
+              ],
+              "aggregateRssBytes": 758226944,
+              "canvasCount": 0,
+              "wasmBytes": 82640896,
+              "owners": [],
+              "canvasPixels": 0,
+              "lastDisposal": {
+                "liveAtFree": 0,
+                "discards": 0,
+                "id": 5,
+                "saves": 0
+              }
+            }
+          },
+          {
+            "mode": "editCapacityRefusalControl",
+            "cycle": 0,
+            "before": {
+              "processes": [
+                {
+                  "pid": 1112597,
+                  "rssBytes": 758231040
+                }
+              ],
+              "aggregateRssBytes": 758231040,
+              "canvasCount": 0,
+              "wasmBytes": 82640896,
+              "owners": [],
+              "canvasPixels": 0,
+              "lastDisposal": {
+                "liveAtFree": 0,
+                "discards": 0,
+                "id": 5,
+                "saves": 0
+              }
+            },
+            "opened": {
+              "processes": [
+                {
+                  "pid": 1112597,
+                  "rssBytes": 1026813952
+                }
+              ],
+              "aggregateRssBytes": 1026813952,
+              "canvasCount": 24,
+              "wasmBytes": 120455168,
+              "owners": [
+                {
+                  "discards": 0,
+                  "nativeCapacity": 100,
+                  "id": 6,
+                  "saves": 0,
+                  "live": 0
+                }
+              ],
+              "canvasPixels": 5812560,
+              "lastDisposal": {
+                "liveAtFree": 0,
+                "discards": 0,
+                "id": 5,
+                "saves": 0
+              }
+            },
+            "closed": {
+              "processes": [
+                {
+                  "pid": 1112597,
+                  "rssBytes": 1029668864
+                }
+              ],
+              "aggregateRssBytes": 1029668864,
+              "canvasCount": 0,
+              "wasmBytes": 120455168,
+              "owners": [],
+              "canvasPixels": 0,
+              "lastDisposal": {
+                "liveAtFree": 0,
+                "discards": 0,
+                "id": 6,
+                "saves": 0
+              }
+            }
+          },
+          {
+            "mode": "editCapacityRefusalControl",
+            "cycle": 1,
+            "before": {
+              "processes": [
+                {
+                  "pid": 1112597,
+                  "rssBytes": 1029677056
+                }
+              ],
+              "aggregateRssBytes": 1029677056,
+              "canvasCount": 0,
+              "wasmBytes": 120455168,
+              "owners": [],
+              "canvasPixels": 0,
+              "lastDisposal": {
+                "liveAtFree": 0,
+                "discards": 0,
+                "id": 6,
+                "saves": 0
+              }
+            },
+            "opened": {
+              "processes": [
+                {
+                  "pid": 1112597,
+                  "rssBytes": 1128849408
+                }
+              ],
+              "aggregateRssBytes": 1128849408,
+              "canvasCount": 24,
+              "wasmBytes": 120455168,
+              "owners": [
+                {
+                  "discards": 0,
+                  "nativeCapacity": 100,
+                  "id": 7,
+                  "saves": 0,
+                  "live": 0
+                }
+              ],
+              "canvasPixels": 5812560,
+              "lastDisposal": {
+                "liveAtFree": 0,
+                "discards": 0,
+                "id": 6,
+                "saves": 0
+              }
+            },
+            "closed": {
+              "processes": [
+                {
+                  "pid": 1112597,
+                  "rssBytes": 1128816640
+                }
+              ],
+              "aggregateRssBytes": 1128816640,
+              "canvasCount": 0,
+              "wasmBytes": 120455168,
+              "owners": [],
+              "canvasPixels": 0,
+              "lastDisposal": {
+                "liveAtFree": 0,
+                "discards": 0,
+                "id": 7,
+                "saves": 0
+              }
+            }
+          },
+          {
+            "mode": "editCapacityRefusalControl",
+            "cycle": 2,
+            "before": {
+              "processes": [
+                {
+                  "pid": 1112597,
+                  "rssBytes": 1128824832
+                }
+              ],
+              "aggregateRssBytes": 1128824832,
+              "canvasCount": 0,
+              "wasmBytes": 120455168,
+              "owners": [],
+              "canvasPixels": 0,
+              "lastDisposal": {
+                "liveAtFree": 0,
+                "discards": 0,
+                "id": 7,
+                "saves": 0
+              }
+            },
+            "opened": {
+              "processes": [
+                {
+                  "pid": 1112597,
+                  "rssBytes": 1226612736
+                }
+              ],
+              "aggregateRssBytes": 1226612736,
+              "canvasCount": 24,
+              "wasmBytes": 120455168,
+              "owners": [
+                {
+                  "discards": 0,
+                  "nativeCapacity": 100,
+                  "id": 8,
+                  "saves": 0,
+                  "live": 0
+                }
+              ],
+              "canvasPixels": 5812560,
+              "lastDisposal": {
+                "liveAtFree": 0,
+                "discards": 0,
+                "id": 7,
+                "saves": 0
+              }
+            },
+            "closed": {
+              "processes": [
+                {
+                  "pid": 1112597,
+                  "rssBytes": 1228095488
+                }
+              ],
+              "aggregateRssBytes": 1228095488,
+              "canvasCount": 0,
+              "wasmBytes": 120455168,
+              "owners": [],
+              "canvasPixels": 0,
+              "lastDisposal": {
+                "liveAtFree": 0,
+                "discards": 0,
+                "id": 8,
+                "saves": 0
+              }
+            }
+          },
+          {
+            "mode": "editCapacityRefusalControl",
+            "cycle": 3,
+            "before": {
+              "processes": [
+                {
+                  "pid": 1112597,
+                  "rssBytes": 1228103680
+                }
+              ],
+              "aggregateRssBytes": 1228103680,
+              "canvasCount": 0,
+              "wasmBytes": 120455168,
+              "owners": [],
+              "canvasPixels": 0,
+              "lastDisposal": {
+                "liveAtFree": 0,
+                "discards": 0,
+                "id": 8,
+                "saves": 0
+              }
+            },
+            "opened": {
+              "processes": [
+                {
+                  "pid": 1112597,
+                  "rssBytes": 1335316480
+                }
+              ],
+              "aggregateRssBytes": 1335316480,
+              "canvasCount": 24,
+              "wasmBytes": 120455168,
+              "owners": [
+                {
+                  "discards": 0,
+                  "nativeCapacity": 100,
+                  "id": 9,
+                  "saves": 0,
+                  "live": 0
+                }
+              ],
+              "canvasPixels": 5812560,
+              "lastDisposal": {
+                "liveAtFree": 0,
+                "discards": 0,
+                "id": 8,
+                "saves": 0
+              }
+            },
+            "closed": {
+              "processes": [
+                {
+                  "pid": 1112597,
+                  "rssBytes": 1338056704
+                }
+              ],
+              "aggregateRssBytes": 1338056704,
+              "canvasCount": 0,
+              "wasmBytes": 120455168,
+              "owners": [],
+              "canvasPixels": 0,
+              "lastDisposal": {
+                "liveAtFree": 0,
+                "discards": 0,
+                "id": 9,
+                "saves": 0
+              }
+            }
+          },
+          {
+            "mode": "editCapacityRefusalControl",
+            "cycle": 4,
+            "before": {
+              "processes": [
+                {
+                  "pid": 1112597,
+                  "rssBytes": 1338064896
+                }
+              ],
+              "aggregateRssBytes": 1338064896,
+              "canvasCount": 0,
+              "wasmBytes": 120455168,
+              "owners": [],
+              "canvasPixels": 0,
+              "lastDisposal": {
+                "liveAtFree": 0,
+                "discards": 0,
+                "id": 9,
+                "saves": 0
+              }
+            },
+            "opened": {
+              "processes": [
+                {
+                  "pid": 1112597,
+                  "rssBytes": 1436307456
+                }
+              ],
+              "aggregateRssBytes": 1436307456,
+              "canvasCount": 24,
+              "wasmBytes": 120455168,
+              "owners": [
+                {
+                  "discards": 0,
+                  "nativeCapacity": 100,
+                  "id": 10,
+                  "saves": 0,
+                  "live": 0
+                }
+              ],
+              "canvasPixels": 5812560,
+              "lastDisposal": {
+                "liveAtFree": 0,
+                "discards": 0,
+                "id": 9,
+                "saves": 0
+              }
+            },
+            "closed": {
+              "processes": [
+                {
+                  "pid": 1112597,
+                  "rssBytes": 1430265856
+                }
+              ],
+              "aggregateRssBytes": 1430265856,
+              "canvasCount": 0,
+              "wasmBytes": 120455168,
+              "owners": [],
+              "canvasPixels": 0,
+              "lastDisposal": {
+                "liveAtFree": 0,
+                "discards": 0,
+                "id": 10,
+                "saves": 0
+              }
+            },
+            "closedAfter10s": {
+              "processes": [
+                {
+                  "pid": 1112597,
+                  "rssBytes": 1430044672
+                }
+              ],
+              "aggregateRssBytes": 1430044672,
+              "canvasCount": 0,
+              "wasmBytes": 120455168,
+              "owners": [],
+              "canvasPixels": 0,
+              "lastDisposal": {
+                "liveAtFree": 0,
+                "discards": 0,
+                "id": 10,
+                "saves": 0
+              }
+            }
+          },
+          {
+            "mode": "undoRedo",
+            "cycle": 0,
+            "before": {
+              "processes": [
+                {
+                  "pid": 1112597,
+                  "rssBytes": 1429299200
+                }
+              ],
+              "aggregateRssBytes": 1429299200,
+              "canvasCount": 0,
+              "wasmBytes": 120455168,
+              "owners": [],
+              "canvasPixels": 0,
+              "lastDisposal": {
+                "liveAtFree": 0,
+                "discards": 0,
+                "id": 10,
+                "saves": 0
+              }
+            },
+            "opened": {
+              "processes": [
+                {
+                  "pid": 1112597,
+                  "rssBytes": 1080446976
+                }
+              ],
+              "aggregateRssBytes": 1080446976,
+              "canvasCount": 24,
+              "wasmBytes": 120455168,
+              "owners": [
+                {
+                  "discards": 0,
+                  "nativeCapacity": 100,
+                  "id": 11,
+                  "saves": 7,
+                  "live": 7
+                }
+              ],
+              "canvasPixels": 5812560,
+              "lastDisposal": {
+                "liveAtFree": 0,
+                "discards": 0,
+                "id": 10,
+                "saves": 0
+              }
+            },
+            "closed": {
+              "processes": [
+                {
+                  "pid": 1112597,
+                  "rssBytes": 1051963392
+                }
+              ],
+              "aggregateRssBytes": 1051963392,
+              "canvasCount": 0,
+              "wasmBytes": 120455168,
+              "owners": [],
+              "canvasPixels": 0,
+              "lastDisposal": {
+                "liveAtFree": 7,
+                "discards": 0,
+                "id": 11,
+                "saves": 7
+              }
+            }
+          },
+          {
+            "mode": "undoRedo",
+            "cycle": 1,
+            "before": {
+              "processes": [
+                {
+                  "pid": 1112597,
+                  "rssBytes": 1051971584
+                }
+              ],
+              "aggregateRssBytes": 1051971584,
+              "canvasCount": 0,
+              "wasmBytes": 120455168,
+              "owners": [],
+              "canvasPixels": 0,
+              "lastDisposal": {
+                "liveAtFree": 7,
+                "discards": 0,
+                "id": 11,
+                "saves": 7
+              }
+            },
+            "opened": {
+              "processes": [
+                {
+                  "pid": 1112597,
+                  "rssBytes": 1156431872
+                }
+              ],
+              "aggregateRssBytes": 1156431872,
+              "canvasCount": 24,
+              "wasmBytes": 120455168,
+              "owners": [
+                {
+                  "discards": 0,
+                  "nativeCapacity": 100,
+                  "id": 12,
+                  "saves": 7,
+                  "live": 7
+                }
+              ],
+              "canvasPixels": 5812560,
+              "lastDisposal": {
+                "liveAtFree": 7,
+                "discards": 0,
+                "id": 11,
+                "saves": 7
+              }
+            },
+            "closed": {
+              "processes": [
+                {
+                  "pid": 1112597,
+                  "rssBytes": 1156321280
+                }
+              ],
+              "aggregateRssBytes": 1156321280,
+              "canvasCount": 0,
+              "wasmBytes": 120455168,
+              "owners": [],
+              "canvasPixels": 0,
+              "lastDisposal": {
+                "liveAtFree": 7,
+                "discards": 0,
+                "id": 12,
+                "saves": 7
+              }
+            }
+          },
+          {
+            "mode": "undoRedo",
+            "cycle": 2,
+            "before": {
+              "processes": [
+                {
+                  "pid": 1112597,
+                  "rssBytes": 1156329472
+                }
+              ],
+              "aggregateRssBytes": 1156329472,
+              "canvasCount": 0,
+              "wasmBytes": 120455168,
+              "owners": [],
+              "canvasPixels": 0,
+              "lastDisposal": {
+                "liveAtFree": 7,
+                "discards": 0,
+                "id": 12,
+                "saves": 7
+              }
+            },
+            "opened": {
+              "processes": [
+                {
+                  "pid": 1112597,
+                  "rssBytes": 1235910656
+                }
+              ],
+              "aggregateRssBytes": 1235910656,
+              "canvasCount": 24,
+              "wasmBytes": 120455168,
+              "owners": [
+                {
+                  "discards": 0,
+                  "nativeCapacity": 100,
+                  "id": 13,
+                  "saves": 7,
+                  "live": 7
+                }
+              ],
+              "canvasPixels": 5812560,
+              "lastDisposal": {
+                "liveAtFree": 7,
+                "discards": 0,
+                "id": 12,
+                "saves": 7
+              }
+            },
+            "closed": {
+              "processes": [
+                {
+                  "pid": 1112597,
+                  "rssBytes": 1235755008
+                }
+              ],
+              "aggregateRssBytes": 1235755008,
+              "canvasCount": 0,
+              "wasmBytes": 120455168,
+              "owners": [],
+              "canvasPixels": 0,
+              "lastDisposal": {
+                "liveAtFree": 7,
+                "discards": 0,
+                "id": 13,
+                "saves": 7
+              }
+            }
+          },
+          {
+            "mode": "undoRedo",
+            "cycle": 3,
+            "before": {
+              "processes": [
+                {
+                  "pid": 1112597,
+                  "rssBytes": 1235763200
+                }
+              ],
+              "aggregateRssBytes": 1235763200,
+              "canvasCount": 0,
+              "wasmBytes": 120455168,
+              "owners": [],
+              "canvasPixels": 0,
+              "lastDisposal": {
+                "liveAtFree": 7,
+                "discards": 0,
+                "id": 13,
+                "saves": 7
+              }
+            },
+            "opened": {
+              "processes": [
+                {
+                  "pid": 1112597,
+                  "rssBytes": 1080467456
+                }
+              ],
+              "aggregateRssBytes": 1080467456,
+              "canvasCount": 24,
+              "wasmBytes": 120455168,
+              "owners": [
+                {
+                  "discards": 0,
+                  "nativeCapacity": 100,
+                  "id": 14,
+                  "saves": 7,
+                  "live": 7
+                }
+              ],
+              "canvasPixels": 5812560,
+              "lastDisposal": {
+                "liveAtFree": 7,
+                "discards": 0,
+                "id": 13,
+                "saves": 7
+              }
+            },
+            "closed": {
+              "processes": [
+                {
+                  "pid": 1112597,
+                  "rssBytes": 1079418880
+                }
+              ],
+              "aggregateRssBytes": 1079418880,
+              "canvasCount": 0,
+              "wasmBytes": 120455168,
+              "owners": [],
+              "canvasPixels": 0,
+              "lastDisposal": {
+                "liveAtFree": 7,
+                "discards": 0,
+                "id": 14,
+                "saves": 7
+              }
+            }
+          },
+          {
+            "mode": "undoRedo",
+            "cycle": 4,
+            "before": {
+              "processes": [
+                {
+                  "pid": 1112597,
+                  "rssBytes": 1079427072
+                }
+              ],
+              "aggregateRssBytes": 1079427072,
+              "canvasCount": 0,
+              "wasmBytes": 120455168,
+              "owners": [],
+              "canvasPixels": 0,
+              "lastDisposal": {
+                "liveAtFree": 7,
+                "discards": 0,
+                "id": 14,
+                "saves": 7
+              }
+            },
+            "opened": {
+              "processes": [
+                {
+                  "pid": 1112597,
+                  "rssBytes": 1162334208
+                }
+              ],
+              "aggregateRssBytes": 1162334208,
+              "canvasCount": 24,
+              "wasmBytes": 120455168,
+              "owners": [
+                {
+                  "discards": 0,
+                  "nativeCapacity": 100,
+                  "id": 15,
+                  "saves": 7,
+                  "live": 7
+                }
+              ],
+              "canvasPixels": 5812560,
+              "lastDisposal": {
+                "liveAtFree": 7,
+                "discards": 0,
+                "id": 14,
+                "saves": 7
+              }
+            },
+            "closed": {
+              "processes": [
+                {
+                  "pid": 1112597,
+                  "rssBytes": 1158565888
+                }
+              ],
+              "aggregateRssBytes": 1158565888,
+              "canvasCount": 0,
+              "wasmBytes": 120455168,
+              "owners": [],
+              "canvasPixels": 0,
+              "lastDisposal": {
+                "liveAtFree": 7,
+                "discards": 0,
+                "id": 15,
+                "saves": 7
+              }
+            },
+            "closedAfter10s": {
+              "processes": [
+                {
+                  "pid": 1112597,
+                  "rssBytes": 1157902336
+                }
+              ],
+              "aggregateRssBytes": 1157902336,
+              "canvasCount": 0,
+              "wasmBytes": 120455168,
+              "owners": [],
+              "canvasPixels": 0,
+              "lastDisposal": {
+                "liveAtFree": 7,
+                "discards": 0,
+                "id": 15,
+                "saves": 7
+              }
+            }
+          }
+        ]
+      },
+      {
+        "sample": "multi-60.hwpx",
+        "cyclesPerMode": 5,
+        "stabilizationSeconds": 2,
+        "rows": [
+          {
+            "mode": "openClose",
+            "cycle": 0,
+            "before": {
+              "processes": [
+                {
+                  "pid": 1112597,
+                  "rssBytes": 1156513792
+                }
+              ],
+              "aggregateRssBytes": 1156513792,
+              "canvasCount": 0,
+              "wasmBytes": 120455168,
+              "owners": [],
+              "canvasPixels": 0,
+              "lastDisposal": {
+                "liveAtFree": 7,
+                "discards": 0,
+                "id": 15,
+                "saves": 7
+              }
+            },
+            "opened": {
+              "processes": [
+                {
+                  "pid": 1112597,
+                  "rssBytes": 1235337216
+                }
+              ],
+              "aggregateRssBytes": 1235337216,
+              "canvasCount": 60,
+              "wasmBytes": 120455168,
+              "owners": [
+                {
+                  "discards": 0,
+                  "nativeCapacity": 100,
+                  "id": 16,
+                  "saves": 0,
+                  "live": 0
+                }
+              ],
+              "canvasPixels": 2906280,
+              "lastDisposal": {
+                "liveAtFree": 7,
+                "discards": 0,
+                "id": 15,
+                "saves": 7
+              }
+            },
+            "closed": {
+              "processes": [
+                {
+                  "pid": 1112597,
+                  "rssBytes": 1238269952
+                }
+              ],
+              "aggregateRssBytes": 1238269952,
+              "canvasCount": 0,
+              "wasmBytes": 120455168,
+              "owners": [],
+              "canvasPixels": 0,
+              "lastDisposal": {
+                "liveAtFree": 0,
+                "discards": 0,
+                "id": 16,
+                "saves": 0
+              }
+            }
+          },
+          {
+            "mode": "openClose",
+            "cycle": 1,
+            "before": {
+              "processes": [
+                {
+                  "pid": 1112597,
+                  "rssBytes": 1238274048
+                }
+              ],
+              "aggregateRssBytes": 1238274048,
+              "canvasCount": 0,
+              "wasmBytes": 120455168,
+              "owners": [],
+              "canvasPixels": 0,
+              "lastDisposal": {
+                "liveAtFree": 0,
+                "discards": 0,
+                "id": 16,
+                "saves": 0
+              }
+            },
+            "opened": {
+              "processes": [
+                {
+                  "pid": 1112597,
+                  "rssBytes": 1245892608
+                }
+              ],
+              "aggregateRssBytes": 1245892608,
+              "canvasCount": 60,
+              "wasmBytes": 120455168,
+              "owners": [
+                {
+                  "discards": 0,
+                  "nativeCapacity": 100,
+                  "id": 17,
+                  "saves": 0,
+                  "live": 0
+                }
+              ],
+              "canvasPixels": 3148470,
+              "lastDisposal": {
+                "liveAtFree": 0,
+                "discards": 0,
+                "id": 16,
+                "saves": 0
+              }
+            },
+            "closed": {
+              "processes": [
+                {
+                  "pid": 1112597,
+                  "rssBytes": 1248854016
+                }
+              ],
+              "aggregateRssBytes": 1248854016,
+              "canvasCount": 0,
+              "wasmBytes": 120455168,
+              "owners": [],
+              "canvasPixels": 0,
+              "lastDisposal": {
+                "liveAtFree": 0,
+                "discards": 0,
+                "id": 17,
+                "saves": 0
+              }
+            }
+          },
+          {
+            "mode": "openClose",
+            "cycle": 2,
+            "before": {
+              "processes": [
+                {
+                  "pid": 1112597,
+                  "rssBytes": 1248862208
+                }
+              ],
+              "aggregateRssBytes": 1248862208,
+              "canvasCount": 0,
+              "wasmBytes": 120455168,
+              "owners": [],
+              "canvasPixels": 0,
+              "lastDisposal": {
+                "liveAtFree": 0,
+                "discards": 0,
+                "id": 17,
+                "saves": 0
+              }
+            },
+            "opened": {
+              "processes": [
+                {
+                  "pid": 1112597,
+                  "rssBytes": 1250136064
+                }
+              ],
+              "aggregateRssBytes": 1250136064,
+              "canvasCount": 60,
+              "wasmBytes": 120455168,
+              "owners": [
+                {
+                  "discards": 0,
+                  "nativeCapacity": 100,
+                  "id": 18,
+                  "saves": 0,
+                  "live": 0
+                }
+              ],
+              "canvasPixels": 2906280,
+              "lastDisposal": {
+                "liveAtFree": 0,
+                "discards": 0,
+                "id": 17,
+                "saves": 0
+              }
+            },
+            "closed": {
+              "processes": [
+                {
+                  "pid": 1112597,
+                  "rssBytes": 1253670912
+                }
+              ],
+              "aggregateRssBytes": 1253670912,
+              "canvasCount": 0,
+              "wasmBytes": 120455168,
+              "owners": [],
+              "canvasPixels": 0,
+              "lastDisposal": {
+                "liveAtFree": 0,
+                "discards": 0,
+                "id": 18,
+                "saves": 0
+              }
+            }
+          },
+          {
+            "mode": "openClose",
+            "cycle": 3,
+            "before": {
+              "processes": [
+                {
+                  "pid": 1112597,
+                  "rssBytes": 1253670912
+                }
+              ],
+              "aggregateRssBytes": 1253670912,
+              "canvasCount": 0,
+              "wasmBytes": 120455168,
+              "owners": [],
+              "canvasPixels": 0,
+              "lastDisposal": {
+                "liveAtFree": 0,
+                "discards": 0,
+                "id": 18,
+                "saves": 0
+              }
+            },
+            "opened": {
+              "processes": [
+                {
+                  "pid": 1112597,
+                  "rssBytes": 1279836160
+                }
+              ],
+              "aggregateRssBytes": 1279836160,
+              "canvasCount": 60,
+              "wasmBytes": 120455168,
+              "owners": [
+                {
+                  "discards": 0,
+                  "nativeCapacity": 100,
+                  "id": 19,
+                  "saves": 0,
+                  "live": 0
+                }
+              ],
+              "canvasPixels": 3148470,
+              "lastDisposal": {
+                "liveAtFree": 0,
+                "discards": 0,
+                "id": 18,
+                "saves": 0
+              }
+            },
+            "closed": {
+              "processes": [
+                {
+                  "pid": 1112597,
+                  "rssBytes": 898871296
+                }
+              ],
+              "aggregateRssBytes": 898871296,
+              "canvasCount": 0,
+              "wasmBytes": 120455168,
+              "owners": [],
+              "canvasPixels": 0,
+              "lastDisposal": {
+                "liveAtFree": 0,
+                "discards": 0,
+                "id": 19,
+                "saves": 0
+              }
+            }
+          },
+          {
+            "mode": "openClose",
+            "cycle": 4,
+            "before": {
+              "processes": [
+                {
+                  "pid": 1112597,
+                  "rssBytes": 898875392
+                }
+              ],
+              "aggregateRssBytes": 898875392,
+              "canvasCount": 0,
+              "wasmBytes": 120455168,
+              "owners": [],
+              "canvasPixels": 0,
+              "lastDisposal": {
+                "liveAtFree": 0,
+                "discards": 0,
+                "id": 19,
+                "saves": 0
+              }
+            },
+            "opened": {
+              "processes": [
+                {
+                  "pid": 1112597,
+                  "rssBytes": 929542144
+                }
+              ],
+              "aggregateRssBytes": 929542144,
+              "canvasCount": 60,
+              "wasmBytes": 120455168,
+              "owners": [
+                {
+                  "discards": 0,
+                  "nativeCapacity": 100,
+                  "id": 20,
+                  "saves": 0,
+                  "live": 0
+                }
+              ],
+              "canvasPixels": 3148470,
+              "lastDisposal": {
+                "liveAtFree": 0,
+                "discards": 0,
+                "id": 19,
+                "saves": 0
+              }
+            },
+            "closed": {
+              "processes": [
+                {
+                  "pid": 1112597,
+                  "rssBytes": 930545664
+                }
+              ],
+              "aggregateRssBytes": 930545664,
+              "canvasCount": 0,
+              "wasmBytes": 120455168,
+              "owners": [],
+              "canvasPixels": 0,
+              "lastDisposal": {
+                "liveAtFree": 0,
+                "discards": 0,
+                "id": 20,
+                "saves": 0
+              }
+            },
+            "closedAfter10s": {
+              "processes": [
+                {
+                  "pid": 1112597,
+                  "rssBytes": 927584256
+                }
+              ],
+              "aggregateRssBytes": 927584256,
+              "canvasCount": 0,
+              "wasmBytes": 120455168,
+              "owners": [],
+              "canvasPixels": 0,
+              "lastDisposal": {
+                "liveAtFree": 0,
+                "discards": 0,
+                "id": 20,
+                "saves": 0
+              }
+            }
+          },
+          {
+            "mode": "editCapacityRefusalControl",
+            "cycle": 0,
+            "before": {
+              "processes": [
+                {
+                  "pid": 1112597,
+                  "rssBytes": 927641600
+                }
+              ],
+              "aggregateRssBytes": 927641600,
+              "canvasCount": 0,
+              "wasmBytes": 120455168,
+              "owners": [],
+              "canvasPixels": 0,
+              "lastDisposal": {
+                "liveAtFree": 0,
+                "discards": 0,
+                "id": 20,
+                "saves": 0
+              }
+            },
+            "opened": {
+              "processes": [
+                {
+                  "pid": 1112597,
+                  "rssBytes": 1152708608
+                }
+              ],
+              "aggregateRssBytes": 1152708608,
+              "canvasCount": 60,
+              "wasmBytes": 120455168,
+              "owners": [
+                {
+                  "discards": 0,
+                  "nativeCapacity": 100,
+                  "id": 21,
+                  "saves": 0,
+                  "live": 0
+                }
+              ],
+              "canvasPixels": 13804830,
+              "lastDisposal": {
+                "liveAtFree": 0,
+                "discards": 0,
+                "id": 20,
+                "saves": 0
+              }
+            },
+            "closed": {
+              "processes": [
+                {
+                  "pid": 1112597,
+                  "rssBytes": 1100247040
+                }
+              ],
+              "aggregateRssBytes": 1100247040,
+              "canvasCount": 0,
+              "wasmBytes": 120455168,
+              "owners": [],
+              "canvasPixels": 0,
+              "lastDisposal": {
+                "liveAtFree": 0,
+                "discards": 0,
+                "id": 21,
+                "saves": 0
+              }
+            }
+          },
+          {
+            "mode": "editCapacityRefusalControl",
+            "cycle": 1,
+            "before": {
+              "processes": [
+                {
+                  "pid": 1112597,
+                  "rssBytes": 1100255232
+                }
+              ],
+              "aggregateRssBytes": 1100255232,
+              "canvasCount": 0,
+              "wasmBytes": 120455168,
+              "owners": [],
+              "canvasPixels": 0,
+              "lastDisposal": {
+                "liveAtFree": 0,
+                "discards": 0,
+                "id": 21,
+                "saves": 0
+              }
+            },
+            "opened": {
+              "processes": [
+                {
+                  "pid": 1112597,
+                  "rssBytes": 1343631360
+                }
+              ],
+              "aggregateRssBytes": 1343631360,
+              "canvasCount": 60,
+              "wasmBytes": 120455168,
+              "owners": [
+                {
+                  "discards": 0,
+                  "nativeCapacity": 100,
+                  "id": 22,
+                  "saves": 0,
+                  "live": 0
+                }
+              ],
+              "canvasPixels": 13804830,
+              "lastDisposal": {
+                "liveAtFree": 0,
+                "discards": 0,
+                "id": 21,
+                "saves": 0
+              }
+            },
+            "closed": {
+              "processes": [
+                {
+                  "pid": 1112597,
+                  "rssBytes": 1382060032
+                }
+              ],
+              "aggregateRssBytes": 1382060032,
+              "canvasCount": 0,
+              "wasmBytes": 120455168,
+              "owners": [],
+              "canvasPixels": 0,
+              "lastDisposal": {
+                "liveAtFree": 0,
+                "discards": 0,
+                "id": 22,
+                "saves": 0
+              }
+            }
+          },
+          {
+            "mode": "editCapacityRefusalControl",
+            "cycle": 2,
+            "before": {
+              "processes": [
+                {
+                  "pid": 1112597,
+                  "rssBytes": 1382072320
+                }
+              ],
+              "aggregateRssBytes": 1382072320,
+              "canvasCount": 0,
+              "wasmBytes": 120455168,
+              "owners": [],
+              "canvasPixels": 0,
+              "lastDisposal": {
+                "liveAtFree": 0,
+                "discards": 0,
+                "id": 22,
+                "saves": 0
+              }
+            },
+            "opened": {
+              "processes": [
+                {
+                  "pid": 1112597,
+                  "rssBytes": 1556729856
+                }
+              ],
+              "aggregateRssBytes": 1556729856,
+              "canvasCount": 60,
+              "wasmBytes": 120455168,
+              "owners": [
+                {
+                  "discards": 0,
+                  "nativeCapacity": 100,
+                  "id": 23,
+                  "saves": 0,
+                  "live": 0
+                }
+              ],
+              "canvasPixels": 14531400,
+              "lastDisposal": {
+                "liveAtFree": 0,
+                "discards": 0,
+                "id": 22,
+                "saves": 0
+              }
+            },
+            "closed": {
+              "processes": [
+                {
+                  "pid": 1112597,
+                  "rssBytes": 1174495232
+                }
+              ],
+              "aggregateRssBytes": 1174495232,
+              "canvasCount": 0,
+              "wasmBytes": 120455168,
+              "owners": [],
+              "canvasPixels": 0,
+              "lastDisposal": {
+                "liveAtFree": 0,
+                "discards": 0,
+                "id": 23,
+                "saves": 0
+              }
+            }
+          },
+          {
+            "mode": "editCapacityRefusalControl",
+            "cycle": 3,
+            "before": {
+              "processes": [
+                {
+                  "pid": 1112597,
+                  "rssBytes": 1174503424
+                }
+              ],
+              "aggregateRssBytes": 1174503424,
+              "canvasCount": 0,
+              "wasmBytes": 120455168,
+              "owners": [],
+              "canvasPixels": 0,
+              "lastDisposal": {
+                "liveAtFree": 0,
+                "discards": 0,
+                "id": 23,
+                "saves": 0
+              }
+            },
+            "opened": {
+              "processes": [
+                {
+                  "pid": 1112597,
+                  "rssBytes": 1286737920
+                }
+              ],
+              "aggregateRssBytes": 1286737920,
+              "canvasCount": 60,
+              "wasmBytes": 120455168,
+              "owners": [
+                {
+                  "discards": 0,
+                  "nativeCapacity": 100,
+                  "id": 24,
+                  "saves": 0,
+                  "live": 0
+                }
+              ],
+              "canvasPixels": 14531400,
+              "lastDisposal": {
+                "liveAtFree": 0,
+                "discards": 0,
+                "id": 23,
+                "saves": 0
+              }
+            },
+            "closed": {
+              "processes": [
+                {
+                  "pid": 1112597,
+                  "rssBytes": 1294557184
+                }
+              ],
+              "aggregateRssBytes": 1294557184,
+              "canvasCount": 0,
+              "wasmBytes": 120455168,
+              "owners": [],
+              "canvasPixels": 0,
+              "lastDisposal": {
+                "liveAtFree": 0,
+                "discards": 0,
+                "id": 24,
+                "saves": 0
+              }
+            }
+          },
+          {
+            "mode": "editCapacityRefusalControl",
+            "cycle": 4,
+            "before": {
+              "processes": [
+                {
+                  "pid": 1112597,
+                  "rssBytes": 1294565376
+                }
+              ],
+              "aggregateRssBytes": 1294565376,
+              "canvasCount": 0,
+              "wasmBytes": 120455168,
+              "owners": [],
+              "canvasPixels": 0,
+              "lastDisposal": {
+                "liveAtFree": 0,
+                "discards": 0,
+                "id": 24,
+                "saves": 0
+              }
+            },
+            "opened": {
+              "processes": [
+                {
+                  "pid": 1112597,
+                  "rssBytes": 1437396992
+                }
+              ],
+              "aggregateRssBytes": 1437396992,
+              "canvasCount": 60,
+              "wasmBytes": 120455168,
+              "owners": [
+                {
+                  "discards": 0,
+                  "nativeCapacity": 100,
+                  "id": 25,
+                  "saves": 0,
+                  "live": 0
+                }
+              ],
+              "canvasPixels": 13804830,
+              "lastDisposal": {
+                "liveAtFree": 0,
+                "discards": 0,
+                "id": 24,
+                "saves": 0
+              }
+            },
+            "closed": {
+              "processes": [
+                {
+                  "pid": 1112597,
+                  "rssBytes": 1463087104
+                }
+              ],
+              "aggregateRssBytes": 1463087104,
+              "canvasCount": 0,
+              "wasmBytes": 120455168,
+              "owners": [],
+              "canvasPixels": 0,
+              "lastDisposal": {
+                "liveAtFree": 0,
+                "discards": 0,
+                "id": 25,
+                "saves": 0
+              }
+            },
+            "closedAfter10s": {
+              "processes": [
+                {
+                  "pid": 1112597,
+                  "rssBytes": 1462644736
+                }
+              ],
+              "aggregateRssBytes": 1462644736,
+              "canvasCount": 0,
+              "wasmBytes": 120455168,
+              "owners": [],
+              "canvasPixels": 0,
+              "lastDisposal": {
+                "liveAtFree": 0,
+                "discards": 0,
+                "id": 25,
+                "saves": 0
+              }
+            }
+          },
+          {
+            "mode": "undoRedo",
+            "cycle": 0,
+            "before": {
+              "processes": [
+                {
+                  "pid": 1112597,
+                  "rssBytes": 1461899264
+                }
+              ],
+              "aggregateRssBytes": 1461899264,
+              "canvasCount": 0,
+              "wasmBytes": 120455168,
+              "owners": [],
+              "canvasPixels": 0,
+              "lastDisposal": {
+                "liveAtFree": 0,
+                "discards": 0,
+                "id": 25,
+                "saves": 0
+              }
+            },
+            "opened": {
+              "processes": [
+                {
+                  "pid": 1112597,
+                  "rssBytes": 1235808256
+                }
+              ],
+              "aggregateRssBytes": 1235808256,
+              "canvasCount": 60,
+              "wasmBytes": 120455168,
+              "owners": [
+                {
+                  "discards": 0,
+                  "nativeCapacity": 100,
+                  "id": 26,
+                  "saves": 7,
+                  "live": 7
+                }
+              ],
+              "canvasPixels": 14531400,
+              "lastDisposal": {
+                "liveAtFree": 0,
+                "discards": 0,
+                "id": 25,
+                "saves": 0
+              }
+            },
+            "closed": {
+              "processes": [
+                {
+                  "pid": 1112597,
+                  "rssBytes": 1253535744
+                }
+              ],
+              "aggregateRssBytes": 1253535744,
+              "canvasCount": 0,
+              "wasmBytes": 120455168,
+              "owners": [],
+              "canvasPixels": 0,
+              "lastDisposal": {
+                "liveAtFree": 7,
+                "discards": 0,
+                "id": 26,
+                "saves": 7
+              }
+            }
+          },
+          {
+            "mode": "undoRedo",
+            "cycle": 1,
+            "before": {
+              "processes": [
+                {
+                  "pid": 1112597,
+                  "rssBytes": 1253347328
+                }
+              ],
+              "aggregateRssBytes": 1253347328,
+              "canvasCount": 0,
+              "wasmBytes": 120455168,
+              "owners": [],
+              "canvasPixels": 0,
+              "lastDisposal": {
+                "liveAtFree": 7,
+                "discards": 0,
+                "id": 26,
+                "saves": 7
+              }
+            },
+            "opened": {
+              "processes": [
+                {
+                  "pid": 1112597,
+                  "rssBytes": 1473716224
+                }
+              ],
+              "aggregateRssBytes": 1473716224,
+              "canvasCount": 60,
+              "wasmBytes": 120455168,
+              "owners": [
+                {
+                  "discards": 0,
+                  "nativeCapacity": 100,
+                  "id": 27,
+                  "saves": 7,
+                  "live": 7
+                }
+              ],
+              "canvasPixels": 14531400,
+              "lastDisposal": {
+                "liveAtFree": 7,
+                "discards": 0,
+                "id": 26,
+                "saves": 7
+              }
+            },
+            "closed": {
+              "processes": [
+                {
+                  "pid": 1112597,
+                  "rssBytes": 1494216704
+                }
+              ],
+              "aggregateRssBytes": 1494216704,
+              "canvasCount": 0,
+              "wasmBytes": 120455168,
+              "owners": [],
+              "canvasPixels": 0,
+              "lastDisposal": {
+                "liveAtFree": 7,
+                "discards": 0,
+                "id": 27,
+                "saves": 7
+              }
+            }
+          },
+          {
+            "mode": "undoRedo",
+            "cycle": 2,
+            "before": {
+              "processes": [
+                {
+                  "pid": 1112597,
+                  "rssBytes": 1494224896
+                }
+              ],
+              "aggregateRssBytes": 1494224896,
+              "canvasCount": 0,
+              "wasmBytes": 120455168,
+              "owners": [],
+              "canvasPixels": 0,
+              "lastDisposal": {
+                "liveAtFree": 7,
+                "discards": 0,
+                "id": 27,
+                "saves": 7
+              }
+            },
+            "opened": {
+              "processes": [
+                {
+                  "pid": 1112597,
+                  "rssBytes": 1724674048
+                }
+              ],
+              "aggregateRssBytes": 1724674048,
+              "canvasCount": 60,
+              "wasmBytes": 120455168,
+              "owners": [
+                {
+                  "discards": 0,
+                  "nativeCapacity": 100,
+                  "id": 28,
+                  "saves": 7,
+                  "live": 7
+                }
+              ],
+              "canvasPixels": 14531400,
+              "lastDisposal": {
+                "liveAtFree": 7,
+                "discards": 0,
+                "id": 27,
+                "saves": 7
+              }
+            },
+            "closed": {
+              "processes": [
+                {
+                  "pid": 1112597,
+                  "rssBytes": 1064161280
+                }
+              ],
+              "aggregateRssBytes": 1064161280,
+              "canvasCount": 0,
+              "wasmBytes": 120455168,
+              "owners": [],
+              "canvasPixels": 0,
+              "lastDisposal": {
+                "liveAtFree": 7,
+                "discards": 0,
+                "id": 28,
+                "saves": 7
+              }
+            }
+          },
+          {
+            "mode": "undoRedo",
+            "cycle": 3,
+            "before": {
+              "processes": [
+                {
+                  "pid": 1112597,
+                  "rssBytes": 1064108032
+                }
+              ],
+              "aggregateRssBytes": 1064108032,
+              "canvasCount": 0,
+              "wasmBytes": 120455168,
+              "owners": [],
+              "canvasPixels": 0,
+              "lastDisposal": {
+                "liveAtFree": 7,
+                "discards": 0,
+                "id": 28,
+                "saves": 7
+              }
+            },
+            "opened": {
+              "processes": [
+                {
+                  "pid": 1112597,
+                  "rssBytes": 1347694592
+                }
+              ],
+              "aggregateRssBytes": 1347694592,
+              "canvasCount": 60,
+              "wasmBytes": 120455168,
+              "owners": [
+                {
+                  "discards": 0,
+                  "nativeCapacity": 100,
+                  "id": 29,
+                  "saves": 7,
+                  "live": 7
+                }
+              ],
+              "canvasPixels": 14531400,
+              "lastDisposal": {
+                "liveAtFree": 7,
+                "discards": 0,
+                "id": 28,
+                "saves": 7
+              }
+            },
+            "closed": {
+              "processes": [
+                {
+                  "pid": 1112597,
+                  "rssBytes": 1371754496
+                }
+              ],
+              "aggregateRssBytes": 1371754496,
+              "canvasCount": 0,
+              "wasmBytes": 120455168,
+              "owners": [],
+              "canvasPixels": 0,
+              "lastDisposal": {
+                "liveAtFree": 7,
+                "discards": 0,
+                "id": 29,
+                "saves": 7
+              }
+            }
+          },
+          {
+            "mode": "undoRedo",
+            "cycle": 4,
+            "before": {
+              "processes": [
+                {
+                  "pid": 1112597,
+                  "rssBytes": 1371676672
+                }
+              ],
+              "aggregateRssBytes": 1371676672,
+              "canvasCount": 0,
+              "wasmBytes": 120455168,
+              "owners": [],
+              "canvasPixels": 0,
+              "lastDisposal": {
+                "liveAtFree": 7,
+                "discards": 0,
+                "id": 29,
+                "saves": 7
+              }
+            },
+            "opened": {
+              "processes": [
+                {
+                  "pid": 1112597,
+                  "rssBytes": 1656299520
+                }
+              ],
+              "aggregateRssBytes": 1656299520,
+              "canvasCount": 60,
+              "wasmBytes": 120455168,
+              "owners": [
+                {
+                  "discards": 0,
+                  "nativeCapacity": 100,
+                  "id": 30,
+                  "saves": 7,
+                  "live": 7
+                }
+              ],
+              "canvasPixels": 14531400,
+              "lastDisposal": {
+                "liveAtFree": 7,
+                "discards": 0,
+                "id": 29,
+                "saves": 7
+              }
+            },
+            "closed": {
+              "processes": [
+                {
+                  "pid": 1112597,
+                  "rssBytes": 871514112
+                }
+              ],
+              "aggregateRssBytes": 871514112,
+              "canvasCount": 0,
+              "wasmBytes": 120455168,
+              "owners": [],
+              "canvasPixels": 0,
+              "lastDisposal": {
+                "liveAtFree": 7,
+                "discards": 0,
+                "id": 30,
+                "saves": 7
+              }
+            },
+            "closedAfter10s": {
+              "processes": [
+                {
+                  "pid": 1112597,
+                  "rssBytes": 874807296
+                }
+              ],
+              "aggregateRssBytes": 874807296,
+              "canvasCount": 0,
+              "wasmBytes": 120455168,
+              "owners": [],
+              "canvasPixels": 0,
+              "lastDisposal": {
+                "liveAtFree": 7,
+                "discards": 0,
+                "id": 30,
+                "saves": 7
+              }
+            }
+          }
+        ]
+      }
+    ]
+  },
+  "scope": "PASS subchecks concern document handles, coordinator/API-accounted snapshots and mounted page canvases only. They do not establish global cache release or RSS stabilization. Overall memory acceptance: INCONCLUSIVE."
+}

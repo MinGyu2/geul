@@ -1,0 +1,99 @@
+{
+  "status": "INVALID",
+  "cause": "Document-to-document MEASURE reinstrumentation retained old listeners. Later sample counts were 60/90 rather than 30. Run interrupted, not acceptance evidence. Listener teardown and cardinality assertion added.",
+  "observed": [
+    {
+      "sample": "basic-ko.hwp",
+      "groupStart": {
+        "n": 30,
+        "p50": 29,
+        "p95": 75,
+        "max": 80,
+        "timeouts": 0
+      },
+      "extend": {
+        "n": 30,
+        "p50": 27,
+        "p95": 42,
+        "max": 54,
+        "timeouts": 0
+      },
+      "undo": {
+        "n": 25,
+        "p50": 82,
+        "p95": 111,
+        "max": 126,
+        "timeouts": 0
+      },
+      "redo": {
+        "n": 20,
+        "p50": 125,
+        "p95": 133,
+        "max": 134,
+        "timeouts": 0
+      }
+    },
+    {
+      "sample": "basic-ko.hwpx",
+      "groupStart": {
+        "n": 60,
+        "p50": 29,
+        "p95": 77,
+        "max": 80,
+        "timeouts": 0
+      },
+      "extend": {
+        "n": 60,
+        "p50": 27,
+        "p95": 43,
+        "max": 52,
+        "timeouts": 0
+      },
+      "undo": {
+        "n": 50,
+        "p50": 81,
+        "p95": 111,
+        "max": 125,
+        "timeouts": 0
+      },
+      "redo": {
+        "n": 40,
+        "p50": 85,
+        "p95": 129,
+        "max": 133,
+        "timeouts": 0
+      }
+    },
+    {
+      "sample": "large-24.hwp",
+      "groupStart": {
+        "n": 90,
+        "p50": 50,
+        "p95": 87,
+        "max": 189,
+        "timeouts": 0
+      },
+      "extend": {
+        "n": 90,
+        "p50": 43,
+        "p95": 62,
+        "max": 210,
+        "timeouts": 0
+      },
+      "undo": {
+        "n": 75,
+        "p50": 119,
+        "p95": 145,
+        "max": 166,
+        "timeouts": 0
+      },
+      "redo": {
+        "n": 60,
+        "p50": 121,
+        "p95": 186,
+        "max": 196,
+        "timeouts": 0
+      }
+    }
+  ]
+}

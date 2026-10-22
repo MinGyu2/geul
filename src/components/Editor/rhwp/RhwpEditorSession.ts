@@ -39,6 +39,7 @@
 //   기록이 없어, 문서·스냅숏 내용은 엔진이 갖고 이 세션의 RhwpHistory(rhwpHistory.ts)가 스냅숏 ID·시간선·커서 체크포인트·타자 그룹만
 //   조정한다(문서 모델은 하나). 레지스트리가 rhwp 실행 취소를 지원으로 두기 전에는 execute가 거절한다. 글자 서식은 보존 검사가 저장을
 //   막으므로 받지 않는다.
+import { trace } from "../imeTrace";
 import type { DocumentBackend, ReopenEvidence } from "../../../adapters/backend";
 import type { DocumentError, Result, SaveCheck, SaveOutcome, SessionInfo } from "../../../adapters/contract";
 import { blockedBy, type SaveCheckRecord, type SaveState } from "../saveState";
@@ -167,6 +168,7 @@ const isPageExtent = (value: unknown): value is number =>
  * - bitmap 픽셀 예산은 여기서 보지 않는다(페이지 정보가 올바른지와 별개, 그리는 배율에 따라 다름).
  */
 function readPages(doc: RhwpDocument): PageSize[] {
+  const started = import.meta.env.VITE_GEUL_TEST_HOOKS === "1" ? performance.now() : 0;
   const count = doc.pageCount();
   if (!Number.isSafeInteger(count) || count < 1) throw new Error("page count");
   const pages: PageSize[] = [];
@@ -186,6 +188,7 @@ function readPages(doc: RhwpDocument): PageSize[] {
     if (pageIndex !== local || !isPageExtent(width) || !isPageExtent(height)) throw new Error("page info");
     pages.push({ width, height });
   }
+  trace("rhwp:readPages", () => ({ ms: performance.now() - started }));
   return pages;
 }
 
@@ -320,6 +323,20 @@ export class RhwpEditorSession implements DocumentCommandTarget {
     if (this.awaiting === awaiting) return;
     this.awaiting = awaiting;
     this.emit();
+  }
+
+  /** ImeInput의 같은 거래 취소 증거를 받은 경우만 허용한다(명령 경계에서는 호출하지 않음). */
+  confirmCompositionCancellation(): boolean {
+    if (!this.awaiting || this.composition || this.provisional || !this.editable || this.uncertain) return false;
+    this.setAwaitingCommit(false);
+    return true;
+  }
+
+  imeDiagnostics(): Record<string, number | boolean> {
+    return { session: this.sessionId, generation: this.generation, revision: this.localRevision,
+      provisional: this.provisional !== null, historyTransaction: this.history?.transactionOpen ?? false,
+      historyUndo: this.history?.steps.undo ?? 0, historyRedo: this.history?.steps.redo ?? 0,
+      pendingCommit: this.pending > 0 || this.committingEpoch === this.epoch };
   }
 
   /** 지금 조합 중인 글자(문서에 보이는 것). */
@@ -677,12 +694,15 @@ export class RhwpEditorSession implements DocumentCommandTarget {
   private mutate(apply: Mutation, count = true, kind: HistoryKind = "other", start: string | null = null): boolean {
     if (!this.editable || !this.doc) return false;
     this.settleProvisional(); // 기다리던 조합은 이 변경보다 먼저 끝난 변경이다
+    if (!this.editable) return false;
     const doc = this.doc;
     // 실행 취소 기록: 바꾸는 첫 엔진 호출 직전에 트랜잭션을 연다(지금 상태 스냅숏 = 그룹의 before). 이미 열려 있으면 그대로(조합).
     if (!this.beginHistory(kind, start)) return false;
     let next: ReturnType<Mutation>;
+    const started = import.meta.env.VITE_GEUL_TEST_HOOKS === "1" ? performance.now() : 0;
     try {
       next = apply();
+      trace("rhwp:text-mutation", () => ({ ms: performance.now() - started }));
     } catch {
       // 진행 중인 조합도 이 실패로 끝난다. 그 조합은 성공한 변경으로 세지 않는다(markFailed가 세지 않게 먼저 비움).
       this.composition = null;
@@ -701,6 +721,7 @@ export class RhwpEditorSession implements DocumentCommandTarget {
     } else this.caret = this.anchor = next;
     this.preferredX = -1;
     if (count) this.recordMutation();
+    if (!this.editable) return true; // 기록 정리 trap 뒤 엔진을 더 부르지 않음
     try {
       this.pages = readPages(doc);
     } catch {
@@ -715,8 +736,15 @@ export class RhwpEditorSession implements DocumentCommandTarget {
     this.modified = true;
     this.pending += 1;
     // 백엔드 확정(위)과 기록 그룹은 따로다: 열린 트랜잭션을 단계로 닫거나 이어 쓰는 그룹에 넣는다(확정 N개 → 단계 1개 가능).
-    this.history?.commit(RhwpEditorSession.positionKey(this.caret));
+    try {
+      this.history?.commit(RhwpEditorSession.positionKey(this.caret));
+    } catch (error) {
+      this.historyFailure(error);
+      return;
+    }
+    const started = import.meta.env.VITE_GEUL_TEST_HOOKS === "1" ? performance.now() : 0;
     void this.flushCommits();
+    trace("rhwp:revision-schedule", () => ({ ms: performance.now() - started }));
   }
 
   // ---- 실행 취소 기록(T010 Phase 2) ----
@@ -751,24 +779,50 @@ export class RhwpEditorSession implements DocumentCommandTarget {
       return true;
     } catch (error) {
       if (error instanceof HistoryFailure) {
-        this.composition = null;
-        this.uncertain = true;
-        this.lastRoundTrip = null;
-        this.modelVersion += 1;
-        this.failEditing();
+        this.historyFailure(error);
         return false;
       }
-      this.dropHistory(error instanceof HistoryRefused ? "limit" : "unavailable");
-      return true;
+      this.dropHistory(error instanceof HistoryRefused && error.reason === "limit" ? "limit" : "unavailable");
+      return this.editable;
     }
   }
 
-  /** 기록을 비운다. 엔진을 믿을 수 있으면(불확실하지 않음) 참조 스냅숏을 엔진에서도 버린다. */
+  /** Result 없는 스냅숏 정리 trap도 모델 무결성을 보장하지 못한다. 재진입 전에 기록부터 분리한다. */
+  private historyFailure(error: unknown) {
+    const history = this.history;
+    this.history = null;
+    this.historyOff = "unavailable";
+    history?.release(false);
+    if (!(error instanceof HistoryFailure) || error.uncertain) {
+      this.composition = null;
+      this.provisional = null;
+      this.awaiting = false;
+      this.imeSerial += 1;
+      this.uncertain = true;
+      this.lastRoundTrip = null;
+      this.modelVersion += 1;
+      this.failEditing();
+    }
+  }
+
+  /** 기록을 먼저 분리해 정리 실패가 재진입·같은 ID 재폐기를 일으키지 않게 한다. */
   private dropHistory(reason: "limit" | "unavailable") {
-    if (!this.history) return;
-    this.history.release(!this.uncertain);
+    const history = this.history;
     this.history = null;
     this.historyOff = reason;
+    try {
+      history?.release(!this.uncertain);
+    } catch (error) {
+      this.historyFailure(error);
+    }
+  }
+
+  private cancelHistory() {
+    try {
+      this.history?.cancel();
+    } catch (error) {
+      this.historyFailure(error);
+    }
   }
 
   /** 초점 잃음·표면 사라짐(ImeInput): 타자 그룹을 끊는다. 문서·revision·조합·대기 확정은 바꾸지 않는다(설계 §6). */
@@ -902,6 +956,7 @@ export class RhwpEditorSession implements DocumentCommandTarget {
   beginComposition(): void {
     if (!this.editable || this.composition) return;
     this.settleProvisional();
+    if (!this.editable) return;
     if (!this.hasSelection) {
       this.composition = { anchor: this.caret, text: "", deletedSelection: false };
       return;
@@ -964,7 +1019,7 @@ export class RhwpEditorSession implements DocumentCommandTarget {
     if (!composition) return;
     this.composition = null;
     if (composition.text !== "" || composition.deletedSelection) this.recordMutation();
-    else this.history?.cancel(); // 문서를 바꾸지 않은 조합: 단계 없음, 찍은 스냅숏만 버림
+    else this.cancelHistory(); // 문서를 바꾸지 않은 조합: 단계 없음, 찍은 스냅숏만 버림
   }
 
   /** 기다리던 조합을 지금 모델 그대로(고치지 않고) 한 번 센다. 다른 변경·새 조합·편집 중지 전에 부른다. */
@@ -973,7 +1028,7 @@ export class RhwpEditorSession implements DocumentCommandTarget {
     if (!provisional) return;
     this.provisional = null;
     if (provisional.text !== "" || provisional.deletedSelection) this.recordMutation();
-    else this.history?.cancel();
+    else this.cancelHistory();
   }
 
   /** 입력기의 끝을 기다리는 앱 확정 조합이 있음. */
@@ -1129,7 +1184,9 @@ export class RhwpEditorSession implements DocumentCommandTarget {
     try {
       while (this.pending > 0 && this.owns(epoch) && this.status.kind === "ready") {
         const count = this.pending;
+        const started = import.meta.env.VITE_GEUL_TEST_HOOKS === "1" ? performance.now() : 0;
         const result = await this.backend.commit(this.sessionId, generation, this.committed, count);
+        trace("rhwp:commit-ack", () => ({ session: this.sessionId, generation, ms: performance.now() - started }));
         if (!this.owns(epoch)) return;
         if (!result.ok) {
           this.handleBackendRejection(result.error);

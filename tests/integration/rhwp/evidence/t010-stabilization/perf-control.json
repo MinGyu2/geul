@@ -1,0 +1,1086 @@
+{
+  "results": [],
+  "gates": [],
+  "measurements": {
+    "fixtureSha256": {
+      "basic-ko.hwp": "57c901cc394abf6f58f4838315d1ea2c5ecf8a03d9934d3fc098fd8be6e6e12f",
+      "basic-ko.hwpx": "26d434b7b427149110751c6ef5b19e9ecb4818f3ba7eadfe201b5afd3de442a8"
+    },
+    "keyDelivery": "native X11 xdotool",
+    "perf": [
+      {
+        "sample": "basic-ko.hwp",
+        "control": "injected capacity refusal",
+        "fileBytes": 13312,
+        "pages": 1,
+        "zoom": 50,
+        "warmupGroups": 3,
+        "groupStart": {
+          "n": 30,
+          "p50": 26,
+          "p95": 73,
+          "max": 80,
+          "timeouts": 0
+        },
+        "extend": {
+          "n": 30,
+          "p50": 29,
+          "p95": 45,
+          "max": 48,
+          "timeouts": 0
+        },
+        "stages": {
+          "extend": {
+            "saveSnapshot": {
+              "n": 30,
+              "p50": 0,
+              "p95": 0,
+              "max": 0,
+              "timeouts": 0
+            },
+            "restoreSnapshot": {
+              "n": 30,
+              "p50": 0,
+              "p95": 0,
+              "max": 0,
+              "timeouts": 0
+            },
+            "getPageInfo": {
+              "n": 30,
+              "p50": 0,
+              "p95": 1,
+              "max": 1,
+              "timeouts": 0
+            },
+            "mutation": {
+              "n": 30,
+              "p50": 1,
+              "p95": 1,
+              "max": 2,
+              "timeouts": 0
+            },
+            "layoutTree": {
+              "n": 30,
+              "p50": 2,
+              "p95": 4,
+              "max": 7,
+              "timeouts": 0
+            },
+            "render": {
+              "n": 30,
+              "p50": 2,
+              "p95": 6,
+              "max": 6,
+              "timeouts": 0
+            },
+            "discardSnapshot": {
+              "n": 30,
+              "p50": 0,
+              "p95": 0,
+              "max": 0,
+              "timeouts": 0
+            },
+            "inputToFrame": {
+              "n": 30,
+              "p50": 28,
+              "p95": 45,
+              "max": 46,
+              "timeouts": 0
+            },
+            "keyToFrame": {
+              "n": 30,
+              "p50": 29,
+              "p95": 45,
+              "max": 48,
+              "timeouts": 0
+            },
+            "delivery": {
+              "n": 30,
+              "p50": 0,
+              "p95": 0,
+              "max": 1,
+              "timeouts": 0
+            }
+          },
+          "groupStart": {
+            "saveSnapshot": {
+              "n": 30,
+              "p50": 0,
+              "p95": 0,
+              "max": 0,
+              "timeouts": 0
+            },
+            "restoreSnapshot": {
+              "n": 30,
+              "p50": 0,
+              "p95": 0,
+              "max": 0,
+              "timeouts": 0
+            },
+            "getPageInfo": {
+              "n": 30,
+              "p50": 0,
+              "p95": 0,
+              "max": 0,
+              "timeouts": 0
+            },
+            "mutation": {
+              "n": 30,
+              "p50": 1,
+              "p95": 2,
+              "max": 2,
+              "timeouts": 0
+            },
+            "layoutTree": {
+              "n": 30,
+              "p50": 2,
+              "p95": 3,
+              "max": 4,
+              "timeouts": 0
+            },
+            "render": {
+              "n": 30,
+              "p50": 2,
+              "p95": 5,
+              "max": 8,
+              "timeouts": 0
+            },
+            "discardSnapshot": {
+              "n": 30,
+              "p50": 0,
+              "p95": 0,
+              "max": 0,
+              "timeouts": 0
+            },
+            "inputToFrame": {
+              "n": 30,
+              "p50": 26,
+              "p95": 73,
+              "max": 80,
+              "timeouts": 0
+            },
+            "keyToFrame": {
+              "n": 30,
+              "p50": 26,
+              "p95": 73,
+              "max": 80,
+              "timeouts": 0
+            },
+            "delivery": {
+              "n": 30,
+              "p50": 0,
+              "p95": 1,
+              "max": 1,
+              "timeouts": 0
+            }
+          }
+        },
+        "frameGapDuringHistoryAndFollowingInputMs": {
+          "n": 12,
+          "p50": 16,
+          "p95": 17,
+          "max": 17,
+          "timeouts": 0
+        },
+        "frameGapDuringUndoRedoMs": {
+          "n": 0
+        },
+        "memory": {
+          "beforeOpen": {
+            "processes": [
+              {
+                "pid": 1109813,
+                "rssBytes": 272871424
+              }
+            ],
+            "aggregateRssBytes": 272871424,
+            "canvasCount": 0,
+            "wasmBytes": 2949120,
+            "owners": [],
+            "canvasPixels": 0,
+            "lastDisposal": null
+          },
+          "afterOpen": {
+            "processes": [
+              {
+                "pid": 1109813,
+                "rssBytes": 299368448
+              }
+            ],
+            "aggregateRssBytes": 299368448,
+            "canvasCount": 1,
+            "wasmBytes": 3342336,
+            "owners": [
+              {
+                "discards": 0,
+                "nativeCapacity": 100,
+                "id": 1,
+                "saves": 0,
+                "live": 0
+              }
+            ],
+            "canvasPixels": 242190,
+            "lastDisposal": null
+          },
+          "afterUndoRedo": {
+            "processes": [
+              {
+                "pid": 1109813,
+                "rssBytes": 332079104
+              }
+            ],
+            "aggregateRssBytes": 332079104,
+            "canvasCount": 1,
+            "wasmBytes": 3473408,
+            "owners": [
+              {
+                "discards": 0,
+                "nativeCapacity": 100,
+                "id": 1,
+                "saves": 0,
+                "live": 0
+              }
+            ],
+            "canvasPixels": 242190,
+            "lastDisposal": null
+          },
+          "afterClose": {
+            "processes": [
+              {
+                "pid": 1109813,
+                "rssBytes": 327446528
+              }
+            ],
+            "aggregateRssBytes": 327446528,
+            "canvasCount": 0,
+            "wasmBytes": 3473408,
+            "owners": [],
+            "canvasPixels": 0,
+            "lastDisposal": {
+              "liveAtFree": 0,
+              "discards": 0,
+              "id": 1,
+              "saves": 0
+            }
+          }
+        }
+      },
+      {
+        "sample": "basic-ko.hwpx",
+        "control": "injected capacity refusal",
+        "fileBytes": 8064,
+        "pages": 1,
+        "zoom": 50,
+        "warmupGroups": 3,
+        "groupStart": {
+          "n": 30,
+          "p50": 26,
+          "p95": 71,
+          "max": 77,
+          "timeouts": 0
+        },
+        "extend": {
+          "n": 30,
+          "p50": 25,
+          "p95": 33,
+          "max": 44,
+          "timeouts": 0
+        },
+        "stages": {
+          "extend": {
+            "saveSnapshot": {
+              "n": 30,
+              "p50": 0,
+              "p95": 0,
+              "max": 0,
+              "timeouts": 0
+            },
+            "restoreSnapshot": {
+              "n": 30,
+              "p50": 0,
+              "p95": 0,
+              "max": 0,
+              "timeouts": 0
+            },
+            "getPageInfo": {
+              "n": 30,
+              "p50": 0,
+              "p95": 0,
+              "max": 2,
+              "timeouts": 0
+            },
+            "mutation": {
+              "n": 30,
+              "p50": 1,
+              "p95": 1,
+              "max": 4,
+              "timeouts": 0
+            },
+            "layoutTree": {
+              "n": 30,
+              "p50": 1,
+              "p95": 2,
+              "max": 5,
+              "timeouts": 0
+            },
+            "render": {
+              "n": 30,
+              "p50": 2,
+              "p95": 2,
+              "max": 5,
+              "timeouts": 0
+            },
+            "discardSnapshot": {
+              "n": 30,
+              "p50": 0,
+              "p95": 0,
+              "max": 0,
+              "timeouts": 0
+            },
+            "inputToFrame": {
+              "n": 30,
+              "p50": 25,
+              "p95": 31,
+              "max": 43,
+              "timeouts": 0
+            },
+            "keyToFrame": {
+              "n": 30,
+              "p50": 25,
+              "p95": 33,
+              "max": 44,
+              "timeouts": 0
+            },
+            "delivery": {
+              "n": 30,
+              "p50": 0,
+              "p95": 0,
+              "max": 1,
+              "timeouts": 0
+            }
+          },
+          "groupStart": {
+            "saveSnapshot": {
+              "n": 30,
+              "p50": 0,
+              "p95": 0,
+              "max": 0,
+              "timeouts": 0
+            },
+            "restoreSnapshot": {
+              "n": 30,
+              "p50": 0,
+              "p95": 0,
+              "max": 0,
+              "timeouts": 0
+            },
+            "getPageInfo": {
+              "n": 30,
+              "p50": 0,
+              "p95": 1,
+              "max": 1,
+              "timeouts": 0
+            },
+            "mutation": {
+              "n": 30,
+              "p50": 1,
+              "p95": 1,
+              "max": 1,
+              "timeouts": 0
+            },
+            "layoutTree": {
+              "n": 30,
+              "p50": 2,
+              "p95": 2,
+              "max": 4,
+              "timeouts": 0
+            },
+            "render": {
+              "n": 30,
+              "p50": 2,
+              "p95": 3,
+              "max": 6,
+              "timeouts": 0
+            },
+            "discardSnapshot": {
+              "n": 30,
+              "p50": 0,
+              "p95": 0,
+              "max": 0,
+              "timeouts": 0
+            },
+            "inputToFrame": {
+              "n": 30,
+              "p50": 26,
+              "p95": 71,
+              "max": 72,
+              "timeouts": 0
+            },
+            "keyToFrame": {
+              "n": 30,
+              "p50": 26,
+              "p95": 71,
+              "max": 77,
+              "timeouts": 0
+            },
+            "delivery": {
+              "n": 30,
+              "p50": 0,
+              "p95": 1,
+              "max": 1,
+              "timeouts": 0
+            }
+          }
+        },
+        "frameGapDuringHistoryAndFollowingInputMs": {
+          "n": 13,
+          "p50": 16,
+          "p95": 18,
+          "max": 18,
+          "timeouts": 0
+        },
+        "frameGapDuringUndoRedoMs": {
+          "n": 0
+        },
+        "memory": {
+          "beforeOpen": {
+            "processes": [
+              {
+                "pid": 1109813,
+                "rssBytes": 328642560
+              }
+            ],
+            "aggregateRssBytes": 328642560,
+            "canvasCount": 0,
+            "wasmBytes": 3473408,
+            "owners": [],
+            "canvasPixels": 0,
+            "lastDisposal": {
+              "liveAtFree": 0,
+              "discards": 0,
+              "id": 1,
+              "saves": 0
+            }
+          },
+          "afterOpen": {
+            "processes": [
+              {
+                "pid": 1109813,
+                "rssBytes": 338927616
+              }
+            ],
+            "aggregateRssBytes": 338927616,
+            "canvasCount": 1,
+            "wasmBytes": 3473408,
+            "owners": [
+              {
+                "discards": 0,
+                "nativeCapacity": 100,
+                "id": 2,
+                "saves": 0,
+                "live": 0
+              }
+            ],
+            "canvasPixels": 242190,
+            "lastDisposal": {
+              "liveAtFree": 0,
+              "discards": 0,
+              "id": 1,
+              "saves": 0
+            }
+          },
+          "afterUndoRedo": {
+            "processes": [
+              {
+                "pid": 1109813,
+                "rssBytes": 333873152
+              }
+            ],
+            "aggregateRssBytes": 333873152,
+            "canvasCount": 1,
+            "wasmBytes": 3473408,
+            "owners": [
+              {
+                "discards": 0,
+                "nativeCapacity": 100,
+                "id": 2,
+                "saves": 0,
+                "live": 0
+              }
+            ],
+            "canvasPixels": 242190,
+            "lastDisposal": {
+              "liveAtFree": 0,
+              "discards": 0,
+              "id": 1,
+              "saves": 0
+            }
+          },
+          "afterClose": {
+            "processes": [
+              {
+                "pid": 1109813,
+                "rssBytes": 331595776
+              }
+            ],
+            "aggregateRssBytes": 331595776,
+            "canvasCount": 0,
+            "wasmBytes": 3473408,
+            "owners": [],
+            "canvasPixels": 0,
+            "lastDisposal": {
+              "liveAtFree": 0,
+              "discards": 0,
+              "id": 2,
+              "saves": 0
+            }
+          }
+        }
+      },
+      {
+        "sample": "large-24.hwp",
+        "control": "injected capacity refusal",
+        "fileBytes": 11956736,
+        "pages": 24,
+        "zoom": 50,
+        "warmupGroups": 3,
+        "groupStart": {
+          "n": 30,
+          "p50": 49,
+          "p95": 115,
+          "max": 187,
+          "timeouts": 0
+        },
+        "extend": {
+          "n": 30,
+          "p50": 49,
+          "p95": 59,
+          "max": 200,
+          "timeouts": 0
+        },
+        "stages": {
+          "extend": {
+            "saveSnapshot": {
+              "n": 30,
+              "p50": 0,
+              "p95": 0,
+              "max": 0,
+              "timeouts": 0
+            },
+            "restoreSnapshot": {
+              "n": 30,
+              "p50": 0,
+              "p95": 0,
+              "max": 0,
+              "timeouts": 0
+            },
+            "getPageInfo": {
+              "n": 30,
+              "p50": 0,
+              "p95": 1,
+              "max": 1,
+              "timeouts": 0
+            },
+            "mutation": {
+              "n": 30,
+              "p50": 1,
+              "p95": 2,
+              "max": 28,
+              "timeouts": 0
+            },
+            "layoutTree": {
+              "n": 30,
+              "p50": 2,
+              "p95": 3,
+              "max": 38,
+              "timeouts": 0
+            },
+            "render": {
+              "n": 30,
+              "p50": 3,
+              "p95": 7,
+              "max": 13,
+              "timeouts": 0
+            },
+            "discardSnapshot": {
+              "n": 30,
+              "p50": 0,
+              "p95": 0,
+              "max": 0,
+              "timeouts": 0
+            },
+            "inputToFrame": {
+              "n": 30,
+              "p50": 48,
+              "p95": 58,
+              "max": 198,
+              "timeouts": 0
+            },
+            "keyToFrame": {
+              "n": 30,
+              "p50": 49,
+              "p95": 59,
+              "max": 200,
+              "timeouts": 0
+            },
+            "delivery": {
+              "n": 30,
+              "p50": 0,
+              "p95": 1,
+              "max": 1,
+              "timeouts": 0
+            }
+          },
+          "groupStart": {
+            "saveSnapshot": {
+              "n": 30,
+              "p50": 0,
+              "p95": 0,
+              "max": 0,
+              "timeouts": 0
+            },
+            "restoreSnapshot": {
+              "n": 30,
+              "p50": 0,
+              "p95": 0,
+              "max": 0,
+              "timeouts": 0
+            },
+            "getPageInfo": {
+              "n": 30,
+              "p50": 0,
+              "p95": 1,
+              "max": 1,
+              "timeouts": 0
+            },
+            "mutation": {
+              "n": 30,
+              "p50": 1,
+              "p95": 3,
+              "max": 28,
+              "timeouts": 0
+            },
+            "layoutTree": {
+              "n": 30,
+              "p50": 1,
+              "p95": 4,
+              "max": 38,
+              "timeouts": 0
+            },
+            "render": {
+              "n": 30,
+              "p50": 5,
+              "p95": 11,
+              "max": 17,
+              "timeouts": 0
+            },
+            "discardSnapshot": {
+              "n": 30,
+              "p50": 0,
+              "p95": 0,
+              "max": 0,
+              "timeouts": 0
+            },
+            "inputToFrame": {
+              "n": 30,
+              "p50": 46,
+              "p95": 77,
+              "max": 187,
+              "timeouts": 0
+            },
+            "keyToFrame": {
+              "n": 30,
+              "p50": 49,
+              "p95": 115,
+              "max": 187,
+              "timeouts": 0
+            },
+            "delivery": {
+              "n": 30,
+              "p50": 0,
+              "p95": 1,
+              "max": 1,
+              "timeouts": 0
+            }
+          }
+        },
+        "frameGapDuringHistoryAndFollowingInputMs": {
+          "n": 20,
+          "p50": 14,
+          "p95": 18,
+          "max": 18,
+          "timeouts": 0
+        },
+        "frameGapDuringUndoRedoMs": {
+          "n": 0
+        },
+        "memory": {
+          "beforeOpen": {
+            "processes": [
+              {
+                "pid": 1109813,
+                "rssBytes": 331407360
+              }
+            ],
+            "aggregateRssBytes": 331407360,
+            "canvasCount": 0,
+            "wasmBytes": 3473408,
+            "owners": [],
+            "canvasPixels": 0,
+            "lastDisposal": {
+              "liveAtFree": 0,
+              "discards": 0,
+              "id": 2,
+              "saves": 0
+            }
+          },
+          "afterOpen": {
+            "processes": [
+              {
+                "pid": 1109813,
+                "rssBytes": 882245632
+              }
+            ],
+            "aggregateRssBytes": 882245632,
+            "canvasCount": 24,
+            "wasmBytes": 134545408,
+            "owners": [
+              {
+                "discards": 0,
+                "nativeCapacity": 100,
+                "id": 3,
+                "saves": 0,
+                "live": 0
+              }
+            ],
+            "canvasPixels": 5812560,
+            "lastDisposal": {
+              "liveAtFree": 0,
+              "discards": 0,
+              "id": 2,
+              "saves": 0
+            }
+          },
+          "afterUndoRedo": {
+            "processes": [
+              {
+                "pid": 1109813,
+                "rssBytes": 928235520
+              }
+            ],
+            "aggregateRssBytes": 928235520,
+            "canvasCount": 24,
+            "wasmBytes": 134545408,
+            "owners": [
+              {
+                "discards": 0,
+                "nativeCapacity": 100,
+                "id": 3,
+                "saves": 0,
+                "live": 0
+              }
+            ],
+            "canvasPixels": 5812560,
+            "lastDisposal": {
+              "liveAtFree": 0,
+              "discards": 0,
+              "id": 2,
+              "saves": 0
+            }
+          },
+          "afterClose": {
+            "processes": [
+              {
+                "pid": 1109813,
+                "rssBytes": 880619520
+              }
+            ],
+            "aggregateRssBytes": 880619520,
+            "canvasCount": 0,
+            "wasmBytes": 134545408,
+            "owners": [],
+            "canvasPixels": 0,
+            "lastDisposal": {
+              "liveAtFree": 0,
+              "discards": 0,
+              "id": 3,
+              "saves": 0
+            }
+          }
+        }
+      },
+      {
+        "sample": "multi-60.hwpx",
+        "control": "injected capacity refusal",
+        "fileBytes": 423622,
+        "pages": 60,
+        "zoom": 50,
+        "warmupGroups": 3,
+        "groupStart": {
+          "n": 30,
+          "p50": 101,
+          "p95": 245,
+          "max": 538,
+          "timeouts": 0
+        },
+        "extend": {
+          "n": 30,
+          "p50": 92,
+          "p95": 117,
+          "max": 631,
+          "timeouts": 0
+        },
+        "stages": {
+          "extend": {
+            "saveSnapshot": {
+              "n": 30,
+              "p50": 0,
+              "p95": 0,
+              "max": 0,
+              "timeouts": 0
+            },
+            "restoreSnapshot": {
+              "n": 30,
+              "p50": 0,
+              "p95": 0,
+              "max": 0,
+              "timeouts": 0
+            },
+            "getPageInfo": {
+              "n": 30,
+              "p50": 0,
+              "p95": 1,
+              "max": 1,
+              "timeouts": 0
+            },
+            "mutation": {
+              "n": 30,
+              "p50": 25,
+              "p95": 26,
+              "max": 28,
+              "timeouts": 0
+            },
+            "layoutTree": {
+              "n": 30,
+              "p50": 7,
+              "p95": 8,
+              "max": 31,
+              "timeouts": 0
+            },
+            "render": {
+              "n": 30,
+              "p50": 5,
+              "p95": 13,
+              "max": 209,
+              "timeouts": 0
+            },
+            "discardSnapshot": {
+              "n": 30,
+              "p50": 0,
+              "p95": 0,
+              "max": 0,
+              "timeouts": 0
+            },
+            "inputToFrame": {
+              "n": 30,
+              "p50": 91,
+              "p95": 116,
+              "max": 513,
+              "timeouts": 0
+            },
+            "keyToFrame": {
+              "n": 30,
+              "p50": 92,
+              "p95": 117,
+              "max": 631,
+              "timeouts": 0
+            },
+            "delivery": {
+              "n": 30,
+              "p50": 0,
+              "p95": 1,
+              "max": 1,
+              "timeouts": 0
+            }
+          },
+          "groupStart": {
+            "saveSnapshot": {
+              "n": 30,
+              "p50": 0,
+              "p95": 0,
+              "max": 0,
+              "timeouts": 0
+            },
+            "restoreSnapshot": {
+              "n": 30,
+              "p50": 0,
+              "p95": 0,
+              "max": 0,
+              "timeouts": 0
+            },
+            "getPageInfo": {
+              "n": 30,
+              "p50": 1,
+              "p95": 1,
+              "max": 1,
+              "timeouts": 0
+            },
+            "mutation": {
+              "n": 30,
+              "p50": 26,
+              "p95": 27,
+              "max": 27,
+              "timeouts": 0
+            },
+            "layoutTree": {
+              "n": 30,
+              "p50": 7,
+              "p95": 8,
+              "max": 59,
+              "timeouts": 0
+            },
+            "render": {
+              "n": 30,
+              "p50": 12,
+              "p95": 14,
+              "max": 128,
+              "timeouts": 0
+            },
+            "discardSnapshot": {
+              "n": 30,
+              "p50": 0,
+              "p95": 0,
+              "max": 0,
+              "timeouts": 0
+            },
+            "inputToFrame": {
+              "n": 30,
+              "p50": 98,
+              "p95": 168,
+              "max": 440,
+              "timeouts": 0
+            },
+            "keyToFrame": {
+              "n": 30,
+              "p50": 101,
+              "p95": 245,
+              "max": 538,
+              "timeouts": 0
+            },
+            "delivery": {
+              "n": 30,
+              "p50": 0,
+              "p95": 0,
+              "max": 1,
+              "timeouts": 0
+            }
+          }
+        },
+        "frameGapDuringHistoryAndFollowingInputMs": {
+          "n": 12,
+          "p50": 16,
+          "p95": 30,
+          "max": 30,
+          "timeouts": 0
+        },
+        "frameGapDuringUndoRedoMs": {
+          "n": 0
+        },
+        "memory": {
+          "beforeOpen": {
+            "processes": [
+              {
+                "pid": 1109813,
+                "rssBytes": 881831936
+              }
+            ],
+            "aggregateRssBytes": 881831936,
+            "canvasCount": 0,
+            "wasmBytes": 134545408,
+            "owners": [],
+            "canvasPixels": 0,
+            "lastDisposal": {
+              "liveAtFree": 0,
+              "discards": 0,
+              "id": 3,
+              "saves": 0
+            }
+          },
+          "afterOpen": {
+            "processes": [
+              {
+                "pid": 1109813,
+                "rssBytes": 1090854912
+              }
+            ],
+            "aggregateRssBytes": 1090854912,
+            "canvasCount": 60,
+            "wasmBytes": 134545408,
+            "owners": [
+              {
+                "discards": 0,
+                "nativeCapacity": 100,
+                "id": 4,
+                "saves": 0,
+                "live": 0
+              }
+            ],
+            "canvasPixels": 10414170,
+            "lastDisposal": {
+              "liveAtFree": 0,
+              "discards": 0,
+              "id": 3,
+              "saves": 0
+            }
+          },
+          "afterUndoRedo": {
+            "processes": [
+              {
+                "pid": 1109813,
+                "rssBytes": 1127694336
+              }
+            ],
+            "aggregateRssBytes": 1127694336,
+            "canvasCount": 60,
+            "wasmBytes": 134545408,
+            "owners": [
+              {
+                "discards": 0,
+                "nativeCapacity": 100,
+                "id": 4,
+                "saves": 0,
+                "live": 0
+              }
+            ],
+            "canvasPixels": 14531400,
+            "lastDisposal": {
+              "liveAtFree": 0,
+              "discards": 0,
+              "id": 3,
+              "saves": 0
+            }
+          },
+          "afterClose": {
+            "processes": [
+              {
+                "pid": 1109813,
+                "rssBytes": 975626240
+              }
+            ],
+            "aggregateRssBytes": 975626240,
+            "canvasCount": 0,
+            "wasmBytes": 134545408,
+            "owners": [],
+            "canvasPixels": 0,
+            "lastDisposal": {
+              "liveAtFree": 0,
+              "discards": 0,
+              "id": 4,
+              "saves": 0
+            }
+          }
+        }
+      }
+    ]
+  }
+}

@@ -61,7 +61,7 @@ export function attachTextInput(input: HTMLTextAreaElement, controller: ImeInput
   /** 바로 앞 input이 \r로 끝난 insertText였고 그 뒤 키·조합·초점 변화가 없다(paragraphBreaks). */
   let afterCarriageReturn = false;
   const onKeyDown = (event: KeyboardEvent) => {
-    trace("dom:keydown", () => ({ key: keyKind(event), composing: event.isComposing }));
+    trace("dom:keydown", () => ({ key: keyKind(event), keyCode: event.keyCode, composing: event.isComposing }));
     afterCarriageReturn = false;
     // Ctrl·Meta·Alt를 누른 키(수식 키 자체 포함)는 명령 레지스트리(T010) 몫이고 IME 트랜잭션의 새 입력 경계가 아니다(T010 마무리
     // 안정화 경계 A): 경계로 보면 앱이 먼저 확정한 조합이 입력기의 최종 글자 전에 끝나, 늦게 온 최종 글자가 새 입력으로 한 번 더
@@ -75,6 +75,11 @@ export function attachTextInput(input: HTMLTextAreaElement, controller: ImeInput
       return;
     }
     if (handleKey(event)) event.preventDefault();
+  };
+  const onKeyUp = (event: KeyboardEvent) => {
+    trace("dom:keyup", () => ({ key: keyKind(event), code: event.code, keyCode: event.keyCode, composing: event.isComposing }));
+    controller.keyUp(event.code, event.keyCode, event.isComposing, event.ctrlKey || event.metaKey || event.altKey);
+    trace("ime:keyUp", () => controller.phase());
   };
   const onCompositionStart = (event: CompositionEvent) => {
     trace("dom:compositionstart");
@@ -136,6 +141,7 @@ export function attachTextInput(input: HTMLTextAreaElement, controller: ImeInput
     if (pending) handleKey(pending);
   };
   input.addEventListener("keydown", onKeyDown);
+  input.addEventListener("keyup", onKeyUp);
   input.addEventListener("compositionstart", onCompositionStart);
   input.addEventListener("beforeinput", onBeforeInput);
   input.addEventListener("input", onInput);
@@ -154,6 +160,7 @@ export function attachTextInput(input: HTMLTextAreaElement, controller: ImeInput
     trace("ime:detach", () => controller.phase());
     handlers.detached?.();
     input.removeEventListener("keydown", onKeyDown);
+    input.removeEventListener("keyup", onKeyUp);
     input.removeEventListener("compositionstart", onCompositionStart);
     input.removeEventListener("beforeinput", onBeforeInput);
     input.removeEventListener("input", onInput);

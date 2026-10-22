@@ -1,0 +1,341 @@
+{
+  "results": [
+    "hwp: 편집 전 실행 취소는 쓸 수 없음(되돌릴 것 없음)",
+    "hwp: 편집이 Canvas 픽셀을 바꿈",
+    "hwp: Ctrl+Z 세 번(글자 묶음·나누기·글자) → 쪽 Canvas가 편집 전(쪽 전체 그리기)과 같은 내용",
+    "hwp: 더 되돌릴 것이 없으면 Ctrl+Z가 모델을 바꾸지 않고 단추는 비활성",
+    "hwp: Ctrl+Y·Ctrl+Shift+Z·Ctrl+Y → 쪽 Canvas가 편집 뒤(쪽 전체 그리기)와 같은 내용",
+    "hwp: 실행 취소 뒤 새 타자는 다시 실행을 버림",
+    "hwp: 선택이 있어도 Ctrl+Z가 직전 단계를 되돌림",
+    "hwp: 쪽이 늘어난 편집 1쪽을 되돌리면 쪽 수와 첫 쪽 Canvas가 편집 전과 같은 내용",
+    "hwpx: 편집 전 실행 취소는 쓸 수 없음(되돌릴 것 없음)",
+    "hwpx: 편집이 Canvas 픽셀을 바꿈",
+    "hwpx: Ctrl+Z 세 번(글자 묶음·나누기·글자) → 쪽 Canvas가 편집 전(쪽 전체 그리기)과 같은 내용",
+    "hwpx: 더 되돌릴 것이 없으면 Ctrl+Z가 모델을 바꾸지 않고 단추는 비활성",
+    "hwpx: Ctrl+Y·Ctrl+Shift+Z·Ctrl+Y → 쪽 Canvas가 편집 뒤(쪽 전체 그리기)와 같은 내용",
+    "hwpx: 실행 취소 뒤 새 타자는 다시 실행을 버림",
+    "hwpx: 선택이 있어도 Ctrl+Z가 직전 단계를 되돌림"
+  ],
+  "gates": [
+    {
+      "gate": "D1",
+      "item": "hwp: 편집 전 실행 취소는 쓸 수 없음(되돌릴 것 없음)",
+      "result": "PASS",
+      "detail": "실행 취소 (Ctrl+Z) — 되돌릴 편집 없음"
+    },
+    {
+      "gate": "D1",
+      "item": "hwp: 편집이 Canvas 픽셀을 바꿈",
+      "result": "PASS",
+      "detail": ""
+    },
+    {
+      "gate": "D1",
+      "item": "hwp: Ctrl+Z 세 번(글자 묶음·나누기·글자) → 쪽 Canvas가 편집 전(쪽 전체 그리기)과 같은 내용",
+      "result": "PASS",
+      "detail": "변경=[True, True, True], 픽셀 차 {'strongPixels': 0, 'pixels': 1996, 'edgePixels': 1996, 'innerMaxDelta': 0, 'comparable': True, 'maxDelta': 10, 'same': True}"
+    },
+    {
+      "gate": "D1",
+      "item": "hwp: 더 되돌릴 것이 없으면 Ctrl+Z가 모델을 바꾸지 않고 단추는 비활성",
+      "result": "PASS",
+      "detail": ""
+    },
+    {
+      "gate": "D1",
+      "item": "hwp: Ctrl+Y·Ctrl+Shift+Z·Ctrl+Y → 쪽 Canvas가 편집 뒤(쪽 전체 그리기)와 같은 내용",
+      "result": "PASS",
+      "detail": "변경=[True, True, True], 픽셀 차 {'strongPixels': 0, 'pixels': 1996, 'edgePixels': 1996, 'innerMaxDelta': 0, 'comparable': True, 'maxDelta': 12, 'same': True}"
+    },
+    {
+      "gate": "D1",
+      "item": "hwp: 실행 취소 뒤 새 타자는 다시 실행을 버림",
+      "result": "PASS",
+      "detail": ""
+    },
+    {
+      "gate": "D1",
+      "item": "hwp: 선택이 있어도 Ctrl+Z가 직전 단계를 되돌림",
+      "result": "PASS",
+      "detail": ""
+    },
+    {
+      "gate": "D1",
+      "item": "hwp: 쪽이 늘어난 편집 1쪽을 되돌리면 쪽 수와 첫 쪽 Canvas가 편집 전과 같은 내용",
+      "result": "PASS",
+      "detail": "쪽 1→2→1, Ctrl+Z 45번, 픽셀 차 {'strongPixels': 0, 'pixels': 1996, 'edgePixels': 1996, 'innerMaxDelta': 0, 'comparable': True, 'maxDelta': 70, 'same': True}"
+    },
+    {
+      "gate": "D1",
+      "item": "hwp: 표 셀 안 넣기·나누기를 되돌리면 셀 글자·셀 커서가 그대로, 다시 실행이 다시 넣음",
+      "result": "FAIL",
+      "detail": "caret=0:0:0"
+    },
+    {
+      "gate": "D1",
+      "item": "hwpx: 편집 전 실행 취소는 쓸 수 없음(되돌릴 것 없음)",
+      "result": "PASS",
+      "detail": "실행 취소 (Ctrl+Z) — 되돌릴 편집 없음"
+    },
+    {
+      "gate": "D1",
+      "item": "hwpx: 편집이 Canvas 픽셀을 바꿈",
+      "result": "PASS",
+      "detail": ""
+    },
+    {
+      "gate": "D1",
+      "item": "hwpx: Ctrl+Z 세 번(글자 묶음·나누기·글자) → 쪽 Canvas가 편집 전(쪽 전체 그리기)과 같은 내용",
+      "result": "PASS",
+      "detail": "변경=[True, True, True], 픽셀 차 {'strongPixels': 0, 'pixels': 1996, 'edgePixels': 1996, 'innerMaxDelta': 0, 'comparable': True, 'maxDelta': 10, 'same': True}"
+    },
+    {
+      "gate": "D1",
+      "item": "hwpx: 더 되돌릴 것이 없으면 Ctrl+Z가 모델을 바꾸지 않고 단추는 비활성",
+      "result": "PASS",
+      "detail": ""
+    },
+    {
+      "gate": "D1",
+      "item": "hwpx: Ctrl+Y·Ctrl+Shift+Z·Ctrl+Y → 쪽 Canvas가 편집 뒤(쪽 전체 그리기)와 같은 내용",
+      "result": "PASS",
+      "detail": "변경=[True, True, True], 픽셀 차 {'strongPixels': 0, 'pixels': 1996, 'edgePixels': 1996, 'innerMaxDelta': 0, 'comparable': True, 'maxDelta': 12, 'same': True}"
+    },
+    {
+      "gate": "D1",
+      "item": "hwpx: 실행 취소 뒤 새 타자는 다시 실행을 버림",
+      "result": "PASS",
+      "detail": ""
+    },
+    {
+      "gate": "D1",
+      "item": "hwpx: 선택이 있어도 Ctrl+Z가 직전 단계를 되돌림",
+      "result": "PASS",
+      "detail": ""
+    }
+  ],
+  "measurements": {
+    "fixtureSha256": {
+      "basic-ko.hwp": "57c901cc394abf6f58f4838315d1ea2c5ecf8a03d9934d3fc098fd8be6e6e12f",
+      "basic-ko.hwpx": "26d434b7b427149110751c6ef5b19e9ecb4818f3ba7eadfe201b5afd3de442a8"
+    },
+    "hwp": {
+      "cellClick": {
+        "caret": "0:1:0",
+        "target": "CANVAS.rhwp-page__canvas"
+      },
+      "pointerProbe": {
+        "hits": [
+          {
+            "page": 0,
+            "x": 132.01593017578125,
+            "y": 121.447998046875,
+            "raw": {
+              "charOffset": 2,
+              "sectionIndex": 0,
+              "paragraphIndex": 0,
+              "cursorRect": {
+                "height": 13.3,
+                "pageIndex": 0,
+                "x": 139.3,
+                "y": 132.3
+              }
+            }
+          },
+          {
+            "page": 0,
+            "x": 382.01593017578125,
+            "y": 161.94061279296875,
+            "raw": {
+              "charOffset": 15,
+              "sectionIndex": 0,
+              "paragraphIndex": 1,
+              "cursorRect": {
+                "height": 13.3,
+                "pageIndex": 0,
+                "x": 236.7,
+                "y": 153.6
+              }
+            }
+          },
+          {
+            "page": 0,
+            "x": 382.01593017578125,
+            "y": 161.94061279296875,
+            "raw": {
+              "charOffset": 15,
+              "sectionIndex": 0,
+              "paragraphIndex": 1,
+              "cursorRect": {
+                "height": 13.3,
+                "pageIndex": 0,
+                "x": 236.7,
+                "y": 153.6
+              }
+            }
+          },
+          {
+            "page": 0,
+            "x": 382.01593017578125,
+            "y": 161.94061279296875,
+            "raw": {
+              "charOffset": 15,
+              "sectionIndex": 0,
+              "paragraphIndex": 1,
+              "cursorRect": {
+                "height": 13.3,
+                "pageIndex": 0,
+                "x": 236.7,
+                "y": 153.6
+              }
+            }
+          }
+        ],
+        "geometry": {
+          "cellBounds": {
+            "h": 17.1,
+            "x": 396.9,
+            "w": 279.7,
+            "y": 178.7
+          },
+          "page": {
+            "pageNumber": 1,
+            "bodyRight": 680.3,
+            "marginTop": 75.6,
+            "pageBorderTop": 113.4,
+            "pageBorderRight": 94.5,
+            "pageBorderLeft": 94.5,
+            "bindingMirrored": false,
+            "marginGutter": 0,
+            "marginFooter": 56.7,
+            "columns": [
+              {
+                "width": 566.9,
+                "x": 113.4
+              }
+            ],
+            "headerArea": {
+              "width": 566.9,
+              "x": 113.4,
+              "height": 56.7,
+              "y": 75.6
+            },
+            "marginLeft": 113.4,
+            "pageIndex": 0,
+            "height": 1122.5,
+            "marginHeader": 56.7,
+            "marginBottom": 56.7,
+            "bodyLeft": 113.4,
+            "width": 793.7,
+            "sectionIndex": 0,
+            "pageBorderBottom": 94.5,
+            "marginRight": 113.4,
+            "footerArea": {
+              "width": 566.9,
+              "x": 113.4,
+              "height": 56.7,
+              "y": 1009.1
+            }
+          },
+          "height": 13.3,
+          "pageIndex": 0,
+          "x": 403.7,
+          "cellOverflowed": false,
+          "y": 181.3
+        }
+      },
+      "latency": {
+        "type": {
+          "n": 5,
+          "p50": 137,
+          "p95": 159,
+          "max": 159,
+          "timeouts": 0
+        },
+        "undo": {
+          "n": 55,
+          "p50": 49,
+          "p95": 218,
+          "max": 5229,
+          "timeouts": 2
+        },
+        "redo": {
+          "n": 4,
+          "p50": 117,
+          "p95": 126,
+          "max": 126,
+          "timeouts": 0
+        }
+      }
+    },
+    "driverLost": {
+      "request": "DELETE /actions",
+      "transport": "connection",
+      "phase": "interaction",
+      "kind": "connectionLost",
+      "exitCode": 2,
+      "lastCheck": "",
+      "seen": [
+        "WebKitWebDriver",
+        "WebKitWebProces",
+        "geul"
+      ],
+      "tauriDriverExit": null,
+      "processes": [
+        {
+          "pid": 1097682,
+          "comm": "tauri-driver",
+          "state": "S"
+        },
+        {
+          "pid": 1097683,
+          "comm": "WebKitWebDriver",
+          "state": "S"
+        },
+        {
+          "pid": 1097685,
+          "comm": "geul",
+          "state": "S"
+        },
+        {
+          "pid": 1097698,
+          "comm": "WebKitNetworkPr",
+          "state": "S"
+        },
+        {
+          "pid": 1097701,
+          "comm": "WebKitWebProces",
+          "state": "S"
+        }
+      ],
+      "processesAfter1s": [
+        {
+          "pid": 1097682,
+          "comm": "tauri-driver",
+          "state": "S"
+        },
+        {
+          "pid": 1097683,
+          "comm": "WebKitWebDriver",
+          "state": "S"
+        },
+        {
+          "pid": 1097685,
+          "comm": "geul",
+          "state": "S"
+        },
+        {
+          "pid": 1097698,
+          "comm": "WebKitNetworkPr",
+          "state": "S"
+        },
+        {
+          "pid": 1097701,
+          "comm": "WebKitWebProces",
+          "state": "S"
+        }
+      ],
+      "listeners": []
+    }
+  }
+}

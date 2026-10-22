@@ -99,8 +99,10 @@ def click(d, x: float, y: float) -> None:
     width, height = d.js("return [window.innerWidth, window.innerHeight]")
     if not (0 <= x < width and 0 <= y < height):
         raise smoke.Failure(f"클릭 위치가 화면 밖: {(x, y)} / {(width, height)}")
+    # Optional, measured by the T010 native probe; ordinary harness behavior stays unchanged.
+    sx, sy = getattr(d, "pointer_scale", (1, 1))
     perform(d, [{"type": "pointer", "id": "mouse", "parameters": {"pointerType": "mouse"}, "actions": [
-        {"type": "pointerMove", "x": int(round(x)), "y": int(round(y)), "origin": "viewport"},
+        {"type": "pointerMove", "x": int(round(x * sx)), "y": int(round(y * sy)), "origin": "viewport"},
         {"type": "pointerDown", "button": 0}, {"type": "pointerUp", "button": 0}]}])
 
 
@@ -118,6 +120,11 @@ KEY = {"Left": "", "Right": "", "Up": "", "Down": "", "Home": "",
 
 
 def press(d, *keys: str, shift: bool = False, pause: int = 0) -> None:
+    if getattr(d, "native_key_tool", None):
+        subprocess.run(["env","-u","LD_LIBRARY_PATH",d.native_key_tool,"key","--delay",str(pause or 20),
+                        *[("shift+" if shift else "")+k for k in keys]],check=True,capture_output=True)
+        time.sleep(0.15)
+        return
     actions = []
     if shift:
         actions.append({"type": "keyDown", "value": KEY["Shift"]})
@@ -257,11 +264,22 @@ def click_paragraph_start(d) -> None:
 
 
 def click_cell(d, cell: int) -> None:
-    origin = page_origin(d)
-    # 고정 픽스처의 2×2 표: 첫 행 y≈181, 두 열 x≈ 120 / 400 (페이지 좌표)
-    x = 130 if cell % 2 == 0 else 410
-    y = 182 if cell < 2 else 199
-    click(d, origin[0] + x, origin[1] + y)
+    if getattr(d, "engine_cell_probe", False):
+        # Current engine geometry + actual DOM placement/zoom; only available in
+        # the T010 instrumented native test. No fallback to a different text target.
+        g = d.js("return window.__rhwpProbe.cell(0,2,0,arguments[0])", cell)
+        if not g or not g.get("cellBounds"):
+            raise smoke.Failure("목표 셀의 실제 경계가 없음")
+        d.js("const s=document.querySelector('.editor__scroll'); s.scrollTop=0; s.scrollLeft=0")
+        point = d.js("""const g=arguments[0], c=document.querySelectorAll('.rhwp-page__canvas')[g.pageIndex],r=c.getBoundingClientRect();
+          return [r.left+(g.x+1)*r.width/g.page.width,r.top+(g.y+g.height/2)*r.height/g.page.height]""", g)
+        click(d, *point)
+    else:
+        origin = page_origin(d)
+        # Legacy T007 fixture harness; native T010 uses live geometry above.
+        x = 130 if cell % 2 == 0 else 410
+        y = 182 if cell < 2 else 199
+        click(d, origin[0] + x, origin[1] + y)
     time.sleep(0.1)
     press(d, "Home")
 
@@ -526,7 +544,10 @@ def type_ascii(d, text: str) -> dict:
     actions = []
     for ch in text:
         actions += [{"type": "keyDown", "value": ch}, {"type": "keyUp", "value": ch}]
-    perform(d, [{"type": "key", "id": "kbd", "actions": actions}])
+    if getattr(d, "native_key_tool", None):
+        subprocess.run(["env","-u","LD_LIBRARY_PATH",d.native_key_tool,"type","--delay","20",text],check=True,capture_output=True)
+    else:
+        perform(d, [{"type": "key", "id": "kbd", "actions": actions}])
     smoke.wait_until(d, f"const e=document.querySelector('{STATUS}'); return e && Number(e.dataset.revision) >= arguments[0]"
                      " && e.dataset.revision === e.dataset.localRevision", before + len(text), timeout=20)
     return status(d)

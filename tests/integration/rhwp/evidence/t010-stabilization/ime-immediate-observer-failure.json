@@ -1,0 +1,886 @@
+{
+  "results": [],
+  "gates": [
+    {
+      "gate": "D2",
+      "item": "hwp: 선택 없는 취소는 문서/판/기록을 만들지 않음",
+      "result": "PASS",
+      "detail": ""
+    },
+    {
+      "gate": "D2",
+      "item": "hwp: 조합 중 Ctrl+Z가 조합을 깨지 않음",
+      "result": "PASS",
+      "detail": "조합 중=true, 결과 되돌림"
+    },
+    {
+      "gate": "D2",
+      "item": "hwp: 확정한 조합(한글) Ctrl+Z → 한 단계로 되돌림, Ctrl+Y → 정확히 복원",
+      "result": "PASS",
+      "detail": "넣은 글자 수 2, revision 4→5→6"
+    },
+    {
+      "gate": "D2",
+      "item": "hwp: 이어진 한글 음절은 한 단계, 앞 그룹과 경계 유지",
+      "result": "PASS",
+      "detail": "단계별 글자 수 [8, 2, 0]"
+    },
+    {
+      "gate": "D2",
+      "item": "hwp: 선택을 조합으로 바꾸다 취소 → 바로 Ctrl+Z가 선택 글자를 되살림",
+      "result": "FAIL",
+      "detail": "선택=True, 취소 뒤 글자 수 1, Ctrl+Z 뒤 2 (취소 keyup 경계; 빈 끝만으로는 명령을 허용하지 않음)"
+    },
+    {
+      "gate": "D2",
+      "item": "hwp: 취소 직후 Undo의 Ctrl+Y/Ctrl+Shift+Z와 정확한 선택 복원",
+      "result": "PASS",
+      "detail": ""
+    },
+    {
+      "gate": "D2",
+      "item": "hwp: 조합 중 클릭(앱 확정·늦은 최종 글자) 뒤 Ctrl+Z → 그 조합만 되돌리고 Ctrl+Y → 복원",
+      "result": "PASS",
+      "detail": "클릭 뒤 글자 수 +1"
+    },
+    {
+      "gate": "D2",
+      "item": "hwp: 조합 중 초점 잃음 뒤 돌아와 친 글자는 따로 된 단계(첫 Ctrl+Z가 뒤 글자만)",
+      "result": "PASS",
+      "detail": "초점 잃음 뒤 +1, 돌아온 뒤 +2, Ctrl+Z 뒤 +1 (초점 잃음은 입력 칸 blur — 창 초점 이동이 아님)"
+    },
+    {
+      "gate": "D2",
+      "item": "hwp: 빠른 연속 한글 → 음절 누락 없음, Ctrl+Z 한 번, Ctrl+Y 정확히",
+      "result": "PASS",
+      "detail": "넣은 글자 수 5"
+    },
+    {
+      "gate": "D2",
+      "item": "hwpx: 선택 없는 취소는 문서/판/기록을 만들지 않음",
+      "result": "PASS",
+      "detail": ""
+    },
+    {
+      "gate": "D2",
+      "item": "hwpx: 조합 중 Ctrl+Z가 조합을 깨지 않음",
+      "result": "PASS",
+      "detail": "조합 중=true, 결과 되돌림"
+    },
+    {
+      "gate": "D2",
+      "item": "hwpx: 확정한 조합(한글) Ctrl+Z → 한 단계로 되돌림, Ctrl+Y → 정확히 복원",
+      "result": "PASS",
+      "detail": "넣은 글자 수 2, revision 4→5→6"
+    },
+    {
+      "gate": "D2",
+      "item": "hwpx: 이어진 한글 음절은 한 단계, 앞 그룹과 경계 유지",
+      "result": "PASS",
+      "detail": "단계별 글자 수 [8, 2, 0]"
+    },
+    {
+      "gate": "D2",
+      "item": "hwpx: 선택을 조합으로 바꾸다 취소 → 바로 Ctrl+Z가 선택 글자를 되살림",
+      "result": "FAIL",
+      "detail": "선택=True, 취소 뒤 글자 수 1, Ctrl+Z 뒤 2 (취소 keyup 경계; 빈 끝만으로는 명령을 허용하지 않음)"
+    },
+    {
+      "gate": "D2",
+      "item": "hwpx: 취소 직후 Undo의 Ctrl+Y/Ctrl+Shift+Z와 정확한 선택 복원",
+      "result": "PASS",
+      "detail": ""
+    },
+    {
+      "gate": "D2",
+      "item": "hwpx: 조합 중 클릭(앱 확정·늦은 최종 글자) 뒤 Ctrl+Z → 그 조합만 되돌리고 Ctrl+Y → 복원",
+      "result": "PASS",
+      "detail": "클릭 뒤 글자 수 +1"
+    },
+    {
+      "gate": "D2",
+      "item": "hwpx: 조합 중 초점 잃음 뒤 돌아와 친 글자는 따로 된 단계(첫 Ctrl+Z가 뒤 글자만)",
+      "result": "PASS",
+      "detail": "초점 잃음 뒤 +1, 돌아온 뒤 +2, Ctrl+Z 뒤 +1 (초점 잃음은 입력 칸 blur — 창 초점 이동이 아님)"
+    },
+    {
+      "gate": "D2",
+      "item": "hwpx: 빠른 연속 한글 → 음절 누락 없음, Ctrl+Z 한 번, Ctrl+Y 정확히",
+      "result": "PASS",
+      "detail": "넣은 글자 수 5"
+    },
+    {
+      "gate": "D2",
+      "item": "실행 취소·다시 실행 뒤 닫고 다시 열면 Ctrl+Z가 아무것도 바꾸지 않음",
+      "result": "PASS",
+      "detail": ""
+    }
+  ],
+  "measurements": {
+    "fixtureSha256": {
+      "basic-ko.hwp": "57c901cc394abf6f58f4838315d1ea2c5ecf8a03d9934d3fc098fd8be6e6e12f",
+      "basic-ko.hwpx": "26d434b7b427149110751c6ef5b19e9ecb4818f3ba7eadfe201b5afd3de442a8"
+    },
+    "imeEnvironment": {
+      "ibusEngine": "hangul",
+      "ibusVersion": "IBus 1.5.33"
+    },
+    "cancelTrace": {
+      "hwp": {
+        "records": [
+          [
+            1,
+            17072,
+            "dom:keydown",
+            {
+              "composing": false,
+              "keyCode": 229,
+              "key": "ime"
+            }
+          ],
+          [
+            2,
+            17072,
+            "ime:keyDown",
+            {
+              "interrupted": "none",
+              "composing": false,
+              "session": 1,
+              "historyTransaction": false,
+              "discarded": false,
+              "provisional": false,
+              "terminal": "none",
+              "pendingCommit": false,
+              "historyRedo": 0,
+              "epoch": 1,
+              "awaiting": "none",
+              "historyUndo": 1,
+              "generation": 1,
+              "revision": 16
+            }
+          ],
+          [
+            3,
+            17073,
+            "dom:compositionstart",
+            null
+          ],
+          [
+            4,
+            17078,
+            "ime:compositionStart",
+            {
+              "interrupted": "none",
+              "composing": true,
+              "session": 1,
+              "historyTransaction": true,
+              "discarded": false,
+              "provisional": false,
+              "terminal": "none",
+              "pendingCommit": false,
+              "historyRedo": 0,
+              "epoch": 1,
+              "awaiting": "none",
+              "historyUndo": 1,
+              "generation": 1,
+              "revision": 16
+            }
+          ],
+          [
+            5,
+            17088,
+            "dom:beforeinput",
+            {
+              "composing": true,
+              "length": 1,
+              "inputType": "insertCompositionText"
+            }
+          ],
+          [
+            6,
+            17089,
+            "dom:input",
+            {
+              "composing": true,
+              "length": 1,
+              "inputType": "insertCompositionText"
+            }
+          ],
+          [
+            7,
+            17090,
+            "ime:input",
+            {
+              "interrupted": "none",
+              "composing": true,
+              "session": 1,
+              "historyTransaction": true,
+              "discarded": false,
+              "provisional": false,
+              "terminal": "none",
+              "pendingCommit": false,
+              "historyRedo": 0,
+              "epoch": 1,
+              "awaiting": "none",
+              "historyUndo": 1,
+              "generation": 1,
+              "revision": 16
+            }
+          ],
+          [
+            8,
+            17203,
+            "dom:keyup",
+            {
+              "composing": true,
+              "keyCode": 82,
+              "code": "KeyR",
+              "key": "char"
+            }
+          ],
+          [
+            9,
+            17203,
+            "ime:keyUp",
+            {
+              "interrupted": "none",
+              "composing": true,
+              "session": 1,
+              "historyTransaction": true,
+              "discarded": false,
+              "provisional": false,
+              "terminal": "none",
+              "pendingCommit": false,
+              "historyRedo": 0,
+              "epoch": 1,
+              "awaiting": "none",
+              "historyUndo": 1,
+              "generation": 1,
+              "revision": 16
+            }
+          ],
+          [
+            10,
+            17305,
+            "dom:keydown",
+            {
+              "composing": true,
+              "keyCode": 229,
+              "key": "ime"
+            }
+          ],
+          [
+            11,
+            17305,
+            "ime:keyDown",
+            {
+              "interrupted": "none",
+              "composing": true,
+              "session": 1,
+              "historyTransaction": true,
+              "discarded": false,
+              "provisional": false,
+              "terminal": "none",
+              "pendingCommit": false,
+              "historyRedo": 0,
+              "epoch": 1,
+              "awaiting": "none",
+              "historyUndo": 1,
+              "generation": 1,
+              "revision": 16
+            }
+          ],
+          [
+            12,
+            17308,
+            "dom:beforeinput",
+            {
+              "composing": true,
+              "length": 0,
+              "inputType": "deleteCompositionText"
+            }
+          ],
+          [
+            13,
+            17309,
+            "dom:input",
+            {
+              "composing": true,
+              "length": 0,
+              "inputType": "deleteCompositionText"
+            }
+          ],
+          [
+            14,
+            17309,
+            "ime:input",
+            {
+              "interrupted": "none",
+              "composing": true,
+              "session": 1,
+              "historyTransaction": true,
+              "discarded": false,
+              "provisional": false,
+              "terminal": "none",
+              "pendingCommit": false,
+              "historyRedo": 0,
+              "epoch": 1,
+              "awaiting": "none",
+              "historyUndo": 1,
+              "generation": 1,
+              "revision": 16
+            }
+          ],
+          [
+            15,
+            17318,
+            "dom:compositionend",
+            {
+              "length": 0
+            }
+          ],
+          [
+            16,
+            17319,
+            "ime:compositionEnd",
+            {
+              "interrupted": "none",
+              "composing": false,
+              "session": 1,
+              "historyTransaction": false,
+              "discarded": false,
+              "provisional": false,
+              "terminal": "empty",
+              "pendingCommit": true,
+              "historyRedo": 0,
+              "epoch": 1,
+              "awaiting": "this",
+              "historyUndo": 2,
+              "generation": 1,
+              "revision": 17
+            }
+          ],
+          [
+            17,
+            17432,
+            "dom:keyup",
+            {
+              "composing": false,
+              "keyCode": 8,
+              "code": "Backspace",
+              "key": "named"
+            }
+          ],
+          [
+            18,
+            17432,
+            "ime:keyUp",
+            {
+              "interrupted": "none",
+              "composing": false,
+              "session": 1,
+              "historyTransaction": false,
+              "discarded": true,
+              "provisional": false,
+              "terminal": "empty",
+              "pendingCommit": true,
+              "historyRedo": 0,
+              "epoch": 1,
+              "awaiting": "none",
+              "historyUndo": 2,
+              "generation": 1,
+              "revision": 17
+            }
+          ],
+          [
+            19,
+            17448,
+            "dom:keydown",
+            {
+              "composing": false,
+              "keyCode": 17,
+              "key": "mod:ControlLeft"
+            }
+          ],
+          [
+            20,
+            17448,
+            "dom:keydown",
+            {
+              "composing": false,
+              "keyCode": 90,
+              "key": "mod:KeyZ"
+            }
+          ],
+          [
+            21,
+            17449,
+            "command:request",
+            {
+              "reason": null,
+              "composing": false,
+              "session": 1,
+              "modal": false,
+              "id": "edit.undo",
+              "available": true,
+              "pending": false
+            }
+          ],
+          [
+            22,
+            17450,
+            "command:dispatch",
+            {
+              "id": "edit.undo",
+              "accepted": true
+            }
+          ],
+          [
+            23,
+            17525,
+            "dom:keyup",
+            {
+              "composing": false,
+              "keyCode": 17,
+              "code": "ControlLeft",
+              "key": "mod:ControlLeft"
+            }
+          ],
+          [
+            24,
+            17525,
+            "ime:keyUp",
+            {
+              "interrupted": "none",
+              "composing": false,
+              "session": 1,
+              "historyTransaction": false,
+              "discarded": true,
+              "provisional": false,
+              "terminal": "empty",
+              "pendingCommit": true,
+              "historyRedo": 1,
+              "epoch": 1,
+              "awaiting": "none",
+              "historyUndo": 1,
+              "generation": 1,
+              "revision": 18
+            }
+          ],
+          [
+            25,
+            17586,
+            "dom:keyup",
+            {
+              "composing": false,
+              "keyCode": 90,
+              "code": "KeyZ",
+              "key": "char"
+            }
+          ],
+          [
+            26,
+            17586,
+            "ime:keyUp",
+            {
+              "interrupted": "none",
+              "composing": false,
+              "session": 1,
+              "historyTransaction": false,
+              "discarded": true,
+              "provisional": false,
+              "terminal": "empty",
+              "pendingCommit": false,
+              "historyRedo": 1,
+              "epoch": 1,
+              "awaiting": "none",
+              "historyUndo": 1,
+              "generation": 1,
+              "revision": 18
+            }
+          ]
+        ],
+        "seq": 26,
+        "dropped": 0
+      },
+      "hwpx": {
+        "records": [
+          [
+            1,
+            53921,
+            "dom:keydown",
+            {
+              "composing": false,
+              "keyCode": 229,
+              "key": "ime"
+            }
+          ],
+          [
+            2,
+            53921,
+            "ime:keyDown",
+            {
+              "interrupted": "none",
+              "composing": false,
+              "session": 2,
+              "historyTransaction": false,
+              "discarded": false,
+              "provisional": false,
+              "terminal": "none",
+              "pendingCommit": false,
+              "historyRedo": 0,
+              "epoch": 1,
+              "awaiting": "none",
+              "historyUndo": 1,
+              "generation": 1,
+              "revision": 16
+            }
+          ],
+          [
+            3,
+            53922,
+            "dom:compositionstart",
+            null
+          ],
+          [
+            4,
+            53923,
+            "ime:compositionStart",
+            {
+              "interrupted": "none",
+              "composing": true,
+              "session": 2,
+              "historyTransaction": true,
+              "discarded": false,
+              "provisional": false,
+              "terminal": "none",
+              "pendingCommit": false,
+              "historyRedo": 0,
+              "epoch": 1,
+              "awaiting": "none",
+              "historyUndo": 1,
+              "generation": 1,
+              "revision": 16
+            }
+          ],
+          [
+            5,
+            53932,
+            "dom:beforeinput",
+            {
+              "composing": true,
+              "length": 1,
+              "inputType": "insertCompositionText"
+            }
+          ],
+          [
+            6,
+            53934,
+            "dom:input",
+            {
+              "composing": true,
+              "length": 1,
+              "inputType": "insertCompositionText"
+            }
+          ],
+          [
+            7,
+            53935,
+            "ime:input",
+            {
+              "interrupted": "none",
+              "composing": true,
+              "session": 2,
+              "historyTransaction": true,
+              "discarded": false,
+              "provisional": false,
+              "terminal": "none",
+              "pendingCommit": false,
+              "historyRedo": 0,
+              "epoch": 1,
+              "awaiting": "none",
+              "historyUndo": 1,
+              "generation": 1,
+              "revision": 16
+            }
+          ],
+          [
+            8,
+            54041,
+            "dom:keyup",
+            {
+              "composing": true,
+              "keyCode": 82,
+              "code": "KeyR",
+              "key": "char"
+            }
+          ],
+          [
+            9,
+            54041,
+            "ime:keyUp",
+            {
+              "interrupted": "none",
+              "composing": true,
+              "session": 2,
+              "historyTransaction": true,
+              "discarded": false,
+              "provisional": false,
+              "terminal": "none",
+              "pendingCommit": false,
+              "historyRedo": 0,
+              "epoch": 1,
+              "awaiting": "none",
+              "historyUndo": 1,
+              "generation": 1,
+              "revision": 16
+            }
+          ],
+          [
+            10,
+            54138,
+            "dom:keydown",
+            {
+              "composing": true,
+              "keyCode": 229,
+              "key": "ime"
+            }
+          ],
+          [
+            11,
+            54138,
+            "ime:keyDown",
+            {
+              "interrupted": "none",
+              "composing": true,
+              "session": 2,
+              "historyTransaction": true,
+              "discarded": false,
+              "provisional": false,
+              "terminal": "none",
+              "pendingCommit": false,
+              "historyRedo": 0,
+              "epoch": 1,
+              "awaiting": "none",
+              "historyUndo": 1,
+              "generation": 1,
+              "revision": 16
+            }
+          ],
+          [
+            12,
+            54145,
+            "dom:beforeinput",
+            {
+              "composing": true,
+              "length": 0,
+              "inputType": "deleteCompositionText"
+            }
+          ],
+          [
+            13,
+            54146,
+            "dom:input",
+            {
+              "composing": true,
+              "length": 0,
+              "inputType": "deleteCompositionText"
+            }
+          ],
+          [
+            14,
+            54146,
+            "ime:input",
+            {
+              "interrupted": "none",
+              "composing": true,
+              "session": 2,
+              "historyTransaction": true,
+              "discarded": false,
+              "provisional": false,
+              "terminal": "none",
+              "pendingCommit": false,
+              "historyRedo": 0,
+              "epoch": 1,
+              "awaiting": "none",
+              "historyUndo": 1,
+              "generation": 1,
+              "revision": 16
+            }
+          ],
+          [
+            15,
+            54154,
+            "dom:compositionend",
+            {
+              "length": 0
+            }
+          ],
+          [
+            16,
+            54154,
+            "ime:compositionEnd",
+            {
+              "interrupted": "none",
+              "composing": false,
+              "session": 2,
+              "historyTransaction": false,
+              "discarded": false,
+              "provisional": false,
+              "terminal": "empty",
+              "pendingCommit": true,
+              "historyRedo": 0,
+              "epoch": 1,
+              "awaiting": "this",
+              "historyUndo": 2,
+              "generation": 1,
+              "revision": 17
+            }
+          ],
+          [
+            17,
+            54257,
+            "dom:keyup",
+            {
+              "composing": false,
+              "keyCode": 8,
+              "code": "Backspace",
+              "key": "named"
+            }
+          ],
+          [
+            18,
+            54257,
+            "ime:keyUp",
+            {
+              "interrupted": "none",
+              "composing": false,
+              "session": 2,
+              "historyTransaction": false,
+              "discarded": true,
+              "provisional": false,
+              "terminal": "empty",
+              "pendingCommit": true,
+              "historyRedo": 0,
+              "epoch": 1,
+              "awaiting": "none",
+              "historyUndo": 2,
+              "generation": 1,
+              "revision": 17
+            }
+          ],
+          [
+            19,
+            54271,
+            "dom:keydown",
+            {
+              "composing": false,
+              "keyCode": 17,
+              "key": "mod:ControlLeft"
+            }
+          ],
+          [
+            20,
+            54280,
+            "dom:keydown",
+            {
+              "composing": false,
+              "keyCode": 90,
+              "key": "mod:KeyZ"
+            }
+          ],
+          [
+            21,
+            54280,
+            "command:request",
+            {
+              "reason": null,
+              "composing": false,
+              "session": 2,
+              "modal": false,
+              "id": "edit.undo",
+              "available": true,
+              "pending": false
+            }
+          ],
+          [
+            22,
+            54282,
+            "command:dispatch",
+            {
+              "id": "edit.undo",
+              "accepted": true
+            }
+          ],
+          [
+            23,
+            54351,
+            "dom:keyup",
+            {
+              "composing": false,
+              "keyCode": 17,
+              "code": "ControlLeft",
+              "key": "mod:ControlLeft"
+            }
+          ],
+          [
+            24,
+            54351,
+            "ime:keyUp",
+            {
+              "interrupted": "none",
+              "composing": false,
+              "session": 2,
+              "historyTransaction": false,
+              "discarded": true,
+              "provisional": false,
+              "terminal": "empty",
+              "pendingCommit": false,
+              "historyRedo": 1,
+              "epoch": 1,
+              "awaiting": "none",
+              "historyUndo": 1,
+              "generation": 1,
+              "revision": 18
+            }
+          ],
+          [
+            25,
+            54408,
+            "dom:keyup",
+            {
+              "composing": false,
+              "keyCode": 90,
+              "code": "KeyZ",
+              "key": "char"
+            }
+          ],
+          [
+            26,
+            54408,
+            "ime:keyUp",
+            {
+              "interrupted": "none",
+              "composing": false,
+              "session": 2,
+              "historyTransaction": false,
+              "discarded": true,
+              "provisional": false,
+              "terminal": "empty",
+              "pendingCommit": false,
+              "historyRedo": 1,
+              "epoch": 1,
+              "awaiting": "none",
+              "historyUndo": 1,
+              "generation": 1,
+              "revision": 18
+            }
+          ]
+        ],
+        "seq": 26,
+        "dropped": 0
+      }
+    }
+  },
+  "diagnosis": "The first attempt read asynchronous React DOM state too early; a follow-up observer incorrectly compared hardcoded paragraph0 instead of the selected paragraph1. Final harness queries the actual selected section/paragraph at compositionend and restores exact text/selection with revision+1. This earlier run remains 17 PASS /2 FAIL and is not passing acceptance evidence."
+}

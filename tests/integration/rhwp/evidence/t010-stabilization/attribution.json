@@ -1,0 +1,1608 @@
+{
+  "results": [],
+  "gates": [
+    {
+      "gate": "D4",
+      "item": ".hwp: group-start key→frame p95 ≤50ms",
+      "result": "FAIL",
+      "detail": "{'n': 30, 'p50': 56, 'p95': 126, 'max': 192, 'timeouts': 0}"
+    },
+    {
+      "gate": "D4",
+      "item": ".hwp: Undo p95 ≤1500ms",
+      "result": "PASS",
+      "detail": "{'n': 25, 'p50': 120, 'p95': 129, 'max': 162, 'timeouts': 0}"
+    },
+    {
+      "gate": "D4",
+      "item": ".hwpx: group-start key→frame p95 ≤50ms",
+      "result": "FAIL",
+      "detail": "{'n': 30, 'p50': 101, 'p95': 224, 'max': 521, 'timeouts': 0}"
+    },
+    {
+      "gate": "D4",
+      "item": ".hwpx: Undo p95 ≤1500ms",
+      "result": "PASS",
+      "detail": "{'n': 25, 'p50': 186, 'p95': 246, 'max': 269, 'timeouts': 0}"
+    }
+  ],
+  "measurements": {
+    "fixtureSha256": {
+      "basic-ko.hwp": "57c901cc394abf6f58f4838315d1ea2c5ecf8a03d9934d3fc098fd8be6e6e12f",
+      "basic-ko.hwpx": "26d434b7b427149110751c6ef5b19e9ecb4818f3ba7eadfe201b5afd3de442a8"
+    },
+    "attributionRequested": true,
+    "keyDelivery": "native X11 xdotool",
+    "perf": [
+      {
+        "sample": "large-24.hwp",
+        "dpr": 1.04205322265625,
+        "sessionSpansMs": {
+          "rhwp:commit-ack": {
+            "n": 110,
+            "p50": 48,
+            "p95": 52,
+            "max": 145,
+            "timeouts": 0
+          },
+          "rhwp:revision-schedule": {
+            "n": 110,
+            "p50": 0,
+            "p95": 1,
+            "max": 1,
+            "timeouts": 0
+          },
+          "rhwp:readPages": {
+            "n": 110,
+            "p50": 0,
+            "p95": 1,
+            "max": 1,
+            "timeouts": 0
+          },
+          "rhwp:text-mutation": {
+            "n": 65,
+            "p50": 1,
+            "p95": 3,
+            "max": 30,
+            "timeouts": 0
+          }
+        },
+        "control": "normal history",
+        "fileBytes": 11956736,
+        "pages": 24,
+        "zoom": 50,
+        "warmupGroups": 3,
+        "groupStart": {
+          "n": 30,
+          "p50": 56,
+          "p95": 126,
+          "max": 192,
+          "timeouts": 0
+        },
+        "extend": {
+          "n": 30,
+          "p50": 50,
+          "p95": 64,
+          "max": 201,
+          "timeouts": 0
+        },
+        "undo": {
+          "n": 25,
+          "p50": 120,
+          "p95": 129,
+          "max": 162,
+          "timeouts": 0
+        },
+        "redo": {
+          "n": 20,
+          "p50": 109,
+          "p95": 113,
+          "max": 162,
+          "timeouts": 0
+        },
+        "afterUndo": {
+          "n": 5,
+          "p50": 86,
+          "p95": 91,
+          "max": 91,
+          "timeouts": 0
+        },
+        "stages": {
+          "extend": {
+            "saveSnapshot": {
+              "n": 30,
+              "p50": 0,
+              "p95": 0,
+              "max": 0,
+              "timeouts": 0,
+              "calls": 0
+            },
+            "restoreSnapshot": {
+              "n": 30,
+              "p50": 0,
+              "p95": 0,
+              "max": 0,
+              "timeouts": 0,
+              "calls": 0
+            },
+            "getPageInfo": {
+              "n": 30,
+              "p50": 0,
+              "p95": 1,
+              "max": 1,
+              "timeouts": 0,
+              "calls": 720
+            },
+            "mutation": {
+              "n": 30,
+              "p50": 1,
+              "p95": 3,
+              "max": 29,
+              "timeouts": 0,
+              "calls": 30
+            },
+            "layoutTree": {
+              "n": 30,
+              "p50": 1,
+              "p95": 3,
+              "max": 38,
+              "timeouts": 0,
+              "calls": 57
+            },
+            "render": {
+              "n": 30,
+              "p50": 4,
+              "p95": 7,
+              "max": 13,
+              "timeouts": 0,
+              "calls": 30
+            },
+            "discardSnapshot": {
+              "n": 30,
+              "p50": 0,
+              "p95": 0,
+              "max": 0,
+              "timeouts": 0,
+              "calls": 0
+            },
+            "sessionReadPages": {
+              "n": 30,
+              "p50": 0,
+              "p95": 1,
+              "max": 1,
+              "timeouts": 0,
+              "calls": 30
+            },
+            "sessionMutation": {
+              "n": 30,
+              "p50": 1,
+              "p95": 3,
+              "max": 29,
+              "timeouts": 0,
+              "calls": 30
+            },
+            "revisionSchedule": {
+              "n": 30,
+              "p50": 1,
+              "p95": 1,
+              "max": 1,
+              "timeouts": 0,
+              "calls": 30
+            },
+            "backendCommitAck": {
+              "n": 30,
+              "p50": 37,
+              "p95": 44,
+              "max": 142,
+              "timeouts": 0,
+              "calls": 30
+            },
+            "inputToFrame": {
+              "n": 30,
+              "p50": 49,
+              "p95": 63,
+              "max": 200,
+              "timeouts": 0
+            },
+            "keyToFrame": {
+              "n": 30,
+              "p50": 50,
+              "p95": 64,
+              "max": 201,
+              "timeouts": 0
+            },
+            "delivery": {
+              "n": 30,
+              "p50": 0,
+              "p95": 1,
+              "max": 1,
+              "timeouts": 0
+            },
+            "inputHandlerMs": {
+              "n": 30,
+              "p50": 11,
+              "p95": 14,
+              "max": 141,
+              "timeouts": 0
+            }
+          },
+          "afterUndo": {
+            "saveSnapshot": {
+              "n": 5,
+              "p50": 0,
+              "p95": 0,
+              "max": 0,
+              "timeouts": 0,
+              "calls": 0
+            },
+            "restoreSnapshot": {
+              "n": 5,
+              "p50": 0,
+              "p95": 0,
+              "max": 0,
+              "timeouts": 0,
+              "calls": 0
+            },
+            "getPageInfo": {
+              "n": 5,
+              "p50": 0,
+              "p95": 1,
+              "max": 1,
+              "timeouts": 0,
+              "calls": 120
+            },
+            "mutation": {
+              "n": 5,
+              "p50": 1,
+              "p95": 1,
+              "max": 1,
+              "timeouts": 0,
+              "calls": 5
+            },
+            "layoutTree": {
+              "n": 5,
+              "p50": 1,
+              "p95": 2,
+              "max": 2,
+              "timeouts": 0,
+              "calls": 10
+            },
+            "render": {
+              "n": 5,
+              "p50": 9,
+              "p95": 9,
+              "max": 9,
+              "timeouts": 0,
+              "calls": 5
+            },
+            "discardSnapshot": {
+              "n": 5,
+              "p50": 1,
+              "p95": 1,
+              "max": 1,
+              "timeouts": 0,
+              "calls": 5
+            },
+            "sessionReadPages": {
+              "n": 5,
+              "p50": 1,
+              "p95": 1,
+              "max": 1,
+              "timeouts": 0,
+              "calls": 5
+            },
+            "sessionMutation": {
+              "n": 5,
+              "p50": 1,
+              "p95": 1,
+              "max": 1,
+              "timeouts": 0,
+              "calls": 5
+            },
+            "revisionSchedule": {
+              "n": 5,
+              "p50": 0,
+              "p95": 1,
+              "max": 1,
+              "timeouts": 0,
+              "calls": 5
+            },
+            "backendCommitAck": {
+              "n": 5,
+              "p50": 49,
+              "p95": 51,
+              "max": 51,
+              "timeouts": 0,
+              "calls": 5
+            },
+            "inputToFrame": {
+              "n": 5,
+              "p50": 86,
+              "p95": 90,
+              "max": 90,
+              "timeouts": 0
+            },
+            "keyToFrame": {
+              "n": 5,
+              "p50": 86,
+              "p95": 91,
+              "max": 91,
+              "timeouts": 0
+            },
+            "delivery": {
+              "n": 5,
+              "p50": 0,
+              "p95": 0,
+              "max": 0,
+              "timeouts": 0
+            },
+            "inputHandlerMs": {
+              "n": 5,
+              "p50": 16,
+              "p95": 17,
+              "max": 17,
+              "timeouts": 0
+            }
+          },
+          "undo": {
+            "saveSnapshot": {
+              "n": 25,
+              "p50": 0,
+              "p95": 1,
+              "max": 1,
+              "timeouts": 0,
+              "calls": 5
+            },
+            "restoreSnapshot": {
+              "n": 25,
+              "p50": 16,
+              "p95": 17,
+              "max": 17,
+              "timeouts": 0,
+              "calls": 25
+            },
+            "getPageInfo": {
+              "n": 25,
+              "p50": 0,
+              "p95": 1,
+              "max": 1,
+              "timeouts": 0,
+              "calls": 600
+            },
+            "mutation": {
+              "n": 25,
+              "p50": 0,
+              "p95": 0,
+              "max": 0,
+              "timeouts": 0,
+              "calls": 0
+            },
+            "layoutTree": {
+              "n": 25,
+              "p50": 3,
+              "p95": 4,
+              "max": 4,
+              "timeouts": 0,
+              "calls": 75
+            },
+            "render": {
+              "n": 25,
+              "p50": 20,
+              "p95": 21,
+              "max": 25,
+              "timeouts": 0,
+              "calls": 75
+            },
+            "discardSnapshot": {
+              "n": 25,
+              "p50": 0,
+              "p95": 0,
+              "max": 0,
+              "timeouts": 0,
+              "calls": 0
+            },
+            "sessionReadPages": {
+              "n": 25,
+              "p50": 1,
+              "p95": 1,
+              "max": 1,
+              "timeouts": 0,
+              "calls": 25
+            },
+            "sessionMutation": {
+              "n": 0,
+              "calls": 0,
+              "unobserved": true
+            },
+            "revisionSchedule": {
+              "n": 25,
+              "p50": 0,
+              "p95": 1,
+              "max": 1,
+              "timeouts": 0,
+              "calls": 25
+            },
+            "backendCommitAck": {
+              "n": 25,
+              "p50": 49,
+              "p95": 51,
+              "max": 78,
+              "timeouts": 0,
+              "calls": 25
+            },
+            "inputToFrame": {
+              "n": 25,
+              "p50": 120,
+              "p95": 129,
+              "max": 162,
+              "timeouts": 0
+            },
+            "keyToFrame": {
+              "n": 25,
+              "p50": 120,
+              "p95": 129,
+              "max": 162,
+              "timeouts": 0
+            },
+            "delivery": {
+              "n": 20,
+              "p50": 0,
+              "p95": 1,
+              "max": 4,
+              "timeouts": 5
+            },
+            "inputHandlerMs": {
+              "n": 0
+            }
+          },
+          "groupStart": {
+            "saveSnapshot": {
+              "n": 30,
+              "p50": 0,
+              "p95": 1,
+              "max": 1,
+              "timeouts": 0,
+              "calls": 20
+            },
+            "restoreSnapshot": {
+              "n": 30,
+              "p50": 0,
+              "p95": 0,
+              "max": 0,
+              "timeouts": 0,
+              "calls": 0
+            },
+            "getPageInfo": {
+              "n": 30,
+              "p50": 0,
+              "p95": 1,
+              "max": 1,
+              "timeouts": 0,
+              "calls": 720
+            },
+            "mutation": {
+              "n": 30,
+              "p50": 2,
+              "p95": 4,
+              "max": 29,
+              "timeouts": 0,
+              "calls": 30
+            },
+            "layoutTree": {
+              "n": 30,
+              "p50": 2,
+              "p95": 4,
+              "max": 39,
+              "timeouts": 0,
+              "calls": 73
+            },
+            "render": {
+              "n": 30,
+              "p50": 5,
+              "p95": 11,
+              "max": 18,
+              "timeouts": 0,
+              "calls": 30
+            },
+            "discardSnapshot": {
+              "n": 30,
+              "p50": 0,
+              "p95": 1,
+              "max": 4,
+              "timeouts": 0,
+              "calls": 4
+            },
+            "sessionReadPages": {
+              "n": 30,
+              "p50": 0,
+              "p95": 1,
+              "max": 1,
+              "timeouts": 0,
+              "calls": 30
+            },
+            "sessionMutation": {
+              "n": 30,
+              "p50": 2,
+              "p95": 4,
+              "max": 30,
+              "timeouts": 0,
+              "calls": 30
+            },
+            "revisionSchedule": {
+              "n": 30,
+              "p50": 0,
+              "p95": 1,
+              "max": 1,
+              "timeouts": 0,
+              "calls": 30
+            },
+            "backendCommitAck": {
+              "n": 30,
+              "p50": 42,
+              "p95": 77,
+              "max": 145,
+              "timeouts": 0,
+              "calls": 30
+            },
+            "inputToFrame": {
+              "n": 30,
+              "p50": 52,
+              "p95": 90,
+              "max": 190,
+              "timeouts": 0
+            },
+            "keyToFrame": {
+              "n": 30,
+              "p50": 56,
+              "p95": 126,
+              "max": 192,
+              "timeouts": 0
+            },
+            "delivery": {
+              "n": 30,
+              "p50": 0,
+              "p95": 1,
+              "max": 1,
+              "timeouts": 0
+            },
+            "inputHandlerMs": {
+              "n": 30,
+              "p50": 12,
+              "p95": 29,
+              "max": 147,
+              "timeouts": 0
+            }
+          },
+          "redo": {
+            "saveSnapshot": {
+              "n": 20,
+              "p50": 0,
+              "p95": 0,
+              "max": 0,
+              "timeouts": 0,
+              "calls": 0
+            },
+            "restoreSnapshot": {
+              "n": 20,
+              "p50": 16,
+              "p95": 17,
+              "max": 17,
+              "timeouts": 0,
+              "calls": 20
+            },
+            "getPageInfo": {
+              "n": 20,
+              "p50": 0,
+              "p95": 1,
+              "max": 1,
+              "timeouts": 0,
+              "calls": 480
+            },
+            "mutation": {
+              "n": 20,
+              "p50": 0,
+              "p95": 0,
+              "max": 0,
+              "timeouts": 0,
+              "calls": 0
+            },
+            "layoutTree": {
+              "n": 20,
+              "p50": 1,
+              "p95": 2,
+              "max": 2,
+              "timeouts": 0,
+              "calls": 40
+            },
+            "render": {
+              "n": 20,
+              "p50": 14,
+              "p95": 15,
+              "max": 16,
+              "timeouts": 0,
+              "calls": 40
+            },
+            "discardSnapshot": {
+              "n": 20,
+              "p50": 0,
+              "p95": 0,
+              "max": 0,
+              "timeouts": 0,
+              "calls": 0
+            },
+            "sessionReadPages": {
+              "n": 20,
+              "p50": 1,
+              "p95": 1,
+              "max": 1,
+              "timeouts": 0,
+              "calls": 20
+            },
+            "sessionMutation": {
+              "n": 0,
+              "calls": 0,
+              "unobserved": true
+            },
+            "revisionSchedule": {
+              "n": 20,
+              "p50": 0,
+              "p95": 1,
+              "max": 1,
+              "timeouts": 0,
+              "calls": 20
+            },
+            "backendCommitAck": {
+              "n": 20,
+              "p50": 50,
+              "p95": 52,
+              "max": 77,
+              "timeouts": 0,
+              "calls": 20
+            },
+            "inputToFrame": {
+              "n": 20,
+              "p50": 109,
+              "p95": 113,
+              "max": 162,
+              "timeouts": 0
+            },
+            "keyToFrame": {
+              "n": 20,
+              "p50": 109,
+              "p95": 113,
+              "max": 162,
+              "timeouts": 0
+            },
+            "delivery": {
+              "n": 16,
+              "p50": 0,
+              "p95": 0,
+              "max": 0,
+              "timeouts": 4
+            },
+            "inputHandlerMs": {
+              "n": 0
+            }
+          }
+        },
+        "frameGapDuringHistoryAndFollowingInputMs": {
+          "n": 308,
+          "p50": 35,
+          "p95": 46,
+          "max": 69,
+          "timeouts": 0
+        },
+        "frameGapDuringUndoRedoMs": {
+          "n": 229,
+          "p50": 35,
+          "p95": 47,
+          "max": 69,
+          "timeouts": 0
+        },
+        "memory": {
+          "beforeOpen": {
+            "processes": [
+              {
+                "pid": 1115183,
+                "rssBytes": 271237120
+              }
+            ],
+            "aggregateRssBytes": 271237120,
+            "wasmBytes": 2949120,
+            "canvasPixels": 0,
+            "canvasCount": 0,
+            "owners": [],
+            "engineSurfaces": {
+              "externrefSlots": 1028,
+              "canvasPixels": 0,
+              "imageCount": 0,
+              "detachedCanvases": 0,
+              "canvasCount": 0,
+              "imagePixels": 0
+            },
+            "lastDisposal": null
+          },
+          "afterOpen": {
+            "processes": [
+              {
+                "pid": 1115183,
+                "rssBytes": 873693184
+              }
+            ],
+            "aggregateRssBytes": 873693184,
+            "wasmBytes": 120455168,
+            "canvasPixels": 5812560,
+            "canvasCount": 24,
+            "owners": [
+              {
+                "discards": 0,
+                "nativeCapacity": 100,
+                "id": 1,
+                "saves": 3,
+                "live": 3
+              }
+            ],
+            "engineSurfaces": {
+              "externrefSlots": 1156,
+              "canvasPixels": 100819044,
+              "imageCount": 0,
+              "detachedCanvases": 21,
+              "canvasCount": 21,
+              "imagePixels": 0
+            },
+            "lastDisposal": null
+          },
+          "afterUndoRedo": {
+            "processes": [
+              {
+                "pid": 1115183,
+                "rssBytes": 1395470336
+              }
+            ],
+            "aggregateRssBytes": 1395470336,
+            "wasmBytes": 120455168,
+            "canvasPixels": 5812560,
+            "canvasCount": 24,
+            "owners": [
+              {
+                "discards": 9,
+                "nativeCapacity": 100,
+                "id": 1,
+                "saves": 28,
+                "live": 19
+              }
+            ],
+            "engineSurfaces": {
+              "externrefSlots": 1156,
+              "canvasPixels": 100819044,
+              "imageCount": 0,
+              "detachedCanvases": 21,
+              "canvasCount": 21,
+              "imagePixels": 0
+            },
+            "lastDisposal": null
+          },
+          "afterClose": {
+            "processes": [
+              {
+                "pid": 1115183,
+                "rssBytes": 1387347968
+              }
+            ],
+            "aggregateRssBytes": 1387347968,
+            "wasmBytes": 120455168,
+            "canvasPixels": 0,
+            "canvasCount": 0,
+            "owners": [],
+            "engineSurfaces": {
+              "externrefSlots": 1156,
+              "canvasPixels": 100819044,
+              "imageCount": 0,
+              "detachedCanvases": 21,
+              "canvasCount": 21,
+              "imagePixels": 0
+            },
+            "lastDisposal": {
+              "liveAtFree": 19,
+              "discards": 9,
+              "id": 1,
+              "saves": 28
+            }
+          }
+        }
+      },
+      {
+        "sample": "multi-60.hwpx",
+        "dpr": 1.04205322265625,
+        "sessionSpansMs": {
+          "rhwp:commit-ack": {
+            "n": 110,
+            "p50": 61,
+            "p95": 97,
+            "max": 165,
+            "timeouts": 0
+          },
+          "rhwp:revision-schedule": {
+            "n": 110,
+            "p50": 1,
+            "p95": 1,
+            "max": 2,
+            "timeouts": 0
+          },
+          "rhwp:readPages": {
+            "n": 110,
+            "p50": 1,
+            "p95": 1,
+            "max": 1,
+            "timeouts": 0
+          },
+          "rhwp:text-mutation": {
+            "n": 65,
+            "p50": 26,
+            "p95": 27,
+            "max": 30,
+            "timeouts": 0
+          }
+        },
+        "control": "normal history",
+        "fileBytes": 423622,
+        "pages": 60,
+        "zoom": 50,
+        "warmupGroups": 3,
+        "groupStart": {
+          "n": 30,
+          "p50": 101,
+          "p95": 224,
+          "max": 521,
+          "timeouts": 0
+        },
+        "extend": {
+          "n": 30,
+          "p50": 88,
+          "p95": 153,
+          "max": 591,
+          "timeouts": 0
+        },
+        "undo": {
+          "n": 25,
+          "p50": 186,
+          "p95": 246,
+          "max": 269,
+          "timeouts": 0
+        },
+        "redo": {
+          "n": 20,
+          "p50": 186,
+          "p95": 198,
+          "max": 201,
+          "timeouts": 0
+        },
+        "afterUndo": {
+          "n": 5,
+          "p50": 129,
+          "p95": 140,
+          "max": 140,
+          "timeouts": 0
+        },
+        "stages": {
+          "extend": {
+            "saveSnapshot": {
+              "n": 30,
+              "p50": 0,
+              "p95": 0,
+              "max": 0,
+              "timeouts": 0,
+              "calls": 0
+            },
+            "restoreSnapshot": {
+              "n": 30,
+              "p50": 0,
+              "p95": 0,
+              "max": 0,
+              "timeouts": 0,
+              "calls": 0
+            },
+            "getPageInfo": {
+              "n": 30,
+              "p50": 1,
+              "p95": 1,
+              "max": 1,
+              "timeouts": 0,
+              "calls": 1800
+            },
+            "mutation": {
+              "n": 30,
+              "p50": 26,
+              "p95": 28,
+              "max": 30,
+              "timeouts": 0,
+              "calls": 30
+            },
+            "layoutTree": {
+              "n": 30,
+              "p50": 7,
+              "p95": 8,
+              "max": 30,
+              "timeouts": 0,
+              "calls": 33
+            },
+            "render": {
+              "n": 30,
+              "p50": 5,
+              "p95": 21,
+              "max": 186,
+              "timeouts": 0,
+              "calls": 33
+            },
+            "discardSnapshot": {
+              "n": 30,
+              "p50": 0,
+              "p95": 0,
+              "max": 0,
+              "timeouts": 0,
+              "calls": 0
+            },
+            "sessionReadPages": {
+              "n": 30,
+              "p50": 1,
+              "p95": 1,
+              "max": 1,
+              "timeouts": 0,
+              "calls": 30
+            },
+            "sessionMutation": {
+              "n": 30,
+              "p50": 26,
+              "p95": 28,
+              "max": 30,
+              "timeouts": 0,
+              "calls": 30
+            },
+            "revisionSchedule": {
+              "n": 30,
+              "p50": 1,
+              "p95": 1,
+              "max": 2,
+              "timeouts": 0,
+              "calls": 30
+            },
+            "backendCommitAck": {
+              "n": 30,
+              "p50": 53,
+              "p95": 106,
+              "max": 145,
+              "timeouts": 0,
+              "calls": 30
+            },
+            "inputToFrame": {
+              "n": 30,
+              "p50": 83,
+              "p95": 144,
+              "max": 474,
+              "timeouts": 0
+            },
+            "keyToFrame": {
+              "n": 30,
+              "p50": 88,
+              "p95": 153,
+              "max": 591,
+              "timeouts": 0
+            },
+            "delivery": {
+              "n": 30,
+              "p50": 0,
+              "p95": 1,
+              "max": 1,
+              "timeouts": 0
+            },
+            "inputHandlerMs": {
+              "n": 30,
+              "p50": 49,
+              "p95": 64,
+              "max": 104,
+              "timeouts": 0
+            }
+          },
+          "afterUndo": {
+            "saveSnapshot": {
+              "n": 5,
+              "p50": 0,
+              "p95": 0,
+              "max": 0,
+              "timeouts": 0,
+              "calls": 0
+            },
+            "restoreSnapshot": {
+              "n": 5,
+              "p50": 0,
+              "p95": 0,
+              "max": 0,
+              "timeouts": 0,
+              "calls": 0
+            },
+            "getPageInfo": {
+              "n": 5,
+              "p50": 1,
+              "p95": 1,
+              "max": 1,
+              "timeouts": 0,
+              "calls": 300
+            },
+            "mutation": {
+              "n": 5,
+              "p50": 26,
+              "p95": 26,
+              "max": 26,
+              "timeouts": 0,
+              "calls": 5
+            },
+            "layoutTree": {
+              "n": 5,
+              "p50": 8,
+              "p95": 8,
+              "max": 8,
+              "timeouts": 0,
+              "calls": 5
+            },
+            "render": {
+              "n": 5,
+              "p50": 13,
+              "p95": 14,
+              "max": 14,
+              "timeouts": 0,
+              "calls": 5
+            },
+            "discardSnapshot": {
+              "n": 5,
+              "p50": 1,
+              "p95": 4,
+              "max": 4,
+              "timeouts": 0,
+              "calls": 5
+            },
+            "sessionReadPages": {
+              "n": 5,
+              "p50": 1,
+              "p95": 1,
+              "max": 1,
+              "timeouts": 0,
+              "calls": 5
+            },
+            "sessionMutation": {
+              "n": 5,
+              "p50": 26,
+              "p95": 26,
+              "max": 26,
+              "timeouts": 0,
+              "calls": 5
+            },
+            "revisionSchedule": {
+              "n": 5,
+              "p50": 1,
+              "p95": 1,
+              "max": 1,
+              "timeouts": 0,
+              "calls": 5
+            },
+            "backendCommitAck": {
+              "n": 5,
+              "p50": 67,
+              "p95": 71,
+              "max": 71,
+              "timeouts": 0,
+              "calls": 5
+            },
+            "inputToFrame": {
+              "n": 5,
+              "p50": 128,
+              "p95": 136,
+              "max": 136,
+              "timeouts": 0
+            },
+            "keyToFrame": {
+              "n": 5,
+              "p50": 129,
+              "p95": 140,
+              "max": 140,
+              "timeouts": 0
+            },
+            "delivery": {
+              "n": 5,
+              "p50": 0,
+              "p95": 0,
+              "max": 0,
+              "timeouts": 0
+            },
+            "inputHandlerMs": {
+              "n": 5,
+              "p50": 59,
+              "p95": 66,
+              "max": 66,
+              "timeouts": 0
+            }
+          },
+          "undo": {
+            "saveSnapshot": {
+              "n": 25,
+              "p50": 0,
+              "p95": 1,
+              "max": 1,
+              "timeouts": 0,
+              "calls": 5
+            },
+            "restoreSnapshot": {
+              "n": 25,
+              "p50": 83,
+              "p95": 86,
+              "max": 88,
+              "timeouts": 0,
+              "calls": 25
+            },
+            "getPageInfo": {
+              "n": 25,
+              "p50": 1,
+              "p95": 1,
+              "max": 1,
+              "timeouts": 0,
+              "calls": 1500
+            },
+            "mutation": {
+              "n": 25,
+              "p50": 0,
+              "p95": 0,
+              "max": 0,
+              "timeouts": 0,
+              "calls": 0
+            },
+            "layoutTree": {
+              "n": 25,
+              "p50": 8,
+              "p95": 8,
+              "max": 8,
+              "timeouts": 0,
+              "calls": 25
+            },
+            "render": {
+              "n": 25,
+              "p50": 13,
+              "p95": 14,
+              "max": 16,
+              "timeouts": 0,
+              "calls": 25
+            },
+            "discardSnapshot": {
+              "n": 25,
+              "p50": 0,
+              "p95": 0,
+              "max": 0,
+              "timeouts": 0,
+              "calls": 0
+            },
+            "sessionReadPages": {
+              "n": 25,
+              "p50": 1,
+              "p95": 1,
+              "max": 1,
+              "timeouts": 0,
+              "calls": 25
+            },
+            "sessionMutation": {
+              "n": 0,
+              "calls": 0,
+              "unobserved": true
+            },
+            "revisionSchedule": {
+              "n": 25,
+              "p50": 1,
+              "p95": 1,
+              "max": 1,
+              "timeouts": 0,
+              "calls": 25
+            },
+            "backendCommitAck": {
+              "n": 25,
+              "p50": 66,
+              "p95": 97,
+              "max": 111,
+              "timeouts": 0,
+              "calls": 25
+            },
+            "inputToFrame": {
+              "n": 25,
+              "p50": 186,
+              "p95": 246,
+              "max": 269,
+              "timeouts": 0
+            },
+            "keyToFrame": {
+              "n": 25,
+              "p50": 186,
+              "p95": 246,
+              "max": 269,
+              "timeouts": 0
+            },
+            "delivery": {
+              "n": 18,
+              "p50": 0,
+              "p95": 5,
+              "max": 5,
+              "timeouts": 7
+            },
+            "inputHandlerMs": {
+              "n": 0
+            }
+          },
+          "groupStart": {
+            "saveSnapshot": {
+              "n": 30,
+              "p50": 1,
+              "p95": 1,
+              "max": 2,
+              "timeouts": 0,
+              "calls": 30
+            },
+            "restoreSnapshot": {
+              "n": 30,
+              "p50": 0,
+              "p95": 0,
+              "max": 0,
+              "timeouts": 0,
+              "calls": 0
+            },
+            "getPageInfo": {
+              "n": 30,
+              "p50": 0,
+              "p95": 1,
+              "max": 1,
+              "timeouts": 0,
+              "calls": 1800
+            },
+            "mutation": {
+              "n": 30,
+              "p50": 26,
+              "p95": 27,
+              "max": 27,
+              "timeouts": 0,
+              "calls": 30
+            },
+            "layoutTree": {
+              "n": 30,
+              "p50": 7,
+              "p95": 8,
+              "max": 56,
+              "timeouts": 0,
+              "calls": 33
+            },
+            "render": {
+              "n": 30,
+              "p50": 12,
+              "p95": 45,
+              "max": 123,
+              "timeouts": 0,
+              "calls": 33
+            },
+            "discardSnapshot": {
+              "n": 30,
+              "p50": 0,
+              "p95": 0,
+              "max": 0,
+              "timeouts": 0,
+              "calls": 0
+            },
+            "sessionReadPages": {
+              "n": 30,
+              "p50": 1,
+              "p95": 1,
+              "max": 1,
+              "timeouts": 0,
+              "calls": 30
+            },
+            "sessionMutation": {
+              "n": 30,
+              "p50": 26,
+              "p95": 27,
+              "max": 27,
+              "timeouts": 0,
+              "calls": 30
+            },
+            "revisionSchedule": {
+              "n": 30,
+              "p50": 1,
+              "p95": 1,
+              "max": 1,
+              "timeouts": 0,
+              "calls": 30
+            },
+            "backendCommitAck": {
+              "n": 30,
+              "p50": 60,
+              "p95": 115,
+              "max": 165,
+              "timeouts": 0,
+              "calls": 30
+            },
+            "inputToFrame": {
+              "n": 30,
+              "p50": 99,
+              "p95": 157,
+              "max": 424,
+              "timeouts": 0
+            },
+            "keyToFrame": {
+              "n": 30,
+              "p50": 101,
+              "p95": 224,
+              "max": 521,
+              "timeouts": 0
+            },
+            "delivery": {
+              "n": 30,
+              "p50": 0,
+              "p95": 1,
+              "max": 1,
+              "timeouts": 0
+            },
+            "inputHandlerMs": {
+              "n": 30,
+              "p50": 56,
+              "p95": 64,
+              "max": 93,
+              "timeouts": 0
+            }
+          },
+          "redo": {
+            "saveSnapshot": {
+              "n": 20,
+              "p50": 0,
+              "p95": 0,
+              "max": 0,
+              "timeouts": 0,
+              "calls": 0
+            },
+            "restoreSnapshot": {
+              "n": 20,
+              "p50": 82,
+              "p95": 86,
+              "max": 86,
+              "timeouts": 0,
+              "calls": 20
+            },
+            "getPageInfo": {
+              "n": 20,
+              "p50": 0,
+              "p95": 1,
+              "max": 1,
+              "timeouts": 0,
+              "calls": 1200
+            },
+            "mutation": {
+              "n": 20,
+              "p50": 0,
+              "p95": 0,
+              "max": 0,
+              "timeouts": 0,
+              "calls": 0
+            },
+            "layoutTree": {
+              "n": 20,
+              "p50": 7,
+              "p95": 8,
+              "max": 9,
+              "timeouts": 0,
+              "calls": 20
+            },
+            "render": {
+              "n": 20,
+              "p50": 13,
+              "p95": 15,
+              "max": 15,
+              "timeouts": 0,
+              "calls": 20
+            },
+            "discardSnapshot": {
+              "n": 20,
+              "p50": 0,
+              "p95": 0,
+              "max": 0,
+              "timeouts": 0,
+              "calls": 0
+            },
+            "sessionReadPages": {
+              "n": 20,
+              "p50": 1,
+              "p95": 1,
+              "max": 1,
+              "timeouts": 0,
+              "calls": 20
+            },
+            "sessionMutation": {
+              "n": 0,
+              "calls": 0,
+              "unobserved": true
+            },
+            "revisionSchedule": {
+              "n": 20,
+              "p50": 1,
+              "p95": 1,
+              "max": 1,
+              "timeouts": 0,
+              "calls": 20
+            },
+            "backendCommitAck": {
+              "n": 20,
+              "p50": 67,
+              "p95": 70,
+              "max": 70,
+              "timeouts": 0,
+              "calls": 20
+            },
+            "inputToFrame": {
+              "n": 20,
+              "p50": 186,
+              "p95": 198,
+              "max": 201,
+              "timeouts": 0
+            },
+            "keyToFrame": {
+              "n": 20,
+              "p50": 186,
+              "p95": 198,
+              "max": 201,
+              "timeouts": 0
+            },
+            "delivery": {
+              "n": 15,
+              "p50": 3,
+              "p95": 8,
+              "max": 8,
+              "timeouts": 5
+            },
+            "inputHandlerMs": {
+              "n": 0
+            }
+          }
+        },
+        "frameGapDuringHistoryAndFollowingInputMs": {
+          "n": 303,
+          "p50": 33,
+          "p95": 130,
+          "max": 146,
+          "timeouts": 0
+        },
+        "frameGapDuringUndoRedoMs": {
+          "n": 224,
+          "p50": 33,
+          "p95": 130,
+          "max": 146,
+          "timeouts": 0
+        },
+        "memory": {
+          "beforeOpen": {
+            "processes": [
+              {
+                "pid": 1115183,
+                "rssBytes": 1388969984
+              }
+            ],
+            "aggregateRssBytes": 1388969984,
+            "wasmBytes": 120455168,
+            "canvasPixels": 0,
+            "canvasCount": 0,
+            "owners": [],
+            "engineSurfaces": {
+              "externrefSlots": 1156,
+              "canvasPixels": 100819044,
+              "imageCount": 0,
+              "detachedCanvases": 21,
+              "canvasCount": 21,
+              "imagePixels": 0
+            },
+            "lastDisposal": {
+              "liveAtFree": 19,
+              "discards": 9,
+              "id": 1,
+              "saves": 28
+            }
+          },
+          "afterOpen": {
+            "processes": [
+              {
+                "pid": 1115183,
+                "rssBytes": 1632948224
+              }
+            ],
+            "aggregateRssBytes": 1632948224,
+            "wasmBytes": 120455168,
+            "canvasPixels": 10414170,
+            "canvasCount": 60,
+            "owners": [
+              {
+                "discards": 0,
+                "nativeCapacity": 100,
+                "id": 2,
+                "saves": 3,
+                "live": 3
+              }
+            ],
+            "engineSurfaces": {
+              "externrefSlots": 1156,
+              "canvasPixels": 102854184,
+              "imageCount": 0,
+              "detachedCanvases": 23,
+              "canvasCount": 23,
+              "imagePixels": 0
+            },
+            "lastDisposal": {
+              "liveAtFree": 19,
+              "discards": 9,
+              "id": 1,
+              "saves": 28
+            }
+          },
+          "afterUndoRedo": {
+            "processes": [
+              {
+                "pid": 1115183,
+                "rssBytes": 1728348160
+              }
+            ],
+            "aggregateRssBytes": 1728348160,
+            "wasmBytes": 120455168,
+            "canvasPixels": 14531400,
+            "canvasCount": 60,
+            "owners": [
+              {
+                "discards": 5,
+                "nativeCapacity": 100,
+                "id": 2,
+                "saves": 38,
+                "live": 33
+              }
+            ],
+            "engineSurfaces": {
+              "externrefSlots": 1156,
+              "canvasPixels": 102854184,
+              "imageCount": 0,
+              "detachedCanvases": 23,
+              "canvasCount": 23,
+              "imagePixels": 0
+            },
+            "lastDisposal": {
+              "liveAtFree": 19,
+              "discards": 9,
+              "id": 1,
+              "saves": 28
+            }
+          },
+          "afterClose": {
+            "processes": [
+              {
+                "pid": 1115183,
+                "rssBytes": 1759285248
+              }
+            ],
+            "aggregateRssBytes": 1759285248,
+            "wasmBytes": 120455168,
+            "canvasPixels": 0,
+            "canvasCount": 0,
+            "owners": [],
+            "engineSurfaces": {
+              "externrefSlots": 1156,
+              "canvasPixels": 102854184,
+              "imageCount": 0,
+              "detachedCanvases": 23,
+              "canvasCount": 23,
+              "imagePixels": 0
+            },
+            "lastDisposal": {
+              "liveAtFree": 33,
+              "discards": 5,
+              "id": 2,
+              "saves": 38
+            }
+          }
+        }
+      }
+    ]
+  }
+}
