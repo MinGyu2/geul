@@ -24,7 +24,7 @@ T006의 자리표시자 `src/adapters/engines.ts`(`EngineAdapter`, 모든 명령
 |------|------|-----------|
 | A 어댑터 소유 | VERIFIED CORRECT(정리) | 엔진 모델은 세션마다 하나: rhwp는 WebView WASM(`RhwpEditorSession`), WordCraft는 백엔드 `DocxModel`(`DocxEditorSession`이 편집 표면). 레지스트리는 엔진 함수를 직접 부르지 않고 세션에 명령 ID만 준다. 자리표시자 `EngineAdapter`는 지움. |
 | B 실행 취소(WordCraft) | VERIFIED CORRECT | 기록은 고정 WordCraft `Session`(`history`·`redo`, 타자 묶기)이 가진다. `edit.undo`·`edit.redo`는 `.pure()`(mutates=false)로 선언돼 있어 `DocxModel::run`의 변경 판정이 "안 바뀜"을 낸다 → `undo_redo_step`이 실행 전후 문서를 비교해 revision을 정한다. 되돌린 뒤 표지(`Mark`)·마지막 넣기 기억을 버려 늦은 `InsertAt`·`ReplaceInserted`가 되돌린 자리에 쓰지 않는다. 문서 보호를 푸는 단계(`step_lifts_protection`)는 쓸 수 없다고 보인다. 앱은 기록을 따로 두지 않는다(두 번째 기록 없음). |
-| B 실행 취소(rhwp) | NON-BLOCKING LIMITATION | 고정 rhwp(`1a76570`)에는 엔진이 가진 실행 취소 기록이 없다. `saveSnapshot`·`restoreSnapshot`·`discardSnapshot`(최대 100) 기본 함수만 있고 기록은 rhwp studio 화면 코드가 만든다. 앱에서 기록을 만들면 엔진 밖 두 번째 기록이 되고, 조합·대기 확정(T007)·revision과 맞추는 계약이 없다 → `edit.undo`·`edit.redo`는 rhwp에서 `unsupported`. SC-003의 rhwp 실행 취소는 남은 일이다. |
+| B 실행 취소(rhwp) | IMPLEMENTED — NOT ENABLED (2026-10-22) | 고정 rhwp(`1a76570`)에는 엔진이 가진 실행 취소 기록이 없다(`saveSnapshot`·`restoreSnapshot`·`discardSnapshot`·`snapshotCapacity` 기본 함수만). T010 Phase 2: 기록 **내용**(스냅숏)은 엔진이 갖고, 세션(`RhwpEditorSession`)의 `RhwpHistory`(`src/components/Editor/rhwp/rhwpHistory.ts`)가 스냅숏 ID·상태 시간선·커서 체크포인트·타자 그룹만 조정한다(문서 모델은 하나, [rhwp-undo-redo.md](rhwp-undo-redo.md)). 세션은 `snapshot().history`로 단계를 알리고 `execute`가 같은 가용성 함수로 다시 확인한 뒤 `undo()`/`redo()`를 부른다. 그러나 레지스트리의 rhwp `edit.undo`·`edit.redo`는 아직 `unsupported`: 활성화 관문 중 네이티브 ibus-hangul 실행 취소 시나리오와 WebView 성능이 검증되지 않았다(가용성은 `engineUnsupported`로 거절). |
 | 서식(WordCraft) | VERIFIED CORRECT | `format.bold`·`italic`·`underline`·`strikethrough`(엔진 명령): 선택이 있으면 그 범위를 켜고 끄며 문서를 바꾸고, 커서만 있으면 다음 입력의 서식만 바꾼다(문서·revision 그대로). 눌림은 `wordcraft_engine::cmd::format::state`(선택 전체가 그 서식일 때 참). 굵게·실행 취소 뒤 저장이 T009 보존 검사를 통과하고 다시 열면 같다(Rust 시험). |
 | 서식(rhwp) | NON-BLOCKING LIMITATION | rhwp 글자 서식은 HWP DocInfo 글자 모양·HWPX `header.xml`을 바꾼다. T009 보존 검사는 편집과 무관한 레코드·부분이 바뀌면 저장을 막도록 정했으므로(엄격 비교) 서식을 바꾼 문서는 저장할 수 없을 것으로 본다. 실제 rhwp로 확인하지 않았으므로 지원한다고 하지 않는다(`unsupported`). |
 | C 가용성 | VERIFIED CORRECT | 엔진 지원 표 + 세션 상태(불러옴·편집 가능·조합·대기·저장 중·엔진 기록·엔진 서식). 아래 표. |
@@ -45,7 +45,8 @@ T006의 자리표시자 `src/adapters/engines.ts`(`EngineAdapter`, 모든 명령
 5. 실행 취소: 엔진 기록에 단계가 있음 → 아니면 `nothingToUndo`. 다시 실행: 다시 실행 단계가 있음 → 아니면 `nothingToRedo`. 대기 중인
    연산이 있으면 엔진 기록 대신 그 연산을 적용한 예상(`queuedHistory`, 안정화 — 처음 T010은 "대기 중이면 실행 취소 가능"이었음)으로
    정한다. 마무리 안정화부터 예상은 방향마다 `available`·`none`·`unknown`이고, 남은 단계를 응답 전에 모르면(`unknown`) `pendingEdits`로
-   응답까지 기다린다. 엔진이 기록을 알려 주지 않으면(`history: null`) `engineUnsupported`.
+   응답까지 기다린다. 엔진이 기록을 알려 주지 않으면(`history: null`) `engineUnsupported`, 기록을 쓸 수 있는 엔진이 이 문서에서
+   한도로 껐으면(`historyLimited`, rhwp 큰 문서) `limit`.
 6. 서식: 엔진이 서식 상태를 알려 주면 쓸 수 있고 눌림 = 그 상태. 아니면 `engineUnsupported`. 문서 보호가 언제나 거부하면
    (`formatAccess: "protected"`, 안정화) `protected`.
 
@@ -59,8 +60,8 @@ T006의 자리표시자 `src/adapters/engines.ts`(`EngineAdapter`, 모든 명령
 
 | 명령 | 단축키 | WordCraft(DOCX) | rhwp(HWP·HWPX) |
 |------|--------|-----------------|----------------|
-| `edit.undo` | Ctrl+Z | 지원(엔진 기록) | 미지원(엔진 기록 없음) |
-| `edit.redo` | Ctrl+Y, Ctrl+Shift+Z | 지원(엔진 기록) | 미지원 |
+| `edit.undo` | Ctrl+Z | 지원(엔진 기록) | 미지원(세션 기록 구현, 활성화 관문 미통과) |
+| `edit.redo` | Ctrl+Y, Ctrl+Shift+Z | 지원(엔진 기록) | 미지원(세션 기록 구현, 활성화 관문 미통과) |
 | `format.bold` | Ctrl+B | 지원 | 미지원(보존 검사, 미확인) |
 | `format.italic` | Ctrl+I | 지원 | 미지원 |
 | `format.underline` | Ctrl+U | 지원 | 미지원 |

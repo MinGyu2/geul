@@ -26,6 +26,35 @@ export class FakeDocument {
     }
   }
   free() { this.freed = true; }
+  // 스냅숏(고정 rhwp save/restore/discard_snapshot_native 흉내): 상한 100, 넘치면 가장 오래된 것을 알림 없이 지움, 없는 ID는
+  // "스냅샷 N 없음". failNext와 따로 실패를 주입한다(편집 실패 시험이 스냅숏 호출에 먹히지 않게).
+  snapshots: [number, string[]][] = [];
+  private nextSnapshot = 0;
+  failSnapshot = false;
+  failRestore = false;
+  snapshotCapacity() { return 100; }
+  saveSnapshot() {
+    if (this.failSnapshot) {
+      this.failSnapshot = false;
+      throw new Error("RuntimeError: unreachable");
+    }
+    this.snapshots.push([this.nextSnapshot, [...this.paragraphs]]);
+    while (this.snapshots.length > this.snapshotCapacity()) this.snapshots.shift();
+    return this.nextSnapshot++;
+  }
+  restoreSnapshot(id: number) {
+    if (this.failRestore) {
+      this.failRestore = false;
+      throw new Error("RuntimeError: unreachable");
+    }
+    const hit = this.snapshots.find(([sid]) => sid === id);
+    if (!hit) throw new Error(`렌더링 오류: 스냅샷 ${id} 없음`);
+    this.paragraphs = [...hit[1]];
+    return '{"ok":true}';
+  }
+  discardSnapshot(id: number) {
+    this.snapshots = this.snapshots.filter(([sid]) => sid !== id);
+  }
   pageCount() { return 1; }
   getPageInfo(page: number) { return JSON.stringify({ pageIndex: page, width: 800, height: 1000 }); }
   getSourceFormat(): string { return this.format; }

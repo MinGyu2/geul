@@ -1,0 +1,179 @@
+{
+ "rhwpCommit": "1a76570e833917d15817415a53c09ad61ab3203f",
+ "results": [
+  {
+   "name": "hwp: 셀 글자 서식이 셀 문단 위치(커서 사각형)를 바꾼다(시험 상태가 의미 있음)",
+   "status": "PASS",
+   "detail": {
+    "plain": [
+     "{\"pageIndex\":0,\"x\":124.0,\"y\":177.5,\"height\":13.3,\"cellBounds\":{\"x\":117.2,\"y\":174.9,\"w\":279.7,\"h\":38.4},\"cellOverflowed\":false}",
+     "{\"pageIndex\":0,\"x\":124.0,\"y\":198.8,\"height\":13.3,\"cellBounds\":{\"x\":117.2,\"y\":174.9,\"w\":279.7,\"h\":38.4},\"cellOverflowed\":false}"
+    ],
+    "formatted": [
+     "{\"pageIndex\":0,\"x\":124.0,\"y\":178.4,\"height\":32.0,\"cellBounds\":{\"x\":117.2,\"y\":174.9,\"w\":279.7,\"h\":68.3},\"cellOverflowed\":false}",
+     "{\"pageIndex\":0,\"x\":124.0,\"y\":228.7,\"height\":13.3,\"cellBounds\":{\"x\":117.2,\"y\":174.9,\"w\":279.7,\"h\":68.3},\"cellOverflowed\":false}"
+    ]
+   }
+  },
+  {
+   "name": "hwp: 배치 아님 — 찍기 전후 모델 상태 같음",
+   "status": "PASS",
+   "detail": {
+    "cellParagraphs": 2
+   }
+  },
+  {
+   "name": "hwp: 배치 아님 — 찍기 전후 내보내기 바이트 같음",
+   "status": "PASS",
+   "detail": {
+    "before": "caa96d69acfb",
+    "after": "caa96d69acfb",
+    "exportTwiceSame": true
+   }
+  },
+  {
+   "name": "hwp: 배치 아님 — 스냅숏 없는 같은 편집과 바이트·상태 같음",
+   "status": "PASS",
+   "detail": {}
+  },
+  {
+   "name": "hwp: 다시 연 문서가 대조와 같음",
+   "status": "PASS",
+   "detail": {}
+  },
+  {
+   "name": "hwp: T009 판정이 찍기 전·후·대조 모두 같음",
+   "status": "PASS",
+   "detail": {
+    "before": {
+     "outcome": "unsafe",
+     "findings": [
+      "recordsChanged:DocInfo",
+      "previewStale:PrvText",
+      "previewStale:PrvImage"
+     ]
+    },
+    "after": {
+     "outcome": "unsafe",
+     "findings": [
+      "recordsChanged:DocInfo",
+      "previewStale:PrvText",
+      "previewStale:PrvImage"
+     ]
+    },
+    "control": {
+     "outcome": "unsafe",
+     "findings": [
+      "recordsChanged:DocInfo",
+      "previewStale:PrvText",
+      "previewStale:PrvImage"
+     ]
+    }
+   }
+  },
+  {
+   "name": "hwp: 다른 편집 뒤 복원하면 찍기 전 내보내기와 바이트 같음",
+   "status": "PASS",
+   "detail": {}
+  },
+  {
+   "name": "hwp: 배치 — 배치 안에서 찍기 전후 관찰 상태",
+   "status": "PASS",
+   "detail": {
+    "changedCellLines": [
+     false,
+     false
+    ]
+   }
+  },
+  {
+   "name": "hwp: 배치 — endBatch 뒤 내보내기는 스냅숏 유무와 같음",
+   "status": "PASS",
+   "detail": {}
+  },
+  {
+   "name": "hwpx: 셀 글자 서식이 셀 문단 위치(커서 사각형)를 바꾼다(시험 상태가 의미 있음)",
+   "status": "PASS",
+   "detail": {
+    "plain": [
+     "{\"pageIndex\":0,\"x\":124.0,\"y\":181.3,\"height\":13.3,\"cellBounds\":{\"x\":117.2,\"y\":178.7,\"w\":279.7,\"h\":38.4},\"cellOverflowed\":false}",
+     "{\"pageIndex\":0,\"x\":124.0,\"y\":202.6,\"height\":13.3,\"cellBounds\":{\"x\":117.2,\"y\":178.7,\"w\":279.7,\"h\":38.4},\"cellOverflowed\":false}"
+    ],
+    "formatted": [
+     "{\"pageIndex\":0,\"x\":124.0,\"y\":182.2,\"height\":32.0,\"cellBounds\":{\"x\":117.2,\"y\":178.7,\"w\":279.7,\"h\":68.3},\"cellOverflowed\":false}",
+     "{\"pageIndex\":0,\"x\":124.0,\"y\":232.5,\"height\":13.3,\"cellBounds\":{\"x\":117.2,\"y\":178.7,\"w\":279.7,\"h\":68.3},\"cellOverflowed\":false}"
+    ]
+   }
+  },
+  {
+   "name": "hwpx: 배치 아님 — 찍기 전후 모델 상태 같음",
+   "status": "PASS",
+   "detail": {
+    "cellParagraphs": 2
+   }
+  },
+  {
+   "name": "hwpx: 배치 아님 — 찍기 전후 내보내기 바이트 같음",
+   "status": "PASS",
+   "detail": {
+    "before": "f31c9163abd1",
+    "after": "f31c9163abd1",
+    "exportTwiceSame": true
+   }
+  },
+  {
+   "name": "hwpx: 배치 아님 — 스냅숏 없는 같은 편집과 바이트·상태 같음",
+   "status": "PASS",
+   "detail": {}
+  },
+  {
+   "name": "hwpx: 다시 연 문서가 대조와 같음",
+   "status": "PASS",
+   "detail": {}
+  },
+  {
+   "name": "hwpx: T009 판정이 찍기 전·후·대조 모두 같음",
+   "status": "PASS",
+   "detail": {
+    "before": {
+     "outcome": "unsafe",
+     "findings": [
+      "partChanged:Contents/header.xml"
+     ]
+    },
+    "after": {
+     "outcome": "unsafe",
+     "findings": [
+      "partChanged:Contents/header.xml"
+     ]
+    },
+    "control": {
+     "outcome": "unsafe",
+     "findings": [
+      "partChanged:Contents/header.xml"
+     ]
+    }
+   }
+  },
+  {
+   "name": "hwpx: 다른 편집 뒤 복원하면 찍기 전 내보내기와 바이트 같음",
+   "status": "PASS",
+   "detail": {}
+  },
+  {
+   "name": "hwpx: 배치 — 배치 안에서 찍기 전후 관찰 상태",
+   "status": "PASS",
+   "detail": {
+    "changedCellLines": [
+     false,
+     false
+    ]
+   }
+  },
+  {
+   "name": "hwpx: 배치 — endBatch 뒤 내보내기는 스냅숏 유무와 같음",
+   "status": "PASS",
+   "detail": {}
+  }
+ ]
+}

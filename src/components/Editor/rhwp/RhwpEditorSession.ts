@@ -46,6 +46,9 @@ import type { CommandDispatch, DocumentCommandSnapshot, DocumentCommandTarget } 
 import type { DocumentSessions } from "../../../adapters/sessions";
 import { changedBand, summarizeLayerTree, type PaintBox, type PaintedPage } from "./paintDiff";
 import type { RhwpDocument, RhwpModule } from "./rhwpModule";
+import {
+  captureCheckpoint, historyBudget, HistoryFailure, HistoryRefused, placeCheckpoint, RhwpHistory, type HistoryKind,
+} from "./rhwpHistory";
 import { ZOOM_STEPS } from "../../../hooks/layoutState";
 import { drawsAtRequestedScale, fitsRenderBudget, MAX_PAGE_EXTENT } from "./renderBudget";
 export { MAX_PAGE_EXTENT } from "./renderBudget";
@@ -242,6 +245,13 @@ export class RhwpEditorSession implements DocumentCommandTarget {
   private provisional: Composition | null = null;
   /** 입력기의 빈 끝 뒤 최종 글자를 기다림(ImeInput이 정함, T010 IME 경계). 모델을 놓으면(다시 불러오기·닫기) 버린다. */
   private awaiting = false;
+  /**
+   * 실행 취소 기록(T010 Phase 2, rhwpHistory.ts, docs/architecture/rhwp-undo-redo.md). 문서 내용·스냅숏은 엔진이 갖고 이것은 스냅숏
+   * ID·시간선·커서 체크포인트·타자 그룹만 든다. 문서를 열 때 새로 만들고 놓을 때(다시 불러오기·닫기)·편집을 멈출 때 비운다.
+   */
+  private history: RhwpHistory | null = null;
+  /** 기록이 없는 까닭: 문서가 예산 밖(limit) 또는 기록을 쓸 수 없게 됨(unavailable). 기록이 있거나 문서가 없으면 null. */
+  private historyOff: "limit" | "unavailable" | null = null;
   /** Canvas마다 마지막으로 그린 쪽·배율·그리기 입력 요약(그 자리 다시 그리기의 조건과 바뀐 띠 비교). 놓은 Canvas(releaseRendering, 크기 0)는 쓰지 않고 전체 그리기로 다시 기록한다. */
   private drawnAt = new WeakMap<HTMLCanvasElement, { page: number; scale: number; painted: PaintedPage | null }>();
   private readonly samples: number[] = [];
@@ -435,6 +445,7 @@ export class RhwpEditorSession implements DocumentCommandTarget {
     }
     this.doc = doc;
     this.text = new RhwpText(doc);
+    this.startHistory(doc, loaded.value.bytes.length);
     this.generation = generation;
     this.committed = ready.value.revision;
     this.pending = 0;
@@ -652,10 +663,12 @@ export class RhwpEditorSession implements DocumentCommandTarget {
    * 이미 모델에 있으므로 센 채로 편집을 멈춘다. apply가 예외를 던지면 여러 엔진 호출 중 일부가 이미 모델을 바꿨을 수
    * 있으므로 세지 않고(확정하지 않음) 모델을 uncertain으로 표시한 뒤 편집을 멈춘다.
    */
-  private mutate(apply: Mutation, count = true): boolean {
+  private mutate(apply: Mutation, count = true, kind: HistoryKind = "other", start: string | null = null): boolean {
     if (!this.editable || !this.doc) return false;
     this.settleProvisional(); // 기다리던 조합은 이 변경보다 먼저 끝난 변경이다
     const doc = this.doc;
+    // 실행 취소 기록: 바꾸는 첫 엔진 호출 직전에 트랜잭션을 연다(지금 상태 스냅숏 = 그룹의 before). 이미 열려 있으면 그대로(조합).
+    if (!this.beginHistory(kind, start)) return false;
     let next: ReturnType<Mutation>;
     try {
       next = apply();
@@ -690,7 +703,113 @@ export class RhwpEditorSession implements DocumentCommandTarget {
   private recordMutation() {
     this.modified = true;
     this.pending += 1;
+    // 백엔드 확정(위)과 기록 그룹은 따로다: 열린 트랜잭션을 단계로 닫거나 이어 쓰는 그룹에 넣는다(확정 N개 → 단계 1개 가능).
+    this.history?.commit(RhwpEditorSession.positionKey(this.caret));
     void this.flushCommits();
+  }
+
+  // ---- 실행 취소 기록(T010 Phase 2) ----
+
+  /** 문서를 열 때: 예산(원본 크기 대용)이 최소 깊이를 담을 때만 기록을 켠다. 기록을 만들지 못해도 문서 세션은 그대로다. */
+  private startHistory(doc: RhwpDocument, bytes: number) {
+    this.history = null;
+    this.historyOff = null;
+    try {
+      const budget = historyBudget(bytes, doc.snapshotCapacity());
+      if (!budget.enabled) {
+        this.historyOff = "limit";
+        return;
+      }
+      this.history = new RhwpHistory(doc, budget.depth);
+    } catch {
+      this.historyOff = "unavailable";
+    }
+  }
+
+  /**
+   * 트랜잭션을 연다. false = 스냅숏 찍기가 던졌다: Result가 없는 함수라 WASM trap이고, 찍기 전 미뤄 둔 갱신
+   * (`flush_cell_format_vpos`)이 모델을 바꿨을 수 있으므로 엔진 예외와 같이 불확실로 두고 편집을 멈춘다(편집은 하지 않았다).
+   * 자리를 만들지 못한 거절(엔진을 부르지 않음)은 기록만 끄고 편집은 계속한다.
+   */
+  private beginHistory(kind: HistoryKind, start: string | null): boolean {
+    const history = this.history;
+    const text = this.text;
+    if (!history || !text) return true;
+    try {
+      history.begin(kind, start, () => captureCheckpoint(text, this.caret, this.anchor));
+      return true;
+    } catch (error) {
+      if (error instanceof HistoryFailure) {
+        this.composition = null;
+        this.uncertain = true;
+        this.lastRoundTrip = null;
+        this.modelVersion += 1;
+        this.failEditing();
+        return false;
+      }
+      this.dropHistory(error instanceof HistoryRefused ? "limit" : "unavailable");
+      return true;
+    }
+  }
+
+  /** 기록을 비운다. 엔진을 믿을 수 있으면(불확실하지 않음) 참조 스냅숏을 엔진에서도 버린다. */
+  private dropHistory(reason: "limit" | "unavailable") {
+    if (!this.history) return;
+    this.history.release(!this.uncertain);
+    this.history = null;
+    this.historyOff = reason;
+  }
+
+  /** 실행 취소(T010 Phase 2). 성공하면 변경 1개(revision +1, 줄이지 않음). 할 수 없으면 아무것도 바꾸지 않고 false. */
+  undo(): boolean {
+    return this.travel("undo");
+  }
+
+  /** 다시 실행. 실행 취소와 같은 계약. */
+  redo(): boolean {
+    return this.travel("redo");
+  }
+
+  private travel(direction: "undo" | "redo"): boolean {
+    const history = this.history;
+    const doc = this.doc;
+    const text = this.text;
+    // IME 트랜잭션(조합·provisional·최종 글자 기다림) 중에는 하지 않는다: 조합 좌표·ReplaceInserted가 복원으로 무효가 된다.
+    if (!history || !doc || !text || !this.editable || this.imeUnsettled) return false;
+    let checkpoint;
+    try {
+      checkpoint = direction === "undo" ? history.undo(() => captureCheckpoint(text, this.caret, this.anchor)) : history.redo();
+    } catch (error) {
+      if (error instanceof HistoryFailure && error.uncertain) {
+        // 엔진이 문서를 바꿨는지 알 수 없다(찍기·복원 trap): 되돌림을 보장하지 않고 편집을 멈춘다.
+        this.uncertain = true;
+        this.lastRoundTrip = null;
+        this.modelVersion += 1;
+        this.failEditing();
+        return false;
+      }
+      // 엔진을 부르기 전 거절, 또는 바꾸기 전 오류("스냅샷 N 없음" — 기록의 셈이 엔진과 어긋남): 문서는 그대로다.
+      if (error instanceof HistoryFailure) this.dropHistory("unavailable");
+      this.emit();
+      return false;
+    }
+    this.history?.boundary();
+    this.modified = true;
+    this.lastRoundTrip = null;
+    this.modelVersion += 1;
+    const placed = placeCheckpoint(text, checkpoint);
+    this.caret = placed.caret;
+    this.anchor = placed.anchor;
+    this.preferredX = -1;
+    this.recordMutation();
+    try {
+      this.pages = readPages(doc);
+    } catch {
+      this.markFailed({ code: "EngineFailure", engine: "rhwp", stage: "render" });
+      return true;
+    }
+    this.emit();
+    return true;
   }
 
   private deleteSelectionRaw(): DocPosition {
@@ -701,11 +820,12 @@ export class RhwpEditorSession implements DocumentCommandTarget {
 
   typeText(text: string): boolean {
     if (!text || this.composition) return false;
+    const start = this.hasSelection ? null : RhwpEditorSession.positionKey(this.caret);
     return this.mutate(() => {
       const at = this.hasSelection ? this.deleteSelectionRaw() : this.caret;
       this.text!.insert(at, text);
       return { ...at, offset: at.offset + charCount(text) };
-    });
+    }, true, "typing", start);
   }
 
   backspace(): boolean {
@@ -718,7 +838,7 @@ export class RhwpEditorSession implements DocumentCommandTarget {
       return this.mutate(() => {
         text.delete({ ...at, offset: at.offset - 1 }, 1);
         return { ...at, offset: at.offset - 1 };
-      });
+      }, true, "deleteBack", RhwpEditorSession.positionKey(at));
     }
     const paragraph = paragraphOf(at);
     if (paragraph === 0) return false; // 문맥의 처음: 바꿀 것이 없음(변경 아님)
@@ -739,7 +859,7 @@ export class RhwpEditorSession implements DocumentCommandTarget {
       return this.mutate(() => {
         text.delete(at, 1);
         return at;
-      });
+      }, true, "deleteForward", RhwpEditorSession.positionKey(at));
     }
     const paragraph = paragraphOf(at);
     if (paragraph + 1 >= text.paragraphCount(at)) return false;
@@ -774,7 +894,7 @@ export class RhwpEditorSession implements DocumentCommandTarget {
       const at = this.deleteSelectionRaw();
       this.composition = { anchor: at, text: "", deletedSelection: true };
       return at;
-    }, false);
+    }, false, "typing", null); // 선택 바꾸기는 새 단계(before = 지우기 전)
   }
 
   /** 조합 문자열이 바뀌었다(입력 이벤트). 문서의 조합 범위를 새 문자열로 바꾼다. 변경으로 세지 않는다. */
@@ -796,7 +916,7 @@ export class RhwpEditorSession implements DocumentCommandTarget {
       if (text) this.text!.insert(composition.anchor, text);
       composition.text = text;
       return { ...composition.anchor, offset: composition.anchor.offset + charCount(text) };
-    }, false);
+    }, false, "typing", RhwpEditorSession.positionKey(composition.anchor)); // 갱신은 단계가 아님: 정리할 때 닫는다
   }
 
   /**
@@ -828,6 +948,7 @@ export class RhwpEditorSession implements DocumentCommandTarget {
     if (!composition) return;
     this.composition = null;
     if (composition.text !== "" || composition.deletedSelection) this.recordMutation();
+    else this.history?.cancel(); // 문서를 바꾸지 않은 조합: 단계 없음, 찍은 스냅숏만 버림
   }
 
   /** 기다리던 조합을 지금 모델 그대로(고치지 않고) 한 번 센다. 다른 변경·새 조합·편집 중지 전에 부른다. */
@@ -836,6 +957,7 @@ export class RhwpEditorSession implements DocumentCommandTarget {
     if (!provisional) return;
     this.provisional = null;
     if (provisional.text !== "" || provisional.deletedSelection) this.recordMutation();
+    else this.history?.cancel();
   }
 
   /** 입력기의 끝을 기다리는 앱 확정 조합이 있음. */
@@ -865,7 +987,7 @@ export class RhwpEditorSession implements DocumentCommandTarget {
         if (finalText) this.text!.insert(at, finalText);
         provisional.text = finalText;
         return { caret: shift(this.caret), anchor: shift(this.anchor) };
-      }, false);
+      }, false, "typing", RhwpEditorSession.positionKey(at));
       if (!changed) return; // 엔진 예외: mutate가 uncertain으로 표시하고 편집을 멈췄다(세지 않음)
       // 고친 변경은 성공했다(그 뒤 화면 갱신이 실패해 편집이 멈췄어도 모델에 있으므로 센다, 확정은 보내지 않음).
       this.provisional = provisional;
@@ -900,6 +1022,7 @@ export class RhwpEditorSession implements DocumentCommandTarget {
 
   private moveTo(position: DocPosition, extend: boolean, keepPreferredX = false) {
     if (extend && !sameContext(this.anchor, position)) return; // 선택은 한 문맥(본문 또는 한 셀) 안에서만
+    this.history?.boundary(); // 이동·클릭·선택은 타자 그룹을 끊는다
     this.caret = position;
     if (!extend) this.anchor = position;
     if (!keepPreferredX) this.preferredX = -1;
@@ -1013,6 +1136,7 @@ export class RhwpEditorSession implements DocumentCommandTarget {
       // 이 모델은 더 새로운 불러오기 시도로 대체됐다. 그 시도의 상태를 건드리지 않고 편집만 멈춘다.
       this.status = { kind: "failed", error };
       this.settleComposition();
+      this.dropHistory("unavailable");
       this.emit();
       const epoch = this.epoch;
       void this.sessions.refresh(this.sessionId, () => this.owns(epoch));
@@ -1036,6 +1160,7 @@ export class RhwpEditorSession implements DocumentCommandTarget {
     const from = this.status.kind === "loading" ? "loading" : "ready";
     this.status = { kind: "failed", error }; // 조합을 세기 전에: 확정을 보내지 않는다
     this.settleComposition();
+    this.dropHistory("unavailable"); // 편집을 멈춘 모델의 기록은 쓰지 않는다(엔진이 불확실하면 스냅숏을 엔진에서 버리지 않음)
     this.failure = this.reportFailure(this.generation, from);
     this.emit();
   }
@@ -1143,13 +1268,20 @@ export class RhwpEditorSession implements DocumentCommandTarget {
       loaded: this.status.kind === "ready" && this.doc !== null && !this.closing, editable: this.editable,
       composing: this.imeUnsettled,
       pending: this.pending > 0 || this.committingEpoch === this.epoch, queuedHistory: null,
-      saving: this.saving, history: null, format: null, formatAccess: null,
+      saving: this.saving,
+      // 기록은 지역·동기라 대기 확정에 영향받지 않는다(queuedHistory 없음). 열린 트랜잭션(조합)은 composing이 막는다.
+      history: this.history ? { undo: this.history.canUndo, redo: this.history.canRedo } : null,
+      historyLimited: this.history === null && this.historyOff === "limit",
+      format: null, formatAccess: null,
     };
   }
 
   /** 명령을 이 세션에서 실행한다. 지금 상태로 다시 확인해 할 수 없으면(rhwp가 지원하지 않는 명령 포함) 아무것도 바꾸지 않는다. */
   execute(command: DocumentCommandId): CommandDispatch {
-    if (command !== "file.save" || !documentCommandState(command, this.snapshot()).available) return { accepted: false };
+    // 레지스트리 가용성(엔진 지원 표 포함)을 실행 직전에 다시 확인한다. rhwp 실행 취소는 그 표가 지원으로 바뀌기 전에는 오지 않는다.
+    if (!documentCommandState(command, this.snapshot()).available) return { accepted: false };
+    if (command === "edit.undo" || command === "edit.redo") return { accepted: command === "edit.undo" ? this.undo() : this.redo() };
+    if (command !== "file.save") return { accepted: false };
     void this.save();
     return { accepted: true };
   }
@@ -1327,6 +1459,10 @@ export class RhwpEditorSession implements DocumentCommandTarget {
 
   private releaseDocument() {
     this.releaseRendering();
+    // 기록의 스냅숏은 문서 객체 안에 있어 free와 함께 사라진다: 엔진을 다시 부르지 않고 참조만 버린다.
+    this.history?.release(false);
+    this.history = null;
+    this.historyOff = null;
     this.doc?.free();
     this.doc = null;
     this.text = null;

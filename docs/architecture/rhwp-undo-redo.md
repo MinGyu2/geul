@@ -1,7 +1,7 @@
-# rhwp 실행 취소·다시 실행 계약 (T010 Phase 1 설계, 2026-10-21 · 2026-10-22 고침)
+# rhwp 실행 취소·다시 실행 계약 (T010 Phase 1 설계 2026-10-21 · 고침 2026-10-22 · Phase 2 구현 2026-10-22)
 
-T010 SC-003의 rhwp 몫(실행 취소·다시 실행)을 어떻게 통합할지 정하는 **설계 문서**다. 이 문서는 제품 코드를 구현하지 않는다:
-레지스트리의 `edit.undo`·`edit.redo`는 rhwp에서 계속 `unsupported`이고, T010 완료 상태와 T011 선행 조건은 그대로다
+T010 SC-003의 rhwp 몫(실행 취소·다시 실행)의 계약이다. Phase 2(2026-10-22)에 이 계약대로 세션 기록을 구현했다(맨 아래 "Phase 2 구현").
+레지스트리의 `edit.undo`·`edit.redo`는 rhwp에서 아직 `unsupported`이고(활성화 관문 미통과), T010 완료 상태와 T011 선행 조건은 그대로다
 ([tasks.md](../planning/tasks.md)). 근거는 Phase 0 PoC(`tests/poc/t010-phase0/`, [README](../../tests/poc/t010-phase0/README.md))와
 고정 rhwp `1a76570`(v0.8.7) 소스다. 근거의 강도: **VERIFIED**(실행한 시험·읽은 코드), **INFERRED**(근거에서 추론), **UNVERIFIED**.
 
@@ -223,14 +223,14 @@ Phase 2가 더할 것: 세션 통합 시험(복원 뒤 커서·쪽·revision +1�
 
 ## 12. 열린 질문과 관문
 
-열린 질문: ① `flush_cell_format_vpos` 영향(위) ② trap 뒤 같은 모듈의 다른 문서를 쓸 수 있는가(지금은 쓸 수 없다고 본다) ③ 스냅숏의 실제 바이트 ④
+열린 질문(①·④는 2026-10-22 선행 PoC로 답함 — 아래 "Phase 2 구현"): ① `flush_cell_format_vpos` 영향(위) ② trap 뒤 같은 모듈의 다른 문서를 쓸 수 있는가(지금은 쓸 수 없다고 본다) ③ 스냅숏의 실제 바이트 ④
 표 구조가 바뀐 단계에서 커서 체크포인트의 유효성 ⑤ 복원한 상태를 다시 실행 대상 그대로 재사용하는 것의 바이트 동등성 — 글은 같음(VERIFIED 200회),
 내보내기 바이트 동등성은 Phase 0 A6로 INFERRED.
 
 Phase 2 시작 관문: 이 문서 검토 승인, ①·④의 짧은 PoC, `RhwpDocument` 타입에 스냅숏 네 함수 추가 범위 확정. 명령 활성화(Phase 4) 관문: §11의
 "실행하지 않음" 줄 전부 통과, 네이티브 ibus-hangul 시험 통과, 벤치마크가 재설계 조건에 걸리지 않음.
 
-## 13. 명령 레지스트리 통합(나중의 최소 변경, 지금 바꾸지 않음)
+## 13. 명령 레지스트리 통합(Phase 2에서 구현 — 레지스트리 지원 표만 남음)
 
 | 위치 | 변경 |
 |------|------|
@@ -250,3 +250,50 @@ Phase 2 시작 관문: 이 문서 검토 승인, ①·④의 짧은 PoC, `RhwpDo
 자세한 관문은 [tests/poc/t010-phase0/README.md](../../tests/poc/t010-phase0/README.md) "다음 단계". Phase 3A(T009 모양 참조 무결성)는
 2026-10-22에 고쳤다([save-preservation.md](save-preservation.md) "모양 참조 무결성"). 남은 순서: Phase 2(이 계약으로 rhwp 실행 취소 구현) →
 Phase 3B(HWPX 서식과 좁은 header 규칙) → Phase 3C(HWP 서식은 미리보기·모양 재사용과 따로) → Phase 4(검증한 명령만 켜고 T010 수용 기준 마무리).
+
+## Phase 2 구현(2026-10-22)
+
+### 선행 PoC(관문 B)
+
+- **B1 스냅숏 부작용**(`tests/poc/t010-phase0/snapshot_side_effects.mjs`, 실제 WASM, 18/18): 표 셀을 두 문단으로 나누고 첫 문단에 큰 글자 크기를 걸어
+  셀 문단 위치(커서 사각형 y)가 실제로 바뀌는 상태를 만든 뒤, 배치 아님(세션과 같은 경로)·배치 모드 모두에서 `saveSnapshot` 전후의 본문·셀 구조·
+  서식·커서 사각형·내보내기 바이트·다시 연 문서·T009 판정이 같고, 스냅숏 없는 같은 편집과도 같았다. 두 번 내보내기도 같은 바이트. 결론(VERIFIED):
+  고정 rhwp에서 `flush_cell_format_vpos`는 비배치 편집 경로에서 이미 `rebuild_section`이 하므로 스냅숏 찍기는 관찰 가능한 상태를 바꾸지 않는다
+  (배치 모드에서도 최종 결과 같음). 세션은 배치 모드를 쓰지 않는다. 계약 변경 없음(§9의 "찍기 예외 = 불확실"은 유지 — trap 가능성 때문).
+- **B2 커서 체크포인트**(`tests/poc/t010-phase0/checkpoint.poc.test.ts`, 실제 WASM·제품 `RhwpText`, HWP·HWPX 22개): 체크포인트를 위치만이 아니라
+  위치 + 앞뒤 8글자 지문 + 그 문맥의 문단 수 + 셀 수로 둔다. 넣기·지우기·나누기·합치기·선택 바꾸기·여러 문단 선택·셀 안·셀 끝 경계에서 복원 뒤
+  정확(exact)하고 후속 넣기가 그 자리에 들어간다. 다른 상태에서 찍은 체크포인트(새 문단·새 셀 문단·숫자로는 범위 안이지만 다른 자리)는 구조·
+  지문으로 가려 문서 처음·선택 없음으로 대체하며 내용을 바꾸지 않는다. 계약 변경: §4의 커서 체크포인트 = `rhwpHistory.ts` `Checkpoint`.
+
+### 구현
+
+- `src/components/Editor/rhwp/rhwpHistory.ts`: `RhwpHistory`(§4·§5의 시간선·I1–I3·ID 보호 예약·끝에서만 지움·다시 실행 무할당·
+  취소한 트랜잭션의 스냅숏 버림), `historyBudget`(§10 순서: HEADROOM 2, MIN_DEPTH 4, MAX_DEPTH 50, BUDGET 256MB — 추정이지 보장이 아님),
+  `captureCheckpoint`·`placeCheckpoint`(B2), 쉼 정책 `HISTORY_IDLE_MS = 1500`(같은 종류·이어진 자리여도 1.5초 넘게 쉬면 새 단계 — 긴 입력이
+  한 번에 사라지지 않게). `limit`은 엔진 상한을 매번 읽는다(고정 판이 바뀌면 다음 할당이 먼저 지우거나 거절).
+- `RhwpEditorSession`: 불러올 때 원본 바이트 수로 예산을 정해 기록을 켜고(아니면 `historyLimited`), `mutate`가 바꾸는 첫 엔진 호출 직전에
+  트랜잭션을 열고(종류: 넣기 `typing`, 앞 지우기 `deleteBack`, 뒤 지우기 `deleteForward`, 나머지 `other`; 선택이 있으면 이어 쓰지 않음),
+  `recordMutation`이 확정과 별도로 그룹을 닫고, 셈 없이 끝난 조합·provisional은 `cancel`, `moveTo`(이동·클릭·셀 이동)가 그룹을 끊는다.
+  `undo()`·`redo()`는 `imeUnsettled`(조합·provisional·최종 글자 기다림)와 편집 불가에서 거절하고, 성공하면 `modified`, `lastRoundTrip = null`,
+  `modelVersion += 1`, 체크포인트 배치, `preferredX = -1`, `recordMutation`(revision +1), 쪽 정보 다시 읽기(실패하면 센 채로 `markFailed(render)`).
+  실패: 찍기·복원 trap = 불확실·`failEditing`, "스냅샷 N 없음" = 문서 그대로·기록만 끔, 엔진 호출 전 거절 = 아무것도 바꾸지 않음. 편집을 멈추면
+  (`markFailed`·`StaleLoad`) 기록을 비우고, 다시 불러오기·닫기는 문서와 함께 놓는다.
+- 명령: `snapshot().history`(세션 기록), `historyLimited` → 가용성 `limit`. `execute`는 모든 명령을 같은 가용성 함수로 다시 확인한 뒤 실행 —
+  레지스트리가 rhwp `edit.undo`·`edit.redo`를 `unsupported`로 두는 동안은 `engineUnsupported`로 거절된다.
+
+### 검증(2026-10-22, 이 환경)
+
+| 시험 | 결과 | 엔진 |
+|------|------|------|
+| `src/components/Editor/rhwp/rhwpHistory.test.ts`(기본 `npm test`) | 25개 통과 — 알고리즘 경계 11(깊이 4·5, 상한 97, ID 보호, 거절, 쉼, 실패 3종, 무작위 2만 단계 × 3, 예산), 세션 통합 14(실행 취소·다시 실행 revision·modified, 묶기, 새 편집, 조합 시작만 한 상태의 거절, 조합 취소, provisional, 다시 불러오기·닫기, 찍기·복원 실패, 없는 ID, 복원 뒤 그리기 실패, 확정 거절, limit, 레지스트리 거절) | 흉내·가짜 문서 |
+| `tests/integration/rhwp/undo.wasm.test.ts` | 8개 통과(HWP·HWPX × 4: 넣기·나누기·합치기·선택 바꾸기·셀 편집의 단계별 실행 취소·다시 실행과 커서, 왕복 검사·되돌린 내보내기 바이트 = 편집 전, 조합, 깊이 50 상한) | 실제 WASM 세션 |
+| `tests/integration/rhwp/undo_save.py` | 5/5 — 되돌린 출력 safe·게시, 다시 실행한 HWPX safe·게시, HWP `previewStale` 거부, 다시 실행 + 없는 참조 `referenceInvalid` 거부·원본 SHA-256 그대로 | 실제 WASM + 실제 `service::save` |
+| `tests/integration/rhwp/history-perf.wasm.test.ts`(`GEUL_PERF=1`) | 12MB HWP(24쪽): 그룹 시작 p95 19.9ms, 실행 취소 p95 23.9ms, 다시 실행 p95 34.9ms. 7MB HWPX(1쪽): 모두 11ms 이하. node + jsdom, 그리기 없음 — **WebView 지연이 아님** | 실제 WASM 세션 |
+| 네이티브 앱(검사 훅 빌드, Xvfb + ibus-hangul) `rhwp_poc.py --ime` | IME 게이트 PASS 7/7 — 기록을 붙인 세션에서 기존 조합 계약 회귀 없음. 실행 취소 자체는 레지스트리가 막아 실행하지 않음 | 실제 앱·입력기 |
+
+활성화 관문(미통과, 그래서 `unsupported` 유지): 네이티브 ibus-hangul에서의 실행 취소 시나리오(조합 중 Ctrl+Z, 확정 직후 Ctrl+Z, Ctrl+Y, 선택 조합
+취소, provisional, 빠른 연속 입력, 다시 불러오기·닫기) — 지원 표가 바뀌기 전에는 앱 단축키가 실행 취소를 부르지 않고, 시험용 우회 활성화는 넣지 않았다.
+WebView 응답성·실제 그리기까지의 지연과 여러 쪽의 큰 HWPX(공개 예제의 큰 여러 구역 문서는 지금 세션이 열지 못함 — 별도 결함, 아래) 측정.
+
+발견한 별도 결함(이 작업 밖, 고치지 않음): 고정 rhwp의 `getPageInfo(page).pageIndex`가 구역마다 0부터 다시 시작하는 여러 구역 문서를 세션의
+`readPages`(`pageIndex === page` 요구)가 `EngineFailure(render)`로 거부한다(공개 예제 12.8MB HWP 202쪽: 136쪽부터, 20MB HWPX 140쪽: 59쪽부터 — 실측).

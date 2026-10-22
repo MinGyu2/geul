@@ -32,7 +32,7 @@ Independent Test: 해당 User Story의 acceptance scenario와 실패 조건을 �
 
 ## Phase 4: User Story 3 - 공통 명령 및 리본 (Priority: P1)
 Independent Test: 해당 User Story의 acceptance scenario와 실패 조건을 실제 실행으로 확인한다.
-- [ ] T010 [US3] 공통 명령 레지스트리/비활성화·Undo 연결 — `src/commands/` (구현·이 환경의 검증 완료, 체크 안 함: SC-003의 rhwp 실행 취소·서식이 남음 — 고정 rhwp에 엔진 실행 취소 기록이 없고 서식은 보존 검사상 미지원, 선행 T007–T009 미체크. WordCraft 실행 취소·다시 실행·굵게·기울임·밑줄·취소선은 엔진 기록·엔진 서식으로 실제 앱에서 확인 — 아래 검증 기록, [command-registry.md](../architecture/command-registry.md))
+- [ ] T010 [US3] 공통 명령 레지스트리/비활성화·Undo 연결 — `src/commands/` (구현·이 환경의 검증 완료, 체크 안 함: SC-003의 rhwp 실행 취소·서식이 남음 — rhwp 실행 취소·다시 실행은 세션 기록(엔진 스냅숏, [rhwp-undo-redo.md](../architecture/rhwp-undo-redo.md))으로 구현했지만 명령은 아직 미지원(네이티브 ibus-hangul 실행 취소·WebView 성능 관문 미검증, 2026-10-22), 서식은 보존 검사상 미지원, 선행 T007–T009 미체크. WordCraft 실행 취소·다시 실행·굵게·기울임·밑줄·취소선은 엔진 기록·엔진 서식으로 실제 앱에서 확인 — 아래 검증 기록, [command-registry.md](../architecture/command-registry.md))
 - [ ] T011 [US3] 공통 리본과 상황별 도구 연결 — `src/ribbon/`
 
 ## Phase 5: User Story 4 - 고급 기능 (Priority: P2)

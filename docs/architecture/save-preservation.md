@@ -103,7 +103,14 @@ safe·플랫폼 지원일 때만:
   모양을 기본 모양으로, 숫자가 아닌 HWPX 참조를 0으로 말없이 바꿔 다시 열기 비교(쪽·글·컨트롤)로는 드러나지 않으므로 판정이 따로 본다.
   - HWPX(`package::validate_hwpx_references`): 출력 `Contents/section<N>.xml`의 **모든 요소**(글 run·구역 정의 run·표 셀 문단·양식
     `formCharPr` 등)의 `charPrIDRef`·`paraPrIDRef`가 10진 숫자(부호·공백·빈 값 없음, u32)이고 출력 `Contents/header.xml`의 `charPr`·`paraPr`
-    `id`(이름공간마다 따로, 65535 이하 — 넘는 정의는 엔진이 버림)에 있어야 한다. 아니면 `referenceInvalid{section}`(unsafe). header가 없거나
+    `id`(이름공간마다 따로, 65535 이하 — 넘는 정의는 엔진이 버림)에 있어야 한다. 정의는 **고정 rhwp가 실제로 등록하는 것만** 센다(2026-10-22
+    2차 고침): 엔진 header 파서는 `charPr`·`paraPr`를 `Event::Start`(내용이 있는 요소, `<a></a>` 포함)에서만 등록하고 자기 닫힘(`<a/>`)은 건너뛴다
+    (실측: 자기 닫힘 `charPr` 13을 가리키면 엔진은 id 13을 보고하며 기본 모양으로 그리고 내보내기는 "미등록 ID 참조"로 실패, 자기 닫힘 `paraPr`은
+    내보내기도 통과해 정의 없는 참조를 씀). 그래서 판정은 `xml::element_starts`(자기 닫힘·부모를 구별하는 요소 목록)로 `hh` 이름공간이고 부모가
+    `hh:charProperties`·`hh:paraProperties`인 내용 있는 요소만 정의로 보고, 자기 닫힘 정의를 가리키면 `referenceInvalid`, 쓰지 않는 자기 닫힘
+    요소만으로는 막지 않는다. 엔진이 등록하지만 정의로 확인할 수 없는 내용 있는 `charPr`/`paraPr`(다른 이름공간·목록 밖 — 엔진은 같은 배열에 넣어
+    정의를 덮을 수 있다)는 `unsupported`. 실제 저장 경로에서는 자기 닫힘 정의가 있는 원본이 엔진의 편집 없는 출력에서 그 정의를 잃어 사전 검사가
+    이미 `partChanged{header}`로 막는다(실측, `tests/poc/t010-phase0/selfclosing.py`) — 이 판정은 그와 별개로 엔진과 같은 해석을 한다. 아니면 `referenceInvalid{section}`(unsafe). header가 없거나
     정의 id를 정할 수 없으면(id 없음·숫자 아님·중복 — 엔진이 등장 순서·0으로 넣거나 덮어씀) `unsupported{Contents/header.xml}`(unknown).
     읽을 수 없는 header는 기존 `outputMalformed`. id가 이어질 필요는 없다(빈 번호 뒤의 정의도 올바르다).
   - HWP(`hwp::compare_saved` → `references`): 모든 구역 스트림(중첩 문단도 같은 스트림)의 `PARA_HEADER` 문단 모양 ID(오프셋 8, u16)와

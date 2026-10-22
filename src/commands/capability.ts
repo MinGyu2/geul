@@ -50,7 +50,7 @@ export function documentCommandState(id: DocumentCommandId, snapshot: DocumentCo
   if (snapshot.composing) return unavailable("composing");
   if (id === "edit.undo" || id === "edit.redo") {
     // 지원한다고 선언했는데 엔진이 기록을 알려 주지 않으면 하지 않는다(기록을 화면에서 만들지 않음).
-    if (!snapshot.history) return unavailable("engineUnsupported");
+    if (!snapshot.history) return unavailable(snapshot.historyLimited ? "limit" : "engineUnsupported");
     const direction = id === "edit.undo" ? "undo" : "redo";
     const step = snapshot.queuedHistory?.[direction] ?? (snapshot.history[direction] ? "available" : "none");
     if (step === "available") return ENABLED;

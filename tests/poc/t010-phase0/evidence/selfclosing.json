@@ -1,0 +1,164 @@
+{
+ "rhwpCommit": "1a76570e833917d15817415a53c09ad61ab3203f",
+ "fixtureSha256": "26d434b7b427149110751c6ef5b19e9ecb4818f3ba7eadfe201b5afd3de442a8",
+ "craftedOriginalSha256": "23cef501b346136fe10e67a039b6899e9581db51d8e5adfdb49d3975d472683c",
+ "engineExportDefinitions": {
+  "charPr12": true,
+  "charPr13": false,
+  "charPr14": false,
+  "paraPr21": true,
+  "paraPr22": false
+ },
+ "semantics": {
+  "start12_resolved": true,
+  "selfclosing13_fallback": true,
+  "selfclosing13_export_refused": true,
+  "selfclosing22_export_allowed": true,
+  "export_drops_selfclosing": true,
+  "unedited_header_changed": true
+ },
+ "rows": [
+  {
+   "case": "run-12-start",
+   "engine": {
+    "charShapeId": 12,
+    "fontSize": 1700,
+    "bold": true,
+    "paraShapeId": 0,
+    "export": {
+     "ok": true,
+     "lossCount": 0,
+     "reopenCharShapeId": 12,
+     "reopenFontSize": 1700
+    }
+   },
+   "registered": true,
+   "checkSaved": "safe",
+   "findings": [],
+   "ok": true
+  },
+  {
+   "case": "run-7-existing",
+   "engine": {
+    "charShapeId": 7,
+    "fontSize": 1000,
+    "bold": true,
+    "paraShapeId": 0,
+    "export": {
+     "ok": true,
+     "lossCount": 0,
+     "reopenCharShapeId": 7,
+     "reopenFontSize": 1000
+    }
+   },
+   "registered": true,
+   "checkSaved": "safe",
+   "findings": [],
+   "ok": true
+  },
+  {
+   "case": "run-13-self-closing",
+   "engine": {
+    "charShapeId": 13,
+    "fontSize": 1000,
+    "bold": false,
+    "paraShapeId": 0,
+    "export": {
+     "ok": false,
+     "error": "렌더링 오류: XML 쓰기 실패: 미등록 ID 참조 발견: charPrIDRef: [13]"
+    }
+   },
+   "registered": false,
+   "checkSaved": "unsafe",
+   "findings": [
+    [
+     "referenceInvalid",
+     "Contents/section0.xml"
+    ]
+   ],
+   "ok": true
+  },
+  {
+   "case": "para-21-start",
+   "engine": {
+    "charShapeId": 0,
+    "fontSize": 1000,
+    "bold": false,
+    "paraShapeId": 21,
+    "export": {
+     "ok": true,
+     "lossCount": 0,
+     "reopenCharShapeId": 0,
+     "reopenFontSize": 1000
+    }
+   },
+   "registered": true,
+   "checkSaved": "safe",
+   "findings": [],
+   "ok": true
+  },
+  {
+   "case": "para-22-self-closing",
+   "engine": {
+    "charShapeId": 0,
+    "fontSize": 1000,
+    "bold": false,
+    "paraShapeId": 22,
+    "export": {
+     "ok": true,
+     "lossCount": 0,
+     "reopenCharShapeId": 0,
+     "reopenFontSize": 1000
+    }
+   },
+   "registered": false,
+   "checkSaved": "unsafe",
+   "findings": [
+    [
+     "referenceInvalid",
+     "Contents/section0.xml"
+    ]
+   ],
+   "ok": true
+  }
+ ],
+ "realSave": {
+  "preflight": {
+   "findings": [
+    {
+     "code": "partChanged",
+     "part": "Contents/header.xml"
+    }
+   ],
+   "outcome": "unsafe"
+  },
+  "save": {
+   "error": {
+    "code": "UnsafeSave",
+    "preservation": {
+     "findings": [
+      {
+       "code": "partChanged",
+       "part": "Contents/header.xml"
+      }
+     ],
+     "outcome": "unsafe"
+    }
+   },
+   "ok": false
+  },
+  "sessionAfter": {
+   "dirty": true,
+   "revision": 1,
+   "state": "ready"
+  },
+  "targetEqualsOriginal": true,
+  "dirBefore": [
+   "doc.hwpx"
+  ],
+  "dirAfter": [
+   "doc.hwpx"
+  ]
+ },
+ "failures": []
+}

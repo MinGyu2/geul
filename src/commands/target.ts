@@ -42,6 +42,8 @@ export interface DocumentCommandSnapshot {
   saving: boolean;
   /** 엔진의 실행 취소 기록. 엔진에 기록이 없으면 null. */
   history: { undo: boolean; redo: boolean } | null;
+  /** 기록을 쓸 수 있는 엔진인데 이 문서에서는 한도(기록 메모리 예산 등)로 껐다(history는 null, 이유 limit — T010 Phase 2 rhwp). */
+  historyLimited?: boolean;
   /** 선택(없으면 다음 입력)의 글자 서식. 엔진이 알려 주지 않으면 null. */
   format: Readonly<Record<CharFormatFlag, boolean>> | null;
   /** 문서 보호가 직접 글자 서식을 허용하는지(엔진이 알려 주면). null이면 서식 상태가 없는 엔진. */

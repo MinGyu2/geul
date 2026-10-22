@@ -66,6 +66,12 @@ export interface RhwpDocument {
   mergeParagraphInCell(section: number, parentParagraph: number, control: number, cell: number, cellParagraph: number): string;
   exportHwpWithReport(): RhwpExport;
   exportHwpxWithReport(): RhwpExport;
+  // 스냅숏(T010 Phase 2 실행 취소 기록, rhwpHistory.ts). 고정 rhwp: saveSnapshot·snapshotCapacity는 u32, restoreSnapshot은 성공 JSON 또는
+  // 예외("스냅샷 N 없음"), discardSnapshot은 반환 없음.
+  saveSnapshot(): number;
+  restoreSnapshot(id: number): string;
+  discardSnapshot(id: number): void;
+  snapshotCapacity(): number;
 }
 
 export interface RhwpModule {

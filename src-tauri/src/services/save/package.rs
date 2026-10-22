@@ -448,27 +448,45 @@ fn hwpx_id(text: &str) -> Option<u32> {
     text.parse().ok()
 }
 
-/// header의 모양 정의 id 집합(요소 이름마다). 엔진이 정의를 정할 수 없는 모양(id가 없거나 숫자가 아님 — 엔진은 등장 순서나
-/// 0으로 넣는다 —, 같은 id가 둘 — 뒤의 것이 덮는다)이면 None: 참조가 무엇을 가리키는지 증명할 수 없다.
-fn hwpx_definitions(header: &[xml::Canonical]) -> Option<[std::collections::BTreeSet<u32>; 2]> {
+/// HWPML head 이름공간(고정 rhwp가 쓰는 `hh:` — `serializer/hwpx/header.rs`, 한컴 출력과 같음).
+const HWPML_HEAD: &str = "http://www.hancom.co.kr/hwpml/2011/head";
+/// 정의 요소 → 그 정의를 담는 목록 요소(`hh:charProperties`·`hh:paraProperties`).
+const HWPX_SHAPE_LISTS: [&str; 2] = ["charProperties", "paraProperties"];
+
+/// header의 모양 정의 id 집합(이름공간마다) — 고정 rhwp가 실제로 등록하는 정의만(2026-10-22 2차 고침).
+///
+/// 엔진(`parser/hwpx/header.rs` `parse_hwpx_header_with_plain_margin_units`)은 지역 이름이 `charPr`·`paraPr`인 요소를 이름공간·위치와
+/// 관계없이 `Event::Start`(내용이 있는 요소)에서만 등록하고, 자기 닫힘(`Event::Empty`)은 건너뛴다(실측: 자기 닫힘 정의를 가리키면 엔진은
+/// 그 id를 보고하며 기본 모양으로 그리고, 내보내기는 그 정의를 빼고 쓴다). 그래서:
+/// - 정의 = 내용이 있는 요소이고 `hh` 이름공간이며 부모가 같은 이름공간의 목록 요소(`charProperties`·`paraProperties`)인 것.
+/// - 자기 닫힘 `charPr`·`paraPr`는 정의가 아니다(가리키면 `referenceInvalid`). 쓰지 않는 자기 닫힘 요소만으로는 막지 않는다.
+/// - 엔진이 등록하지만 정의로 확인할 수 없는 요소(다른 이름공간·다른 위치의 내용 있는 `charPr`/`paraPr` — 엔진은 그것도 같은 배열에
+///   넣어 정의를 덮을 수 있다), id가 없거나 숫자가 아님(엔진은 등장 순서·0으로 넣는다), 등록되는 요소끼리 같은 id(뒤의 것이 덮는다)이면
+///   None: 참조가 무엇을 가리키는지 증명할 수 없다.
+fn hwpx_definitions(header: &[xml::ElementStart]) -> Option<[std::collections::BTreeSet<u32>; 2]> {
     let mut sets = [
         std::collections::BTreeSet::new(),
         std::collections::BTreeSet::new(),
     ];
-    for event in header {
-        let xml::Canonical::Start {
-            name, attributes, ..
-        } = event
-        else {
-            continue;
-        };
+    for element in header {
         let Some(slot) = HWPX_SHAPE_REFERENCES
             .iter()
-            .position(|(_, element)| element == name)
+            .position(|(_, name)| *name == element.name)
         else {
             continue;
         };
-        let id = attributes
+        if element.self_closing {
+            continue; // 엔진이 등록하지 않는다
+        }
+        let in_list = element.namespace.as_deref() == Some(HWPML_HEAD)
+            && element.parent.as_ref().is_some_and(|(namespace, name)| {
+                namespace.as_deref() == Some(HWPML_HEAD) && name == HWPX_SHAPE_LISTS[slot]
+            });
+        if !in_list {
+            return None;
+        }
+        let id = element
+            .attributes
             .iter()
             .find(|(ns, key, _)| ns.is_none() && key == "id")
             .and_then(|(_, _, value)| hwpx_id(value))?;
@@ -505,10 +523,13 @@ pub fn validate_hwpx_references(output: &Package) -> Vec<Finding> {
         return vec![Finding::at(FindingCode::Unsupported, HWPX_HEADER)];
     };
     // 읽을 수 없는 header는 malformed_xml(validate_hwpx)이 이미 `outputMalformed`로 막는다(같은 까닭을 두 번 적지 않음).
-    let Ok(header) = xml::canonical(header) else {
+    if xml::canonical(header).is_err() {
         return Vec::new();
-    };
-    let Some(definitions) = hwpx_definitions(&header) else {
+    }
+    let Some(definitions) = xml::element_starts(header)
+        .ok()
+        .and_then(|elements| hwpx_definitions(&elements))
+    else {
         return vec![Finding::at(FindingCode::Unsupported, HWPX_HEADER)];
     };
     let mut findings = Vec::new();

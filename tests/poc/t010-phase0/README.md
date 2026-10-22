@@ -23,6 +23,14 @@ Vitest는 별도 설정, Rust 시험은 `#[ignore]`이고 환경 변수가 없�
 | `npx vitest run --config tests/poc/t010-phase0/vitest.config.ts` | Phase 0 C(`lifecycle.poc.test.ts` 9개): 세션 편집·조합 수명주기. Phase 1(`typing_groups.poc.test.ts` 13개): 타자 그룹과 백엔드 확정의 분리 — 세션을 바꾸지 않고 시험용 문서 감싸개가 기록 모델에 트랜잭션 시작을 알림(세션 메서드 호출, 입력기 아님, 제품 통합 아님) | 진짜 WASM, 백엔드 시험 응답 |
 | `TMPDIR=… node tests/poc/t010-phase0/history_boundary.mjs [--out evidence/history-boundary.json]` | Phase 1 기록 경계 18개: 고친 알고리즘(`history_model.mjs`)의 용량·보호·거부·실패 주입·이전 설계 반례(실제 WASM 13개), 무작위 불변식(흉내 엔진 4개 — 엔진 증거 아님), 깊이 식 산술 1개 | 진짜 WASM 스냅숏 + 흉내 엔진 |
 
+| `TMPDIR=… python3 tests/poc/t010-phase0/selfclosing.py --evidence tests/poc/t010-phase0/evidence/selfclosing.json` | T009 2차 고침: HWPX 자기 닫힘 `charPr`·`paraPr` 정의를 엔진이 등록하는지(실측)와 판정·실제 저장의 해석이 같은지 | 진짜 WASM + 진짜 판정·저장 서비스 |
+| `TMPDIR=… node tests/poc/t010-phase0/snapshot_side_effects.mjs [--out evidence/snapshot-side-effects.json]` | Phase 2 선행 B1: `saveSnapshot`(찍기 전 `flush_cell_format_vpos`)이 표 셀 서식 상태에서 관찰 가능한 상태·내보내기·T009 판정을 바꾸는지 | 진짜 WASM + `save_check` |
+| (위 Vitest 설정) `checkpoint.poc.test.ts` | Phase 2 선행 B2: 구조 편집·복원을 지난 커서·선택 체크포인트의 정확·대체 계약 | 진짜 WASM + 제품 `RhwpText` |
+
+Phase 2 제품 기록의 시험은 `src/components/Editor/rhwp/rhwpHistory.test.ts`(기본 `npm test`), `tests/integration/rhwp/undo.wasm.test.ts`·
+`history-perf.wasm.test.ts`(`npx vitest run --config tests/integration/rhwp/vitest.config.ts`, 성능은 `GEUL_PERF=1`), `tests/integration/rhwp/undo_save.py`
+(실제 `service::save`)에 있다. 결과는 [rhwp-undo-redo.md](../../../docs/architecture/rhwp-undo-redo.md) "Phase 2 구현".
+
 `save_service.py`의 종료 코드: 지금 동작(CURRENT 표 — 판정·저장 성공·**근거 코드와 부분까지 정확히**)과 다르면 1. 바라는 동작(DESIRED: 판정과
 반드시 있어야 할 근거, 거부된 저장은 그 근거로 거부)과 다르면 `--strict-desired`에서 1. 2026-10-22 T009 수정 뒤 두 표 모두 0건이다(수정 전에는
 DESIRED 9건 실패 — 재현 기록은 이 파일의 git 이력과 아래 Stage B 표).
@@ -32,6 +40,7 @@ DESIRED 9건 실패 — 재현 기록은 이 파일의 git 이력과 아래 Stag
 `실제_저장_서비스는…`)는 수정의 두 호출을 끄면 실패한다(확인함).
 
 `evidence/`: `save-service.json`(위 명령의 정리된 결과, 경로는 `<tmp>`, 2026-10-22 수정 뒤 실행), `history-boundary.json`(기록 경계 결과),
+`selfclosing.json`·`snapshot-side-effects.json`(T009 2차·B1), `history-perf.json`(Phase 2 성능, node — WebView 아님), `undo-save.json`(Phase 2 D3),
 `phase0-summary.json`(이전 Phase 0 실행의 A·B·C·G 요약을 임시 디렉터리에서 옮긴 것, 문서 내용·경로 제거).
 
 ## Stage A 결과: 실제 저장 서비스(2026-10-21)

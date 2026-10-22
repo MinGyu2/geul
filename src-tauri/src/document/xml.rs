@@ -327,6 +327,56 @@ pub fn canonical(bytes: &[u8]) -> Result<Vec<Canonical>, Invalid> {
     }
 }
 
+/// 요소 하나의 시작(T009 모양 참조 무결성). `canonical`과 달리 자기 닫힘(`<a/>`)과 내용이 있는 요소(`<a></a>`)를 구별하고
+/// 부모 요소를 함께 준다: 고정 rhwp HWPX header 파서는 `Event::Start`에서만 `charPr`·`paraPr` 정의를 등록하고 `Event::Empty`는
+/// 건너뛴다(`parser/hwpx/header.rs`) — 정규화한 사건 열로는 그 차이를 볼 수 없다.
+#[derive(Debug, PartialEq, Eq)]
+pub struct ElementStart {
+    pub namespace: Option<String>,
+    pub name: String,
+    pub attributes: Vec<(Option<String>, String, String)>,
+    pub self_closing: bool,
+    /// 부모 요소의 (이름공간, 지역 이름). 루트는 None.
+    pub parent: Option<(Option<String>, String)>,
+}
+
+/// 문서의 모든 요소 시작을 문서 순서로 읽는다. 형식 오류·선언하지 않은 접두사·DTD는 `Invalid`.
+pub fn element_starts(bytes: &[u8]) -> Result<Vec<ElementStart>, Invalid> {
+    let text = decode(bytes)?;
+    let mut reader = NsReader::from_str(&text);
+    let mut stack: Vec<(Option<String>, String)> = Vec::new();
+    let mut out = Vec::new();
+    loop {
+        if out.len() > MAX_CANONICAL_EVENTS {
+            return Err(Invalid);
+        }
+        let event = reader.read_event().map_err(|_| Invalid)?;
+        match event {
+            Event::Start(ref start) | Event::Empty(ref start) => {
+                let element = element(&reader, start, stack.len())?;
+                let self_closing = matches!(event, Event::Empty(_));
+                out.push(ElementStart {
+                    namespace: element.namespace.clone(),
+                    name: element.name.clone(),
+                    attributes: element.attributes,
+                    self_closing,
+                    parent: stack.last().cloned(),
+                });
+                if !self_closing {
+                    stack.push((element.namespace, element.name));
+                }
+            }
+            Event::End(_) => {
+                stack.pop().ok_or(Invalid)?;
+            }
+            Event::DocType(_) => return Err(Invalid),
+            Event::Eof if stack.is_empty() => return Ok(out),
+            Event::Eof => return Err(Invalid),
+            _ => {}
+        }
+    }
+}
+
 #[derive(Debug, PartialEq, Eq)]
 pub struct Relationship {
     pub kind: String,

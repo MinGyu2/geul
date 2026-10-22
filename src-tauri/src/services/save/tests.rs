@@ -5968,9 +5968,11 @@ fn t010_굵게와_실행_취소로_바꾼_docx는_보존_검사를_통과해_저
 
 // ---- T009 모양 참조 무결성(T010 Phase 0 Stage B 결함 수정) ----
 
-/// 고정 rhwp 출력과 같은 이름공간·이름(`hh:charPr`·`hh:paraPr`, `hp:run`·`hp:p`)의 header. 글자 모양 id는 0·7·12(빈 번호가
-/// 있는 정상 header — id가 이어질 필요는 없다), 문단 모양 id는 0.
-const REF_HEADER: &str = r#"<hh:head xmlns:hh="http://www.hancom.co.kr/hwpml/2011/head"><hh:refList><hh:charProperties itemCnt="3"><hh:charPr id="0" height="1000"/><hh:charPr id="7" height="1000"><hh:bold/></hh:charPr><hh:charPr id="12" height="900"/></hh:charProperties><hh:paraProperties itemCnt="1"><hh:paraPr id="0"/></hh:paraProperties></hh:refList></hh:head>"#;
+/// 고정 rhwp 출력과 같은 이름공간·이름·구조(`hh:charProperties` 안의 `hh:charPr`, `hh:paraProperties` 안의 `hh:paraPr`, 본문
+/// `hp:run`·`hp:p`)의 header. 정의는 **내용이 있는 요소**다: 고정 rhwp는 `Event::Start`에서만 정의를 등록하고 자기 닫힘은 건너뛴다
+/// (2026-10-22 2차 고침 — 처음 판의 이 상수는 자기 닫힘 정의를 써서 엔진이 등록하지 않는 정의를 양성 대조로 썼다). 글자 모양 id는
+/// 12·0·7 순서(빈 번호가 있고 순서가 바뀐 정상 header — id가 이어지거나 차례일 필요는 없다), 문단 모양 id는 0.
+const REF_HEADER: &str = r#"<hh:head xmlns:hh="http://www.hancom.co.kr/hwpml/2011/head"><hh:refList><hh:charProperties itemCnt="3"><hh:charPr id="12" height="900"><hh:fontRef hangul="0"/></hh:charPr><hh:charPr id="0" height="1000"><hh:fontRef hangul="0"/></hh:charPr><hh:charPr id="7" height="1000"><hh:bold/></hh:charPr></hh:charProperties><hh:paraProperties itemCnt="1"><hh:paraPr id="0"><hh:align horizontal="JUSTIFY"/></hh:paraPr></hh:paraProperties></hh:refList></hh:head>"#;
 
 /// 본문: 구역 정의 run, 글 run 둘, 표 셀 안 문단 run, 양식 글자 모양(고정 rhwp가 읽는 참조 자리 모두).
 fn ref_section(
@@ -6075,7 +6077,29 @@ fn hwpx_정의를_정할_수_없는_header는_unknown이고_없는_header도_막
         ),
         (
             "문단 모양 id 없음",
-            REF_HEADER.replace(r#"<hh:paraPr id="0"/>"#, "<hh:paraPr/>"),
+            REF_HEADER.replace(r#"<hh:paraPr id="0">"#, "<hh:paraPr>"),
+        ),
+        // 엔진이 등록하지만 정의로 확인할 수 없는 위치·이름공간의 내용 있는 charPr(엔진 배열에 들어가 정의를 덮을 수 있다).
+        (
+            "목록 밖 charPr",
+            REF_HEADER.replace(
+                "</hh:refList>",
+                r#"</hh:refList><hh:extra><hh:charPr id="40"><hh:bold/></hh:charPr></hh:extra>"#,
+            ),
+        ),
+        (
+            "다른 이름공간의 charPr",
+            REF_HEADER.replace(
+                "</hh:charProperties>",
+                r#"<x:charPr xmlns:x="urn:other" id="41"><x:bold/></x:charPr></hh:charProperties>"#,
+            ),
+        ),
+        (
+            "같은 id의 내용 있는 charPr 둘",
+            REF_HEADER.replace(
+                "</hh:charProperties>",
+                r#"<hh:charPr id="0" height="2000"><hh:bold/></hh:charPr></hh:charProperties>"#,
+            ),
         ),
     ] {
         assert_eq!(
@@ -6094,6 +6118,80 @@ fn hwpx_정의를_정할_수_없는_header는_unknown이고_없는_header도_막
     assert_eq!(
         package::validate_hwpx_references(&pkg(&ref_pkg(&section, "<hh:head>"))),
         vec![]
+    );
+}
+
+#[test]
+fn hwpx_자기_닫힘_모양_정의는_엔진이_등록하지_않으므로_가리킬_수_없다() {
+    // 실측(고정 rhwp WASM, tests/poc/t010-phase0/selfclosing.py): 자기 닫힘 `<hh:charPr id="13" .../>`를 가리키면 엔진은 id 13을 보고하며
+    // 기본 모양(크기 1000)으로 그리고, 그 문서의 내보내기는 "미등록 ID 참조"로 실패한다. 자기 닫힘 `paraPr`은 내보내기도 통과해 정의
+    // 없는 참조를 쓴다.
+    let header = REF_HEADER
+        .replace(
+            "</hh:charProperties>",
+            r#"<hh:charPr id="13" height="2300"/><hh:charPr id="14" height="900"/></hh:charProperties>"#,
+        )
+        .replace(
+            "</hh:paraProperties>",
+            r#"<hh:paraPr id="22"/></hh:paraProperties>"#,
+        );
+    let invalid = vec![Finding::at(
+        FindingCode::ReferenceInvalid,
+        "Contents/section0.xml",
+    )];
+    let check =
+        |section: String| package::validate_hwpx_references(&pkg(&ref_pkg(&section, &header)));
+    assert_eq!(
+        check(ref_section("0", "13", "12", "0", "0", "0")),
+        invalid,
+        "자기 닫힘 글자 모양"
+    );
+    assert_eq!(
+        check(ref_section("0", "7", "12", "13", "0", "0")),
+        invalid,
+        "표 셀에서 자기 닫힘"
+    );
+    assert_eq!(
+        check(ref_section("0", "7", "12", "0", "22", "0")),
+        invalid,
+        "자기 닫힘 문단 모양"
+    );
+    // 쓰지 않는 자기 닫힘 정의는 막지 않는다. 내용 있는 정의(빈 번호·순서 바뀜 포함)는 그대로 풀린다.
+    assert_eq!(
+        check(ref_section("0", "7", "12", "0", "0", "0")),
+        vec![],
+        "쓰지 않는 자기 닫힘"
+    );
+    // `<a></a>`(내용 없는 시작·끝 쌍)는 엔진에 `Event::Start`라 정의다.
+    let explicit = REF_HEADER.replace(
+        "</hh:charProperties>",
+        r#"<hh:charPr id="30" height="900"></hh:charPr></hh:charProperties>"#,
+    );
+    assert_eq!(
+        package::validate_hwpx_references(&pkg(&ref_pkg(
+            &ref_section("0", "30", "12", "0", "0", "0"),
+            &explicit
+        ))),
+        vec![]
+    );
+    // 정의 목록 밖에 같은 이름의 자기 닫힘 요소가 있어도(엔진이 건너뜀) 정의를 만들지 않고 막지도 않는다.
+    let stray = REF_HEADER.replace(
+        "</hh:refList>",
+        r#"</hh:refList><hh:extra><hh:charPr id="50"/></hh:extra>"#,
+    );
+    assert_eq!(
+        package::validate_hwpx_references(&pkg(&ref_pkg(
+            &ref_section("0", "7", "12", "0", "0", "0"),
+            &stray
+        ))),
+        vec![]
+    );
+    assert_eq!(
+        package::validate_hwpx_references(&pkg(&ref_pkg(
+            &ref_section("0", "50", "12", "0", "0", "0"),
+            &stray
+        ))),
+        invalid
     );
 }
 

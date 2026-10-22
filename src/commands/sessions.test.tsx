@@ -171,7 +171,9 @@ describe("rhwp 세션의 명령", () => {
     }
     expect({ text: doc.paragraphs, revision: editor.localRevision, calls: calls.length }).toEqual(before);
     expect(new Set(notices.map((notice) => notice.key))).toEqual(new Set(["command.unavailable.engineUnsupported"]));
-    expect(editor.snapshot()).toMatchObject({ engine: "rhwp", history: null, format: null });
+    // T010 Phase 2: 세션은 이제 기록(되돌릴 단계 1)을 알리지만, 레지스트리가 rhwp 실행 취소를 지원으로 바꾸기 전에는 가용성·실행이
+    // engineUnsupported로 거절된다(위 반복이 그 확인). 서식 상태는 여전히 없다.
+    expect(editor.snapshot()).toMatchObject({ engine: "rhwp", history: { undo: true, redo: false }, format: null });
   });
 
   it("저장 명령은 rhwp 세션의 저장 절차를 부른다(조합·대기 검사는 그 절차가 한다)", async () => {
