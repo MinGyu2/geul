@@ -56,7 +56,7 @@ export class FakeDocument {
     this.snapshots = this.snapshots.filter(([sid]) => sid !== id);
   }
   pageCount() { return 1; }
-  getPageInfo(page: number) { return JSON.stringify({ pageIndex: page, width: 800, height: 1000 }); }
+  getPageInfo(page: number) { return JSON.stringify({ pageIndex: page, sectionIndex: 0, width: 800, height: 1000 }); }
   getSourceFormat(): string { return this.format; }
   renderPageToCanvas() {}
   hitTest(_page: number, x: number, y: number) {

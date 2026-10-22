@@ -509,7 +509,7 @@ describe("P2-B 페이지 정보가 올바를 때만 ready", () => {
   it("올바른 페이지 정보(여러 쪽)는 ready", async () => {
     const l = await loadWith((doc) => {
       doc.pageCount = () => 2;
-      doc.getPageInfo = (page: number) => JSON.stringify({ pageIndex: page, width: 793.7, height: 1122.5 });
+      doc.getPageInfo = (page: number) => JSON.stringify({ pageIndex: page, sectionIndex: 0, width: 793.7, height: 1122.5 });
     });
     expect(l.target).toBe("ready");
     expect(l.editor.pages).toEqual([{ width: 793.7, height: 1122.5 }, { width: 793.7, height: 1122.5 }]);
@@ -525,7 +525,10 @@ describe("P2-B 페이지 정보가 올바를 때만 ready", () => {
     ["너비 문자열", JSON.stringify({ width: "800", height: 1000 })],
     ["무한대(1e400)", '{"width":1e400,"height":1000}'],
     ["엔진 캔버스 한도(16384px) 초과", JSON.stringify({ width: 16385, height: 1000 })],
-    ["다른 쪽 번호", JSON.stringify({ pageIndex: 3, width: 800, height: 1000 })],
+    ["다른 쪽 번호(구역 안 순번이 0이 아님)", JSON.stringify({ pageIndex: 3, sectionIndex: 0, width: 800, height: 1000 })],
+    ["구역 번호 없음", JSON.stringify({ pageIndex: 0, width: 800, height: 1000 })],
+    ["구역 번호 음수", JSON.stringify({ pageIndex: 0, sectionIndex: -1, width: 800, height: 1000 })],
+    ["구역 번호 문자열", JSON.stringify({ pageIndex: 0, sectionIndex: "0", width: 800, height: 1000 })],
   ];
   for (const [name, json] of invalidInfo) {
     it(`페이지 정보가 잘못되면(${name}) ready가 아니라 failed(render)이고 문서를 놓는다`, async () => {
@@ -538,6 +541,34 @@ describe("P2-B 페이지 정보가 올바를 때만 ready", () => {
       expect(l.doc.freed).toBe(true);
     });
   }
+
+  // 여러 쪽의 구역 계약(T010 Phase 2 안정화): 쪽 번호 인자는 문서 전체 물리 순번, getPageInfo의 pageIndex는 구역 안 순번(구역마다 0부터).
+  const sections: [string, [number, number][]][] = [
+    ["구역이 줄어듦", [[0, 0], [1, 0], [0, 1]]],
+    ["구역 안 순번이 건너뜀", [[0, 0], [0, 2]]],
+    ["새 구역의 첫 쪽이 0이 아님", [[0, 0], [1, 1]]],
+    ["구역이 바뀌었는데 문서 전체 순번을 씀(구역 안 순번 아님)", [[0, 0], [0, 1], [1, 2]]],
+  ];
+  for (const [name, layout] of sections) {
+    it(`여러 쪽의 구역·순번이 계약과 다르면(${name}) failed(render)`, async () => {
+      const l = await loadWith((doc) => {
+        doc.pageCount = () => layout.length;
+        doc.getPageInfo = (page: number) => JSON.stringify({ sectionIndex: layout[page]![0], pageIndex: layout[page]![1], width: 800, height: 1000 });
+      });
+      expect(l.target).toBe("failed");
+      expect(l.editor.status).toMatchObject({ kind: "failed", error: { code: "EngineFailure", stage: "render" } });
+    });
+  }
+
+  it("구역마다 0부터 다시 세는 쪽 정보(여러 구역 문서)는 받아들인다", async () => {
+    const layout = [[0, 0], [0, 1], [1, 0], [1, 1], [1, 2], [3, 0]];
+    const l = await loadWith((doc) => {
+      doc.pageCount = () => layout.length;
+      doc.getPageInfo = (page: number) => JSON.stringify({ sectionIndex: layout[page]![0], pageIndex: layout[page]![1], pageNumber: page + 1, width: 800, height: page < 2 ? 1000 : 700 });
+    });
+    expect(l.target).toBe("ready");
+    expect(l.editor.pages.map((p) => p.height)).toEqual([1000, 1000, 700, 700, 700, 700]);
+  });
 
   for (const count of [0, -1, 1.5, Number.NaN]) {
     it(`쪽 수가 엔진 계약(1 이상 정수)이 아니면(${count}) failed(render)`, async () => {

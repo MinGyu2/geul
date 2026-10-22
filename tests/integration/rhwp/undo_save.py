@@ -41,10 +41,11 @@ def sha(path: Path) -> str:
 
 
 PREVIEW = [["previewStale", "PrvText"], ["previewStale", "PrvImage"]]
-EXPECT = {  # 사례 → (check_saved, 게시됨, 근거)
-    "hwp-undone": ("safe", True, []), "hwpx-undone": ("safe", True, []),
-    "hwp-redone": ("unsafe", False, PREVIEW), "hwpx-redone": ("safe", True, []),
-    "hwpx-redone-dangling": ("unsafe", False, [["referenceInvalid", "Contents/section0.xml"]]),
+EXPECT = {  # 생성 픽스처 사례 → (check_saved, 게시됨, 근거). 여러 구역 예제는 아래 규칙(사전 검사에 따름).
+    "basic-hwp-undone": ("safe", True, []), "basic-hwpx-undone": ("safe", True, []),
+    "basic-hwp-redone": ("unsafe", False, PREVIEW), "basic-hwpx-redone": ("safe", True, []),
+    "basic-hwp-newAfterUndo": ("unsafe", False, PREVIEW), "basic-hwpx-newAfterUndo": ("safe", True, []),
+    "basic-hwpx-redone-dangling": ("unsafe", False, [["referenceInvalid", "Contents/section0.xml"]]),
 }
 
 
@@ -60,12 +61,12 @@ def main() -> int:
         cases = json.loads((out / "cases.json").read_text())
         manifest, rows = [], []
         for c in cases:
-            fmt = c["fmt"]
-            for kind in ("undone", "redone"):
-                manifest.append((f"{fmt}-{kind}", fmt, c["original"], c["unedited"], c[kind]))
-            if fmt == "hwpx":
+            fmt, tag = c["fmt"], c["tag"]
+            for kind in ("undone", "redone", "newAfterUndo"):
+                manifest.append((f"{tag}-{kind}", fmt, c["original"], c["unedited"], c[kind]))
+            if tag == "basic-hwpx":
                 src = Path(c["redone"]["file"])
-                bad = out / "hwpx-redone-dangling.hwpx"
+                bad = out / "basic-hwpx-redone-dangling.hwpx"
                 with zipfile.ZipFile(src) as zin, zipfile.ZipFile(bad, "w") as zout:
                     for i in zin.infolist():
                         data = zin.read(i.filename)
@@ -73,7 +74,7 @@ def main() -> int:
                             data = re.sub(rb'<hp:run charPrIDRef="\d+"><hp:t>', b'<hp:run charPrIDRef="9999"><hp:t>', data, count=1)
                         zout.writestr(i, data)
                 shutil.copyfile(f"{src}.loss.json", f"{bad}.loss.json")
-                manifest.append(("hwpx-redone-dangling", fmt, c["original"], c["unedited"], {**c["redone"], "file": str(bad)}))
+                manifest.append(("basic-hwpx-redone-dangling", fmt, c["original"], c["unedited"], {**c["redone"], "file": str(bad)}))
         entries, before = [], {}
         for name, fmt, original, unedited, output in manifest:
             d = tmp / "work" / name
@@ -92,19 +93,27 @@ def main() -> int:
             findings = [[f["code"], f.get("part")] for f in r["checkSaved"]["findings"]]
             published = r["save"]["ok"]
             after = sha(target)
-            want = EXPECT[name]
-            ok = r["preflight"]["outcome"] == "safe" and r["checkSaved"]["outcome"] == want[0] and published == want[1] \
-                and sorted(findings) == sorted(want[2]) and r["dirAfter"] == [target.name] \
-                and (after == sha(Path(e["output"])) if published else after == before[name] and r["sessionAfter"]["dirty"])
-            rows.append({"case": name, "reopen": e["reopen"], "checkSaved": r["checkSaved"]["outcome"], "findings": findings,
+            want = EXPECT.get(name)
+            preserved = r["dirAfter"] == [target.name] and \
+                (after == sha(Path(e["output"])) if published else after == before[name] and r["sessionAfter"]["dirty"])
+            if want is not None:
+                ok = r["preflight"]["outcome"] == "safe" and r["checkSaved"]["outcome"] == want[0] and published == want[1] \
+                    and sorted(findings) == sorted(want[2]) and preserved
+            else:
+                # 여러 구역 공개 예제: 기대를 정하지 않고 정책대로인지만 — 게시는 사전 검사·출력 검사가 모두 safe일 때만, 아니면 거부하고
+                # 원본 바이트 그대로. 엔진 내보내기 성공(파일이 만들어짐)과 안전한 게시를 구별한다.
+                ok = preserved and published == (r["preflight"]["outcome"] == "safe" and r["checkSaved"]["outcome"] == "safe")
+            rows.append({"case": name, "reopen": e["reopen"], "preflight": r["preflight"]["outcome"],
+                         "preflightFindings": [[f["code"], f.get("part")] for f in r["preflight"]["findings"]][:6],
+                         "checkSaved": r["checkSaved"]["outcome"], "findings": findings,
                          "published": published, "originalSha256": before[name], "afterSha256": after,
                          "sessionAfter": r["sessionAfter"], "dirAfter": r["dirAfter"], "ok": ok})
-            print(f"[{'ok' if ok else 'MISMATCH'}] {name}: checkSaved={r['checkSaved']['outcome']} {findings} 게시={published} "
+            print(f"[{'ok' if ok else 'MISMATCH'}] {name}: preflight={r['preflight']['outcome']} checkSaved={r['checkSaved']['outcome']} {findings[:3]} 게시={published} "
                   f"원본 그대로={after == before[name]}")
             if not ok:
                 failures.append(name)
-        sessions = [{k: c[k] for k in ("fmt",)} | {s: {"revision": c[s]["revision"], "unpreserved": c[s]["modified"]}
-                                                   for s in ("edited", "undone", "redone")} for c in cases]
+        sessions = [{"case": c["tag"]} | {s: {"revision": c[s]["revision"], "unpreserved": c[s]["modified"]}
+                                         for s in ("edited", "undone", "redone", "newAfterUndo")} for c in cases]
         if args.evidence:
             args.evidence.write_text(json.dumps({"rows": rows, "sessions": sessions, "failures": failures},
                                                 ensure_ascii=False, indent=1).replace(str(tmp), "<tmp>") + "\n")

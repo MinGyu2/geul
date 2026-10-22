@@ -50,15 +50,27 @@ const SUPPORTED: EngineSupport = { level: "supported" };
 const UNSUPPORTED: EngineSupport = { level: "unsupported" };
 
 /**
+ * 시험 빌드 전용 활성화(T010 Phase 2 활성화 관문, tests/integration/rhwp/undo_native.py): 검사 훅 빌드(`VITE_GEUL_TEST_HOOKS=1`)이면서
+ * `VITE_GEUL_TEST_RHWP_HISTORY=1`일 때만 rhwp 실행 취소·다시 실행을 지원으로 본다. 두 값은 빌드 때 상수로 바뀌어 일반 빌드에서는 이
+ * 분기와 표지 문자열이 빠진다(시험이 일반 빌드 산출물에 표지가 없음을 확인). 실행 시 바꿀 수 없고, 가용성·실행 직전 재확인은 그대로다.
+ * 제품 지원 상태는 활성화 관문을 모두 통과하기 전까지 `unsupported`다(docs/architecture/command-registry.md).
+ */
+const RHWP_HISTORY: EngineSupport =
+  import.meta.env.VITE_GEUL_TEST_HOOKS === "1" && import.meta.env.VITE_GEUL_TEST_RHWP_HISTORY === "1"
+    ? (console.info("geul-test-build: rhwp-history-commands"), SUPPORTED)
+    : UNSUPPORTED;
+
+/**
  * 엔진별 지원(근거: docs/architecture/command-registry.md).
  * - WordCraft: 실행 취소·다시 실행은 엔진(`Session`)의 기록, 글자 서식은 WordCraft `format.*` 명령(Rust 시험·보존 검사 통과).
- * - rhwp: 고정 rhwp에는 실행 취소 기록이 없다(스냅숏 함수만 있고 기록은 rhwp studio 화면이 만든다). 앱이 따로 기록을 만들지
- *   않으므로 하지 않는다. 글자 서식은 HWP DocInfo 글자 모양·HWPX header.xml을 바꿔 T009 보존 검사가 저장을 막으므로 하지 않는다.
+ * - rhwp: 고정 rhwp에는 실행 취소 기록이 없다(스냅숏 함수만). 세션의 기록(RhwpHistory, T010 Phase 2)은 구현했지만 활성화 관문을
+ *   통과하지 못해 제품 빌드에서는 `unsupported`다(시험 활성화 빌드만 `RHWP_HISTORY`). 글자 서식은 HWP DocInfo 글자 모양·HWPX
+ *   header.xml을 바꿔 T009 보존 검사가 저장을 막으므로 하지 않는다.
  * - 저장은 두 엔진 모두 기존 T009 저장 절차(사전 검사·출력 검사·게시)를 그대로 부른다.
  */
 const DOCUMENT_COMMANDS: Record<DocumentCommandId, Omit<CommandDefinition, "id" | "labelKey" | "kind">> = {
-  "edit.undo": { engines: { wordcraft: SUPPORTED, rhwp: UNSUPPORTED }, shortcuts: ["Mod+Z"], scope: "document" },
-  "edit.redo": { engines: { wordcraft: SUPPORTED, rhwp: UNSUPPORTED }, shortcuts: ["Mod+Y", "Mod+Shift+Z"], scope: "document" },
+  "edit.undo": { engines: { wordcraft: SUPPORTED, rhwp: RHWP_HISTORY }, shortcuts: ["Mod+Z"], scope: "document" },
+  "edit.redo": { engines: { wordcraft: SUPPORTED, rhwp: RHWP_HISTORY }, shortcuts: ["Mod+Y", "Mod+Shift+Z"], scope: "document" },
   "format.bold": { engines: { wordcraft: SUPPORTED, rhwp: UNSUPPORTED }, shortcuts: ["Mod+B"], scope: "document" },
   "format.italic": { engines: { wordcraft: SUPPORTED, rhwp: UNSUPPORTED }, shortcuts: ["Mod+I"], scope: "document" },
   "format.underline": { engines: { wordcraft: SUPPORTED, rhwp: UNSUPPORTED }, shortcuts: ["Mod+U"], scope: "document" },

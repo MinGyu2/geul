@@ -35,8 +35,10 @@
 //   엔진 호출이 예외를 던지면 그 조합은 세지 않고 끝난다(uncertain). 편집이 다른 이유로 멈추면(화면 갱신 실패·백엔드
 //   거부) 그때까지 성공한 조합 변경을 한 번 센다. 끝난 조합은 다시 세지 않는다.
 // - 저장은 없다(T009). 내보내기 검사는 메모리에서만 내보내고 다시 열어 비교한다(파일을 쓰지 않음).
-// - 명령(T010, src/commands/): 고정 rhwp에는 엔진이 가진 실행 취소 기록이 없고 글자 서식은 보존 검사가 저장을 막으므로, 이
-//   세션이 받는 문서 명령은 저장(save())뿐이다. 실행 취소 기록을 화면에서 따로 만들지 않는다(history: null).
+// - 명령(T010, src/commands/): 저장(save())과 실행 취소·다시 실행(undo()·redo(), T010 Phase 2). 고정 rhwp에는 엔진이 가진 실행 취소
+//   기록이 없어, 문서·스냅숏 내용은 엔진이 갖고 이 세션의 RhwpHistory(rhwpHistory.ts)가 스냅숏 ID·시간선·커서 체크포인트·타자 그룹만
+//   조정한다(문서 모델은 하나). 레지스트리가 rhwp 실행 취소를 지원으로 두기 전에는 execute가 거절한다. 글자 서식은 보존 검사가 저장을
+//   막으므로 받지 않는다.
 import type { DocumentBackend, ReopenEvidence } from "../../../adapters/backend";
 import type { DocumentError, Result, SaveCheck, SaveOutcome, SessionInfo } from "../../../adapters/contract";
 import { blockedBy, type SaveCheckRecord, type SaveState } from "../saveState";
@@ -168,11 +170,20 @@ function readPages(doc: RhwpDocument): PageSize[] {
   const count = doc.pageCount();
   if (!Number.isSafeInteger(count) || count < 1) throw new Error("page count");
   const pages: PageSize[] = [];
+  // 쪽 번호 계약(고정 rhwp `get_page_info_native`·`find_page`, T010 Phase 2 안정화 실측): 인자 `page`와 그리기·hit test·커서·선택
+  // 사각형의 pageIndex는 문서 전체의 물리 순번이고, getPageInfo가 돌려주는 pageIndex는 그 쪽이 속한 구역(sectionIndex) 안의 순번
+  // (구역마다 0부터)이다. pageNumber는 보이는 쪽 번호(번호 다시 시작 등)라 검사하지 않는다. 그래서 구역은 줄지 않는 정수로 이어지고,
+  // 한 구역의 쪽은 붙어 있으며, 구역 안 순번은 그 구역 첫 쪽에서 0으로 시작해 1씩 는다. 이 모양이 아니면 쪽 정보로 쓰지 않는다.
+  let section = -1;
+  let local = -1;
   for (let page = 0; page < count; page++) {
     const info: unknown = JSON.parse(doc.getPageInfo(page));
     if (typeof info !== "object" || info === null || Array.isArray(info)) throw new Error("page info");
-    const { pageIndex, width, height } = info as { pageIndex?: unknown; width?: unknown; height?: unknown };
-    if (pageIndex !== page || !isPageExtent(width) || !isPageExtent(height)) throw new Error("page info");
+    const { pageIndex, sectionIndex, width, height } = info as { pageIndex?: unknown; sectionIndex?: unknown; width?: unknown; height?: unknown };
+    if (!Number.isSafeInteger(sectionIndex) || (sectionIndex as number) < Math.max(section, 0)) throw new Error("page info");
+    local = sectionIndex === section ? local + 1 : 0;
+    section = sectionIndex as number;
+    if (pageIndex !== local || !isPageExtent(width) || !isPageExtent(height)) throw new Error("page info");
     pages.push({ width, height });
   }
   return pages;
@@ -760,6 +771,11 @@ export class RhwpEditorSession implements DocumentCommandTarget {
     this.historyOff = reason;
   }
 
+  /** 초점 잃음·표면 사라짐(ImeInput): 타자 그룹을 끊는다. 문서·revision·조합·대기 확정은 바꾸지 않는다(설계 §6). */
+  endHistoryGroup(): void {
+    this.history?.boundary();
+  }
+
   /** 실행 취소(T010 Phase 2). 성공하면 변경 1개(revision +1, 줄이지 않음). 할 수 없으면 아무것도 바꾸지 않고 false. */
   undo(): boolean {
     return this.travel("undo");
@@ -1093,6 +1109,8 @@ export class RhwpEditorSession implements DocumentCommandTarget {
       position = null;
     }
     if (!position) return false;
+    // 셀 위치는 그 컨트롤이 실제 표일 때만(엔진이 표가 아닌 컨트롤 안을 셀처럼 돌려주는 경우가 있다 — 그 자리에 쓰면 엔진 예외로 편집이 멈춤).
+    if (position.cell && this.text?.cellCount(position) === null) return false;
     this.moveTo(position, extend);
     return true;
   }
@@ -1261,7 +1279,7 @@ export class RhwpEditorSession implements DocumentCommandTarget {
 
   // ---- 명령(T010) ----
 
-  /** 명령 가용성을 정하는 지금 상태. 엔진 기록·서식 상태가 없다(null). */
+  /** 명령 가용성을 정하는 지금 상태. 기록은 세션의 RhwpHistory(없거나 꺼졌으면 null), 서식 상태는 없다(null). */
   snapshot(): DocumentCommandSnapshot {
     return {
       sessionId: this.sessionId, engine: this.engine, loadGeneration: this.generation, revision: this.committed,

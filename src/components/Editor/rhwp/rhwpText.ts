@@ -66,7 +66,12 @@ export function parsePosition(value: unknown): DocPosition | null {
   const { sectionIndex, paragraphIndex, charOffset, parentParaIndex, controlIndex, cellIndex, cellParaIndex, isTextBox } = value;
   if (!isIndex(sectionIndex) || !isIndex(paragraphIndex) || !isIndex(charOffset)) return null;
   if (paragraphIndex >= 0xffffff00) return null;
-  if (parentParaIndex === undefined) return { section: sectionIndex, paragraph: paragraphIndex, offset: charOffset };
+  if (parentParaIndex === undefined) {
+    // 표 셀 안의 개체(그림 등)를 가리키는 결과는 셀 경로를 다른 모양(`cellPath: [[컨트롤, 셀, 셀 문단]]`, `innerControlIdx`)으로만 준다
+    // (고정 rhwp 실측, 여러 구역 문서 예제). 본문 위치로 읽으면 구역 첫 문단으로 커서가 튄다 — 이 모양은 다루지 않는다.
+    if (value.cellPath !== undefined || value.innerControlIdx !== undefined) return null;
+    return { section: sectionIndex, paragraph: paragraphIndex, offset: charOffset };
+  }
   if (isTextBox === true) return null; // 글상자는 이 PoC 범위 밖
   if (!isIndex(parentParaIndex) || !isIndex(controlIndex) || !isIndex(cellIndex) || !isIndex(cellParaIndex)) return null;
   if (Array.isArray(value.cellPath) && value.cellPath.length > 1) return null; // 중첩 표는 범위 밖

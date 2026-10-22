@@ -16,15 +16,20 @@ const OUT = process.env.GEUL_UNDO_SAVE_OUT;
 type Doc = RhwpDocument & { getTextFileText(): string; getControls(): string };
 
 describe.runIf(OUT)("D3 입력: 실행 취소·다시 실행한 실제 세션 모델의 내보내기", () => {
-  it("HWP·HWPX", async () => {
+  it("HWP·HWPX(생성 픽스처·여러 구역 공개 예제)", async () => {
     const out = OUT!;
     mkdirSync(join(out, "fixtures"), { recursive: true });
     execFileSync("node", [join(ROOT, "tests/fixtures/rhwp/generate.mjs"), join(out, "fixtures")]);
     const mod = await import(/* @vite-ignore */ pathToFileURL(join(ROOT, "public/rhwp/rhwp.js")).href);
     mod.initSync({ module: readFileSync(join(ROOT, "public/rhwp/rhwp_bg.wasm")) });
     const cases: unknown[] = [];
-    for (const fmt of ["hwp", "hwpx"] as const) {
-      const original = join(out, "fixtures", `basic-ko.${fmt}`);
+    // 생성 픽스처 둘 + 여러 구역 공개 예제 둘(사본 — 원본 예제는 읽기만).
+    const multi = [["aift.hwp", "external/rhwp/samples/aift.hwp"], ["assets.hwpx", "external/rhwp/samples/issue6031/3249937_asset_management_rules.hwpx"]];
+    for (const [name, path] of multi) writeFileSync(join(out, "fixtures", name), readFileSync(join(ROOT, path)));
+    const inputs = [["basic", "hwp"], ["basic", "hwpx"], ["multi", "hwp"], ["multi", "hwpx"]] as const;
+    for (const [kind, fmt] of inputs) {
+      const original = kind === "basic" ? join(out, "fixtures", `basic-ko.${fmt}`) : join(out, "fixtures", fmt === "hwp" ? "aift.hwp" : "assets.hwpx");
+      const tag = `${kind}-${fmt}`;
       const { backend, take } = controlledBackend();
       const sessions = new DocumentSessions(backend);
       const opening = sessions.open(`/a.${fmt}`);
@@ -49,7 +54,7 @@ describe.runIf(OUT)("D3 입력: 실행 취소·다시 실행한 실제 세션 �
         const reopen = { formatEqual: re.getSourceFormat() === fmt, pagesEqual: re.pageCount() === doc!.pageCount(),
           textEqual: re.getTextFileText() === doc!.getTextFileText(), controlsEqual: re.getControls() === doc!.getControls() };
         re.free();
-        const file = join(out, `${fmt}-${name}.${fmt}`);
+        const file = join(out, `${tag}-${name}.${fmt}`);
         writeFileSync(file, bytes);
         writeFileSync(`${file}.loss.json`, loss);
         return { file, reopen, revision: editor.localRevision, modified: editor.hasUnpreservedChanges };
@@ -64,9 +69,14 @@ describe.runIf(OUT)("D3 입력: 실행 취소·다시 실행한 실제 세션 �
       editor.redo();
       editor.redo();
       const redone = emit("redone");
+      // 실행 취소 뒤 새 편집: 다시 실행 기록을 버리고 새 단계(그 모델의 내보내기).
+      editor.undo();
+      editor.typeText("다");
+      const newAfterUndo = emit("newAfterUndo");
+      expect(editor.redo()).toBe(false);
       expect(undone.revision).toBeGreaterThan(edited.revision);
       expect(undone.modified).toBe(true); // 내용이 원본과 같아도 저장하지 않은 편집으로 남는다
-      cases.push({ fmt, original, unedited, edited, undone, redone });
+      cases.push({ kind, fmt, tag, original, unedited, edited, undone, redone, newAfterUndo });
       editor.dispose();
     }
     writeFileSync(join(out, "cases.json"), JSON.stringify(cases, null, 1));

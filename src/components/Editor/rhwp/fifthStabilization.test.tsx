@@ -26,7 +26,7 @@ async function setup(options: Options = {}) {
   const module: RhwpModule = { openDocument: () => {
     const doc = new FakeDocument(["ab"]);
     doc.pageCount = () => pages;
-    doc.getPageInfo = page => JSON.stringify({ pageIndex: page, width, height });
+    doc.getPageInfo = page => JSON.stringify({ pageIndex: page, sectionIndex: 0, width, height });
     docs.push(doc);
     return doc as unknown as RhwpDocument;
   } };
@@ -574,7 +574,7 @@ describe("P2: 배율·DPR 픽셀 예산 초과는 복구할 수 있는 표시 �
       const sessions = new DocumentSessions(backend);
       const doc = new FakeDocument(["ab"]);
       doc.pageCount = () => pages;
-      doc.getPageInfo = page => JSON.stringify({ pageIndex: page, width, height });
+      doc.getPageInfo = page => JSON.stringify({ pageIndex: page, sectionIndex: 0, width, height });
       const draw = vi.spyOn(doc, "renderPageToCanvas");
       const { RhwpEditorSession } = await import("./RhwpEditorSession");
       const editor = new RhwpEditorSession(1, backend, sessions, async () => ({ openDocument: () => doc as unknown as RhwpDocument }));

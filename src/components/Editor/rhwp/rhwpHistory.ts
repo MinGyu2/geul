@@ -126,6 +126,8 @@ export class RhwpHistory {
   private cursor = 0;
   private pending: Pending | null = null;
   private group: { kind: HistoryKind; end: string; at: number } | null = null;
+  /** 열린 트랜잭션 동안 받은 그룹 끊기: 그 트랜잭션이 닫힐 때(조합·provisional 정리) 끊는다. */
+  private breakAfterCommit = false;
   private readonly checkpoints = new Map<number, Checkpoint | null>();
   /** ok | broken(엔진 상태를 믿을 수 없거나 셈이 어긋남 — 더 쓰지 않음). */
   state: "ok" | "broken" = "ok";
@@ -275,6 +277,11 @@ export class RhwpHistory {
       while (this.live > this.limit - 1) if (!this.evictOldestPast(new Set())) break;
     }
     this.group = { kind: pending.kind, end, at: this.now() };
+    if (this.breakAfterCommit) {
+      // 트랜잭션 중에 끊기를 받았다(조합 중 초점 잃음 등): 이 트랜잭션은 그대로 단계가 되고, 그 뒤 트랜잭션은 이어 쓰지 않는다.
+      this.breakAfterCommit = false;
+      this.group = null;
+    }
   }
 
   /** 트랜잭션이 세지 않고 끝났다(선택 없이 취소한 조합). 이 트랜잭션이 찍은 것만 버린다. */
@@ -282,6 +289,7 @@ export class RhwpHistory {
     const pending = this.pending;
     if (!pending) return;
     this.pending = null;
+    this.breakAfterCommit = false; // 그룹은 이미 끊겼다(아래 boundary가 group을 비움)
     if (pending.captured) {
       const id = this.states[this.cursor];
       this.states[this.cursor] = null;
@@ -289,9 +297,13 @@ export class RhwpHistory {
     }
   }
 
-  /** 이동·클릭·선택·명령: 타자 그룹을 끊는다(기록은 그대로). */
+  /**
+   * 이동·클릭·선택·명령·초점 잃음: 타자 그룹을 끊는다(기록은 그대로). 트랜잭션(조합·provisional)이 열려 있으면 그 트랜잭션이 닫힐
+   * 때 끊는다 — 지금 그룹만 비우면 조합이 나중에 닫히며 그룹을 다시 만들어 다음 타자가 끊기를 넘어 이어 쓴다.
+   */
   boundary() {
     this.group = null;
+    if (this.pending) this.breakAfterCommit = true;
   }
 
   // ---- 실행 취소·다시 실행 ----
@@ -342,6 +354,7 @@ export class RhwpHistory {
     this.cursor = 0;
     this.pending = null;
     this.group = null;
+    this.breakAfterCommit = false;
     this.checkpoints.clear();
     this.state = "broken";
   }

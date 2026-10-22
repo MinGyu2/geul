@@ -27,6 +27,11 @@ Vitest는 별도 설정, Rust 시험은 `#[ignore]`이고 환경 변수가 없�
 | `TMPDIR=… node tests/poc/t010-phase0/snapshot_side_effects.mjs [--out evidence/snapshot-side-effects.json]` | Phase 2 선행 B1: `saveSnapshot`(찍기 전 `flush_cell_format_vpos`)이 표 셀 서식 상태에서 관찰 가능한 상태·내보내기·T009 판정을 바꾸는지 | 진짜 WASM + `save_check` |
 | (위 Vitest 설정) `checkpoint.poc.test.ts` | Phase 2 선행 B2: 구조 편집·복원을 지난 커서·선택 체크포인트의 정확·대체 계약 | 진짜 WASM + 제품 `RhwpText` |
 
+Phase 2 안정화(2026-10-22 2차): `tests/integration/rhwp/multisection.wasm.test.ts`(여러 구역 쪽 계약, 실제 WASM), `src/components/Editor/rhwp/
+historyFocus.test.ts`(초점 경계), 이 디렉터리의 `checkpoint.poc.test.ts`(이제 제품 체크포인트 함수), `tests/integration/rhwp/undo_native.py`(시험 활성화 빌드 —
+`VITE_GEUL_TEST_HOOKS=1 VITE_GEUL_TEST_RHWP_HISTORY=1` — 의 실제 앱 그리기·ibus-hangul·성능 관문). 주의: `cargo test`는 `target/debug/geul`을 개발 서버용
+빌드로 다시 만든다 — 네이티브 시험 전에 `npm run tauri build -- --debug --no-bundle`로 다시 빌드한다.
+
 Phase 2 제품 기록의 시험은 `src/components/Editor/rhwp/rhwpHistory.test.ts`(기본 `npm test`), `tests/integration/rhwp/undo.wasm.test.ts`·
 `history-perf.wasm.test.ts`(`npx vitest run --config tests/integration/rhwp/vitest.config.ts`, 성능은 `GEUL_PERF=1`), `tests/integration/rhwp/undo_save.py`
 (실제 `service::save`)에 있다. 결과는 [rhwp-undo-redo.md](../../../docs/architecture/rhwp-undo-redo.md) "Phase 2 구현".

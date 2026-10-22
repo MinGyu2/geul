@@ -97,6 +97,16 @@ describe.each(["hwp", "hwpx"] as const)("실제 WASM 세션 실행 취소(%s)", 
     expect(s.editor.redo()).toBe(false);
     // 실행 취소·다시 실행 하나가 변경 1개: revision은 늘기만 한다.
     expect(s.editor.localRevision).toBe(revision + 2 * (timeline.length - 1));
+    // 다시 모두 되돌린 뒤 복원한 커서(제품 placeCheckpoint, 셀 문맥)에서 바로 친 글자는 그 셀의 그 자리에 들어가고, 다시 실행 기록을 버린다.
+    while (s.editor.undo());
+    expect(s.caret()).toEqual({ caret: cellStart, anchor: cellStart });
+    const cellText = () => s.doc().getTextInCell(0, 2, 0, 1, 0, 0, 20);
+    const beforeType = cellText();
+    expect(s.editor.typeText("Q")).toBe(true);
+    expect(cellText()).toBe(beforeType.slice(0, 1) + "Q" + beforeType.slice(1, 19));
+    expect(s.editor.redo()).toBe(false);
+    expect(s.editor.undo()).toBe(true);
+    expect(cellText()).toBe(beforeType);
     s.editor.dispose();
   });
 

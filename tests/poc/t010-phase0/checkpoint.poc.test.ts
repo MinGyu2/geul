@@ -1,7 +1,8 @@
-// T010 Phase 2 선행 PoC B2(시험 전용): 커서·선택 체크포인트가 구조 편집과 스냅숏 복원을 지나도 정확한가. 실제 rhwp WASM 문서와
-// 제품 위치 계층(RhwpText — 세션이 쓰는 본문/셀 API 선택)으로, 체크포인트 찍기 → 스냅숏 → 구조 편집 → 복원 → 체크포인트 검증 →
-// 후속 편집을 한다. 숫자 오프셋이 범위 안이라는 것은 정확함의 증거가 아니므로, 체크포인트는 위치 + 주변 글 지문(앞뒤 8글자) + 셀이면
-// 셀 수·셀 문단 수를 함께 갖고, 복원 뒤 그 지문이 같을 때만 "정확"이다. 아니면 내용을 바꾸지 않는 대체(문서 처음, 선택 없음).
+// T010 Phase 2 커서 체크포인트 시험(선행 PoC B2를 제품 함수로 바꿈, 2026-10-22 안정화 B4): 제품 rhwpHistory.ts의
+// captureCheckpoint·placeCheckpoint를 실제 rhwp WASM 문서와 제품 위치 계층(RhwpText)으로 직접 부른다(시험 안에 같은 알고리즘을 두지
+// 않음). 체크포인트 찍기 → 스냅숏 → 구조 편집 → 복원 → 배치 → 후속 편집. 숫자 오프셋이 범위 안이라는 것은 정확함의 증거가 아니므로,
+// 체크포인트는 위치 + 주변 글 지문(앞뒤 8글자) + 문맥의 문단 수·셀 수를 갖고, 복원 뒤 그것이 같을 때만 정확(exact)이다. 아니면 내용을
+// 바꾸지 않는 대체(문서 처음, 선택 없음).
 //   npx vitest run --config tests/poc/t010-phase0/vitest.config.ts
 import { execFileSync } from "node:child_process";
 import { mkdtempSync, readFileSync, rmSync } from "node:fs";
@@ -10,6 +11,7 @@ import { join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import type { RhwpDocument } from "../../../src/components/Editor/rhwp/rhwpModule";
+import { captureCheckpoint, placeCheckpoint, type Checkpoint } from "../../../src/components/Editor/rhwp/rhwpHistory";
 import { RhwpText, type DocPosition } from "../../../src/components/Editor/rhwp/rhwpText";
 
 const ROOT = resolve(__dirname, "../../..");
@@ -28,47 +30,14 @@ beforeAll(async () => {
 });
 afterAll(() => rmSync(scratch, { recursive: true, force: true }));
 
-interface Checkpoint {
-  caret: DocPosition;
-  anchor: DocPosition;
-  marks: { caret: Mark; anchor: Mark };
-}
-interface Mark { before: string; after: string; paragraphs: number; cells: number | null }
 const FINGER = 8;
-
-function mark(text: RhwpText, at: DocPosition): Mark {
-  const start = Math.max(0, at.offset - FINGER);
-  return {
-    before: text.text({ ...at, offset: start }, at.offset - start),
-    after: text.text(at, Math.min(FINGER, text.paragraphLength(at) - at.offset)),
-    paragraphs: text.paragraphCount(at),
-    cells: text.cellCount(at),
-  };
-}
-const capture = (text: RhwpText, caret: DocPosition, anchor = caret): Checkpoint => ({ caret, anchor, marks: { caret: mark(text, caret), anchor: mark(text, anchor) } });
-
-/** 구조상 그 문서에 있는 위치인가(엔진 질의가 던지거나 범위 밖이면 아님). */
-function structurallyValid(text: RhwpText, at: DocPosition): boolean {
-  try {
-    if (at.cell) {
-      const cells = text.cellCount(at);
-      if (cells === null || at.cell.cell >= cells || at.cell.cellParagraph >= text.paragraphCount(at)) return false;
-    } else if (at.paragraph >= text.paragraphCount(at)) return false;
-    return at.offset >= 0 && at.offset <= text.paragraphLength(at);
-  } catch {
-    return false;
-  }
-}
-type Restored = { kind: "exact"; caret: DocPosition; anchor: DocPosition } | { kind: "fallback"; caret: DocPosition; anchor: DocPosition; reason: string };
 const START: DocPosition = { section: 0, paragraph: 0, offset: 0 };
-/** 복원한 문서에 체크포인트를 둔다: 구조·지문이 모두 맞으면 exact, 아니면 문서 처음(내용을 바꾸지 않음). */
-function restoreCheckpoint(text: RhwpText, cp: Checkpoint): Restored {
-  for (const key of ["caret", "anchor"] as const) {
-    if (!structurallyValid(text, cp[key])) return { kind: "fallback", caret: START, anchor: START, reason: `${key}: structure` };
-    if (JSON.stringify(mark(text, cp[key])) !== JSON.stringify(cp.marks[key])) return { kind: "fallback", caret: START, anchor: START, reason: `${key}: fingerprint` };
-  }
-  return { kind: "exact", caret: cp.caret, anchor: cp.anchor };
-}
+const capture = (text: RhwpText, caret: DocPosition, anchor = caret): Checkpoint => {
+  const cp = captureCheckpoint(text, caret, anchor);
+  if (!cp) throw new Error("체크포인트를 찍지 못함");
+  return cp;
+};
+const restoreCheckpoint = (text: RhwpText, cp: Checkpoint | null) => placeCheckpoint(text, cp);
 
 const BODY = (paragraph: number, offset: number): DocPosition => ({ section: 0, paragraph, offset });
 const CELL = (cell: number, cellParagraph: number, offset: number): DocPosition => ({ section: 0, paragraph: 2, offset, cell: { parentParagraph: 2, control: 0, cell, cellParagraph } });
@@ -90,10 +59,10 @@ describe.each(["hwp", "hwpx"])("B2 체크포인트(%s, 실제 WASM)", (fmt) => {
     doc.restoreSnapshot(id);
     expect(doc.getTextFileText()).toBe(textBefore);
     const restored = restoreCheckpoint(text, cp);
-    expect(restored.kind).toBe("exact");
+    expect(restored.exact).toBe(true);
     // 후속 편집: 그 자리에 넣으면 바로 앞이 체크포인트 앞 글, 바로 뒤가 Q와 체크포인트 뒤 글이다.
     text.insert(restored.caret, "Q");
-    const after = mark(text, { ...restored.caret, offset: restored.caret.offset + 1 });
+    const after = capture(text, { ...restored.caret, offset: restored.caret.offset + 1 }).marks.caret;
     expect(after.before.endsWith(cp.marks.caret.before.slice(-(FINGER - 1)) + "Q")).toBe(true);
     expect(text.text({ ...restored.caret, offset: restored.caret.offset + 1 }, cp.marks.caret.after.length)).toBe(cp.marks.caret.after);
     doc.free();
@@ -143,7 +112,7 @@ describe.each(["hwp", "hwpx"])("B2 체크포인트(%s, 실제 WASM)", (fmt) => {
     doc.restoreSnapshot(id);
     const before = doc.getTextFileText();
     const r = restoreCheckpoint(text, late);
-    expect(r).toMatchObject({ kind: "fallback", caret: START, reason: "caret: structure" });
+    expect(r).toEqual({ exact: false, caret: START, anchor: START });
     expect(doc.getTextFileText()).toBe(before);
     doc.free();
   });
@@ -153,9 +122,11 @@ describe.each(["hwp", "hwpx"])("B2 체크포인트(%s, 실제 WASM)", (fmt) => {
     text.insert(BODY(0, 0), "XYZ");
     const late = capture(text, BODY(0, 4));
     doc.restoreSnapshot(id);
-    expect(structurallyValid(text, BODY(0, 4))).toBe(true); // 오프셋은 유효
+    expect(BODY(0, 4).offset).toBeLessThanOrEqual(text.paragraphLength(BODY(0, 0))); // 오프셋은 범위 안
+    const before = doc.getTextFileText();
     const r = restoreCheckpoint(text, late);
-    expect(r).toMatchObject({ kind: "fallback", reason: "caret: fingerprint" });
+    expect(r).toEqual({ exact: false, caret: START, anchor: START }); // 지문이 달라 대체
+    expect(doc.getTextFileText()).toBe(before);
     doc.free();
   });
   it("셀 구조 불일치: 셀 안 나누기로 생긴 셀 문단의 체크포인트는 대체", () => {
@@ -164,14 +135,61 @@ describe.each(["hwp", "hwpx"])("B2 체크포인트(%s, 실제 WASM)", (fmt) => {
     text.split(CELL(0, 0, 1));
     const late = capture(text, CELL(0, 1, 0));
     doc.restoreSnapshot(id);
-    expect(restoreCheckpoint(text, late)).toMatchObject({ kind: "fallback", reason: "caret: structure" });
+    expect(restoreCheckpoint(text, late)).toEqual({ exact: false, caret: START, anchor: START });
     doc.free();
   });
-  it("없는 셀 번호·없는 표 문단의 위치는 구조상 아님(엔진 질의 예외도 아님으로)", () => {
+  it("없는 셀 번호·표가 아닌 문단·없는 문단의 체크포인트는 대체(엔진 질의 예외도 대체로)", () => {
     const { doc, text } = open(fmt);
-    expect(structurallyValid(text, CELL(9, 0, 0))).toBe(false);
-    expect(structurallyValid(text, { section: 0, paragraph: 0, offset: 0, cell: { parentParagraph: 0, control: 0, cell: 0, cellParagraph: 0 } })).toBe(false);
-    expect(structurallyValid(text, BODY(99, 0))).toBe(false);
+    const real = capture(text, BODY(0, 1));
+    const before = doc.getTextFileText();
+    for (const bad of [CELL(9, 0, 0), { section: 0, paragraph: 0, offset: 0, cell: { parentParagraph: 0, control: 0, cell: 0, cellParagraph: 0 } }, BODY(99, 0), BODY(0, 999)]) {
+      // 지문은 다른 자리의 것을 그대로 두고 위치만 바꾼 체크포인트(구조 검사가 먼저 막아야 함).
+      expect(restoreCheckpoint(text, { ...real, caret: bad as DocPosition, anchor: bad as DocPosition })).toEqual({ exact: false, caret: START, anchor: START });
+    }
+    expect(restoreCheckpoint(text, null)).toEqual({ exact: false, caret: START, anchor: START });
+    expect(doc.getTextFileText()).toBe(before);
+    doc.free();
+  });
+
+  // ---- 모호한 경우(지문의 한계) ----
+
+  it("같은 문단이 되풀이되어도 체크포인트는 자기 상태에서는 정확하다(좌표 + 문단 수)", () => {
+    const { doc, text } = open(fmt);
+    const same = text.text(BODY(0, 0), text.paragraphLength(BODY(0, 0)));
+    text.split(BODY(0, 0));
+    text.insert(BODY(0, 0), same); // [A, A, ...]
+    const cp = capture(text, BODY(1, 3));
+    const id = doc.saveSnapshot();
+    text.mergeIntoPrevious(BODY(1, 0), 1); // 구조가 바뀜
+    doc.restoreSnapshot(id);
+    expect(restoreCheckpoint(text, cp).exact).toBe(true);
+    doc.free();
+  });
+
+  it("한계(문서화): 문단 수가 같고 앞뒤 8글자가 같으면 다른 상태의 같은 좌표를 정확으로 본다 — 체크포인트는 그 스냅숏 상태와 짝으로만 쓴다", () => {
+    const { doc, text } = open(fmt);
+    const same = text.text(BODY(0, 0), text.paragraphLength(BODY(0, 0)));
+    text.split(BODY(0, 0));
+    text.insert(BODY(0, 0), same); // [A, A, B, ...]
+    const cp = capture(text, BODY(1, 3)); // 둘째 A
+    // 다른 상태: 첫 A를 지우고 그 자리에 A를 새로 넣음(문단 수·좌표의 글이 같다) — 의미로는 다른 문단이지만 지문이 같다.
+    text.deleteRange(BODY(0, 0), BODY(0, text.paragraphLength(BODY(0, 0))));
+    text.insert(BODY(0, 0), same);
+    expect(restoreCheckpoint(text, cp).exact).toBe(true);
+    doc.free();
+  });
+
+  it("셀 내용이 비슷해도 셀 번호·셀 문단 수가 지문에 들어 다른 셀 구조는 대체", () => {
+    const { doc, text } = open(fmt);
+    text.insert(CELL(0, 0, 0), "같은글");
+    text.insert(CELL(1, 0, 0), "같은글");
+    const cp = capture(text, CELL(1, 0, 2));
+    const id = doc.saveSnapshot();
+    text.split(CELL(1, 0, 1)); // 셀 1의 문단 수가 바뀜
+    const moved = capture(text, CELL(1, 0, 1));
+    doc.restoreSnapshot(id);
+    expect(restoreCheckpoint(text, cp).exact).toBe(true);
+    expect(restoreCheckpoint(text, moved).exact).toBe(false);
     doc.free();
   });
 });

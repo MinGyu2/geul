@@ -65,6 +65,11 @@ export interface ImeSession {
   /** 빈 끝 뒤 입력기의 최종 글자를 기다리는 중(ImeInput이 정하고, 세션은 다시 불러오기·닫기에서 거짓으로 되돌린다). */
   readonly awaitingCommit: boolean;
   setAwaitingCommit(awaiting: boolean): void;
+  /**
+   * 초점을 잃거나 표면이 사라짐: 실행 취소 타자 그룹을 끊는다(같은 자리로 돌아와 친 글자가 이전 그룹에 묶이지 않게). 문서·revision·
+   * 조합은 바꾸지 않는다. 기록을 앱이 조정하는 세션만(rhwp, T010 Phase 2) — WordCraft는 엔진이 묶으므로 없다.
+   */
+  endHistoryGroup?(): void;
 }
 
 type Session = ImeSession;
@@ -339,12 +344,14 @@ export class ImeInput {
   blur(): void {
     this.syncOwner();
     if (!this.finalizeVisible()) this.anchorAwaiting();
+    this.session.endHistoryGroup?.();
   }
 
   /** 표면이 사라짐(탭 전환 등, 초점 잃음 이벤트가 없을 수 있음). 보이는 조합을 그 문서에 확정한다. */
   detach(): void {
     this.syncOwner();
     if (!this.finalizeVisible()) this.anchorAwaiting();
+    this.session.endHistoryGroup?.();
   }
 
   /** 빈 끝 뒤 최종 글자를 이 세션에서 기다린다. */

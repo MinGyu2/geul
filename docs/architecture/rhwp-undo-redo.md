@@ -297,3 +297,55 @@ WebView 응답성·실제 그리기까지의 지연과 여러 쪽의 큰 HWPX(�
 
 발견한 별도 결함(이 작업 밖, 고치지 않음): 고정 rhwp의 `getPageInfo(page).pageIndex`가 구역마다 0부터 다시 시작하는 여러 구역 문서를 세션의
 `readPages`(`pageIndex === page` 요구)가 `EngineFailure(render)`로 거부한다(공개 예제 12.8MB HWP 202쪽: 136쪽부터, 20MB HWPX 140쪽: 59쪽부터 — 실측).
+
+## Phase 2 안정화(2026-10-22, 2차)
+
+### 여러 구역 문서의 쪽 번호(관문 A)
+
+고정 rhwp `get_page_info_native`·`find_page`(VERIFIED 코드·실측): 쪽 번호 **인자**와 그리기(`renderPageToCanvas`)·hit test·커서·선택 사각형의
+`pageIndex`는 문서 전체 **물리 순번**이다. `getPageInfo(page)`가 돌려주는 `pageIndex`만 그 쪽이 속한 구역(`sectionIndex`) 안의 순번(구역마다 0부터)이고,
+`pageNumber`는 보이는 쪽 번호(번호 다시 시작이 반영된 값)다. 세션 `readPages`는 `pageIndex === page`를 요구해 여러 구역 문서를
+`EngineFailure(render)`로 거부했다 — 공개 예제 중 여러 구역 문서 86개(HWP 50, HWPX 36)가 열리지 않았다. 고침: 구역 번호는 0 이상이고 줄지
+않으며, 한 구역의 쪽은 붙어 있고, 구역 안 순번은 구역 첫 쪽에서 0부터 1씩 는다(아니면 그대로 거부). 쪽 크기·쪽 수·그리기 예산 검사는 그대로.
+
+함께 고친 쪽 소비자(실측으로 찾음): 표 셀 안 개체를 가리키는 hit test 결과(`cellPath: [[컨트롤, 셀, 셀 문단]]`, `innerControlIdx`)를 본문 위치로
+읽어 커서가 구역 첫 문단(다른 쪽)으로 튀던 것 → 그 모양은 다루지 않음(`parsePosition` null). 표가 아닌 컨트롤을 셀처럼 돌려주는 hit test
+(`exam_kor.hwp`)의 셀 위치에 커서를 두면 넣기가 엔진 예외로 편집을 멈추던 것 → `pointAt`이 그 컨트롤이 실제 표일 때만 옮김.
+
+시험: `tests/integration/rhwp/multisection.wasm.test.ts`(실제 WASM, 7개 — 여러 구역 HWP 2·HWPX 2의 열기, 구역 경계 앞뒤 쪽 클릭 = 커서 쪽,
+선택 사각형 쪽, 뒤 구역 편집·실행 취소·다시 실행 뒤 쪽 정보, 위아래 이동; 표가 아닌 컨트롤 클릭 거부; 진짜 예산 초과 2개는 `RenderLimit`).
+고치기 전 계약으로 되돌리면 7개 중 6개 실패(확인). 가짜 문서 시험에 구역 계약의 잘못된 모양 7가지와 받아들이는 여러 구역 모양 1가지를 더했다.
+그리기 예산(`MAX_RENDER_PIXELS`, 최소 배율에서 모든 쪽 비트맵 합)을 넘는 문서(202쪽 HWP, 215쪽 HWPX)는 쪽 번호와 무관하게 `RenderLimit`이다.
+
+### 초점 경계(관문 B1–B3)
+
+`ImeInput.blur()`·`detach()`(초점 잃음·탭 전환으로 표면 사라짐)가 세션의 `endHistoryGroup()`(선택 메서드 — WordCraft는 엔진이 묶으므로 없음)을
+부른다. `RhwpHistory.boundary()`는 열린 트랜잭션(조합·provisional·늦은 최종 글자)이 없으면 바로 그룹을 끊고, 있으면 **그 트랜잭션이 닫힐 때**
+끊는다(`breakAfterCommit` — 지금 그룹만 비우면 조합이 나중에 닫히며 그룹을 다시 만든다). 초점 사건은 문서·revision·조합·대기 확정을 바꾸지 않고
+단계를 만들지 않는다. 시험 `src/components/Editor/rhwp/historyFocus.test.ts` 10개(쉼은 performance.now를 시험이 정함), 경계 호출이나 지연 끊기를
+지우면 각각 5개·2개 실패(확인).
+
+### 체크포인트(관문 B4–B5)
+
+`tests/poc/t010-phase0/checkpoint.poc.test.ts`는 이제 제품 `captureCheckpoint`·`placeCheckpoint`를 직접 부른다(시험 안의 같은 알고리즘 제거, HWP·HWPX
+28개). 한계(문서화, 시험으로 고정): 문단 수가 같고 앞뒤 8글자가 같으면 **다른 상태의** 같은 좌표를 정확으로 본다 — 의미상 다른 문단인지 엔진 API로는
+알 수 없다. 체크포인트는 그 스냅숏 상태와 짝으로만 쓰므로(같은 상태로 복원) 이 경우는 기록의 셈이 어긋난 때뿐이고, 지문은 그때를 잡는 보조 장치다.
+
+### 활성화 관문(2026-10-22, 실제 앱 · 시험 활성화 빌드)
+
+시험 활성화: `VITE_GEUL_TEST_HOOKS=1 VITE_GEUL_TEST_RHWP_HISTORY=1` 빌드에서만 `registry.ts` `RHWP_HISTORY`가 `supported`(빌드 때 상수 — 일반·검사 훅만
+켠 빌드의 산출물에 그 분기의 표지 문자열이 0개임을 확인). 단축키·리본은 같은 명령 경로(`executeCommand` → 세션 `execute` 재확인)다. 시험
+`tests/integration/rhwp/undo_native.py`, 정리된 결과 `tests/poc/t010-phase0/evidence/undo-native.json`.
+
+| 관문 | 판정 | 근거 |
+|------|------|------|
+| C1 시험 전용 경로 | PASS | 일반 빌드·검사 훅 빌드에 표지 0, 시험 활성화 빌드에 1. 검사 훅만 켠 앱에서 rhwp 실행 취소가 미지원으로 보이고 단축키가 아무것도 바꾸지 않음(`rhwp_poc.py --commands-only` 6/6) |
+| D1 WebView 그리기 | INCONCLUSIVE | HWP·HWPX: Ctrl+Z 세 번·Ctrl+Y·Ctrl+Shift+Z·쪽이 늘어난 편집 45단계 되돌림이 쪽 Canvas 내용과 같음(쪽 전체로 다시 그린 기준과 비교해 가장자리 1픽셀 줄 밖의 차 0), 실행 취소 뒤 새 타자가 다시 실행을 버림, 닫고 다시 열면 기록 없음. 여러 구역 HWP(aift, 74쪽)·HWPX(자산 관리 규정, 60쪽): 뒤 구역 첫 쪽 클릭 = 커서 쪽, 넣기 → Ctrl+Z → Ctrl+Y의 그 쪽 내용 같음. **표 셀 안 시나리오는 클릭이 셀에 닿지 않아(커서 `0:1:0`) 실행하지 못함** — 원인 미확인 |
+| D2 네이티브 ibus-hangul | **FAIL** | 15개 중 13 PASS(조합 중 Ctrl+Z가 조합을 깨지 않음, 확정한 조합 한 단계 되돌림·Ctrl+Y 정확, 이어진 음절 한 그룹, 조합 중 클릭·늦은 최종 글자, 조합 중 초점 잃음, 빠른 연속 입력, 닫고 다시 열기). **FAIL 2(HWP·HWPX): 선택을 조합으로 바꾸다 Backspace로 취소한 뒤 바로 Ctrl+Z가 거절됨** — 실측 추적: WebKitGTK가 `deleteCompositionText` 뒤 빈 `compositionend`를 보내 앱이 최종 글자 기다림(`awaiting`)에 들어가고 명령이 `composing`으로 거절된다. 이 사건 열은 WebKitGTK의 확정 나누기(빈 끝 뒤 `insertFromComposition`)와 최종 글자가 오기 전까지 같아 구별할 수 없고, 기다림은 T010 IME 경계 계약(빈 끝과 최종 글자 사이 명령 차단)이다. 지운 선택 글자는 열린 조합 트랜잭션에 남아 잃지 않지만(다음 입력 뒤 되돌릴 수 있음, INFERRED), 그 자리 클릭 뒤에도 Ctrl+Z가 되살리지 못했다(관찰) |
+| D3 저장 보존 | PASS | `undo_save.py` 13/13: 생성 픽스처·여러 구역 공개 예제의 되돌림·다시 실행·실행 취소 뒤 새 편집을 실제 `service::save`에. 게시는 사전 검사·출력 검사가 모두 safe일 때만, 아니면 거부·원본 SHA-256 그대로(여러 구역 HWPX는 엔진 왕복 자체가 사전 검사 unsafe), 참조 무결성 거부 유지 |
+| D4 WebView 성능·메모리 | **FAIL** | 12MB HWP(24쪽, 배율 50%), 페이지 안 keydown·input → 모델 변경 뒤 두 번째 frame: 그룹 시작 타자 p50 61ms·**p95 211ms**(기준 50ms 초과, n=12), 이어 친 타자 p95 73ms, 실행 취소 p50 137·p95 240ms(n=10), 다시 실행 p95 273ms, 실행 취소·다시 실행 중 frame 간격 p95 109ms(최대 119). WebKitWebProcess RSS 200MB → 열기 654MB → 실행 취소·다시 실행 20회 뒤 1.05GB → **닫은 뒤 1.06GB(돌아오지 않음)**. 큰 여러 쪽 HWPX(140쪽)는 배율 50%에서도 표시 비트맵 예산을 넘어 측정하지 못함. 첫 측정(배율 100%)은 그룹 시작 p95 386·이어 친 타자 p95 465ms로 큰 문서의 다시 그리기 비용이 지배적이었다 |
+
+결론: D2·D4 FAIL, D1 INCONCLUSIVE → **제품 rhwp `edit.undo`·`edit.redo`는 `unsupported` 유지**. 다음에 필요한 것: (1) 빈 조합 끝 뒤 기다림과 실행 취소의
+계약(예: 기다림 중 Ctrl+Z를 기다림이 끝난 뒤로 미루기 — 즉시 거절 대신 — 를 IME 경계 계약을 깨지 않게 설계·네이티브 검증), (2) 큰 문서의 그룹 시작
+스냅숏 지연(타자 경로 밖으로 옮기거나 그룹 시작 판정을 바꾸는 설계)과 WebKitWebProcess 메모리 유지(WASM 선형 메모리는 줄지 않음 — INFERRED)의
+측정·대책, (3) 표 셀 클릭 시나리오의 원인 확인.

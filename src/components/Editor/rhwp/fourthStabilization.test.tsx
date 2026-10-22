@@ -233,7 +233,7 @@ describe("P2-B bitmap resource budget", () => {
       const sessions = new DocumentSessions(backend);
       const doc = new FakeDocument(["ab"]);
       doc.pageCount = () => pages;
-      doc.getPageInfo = page => JSON.stringify({ pageIndex: page, width, height });
+      doc.getPageInfo = page => JSON.stringify({ pageIndex: page, sectionIndex: 0, width, height });
       const draw = vi.spyOn(doc, "renderPageToCanvas");
       const { RhwpEditorSession } = await import("./RhwpEditorSession");
       const editor = new RhwpEditorSession(1, backend, sessions, async () => ({ openDocument: () => doc as unknown as RhwpDocument }));

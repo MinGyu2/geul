@@ -35,7 +35,7 @@ class LayeredDocument extends FakeDocument {
   }
 
   pageCount() { return this.pages; }
-  override getPageInfo(page: number) { return JSON.stringify({ pageIndex: page, ...this.size }); }
+  override getPageInfo(page: number) { return JSON.stringify({ pageIndex: page, sectionIndex: 0, ...this.size }); }
   /** pinned rhwp normalize_canvas_scale: 0.25..12, 각 변 16,384 px 이하. */
   engineScale(scale: number) {
     return Math.min(Math.max(0.25, Math.min(12, scale)), 16_384 / this.size.width, 16_384 / this.size.height);
