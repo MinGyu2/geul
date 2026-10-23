@@ -1,0 +1,104 @@
+T010 renderer resource scheduler 실행 보고서 (2026-10-23)
+
+1. 전체 실행 상태
+COMPLETED — 이번에 합의한 A/B/C scheduler 안정화와 필수 검증 범위의 공학적 완료다. 제품 활성화와 T010 전체 완료를 뜻하지 않는다.
+VERIFIED: inactive resident 회수, 취소에 의한 정상 알림 진행, 동일 active request 재사용을 구현하고 실제 Rust·Chrome·WebKitGTK·Tauri 검증을 수행했다. 범위 내 재현된 정확성 실패는 최종 검사에서 남지 않았다. D2/D4 및 전체 후보 저장·실패 주입 관문은 별도이며 NO-GO를 유지한다.
+
+2. 초기·최종 Git/submodule 상태
+VERIFIED: master c9a0af39da146d86f96971afb770f9656fde5872에서 시작했고 tracked/staged/untracked가 깨끗했다. 기존 checkpoint를 읽고 이번 집중 범위로 갱신했다. commit/push하지 않았고 최종 HEAD도 같다.
+rhwp 1a76570e833917d15817415a53c09ad61ab3203f(v0.8.7), WordCraft fc41918814f62645b6746ed68e71e8c2c2e85d6f(v0.7.0)와 양쪽 상태가 그대로다. external/rhwp를 수정하지 않았다. 제품 src·public WASM·registry·T010/T011 planning은 초기 해시/최종 diff로 대조했다. 이전 t010-render-ownership의 모든 증거와 전체 패치도 byte-for-byte 보존했다. exact file list는 final-integrity.json이다.
+
+3. 257번째 그림 포화 재현
+VERIFIED: 이전 ownership WASM을 실제 Chrome에서 실행했다. before-chrome.json의 기존 ownership 52 PASS와 별개로 신규 scheduler 39개 중 26 PASS/13 FAIL이었다. 작은 SVG 256개를 distinct content로 완료·resident화하고 문서를 해제한 뒤, resident256/pending0/active lease estimate0에서 257번째가 RESOURCE_LIMIT였다. 새 픽셀은 게시되지 않았다. 3개의 큰 resident에서도 새 요청이 RESOURCE_LIMIT였다.
+구 버전에는 uniqueResourceCount가 없었다. live resource256은 resident 수·입력 고유성·다른 active/pending 없음으로 추론(INFERRED)한다. 없는 계측 필드를 측정했다고 주장하지 않는다. 구 버전 실패를 환경 불명으로 분류하지 않았다.
+
+4. Resident 회수 교정
+VERIFIED: 신규 resource admission이 부족할 때 IMAGE_CACHE의 cache-only Rc(strong_count==1)만 LRU로 하나씩 회수하고 pool의 live count/bytes/pending을 다시 계산한다. predicate는 소유권을 clone하지 않는다. 임시 Weak-upgrade snapshot도 회수 전에 놓는다. active lease를 가진 항목은 대상에서 제외한다. global clear로 admission을 해결하지 않는다.
+입장 전 URL 예상 길이+96MiB decoded 예약, 변환 후 실제 URL 길이+예약을 모두 검사한다. 다른 live 작업이 용량을 놓을 수 있으면 PENDING, 지원 한도 안에서 불가능하면 RESOURCE_LIMIT를 유지한다. 원래 Rc release/원자적 게시 계약과 API는 유지했다.
+
+5. Byte/count 예산 검증
+VERIFIED: 최종 두 브라우저에서 정확히256resident→257번째 COMPLETE, eviction 1개, 최종 RGBA 불일치0. evicted 그림을 다시 요청한 경우도 COMPLETE/불일치0.
+byte 지배 사례는4000×4000 SVG 3개(각64,000,000 RGBA 추정 bytes, count3)에서96MiB 신규 예약이 한도에 걸리는 경우다. inactive 1개 회수 후 COMPLETE/불일치0이다. count 상한 때문에 생긴 실패와 구별했다.
+256개 활성 lease(그중 pending1)를 유지한 문서가 있을 때 다른 문서는 PENDING/원래 Canvas 유지였고, 그 owner 취소 후 새 문서는 COMPLETE/불일치0이었다. 현재 문서 자체의 큰 working set이 들어갈 수 없는 경우에는 RESOURCE_LIMIT/원래 RGBA 보존이었다.
+MAX_PENDING2/MAX_RESOURCES256/MAX_JOBS8/MAX_OWNED_BYTES256MiB를 늘리지 않았다. scratch64MiB+backup64MiB, URL32MiB/source16MiB/decoded96MiB의 보호도 유지했다. 이는 renderer 소유 추정치이고 decoder/GPU/RSS/전체 WASM heap의 하드 상한은 아니다.
+
+6. 취소 후 wake-up 누락 재현
+VERIFIED: 실제 SVG HTTP 응답 두 개를 서버에서 보류하고 세 번째 job을 대기시켰다. 기존 WASM은 한 개/두 개 취소, 문서 free, 세대 교체, 모델 변경 뒤 pending 용량이 줄었지만 정상 listener wake-up0으로 C가 PENDING에 남았다. 고정된 관찰 구간 동안 host의 반복 poll은 없었다. 코드에도 이 해제 경로의 알림이 없었다.
+before-chrome.json에 취소 전후 pending·owned bytes·상태·wakeups·notifications를 기록했다. 15초 만료 timer가 있다는 점을 정상 취소 진행으로 간주하지 않았다.
+
+7. Capacity-release 알림 교정
+VERIFIED: 마지막 resource 참조의 Drop은 handler/src를 해제하고 지연 알림을 예약한다. decode 완료/오류와 global invalidation/expiry terminal 전환도 정상 모듈 listener로 전달한다. Cell flag와 하나의 event-loop task로 해제를 합치며 mutable RefCell borrow 중 JS listener를 부르지 않는다.
+첫 후보는 두 브라우저에서 신규45개 중44 PASS/1 FAIL이었다. 공유 owner만 취소한 경우 이전 queued release가 새 포화 상태에도 전달되는 결함을 실제 검출했다. attempt-1-*에 보존했다. 최종본은 전달 시 pending/count/bytes와 cache-only 회수 가능량을 다시 확인한다. 이미 소비된 slot이나 공유 owner가 남은 resource를 새 가용량으로 광고하지 않는다.
+completionNotifications, capacityNotifications, listenerNotifications, cancellations를 구별하고 각 취소 시나리오의 cancellationNotifications도 기록한다. 단순 callback 억제나 반복 RAF/timeout poll로 문제를 숨기지 않았다.
+
+8. 대기 job 진행·공정성 결과
+VERIFIED: 각 브라우저 신규48 PASS/0 FAIL/0 skipped. 한 개/두 개 취소, free, generation replacement, mutation, shared pending owner, 정상 completion/error, budget/trim, 두 waiter 경쟁, expiry, 늦은 이벤트·close·terminal 이후 알림 안정성을 검사했다.
+정상 cancel/progress의 elapsedMs는 관찰 상한으로 Chrome 최대 451.4ms였다(공유 owner 유지100ms 포함). 이는 실제 완료 timestamp나 D4 latency 표본이 아니다. 첫 poll 이후 진행 poll은 정상 notification callback에서만 한다. timeout은 poll하지 않는다. 202번 같은 취소 호출에도 해당 사례 알림은 1개였고 모든 사례가 선언한5개 이하/terminal 뒤 추가0을 만족했다. shared 한 owner만 취소한 직후에는 notification0/pending2를 유지했다.
+expiry는 별도 장기 사례이며 정상 취소 진행의 대체가 아니다. budget/trim은 기다리던 job까지 CANCELED로 종료시키고 원래 Canvas를 보존한다. finite live job 경쟁에서 진행을 검증했으며 엄격한 FIFO·무한 신규 요청 아래의 동일 지분/무조건 COMPLETE는 보장하지 않는다. 지원 불가능·기한 만료에는 명시적 terminal 결과를 보존한다.
+
+9. 중복 render 요청 재현
+VERIFIED: 모듈 loader만 deterministic fake engine으로 바꾼 Node 계약 검사에서 원 adapter는 7 PASS/3 FAIL이었다. 동일 pending 요청이 cancel을 일으켰고 뒤 완료에도 job을 다시 만들었으며, page0 실패가 같은 Canvas의 유효 page1까지 막았다. before-adapter.json에 원인별 결과가 있다. 이것은 실제 decoder/native 실행이 아닌 호출·identity 계약 재현이다.
+
+10. 시험용 adapter 교정
+VERIFIED: Canvas 객체/page/effective scale/document generation/modelVersion 전체를 같은 request identity로 쓴다. full-page mode만 있으므로 별도 mode 필드는 필요하지 않다. active·queued 동일 요청은 그대로 두고 job/decode/deadline을 재시작하지 않는다. painted/failed lookup에도 같은 비교를 사용한다. 달라진 동일 target은 취소하고 새 요청을 예약한다.
+after-adapter.json: 10 PASS/0 FAIL/0 skipped. pending 반복, React 식 반복20회, page/zoom/version/reload, 완료, 실패 뒤 다른 page, disconnect, terminal 재사용을 검사했다. 실제 Tauri에서는 동일 요청50회 뒤 activeJobId/loadAttempts/cancellations가 같고 정상 완료 RGBA0인 것도 별도로 검증했다. 변경은 ownership-poc 안에 한정했으며 production RhwpSurface/workspace는 수정하지 않았다.
+
+11. Rust 1.93.1·WASM 검증
+VERIFIED: 고정 Rust1.93.1/Cargo1.93.1로 실행했다. 최종 native library4063 PASS/0 FAIL/13 ignored(native-library-final.json). 초기 후보 실행도 있었으나 최종 frozen 소스를 다시 실행한 결과와 구별한다. native all-target Clippy, fmt, WASM Clippy, release WASM build, 실제 생성 DTS의 tsc/API 이름 검사가 PASS다.
+scheduler-rust.json raw15=내부11+신규4, ownership-rust.json raw24=내부11+외부13이며 내부11을 중복 합산하지 않는다. 신규4는 selective256회수, byte 회수, active/pending 보호, trim/budget Rc ownership/query를 검사한다. WASM job cancellation 자체는 실제 브라우저/네이티브 WebView 검사로 입증한다.
+Nix lld wrapper 누락에 따른 최초 unit link 실패는 scheduler-rust-linker-failure.json에 보존했고 task-local bfd cc wrapper로 실제 재실행했다. compiler/시스템 설정을 수정하지 않았다. Rust release 최적화는 켜고 별도 wasm-opt만 생략했다. 해당 범위·명령·중복 count는 각 JSON을 따른다.
+
+12. Chrome 회귀 결과
+VERIFIED: chrome.json, 실제 Chrome WASM 실행. 기존52/52+신규48/48 PASS, failed/skipped0. 기존12 rendering 시나리오·50 draw RGBA50/50 exact, HWP/HWPX roundtrip 각각 불일치0. count/byte 포화와 재디코드, 활성 lease 및 정상 알림에 의한 C 진행, 표 위치 그림의 색상 영역과 픽셀을 포함한다. source/WASM/harness 해시는 JSON에 기록했다.
+완료 반환값이나 nonempty Canvas만으로 픽셀 일치를 대체하지 않았다. marker -1을 보존한 globalcancel 사례는 강화된 runner가 거부했고 diagnostic-harness-*에 남겼다. 이를 원래 Canvas의 정확한 sentinel RGBA 비교로 보강한 뒤 최종 실행을 통과했다.
+
+13. WebKitGTK 회귀 결과
+VERIFIED: webkit.json, 실제 WebKitGTK2.54.1/WebDriver/Xvfb의 WASM 실행. 기존52/52+신규48/48 PASS, failed/skipped0. 동일12시나리오·50 exact draw·두 형식 roundtrip 불일치0. Chrome의 결과를 WebKit 결과로 대신하지 않았다. 기한·취소·알림 수·close 계측도 실제 WebKit에서 수집했다.
+
+14. 실제 Tauri PoC 결과
+VERIFIED: approved engine-safety-gates 이후에만 실행했다. native-44-regressions.json은 실제 재실행한 기존44 PASS/0 FAIL/0 skipped 부분 범위다. 그 실행은 뒤의 새 helper import에서 실패했으므로 parent exit1과 원 실패(native-import-vite-query-diagnostic.json)를 명시했다. 원 명령 전체가 PASS였다고 바꾸지 않았다.
+geul-native-focused.json은 별도 --scheduler-only 실제 native 실행11 PASS/0 FAIL/0 skipped/exit0(초기화2+추가9), 내부 scheduler48/48 PASS다. 256resident seed 후 실제 geul HWPX 이미지, 동일 request50회 reuse/완료픽셀, pending 중 실제 탭 전환·늦은 HTTP 응답, shared session 하나 close·마지막 close·lease0를 검증했다. 44개를 이 집중 명령이 재실행했다고 주장하지 않는다.
+HTTP import 실패는 Vite의 public JS import/query 규칙에 맞춰 기준 모듈을 기존 WebDriver runtime import로 전달하여 해결했다. 중간 WebDriver 연결 종료(native-transport-diagnostic.json)는 앱/WebProcess/driver가 모두 살아 있었고 원인 UNVERIFIED다. heavy Rust 완료 뒤 재시도했다는 사실만으로 CPU 원인이라고 단정하지 않는다. 모든 실패 기록과 종료 기준을 보존했다.
+
+15. 픽셀·자원 수명
+VERIFIED: 최종 브라우저 및 실제 native의 COMPLETE 그림은 pinned reference RGBA와 불일치0이다. CANCELED/RESOURCE_LIMIT는 원래 target RGBA를 보존했다. 과거52개의 rollback·세대·legacy/filtered/header/patch·부분 replay 안전 관문도 유지했다.
+native 집중 마지막 close+trim 후 subscribers0/uniqueResourceCount0/activeLeaseCount0/pendingCount0이다. 다른 owner의 Rc가 있으면 cache eviction이 DOM src를 비우지 않는다. table 위치 API는 pinned 엔진의 table-sibling float 표현을 사용하며 실제 중첩 cell control이라고 오기하지 않는다.
+RSS·실제 decoder 종료/GC 시점·GPU·모든 문서의 장기 메모리 안정성은 이 결과로 인증하지 않는다. 세 문서 matrix는 세 session open/한 surface visible 조건이다.
+
+16. 공식 D4 상태
+이번 집중 task에서는 공식 성능을 재실행하지 않았다. 역사적 후보 group-start p95=작은HWP66/작은HWPX61/24쪽HWP346/60쪽HWPX107ms로 <=50ms 관문 FAIL을 유지한다. 역사적 Undo p95=51/59/68/149ms는 <=1500ms 안이지만 새 실행 결과가 아니다.
+native keydown→revision 관찰 RAF→추가2RAF 계약과 한도를 변경하지 않았다. scheduler 진행 관찰 상한·host repaint 완료 시간으로 이를 대체하거나 전후 개선률을 주장하지 않는다.
+
+17. D2 native IME 상태
+이번 새 native IME 관찰0회. 역사적 target ordering0/298회는 INCONCLUSIVE다. 역사적 deterministic replay56 PASS도 native 관찰로 합산하지 않는다. 생산 IME 코드는 수정하지 않았다.
+
+18. D1–D5 최종 활성화 matrix
+D1: 기존 제품 rendering PASS. 이번 후보의 52+46 browser/44 native regression/11 focused 결과는 VERIFIED이나 전체 편집·cell 상호작용 승인은 아니다.
+D2: INCONCLUSIVE — 다른 native IME 환경의 목표 순서 증거가 없다.
+D3: 기존 pinned 엄격 저장 보존 PASS. 전체 후보의 native save-preservation은 별도 UNVERIFIED다.
+D4: FAIL — 역사적 공식 group-start p95가 한도를 넘고 이번에는 재측정하지 않았다. scheduler correctness가 이를 해소하지 않는다.
+D5: 기존 pinned snapshot 실패 안전 PASS. 전체 후보 failure injection은 미완료/UNVERIFIED다.
+제품 rhwp Undo/Redo와 네 formatting command는 unsupported 그대로이며 T010은 미완료, T011 의존성도 그대로다. WordCraft·SessionRegistry·history·backend revision·T009 정책을 바꾸지 않았다.
+
+19. 파일·패치·실행 명령
+전체 패치 SHA256=2c5e1ad101b1c16856ed20d1facfd295db9f0d8e2824223d3ec68c201ddf4098
+최종 WASM SHA256=fe690444a700fc3b3ef6eec38e1cf1c36c599f1cc0fa4b0c44a3b853013ecdc2
+독립 pinned source export+git apply --check와 빌드 전후5개 source hash가 일치한다(fresh-apply.json). fresh export에서 두 번째 빌드를 했다고 주장하지 않는다. 실제 upstream 지원 wasm-pack-locked release/no-opt 명령으로 최종 패키지를 만들었다. 전체 패치는 pinned 기준에 단독 적용하고, optional incremental은 기존 ownership 패치에만 추가한다.
+수정 파일은 새 scheduler evidence/patches, cache-concurrency의 scheduler.mjs/scheduler_contract.rs/runner·prepare·기존 ownership 진입점/README, ownership-poc의 session·Vite·native·helper·identity test/README, architecture 직접 관련 절, 정확한 공개 체크섬 .gitleaks 예외다. 이전 evidence는 변경하지 않았다.
+대표 명령(cwd=저장소 root):
+- python3 tests/integration/rhwp/cache-concurrency/prepare.py --work <new-isolated> --patch <new-complete-patch> --toolchain-bin <Rust193> --no-opt
+- python3 tests/integration/rhwp/cache-concurrency/unit.py --rustc <Rust193/rustc> --patch <new-patch> --contract <scheduler_contract.rs 또는 ownership_contract.rs> --output <json>
+- python3 tests/integration/rhwp/cache-concurrency/run.py --pinned public/rhwp --candidate <built-package> --browser chrome|webkit --timeout 240 --output <json> (WebKit driver/Xvfb 경로 별도)
+- node --test tests/integration/rhwp/ownership-poc/test-session.mjs
+- python3 -m unittest discover -s tests/integration/rhwp/cache-concurrency -p test_runner.py -v
+- dbus-run-session -- python3 tests/integration/rhwp/ownership-poc/native.py --extended --matrix --scheduler <도구인자>
+- dbus-run-session -- python3 tests/integration/rhwp/ownership-poc/native.py --scheduler --scheduler-only <도구인자>
+격리 cwd에서 cargo fmt --check; cargo test --locked --lib; cargo clippy --locked --all-targets -- -D warnings; cargo clippy --locked --target wasm32-unknown-unknown --lib --release -- -D warnings; scripts/wasm-pack-locked.sh --release --no-opt --target web --out-dir scheduler-package를 실행했다. Rust193/bfd wrapper/독립 target 캐시는 명령 범위 환경으로 지정했다.
+마지막 build/lint, runner25 PASS, security86 PASS, 민감정보·gitleaks·diff·생성 API 검사는 final-verification.json과 execution.json을 따른다. test flag 없이는 PoC가 거부되고 normal bundle은 pinned WASM을 복사하며 후보 hook이 없다(production-isolation.json).
+
+20. 남은 위험과 정확한 다음 작업
+범위 내 재현된 A/B/C 정확성 실패: 최종 검증에서 없음(VERIFIED). 실패한 중간 후보와 도구 실패는 그대로 남겼다. 관찰한 finite workload를 모든 브라우저·무한 신규 요청·모든 크기 조합의 수학적 증명으로 확대하지 않는다. WebDriver 연결 종료 원인은 UNVERIFIED이며 재발하면 동일 환경의 driver/page lifecycle 로그를 좁게 수집해야 한다.
+전체 후보 integration의 D3 저장·D5 실패 주입·전체 D1 cell 상호작용과 장기/cross-platform RSS는 별도 미완료다. D2 native IME0/298 증거 공백과 D4 공식 latency FAIL은 계속 남는다.
+가장 작은 다음 T010 작업은 실제 후보 pollRenderJob/prepared-layout/publication 구간을 신뢰할 수 있게 계측하고 같은4문서·원래 공식 timing boundary의 A/B 자료를 수집하는 것이다. 그 결과를 기반으로 성능 수정을 따로 결정한다. 다른 native IME 환경과 최종 후보 저장/실패 주입은 각각 독립 관문으로 유지한다.
+
+RHWP UNDO/REDO PRODUCTION ACTIVATION: NO-GO

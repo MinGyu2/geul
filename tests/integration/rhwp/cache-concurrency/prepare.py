@@ -87,6 +87,10 @@ def main():
                 'compiler': version(['rustc', '--version']), 'cargo': version(['cargo', '--version']),
                 'wasmPack': version(['wasm-pack', '--version']), 'target': 'wasm32-unknown-unknown',
                 'profile': 'release', 'targetCache': 'explicit cache' if a.target_dir else 'isolated target/pr-review', 'sourceExport': 'build/test inputs; documentation/PDF archives excluded', 'buildStatus': 'NOT EXECUTED'}
+    job_source = work / 'src/renderer/render_job.rs'
+    manifest['rendererJobAPI'] = job_source.is_file()
+    manifest['schedulerAPI'] = job_source.is_file() and 'capacityNotifications' in job_source.read_text() and 'reclaim_inactive_image' in job_source.read_text()
+    manifest['sourceStableDuringBuild'] = False
     package = work / 'test-package'
     command = ['scripts/wasm-pack-locked.sh', '--release', '--target', 'web', '--out-dir', 'test-package']
     if a.no_opt:
@@ -100,6 +104,7 @@ def main():
             if manifest['sourceSha256'] != after_sources:
                 manifest['buildStatus'] = 'STALE'
                 raise RuntimeError('source changed during build; artifacts are not verified')
+            manifest['sourceStableDuringBuild'] = True
             manifest['buildStatus'] = 'PASS'
             manifest['artifacts'] = {name: sha(package / name) for name in ('rhwp.js', 'rhwp_bg.wasm', 'rhwp.d.ts')}
     except subprocess.CalledProcessError:

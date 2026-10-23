@@ -133,3 +133,54 @@ class CompletionContract(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
+
+class SchedulerValidation(unittest.TestCase):
+    def value(self):
+        v = valid_result()
+        names = ['count-saturation-admits', 'bytes-saturation-admits', 'active-saturation-waits-without-publication', 'active-owner-release-progress', 'intrinsic-active-byte-limit-explicit', 'resident-eviction-during-shared-draw', 'shared-resident-close-one-preserves-pixels'] + [
+            'notification-progress-' + k for k in ('cancel-one', 'cancel-both', 'dispose', 'replace',
+            'mutate', 'shared-owner', 'complete', 'error', 'budget', 'trim', 'competition', 'deadline')]
+        job = {'uniqueResourceCount': 0, 'activeLeaseCount': 0, 'capacityNotifications': 0,
+               'listenerNotifications': 0, 'pendingCount': 0, 'ownedEstimatedBytes': 0, 'activeJobs': 0, 'maxResources': 256, 'maxPending': 2, 'maxOwnedBytes': 256 << 20}
+        v['scheduler'] = {'status': 'PASS', 'tests': [{'name': n, 'status': 'PASS'} for n in names],
+                          'checkpoints': [{'jobs': job}]}
+        return v
+
+    def test_scheduler_valid(self):
+        runner.validate_result(self.value(), require_scheduler=True)
+
+    def test_scheduler_missing(self):
+        with self.assertRaisesRegex(RuntimeError, 'missing mandatory scheduler'):
+            runner.validate_result(valid_result(), require_scheduler=True)
+
+    def test_scheduler_subtest_fail(self):
+        v = self.value(); v['scheduler']['tests'][0]['status'] = 'FAIL'
+        with self.assertRaisesRegex(RuntimeError, 'contradicts'): runner.validate_result(v)
+
+    def test_scheduler_incomplete(self):
+        v = self.value(); v['scheduler']['tests'].pop()
+        with self.assertRaisesRegex(RuntimeError, 'incomplete scheduler'): runner.validate_result(v)
+
+    def test_scheduler_resource_overflow(self):
+        v = self.value(); v['scheduler']['checkpoints'][0]['jobs']['uniqueResourceCount'] = 257
+        with self.assertRaisesRegex(RuntimeError, 'resource limit'): runner.validate_result(v)
+
+    def test_scheduler_complete_with_pending(self):
+        v = self.value(); v['scheduler']['tests'][0].update(completion='COMPLETE', requiredPendingCount=1)
+        with self.assertRaisesRegex(RuntimeError, 'publication'): runner.validate_result(v)
+
+    def test_scheduler_notification_storm(self):
+        v = self.value(); v['scheduler']['tests'][0]['notifications'] = 100
+        with self.assertRaisesRegex(RuntimeError, 'notification'): runner.validate_result(v)
+
+    def test_scheduler_wrong_pixels(self):
+        v = self.value(); v['scheduler']['tests'][0]['pixelMismatchCount'] = 1
+        with self.assertRaisesRegex(RuntimeError, 'pixel'): runner.validate_result(v)
+
+    def test_scheduler_missing_measurement(self):
+        v = self.value(); del v['scheduler']['checkpoints'][0]['jobs']['capacityNotifications']
+        with self.assertRaisesRegex(RuntimeError, 'measurements'): runner.validate_result(v, require_scheduler=True)
+
+    def test_scheduler_declared_limits_cannot_be_relaxed(self):
+        v = self.value(); v['scheduler']['checkpoints'][0]['jobs']['maxResources'] = 1000
+        with self.assertRaisesRegex(RuntimeError, 'declared limits'): runner.validate_result(v, require_scheduler=True)

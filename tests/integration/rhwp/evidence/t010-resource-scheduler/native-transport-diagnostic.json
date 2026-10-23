@@ -1,0 +1,1232 @@
+{
+  "status": "FAIL",
+  "classification": "VERIFIED only for executed checks",
+  "target": "real Tauri/WebKitGTK, gated candidate dev-server injection",
+  "expectedWasmSha256": "fe690444a700fc3b3ef6eec38e1cf1c36c599f1cc0fa4b0c44a3b853013ecdc2",
+  "tests": [
+    {
+      "name": "candidate-dev-origin",
+      "status": "PASS"
+    },
+    {
+      "name": "hwp-candidate-identity",
+      "status": "PASS",
+      "identity": {
+        "wasmSha256": "fe690444a700fc3b3ef6eec38e1cf1c36c599f1cc0fa4b0c44a3b853013ecdc2",
+        "baseline": "1a76570e833917d15817415a53c09ad61ab3203f"
+      }
+    },
+    {
+      "name": "hwp-images-visible",
+      "status": "PASS",
+      "measurements": {
+        "width": 1588,
+        "height": 2245,
+        "color": 86400
+      }
+    },
+    {
+      "name": "hwp-exact-native-pixels",
+      "status": "PASS",
+      "measurements": {
+        "width": 1588,
+        "height": 2245,
+        "pixelMismatchCount": 0
+      }
+    },
+    {
+      "name": "hwpx-candidate-identity",
+      "status": "PASS",
+      "identity": {
+        "wasmSha256": "fe690444a700fc3b3ef6eec38e1cf1c36c599f1cc0fa4b0c44a3b853013ecdc2",
+        "baseline": "1a76570e833917d15817415a53c09ad61ab3203f"
+      }
+    },
+    {
+      "name": "hwpx-images-visible",
+      "status": "PASS",
+      "measurements": {
+        "width": 1588,
+        "height": 2245,
+        "color": 86400
+      }
+    },
+    {
+      "name": "hwpx-exact-native-pixels",
+      "status": "PASS",
+      "measurements": {
+        "width": 1588,
+        "height": 2245,
+        "pixelMismatchCount": 0
+      }
+    },
+    {
+      "name": "two-live-session-listeners",
+      "status": "PASS"
+    },
+    {
+      "name": "close-one-keeps-other",
+      "status": "PASS"
+    },
+    {
+      "name": "close-final",
+      "status": "PASS"
+    },
+    {
+      "name": "multisection-native-page-0",
+      "status": "PASS",
+      "measurements": {
+        "width": 1588,
+        "height": 2245,
+        "pixelMismatchCount": 0
+      }
+    },
+    {
+      "name": "multisection-native-page-1",
+      "status": "PASS",
+      "measurements": {
+        "width": 2245,
+        "height": 1588,
+        "pixelMismatchCount": 0
+      }
+    },
+    {
+      "name": "multisection-native-page-2",
+      "status": "PASS",
+      "measurements": {
+        "width": 1588,
+        "height": 2245,
+        "pixelMismatchCount": 0
+      }
+    },
+    {
+      "name": "scroll-zoom-150-page-2",
+      "status": "PASS",
+      "measurements": {
+        "width": 2382,
+        "height": 3368,
+        "pixelMismatchCount": 0
+      }
+    },
+    {
+      "name": "scroll-zoom-150-page-0",
+      "status": "PASS",
+      "measurements": {
+        "width": 2382,
+        "height": 3368,
+        "pixelMismatchCount": 0
+      }
+    },
+    {
+      "name": "scroll-zoom-50-page-2",
+      "status": "PASS",
+      "measurements": {
+        "width": 794,
+        "height": 1123,
+        "pixelMismatchCount": 0
+      }
+    },
+    {
+      "name": "scroll-zoom-50-page-0",
+      "status": "PASS",
+      "measurements": {
+        "width": 794,
+        "height": 1123,
+        "pixelMismatchCount": 0
+      }
+    },
+    {
+      "name": "scroll-zoom-100-page-2",
+      "status": "PASS",
+      "measurements": {
+        "width": 1588,
+        "height": 2245,
+        "pixelMismatchCount": 0
+      }
+    },
+    {
+      "name": "scroll-zoom-100-page-0",
+      "status": "PASS",
+      "measurements": {
+        "width": 1588,
+        "height": 2245,
+        "pixelMismatchCount": 0
+      }
+    },
+    {
+      "name": "close-multisection",
+      "status": "PASS"
+    },
+    {
+      "name": "pending-zoom-no-false-complete",
+      "status": "PASS",
+      "measurements": {
+        "sessions": [
+          {
+            "activeJobId": 56,
+            "failures": 0,
+            "modelVersion": 1,
+            "canvases": 1,
+            "sessionId": 4,
+            "generation": 1,
+            "queued": 0,
+            "active": 1
+          }
+        ],
+        "jobs": {
+          "pendingCount": 2,
+          "cancellations": 0,
+          "peakTemporaryCanvasBytes": 32090304,
+          "listenerNotifications": 1,
+          "peakStagingBytes": 32090304,
+          "inFlightEstimatedBytes": 201327652,
+          "capacityNotifications": 1,
+          "maxFrameBytes": 67108864,
+          "resourceLimits": 0,
+          "retryCount": 1,
+          "backupImageDataBytes": 0,
+          "activeLeaseEstimatedBytes": 201327652,
+          "activeJobs": 1,
+          "activeLeaseCount": 2,
+          "maxPending": 2,
+          "transientEstimatedBytes": 0,
+          "loadAttempts": 10,
+          "uniqueResourceCount": 2,
+          "readyLeaseCount": 0,
+          "temporaryCanvasBytes": 0,
+          "maxOwnedBytes": 268435456,
+          "maxStagingBytes": 134217728,
+          "ownedEstimatedBytes": 201327652,
+          "maxResources": 256,
+          "errors": 0,
+          "peakBackupImageDataBytes": 14260240,
+          "completionNotifications": 2
+        },
+        "cache": {
+          "decoded": {
+            "maxBytes": 402653184,
+            "bytes": 128,
+            "misses": 10,
+            "maxEntryBytes": 100663296,
+            "oversize": 0,
+            "maxEntries": 256,
+            "evictions": 8,
+            "hits": 24,
+            "entries": 2,
+            "pendingEntries": 0,
+            "negativeEntries": 2,
+            "rejected": 0,
+            "transientEntries": 0
+          },
+          "images": {
+            "maxBytes": 134217728,
+            "bytes": 0,
+            "misses": 10,
+            "maxEntryBytes": 33554432,
+            "oversize": 0,
+            "maxEntries": 256,
+            "evictions": 8,
+            "hits": 22,
+            "entries": 0,
+            "pendingEntries": 0,
+            "negativeEntries": 0,
+            "rejected": 0,
+            "transientEntries": 0
+          }
+        },
+        "subscribers": 1
+      }
+    },
+    {
+      "name": "pending-replacement-latest-pixels",
+      "status": "PASS"
+    },
+    {
+      "name": "close-pending-document",
+      "status": "PASS"
+    },
+    {
+      "name": "pending-close-releases-leases",
+      "status": "PASS",
+      "measurements": {
+        "sessions": [],
+        "jobs": {
+          "pendingCount": 0,
+          "cancellations": 4,
+          "peakTemporaryCanvasBytes": 32090304,
+          "listenerNotifications": 2,
+          "peakStagingBytes": 32090304,
+          "inFlightEstimatedBytes": 0,
+          "capacityNotifications": 2,
+          "maxFrameBytes": 67108864,
+          "resourceLimits": 0,
+          "retryCount": 2,
+          "backupImageDataBytes": 0,
+          "activeLeaseEstimatedBytes": 0,
+          "activeJobs": 0,
+          "activeLeaseCount": 0,
+          "maxPending": 2,
+          "transientEstimatedBytes": 0,
+          "loadAttempts": 18,
+          "uniqueResourceCount": 0,
+          "readyLeaseCount": 0,
+          "temporaryCanvasBytes": 0,
+          "maxOwnedBytes": 268435456,
+          "maxStagingBytes": 134217728,
+          "ownedEstimatedBytes": 0,
+          "maxResources": 256,
+          "errors": 0,
+          "peakBackupImageDataBytes": 14260240,
+          "completionNotifications": 4
+        },
+        "cache": {
+          "decoded": {
+            "maxBytes": 402653184,
+            "bytes": 128,
+            "misses": 12,
+            "maxEntryBytes": 100663296,
+            "oversize": 0,
+            "maxEntries": 256,
+            "evictions": 10,
+            "hits": 32,
+            "entries": 2,
+            "pendingEntries": 0,
+            "negativeEntries": 2,
+            "rejected": 0,
+            "transientEntries": 0
+          },
+          "images": {
+            "maxBytes": 134217728,
+            "bytes": 0,
+            "misses": 18,
+            "maxEntryBytes": 33554432,
+            "oversize": 0,
+            "maxEntries": 256,
+            "evictions": 10,
+            "hits": 22,
+            "entries": 0,
+            "pendingEntries": 0,
+            "negativeEntries": 0,
+            "rejected": 0,
+            "transientEntries": 0
+          }
+        },
+        "subscribers": 0
+      }
+    },
+    {
+      "name": "late-load-cannot-paint-reopened-document",
+      "status": "PASS",
+      "measurements": {
+        "completed": 59,
+        "pixels": {
+          "width": 2382,
+          "height": 3368,
+          "pixelMismatchCount": 0
+        }
+      },
+      "completedBefore": 59,
+      "zoom": 1.5
+    },
+    {
+      "name": "close-reopened-document",
+      "status": "PASS"
+    },
+    {
+      "name": "multi-budget-256-zoom-50-page-2",
+      "status": "PASS",
+      "measurements": {
+        "width": 794,
+        "height": 1123,
+        "pixelMismatchCount": 0
+      }
+    },
+    {
+      "name": "multi-budget-256-zoom-100-page-0",
+      "status": "PASS",
+      "measurements": {
+        "width": 1588,
+        "height": 2245,
+        "pixelMismatchCount": 0
+      }
+    },
+    {
+      "name": "multi-budget-256-zoom-150-page-2",
+      "status": "PASS",
+      "measurements": {
+        "width": 2382,
+        "height": 3368,
+        "pixelMismatchCount": 0
+      }
+    },
+    {
+      "name": "multi-budget-256-three-subscribers",
+      "status": "PASS",
+      "measurements": {
+        "subscribers": 3
+      }
+    },
+    {
+      "name": "multi-budget-384-zoom-50-page-2",
+      "status": "PASS",
+      "measurements": {
+        "width": 794,
+        "height": 1123,
+        "pixelMismatchCount": 0
+      }
+    },
+    {
+      "name": "multi-budget-384-zoom-100-page-0",
+      "status": "PASS",
+      "measurements": {
+        "width": 1588,
+        "height": 2245,
+        "pixelMismatchCount": 0
+      }
+    },
+    {
+      "name": "multi-budget-384-zoom-150-page-2",
+      "status": "PASS",
+      "measurements": {
+        "width": 2382,
+        "height": 3368,
+        "pixelMismatchCount": 0
+      }
+    },
+    {
+      "name": "multi-budget-384-three-subscribers",
+      "status": "PASS",
+      "measurements": {
+        "subscribers": 3
+      }
+    },
+    {
+      "name": "multi-budget-512-zoom-50-page-2",
+      "status": "PASS",
+      "measurements": {
+        "width": 794,
+        "height": 1123,
+        "pixelMismatchCount": 0
+      }
+    },
+    {
+      "name": "runner-completion",
+      "status": "FAIL"
+    }
+  ],
+  "budgets": [
+    {
+      "requestedMiB": 256,
+      "split": "75% decoded Canvas /25% browser residents; module browser lease cap remains256MiB",
+      "samples": [
+        {
+          "kind": "cache-cold",
+          "hostObservedCompletionMs": 115.49
+        },
+        {
+          "kind": "warm",
+          "hostObservedCompletionMs": 12.51
+        },
+        {
+          "kind": "warm",
+          "hostObservedCompletionMs": 112.02
+        },
+        {
+          "kind": "warm",
+          "hostObservedCompletionMs": 109.45
+        }
+      ],
+      "ownership": {
+        "sessions": [
+          {
+            "activeJobId": null,
+            "failures": 0,
+            "modelVersion": 1,
+            "canvases": 1,
+            "sessionId": 2,
+            "generation": 1,
+            "queued": 0,
+            "active": 0
+          }
+        ],
+        "jobs": {
+          "pendingCount": 0,
+          "cancellations": 0,
+          "peakTemporaryCanvasBytes": 14260240,
+          "listenerNotifications": 1,
+          "peakStagingBytes": 28520480,
+          "inFlightEstimatedBytes": 0,
+          "capacityNotifications": 1,
+          "maxFrameBytes": 67108864,
+          "resourceLimits": 0,
+          "retryCount": 1,
+          "backupImageDataBytes": 0,
+          "activeLeaseEstimatedBytes": 0,
+          "activeJobs": 0,
+          "activeLeaseCount": 0,
+          "maxPending": 2,
+          "transientEstimatedBytes": 0,
+          "loadAttempts": 4,
+          "uniqueResourceCount": 2,
+          "readyLeaseCount": 0,
+          "temporaryCanvasBytes": 0,
+          "maxOwnedBytes": 268435456,
+          "maxStagingBytes": 134217728,
+          "ownedEstimatedBytes": 11617460,
+          "maxResources": 256,
+          "errors": 0,
+          "peakBackupImageDataBytes": 14260240,
+          "completionNotifications": 2
+        },
+        "cache": {
+          "decoded": {
+            "maxBytes": 201326592,
+            "bytes": 128,
+            "misses": 4,
+            "maxEntryBytes": 50331648,
+            "oversize": 0,
+            "maxEntries": 256,
+            "evictions": 2,
+            "hits": 10,
+            "entries": 2,
+            "pendingEntries": 0,
+            "negativeEntries": 2,
+            "rejected": 0,
+            "transientEntries": 0
+          },
+          "images": {
+            "maxBytes": 67108864,
+            "bytes": 11617460,
+            "misses": 4,
+            "maxEntryBytes": 16777216,
+            "oversize": 0,
+            "maxEntries": 256,
+            "evictions": 2,
+            "hits": 8,
+            "entries": 2,
+            "pendingEntries": 0,
+            "negativeEntries": 0,
+            "rejected": 0,
+            "transientEntries": 0
+          }
+        },
+        "subscribers": 1
+      },
+      "processRss": [
+        {
+          "role": "tauri-driver",
+          "rssKiB": 3796
+        },
+        {
+          "role": "WebKitWebDriver",
+          "rssKiB": 26000
+        },
+        {
+          "role": "geul",
+          "rssKiB": 216508
+        },
+        {
+          "role": "WebKitNetworkPr",
+          "rssKiB": 91264
+        },
+        {
+          "role": "WebKitWebProces",
+          "rssKiB": 472072
+        }
+      ],
+      "officialD4Timing": false
+    },
+    {
+      "requestedMiB": 384,
+      "split": "75% decoded Canvas /25% browser residents; module browser lease cap remains256MiB",
+      "samples": [
+        {
+          "kind": "cache-cold",
+          "hostObservedCompletionMs": 114.1
+        },
+        {
+          "kind": "warm",
+          "hostObservedCompletionMs": 113.01
+        },
+        {
+          "kind": "warm",
+          "hostObservedCompletionMs": 16.15
+        },
+        {
+          "kind": "warm",
+          "hostObservedCompletionMs": 109.88
+        }
+      ],
+      "ownership": {
+        "sessions": [
+          {
+            "activeJobId": null,
+            "failures": 0,
+            "modelVersion": 1,
+            "canvases": 1,
+            "sessionId": 2,
+            "generation": 1,
+            "queued": 0,
+            "active": 0
+          }
+        ],
+        "jobs": {
+          "pendingCount": 0,
+          "cancellations": 0,
+          "peakTemporaryCanvasBytes": 14260240,
+          "listenerNotifications": 1,
+          "peakStagingBytes": 28520480,
+          "inFlightEstimatedBytes": 0,
+          "capacityNotifications": 1,
+          "maxFrameBytes": 67108864,
+          "resourceLimits": 0,
+          "retryCount": 1,
+          "backupImageDataBytes": 0,
+          "activeLeaseEstimatedBytes": 0,
+          "activeJobs": 0,
+          "activeLeaseCount": 0,
+          "maxPending": 2,
+          "transientEstimatedBytes": 0,
+          "loadAttempts": 6,
+          "uniqueResourceCount": 2,
+          "readyLeaseCount": 0,
+          "temporaryCanvasBytes": 0,
+          "maxOwnedBytes": 268435456,
+          "maxStagingBytes": 134217728,
+          "ownedEstimatedBytes": 11617460,
+          "maxResources": 256,
+          "errors": 0,
+          "peakBackupImageDataBytes": 14260240,
+          "completionNotifications": 2
+        },
+        "cache": {
+          "decoded": {
+            "maxBytes": 301989888,
+            "bytes": 128,
+            "misses": 6,
+            "maxEntryBytes": 75497472,
+            "oversize": 0,
+            "maxEntries": 256,
+            "evictions": 4,
+            "hits": 16,
+            "entries": 2,
+            "pendingEntries": 0,
+            "negativeEntries": 2,
+            "rejected": 0,
+            "transientEntries": 0
+          },
+          "images": {
+            "maxBytes": 100663296,
+            "bytes": 11617460,
+            "misses": 6,
+            "maxEntryBytes": 25165824,
+            "oversize": 0,
+            "maxEntries": 256,
+            "evictions": 4,
+            "hits": 14,
+            "entries": 2,
+            "pendingEntries": 0,
+            "negativeEntries": 0,
+            "rejected": 0,
+            "transientEntries": 0
+          }
+        },
+        "subscribers": 1
+      },
+      "processRss": [
+        {
+          "role": "tauri-driver",
+          "rssKiB": 3796
+        },
+        {
+          "role": "WebKitWebDriver",
+          "rssKiB": 25992
+        },
+        {
+          "role": "geul",
+          "rssKiB": 216508
+        },
+        {
+          "role": "WebKitNetworkPr",
+          "rssKiB": 91264
+        },
+        {
+          "role": "WebKitWebProces",
+          "rssKiB": 494348
+        }
+      ],
+      "officialD4Timing": false
+    },
+    {
+      "requestedMiB": 512,
+      "split": "75% decoded Canvas /25% browser residents; module browser lease cap remains256MiB",
+      "samples": [
+        {
+          "kind": "cache-cold",
+          "hostObservedCompletionMs": 15.24
+        },
+        {
+          "kind": "warm",
+          "hostObservedCompletionMs": 137.6
+        },
+        {
+          "kind": "warm",
+          "hostObservedCompletionMs": 13.17
+        },
+        {
+          "kind": "warm",
+          "hostObservedCompletionMs": 112.59
+        }
+      ],
+      "ownership": {
+        "sessions": [
+          {
+            "activeJobId": null,
+            "failures": 0,
+            "modelVersion": 1,
+            "canvases": 1,
+            "sessionId": 2,
+            "generation": 1,
+            "queued": 0,
+            "active": 0
+          }
+        ],
+        "jobs": {
+          "pendingCount": 0,
+          "cancellations": 0,
+          "peakTemporaryCanvasBytes": 14260240,
+          "listenerNotifications": 1,
+          "peakStagingBytes": 28520480,
+          "inFlightEstimatedBytes": 0,
+          "capacityNotifications": 1,
+          "maxFrameBytes": 67108864,
+          "resourceLimits": 0,
+          "retryCount": 1,
+          "backupImageDataBytes": 0,
+          "activeLeaseEstimatedBytes": 0,
+          "activeJobs": 0,
+          "activeLeaseCount": 0,
+          "maxPending": 2,
+          "transientEstimatedBytes": 0,
+          "loadAttempts": 8,
+          "uniqueResourceCount": 2,
+          "readyLeaseCount": 0,
+          "temporaryCanvasBytes": 0,
+          "maxOwnedBytes": 268435456,
+          "maxStagingBytes": 134217728,
+          "ownedEstimatedBytes": 11617460,
+          "maxResources": 256,
+          "errors": 0,
+          "peakBackupImageDataBytes": 14260240,
+          "completionNotifications": 2
+        },
+        "cache": {
+          "decoded": {
+            "maxBytes": 402653184,
+            "bytes": 128,
+            "misses": 8,
+            "maxEntryBytes": 100663296,
+            "oversize": 0,
+            "maxEntries": 256,
+            "evictions": 6,
+            "hits": 22,
+            "entries": 2,
+            "pendingEntries": 0,
+            "negativeEntries": 2,
+            "rejected": 0,
+            "transientEntries": 0
+          },
+          "images": {
+            "maxBytes": 134217728,
+            "bytes": 11617460,
+            "misses": 8,
+            "maxEntryBytes": 33554432,
+            "oversize": 0,
+            "maxEntries": 256,
+            "evictions": 6,
+            "hits": 20,
+            "entries": 2,
+            "pendingEntries": 0,
+            "negativeEntries": 0,
+            "rejected": 0,
+            "transientEntries": 0
+          }
+        },
+        "subscribers": 1
+      },
+      "processRss": [
+        {
+          "role": "tauri-driver",
+          "rssKiB": 3796
+        },
+        {
+          "role": "WebKitWebDriver",
+          "rssKiB": 25992
+        },
+        {
+          "role": "geul",
+          "rssKiB": 216512
+        },
+        {
+          "role": "WebKitNetworkPr",
+          "rssKiB": 91264
+        },
+        {
+          "role": "WebKitWebProces",
+          "rssKiB": 508596
+        }
+      ],
+      "officialD4Timing": false
+    }
+  ],
+  "multiDocumentBudgets": [
+    {
+      "requestedMiB": 256,
+      "samples": [
+        {
+          "zoom": 50,
+          "page": 2,
+          "kind": "cache-cold",
+          "hostObservedCompletionMs": 116.98
+        },
+        {
+          "zoom": 50,
+          "page": 2,
+          "kind": "warm",
+          "hostObservedCompletionMs": 114.5
+        },
+        {
+          "zoom": 100,
+          "page": 0,
+          "kind": "cache-cold",
+          "hostObservedCompletionMs": 113.03
+        },
+        {
+          "zoom": 100,
+          "page": 0,
+          "kind": "warm",
+          "hostObservedCompletionMs": 130.19
+        },
+        {
+          "zoom": 150,
+          "page": 2,
+          "kind": "cache-cold",
+          "hostObservedCompletionMs": 136.63
+        },
+        {
+          "zoom": 150,
+          "page": 2,
+          "kind": "warm",
+          "hostObservedCompletionMs": 111.93
+        }
+      ],
+      "ownership": {
+        "sessions": [
+          {
+            "activeJobId": null,
+            "failures": 0,
+            "modelVersion": 1,
+            "canvases": 0,
+            "sessionId": 6,
+            "generation": 1,
+            "queued": 0,
+            "active": 0
+          },
+          {
+            "activeJobId": null,
+            "failures": 0,
+            "modelVersion": 1,
+            "canvases": 0,
+            "sessionId": 7,
+            "generation": 1,
+            "queued": 0,
+            "active": 0
+          },
+          {
+            "activeJobId": null,
+            "failures": 0,
+            "modelVersion": 1,
+            "canvases": 3,
+            "sessionId": 8,
+            "generation": 1,
+            "queued": 0,
+            "active": 0
+          }
+        ],
+        "jobs": {
+          "pendingCount": 0,
+          "cancellations": 4,
+          "peakTemporaryCanvasBytes": 32090304,
+          "listenerNotifications": 2,
+          "peakStagingBytes": 64180608,
+          "inFlightEstimatedBytes": 0,
+          "capacityNotifications": 2,
+          "maxFrameBytes": 67108864,
+          "resourceLimits": 0,
+          "retryCount": 2,
+          "backupImageDataBytes": 0,
+          "activeLeaseEstimatedBytes": 0,
+          "activeJobs": 0,
+          "activeLeaseCount": 0,
+          "maxPending": 2,
+          "transientEstimatedBytes": 0,
+          "loadAttempts": 20,
+          "uniqueResourceCount": 0,
+          "readyLeaseCount": 0,
+          "temporaryCanvasBytes": 0,
+          "maxOwnedBytes": 268435456,
+          "maxStagingBytes": 134217728,
+          "ownedEstimatedBytes": 0,
+          "maxResources": 256,
+          "errors": 0,
+          "peakBackupImageDataBytes": 32090304,
+          "completionNotifications": 4
+        },
+        "cache": {
+          "decoded": {
+            "maxBytes": 201326592,
+            "bytes": 0,
+            "misses": 12,
+            "maxEntryBytes": 50331648,
+            "oversize": 0,
+            "maxEntries": 256,
+            "evictions": 12,
+            "hits": 36,
+            "entries": 0,
+            "pendingEntries": 0,
+            "negativeEntries": 0,
+            "rejected": 0,
+            "transientEntries": 0
+          },
+          "images": {
+            "maxBytes": 67108864,
+            "bytes": 0,
+            "misses": 20,
+            "maxEntryBytes": 16777216,
+            "oversize": 0,
+            "maxEntries": 256,
+            "evictions": 12,
+            "hits": 24,
+            "entries": 0,
+            "pendingEntries": 0,
+            "negativeEntries": 0,
+            "rejected": 0,
+            "transientEntries": 0
+          }
+        },
+        "subscribers": 3
+      },
+      "processRss": [
+        {
+          "role": "tauri-driver",
+          "rssKiB": 3824
+        },
+        {
+          "role": "WebKitWebDriver",
+          "rssKiB": 25444
+        },
+        {
+          "role": "geul",
+          "rssKiB": 215004
+        },
+        {
+          "role": "WebKitNetworkPr",
+          "rssKiB": 90356
+        },
+        {
+          "role": "WebKitWebProces",
+          "rssKiB": 544144
+        }
+      ],
+      "officialD4Timing": false
+    },
+    {
+      "requestedMiB": 384,
+      "samples": [
+        {
+          "zoom": 50,
+          "page": 2,
+          "kind": "cache-cold",
+          "hostObservedCompletionMs": 129.16
+        },
+        {
+          "zoom": 50,
+          "page": 2,
+          "kind": "warm",
+          "hostObservedCompletionMs": 116.31
+        },
+        {
+          "zoom": 100,
+          "page": 0,
+          "kind": "cache-cold",
+          "hostObservedCompletionMs": 119.16
+        },
+        {
+          "zoom": 100,
+          "page": 0,
+          "kind": "warm",
+          "hostObservedCompletionMs": 113.54
+        },
+        {
+          "zoom": 150,
+          "page": 2,
+          "kind": "cache-cold",
+          "hostObservedCompletionMs": 110.46
+        },
+        {
+          "zoom": 150,
+          "page": 2,
+          "kind": "warm",
+          "hostObservedCompletionMs": 114.31
+        }
+      ],
+      "ownership": {
+        "sessions": [
+          {
+            "activeJobId": null,
+            "failures": 0,
+            "modelVersion": 1,
+            "canvases": 0,
+            "sessionId": 6,
+            "generation": 1,
+            "queued": 0,
+            "active": 0
+          },
+          {
+            "activeJobId": null,
+            "failures": 0,
+            "modelVersion": 1,
+            "canvases": 0,
+            "sessionId": 7,
+            "generation": 1,
+            "queued": 0,
+            "active": 0
+          },
+          {
+            "activeJobId": null,
+            "failures": 0,
+            "modelVersion": 1,
+            "canvases": 3,
+            "sessionId": 8,
+            "generation": 1,
+            "queued": 0,
+            "active": 0
+          }
+        ],
+        "jobs": {
+          "pendingCount": 0,
+          "cancellations": 4,
+          "peakTemporaryCanvasBytes": 32090304,
+          "listenerNotifications": 2,
+          "peakStagingBytes": 64180608,
+          "inFlightEstimatedBytes": 0,
+          "capacityNotifications": 2,
+          "maxFrameBytes": 67108864,
+          "resourceLimits": 0,
+          "retryCount": 2,
+          "backupImageDataBytes": 0,
+          "activeLeaseEstimatedBytes": 0,
+          "activeJobs": 0,
+          "activeLeaseCount": 0,
+          "maxPending": 2,
+          "transientEstimatedBytes": 0,
+          "loadAttempts": 20,
+          "uniqueResourceCount": 0,
+          "readyLeaseCount": 0,
+          "temporaryCanvasBytes": 0,
+          "maxOwnedBytes": 268435456,
+          "maxStagingBytes": 134217728,
+          "ownedEstimatedBytes": 0,
+          "maxResources": 256,
+          "errors": 0,
+          "peakBackupImageDataBytes": 32090304,
+          "completionNotifications": 4
+        },
+        "cache": {
+          "decoded": {
+            "maxBytes": 301989888,
+            "bytes": 0,
+            "misses": 12,
+            "maxEntryBytes": 75497472,
+            "oversize": 0,
+            "maxEntries": 256,
+            "evictions": 12,
+            "hits": 36,
+            "entries": 0,
+            "pendingEntries": 0,
+            "negativeEntries": 0,
+            "rejected": 0,
+            "transientEntries": 0
+          },
+          "images": {
+            "maxBytes": 100663296,
+            "bytes": 0,
+            "misses": 20,
+            "maxEntryBytes": 25165824,
+            "oversize": 0,
+            "maxEntries": 256,
+            "evictions": 12,
+            "hits": 24,
+            "entries": 0,
+            "pendingEntries": 0,
+            "negativeEntries": 0,
+            "rejected": 0,
+            "transientEntries": 0
+          }
+        },
+        "subscribers": 3
+      },
+      "processRss": [
+        {
+          "role": "tauri-driver",
+          "rssKiB": 3824
+        },
+        {
+          "role": "WebKitWebDriver",
+          "rssKiB": 25196
+        },
+        {
+          "role": "geul",
+          "rssKiB": 214880
+        },
+        {
+          "role": "WebKitNetworkPr",
+          "rssKiB": 90356
+        },
+        {
+          "role": "WebKitWebProces",
+          "rssKiB": 643084
+        }
+      ],
+      "officialD4Timing": false
+    }
+  ],
+  "lastObserved": {
+    "origin": "http://localhost:1420",
+    "ownership": {
+      "counters": {
+        "polls": 213,
+        "limits": 0,
+        "staleDropped": 0,
+        "reused": 45,
+        "replacements": 0,
+        "completed": 207,
+        "errors": 0,
+        "canceled": 4,
+        "notifications": 2
+      },
+      "stats": {
+        "sessions": [
+          {
+            "activeJobId": null,
+            "failures": 0,
+            "modelVersion": 1,
+            "canvases": 0,
+            "sessionId": 6,
+            "generation": 1,
+            "queued": 0,
+            "active": 0
+          },
+          {
+            "activeJobId": null,
+            "failures": 0,
+            "modelVersion": 1,
+            "canvases": 0,
+            "sessionId": 7,
+            "generation": 1,
+            "queued": 0,
+            "active": 0
+          },
+          {
+            "activeJobId": null,
+            "failures": 0,
+            "modelVersion": 1,
+            "canvases": 3,
+            "sessionId": 8,
+            "generation": 1,
+            "queued": 0,
+            "active": 0
+          }
+        ],
+        "jobs": {
+          "pendingCount": 0,
+          "cancellations": 4,
+          "peakTemporaryCanvasBytes": 32090304,
+          "listenerNotifications": 2,
+          "peakStagingBytes": 64180608,
+          "inFlightEstimatedBytes": 0,
+          "capacityNotifications": 2,
+          "maxFrameBytes": 67108864,
+          "resourceLimits": 0,
+          "retryCount": 2,
+          "backupImageDataBytes": 0,
+          "activeLeaseEstimatedBytes": 0,
+          "activeJobs": 0,
+          "activeLeaseCount": 0,
+          "maxPending": 2,
+          "transientEstimatedBytes": 0,
+          "loadAttempts": 20,
+          "uniqueResourceCount": 0,
+          "readyLeaseCount": 0,
+          "temporaryCanvasBytes": 0,
+          "maxOwnedBytes": 268435456,
+          "maxStagingBytes": 134217728,
+          "ownedEstimatedBytes": 0,
+          "maxResources": 256,
+          "errors": 0,
+          "peakBackupImageDataBytes": 32090304,
+          "completionNotifications": 4
+        },
+        "cache": {
+          "decoded": {
+            "maxBytes": 402653184,
+            "bytes": 0,
+            "misses": 12,
+            "maxEntryBytes": 100663296,
+            "oversize": 0,
+            "maxEntries": 256,
+            "evictions": 12,
+            "hits": 36,
+            "entries": 0,
+            "pendingEntries": 0,
+            "negativeEntries": 0,
+            "rejected": 0,
+            "transientEntries": 0
+          },
+          "images": {
+            "maxBytes": 134217728,
+            "bytes": 0,
+            "misses": 20,
+            "maxEntryBytes": 33554432,
+            "oversize": 0,
+            "maxEntries": 256,
+            "evictions": 12,
+            "hits": 24,
+            "entries": 0,
+            "pendingEntries": 0,
+            "negativeEntries": 0,
+            "rejected": 0,
+            "transientEntries": 0
+          }
+        },
+        "subscribers": 3
+      },
+      "identity": {
+        "wasmSha256": "fe690444a700fc3b3ef6eec38e1cf1c36c599f1cc0fa4b0c44a3b853013ecdc2",
+        "baseline": "1a76570e833917d15817415a53c09ad61ab3203f"
+      }
+    },
+    "status": [
+      {
+        "pages": "3",
+        "status": "ready",
+        "dirty": "false",
+        "revision": "0"
+      }
+    ]
+  },
+  "error": "WebDriver \uc5f0\uacb0 \ub04a\uae40(\ud310\ub2e8 \ubd88\uac00(\uc0c1\ud638\uc791\uc6a9 \uc911, \uc571\u00b7WebProcess\u00b7WebDriver \ubaa8\ub450 \uc0b4\uc544 \uc788\uc74c); POST /execute/sync): Remote end closed connection without response \u2014 \ub9c8\uc9c0\ub9c9 \ud1b5\uacfc \ud56d\ubaa9 '\uc5c6\uc74c', tauri-driver \uc885\ub8cc \ucf54\ub4dc None, \uc774 \uc138\uc158\uc5d0\uc11c \ubcf8 \ud504\ub85c\uc138\uc2a4 ['WebKitWebDriver', 'WebKitWebProces', 'geul'], 1\ucd08 \ub4a4 \ud504\ub85c\uc138\uc2a4 ['WebKitNetworkPr', 'WebKitWebDriver', 'WebKitWebProces', 'geul', 'tauri-driver']",
+  "passed": 35,
+  "failed": 1,
+  "skippedOrIgnored": 0
+}

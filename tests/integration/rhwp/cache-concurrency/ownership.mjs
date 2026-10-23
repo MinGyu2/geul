@@ -1,3 +1,4 @@
+import { scheduler } from './scheduler.mjs';
 import { historical } from './historical.mjs';
 import { jobHistorical } from './job-historical.mjs';
 import { svg, classify } from './fixtures.mjs';
@@ -351,7 +352,8 @@ export async function ownership(candidate,pinned,{mismatch,loads}) {
     p.images.bytes<=p.images.maxBytes&&p.images.entries<=p.images.maxEntries&&
     p.jobs.temporaryCanvasBytes===0&&p.jobs.peakTemporaryCanvasBytes<=p.jobs.maxFrameBytes&&
     p.jobs.backupImageDataBytes===0&&p.jobs.peakBackupImageDataBytes<=p.jobs.maxFrameBytes&&p.jobs.peakStagingBytes<=p.jobs.maxStagingBytes));
-  return {schema:1,userAgent:navigator.userAgent,status:tests.every(t=>t.status==='PASS')&&formats.every(f=>f.status==='PASS')?'PASS':'FAIL',
+  const scheduled = await scheduler(candidate,pinned,{mismatch});
+  return {scheduler:scheduled,schema:1,userAgent:navigator.userAgent,status:scheduled.status==='PASS'&&tests.every(t=>t.status==='PASS')&&formats.every(f=>f.status==='PASS')?'PASS':'FAIL',
     concurrent,pending,formats,historical:{status:failures.length?'FAIL':'PASS',draws,exactPixelMatches:exact,failures,pinned:sanitize(baseline),candidate:sanitize(current)},
     ownership:{status:tests.every(t=>t.status==='PASS')?'PASS':'FAIL',tests,checkpoints},loads};
 }

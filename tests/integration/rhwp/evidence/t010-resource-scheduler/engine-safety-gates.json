@@ -1,0 +1,45 @@
+{
+  "status": "PASS",
+  "scope": "permits conditional test-only native evaluation; no production activation",
+  "patchSha256": "2c5e1ad101b1c16856ed20d1facfd295db9f0d8e2824223d3ec68c201ddf4098",
+  "wasmSha256": "fe690444a700fc3b3ef6eec38e1cf1c36c599f1cc0fa4b0c44a3b853013ecdc2",
+  "sourceStableDuringBuild": true,
+  "browsers": [
+    {
+      "browser": "chrome",
+      "ownershipPass": 52,
+      "schedulerPass": 48,
+      "fail": 0,
+      "skipped": 0,
+      "historicalScenarios": 12,
+      "exactHistoricalDraws": 50,
+      "hwpHwpxPixelMismatch": 0
+    },
+    {
+      "browser": "webkit",
+      "ownershipPass": 52,
+      "schedulerPass": 48,
+      "fail": 0,
+      "skipped": 0,
+      "historicalScenarios": 12,
+      "exactHistoricalDraws": 50,
+      "hwpHwpxPixelMismatch": 0
+    }
+  ],
+  "mandatoryRustContracts": {
+    "internal": 11,
+    "externalOwnership": 13,
+    "newScheduler": 4,
+    "failed": 0,
+    "ignored": 0
+  },
+  "nativeClippy": "PASS",
+  "wasmClippy": "PASS",
+  "releaseBuild": "PASS",
+  "additionalFinalLibraryReexecution": {
+    "status": "PASS",
+    "passed": 4063,
+    "failed": 0,
+    "ignored": 13
+  }
+}

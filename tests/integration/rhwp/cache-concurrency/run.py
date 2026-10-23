@@ -84,7 +84,7 @@ def stop(process):
             process.wait(timeout=10)
 
 
-def validate_result(value, require_ownership=False):
+def validate_result(value, require_ownership=False, require_scheduler=False):
     """Independently validate mandatory gates; a browser's top-level PASS is not proof."""
     if value.get('schema') != 1 or value.get('status') not in ('PASS', 'FAIL'):
         raise RuntimeError('invalid completion status')
@@ -139,6 +139,46 @@ def validate_result(value, require_ownership=False):
                     job['peakStagingBytes'] > job['maxStagingBytes']):
                 raise RuntimeError('ownership measurement violates resource budget')
 
+    if require_scheduler and 'scheduler' not in value:
+        raise RuntimeError('missing mandatory scheduler gate')
+    if 'scheduler' in value:
+        scheduler = value['scheduler']; rows = scheduler.get('tests', [])
+        required_names = {'count-saturation-admits', 'bytes-saturation-admits',
+                          'notification-progress-cancel-one', 'notification-progress-cancel-both',
+                          'notification-progress-dispose', 'notification-progress-replace',
+                          'notification-progress-mutate', 'notification-progress-shared-owner',
+                          'notification-progress-complete', 'notification-progress-error',
+                          'notification-progress-budget', 'notification-progress-trim',
+                          'notification-progress-competition', 'notification-progress-deadline',
+                          'active-saturation-waits-without-publication', 'active-owner-release-progress',
+                          'intrinsic-active-byte-limit-explicit', 'resident-eviction-during-shared-draw',
+                          'shared-resident-close-one-preserves-pixels'}
+        if scheduler.get('status') not in ('PASS', 'FAIL') or not required_names <= {r.get('name') for r in rows}:
+            raise RuntimeError('incomplete scheduler scenarios')
+        gates += [scheduler['status']] + [r.get('status') for r in rows]
+        for row in rows:
+            if row.get('status') not in ('PASS', 'FAIL'):
+                raise RuntimeError('invalid scheduler subtest status')
+            if value['status'] == 'PASS' and (row.get('pixelMismatchCount', 0) != 0 or
+                    row.get('notifications', 0) > 5 or row.get('requiredPendingCount', 0) > 0):
+                raise RuntimeError('scheduler pixel/publication/notification violation')
+        points = scheduler.get('checkpoints', [])
+        if not points:
+            raise RuntimeError('missing scheduler accounting')
+        for point in points:
+            job = point.get('jobs', {})
+            if require_scheduler and any(type(job.get(k)) is not int or job[k] < 0 for k in
+                    ('uniqueResourceCount', 'activeLeaseCount', 'capacityNotifications', 'listenerNotifications',
+                     'pendingCount', 'ownedEstimatedBytes', 'activeJobs', 'maxPending', 'maxOwnedBytes', 'maxResources')):
+                raise RuntimeError('missing scheduler measurements')
+            if require_scheduler and (job['maxPending'] != 2 or job['maxResources'] != 256 or job['maxOwnedBytes'] != 256 << 20):
+                raise RuntimeError('scheduler declared limits changed')
+            if value['status'] == 'PASS' and (job.get('uniqueResourceCount', 0) > job.get('maxResources', 0) or
+                    job.get('pendingCount', 0) > job.get('maxPending', 0) or
+                    job.get('ownedEstimatedBytes', 0) > job.get('maxOwnedBytes', 0) or
+                    job.get('activeJobs', 0) > 8):
+                raise RuntimeError('scheduler resource limit violation')
+
     if value['status'] == 'PASS' and (any(g != 'PASS' for g in gates) or value.get('unhandledErrors')):
         raise RuntimeError('top-level PASS contradicts mandatory subordinate gate')
 
@@ -159,13 +199,14 @@ def main():
         temporary = Path(stack.enter_context(tempfile.TemporaryDirectory(prefix='geul-cache-browser-')))
         web = temporary / 'web'; web.mkdir()
         result['identities'] = {name: engine(source.resolve(), web / name) for name, source in [('pinned', a.pinned), ('candidate', a.candidate)]}
-        for name in ('index.html', 'browser.mjs', 'historical.mjs', 'fixtures.mjs', 'historical-expected.json', 'ownership.mjs', 'job-historical.mjs'):
+        for name in ('index.html', 'browser.mjs', 'historical.mjs', 'fixtures.mjs', 'historical-expected.json', 'ownership.mjs', 'job-historical.mjs', 'scheduler.mjs'):
             shutil.copy2(HERE / name, web / name)
         multisection_fixture(web / 'multisection.hwpx')
         result['testSourcesSha256'] = {path.name: sha(path) for path in web.iterdir() if path.is_file()}
         result['testSourcesSha256']['run.py'] = sha(HERE / 'run.py')
         event = threading.Event()
         received = []
+        held_images = {}
 
         class Handler(SimpleHTTPRequestHandler):
             def __init__(self, *args, **kwargs):
@@ -177,6 +218,23 @@ def main():
             def end_headers(self):
                 self.send_header('Cache-Control', 'no-store')
                 super().end_headers()
+
+            def do_GET(self):
+                from urllib.parse import urlparse, parse_qs
+                parsed = urlparse(self.path); query = parse_qs(parsed.query)
+                if parsed.path in ('/held-image.svg', '/release-image'):
+                    key = query.get('key', [''])[0]
+                    signal = held_images.setdefault(key, threading.Event())
+                    if parsed.path == '/release-image':
+                        signal.set(); self.send_response(204); self.end_headers(); return
+                    signal.wait(20)
+                    self.send_response(200); self.send_header('Content-Type', 'image/svg+xml'); self.end_headers()
+                    try:
+                        self.wfile.write(b'invalid image' if 'error' in query else __import__('base64').b64decode(query['data'][0].split(',',1)[1]) if 'data' in query else b'<svg xmlns="http://www.w3.org/2000/svg" width="8" height="8"><rect width="8" height="8" fill="red"/></svg>')
+                    except (BrokenPipeError, ConnectionResetError):
+                        pass
+                    return
+                super().do_GET()
 
             def do_POST(self):
                 if self.path != '/result':
@@ -255,8 +313,8 @@ def main():
             value = received[0]
             candidate_manifest = result['identities']['candidate'].get('ENGINE.json', {})
             require_ownership = candidate_manifest.get('rendererJobAPI') is True or 'src/renderer/render_job.rs' in candidate_manifest.get('sourceSha256', {})
-            validate_result(value, require_ownership=require_ownership)
-            result['run'] = value
+            result['run'] = value  # Preserve rejected payload for failure diagnosis.
+            validate_result(value, require_ownership=require_ownership, require_scheduler=candidate_manifest.get('schedulerAPI') is True)
             result['status'] = value['status']
         except Exception as e:
             result['error'] = str(e).replace(str(temporary), '<temporary>')

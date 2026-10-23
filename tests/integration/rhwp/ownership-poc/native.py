@@ -54,18 +54,23 @@ const bytes=new Uint8Array(arguments[0]),page=arguments[1];window.__ownershipPix
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument('--scheduler', action='store_true')
+    parser.add_argument('--scheduler-only', action='store_true', help='run focused checks; does not claim the existing44 matrix was re-executed')
     parser.add_argument('--extended', action='store_true')
     parser.add_argument('--matrix', action='store_true', help='also compare multi-document budget/scroll/zoom cases')
     for name in ('app', 'driver', 'webkit-driver', 'xvfb', 'output'):
         parser.add_argument('--' + name, required=True, type=Path)
     args = parser.parse_args()
-    evidence = ROOT / 'tests/integration/rhwp/evidence/t010-render-ownership'
+    if args.scheduler_only and not args.scheduler:
+        parser.error('--scheduler-only requires --scheduler')
+    evidence = ROOT / ('tests/integration/rhwp/evidence/t010-resource-scheduler' if args.scheduler else 'tests/integration/rhwp/evidence/t010-render-ownership')
     gate = json.loads((evidence / 'engine-safety-gates.json').read_text())
     if gate['status'] != 'PASS':
         raise RuntimeError('engine safety prerequisites failed')
     result = {'status': 'RUNNING', 'classification': 'VERIFIED only for executed checks',
               'target': 'real Tauri/WebKitGTK, gated candidate dev-server injection',
-              'expectedWasmSha256': gate['wasmSha256'], 'tests': [], 'budgets': []}
+              'expectedWasmSha256': gate['wasmSha256'], 'tests': [], 'budgets': [],
+              'scope': 'focused scheduler only' if args.scheduler_only else 'full native matrix'}
 
     def save():
         args.output.parent.mkdir(parents=True, exist_ok=True)
@@ -99,132 +104,185 @@ def main():
                 try:
                     smoke.wait_until(driver, "return !!document.querySelector('.document-bar__open')", timeout=30)
                     check('candidate-dev-origin', driver.js('return location.origin') == 'http://localhost:1420')
-                    for format in ('hwp', 'hwpx'):
-                        before = driver.js('return window.__geulOwnership?.counters.completed||0')
-                        poc.open_document(driver, work / ('ownership-' + format + '.' + format))
-                        smoke.wait_until(driver, "return !!window.__geulOwnership && window.__geulOwnership.counters.completed>arguments[0] && window.__geulOwnership.stats().sessions.every(s=>!s.active&&!s.queued)", before, timeout=30)
-                        loaded = driver.js('return window.__geulOwnership.identity')
-                        check(format + '-candidate-identity', loaded['wasmSha256'] == gate['wasmSha256'], identity=loaded)
-                        pixels = driver.js("const c=document.querySelector('.rhwp-page__canvas');const p=c.getContext('2d').getImageData(0,0,c.width,c.height).data;let color=0;for(let i=0;i<p.length;i+=4)if(p[i+3]>200&&Math.max(p[i],p[i+1],p[i+2])-Math.min(p[i],p[i+1],p[i+2])>100)color++;return {width:c.width,height:c.height,color};")
-                        check(format + '-images-visible', pixels['color'] > 1000, measurements=pixels)
-                        driver.js(PIXELS, list((work / ('ownership-' + format + '.' + format)).read_bytes()), 0)
-                        smoke.wait_until(driver, 'return !!window.__ownershipPixelResult', timeout=15)
-                        compared = driver.js('return window.__ownershipPixelResult')
-                        check(format + '-exact-native-pixels', compared.get('pixelMismatchCount') == 0, measurements=compared)
-                    check('two-live-session-listeners', driver.js('return window.__geulOwnership.stats().subscribers') == 2)
-                    check('close-one-keeps-other', poc.close_tab(driver, 'ownership-hwp.hwp') and driver.js('return window.__geulOwnership.stats().subscribers') == 1)
-                    for mib in (256, 384, 512):
-                        driver.js('window.__geulOwnership.budget(arguments[0]);', mib << 20)
-                        driver.js('window.__geulOwnership.trim();')
-                        samples = []
-                        for kind in ('cache-cold', 'warm', 'warm', 'warm'):
-                            before = driver.js('return window.__geulOwnership.counters.completed')
-                            started = time.monotonic()
-                            driver.js('window.__geulOwnership.repaint();')
-                            smoke.wait_until(driver, 'return window.__geulOwnership.counters.completed>arguments[0] && window.__geulOwnership.stats().sessions.every(s=>!s.active&&!s.queued)', before, timeout=30)
-                            samples.append({'kind': kind, 'hostObservedCompletionMs': round((time.monotonic() - started) * 1000, 2)})
-                        result['budgets'].append({'requestedMiB': mib, 'split': '75% decoded Canvas /25% browser residents; module browser lease cap remains256MiB', 'samples': samples, 'ownership': driver.js('return window.__geulOwnership.stats()'), 'processRss': rss(), 'officialD4Timing': False})
-                        save()
-                    check('close-final', poc.close_tab(driver, 'ownership-hwpx.hwpx'))
-                    poc.open_document(driver, work / 'multiple-sections.hwpx')
-                    smoke.wait_until(driver, 'return document.querySelectorAll(".rhwp-page__canvas").length===3 && [...document.querySelectorAll(".rhwp-page__canvas")].every(c=>c.width>0) && window.__geulOwnership.stats().sessions.every(s=>!s.active&&!s.queued)', timeout=30)
-                    for page in range(3):
-                        driver.js(PIXELS, list((work / 'multiple-sections.hwpx').read_bytes()), page)
-                        smoke.wait_until(driver, 'return !!window.__ownershipPixelResult', timeout=15)
-                        compared = driver.js('return window.__ownershipPixelResult')
-                        check('multisection-native-page-' + str(page), compared.get('pixelMismatchCount') == 0, measurements=compared)
-                    if args.extended:
-                        for zoom in (150, 50, 100):
-                            poc.set_zoom(driver, zoom)
-                            smoke.wait_until(driver, 'return window.__geulOwnership.stats().sessions.every(s=>!s.active&&!s.queued)', timeout=30)
-                            for page in (2, 0):
-                                driver.js('document.querySelectorAll(".rhwp-page")[arguments[0]].scrollIntoView({block:"start"})', page)
-                                time.sleep(.25)
-                                driver.js(PIXELS, list((work / 'multiple-sections.hwpx').read_bytes()), page, zoom / 100)
-                                smoke.wait_until(driver, 'return !!window.__ownershipPixelResult', timeout=15)
-                                compared = driver.js('return window.__ownershipPixelResult')
-                                check('scroll-zoom-' + str(zoom) + '-page-' + str(page), compared.get('pixelMismatchCount') == 0, measurements=compared)
-                    check('close-multisection', poc.close_tab(driver, 'multiple-sections.hwpx'))
-                    if args.extended:
-                        # Hold real image src assignments; do not replace document/model APIs.
+                    if args.scheduler_only:
                         poc.open_document(driver, work / 'ownership-hwpx.hwpx')
-                        smoke.wait_until(driver, 'return window.__geulOwnership.stats().sessions.every(s=>!s.active&&!s.queued)', timeout=30)
-                        driver.js(r'''window.__heldImages=new Map();window.__lateImages=[];
-                          window.__imageSrc=Object.getOwnPropertyDescriptor(HTMLImageElement.prototype,'src');
-                          Object.defineProperty(HTMLImageElement.prototype,'src',{...window.__imageSrc,set(value){
-                            if(value){window.__heldImages.set(this,value);window.__lateImages.push([this,value]);}
-                            else{window.__heldImages.delete(this);window.__imageSrc.set.call(this,value);}
-                          }});
-                          window.__geulOwnership.trim();window.__geulOwnership.repaint();''')
-                        smoke.wait_until(driver, 'return window.__geulOwnership.stats().jobs.pendingCount>0', timeout=10)
-                        held = driver.js('return window.__geulOwnership.stats()')
-                        before = driver.js('return window.__geulOwnership.counters.completed')
-                        poc.set_zoom(driver, 150)
-                        smoke.wait_until(driver, 'return window.__lateImages.length>=2 && window.__geulOwnership.stats().jobs.pendingCount>0', timeout=10)
-                        check('pending-zoom-no-false-complete', driver.js('return window.__geulOwnership.counters.completed') == before, measurements=held)
-                        driver.js('Object.defineProperty(HTMLImageElement.prototype,"src",window.__imageSrc);for(const [image,value] of window.__heldImages)window.__imageSrc.set.call(image,value);window.__heldImages.clear();')
-                        smoke.wait_until(driver, 'return window.__geulOwnership.counters.completed>arguments[0] && window.__geulOwnership.stats().sessions.every(s=>!s.active&&!s.queued)', before, timeout=30)
-                        driver.js(PIXELS, list((work / 'ownership-hwpx.hwpx').read_bytes()), 0, 1.5)
-                        smoke.wait_until(driver, 'return !!window.__ownershipPixelResult', timeout=15)
-                        check('pending-replacement-latest-pixels', driver.js('return window.__ownershipPixelResult.pixelMismatchCount') == 0)
-                        # Block again, close a genuinely PENDING document, then reopen another.
-                        driver.js(r'''window.__heldImages.clear();window.__lateImages=[];
-                          Object.defineProperty(HTMLImageElement.prototype,'src',{...window.__imageSrc,set(value){
-                            if(value){window.__heldImages.set(this,value);window.__lateImages.push([this,value]);}
-                            else{window.__heldImages.delete(this);window.__imageSrc.set.call(this,value);}
-                          }});window.__geulOwnership.trim();window.__geulOwnership.repaint();''')
-                        smoke.wait_until(driver, 'return window.__geulOwnership.stats().jobs.pendingCount>0', timeout=10)
-                        check('close-pending-document', poc.close_tab(driver, 'ownership-hwpx.hwpx'))
-                        driver.js('Object.defineProperty(HTMLImageElement.prototype,"src",window.__imageSrc)')
-                        released = driver.js('return window.__geulOwnership.stats()')
-                        check('pending-close-releases-leases', released['subscribers'] == 0 and released['jobs']['pendingCount'] == 0 and released['jobs']['ownedEstimatedBytes'] == 0, measurements=released)
-                        poc.open_document(driver, work / 'multiple-sections.hwpx')
-                        smoke.wait_until(driver, 'return document.querySelectorAll(".rhwp-page__canvas").length===3 && [...document.querySelectorAll(".rhwp-page__canvas")].every(c=>c.width>0) && window.__geulOwnership.stats().sessions.every(s=>s.canvases===3&&!s.active&&!s.queued)', timeout=30)
-                        actual_zoom = driver.js('return parseInt(document.querySelector(".statusbar__zoom-value").textContent)/100')
-                        before = driver.js('return window.__geulOwnership.counters.completed')
-                        driver.js('for(const [image,value] of window.__lateImages){window.__imageSrc.set.call(image,value);image.dispatchEvent(new Event("load"));}window.__lateImages=[]')
-                        time.sleep(.75)
-                        driver.js(PIXELS, list((work / 'multiple-sections.hwpx').read_bytes()), 0, actual_zoom)
-                        smoke.wait_until(driver, 'return !!window.__ownershipPixelResult', timeout=15)
-                        late = driver.js('return {pixels:window.__ownershipPixelResult,completed:window.__geulOwnership.counters.completed}')
-                        check('late-load-cannot-paint-reopened-document', late['pixels'].get('pixelMismatchCount') == 0 and late['completed'] == before, measurements=late, completedBefore=before, zoom=actual_zoom)
-                        check('close-reopened-document', poc.close_tab(driver, 'multiple-sections.hwpx'))
-                    if args.matrix:
-                        for name in ('ownership-hwp.hwp', 'ownership-hwpx.hwpx', 'multiple-sections.hwpx'):
-                            poc.open_document(driver, work / name)
-                        smoke.wait_until(driver, 'return document.querySelectorAll(".rhwp-page__canvas").length===3 && [...document.querySelectorAll(".rhwp-page__canvas")].every(c=>c.width>0) && window.__geulOwnership.stats().sessions.every(s=>!s.active&&!s.queued)', timeout=30)
-                        result['multiDocumentBudgets'] = []
+                        smoke.wait_until(driver, 'return window.__geulOwnership?.stats().sessions.some(s=>s.canvases>0&&!s.active&&!s.queued)', timeout=30)
+                        check('focused-session-initialized-and-closed', poc.close_tab(driver, 'ownership-hwpx.hwpx'))
+                    else:
+                        for format in ('hwp', 'hwpx'):
+                            before = driver.js('return window.__geulOwnership?.counters.completed||0')
+                            poc.open_document(driver, work / ('ownership-' + format + '.' + format))
+                            smoke.wait_until(driver, "return !!window.__geulOwnership && window.__geulOwnership.counters.completed>arguments[0] && window.__geulOwnership.stats().sessions.every(s=>!s.active&&!s.queued)", before, timeout=30)
+                            loaded = driver.js('return window.__geulOwnership.identity')
+                            check(format + '-candidate-identity', loaded['wasmSha256'] == gate['wasmSha256'], identity=loaded)
+                            pixels = driver.js("const c=document.querySelector('.rhwp-page__canvas');const p=c.getContext('2d').getImageData(0,0,c.width,c.height).data;let color=0;for(let i=0;i<p.length;i+=4)if(p[i+3]>200&&Math.max(p[i],p[i+1],p[i+2])-Math.min(p[i],p[i+1],p[i+2])>100)color++;return {width:c.width,height:c.height,color};")
+                            check(format + '-images-visible', pixels['color'] > 1000, measurements=pixels)
+                            driver.js(PIXELS, list((work / ('ownership-' + format + '.' + format)).read_bytes()), 0)
+                            smoke.wait_until(driver, 'return !!window.__ownershipPixelResult', timeout=15)
+                            compared = driver.js('return window.__ownershipPixelResult')
+                            check(format + '-exact-native-pixels', compared.get('pixelMismatchCount') == 0, measurements=compared)
+                        check('two-live-session-listeners', driver.js('return window.__geulOwnership.stats().subscribers') == 2)
+                        check('close-one-keeps-other', poc.close_tab(driver, 'ownership-hwp.hwp') and driver.js('return window.__geulOwnership.stats().subscribers') == 1)
                         for mib in (256, 384, 512):
-                            driver.js('window.__geulOwnership.budget(arguments[0]);window.__geulOwnership.trim()', mib << 20)
-                            rows = []
-                            for zoom, page in ((50, 2), (100, 0), (150, 2)):
-                                poc.set_zoom(driver, zoom)
-                                driver.js('document.querySelectorAll(".rhwp-page")[arguments[0]].scrollIntoView({block:"start"})', page)
-                                for kind in ('cache-cold', 'warm'):
-                                    if kind == 'cache-cold':
-                                        driver.js('window.__geulOwnership.trim()')
-                                    before = driver.js('return window.__geulOwnership.counters.completed')
-                                    started = time.monotonic()
-                                    driver.js('window.__geulOwnership.repaint()')
-                                    smoke.wait_until(driver, 'return window.__geulOwnership.counters.completed>arguments[0] && window.__geulOwnership.stats().sessions.every(s=>!s.active&&!s.queued)', before, timeout=30)
-                                    rows.append({'zoom': zoom, 'page': page, 'kind': kind, 'hostObservedCompletionMs': round((time.monotonic() - started) * 1000, 2)})
-                                driver.js(PIXELS, list((work / 'multiple-sections.hwpx').read_bytes()), page, zoom / 100)
-                                smoke.wait_until(driver, 'return !!window.__ownershipPixelResult', timeout=15)
-                                compared = driver.js('return window.__ownershipPixelResult')
-                                check(f'multi-budget-{mib}-zoom-{zoom}-page-{page}', compared.get('pixelMismatchCount') == 0, measurements=compared)
-                            stats = driver.js('return window.__geulOwnership.stats()')
-                            check(f'multi-budget-{mib}-three-subscribers', stats['subscribers'] == 3, measurements={'subscribers': stats['subscribers']})
-                            result['multiDocumentBudgets'].append({'requestedMiB': mib, 'samples': rows, 'ownership': stats, 'processRss': rss(), 'officialD4Timing': False})
+                            driver.js('window.__geulOwnership.budget(arguments[0]);', mib << 20)
+                            driver.js('window.__geulOwnership.trim();')
+                            samples = []
+                            for kind in ('cache-cold', 'warm', 'warm', 'warm'):
+                                before = driver.js('return window.__geulOwnership.counters.completed')
+                                started = time.monotonic()
+                                driver.js('window.__geulOwnership.repaint();')
+                                smoke.wait_until(driver, 'return window.__geulOwnership.counters.completed>arguments[0] && window.__geulOwnership.stats().sessions.every(s=>!s.active&&!s.queued)', before, timeout=30)
+                                samples.append({'kind': kind, 'hostObservedCompletionMs': round((time.monotonic() - started) * 1000, 2)})
+                            result['budgets'].append({'requestedMiB': mib, 'split': '75% decoded Canvas /25% browser residents; module browser lease cap remains256MiB', 'samples': samples, 'ownership': driver.js('return window.__geulOwnership.stats()'), 'processRss': rss(), 'officialD4Timing': False})
                             save()
-                        for name in ('ownership-hwp.hwp', 'ownership-hwpx.hwpx', 'multiple-sections.hwpx'):
-                            check('matrix-close-' + name, poc.close_tab(driver, name))
-                    time.sleep(.5)
-                    closed = driver.js('return window.__geulOwnership.stats()')
-                    check('closed-host-and-transient-zero', closed['subscribers'] == 0 and not closed['sessions'] and closed['jobs']['activeLeaseEstimatedBytes'] == 0, measurements=closed)
-                    driver.js('window.__geulOwnership.trim()')
-                    final = driver.js('return window.__geulOwnership.stats()')
-                    check('pressure-trim-owned-zero', final['jobs']['ownedEstimatedBytes'] == 0 and final['cache']['images']['bytes'] == 0, measurements=final)
-                    check('no-host-errors-or-limits', driver.js('return window.__geulOwnership.counters.errors+window.__geulOwnership.counters.limits') == 0)
+                        check('close-final', poc.close_tab(driver, 'ownership-hwpx.hwpx'))
+                        poc.open_document(driver, work / 'multiple-sections.hwpx')
+                        smoke.wait_until(driver, 'return document.querySelectorAll(".rhwp-page__canvas").length===3 && [...document.querySelectorAll(".rhwp-page__canvas")].every(c=>c.width>0) && window.__geulOwnership.stats().sessions.every(s=>!s.active&&!s.queued)', timeout=30)
+                        for page in range(3):
+                            driver.js(PIXELS, list((work / 'multiple-sections.hwpx').read_bytes()), page)
+                            smoke.wait_until(driver, 'return !!window.__ownershipPixelResult', timeout=15)
+                            compared = driver.js('return window.__ownershipPixelResult')
+                            check('multisection-native-page-' + str(page), compared.get('pixelMismatchCount') == 0, measurements=compared)
+                        if args.extended:
+                            for zoom in (150, 50, 100):
+                                poc.set_zoom(driver, zoom)
+                                smoke.wait_until(driver, 'return window.__geulOwnership.stats().sessions.every(s=>!s.active&&!s.queued)', timeout=30)
+                                for page in (2, 0):
+                                    driver.js('document.querySelectorAll(".rhwp-page")[arguments[0]].scrollIntoView({block:"start"})', page)
+                                    time.sleep(.25)
+                                    driver.js(PIXELS, list((work / 'multiple-sections.hwpx').read_bytes()), page, zoom / 100)
+                                    smoke.wait_until(driver, 'return !!window.__ownershipPixelResult', timeout=15)
+                                    compared = driver.js('return window.__ownershipPixelResult')
+                                    check('scroll-zoom-' + str(zoom) + '-page-' + str(page), compared.get('pixelMismatchCount') == 0, measurements=compared)
+                        check('close-multisection', poc.close_tab(driver, 'multiple-sections.hwpx'))
+                        if args.extended:
+                            # Hold real image src assignments; do not replace document/model APIs.
+                            poc.open_document(driver, work / 'ownership-hwpx.hwpx')
+                            smoke.wait_until(driver, 'return window.__geulOwnership.stats().sessions.every(s=>!s.active&&!s.queued)', timeout=30)
+                            driver.js(r'''window.__heldImages=new Map();window.__lateImages=[];
+                              window.__imageSrc=Object.getOwnPropertyDescriptor(HTMLImageElement.prototype,'src');
+                              Object.defineProperty(HTMLImageElement.prototype,'src',{...window.__imageSrc,set(value){
+                                if(value){window.__heldImages.set(this,value);window.__lateImages.push([this,value]);}
+                                else{window.__heldImages.delete(this);window.__imageSrc.set.call(this,value);}
+                              }});
+                              window.__geulOwnership.trim();window.__geulOwnership.repaint();''')
+                            smoke.wait_until(driver, 'return window.__geulOwnership.stats().jobs.pendingCount>0', timeout=10)
+                            held = driver.js('return window.__geulOwnership.stats()')
+                            before = driver.js('return window.__geulOwnership.counters.completed')
+                            poc.set_zoom(driver, 150)
+                            smoke.wait_until(driver, 'return window.__lateImages.length>=2 && window.__geulOwnership.stats().jobs.pendingCount>0', timeout=10)
+                            check('pending-zoom-no-false-complete', driver.js('return window.__geulOwnership.counters.completed') == before, measurements=held)
+                            driver.js('Object.defineProperty(HTMLImageElement.prototype,"src",window.__imageSrc);for(const [image,value] of window.__heldImages)window.__imageSrc.set.call(image,value);window.__heldImages.clear();')
+                            smoke.wait_until(driver, 'return window.__geulOwnership.counters.completed>arguments[0] && window.__geulOwnership.stats().sessions.every(s=>!s.active&&!s.queued)', before, timeout=30)
+                            driver.js(PIXELS, list((work / 'ownership-hwpx.hwpx').read_bytes()), 0, 1.5)
+                            smoke.wait_until(driver, 'return !!window.__ownershipPixelResult', timeout=15)
+                            check('pending-replacement-latest-pixels', driver.js('return window.__ownershipPixelResult.pixelMismatchCount') == 0)
+                            # Block again, close a genuinely PENDING document, then reopen another.
+                            driver.js(r'''window.__heldImages.clear();window.__lateImages=[];
+                              Object.defineProperty(HTMLImageElement.prototype,'src',{...window.__imageSrc,set(value){
+                                if(value){window.__heldImages.set(this,value);window.__lateImages.push([this,value]);}
+                                else{window.__heldImages.delete(this);window.__imageSrc.set.call(this,value);}
+                              }});window.__geulOwnership.trim();window.__geulOwnership.repaint();''')
+                            smoke.wait_until(driver, 'return window.__geulOwnership.stats().jobs.pendingCount>0', timeout=10)
+                            check('close-pending-document', poc.close_tab(driver, 'ownership-hwpx.hwpx'))
+                            driver.js('Object.defineProperty(HTMLImageElement.prototype,"src",window.__imageSrc)')
+                            released = driver.js('return window.__geulOwnership.stats()')
+                            check('pending-close-releases-leases', released['subscribers'] == 0 and released['jobs']['pendingCount'] == 0 and released['jobs']['ownedEstimatedBytes'] == 0, measurements=released)
+                            poc.open_document(driver, work / 'multiple-sections.hwpx')
+                            smoke.wait_until(driver, 'return document.querySelectorAll(".rhwp-page__canvas").length===3 && [...document.querySelectorAll(".rhwp-page__canvas")].every(c=>c.width>0) && window.__geulOwnership.stats().sessions.every(s=>s.canvases===3&&!s.active&&!s.queued)', timeout=30)
+                            actual_zoom = driver.js('return parseInt(document.querySelector(".statusbar__zoom-value").textContent)/100')
+                            before = driver.js('return window.__geulOwnership.counters.completed')
+                            driver.js('for(const [image,value] of window.__lateImages){window.__imageSrc.set.call(image,value);image.dispatchEvent(new Event("load"));}window.__lateImages=[]')
+                            time.sleep(.75)
+                            driver.js(PIXELS, list((work / 'multiple-sections.hwpx').read_bytes()), 0, actual_zoom)
+                            smoke.wait_until(driver, 'return !!window.__ownershipPixelResult', timeout=15)
+                            late = driver.js('return {pixels:window.__ownershipPixelResult,completed:window.__geulOwnership.counters.completed}')
+                            check('late-load-cannot-paint-reopened-document', late['pixels'].get('pixelMismatchCount') == 0 and late['completed'] == before, measurements=late, completedBefore=before, zoom=actual_zoom)
+                            check('close-reopened-document', poc.close_tab(driver, 'multiple-sections.hwpx'))
+                        if args.matrix:
+                            for name in ('ownership-hwp.hwp', 'ownership-hwpx.hwpx', 'multiple-sections.hwpx'):
+                                poc.open_document(driver, work / name)
+                            smoke.wait_until(driver, 'return document.querySelectorAll(".rhwp-page__canvas").length===3 && [...document.querySelectorAll(".rhwp-page__canvas")].every(c=>c.width>0) && window.__geulOwnership.stats().sessions.every(s=>!s.active&&!s.queued)', timeout=30)
+                            result['multiDocumentBudgets'] = []
+                            for mib in (256, 384, 512):
+                                driver.js('window.__geulOwnership.budget(arguments[0]);window.__geulOwnership.trim()', mib << 20)
+                                rows = []
+                                for zoom, page in ((50, 2), (100, 0), (150, 2)):
+                                    poc.set_zoom(driver, zoom)
+                                    driver.js('document.querySelectorAll(".rhwp-page")[arguments[0]].scrollIntoView({block:"start"})', page)
+                                    for kind in ('cache-cold', 'warm'):
+                                        if kind == 'cache-cold':
+                                            driver.js('window.__geulOwnership.trim()')
+                                        before = driver.js('return window.__geulOwnership.counters.completed')
+                                        started = time.monotonic()
+                                        driver.js('window.__geulOwnership.repaint()')
+                                        smoke.wait_until(driver, 'return window.__geulOwnership.counters.completed>arguments[0] && window.__geulOwnership.stats().sessions.every(s=>!s.active&&!s.queued)', before, timeout=30)
+                                        rows.append({'zoom': zoom, 'page': page, 'kind': kind, 'hostObservedCompletionMs': round((time.monotonic() - started) * 1000, 2)})
+                                    driver.js(PIXELS, list((work / 'multiple-sections.hwpx').read_bytes()), page, zoom / 100)
+                                    smoke.wait_until(driver, 'return !!window.__ownershipPixelResult', timeout=15)
+                                    compared = driver.js('return window.__ownershipPixelResult')
+                                    check(f'multi-budget-{mib}-zoom-{zoom}-page-{page}', compared.get('pixelMismatchCount') == 0, measurements=compared)
+                                stats = driver.js('return window.__geulOwnership.stats()')
+                                check(f'multi-budget-{mib}-three-subscribers', stats['subscribers'] == 3, measurements={'subscribers': stats['subscribers']})
+                                result['multiDocumentBudgets'].append({'requestedMiB': mib, 'samples': rows, 'ownership': stats, 'processRss': rss(), 'officialD4Timing': False})
+                                save()
+                            for name in ('ownership-hwp.hwp', 'ownership-hwpx.hwpx', 'multiple-sections.hwpx'):
+                                check('matrix-close-' + name, poc.close_tab(driver, name))
+                        time.sleep(.5)
+                        closed = driver.js('return window.__geulOwnership.stats()')
+                        check('closed-host-and-transient-zero', closed['subscribers'] == 0 and not closed['sessions'] and closed['jobs']['activeLeaseEstimatedBytes'] == 0, measurements=closed)
+                        driver.js('window.__geulOwnership.trim()')
+                        final = driver.js('return window.__geulOwnership.stats()')
+                        check('pressure-trim-owned-zero', final['jobs']['ownedEstimatedBytes'] == 0 and final['cache']['images']['bytes'] == 0, measurements=final)
+                        check('no-host-errors-or-limits', driver.js('return window.__geulOwnership.counters.errors+window.__geulOwnership.counters.limits') == 0)
+                    if args.scheduler:
+                        driver.js("window.__nativeScheduler=null;(async()=>{const pinned=await import('/rhwp/rhwp.js');await pinned.default({module_or_path:'/rhwp/rhwp_bg.wasm'});const m=await import('/tests/integration/rhwp/ownership-poc/native-scheduler.mjs');return m.run(pinned);})().then(r=>window.__nativeScheduler=r).catch(e=>window.__nativeScheduler={status:'FAIL',error:String(e)})")
+                        smoke.wait_until(driver, 'return !!window.__nativeScheduler', timeout=180)
+                        result['scheduler'] = driver.js('return window.__nativeScheduler')
+                        check('native-resource-scheduler-matrix', result['scheduler']['status'] == 'PASS', passed=sum(t['status']=='PASS' for t in result['scheduler'].get('tests',[])))
+                        driver.js("window.__nativeSeed=null;import('/tests/integration/rhwp/ownership-poc/native-scheduler.mjs').then(m=>m.seed()).then(r=>window.__nativeSeed=r).catch(e=>window.__nativeSeed={error:String(e)})")
+                        smoke.wait_until(driver, 'return !!window.__nativeSeed', timeout=60)
+                        seeded = driver.js('return window.__nativeSeed')
+                        check('native-256-residents-seeded', seeded.get('cache',{}).get('images',{}).get('entries') == 256, measurements=seeded)
+                        poc.open_document(driver, work / 'ownership-hwpx.hwpx')
+                        poc.set_zoom(driver, 100)
+                        smoke.wait_until(driver, 'return window.__geulOwnership.stats().sessions.some(s=>s.canvases>0&&!s.active&&!s.queued)', timeout=30)
+                        driver.js(PIXELS, list((work / 'ownership-hwpx.hwpx').read_bytes()), 0, 1)
+                        smoke.wait_until(driver, 'return !!window.__ownershipPixelResult', timeout=15)
+                        check('native-app-image-after-saturation', driver.js('return window.__ownershipPixelResult.pixelMismatchCount') == 0)
+                        block_images = r'''window.__repeatKeys=[];window.__repeatSerial=(window.__repeatSerial||0)+1;const desc=Object.getOwnPropertyDescriptor(HTMLImageElement.prototype,'src');window.__repeatSrc=desc;
+                          Object.defineProperty(HTMLImageElement.prototype,'src',{...desc,set(value){
+                            if(value&&window.__repeatKeys.length<2){const key='native-repeat-'+window.__repeatSerial+'-'+window.__repeatKeys.length;window.__repeatKeys.push(key);desc.set.call(this,'/held-image.svg?key='+key+'&data='+encodeURIComponent(value));}
+                            else desc.set.call(this,value);
+                          }});window.__geulOwnership.trim();window.__geulOwnership.repaint();'''
+                        driver.js(block_images)
+                        smoke.wait_until(driver, 'return window.__geulOwnership.stats().jobs.pendingCount===2', timeout=10)
+                        before = driver.js('return {stats:window.__geulOwnership.stats(),counters:{...window.__geulOwnership.counters}}')
+                        driver.js('window.__geulOwnership.repeat(50)')
+                        after = driver.js('return {stats:window.__geulOwnership.stats(),counters:{...window.__geulOwnership.counters}}')
+                        check('native-identical-requests-reuse-active-job', before['stats']['sessions'][0]['activeJobId'] == after['stats']['sessions'][0]['activeJobId'] and before['stats']['jobs']['loadAttempts'] == after['stats']['jobs']['loadAttempts'] and before['counters']['canceled'] == after['counters']['canceled'] and after['counters']['reused'] >= before['counters']['reused'] + 50, measurements={'before':before,'after':after})
+                        completed_before = driver.js('return window.__geulOwnership.counters.completed')
+                        driver.js('Object.defineProperty(HTMLImageElement.prototype,"src",window.__repeatSrc);for(const key of window.__repeatKeys)fetch("/release-image?key="+key)')
+                        smoke.wait_until(driver, 'return window.__geulOwnership.counters.completed>arguments[0] && window.__geulOwnership.stats().sessions.every(s=>!s.active&&!s.queued)', completed_before, timeout=30)
+                        driver.js(PIXELS, list((work / 'ownership-hwpx.hwpx').read_bytes()), 0, 1)
+                        smoke.wait_until(driver, 'return !!window.__ownershipPixelResult', timeout=15)
+                        check('native-duplicate-request-completes-exact-pixels', driver.js('return window.__ownershipPixelResult.pixelMismatchCount') == 0)
+                        driver.js(block_images)
+                        smoke.wait_until(driver, 'return window.__geulOwnership.stats().jobs.pendingCount===2', timeout=10)
+                        # Switching real geul tabs cancels the old target; late HTTP replies cannot paint it.
+                        driver.js('Object.defineProperty(HTMLImageElement.prototype,"src",window.__repeatSrc)')
+                        poc.open_document(driver, work / 'ownership-hwp.hwp')
+                        smoke.wait_until(driver, 'return document.querySelector(".rhwp-page__canvas")?.width>0 && window.__geulOwnership.stats().sessions.some(s=>s.canvases>0) && window.__geulOwnership.stats().sessions.every(s=>!s.active&&!s.queued)', timeout=30)
+                        driver.js('for(const key of window.__repeatKeys)fetch("/release-image?key="+key)')
+                        time.sleep(.4)
+                        driver.js(PIXELS, list((work / 'ownership-hwp.hwp').read_bytes()), 0, 1)
+                        smoke.wait_until(driver, 'return !!window.__ownershipPixelResult', timeout=15)
+                        check('native-switch-pending-late-replies-safe', driver.js('return window.__ownershipPixelResult.pixelMismatchCount') == 0)
+                        check('native-close-one-shared-session', poc.close_tab(driver, 'ownership-hwpx.hwpx') and driver.js('return window.__geulOwnership.stats().subscribers') == 1)
+                        check('native-close-final-scheduler-session', poc.close_tab(driver, 'ownership-hwp.hwp'))
+                        driver.js('window.__geulOwnership.trim()')
+                        clean = driver.js('return window.__geulOwnership.stats()')
+                        check('native-scheduler-all-leases-released', clean['subscribers'] == 0 and clean['jobs']['uniqueResourceCount'] == 0 and clean['jobs']['activeLeaseCount'] == 0 and clean['jobs']['pendingCount'] == 0, measurements=clean)
                     result['processesBeforeExit'] = rss()
                 finally:
                     try: result['lastObserved'] = driver.js("return {origin:location.origin,status:[...document.querySelectorAll('[data-testid=rhwp-status]')].map(e=>({status:e.dataset.status,pages:e.dataset.pages,revision:e.dataset.revision,dirty:e.dataset.dirty})),ownership:window.__geulOwnership?{identity:window.__geulOwnership.identity,counters:window.__geulOwnership.counters,stats:window.__geulOwnership.stats()}:null}")

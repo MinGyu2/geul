@@ -688,3 +688,30 @@ D2 native 목표 순서는 새 플랫폼에서 관찰하지 못했다. 결정적
 추가한 것으로 세지 않는다. D4 공식 지연 계약(실제 keydown → revision 관찰 RAF → 추가 2 RAF)과 50 ms 기준은 유지한다.
 기존 p95 77/77/87/121 ms는 FAIL이며 캐시 알림 교정으로 편집 지연이 해결되었다고 추론하지 않는다.
 **RHWP UNDO/REDO PRODUCTION ACTIVATION: NO-GO.**
+
+## T010 격리 resource scheduler 후속 계약 (2026-10-23)
+
+이 절은 `t010-resource-scheduler` 후보의 시험 계약이다. 이전 v2의 “trim은 pending을 취소하지 않는다”는 설명은
+그 역사적 패치에만 해당한다. 현 job 후보의 `trimRendererCaches`·예산 변경은 활성 job을 먼저 무효화한 뒤 캐시를
+줄인다. 제품 엔진·submodule·명령 정책은 바꾸지 않으며 T010/T011 활성화 상태도 유지한다.
+
+- **Resident와 활성 lease:** cache-only Rc(`strong_count == 1`)만 admission 회수 대상으로 삼는다. LRU 순서로
+  필요한 항목만 내보낸 뒤 unique resource 수와 추정 byte 예약을 다시 계산한다. 다른 job의 lease는 해제하지 않는다.
+  정상 cache budget/trim도 cache 소유 참조만 놓으며 활성 참조를 강제로 비우지 않는다.
+- **한도:** pending decode 2·unique resource 256·job 8·module 추정 browser 소유 256 MiB를 유지한다. URL 예측과
+  변환 후 실제 URL 길이를 모두 검사한다. 회수 가능한 resident가 없고 다른 작업이 용량을 놓을 수 있으면 PENDING,
+  현재 요청 자체가 한도에 들어갈 수 없으면 RESOURCE_LIMIT다. RSS·decoder·GPU의 하드 상한과는 구별한다.
+- **알림:** 마지막 resource 참조 해제와 decode 완료/오류는 지연·합쳐진 알림을 예약한다. mutable RefCell borrow 중
+  host callback을 부르지 않는다. 전달 시 현재 pending·count·byte 및 cache-only 회수 가능량을 다시 확인한다.
+  이미 다른 요청이 소비한 용량이나 공유 resource의 한 소유자만 취소한 경우를 새 가용량으로 알리지 않는다.
+  global invalidate와 기한 만료의 terminal 전환도 host가 관찰할 수 있다. 재귀 poll이나 주기적 진행 재시도는 추가하지 않는다.
+- **진행:** host는 정상 알림마다 살아 있는 대기 job을 poll한다. 여러 대기 job의 유한 경쟁·취소 후 진행을 검사한다.
+  엄격한 FIFO/동일 CPU 지분이나 무한 신규 요청 아래의 무기한 완료를 약속하지 않는다. 기한 만료는 ERROR이며 정상 취소
+  진행을 15초 기한에 의존시키지 않는다. 취소·만료 job을 다시 시작하지 않는다.
+- **시험 adapter의 요청 식별:** Canvas 객체·page·유효 scale·문서 generation·modelVersion 전체가 같으면 active/queued
+  작업을 재사용한다. 동일 요청은 decode·job·기한을 재시작하지 않는다. 변경된 요청은 교체하며 failed/painted 식별도
+  같은 필드를 사용한다. 현 adapter는 full-page mode만 사용하므로 별도 mode 필드는 없다.
+
+실행 범위·정확한 결과·누락은 [새 한국어 보고서](../../tests/integration/rhwp/evidence/t010-resource-scheduler/REPORT.ko.txt)에 기록한다.
+D2 native IME 증거 공백, D3/D5 전체 후보 통합 미검증 및 공식 D4 지연 FAIL은 이 소유권/스케줄링 교정과 별도 관문이다.
+**RHWP UNDO/REDO PRODUCTION ACTIVATION: NO-GO.**

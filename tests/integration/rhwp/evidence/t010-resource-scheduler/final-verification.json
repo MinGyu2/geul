@@ -1,0 +1,120 @@
+{
+  "status": "PASS",
+  "scope": "executed scheduler verification and current source/security checks; product activation NO-GO",
+  "checks": [
+    {
+      "name": "lint",
+      "command": "npm run lint",
+      "status": "PASS",
+      "exit": 0,
+      "output": "\n> geul@0.1.0 lint\n> eslint .\n\n"
+    },
+    {
+      "name": "runner-contracts",
+      "command": "python3 -m unittest discover -s tests/integration/rhwp/cache-concurrency -p test_runner.py -v",
+      "status": "PASS",
+      "exit": 0,
+      "output": "test_duplicate_completion (test_runner.CompletionContract.test_duplicate_completion) ... ok\ntest_partial_pass_result_is_rejected (test_runner.CompletionContract.test_partial_pass_result_is_rejected) ... ok\ntest_timeout_without_result_is_failure (test_runner.CompletionContract.test_timeout_without_result_is_failure) ... ok\ntest_zero_exit_without_result_is_failure (test_runner.CompletionContract.test_zero_exit_without_result_is_failure) ... ok\ntest_incomplete_browser_result (test_runner.ResultValidation.test_incomplete_browser_result) ... ok\ntest_invalid_completion (test_runner.ResultValidation.test_invalid_completion) ... ok\ntest_measurement_over_budget_despite_all_pass (test_runner.ResultValidation.test_measurement_over_budget_despite_all_pass) ... ok\ntest_missing_mandatory_ownership (test_runner.ResultValidation.test_missing_mandatory_ownership) ... ok\ntest_missing_measurement (test_runner.ResultValidation.test_missing_measurement) ... ok\ntest_ownership_missing_measurement (test_runner.ResultValidation.test_ownership_missing_measurement) ... ok\ntest_ownership_subordinate_failure (test_runner.ResultValidation.test_ownership_subordinate_failure) ... ok\ntest_pass_with_concurrent_fail (test_runner.ResultValidation.test_pass_with_concurrent_fail) ... ok\ntest_pass_with_format_fail (test_runner.ResultValidation.test_pass_with_format_fail) ... ok\ntest_pass_with_pending_fail (test_runner.ResultValidation.test_pass_with_pending_fail) ... ok\ntest_valid_complete (test_runner.ResultValidation.test_valid_complete) ... ok\ntest_scheduler_complete_with_pending (test_runner.SchedulerValidation.test_scheduler_complete_with_pending) ... ok\ntest_scheduler_declared_limits_cannot_be_relaxed (test_runner.SchedulerValidation.test_scheduler_declared_limits_cannot_be_relaxed) ... ok\ntest_scheduler_incomplete (test_runner.SchedulerValidation.test_scheduler_incomplete) ... ok\ntest_scheduler_missing (test_runner.SchedulerValidation.test_scheduler_missing) ... ok\ntest_scheduler_missing_measurement (test_runner.SchedulerValidation.test_scheduler_missing_measurement) ... ok\ntest_scheduler_notification_storm (test_runner.SchedulerValidation.test_scheduler_notification_storm) ... ok\ntest_scheduler_resource_overflow (test_runner.SchedulerValidation.test_scheduler_resource_overflow) ... ok\ntest_scheduler_subtest_fail (test_runner.SchedulerValidation.test_scheduler_subtest_fail) ... ok\ntest_scheduler_valid (test_runner.SchedulerValidation.test_scheduler_valid) ... ok\ntest_scheduler_wrong_pixels (test_runner.SchedulerValidation.test_scheduler_wrong_pixels) ... ok\n\n----------------------------------------------------------------------\nRan 25 tests in 3.352s\n\nOK\n"
+    },
+    {
+      "name": "gitleaks-evidence",
+      "command": "/nix/store/xcn42a2dylrijcsdgh2w5nn1r33s1img-gitleaks-8.30.1/bin/gitleaks dir tests/integration/rhwp/evidence/t010-resource-scheduler --config .gitleaks.toml --redact --no-banner",
+      "status": "PASS",
+      "exit": 0,
+      "output": "6:01PM INF scanned ~759306 bytes (759.31 KB) in 305ms\n6:01PM INF no leaks found\n"
+    },
+    {
+      "name": "gitleaks-cache-harness",
+      "command": "/nix/store/xcn42a2dylrijcsdgh2w5nn1r33s1img-gitleaks-8.30.1/bin/gitleaks dir tests/integration/rhwp/cache-concurrency --config .gitleaks.toml --redact --no-banner",
+      "status": "PASS",
+      "exit": 0,
+      "output": "6:01PM INF scanned ~222860 bytes (222.86 KB) in 178ms\n6:01PM INF no leaks found\n"
+    },
+    {
+      "name": "diff-check",
+      "command": "git diff --check",
+      "status": "PASS",
+      "exit": 0,
+      "output": ""
+    },
+    {
+      "name": "sensitive-changed-new",
+      "command": "python3 - <<'PY'\nimport subprocess\npaths=sorted(set(subprocess.check_output(['git','diff','--name-only'],text=True).splitlines()+subprocess.check_output(['git','ls-files','--others','--exclude-standard'],text=True).splitlines()))\nraise SystemExit(subprocess.run(['python3','scripts/check-sensitive-info.py',*paths]).returncode)\nPY",
+      "status": "PASS",
+      "exit": 0,
+      "output": "\ubbfc\uac10\uc815\ubcf4 \uac80\uc0ac \ud1b5\uacfc (\uc9c0\uc815 \ud30c\uc77c 52\uac1c)\n"
+    },
+    {
+      "name": "python-compile",
+      "command": "python3 -m py_compile tests/integration/rhwp/cache-concurrency/prepare.py tests/integration/rhwp/cache-concurrency/run.py tests/integration/rhwp/ownership-poc/native.py",
+      "status": "PASS",
+      "exit": 0,
+      "output": ""
+    },
+    {
+      "name": "adapter-contracts",
+      "command": "SESSION_RESULT=tests/integration/rhwp/evidence/t010-resource-scheduler/after-adapter.json node --test tests/integration/rhwp/ownership-poc/test-session.mjs",
+      "status": "PASS",
+      "exit": 0,
+      "output": "\u2714 identical-pending (13.7311ms)\n\u2714 different-page (4.783401ms)\n\u2714 different-scale (6.65278ms)\n\u2714 mutation (4.684916ms)\n\u2714 reload (4.848908ms)\n\u2714 complete-after-duplicates (6.128624ms)\n\u2714 error-then-other-page (5.137749ms)\n\u2714 disconnected (6.044499ms)\n\u2714 queued-identical (6.034316ms)\n\u2714 terminal-no-restart (5.642321ms)\n\u2139 tests 10\n\u2139 suites 0\n\u2139 pass 10\n\u2139 fail 0\n\u2139 cancelled 0\n\u2139 skipped 0\n\u2139 todo 0\n\u2139 duration_ms 281.183817\n"
+    },
+    {
+      "name": "sensitive-tracked",
+      "command": "python3 scripts/check-sensitive-info.py --all",
+      "status": "PASS",
+      "exit": 0,
+      "output": "\ubbfc\uac10\uc815\ubcf4 \uac80\uc0ac \ud1b5\uacfc (\ucd94\uc801 \ud30c\uc77c 393\uac1c)\n"
+    },
+    {
+      "name": "gitleaks-harness",
+      "command": "/nix/store/xcn42a2dylrijcsdgh2w5nn1r33s1img-gitleaks-8.30.1/bin/gitleaks dir tests/integration/rhwp/ownership-poc --config .gitleaks.toml --redact --no-banner",
+      "status": "PASS",
+      "exit": 0,
+      "output": "5:44PM INF scanned ~120365 bytes (120.36 KB) in 135ms\n5:44PM INF no leaks found\n"
+    },
+    {
+      "name": "generated-api",
+      "command": "node_modules/.bin/tsc --ignoreConfig --noEmit --skipLibCheck --lib ES2022,DOM /tmp/geul-t010-scheduler/scheduler-package/rhwp.d.ts",
+      "status": "PASS",
+      "exit": 0,
+      "output": ""
+    },
+    {
+      "name": "security-unit",
+      "command": "python3 -m unittest discover -s tests/security -p 'test_*.py'",
+      "status": "PASS",
+      "passed": 86,
+      "failed": 0,
+      "skipped": 0,
+      "elapsedSeconds": 58.523
+    },
+    {
+      "name": "normal-build",
+      "command": "npm run build",
+      "status": "PASS",
+      "typescriptChecked": true,
+      "evidence": "production-isolation.json"
+    },
+    {
+      "name": "independent-patch-apply",
+      "status": "PASS",
+      "evidence": "fresh-apply.json",
+      "incrementalApplyCheck": true
+    }
+  ],
+  "rendererEvidence": {
+    "chrome": "52+48PASS;50exactdraws",
+    "webkit": "52+48PASS;50exactdraws",
+    "native": "existing44 assertion subset plus focused11 PASS incl nested48; separate executions, parent failures retained",
+    "rust": "final4063PASS13ignored;internal11+external13+new4PASS"
+  },
+  "exceptionReview": "One exact unchanged public wasm_api.rs digest with exact scheduler evidence filenames only; initial historical digest manifest uses artifact/sha256 records to avoid ambiguous API-key labels.",
+  "historicalFailuresPreserved": true,
+  "postReportFinalScan": {
+    "sensitiveChangedNewFiles": 54,
+    "sensitiveStatus": "PASS",
+    "gitleaksEvidence": "PASS",
+    "diffCheck": "PASS",
+    "taskProcesses": "none observed"
+  }
+}

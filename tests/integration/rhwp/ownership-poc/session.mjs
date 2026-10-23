@@ -1,10 +1,12 @@
 // Test-only adapter for the real RhwpEditorSession and its sole WASM document.
 // No document bytes, text, secondary editable model or history are retained here.
+const sameRequest = (a, b) => !!a && a.canvas === b.canvas && a.page === b.page
+  && a.scale === b.scale && a.generation === b.generation && a.version === b.version;
 const MAX_SESSIONS = 8, MAX_QUEUE = 256, MAX_POLLS = 512;
 const subscribers = new Set();
 const sessions = new Set();
-const counters = { completed: 0, canceled: 0, errors: 0, limits: 0, notifications: 0, polls: 0, staleDropped: 0 };
-let scheduled = false, loading;
+const counters = { completed: 0, canceled: 0, errors: 0, limits: 0, notifications: 0, polls: 0, staleDropped: 0, reused: 0, replacements: 0 };
+let scheduled = false, loading, probeListener = null;
 const wake = () => {
   if (scheduled) return;
   scheduled = true;
@@ -19,9 +21,11 @@ async function module() {
     const url = '/__ownership_candidate__/rhwp.js';
     const engine = await import(/* @vite-ignore */ url);
     await engine.default({ module_or_path: bytes });
-    engine.setRendererImageLoadListener(() => { counters.notifications++; wake(); });
+    engine.setRendererImageLoadListener(() => { counters.notifications++; wake(); probeListener?.(); });
     window.__geulOwnership = {
+      probeEngine: () => ({ ...engine, setRendererImageLoadListener: listener => { probeListener = listener; } }),
       identity: { baseline: identity.baseline, wasmSha256: hash }, counters,
+      repeat: count => { for (const session of sessions) session.repeat(count); },
       stats: () => ({ subscribers: subscribers.size, sessions: [...sessions].map(s => s.stats()),
         jobs: JSON.parse(engine.rendererJobStats()), cache: JSON.parse(engine.rendererCacheStats()) }),
       // Explicit pressure invalidates queued host jobs before canceling module resources.
@@ -111,15 +115,19 @@ export function createOwnershipSession(Session, sessionId, backend, registry) {
   };
   session.renderPage = (page, canvas, scale) => {
     if (disposed || !doc || !session.prepareRendering(scale)) return false;
+    const request = { page, canvas, scale, generation, version: session.modelVersion };
     const complete = painted.get(canvas);
-    if(complete && complete.version===session.modelVersion && complete.scale===scale && complete.page===page && complete.generation===generation)return true;
+    if (sameRequest(complete, request)) return true;
+    if (sameRequest(active, request) || sameRequest(queue.get(canvas), request)) { counters.reused++; return false; }
     if (active && active.version !== session.modelVersion) cancel();
     const previous = failed.get(canvas);
-    if (previous && previous.version === session.modelVersion && previous.scale === scale) return false;
+    if (sameRequest(previous, request)) return false;
     failed.delete(canvas);
     if (!canvases.has(canvas) && canvases.size >= MAX_QUEUE) { counters.limits++; return false; }
-    if (active?.canvas === canvas) { doc.cancelRenderJob(active.id); active = null; }
-    const request = { page, canvas, scale, generation, version: session.modelVersion };
+    if (active?.canvas === canvas) {
+      doc.cancelRenderJob(active.id); counters.canceled++; counters.replacements++; active = null;
+      if (timer !== null) clearTimeout(timer); timer = null;
+    }
     queue.set(canvas, request); canvases.set(canvas, request); wake();
     return false; // a queued frame is never reported as completed
   };
@@ -128,7 +136,7 @@ export function createOwnershipSession(Session, sessionId, backend, registry) {
     for (const canvas of canvases.keys()) { canvas.width = 0; canvas.height = 0; }
     canvases.clear(); originalRelease();
   };
-  const handle = { cancel, repaint: () => { for(const [canvas, request] of canvases) { if(canvas.isConnected)queue.set(canvas,{...request,generation,version:session.modelVersion}); } }, stats: () => ({ sessionId, generation, queued: queue.size, active: active ? 1 : 0,
+  const handle = { cancel, repeat: count => { for(let n=0;n<Math.min(count,100);n++) for(const request of canvases.values()) session.renderPage(request.page,request.canvas,request.scale); }, repaint: () => { for(const [canvas, request] of canvases) { if(canvas.isConnected)queue.set(canvas,{...request,generation,version:session.modelVersion}); } }, stats: () => ({ sessionId, generation, queued: queue.size, active: active ? 1 : 0, activeJobId: active?.id ?? null,
     canvases: canvases.size, failures: failed.size, modelVersion: session.modelVersion }) };
   session.dispose = () => { if (disposed) return; cancel(); unsubscribe(); disposed = true; sessions.delete(handle); originalDispose(); };
   return session;

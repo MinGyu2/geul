@@ -29,3 +29,11 @@ condition = "AND"
 paths = ['''^tests/integration/rhwp/evidence/t010-render-ownership/(engine|patch|fresh-apply|full-page-engine|full-page-chrome|full-page-webkit|full-page-fresh-apply|final-wasm-checks|url-reservation-stale-build|pre-publication-engine|historical-chrome|historical-webkit|pre-publication-fix-chrome|pre-publication-fix-webkit|getter-blocked-chrome|getter-detail-chrome|getter-diagnostic-chrome|getter-diagnostic-webkit|chrome|webkit)\.json$''']
 regexTarget = "secret"
 regexes = ['''^941a33bd400941f2d3f590f6194e5f476044042fa6e7cdcf08ff4f1d5f295ec2$''','''^de0a59a3c774cc842e9e7af9874cc99fc5aa578d50dac1995f4d166537f04167$''','''^dba5751a411cad724e69fe7bcacd207c92fbc3d0ff0502b2582023fa81f2322a$''','''^ab73fb12f34b08cd621362c6f6d0f44340b0007bf89baeaba3b97bcd92c5afcf$''']
+
+# Resource-scheduler evidence reuses the unchanged public wasm_api source.
+[[allowlists]]
+description = "T010 resource scheduler verified public wasm_api.rs checksum"
+condition = "AND"
+paths = ['''^tests/integration/rhwp/evidence/t010-resource-scheduler/(before-chrome|attempt-1-(chrome|webkit|engine|patch|final-wasm-checks)|diagnostic-harness-(chrome|webkit)|pre-shared-(chrome|webkit)|chrome|webkit|engine|patch|final-wasm-checks)\.json$''']
+regexTarget = "secret"
+regexes = ['''^ab73fb12f34b08cd621362c6f6d0f44340b0007bf89baeaba3b97bcd92c5afcf$''']

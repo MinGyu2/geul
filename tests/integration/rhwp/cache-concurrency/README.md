@@ -98,3 +98,42 @@ python3 tests/integration/rhwp/cache-concurrency/run.py \
 `ownership.mjs`는 공유 디코드·8 active job/2 in-flight 상한·네 이미지의 전진·초대형 ready lease·100 same-task 요청·취소·문서 변경·오래된 취소 토큰·15초 deadline·draw 오류·동기 API의 terminal ERROR 보존·두 쪽 순서·표 셀·crop·scale·재그리기·resident 보호를 검사한다. 보유량은 renderer estimate이며 RSS가 아니다. 정상 resident와 active/temporary lease는 별도 측정한다.
 
 신규 API의 유무로 runner가 job 검사를 선택한다. `run.py`는 상위 PASS와 하위 FAIL의 모순, 빠진 계측, 잘못된 완료 값, timeout, 중복 완료 및 불완전 결과를 실패 처리한다. 신규 job API가 있는 경우 ownership 검사도 필수다. 아직 통합되지 않은 엔진 후보 검증을 geul native 상호작용·IME·편집 성능의 통과로 보지 않는다.
+
+## Resource scheduler 후속 (A/B 포화·취소)
+
+`t010-resource-scheduler/upstream-rhwp-resource-scheduler.patch`는 pinned 기준의 **새 전체 패치**다.
+`t010-render-ownership`의 역사적 패치는 그대로 보존한다. 두 전체 패치를 겹쳐 적용하지 않는다.
+`incremental-from-ownership.patch`는 역사적 ownership 패치가 이미 적용된 소스에만 쓴다.
+
+```sh
+python3 tests/integration/rhwp/cache-concurrency/prepare.py \
+  --work "$CACHE_WORK/scheduler" --toolchain-bin "$RUST_193_BIN" --no-opt \
+  --patch tests/integration/rhwp/evidence/t010-resource-scheduler/upstream-rhwp-resource-scheduler.patch
+python3 tests/integration/rhwp/cache-concurrency/unit.py --rustc "$RUST_193_BIN/rustc" \
+  --patch tests/integration/rhwp/evidence/t010-resource-scheduler/upstream-rhwp-resource-scheduler.patch \
+  --contract tests/integration/rhwp/cache-concurrency/scheduler_contract.rs \
+  --output "$CACHE_WORK/scheduler-contracts.json"
+python3 tests/integration/rhwp/cache-concurrency/run.py --pinned public/rhwp \
+  --candidate "$CACHE_WORK/scheduler/test-package" --browser chrome --timeout 240 \
+  --output "$CACHE_WORK/scheduler-chrome.json"
+python3 tests/integration/rhwp/cache-concurrency/run.py --pinned public/rhwp \
+  --candidate "$CACHE_WORK/scheduler/test-package" --browser webkit --timeout 240 \
+  --webkit-driver "$WEBKIT_DRIVER" --xvfb "$XVFB" \
+  --output "$CACHE_WORK/scheduler-webkit.json"
+```
+
+`ownership_contract.rs`도 같은 완성 패치로 실행한다. 신규 contract의 raw 15는 내부 11+신규 4,
+기존 ownership raw 24는 내부 11+외부 13이다. 중복 내부 검사를 합산하지 않는다.
+`prepare.py`는 sourceStableDuringBuild를 실제 빌드 전후 비교 후에만 true로 기록한다. prepare-only는
+이를 false로 유지하며 실제 WASM 실행 증거가 아니다. rendererJobAPI/schedulerAPI는 소스 기능 계측을 표시한다.
+
+`scheduler.mjs`는 기존 ownership 52개에 추가하는 48개 검사다. 256개 작은 SVG resident/257번째 요청,
+byte 지배 포화, 256개 활성 lease, 불가능한 working set, cell 위치의 그림, 재디코드를 검사한다.
+취소 검사는 서버가 실제 SVG HTTP 응답을 보류하고 취소/해제하므로 브라우저 비동기 decode 경로를 지난다.
+첫 poll 이후에는 정상 listener 알림에서만 poll한다. timeout은 진행 poll을 하지 않는다. `elapsedMs`는
+정해진 관찰 시점까지의 진행 상한이며 정확한 지연 표본이나 D4 입력 성능이 아니다. 202번 취소 호출에도
+알림 수가 유한하고, shared owner 취소로 실제 resource가 남으면 새 가용량 알림을 내지 않아야 한다.
+
+러너는 신규 gate 누락, 하위 FAIL, 예산/선언 한도 위반, 불완전 게시 계측, 픽셀 불일치와 알림 폭증을
+거부한다. 검증에서 거부한 원 결과도 JSON에 남긴다. 초기 실패·보완·최종 결과와 remaining gates는
+`../evidence/t010-resource-scheduler/REPORT.ko.txt`를 참조한다.

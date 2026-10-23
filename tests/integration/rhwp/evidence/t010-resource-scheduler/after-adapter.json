@@ -1,0 +1,45 @@
+{
+  "implementation": "session.mjs factory; only module loader replaced with deterministic fake engine",
+  "tests": [
+    {
+      "name": "identical-pending",
+      "status": "PASS"
+    },
+    {
+      "name": "different-page",
+      "status": "PASS"
+    },
+    {
+      "name": "different-scale",
+      "status": "PASS"
+    },
+    {
+      "name": "mutation",
+      "status": "PASS"
+    },
+    {
+      "name": "reload",
+      "status": "PASS"
+    },
+    {
+      "name": "complete-after-duplicates",
+      "status": "PASS"
+    },
+    {
+      "name": "error-then-other-page",
+      "status": "PASS"
+    },
+    {
+      "name": "disconnected",
+      "status": "PASS"
+    },
+    {
+      "name": "queued-identical",
+      "status": "PASS"
+    },
+    {
+      "name": "terminal-no-restart",
+      "status": "PASS"
+    }
+  ]
+}

@@ -43,3 +43,32 @@ dbus-run-session -- python3 tests/integration/rhwp/ownership-poc/history-perf.py
 `history-perf.py`는 기존 `undo_native.scenario_perf`와 `MEASURE`를 그대로 호출한다. 계측 모듈 URL만 후보로 연결한다. 문서당 새 앱 세션, native X11 키, 기존 4문서·50% 배율·30 group-start/extend·20 Undo/Redo·5 Undo 뒤 입력을 유지한다. p95 50 ms/Undo 1,500 ms 기준을 넘으면 종료 코드 1이다. 실패도 유효한 측정 결과로 보존한다.
 
 `typing.py`는 history 비활성 진단용이다. 공식 history 성능 결과와 합치지 않는다. 과거의 설정 재로드 중단·자동 D-Bus 정리 실패는 별도 JSON으로 보존한다.
+
+## Resource scheduler 후보
+
+새 complete patch와 두 브라우저 gate가 승인된 패키지에는 `GEUL_T010_SCHEDULER_POC=1`을 추가한다.
+이 모드는 `t010-resource-scheduler`의 gate와 정확한 candidate WASM을 검사한다. 새 모드에서 history
+시험 플래그는 켜지 않는다. 일반 build와 public WASM은 그대로다.
+
+```sh
+GEUL_T010_OWNERSHIP_POC=1 GEUL_T010_SCHEDULER_POC=1 VITE_GEUL_TEST_HOOKS=1 \
+GEUL_T010_CANDIDATE="$CANDIDATE" npm run dev -- \
+  --config tests/integration/rhwp/ownership-poc/vite.config.mjs \
+  --host 127.0.0.1 --port 1420 --strictPort
+
+dbus-run-session -- python3 tests/integration/rhwp/ownership-poc/native.py \
+  --extended --matrix --scheduler --app "$APP" --driver "$TAURI_DRIVER" \
+  --webkit-driver "$WEBKIT_DRIVER" --xvfb "$XVFB" --output /tmp/scheduler-native.json
+```
+
+`--scheduler --scheduler-only`는 이미 검증한 기존 44개를 다시 실행하지 않고 집중 검사만 실행한다.
+출력 scope도 이를 구별한다. 이번 증거는 기존 44개 실행 부분과 focused 11개(초기화 2+추가 9)를 별도로
+기록하며, 앞선 전체 runner 실패를 전체 PASS로 바꾸지 않는다. focused 내부에 실제 WebView engine의
+scheduler 48개 실행이 포함된다. 문서 세션을 통한 포화 후 이미지, 동일 요청 50회, 완료 픽셀, PENDING 중
+탭 전환·늦은 응답·공유 close·마지막 lease 반납은 실제 geul session에서 검사한다.
+
+`probeEngine()` observer는 시험에만 쓰며 원 module listener를 교체하지 않는다. 새로운 observer가
+별도 문서 모델이나 snapshot/history를 보관하지 않는다. 정상 session hub는 계속 유일한 listener를 소유한다.
+기준 public JS는 Vite 소스 import 대상으로 만들지 않고 기존 WebDriver의 runtime import로 전달한다.
+`node --test tests/integration/rhwp/ownership-poc/test-session.mjs`는 모듈 loader만 fake engine으로 바꾼
+10개 결정적 identity 계약 검사다. native 또는 실제 decoder 실행 증거와 구별한다.
