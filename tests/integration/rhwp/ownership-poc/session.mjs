@@ -131,6 +131,12 @@ export function createOwnershipSession(Session, sessionId, backend, registry) {
     queue.set(canvas, request); canvases.set(canvas, request); wake();
     return false; // a queued frame is never reported as completed
   };
+  const renderRequest = session.renderPage;
+  session.renderPage = (...args) => {
+    const at = performance.now();
+    try { return renderRequest(...args); }
+    finally { globalThis.window?.__rhwpProbe?.record?.('adapterRenderRequest', at); }
+  };
   session.releaseRendering = () => {
     cancel();
     for (const canvas of canvases.keys()) { canvas.width = 0; canvas.height = 0; }

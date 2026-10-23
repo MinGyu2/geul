@@ -69,3 +69,28 @@ fn budget_and_trim_drop_only_cache_owned_rc() {
     assert_eq!(c.stats().bytes, 0);
     assert_eq!(a.0.get(), 9);
 }
+
+#[test]
+fn last_active_lease_makes_cache_reclaimable_without_resource_drop() {
+    struct Resource(Rc<Cell<usize>>);
+    impl Drop for Resource {
+        fn drop(&mut self) { self.0.set(self.0.get() + 1); }
+    }
+    impl Release for Rc<Resource> { fn release(&self) {} }
+    let drops = Rc::new(Cell::new(0));
+    let mut cache = BoundedCache::new(1024, 8, false);
+    let active = Rc::new(Resource(drops.clone()));
+    cache.insert(key(0), Some(active.clone()), 128);
+    let shared_pending = Rc::new(Resource(drops.clone()));
+    let other_owner = shared_pending.clone();
+    let owner_a = vec![active, shared_pending];
+    assert_eq!(cache.resident_capacity_where(|r| Rc::strong_count(r) == 1), (0, 0));
+    drop(owner_a);
+    assert_eq!(drops.get(), 0);
+    assert_eq!(Rc::strong_count(&other_owner), 1);
+    assert_eq!(cache.resident_capacity_where(|r| Rc::strong_count(r) == 1), (1, 128));
+    assert!(cache.evict_resident_where(|r| Rc::strong_count(r) == 1));
+    assert_eq!(drops.get(), 1);
+    drop(other_owner);
+    assert_eq!(drops.get(), 2);
+}

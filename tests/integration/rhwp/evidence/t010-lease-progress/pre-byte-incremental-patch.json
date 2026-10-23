@@ -1,0 +1,7 @@
+{
+  "status": "PASS",
+  "sha256": "8eb76ec007c24bedc2f439247e6579f50a99282fba02ea76f7192e1716d44c72",
+  "againstPreviousCandidatePatchSha256": "2c5e1ad101b1c16856ed20d1facfd295db9f0d8e2824223d3ec68c201ddf4098",
+  "applyCheckExit": 0,
+  "scope": "Optional delta; complete patch is upstream-rhwp-lease-progress.patch"
+}

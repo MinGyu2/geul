@@ -144,6 +144,10 @@ def validate_result(value, require_ownership=False, require_scheduler=False):
     if 'scheduler' in value:
         scheduler = value['scheduler']; rows = scheduler.get('tests', [])
         required_names = {'count-saturation-admits', 'bytes-saturation-admits',
+                          'cache-only-transition-established', 'cache-only-release-without-destruction',
+                          'cache-only-notification-progress', 'cache-only-repeated-terminal-cancel-bounded',
+                          'cache-only-final-cleanup', 'cache-only-no-decode-wait-capacity-notification',
+            'shared-byte-demand-established', 'shared-byte-cancel-no-false-capacity', 'shared-byte-cleanup', 'shared-byte-partial-release-no-false-capacity',
                           'notification-progress-cancel-one', 'notification-progress-cancel-both',
                           'notification-progress-dispose', 'notification-progress-replace',
                           'notification-progress-mutate', 'notification-progress-shared-owner',

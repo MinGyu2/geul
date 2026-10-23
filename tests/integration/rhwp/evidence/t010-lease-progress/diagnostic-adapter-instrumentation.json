@@ -1,0 +1,7 @@
+{
+  "status": "FAIL",
+  "command": "node tests/integration/rhwp/ownership-poc/test-session.mjs",
+  "passed": 0,
+  "failed": 10,
+  "reason": "Test-only performance observer directly referenced window in Node fake environment; changed optional observer to globalThis.window?.__rhwpProbe. Final rerun10/10 passed. Original data-URL stack omitted from sanitized summary."
+}

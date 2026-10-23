@@ -1,0 +1,5 @@
+{
+  "status": "FAIL",
+  "phase": "Vite startup before native test process",
+  "reason": "Browser files temporarily renamed to preserve old fixture evidence; Vite correctly rejected missing required chrome/webkit gate files. Restart pending final browser results. No native assertions executed on this startup attempt."
+}

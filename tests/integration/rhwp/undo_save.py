@@ -52,12 +52,13 @@ EXPECT = {  # 생성 픽스처 사례 → (check_saved, 게시됨, 근거). 여�
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--evidence", type=Path)
+    parser.add_argument("--candidate", type=Path, help="Explicit verified test package; never replaces production WASM")
     args = parser.parse_args()
     failures: list[str] = []
     with tempfile.TemporaryDirectory(prefix="geul-t010-d3-") as scratch:
         tmp = Path(scratch)
         out = tmp / "out"
-        run(["npx", "vitest", "run", "--config", "tests/integration/rhwp/vitest.config.ts", "undo-save"], {"GEUL_UNDO_SAVE_OUT": str(out)})
+        run(["npx", "vitest", "run", "--config", "tests/integration/rhwp/vitest.config.ts", "undo-save"], {"GEUL_UNDO_SAVE_OUT": str(out), **({"GEUL_RHWP_TEST_PACKAGE": str(args.candidate.resolve())} if args.candidate else {})})
         cases = json.loads((out / "cases.json").read_text())
         manifest, rows = [], []
         for c in cases:
@@ -96,6 +97,9 @@ def main() -> int:
             want = EXPECT.get(name)
             preserved = r["dirAfter"] == [target.name] and \
                 (after == sha(Path(e["output"])) if published else after == before[name] and r["sessionAfter"]["dirty"])
+            preserved = preserved and r["sessionAfter"]["revision"] == r["committedRevision"] == 1 \
+                and r["dirtyBeforeSave"] and r["sessionAfter"]["dirty"] == (not published) \
+                and (not published or r["save"]["durable"])
             if want is not None:
                 ok = r["preflight"]["outcome"] == "safe" and r["checkSaved"]["outcome"] == want[0] and published == want[1] \
                     and sorted(findings) == sorted(want[2]) and preserved
@@ -107,6 +111,7 @@ def main() -> int:
                          "preflightFindings": [[f["code"], f.get("part")] for f in r["preflight"]["findings"]][:6],
                          "checkSaved": r["checkSaved"]["outcome"], "findings": findings,
                          "published": published, "originalSha256": before[name], "afterSha256": after,
+                         "committedRevision": r["committedRevision"], "dirtyBeforeSave": r["dirtyBeforeSave"], "durable": r["save"].get("durable"),
                          "sessionAfter": r["sessionAfter"], "dirAfter": r["dirAfter"], "ok": ok})
             print(f"[{'ok' if ok else 'MISMATCH'}] {name}: preflight={r['preflight']['outcome']} checkSaved={r['checkSaved']['outcome']} {findings[:3]} 게시={published} "
                   f"원본 그대로={after == before[name]}")
@@ -115,7 +120,7 @@ def main() -> int:
         sessions = [{"case": c["tag"]} | {s: {"revision": c[s]["revision"], "unpreserved": c[s]["modified"]}
                                          for s in ("edited", "undone", "redone", "newAfterUndo")} for c in cases]
         if args.evidence:
-            args.evidence.write_text(json.dumps({"rows": rows, "sessions": sessions, "failures": failures},
+            args.evidence.write_text(json.dumps({"rows": rows, "sessions": sessions, "failures": failures, "engine": json.loads((args.candidate / "ENGINE.json").read_text()) if args.candidate else "pinned"},
                                                 ensure_ascii=False, indent=1).replace(str(tmp), "<tmp>") + "\n")
     print(f"불일치 {len(failures)}건 {failures}")
     return 1 if failures else 0

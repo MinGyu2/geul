@@ -1,0 +1,26 @@
+{
+  "baseline": "1a76570e833917d15817415a53c09ad61ab3203f",
+  "buildStatus": "PASS",
+  "sourceStableDuringBuild": true,
+  "rendererJobAPI": true,
+  "schedulerAPI": true,
+  "sourceSha256": {
+    "src/renderer/mod.rs": "417872f6330bda18ba30fdb2b644e4f1bb46f3a365cda11d794d0861ac32fc8f",
+    "src/renderer/surface_cache.rs": "ef2a93b56ea85b2f619b013a97239e22eff92b93fcbaebc941e0de476dba4a0f",
+    "src/renderer/render_job.rs": "67fe87fcf60f32cf26ec22706554220a4baada95776891aba708a71f86e141a5",
+    "src/renderer/web_canvas.rs": "c353c72224d0b70f0db5b42443d18e175028b9cd6e2e5ce347b3fa30a6d85ec6",
+    "src/wasm_api.rs": "ab73fb12f34b08cd621362c6f6d0f44340b0007bf89baeaba3b97bcd92c5afcf"
+  },
+  "compiler": "rustc 1.93.1 (01f6ddf75 2026-02-11)",
+  "cargo": "cargo 1.93.1 (083ac5135 2025-12-15)",
+  "wasmPack": "wasm-pack 0.15.0",
+  "wasmBindgen": "0.2.127",
+  "cargoLockSha256": "f24e98940a42000cea09500bea090cc571773e761c3d068769227e82a0e2f024",
+  "profile": "release",
+  "wasmOpt": false,
+  "artifacts": {
+    "rhwp.js": "3f3416ac1e776f036e943e2d298741cc9f749b204b56476322e1d83fdcb9b3b5",
+    "rhwp_bg.wasm": "a949d6bd367e52dc974bb1198c0b8192fdccd27265674a480bf28a58ef7e814e",
+    "rhwp.d.ts": "c753156bdc44f80562fdcb6580b63ed45cf42b6e32083aede80e11b72c6da5eb"
+  }
+}

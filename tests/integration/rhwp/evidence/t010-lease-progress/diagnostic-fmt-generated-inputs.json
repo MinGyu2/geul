@@ -1,0 +1,25 @@
+{
+  "status": "RUNNING",
+  "sourceBeforeSha256": {
+    "src/renderer/mod.rs": "417872f6330bda18ba30fdb2b644e4f1bb46f3a365cda11d794d0861ac32fc8f",
+    "src/renderer/surface_cache.rs": "ef2a93b56ea85b2f619b013a97239e22eff92b93fcbaebc941e0de476dba4a0f",
+    "src/renderer/render_job.rs": "67fe87fcf60f32cf26ec22706554220a4baada95776891aba708a71f86e141a5",
+    "src/renderer/web_canvas.rs": "c353c72224d0b70f0db5b42443d18e175028b9cd6e2e5ce347b3fa30a6d85ec6",
+    "src/wasm_api.rs": "ab73fb12f34b08cd621362c6f6d0f44340b0007bf89baeaba3b97bcd92c5afcf"
+  },
+  "checks": [
+    {
+      "name": "fmt",
+      "command": [
+        "cargo",
+        "fmt",
+        "--check"
+      ],
+      "cwd": "<isolated>",
+      "exit": 1,
+      "status": "FAIL",
+      "elapsedSeconds": 15.61,
+      "output": "Error: file `<isolated>/tests/generated/regression_suite_001.rs` does not exist\nError: file `<isolated>/tests/generated/regression_suite_002.rs` does not exist\nError: file `<isolated>/tests/generated/regression_suite_003.rs` does not exist\nError: file `<isolated>/tests/generated/regression_suite_004.rs` does not exist\nError: file `<isolated>/tests/generated/regression_suite_005.rs` does not exist\nError: file `<isolated>/tests/generated/regression_suite_006.rs` does not exist\nError: file `<isolated>/tests/generated/regression_suite_007.rs` does not exist\nError: file `<isolated>/tests/generated/regression_suite_008.rs` does not exist\nError: file `<isolated>/tests/generated/regression_suite_009.rs` does not exist\nError: file `<isolated>/tests/generated/regression_suite_010.rs` does not exist\nError: file `<isolated>/tests/generated/regression_suite_011.rs` does not exist\nError: file `<isolated>/tests/generated/regression_suite_012.rs` does not exist\nError: file `<isolated>/tests/generated/regression_suite_013.rs` does not exist\nError: file `<isolated>/tests/generated/regression_suite_014.rs` does not exist\nError: file `<isolated>/tests/generated/regression_suite_015.rs` does not exist\nError: file `<isolated>/tests/generated/regression_suite_016.rs` does not exist\nError: file `<isolated>/tests/generated/regression_suite_017.rs` does not exist\nError: file `<isolated>/tests/generated/regression_suite_018.rs` does not exist\nError: file `<isolated>/tests/generated/regression_suite_019.rs` does not exist\nError: file `<isolated>/tests/generated/regression_suite_020.rs` does not exist\nError: file `<isolated>/tests/generated/regression_suite_021.rs` does not exist\nError: file `<isolated>/tests/generated/regression_suite_022.rs` does not exist\nError: file `<isolated>/tests/generated/regression_suite_023.rs` does not exist\nError: file `<isolated>/tests/generated/regression_suite_024.rs` does not exist\nError: file `<isolated>/tests/generated/regression_suite_025.rs` does not exist\nError: file `<isolated>/tests/generated/regression_suite_026.rs` does not exist\nError: file `<isolated>/tests/generated/regression_suite_027.rs` does not exist\nError: file `<isolated>/tests/generated/regression_suite_028.rs` does not exist\n"
+    }
+  ]
+}

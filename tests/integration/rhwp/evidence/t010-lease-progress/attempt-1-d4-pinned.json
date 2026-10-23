@@ -1,0 +1,79 @@
+{
+  "status": "FAIL",
+  "protocol": "unmodified undo_native.scenario_perf/MEASURE",
+  "engine": "pinned",
+  "historyEnabled": true,
+  "keyDelivery": "native X11 xdotool",
+  "environment": {
+    "platform": "Linux",
+    "webkitGTK": "2.54.1",
+    "debugAppSha256": "48b7b8364cb4b91ae0b4c3cb3113977c15fd92aa9ca3d60f0406f331749d45c1",
+    "cpuAffinity": [
+      0,
+      1,
+      2,
+      3,
+      4,
+      5,
+      6,
+      7
+    ],
+    "loadAverageBefore": [
+      2.259765625,
+      1.93017578125,
+      2.59033203125
+    ],
+    "softwareGLRequested": true,
+    "webkitDmabufDisabled": true,
+    "GDK_BACKEND": "x11",
+    "busyProbe": false,
+    "warmupGroups": 3,
+    "groupStartSamplesPerDocument": 30,
+    "probeBootstrapDocument": "basic-ko.hwpx in both arms",
+    "loadAverageAfter": [
+      2.439453125,
+      2.03515625,
+      2.583984375
+    ]
+  },
+  "measurements": {},
+  "gates": [],
+  "error": "조건을 만족하지 않음: const e=document.querySelector('[data-testid=rhwp-status]'); return e && e.dataset.status===arguments[0]",
+  "parentExit": 1,
+  "processFinished": true,
+  "elapsedSeconds": 63.87,
+  "command": [
+    "dbus-run-session",
+    "--",
+    "python3",
+    "tests/integration/rhwp/ownership-poc/history-perf.py",
+    "--app",
+    "<workspace>/src-tauri/target/debug/geul",
+    "--driver",
+    "/tmp/geul-t010-ownership-tools/bin/tauri-driver",
+    "--webkit-driver",
+    "/nix/store/p7h9r90h1vmk4wq1964nhd8vfp0kf27b-webkitgtk-2.54.1+abi=4.1/bin/WebKitWebDriver",
+    "--xvfb",
+    "/nix/store/7yz3bnmll7fy11n0xci85mbhnf6p5669-xvfb-21.1.23/bin/Xvfb",
+    "--output",
+    "<workspace>/tests/integration/rhwp/evidence/t010-lease-progress/d4-pinned.json",
+    "--xdotool",
+    "/nix/store/kyp2r08w6hs0l1zj3cya6d2ciba9v47h-xdotool-3.20211022.1/bin/xdotool",
+    "--engine",
+    "pinned"
+  ],
+  "activationFlags": {
+    "VITE_GEUL_TEST_HOOKS": "1",
+    "VITE_GEUL_TEST_RHWP_HISTORY": "1",
+    "GEUL_T010_PINNED_PERF_ONLY": "1"
+  },
+  "devServerCommand": [
+    "node",
+    "node_modules/vite/bin/vite.js",
+    "--host",
+    "127.0.0.1",
+    "--config",
+    "tests/integration/rhwp/ownership-poc/pinned-perf.vite.config.mjs"
+  ],
+  "appSha256": "48b7b8364cb4b91ae0b4c3cb3113977c15fd92aa9ca3d60f0406f331749d45c1"
+}

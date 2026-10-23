@@ -16,6 +16,19 @@ import('/rhwp/rhwp.js').then(async mod => {
     let id=ids.get(self); if(id===undefined) {id=++serial; ids.set(self,id); docs.set(id,{id,live:new Set(),saves:0,discards:0});}
     return docs.get(id);
   };
+  p.record = (name, at) => {
+    p.calls.push({name,at,ms:performance.now()-at});
+    if(p.calls.length>20000)p.calls.splice(0,10000);
+  };
+  // Identical read-only Canvas timing in both A/B arms. No draw arguments retained.
+  for(const name of ['drawImage','getImageData']) {
+    const original=CanvasRenderingContext2D.prototype[name];
+    CanvasRenderingContext2D.prototype[name]=function(...args) {
+      if(!this.canvas.isConnected || !this.canvas.classList.contains('rhwp-page__canvas'))return original.apply(this,args);
+      const at=performance.now();try{return original.apply(this,args);}
+      finally{p.record(name==='drawImage'?'canvasVisibleDraw':'canvasReadback',at);}
+    };
+  }
   p.paragraphCheck = (expected,section,paragraph) => {
     if(!active)return null;
     const text=active.getTextRange(section,paragraph,0,active.getParagraphLength(section,paragraph));
@@ -36,7 +49,7 @@ import('/rhwp/rhwp.js').then(async mod => {
   };
   for (const name of ['getPageInfo','saveSnapshot','restoreSnapshot','discardSnapshot','insertText','insertTextInCell',
     'snapshotCapacity','deleteText','deleteTextInCell','splitParagraph','splitParagraphInCell','getPageLayerTreeWithProfile',
-    'renderPageToCanvas','renderPagePatchToCanvasFilteredWithProfile','hitTest','free']) {
+    'renderPageToCanvas','renderPagePatchToCanvasFilteredWithProfile','beginRenderJob','pollRenderJob','hitTest','free']) {
     const original=mod.HwpDocument.prototype[name]; if(!original) continue;
     mod.HwpDocument.prototype[name]=function(...args) {
       const doc=tracked(this), start=performance.now(); let value,completed=false;
@@ -53,7 +66,7 @@ import('/rhwp/rhwp.js').then(async mod => {
         return value;
       } finally {
         if(name==='free' && completed) {p.disposals.push({id:doc.id,liveAtFree:doc.live.size,saves:doc.saves,discards:doc.discards});if(p.disposals.length>50)p.disposals.shift();docs.delete(doc.id);if(active===this) active=null;}
-        p.calls.push({name,ms:performance.now()-start,at:start});
+        p.calls.push({name,ms:performance.now()-start,at:start,...(name==='pollRenderJob'&&completed?{outcome:value}:{})});
         if(p.calls.length>20000) p.calls.splice(0,10000);
       }
     };
@@ -77,8 +90,8 @@ import('/rhwp/rhwp.js').then(async mod => {
 """
 
 
-def install(d):
-    d.js(INSTALL)
+def install(d, script=INSTALL):
+    d.js(script)
     smoke.wait_until(d, "return window.__rhwpProbeReady === true", timeout=30)
 
 

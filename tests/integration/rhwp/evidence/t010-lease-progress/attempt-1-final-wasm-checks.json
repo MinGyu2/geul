@@ -1,0 +1,69 @@
+{
+  "status": "PASS",
+  "sourceBeforeSha256": {
+    "src/renderer/mod.rs": "417872f6330bda18ba30fdb2b644e4f1bb46f3a365cda11d794d0861ac32fc8f",
+    "src/renderer/surface_cache.rs": "ef2a93b56ea85b2f619b013a97239e22eff92b93fcbaebc941e0de476dba4a0f",
+    "src/renderer/render_job.rs": "67fe87fcf60f32cf26ec22706554220a4baada95776891aba708a71f86e141a5",
+    "src/renderer/web_canvas.rs": "c353c72224d0b70f0db5b42443d18e175028b9cd6e2e5ce347b3fa30a6d85ec6",
+    "src/wasm_api.rs": "ab73fb12f34b08cd621362c6f6d0f44340b0007bf89baeaba3b97bcd92c5afcf"
+  },
+  "sourceAfterSha256": {
+    "src/renderer/mod.rs": "417872f6330bda18ba30fdb2b644e4f1bb46f3a365cda11d794d0861ac32fc8f",
+    "src/renderer/surface_cache.rs": "ef2a93b56ea85b2f619b013a97239e22eff92b93fcbaebc941e0de476dba4a0f",
+    "src/renderer/render_job.rs": "67fe87fcf60f32cf26ec22706554220a4baada95776891aba708a71f86e141a5",
+    "src/renderer/web_canvas.rs": "c353c72224d0b70f0db5b42443d18e175028b9cd6e2e5ce347b3fa30a6d85ec6",
+    "src/wasm_api.rs": "ab73fb12f34b08cd621362c6f6d0f44340b0007bf89baeaba3b97bcd92c5afcf"
+  },
+  "checks": [
+    {
+      "name": "wasm-clippy",
+      "command": [
+        "cargo",
+        "clippy",
+        "--locked",
+        "--target",
+        "wasm32-unknown-unknown",
+        "--lib",
+        "--release",
+        "--",
+        "-D",
+        "warnings"
+      ],
+      "cwd": "<isolated>",
+      "exit": 0,
+      "status": "PASS",
+      "elapsedSeconds": 80.35,
+      "output": "   Compiling rhwp v0.8.7 (<isolated>)\n    Finished `release` profile [optimized] target(s) in 1m 20s\n"
+    },
+    {
+      "name": "fmt",
+      "command": [
+        "cargo",
+        "fmt",
+        "--check"
+      ],
+      "cwd": "<isolated>",
+      "exit": 0,
+      "status": "PASS",
+      "elapsedSeconds": 18.18,
+      "output": ""
+    },
+    {
+      "name": "wasm-build",
+      "command": [
+        "scripts/wasm-pack-locked.sh",
+        "--release",
+        "--no-opt",
+        "--target",
+        "web",
+        "--out-dir",
+        "lease-package"
+      ],
+      "cwd": "<isolated>",
+      "exit": 0,
+      "status": "PASS",
+      "elapsedSeconds": 489.56,
+      "output": "[INFO]: \ud83c\udfaf  Checking for the Wasm target...\n[INFO]: \ud83c\udf00  Compiling to Wasm...\n   Compiling rhwp v0.8.7 (<isolated>)\n    Finished `release` profile [optimized] target(s) in 8m 03s\n[INFO]: \u2b07\ufe0f  Installing wasm-bindgen...\n[INFO]: \u2728   Done in 8m 09s\n[INFO]: \ud83d\udce6   Your wasm pkg is ready to publish at <isolated>/lease-package.\n"
+    }
+  ]
+}

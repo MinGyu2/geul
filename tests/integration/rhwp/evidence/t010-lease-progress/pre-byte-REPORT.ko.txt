@@ -1,0 +1,147 @@
+T010 lease-progress 집중 구현·검증 보고서
+작성: 2026-10-23T21:53:38.438995+09:00
+분류: VERIFIED=직접 소스 확인 또는 실제 실행; INFERRED=관측으로 뒷받침되지만 독립 인과 실험 아님; UNVERIFIED=이번 환경에서 입증하지 못함.
+
+1. Overall task status — 전체 작업 상태
+PARTIALLY COMPLETED — 이번 집중 작업의 공학적 범위다. T010 전체는 미완료이며 제품 활성화 승인이 아니다.
+VERIFIED: 자원 소멸 없이 cache-only reclaimability가 생기는 경계 결함을 두 브라우저에서 재현·교정했다. 완전한 격리 upstream 패치와 시험용 후보 통합을 검증했다. native 기존44+추가9 및 별도11 명령이 각각 exit0이다. 후보 D3/D5는 아래에 명시한 실행 범위에서 PASS, 공식 D4는 양쪽 FAIL이다.
+최종 보안·무결성 관문: 아직 최종 확인 중; 완료 판정 전 갱신 필요.
+결과의 성격: 검증된 격리 upstream 패치 + 검증된 시험용 후보 통합이며, 제품 활성화 관점에서는 D1 확대 검증·D2·D4 공백이 남은 후보다.
+
+2. Starting and ending Git/submodule state — 시작·종료 상태
+VERIFIED: master, HEAD 896aa0dbde016a3fce48f17224e3540df390538c에서 시작했다. tracked/staged/untracked 변경이 없었고 checkpoint도 없었다. 종료 HEAD·branch 동일, staged 변경 없음. commit/push 없음.
+rhwp=1a76570e833917d15817415a53c09ad61ab3203f(v0.8.7), WordCraft=fc41918814f62645b6746ed68e71e8c2c2e85d6f(v0.7.0), 두 submodule 상태·gitlink 동일.
+initial-integrity.json / final-integrity.json으로 제품 src·backend src·public·planning 및 이전 evidence 전체의 해시를 대조한다. 기존 작업 손실 없음. 새 evidence는 t010-lease-progress에만 기록했다. rg 부재로 grep/find를 사용했다.
+
+3. Exact isolated candidate identity — 정확한 후보 식별
+기준: rhwp 1a76570e833917d15817415a53c09ad61ab3203f.
+완전 패치: upstream-rhwp-lease-progress.patch
+SHA-256: 8edc004ff0906205644eece5df696064eb56c3703173d0f9899e79fd51b9c939
+WASM SHA-256: 7936ec76a7691c797f61683b8edf55636132ef3679959ac67765fb38ffbef888
+Rust: rustc 1.93.1 (01f6ddf75 2026-02-11); Cargo: cargo 1.93.1 (083ac5135 2025-12-15); wasm-pack=wasm-pack 0.15.0; wasm-bindgen=0.2.127.
+release 최적화 사용, 별도 wasm-opt만 --no-opt로 생략했다. Cargo.lock 변경 없음. 빌드 전후 다섯 소스 해시 동일, engine.json/patch.json 일치. 생성 JS·DTS·WASM 해시는 engine.json 참조.
+VERIFIED: pinned에 git apply --check exit0. 독립 fresh git archive에 완전 패치를 실제 적용한 다섯 소스도 빌드 소스와 일치(fresh-apply.json). fresh export의 WASM을 따로 재빌드했다고 주장하지 않는다. 이전 후보에 대한 선택적 최종 delta는 incremental-lease-progress.patch / incremental-patch.json이다.
+
+4. Active-lease-to-cache-only reproduction — 소멸 없는 lease 전환 재현
+VERIFIED: 최종 동일 harness의 before-chrome.json / before-webkit.json은 이전 candidate WASM을 실제 실행한 실패 증거다. 각 브라우저에서 기존 ownership52/scheduler48은 유지되고 새 진행 검사가 실패했다.
+resident255개를 먼저 완료시킨 뒤 A가 resident255+진짜 HTTP pending1을, B가 같은 pending1을 lease한다. C는 별도 이미지 admission을 요청한다. 취소 직전 unique256/active leases257/pending1/resident255/reclaimable0이다. A만 취소한 직후 unique256/pending1은 그대로, active leases1, cache-only/reclaimable residents255로 바뀐다. URL 생성/loadAttempts와 cache entries도 그대로다. 유일한 남은 active owner B는 pending을 계속 소유한다.
+cache-only255는 고정한 resident 입력255, 실제 cache entries255, active ready lease0 및 unique/pending 계측을 함께 확인한 소유권 분류다. 별도 가상 drop 계수로 DOM 소멸을 주장하지 않는다. Rust Rc 계약에서는 Drop 계수0인 동일 전환을 직접 확인했다.
+이전 후보 C: notifications0, initial poll1 이후 추가 poll0, PENDING 유지, target RGBA 보존. 관찰 시간400ms 동안 소멸/expiry에 기대지 않는다.
+최종 후보 C: 정상 capacity notification1 + decode completion1, initial 포함 poll3, COMPLETE, 기준 RGBA 불일치0. pending B는 유지된다. 반복 취소 후 추가 알림0. close+trim 후 unique/active/pending/owned bytes 모두0. 상세 owned bytes·callback/capacity 수·상태는 각 scheduler checkpoint에 있다.
+Native 첫 새 사례는 SVG 고유 padding12000을 보류 URL에 실어 Vite HTTP431을 받았다. 기존44 PASS 뒤 parent1이었으며 attempt-1-native-full.json에 보존했다. padding900/901로 바꾸어 URL 크기만 줄였고 distinct resource/진짜 pending/255 resident/픽셀·자원 assertion은 유지했다. 두 브라우저 before/after와 native 전체를 최종 fixture로 다시 실행했다. 이전 fixture 증거도 pre-native-fixture-*로 보존했다.
+
+5. Root cause and corrected scheduling transition — 원인·교정
+VERIFIED: Job::finish가 job의 Rc lease 목록을 비울 때 cache Rc가 남으면 ImageResource::drop은 호출되지 않는다. 기존에는 이 전환이 capacity dirty flag를 예약하지 않았다.
+최종 수정: nonempty lease를 놓은 finish에서 기존 queue_notification(true,false)를 예약한다. 하나의 deferred/coalesced callback이 최종 resource count/bytes/pending/cache-only reclaimability를 다시 검사한다. 다른 job이 이미 소비한 용량은 광고하지 않는다. JavaScript listener는 mutable RefCell borrow가 끝난 뒤 호출하며 destructor/cache eviction에서 renderer를 재귀 poll하지 않는다.
+추가로 waiting_capacity를 별도로 두고 매 poll에서 초기화한다. admission 대기만 capacity callback의 대상이다. decode 자체를 기다리는 기존 waiting은 불완전 frame 방지 계약에 계속 사용한다. 완료·오류 알림은 기존 경로를 유지한다. cancel/disposal/invalidation/generation/cleanup은 공통 finish로 들어온다.
+첫 최소 수정은 C를 재개했지만 decode-only B에 capacity callback을 더 보냈다(3회). attempt-1-notification-chrome.json에서 새 assertion이 실제 FAIL했다. 최종은 capacity1/총2로 두 브라우저·native 모두 PASS다.
+
+6. Shared resource and false-notification regressions — 공유·거짓 알림 회귀
+VERIFIED: shared pending owner 하나만 취소하고 pending2 포화가 유지되는 경우 callback0을 유지한다. cache-only255가 실제로 생긴 경우에만 C admission이 진행한다. decode-only waiter에는 불필요한 capacity 알림이 없다.
+기존 repeated cancel202, 완료/만료 job 취소·close, 두 waiter 경쟁, budget/trim(0), 문서 전환·generation replacement·mutation·dispose, 늦은 load/error, queued callback 중 취소, 자원 한도 명시 종료 및 안전한 재요청을 유지했다. 각 사례 callback 상한5, settled 뒤 추가0 assertion을 유지했다.
+MAX_PENDING2 / MAX_RESOURCES256 / MAX_JOBS8 / MAX_OWNED_BYTES256MiB 동일. count256→257, byte 포화·active lease 비회수, cache-only 회수, pending saturation, 중복요청, decode 재시작 폭주 방지, target 원자적 게시와 stale/incomplete frame 차단 검사를 약화하지 않았다.
+이 예산은 renderer 소유 추정치이며 OS RSS/GPU/전체 WASM heap의 상한이 아니다. 새 진행 재현은 initial poll 뒤 정상 listener만 poll한다. 기존 다른 ownership 테스트의 polling을 이 재현의 진행 증거로 사용하지 않았다.
+
+7. Rust 1.93.1 verification
+VERIFIED: 최종 frozen 소스로 cargo test --locked --lib:4063 PASS/0 FAIL/13 ignored, exit0(native-library-final.json). 초기4063 실행과 최종 반복을 분리했다.
+fmt --check, native --all-targets Clippy -D warnings, wasm32 --lib --release Clippy -D warnings, release WASM build 모두 exit0.
+독립 Rust 계약: cache 내부11; ownership 외부13; scheduler 외부5(새 lease 전환1 포함). 고유29개다. ownership raw 계약24=내부11+외부13, scheduler raw16=내부11+외부5이며 별도 내부11 실행을 중복 합산하지 않는다.
+새 Rust 검사는 실제 BoundedCache/Rc에서 owner A를 놓아도 Drop0, cache-only 회수 가능량 증가, pending B 생존, 실제 eviction 때만 Drop 발생을 확인한다. async WASM scheduler 진행의 직접 증거는 브라우저/native다.
+격리 source export에는 생성 native suite가 없었다. 초기 fmt 실패와 subset 자동 generator의49/48 target 정책 문제를 보존했다. 기존 pinned manifest의 모든 referenced source가 byte-identical임을 검증하고 native suite 입력을 재사용했다. native-suite-manifest.json + prepare_native.py로28 harness를 독립 fresh export에서 재구성해 해시 일치까지 확인했다. Cargo targets/원본 소스·테스트 assertion은 바꾸지 않았다.
+생성 선언 tsc(--ignoreConfig --lib es2022,dom,esnext.disposable) PASS. 타입 검사 초기 실패는 TS6 옵션·Symbol.dispose lib 설정 문제였고 diagnostic-integration-* 및 diagnostic-service-harness-and-dts-lib.json에 보존했다.
+
+8. Chrome ownership and scheduler results
+VERIFIED: Google Chrome155.0.8059.39, 최종 실제 WASM ownership52/52 + scheduler54/54 PASS, failed/skipped0, parent0. 기존48 + 새6이다. historical12 시나리오/50 draw 모두 exact. HWP/HWPX roundtrip 픽셀 불일치 각각0. chrome.json에 binary/source/harness identity와 모든 계측이 있다.
+
+9. WebKitGTK ownership and scheduler results
+VERIFIED: 실제 WebKitGTK2.54.1/WebDriver/Xvfb, ownership52/52 + scheduler54/54 PASS, failed/skipped0, parent0. 동일 historical12/50 exact, HWP/HWPX RGBA0. Chrome 결과를 대체 증거로 쓰지 않았다(webkit.json).
+
+10. Full native 44-test command and exit code
+VERIFIED: dbus-run-session -- python3 tests/integration/rhwp/ownership-poc/native.py --scheduler --extended --matrix --evidence-dir "$EVIDENCE" --app "$APP" --driver "$DRIVER" --webkit-driver "$WEBKIT" --xvfb "$XVFB" --output "$EVIDENCE/native-44-regressions.json"
+실제 Tauri/WebKitGTK debug 앱, 명시적 candidate dev server에서 실행했다. 기존44개 이름을 역사 결과와 각각 대조:44 PASS/누락0. 추가 mandatory9 PASS, 총53 PASS/0 FAIL/0 skipped, 내부 scheduler54 PASS. parent exit0, processFinished=true. 파일의 command/activationFlags/appSha256이 정확한 실행 식별이다.
+기존 Vite helper 수정은 pinned module을 WebDriver runtime import로 얻어 m.run(pinned)에 전달하는 방식이다. 전체 실행이 뒤 helper import까지 정상 종료해 교정이 유지됨을 확인했다.
+이번 첫 실패(기존44 PASS 뒤 HTTP431), 재시작 시 gate 파일 일시 부재로 막힌 startup도 별도 보존했다. 이전 역사적44 assertion PASS/parent1 결과와 이번53/parent0을 합치거나 덮어쓰지 않았다.
+
+11. Focused native scheduler results
+VERIFIED: 별도 native.py --scheduler --scheduler-only 동일 app/driver/evidence 경로 명령을 새로 실행했다. 11/11 PASS/0 FAIL/0 skipped, parent0, 내부 scheduler54 PASS(geul-native-focused.json).
+후보 SHA, resident256/257 완료, 동일요청50회 job 재사용·픽셀, shared session, pending decode 중 문서 전환·late response, 최종 close+trim 및 subscriber/resource/active lease/pending0을 확인했다. 이11개로 기존44 실행을 대신하지 않았다.
+
+12. Candidate D3 save-preservation verification
+PASS(명시한 보수적 보존 범위), VERIFIED.
+실제 후보 WASM + RhwpEditorSession으로 body/표 cell/구역1에서 편집·Undo·Redo·Undo 뒤 새 편집을 만들고 기존 Rust SessionRegistry→preflight→commit→begin_save→service::save 경로에 넣었다. 실제 service::save19사례 모두 계약 PASS: 게시9/거부10. 내보내기만으로 backend save를 대체하지 않았다.
+모든 거부는 원본 SHA 그대로이며 새 unsafe 출력·임시 파일이 게시되지 않았다. 성공은 durable=true/dirty=false, committed revision 유지다. HWP Undo는 저장되며 편집/Redo 출력의 stale preview는 계속 거부한다. HWPX body/cell 저장은 성공한다. 여러 구역 HWPX의 unsafe export는 Undo 뒤라도 보수적으로 거부한다. 보존 PASS는 모든 문서의 저장 가능성을 뜻하지 않는다.
+실제 native 앱에서도 T0099개 검사(정상 HWPX save/reopen, HWP stale preview, 외부 수정 FileConflict, malformed/unknown XML 거부, 임시파일 정리) 및 HWP/HWPX Edit→Undo→save/Redo→save4개를 확인했다. revision2/3을 유지하고 성공 dirty=false/거부 dirty=true, 원본 보존을 확인했다. native parent0.
+증거: candidate-d3-service-save.json / candidate-d3-summary.json / candidate-native-safety.json. geul backend 전체 library도174 PASS/0 FAIL/4 ignored, exit0(default Rust1.99.0; upstream1.93.1 결과와 구별)이다.
+
+13. Candidate D5 failure-injection verification
+PASS(통제한 API 경계 실패 범위), VERIFIED.
+실제 후보 WASM 세션에서 형식별9=18 fault/close 경계를 실행했다: allocation 전/실제 saveSnapshot 뒤 예외, 실제 restore 뒤 Undo/Redo 예외, reserve/redo-branch/composition-cancel/release에서 실제 discard 뒤 예외, close 때 재시도 없이 owning document free. 실패 분류 EngineFailure(edit)/uncertain, 거짓 UndoRedo 성공 없음, revision rollback 없음, save 거부, history 분리, stale ID 재폐기 없음, dispose 뒤 mutation 금지, free 정확히1회를 확인했다. 이 검사는 real-WASM37 PASS 안에 포함되며 선택적 export-only1 skip은 별도다.
+native에서는 body HWP/HWPX 및 실제 이미지 자원이 있는 HWP/HWPX4개 문서에서 실제 discard 뒤 예외→uncertain/편집·Undo·Save 차단/원본 SHA 보존→명시적 discard+reload/새 generation·빈 history·Canvas 복구를 검증했다. 이미지 자원 확보 후 close+trim0 및 최종 snapshot owner[]도 확인했다.
+처음 native 주입은 실패 상태에 도달하지 못했다. 진단에서 원시 URL과 ?import URL constructor가 서로 다르고 observer의 snapshotCalls/owners가 비어 있음을 확인했다. 실제 app의 probeEngine에 붙인 뒤 snapshot/mutation 호출 도달을 assertion으로 확인했다. 실패 시도는 attempt-1/2-native-safety.json이며 미도달 주입을 PASS로 세지 않았다.
+증거: candidate-d5-failure-safety.json, integration-checks.json, candidate-native-safety.json. 실제 allocator OOM, 임의 메모리 손상, OS 강제종료는 UNVERIFIED; 경계 예외 검증을 그 범위로 확대하지 않는다. production failure-injection 경로를 추가하지 않았다.
+
+14. D4 pinned/candidate A/B latency
+공식 gate: 양쪽 FAIL. 측정 작업은 네 문서 모두 완료했고 각 group-start30/extend30/Undo25/Redo20/afterUndo5 표본을 유지했다. Undo25는 canonical protocol의20회와 afterUndo 준비5회를 포함한다. timeout0, slow sample 제거 없음.
+작은 HWP: group-start p95 pinned=83ms / candidate=88ms; Undo p95=119ms / 151ms
+작은 HWPX: group-start p95 pinned=82ms / candidate=84ms; Undo p95=89ms / 200ms
+24쪽 HWP: group-start p95 pinned=84ms / candidate=372ms; Undo p95=138ms / 177ms
+60쪽 HWPX: group-start p95 pinned=131ms / candidate=137ms; Undo p95=208ms / 239ms
+두 parent exit는1이며 공식50ms gate FAIL 때문이다. 네 문서 완료·모든 표본 확보와 gate FAIL은 별개다. Undo<=1500ms는 양쪽 모두 PASS.
+계약: native X11 xdotool keydown→revision 관찰 RAF→추가2 RAF. 경계/한도/샘플을 변경하지 않았다. 동일 debug app SHA 48b7b8364cb4b91ae0b4c3cb3113977c15fd92aa9ca3d60f0406f331749d45c1, WebKitGTK2.54.1, Xvfb1280x1024, software GL, CPU affinity0..7, zoom50, DPR은 각 row, warmup3, ASCII native 입력, busy-probe off. 각 arm에 동일 clean bootstrap 문서를 사용했다. 두 arm 문서 SHA도 일치한다.
+비교 한계: pinned public WASM SHA a91fa6a4336d34441c0d8f52afd0971aebe34019f7caf9eddad100f7a568f94d의 compiler/wasm-opt 세부 provenance는 BUILD.json에 없다. 후보는1.93.1 release/no-opt이며, pinned의 기존 damage path와 후보 full-page job adapter가 다르다. 순수 scheduler 패치만의 인과 A/B가 아니다. 최초 pinned dev bootstrap은 Vite public-module import 제약으로 실패해 표본0이었다. 명시적 시험용 runtime import/실제 module observer로 교정했으며 attempt-1-d4-pinned.json을 보존했다.
+VERIFIED: per-sample engineTimeline(호출시각/경과/outcome), key/input/handlerEnd/observed/RAF1/end, Canvas publication/readback, app trace가 있다. interval union에서 중첩을 제거했다. backend commit-ack는 비동기 경과이므로 동기 앱 작업에 합산하지 않는다. 개별 stage p95를 더한 가짜 E2E p95는 없다.
+같은 E2E p95 표본의 후보 분해(ms; engine API/관측 Canvas/동기 app/key→input/미계측 pre-revision/후속 frame 잔차):
+작은 HWP=4/2/2/1/13/66=88; 작은 HWPX=4/2/1/1/12/64=84;
+24쪽 HWP=137/4/1/45/11/174=372; 60쪽 HWPX=39/3/1/30/22/42=137.
+24쪽 후보 p95 표본에는 full pollRenderJob128ms와 추가 poll7ms가 있고, pinned p95 표본은 renderPagePatchToCanvasFilteredWithProfile5ms였다. source도 후보 adapter의 beginRenderJob(Full) 우회와 pinned damage/summary 경로를 확인했다. 작은 문서는 후속 frame 구간이 주된 관측 기여자이며, 24쪽 후보는 전체 페이지 replay와 입력·frame scheduling의 복합 지연이다. 60쪽 p95 표본의 insertText는 양쪽26ms로 엔진 mutation 기여도 있다.
+INFERRED: 후보24쪽의 큰 추가 지연에는 full-page adapter 통합이 주요 기여자다. 단일 원인이 rhwp layout/serialization이라고 입증하지 않았다. engine API 경과에는 detached Canvas 작업도 들어가며 순수 Rust CPU가 아니다. frame 잔차에는 compositor/GC/IPC·event-loop·미계측 작업이 들어가고 순수 idle wait가 아니다. WebKit timer 약1ms 분해능이다. 무입력3RAF control은 큰 문서에서 여전히 긴 gap을 보여 절대적인 idle floor로 인증하지 않는다.
+범위 통제: correctness/예산을 희생하는 성능 수정을 하지 않았다. 다음 좁은 upstream/test-only 통합 제안은 UPSTREAM-PROPOSAL.ko.txt다. d4-attribution.json 및 두 raw D4 JSON에 전체 표본과 비교 제약이 있다.
+
+15. D2 native Korean IME evidence
+INCONCLUSIVE 유지. 이번 Linux/WebKitGTK2.54.1 환경에서 fcitx5 등 실제로 다른 입력 환경을 찾지 못했다(d2-environment.json). 동일한 네이티브 행렬을 반복하지 않았다. 역사적298회/목표 순서0은 역사적 증거이며 새 실행이 아니다. deterministic replay56 및 이번 기존 IME 회귀 PASS는 native 목표 순서의 증거가 아니다. 생산 IME 코드를 추측 수정하지 않았다.
+
+16. D1–D5 product and candidate matrices
+                     pinned 제품                    격리 후보
+D1                   PASS(역사적 제품 근거)          INCONCLUSIVE(집중 rendering/native 회귀 PASS; 전체 history native RGBA/제품 통합 미완료)
+D2                   INCONCLUSIVE                   INCONCLUSIVE
+D3                   PASS(기존 제품 근거)            PASS(이번 실제 service/native 보존 범위)
+D4                   FAIL(이번 native)               FAIL(이번 native)
+D5                   PASS(기존 제품 근거)            PASS(이번 통제된 후보 실패 경계)
+activation-gates.json에 독립 근거를 기록했다. 기존 pinned PASS를 후보 PASS로 옮겨 쓰지 않았다. 격리 패치는 제품 통합이 아니며 PoC는 shipped behavior를 바꾸지 않는다.
+
+17. Modified files and test commands
+제품 src/public/external/planning 수정 없음. 테스트 파일: cache-concurrency의 scheduler.mjs/scheduler_contract.rs/run.py/test_runner.py/prepare_native.py, 실제 WASM 시험4개와 test-package.ts, native_probe.py/undo_native.py/undo_save.py, ownership-poc의 session/native/vite/history-perf 및 새 candidate-safety.py/pinned-perf.vite.config.mjs. .gitleaks.toml은 이번 JSON 파일명과 재계산한 공개 SHA만 AND로 제한한 오탐 예외이며 default credential 규칙을 끄지 않았다. 모든 실제 변경 경로는 final-integrity.json의 changedFiles다.
+워크스페이스에서 실행한 주요 명령(변수는 격리 소스/검증된 도구 경로이며 정확한 argv는 JSON 참조):
+  cargo fmt --check
+  cargo test --locked --lib
+  cargo clippy --locked --all-targets -- -D warnings
+  cargo clippy --locked --target wasm32-unknown-unknown --lib --release -- -D warnings
+  scripts/wasm-pack-locked.sh --release --no-opt --target web --out-dir lease-package
+  python3 tests/integration/rhwp/cache-concurrency/unit.py --source "$WORK/src/renderer/surface_cache.rs" --contract <ownership_contract.rs|scheduler_contract.rs> --rustc "$RUST193/rustc" --output <evidence.json>
+  python3 tests/integration/rhwp/cache-concurrency/run.py --pinned public/rhwp --candidate "$PACKAGE" --browser chrome --timeout 240 --output <chrome.json>
+  동일 run.py --browser webkit --xvfb "$XVFB" --timeout 240 --output <webkit.json>
+  native.py --scheduler --extended --matrix / 별도 --scheduler-only (10·11절 및 각 JSON argv)
+  candidate-safety.py (명시적 HISTORY_SAFETY_ONLY 시험 서버)
+  history-perf.py --engine pinned / --engine candidate (각 별도 명시적 시험 서버)
+  GEUL_RHWP_TEST_PACKAGE="$PACKAGE" npx vitest run --config tests/integration/rhwp/vitest.config.ts undo multisection
+  python3 tests/integration/rhwp/undo_save.py --candidate "$PACKAGE" --evidence <candidate-d3-service-save.json>
+  npx tsc --ignoreConfig --noEmit --strict --lib es2022,dom,esnext.disposable "$PACKAGE/rhwp.d.ts"
+  cargo test --locked --manifest-path src-tauri/Cargo.toml --lib
+  npm run typecheck; npm run lint; npm test
+  node tests/integration/rhwp/ownership-poc/test-session.mjs
+  python3 -m unittest discover -s tests/integration/rhwp/cache-concurrency -p test_runner.py
+  python3 -m unittest discover -s tests/e2e -p 'test_*.py'
+  python3 -m unittest discover -s tests/security
+  git diff --check; git apply --check <complete-patch>
+최종 application-final.json:779 app unit PASS, adapter10, runner25, Python e2e66, security86, typecheck/lint exit0. integration-checks.json: 실제 후보 WASM37 PASS/선택 export-only1 skip. Rust backend174 PASS/4 ignored. native/browsers unexpected skip0. 실제 실행하지 않은 check는 PASS로 쓰지 않았다. 보안 최종 결과: RUNNING (security-final.json).
+재현: prepare.py로 pinned+완전 패치를 새 격리 work에 export한다. prepare_native.py --work "$WORK"로 보존한 pinned native-suite-manifest의28 harness를 재구성할 수 있다. generated-test-inputs.json/native-harness-reconstruction.json이 입력·출력 식별을 보존한다. 생성 WASM/대형 바이너리 fixture는 추가하지 않았다. 이전 source export/fmt·Node module import·TS6·observer·HTTP431 실패는 diagnostic/attempt 파일에 남았다.
+
+18. Remaining failures, risks, and next tasks
+제품 활성화 차단 요인:
+- D1: 시험용 job adapter를 정상 제품 완료/오류 계약에 통합하지 않았고 후보 Undo/Redo 전후 body/cell/multi-section 전체 native RGBA matrix는 미실행이다. 다음 최소 작업은 기존 undo_native --render matrix를 실제 candidate observer/adapter에 연결해 그 차이를 검증하는 것이다.
+- D2: 다른 실제 한국어 IME 환경에서 목표 ordering의 판별력이 있는 native 검증이 필요하다. 동일 환경 반복·재생 PASS로 대체하지 않는다.
+- D4: 공식 group-start50ms 기준 미달이다. 먼저24쪽 HWP의 full-page job 요청과 frame 구간을 좁은 async dirty-band/Replay::Patch 통합 실험으로 분리한다. 전체4문서 공식 timing과 pixel/resource 회귀를 유지해야 한다. 임의 layout 재작성·threshold 상향·RAF 제거는 하지 않는다.
+- 실제 allocator OOM/프로세스 crash, 전체 문서 corpus, 장기 RSS/GPU 안정성은 이번 PASS 범위를 넘는다. 추가 활성화 검토에서 범위를 명시해야 한다.
+VERIFIED: WordCraft 변경 없음, submodule revision/작업트리 동일, production WASM 교체 없음, production registry/formatting/UndoRedo 지원 변경 없음, T007/T008 source 및 회귀 유지, T009 저장·preview 정책 완화 없음, T010 완료 처리 없음, T011 의존성 변경 없음, commit/push 없음, 이전 evidence와 사용자 작업 보존.
+최종 결론: 검증된 격리 upstream scheduler 패치와 시험용 후보 증거를 제공한다. 제품 활성화와 T010 전체 완료는 승인하지 않는다.
+RHWP UNDO/REDO PRODUCTION ACTIVATION: NO-GO

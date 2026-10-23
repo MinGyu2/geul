@@ -1,0 +1,158 @@
+{
+  "status": "PASS",
+  "wasmSha256": "3491826c7a59e910655b046b0c192f130283cb89bb525616b5aa0def4059afbf",
+  "nodeActualWasmRegression": {
+    "name": "candidate-realwasm",
+    "command": [
+      "npx",
+      "vitest",
+      "run",
+      "--config",
+      "tests/integration/rhwp/vitest.config.ts",
+      "undo",
+      "multisection"
+    ],
+    "cwd": "<workspace>",
+    "environment": {
+      "GEUL_RHWP_TEST_PACKAGE": "<isolated>/lease-package"
+    },
+    "exit": 0,
+    "status": "PASS",
+    "elapsedSeconds": 11.7,
+    "outputTail": "\n RUN  v5.0.3 <workspace>\n\n\n Test Files  2 passed | 1 skipped (3)\n      Tests  37 passed | 1 skipped (38)\n   Start at  22:37:57\n   Duration  9.58s (tests 56%, environment 30%, transform 7%, setup 6%, import 1%)\n"
+  },
+  "faultBoundariesPerFormat": [
+    "allocate-before-call",
+    "allocate-after-actual-saveSnapshot",
+    "after-actual-restoreSnapshot-undo",
+    "after-actual-restoreSnapshot-redo",
+    "close-without-retrying-discard",
+    "after-actual-discard-reserve",
+    "after-actual-discard-redo-branch",
+    "after-actual-discard-composition-cancel",
+    "after-actual-discard-release"
+  ],
+  "formats": [
+    "hwp",
+    "hwpx"
+  ],
+  "parameterizedCases": 18,
+  "nativeDiscardFailureCases": [
+    {
+      "gate": "D5",
+      "item": "hwp: 실제 discard 뒤 예외 → uncertain, 편집/Undo/Save 차단·원본 SHA 보존",
+      "result": "PASS",
+      "detail": ""
+    },
+    {
+      "gate": "D5",
+      "item": "hwpx: 실제 discard 뒤 예외 → uncertain, 편집/Undo/Save 차단·원본 SHA 보존",
+      "result": "PASS",
+      "detail": ""
+    },
+    {
+      "gate": "D5",
+      "item": "hwp-images: 실제 discard 뒤 예외 → uncertain, 편집/Undo/Save 차단·원본 SHA 보존",
+      "result": "PASS",
+      "detail": ""
+    },
+    {
+      "gate": "D5",
+      "item": "hwpx-images: 실제 discard 뒤 예외 → uncertain, 편집/Undo/Save 차단·원본 SHA 보존",
+      "result": "PASS",
+      "detail": ""
+    }
+  ],
+  "nativeRecoveryChecks": [
+    "hwp: 불확실 실패 후 버리기/실제 reload → 새 세대·원본 텍스트·빈 기록·새 Canvas",
+    "hwpx: 불확실 실패 후 버리기/실제 reload → 새 세대·원본 텍스트·빈 기록·새 Canvas",
+    "hwp-images: 불확실 실패 후 버리기/실제 reload → 새 세대·원본 텍스트·빈 기록·새 Canvas",
+    "hwpx-images: 불확실 실패 후 버리기/실제 reload → 새 세대·원본 텍스트·빈 기록·새 Canvas"
+  ],
+  "actualObserverReached": {
+    "name": "observer-reaches-authoritative-WASM",
+    "status": "PASS"
+  },
+  "nativeModuleAliasDiagnostic": {
+    "sameConstructor": false,
+    "resources": [
+      "/__ownership_candidate__/rhwp.js?import",
+      "/__ownership_candidate__/rhwp.js"
+    ]
+  },
+  "nativeFinalSnapshotOwners": [],
+  "nativeResourceCleanup": [
+    {
+      "name": "hwp-history-failure-image-cleanup",
+      "status": "PASS",
+      "resources": {
+        "pendingCount": 0,
+        "cancellations": 0,
+        "peakTemporaryCanvasBytes": 3875040,
+        "listenerNotifications": 1,
+        "peakStagingBytes": 7750080,
+        "inFlightEstimatedBytes": 0,
+        "capacityNotifications": 0,
+        "maxFrameBytes": 67108864,
+        "resourceLimits": 0,
+        "retryCount": 1,
+        "backupImageDataBytes": 0,
+        "activeLeaseEstimatedBytes": 0,
+        "activeJobs": 0,
+        "activeLeaseCount": 0,
+        "maxPending": 2,
+        "transientEstimatedBytes": 0,
+        "loadAttempts": 2,
+        "uniqueResourceCount": 0,
+        "readyLeaseCount": 0,
+        "temporaryCanvasBytes": 0,
+        "maxOwnedBytes": 268435456,
+        "maxStagingBytes": 134217728,
+        "ownedEstimatedBytes": 0,
+        "maxResources": 256,
+        "errors": 0,
+        "peakBackupImageDataBytes": 3875040,
+        "completionNotifications": 2
+      }
+    },
+    {
+      "name": "hwpx-history-failure-image-cleanup",
+      "status": "PASS",
+      "resources": {
+        "pendingCount": 0,
+        "cancellations": 0,
+        "peakTemporaryCanvasBytes": 3875040,
+        "listenerNotifications": 1,
+        "peakStagingBytes": 7750080,
+        "inFlightEstimatedBytes": 0,
+        "capacityNotifications": 0,
+        "maxFrameBytes": 67108864,
+        "resourceLimits": 0,
+        "retryCount": 1,
+        "backupImageDataBytes": 0,
+        "activeLeaseEstimatedBytes": 0,
+        "activeJobs": 0,
+        "activeLeaseCount": 0,
+        "maxPending": 2,
+        "transientEstimatedBytes": 0,
+        "loadAttempts": 4,
+        "uniqueResourceCount": 0,
+        "readyLeaseCount": 0,
+        "temporaryCanvasBytes": 0,
+        "maxOwnedBytes": 268435456,
+        "maxStagingBytes": 134217728,
+        "ownedEstimatedBytes": 0,
+        "maxResources": 256,
+        "errors": 0,
+        "peakBackupImageDataBytes": 3875040,
+        "completionNotifications": 2
+      }
+    },
+    {
+      "name": "native-final-resource-cleanup",
+      "status": "PASS"
+    }
+  ],
+  "nativeParentExit": 0,
+  "limits": "Controlled API-boundary exceptions; actual allocator OOM, arbitrary memory corruption and OS crash not injected. Source inspection alone is not counted."
+}

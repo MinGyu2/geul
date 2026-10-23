@@ -715,3 +715,17 @@ D2 native 목표 순서는 새 플랫폼에서 관찰하지 못했다. 결정적
 실행 범위·정확한 결과·누락은 [새 한국어 보고서](../../tests/integration/rhwp/evidence/t010-resource-scheduler/REPORT.ko.txt)에 기록한다.
 D2 native IME 증거 공백, D3/D5 전체 후보 통합 미검증 및 공식 D4 지연 FAIL은 이 소유권/스케줄링 교정과 별도 관문이다.
 **RHWP UNDO/REDO PRODUCTION ACTIVATION: NO-GO.**
+
+### Last-active-lease → cache-only 전환 후속 검증
+
+`t010-lease-progress` 격리 후보는 마지막 job lease가 사라져도 resident Rc가 남아 resource destructor가
+호출되지 않는 전환을 처리한다. `Job::finish`가 lease 해제 전후 cache-only 회수 가능량을 비교하고,
+변화가 있을 때 기존 지연·병합 알림을 예약한다. 공유 소유자만 줄어 가용량이 그대로이면 예약하지 않는다.
+대기 job에는 실제 막힌 admission 예약량을 기록하며, 알림 전달 시 count·pending·byte 예산과 회수 가능한
+resident를 다시 대조한다. decode 완료만 기다리는 작업이나 필요한 byte 예약보다 작은 해제는 capacity
+진행 알림의 근거가 아니다. mutable borrow 안에서 host callback을 호출하거나 주기적 poll을 추가하지 않는다.
+
+최종 후보의 실제 Chrome/WebKitGTK 각 ownership52+scheduler58, native 전체53 및 별도 focused11은
+통과했다. 자세한 후보 식별·실패 재현·D3/D5 검증 범위·D4 측정은
+[후속 보고서](../../tests/integration/rhwp/evidence/t010-lease-progress/REPORT.ko.txt)를 따른다.
+D2 native IME 증거 공백과 D4 지연 실패는 남으며 T010/T011 및 제품 활성화 상태는 바꾸지 않는다.

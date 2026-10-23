@@ -597,7 +597,7 @@ def timeline_samples(raw):
             calls.setdefault(name,{"n":0,"ms":0.0,"firstAt":c.get("at")})
             calls[name]["n"]+=1;calls[name]["ms"]=round(calls[name]["ms"]+c["ms"],2)
         rows.append({"kind":s["kind"],"keyToFrame":round(s["keyToFrame"],1),"at":{k:(None if v is None else round(v,1)) for k,v in (s.get("at") or {}).items()},
-                     "calls":calls,"timeline":[{"name":t["name"],"at":round(t["at"],1),"ms":None if t["ms"] is None else round(t["ms"],2),"page":t.get("page")} for t in s.get("timeline",[])][:80],
+                     "calls":calls,"engineTimeline":[{"name":c["name"],"at":None if c.get("at") is None else round(c["at"],2),"ms":round(c["ms"],2),**({"outcome":c["outcome"]} if "outcome" in c else {})} for c in s.get("calls",[])],"timeline":[{"name":t["name"],"at":round(t["at"],1),"ms":None if t["ms"] is None else round(t["ms"],2),"page":t.get("page")} for t in s.get("timeline",[])][:80],
                      "busy":None if s.get("busy") is None else [[round(a,1),round(b,1)] for a,b in s["busy"]][:40]})
     return rows
 
@@ -648,7 +648,7 @@ def scenario_perf(d, path: Path, scratch: Path, control=False) -> None:
     rss_closed=memory_sample(d);poc.set_zoom(d,100)
     spans=d.js("return (window.__geulTrace?.records||[]).filter(r=>typeof r[3]?.ms==='number').map(r=>({name:r[2],ms:r[3].ms}))")
     session_spans={kind:pct([r["ms"] for r in spans if r["name"]==kind]) for kind in {r["name"] for r in spans}}
-    row={"sample":path.name,"dpr":d.js("return window.devicePixelRatio"),"sessionSpansMs":session_spans,"control":"injected capacity refusal" if control else "normal history","fileBytes":path.stat().st_size,
+    row={"sample":path.name,"sourceSha256":hashlib.sha256(path.read_bytes()).hexdigest(),"dpr":d.js("return window.devicePixelRatio"),"sessionSpansMs":session_spans,"control":"injected capacity refusal" if control else "normal history","fileBytes":path.stat().st_size,
          "pages":int(st["pages"]),"zoom":50,"warmupGroups":3,**{k:pct(v) for k,v in lat.items()},
          "stages":stages,"timelineSamples":timeline_samples(raw),"busyProbe":getattr(d,"busy_probe",False),"threadCpuDuringTypingMs":cpu_typing,"zeroWorkFrameFloorMs":pct(floor),"frameGapDuringHistoryAndFollowingInputMs":pct(gaps),"frameGapDuringUndoRedoMs":pct(undo_redo_gaps),"memory":{"beforeOpen":rss0,"afterOpen":rss_open,"afterUndoRedo":rss_ops,"afterClose":rss_closed}}
     REPORT.setdefault("perf",[]).append(row)

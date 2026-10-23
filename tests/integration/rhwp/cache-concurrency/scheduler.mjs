@@ -47,6 +47,67 @@ export async function scheduler(mod,ref,{mismatch}) {
   await delay(300);check('active-owner-release-progress',state==='COMPLETE'&&await pixels(b,bc,7001)===0&&notes<=3,{state,notifications:notes,pixelMismatchCount:state==='COMPLETE'?await pixels(b,bc,7001):-1});
   mod.setRendererImageLoadListener(null);Object.defineProperty(HTMLImageElement.prototype,'src',desc);a.free();b.free();await fetch('/release-image?key=active-full');
  }
+ // Last active leases vanish without any ImageResource destruction: B retains
+ // A's pending image, while A's 255 ready images retain cache references.
+ {
+  await seedResidents(mod,255);
+  const a=mod.HwpDocument.createEmpty();
+  for(const n of [...Array.from({length:255},(_,i)=>10000+i),900]) {
+   const p=JSON.parse(a.insertPicture(0,0,0,'',svg(8,8,n),9000,9000,8,8,'svg','',null,null));
+   a.setPictureProperties(0,p.paraIdx,p.controlIdx,JSON.stringify({treatAsChar:false,horzRelTo:'Paper',vertRelTo:'Paper',horzAlign:'Left',vertAlign:'Top',horzOffset:7500,vertOffset:7500}));
+  }
+  const desc=Object.getOwnPropertyDescriptor(HTMLImageElement.prototype,'src');let held=false;
+  Object.defineProperty(HTMLImageElement.prototype,'src',{...desc,set(value){if(value&&!held){held=true;desc.set.call(this,'/held-image.svg?key=lease-cache-only&data='+encodeURIComponent(value));}else desc.set.call(this,value);}});
+  const b=imageDocument(mod,900),c=imageDocument(mod,901),ac=document.createElement('canvas'),bc=document.createElement('canvas'),cc=document.createElement('canvas');
+  const ai=a.beginRenderJob(0,ac,.2),as=a.pollRenderJob(ai),bi=b.beginRenderJob(0,bc,.2),bs=b.pollRenderJob(bi),ci=c.beginRenderJob(0,cc,.2);
+  let state=c.pollRenderJob(ci),notes=0,polls=1;const original=classify(cc),before=snap('cache-only-before');
+  check('cache-only-transition-established',as==='PENDING'&&bs==='PENDING'&&state==='PENDING'&&before.jobs.uniqueResourceCount===256&&before.jobs.activeLeaseCount===257&&before.jobs.pendingCount===1&&before.images.entries===255,{state,before:before.jobs,residentCount:255,reclaimableResidentCount:0});
+  // Flush any old tasks before attaching the observer. No polling drives C.
+  await delay(50);
+  mod.setRendererImageLoadListener(()=>{notes++;queueMicrotask(()=>{if(state==='PENDING'){polls++;state=c.pollRenderJob(ci);}});});
+  a.cancelRenderJob(ai);const released=snap('cache-only-released');
+  check('cache-only-release-without-destruction',released.jobs.uniqueResourceCount===256&&released.jobs.activeLeaseCount===1&&released.jobs.pendingCount===1&&released.images.entries===before.images.entries&&released.jobs.loadAttempts===before.jobs.loadAttempts,{released:released.jobs,cacheOnlyResidentCount:255,reclaimableResidentCount:255});
+  await delay(400);const after=snap('cache-only-after');const wrong=state==='COMPLETE'?await pixels(c,cc,901):-1;
+  check('cache-only-notification-progress',state==='COMPLETE'&&wrong===0&&notes>0&&notes<=3&&after.jobs.capacityNotifications>before.jobs.capacityNotifications&&after.jobs.pendingCount===1,{state,notifications:notes,polls,pixelMismatchCount:wrong,unchangedWhilePending:state==='PENDING'?mismatch(original,classify(cc)):null,before:before.jobs,after:after.jobs});
+  check('cache-only-no-decode-wait-capacity-notification',state==='COMPLETE'&&after.jobs.capacityNotifications-before.jobs.capacityNotifications===1&&notes<=2,{state,notifications:notes,capacityNotifications:after.jobs.capacityNotifications-before.jobs.capacityNotifications});
+  const settled=notes;for(let i=0;i<100;i++)a.cancelRenderJob(ai);c.cancelRenderJob(ci);await delay(100);
+  check('cache-only-repeated-terminal-cancel-bounded',notes===settled,{notifications:notes});
+  mod.setRendererImageLoadListener(null);Object.defineProperty(HTMLImageElement.prototype,'src',desc);a.free();b.free();c.free();await fetch('/release-image?key=lease-cache-only');await delay(30);mod.trimRendererCaches(0);
+  const clean=snap('cache-only-cleanup');check('cache-only-final-cleanup',clean.jobs.uniqueResourceCount===0&&clean.jobs.activeLeaseCount===0&&clean.jobs.pendingCount===0,{after:clean.jobs});
+  ac.width=ac.height=bc.width=bc.height=cc.width=cc.height=0;
+ }
+ // A shared-owner cancellation must not advertise a byte reservation that cannot
+ // fit this waiter, even when the old generic96MiB decode minimum would fit.
+ {
+  mod.trimRendererCaches(0);mod.setRendererCacheBudget(1<<20,512<<20,256);
+  for(const [n,size] of [[950,3320],[952,512]]){const ready=imageDocument(mod,n,size),rc=document.createElement('canvas');await finish(ready,rc);ready.free();rc.width=rc.height=0;}
+  const b=mod.HwpDocument.createEmpty();
+  for(const [n,size] of [[950,3320],[951,8]]) {
+   const p=JSON.parse(b.insertPicture(0,0,0,'',svg(size,size,n),9000,9000,size,size,'svg','',null,null));
+   b.setPictureProperties(0,p.paraIdx,p.controlIdx,JSON.stringify({treatAsChar:false,horzRelTo:'Paper',vertRelTo:'Paper',horzAlign:'Left',vertAlign:'Top',horzOffset:7500,vertOffset:7500}));
+  }
+  const d=mod.HwpDocument.createEmpty();
+  for(const [n,size] of [[952,512],[951,8]]) {
+   const p=JSON.parse(d.insertPicture(0,0,0,'',svg(size,size,n),9000,9000,size,size,'svg','',null,null));
+   d.setPictureProperties(0,p.paraIdx,p.controlIdx,JSON.stringify({treatAsChar:false,horzRelTo:'Paper',vertRelTo:'Paper',horzAlign:'Left',vertAlign:'Top',horzOffset:7500,vertOffset:7500}));
+  }
+  const desc=Object.getOwnPropertyDescriptor(HTMLImageElement.prototype,'src');let held=false;
+  Object.defineProperty(HTMLImageElement.prototype,'src',{...desc,set(value){if(value&&!held){held=true;desc.set.call(this,'/held-image.svg?key=shared-byte-demand&data='+encodeURIComponent(value));}else desc.set.call(this,value);}});
+  const bc=document.createElement('canvas'),bi=b.beginRenderJob(0,bc,.2),bs=b.pollRenderJob(bi),a=imageDocument(mod,951),ac=document.createElement('canvas'),ai=a.beginRenderJob(0,ac,.2),as=a.pollRenderJob(ai);
+  const dc=document.createElement('canvas'),di=d.beginRenderJob(0,dc,.2),ds=d.pollRenderJob(di);
+  const padding=15<<20,c=imageDocument(mod,padding),cc=document.createElement('canvas'),original=classify(cc),ci=c.beginRenderJob(0,cc,.2);let state=c.pollRenderJob(ci),notes=0;
+  const required=svg(8,8,padding).byteLength*2+1024+(96<<20);
+  await delay(50);const before=snap('shared-byte-demand-before');
+  check('shared-byte-demand-established',bs==='PENDING'&&as==='PENDING'&&ds==='PENDING'&&state==='PENDING'&&before.jobs.uniqueResourceCount===3&&before.jobs.pendingCount===1&&before.jobs.activeLeaseCount===5&&before.jobs.ownedEstimatedBytes+(96<<20)+1<=before.jobs.maxOwnedBytes&&before.jobs.ownedEstimatedBytes+required>before.jobs.maxOwnedBytes&&mismatch(original,classify(cc))===0,{state,requiredReservation:required,before:before.jobs});
+  mod.setRendererImageLoadListener(()=>{notes++;queueMicrotask(()=>{state=c.pollRenderJob(ci);});});a.cancelRenderJob(ai);const released=snap('shared-byte-demand-released');await delay(200);
+  const after=snap('shared-byte-demand-after');
+  check('shared-byte-cancel-no-false-capacity',state==='PENDING'&&notes===0&&released.jobs.uniqueResourceCount===before.jobs.uniqueResourceCount&&released.jobs.pendingCount===1&&released.jobs.activeLeaseCount===4&&released.jobs.ownedEstimatedBytes===before.jobs.ownedEstimatedBytes&&after.jobs.capacityNotifications===before.jobs.capacityNotifications&&mismatch(original,classify(cc))===0,{state,notifications:notes,capacityNotifications:after.jobs.capacityNotifications-before.jobs.capacityNotifications,requiredReservation:required,before:before.jobs,released:released.jobs,after:after.jobs,pixelMismatchCount:mismatch(original,classify(cc))});
+  d.cancelRenderJob(di);await delay(200);const partial=snap('shared-byte-demand-partial');
+  const reclaimableBytes=partial.jobs.ownedEstimatedBytes-partial.jobs.activeLeaseEstimatedBytes;
+  check('shared-byte-partial-release-no-false-capacity',state==='PENDING'&&notes===0&&partial.jobs.uniqueResourceCount===3&&partial.jobs.pendingCount===1&&partial.jobs.activeLeaseCount===2&&reclaimableBytes>0&&reclaimableBytes<(2<<20)&&partial.jobs.ownedEstimatedBytes-reclaimableBytes+required>partial.jobs.maxOwnedBytes&&partial.jobs.capacityNotifications===before.jobs.capacityNotifications&&mismatch(original,classify(cc))===0,{state,notifications:notes,capacityNotifications:partial.jobs.capacityNotifications-before.jobs.capacityNotifications,reclaimableResidentBytes:reclaimableBytes,requiredReservation:required,after:partial.jobs,pixelMismatchCount:mismatch(original,classify(cc))});
+  mod.setRendererImageLoadListener(null);Object.defineProperty(HTMLImageElement.prototype,'src',desc);c.free();a.free();b.free();d.free();await fetch('/release-image?key=shared-byte-demand');await delay(30);mod.trimRendererCaches(0);
+  const clean=snap('shared-byte-demand-cleanup');check('shared-byte-cleanup',clean.jobs.uniqueResourceCount===0&&clean.jobs.pendingCount===0&&clean.jobs.activeLeaseCount===0&&clean.jobs.ownedEstimatedBytes===0,{after:clean.jobs});bc.width=bc.height=ac.width=ac.height=cc.width=cc.height=dc.width=dc.height=0;
+ }
  // An intrinsically oversized active working set terminates, keeping the old pixels.
  {
   mod.trimRendererCaches(0);mod.setRendererCacheBudget(1<<20,512<<20,256);
@@ -126,9 +187,9 @@ export async function scheduler(mod,ref,{mismatch}) {
 }
 
 // Native test seeding uses the hub observer facade, preserving its single listener.
-export async function seedResidents(mod) {
+export async function seedResidents(mod,count=256) {
  mod.trimRendererCaches(0);mod.setRendererCacheBudget(1<<20,64<<20,256);
- for(let n=0;n<256;n++){
+ for(let n=0;n<count;n++){
   const doc=imageDocument(mod,10000+n),canvas=document.createElement('canvas'),id=doc.beginRenderJob(0,canvas,.1);
   await new Promise((resolve,reject)=>{const timer=setTimeout(()=>reject(new Error('seed timeout')),3000);
    const poll=()=>{const state=doc.pollRenderJob(id);if(state==='COMPLETE'){clearTimeout(timer);resolve();}else if(state!=='PENDING'){clearTimeout(timer);reject(new Error(state));}};

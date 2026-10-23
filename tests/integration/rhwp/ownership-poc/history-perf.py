@@ -8,6 +8,7 @@ import argparse
 import hashlib
 import json
 import os
+import platform
 from pathlib import Path
 import subprocess
 import sys
@@ -26,9 +27,15 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     for name in ('app', 'driver', 'webkit-driver', 'xvfb', 'xdotool', 'output'):
         parser.add_argument('--' + name, required=True, type=Path)
+    parser.add_argument("--engine", choices=("pinned", "candidate"), default="candidate")
     args = parser.parse_args()
     result = {'status': 'RUNNING', 'protocol': 'unmodified undo_native.scenario_perf/MEASURE',
-              'historyEnabled': True, 'keyDelivery': 'native X11 xdotool'}
+              'engine': args.engine, 'historyEnabled': True, 'keyDelivery': 'native X11 xdotool',
+              'environment': {'platform': platform.system(), 'webkitGTK': subprocess.check_output(['pkg-config','--modversion','webkit2gtk-4.1'],text=True).strip(),
+                              'debugAppSha256': hashlib.sha256(args.app.read_bytes()).hexdigest(),
+                              'cpuAffinity': sorted(os.sched_getaffinity(0)), 'loadAverageBefore': os.getloadavg(),
+                              'softwareGLRequested': True, 'webkitDmabufDisabled': True, 'GDK_BACKEND': 'x11',
+                              'busyProbe': False, 'warmupGroups': 3, 'groupStartSamplesPerDocument': 30, 'probeBootstrapDocument': 'basic-ko.hwpx in both arms'}}
 
     def save():
         args.output.write_text(json.dumps(result, indent=2) + '\n')
@@ -37,7 +44,8 @@ def main():
                                stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, text=True)
     try:
         os.environ.update(DISPLAY=':' + display.stdout.readline().strip(), GDK_BACKEND='x11',
-                          WEBKIT_DISABLE_SANDBOX_THIS_IS_DANGEROUS='1', NO_AT_BRIDGE='1', GTK_A11Y='none')
+                          WEBKIT_DISABLE_SANDBOX_THIS_IS_DANGEROUS='1', NO_AT_BRIDGE='1', GTK_A11Y='none',
+                          LIBGL_ALWAYS_SOFTWARE='1', WEBKIT_DISABLE_DMABUF_RENDERER='1')
         os.environ['PATH'] = str(args.webkit_driver.parent) + os.pathsep + os.environ['PATH']
         with tempfile.TemporaryDirectory(prefix='geul-ownership-history-perf-') as folder:
             work = Path(folder)
@@ -55,15 +63,20 @@ def main():
                         smoke.wait_until(driver, "return !!document.querySelector('.document-bar__open')", timeout=30)
                         # Bind the existing read-only instrumentation to the candidate module.
                         # All measurement boundaries, sampling, history keys and assertions stay canonical.
-                        install = native_probe.INSTALL.replace('/rhwp/rhwp.js', '/__ownership_candidate__/rhwp.js').replace('/rhwp/rhwp_bg.wasm', '/__ownership_candidate__/rhwp_bg.wasm')
-                        driver.js(install)
-                        smoke.wait_until(driver, 'return window.__rhwpProbeReady===true', timeout=30)
+                        # Observe the module actually used by the app, including Vite's
+                        # dynamic-import query identity; do not initialize an alias instance.
+                        if args.engine == 'pinned': driver.js('window.__geulPinnedRuntimeImport = url => import(url)')
+                        historical.poc.open_document(driver, fixtures / 'basic-ko.hwpx')
+                        actual = 'window.__geulPinnedProbeEngine' if args.engine == 'pinned' else 'window.__geulOwnership.probeEngine()'
+                        install = native_probe.INSTALL.replace("import('/rhwp/rhwp.js')", 'Promise.resolve(' + actual + ')')
+                        native_probe.install(driver, install)
+                        historical.close_discard(driver, 'basic-ko.hwpx')
                         windows = subprocess.check_output([str(args.xdotool), 'search', '--onlyvisible', '--name', '^geul'], text=True).split()
                         subprocess.run([str(args.xdotool), 'windowfocus', '--sync', windows[-1]], check=True)
                         driver.native_key_tool = str(args.xdotool)
                         driver.busy_probe = False
                         historical.scenario_perf(driver, source, work)
-                        result['engineIdentity'] = driver.js('return window.__geulOwnership.identity')
+                        result['engineIdentity'] = driver.js('return window.__geulOwnership?.identity||null') if args.engine == 'candidate' else {'wasmSha256': hashlib.sha256((ROOT / 'public/rhwp/rhwp_bg.wasm').read_bytes()).hexdigest()}
                         result['sourceSha256'] = hashlib.sha256(source.read_bytes()).hexdigest()
                     finally:
                         result['measurements'] = historical.REPORT
@@ -79,6 +92,7 @@ def main():
         display.wait(timeout=10)
         result['measurements'] = historical.REPORT
         result['gates'] = historical.GATES
+        result['environment']['loadAverageAfter'] = os.getloadavg()
         # Keep public metrics; remove absolute task paths from inherited diagnostics.
         result = json.loads(json.dumps(result).replace(str(ROOT), '<workspace>').replace(str(Path.home()), '<home>'))
         save()

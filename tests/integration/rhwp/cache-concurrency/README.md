@@ -137,3 +137,18 @@ byte 지배 포화, 256개 활성 lease, 불가능한 working set, cell 위치�
 러너는 신규 gate 누락, 하위 FAIL, 예산/선언 한도 위반, 불완전 게시 계측, 픽셀 불일치와 알림 폭증을
 거부한다. 검증에서 거부한 원 결과도 JSON에 남긴다. 초기 실패·보완·최종 결과와 remaining gates는
 `../evidence/t010-resource-scheduler/REPORT.ko.txt`를 참조한다.
+
+## Lease-progress 후속
+
+`t010-lease-progress/upstream-rhwp-lease-progress.patch`는 pinned 기준의 독립 완전 패치다.
+선택적 `incremental-lease-progress.patch`는 직전 resource-scheduler 소스에만 적용한다.
+새 scheduler10개를 더한 총58개 검사는 active255 resident + shared pending 경계에서 마지막 활성 lease만
+놓아도 자원이 소멸하지 않은 채 대기 요청이 정상 알림으로 진행하는지 확인한다. decode-only 대기,
+공유 취소, 큰 byte 예약에 부족한 작은 해제의 거짓 알림도 검사한다. initial poll 뒤 강제 주기 poll은 없다.
+
+`prepare.py`의 `--patch`를 새 완전 패치로 지정하고 기존 browser/unit 명령을 사용한다. native all-target
+검증에 필요한 pinned suite 입력은 `prepare_native.py --work "$WORK" --output <result.json>`으로
+격리 export에 재구성한다. manifest와28 harness 해시가 보존된 증거와 일치해야 하며 다른 생성 입력은
+덮어쓰지 않는다. native library4063 PASS/13 ignored와 내부11+외부 ownership13+외부 scheduler5 결과는
+서로 구별한다. 정확한 실행 명령·후보 WASM SHA·통과/실패와 남은 관문은
+`../evidence/t010-lease-progress/REPORT.ko.txt`에 기록한다.

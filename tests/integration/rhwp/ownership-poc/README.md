@@ -72,3 +72,18 @@ scheduler 48개 실행이 포함된다. 문서 세션을 통한 포화 후 이�
 기준 public JS는 Vite 소스 import 대상으로 만들지 않고 기존 WebDriver의 runtime import로 전달한다.
 `node --test tests/integration/rhwp/ownership-poc/test-session.mjs`는 모듈 loader만 fake engine으로 바꾼
 10개 결정적 identity 계약 검사다. native 또는 실제 decoder 실행 증거와 구별한다.
+
+## Lease-progress 후보의 추가 검증
+
+새 evidence는 `t010-lease-progress`에 기록한다. 기존 PoC flag에
+`GEUL_T010_EVIDENCE=<lease-progress evidence directory>`를 더해 해당 후보의 engine/browser gate와
+WASM identity를 확인한다. 기존 전체 `native.py --scheduler --extended --matrix`와 별도
+`--scheduler --scheduler-only`를 각각 실행하며, focused 결과로 기존44 검사를 대신하지 않는다.
+
+후보 history/save 실패 경계는 `candidate-safety.py`로 실제 앱에서 검사한다.
+`VITE_GEUL_TEST_RHWP_HISTORY=1 GEUL_T010_HISTORY_SAFETY_ONLY=1`의 명시적 시험 서버가 필요하다.
+D4는 동일 native 입력·revision 관찰 RAF·추가2RAF 계약의 `history-perf.py --engine pinned|candidate`를
+각각 실행한다. pinned arm만 `pinned-perf.vite.config.mjs`와 `GEUL_T010_PINNED_PERF_ONLY=1`을 사용한다.
+두 arm의 렌더 경로와 WASM build provenance 차이가 있으므로 scheduler 수정만의 인과 효과라고 부르지 않는다.
+D3/D5의 실제 검증 범위와 공식 D4 FAIL은 새 한국어 보고서에 구분한다. 모든 injection은 시험 config에만
+있으며 production Undo/Redo와 formatting 지원·저장/preview 정책은 변경하지 않는다.

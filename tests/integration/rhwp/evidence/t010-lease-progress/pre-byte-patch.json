@@ -1,0 +1,15 @@
+{
+  "baseline": "1a76570e833917d15817415a53c09ad61ab3203f",
+  "patch": "upstream-rhwp-lease-progress.patch",
+  "sha256": "8edc004ff0906205644eece5df696064eb56c3703173d0f9899e79fd51b9c939",
+  "application": "Apply this COMPLETE patch alone to pinned baseline; do not combine with v2 or notify patches.",
+  "applyCheckExit": 0,
+  "applyCheckOutput": "",
+  "sourceSha256": {
+    "src/renderer/mod.rs": "417872f6330bda18ba30fdb2b644e4f1bb46f3a365cda11d794d0861ac32fc8f",
+    "src/renderer/surface_cache.rs": "ef2a93b56ea85b2f619b013a97239e22eff92b93fcbaebc941e0de476dba4a0f",
+    "src/renderer/render_job.rs": "4ff14fd7c2fc939fa24cfd441354040ca8f58ae141e5160922967f0bf6cb3a71",
+    "src/renderer/web_canvas.rs": "c353c72224d0b70f0db5b42443d18e175028b9cd6e2e5ce347b3fa30a6d85ec6",
+    "src/wasm_api.rs": "ae555376191bc965b5c4c192c990008c6aef8d0459455678c9953f86dc83fcfc"
+  }
+}

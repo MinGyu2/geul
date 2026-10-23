@@ -1,0 +1,9 @@
+{
+  "status": "FAIL",
+  "parentExit": 1,
+  "existing44Passed": 44,
+  "cause": "Vite HTTP431 for test-only held image URL; SVG unique padding12000 made encoded request exceed Node request-header budget. Browser SimpleHTTPRequestHandler accepted the longer URL, hence only native transport exposed it.",
+  "observation": "pending decoded error during pre-cancel50ms barrier; released resource255/pending0 instead of256/pending1",
+  "fix": "Use distinct SVG padding900/901 for pending and new resources; resident255 still uses10000..10254. Count/ownership/pixel assertions unchanged; no server budget raised.",
+  "nativeEvidence": "attempt-1-native-full.json"
+}

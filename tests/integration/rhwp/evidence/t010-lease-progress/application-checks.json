@@ -1,0 +1,76 @@
+{
+  "status": "PASS",
+  "checks": [
+    {
+      "name": "typecheck",
+      "command": "npm run typecheck",
+      "cwd": "<workspace>",
+      "status": "PASS",
+      "exit": 0,
+      "pass": null,
+      "skipped": 0,
+      "outputTail": "\n> geul@0.1.0 typecheck\n> tsc --noEmit\n"
+    },
+    {
+      "name": "lint",
+      "command": "npm run lint",
+      "cwd": "<workspace>",
+      "status": "PASS",
+      "exit": 0,
+      "pass": null,
+      "skipped": 0,
+      "outputTail": "\n> geul@0.1.0 lint\n> eslint .\n"
+    },
+    {
+      "name": "vitest",
+      "command": "npm test",
+      "cwd": "<workspace>",
+      "status": "PASS",
+      "exit": 0,
+      "pass": 779,
+      "skipped": 0,
+      "outputTail": "      Tests  779 passed (779)\n   Start at  20:40:09\n   Duration  21.24s (tests 43%, environment 42%, setup 6%, transform 5%, import 3%)\n\nEnvironment  jsdom was created 40 times \u00b7 54.76s total, 42% of tracked time\n             create it once per worker with pool: 'vmThreads' (keeps per-file isolation) or isolate: false (shares it across files)\n             learn more: https://vitest.dev/guide/improving-performance#test-environments\n"
+    },
+    {
+      "name": "python-e2e",
+      "command": "python3 -m unittest discover -s tests/e2e -p 'test_*.py'",
+      "cwd": "<workspace>",
+      "status": "PASS",
+      "exit": 0,
+      "pass": 66,
+      "skipped": 0,
+      "outputTail": "..................................................................\n----------------------------------------------------------------------\nRan 66 tests in 0.161s\n\nOK"
+    },
+    {
+      "name": "adapter",
+      "command": "node tests/integration/rhwp/ownership-poc/test-session.mjs",
+      "cwd": "<workspace>",
+      "status": "PASS",
+      "exit": 0,
+      "pass": 10,
+      "skipped": 0,
+      "outputTail": "\u2139 tests 10\n\u2139 suites 0\n\u2139 pass 10\n\u2139 fail 0\n\u2139 cancelled 0\n\u2139 skipped 0\n\u2139 todo 0\n\u2139 duration_ms 51.120722"
+    },
+    {
+      "name": "runner",
+      "command": "python3 -m unittest discover -s tests/integration/rhwp/cache-concurrency -p test_runner.py",
+      "cwd": "<workspace>",
+      "status": "PASS",
+      "exit": 0,
+      "pass": 25,
+      "skipped": 0,
+      "outputTail": ".........................\n----------------------------------------------------------------------\nRan 25 tests in 3.079s\n\nOK"
+    },
+    {
+      "name": "pinned-realwasm",
+      "command": "npx vitest run --config tests/integration/rhwp/vitest.config.ts undo multisection",
+      "cwd": "<workspace>",
+      "status": "PASS",
+      "exit": 0,
+      "pass": 37,
+      "skipped": 1,
+      "outputTail": " RUN  v5.0.3 <workspace>\n\n\n Test Files  2 passed | 1 skipped (3)\n      Tests  37 passed | 1 skipped (38)\n   Start at  20:45:41\n   Duration  8.27s (tests 71%, environment 19%, transform 5%, setup 3%, import 1%)\n"
+    }
+  ],
+  "scope": "Each command observed exit0; product779 before subsequent test-only changes; typecheck/lint subsequently rerun"
+}

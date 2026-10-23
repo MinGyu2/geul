@@ -1,0 +1,63 @@
+{
+  "status": "PASS",
+  "scope": "permits conditional test-only native evaluation; no production activation",
+  "patchSha256": "8edc004ff0906205644eece5df696064eb56c3703173d0f9899e79fd51b9c939",
+  "wasmSha256": "7936ec76a7691c797f61683b8edf55636132ef3679959ac67765fb38ffbef888",
+  "sourceStableDuringBuild": true,
+  "browsers": [
+    {
+      "browser": "chrome",
+      "ownershipPass": 52,
+      "schedulerPass": 54,
+      "failed": 0,
+      "skipped": 0,
+      "historicalScenarios": 12,
+      "exactHistoricalDraws": 50,
+      "hwpHwpxPixelMismatch": 0
+    },
+    {
+      "browser": "webkit",
+      "ownershipPass": 52,
+      "schedulerPass": 54,
+      "failed": 0,
+      "skipped": 0,
+      "historicalScenarios": 12,
+      "exactHistoricalDraws": 50,
+      "hwpHwpxPixelMismatch": 0
+    }
+  ],
+  "mandatoryRustContracts": {
+    "internal": 11,
+    "externalOwnership": 13,
+    "externalScheduler": 5,
+    "failed": 0,
+    "ignored": 0
+  },
+  "nativeClippy": "PASS",
+  "wasmClippy": "PASS",
+  "releaseBuild": "PASS",
+  "initialNativeLibrary": {
+    "status": "PASS",
+    "passed": 4063,
+    "failed": 0,
+    "ignored": 13
+  },
+  "additionalFinalLibraryReexecution": {
+    "status": "PASS",
+    "pass": 4063,
+    "fail": 0,
+    "ignored": 13
+  },
+  "finalHarnessSha256": {
+    "index.html": "cc18200cbad7bf69fa04d79325d6654d74bbdc027d1f4929863e43e6eec6a1a9",
+    "browser.mjs": "1c910622dd0e2779cbb3250bd10691fd19564587303c04c947434c8ad53e2b6c",
+    "historical.mjs": "a858c95480f21b8aa1274247adfb396efdd90b4f316fa145276c8860b61780b6",
+    "fixtures.mjs": "df417a5f5d1a38ee2eec00738fb6225d83dee86dd93124cc96acb73be831b06a",
+    "historical-expected.json": "4f3594d3d413f0e2c1fc0e86ba1015e7414e3f9c7df294c5ee27005190c7cc48",
+    "ownership.mjs": "fa3472b82a9b2ab0f78532bb382130f79b2e2112df436a162c3d5f93913b24fa",
+    "job-historical.mjs": "c28b195c0bfff7027388cb30104f744f9d40afc44927ff4ddb56aa3e59327070",
+    "scheduler.mjs": "6b88a8ab067fc6fbd14158bc39573324194880088ea92ad4998132589f33d825",
+    "multisection.hwpx": "48a17e96bfbcd060bb693e655fd3a38c6102da4a5262c255b24d27ef51ecea88",
+    "run.py": "7f3166dae9524e13eb6a83ffea1a5b344184cdb8c16d8b23775094d9f0da9ae4"
+  }
+}

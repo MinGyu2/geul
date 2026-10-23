@@ -1,0 +1,87 @@
+{
+  "checks": [
+    {
+      "name": "candidate-realwasm",
+      "command": [
+        "npx",
+        "vitest",
+        "run",
+        "--config",
+        "tests/integration/rhwp/vitest.config.ts",
+        "undo",
+        "multisection"
+      ],
+      "cwd": "<workspace>",
+      "environment": {
+        "GEUL_RHWP_TEST_PACKAGE": "<isolated>/lease-package"
+      },
+      "exit": 1,
+      "status": "FAIL",
+      "elapsedSeconds": 4.1,
+      "outputTail": "\n FAIL  tests/integration/rhwp/multisection.wasm.test.ts [ tests/integration/rhwp/multisection.wasm.test.ts ]\nError: Cannot find module 'file://<isolated>/lease-package/rhwp.js' imported from <workspace>/tests/integration/rhwp/multisection.wasm.test.ts\n \u276f tests/integration/rhwp/multisection.wasm.test.ts:20:15\n     18| let engine: { HwpDocument: new (bytes: Uint8Array) => Doc };\n     19| beforeAll(async () => {\n     20|   const mod = await import(/* @vite-ignore */ pathToFileURL(join(testP\u2026\n       |               ^\n     21|   mod.initSync({ module: readFileSync(join(testPackage(ROOT), \"rhwp_bg\u2026\n     22|   engine = mod;\n\n\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af[1/2]\u23af\n\n FAIL  tests/integration/rhwp/undo.wasm.test.ts [ tests/integration/rhwp/undo.wasm.test.ts ]\nError: Cannot find module 'file://<isolated>/lease-package/rhwp.js' imported from <workspace>/tests/integration/rhwp/undo.wasm.test.ts\n \u276f tests/integration/rhwp/undo.wasm.test.ts:28:15\n     26|   execFileSync(\"node\", [join(ROOT, \"tests/fixtures/rhwp/generate.mjs\")\u2026\n     27|   for (const fmt of [\"hwp\", \"hwpx\"] as const) fixtures[fmt] = new Uint\u2026\n     28|   const mod = await import(/* @vite-ignore */ pathToFileURL(join(testP\u2026\n       |               ^\n     29|   mod.initSync({ module: readFileSync(join(testPackage(ROOT), \"rhwp_bg\u2026\n     30|   engine = mod;\n\n\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af[2/2]\u23af\n"
+    },
+    {
+      "name": "candidate-service-save",
+      "command": [
+        "python3",
+        "tests/integration/rhwp/undo_save.py",
+        "--candidate",
+        "<isolated>/lease-package",
+        "--evidence",
+        "<workspace>/tests/integration/rhwp/evidence/t010-lease-progress/candidate-d3-service-save.json"
+      ],
+      "cwd": "<workspace>",
+      "environment": {},
+      "exit": 1,
+      "status": "FAIL",
+      "elapsedSeconds": 3.98,
+      "outputTail": "   \u276f D3 \uc785\ub825: \uc2e4\ud589 \ucde8\uc18c\u00b7\ub2e4\uc2dc \uc2e4\ud589\ud55c \uc2e4\uc81c \uc138\uc158 \ubaa8\ub378\uc758 \ub0b4\ubcf4\ub0b4\uae30 (1)\n     \u00d7 HWP\u00b7HWPX(\uc0dd\uc131 \ud53d\uc2a4\ucc98\u00b7\uc5ec\ub7ec \uad6c\uc5ed \uacf5\uac1c \uc608\uc81c) 1333ms\n\n Test Files  1 failed (1)\n      Tests  1 failed (1)\n   Start at  20:52:35\n   Duration  2.93s (tests 49%, environment 32%, transform 12%, setup 5%, import 1%)\n\n\n\n\u23af\u23af\u23af\u23af\u23af\u23af\u23af Failed Tests 1 \u23af\u23af\u23af\u23af\u23af\u23af\u23af\n\n FAIL  tests/integration/rhwp/undo-save.wasm.test.ts > D3 \uc785\ub825: \uc2e4\ud589 \ucde8\uc18c\u00b7\ub2e4\uc2dc \uc2e4\ud589\ud55c \uc2e4\uc81c \uc138\uc158 \ubaa8\ub378\uc758 \ub0b4\ubcf4\ub0b4\uae30 > HWP\u00b7HWPX(\uc0dd\uc131 \ud53d\uc2a4\ucc98\u00b7\uc5ec\ub7ec \uad6c\uc5ed \uacf5\uac1c \uc608\uc81c)\nError: Cannot find module 'file://<isolated>/lease-package/rhwp.js' imported from <workspace>/tests/integration/rhwp/undo-save.wasm.test.ts\n \u276f tests/integration/rhwp/undo-save.wasm.test.ts:24:17\n     22|     mkdirSync(join(out, \"fixtures\"), { recursive: true });\n     23|     execFileSync(\"node\", [join(ROOT, \"tests/fixtures/rhwp/generate.mjs\u2026\n     24|     const mod = await import(/* @vite-ignore */ pathToFileURL(join(tes\u2026\n       |                 ^\n     25|     mod.initSync({ module: readFileSync(join(testPackage(ROOT), \"rhwp_\u2026\n     26|     const cases: unknown[] = [];\n\n\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af[1/1]\u23af\n\n"
+    },
+    {
+      "name": "declarations",
+      "command": [
+        "npx",
+        "tsc",
+        "--noEmit",
+        "--strict",
+        "--lib",
+        "es2022,dom",
+        "<isolated>/lease-package/rhwp.d.ts"
+      ],
+      "cwd": "<workspace>",
+      "environment": {},
+      "exit": 1,
+      "status": "FAIL",
+      "elapsedSeconds": 0.46,
+      "outputTail": "error TS5112: tsconfig.json is present but will not be loaded if files are specified on commandline. Use '--ignoreConfig' to skip this error."
+    },
+    {
+      "name": "typecheck-final",
+      "command": [
+        "npm",
+        "run",
+        "typecheck"
+      ],
+      "cwd": "<workspace>",
+      "environment": {},
+      "exit": 0,
+      "status": "PASS",
+      "elapsedSeconds": 5.07,
+      "outputTail": "\n> geul@0.1.0 typecheck\n> tsc --noEmit\n"
+    },
+    {
+      "name": "lint-final",
+      "command": [
+        "npm",
+        "run",
+        "lint"
+      ],
+      "cwd": "<workspace>",
+      "environment": {},
+      "exit": 0,
+      "status": "PASS",
+      "elapsedSeconds": 7.32,
+      "outputTail": "\n> geul@0.1.0 lint\n> eslint .\n"
+    }
+  ]
+}

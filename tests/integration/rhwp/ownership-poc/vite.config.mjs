@@ -8,10 +8,10 @@ import base from '../../../../vite.config.ts';
 
 const root = fileURLToPath(new URL('../../../../', import.meta.url));
 if (process.env.GEUL_T010_OWNERSHIP_POC !== '1' || process.env.VITE_GEUL_TEST_HOOKS !== '1') throw new Error('explicit ownership PoC flags required');
-if (process.env.VITE_GEUL_TEST_RHWP_HISTORY === '1' && process.env.GEUL_T010_HISTORY_PERF_ONLY !== '1') throw new Error('history requires the separate explicit native performance experiment flag');
+if (process.env.VITE_GEUL_TEST_RHWP_HISTORY === '1' && process.env.GEUL_T010_HISTORY_PERF_ONLY !== '1' && process.env.GEUL_T010_HISTORY_SAFETY_ONLY !== '1') throw new Error('history requires a separate explicit native performance or safety experiment flag');
 const candidate = resolve(process.env.GEUL_T010_CANDIDATE || 'missing-candidate');
 const schedulerMode = process.env.GEUL_T010_SCHEDULER_POC === '1';
-const evidence = resolve(root, 'tests/integration/rhwp/evidence/' + (schedulerMode ? 't010-resource-scheduler' : 't010-render-ownership'));
+const evidence = resolve(process.env.GEUL_T010_EVIDENCE || resolve(root, 'tests/integration/rhwp/evidence/' + (schedulerMode ? 't010-resource-scheduler' : 't010-render-ownership')));
 const json = path => JSON.parse(readFileSync(path, 'utf8'));
 const identity = json(resolve(candidate, 'ENGINE.json'));
 const gates = json(resolve(evidence, 'engine-safety-gates.json'));

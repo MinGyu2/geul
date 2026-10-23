@@ -1,10 +1,10 @@
+import { loadTestEngine, testPackage } from "./test-package";
 // T010 Phase 2 성능 측정(선택 실행, GEUL_PERF=1): 제품 RhwpEditorSession(기록 포함)을 실제 WASM으로 열어 큰 공개 예제(external/rhwp/
 // samples — 업스트림 공개 시험 문서)에서 실행 취소·다시 실행·그룹 시작 타자의 시간과 메모리를 잰다. node + jsdom(그리기 없음)
 // 이므로 WebView 끝단 지연이 아니다(세션 메서드 시간 = 엔진 복원·스냅숏 + 쪽 정보 다시 읽기).
 //   GEUL_PERF=1 [GEUL_PERF_OUT=결과.json] npx vitest run --config tests/integration/rhwp/vitest.config.ts history-perf
 import { readFileSync, statSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
-import { pathToFileURL } from "node:url";
 import { describe, expect, it } from "vitest";
 import { DocumentSessions } from "../../../src/adapters/sessions";
 import { RhwpEditorSession } from "../../../src/components/Editor/rhwp/RhwpEditorSession";
@@ -26,8 +26,8 @@ const stats = (xs: number[]) => {
 
 describe.runIf(process.env.GEUL_PERF)("실행 취소 성능(큰 공개 예제, 실제 WASM 세션)", () => {
   it("큰 HWP·HWPX·아주 큰 HWP", async () => {
-    const mod = await import(/* @vite-ignore */ pathToFileURL(join(ROOT, "public/rhwp/rhwp.js")).href);
-    const wasm = mod.initSync({ module: readFileSync(join(ROOT, "public/rhwp/rhwp_bg.wasm")) }) as { memory: WebAssembly.Memory };
+    const mod = loadTestEngine(ROOT);
+    const wasm = mod.initSync({ module: readFileSync(join(testPackage(ROOT), "rhwp_bg.wasm")) }) as { memory: WebAssembly.Memory };
     const rows: unknown[] = [];
     for (const path of SAMPLES) {
       const fmt = path.endsWith(".hwpx") ? "hwpx" : "hwp";

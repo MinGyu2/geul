@@ -137,7 +137,10 @@ if __name__ == '__main__':
 class SchedulerValidation(unittest.TestCase):
     def value(self):
         v = valid_result()
-        names = ['count-saturation-admits', 'bytes-saturation-admits', 'active-saturation-waits-without-publication', 'active-owner-release-progress', 'intrinsic-active-byte-limit-explicit', 'resident-eviction-during-shared-draw', 'shared-resident-close-one-preserves-pixels'] + [
+        names = ['count-saturation-admits', 'bytes-saturation-admits',
+            'cache-only-transition-established', 'cache-only-release-without-destruction',
+            'cache-only-notification-progress', 'cache-only-repeated-terminal-cancel-bounded', 'cache-only-final-cleanup', 'cache-only-no-decode-wait-capacity-notification',
+            'shared-byte-demand-established', 'shared-byte-cancel-no-false-capacity', 'shared-byte-cleanup', 'shared-byte-partial-release-no-false-capacity', 'active-saturation-waits-without-publication', 'active-owner-release-progress', 'intrinsic-active-byte-limit-explicit', 'resident-eviction-during-shared-draw', 'shared-resident-close-one-preserves-pixels'] + [
             'notification-progress-' + k for k in ('cancel-one', 'cancel-both', 'dispose', 'replace',
             'mutate', 'shared-owner', 'complete', 'error', 'budget', 'trim', 'competition', 'deadline')]
         job = {'uniqueResourceCount': 0, 'activeLeaseCount': 0, 'capacityNotifications': 0,

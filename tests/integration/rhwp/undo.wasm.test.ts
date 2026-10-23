@@ -1,3 +1,4 @@
+import { loadTestEngine, testPackage } from "./test-package";
 // T010 Phase 2 실제 rhwp WASM 통합 시험: 제품 RhwpEditorSession(기록 rhwpHistory.ts 포함)을 고정 WASM 문서로 열고 세션 메서드로
 // 편집·실행 취소·다시 실행한다. 백엔드는 시험 응답(controlledBackend), 입력은 세션 메서드 호출(입력기 아님 — 네이티브 ibus-hangul은
 // tests/integration/rhwp/rhwp_poc.py). 픽스처는 generate.mjs가 임시 디렉터리에 만든다.
@@ -6,7 +7,6 @@ import { execFileSync } from "node:child_process";
 import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
-import { pathToFileURL } from "node:url";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { DocumentSessions } from "../../../src/adapters/sessions";
 import { RhwpEditorSession } from "../../../src/components/Editor/rhwp/RhwpEditorSession";
@@ -24,8 +24,8 @@ beforeAll(async () => {
   scratch = mkdtempSync(join(process.env.TMPDIR ?? tmpdir(), "geul-t010-undo-"));
   execFileSync("node", [join(ROOT, "tests/fixtures/rhwp/generate.mjs"), scratch]);
   for (const fmt of ["hwp", "hwpx"] as const) fixtures[fmt] = new Uint8Array(readFileSync(join(scratch, `basic-ko.${fmt}`)));
-  const mod = await import(/* @vite-ignore */ pathToFileURL(join(ROOT, "public/rhwp/rhwp.js")).href);
-  mod.initSync({ module: readFileSync(join(ROOT, "public/rhwp/rhwp_bg.wasm")) });
+  const mod = loadTestEngine(ROOT);
+  mod.initSync({ module: readFileSync(join(testPackage(ROOT), "rhwp_bg.wasm")) });
   engine = mod;
 });
 afterAll(() => rmSync(scratch, { recursive: true, force: true }));
@@ -202,6 +202,57 @@ describe.each(["hwp", "hwpx"] as const)("실제 WASM 세션 실행 취소(%s)", 
     expect((await s.editor.save()).ok).toBe(false);expect(s.state().text).toBe(text);
     s.editor.dispose();
   });
+
+  it.each(["allocate-before", "allocate-after", "restore-undo", "restore-redo", "close-cleanup"] as const)(
+    "실제 후보 WASM %s 실패 경계: 거짓 성공·revision rollback·disposed mutation 없음", async boundary => {
+      const s = await open(fmt);
+      const ids: number[] = [], discarded: number[] = [];
+      let frees = 0;
+      const free = s.doc().free.bind(s.doc());
+      s.doc().free = () => { frees++; free(); };
+      const save = s.doc().saveSnapshot.bind(s.doc());
+      const discard = s.doc().discardSnapshot.bind(s.doc());
+      s.doc().discardSnapshot = id => { discarded.push(id); discard(id); };
+      const initial = s.editor.localRevision;
+      if (boundary.startsWith("allocate")) {
+        s.doc().saveSnapshot = () => {
+          if (boundary === "allocate-after") ids.push(save());
+          throw new Error("injected snapshot allocation failure");
+        };
+        expect(s.editor.typeText("x")).toBe(false);
+        expect(s.editor.localRevision).toBe(initial);
+      } else {
+        s.editor.typeText("x"); s.editor.endHistoryGroup();
+        if (boundary === "restore-redo") expect(s.editor.undo()).toBe(true);
+        const revision = s.editor.localRevision;
+        if (boundary === "close-cleanup") {
+          s.doc().discardSnapshot = id => { discarded.push(id); discard(id); throw new Error("injected close cleanup failure"); };
+          s.editor.dispose();
+          expect(s.editor.status.kind).toBe("closed");
+          expect(discarded).toEqual([]); // close frees the owning WASM document directly
+        } else {
+          const restore = s.doc().restoreSnapshot.bind(s.doc());
+          s.doc().restoreSnapshot = id => { restore(id); throw new Error("injected after actual restore"); };
+          expect(boundary === "restore-redo" ? s.editor.redo() : s.editor.undo()).toBe(false);
+          expect(s.editor.hasUncertainChanges).toBe(true);
+          expect(s.editor.status.kind).toBe("failed");
+        }
+        expect(s.editor.localRevision).toBe(revision);
+      }
+      if (boundary !== "close-cleanup") {
+        expect(s.editor.hasUncertainChanges).toBe(true);
+        expect(s.editor.status).toMatchObject({ kind: "failed", error: { code: "EngineFailure", engine: "rhwp", stage: "edit" } });
+      }
+      expect(s.editor.snapshot().history).toBeNull();
+      expect(s.editor.undo()).toBe(false); expect(s.editor.redo()).toBe(false);
+      expect((await s.editor.save()).ok).toBe(false);
+      s.editor.dispose(); s.editor.dispose();
+      expect(s.editor.typeText("disposed")).toBe(false);
+      expect(new Set(discarded).size).toBe(discarded.length);
+      expect(frees).toBe(1);
+      // Unknown allocation IDs are owned by document disposal, never reused by history.
+      expect(ids.length).toBe(boundary === "allocate-after" ? 1 : 0);
+    });
 
   it("본문 Undo 뒤 셀로 이동한 새 편집: 같은 snapshot 재사용도 셀 caret/선택 checkpoint 갱신", async () => {
     const s=await open(fmt);

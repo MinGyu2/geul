@@ -1,0 +1,52 @@
+{
+  "status": "PASS",
+  "checks": [
+    {
+      "name": "normal-build",
+      "command": [
+        "npm",
+        "run",
+        "build"
+      ],
+      "exit": 0,
+      "status": "PASS",
+      "elapsedSeconds": 6.03,
+      "outputTail": "vite v8.3.2 building client environment for production...\ntransforming...\n\u2713 69 modules transformed.\nrendering chunks...\ncomputing gzip size...\ndist/index.html                   0.38 kB \u2502 gzip:   0.26 kB\ndist/assets/index-DY8YVpIi.css   12.07 kB \u2502 gzip:   3.14 kB\ndist/assets/index-CuKnqcEd.js   409.16 kB \u2502 gzip: 123.49 kB\n\n\u2713 built in 312ms"
+    },
+    {
+      "name": "unflagged-vite.config.mjs-rejected",
+      "command": [
+        "node",
+        "node_modules/vite/bin/vite.js",
+        "--config",
+        "tests/integration/rhwp/ownership-poc/vite.config.mjs"
+      ],
+      "exit": 1,
+      "status": "PASS",
+      "expectedNonzero": true
+    },
+    {
+      "name": "unflagged-pinned-perf.vite.config.mjs-rejected",
+      "command": [
+        "node",
+        "node_modules/vite/bin/vite.js",
+        "--config",
+        "tests/integration/rhwp/ownership-poc/pinned-perf.vite.config.mjs"
+      ],
+      "exit": 1,
+      "status": "PASS",
+      "expectedNonzero": true
+    },
+    {
+      "name": "normal-build-copies-pinned-WASM",
+      "status": "PASS",
+      "sha256": "a91fa6a4336d34441c0d8f52afd0971aebe34019f7caf9eddad100f7a568f94d"
+    },
+    {
+      "name": "normal-bundle-no-candidate-hooks",
+      "status": "PASS",
+      "hits": {}
+    }
+  ],
+  "testEnvironmentFlagsRemoved": true
+}

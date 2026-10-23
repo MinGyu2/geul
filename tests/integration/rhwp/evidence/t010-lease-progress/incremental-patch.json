@@ -1,0 +1,6 @@
+{
+  "status": "PASS",
+  "sha256": "424a8cc69cc44c91db5f8ad1f4c4f0717113b535411b2fd136b2a6cfdad7c2d2",
+  "againstPreviousCandidatePatchSha256": "2c5e1ad101b1c16856ed20d1facfd295db9f0d8e2824223d3ec68c201ddf4098",
+  "applyCheckExit": 0
+}

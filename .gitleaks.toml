@@ -37,3 +37,18 @@ condition = "AND"
 paths = ['''^tests/integration/rhwp/evidence/t010-resource-scheduler/(before-chrome|attempt-1-(chrome|webkit|engine|patch|final-wasm-checks)|diagnostic-harness-(chrome|webkit)|pre-shared-(chrome|webkit)|chrome|webkit|engine|patch|final-wasm-checks)\.json$''']
 regexTarget = "secret"
 regexes = ['''^ab73fb12f34b08cd621362c6f6d0f44340b0007bf89baeaba3b97bcd92c5afcf$''']
+# Lease-progress evidence contains independently reconstructed public source digests.
+# Limit both the exact JSON filenames and the exact public SHA-256 values.
+[[allowlists]]
+description = "T010 lease progress verified public wasm_api.rs source checksums"
+condition = "AND"
+paths = ['''^tests/integration/rhwp/evidence/t010-lease-progress/(attempt-1-candidate-d3-service-save|attempt-1-chrome|attempt-1-engine|attempt-1-final-wasm-checks|attempt-1-notification-chrome|attempt-1-patch|attempt-1-webkit|before-chrome|before-webkit|byte-before-chrome|byte-before-webkit|byte-single-owner-before-chrome|candidate-d3-service-save|chrome|diagnostic-baseline-resident-assertion|diagnostic-byte-fixture-type|diagnostic-fmt-generated-inputs|diagnostic-fmt-generated-order|diagnostic-harness-count|engine|final-wasm-checks|fresh-apply|patch|pre-byte-before-chrome|pre-byte-before-webkit|pre-byte-candidate-d3-service-save|pre-byte-chrome|pre-byte-engine|pre-byte-final-wasm-checks|pre-byte-fresh-apply|pre-byte-patch|pre-byte-webkit|pre-native-fixture-before-chrome|pre-native-fixture-before-webkit|pre-native-fixture-chrome|pre-native-fixture-webkit|security-false-positive-review|webkit)\.json$''']
+regexTarget = "secret"
+regexes = ['''^40f8a2faf5e279127b391fc9d4222ce48770cbd30bcea77cd51511d8082e8d7f$''','''^ab73fb12f34b08cd621362c6f6d0f44340b0007bf89baeaba3b97bcd92c5afcf$''','''^ae555376191bc965b5c4c192c990008c6aef8d0459455678c9953f86dc83fcfc$''']
+
+[[allowlists]]
+description = "T010 initial integrity hashes of two pre-existing public API evidence files"
+condition = "AND"
+paths = ['''^tests/integration/rhwp/evidence/t010-lease-progress/initial-integrity\.json$''']
+regexTarget = "secret"
+regexes = ['''^6c35cd4ff761272ec034bf09d1fde054ee79ad483aa785c984e243d465e094b4$''','''^a49f8417b3beace7a3d415c64e5536b5e7c336642469b6e524f322caf1571646$''']

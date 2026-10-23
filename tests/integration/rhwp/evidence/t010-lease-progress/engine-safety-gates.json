@@ -1,0 +1,59 @@
+{
+  "status": "PASS",
+  "scope": "permits conditional test-only native evaluation; no production activation",
+  "patchSha256": "4c90f6f9a95c44b30590329976afc078a2926b510cbdc370d49ce5169aaac384",
+  "wasmSha256": "3491826c7a59e910655b046b0c192f130283cb89bb525616b5aa0def4059afbf",
+  "sourceStableDuringBuild": true,
+  "browsers": [
+    {
+      "browser": "chrome",
+      "ownershipPass": 52,
+      "schedulerPass": 58,
+      "existingScheduler": 48,
+      "newScheduler": 10,
+      "failed": 0,
+      "skipped": 0,
+      "historicalScenarios": 12,
+      "exactHistoricalDraws": 50
+    },
+    {
+      "browser": "webkit",
+      "ownershipPass": 52,
+      "schedulerPass": 58,
+      "existingScheduler": 48,
+      "newScheduler": 10,
+      "failed": 0,
+      "skipped": 0,
+      "historicalScenarios": 12,
+      "exactHistoricalDraws": 50
+    }
+  ],
+  "mandatoryRustContracts": {
+    "internal": 11,
+    "externalOwnership": 13,
+    "externalScheduler": 5,
+    "failed": 0,
+    "ignored": 0
+  },
+  "nativeClippy": "PASS",
+  "wasmClippy": "PASS",
+  "releaseBuild": "PASS",
+  "finalLibrary": {
+    "status": "PASS",
+    "pass": 4063,
+    "fail": 0,
+    "ignored": 13
+  },
+  "finalHarnessSha256": {
+    "index.html": "cc18200cbad7bf69fa04d79325d6654d74bbdc027d1f4929863e43e6eec6a1a9",
+    "browser.mjs": "1c910622dd0e2779cbb3250bd10691fd19564587303c04c947434c8ad53e2b6c",
+    "historical.mjs": "a858c95480f21b8aa1274247adfb396efdd90b4f316fa145276c8860b61780b6",
+    "fixtures.mjs": "df417a5f5d1a38ee2eec00738fb6225d83dee86dd93124cc96acb73be831b06a",
+    "historical-expected.json": "4f3594d3d413f0e2c1fc0e86ba1015e7414e3f9c7df294c5ee27005190c7cc48",
+    "ownership.mjs": "fa3472b82a9b2ab0f78532bb382130f79b2e2112df436a162c3d5f93913b24fa",
+    "job-historical.mjs": "c28b195c0bfff7027388cb30104f744f9d40afc44927ff4ddb56aa3e59327070",
+    "scheduler.mjs": "a459407759428d7f4fbadcd5e9ae052fc77c8f1a65a33f1d2d1d1d7dd41202da",
+    "multisection.hwpx": "48a17e96bfbcd060bb693e655fd3a38c6102da4a5262c255b24d27ef51ecea88",
+    "run.py": "6fd0c35bc708fba893f936ac94d329f6c8052490ea8818cac9c70fb74004d640"
+  }
+}

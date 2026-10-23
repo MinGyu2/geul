@@ -1,0 +1,14 @@
+{
+  "status": "NOT EXECUTED",
+  "attempts": [
+    {
+      "error": "Initial guessed temporary pinned package path absent; replaced with verified public/rhwp package",
+      "effect": "No browser execution"
+    },
+    {
+      "error": "Old sandbox denied loopback socket bind (EPERM); approval call interrupted by user",
+      "effect": "No test started; continuation used user-updated unrestricted permissions"
+    }
+  ],
+  "verification": "No previous browser process remained on continuation; checkpoint reconciled before restart"
+}

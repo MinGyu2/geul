@@ -54,6 +54,7 @@ const bytes=new Uint8Array(arguments[0]),page=arguments[1];window.__ownershipPix
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument('--evidence-dir', type=Path, help='Explicit follow-up safety evidence; historical files remain unchanged')
     parser.add_argument('--scheduler', action='store_true')
     parser.add_argument('--scheduler-only', action='store_true', help='run focused checks; does not claim the existing44 matrix was re-executed')
     parser.add_argument('--extended', action='store_true')
@@ -63,7 +64,7 @@ def main():
     args = parser.parse_args()
     if args.scheduler_only and not args.scheduler:
         parser.error('--scheduler-only requires --scheduler')
-    evidence = ROOT / ('tests/integration/rhwp/evidence/t010-resource-scheduler' if args.scheduler else 'tests/integration/rhwp/evidence/t010-render-ownership')
+    evidence = args.evidence_dir or ROOT / ('tests/integration/rhwp/evidence/t010-resource-scheduler' if args.scheduler else 'tests/integration/rhwp/evidence/t010-render-ownership')
     gate = json.loads((evidence / 'engine-safety-gates.json').read_text())
     if gate['status'] != 'PASS':
         raise RuntimeError('engine safety prerequisites failed')

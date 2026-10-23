@@ -1,0 +1,19 @@
+{
+  "classification": "INCONCLUSIVE",
+  "newNativeOrderingTest": "NOT EXECUTED",
+  "reason": "No demonstrably different native Korean input environment found; do not repeat historical 0/298 matrix",
+  "platform": "Linux",
+  "tools": {
+    "fcitx5": false,
+    "fcitx": false,
+    "ibus": false,
+    "ibus-daemon": false
+  },
+  "historical": {
+    "nativeAttempts": 298,
+    "targetOrderingObserved": 0,
+    "deterministicReplay": 56,
+    "freshResult": false
+  },
+  "webkitGTK": "2.54.1"
+}

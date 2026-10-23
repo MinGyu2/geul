@@ -1,0 +1,19 @@
+{
+  "status": "PASS",
+  "exit": 0,
+  "command": [
+    "cargo",
+    "test",
+    "--locked",
+    "--manifest-path",
+    "src-tauri/Cargo.toml",
+    "--lib"
+  ],
+  "compiler": "rustc 1.99.0 (b940084d7 2026-09-28)",
+  "counts": {
+    "pass": 174,
+    "fail": 0,
+    "ignored": 4
+  },
+  "outputTail": "test services::save::tests::a6_\uce21\uc815\ud558\uc9c0_\ubabb\ud55c_\ub514\ub809\ud130\ub9ac\ub294_\ud1b5\uacfc\uc758_\uadfc\uac70\uac00_\uc544\ub2c8\uace0_\ud655\uc778\ub41c_\uc704\ubc18\uc740_\uc2e4\ud328\ub2e4 ... ok\ntest services::save::tests::a5_\ud0d0\uce68\uc740_\uc2e4\uc81c_\uc800\uc7a5_\uacbd\ub85c\uc5d0\uc11c_\ud1b5\uacfc\ud558\uace0_\uc8fc\uc785\ud55c_\uc704\ubc18\uc744_\uc2e4\ud328\ub85c_\uc7a1\ub294\ub2e4 ... ok\ntest services::save::tests::h5_\uc784\uc2dc_\ud30c\uc77c_\uc774\ub984\uc740_\uc6b4\uc601\uccb4\uc81c_\ub09c\uc218\ub85c_\uc815\ud558\uace0_\ucda9\ub3cc_\uc18c\uc9c4_\ub09c\uc218_\uc2e4\ud328\ub294_\uc6d0\ubcf8\uc744_\uc9c0\ud0a8\ub2e4 ... ok\n\ntest result: ok. 174 passed; 0 failed; 4 ignored; 0 measured; 0 filtered out; finished in 3.34s\n"
+}

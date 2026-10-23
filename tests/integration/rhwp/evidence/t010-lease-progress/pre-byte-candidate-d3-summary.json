@@ -1,0 +1,50 @@
+{
+  "status": "PASS",
+  "wasmSha256": "7936ec76a7691c797f61683b8edf55636132ef3679959ac67765fb38ffbef888",
+  "actualServiceSaveCases": 19,
+  "published": 9,
+  "refused": 10,
+  "refusalsPreserveOriginalSha": true,
+  "successDirtyFalseDurableRevisionHeld": true,
+  "nativeT009Assertions": 9,
+  "nativeHistorySaveChecks": [
+    {
+      "name": "hwp-undo-service-save",
+      "status": "PASS",
+      "revision": 2,
+      "saved": "saved",
+      "dirty": "false",
+      "originalPreserved": true
+    },
+    {
+      "name": "hwp-redo-service-save",
+      "status": "PASS",
+      "revision": 3,
+      "saved": "failed",
+      "dirty": "true",
+      "originalPreserved": true
+    },
+    {
+      "name": "hwpx-undo-service-save",
+      "status": "PASS",
+      "revision": 2,
+      "saved": "saved",
+      "dirty": "false",
+      "originalPreserved": true
+    },
+    {
+      "name": "hwpx-redo-service-save",
+      "status": "PASS",
+      "revision": 3,
+      "saved": "saved",
+      "dirty": "false",
+      "originalPreserved": false
+    }
+  ],
+  "nativeParentExit": 0,
+  "scope": "Real Rust service::save plus native app save coordination; conservative refusals are expected, not universal save availability",
+  "evidence": [
+    "candidate-d3-service-save.json",
+    "candidate-native-safety.json"
+  ]
+}

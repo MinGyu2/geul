@@ -1,0 +1,125 @@
+{
+  "status": "FAIL",
+  "tests": [
+    {
+      "name": "native-T009-save-matrix",
+      "status": "PASS"
+    },
+    {
+      "name": "hwp-undo-service-save",
+      "status": "PASS",
+      "revision": 2,
+      "saved": "saved",
+      "dirty": "false",
+      "originalPreserved": true
+    },
+    {
+      "name": "hwp-redo-service-save",
+      "status": "PASS",
+      "revision": 3,
+      "saved": "failed",
+      "dirty": "true",
+      "originalPreserved": true
+    }
+  ],
+  "scope": "actual candidate native service::save and controlled history boundary exceptions",
+  "lastObserved": {
+    "throwAfterDiscard": true,
+    "status": {
+      "uncertain": "false",
+      "history": null,
+      "status": "ready",
+      "dirty": "true",
+      "localRevision": "3",
+      "revision": "3"
+    },
+    "snapshotCalls": [],
+    "owners": [],
+    "jobs": {
+      "pendingCount": 0,
+      "cancellations": 0,
+      "peakTemporaryCanvasBytes": 3875040,
+      "listenerNotifications": 0,
+      "peakStagingBytes": 7750080,
+      "inFlightEstimatedBytes": 0,
+      "capacityNotifications": 0,
+      "maxFrameBytes": 67108864,
+      "resourceLimits": 0,
+      "retryCount": 0,
+      "backupImageDataBytes": 0,
+      "activeLeaseEstimatedBytes": 0,
+      "activeJobs": 0,
+      "activeLeaseCount": 0,
+      "maxPending": 2,
+      "transientEstimatedBytes": 0,
+      "loadAttempts": 0,
+      "uniqueResourceCount": 0,
+      "readyLeaseCount": 0,
+      "temporaryCanvasBytes": 0,
+      "maxOwnedBytes": 268435456,
+      "maxStagingBytes": 134217728,
+      "ownedEstimatedBytes": 0,
+      "maxResources": 256,
+      "errors": 0,
+      "peakBackupImageDataBytes": 3875040,
+      "completionNotifications": 0
+    },
+    "identity": {
+      "wasmSha256": "7936ec76a7691c797f61683b8edf55636132ef3679959ac67765fb38ffbef888",
+      "baseline": "1a76570e833917d15817415a53c09ad61ab3203f"
+    }
+  },
+  "error": "조건을 만족하지 않음: const e=document.querySelector('[data-testid=rhwp-status]'); return e && e.dataset.status===arguments[0]",
+  "existingSaveAssertions": [
+    "hwp: 편집 전 글자가 남는 미리보기(PrvText)가 있으면 저장하지 않고(unsafe previewStale) 이유를 보이며 원본·편집 그대로",
+    "hwpx: 편집 뒤 저장 전에는 파일이 그대로이고 저장하지 않은 편집으로 보임",
+    "hwpx: 사전 검사(편집 없는 왕복 safe)를 거쳐 원본 형식으로 저장하고 dirty가 풀림(파일이 바뀌고 컨테이너가 올바름)",
+    "hwpx: 저장한 문서는 버리기 확인 없이 닫힘",
+    "hwpx: 저장한 파일을 앱에서 다시 열면 넣은 글자가 있고 편집 가능",
+    "hwpx: 연 뒤 파일이 바뀌면(외부 수정) FileConflict로 저장하지 않고 바뀐 파일을 덮어쓰지 않음",
+    "hwpx: 본문 XML이 잘림(rhwp는 거의 빈 문서로 엶) → 저장하지 않고(unknown) 이유를 보이며 원본 그대로",
+    "hwpx: rhwp가 모르는 요소가 있음 → 저장하지 않고(unsafe) 이유를 보이며 원본 그대로",
+    "저장 시도 뒤 임시 파일(.geul-save-*.tmp)이 남지 않음"
+  ],
+  "historyGates": [],
+  "historyChecks": [],
+  "parentExit": 1,
+  "processFinished": true,
+  "elapsedSeconds": 74.05,
+  "command": [
+    "dbus-run-session",
+    "--",
+    "python3",
+    "tests/integration/rhwp/ownership-poc/candidate-safety.py",
+    "--app",
+    "<workspace>/src-tauri/target/debug/geul",
+    "--driver",
+    "/tmp/geul-t010-ownership-tools/bin/tauri-driver",
+    "--webkit-driver",
+    "/nix/store/p7h9r90h1vmk4wq1964nhd8vfp0kf27b-webkitgtk-2.54.1+abi=4.1/bin/WebKitWebDriver",
+    "--xvfb",
+    "/nix/store/7yz3bnmll7fy11n0xci85mbhnf6p5669-xvfb-21.1.23/bin/Xvfb",
+    "--output",
+    "<workspace>/tests/integration/rhwp/evidence/t010-lease-progress/candidate-native-safety.json",
+    "--xdotool",
+    "/nix/store/kyp2r08w6hs0l1zj3cya6d2ciba9v47h-xdotool-3.20211022.1/bin/xdotool"
+  ],
+  "activationFlags": {
+    "VITE_GEUL_TEST_HOOKS": "1",
+    "GEUL_T010_OWNERSHIP_POC": "1",
+    "GEUL_T010_SCHEDULER_POC": "1",
+    "GEUL_T010_CANDIDATE": "<isolated>/lease-package",
+    "GEUL_T010_EVIDENCE": "<workspace>/tests/integration/rhwp/evidence/t010-lease-progress",
+    "VITE_GEUL_TEST_RHWP_HISTORY": "1",
+    "GEUL_T010_HISTORY_SAFETY_ONLY": "1"
+  },
+  "devServerCommand": [
+    "node",
+    "node_modules/vite/bin/vite.js",
+    "--host",
+    "127.0.0.1",
+    "--config",
+    "tests/integration/rhwp/ownership-poc/vite.config.mjs"
+  ],
+  "appSha256": "48b7b8364cb4b91ae0b4c3cb3113977c15fd92aa9ca3d60f0406f331749d45c1"
+}

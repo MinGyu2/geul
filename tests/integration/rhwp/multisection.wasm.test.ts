@@ -1,3 +1,4 @@
+import { loadTestEngine, testPackage } from "./test-package";
 // 여러 구역 문서의 쪽 계약(T010 Phase 2 안정화 A): 고정 rhwp는 getPageInfo(page)의 pageIndex를 구역 안 순번으로 주고, 쪽 번호 인자·
 // 그리기·hit test·커서·선택 사각형은 문서 전체 물리 순번을 쓴다. 제품 RhwpEditorSession을 실제 WASM으로 열어 공개 예제(external/rhwp/
 // samples)의 여러 구역 HWP·HWPX가 열리고, 구역 경계 앞뒤 쪽에서 클릭한 쪽·커서 쪽·선택 쪽이 같은 물리 쪽이며, 편집·실행 취소 뒤에도
@@ -5,7 +6,6 @@
 //   npx vitest run --config tests/integration/rhwp/vitest.config.ts multisection
 import { readFileSync } from "node:fs";
 import { join, resolve } from "node:path";
-import { pathToFileURL } from "node:url";
 import { beforeAll, describe, expect, it } from "vitest";
 import { DocumentSessions } from "../../../src/adapters/sessions";
 import { RhwpEditorSession } from "../../../src/components/Editor/rhwp/RhwpEditorSession";
@@ -16,8 +16,8 @@ const ROOT = resolve(__dirname, "../../..");
 type Doc = RhwpDocument & { getTextFileText(): string };
 let engine: { HwpDocument: new (bytes: Uint8Array) => Doc };
 beforeAll(async () => {
-  const mod = await import(/* @vite-ignore */ pathToFileURL(join(ROOT, "public/rhwp/rhwp.js")).href);
-  mod.initSync({ module: readFileSync(join(ROOT, "public/rhwp/rhwp_bg.wasm")) });
+  const mod = loadTestEngine(ROOT);
+  mod.initSync({ module: readFileSync(join(testPackage(ROOT), "rhwp_bg.wasm")) });
   engine = mod;
 });
 
