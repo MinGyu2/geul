@@ -1,0 +1,6 @@
+{
+  "status": "CANCELED",
+  "reason": "source changed after compilation began to correct Clippy public Result unit error; no build PASS claimed",
+  "operation": "WASM release build",
+  "completedChecks": "attempt-1-upstream-checks.json"
+}

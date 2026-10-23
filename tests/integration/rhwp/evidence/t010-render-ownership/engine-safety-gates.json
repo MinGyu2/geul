@@ -1,0 +1,60 @@
+{
+  "status": "PASS",
+  "classification": "VERIFIED",
+  "scope": "isolated engine; permits conditional test-only geul evaluation, not production activation",
+  "wasmSha256": "410c2ed5acdd18f19ffce9fc6435b1c9583a10a814d3538e4449ed8cd9e46ecc",
+  "patchSha256": "0ac1dc90e534b65c781c150a9b9157796c7743c6fb84f61f70f6a0eb49a8ff90",
+  "browserResults": [
+    {
+      "browser": "chrome",
+      "safetyPassed": 52,
+      "failed": 0,
+      "skippedOrIgnored": 0,
+      "historicalScenarios": 12,
+      "historicalDraws": 50,
+      "exactPixelMatches": 50,
+      "formats": [
+        {
+          "format": "hwp",
+          "status": "PASS",
+          "completion": "COMPLETE",
+          "pixelMismatchCount": 0
+        },
+        {
+          "format": "hwpx",
+          "status": "PASS",
+          "completion": "COMPLETE",
+          "pixelMismatchCount": 0
+        }
+      ]
+    },
+    {
+      "browser": "webkit",
+      "safetyPassed": 52,
+      "failed": 0,
+      "skippedOrIgnored": 0,
+      "historicalScenarios": 12,
+      "historicalDraws": 50,
+      "exactPixelMatches": 50,
+      "formats": [
+        {
+          "format": "hwp",
+          "status": "PASS",
+          "completion": "COMPLETE",
+          "pixelMismatchCount": 0
+        },
+        {
+          "format": "hwpx",
+          "status": "PASS",
+          "completion": "COMPLETE",
+          "pixelMismatchCount": 0
+        }
+      ]
+    }
+  ],
+  "nativeLibraryPassed": 4063,
+  "nativeLibraryIgnored": 13,
+  "cacheInternalPassed": 11,
+  "externalOwnershipContractsPassed": 13,
+  "wasmBuildSourceStable": true
+}

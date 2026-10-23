@@ -1,0 +1,5758 @@
+{
+  "schema": 1,
+  "browser": "chrome",
+  "status": "FAIL",
+  "identities": {
+    "pinned": {
+      "rhwp.js": "70cde06a369fa7fd4fc8bc8f3d6acaee158596ba1a116a2c72159002b0b5654e",
+      "rhwp_bg.wasm": "a91fa6a4336d34441c0d8f52afd0971aebe34019f7caf9eddad100f7a568f94d",
+      "BUILD.json": {
+        "engine": "rhwp",
+        "commit": "1a76570e833917d15817415a53c09ad61ab3203f"
+      }
+    },
+    "candidate": {
+      "rhwp.js": "d5817f4cd93e791f0c4d03558ea62e2fb1b5fdf087e1044b40b2e503887b6e0d",
+      "rhwp_bg.wasm": "2632a2e05eaa2ddf5f67a9270293820103b5dfc8df41e54a91b1bffc61d9a706",
+      "ENGINE.json": {
+        "baseline": "1a76570e833917d15817415a53c09ad61ab3203f",
+        "buildStatus": "PASS",
+        "compiler": "rustc 1.93.1 (01f6ddf75 2026-02-11)",
+        "wasmPack": "wasm-pack 0.15.0",
+        "sourceSha256": {
+          "src/renderer/mod.rs": "417872f6330bda18ba30fdb2b644e4f1bb46f3a365cda11d794d0861ac32fc8f",
+          "src/renderer/surface_cache.rs": "f36556f7515b9938ab54692aa75a9afbd9af4e2e5825d071810e38918efd260f",
+          "src/renderer/render_job.rs": "c281e76b51465a81043215668375960aee7cf75b94dcdf5e2d2a32552237e9ca",
+          "src/renderer/web_canvas.rs": "7a7bc4c6729ff76af873a5fece0702f8e639d0aafa98434f297ccbcf518828e1",
+          "src/wasm_api.rs": "de0a59a3c774cc842e9e7af9874cc99fc5aa578d50dac1995f4d166537f04167"
+        },
+        "artifacts": {
+          "rhwp.js": "d5817f4cd93e791f0c4d03558ea62e2fb1b5fdf087e1044b40b2e503887b6e0d",
+          "rhwp_bg.wasm": "2632a2e05eaa2ddf5f67a9270293820103b5dfc8df41e54a91b1bffc61d9a706",
+          "rhwp.d.ts": "bc4b2876de2f4b552bbd7bf14b9914a8be587b949619af1849646d3ded83afe1"
+        },
+        "profile": "release",
+        "wasmOpt": false
+      }
+    }
+  },
+  "testSourcesSha256": {
+    "index.html": "cc18200cbad7bf69fa04d79325d6654d74bbdc027d1f4929863e43e6eec6a1a9",
+    "browser.mjs": "1c910622dd0e2779cbb3250bd10691fd19564587303c04c947434c8ad53e2b6c",
+    "historical.mjs": "a858c95480f21b8aa1274247adfb396efdd90b4f316fa145276c8860b61780b6",
+    "fixtures.mjs": "df417a5f5d1a38ee2eec00738fb6225d83dee86dd93124cc96acb73be831b06a",
+    "historical-expected.json": "4f3594d3d413f0e2c1fc0e86ba1015e7414e3f9c7df294c5ee27005190c7cc48",
+    "ownership.mjs": "a8bbd07b9b2aadf7ea967de59bc67c4dacc81393e25970eed520274f0a5cb0b5",
+    "job-historical.mjs": "c28b195c0bfff7027388cb30104f744f9d40afc44927ff4ddb56aa3e59327070",
+    "run.py": "3abc264061f6b2a04d4538f45b1c3fc071c3c693ebc0d0c457037de0acccec44"
+  },
+  "version": "Google Chrome 155.0.8059.39",
+  "run": {
+    "schema": 1,
+    "userAgent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/155.0.0.0 Safari/537.36",
+    "status": "FAIL",
+    "concurrent": {
+      "status": "PASS",
+      "loadAttempts": 2,
+      "notifications": 2,
+      "pixelMismatchCount": 0,
+      "during": {
+        "name": "two-oversize-pending",
+        "decoded": {
+          "bytes": 128,
+          "entries": 2,
+          "evictions": 0,
+          "hits": 0,
+          "maxBytes": 8388608,
+          "maxEntries": 8,
+          "maxEntryBytes": 2097152,
+          "misses": 2,
+          "negativeEntries": 2,
+          "oversize": 0,
+          "pendingEntries": 0,
+          "rejected": 0,
+          "transientEntries": 0
+        },
+        "images": {
+          "bytes": 0,
+          "entries": 0,
+          "evictions": 0,
+          "hits": 0,
+          "maxBytes": 2097152,
+          "maxEntries": 8,
+          "maxEntryBytes": 524288,
+          "misses": 2,
+          "negativeEntries": 0,
+          "oversize": 0,
+          "pendingEntries": 0,
+          "rejected": 0,
+          "transientEntries": 0
+        },
+        "jobs": {
+          "activeJobs": 1,
+          "activeLeaseEstimatedBytes": 201327652,
+          "cancellations": 0,
+          "completionNotifications": 0,
+          "errors": 0,
+          "inFlightEstimatedBytes": 201327652,
+          "loadAttempts": 2,
+          "maxFrameBytes": 67108864,
+          "maxOwnedBytes": 268435456,
+          "maxPending": 2,
+          "maxResources": 256,
+          "ownedEstimatedBytes": 201327652,
+          "peakTemporaryCanvasBytes": 3566648,
+          "pendingCount": 2,
+          "readyLeaseCount": 0,
+          "resourceLimits": 0,
+          "retryCount": 0,
+          "temporaryCanvasBytes": 0,
+          "transientEstimatedBytes": 0
+        }
+      },
+      "ready": {
+        "name": "ready-before-draw",
+        "decoded": {
+          "bytes": 128,
+          "entries": 2,
+          "evictions": 0,
+          "hits": 0,
+          "maxBytes": 8388608,
+          "maxEntries": 8,
+          "maxEntryBytes": 2097152,
+          "misses": 2,
+          "negativeEntries": 2,
+          "oversize": 0,
+          "pendingEntries": 0,
+          "rejected": 0,
+          "transientEntries": 0
+        },
+        "images": {
+          "bytes": 0,
+          "entries": 0,
+          "evictions": 0,
+          "hits": 0,
+          "maxBytes": 2097152,
+          "maxEntries": 8,
+          "maxEntryBytes": 524288,
+          "misses": 2,
+          "negativeEntries": 0,
+          "oversize": 0,
+          "pendingEntries": 0,
+          "rejected": 0,
+          "transientEntries": 0
+        },
+        "jobs": {
+          "activeJobs": 1,
+          "activeLeaseEstimatedBytes": 11617460,
+          "cancellations": 0,
+          "completionNotifications": 2,
+          "errors": 0,
+          "inFlightEstimatedBytes": 0,
+          "loadAttempts": 2,
+          "maxFrameBytes": 67108864,
+          "maxOwnedBytes": 268435456,
+          "maxPending": 2,
+          "maxResources": 256,
+          "ownedEstimatedBytes": 11617460,
+          "peakTemporaryCanvasBytes": 3566648,
+          "pendingCount": 0,
+          "readyLeaseCount": 2,
+          "resourceLimits": 0,
+          "retryCount": 0,
+          "temporaryCanvasBytes": 0,
+          "transientEstimatedBytes": 11617460
+        }
+      },
+      "retained": {
+        "name": "after-complete",
+        "decoded": {
+          "bytes": 128,
+          "entries": 2,
+          "evictions": 0,
+          "hits": 2,
+          "maxBytes": 8388608,
+          "maxEntries": 8,
+          "maxEntryBytes": 2097152,
+          "misses": 2,
+          "negativeEntries": 2,
+          "oversize": 0,
+          "pendingEntries": 0,
+          "rejected": 0,
+          "transientEntries": 0
+        },
+        "images": {
+          "bytes": 0,
+          "entries": 0,
+          "evictions": 0,
+          "hits": 0,
+          "maxBytes": 2097152,
+          "maxEntries": 8,
+          "maxEntryBytes": 524288,
+          "misses": 2,
+          "negativeEntries": 0,
+          "oversize": 2,
+          "pendingEntries": 0,
+          "rejected": 0,
+          "transientEntries": 0
+        },
+        "jobs": {
+          "activeJobs": 0,
+          "activeLeaseEstimatedBytes": 0,
+          "cancellations": 0,
+          "completionNotifications": 2,
+          "errors": 0,
+          "inFlightEstimatedBytes": 0,
+          "loadAttempts": 2,
+          "maxFrameBytes": 67108864,
+          "maxOwnedBytes": 268435456,
+          "maxPending": 2,
+          "maxResources": 256,
+          "ownedEstimatedBytes": 0,
+          "peakTemporaryCanvasBytes": 3566648,
+          "pendingCount": 0,
+          "readyLeaseCount": 0,
+          "resourceLimits": 0,
+          "retryCount": 1,
+          "temporaryCanvasBytes": 0,
+          "transientEstimatedBytes": 0
+        }
+      },
+      "afterClose": {
+        "name": "after-close",
+        "decoded": {
+          "bytes": 128,
+          "entries": 2,
+          "evictions": 0,
+          "hits": 2,
+          "maxBytes": 8388608,
+          "maxEntries": 8,
+          "maxEntryBytes": 2097152,
+          "misses": 2,
+          "negativeEntries": 2,
+          "oversize": 0,
+          "pendingEntries": 0,
+          "rejected": 0,
+          "transientEntries": 0
+        },
+        "images": {
+          "bytes": 0,
+          "entries": 0,
+          "evictions": 0,
+          "hits": 0,
+          "maxBytes": 2097152,
+          "maxEntries": 8,
+          "maxEntryBytes": 524288,
+          "misses": 2,
+          "negativeEntries": 0,
+          "oversize": 2,
+          "pendingEntries": 0,
+          "rejected": 0,
+          "transientEntries": 0
+        },
+        "jobs": {
+          "activeJobs": 0,
+          "activeLeaseEstimatedBytes": 0,
+          "cancellations": 0,
+          "completionNotifications": 2,
+          "errors": 0,
+          "inFlightEstimatedBytes": 0,
+          "loadAttempts": 2,
+          "maxFrameBytes": 67108864,
+          "maxOwnedBytes": 268435456,
+          "maxPending": 2,
+          "maxResources": 256,
+          "ownedEstimatedBytes": 0,
+          "peakTemporaryCanvasBytes": 3566648,
+          "pendingCount": 0,
+          "readyLeaseCount": 0,
+          "resourceLimits": 0,
+          "retryCount": 1,
+          "temporaryCanvasBytes": 0,
+          "transientEstimatedBytes": 0
+        }
+      },
+      "final": {
+        "present": "1111",
+        "counts": [
+          7200,
+          7200,
+          7200,
+          7200
+        ],
+        "other": 0,
+        "hash": "f25aebc7",
+        "width": 794,
+        "height": 1123
+      }
+    },
+    "pending": {
+      "requests": 100,
+      "during": {
+        "name": "100-burst",
+        "decoded": {
+          "bytes": 128,
+          "entries": 2,
+          "evictions": 8,
+          "hits": 2,
+          "maxBytes": 1048576,
+          "maxEntries": 2,
+          "maxEntryBytes": 262144,
+          "misses": 10,
+          "negativeEntries": 2,
+          "oversize": 0,
+          "pendingEntries": 0,
+          "rejected": 0,
+          "transientEntries": 0
+        },
+        "images": {
+          "bytes": 0,
+          "entries": 0,
+          "evictions": 0,
+          "hits": 0,
+          "maxBytes": 1024,
+          "maxEntries": 2,
+          "maxEntryBytes": 256,
+          "misses": 10,
+          "negativeEntries": 0,
+          "oversize": 2,
+          "pendingEntries": 0,
+          "rejected": 0,
+          "transientEntries": 0
+        },
+        "jobs": {
+          "activeJobs": 8,
+          "activeLeaseEstimatedBytes": 201327628,
+          "cancellations": 0,
+          "completionNotifications": 2,
+          "errors": 0,
+          "inFlightEstimatedBytes": 201327628,
+          "loadAttempts": 4,
+          "maxFrameBytes": 67108864,
+          "maxOwnedBytes": 268435456,
+          "maxPending": 2,
+          "maxResources": 256,
+          "ownedEstimatedBytes": 201327628,
+          "peakTemporaryCanvasBytes": 3566648,
+          "pendingCount": 2,
+          "readyLeaseCount": 0,
+          "resourceLimits": 0,
+          "retryCount": 1,
+          "temporaryCanvasBytes": 0,
+          "transientEstimatedBytes": 0
+        }
+      },
+      "reduced": {
+        "name": "budget-reduction",
+        "decoded": {
+          "bytes": 64,
+          "entries": 1,
+          "evictions": 9,
+          "hits": 2,
+          "maxBytes": 1048576,
+          "maxEntries": 1,
+          "maxEntryBytes": 262144,
+          "misses": 10,
+          "negativeEntries": 1,
+          "oversize": 0,
+          "pendingEntries": 0,
+          "rejected": 0,
+          "transientEntries": 0
+        },
+        "images": {
+          "bytes": 0,
+          "entries": 0,
+          "evictions": 0,
+          "hits": 0,
+          "maxBytes": 512,
+          "maxEntries": 1,
+          "maxEntryBytes": 128,
+          "misses": 10,
+          "negativeEntries": 0,
+          "oversize": 2,
+          "pendingEntries": 0,
+          "rejected": 0,
+          "transientEntries": 0
+        },
+        "jobs": {
+          "activeJobs": 0,
+          "activeLeaseEstimatedBytes": 0,
+          "cancellations": 8,
+          "completionNotifications": 2,
+          "errors": 0,
+          "inFlightEstimatedBytes": 0,
+          "loadAttempts": 4,
+          "maxFrameBytes": 67108864,
+          "maxOwnedBytes": 268435456,
+          "maxPending": 2,
+          "maxResources": 256,
+          "ownedEstimatedBytes": 0,
+          "peakTemporaryCanvasBytes": 3566648,
+          "pendingCount": 0,
+          "readyLeaseCount": 0,
+          "resourceLimits": 0,
+          "retryCount": 1,
+          "temporaryCanvasBytes": 0,
+          "transientEstimatedBytes": 0
+        }
+      },
+      "trimmedWhilePending": {
+        "name": "trim-during-load",
+        "decoded": {
+          "bytes": 0,
+          "entries": 0,
+          "evictions": 10,
+          "hits": 2,
+          "maxBytes": 1048576,
+          "maxEntries": 1,
+          "maxEntryBytes": 262144,
+          "misses": 10,
+          "negativeEntries": 0,
+          "oversize": 0,
+          "pendingEntries": 0,
+          "rejected": 0,
+          "transientEntries": 0
+        },
+        "images": {
+          "bytes": 0,
+          "entries": 0,
+          "evictions": 0,
+          "hits": 0,
+          "maxBytes": 512,
+          "maxEntries": 1,
+          "maxEntryBytes": 128,
+          "misses": 10,
+          "negativeEntries": 0,
+          "oversize": 2,
+          "pendingEntries": 0,
+          "rejected": 0,
+          "transientEntries": 0
+        },
+        "jobs": {
+          "activeJobs": 0,
+          "activeLeaseEstimatedBytes": 0,
+          "cancellations": 8,
+          "completionNotifications": 2,
+          "errors": 0,
+          "inFlightEstimatedBytes": 0,
+          "loadAttempts": 4,
+          "maxFrameBytes": 67108864,
+          "maxOwnedBytes": 268435456,
+          "maxPending": 2,
+          "maxResources": 256,
+          "ownedEstimatedBytes": 0,
+          "peakTemporaryCanvasBytes": 3566648,
+          "pendingCount": 0,
+          "readyLeaseCount": 0,
+          "resourceLimits": 0,
+          "retryCount": 1,
+          "temporaryCanvasBytes": 0,
+          "transientEstimatedBytes": 0
+        }
+      },
+      "afterClosedCallbacks": {
+        "name": "after-late-callbacks",
+        "decoded": {
+          "bytes": 0,
+          "entries": 0,
+          "evictions": 10,
+          "hits": 2,
+          "maxBytes": 1048576,
+          "maxEntries": 1,
+          "maxEntryBytes": 262144,
+          "misses": 10,
+          "negativeEntries": 0,
+          "oversize": 0,
+          "pendingEntries": 0,
+          "rejected": 0,
+          "transientEntries": 0
+        },
+        "images": {
+          "bytes": 0,
+          "entries": 0,
+          "evictions": 0,
+          "hits": 0,
+          "maxBytes": 512,
+          "maxEntries": 1,
+          "maxEntryBytes": 128,
+          "misses": 10,
+          "negativeEntries": 0,
+          "oversize": 2,
+          "pendingEntries": 0,
+          "rejected": 0,
+          "transientEntries": 0
+        },
+        "jobs": {
+          "activeJobs": 0,
+          "activeLeaseEstimatedBytes": 0,
+          "cancellations": 8,
+          "completionNotifications": 2,
+          "errors": 0,
+          "inFlightEstimatedBytes": 0,
+          "loadAttempts": 4,
+          "maxFrameBytes": 67108864,
+          "maxOwnedBytes": 268435456,
+          "maxPending": 2,
+          "maxResources": 256,
+          "ownedEstimatedBytes": 0,
+          "peakTemporaryCanvasBytes": 3566648,
+          "pendingCount": 0,
+          "readyLeaseCount": 0,
+          "resourceLimits": 0,
+          "retryCount": 1,
+          "temporaryCanvasBytes": 0,
+          "transientEstimatedBytes": 0
+        }
+      },
+      "afterFinalTrim": {
+        "name": "post-burst",
+        "decoded": {
+          "bytes": 0,
+          "entries": 0,
+          "evictions": 10,
+          "hits": 2,
+          "maxBytes": 1048576,
+          "maxEntries": 1,
+          "maxEntryBytes": 262144,
+          "misses": 10,
+          "negativeEntries": 0,
+          "oversize": 0,
+          "pendingEntries": 0,
+          "rejected": 0,
+          "transientEntries": 0
+        },
+        "images": {
+          "bytes": 0,
+          "entries": 0,
+          "evictions": 0,
+          "hits": 0,
+          "maxBytes": 512,
+          "maxEntries": 1,
+          "maxEntryBytes": 128,
+          "misses": 10,
+          "negativeEntries": 0,
+          "oversize": 2,
+          "pendingEntries": 0,
+          "rejected": 0,
+          "transientEntries": 0
+        },
+        "jobs": {
+          "activeJobs": 0,
+          "activeLeaseEstimatedBytes": 0,
+          "cancellations": 8,
+          "completionNotifications": 2,
+          "errors": 0,
+          "inFlightEstimatedBytes": 0,
+          "loadAttempts": 4,
+          "maxFrameBytes": 67108864,
+          "maxOwnedBytes": 268435456,
+          "maxPending": 2,
+          "maxResources": 256,
+          "ownedEstimatedBytes": 0,
+          "peakTemporaryCanvasBytes": 3566648,
+          "pendingCount": 0,
+          "readyLeaseCount": 0,
+          "resourceLimits": 0,
+          "retryCount": 1,
+          "temporaryCanvasBytes": 0,
+          "transientEstimatedBytes": 0
+        }
+      },
+      "terminalOutcomes": {
+        "CANCELED": 8,
+        "RESOURCE_LIMIT": 92
+      },
+      "outcomes": {
+        "PENDING": 8,
+        "RESOURCE_LIMIT": 92
+      },
+      "status": "PASS"
+    },
+    "formats": [
+      {
+        "format": "hwp",
+        "status": "PASS",
+        "completion": "COMPLETE",
+        "pixelMismatchCount": 0
+      },
+      {
+        "format": "hwpx",
+        "status": "PASS",
+        "completion": "COMPLETE",
+        "pixelMismatchCount": 0
+      }
+    ],
+    "historical": {
+      "status": "PASS",
+      "draws": 50,
+      "exactPixelMatches": 50,
+      "failures": [],
+      "pinned": {
+        "results": {
+          "smallPng": {
+            "rows": [
+              {
+                "label": "r1",
+                "present": "1111",
+                "counts": [
+                  9801,
+                  9801,
+                  9801,
+                  9801
+                ],
+                "other": 796,
+                "hash": "ce90b40e",
+                "width": 794,
+                "height": 1123,
+                "threw": null,
+                "stats": null,
+                "notified": 0
+              },
+              {
+                "label": "r2",
+                "present": "1111",
+                "counts": [
+                  9801,
+                  9801,
+                  9801,
+                  9801
+                ],
+                "other": 796,
+                "hash": "ce90b40e",
+                "width": 794,
+                "height": 1123,
+                "threw": null,
+                "stats": null,
+                "notified": 0
+              }
+            ],
+            "notifiedTotal": 0
+          },
+          "largePngOversizeDecoded": {
+            "rows": [
+              {
+                "label": "r1",
+                "present": "1111",
+                "counts": [
+                  22500,
+                  22500,
+                  22500,
+                  22500
+                ],
+                "other": 0,
+                "hash": "dc0d3777",
+                "width": 794,
+                "height": 1123,
+                "threw": null,
+                "stats": null,
+                "notified": 0
+              },
+              {
+                "label": "r2",
+                "present": "1111",
+                "counts": [
+                  22500,
+                  22500,
+                  22500,
+                  22500
+                ],
+                "other": 0,
+                "hash": "dc0d3777",
+                "width": 794,
+                "height": 1123,
+                "threw": null,
+                "stats": null,
+                "notified": 0
+              },
+              {
+                "label": "r3",
+                "present": "1111",
+                "counts": [
+                  22500,
+                  22500,
+                  22500,
+                  22500
+                ],
+                "other": 0,
+                "hash": "dc0d3777",
+                "width": 794,
+                "height": 1123,
+                "threw": null,
+                "stats": null,
+                "notified": 0
+              }
+            ],
+            "notifiedTotal": 0
+          },
+          "smallSvg": {
+            "rows": [
+              {
+                "label": "r1",
+                "present": "0000",
+                "counts": [
+                  0,
+                  0,
+                  0,
+                  0
+                ],
+                "other": 0,
+                "hash": "e805fb47",
+                "width": 794,
+                "height": 1123,
+                "threw": null,
+                "stats": null,
+                "notified": 0
+              },
+              {
+                "label": "r2",
+                "present": "1111",
+                "counts": [
+                  10000,
+                  10000,
+                  10000,
+                  10000
+                ],
+                "other": 0,
+                "hash": "c4482d47",
+                "width": 794,
+                "height": 1123,
+                "threw": null,
+                "stats": null,
+                "notified": 0
+              },
+              {
+                "label": "r3",
+                "present": "1111",
+                "counts": [
+                  10000,
+                  10000,
+                  10000,
+                  10000
+                ],
+                "other": 0,
+                "hash": "c4482d47",
+                "width": 794,
+                "height": 1123,
+                "threw": null,
+                "stats": null,
+                "notified": 0
+              }
+            ],
+            "notifiedTotal": 0
+          },
+          "largeSvgGrowsPastEntryLimit": {
+            "rows": [
+              {
+                "label": "r1",
+                "present": "0000",
+                "counts": [
+                  0,
+                  0,
+                  0,
+                  0
+                ],
+                "other": 0,
+                "hash": "e805fb47",
+                "width": 794,
+                "height": 1123,
+                "threw": null,
+                "stats": null,
+                "notified": 0
+              },
+              {
+                "label": "r2",
+                "present": "1111",
+                "counts": [
+                  22500,
+                  22500,
+                  22500,
+                  22500
+                ],
+                "other": 0,
+                "hash": "dc0d3777",
+                "width": 794,
+                "height": 1123,
+                "threw": null,
+                "stats": null,
+                "notified": 0
+              },
+              {
+                "label": "r3",
+                "present": "1111",
+                "counts": [
+                  22500,
+                  22500,
+                  22500,
+                  22500
+                ],
+                "other": 0,
+                "hash": "dc0d3777",
+                "width": 794,
+                "height": 1123,
+                "threw": null,
+                "stats": null,
+                "notified": 0
+              },
+              {
+                "label": "r4",
+                "present": "1111",
+                "counts": [
+                  22500,
+                  22500,
+                  22500,
+                  22500
+                ],
+                "other": 0,
+                "hash": "dc0d3777",
+                "width": 794,
+                "height": 1123,
+                "threw": null,
+                "stats": null,
+                "notified": 0
+              },
+              {
+                "label": "r5",
+                "present": "1111",
+                "counts": [
+                  22500,
+                  22500,
+                  22500,
+                  22500
+                ],
+                "other": 0,
+                "hash": "dc0d3777",
+                "width": 794,
+                "height": 1123,
+                "threw": null,
+                "stats": null,
+                "notified": 0
+              }
+            ],
+            "notifiedTotal": 0
+          },
+          "croppedGif": {
+            "rows": [
+              {
+                "label": "r1",
+                "present": "0000",
+                "counts": [
+                  0,
+                  0,
+                  0,
+                  0
+                ],
+                "other": 0,
+                "hash": "e805fb47",
+                "width": 794,
+                "height": 1123,
+                "threw": null,
+                "stats": null,
+                "notified": 0
+              },
+              {
+                "label": "r2",
+                "present": "0101",
+                "counts": [
+                  0,
+                  20000,
+                  0,
+                  19900
+                ],
+                "other": 100,
+                "hash": "dc19f57f",
+                "width": 794,
+                "height": 1123,
+                "threw": null,
+                "stats": null,
+                "notified": 0
+              },
+              {
+                "label": "r3",
+                "present": "0101",
+                "counts": [
+                  0,
+                  20000,
+                  0,
+                  19900
+                ],
+                "other": 100,
+                "hash": "dc19f57f",
+                "width": 794,
+                "height": 1123,
+                "threw": null,
+                "stats": null,
+                "notified": 0
+              }
+            ],
+            "notifiedTotal": 0
+          },
+          "encodedOversizeSvg": {
+            "rows": [
+              {
+                "label": "r1",
+                "present": "0000",
+                "counts": [
+                  0,
+                  0,
+                  0,
+                  0
+                ],
+                "other": 0,
+                "hash": "e805fb47",
+                "width": 794,
+                "height": 1123,
+                "threw": null,
+                "stats": null,
+                "notified": 0
+              },
+              {
+                "label": "r2",
+                "present": "1111",
+                "counts": [
+                  10000,
+                  10000,
+                  10000,
+                  10000
+                ],
+                "other": 0,
+                "hash": "c4482d47",
+                "width": 794,
+                "height": 1123,
+                "threw": null,
+                "stats": null,
+                "notified": 0
+              },
+              {
+                "label": "r3",
+                "present": "1111",
+                "counts": [
+                  10000,
+                  10000,
+                  10000,
+                  10000
+                ],
+                "other": 0,
+                "hash": "c4482d47",
+                "width": 794,
+                "height": 1123,
+                "threw": null,
+                "stats": null,
+                "notified": 0
+              },
+              {
+                "label": "r4",
+                "present": "1111",
+                "counts": [
+                  10000,
+                  10000,
+                  10000,
+                  10000
+                ],
+                "other": 0,
+                "hash": "c4482d47",
+                "width": 794,
+                "height": 1123,
+                "threw": null,
+                "stats": null,
+                "notified": 0
+              }
+            ],
+            "notifiedTotal": 0
+          },
+          "negativeDecode": {
+            "rows": [
+              {
+                "label": "r1",
+                "present": "0000",
+                "counts": [
+                  18,
+                  0,
+                  0,
+                  0
+                ],
+                "other": 995,
+                "hash": "a8189a52",
+                "width": 794,
+                "height": 1123,
+                "threw": null,
+                "stats": null,
+                "notified": 0
+              },
+              {
+                "label": "r2",
+                "present": "0000",
+                "counts": [
+                  18,
+                  0,
+                  0,
+                  0
+                ],
+                "other": 995,
+                "hash": "a8189a52",
+                "width": 794,
+                "height": 1123,
+                "threw": null,
+                "stats": null,
+                "notified": 0
+              },
+              {
+                "label": "r3",
+                "present": "0000",
+                "counts": [
+                  18,
+                  0,
+                  0,
+                  0
+                ],
+                "other": 995,
+                "hash": "a8189a52",
+                "width": 794,
+                "height": 1123,
+                "threw": null,
+                "stats": null,
+                "notified": 0
+              }
+            ],
+            "notifiedTotal": 0
+          },
+          "trimBetweenDraws": {
+            "rows": [
+              {
+                "label": "png1",
+                "present": "1111",
+                "counts": [
+                  9801,
+                  9801,
+                  9801,
+                  9801
+                ],
+                "other": 796,
+                "hash": "ce90b40e",
+                "width": 794,
+                "height": 1123,
+                "threw": null,
+                "stats": null,
+                "notified": 0
+              },
+              {
+                "label": "svg1",
+                "present": "1111",
+                "counts": [
+                  10000,
+                  10000,
+                  10000,
+                  10000
+                ],
+                "other": 0,
+                "hash": "c4482d47",
+                "width": 794,
+                "height": 1123,
+                "threw": null,
+                "stats": null,
+                "notified": 0
+              },
+              {
+                "label": "svg2",
+                "present": "1111",
+                "counts": [
+                  10000,
+                  10000,
+                  10000,
+                  10000
+                ],
+                "other": 0,
+                "hash": "c4482d47",
+                "width": 794,
+                "height": 1123,
+                "threw": null,
+                "stats": null,
+                "notified": 0
+              },
+              {
+                "label": "png-after-trim",
+                "present": "1111",
+                "counts": [
+                  9801,
+                  9801,
+                  9801,
+                  9801
+                ],
+                "other": 796,
+                "hash": "ce90b40e",
+                "width": 794,
+                "height": 1123,
+                "threw": null,
+                "stats": null,
+                "notified": 0
+              },
+              {
+                "label": "svg-after-trim",
+                "present": "1111",
+                "counts": [
+                  10000,
+                  10000,
+                  10000,
+                  10000
+                ],
+                "other": 0,
+                "hash": "c4482d47",
+                "width": 794,
+                "height": 1123,
+                "threw": null,
+                "stats": null,
+                "notified": 0
+              },
+              {
+                "label": "svg-after-trim-wait",
+                "present": "1111",
+                "counts": [
+                  10000,
+                  10000,
+                  10000,
+                  10000
+                ],
+                "other": 0,
+                "hash": "c4482d47",
+                "width": 794,
+                "height": 1123,
+                "threw": null,
+                "stats": null,
+                "notified": 0
+              }
+            ],
+            "notifiedTotal": 0
+          },
+          "trimDuringLoad": {
+            "rows": [
+              {
+                "label": "r1",
+                "present": "0000",
+                "counts": [
+                  0,
+                  0,
+                  0,
+                  0
+                ],
+                "other": 0,
+                "hash": "e805fb47",
+                "width": 794,
+                "height": 1123,
+                "threw": null,
+                "stats": null,
+                "notified": 0
+              },
+              {
+                "label": "r2",
+                "present": "1111",
+                "counts": [
+                  10000,
+                  10000,
+                  10000,
+                  10000
+                ],
+                "other": 0,
+                "hash": "c4482d47",
+                "width": 794,
+                "height": 1123,
+                "threw": null,
+                "stats": null,
+                "notified": 0
+              },
+              {
+                "label": "r3",
+                "present": "1111",
+                "counts": [
+                  10000,
+                  10000,
+                  10000,
+                  10000
+                ],
+                "other": 0,
+                "hash": "c4482d47",
+                "width": 794,
+                "height": 1123,
+                "threw": null,
+                "stats": null,
+                "notified": 0
+              }
+            ],
+            "notifiedTotal": 0
+          },
+          "closedBeforeLoad": {
+            "rows": [
+              {
+                "label": "r1",
+                "present": "0000",
+                "counts": [
+                  0,
+                  0,
+                  0,
+                  0
+                ],
+                "other": 0,
+                "hash": "e805fb47",
+                "width": 794,
+                "height": 1123,
+                "threw": null,
+                "stats": null,
+                "notified": 0
+              },
+              {
+                "label": "other-doc-same-image",
+                "present": "1111",
+                "counts": [
+                  10000,
+                  10000,
+                  10000,
+                  10000
+                ],
+                "other": 0,
+                "hash": "c4482d47",
+                "width": 794,
+                "height": 1123,
+                "threw": null,
+                "stats": null,
+                "notified": 0
+              }
+            ],
+            "notifiedTotal": 0
+          },
+          "sharedAcrossDocs": {
+            "rows": [
+              {
+                "label": "a1",
+                "present": "0000",
+                "counts": [
+                  0,
+                  0,
+                  0,
+                  0
+                ],
+                "other": 0,
+                "hash": "e805fb47",
+                "width": 794,
+                "height": 1123,
+                "threw": null,
+                "stats": null,
+                "notified": 0
+              },
+              {
+                "label": "b1",
+                "present": "0000",
+                "counts": [
+                  0,
+                  0,
+                  0,
+                  0
+                ],
+                "other": 0,
+                "hash": "e805fb47",
+                "width": 794,
+                "height": 1123,
+                "threw": null,
+                "stats": null,
+                "notified": 0
+              },
+              {
+                "label": "c1",
+                "present": "1111",
+                "counts": [
+                  9801,
+                  9801,
+                  9801,
+                  9801
+                ],
+                "other": 796,
+                "hash": "ec0c8814",
+                "width": 794,
+                "height": 1123,
+                "threw": null,
+                "stats": null,
+                "notified": 0
+              },
+              {
+                "label": "e1",
+                "present": "1111",
+                "counts": [
+                  9801,
+                  9801,
+                  9801,
+                  9801
+                ],
+                "other": 796,
+                "hash": "ec0c8814",
+                "width": 794,
+                "height": 1123,
+                "threw": null,
+                "stats": null,
+                "notified": 0
+              },
+              {
+                "label": "a2",
+                "present": "1111",
+                "counts": [
+                  10000,
+                  10000,
+                  10000,
+                  10000
+                ],
+                "other": 0,
+                "hash": "c4482d47",
+                "width": 794,
+                "height": 1123,
+                "threw": null,
+                "stats": null,
+                "notified": 0
+              },
+              {
+                "label": "b2",
+                "present": "1111",
+                "counts": [
+                  10000,
+                  10000,
+                  10000,
+                  10000
+                ],
+                "other": 0,
+                "hash": "c4482d47",
+                "width": 794,
+                "height": 1123,
+                "threw": null,
+                "stats": null,
+                "notified": 0
+              },
+              {
+                "label": "a-after-b-closed",
+                "present": "1111",
+                "counts": [
+                  10000,
+                  10000,
+                  10000,
+                  10000
+                ],
+                "other": 0,
+                "hash": "c4482d47",
+                "width": 794,
+                "height": 1123,
+                "threw": null,
+                "stats": null,
+                "notified": 0
+              },
+              {
+                "label": "c-after-e-closed",
+                "present": "1111",
+                "counts": [
+                  9801,
+                  9801,
+                  9801,
+                  9801
+                ],
+                "other": 796,
+                "hash": "ec0c8814",
+                "width": 794,
+                "height": 1123,
+                "threw": null,
+                "stats": null,
+                "notified": 0
+              }
+            ],
+            "notifiedTotal": 0
+          },
+          "budgetPressureAlternating": {
+            "rows": [
+              {
+                "label": "a0",
+                "present": "0000",
+                "counts": [
+                  0,
+                  0,
+                  0,
+                  0
+                ],
+                "other": 0,
+                "hash": "e805fb47",
+                "width": 794,
+                "height": 1123,
+                "threw": null,
+                "stats": null,
+                "notified": 0
+              },
+              {
+                "label": "b0",
+                "present": "0000",
+                "counts": [
+                  0,
+                  0,
+                  0,
+                  0
+                ],
+                "other": 0,
+                "hash": "e805fb47",
+                "width": 794,
+                "height": 1123,
+                "threw": null,
+                "stats": null,
+                "notified": 0
+              },
+              {
+                "label": "a1",
+                "present": "1111",
+                "counts": [
+                  22500,
+                  22500,
+                  22500,
+                  22500
+                ],
+                "other": 0,
+                "hash": "dc0d3777",
+                "width": 794,
+                "height": 1123,
+                "threw": null,
+                "stats": null,
+                "notified": 0
+              },
+              {
+                "label": "b1",
+                "present": "1111",
+                "counts": [
+                  22500,
+                  22500,
+                  22500,
+                  22500
+                ],
+                "other": 0,
+                "hash": "dc0d3777",
+                "width": 794,
+                "height": 1123,
+                "threw": null,
+                "stats": null,
+                "notified": 0
+              },
+              {
+                "label": "a2",
+                "present": "1111",
+                "counts": [
+                  22500,
+                  22500,
+                  22500,
+                  22500
+                ],
+                "other": 0,
+                "hash": "dc0d3777",
+                "width": 794,
+                "height": 1123,
+                "threw": null,
+                "stats": null,
+                "notified": 0
+              },
+              {
+                "label": "b2",
+                "present": "1111",
+                "counts": [
+                  22500,
+                  22500,
+                  22500,
+                  22500
+                ],
+                "other": 0,
+                "hash": "dc0d3777",
+                "width": 794,
+                "height": 1123,
+                "threw": null,
+                "stats": null,
+                "notified": 0
+              },
+              {
+                "label": "a3",
+                "present": "1111",
+                "counts": [
+                  22500,
+                  22500,
+                  22500,
+                  22500
+                ],
+                "other": 0,
+                "hash": "dc0d3777",
+                "width": 794,
+                "height": 1123,
+                "threw": null,
+                "stats": null,
+                "notified": 0
+              },
+              {
+                "label": "b3",
+                "present": "1111",
+                "counts": [
+                  22500,
+                  22500,
+                  22500,
+                  22500
+                ],
+                "other": 0,
+                "hash": "dc0d3777",
+                "width": 794,
+                "height": 1123,
+                "threw": null,
+                "stats": null,
+                "notified": 0
+              }
+            ],
+            "notifiedTotal": 0
+          }
+        },
+        "fixtures": [
+          {
+            "ext": "png",
+            "naturalWidth": 64,
+            "naturalHeight": 64,
+            "encodedBytes": 301,
+            "boxPx": 200,
+            "scale": 1
+          },
+          {
+            "ext": "png",
+            "naturalWidth": 4400,
+            "naturalHeight": 4000,
+            "encodedBytes": 347078,
+            "boxPx": 300,
+            "scale": 1
+          },
+          {
+            "ext": "svg",
+            "naturalWidth": 64,
+            "naturalHeight": 64,
+            "encodedBytes": 348,
+            "boxPx": 200,
+            "scale": 1
+          },
+          {
+            "ext": "svg",
+            "naturalWidth": 2400,
+            "naturalHeight": 2400,
+            "encodedBytes": 380,
+            "boxPx": 300,
+            "scale": 1
+          },
+          {
+            "ext": "gif",
+            "naturalWidth": 200,
+            "naturalHeight": 200,
+            "encodedBytes": 22628,
+            "boxPx": 200,
+            "scale": 1
+          },
+          {
+            "ext": "svg",
+            "naturalWidth": 64,
+            "naturalHeight": 64,
+            "encodedBytes": 13631843,
+            "boxPx": 200,
+            "scale": 1
+          },
+          {
+            "ext": "png",
+            "naturalWidth": 64,
+            "naturalHeight": 64,
+            "encodedBytes": 4096,
+            "boxPx": 200,
+            "scale": 1
+          },
+          {
+            "ext": "png",
+            "naturalWidth": 64,
+            "naturalHeight": 64,
+            "encodedBytes": 301,
+            "boxPx": 200,
+            "scale": 1
+          },
+          {
+            "ext": "svg",
+            "naturalWidth": 64,
+            "naturalHeight": 64,
+            "encodedBytes": 348,
+            "boxPx": 200,
+            "scale": 1
+          },
+          {
+            "ext": "svg",
+            "naturalWidth": 80,
+            "naturalHeight": 80,
+            "encodedBytes": 348,
+            "boxPx": 200,
+            "scale": 1
+          },
+          {
+            "ext": "svg",
+            "naturalWidth": 96,
+            "naturalHeight": 96,
+            "encodedBytes": 348,
+            "boxPx": 200,
+            "scale": 1
+          },
+          {
+            "ext": "svg",
+            "naturalWidth": 96,
+            "naturalHeight": 96,
+            "encodedBytes": 348,
+            "boxPx": 200,
+            "scale": 1
+          },
+          {
+            "ext": "svg",
+            "naturalWidth": 72,
+            "naturalHeight": 72,
+            "encodedBytes": 348,
+            "boxPx": 200,
+            "scale": 1
+          },
+          {
+            "ext": "svg",
+            "naturalWidth": 72,
+            "naturalHeight": 72,
+            "encodedBytes": 348,
+            "boxPx": 200,
+            "scale": 1
+          },
+          {
+            "ext": "png",
+            "naturalWidth": 72,
+            "naturalHeight": 72,
+            "encodedBytes": 349,
+            "boxPx": 200,
+            "scale": 1
+          },
+          {
+            "ext": "png",
+            "naturalWidth": 72,
+            "naturalHeight": 72,
+            "encodedBytes": 349,
+            "boxPx": 200,
+            "scale": 1
+          },
+          {
+            "ext": "svg",
+            "naturalWidth": 600,
+            "naturalHeight": 600,
+            "encodedBytes": 364,
+            "boxPx": 300,
+            "scale": 1
+          },
+          {
+            "ext": "svg",
+            "naturalWidth": 610,
+            "naturalHeight": 610,
+            "encodedBytes": 364,
+            "boxPx": 300,
+            "scale": 1
+          }
+        ],
+        "notes": [
+          {
+            "cropBefore": {
+              "l": 0,
+              "t": 0,
+              "r": 0,
+              "b": 0,
+              "w": 15000
+            }
+          }
+        ],
+        "errors": []
+      },
+      "candidate": {
+        "results": {
+          "smallPng": {
+            "rows": [
+              {
+                "label": "r1",
+                "completion": "COMPLETE",
+                "attempts": 1,
+                "browserDecodeRequests": 0,
+                "present": "1111",
+                "counts": [
+                  9801,
+                  9801,
+                  9801,
+                  9801
+                ],
+                "other": 796,
+                "hash": "ce90b40e",
+                "width": 794,
+                "height": 1123,
+                "threw": null,
+                "stats": {
+                  "decoded": {
+                    "bytes": 16384,
+                    "entries": 1,
+                    "evictions": 44,
+                    "hits": 121,
+                    "maxBytes": 268435456,
+                    "maxEntries": 256,
+                    "maxEntryBytes": 67108864,
+                    "misses": 47,
+                    "negativeEntries": 0,
+                    "oversize": 2,
+                    "pendingEntries": 0,
+                    "rejected": 0,
+                    "transientEntries": 0
+                  },
+                  "images": {
+                    "bytes": 0,
+                    "entries": 0,
+                    "evictions": 9,
+                    "hits": 1,
+                    "maxBytes": 67108864,
+                    "maxEntries": 256,
+                    "maxEntryBytes": 16777216,
+                    "misses": 51,
+                    "negativeEntries": 0,
+                    "oversize": 15,
+                    "pendingEntries": 0,
+                    "rejected": 0,
+                    "transientEntries": 0
+                  }
+                },
+                "notified": 0,
+                "pixelMismatchCount": 0
+              },
+              {
+                "label": "r2",
+                "completion": "COMPLETE",
+                "attempts": 1,
+                "browserDecodeRequests": 0,
+                "present": "1111",
+                "counts": [
+                  9801,
+                  9801,
+                  9801,
+                  9801
+                ],
+                "other": 796,
+                "hash": "ce90b40e",
+                "width": 794,
+                "height": 1123,
+                "threw": null,
+                "stats": {
+                  "decoded": {
+                    "bytes": 16384,
+                    "entries": 1,
+                    "evictions": 44,
+                    "hits": 122,
+                    "maxBytes": 268435456,
+                    "maxEntries": 256,
+                    "maxEntryBytes": 67108864,
+                    "misses": 47,
+                    "negativeEntries": 0,
+                    "oversize": 2,
+                    "pendingEntries": 0,
+                    "rejected": 0,
+                    "transientEntries": 0
+                  },
+                  "images": {
+                    "bytes": 0,
+                    "entries": 0,
+                    "evictions": 9,
+                    "hits": 1,
+                    "maxBytes": 67108864,
+                    "maxEntries": 256,
+                    "maxEntryBytes": 16777216,
+                    "misses": 51,
+                    "negativeEntries": 0,
+                    "oversize": 15,
+                    "pendingEntries": 0,
+                    "rejected": 0,
+                    "transientEntries": 0
+                  }
+                },
+                "notified": 0,
+                "pixelMismatchCount": 0
+              }
+            ],
+            "notifiedTotal": 0
+          },
+          "largePngOversizeDecoded": {
+            "rows": [
+              {
+                "label": "r1",
+                "completion": "COMPLETE",
+                "attempts": 1,
+                "browserDecodeRequests": 0,
+                "present": "1111",
+                "counts": [
+                  22500,
+                  22500,
+                  22500,
+                  22500
+                ],
+                "other": 0,
+                "hash": "dc0d3777",
+                "width": 794,
+                "height": 1123,
+                "threw": null,
+                "stats": {
+                  "decoded": {
+                    "bytes": 0,
+                    "entries": 0,
+                    "evictions": 45,
+                    "hits": 122,
+                    "maxBytes": 268435456,
+                    "maxEntries": 256,
+                    "maxEntryBytes": 67108864,
+                    "misses": 48,
+                    "negativeEntries": 0,
+                    "oversize": 3,
+                    "pendingEntries": 0,
+                    "rejected": 0,
+                    "transientEntries": 0
+                  },
+                  "images": {
+                    "bytes": 0,
+                    "entries": 0,
+                    "evictions": 9,
+                    "hits": 1,
+                    "maxBytes": 67108864,
+                    "maxEntries": 256,
+                    "maxEntryBytes": 16777216,
+                    "misses": 51,
+                    "negativeEntries": 0,
+                    "oversize": 15,
+                    "pendingEntries": 0,
+                    "rejected": 0,
+                    "transientEntries": 0
+                  }
+                },
+                "notified": 0,
+                "pixelMismatchCount": 0
+              },
+              {
+                "label": "r2",
+                "completion": "COMPLETE",
+                "attempts": 1,
+                "browserDecodeRequests": 0,
+                "present": "1111",
+                "counts": [
+                  22500,
+                  22500,
+                  22500,
+                  22500
+                ],
+                "other": 0,
+                "hash": "dc0d3777",
+                "width": 794,
+                "height": 1123,
+                "threw": null,
+                "stats": {
+                  "decoded": {
+                    "bytes": 0,
+                    "entries": 0,
+                    "evictions": 45,
+                    "hits": 122,
+                    "maxBytes": 268435456,
+                    "maxEntries": 256,
+                    "maxEntryBytes": 67108864,
+                    "misses": 49,
+                    "negativeEntries": 0,
+                    "oversize": 4,
+                    "pendingEntries": 0,
+                    "rejected": 0,
+                    "transientEntries": 0
+                  },
+                  "images": {
+                    "bytes": 0,
+                    "entries": 0,
+                    "evictions": 9,
+                    "hits": 1,
+                    "maxBytes": 67108864,
+                    "maxEntries": 256,
+                    "maxEntryBytes": 16777216,
+                    "misses": 51,
+                    "negativeEntries": 0,
+                    "oversize": 15,
+                    "pendingEntries": 0,
+                    "rejected": 0,
+                    "transientEntries": 0
+                  }
+                },
+                "notified": 0,
+                "pixelMismatchCount": 0
+              },
+              {
+                "label": "r3",
+                "completion": "COMPLETE",
+                "attempts": 1,
+                "browserDecodeRequests": 0,
+                "present": "1111",
+                "counts": [
+                  22500,
+                  22500,
+                  22500,
+                  22500
+                ],
+                "other": 0,
+                "hash": "dc0d3777",
+                "width": 794,
+                "height": 1123,
+                "threw": null,
+                "stats": {
+                  "decoded": {
+                    "bytes": 0,
+                    "entries": 0,
+                    "evictions": 45,
+                    "hits": 122,
+                    "maxBytes": 268435456,
+                    "maxEntries": 256,
+                    "maxEntryBytes": 67108864,
+                    "misses": 50,
+                    "negativeEntries": 0,
+                    "oversize": 5,
+                    "pendingEntries": 0,
+                    "rejected": 0,
+                    "transientEntries": 0
+                  },
+                  "images": {
+                    "bytes": 0,
+                    "entries": 0,
+                    "evictions": 9,
+                    "hits": 1,
+                    "maxBytes": 67108864,
+                    "maxEntries": 256,
+                    "maxEntryBytes": 16777216,
+                    "misses": 51,
+                    "negativeEntries": 0,
+                    "oversize": 15,
+                    "pendingEntries": 0,
+                    "rejected": 0,
+                    "transientEntries": 0
+                  }
+                },
+                "notified": 0,
+                "pixelMismatchCount": 0
+              }
+            ],
+            "notifiedTotal": 0
+          },
+          "smallSvg": {
+            "rows": [
+              {
+                "label": "r1",
+                "completion": "COMPLETE",
+                "attempts": 1,
+                "browserDecodeRequests": 1,
+                "present": "1111",
+                "counts": [
+                  10000,
+                  10000,
+                  10000,
+                  10000
+                ],
+                "other": 0,
+                "hash": "c4482d47",
+                "width": 794,
+                "height": 1123,
+                "threw": null,
+                "stats": {
+                  "decoded": {
+                    "bytes": 64,
+                    "entries": 1,
+                    "evictions": 45,
+                    "hits": 122,
+                    "maxBytes": 268435456,
+                    "maxEntries": 256,
+                    "maxEntryBytes": 67108864,
+                    "misses": 51,
+                    "negativeEntries": 1,
+                    "oversize": 5,
+                    "pendingEntries": 0,
+                    "rejected": 0,
+                    "transientEntries": 0
+                  },
+                  "images": {
+                    "bytes": 16874,
+                    "entries": 1,
+                    "evictions": 9,
+                    "hits": 1,
+                    "maxBytes": 67108864,
+                    "maxEntries": 256,
+                    "maxEntryBytes": 16777216,
+                    "misses": 52,
+                    "negativeEntries": 0,
+                    "oversize": 15,
+                    "pendingEntries": 0,
+                    "rejected": 0,
+                    "transientEntries": 0
+                  }
+                },
+                "notified": 0,
+                "pixelMismatchCount": 0
+              },
+              {
+                "label": "r2",
+                "completion": "COMPLETE",
+                "attempts": 1,
+                "browserDecodeRequests": 0,
+                "present": "1111",
+                "counts": [
+                  10000,
+                  10000,
+                  10000,
+                  10000
+                ],
+                "other": 0,
+                "hash": "c4482d47",
+                "width": 794,
+                "height": 1123,
+                "threw": null,
+                "stats": {
+                  "decoded": {
+                    "bytes": 64,
+                    "entries": 1,
+                    "evictions": 45,
+                    "hits": 123,
+                    "maxBytes": 268435456,
+                    "maxEntries": 256,
+                    "maxEntryBytes": 67108864,
+                    "misses": 51,
+                    "negativeEntries": 1,
+                    "oversize": 5,
+                    "pendingEntries": 0,
+                    "rejected": 0,
+                    "transientEntries": 0
+                  },
+                  "images": {
+                    "bytes": 16874,
+                    "entries": 1,
+                    "evictions": 9,
+                    "hits": 2,
+                    "maxBytes": 67108864,
+                    "maxEntries": 256,
+                    "maxEntryBytes": 16777216,
+                    "misses": 52,
+                    "negativeEntries": 0,
+                    "oversize": 15,
+                    "pendingEntries": 0,
+                    "rejected": 0,
+                    "transientEntries": 0
+                  }
+                },
+                "notified": 0,
+                "pixelMismatchCount": 0
+              },
+              {
+                "label": "r3",
+                "completion": "COMPLETE",
+                "attempts": 1,
+                "browserDecodeRequests": 0,
+                "present": "1111",
+                "counts": [
+                  10000,
+                  10000,
+                  10000,
+                  10000
+                ],
+                "other": 0,
+                "hash": "c4482d47",
+                "width": 794,
+                "height": 1123,
+                "threw": null,
+                "stats": {
+                  "decoded": {
+                    "bytes": 64,
+                    "entries": 1,
+                    "evictions": 45,
+                    "hits": 124,
+                    "maxBytes": 268435456,
+                    "maxEntries": 256,
+                    "maxEntryBytes": 67108864,
+                    "misses": 51,
+                    "negativeEntries": 1,
+                    "oversize": 5,
+                    "pendingEntries": 0,
+                    "rejected": 0,
+                    "transientEntries": 0
+                  },
+                  "images": {
+                    "bytes": 16874,
+                    "entries": 1,
+                    "evictions": 9,
+                    "hits": 3,
+                    "maxBytes": 67108864,
+                    "maxEntries": 256,
+                    "maxEntryBytes": 16777216,
+                    "misses": 52,
+                    "negativeEntries": 0,
+                    "oversize": 15,
+                    "pendingEntries": 0,
+                    "rejected": 0,
+                    "transientEntries": 0
+                  }
+                },
+                "notified": 0,
+                "pixelMismatchCount": 0
+              }
+            ],
+            "notifiedTotal": 0
+          },
+          "largeSvgGrowsPastEntryLimit": {
+            "rows": [
+              {
+                "label": "r1",
+                "completion": "COMPLETE",
+                "attempts": 1,
+                "browserDecodeRequests": 1,
+                "present": "1111",
+                "counts": [
+                  22500,
+                  22500,
+                  22500,
+                  22500
+                ],
+                "other": 0,
+                "hash": "dc0d3777",
+                "width": 794,
+                "height": 1123,
+                "threw": null,
+                "stats": {
+                  "decoded": {
+                    "bytes": 64,
+                    "entries": 1,
+                    "evictions": 46,
+                    "hits": 124,
+                    "maxBytes": 268435456,
+                    "maxEntries": 256,
+                    "maxEntryBytes": 67108864,
+                    "misses": 52,
+                    "negativeEntries": 1,
+                    "oversize": 5,
+                    "pendingEntries": 0,
+                    "rejected": 0,
+                    "transientEntries": 0
+                  },
+                  "images": {
+                    "bytes": 0,
+                    "entries": 0,
+                    "evictions": 10,
+                    "hits": 3,
+                    "maxBytes": 67108864,
+                    "maxEntries": 256,
+                    "maxEntryBytes": 16777216,
+                    "misses": 53,
+                    "negativeEntries": 0,
+                    "oversize": 16,
+                    "pendingEntries": 0,
+                    "rejected": 0,
+                    "transientEntries": 0
+                  }
+                },
+                "notified": 0,
+                "pixelMismatchCount": 0
+              },
+              {
+                "label": "r2",
+                "completion": "COMPLETE",
+                "attempts": 1,
+                "browserDecodeRequests": 1,
+                "present": "1111",
+                "counts": [
+                  22500,
+                  22500,
+                  22500,
+                  22500
+                ],
+                "other": 0,
+                "hash": "dc0d3777",
+                "width": 794,
+                "height": 1123,
+                "threw": null,
+                "stats": {
+                  "decoded": {
+                    "bytes": 64,
+                    "entries": 1,
+                    "evictions": 46,
+                    "hits": 125,
+                    "maxBytes": 268435456,
+                    "maxEntries": 256,
+                    "maxEntryBytes": 67108864,
+                    "misses": 52,
+                    "negativeEntries": 1,
+                    "oversize": 5,
+                    "pendingEntries": 0,
+                    "rejected": 0,
+                    "transientEntries": 0
+                  },
+                  "images": {
+                    "bytes": 0,
+                    "entries": 0,
+                    "evictions": 10,
+                    "hits": 3,
+                    "maxBytes": 67108864,
+                    "maxEntries": 256,
+                    "maxEntryBytes": 16777216,
+                    "misses": 54,
+                    "negativeEntries": 0,
+                    "oversize": 17,
+                    "pendingEntries": 0,
+                    "rejected": 0,
+                    "transientEntries": 0
+                  }
+                },
+                "notified": 0,
+                "pixelMismatchCount": 0
+              },
+              {
+                "label": "r3",
+                "completion": "COMPLETE",
+                "attempts": 1,
+                "browserDecodeRequests": 1,
+                "present": "1111",
+                "counts": [
+                  22500,
+                  22500,
+                  22500,
+                  22500
+                ],
+                "other": 0,
+                "hash": "dc0d3777",
+                "width": 794,
+                "height": 1123,
+                "threw": null,
+                "stats": {
+                  "decoded": {
+                    "bytes": 64,
+                    "entries": 1,
+                    "evictions": 46,
+                    "hits": 126,
+                    "maxBytes": 268435456,
+                    "maxEntries": 256,
+                    "maxEntryBytes": 67108864,
+                    "misses": 52,
+                    "negativeEntries": 1,
+                    "oversize": 5,
+                    "pendingEntries": 0,
+                    "rejected": 0,
+                    "transientEntries": 0
+                  },
+                  "images": {
+                    "bytes": 0,
+                    "entries": 0,
+                    "evictions": 10,
+                    "hits": 3,
+                    "maxBytes": 67108864,
+                    "maxEntries": 256,
+                    "maxEntryBytes": 16777216,
+                    "misses": 55,
+                    "negativeEntries": 0,
+                    "oversize": 18,
+                    "pendingEntries": 0,
+                    "rejected": 0,
+                    "transientEntries": 0
+                  }
+                },
+                "notified": 0,
+                "pixelMismatchCount": 0
+              },
+              {
+                "label": "r4",
+                "completion": "COMPLETE",
+                "attempts": 1,
+                "browserDecodeRequests": 1,
+                "present": "1111",
+                "counts": [
+                  22500,
+                  22500,
+                  22500,
+                  22500
+                ],
+                "other": 0,
+                "hash": "dc0d3777",
+                "width": 794,
+                "height": 1123,
+                "threw": null,
+                "stats": {
+                  "decoded": {
+                    "bytes": 64,
+                    "entries": 1,
+                    "evictions": 46,
+                    "hits": 127,
+                    "maxBytes": 268435456,
+                    "maxEntries": 256,
+                    "maxEntryBytes": 67108864,
+                    "misses": 52,
+                    "negativeEntries": 1,
+                    "oversize": 5,
+                    "pendingEntries": 0,
+                    "rejected": 0,
+                    "transientEntries": 0
+                  },
+                  "images": {
+                    "bytes": 0,
+                    "entries": 0,
+                    "evictions": 10,
+                    "hits": 3,
+                    "maxBytes": 67108864,
+                    "maxEntries": 256,
+                    "maxEntryBytes": 16777216,
+                    "misses": 56,
+                    "negativeEntries": 0,
+                    "oversize": 19,
+                    "pendingEntries": 0,
+                    "rejected": 0,
+                    "transientEntries": 0
+                  }
+                },
+                "notified": 0,
+                "pixelMismatchCount": 0
+              },
+              {
+                "label": "r5",
+                "completion": "COMPLETE",
+                "attempts": 1,
+                "browserDecodeRequests": 1,
+                "present": "1111",
+                "counts": [
+                  22500,
+                  22500,
+                  22500,
+                  22500
+                ],
+                "other": 0,
+                "hash": "dc0d3777",
+                "width": 794,
+                "height": 1123,
+                "threw": null,
+                "stats": {
+                  "decoded": {
+                    "bytes": 64,
+                    "entries": 1,
+                    "evictions": 46,
+                    "hits": 128,
+                    "maxBytes": 268435456,
+                    "maxEntries": 256,
+                    "maxEntryBytes": 67108864,
+                    "misses": 52,
+                    "negativeEntries": 1,
+                    "oversize": 5,
+                    "pendingEntries": 0,
+                    "rejected": 0,
+                    "transientEntries": 0
+                  },
+                  "images": {
+                    "bytes": 0,
+                    "entries": 0,
+                    "evictions": 10,
+                    "hits": 3,
+                    "maxBytes": 67108864,
+                    "maxEntries": 256,
+                    "maxEntryBytes": 16777216,
+                    "misses": 57,
+                    "negativeEntries": 0,
+                    "oversize": 20,
+                    "pendingEntries": 0,
+                    "rejected": 0,
+                    "transientEntries": 0
+                  }
+                },
+                "notified": 0,
+                "pixelMismatchCount": 0
+              }
+            ],
+            "notifiedTotal": 0
+          },
+          "croppedGif": {
+            "rows": [
+              {
+                "label": "r1",
+                "completion": "COMPLETE",
+                "attempts": 1,
+                "browserDecodeRequests": 1,
+                "present": "0101",
+                "counts": [
+                  0,
+                  20000,
+                  0,
+                  19900
+                ],
+                "other": 100,
+                "hash": "dc19f57f",
+                "width": 794,
+                "height": 1123,
+                "threw": null,
+                "stats": {
+                  "decoded": {
+                    "bytes": 64,
+                    "entries": 1,
+                    "evictions": 47,
+                    "hits": 128,
+                    "maxBytes": 268435456,
+                    "maxEntries": 256,
+                    "maxEntryBytes": 67108864,
+                    "misses": 53,
+                    "negativeEntries": 1,
+                    "oversize": 5,
+                    "pendingEntries": 0,
+                    "rejected": 0,
+                    "transientEntries": 0
+                  },
+                  "images": {
+                    "bytes": 190194,
+                    "entries": 1,
+                    "evictions": 10,
+                    "hits": 3,
+                    "maxBytes": 67108864,
+                    "maxEntries": 256,
+                    "maxEntryBytes": 16777216,
+                    "misses": 58,
+                    "negativeEntries": 0,
+                    "oversize": 20,
+                    "pendingEntries": 0,
+                    "rejected": 0,
+                    "transientEntries": 0
+                  }
+                },
+                "notified": 0,
+                "pixelMismatchCount": 0
+              },
+              {
+                "label": "r2",
+                "completion": "COMPLETE",
+                "attempts": 1,
+                "browserDecodeRequests": 0,
+                "present": "0101",
+                "counts": [
+                  0,
+                  20000,
+                  0,
+                  19900
+                ],
+                "other": 100,
+                "hash": "dc19f57f",
+                "width": 794,
+                "height": 1123,
+                "threw": null,
+                "stats": {
+                  "decoded": {
+                    "bytes": 64,
+                    "entries": 1,
+                    "evictions": 47,
+                    "hits": 129,
+                    "maxBytes": 268435456,
+                    "maxEntries": 256,
+                    "maxEntryBytes": 67108864,
+                    "misses": 53,
+                    "negativeEntries": 1,
+                    "oversize": 5,
+                    "pendingEntries": 0,
+                    "rejected": 0,
+                    "transientEntries": 0
+                  },
+                  "images": {
+                    "bytes": 190194,
+                    "entries": 1,
+                    "evictions": 10,
+                    "hits": 4,
+                    "maxBytes": 67108864,
+                    "maxEntries": 256,
+                    "maxEntryBytes": 16777216,
+                    "misses": 58,
+                    "negativeEntries": 0,
+                    "oversize": 20,
+                    "pendingEntries": 0,
+                    "rejected": 0,
+                    "transientEntries": 0
+                  }
+                },
+                "notified": 0,
+                "pixelMismatchCount": 0
+              },
+              {
+                "label": "r3",
+                "completion": "COMPLETE",
+                "attempts": 1,
+                "browserDecodeRequests": 0,
+                "present": "0101",
+                "counts": [
+                  0,
+                  20000,
+                  0,
+                  19900
+                ],
+                "other": 100,
+                "hash": "dc19f57f",
+                "width": 794,
+                "height": 1123,
+                "threw": null,
+                "stats": {
+                  "decoded": {
+                    "bytes": 64,
+                    "entries": 1,
+                    "evictions": 47,
+                    "hits": 130,
+                    "maxBytes": 268435456,
+                    "maxEntries": 256,
+                    "maxEntryBytes": 67108864,
+                    "misses": 53,
+                    "negativeEntries": 1,
+                    "oversize": 5,
+                    "pendingEntries": 0,
+                    "rejected": 0,
+                    "transientEntries": 0
+                  },
+                  "images": {
+                    "bytes": 190194,
+                    "entries": 1,
+                    "evictions": 10,
+                    "hits": 5,
+                    "maxBytes": 67108864,
+                    "maxEntries": 256,
+                    "maxEntryBytes": 16777216,
+                    "misses": 58,
+                    "negativeEntries": 0,
+                    "oversize": 20,
+                    "pendingEntries": 0,
+                    "rejected": 0,
+                    "transientEntries": 0
+                  }
+                },
+                "notified": 0,
+                "pixelMismatchCount": 0
+              }
+            ],
+            "notifiedTotal": 0
+          },
+          "encodedOversizeSvg": {
+            "rows": [
+              {
+                "label": "r1",
+                "completion": "COMPLETE",
+                "attempts": 1,
+                "browserDecodeRequests": 1,
+                "present": "1111",
+                "counts": [
+                  10000,
+                  10000,
+                  10000,
+                  10000
+                ],
+                "other": 0,
+                "hash": "c4482d47",
+                "width": 794,
+                "height": 1123,
+                "threw": null,
+                "stats": {
+                  "decoded": {
+                    "bytes": 64,
+                    "entries": 1,
+                    "evictions": 48,
+                    "hits": 130,
+                    "maxBytes": 268435456,
+                    "maxEntries": 256,
+                    "maxEntryBytes": 67108864,
+                    "misses": 54,
+                    "negativeEntries": 1,
+                    "oversize": 5,
+                    "pendingEntries": 0,
+                    "rejected": 0,
+                    "transientEntries": 0
+                  },
+                  "images": {
+                    "bytes": 0,
+                    "entries": 0,
+                    "evictions": 11,
+                    "hits": 5,
+                    "maxBytes": 67108864,
+                    "maxEntries": 256,
+                    "maxEntryBytes": 16777216,
+                    "misses": 59,
+                    "negativeEntries": 0,
+                    "oversize": 21,
+                    "pendingEntries": 0,
+                    "rejected": 0,
+                    "transientEntries": 0
+                  }
+                },
+                "notified": 0,
+                "pixelMismatchCount": 0
+              },
+              {
+                "label": "r2",
+                "completion": "COMPLETE",
+                "attempts": 1,
+                "browserDecodeRequests": 1,
+                "present": "1111",
+                "counts": [
+                  10000,
+                  10000,
+                  10000,
+                  10000
+                ],
+                "other": 0,
+                "hash": "c4482d47",
+                "width": 794,
+                "height": 1123,
+                "threw": null,
+                "stats": {
+                  "decoded": {
+                    "bytes": 64,
+                    "entries": 1,
+                    "evictions": 48,
+                    "hits": 131,
+                    "maxBytes": 268435456,
+                    "maxEntries": 256,
+                    "maxEntryBytes": 67108864,
+                    "misses": 54,
+                    "negativeEntries": 1,
+                    "oversize": 5,
+                    "pendingEntries": 0,
+                    "rejected": 0,
+                    "transientEntries": 0
+                  },
+                  "images": {
+                    "bytes": 0,
+                    "entries": 0,
+                    "evictions": 11,
+                    "hits": 5,
+                    "maxBytes": 67108864,
+                    "maxEntries": 256,
+                    "maxEntryBytes": 16777216,
+                    "misses": 60,
+                    "negativeEntries": 0,
+                    "oversize": 22,
+                    "pendingEntries": 0,
+                    "rejected": 0,
+                    "transientEntries": 0
+                  }
+                },
+                "notified": 0,
+                "pixelMismatchCount": 0
+              },
+              {
+                "label": "r3",
+                "completion": "COMPLETE",
+                "attempts": 1,
+                "browserDecodeRequests": 1,
+                "present": "1111",
+                "counts": [
+                  10000,
+                  10000,
+                  10000,
+                  10000
+                ],
+                "other": 0,
+                "hash": "c4482d47",
+                "width": 794,
+                "height": 1123,
+                "threw": null,
+                "stats": {
+                  "decoded": {
+                    "bytes": 64,
+                    "entries": 1,
+                    "evictions": 48,
+                    "hits": 132,
+                    "maxBytes": 268435456,
+                    "maxEntries": 256,
+                    "maxEntryBytes": 67108864,
+                    "misses": 54,
+                    "negativeEntries": 1,
+                    "oversize": 5,
+                    "pendingEntries": 0,
+                    "rejected": 0,
+                    "transientEntries": 0
+                  },
+                  "images": {
+                    "bytes": 0,
+                    "entries": 0,
+                    "evictions": 11,
+                    "hits": 5,
+                    "maxBytes": 67108864,
+                    "maxEntries": 256,
+                    "maxEntryBytes": 16777216,
+                    "misses": 61,
+                    "negativeEntries": 0,
+                    "oversize": 23,
+                    "pendingEntries": 0,
+                    "rejected": 0,
+                    "transientEntries": 0
+                  }
+                },
+                "notified": 0,
+                "pixelMismatchCount": 0
+              },
+              {
+                "label": "r4",
+                "completion": "COMPLETE",
+                "attempts": 1,
+                "browserDecodeRequests": 1,
+                "present": "1111",
+                "counts": [
+                  10000,
+                  10000,
+                  10000,
+                  10000
+                ],
+                "other": 0,
+                "hash": "c4482d47",
+                "width": 794,
+                "height": 1123,
+                "threw": null,
+                "stats": {
+                  "decoded": {
+                    "bytes": 64,
+                    "entries": 1,
+                    "evictions": 48,
+                    "hits": 133,
+                    "maxBytes": 268435456,
+                    "maxEntries": 256,
+                    "maxEntryBytes": 67108864,
+                    "misses": 54,
+                    "negativeEntries": 1,
+                    "oversize": 5,
+                    "pendingEntries": 0,
+                    "rejected": 0,
+                    "transientEntries": 0
+                  },
+                  "images": {
+                    "bytes": 0,
+                    "entries": 0,
+                    "evictions": 11,
+                    "hits": 5,
+                    "maxBytes": 67108864,
+                    "maxEntries": 256,
+                    "maxEntryBytes": 16777216,
+                    "misses": 62,
+                    "negativeEntries": 0,
+                    "oversize": 24,
+                    "pendingEntries": 0,
+                    "rejected": 0,
+                    "transientEntries": 0
+                  }
+                },
+                "notified": 0,
+                "pixelMismatchCount": 0
+              }
+            ],
+            "notifiedTotal": 0
+          },
+          "negativeDecode": {
+            "rows": [
+              {
+                "label": "r1",
+                "completion": "COMPLETE",
+                "attempts": 1,
+                "browserDecodeRequests": 0,
+                "present": "0000",
+                "counts": [
+                  18,
+                  0,
+                  0,
+                  0
+                ],
+                "other": 995,
+                "hash": "a8189a52",
+                "width": 794,
+                "height": 1123,
+                "threw": null,
+                "stats": {
+                  "decoded": {
+                    "bytes": 0,
+                    "entries": 0,
+                    "evictions": 49,
+                    "hits": 133,
+                    "maxBytes": 268435456,
+                    "maxEntries": 256,
+                    "maxEntryBytes": 67108864,
+                    "misses": 54,
+                    "negativeEntries": 0,
+                    "oversize": 5,
+                    "pendingEntries": 0,
+                    "rejected": 0,
+                    "transientEntries": 0
+                  },
+                  "images": {
+                    "bytes": 0,
+                    "entries": 0,
+                    "evictions": 11,
+                    "hits": 5,
+                    "maxBytes": 67108864,
+                    "maxEntries": 256,
+                    "maxEntryBytes": 16777216,
+                    "misses": 62,
+                    "negativeEntries": 0,
+                    "oversize": 24,
+                    "pendingEntries": 0,
+                    "rejected": 0,
+                    "transientEntries": 0
+                  }
+                },
+                "notified": 0,
+                "pixelMismatchCount": 0
+              },
+              {
+                "label": "r2",
+                "completion": "COMPLETE",
+                "attempts": 1,
+                "browserDecodeRequests": 0,
+                "present": "0000",
+                "counts": [
+                  18,
+                  0,
+                  0,
+                  0
+                ],
+                "other": 995,
+                "hash": "a8189a52",
+                "width": 794,
+                "height": 1123,
+                "threw": null,
+                "stats": {
+                  "decoded": {
+                    "bytes": 0,
+                    "entries": 0,
+                    "evictions": 49,
+                    "hits": 133,
+                    "maxBytes": 268435456,
+                    "maxEntries": 256,
+                    "maxEntryBytes": 67108864,
+                    "misses": 54,
+                    "negativeEntries": 0,
+                    "oversize": 5,
+                    "pendingEntries": 0,
+                    "rejected": 0,
+                    "transientEntries": 0
+                  },
+                  "images": {
+                    "bytes": 0,
+                    "entries": 0,
+                    "evictions": 11,
+                    "hits": 5,
+                    "maxBytes": 67108864,
+                    "maxEntries": 256,
+                    "maxEntryBytes": 16777216,
+                    "misses": 62,
+                    "negativeEntries": 0,
+                    "oversize": 24,
+                    "pendingEntries": 0,
+                    "rejected": 0,
+                    "transientEntries": 0
+                  }
+                },
+                "notified": 0,
+                "pixelMismatchCount": 0
+              },
+              {
+                "label": "r3",
+                "completion": "COMPLETE",
+                "attempts": 1,
+                "browserDecodeRequests": 0,
+                "present": "0000",
+                "counts": [
+                  18,
+                  0,
+                  0,
+                  0
+                ],
+                "other": 995,
+                "hash": "a8189a52",
+                "width": 794,
+                "height": 1123,
+                "threw": null,
+                "stats": {
+                  "decoded": {
+                    "bytes": 0,
+                    "entries": 0,
+                    "evictions": 49,
+                    "hits": 133,
+                    "maxBytes": 268435456,
+                    "maxEntries": 256,
+                    "maxEntryBytes": 67108864,
+                    "misses": 54,
+                    "negativeEntries": 0,
+                    "oversize": 5,
+                    "pendingEntries": 0,
+                    "rejected": 0,
+                    "transientEntries": 0
+                  },
+                  "images": {
+                    "bytes": 0,
+                    "entries": 0,
+                    "evictions": 11,
+                    "hits": 5,
+                    "maxBytes": 67108864,
+                    "maxEntries": 256,
+                    "maxEntryBytes": 16777216,
+                    "misses": 62,
+                    "negativeEntries": 0,
+                    "oversize": 24,
+                    "pendingEntries": 0,
+                    "rejected": 0,
+                    "transientEntries": 0
+                  }
+                },
+                "notified": 0,
+                "pixelMismatchCount": 0
+              }
+            ],
+            "notifiedTotal": 0
+          },
+          "trimBetweenDraws": {
+            "rows": [
+              {
+                "label": "png1",
+                "completion": "COMPLETE",
+                "attempts": 1,
+                "browserDecodeRequests": 0,
+                "present": "1111",
+                "counts": [
+                  9801,
+                  9801,
+                  9801,
+                  9801
+                ],
+                "other": 796,
+                "hash": "ce90b40e",
+                "width": 794,
+                "height": 1123,
+                "threw": null,
+                "stats": {
+                  "decoded": {
+                    "bytes": 16384,
+                    "entries": 1,
+                    "evictions": 49,
+                    "hits": 133,
+                    "maxBytes": 268435456,
+                    "maxEntries": 256,
+                    "maxEntryBytes": 67108864,
+                    "misses": 55,
+                    "negativeEntries": 0,
+                    "oversize": 5,
+                    "pendingEntries": 0,
+                    "rejected": 0,
+                    "transientEntries": 0
+                  },
+                  "images": {
+                    "bytes": 0,
+                    "entries": 0,
+                    "evictions": 11,
+                    "hits": 5,
+                    "maxBytes": 67108864,
+                    "maxEntries": 256,
+                    "maxEntryBytes": 16777216,
+                    "misses": 62,
+                    "negativeEntries": 0,
+                    "oversize": 24,
+                    "pendingEntries": 0,
+                    "rejected": 0,
+                    "transientEntries": 0
+                  }
+                },
+                "notified": 0,
+                "pixelMismatchCount": 0
+              },
+              {
+                "label": "svg1",
+                "completion": "COMPLETE",
+                "attempts": 1,
+                "browserDecodeRequests": 1,
+                "present": "1111",
+                "counts": [
+                  10000,
+                  10000,
+                  10000,
+                  10000
+                ],
+                "other": 0,
+                "hash": "c4482d47",
+                "width": 794,
+                "height": 1123,
+                "threw": null,
+                "stats": {
+                  "decoded": {
+                    "bytes": 16448,
+                    "entries": 2,
+                    "evictions": 49,
+                    "hits": 133,
+                    "maxBytes": 268435456,
+                    "maxEntries": 256,
+                    "maxEntryBytes": 67108864,
+                    "misses": 56,
+                    "negativeEntries": 1,
+                    "oversize": 5,
+                    "pendingEntries": 0,
+                    "rejected": 0,
+                    "transientEntries": 0
+                  },
+                  "images": {
+                    "bytes": 16874,
+                    "entries": 1,
+                    "evictions": 11,
+                    "hits": 5,
+                    "maxBytes": 67108864,
+                    "maxEntries": 256,
+                    "maxEntryBytes": 16777216,
+                    "misses": 63,
+                    "negativeEntries": 0,
+                    "oversize": 24,
+                    "pendingEntries": 0,
+                    "rejected": 0,
+                    "transientEntries": 0
+                  }
+                },
+                "notified": 0,
+                "pixelMismatchCount": 0
+              },
+              {
+                "label": "svg2",
+                "completion": "COMPLETE",
+                "attempts": 1,
+                "browserDecodeRequests": 0,
+                "present": "1111",
+                "counts": [
+                  10000,
+                  10000,
+                  10000,
+                  10000
+                ],
+                "other": 0,
+                "hash": "c4482d47",
+                "width": 794,
+                "height": 1123,
+                "threw": null,
+                "stats": {
+                  "decoded": {
+                    "bytes": 16448,
+                    "entries": 2,
+                    "evictions": 49,
+                    "hits": 134,
+                    "maxBytes": 268435456,
+                    "maxEntries": 256,
+                    "maxEntryBytes": 67108864,
+                    "misses": 56,
+                    "negativeEntries": 1,
+                    "oversize": 5,
+                    "pendingEntries": 0,
+                    "rejected": 0,
+                    "transientEntries": 0
+                  },
+                  "images": {
+                    "bytes": 16874,
+                    "entries": 1,
+                    "evictions": 11,
+                    "hits": 6,
+                    "maxBytes": 67108864,
+                    "maxEntries": 256,
+                    "maxEntryBytes": 16777216,
+                    "misses": 63,
+                    "negativeEntries": 0,
+                    "oversize": 24,
+                    "pendingEntries": 0,
+                    "rejected": 0,
+                    "transientEntries": 0
+                  }
+                },
+                "notified": 0,
+                "pixelMismatchCount": 0
+              },
+              {
+                "label": "png-after-trim",
+                "completion": "COMPLETE",
+                "attempts": 1,
+                "browserDecodeRequests": 0,
+                "present": "1111",
+                "counts": [
+                  9801,
+                  9801,
+                  9801,
+                  9801
+                ],
+                "other": 796,
+                "hash": "ce90b40e",
+                "width": 794,
+                "height": 1123,
+                "threw": null,
+                "stats": {
+                  "decoded": {
+                    "bytes": 16384,
+                    "entries": 1,
+                    "evictions": 51,
+                    "hits": 134,
+                    "maxBytes": 268435456,
+                    "maxEntries": 256,
+                    "maxEntryBytes": 67108864,
+                    "misses": 57,
+                    "negativeEntries": 0,
+                    "oversize": 5,
+                    "pendingEntries": 0,
+                    "rejected": 0,
+                    "transientEntries": 0
+                  },
+                  "images": {
+                    "bytes": 0,
+                    "entries": 0,
+                    "evictions": 12,
+                    "hits": 6,
+                    "maxBytes": 67108864,
+                    "maxEntries": 256,
+                    "maxEntryBytes": 16777216,
+                    "misses": 63,
+                    "negativeEntries": 0,
+                    "oversize": 24,
+                    "pendingEntries": 0,
+                    "rejected": 0,
+                    "transientEntries": 0
+                  }
+                },
+                "notified": 0,
+                "pixelMismatchCount": 0
+              },
+              {
+                "label": "svg-after-trim",
+                "completion": "COMPLETE",
+                "attempts": 1,
+                "browserDecodeRequests": 1,
+                "present": "1111",
+                "counts": [
+                  10000,
+                  10000,
+                  10000,
+                  10000
+                ],
+                "other": 0,
+                "hash": "c4482d47",
+                "width": 794,
+                "height": 1123,
+                "threw": null,
+                "stats": {
+                  "decoded": {
+                    "bytes": 16448,
+                    "entries": 2,
+                    "evictions": 51,
+                    "hits": 134,
+                    "maxBytes": 268435456,
+                    "maxEntries": 256,
+                    "maxEntryBytes": 67108864,
+                    "misses": 58,
+                    "negativeEntries": 1,
+                    "oversize": 5,
+                    "pendingEntries": 0,
+                    "rejected": 0,
+                    "transientEntries": 0
+                  },
+                  "images": {
+                    "bytes": 16874,
+                    "entries": 1,
+                    "evictions": 12,
+                    "hits": 6,
+                    "maxBytes": 67108864,
+                    "maxEntries": 256,
+                    "maxEntryBytes": 16777216,
+                    "misses": 64,
+                    "negativeEntries": 0,
+                    "oversize": 24,
+                    "pendingEntries": 0,
+                    "rejected": 0,
+                    "transientEntries": 0
+                  }
+                },
+                "notified": 0,
+                "pixelMismatchCount": 0
+              },
+              {
+                "label": "svg-after-trim-wait",
+                "completion": "COMPLETE",
+                "attempts": 1,
+                "browserDecodeRequests": 0,
+                "present": "1111",
+                "counts": [
+                  10000,
+                  10000,
+                  10000,
+                  10000
+                ],
+                "other": 0,
+                "hash": "c4482d47",
+                "width": 794,
+                "height": 1123,
+                "threw": null,
+                "stats": {
+                  "decoded": {
+                    "bytes": 16448,
+                    "entries": 2,
+                    "evictions": 51,
+                    "hits": 135,
+                    "maxBytes": 268435456,
+                    "maxEntries": 256,
+                    "maxEntryBytes": 67108864,
+                    "misses": 58,
+                    "negativeEntries": 1,
+                    "oversize": 5,
+                    "pendingEntries": 0,
+                    "rejected": 0,
+                    "transientEntries": 0
+                  },
+                  "images": {
+                    "bytes": 16874,
+                    "entries": 1,
+                    "evictions": 12,
+                    "hits": 7,
+                    "maxBytes": 67108864,
+                    "maxEntries": 256,
+                    "maxEntryBytes": 16777216,
+                    "misses": 64,
+                    "negativeEntries": 0,
+                    "oversize": 24,
+                    "pendingEntries": 0,
+                    "rejected": 0,
+                    "transientEntries": 0
+                  }
+                },
+                "notified": 0,
+                "pixelMismatchCount": 0
+              }
+            ],
+            "notifiedTotal": 0
+          },
+          "trimDuringLoad": {
+            "rows": [
+              {
+                "label": "r1",
+                "completion": "COMPLETE",
+                "attempts": 1,
+                "browserDecodeRequests": 1,
+                "present": "1111",
+                "counts": [
+                  10000,
+                  10000,
+                  10000,
+                  10000
+                ],
+                "other": 0,
+                "hash": "c4482d47",
+                "width": 794,
+                "height": 1123,
+                "threw": null,
+                "stats": {
+                  "decoded": {
+                    "bytes": 64,
+                    "entries": 1,
+                    "evictions": 53,
+                    "hits": 135,
+                    "maxBytes": 268435456,
+                    "maxEntries": 256,
+                    "maxEntryBytes": 67108864,
+                    "misses": 59,
+                    "negativeEntries": 1,
+                    "oversize": 5,
+                    "pendingEntries": 0,
+                    "rejected": 0,
+                    "transientEntries": 0
+                  },
+                  "images": {
+                    "bytes": 26090,
+                    "entries": 1,
+                    "evictions": 13,
+                    "hits": 7,
+                    "maxBytes": 67108864,
+                    "maxEntries": 256,
+                    "maxEntryBytes": 16777216,
+                    "misses": 65,
+                    "negativeEntries": 0,
+                    "oversize": 24,
+                    "pendingEntries": 0,
+                    "rejected": 0,
+                    "transientEntries": 0
+                  }
+                },
+                "notified": 0,
+                "pixelMismatchCount": 0
+              },
+              {
+                "label": "r2",
+                "completion": "COMPLETE",
+                "attempts": 1,
+                "browserDecodeRequests": 1,
+                "present": "1111",
+                "counts": [
+                  10000,
+                  10000,
+                  10000,
+                  10000
+                ],
+                "other": 0,
+                "hash": "c4482d47",
+                "width": 794,
+                "height": 1123,
+                "threw": null,
+                "stats": {
+                  "decoded": {
+                    "bytes": 64,
+                    "entries": 1,
+                    "evictions": 54,
+                    "hits": 135,
+                    "maxBytes": 268435456,
+                    "maxEntries": 256,
+                    "maxEntryBytes": 67108864,
+                    "misses": 60,
+                    "negativeEntries": 1,
+                    "oversize": 5,
+                    "pendingEntries": 0,
+                    "rejected": 0,
+                    "transientEntries": 0
+                  },
+                  "images": {
+                    "bytes": 26090,
+                    "entries": 1,
+                    "evictions": 14,
+                    "hits": 7,
+                    "maxBytes": 67108864,
+                    "maxEntries": 256,
+                    "maxEntryBytes": 16777216,
+                    "misses": 66,
+                    "negativeEntries": 0,
+                    "oversize": 24,
+                    "pendingEntries": 0,
+                    "rejected": 0,
+                    "transientEntries": 0
+                  }
+                },
+                "notified": 0,
+                "pixelMismatchCount": 0
+              },
+              {
+                "label": "r3",
+                "completion": "COMPLETE",
+                "attempts": 1,
+                "browserDecodeRequests": 0,
+                "present": "1111",
+                "counts": [
+                  10000,
+                  10000,
+                  10000,
+                  10000
+                ],
+                "other": 0,
+                "hash": "c4482d47",
+                "width": 794,
+                "height": 1123,
+                "threw": null,
+                "stats": {
+                  "decoded": {
+                    "bytes": 64,
+                    "entries": 1,
+                    "evictions": 54,
+                    "hits": 136,
+                    "maxBytes": 268435456,
+                    "maxEntries": 256,
+                    "maxEntryBytes": 67108864,
+                    "misses": 60,
+                    "negativeEntries": 1,
+                    "oversize": 5,
+                    "pendingEntries": 0,
+                    "rejected": 0,
+                    "transientEntries": 0
+                  },
+                  "images": {
+                    "bytes": 26090,
+                    "entries": 1,
+                    "evictions": 14,
+                    "hits": 8,
+                    "maxBytes": 67108864,
+                    "maxEntries": 256,
+                    "maxEntryBytes": 16777216,
+                    "misses": 66,
+                    "negativeEntries": 0,
+                    "oversize": 24,
+                    "pendingEntries": 0,
+                    "rejected": 0,
+                    "transientEntries": 0
+                  }
+                },
+                "notified": 0,
+                "pixelMismatchCount": 0
+              }
+            ],
+            "notifiedTotal": 0
+          },
+          "closedBeforeLoad": {
+            "rows": [
+              {
+                "label": "r1",
+                "completion": "COMPLETE",
+                "attempts": 1,
+                "browserDecodeRequests": 1,
+                "present": "1111",
+                "counts": [
+                  10000,
+                  10000,
+                  10000,
+                  10000
+                ],
+                "other": 0,
+                "hash": "c4482d47",
+                "width": 794,
+                "height": 1123,
+                "threw": null,
+                "stats": {
+                  "decoded": {
+                    "bytes": 64,
+                    "entries": 1,
+                    "evictions": 55,
+                    "hits": 136,
+                    "maxBytes": 268435456,
+                    "maxEntries": 256,
+                    "maxEntryBytes": 67108864,
+                    "misses": 61,
+                    "negativeEntries": 1,
+                    "oversize": 5,
+                    "pendingEntries": 0,
+                    "rejected": 0,
+                    "transientEntries": 0
+                  },
+                  "images": {
+                    "bytes": 37354,
+                    "entries": 1,
+                    "evictions": 15,
+                    "hits": 8,
+                    "maxBytes": 67108864,
+                    "maxEntries": 256,
+                    "maxEntryBytes": 16777216,
+                    "misses": 67,
+                    "negativeEntries": 0,
+                    "oversize": 24,
+                    "pendingEntries": 0,
+                    "rejected": 0,
+                    "transientEntries": 0
+                  }
+                },
+                "notified": 0,
+                "pixelMismatchCount": 0
+              },
+              {
+                "label": "other-doc-same-image",
+                "completion": "COMPLETE",
+                "attempts": 1,
+                "browserDecodeRequests": 0,
+                "present": "1111",
+                "counts": [
+                  10000,
+                  10000,
+                  10000,
+                  10000
+                ],
+                "other": 0,
+                "hash": "c4482d47",
+                "width": 794,
+                "height": 1123,
+                "threw": null,
+                "stats": {
+                  "decoded": {
+                    "bytes": 64,
+                    "entries": 1,
+                    "evictions": 55,
+                    "hits": 137,
+                    "maxBytes": 268435456,
+                    "maxEntries": 256,
+                    "maxEntryBytes": 67108864,
+                    "misses": 61,
+                    "negativeEntries": 1,
+                    "oversize": 5,
+                    "pendingEntries": 0,
+                    "rejected": 0,
+                    "transientEntries": 0
+                  },
+                  "images": {
+                    "bytes": 37354,
+                    "entries": 1,
+                    "evictions": 15,
+                    "hits": 9,
+                    "maxBytes": 67108864,
+                    "maxEntries": 256,
+                    "maxEntryBytes": 16777216,
+                    "misses": 67,
+                    "negativeEntries": 0,
+                    "oversize": 24,
+                    "pendingEntries": 0,
+                    "rejected": 0,
+                    "transientEntries": 0
+                  }
+                },
+                "notified": 0,
+                "pixelMismatchCount": 0
+              }
+            ],
+            "notifiedTotal": 0
+          },
+          "sharedAcrossDocs": {
+            "rows": [
+              {
+                "label": "a1",
+                "completion": "COMPLETE",
+                "attempts": 1,
+                "browserDecodeRequests": 1,
+                "present": "1111",
+                "counts": [
+                  10000,
+                  10000,
+                  10000,
+                  10000
+                ],
+                "other": 0,
+                "hash": "c4482d47",
+                "width": 794,
+                "height": 1123,
+                "threw": null,
+                "stats": {
+                  "decoded": {
+                    "bytes": 64,
+                    "entries": 1,
+                    "evictions": 56,
+                    "hits": 137,
+                    "maxBytes": 268435456,
+                    "maxEntries": 256,
+                    "maxEntryBytes": 67108864,
+                    "misses": 62,
+                    "negativeEntries": 1,
+                    "oversize": 5,
+                    "pendingEntries": 0,
+                    "rejected": 0,
+                    "transientEntries": 0
+                  },
+                  "images": {
+                    "bytes": 21226,
+                    "entries": 1,
+                    "evictions": 16,
+                    "hits": 9,
+                    "maxBytes": 67108864,
+                    "maxEntries": 256,
+                    "maxEntryBytes": 16777216,
+                    "misses": 68,
+                    "negativeEntries": 0,
+                    "oversize": 24,
+                    "pendingEntries": 0,
+                    "rejected": 0,
+                    "transientEntries": 0
+                  }
+                },
+                "notified": 0,
+                "pixelMismatchCount": 0
+              },
+              {
+                "label": "b1",
+                "completion": "COMPLETE",
+                "attempts": 1,
+                "browserDecodeRequests": 0,
+                "present": "1111",
+                "counts": [
+                  10000,
+                  10000,
+                  10000,
+                  10000
+                ],
+                "other": 0,
+                "hash": "c4482d47",
+                "width": 794,
+                "height": 1123,
+                "threw": null,
+                "stats": {
+                  "decoded": {
+                    "bytes": 64,
+                    "entries": 1,
+                    "evictions": 56,
+                    "hits": 138,
+                    "maxBytes": 268435456,
+                    "maxEntries": 256,
+                    "maxEntryBytes": 67108864,
+                    "misses": 62,
+                    "negativeEntries": 1,
+                    "oversize": 5,
+                    "pendingEntries": 0,
+                    "rejected": 0,
+                    "transientEntries": 0
+                  },
+                  "images": {
+                    "bytes": 21226,
+                    "entries": 1,
+                    "evictions": 16,
+                    "hits": 10,
+                    "maxBytes": 67108864,
+                    "maxEntries": 256,
+                    "maxEntryBytes": 16777216,
+                    "misses": 68,
+                    "negativeEntries": 0,
+                    "oversize": 24,
+                    "pendingEntries": 0,
+                    "rejected": 0,
+                    "transientEntries": 0
+                  }
+                },
+                "notified": 0,
+                "pixelMismatchCount": 0
+              },
+              {
+                "label": "c1",
+                "completion": "COMPLETE",
+                "attempts": 1,
+                "browserDecodeRequests": 0,
+                "present": "1111",
+                "counts": [
+                  9801,
+                  9801,
+                  9801,
+                  9801
+                ],
+                "other": 796,
+                "hash": "ec0c8814",
+                "width": 794,
+                "height": 1123,
+                "threw": null,
+                "stats": {
+                  "decoded": {
+                    "bytes": 20800,
+                    "entries": 2,
+                    "evictions": 56,
+                    "hits": 138,
+                    "maxBytes": 268435456,
+                    "maxEntries": 256,
+                    "maxEntryBytes": 67108864,
+                    "misses": 63,
+                    "negativeEntries": 1,
+                    "oversize": 5,
+                    "pendingEntries": 0,
+                    "rejected": 0,
+                    "transientEntries": 0
+                  },
+                  "images": {
+                    "bytes": 21226,
+                    "entries": 1,
+                    "evictions": 16,
+                    "hits": 10,
+                    "maxBytes": 67108864,
+                    "maxEntries": 256,
+                    "maxEntryBytes": 16777216,
+                    "misses": 68,
+                    "negativeEntries": 0,
+                    "oversize": 24,
+                    "pendingEntries": 0,
+                    "rejected": 0,
+                    "transientEntries": 0
+                  }
+                },
+                "notified": 0,
+                "pixelMismatchCount": 0
+              },
+              {
+                "label": "e1",
+                "completion": "COMPLETE",
+                "attempts": 1,
+                "browserDecodeRequests": 0,
+                "present": "1111",
+                "counts": [
+                  9801,
+                  9801,
+                  9801,
+                  9801
+                ],
+                "other": 796,
+                "hash": "ec0c8814",
+                "width": 794,
+                "height": 1123,
+                "threw": null,
+                "stats": {
+                  "decoded": {
+                    "bytes": 20800,
+                    "entries": 2,
+                    "evictions": 56,
+                    "hits": 139,
+                    "maxBytes": 268435456,
+                    "maxEntries": 256,
+                    "maxEntryBytes": 67108864,
+                    "misses": 63,
+                    "negativeEntries": 1,
+                    "oversize": 5,
+                    "pendingEntries": 0,
+                    "rejected": 0,
+                    "transientEntries": 0
+                  },
+                  "images": {
+                    "bytes": 21226,
+                    "entries": 1,
+                    "evictions": 16,
+                    "hits": 10,
+                    "maxBytes": 67108864,
+                    "maxEntries": 256,
+                    "maxEntryBytes": 16777216,
+                    "misses": 68,
+                    "negativeEntries": 0,
+                    "oversize": 24,
+                    "pendingEntries": 0,
+                    "rejected": 0,
+                    "transientEntries": 0
+                  }
+                },
+                "notified": 0,
+                "pixelMismatchCount": 0
+              },
+              {
+                "label": "a2",
+                "completion": "COMPLETE",
+                "attempts": 1,
+                "browserDecodeRequests": 0,
+                "present": "1111",
+                "counts": [
+                  10000,
+                  10000,
+                  10000,
+                  10000
+                ],
+                "other": 0,
+                "hash": "c4482d47",
+                "width": 794,
+                "height": 1123,
+                "threw": null,
+                "stats": {
+                  "decoded": {
+                    "bytes": 20800,
+                    "entries": 2,
+                    "evictions": 56,
+                    "hits": 140,
+                    "maxBytes": 268435456,
+                    "maxEntries": 256,
+                    "maxEntryBytes": 67108864,
+                    "misses": 63,
+                    "negativeEntries": 1,
+                    "oversize": 5,
+                    "pendingEntries": 0,
+                    "rejected": 0,
+                    "transientEntries": 0
+                  },
+                  "images": {
+                    "bytes": 21226,
+                    "entries": 1,
+                    "evictions": 16,
+                    "hits": 11,
+                    "maxBytes": 67108864,
+                    "maxEntries": 256,
+                    "maxEntryBytes": 16777216,
+                    "misses": 68,
+                    "negativeEntries": 0,
+                    "oversize": 24,
+                    "pendingEntries": 0,
+                    "rejected": 0,
+                    "transientEntries": 0
+                  }
+                },
+                "notified": 0,
+                "pixelMismatchCount": 0
+              },
+              {
+                "label": "b2",
+                "completion": "COMPLETE",
+                "attempts": 1,
+                "browserDecodeRequests": 0,
+                "present": "1111",
+                "counts": [
+                  10000,
+                  10000,
+                  10000,
+                  10000
+                ],
+                "other": 0,
+                "hash": "c4482d47",
+                "width": 794,
+                "height": 1123,
+                "threw": null,
+                "stats": {
+                  "decoded": {
+                    "bytes": 20800,
+                    "entries": 2,
+                    "evictions": 56,
+                    "hits": 141,
+                    "maxBytes": 268435456,
+                    "maxEntries": 256,
+                    "maxEntryBytes": 67108864,
+                    "misses": 63,
+                    "negativeEntries": 1,
+                    "oversize": 5,
+                    "pendingEntries": 0,
+                    "rejected": 0,
+                    "transientEntries": 0
+                  },
+                  "images": {
+                    "bytes": 21226,
+                    "entries": 1,
+                    "evictions": 16,
+                    "hits": 12,
+                    "maxBytes": 67108864,
+                    "maxEntries": 256,
+                    "maxEntryBytes": 16777216,
+                    "misses": 68,
+                    "negativeEntries": 0,
+                    "oversize": 24,
+                    "pendingEntries": 0,
+                    "rejected": 0,
+                    "transientEntries": 0
+                  }
+                },
+                "notified": 0,
+                "pixelMismatchCount": 0
+              },
+              {
+                "label": "a-after-b-closed",
+                "completion": "COMPLETE",
+                "attempts": 1,
+                "browserDecodeRequests": 0,
+                "present": "1111",
+                "counts": [
+                  10000,
+                  10000,
+                  10000,
+                  10000
+                ],
+                "other": 0,
+                "hash": "c4482d47",
+                "width": 794,
+                "height": 1123,
+                "threw": null,
+                "stats": {
+                  "decoded": {
+                    "bytes": 20800,
+                    "entries": 2,
+                    "evictions": 56,
+                    "hits": 142,
+                    "maxBytes": 268435456,
+                    "maxEntries": 256,
+                    "maxEntryBytes": 67108864,
+                    "misses": 63,
+                    "negativeEntries": 1,
+                    "oversize": 5,
+                    "pendingEntries": 0,
+                    "rejected": 0,
+                    "transientEntries": 0
+                  },
+                  "images": {
+                    "bytes": 21226,
+                    "entries": 1,
+                    "evictions": 16,
+                    "hits": 13,
+                    "maxBytes": 67108864,
+                    "maxEntries": 256,
+                    "maxEntryBytes": 16777216,
+                    "misses": 68,
+                    "negativeEntries": 0,
+                    "oversize": 24,
+                    "pendingEntries": 0,
+                    "rejected": 0,
+                    "transientEntries": 0
+                  }
+                },
+                "notified": 0,
+                "pixelMismatchCount": 0
+              },
+              {
+                "label": "c-after-e-closed",
+                "completion": "COMPLETE",
+                "attempts": 1,
+                "browserDecodeRequests": 0,
+                "present": "1111",
+                "counts": [
+                  9801,
+                  9801,
+                  9801,
+                  9801
+                ],
+                "other": 796,
+                "hash": "ec0c8814",
+                "width": 794,
+                "height": 1123,
+                "threw": null,
+                "stats": {
+                  "decoded": {
+                    "bytes": 20800,
+                    "entries": 2,
+                    "evictions": 56,
+                    "hits": 143,
+                    "maxBytes": 268435456,
+                    "maxEntries": 256,
+                    "maxEntryBytes": 67108864,
+                    "misses": 63,
+                    "negativeEntries": 1,
+                    "oversize": 5,
+                    "pendingEntries": 0,
+                    "rejected": 0,
+                    "transientEntries": 0
+                  },
+                  "images": {
+                    "bytes": 21226,
+                    "entries": 1,
+                    "evictions": 16,
+                    "hits": 13,
+                    "maxBytes": 67108864,
+                    "maxEntries": 256,
+                    "maxEntryBytes": 16777216,
+                    "misses": 68,
+                    "negativeEntries": 0,
+                    "oversize": 24,
+                    "pendingEntries": 0,
+                    "rejected": 0,
+                    "transientEntries": 0
+                  }
+                },
+                "notified": 0,
+                "pixelMismatchCount": 0
+              }
+            ],
+            "notifiedTotal": 0
+          },
+          "budgetPressureAlternating": {
+            "rows": [
+              {
+                "label": "a0",
+                "completion": "COMPLETE",
+                "attempts": 1,
+                "browserDecodeRequests": 1,
+                "present": "1111",
+                "counts": [
+                  22500,
+                  22500,
+                  22500,
+                  22500
+                ],
+                "other": 0,
+                "hash": "dc0d3777",
+                "width": 794,
+                "height": 1123,
+                "threw": null,
+                "stats": {
+                  "decoded": {
+                    "bytes": 64,
+                    "entries": 1,
+                    "evictions": 58,
+                    "hits": 143,
+                    "maxBytes": 8388608,
+                    "maxEntries": 16,
+                    "maxEntryBytes": 2097152,
+                    "misses": 64,
+                    "negativeEntries": 1,
+                    "oversize": 5,
+                    "pendingEntries": 0,
+                    "rejected": 0,
+                    "transientEntries": 0
+                  },
+                  "images": {
+                    "bytes": 0,
+                    "entries": 0,
+                    "evictions": 17,
+                    "hits": 13,
+                    "maxBytes": 2097152,
+                    "maxEntries": 16,
+                    "maxEntryBytes": 524288,
+                    "misses": 69,
+                    "negativeEntries": 0,
+                    "oversize": 25,
+                    "pendingEntries": 0,
+                    "rejected": 0,
+                    "transientEntries": 0
+                  }
+                },
+                "notified": 0,
+                "pixelMismatchCount": 0
+              },
+              {
+                "label": "b0",
+                "completion": "COMPLETE",
+                "attempts": 1,
+                "browserDecodeRequests": 1,
+                "present": "1111",
+                "counts": [
+                  22500,
+                  22500,
+                  22500,
+                  22500
+                ],
+                "other": 0,
+                "hash": "dc0d3777",
+                "width": 794,
+                "height": 1123,
+                "threw": null,
+                "stats": {
+                  "decoded": {
+                    "bytes": 128,
+                    "entries": 2,
+                    "evictions": 58,
+                    "hits": 143,
+                    "maxBytes": 8388608,
+                    "maxEntries": 16,
+                    "maxEntryBytes": 2097152,
+                    "misses": 65,
+                    "negativeEntries": 2,
+                    "oversize": 5,
+                    "pendingEntries": 0,
+                    "rejected": 0,
+                    "transientEntries": 0
+                  },
+                  "images": {
+                    "bytes": 0,
+                    "entries": 0,
+                    "evictions": 17,
+                    "hits": 13,
+                    "maxBytes": 2097152,
+                    "maxEntries": 16,
+                    "maxEntryBytes": 524288,
+                    "misses": 70,
+                    "negativeEntries": 0,
+                    "oversize": 26,
+                    "pendingEntries": 0,
+                    "rejected": 0,
+                    "transientEntries": 0
+                  }
+                },
+                "notified": 0,
+                "pixelMismatchCount": 0
+              },
+              {
+                "label": "a1",
+                "completion": "COMPLETE",
+                "attempts": 1,
+                "browserDecodeRequests": 1,
+                "present": "1111",
+                "counts": [
+                  22500,
+                  22500,
+                  22500,
+                  22500
+                ],
+                "other": 0,
+                "hash": "dc0d3777",
+                "width": 794,
+                "height": 1123,
+                "threw": null,
+                "stats": {
+                  "decoded": {
+                    "bytes": 128,
+                    "entries": 2,
+                    "evictions": 58,
+                    "hits": 144,
+                    "maxBytes": 8388608,
+                    "maxEntries": 16,
+                    "maxEntryBytes": 2097152,
+                    "misses": 65,
+                    "negativeEntries": 2,
+                    "oversize": 5,
+                    "pendingEntries": 0,
+                    "rejected": 0,
+                    "transientEntries": 0
+                  },
+                  "images": {
+                    "bytes": 0,
+                    "entries": 0,
+                    "evictions": 17,
+                    "hits": 13,
+                    "maxBytes": 2097152,
+                    "maxEntries": 16,
+                    "maxEntryBytes": 524288,
+                    "misses": 71,
+                    "negativeEntries": 0,
+                    "oversize": 27,
+                    "pendingEntries": 0,
+                    "rejected": 0,
+                    "transientEntries": 0
+                  }
+                },
+                "notified": 0,
+                "pixelMismatchCount": 0
+              },
+              {
+                "label": "b1",
+                "completion": "COMPLETE",
+                "attempts": 1,
+                "browserDecodeRequests": 1,
+                "present": "1111",
+                "counts": [
+                  22500,
+                  22500,
+                  22500,
+                  22500
+                ],
+                "other": 0,
+                "hash": "dc0d3777",
+                "width": 794,
+                "height": 1123,
+                "threw": null,
+                "stats": {
+                  "decoded": {
+                    "bytes": 128,
+                    "entries": 2,
+                    "evictions": 58,
+                    "hits": 145,
+                    "maxBytes": 8388608,
+                    "maxEntries": 16,
+                    "maxEntryBytes": 2097152,
+                    "misses": 65,
+                    "negativeEntries": 2,
+                    "oversize": 5,
+                    "pendingEntries": 0,
+                    "rejected": 0,
+                    "transientEntries": 0
+                  },
+                  "images": {
+                    "bytes": 0,
+                    "entries": 0,
+                    "evictions": 17,
+                    "hits": 13,
+                    "maxBytes": 2097152,
+                    "maxEntries": 16,
+                    "maxEntryBytes": 524288,
+                    "misses": 72,
+                    "negativeEntries": 0,
+                    "oversize": 28,
+                    "pendingEntries": 0,
+                    "rejected": 0,
+                    "transientEntries": 0
+                  }
+                },
+                "notified": 0,
+                "pixelMismatchCount": 0
+              },
+              {
+                "label": "a2",
+                "completion": "COMPLETE",
+                "attempts": 1,
+                "browserDecodeRequests": 1,
+                "present": "1111",
+                "counts": [
+                  22500,
+                  22500,
+                  22500,
+                  22500
+                ],
+                "other": 0,
+                "hash": "dc0d3777",
+                "width": 794,
+                "height": 1123,
+                "threw": null,
+                "stats": {
+                  "decoded": {
+                    "bytes": 128,
+                    "entries": 2,
+                    "evictions": 58,
+                    "hits": 146,
+                    "maxBytes": 8388608,
+                    "maxEntries": 16,
+                    "maxEntryBytes": 2097152,
+                    "misses": 65,
+                    "negativeEntries": 2,
+                    "oversize": 5,
+                    "pendingEntries": 0,
+                    "rejected": 0,
+                    "transientEntries": 0
+                  },
+                  "images": {
+                    "bytes": 0,
+                    "entries": 0,
+                    "evictions": 17,
+                    "hits": 13,
+                    "maxBytes": 2097152,
+                    "maxEntries": 16,
+                    "maxEntryBytes": 524288,
+                    "misses": 73,
+                    "negativeEntries": 0,
+                    "oversize": 29,
+                    "pendingEntries": 0,
+                    "rejected": 0,
+                    "transientEntries": 0
+                  }
+                },
+                "notified": 0,
+                "pixelMismatchCount": 0
+              },
+              {
+                "label": "b2",
+                "completion": "COMPLETE",
+                "attempts": 1,
+                "browserDecodeRequests": 1,
+                "present": "1111",
+                "counts": [
+                  22500,
+                  22500,
+                  22500,
+                  22500
+                ],
+                "other": 0,
+                "hash": "dc0d3777",
+                "width": 794,
+                "height": 1123,
+                "threw": null,
+                "stats": {
+                  "decoded": {
+                    "bytes": 128,
+                    "entries": 2,
+                    "evictions": 58,
+                    "hits": 147,
+                    "maxBytes": 8388608,
+                    "maxEntries": 16,
+                    "maxEntryBytes": 2097152,
+                    "misses": 65,
+                    "negativeEntries": 2,
+                    "oversize": 5,
+                    "pendingEntries": 0,
+                    "rejected": 0,
+                    "transientEntries": 0
+                  },
+                  "images": {
+                    "bytes": 0,
+                    "entries": 0,
+                    "evictions": 17,
+                    "hits": 13,
+                    "maxBytes": 2097152,
+                    "maxEntries": 16,
+                    "maxEntryBytes": 524288,
+                    "misses": 74,
+                    "negativeEntries": 0,
+                    "oversize": 30,
+                    "pendingEntries": 0,
+                    "rejected": 0,
+                    "transientEntries": 0
+                  }
+                },
+                "notified": 0,
+                "pixelMismatchCount": 0
+              },
+              {
+                "label": "a3",
+                "completion": "COMPLETE",
+                "attempts": 1,
+                "browserDecodeRequests": 1,
+                "present": "1111",
+                "counts": [
+                  22500,
+                  22500,
+                  22500,
+                  22500
+                ],
+                "other": 0,
+                "hash": "dc0d3777",
+                "width": 794,
+                "height": 1123,
+                "threw": null,
+                "stats": {
+                  "decoded": {
+                    "bytes": 128,
+                    "entries": 2,
+                    "evictions": 58,
+                    "hits": 148,
+                    "maxBytes": 8388608,
+                    "maxEntries": 16,
+                    "maxEntryBytes": 2097152,
+                    "misses": 65,
+                    "negativeEntries": 2,
+                    "oversize": 5,
+                    "pendingEntries": 0,
+                    "rejected": 0,
+                    "transientEntries": 0
+                  },
+                  "images": {
+                    "bytes": 0,
+                    "entries": 0,
+                    "evictions": 17,
+                    "hits": 13,
+                    "maxBytes": 2097152,
+                    "maxEntries": 16,
+                    "maxEntryBytes": 524288,
+                    "misses": 75,
+                    "negativeEntries": 0,
+                    "oversize": 31,
+                    "pendingEntries": 0,
+                    "rejected": 0,
+                    "transientEntries": 0
+                  }
+                },
+                "notified": 0,
+                "pixelMismatchCount": 0
+              },
+              {
+                "label": "b3",
+                "completion": "COMPLETE",
+                "attempts": 1,
+                "browserDecodeRequests": 1,
+                "present": "1111",
+                "counts": [
+                  22500,
+                  22500,
+                  22500,
+                  22500
+                ],
+                "other": 0,
+                "hash": "dc0d3777",
+                "width": 794,
+                "height": 1123,
+                "threw": null,
+                "stats": {
+                  "decoded": {
+                    "bytes": 128,
+                    "entries": 2,
+                    "evictions": 58,
+                    "hits": 149,
+                    "maxBytes": 8388608,
+                    "maxEntries": 16,
+                    "maxEntryBytes": 2097152,
+                    "misses": 65,
+                    "negativeEntries": 2,
+                    "oversize": 5,
+                    "pendingEntries": 0,
+                    "rejected": 0,
+                    "transientEntries": 0
+                  },
+                  "images": {
+                    "bytes": 0,
+                    "entries": 0,
+                    "evictions": 17,
+                    "hits": 13,
+                    "maxBytes": 2097152,
+                    "maxEntries": 16,
+                    "maxEntryBytes": 524288,
+                    "misses": 76,
+                    "negativeEntries": 0,
+                    "oversize": 32,
+                    "pendingEntries": 0,
+                    "rejected": 0,
+                    "transientEntries": 0
+                  }
+                },
+                "notified": 0,
+                "pixelMismatchCount": 0
+              }
+            ],
+            "notifiedTotal": 0
+          }
+        },
+        "fixtures": [
+          {
+            "ext": "png",
+            "naturalWidth": 64,
+            "naturalHeight": 64,
+            "encodedBytes": 301,
+            "boxPx": 200,
+            "scale": 1
+          },
+          {
+            "ext": "png",
+            "naturalWidth": 4400,
+            "naturalHeight": 4000,
+            "encodedBytes": 347078,
+            "boxPx": 300,
+            "scale": 1
+          },
+          {
+            "ext": "svg",
+            "naturalWidth": 64,
+            "naturalHeight": 64,
+            "encodedBytes": 348,
+            "boxPx": 200,
+            "scale": 1
+          },
+          {
+            "ext": "svg",
+            "naturalWidth": 2400,
+            "naturalHeight": 2400,
+            "encodedBytes": 380,
+            "boxPx": 300,
+            "scale": 1
+          },
+          {
+            "ext": "gif",
+            "naturalWidth": 200,
+            "naturalHeight": 200,
+            "encodedBytes": 22628,
+            "boxPx": 200,
+            "scale": 1
+          },
+          {
+            "ext": "svg",
+            "naturalWidth": 64,
+            "naturalHeight": 64,
+            "encodedBytes": 13631843,
+            "boxPx": 200,
+            "scale": 1
+          },
+          {
+            "ext": "png",
+            "naturalWidth": 64,
+            "naturalHeight": 64,
+            "encodedBytes": 4096,
+            "boxPx": 200,
+            "scale": 1
+          },
+          {
+            "ext": "png",
+            "naturalWidth": 64,
+            "naturalHeight": 64,
+            "encodedBytes": 301,
+            "boxPx": 200,
+            "scale": 1
+          },
+          {
+            "ext": "svg",
+            "naturalWidth": 64,
+            "naturalHeight": 64,
+            "encodedBytes": 348,
+            "boxPx": 200,
+            "scale": 1
+          },
+          {
+            "ext": "svg",
+            "naturalWidth": 80,
+            "naturalHeight": 80,
+            "encodedBytes": 348,
+            "boxPx": 200,
+            "scale": 1
+          },
+          {
+            "ext": "svg",
+            "naturalWidth": 96,
+            "naturalHeight": 96,
+            "encodedBytes": 348,
+            "boxPx": 200,
+            "scale": 1
+          },
+          {
+            "ext": "svg",
+            "naturalWidth": 96,
+            "naturalHeight": 96,
+            "encodedBytes": 348,
+            "boxPx": 200,
+            "scale": 1
+          },
+          {
+            "ext": "svg",
+            "naturalWidth": 72,
+            "naturalHeight": 72,
+            "encodedBytes": 348,
+            "boxPx": 200,
+            "scale": 1
+          },
+          {
+            "ext": "svg",
+            "naturalWidth": 72,
+            "naturalHeight": 72,
+            "encodedBytes": 348,
+            "boxPx": 200,
+            "scale": 1
+          },
+          {
+            "ext": "png",
+            "naturalWidth": 72,
+            "naturalHeight": 72,
+            "encodedBytes": 349,
+            "boxPx": 200,
+            "scale": 1
+          },
+          {
+            "ext": "png",
+            "naturalWidth": 72,
+            "naturalHeight": 72,
+            "encodedBytes": 349,
+            "boxPx": 200,
+            "scale": 1
+          },
+          {
+            "ext": "svg",
+            "naturalWidth": 600,
+            "naturalHeight": 600,
+            "encodedBytes": 364,
+            "boxPx": 300,
+            "scale": 1
+          },
+          {
+            "ext": "svg",
+            "naturalWidth": 610,
+            "naturalHeight": 610,
+            "encodedBytes": 364,
+            "boxPx": 300,
+            "scale": 1
+          }
+        ],
+        "notes": [
+          {
+            "cropBefore": {
+              "l": 0,
+              "t": 0,
+              "r": 0,
+              "b": 0,
+              "w": 15000
+            }
+          }
+        ],
+        "errors": []
+      }
+    },
+    "ownership": {
+      "status": "FAIL",
+      "tests": [
+        {
+          "name": "pending-does-not-publish",
+          "status": "PASS"
+        },
+        {
+          "name": "two-oversize-complete",
+          "status": "PASS",
+          "state": "COMPLETE",
+          "pixelMismatchCount": 0
+        },
+        {
+          "name": "resident-budget",
+          "status": "PASS"
+        },
+        {
+          "name": "job-complete-releases-transients",
+          "status": "PASS"
+        },
+        {
+          "name": "no-reload-loop",
+          "status": "PASS",
+          "loadAttempts": 2
+        },
+        {
+          "name": "closed-ownership-zero",
+          "status": "PASS"
+        },
+        {
+          "name": "100-burst-bounded",
+          "status": "PASS"
+        },
+        {
+          "name": "burst-has-terminal-outcomes",
+          "status": "PASS",
+          "outcomes": {
+            "CANCELED": 8,
+            "RESOURCE_LIMIT": 92
+          }
+        },
+        {
+          "name": "late-callbacks-cannot-resurrect",
+          "status": "PASS"
+        },
+        {
+          "name": "waiting-work-progresses",
+          "status": "PASS",
+          "state": "COMPLETE",
+          "pixelMismatchCount": 0,
+          "peakPending": 2,
+          "loadAttempts": 4
+        },
+        {
+          "name": "shared-pending-close-one",
+          "status": "PASS",
+          "state": "COMPLETE",
+          "loadAttempts": 1
+        },
+        {
+          "name": "cancel-pending",
+          "status": "PASS"
+        },
+        {
+          "name": "cancel-ready",
+          "status": "PASS"
+        },
+        {
+          "name": "model-mutation-cancels",
+          "status": "PASS"
+        },
+        {
+          "name": "canvas-generation-cancels",
+          "status": "PASS"
+        },
+        {
+          "name": "stale-cancel-cannot-cancel-replacement",
+          "status": "PASS"
+        },
+        {
+          "name": "frame-limit-fails-closed",
+          "status": "PASS",
+          "state": "RESOURCE_LIMIT"
+        },
+        {
+          "name": "cropped-oversize",
+          "status": "PASS",
+          "states": [
+            "COMPLETE"
+          ],
+          "pixelMismatchCount": 0
+        },
+        {
+          "name": "zoom-dpr",
+          "status": "PASS",
+          "states": [
+            "COMPLETE"
+          ],
+          "pixelMismatchCount": 0
+        },
+        {
+          "name": "pressure-rerender",
+          "status": "PASS",
+          "states": [
+            "COMPLETE",
+            "COMPLETE",
+            "COMPLETE",
+            "COMPLETE"
+          ],
+          "pixelMismatchCount": 0
+        },
+        {
+          "name": "ready-budget-reduction-cancels",
+          "status": "PASS"
+        },
+        {
+          "name": "identical-request-no-restart",
+          "status": "PASS",
+          "loadAttempts": 1,
+          "state": "COMPLETE"
+        },
+        {
+          "name": "oversize-preserves-normal-resident",
+          "status": "PASS",
+          "beforeResidentBytes": 16886,
+          "afterResidentBytes": 16886
+        },
+        {
+          "name": "decode-failure-explicit-retry",
+          "status": "PASS",
+          "states": [
+            "ERROR",
+            "ERROR"
+          ]
+        },
+        {
+          "name": "tiny-budget-negative-bounded",
+          "status": "PASS"
+        },
+        {
+          "name": "compatibility-error-is-sticky",
+          "status": "PASS",
+          "states": [
+            "PENDING",
+            "ERROR",
+            "ERROR"
+          ]
+        },
+        {
+          "name": "mutation-releases-terminal-generation",
+          "status": "PASS",
+          "states": [
+            "PENDING",
+            "COMPLETE"
+          ]
+        },
+        {
+          "name": "draw-failure-does-not-publish",
+          "status": "PASS",
+          "state": "ERROR"
+        },
+        {
+          "name": "publication-failure-preserves-visible-frame",
+          "status": "FAIL",
+          "state": "ERROR",
+          "pixelMismatchCount": 891662
+        },
+        {
+          "name": "oversize-encoded-rejected",
+          "status": "PASS",
+          "state": "RESOURCE_LIMIT"
+        },
+        {
+          "name": "ready-before-expiry",
+          "status": "PASS"
+        },
+        {
+          "name": "close-ready-releases",
+          "status": "PASS"
+        },
+        {
+          "name": "page-ordering",
+          "status": "PASS",
+          "states": [
+            "COMPLETE",
+            "COMPLETE",
+            "COMPLETE"
+          ],
+          "pixelMismatchCount": 0
+        },
+        {
+          "name": "table-cell-rendering",
+          "status": "PASS",
+          "state": "COMPLETE",
+          "pixelMismatchCount": 0
+        },
+        {
+          "name": "page-count-change-cancels",
+          "status": "PASS"
+        },
+        {
+          "name": "idle-ready-lease-established",
+          "status": "PASS"
+        },
+        {
+          "name": "never-complete-times-out",
+          "status": "PASS",
+          "first": "PENDING",
+          "last": "ERROR"
+        },
+        {
+          "name": "ready-lease-expires-without-insertion",
+          "status": "PASS",
+          "state": "ERROR"
+        },
+        {
+          "name": "historical12scenarios50draws",
+          "status": "PASS",
+          "draws": 50,
+          "failures": []
+        },
+        {
+          "name": "all-accounting-checkpoints-bounded",
+          "status": "PASS"
+        }
+      ],
+      "checkpoints": [
+        {
+          "name": "before",
+          "decoded": {
+            "bytes": 0,
+            "entries": 0,
+            "evictions": 0,
+            "hits": 0,
+            "maxBytes": 8388608,
+            "maxEntries": 8,
+            "maxEntryBytes": 2097152,
+            "misses": 0,
+            "negativeEntries": 0,
+            "oversize": 0,
+            "pendingEntries": 0,
+            "rejected": 0,
+            "transientEntries": 0
+          },
+          "images": {
+            "bytes": 0,
+            "entries": 0,
+            "evictions": 0,
+            "hits": 0,
+            "maxBytes": 2097152,
+            "maxEntries": 8,
+            "maxEntryBytes": 524288,
+            "misses": 0,
+            "negativeEntries": 0,
+            "oversize": 0,
+            "pendingEntries": 0,
+            "rejected": 0,
+            "transientEntries": 0
+          },
+          "jobs": {
+            "activeJobs": 0,
+            "activeLeaseEstimatedBytes": 0,
+            "cancellations": 0,
+            "completionNotifications": 0,
+            "errors": 0,
+            "inFlightEstimatedBytes": 0,
+            "loadAttempts": 0,
+            "maxFrameBytes": 67108864,
+            "maxOwnedBytes": 268435456,
+            "maxPending": 2,
+            "maxResources": 256,
+            "ownedEstimatedBytes": 0,
+            "peakTemporaryCanvasBytes": 0,
+            "pendingCount": 0,
+            "readyLeaseCount": 0,
+            "resourceLimits": 0,
+            "retryCount": 0,
+            "temporaryCanvasBytes": 0,
+            "transientEstimatedBytes": 0
+          }
+        },
+        {
+          "name": "two-oversize-pending",
+          "decoded": {
+            "bytes": 128,
+            "entries": 2,
+            "evictions": 0,
+            "hits": 0,
+            "maxBytes": 8388608,
+            "maxEntries": 8,
+            "maxEntryBytes": 2097152,
+            "misses": 2,
+            "negativeEntries": 2,
+            "oversize": 0,
+            "pendingEntries": 0,
+            "rejected": 0,
+            "transientEntries": 0
+          },
+          "images": {
+            "bytes": 0,
+            "entries": 0,
+            "evictions": 0,
+            "hits": 0,
+            "maxBytes": 2097152,
+            "maxEntries": 8,
+            "maxEntryBytes": 524288,
+            "misses": 2,
+            "negativeEntries": 0,
+            "oversize": 0,
+            "pendingEntries": 0,
+            "rejected": 0,
+            "transientEntries": 0
+          },
+          "jobs": {
+            "activeJobs": 1,
+            "activeLeaseEstimatedBytes": 201327652,
+            "cancellations": 0,
+            "completionNotifications": 0,
+            "errors": 0,
+            "inFlightEstimatedBytes": 201327652,
+            "loadAttempts": 2,
+            "maxFrameBytes": 67108864,
+            "maxOwnedBytes": 268435456,
+            "maxPending": 2,
+            "maxResources": 256,
+            "ownedEstimatedBytes": 201327652,
+            "peakTemporaryCanvasBytes": 3566648,
+            "pendingCount": 2,
+            "readyLeaseCount": 0,
+            "resourceLimits": 0,
+            "retryCount": 0,
+            "temporaryCanvasBytes": 0,
+            "transientEstimatedBytes": 0
+          }
+        },
+        {
+          "name": "ready-before-draw",
+          "decoded": {
+            "bytes": 128,
+            "entries": 2,
+            "evictions": 0,
+            "hits": 0,
+            "maxBytes": 8388608,
+            "maxEntries": 8,
+            "maxEntryBytes": 2097152,
+            "misses": 2,
+            "negativeEntries": 2,
+            "oversize": 0,
+            "pendingEntries": 0,
+            "rejected": 0,
+            "transientEntries": 0
+          },
+          "images": {
+            "bytes": 0,
+            "entries": 0,
+            "evictions": 0,
+            "hits": 0,
+            "maxBytes": 2097152,
+            "maxEntries": 8,
+            "maxEntryBytes": 524288,
+            "misses": 2,
+            "negativeEntries": 0,
+            "oversize": 0,
+            "pendingEntries": 0,
+            "rejected": 0,
+            "transientEntries": 0
+          },
+          "jobs": {
+            "activeJobs": 1,
+            "activeLeaseEstimatedBytes": 11617460,
+            "cancellations": 0,
+            "completionNotifications": 2,
+            "errors": 0,
+            "inFlightEstimatedBytes": 0,
+            "loadAttempts": 2,
+            "maxFrameBytes": 67108864,
+            "maxOwnedBytes": 268435456,
+            "maxPending": 2,
+            "maxResources": 256,
+            "ownedEstimatedBytes": 11617460,
+            "peakTemporaryCanvasBytes": 3566648,
+            "pendingCount": 0,
+            "readyLeaseCount": 2,
+            "resourceLimits": 0,
+            "retryCount": 0,
+            "temporaryCanvasBytes": 0,
+            "transientEstimatedBytes": 11617460
+          }
+        },
+        {
+          "name": "after-complete",
+          "decoded": {
+            "bytes": 128,
+            "entries": 2,
+            "evictions": 0,
+            "hits": 2,
+            "maxBytes": 8388608,
+            "maxEntries": 8,
+            "maxEntryBytes": 2097152,
+            "misses": 2,
+            "negativeEntries": 2,
+            "oversize": 0,
+            "pendingEntries": 0,
+            "rejected": 0,
+            "transientEntries": 0
+          },
+          "images": {
+            "bytes": 0,
+            "entries": 0,
+            "evictions": 0,
+            "hits": 0,
+            "maxBytes": 2097152,
+            "maxEntries": 8,
+            "maxEntryBytes": 524288,
+            "misses": 2,
+            "negativeEntries": 0,
+            "oversize": 2,
+            "pendingEntries": 0,
+            "rejected": 0,
+            "transientEntries": 0
+          },
+          "jobs": {
+            "activeJobs": 0,
+            "activeLeaseEstimatedBytes": 0,
+            "cancellations": 0,
+            "completionNotifications": 2,
+            "errors": 0,
+            "inFlightEstimatedBytes": 0,
+            "loadAttempts": 2,
+            "maxFrameBytes": 67108864,
+            "maxOwnedBytes": 268435456,
+            "maxPending": 2,
+            "maxResources": 256,
+            "ownedEstimatedBytes": 0,
+            "peakTemporaryCanvasBytes": 3566648,
+            "pendingCount": 0,
+            "readyLeaseCount": 0,
+            "resourceLimits": 0,
+            "retryCount": 1,
+            "temporaryCanvasBytes": 0,
+            "transientEstimatedBytes": 0
+          }
+        },
+        {
+          "name": "after-close",
+          "decoded": {
+            "bytes": 128,
+            "entries": 2,
+            "evictions": 0,
+            "hits": 2,
+            "maxBytes": 8388608,
+            "maxEntries": 8,
+            "maxEntryBytes": 2097152,
+            "misses": 2,
+            "negativeEntries": 2,
+            "oversize": 0,
+            "pendingEntries": 0,
+            "rejected": 0,
+            "transientEntries": 0
+          },
+          "images": {
+            "bytes": 0,
+            "entries": 0,
+            "evictions": 0,
+            "hits": 0,
+            "maxBytes": 2097152,
+            "maxEntries": 8,
+            "maxEntryBytes": 524288,
+            "misses": 2,
+            "negativeEntries": 0,
+            "oversize": 2,
+            "pendingEntries": 0,
+            "rejected": 0,
+            "transientEntries": 0
+          },
+          "jobs": {
+            "activeJobs": 0,
+            "activeLeaseEstimatedBytes": 0,
+            "cancellations": 0,
+            "completionNotifications": 2,
+            "errors": 0,
+            "inFlightEstimatedBytes": 0,
+            "loadAttempts": 2,
+            "maxFrameBytes": 67108864,
+            "maxOwnedBytes": 268435456,
+            "maxPending": 2,
+            "maxResources": 256,
+            "ownedEstimatedBytes": 0,
+            "peakTemporaryCanvasBytes": 3566648,
+            "pendingCount": 0,
+            "readyLeaseCount": 0,
+            "resourceLimits": 0,
+            "retryCount": 1,
+            "temporaryCanvasBytes": 0,
+            "transientEstimatedBytes": 0
+          }
+        },
+        {
+          "name": "100-burst",
+          "decoded": {
+            "bytes": 128,
+            "entries": 2,
+            "evictions": 8,
+            "hits": 2,
+            "maxBytes": 1048576,
+            "maxEntries": 2,
+            "maxEntryBytes": 262144,
+            "misses": 10,
+            "negativeEntries": 2,
+            "oversize": 0,
+            "pendingEntries": 0,
+            "rejected": 0,
+            "transientEntries": 0
+          },
+          "images": {
+            "bytes": 0,
+            "entries": 0,
+            "evictions": 0,
+            "hits": 0,
+            "maxBytes": 1024,
+            "maxEntries": 2,
+            "maxEntryBytes": 256,
+            "misses": 10,
+            "negativeEntries": 0,
+            "oversize": 2,
+            "pendingEntries": 0,
+            "rejected": 0,
+            "transientEntries": 0
+          },
+          "jobs": {
+            "activeJobs": 8,
+            "activeLeaseEstimatedBytes": 201327628,
+            "cancellations": 0,
+            "completionNotifications": 2,
+            "errors": 0,
+            "inFlightEstimatedBytes": 201327628,
+            "loadAttempts": 4,
+            "maxFrameBytes": 67108864,
+            "maxOwnedBytes": 268435456,
+            "maxPending": 2,
+            "maxResources": 256,
+            "ownedEstimatedBytes": 201327628,
+            "peakTemporaryCanvasBytes": 3566648,
+            "pendingCount": 2,
+            "readyLeaseCount": 0,
+            "resourceLimits": 0,
+            "retryCount": 1,
+            "temporaryCanvasBytes": 0,
+            "transientEstimatedBytes": 0
+          }
+        },
+        {
+          "name": "budget-reduction",
+          "decoded": {
+            "bytes": 64,
+            "entries": 1,
+            "evictions": 9,
+            "hits": 2,
+            "maxBytes": 1048576,
+            "maxEntries": 1,
+            "maxEntryBytes": 262144,
+            "misses": 10,
+            "negativeEntries": 1,
+            "oversize": 0,
+            "pendingEntries": 0,
+            "rejected": 0,
+            "transientEntries": 0
+          },
+          "images": {
+            "bytes": 0,
+            "entries": 0,
+            "evictions": 0,
+            "hits": 0,
+            "maxBytes": 512,
+            "maxEntries": 1,
+            "maxEntryBytes": 128,
+            "misses": 10,
+            "negativeEntries": 0,
+            "oversize": 2,
+            "pendingEntries": 0,
+            "rejected": 0,
+            "transientEntries": 0
+          },
+          "jobs": {
+            "activeJobs": 0,
+            "activeLeaseEstimatedBytes": 0,
+            "cancellations": 8,
+            "completionNotifications": 2,
+            "errors": 0,
+            "inFlightEstimatedBytes": 0,
+            "loadAttempts": 4,
+            "maxFrameBytes": 67108864,
+            "maxOwnedBytes": 268435456,
+            "maxPending": 2,
+            "maxResources": 256,
+            "ownedEstimatedBytes": 0,
+            "peakTemporaryCanvasBytes": 3566648,
+            "pendingCount": 0,
+            "readyLeaseCount": 0,
+            "resourceLimits": 0,
+            "retryCount": 1,
+            "temporaryCanvasBytes": 0,
+            "transientEstimatedBytes": 0
+          }
+        },
+        {
+          "name": "trim-during-load",
+          "decoded": {
+            "bytes": 0,
+            "entries": 0,
+            "evictions": 10,
+            "hits": 2,
+            "maxBytes": 1048576,
+            "maxEntries": 1,
+            "maxEntryBytes": 262144,
+            "misses": 10,
+            "negativeEntries": 0,
+            "oversize": 0,
+            "pendingEntries": 0,
+            "rejected": 0,
+            "transientEntries": 0
+          },
+          "images": {
+            "bytes": 0,
+            "entries": 0,
+            "evictions": 0,
+            "hits": 0,
+            "maxBytes": 512,
+            "maxEntries": 1,
+            "maxEntryBytes": 128,
+            "misses": 10,
+            "negativeEntries": 0,
+            "oversize": 2,
+            "pendingEntries": 0,
+            "rejected": 0,
+            "transientEntries": 0
+          },
+          "jobs": {
+            "activeJobs": 0,
+            "activeLeaseEstimatedBytes": 0,
+            "cancellations": 8,
+            "completionNotifications": 2,
+            "errors": 0,
+            "inFlightEstimatedBytes": 0,
+            "loadAttempts": 4,
+            "maxFrameBytes": 67108864,
+            "maxOwnedBytes": 268435456,
+            "maxPending": 2,
+            "maxResources": 256,
+            "ownedEstimatedBytes": 0,
+            "peakTemporaryCanvasBytes": 3566648,
+            "pendingCount": 0,
+            "readyLeaseCount": 0,
+            "resourceLimits": 0,
+            "retryCount": 1,
+            "temporaryCanvasBytes": 0,
+            "transientEstimatedBytes": 0
+          }
+        },
+        {
+          "name": "after-late-callbacks",
+          "decoded": {
+            "bytes": 0,
+            "entries": 0,
+            "evictions": 10,
+            "hits": 2,
+            "maxBytes": 1048576,
+            "maxEntries": 1,
+            "maxEntryBytes": 262144,
+            "misses": 10,
+            "negativeEntries": 0,
+            "oversize": 0,
+            "pendingEntries": 0,
+            "rejected": 0,
+            "transientEntries": 0
+          },
+          "images": {
+            "bytes": 0,
+            "entries": 0,
+            "evictions": 0,
+            "hits": 0,
+            "maxBytes": 512,
+            "maxEntries": 1,
+            "maxEntryBytes": 128,
+            "misses": 10,
+            "negativeEntries": 0,
+            "oversize": 2,
+            "pendingEntries": 0,
+            "rejected": 0,
+            "transientEntries": 0
+          },
+          "jobs": {
+            "activeJobs": 0,
+            "activeLeaseEstimatedBytes": 0,
+            "cancellations": 8,
+            "completionNotifications": 2,
+            "errors": 0,
+            "inFlightEstimatedBytes": 0,
+            "loadAttempts": 4,
+            "maxFrameBytes": 67108864,
+            "maxOwnedBytes": 268435456,
+            "maxPending": 2,
+            "maxResources": 256,
+            "ownedEstimatedBytes": 0,
+            "peakTemporaryCanvasBytes": 3566648,
+            "pendingCount": 0,
+            "readyLeaseCount": 0,
+            "resourceLimits": 0,
+            "retryCount": 1,
+            "temporaryCanvasBytes": 0,
+            "transientEstimatedBytes": 0
+          }
+        },
+        {
+          "name": "post-burst",
+          "decoded": {
+            "bytes": 0,
+            "entries": 0,
+            "evictions": 10,
+            "hits": 2,
+            "maxBytes": 1048576,
+            "maxEntries": 1,
+            "maxEntryBytes": 262144,
+            "misses": 10,
+            "negativeEntries": 0,
+            "oversize": 0,
+            "pendingEntries": 0,
+            "rejected": 0,
+            "transientEntries": 0
+          },
+          "images": {
+            "bytes": 0,
+            "entries": 0,
+            "evictions": 0,
+            "hits": 0,
+            "maxBytes": 512,
+            "maxEntries": 1,
+            "maxEntryBytes": 128,
+            "misses": 10,
+            "negativeEntries": 0,
+            "oversize": 2,
+            "pendingEntries": 0,
+            "rejected": 0,
+            "transientEntries": 0
+          },
+          "jobs": {
+            "activeJobs": 0,
+            "activeLeaseEstimatedBytes": 0,
+            "cancellations": 8,
+            "completionNotifications": 2,
+            "errors": 0,
+            "inFlightEstimatedBytes": 0,
+            "loadAttempts": 4,
+            "maxFrameBytes": 67108864,
+            "maxOwnedBytes": 268435456,
+            "maxPending": 2,
+            "maxResources": 256,
+            "ownedEstimatedBytes": 0,
+            "peakTemporaryCanvasBytes": 3566648,
+            "pendingCount": 0,
+            "readyLeaseCount": 0,
+            "resourceLimits": 0,
+            "retryCount": 1,
+            "temporaryCanvasBytes": 0,
+            "transientEstimatedBytes": 0
+          }
+        },
+        {
+          "name": "tiny-budget-failure",
+          "decoded": {
+            "bytes": 0,
+            "entries": 0,
+            "evictions": 36,
+            "hits": 117,
+            "maxBytes": 10,
+            "maxEntries": 1,
+            "maxEntryBytes": 2,
+            "misses": 38,
+            "negativeEntries": 0,
+            "oversize": 2,
+            "pendingEntries": 0,
+            "rejected": 0,
+            "transientEntries": 0
+          },
+          "images": {
+            "bytes": 0,
+            "entries": 0,
+            "evictions": 8,
+            "hits": 1,
+            "maxBytes": 10,
+            "maxEntries": 1,
+            "maxEntryBytes": 2,
+            "misses": 42,
+            "negativeEntries": 0,
+            "oversize": 15,
+            "pendingEntries": 0,
+            "rejected": 0,
+            "transientEntries": 0
+          },
+          "jobs": {
+            "activeJobs": 0,
+            "activeLeaseEstimatedBytes": 0,
+            "cancellations": 16,
+            "completionNotifications": 15,
+            "errors": 2,
+            "inFlightEstimatedBytes": 0,
+            "loadAttempts": 33,
+            "maxFrameBytes": 67108864,
+            "maxOwnedBytes": 268435456,
+            "maxPending": 2,
+            "maxResources": 256,
+            "ownedEstimatedBytes": 0,
+            "peakTemporaryCanvasBytes": 8022576,
+            "pendingCount": 0,
+            "readyLeaseCount": 0,
+            "resourceLimits": 1,
+            "retryCount": 107,
+            "temporaryCanvasBytes": 0,
+            "transientEstimatedBytes": 0
+          }
+        },
+        {
+          "name": "idle-ready-lease",
+          "decoded": {
+            "bytes": 256,
+            "entries": 4,
+            "evictions": 37,
+            "hits": 121,
+            "maxBytes": 8388608,
+            "maxEntries": 8,
+            "maxEntryBytes": 2097152,
+            "misses": 43,
+            "negativeEntries": 4,
+            "oversize": 2,
+            "pendingEntries": 0,
+            "rejected": 0,
+            "transientEntries": 0
+          },
+          "images": {
+            "bytes": 0,
+            "entries": 0,
+            "evictions": 9,
+            "hits": 1,
+            "maxBytes": 2097152,
+            "maxEntries": 8,
+            "maxEntryBytes": 524288,
+            "misses": 48,
+            "negativeEntries": 0,
+            "oversize": 15,
+            "pendingEntries": 0,
+            "rejected": 0,
+            "transientEntries": 0
+          },
+          "jobs": {
+            "activeJobs": 1,
+            "activeLeaseEstimatedBytes": 215818,
+            "cancellations": 16,
+            "completionNotifications": 20,
+            "errors": 5,
+            "inFlightEstimatedBytes": 0,
+            "loadAttempts": 38,
+            "maxFrameBytes": 67108864,
+            "maxOwnedBytes": 268435456,
+            "maxPending": 2,
+            "maxResources": 256,
+            "ownedEstimatedBytes": 215818,
+            "peakTemporaryCanvasBytes": 8022576,
+            "pendingCount": 0,
+            "readyLeaseCount": 1,
+            "resourceLimits": 2,
+            "retryCount": 110,
+            "temporaryCanvasBytes": 0,
+            "transientEstimatedBytes": 215818
+          }
+        },
+        {
+          "name": "ready-awaiting-expiration",
+          "decoded": {
+            "bytes": 384,
+            "entries": 6,
+            "evictions": 37,
+            "hits": 121,
+            "maxBytes": 8388608,
+            "maxEntries": 8,
+            "maxEntryBytes": 2097152,
+            "misses": 45,
+            "negativeEntries": 6,
+            "oversize": 2,
+            "pendingEntries": 0,
+            "rejected": 0,
+            "transientEntries": 0
+          },
+          "images": {
+            "bytes": 0,
+            "entries": 0,
+            "evictions": 9,
+            "hits": 1,
+            "maxBytes": 2097152,
+            "maxEntries": 8,
+            "maxEntryBytes": 524288,
+            "misses": 50,
+            "negativeEntries": 0,
+            "oversize": 15,
+            "pendingEntries": 0,
+            "rejected": 0,
+            "transientEntries": 0
+          },
+          "jobs": {
+            "activeJobs": 1,
+            "activeLeaseEstimatedBytes": 234778,
+            "cancellations": 18,
+            "completionNotifications": 21,
+            "errors": 5,
+            "inFlightEstimatedBytes": 0,
+            "loadAttempts": 40,
+            "maxFrameBytes": 67108864,
+            "maxOwnedBytes": 268435456,
+            "maxPending": 2,
+            "maxResources": 256,
+            "ownedEstimatedBytes": 234778,
+            "peakTemporaryCanvasBytes": 8022576,
+            "pendingCount": 0,
+            "readyLeaseCount": 1,
+            "resourceLimits": 2,
+            "retryCount": 110,
+            "temporaryCanvasBytes": 0,
+            "transientEstimatedBytes": 234778
+          }
+        },
+        {
+          "name": "stalled-timeout",
+          "decoded": {
+            "bytes": 448,
+            "entries": 7,
+            "evictions": 37,
+            "hits": 121,
+            "maxBytes": 8388608,
+            "maxEntries": 8,
+            "maxEntryBytes": 2097152,
+            "misses": 46,
+            "negativeEntries": 7,
+            "oversize": 2,
+            "pendingEntries": 0,
+            "rejected": 0,
+            "transientEntries": 0
+          },
+          "images": {
+            "bytes": 0,
+            "entries": 0,
+            "evictions": 9,
+            "hits": 1,
+            "maxBytes": 2097152,
+            "maxEntries": 8,
+            "maxEntryBytes": 524288,
+            "misses": 51,
+            "negativeEntries": 0,
+            "oversize": 15,
+            "pendingEntries": 0,
+            "rejected": 0,
+            "transientEntries": 0
+          },
+          "jobs": {
+            "activeJobs": 0,
+            "activeLeaseEstimatedBytes": 0,
+            "cancellations": 18,
+            "completionNotifications": 21,
+            "errors": 7,
+            "inFlightEstimatedBytes": 0,
+            "loadAttempts": 41,
+            "maxFrameBytes": 67108864,
+            "maxOwnedBytes": 268435456,
+            "maxPending": 2,
+            "maxResources": 256,
+            "ownedEstimatedBytes": 0,
+            "peakTemporaryCanvasBytes": 8022576,
+            "pendingCount": 0,
+            "readyLeaseCount": 0,
+            "resourceLimits": 2,
+            "retryCount": 110,
+            "temporaryCanvasBytes": 0,
+            "transientEstimatedBytes": 0
+          }
+        },
+        {
+          "name": "final-trim",
+          "decoded": {
+            "bytes": 0,
+            "entries": 0,
+            "evictions": 61,
+            "hits": 151,
+            "maxBytes": 268435456,
+            "maxEntries": 256,
+            "maxEntryBytes": 67108864,
+            "misses": 66,
+            "negativeEntries": 0,
+            "oversize": 5,
+            "pendingEntries": 0,
+            "rejected": 0,
+            "transientEntries": 0
+          },
+          "images": {
+            "bytes": 0,
+            "entries": 0,
+            "evictions": 18,
+            "hits": 14,
+            "maxBytes": 67108864,
+            "maxEntries": 256,
+            "maxEntryBytes": 16777216,
+            "misses": 77,
+            "negativeEntries": 0,
+            "oversize": 32,
+            "pendingEntries": 0,
+            "rejected": 0,
+            "transientEntries": 0
+          },
+          "jobs": {
+            "activeJobs": 0,
+            "activeLeaseEstimatedBytes": 0,
+            "cancellations": 18,
+            "completionNotifications": 22,
+            "errors": 7,
+            "inFlightEstimatedBytes": 0,
+            "loadAttempts": 67,
+            "maxFrameBytes": 67108864,
+            "maxOwnedBytes": 268435456,
+            "maxPending": 2,
+            "maxResources": 256,
+            "ownedEstimatedBytes": 0,
+            "peakTemporaryCanvasBytes": 8022576,
+            "pendingCount": 0,
+            "readyLeaseCount": 0,
+            "resourceLimits": 2,
+            "retryCount": 111,
+            "temporaryCanvasBytes": 0,
+            "transientEstimatedBytes": 0
+          }
+        }
+      ]
+    },
+    "loads": {
+      "started": 85,
+      "loaded": 45,
+      "errors": 0,
+      "canceled": 66,
+      "releaseErrorEvents": 65,
+      "byImage": {
+        "608f582a": {
+          "started": 2,
+          "loaded": 2,
+          "errors": 0,
+          "encodedUrlChars": 530
+        },
+        "519e299f": {
+          "started": 2,
+          "loaded": 2,
+          "errors": 0,
+          "encodedUrlChars": 530
+        },
+        "b1c3abe4": {
+          "started": 1,
+          "loaded": 0,
+          "errors": 0,
+          "encodedUrlChars": 534
+        },
+        "be02c142": {
+          "started": 1,
+          "loaded": 0,
+          "errors": 0,
+          "encodedUrlChars": 502
+        },
+        "f65aad10": {
+          "started": 2,
+          "loaded": 2,
+          "errors": 0,
+          "encodedUrlChars": 554
+        },
+        "ec6ddacd": {
+          "started": 2,
+          "loaded": 2,
+          "errors": 0,
+          "encodedUrlChars": 526
+        },
+        "3aab5582": {
+          "started": 2,
+          "loaded": 2,
+          "errors": 0,
+          "encodedUrlChars": 558
+        },
+        "58a08ba0": {
+          "started": 2,
+          "loaded": 2,
+          "errors": 0,
+          "encodedUrlChars": 526
+        },
+        "2512a1cc": {
+          "started": 1,
+          "loaded": 1,
+          "errors": 0,
+          "encodedUrlChars": 522
+        },
+        "941e896": {
+          "started": 1,
+          "loaded": 0,
+          "errors": 0,
+          "encodedUrlChars": 554
+        },
+        "43ff614b": {
+          "started": 1,
+          "loaded": 1,
+          "errors": 0,
+          "encodedUrlChars": 522
+        },
+        "bc5e756b": {
+          "started": 1,
+          "loaded": 0,
+          "errors": 0,
+          "encodedUrlChars": 554
+        },
+        "35b97cc6": {
+          "started": 1,
+          "loaded": 0,
+          "errors": 0,
+          "encodedUrlChars": 522
+        },
+        "352e88cc": {
+          "started": 2,
+          "loaded": 1,
+          "errors": 0,
+          "encodedUrlChars": 522
+        },
+        "ec756212": {
+          "started": 7,
+          "loaded": 1,
+          "errors": 0,
+          "encodedUrlChars": 530
+        },
+        "b8eb222d": {
+          "started": 7,
+          "loaded": 1,
+          "errors": 0,
+          "encodedUrlChars": 530
+        },
+        "4254c766": {
+          "started": 1,
+          "loaded": 1,
+          "errors": 0,
+          "encodedUrlChars": 554
+        },
+        "9535be55": {
+          "started": 1,
+          "loaded": 1,
+          "errors": 0,
+          "encodedUrlChars": 522
+        },
+        "c13ffca3": {
+          "started": 1,
+          "loaded": 1,
+          "errors": 0,
+          "encodedUrlChars": 502
+        },
+        "ee520538": {
+          "started": 1,
+          "loaded": 1,
+          "errors": 0,
+          "encodedUrlChars": 530
+        },
+        "4b0d21f3": {
+          "started": 3,
+          "loaded": 0,
+          "errors": 0,
+          "encodedUrlChars": 30
+        },
+        "e773bb6e": {
+          "started": 1,
+          "loaded": 1,
+          "errors": 0,
+          "encodedUrlChars": 522
+        },
+        "57a4e1a0": {
+          "started": 1,
+          "loaded": 1,
+          "errors": 0,
+          "encodedUrlChars": 554
+        },
+        "ea4f1fb7": {
+          "started": 1,
+          "loaded": 1,
+          "errors": 0,
+          "encodedUrlChars": 554
+        },
+        "aaac04c7": {
+          "started": 1,
+          "loaded": 1,
+          "errors": 0,
+          "encodedUrlChars": 522
+        },
+        "d24960c8": {
+          "started": 1,
+          "loaded": 0,
+          "errors": 0,
+          "encodedUrlChars": 554
+        },
+        "c308f390": {
+          "started": 1,
+          "loaded": 1,
+          "errors": 0,
+          "encodedUrlChars": 522
+        },
+        "3a2a1fcd": {
+          "started": 4,
+          "loaded": 4,
+          "errors": 0,
+          "encodedUrlChars": 490
+        },
+        "26ab59c1": {
+          "started": 6,
+          "loaded": 1,
+          "errors": 0,
+          "encodedUrlChars": 534
+        },
+        "741a17f4": {
+          "started": 2,
+          "loaded": 2,
+          "errors": 0,
+          "encodedUrlChars": 30194
+        },
+        "3061b463": {
+          "started": 5,
+          "loaded": 1,
+          "errors": 0,
+          "encodedUrlChars": 18175818
+        },
+        "4dd3e082": {
+          "started": 3,
+          "loaded": 2,
+          "errors": 0,
+          "encodedUrlChars": 490
+        },
+        "737d4d91": {
+          "started": 2,
+          "loaded": 2,
+          "errors": 0,
+          "encodedUrlChars": 490
+        },
+        "40a4313c": {
+          "started": 3,
+          "loaded": 3,
+          "errors": 0,
+          "encodedUrlChars": 490
+        },
+        "831c07ad": {
+          "started": 5,
+          "loaded": 1,
+          "errors": 0,
+          "encodedUrlChars": 514
+        },
+        "56f554e": {
+          "started": 5,
+          "loaded": 1,
+          "errors": 0,
+          "encodedUrlChars": 514
+        },
+        "43dc7cb2": {
+          "started": 2,
+          "loaded": 2,
+          "errors": 0,
+          "encodedUrlChars": 506
+        }
+      }
+    },
+    "unhandledErrors": []
+  }
+}

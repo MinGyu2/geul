@@ -1,0 +1,20 @@
+{
+  "baseline": "1a76570e833917d15817415a53c09ad61ab3203f",
+  "buildStatus": "PASS",
+  "compiler": "rustc 1.93.1 (01f6ddf75 2026-02-11)",
+  "wasmPack": "wasm-pack 0.15.0",
+  "sourceSha256": {
+    "src/renderer/mod.rs": "417872f6330bda18ba30fdb2b644e4f1bb46f3a365cda11d794d0861ac32fc8f",
+    "src/renderer/surface_cache.rs": "f36556f7515b9938ab54692aa75a9afbd9af4e2e5825d071810e38918efd260f",
+    "src/renderer/render_job.rs": "d85dbaf5a314cb752aaaa1852d725483a728c27614a8e85ded066913cb2090a1",
+    "src/renderer/web_canvas.rs": "7a7bc4c6729ff76af873a5fece0702f8e639d0aafa98434f297ccbcf518828e1",
+    "src/wasm_api.rs": "dba5751a411cad724e69fe7bcacd207c92fbc3d0ff0502b2582023fa81f2322a"
+  },
+  "artifacts": {
+    "rhwp.js": "64e3af30d575278f272232e90aaff1ffbe90db8d6686a1d7bc7f537b4fdce13d",
+    "rhwp_bg.wasm": "3baa9cf59cf9e60989c606e6edba4eaca54e9af9f5ee45c1ee2df4e9caab01d8",
+    "rhwp.d.ts": "bc4b2876de2f4b552bbd7bf14b9914a8be587b949619af1849646d3ded83afe1"
+  },
+  "profile": "release",
+  "wasmOpt": false
+}

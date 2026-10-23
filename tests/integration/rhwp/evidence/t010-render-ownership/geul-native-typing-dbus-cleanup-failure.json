@@ -1,0 +1,138 @@
+{
+  "status": "FAIL",
+  "classification": "DIAGNOSTIC: history disabled",
+  "boundary": "native keydown -> revision-observed RAF -> two additional RAF",
+  "officialD4ActivationEvidence": false,
+  "samples": [
+    {
+      "sample": "basic-ko.hwp",
+      "sourceSha256": "57c901cc394abf6f58f4838315d1ea2c5ecf8a03d9934d3fc098fd8be6e6e12f",
+      "pages": 1,
+      "zoom": 50,
+      "warmupGroups": 3,
+      "keyDelivery": "native X11 xdotool",
+      "historyEnabled": false,
+      "engineIdentity": {
+        "wasmSha256": "410c2ed5acdd18f19ffce9fc6435b1c9583a10a814d3538e4449ed8cd9e46ecc",
+        "baseline": "1a76570e833917d15817415a53c09ad61ab3203f"
+      },
+      "groupStart": {
+        "n": 30,
+        "p50": 39,
+        "p95": 56,
+        "max": 66,
+        "timeouts": 0
+      },
+      "extend": {
+        "n": 30,
+        "p50": 41,
+        "p95": 55,
+        "max": 56,
+        "timeouts": 0
+      },
+      "rss": [
+        {
+          "role": "tauri-driver",
+          "rssKiB": 3728
+        },
+        {
+          "role": "WebKitWebDriver",
+          "rssKiB": 25196
+        },
+        {
+          "role": "geul",
+          "rssKiB": 220820
+        },
+        {
+          "role": "dbus-launch",
+          "rssKiB": 2132
+        },
+        {
+          "role": "dbus-daemon",
+          "rssKiB": 3184
+        },
+        {
+          "role": "WebKitNetworkPr",
+          "rssKiB": 92000
+        },
+        {
+          "role": "WebKitWebProces",
+          "rssKiB": 423664
+        }
+      ],
+      "ownership": {
+        "sessions": [
+          {
+            "queued": 0,
+            "modelVersion": 67,
+            "canvases": 1,
+            "sessionId": 1,
+            "generation": 1,
+            "failures": 0,
+            "active": 0
+          }
+        ],
+        "jobs": {
+          "peakBackupImageDataBytes": 968760,
+          "pendingCount": 0,
+          "cancellations": 0,
+          "peakTemporaryCanvasBytes": 3875040,
+          "maxPending": 2,
+          "peakStagingBytes": 3875040,
+          "loadAttempts": 0,
+          "inFlightEstimatedBytes": 0,
+          "readyLeaseCount": 0,
+          "maxFrameBytes": 67108864,
+          "resourceLimits": 0,
+          "maxOwnedBytes": 268435456,
+          "maxStagingBytes": 134217728,
+          "temporaryCanvasBytes": 0,
+          "transientEstimatedBytes": 0,
+          "ownedEstimatedBytes": 0,
+          "retryCount": 0,
+          "maxResources": 256,
+          "backupImageDataBytes": 0,
+          "errors": 0,
+          "activeJobs": 0,
+          "activeLeaseEstimatedBytes": 0,
+          "completionNotifications": 0
+        },
+        "cache": {
+          "decoded": {
+            "maxBytes": 268435456,
+            "bytes": 0,
+            "misses": 0,
+            "maxEntryBytes": 67108864,
+            "oversize": 0,
+            "maxEntries": 256,
+            "evictions": 0,
+            "hits": 0,
+            "entries": 0,
+            "pendingEntries": 0,
+            "negativeEntries": 0,
+            "rejected": 0,
+            "transientEntries": 0
+          },
+          "images": {
+            "maxBytes": 67108864,
+            "bytes": 0,
+            "misses": 0,
+            "maxEntryBytes": 16777216,
+            "oversize": 0,
+            "maxEntries": 256,
+            "evictions": 0,
+            "hits": 0,
+            "entries": 0,
+            "pendingEntries": 0,
+            "negativeEntries": 0,
+            "rejected": 0,
+            "transientEntries": 0
+          }
+        },
+        "subscribers": 1
+      },
+      "typingThreshold": "FAIL"
+    }
+  ],
+  "error": "\uc2dc\ub098\ub9ac\uc624 \uc885\ub8cc \ud6c4\uc5d0\ub3c4 \ub0a8\uc740 \ud504\ub85c\uc138\uc2a4(\uc885\ub8cc \uc694\uccad\ud568): pid=1861209(state=S ppid=1) pid=1861210(state=S ppid=1)"
+}

@@ -4,6 +4,7 @@ import argparse
 import hashlib
 import json
 import os
+import re
 from pathlib import Path
 import subprocess
 import tarfile
@@ -12,11 +13,26 @@ HERE = Path(__file__).resolve().parent
 ROOT = HERE.parents[3]
 BASELINE = '1a76570e833917d15817415a53c09ad61ab3203f'
 DEFAULT_PATCH = ROOT / 'tests/integration/rhwp/evidence/t010-cache-hardening/upstream-rhwp-bounded-image-cache-v2.patch'
-CHANGED = ('src/renderer/mod.rs', 'src/renderer/surface_cache.rs', 'src/renderer/web_canvas.rs', 'src/wasm_api.rs')
+CHANGED = ('src/renderer/mod.rs', 'src/renderer/surface_cache.rs', 'src/renderer/render_job.rs', 'src/renderer/web_canvas.rs', 'src/wasm_api.rs')
 
 
 def sha(path):
     return hashlib.sha256(path.read_bytes()).hexdigest()
+
+
+def export_declared_inputs(source, work):
+    """Include pinned static Rust test inputs without exporting unrelated document archives."""
+    for directory in ('src', 'tests', 'crates', 'tools', 'bindings'):
+        for rust_file in (work / directory).rglob('*.rs'):
+            for relative in re.findall(r'include_(?:bytes|str)!\s*\(\s*"([^"\n]+)"', rust_file.read_text(errors='replace')):
+                target = (rust_file.parent / relative).resolve()
+                if not target.is_relative_to(work) or target.exists():
+                    continue
+                name = target.relative_to(work).as_posix()
+                declared = subprocess.run(['git', '-C', str(source), 'show', BASELINE + ':' + name], capture_output=True)
+                if declared.returncode == 0:
+                    target.parent.mkdir(parents=True, exist_ok=True)
+                    target.write_bytes(declared.stdout)
 
 
 def main():
@@ -37,11 +53,15 @@ def main():
     work.mkdir()
     # Stream only the pinned tracked source; copying Git history can dwarf the working tree.
     archive = subprocess.Popen(['git', '-C', str(source), 'archive', BASELINE, '--',
-                                'Cargo.toml', 'Cargo.lock', 'rust-toolchain.toml', 'build.rs',
+                                'Cargo.toml', 'Cargo.lock', 'rust-toolchain.toml', 'rustfmt.toml', 'build.rs',
                                 'src', 'crates', 'bindings/Native', 'tools/rhwp-subsecond',
                                 'tools/batch-convert', 'tools/llm_verifier', 'tools/diagnostics',
                                 'tools/fixture_generators', 'scripts',
-                                'tests', 'samples', 'assets', 'saved', 'vendor', 'LICENSE', 'README.md'], stdout=subprocess.PIPE)
+                                'tests', 'samples', 'assets', 'saved', 'vendor', 'template',
+                                'rhwp-studio/public/samples/issue1949_giant_cell_nested_tables_perf.hwp',
+                                'rhwp-studio/src/view/canvaskit/glyph-run-fonts.ts',
+                                'mydocs/tech/agent_runtime/version_policy.md',
+                                'ttfs', 'LICENSE', 'README.md'], stdout=subprocess.PIPE)
     try:
         with tarfile.open(fileobj=archive.stdout, mode='r|') as stream:
             stream.extractall(work, filter='data')
@@ -53,7 +73,10 @@ def main():
     if not a.baseline_only:
         for options in (['--check'], []):
             subprocess.run(['git', '-C', str(work), 'apply', *options, str(a.patch.resolve())], check=True)
+    export_declared_inputs(source, work)
     env = dict(os.environ)
+    build_tmp = work / 'build-tmp'; build_tmp.mkdir(exist_ok=True)
+    env['TMPDIR'] = str(build_tmp)
     if a.toolchain_bin:
         env['PATH'] = str(a.toolchain_bin.resolve()) + os.pathsep + env['PATH']
     env['CARGO_TARGET_DIR'] = str(a.target_dir.resolve() if a.target_dir else work / 'target/pr-review')
@@ -73,6 +96,10 @@ def main():
     try:
         if not a.prepare_only:
             subprocess.run(command, cwd=work, env=env, check=True)
+            after_sources = {name: sha(work / name) for name in CHANGED if (work / name).is_file()}
+            if manifest['sourceSha256'] != after_sources:
+                manifest['buildStatus'] = 'STALE'
+                raise RuntimeError('source changed during build; artifacts are not verified')
             manifest['buildStatus'] = 'PASS'
             manifest['artifacts'] = {name: sha(package / name) for name in ('rhwp.js', 'rhwp_bg.wasm', 'rhwp.d.ts')}
     except subprocess.CalledProcessError:

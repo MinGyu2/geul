@@ -1,0 +1,6 @@
+{
+  "status": "INTERRUPTED",
+  "buildCompleted": false,
+  "observed": "no verification/build processes remain; shared previous target directory no longer exists; no final ENGINE.json",
+  "completedChecks": "attempt-4-upstream-checks.json"
+}

@@ -67,3 +67,34 @@ cargo clippy --locked --target wasm32-unknown-unknown --lib --release -- -D warn
 ```
 
 위 prepare는 검증 checkout의 ignored Rust harness를 생성한다. 생략하면 fmt·all-target 검사에서 파일 누락이 발생한다. 생성물은 패치에 포함하지 않는다. Nix의 이번 Rustup 설치는 기본 lld wrapper가 존재하지 않는 `nix-support/ld-wrapper.sh`를 참조했다. native 검사는 명령 범위의 `RUSTFLAGS='-C link-arg=-fuse-ld=bfd'`, WASM Clippy의 host build script는 임시 `cc` wrapper(`exec <원래 cc> "$@" -fuse-ld=bfd`)로 해결했다. compiler·시스템 설정·프로젝트 설정을 고치지 않았다. 이 호스트 우회와 초기 실패도 `rust-compatibility.json`에 남겼다.
+
+## Render-job 소유권 후보 (별도 T010 후속)
+
+새 증거·전체 패치는 `../evidence/t010-render-ownership/`에 둔다. 기존 v2/notify 증거와 `cache_contract.rs`, `historical.mjs`는 보존한다. 새 패치는 **pinned 기준에 단독 적용**한다. 기존 패치 위에 겹쳐 적용하지 않는다. 전체 상태·호환성 제한은 해당 디렉터리의 `REPORT.ko.txt`와 `resource-contract.json`을 확인한다. 이 후보는 제품 엔진을 교체하지 않는다.
+
+```sh
+python3 tests/integration/rhwp/cache-concurrency/prepare.py \
+  --work "$CACHE_WORK/ownership" --toolchain-bin "$RUST_193_BIN" --no-opt \
+  --patch tests/integration/rhwp/evidence/t010-render-ownership/upstream-rhwp-render-ownership.patch
+python3 tests/integration/rhwp/cache-concurrency/unit.py \
+  --rustc "$RUST_193_BIN/rustc" \
+  --patch tests/integration/rhwp/evidence/t010-render-ownership/upstream-rhwp-render-ownership.patch \
+  --contract tests/integration/rhwp/cache-concurrency/ownership_contract.rs \
+  --output "$CACHE_WORK/ownership-contracts.json"
+python3 tests/integration/rhwp/cache-concurrency/run.py \
+  --pinned "$CACHE_WORK/pinned/test-package" --candidate "$CACHE_WORK/ownership/test-package" \
+  --browser chrome --output "$CACHE_WORK/ownership-chrome.json"
+python3 tests/integration/rhwp/cache-concurrency/run.py \
+  --pinned "$CACHE_WORK/pinned/test-package" --candidate "$CACHE_WORK/ownership/test-package" \
+  --browser webkit --output "$CACHE_WORK/ownership-webkit.json"
+```
+
+`unit.py --source <isolated/src/renderer/surface_cache.rs>`는 수정 중인 소스를 직접 검사할 때만 쓴다. 이때 `patchSha256`는 null이며 실제 source/contract SHA를 기록한다. 최종 증거에는 완성 패치에서 추출한 검사를 쓴다. Nix linker 우회가 필요한 환경은 앞 절의 task-local bfd wrapper를 사용한다.
+
+`ownership_contract.rs`는 거부된 pending handle의 소유권이 호출자에게 남는 것, trim/budget 변경의 명시적 취소, oversized completion의 ready lease 이관을 검사한다. 기존의 “pending은 무조건 남는다” 및 “oversized 둘이 캐시에 동시에 남아야 한다”는 주장을 유지하지 않는다. 대신 브라우저에서 두 이미지가 모두 들어간 완성 프레임과 취소·한도 오류 시 원래 Canvas 보존을 검증한다. 원래 실패 검사와 재현 결과는 별도로 남는다.
+
+`job-historical.mjs`는 기존 12개 시나리오·50개 관측을 job 완료 후 비교한다. 원래 nonblank 프레임은 같은 draw의 pinned RGBA와 비교하고, cold 비동기 관측은 같은 이미지 형식의 settled 기준과 비교한다. `negativeDecode`의 임의 바이트는 pinned paint 경로에서도 브라우저 decode 요청을 만들지 않는다. 이 관측은 원래 blank 픽셀 계약을 보존하며, 실제 디코드 ERROR와 재시도는 유효한 SVG의 DOM src를 오류 입력으로 주입하는 별도 검사다.
+
+`ownership.mjs`는 공유 디코드·8 active job/2 in-flight 상한·네 이미지의 전진·초대형 ready lease·100 same-task 요청·취소·문서 변경·오래된 취소 토큰·15초 deadline·draw 오류·동기 API의 terminal ERROR 보존·두 쪽 순서·표 셀·crop·scale·재그리기·resident 보호를 검사한다. 보유량은 renderer estimate이며 RSS가 아니다. 정상 resident와 active/temporary lease는 별도 측정한다.
+
+신규 API의 유무로 runner가 job 검사를 선택한다. `run.py`는 상위 PASS와 하위 FAIL의 모순, 빠진 계측, 잘못된 완료 값, timeout, 중복 완료 및 불완전 결과를 실패 처리한다. 신규 job API가 있는 경우 ownership 검사도 필수다. 아직 통합되지 않은 엔진 후보 검증을 geul native 상호작용·IME·편집 성능의 통과로 보지 않는다.

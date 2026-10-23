@@ -1,0 +1,83 @@
+T010 렌더 작업 소유권 후보 실행 보고서
+
+1. 전체 판정
+격리 엔진의 소유권·한도·완성 프레임 관문 PASS. 조건부 실제 geul/Tauri PoC 44 PASS, 0 FAIL, skip 0. 제품 통합과 rhwp Undo/Redo 활성화는 NO-GO이며 T010을 완료 표시하지 않는다. 공식 D4 입력 지연은 FAIL이며 20절에 최종 수치를 기록한다. 전체 제품 관문과 격리 패치의 성공을 구별한다.
+
+2. 범위와 금지 사항
+고정 rhwp에 단독 적용하는 전체 upstream 패치, 재현 가능한 검사, 명시적 시험 전용 adapter와 증거를 작성했다. 제품 src, public/rhwp, submodule 소스·gitlink, 명령 registry, IME·history·저장 정책을 변경하지 않았다. commit/push하지 않았다. 기존 test history 플래그는 별도 성능 시험 서버에서만 명시적으로 사용했다.
+
+3. 시작 상태와 재개
+.agent-tmp.md를 먼저 읽고 master f06fa28fa171c5a22630e3a34b7207274cc45c0b의 실제 diff와 미추적 파일을 대조했다. 완료한 엔진 빌드·브라우저·앱 회귀를 반복하지 않았다. 중단된 마지막 native 결과가 실제로 17 PASS인 것을 확인한 뒤 확장했다. 최종 Git·보호 파일·하위 저장소 상태는 final-integrity.json에 기록한다. staged 변경은 만들지 않았다.
+
+4. 보존한 기존 실패
+historical-rust.json의 새 안전성 계약 2 PASS/7 FAIL과 historical Chrome/WebKit의 pending/transient 한도 FAIL을 보존한다. 과거 cache-concurrency 및 cache-hardening 증거는 변경하지 않았다. 한도만 덧붙여 조용히 이미지를 빼는 교정 대신 작업이 자원을 소유하고 명시적 완료/실패를 반환하게 했다. stale 빌드·초기 linker/fixture/게시 실패도 별도 JSON에 남긴다.
+
+5. 작업 소유권 모델
+문서는 원본 encoded 데이터와 page/tree cache를 소유한다. 유한 job은 문서·target·page·scale·세대 토큰을 연결하고, pending 및 ready 이미지는 Rc lease로 보유한다. 캐시 퇴출은 캐시의 참조만 놓는다. ready oversized 자원은 성공 프레임 소비까지 job이 보유하고, 작은 자원만 성공 게시 뒤 resident로 승격한다. callback은 자원 상태 변경과 모듈 알림만 하며 Canvas를 그리지 않는다.
+
+6. 불변식과 검증 경계
+resource-contract.json의 I1–I14가 계약이다. 활성 참조 미해제, admission 전 예약, 유일 pending/자원 수 상한, transient 수명, 거부한 음성 항목의 비보유, trim/예산 변경 취소, 오래된 callback의 부활 금지, 최신 세대의 완성 프레임만 게시를 검사했다. 모든 입력 문서와 모든 브라우저의 수학적 증명을 주장하지 않는다. scope-review.json은 여섯 Canvas 게시 API의 진입 경계를 검토한다.
+
+7. 자원 상한과 비용 식
+모듈당 pending decode 2, unique browser resource 256, active job 8, 추정 browser lease 256 MiB. 요청당 decoded 예약 96 MiB, 변환 전 source 16 MiB, URL 32 MiB. scratch Canvas 64 MiB와 원래 픽셀 backup ImageData 64 MiB를 별도 제한한다. pending은 URL 예상/실제 길이+96 MiB, ready는 URL 길이+자연 크기×4로 추정한다. 변환 후 실제 URL 길이를 DOM 생성 전에 재검사한다. decoded Canvas cache와 browser resource 예약은 별도 예산이다.
+
+8. 취소·수명·플랫폼 한계
+완료·취소·모델 변경·문서 free·새 target·trim·재예산·15초 기한에 job lease를 해제한다. 마지막 Rc는 handler를 떼고 src를 비운다. 이는 renderer 소유권 종료 및 플랫폼 취소 요청이며 실제 decoder 종료·GPU·RSS·WASM 선형 메모리 용량의 하드 상한이 아니다. 변환 도중 할당과 JS 객체 overhead도 정확히 계상하지 않는다. 별도 WASM 인스턴스끼리 상한을 공유하지 않는다.
+
+9. API와 결과
+beginRenderJob/pollRenderJob/cancelRenderJob/currentRenderJobId 및 rendererJobStats를 제공한다. 결과는 COMPLETE/PENDING/RESOURCE_LIMIT/CANCELED/ERROR다. 취소 토큰은 현재 job과 일치해야 하며 오래된 토큰으로 새 job을 취소할 수 없다. pending을 성공한 blank로 반환하지 않는다. 기한과 실제 decode/draw 오류를 terminal 결과로 보존하고 explicit begin 또는 모델 변경으로 재시도한다.
+
+10. 동기·호환 경로
+전체 page, filtered/profile, legacy, header/footer preview, partial patch Canvas 경로가 같은 staged job 경계를 사용한다. 동기 성공은 COMPLETE일 때만 반환하며 나머지는 정확한 상태를 throw한다. 동기 PENDING의 토큰도 getter로 조회·취소할 수 있다. mode/page/scale 변경은 새 세대를 만든다. 원래 void 성공을 기대하는 제품에 그대로 교체할 수 있는 drop-in 패치라고 주장하지 않는다.
+
+11. paint 순서와 원자적 게시
+매 poll은 현재 모델에서 원래 paint 순서로 다시 준비하고, 이미지가 모두 준비되면 유한 detached Canvas에 완성한다. 대기·오류·취소·한도 거부는 target을 resize/paint하지 않는다. 게시 직전 current token을 확인하고 기존 픽셀을 백업한 뒤 게시한다. draw 실패를 주입한 검사에서 원래 크기·RGBA rollback을 확인했다. 플랫폼이 Canvas backing store 자체를 잃은 경우의 복구는 보장하지 않는다.
+
+12. Rust 계약 검사
+final-cache-contracts.json: 내부 cache 11 PASS, 독립 ownership 계약 13 PASS. contract 실행의 24에는 내부 11이 중복되므로 35개 독립 검사로 합산하지 않는다. admission 거부 시 handle 소유권, pending 취소·예산 축소, oversized ready lease 전달, tiny negative 비용을 검사했다. 과거의 무조건 pending 보존·oversized resident 동시 유지 주장은 새 job 소유권 계약과 분리했다.
+
+13. 고정 Rust 호환성
+Rust 1.93.1, Cargo 1.93.1, wasm32-unknown-unknown을 실제 사용했다. native library 4,063 PASS/13 ignored, all-target Clippy PASS. fmt, WASM release Clippy, release WASM build PASS. ignored는 통과가 아니다. Nix host linker 문제는 작업 전용 bfd wrapper로 우회했고 compiler·시스템 설정은 변경하지 않았다. 누락된 정적 include fixture를 pinned commit에서 복원한 뒤 실패한 네 library 검사를 재실행했다. 초기 실패와 전체 재실행은 native-input-retry/native-final-checks에 구별한다.
+
+14. 패치·빌드 식별
+전체 패치 SHA-256: 0ac1dc90e534b65c781c150a9b9157796c7743c6fb84f61f70f6a0eb49a8ff90.
+최종 WASM SHA-256: 410c2ed5acdd18f19ffce9fc6435b1c9583a10a814d3538e4449ed8cd9e46ecc.
+완성 패치 fresh apply의 다섯 소스 해시가 빌드 전후 고정 소스와 모두 일치한다. 실제 최종 빌드는 ownership-final-package이며 진단 ownership-package와 다르다. fresh checkout에서는 prepare/apply/해시 대조만 했고 두 번째 WASM 빌드는 하지 않았다. Rust release 최적화를 유지하고 별도 wasm-opt만 생략했다. 생성한 실제 TypeScript를 tsc로 검사하고 신규 API를 확인했다.
+
+15. 기존 픽셀 회귀
+최종 Chrome와 WebKitGTK 각각 기존 12 시나리오·50 draw를 비교해 RGBA 50/50 일치했다. 원래 nonblank 프레임은 같은 draw의 pinned 결과, cold async 관측은 같은 형식 settled 기준을 사용한다. HWP/HWPX 생성·export·재열기·이미지의 실제 RGBA도 각 불일치 0이다. 과거 blank 프레임을 성공 기준으로 바꾸거나 실패 assertion을 약화하지 않았다.
+
+16. 신규 브라우저 소유권 검사
+최종 Chrome 52 PASS, WebKit 52 PASS, 실패·skip 0. 두 decode의 공유·진행, 네 cold 이미지, oversize ready lease, 100 same-task 요청, 8 job 상한, 취소·교체·변경·기한, terminal 실패, 원래 Canvas 보존·게시 rollback, crop/scale/표·여러 구역·스크롤·배율·동기 getter 취소를 검사했다. 실제 브라우저와 source/WASM identity는 chrome.json/webkit.json에 있다. native Rust 결과가 WASM 경로 실행의 대체 증거는 아니다.
+
+17. 러너와 실패 분류
+runner 계약 15 PASS. timeout·무응답·부분/중복 결과·상위 PASS와 하위 FAIL 모순·빠진 계측·예산 초과를 실패 처리한다. 잘못된 항상-PENDING getter 가정, fixture 초기화 누락, 닫기 selector, Surface 완료 경계 등의 초기 실패를 보존했다. native 확장 첫 실패는 실제 확대값과 준비된 세 Canvas를 확인하도록 교정했다. 이후 기능은 모두 통과했으나 자동 시작 D-Bus 두 프로세스의 정리가 실패했다. managed dbus-run-session에서 종료 검사도 통과했으며 강제 정리를 성공으로 간주하도록 바꾸지 않았다.
+
+18. 조건부 실제 geul 통합
+engine-safety-gates PASS 뒤에만 시험 전용 Vite factory/Surface 변환과 session adapter를 사용했다. 모듈 listener 하나, 구독 session 최대 8, Canvas 요청 메타데이터 최대 256, 문서당 job 하나다. 알림을 RAF로 합치고 visible 요청을 우선하며, PENDING은 알림 또는 유한 deadline 때만 다시 poll한다. generation/modelVersion/isConnected를 검사하고 한 문서 close가 다른 listener를 지우지 않는다. 실제 Tauri/WebKitGTK의 최종 native 44 PASS에 두 형식 이미지·표 픽셀, 세 구역, 50/100/150% scroll/zoom, PENDING 교체·닫기·늦은 이벤트 후 새 문서 픽셀을 포함한다.
+
+19. 예산·RSS·close
+geul-native-matrix.json에 256/384/512 MiB 단일 활성 이미지 문서와 세 문서 open/한 surface visible의 cold/warm·확대·스크롤·RSS를 기록했다. 전체 예산의 decoded/browser split은 75/25%, 모듈 browser lease cap은 별도 256 MiB다. inactive 탭은 화면 Canvas를 놓고 session은 유지한다. 세 문서가 동시에 visible인 시험이 아니다. 이미지 활성 시 browser owned estimate 11,617,460 bytes; close와 최종 trim 뒤 job/resource/cache 보유량 0. WebProcess RSS 관측은 약 451–530 MiB로 추정 renderer 예산과 다른 양이다. 짧고 작은 공개 fixture 표본으로 장기 RSS 안정성이나 384/512 MiB의 우월성을 결론내리지 않았고 기본 예산을 채택하지 않았다.
+
+20. 공식 D4 응답성
+공식 native keydown → revision 관찰 RAF → 추가 2 RAF, group-start p95 ≤50 ms, Undo p95 ≤1,500 ms를 유지한다. history-perf.py는 기존 scenario_perf/MEASURE를 변경 없이 호출하고 probe URL만 후보로 연결한다. 기존 네 문서, 새 native session/문서, 배율 50%, warmup 3, group-start/extend 각 30, Undo/Redo 반복과 Undo 뒤 입력을 유지한다. 별도 history 비활성 typing 진단의 p95 또는 host repaint 완료 시간으로 공식 D4를 대체하지 않는다. 설정 재로드로 중단된 진단도 별도 실패 파일로 보존했다.
+VERIFIED: 네 문서의 group-start p50/p95(ms)는 작은 HWP 41/66, 작은 HWPX 41/61, 24쪽 HWP 58/346, 60쪽 HWPX 85/107. 네 p95 모두 50ms 기준 FAIL이다. Undo p95는 51/59/68/149ms로 네 문서 모두 1,500ms 기준 PASS, 각 25표본이며 timeout은 0이다. Redo p95는 51/52/73/149ms다. 완성된 네 문서·8개 관문 중 4 PASS/4 FAIL로 종료 코드 1이며 runner 오류/정리 실패는 없다.
+이번 새 후보와 역사적 77/77/87/121ms는 동일 시각 A/B가 아니므로 개선율·회귀율을 결론내리지 않는다. 24쪽 HWP의 zero-work frame floor도 p95 181ms로 높다. supplementary API별 calls가 0이므로 해당 0ms를 실제 엔진 비용 0으로 읽을 수 없다. Surface first-draw trace는 async job 예약 비용이며 완성 frame 비용이 아니다. 관측된 session text-mutation p95는 2/2/2/28ms, commit-ack p95는 21/21/53/38ms이지만 총 지연의 인과 분해는 미완료다. 다음 prepared-layout/damage-page 작업은 동일 공식 관문과 픽셀·저장 회귀를 유지해야 한다.
+
+21. D2 native IME
+새 native IME 시도는 0이다. 기존 target 0/298 관측의 INCONCLUSIVE와 결정적 replay 56 PASS를 유지한다. replay를 native 목표 순서 관찰로 합산하지 않는다. 이번 패치는 IME 코드를 변경하지 않으며 다른 native 입력 환경의 검증을 면제하지 않는다.
+
+22. 앱·저장·회귀
+application-regressions.json은 기존 pinned 앱 결과다: typecheck/lint PASS, Vitest 779 PASS, real WASM 27 PASS+2 skipped, Python harness 66 PASS, geul Rust 175 PASS+6 ignored 및 fmt/Clippy PASS. undo_save 13사례 불일치0, strict save 23사례 CURRENT0/DESIRED0. 이를 후보 adapter의 native 저장·실패 주입·D3/D5 완료로 주장하지 않는다. 새 시험 파일의 최종 lint·보안·민감정보·diff 검사는 final-verification.json에 별도 기록한다.
+
+23. 제품 D1–D5 관문
+D1: 후보의 이번 native 픽셀/구역/확대/생명주기 사례 VERIFIED. 모든 편집·셀 상호작용의 제품 승인 범위는 미완료.
+D2: native IME INCONCLUSIVE 유지.
+D3: pinned 저장 보존 PASS. 후보 adapter의 전체 native 저장 계약은 미완료.
+D4: 원래 공식 실패 판정을 유지한다. 새로운 후보 수치는 20절과 공식 JSON을 따른다. 메모리 소유권/취소 PASS가 응답성·장기 RSS 관문을 대신하지 않는다.
+D5: pinned snapshot/history 실패 안전 증거 유지. 후보의 전체 native 실패 주입은 미완료.
+제품 registry의 rhwp Undo/Redo 및 미지원 서식은 그대로이며 T010/T011 상태도 바꾸지 않았다. RHWP UNDO/REDO PRODUCTION ACTIVATION: NO-GO.
+
+24. 산출물·재현·다음 작업
+전체 단독 패치는 upstream-rhwp-render-ownership.patch, 엔진과 검사는 engine.json/final-wasm-checks.json/fresh-apply.json/chrome.json/webkit.json, native는 geul-native-matrix.json 및 geul-native-history-perf.json이다. 실제 도구 버전·해시·명령은 native-execution.json과 final-integrity.json에 기록한다. ../../cache-concurrency/README.md 및 ../../ownership-poc/README.md의 명령으로 재현한다. historical/stale/diagnostic 파일은 최종 PASS와 구별한다.
+남은 제품 작업은 다른 native IME 환경의 목표 순서 확인, 공식 D4 실패의 prepared-layout/damage-page 비용 개선, 최종 후보의 native 저장·snapshot 실패 주입·장기 RSS 및 플랫폼 검증이다. 이는 이번 renderer 소유권 패치가 해결했다고 주장하지 않는다. 요구된 제품 관문이 남아 있으므로 .agent-tmp.md는 미완료 상태로 보존한다.

@@ -1,0 +1,15 @@
+{
+  "baseline": "1a76570e833917d15817415a53c09ad61ab3203f",
+  "buildStatus": "DIAGNOSTIC_SOURCE_CHANGED_DURING_BUILD",
+  "compiler": "rustc 1.93.1 (01f6ddf75 2026-02-11)",
+  "wasmPack": "wasm-pack 0.15.0",
+  "artifacts": {
+    "rhwp.js": "64e3af30d575278f272232e90aaff1ffbe90db8d6686a1d7bc7f537b4fdce13d",
+    "rhwp_bg.wasm": "4247d9dff59484f962c70f5b08996b6536dc57f79c248fe092db9eb4b3cff320",
+    "rhwp.d.ts": "bc4b2876de2f4b552bbd7bf14b9914a8be587b949619af1849646d3ded83afe1"
+  },
+  "profile": "release",
+  "wasmOpt": false,
+  "rendererJobAPI": true,
+  "identityLimitation": "currentRenderJobId accessor was added after compilation started; generated d.ts confirms it is absent. This artifact is diagnostic, not final-source verification."
+}

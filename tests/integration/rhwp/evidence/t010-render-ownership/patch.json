@@ -1,0 +1,15 @@
+{
+  "baseline": "1a76570e833917d15817415a53c09ad61ab3203f",
+  "patch": "upstream-rhwp-render-ownership.patch",
+  "sha256": "0ac1dc90e534b65c781c150a9b9157796c7743c6fb84f61f70f6a0eb49a8ff90",
+  "application": "Apply this COMPLETE patch alone to pinned baseline; do not combine with v2 or notify patches.",
+  "applyCheckExit": 0,
+  "applyCheckOutput": "",
+  "sourceSha256": {
+    "src/renderer/mod.rs": "417872f6330bda18ba30fdb2b644e4f1bb46f3a365cda11d794d0861ac32fc8f",
+    "src/renderer/surface_cache.rs": "f36556f7515b9938ab54692aa75a9afbd9af4e2e5825d071810e38918efd260f",
+    "src/renderer/render_job.rs": "a0a51415f8e9f37047ec2ee237b2457314628970310e5a7cc4e7b0d5d4a0101e",
+    "src/renderer/web_canvas.rs": "7a7bc4c6729ff76af873a5fece0702f8e639d0aafa98434f297ccbcf518828e1",
+    "src/wasm_api.rs": "ab73fb12f34b08cd621362c6f6d0f44340b0007bf89baeaba3b97bcd92c5afcf"
+  }
+}

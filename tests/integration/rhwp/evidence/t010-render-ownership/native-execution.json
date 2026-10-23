@@ -1,0 +1,56 @@
+{
+  "status": "VERIFIED_EXECUTIONS_WITH_D4_FAIL",
+  "engineIdentity": "engine.json and engine-safety-gates.json",
+  "candidateWasmSha256": "410c2ed5acdd18f19ffce9fc6435b1c9583a10a814d3538e4449ed8cd9e46ecc",
+  "testFilesCurrentSha256": {
+    "native.py": "92e04ae63fc8fd453a9b198050888d52763b1771c67f38ae4ac13b8795735f69",
+    "history-perf.py": "1f08c9ffafd3faa8b9a934577cf4ac1e1468cec98e65fae436bdcdcc2a86426a",
+    "typing.py": "3a3d271ae89e954e2572739990022dd9d659aa5874a09740033e009666253c48",
+    "session.mjs": "d7dd8912b39e758e9bb2cb006d82f5cd60cdcad4b2982aef5ea03e00e175a44a",
+    "README.md": "9df42d9b3e08e577da89c11ac3ae23739a775243e66084ddaa10ad57ddc72601",
+    "generate.mjs": "b7cf1b9cc56828019ce14b95bc46ddbfd177b89d3b1a98144ab63c5a559862c1",
+    "vite.config.mjs": "dc4fd07549d062a3575fb477bf091c72497a22d3cf2a6ca00624f4adceb7f118"
+  },
+  "testFilesExecutedSha256": {
+    "native.py": "7eb69c3f8ea7b468df17a4cb94d68e428838860df960aa19e95eac81be8aaff3",
+    "history-perf.py": "a6cb923e7dec389dab1ab56e521729ef83ca27870684e40726aa4cb15427d4f3",
+    "typing.py": "ae63e017fa4fab2e5cd42b8bfa08122163bc62c687cc12bfe7e13d8cd613fc49",
+    "session.mjs": "d7dd8912b39e758e9bb2cb006d82f5cd60cdcad4b2982aef5ea03e00e175a44a",
+    "README.md": "9df42d9b3e08e577da89c11ac3ae23739a775243e66084ddaa10ad57ddc72601",
+    "generate.mjs": "b7cf1b9cc56828019ce14b95bc46ddbfd177b89d3b1a98144ab63c5a559862c1",
+    "vite.config.mjs": "dc4fd07549d062a3575fb477bf091c72497a22d3cf2a6ca00624f4adceb7f118"
+  },
+  "postExecutionChange": "Only Python error-log home redaction generalized from literal development home to Path.home(); assertions and normal behavior unchanged. No engine/session/vite edits after final matrix and official performance execution.",
+  "nativeAppSha256": "48b7b8364cb4b91ae0b4c3cb3113977c15fd92aa9ca3d60f0406f331749d45c1",
+  "platform": "Linux Xvfb; Tauri native WebKitGTK2.54.1",
+  "driverVersion": "2.0.4 verified Cargo install manifest; binary does not implement --version",
+  "driverSha256": "9cbe48cd34e370d4d1fb81f02cdc3af1d032a110aace3bdc985b7de835739eef",
+  "nodeVersion": "v24.21.0",
+  "pythonVersion": "Python 3.14.7",
+  "executionCwd": "<workspace>",
+  "managedBus": "dbus-run-session; private bus ends with runner",
+  "commands": {
+    "renderLifecycleBudget": "dbus-run-session -- python3 tests/integration/rhwp/ownership-poc/native.py --extended --matrix --app <debug-app> --driver <tauri-driver2.0.4> --webkit-driver <WebKitWebDriver2.54.1> --xvfb <Xvfb21.1.23> --output <evidence>/geul-native-matrix.json",
+    "officialHistoryPerformance": "dbus-run-session -- python3 tests/integration/rhwp/ownership-poc/history-perf.py --app <debug-app> --driver <tauri-driver2.0.4> --webkit-driver <WebKitWebDriver2.54.1> --xvfb <Xvfb21.1.23> --xdotool <xdotool3.20211022.1> --output <evidence>/geul-native-history-perf.json"
+  },
+  "observedResults": {
+    "matrix": {
+      "exit": 0,
+      "passed": 44,
+      "failed": 0
+    },
+    "officialD4": {
+      "exit": 1,
+      "gatePass": 4,
+      "gateFail": 4,
+      "runnerError": false,
+      "cleanupFailure": false
+    }
+  },
+  "nativeMeasurementConcurrency": "Matrix and official history performance ran sequentially; no engine build/test suite ran during official native measurement.",
+  "limitations": [
+    "Short public-fixture workload; three open documents but only selected tab surface visible.",
+    "Official timing preserves historical revision/RAF contract; no new asynchronous publication fence.",
+    "Supplementary API-level calls=0 is unavailable attribution, not zero engine cost."
+  ]
+}

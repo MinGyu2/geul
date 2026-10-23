@@ -1,0 +1,6 @@
+{
+  "status": "CANCELED",
+  "operation": "WASM release build",
+  "reason": "failure-boundary review: propagate draw failures, retain compatibility ERROR until retry, invalidate terminal generations on edit, check deadlines at publication",
+  "completedChecks": "attempt-3-upstream-checks.json"
+}

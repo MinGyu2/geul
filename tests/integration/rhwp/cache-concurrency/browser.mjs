@@ -149,6 +149,10 @@ async function main() {
   await candidate.default({ module_or_path: '/candidate/rhwp_bg.wasm' });
   const pinned = await import('/pinned/rhwp.js');
   await pinned.default({ module_or_path: '/pinned/rhwp_bg.wasm' });
+  if (candidate.HwpDocument.prototype.beginRenderJob) {
+    const { ownership } = await import('./ownership.mjs');
+    return ownership(candidate, pinned, { mismatch, loads });
+  }
   const concurrent = await stress(candidate, pinned);
   const pending = await pendingBurst(candidate);
   candidate.setRendererCacheBudget(256 << 20, 64 << 20, 256);

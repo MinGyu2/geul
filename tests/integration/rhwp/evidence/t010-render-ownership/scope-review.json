@@ -1,0 +1,52 @@
+{
+  "status": "PASS",
+  "classification": "SOURCE_REVIEW plus executed tests; not proof of all possible documents",
+  "scope": "exported Canvas replay entry points; SVG/HTML/command-count APIs do not publish caller Canvas",
+  "sourceIdentity": "engine.json sourceSha256/src/wasm_api.rs",
+  "entries": [
+    {
+      "name": "renderPageToCanvas",
+      "stagedBoundary": true,
+      "line": 867
+    },
+    {
+      "name": "renderHeaderFooterEditPreviewToCanvas",
+      "stagedBoundary": true,
+      "line": 1129
+    },
+    {
+      "name": "renderPageToCanvasFiltered",
+      "stagedBoundary": true,
+      "line": 1189
+    },
+    {
+      "name": "renderPageToCanvasFilteredWithProfile",
+      "stagedBoundary": true,
+      "line": 1203
+    },
+    {
+      "name": "renderPagePatchToCanvasFilteredWithProfile",
+      "stagedBoundary": true,
+      "line": 1234
+    },
+    {
+      "name": "renderPageToCanvasLegacy",
+      "stagedBoundary": true,
+      "line": 1279
+    }
+  ],
+  "runtimeEvidence": [
+    "chrome.json:52 ownership tests and50 historical draws",
+    "webkit.json:same",
+    "geul-native-poc.json:17 actual native checks",
+    "geul-native-extended.json:29 actual native checks",
+    "geul-native-matrix.json:44 actual native checks"
+  ],
+  "boundaries": [
+    "Publication is synchronous inside a guarded job poll; callbacks update resource state and notify only.",
+    "Mutation and cache pressure cancel current jobs; stale cancel token cannot cancel newer generation.",
+    "Legacy, filtered/profile, header/footer and partial replay stage via same job owner; terminal failures explicit.",
+    "Global pool is module-local, not process-global; separate WASM module instances have separate caps.",
+    "App-wide decoder/GPU/RSS/format-conversion bounds and long-run cross-platform gates remain unverified."
+  ]
+}

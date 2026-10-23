@@ -1,0 +1,67 @@
+{
+  "status": "ISOLATED_ENGINE_AND_CONDITIONAL_NATIVE_POC_VERIFIED",
+  "baseline": "1a76570e833917d15817415a53c09ad61ab3203f",
+  "scope": "isolated candidate only; no production artifacts replaced",
+  "boundedQuantity": "estimated retained renderer resource ownership, not RSS, browser decoder allocations, GPU memory or WASM linear memory capacity",
+  "limits": {
+    "moduleUniqueBrowserResources": 256,
+    "modulePendingDecodes": 2,
+    "moduleBrowserResourceEstimateBytes": 268435456,
+    "perRequestDecodedEstimateReservationBytes": 100663296,
+    "perRequestDataUrlBytes": 33554432,
+    "preConversionSourceBytes": 16777216,
+    "synchronousDecodedCanvasBytes": 100663296,
+    "temporaryFrameBytes": 67108864,
+    "deadlineMs": 15000,
+    "moduleActiveJobs": 8,
+    "backupImageDataBytes": 67108864,
+    "combinedStagingBytes": 134217728
+  },
+  "ownership": {
+    "document": "source encoded buffers and page/tree caches; borrowed during synchronous poll only; not copied to deferred queue",
+    "waiting": "no queued bytes/URL/DOM; only existing document and bounded job flag; host polls same paint order",
+    "pending": "job-owned Rc lease; reservation before URL/DOM allocation; shared by content key across live jobs; at most2 unique decodes",
+    "ready": "same job lease retains DOM until complete/cancel/disposal/mutation/target replacement/timeout/limit/error",
+    "resident": "small ready lease promoted to bounded cache only after successful frame publication; cache release drops its Rc and cannot clear other active clones",
+    "active": "synchronous poll borrows current document; staging original renderer order; source/draw clones valid until poll returns",
+    "released": "last ImageResource Rc drops, clears onload/onerror then src; browser internal cancellation/GC is platform-owned, not measured RSS"
+  },
+  "outcomes": [
+    "COMPLETE",
+    "PENDING",
+    "RESOURCE_LIMIT",
+    "CANCELED",
+    "ERROR"
+  ],
+  "generations": "globally monotonic job id; one current job per document; begin cancels previous same-target job; &mut document operations invalidate; callbacks update resource state and notify only, never paint; exported cancelRenderJob(id) ignores stale ids and cannot cancel a replacement job",
+  "publication": "rebuild current page tree on each poll; paint one bounded detached frame; pending/error/canceled/limit does not resize or draw target; validate target id immediately before synchronous publication; before resizing target, reserve/read one <=64MiB old-frame ImageData; restore original dimensions/pixels if publication draw fails. Platform-wide lost Canvas context remains outside renderer-controlled rollback guarantees.",
+  "compatibility": "All full/filtered/profile/legacy/header/footer/partial Canvas replay entry points stage through the same bounded job boundary. Synchronous success means COMPLETE only; otherwise throws exact status. Pending synchronous jobs are observable/cancelable using currentRenderJobId(). Terminal ERROR/RESOURCE_LIMIT is sticky until explicit begin or model mutation; mode/page/scale changes create a new generation.",
+  "fairness": "at most2 decodes; waiting work revisited in original paint order on next host poll; no second unbounded queue; all jobs expire with ERROR after15s including ready idle jobs; host must coalesce notifications and fairly poll visible live jobs",
+  "accounting": "normal resident budget and module browser-lease reservation cap are separate; former setRendererCacheBudget cancels active jobs on change/trim; frame cap separate; pooled physical resource estimates deduplicate by content, active lease metrics may double-count shared refs conservatively",
+  "knownLimitations": [
+    "Only estimated retained renderer ownership is bounded; temporary format-conversion allocations, actual decoder/GPU/RSS/WASM linear memory capacity are not hard capped.",
+    "Host must poll fairly after coalesced module notifications; callbacks carry no document identity.",
+    "Actual context-loss rollback cannot recover a Canvas backing store the platform has lost.",
+    "Conditional real Tauri rendering/lifecycle/budget checks passed44; official native history group-start p95=66/61/346/107ms FAIL<=50ms. Full D1-D5 activation and cross-platform validation remain incomplete."
+  ],
+  "invariants": {
+    "I1": "Job/cache share Rc; cache eviction cannot clear image until last active lease drops.",
+    "I2": "Module pending unique decode count <=2; active jobs <=8; unique owned browser resources <=256.",
+    "I3": "Admission before URL/DOM; URL+96MiB reservation within256MiB physical estimated resource cap; converted URL rechecked before DOM.",
+    "I4": "Job finish/cancel/mutation/disposal/globaltrim or15sec deadline release transient ready ownership without insertion.",
+    "I5": "Only successful small ready resources promote; oversized remain job leases and do not evict normal residents.",
+    "I6": "Negative insert refused if64byte cost exceeds budget; browser errors terminal and not negative retained.",
+    "I7": "Trim/rebudget cancel active jobs; generic cache releases pending and updates entries/bytes.",
+    "I8": "Drop detaches callbacks and clears src; late handler looks up live weak pooled resource; no resurrection.",
+    "I9": "Resource callbacks only update live leases; cancellation token must match current job; callback never paints.",
+    "I10": "Original-order bounded replay makes progress when decodes finish and host polls; no repeated decoding within job.",
+    "I11": "Capacity/individual/frame/decode policy failures RESOURCE_LIMIT; stalled/error paths ERROR bydeadline, not successful blank.",
+    "I12": "All resources ready + current target generation + bounded frame/backup are prerequisites for COMPLETE publication.",
+    "I13": "Pool deduplicates leases; closing one document drops its own refs and does not unset module listener or other lease.",
+    "I14": "Only first pending completion notifies; immediately drawable image is recognized without redundant notification."
+  },
+  "estimatedByteFormula": "browser ready: retained URL UTF-8 length + width*height*4; pending: URL forecast/actual length +96MiB decoded reservation; decoded Canvas cache: width*height*4; negative generic cache64bytes only ifadmitted; scratch/old ImageData width*height*4 each. This is an estimator, not DOM object/string overhead, copy count or true process memory.",
+  "visibleCanvas": "Visible output Canvas is caller-owned and outside resident/pending estimates. A pending job retains at most one target reference until <=15sec expiry/cancel. Publication refuses backup >64MiB; no renderer-owned staging surface persists between polls.",
+  "browserCancellation": "Last lease clears event handlers and src. This ends renderer ownership and requests platform cancellation. Actual decoder termination and memory reclamation timing remain platform-owned; late events cannot find/resurrect a released resource. No hard RSS or decoder allocator bound is claimed.",
+  "nativeEvidence": "geul-native-matrix.json:44PASS; three open documents, only the selected surface visible; RSS samples are not an allocator bound"
+}

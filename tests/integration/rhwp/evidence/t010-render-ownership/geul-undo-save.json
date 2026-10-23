@@ -1,0 +1,551 @@
+{
+ "rows": [
+  {
+   "case": "basic-hwp-undone",
+   "reopen": {
+    "formatEqual": true,
+    "pagesEqual": true,
+    "textEqual": true,
+    "controlsEqual": true
+   },
+   "preflight": "safe",
+   "preflightFindings": [],
+   "checkSaved": "safe",
+   "findings": [],
+   "published": true,
+   "originalSha256": "57c901cc394abf6f58f4838315d1ea2c5ecf8a03d9934d3fc098fd8be6e6e12f",
+   "afterSha256": "57c901cc394abf6f58f4838315d1ea2c5ecf8a03d9934d3fc098fd8be6e6e12f",
+   "sessionAfter": {
+    "dirty": false,
+    "revision": 1,
+    "state": "ready"
+   },
+   "dirAfter": [
+    "doc.hwp"
+   ],
+   "ok": true
+  },
+  {
+   "case": "basic-hwp-redone",
+   "reopen": {
+    "formatEqual": true,
+    "pagesEqual": true,
+    "textEqual": true,
+    "controlsEqual": true
+   },
+   "preflight": "safe",
+   "preflightFindings": [],
+   "checkSaved": "unsafe",
+   "findings": [
+    [
+     "previewStale",
+     "PrvText"
+    ],
+    [
+     "previewStale",
+     "PrvImage"
+    ]
+   ],
+   "published": false,
+   "originalSha256": "57c901cc394abf6f58f4838315d1ea2c5ecf8a03d9934d3fc098fd8be6e6e12f",
+   "afterSha256": "57c901cc394abf6f58f4838315d1ea2c5ecf8a03d9934d3fc098fd8be6e6e12f",
+   "sessionAfter": {
+    "dirty": true,
+    "revision": 1,
+    "state": "ready"
+   },
+   "dirAfter": [
+    "doc.hwp"
+   ],
+   "ok": true
+  },
+  {
+   "case": "basic-hwp-newAfterUndo",
+   "reopen": {
+    "formatEqual": true,
+    "pagesEqual": true,
+    "textEqual": true,
+    "controlsEqual": true
+   },
+   "preflight": "safe",
+   "preflightFindings": [],
+   "checkSaved": "unsafe",
+   "findings": [
+    [
+     "previewStale",
+     "PrvText"
+    ],
+    [
+     "previewStale",
+     "PrvImage"
+    ]
+   ],
+   "published": false,
+   "originalSha256": "57c901cc394abf6f58f4838315d1ea2c5ecf8a03d9934d3fc098fd8be6e6e12f",
+   "afterSha256": "57c901cc394abf6f58f4838315d1ea2c5ecf8a03d9934d3fc098fd8be6e6e12f",
+   "sessionAfter": {
+    "dirty": true,
+    "revision": 1,
+    "state": "ready"
+   },
+   "dirAfter": [
+    "doc.hwp"
+   ],
+   "ok": true
+  },
+  {
+   "case": "basic-hwpx-undone",
+   "reopen": {
+    "formatEqual": true,
+    "pagesEqual": true,
+    "textEqual": true,
+    "controlsEqual": true
+   },
+   "preflight": "safe",
+   "preflightFindings": [],
+   "checkSaved": "safe",
+   "findings": [],
+   "published": true,
+   "originalSha256": "26d434b7b427149110751c6ef5b19e9ecb4818f3ba7eadfe201b5afd3de442a8",
+   "afterSha256": "26d434b7b427149110751c6ef5b19e9ecb4818f3ba7eadfe201b5afd3de442a8",
+   "sessionAfter": {
+    "dirty": false,
+    "revision": 1,
+    "state": "ready"
+   },
+   "dirAfter": [
+    "doc.hwpx"
+   ],
+   "ok": true
+  },
+  {
+   "case": "basic-hwpx-redone",
+   "reopen": {
+    "formatEqual": true,
+    "pagesEqual": true,
+    "textEqual": true,
+    "controlsEqual": true
+   },
+   "preflight": "safe",
+   "preflightFindings": [],
+   "checkSaved": "safe",
+   "findings": [],
+   "published": true,
+   "originalSha256": "26d434b7b427149110751c6ef5b19e9ecb4818f3ba7eadfe201b5afd3de442a8",
+   "afterSha256": "2258645d7d618582594c77d2b3d7d1213345e95c8e885487e64a85de3d323af5",
+   "sessionAfter": {
+    "dirty": false,
+    "revision": 1,
+    "state": "ready"
+   },
+   "dirAfter": [
+    "doc.hwpx"
+   ],
+   "ok": true
+  },
+  {
+   "case": "basic-hwpx-newAfterUndo",
+   "reopen": {
+    "formatEqual": true,
+    "pagesEqual": true,
+    "textEqual": true,
+    "controlsEqual": true
+   },
+   "preflight": "safe",
+   "preflightFindings": [],
+   "checkSaved": "safe",
+   "findings": [],
+   "published": true,
+   "originalSha256": "26d434b7b427149110751c6ef5b19e9ecb4818f3ba7eadfe201b5afd3de442a8",
+   "afterSha256": "0f77d50f3a0be629f451c087a9707eaff2f626c0ca906a36b2149c9102413335",
+   "sessionAfter": {
+    "dirty": false,
+    "revision": 1,
+    "state": "ready"
+   },
+   "dirAfter": [
+    "doc.hwpx"
+   ],
+   "ok": true
+  },
+  {
+   "case": "basic-hwpx-redone-dangling",
+   "reopen": {
+    "formatEqual": true,
+    "pagesEqual": true,
+    "textEqual": true,
+    "controlsEqual": true
+   },
+   "preflight": "safe",
+   "preflightFindings": [],
+   "checkSaved": "unsafe",
+   "findings": [
+    [
+     "referenceInvalid",
+     "Contents/section0.xml"
+    ]
+   ],
+   "published": false,
+   "originalSha256": "26d434b7b427149110751c6ef5b19e9ecb4818f3ba7eadfe201b5afd3de442a8",
+   "afterSha256": "26d434b7b427149110751c6ef5b19e9ecb4818f3ba7eadfe201b5afd3de442a8",
+   "sessionAfter": {
+    "dirty": true,
+    "revision": 1,
+    "state": "ready"
+   },
+   "dirAfter": [
+    "doc.hwpx"
+   ],
+   "ok": true
+  },
+  {
+   "case": "multi-hwp-undone",
+   "reopen": {
+    "formatEqual": true,
+    "pagesEqual": true,
+    "textEqual": true,
+    "controlsEqual": true
+   },
+   "preflight": "safe",
+   "preflightFindings": [],
+   "checkSaved": "safe",
+   "findings": [],
+   "published": true,
+   "originalSha256": "a3e94e613a7d3dad0ee11e2df8f9572a5b7c2d704602960c2075b5fd22df995c",
+   "afterSha256": "ff29f73fa4d6fb0d3d5deb214f53477606b6f270086bbb1bd7f037cd8c0ddf11",
+   "sessionAfter": {
+    "dirty": false,
+    "revision": 1,
+    "state": "ready"
+   },
+   "dirAfter": [
+    "doc.hwp"
+   ],
+   "ok": true
+  },
+  {
+   "case": "multi-hwp-redone",
+   "reopen": {
+    "formatEqual": true,
+    "pagesEqual": true,
+    "textEqual": true,
+    "controlsEqual": true
+   },
+   "preflight": "safe",
+   "preflightFindings": [],
+   "checkSaved": "unsafe",
+   "findings": [
+    [
+     "previewStale",
+     "PrvText"
+    ],
+    [
+     "previewStale",
+     "PrvImage"
+    ]
+   ],
+   "published": false,
+   "originalSha256": "a3e94e613a7d3dad0ee11e2df8f9572a5b7c2d704602960c2075b5fd22df995c",
+   "afterSha256": "a3e94e613a7d3dad0ee11e2df8f9572a5b7c2d704602960c2075b5fd22df995c",
+   "sessionAfter": {
+    "dirty": true,
+    "revision": 1,
+    "state": "ready"
+   },
+   "dirAfter": [
+    "doc.hwp"
+   ],
+   "ok": true
+  },
+  {
+   "case": "multi-hwp-newAfterUndo",
+   "reopen": {
+    "formatEqual": true,
+    "pagesEqual": true,
+    "textEqual": true,
+    "controlsEqual": true
+   },
+   "preflight": "safe",
+   "preflightFindings": [],
+   "checkSaved": "unsafe",
+   "findings": [
+    [
+     "previewStale",
+     "PrvText"
+    ],
+    [
+     "previewStale",
+     "PrvImage"
+    ]
+   ],
+   "published": false,
+   "originalSha256": "a3e94e613a7d3dad0ee11e2df8f9572a5b7c2d704602960c2075b5fd22df995c",
+   "afterSha256": "a3e94e613a7d3dad0ee11e2df8f9572a5b7c2d704602960c2075b5fd22df995c",
+   "sessionAfter": {
+    "dirty": true,
+    "revision": 1,
+    "state": "ready"
+   },
+   "dirAfter": [
+    "doc.hwp"
+   ],
+   "ok": true
+  },
+  {
+   "case": "multi-hwpx-undone",
+   "reopen": {
+    "formatEqual": true,
+    "pagesEqual": true,
+    "textEqual": true,
+    "controlsEqual": true
+   },
+   "preflight": "unsafe",
+   "preflightFindings": [
+    [
+     "partAdded",
+     "Preview/PrvImage.png"
+    ],
+    [
+     "partChanged",
+     "Contents/content.hpf"
+    ],
+    [
+     "partChanged",
+     "Contents/section0.xml"
+    ],
+    [
+     "partChanged",
+     "Contents/section1.xml"
+    ],
+    [
+     "partChanged",
+     "Contents/section2.xml"
+    ]
+   ],
+   "checkSaved": "unsafe",
+   "findings": [
+    [
+     "partAdded",
+     "Preview/PrvImage.png"
+    ],
+    [
+     "partChanged",
+     "Contents/content.hpf"
+    ],
+    [
+     "previewStale",
+     "Preview/PrvText.txt"
+    ]
+   ],
+   "published": false,
+   "originalSha256": "97b5d6c571a6b7626321c6a53d797e3511978447497bb73309bd23eaa8e7ea77",
+   "afterSha256": "97b5d6c571a6b7626321c6a53d797e3511978447497bb73309bd23eaa8e7ea77",
+   "sessionAfter": {
+    "dirty": true,
+    "revision": 1,
+    "state": "ready"
+   },
+   "dirAfter": [
+    "doc.hwpx"
+   ],
+   "ok": true
+  },
+  {
+   "case": "multi-hwpx-redone",
+   "reopen": {
+    "formatEqual": true,
+    "pagesEqual": true,
+    "textEqual": true,
+    "controlsEqual": true
+   },
+   "preflight": "unsafe",
+   "preflightFindings": [
+    [
+     "partAdded",
+     "Preview/PrvImage.png"
+    ],
+    [
+     "partChanged",
+     "Contents/content.hpf"
+    ],
+    [
+     "partChanged",
+     "Contents/section0.xml"
+    ],
+    [
+     "partChanged",
+     "Contents/section1.xml"
+    ],
+    [
+     "partChanged",
+     "Contents/section2.xml"
+    ]
+   ],
+   "checkSaved": "unsafe",
+   "findings": [
+    [
+     "partAdded",
+     "Preview/PrvImage.png"
+    ],
+    [
+     "partChanged",
+     "Contents/content.hpf"
+    ],
+    [
+     "previewStale",
+     "Preview/PrvText.txt"
+    ]
+   ],
+   "published": false,
+   "originalSha256": "97b5d6c571a6b7626321c6a53d797e3511978447497bb73309bd23eaa8e7ea77",
+   "afterSha256": "97b5d6c571a6b7626321c6a53d797e3511978447497bb73309bd23eaa8e7ea77",
+   "sessionAfter": {
+    "dirty": true,
+    "revision": 1,
+    "state": "ready"
+   },
+   "dirAfter": [
+    "doc.hwpx"
+   ],
+   "ok": true
+  },
+  {
+   "case": "multi-hwpx-newAfterUndo",
+   "reopen": {
+    "formatEqual": true,
+    "pagesEqual": true,
+    "textEqual": true,
+    "controlsEqual": true
+   },
+   "preflight": "unsafe",
+   "preflightFindings": [
+    [
+     "partAdded",
+     "Preview/PrvImage.png"
+    ],
+    [
+     "partChanged",
+     "Contents/content.hpf"
+    ],
+    [
+     "partChanged",
+     "Contents/section0.xml"
+    ],
+    [
+     "partChanged",
+     "Contents/section1.xml"
+    ],
+    [
+     "partChanged",
+     "Contents/section2.xml"
+    ]
+   ],
+   "checkSaved": "unsafe",
+   "findings": [
+    [
+     "partAdded",
+     "Preview/PrvImage.png"
+    ],
+    [
+     "partChanged",
+     "Contents/content.hpf"
+    ],
+    [
+     "previewStale",
+     "Preview/PrvText.txt"
+    ]
+   ],
+   "published": false,
+   "originalSha256": "97b5d6c571a6b7626321c6a53d797e3511978447497bb73309bd23eaa8e7ea77",
+   "afterSha256": "97b5d6c571a6b7626321c6a53d797e3511978447497bb73309bd23eaa8e7ea77",
+   "sessionAfter": {
+    "dirty": true,
+    "revision": 1,
+    "state": "ready"
+   },
+   "dirAfter": [
+    "doc.hwpx"
+   ],
+   "ok": true
+  }
+ ],
+ "sessions": [
+  {
+   "case": "basic-hwp",
+   "edited": {
+    "revision": 3,
+    "unpreserved": true
+   },
+   "undone": {
+    "revision": 6,
+    "unpreserved": true
+   },
+   "redone": {
+    "revision": 8,
+    "unpreserved": true
+   },
+   "newAfterUndo": {
+    "revision": 10,
+    "unpreserved": true
+   }
+  },
+  {
+   "case": "basic-hwpx",
+   "edited": {
+    "revision": 3,
+    "unpreserved": true
+   },
+   "undone": {
+    "revision": 6,
+    "unpreserved": true
+   },
+   "redone": {
+    "revision": 8,
+    "unpreserved": true
+   },
+   "newAfterUndo": {
+    "revision": 10,
+    "unpreserved": true
+   }
+  },
+  {
+   "case": "multi-hwp",
+   "edited": {
+    "revision": 3,
+    "unpreserved": true
+   },
+   "undone": {
+    "revision": 6,
+    "unpreserved": true
+   },
+   "redone": {
+    "revision": 8,
+    "unpreserved": true
+   },
+   "newAfterUndo": {
+    "revision": 10,
+    "unpreserved": true
+   }
+  },
+  {
+   "case": "multi-hwpx",
+   "edited": {
+    "revision": 3,
+    "unpreserved": true
+   },
+   "undone": {
+    "revision": 6,
+    "unpreserved": true
+   },
+   "redone": {
+    "revision": 8,
+    "unpreserved": true
+   },
+   "newAfterUndo": {
+    "revision": 10,
+    "unpreserved": true
+   }
+  }
+ ],
+ "failures": []
+}

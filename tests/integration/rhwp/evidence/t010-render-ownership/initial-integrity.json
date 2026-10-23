@@ -1,0 +1,21 @@
+{
+  "branch": "master",
+  "head": "f06fa28fa171c5a22630e3a34b7207274cc45c0b",
+  "submodules": {
+    "rhwp": {
+      "head": "1a76570e833917d15817415a53c09ad61ab3203f",
+      "status": ""
+    },
+    "wordcraft": {
+      "head": "fc41918814f62645b6746ed68e71e8c2c2e85d6f",
+      "status": ""
+    }
+  },
+  "productionFiles": {
+    "src/commands/registry.ts": "28fda24b8641f5d18ac0ed11ac771102c261b49bda1c6f153710831fc1a0471d",
+    "public/rhwp/BUILD.json": "bac96306df081aeabe1569bd91954e051c7803c56ef013a3bb8158f86b8919ba",
+    "public/rhwp/rhwp.js": "70cde06a369fa7fd4fc8bc8f3d6acaee158596ba1a116a2c72159002b0b5654e",
+    "public/rhwp/rhwp_bg.wasm": "a91fa6a4336d34441c0d8f52afd0971aebe34019f7caf9eddad100f7a568f94d"
+  },
+  "staged": ""
+}

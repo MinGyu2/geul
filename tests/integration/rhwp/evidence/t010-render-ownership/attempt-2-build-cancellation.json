@@ -1,0 +1,6 @@
+{
+  "status": "CANCELED",
+  "operation": "WASM release build",
+  "reason": "API review found stale cancellation could cancel a replacement job; add token-checked cancellation before final build",
+  "completedChecks": "attempt-2-upstream-checks.json"
+}

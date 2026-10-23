@@ -16,6 +16,7 @@ import threading
 import time
 import urllib.error
 import urllib.request
+import zipfile
 
 HERE = Path(__file__).resolve().parent
 ROOT = HERE.parents[3]
@@ -35,6 +36,29 @@ def engine(source, destination):
         if (source / name).is_file():
             identity[name] = json.loads((source / name).read_text())
     return identity
+
+
+def multisection_fixture(destination):
+    """Deterministic three-section fixture from the pinned public blank template."""
+    with zipfile.ZipFile(ROOT / 'external/rhwp/saved/blank_hwpx.hwpx') as source:
+        files = {name: source.read(name) for name in source.namelist()}
+    package = files['Contents/content.hpf'].decode()
+    package = package.replace('</opf:manifest>', ''.join(
+        f'<opf:item id="section{i}" href="Contents/section{i}.xml" media-type="application/xml"/>'
+        for i in (1, 2)) + '</opf:manifest>')
+    package = package.replace('</opf:spine>', ''.join(
+        f'<opf:itemref idref="section{i}"/>' for i in (1, 2)) + '</opf:spine>')
+    files['Contents/content.hpf'] = package.encode()
+    section = files['Contents/section0.xml'].decode()
+    for i in range(3):
+        body = section.replace('<hp:t/>', f'<hp:t>section {i}</hp:t>')
+        body = body.replace('<hp:t></hp:t>', f'<hp:t>section {i}</hp:t>')
+        if i == 1:
+            body = body.replace('width="59528" height="84186"', 'width="84186" height="59528"')
+        files[f'Contents/section{i}.xml'] = body.encode()
+    with zipfile.ZipFile(destination, 'w', compression=zipfile.ZIP_DEFLATED) as target:
+        for name, data in files.items():
+            target.writestr(zipfile.ZipInfo(name, date_time=(2020, 1, 1, 0, 0, 0)), data)
 
 
 def free_port():
@@ -60,6 +84,65 @@ def stop(process):
             process.wait(timeout=10)
 
 
+def validate_result(value, require_ownership=False):
+    """Independently validate mandatory gates; a browser's top-level PASS is not proof."""
+    if value.get('schema') != 1 or value.get('status') not in ('PASS', 'FAIL'):
+        raise RuntimeError('invalid completion status')
+    if value.get('error'):
+        if value['status'] == 'PASS':
+            raise RuntimeError('PASS containing browser error')
+        return
+    if value.get('historical', {}).get('draws') != 50 or len(value.get('historical', {}).get('candidate', {}).get('results', {})) != 12:
+        raise RuntimeError('incomplete historical scenario result')
+    formats = value.get('formats', [])
+    if len(formats) != 2 or {f.get('format') for f in formats} != {'hwp', 'hwpx'}:
+        raise RuntimeError('incomplete HWP/HWPX load result')
+    gates = [value.get(name, {}).get('status') for name in ('pending', 'concurrent', 'historical')]
+    gates += [f.get('status') for f in formats]
+    if any(g not in ('PASS', 'FAIL') for g in gates):
+        raise RuntimeError('incomplete safety scenario result')
+    required = [(value['pending'], 'requests'), (value['concurrent'], 'loadAttempts'),
+                (value['concurrent'], 'notifications'), (value['concurrent'], 'pixelMismatchCount')]
+    required += [(f, 'pixelMismatchCount') for f in formats]
+    for row, name in required:
+        n = row.get(name)
+        if isinstance(n, bool) or not isinstance(n, (int, float)) or not 0 <= n < float('inf'):
+            raise RuntimeError('missing or invalid required measurement: ' + name)
+    for name in ('during', 'reduced', 'trimmedWhilePending', 'afterClosedCallbacks', 'afterFinalTrim'):
+        row = value['pending'].get(name, {}).get('images', {})
+        if any(type(row.get(k)) is not int or row[k] < 0 for k in ('bytes', 'entries', 'pendingEntries')):
+            raise RuntimeError('missing required pending measurement: ' + name)
+    if require_ownership and 'ownership' not in value:
+        raise RuntimeError('missing required ownership gate')
+    if 'ownership' in value:
+        ownership = value['ownership']
+        rows = ownership.get('tests', [])
+        if ownership.get('status') not in ('PASS', 'FAIL') or not rows or any(t.get('status') not in ('PASS', 'FAIL') for t in rows):
+            raise RuntimeError('incomplete ownership result')
+        gates += [ownership['status']] + [t['status'] for t in rows]
+        checkpoints = ownership.get('checkpoints', [])
+        if not checkpoints:
+            raise RuntimeError('missing ownership measurements')
+        for checkpoint in checkpoints:
+            job = checkpoint.get('jobs', {})
+            fields = ('pendingCount', 'inFlightEstimatedBytes', 'readyLeaseCount', 'transientEstimatedBytes',
+                      'ownedEstimatedBytes', 'activeLeaseEstimatedBytes', 'temporaryCanvasBytes',
+                      'peakTemporaryCanvasBytes', 'loadAttempts', 'completionNotifications', 'retryCount',
+                      'cancellations', 'errors', 'resourceLimits', 'maxOwnedBytes', 'maxPending', 'maxResources', 'maxFrameBytes',
+                      'backupImageDataBytes', 'peakBackupImageDataBytes', 'peakStagingBytes', 'maxStagingBytes')
+            if any(type(job.get(k)) is not int or job[k] < 0 for k in fields):
+                raise RuntimeError('missing or invalid ownership measurement')
+            if value['status'] == 'PASS' and (job['pendingCount'] > job['maxPending'] or
+                    job['ownedEstimatedBytes'] > job['maxOwnedBytes'] or
+                    job['peakTemporaryCanvasBytes'] > job['maxFrameBytes'] or job['temporaryCanvasBytes'] != 0 or
+                    job['backupImageDataBytes'] != 0 or job['peakBackupImageDataBytes'] > job['maxFrameBytes'] or
+                    job['peakStagingBytes'] > job['maxStagingBytes']):
+                raise RuntimeError('ownership measurement violates resource budget')
+
+    if value['status'] == 'PASS' and (any(g != 'PASS' for g in gates) or value.get('unhandledErrors')):
+        raise RuntimeError('top-level PASS contradicts mandatory subordinate gate')
+
+
 def main():
     p = argparse.ArgumentParser(description=__doc__)
     p.add_argument('--pinned', type=Path, required=True, help='Explicit web package directory')
@@ -76,8 +159,9 @@ def main():
         temporary = Path(stack.enter_context(tempfile.TemporaryDirectory(prefix='geul-cache-browser-')))
         web = temporary / 'web'; web.mkdir()
         result['identities'] = {name: engine(source.resolve(), web / name) for name, source in [('pinned', a.pinned), ('candidate', a.candidate)]}
-        for name in ('index.html', 'browser.mjs', 'historical.mjs', 'fixtures.mjs', 'historical-expected.json'):
+        for name in ('index.html', 'browser.mjs', 'historical.mjs', 'fixtures.mjs', 'historical-expected.json', 'ownership.mjs', 'job-historical.mjs'):
             shutil.copy2(HERE / name, web / name)
+        multisection_fixture(web / 'multisection.hwpx')
         result['testSourcesSha256'] = {path.name: sha(path) for path in web.iterdir() if path.is_file()}
         result['testSourcesSha256']['run.py'] = sha(HERE / 'run.py')
         event = threading.Event()
@@ -118,12 +202,12 @@ def main():
                 result['version'] = subprocess.check_output([a.chrome, '--version'], text=True).strip()
                 args = [a.chrome, '--headless=new', '--disable-gpu', '--no-first-run', '--no-default-browser-check',
                         '--no-sandbox', f'--user-data-dir={temporary / "chrome"}', url]
-                browser = subprocess.Popen(args, stdout=log, stderr=subprocess.STDOUT)
+                browser = subprocess.Popen(args, stdout=log, stderr=subprocess.STDOUT, env={**os.environ, 'TMPDIR': str(temporary)})
                 stack.callback(stop, browser)
             else:
                 if not a.webkit_driver:
                     raise RuntimeError('WebKitWebDriver unavailable')
-                env = {**os.environ, 'LIBGL_ALWAYS_SOFTWARE': '1', 'WEBKIT_DISABLE_DMABUF_RENDERER': '1',
+                env = {**os.environ, 'TMPDIR': str(temporary), 'LIBGL_ALWAYS_SOFTWARE': '1', 'WEBKIT_DISABLE_DMABUF_RENDERER': '1',
                        'XDG_DATA_HOME': str(temporary / 'data'), 'XDG_CACHE_HOME': str(temporary / 'cache'),
                        'XDG_CONFIG_HOME': str(temporary / 'config')}
                 if a.xvfb:
@@ -162,18 +246,16 @@ def main():
                     raise RuntimeError(f'browser exited before completion: {browser.returncode}')
                 if time.monotonic() > deadline:
                     raise RuntimeError('browser test timed out before final result; FAIL')
-            if len(received) != 1 or received[0].get('schema') != 1:
+            # Collect immediately duplicated completion posts before accepting the one-shot result.
+            # A result is final: the page must not submit another completion.
+            event.wait(0.1)
+            time.sleep(0.1)
+            if len(received) != 1:
                 raise RuntimeError('invalid or duplicate result')
             value = received[0]
-            if value.get('status') not in ('PASS', 'FAIL'):
-                raise RuntimeError('invalid completion status')
-            if not value.get('error'):
-                if value.get('historical', {}).get('draws') != 50 or len(value.get('historical', {}).get('candidate', {}).get('results', {})) != 12:
-                    raise RuntimeError('incomplete historical scenario result')
-                if len(value.get('formats', [])) != 2 or any(f.get('status') not in ('PASS', 'FAIL') for f in value['formats']):
-                    raise RuntimeError('incomplete HWP/HWPX load result')
-                if any(value.get(name, {}).get('status') not in ('PASS', 'FAIL') for name in ('pending', 'concurrent', 'historical')):
-                    raise RuntimeError('incomplete safety scenario result')
+            candidate_manifest = result['identities']['candidate'].get('ENGINE.json', {})
+            require_ownership = candidate_manifest.get('rendererJobAPI') is True or 'src/renderer/render_job.rs' in candidate_manifest.get('sourceSha256', {})
+            validate_result(value, require_ownership=require_ownership)
             result['run'] = value
             result['status'] = value['status']
         except Exception as e:

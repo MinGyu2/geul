@@ -1,0 +1,57 @@
+{
+  "status": "PASS",
+  "checks": [
+    {
+      "name": "browser-runner-injection",
+      "status": "PASS",
+      "command": "python3 -m unittest discover -s tests/integration/rhwp/cache-concurrency -p test_runner.py -v",
+      "passed": 15,
+      "failed": 0,
+      "skippedOrIgnored": 0,
+      "actualCandidateWasmRan": false,
+      "output": "test_duplicate_completion (test_runner.CompletionContract.test_duplicate_completion) ... ok\ntest_partial_pass_result_is_rejected (test_runner.CompletionContract.test_partial_pass_result_is_rejected) ... ok\ntest_timeout_without_result_is_failure (test_runner.CompletionContract.test_timeout_without_result_is_failure) ... ok\ntest_zero_exit_without_result_is_failure (test_runner.CompletionContract.test_zero_exit_without_result_is_failure) ... ok\ntest_incomplete_browser_result (test_runner.ResultValidation.test_incomplete_browser_result) ... ok\ntest_invalid_completion (test_runner.ResultValidation.test_invalid_completion) ... ok\ntest_measurement_over_budget_despite_all_pass (test_runner.ResultValidation.test_measurement_over_budget_despite_all_pass) ... ok\ntest_missing_mandatory_ownership (test_runner.ResultValidation.test_missing_mandatory_ownership) ... ok\ntest_missing_measurement (test_runner.ResultValidation.test_missing_measurement) ... ok\ntest_ownership_missing_measurement (test_runner.ResultValidation.test_ownership_missing_measurement) ... ok\ntest_ownership_subordinate_failure (test_runner.ResultValidation.test_ownership_subordinate_failure) ... ok\ntest_pass_with_concurrent_fail (test_runner.ResultValidation.test_pass_with_concurrent_fail) ... ok\ntest_pass_with_format_fail (test_runner.ResultValidation.test_pass_with_format_fail) ... ok\ntest_pass_with_pending_fail (test_runner.ResultValidation.test_pass_with_pending_fail) ... ok\ntest_valid_complete (test_runner.ResultValidation.test_valid_complete) ... ok\n\n----------------------------------------------------------------------\nRan 15 tests in 3.110s\n\nOK\n"
+    },
+    {
+      "name": "sensitive-tracked",
+      "status": "PASS",
+      "command": "python3 scripts/check-sensitive-info.py --all",
+      "passed": 1,
+      "failed": 0,
+      "skippedOrIgnored": 0,
+      "actualCandidateWasmRan": false,
+      "output": "\ubbfc\uac10\uc815\ubcf4 \uac80\uc0ac \ud1b5\uacfc (\ucd94\uc801 \ud30c\uc77c 309\uac1c)\n"
+    },
+    {
+      "name": "sensitive-new",
+      "status": "PASS",
+      "command": "python3 scripts/check-sensitive-info.py <explicit 61 changed/new text files>",
+      "passed": 1,
+      "failed": 0,
+      "skippedOrIgnored": 0,
+      "actualCandidateWasmRan": false,
+      "output": "\ubbfc\uac10\uc815\ubcf4 \uac80\uc0ac \ud1b5\uacfc (\uc9c0\uc815 \ud30c\uc77c 61\uac1c)\n"
+    },
+    {
+      "name": "gitleaks-evidence",
+      "status": "PASS",
+      "command": "gitleaks dir tests/integration/rhwp/evidence/t010-render-ownership --config .gitleaks.toml --redact --no-banner",
+      "passed": 1,
+      "failed": 0,
+      "skippedOrIgnored": 0,
+      "actualCandidateWasmRan": false,
+      "output": "3:19PM INF scanned ~2479373 bytes (2.48 MB) in 1.17s\n3:19PM INF no leaks found\n"
+    },
+    {
+      "name": "security-unit",
+      "status": "PASS",
+      "command": "python3 -m unittest discover -s tests/security -p test_*.py",
+      "passed": 86,
+      "failed": 0,
+      "skippedOrIgnored": 0,
+      "actualCandidateWasmRan": false,
+      "output": "......................................................................................\n----------------------------------------------------------------------\nRan 86 tests in 55.559s\n\nOK\n"
+    }
+  ],
+  "gitleaksVersion": "8.30.1",
+  "exceptionReview": "Exact public wasm_api source digest independently matches isolated source and fresh pinned+complete-patch archive; exceptions require exact evidence filename AND digest."
+}

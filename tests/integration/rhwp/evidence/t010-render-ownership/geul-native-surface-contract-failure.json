@@ -1,0 +1,125 @@
+{
+  "status": "FAIL",
+  "classification": "VERIFIED only for executed checks",
+  "target": "real Tauri/WebKitGTK, gated candidate dev-server injection",
+  "expectedWasmSha256": "410c2ed5acdd18f19ffce9fc6435b1c9583a10a814d3538e4449ed8cd9e46ecc",
+  "tests": [
+    {
+      "name": "candidate-dev-origin",
+      "status": "PASS"
+    }
+  ],
+  "budgets": [],
+  "lastObserved": {
+    "origin": "http://localhost:1420",
+    "ownership": {
+      "counters": {
+        "polls": 0,
+        "limits": 0,
+        "staleDropped": 0,
+        "completed": 0,
+        "errors": 0,
+        "canceled": 0,
+        "notifications": 0
+      },
+      "stats": {
+        "sessions": [
+          {
+            "queued": 0,
+            "modelVersion": 1,
+            "canvases": 0,
+            "sessionId": 1,
+            "generation": 1,
+            "failures": 0,
+            "active": 0
+          }
+        ],
+        "jobs": {
+          "peakBackupImageDataBytes": 0,
+          "pendingCount": 0,
+          "cancellations": 0,
+          "peakTemporaryCanvasBytes": 0,
+          "maxPending": 2,
+          "peakStagingBytes": 0,
+          "loadAttempts": 0,
+          "inFlightEstimatedBytes": 0,
+          "readyLeaseCount": 0,
+          "maxFrameBytes": 67108864,
+          "resourceLimits": 0,
+          "maxOwnedBytes": 268435456,
+          "maxStagingBytes": 134217728,
+          "temporaryCanvasBytes": 0,
+          "transientEstimatedBytes": 0,
+          "ownedEstimatedBytes": 0,
+          "retryCount": 0,
+          "maxResources": 256,
+          "backupImageDataBytes": 0,
+          "errors": 0,
+          "activeJobs": 0,
+          "activeLeaseEstimatedBytes": 0,
+          "completionNotifications": 0
+        },
+        "cache": {
+          "decoded": {
+            "maxBytes": 268435456,
+            "bytes": 0,
+            "misses": 0,
+            "maxEntryBytes": 67108864,
+            "oversize": 0,
+            "maxEntries": 256,
+            "evictions": 0,
+            "hits": 0,
+            "entries": 0,
+            "pendingEntries": 0,
+            "negativeEntries": 0,
+            "rejected": 0,
+            "transientEntries": 0
+          },
+          "images": {
+            "maxBytes": 67108864,
+            "bytes": 0,
+            "misses": 0,
+            "maxEntryBytes": 16777216,
+            "oversize": 0,
+            "maxEntries": 256,
+            "evictions": 0,
+            "hits": 0,
+            "entries": 0,
+            "pendingEntries": 0,
+            "negativeEntries": 0,
+            "rejected": 0,
+            "transientEntries": 0
+          }
+        },
+        "subscribers": 1
+      },
+      "identity": {
+        "wasmSha256": "410c2ed5acdd18f19ffce9fc6435b1c9583a10a814d3538e4449ed8cd9e46ecc",
+        "baseline": "1a76570e833917d15817415a53c09ad61ab3203f"
+      }
+    },
+    "status": [
+      {
+        "revision": "0",
+        "composing": "false",
+        "uncertain": "false",
+        "pages": "1",
+        "testid": "rhwp-status",
+        "status": "ready",
+        "latencyCount": "0",
+        "selection": "",
+        "localRevision": "0",
+        "unpreserved": "false",
+        "caret": "0:0:0",
+        "firstPaintMs": "",
+        "dirty": "false",
+        "latencyMax": "",
+        "latencyP95": ""
+      }
+    ]
+  },
+  "error": "\uc870\uac74\uc744 \ub9cc\uc871\ud558\uc9c0 \uc54a\uc74c: return !!window.__geulOwnership && window.__geulOwnership.counters.completed>0 && window.__geulOwnership.stats().sessions.every(s=>!s.active&&!s.queued)",
+  "passed": 1,
+  "failed": 0,
+  "skippedOrIgnored": 0
+}

@@ -1,0 +1,39 @@
+{
+  "checks": [
+    {
+      "name": "fmt",
+      "command": [
+        "cargo",
+        "fmt",
+        "--check"
+      ],
+      "environment": "isolated pinned+ownership patch; Rust1.93.1; local bfd host wrapper",
+      "cwd": "<isolated>",
+      "exit": 0,
+      "status": "PASS",
+      "elapsedSeconds": 19.84,
+      "log": "fmt.log"
+    },
+    {
+      "name": "wasm-clippy",
+      "command": [
+        "cargo",
+        "clippy",
+        "--locked",
+        "--target",
+        "wasm32-unknown-unknown",
+        "--lib",
+        "--release",
+        "--",
+        "-D",
+        "warnings"
+      ],
+      "environment": "isolated pinned+ownership patch; Rust1.93.1; local bfd host wrapper",
+      "cwd": "<isolated>",
+      "exit": 0,
+      "status": "PASS",
+      "elapsedSeconds": 79.95,
+      "log": "wasm-clippy.log"
+    }
+  ]
+}
