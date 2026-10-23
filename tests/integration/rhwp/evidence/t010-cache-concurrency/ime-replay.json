@@ -1,0 +1,41 @@
+{
+  "classification": "DETERMINISTIC REPLAY; not native",
+  "passed": 56,
+  "failed": 0,
+  "skipped": 0,
+  "suites": [
+    {
+      "file": "imeBoundary.test.tsx",
+      "status": "passed",
+      "passed": 6,
+      "failed": 0
+    },
+    {
+      "file": "imeGap.test.tsx",
+      "status": "passed",
+      "passed": 9,
+      "failed": 0
+    },
+    {
+      "file": "cancellationBoundary.test.ts",
+      "status": "passed",
+      "passed": 15,
+      "failed": 0
+    },
+    {
+      "file": "nativeImeOrder.test.tsx",
+      "status": "passed",
+      "passed": 26,
+      "failed": 0
+    }
+  ],
+  "newNativeAttempts": 0,
+  "historicalTargetObserved": 0,
+  "historicalNativeAttempts": 298,
+  "nativeGate": "INCONCLUSIVE",
+  "targetOrdering": [
+    "compositionend(\"\")",
+    "Ctrl+Z",
+    "insertFromComposition(finalText)"
+  ]
+}

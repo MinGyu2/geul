@@ -11,3 +11,12 @@ title = "geul gitleaks config"
 
 [extend]
 useDefault = true
+
+# T010 evidence records the verified SHA-256 of isolated src/wasm_api.rs.
+# The filename's api token causes generic-api-key to misclassify this public source checksum.
+[[allowlists]]
+description = "T010 verified wasm_api.rs source checksum, evidence JSON only"
+condition = "AND"
+paths = ['''^tests/integration/rhwp/evidence/t010-cache-concurrency/(engine-identity|fresh-chrome|fresh-webkit|repro-chrome|notify-chrome|notify-webkit|v2-chrome|v2-webkit)\.json$''']
+regexTarget = "secret"
+regexes = ['''^941a33bd400941f2d3f590f6194e5f476044042fa6e7cdcf08ff4f1d5f295ec2$''']

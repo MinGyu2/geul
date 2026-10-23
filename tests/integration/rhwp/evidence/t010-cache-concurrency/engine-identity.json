@@ -1,0 +1,99 @@
+{
+  "v2": {
+    "schema": 1,
+    "baseline": "1a76570e833917d15817415a53c09ad61ab3203f",
+    "patchSha256": "f1c2f44d088dce21eb7b9edb92a0768b00ce7744dd50e10b89f753fd25e87bc1",
+    "compiler": "rustc 1.93.1 (01f6ddf75 2026-02-11)",
+    "target": "wasm32-unknown-unknown",
+    "profile": "release",
+    "wasmPack": "wasm-pack 0.15.0",
+    "sourceSha256": {
+      "src/renderer/mod.rs": "dc0b634d5c30d0d2226f202f0ef994df8f224645809005a0f9a6ac4d753004e4",
+      "src/renderer/surface_cache.rs": "29ef1ea8424aa00cb427caf82f8df8a422001932857b1f335acc9c1b8c8278cd",
+      "src/renderer/web_canvas.rs": "726df45152262e4330a23d0401923dcda6c00919ed5cac8b55d182d869cca9d8",
+      "src/wasm_api.rs": "941a33bd400941f2d3f590f6194e5f476044042fa6e7cdcf08ff4f1d5f295ec2"
+    },
+    "buildStatus": "PASS",
+    "duration": "18m51s",
+    "artifacts": {
+      "rhwp.js": "b192e70f1078f0972860ec69eb65d4c6e1c824cdd92b793d28b09d1fc8000c4d",
+      "rhwp_bg.wasm": "b395746fb8dfbd90793b96b66a23986b2a934f93399df625a677591b9262d4f3",
+      "rhwp.d.ts": "2d2de2a93dcdec3bd6bde9d00ae7784fea7de9c88089bb1579372eb1e459651a"
+    }
+  },
+  "notifyCorrection": {
+    "schema": 1,
+    "baseline": "1a76570e833917d15817415a53c09ad61ab3203f",
+    "patchSha256": "b4b22f8557804723b164b7fef0943d473afe44dd020a755f4d5cb7f9fe184d6b",
+    "sourceSha256": {
+      "src/renderer/mod.rs": "dc0b634d5c30d0d2226f202f0ef994df8f224645809005a0f9a6ac4d753004e4",
+      "src/renderer/surface_cache.rs": "29ef1ea8424aa00cb427caf82f8df8a422001932857b1f335acc9c1b8c8278cd",
+      "src/renderer/web_canvas.rs": "14a33c762fe2d50c6108101df76729a4485754753631326eb5bfb7e3e1edb171",
+      "src/wasm_api.rs": "941a33bd400941f2d3f590f6194e5f476044042fa6e7cdcf08ff4f1d5f295ec2"
+    },
+    "compiler": "rustc 1.93.1 (01f6ddf75 2026-02-11)",
+    "cargo": "cargo 1.93.1 (083ac5135 2025-12-15)",
+    "wasmPack": "wasm-pack 0.15.0",
+    "target": "wasm32-unknown-unknown",
+    "profile": "release",
+    "sourceExport": "build/test inputs; documentation/PDF archives excluded",
+    "buildStatus": "PASS",
+    "command": [
+      "scripts/wasm-pack-locked.sh",
+      "--release",
+      "--no-opt",
+      "--target",
+      "web",
+      "--out-dir",
+      "<isolated-package>"
+    ],
+    "duration": "8m04s",
+    "wasmOpt": false,
+    "artifacts": {
+      "rhwp.js": "b192e70f1078f0972860ec69eb65d4c6e1c824cdd92b793d28b09d1fc8000c4d",
+      "rhwp_bg.wasm": "9d40f7542770b2d96c60f41ed9e0bcbd6871691e200be024365860eba98621b4",
+      "rhwp.d.ts": "2d2de2a93dcdec3bd6bde9d00ae7784fea7de9c88089bb1579372eb1e459651a"
+    }
+  },
+  "independentSourceExportMatchesBuildSource": true,
+  "independentCargoMetadataPackages": 10,
+  "freshExporterBuild": {
+    "schema": 1,
+    "baseline": "1a76570e833917d15817415a53c09ad61ab3203f",
+    "patchSha256": "b4b22f8557804723b164b7fef0943d473afe44dd020a755f4d5cb7f9fe184d6b",
+    "sourceSha256": {
+      "src/renderer/mod.rs": "dc0b634d5c30d0d2226f202f0ef994df8f224645809005a0f9a6ac4d753004e4",
+      "src/renderer/surface_cache.rs": "29ef1ea8424aa00cb427caf82f8df8a422001932857b1f335acc9c1b8c8278cd",
+      "src/renderer/web_canvas.rs": "14a33c762fe2d50c6108101df76729a4485754753631326eb5bfb7e3e1edb171",
+      "src/wasm_api.rs": "941a33bd400941f2d3f590f6194e5f476044042fa6e7cdcf08ff4f1d5f295ec2"
+    },
+    "compiler": "rustc 1.93.1 (01f6ddf75 2026-02-11)",
+    "cargo": "cargo 1.93.1 (083ac5135 2025-12-15)",
+    "wasmPack": "wasm-pack 0.15.0",
+    "target": "wasm32-unknown-unknown",
+    "profile": "release",
+    "targetCache": "explicit cache",
+    "sourceExport": "build/test inputs; documentation/PDF archives excluded",
+    "buildStatus": "PASS",
+    "wasmOpt": false,
+    "command": [
+      "scripts/wasm-pack-locked.sh",
+      "--release",
+      "--no-opt",
+      "--target",
+      "web",
+      "--out-dir",
+      "test-package"
+    ],
+    "artifacts": {
+      "rhwp.js": "b192e70f1078f0972860ec69eb65d4c6e1c824cdd92b793d28b09d1fc8000c4d",
+      "rhwp_bg.wasm": "9d40f7542770b2d96c60f41ed9e0bcbd6871691e200be024365860eba98621b4",
+      "rhwp.d.ts": "2d2de2a93dcdec3bd6bde9d00ae7784fea7de9c88089bb1579372eb1e459651a"
+    }
+  },
+  "freshVsOriginalArtifactEqual": {
+    "rhwp.js": true,
+    "rhwp_bg.wasm": true,
+    "rhwp.d.ts": true
+  }
+}

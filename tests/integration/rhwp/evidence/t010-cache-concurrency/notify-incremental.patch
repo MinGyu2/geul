@@ -1,0 +1,26 @@
+diff --git a/src/renderer/web_canvas.rs b/src/renderer/web_canvas.rs
+--- a/src/renderer/web_canvas.rs
++++ b/src/renderer/web_canvas.rs
+@@ -259,8 +259,20 @@
+             .borrow_mut()
+             .insert_pending(key, img.clone(), data_url.len())
+     });
+-    // 같은 data URL을 이미 디코드했으면 브라우저가 바로 그릴 수 있게 줄 수 있다.
+-    Ok(drawable(img))
++    // 새 요소가 동기적으로 drawable이면 이번 호출에서 바로 그린다. 이 요소의 이전 소비자는 없으므로
++    // 뒤늦은 load 이벤트로 같은 페이지를 다시 그릴 필요가 없다. transient를 내보낸 뒤 같은 URL을
++    // 다시 쓰는 경우마다 알리면 host repaint → 새 요소 → load → repaint 순환이 생긴다.
++    // 기존 pending 요소의 이벤트는 그대로 둔다(다른 문서도 그 완료 알림을 기다릴 수 있다).
++    let ready = drawable(img.clone());
++    if ready.is_some() {
++        IMAGE_CACHE.with(|cache| {
++            cache
++                .borrow_mut()
++                .loaded(&key, rgba_bytes(img.natural_width(), img.natural_height()));
++        });
++        unwatch_image_load(&img);
++    }
++    Ok(ready)
+ }
+ 
+ /// 브라우저가 그릴 수 있는 data URL. WMF/EMF → SVG, PCX/TIFF → PNG, EPS → 내장 미리 보기로 바꾼다.

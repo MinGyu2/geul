@@ -631,8 +631,9 @@ fixture 12 시나리오, Chrome 155·WebKitGTK 2.54.1) 세 결함을 재현했�
 | 512 MiB | | 56 ms | 56 ms |
 
 예산보다 큰 작업 집합에서 교정판도 고정 엔진보다 느리다(256 MiB에서 약 14배). 두 문서를 함께 열면 합친 작업 집합(약 760 MB)이
-512 MiB도 넘어 두 번째 문서 다시 그리기가 1.1 s(고정 52 ms). 기본 예산은 올리지 않았다. 통합 때는 호스트가 장치 메모리에 따라 예산을
-정하고(데스크톱 384–512 MiB), 문서 닫기·메모리 압박에 `trimRendererCaches`를 부르는 방식을 권한다 — 남은 결정.
+512 MiB도 넘어 두 번째 문서 다시 그리기가 1.1 s(고정 52 ms). 기본 예산은 올리지 않았다. 384–512 MiB는 당시 측정 후보이며
+승인된 기본값이 아니다. 아래 동시성 후속 검사에서 pending·transient 한도 위반이 확인되었으므로 예산 선택보다 소유권 교정이 먼저다.
+문서별 소유권이 없는 전역 `trimRendererCaches`를 모든 문서 닫기에 일괄 연결해서는 안 된다.
 
 ### WebView 지연 귀속(제품 변경 없음)
 
@@ -650,3 +651,40 @@ task보다 늘 먼저 왔다(128/128). 그 사이에 오는 keydown은 Ctrl 자�
 경로에서는 Z keydown이 그 사이에 들어올 수 없다는 근거(INFERRED, 다른 플랫폼 미확인). sync mode에서는 빈 끝 없이 확정이 두 번 오는
 새 순서(sync mode마다 포인터 변형 8회 — hwp·hwpx 각 4)가 보였고 글자·revision은 맞았다. 결정적 시뮬레이션(`cancellationBoundary.test.ts`, `imeBoundary.test.tsx`)이
 목표 순서의 처리를 계속 확인한다. 결함이 드러나지 않아 IME 제품 코드는 바꾸지 않았다. D2는 INCONCLUSIVE로 남는다.
+
+## T010 동시성 후속 검사 (2026-10-23, 부분 완료·미통합)
+
+[재현 명령](../../tests/integration/rhwp/cache-concurrency/README.md)과
+[실행 보고서·새 증거](../../tests/integration/rhwp/evidence/t010-cache-concurrency/README.md)를 추가했다. 기존
+`t010-cache-hardening/` 패치와 증거는 보존했다. 이번 후보도 제품에 통합하지 않았으며 T010·T011 의존성과 명령 레지스트리는 그대로다.
+
+**VERIFIED:** 역사적 v2의 pending 예외는 실제 한도가 아니다. 100바이트·2항목에 90바이트 3개를 넣으면 3항목·270바이트,
+실제 WASM에서 1,024바이트·2항목에 100개 요청을 보내면 100항목·52,124바이트가 남는다. `trim(0)`·예산 축소도 이를 막지 못한다.
+SVG 2개를 2 MiB 예산으로 그리고 load 알림을 RAF로 합치면 Chrome 155와 WebKitGTK 2.54.1 모두 64 load·64 알림·32 draw 제한에 도달했다.
+최종 픽셀은 맞아도 캐시가 안정된 것은 아니다. 문서를 닫고 idle 뒤에도 transient 추정 5,856,930바이트가 남았다.
+
+**VERIFIED:** 새 부분 패치 `upstream-rhwp-no-redundant-notify.patch`는 새 이미지가 같은 호출에서 이미 drawable일 때
+load 비용을 갱신하고 그 새 요소의 지연 이벤트를 해제한다. 이미 그릴 수 있는 새 요소의 알림이 다시 캐시 miss와 repaint를
+일으키는 순환만 막는다. 이전 요청이 대기한 기존 pending 요소의 알림은 유지한다(다른 문서도 기다릴 수 있음).
+두 브라우저에서 2 알림·2 draw·4 load 시도와 최종 픽셀 불일치 0을 확인했다.
+
+**FAIL:** 이 부분 수정은 pending 상한·transient의 독립된 수명 제한을 제공하지 않는다. 정상 resident를 밀어내는 정책과
+전역 캐시의 문서별 소유권도 해결하지 않았다. 256/384/512 MiB 중 하나를 제품 기본값으로 승인하거나, 문서를 닫을 때마다
+전역 trim을 호출할 근거가 없다. 위 역사적 예산 권고는 새 동시성 증거를 통과한 기본값이 아니다.
+
+**INFERRED:** 현재 동기 `renderPageToCanvas`는 먼저 Canvas를 비우며, 이미지 완료 알림은 문서·쪽·세대를 식별하지 않는다.
+예산 밖의 이미지를 단순 거절·취소하거나 준비 직후 해제하면 누락·재시작이 생길 수 있다. 무조건 보존하면 지금 확인한 한도
+위반이 남는다. 캐시 함수만 바꾸어 두 조건을 모두 보장했다고 주장하지 않는다. 다음 upstream 작업은 유한한 decode 큐와
+문서 세대가 있는 렌더 작업을 연결하고, 원래 paint 순서를 보존하며 임시 Canvas에서 완성한 결과만 게시하는 소유권 계약이다.
+최소한 pending/resource-limit/complete와 재시도·취소 소유권을 명시해야 한다. 임의의 초대형 페이지를 지원할 수 없으면
+불완전한 Canvas 성공 대신 명시적 resource-limit 결과를 돌려주는 계약이 필요하다.
+
+**NOT EXECUTED:** A의 메모리 관문이 실패하므로 geul의 `RhwpEditorSession`·`RhwpSurface`에 listener나 예산을 연결하지 않았다.
+기존 `loadRhwpModule(importer)`는 생성 모듈의 전역 API를 노출하지 않으므로, 후속 시험 adapter는 모듈별 listener 하나를
+소유하고 살아 있는 session의 현재 세대·보이는 쪽에만 알림을 분배해야 한다. 한 문서 close로 다른 문서의 listener를 지우면 안 된다.
+브라우저 primitive 검사는 이 통합의 증거가 아니다.
+
+D2 native 목표 순서는 새 플랫폼에서 관찰하지 못했다. 결정적 replay와 실제 WASM·저장 회귀를 다시 실행했지만 native 증거를
+추가한 것으로 세지 않는다. D4 공식 지연 계약(실제 keydown → revision 관찰 RAF → 추가 2 RAF)과 50 ms 기준은 유지한다.
+기존 p95 77/77/87/121 ms는 FAIL이며 캐시 알림 교정으로 편집 지연이 해결되었다고 추론하지 않는다.
+**RHWP UNDO/REDO PRODUCTION ACTIVATION: NO-GO.**

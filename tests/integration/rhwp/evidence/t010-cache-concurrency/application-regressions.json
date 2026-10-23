@@ -1,0 +1,74 @@
+{
+  "scope": "unchanged pinned production application; partial cache patch is not loaded by these tests",
+  "checks": [
+    {
+      "command": "npm run typecheck",
+      "status": "PASS"
+    },
+    {
+      "command": "npm run lint",
+      "status": "PASS"
+    },
+    {
+      "command": "npm test",
+      "status": "PASS",
+      "passed": 779,
+      "files": 40
+    },
+    {
+      "command": "npx vitest run --config tests/integration/rhwp/vitest.config.ts",
+      "status": "PASS",
+      "passed": 27,
+      "skipped": 2,
+      "note": "includes existing multi-section/table-cell/session tests; skipped opt-ins not counted"
+    },
+    {
+      "command": "cargo fmt --check --manifest-path src-tauri/Cargo.toml",
+      "status": "PASS",
+      "compiler": "1.99.0"
+    },
+    {
+      "command": "cargo clippy --locked --manifest-path src-tauri/Cargo.toml --all-targets -- -D warnings",
+      "status": "PASS",
+      "compiler": "1.99.0"
+    },
+    {
+      "command": "cargo test --locked --manifest-path src-tauri/Cargo.toml",
+      "status": "PASS",
+      "passed": 175,
+      "ignored": 6,
+      "compiler": "1.99.0"
+    },
+    {
+      "command": "python3 -m unittest discover -s tests/e2e -p 'test_*.py'",
+      "status": "PASS",
+      "passed": 66
+    },
+    {
+      "command": "python3 -m unittest discover -s tests/security -p 'test_*.py'",
+      "status": "PASS",
+      "passed": 86
+    },
+    {
+      "command": "python3 tests/integration/rhwp/undo_save.py --evidence <output.json>",
+      "status": "PASS",
+      "scenarios": 13,
+      "failures": []
+    },
+    {
+      "command": "python3 tests/poc/t010-phase0/save_service.py --strict-desired --evidence <output.json>",
+      "status": "PASS",
+      "scenarios": 23,
+      "currentMismatch": [],
+      "unresolvedDesired": []
+    },
+    {
+      "command": "python3 -m unittest discover -s tests/integration/rhwp/cache-concurrency -p test_runner.py -v",
+      "status": "PASS",
+      "passed": 3,
+      "independentIsolatedPythonRun": "PASS"
+    }
+  ],
+  "nativeTauriRendering": "NOT EXECUTED in this round; dependency gate A failed",
+  "productionActivation": "NO-GO"
+}

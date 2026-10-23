@@ -1,0 +1,44 @@
+{
+  "overall": "PARTIALLY COMPLETED",
+  "cacheCorrectness": "FAIL",
+  "browserReproducibility": "PASS",
+  "pinnedToolchainCompatibility": "PASS (partial notification correction only)",
+  "testOnlyGeulIntegration": "NOT EXECUTED",
+  "D2NativeIme": "INCONCLUSIVE",
+  "D4EditingPerformance": "FAIL (historical official thresholds remain violated; no fresh native measurement)",
+  "D4MemoryLifecycle": "FAIL (candidate estimated ownership bound); production native RSS INCONCLUSIVE",
+  "sourceSyntaxChecks": "PASS",
+  "gitDiffCheck": "PASS",
+  "trackedSensitiveScan": {
+    "status": "PASS",
+    "files": 276
+  },
+  "newSourceAndEvidenceSensitiveScan": "PASS",
+  "knownSafetyContractFailures": 7,
+  "safetyContractsPassed": 2,
+  "historicalCacheUnitPassed": 12,
+  "nativeLibraryPassed": 4064,
+  "nativeLibraryIgnored": 13,
+  "freshActualBrowsers": [
+    "Chrome 155.0.8059.39",
+    "WebKitGTK 2.54.1"
+  ],
+  "noBinaryFixturesAdded": true,
+  "finalProtectionsAllPassed": true,
+  "nativeTauriInteractionThisRound": "NOT EXECUTED",
+  "handoffRetainedBecauseTaskIncomplete": true,
+  "productionActivation": "NO-GO",
+  "initialEnvironment": {
+    "rustOnPath": "1.99.0",
+    "cachedAdditionalRustToolchain": "1.97.1",
+    "rustInstalledForTask": "1.93.1",
+    "wasmPack": "0.15.0",
+    "node": "v24.21.0",
+    "python": "Python 3.14.7",
+    "chrome": "155.0.8059.39",
+    "webkitGtk": "2.54.1",
+    "otherInstalledWebkitVersions": [],
+    "fcitx5Available": false,
+    "differentNativeImeEnvironmentExecuted": false
+  }
+}
