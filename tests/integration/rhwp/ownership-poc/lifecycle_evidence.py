@@ -98,6 +98,50 @@ def check_point_fields(point, where, closed, failures):
         failures.append(f'{where}: engine image surfaces not accounted by image cache')
 
 
+def content_mismatches(canonical, samples):
+    """The durable sample stream and the scenario's own rows must hold identical observations, in the same order."""
+    failures = []
+    if len(samples) != len(canonical): failures.append(f'durable samples {len(samples)} != lifecycle observations {len(canonical)}')
+    for index, (where, point) in enumerate(canonical[:len(samples)]):
+        sample = samples[index]
+        if sample != point:
+            keys = sorted(k for k in set(point) | set(sample if isinstance(sample, dict) else {}) if not isinstance(sample, dict) or sample.get(k) != point.get(k))
+            failures.append(f'durable sample {index} differs from {where} in {keys}'[:240])
+    return failures[:20] + ([f'... {len(failures) - 20} more sample mismatches'] if len(failures) > 20 else [])
+
+
+def last_sequence(row):
+    point = row.get(SETTLED) if row.get('cycle') == CYCLES - 1 else row.get('closed')
+    return point.get('sequence') if isinstance(point, dict) else None
+
+
+def gate_association(gates, row_order, session):
+    """Each document contributes 60 cycle gates in row order then one INCONCLUSIVE cache/RSS gate. A cycle gate must
+    name its mode/cycle, carry the association recorded when it was produced (document, session, last memory sample)
+    and agree with the recorded closed observation; a gate cannot vouch for another cycle."""
+    failures, expected = [], []
+    for index, (doc, row) in enumerate(row_order):
+        expected.append(('cycle', doc, row))
+        if index + 1 == len(row_order) or row_order[index + 1][0] != doc: expected.append(('summary', doc, row))
+    if len(gates) != len(expected): failures.append(f'{len(gates)} gates != expected {len(expected)} (cycle + per-document summary)')
+    associated = [isinstance(g, dict) and 'association' in g for g in gates]
+    unavailable = ['gate production association (document/session/sample)'] if gates and not any(associated) else []
+    if any(associated) and not all(associated): failures.append('gate association recorded for only some gates')
+    for gate, (kind, doc, row) in zip(gates, expected):
+        where = f'gate {doc}:{row.get("mode")}:{row.get("cycle")}'
+        if not isinstance(gate, dict): failures.append(where + ': not an object'); continue
+        if kind == 'cycle':
+            closed = row.get('closed') if isinstance(row.get('closed'), dict) else {}
+            clean = 'PASS' if closed.get('owners') == [] and closed.get('canvasCount') == 0 else 'FAIL'
+            if gate.get('gate') != 'D4' or not str(gate.get('item', '')).startswith(f'{row.get("mode")} cycle{row.get("cycle")}:') or gate.get('result') != clean:
+                failures.append(f'{where}: missing, displaced or disagrees with the recorded closed observation ({gate.get("item")!r}, {gate.get("result")})'[:240])
+        elif gate.get('result') != 'INCONCLUSIVE' or not str(gate.get('item', '')).startswith(('.' + str(doc).rpartition('.')[2]) + ':'):
+            failures.append(f'gate {doc}: per-document cache/RSS summary gate missing or displaced')
+        if not unavailable and gate.get('association') != {'doc': doc, 'sessionId': session, 'afterSequence': last_sequence(row)}:
+            failures.append(f'{where}: association {gate.get("association")} does not identify this document/session/cycle'[:240])
+    return failures, unavailable
+
+
 def classify(result, expected_wasm):
     """PASS only for complete, ordered, single-session/single-WebProcess evidence with all cleanup and bounds."""
     failures = []
@@ -116,7 +160,7 @@ def classify(result, expected_wasm):
     if not isinstance(lifecycle, list): lifecycle = []; failures.append('lifecycle measurements missing')
     if [doc.get('sample') if isinstance(doc, dict) else None for doc in lifecycle] != list(DOCUMENTS):
         failures.append(f'lifecycle documents != {list(DOCUMENTS)}')
-    point_failures, sequences, cycles = [], [], 0
+    point_failures, sequences, cycles, canonical, row_order = [], [], 0, [], []
     for doc in lifecycle:
         rows = doc.get('rows') if isinstance(doc, dict) else None
         if not isinstance(rows, list): failures.append('lifecycle rows missing'); continue
@@ -126,6 +170,7 @@ def classify(result, expected_wasm):
         for row in rows:
             if not isinstance(row, dict): continue
             cycles += 1
+            row_order.append((doc.get('sample'), row))
             labels = [*LABELS, SETTLED] if row.get('cycle') == CYCLES - 1 else list(LABELS)
             extra = sorted(set(row) - {'mode', 'cycle', *labels})
             if extra: failures.append(f'{doc.get("sample")}:{row.get("mode")}:{row.get("cycle")}: unexpected observations {extra}')
@@ -136,6 +181,7 @@ def classify(result, expected_wasm):
                 if point.get('doc') != doc.get('sample') or point.get('sessionId') != session:
                     point_failures.append(where + ': observation not bound to this document/session')
                 sequences.append(point.get('sequence'))
+                canonical.append((where, point))
                 check_point(point, where, label in ('closed', SETTLED), point_failures)
     failures += point_failures[:40]
     if len(point_failures) > 40: failures.append(f'... {len(point_failures) - 40} more observation failures')
@@ -145,6 +191,7 @@ def classify(result, expected_wasm):
         failures.append(f'{len(sequences)}/{EXPECTED_POINTS} memory observations missing, duplicated or reordered')
     if [s.get('sequence') if isinstance(s, dict) else None for s in samples] != list(range(len(samples))) or len(samples) != len(sequences):
         failures.append('durable sample stream does not match the measured observations')
+    failures += content_mismatches(canonical, samples)
     identities = set()
     for index, sample in enumerate(samples):
         identity = process_identity(sample.get('processes') if isinstance(sample, dict) else None, f'sample {index}', failures)
@@ -155,10 +202,14 @@ def classify(result, expected_wasm):
     cycle_gates = [g for g in gates if isinstance(g, dict) and g.get('result') != 'INCONCLUSIVE']
     if len(cycle_gates) != EXPECTED_CYCLES or any(g.get('result') != 'PASS' for g in cycle_gates):
         failures.append(f'cycle cleanup gates {sum(g.get("result") == "PASS" for g in cycle_gates)}/{len(cycle_gates)} PASS, expected {EXPECTED_CYCLES}')
+    gate_failures, unavailable = gate_association(gates, row_order, session)
+    failures += gate_failures[:20]
+    if len(gate_failures) > 20: failures.append(f'... {len(gate_failures) - 20} more gate association failures')
     cleanup = result.get('cleanup') if isinstance(result.get('cleanup'), dict) else {}
     incomplete = [step for step in CLEANUP_STEPS if cleanup.get(step) is not True]
     if incomplete: failures.append('run cleanup incomplete: ' + ', '.join(incomplete))
-    return {'status': 'FAIL' if failures else 'PASS', 'failures': failures,
+    # INCONCLUSIVE: no demonstrated defect, but evidence the new contract requires was never recorded (older runs).
+    return {'status': 'FAIL' if failures else 'INCONCLUSIVE' if unavailable else 'PASS', 'failures': failures, 'unavailableEvidence': unavailable,
             'completedCycles': cycles, 'memoryPoints': len(sequences), 'expectedMemoryPoints': EXPECTED_POINTS,
             'webProcessIdentity': {'verified': stable, 'evidence': 'pid+/proc starttime', 'identity': list(start_identity) if stable else None},
             'rssVerdict': 'INCONCLUSIVE: no approved RSS stability criterion; declared budgets are not process RSS/GPU caps'}

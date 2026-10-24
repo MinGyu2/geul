@@ -825,10 +825,34 @@ idle 10초로는 줄지 않고(GC 대상 아님) 명시적 trim에서 즉시0이
 보이지만 승인된 기준이 없어 INCONCLUSIVE다.
 
 D4 공식 결과는 첫 유효 공식 실행(group-start p95 88/89/266/138ms FAIL)을 유지한다. 공식 측정은 revision을 RAF poll에서 보고
-RAF 두 번을 더 기다리므로, 일이 없어도 3-RAF 바닥이 p50 40~46/p95 48~49ms다. 진단 관찰자로 나누면 software GL(공식 환경)에서는
-revision 다음 frame의 주 스레드 rendering update가 p50 35~60ms이고 frame 대기는0이다(compositor 대기가 아니라 주 스레드 그리기 비용).
+RAF 두 번을 더 기다리므로, 일이 없어도 3-RAF 바닥의 중앙값이 40~46ms다(p95는 문서마다 달라 60쪽 HWPX는 173ms — 아래 절에서 정정).
+진단 관찰자로 보면 software GL(공식 환경)에서는 revision 다음 RAF에서 이후 작업 실행까지가 p50 35~60ms였다
+(이 간격을 주 스레드 그리기 비용으로 본 원래 해석은 아래 절에서 철회).
 WebProcess가 실제 Intel xe GPU(renderD128, render engine cycle 증가 확인)를 쓰는 설정에서는 그 구간이 p50 2~7ms로 줄어
 기본 문서 group-start p50이40~41ms가 되지만, p95는 77/57/187/104ms로 여전히50ms를 넘는다(Xvfb 표시, 실제 화면 아님, 비공식 진단).
 남는 큰 몫은 큰 문서의 key→revision commit(p50 29~60ms, p95 최대164ms)이다. 문턱·측정 경계는 바꾸지 않았다.
 D2는 새 근거가 없어 INCONCLUSIVE를 유지한다.
 [완전성 보고서](../../tests/integration/rhwp/evidence/t010-native-completeness/REPORT.ko.txt). T010 전체는 미완료이며 제품 활성화와 T011은 계속 NO-GO다.
+
+## T010 진단 판정 무결성·D4 계측 정합성 보완 (2026-10-24)
+
+`cache-trim-native.py` 판정은 저장된 `ownershipFailures`를 믿지 않고 원래 counter에서 `lifecycle_evidence.check_point`로 다시 계산한다.
+정확한 phase 순서, 모든 point의 WebProcess(PID·start time)·RSS·counter 구조, 정착 상태 정리·Canvas 소유, 실행 전후 WASM,
+정리 3단계를 요구하고, cache가 trim 전에 실제로 채워져 있었고 idle이 유지했으며 trim이 decoded/image cache와 엔진 surface를
+비웠고 다시 열면 채워졌는지 확인한다. 수정 전 판정은 빈 프로세스 관찰·없는/None ownership 결과·잘못된 RSS 등 15경우를 PASS로,
+2경우는 예외로 처리했다. 이번 workload에서는 image cache가 한 번도 채워지지 않아 image cache 해제는 "trim 뒤 비어 있음"까지만 확인된다.
+
+`lifecycle_evidence.classify`는 durable sample 366개와 `measurements.lifecycle` 행의 관찰을 순서대로 전체 내용 비교한다(한쪽만 바뀐
+RSS·counter·process identity·문서/세션, 누락·중복·재정렬 FAIL). cycle 정리 gate는 driver가 gate가 만들어지는 순간 문서·세션·직전 memory
+sample을 붙이고(시험 전용, `undo_native` 무변경), 판정은 gate의 mode/cycle 이름·위치·연결과 기록된 closed 관찰로 다시 계산한 결과를
+대조한다. 연결 정보가 없는 이전 실행은 결함 없이도 PASS가 아니라 INCONCLUSIVE다. 이 gate는 정리 증거이며 D4 성능 통과가 아니다.
+
+D4 정정: 무작업 3-RAF 바닥의 중앙값은 대체로 40~46ms지만 p95는 일정하지 않다. 공식 실행의 60쪽 HWPX는 p95 173ms(최대 243ms)였고
+진단 실행에서도 큰 두 문서의 p95가 67~205ms였다(기본 문서는 48~50ms). 앞선 "p95 48~49ms" 요약은 틀렸다. 이 변동은 편집 작업이 없어도 생기며, 공식 group-start
+이상값의 원인을 그것만으로 입증하지는 않는다. 또 RAF 뒤 MessageChannel 작업까지의 간격은 Canvas 그리기·GPU·compositor 시간이 아니며,
+software GL에서는 rafA에 올린 작업이 rafB 뒤에야 실행된 표본이 많다(문서당 4~14/30). 그래서 앞선 "frame 대기 0 → 주 스레드 그리기
+비용" 결론은 철회한다. 지지되는 것은 software GL(rafA→rafB p50 34~39ms)과 WebProcess가 실제 GPU를 쓴 설정(6~11ms)의 차이로 볼 때
+graphics 경로가 지연에 크게 작용한다는 추론까지다. D4 진단 판정은 네 fixture 순서·해시, 문서별 엔진 identity, 문서당 30개의 유한한
+timestamp와 인과 순서, revision 중복 없음을 요구하며 `DIAGNOSTIC_COMPLETE`는 공식 D4 PASS가 아니다. 관찰자와 MEASURE 표본은
+공통 trial 식별자가 없어 순서로만 짝지으며 이를 한계로 남긴다. 공식 D4는 FAIL 그대로다.
+[진단 무결성 보고서](../../tests/integration/rhwp/evidence/t010-diagnostic-integrity/REPORT.ko.txt). T010 전체는 미완료이며 제품 활성화와 T011은 계속 NO-GO다.

@@ -1,0 +1,69 @@
+"""T010 diagnostic integrity runner: actual Tauri/WebKitGTK app against the frozen 48adaa candidate.
+
+Records executed-dependency stability separately from overall workspace mutation; never retries a mode.
+"""
+from pathlib import Path
+import subprocess,os,json,sys,time,urllib.request,socket,hashlib
+root=Path('<workspace>');out=root/'tests/integration/rhwp/evidence/t010-diagnostic-integrity';mode=sys.argv[1]
+gate_evidence=root/'tests/integration/rhwp/evidence/t010-caret-geometry'  # read-only engine/browser gates for 48adaa
+candidate_dir=Path('/tmp/geul-t010-caret-geometry/candidate-package')
+EXPECTED='48adaa0f748484d12f59f4805deda0480635f915368392a87e76e95962ec0b27'
+P='tests/integration/rhwp/ownership-poc/'
+modes={'perf-visual':('performance-visual-native.py','d1-four-document-native.json',[]),
+ 'perf-visual-focus':('performance-visual-native.py','diagnostic-single-chemical-native.json',['--sample','연구노트(화학).hwp']),
+ 'lifecycle':('lifecycle-continuous-native.py','diagnostic-lifecycle-continuous-identity.json',['--driver-log','/tmp/geul-diagnostic-integrity/driver-lifecycle.log','--expected-wasm',EXPECTED]),
+ 'trim':('cache-trim-native.py','diagnostic-cache-ownership-trim.json',['--expected-wasm',EXPECTED]),
+ 'frame-software':('d4-frame-attribution-native.py','diagnostic-d4-frame-attribution-software.json',['--graphics','software','--expected-wasm',EXPECTED])}
+script,name,extra=modes[mode];output=out/name
+if output.exists():raise SystemExit('preserve prior evidence before repeating mode '+mode)
+out.mkdir(exist_ok=True)
+wasm=hashlib.sha256((candidate_dir/'rhwp_bg.wasm').read_bytes()).hexdigest()
+if wasm!=EXPECTED:raise SystemExit('candidate identity mismatch '+wasm)
+relevant=[P+n for n in ('session.mjs','vite.config.mjs','native.py','generate.mjs',script)]+['tests/integration/rhwp/undo_native.py','tests/integration/rhwp/native_probe.py','tests/integration/rhwp/rhwp_poc.py','tests/e2e/tauri_smoke.py','tests/fixtures/rhwp/generate.mjs','src-tauri/target/debug/geul','external/rhwp/samples/rnote/연구노트(화학).hwp','external/rhwp/samples/issue6031/3249937_asset_management_rules.hwpx']
+if script in ('lifecycle-continuous-native.py','cache-trim-native.py'):relevant+=[P+'lifecycle_evidence.py',P+'lifecycle-continuous-native.py']
+relevant_abs=[str(candidate_dir/f) for f in ('rhwp_bg.wasm','rhwp.js')]
+def digest(paths):return {p:hashlib.sha256((root/p).read_bytes()).hexdigest() for p in paths}
+def workspace():
+ status=subprocess.run(['git','status','--porcelain=v1','-uall'],cwd=root,capture_output=True,text=True,check=True).stdout.splitlines()
+ rows=[l for l in status if 'evidence/t010-diagnostic-integrity/' not in l]
+ return {'status':rows,'contentSha256':{l[3:]:hashlib.sha256((root/l[3:]).read_bytes()).hexdigest() if (root/l[3:]).is_file() else None for l in rows}}
+env=dict(os.environ);env['VITE_GEUL_TEST_HOOKS']='1'
+env['GEUL_T010_DAMAGE_POC']='1' if mode=='lifecycle' else '0'  # lifecycle matches prior lifecycle windows; adapter patch jobs execute atomic Full
+env.update(GEUL_T010_OWNERSHIP_POC='1',GEUL_T010_SCHEDULER_POC='1',GEUL_T010_CANDIDATE=str(candidate_dir),GEUL_T010_EVIDENCE=str(gate_evidence),VITE_GEUL_TEST_RHWP_HISTORY='1')
+env['GEUL_T010_HISTORY_PERF_ONLY' if mode.startswith('frame-') else 'GEUL_T010_HISTORY_SAFETY_ONLY']='1'
+port=socket.socket();port.setsockopt(socket.SOL_SOCKET,socket.SO_REUSEADDR,1);port.bind(('127.0.0.1',1420));port.close()
+serve=['node','node_modules/vite/bin/vite.js','--host','127.0.0.1','--config',P+'vite.config.mjs']
+log=Path('/tmp/geul-diagnostic-integrity/vite-'+mode+'.log').open('w')
+p=subprocess.Popen(serve,cwd=root,env=env,stdout=log,stderr=subprocess.STDOUT);done=None
+try:
+ deadline=time.monotonic()+30
+ while True:
+  if p.poll() is not None:raise RuntimeError('Vite startup exited '+str(p.returncode))
+  try:
+   with urllib.request.urlopen('http://localhost:1420',timeout=1) as response:
+    if response.status==200:break
+  except OSError:
+   if time.monotonic()>deadline:raise RuntimeError('Vite startup timeout')
+   time.sleep(.1)
+ common=['--app',str(root/'src-tauri/target/debug/geul'),'--driver','/tmp/geul-t010-ownership-tools/bin/tauri-driver','--webkit-driver','/nix/store/p7h9r90h1vmk4wq1964nhd8vfp0kf27b-webkitgtk-2.54.1+abi=4.1/bin/WebKitWebDriver','--xvfb','/nix/store/7yz3bnmll7fy11n0xci85mbhnf6p5669-xvfb-21.1.23/bin/Xvfb','--output',str(output),'--xdotool','/nix/store/kyp2r08w6hs0l1zj3cya6d2ciba9v47h-xdotool-3.20211022.1/bin/xdotool']
+ cmd=['python3',P+script]+common+extra
+ before=digest(relevant);before_abs={f:hashlib.sha256(Path(f).read_bytes()).hexdigest() for f in relevant_abs};ws_before=workspace()
+ started=time.monotonic()
+ with Path('/tmp/geul-diagnostic-integrity/native-'+mode+'.log').open('w') as native_log:
+  done=subprocess.run(['dbus-run-session','--',*cmd],cwd=root,env=env,stdout=native_log,stderr=subprocess.STDOUT)
+ result=json.loads(output.read_text()) if output.exists() else {'status':'FAIL','error':'test process returned without result file'}
+ after=digest(relevant);after_abs={f:hashlib.sha256(Path(f).read_bytes()).hexdigest() for f in relevant_abs};ws_after=workspace()
+ result.update(executedDependencySha256={**before,**{k.replace(str(candidate_dir),'<isolated>/candidate-package'):v for k,v in before_abs.items()}},
+  executedDependenciesStable=after==before and after_abs==before_abs,
+  workspaceMutationDuringRun={'changed':ws_after!=ws_before,'before':ws_before,'after':ws_after,'excludes':'this evidence directory (run output)'},
+  candidateWasmSha256=wasm,parentExit=done.returncode,processFinished=True,runnerElapsedSeconds=round(time.monotonic()-started,2),command=['dbus-run-session','--',*cmd],
+  activationFlags={k:v for k,v in env.items() if k.startswith(('GEUL_T010_','VITE_GEUL_TEST_'))},devServerCommand=serve,
+  appSha256=before['src-tauri/target/debug/geul'],executedAt=time.strftime('%Y-%m-%dT%H:%M:%S%z'),loadAverageAtEnd=os.getloadavg())
+ clean=json.dumps(result,ensure_ascii=False,indent=2).replace(str(root),'<workspace>').replace(str(Path.home()),'<home>').replace('/tmp/geul-t010-caret-geometry','<isolated>')
+ output.write_text(clean+'\n');print(mode,done.returncode,result.get('status'),result.get('exitReason'),str(result.get('failures') or (result.get('classification') or {}).get('failures'))[:600],flush=True)
+finally:
+ p.terminate()
+ try:p.wait(timeout=10)
+ except subprocess.TimeoutExpired:p.kill();p.wait(timeout=10)
+ log.close()
+raise SystemExit(done.returncode if done else 2)

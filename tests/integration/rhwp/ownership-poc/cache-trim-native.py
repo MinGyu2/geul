@@ -70,7 +70,8 @@ def main():
                         value = history.memory_sample(d)
                         value['processes'] = driver_module.with_generation(value['processes'])
                         value.update(phase=phase, renderer=d.js('return window.__geulOwnership.stats()'), at=round(time.time() - result['startedAt'], 2))
-                        value['ownershipFailures'] = surfaces_accounted(value) if phase.startswith(('closed', 'idle', 'trim', 'baseline')) else None
+                        # Recorded for reading only; classify() recomputes ownership from the raw counters.
+                        value['ownershipFailures'] = surfaces_accounted(value) if not phase.startswith('opened') else None
                         result['points'].append(value)
                         return value
                     def cycle(phase):
@@ -100,30 +101,66 @@ def main():
     return 0 if result['status'] == 'PASS' else 1
 
 
-def classify(result, expected_wasm):
-    """Measurement complete + every settled point accounted; trim must release every cache-owned surface."""
-    points = {p['phase']: p for p in result.get('points', [])}
-    expected = ['baseline', *[f'{k}-A{i}' for i in range(CYCLES) for k in ('opened', 'closed')], 'idle10s-without-trim',
-                'trim+0s', 'trim+2s', 'trim+10s', 'opened-C0', 'closed-C0']
-    failures = []
-    if result.get('error'): failures.append('run error: ' + str(result['error'])[:200])
-    if [p.get('phase') for p in result.get('points', [])] != expected: failures.append('phases incomplete or reordered')
-    for key in ('engineIdentity', 'engineIdentityAtEnd'):
-        if (result.get(key) or {}).get('wasmSha256') != expected_wasm: failures.append(key + ' != expected WASM')
-    if any(p.get('ownershipFailures') for p in points.values()): failures.append('settled point with unaccounted surface/cleanup')
-    identities = {tuple((r.get('pid'), r.get('startTime')) for r in p.get('processes', [])) for p in points.values()}
-    if len(identities) != 1 or any(None in pair for ident in identities for pair in ident): failures.append('WebProcess identity changed or unverified')
-    if any(result.get('cleanup', {}).get(step) is not True for step in lifecycle_evidence.CLEANUP_STEPS): failures.append('run cleanup incomplete')
-    def surf(phase): return points.get(phase, {}).get('engineSurfaces') or {}
-    def decoded(phase): return points.get(phase, {}).get('renderer', {}).get('cache', {}).get('decoded', {})
-    trimmed = [phase for phase in ('trim+0s', 'trim+2s', 'trim+10s') if surf(phase).get('detachedCanvases') != 0 or decoded(phase).get('entries') != 0]
-    if trimmed: failures.append('explicit trim left cache entries or detached Canvases: ' + ', '.join(trimmed))
-    return {'status': 'FAIL' if failures else 'PASS', 'failures': failures,
-            'summary': {phase: {'detachedCanvases': surf(phase).get('detachedCanvases'), 'externrefSlots': surf(phase).get('externrefSlots'),
-                                'decodedEntries': decoded(phase).get('entries'), 'decodedMiB': round(decoded(phase).get('bytes', 0) / 2**20, 2),
-                                'rssMiB': round(points[phase]['aggregateRssBytes'] / 2**20, 1), 'wasmMiB': round(points[phase]['wasmBytes'] / 2**20, 2)}
-                        for phase in expected if phase in points}}
+PHASES = ['baseline', *[f'{k}-A{i}' for i in range(CYCLES) for k in ('opened', 'closed')], 'idle10s-without-trim',
+          'trim+0s', 'trim+2s', 'trim+10s', 'opened-C0', 'closed-C0']
+TRIMMED = ('trim+0s', 'trim+2s', 'trim+10s')
 
+
+def classify(result, expected_wasm):
+    """Fail closed: every phase present once in order, ownership recomputed from the raw counters (a stored
+    ownershipFailures field is never trusted), one stable (pid, startTime) WebProcess, and a populated cache that
+    idle keeps, explicit trim empties and a reopen repopulates."""
+    try:
+        return classify_checked(result, expected_wasm)
+    except (AttributeError, KeyError, TypeError, ValueError) as error:
+        return {'status': 'FAIL', 'failures': [f'malformed result: {type(error).__name__}: {error}'[:300]], 'summary': {}}
+
+
+def classify_checked(result, expected_wasm):
+    if not isinstance(result, dict): return {'status': 'FAIL', 'failures': ['result is not an object'], 'summary': {}}
+    failures = []
+    raw = result.get('points')
+    points = raw if isinstance(raw, list) and all(isinstance(p, dict) for p in raw) else []
+    if [p.get('phase') for p in points] != PHASES or len(points) != len(raw if isinstance(raw, list) else []):
+        failures.append('phases missing, malformed, duplicated, reordered or unexpected')
+    if result.get('error'): failures.append('run error: ' + str(result['error'])[:200])
+    for key in ('engineIdentity', 'engineIdentityAtEnd'):
+        if not isinstance(result.get(key), dict) or result[key].get('wasmSha256') != expected_wasm: failures.append(key + ' != expected WASM')
+    cleanup = result.get('cleanup') if isinstance(result.get('cleanup'), dict) else {}
+    if any(cleanup.get(step) is not True for step in lifecycle_evidence.CLEANUP_STEPS): failures.append('run cleanup incomplete')
+    identities = set()
+    for point in points:
+        phase = str(point.get('phase'))
+        # Opened states legitimately hold documents/jobs: structure, identity, RSS and bounds only.
+        lifecycle_evidence.check_point(point, phase, not phase.startswith('opened'), failures)
+        identities.add(lifecycle_evidence.process_identity(point.get('processes'), phase, []))
+    if not points or len(identities) != 1 or None in identities: failures.append(f'WebProcess identity not stable/verified: {sorted(map(str, identities))[:4]}')
+    by_phase = {p.get('phase'): p for p in points}
+    def decoded(phase): return by_phase[phase]['renderer']['cache']['decoded']
+    def images(phase): return by_phase[phase]['renderer']['cache']['images']
+    def detached(phase): return by_phase[phase]['engineSurfaces']['detachedCanvases']
+    if not failures:
+        last = f'closed-A{CYCLES - 1}'
+        if not (decoded(last)['entries'] > 0 and decoded(last)['bytes'] > 0 and detached(last) > 0):
+            failures.append('cache was not populated before trim; an empty cache cannot prove release')
+        if (decoded('idle10s-without-trim')['entries'], detached('idle10s-without-trim')) != (decoded(last)['entries'], detached(last)):
+            failures.append('idle without trim did not retain the cache-owned surfaces')
+        kept = [phase for phase in TRIMMED if decoded(phase)['entries'] or decoded(phase)['bytes'] or detached(phase)
+                or images(phase)['entries'] or images(phase)['bytes'] or by_phase[phase]['engineSurfaces']['imageCount']]
+        if kept: failures.append('explicit trim left decoded/image cache entries or engine surfaces: ' + ', '.join(kept))
+        if not (decoded('closed-C0')['entries'] > 0 and detached('closed-C0') > 0):
+            failures.append('reopen did not repopulate the decoded cache')
+    def summary(point):
+        try:
+            return {'detachedCanvases': point['engineSurfaces']['detachedCanvases'], 'externrefSlots': point['engineSurfaces']['externrefSlots'],
+                    'decodedEntries': point['renderer']['cache']['decoded']['entries'], 'decodedMiB': round(point['renderer']['cache']['decoded']['bytes'] / 2**20, 2),
+                    'imageEntries': point['renderer']['cache']['images']['entries'],
+                    'rssMiB': round(point['aggregateRssBytes'] / 2**20, 1), 'wasmMiB': round(point['wasmBytes'] / 2**20, 2)}
+        except (KeyError, TypeError):
+            return None
+    return {'status': 'FAIL' if failures else 'PASS', 'failures': failures,
+            'imageCachePopulatedBeforeTrim': bool(not failures and images(f'closed-A{CYCLES - 1}')['entries']),
+            'summary': {p.get('phase'): summary(p) for p in points}}
 
 if __name__ == '__main__':
     raise SystemExit(main())

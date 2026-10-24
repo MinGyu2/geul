@@ -1,0 +1,84 @@
+{
+ "newRun": {
+  "source": {
+   "path": "tests/integration/rhwp/evidence/t010-diagnostic-integrity/diagnostic-lifecycle-continuous-identity.json",
+   "sha256": "61f7d23cabd7c05facec76f980e1b499308bf8fc17c6739d327b283b04b85bc7"
+  },
+  "status": "PASS",
+  "failures": [],
+  "unavailableEvidence": [],
+  "runStatus": "PASS",
+  "parentExit": 0,
+  "completedCycles": 120,
+  "memoryPoints": 366,
+  "webProcessIdentity": {
+   "verified": true,
+   "evidence": "pid+/proc starttime",
+   "identity": [
+    2773261,
+    28184787
+   ]
+  },
+  "contentCrossCheck": {
+   "durableSamples": 366,
+   "lifecycleObservations": 366,
+   "identical": 366
+  },
+  "gates": {
+   "total": 122,
+   "associated": 122,
+   "cyclePass": 120,
+   "summaryInconclusive": 2
+  },
+  "executedDependenciesStable": true,
+  "workspaceChangedDuringRun": false,
+  "elapsedSeconds": 1063.14,
+  "rssMiB": {
+   "min": 297.2,
+   "max": 2053.0
+  },
+  "cleanup": {
+   "sessionEnded": true,
+   "driverStopped": true,
+   "displayTerminated": true
+  },
+  "engineIdentity": [
+   "48adaa0f748484d12f59f4805deda0480635f915368392a87e76e95962ec0b27",
+   "48adaa0f748484d12f59f4805deda0480635f915368392a87e76e95962ec0b27"
+  ]
+ },
+ "historical": {
+  "6a58ff8-continuous": {
+   "source": {
+    "path": "tests/integration/rhwp/evidence/t010-native-completeness/diagnostic-lifecycle-continuous-identity.json",
+    "sha256": "8066031bf9c8900d46b26bd2f0492516beb74b2e5601593e6848bc8b85cd9ff0"
+   },
+   "newContractStatus": "INCONCLUSIVE",
+   "unavailableEvidence": [
+    "gate production association (document/session/sample)"
+   ],
+   "failureCategories": {},
+   "contentEqualIgnoringRunnerMetadata": "366/366 (metadata keys at/doc/sequence excluded only for runs whose rows never stored them)",
+   "gateOrderItemsResults": "checked by new classifier; association unavailable"
+  },
+  "7efb162-continuous": {
+   "source": {
+    "path": "tests/integration/rhwp/evidence/t010-native-gate-followup/diagnostic-d4-lifecycle-continuous.json",
+    "sha256": "464d944a11bf21e42cf2a6587ea389f960c6d17c5f6c6fdd92af110d7e1b5c73"
+   },
+   "newContractStatus": "FAIL",
+   "unavailableEvidence": [
+    "gate production association (document/session/sample)"
+   ],
+   "failureCategories": {
+    "missing older-contract field": 432
+   },
+   "contentEqualIgnoringRunnerMetadata": "366/366 (metadata keys at/doc/sequence excluded only for runs whose rows never stored them)",
+   "gateOrderItemsResults": "checked by new classifier; association unavailable"
+  }
+ },
+ "interpretation": {
+  "6a58ff8-continuous": "valid under its contract; under the new contract content and gate order/results all agree, only production-time gate association was never recorded -> INCONCLUSIVE, no regression",
+  "7efb162-continuous": "valid under its contract; lacks start time, sample binding and gate association (cannot be reconstructed) -> new-contract FAIL caused only by unavailable fields; observation contents agree apart from runner metadata"
+ }
+}

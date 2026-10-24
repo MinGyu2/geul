@@ -3,7 +3,8 @@
 
 Runs undo_native.scenario_lifecycle unchanged. The tauri-driver session is created normally (capability
 translation); later commands go directly to the same native WebKitWebDriver session. No request is retried.
-Every memory point is saved durably with its sequence, document, session and WebProcess (pid, start time).
+Every memory point is saved durably with its sequence, document, session and WebProcess (pid, start time);
+every gate records, when produced, its document, session and the last memory sample it follows.
 No forced GC or cache trim. PASS comes only from lifecycle_evidence.classify; RSS stays INCONCLUSIVE.
 """
 import argparse
@@ -98,14 +99,19 @@ def main():
                         result['samples'].append(value)
                         save()
                         return value
-                    history.memory_sample = measured_memory
+                    original_gate = history.gate
+                    def associated_gate(*gate_args, **gate_kwargs):
+                        # Test-only: bind each gate, when produced, to its document/session and the last memory sample.
+                        original_gate(*gate_args, **gate_kwargs)
+                        history.GATES[-1]['association'] = {'doc': state['doc'], 'sessionId': driver.session, 'afterSequence': len(result['samples']) - 1}
+                    history.memory_sample, history.gate = measured_memory, associated_gate
                     try:
                         for fixture in documents:
                             state['doc'] = fixture.name
                             history.scenario_lifecycle(driver, fixture, work, lifecycle_evidence.CYCLES)
                             save()
                     finally:
-                        history.memory_sample = original_memory
+                        history.memory_sample, history.gate = original_memory, original_gate
                     result['engineIdentityAtEnd'] = driver.js('return window.__geulOwnership.identity')
                 finally:
                     result['processesBeforeSessionEnd'] = with_generation(smoke.owned_processes())

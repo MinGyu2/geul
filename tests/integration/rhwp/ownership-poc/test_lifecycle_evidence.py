@@ -1,5 +1,6 @@
 """Fail-closed lifecycle evidence classification with synthetic complete/broken results (no native run)."""
 import copy
+import json
 import importlib.util
 import os
 from pathlib import Path
@@ -34,13 +35,21 @@ def complete():
                 row = {'mode': mode, 'cycle': cycle}
                 for label in [*evidence.LABELS, evidence.SETTLED][:4 if cycle == evidence.CYCLES - 1 else 3]:
                     row[label] = point(len(samples), doc, label != 'opened'); samples.append(row[label])
-                rows.append(row); gates.append({'gate': 'D4', 'result': 'PASS'})
+                rows.append(row)
+                gates.append({'gate': 'D4', 'item': f'{mode} cycle{cycle}: cleanup', 'result': 'PASS', 'detail': '',
+                              'association': {'doc': doc, 'sessionId': 's-1', 'afterSequence': len(samples) - 1}})
         lifecycle.append({'sample': doc, 'cyclesPerMode': evidence.CYCLES, 'rows': rows})
-        gates.append({'gate': 'D4', 'result': 'INCONCLUSIVE'})
+        gates.append({'gate': 'D4', 'item': '.' + doc.rpartition('.')[2] + ': cache/RSS', 'result': 'INCONCLUSIVE', 'detail': '',
+                      'association': {'doc': doc, 'sessionId': 's-1', 'afterSequence': len(samples) - 1}})
     return {'sessionId': 's-1', 'engineIdentity': {'wasmSha256': WASM}, 'engineIdentityAtEnd': {'wasmSha256': WASM},
             'processesAtStart': [{'pid': 7, 'comm': 'geul', 'startTime': 9}, {'comm': evidence.WEBPROCESS_COMM, **PROCESS}],
             'samples': samples, 'measurements': {'lifecycle': lifecycle}, 'gates': gates, 'completedCycles': evidence.EXPECTED_CYCLES,
             'cleanup': dict.fromkeys(evidence.CLEANUP_STEPS, True)}
+
+
+def detached_samples(result):
+    """JSON round trip: durable samples and lifecycle rows become independent copies, as in the saved evidence."""
+    return json.loads(json.dumps(result))
 
 
 def rows(result, doc=0):
@@ -169,6 +178,74 @@ class LifecycleEvidence(unittest.TestCase):
         self.assertFails(lambda r: r['cleanup'].update(displayTerminated=False), 'run cleanup')
         self.assertFails(lambda r: r.update(engineIdentityAtEnd=None), 'engineIdentityAtEnd')
         self.assertFails(lambda r: r.update(error='RemoteDisconnected'), 'run error')
+
+    def independent(self, change):
+        result = detached_samples(complete())
+        self.assertEqual(evidence.classify(result, WASM)['status'], 'PASS')
+        change(result)
+        return evidence.classify(result, WASM)
+
+    def assertIndependentFails(self, change, text):
+        verdict = self.independent(change)
+        self.assertEqual(verdict['status'], 'FAIL')
+        self.assertTrue(any(text in f for f in verdict['failures']), verdict['failures'][:5])
+
+    def test_durable_sample_changed_alone_fails(self):
+        def rss(result):
+            result['samples'][10]['processes'][0]['rssBytes'] += 1; result['samples'][10]['aggregateRssBytes'] += 1
+        self.assertIndependentFails(rss, 'durable sample 10 differs')
+        self.assertIndependentFails(lambda r: r['samples'][44]['renderer']['jobs'].update(uniqueResourceCount=7), 'durable sample 44 differs')
+        self.assertIndependentFails(lambda r: r['samples'][5]['engineSurfaces'].update(externrefSlots=2000), 'durable sample 5 differs')
+        self.assertIndependentFails(lambda r: r['samples'][7].update(wasmBytes=1 << 30), 'durable sample 7 differs')
+
+    def test_lifecycle_row_changed_alone_fails(self):
+        def rss(result):
+            point = rows(result)[3]['closed']; point['processes'][0]['rssBytes'] += 1; point['aggregateRssBytes'] += 1
+        self.assertIndependentFails(rss, 'differs from')
+        self.assertIndependentFails(lambda r: rows(r, 1)[0]['opened']['renderer']['cache']['decoded'].update(hits=5), 'differs from')
+
+    def test_process_identity_replaced_in_one_representation_fails(self):
+        self.assertIndependentFails(lambda r: r['samples'][100]['processes'][0].update(pid=9999), 'durable sample 100 differs')
+        self.assertIndependentFails(lambda r: rows(r)[30]['opened']['processes'][0].update(startTime=5), 'differs from')
+
+    def test_sample_stream_missing_duplicated_or_reordered_fails(self):
+        self.assertIndependentFails(lambda r: r['samples'].pop(), 'durable samples 365 != lifecycle observations 366')
+        self.assertIndependentFails(lambda r: r['samples'].insert(3, copy.deepcopy(r['samples'][3])), 'durable samples 367')
+        def swap(result):
+            a, b = result['samples'][19], result['samples'][20]  # opened/closed of one cycle
+            a['sequence'], b['sequence'] = 20, 19; result['samples'][19], result['samples'][20] = b, a
+        self.assertIndependentFails(swap, 'differs from')
+
+    def test_sample_document_or_session_association_alone_fails(self):
+        self.assertIndependentFails(lambda r: r['samples'][2].update(doc=evidence.DOCUMENTS[1]), 'durable sample 2 differs')
+        self.assertIndependentFails(lambda r: r['samples'][2].update(sessionId='other'), 'durable sample 2 differs')
+
+    def test_gate_missing_duplicated_or_displaced_fails(self):
+        self.assertIndependentFails(lambda r: r['gates'].pop(10), 'gates != expected')
+        self.assertIndependentFails(lambda r: r['gates'].insert(10, dict(r['gates'][10])), 'gates != expected')
+        self.assertIndependentFails(lambda r: r['gates'].insert(4, r['gates'].pop(5)), 'displaced')
+        self.assertIndependentFails(lambda r: r['gates'].insert(60, r['gates'].pop(61)), 'displaced')
+        self.assertIndependentFails(lambda r: r['gates'][60].update(item='other: summary'), 'summary gate')
+
+    def test_gate_cannot_vouch_for_another_cycle(self):
+        self.assertIndependentFails(lambda r: r['gates'][7]['association'].update(afterSequence=r['gates'][8]['association']['afterSequence']), 'does not identify')
+        self.assertIndependentFails(lambda r: r['gates'][7]['association'].update(doc=evidence.DOCUMENTS[1]), 'does not identify')
+        self.assertIndependentFails(lambda r: r['gates'][7]['association'].update(sessionId='other'), 'does not identify')
+        self.assertIndependentFails(lambda r: r['gates'][7].update(item='openClose cycle8: cleanup'), 'displaced')
+
+    def test_gate_result_must_agree_with_recorded_closed_observation(self):
+        self.assertIndependentFails(lambda r: r['gates'][3].update(result='FAIL'), 'disagrees')
+        def dirty_but_pass(result):
+            for point in (rows(result)[3]['closed'], result['samples'][rows(result)[3]['closed']['sequence']]): point['canvasCount'] = 1
+        self.assertIndependentFails(dirty_but_pass, 'disagrees')
+
+    def test_unassociated_gates_are_inconclusive_not_pass(self):
+        def historical(result):
+            for gate in result['gates']: gate.pop('association')
+        verdict = self.independent(historical)
+        self.assertEqual(verdict['status'], 'INCONCLUSIVE')
+        self.assertEqual(verdict['failures'], [])
+        self.assertIndependentFails(lambda r: r['gates'][9].pop('association'), 'only some gates')
 
     def test_driver_reads_process_generation(self):
         spec = importlib.util.spec_from_file_location('lifecycle_driver', Path(__file__).with_name('lifecycle-continuous-native.py'))

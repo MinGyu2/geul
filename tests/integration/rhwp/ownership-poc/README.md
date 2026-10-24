@@ -138,3 +138,7 @@ job/lease/staging/backup/timer 정리, 선언 예산 필드(누락·변경 불�
 `d4-frame-attribution-native.py --graphics software|gpu`: 공식 `scenario_perf`/MEASURE 그대로에 revision 관찰자 하나를 더해
 rendering update 작업과 다음 frame 대기를 나눈다. 관찰자가 일정을 조금 바꾸므로 그 실행의 지연 값은 공식 D4가 아니다.
 실제 graphics backend는 `/proc`의 DRM fd·fdinfo engine counter·GL 라이브러리로 기록한다.
+`cache-trim-native.py`의 판정은 저장된 ownership 결과를 믿지 않고 원래 counter로 다시 계산하며, 채워진 cache·idle 유지·trim 해제·재채움을
+모두 요구한다. `lifecycle_evidence.classify`는 durable sample과 lifecycle 행을 전체 내용으로 맞대고, cycle gate는 생성 시점에 붙인
+문서·세션·sample 연결로 확인한다(연결 없는 이전 실행은 INCONCLUSIVE). `d4-frame-attribution-native.py --expected-wasm`의 판정은
+fixture 순서·해시, 엔진 identity, 유한하고 인과 순서가 맞는 timestamp를 요구한다. RAF→작업 간격은 그리기/GPU/compositor 시간이 아니다.

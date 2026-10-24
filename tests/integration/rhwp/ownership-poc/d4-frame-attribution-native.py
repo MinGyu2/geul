@@ -3,14 +3,17 @@
 
 Runs the unchanged undo_native.scenario_perf/MEASURE per official fixture, plus one extra observer: a
 MutationObserver on data-local-revision records the commit time, the next three RAFs, and one
-MessageChannel task after each, so main-thread rendering-update work (rafX -> taskX) is separated from
-waiting for the next frame (taskX -> next raf). The observer perturbs scheduling slightly, so this run's
-MEASURE values are not official. The actual graphics backend is recorded from /proc: DRM device fds,
-their fdinfo engine counters (GPU work evidence) and loaded GL/DRI libraries.
+MessageChannel task posted from each. These are observed intervals only: rafX -> taskX is when the page
+next ran a task, which can include any browser rendering-update or scheduling work (and can even fall after
+the next RAF); it is not Canvas drawing, GPU or compositor time. The observer perturbs scheduling slightly,
+so this run's MEASURE values are not official. Observer records pair with MEASURE samples only by order:
+canonical MEASURE exposes no trial identifier. The actual graphics backend is recorded from /proc: DRM
+device fds, their fdinfo engine counters (GPU work evidence) and loaded GL/DRI libraries.
 """
 import argparse
 import hashlib
 import json
+import math
 import os
 from pathlib import Path
 import re
@@ -29,6 +32,14 @@ from native import smoke
 
 FIXTURES = (('basic-ko.hwp', None), ('basic-ko.hwpx', None), ('연구노트(화학).hwp', 'rnote/연구노트(화학).hwp'),
             ('3249937_asset_management_rules.hwpx', 'issue6031/3249937_asset_management_rules.hwpx'))
+EXPECTED_SOURCE_SHA256 = {  # deterministic generated fixtures and pinned public samples (identical in every prior run)
+    'basic-ko.hwp': '57c901cc394abf6f58f4838315d1ea2c5ecf8a03d9934d3fc098fd8be6e6e12f',
+    'basic-ko.hwpx': '26d434b7b427149110751c6ef5b19e9ecb4818f3ba7eadfe201b5afd3de442a8',
+    '연구노트(화학).hwp': '6717eca43c6fdd9b0530530cf17d33b6687da0c462a433d37eb652afb5394f91',
+    '3249937_asset_management_rules.hwpx': '97b5d6c571a6b7626321c6a53d797e3511978447497bb73309bd23eaa8e7ea77'}
+TIMES = ('key', 'rev', 'task0', 'rafA', 'taskA', 'rafB', 'taskB', 'rafC')
+# Orderings guaranteed by how each callback is scheduled. taskA/taskB may legitimately run after the next RAF.
+CAUSAL_ORDER = (('key', 'rev'), ('rev', 'task0'), ('rev', 'rafA'), ('rafA', 'taskA'), ('rafA', 'rafB'), ('rafB', 'taskB'), ('rafB', 'rafC'))
 GRAPHICS = {'software': {'LIBGL_ALWAYS_SOFTWARE': '1', 'WEBKIT_DISABLE_DMABUF_RENDERER': '1'}, 'gpu': {}}
 OBSERVER = r"""
 if (!window.__frameAttr) {
@@ -44,7 +55,7 @@ if (!window.__frameAttr) {
     const value = document.querySelector('[data-testid=rhwp-status]')?.dataset.localRevision;
     if (value === last) return; last = value;
     if (!Array.isArray(window.__lat)) return;  // only while the canonical MEASURE is collecting
-    const r = {kind: key?.kind ?? window.__nextKind ?? null, key: key?.t ?? null, rev: performance.now()}; key = null;
+    const r = {kind: key?.kind ?? window.__nextKind ?? null, key: key?.t ?? null, rev: performance.now(), revision: value}; key = null;
     A.records.push(r); if (A.records.length > 1000) A.records.shift();
     task(t => r.task0 = t);
     requestAnimationFrame(() => { r.rafA = performance.now(); task(t => r.taskA = t);
@@ -76,21 +87,54 @@ def graphics_backend():
     return rows
 
 
-def classify(result):
-    complete = len(result.get('documents', [])) == 4
-    for doc in result.get('documents', []):
-        records = [r for r in doc.get('observer', []) if r.get('kind') == 'groupStart']
-        complete = complete and doc.get('groupStart', {}).get('n') == 30 and doc['groupStart'].get('timeouts') == 0 \
-            and len(records) == 30 and all(all(isinstance(r.get(k), (int, float)) for k in ('rev', 'rafA', 'taskA', 'rafB', 'taskB', 'rafC')) for r in records)
-    return {'measurementComplete': complete, 'status': 'DIAGNOSTIC_COMPLETE' if complete and not result.get('error') else 'FAIL',
-            'officialD4': 'not evaluated: diagnostic observer perturbs scheduling; official result stays the first valid official run'}
+def timestamp(value):
+    return type(value) in (int, float) and math.isfinite(value)
 
+
+def classify(result, expected_wasm):
+    """Diagnostic completeness only (never official D4): exact fixtures/order/identity, 30 canonical and 30 observer
+    group-start records per document with finite, causally ordered timestamps and unique revisions."""
+    failures, unavailable = [], []
+    if not isinstance(result, dict): return {'status': 'FAIL', 'failures': ['result is not an object'], 'unavailableEvidence': []}
+    if result.get('error'): failures.append('run error: ' + str(result['error'])[:200])
+    documents = result.get('documents') if isinstance(result.get('documents'), list) else []
+    if [d.get('sample') if isinstance(d, dict) else None for d in documents] != [name for name, _ in FIXTURES]:
+        failures.append('documents missing, duplicated, reordered or unexpected')
+    for doc in documents:
+        if not isinstance(doc, dict): continue
+        name = doc.get('sample')
+        if doc.get('sourceSha256') != EXPECTED_SOURCE_SHA256.get(name): failures.append(f'{name}: source fixture identity mismatch')
+        if 'engineIdentity' not in doc: unavailable.append(f'{name}: per-document engine identity')
+        elif (doc.get('engineIdentity') or {}).get('wasmSha256') != expected_wasm: failures.append(f'{name}: engine identity != expected WASM')
+        measured = doc.get('groupStart') if isinstance(doc.get('groupStart'), dict) else {}
+        timeline = [s for s in doc.get('measureTimeline') or [] if isinstance(s, dict) and s.get('kind') == 'groupStart']
+        if measured.get('n') != 30 or measured.get('timeouts') != 0 or len(timeline) != 30 \
+                or not all(timestamp(s.get('keyToFrame')) and s['keyToFrame'] >= 0 for s in timeline):
+            failures.append(f'{name}: canonical MEASURE group-start incomplete or timed out')
+        observer = doc.get('observer') if isinstance(doc.get('observer'), list) else None
+        records = [r for r in observer or [] if isinstance(r, dict) and r.get('kind') == 'groupStart']
+        if observer is None or not all(isinstance(r, dict) for r in observer) or len(records) != 30:
+            failures.append(f'{name}: observer group-start records {len(records)} != 30 or malformed'); continue
+        bad = [i for i, r in enumerate(records) if not all(timestamp(r.get(k)) for k in TIMES)]
+        if bad: failures.append(f'{name}: observer records with missing/non-finite/boolean timestamps {bad[:5]}'); continue
+        disordered = [i for i, r in enumerate(records) if any(r[a] > r[b] for a, b in CAUSAL_ORDER)]
+        if disordered: failures.append(f'{name}: observer records violate causal callback order {disordered[:5]}')
+        revisions = [r.get('revision') for r in records]
+        if any(v is None for v in revisions): unavailable.append(f'{name}: observer revision identifiers')
+        elif len(set(revisions)) != len(revisions): failures.append(f'{name}: duplicated observer revisions')
+    identity = (result.get('engineIdentity') or {}).get('wasmSha256') if isinstance(result.get('engineIdentity'), dict) else None
+    if identity != expected_wasm: failures.append('final engine identity != expected WASM')
+    status = 'FAIL' if failures else 'INCONCLUSIVE' if unavailable else 'DIAGNOSTIC_COMPLETE'
+    return {'measurementComplete': status == 'DIAGNOSTIC_COMPLETE', 'status': status, 'failures': failures, 'unavailableEvidence': unavailable,
+            'observerMeasurePairing': 'by order only: canonical MEASURE records no trial identifier; agreement of end times is a consistency check, not identity',
+            'officialD4': 'not evaluated: diagnostic observer perturbs scheduling; official result stays the first valid official run'}
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     for name in ('app', 'driver', 'webkit-driver', 'xvfb', 'xdotool', 'output'):
         parser.add_argument('--' + name, required=True, type=Path)
     parser.add_argument('--graphics', choices=tuple(GRAPHICS), required=True)
+    parser.add_argument('--expected-wasm', required=True)
     args = parser.parse_args()
     if args.output.exists(): parser.error('preserve previous diagnostic output before repeating')
     result = {'status': 'RUNNING', 'graphicsRequest': args.graphics, 'protocol': 'unmodified undo_native.scenario_perf/MEASURE + revision frame observer', 'documents': [],
@@ -128,7 +172,8 @@ def main():
                         result['documents'].append({'sample': name, 'sourceSha256': hashlib.sha256(source.read_bytes()).hexdigest(), 'dpr': row['dpr'], 'zoom': row['zoom'],
                             **{k: row[k] for k in ('groupStart', 'extend', 'undo', 'redo', 'afterUndo', 'zeroWorkFrameFloorMs', 'frameGapDuringHistoryAndFollowingInputMs')},
                             'measureTimeline': [{'kind': s['kind'], 'keyToFrame': s['keyToFrame'], 'at': s['at']} for s in row['timelineSamples']],
-                            'observer': d.js('return window.__frameAttr.records'), 'backendBefore': backend_before, 'backendAfter': graphics_backend()})
+                            'observer': d.js('return window.__frameAttr.records'), 'backendBefore': backend_before, 'backendAfter': graphics_backend(),
+                            'engineIdentity': d.js('return window.__geulOwnership?.identity||null')})
                         result['engineIdentity'] = d.js('return window.__geulOwnership?.identity||null')
                     finally:
                         smoke.end_session(d)
@@ -139,7 +184,7 @@ def main():
         display.terminate(); display.wait(timeout=10)
         result['nonOfficialGateRows'] = history.GATES
         result['environment']['loadAverageAfter'] = os.getloadavg()
-        result.update(classify(result))
+        result.update(classify(result, args.expected_wasm))
         args.output.write_text(json.dumps(result, ensure_ascii=False, indent=1).replace(str(ROOT), '<workspace>').replace(str(Path.home()), '<home>') + '\n')
     return 0 if result['status'] == 'DIAGNOSTIC_COMPLETE' else 1
 

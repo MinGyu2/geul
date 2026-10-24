@@ -1,0 +1,40 @@
+"""Corrected D4 attribution analysis: observed intervals vs supported inferences vs unknown browser-internal work."""
+from pathlib import Path
+import json,hashlib
+ev=Path('<workspace>/tests/integration/rhwp/evidence');out=ev/'t010-diagnostic-integrity'
+def pct(v):
+  v=sorted(v)
+  if not v:return None
+  q=lambda p:v[min(len(v)-1,int(round(p*(len(v)-1))))]
+  return {'n':len(v),'p50':round(q(.5),1),'p95':round(q(.95),1),'min':round(v[0],1),'max':round(v[-1],1)}
+def ref(p):return {'path':str(p.relative_to(ev.parent.parent.parent.parent)),'sha256':hashlib.sha256(p.read_bytes()).hexdigest()}
+official=ev/'t010-native-gate-followup/d4-official-48adaa-full.json';o=json.loads(official.read_text())
+runs={'previous-software':ev/'t010-native-completeness/diagnostic-d4-frame-attribution-software.json','previous-gpu':ev/'t010-native-completeness/diagnostic-d4-frame-attribution-gpu.json','new-software':out/'diagnostic-d4-frame-attribution-software.json'}
+r={'officialResult':{'source':ref(official),'status':'OFFICIAL_GATE_FAILURE (unchanged; first valid official run)','groupStartP95':[row['groupStart']['p95'] for row in o['measurements']['perf']],'undoP95':[row['undo']['p95'] for row in o['measurements']['perf']],'threshold':'group-start p95 <= 50 ms, Undo p95 <= 1500 ms'},
+ 'zeroWorkFrameFloorCorrection':{'class':'VERIFIED','official':[{'sample':row['sample'],**{k:row['zeroWorkFrameFloorMs'][k] for k in ('p50','p95','max')}} for row in o['measurements']['perf']],
+   'correction':'The earlier summary "zero-work p95 48-49 ms" was wrong for the 60-page HWPX (p95 173 ms, max 243 ms). Typical zero-work median is 40-46 ms; p95 is not uniform.',
+   'interpretation':'Substantial scheduling/environment variance exists even without document-edit work. This does not by itself establish the cause of the official group-start outliers, and does not change the 50 ms threshold or the FAIL.'},
+ 'terminology':{'observed':'rev (MutationObserver commit), rafA/B/C (RAF callback start), taskX (first MessageChannel task run after a task posted in rafX)',
+   'notMeasured':'Canvas drawing time, GPU execution time, compositor time, idle frame waiting: none is isolated by these intervals',
+   'rafToTask':'rafX->taskX spans whatever the page ran before the posted task, possibly including a whole later rendering update (task can run after the next RAF)',
+   'nearZero':'a near-zero taskX->next RAF interval does not prove absence of compositor influence'},
+ 'runs':{}}
+for name,path in runs.items():
+  d=json.loads(path.read_text());docs=[]
+  for doc in d['documents']:
+    g=[x for x in doc['observer'] if x.get('kind')=='groupStart']
+    docs.append({'sample':doc['sample'],'diagnosticGroupStart':{k:doc['groupStart'][k] for k in ('p50','p95','max')},'zeroWorkFrameFloorMs':{k:doc['zeroWorkFrameFloorMs'][k] for k in ('p50','p95','max')},
+      'keyToCommit':pct([x['rev']-x['key'] for x in g]),'commitToRafA':pct([x['rafA']-x['rev'] for x in g]),'rafAtoTaskA':pct([x['taskA']-x['rafA'] for x in g]),
+      'rafAtoRafB':pct([x['rafB']-x['rafA'] for x in g]),'rafBtoRafC':pct([x['rafC']-x['rafB'] for x in g]),
+      'taskARanAfterRafB':sum(x['taskA']>x['rafB'] for x in g),'taskBRanAfterRafC':sum(x['taskB']>x['rafC'] for x in g),
+      'webProcessDrm':sorted({fd['device']+' '+fd.get('drm-driver','') for p in doc.get('backendAfter',[]) if p['comm']=='WebKitWebProces' for fd in p.get('drm',[])})})
+  r['runs'][name]={'source':ref(path),'status':d.get('status'),'graphicsEnvironment':d['environment'].get('graphicsEnvironment'),'executedDependenciesStable':d.get('executedDependenciesStable'),'documents':docs}
+r['inferences']=[
+ {'class':'VERIFIED','text':'Software-GL runs (no DRM device in the WebProcess) show rafA->rafB p50 34-37 ms; the GPU-enabled run (WebProcess opened /dev/dri/renderD128 xe and its render-engine cycle counter increased) shows 6-11 ms, with diagnostic group-start medians of 40-41 ms for the basic documents.'},
+ {'class':'VERIFIED','text':'In software-GL runs the task posted in rafA often ran only after rafB (see taskARanAfterRafB), so rafA->taskA is not a rendering-update duration.'},
+ {'class':'INFERRED','text':'The graphics path materially affects post-revision frame latency.'},
+ {'class':'UNVERIFIED','text':'Whether the software-GL cost is main-thread painting, compositor/display pacing or another browser-internal step; exact GPU execution time; equivalence of the Xvfb-presented GPU configuration to a physical display.'},
+ {'class':'WITHDRAWN','text':'Earlier statement "frame wait p50 0 ms, so the delay is main-thread drawing, not compositor waiting" (t010-native-completeness REPORT section 7) is not supported by the observer design.'}]
+(out/'d4-attribution-correction.json').write_text(json.dumps(r,ensure_ascii=False,indent=1)+'\n')
+for n,v in r['runs'].items():
+  for d in v['documents']:print(n,d['sample'][:10],'A->B',d['rafAtoRafB']['p50'],'A->taskA',d['rafAtoTaskA']['p50'],'inv',d['taskARanAfterRafB'],d['taskBRanAfterRafC'],'floor',d['zeroWorkFrameFloorMs'],d['webProcessDrm'])
