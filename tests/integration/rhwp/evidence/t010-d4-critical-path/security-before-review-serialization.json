@@ -1,0 +1,73 @@
+{
+  "status": "FAIL",
+  "files": [
+    "docs/architecture/rhwp-undo-redo.md",
+    "tests/integration/rhwp/evidence/t010-d4-critical-path/REPORT.ko.txt",
+    "tests/integration/rhwp/evidence/t010-d4-critical-path/build-deep.log.txt",
+    "tests/integration/rhwp/evidence/t010-d4-critical-path/build-phase.log.txt",
+    "tests/integration/rhwp/evidence/t010-d4-critical-path/corrected-input-delay-v2.json",
+    "tests/integration/rhwp/evidence/t010-d4-critical-path/corrected-input-delay.json",
+    "tests/integration/rhwp/evidence/t010-d4-critical-path/corrected-official-handler-v2.json",
+    "tests/integration/rhwp/evidence/t010-d4-critical-path/corrected-official-handler.json",
+    "tests/integration/rhwp/evidence/t010-d4-critical-path/d1-four-document-native-final.json",
+    "tests/integration/rhwp/evidence/t010-d4-critical-path/d1-four-document-native.json",
+    "tests/integration/rhwp/evidence/t010-d4-critical-path/deep-build.json",
+    "tests/integration/rhwp/evidence/t010-d4-critical-path/deep-edit-phases-chrome.json",
+    "tests/integration/rhwp/evidence/t010-d4-critical-path/deep-phase-diagnostic.patch",
+    "tests/integration/rhwp/evidence/t010-d4-critical-path/deep-phase-summary.json",
+    "tests/integration/rhwp/evidence/t010-d4-critical-path/deep-render-phases-chrome.json",
+    "tests/integration/rhwp/evidence/t010-d4-critical-path/diagnostic-d4-input-delay-chemical.json",
+    "tests/integration/rhwp/evidence/t010-d4-critical-path/diagnostic-d4-input-delay-triggers-attempt2.json",
+    "tests/integration/rhwp/evidence/t010-d4-critical-path/diagnostic-d4-input-delay-triggers-final.json",
+    "tests/integration/rhwp/evidence/t010-d4-critical-path/diagnostic-d4-input-delay-triggers.json",
+    "tests/integration/rhwp/evidence/t010-d4-critical-path/edit-phase-diagnostic.patch",
+    "tests/integration/rhwp/evidence/t010-d4-critical-path/edit-phases-chrome-realtime.json",
+    "tests/integration/rhwp/evidence/t010-d4-critical-path/edit-phases-chrome.json",
+    "tests/integration/rhwp/evidence/t010-d4-critical-path/final-input-delay-analysis.json",
+    "tests/integration/rhwp/evidence/t010-d4-critical-path/final-integrity.json",
+    "tests/integration/rhwp/evidence/t010-d4-critical-path/final-trigger-cache-analysis.json",
+    "tests/integration/rhwp/evidence/t010-d4-critical-path/first-phase-build.json",
+    "tests/integration/rhwp/evidence/t010-d4-critical-path/historical-input-delay-final.json",
+    "tests/integration/rhwp/evidence/t010-d4-critical-path/new-input-delay-analysis.json",
+    "tests/integration/rhwp/evidence/t010-d4-critical-path/per-call-cache-analysis.json",
+    "tests/integration/rhwp/evidence/t010-d4-critical-path/regressions.json",
+    "tests/integration/rhwp/evidence/t010-d4-critical-path/run.py.txt",
+    "tests/integration/rhwp/evidence/t010-d4-critical-path/security-pre-report.json",
+    "tests/integration/rhwp/evidence/t010-d4-critical-path/security-public-hash-review.json",
+    "tests/integration/rhwp/evidence/t010-d4-critical-path/source-runtime-identities.json",
+    "tests/integration/rhwp/evidence/t010-d4-critical-path/starting-state.json",
+    "tests/integration/rhwp/ownership-poc/analyze-d4.py",
+    "tests/integration/rhwp/ownership-poc/d4-input-delay-native.py",
+    "tests/integration/rhwp/ownership-poc/d4_evidence.py",
+    "tests/integration/rhwp/ownership-poc/edit-phases-browser.mjs",
+    "tests/integration/rhwp/ownership-poc/instrument-edit-phases.py",
+    "tests/integration/rhwp/ownership-poc/render-phases-browser.mjs",
+    "tests/integration/rhwp/ownership-poc/run-edit-phases.py",
+    "tests/integration/rhwp/ownership-poc/session.mjs",
+    "tests/integration/rhwp/ownership-poc/test_d4_evidence.py",
+    "tests/integration/rhwp/ownership-poc/vite.config.mjs"
+  ],
+  "checks": [
+    {
+      "name": "sensitive-changed",
+      "exit": 1,
+      "outputTail": "tests/integration/rhwp/evidence/t010-d4-critical-path/security-public-hash-review.json:6: [secret-assignment] 비밀값 할당: sour***on (len=30)\n\n민감정보 의심 항목 1건 발견 (지정 파일 45개). 값을 제거하거나, 오탐이면 docs/development/security-policy.md의 예외 절차를 따르세요."
+    },
+    {
+      "name": "sensitive-tracked",
+      "exit": 0,
+      "outputTail": "민감정보 검사 통과 (추적 파일 943개)"
+    },
+    {
+      "name": "diff-check",
+      "exit": 0,
+      "outputTail": ""
+    },
+    {
+      "name": "gitleaks-changed",
+      "exit": 0,
+      "outputTail": "10:35PM INF scanned ~17300963 bytes (17.30 MB) in 1.98s\n10:35PM INF no leaks found"
+    }
+  ],
+  "initialPublicHashFinding": "security-pre-report.json + security-public-hash-review.json; no secret/rule/allowlist changes"
+}

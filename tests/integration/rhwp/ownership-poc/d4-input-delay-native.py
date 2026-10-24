@@ -21,17 +21,52 @@ ROOT = HERE.parents[3]
 sys.path.insert(0, str(HERE))
 import native  # noqa: F401  (sets import paths)
 import native_probe
+from d4_evidence import validate
 import undo_native as history
 from native import smoke
 
 FIXTURE = ('연구노트(화학).hwp', 'rnote/연구노트(화학).hwp', '6717eca43c6fdd9b0530530cf17d33b6687da0c462a433d37eb652afb5394f91')
 EVENTS = r"""
 if (!window.__inputDelay) {
-  const E = window.__inputDelay = {keys: [], inputs: []};
+  const E = window.__inputDelay = {keys: [], inputs: [], right: [], requests: [], effects: [], taskWitnesses: []};
+  window.__d4RenderRequest = row => { if(E.requests.length<4096)E.requests.push(row); };
+  window.__d4SurfaceEffect = row => { if(E.effects.length<4096)E.effects.push(row); };
   window.addEventListener('keydown', e => { if (!e.ctrlKey && e.key.length === 1) E.keys.push({t: e.timeStamp, seen: performance.now()}); }, true);
+  window.addEventListener('keydown', e => { if(e.key === 'ArrowRight') { const r={t:e.timeStamp,seen:performance.now(),before:window.__geulOwnership?.stats()}; E.right.push(r); queueMicrotask(()=>{r.microtask=window.__geulOwnership?.stats()}); } }, true);
+  window.addEventListener('keydown', e => { if(e.key==='ArrowRight') { const r=E.right.at(-1); if(r){r.bubbled=performance.now();r.after=window.__geulOwnership?.stats();} } });
   document.addEventListener('input', e => { if (e.target?.classList?.contains('rhwp-input')) E.inputs.push({t: e.timeStamp, seen: performance.now()}); }, true);
 }
 """
+
+
+def diagnostic_install():
+    """Two counter snapshots per poll; numeric IDs only, no retained resources.
+
+    Question: does THIS blocking poll miss/evict decoded images? Right-key
+    observations ask whether modelVersion changes, without changing MEASURE.
+    """
+    script = native_probe.INSTALL.replace("import('/rhwp/rhwp.js')", 'Promise.resolve(window.__geulOwnership.probeEngine())')
+    script = script.replace('  for (const name of [', '  const jobPages=new Map();\n  for (const name of [', 1)
+    script = script.replace('value=original.apply(this,args);completed=true;', '''
+        const before=name==='pollRenderJob'?window.__geulOwnership.stats():null;
+        const wallStart=performance.now();
+        value=original.apply(this,args);completed=true;
+        const wallMs=performance.now()-wallStart;
+        if(name==='beginRenderJob'){jobPages.set(value,args[0]);if(jobPages.size>512)jobPages.delete(jobPages.keys().next().value);}
+        if(name==='pollRenderJob')p.lastRenderDiagnostic={id:args[0],page:jobPages.get(args[0])??null,
+          before,after:window.__geulOwnership.stats(),wallStart,wallMs};
+        // One zero-delay witness after a long poll: can a task run before delayed input?
+        // Bounded, no self-reposting loop and no image/document retention.
+        if(name==='pollRenderJob' && wallMs>=20 && window.__inputDelay?.taskWitnesses.length<128) {
+          const row={pollStart:wallStart,posted:performance.now(),ran:null};
+          window.__inputDelay.taskWitnesses.push(row);setTimeout(()=>{row.ran=performance.now();},0);
+        }
+        ''')
+    token = "...(name==='pollRenderJob'&&completed?{outcome:value}:{})"
+    assert token in script
+    script = script.replace(token, "...(name==='pollRenderJob'&&completed?{outcome:value,diagnostic:p.lastRenderDiagnostic}:{})")
+    script = script.replace('p.calls.splice(0,10000);', '{p.calls.splice(0,10000);p.callDropped=(p.callDropped||0)+10000;}')
+    return script
 
 
 def main():
@@ -39,7 +74,9 @@ def main():
     for name in ('app', 'driver', 'webkit-driver', 'xvfb', 'xdotool', 'output'):
         parser.add_argument('--' + name, required=True, type=Path)
     parser.add_argument('--expected-wasm', required=True)
+    parser.add_argument('--driver-log', type=Path)
     args = parser.parse_args()
+    smoke.DRIVER_LOG = args.driver_log
     if args.output.exists(): parser.error('preserve previous diagnostic output before repeating')
     name, relative, expected_sha = FIXTURE
     result = {'status': 'RUNNING', 'sample': name, 'protocol': 'unmodified undo_native.scenario_perf/MEASURE + existing busy probe + absolute key/input times',
@@ -63,7 +100,7 @@ def main():
                 try:
                     smoke.wait_until(d, "return !!document.querySelector('.document-bar__open')", timeout=30)
                     history.poc.open_document(d, fixtures / 'basic-ko.hwpx')
-                    native_probe.install(d, native_probe.INSTALL.replace("import('/rhwp/rhwp.js')", 'Promise.resolve(window.__geulOwnership.probeEngine())'))
+                    native_probe.install(d, diagnostic_install())
                     history.close_discard(d, 'basic-ko.hwpx')
                     windows = subprocess.check_output([str(args.xdotool), 'search', '--onlyvisible', '--name', '^geul'], text=True).split()
                     subprocess.run([str(args.xdotool), 'windowfocus', '--sync', windows[-1]], check=True)
@@ -74,20 +111,21 @@ def main():
                     result['measure'] = {k: row[k] for k in ('groupStart', 'extend', 'undo', 'redo', 'zeroWorkFrameFloorMs')}
                     result['samples'] = row['timelineSamples']
                     result['events'] = d.js('return window.__inputDelay')
-                    result['probeCalls'] = d.js("return window.__rhwpProbe.calls.map(c=>({name:c.name,at:c.at,ms:c.ms,outcome:c.outcome??null}))")
+                    result['probeCalls'] = d.js("return window.__rhwpProbe.calls.map(c=>({name:c.name,at:c.at,ms:c.ms,outcome:c.outcome??null,diagnostic:c.diagnostic??null}))")
                     result['traceSpans'] = d.js("return (window.__geulTrace?.records||[]).map(r=>({name:r[2],at:r[1],ms:typeof r[3]?.ms==='number'?r[3].ms:null}))")
+                    result['probeCallDropped'] = d.js('return window.__rhwpProbe.callDropped||0')
                     result['traceDropped'] = d.js('return window.__geulTrace?.dropped ?? null')
                     result['engineIdentity'] = d.js('return window.__geulOwnership?.identity||null')
                 finally:
                     smoke.end_session(d)
     except Exception as error:
         result['error'] = str(error)
+        result['transportProcesses'] = smoke.owned_processes()
+        result['driverLogTail'] = args.driver_log.read_text(errors='replace')[-8000:] if args.driver_log and args.driver_log.exists() else None
     finally:
         display.terminate(); display.wait(timeout=10)
-        group = [s for s in result.get('samples', []) if s.get('kind') == 'groupStart']
-        complete = (not result.get('error') and result.get('sourceSha256') == expected_sha and (result.get('engineIdentity') or {}).get('wasmSha256') == args.expected_wasm
-                    and len(group) == 30 and all(isinstance(s.get('busy'), list) for s in group))
-        result['status'] = 'DIAGNOSTIC_COMPLETE' if complete else 'FAIL'
+        result['classification'] = validate(result, args.expected_wasm, expected_sha)
+        result['status'] = result['classification']['status']
         result['officialD4'] = 'not evaluated: busy probe perturbs scheduling'
         args.output.write_text(json.dumps(result, ensure_ascii=False, indent=1).replace(str(ROOT), '<workspace>').replace(str(Path.home()), '<home>') + '\n')
     return 0 if result['status'] == 'DIAGNOSTIC_COMPLETE' else 1

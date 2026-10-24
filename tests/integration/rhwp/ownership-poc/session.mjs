@@ -193,6 +193,10 @@ export function createOwnershipSession(Session, sessionId, backend, registry) {
   const renderRequest = session.renderPage;
   session.renderPage = (...args) => {
     const at = performance.now();
+    // Optional numeric-only diagnostic hook; no document/Canvas references escape.
+    globalThis.window?.__d4RenderRequest?.({ at, page:args[0], generation,
+      version:session.modelVersion, paintedVersion:painted.get(args[1])?.version ?? null,
+      width:args[1].width, height:args[1].height, active:active?.id ?? null, queued:queue.size });
     try { return renderRequest(...args); }
     finally { globalThis.window?.__rhwpProbe?.record?.('adapterRenderRequest', at); }
   };

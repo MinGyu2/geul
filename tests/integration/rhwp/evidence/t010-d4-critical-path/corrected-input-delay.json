@@ -1,0 +1,4005 @@
+{
+  "source": {
+    "path": "tests/integration/rhwp/evidence/t010-validation-d4-investigation/diagnostic-d4-input-delay-chemical.json",
+    "sha256": "93bfef44137e48dd6079496f0146504a7798d7587bcf5c517174e200da16202b"
+  },
+  "official": false,
+  "pairing": {
+    "status": "DIAGNOSTIC_COMPLETE",
+    "failures": [],
+    "pairing": "ordered insertText anchors independently checked against absolute key/input timestamps; no shared trial ID",
+    "official": false
+  },
+  "rows": [
+    {
+      "trial": 1,
+      "deliveryMs": 1,
+      "keyToObservedMs": 0,
+      "observedToInputMs": 1,
+      "callsUnionMs": 0,
+      "renderUnionMs": 0,
+      "overlapPercent": 0.0,
+      "residualMs": 1,
+      "afterLastCallMs": 1,
+      "afterLastCallToKeyObservationMs": 0,
+      "multipleRenderCalls": false,
+      "renders": [],
+      "calls": [],
+      "spans": [
+        {
+          "ms": null,
+          "name": "dom:keydown",
+          "at": 0
+        },
+        {
+          "ms": null,
+          "name": "ime:keyDown",
+          "at": 0
+        },
+        {
+          "ms": null,
+          "name": "dom:beforeinput",
+          "at": 0
+        },
+        {
+          "ms": null,
+          "name": "dom:input",
+          "at": 1
+        }
+      ],
+      "busy": [
+        [
+          -226,
+          30
+        ],
+        [
+          -112,
+          36
+        ],
+        [
+          -76,
+          63
+        ],
+        [
+          0,
+          113
+        ]
+      ],
+      "classification": "residual UNVERIFIED"
+    },
+    {
+      "trial": 2,
+      "deliveryMs": 147,
+      "keyToObservedMs": 145,
+      "observedToInputMs": 2,
+      "callsUnionMs": 145,
+      "renderUnionMs": 145,
+      "overlapPercent": 98.63945578231292,
+      "residualMs": 2,
+      "afterLastCallMs": 2,
+      "afterLastCallToKeyObservationMs": 0,
+      "multipleRenderCalls": false,
+      "renders": [
+        {
+          "atMs": -8,
+          "ms": 153,
+          "outcome": "COMPLETE",
+          "diagnostic": null
+        }
+      ],
+      "calls": [
+        {
+          "name": "canvasReadback",
+          "atMs": 143,
+          "ms": 1
+        },
+        {
+          "name": "canvasVisibleDraw",
+          "atMs": 145,
+          "ms": 0
+        },
+        {
+          "name": "pollRenderJob",
+          "atMs": -8,
+          "ms": 153
+        },
+        {
+          "name": "adapterRenderRequest",
+          "atMs": -8,
+          "ms": 153
+        }
+      ],
+      "spans": [
+        {
+          "ms": null,
+          "name": "dom:keydown",
+          "at": 146
+        },
+        {
+          "ms": null,
+          "name": "ime:keyDown",
+          "at": 146
+        },
+        {
+          "ms": null,
+          "name": "dom:beforeinput",
+          "at": 146
+        },
+        {
+          "ms": null,
+          "name": "dom:input",
+          "at": 147
+        }
+      ],
+      "busy": [
+        [
+          -468,
+          18
+        ],
+        [
+          -450,
+          39
+        ],
+        [
+          -411,
+          123
+        ],
+        [
+          -203,
+          14
+        ],
+        [
+          -189,
+          48
+        ],
+        [
+          -141,
+          20
+        ],
+        [
+          -121,
+          22
+        ],
+        [
+          -99,
+          28
+        ],
+        [
+          -64,
+          16
+        ],
+        [
+          -48,
+          18
+        ],
+        [
+          -24,
+          11
+        ],
+        [
+          -8,
+          212
+        ]
+      ],
+      "classification": "associated >=95%"
+    },
+    {
+      "trial": 3,
+      "deliveryMs": 3,
+      "keyToObservedMs": 2,
+      "observedToInputMs": 1,
+      "callsUnionMs": 0,
+      "renderUnionMs": 0,
+      "overlapPercent": 0.0,
+      "residualMs": 3,
+      "afterLastCallMs": 3,
+      "afterLastCallToKeyObservationMs": 2,
+      "multipleRenderCalls": false,
+      "renders": [],
+      "calls": [],
+      "spans": [
+        {
+          "ms": null,
+          "name": "rhwp:surface-effect",
+          "at": 1
+        },
+        {
+          "ms": null,
+          "name": "dom:keydown",
+          "at": 2
+        },
+        {
+          "ms": null,
+          "name": "ime:keyDown",
+          "at": 2
+        },
+        {
+          "ms": null,
+          "name": "dom:beforeinput",
+          "at": 2
+        },
+        {
+          "ms": null,
+          "name": "dom:input",
+          "at": 3
+        }
+      ],
+      "busy": [
+        [
+          -685,
+          212
+        ],
+        [
+          -378,
+          60
+        ],
+        [
+          -318,
+          36
+        ],
+        [
+          -188,
+          43
+        ],
+        [
+          -145,
+          9
+        ],
+        [
+          -136,
+          21
+        ],
+        [
+          -115,
+          20
+        ],
+        [
+          -95,
+          28
+        ],
+        [
+          -67,
+          13
+        ],
+        [
+          -53,
+          15
+        ],
+        [
+          -33,
+          14
+        ],
+        [
+          -13,
+          10
+        ],
+        [
+          -3,
+          63
+        ]
+      ],
+      "classification": "residual UNVERIFIED"
+    },
+    {
+      "trial": 4,
+      "deliveryMs": 5,
+      "keyToObservedMs": 4,
+      "observedToInputMs": 1,
+      "callsUnionMs": 0,
+      "renderUnionMs": 0,
+      "overlapPercent": 0.0,
+      "residualMs": 5,
+      "afterLastCallMs": 5,
+      "afterLastCallToKeyObservationMs": 4,
+      "multipleRenderCalls": false,
+      "renders": [],
+      "calls": [],
+      "spans": [
+        {
+          "ms": null,
+          "name": "rhwp:surface-render",
+          "at": 1
+        },
+        {
+          "ms": null,
+          "name": "rhwp:surface-render",
+          "at": 2
+        },
+        {
+          "ms": null,
+          "name": "rhwp:surface-effect",
+          "at": 4
+        },
+        {
+          "ms": null,
+          "name": "dom:keydown",
+          "at": 4
+        },
+        {
+          "ms": null,
+          "name": "ime:keyDown",
+          "at": 4
+        },
+        {
+          "ms": null,
+          "name": "dom:beforeinput",
+          "at": 5
+        },
+        {
+          "ms": null,
+          "name": "dom:input",
+          "at": 5
+        }
+      ],
+      "busy": [
+        [
+          -404,
+          57
+        ],
+        [
+          -243,
+          27
+        ],
+        [
+          -197,
+          41
+        ],
+        [
+          -156,
+          13
+        ],
+        [
+          -143,
+          19
+        ],
+        [
+          -124,
+          26
+        ],
+        [
+          -98,
+          24
+        ],
+        [
+          -74,
+          20
+        ],
+        [
+          -47,
+          10
+        ],
+        [
+          -31,
+          14
+        ],
+        [
+          -11,
+          10
+        ],
+        [
+          -1,
+          26
+        ],
+        [
+          25,
+          44
+        ]
+      ],
+      "classification": "residual UNVERIFIED"
+    },
+    {
+      "trial": 5,
+      "deliveryMs": 146,
+      "keyToObservedMs": 145,
+      "observedToInputMs": 1,
+      "callsUnionMs": 144,
+      "renderUnionMs": 144,
+      "overlapPercent": 98.63013698630137,
+      "residualMs": 2,
+      "afterLastCallMs": 2,
+      "afterLastCallToKeyObservationMs": 1,
+      "multipleRenderCalls": false,
+      "renders": [
+        {
+          "atMs": -6,
+          "ms": 150,
+          "outcome": "COMPLETE",
+          "diagnostic": null
+        }
+      ],
+      "calls": [
+        {
+          "name": "canvasReadback",
+          "atMs": 142,
+          "ms": 2
+        },
+        {
+          "name": "canvasVisibleDraw",
+          "atMs": 144,
+          "ms": 0
+        },
+        {
+          "name": "pollRenderJob",
+          "atMs": -6,
+          "ms": 150
+        },
+        {
+          "name": "adapterRenderRequest",
+          "atMs": -6,
+          "ms": 150
+        }
+      ],
+      "spans": [
+        {
+          "ms": null,
+          "name": "dom:keydown",
+          "at": 145
+        },
+        {
+          "ms": null,
+          "name": "ime:keyDown",
+          "at": 145
+        },
+        {
+          "ms": null,
+          "name": "dom:beforeinput",
+          "at": 145
+        },
+        {
+          "ms": null,
+          "name": "dom:input",
+          "at": 146
+        }
+      ],
+      "busy": [
+        [
+          -407,
+          58
+        ],
+        [
+          -241,
+          26
+        ],
+        [
+          -199,
+          41
+        ],
+        [
+          -158,
+          11
+        ],
+        [
+          -147,
+          23
+        ],
+        [
+          -124,
+          20
+        ],
+        [
+          -104,
+          29
+        ],
+        [
+          -75,
+          18
+        ],
+        [
+          -38,
+          10
+        ],
+        [
+          -22,
+          10
+        ],
+        [
+          -6,
+          172
+        ],
+        [
+          166,
+          73
+        ]
+      ],
+      "classification": "associated >=95%"
+    },
+    {
+      "trial": 6,
+      "deliveryMs": 146,
+      "keyToObservedMs": 145,
+      "observedToInputMs": 1,
+      "callsUnionMs": 144,
+      "renderUnionMs": 144,
+      "overlapPercent": 98.63013698630137,
+      "residualMs": 2,
+      "afterLastCallMs": 2,
+      "afterLastCallToKeyObservationMs": 1,
+      "multipleRenderCalls": false,
+      "renders": [
+        {
+          "atMs": -10,
+          "ms": 154,
+          "outcome": "COMPLETE",
+          "diagnostic": null
+        }
+      ],
+      "calls": [
+        {
+          "name": "canvasReadback",
+          "atMs": 142,
+          "ms": 2
+        },
+        {
+          "name": "canvasVisibleDraw",
+          "atMs": 144,
+          "ms": 0
+        },
+        {
+          "name": "pollRenderJob",
+          "atMs": -10,
+          "ms": 154
+        },
+        {
+          "name": "adapterRenderRequest",
+          "atMs": -10,
+          "ms": 154
+        }
+      ],
+      "spans": [
+        {
+          "ms": null,
+          "name": "dom:keydown",
+          "at": 145
+        },
+        {
+          "ms": null,
+          "name": "ime:keyDown",
+          "at": 145
+        },
+        {
+          "ms": null,
+          "name": "dom:beforeinput",
+          "at": 146
+        },
+        {
+          "ms": null,
+          "name": "dom:input",
+          "at": 146
+        }
+      ],
+      "busy": [
+        [
+          -524,
+          73
+        ],
+        [
+          -397,
+          86
+        ],
+        [
+          -311,
+          60
+        ],
+        [
+          -191,
+          49
+        ],
+        [
+          -142,
+          14
+        ],
+        [
+          -128,
+          24
+        ],
+        [
+          -104,
+          29
+        ],
+        [
+          -75,
+          28
+        ],
+        [
+          -47,
+          16
+        ],
+        [
+          -16,
+          191
+        ],
+        [
+          175,
+          42
+        ]
+      ],
+      "classification": "associated >=95%"
+    },
+    {
+      "trial": 7,
+      "deliveryMs": 4,
+      "keyToObservedMs": 3,
+      "observedToInputMs": 1,
+      "callsUnionMs": 0,
+      "renderUnionMs": 0,
+      "overlapPercent": 0.0,
+      "residualMs": 4,
+      "afterLastCallMs": 4,
+      "afterLastCallToKeyObservationMs": 3,
+      "multipleRenderCalls": false,
+      "renders": [],
+      "calls": [],
+      "spans": [
+        {
+          "ms": null,
+          "name": "rhwp:surface-render",
+          "at": 0
+        },
+        {
+          "ms": null,
+          "name": "rhwp:surface-render",
+          "at": 1
+        },
+        {
+          "ms": null,
+          "name": "rhwp:surface-effect",
+          "at": 3
+        },
+        {
+          "ms": null,
+          "name": "dom:keydown",
+          "at": 3
+        },
+        {
+          "ms": null,
+          "name": "ime:keyDown",
+          "at": 3
+        },
+        {
+          "ms": null,
+          "name": "dom:beforeinput",
+          "at": 4
+        },
+        {
+          "ms": null,
+          "name": "dom:input",
+          "at": 4
+        }
+      ],
+      "busy": [
+        [
+          -477,
+          29
+        ],
+        [
+          -448,
+          71
+        ],
+        [
+          -286,
+          43
+        ],
+        [
+          -240,
+          22
+        ],
+        [
+          -218,
+          25
+        ],
+        [
+          -193,
+          23
+        ],
+        [
+          -170,
+          154
+        ],
+        [
+          -2,
+          31
+        ],
+        [
+          29,
+          50
+        ]
+      ],
+      "classification": "residual UNVERIFIED"
+    },
+    {
+      "trial": 8,
+      "deliveryMs": 156,
+      "keyToObservedMs": 154,
+      "observedToInputMs": 2,
+      "callsUnionMs": 154,
+      "renderUnionMs": 154,
+      "overlapPercent": 98.71794871794872,
+      "residualMs": 2,
+      "afterLastCallMs": 2,
+      "afterLastCallToKeyObservationMs": 0,
+      "multipleRenderCalls": false,
+      "renders": [
+        {
+          "atMs": -4,
+          "ms": 158,
+          "outcome": "COMPLETE",
+          "diagnostic": null
+        }
+      ],
+      "calls": [
+        {
+          "name": "canvasReadback",
+          "atMs": 152,
+          "ms": 1
+        },
+        {
+          "name": "canvasVisibleDraw",
+          "atMs": 154,
+          "ms": 0
+        },
+        {
+          "name": "pollRenderJob",
+          "atMs": -4,
+          "ms": 158
+        },
+        {
+          "name": "adapterRenderRequest",
+          "atMs": -4,
+          "ms": 158
+        }
+      ],
+      "spans": [
+        {
+          "ms": null,
+          "name": "dom:keydown",
+          "at": 154
+        },
+        {
+          "ms": null,
+          "name": "ime:keyDown",
+          "at": 154
+        },
+        {
+          "ms": null,
+          "name": "dom:beforeinput",
+          "at": 155
+        },
+        {
+          "ms": null,
+          "name": "dom:input",
+          "at": 156
+        }
+      ],
+      "busy": [
+        [
+          -505,
+          26
+        ],
+        [
+          -479,
+          76
+        ],
+        [
+          -314,
+          52
+        ],
+        [
+          -262,
+          15
+        ],
+        [
+          -247,
+          29
+        ],
+        [
+          -218,
+          26
+        ],
+        [
+          -192,
+          181
+        ],
+        [
+          -11,
+          237
+        ]
+      ],
+      "classification": "associated >=95%"
+    },
+    {
+      "trial": 9,
+      "deliveryMs": 139,
+      "keyToObservedMs": 138,
+      "observedToInputMs": 1,
+      "callsUnionMs": 137,
+      "renderUnionMs": 137,
+      "overlapPercent": 98.56115107913669,
+      "residualMs": 2,
+      "afterLastCallMs": 2,
+      "afterLastCallToKeyObservationMs": 1,
+      "multipleRenderCalls": false,
+      "renders": [
+        {
+          "atMs": -5,
+          "ms": 142,
+          "outcome": "COMPLETE",
+          "diagnostic": null
+        }
+      ],
+      "calls": [
+        {
+          "name": "canvasReadback",
+          "atMs": 136,
+          "ms": 1
+        },
+        {
+          "name": "canvasVisibleDraw",
+          "atMs": 137,
+          "ms": 0
+        },
+        {
+          "name": "pollRenderJob",
+          "atMs": -5,
+          "ms": 142
+        },
+        {
+          "name": "adapterRenderRequest",
+          "atMs": -6,
+          "ms": 143
+        }
+      ],
+      "spans": [
+        {
+          "ms": null,
+          "name": "dom:keydown",
+          "at": 138
+        },
+        {
+          "ms": null,
+          "name": "ime:keyDown",
+          "at": 138
+        },
+        {
+          "ms": null,
+          "name": "dom:beforeinput",
+          "at": 139
+        },
+        {
+          "ms": null,
+          "name": "dom:input",
+          "at": 139
+        }
+      ],
+      "busy": [
+        [
+          -518,
+          34
+        ],
+        [
+          -460,
+          73
+        ],
+        [
+          -387,
+          10
+        ],
+        [
+          -262,
+          53
+        ],
+        [
+          -209,
+          18
+        ],
+        [
+          -191,
+          23
+        ],
+        [
+          -168,
+          156
+        ],
+        [
+          -12,
+          223
+        ]
+      ],
+      "classification": "associated >=95%"
+    },
+    {
+      "trial": 10,
+      "deliveryMs": 55,
+      "keyToObservedMs": 54,
+      "observedToInputMs": 1,
+      "callsUnionMs": 54,
+      "renderUnionMs": 54,
+      "overlapPercent": 98.18181818181819,
+      "residualMs": 1,
+      "afterLastCallMs": 1,
+      "afterLastCallToKeyObservationMs": 0,
+      "multipleRenderCalls": false,
+      "renders": [
+        {
+          "atMs": -7,
+          "ms": 61,
+          "outcome": "COMPLETE",
+          "diagnostic": null
+        }
+      ],
+      "calls": [
+        {
+          "name": "canvasReadback",
+          "atMs": 52,
+          "ms": 1
+        },
+        {
+          "name": "canvasVisibleDraw",
+          "atMs": 53,
+          "ms": 0
+        },
+        {
+          "name": "pollRenderJob",
+          "atMs": -7,
+          "ms": 61
+        },
+        {
+          "name": "adapterRenderRequest",
+          "atMs": -7,
+          "ms": 61
+        }
+      ],
+      "spans": [
+        {
+          "ms": null,
+          "name": "dom:keydown",
+          "at": 54
+        },
+        {
+          "ms": null,
+          "name": "ime:keyDown",
+          "at": 54
+        },
+        {
+          "ms": null,
+          "name": "dom:beforeinput",
+          "at": 55
+        },
+        {
+          "ms": null,
+          "name": "dom:input",
+          "at": 55
+        }
+      ],
+      "busy": [
+        [
+          -608,
+          109
+        ],
+        [
+          -480,
+          100
+        ],
+        [
+          -380,
+          9
+        ],
+        [
+          -254,
+          43
+        ],
+        [
+          -211,
+          22
+        ],
+        [
+          -189,
+          168
+        ],
+        [
+          -21,
+          102
+        ],
+        [
+          81,
+          53
+        ]
+      ],
+      "classification": "associated >=95%"
+    },
+    {
+      "trial": 11,
+      "deliveryMs": 50,
+      "keyToObservedMs": 49,
+      "observedToInputMs": 1,
+      "callsUnionMs": 49,
+      "renderUnionMs": 49,
+      "overlapPercent": 98.0,
+      "residualMs": 1,
+      "afterLastCallMs": 1,
+      "afterLastCallToKeyObservationMs": 0,
+      "multipleRenderCalls": false,
+      "renders": [
+        {
+          "atMs": -13,
+          "ms": 62,
+          "outcome": "COMPLETE",
+          "diagnostic": null
+        }
+      ],
+      "calls": [
+        {
+          "name": "canvasReadback",
+          "atMs": 46,
+          "ms": 1
+        },
+        {
+          "name": "canvasVisibleDraw",
+          "atMs": 48,
+          "ms": 0
+        },
+        {
+          "name": "pollRenderJob",
+          "atMs": -13,
+          "ms": 62
+        },
+        {
+          "name": "adapterRenderRequest",
+          "atMs": -13,
+          "ms": 62
+        }
+      ],
+      "spans": [
+        {
+          "ms": null,
+          "name": "dom:keydown",
+          "at": 49
+        },
+        {
+          "ms": null,
+          "name": "ime:keyDown",
+          "at": 49
+        },
+        {
+          "ms": null,
+          "name": "dom:beforeinput",
+          "at": 50
+        },
+        {
+          "ms": null,
+          "name": "dom:input",
+          "at": 50
+        }
+      ],
+      "busy": [
+        [
+          -437,
+          69
+        ],
+        [
+          -368,
+          37
+        ],
+        [
+          -246,
+          42
+        ],
+        [
+          -197,
+          169
+        ],
+        [
+          -28,
+          99
+        ],
+        [
+          71,
+          45
+        ]
+      ],
+      "classification": "associated >=95%"
+    },
+    {
+      "trial": 12,
+      "deliveryMs": 11,
+      "keyToObservedMs": 9,
+      "observedToInputMs": 2,
+      "callsUnionMs": 0,
+      "renderUnionMs": 0,
+      "overlapPercent": 0.0,
+      "residualMs": 11,
+      "afterLastCallMs": 2,
+      "afterLastCallToKeyObservationMs": 0,
+      "multipleRenderCalls": false,
+      "renders": [],
+      "calls": [
+        {
+          "name": "adapterRenderRequest",
+          "atMs": 9,
+          "ms": 0
+        }
+      ],
+      "spans": [
+        {
+          "ms": null,
+          "name": "rhwp:surface-render",
+          "at": 6
+        },
+        {
+          "ms": null,
+          "name": "rhwp:surface-render",
+          "at": 6
+        },
+        {
+          "ms": null,
+          "name": "rhwp:surface-effect",
+          "at": 9
+        },
+        {
+          "ms": 0,
+          "name": "rhwp:surface-first-draw",
+          "at": 9
+        },
+        {
+          "ms": null,
+          "name": "dom:keydown",
+          "at": 9
+        },
+        {
+          "ms": null,
+          "name": "ime:keyDown",
+          "at": 9
+        },
+        {
+          "ms": null,
+          "name": "dom:beforeinput",
+          "at": 10
+        },
+        {
+          "ms": null,
+          "name": "dom:input",
+          "at": 11
+        }
+      ],
+      "busy": [
+        [
+          -471,
+          27
+        ],
+        [
+          -383,
+          41
+        ],
+        [
+          -330,
+          67
+        ],
+        [
+          -263,
+          28
+        ],
+        [
+          -235,
+          20
+        ],
+        [
+          -215,
+          204
+        ],
+        [
+          -11,
+          109
+        ]
+      ],
+      "classification": "residual UNVERIFIED"
+    },
+    {
+      "trial": 13,
+      "deliveryMs": 173,
+      "keyToObservedMs": 171,
+      "observedToInputMs": 2,
+      "callsUnionMs": 139,
+      "renderUnionMs": 139,
+      "overlapPercent": 80.34682080924856,
+      "residualMs": 34,
+      "afterLastCallMs": 31,
+      "afterLastCallToKeyObservationMs": 29,
+      "multipleRenderCalls": false,
+      "renders": [
+        {
+          "atMs": 3,
+          "ms": 139,
+          "outcome": "COMPLETE",
+          "diagnostic": null
+        }
+      ],
+      "calls": [
+        {
+          "name": "adapterRenderRequest",
+          "atMs": 3,
+          "ms": 0
+        },
+        {
+          "name": "beginRenderJob",
+          "atMs": 3,
+          "ms": 0
+        },
+        {
+          "name": "canvasVisibleDraw",
+          "atMs": 142,
+          "ms": 0
+        },
+        {
+          "name": "pollRenderJob",
+          "atMs": 3,
+          "ms": 139
+        }
+      ],
+      "spans": [
+        {
+          "ms": null,
+          "name": "rhwp:surface-render",
+          "at": 0
+        },
+        {
+          "ms": null,
+          "name": "rhwp:surface-effect",
+          "at": 2
+        },
+        {
+          "ms": null,
+          "name": "dom:keydown",
+          "at": 171
+        },
+        {
+          "ms": null,
+          "name": "ime:keyDown",
+          "at": 172
+        },
+        {
+          "ms": null,
+          "name": "dom:beforeinput",
+          "at": 172
+        },
+        {
+          "ms": null,
+          "name": "dom:input",
+          "at": 173
+        }
+      ],
+      "busy": [
+        [
+          -563,
+          81
+        ],
+        [
+          -474,
+          15
+        ],
+        [
+          -458,
+          15
+        ],
+        [
+          -360,
+          121
+        ],
+        [
+          -239,
+          15
+        ],
+        [
+          -224,
+          27
+        ],
+        [
+          -197,
+          27
+        ],
+        [
+          -170,
+          166
+        ],
+        [
+          -4,
+          327
+        ]
+      ],
+      "classification": "residual UNVERIFIED"
+    },
+    {
+      "trial": 14,
+      "deliveryMs": 111,
+      "keyToObservedMs": 110,
+      "observedToInputMs": 1,
+      "callsUnionMs": 110,
+      "renderUnionMs": 110,
+      "overlapPercent": 99.09909909909909,
+      "residualMs": 1,
+      "afterLastCallMs": 1,
+      "afterLastCallToKeyObservationMs": 0,
+      "multipleRenderCalls": false,
+      "renders": [
+        {
+          "atMs": -11,
+          "ms": 121,
+          "outcome": "COMPLETE",
+          "diagnostic": null
+        }
+      ],
+      "calls": [
+        {
+          "name": "canvasReadback",
+          "atMs": 108,
+          "ms": 1
+        },
+        {
+          "name": "canvasVisibleDraw",
+          "atMs": 109,
+          "ms": 0
+        },
+        {
+          "name": "pollRenderJob",
+          "atMs": -11,
+          "ms": 121
+        },
+        {
+          "name": "adapterRenderRequest",
+          "atMs": -12,
+          "ms": 122
+        }
+      ],
+      "spans": [
+        {
+          "ms": null,
+          "name": "dom:keydown",
+          "at": 110
+        },
+        {
+          "ms": null,
+          "name": "ime:keyDown",
+          "at": 110
+        },
+        {
+          "ms": null,
+          "name": "dom:beforeinput",
+          "at": 111
+        },
+        {
+          "ms": null,
+          "name": "dom:input",
+          "at": 111
+        }
+      ],
+      "busy": [
+        [
+          -543,
+          96
+        ],
+        [
+          -447,
+          38
+        ],
+        [
+          -292,
+          9
+        ],
+        [
+          -283,
+          73
+        ],
+        [
+          -210,
+          12
+        ],
+        [
+          -198,
+          19
+        ],
+        [
+          -179,
+          167
+        ],
+        [
+          -12,
+          174
+        ]
+      ],
+      "classification": "associated >=95%"
+    },
+    {
+      "trial": 15,
+      "deliveryMs": 50,
+      "keyToObservedMs": 49,
+      "observedToInputMs": 1,
+      "callsUnionMs": 19,
+      "renderUnionMs": 19,
+      "overlapPercent": 38.0,
+      "residualMs": 31,
+      "afterLastCallMs": 31,
+      "afterLastCallToKeyObservationMs": 30,
+      "multipleRenderCalls": false,
+      "renders": [
+        {
+          "atMs": -8,
+          "ms": 27,
+          "outcome": "COMPLETE",
+          "diagnostic": null
+        }
+      ],
+      "calls": [
+        {
+          "name": "canvasVisibleDraw",
+          "atMs": 17,
+          "ms": 2
+        },
+        {
+          "name": "pollRenderJob",
+          "atMs": -8,
+          "ms": 27
+        }
+      ],
+      "spans": [
+        {
+          "ms": null,
+          "name": "dom:keydown",
+          "at": 49
+        },
+        {
+          "ms": null,
+          "name": "ime:keyDown",
+          "at": 49
+        },
+        {
+          "ms": null,
+          "name": "dom:beforeinput",
+          "at": 49
+        },
+        {
+          "ms": null,
+          "name": "dom:input",
+          "at": 50
+        }
+      ],
+      "busy": [
+        [
+          -525,
+          49
+        ],
+        [
+          -476,
+          42
+        ],
+        [
+          -434,
+          35
+        ],
+        [
+          -279,
+          37
+        ],
+        [
+          -240,
+          52
+        ],
+        [
+          -188,
+          13
+        ],
+        [
+          -175,
+          19
+        ],
+        [
+          -156,
+          143
+        ],
+        [
+          -8,
+          131
+        ]
+      ],
+      "classification": "residual UNVERIFIED"
+    },
+    {
+      "trial": 16,
+      "deliveryMs": 9,
+      "keyToObservedMs": 8,
+      "observedToInputMs": 1,
+      "callsUnionMs": 7,
+      "renderUnionMs": 7,
+      "overlapPercent": 77.77777777777777,
+      "residualMs": 2,
+      "afterLastCallMs": 1,
+      "afterLastCallToKeyObservationMs": 0,
+      "multipleRenderCalls": false,
+      "renders": [
+        {
+          "atMs": 1,
+          "ms": 7,
+          "outcome": "COMPLETE",
+          "diagnostic": null
+        }
+      ],
+      "calls": [
+        {
+          "name": "beginRenderJob",
+          "atMs": 1,
+          "ms": 0
+        },
+        {
+          "name": "canvasReadback",
+          "atMs": 6,
+          "ms": 2
+        },
+        {
+          "name": "canvasVisibleDraw",
+          "atMs": 8,
+          "ms": 0
+        },
+        {
+          "name": "pollRenderJob",
+          "atMs": 1,
+          "ms": 7
+        },
+        {
+          "name": "adapterRenderRequest",
+          "atMs": 1,
+          "ms": 7
+        }
+      ],
+      "spans": [
+        {
+          "ms": null,
+          "name": "rhwp:surface-effect",
+          "at": 0
+        },
+        {
+          "ms": null,
+          "name": "dom:keydown",
+          "at": 8
+        },
+        {
+          "ms": null,
+          "name": "ime:keyDown",
+          "at": 8
+        },
+        {
+          "ms": null,
+          "name": "dom:beforeinput",
+          "at": 9
+        },
+        {
+          "ms": null,
+          "name": "dom:input",
+          "at": 9
+        }
+      ],
+      "busy": [
+        [
+          -449,
+          78
+        ],
+        [
+          -371,
+          34
+        ],
+        [
+          -251,
+          40
+        ],
+        [
+          -211,
+          10
+        ],
+        [
+          -201,
+          175
+        ],
+        [
+          -26,
+          22
+        ],
+        [
+          -4,
+          69
+        ],
+        [
+          65,
+          9
+        ]
+      ],
+      "classification": "residual UNVERIFIED"
+    },
+    {
+      "trial": 17,
+      "deliveryMs": 1,
+      "keyToObservedMs": 0,
+      "observedToInputMs": 1,
+      "callsUnionMs": 0,
+      "renderUnionMs": 0,
+      "overlapPercent": 0.0,
+      "residualMs": 1,
+      "afterLastCallMs": 1,
+      "afterLastCallToKeyObservationMs": 0,
+      "multipleRenderCalls": false,
+      "renders": [],
+      "calls": [],
+      "spans": [
+        {
+          "ms": null,
+          "name": "dom:keydown",
+          "at": 0
+        },
+        {
+          "ms": null,
+          "name": "ime:keyDown",
+          "at": 0
+        },
+        {
+          "ms": null,
+          "name": "dom:beforeinput",
+          "at": 1
+        },
+        {
+          "ms": null,
+          "name": "dom:input",
+          "at": 1
+        }
+      ],
+      "busy": [
+        [
+          -400,
+          23
+        ],
+        [
+          -377,
+          42
+        ],
+        [
+          -298,
+          27
+        ],
+        [
+          -221,
+          50
+        ],
+        [
+          -171,
+          13
+        ],
+        [
+          -158,
+          67
+        ],
+        [
+          -91,
+          81
+        ],
+        [
+          0,
+          97
+        ]
+      ],
+      "classification": "residual UNVERIFIED"
+    },
+    {
+      "trial": 18,
+      "deliveryMs": 1,
+      "keyToObservedMs": -1,
+      "observedToInputMs": 2,
+      "callsUnionMs": 0,
+      "renderUnionMs": 0,
+      "overlapPercent": 0.0,
+      "residualMs": 1,
+      "afterLastCallMs": 1,
+      "afterLastCallToKeyObservationMs": 0,
+      "multipleRenderCalls": false,
+      "renders": [],
+      "calls": [],
+      "spans": [
+        {
+          "ms": null,
+          "name": "dom:beforeinput",
+          "at": 0
+        },
+        {
+          "ms": null,
+          "name": "dom:input",
+          "at": 1
+        }
+      ],
+      "busy": [
+        [
+          -517,
+          113
+        ],
+        [
+          -404,
+          33
+        ],
+        [
+          -282,
+          17
+        ],
+        [
+          -265,
+          48
+        ],
+        [
+          -217,
+          12
+        ],
+        [
+          -205,
+          193
+        ],
+        [
+          -1,
+          95
+        ],
+        [
+          94,
+          9
+        ]
+      ],
+      "classification": "residual UNVERIFIED"
+    },
+    {
+      "trial": 19,
+      "deliveryMs": 1,
+      "keyToObservedMs": 0,
+      "observedToInputMs": 1,
+      "callsUnionMs": 0,
+      "renderUnionMs": 0,
+      "overlapPercent": 0.0,
+      "residualMs": 1,
+      "afterLastCallMs": 1,
+      "afterLastCallToKeyObservationMs": 0,
+      "multipleRenderCalls": false,
+      "renders": [],
+      "calls": [],
+      "spans": [
+        {
+          "ms": null,
+          "name": "dom:keydown",
+          "at": 0
+        },
+        {
+          "ms": null,
+          "name": "ime:keyDown",
+          "at": 0
+        },
+        {
+          "ms": null,
+          "name": "dom:beforeinput",
+          "at": 1
+        },
+        {
+          "ms": null,
+          "name": "dom:input",
+          "at": 1
+        }
+      ],
+      "busy": [
+        [
+          -461,
+          94
+        ],
+        [
+          -367,
+          35
+        ],
+        [
+          -243,
+          42
+        ],
+        [
+          -201,
+          12
+        ],
+        [
+          -189,
+          114
+        ],
+        [
+          -75,
+          63
+        ],
+        [
+          -12,
+          70
+        ],
+        [
+          58,
+          9
+        ]
+      ],
+      "classification": "residual UNVERIFIED"
+    },
+    {
+      "trial": 20,
+      "deliveryMs": 4,
+      "keyToObservedMs": 3,
+      "observedToInputMs": 1,
+      "callsUnionMs": 2,
+      "renderUnionMs": 2,
+      "overlapPercent": 50.0,
+      "residualMs": 2,
+      "afterLastCallMs": 2,
+      "afterLastCallToKeyObservationMs": 1,
+      "multipleRenderCalls": false,
+      "renders": [
+        {
+          "atMs": -5,
+          "ms": 7,
+          "outcome": "COMPLETE",
+          "diagnostic": null
+        }
+      ],
+      "calls": [
+        {
+          "name": "canvasReadback",
+          "atMs": 0,
+          "ms": 2
+        },
+        {
+          "name": "canvasVisibleDraw",
+          "atMs": 2,
+          "ms": 0
+        },
+        {
+          "name": "pollRenderJob",
+          "atMs": -5,
+          "ms": 7
+        },
+        {
+          "name": "adapterRenderRequest",
+          "atMs": -5,
+          "ms": 7
+        }
+      ],
+      "spans": [
+        {
+          "ms": null,
+          "name": "dom:keydown",
+          "at": 3
+        },
+        {
+          "ms": null,
+          "name": "ime:keyDown",
+          "at": 3
+        },
+        {
+          "ms": null,
+          "name": "dom:beforeinput",
+          "at": 3
+        },
+        {
+          "ms": null,
+          "name": "dom:input",
+          "at": 4
+        }
+      ],
+      "busy": [
+        [
+          -423,
+          61
+        ],
+        [
+          -362,
+          9
+        ],
+        [
+          -310,
+          26
+        ],
+        [
+          -242,
+          129
+        ],
+        [
+          -113,
+          19
+        ],
+        [
+          -94,
+          18
+        ],
+        [
+          -76,
+          65
+        ],
+        [
+          -11,
+          79
+        ],
+        [
+          68,
+          9
+        ]
+      ],
+      "classification": "residual UNVERIFIED"
+    },
+    {
+      "trial": 21,
+      "deliveryMs": 5,
+      "keyToObservedMs": 4,
+      "observedToInputMs": 1,
+      "callsUnionMs": 3,
+      "renderUnionMs": 3,
+      "overlapPercent": 60.0,
+      "residualMs": 2,
+      "afterLastCallMs": 2,
+      "afterLastCallToKeyObservationMs": 1,
+      "multipleRenderCalls": false,
+      "renders": [
+        {
+          "atMs": -10,
+          "ms": 13,
+          "outcome": "COMPLETE",
+          "diagnostic": null
+        }
+      ],
+      "calls": [
+        {
+          "name": "canvasReadback",
+          "atMs": 1,
+          "ms": 2
+        },
+        {
+          "name": "canvasVisibleDraw",
+          "atMs": 3,
+          "ms": 0
+        },
+        {
+          "name": "pollRenderJob",
+          "atMs": -10,
+          "ms": 13
+        },
+        {
+          "name": "adapterRenderRequest",
+          "atMs": -10,
+          "ms": 13
+        }
+      ],
+      "spans": [
+        {
+          "ms": null,
+          "name": "dom:keydown",
+          "at": 4
+        },
+        {
+          "ms": null,
+          "name": "ime:keyDown",
+          "at": 4
+        },
+        {
+          "ms": null,
+          "name": "dom:beforeinput",
+          "at": 4
+        },
+        {
+          "ms": null,
+          "name": "dom:input",
+          "at": 5
+        }
+      ],
+      "busy": [
+        [
+          -385,
+          26
+        ],
+        [
+          -359,
+          43
+        ],
+        [
+          -277,
+          26
+        ],
+        [
+          -151,
+          21
+        ],
+        [
+          -130,
+          17
+        ],
+        [
+          -113,
+          63
+        ],
+        [
+          -50,
+          20
+        ],
+        [
+          -30,
+          15
+        ],
+        [
+          -10,
+          41
+        ],
+        [
+          31,
+          25
+        ]
+      ],
+      "classification": "residual UNVERIFIED"
+    },
+    {
+      "trial": 22,
+      "deliveryMs": 3,
+      "keyToObservedMs": 2,
+      "observedToInputMs": 1,
+      "callsUnionMs": 2,
+      "renderUnionMs": 2,
+      "overlapPercent": 66.66666666666667,
+      "residualMs": 1,
+      "afterLastCallMs": 1,
+      "afterLastCallToKeyObservationMs": 0,
+      "multipleRenderCalls": false,
+      "renders": [
+        {
+          "atMs": -8,
+          "ms": 10,
+          "outcome": "COMPLETE",
+          "diagnostic": null
+        }
+      ],
+      "calls": [
+        {
+          "name": "canvasReadback",
+          "atMs": 0,
+          "ms": 1
+        },
+        {
+          "name": "canvasVisibleDraw",
+          "atMs": 1,
+          "ms": 0
+        },
+        {
+          "name": "pollRenderJob",
+          "atMs": -8,
+          "ms": 10
+        },
+        {
+          "name": "adapterRenderRequest",
+          "atMs": -8,
+          "ms": 10
+        }
+      ],
+      "spans": [
+        {
+          "ms": null,
+          "name": "dom:keydown",
+          "at": 2
+        },
+        {
+          "ms": null,
+          "name": "ime:keyDown",
+          "at": 2
+        },
+        {
+          "ms": null,
+          "name": "dom:beforeinput",
+          "at": 3
+        },
+        {
+          "ms": null,
+          "name": "dom:input",
+          "at": 3
+        }
+      ],
+      "busy": [
+        [
+          -516,
+          25
+        ],
+        [
+          -370,
+          43
+        ],
+        [
+          -327,
+          9
+        ],
+        [
+          -134,
+          21
+        ],
+        [
+          -113,
+          16
+        ],
+        [
+          -97,
+          64
+        ],
+        [
+          -33,
+          20
+        ],
+        [
+          -13,
+          57
+        ]
+      ],
+      "classification": "residual UNVERIFIED"
+    },
+    {
+      "trial": 23,
+      "deliveryMs": 11,
+      "keyToObservedMs": 9,
+      "observedToInputMs": 2,
+      "callsUnionMs": 9,
+      "renderUnionMs": 9,
+      "overlapPercent": 81.81818181818181,
+      "residualMs": 2,
+      "afterLastCallMs": 2,
+      "afterLastCallToKeyObservationMs": 0,
+      "multipleRenderCalls": false,
+      "renders": [
+        {
+          "atMs": -1,
+          "ms": 10,
+          "outcome": "COMPLETE",
+          "diagnostic": null
+        }
+      ],
+      "calls": [
+        {
+          "name": "canvasReadback",
+          "atMs": 7,
+          "ms": 1
+        },
+        {
+          "name": "canvasVisibleDraw",
+          "atMs": 8,
+          "ms": 0
+        },
+        {
+          "name": "pollRenderJob",
+          "atMs": -1,
+          "ms": 10
+        },
+        {
+          "name": "adapterRenderRequest",
+          "atMs": -1,
+          "ms": 10
+        }
+      ],
+      "spans": [
+        {
+          "ms": null,
+          "name": "dom:keydown",
+          "at": 9
+        },
+        {
+          "ms": null,
+          "name": "ime:keyDown",
+          "at": 9
+        },
+        {
+          "ms": null,
+          "name": "dom:beforeinput",
+          "at": 10
+        },
+        {
+          "ms": null,
+          "name": "dom:input",
+          "at": 11
+        }
+      ],
+      "busy": [
+        [
+          -381,
+          24
+        ],
+        [
+          -357,
+          23
+        ],
+        [
+          -140,
+          22
+        ],
+        [
+          -118,
+          36
+        ],
+        [
+          -82,
+          69
+        ],
+        [
+          -13,
+          52
+        ],
+        [
+          39,
+          25
+        ]
+      ],
+      "classification": "residual UNVERIFIED"
+    },
+    {
+      "trial": 24,
+      "deliveryMs": 9,
+      "keyToObservedMs": 7,
+      "observedToInputMs": 2,
+      "callsUnionMs": 7,
+      "renderUnionMs": 7,
+      "overlapPercent": 77.77777777777777,
+      "residualMs": 2,
+      "afterLastCallMs": 2,
+      "afterLastCallToKeyObservationMs": 0,
+      "multipleRenderCalls": false,
+      "renders": [
+        {
+          "atMs": -3,
+          "ms": 10,
+          "outcome": "COMPLETE",
+          "diagnostic": null
+        }
+      ],
+      "calls": [
+        {
+          "name": "canvasReadback",
+          "atMs": 5,
+          "ms": 2
+        },
+        {
+          "name": "canvasVisibleDraw",
+          "atMs": 7,
+          "ms": 0
+        },
+        {
+          "name": "pollRenderJob",
+          "atMs": -3,
+          "ms": 10
+        },
+        {
+          "name": "adapterRenderRequest",
+          "atMs": -3,
+          "ms": 10
+        }
+      ],
+      "spans": [
+        {
+          "ms": null,
+          "name": "dom:keydown",
+          "at": 7
+        },
+        {
+          "ms": null,
+          "name": "ime:keyDown",
+          "at": 7
+        },
+        {
+          "ms": null,
+          "name": "dom:beforeinput",
+          "at": 8
+        },
+        {
+          "ms": null,
+          "name": "dom:input",
+          "at": 9
+        }
+      ],
+      "busy": [
+        [
+          -420,
+          63
+        ],
+        [
+          -357,
+          9
+        ],
+        [
+          -184,
+          9
+        ],
+        [
+          -175,
+          24
+        ],
+        [
+          -151,
+          68
+        ],
+        [
+          -83,
+          68
+        ],
+        [
+          -15,
+          50
+        ],
+        [
+          35,
+          70
+        ]
+      ],
+      "classification": "residual UNVERIFIED"
+    },
+    {
+      "trial": 25,
+      "deliveryMs": 5,
+      "keyToObservedMs": 3,
+      "observedToInputMs": 2,
+      "callsUnionMs": 3,
+      "renderUnionMs": 3,
+      "overlapPercent": 60.0,
+      "residualMs": 2,
+      "afterLastCallMs": 2,
+      "afterLastCallToKeyObservationMs": 0,
+      "multipleRenderCalls": false,
+      "renders": [
+        {
+          "atMs": -10,
+          "ms": 13,
+          "outcome": "COMPLETE",
+          "diagnostic": null
+        }
+      ],
+      "calls": [
+        {
+          "name": "canvasReadback",
+          "atMs": 1,
+          "ms": 2
+        },
+        {
+          "name": "canvasVisibleDraw",
+          "atMs": 3,
+          "ms": 0
+        },
+        {
+          "name": "pollRenderJob",
+          "atMs": -10,
+          "ms": 13
+        },
+        {
+          "name": "adapterRenderRequest",
+          "atMs": -10,
+          "ms": 13
+        }
+      ],
+      "spans": [
+        {
+          "ms": null,
+          "name": "dom:keydown",
+          "at": 3
+        },
+        {
+          "ms": null,
+          "name": "ime:keyDown",
+          "at": 3
+        },
+        {
+          "ms": null,
+          "name": "dom:beforeinput",
+          "at": 4
+        },
+        {
+          "ms": null,
+          "name": "dom:input",
+          "at": 5
+        }
+      ],
+      "busy": [
+        [
+          -555,
+          70
+        ],
+        [
+          -485,
+          28
+        ],
+        [
+          -386,
+          22
+        ],
+        [
+          -364,
+          68
+        ],
+        [
+          -296,
+          26
+        ],
+        [
+          -155,
+          9
+        ],
+        [
+          -146,
+          25
+        ],
+        [
+          -121,
+          17
+        ],
+        [
+          -104,
+          66
+        ],
+        [
+          -38,
+          23
+        ],
+        [
+          -10,
+          78
+        ]
+      ],
+      "classification": "residual UNVERIFIED"
+    },
+    {
+      "trial": 26,
+      "deliveryMs": 6,
+      "keyToObservedMs": 5,
+      "observedToInputMs": 1,
+      "callsUnionMs": 5,
+      "renderUnionMs": 5,
+      "overlapPercent": 83.33333333333333,
+      "residualMs": 1,
+      "afterLastCallMs": 1,
+      "afterLastCallToKeyObservationMs": 0,
+      "multipleRenderCalls": false,
+      "renders": [
+        {
+          "atMs": -10,
+          "ms": 15,
+          "outcome": "COMPLETE",
+          "diagnostic": null
+        }
+      ],
+      "calls": [
+        {
+          "name": "canvasReadback",
+          "atMs": 3,
+          "ms": 1
+        },
+        {
+          "name": "canvasVisibleDraw",
+          "atMs": 4,
+          "ms": 0
+        },
+        {
+          "name": "pollRenderJob",
+          "atMs": -10,
+          "ms": 15
+        },
+        {
+          "name": "adapterRenderRequest",
+          "atMs": -10,
+          "ms": 15
+        }
+      ],
+      "spans": [
+        {
+          "ms": null,
+          "name": "dom:keydown",
+          "at": 5
+        },
+        {
+          "ms": null,
+          "name": "ime:keyDown",
+          "at": 5
+        },
+        {
+          "ms": null,
+          "name": "dom:beforeinput",
+          "at": 6
+        },
+        {
+          "ms": null,
+          "name": "dom:input",
+          "at": 6
+        }
+      ],
+      "busy": [
+        [
+          -548,
+          62
+        ],
+        [
+          -407,
+          61
+        ],
+        [
+          -346,
+          60
+        ],
+        [
+          -165,
+          24
+        ],
+        [
+          -141,
+          17
+        ],
+        [
+          -124,
+          67
+        ],
+        [
+          -57,
+          22
+        ],
+        [
+          -30,
+          15
+        ],
+        [
+          -10,
+          15
+        ],
+        [
+          5,
+          64
+        ]
+      ],
+      "classification": "residual UNVERIFIED"
+    },
+    {
+      "trial": 27,
+      "deliveryMs": 8,
+      "keyToObservedMs": 7,
+      "observedToInputMs": 1,
+      "callsUnionMs": 6,
+      "renderUnionMs": 6,
+      "overlapPercent": 75.0,
+      "residualMs": 2,
+      "afterLastCallMs": 2,
+      "afterLastCallToKeyObservationMs": 1,
+      "multipleRenderCalls": false,
+      "renders": [
+        {
+          "atMs": -9,
+          "ms": 15,
+          "outcome": "COMPLETE",
+          "diagnostic": null
+        }
+      ],
+      "calls": [
+        {
+          "name": "canvasReadback",
+          "atMs": 4,
+          "ms": 2
+        },
+        {
+          "name": "canvasVisibleDraw",
+          "atMs": 6,
+          "ms": 0
+        },
+        {
+          "name": "pollRenderJob",
+          "atMs": -9,
+          "ms": 15
+        },
+        {
+          "name": "adapterRenderRequest",
+          "atMs": -9,
+          "ms": 15
+        }
+      ],
+      "spans": [
+        {
+          "ms": null,
+          "name": "dom:keydown",
+          "at": 7
+        },
+        {
+          "ms": null,
+          "name": "ime:keyDown",
+          "at": 7
+        },
+        {
+          "ms": null,
+          "name": "dom:beforeinput",
+          "at": 7
+        },
+        {
+          "ms": null,
+          "name": "dom:input",
+          "at": 8
+        }
+      ],
+      "busy": [
+        [
+          -539,
+          56
+        ],
+        [
+          -406,
+          26
+        ],
+        [
+          -380,
+          70
+        ],
+        [
+          -310,
+          24
+        ],
+        [
+          -163,
+          24
+        ],
+        [
+          -139,
+          16
+        ],
+        [
+          -123,
+          66
+        ],
+        [
+          -57,
+          22
+        ],
+        [
+          -29,
+          20
+        ],
+        [
+          -9,
+          79
+        ]
+      ],
+      "classification": "residual UNVERIFIED"
+    },
+    {
+      "trial": 28,
+      "deliveryMs": 9,
+      "keyToObservedMs": 8,
+      "observedToInputMs": 1,
+      "callsUnionMs": 8,
+      "renderUnionMs": 8,
+      "overlapPercent": 88.88888888888889,
+      "residualMs": 1,
+      "afterLastCallMs": 1,
+      "afterLastCallToKeyObservationMs": 0,
+      "multipleRenderCalls": false,
+      "renders": [
+        {
+          "atMs": -5,
+          "ms": 13,
+          "outcome": "COMPLETE",
+          "diagnostic": null
+        }
+      ],
+      "calls": [
+        {
+          "name": "canvasReadback",
+          "atMs": 6,
+          "ms": 1
+        },
+        {
+          "name": "canvasVisibleDraw",
+          "atMs": 7,
+          "ms": 1
+        },
+        {
+          "name": "pollRenderJob",
+          "atMs": -5,
+          "ms": 13
+        },
+        {
+          "name": "adapterRenderRequest",
+          "atMs": -6,
+          "ms": 14
+        }
+      ],
+      "spans": [
+        {
+          "ms": null,
+          "name": "dom:keydown",
+          "at": 8
+        },
+        {
+          "ms": null,
+          "name": "ime:keyDown",
+          "at": 8
+        },
+        {
+          "ms": null,
+          "name": "dom:beforeinput",
+          "at": 8
+        },
+        {
+          "ms": null,
+          "name": "dom:input",
+          "at": 9
+        }
+      ],
+      "busy": [
+        [
+          -522,
+          54
+        ],
+        [
+          -384,
+          61
+        ],
+        [
+          -323,
+          60
+        ],
+        [
+          -150,
+          9
+        ],
+        [
+          -141,
+          26
+        ],
+        [
+          -115,
+          16
+        ],
+        [
+          -99,
+          66
+        ],
+        [
+          -33,
+          22
+        ],
+        [
+          -6,
+          79
+        ]
+      ],
+      "classification": "residual UNVERIFIED"
+    },
+    {
+      "trial": 29,
+      "deliveryMs": 5,
+      "keyToObservedMs": 4,
+      "observedToInputMs": 1,
+      "callsUnionMs": 4,
+      "renderUnionMs": 4,
+      "overlapPercent": 80.0,
+      "residualMs": 1,
+      "afterLastCallMs": 1,
+      "afterLastCallToKeyObservationMs": 0,
+      "multipleRenderCalls": false,
+      "renders": [
+        {
+          "atMs": -10,
+          "ms": 14,
+          "outcome": "COMPLETE",
+          "diagnostic": null
+        }
+      ],
+      "calls": [
+        {
+          "name": "canvasReadback",
+          "atMs": 2,
+          "ms": 1
+        },
+        {
+          "name": "canvasVisibleDraw",
+          "atMs": 3,
+          "ms": 1
+        },
+        {
+          "name": "pollRenderJob",
+          "atMs": -10,
+          "ms": 14
+        },
+        {
+          "name": "adapterRenderRequest",
+          "atMs": -10,
+          "ms": 14
+        }
+      ],
+      "spans": [
+        {
+          "ms": null,
+          "name": "dom:keydown",
+          "at": 4
+        },
+        {
+          "ms": null,
+          "name": "ime:keyDown",
+          "at": 4
+        },
+        {
+          "ms": null,
+          "name": "dom:beforeinput",
+          "at": 5
+        },
+        {
+          "ms": null,
+          "name": "dom:input",
+          "at": 5
+        }
+      ],
+      "busy": [
+        [
+          -519,
+          55
+        ],
+        [
+          -389,
+          64
+        ],
+        [
+          -325,
+          61
+        ],
+        [
+          -153,
+          9
+        ],
+        [
+          -144,
+          25
+        ],
+        [
+          -119,
+          14
+        ],
+        [
+          -105,
+          65
+        ],
+        [
+          -40,
+          24
+        ],
+        [
+          -10,
+          53
+        ]
+      ],
+      "classification": "residual UNVERIFIED"
+    },
+    {
+      "trial": 30,
+      "deliveryMs": 3,
+      "keyToObservedMs": 2,
+      "observedToInputMs": 1,
+      "callsUnionMs": 2,
+      "renderUnionMs": 2,
+      "overlapPercent": 66.66666666666667,
+      "residualMs": 1,
+      "afterLastCallMs": 1,
+      "afterLastCallToKeyObservationMs": 0,
+      "multipleRenderCalls": false,
+      "renders": [
+        {
+          "atMs": -8,
+          "ms": 10,
+          "outcome": "COMPLETE",
+          "diagnostic": null
+        }
+      ],
+      "calls": [
+        {
+          "name": "canvasReadback",
+          "atMs": 0,
+          "ms": 2
+        },
+        {
+          "name": "canvasVisibleDraw",
+          "atMs": 2,
+          "ms": 0
+        },
+        {
+          "name": "pollRenderJob",
+          "atMs": -8,
+          "ms": 10
+        },
+        {
+          "name": "adapterRenderRequest",
+          "atMs": -8,
+          "ms": 10
+        }
+      ],
+      "spans": [
+        {
+          "ms": null,
+          "name": "dom:keydown",
+          "at": 2
+        },
+        {
+          "ms": null,
+          "name": "ime:keyDown",
+          "at": 2
+        },
+        {
+          "ms": null,
+          "name": "dom:beforeinput",
+          "at": 3
+        }
+      ],
+      "busy": [
+        [
+          -552,
+          53
+        ],
+        [
+          -369,
+          42
+        ],
+        [
+          -134,
+          20
+        ],
+        [
+          -114,
+          17
+        ],
+        [
+          -97,
+          64
+        ],
+        [
+          -33,
+          20
+        ],
+        [
+          -13,
+          57
+        ],
+        [
+          44,
+          9
+        ]
+      ],
+      "classification": "residual UNVERIFIED"
+    }
+  ],
+  "slowRows": [
+    {
+      "trial": 2,
+      "deliveryMs": 147,
+      "keyToObservedMs": 145,
+      "observedToInputMs": 2,
+      "callsUnionMs": 145,
+      "renderUnionMs": 145,
+      "overlapPercent": 98.63945578231292,
+      "residualMs": 2,
+      "afterLastCallMs": 2,
+      "afterLastCallToKeyObservationMs": 0,
+      "multipleRenderCalls": false,
+      "renders": [
+        {
+          "atMs": -8,
+          "ms": 153,
+          "outcome": "COMPLETE",
+          "diagnostic": null
+        }
+      ],
+      "calls": [
+        {
+          "name": "canvasReadback",
+          "atMs": 143,
+          "ms": 1
+        },
+        {
+          "name": "canvasVisibleDraw",
+          "atMs": 145,
+          "ms": 0
+        },
+        {
+          "name": "pollRenderJob",
+          "atMs": -8,
+          "ms": 153
+        },
+        {
+          "name": "adapterRenderRequest",
+          "atMs": -8,
+          "ms": 153
+        }
+      ],
+      "spans": [
+        {
+          "ms": null,
+          "name": "dom:keydown",
+          "at": 146
+        },
+        {
+          "ms": null,
+          "name": "ime:keyDown",
+          "at": 146
+        },
+        {
+          "ms": null,
+          "name": "dom:beforeinput",
+          "at": 146
+        },
+        {
+          "ms": null,
+          "name": "dom:input",
+          "at": 147
+        }
+      ],
+      "busy": [
+        [
+          -468,
+          18
+        ],
+        [
+          -450,
+          39
+        ],
+        [
+          -411,
+          123
+        ],
+        [
+          -203,
+          14
+        ],
+        [
+          -189,
+          48
+        ],
+        [
+          -141,
+          20
+        ],
+        [
+          -121,
+          22
+        ],
+        [
+          -99,
+          28
+        ],
+        [
+          -64,
+          16
+        ],
+        [
+          -48,
+          18
+        ],
+        [
+          -24,
+          11
+        ],
+        [
+          -8,
+          212
+        ]
+      ],
+      "classification": "associated >=95%"
+    },
+    {
+      "trial": 5,
+      "deliveryMs": 146,
+      "keyToObservedMs": 145,
+      "observedToInputMs": 1,
+      "callsUnionMs": 144,
+      "renderUnionMs": 144,
+      "overlapPercent": 98.63013698630137,
+      "residualMs": 2,
+      "afterLastCallMs": 2,
+      "afterLastCallToKeyObservationMs": 1,
+      "multipleRenderCalls": false,
+      "renders": [
+        {
+          "atMs": -6,
+          "ms": 150,
+          "outcome": "COMPLETE",
+          "diagnostic": null
+        }
+      ],
+      "calls": [
+        {
+          "name": "canvasReadback",
+          "atMs": 142,
+          "ms": 2
+        },
+        {
+          "name": "canvasVisibleDraw",
+          "atMs": 144,
+          "ms": 0
+        },
+        {
+          "name": "pollRenderJob",
+          "atMs": -6,
+          "ms": 150
+        },
+        {
+          "name": "adapterRenderRequest",
+          "atMs": -6,
+          "ms": 150
+        }
+      ],
+      "spans": [
+        {
+          "ms": null,
+          "name": "dom:keydown",
+          "at": 145
+        },
+        {
+          "ms": null,
+          "name": "ime:keyDown",
+          "at": 145
+        },
+        {
+          "ms": null,
+          "name": "dom:beforeinput",
+          "at": 145
+        },
+        {
+          "ms": null,
+          "name": "dom:input",
+          "at": 146
+        }
+      ],
+      "busy": [
+        [
+          -407,
+          58
+        ],
+        [
+          -241,
+          26
+        ],
+        [
+          -199,
+          41
+        ],
+        [
+          -158,
+          11
+        ],
+        [
+          -147,
+          23
+        ],
+        [
+          -124,
+          20
+        ],
+        [
+          -104,
+          29
+        ],
+        [
+          -75,
+          18
+        ],
+        [
+          -38,
+          10
+        ],
+        [
+          -22,
+          10
+        ],
+        [
+          -6,
+          172
+        ],
+        [
+          166,
+          73
+        ]
+      ],
+      "classification": "associated >=95%"
+    },
+    {
+      "trial": 6,
+      "deliveryMs": 146,
+      "keyToObservedMs": 145,
+      "observedToInputMs": 1,
+      "callsUnionMs": 144,
+      "renderUnionMs": 144,
+      "overlapPercent": 98.63013698630137,
+      "residualMs": 2,
+      "afterLastCallMs": 2,
+      "afterLastCallToKeyObservationMs": 1,
+      "multipleRenderCalls": false,
+      "renders": [
+        {
+          "atMs": -10,
+          "ms": 154,
+          "outcome": "COMPLETE",
+          "diagnostic": null
+        }
+      ],
+      "calls": [
+        {
+          "name": "canvasReadback",
+          "atMs": 142,
+          "ms": 2
+        },
+        {
+          "name": "canvasVisibleDraw",
+          "atMs": 144,
+          "ms": 0
+        },
+        {
+          "name": "pollRenderJob",
+          "atMs": -10,
+          "ms": 154
+        },
+        {
+          "name": "adapterRenderRequest",
+          "atMs": -10,
+          "ms": 154
+        }
+      ],
+      "spans": [
+        {
+          "ms": null,
+          "name": "dom:keydown",
+          "at": 145
+        },
+        {
+          "ms": null,
+          "name": "ime:keyDown",
+          "at": 145
+        },
+        {
+          "ms": null,
+          "name": "dom:beforeinput",
+          "at": 146
+        },
+        {
+          "ms": null,
+          "name": "dom:input",
+          "at": 146
+        }
+      ],
+      "busy": [
+        [
+          -524,
+          73
+        ],
+        [
+          -397,
+          86
+        ],
+        [
+          -311,
+          60
+        ],
+        [
+          -191,
+          49
+        ],
+        [
+          -142,
+          14
+        ],
+        [
+          -128,
+          24
+        ],
+        [
+          -104,
+          29
+        ],
+        [
+          -75,
+          28
+        ],
+        [
+          -47,
+          16
+        ],
+        [
+          -16,
+          191
+        ],
+        [
+          175,
+          42
+        ]
+      ],
+      "classification": "associated >=95%"
+    },
+    {
+      "trial": 8,
+      "deliveryMs": 156,
+      "keyToObservedMs": 154,
+      "observedToInputMs": 2,
+      "callsUnionMs": 154,
+      "renderUnionMs": 154,
+      "overlapPercent": 98.71794871794872,
+      "residualMs": 2,
+      "afterLastCallMs": 2,
+      "afterLastCallToKeyObservationMs": 0,
+      "multipleRenderCalls": false,
+      "renders": [
+        {
+          "atMs": -4,
+          "ms": 158,
+          "outcome": "COMPLETE",
+          "diagnostic": null
+        }
+      ],
+      "calls": [
+        {
+          "name": "canvasReadback",
+          "atMs": 152,
+          "ms": 1
+        },
+        {
+          "name": "canvasVisibleDraw",
+          "atMs": 154,
+          "ms": 0
+        },
+        {
+          "name": "pollRenderJob",
+          "atMs": -4,
+          "ms": 158
+        },
+        {
+          "name": "adapterRenderRequest",
+          "atMs": -4,
+          "ms": 158
+        }
+      ],
+      "spans": [
+        {
+          "ms": null,
+          "name": "dom:keydown",
+          "at": 154
+        },
+        {
+          "ms": null,
+          "name": "ime:keyDown",
+          "at": 154
+        },
+        {
+          "ms": null,
+          "name": "dom:beforeinput",
+          "at": 155
+        },
+        {
+          "ms": null,
+          "name": "dom:input",
+          "at": 156
+        }
+      ],
+      "busy": [
+        [
+          -505,
+          26
+        ],
+        [
+          -479,
+          76
+        ],
+        [
+          -314,
+          52
+        ],
+        [
+          -262,
+          15
+        ],
+        [
+          -247,
+          29
+        ],
+        [
+          -218,
+          26
+        ],
+        [
+          -192,
+          181
+        ],
+        [
+          -11,
+          237
+        ]
+      ],
+      "classification": "associated >=95%"
+    },
+    {
+      "trial": 9,
+      "deliveryMs": 139,
+      "keyToObservedMs": 138,
+      "observedToInputMs": 1,
+      "callsUnionMs": 137,
+      "renderUnionMs": 137,
+      "overlapPercent": 98.56115107913669,
+      "residualMs": 2,
+      "afterLastCallMs": 2,
+      "afterLastCallToKeyObservationMs": 1,
+      "multipleRenderCalls": false,
+      "renders": [
+        {
+          "atMs": -5,
+          "ms": 142,
+          "outcome": "COMPLETE",
+          "diagnostic": null
+        }
+      ],
+      "calls": [
+        {
+          "name": "canvasReadback",
+          "atMs": 136,
+          "ms": 1
+        },
+        {
+          "name": "canvasVisibleDraw",
+          "atMs": 137,
+          "ms": 0
+        },
+        {
+          "name": "pollRenderJob",
+          "atMs": -5,
+          "ms": 142
+        },
+        {
+          "name": "adapterRenderRequest",
+          "atMs": -6,
+          "ms": 143
+        }
+      ],
+      "spans": [
+        {
+          "ms": null,
+          "name": "dom:keydown",
+          "at": 138
+        },
+        {
+          "ms": null,
+          "name": "ime:keyDown",
+          "at": 138
+        },
+        {
+          "ms": null,
+          "name": "dom:beforeinput",
+          "at": 139
+        },
+        {
+          "ms": null,
+          "name": "dom:input",
+          "at": 139
+        }
+      ],
+      "busy": [
+        [
+          -518,
+          34
+        ],
+        [
+          -460,
+          73
+        ],
+        [
+          -387,
+          10
+        ],
+        [
+          -262,
+          53
+        ],
+        [
+          -209,
+          18
+        ],
+        [
+          -191,
+          23
+        ],
+        [
+          -168,
+          156
+        ],
+        [
+          -12,
+          223
+        ]
+      ],
+      "classification": "associated >=95%"
+    },
+    {
+      "trial": 10,
+      "deliveryMs": 55,
+      "keyToObservedMs": 54,
+      "observedToInputMs": 1,
+      "callsUnionMs": 54,
+      "renderUnionMs": 54,
+      "overlapPercent": 98.18181818181819,
+      "residualMs": 1,
+      "afterLastCallMs": 1,
+      "afterLastCallToKeyObservationMs": 0,
+      "multipleRenderCalls": false,
+      "renders": [
+        {
+          "atMs": -7,
+          "ms": 61,
+          "outcome": "COMPLETE",
+          "diagnostic": null
+        }
+      ],
+      "calls": [
+        {
+          "name": "canvasReadback",
+          "atMs": 52,
+          "ms": 1
+        },
+        {
+          "name": "canvasVisibleDraw",
+          "atMs": 53,
+          "ms": 0
+        },
+        {
+          "name": "pollRenderJob",
+          "atMs": -7,
+          "ms": 61
+        },
+        {
+          "name": "adapterRenderRequest",
+          "atMs": -7,
+          "ms": 61
+        }
+      ],
+      "spans": [
+        {
+          "ms": null,
+          "name": "dom:keydown",
+          "at": 54
+        },
+        {
+          "ms": null,
+          "name": "ime:keyDown",
+          "at": 54
+        },
+        {
+          "ms": null,
+          "name": "dom:beforeinput",
+          "at": 55
+        },
+        {
+          "ms": null,
+          "name": "dom:input",
+          "at": 55
+        }
+      ],
+      "busy": [
+        [
+          -608,
+          109
+        ],
+        [
+          -480,
+          100
+        ],
+        [
+          -380,
+          9
+        ],
+        [
+          -254,
+          43
+        ],
+        [
+          -211,
+          22
+        ],
+        [
+          -189,
+          168
+        ],
+        [
+          -21,
+          102
+        ],
+        [
+          81,
+          53
+        ]
+      ],
+      "classification": "associated >=95%"
+    },
+    {
+      "trial": 11,
+      "deliveryMs": 50,
+      "keyToObservedMs": 49,
+      "observedToInputMs": 1,
+      "callsUnionMs": 49,
+      "renderUnionMs": 49,
+      "overlapPercent": 98.0,
+      "residualMs": 1,
+      "afterLastCallMs": 1,
+      "afterLastCallToKeyObservationMs": 0,
+      "multipleRenderCalls": false,
+      "renders": [
+        {
+          "atMs": -13,
+          "ms": 62,
+          "outcome": "COMPLETE",
+          "diagnostic": null
+        }
+      ],
+      "calls": [
+        {
+          "name": "canvasReadback",
+          "atMs": 46,
+          "ms": 1
+        },
+        {
+          "name": "canvasVisibleDraw",
+          "atMs": 48,
+          "ms": 0
+        },
+        {
+          "name": "pollRenderJob",
+          "atMs": -13,
+          "ms": 62
+        },
+        {
+          "name": "adapterRenderRequest",
+          "atMs": -13,
+          "ms": 62
+        }
+      ],
+      "spans": [
+        {
+          "ms": null,
+          "name": "dom:keydown",
+          "at": 49
+        },
+        {
+          "ms": null,
+          "name": "ime:keyDown",
+          "at": 49
+        },
+        {
+          "ms": null,
+          "name": "dom:beforeinput",
+          "at": 50
+        },
+        {
+          "ms": null,
+          "name": "dom:input",
+          "at": 50
+        }
+      ],
+      "busy": [
+        [
+          -437,
+          69
+        ],
+        [
+          -368,
+          37
+        ],
+        [
+          -246,
+          42
+        ],
+        [
+          -197,
+          169
+        ],
+        [
+          -28,
+          99
+        ],
+        [
+          71,
+          45
+        ]
+      ],
+      "classification": "associated >=95%"
+    },
+    {
+      "trial": 13,
+      "deliveryMs": 173,
+      "keyToObservedMs": 171,
+      "observedToInputMs": 2,
+      "callsUnionMs": 139,
+      "renderUnionMs": 139,
+      "overlapPercent": 80.34682080924856,
+      "residualMs": 34,
+      "afterLastCallMs": 31,
+      "afterLastCallToKeyObservationMs": 29,
+      "multipleRenderCalls": false,
+      "renders": [
+        {
+          "atMs": 3,
+          "ms": 139,
+          "outcome": "COMPLETE",
+          "diagnostic": null
+        }
+      ],
+      "calls": [
+        {
+          "name": "adapterRenderRequest",
+          "atMs": 3,
+          "ms": 0
+        },
+        {
+          "name": "beginRenderJob",
+          "atMs": 3,
+          "ms": 0
+        },
+        {
+          "name": "canvasVisibleDraw",
+          "atMs": 142,
+          "ms": 0
+        },
+        {
+          "name": "pollRenderJob",
+          "atMs": 3,
+          "ms": 139
+        }
+      ],
+      "spans": [
+        {
+          "ms": null,
+          "name": "rhwp:surface-render",
+          "at": 0
+        },
+        {
+          "ms": null,
+          "name": "rhwp:surface-effect",
+          "at": 2
+        },
+        {
+          "ms": null,
+          "name": "dom:keydown",
+          "at": 171
+        },
+        {
+          "ms": null,
+          "name": "ime:keyDown",
+          "at": 172
+        },
+        {
+          "ms": null,
+          "name": "dom:beforeinput",
+          "at": 172
+        },
+        {
+          "ms": null,
+          "name": "dom:input",
+          "at": 173
+        }
+      ],
+      "busy": [
+        [
+          -563,
+          81
+        ],
+        [
+          -474,
+          15
+        ],
+        [
+          -458,
+          15
+        ],
+        [
+          -360,
+          121
+        ],
+        [
+          -239,
+          15
+        ],
+        [
+          -224,
+          27
+        ],
+        [
+          -197,
+          27
+        ],
+        [
+          -170,
+          166
+        ],
+        [
+          -4,
+          327
+        ]
+      ],
+      "classification": "residual UNVERIFIED"
+    },
+    {
+      "trial": 14,
+      "deliveryMs": 111,
+      "keyToObservedMs": 110,
+      "observedToInputMs": 1,
+      "callsUnionMs": 110,
+      "renderUnionMs": 110,
+      "overlapPercent": 99.09909909909909,
+      "residualMs": 1,
+      "afterLastCallMs": 1,
+      "afterLastCallToKeyObservationMs": 0,
+      "multipleRenderCalls": false,
+      "renders": [
+        {
+          "atMs": -11,
+          "ms": 121,
+          "outcome": "COMPLETE",
+          "diagnostic": null
+        }
+      ],
+      "calls": [
+        {
+          "name": "canvasReadback",
+          "atMs": 108,
+          "ms": 1
+        },
+        {
+          "name": "canvasVisibleDraw",
+          "atMs": 109,
+          "ms": 0
+        },
+        {
+          "name": "pollRenderJob",
+          "atMs": -11,
+          "ms": 121
+        },
+        {
+          "name": "adapterRenderRequest",
+          "atMs": -12,
+          "ms": 122
+        }
+      ],
+      "spans": [
+        {
+          "ms": null,
+          "name": "dom:keydown",
+          "at": 110
+        },
+        {
+          "ms": null,
+          "name": "ime:keyDown",
+          "at": 110
+        },
+        {
+          "ms": null,
+          "name": "dom:beforeinput",
+          "at": 111
+        },
+        {
+          "ms": null,
+          "name": "dom:input",
+          "at": 111
+        }
+      ],
+      "busy": [
+        [
+          -543,
+          96
+        ],
+        [
+          -447,
+          38
+        ],
+        [
+          -292,
+          9
+        ],
+        [
+          -283,
+          73
+        ],
+        [
+          -210,
+          12
+        ],
+        [
+          -198,
+          19
+        ],
+        [
+          -179,
+          167
+        ],
+        [
+          -12,
+          174
+        ]
+      ],
+      "classification": "associated >=95%"
+    },
+    {
+      "trial": 15,
+      "deliveryMs": 50,
+      "keyToObservedMs": 49,
+      "observedToInputMs": 1,
+      "callsUnionMs": 19,
+      "renderUnionMs": 19,
+      "overlapPercent": 38.0,
+      "residualMs": 31,
+      "afterLastCallMs": 31,
+      "afterLastCallToKeyObservationMs": 30,
+      "multipleRenderCalls": false,
+      "renders": [
+        {
+          "atMs": -8,
+          "ms": 27,
+          "outcome": "COMPLETE",
+          "diagnostic": null
+        }
+      ],
+      "calls": [
+        {
+          "name": "canvasVisibleDraw",
+          "atMs": 17,
+          "ms": 2
+        },
+        {
+          "name": "pollRenderJob",
+          "atMs": -8,
+          "ms": 27
+        }
+      ],
+      "spans": [
+        {
+          "ms": null,
+          "name": "dom:keydown",
+          "at": 49
+        },
+        {
+          "ms": null,
+          "name": "ime:keyDown",
+          "at": 49
+        },
+        {
+          "ms": null,
+          "name": "dom:beforeinput",
+          "at": 49
+        },
+        {
+          "ms": null,
+          "name": "dom:input",
+          "at": 50
+        }
+      ],
+      "busy": [
+        [
+          -525,
+          49
+        ],
+        [
+          -476,
+          42
+        ],
+        [
+          -434,
+          35
+        ],
+        [
+          -279,
+          37
+        ],
+        [
+          -240,
+          52
+        ],
+        [
+          -188,
+          13
+        ],
+        [
+          -175,
+          19
+        ],
+        [
+          -156,
+          143
+        ],
+        [
+          -8,
+          131
+        ]
+      ],
+      "classification": "residual UNVERIFIED"
+    }
+  ]
+}

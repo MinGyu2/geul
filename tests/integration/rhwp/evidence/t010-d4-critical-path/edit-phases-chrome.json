@@ -1,0 +1,4419 @@
+{
+  "status": "DIAGNOSTIC_COMPLETE",
+  "official": false,
+  "scope": "Chrome standalone WASM insertText phases; no app handler/history/frame timing",
+  "documents": [
+    {
+      "fixture": "basic-ko.hwpx",
+      "paragraph": 3,
+      "offset": 9,
+      "arms": {
+        "baseline": {
+          "pages": 1,
+          "length": 12,
+          "sections": 1,
+          "paragraphs": [
+            4
+          ],
+          "rows": [
+            {
+              "wallMs": 0,
+              "phases": null
+            },
+            {
+              "wallMs": 0,
+              "phases": null
+            },
+            {
+              "wallMs": 0,
+              "phases": null
+            },
+            {
+              "wallMs": 0,
+              "phases": null
+            },
+            {
+              "wallMs": 0,
+              "phases": null
+            },
+            {
+              "wallMs": 0,
+              "phases": null
+            },
+            {
+              "wallMs": 0,
+              "phases": null
+            },
+            {
+              "wallMs": 0,
+              "phases": null
+            },
+            {
+              "wallMs": 0,
+              "phases": null
+            },
+            {
+              "wallMs": 0,
+              "phases": null
+            },
+            {
+              "wallMs": 0,
+              "phases": null
+            },
+            {
+              "wallMs": 0,
+              "phases": null
+            },
+            {
+              "wallMs": 0,
+              "phases": null
+            },
+            {
+              "wallMs": 0,
+              "phases": null
+            },
+            {
+              "wallMs": 0,
+              "phases": null
+            },
+            {
+              "wallMs": 0,
+              "phases": null
+            },
+            {
+              "wallMs": 0,
+              "phases": null
+            },
+            {
+              "wallMs": 0,
+              "phases": null
+            },
+            {
+              "wallMs": 0,
+              "phases": null
+            },
+            {
+              "wallMs": 0,
+              "phases": null
+            },
+            {
+              "wallMs": 0,
+              "phases": null
+            },
+            {
+              "wallMs": 0,
+              "phases": null
+            },
+            {
+              "wallMs": 0,
+              "phases": null
+            },
+            {
+              "wallMs": 0,
+              "phases": null
+            },
+            {
+              "wallMs": 0,
+              "phases": null
+            },
+            {
+              "wallMs": 0,
+              "phases": null
+            },
+            {
+              "wallMs": 0,
+              "phases": null
+            },
+            {
+              "wallMs": 0,
+              "phases": null
+            },
+            {
+              "wallMs": 0,
+              "phases": null
+            },
+            {
+              "wallMs": 0,
+              "phases": null
+            }
+          ],
+          "wall": {
+            "n": 30,
+            "p50": 0,
+            "p95": 0,
+            "max": 0
+          },
+          "phaseSummary": {}
+        },
+        "phase": {
+          "pages": 1,
+          "length": 12,
+          "sections": 1,
+          "paragraphs": [
+            4
+          ],
+          "rows": [
+            {
+              "wallMs": 0,
+              "phases": [
+                {
+                  "name": "insert.pictureBand",
+                  "at": 192,
+                  "ms": 0
+                },
+                {
+                  "name": "insert.mutation",
+                  "at": 192,
+                  "ms": 0
+                },
+                {
+                  "name": "reflow.paragraph",
+                  "at": 192,
+                  "ms": 0
+                },
+                {
+                  "name": "insert.reflow",
+                  "at": 192,
+                  "ms": 0
+                },
+                {
+                  "name": "insert.sectionVpos",
+                  "at": 192,
+                  "ms": 0
+                },
+                {
+                  "name": "compose.paragraph",
+                  "at": 192,
+                  "ms": 0
+                },
+                {
+                  "name": "insert.compose",
+                  "at": 192,
+                  "ms": 0
+                },
+                {
+                  "name": "paginate.normalize",
+                  "at": 192,
+                  "ms": 0
+                },
+                {
+                  "name": "paginate.pass",
+                  "at": 192,
+                  "ms": 0
+                },
+                {
+                  "name": "paginate.total",
+                  "at": 192,
+                  "ms": 0
+                },
+                {
+                  "name": "insert.pagination",
+                  "at": 192,
+                  "ms": 0
+                },
+                {
+                  "name": "insert.total",
+                  "at": 192,
+                  "ms": 0
+                }
+              ]
+            },
+            {
+              "wallMs": 0,
+              "phases": [
+                {
+                  "name": "insert.pictureBand",
+                  "at": 196,
+                  "ms": 0
+                },
+                {
+                  "name": "insert.mutation",
+                  "at": 196,
+                  "ms": 0
+                },
+                {
+                  "name": "reflow.paragraph",
+                  "at": 196,
+                  "ms": 0
+                },
+                {
+                  "name": "insert.reflow",
+                  "at": 196,
+                  "ms": 0
+                },
+                {
+                  "name": "insert.sectionVpos",
+                  "at": 196,
+                  "ms": 0
+                },
+                {
+                  "name": "compose.paragraph",
+                  "at": 196,
+                  "ms": 0
+                },
+                {
+                  "name": "insert.compose",
+                  "at": 196,
+                  "ms": 0
+                },
+                {
+                  "name": "paginate.normalize",
+                  "at": 196,
+                  "ms": 0
+                },
+                {
+                  "name": "paginate.pass",
+                  "at": 196,
+                  "ms": 0
+                },
+                {
+                  "name": "paginate.total",
+                  "at": 196,
+                  "ms": 0
+                },
+                {
+                  "name": "insert.pagination",
+                  "at": 196,
+                  "ms": 0
+                },
+                {
+                  "name": "insert.total",
+                  "at": 196,
+                  "ms": 0
+                }
+              ]
+            },
+            {
+              "wallMs": 0,
+              "phases": [
+                {
+                  "name": "insert.pictureBand",
+                  "at": 200,
+                  "ms": 0
+                },
+                {
+                  "name": "insert.mutation",
+                  "at": 200,
+                  "ms": 0
+                },
+                {
+                  "name": "reflow.paragraph",
+                  "at": 200,
+                  "ms": 0
+                },
+                {
+                  "name": "insert.reflow",
+                  "at": 200,
+                  "ms": 0
+                },
+                {
+                  "name": "insert.sectionVpos",
+                  "at": 200,
+                  "ms": 0
+                },
+                {
+                  "name": "compose.paragraph",
+                  "at": 200,
+                  "ms": 0
+                },
+                {
+                  "name": "insert.compose",
+                  "at": 200,
+                  "ms": 0
+                },
+                {
+                  "name": "paginate.normalize",
+                  "at": 200,
+                  "ms": 0
+                },
+                {
+                  "name": "paginate.pass",
+                  "at": 200,
+                  "ms": 0
+                },
+                {
+                  "name": "paginate.total",
+                  "at": 200,
+                  "ms": 0
+                },
+                {
+                  "name": "insert.pagination",
+                  "at": 200,
+                  "ms": 0
+                },
+                {
+                  "name": "insert.total",
+                  "at": 200,
+                  "ms": 0
+                }
+              ]
+            },
+            {
+              "wallMs": 0,
+              "phases": [
+                {
+                  "name": "insert.pictureBand",
+                  "at": 204,
+                  "ms": 0
+                },
+                {
+                  "name": "insert.mutation",
+                  "at": 204,
+                  "ms": 0
+                },
+                {
+                  "name": "reflow.paragraph",
+                  "at": 204,
+                  "ms": 0
+                },
+                {
+                  "name": "insert.reflow",
+                  "at": 204,
+                  "ms": 0
+                },
+                {
+                  "name": "insert.sectionVpos",
+                  "at": 204,
+                  "ms": 0
+                },
+                {
+                  "name": "compose.paragraph",
+                  "at": 204,
+                  "ms": 0
+                },
+                {
+                  "name": "insert.compose",
+                  "at": 204,
+                  "ms": 0
+                },
+                {
+                  "name": "paginate.normalize",
+                  "at": 204,
+                  "ms": 0
+                },
+                {
+                  "name": "paginate.pass",
+                  "at": 204,
+                  "ms": 0
+                },
+                {
+                  "name": "paginate.total",
+                  "at": 204,
+                  "ms": 0
+                },
+                {
+                  "name": "insert.pagination",
+                  "at": 204,
+                  "ms": 0
+                },
+                {
+                  "name": "insert.total",
+                  "at": 204,
+                  "ms": 0
+                }
+              ]
+            },
+            {
+              "wallMs": 0,
+              "phases": [
+                {
+                  "name": "insert.pictureBand",
+                  "at": 208,
+                  "ms": 0
+                },
+                {
+                  "name": "insert.mutation",
+                  "at": 208,
+                  "ms": 0
+                },
+                {
+                  "name": "reflow.paragraph",
+                  "at": 208,
+                  "ms": 0
+                },
+                {
+                  "name": "insert.reflow",
+                  "at": 208,
+                  "ms": 0
+                },
+                {
+                  "name": "insert.sectionVpos",
+                  "at": 208,
+                  "ms": 0
+                },
+                {
+                  "name": "compose.paragraph",
+                  "at": 208,
+                  "ms": 0
+                },
+                {
+                  "name": "insert.compose",
+                  "at": 208,
+                  "ms": 0
+                },
+                {
+                  "name": "paginate.normalize",
+                  "at": 208,
+                  "ms": 0
+                },
+                {
+                  "name": "paginate.pass",
+                  "at": 208,
+                  "ms": 0
+                },
+                {
+                  "name": "paginate.total",
+                  "at": 208,
+                  "ms": 0
+                },
+                {
+                  "name": "insert.pagination",
+                  "at": 208,
+                  "ms": 0
+                },
+                {
+                  "name": "insert.total",
+                  "at": 208,
+                  "ms": 0
+                }
+              ]
+            },
+            {
+              "wallMs": 0,
+              "phases": [
+                {
+                  "name": "insert.pictureBand",
+                  "at": 212,
+                  "ms": 0
+                },
+                {
+                  "name": "insert.mutation",
+                  "at": 212,
+                  "ms": 0
+                },
+                {
+                  "name": "reflow.paragraph",
+                  "at": 212,
+                  "ms": 0
+                },
+                {
+                  "name": "insert.reflow",
+                  "at": 212,
+                  "ms": 0
+                },
+                {
+                  "name": "insert.sectionVpos",
+                  "at": 212,
+                  "ms": 0
+                },
+                {
+                  "name": "compose.paragraph",
+                  "at": 212,
+                  "ms": 0
+                },
+                {
+                  "name": "insert.compose",
+                  "at": 212,
+                  "ms": 0
+                },
+                {
+                  "name": "paginate.normalize",
+                  "at": 212,
+                  "ms": 0
+                },
+                {
+                  "name": "paginate.pass",
+                  "at": 212,
+                  "ms": 0
+                },
+                {
+                  "name": "paginate.total",
+                  "at": 212,
+                  "ms": 0
+                },
+                {
+                  "name": "insert.pagination",
+                  "at": 212,
+                  "ms": 0
+                },
+                {
+                  "name": "insert.total",
+                  "at": 212,
+                  "ms": 0
+                }
+              ]
+            },
+            {
+              "wallMs": 0,
+              "phases": [
+                {
+                  "name": "insert.pictureBand",
+                  "at": 216,
+                  "ms": 0
+                },
+                {
+                  "name": "insert.mutation",
+                  "at": 216,
+                  "ms": 0
+                },
+                {
+                  "name": "reflow.paragraph",
+                  "at": 216,
+                  "ms": 0
+                },
+                {
+                  "name": "insert.reflow",
+                  "at": 216,
+                  "ms": 0
+                },
+                {
+                  "name": "insert.sectionVpos",
+                  "at": 216,
+                  "ms": 0
+                },
+                {
+                  "name": "compose.paragraph",
+                  "at": 216,
+                  "ms": 0
+                },
+                {
+                  "name": "insert.compose",
+                  "at": 216,
+                  "ms": 0
+                },
+                {
+                  "name": "paginate.normalize",
+                  "at": 216,
+                  "ms": 0
+                },
+                {
+                  "name": "paginate.pass",
+                  "at": 216,
+                  "ms": 0
+                },
+                {
+                  "name": "paginate.total",
+                  "at": 216,
+                  "ms": 0
+                },
+                {
+                  "name": "insert.pagination",
+                  "at": 216,
+                  "ms": 0
+                },
+                {
+                  "name": "insert.total",
+                  "at": 216,
+                  "ms": 0
+                }
+              ]
+            },
+            {
+              "wallMs": 0,
+              "phases": [
+                {
+                  "name": "insert.pictureBand",
+                  "at": 220,
+                  "ms": 0
+                },
+                {
+                  "name": "insert.mutation",
+                  "at": 220,
+                  "ms": 0
+                },
+                {
+                  "name": "reflow.paragraph",
+                  "at": 220,
+                  "ms": 0
+                },
+                {
+                  "name": "insert.reflow",
+                  "at": 220,
+                  "ms": 0
+                },
+                {
+                  "name": "insert.sectionVpos",
+                  "at": 220,
+                  "ms": 0
+                },
+                {
+                  "name": "compose.paragraph",
+                  "at": 220,
+                  "ms": 0
+                },
+                {
+                  "name": "insert.compose",
+                  "at": 220,
+                  "ms": 0
+                },
+                {
+                  "name": "paginate.normalize",
+                  "at": 220,
+                  "ms": 0
+                },
+                {
+                  "name": "paginate.pass",
+                  "at": 220,
+                  "ms": 0
+                },
+                {
+                  "name": "paginate.total",
+                  "at": 220,
+                  "ms": 0
+                },
+                {
+                  "name": "insert.pagination",
+                  "at": 220,
+                  "ms": 0
+                },
+                {
+                  "name": "insert.total",
+                  "at": 220,
+                  "ms": 0
+                }
+              ]
+            },
+            {
+              "wallMs": 0,
+              "phases": [
+                {
+                  "name": "insert.pictureBand",
+                  "at": 224,
+                  "ms": 0
+                },
+                {
+                  "name": "insert.mutation",
+                  "at": 224,
+                  "ms": 0
+                },
+                {
+                  "name": "reflow.paragraph",
+                  "at": 224,
+                  "ms": 0
+                },
+                {
+                  "name": "insert.reflow",
+                  "at": 224,
+                  "ms": 0
+                },
+                {
+                  "name": "insert.sectionVpos",
+                  "at": 224,
+                  "ms": 0
+                },
+                {
+                  "name": "compose.paragraph",
+                  "at": 224,
+                  "ms": 0
+                },
+                {
+                  "name": "insert.compose",
+                  "at": 224,
+                  "ms": 0
+                },
+                {
+                  "name": "paginate.normalize",
+                  "at": 224,
+                  "ms": 0
+                },
+                {
+                  "name": "paginate.pass",
+                  "at": 224,
+                  "ms": 0
+                },
+                {
+                  "name": "paginate.total",
+                  "at": 224,
+                  "ms": 0
+                },
+                {
+                  "name": "insert.pagination",
+                  "at": 224,
+                  "ms": 0
+                },
+                {
+                  "name": "insert.total",
+                  "at": 224,
+                  "ms": 0
+                }
+              ]
+            },
+            {
+              "wallMs": 0,
+              "phases": [
+                {
+                  "name": "insert.pictureBand",
+                  "at": 228,
+                  "ms": 0
+                },
+                {
+                  "name": "insert.mutation",
+                  "at": 228,
+                  "ms": 0
+                },
+                {
+                  "name": "reflow.paragraph",
+                  "at": 228,
+                  "ms": 0
+                },
+                {
+                  "name": "insert.reflow",
+                  "at": 228,
+                  "ms": 0
+                },
+                {
+                  "name": "insert.sectionVpos",
+                  "at": 228,
+                  "ms": 0
+                },
+                {
+                  "name": "compose.paragraph",
+                  "at": 228,
+                  "ms": 0
+                },
+                {
+                  "name": "insert.compose",
+                  "at": 228,
+                  "ms": 0
+                },
+                {
+                  "name": "paginate.normalize",
+                  "at": 228,
+                  "ms": 0
+                },
+                {
+                  "name": "paginate.pass",
+                  "at": 228,
+                  "ms": 0
+                },
+                {
+                  "name": "paginate.total",
+                  "at": 228,
+                  "ms": 0
+                },
+                {
+                  "name": "insert.pagination",
+                  "at": 228,
+                  "ms": 0
+                },
+                {
+                  "name": "insert.total",
+                  "at": 228,
+                  "ms": 0
+                }
+              ]
+            },
+            {
+              "wallMs": 0,
+              "phases": [
+                {
+                  "name": "insert.pictureBand",
+                  "at": 232,
+                  "ms": 0
+                },
+                {
+                  "name": "insert.mutation",
+                  "at": 232,
+                  "ms": 0
+                },
+                {
+                  "name": "reflow.paragraph",
+                  "at": 232,
+                  "ms": 0
+                },
+                {
+                  "name": "insert.reflow",
+                  "at": 232,
+                  "ms": 0
+                },
+                {
+                  "name": "insert.sectionVpos",
+                  "at": 232,
+                  "ms": 0
+                },
+                {
+                  "name": "compose.paragraph",
+                  "at": 232,
+                  "ms": 0
+                },
+                {
+                  "name": "insert.compose",
+                  "at": 232,
+                  "ms": 0
+                },
+                {
+                  "name": "paginate.normalize",
+                  "at": 232,
+                  "ms": 0
+                },
+                {
+                  "name": "paginate.pass",
+                  "at": 232,
+                  "ms": 0
+                },
+                {
+                  "name": "paginate.total",
+                  "at": 232,
+                  "ms": 0
+                },
+                {
+                  "name": "insert.pagination",
+                  "at": 232,
+                  "ms": 0
+                },
+                {
+                  "name": "insert.total",
+                  "at": 232,
+                  "ms": 0
+                }
+              ]
+            },
+            {
+              "wallMs": 0,
+              "phases": [
+                {
+                  "name": "insert.pictureBand",
+                  "at": 236.09999999403954,
+                  "ms": 0
+                },
+                {
+                  "name": "insert.mutation",
+                  "at": 236.09999999403954,
+                  "ms": 0
+                },
+                {
+                  "name": "reflow.paragraph",
+                  "at": 236.09999999403954,
+                  "ms": 0
+                },
+                {
+                  "name": "insert.reflow",
+                  "at": 236.09999999403954,
+                  "ms": 0
+                },
+                {
+                  "name": "insert.sectionVpos",
+                  "at": 236.09999999403954,
+                  "ms": 0
+                },
+                {
+                  "name": "compose.paragraph",
+                  "at": 236.09999999403954,
+                  "ms": 0
+                },
+                {
+                  "name": "insert.compose",
+                  "at": 236.09999999403954,
+                  "ms": 0
+                },
+                {
+                  "name": "paginate.normalize",
+                  "at": 236.09999999403954,
+                  "ms": 0
+                },
+                {
+                  "name": "paginate.pass",
+                  "at": 236.09999999403954,
+                  "ms": 0
+                },
+                {
+                  "name": "paginate.total",
+                  "at": 236.09999999403954,
+                  "ms": 0
+                },
+                {
+                  "name": "insert.pagination",
+                  "at": 236.09999999403954,
+                  "ms": 0
+                },
+                {
+                  "name": "insert.total",
+                  "at": 236.09999999403954,
+                  "ms": 0
+                }
+              ]
+            },
+            {
+              "wallMs": 0,
+              "phases": [
+                {
+                  "name": "insert.pictureBand",
+                  "at": 240,
+                  "ms": 0
+                },
+                {
+                  "name": "insert.mutation",
+                  "at": 240,
+                  "ms": 0
+                },
+                {
+                  "name": "reflow.paragraph",
+                  "at": 240,
+                  "ms": 0
+                },
+                {
+                  "name": "insert.reflow",
+                  "at": 240,
+                  "ms": 0
+                },
+                {
+                  "name": "insert.sectionVpos",
+                  "at": 240,
+                  "ms": 0
+                },
+                {
+                  "name": "compose.paragraph",
+                  "at": 240,
+                  "ms": 0
+                },
+                {
+                  "name": "insert.compose",
+                  "at": 240,
+                  "ms": 0
+                },
+                {
+                  "name": "paginate.normalize",
+                  "at": 240,
+                  "ms": 0
+                },
+                {
+                  "name": "paginate.pass",
+                  "at": 240,
+                  "ms": 0
+                },
+                {
+                  "name": "paginate.total",
+                  "at": 240,
+                  "ms": 0
+                },
+                {
+                  "name": "insert.pagination",
+                  "at": 240,
+                  "ms": 0
+                },
+                {
+                  "name": "insert.total",
+                  "at": 240,
+                  "ms": 0
+                }
+              ]
+            },
+            {
+              "wallMs": 0,
+              "phases": [
+                {
+                  "name": "insert.pictureBand",
+                  "at": 244,
+                  "ms": 0
+                },
+                {
+                  "name": "insert.mutation",
+                  "at": 244,
+                  "ms": 0
+                },
+                {
+                  "name": "reflow.paragraph",
+                  "at": 244,
+                  "ms": 0
+                },
+                {
+                  "name": "insert.reflow",
+                  "at": 244,
+                  "ms": 0
+                },
+                {
+                  "name": "insert.sectionVpos",
+                  "at": 244,
+                  "ms": 0
+                },
+                {
+                  "name": "compose.paragraph",
+                  "at": 244,
+                  "ms": 0
+                },
+                {
+                  "name": "insert.compose",
+                  "at": 244,
+                  "ms": 0
+                },
+                {
+                  "name": "paginate.normalize",
+                  "at": 244,
+                  "ms": 0
+                },
+                {
+                  "name": "paginate.pass",
+                  "at": 244,
+                  "ms": 0
+                },
+                {
+                  "name": "paginate.total",
+                  "at": 244,
+                  "ms": 0
+                },
+                {
+                  "name": "insert.pagination",
+                  "at": 244,
+                  "ms": 0
+                },
+                {
+                  "name": "insert.total",
+                  "at": 244,
+                  "ms": 0
+                }
+              ]
+            },
+            {
+              "wallMs": 0,
+              "phases": [
+                {
+                  "name": "insert.pictureBand",
+                  "at": 248,
+                  "ms": 0
+                },
+                {
+                  "name": "insert.mutation",
+                  "at": 248,
+                  "ms": 0
+                },
+                {
+                  "name": "reflow.paragraph",
+                  "at": 248,
+                  "ms": 0
+                },
+                {
+                  "name": "insert.reflow",
+                  "at": 248,
+                  "ms": 0
+                },
+                {
+                  "name": "insert.sectionVpos",
+                  "at": 248,
+                  "ms": 0
+                },
+                {
+                  "name": "compose.paragraph",
+                  "at": 248,
+                  "ms": 0
+                },
+                {
+                  "name": "insert.compose",
+                  "at": 248,
+                  "ms": 0
+                },
+                {
+                  "name": "paginate.normalize",
+                  "at": 248,
+                  "ms": 0
+                },
+                {
+                  "name": "paginate.pass",
+                  "at": 248,
+                  "ms": 0
+                },
+                {
+                  "name": "paginate.total",
+                  "at": 248,
+                  "ms": 0
+                },
+                {
+                  "name": "insert.pagination",
+                  "at": 248,
+                  "ms": 0
+                },
+                {
+                  "name": "insert.total",
+                  "at": 248,
+                  "ms": 0
+                }
+              ]
+            },
+            {
+              "wallMs": 0,
+              "phases": [
+                {
+                  "name": "insert.pictureBand",
+                  "at": 252,
+                  "ms": 0
+                },
+                {
+                  "name": "insert.mutation",
+                  "at": 252,
+                  "ms": 0
+                },
+                {
+                  "name": "reflow.paragraph",
+                  "at": 252,
+                  "ms": 0
+                },
+                {
+                  "name": "insert.reflow",
+                  "at": 252,
+                  "ms": 0
+                },
+                {
+                  "name": "insert.sectionVpos",
+                  "at": 252,
+                  "ms": 0
+                },
+                {
+                  "name": "compose.paragraph",
+                  "at": 252,
+                  "ms": 0
+                },
+                {
+                  "name": "insert.compose",
+                  "at": 252,
+                  "ms": 0
+                },
+                {
+                  "name": "paginate.normalize",
+                  "at": 252,
+                  "ms": 0
+                },
+                {
+                  "name": "paginate.pass",
+                  "at": 252,
+                  "ms": 0
+                },
+                {
+                  "name": "paginate.total",
+                  "at": 252,
+                  "ms": 0
+                },
+                {
+                  "name": "insert.pagination",
+                  "at": 252,
+                  "ms": 0
+                },
+                {
+                  "name": "insert.total",
+                  "at": 252,
+                  "ms": 0
+                }
+              ]
+            },
+            {
+              "wallMs": 0,
+              "phases": [
+                {
+                  "name": "insert.pictureBand",
+                  "at": 256,
+                  "ms": 0
+                },
+                {
+                  "name": "insert.mutation",
+                  "at": 256,
+                  "ms": 0
+                },
+                {
+                  "name": "reflow.paragraph",
+                  "at": 256,
+                  "ms": 0
+                },
+                {
+                  "name": "insert.reflow",
+                  "at": 256,
+                  "ms": 0
+                },
+                {
+                  "name": "insert.sectionVpos",
+                  "at": 256,
+                  "ms": 0
+                },
+                {
+                  "name": "compose.paragraph",
+                  "at": 256,
+                  "ms": 0
+                },
+                {
+                  "name": "insert.compose",
+                  "at": 256,
+                  "ms": 0
+                },
+                {
+                  "name": "paginate.normalize",
+                  "at": 256,
+                  "ms": 0
+                },
+                {
+                  "name": "paginate.pass",
+                  "at": 256,
+                  "ms": 0
+                },
+                {
+                  "name": "paginate.total",
+                  "at": 256,
+                  "ms": 0
+                },
+                {
+                  "name": "insert.pagination",
+                  "at": 256,
+                  "ms": 0
+                },
+                {
+                  "name": "insert.total",
+                  "at": 256,
+                  "ms": 0
+                }
+              ]
+            },
+            {
+              "wallMs": 0,
+              "phases": [
+                {
+                  "name": "insert.pictureBand",
+                  "at": 260.09999999403954,
+                  "ms": 0
+                },
+                {
+                  "name": "insert.mutation",
+                  "at": 260.09999999403954,
+                  "ms": 0
+                },
+                {
+                  "name": "reflow.paragraph",
+                  "at": 260.09999999403954,
+                  "ms": 0
+                },
+                {
+                  "name": "insert.reflow",
+                  "at": 260.09999999403954,
+                  "ms": 0
+                },
+                {
+                  "name": "insert.sectionVpos",
+                  "at": 260.09999999403954,
+                  "ms": 0
+                },
+                {
+                  "name": "compose.paragraph",
+                  "at": 260.09999999403954,
+                  "ms": 0
+                },
+                {
+                  "name": "insert.compose",
+                  "at": 260.09999999403954,
+                  "ms": 0
+                },
+                {
+                  "name": "paginate.normalize",
+                  "at": 260.09999999403954,
+                  "ms": 0
+                },
+                {
+                  "name": "paginate.pass",
+                  "at": 260.09999999403954,
+                  "ms": 0
+                },
+                {
+                  "name": "paginate.total",
+                  "at": 260.09999999403954,
+                  "ms": 0
+                },
+                {
+                  "name": "insert.pagination",
+                  "at": 260.09999999403954,
+                  "ms": 0
+                },
+                {
+                  "name": "insert.total",
+                  "at": 260.09999999403954,
+                  "ms": 0
+                }
+              ]
+            },
+            {
+              "wallMs": 0,
+              "phases": [
+                {
+                  "name": "insert.pictureBand",
+                  "at": 264,
+                  "ms": 0
+                },
+                {
+                  "name": "insert.mutation",
+                  "at": 264,
+                  "ms": 0
+                },
+                {
+                  "name": "reflow.paragraph",
+                  "at": 264,
+                  "ms": 0
+                },
+                {
+                  "name": "insert.reflow",
+                  "at": 264,
+                  "ms": 0
+                },
+                {
+                  "name": "insert.sectionVpos",
+                  "at": 264,
+                  "ms": 0
+                },
+                {
+                  "name": "compose.paragraph",
+                  "at": 264,
+                  "ms": 0
+                },
+                {
+                  "name": "insert.compose",
+                  "at": 264,
+                  "ms": 0
+                },
+                {
+                  "name": "paginate.normalize",
+                  "at": 264,
+                  "ms": 0
+                },
+                {
+                  "name": "paginate.pass",
+                  "at": 264,
+                  "ms": 0
+                },
+                {
+                  "name": "paginate.total",
+                  "at": 264,
+                  "ms": 0
+                },
+                {
+                  "name": "insert.pagination",
+                  "at": 264,
+                  "ms": 0
+                },
+                {
+                  "name": "insert.total",
+                  "at": 264,
+                  "ms": 0
+                }
+              ]
+            },
+            {
+              "wallMs": 0,
+              "phases": [
+                {
+                  "name": "insert.pictureBand",
+                  "at": 268,
+                  "ms": 0
+                },
+                {
+                  "name": "insert.mutation",
+                  "at": 268,
+                  "ms": 0
+                },
+                {
+                  "name": "reflow.paragraph",
+                  "at": 268,
+                  "ms": 0
+                },
+                {
+                  "name": "insert.reflow",
+                  "at": 268,
+                  "ms": 0
+                },
+                {
+                  "name": "insert.sectionVpos",
+                  "at": 268,
+                  "ms": 0
+                },
+                {
+                  "name": "compose.paragraph",
+                  "at": 268,
+                  "ms": 0
+                },
+                {
+                  "name": "insert.compose",
+                  "at": 268,
+                  "ms": 0
+                },
+                {
+                  "name": "paginate.normalize",
+                  "at": 268,
+                  "ms": 0
+                },
+                {
+                  "name": "paginate.pass",
+                  "at": 268,
+                  "ms": 0
+                },
+                {
+                  "name": "paginate.total",
+                  "at": 268,
+                  "ms": 0
+                },
+                {
+                  "name": "insert.pagination",
+                  "at": 268,
+                  "ms": 0
+                },
+                {
+                  "name": "insert.total",
+                  "at": 268,
+                  "ms": 0
+                }
+              ]
+            },
+            {
+              "wallMs": 0,
+              "phases": [
+                {
+                  "name": "insert.pictureBand",
+                  "at": 272,
+                  "ms": 0
+                },
+                {
+                  "name": "insert.mutation",
+                  "at": 272,
+                  "ms": 0
+                },
+                {
+                  "name": "reflow.paragraph",
+                  "at": 272,
+                  "ms": 0
+                },
+                {
+                  "name": "insert.reflow",
+                  "at": 272,
+                  "ms": 0
+                },
+                {
+                  "name": "insert.sectionVpos",
+                  "at": 272,
+                  "ms": 0
+                },
+                {
+                  "name": "compose.paragraph",
+                  "at": 272,
+                  "ms": 0
+                },
+                {
+                  "name": "insert.compose",
+                  "at": 272,
+                  "ms": 0
+                },
+                {
+                  "name": "paginate.normalize",
+                  "at": 272,
+                  "ms": 0
+                },
+                {
+                  "name": "paginate.pass",
+                  "at": 272,
+                  "ms": 0
+                },
+                {
+                  "name": "paginate.total",
+                  "at": 272,
+                  "ms": 0
+                },
+                {
+                  "name": "insert.pagination",
+                  "at": 272,
+                  "ms": 0
+                },
+                {
+                  "name": "insert.total",
+                  "at": 272,
+                  "ms": 0
+                }
+              ]
+            },
+            {
+              "wallMs": 0,
+              "phases": [
+                {
+                  "name": "insert.pictureBand",
+                  "at": 276,
+                  "ms": 0
+                },
+                {
+                  "name": "insert.mutation",
+                  "at": 276,
+                  "ms": 0
+                },
+                {
+                  "name": "reflow.paragraph",
+                  "at": 276,
+                  "ms": 0
+                },
+                {
+                  "name": "insert.reflow",
+                  "at": 276,
+                  "ms": 0
+                },
+                {
+                  "name": "insert.sectionVpos",
+                  "at": 276,
+                  "ms": 0
+                },
+                {
+                  "name": "compose.paragraph",
+                  "at": 276,
+                  "ms": 0
+                },
+                {
+                  "name": "insert.compose",
+                  "at": 276,
+                  "ms": 0
+                },
+                {
+                  "name": "paginate.normalize",
+                  "at": 276,
+                  "ms": 0
+                },
+                {
+                  "name": "paginate.pass",
+                  "at": 276,
+                  "ms": 0
+                },
+                {
+                  "name": "paginate.total",
+                  "at": 276,
+                  "ms": 0
+                },
+                {
+                  "name": "insert.pagination",
+                  "at": 276,
+                  "ms": 0
+                },
+                {
+                  "name": "insert.total",
+                  "at": 276,
+                  "ms": 0
+                }
+              ]
+            },
+            {
+              "wallMs": 0,
+              "phases": [
+                {
+                  "name": "insert.pictureBand",
+                  "at": 280,
+                  "ms": 0
+                },
+                {
+                  "name": "insert.mutation",
+                  "at": 280,
+                  "ms": 0
+                },
+                {
+                  "name": "reflow.paragraph",
+                  "at": 280,
+                  "ms": 0
+                },
+                {
+                  "name": "insert.reflow",
+                  "at": 280,
+                  "ms": 0
+                },
+                {
+                  "name": "insert.sectionVpos",
+                  "at": 280,
+                  "ms": 0
+                },
+                {
+                  "name": "compose.paragraph",
+                  "at": 280,
+                  "ms": 0
+                },
+                {
+                  "name": "insert.compose",
+                  "at": 280,
+                  "ms": 0
+                },
+                {
+                  "name": "paginate.normalize",
+                  "at": 280,
+                  "ms": 0
+                },
+                {
+                  "name": "paginate.pass",
+                  "at": 280,
+                  "ms": 0
+                },
+                {
+                  "name": "paginate.total",
+                  "at": 280,
+                  "ms": 0
+                },
+                {
+                  "name": "insert.pagination",
+                  "at": 280,
+                  "ms": 0
+                },
+                {
+                  "name": "insert.total",
+                  "at": 280,
+                  "ms": 0
+                }
+              ]
+            },
+            {
+              "wallMs": 0,
+              "phases": [
+                {
+                  "name": "insert.pictureBand",
+                  "at": 284,
+                  "ms": 0
+                },
+                {
+                  "name": "insert.mutation",
+                  "at": 284,
+                  "ms": 0
+                },
+                {
+                  "name": "reflow.paragraph",
+                  "at": 284,
+                  "ms": 0
+                },
+                {
+                  "name": "insert.reflow",
+                  "at": 284,
+                  "ms": 0
+                },
+                {
+                  "name": "insert.sectionVpos",
+                  "at": 284,
+                  "ms": 0
+                },
+                {
+                  "name": "compose.paragraph",
+                  "at": 284,
+                  "ms": 0
+                },
+                {
+                  "name": "insert.compose",
+                  "at": 284,
+                  "ms": 0
+                },
+                {
+                  "name": "paginate.normalize",
+                  "at": 284,
+                  "ms": 0
+                },
+                {
+                  "name": "paginate.pass",
+                  "at": 284,
+                  "ms": 0
+                },
+                {
+                  "name": "paginate.total",
+                  "at": 284,
+                  "ms": 0
+                },
+                {
+                  "name": "insert.pagination",
+                  "at": 284,
+                  "ms": 0
+                },
+                {
+                  "name": "insert.total",
+                  "at": 284,
+                  "ms": 0
+                }
+              ]
+            },
+            {
+              "wallMs": 0,
+              "phases": [
+                {
+                  "name": "insert.pictureBand",
+                  "at": 288,
+                  "ms": 0
+                },
+                {
+                  "name": "insert.mutation",
+                  "at": 288,
+                  "ms": 0
+                },
+                {
+                  "name": "reflow.paragraph",
+                  "at": 288,
+                  "ms": 0
+                },
+                {
+                  "name": "insert.reflow",
+                  "at": 288,
+                  "ms": 0
+                },
+                {
+                  "name": "insert.sectionVpos",
+                  "at": 288,
+                  "ms": 0
+                },
+                {
+                  "name": "compose.paragraph",
+                  "at": 288,
+                  "ms": 0
+                },
+                {
+                  "name": "insert.compose",
+                  "at": 288,
+                  "ms": 0
+                },
+                {
+                  "name": "paginate.normalize",
+                  "at": 288,
+                  "ms": 0
+                },
+                {
+                  "name": "paginate.pass",
+                  "at": 288,
+                  "ms": 0
+                },
+                {
+                  "name": "paginate.total",
+                  "at": 288,
+                  "ms": 0
+                },
+                {
+                  "name": "insert.pagination",
+                  "at": 288,
+                  "ms": 0
+                },
+                {
+                  "name": "insert.total",
+                  "at": 288,
+                  "ms": 0
+                }
+              ]
+            },
+            {
+              "wallMs": 0,
+              "phases": [
+                {
+                  "name": "insert.pictureBand",
+                  "at": 292,
+                  "ms": 0
+                },
+                {
+                  "name": "insert.mutation",
+                  "at": 292,
+                  "ms": 0
+                },
+                {
+                  "name": "reflow.paragraph",
+                  "at": 292,
+                  "ms": 0
+                },
+                {
+                  "name": "insert.reflow",
+                  "at": 292,
+                  "ms": 0
+                },
+                {
+                  "name": "insert.sectionVpos",
+                  "at": 292,
+                  "ms": 0
+                },
+                {
+                  "name": "compose.paragraph",
+                  "at": 292,
+                  "ms": 0
+                },
+                {
+                  "name": "insert.compose",
+                  "at": 292,
+                  "ms": 0
+                },
+                {
+                  "name": "paginate.normalize",
+                  "at": 292,
+                  "ms": 0
+                },
+                {
+                  "name": "paginate.pass",
+                  "at": 292,
+                  "ms": 0
+                },
+                {
+                  "name": "paginate.total",
+                  "at": 292,
+                  "ms": 0
+                },
+                {
+                  "name": "insert.pagination",
+                  "at": 292,
+                  "ms": 0
+                },
+                {
+                  "name": "insert.total",
+                  "at": 292,
+                  "ms": 0
+                }
+              ]
+            },
+            {
+              "wallMs": 0,
+              "phases": [
+                {
+                  "name": "insert.pictureBand",
+                  "at": 296,
+                  "ms": 0
+                },
+                {
+                  "name": "insert.mutation",
+                  "at": 296,
+                  "ms": 0
+                },
+                {
+                  "name": "reflow.paragraph",
+                  "at": 296,
+                  "ms": 0
+                },
+                {
+                  "name": "insert.reflow",
+                  "at": 296,
+                  "ms": 0
+                },
+                {
+                  "name": "insert.sectionVpos",
+                  "at": 296,
+                  "ms": 0
+                },
+                {
+                  "name": "compose.paragraph",
+                  "at": 296,
+                  "ms": 0
+                },
+                {
+                  "name": "insert.compose",
+                  "at": 296,
+                  "ms": 0
+                },
+                {
+                  "name": "paginate.normalize",
+                  "at": 296,
+                  "ms": 0
+                },
+                {
+                  "name": "paginate.pass",
+                  "at": 296,
+                  "ms": 0
+                },
+                {
+                  "name": "paginate.total",
+                  "at": 296,
+                  "ms": 0
+                },
+                {
+                  "name": "insert.pagination",
+                  "at": 296,
+                  "ms": 0
+                },
+                {
+                  "name": "insert.total",
+                  "at": 296,
+                  "ms": 0
+                }
+              ]
+            },
+            {
+              "wallMs": 0,
+              "phases": [
+                {
+                  "name": "insert.pictureBand",
+                  "at": 300,
+                  "ms": 0
+                },
+                {
+                  "name": "insert.mutation",
+                  "at": 300,
+                  "ms": 0
+                },
+                {
+                  "name": "reflow.paragraph",
+                  "at": 300,
+                  "ms": 0
+                },
+                {
+                  "name": "insert.reflow",
+                  "at": 300,
+                  "ms": 0
+                },
+                {
+                  "name": "insert.sectionVpos",
+                  "at": 300,
+                  "ms": 0
+                },
+                {
+                  "name": "compose.paragraph",
+                  "at": 300,
+                  "ms": 0
+                },
+                {
+                  "name": "insert.compose",
+                  "at": 300,
+                  "ms": 0
+                },
+                {
+                  "name": "paginate.normalize",
+                  "at": 300,
+                  "ms": 0
+                },
+                {
+                  "name": "paginate.pass",
+                  "at": 300,
+                  "ms": 0
+                },
+                {
+                  "name": "paginate.total",
+                  "at": 300,
+                  "ms": 0
+                },
+                {
+                  "name": "insert.pagination",
+                  "at": 300,
+                  "ms": 0
+                },
+                {
+                  "name": "insert.total",
+                  "at": 300,
+                  "ms": 0
+                }
+              ]
+            },
+            {
+              "wallMs": 0,
+              "phases": [
+                {
+                  "name": "insert.pictureBand",
+                  "at": 304,
+                  "ms": 0
+                },
+                {
+                  "name": "insert.mutation",
+                  "at": 304,
+                  "ms": 0
+                },
+                {
+                  "name": "reflow.paragraph",
+                  "at": 304,
+                  "ms": 0
+                },
+                {
+                  "name": "insert.reflow",
+                  "at": 304,
+                  "ms": 0
+                },
+                {
+                  "name": "insert.sectionVpos",
+                  "at": 304,
+                  "ms": 0
+                },
+                {
+                  "name": "compose.paragraph",
+                  "at": 304,
+                  "ms": 0
+                },
+                {
+                  "name": "insert.compose",
+                  "at": 304,
+                  "ms": 0
+                },
+                {
+                  "name": "paginate.normalize",
+                  "at": 304,
+                  "ms": 0
+                },
+                {
+                  "name": "paginate.pass",
+                  "at": 304,
+                  "ms": 0
+                },
+                {
+                  "name": "paginate.total",
+                  "at": 304,
+                  "ms": 0
+                },
+                {
+                  "name": "insert.pagination",
+                  "at": 304,
+                  "ms": 0
+                },
+                {
+                  "name": "insert.total",
+                  "at": 304,
+                  "ms": 0
+                }
+              ]
+            },
+            {
+              "wallMs": 0,
+              "phases": [
+                {
+                  "name": "insert.pictureBand",
+                  "at": 308,
+                  "ms": 0
+                },
+                {
+                  "name": "insert.mutation",
+                  "at": 308,
+                  "ms": 0
+                },
+                {
+                  "name": "reflow.paragraph",
+                  "at": 308,
+                  "ms": 0
+                },
+                {
+                  "name": "insert.reflow",
+                  "at": 308,
+                  "ms": 0
+                },
+                {
+                  "name": "insert.sectionVpos",
+                  "at": 308,
+                  "ms": 0
+                },
+                {
+                  "name": "compose.paragraph",
+                  "at": 308,
+                  "ms": 0
+                },
+                {
+                  "name": "insert.compose",
+                  "at": 308,
+                  "ms": 0
+                },
+                {
+                  "name": "paginate.normalize",
+                  "at": 308,
+                  "ms": 0
+                },
+                {
+                  "name": "paginate.pass",
+                  "at": 308,
+                  "ms": 0
+                },
+                {
+                  "name": "paginate.total",
+                  "at": 308,
+                  "ms": 0
+                },
+                {
+                  "name": "insert.pagination",
+                  "at": 308,
+                  "ms": 0
+                },
+                {
+                  "name": "insert.total",
+                  "at": 308,
+                  "ms": 0
+                }
+              ]
+            }
+          ],
+          "wall": {
+            "n": 30,
+            "p50": 0,
+            "p95": 0,
+            "max": 0
+          },
+          "phaseSummary": {
+            "insert.pictureBand": {
+              "n": 30,
+              "p50": 0,
+              "p95": 0,
+              "max": 0
+            },
+            "insert.mutation": {
+              "n": 30,
+              "p50": 0,
+              "p95": 0,
+              "max": 0
+            },
+            "reflow.paragraph": {
+              "n": 30,
+              "p50": 0,
+              "p95": 0,
+              "max": 0
+            },
+            "insert.reflow": {
+              "n": 30,
+              "p50": 0,
+              "p95": 0,
+              "max": 0
+            },
+            "insert.sectionVpos": {
+              "n": 30,
+              "p50": 0,
+              "p95": 0,
+              "max": 0
+            },
+            "compose.paragraph": {
+              "n": 30,
+              "p50": 0,
+              "p95": 0,
+              "max": 0
+            },
+            "insert.compose": {
+              "n": 30,
+              "p50": 0,
+              "p95": 0,
+              "max": 0
+            },
+            "paginate.normalize": {
+              "n": 30,
+              "p50": 0,
+              "p95": 0,
+              "max": 0
+            },
+            "paginate.pass": {
+              "n": 30,
+              "p50": 0,
+              "p95": 0,
+              "max": 0
+            },
+            "paginate.total": {
+              "n": 30,
+              "p50": 0,
+              "p95": 0,
+              "max": 0
+            },
+            "insert.pagination": {
+              "n": 30,
+              "p50": 0,
+              "p95": 0,
+              "max": 0
+            },
+            "insert.total": {
+              "n": 30,
+              "p50": 0,
+              "p95": 0,
+              "max": 0
+            }
+          }
+        }
+      },
+      "equivalence": {
+        "pages": true,
+        "text": true,
+        "pageInfo": true,
+        "caret": true
+      },
+      "phaseUnionNote": "insert.total contains phase spans; paginate.total/pass/normalize nested, never add them as independent cost"
+    },
+    {
+      "fixture": "3249937_asset_management_rules.hwpx",
+      "paragraph": 4,
+      "offset": 51,
+      "arms": {
+        "baseline": {
+          "pages": 60,
+          "length": 113,
+          "sections": 3,
+          "paragraphs": [
+            593,
+            4,
+            34
+          ],
+          "rows": [
+            {
+              "wallMs": 0,
+              "phases": null
+            },
+            {
+              "wallMs": 0,
+              "phases": null
+            },
+            {
+              "wallMs": 0,
+              "phases": null
+            },
+            {
+              "wallMs": 0,
+              "phases": null
+            },
+            {
+              "wallMs": 0,
+              "phases": null
+            },
+            {
+              "wallMs": 0,
+              "phases": null
+            },
+            {
+              "wallMs": 0,
+              "phases": null
+            },
+            {
+              "wallMs": 0,
+              "phases": null
+            },
+            {
+              "wallMs": 0,
+              "phases": null
+            },
+            {
+              "wallMs": 0,
+              "phases": null
+            },
+            {
+              "wallMs": 0,
+              "phases": null
+            },
+            {
+              "wallMs": 0,
+              "phases": null
+            },
+            {
+              "wallMs": 0,
+              "phases": null
+            },
+            {
+              "wallMs": 0,
+              "phases": null
+            },
+            {
+              "wallMs": 0,
+              "phases": null
+            },
+            {
+              "wallMs": 0,
+              "phases": null
+            },
+            {
+              "wallMs": 0,
+              "phases": null
+            },
+            {
+              "wallMs": 0,
+              "phases": null
+            },
+            {
+              "wallMs": 0,
+              "phases": null
+            },
+            {
+              "wallMs": 0,
+              "phases": null
+            },
+            {
+              "wallMs": 0,
+              "phases": null
+            },
+            {
+              "wallMs": 0,
+              "phases": null
+            },
+            {
+              "wallMs": 0,
+              "phases": null
+            },
+            {
+              "wallMs": 0,
+              "phases": null
+            },
+            {
+              "wallMs": 0,
+              "phases": null
+            },
+            {
+              "wallMs": 0,
+              "phases": null
+            },
+            {
+              "wallMs": 0,
+              "phases": null
+            },
+            {
+              "wallMs": 0,
+              "phases": null
+            },
+            {
+              "wallMs": 0,
+              "phases": null
+            },
+            {
+              "wallMs": 0,
+              "phases": null
+            }
+          ],
+          "wall": {
+            "n": 30,
+            "p50": 0,
+            "p95": 0,
+            "max": 0
+          },
+          "phaseSummary": {}
+        },
+        "phase": {
+          "pages": 60,
+          "length": 113,
+          "sections": 3,
+          "paragraphs": [
+            593,
+            4,
+            34
+          ],
+          "rows": [
+            {
+              "wallMs": 0,
+              "phases": [
+                {
+                  "name": "insert.pictureBand",
+                  "at": 418,
+                  "ms": 0
+                },
+                {
+                  "name": "insert.mutation",
+                  "at": 418,
+                  "ms": 0
+                },
+                {
+                  "name": "reflow.paragraph",
+                  "at": 418,
+                  "ms": 0
+                },
+                {
+                  "name": "insert.reflow",
+                  "at": 418,
+                  "ms": 0
+                },
+                {
+                  "name": "insert.sectionVpos",
+                  "at": 418,
+                  "ms": 0
+                },
+                {
+                  "name": "compose.paragraph",
+                  "at": 418,
+                  "ms": 0
+                },
+                {
+                  "name": "insert.compose",
+                  "at": 418,
+                  "ms": 0
+                },
+                {
+                  "name": "paginate.normalize",
+                  "at": 418,
+                  "ms": 0
+                },
+                {
+                  "name": "paginate.pass",
+                  "at": 418,
+                  "ms": 0
+                },
+                {
+                  "name": "paginate.total",
+                  "at": 418,
+                  "ms": 0
+                },
+                {
+                  "name": "insert.pagination",
+                  "at": 418,
+                  "ms": 0
+                },
+                {
+                  "name": "insert.total",
+                  "at": 418,
+                  "ms": 0
+                }
+              ]
+            },
+            {
+              "wallMs": 0,
+              "phases": [
+                {
+                  "name": "insert.pictureBand",
+                  "at": 422,
+                  "ms": 0
+                },
+                {
+                  "name": "insert.mutation",
+                  "at": 422,
+                  "ms": 0
+                },
+                {
+                  "name": "reflow.paragraph",
+                  "at": 422,
+                  "ms": 0
+                },
+                {
+                  "name": "insert.reflow",
+                  "at": 422,
+                  "ms": 0
+                },
+                {
+                  "name": "insert.sectionVpos",
+                  "at": 422,
+                  "ms": 0
+                },
+                {
+                  "name": "compose.paragraph",
+                  "at": 422,
+                  "ms": 0
+                },
+                {
+                  "name": "insert.compose",
+                  "at": 422,
+                  "ms": 0
+                },
+                {
+                  "name": "paginate.normalize",
+                  "at": 422,
+                  "ms": 0
+                },
+                {
+                  "name": "paginate.pass",
+                  "at": 422,
+                  "ms": 0
+                },
+                {
+                  "name": "paginate.total",
+                  "at": 422,
+                  "ms": 0
+                },
+                {
+                  "name": "insert.pagination",
+                  "at": 422,
+                  "ms": 0
+                },
+                {
+                  "name": "insert.total",
+                  "at": 422,
+                  "ms": 0
+                }
+              ]
+            },
+            {
+              "wallMs": 0,
+              "phases": [
+                {
+                  "name": "insert.pictureBand",
+                  "at": 426,
+                  "ms": 0
+                },
+                {
+                  "name": "insert.mutation",
+                  "at": 426,
+                  "ms": 0
+                },
+                {
+                  "name": "reflow.paragraph",
+                  "at": 426,
+                  "ms": 0
+                },
+                {
+                  "name": "insert.reflow",
+                  "at": 426,
+                  "ms": 0
+                },
+                {
+                  "name": "insert.sectionVpos",
+                  "at": 426,
+                  "ms": 0
+                },
+                {
+                  "name": "compose.paragraph",
+                  "at": 426,
+                  "ms": 0
+                },
+                {
+                  "name": "insert.compose",
+                  "at": 426,
+                  "ms": 0
+                },
+                {
+                  "name": "paginate.normalize",
+                  "at": 426,
+                  "ms": 0
+                },
+                {
+                  "name": "paginate.pass",
+                  "at": 426,
+                  "ms": 0
+                },
+                {
+                  "name": "paginate.total",
+                  "at": 426,
+                  "ms": 0
+                },
+                {
+                  "name": "insert.pagination",
+                  "at": 426,
+                  "ms": 0
+                },
+                {
+                  "name": "insert.total",
+                  "at": 426,
+                  "ms": 0
+                }
+              ]
+            },
+            {
+              "wallMs": 0,
+              "phases": [
+                {
+                  "name": "insert.pictureBand",
+                  "at": 430,
+                  "ms": 0
+                },
+                {
+                  "name": "insert.mutation",
+                  "at": 430,
+                  "ms": 0
+                },
+                {
+                  "name": "reflow.paragraph",
+                  "at": 430,
+                  "ms": 0
+                },
+                {
+                  "name": "insert.reflow",
+                  "at": 430,
+                  "ms": 0
+                },
+                {
+                  "name": "insert.sectionVpos",
+                  "at": 430,
+                  "ms": 0
+                },
+                {
+                  "name": "compose.paragraph",
+                  "at": 430,
+                  "ms": 0
+                },
+                {
+                  "name": "insert.compose",
+                  "at": 430,
+                  "ms": 0
+                },
+                {
+                  "name": "paginate.normalize",
+                  "at": 430,
+                  "ms": 0
+                },
+                {
+                  "name": "paginate.pass",
+                  "at": 430,
+                  "ms": 0
+                },
+                {
+                  "name": "paginate.total",
+                  "at": 430,
+                  "ms": 0
+                },
+                {
+                  "name": "insert.pagination",
+                  "at": 430,
+                  "ms": 0
+                },
+                {
+                  "name": "insert.total",
+                  "at": 430,
+                  "ms": 0
+                }
+              ]
+            },
+            {
+              "wallMs": 0,
+              "phases": [
+                {
+                  "name": "insert.pictureBand",
+                  "at": 434.09999999403954,
+                  "ms": 0
+                },
+                {
+                  "name": "insert.mutation",
+                  "at": 434.09999999403954,
+                  "ms": 0
+                },
+                {
+                  "name": "reflow.paragraph",
+                  "at": 434.09999999403954,
+                  "ms": 0
+                },
+                {
+                  "name": "insert.reflow",
+                  "at": 434.09999999403954,
+                  "ms": 0
+                },
+                {
+                  "name": "insert.sectionVpos",
+                  "at": 434.09999999403954,
+                  "ms": 0
+                },
+                {
+                  "name": "compose.paragraph",
+                  "at": 434.09999999403954,
+                  "ms": 0
+                },
+                {
+                  "name": "insert.compose",
+                  "at": 434.09999999403954,
+                  "ms": 0
+                },
+                {
+                  "name": "paginate.normalize",
+                  "at": 434.09999999403954,
+                  "ms": 0
+                },
+                {
+                  "name": "paginate.pass",
+                  "at": 434.09999999403954,
+                  "ms": 0
+                },
+                {
+                  "name": "paginate.total",
+                  "at": 434.09999999403954,
+                  "ms": 0
+                },
+                {
+                  "name": "insert.pagination",
+                  "at": 434.09999999403954,
+                  "ms": 0
+                },
+                {
+                  "name": "insert.total",
+                  "at": 434.09999999403954,
+                  "ms": 0
+                }
+              ]
+            },
+            {
+              "wallMs": 0,
+              "phases": [
+                {
+                  "name": "insert.pictureBand",
+                  "at": 438.09999999403954,
+                  "ms": 0
+                },
+                {
+                  "name": "insert.mutation",
+                  "at": 438.09999999403954,
+                  "ms": 0
+                },
+                {
+                  "name": "reflow.paragraph",
+                  "at": 438.09999999403954,
+                  "ms": 0
+                },
+                {
+                  "name": "insert.reflow",
+                  "at": 438.09999999403954,
+                  "ms": 0
+                },
+                {
+                  "name": "insert.sectionVpos",
+                  "at": 438.09999999403954,
+                  "ms": 0
+                },
+                {
+                  "name": "compose.paragraph",
+                  "at": 438.09999999403954,
+                  "ms": 0
+                },
+                {
+                  "name": "insert.compose",
+                  "at": 438.09999999403954,
+                  "ms": 0
+                },
+                {
+                  "name": "paginate.normalize",
+                  "at": 438.09999999403954,
+                  "ms": 0
+                },
+                {
+                  "name": "paginate.pass",
+                  "at": 438.09999999403954,
+                  "ms": 0
+                },
+                {
+                  "name": "paginate.total",
+                  "at": 438.09999999403954,
+                  "ms": 0
+                },
+                {
+                  "name": "insert.pagination",
+                  "at": 438.09999999403954,
+                  "ms": 0
+                },
+                {
+                  "name": "insert.total",
+                  "at": 438.09999999403954,
+                  "ms": 0
+                }
+              ]
+            },
+            {
+              "wallMs": 0,
+              "phases": [
+                {
+                  "name": "insert.pictureBand",
+                  "at": 442.09999999403954,
+                  "ms": 0
+                },
+                {
+                  "name": "insert.mutation",
+                  "at": 442.09999999403954,
+                  "ms": 0
+                },
+                {
+                  "name": "reflow.paragraph",
+                  "at": 442.09999999403954,
+                  "ms": 0
+                },
+                {
+                  "name": "insert.reflow",
+                  "at": 442.09999999403954,
+                  "ms": 0
+                },
+                {
+                  "name": "insert.sectionVpos",
+                  "at": 442.09999999403954,
+                  "ms": 0
+                },
+                {
+                  "name": "compose.paragraph",
+                  "at": 442.09999999403954,
+                  "ms": 0
+                },
+                {
+                  "name": "insert.compose",
+                  "at": 442.09999999403954,
+                  "ms": 0
+                },
+                {
+                  "name": "paginate.normalize",
+                  "at": 442.09999999403954,
+                  "ms": 0
+                },
+                {
+                  "name": "paginate.pass",
+                  "at": 442.09999999403954,
+                  "ms": 0
+                },
+                {
+                  "name": "paginate.total",
+                  "at": 442.09999999403954,
+                  "ms": 0
+                },
+                {
+                  "name": "insert.pagination",
+                  "at": 442.09999999403954,
+                  "ms": 0
+                },
+                {
+                  "name": "insert.total",
+                  "at": 442.09999999403954,
+                  "ms": 0
+                }
+              ]
+            },
+            {
+              "wallMs": 0,
+              "phases": [
+                {
+                  "name": "insert.pictureBand",
+                  "at": 446.09999999403954,
+                  "ms": 0
+                },
+                {
+                  "name": "insert.mutation",
+                  "at": 446.09999999403954,
+                  "ms": 0
+                },
+                {
+                  "name": "reflow.paragraph",
+                  "at": 446.09999999403954,
+                  "ms": 0
+                },
+                {
+                  "name": "insert.reflow",
+                  "at": 446.09999999403954,
+                  "ms": 0
+                },
+                {
+                  "name": "insert.sectionVpos",
+                  "at": 446.09999999403954,
+                  "ms": 0
+                },
+                {
+                  "name": "compose.paragraph",
+                  "at": 446.09999999403954,
+                  "ms": 0
+                },
+                {
+                  "name": "insert.compose",
+                  "at": 446.09999999403954,
+                  "ms": 0
+                },
+                {
+                  "name": "paginate.normalize",
+                  "at": 446.09999999403954,
+                  "ms": 0
+                },
+                {
+                  "name": "paginate.pass",
+                  "at": 446.09999999403954,
+                  "ms": 0
+                },
+                {
+                  "name": "paginate.total",
+                  "at": 446.09999999403954,
+                  "ms": 0
+                },
+                {
+                  "name": "insert.pagination",
+                  "at": 446.09999999403954,
+                  "ms": 0
+                },
+                {
+                  "name": "insert.total",
+                  "at": 446.09999999403954,
+                  "ms": 0
+                }
+              ]
+            },
+            {
+              "wallMs": 0,
+              "phases": [
+                {
+                  "name": "insert.pictureBand",
+                  "at": 450.09999999403954,
+                  "ms": 0
+                },
+                {
+                  "name": "insert.mutation",
+                  "at": 450.09999999403954,
+                  "ms": 0
+                },
+                {
+                  "name": "reflow.paragraph",
+                  "at": 450.09999999403954,
+                  "ms": 0
+                },
+                {
+                  "name": "insert.reflow",
+                  "at": 450.09999999403954,
+                  "ms": 0
+                },
+                {
+                  "name": "insert.sectionVpos",
+                  "at": 450.09999999403954,
+                  "ms": 0
+                },
+                {
+                  "name": "compose.paragraph",
+                  "at": 450.09999999403954,
+                  "ms": 0
+                },
+                {
+                  "name": "insert.compose",
+                  "at": 450.09999999403954,
+                  "ms": 0
+                },
+                {
+                  "name": "paginate.normalize",
+                  "at": 450.09999999403954,
+                  "ms": 0
+                },
+                {
+                  "name": "paginate.pass",
+                  "at": 450.09999999403954,
+                  "ms": 0
+                },
+                {
+                  "name": "paginate.total",
+                  "at": 450.09999999403954,
+                  "ms": 0
+                },
+                {
+                  "name": "insert.pagination",
+                  "at": 450.09999999403954,
+                  "ms": 0
+                },
+                {
+                  "name": "insert.total",
+                  "at": 450.09999999403954,
+                  "ms": 0
+                }
+              ]
+            },
+            {
+              "wallMs": 0,
+              "phases": [
+                {
+                  "name": "insert.pictureBand",
+                  "at": 454,
+                  "ms": 0
+                },
+                {
+                  "name": "insert.mutation",
+                  "at": 454,
+                  "ms": 0
+                },
+                {
+                  "name": "reflow.paragraph",
+                  "at": 454,
+                  "ms": 0
+                },
+                {
+                  "name": "insert.reflow",
+                  "at": 454,
+                  "ms": 0
+                },
+                {
+                  "name": "insert.sectionVpos",
+                  "at": 454,
+                  "ms": 0
+                },
+                {
+                  "name": "compose.paragraph",
+                  "at": 454,
+                  "ms": 0
+                },
+                {
+                  "name": "insert.compose",
+                  "at": 454,
+                  "ms": 0
+                },
+                {
+                  "name": "paginate.normalize",
+                  "at": 454,
+                  "ms": 0
+                },
+                {
+                  "name": "paginate.pass",
+                  "at": 454,
+                  "ms": 0
+                },
+                {
+                  "name": "paginate.total",
+                  "at": 454,
+                  "ms": 0
+                },
+                {
+                  "name": "insert.pagination",
+                  "at": 454,
+                  "ms": 0
+                },
+                {
+                  "name": "insert.total",
+                  "at": 454,
+                  "ms": 0
+                }
+              ]
+            },
+            {
+              "wallMs": 0,
+              "phases": [
+                {
+                  "name": "insert.pictureBand",
+                  "at": 458,
+                  "ms": 0
+                },
+                {
+                  "name": "insert.mutation",
+                  "at": 458,
+                  "ms": 0
+                },
+                {
+                  "name": "reflow.paragraph",
+                  "at": 458,
+                  "ms": 0
+                },
+                {
+                  "name": "insert.reflow",
+                  "at": 458,
+                  "ms": 0
+                },
+                {
+                  "name": "insert.sectionVpos",
+                  "at": 458,
+                  "ms": 0
+                },
+                {
+                  "name": "compose.paragraph",
+                  "at": 458,
+                  "ms": 0
+                },
+                {
+                  "name": "insert.compose",
+                  "at": 458,
+                  "ms": 0
+                },
+                {
+                  "name": "paginate.normalize",
+                  "at": 458,
+                  "ms": 0
+                },
+                {
+                  "name": "paginate.pass",
+                  "at": 458,
+                  "ms": 0
+                },
+                {
+                  "name": "paginate.total",
+                  "at": 458,
+                  "ms": 0
+                },
+                {
+                  "name": "insert.pagination",
+                  "at": 458,
+                  "ms": 0
+                },
+                {
+                  "name": "insert.total",
+                  "at": 458,
+                  "ms": 0
+                }
+              ]
+            },
+            {
+              "wallMs": 0,
+              "phases": [
+                {
+                  "name": "insert.pictureBand",
+                  "at": 462,
+                  "ms": 0
+                },
+                {
+                  "name": "insert.mutation",
+                  "at": 462,
+                  "ms": 0
+                },
+                {
+                  "name": "reflow.paragraph",
+                  "at": 462,
+                  "ms": 0
+                },
+                {
+                  "name": "insert.reflow",
+                  "at": 462,
+                  "ms": 0
+                },
+                {
+                  "name": "insert.sectionVpos",
+                  "at": 462,
+                  "ms": 0
+                },
+                {
+                  "name": "compose.paragraph",
+                  "at": 462,
+                  "ms": 0
+                },
+                {
+                  "name": "insert.compose",
+                  "at": 462,
+                  "ms": 0
+                },
+                {
+                  "name": "paginate.normalize",
+                  "at": 462,
+                  "ms": 0
+                },
+                {
+                  "name": "paginate.pass",
+                  "at": 462,
+                  "ms": 0
+                },
+                {
+                  "name": "paginate.total",
+                  "at": 462,
+                  "ms": 0
+                },
+                {
+                  "name": "insert.pagination",
+                  "at": 462,
+                  "ms": 0
+                },
+                {
+                  "name": "insert.total",
+                  "at": 462,
+                  "ms": 0
+                }
+              ]
+            },
+            {
+              "wallMs": 0,
+              "phases": [
+                {
+                  "name": "insert.pictureBand",
+                  "at": 466,
+                  "ms": 0
+                },
+                {
+                  "name": "insert.mutation",
+                  "at": 466,
+                  "ms": 0
+                },
+                {
+                  "name": "reflow.paragraph",
+                  "at": 466,
+                  "ms": 0
+                },
+                {
+                  "name": "insert.reflow",
+                  "at": 466,
+                  "ms": 0
+                },
+                {
+                  "name": "insert.sectionVpos",
+                  "at": 466,
+                  "ms": 0
+                },
+                {
+                  "name": "compose.paragraph",
+                  "at": 466,
+                  "ms": 0
+                },
+                {
+                  "name": "insert.compose",
+                  "at": 466,
+                  "ms": 0
+                },
+                {
+                  "name": "paginate.normalize",
+                  "at": 466,
+                  "ms": 0
+                },
+                {
+                  "name": "paginate.pass",
+                  "at": 466,
+                  "ms": 0
+                },
+                {
+                  "name": "paginate.total",
+                  "at": 466,
+                  "ms": 0
+                },
+                {
+                  "name": "insert.pagination",
+                  "at": 466,
+                  "ms": 0
+                },
+                {
+                  "name": "insert.total",
+                  "at": 466,
+                  "ms": 0
+                }
+              ]
+            },
+            {
+              "wallMs": 0,
+              "phases": [
+                {
+                  "name": "insert.pictureBand",
+                  "at": 470,
+                  "ms": 0
+                },
+                {
+                  "name": "insert.mutation",
+                  "at": 470,
+                  "ms": 0
+                },
+                {
+                  "name": "reflow.paragraph",
+                  "at": 470,
+                  "ms": 0
+                },
+                {
+                  "name": "insert.reflow",
+                  "at": 470,
+                  "ms": 0
+                },
+                {
+                  "name": "insert.sectionVpos",
+                  "at": 470,
+                  "ms": 0
+                },
+                {
+                  "name": "compose.paragraph",
+                  "at": 470,
+                  "ms": 0
+                },
+                {
+                  "name": "insert.compose",
+                  "at": 470,
+                  "ms": 0
+                },
+                {
+                  "name": "paginate.normalize",
+                  "at": 470,
+                  "ms": 0
+                },
+                {
+                  "name": "paginate.pass",
+                  "at": 470,
+                  "ms": 0
+                },
+                {
+                  "name": "paginate.total",
+                  "at": 470,
+                  "ms": 0
+                },
+                {
+                  "name": "insert.pagination",
+                  "at": 470,
+                  "ms": 0
+                },
+                {
+                  "name": "insert.total",
+                  "at": 470,
+                  "ms": 0
+                }
+              ]
+            },
+            {
+              "wallMs": 0,
+              "phases": [
+                {
+                  "name": "insert.pictureBand",
+                  "at": 474,
+                  "ms": 0
+                },
+                {
+                  "name": "insert.mutation",
+                  "at": 474,
+                  "ms": 0
+                },
+                {
+                  "name": "reflow.paragraph",
+                  "at": 474,
+                  "ms": 0
+                },
+                {
+                  "name": "insert.reflow",
+                  "at": 474,
+                  "ms": 0
+                },
+                {
+                  "name": "insert.sectionVpos",
+                  "at": 474,
+                  "ms": 0
+                },
+                {
+                  "name": "compose.paragraph",
+                  "at": 474,
+                  "ms": 0
+                },
+                {
+                  "name": "insert.compose",
+                  "at": 474,
+                  "ms": 0
+                },
+                {
+                  "name": "paginate.normalize",
+                  "at": 474,
+                  "ms": 0
+                },
+                {
+                  "name": "paginate.pass",
+                  "at": 474,
+                  "ms": 0
+                },
+                {
+                  "name": "paginate.total",
+                  "at": 474,
+                  "ms": 0
+                },
+                {
+                  "name": "insert.pagination",
+                  "at": 474,
+                  "ms": 0
+                },
+                {
+                  "name": "insert.total",
+                  "at": 474,
+                  "ms": 0
+                }
+              ]
+            },
+            {
+              "wallMs": 0,
+              "phases": [
+                {
+                  "name": "insert.pictureBand",
+                  "at": 478,
+                  "ms": 0
+                },
+                {
+                  "name": "insert.mutation",
+                  "at": 478,
+                  "ms": 0
+                },
+                {
+                  "name": "reflow.paragraph",
+                  "at": 478,
+                  "ms": 0
+                },
+                {
+                  "name": "insert.reflow",
+                  "at": 478,
+                  "ms": 0
+                },
+                {
+                  "name": "insert.sectionVpos",
+                  "at": 478,
+                  "ms": 0
+                },
+                {
+                  "name": "compose.paragraph",
+                  "at": 478,
+                  "ms": 0
+                },
+                {
+                  "name": "insert.compose",
+                  "at": 478,
+                  "ms": 0
+                },
+                {
+                  "name": "paginate.normalize",
+                  "at": 478,
+                  "ms": 0
+                },
+                {
+                  "name": "paginate.pass",
+                  "at": 478,
+                  "ms": 0
+                },
+                {
+                  "name": "paginate.total",
+                  "at": 478,
+                  "ms": 0
+                },
+                {
+                  "name": "insert.pagination",
+                  "at": 478,
+                  "ms": 0
+                },
+                {
+                  "name": "insert.total",
+                  "at": 478,
+                  "ms": 0
+                }
+              ]
+            },
+            {
+              "wallMs": 0,
+              "phases": [
+                {
+                  "name": "insert.pictureBand",
+                  "at": 482,
+                  "ms": 0
+                },
+                {
+                  "name": "insert.mutation",
+                  "at": 482,
+                  "ms": 0
+                },
+                {
+                  "name": "reflow.paragraph",
+                  "at": 482,
+                  "ms": 0
+                },
+                {
+                  "name": "insert.reflow",
+                  "at": 482,
+                  "ms": 0
+                },
+                {
+                  "name": "insert.sectionVpos",
+                  "at": 482,
+                  "ms": 0
+                },
+                {
+                  "name": "compose.paragraph",
+                  "at": 482,
+                  "ms": 0
+                },
+                {
+                  "name": "insert.compose",
+                  "at": 482,
+                  "ms": 0
+                },
+                {
+                  "name": "paginate.normalize",
+                  "at": 482,
+                  "ms": 0
+                },
+                {
+                  "name": "paginate.pass",
+                  "at": 482,
+                  "ms": 0
+                },
+                {
+                  "name": "paginate.total",
+                  "at": 482,
+                  "ms": 0
+                },
+                {
+                  "name": "insert.pagination",
+                  "at": 482,
+                  "ms": 0
+                },
+                {
+                  "name": "insert.total",
+                  "at": 482,
+                  "ms": 0
+                }
+              ]
+            },
+            {
+              "wallMs": 0,
+              "phases": [
+                {
+                  "name": "insert.pictureBand",
+                  "at": 486,
+                  "ms": 0
+                },
+                {
+                  "name": "insert.mutation",
+                  "at": 486,
+                  "ms": 0
+                },
+                {
+                  "name": "reflow.paragraph",
+                  "at": 486,
+                  "ms": 0
+                },
+                {
+                  "name": "insert.reflow",
+                  "at": 486,
+                  "ms": 0
+                },
+                {
+                  "name": "insert.sectionVpos",
+                  "at": 486,
+                  "ms": 0
+                },
+                {
+                  "name": "compose.paragraph",
+                  "at": 486,
+                  "ms": 0
+                },
+                {
+                  "name": "insert.compose",
+                  "at": 486,
+                  "ms": 0
+                },
+                {
+                  "name": "paginate.normalize",
+                  "at": 486,
+                  "ms": 0
+                },
+                {
+                  "name": "paginate.pass",
+                  "at": 486,
+                  "ms": 0
+                },
+                {
+                  "name": "paginate.total",
+                  "at": 486,
+                  "ms": 0
+                },
+                {
+                  "name": "insert.pagination",
+                  "at": 486,
+                  "ms": 0
+                },
+                {
+                  "name": "insert.total",
+                  "at": 486,
+                  "ms": 0
+                }
+              ]
+            },
+            {
+              "wallMs": 0,
+              "phases": [
+                {
+                  "name": "insert.pictureBand",
+                  "at": 490,
+                  "ms": 0
+                },
+                {
+                  "name": "insert.mutation",
+                  "at": 490,
+                  "ms": 0
+                },
+                {
+                  "name": "reflow.paragraph",
+                  "at": 490,
+                  "ms": 0
+                },
+                {
+                  "name": "insert.reflow",
+                  "at": 490,
+                  "ms": 0
+                },
+                {
+                  "name": "insert.sectionVpos",
+                  "at": 490,
+                  "ms": 0
+                },
+                {
+                  "name": "compose.paragraph",
+                  "at": 490,
+                  "ms": 0
+                },
+                {
+                  "name": "insert.compose",
+                  "at": 490,
+                  "ms": 0
+                },
+                {
+                  "name": "paginate.normalize",
+                  "at": 490,
+                  "ms": 0
+                },
+                {
+                  "name": "paginate.pass",
+                  "at": 490,
+                  "ms": 0
+                },
+                {
+                  "name": "paginate.total",
+                  "at": 490,
+                  "ms": 0
+                },
+                {
+                  "name": "insert.pagination",
+                  "at": 490,
+                  "ms": 0
+                },
+                {
+                  "name": "insert.total",
+                  "at": 490,
+                  "ms": 0
+                }
+              ]
+            },
+            {
+              "wallMs": 0,
+              "phases": [
+                {
+                  "name": "insert.pictureBand",
+                  "at": 494,
+                  "ms": 0
+                },
+                {
+                  "name": "insert.mutation",
+                  "at": 494,
+                  "ms": 0
+                },
+                {
+                  "name": "reflow.paragraph",
+                  "at": 494,
+                  "ms": 0
+                },
+                {
+                  "name": "insert.reflow",
+                  "at": 494,
+                  "ms": 0
+                },
+                {
+                  "name": "insert.sectionVpos",
+                  "at": 494,
+                  "ms": 0
+                },
+                {
+                  "name": "compose.paragraph",
+                  "at": 494,
+                  "ms": 0
+                },
+                {
+                  "name": "insert.compose",
+                  "at": 494,
+                  "ms": 0
+                },
+                {
+                  "name": "paginate.normalize",
+                  "at": 494,
+                  "ms": 0
+                },
+                {
+                  "name": "paginate.pass",
+                  "at": 494,
+                  "ms": 0
+                },
+                {
+                  "name": "paginate.total",
+                  "at": 494,
+                  "ms": 0
+                },
+                {
+                  "name": "insert.pagination",
+                  "at": 494,
+                  "ms": 0
+                },
+                {
+                  "name": "insert.total",
+                  "at": 494,
+                  "ms": 0
+                }
+              ]
+            },
+            {
+              "wallMs": 0,
+              "phases": [
+                {
+                  "name": "insert.pictureBand",
+                  "at": 498,
+                  "ms": 0
+                },
+                {
+                  "name": "insert.mutation",
+                  "at": 498,
+                  "ms": 0
+                },
+                {
+                  "name": "reflow.paragraph",
+                  "at": 498,
+                  "ms": 0
+                },
+                {
+                  "name": "insert.reflow",
+                  "at": 498,
+                  "ms": 0
+                },
+                {
+                  "name": "insert.sectionVpos",
+                  "at": 498,
+                  "ms": 0
+                },
+                {
+                  "name": "compose.paragraph",
+                  "at": 498,
+                  "ms": 0
+                },
+                {
+                  "name": "insert.compose",
+                  "at": 498,
+                  "ms": 0
+                },
+                {
+                  "name": "paginate.normalize",
+                  "at": 498,
+                  "ms": 0
+                },
+                {
+                  "name": "paginate.pass",
+                  "at": 498,
+                  "ms": 0
+                },
+                {
+                  "name": "paginate.total",
+                  "at": 498,
+                  "ms": 0
+                },
+                {
+                  "name": "insert.pagination",
+                  "at": 498,
+                  "ms": 0
+                },
+                {
+                  "name": "insert.total",
+                  "at": 498,
+                  "ms": 0
+                }
+              ]
+            },
+            {
+              "wallMs": 0,
+              "phases": [
+                {
+                  "name": "insert.pictureBand",
+                  "at": 502,
+                  "ms": 0
+                },
+                {
+                  "name": "insert.mutation",
+                  "at": 502,
+                  "ms": 0
+                },
+                {
+                  "name": "reflow.paragraph",
+                  "at": 502,
+                  "ms": 0
+                },
+                {
+                  "name": "insert.reflow",
+                  "at": 502,
+                  "ms": 0
+                },
+                {
+                  "name": "insert.sectionVpos",
+                  "at": 502,
+                  "ms": 0
+                },
+                {
+                  "name": "compose.paragraph",
+                  "at": 502,
+                  "ms": 0
+                },
+                {
+                  "name": "insert.compose",
+                  "at": 502,
+                  "ms": 0
+                },
+                {
+                  "name": "paginate.normalize",
+                  "at": 502,
+                  "ms": 0
+                },
+                {
+                  "name": "paginate.pass",
+                  "at": 502,
+                  "ms": 0
+                },
+                {
+                  "name": "paginate.total",
+                  "at": 502,
+                  "ms": 0
+                },
+                {
+                  "name": "insert.pagination",
+                  "at": 502,
+                  "ms": 0
+                },
+                {
+                  "name": "insert.total",
+                  "at": 502,
+                  "ms": 0
+                }
+              ]
+            },
+            {
+              "wallMs": 0,
+              "phases": [
+                {
+                  "name": "insert.pictureBand",
+                  "at": 506,
+                  "ms": 0
+                },
+                {
+                  "name": "insert.mutation",
+                  "at": 506,
+                  "ms": 0
+                },
+                {
+                  "name": "reflow.paragraph",
+                  "at": 506,
+                  "ms": 0
+                },
+                {
+                  "name": "insert.reflow",
+                  "at": 506,
+                  "ms": 0
+                },
+                {
+                  "name": "insert.sectionVpos",
+                  "at": 506,
+                  "ms": 0
+                },
+                {
+                  "name": "compose.paragraph",
+                  "at": 506,
+                  "ms": 0
+                },
+                {
+                  "name": "insert.compose",
+                  "at": 506,
+                  "ms": 0
+                },
+                {
+                  "name": "paginate.normalize",
+                  "at": 506,
+                  "ms": 0
+                },
+                {
+                  "name": "paginate.pass",
+                  "at": 506,
+                  "ms": 0
+                },
+                {
+                  "name": "paginate.total",
+                  "at": 506,
+                  "ms": 0
+                },
+                {
+                  "name": "insert.pagination",
+                  "at": 506,
+                  "ms": 0
+                },
+                {
+                  "name": "insert.total",
+                  "at": 506,
+                  "ms": 0
+                }
+              ]
+            },
+            {
+              "wallMs": 0,
+              "phases": [
+                {
+                  "name": "insert.pictureBand",
+                  "at": 510.09999999403954,
+                  "ms": 0
+                },
+                {
+                  "name": "insert.mutation",
+                  "at": 510.09999999403954,
+                  "ms": 0
+                },
+                {
+                  "name": "reflow.paragraph",
+                  "at": 510.09999999403954,
+                  "ms": 0
+                },
+                {
+                  "name": "insert.reflow",
+                  "at": 510.09999999403954,
+                  "ms": 0
+                },
+                {
+                  "name": "insert.sectionVpos",
+                  "at": 510.09999999403954,
+                  "ms": 0
+                },
+                {
+                  "name": "compose.paragraph",
+                  "at": 510.09999999403954,
+                  "ms": 0
+                },
+                {
+                  "name": "insert.compose",
+                  "at": 510.09999999403954,
+                  "ms": 0
+                },
+                {
+                  "name": "paginate.normalize",
+                  "at": 510.09999999403954,
+                  "ms": 0
+                },
+                {
+                  "name": "paginate.pass",
+                  "at": 510.09999999403954,
+                  "ms": 0
+                },
+                {
+                  "name": "paginate.total",
+                  "at": 510.09999999403954,
+                  "ms": 0
+                },
+                {
+                  "name": "insert.pagination",
+                  "at": 510.09999999403954,
+                  "ms": 0
+                },
+                {
+                  "name": "insert.total",
+                  "at": 510.09999999403954,
+                  "ms": 0
+                }
+              ]
+            },
+            {
+              "wallMs": 0,
+              "phases": [
+                {
+                  "name": "insert.pictureBand",
+                  "at": 514,
+                  "ms": 0
+                },
+                {
+                  "name": "insert.mutation",
+                  "at": 514,
+                  "ms": 0
+                },
+                {
+                  "name": "reflow.paragraph",
+                  "at": 514,
+                  "ms": 0
+                },
+                {
+                  "name": "insert.reflow",
+                  "at": 514,
+                  "ms": 0
+                },
+                {
+                  "name": "insert.sectionVpos",
+                  "at": 514,
+                  "ms": 0
+                },
+                {
+                  "name": "compose.paragraph",
+                  "at": 514,
+                  "ms": 0
+                },
+                {
+                  "name": "insert.compose",
+                  "at": 514,
+                  "ms": 0
+                },
+                {
+                  "name": "paginate.normalize",
+                  "at": 514,
+                  "ms": 0
+                },
+                {
+                  "name": "paginate.pass",
+                  "at": 514,
+                  "ms": 0
+                },
+                {
+                  "name": "paginate.total",
+                  "at": 514,
+                  "ms": 0
+                },
+                {
+                  "name": "insert.pagination",
+                  "at": 514,
+                  "ms": 0
+                },
+                {
+                  "name": "insert.total",
+                  "at": 514,
+                  "ms": 0
+                }
+              ]
+            },
+            {
+              "wallMs": 0,
+              "phases": [
+                {
+                  "name": "insert.pictureBand",
+                  "at": 518.0999999940395,
+                  "ms": 0
+                },
+                {
+                  "name": "insert.mutation",
+                  "at": 518.0999999940395,
+                  "ms": 0
+                },
+                {
+                  "name": "reflow.paragraph",
+                  "at": 518.0999999940395,
+                  "ms": 0
+                },
+                {
+                  "name": "insert.reflow",
+                  "at": 518.0999999940395,
+                  "ms": 0
+                },
+                {
+                  "name": "insert.sectionVpos",
+                  "at": 518.0999999940395,
+                  "ms": 0
+                },
+                {
+                  "name": "compose.paragraph",
+                  "at": 518.0999999940395,
+                  "ms": 0
+                },
+                {
+                  "name": "insert.compose",
+                  "at": 518.0999999940395,
+                  "ms": 0
+                },
+                {
+                  "name": "paginate.normalize",
+                  "at": 518.0999999940395,
+                  "ms": 0
+                },
+                {
+                  "name": "paginate.pass",
+                  "at": 518.0999999940395,
+                  "ms": 0
+                },
+                {
+                  "name": "paginate.total",
+                  "at": 518.0999999940395,
+                  "ms": 0
+                },
+                {
+                  "name": "insert.pagination",
+                  "at": 518.0999999940395,
+                  "ms": 0
+                },
+                {
+                  "name": "insert.total",
+                  "at": 518.0999999940395,
+                  "ms": 0
+                }
+              ]
+            },
+            {
+              "wallMs": 0,
+              "phases": [
+                {
+                  "name": "insert.pictureBand",
+                  "at": 522,
+                  "ms": 0
+                },
+                {
+                  "name": "insert.mutation",
+                  "at": 522,
+                  "ms": 0
+                },
+                {
+                  "name": "reflow.paragraph",
+                  "at": 522,
+                  "ms": 0
+                },
+                {
+                  "name": "insert.reflow",
+                  "at": 522,
+                  "ms": 0
+                },
+                {
+                  "name": "insert.sectionVpos",
+                  "at": 522,
+                  "ms": 0
+                },
+                {
+                  "name": "compose.paragraph",
+                  "at": 522,
+                  "ms": 0
+                },
+                {
+                  "name": "insert.compose",
+                  "at": 522,
+                  "ms": 0
+                },
+                {
+                  "name": "paginate.normalize",
+                  "at": 522,
+                  "ms": 0
+                },
+                {
+                  "name": "paginate.pass",
+                  "at": 522,
+                  "ms": 0
+                },
+                {
+                  "name": "paginate.total",
+                  "at": 522,
+                  "ms": 0
+                },
+                {
+                  "name": "insert.pagination",
+                  "at": 522,
+                  "ms": 0
+                },
+                {
+                  "name": "insert.total",
+                  "at": 522,
+                  "ms": 0
+                }
+              ]
+            },
+            {
+              "wallMs": 0,
+              "phases": [
+                {
+                  "name": "insert.pictureBand",
+                  "at": 526,
+                  "ms": 0
+                },
+                {
+                  "name": "insert.mutation",
+                  "at": 526,
+                  "ms": 0
+                },
+                {
+                  "name": "reflow.paragraph",
+                  "at": 526,
+                  "ms": 0
+                },
+                {
+                  "name": "insert.reflow",
+                  "at": 526,
+                  "ms": 0
+                },
+                {
+                  "name": "insert.sectionVpos",
+                  "at": 526,
+                  "ms": 0
+                },
+                {
+                  "name": "compose.paragraph",
+                  "at": 526,
+                  "ms": 0
+                },
+                {
+                  "name": "insert.compose",
+                  "at": 526,
+                  "ms": 0
+                },
+                {
+                  "name": "paginate.normalize",
+                  "at": 526,
+                  "ms": 0
+                },
+                {
+                  "name": "paginate.pass",
+                  "at": 526,
+                  "ms": 0
+                },
+                {
+                  "name": "paginate.total",
+                  "at": 526,
+                  "ms": 0
+                },
+                {
+                  "name": "insert.pagination",
+                  "at": 526,
+                  "ms": 0
+                },
+                {
+                  "name": "insert.total",
+                  "at": 526,
+                  "ms": 0
+                }
+              ]
+            },
+            {
+              "wallMs": 0,
+              "phases": [
+                {
+                  "name": "insert.pictureBand",
+                  "at": 530,
+                  "ms": 0
+                },
+                {
+                  "name": "insert.mutation",
+                  "at": 530,
+                  "ms": 0
+                },
+                {
+                  "name": "reflow.paragraph",
+                  "at": 530,
+                  "ms": 0
+                },
+                {
+                  "name": "insert.reflow",
+                  "at": 530,
+                  "ms": 0
+                },
+                {
+                  "name": "insert.sectionVpos",
+                  "at": 530,
+                  "ms": 0
+                },
+                {
+                  "name": "compose.paragraph",
+                  "at": 530,
+                  "ms": 0
+                },
+                {
+                  "name": "insert.compose",
+                  "at": 530,
+                  "ms": 0
+                },
+                {
+                  "name": "paginate.normalize",
+                  "at": 530,
+                  "ms": 0
+                },
+                {
+                  "name": "paginate.pass",
+                  "at": 530,
+                  "ms": 0
+                },
+                {
+                  "name": "paginate.total",
+                  "at": 530,
+                  "ms": 0
+                },
+                {
+                  "name": "insert.pagination",
+                  "at": 530,
+                  "ms": 0
+                },
+                {
+                  "name": "insert.total",
+                  "at": 530,
+                  "ms": 0
+                }
+              ]
+            },
+            {
+              "wallMs": 0,
+              "phases": [
+                {
+                  "name": "insert.pictureBand",
+                  "at": 534,
+                  "ms": 0
+                },
+                {
+                  "name": "insert.mutation",
+                  "at": 534,
+                  "ms": 0
+                },
+                {
+                  "name": "reflow.paragraph",
+                  "at": 534,
+                  "ms": 0
+                },
+                {
+                  "name": "insert.reflow",
+                  "at": 534,
+                  "ms": 0
+                },
+                {
+                  "name": "insert.sectionVpos",
+                  "at": 534,
+                  "ms": 0
+                },
+                {
+                  "name": "compose.paragraph",
+                  "at": 534,
+                  "ms": 0
+                },
+                {
+                  "name": "insert.compose",
+                  "at": 534,
+                  "ms": 0
+                },
+                {
+                  "name": "paginate.normalize",
+                  "at": 534,
+                  "ms": 0
+                },
+                {
+                  "name": "paginate.pass",
+                  "at": 534,
+                  "ms": 0
+                },
+                {
+                  "name": "paginate.total",
+                  "at": 534,
+                  "ms": 0
+                },
+                {
+                  "name": "insert.pagination",
+                  "at": 534,
+                  "ms": 0
+                },
+                {
+                  "name": "insert.total",
+                  "at": 534,
+                  "ms": 0
+                }
+              ]
+            }
+          ],
+          "wall": {
+            "n": 30,
+            "p50": 0,
+            "p95": 0,
+            "max": 0
+          },
+          "phaseSummary": {
+            "insert.pictureBand": {
+              "n": 30,
+              "p50": 0,
+              "p95": 0,
+              "max": 0
+            },
+            "insert.mutation": {
+              "n": 30,
+              "p50": 0,
+              "p95": 0,
+              "max": 0
+            },
+            "reflow.paragraph": {
+              "n": 30,
+              "p50": 0,
+              "p95": 0,
+              "max": 0
+            },
+            "insert.reflow": {
+              "n": 30,
+              "p50": 0,
+              "p95": 0,
+              "max": 0
+            },
+            "insert.sectionVpos": {
+              "n": 30,
+              "p50": 0,
+              "p95": 0,
+              "max": 0
+            },
+            "compose.paragraph": {
+              "n": 30,
+              "p50": 0,
+              "p95": 0,
+              "max": 0
+            },
+            "insert.compose": {
+              "n": 30,
+              "p50": 0,
+              "p95": 0,
+              "max": 0
+            },
+            "paginate.normalize": {
+              "n": 30,
+              "p50": 0,
+              "p95": 0,
+              "max": 0
+            },
+            "paginate.pass": {
+              "n": 30,
+              "p50": 0,
+              "p95": 0,
+              "max": 0
+            },
+            "paginate.total": {
+              "n": 30,
+              "p50": 0,
+              "p95": 0,
+              "max": 0
+            },
+            "insert.pagination": {
+              "n": 30,
+              "p50": 0,
+              "p95": 0,
+              "max": 0
+            },
+            "insert.total": {
+              "n": 30,
+              "p50": 0,
+              "p95": 0,
+              "max": 0
+            }
+          }
+        }
+      },
+      "equivalence": {
+        "pages": true,
+        "text": true,
+        "pageInfo": true,
+        "caret": true
+      },
+      "phaseUnionNote": "insert.total contains phase spans; paginate.total/pass/normalize nested, never add them as independent cost"
+    }
+  ],
+  "parentExit": 0,
+  "command": [
+    "/nix/store/k1lvk4d36zsv6wpvqc1wrczid08lb2r4-google-chrome/bin/google-chrome",
+    "--headless=new",
+    "--no-sandbox",
+    "--disable-dev-shm-usage",
+    "--disable-gpu",
+    "--user-data-dir=/tmp/nix-shell.FNr9XN/geul-d4-phase-chrome-iol8zylv",
+    "--dump-dom",
+    "--timeout=120000",
+    "--virtual-time-budget=60000",
+    "http://127.0.0.1:43859"
+  ],
+  "identities": {
+    "<workspace>/tests/integration/rhwp/ownership-poc/edit-phases-browser.mjs": "a458980d32d37267a7e4ff761431680ebd23bfa03ace548d1def7c9690473612",
+    "<workspace>/tests/integration/rhwp/ownership-poc/run-edit-phases.py": "5394dc552c34f83717cba2d9f44891dc7df63866597c50d7d4c35df59d88e1c2",
+    "<workspace>/external/rhwp/samples/issue6031/3249937_asset_management_rules.hwpx": "97b5d6c571a6b7626321c6a53d797e3511978447497bb73309bd23eaa8e7ea77",
+    "/tmp/geul-d4-critical-path/fixtures/basic-ko.hwpx": "26d434b7b427149110751c6ef5b19e9ecb4818f3ba7eadfe201b5afd3de442a8",
+    "/tmp/geul-t010-caret-geometry/candidate-package/rhwp.js": "b69e920c8fb1e9d05dacadf3ebae2396b043da385137ad2b4b3386a9b3433252",
+    "/tmp/geul-t010-caret-geometry/candidate-package/rhwp_bg.wasm": "48adaa0f748484d12f59f4805deda0480635f915368392a87e76e95962ec0b27",
+    "/tmp/geul-d4-phase-source/phase-package/rhwp.js": "706ae353dcdd21f48731b31f91269708f53cba2ae0bca5728ff9fa6422e54954",
+    "/tmp/geul-d4-phase-source/phase-package/rhwp_bg.wasm": "f50e2be27428563b7d189d6b3ffb930616d413234e444a09e82cf62ada79ad2c",
+    "/tmp/geul-d4-phase-source/phase-package/snippets/rhwp-594b72360f448ee6/inline0.js": "0f2619d563a0e87e628d82025ac91128bb790660744ff4b7c66cc43e40b6be3b"
+  },
+  "executedDependenciesStable": true,
+  "browserVersion": "Google Chrome 155.0.8059.39"
+}

@@ -37,7 +37,13 @@ export default mergeConfig(base, {
       if (id.split('?')[0] === resolve(root, 'src/components/Editor/rhwp/RhwpSurface.tsx')) {
         const before = 'if (canvas) session.renderPage(page, canvas, scale * ratio);';
         if (!code.includes(before)) throw new Error('PoC Surface completion boundary changed');
-        return code.replace(before, 'if (canvas && !session.renderPage(page, canvas, scale * ratio)) rendered.current.version = -1;');
+        let transformed = code.replace(before, 'if (canvas && !session.renderPage(page, canvas, scale * ratio)) rendered.current.version = -1;');
+        if (process.env.GEUL_T010_D4_TRACE === '1') {
+          const boundary = 'if (!all && last.version === session.modelVersion) {';
+          if (!transformed.includes(boundary)) throw new Error('D4 effect diagnostic boundary changed');
+          transformed = transformed.replace(boundary, `window.__d4SurfaceEffect?.({at:performance.now(),all,lastVersion:last.version,version:session.modelVersion,caretPage:session.caretRect()?.page??null});\n    ${boundary}`);
+        }
+        return transformed;
       }
       if (id.split('?')[0] !== resolve(root, 'src/components/Editor/documentWorkspace.ts')) return;
       const before = 'new RhwpEditorSession(sessionId, this.backend, this.sessions, this.loadModule)';

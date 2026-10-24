@@ -877,11 +877,57 @@ image surface가 모두 0이 되며, 다시 열면 같은 크기로 채워지고
 정한 2,904,100px와 상주 phase의 값이 같고 trim 뒤 0인지 확인한다. `aggregateRssBytes`는 정수여야 한다(405213184.0 == 405213184라서 비교만으로는
 실수를 받아들였다). D4 진단의 timestamp는 float로 바꿀 수 없을 만큼 큰 정수(10**400)를 예외 없이 거부한다.
 
-D4 원인(공식 48adaa 실행의 기존 trace 재분석, VERIFIED): 60쪽 HWPX는 동기 입력 handler가 p50 59ms이며 그중 `insertText`(엔진 편집과 내부
-재배치) 26ms, 동기 render job 14ms, 나머지 app/JS 14ms다. 기본 문서는 handler 약18ms이고 revision 뒤 RAF 두 번(p50 45~47ms)이 대부분이다.
-24쪽 화학 HWP의 p95 꼬리는 keydown→input 전달 150~166ms에서 나온다. 비공식 busy-probe 진단(`d4-input-delay-native.py`)에서 느린 표본 10개
-모두 keydown 3~13ms 전에 시작한 동기 `pollRenderJob` 121~158ms가 주 스레드를 점유했고, 그것이 끝난 직후 input이 전달됐다. 즉 이 꼬리는
-느린 native 입력이 아니라 직전 화면 갱신의 긴 동기 render가 입력 처리를 막은 것이다. 긴 render가 decoded cache miss(작업 집합 > 256MiB
-예산) 재디코드라는 연결은 INFERRED다. 렌더러 최적화는 하지 않았다(48adaa 유지). 다음 구현 후보: render job의 시간 분할·입력 우선 양보,
-caret 이동 뒤 재렌더 원인 확인, 큰 문서 `insertText` 재배치 비용 축소. 공식 D4는 FAIL 그대로다.
+D4 원인(공식 48adaa 실행의 기존 trace 재분석): 60쪽 HWPX의 동기 handler p50 59ms, `insertText` 26ms, render job 14ms는
+엔진 API의 벽시계 관측이다. 이전 "나머지 app/JS 14ms"는 중첩 호출을 더해 뺀 비배타적 산술 잔여여서 철회한다(아래 후속 교정).
+24쪽 화학 HWP의 비공식 진단에서 느린 group-start 10개 모두 동기 `pollRenderJob`과 겹치지만, 121~158ms 호출은 그중 7개다.
+나머지는 61·62·27ms이고, 13·15번 표본은 기록 호출로 덮이지 않는 34·31ms가 남는다. native 전달 자체를 배제하거나 모두 render가
+완전히 설명한다고 주장할 수 없다. 캐시 축출만으로 설명한다는 가설도 아래 호출별 근거로 제한한다. 승인 후보48adaa·공식 D4 FAIL은 유지한다.
 [검증·원인 분석 보고서](../../tests/integration/rhwp/evidence/t010-validation-d4-investigation/REPORT.ko.txt). T010 미완료, 제품 활성화와 T011은 NO-GO다.
+
+
+## T010 D4 critical path 귀속·호출별 계측 (2026-10-24)
+
+과거 원본은 보존하고 시험용 `ownership-poc/d4_evidence.py`·`analyze-d4.py`로 후속 분석한다. `call_start < input && call_end > key`
+교집합과 clipped interval union을 써 pre-key 호출·중첩·부분 겹침을 센다. 원본65개 `insertText` 호출과 canonical edit65개를 순서로 제안하되,
+각 상대 호출시각으로 복원한 절대 key와 input timestamp를 서로 독립적으로 유일 대조한다(30 group-start·30 extend·5 afterUndo;
+warmup6개는 별도). 공유 trial ID는 없어 순서를 전혀 쓰지 않는 독립 pairing은 아니다. timeStamp와 JS observation은 구분한다.
+화학 느린10개 중8개는 render 교집합이 지연의95% 이상, 13번은139/173ms(80.3%),15번은19/50ms(38%)다. 두 표본에서 마지막 호출 뒤
+keydown 관찰까지29·30ms가 남으며 다른 기록 동기 호출로 설명되지 않는다. busy gap은 관찰자 task가 못 돈 기간이며 CPU 작업명이 아니다.
+
+호출별 cache/native 진단 최종 실행은 DIAGNOSTIC_COMPLETE, 실행 의존 파일 안정·traceDropped0·probeCallDropped0이다(비공식).
+50ms 이상 poll46개 중26개에서 decoded miss,21개에서 입장 거부,5개에서 축출이 증가했다.20개는 decoded hit/miss 변화가 없다.
+따라서 모든 긴 poll을 cache miss 또는 축출로 단정하지 않는다. Right33개 모두 모델 버전·세대가 유지되고, dispatch 안에서 관찰된 effect23개는
+`all=false,lastVersion=modelVersion`이라 재요청 경로에서 빠졌다. 긴 요청의 실제 page14·15·16 등은 직전 편집보다 낡은 paintedVersion을
+갱신하는 요청이었다. 소스상 편집은 modelVersion을 올리고 화면 밖 쪽은200ms 뒤 한 task에 한 쪽씩 그린다. Right가 직접 문서를 바꿔
+불필요한 full render를 시작한다는 가설은 이 workload에서 지지되지 않는다. 이전 편집의 지연 background 작업과 입력 도착이 겹친다.
+각 페이지의 paint가 실제 동일한지는 모델 버전만으로 보증할 수 없어 render skipping은 적용하지 않는다.
+
+job poll은 tree 작성→scratch Full replay(동기 Rust decode 포함)→세대/취소 재검사→backup/atomic publication을 한 번에 수행한다.
+PENDING은 이미지/용량 대기이며 계산량의 time slice가 아니다. 같은 긴 동기 poll 바깥에 timer만 붙여도 decode를 나누지 못한다.
+안전한 다음 구현 경계는 자원 준비와 replay를 분리한 job 상태 전이이며, 준비된 자원의 수명·예산·취소 후 정리·capacity 알림·최종 세대 검사를
+함께 설계해야 한다. 개별 decode 자체가 긴 경우 자원 사이 yield만으로 입력 지연 상한은 보장되지 않는다. 예산 증액·캐시 정책 변경·생산 활성화는 하지 않는다.
+
+별도 고정 소스+진단 패치로 만든 WASM을 Chrome에서 승인48adaa와 같은 문서·위치·편집으로 비교했다(앱에 주입하지 않음).
+1쪽 HWPX는 `insertText` p50 1.1ms, 60쪽은27.7ms이며 그중 pagination26.8ms, 문단 reflow0.6ms, compose0.1ms다.
+각 측정의 중첩 spans는 더하지 않는다. 문단 reflow/compose는 표적 문단만 부르고, pagination은 dirty 구역을 다시 배치한다. 이를 매 키마다
+전체 문서 모든 문단의 shaping이라고 부르는 것은 틀리다. 60쪽 문서는3구역(593/4/34문단)이므로 페이지 수와 문단 복잡도를 두 fixture만으로
+독립 인과 분리할 수 없다. 부분 pagination 최적화는 affected-range·page break/table/caret/history 보존 근거가 더 필요하다.
+진단 WASM은 승인 후보가 아니며 엔진 성능 개선·공식 D4 PASS를 주장하지 않는다.
+
+공식 trace120개 group-start의 `engineTimeline` 경계를 handler에 자른 union으로 중첩을 교정했다. 과거 화학10개의 -6ms까지의 값은
+비배타적 산술 잔여이며 보존한다. union 밖 구간은 반올림된 선택 probe의 미계측 시간 추정치다. 실제 exclusive app/JS CPU 시간은 UNVERIFIED다.
+진단 완전성은 key/input·call·trace·busy 로그와 canonical timestamp/순서·65개 edit 연결·fixture/candidate·trace loss를 확인한다.
+누락 로그·중복/재정렬·짝 불일치·trace 손실은 FAIL이다. 첫 추가 실행의 timestamp 역전 FAIL, driver 전송 실패, 실행 중 분석 파일이 바뀐
+시도와 Chrome 가상시계의0ms 무효 관찰도 증거에 남긴다. 이 실패들을 최종 정상 실행이나 성능 개선으로 덮지 않는다.
+
+[후속 보고서](../../tests/integration/rhwp/evidence/t010-d4-critical-path/REPORT.ko.txt).
+D1 실제 native39/39·RGBA24/24·정리3/3 PASS, D2 INCONCLUSIVE, D3·D5 보관 근거 PASS, D4 공식88/89/266/138ms FAIL,
+RSS 기준 미승인 INCONCLUSIVE다. T010 전체 미완료, 생산 RHWP Undo/Redo 및 T011은 NO-GO를 유지한다.
+
+
+추가 분해(같은 후속 증거의 deep-*): dirty section typeset이60쪽 `insertText`의 p50 24.0ms를 차지하고 selective measurement는0.2ms다.
+화학 page14/15/19의 긴 poll은 tree보다 decoded image 준비 경로(161~170ms)가 지배하지만 codec 자체는5~9ms였다.
+RGBA 변환·ImageData·Canvas 생성/업로드·입장 시도를 포함한 나머지를 codec으로 귀속하지 않는다. page20/23은 codec도80~101ms다.
+cache 활동 없는 page16은 tree 약39~42ms/replay 약16ms로 나뉜다. 따라서 decode나 cache 한 가지로 모든 긴 poll을 설명하지 않는다.
+이 별도 Chrome 진단의21개 baseline/진단 Full frame은 exact RGBA이며 최종 trim 뒤 job/lease/cache가0이다. native D4 성능 비교는 아니다.
+다음 구현 경계는 이미지 준비/재생/게시 상태 전이와 tree 작성의 긴 동기 단위, layout은 dirty section typeset의 영향 범위 증명이다.
