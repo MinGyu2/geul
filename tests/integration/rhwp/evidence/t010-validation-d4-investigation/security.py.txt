@@ -1,0 +1,27 @@
+from pathlib import Path
+import subprocess,json,tempfile,shutil,time,os
+root=Path('<workspace>');out=root/'tests/integration/rhwp/evidence/t010-validation-d4-investigation'
+def git(*args):return subprocess.check_output(['git',*args],cwd=root,text=True).splitlines()
+files=sorted(set(git('diff','--name-only')+git('ls-files','--others','--exclude-standard')))
+rows=[]
+def run(name,cmd,cwd=root):
+ start=time.monotonic();p=subprocess.run(cmd,cwd=cwd,capture_output=True,text=True);log=(p.stdout+p.stderr).replace(str(root),'<workspace>').replace(str(Path.home()),'<home>')
+ Path('/tmp/geul-d4-investigation/scan-'+name+'.log').write_text(log)
+ rows.append({'name':name,'command':cmd,'cwd':'<workspace>' if cwd==root else '<review-copy>','exit':p.returncode,'status':'PASS' if p.returncode==0 else 'FAIL','elapsedSeconds':round(time.monotonic()-start,2),'outputTail':'\n'.join(log.splitlines()[-12:])})
+ print(name,p.returncode,flush=True)
+
+run('python-harness-compile',['python3','-B','-c','import sys,ast;[ast.parse(open(f,encoding="utf-8").read(),f) for f in sys.argv[1:]]','tests/integration/rhwp/cache-concurrency/prepare_native.py','tests/integration/rhwp/cache-concurrency/prepare.py','tests/integration/rhwp/cache-concurrency/test_prepare.py','tests/integration/rhwp/ownership-poc/candidate-safety.py','tests/integration/rhwp/ownership-poc/history-perf.py','tests/integration/rhwp/ownership-poc/performance-visual-native.py','tests/integration/rhwp/ownership-poc/test_performance_visual_native.py','tests/integration/rhwp/ownership-poc/lifecycle_evidence.py','tests/integration/rhwp/ownership-poc/lifecycle-continuous-native.py','tests/integration/rhwp/ownership-poc/cache-trim-native.py','tests/integration/rhwp/ownership-poc/d4-frame-attribution-native.py','tests/integration/rhwp/ownership-poc/test_lifecycle_evidence.py','tests/integration/rhwp/ownership-poc/test_native_diagnostics.py','tests/integration/rhwp/ownership-poc/image-cache-trim-native.py','tests/integration/rhwp/ownership-poc/d4-input-delay-native.py'])
+run('sensitive-changed',['python3','scripts/check-sensitive-info.py',*files])
+run('sensitive-tracked',['python3','scripts/check-sensitive-info.py','--all'])
+with tempfile.TemporaryDirectory(prefix='geul-d4-investigation-review-') as folder:
+ mirror=Path(folder)
+ for name in files:
+  source=root/name
+  if source.is_file():
+   target=mirror/name;target.parent.mkdir(parents=True,exist_ok=True);shutil.copy2(source,target)
+ run('gitleaks-changed',['/nix/store/xcn42a2dylrijcsdgh2w5nn1r33s1img-gitleaks-8.30.1/bin/gitleaks','dir','--redact','--no-banner','--config',str(root/'.gitleaks.toml'),'--report-format','json','--report-path','/tmp/geul-d4-investigation/gitleaks-final.json','.'],mirror)
+run('diff-whitespace',['git','diff','--check'])
+# Replace only workspace-specific argv paths, preserving exact option/order.
+data=json.dumps({'status':'PASS' if all(r['exit']==0 for r in rows) else 'FAIL','checkedChangedFiles':len(files),'checks':rows},indent=2).replace(str(root),'<workspace>').replace(str(Path.home()),'<home>')
+(out/'security-final.json').write_text(data+'\n')
+raise SystemExit(0 if all(r['exit']==0 for r in rows) else 1)

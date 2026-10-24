@@ -1,0 +1,50 @@
+{
+ "status": "PASS",
+ "baseline": "312fedc4eb636932c6e912925eb288dcd7b191cd",
+ "head": "312fedc4eb636932c6e912925eb288dcd7b191cd",
+ "checks": {
+  "headIsBaseOrChild": true,
+  "changedFilesInScope": true,
+  "protectedUnchanged": true,
+  "priorEvidenceUnchanged": true,
+  "submodulesPinned": true,
+  "candidateWasm": true,
+  "appBinary": true,
+  "checkpointNotStaged": true,
+  "previousCompletenessEvidenceUnchanged": true,
+  "diffCheck": true
+ },
+ "changedFiles": {
+  "docs/architecture/rhwp-undo-redo.md": "2345b6d070bf12562ecc9d23c14dff770fec80fcdab56876b92a399762ebe795",
+  "tests/integration/rhwp/evidence/t010-validation-d4-investigation/REPORT.ko.txt": "f38caea60316b656e5704f3dded353bc4eb83c4799124a512e26154ba188e876",
+  "tests/integration/rhwp/evidence/t010-validation-d4-investigation/d1-four-document-native-attempt2.json": "5dc8e5d074510e6eacaf31bdaac1b0888b70b1fa50454647b8b335cf55ce6831",
+  "tests/integration/rhwp/evidence/t010-validation-d4-investigation/d1-four-document-native.json": "1f2bd2265353000a3c227132b62264f5608cf4f6f0cbe0cb7a128bebfbcb36ed",
+  "tests/integration/rhwp/evidence/t010-validation-d4-investigation/d4-input-delay-analysis.json": "9fe3f6faf701cc4724eb740c38bcf2ab497e9b78b38909cbe9c2aa13985d4470",
+  "tests/integration/rhwp/evidence/t010-validation-d4-investigation/d4-input-to-commit-official-reanalysis.json": "78af93bd2280ed773548e8acde6ca385a9d69397f67587a806676237853f9df2",
+  "tests/integration/rhwp/evidence/t010-validation-d4-investigation/defect-reproduction.json": "9dcc642943632f9eb167d90ed98be6100b9b00a56eadb6155c21d1bc9dccf588",
+  "tests/integration/rhwp/evidence/t010-validation-d4-investigation/diagnostic-cache-ownership-trim.json": "a53514403687083a9ce45d884e1dd947ebf1b7469af43aee962f49182808f791",
+  "tests/integration/rhwp/evidence/t010-validation-d4-investigation/diagnostic-d4-input-delay-chemical.json": "93bfef44137e48dd6079496f0146504a7798d7587bcf5c517174e200da16202b",
+  "tests/integration/rhwp/evidence/t010-validation-d4-investigation/diagnostic-image-cache-trim.json": "099c5e895b05e9e45cde11eb81f15338e8e345007dbe07613d786b60d8a382dd",
+  "tests/integration/rhwp/evidence/t010-validation-d4-investigation/final-integrity.json": "a5411b4d0a60c4566e991e9272993663829408988120be1fd056ad4b480118c4",
+  "tests/integration/rhwp/evidence/t010-validation-d4-investigation/input-delay-analysis.py.txt": "3653dfc0c119059fa8b35c9e1cdd33e67204dc341be85865ce8c4bd0a0a6c5be",
+  "tests/integration/rhwp/evidence/t010-validation-d4-investigation/input-to-commit.py.txt": "5b85e4d15906224a7d7739a57e6af07b4d7fb36643d3c98d88606945c4b9b911",
+  "tests/integration/rhwp/evidence/t010-validation-d4-investigation/integrity.py.txt": "2dbb0bba0065e1cb9bae6b0f058fa83a56eba3a0bd0e169b95178cc6d6e06011",
+  "tests/integration/rhwp/evidence/t010-validation-d4-investigation/run.py.txt": "73e2c2de117f37b432a79233d51e578da20b0932a6555edd441f239e9e40eaf8",
+  "tests/integration/rhwp/evidence/t010-validation-d4-investigation/s-mutation.json": "78495430387366120dfe6c7b6b0e1991872ff38849aeb8ef01bec6697bddc705",
+  "tests/integration/rhwp/evidence/t010-validation-d4-investigation/s-mutation.py.txt": "2782dea0f59895c73f044778c2f44078dcad0356e9199a4d39bd6d9aaa570c4d",
+  "tests/integration/rhwp/evidence/t010-validation-d4-investigation/security-final.json": "d64c3c43558bbb88e4c8c62ffce3af9d4ab0f2a56f7e6ec19b9e8ec71b4c66c4",
+  "tests/integration/rhwp/evidence/t010-validation-d4-investigation/security.py.txt": "4e29ac1016fac05f336220b0ee26e86e7269cbc81ab33ce2f607579f81fbeb85",
+  "tests/integration/rhwp/ownership-poc/README.md": "2341c48e18aefaf46f7cce0bc5c72956de776cba715e909afb32b492a0becb50",
+  "tests/integration/rhwp/ownership-poc/d4-frame-attribution-native.py": "988de13828047beae65d84176761a69e377a0fb83a84e53da23db8771a5a6541",
+  "tests/integration/rhwp/ownership-poc/d4-input-delay-native.py": "336b38240b2294b597523bc377b6794ec6b3221c1a0de0ef742c1d485ac224a2",
+  "tests/integration/rhwp/ownership-poc/image-cache-trim-native.py": "ee4742fdc04fb2ba12b5cfa02c6a19b20bad30877cc85c50dcea1c992fa5f30d",
+  "tests/integration/rhwp/ownership-poc/lifecycle_evidence.py": "01b6b6323bac3a178d3e7dfb737332f8b6b43ed9019c52ef9e8d26a67fc3f3fb",
+  "tests/integration/rhwp/ownership-poc/test_lifecycle_evidence.py": "4dd3e92f186cbd8f60c901ac8871c555dd6baebfac2aab7b0cf1ed7b7cc139b0",
+  "tests/integration/rhwp/ownership-poc/test_native_diagnostics.py": "55de0741709735905caced20dda56bdc0dcc4b7ca26dce96aee031e7133dbeb8"
+ },
+ "priorEvidenceChanged": [],
+ "submodules": [
+  " 1a76570e833917d15817415a53c09ad61ab3203f external/rhwp (v0.8.7)",
+  " fc41918814f62645b6746ed68e71e8c2c2e85d6f external/wordcraft (v0.7.0)"
+ ]
+}

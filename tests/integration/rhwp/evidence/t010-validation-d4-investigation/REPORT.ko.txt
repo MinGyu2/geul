@@ -1,0 +1,88 @@
+T010 이미지·RSS·D4 진단 검증 보완 및 D4 성능 원인 분석 보고서
+작성: 2026-10-24 (KST)
+분류: VERIFIED=실제 실행/소스 대조, INFERRED=관측에 근거한 해석(한계 명시), UNVERIFIED=근거 부족.
+
+1. 범위와 판정
+범위 작업: COMPLETED(P0~P2 수정·검증, P3 원인 분석과 비공식 진단 1건, 로컬 커밋). 개선은 진단 harness의 검증력이며 제품 실행 성능은
+바뀌지 않았다(엔진·제품 코드 변경 없음, 48adaa 유지). 전체 T010 미완료, 제품 Undo/Redo NO-GO, T011 미시작.
+시작 HEAD=312fedc4eb636932c6e912925eb288dcd7b191cd(master=origin/master, clean). rhwp 1a76570e…, WordCraft fc419188…(변경 없음).
+후보 WASM 48adaa0f748484d12f59f4805deda0480635f915368392a87e76e95962ec0b27, app 48b7b8364cb4b91ae0b4c3cb3113977c15fd92aa9ca3d60f0406f331749d45c1.
+fixture SHA: basic-ko.hwp 57c901cc…, basic-ko.hwpx 26d434b7…, 화학 6717eca4…, HWPX 97b5d6c5…(이전 모든 실행과 동일). 이전 증거 불변.
+
+2. 결함 재현 — VERIFIED (defect-reproduction.json)
+새 시험을 312fedc 판정에 그대로 돌린 결과 FAIL 14, ERROR 4:
+- P0: imagePixels 누락/None/False/0(상주)/-1/1.0/문자열/잘못된 합계/닫은 뒤 다른 값/trim 뒤 비0/다시 연 뒤 누락/baseline 누락 → PASS(12).
+  원인: imagePixels가 보고용으로만 기록되고 구조·값 검사가 없었다.
+- P1: aggregateRssBytes=734003200.0 → PASS. 원인: 정수 검사 없이 ==만 비교(실수 == 정수 성립). None/0/-1/True/문자열은 이미 FAIL이었다.
+- P2: rafA·keyToFrame = ±10**400 → math.isfinite에서 OverflowError(4). inf/nan/bool/None/문자열은 이미 FAIL이었다.
+- 정상 대조 시험 하나(정수·실수 섞은 timestamp)가 원래 코드에서 실패했는데, 원인은 시험이 taskB/rafC를 옛 값으로 둔 시험 오류였다.
+  판정 코드가 아니라 시험을 고쳤다.
+
+3. 수정 — VERIFIED
+- lifecycle_evidence.py(SHA 01b6b632…): SURFACE_COUNTERS에 imagePixels 추가(모든 관찰, 0 이상 정수, bool 거부). aggregateRssBytes는
+  positive()(정확한 양의 정수) 뒤 process RSS와 비교. 공통 경계라 lifecycle·decoded trim·image trim 모두에 적용된다.
+- image-cache-trim-native.py(SHA ee4742fd…): IMAGE_PIXELS = 1200² + 1210² = 2,904,100(generate.mjs의 n = 1200 + i*10, i=0,1 확인). 상주
+  phase(opened/closed/idle/reopened/reclosed)는 정확히 이 값, baseline과 trim 뒤 phase는 0. 관찰값에서 기대값을 만들지 않는다. image cache
+  bytes가 pixels×4라고 가정하지 않는다(실측 11,617,460 = 2,904,100×4 + 1,060). decoded 음성 항목은 그대로 허용.
+- d4-frame-attribution-native.py(SHA 988de138…): timestamp()는 float면 isfinite, int면 |값| ≤ sys.float_info.max(그보다 큰 정수는 float
+  변환이 불가능하므로 timestamp가 아님; 임의 상한이 아닌 IEEE double 한계). 넓은 예외 처리 없음. rafA 작업이 rafB 뒤 실행되는 것은 계속 허용.
+- 새 d4-input-delay-native.py(SHA 336b3824…): 7절 진단. 시험 test_native_diagnostics.py(SHA 55de0741…), test_lifecycle_evidence.py(SHA 4dd3e92f…).
+변이(s-mutation.json): 29개 중 28개 검출. 남은 1개(trim 요약 None 무시)는 이번 변경 뒤에도 도달 불가능하다: 요약에 쓰는 모든 필드(정수 RSS 포함)를
+check_point가 먼저 검증하므로 요약이 None이면 이미 다른 실패가 있다. 29/29로 보고하지 않는다.
+
+4. 이미지 픽셀 검증 — VERIFIED (diagnostic-image-cache-trim.json, PASS/exit0, 의존 파일 안정·작업 공간 변경 없음)
+baseline (항목, bytes, 엔진 image, pixels) = (0,0,0,0) → opened (2, 11,617,460, 2, 2,904,100), frame exact(pixels 0, maxDelta 0) →
+closed·idle 10초 동일 → trim 0/2/10초 (0,0,0,0) → reopened 동일 2·2,904,100, frame exact → reclosed 동일 → final trim 0.
+decoded cache에는 SVG 디코드 실패 음성 항목 2개만 있어 image 상주와 decoded 상주가 구별된다. WebProcess (pid,start) 하나, 정리 3단계.
+
+5. RSS 형식 검증 — VERIFIED
+정수 양수 RSS만 통과하고 실수(정수값이어도)·bool·문자열·0·음수·누락은 FAIL. 보존 증거(이전 trim 3건, lifecycle 3건, image 1건) 재분류 결과는
+모두 이전과 같다(정수 RSS만 기록돼 있음). 유효한 RSS 값은 장기 RSS 안정성을 뜻하지 않으며 RSS 판정은 INCONCLUSIVE 그대로다.
+
+6. 극단 timestamp — VERIFIED
+±10**400, ±inf, nan, True/False, None, 문자열을 관찰자 기록과 MEASURE 기록에 넣으면 예외 없이 FAIL이고 실패 문구에 'timestamp'/'MEASURE'가
+나온다. 정수·실수 timestamp가 섞인 정상 기록은 DIAGNOSTIC_COMPLETE(공식 D4 PASS 아님). 기존 D4 진단 재분류도 불변.
+
+7. D4 원인 분석
+(A) key → revision commit — VERIFIED(공식 48adaa 실행의 기존 trace 재분석, d4-input-to-commit-official-reanalysis.json; 새 실행 아님)
+| 문서 | handler p50/p95 | insertText | render job | 기타 app/JS | delivery p50/p95 | revision 뒤 RAF 2회 p50/p95 |
+| basic-ko.hwp | 18/20 | 1 | 5 | 10 | 1/16 | 45/64 |
+| basic-ko.hwpx | 18/20 | 1 | 5 | 10 | 1/18 | 47/65 |
+| 화학 HWP(24쪽) | 23/97 | 1 | 19 | 1 | 9/157 | 50/102 |
+| HWPX(60쪽) | 59/67 | 26 | 14 | 14 | 4/19 | 43/65 |
+(ms, 표본 각 30.) render job과 첫 그리기는 입력 handler 안에서 동기로 끝나고 그 뒤에 revision이 관찰된다. snapshot·getPageInfo(쪽 수만큼 호출)는 1ms 안팎.
+60쪽 HWPX는 매 입력의 `insertText`가 26ms로 일정하다(엔진 편집+재배치; 엔진 내부 단계별 분해는 UNVERIFIED).
+(B) 화학 HWP 꼬리 — VERIFIED(비공식 진단 diagnostic-d4-input-delay-chemical.json, busy probe가 일정을 바꾸므로 값은 비공식, d4-input-delay-analysis.json)
+비공식 group-start p50/p95 104/265ms, delivery p95 156ms. delivery ≥50ms 표본 10개 모두 keydown 4~28ms 전 시작한 주 스레드 busy 구간이
+delivery의 80% 이상을 덮었다. 절대 시각으로 보면 그 구간마다 keydown 3~13ms 전에 시작한 동기 `pollRenderJob` 121~158ms가 있었고(앞서 10ms 안팎
+render 두 번), 그것이 끝난 직후 input이 전달됐다. 즉 이 꼬리는 native 입력 전달 자체가 아니라 직전 화면 갱신의 긴 동기 render가 입력 처리를 막은 것이다.
+INFERRED: 긴 render는 그림이 많은 쪽의 decoded cache miss 재디코드다(이전 증거: cold/반복 miss 약130ms, 작업 집합이 256MiB 예산보다 큼; 이번 실행은
+호출별 cache 통계를 기록하지 않음). 왜 각 표본 직전(Right 키 caret 이동 뒤)에 render가 시작되는지는 UNVERIFIED.
+(C) revision → 보이는 frame, software GL vs GPU — 이전 증거 그대로(새 실험 없음). software GL rafA→rafB p50 34~39ms, WebProcess가 renderD128(xe)을 쓴
+설정 6~11ms. graphics 경로가 frame 일정에 크게 작용한다(INFERRED). rendering update 안의 style/layout/paint/raster/compositor 단계별 시간은 지원되는
+계측이 없어 UNVERIFIED. 무작업 3-RAF p95는 49/49/48/173ms로 균일하지 않다.
+결론: 공식 D4 group-start p95 88/89/266/138ms FAIL(문턱 50ms), Undo p95 152/150/133/247ms PASS(문턱 1500ms) 그대로. 최적화는 하지 않았다.
+
+8. 실제 native 회귀(이번 세션, run.py.txt)
+- image-trim exit0 PASS. trim exit0 PASS(13 → idle 13 → trim 0 → 재채움 9).
+- D1 perf-visual 첫 시도 exit1 FAIL: WebKitWebDriver 500 "Could not parse script result"가 첫 frame 검사 전에 났다(bootstrap만 기록, 의존 파일 안정,
+  같은 harness가 이전 4회 통과, 경쟁 native 세션 없음). 원인 UNVERIFIED, 결과 보존(d1-four-document-native.json). 별도 두 번째 시도
+  (d1-four-document-native-attempt2.json) exit0 PASS 39/39·참조 24/24·정리 3/3. 성능 측정이 아니므로 결과 선택 문제는 없다.
+- input-delay exit0 DIAGNOSTIC_COMPLETE(비공식). pending 이미지 회귀는 이번 변경이 그 경로·판정에 닿지 않아 다시 하지 않았다(직전 커밋에서 22/22).
+
+9. 단위·변이
+- python3 -I -m unittest discover -s tests/integration/rhwp/ownership-poc -p 'test_*.py' → 114 OK(26+38+44+6; 이전 110 유지), exit0.
+- node --experimental-strip-types --test tests/integration/rhwp/ownership-poc/test-session.mjs → 23 pass/0 fail/0 skipped.
+- 변이 28/29(1 동등). 재실행하지 않음(보관 증거): 120회 연속 수명주기(판정만 변경, 재분류 PASS 유지), D3, D5, scheduler, Rust/WASM.
+
+10. D1~D5 독립 판정
+D1 PASS(이번 두 번째 시도, 첫 시도 FAIL 보존). D2 INCONCLUSIVE. D3 보관 증거 PASS. D4 공식 FAIL. D5 보관 증거 PASS.
+수명주기·decoded/image cache 소유 PASS(D4 아님). RSS INCONCLUSIVE.
+
+11. 무결성·보안: security-final.json, final-integrity.json.
+
+12. 남은 위험과 다음 D4 구현 우선순위
+(1) 화학 HWP: 입력 직전 시작되는 긴 동기 render(121~158ms)를 없애거나 나누기 — render job 시간 분할·입력 우선 양보, caret 이동 뒤 재렌더 원인 확인,
+decoded cache miss 여부를 호출별 통계로 확인(예산은 바꾸지 않음). (2) 60쪽 HWPX: insertText 26ms 재배치 비용의 엔진 내부 분해. (3) 기본 문서:
+revision 뒤 RAF 두 번(p50 45ms)이 문턱에 가까운 구조적 비용 — 공식 환경(software GL)과 문턱 정합성은 별도 승인 판단.
+미해결 필수 관문: D4 공식 group-start p95 ≤ 50ms, D2 목표 IME 순서, RSS 기준 승인과 충족.

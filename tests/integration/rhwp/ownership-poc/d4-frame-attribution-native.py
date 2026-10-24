@@ -88,7 +88,10 @@ def graphics_backend():
 
 
 def timestamp(value):
-    return type(value) in (int, float) and math.isfinite(value)
+    """A finite JSON number other than bool. An int too large for a float (10**400) is not a timestamp; it must not
+    raise OverflowError inside math.isfinite or later float comparisons."""
+    if type(value) is float: return math.isfinite(value)
+    return type(value) is int and abs(value) <= sys.float_info.max
 
 
 def sha256_hex(value):

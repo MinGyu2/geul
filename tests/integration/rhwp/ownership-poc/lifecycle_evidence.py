@@ -27,7 +27,7 @@ RELEASED_JOB_FIELDS = ('activeJobs', 'activeLeaseCount', 'pendingCount', 'readyL
 JOB_COUNTERS = ('ownedEstimatedBytes', 'uniqueResourceCount', 'peakStagingBytes', 'peakTemporaryCanvasBytes', 'peakBackupImageDataBytes')
 CACHE_COUNTERS = ('bytes', 'entries', 'pendingEntries', 'negativeEntries', 'transientEntries')
 CLEANUP_STEPS = ('sessionEnded', 'driverStopped', 'displayTerminated')
-SURFACE_COUNTERS = ('detachedCanvases', 'canvasCount', 'canvasPixels', 'imageCount', 'externrefSlots')
+SURFACE_COUNTERS = ('detachedCanvases', 'canvasCount', 'canvasPixels', 'imageCount', 'imagePixels', 'externrefSlots')
 
 
 def count(value):
@@ -59,7 +59,8 @@ def check_point_fields(point, where, closed, failures):
         failures.append(f'{where}: not a memory sample'); return
     identity = process_identity(point.get('processes'), where, failures)
     rss = point.get('aggregateRssBytes')
-    if identity and not (positive(point['processes'][0].get('rssBytes')) and rss == point['processes'][0]['rssBytes']):
+    # Both must be exact positive ints: 405213184.0 == 405213184 in Python, so equality alone accepts a float.
+    if identity and not (positive(point['processes'][0].get('rssBytes')) and positive(rss) and rss == point['processes'][0]['rssBytes']):
         failures.append(f'{where}: RSS missing, zero or inconsistent')
     if not positive(point.get('wasmBytes')): failures.append(f'{where}: WASM memory missing')
     renderer = point.get('renderer')

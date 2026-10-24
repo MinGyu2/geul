@@ -870,3 +870,18 @@ D4 진단 판정은 기대 WASM이 소문자 SHA-256인지 먼저 확인하고, 
 image surface가 모두 0이 되며, 다시 열면 같은 크기로 채워지고 frame이 다시 exact다. 늦은 이미지 콜백이 교체된 문서에 게시되지
 않는 것은 `history-pending-native.py`(22/22)로 다시 확인했다. 앞 절의 "image cache 해제는 trim 뒤 비어 있음까지만 확인" 한계는 해소됐다.
 [입력 검증 보고서](../../tests/integration/rhwp/evidence/t010-diagnostic-input-validation/REPORT.ko.txt). D4 공식 FAIL, D2·RSS INCONCLUSIVE, T010 미완료, 제품 활성화와 T011은 계속 NO-GO다.
+
+## T010 이미지·RSS·D4 진단 검증 보완 및 D4 원인 분석 (2026-10-24)
+
+`engineSurfaces.imagePixels`도 모든 관찰에서 0 이상 정수여야 하며, 이미지 cache 실험은 생성 문서의 두 SVG(1200·1210px 정사각형)에서 독립적으로
+정한 2,904,100px와 상주 phase의 값이 같고 trim 뒤 0인지 확인한다. `aggregateRssBytes`는 정수여야 한다(405213184.0 == 405213184라서 비교만으로는
+실수를 받아들였다). D4 진단의 timestamp는 float로 바꿀 수 없을 만큼 큰 정수(10**400)를 예외 없이 거부한다.
+
+D4 원인(공식 48adaa 실행의 기존 trace 재분석, VERIFIED): 60쪽 HWPX는 동기 입력 handler가 p50 59ms이며 그중 `insertText`(엔진 편집과 내부
+재배치) 26ms, 동기 render job 14ms, 나머지 app/JS 14ms다. 기본 문서는 handler 약18ms이고 revision 뒤 RAF 두 번(p50 45~47ms)이 대부분이다.
+24쪽 화학 HWP의 p95 꼬리는 keydown→input 전달 150~166ms에서 나온다. 비공식 busy-probe 진단(`d4-input-delay-native.py`)에서 느린 표본 10개
+모두 keydown 3~13ms 전에 시작한 동기 `pollRenderJob` 121~158ms가 주 스레드를 점유했고, 그것이 끝난 직후 input이 전달됐다. 즉 이 꼬리는
+느린 native 입력이 아니라 직전 화면 갱신의 긴 동기 render가 입력 처리를 막은 것이다. 긴 render가 decoded cache miss(작업 집합 > 256MiB
+예산) 재디코드라는 연결은 INFERRED다. 렌더러 최적화는 하지 않았다(48adaa 유지). 다음 구현 후보: render job의 시간 분할·입력 우선 양보,
+caret 이동 뒤 재렌더 원인 확인, 큰 문서 `insertText` 재배치 비용 축소. 공식 D4는 FAIL 그대로다.
+[검증·원인 분석 보고서](../../tests/integration/rhwp/evidence/t010-validation-d4-investigation/REPORT.ko.txt). T010 미완료, 제품 활성화와 T011은 NO-GO다.

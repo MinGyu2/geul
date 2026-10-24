@@ -1,0 +1,280 @@
+{
+ "status": "FAIL",
+ "survivors": [
+  "trim-summary-none-ignored"
+ ],
+ "mutants": {
+  "baseline-unmutated": {
+   "exit": 0,
+   "summary": [
+    "OK"
+   ],
+   "killedBy": []
+  },
+  "opened-surfaces-unchecked": {
+   "exit": 1,
+   "summary": [
+    "FAILED (failures=11, errors=5)"
+   ],
+   "killedBy": [
+    "test_image_pixel_evidence_is_mandatory_and_exact",
+    "test_malformed_or_incomplete_evidence_fails",
+    "test_opened_state_engine_surfaces_are_mandatory",
+    "test_orphan_detached_canvas_fails"
+   ]
+  },
+  "surface-count-type-relaxed": {
+   "exit": 1,
+   "summary": [
+    "FAILED (failures=3)"
+   ],
+   "killedBy": [
+    "test_opened_state_engine_surfaces_are_mandatory"
+   ]
+  },
+  "trim-summary-none-ignored": {
+   "exit": 0,
+   "summary": [
+    "OK"
+   ],
+   "killedBy": []
+  },
+  "summary-gate-id-unchecked": {
+   "exit": 1,
+   "summary": [
+    "FAILED (failures=6)"
+   ],
+   "killedBy": [
+    "test_summary_gate_identity_is_mandatory"
+   ]
+  },
+  "d4-expected-wasm-unvalidated": {
+   "exit": 1,
+   "summary": [
+    "FAILED (failures=6)"
+   ],
+   "killedBy": [
+    "test_invalid_expected_wasm_identity_fails"
+   ]
+  },
+  "d4-records-accept-any-items": {
+   "exit": 1,
+   "summary": [
+    "FAILED (errors=4)"
+   ],
+   "killedBy": [
+    "test_malformed_documents_fail_without_exception",
+    "test_malformed_json_fields_fail_without_exception"
+   ]
+  },
+  "d4-engine-identity-type-unchecked": {
+   "exit": 1,
+   "summary": [
+    "FAILED (errors=2)"
+   ],
+   "killedBy": [
+    "test_malformed_json_fields_fail_without_exception"
+   ]
+  },
+  "d4-revision-type-unchecked": {
+   "exit": 1,
+   "summary": [
+    "FAILED (failures=1, errors=2)"
+   ],
+   "killedBy": [
+    "test_malformed_json_fields_fail_without_exception"
+   ]
+  },
+  "d4-group-start-int-unchecked": {
+   "exit": 1,
+   "summary": [
+    "FAILED (failures=1)"
+   ],
+   "killedBy": [
+    "test_malformed_json_fields_fail_without_exception"
+   ]
+  },
+  "img-phases-unchecked": {
+   "exit": 1,
+   "summary": [
+    "FAILED (errors=1)"
+   ],
+   "killedBy": [
+    "test_malformed_or_incomplete_evidence_fails"
+   ]
+  },
+  "img-baseline-unchecked": {
+   "exit": 1,
+   "summary": [
+    "FAILED (failures=1)"
+   ],
+   "killedBy": [
+    "test_baseline_must_start_empty"
+   ]
+  },
+  "img-populated-unchecked": {
+   "exit": 1,
+   "summary": [
+    "FAILED (failures=2)"
+   ],
+   "killedBy": [
+    "test_decoded_entries_cannot_substitute_for_image_entries",
+    "test_never_populated_image_cache_is_not_proof"
+   ]
+  },
+  "img-kept-unchecked": {
+   "exit": 1,
+   "summary": [
+    "FAILED (failures=1)"
+   ],
+   "killedBy": [
+    "test_image_cache_must_survive_close_and_idle"
+   ]
+  },
+  "img-trim-unchecked": {
+   "exit": 1,
+   "summary": [
+    "FAILED (failures=1)"
+   ],
+   "killedBy": [
+    "test_trim_must_release_images_and_surfaces"
+   ]
+  },
+  "img-trim-images-only-decoded": {
+   "exit": 1,
+   "summary": [
+    "FAILED (failures=1)"
+   ],
+   "killedBy": [
+    "test_trim_must_release_images_and_surfaces"
+   ]
+  },
+  "img-repopulate-unchecked": {
+   "exit": 1,
+   "summary": [
+    "FAILED (failures=1)"
+   ],
+   "killedBy": [
+    "test_reopen_must_repopulate_with_exact_frames"
+   ]
+  },
+  "img-frames-unchecked": {
+   "exit": 1,
+   "summary": [
+    "FAILED (failures=1)"
+   ],
+   "killedBy": [
+    "test_reopen_must_repopulate_with_exact_frames"
+   ]
+  },
+  "img-settled-as-opened": {
+   "exit": 1,
+   "summary": [
+    "FAILED (failures=1)"
+   ],
+   "killedBy": [
+    "test_orphan_engine_image_in_settled_state_fails"
+   ]
+  },
+  "img-identity-unchecked": {
+   "exit": 1,
+   "summary": [
+    "FAILED (failures=1)"
+   ],
+   "killedBy": [
+    "test_process_generation_must_stay_stable"
+   ]
+  },
+  "img-error-ignored": {
+   "exit": 1,
+   "summary": [
+    "FAILED (failures=1)"
+   ],
+   "killedBy": [
+    "test_malformed_or_incomplete_evidence_fails"
+   ]
+  },
+  "img-cleanup-ignored": {
+   "exit": 1,
+   "summary": [
+    "FAILED (failures=1)"
+   ],
+   "killedBy": [
+    "test_malformed_or_incomplete_evidence_fails"
+   ]
+  },
+  "img-wasm-ignored": {
+   "exit": 1,
+   "summary": [
+    "FAILED (failures=1)"
+   ],
+   "killedBy": [
+    "test_malformed_or_incomplete_evidence_fails"
+   ]
+  },
+  "img-pixels-populated-unchecked": {
+   "exit": 1,
+   "summary": [
+    "FAILED (failures=3)"
+   ],
+   "killedBy": [
+    "test_image_pixel_evidence_is_mandatory_and_exact"
+   ]
+  },
+  "img-pixels-trimmed-unchecked": {
+   "exit": 1,
+   "summary": [
+    "FAILED (failures=1)"
+   ],
+   "killedBy": [
+    "test_image_pixel_evidence_is_mandatory_and_exact"
+   ]
+  },
+  "img-pixels-failure-ignored": {
+   "exit": 1,
+   "summary": [
+    "FAILED (failures=4)"
+   ],
+   "killedBy": [
+    "test_image_pixel_evidence_is_mandatory_and_exact"
+   ]
+  },
+  "image-pixels-not-structural": {
+   "exit": 1,
+   "summary": [
+    "FAILED (errors=3)"
+   ],
+   "killedBy": [
+    "test_image_pixel_evidence_is_mandatory_and_exact"
+   ]
+  },
+  "aggregate-rss-type-unchecked": {
+   "exit": 1,
+   "summary": [
+    "FAILED (failures=1)"
+   ],
+   "killedBy": [
+    "test_aggregate_rss_must_be_an_exact_positive_integer"
+   ]
+  },
+  "timestamp-overflow-unguarded": {
+   "exit": 1,
+   "summary": [
+    "FAILED (errors=4)"
+   ],
+   "killedBy": [
+    "test_extreme_or_non_numeric_timestamps_fail_without_exception"
+   ]
+  },
+  "timestamp-float-nonfinite-accepted": {
+   "exit": 1,
+   "summary": [
+    "FAILED (failures=6)"
+   ],
+   "killedBy": [
+    "test_extreme_or_non_numeric_timestamps_fail_without_exception",
+    "test_timestamps_must_be_finite_numbers_in_causal_order"
+   ]
+  }
+ }
+}

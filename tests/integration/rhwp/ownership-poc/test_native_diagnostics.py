@@ -186,7 +186,7 @@ def image_result():
         populated = phase in ('opened', 'closed', 'idle10s-without-trim', 'reopened', 'reclosed')
         value['renderer']['cache']['images'].update(entries=2 if populated else 0, bytes=8_000_000 if populated else 0)
         value['renderer']['cache']['decoded'].update(entries=2 if populated else 0, negativeEntries=2 if populated else 0, bytes=128 if populated else 0)
-        value['engineSurfaces'].update(imageCount=2 if populated else 0, detachedCanvases=0, canvasCount=0, canvasPixels=0, imagePixels=2_000_000 if populated else 0)
+        value['engineSurfaces'].update(imageCount=2 if populated else 0, detachedCanvases=0, canvasCount=0, canvasPixels=0, imagePixels=1200 ** 2 + 1210 ** 2 if populated else 0)  # generate.mjs: two SVGs 1200 and 1210 px square
         value['phase'] = phase
         points.append(value)
     exact = {'verified': True, 'pixels': 0, 'maxDelta': 0}
@@ -242,6 +242,21 @@ class ImageCacheTrim(unittest.TestCase):
         self.assertImageFails(lambda r: r['frames']['reopened'].update(pixels=4), 'not exact')
         self.assertImageFails(lambda r: r['frames'].pop('opened'), 'not exact')
         self.assertImageFails(lambda r: r['frames']['opened'].update(maxDelta=False), 'not exact')
+
+    def test_image_pixel_evidence_is_mandatory_and_exact(self):
+        def opened(change):
+            return lambda r: change(r['points'][1]['engineSurfaces'])
+        cases = {'missing': opened(lambda e: e.pop('imagePixels')), 'none': opened(lambda e: e.update(imagePixels=None)),
+                 'false': opened(lambda e: e.update(imagePixels=False)), 'zero-populated': opened(lambda e: e.update(imagePixels=0)),
+                 'negative': opened(lambda e: e.update(imagePixels=-1)), 'float': opened(lambda e: e.update(imagePixels=1.0)),
+                 'string': opened(lambda e: e.update(imagePixels='2904100')), 'wrong-total': opened(lambda e: e.update(imagePixels=2_000_000)),
+                 'closed-differs': lambda r: r['points'][2]['engineSurfaces'].update(imagePixels=1_440_000),
+                 'after-trim': lambda r: r['points'][4]['engineSurfaces'].update(imagePixels=5),
+                 'reopened-missing': lambda r: r['points'][7]['engineSurfaces'].pop('imagePixels'),
+                 'baseline-missing': lambda r: r['points'][0]['engineSurfaces'].pop('imagePixels')}
+        for name, change in cases.items():
+            with self.subTest(case=name):
+                self.assertImageFails(change)
 
     def test_baseline_must_start_empty(self):
         self.assertImageFails(lambda r: r['points'][0]['renderer']['cache']['images'].update(entries=2, bytes=10) or r['points'][0]['engineSurfaces'].update(imageCount=2), 'baseline')
@@ -339,6 +354,23 @@ class FrameAttribution(unittest.TestCase):
         for name, change in cases.items():
             with self.subTest(case=name):
                 self.assertEqual(self.verdict(change)['status'], 'FAIL')
+
+    def test_extreme_or_non_numeric_timestamps_fail_without_exception(self):
+        for value in (10 ** 400, -(10 ** 400), float('inf'), float('-inf'), float('nan'), True, False, None, '25'):
+            with self.subTest(observer=repr(value)[:12]):
+                verdict = self.verdict(lambda r: r['documents'][0]['observer'][3].update(rafA=value))
+                self.assertEqual(verdict['status'], 'FAIL'); self.assertTrue(any('timestamp' in f for f in verdict['failures']))
+            with self.subTest(measure=repr(value)[:12]):
+                verdict = self.verdict(lambda r: r['documents'][1]['measureTimeline'][3].update(keyToFrame=value))
+                self.assertEqual(verdict['status'], 'FAIL'); self.assertTrue(any('MEASURE' in f for f in verdict['failures']))
+
+    def test_valid_integer_and_float_timestamps_complete(self):
+        def mixed(result):
+            for doc in result['documents']:
+                for index, record in enumerate(doc['observer'][:30]):
+                    record.update(key=1000 + index, rev=1020.25 + index, task0=1021.5 + index, rafA=1025 + index, taskA=1070 + index, rafB=1058.0 + index,
+                                  taskB=1060 + index, rafC=1070.5 + index)
+        self.assertEqual(self.verdict(mixed)['status'], 'DIAGNOSTIC_COMPLETE')
 
     def test_invalid_expected_wasm_identity_fails(self):
         for expected in (None, '', 'abc', 123, ['x'], WASM.upper()):

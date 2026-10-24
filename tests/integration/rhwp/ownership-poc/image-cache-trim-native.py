@@ -30,6 +30,7 @@ driver_module = importlib.util.module_from_spec(spec); spec.loader.exec_module(d
 PHASES = ['baseline', 'opened', 'closed', 'idle10s-without-trim', 'trim+0s', 'trim+2s', 'trim+10s', 'reopened', 'reclosed', 'final-trim']
 TRIMMED = ('trim+0s', 'trim+2s', 'trim+10s', 'final-trim')
 IMAGES = 2
+IMAGE_PIXELS = 1200 ** 2 + 1210 ** 2  # generate.mjs: SVG pictures n = 1200 + i * 10, i = 0, 1 (natural size)
 FRAMES = ('opened', 'reopened')
 
 
@@ -141,6 +142,11 @@ def classify(result, expected_wasm):
                 or decoded[phase]['entries'] or decoded[phase]['bytes'] or surfaces[phase]['detachedCanvases']]
         if left: failures.append('explicit trim left image/decoded cache entries or engine surfaces: ' + ', '.join(left))
         if not (resident('reopened') >= IMAGES and surfaces['reopened']['imageCount'] >= IMAGES): failures.append('reopen did not repopulate the image cache')
+        # Natural pixels of the two resident SVG images, from the fixture definition, not from the observation itself.
+        populated = ('opened', 'closed', 'idle10s-without-trim', 'reopened', 'reclosed')
+        wrong = [f"{phase}={surfaces[phase]['imagePixels']}" for phase in populated if surfaces[phase]['imagePixels'] != IMAGE_PIXELS]
+        wrong += [f"{phase}={surfaces[phase]['imagePixels']}" for phase in ('baseline', *TRIMMED) if surfaces[phase]['imagePixels']]
+        if wrong: failures.append(f'engine image pixels != expected {IMAGE_PIXELS} when resident / 0 when empty: ' + ', '.join(wrong))
         summary = {phase: {'imageEntries': images[phase]['entries'], 'imageNegative': images[phase]['negativeEntries'], 'imageBytes': images[phase]['bytes'],
                            'engineImages': surfaces[phase]['imageCount'], 'imagePixels': surfaces[phase].get('imagePixels'),
                            'decodedEntries': decoded[phase]['entries'], 'decodedNegative': decoded[phase]['negativeEntries'],

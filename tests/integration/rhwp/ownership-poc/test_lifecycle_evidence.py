@@ -22,7 +22,7 @@ def point(sequence, doc, closed):
     if not closed: jobs.update(activeJobs=1, pendingCount=1)
     return {'sequence': sequence, 'doc': doc, 'sessionId': 's-1', 'processes': [dict(PROCESS)], 'aggregateRssBytes': PROCESS['rssBytes'],
             'wasmBytes': 133 * MIB, 'owners': [] if closed else [{'id': 1}], 'canvasCount': 0 if closed else 3,
-            'engineSurfaces': {'detachedCanvases': 2, 'canvasCount': 2, 'canvasPixels': 100, 'imageCount': 0, 'externrefSlots': 1156},
+            'engineSurfaces': {'detachedCanvases': 2, 'canvasCount': 2, 'canvasPixels': 100, 'imageCount': 0, 'imagePixels': 0, 'externrefSlots': 1156},
             'renderer': {'sessions': [], 'subscribers': 0, 'jobs': jobs, 'cache': {'decoded': decoded, 'images': images}}}
 
 
@@ -109,6 +109,13 @@ class LifecycleEvidence(unittest.TestCase):
             with self.subTest(value=value):
                 self.assertFails(lambda r: r['samples'][4]['processes'][0].update(rssBytes=value), 'RSS')
         self.assertFails(lambda r: r['samples'][4].update(aggregateRssBytes=1), 'RSS')
+
+    def test_aggregate_rss_must_be_an_exact_positive_integer(self):
+        for value in (None, 0, -1, True, float(PROCESS['rssBytes']), str(PROCESS['rssBytes'])):
+            with self.subTest(aggregate=value):
+                self.assertFails(lambda r: r['samples'][4].update(aggregateRssBytes=value), 'RSS')
+        self.assertFails(lambda r: r['samples'][4].pop('aggregateRssBytes'), 'RSS')
+        self.assertEqual(self.verdict(lambda r: r['samples'][4].update(aggregateRssBytes=PROCESS['rssBytes']))['status'], 'PASS')
 
     def test_incomplete_measurement_count_fails(self):
         def truncated(result):

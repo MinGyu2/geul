@@ -1,0 +1,501 @@
+{
+ "source": {
+  "path": "tests/integration/rhwp/evidence/t010-native-gate-followup/d4-official-48adaa-full.json",
+  "sha256": "ee40d0b972af8ed1faff61442d8d30f4f67ccc6b8c3f27a08e0c64a7f0f488d3"
+ },
+ "method": "existing official MEASURE timeline + read-only probe call timings (performance.now on the WebView main thread; ms rounded); no new run",
+ "definitions": {
+  "delivery": "native keydown event timeStamp -> input event",
+  "handler": "input handler start -> end (synchronous)",
+  "insertText": "engine edit call incl. its internal relayout",
+  "snapshot": "saveSnapshot+snapshotCapacity",
+  "pageInfo": "getPageInfo calls (count = pages)",
+  "render": "pollRenderJob (synchronous render job inside the handler)",
+  "canvas": "visible draw + readback",
+  "otherHandler": "handler - instrumented engine/canvas calls inside it (app/React/JS)",
+  "postHandlerToRevisionPoll": "handler end -> RAF poll that saw the revision",
+  "postRevision": "poll RAF -> end (two RAFs)"
+ },
+ "documents": [
+  {
+   "sample": "basic-ko.hwp",
+   "pages": 1,
+   "keyToFrame": {
+    "n": 30,
+    "p50": 65,
+    "p95": 88,
+    "max": 89
+   },
+   "delivery": {
+    "n": 30,
+    "p50": 1,
+    "p95": 16,
+    "max": 24
+   },
+   "handler": {
+    "n": 30,
+    "p50": 18,
+    "p95": 20,
+    "max": 20
+   },
+   "insertText": {
+    "n": 30,
+    "p50": 1.0,
+    "p95": 2.0,
+    "max": 2.0
+   },
+   "snapshot": {
+    "n": 30,
+    "p50": 0.0,
+    "p95": 0.0,
+    "max": 1.0
+   },
+   "pageInfo": {
+    "n": 30,
+    "p50": 0.0,
+    "p95": 0.0,
+    "max": 0.0
+   },
+   "pageInfoCalls": {
+    "n": 30,
+    "p50": 1,
+    "p95": 1,
+    "max": 1
+   },
+   "render": {
+    "n": 30,
+    "p50": 5.0,
+    "p95": 6.0,
+    "max": 6.0
+   },
+   "canvas": {
+    "n": 30,
+    "p50": 1.0,
+    "p95": 2.0,
+    "max": 3.0
+   },
+   "otherHandler": {
+    "n": 30,
+    "p50": 10.0,
+    "p95": 13.0,
+    "max": 14.0
+   },
+   "postHandlerToRevisionPoll": {
+    "n": 30,
+    "p50": 2,
+    "p95": 7,
+    "max": 14
+   },
+   "postRevision": {
+    "n": 30,
+    "p50": 45,
+    "p95": 64,
+    "max": 65
+   },
+   "slowest3": [
+    {
+     "keyToFrame": 89,
+     "delivery": 24,
+     "handler": 17,
+     "insertText": 1.0,
+     "snapshot": 0.0,
+     "pageInfo": 0.0,
+     "pageInfoCalls": 1,
+     "render": 5.0,
+     "canvas": 1.0,
+     "otherHandler": 10.0,
+     "postHandlerToRevisionPoll": 2,
+     "postRevision": 46
+    },
+    {
+     "keyToFrame": 88,
+     "delivery": 0,
+     "handler": 16,
+     "insertText": 2.0,
+     "snapshot": 0.0,
+     "pageInfo": 0.0,
+     "pageInfoCalls": 1,
+     "render": 4.0,
+     "canvas": 1.0,
+     "otherHandler": 9.0,
+     "postHandlerToRevisionPoll": 14,
+     "postRevision": 58
+    },
+    {
+     "keyToFrame": 87,
+     "delivery": -1,
+     "handler": 20,
+     "insertText": 2.0,
+     "snapshot": 0.0,
+     "pageInfo": 0.0,
+     "pageInfoCalls": 1,
+     "render": 4.0,
+     "canvas": 1.0,
+     "otherHandler": 13.0,
+     "postHandlerToRevisionPoll": 6,
+     "postRevision": 62
+    }
+   ]
+  },
+  {
+   "sample": "basic-ko.hwpx",
+   "pages": 1,
+   "keyToFrame": {
+    "n": 30,
+    "p50": 70,
+    "p95": 89,
+    "max": 90
+   },
+   "delivery": {
+    "n": 30,
+    "p50": 1,
+    "p95": 18,
+    "max": 29
+   },
+   "handler": {
+    "n": 30,
+    "p50": 18,
+    "p95": 20,
+    "max": 24
+   },
+   "insertText": {
+    "n": 30,
+    "p50": 1.0,
+    "p95": 1.0,
+    "max": 2.0
+   },
+   "snapshot": {
+    "n": 30,
+    "p50": 0.0,
+    "p95": 0.0,
+    "max": 0.0
+   },
+   "pageInfo": {
+    "n": 30,
+    "p50": 0.0,
+    "p95": 1.0,
+    "max": 1.0
+   },
+   "pageInfoCalls": {
+    "n": 30,
+    "p50": 1,
+    "p95": 1,
+    "max": 1
+   },
+   "render": {
+    "n": 30,
+    "p50": 5.0,
+    "p95": 6.0,
+    "max": 6.0
+   },
+   "canvas": {
+    "n": 30,
+    "p50": 1.0,
+    "p95": 3.0,
+    "max": 3.0
+   },
+   "otherHandler": {
+    "n": 30,
+    "p50": 10.0,
+    "p95": 13.0,
+    "max": 15.0
+   },
+   "postHandlerToRevisionPoll": {
+    "n": 30,
+    "p50": 1,
+    "p95": 2,
+    "max": 6
+   },
+   "postRevision": {
+    "n": 30,
+    "p50": 47,
+    "p95": 65,
+    "max": 67
+   },
+   "slowest3": [
+    {
+     "keyToFrame": 90,
+     "delivery": 1,
+     "handler": 24,
+     "insertText": 1.0,
+     "snapshot": 0.0,
+     "pageInfo": 0.0,
+     "pageInfoCalls": 1,
+     "render": 6.0,
+     "canvas": 2.0,
+     "otherHandler": 15.0,
+     "postHandlerToRevisionPoll": 1,
+     "postRevision": 64
+    },
+    {
+     "keyToFrame": 89,
+     "delivery": 2,
+     "handler": 19,
+     "insertText": 1.0,
+     "snapshot": 0.0,
+     "pageInfo": 0.0,
+     "pageInfoCalls": 1,
+     "render": 6.0,
+     "canvas": 1.0,
+     "otherHandler": 11.0,
+     "postHandlerToRevisionPoll": 1,
+     "postRevision": 67
+    },
+    {
+     "keyToFrame": 86,
+     "delivery": 1,
+     "handler": 18,
+     "insertText": 1.0,
+     "snapshot": 0.0,
+     "pageInfo": 0.0,
+     "pageInfoCalls": 1,
+     "render": 5.0,
+     "canvas": 2.0,
+     "otherHandler": 10.0,
+     "postHandlerToRevisionPoll": 2,
+     "postRevision": 65
+    }
+   ]
+  },
+  {
+   "sample": "연구노트(화학).hwp",
+   "pages": 24,
+   "keyToFrame": {
+    "n": 30,
+    "p50": 102,
+    "p95": 266,
+    "max": 332
+   },
+   "delivery": {
+    "n": 30,
+    "p50": 9,
+    "p95": 157,
+    "max": 166
+   },
+   "handler": {
+    "n": 30,
+    "p50": 23,
+    "p95": 97,
+    "max": 126
+   },
+   "insertText": {
+    "n": 30,
+    "p50": 1.0,
+    "p95": 3.0,
+    "max": 28.0
+   },
+   "snapshot": {
+    "n": 30,
+    "p50": 0.0,
+    "p95": 1.0,
+    "max": 1.0
+   },
+   "pageInfo": {
+    "n": 30,
+    "p50": 0.0,
+    "p95": 1.0,
+    "max": 1.0
+   },
+   "pageInfoCalls": {
+    "n": 30,
+    "p50": 24,
+    "p95": 24,
+    "max": 24
+   },
+   "render": {
+    "n": 30,
+    "p50": 19.0,
+    "p95": 28.0,
+    "max": 117.0
+   },
+   "canvas": {
+    "n": 30,
+    "p50": 3.0,
+    "p95": 4.0,
+    "max": 4.0
+   },
+   "otherHandler": {
+    "n": 30,
+    "p50": 1.0,
+    "p95": 14.0,
+    "max": 46.0
+   },
+   "postHandlerToRevisionPoll": {
+    "n": 30,
+    "p50": 10,
+    "p95": 16,
+    "max": 17
+   },
+   "postRevision": {
+    "n": 30,
+    "p50": 50,
+    "p95": 102,
+    "max": 142
+   },
+   "slowest3": [
+    {
+     "keyToFrame": 332,
+     "delivery": 166,
+     "handler": 22,
+     "insertText": 3.0,
+     "snapshot": 0.0,
+     "pageInfo": 1.0,
+     "pageInfoCalls": 24,
+     "render": 4.0,
+     "canvas": 1.0,
+     "otherHandler": 13.0,
+     "postHandlerToRevisionPoll": 2,
+     "postRevision": 142
+    },
+    {
+     "keyToFrame": 266,
+     "delivery": 157,
+     "handler": 27,
+     "insertText": 1.0,
+     "snapshot": 0.0,
+     "pageInfo": 1.0,
+     "pageInfoCalls": 24,
+     "render": 28.0,
+     "canvas": 2.0,
+     "otherHandler": -5.0,
+     "postHandlerToRevisionPoll": 17,
+     "postRevision": 65
+    },
+    {
+     "keyToFrame": 257,
+     "delivery": 150,
+     "handler": 30,
+     "insertText": 1.0,
+     "snapshot": 0.0,
+     "pageInfo": 0.0,
+     "pageInfoCalls": 24,
+     "render": 19.0,
+     "canvas": 4.0,
+     "otherHandler": 6.0,
+     "postHandlerToRevisionPoll": 9,
+     "postRevision": 68
+    }
+   ]
+  },
+  {
+   "sample": "3249937_asset_management_rules.hwpx",
+   "pages": 60,
+   "keyToFrame": {
+    "n": 30,
+    "p50": 109,
+    "p95": 138,
+    "max": 148
+   },
+   "delivery": {
+    "n": 30,
+    "p50": 4,
+    "p95": 19,
+    "max": 37
+   },
+   "handler": {
+    "n": 30,
+    "p50": 59,
+    "p95": 67,
+    "max": 68
+   },
+   "insertText": {
+    "n": 30,
+    "p50": 26.0,
+    "p95": 28.0,
+    "max": 31.0
+   },
+   "snapshot": {
+    "n": 30,
+    "p50": 2.0,
+    "p95": 3.0,
+    "max": 3.0
+   },
+   "pageInfo": {
+    "n": 30,
+    "p50": 1.0,
+    "p95": 1.0,
+    "max": 1.0
+   },
+   "pageInfoCalls": {
+    "n": 30,
+    "p50": 60,
+    "p95": 60,
+    "max": 60
+   },
+   "render": {
+    "n": 30,
+    "p50": 14.0,
+    "p95": 15.0,
+    "max": 15.0
+   },
+   "canvas": {
+    "n": 30,
+    "p50": 2.0,
+    "p95": 3.0,
+    "max": 3.0
+   },
+   "otherHandler": {
+    "n": 30,
+    "p50": 14.0,
+    "p95": 19.0,
+    "max": 23.0
+   },
+   "postHandlerToRevisionPoll": {
+    "n": 30,
+    "p50": 2,
+    "p95": 2,
+    "max": 2
+   },
+   "postRevision": {
+    "n": 30,
+    "p50": 43,
+    "p95": 65,
+    "max": 67
+   },
+   "slowest3": [
+    {
+     "keyToFrame": 148,
+     "delivery": 19,
+     "handler": 61,
+     "insertText": 26.0,
+     "snapshot": 2.0,
+     "pageInfo": 1.0,
+     "pageInfoCalls": 60,
+     "render": 13.0,
+     "canvas": 2.0,
+     "otherHandler": 17.0,
+     "postHandlerToRevisionPoll": 1,
+     "postRevision": 67
+    },
+    {
+     "keyToFrame": 138,
+     "delivery": 37,
+     "handler": 55,
+     "insertText": 26.0,
+     "snapshot": 1.0,
+     "pageInfo": 0.0,
+     "pageInfoCalls": 60,
+     "render": 13.0,
+     "canvas": 2.0,
+     "otherHandler": 13.0,
+     "postHandlerToRevisionPoll": 2,
+     "postRevision": 44
+    },
+    {
+     "keyToFrame": 132,
+     "delivery": 5,
+     "handler": 61,
+     "insertText": 26.0,
+     "snapshot": 2.0,
+     "pageInfo": 0.0,
+     "pageInfoCalls": 60,
+     "render": 14.0,
+     "canvas": 3.0,
+     "otherHandler": 16.0,
+     "postHandlerToRevisionPoll": 1,
+     "postRevision": 65
+    }
+   ]
+  }
+ ]
+}

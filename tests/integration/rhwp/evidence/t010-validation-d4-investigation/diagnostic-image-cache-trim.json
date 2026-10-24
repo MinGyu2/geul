@@ -1,0 +1,1275 @@
+{
+  "status": "PASS",
+  "points": [
+    {
+      "processes": [
+        {
+          "pid": 2840923,
+          "rssBytes": 392368128,
+          "startTime": 28949716
+        }
+      ],
+      "aggregateRssBytes": 392368128,
+      "wasmBytes": 3276800,
+      "canvasPixels": 0,
+      "canvasCount": 0,
+      "owners": [],
+      "engineSurfaces": {
+        "externrefSlots": 1156,
+        "canvasPixels": 0,
+        "imageCount": 0,
+        "detachedCanvases": 0,
+        "canvasCount": 0,
+        "imagePixels": 0
+      },
+      "lastDisposal": null,
+      "phase": "baseline",
+      "renderer": {
+        "sessions": [],
+        "jobs": {
+          "pendingCount": 0,
+          "cancellations": 0,
+          "peakTemporaryCanvasBytes": 3875040,
+          "listenerNotifications": 0,
+          "peakStagingBytes": 3875040,
+          "inFlightEstimatedBytes": 0,
+          "capacityNotifications": 0,
+          "maxFrameBytes": 67108864,
+          "expiryTimerTicks": 0,
+          "resourceLimits": 0,
+          "expiryTimerActive": false,
+          "retryCount": 0,
+          "expiryTimerStarts": 1,
+          "backupImageDataBytes": 0,
+          "activeLeaseEstimatedBytes": 0,
+          "activeJobs": 0,
+          "activeLeaseCount": 0,
+          "maxPending": 2,
+          "transientEstimatedBytes": 0,
+          "loadAttempts": 0,
+          "uniqueResourceCount": 0,
+          "readyLeaseCount": 0,
+          "temporaryCanvasBytes": 0,
+          "maxOwnedBytes": 268435456,
+          "maxStagingBytes": 134217728,
+          "ownedEstimatedBytes": 0,
+          "maxResources": 256,
+          "errors": 0,
+          "peakBackupImageDataBytes": 0,
+          "completionNotifications": 0
+        },
+        "cache": {
+          "decoded": {
+            "maxBytes": 268435456,
+            "bytes": 0,
+            "misses": 0,
+            "maxEntryBytes": 67108864,
+            "oversize": 0,
+            "maxEntries": 256,
+            "evictions": 0,
+            "hits": 0,
+            "entries": 0,
+            "pendingEntries": 0,
+            "negativeEntries": 0,
+            "rejected": 0,
+            "transientEntries": 0
+          },
+          "images": {
+            "maxBytes": 67108864,
+            "bytes": 0,
+            "misses": 0,
+            "maxEntryBytes": 16777216,
+            "oversize": 0,
+            "maxEntries": 256,
+            "evictions": 0,
+            "hits": 0,
+            "entries": 0,
+            "pendingEntries": 0,
+            "negativeEntries": 0,
+            "rejected": 0,
+            "transientEntries": 0
+          }
+        },
+        "subscribers": 0
+      },
+      "at": 5.81
+    },
+    {
+      "processes": [
+        {
+          "pid": 2840923,
+          "rssBytes": 675450880,
+          "startTime": 28949716
+        }
+      ],
+      "aggregateRssBytes": 675450880,
+      "wasmBytes": 3276800,
+      "canvasPixels": 968760,
+      "canvasCount": 1,
+      "owners": [
+        {
+          "discards": 0,
+          "nativeCapacity": 100,
+          "id": 1,
+          "saves": 0,
+          "live": 0
+        }
+      ],
+      "engineSurfaces": {
+        "externrefSlots": 1156,
+        "canvasPixels": 0,
+        "imageCount": 2,
+        "detachedCanvases": 0,
+        "canvasCount": 0,
+        "imagePixels": 2904100
+      },
+      "lastDisposal": null,
+      "phase": "opened",
+      "renderer": {
+        "sessions": [
+          {
+            "maxSummaries": 64,
+            "summaryCodeUnits": 0,
+            "modelVersion": 1,
+            "canvases": 1,
+            "maxSummaryBytes": 262144,
+            "maxSummaryTotalCodeUnits": 2097152,
+            "sessionId": 2,
+            "queued": 0,
+            "failures": 0,
+            "summaries": 0,
+            "activeJobId": null,
+            "generation": 1,
+            "active": 0
+          }
+        ],
+        "jobs": {
+          "pendingCount": 0,
+          "cancellations": 0,
+          "peakTemporaryCanvasBytes": 3875040,
+          "listenerNotifications": 1,
+          "peakStagingBytes": 4055040,
+          "inFlightEstimatedBytes": 0,
+          "capacityNotifications": 0,
+          "maxFrameBytes": 67108864,
+          "expiryTimerTicks": 0,
+          "resourceLimits": 0,
+          "expiryTimerActive": false,
+          "retryCount": 1,
+          "expiryTimerStarts": 3,
+          "backupImageDataBytes": 0,
+          "activeLeaseEstimatedBytes": 0,
+          "activeJobs": 0,
+          "activeLeaseCount": 0,
+          "maxPending": 2,
+          "transientEstimatedBytes": 0,
+          "loadAttempts": 2,
+          "uniqueResourceCount": 2,
+          "readyLeaseCount": 0,
+          "temporaryCanvasBytes": 0,
+          "maxOwnedBytes": 268435456,
+          "maxStagingBytes": 134217728,
+          "ownedEstimatedBytes": 11617460,
+          "maxResources": 256,
+          "errors": 0,
+          "peakBackupImageDataBytes": 180000,
+          "completionNotifications": 2
+        },
+        "cache": {
+          "decoded": {
+            "maxBytes": 268435456,
+            "bytes": 128,
+            "misses": 2,
+            "maxEntryBytes": 67108864,
+            "oversize": 0,
+            "maxEntries": 256,
+            "evictions": 0,
+            "hits": 4,
+            "entries": 2,
+            "pendingEntries": 0,
+            "negativeEntries": 2,
+            "rejected": 0,
+            "transientEntries": 0
+          },
+          "images": {
+            "maxBytes": 67108864,
+            "bytes": 11617460,
+            "misses": 2,
+            "maxEntryBytes": 16777216,
+            "oversize": 0,
+            "maxEntries": 256,
+            "evictions": 0,
+            "hits": 2,
+            "entries": 2,
+            "pendingEntries": 0,
+            "negativeEntries": 0,
+            "rejected": 0,
+            "transientEntries": 0
+          }
+        },
+        "subscribers": 1
+      },
+      "at": 7.32
+    },
+    {
+      "processes": [
+        {
+          "pid": 2840923,
+          "rssBytes": 661458944,
+          "startTime": 28949716
+        }
+      ],
+      "aggregateRssBytes": 661458944,
+      "wasmBytes": 3276800,
+      "canvasPixels": 0,
+      "canvasCount": 0,
+      "owners": [],
+      "engineSurfaces": {
+        "externrefSlots": 1156,
+        "canvasPixels": 0,
+        "imageCount": 2,
+        "detachedCanvases": 0,
+        "canvasCount": 0,
+        "imagePixels": 2904100
+      },
+      "lastDisposal": {
+        "liveAtFree": 0,
+        "discards": 0,
+        "id": 1,
+        "saves": 0
+      },
+      "phase": "closed",
+      "renderer": {
+        "sessions": [],
+        "jobs": {
+          "pendingCount": 0,
+          "cancellations": 0,
+          "peakTemporaryCanvasBytes": 3875040,
+          "listenerNotifications": 1,
+          "peakStagingBytes": 4055040,
+          "inFlightEstimatedBytes": 0,
+          "capacityNotifications": 0,
+          "maxFrameBytes": 67108864,
+          "expiryTimerTicks": 0,
+          "resourceLimits": 0,
+          "expiryTimerActive": false,
+          "retryCount": 1,
+          "expiryTimerStarts": 3,
+          "backupImageDataBytes": 0,
+          "activeLeaseEstimatedBytes": 0,
+          "activeJobs": 0,
+          "activeLeaseCount": 0,
+          "maxPending": 2,
+          "transientEstimatedBytes": 0,
+          "loadAttempts": 2,
+          "uniqueResourceCount": 2,
+          "readyLeaseCount": 0,
+          "temporaryCanvasBytes": 0,
+          "maxOwnedBytes": 268435456,
+          "maxStagingBytes": 134217728,
+          "ownedEstimatedBytes": 11617460,
+          "maxResources": 256,
+          "errors": 0,
+          "peakBackupImageDataBytes": 180000,
+          "completionNotifications": 2
+        },
+        "cache": {
+          "decoded": {
+            "maxBytes": 268435456,
+            "bytes": 128,
+            "misses": 2,
+            "maxEntryBytes": 67108864,
+            "oversize": 0,
+            "maxEntries": 256,
+            "evictions": 0,
+            "hits": 4,
+            "entries": 2,
+            "pendingEntries": 0,
+            "negativeEntries": 2,
+            "rejected": 0,
+            "transientEntries": 0
+          },
+          "images": {
+            "maxBytes": 67108864,
+            "bytes": 11617460,
+            "misses": 2,
+            "maxEntryBytes": 16777216,
+            "oversize": 0,
+            "maxEntries": 256,
+            "evictions": 0,
+            "hits": 2,
+            "entries": 2,
+            "pendingEntries": 0,
+            "negativeEntries": 0,
+            "rejected": 0,
+            "transientEntries": 0
+          }
+        },
+        "subscribers": 0
+      },
+      "at": 9.87
+    },
+    {
+      "processes": [
+        {
+          "pid": 2840923,
+          "rssBytes": 649560064,
+          "startTime": 28949716
+        }
+      ],
+      "aggregateRssBytes": 649560064,
+      "wasmBytes": 3276800,
+      "canvasPixels": 0,
+      "canvasCount": 0,
+      "owners": [],
+      "engineSurfaces": {
+        "externrefSlots": 1156,
+        "canvasPixels": 0,
+        "imageCount": 2,
+        "detachedCanvases": 0,
+        "canvasCount": 0,
+        "imagePixels": 2904100
+      },
+      "lastDisposal": {
+        "liveAtFree": 0,
+        "discards": 0,
+        "id": 1,
+        "saves": 0
+      },
+      "phase": "idle10s-without-trim",
+      "renderer": {
+        "sessions": [],
+        "jobs": {
+          "pendingCount": 0,
+          "cancellations": 0,
+          "peakTemporaryCanvasBytes": 3875040,
+          "listenerNotifications": 1,
+          "peakStagingBytes": 4055040,
+          "inFlightEstimatedBytes": 0,
+          "capacityNotifications": 0,
+          "maxFrameBytes": 67108864,
+          "expiryTimerTicks": 0,
+          "resourceLimits": 0,
+          "expiryTimerActive": false,
+          "retryCount": 1,
+          "expiryTimerStarts": 3,
+          "backupImageDataBytes": 0,
+          "activeLeaseEstimatedBytes": 0,
+          "activeJobs": 0,
+          "activeLeaseCount": 0,
+          "maxPending": 2,
+          "transientEstimatedBytes": 0,
+          "loadAttempts": 2,
+          "uniqueResourceCount": 2,
+          "readyLeaseCount": 0,
+          "temporaryCanvasBytes": 0,
+          "maxOwnedBytes": 268435456,
+          "maxStagingBytes": 134217728,
+          "ownedEstimatedBytes": 11617460,
+          "maxResources": 256,
+          "errors": 0,
+          "peakBackupImageDataBytes": 180000,
+          "completionNotifications": 2
+        },
+        "cache": {
+          "decoded": {
+            "maxBytes": 268435456,
+            "bytes": 128,
+            "misses": 2,
+            "maxEntryBytes": 67108864,
+            "oversize": 0,
+            "maxEntries": 256,
+            "evictions": 0,
+            "hits": 4,
+            "entries": 2,
+            "pendingEntries": 0,
+            "negativeEntries": 2,
+            "rejected": 0,
+            "transientEntries": 0
+          },
+          "images": {
+            "maxBytes": 67108864,
+            "bytes": 11617460,
+            "misses": 2,
+            "maxEntryBytes": 16777216,
+            "oversize": 0,
+            "maxEntries": 256,
+            "evictions": 0,
+            "hits": 2,
+            "entries": 2,
+            "pendingEntries": 0,
+            "negativeEntries": 0,
+            "rejected": 0,
+            "transientEntries": 0
+          }
+        },
+        "subscribers": 0
+      },
+      "at": 19.89
+    },
+    {
+      "processes": [
+        {
+          "pid": 2840923,
+          "rssBytes": 647405568,
+          "startTime": 28949716
+        }
+      ],
+      "aggregateRssBytes": 647405568,
+      "wasmBytes": 3276800,
+      "canvasPixels": 0,
+      "canvasCount": 0,
+      "owners": [],
+      "engineSurfaces": {
+        "externrefSlots": 1156,
+        "canvasPixels": 0,
+        "imageCount": 0,
+        "detachedCanvases": 0,
+        "canvasCount": 0,
+        "imagePixels": 0
+      },
+      "lastDisposal": {
+        "liveAtFree": 0,
+        "discards": 0,
+        "id": 1,
+        "saves": 0
+      },
+      "phase": "trim+0s",
+      "renderer": {
+        "sessions": [],
+        "jobs": {
+          "pendingCount": 0,
+          "cancellations": 0,
+          "peakTemporaryCanvasBytes": 3875040,
+          "listenerNotifications": 1,
+          "peakStagingBytes": 4055040,
+          "inFlightEstimatedBytes": 0,
+          "capacityNotifications": 0,
+          "maxFrameBytes": 67108864,
+          "expiryTimerTicks": 0,
+          "resourceLimits": 0,
+          "expiryTimerActive": false,
+          "retryCount": 1,
+          "expiryTimerStarts": 3,
+          "backupImageDataBytes": 0,
+          "activeLeaseEstimatedBytes": 0,
+          "activeJobs": 0,
+          "activeLeaseCount": 0,
+          "maxPending": 2,
+          "transientEstimatedBytes": 0,
+          "loadAttempts": 2,
+          "uniqueResourceCount": 0,
+          "readyLeaseCount": 0,
+          "temporaryCanvasBytes": 0,
+          "maxOwnedBytes": 268435456,
+          "maxStagingBytes": 134217728,
+          "ownedEstimatedBytes": 0,
+          "maxResources": 256,
+          "errors": 0,
+          "peakBackupImageDataBytes": 180000,
+          "completionNotifications": 2
+        },
+        "cache": {
+          "decoded": {
+            "maxBytes": 268435456,
+            "bytes": 0,
+            "misses": 2,
+            "maxEntryBytes": 67108864,
+            "oversize": 0,
+            "maxEntries": 256,
+            "evictions": 2,
+            "hits": 4,
+            "entries": 0,
+            "pendingEntries": 0,
+            "negativeEntries": 0,
+            "rejected": 0,
+            "transientEntries": 0
+          },
+          "images": {
+            "maxBytes": 67108864,
+            "bytes": 0,
+            "misses": 2,
+            "maxEntryBytes": 16777216,
+            "oversize": 0,
+            "maxEntries": 256,
+            "evictions": 2,
+            "hits": 2,
+            "entries": 0,
+            "pendingEntries": 0,
+            "negativeEntries": 0,
+            "rejected": 0,
+            "transientEntries": 0
+          }
+        },
+        "subscribers": 0
+      },
+      "at": 19.91
+    },
+    {
+      "processes": [
+        {
+          "pid": 2840923,
+          "rssBytes": 646971392,
+          "startTime": 28949716
+        }
+      ],
+      "aggregateRssBytes": 646971392,
+      "wasmBytes": 3276800,
+      "canvasPixels": 0,
+      "canvasCount": 0,
+      "owners": [],
+      "engineSurfaces": {
+        "externrefSlots": 1156,
+        "canvasPixels": 0,
+        "imageCount": 0,
+        "detachedCanvases": 0,
+        "canvasCount": 0,
+        "imagePixels": 0
+      },
+      "lastDisposal": {
+        "liveAtFree": 0,
+        "discards": 0,
+        "id": 1,
+        "saves": 0
+      },
+      "phase": "trim+2s",
+      "renderer": {
+        "sessions": [],
+        "jobs": {
+          "pendingCount": 0,
+          "cancellations": 0,
+          "peakTemporaryCanvasBytes": 3875040,
+          "listenerNotifications": 1,
+          "peakStagingBytes": 4055040,
+          "inFlightEstimatedBytes": 0,
+          "capacityNotifications": 0,
+          "maxFrameBytes": 67108864,
+          "expiryTimerTicks": 0,
+          "resourceLimits": 0,
+          "expiryTimerActive": false,
+          "retryCount": 1,
+          "expiryTimerStarts": 3,
+          "backupImageDataBytes": 0,
+          "activeLeaseEstimatedBytes": 0,
+          "activeJobs": 0,
+          "activeLeaseCount": 0,
+          "maxPending": 2,
+          "transientEstimatedBytes": 0,
+          "loadAttempts": 2,
+          "uniqueResourceCount": 0,
+          "readyLeaseCount": 0,
+          "temporaryCanvasBytes": 0,
+          "maxOwnedBytes": 268435456,
+          "maxStagingBytes": 134217728,
+          "ownedEstimatedBytes": 0,
+          "maxResources": 256,
+          "errors": 0,
+          "peakBackupImageDataBytes": 180000,
+          "completionNotifications": 2
+        },
+        "cache": {
+          "decoded": {
+            "maxBytes": 268435456,
+            "bytes": 0,
+            "misses": 2,
+            "maxEntryBytes": 67108864,
+            "oversize": 0,
+            "maxEntries": 256,
+            "evictions": 2,
+            "hits": 4,
+            "entries": 0,
+            "pendingEntries": 0,
+            "negativeEntries": 0,
+            "rejected": 0,
+            "transientEntries": 0
+          },
+          "images": {
+            "maxBytes": 67108864,
+            "bytes": 0,
+            "misses": 2,
+            "maxEntryBytes": 16777216,
+            "oversize": 0,
+            "maxEntries": 256,
+            "evictions": 2,
+            "hits": 2,
+            "entries": 0,
+            "pendingEntries": 0,
+            "negativeEntries": 0,
+            "rejected": 0,
+            "transientEntries": 0
+          }
+        },
+        "subscribers": 0
+      },
+      "at": 21.94
+    },
+    {
+      "processes": [
+        {
+          "pid": 2840923,
+          "rssBytes": 646610944,
+          "startTime": 28949716
+        }
+      ],
+      "aggregateRssBytes": 646610944,
+      "wasmBytes": 3276800,
+      "canvasPixels": 0,
+      "canvasCount": 0,
+      "owners": [],
+      "engineSurfaces": {
+        "externrefSlots": 1156,
+        "canvasPixels": 0,
+        "imageCount": 0,
+        "detachedCanvases": 0,
+        "canvasCount": 0,
+        "imagePixels": 0
+      },
+      "lastDisposal": {
+        "liveAtFree": 0,
+        "discards": 0,
+        "id": 1,
+        "saves": 0
+      },
+      "phase": "trim+10s",
+      "renderer": {
+        "sessions": [],
+        "jobs": {
+          "pendingCount": 0,
+          "cancellations": 0,
+          "peakTemporaryCanvasBytes": 3875040,
+          "listenerNotifications": 1,
+          "peakStagingBytes": 4055040,
+          "inFlightEstimatedBytes": 0,
+          "capacityNotifications": 0,
+          "maxFrameBytes": 67108864,
+          "expiryTimerTicks": 0,
+          "resourceLimits": 0,
+          "expiryTimerActive": false,
+          "retryCount": 1,
+          "expiryTimerStarts": 3,
+          "backupImageDataBytes": 0,
+          "activeLeaseEstimatedBytes": 0,
+          "activeJobs": 0,
+          "activeLeaseCount": 0,
+          "maxPending": 2,
+          "transientEstimatedBytes": 0,
+          "loadAttempts": 2,
+          "uniqueResourceCount": 0,
+          "readyLeaseCount": 0,
+          "temporaryCanvasBytes": 0,
+          "maxOwnedBytes": 268435456,
+          "maxStagingBytes": 134217728,
+          "ownedEstimatedBytes": 0,
+          "maxResources": 256,
+          "errors": 0,
+          "peakBackupImageDataBytes": 180000,
+          "completionNotifications": 2
+        },
+        "cache": {
+          "decoded": {
+            "maxBytes": 268435456,
+            "bytes": 0,
+            "misses": 2,
+            "maxEntryBytes": 67108864,
+            "oversize": 0,
+            "maxEntries": 256,
+            "evictions": 2,
+            "hits": 4,
+            "entries": 0,
+            "pendingEntries": 0,
+            "negativeEntries": 0,
+            "rejected": 0,
+            "transientEntries": 0
+          },
+          "images": {
+            "maxBytes": 67108864,
+            "bytes": 0,
+            "misses": 2,
+            "maxEntryBytes": 16777216,
+            "oversize": 0,
+            "maxEntries": 256,
+            "evictions": 2,
+            "hits": 2,
+            "entries": 0,
+            "pendingEntries": 0,
+            "negativeEntries": 0,
+            "rejected": 0,
+            "transientEntries": 0
+          }
+        },
+        "subscribers": 0
+      },
+      "at": 29.96
+    },
+    {
+      "processes": [
+        {
+          "pid": 2840923,
+          "rssBytes": 684601344,
+          "startTime": 28949716
+        }
+      ],
+      "aggregateRssBytes": 684601344,
+      "wasmBytes": 3276800,
+      "canvasPixels": 968760,
+      "canvasCount": 1,
+      "owners": [
+        {
+          "discards": 0,
+          "nativeCapacity": 100,
+          "id": 2,
+          "saves": 0,
+          "live": 0
+        }
+      ],
+      "engineSurfaces": {
+        "externrefSlots": 1156,
+        "canvasPixels": 0,
+        "imageCount": 2,
+        "detachedCanvases": 0,
+        "canvasCount": 0,
+        "imagePixels": 2904100
+      },
+      "lastDisposal": {
+        "liveAtFree": 0,
+        "discards": 0,
+        "id": 1,
+        "saves": 0
+      },
+      "phase": "reopened",
+      "renderer": {
+        "sessions": [
+          {
+            "maxSummaries": 64,
+            "summaryCodeUnits": 0,
+            "modelVersion": 1,
+            "canvases": 1,
+            "maxSummaryBytes": 262144,
+            "maxSummaryTotalCodeUnits": 2097152,
+            "sessionId": 3,
+            "queued": 0,
+            "failures": 0,
+            "summaries": 0,
+            "activeJobId": null,
+            "generation": 1,
+            "active": 0
+          }
+        ],
+        "jobs": {
+          "pendingCount": 0,
+          "cancellations": 0,
+          "peakTemporaryCanvasBytes": 3875040,
+          "listenerNotifications": 1,
+          "peakStagingBytes": 4055040,
+          "inFlightEstimatedBytes": 0,
+          "capacityNotifications": 0,
+          "maxFrameBytes": 67108864,
+          "expiryTimerTicks": 0,
+          "resourceLimits": 0,
+          "expiryTimerActive": false,
+          "retryCount": 1,
+          "expiryTimerStarts": 5,
+          "backupImageDataBytes": 0,
+          "activeLeaseEstimatedBytes": 0,
+          "activeJobs": 0,
+          "activeLeaseCount": 0,
+          "maxPending": 2,
+          "transientEstimatedBytes": 0,
+          "loadAttempts": 4,
+          "uniqueResourceCount": 2,
+          "readyLeaseCount": 0,
+          "temporaryCanvasBytes": 0,
+          "maxOwnedBytes": 268435456,
+          "maxStagingBytes": 134217728,
+          "ownedEstimatedBytes": 11617460,
+          "maxResources": 256,
+          "errors": 0,
+          "peakBackupImageDataBytes": 180000,
+          "completionNotifications": 2
+        },
+        "cache": {
+          "decoded": {
+            "maxBytes": 268435456,
+            "bytes": 128,
+            "misses": 4,
+            "maxEntryBytes": 67108864,
+            "oversize": 0,
+            "maxEntries": 256,
+            "evictions": 2,
+            "hits": 6,
+            "entries": 2,
+            "pendingEntries": 0,
+            "negativeEntries": 2,
+            "rejected": 0,
+            "transientEntries": 0
+          },
+          "images": {
+            "maxBytes": 67108864,
+            "bytes": 11617460,
+            "misses": 4,
+            "maxEntryBytes": 16777216,
+            "oversize": 0,
+            "maxEntries": 256,
+            "evictions": 2,
+            "hits": 4,
+            "entries": 2,
+            "pendingEntries": 0,
+            "negativeEntries": 0,
+            "rejected": 0,
+            "transientEntries": 0
+          }
+        },
+        "subscribers": 1
+      },
+      "at": 31.55
+    },
+    {
+      "processes": [
+        {
+          "pid": 2840923,
+          "rssBytes": 652857344,
+          "startTime": 28949716
+        }
+      ],
+      "aggregateRssBytes": 652857344,
+      "wasmBytes": 3276800,
+      "canvasPixels": 0,
+      "canvasCount": 0,
+      "owners": [],
+      "engineSurfaces": {
+        "externrefSlots": 1156,
+        "canvasPixels": 0,
+        "imageCount": 2,
+        "detachedCanvases": 0,
+        "canvasCount": 0,
+        "imagePixels": 2904100
+      },
+      "lastDisposal": {
+        "liveAtFree": 0,
+        "discards": 0,
+        "id": 2,
+        "saves": 0
+      },
+      "phase": "reclosed",
+      "renderer": {
+        "sessions": [],
+        "jobs": {
+          "pendingCount": 0,
+          "cancellations": 0,
+          "peakTemporaryCanvasBytes": 3875040,
+          "listenerNotifications": 1,
+          "peakStagingBytes": 4055040,
+          "inFlightEstimatedBytes": 0,
+          "capacityNotifications": 0,
+          "maxFrameBytes": 67108864,
+          "expiryTimerTicks": 0,
+          "resourceLimits": 0,
+          "expiryTimerActive": false,
+          "retryCount": 1,
+          "expiryTimerStarts": 5,
+          "backupImageDataBytes": 0,
+          "activeLeaseEstimatedBytes": 0,
+          "activeJobs": 0,
+          "activeLeaseCount": 0,
+          "maxPending": 2,
+          "transientEstimatedBytes": 0,
+          "loadAttempts": 4,
+          "uniqueResourceCount": 2,
+          "readyLeaseCount": 0,
+          "temporaryCanvasBytes": 0,
+          "maxOwnedBytes": 268435456,
+          "maxStagingBytes": 134217728,
+          "ownedEstimatedBytes": 11617460,
+          "maxResources": 256,
+          "errors": 0,
+          "peakBackupImageDataBytes": 180000,
+          "completionNotifications": 2
+        },
+        "cache": {
+          "decoded": {
+            "maxBytes": 268435456,
+            "bytes": 128,
+            "misses": 4,
+            "maxEntryBytes": 67108864,
+            "oversize": 0,
+            "maxEntries": 256,
+            "evictions": 2,
+            "hits": 6,
+            "entries": 2,
+            "pendingEntries": 0,
+            "negativeEntries": 2,
+            "rejected": 0,
+            "transientEntries": 0
+          },
+          "images": {
+            "maxBytes": 67108864,
+            "bytes": 11617460,
+            "misses": 4,
+            "maxEntryBytes": 16777216,
+            "oversize": 0,
+            "maxEntries": 256,
+            "evictions": 2,
+            "hits": 4,
+            "entries": 2,
+            "pendingEntries": 0,
+            "negativeEntries": 0,
+            "rejected": 0,
+            "transientEntries": 0
+          }
+        },
+        "subscribers": 0
+      },
+      "at": 34.12
+    },
+    {
+      "processes": [
+        {
+          "pid": 2840923,
+          "rssBytes": 652836864,
+          "startTime": 28949716
+        }
+      ],
+      "aggregateRssBytes": 652836864,
+      "wasmBytes": 3276800,
+      "canvasPixels": 0,
+      "canvasCount": 0,
+      "owners": [],
+      "engineSurfaces": {
+        "externrefSlots": 1156,
+        "canvasPixels": 0,
+        "imageCount": 0,
+        "detachedCanvases": 0,
+        "canvasCount": 0,
+        "imagePixels": 0
+      },
+      "lastDisposal": {
+        "liveAtFree": 0,
+        "discards": 0,
+        "id": 2,
+        "saves": 0
+      },
+      "phase": "final-trim",
+      "renderer": {
+        "sessions": [],
+        "jobs": {
+          "pendingCount": 0,
+          "cancellations": 0,
+          "peakTemporaryCanvasBytes": 3875040,
+          "listenerNotifications": 1,
+          "peakStagingBytes": 4055040,
+          "inFlightEstimatedBytes": 0,
+          "capacityNotifications": 0,
+          "maxFrameBytes": 67108864,
+          "expiryTimerTicks": 0,
+          "resourceLimits": 0,
+          "expiryTimerActive": false,
+          "retryCount": 1,
+          "expiryTimerStarts": 5,
+          "backupImageDataBytes": 0,
+          "activeLeaseEstimatedBytes": 0,
+          "activeJobs": 0,
+          "activeLeaseCount": 0,
+          "maxPending": 2,
+          "transientEstimatedBytes": 0,
+          "loadAttempts": 4,
+          "uniqueResourceCount": 0,
+          "readyLeaseCount": 0,
+          "temporaryCanvasBytes": 0,
+          "maxOwnedBytes": 268435456,
+          "maxStagingBytes": 134217728,
+          "ownedEstimatedBytes": 0,
+          "maxResources": 256,
+          "errors": 0,
+          "peakBackupImageDataBytes": 180000,
+          "completionNotifications": 2
+        },
+        "cache": {
+          "decoded": {
+            "maxBytes": 268435456,
+            "bytes": 0,
+            "misses": 4,
+            "maxEntryBytes": 67108864,
+            "oversize": 0,
+            "maxEntries": 256,
+            "evictions": 4,
+            "hits": 6,
+            "entries": 0,
+            "pendingEntries": 0,
+            "negativeEntries": 0,
+            "rejected": 0,
+            "transientEntries": 0
+          },
+          "images": {
+            "maxBytes": 67108864,
+            "bytes": 0,
+            "misses": 4,
+            "maxEntryBytes": 16777216,
+            "oversize": 0,
+            "maxEntries": 256,
+            "evictions": 4,
+            "hits": 4,
+            "entries": 0,
+            "pendingEntries": 0,
+            "negativeEntries": 0,
+            "rejected": 0,
+            "transientEntries": 0
+          }
+        },
+        "subscribers": 0
+      },
+      "at": 35.17
+    }
+  ],
+  "frames": {
+    "opened": {
+      "strongPixels": 0,
+      "pixels": 0,
+      "edgePixels": 0,
+      "height": 1170,
+      "surface": "attached page Canvas readback",
+      "width": 828,
+      "verified": true,
+      "maxDelta": 0,
+      "oracle": "authoritative model full replay; browser historical full pixels independently pinned-verified"
+    },
+    "reopened": {
+      "strongPixels": 0,
+      "pixels": 0,
+      "edgePixels": 0,
+      "height": 1170,
+      "surface": "attached page Canvas readback",
+      "width": 828,
+      "verified": true,
+      "maxDelta": 0,
+      "oracle": "authoritative model full replay; browser historical full pixels independently pinned-verified"
+    }
+  },
+  "startedAt": 1792844805.8750265,
+  "cleanup": {
+    "sessionEnded": true,
+    "driverStopped": true,
+    "displayTerminated": true
+  },
+  "scope": "browser-image cache: open (2 SVG pictures) / close / idle 10s / explicit trim / reopen; diagnostic only",
+  "engineIdentity": {
+    "wasmSha256": "48adaa0f748484d12f59f4805deda0480635f915368392a87e76e95962ec0b27",
+    "baseline": "1a76570e833917d15817415a53c09ad61ab3203f"
+  },
+  "engineIdentityAtEnd": {
+    "wasmSha256": "48adaa0f748484d12f59f4805deda0480635f915368392a87e76e95962ec0b27",
+    "baseline": "1a76570e833917d15817415a53c09ad61ab3203f"
+  },
+  "failures": [],
+  "summary": {
+    "baseline": {
+      "imageEntries": 0,
+      "imageNegative": 0,
+      "imageBytes": 0,
+      "engineImages": 0,
+      "imagePixels": 0,
+      "decodedEntries": 0,
+      "decodedNegative": 0,
+      "rssMiB": 374.2
+    },
+    "opened": {
+      "imageEntries": 2,
+      "imageNegative": 0,
+      "imageBytes": 11617460,
+      "engineImages": 2,
+      "imagePixels": 2904100,
+      "decodedEntries": 2,
+      "decodedNegative": 2,
+      "rssMiB": 644.2
+    },
+    "closed": {
+      "imageEntries": 2,
+      "imageNegative": 0,
+      "imageBytes": 11617460,
+      "engineImages": 2,
+      "imagePixels": 2904100,
+      "decodedEntries": 2,
+      "decodedNegative": 2,
+      "rssMiB": 630.8
+    },
+    "idle10s-without-trim": {
+      "imageEntries": 2,
+      "imageNegative": 0,
+      "imageBytes": 11617460,
+      "engineImages": 2,
+      "imagePixels": 2904100,
+      "decodedEntries": 2,
+      "decodedNegative": 2,
+      "rssMiB": 619.5
+    },
+    "trim+0s": {
+      "imageEntries": 0,
+      "imageNegative": 0,
+      "imageBytes": 0,
+      "engineImages": 0,
+      "imagePixels": 0,
+      "decodedEntries": 0,
+      "decodedNegative": 0,
+      "rssMiB": 617.4
+    },
+    "trim+2s": {
+      "imageEntries": 0,
+      "imageNegative": 0,
+      "imageBytes": 0,
+      "engineImages": 0,
+      "imagePixels": 0,
+      "decodedEntries": 0,
+      "decodedNegative": 0,
+      "rssMiB": 617.0
+    },
+    "trim+10s": {
+      "imageEntries": 0,
+      "imageNegative": 0,
+      "imageBytes": 0,
+      "engineImages": 0,
+      "imagePixels": 0,
+      "decodedEntries": 0,
+      "decodedNegative": 0,
+      "rssMiB": 616.7
+    },
+    "reopened": {
+      "imageEntries": 2,
+      "imageNegative": 0,
+      "imageBytes": 11617460,
+      "engineImages": 2,
+      "imagePixels": 2904100,
+      "decodedEntries": 2,
+      "decodedNegative": 2,
+      "rssMiB": 652.9
+    },
+    "reclosed": {
+      "imageEntries": 2,
+      "imageNegative": 0,
+      "imageBytes": 11617460,
+      "engineImages": 2,
+      "imagePixels": 2904100,
+      "decodedEntries": 2,
+      "decodedNegative": 2,
+      "rssMiB": 622.6
+    },
+    "final-trim": {
+      "imageEntries": 0,
+      "imageNegative": 0,
+      "imageBytes": 0,
+      "engineImages": 0,
+      "imagePixels": 0,
+      "decodedEntries": 0,
+      "decodedNegative": 0,
+      "rssMiB": 622.6
+    }
+  },
+  "elapsedSeconds": 35.42,
+  "executedDependencySha256": {
+    "tests/integration/rhwp/ownership-poc/session.mjs": "fe14f40f63bae2b471c84f30dda947283f8664fc387d16c86fb7ec138b6a2c22",
+    "tests/integration/rhwp/ownership-poc/vite.config.mjs": "fbe03f67fece9039e5ccb09fa0d7ac3f14e38d8a095637e4eb35628f8cb35abd",
+    "tests/integration/rhwp/ownership-poc/native.py": "49bbfcc827fdd193b3976719bb5779c64350d4cbc3d03d4c81910a5929af7ca6",
+    "tests/integration/rhwp/ownership-poc/generate.mjs": "b7cf1b9cc56828019ce14b95bc46ddbfd177b89d3b1a98144ab63c5a559862c1",
+    "tests/integration/rhwp/ownership-poc/image-cache-trim-native.py": "ee4742fdc04fb2ba12b5cfa02c6a19b20bad30877cc85c50dcea1c992fa5f30d",
+    "tests/integration/rhwp/undo_native.py": "1d0982fa18c155bbd1e7b009307253815148f841fe1116ec92d818a3ea195445",
+    "tests/integration/rhwp/native_probe.py": "8f4be7dcd57bf5f284dda7ca94d12c9bad8a8f718d543ca57b500166b50c39a0",
+    "tests/integration/rhwp/rhwp_poc.py": "fc3c2f03a0e774e6653f4d7054336f10cc3d01b116e2eb4dbbebf8c172ae581a",
+    "tests/e2e/tauri_smoke.py": "2b87db47c928b523c4fce11a44b42ec7a08dd4944ee0ab943dbf166691cb6229",
+    "tests/fixtures/rhwp/generate.mjs": "a5699770df0dff01e31e1bcc248186b663c2da848229b5193d1c9218c5a86c40",
+    "src-tauri/target/debug/geul": "48b7b8364cb4b91ae0b4c3cb3113977c15fd92aa9ca3d60f0406f331749d45c1",
+    "external/rhwp/samples/rnote/연구노트(화학).hwp": "6717eca43c6fdd9b0530530cf17d33b6687da0c462a433d37eb652afb5394f91",
+    "external/rhwp/samples/issue6031/3249937_asset_management_rules.hwpx": "97b5d6c571a6b7626321c6a53d797e3511978447497bb73309bd23eaa8e7ea77",
+    "tests/integration/rhwp/ownership-poc/lifecycle_evidence.py": "01b6b6323bac3a178d3e7dfb737332f8b6b43ed9019c52ef9e8d26a67fc3f3fb",
+    "tests/integration/rhwp/ownership-poc/lifecycle-continuous-native.py": "c26ff55d7af21004ffbcd8ef7b29f263644a6107b01ac44decb5ef01fa486564",
+    "<isolated>/candidate-package/rhwp_bg.wasm": "48adaa0f748484d12f59f4805deda0480635f915368392a87e76e95962ec0b27",
+    "<isolated>/candidate-package/rhwp.js": "b69e920c8fb1e9d05dacadf3ebae2396b043da385137ad2b4b3386a9b3433252"
+  },
+  "executedDependenciesStable": true,
+  "workspaceMutationDuringRun": {
+    "changed": false,
+    "before": {
+      "status": [
+        " M tests/integration/rhwp/ownership-poc/d4-frame-attribution-native.py",
+        " M tests/integration/rhwp/ownership-poc/image-cache-trim-native.py",
+        " M tests/integration/rhwp/ownership-poc/lifecycle_evidence.py",
+        " M tests/integration/rhwp/ownership-poc/test_lifecycle_evidence.py",
+        " M tests/integration/rhwp/ownership-poc/test_native_diagnostics.py",
+        "?? tests/integration/rhwp/ownership-poc/d4-input-delay-native.py"
+      ],
+      "contentSha256": {
+        "tests/integration/rhwp/ownership-poc/d4-frame-attribution-native.py": "988de13828047beae65d84176761a69e377a0fb83a84e53da23db8771a5a6541",
+        "tests/integration/rhwp/ownership-poc/image-cache-trim-native.py": "ee4742fdc04fb2ba12b5cfa02c6a19b20bad30877cc85c50dcea1c992fa5f30d",
+        "tests/integration/rhwp/ownership-poc/lifecycle_evidence.py": "01b6b6323bac3a178d3e7dfb737332f8b6b43ed9019c52ef9e8d26a67fc3f3fb",
+        "tests/integration/rhwp/ownership-poc/test_lifecycle_evidence.py": "4dd3e92f186cbd8f60c901ac8871c555dd6baebfac2aab7b0cf1ed7b7cc139b0",
+        "tests/integration/rhwp/ownership-poc/test_native_diagnostics.py": "55de0741709735905caced20dda56bdc0dcc4b7ca26dce96aee031e7133dbeb8",
+        "tests/integration/rhwp/ownership-poc/d4-input-delay-native.py": "336b38240b2294b597523bc377b6794ec6b3221c1a0de0ef742c1d485ac224a2"
+      }
+    },
+    "after": {
+      "status": [
+        " M tests/integration/rhwp/ownership-poc/d4-frame-attribution-native.py",
+        " M tests/integration/rhwp/ownership-poc/image-cache-trim-native.py",
+        " M tests/integration/rhwp/ownership-poc/lifecycle_evidence.py",
+        " M tests/integration/rhwp/ownership-poc/test_lifecycle_evidence.py",
+        " M tests/integration/rhwp/ownership-poc/test_native_diagnostics.py",
+        "?? tests/integration/rhwp/ownership-poc/d4-input-delay-native.py"
+      ],
+      "contentSha256": {
+        "tests/integration/rhwp/ownership-poc/d4-frame-attribution-native.py": "988de13828047beae65d84176761a69e377a0fb83a84e53da23db8771a5a6541",
+        "tests/integration/rhwp/ownership-poc/image-cache-trim-native.py": "ee4742fdc04fb2ba12b5cfa02c6a19b20bad30877cc85c50dcea1c992fa5f30d",
+        "tests/integration/rhwp/ownership-poc/lifecycle_evidence.py": "01b6b6323bac3a178d3e7dfb737332f8b6b43ed9019c52ef9e8d26a67fc3f3fb",
+        "tests/integration/rhwp/ownership-poc/test_lifecycle_evidence.py": "4dd3e92f186cbd8f60c901ac8871c555dd6baebfac2aab7b0cf1ed7b7cc139b0",
+        "tests/integration/rhwp/ownership-poc/test_native_diagnostics.py": "55de0741709735905caced20dda56bdc0dcc4b7ca26dce96aee031e7133dbeb8",
+        "tests/integration/rhwp/ownership-poc/d4-input-delay-native.py": "336b38240b2294b597523bc377b6794ec6b3221c1a0de0ef742c1d485ac224a2"
+      }
+    },
+    "excludes": "this evidence directory (run output)"
+  },
+  "candidateWasmSha256": "48adaa0f748484d12f59f4805deda0480635f915368392a87e76e95962ec0b27",
+  "parentExit": 0,
+  "processFinished": true,
+  "runnerElapsedSeconds": 36.49,
+  "command": [
+    "dbus-run-session",
+    "--",
+    "python3",
+    "tests/integration/rhwp/ownership-poc/image-cache-trim-native.py",
+    "--app",
+    "<workspace>/src-tauri/target/debug/geul",
+    "--driver",
+    "/tmp/geul-t010-ownership-tools/bin/tauri-driver",
+    "--webkit-driver",
+    "/nix/store/p7h9r90h1vmk4wq1964nhd8vfp0kf27b-webkitgtk-2.54.1+abi=4.1/bin/WebKitWebDriver",
+    "--xvfb",
+    "/nix/store/7yz3bnmll7fy11n0xci85mbhnf6p5669-xvfb-21.1.23/bin/Xvfb",
+    "--output",
+    "<workspace>/tests/integration/rhwp/evidence/t010-validation-d4-investigation/diagnostic-image-cache-trim.json",
+    "--xdotool",
+    "/nix/store/kyp2r08w6hs0l1zj3cya6d2ciba9v47h-xdotool-3.20211022.1/bin/xdotool",
+    "--expected-wasm",
+    "48adaa0f748484d12f59f4805deda0480635f915368392a87e76e95962ec0b27"
+  ],
+  "activationFlags": {
+    "VITE_GEUL_TEST_HOOKS": "1",
+    "GEUL_T010_DAMAGE_POC": "0",
+    "GEUL_T010_OWNERSHIP_POC": "1",
+    "GEUL_T010_SCHEDULER_POC": "1",
+    "GEUL_T010_CANDIDATE": "<isolated>/candidate-package",
+    "GEUL_T010_EVIDENCE": "<workspace>/tests/integration/rhwp/evidence/t010-caret-geometry",
+    "VITE_GEUL_TEST_RHWP_HISTORY": "1",
+    "GEUL_T010_HISTORY_SAFETY_ONLY": "1"
+  },
+  "devServerCommand": [
+    "node",
+    "node_modules/vite/bin/vite.js",
+    "--host",
+    "127.0.0.1",
+    "--config",
+    "tests/integration/rhwp/ownership-poc/vite.config.mjs"
+  ],
+  "appSha256": "48b7b8364cb4b91ae0b4c3cb3113977c15fd92aa9ca3d60f0406f331749d45c1",
+  "executedAt": "2026-10-24T21:27:22+0900",
+  "loadAverageAtEnd": [
+    1.16162109375,
+    2.96240234375,
+    3.6181640625
+  ]
+}

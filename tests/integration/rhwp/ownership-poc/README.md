@@ -144,3 +144,5 @@ rendering update 작업과 다음 frame 대기를 나눈다. 관찰자가 일정
 fixture 순서·해시, 엔진 identity, 유한하고 인과 순서가 맞는 timestamp를 요구한다. RAF→작업 간격은 그리기/GPU/compositor 시간이 아니다.
 모든 memory 관찰(열린 상태 포함)은 `engineSurfaces` counter가 0 이상 정수여야 하고, 요약 gate도 `D4` 식별자가 필요하며, D4 진단 판정은 잘못된 JSON 형식에 예외 대신 FAIL을 낸다.
 `image-cache-trim-native.py`: SVG 그림 문서로 브라우저 이미지 cache를 실제로 채운 뒤 닫기·idle 유지, 명시적 trim 해제, 다시 열기와 exact frame을 확인하는 별도 진단이다.
+`imagePixels`는 생성 문서의 두 SVG 크기에서 정한 2,904,100px(상주)·0(trim 뒤)과 같아야 하고, `aggregateRssBytes`는 정수여야 한다.
+`d4-input-delay-native.py`: 화학 HWP 하나에서 공식 `scenario_perf`에 기존 busy probe와 절대 keydown/input 시각, probe 호출·trace 기록을 더해 key→input 지연을 무엇이 막는지 보는 비공식 진단이다.

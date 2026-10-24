@@ -1,0 +1,159 @@
+{
+ "baseline": "312fedc4eb636932c6e912925eb288dcd7b191cd",
+ "method": "new tests run against committed 312fedc classifiers before source changes",
+ "summary": [
+  "Ran 114 tests in 2.759s",
+  "FAILED (failures=14, errors=4)"
+ ],
+ "failingCases": [
+  "ERROR test_extreme_or_non_numeric_timestamps_fail_without_exception measure='-10000000000'",
+  "ERROR test_extreme_or_non_numeric_timestamps_fail_without_exception measure='100000000000'",
+  "ERROR test_extreme_or_non_numeric_timestamps_fail_without_exception observer='-10000000000'",
+  "ERROR test_extreme_or_non_numeric_timestamps_fail_without_exception observer='100000000000'",
+  "FAIL test_aggregate_rss_must_be_an_exact_positive_integer aggregate=734003200.0",
+  "FAIL test_image_pixel_evidence_is_mandatory_and_exact case='after-trim'",
+  "FAIL test_image_pixel_evidence_is_mandatory_and_exact case='baseline-missing'",
+  "FAIL test_image_pixel_evidence_is_mandatory_and_exact case='closed-differs'",
+  "FAIL test_image_pixel_evidence_is_mandatory_and_exact case='false'",
+  "FAIL test_image_pixel_evidence_is_mandatory_and_exact case='float'",
+  "FAIL test_image_pixel_evidence_is_mandatory_and_exact case='missing'",
+  "FAIL test_image_pixel_evidence_is_mandatory_and_exact case='negative'",
+  "FAIL test_image_pixel_evidence_is_mandatory_and_exact case='none'",
+  "FAIL test_image_pixel_evidence_is_mandatory_and_exact case='reopened-missing'",
+  "FAIL test_image_pixel_evidence_is_mandatory_and_exact case='string'",
+  "FAIL test_image_pixel_evidence_is_mandatory_and_exact case='wrong-total'",
+  "FAIL test_image_pixel_evidence_is_mandatory_and_exact case='zero-populated'",
+  "FAIL test_valid_integer_and_float_timestamps_complete"
+ ],
+ "testBugCorrected": "test_valid_integer_and_float_timestamps_complete failed on the original only because the test left taskB/rafC at old values (causal order); the test was corrected, not the classifier",
+ "alreadyProtectedOnOriginal": [
+  "aggregateRssBytes None/0/-1/True/string (positive/equality already failed)",
+  "timestamps inf/-inf/nan/True/False/None/string (already FAIL)"
+ ],
+ "reproduced": {
+  "P0": "12 imagePixels cases PASS on original (missing/None/False/0/-1/1.0/string/wrong total/closed differs/after trim/reopened missing/baseline missing)",
+  "P1": "aggregateRssBytes=734003200.0 PASS on original (float == int)",
+  "P2": "rafA/keyToFrame = +-10**400 raised OverflowError in math.isfinite (4 exceptions)"
+ },
+ "mutation": {
+  "status": "FAIL",
+  "mutants": 29,
+  "detected": 28,
+  "survivors": [
+   "trim-summary-none-ignored"
+  ],
+  "equivalentSurvivor": "trim-summary-none-ignored: still unreachable after this change (summary fields incl. integer RSS are validated by check_point before summary is built); reported as 28/29 detected, not 29/29",
+  "killedBy": {
+   "baseline-unmutated": [],
+   "opened-surfaces-unchecked": [
+    "test_image_pixel_evidence_is_mandatory_and_exact",
+    "test_malformed_or_incomplete_evidence_fails",
+    "test_opened_state_engine_surfaces_are_mandatory"
+   ],
+   "surface-count-type-relaxed": [
+    "test_opened_state_engine_surfaces_are_mandatory"
+   ],
+   "trim-summary-none-ignored": [],
+   "summary-gate-id-unchecked": [
+    "test_summary_gate_identity_is_mandatory"
+   ],
+   "d4-expected-wasm-unvalidated": [
+    "test_invalid_expected_wasm_identity_fails"
+   ],
+   "d4-records-accept-any-items": [
+    "test_malformed_documents_fail_without_exception",
+    "test_malformed_json_fields_fail_without_exception"
+   ],
+   "d4-engine-identity-type-unchecked": [
+    "test_malformed_json_fields_fail_without_exception"
+   ],
+   "d4-revision-type-unchecked": [
+    "test_malformed_json_fields_fail_without_exception"
+   ],
+   "d4-group-start-int-unchecked": [
+    "test_malformed_json_fields_fail_without_exception"
+   ],
+   "img-phases-unchecked": [
+    "test_malformed_or_incomplete_evidence_fails"
+   ],
+   "img-baseline-unchecked": [
+    "test_baseline_must_start_empty"
+   ],
+   "img-populated-unchecked": [
+    "test_decoded_entries_cannot_substitute_for_image_entries",
+    "test_never_populated_image_cache_is_not_proof"
+   ],
+   "img-kept-unchecked": [
+    "test_image_cache_must_survive_close_and_idle"
+   ],
+   "img-trim-unchecked": [
+    "test_trim_must_release_images_and_surfaces"
+   ],
+   "img-trim-images-only-decoded": [
+    "test_trim_must_release_images_and_surfaces"
+   ],
+   "img-repopulate-unchecked": [
+    "test_reopen_must_repopulate_with_exact_frames"
+   ],
+   "img-frames-unchecked": [
+    "test_reopen_must_repopulate_with_exact_frames"
+   ],
+   "img-settled-as-opened": [
+    "test_orphan_engine_image_in_settled_state_fails"
+   ],
+   "img-identity-unchecked": [
+    "test_process_generation_must_stay_stable"
+   ],
+   "img-error-ignored": [
+    "test_malformed_or_incomplete_evidence_fails"
+   ],
+   "img-cleanup-ignored": [
+    "test_malformed_or_incomplete_evidence_fails"
+   ],
+   "img-wasm-ignored": [
+    "test_malformed_or_incomplete_evidence_fails"
+   ],
+   "img-pixels-populated-unchecked": [
+    "test_image_pixel_evidence_is_mandatory_and_exact"
+   ],
+   "img-pixels-trimmed-unchecked": [
+    "test_image_pixel_evidence_is_mandatory_and_exact"
+   ],
+   "img-pixels-failure-ignored": [
+    "test_image_pixel_evidence_is_mandatory_and_exact"
+   ],
+   "image-pixels-not-structural": [
+    "test_image_pixel_evidence_is_mandatory_and_exact"
+   ],
+   "aggregate-rss-type-unchecked": [
+    "test_aggregate_rss_must_be_an_exact_positive_integer"
+   ],
+   "timestamp-overflow-unguarded": [
+    "test_extreme_or_non_numeric_timestamps_fail_without_exception"
+   ],
+   "timestamp-float-nonfinite-accepted": [
+    "test_extreme_or_non_numeric_timestamps_fail_without_exception",
+    "test_timestamps_must_be_finite_numbers_in_causal_order"
+   ]
+  }
+ },
+ "d1Attempts": [
+  {
+   "file": "d1-four-document-native.json",
+   "status": "FAIL",
+   "parentExit": 1,
+   "error": "WebDriver POST /execute/sync: 500 b'{\"value\":{\"error\":\"unknown error\",\"message\":\"Could not parse script result\",\"stacktrace\":\"\"}}'",
+   "tests": 1,
+   "executedDependenciesStable": true
+  },
+  {
+   "file": "d1-four-document-native-attempt2.json",
+   "status": "PASS",
+   "parentExit": 0,
+   "tests": 39,
+   "exact": 24,
+   "executedDependenciesStable": true
+  }
+ ],
+ "d1FirstAttemptNote": "UNVERIFIED cause: WebKitWebDriver returned 500 \"Could not parse script result\" before the first frame check (bootstrap assertion only); harness and dependencies byte-identical to 4 earlier passes; no competing native session found. Preserved; the separate second attempt passed. Not a performance measurement, so no result selection issue."
+}
