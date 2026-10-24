@@ -1,0 +1,150 @@
+{
+  "original": true,
+  "head": "93004384cc8dd8ea12ff898dc16ac20fbd0a7af1",
+  "sourceHashes": {
+    "baseline-official-frozen-comparison.json": "c5c85470d84314aba4a153810972eb991c1e8c6947bb483da887e75c77b9d669",
+    "optimized-official-retry.json": "2d6c5f1be28fc98fc6a848f9373d1013c430dbf343655db26fef53b91a906dd0"
+  },
+  "results": [
+    {
+      "record": "baseline-official-frozen-comparison.json",
+      "case": "genuine",
+      "exit": 0,
+      "status": "ANALYZED",
+      "error": null,
+      "nonfinite": false,
+      "traceback": false,
+      "inputUnchanged": true
+    },
+    {
+      "record": "baseline-official-frozen-comparison.json",
+      "case": "aggregate-ms",
+      "exit": 0,
+      "status": "ANALYZED",
+      "error": null,
+      "nonfinite": false,
+      "traceback": false,
+      "inputUnchanged": true
+    },
+    {
+      "record": "baseline-official-frozen-comparison.json",
+      "case": "aggregate-firstAt",
+      "exit": 0,
+      "status": "ANALYZED",
+      "error": null,
+      "nonfinite": false,
+      "traceback": false,
+      "inputUnchanged": true
+    },
+    {
+      "record": "baseline-official-frozen-comparison.json",
+      "case": "call-outside",
+      "exit": 0,
+      "status": "ANALYZED",
+      "error": null,
+      "nonfinite": false,
+      "traceback": false,
+      "inputUnchanged": true
+    },
+    {
+      "record": "baseline-official-frozen-comparison.json",
+      "case": "extend-handlerEnd",
+      "exit": 0,
+      "status": "ANALYZED",
+      "error": null,
+      "nonfinite": false,
+      "traceback": false,
+      "inputUnchanged": true
+    },
+    {
+      "record": "baseline-official-frozen-comparison.json",
+      "case": "precision",
+      "exit": 0,
+      "status": "ANALYZED",
+      "error": null,
+      "nonfinite": false,
+      "traceback": false,
+      "inputUnchanged": true
+    },
+    {
+      "record": "baseline-official-frozen-comparison.json",
+      "case": "origin",
+      "exit": 0,
+      "status": "ANALYZED",
+      "error": null,
+      "nonfinite": false,
+      "traceback": false,
+      "inputUnchanged": true
+    },
+    {
+      "record": "baseline-official-frozen-comparison.json",
+      "case": "latency-end",
+      "exit": 0,
+      "status": "ANALYZED",
+      "error": null,
+      "nonfinite": false,
+      "traceback": false,
+      "inputUnchanged": true
+    },
+    {
+      "record": "baseline-official-frozen-comparison.json",
+      "case": "overflow",
+      "exit": 0,
+      "status": "ANALYZED",
+      "error": null,
+      "nonfinite": true,
+      "traceback": false,
+      "inputUnchanged": true
+    },
+    {
+      "record": "baseline-official-frozen-comparison.json",
+      "case": "empty-error",
+      "exit": 0,
+      "status": "ANALYZED",
+      "error": null,
+      "nonfinite": false,
+      "traceback": false,
+      "inputUnchanged": true
+    },
+    {
+      "record": "baseline-official-frozen-comparison.json",
+      "case": "trace-identity",
+      "exit": 0,
+      "status": "ANALYZED",
+      "error": null,
+      "nonfinite": false,
+      "traceback": false,
+      "inputUnchanged": true
+    },
+    {
+      "record": "baseline-official-frozen-comparison.json",
+      "case": "duplicate-key",
+      "exit": 0,
+      "status": "ANALYZED",
+      "error": null,
+      "nonfinite": false,
+      "traceback": false,
+      "inputUnchanged": true
+    },
+    {
+      "record": "baseline-official-frozen-comparison.json",
+      "case": "nested",
+      "exit": 1,
+      "status": "FAIL",
+      "error": "official evidence must be an object",
+      "nonfinite": false,
+      "traceback": false,
+      "inputUnchanged": true
+    },
+    {
+      "record": "optimized-official-retry.json",
+      "case": "genuine",
+      "exit": 0,
+      "status": "ANALYZED",
+      "error": null,
+      "nonfinite": false,
+      "traceback": false,
+      "inputUnchanged": true
+    }
+  ]
+}

@@ -1,0 +1,117 @@
+T010 공식 D4 handler 분석 무결성 보강 — 완료 보고
+
+범위와 Git
+시작 master / 93004384cc8dd8ea12ff898dc16ac20fbd0a7af1, 작업 트리 clean.
+제품·생산자·엔진·WASM/JS·과거 증거·submodule gitlink는 변경하지 않았다.
+새 증거와 Python 분석기/회귀/문서만 로컬 커밋한다. push는 수행하지 않는다.
+최종 커밋 SHA와 최종 Git 상태는 사용자 최종 보고에 기록한다(커밋 자기 참조를 피함).
+
+확인한 결함과 교정
+A/P1: 모든 연산에서 ms/firstAt 정합성 검사가 없고, n 대조도 groupStart에 한정됐다.
+실제 첫 groupStart insertText duration은 baseline 2ms, Luma8 1ms다. 합계만 999ms로
+변조해도 원본이 수용했다. d4_handler.validate_sample_contract가 모든 5종류의
+n, ms 순차 합산 가능 범위, 첫 반환 배열 항목 firstAt의 두 자리 대응을 검사한다.
+producer는 실제 호출에만 setdefault하므로 무호출 이름은 생략해야 하며 n=0 항목은 거부한다.
+반환 배열은 중첩 호출 때문에 시작 시각순일 필요가 없으며 firstAt은 min(at)이 아니다.
+
+B/P1: engineTimeline.at=99999, extend.handlerEnd=99999 등이 수용됐다.
+호출은 입력/명령 trace 관찰 이후이고 최종 RAF 전에 완료 가능한 구간이어야 한다.
+편집은 input <= handlerEnd <= observed <= raf1 <= end, undo/redo는 input=0,
+handlerEnd=null이다. 동기 insertText는 handlerEnd 안에서 끝나야 한다.
+렌더 관련 호출은 handlerEnd 이후에도 유효하다. trace.at은 발행 시각, trace.ms는
+비동기 대기를 포함할 수 있어 trace.at-ms가 input 이후라는 규칙은 두지 않았다.
+Python 직렬화 정밀도에 따른 실제 반올림 구간으로 비교하며 임의의 epsilon을 추가하지 않았다.
+
+C/P1: 원점 .1, keyToFrame=87.04, keyToFrame=80.9/end=81 등 수용을 재현했다.
+key=0, keyToFrame=end 정확 일치, keyToFrame/at 1자리, engine at/ms 2자리를 요구한다.
+기존 test_rounding_boundary_against_raw_sample은 raw 87.25를 serialized evidence에 넣어
+수용하도록 요구했으므로 수정했다. producer pct는 raw float를 받지만 timeline_samples는
+이미 round(...,1)을 저장한다. 두 층은 다르다. raw percentile 알고리즘과 기존 동등성
+시험은 보존했으며 randomized nearest-rank 검증도 계속 통과한다.
+
+D/P1: 두 aggregate ms를 각각 유한한 1e308로 바꾸면 원본 CLI가 합계 overflow로
+-Infinity를 출력하면서 ANALYZED/exit 0이었다(before-final/0-overflow.json).
+d4_evidence.finite/union/intervals/handler_accounting/verify_finite_tree가
+산술 중간값과 결과 유한성을 확인한다. analyze-d4.main은 성공 출력 전체도 재검사하고
+strict_json의 allow_nan=False로 최종 방어한다. 직렬화 전 메모리에서 완성하고
+기존 'x' 배타적 생성으로 저장한다. 회귀는 직접 overflow와 결과 함수의 inf 주입을
+각각 검증한다. 수정 CLI는 구조화 FAIL/exit 1이고 비유한 숫자를 출력하지 않는다.
+중첩/겹침 합계는 exclusive CPU 시간으로 해석하지 않으며 원래 residual/union 의미를 유지한다.
+
+F/P2: 기본 json.loads가 중복 키를 마지막 값으로 덮어썼다. 공식 measurementComplete
+false/true 중복 및 manifest buildStatus 중복을 실제 CLI로 재현했다.
+read_json이 입력/ENGINE.json 모두에서 중복 키, NaN/Infinity, 1e999, 큰 정수, binary float로 정확히 표현할 수 없는 timestamp 정수,
+잘못된 Unicode를 거부한다. 32 MiB 바이트 제한·중첩 64단계를 parsing 전에 검사한다.
+공식 baseline/Luma8은 각각 3,619,753/3,618,352 bytes, 깊이 8이므로 호환된다.
+OSError/UnicodeError/ValueError/RecursionError/OverflowError/TypeError/KeyError는
+쓰기 가능한 새 출력에 FAIL로 남긴다. 이미 있는 결과는 덮어쓰지 않는다.
+
+G/P2: 빈 error 객체 등 falsey 오류 필드가 성공으로 취급됐고, 무의미한 trace 하나가
+coverage를 충족했다. history-perf/native 진단 생산자는 예외 때만 error 문자열을 추가하므로
+error 필드의 존재 자체를 거부한다. 입력 trace dom:input / shortcut command:request
+identity, 동기 입력 경계, monotonic emission과 RAF 상한을 검사한다.
+고정된 모든 이벤트 이름의 나열이나 call 배열 시작시각 순서는 강제하지 않는다.
+
+재현되지 않았거나 잘못 의심된 규칙
+- 기존 groupStart n 변조, 통계 변조, measurementComplete 비불리언은 이미 거부됐다.
+- 모든 호출이 handlerEnd 이전에 끝나야 한다는 규칙은 잘못이다. 실제 공식 기록의
+  handler 후 렌더링을 보존한다.
+- 모든 trace를 key-2ms 이후로 제한하면 실제 Luma8 연구노트 undo 표본 82의
+  dom:keydown=-3ms가 거부된다. native event 시각과 performance clock을 구별하고
+  같은 clock의 관찰 anchor를 사용한다. 입력 이벤트 -2ms 기존 허용은 보존한다.
+- 현 환경 Python 3.14.7에서는 중첩 20,000 입력도 원본이 최상위 타입 FAIL을 정상
+  출력했다. 이 환경에서 RecursionError traceback은 재현하지 못했다. 그럼에도 새
+  depth 제한과 RecursionError 처리는 파서/실행환경 차이에도 결정적인 거부를 제공한다.
+- serialized duration의 단순 합과 aggregate가 항상 같다는 가정은 틀리다.
+
+생산자 계약의 남는 한계 (범위 밖 변경은 하지 않음)
+A: aggregate는 round(previous + raw_ms,2)를 매번 적용하지만 engineTimeline은 각
+raw_ms를 별도로 round(...,2)해 잃는다. 예를 들어 .005/.005는 .01/.01로 저장되며
+합계는 .01이 된다. 실제 생산자 함수를 AST로 추출해 이 양성 예제를 검증했다.
+원래 합계를 하나의 값으로 재계산할 수 없으므로 각 저장값을 생성할 수 있는 binary
+float의 양끝을 Python round/nextafter로 구하고 정확한 순차 연산으로 가능한 합계
+범위를 전파한다. 이 범위 밖 변조는 거부하지만 범위 안 변조의 판별은 원시 duration
+계약 없이는 불가능하다. arbitrary tolerance를 정해 정확 대조라고 주장하지 않는다.
+E: timeline_samples는 kind와 상대 시각만 남기며 trial ID/절대 key/trace sequence를
+저장하지 않는다. 같은 latency의 표본을 통째로 복제해도 분포와 통계가 같으면 독립된
+표본인지 판별할 수 없다. 이를 통과시키는 명시적 양성 회귀를 두었다. 동일 값 자체를
+거부하거나 과거 ID를 발명하지 않았다. 독립 표본 증명에는 향후 생산자 변경이 필요하다.
+Trace도 필터/최대80개 절단 및 seq/상세 정보 손실 때문에 완전한 인과·출처 증명은 아니다.
+본 검사는 내부 JSON 정합성과 기존 artifact/fixture 독립 확인이다. provenance 증명은 아니다.
+
+검증
+- 원래 구현: 집중 73 / 전체 187 통과(focused-original.txt/full-original.txt).
+- 새 음성·양성 회귀를 원래 구현에 적용: 11 tests, 32 assertion failures, errors=0
+  (regression-original-final.txt). 테스트 인프라 오류로 결함을 대신 주장하지 않는다.
+- 수정 구현: 집중 87 / 전체 201 통과(focused-after.txt/full-after.txt).
+  P0 invalid variants, 20개 통계 그룹/변조, pct 동등성, 독립 WASM/JS/manifest/fixture,
+  원본 불변·출력 보존, 호출/시각/정밀도/trace, 엄격 JSON·산술 overflow를 포함한다.
+- 실제 기존 패키지 사용 before-final/after-final CLI: genuine 2개 모두 ANALYZED/exit 0,
+  official=false. 기존 완전한 공식 FAIL을 PASS로 재분류하지 않는다.
+  전체 40개 통계 그룹 정확 일치, handler 240행 결과는 교정 전후 완전히 동일하다.
+  최종 코드의 원본 파일 직접 CLI 결과는 verified-baseline-handler.json /
+  verified-luma8-handler.json에 추가 보존했다. 보안 검사에서 홈 경로가 검출되어
+  이 두 파일의 source.path 메타데이터만 저장소 상대경로로 정규화했다.
+  SHA256/측정값/상태는 변경하지 않았다(sensitive-path-finding.txt).
+  원본에서 수용한 11개 변조는 수정본에서 모두 FAIL/exit 1이다.
+- 보안 검사기 회귀 86개, 추적 파일 민감정보(시작 시점 1114개), 전체 Git 이력
+  민감정보(1872 파일 버전), staged 검사와 변경 파일 Gitleaks가 통과했다.
+  세부 결과는 security-summary.json / integrity.json과 해당 로그 참조.
+- 로그는 diff 검사에 맞춰 줄 끝 공백만 정규화했다. 결과/진단 내용은 보존했다.
+- Node는 fixture 생성에만 사용했다. 제품/브라우저/Rust/native suite나 새 공식 측정은
+  실행하지 않았다. Python 분석 계약 변경만이므로 이들 재실행은 필요하지 않았다.
+
+판정 (변경 없음)
+T010: INCOMPLETE
+D1: PASS (historical evidence)
+D2: INCONCLUSIVE
+D3: PASS (historical evidence)
+D4: FAIL (official group-start p95 exceeds 50 ms)
+D5: PASS (historical evidence)
+RSS: INCONCLUSIVE
+Production RHWP Undo/Redo: NO-GO
+T011: NOT STARTED
+
+분석기 보강의 범위는 완료다. 위 생산자 한계를 전제로 예정된 resource-lease/memory-accounting
+작업을 검토할 준비는 됐지만, 이 작업에서 lease 구현·Preparing→ResourcesReady·성능 최적화나
+T011을 시작하지 않았다. 성능·메모리 승인과 제품 NO-GO는 그대로다.

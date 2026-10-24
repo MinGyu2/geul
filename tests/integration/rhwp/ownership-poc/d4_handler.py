@@ -6,7 +6,10 @@ d4-frame-attribution-native.EXPECTED_SOURCE_SHA256. No values come from input JS
 import hashlib
 from collections import Counter
 from pathlib import Path
-from d4_evidence import number
+from d4_evidence import number, finite
+from fractions import Fraction
+from functools import lru_cache
+import math
 
 ROOT = Path(__file__).resolve().parents[4]
 FIXTURES = (
@@ -31,6 +34,95 @@ def producer_pct(values):
     return {"n": len(v), "p50": round(q(0.5), 1), "p95": round(q(0.95), 1), "max": round(v[-1], 1), "timeouts": len(values) - len(v)}
 
 
+@lru_cache(maxsize=16384)
+def rounding_bounds(value, digits):
+    """Extremal binary floats that Python round(..., digits) serializes as value.
+
+    Endpoint membership uses Python round, including binary-float ties; this is
+    not an arbitrary epsilon or decimal half-up approximation.
+    """
+    if not number(value) or float(value) != value or round(value, digits) != value:
+        raise ValueError('invalid producer decimal precision')
+    half = Fraction(1, 2 * 10**digits)
+    try:
+        lo, hi = (float(Fraction(value) + sign*half) for sign in (-1, 1))
+    except OverflowError as error:
+        raise ValueError('invalid producer rounding range') from error
+    finite(lo); finite(hi)
+    while round(lo, digits) != value:
+        lo = math.nextafter(lo, math.inf)
+    while round(hi, digits) != value:
+        hi = math.nextafter(hi, -math.inf)
+    while round(math.nextafter(lo, -math.inf), digits) == value:
+        lo = math.nextafter(lo, -math.inf)
+    while round(math.nextafter(hi, math.inf), digits) == value:
+        hi = math.nextafter(hi, math.inf)
+    return lo, hi
+
+
+def validate_sample_contract(s):
+    """Internal serialized MEASURE consistency, not independent event provenance."""
+    def require(ok, message):
+        if not ok: raise ValueError(message)
+    at, calls, timeline, trace = s['at'], s['calls'], s['engineTimeline'], s['timeline']
+    require(at['key'] == 0 and s['keyToFrame'] == at['end'],
+            'invalid canonical timeline measurement: origin/end mismatch')
+    require(set(at) == {'key','input','handlerEnd','observed','raf1','end'}, 'invalid timestamp fields')
+    for value in (s['keyToFrame'], *[v for v in at.values() if v is not None]):
+        rounding_bounds(value, 1)
+    require(at['input'] >= -2, 'invalid event timestamp rounding')
+    if s['kind'] in ('undo', 'redo'):
+        require(at['input'] == 0 and at.get('handlerEnd') is None, 'invalid shortcut handler boundaries')
+    else:
+        require(at['input'] <= at['handlerEnd'] <= at['observed'], 'invalid handler boundaries/order')
+    require(Counter(c['name'] for c in timeline) == Counter({n:v['n'] for n,v in calls.items()})
+            and all(v['n'] > 0 for v in calls.values()), 'aggregate/timeline count mismatch or zero-call entry')
+    # Event timeStamp can precede/follow the performance clock (historical
+    # shortcut trace reaches -3 ms). Use same-clock emission anchors instead.
+    anchor_name = 'command:request' if s['kind'] in ('undo','redo') else 'dom:input'
+    anchors = [t for t in trace if t['name'] == anchor_name]
+    require(bool(anchors), 'missing execution trace association')
+    anchor_lo = min(rounding_bounds(t['at'],1)[0] for t in anchors)
+    # Calls append on return (render spans can cross handlerEnd).
+    # Their two-decimal start/duration must admit completion by the final RAF.
+    final_hi = rounding_bounds(at['end'], 1)[1]
+    aggregate = {}
+    seen = set()
+    for c in timeline:
+        require(bool(c['name']), 'invalid call name')
+        lo, hi = rounding_bounds(c['ms'], 2)
+        start_lo, _ = rounding_bounds(c['at'], 2)
+        require(rounding_bounds(c['at'],2)[1] >= anchor_lo and finite(start_lo+max(0,lo)) <= final_hi,
+                'invalid call execution interval')
+        lower, upper = aggregate.get(c['name'], (0.0, 0.0))
+        aggregate[c['name']] = (round(finite(lower+max(0,lo)),2), round(finite(upper+hi),2))
+        if c['name'] not in seen:
+            first = calls[c['name']].get('firstAt')
+            require(number(first) and round(first,2) == c['at'], 'aggregate firstAt mismatch')
+            seen.add(c['name'])
+    for name, (lower, upper) in aggregate.items():
+        value = calls[name]['ms']
+        rounding_bounds(value, 2)
+        require(lower <= value <= upper, 'aggregate duration mismatch: '+name)
+    require(len(trace) <= 80, 'invalid trace truncation')
+    for t in trace:
+        require(bool(t['name']), 'invalid trace identity')
+        lo, _ = rounding_bounds(t['at'], 1)
+        require(lo <= final_hi, 'invalid trace emission interval')
+        if t['ms'] is not None: rounding_bounds(t['ms'], 2)
+    require(all(a['at'] <= b['at'] for a,b in zip(trace,trace[1:])), 'invalid trace emission order')
+    if s['kind'] in ('groupStart','extend','afterUndo'):
+        # dom:input is emitted synchronously by the real input handler. Other
+        # trace names/order and async span starts are not a stable contract.
+        require(any(t['name']=='dom:input' and at['input']-2 <= t['at'] <= at['handlerEnd']
+                    and t['ms'] is None for t in trace), 'missing/invalid input trace association')
+        inserts = [c for c in timeline if c['name']=='insertText']
+        require(len(inserts)==1, 'missing edit insertText coverage')
+        c=inserts[0]
+        require(finite(rounding_bounds(c['at'],2)[0]+max(0,rounding_bounds(c['ms'],2)[0]))
+                <= rounding_bounds(at['handlerEnd'],1)[1], 'synchronous insertText exceeds handler')
+
+
 def verified_fixtures(generated):
     identities = {}
     for name, relative, expected, _ in FIXTURES:
@@ -46,7 +138,7 @@ def validate_handler(result, expected_wasm, identities):
     def require(ok, reason):
         if not ok: raise ValueError(reason)
     require(isinstance(result, dict), 'official evidence must be an object')
-    require(not result.get('error'), 'recorded harness error')
+    require('error' not in result, 'recorded/invalid harness error')
     # Collection completeness only; a complete run whose official gate is FAIL stays analyzable.
     require(result.get('measurementComplete') is True,
             'official measurement incomplete: measurementComplete must be exactly true, got '
@@ -80,8 +172,7 @@ def validate_handler(result, expected_wasm, identities):
             at, calls, timeline = s.get('at'), s.get('calls'), s.get('engineTimeline')
             require(isinstance(at, dict) and all(number(at.get(k)) for k in ('key', 'input', 'observed', 'raf1', 'end'))
                     and at['input'] <= at['observed'] <= at['raf1'] <= at['end']
-                    and number(s.get('keyToFrame')) and s['keyToFrame'] >= 0
-                    and abs(s['keyToFrame'] - (at['end'] - at['key'])) <= .11, 'invalid canonical timeline measurement')
+                    and number(s.get('keyToFrame')) and s['keyToFrame'] >= 0, 'invalid canonical timeline measurement')
             require(isinstance(at, dict) and number(at.get('input')) and
                     (s['kind'] in ('undo', 'redo') and at.get('handlerEnd') is None or
                      number(at.get('handlerEnd')) and at['input'] <= at['handlerEnd']), 'invalid handler boundaries')
@@ -97,14 +188,7 @@ def validate_handler(result, expected_wasm, identities):
             if s['kind'] == 'groupStart':
                 require(bool(timeline) and bool(trace) and calls.get('insertText', {}).get('n') == 1
                         and sum(c['name'] == 'insertText' for c in timeline) == 1, 'missing group-start call/trace coverage')
-                require(Counter(c['name'] for c in timeline) == Counter({name: value['n'] for name, value in calls.items()}),
-                        'aggregate/timeline count mismatch')
-                keys = ('key', 'input', 'handlerEnd', 'observed', 'raf1', 'end')
-                # Native event timestamps can round 1 ms before the key timestamp.
-                # Only observation/RAF ordering is a strict same-clock causal chain.
-                require(all(number(at.get(k)) for k in keys) and at['input'] >= at['key'] - 2
-                        and all(at[a] <= at[b] for a, b in zip(keys[1:], keys[2:])),
-                        'invalid group-start timestamps/order')
+            validate_sample_contract(s)
         # The reported aggregates must be exactly what the producer derives from these raw samples.
         for kind in COUNTS:
             recomputed = producer_pct([s['keyToFrame'] for s in samples if s['kind'] == kind])

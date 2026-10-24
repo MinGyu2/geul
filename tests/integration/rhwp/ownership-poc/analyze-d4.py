@@ -4,8 +4,52 @@ import argparse
 import hashlib
 import json
 from pathlib import Path
-from d4_evidence import analyze_delay, handler_accounting, validate
+from d4_evidence import analyze_delay, handler_accounting, validate, number, verify_finite_tree
 from d4_handler import verified_fixtures, validate_handler
+
+
+# Historical official inputs are <4 MiB and depth <16. Leave ample room for
+# full four-document runs while bounding parser memory/recursion exposure.
+MAX_JSON_BYTES = 32 * 1024 * 1024
+MAX_JSON_DEPTH = 64
+
+
+def strict_json(value):
+    return json.dumps(value, ensure_ascii=False, indent=2, allow_nan=False)+'\n'
+
+
+def read_json(path):
+    with path.open('rb') as source:
+        raw = source.read(MAX_JSON_BYTES+1)
+    if len(raw) > MAX_JSON_BYTES: raise ValueError('JSON exceeds 32 MiB limit')
+    text = raw.decode('utf-8')
+    depth=0; quoted=False; escaped=False
+    for char in text:
+        if quoted:
+            if escaped: escaped=False
+            elif char == '\\': escaped=True
+            elif char == '"': quoted=False
+        elif char == '"': quoted=True
+        elif char in '[{':
+            depth+=1
+            if depth > MAX_JSON_DEPTH: raise ValueError('JSON exceeds depth 64 limit')
+        elif char in ']}': depth-=1
+    def pairs(items):
+        out={}
+        for key,value in items:
+            if key in out: raise ValueError('duplicate JSON object key: '+ascii(key))
+            out[key]=value
+        return out
+    def constant(value): raise ValueError('non-standard JSON constant: '+value)
+    result=json.loads(text,object_pairs_hook=pairs,parse_constant=constant)
+    pending=[result]
+    while pending:
+        value=pending.pop()
+        if isinstance(value,dict): pending.extend(value.keys());pending.extend(value.values())
+        elif isinstance(value,list): pending.extend(value)
+        elif isinstance(value,str): value.encode('utf-8')
+        elif type(value) in (float,int) and not number(value): raise ValueError('non-finite JSON number')
+    return raw,result
 
 
 def digest(path):
@@ -14,7 +58,7 @@ def digest(path):
 
 def candidate_identity(folder, expected, expected_js):
     """The claimed JSON identity is never an expectation or artifact oracle."""
-    manifest=json.loads((folder/'ENGINE.json').read_text())
+    _,manifest=read_json(folder/'ENGINE.json')
     if not isinstance(manifest,dict) or manifest.get('buildStatus')!='PASS' or manifest.get('sourceStableDuringBuild') is not True:
         raise ValueError('candidate manifest is not a verified build')
     artifacts=manifest.get('artifacts')
@@ -40,7 +84,7 @@ def main():
     out=dict(status='FAIL',official=False,method='clipped interval union; nested calls never summed; no official remeasurement')
     exit_code=1
     try:
-        raw=a.source.read_bytes();r=json.loads(raw)
+        raw,r=read_json(a.source)
         out['source']=dict(path=a.source.as_posix(),sha256=hashlib.sha256(raw).hexdigest())
         out['independentIdentity']=candidate_identity(a.candidate,a.expected_wasm,a.expected_js)
         if a.mode=='input-delay':
@@ -64,10 +108,21 @@ def main():
                     rows=rows,negativeArithmeticCount=sum(x['nonexclusiveArithmeticResidualMs']<0 for x in rows)))
             out.update(status='ANALYZED',documents=docs,exclusiveAppJs='UNVERIFIED; rounded selected-probe coverage')
             exit_code=0
-    except (OSError,json.JSONDecodeError,UnicodeDecodeError,ValueError) as error:
+        verify_finite_tree(out)
+    except (OSError,UnicodeError,ValueError,RecursionError,OverflowError,TypeError,KeyError) as error:
         out.update(status='FAIL',error=str(error))
+        exit_code=1
+    try:
+        serialized=strict_json(out)
+        serialized.encode('utf-8')
+    except (ValueError,OverflowError,UnicodeError,RecursionError) as error:
+        out=dict(status='FAIL',official=False,error='invalid analysis serialization: '+ascii(str(error)))
+        serialized=strict_json(out);exit_code=1
     # Exclusive creation also prevents accidentally replacing a result created meanwhile.
-    with a.output.open('x') as target:target.write(json.dumps(out,ensure_ascii=False,indent=2)+'\n')
+    try:
+        with a.output.open('x',encoding='utf-8') as target:target.write(serialized)
+    except OSError as error:
+        p.exit(1, 'cannot create analysis output: '+str(error)+'\n')
     return exit_code
 
 

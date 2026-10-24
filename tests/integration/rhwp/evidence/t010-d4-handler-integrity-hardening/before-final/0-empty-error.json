@@ -1,0 +1,1015 @@
+{
+  "status": "ANALYZED",
+  "official": false,
+  "method": "clipped interval union; nested calls never summed; no official remeasurement",
+  "source": {
+    "path": "/tmp/nix-shell.FNr9XN/tmp9ozjy676/input.json",
+    "sha256": "9f736c1af64da3f0fc8a88baab310e50f79e359e16a95da5c8bf9463b50fd974"
+  },
+  "independentIdentity": {
+    "wasmSha256": "48adaa0f748484d12f59f4805deda0480635f915368392a87e76e95962ec0b27",
+    "manifestSha256": "4ecda13f2d611e6f8ba4291b939efaeeccb6e812e68de7f8b539b11526c20ce2",
+    "glueSha256": "b69e920c8fb1e9d05dacadf3ebae2396b043da385137ad2b4b3386a9b3433252",
+    "fixtures": {
+      "basic-ko.hwp": "57c901cc394abf6f58f4838315d1ea2c5ecf8a03d9934d3fc098fd8be6e6e12f",
+      "basic-ko.hwpx": "26d434b7b427149110751c6ef5b19e9ecb4818f3ba7eadfe201b5afd3de442a8",
+      "연구노트(화학).hwp": "6717eca43c6fdd9b0530530cf17d33b6687da0c462a433d37eb652afb5394f91",
+      "3249937_asset_management_rules.hwpx": "97b5d6c571a6b7626321c6a53d797e3511978447497bb73309bd23eaa8e7ea77"
+    }
+  },
+  "documents": [
+    {
+      "sample": "basic-ko.hwp",
+      "pages": 1,
+      "fixtureIdentity": "VERIFIED",
+      "rows": [
+        {
+          "handlerMs": 19,
+          "nonexclusiveArithmeticResidualMs": 11.0,
+          "recordedUnionMs": 7,
+          "uncoveredMs": 12,
+          "exclusiveAppJs": "UNVERIFIED: rounded probes cover selected calls only",
+          "intervalCoverage": "rounded interval estimate"
+        },
+        {
+          "handlerMs": 17,
+          "nonexclusiveArithmeticResidualMs": 10.0,
+          "recordedUnionMs": 5,
+          "uncoveredMs": 12,
+          "exclusiveAppJs": "UNVERIFIED: rounded probes cover selected calls only",
+          "intervalCoverage": "rounded interval estimate"
+        },
+        {
+          "handlerMs": 16,
+          "nonexclusiveArithmeticResidualMs": 11.0,
+          "recordedUnionMs": 4,
+          "uncoveredMs": 12,
+          "exclusiveAppJs": "UNVERIFIED: rounded probes cover selected calls only",
+          "intervalCoverage": "rounded interval estimate"
+        },
+        {
+          "handlerMs": 18,
+          "nonexclusiveArithmeticResidualMs": 8.0,
+          "recordedUnionMs": 7,
+          "uncoveredMs": 11,
+          "exclusiveAppJs": "UNVERIFIED: rounded probes cover selected calls only",
+          "intervalCoverage": "rounded interval estimate"
+        },
+        {
+          "handlerMs": 18,
+          "nonexclusiveArithmeticResidualMs": 10.0,
+          "recordedUnionMs": 6,
+          "uncoveredMs": 12,
+          "exclusiveAppJs": "UNVERIFIED: rounded probes cover selected calls only",
+          "intervalCoverage": "rounded interval estimate"
+        },
+        {
+          "handlerMs": 18,
+          "nonexclusiveArithmeticResidualMs": 10.0,
+          "recordedUnionMs": 7,
+          "uncoveredMs": 11,
+          "exclusiveAppJs": "UNVERIFIED: rounded probes cover selected calls only",
+          "intervalCoverage": "rounded interval estimate"
+        },
+        {
+          "handlerMs": 16,
+          "nonexclusiveArithmeticResidualMs": 9.0,
+          "recordedUnionMs": 5,
+          "uncoveredMs": 11,
+          "exclusiveAppJs": "UNVERIFIED: rounded probes cover selected calls only",
+          "intervalCoverage": "rounded interval estimate"
+        },
+        {
+          "handlerMs": 18,
+          "nonexclusiveArithmeticResidualMs": 11.0,
+          "recordedUnionMs": 6,
+          "uncoveredMs": 12,
+          "exclusiveAppJs": "UNVERIFIED: rounded probes cover selected calls only",
+          "intervalCoverage": "rounded interval estimate"
+        },
+        {
+          "handlerMs": 18,
+          "nonexclusiveArithmeticResidualMs": 10.0,
+          "recordedUnionMs": 6,
+          "uncoveredMs": 12,
+          "exclusiveAppJs": "UNVERIFIED: rounded probes cover selected calls only",
+          "intervalCoverage": "rounded interval estimate"
+        },
+        {
+          "handlerMs": 18,
+          "nonexclusiveArithmeticResidualMs": 10.0,
+          "recordedUnionMs": 6,
+          "uncoveredMs": 12,
+          "exclusiveAppJs": "UNVERIFIED: rounded probes cover selected calls only",
+          "intervalCoverage": "rounded interval estimate"
+        },
+        {
+          "handlerMs": 17,
+          "nonexclusiveArithmeticResidualMs": 9.0,
+          "recordedUnionMs": 6,
+          "uncoveredMs": 11,
+          "exclusiveAppJs": "UNVERIFIED: rounded probes cover selected calls only",
+          "intervalCoverage": "rounded interval estimate"
+        },
+        {
+          "handlerMs": 17,
+          "nonexclusiveArithmeticResidualMs": 8.0,
+          "recordedUnionMs": 7,
+          "uncoveredMs": 10,
+          "exclusiveAppJs": "UNVERIFIED: rounded probes cover selected calls only",
+          "intervalCoverage": "rounded interval estimate"
+        },
+        {
+          "handlerMs": 18,
+          "nonexclusiveArithmeticResidualMs": 10.0,
+          "recordedUnionMs": 7,
+          "uncoveredMs": 11,
+          "exclusiveAppJs": "UNVERIFIED: rounded probes cover selected calls only",
+          "intervalCoverage": "rounded interval estimate"
+        },
+        {
+          "handlerMs": 18,
+          "nonexclusiveArithmeticResidualMs": 8.0,
+          "recordedUnionMs": 7,
+          "uncoveredMs": 11,
+          "exclusiveAppJs": "UNVERIFIED: rounded probes cover selected calls only",
+          "intervalCoverage": "rounded interval estimate"
+        },
+        {
+          "handlerMs": 18,
+          "nonexclusiveArithmeticResidualMs": 10.0,
+          "recordedUnionMs": 7,
+          "uncoveredMs": 11,
+          "exclusiveAppJs": "UNVERIFIED: rounded probes cover selected calls only",
+          "intervalCoverage": "rounded interval estimate"
+        },
+        {
+          "handlerMs": 19,
+          "nonexclusiveArithmeticResidualMs": 11.0,
+          "recordedUnionMs": 6,
+          "uncoveredMs": 13,
+          "exclusiveAppJs": "UNVERIFIED: rounded probes cover selected calls only",
+          "intervalCoverage": "rounded interval estimate"
+        },
+        {
+          "handlerMs": 17,
+          "nonexclusiveArithmeticResidualMs": 8.0,
+          "recordedUnionMs": 7,
+          "uncoveredMs": 10,
+          "exclusiveAppJs": "UNVERIFIED: rounded probes cover selected calls only",
+          "intervalCoverage": "rounded interval estimate"
+        },
+        {
+          "handlerMs": 18,
+          "nonexclusiveArithmeticResidualMs": 11.0,
+          "recordedUnionMs": 6,
+          "uncoveredMs": 12,
+          "exclusiveAppJs": "UNVERIFIED: rounded probes cover selected calls only",
+          "intervalCoverage": "rounded interval estimate"
+        },
+        {
+          "handlerMs": 18,
+          "nonexclusiveArithmeticResidualMs": 8.0,
+          "recordedUnionMs": 7,
+          "uncoveredMs": 11,
+          "exclusiveAppJs": "UNVERIFIED: rounded probes cover selected calls only",
+          "intervalCoverage": "rounded interval estimate"
+        },
+        {
+          "handlerMs": 18,
+          "nonexclusiveArithmeticResidualMs": 10.0,
+          "recordedUnionMs": 7,
+          "uncoveredMs": 11,
+          "exclusiveAppJs": "UNVERIFIED: rounded probes cover selected calls only",
+          "intervalCoverage": "rounded interval estimate"
+        },
+        {
+          "handlerMs": 18,
+          "nonexclusiveArithmeticResidualMs": 7.0,
+          "recordedUnionMs": 8,
+          "uncoveredMs": 10,
+          "exclusiveAppJs": "UNVERIFIED: rounded probes cover selected calls only",
+          "intervalCoverage": "rounded interval estimate"
+        },
+        {
+          "handlerMs": 21,
+          "nonexclusiveArithmeticResidualMs": 14.0,
+          "recordedUnionMs": 6,
+          "uncoveredMs": 15,
+          "exclusiveAppJs": "UNVERIFIED: rounded probes cover selected calls only",
+          "intervalCoverage": "rounded interval estimate"
+        },
+        {
+          "handlerMs": 17,
+          "nonexclusiveArithmeticResidualMs": 9.0,
+          "recordedUnionMs": 6,
+          "uncoveredMs": 11,
+          "exclusiveAppJs": "UNVERIFIED: rounded probes cover selected calls only",
+          "intervalCoverage": "rounded interval estimate"
+        },
+        {
+          "handlerMs": 17,
+          "nonexclusiveArithmeticResidualMs": 9.0,
+          "recordedUnionMs": 6,
+          "uncoveredMs": 11,
+          "exclusiveAppJs": "UNVERIFIED: rounded probes cover selected calls only",
+          "intervalCoverage": "rounded interval estimate"
+        },
+        {
+          "handlerMs": 18,
+          "nonexclusiveArithmeticResidualMs": 10.0,
+          "recordedUnionMs": 7,
+          "uncoveredMs": 11,
+          "exclusiveAppJs": "UNVERIFIED: rounded probes cover selected calls only",
+          "intervalCoverage": "rounded interval estimate"
+        },
+        {
+          "handlerMs": 18,
+          "nonexclusiveArithmeticResidualMs": 10.0,
+          "recordedUnionMs": 6,
+          "uncoveredMs": 12,
+          "exclusiveAppJs": "UNVERIFIED: rounded probes cover selected calls only",
+          "intervalCoverage": "rounded interval estimate"
+        },
+        {
+          "handlerMs": 19,
+          "nonexclusiveArithmeticResidualMs": 11.0,
+          "recordedUnionMs": 7,
+          "uncoveredMs": 12,
+          "exclusiveAppJs": "UNVERIFIED: rounded probes cover selected calls only",
+          "intervalCoverage": "rounded interval estimate"
+        },
+        {
+          "handlerMs": 18,
+          "nonexclusiveArithmeticResidualMs": 10.0,
+          "recordedUnionMs": 7,
+          "uncoveredMs": 11,
+          "exclusiveAppJs": "UNVERIFIED: rounded probes cover selected calls only",
+          "intervalCoverage": "rounded interval estimate"
+        },
+        {
+          "handlerMs": 18,
+          "nonexclusiveArithmeticResidualMs": 9.0,
+          "recordedUnionMs": 7,
+          "uncoveredMs": 11,
+          "exclusiveAppJs": "UNVERIFIED: rounded probes cover selected calls only",
+          "intervalCoverage": "rounded interval estimate"
+        },
+        {
+          "handlerMs": 17,
+          "nonexclusiveArithmeticResidualMs": 9.0,
+          "recordedUnionMs": 6,
+          "uncoveredMs": 11,
+          "exclusiveAppJs": "UNVERIFIED: rounded probes cover selected calls only",
+          "intervalCoverage": "rounded interval estimate"
+        }
+      ],
+      "negativeArithmeticCount": 0
+    },
+    {
+      "sample": "basic-ko.hwpx",
+      "pages": 1,
+      "fixtureIdentity": "VERIFIED",
+      "rows": [
+        {
+          "handlerMs": 20,
+          "nonexclusiveArithmeticResidualMs": 11.0,
+          "recordedUnionMs": 8,
+          "uncoveredMs": 12,
+          "exclusiveAppJs": "UNVERIFIED: rounded probes cover selected calls only",
+          "intervalCoverage": "rounded interval estimate"
+        },
+        {
+          "handlerMs": 17,
+          "nonexclusiveArithmeticResidualMs": 10.0,
+          "recordedUnionMs": 6,
+          "uncoveredMs": 11,
+          "exclusiveAppJs": "UNVERIFIED: rounded probes cover selected calls only",
+          "intervalCoverage": "rounded interval estimate"
+        },
+        {
+          "handlerMs": 18,
+          "nonexclusiveArithmeticResidualMs": 10.0,
+          "recordedUnionMs": 6,
+          "uncoveredMs": 12,
+          "exclusiveAppJs": "UNVERIFIED: rounded probes cover selected calls only",
+          "intervalCoverage": "rounded interval estimate"
+        },
+        {
+          "handlerMs": 17,
+          "nonexclusiveArithmeticResidualMs": 9.0,
+          "recordedUnionMs": 6,
+          "uncoveredMs": 11,
+          "exclusiveAppJs": "UNVERIFIED: rounded probes cover selected calls only",
+          "intervalCoverage": "rounded interval estimate"
+        },
+        {
+          "handlerMs": 16,
+          "nonexclusiveArithmeticResidualMs": 8.0,
+          "recordedUnionMs": 6,
+          "uncoveredMs": 10,
+          "exclusiveAppJs": "UNVERIFIED: rounded probes cover selected calls only",
+          "intervalCoverage": "rounded interval estimate"
+        },
+        {
+          "handlerMs": 17,
+          "nonexclusiveArithmeticResidualMs": 11.0,
+          "recordedUnionMs": 5,
+          "uncoveredMs": 12,
+          "exclusiveAppJs": "UNVERIFIED: rounded probes cover selected calls only",
+          "intervalCoverage": "rounded interval estimate"
+        },
+        {
+          "handlerMs": 18,
+          "nonexclusiveArithmeticResidualMs": 11.0,
+          "recordedUnionMs": 6,
+          "uncoveredMs": 12,
+          "exclusiveAppJs": "UNVERIFIED: rounded probes cover selected calls only",
+          "intervalCoverage": "rounded interval estimate"
+        },
+        {
+          "handlerMs": 17,
+          "nonexclusiveArithmeticResidualMs": 9.0,
+          "recordedUnionMs": 6,
+          "uncoveredMs": 11,
+          "exclusiveAppJs": "UNVERIFIED: rounded probes cover selected calls only",
+          "intervalCoverage": "rounded interval estimate"
+        },
+        {
+          "handlerMs": 18,
+          "nonexclusiveArithmeticResidualMs": 8.0,
+          "recordedUnionMs": 7,
+          "uncoveredMs": 11,
+          "exclusiveAppJs": "UNVERIFIED: rounded probes cover selected calls only",
+          "intervalCoverage": "rounded interval estimate"
+        },
+        {
+          "handlerMs": 16,
+          "nonexclusiveArithmeticResidualMs": 10.0,
+          "recordedUnionMs": 5,
+          "uncoveredMs": 11,
+          "exclusiveAppJs": "UNVERIFIED: rounded probes cover selected calls only",
+          "intervalCoverage": "rounded interval estimate"
+        },
+        {
+          "handlerMs": 21,
+          "nonexclusiveArithmeticResidualMs": 10.0,
+          "recordedUnionMs": 9,
+          "uncoveredMs": 12,
+          "exclusiveAppJs": "UNVERIFIED: rounded probes cover selected calls only",
+          "intervalCoverage": "rounded interval estimate"
+        },
+        {
+          "handlerMs": 17,
+          "nonexclusiveArithmeticResidualMs": 11.0,
+          "recordedUnionMs": 5,
+          "uncoveredMs": 12,
+          "exclusiveAppJs": "UNVERIFIED: rounded probes cover selected calls only",
+          "intervalCoverage": "rounded interval estimate"
+        },
+        {
+          "handlerMs": 16,
+          "nonexclusiveArithmeticResidualMs": 9.0,
+          "recordedUnionMs": 6,
+          "uncoveredMs": 10,
+          "exclusiveAppJs": "UNVERIFIED: rounded probes cover selected calls only",
+          "intervalCoverage": "rounded interval estimate"
+        },
+        {
+          "handlerMs": 18,
+          "nonexclusiveArithmeticResidualMs": 9.0,
+          "recordedUnionMs": 7,
+          "uncoveredMs": 11,
+          "exclusiveAppJs": "UNVERIFIED: rounded probes cover selected calls only",
+          "intervalCoverage": "rounded interval estimate"
+        },
+        {
+          "handlerMs": 16,
+          "nonexclusiveArithmeticResidualMs": 10.0,
+          "recordedUnionMs": 5,
+          "uncoveredMs": 11,
+          "exclusiveAppJs": "UNVERIFIED: rounded probes cover selected calls only",
+          "intervalCoverage": "rounded interval estimate"
+        },
+        {
+          "handlerMs": 18,
+          "nonexclusiveArithmeticResidualMs": 9.0,
+          "recordedUnionMs": 7,
+          "uncoveredMs": 11,
+          "exclusiveAppJs": "UNVERIFIED: rounded probes cover selected calls only",
+          "intervalCoverage": "rounded interval estimate"
+        },
+        {
+          "handlerMs": 18,
+          "nonexclusiveArithmeticResidualMs": 10.0,
+          "recordedUnionMs": 7,
+          "uncoveredMs": 11,
+          "exclusiveAppJs": "UNVERIFIED: rounded probes cover selected calls only",
+          "intervalCoverage": "rounded interval estimate"
+        },
+        {
+          "handlerMs": 17,
+          "nonexclusiveArithmeticResidualMs": 9.0,
+          "recordedUnionMs": 6,
+          "uncoveredMs": 11,
+          "exclusiveAppJs": "UNVERIFIED: rounded probes cover selected calls only",
+          "intervalCoverage": "rounded interval estimate"
+        },
+        {
+          "handlerMs": 19,
+          "nonexclusiveArithmeticResidualMs": 9.0,
+          "recordedUnionMs": 8,
+          "uncoveredMs": 11,
+          "exclusiveAppJs": "UNVERIFIED: rounded probes cover selected calls only",
+          "intervalCoverage": "rounded interval estimate"
+        },
+        {
+          "handlerMs": 19,
+          "nonexclusiveArithmeticResidualMs": 10.0,
+          "recordedUnionMs": 7,
+          "uncoveredMs": 12,
+          "exclusiveAppJs": "UNVERIFIED: rounded probes cover selected calls only",
+          "intervalCoverage": "rounded interval estimate"
+        },
+        {
+          "handlerMs": 18,
+          "nonexclusiveArithmeticResidualMs": 11.0,
+          "recordedUnionMs": 6,
+          "uncoveredMs": 12,
+          "exclusiveAppJs": "UNVERIFIED: rounded probes cover selected calls only",
+          "intervalCoverage": "rounded interval estimate"
+        },
+        {
+          "handlerMs": 18,
+          "nonexclusiveArithmeticResidualMs": 10.0,
+          "recordedUnionMs": 7,
+          "uncoveredMs": 11,
+          "exclusiveAppJs": "UNVERIFIED: rounded probes cover selected calls only",
+          "intervalCoverage": "rounded interval estimate"
+        },
+        {
+          "handlerMs": 16,
+          "nonexclusiveArithmeticResidualMs": 8.0,
+          "recordedUnionMs": 6,
+          "uncoveredMs": 10,
+          "exclusiveAppJs": "UNVERIFIED: rounded probes cover selected calls only",
+          "intervalCoverage": "rounded interval estimate"
+        },
+        {
+          "handlerMs": 22,
+          "nonexclusiveArithmeticResidualMs": 15.0,
+          "recordedUnionMs": 6,
+          "uncoveredMs": 16,
+          "exclusiveAppJs": "UNVERIFIED: rounded probes cover selected calls only",
+          "intervalCoverage": "rounded interval estimate"
+        },
+        {
+          "handlerMs": 18,
+          "nonexclusiveArithmeticResidualMs": 10.0,
+          "recordedUnionMs": 6,
+          "uncoveredMs": 12,
+          "exclusiveAppJs": "UNVERIFIED: rounded probes cover selected calls only",
+          "intervalCoverage": "rounded interval estimate"
+        },
+        {
+          "handlerMs": 17,
+          "nonexclusiveArithmeticResidualMs": 9.0,
+          "recordedUnionMs": 6,
+          "uncoveredMs": 11,
+          "exclusiveAppJs": "UNVERIFIED: rounded probes cover selected calls only",
+          "intervalCoverage": "rounded interval estimate"
+        },
+        {
+          "handlerMs": 18,
+          "nonexclusiveArithmeticResidualMs": 9.0,
+          "recordedUnionMs": 7,
+          "uncoveredMs": 11,
+          "exclusiveAppJs": "UNVERIFIED: rounded probes cover selected calls only",
+          "intervalCoverage": "rounded interval estimate"
+        },
+        {
+          "handlerMs": 18,
+          "nonexclusiveArithmeticResidualMs": 11.0,
+          "recordedUnionMs": 6,
+          "uncoveredMs": 12,
+          "exclusiveAppJs": "UNVERIFIED: rounded probes cover selected calls only",
+          "intervalCoverage": "rounded interval estimate"
+        },
+        {
+          "handlerMs": 17,
+          "nonexclusiveArithmeticResidualMs": 9.0,
+          "recordedUnionMs": 6,
+          "uncoveredMs": 11,
+          "exclusiveAppJs": "UNVERIFIED: rounded probes cover selected calls only",
+          "intervalCoverage": "rounded interval estimate"
+        },
+        {
+          "handlerMs": 17,
+          "nonexclusiveArithmeticResidualMs": 7.0,
+          "recordedUnionMs": 7,
+          "uncoveredMs": 10,
+          "exclusiveAppJs": "UNVERIFIED: rounded probes cover selected calls only",
+          "intervalCoverage": "rounded interval estimate"
+        }
+      ],
+      "negativeArithmeticCount": 0
+    },
+    {
+      "sample": "연구노트(화학).hwp",
+      "pages": 24,
+      "fixtureIdentity": "VERIFIED",
+      "rows": [
+        {
+          "handlerMs": 23,
+          "nonexclusiveArithmeticResidualMs": 2.0,
+          "recordedUnionMs": 10,
+          "uncoveredMs": 13,
+          "exclusiveAppJs": "UNVERIFIED: rounded probes cover selected calls only",
+          "intervalCoverage": "rounded interval estimate"
+        },
+        {
+          "handlerMs": 20,
+          "nonexclusiveArithmeticResidualMs": -1.0,
+          "recordedUnionMs": 10,
+          "uncoveredMs": 10,
+          "exclusiveAppJs": "UNVERIFIED: rounded probes cover selected calls only",
+          "intervalCoverage": "rounded interval estimate"
+        },
+        {
+          "handlerMs": 20,
+          "nonexclusiveArithmeticResidualMs": 3.0,
+          "recordedUnionMs": 9,
+          "uncoveredMs": 11,
+          "exclusiveAppJs": "UNVERIFIED: rounded probes cover selected calls only",
+          "intervalCoverage": "rounded interval estimate"
+        },
+        {
+          "handlerMs": 19,
+          "nonexclusiveArithmeticResidualMs": -1.0,
+          "recordedUnionMs": 8,
+          "uncoveredMs": 11,
+          "exclusiveAppJs": "UNVERIFIED: rounded probes cover selected calls only",
+          "intervalCoverage": "rounded interval estimate"
+        },
+        {
+          "handlerMs": 22,
+          "nonexclusiveArithmeticResidualMs": 1.0,
+          "recordedUnionMs": 10,
+          "uncoveredMs": 12,
+          "exclusiveAppJs": "UNVERIFIED: rounded probes cover selected calls only",
+          "intervalCoverage": "rounded interval estimate"
+        },
+        {
+          "handlerMs": 28,
+          "nonexclusiveArithmeticResidualMs": 4.0,
+          "recordedUnionMs": 13,
+          "uncoveredMs": 15,
+          "exclusiveAppJs": "UNVERIFIED: rounded probes cover selected calls only",
+          "intervalCoverage": "rounded interval estimate"
+        },
+        {
+          "handlerMs": 24,
+          "nonexclusiveArithmeticResidualMs": -2.0,
+          "recordedUnionMs": 11,
+          "uncoveredMs": 13,
+          "exclusiveAppJs": "UNVERIFIED: rounded probes cover selected calls only",
+          "intervalCoverage": "rounded interval estimate"
+        },
+        {
+          "handlerMs": 29,
+          "nonexclusiveArithmeticResidualMs": 1.0,
+          "recordedUnionMs": 14,
+          "uncoveredMs": 15,
+          "exclusiveAppJs": "UNVERIFIED: rounded probes cover selected calls only",
+          "intervalCoverage": "rounded interval estimate"
+        },
+        {
+          "handlerMs": 28,
+          "nonexclusiveArithmeticResidualMs": -4.0,
+          "recordedUnionMs": 13,
+          "uncoveredMs": 15,
+          "exclusiveAppJs": "UNVERIFIED: rounded probes cover selected calls only",
+          "intervalCoverage": "rounded interval estimate"
+        },
+        {
+          "handlerMs": 25,
+          "nonexclusiveArithmeticResidualMs": -6.0,
+          "recordedUnionMs": 12,
+          "uncoveredMs": 13,
+          "exclusiveAppJs": "UNVERIFIED: rounded probes cover selected calls only",
+          "intervalCoverage": "rounded interval estimate"
+        },
+        {
+          "handlerMs": 20,
+          "nonexclusiveArithmeticResidualMs": -2.0,
+          "recordedUnionMs": 10,
+          "uncoveredMs": 10,
+          "exclusiveAppJs": "UNVERIFIED: rounded probes cover selected calls only",
+          "intervalCoverage": "rounded interval estimate"
+        },
+        {
+          "handlerMs": 22,
+          "nonexclusiveArithmeticResidualMs": 1.0,
+          "recordedUnionMs": 9,
+          "uncoveredMs": 13,
+          "exclusiveAppJs": "UNVERIFIED: rounded probes cover selected calls only",
+          "intervalCoverage": "rounded interval estimate"
+        },
+        {
+          "handlerMs": 101,
+          "nonexclusiveArithmeticResidualMs": 50.0,
+          "recordedUnionMs": 50,
+          "uncoveredMs": 51,
+          "exclusiveAppJs": "UNVERIFIED: rounded probes cover selected calls only",
+          "intervalCoverage": "rounded interval estimate"
+        },
+        {
+          "handlerMs": 22,
+          "nonexclusiveArithmeticResidualMs": 11.0,
+          "recordedUnionMs": 8,
+          "uncoveredMs": 14,
+          "exclusiveAppJs": "UNVERIFIED: rounded probes cover selected calls only",
+          "intervalCoverage": "rounded interval estimate"
+        },
+        {
+          "handlerMs": 18,
+          "nonexclusiveArithmeticResidualMs": 10.0,
+          "recordedUnionMs": 6,
+          "uncoveredMs": 12,
+          "exclusiveAppJs": "UNVERIFIED: rounded probes cover selected calls only",
+          "intervalCoverage": "rounded interval estimate"
+        },
+        {
+          "handlerMs": 20,
+          "nonexclusiveArithmeticResidualMs": 5.0,
+          "recordedUnionMs": 10,
+          "uncoveredMs": 10,
+          "exclusiveAppJs": "UNVERIFIED: rounded probes cover selected calls only",
+          "intervalCoverage": "rounded interval estimate"
+        },
+        {
+          "handlerMs": 30,
+          "nonexclusiveArithmeticResidualMs": 7.0,
+          "recordedUnionMs": 12,
+          "uncoveredMs": 18,
+          "exclusiveAppJs": "UNVERIFIED: rounded probes cover selected calls only",
+          "intervalCoverage": "rounded interval estimate"
+        },
+        {
+          "handlerMs": 45,
+          "nonexclusiveArithmeticResidualMs": -1.0,
+          "recordedUnionMs": 30,
+          "uncoveredMs": 15,
+          "exclusiveAppJs": "UNVERIFIED: rounded probes cover selected calls only",
+          "intervalCoverage": "rounded interval estimate"
+        },
+        {
+          "handlerMs": 23,
+          "nonexclusiveArithmeticResidualMs": 0.0,
+          "recordedUnionMs": 12,
+          "uncoveredMs": 11,
+          "exclusiveAppJs": "UNVERIFIED: rounded probes cover selected calls only",
+          "intervalCoverage": "rounded interval estimate"
+        },
+        {
+          "handlerMs": 26,
+          "nonexclusiveArithmeticResidualMs": 0.0,
+          "recordedUnionMs": 13,
+          "uncoveredMs": 13,
+          "exclusiveAppJs": "UNVERIFIED: rounded probes cover selected calls only",
+          "intervalCoverage": "rounded interval estimate"
+        },
+        {
+          "handlerMs": 26,
+          "nonexclusiveArithmeticResidualMs": 1.0,
+          "recordedUnionMs": 13,
+          "uncoveredMs": 13,
+          "exclusiveAppJs": "UNVERIFIED: rounded probes cover selected calls only",
+          "intervalCoverage": "rounded interval estimate"
+        },
+        {
+          "handlerMs": 25,
+          "nonexclusiveArithmeticResidualMs": -3.0,
+          "recordedUnionMs": 14,
+          "uncoveredMs": 11,
+          "exclusiveAppJs": "UNVERIFIED: rounded probes cover selected calls only",
+          "intervalCoverage": "rounded interval estimate"
+        },
+        {
+          "handlerMs": 25,
+          "nonexclusiveArithmeticResidualMs": -1.0,
+          "recordedUnionMs": 13,
+          "uncoveredMs": 12,
+          "exclusiveAppJs": "UNVERIFIED: rounded probes cover selected calls only",
+          "intervalCoverage": "rounded interval estimate"
+        },
+        {
+          "handlerMs": 23,
+          "nonexclusiveArithmeticResidualMs": -3.0,
+          "recordedUnionMs": 13,
+          "uncoveredMs": 10,
+          "exclusiveAppJs": "UNVERIFIED: rounded probes cover selected calls only",
+          "intervalCoverage": "rounded interval estimate"
+        },
+        {
+          "handlerMs": 25,
+          "nonexclusiveArithmeticResidualMs": 1.0,
+          "recordedUnionMs": 12,
+          "uncoveredMs": 13,
+          "exclusiveAppJs": "UNVERIFIED: rounded probes cover selected calls only",
+          "intervalCoverage": "rounded interval estimate"
+        },
+        {
+          "handlerMs": 25,
+          "nonexclusiveArithmeticResidualMs": 0.0,
+          "recordedUnionMs": 13,
+          "uncoveredMs": 12,
+          "exclusiveAppJs": "UNVERIFIED: rounded probes cover selected calls only",
+          "intervalCoverage": "rounded interval estimate"
+        },
+        {
+          "handlerMs": 24,
+          "nonexclusiveArithmeticResidualMs": -1.0,
+          "recordedUnionMs": 13,
+          "uncoveredMs": 11,
+          "exclusiveAppJs": "UNVERIFIED: rounded probes cover selected calls only",
+          "intervalCoverage": "rounded interval estimate"
+        },
+        {
+          "handlerMs": 25,
+          "nonexclusiveArithmeticResidualMs": 1.0,
+          "recordedUnionMs": 12,
+          "uncoveredMs": 13,
+          "exclusiveAppJs": "UNVERIFIED: rounded probes cover selected calls only",
+          "intervalCoverage": "rounded interval estimate"
+        },
+        {
+          "handlerMs": 25,
+          "nonexclusiveArithmeticResidualMs": -1.0,
+          "recordedUnionMs": 14,
+          "uncoveredMs": 11,
+          "exclusiveAppJs": "UNVERIFIED: rounded probes cover selected calls only",
+          "intervalCoverage": "rounded interval estimate"
+        },
+        {
+          "handlerMs": 26,
+          "nonexclusiveArithmeticResidualMs": -1.0,
+          "recordedUnionMs": 14,
+          "uncoveredMs": 12,
+          "exclusiveAppJs": "UNVERIFIED: rounded probes cover selected calls only",
+          "intervalCoverage": "rounded interval estimate"
+        }
+      ],
+      "negativeArithmeticCount": 13
+    },
+    {
+      "sample": "3249937_asset_management_rules.hwpx",
+      "pages": 60,
+      "fixtureIdentity": "VERIFIED",
+      "rows": [
+        {
+          "handlerMs": 64,
+          "nonexclusiveArithmeticResidualMs": 18.0,
+          "recordedUnionMs": 44,
+          "uncoveredMs": 20,
+          "exclusiveAppJs": "UNVERIFIED: rounded probes cover selected calls only",
+          "intervalCoverage": "rounded interval estimate"
+        },
+        {
+          "handlerMs": 60,
+          "nonexclusiveArithmeticResidualMs": 15.0,
+          "recordedUnionMs": 43,
+          "uncoveredMs": 17,
+          "exclusiveAppJs": "UNVERIFIED: rounded probes cover selected calls only",
+          "intervalCoverage": "rounded interval estimate"
+        },
+        {
+          "handlerMs": 59,
+          "nonexclusiveArithmeticResidualMs": 18.0,
+          "recordedUnionMs": 40,
+          "uncoveredMs": 19,
+          "exclusiveAppJs": "UNVERIFIED: rounded probes cover selected calls only",
+          "intervalCoverage": "rounded interval estimate"
+        },
+        {
+          "handlerMs": 56,
+          "nonexclusiveArithmeticResidualMs": 13.0,
+          "recordedUnionMs": 42,
+          "uncoveredMs": 14,
+          "exclusiveAppJs": "UNVERIFIED: rounded probes cover selected calls only",
+          "intervalCoverage": "rounded interval estimate"
+        },
+        {
+          "handlerMs": 60,
+          "nonexclusiveArithmeticResidualMs": 17.0,
+          "recordedUnionMs": 41,
+          "uncoveredMs": 19,
+          "exclusiveAppJs": "UNVERIFIED: rounded probes cover selected calls only",
+          "intervalCoverage": "rounded interval estimate"
+        },
+        {
+          "handlerMs": 59,
+          "nonexclusiveArithmeticResidualMs": 16.0,
+          "recordedUnionMs": 41,
+          "uncoveredMs": 18,
+          "exclusiveAppJs": "UNVERIFIED: rounded probes cover selected calls only",
+          "intervalCoverage": "rounded interval estimate"
+        },
+        {
+          "handlerMs": 58,
+          "nonexclusiveArithmeticResidualMs": 14.0,
+          "recordedUnionMs": 42,
+          "uncoveredMs": 16,
+          "exclusiveAppJs": "UNVERIFIED: rounded probes cover selected calls only",
+          "intervalCoverage": "rounded interval estimate"
+        },
+        {
+          "handlerMs": 59,
+          "nonexclusiveArithmeticResidualMs": 15.0,
+          "recordedUnionMs": 42,
+          "uncoveredMs": 17,
+          "exclusiveAppJs": "UNVERIFIED: rounded probes cover selected calls only",
+          "intervalCoverage": "rounded interval estimate"
+        },
+        {
+          "handlerMs": 59,
+          "nonexclusiveArithmeticResidualMs": 15.0,
+          "recordedUnionMs": 42,
+          "uncoveredMs": 17,
+          "exclusiveAppJs": "UNVERIFIED: rounded probes cover selected calls only",
+          "intervalCoverage": "rounded interval estimate"
+        },
+        {
+          "handlerMs": 59,
+          "nonexclusiveArithmeticResidualMs": 15.0,
+          "recordedUnionMs": 42,
+          "uncoveredMs": 17,
+          "exclusiveAppJs": "UNVERIFIED: rounded probes cover selected calls only",
+          "intervalCoverage": "rounded interval estimate"
+        },
+        {
+          "handlerMs": 57,
+          "nonexclusiveArithmeticResidualMs": 15.0,
+          "recordedUnionMs": 40,
+          "uncoveredMs": 17,
+          "exclusiveAppJs": "UNVERIFIED: rounded probes cover selected calls only",
+          "intervalCoverage": "rounded interval estimate"
+        },
+        {
+          "handlerMs": 54,
+          "nonexclusiveArithmeticResidualMs": 13.0,
+          "recordedUnionMs": 40,
+          "uncoveredMs": 14,
+          "exclusiveAppJs": "UNVERIFIED: rounded probes cover selected calls only",
+          "intervalCoverage": "rounded interval estimate"
+        },
+        {
+          "handlerMs": 60,
+          "nonexclusiveArithmeticResidualMs": 17.0,
+          "recordedUnionMs": 42,
+          "uncoveredMs": 18,
+          "exclusiveAppJs": "UNVERIFIED: rounded probes cover selected calls only",
+          "intervalCoverage": "rounded interval estimate"
+        },
+        {
+          "handlerMs": 59,
+          "nonexclusiveArithmeticResidualMs": 14.0,
+          "recordedUnionMs": 43,
+          "uncoveredMs": 16,
+          "exclusiveAppJs": "UNVERIFIED: rounded probes cover selected calls only",
+          "intervalCoverage": "rounded interval estimate"
+        },
+        {
+          "handlerMs": 55,
+          "nonexclusiveArithmeticResidualMs": 14.0,
+          "recordedUnionMs": 40,
+          "uncoveredMs": 15,
+          "exclusiveAppJs": "UNVERIFIED: rounded probes cover selected calls only",
+          "intervalCoverage": "rounded interval estimate"
+        },
+        {
+          "handlerMs": 58,
+          "nonexclusiveArithmeticResidualMs": 15.0,
+          "recordedUnionMs": 41,
+          "uncoveredMs": 17,
+          "exclusiveAppJs": "UNVERIFIED: rounded probes cover selected calls only",
+          "intervalCoverage": "rounded interval estimate"
+        },
+        {
+          "handlerMs": 56,
+          "nonexclusiveArithmeticResidualMs": 11.0,
+          "recordedUnionMs": 43,
+          "uncoveredMs": 13,
+          "exclusiveAppJs": "UNVERIFIED: rounded probes cover selected calls only",
+          "intervalCoverage": "rounded interval estimate"
+        },
+        {
+          "handlerMs": 60,
+          "nonexclusiveArithmeticResidualMs": 15.0,
+          "recordedUnionMs": 43,
+          "uncoveredMs": 17,
+          "exclusiveAppJs": "UNVERIFIED: rounded probes cover selected calls only",
+          "intervalCoverage": "rounded interval estimate"
+        },
+        {
+          "handlerMs": 59,
+          "nonexclusiveArithmeticResidualMs": 14.0,
+          "recordedUnionMs": 43,
+          "uncoveredMs": 16,
+          "exclusiveAppJs": "UNVERIFIED: rounded probes cover selected calls only",
+          "intervalCoverage": "rounded interval estimate"
+        },
+        {
+          "handlerMs": 57,
+          "nonexclusiveArithmeticResidualMs": 12.0,
+          "recordedUnionMs": 43,
+          "uncoveredMs": 14,
+          "exclusiveAppJs": "UNVERIFIED: rounded probes cover selected calls only",
+          "intervalCoverage": "rounded interval estimate"
+        },
+        {
+          "handlerMs": 58,
+          "nonexclusiveArithmeticResidualMs": 15.0,
+          "recordedUnionMs": 42,
+          "uncoveredMs": 16,
+          "exclusiveAppJs": "UNVERIFIED: rounded probes cover selected calls only",
+          "intervalCoverage": "rounded interval estimate"
+        },
+        {
+          "handlerMs": 57,
+          "nonexclusiveArithmeticResidualMs": 12.0,
+          "recordedUnionMs": 43,
+          "uncoveredMs": 14,
+          "exclusiveAppJs": "UNVERIFIED: rounded probes cover selected calls only",
+          "intervalCoverage": "rounded interval estimate"
+        },
+        {
+          "handlerMs": 60,
+          "nonexclusiveArithmeticResidualMs": 14.0,
+          "recordedUnionMs": 44,
+          "uncoveredMs": 16,
+          "exclusiveAppJs": "UNVERIFIED: rounded probes cover selected calls only",
+          "intervalCoverage": "rounded interval estimate"
+        },
+        {
+          "handlerMs": 60,
+          "nonexclusiveArithmeticResidualMs": 16.0,
+          "recordedUnionMs": 42,
+          "uncoveredMs": 18,
+          "exclusiveAppJs": "UNVERIFIED: rounded probes cover selected calls only",
+          "intervalCoverage": "rounded interval estimate"
+        },
+        {
+          "handlerMs": 57,
+          "nonexclusiveArithmeticResidualMs": 12.0,
+          "recordedUnionMs": 43,
+          "uncoveredMs": 14,
+          "exclusiveAppJs": "UNVERIFIED: rounded probes cover selected calls only",
+          "intervalCoverage": "rounded interval estimate"
+        },
+        {
+          "handlerMs": 60,
+          "nonexclusiveArithmeticResidualMs": 14.0,
+          "recordedUnionMs": 44,
+          "uncoveredMs": 16,
+          "exclusiveAppJs": "UNVERIFIED: rounded probes cover selected calls only",
+          "intervalCoverage": "rounded interval estimate"
+        },
+        {
+          "handlerMs": 57,
+          "nonexclusiveArithmeticResidualMs": 12.0,
+          "recordedUnionMs": 43,
+          "uncoveredMs": 14,
+          "exclusiveAppJs": "UNVERIFIED: rounded probes cover selected calls only",
+          "intervalCoverage": "rounded interval estimate"
+        },
+        {
+          "handlerMs": 59,
+          "nonexclusiveArithmeticResidualMs": 14.0,
+          "recordedUnionMs": 43,
+          "uncoveredMs": 16,
+          "exclusiveAppJs": "UNVERIFIED: rounded probes cover selected calls only",
+          "intervalCoverage": "rounded interval estimate"
+        },
+        {
+          "handlerMs": 57,
+          "nonexclusiveArithmeticResidualMs": 13.0,
+          "recordedUnionMs": 42,
+          "uncoveredMs": 15,
+          "exclusiveAppJs": "UNVERIFIED: rounded probes cover selected calls only",
+          "intervalCoverage": "rounded interval estimate"
+        },
+        {
+          "handlerMs": 62,
+          "nonexclusiveArithmeticResidualMs": 16.0,
+          "recordedUnionMs": 44,
+          "uncoveredMs": 18,
+          "exclusiveAppJs": "UNVERIFIED: rounded probes cover selected calls only",
+          "intervalCoverage": "rounded interval estimate"
+        }
+      ],
+      "negativeArithmeticCount": 0
+    }
+  ],
+  "exclusiveAppJs": "UNVERIFIED; rounded selected-probe coverage"
+}

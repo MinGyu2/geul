@@ -1,0 +1,6 @@
+{
+  "status": "FAIL",
+  "official": false,
+  "method": "clipped interval union; nested calls never summed; no official remeasurement",
+  "error": "JSON exceeds depth 64 limit"
+}

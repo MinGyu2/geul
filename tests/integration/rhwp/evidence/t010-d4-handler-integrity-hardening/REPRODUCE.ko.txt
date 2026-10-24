@@ -1,0 +1,44 @@
+저장소 root에서 실행한다. 과거 증거를 수정하지 않으며 출력은 반드시 새 경로로 지정한다.
+
+E=tests/integration/rhwp/evidence/t010-d4-handler-integrity-hardening
+
+1) 공식 증거와 고립된 변조를 실제 승인/Luma8 패키지에 대조한다.
+python3 "$E/reproduce.py" --original NEW_BEFORE_DIRECTORY
+python3 "$E/reproduce.py" NEW_AFTER_DIRECTORY
+
+original은 93004384의 분석기 3개 파일을 git show로 scratch에 복사하고 ROOT 위치만
+실제 저장소로 바꾼다. Git 작업 트리와 원래 증거는 변경하지 않는다.
+패키지 경로·기대 WASM/JS는 reproduce.py의 상수로, 이전 검증에서 독립 확인한 값을
+재사용한다. 현재 입력의 engineIdentity나 manifest를 기대값의 출처로 쓰지 않는다.
+해당 scratch 패키지가 없다면 동일 artifact/manifest를 가진 보관본을 준비해야 한다.
+이것은 분석 재현이며 공식 MEASURE 재실행이 아니다.
+
+before-final/after-final summary.json에 exit/status/error/nonfinite/traceback/inputUnchanged를
+기록했다. 각 CLI 원출력도 함께 보존한다. before-final/0-overflow.json의 -Infinity는
+수정 전 결함 자체를 보여 주는 의도적인 비표준 JSON 증거다. 수정 후 출력은 모두 strict JSON이다.
+변조는 실제 공식 스키마를 유지한 deep copy에 적용하며 원본 SHA256을 마지막에 재확인한다.
+latency-end는 groupStart 두 번째 표본의 keyToFrame만 81→80.9로 바꿔 통계는 그대로 유지한다.
+
+2) 회귀 및 전체 검사
+python3 -I -m unittest discover -s tests/integration/rhwp/ownership-poc -p 'test_d4*.py' -v
+python3 -I -m unittest discover -s tests/integration/rhwp/ownership-poc -p 'test_*.py'
+python3 -I -m unittest discover -s tests/security
+
+원본 기준 집중/전체 로그는 scratch mirror에서 기존 테스트/코드 93004384로 실행했다.
+원본에 새 회귀를 적용한 로그는 test_d4_hardening의 11개 기존 동작 검증을 선택해 실행했다.
+새 rounding_bounds 함수 자체를 검사하는 양성 helper 시험은 원본 비교 대상이 아니며,
+수정본 집중/전체 검사에서는 예외 없이 실행했다. 원본 비교는 assertion failures=32,
+인프라 errors=0이다.
+
+3) 보안/무결성
+python3 scripts/check-sensitive-info.py --all
+python3 scripts/check-sensitive-info.py --history
+python3 scripts/check-sensitive-info.py --staged
+변경·신규 파일만 상대 경로 mirror로 복사해 gitleaks dir --redact --no-banner로 검사한다.
+커밋은 기존 pre-commit 훅도 우회하지 않고 실행한다.
+git diff --check
+git diff --exit-code HEAD -- external/rhwp external/wordcraft tests/integration/rhwp/undo_native.py tests/integration/rhwp/evidence/t010-d4-performance-remediation tests/integration/rhwp/evidence/t010-d4-handler-statistics-integrity src src-tauri
+
+historical-comparison.json은 원본 두 파일의 바이트 SHA, 공식 FAIL 상태, 40개 통계 묶음과
+수정 전후 handler 출력 동등성을 기록한다. integrity.json은 보호 경로/gitlink 확인이다.
+최종 커밋 SHA와 clean 상태는 커밋 후 사용자 보고에서 확인한다. push하지 않는다.

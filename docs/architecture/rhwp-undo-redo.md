@@ -1026,3 +1026,13 @@ handler 분석기는 추가로 `measurementComplete is True`(수집 완전성)�
 
 T010 전체 INCOMPLETE, 공식 D4 FAIL, D2 native 한국어 IME·RSS INCONCLUSIVE를 유지한다.
 생산 RHWP Undo/Redo NO-GO이며 T011은 시작하지 않는다.
+
+D4 분석 무결성 후속 보강(2026-10-25)은 모든 연산의 호출 n/순차 반올림 ms/firstAt,
+직렬화 원점·정밀도·RAF 구간·동기 입력 호출과 trace 관찰을 대조한다. JSON 중복 키,
+비유한 숫자·계산 결과·잘못된 Unicode와 32MiB/64단계 한도 초과 입력은 FAIL이다.
+출력은 allow_nan=False와 배타적 생성으로 보호한다. 공식 baseline/Luma8 FAIL 측정은
+여전히 ANALYZED이며 성능 관문 통과를 의미하지 않는다.
+개별 raw duration의 반올림 손실 때문에 합계는 생산자 순차 반올림의 가능한 범위로
+검증한다. 절대 이벤트 ID 없는 표본의 구별 불가능한 복제나 범위 안의 합계 변조는
+현재 기록만으로 판별할 수 없다. 생산자를 바꾸거나 독립 provenance를 발명하지 않았다.
+새 검증 근거: `tests/integration/rhwp/evidence/t010-d4-handler-integrity-hardening/`.

@@ -1,0 +1,15 @@
+{
+  "status": "FAIL",
+  "official": false,
+  "method": "clipped interval union; nested calls never summed; no official remeasurement",
+  "source": {
+    "path": "/tmp/nix-shell.FNr9XN/tmp2gxfshk0/input.json",
+    "sha256": "dd67ce7c7091b9eea0a7d34e28032f0f52ca6999b489a41d9fd182afc1b01adf"
+  },
+  "independentIdentity": {
+    "wasmSha256": "48adaa0f748484d12f59f4805deda0480635f915368392a87e76e95962ec0b27",
+    "manifestSha256": "4ecda13f2d611e6f8ba4291b939efaeeccb6e812e68de7f8b539b11526c20ce2",
+    "glueSha256": "b69e920c8fb1e9d05dacadf3ebae2396b043da385137ad2b4b3386a9b3433252"
+  },
+  "error": "aggregate duration mismatch: insertText"
+}

@@ -186,3 +186,36 @@ nearest-rank(ceil(p·n)−1, 한 자리 반올림)로 재계산해 정확히 같
 `run-edit-phases.py --probe contract`는 승인·실험 엔진을 바꾸지 않고 decoded Canvas의
 캐시 퇴거/임시 해제와 실제 poll 반환 경계를 검사한다. 새 Preparing 상태를 구현하지 않는다.
 실행 명령과 제한은 `../evidence/t010-render-preparation-boundary/REPRODUCE.ko.txt`를 따른다.
+
+D4 handler 무결성 보강 (2026-10-25): `calls`의 n/firstAt/ms를 모든 종류의
+engineTimeline과 대조한다. 무호출 이름은 calls에 나타나지 않아야 한다(n=0 항목 거부).
+firstAt은 첫 **배열 항목**의 반올림 전 시작값이며, 최소 시작값이 아니다. 중첩 호출은
+반환 순서로 기록된다. ms 합계는 producer의 `round(previous + raw_ms, 2)`를 매번
+적용한다. 개별 raw_ms가 이미 두 자리로 손실되었으므로 단순 합계와의 강제 동일성은
+올바르지 않다. 분석기는 각 저장값을 생성할 수 있는 binary float의 양끝을 Python
+round/nextafter로 구하고, 생산자의 순차 반올림으로 전파한 가능한 합계 범위만 허용한다.
+예: raw .005 두 번은 개별 .01/.01, 합계 .01이 될 수 있다. 원래 합계 하나를
+정확하게 복원하거나 이 범위 안의 변조를 판별하려면 향후 생산자 계약 변경이 필요하다.
+
+at.key=0, keyToFrame=at.end, at/keyToFrame 한 자리·호출 at/ms 두 자리 정밀도를
+요구한다. 편집 handlerEnd는 observed 이전이고 undo/redo에서는 null이다. 호출은
+같은 performance clock의 dom:input 또는 command:request 관찰 이후이며 최종 RAF까지
+완료할 수 있어야 한다(각 필드의 실제 반올림 구간으로 비교). insertText는 동기 handler
+안에서 끝나야 한다. 렌더 호출은 handlerEnd 뒤에도 허용한다. trace.at은 발행 시각이며
+ms는 비동기 대기를 포함할 수 있으므로 at-ms를 handler 시작과 강제로 비교하지 않는다.
+trace는 발행 시각 순서·최종 RAF 상한과 입력/명령 anchor를 검증하지만 모든 trace 이름의
+고정 패턴은 요구하지 않는다. native event 시각과 performance 시각은 다르며 Luma8의
+정상 undo trace -3ms도 허용된다. 기존 입력 timeStamp 차이 -2ms 허용은 유지한다.
+
+CLI는 입력과 ENGINE.json에 같은 엄격 JSON 파서를 적용한다. 중복 객체 키, NaN/Infinity,
+유한 범위를 벗어난 숫자, 잘못된 UTF-8/단독 surrogate를 거부한다. 최대 32 MiB·중첩 64단계이며
+공식 두 파일(3,619,753/3,618,352 bytes, 깊이 8)보다 충분히 크다. 쓰기 가능한 새 출력에는
+지원되는 오류를 구조화 FAIL/exit 1로 남기고, 산술 결과 유한성 검사와 allow_nan=False를
+함께 적용한다. 기존 출력의 배타적 생성 규칙은 유지한다. 성공 기록에는 error 필드가 없으며,
+빈 문자열/객체/null 등 error 필드가 존재하는 기록도 실패다.
+
+이 검사는 JSON 내부 정합성 검증이다. 공식 timeline에는 절대 key·trial ID·이벤트 순번이
+없어 통계가 같은 표본 복제와 실제로 같은 측정을 구별하지 못한다. 동일 값 자체를 거부하지
+않는다. 독립 WASM/JS/manifest/fixture 검사는 유지하지만 표본의 독립 provenance를
+증명하지는 않는다. 새 근거: `../evidence/t010-d4-handler-integrity-hardening/`.
+ANALYZED는 계속 공식 D4 PASS와 별개이며 T010/D4 FAIL 판정은 변하지 않는다.

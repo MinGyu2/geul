@@ -269,15 +269,15 @@ class HandlerStatistics(unittest.TestCase):
         for value in (-1,float('nan'),float('inf'),True,None,'61'):
             with self.subTest(value=value):
                 self.reject(lambda r:self.samples(r,'extend')[0].update(keyToFrame=value),'invalid canonical timeline measurement')
-    def test_rounding_boundary_against_raw_sample(self):
-        def boundary(reported):
-            def mutate(r):
-                top=max(self.samples(r,'groupStart'),key=lambda s:s['keyToFrame'])
-                top['keyToFrame']=87.25;top['at']['end']=round(top['at']['key']+87.25,2)
-                self.doc(r)['groupStart'].update(max=reported)
-            return mutate
-        self.check(boundary(87.2))
-        self.reject(boundary(87.3),'groupStart.max reported 87.3, recomputed 87.2')
+    def test_serialized_sample_rejects_unrounded_raw_latency(self):
+        # pct accepts raw floats, but timeline_samples serializes keyToFrame/end
+        # at one decimal. 87.25 is not a possible official serialized sample.
+        def mutate(r):
+            top=max(self.samples(r,'groupStart'),key=lambda s:s['keyToFrame'])
+            top['keyToFrame']=87.25;top['at']['end']=87.25
+            self.doc(r)['groupStart'].update(max=87.2)
+        self.reject(mutate,'precision')
+
 
 
 if __name__=='__main__':unittest.main()

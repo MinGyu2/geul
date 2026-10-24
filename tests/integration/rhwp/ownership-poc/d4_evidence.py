@@ -14,6 +14,21 @@ def number(value):
             type(value) is float and math.isfinite(value))
 
 
+def finite(value):
+    if not number(value):
+        raise ValueError('non-finite derived arithmetic')
+    return value
+
+
+def verify_finite_tree(value):
+    """Validate computed results before assigning a successful analysis status."""
+    if isinstance(value, dict):
+        for child in value.values(): verify_finite_tree(child)
+    elif isinstance(value, (list, tuple)):
+        for child in value: verify_finite_tree(child)
+    elif type(value) in (int, float): finite(value)
+
+
 def union(intervals, start, end):
     """Clip then union; nested wrappers and Canvas calls are never counted twice."""
     if not number(start) or not number(end) or end < start:
@@ -30,11 +45,11 @@ def union(intervals, start, end):
             merged[-1] = (merged[-1][0], max(b, merged[-1][1]))
         else:
             merged.append((a, b))
-    return sum(b-a for a, b in merged)
+    return finite(sum(finite(b-a) for a, b in merged))
 
 
 def intervals(calls):
-    return [(c['at'], c['at'] + c['ms']) for c in calls
+    return [(c['at'], finite(c['at'] + c['ms'])) for c in calls
             if number(c.get('at')) and number(c.get('ms')) and c['ms'] >= 0]
 
 
@@ -111,6 +126,8 @@ def analyze_delay(result):
                    x['at']-x['ms'] < end and x['at'] > start],
             busy=s['busy'], classification='associated >=95%' if render_covered >= .95*(end-start)
             else 'residual UNVERIFIED'))
+    for row in rows:
+        verify_finite_tree(row)
     return rows
 
 
@@ -118,14 +135,15 @@ def handler_accounting(sample):
     start, end = sample['at']['input'], sample['at']['handlerEnd']
     names = ('insertText','saveSnapshot','snapshotCapacity','getPageInfo','pollRenderJob',
              'canvasVisibleDraw','canvasReadback')
-    arithmetic = end-start-sum(sample['calls'].get(n, {}).get('ms', 0) for n in names)
+    duration = finite(end-start)
+    arithmetic = finite(duration-finite(sum(sample['calls'].get(n, {}).get('ms', 0) for n in names)))
     calls = [c for c in sample.get('engineTimeline', []) if c['name'] in names]
     complete = bool(calls) and all(number(c.get('at')) and number(c.get('ms')) and c['ms'] >= 0 for c in calls)
     # Ensure the interval list accounts for every aggregate call before claiming coverage.
     complete = complete and all(sum(c['name']==n for c in calls) == sample['calls'].get(n,{}).get('n',0) for n in names)
     covered = union(intervals(calls),start,end) if complete else None
-    return dict(handlerMs=end-start, nonexclusiveArithmeticResidualMs=arithmetic,
-                recordedUnionMs=covered, uncoveredMs=None if covered is None else end-start-covered,
+    return dict(handlerMs=duration, nonexclusiveArithmeticResidualMs=arithmetic,
+                recordedUnionMs=covered, uncoveredMs=None if covered is None else finite(duration-covered),
                 exclusiveAppJs='UNVERIFIED: rounded probes cover selected calls only',
                 intervalCoverage='rounded interval estimate' if complete else 'UNVERIFIED: missing boundaries')
 
@@ -172,7 +190,7 @@ def validate(result, expected_wasm, expected_source, *, legacy=False):
     missing_loss = 'probeCallDropped' not in result
     def require(ok, message):
         if not ok: failures.append(message)
-    require(not result.get('error'), 'recorded harness error')
+    require('error' not in result, 'recorded/invalid harness error')
     require(result.get('sourceSha256') == expected_source, 'fixture identity')
     require(result.get('sample') == '연구노트(화학).hwp', 'fixture name')
     require((result.get('engineIdentity') or {}).get('wasmSha256') == expected_wasm, 'candidate identity')
