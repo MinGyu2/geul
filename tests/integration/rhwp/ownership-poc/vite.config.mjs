@@ -28,6 +28,7 @@ for (const browser of ['chrome', 'webkit']) {
 
 export default mergeConfig(base, {
   root,
+  define: { __T010_DAMAGE__: process.env.GEUL_T010_DAMAGE_POC === '1' },
   optimizeDeps: { entries: ['index.html'] },
   plugins: [{
     name: 'explicit-t010-ownership-poc',
@@ -48,6 +49,10 @@ export default mergeConfig(base, {
       const held = new Map();
       server.middlewares.use((request, response, next) => {
         const parsed = new URL(request.url, 'http://localhost');
+        if (parsed.pathname === '/complex-hwp.hwp') {
+          response.setHeader('Content-Type','application/octet-stream');response.setHeader('Cache-Control','no-store');
+          response.end(readFileSync(resolve(root,'external/rhwp/samples/rnote/연구노트(화학).hwp')));return;
+        }
         if (!['/held-image.svg', '/release-image'].includes(parsed.pathname)) return next();
         const key = parsed.searchParams.get('key');
         if (parsed.pathname === '/release-image') {

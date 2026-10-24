@@ -1,0 +1,59 @@
+{
+  "status": "SCOPED_PIXEL_PARITY_ONLY",
+  "engineIdentity": {
+    "wasmSha256": "48adaa0f748484d12f59f4805deda0480635f915368392a87e76e95962ec0b27",
+    "baseline": "1a76570e833917d15817415a53c09ad61ab3203f"
+  },
+  "rawEvidenceSha256": "4cdee4bcebd39da9fdc1b7372171b42fedecdba0e1e540c89af37311276618c1",
+  "images": 3,
+  "comparisons": 12,
+  "exactRgba": true,
+  "browserDecodeWallMs": [
+    {
+      "page": 0,
+      "modes": [
+        {
+          "mode": "original",
+          "ms": 179
+        },
+        {
+          "mode": "normalized",
+          "ms": 415
+        }
+      ]
+    },
+    {
+      "page": 5,
+      "modes": [
+        {
+          "mode": "original",
+          "ms": 113
+        },
+        {
+          "mode": "normalized",
+          "ms": 24
+        }
+      ]
+    },
+    {
+      "page": 23,
+      "modes": [
+        {
+          "mode": "original",
+          "ms": 295
+        },
+        {
+          "mode": "normalized",
+          "ms": 164
+        }
+      ]
+    }
+  ],
+  "limitations": [
+    "Three public opaque8bit PNGs only; no broad format/crop/filter replay acceptance.",
+    "Async decode Promise timing includes event-loop scheduling/background page work; not CPU time or isolated throughput.",
+    "No established D4 speedup, memory ownership proof or input-to-current-frame acceptance.",
+    "Production/general malformed-PNG normalization was not implemented or validated."
+  ],
+  "decision": "Do not change the renderer based on this experiment; exact same-source lab pixels alone are insufficient."
+}

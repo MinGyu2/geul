@@ -1,0 +1,88 @@
+{
+  "checks": [
+    {
+      "name": "candidate-realwasm",
+      "command": [
+        "npx",
+        "vitest",
+        "run",
+        "--config",
+        "tests/integration/rhwp/vitest.config.ts",
+        "undo",
+        "multisection"
+      ],
+      "cwd": "<workspace>",
+      "environment": {
+        "GEUL_RHWP_TEST_PACKAGE": "<isolated>/candidate-final-package"
+      },
+      "exit": 0,
+      "status": "PASS",
+      "elapsedSeconds": 9.21,
+      "outputTail": "\n RUN  v5.0.3 <workspace>\n\n\n Test Files  2 passed | 1 skipped (3)\n      Tests  37 passed | 1 skipped (38)\n   Start at  03:59:48\n   Duration  8.09s (tests 65%, environment 23%, transform 8%, setup 3%, import 1%)\n"
+    },
+    {
+      "name": "candidate-service-save",
+      "command": [
+        "python3",
+        "tests/integration/rhwp/undo_save.py",
+        "--candidate",
+        "<isolated>/candidate-final-package",
+        "--evidence",
+        "<workspace>/tests/integration/rhwp/evidence/t010-final-stabilization/candidate-d3-service-save.json"
+      ],
+      "cwd": "<workspace>",
+      "environment": {},
+      "exit": 0,
+      "status": "PASS",
+      "elapsedSeconds": 19.11,
+      "outputTail": "[ok] basic-hwp-undone: preflight=safe checkSaved=safe [] \uac8c\uc2dc=True \uc6d0\ubcf8 \uadf8\ub300\ub85c=True\n[ok] basic-hwp-redone: preflight=safe checkSaved=unsafe [['previewStale', 'PrvText'], ['previewStale', 'PrvImage']] \uac8c\uc2dc=False \uc6d0\ubcf8 \uadf8\ub300\ub85c=True\n[ok] basic-hwp-newAfterUndo: preflight=safe checkSaved=unsafe [['previewStale', 'PrvText'], ['previewStale', 'PrvImage']] \uac8c\uc2dc=False \uc6d0\ubcf8 \uadf8\ub300\ub85c=True\n[ok] basic-hwpx-undone: preflight=safe checkSaved=safe [] \uac8c\uc2dc=True \uc6d0\ubcf8 \uadf8\ub300\ub85c=True\n[ok] basic-hwpx-redone: preflight=safe checkSaved=safe [] \uac8c\uc2dc=True \uc6d0\ubcf8 \uadf8\ub300\ub85c=False\n[ok] basic-hwpx-newAfterUndo: preflight=safe checkSaved=safe [] \uac8c\uc2dc=True \uc6d0\ubcf8 \uadf8\ub300\ub85c=False\n[ok] basic-hwpx-redone-dangling: preflight=safe checkSaved=unsafe [['referenceInvalid', 'Contents/section0.xml']] \uac8c\uc2dc=False \uc6d0\ubcf8 \uadf8\ub300\ub85c=True\n[ok] cell-hwp-undone: preflight=safe checkSaved=safe [] \uac8c\uc2dc=True \uc6d0\ubcf8 \uadf8\ub300\ub85c=True\n[ok] cell-hwp-redone: preflight=safe checkSaved=unsafe [['previewStale', 'PrvText'], ['previewStale', 'PrvImage']] \uac8c\uc2dc=False \uc6d0\ubcf8 \uadf8\ub300\ub85c=True\n[ok] cell-hwp-newAfterUndo: preflight=safe checkSaved=unsafe [['previewStale', 'PrvText'], ['previewStale', 'PrvImage']] \uac8c\uc2dc=False \uc6d0\ubcf8 \uadf8\ub300\ub85c=True\n[ok] cell-hwpx-undone: preflight=safe checkSaved=safe [] \uac8c\uc2dc=True \uc6d0\ubcf8 \uadf8\ub300\ub85c=True\n[ok] cell-hwpx-redone: preflight=safe checkSaved=safe [] \uac8c\uc2dc=True \uc6d0\ubcf8 \uadf8\ub300\ub85c=False\n[ok] cell-hwpx-newAfterUndo: preflight=safe checkSaved=safe [] \uac8c\uc2dc=True \uc6d0\ubcf8 \uadf8\ub300\ub85c=False\n[ok] multi-hwp-undone: preflight=safe checkSaved=safe [] \uac8c\uc2dc=True \uc6d0\ubcf8 \uadf8\ub300\ub85c=False\n[ok] multi-hwp-redone: preflight=safe checkSaved=unsafe [['previewStale', 'PrvText'], ['previewStale', 'PrvImage']] \uac8c\uc2dc=False \uc6d0\ubcf8 \uadf8\ub300\ub85c=True\n[ok] multi-hwp-newAfterUndo: preflight=safe checkSaved=unsafe [['previewStale', 'PrvText'], ['previewStale', 'PrvImage']] \uac8c\uc2dc=False \uc6d0\ubcf8 \uadf8\ub300\ub85c=True\n[ok] multi-hwpx-undone: preflight=unsafe checkSaved=unsafe [['partAdded', 'Preview/PrvImage.png'], ['partChanged', 'Contents/content.hpf'], ['previewStale', 'Preview/PrvText.txt']] \uac8c\uc2dc=False \uc6d0\ubcf8 \uadf8\ub300\ub85c=True\n[ok] multi-hwpx-redone: preflight=unsafe checkSaved=unsafe [['partAdded', 'Preview/PrvImage.png'], ['partChanged', 'Contents/content.hpf'], ['previewStale', 'Preview/PrvText.txt']] \uac8c\uc2dc=False \uc6d0\ubcf8 \uadf8\ub300\ub85c=True\n[ok] multi-hwpx-newAfterUndo: preflight=unsafe checkSaved=unsafe [['partAdded', 'Preview/PrvImage.png'], ['partChanged', 'Contents/content.hpf'], ['previewStale', 'Preview/PrvText.txt']] \uac8c\uc2dc=False \uc6d0\ubcf8 \uadf8\ub300\ub85c=True\n\ubd88\uc77c\uce58 0\uac74 []"
+    },
+    {
+      "name": "declarations",
+      "command": [
+        "npx",
+        "tsc",
+        "--ignoreConfig",
+        "--noEmit",
+        "--strict",
+        "--lib",
+        "es2022,dom,esnext.disposable",
+        "<isolated>/candidate-final-package/rhwp.d.ts"
+      ],
+      "cwd": "<workspace>",
+      "environment": {},
+      "exit": 0,
+      "status": "PASS",
+      "elapsedSeconds": 1.77,
+      "outputTail": ""
+    },
+    {
+      "name": "typecheck-final",
+      "command": [
+        "npm",
+        "run",
+        "typecheck"
+      ],
+      "cwd": "<workspace>",
+      "environment": {},
+      "exit": 0,
+      "status": "PASS",
+      "elapsedSeconds": 4.98,
+      "outputTail": "\n> geul@0.1.0 typecheck\n> tsc --noEmit\n"
+    },
+    {
+      "name": "lint-final",
+      "command": [
+        "npm",
+        "run",
+        "lint"
+      ],
+      "cwd": "<workspace>",
+      "environment": {},
+      "exit": 0,
+      "status": "PASS",
+      "elapsedSeconds": 7.05,
+      "outputTail": "\n> geul@0.1.0 lint\n> eslint .\n"
+    }
+  ]
+}

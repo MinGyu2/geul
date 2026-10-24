@@ -1,0 +1,944 @@
+{
+  "status": "FAIL",
+  "tests": [
+    {
+      "name": "bootstrap-clean-close",
+      "status": "PASS"
+    }
+  ],
+  "scope": "actual IBus-Hangul native event/history protocol and bounded36-attempt ordering matrix; no synthetic DOM composition",
+  "inputEnvironment": {
+    "ibusVersion": "IBus 1.5.33",
+    "hangul": "1.5.5",
+    "GTK_IM_MODULE": "ibus",
+    "nativeKeys": true,
+    "isolatedDisplay": true,
+    "settingsBackend": "memory; defaults only, no host settings writes"
+  },
+  "observerAliasDiagnostic": {
+    "sameConstructor": false,
+    "resources": [
+      "/__ownership_candidate__/rhwp.js?import",
+      "/__ownership_candidate__/rhwp.js"
+    ]
+  },
+  "lastObserved": {
+    "throwAfterDiscard": null,
+    "status": {
+      "uncertain": "false",
+      "history": null,
+      "status": "ready",
+      "dirty": "true",
+      "localRevision": "50",
+      "revision": "50"
+    },
+    "snapshotCalls": [
+      {
+        "ms": 0,
+        "name": "discardSnapshot",
+        "at": 21789
+      },
+      {
+        "ms": 0,
+        "name": "saveSnapshot",
+        "at": 21900
+      },
+      {
+        "ms": 1,
+        "name": "saveSnapshot",
+        "at": 23517
+      },
+      {
+        "ms": 0,
+        "name": "saveSnapshot",
+        "at": 24453
+      },
+      {
+        "ms": 1,
+        "name": "restoreSnapshot",
+        "at": 24453
+      },
+      {
+        "ms": 1,
+        "name": "restoreSnapshot",
+        "at": 25317
+      },
+      {
+        "ms": 0,
+        "name": "discardSnapshot",
+        "at": 26153
+      },
+      {
+        "ms": 0,
+        "name": "discardSnapshot",
+        "at": 26153
+      },
+      {
+        "ms": 0,
+        "name": "saveSnapshot",
+        "at": 27291
+      },
+      {
+        "ms": 1,
+        "name": "restoreSnapshot",
+        "at": 27291
+      },
+      {
+        "ms": 1,
+        "name": "restoreSnapshot",
+        "at": 28153
+      },
+      {
+        "ms": 0,
+        "name": "saveSnapshot",
+        "at": 31406
+      },
+      {
+        "ms": 1,
+        "name": "restoreSnapshot",
+        "at": 31406
+      },
+      {
+        "ms": 1,
+        "name": "restoreSnapshot",
+        "at": 32268
+      },
+      {
+        "ms": 0,
+        "name": "discardSnapshot",
+        "at": 33125
+      },
+      {
+        "ms": 0,
+        "name": "discardSnapshot",
+        "at": 33125
+      },
+      {
+        "ms": 0,
+        "name": "saveSnapshot",
+        "at": 35257
+      },
+      {
+        "ms": 0,
+        "name": "saveSnapshot",
+        "at": 35316
+      },
+      {
+        "ms": 0,
+        "name": "saveSnapshot",
+        "at": 35401
+      },
+      {
+        "ms": 1,
+        "name": "restoreSnapshot",
+        "at": 35401
+      }
+    ],
+    "owners": [
+      {
+        "discards": 6,
+        "nativeCapacity": 100,
+        "id": 1,
+        "saves": 14,
+        "live": 8
+      }
+    ],
+    "jobs": {
+      "pendingCount": 0,
+      "cancellations": 0,
+      "peakTemporaryCanvasBytes": 3875040,
+      "listenerNotifications": 0,
+      "peakStagingBytes": 7750080,
+      "inFlightEstimatedBytes": 0,
+      "capacityNotifications": 0,
+      "maxFrameBytes": 67108864,
+      "expiryTimerTicks": 0,
+      "resourceLimits": 0,
+      "expiryTimerActive": false,
+      "retryCount": 0,
+      "expiryTimerStarts": 52,
+      "backupImageDataBytes": 0,
+      "activeLeaseEstimatedBytes": 0,
+      "activeJobs": 0,
+      "activeLeaseCount": 0,
+      "maxPending": 2,
+      "transientEstimatedBytes": 0,
+      "loadAttempts": 0,
+      "uniqueResourceCount": 0,
+      "readyLeaseCount": 0,
+      "temporaryCanvasBytes": 0,
+      "maxOwnedBytes": 268435456,
+      "maxStagingBytes": 134217728,
+      "ownedEstimatedBytes": 0,
+      "maxResources": 256,
+      "errors": 0,
+      "peakBackupImageDataBytes": 3875040,
+      "completionNotifications": 0
+    },
+    "identity": {
+      "wasmSha256": "2aa0b5ac0ed09019d1c738f88668a56e2f63c609a78bb3d478f1260a92ce7d6c",
+      "baseline": "1a76570e833917d15817415a53c09ad61ab3203f"
+    }
+  },
+  "error": "'NoneType' object has no attribute 'get'",
+  "ibusLogTail": "portal is not running: GDBus.Error:org.freedesktop.DBus.Error.ServiceUnknown: The name org.freedesktop.portal.IBus was not provided by any .service files\n",
+  "nativeOrdering": {
+    "imeEnvironment": {
+      "ibusEngine": "",
+      "ibusVersion": "IBus 1.5.33"
+    },
+    "beforeCancelModel": {
+      "hwp": {
+        "equals": false,
+        "paragraph": 1,
+        "section": 0,
+        "expectedLength": 17,
+        "actualLength": 26
+      }
+    },
+    "cancelModel": {
+      "hwp": null
+    },
+    "cancelTrace": {
+      "hwp": {
+        "records": [
+          [
+            1,
+            35255,
+            "dom:keydown",
+            {
+              "composing": false,
+              "keyCode": 82,
+              "key": "char"
+            }
+          ],
+          [
+            2,
+            35255,
+            "ime:keyDown",
+            {
+              "interrupted": "none",
+              "composing": false,
+              "session": 2,
+              "historyTransaction": false,
+              "discarded": false,
+              "provisional": false,
+              "terminal": "none",
+              "pendingCommit": false,
+              "historyRedo": 0,
+              "epoch": 1,
+              "awaiting": "none",
+              "historyUndo": 5,
+              "generation": 1,
+              "revision": 47
+            }
+          ],
+          [
+            3,
+            35256,
+            "dom:beforeinput",
+            {
+              "composing": false,
+              "length": 1,
+              "inputType": "insertText"
+            }
+          ],
+          [
+            4,
+            35257,
+            "dom:input",
+            {
+              "composing": false,
+              "length": 1,
+              "inputType": "insertText"
+            }
+          ],
+          [
+            5,
+            35259,
+            "rhwp:text-mutation",
+            {
+              "ms": 2
+            }
+          ],
+          [
+            6,
+            35259,
+            "rhwp:revision-schedule",
+            {
+              "ms": 0
+            }
+          ],
+          [
+            7,
+            35260,
+            "rhwp:readPages",
+            {
+              "ms": 1
+            }
+          ],
+          [
+            8,
+            35260,
+            "ime:input",
+            {
+              "interrupted": "none",
+              "composing": false,
+              "session": 2,
+              "historyTransaction": false,
+              "discarded": false,
+              "provisional": false,
+              "terminal": "none",
+              "pendingCommit": true,
+              "historyRedo": 0,
+              "epoch": 1,
+              "awaiting": "none",
+              "historyUndo": 6,
+              "generation": 1,
+              "revision": 48
+            }
+          ],
+          [
+            9,
+            35263,
+            "rhwp:surface-render",
+            null
+          ],
+          [
+            10,
+            35264,
+            "rhwp:surface-render",
+            null
+          ],
+          [
+            11,
+            35267,
+            "rhwp:surface-effect",
+            null
+          ],
+          [
+            12,
+            35269,
+            "rhwp:layer-json",
+            {
+              "page": 0,
+              "chars": 50952,
+              "ms": 2
+            }
+          ],
+          [
+            13,
+            35275,
+            "rhwp:surface-first-draw",
+            {
+              "page": 0,
+              "ms": 8
+            }
+          ],
+          [
+            14,
+            35279,
+            "rhwp:surface-render",
+            null
+          ],
+          [
+            15,
+            35279,
+            "rhwp:surface-render",
+            null
+          ],
+          [
+            16,
+            35281,
+            "rhwp:surface-effect",
+            null
+          ],
+          [
+            17,
+            35285,
+            "dom:keyup",
+            {
+              "composing": false,
+              "keyCode": 82,
+              "code": "KeyR",
+              "key": "char"
+            }
+          ],
+          [
+            18,
+            35285,
+            "ime:keyUp",
+            {
+              "interrupted": "none",
+              "composing": false,
+              "session": 2,
+              "historyTransaction": false,
+              "discarded": false,
+              "provisional": false,
+              "terminal": "none",
+              "pendingCommit": true,
+              "historyRedo": 0,
+              "epoch": 1,
+              "awaiting": "none",
+              "historyUndo": 6,
+              "generation": 1,
+              "revision": 48
+            }
+          ],
+          [
+            19,
+            35285,
+            "rhwp:commit-ack",
+            {
+              "session": 2,
+              "ms": 26,
+              "generation": 1
+            }
+          ],
+          [
+            20,
+            35287,
+            "rhwp:surface-render",
+            null
+          ],
+          [
+            21,
+            35287,
+            "rhwp:surface-render",
+            null
+          ],
+          [
+            22,
+            35289,
+            "rhwp:surface-effect",
+            null
+          ],
+          [
+            23,
+            35316,
+            "dom:keydown",
+            {
+              "composing": false,
+              "keyCode": 8,
+              "key": "named"
+            }
+          ],
+          [
+            24,
+            35316,
+            "ime:keyDown",
+            {
+              "interrupted": "none",
+              "composing": false,
+              "session": 2,
+              "historyTransaction": false,
+              "discarded": false,
+              "provisional": false,
+              "terminal": "none",
+              "pendingCommit": false,
+              "historyRedo": 0,
+              "epoch": 1,
+              "awaiting": "none",
+              "historyUndo": 6,
+              "generation": 1,
+              "revision": 48
+            }
+          ],
+          [
+            25,
+            35317,
+            "rhwp:text-mutation",
+            {
+              "ms": 1
+            }
+          ],
+          [
+            26,
+            35317,
+            "rhwp:revision-schedule",
+            {
+              "ms": 0
+            }
+          ],
+          [
+            27,
+            35317,
+            "rhwp:readPages",
+            {
+              "ms": 0
+            }
+          ],
+          [
+            28,
+            35319,
+            "rhwp:surface-render",
+            null
+          ],
+          [
+            29,
+            35320,
+            "rhwp:surface-render",
+            null
+          ],
+          [
+            30,
+            35322,
+            "rhwp:surface-effect",
+            null
+          ],
+          [
+            31,
+            35323,
+            "rhwp:layer-json",
+            {
+              "page": 0,
+              "chars": 50719,
+              "ms": 1
+            }
+          ],
+          [
+            32,
+            35332,
+            "rhwp:surface-first-draw",
+            {
+              "page": 0,
+              "ms": 10
+            }
+          ],
+          [
+            33,
+            35335,
+            "rhwp:surface-render",
+            null
+          ],
+          [
+            34,
+            35335,
+            "rhwp:surface-render",
+            null
+          ],
+          [
+            35,
+            35336,
+            "rhwp:surface-effect",
+            null
+          ],
+          [
+            36,
+            35337,
+            "rhwp:commit-ack",
+            {
+              "session": 2,
+              "ms": 20,
+              "generation": 1
+            }
+          ],
+          [
+            37,
+            35339,
+            "rhwp:surface-render",
+            null
+          ],
+          [
+            38,
+            35339,
+            "rhwp:surface-render",
+            null
+          ],
+          [
+            39,
+            35340,
+            "rhwp:surface-effect",
+            null
+          ],
+          [
+            40,
+            35342,
+            "dom:keyup",
+            {
+              "composing": false,
+              "keyCode": 8,
+              "code": "Backspace",
+              "key": "named"
+            }
+          ],
+          [
+            41,
+            35342,
+            "ime:keyUp",
+            {
+              "interrupted": "none",
+              "composing": false,
+              "session": 2,
+              "historyTransaction": false,
+              "discarded": false,
+              "provisional": false,
+              "terminal": "none",
+              "pendingCommit": false,
+              "historyRedo": 0,
+              "epoch": 1,
+              "awaiting": "none",
+              "historyUndo": 7,
+              "generation": 1,
+              "revision": 49
+            }
+          ],
+          [
+            42,
+            35370,
+            "dom:keydown",
+            {
+              "composing": false,
+              "keyCode": 17,
+              "key": "mod:ControlLeft"
+            }
+          ],
+          [
+            43,
+            35400,
+            "dom:keydown",
+            {
+              "composing": false,
+              "keyCode": 90,
+              "key": "mod:KeyZ"
+            }
+          ],
+          [
+            44,
+            35401,
+            "command:request",
+            {
+              "reason": null,
+              "composing": false,
+              "session": 2,
+              "modal": false,
+              "id": "edit.undo",
+              "available": true,
+              "pending": false
+            }
+          ],
+          [
+            45,
+            35402,
+            "rhwp:revision-schedule",
+            {
+              "ms": 0
+            }
+          ],
+          [
+            46,
+            35402,
+            "rhwp:readPages",
+            {
+              "ms": 0
+            }
+          ],
+          [
+            47,
+            35402,
+            "command:dispatch",
+            {
+              "id": "edit.undo",
+              "accepted": true
+            }
+          ],
+          [
+            48,
+            35404,
+            "rhwp:surface-render",
+            null
+          ],
+          [
+            49,
+            35405,
+            "rhwp:surface-render",
+            null
+          ],
+          [
+            50,
+            35407,
+            "rhwp:surface-effect",
+            null
+          ],
+          [
+            51,
+            35407,
+            "rhwp:surface-first-draw",
+            {
+              "page": 0,
+              "ms": 0
+            }
+          ],
+          [
+            52,
+            35410,
+            "rhwp:commit-ack",
+            {
+              "session": 2,
+              "ms": 8,
+              "generation": 1
+            }
+          ],
+          [
+            53,
+            35412,
+            "rhwp:surface-render",
+            null
+          ],
+          [
+            54,
+            35412,
+            "rhwp:surface-render",
+            null
+          ],
+          [
+            55,
+            35414,
+            "rhwp:surface-effect",
+            null
+          ],
+          [
+            56,
+            35414,
+            "rhwp:surface-first-draw",
+            {
+              "page": 0,
+              "ms": 0
+            }
+          ],
+          [
+            57,
+            35428,
+            "rhwp:layer-json",
+            {
+              "page": 0,
+              "chars": 50952,
+              "ms": 1
+            }
+          ],
+          [
+            58,
+            35439,
+            "dom:keyup",
+            {
+              "composing": false,
+              "keyCode": 17,
+              "code": "ControlLeft",
+              "key": "mod:ControlLeft"
+            }
+          ],
+          [
+            59,
+            35439,
+            "ime:keyUp",
+            {
+              "interrupted": "none",
+              "composing": false,
+              "session": 2,
+              "historyTransaction": false,
+              "discarded": false,
+              "provisional": false,
+              "terminal": "none",
+              "pendingCommit": false,
+              "historyRedo": 1,
+              "epoch": 1,
+              "awaiting": "none",
+              "historyUndo": 6,
+              "generation": 1,
+              "revision": 50
+            }
+          ],
+          [
+            60,
+            35441,
+            "rhwp:surface-render",
+            null
+          ],
+          [
+            61,
+            35441,
+            "rhwp:surface-render",
+            null
+          ],
+          [
+            62,
+            35443,
+            "rhwp:surface-effect",
+            null
+          ],
+          [
+            63,
+            35443,
+            "rhwp:surface-first-draw",
+            {
+              "page": 0,
+              "ms": 0
+            }
+          ],
+          [
+            64,
+            35469,
+            "dom:keyup",
+            {
+              "composing": false,
+              "keyCode": 90,
+              "code": "KeyZ",
+              "key": "char"
+            }
+          ],
+          [
+            65,
+            35469,
+            "ime:keyUp",
+            {
+              "interrupted": "none",
+              "composing": false,
+              "session": 2,
+              "historyTransaction": false,
+              "discarded": false,
+              "provisional": false,
+              "terminal": "none",
+              "pendingCommit": false,
+              "historyRedo": 1,
+              "epoch": 1,
+              "awaiting": "none",
+              "historyUndo": 6,
+              "generation": 1,
+              "revision": 50
+            }
+          ],
+          [
+            66,
+            35911,
+            "rhwp:surface-render",
+            null
+          ],
+          [
+            67,
+            35911,
+            "rhwp:surface-render",
+            null
+          ],
+          [
+            68,
+            35911,
+            "rhwp:surface-effect",
+            null
+          ],
+          [
+            69,
+            35915,
+            "rhwp:surface-render",
+            null
+          ],
+          [
+            70,
+            35915,
+            "rhwp:surface-render",
+            null
+          ],
+          [
+            71,
+            35915,
+            "rhwp:surface-effect",
+            null
+          ]
+        ],
+        "seq": 71,
+        "dropped": 0
+      }
+    }
+  },
+  "nativeHelperAssertions": [],
+  "historyGates": [
+    {
+      "gate": "D2",
+      "item": "hwp: 선택 없는 취소는 문서/판/기록을 만들지 않음",
+      "result": "FAIL",
+      "detail": ""
+    },
+    {
+      "gate": "D2",
+      "item": "hwp: 부분 Backspace는 하를 잃지 않고 학으로 확정·Undo",
+      "result": "FAIL",
+      "detail": ""
+    },
+    {
+      "gate": "D2",
+      "item": "hwp: 여러 자모를 모두 취소해도 revision/기록 추가 없음",
+      "result": "FAIL",
+      "detail": ""
+    },
+    {
+      "gate": "D2",
+      "item": "hwp: 조합 중 Ctrl+Z가 조합을 깨지 않음",
+      "result": "FAIL",
+      "detail": "조합 중=false, 결과 어긋남"
+    },
+    {
+      "gate": "D2",
+      "item": "hwp: 확정한 조합(한글) Ctrl+Z → 한 단계로 되돌림, Ctrl+Y → 정확히 복원",
+      "result": "FAIL",
+      "detail": "넣은 글자 수 11, revision 24→25→26"
+    },
+    {
+      "gate": "D2",
+      "item": "hwp: 이어진 한글 음절은 한 단계, 앞 그룹과 경계 유지",
+      "result": "FAIL",
+      "detail": "단계별 글자 수 [24, 11, 5]"
+    }
+  ],
+  "historyChecks": [],
+  "testedSourceSha256": {
+    "tests/integration/rhwp/ownership-poc/session.mjs": "e9506f113daa44799670ae51afef5cb08ff9554bc4f84d136601182dca4e2193",
+    "tests/integration/rhwp/ownership-poc/history-perf.py": "fd2175b55a9520a7cf878bd46c72b586ed5e06b5d1c31c617edb4a8d5529f55e",
+    "tests/integration/rhwp/undo_native.py": "1d0982fa18c155bbd1e7b009307253815148f841fe1116ec92d818a3ea195445",
+    "tests/integration/rhwp/native_probe.py": "973ad00e1c52cd25245553d25677901b53b55e16dd74257b2c4c09f7013825ed"
+  },
+  "parentExit": 1,
+  "processFinished": true,
+  "elapsedSeconds": 40.52,
+  "command": [
+    "dbus-run-session",
+    "--",
+    "python3",
+    "tests/integration/rhwp/ownership-poc/ime-native.py",
+    "--app",
+    "<workspace>/src-tauri/target/debug/geul",
+    "--driver",
+    "/tmp/geul-t010-ownership-tools/bin/tauri-driver",
+    "--webkit-driver",
+    "/nix/store/p7h9r90h1vmk4wq1964nhd8vfp0kf27b-webkitgtk-2.54.1+abi=4.1/bin/WebKitWebDriver",
+    "--xvfb",
+    "/nix/store/7yz3bnmll7fy11n0xci85mbhnf6p5669-xvfb-21.1.23/bin/Xvfb",
+    "--output",
+    "<workspace>/tests/integration/rhwp/evidence/t010-final-stabilization/d2-native.json",
+    "--xdotool",
+    "/nix/store/kyp2r08w6hs0l1zj3cya6d2ciba9v47h-xdotool-3.20211022.1/bin/xdotool",
+    "--ibus-root",
+    "/nix/store/0mvrqxsy82n54jvps5v7i3xsd7c28f9m-ibus-1.5.33",
+    "--hangul-root",
+    "/nix/store/f3b4mgv2xq1nlr37gbkfcrz2hp46chmm-ibus-hangul-1.5.5",
+    "--gtk-query",
+    "/nix/store/jljcyz0c3nld95ra16sz80p3jjda446d-gtk+3-3.24.52-dev/bin/gtk-query-immodules-3.0"
+  ],
+  "activationFlags": {
+    "VITE_GEUL_TEST_HOOKS": "1",
+    "GEUL_T010_DAMAGE_POC": "1",
+    "GEUL_T010_OWNERSHIP_POC": "1",
+    "GEUL_T010_SCHEDULER_POC": "1",
+    "GEUL_T010_CANDIDATE": "<isolated>/candidate-package",
+    "GEUL_T010_EVIDENCE": "<workspace>/tests/integration/rhwp/evidence/t010-final-stabilization",
+    "VITE_GEUL_TEST_RHWP_HISTORY": "1",
+    "GEUL_T010_HISTORY_SAFETY_ONLY": "1"
+  },
+  "devServerCommand": [
+    "node",
+    "node_modules/vite/bin/vite.js",
+    "--host",
+    "127.0.0.1",
+    "--config",
+    "tests/integration/rhwp/ownership-poc/vite.config.mjs"
+  ],
+  "appSha256": "48b7b8364cb4b91ae0b4c3cb3113977c15fd92aa9ca3d60f0406f331749d45c1"
+}

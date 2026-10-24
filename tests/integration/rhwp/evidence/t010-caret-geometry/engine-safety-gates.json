@@ -1,0 +1,40 @@
+{
+  "status": "PASS",
+  "scope": "conditional isolated native evaluation only; D1 geometry candidate; no production activation",
+  "wasmSha256": "48adaa0f748484d12f59f4805deda0480635f915368392a87e76e95962ec0b27",
+  "patchSha256": "f6d847cc3bbf3e6edd8446fd7e0e672c965d3483fc74ca568bec9276c40e16cb",
+  "browsers": [
+    {
+      "browser": "chrome",
+      "ownershipPass": 52,
+      "schedulerPass": 73,
+      "failed": 0,
+      "skipped": 0
+    },
+    {
+      "browser": "webkit",
+      "ownershipPass": 52,
+      "schedulerPass": 73,
+      "failed": 0,
+      "skipped": 0
+    }
+  ],
+  "library": {
+    "pass": 4068,
+    "fail": 0,
+    "ignored": 13
+  },
+  "focusedGeometryCases": 5,
+  "binaryGeometryRepairs": 21,
+  "binaryExistingCaretsUnchanged": 3,
+  "reusedIndependentCacheOwnershipSchedulerContracts": {
+    "count": 29,
+    "reason": "exact contract implementation source hashes unchanged; full new library and browser tests also rerun",
+    "parentEvidence": "t010-final-stabilization",
+    "unchangedSourceSha256": {
+      "src/renderer/surface_cache.rs": "ef2a93b56ea85b2f619b013a97239e22eff92b93fcbaebc941e0de476dba4a0f",
+      "src/renderer/render_job.rs": "6ebaf2d87e79d4fcb8fb94782af017052553d4e44ea9a2725822983cddeafbfd",
+      "src/wasm_api.rs": "9563a9ef26b5d0c22997e9beb8cb8c037e852df7ca95a8362800e7bd0cf24c5d"
+    }
+  }
+}

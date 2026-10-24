@@ -1,0 +1,99 @@
+{
+  "status": "ANALYZED_SEPARATE_WINDOWS",
+  "windows": [
+    {
+      "evidence": "diagnostic-d4-lifecycle-hwpx.json",
+      "rawEvidenceSha256": "e352cd8c6423dc0134ab3d2b2de0f9d4be66aea4daa7d9a1260a8cc5d07e9036",
+      "executionStatus": "FAIL",
+      "parentExit": 1,
+      "runtimeEngineIdentity": {
+        "wasmSha256": "48adaa0f748484d12f59f4805deda0480635f915368392a87e76e95962ec0b27",
+        "baseline": "1a76570e833917d15817415a53c09ad61ab3203f"
+      },
+      "transport": "tauri-driver forwarding",
+      "plannedCycles": 20,
+      "completedCycles": 11,
+      "continuousWindowComplete": false,
+      "scopeCaveat": "Separate processes: never concatenate with original110 or with each other. Forwarded fresh trial set zoom50 after every open; direct trial set zoom50 before loop as canonical.",
+      "memoryPointsChecked": 33,
+      "observedCleanupAndDeclaredBounds": "PASS",
+      "closedRssBytes": [
+        429010944,
+        387948544,
+        452857856,
+        448020480,
+        441626624,
+        441192448,
+        540520448,
+        492875776,
+        560603136,
+        542273536,
+        456781824
+      ],
+      "last10": {
+        "minBytes": 387948544,
+        "maxBytes": 560603136,
+        "medianPairwiseSlopeBytesPerCycle": 13310976.0
+      },
+      "closedAfter10sRssBytes": null,
+      "wasmBytesAtLastPoint": 25034752,
+      "decodedBytesAtLastPoint": 0,
+      "issues": []
+    },
+    {
+      "evidence": "diagnostic-d4-lifecycle-direct.json",
+      "rawEvidenceSha256": "a58e7d58a993f85f9819d62a5ebcbe9c9777d93a5262e53108ff52be47f04c9a",
+      "executionStatus": "PASS",
+      "parentExit": 0,
+      "runtimeEngineIdentity": {
+        "wasmSha256": "48adaa0f748484d12f59f4805deda0480635f915368392a87e76e95962ec0b27",
+        "baseline": "1a76570e833917d15817415a53c09ad61ab3203f"
+      },
+      "transport": "tauri session creation then direct native WebKitWebDriver4445, same session ID; no request retries",
+      "plannedCycles": 20,
+      "completedCycles": 20,
+      "continuousWindowComplete": true,
+      "scopeCaveat": "Separate processes: never concatenate with original110 or with each other. Forwarded fresh trial set zoom50 after every open; direct trial set zoom50 before loop as canonical.",
+      "memoryPointsChecked": 61,
+      "observedCleanupAndDeclaredBounds": "PASS",
+      "closedRssBytes": [
+        376705024,
+        484052992,
+        524419072,
+        439664640,
+        452644864,
+        442384384,
+        385794048,
+        519143424,
+        444592128,
+        447205376,
+        443764736,
+        512303104,
+        542777344,
+        456990720,
+        529821696,
+        406147072,
+        504115200,
+        551780352,
+        560685056,
+        535277568
+      ],
+      "last10": {
+        "minBytes": 406147072,
+        "maxBytes": 560685056,
+        "medianPairwiseSlopeBytesPerCycle": 7319552.0
+      },
+      "closedAfter10sRssBytes": 533803008,
+      "wasmBytesAtLastPoint": 25427968,
+      "decodedBytesAtLastPoint": 0,
+      "issues": []
+    }
+  ],
+  "rssAcceptance": "INCONCLUSIVE; no accepted RSS budget or global plateau proof; completed finite cleanup/bounds checks do not certify long-term RSS stability",
+  "transportInterpretation": "A completed direct trial supports this route only within its measured20-cycle window. It neither proves the exact reset cause nor completes the interrupted120-cycle experiment.",
+  "generatorTemplate": {
+    "path": "independent-memory-analysis.py.txt",
+    "sha256": "ba14a66472d534dcea0fcd19ff407fd36054738de4c5b78edd5e5e6611961ba8",
+    "expansion": "Replace <workspace> with verified project root before executing"
+  }
+}

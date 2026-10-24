@@ -1,0 +1,77 @@
+{
+  "status": "PASS",
+  "initialScanExit": 1,
+  "findingCount": 23,
+  "findingRule": "generic-api-key",
+  "scope": "only64hex public source/file/token digests; reconstructed preformat+formatted source and scanner token digest. No credentials. Initial raw scan redacted, no finding contents stored.",
+  "verifiedPriorFiles": [
+    {
+      "file": "tests/integration/rhwp/evidence/t010-cache-concurrency/api-verification.json",
+      "sha256": "6c35cd4ff761272ec034bf09d1fde054ee79ad483aa785c984e243d465e094b4",
+      "matches": true
+    },
+    {
+      "file": "tests/integration/rhwp/evidence/t010-render-ownership/generated-api-check.json",
+      "sha256": "a49f8417b3beace7a3d415c64e5536b5e7c336642469b6e524f322caf1571646",
+      "matches": true
+    }
+  ],
+  "exactPathDigestExceptions": [
+    {
+      "sha256": "40f8a2faf5e279127b391fc9d4222ce48770cbd30bcea77cd51511d8082e8d7f",
+      "files": [
+        "before-chrome",
+        "before-webkit"
+      ]
+    },
+    {
+      "sha256": "6c35cd4ff761272ec034bf09d1fde054ee79ad483aa785c984e243d465e094b4",
+      "files": [
+        "initial-integrity"
+      ]
+    },
+    {
+      "sha256": "a49f8417b3beace7a3d415c64e5536b5e7c336642469b6e524f322caf1571646",
+      "files": [
+        "initial-integrity"
+      ]
+    },
+    {
+      "sha256": "b4a9be1d81a9be107b998fb119dc035156800e14e19e596d5a90477e25deb94d",
+      "files": [
+        "attempt-1-candidate-d3-service-save",
+        "attempt-1-chrome",
+        "attempt-1-engine",
+        "attempt-1-final-wasm-checks",
+        "attempt-1-patch",
+        "attempt-1-webkit",
+        "before-alignment-chrome",
+        "before-alignment-webkit",
+        "diagnostic-format-build-overlap"
+      ]
+    },
+    {
+      "sha256": "d90418394be8bd4fb4ac285fbb896005d87f0ccfb3f6da77526af00b8e2a7f6c",
+      "files": [
+        "adapter-comment-equivalence"
+      ]
+    },
+    {
+      "sha256": "e6d1a2a7c25bd0ba96cbb423bded39110ab4db8bfa449570a34a6005318abfb8",
+      "files": [
+        "candidate-d3-service-save",
+        "chrome",
+        "engine",
+        "final-wasm-checks",
+        "patch",
+        "webkit"
+      ]
+    },
+    {
+      "sha256": "f0d06a3fecdd22b24399704947293710e70ffae0ba649a5ece81dc43ffae4dbb",
+      "files": [
+        "diagnostic-format-build-overlap"
+      ]
+    }
+  ]
+}

@@ -1,0 +1,217 @@
+import { changedBand } from '../../../../src/components/Editor/rhwp/paintDiff.ts';
+import { drawsAtRequestedScale } from '../../../../src/components/Editor/rhwp/renderBudget.ts';
+// Test-only adapter for the real RhwpEditorSession and its sole WASM document.
+// Bounded read-only paint summaries support damage comparison; no document bytes,
+// alternate editable model or history are retained here.
+const sameRequest = (a, b) => !!a && a.canvas === b.canvas && a.page === b.page
+  && a.scale === b.scale && a.generation === b.generation && a.version === b.version && a.mode === b.mode;
+const MAX_SESSIONS = 8, MAX_QUEUE = 256, MAX_POLLS = 512;
+const MAX_SUMMARIES = 64, MAX_SUMMARY_UNITS = 262144, MAX_SUMMARY_TOTAL_UNITS = 8 * MAX_SUMMARY_UNITS;
+const subscribers = new Set();
+const sessions = new Set();
+const counters = { completed: 0, canceled: 0, errors: 0, limits: 0, notifications: 0, polls: 0, staleDropped: 0, reused: 0, replacements: 0, fullJobs: 0, patchJobs: 0, unchangedFrames: 0 };
+let scheduled = false, loading, probeListener = null;
+const wake = () => {
+  if (scheduled) return;
+  scheduled = true;
+  requestAnimationFrame(() => { scheduled = false; for (const subscriber of [...subscribers]) subscriber(); });
+};
+async function module() {
+  loading ??= (async () => {
+    const identity = await (await fetch('/__ownership_candidate__/ENGINE.json')).json();
+    const bytes = await (await fetch('/__ownership_candidate__/rhwp_bg.wasm')).arrayBuffer();
+    const hash = [...new Uint8Array(await crypto.subtle.digest('SHA-256', bytes))].map(n => n.toString(16).padStart(2, '0')).join('');
+    if (identity.buildStatus !== 'PASS' || !identity.sourceStableDuringBuild || hash !== identity.artifacts['rhwp_bg.wasm']) throw new Error('PoC runtime engine identity mismatch');
+    const url = '/__ownership_candidate__/rhwp.js';
+    const engine = await import(/* @vite-ignore */ url);
+    await engine.default({ module_or_path: bytes });
+    engine.setRendererImageLoadListener(() => { counters.notifications++; wake(); probeListener?.(); });
+    window.__geulOwnership = {
+      probeEngine: () => ({ ...engine, setRendererImageLoadListener: listener => { probeListener = listener; } }),
+      identity: { baseline: identity.baseline, wasmSha256: hash }, counters,
+      repeat: count => { for (const session of sessions) session.repeat(count); },
+      stats: () => ({ subscribers: subscribers.size, sessions: [...sessions].map(s => s.stats()),
+        jobs: JSON.parse(engine.rendererJobStats()), cache: JSON.parse(engine.rendererCacheStats()) }),
+      // Explicit pressure invalidates queued host jobs before canceling module resources.
+      repaint: () => { for (const session of sessions) session.repaint(); wake(); },
+      trim: () => { for (const session of sessions) session.cancel(); engine.trimRendererCaches(0); },
+      budget: bytes => { for (const session of sessions) session.cancel(); engine.setRendererCacheBudget(Math.floor(bytes * .75), Math.floor(bytes * .25), 256); },
+    };
+    return engine;
+  })();
+  return loading;
+}
+
+export function createOwnershipSession(Session, sessionId, backend, registry) {
+  let doc = null, generation = 0, active = null, timer = null, disposed = false;
+  const queue = new Map(), canvases = new Map(), failed = new Map(), painted = new Map(), listeners = new Set();
+  const unsubscribe = () => subscribers.delete(pump);
+  const cancel = (keepPainted = false) => {
+    if (timer !== null) clearTimeout(timer);
+    timer = null;
+    if (active && doc) { doc.cancelRenderJob(active.id); counters.canceled++; }
+    active = null; queue.clear(); failed.clear(); if (!keepPainted) painted.clear();
+  };
+  const session = new Session(sessionId, backend, registry, async () => {
+    const engine = await module();
+    return { openDocument(bytes) {
+      // Save validation reopens are independent read-only handles, never replace
+      // this session's authoritative live document or listener registration.
+      if (doc) return new engine.HwpDocument(bytes);
+      cancel(); generation++;
+      if (disposed || subscribers.size >= MAX_SESSIONS) throw new Error('RESOURCE_LIMIT: PoC sessions');
+      doc = new engine.HwpDocument(bytes);
+      // Snapshot restoration can change table paint structure/edge coverage beyond
+      // the small serialized band. Discard the damage basis and use atomic full
+      // replay after Undo/Redo; never accept a tolerant pixel match as exact.
+      const restore = doc.restoreSnapshot?.bind(doc);
+      if (restore) doc.restoreSnapshot = (...args) => { cancel(); return restore(...args); };
+      const opened = doc, free = doc.free.bind(doc);
+      doc.free = () => {
+        if (doc === opened) { cancel(); generation++; unsubscribe(); sessions.delete(handle); doc = null; }
+        free();
+      };
+      subscribers.add(pump); sessions.add(handle);
+      return doc;
+    } };
+  });
+  const valid = request => !disposed && doc && request.generation === generation
+    && request.version === session.modelVersion && request.canvas.isConnected && session.status.kind === 'ready';
+  const visible = request => { const box = request.canvas.getBoundingClientRect(); return box.bottom > 0 && box.top < innerHeight; };
+  const trimSummaries = () => {
+    const summaries = [...painted.values()].filter(request => request.summary);
+    let count = summaries.length, units = summaries.reduce((sum,request) => sum + request.summaryUnits,0);
+    if (count <= MAX_SUMMARIES && units <= MAX_SUMMARY_TOTAL_UNITS) return;
+    // Keep the original aggregate serialized budget; small unchanged pages can coexist.
+    // Background completion must not displace the visible editing frame's basis.
+    const victims = summaries.map(request => ({ request, visible: visible(request) }))
+      .sort((a,b) => Number(a.visible)-Number(b.visible));
+    for (const {request} of victims) {
+      if (count <= MAX_SUMMARIES && units <= MAX_SUMMARY_TOTAL_UNITS) break;
+      units -= request.summaryUnits; count--; request.summary = null; request.summaryUnits = 0;
+    }
+  };
+  function pump() {
+    if (disposed || !doc) return;
+    if (active && !valid(active)) { doc.cancelRenderJob(active.id); counters.staleDropped++; active = null; if(timer!==null)clearTimeout(timer);timer=null; wake(); }
+    for (const [canvas, request] of queue) if (!valid(request)) { queue.delete(canvas); counters.staleDropped++; }
+    if (!active) {
+      const requests = [...queue.values()].sort((a, b) => Number(visible(b)) - Number(visible(a)));
+      const request = requests[0];
+      if (!request) return;
+      queue.delete(request.canvas);
+      try {
+        const previous = painted.get(request.canvas), size = session.pages?.[request.page];
+        // Existing product summaries describe actual paint input; never guess from caret bounds.
+        // Cell replay still differs from Full at interior stroke/glyph edges; use the exact full path.
+        const summary = request.mode === 'damage' && !session.caret?.cell ? session.paintedSummary?.(doc, request.page) : null;
+        const summaryUnits = summary ? JSON.stringify(summary).length : 0;
+        const bounded = summary && summaryUnits <= MAX_SUMMARY_UNITS ? summary : null;
+        let rect = null;
+        if (bounded && previous?.summary && previous.generation === request.generation
+            && previous.page === request.page && previous.scale === request.scale && size
+            && previous.width === request.canvas.width && previous.height === request.canvas.height
+            && request.canvas.width > 0 && request.canvas.height > 0 && drawsAtRequestedScale(size, request.scale)) {
+          const band = changedBand(previous.summary, bounded, size.width, size.height);
+          if (band === null) {
+            painted.delete(request.canvas);
+            painted.set(request.canvas, {...request, summary:bounded, summaryUnits:bounded ? summaryUnits : 0, width:request.canvas.width, height:request.canvas.height});
+            trimSummaries();
+            counters.unchangedFrames++; queueMicrotask(() => { if (!disposed) for (const listener of listeners) listener(); }); wake(); return;
+          }
+          if (band !== 'page') {
+            const top = Math.floor(band.y * request.scale) / request.scale;
+            const bottom = Math.min(size.height, Math.ceil((band.y + band.height) * request.scale) / request.scale);
+            rect = Number.isInteger(request.scale) ? {...band, y:top, height:bottom-top}
+              // Fractional partial clipping changed three interior color channels in a real HWP.
+              // Replay the complete known page through the same explicit staged API instead.
+              : {x:0,y:0,width:size.width,height:size.height};
+          }
+        }
+        const id = rect && doc.beginRenderPatchJob
+          ? doc.beginRenderPatchJob(request.page,request.canvas,request.scale,rect.x,rect.y,rect.width,rect.height)
+          : doc.beginRenderJob(request.page, request.canvas, request.scale);
+        counters[rect ? 'patchJobs' : 'fullJobs']++;
+        active = { ...request, summary:bounded, summaryUnits:bounded ? summaryUnits : 0, id, polls: 0 };
+      }
+      catch (error) { failed.set(request.canvas, request); counters.limits++; wake(); return; }
+    }
+    const request = active;
+    let state;
+    try { state = ++request.polls > MAX_POLLS ? 'RESOURCE_LIMIT' : doc.pollRenderJob(request.id); }
+    catch { state = 'ERROR'; }
+    counters.polls++;
+    if (timer !== null) clearTimeout(timer);
+    timer = null;
+    if (state === 'PENDING') {
+      // No RAF retry loop: completion notification or the bounded deadline wakes us.
+      timer = setTimeout(() => { timer = null; wake(); }, 15250);
+      return;
+    }
+    if (state === 'COMPLETE') {
+      counters.completed++;
+      painted.delete(request.canvas);
+      painted.set(request.canvas, {...request, width:request.canvas.width, height:request.canvas.height});
+      // Serialized UTF-16 code units, not an actual JS-object or RSS byte certificate.
+      trimSummaries();
+      if (request.page === 0 && session.firstPaintMs === null) session.firstPaintMs = performance.now() - session.loadStartedAt;
+      queueMicrotask(() => { if (!disposed) for(const listener of listeners)listener(); });
+    }
+    else {
+      doc.cancelRenderJob(request.id);
+      if (state === 'CANCELED') counters.canceled++;
+      else { failed.set(request.canvas, {...request, summary:null, summaryUnits:0}); counters[state === 'RESOURCE_LIMIT' ? 'limits' : 'errors']++; }
+    }
+    active = null;
+    wake(); // released capacity may unblock a different live session
+  }
+  const originalRelease = session.releaseRendering.bind(session), originalDispose = session.dispose.bind(session), originalSubscribe = session.subscribe.bind(session);
+  session.subscribe = listener => {
+    if(listeners.size >= 16)throw new Error('RESOURCE_LIMIT: PoC subscriptions');
+    listeners.add(listener);const off=originalSubscribe(listener);
+    return () => { listeners.delete(listener);off(); };
+  };
+  session.renderPage = (page, canvas, scale) => {
+    if (disposed || !doc || !canvas.isConnected || !session.prepareRendering(scale)) return false;
+    const request = { page, canvas, scale, generation, version: session.modelVersion, mode: typeof __T010_DAMAGE__ !== 'undefined' && __T010_DAMAGE__ ? 'damage' : 'full' };
+    const complete = painted.get(canvas);
+    if (sameRequest(complete, request) && complete.width === canvas.width && complete.height === canvas.height) return true;
+    if (sameRequest(active, request) || sameRequest(queue.get(canvas), request)) { counters.reused++; return false; }
+    if (active && active.version !== session.modelVersion) cancel(true);
+    const previous = failed.get(canvas);
+    if (sameRequest(previous, request)) return false;
+    failed.delete(canvas);
+    if (!canvases.has(canvas) && canvases.size >= MAX_QUEUE) { counters.limits++; return false; }
+    if (active?.canvas === canvas) {
+      doc.cancelRenderJob(active.id); counters.canceled++; counters.replacements++; active = null;
+      if (timer !== null) clearTimeout(timer); timer = null;
+    }
+    queue.set(canvas, request); canvases.set(canvas, request);
+    // Synchronous first poll matches the product effect boundary; async image continuation
+    // still uses normal notifications. One job per request, no recursive renderer polling.
+    wake();
+    // Initial/resize frames stay deferred: React development mount cleanup may
+    // release the backing store after this effect. Keep its pending marker until
+    // the post-cleanup pump. Only an established same-size frame may poll here.
+    if (!active && complete && complete.page === page && complete.scale === scale
+        && complete.generation === generation && complete.width === canvas.width
+        && complete.height === canvas.height && canvas.width > 0 && canvas.height > 0) pump();
+    const result = painted.get(canvas);
+    return !queue.has(canvas) && sameRequest(result, request) && result.width === canvas.width && result.height === canvas.height; // a queued frame is never reported as completed
+  };
+  const renderRequest = session.renderPage;
+  session.renderPage = (...args) => {
+    const at = performance.now();
+    try { return renderRequest(...args); }
+    finally { globalThis.window?.__rhwpProbe?.record?.('adapterRenderRequest', at); }
+  };
+  session.releaseRendering = () => {
+    cancel();
+    for (const canvas of canvases.keys()) { canvas.width = 0; canvas.height = 0; }
+    canvases.clear(); originalRelease();
+  };
+  const handle = { cancel, repeat: count => { for(let n=0;n<Math.min(count,100);n++) for(const request of canvases.values()) session.renderPage(request.page,request.canvas,request.scale); }, repaint: () => { for(const [canvas, request] of canvases) { if(canvas.isConnected) { painted.delete(canvas); queue.set(canvas,{...request,generation,version:session.modelVersion}); } } }, stats: () => ({ sessionId, generation, queued: queue.size, active: active ? 1 : 0, activeJobId: active?.id ?? null,
+    canvases: canvases.size, summaries: [...painted.values()].filter(r=>r.summary).length, maxSummaries:MAX_SUMMARIES, summaryCodeUnits:[...painted.values()].reduce((sum,r)=>sum+(r.summary ? r.summaryUnits : 0),0), maxSummaryTotalCodeUnits:MAX_SUMMARY_TOTAL_UNITS, maxSummaryBytes:MAX_SUMMARY_UNITS /* legacy diagnostic name: serialized UTF-16 code units */, failures: failed.size, modelVersion: session.modelVersion }) };
+  session.dispose = () => { if (disposed) return; cancel(); unsubscribe(); disposed = true; sessions.delete(handle); originalDispose(); };
+  return session;
+}

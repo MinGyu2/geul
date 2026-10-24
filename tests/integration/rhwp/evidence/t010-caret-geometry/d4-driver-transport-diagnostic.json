@@ -1,0 +1,13 @@
+{
+  "status": "OBSERVED_FORWARDING_FAILURE",
+  "driverVersion": "tauri-driver2.0.4",
+  "driverLog": "Error serving connection: hyper::Error(User(Service), client error (SendRequest)\n\nCaused by:\n    0: connection error\n    1: Connection reset by peer (os error 104))\n",
+  "sourceInspection": {
+    "upstreamSource": "tauri-driver2.0.4/src/server.rs",
+    "sha256": "e34beb376176aafe7612f7ccbb6e0ddc23178c603455df7af95b737dbdfb0cec",
+    "behavior": "POST /session translates capabilities; subsequent requests forward to native-port4445; hyper SendRequest reset observed."
+  },
+  "observed": "139.22s fresh trial interrupted after11 completed cycles; app/WebProcess/WebDriver alive; no application crash conclusion",
+  "hypothesis": "Intermediary forwarding failure; exact reason native peer reset remains unknown",
+  "nextExperiment": "Keep tauri-driver session creation/capability mapping, route subsequent commands directly to same native WebKitWebDriver session; preserve bodies/boundaries and never retry a failed mutation."
+}

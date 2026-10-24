@@ -1,5 +1,14 @@
 import { historical } from './historical.mjs';
 import { svg, classify } from './fixtures.mjs';
+// Observe the historical 250-ms global interval without retaining callbacks/DOM.
+const expiryIntervals = new Set(); let expiryIntervalTicks = 0, expiryIntervalStarts = 0;
+const startInterval = window.setInterval.bind(window), stopInterval = window.clearInterval.bind(window);
+window.setInterval = (callback, ms, ...args) => {
+  if (ms !== 250 || typeof callback !== 'function') return startInterval(callback, ms, ...args);
+  const id = startInterval(() => { expiryIntervalTicks++; callback(...args); }, ms);
+  expiryIntervals.add(id); expiryIntervalStarts++; return id;
+};
+window.clearInterval = id => { expiryIntervals.delete(id); stopInterval(id); };
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const assert = (condition, message) => { if (!condition) throw new Error(message); };
 const stats = (mod) => mod.rendererCacheStats ? JSON.parse(mod.rendererCacheStats()) : null;
@@ -194,7 +203,7 @@ async function main() {
 const errors = [];
 addEventListener('unhandledrejection', (e) => errors.push(String(e.reason)));
 try {
-  const result = await main(); result.unhandledErrors = errors;
+  const result = await main(); result.unhandledErrors = errors; result.expiryIntervalObservation = { active:expiryIntervals.size, starts:expiryIntervalStarts, ticks:expiryIntervalTicks, pendingJobsAtEnd:result.scheduler?.checkpoints.at(-1)?.jobs.activeJobs ?? null };
   if (errors.length) result.status = 'FAIL';
   await fetch('/result', { method: 'POST', body: JSON.stringify(result) });
 } catch (e) {

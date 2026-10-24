@@ -1,0 +1,7 @@
+{
+  "classification": "VERIFIED reproduced HWPX cell Undo displayed105pixels differed from full reference, maxDelta30,42edgepixels; strict assertion not relaxed",
+  "before": "attempt-1-d1-cell-pixel-drift.json",
+  "beforeAdapter": "attempt-2-session.mjs.txt",
+  "correction": "Invalidate cached damage basis on actual authoritative restoreSnapshot; Undo/Redo falls back to atomic Full. Ordinary typing retains damage path.",
+  "remainingVerification": "Rerun strict full D1 matrix and native regression/perf with final adapter."
+}

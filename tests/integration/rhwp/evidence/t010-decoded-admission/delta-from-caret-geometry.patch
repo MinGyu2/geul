@@ -1,0 +1,121 @@
+diff --git a/src/renderer/surface_cache.rs b/src/renderer/surface_cache.rs
+--- a/src/renderer/surface_cache.rs
++++ b/src/renderer/surface_cache.rs
+@@ -104,6 +104,9 @@
+     admission: bool,
+     frequency: HashMap<ImageKey, u8>,
+     since_aging: usize,
++    // A repeated immediate request is a new working-set signal, unlike a scan.
++    last_request: Option<ImageKey>,
++    consecutive_requests: u8,
+ }
+ 
+ impl<V: Release + Clone> BoundedCache<V> {
+@@ -121,6 +124,8 @@
+             admission,
+             frequency: HashMap::new(),
+             since_aging: 0,
++            last_request: None,
++            consecutive_requests: 0,
+         }
+     }
+ 
+@@ -246,6 +251,8 @@
+     /// Reduce retained accounting to target_bytes, including cancellation of pending entries.
+     /// A zero target releases every cache-owned reference; other Rc owners remain valid.
+     pub fn trim(&mut self, target_bytes: usize) {
++        self.last_request = None;
++        self.consecutive_requests = 0;
+         while self.bytes > target_bytes || (target_bytes == 0 && !self.entries.is_empty()) {
+             if !self.evict_any() {
+                 break;
+@@ -255,6 +262,8 @@
+ 
+     /// 예산을 바꾼다. 줄이면 바로 맞춘다.
+     pub fn set_budget(&mut self, max_bytes: usize, max_entries: usize) {
++        self.last_request = None;
++        self.consecutive_requests = 0;
+         self.max_bytes = max_bytes;
+         self.max_entries = max_entries;
+         self.max_entry_bytes = max_bytes / 4;
+@@ -312,6 +321,12 @@
+         if !self.admission {
+             return;
+         }
++        if self.last_request == Some(*key) {
++            self.consecutive_requests = self.consecutive_requests.saturating_add(1).min(2);
++        } else {
++            self.last_request = Some(*key);
++            self.consecutive_requests = 1;
++        }
+         self.since_aging += 1;
+         if self.since_aging >= 4 * self.entries.len().max(16) {
+             self.age();
+@@ -338,6 +353,12 @@
+     /// 입장 제한: `bytes`를 넣으려고 내보내야 할 항목(일시 항목·오래된 순) 모두보다 새 키의 요청이 많은가.
+     /// 내보낼 것이 없으면(자리가 있음) 들인다.
+     fn admits(&self, key: &ImageKey, bytes: usize) -> bool {
++        // insert() checks byte/entry/per-entry limits first. Only real consecutive
++        // lookups bypass historical frequency, without inflating hit/request stats.
++        // A sequential scan still uses the original frequency admission policy.
++        if self.last_request == Some(*key) && self.consecutive_requests >= 2 {
++            return true;
++        }
+         let candidate = self.frequency.get(key).copied().unwrap_or(0);
+         let mut victims: Vec<(&ImageKey, &Entry<V>)> =
+             self.entries.iter().filter(|(_, e)| !e.pending).collect();
+@@ -677,4 +698,53 @@
+         assert!(admitted, "the new working set must eventually be admitted");
+         assert!(cache.frequency.len() <= 4 * 64);
+     }
+-}
++
++    #[test]
++    fn t010_burst_new_working_set_is_admitted_on_second_consecutive_request() {
++        let log = Rc::new(RefCell::new(Vec::new()));
++        let mut cache = BoundedCache::new(400, 64, true);
++        for _ in 0..15 {
++            scan(&mut cache, &log, 0..4);
++        }
++        assert!(cache.get(&key(9)).is_none());
++        assert!(!cache.insert(key(9), Some(surface(9, &log)), 100));
++        assert!(cache.get(&key(9)).is_none());
++        assert!(cache.insert(key(9), Some(surface(9, &log)), 100),
++            "a consecutive re-request must become resident instead of repeatedly decoding behind a historical hot set");
++        assert!(cache.get(&key(9)).is_some());
++        assert_eq!((cache.stats().entries, cache.stats().bytes), (4, 400));
++    }
++
++    #[test]
++    fn t010_burst_interleaved_scan_does_not_override_hot_residents() {
++        let log = Rc::new(RefCell::new(Vec::new()));
++        let mut cache = BoundedCache::new(400, 64, true);
++        for _ in 0..15 {
++            scan(&mut cache, &log, 0..4);
++        }
++        for n in [9, 10, 9, 10] {
++            assert!(cache.get(&key(n)).is_none());
++            assert!(!cache.insert(key(n), Some(surface(n as u32, &log)), 100));
++        }
++        assert!((0..4).all(|n| cache.entries.contains_key(&key(n))));
++        assert_eq!(cache.stats().bytes, 400);
++    }
++
++    #[test]
++    fn t010_burst_never_bypasses_per_entry_or_zero_budget_limits() {
++        let log = Rc::new(RefCell::new(Vec::new()));
++        let mut cache = BoundedCache::new(400, 64, true);
++        scan(&mut cache, &log, 0..4);
++        for _ in 0..3 {
++            assert!(cache.get(&key(9)).is_none());
++            assert!(!cache.insert(key(9), Some(surface(9, &log)), 101));
++        }
++        assert_eq!((cache.stats().entries, cache.stats().bytes), (4, 400));
++        cache.set_budget(0, 0);
++        for _ in 0..3 {
++            assert!(cache.get(&key(9)).is_none());
++            assert!(!cache.insert(key(9), Some(surface(9, &log)), 100));
++        }
++        assert_eq!((cache.stats().entries, cache.stats().bytes), (0, 0));
++    }
++}

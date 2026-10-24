@@ -1,0 +1,79 @@
+{
+  "implementation": "session.mjs factory; only module loader replaced with deterministic fake engine",
+  "sourceSha256": "30e8665220fa8dc46210fa253b6f6a1b2783561317078183c5a19fb4e01010ae",
+  "testSha256": "88b8a83ddab4a00aaf75a6d7edd82f496dab8a63298d68315f95d1505fa1407b",
+  "tests": [
+    {
+      "name": "identical-pending",
+      "status": "PASS"
+    },
+    {
+      "name": "different-page",
+      "status": "PASS"
+    },
+    {
+      "name": "different-scale",
+      "status": "PASS"
+    },
+    {
+      "name": "mutation",
+      "status": "PASS"
+    },
+    {
+      "name": "reload",
+      "status": "PASS"
+    },
+    {
+      "name": "complete-after-duplicates",
+      "status": "PASS"
+    },
+    {
+      "name": "error-then-other-page",
+      "status": "PASS"
+    },
+    {
+      "name": "disconnected",
+      "status": "PASS"
+    },
+    {
+      "name": "queued-identical",
+      "status": "PASS"
+    },
+    {
+      "name": "damage-retains-valid-previous-frame",
+      "status": "PASS"
+    },
+    {
+      "name": "damage-resize-falls-back-full",
+      "status": "PASS"
+    },
+    {
+      "name": "cell-edit-falls-back-full",
+      "status": "PASS"
+    },
+    {
+      "name": "summary-lru-keeps-newly-touched-frame",
+      "status": "PASS"
+    },
+    {
+      "name": "snapshot-restore-invalidates-damage-basis",
+      "status": "PASS"
+    },
+    {
+      "name": "initial-mount-cleanup-preserves-pending",
+      "status": "PASS"
+    },
+    {
+      "name": "completed-external-resize-rerenders",
+      "status": "PASS"
+    },
+    {
+      "name": "damage-identical-paint-skips-job",
+      "status": "PASS"
+    },
+    {
+      "name": "terminal-no-restart",
+      "status": "PASS"
+    }
+  ]
+}

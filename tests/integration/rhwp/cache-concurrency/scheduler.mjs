@@ -182,6 +182,82 @@ export async function scheduler(mod,ref,{mismatch}) {
   for(const key of keys)await fetch('/release-image?key='+key);for(const image of held)image.dispatchEvent(new Event('load'));
   await delay(20);check('closed-resources-'+operation,snap(operation+'-closed').jobs.activeLeaseEstimatedBytes===0);
  }
+ if (mod.HwpDocument.prototype.beginRenderPatchJob) {
+  mod.trimRendererCaches(0);await delay(30);
+  const idle=snap('timer-idle-start').jobs;await delay(550);const rested=snap('timer-idle-rested').jobs;
+  check('timer-idle-no-ticks',idle.expiryTimerActive===false&&rested.expiryTimerTicks===idle.expiryTimerTicks);
+  const a=mod.HwpDocument.createEmpty(),b=mod.HwpDocument.createEmpty(),ca=document.createElement('canvas'),cb=document.createElement('canvas');
+  const ai=a.beginRenderJob(0,ca,.5),bi=b.beginRenderJob(0,cb,.5);const two=snap('timer-two-jobs').jobs;
+  a.cancelRenderJob(ai);await delay(20);const one=snap('timer-one-job').jobs;
+  check('timer-shared-lifetime',two.activeJobs===2&&two.expiryTimerActive===true&&one.activeJobs===1&&one.expiryTimerActive===true);
+  // Do not query stats until after the idle interval: stats itself reconciles timers.
+  b.cancelRenderJob(bi);await delay(550);const stopped=snap('timer-stopped').jobs;
+  check('timer-final-cancel-stops',stopped.expiryTimerActive===false&&stopped.expiryTimerTicks===one.expiryTimerTicks);
+  let state='PENDING',notices=0;const restarted=a.beginRenderJob(0,ca,.5);
+  mod.setRendererImageLoadListener(()=>{notices++;state=a.pollRenderJob(restarted);});
+  await delay(15350);mod.setRendererImageLoadListener(null);const expired=snap('timer-expired').jobs;
+  check('timer-restart-and-expire',state==='ERROR'&&notices===1&&expired.expiryTimerActive===false&&expired.expiryTimerTicks>stopped.expiryTimerTicks,{state,notifications:notices});
+  let good=true;for(let i=0;i<20;i++){const id=a.beginRenderJob(0,ca,.5);good&&=a.pollRenderJob(id)==='COMPLETE';}
+  for(let i=0;i<20;i++){const opened=mod.HwpDocument.createEmpty();opened.beginRenderJob(0,ca,.5);opened.free();}
+  await delay(550);const closed=snap('timer-after-repeat').jobs;
+  check('timer-repeated-complete-idle',good&&closed.activeJobs===0&&closed.expiryTimerActive===false&&closed.expiryTimerTicks===expired.expiryTimerTicks,{completeCycles:20,disposeCycles:20,withoutInterveningStats:true});
+  a.free();b.free();ca.width=ca.height=cb.width=cb.height=0;
+  // Same replay rectangle and authoritative model in both engines, exact RGBA.
+  const d=mod.HwpDocument.createEmpty(),r=ref.HwpDocument.createEmpty(),target=document.createElement('canvas'),expected=document.createElement('canvas');
+  d.insertText(0,0,0,'before');r.insertText(0,0,0,'before');await finish(d,target,.7);r.renderPageToCanvas(0,expected,.7);
+  d.insertText(0,0,0,'X');r.insertText(0,0,0,'X');
+  const id=d.beginRenderPatchJob(0,target,.7,0,0,800,180);const result=d.pollRenderJob(id);
+  r.renderPageToCanvas(0,expected,.7); // Full is the strict oracle, including fractional paper-edge alpha.
+  const wrong=mismatch(classify(target),classify(expected));check('patch-job-exact-pinned-replay',result==='COMPLETE'&&wrong===0,{state:result,pixelMismatchCount:wrong,oracle:'pinned Full replay, exact RGBA including fractional edges'});
+  const legacy=document.createElement('canvas');legacy.width=expected.width;legacy.height=expected.height;legacy.getContext('2d').drawImage(expected,0,0);
+  d.renderPagePatchToCanvasFilteredWithProfile(0,legacy,.7,'all','screen',0,0,800,180);r.renderPagePatchToCanvasFilteredWithProfile(0,expected,.7,'all','screen',0,0,800,180);
+  check('patch-job-legacy-compat-exact',mismatch(classify(legacy),classify(expected))===0);legacy.width=legacy.height=0;
+  const sentinel=classify(target),old=d.beginRenderPatchJob(0,target,.7,0,0,800,180);d.insertText(0,0,0,'new');
+  check('patch-job-mutation-stale-rejected',d.pollRenderJob(old)==='CANCELED'&&mismatch(sentinel,classify(target))===0);
+  let rejected=false;try{d.beginRenderPatchJob(0,target,.7,0,0,-1,180);}catch{rejected=true;}check('patch-job-invalid-bounds-rejected',rejected);
+  d.free();r.free();target.width=target.height=expected.width=expected.height=0;
+  const q=mod.HwpDocument.createEmpty(),p=ref.HwpDocument.createEmpty(),qc=document.createElement('canvas'),pc=document.createElement('canvas');
+  q.insertText(0,0,0,'start');p.insertText(0,0,0,'start');await finish(q,qc,1.04205322265625);
+  q.insertText(0,0,0,'X');p.insertText(0,0,0,'X');const qi=q.beginRenderPatchJob(0,qc,1.04205322265625,0,0,800,180),qs=q.pollRenderJob(qi);
+  p.renderPageToCanvas(0,pc,1.04205322265625);const fractionalWrong=mismatch(classify(qc),classify(pc));
+  check('patch-job-fractional-edge-full-exact',qs==='COMPLETE'&&fractionalWrong===0,{state:qs,pixelMismatchCount:fractionalWrong,scale:1.04205322265625});// The explicit fractional API must choose Full even when a small requested region
+  // omits changed pixels; this distinguishes fallback from coincidentally exact clipping.
+  q.insertText(0,0,0,'Y');p.insertText(0,0,0,'Y');const beforeFallback=classify(qc);
+  const fallback=q.beginRenderPatchJob(0,qc,1.04205322265625,0,500,100,1),untouched=mismatch(beforeFallback,classify(qc))===0;
+  const fallbackState=q.pollRenderJob(fallback);p.renderPageToCanvas(0,pc,1.04205322265625);const fallbackWrong=mismatch(classify(qc),classify(pc));
+  check('fractional-patch-policy-full-fallback',untouched&&fallbackState==='COMPLETE'&&fallbackWrong===0,{state:fallbackState,pixelMismatchCount:fallbackWrong,policy:'fractional effective scale uses Full replay, rectangle validated only'});
+  q.free();p.free();qc.width=qc.height=pc.width=pc.height=0;
+  const tall=mod.HwpDocument.createEmpty(),tallRef=ref.HwpDocument.createEmpty(),tc=document.createElement('canvas'),tr=document.createElement('canvas');
+  for(const d of [tall,tallRef]){const def=JSON.parse(d.getPageDef(0));d.setPageDef(0,JSON.stringify({...def,width:300*75,height:9000*75,marginLeft:750,marginRight:750,marginTop:750,marginBottom:750,marginHeader:0,marginFooter:0}));d.insertText(0,0,0,'before');}
+  await finish(tall,tc,2);tallRef.renderPageToCanvas(0,tr,2);tall.insertText(0,0,0,'X');tallRef.insertText(0,0,0,'X');
+  const tallJob=tall.beginRenderPatchJob(0,tc,2,0,500,100,1),tallState=tall.pollRenderJob(tallJob);tallRef.renderPageToCanvas(0,tr,2);
+  const tallWrong=mismatch(classify(tc),classify(tr));
+  check('normalized-integer-patch-policy-full-fallback',tallState==='COMPLETE'&&tc.height>0&&tc.height<18000&&tallWrong===0,{state:tallState,pixelMismatchCount:tallWrong,requestedScale:2,normalizedCanvas:[tc.width,tc.height]});
+  tall.free();tallRef.free();tc.width=tc.height=tr.width=tr.height=0;
+  const iq=mod.HwpDocument.createEmpty(),ir=ref.HwpDocument.createEmpty(),ic=document.createElement('canvas'),ifull=document.createElement('canvas');
+  iq.insertText(0,0,0,'before');ir.insertText(0,0,0,'before');await finish(iq,ic,1);
+  iq.insertText(0,0,0,'X');ir.insertText(0,0,0,'X');const ij=iq.beginRenderPatchJob(0,ic,1,0,500,100,1),istate=iq.pollRenderJob(ij);
+  ir.renderPageToCanvas(0,ifull,1);const iwrong=mismatch(classify(ic),classify(ifull));
+  check('integer-patch-policy-full-fallback',istate==='COMPLETE'&&iwrong===0,{state:istate,pixelMismatchCount:iwrong,policy:'all explicit damage requests use atomic Full until native regional equivalence is established'});
+  iq.free();ir.free();ic.width=ic.height=ifull.width=ifull.height=0;
+  const complexBytes=new Uint8Array(await(await fetch('/complex-hwp.hwp')).arrayBuffer());
+  const complexSha=[...new Uint8Array(await crypto.subtle.digest('SHA-256',complexBytes))].map(n=>n.toString(16).padStart(2,'0')).join('');
+  for(const scale of [1,0.521026611328125]) {
+   const d=new mod.HwpDocument(complexBytes),r=new ref.HwpDocument(complexBytes),shown=document.createElement('canvas'),full=document.createElement('canvas');
+   d.insertText(0,13,0,'AB');r.insertText(0,13,0,'AB');const initial=await finish(d,shown,scale,13);r.renderPageToCanvas(13,full,scale);const initialWrong=mismatch(classify(shown),classify(full));
+   let complete=initial.state==='COMPLETE';
+   for(let i=0;i<10;i++){d.insertText(0,13,0,'X');r.insertText(0,13,0,'X');const id=d.beginRenderPatchJob(13,shown,scale,0,0,793.7,180);complete&&=d.pollRenderJob(id)==='COMPLETE';}
+   r.renderPageToCanvas(13,full,scale);const wrong=mismatch(classify(shown),classify(full));
+   const sameModel=document.createElement('canvas');const sameState=await finish(d,sameModel,scale,13);const sameWrong=mismatch(classify(shown),classify(sameModel)),fullWrong=mismatch(classify(sameModel),classify(full));
+   const diffSamples=[];let insideRegionDifferences=0,outsideRegionDifferences=0;
+   if(sameWrong){const a=shown.getContext('2d').getImageData(0,0,shown.width,shown.height).data,b=sameModel.getContext('2d').getImageData(0,0,sameModel.width,sameModel.height).data;
+    for(let i=0;i<a.length;i+=4){if([0,1,2,3].every(k=>a[i+k]===b[i+k]))continue;const x=i/4%shown.width,y=Math.floor(i/4/shown.width);
+     if(y<Math.ceil(180*scale))insideRegionDifferences++;else outsideRegionDifferences++;
+     if(diffSamples.length<8)diffSamples.push({x,y,shown:[...a.slice(i,i+4)],full:[...b.slice(i,i+4)]});}}
+   check(scale===1?'complex-integer-patch-full-reference':'complex-fractional-patch-full-reference',complete&&wrong===0,{scale,pixelMismatchCount:wrong,insideRegionDifferences,outsideRegionDifferences,diffSamples,initialFullMismatchCount:initialWrong,sameModelFullMismatchCount:sameWrong,candidateFullVsPinnedFullMismatchCount:fullWrong,sameModelState:sameState.state,fixtureSha256:complexSha,oracle:'public original HWP, two independent models after identical edits; pinned Full RGBA'});
+   d.free();r.free();shown.width=shown.height=full.width=full.height=sameModel.width=sameModel.height=0;
+  }
+ }
  mod.trimRendererCaches(0);mod.setRendererCacheBudget(256<<20,64<<20,256);snap('scheduler-final');
  return {status:tests.every(t=>t.status==='PASS')?'PASS':'FAIL',tests,checkpoints,notificationPolling:'initial poll then normal listener events only; timeout never polls'};
 }

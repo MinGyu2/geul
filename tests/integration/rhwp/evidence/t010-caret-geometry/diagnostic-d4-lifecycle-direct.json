@@ -1,0 +1,6492 @@
+{
+  "status": "PASS",
+  "scope": "independent HWPX UndoRedo20-cycle window with direct native transport after tauri session creation; no concatenation or RSS acceptance claim",
+  "protocol": "same lifecycle UndoRedo per-cycle operations/sleeps/memory boundaries; only one mode; durable per-cycle saves",
+  "observerSourceSha256": "780077914ca73b7e7f4fde3797d0d13607d93f6a749473b9d9304533a4482b82",
+  "transport": "tauri session creation then direct native WebKitWebDriver4445, same session ID; no request retries",
+  "engineIdentity": {
+    "wasmSha256": "48adaa0f748484d12f59f4805deda0480635f915368392a87e76e95962ec0b27",
+    "baseline": "1a76570e833917d15817415a53c09ad61ab3203f"
+  },
+  "rows": [
+    {
+      "mode": "undoRedo",
+      "cycle": 0,
+      "before": {
+        "processes": [
+          {
+            "pid": 2575697,
+            "rssBytes": 312877056
+          }
+        ],
+        "aggregateRssBytes": 312877056,
+        "wasmBytes": 3342336,
+        "canvasPixels": 0,
+        "canvasCount": 0,
+        "owners": [],
+        "engineSurfaces": {
+          "externrefSlots": 1156,
+          "canvasPixels": 0,
+          "imageCount": 0,
+          "detachedCanvases": 0,
+          "canvasCount": 0,
+          "imagePixels": 0
+        },
+        "lastDisposal": null,
+        "renderer": {
+          "sessions": [],
+          "jobs": {
+            "pendingCount": 0,
+            "cancellations": 0,
+            "peakTemporaryCanvasBytes": 3875040,
+            "listenerNotifications": 0,
+            "peakStagingBytes": 3875040,
+            "inFlightEstimatedBytes": 0,
+            "capacityNotifications": 0,
+            "maxFrameBytes": 67108864,
+            "expiryTimerTicks": 0,
+            "resourceLimits": 0,
+            "expiryTimerActive": false,
+            "retryCount": 0,
+            "expiryTimerStarts": 1,
+            "backupImageDataBytes": 0,
+            "activeLeaseEstimatedBytes": 0,
+            "activeJobs": 0,
+            "activeLeaseCount": 0,
+            "maxPending": 2,
+            "transientEstimatedBytes": 0,
+            "loadAttempts": 0,
+            "uniqueResourceCount": 0,
+            "readyLeaseCount": 0,
+            "temporaryCanvasBytes": 0,
+            "maxOwnedBytes": 268435456,
+            "maxStagingBytes": 134217728,
+            "ownedEstimatedBytes": 0,
+            "maxResources": 256,
+            "errors": 0,
+            "peakBackupImageDataBytes": 0,
+            "completionNotifications": 0
+          },
+          "cache": {
+            "decoded": {
+              "maxBytes": 268435456,
+              "bytes": 0,
+              "misses": 0,
+              "maxEntryBytes": 67108864,
+              "oversize": 0,
+              "maxEntries": 256,
+              "evictions": 0,
+              "hits": 0,
+              "entries": 0,
+              "pendingEntries": 0,
+              "negativeEntries": 0,
+              "rejected": 0,
+              "transientEntries": 0
+            },
+            "images": {
+              "maxBytes": 67108864,
+              "bytes": 0,
+              "misses": 0,
+              "maxEntryBytes": 16777216,
+              "oversize": 0,
+              "maxEntries": 256,
+              "evictions": 0,
+              "hits": 0,
+              "entries": 0,
+              "pendingEntries": 0,
+              "negativeEntries": 0,
+              "rejected": 0,
+              "transientEntries": 0
+            }
+          },
+          "subscribers": 0
+        }
+      },
+      "opened": {
+        "processes": [
+          {
+            "pid": 2575697,
+            "rssBytes": 431230976
+          }
+        ],
+        "aggregateRssBytes": 431230976,
+        "wasmBytes": 23658496,
+        "canvasPixels": 3632850,
+        "canvasCount": 60,
+        "owners": [
+          {
+            "discards": 0,
+            "nativeCapacity": 100,
+            "id": 1,
+            "saves": 7,
+            "live": 7
+          }
+        ],
+        "engineSurfaces": {
+          "externrefSlots": 1156,
+          "canvasPixels": 0,
+          "imageCount": 0,
+          "detachedCanvases": 0,
+          "canvasCount": 0,
+          "imagePixels": 0
+        },
+        "lastDisposal": null,
+        "renderer": {
+          "sessions": [
+            {
+              "maxSummaries": 64,
+              "summaryCodeUnits": 245216,
+              "modelVersion": 19,
+              "canvases": 15,
+              "maxSummaryBytes": 262144,
+              "maxSummaryTotalCodeUnits": 2097152,
+              "sessionId": 2,
+              "queued": 0,
+              "failures": 0,
+              "summaries": 1,
+              "activeJobId": null,
+              "generation": 1,
+              "active": 0
+            }
+          ],
+          "jobs": {
+            "pendingCount": 0,
+            "cancellations": 0,
+            "peakTemporaryCanvasBytes": 3875040,
+            "listenerNotifications": 0,
+            "peakStagingBytes": 3875040,
+            "inFlightEstimatedBytes": 0,
+            "capacityNotifications": 0,
+            "maxFrameBytes": 67108864,
+            "expiryTimerTicks": 0,
+            "resourceLimits": 0,
+            "expiryTimerActive": false,
+            "retryCount": 0,
+            "expiryTimerStarts": 67,
+            "backupImageDataBytes": 0,
+            "activeLeaseEstimatedBytes": 0,
+            "activeJobs": 0,
+            "activeLeaseCount": 0,
+            "maxPending": 2,
+            "transientEstimatedBytes": 0,
+            "loadAttempts": 0,
+            "uniqueResourceCount": 0,
+            "readyLeaseCount": 0,
+            "temporaryCanvasBytes": 0,
+            "maxOwnedBytes": 268435456,
+            "maxStagingBytes": 134217728,
+            "ownedEstimatedBytes": 0,
+            "maxResources": 256,
+            "errors": 0,
+            "peakBackupImageDataBytes": 968760,
+            "completionNotifications": 0
+          },
+          "cache": {
+            "decoded": {
+              "maxBytes": 268435456,
+              "bytes": 0,
+              "misses": 0,
+              "maxEntryBytes": 67108864,
+              "oversize": 0,
+              "maxEntries": 256,
+              "evictions": 0,
+              "hits": 0,
+              "entries": 0,
+              "pendingEntries": 0,
+              "negativeEntries": 0,
+              "rejected": 0,
+              "transientEntries": 0
+            },
+            "images": {
+              "maxBytes": 67108864,
+              "bytes": 0,
+              "misses": 0,
+              "maxEntryBytes": 16777216,
+              "oversize": 0,
+              "maxEntries": 256,
+              "evictions": 0,
+              "hits": 0,
+              "entries": 0,
+              "pendingEntries": 0,
+              "negativeEntries": 0,
+              "rejected": 0,
+              "transientEntries": 0
+            }
+          },
+          "subscribers": 1
+        }
+      },
+      "closed": {
+        "processes": [
+          {
+            "pid": 2575697,
+            "rssBytes": 376705024
+          }
+        ],
+        "aggregateRssBytes": 376705024,
+        "wasmBytes": 24313856,
+        "canvasPixels": 0,
+        "canvasCount": 0,
+        "owners": [],
+        "engineSurfaces": {
+          "externrefSlots": 1156,
+          "canvasPixels": 0,
+          "imageCount": 0,
+          "detachedCanvases": 0,
+          "canvasCount": 0,
+          "imagePixels": 0
+        },
+        "lastDisposal": {
+          "liveAtFree": 7,
+          "discards": 0,
+          "id": 1,
+          "saves": 7
+        },
+        "renderer": {
+          "sessions": [],
+          "jobs": {
+            "pendingCount": 0,
+            "cancellations": 0,
+            "peakTemporaryCanvasBytes": 3875040,
+            "listenerNotifications": 0,
+            "peakStagingBytes": 3875040,
+            "inFlightEstimatedBytes": 0,
+            "capacityNotifications": 0,
+            "maxFrameBytes": 67108864,
+            "expiryTimerTicks": 0,
+            "resourceLimits": 0,
+            "expiryTimerActive": false,
+            "retryCount": 0,
+            "expiryTimerStarts": 69,
+            "backupImageDataBytes": 0,
+            "activeLeaseEstimatedBytes": 0,
+            "activeJobs": 0,
+            "activeLeaseCount": 0,
+            "maxPending": 2,
+            "transientEstimatedBytes": 0,
+            "loadAttempts": 0,
+            "uniqueResourceCount": 0,
+            "readyLeaseCount": 0,
+            "temporaryCanvasBytes": 0,
+            "maxOwnedBytes": 268435456,
+            "maxStagingBytes": 134217728,
+            "ownedEstimatedBytes": 0,
+            "maxResources": 256,
+            "errors": 0,
+            "peakBackupImageDataBytes": 968760,
+            "completionNotifications": 0
+          },
+          "cache": {
+            "decoded": {
+              "maxBytes": 268435456,
+              "bytes": 0,
+              "misses": 0,
+              "maxEntryBytes": 67108864,
+              "oversize": 0,
+              "maxEntries": 256,
+              "evictions": 0,
+              "hits": 0,
+              "entries": 0,
+              "pendingEntries": 0,
+              "negativeEntries": 0,
+              "rejected": 0,
+              "transientEntries": 0
+            },
+            "images": {
+              "maxBytes": 67108864,
+              "bytes": 0,
+              "misses": 0,
+              "maxEntryBytes": 16777216,
+              "oversize": 0,
+              "maxEntries": 256,
+              "evictions": 0,
+              "hits": 0,
+              "entries": 0,
+              "pendingEntries": 0,
+              "negativeEntries": 0,
+              "rejected": 0,
+              "transientEntries": 0
+            }
+          },
+          "subscribers": 0
+        }
+      }
+    },
+    {
+      "mode": "undoRedo",
+      "cycle": 1,
+      "before": {
+        "processes": [
+          {
+            "pid": 2575697,
+            "rssBytes": 376909824
+          }
+        ],
+        "aggregateRssBytes": 376909824,
+        "wasmBytes": 24313856,
+        "canvasPixels": 0,
+        "canvasCount": 0,
+        "owners": [],
+        "engineSurfaces": {
+          "externrefSlots": 1156,
+          "canvasPixels": 0,
+          "imageCount": 0,
+          "detachedCanvases": 0,
+          "canvasCount": 0,
+          "imagePixels": 0
+        },
+        "lastDisposal": {
+          "liveAtFree": 7,
+          "discards": 0,
+          "id": 1,
+          "saves": 7
+        },
+        "renderer": {
+          "sessions": [],
+          "jobs": {
+            "pendingCount": 0,
+            "cancellations": 0,
+            "peakTemporaryCanvasBytes": 3875040,
+            "listenerNotifications": 0,
+            "peakStagingBytes": 3875040,
+            "inFlightEstimatedBytes": 0,
+            "capacityNotifications": 0,
+            "maxFrameBytes": 67108864,
+            "expiryTimerTicks": 0,
+            "resourceLimits": 0,
+            "expiryTimerActive": false,
+            "retryCount": 0,
+            "expiryTimerStarts": 69,
+            "backupImageDataBytes": 0,
+            "activeLeaseEstimatedBytes": 0,
+            "activeJobs": 0,
+            "activeLeaseCount": 0,
+            "maxPending": 2,
+            "transientEstimatedBytes": 0,
+            "loadAttempts": 0,
+            "uniqueResourceCount": 0,
+            "readyLeaseCount": 0,
+            "temporaryCanvasBytes": 0,
+            "maxOwnedBytes": 268435456,
+            "maxStagingBytes": 134217728,
+            "ownedEstimatedBytes": 0,
+            "maxResources": 256,
+            "errors": 0,
+            "peakBackupImageDataBytes": 968760,
+            "completionNotifications": 0
+          },
+          "cache": {
+            "decoded": {
+              "maxBytes": 268435456,
+              "bytes": 0,
+              "misses": 0,
+              "maxEntryBytes": 67108864,
+              "oversize": 0,
+              "maxEntries": 256,
+              "evictions": 0,
+              "hits": 0,
+              "entries": 0,
+              "pendingEntries": 0,
+              "negativeEntries": 0,
+              "rejected": 0,
+              "transientEntries": 0
+            },
+            "images": {
+              "maxBytes": 67108864,
+              "bytes": 0,
+              "misses": 0,
+              "maxEntryBytes": 16777216,
+              "oversize": 0,
+              "maxEntries": 256,
+              "evictions": 0,
+              "hits": 0,
+              "entries": 0,
+              "pendingEntries": 0,
+              "negativeEntries": 0,
+              "rejected": 0,
+              "transientEntries": 0
+            }
+          },
+          "subscribers": 0
+        }
+      },
+      "opened": {
+        "processes": [
+          {
+            "pid": 2575697,
+            "rssBytes": 485089280
+          }
+        ],
+        "aggregateRssBytes": 485089280,
+        "wasmBytes": 24313856,
+        "canvasPixels": 3632850,
+        "canvasCount": 60,
+        "owners": [
+          {
+            "discards": 0,
+            "nativeCapacity": 100,
+            "id": 2,
+            "saves": 7,
+            "live": 7
+          }
+        ],
+        "engineSurfaces": {
+          "externrefSlots": 1156,
+          "canvasPixels": 0,
+          "imageCount": 0,
+          "detachedCanvases": 0,
+          "canvasCount": 0,
+          "imagePixels": 0
+        },
+        "lastDisposal": {
+          "liveAtFree": 7,
+          "discards": 0,
+          "id": 1,
+          "saves": 7
+        },
+        "renderer": {
+          "sessions": [
+            {
+              "maxSummaries": 64,
+              "summaryCodeUnits": 245216,
+              "modelVersion": 19,
+              "canvases": 15,
+              "maxSummaryBytes": 262144,
+              "maxSummaryTotalCodeUnits": 2097152,
+              "sessionId": 3,
+              "queued": 0,
+              "failures": 0,
+              "summaries": 1,
+              "activeJobId": null,
+              "generation": 1,
+              "active": 0
+            }
+          ],
+          "jobs": {
+            "pendingCount": 0,
+            "cancellations": 0,
+            "peakTemporaryCanvasBytes": 3875040,
+            "listenerNotifications": 0,
+            "peakStagingBytes": 3875040,
+            "inFlightEstimatedBytes": 0,
+            "capacityNotifications": 0,
+            "maxFrameBytes": 67108864,
+            "expiryTimerTicks": 0,
+            "resourceLimits": 0,
+            "expiryTimerActive": false,
+            "retryCount": 0,
+            "expiryTimerStarts": 136,
+            "backupImageDataBytes": 0,
+            "activeLeaseEstimatedBytes": 0,
+            "activeJobs": 0,
+            "activeLeaseCount": 0,
+            "maxPending": 2,
+            "transientEstimatedBytes": 0,
+            "loadAttempts": 0,
+            "uniqueResourceCount": 0,
+            "readyLeaseCount": 0,
+            "temporaryCanvasBytes": 0,
+            "maxOwnedBytes": 268435456,
+            "maxStagingBytes": 134217728,
+            "ownedEstimatedBytes": 0,
+            "maxResources": 256,
+            "errors": 0,
+            "peakBackupImageDataBytes": 968760,
+            "completionNotifications": 0
+          },
+          "cache": {
+            "decoded": {
+              "maxBytes": 268435456,
+              "bytes": 0,
+              "misses": 0,
+              "maxEntryBytes": 67108864,
+              "oversize": 0,
+              "maxEntries": 256,
+              "evictions": 0,
+              "hits": 0,
+              "entries": 0,
+              "pendingEntries": 0,
+              "negativeEntries": 0,
+              "rejected": 0,
+              "transientEntries": 0
+            },
+            "images": {
+              "maxBytes": 67108864,
+              "bytes": 0,
+              "misses": 0,
+              "maxEntryBytes": 16777216,
+              "oversize": 0,
+              "maxEntries": 256,
+              "evictions": 0,
+              "hits": 0,
+              "entries": 0,
+              "pendingEntries": 0,
+              "negativeEntries": 0,
+              "rejected": 0,
+              "transientEntries": 0
+            }
+          },
+          "subscribers": 1
+        }
+      },
+      "closed": {
+        "processes": [
+          {
+            "pid": 2575697,
+            "rssBytes": 484052992
+          }
+        ],
+        "aggregateRssBytes": 484052992,
+        "wasmBytes": 24903680,
+        "canvasPixels": 0,
+        "canvasCount": 0,
+        "owners": [],
+        "engineSurfaces": {
+          "externrefSlots": 1156,
+          "canvasPixels": 0,
+          "imageCount": 0,
+          "detachedCanvases": 0,
+          "canvasCount": 0,
+          "imagePixels": 0
+        },
+        "lastDisposal": {
+          "liveAtFree": 7,
+          "discards": 0,
+          "id": 2,
+          "saves": 7
+        },
+        "renderer": {
+          "sessions": [],
+          "jobs": {
+            "pendingCount": 0,
+            "cancellations": 0,
+            "peakTemporaryCanvasBytes": 3875040,
+            "listenerNotifications": 0,
+            "peakStagingBytes": 3875040,
+            "inFlightEstimatedBytes": 0,
+            "capacityNotifications": 0,
+            "maxFrameBytes": 67108864,
+            "expiryTimerTicks": 0,
+            "resourceLimits": 0,
+            "expiryTimerActive": false,
+            "retryCount": 0,
+            "expiryTimerStarts": 138,
+            "backupImageDataBytes": 0,
+            "activeLeaseEstimatedBytes": 0,
+            "activeJobs": 0,
+            "activeLeaseCount": 0,
+            "maxPending": 2,
+            "transientEstimatedBytes": 0,
+            "loadAttempts": 0,
+            "uniqueResourceCount": 0,
+            "readyLeaseCount": 0,
+            "temporaryCanvasBytes": 0,
+            "maxOwnedBytes": 268435456,
+            "maxStagingBytes": 134217728,
+            "ownedEstimatedBytes": 0,
+            "maxResources": 256,
+            "errors": 0,
+            "peakBackupImageDataBytes": 968760,
+            "completionNotifications": 0
+          },
+          "cache": {
+            "decoded": {
+              "maxBytes": 268435456,
+              "bytes": 0,
+              "misses": 0,
+              "maxEntryBytes": 67108864,
+              "oversize": 0,
+              "maxEntries": 256,
+              "evictions": 0,
+              "hits": 0,
+              "entries": 0,
+              "pendingEntries": 0,
+              "negativeEntries": 0,
+              "rejected": 0,
+              "transientEntries": 0
+            },
+            "images": {
+              "maxBytes": 67108864,
+              "bytes": 0,
+              "misses": 0,
+              "maxEntryBytes": 16777216,
+              "oversize": 0,
+              "maxEntries": 256,
+              "evictions": 0,
+              "hits": 0,
+              "entries": 0,
+              "pendingEntries": 0,
+              "negativeEntries": 0,
+              "rejected": 0,
+              "transientEntries": 0
+            }
+          },
+          "subscribers": 0
+        }
+      }
+    },
+    {
+      "mode": "undoRedo",
+      "cycle": 2,
+      "before": {
+        "processes": [
+          {
+            "pid": 2575697,
+            "rssBytes": 484155392
+          }
+        ],
+        "aggregateRssBytes": 484155392,
+        "wasmBytes": 24903680,
+        "canvasPixels": 0,
+        "canvasCount": 0,
+        "owners": [],
+        "engineSurfaces": {
+          "externrefSlots": 1156,
+          "canvasPixels": 0,
+          "imageCount": 0,
+          "detachedCanvases": 0,
+          "canvasCount": 0,
+          "imagePixels": 0
+        },
+        "lastDisposal": {
+          "liveAtFree": 7,
+          "discards": 0,
+          "id": 2,
+          "saves": 7
+        },
+        "renderer": {
+          "sessions": [],
+          "jobs": {
+            "pendingCount": 0,
+            "cancellations": 0,
+            "peakTemporaryCanvasBytes": 3875040,
+            "listenerNotifications": 0,
+            "peakStagingBytes": 3875040,
+            "inFlightEstimatedBytes": 0,
+            "capacityNotifications": 0,
+            "maxFrameBytes": 67108864,
+            "expiryTimerTicks": 0,
+            "resourceLimits": 0,
+            "expiryTimerActive": false,
+            "retryCount": 0,
+            "expiryTimerStarts": 138,
+            "backupImageDataBytes": 0,
+            "activeLeaseEstimatedBytes": 0,
+            "activeJobs": 0,
+            "activeLeaseCount": 0,
+            "maxPending": 2,
+            "transientEstimatedBytes": 0,
+            "loadAttempts": 0,
+            "uniqueResourceCount": 0,
+            "readyLeaseCount": 0,
+            "temporaryCanvasBytes": 0,
+            "maxOwnedBytes": 268435456,
+            "maxStagingBytes": 134217728,
+            "ownedEstimatedBytes": 0,
+            "maxResources": 256,
+            "errors": 0,
+            "peakBackupImageDataBytes": 968760,
+            "completionNotifications": 0
+          },
+          "cache": {
+            "decoded": {
+              "maxBytes": 268435456,
+              "bytes": 0,
+              "misses": 0,
+              "maxEntryBytes": 67108864,
+              "oversize": 0,
+              "maxEntries": 256,
+              "evictions": 0,
+              "hits": 0,
+              "entries": 0,
+              "pendingEntries": 0,
+              "negativeEntries": 0,
+              "rejected": 0,
+              "transientEntries": 0
+            },
+            "images": {
+              "maxBytes": 67108864,
+              "bytes": 0,
+              "misses": 0,
+              "maxEntryBytes": 16777216,
+              "oversize": 0,
+              "maxEntries": 256,
+              "evictions": 0,
+              "hits": 0,
+              "entries": 0,
+              "pendingEntries": 0,
+              "negativeEntries": 0,
+              "rejected": 0,
+              "transientEntries": 0
+            }
+          },
+          "subscribers": 0
+        }
+      },
+      "opened": {
+        "processes": [
+          {
+            "pid": 2575697,
+            "rssBytes": 522309632
+          }
+        ],
+        "aggregateRssBytes": 522309632,
+        "wasmBytes": 24903680,
+        "canvasPixels": 3875040,
+        "canvasCount": 60,
+        "owners": [
+          {
+            "discards": 0,
+            "nativeCapacity": 100,
+            "id": 3,
+            "saves": 7,
+            "live": 7
+          }
+        ],
+        "engineSurfaces": {
+          "externrefSlots": 1156,
+          "canvasPixels": 0,
+          "imageCount": 0,
+          "detachedCanvases": 0,
+          "canvasCount": 0,
+          "imagePixels": 0
+        },
+        "lastDisposal": {
+          "liveAtFree": 7,
+          "discards": 0,
+          "id": 2,
+          "saves": 7
+        },
+        "renderer": {
+          "sessions": [
+            {
+              "maxSummaries": 64,
+              "summaryCodeUnits": 245216,
+              "modelVersion": 19,
+              "canvases": 16,
+              "maxSummaryBytes": 262144,
+              "maxSummaryTotalCodeUnits": 2097152,
+              "sessionId": 4,
+              "queued": 0,
+              "failures": 0,
+              "summaries": 1,
+              "activeJobId": null,
+              "generation": 1,
+              "active": 0
+            }
+          ],
+          "jobs": {
+            "pendingCount": 0,
+            "cancellations": 0,
+            "peakTemporaryCanvasBytes": 3875040,
+            "listenerNotifications": 0,
+            "peakStagingBytes": 3875040,
+            "inFlightEstimatedBytes": 0,
+            "capacityNotifications": 0,
+            "maxFrameBytes": 67108864,
+            "expiryTimerTicks": 0,
+            "resourceLimits": 0,
+            "expiryTimerActive": false,
+            "retryCount": 0,
+            "expiryTimerStarts": 203,
+            "backupImageDataBytes": 0,
+            "activeLeaseEstimatedBytes": 0,
+            "activeJobs": 0,
+            "activeLeaseCount": 0,
+            "maxPending": 2,
+            "transientEstimatedBytes": 0,
+            "loadAttempts": 0,
+            "uniqueResourceCount": 0,
+            "readyLeaseCount": 0,
+            "temporaryCanvasBytes": 0,
+            "maxOwnedBytes": 268435456,
+            "maxStagingBytes": 134217728,
+            "ownedEstimatedBytes": 0,
+            "maxResources": 256,
+            "errors": 0,
+            "peakBackupImageDataBytes": 968760,
+            "completionNotifications": 0
+          },
+          "cache": {
+            "decoded": {
+              "maxBytes": 268435456,
+              "bytes": 0,
+              "misses": 0,
+              "maxEntryBytes": 67108864,
+              "oversize": 0,
+              "maxEntries": 256,
+              "evictions": 0,
+              "hits": 0,
+              "entries": 0,
+              "pendingEntries": 0,
+              "negativeEntries": 0,
+              "rejected": 0,
+              "transientEntries": 0
+            },
+            "images": {
+              "maxBytes": 67108864,
+              "bytes": 0,
+              "misses": 0,
+              "maxEntryBytes": 16777216,
+              "oversize": 0,
+              "maxEntries": 256,
+              "evictions": 0,
+              "hits": 0,
+              "entries": 0,
+              "pendingEntries": 0,
+              "negativeEntries": 0,
+              "rejected": 0,
+              "transientEntries": 0
+            }
+          },
+          "subscribers": 1
+        }
+      },
+      "closed": {
+        "processes": [
+          {
+            "pid": 2575697,
+            "rssBytes": 524419072
+          }
+        ],
+        "aggregateRssBytes": 524419072,
+        "wasmBytes": 25165824,
+        "canvasPixels": 0,
+        "canvasCount": 0,
+        "owners": [],
+        "engineSurfaces": {
+          "externrefSlots": 1156,
+          "canvasPixels": 0,
+          "imageCount": 0,
+          "detachedCanvases": 0,
+          "canvasCount": 0,
+          "imagePixels": 0
+        },
+        "lastDisposal": {
+          "liveAtFree": 7,
+          "discards": 0,
+          "id": 3,
+          "saves": 7
+        },
+        "renderer": {
+          "sessions": [],
+          "jobs": {
+            "pendingCount": 0,
+            "cancellations": 0,
+            "peakTemporaryCanvasBytes": 3875040,
+            "listenerNotifications": 0,
+            "peakStagingBytes": 3875040,
+            "inFlightEstimatedBytes": 0,
+            "capacityNotifications": 0,
+            "maxFrameBytes": 67108864,
+            "expiryTimerTicks": 0,
+            "resourceLimits": 0,
+            "expiryTimerActive": false,
+            "retryCount": 0,
+            "expiryTimerStarts": 206,
+            "backupImageDataBytes": 0,
+            "activeLeaseEstimatedBytes": 0,
+            "activeJobs": 0,
+            "activeLeaseCount": 0,
+            "maxPending": 2,
+            "transientEstimatedBytes": 0,
+            "loadAttempts": 0,
+            "uniqueResourceCount": 0,
+            "readyLeaseCount": 0,
+            "temporaryCanvasBytes": 0,
+            "maxOwnedBytes": 268435456,
+            "maxStagingBytes": 134217728,
+            "ownedEstimatedBytes": 0,
+            "maxResources": 256,
+            "errors": 0,
+            "peakBackupImageDataBytes": 968760,
+            "completionNotifications": 0
+          },
+          "cache": {
+            "decoded": {
+              "maxBytes": 268435456,
+              "bytes": 0,
+              "misses": 0,
+              "maxEntryBytes": 67108864,
+              "oversize": 0,
+              "maxEntries": 256,
+              "evictions": 0,
+              "hits": 0,
+              "entries": 0,
+              "pendingEntries": 0,
+              "negativeEntries": 0,
+              "rejected": 0,
+              "transientEntries": 0
+            },
+            "images": {
+              "maxBytes": 67108864,
+              "bytes": 0,
+              "misses": 0,
+              "maxEntryBytes": 16777216,
+              "oversize": 0,
+              "maxEntries": 256,
+              "evictions": 0,
+              "hits": 0,
+              "entries": 0,
+              "pendingEntries": 0,
+              "negativeEntries": 0,
+              "rejected": 0,
+              "transientEntries": 0
+            }
+          },
+          "subscribers": 0
+        }
+      }
+    },
+    {
+      "mode": "undoRedo",
+      "cycle": 3,
+      "before": {
+        "processes": [
+          {
+            "pid": 2575697,
+            "rssBytes": 524537856
+          }
+        ],
+        "aggregateRssBytes": 524537856,
+        "wasmBytes": 25165824,
+        "canvasPixels": 0,
+        "canvasCount": 0,
+        "owners": [],
+        "engineSurfaces": {
+          "externrefSlots": 1156,
+          "canvasPixels": 0,
+          "imageCount": 0,
+          "detachedCanvases": 0,
+          "canvasCount": 0,
+          "imagePixels": 0
+        },
+        "lastDisposal": {
+          "liveAtFree": 7,
+          "discards": 0,
+          "id": 3,
+          "saves": 7
+        },
+        "renderer": {
+          "sessions": [],
+          "jobs": {
+            "pendingCount": 0,
+            "cancellations": 0,
+            "peakTemporaryCanvasBytes": 3875040,
+            "listenerNotifications": 0,
+            "peakStagingBytes": 3875040,
+            "inFlightEstimatedBytes": 0,
+            "capacityNotifications": 0,
+            "maxFrameBytes": 67108864,
+            "expiryTimerTicks": 0,
+            "resourceLimits": 0,
+            "expiryTimerActive": false,
+            "retryCount": 0,
+            "expiryTimerStarts": 206,
+            "backupImageDataBytes": 0,
+            "activeLeaseEstimatedBytes": 0,
+            "activeJobs": 0,
+            "activeLeaseCount": 0,
+            "maxPending": 2,
+            "transientEstimatedBytes": 0,
+            "loadAttempts": 0,
+            "uniqueResourceCount": 0,
+            "readyLeaseCount": 0,
+            "temporaryCanvasBytes": 0,
+            "maxOwnedBytes": 268435456,
+            "maxStagingBytes": 134217728,
+            "ownedEstimatedBytes": 0,
+            "maxResources": 256,
+            "errors": 0,
+            "peakBackupImageDataBytes": 968760,
+            "completionNotifications": 0
+          },
+          "cache": {
+            "decoded": {
+              "maxBytes": 268435456,
+              "bytes": 0,
+              "misses": 0,
+              "maxEntryBytes": 67108864,
+              "oversize": 0,
+              "maxEntries": 256,
+              "evictions": 0,
+              "hits": 0,
+              "entries": 0,
+              "pendingEntries": 0,
+              "negativeEntries": 0,
+              "rejected": 0,
+              "transientEntries": 0
+            },
+            "images": {
+              "maxBytes": 67108864,
+              "bytes": 0,
+              "misses": 0,
+              "maxEntryBytes": 16777216,
+              "oversize": 0,
+              "maxEntries": 256,
+              "evictions": 0,
+              "hits": 0,
+              "entries": 0,
+              "pendingEntries": 0,
+              "negativeEntries": 0,
+              "rejected": 0,
+              "transientEntries": 0
+            }
+          },
+          "subscribers": 0
+        }
+      },
+      "opened": {
+        "processes": [
+          {
+            "pid": 2575697,
+            "rssBytes": 532529152
+          }
+        ],
+        "aggregateRssBytes": 532529152,
+        "wasmBytes": 25165824,
+        "canvasPixels": 3390660,
+        "canvasCount": 60,
+        "owners": [
+          {
+            "discards": 0,
+            "nativeCapacity": 100,
+            "id": 4,
+            "saves": 7,
+            "live": 7
+          }
+        ],
+        "engineSurfaces": {
+          "externrefSlots": 1156,
+          "canvasPixels": 0,
+          "imageCount": 0,
+          "detachedCanvases": 0,
+          "canvasCount": 0,
+          "imagePixels": 0
+        },
+        "lastDisposal": {
+          "liveAtFree": 7,
+          "discards": 0,
+          "id": 3,
+          "saves": 7
+        },
+        "renderer": {
+          "sessions": [
+            {
+              "maxSummaries": 64,
+              "summaryCodeUnits": 245216,
+              "modelVersion": 19,
+              "canvases": 15,
+              "maxSummaryBytes": 262144,
+              "maxSummaryTotalCodeUnits": 2097152,
+              "sessionId": 5,
+              "queued": 0,
+              "failures": 0,
+              "summaries": 1,
+              "activeJobId": null,
+              "generation": 1,
+              "active": 0
+            }
+          ],
+          "jobs": {
+            "pendingCount": 0,
+            "cancellations": 0,
+            "peakTemporaryCanvasBytes": 3875040,
+            "listenerNotifications": 0,
+            "peakStagingBytes": 3875040,
+            "inFlightEstimatedBytes": 0,
+            "capacityNotifications": 0,
+            "maxFrameBytes": 67108864,
+            "expiryTimerTicks": 0,
+            "resourceLimits": 0,
+            "expiryTimerActive": false,
+            "retryCount": 0,
+            "expiryTimerStarts": 271,
+            "backupImageDataBytes": 0,
+            "activeLeaseEstimatedBytes": 0,
+            "activeJobs": 0,
+            "activeLeaseCount": 0,
+            "maxPending": 2,
+            "transientEstimatedBytes": 0,
+            "loadAttempts": 0,
+            "uniqueResourceCount": 0,
+            "readyLeaseCount": 0,
+            "temporaryCanvasBytes": 0,
+            "maxOwnedBytes": 268435456,
+            "maxStagingBytes": 134217728,
+            "ownedEstimatedBytes": 0,
+            "maxResources": 256,
+            "errors": 0,
+            "peakBackupImageDataBytes": 968760,
+            "completionNotifications": 0
+          },
+          "cache": {
+            "decoded": {
+              "maxBytes": 268435456,
+              "bytes": 0,
+              "misses": 0,
+              "maxEntryBytes": 67108864,
+              "oversize": 0,
+              "maxEntries": 256,
+              "evictions": 0,
+              "hits": 0,
+              "entries": 0,
+              "pendingEntries": 0,
+              "negativeEntries": 0,
+              "rejected": 0,
+              "transientEntries": 0
+            },
+            "images": {
+              "maxBytes": 67108864,
+              "bytes": 0,
+              "misses": 0,
+              "maxEntryBytes": 16777216,
+              "oversize": 0,
+              "maxEntries": 256,
+              "evictions": 0,
+              "hits": 0,
+              "entries": 0,
+              "pendingEntries": 0,
+              "negativeEntries": 0,
+              "rejected": 0,
+              "transientEntries": 0
+            }
+          },
+          "subscribers": 1
+        }
+      },
+      "closed": {
+        "processes": [
+          {
+            "pid": 2575697,
+            "rssBytes": 439664640
+          }
+        ],
+        "aggregateRssBytes": 439664640,
+        "wasmBytes": 25165824,
+        "canvasPixels": 0,
+        "canvasCount": 0,
+        "owners": [],
+        "engineSurfaces": {
+          "externrefSlots": 1156,
+          "canvasPixels": 0,
+          "imageCount": 0,
+          "detachedCanvases": 0,
+          "canvasCount": 0,
+          "imagePixels": 0
+        },
+        "lastDisposal": {
+          "liveAtFree": 7,
+          "discards": 0,
+          "id": 4,
+          "saves": 7
+        },
+        "renderer": {
+          "sessions": [],
+          "jobs": {
+            "pendingCount": 0,
+            "cancellations": 0,
+            "peakTemporaryCanvasBytes": 3875040,
+            "listenerNotifications": 0,
+            "peakStagingBytes": 3875040,
+            "inFlightEstimatedBytes": 0,
+            "capacityNotifications": 0,
+            "maxFrameBytes": 67108864,
+            "expiryTimerTicks": 0,
+            "resourceLimits": 0,
+            "expiryTimerActive": false,
+            "retryCount": 0,
+            "expiryTimerStarts": 274,
+            "backupImageDataBytes": 0,
+            "activeLeaseEstimatedBytes": 0,
+            "activeJobs": 0,
+            "activeLeaseCount": 0,
+            "maxPending": 2,
+            "transientEstimatedBytes": 0,
+            "loadAttempts": 0,
+            "uniqueResourceCount": 0,
+            "readyLeaseCount": 0,
+            "temporaryCanvasBytes": 0,
+            "maxOwnedBytes": 268435456,
+            "maxStagingBytes": 134217728,
+            "ownedEstimatedBytes": 0,
+            "maxResources": 256,
+            "errors": 0,
+            "peakBackupImageDataBytes": 968760,
+            "completionNotifications": 0
+          },
+          "cache": {
+            "decoded": {
+              "maxBytes": 268435456,
+              "bytes": 0,
+              "misses": 0,
+              "maxEntryBytes": 67108864,
+              "oversize": 0,
+              "maxEntries": 256,
+              "evictions": 0,
+              "hits": 0,
+              "entries": 0,
+              "pendingEntries": 0,
+              "negativeEntries": 0,
+              "rejected": 0,
+              "transientEntries": 0
+            },
+            "images": {
+              "maxBytes": 67108864,
+              "bytes": 0,
+              "misses": 0,
+              "maxEntryBytes": 16777216,
+              "oversize": 0,
+              "maxEntries": 256,
+              "evictions": 0,
+              "hits": 0,
+              "entries": 0,
+              "pendingEntries": 0,
+              "negativeEntries": 0,
+              "rejected": 0,
+              "transientEntries": 0
+            }
+          },
+          "subscribers": 0
+        }
+      }
+    },
+    {
+      "mode": "undoRedo",
+      "cycle": 4,
+      "before": {
+        "processes": [
+          {
+            "pid": 2575697,
+            "rssBytes": 437260288
+          }
+        ],
+        "aggregateRssBytes": 437260288,
+        "wasmBytes": 25165824,
+        "canvasPixels": 0,
+        "canvasCount": 0,
+        "owners": [],
+        "engineSurfaces": {
+          "externrefSlots": 1156,
+          "canvasPixels": 0,
+          "imageCount": 0,
+          "detachedCanvases": 0,
+          "canvasCount": 0,
+          "imagePixels": 0
+        },
+        "lastDisposal": {
+          "liveAtFree": 7,
+          "discards": 0,
+          "id": 4,
+          "saves": 7
+        },
+        "renderer": {
+          "sessions": [],
+          "jobs": {
+            "pendingCount": 0,
+            "cancellations": 0,
+            "peakTemporaryCanvasBytes": 3875040,
+            "listenerNotifications": 0,
+            "peakStagingBytes": 3875040,
+            "inFlightEstimatedBytes": 0,
+            "capacityNotifications": 0,
+            "maxFrameBytes": 67108864,
+            "expiryTimerTicks": 0,
+            "resourceLimits": 0,
+            "expiryTimerActive": false,
+            "retryCount": 0,
+            "expiryTimerStarts": 274,
+            "backupImageDataBytes": 0,
+            "activeLeaseEstimatedBytes": 0,
+            "activeJobs": 0,
+            "activeLeaseCount": 0,
+            "maxPending": 2,
+            "transientEstimatedBytes": 0,
+            "loadAttempts": 0,
+            "uniqueResourceCount": 0,
+            "readyLeaseCount": 0,
+            "temporaryCanvasBytes": 0,
+            "maxOwnedBytes": 268435456,
+            "maxStagingBytes": 134217728,
+            "ownedEstimatedBytes": 0,
+            "maxResources": 256,
+            "errors": 0,
+            "peakBackupImageDataBytes": 968760,
+            "completionNotifications": 0
+          },
+          "cache": {
+            "decoded": {
+              "maxBytes": 268435456,
+              "bytes": 0,
+              "misses": 0,
+              "maxEntryBytes": 67108864,
+              "oversize": 0,
+              "maxEntries": 256,
+              "evictions": 0,
+              "hits": 0,
+              "entries": 0,
+              "pendingEntries": 0,
+              "negativeEntries": 0,
+              "rejected": 0,
+              "transientEntries": 0
+            },
+            "images": {
+              "maxBytes": 67108864,
+              "bytes": 0,
+              "misses": 0,
+              "maxEntryBytes": 16777216,
+              "oversize": 0,
+              "maxEntries": 256,
+              "evictions": 0,
+              "hits": 0,
+              "entries": 0,
+              "pendingEntries": 0,
+              "negativeEntries": 0,
+              "rejected": 0,
+              "transientEntries": 0
+            }
+          },
+          "subscribers": 0
+        }
+      },
+      "opened": {
+        "processes": [
+          {
+            "pid": 2575697,
+            "rssBytes": 479948800
+          }
+        ],
+        "aggregateRssBytes": 479948800,
+        "wasmBytes": 25165824,
+        "canvasPixels": 3632850,
+        "canvasCount": 60,
+        "owners": [
+          {
+            "discards": 0,
+            "nativeCapacity": 100,
+            "id": 5,
+            "saves": 7,
+            "live": 7
+          }
+        ],
+        "engineSurfaces": {
+          "externrefSlots": 1156,
+          "canvasPixels": 0,
+          "imageCount": 0,
+          "detachedCanvases": 0,
+          "canvasCount": 0,
+          "imagePixels": 0
+        },
+        "lastDisposal": {
+          "liveAtFree": 7,
+          "discards": 0,
+          "id": 4,
+          "saves": 7
+        },
+        "renderer": {
+          "sessions": [
+            {
+              "maxSummaries": 64,
+              "summaryCodeUnits": 245216,
+              "modelVersion": 19,
+              "canvases": 15,
+              "maxSummaryBytes": 262144,
+              "maxSummaryTotalCodeUnits": 2097152,
+              "sessionId": 6,
+              "queued": 0,
+              "failures": 0,
+              "summaries": 1,
+              "activeJobId": null,
+              "generation": 1,
+              "active": 0
+            }
+          ],
+          "jobs": {
+            "pendingCount": 0,
+            "cancellations": 0,
+            "peakTemporaryCanvasBytes": 3875040,
+            "listenerNotifications": 0,
+            "peakStagingBytes": 3875040,
+            "inFlightEstimatedBytes": 0,
+            "capacityNotifications": 0,
+            "maxFrameBytes": 67108864,
+            "expiryTimerTicks": 0,
+            "resourceLimits": 0,
+            "expiryTimerActive": false,
+            "retryCount": 0,
+            "expiryTimerStarts": 338,
+            "backupImageDataBytes": 0,
+            "activeLeaseEstimatedBytes": 0,
+            "activeJobs": 0,
+            "activeLeaseCount": 0,
+            "maxPending": 2,
+            "transientEstimatedBytes": 0,
+            "loadAttempts": 0,
+            "uniqueResourceCount": 0,
+            "readyLeaseCount": 0,
+            "temporaryCanvasBytes": 0,
+            "maxOwnedBytes": 268435456,
+            "maxStagingBytes": 134217728,
+            "ownedEstimatedBytes": 0,
+            "maxResources": 256,
+            "errors": 0,
+            "peakBackupImageDataBytes": 968760,
+            "completionNotifications": 0
+          },
+          "cache": {
+            "decoded": {
+              "maxBytes": 268435456,
+              "bytes": 0,
+              "misses": 0,
+              "maxEntryBytes": 67108864,
+              "oversize": 0,
+              "maxEntries": 256,
+              "evictions": 0,
+              "hits": 0,
+              "entries": 0,
+              "pendingEntries": 0,
+              "negativeEntries": 0,
+              "rejected": 0,
+              "transientEntries": 0
+            },
+            "images": {
+              "maxBytes": 67108864,
+              "bytes": 0,
+              "misses": 0,
+              "maxEntryBytes": 16777216,
+              "oversize": 0,
+              "maxEntries": 256,
+              "evictions": 0,
+              "hits": 0,
+              "entries": 0,
+              "pendingEntries": 0,
+              "negativeEntries": 0,
+              "rejected": 0,
+              "transientEntries": 0
+            }
+          },
+          "subscribers": 1
+        }
+      },
+      "closed": {
+        "processes": [
+          {
+            "pid": 2575697,
+            "rssBytes": 452644864
+          }
+        ],
+        "aggregateRssBytes": 452644864,
+        "wasmBytes": 25165824,
+        "canvasPixels": 0,
+        "canvasCount": 0,
+        "owners": [],
+        "engineSurfaces": {
+          "externrefSlots": 1156,
+          "canvasPixels": 0,
+          "imageCount": 0,
+          "detachedCanvases": 0,
+          "canvasCount": 0,
+          "imagePixels": 0
+        },
+        "lastDisposal": {
+          "liveAtFree": 7,
+          "discards": 0,
+          "id": 5,
+          "saves": 7
+        },
+        "renderer": {
+          "sessions": [],
+          "jobs": {
+            "pendingCount": 0,
+            "cancellations": 0,
+            "peakTemporaryCanvasBytes": 3875040,
+            "listenerNotifications": 0,
+            "peakStagingBytes": 3875040,
+            "inFlightEstimatedBytes": 0,
+            "capacityNotifications": 0,
+            "maxFrameBytes": 67108864,
+            "expiryTimerTicks": 0,
+            "resourceLimits": 0,
+            "expiryTimerActive": false,
+            "retryCount": 0,
+            "expiryTimerStarts": 341,
+            "backupImageDataBytes": 0,
+            "activeLeaseEstimatedBytes": 0,
+            "activeJobs": 0,
+            "activeLeaseCount": 0,
+            "maxPending": 2,
+            "transientEstimatedBytes": 0,
+            "loadAttempts": 0,
+            "uniqueResourceCount": 0,
+            "readyLeaseCount": 0,
+            "temporaryCanvasBytes": 0,
+            "maxOwnedBytes": 268435456,
+            "maxStagingBytes": 134217728,
+            "ownedEstimatedBytes": 0,
+            "maxResources": 256,
+            "errors": 0,
+            "peakBackupImageDataBytes": 968760,
+            "completionNotifications": 0
+          },
+          "cache": {
+            "decoded": {
+              "maxBytes": 268435456,
+              "bytes": 0,
+              "misses": 0,
+              "maxEntryBytes": 67108864,
+              "oversize": 0,
+              "maxEntries": 256,
+              "evictions": 0,
+              "hits": 0,
+              "entries": 0,
+              "pendingEntries": 0,
+              "negativeEntries": 0,
+              "rejected": 0,
+              "transientEntries": 0
+            },
+            "images": {
+              "maxBytes": 67108864,
+              "bytes": 0,
+              "misses": 0,
+              "maxEntryBytes": 16777216,
+              "oversize": 0,
+              "maxEntries": 256,
+              "evictions": 0,
+              "hits": 0,
+              "entries": 0,
+              "pendingEntries": 0,
+              "negativeEntries": 0,
+              "rejected": 0,
+              "transientEntries": 0
+            }
+          },
+          "subscribers": 0
+        }
+      }
+    },
+    {
+      "mode": "undoRedo",
+      "cycle": 5,
+      "before": {
+        "processes": [
+          {
+            "pid": 2575697,
+            "rssBytes": 452587520
+          }
+        ],
+        "aggregateRssBytes": 452587520,
+        "wasmBytes": 25165824,
+        "canvasPixels": 0,
+        "canvasCount": 0,
+        "owners": [],
+        "engineSurfaces": {
+          "externrefSlots": 1156,
+          "canvasPixels": 0,
+          "imageCount": 0,
+          "detachedCanvases": 0,
+          "canvasCount": 0,
+          "imagePixels": 0
+        },
+        "lastDisposal": {
+          "liveAtFree": 7,
+          "discards": 0,
+          "id": 5,
+          "saves": 7
+        },
+        "renderer": {
+          "sessions": [],
+          "jobs": {
+            "pendingCount": 0,
+            "cancellations": 0,
+            "peakTemporaryCanvasBytes": 3875040,
+            "listenerNotifications": 0,
+            "peakStagingBytes": 3875040,
+            "inFlightEstimatedBytes": 0,
+            "capacityNotifications": 0,
+            "maxFrameBytes": 67108864,
+            "expiryTimerTicks": 0,
+            "resourceLimits": 0,
+            "expiryTimerActive": false,
+            "retryCount": 0,
+            "expiryTimerStarts": 341,
+            "backupImageDataBytes": 0,
+            "activeLeaseEstimatedBytes": 0,
+            "activeJobs": 0,
+            "activeLeaseCount": 0,
+            "maxPending": 2,
+            "transientEstimatedBytes": 0,
+            "loadAttempts": 0,
+            "uniqueResourceCount": 0,
+            "readyLeaseCount": 0,
+            "temporaryCanvasBytes": 0,
+            "maxOwnedBytes": 268435456,
+            "maxStagingBytes": 134217728,
+            "ownedEstimatedBytes": 0,
+            "maxResources": 256,
+            "errors": 0,
+            "peakBackupImageDataBytes": 968760,
+            "completionNotifications": 0
+          },
+          "cache": {
+            "decoded": {
+              "maxBytes": 268435456,
+              "bytes": 0,
+              "misses": 0,
+              "maxEntryBytes": 67108864,
+              "oversize": 0,
+              "maxEntries": 256,
+              "evictions": 0,
+              "hits": 0,
+              "entries": 0,
+              "pendingEntries": 0,
+              "negativeEntries": 0,
+              "rejected": 0,
+              "transientEntries": 0
+            },
+            "images": {
+              "maxBytes": 67108864,
+              "bytes": 0,
+              "misses": 0,
+              "maxEntryBytes": 16777216,
+              "oversize": 0,
+              "maxEntries": 256,
+              "evictions": 0,
+              "hits": 0,
+              "entries": 0,
+              "pendingEntries": 0,
+              "negativeEntries": 0,
+              "rejected": 0,
+              "transientEntries": 0
+            }
+          },
+          "subscribers": 0
+        }
+      },
+      "opened": {
+        "processes": [
+          {
+            "pid": 2575697,
+            "rssBytes": 507846656
+          }
+        ],
+        "aggregateRssBytes": 507846656,
+        "wasmBytes": 25165824,
+        "canvasPixels": 3875040,
+        "canvasCount": 60,
+        "owners": [
+          {
+            "discards": 0,
+            "nativeCapacity": 100,
+            "id": 6,
+            "saves": 7,
+            "live": 7
+          }
+        ],
+        "engineSurfaces": {
+          "externrefSlots": 1156,
+          "canvasPixels": 0,
+          "imageCount": 0,
+          "detachedCanvases": 0,
+          "canvasCount": 0,
+          "imagePixels": 0
+        },
+        "lastDisposal": {
+          "liveAtFree": 7,
+          "discards": 0,
+          "id": 5,
+          "saves": 7
+        },
+        "renderer": {
+          "sessions": [
+            {
+              "maxSummaries": 64,
+              "summaryCodeUnits": 245216,
+              "modelVersion": 19,
+              "canvases": 16,
+              "maxSummaryBytes": 262144,
+              "maxSummaryTotalCodeUnits": 2097152,
+              "sessionId": 7,
+              "queued": 0,
+              "failures": 0,
+              "summaries": 1,
+              "activeJobId": null,
+              "generation": 1,
+              "active": 0
+            }
+          ],
+          "jobs": {
+            "pendingCount": 0,
+            "cancellations": 0,
+            "peakTemporaryCanvasBytes": 3875040,
+            "listenerNotifications": 0,
+            "peakStagingBytes": 3875040,
+            "inFlightEstimatedBytes": 0,
+            "capacityNotifications": 0,
+            "maxFrameBytes": 67108864,
+            "expiryTimerTicks": 0,
+            "resourceLimits": 0,
+            "expiryTimerActive": false,
+            "retryCount": 0,
+            "expiryTimerStarts": 408,
+            "backupImageDataBytes": 0,
+            "activeLeaseEstimatedBytes": 0,
+            "activeJobs": 0,
+            "activeLeaseCount": 0,
+            "maxPending": 2,
+            "transientEstimatedBytes": 0,
+            "loadAttempts": 0,
+            "uniqueResourceCount": 0,
+            "readyLeaseCount": 0,
+            "temporaryCanvasBytes": 0,
+            "maxOwnedBytes": 268435456,
+            "maxStagingBytes": 134217728,
+            "ownedEstimatedBytes": 0,
+            "maxResources": 256,
+            "errors": 0,
+            "peakBackupImageDataBytes": 968760,
+            "completionNotifications": 0
+          },
+          "cache": {
+            "decoded": {
+              "maxBytes": 268435456,
+              "bytes": 0,
+              "misses": 0,
+              "maxEntryBytes": 67108864,
+              "oversize": 0,
+              "maxEntries": 256,
+              "evictions": 0,
+              "hits": 0,
+              "entries": 0,
+              "pendingEntries": 0,
+              "negativeEntries": 0,
+              "rejected": 0,
+              "transientEntries": 0
+            },
+            "images": {
+              "maxBytes": 67108864,
+              "bytes": 0,
+              "misses": 0,
+              "maxEntryBytes": 16777216,
+              "oversize": 0,
+              "maxEntries": 256,
+              "evictions": 0,
+              "hits": 0,
+              "entries": 0,
+              "pendingEntries": 0,
+              "negativeEntries": 0,
+              "rejected": 0,
+              "transientEntries": 0
+            }
+          },
+          "subscribers": 1
+        }
+      },
+      "closed": {
+        "processes": [
+          {
+            "pid": 2575697,
+            "rssBytes": 442384384
+          }
+        ],
+        "aggregateRssBytes": 442384384,
+        "wasmBytes": 25165824,
+        "canvasPixels": 0,
+        "canvasCount": 0,
+        "owners": [],
+        "engineSurfaces": {
+          "externrefSlots": 1156,
+          "canvasPixels": 0,
+          "imageCount": 0,
+          "detachedCanvases": 0,
+          "canvasCount": 0,
+          "imagePixels": 0
+        },
+        "lastDisposal": {
+          "liveAtFree": 7,
+          "discards": 0,
+          "id": 6,
+          "saves": 7
+        },
+        "renderer": {
+          "sessions": [],
+          "jobs": {
+            "pendingCount": 0,
+            "cancellations": 0,
+            "peakTemporaryCanvasBytes": 3875040,
+            "listenerNotifications": 0,
+            "peakStagingBytes": 3875040,
+            "inFlightEstimatedBytes": 0,
+            "capacityNotifications": 0,
+            "maxFrameBytes": 67108864,
+            "expiryTimerTicks": 0,
+            "resourceLimits": 0,
+            "expiryTimerActive": false,
+            "retryCount": 0,
+            "expiryTimerStarts": 410,
+            "backupImageDataBytes": 0,
+            "activeLeaseEstimatedBytes": 0,
+            "activeJobs": 0,
+            "activeLeaseCount": 0,
+            "maxPending": 2,
+            "transientEstimatedBytes": 0,
+            "loadAttempts": 0,
+            "uniqueResourceCount": 0,
+            "readyLeaseCount": 0,
+            "temporaryCanvasBytes": 0,
+            "maxOwnedBytes": 268435456,
+            "maxStagingBytes": 134217728,
+            "ownedEstimatedBytes": 0,
+            "maxResources": 256,
+            "errors": 0,
+            "peakBackupImageDataBytes": 968760,
+            "completionNotifications": 0
+          },
+          "cache": {
+            "decoded": {
+              "maxBytes": 268435456,
+              "bytes": 0,
+              "misses": 0,
+              "maxEntryBytes": 67108864,
+              "oversize": 0,
+              "maxEntries": 256,
+              "evictions": 0,
+              "hits": 0,
+              "entries": 0,
+              "pendingEntries": 0,
+              "negativeEntries": 0,
+              "rejected": 0,
+              "transientEntries": 0
+            },
+            "images": {
+              "maxBytes": 67108864,
+              "bytes": 0,
+              "misses": 0,
+              "maxEntryBytes": 16777216,
+              "oversize": 0,
+              "maxEntries": 256,
+              "evictions": 0,
+              "hits": 0,
+              "entries": 0,
+              "pendingEntries": 0,
+              "negativeEntries": 0,
+              "rejected": 0,
+              "transientEntries": 0
+            }
+          },
+          "subscribers": 0
+        }
+      }
+    },
+    {
+      "mode": "undoRedo",
+      "cycle": 6,
+      "before": {
+        "processes": [
+          {
+            "pid": 2575697,
+            "rssBytes": 442396672
+          }
+        ],
+        "aggregateRssBytes": 442396672,
+        "wasmBytes": 25165824,
+        "canvasPixels": 0,
+        "canvasCount": 0,
+        "owners": [],
+        "engineSurfaces": {
+          "externrefSlots": 1156,
+          "canvasPixels": 0,
+          "imageCount": 0,
+          "detachedCanvases": 0,
+          "canvasCount": 0,
+          "imagePixels": 0
+        },
+        "lastDisposal": {
+          "liveAtFree": 7,
+          "discards": 0,
+          "id": 6,
+          "saves": 7
+        },
+        "renderer": {
+          "sessions": [],
+          "jobs": {
+            "pendingCount": 0,
+            "cancellations": 0,
+            "peakTemporaryCanvasBytes": 3875040,
+            "listenerNotifications": 0,
+            "peakStagingBytes": 3875040,
+            "inFlightEstimatedBytes": 0,
+            "capacityNotifications": 0,
+            "maxFrameBytes": 67108864,
+            "expiryTimerTicks": 0,
+            "resourceLimits": 0,
+            "expiryTimerActive": false,
+            "retryCount": 0,
+            "expiryTimerStarts": 410,
+            "backupImageDataBytes": 0,
+            "activeLeaseEstimatedBytes": 0,
+            "activeJobs": 0,
+            "activeLeaseCount": 0,
+            "maxPending": 2,
+            "transientEstimatedBytes": 0,
+            "loadAttempts": 0,
+            "uniqueResourceCount": 0,
+            "readyLeaseCount": 0,
+            "temporaryCanvasBytes": 0,
+            "maxOwnedBytes": 268435456,
+            "maxStagingBytes": 134217728,
+            "ownedEstimatedBytes": 0,
+            "maxResources": 256,
+            "errors": 0,
+            "peakBackupImageDataBytes": 968760,
+            "completionNotifications": 0
+          },
+          "cache": {
+            "decoded": {
+              "maxBytes": 268435456,
+              "bytes": 0,
+              "misses": 0,
+              "maxEntryBytes": 67108864,
+              "oversize": 0,
+              "maxEntries": 256,
+              "evictions": 0,
+              "hits": 0,
+              "entries": 0,
+              "pendingEntries": 0,
+              "negativeEntries": 0,
+              "rejected": 0,
+              "transientEntries": 0
+            },
+            "images": {
+              "maxBytes": 67108864,
+              "bytes": 0,
+              "misses": 0,
+              "maxEntryBytes": 16777216,
+              "oversize": 0,
+              "maxEntries": 256,
+              "evictions": 0,
+              "hits": 0,
+              "entries": 0,
+              "pendingEntries": 0,
+              "negativeEntries": 0,
+              "rejected": 0,
+              "transientEntries": 0
+            }
+          },
+          "subscribers": 0
+        }
+      },
+      "opened": {
+        "processes": [
+          {
+            "pid": 2575697,
+            "rssBytes": 544243712
+          }
+        ],
+        "aggregateRssBytes": 544243712,
+        "wasmBytes": 25165824,
+        "canvasPixels": 3632850,
+        "canvasCount": 60,
+        "owners": [
+          {
+            "discards": 0,
+            "nativeCapacity": 100,
+            "id": 7,
+            "saves": 7,
+            "live": 7
+          }
+        ],
+        "engineSurfaces": {
+          "externrefSlots": 1156,
+          "canvasPixels": 0,
+          "imageCount": 0,
+          "detachedCanvases": 0,
+          "canvasCount": 0,
+          "imagePixels": 0
+        },
+        "lastDisposal": {
+          "liveAtFree": 7,
+          "discards": 0,
+          "id": 6,
+          "saves": 7
+        },
+        "renderer": {
+          "sessions": [
+            {
+              "maxSummaries": 64,
+              "summaryCodeUnits": 245216,
+              "modelVersion": 19,
+              "canvases": 16,
+              "maxSummaryBytes": 262144,
+              "maxSummaryTotalCodeUnits": 2097152,
+              "sessionId": 8,
+              "queued": 0,
+              "failures": 0,
+              "summaries": 1,
+              "activeJobId": null,
+              "generation": 1,
+              "active": 0
+            }
+          ],
+          "jobs": {
+            "pendingCount": 0,
+            "cancellations": 0,
+            "peakTemporaryCanvasBytes": 3875040,
+            "listenerNotifications": 0,
+            "peakStagingBytes": 3875040,
+            "inFlightEstimatedBytes": 0,
+            "capacityNotifications": 0,
+            "maxFrameBytes": 67108864,
+            "expiryTimerTicks": 0,
+            "resourceLimits": 0,
+            "expiryTimerActive": false,
+            "retryCount": 0,
+            "expiryTimerStarts": 478,
+            "backupImageDataBytes": 0,
+            "activeLeaseEstimatedBytes": 0,
+            "activeJobs": 0,
+            "activeLeaseCount": 0,
+            "maxPending": 2,
+            "transientEstimatedBytes": 0,
+            "loadAttempts": 0,
+            "uniqueResourceCount": 0,
+            "readyLeaseCount": 0,
+            "temporaryCanvasBytes": 0,
+            "maxOwnedBytes": 268435456,
+            "maxStagingBytes": 134217728,
+            "ownedEstimatedBytes": 0,
+            "maxResources": 256,
+            "errors": 0,
+            "peakBackupImageDataBytes": 968760,
+            "completionNotifications": 0
+          },
+          "cache": {
+            "decoded": {
+              "maxBytes": 268435456,
+              "bytes": 0,
+              "misses": 0,
+              "maxEntryBytes": 67108864,
+              "oversize": 0,
+              "maxEntries": 256,
+              "evictions": 0,
+              "hits": 0,
+              "entries": 0,
+              "pendingEntries": 0,
+              "negativeEntries": 0,
+              "rejected": 0,
+              "transientEntries": 0
+            },
+            "images": {
+              "maxBytes": 67108864,
+              "bytes": 0,
+              "misses": 0,
+              "maxEntryBytes": 16777216,
+              "oversize": 0,
+              "maxEntries": 256,
+              "evictions": 0,
+              "hits": 0,
+              "entries": 0,
+              "pendingEntries": 0,
+              "negativeEntries": 0,
+              "rejected": 0,
+              "transientEntries": 0
+            }
+          },
+          "subscribers": 1
+        }
+      },
+      "closed": {
+        "processes": [
+          {
+            "pid": 2575697,
+            "rssBytes": 385794048
+          }
+        ],
+        "aggregateRssBytes": 385794048,
+        "wasmBytes": 25165824,
+        "canvasPixels": 0,
+        "canvasCount": 0,
+        "owners": [],
+        "engineSurfaces": {
+          "externrefSlots": 1156,
+          "canvasPixels": 0,
+          "imageCount": 0,
+          "detachedCanvases": 0,
+          "canvasCount": 0,
+          "imagePixels": 0
+        },
+        "lastDisposal": {
+          "liveAtFree": 7,
+          "discards": 0,
+          "id": 7,
+          "saves": 7
+        },
+        "renderer": {
+          "sessions": [],
+          "jobs": {
+            "pendingCount": 0,
+            "cancellations": 0,
+            "peakTemporaryCanvasBytes": 3875040,
+            "listenerNotifications": 0,
+            "peakStagingBytes": 3875040,
+            "inFlightEstimatedBytes": 0,
+            "capacityNotifications": 0,
+            "maxFrameBytes": 67108864,
+            "expiryTimerTicks": 0,
+            "resourceLimits": 0,
+            "expiryTimerActive": false,
+            "retryCount": 0,
+            "expiryTimerStarts": 480,
+            "backupImageDataBytes": 0,
+            "activeLeaseEstimatedBytes": 0,
+            "activeJobs": 0,
+            "activeLeaseCount": 0,
+            "maxPending": 2,
+            "transientEstimatedBytes": 0,
+            "loadAttempts": 0,
+            "uniqueResourceCount": 0,
+            "readyLeaseCount": 0,
+            "temporaryCanvasBytes": 0,
+            "maxOwnedBytes": 268435456,
+            "maxStagingBytes": 134217728,
+            "ownedEstimatedBytes": 0,
+            "maxResources": 256,
+            "errors": 0,
+            "peakBackupImageDataBytes": 968760,
+            "completionNotifications": 0
+          },
+          "cache": {
+            "decoded": {
+              "maxBytes": 268435456,
+              "bytes": 0,
+              "misses": 0,
+              "maxEntryBytes": 67108864,
+              "oversize": 0,
+              "maxEntries": 256,
+              "evictions": 0,
+              "hits": 0,
+              "entries": 0,
+              "pendingEntries": 0,
+              "negativeEntries": 0,
+              "rejected": 0,
+              "transientEntries": 0
+            },
+            "images": {
+              "maxBytes": 67108864,
+              "bytes": 0,
+              "misses": 0,
+              "maxEntryBytes": 16777216,
+              "oversize": 0,
+              "maxEntries": 256,
+              "evictions": 0,
+              "hits": 0,
+              "entries": 0,
+              "pendingEntries": 0,
+              "negativeEntries": 0,
+              "rejected": 0,
+              "transientEntries": 0
+            }
+          },
+          "subscribers": 0
+        }
+      }
+    },
+    {
+      "mode": "undoRedo",
+      "cycle": 7,
+      "before": {
+        "processes": [
+          {
+            "pid": 2575697,
+            "rssBytes": 385810432
+          }
+        ],
+        "aggregateRssBytes": 385810432,
+        "wasmBytes": 25165824,
+        "canvasPixels": 0,
+        "canvasCount": 0,
+        "owners": [],
+        "engineSurfaces": {
+          "externrefSlots": 1156,
+          "canvasPixels": 0,
+          "imageCount": 0,
+          "detachedCanvases": 0,
+          "canvasCount": 0,
+          "imagePixels": 0
+        },
+        "lastDisposal": {
+          "liveAtFree": 7,
+          "discards": 0,
+          "id": 7,
+          "saves": 7
+        },
+        "renderer": {
+          "sessions": [],
+          "jobs": {
+            "pendingCount": 0,
+            "cancellations": 0,
+            "peakTemporaryCanvasBytes": 3875040,
+            "listenerNotifications": 0,
+            "peakStagingBytes": 3875040,
+            "inFlightEstimatedBytes": 0,
+            "capacityNotifications": 0,
+            "maxFrameBytes": 67108864,
+            "expiryTimerTicks": 0,
+            "resourceLimits": 0,
+            "expiryTimerActive": false,
+            "retryCount": 0,
+            "expiryTimerStarts": 480,
+            "backupImageDataBytes": 0,
+            "activeLeaseEstimatedBytes": 0,
+            "activeJobs": 0,
+            "activeLeaseCount": 0,
+            "maxPending": 2,
+            "transientEstimatedBytes": 0,
+            "loadAttempts": 0,
+            "uniqueResourceCount": 0,
+            "readyLeaseCount": 0,
+            "temporaryCanvasBytes": 0,
+            "maxOwnedBytes": 268435456,
+            "maxStagingBytes": 134217728,
+            "ownedEstimatedBytes": 0,
+            "maxResources": 256,
+            "errors": 0,
+            "peakBackupImageDataBytes": 968760,
+            "completionNotifications": 0
+          },
+          "cache": {
+            "decoded": {
+              "maxBytes": 268435456,
+              "bytes": 0,
+              "misses": 0,
+              "maxEntryBytes": 67108864,
+              "oversize": 0,
+              "maxEntries": 256,
+              "evictions": 0,
+              "hits": 0,
+              "entries": 0,
+              "pendingEntries": 0,
+              "negativeEntries": 0,
+              "rejected": 0,
+              "transientEntries": 0
+            },
+            "images": {
+              "maxBytes": 67108864,
+              "bytes": 0,
+              "misses": 0,
+              "maxEntryBytes": 16777216,
+              "oversize": 0,
+              "maxEntries": 256,
+              "evictions": 0,
+              "hits": 0,
+              "entries": 0,
+              "pendingEntries": 0,
+              "negativeEntries": 0,
+              "rejected": 0,
+              "transientEntries": 0
+            }
+          },
+          "subscribers": 0
+        }
+      },
+      "opened": {
+        "processes": [
+          {
+            "pid": 2575697,
+            "rssBytes": 516730880
+          }
+        ],
+        "aggregateRssBytes": 516730880,
+        "wasmBytes": 25165824,
+        "canvasPixels": 3875040,
+        "canvasCount": 60,
+        "owners": [
+          {
+            "discards": 0,
+            "nativeCapacity": 100,
+            "id": 8,
+            "saves": 7,
+            "live": 7
+          }
+        ],
+        "engineSurfaces": {
+          "externrefSlots": 1156,
+          "canvasPixels": 0,
+          "imageCount": 0,
+          "detachedCanvases": 0,
+          "canvasCount": 0,
+          "imagePixels": 0
+        },
+        "lastDisposal": {
+          "liveAtFree": 7,
+          "discards": 0,
+          "id": 7,
+          "saves": 7
+        },
+        "renderer": {
+          "sessions": [
+            {
+              "maxSummaries": 64,
+              "summaryCodeUnits": 245216,
+              "modelVersion": 19,
+              "canvases": 16,
+              "maxSummaryBytes": 262144,
+              "maxSummaryTotalCodeUnits": 2097152,
+              "sessionId": 9,
+              "queued": 0,
+              "failures": 0,
+              "summaries": 1,
+              "activeJobId": null,
+              "generation": 1,
+              "active": 0
+            }
+          ],
+          "jobs": {
+            "pendingCount": 0,
+            "cancellations": 0,
+            "peakTemporaryCanvasBytes": 3875040,
+            "listenerNotifications": 0,
+            "peakStagingBytes": 3875040,
+            "inFlightEstimatedBytes": 0,
+            "capacityNotifications": 0,
+            "maxFrameBytes": 67108864,
+            "expiryTimerTicks": 0,
+            "resourceLimits": 0,
+            "expiryTimerActive": false,
+            "retryCount": 0,
+            "expiryTimerStarts": 544,
+            "backupImageDataBytes": 0,
+            "activeLeaseEstimatedBytes": 0,
+            "activeJobs": 0,
+            "activeLeaseCount": 0,
+            "maxPending": 2,
+            "transientEstimatedBytes": 0,
+            "loadAttempts": 0,
+            "uniqueResourceCount": 0,
+            "readyLeaseCount": 0,
+            "temporaryCanvasBytes": 0,
+            "maxOwnedBytes": 268435456,
+            "maxStagingBytes": 134217728,
+            "ownedEstimatedBytes": 0,
+            "maxResources": 256,
+            "errors": 0,
+            "peakBackupImageDataBytes": 968760,
+            "completionNotifications": 0
+          },
+          "cache": {
+            "decoded": {
+              "maxBytes": 268435456,
+              "bytes": 0,
+              "misses": 0,
+              "maxEntryBytes": 67108864,
+              "oversize": 0,
+              "maxEntries": 256,
+              "evictions": 0,
+              "hits": 0,
+              "entries": 0,
+              "pendingEntries": 0,
+              "negativeEntries": 0,
+              "rejected": 0,
+              "transientEntries": 0
+            },
+            "images": {
+              "maxBytes": 67108864,
+              "bytes": 0,
+              "misses": 0,
+              "maxEntryBytes": 16777216,
+              "oversize": 0,
+              "maxEntries": 256,
+              "evictions": 0,
+              "hits": 0,
+              "entries": 0,
+              "pendingEntries": 0,
+              "negativeEntries": 0,
+              "rejected": 0,
+              "transientEntries": 0
+            }
+          },
+          "subscribers": 1
+        }
+      },
+      "closed": {
+        "processes": [
+          {
+            "pid": 2575697,
+            "rssBytes": 519143424
+          }
+        ],
+        "aggregateRssBytes": 519143424,
+        "wasmBytes": 25165824,
+        "canvasPixels": 0,
+        "canvasCount": 0,
+        "owners": [],
+        "engineSurfaces": {
+          "externrefSlots": 1156,
+          "canvasPixels": 0,
+          "imageCount": 0,
+          "detachedCanvases": 0,
+          "canvasCount": 0,
+          "imagePixels": 0
+        },
+        "lastDisposal": {
+          "liveAtFree": 7,
+          "discards": 0,
+          "id": 8,
+          "saves": 7
+        },
+        "renderer": {
+          "sessions": [],
+          "jobs": {
+            "pendingCount": 0,
+            "cancellations": 0,
+            "peakTemporaryCanvasBytes": 3875040,
+            "listenerNotifications": 0,
+            "peakStagingBytes": 3875040,
+            "inFlightEstimatedBytes": 0,
+            "capacityNotifications": 0,
+            "maxFrameBytes": 67108864,
+            "expiryTimerTicks": 0,
+            "resourceLimits": 0,
+            "expiryTimerActive": false,
+            "retryCount": 0,
+            "expiryTimerStarts": 546,
+            "backupImageDataBytes": 0,
+            "activeLeaseEstimatedBytes": 0,
+            "activeJobs": 0,
+            "activeLeaseCount": 0,
+            "maxPending": 2,
+            "transientEstimatedBytes": 0,
+            "loadAttempts": 0,
+            "uniqueResourceCount": 0,
+            "readyLeaseCount": 0,
+            "temporaryCanvasBytes": 0,
+            "maxOwnedBytes": 268435456,
+            "maxStagingBytes": 134217728,
+            "ownedEstimatedBytes": 0,
+            "maxResources": 256,
+            "errors": 0,
+            "peakBackupImageDataBytes": 968760,
+            "completionNotifications": 0
+          },
+          "cache": {
+            "decoded": {
+              "maxBytes": 268435456,
+              "bytes": 0,
+              "misses": 0,
+              "maxEntryBytes": 67108864,
+              "oversize": 0,
+              "maxEntries": 256,
+              "evictions": 0,
+              "hits": 0,
+              "entries": 0,
+              "pendingEntries": 0,
+              "negativeEntries": 0,
+              "rejected": 0,
+              "transientEntries": 0
+            },
+            "images": {
+              "maxBytes": 67108864,
+              "bytes": 0,
+              "misses": 0,
+              "maxEntryBytes": 16777216,
+              "oversize": 0,
+              "maxEntries": 256,
+              "evictions": 0,
+              "hits": 0,
+              "entries": 0,
+              "pendingEntries": 0,
+              "negativeEntries": 0,
+              "rejected": 0,
+              "transientEntries": 0
+            }
+          },
+          "subscribers": 0
+        }
+      }
+    },
+    {
+      "mode": "undoRedo",
+      "cycle": 8,
+      "before": {
+        "processes": [
+          {
+            "pid": 2575697,
+            "rssBytes": 519159808
+          }
+        ],
+        "aggregateRssBytes": 519159808,
+        "wasmBytes": 25165824,
+        "canvasPixels": 0,
+        "canvasCount": 0,
+        "owners": [],
+        "engineSurfaces": {
+          "externrefSlots": 1156,
+          "canvasPixels": 0,
+          "imageCount": 0,
+          "detachedCanvases": 0,
+          "canvasCount": 0,
+          "imagePixels": 0
+        },
+        "lastDisposal": {
+          "liveAtFree": 7,
+          "discards": 0,
+          "id": 8,
+          "saves": 7
+        },
+        "renderer": {
+          "sessions": [],
+          "jobs": {
+            "pendingCount": 0,
+            "cancellations": 0,
+            "peakTemporaryCanvasBytes": 3875040,
+            "listenerNotifications": 0,
+            "peakStagingBytes": 3875040,
+            "inFlightEstimatedBytes": 0,
+            "capacityNotifications": 0,
+            "maxFrameBytes": 67108864,
+            "expiryTimerTicks": 0,
+            "resourceLimits": 0,
+            "expiryTimerActive": false,
+            "retryCount": 0,
+            "expiryTimerStarts": 546,
+            "backupImageDataBytes": 0,
+            "activeLeaseEstimatedBytes": 0,
+            "activeJobs": 0,
+            "activeLeaseCount": 0,
+            "maxPending": 2,
+            "transientEstimatedBytes": 0,
+            "loadAttempts": 0,
+            "uniqueResourceCount": 0,
+            "readyLeaseCount": 0,
+            "temporaryCanvasBytes": 0,
+            "maxOwnedBytes": 268435456,
+            "maxStagingBytes": 134217728,
+            "ownedEstimatedBytes": 0,
+            "maxResources": 256,
+            "errors": 0,
+            "peakBackupImageDataBytes": 968760,
+            "completionNotifications": 0
+          },
+          "cache": {
+            "decoded": {
+              "maxBytes": 268435456,
+              "bytes": 0,
+              "misses": 0,
+              "maxEntryBytes": 67108864,
+              "oversize": 0,
+              "maxEntries": 256,
+              "evictions": 0,
+              "hits": 0,
+              "entries": 0,
+              "pendingEntries": 0,
+              "negativeEntries": 0,
+              "rejected": 0,
+              "transientEntries": 0
+            },
+            "images": {
+              "maxBytes": 67108864,
+              "bytes": 0,
+              "misses": 0,
+              "maxEntryBytes": 16777216,
+              "oversize": 0,
+              "maxEntries": 256,
+              "evictions": 0,
+              "hits": 0,
+              "entries": 0,
+              "pendingEntries": 0,
+              "negativeEntries": 0,
+              "rejected": 0,
+              "transientEntries": 0
+            }
+          },
+          "subscribers": 0
+        }
+      },
+      "opened": {
+        "processes": [
+          {
+            "pid": 2575697,
+            "rssBytes": 486195200
+          }
+        ],
+        "aggregateRssBytes": 486195200,
+        "wasmBytes": 25165824,
+        "canvasPixels": 3632850,
+        "canvasCount": 60,
+        "owners": [
+          {
+            "discards": 0,
+            "nativeCapacity": 100,
+            "id": 9,
+            "saves": 7,
+            "live": 7
+          }
+        ],
+        "engineSurfaces": {
+          "externrefSlots": 1156,
+          "canvasPixels": 0,
+          "imageCount": 0,
+          "detachedCanvases": 0,
+          "canvasCount": 0,
+          "imagePixels": 0
+        },
+        "lastDisposal": {
+          "liveAtFree": 7,
+          "discards": 0,
+          "id": 8,
+          "saves": 7
+        },
+        "renderer": {
+          "sessions": [
+            {
+              "maxSummaries": 64,
+              "summaryCodeUnits": 245216,
+              "modelVersion": 19,
+              "canvases": 15,
+              "maxSummaryBytes": 262144,
+              "maxSummaryTotalCodeUnits": 2097152,
+              "sessionId": 10,
+              "queued": 0,
+              "failures": 0,
+              "summaries": 1,
+              "activeJobId": null,
+              "generation": 1,
+              "active": 0
+            }
+          ],
+          "jobs": {
+            "pendingCount": 0,
+            "cancellations": 0,
+            "peakTemporaryCanvasBytes": 3875040,
+            "listenerNotifications": 0,
+            "peakStagingBytes": 3875040,
+            "inFlightEstimatedBytes": 0,
+            "capacityNotifications": 0,
+            "maxFrameBytes": 67108864,
+            "expiryTimerTicks": 0,
+            "resourceLimits": 0,
+            "expiryTimerActive": false,
+            "retryCount": 0,
+            "expiryTimerStarts": 613,
+            "backupImageDataBytes": 0,
+            "activeLeaseEstimatedBytes": 0,
+            "activeJobs": 0,
+            "activeLeaseCount": 0,
+            "maxPending": 2,
+            "transientEstimatedBytes": 0,
+            "loadAttempts": 0,
+            "uniqueResourceCount": 0,
+            "readyLeaseCount": 0,
+            "temporaryCanvasBytes": 0,
+            "maxOwnedBytes": 268435456,
+            "maxStagingBytes": 134217728,
+            "ownedEstimatedBytes": 0,
+            "maxResources": 256,
+            "errors": 0,
+            "peakBackupImageDataBytes": 968760,
+            "completionNotifications": 0
+          },
+          "cache": {
+            "decoded": {
+              "maxBytes": 268435456,
+              "bytes": 0,
+              "misses": 0,
+              "maxEntryBytes": 67108864,
+              "oversize": 0,
+              "maxEntries": 256,
+              "evictions": 0,
+              "hits": 0,
+              "entries": 0,
+              "pendingEntries": 0,
+              "negativeEntries": 0,
+              "rejected": 0,
+              "transientEntries": 0
+            },
+            "images": {
+              "maxBytes": 67108864,
+              "bytes": 0,
+              "misses": 0,
+              "maxEntryBytes": 16777216,
+              "oversize": 0,
+              "maxEntries": 256,
+              "evictions": 0,
+              "hits": 0,
+              "entries": 0,
+              "pendingEntries": 0,
+              "negativeEntries": 0,
+              "rejected": 0,
+              "transientEntries": 0
+            }
+          },
+          "subscribers": 1
+        }
+      },
+      "closed": {
+        "processes": [
+          {
+            "pid": 2575697,
+            "rssBytes": 444592128
+          }
+        ],
+        "aggregateRssBytes": 444592128,
+        "wasmBytes": 25165824,
+        "canvasPixels": 0,
+        "canvasCount": 0,
+        "owners": [],
+        "engineSurfaces": {
+          "externrefSlots": 1156,
+          "canvasPixels": 0,
+          "imageCount": 0,
+          "detachedCanvases": 0,
+          "canvasCount": 0,
+          "imagePixels": 0
+        },
+        "lastDisposal": {
+          "liveAtFree": 7,
+          "discards": 0,
+          "id": 9,
+          "saves": 7
+        },
+        "renderer": {
+          "sessions": [],
+          "jobs": {
+            "pendingCount": 0,
+            "cancellations": 0,
+            "peakTemporaryCanvasBytes": 3875040,
+            "listenerNotifications": 0,
+            "peakStagingBytes": 3875040,
+            "inFlightEstimatedBytes": 0,
+            "capacityNotifications": 0,
+            "maxFrameBytes": 67108864,
+            "expiryTimerTicks": 0,
+            "resourceLimits": 0,
+            "expiryTimerActive": false,
+            "retryCount": 0,
+            "expiryTimerStarts": 615,
+            "backupImageDataBytes": 0,
+            "activeLeaseEstimatedBytes": 0,
+            "activeJobs": 0,
+            "activeLeaseCount": 0,
+            "maxPending": 2,
+            "transientEstimatedBytes": 0,
+            "loadAttempts": 0,
+            "uniqueResourceCount": 0,
+            "readyLeaseCount": 0,
+            "temporaryCanvasBytes": 0,
+            "maxOwnedBytes": 268435456,
+            "maxStagingBytes": 134217728,
+            "ownedEstimatedBytes": 0,
+            "maxResources": 256,
+            "errors": 0,
+            "peakBackupImageDataBytes": 968760,
+            "completionNotifications": 0
+          },
+          "cache": {
+            "decoded": {
+              "maxBytes": 268435456,
+              "bytes": 0,
+              "misses": 0,
+              "maxEntryBytes": 67108864,
+              "oversize": 0,
+              "maxEntries": 256,
+              "evictions": 0,
+              "hits": 0,
+              "entries": 0,
+              "pendingEntries": 0,
+              "negativeEntries": 0,
+              "rejected": 0,
+              "transientEntries": 0
+            },
+            "images": {
+              "maxBytes": 67108864,
+              "bytes": 0,
+              "misses": 0,
+              "maxEntryBytes": 16777216,
+              "oversize": 0,
+              "maxEntries": 256,
+              "evictions": 0,
+              "hits": 0,
+              "entries": 0,
+              "pendingEntries": 0,
+              "negativeEntries": 0,
+              "rejected": 0,
+              "transientEntries": 0
+            }
+          },
+          "subscribers": 0
+        }
+      }
+    },
+    {
+      "mode": "undoRedo",
+      "cycle": 9,
+      "before": {
+        "processes": [
+          {
+            "pid": 2575697,
+            "rssBytes": 444608512
+          }
+        ],
+        "aggregateRssBytes": 444608512,
+        "wasmBytes": 25165824,
+        "canvasPixels": 0,
+        "canvasCount": 0,
+        "owners": [],
+        "engineSurfaces": {
+          "externrefSlots": 1156,
+          "canvasPixels": 0,
+          "imageCount": 0,
+          "detachedCanvases": 0,
+          "canvasCount": 0,
+          "imagePixels": 0
+        },
+        "lastDisposal": {
+          "liveAtFree": 7,
+          "discards": 0,
+          "id": 9,
+          "saves": 7
+        },
+        "renderer": {
+          "sessions": [],
+          "jobs": {
+            "pendingCount": 0,
+            "cancellations": 0,
+            "peakTemporaryCanvasBytes": 3875040,
+            "listenerNotifications": 0,
+            "peakStagingBytes": 3875040,
+            "inFlightEstimatedBytes": 0,
+            "capacityNotifications": 0,
+            "maxFrameBytes": 67108864,
+            "expiryTimerTicks": 0,
+            "resourceLimits": 0,
+            "expiryTimerActive": false,
+            "retryCount": 0,
+            "expiryTimerStarts": 615,
+            "backupImageDataBytes": 0,
+            "activeLeaseEstimatedBytes": 0,
+            "activeJobs": 0,
+            "activeLeaseCount": 0,
+            "maxPending": 2,
+            "transientEstimatedBytes": 0,
+            "loadAttempts": 0,
+            "uniqueResourceCount": 0,
+            "readyLeaseCount": 0,
+            "temporaryCanvasBytes": 0,
+            "maxOwnedBytes": 268435456,
+            "maxStagingBytes": 134217728,
+            "ownedEstimatedBytes": 0,
+            "maxResources": 256,
+            "errors": 0,
+            "peakBackupImageDataBytes": 968760,
+            "completionNotifications": 0
+          },
+          "cache": {
+            "decoded": {
+              "maxBytes": 268435456,
+              "bytes": 0,
+              "misses": 0,
+              "maxEntryBytes": 67108864,
+              "oversize": 0,
+              "maxEntries": 256,
+              "evictions": 0,
+              "hits": 0,
+              "entries": 0,
+              "pendingEntries": 0,
+              "negativeEntries": 0,
+              "rejected": 0,
+              "transientEntries": 0
+            },
+            "images": {
+              "maxBytes": 67108864,
+              "bytes": 0,
+              "misses": 0,
+              "maxEntryBytes": 16777216,
+              "oversize": 0,
+              "maxEntries": 256,
+              "evictions": 0,
+              "hits": 0,
+              "entries": 0,
+              "pendingEntries": 0,
+              "negativeEntries": 0,
+              "rejected": 0,
+              "transientEntries": 0
+            }
+          },
+          "subscribers": 0
+        }
+      },
+      "opened": {
+        "processes": [
+          {
+            "pid": 2575697,
+            "rssBytes": 501493760
+          }
+        ],
+        "aggregateRssBytes": 501493760,
+        "wasmBytes": 25165824,
+        "canvasPixels": 3632850,
+        "canvasCount": 60,
+        "owners": [
+          {
+            "discards": 0,
+            "nativeCapacity": 100,
+            "id": 10,
+            "saves": 7,
+            "live": 7
+          }
+        ],
+        "engineSurfaces": {
+          "externrefSlots": 1156,
+          "canvasPixels": 0,
+          "imageCount": 0,
+          "detachedCanvases": 0,
+          "canvasCount": 0,
+          "imagePixels": 0
+        },
+        "lastDisposal": {
+          "liveAtFree": 7,
+          "discards": 0,
+          "id": 9,
+          "saves": 7
+        },
+        "renderer": {
+          "sessions": [
+            {
+              "maxSummaries": 64,
+              "summaryCodeUnits": 245216,
+              "modelVersion": 19,
+              "canvases": 15,
+              "maxSummaryBytes": 262144,
+              "maxSummaryTotalCodeUnits": 2097152,
+              "sessionId": 11,
+              "queued": 0,
+              "failures": 0,
+              "summaries": 1,
+              "activeJobId": null,
+              "generation": 1,
+              "active": 0
+            }
+          ],
+          "jobs": {
+            "pendingCount": 0,
+            "cancellations": 0,
+            "peakTemporaryCanvasBytes": 3875040,
+            "listenerNotifications": 0,
+            "peakStagingBytes": 3875040,
+            "inFlightEstimatedBytes": 0,
+            "capacityNotifications": 0,
+            "maxFrameBytes": 67108864,
+            "expiryTimerTicks": 0,
+            "resourceLimits": 0,
+            "expiryTimerActive": false,
+            "retryCount": 0,
+            "expiryTimerStarts": 681,
+            "backupImageDataBytes": 0,
+            "activeLeaseEstimatedBytes": 0,
+            "activeJobs": 0,
+            "activeLeaseCount": 0,
+            "maxPending": 2,
+            "transientEstimatedBytes": 0,
+            "loadAttempts": 0,
+            "uniqueResourceCount": 0,
+            "readyLeaseCount": 0,
+            "temporaryCanvasBytes": 0,
+            "maxOwnedBytes": 268435456,
+            "maxStagingBytes": 134217728,
+            "ownedEstimatedBytes": 0,
+            "maxResources": 256,
+            "errors": 0,
+            "peakBackupImageDataBytes": 968760,
+            "completionNotifications": 0
+          },
+          "cache": {
+            "decoded": {
+              "maxBytes": 268435456,
+              "bytes": 0,
+              "misses": 0,
+              "maxEntryBytes": 67108864,
+              "oversize": 0,
+              "maxEntries": 256,
+              "evictions": 0,
+              "hits": 0,
+              "entries": 0,
+              "pendingEntries": 0,
+              "negativeEntries": 0,
+              "rejected": 0,
+              "transientEntries": 0
+            },
+            "images": {
+              "maxBytes": 67108864,
+              "bytes": 0,
+              "misses": 0,
+              "maxEntryBytes": 16777216,
+              "oversize": 0,
+              "maxEntries": 256,
+              "evictions": 0,
+              "hits": 0,
+              "entries": 0,
+              "pendingEntries": 0,
+              "negativeEntries": 0,
+              "rejected": 0,
+              "transientEntries": 0
+            }
+          },
+          "subscribers": 1
+        }
+      },
+      "closed": {
+        "processes": [
+          {
+            "pid": 2575697,
+            "rssBytes": 447205376
+          }
+        ],
+        "aggregateRssBytes": 447205376,
+        "wasmBytes": 25165824,
+        "canvasPixels": 0,
+        "canvasCount": 0,
+        "owners": [],
+        "engineSurfaces": {
+          "externrefSlots": 1156,
+          "canvasPixels": 0,
+          "imageCount": 0,
+          "detachedCanvases": 0,
+          "canvasCount": 0,
+          "imagePixels": 0
+        },
+        "lastDisposal": {
+          "liveAtFree": 7,
+          "discards": 0,
+          "id": 10,
+          "saves": 7
+        },
+        "renderer": {
+          "sessions": [],
+          "jobs": {
+            "pendingCount": 0,
+            "cancellations": 0,
+            "peakTemporaryCanvasBytes": 3875040,
+            "listenerNotifications": 0,
+            "peakStagingBytes": 3875040,
+            "inFlightEstimatedBytes": 0,
+            "capacityNotifications": 0,
+            "maxFrameBytes": 67108864,
+            "expiryTimerTicks": 0,
+            "resourceLimits": 0,
+            "expiryTimerActive": false,
+            "retryCount": 0,
+            "expiryTimerStarts": 683,
+            "backupImageDataBytes": 0,
+            "activeLeaseEstimatedBytes": 0,
+            "activeJobs": 0,
+            "activeLeaseCount": 0,
+            "maxPending": 2,
+            "transientEstimatedBytes": 0,
+            "loadAttempts": 0,
+            "uniqueResourceCount": 0,
+            "readyLeaseCount": 0,
+            "temporaryCanvasBytes": 0,
+            "maxOwnedBytes": 268435456,
+            "maxStagingBytes": 134217728,
+            "ownedEstimatedBytes": 0,
+            "maxResources": 256,
+            "errors": 0,
+            "peakBackupImageDataBytes": 968760,
+            "completionNotifications": 0
+          },
+          "cache": {
+            "decoded": {
+              "maxBytes": 268435456,
+              "bytes": 0,
+              "misses": 0,
+              "maxEntryBytes": 67108864,
+              "oversize": 0,
+              "maxEntries": 256,
+              "evictions": 0,
+              "hits": 0,
+              "entries": 0,
+              "pendingEntries": 0,
+              "negativeEntries": 0,
+              "rejected": 0,
+              "transientEntries": 0
+            },
+            "images": {
+              "maxBytes": 67108864,
+              "bytes": 0,
+              "misses": 0,
+              "maxEntryBytes": 16777216,
+              "oversize": 0,
+              "maxEntries": 256,
+              "evictions": 0,
+              "hits": 0,
+              "entries": 0,
+              "pendingEntries": 0,
+              "negativeEntries": 0,
+              "rejected": 0,
+              "transientEntries": 0
+            }
+          },
+          "subscribers": 0
+        }
+      }
+    },
+    {
+      "mode": "undoRedo",
+      "cycle": 10,
+      "before": {
+        "processes": [
+          {
+            "pid": 2575697,
+            "rssBytes": 447332352
+          }
+        ],
+        "aggregateRssBytes": 447332352,
+        "wasmBytes": 25165824,
+        "canvasPixels": 0,
+        "canvasCount": 0,
+        "owners": [],
+        "engineSurfaces": {
+          "externrefSlots": 1156,
+          "canvasPixels": 0,
+          "imageCount": 0,
+          "detachedCanvases": 0,
+          "canvasCount": 0,
+          "imagePixels": 0
+        },
+        "lastDisposal": {
+          "liveAtFree": 7,
+          "discards": 0,
+          "id": 10,
+          "saves": 7
+        },
+        "renderer": {
+          "sessions": [],
+          "jobs": {
+            "pendingCount": 0,
+            "cancellations": 0,
+            "peakTemporaryCanvasBytes": 3875040,
+            "listenerNotifications": 0,
+            "peakStagingBytes": 3875040,
+            "inFlightEstimatedBytes": 0,
+            "capacityNotifications": 0,
+            "maxFrameBytes": 67108864,
+            "expiryTimerTicks": 0,
+            "resourceLimits": 0,
+            "expiryTimerActive": false,
+            "retryCount": 0,
+            "expiryTimerStarts": 683,
+            "backupImageDataBytes": 0,
+            "activeLeaseEstimatedBytes": 0,
+            "activeJobs": 0,
+            "activeLeaseCount": 0,
+            "maxPending": 2,
+            "transientEstimatedBytes": 0,
+            "loadAttempts": 0,
+            "uniqueResourceCount": 0,
+            "readyLeaseCount": 0,
+            "temporaryCanvasBytes": 0,
+            "maxOwnedBytes": 268435456,
+            "maxStagingBytes": 134217728,
+            "ownedEstimatedBytes": 0,
+            "maxResources": 256,
+            "errors": 0,
+            "peakBackupImageDataBytes": 968760,
+            "completionNotifications": 0
+          },
+          "cache": {
+            "decoded": {
+              "maxBytes": 268435456,
+              "bytes": 0,
+              "misses": 0,
+              "maxEntryBytes": 67108864,
+              "oversize": 0,
+              "maxEntries": 256,
+              "evictions": 0,
+              "hits": 0,
+              "entries": 0,
+              "pendingEntries": 0,
+              "negativeEntries": 0,
+              "rejected": 0,
+              "transientEntries": 0
+            },
+            "images": {
+              "maxBytes": 67108864,
+              "bytes": 0,
+              "misses": 0,
+              "maxEntryBytes": 16777216,
+              "oversize": 0,
+              "maxEntries": 256,
+              "evictions": 0,
+              "hits": 0,
+              "entries": 0,
+              "pendingEntries": 0,
+              "negativeEntries": 0,
+              "rejected": 0,
+              "transientEntries": 0
+            }
+          },
+          "subscribers": 0
+        }
+      },
+      "opened": {
+        "processes": [
+          {
+            "pid": 2575697,
+            "rssBytes": 525414400
+          }
+        ],
+        "aggregateRssBytes": 525414400,
+        "wasmBytes": 25165824,
+        "canvasPixels": 3632850,
+        "canvasCount": 60,
+        "owners": [
+          {
+            "discards": 0,
+            "nativeCapacity": 100,
+            "id": 11,
+            "saves": 7,
+            "live": 7
+          }
+        ],
+        "engineSurfaces": {
+          "externrefSlots": 1156,
+          "canvasPixels": 0,
+          "imageCount": 0,
+          "detachedCanvases": 0,
+          "canvasCount": 0,
+          "imagePixels": 0
+        },
+        "lastDisposal": {
+          "liveAtFree": 7,
+          "discards": 0,
+          "id": 10,
+          "saves": 7
+        },
+        "renderer": {
+          "sessions": [
+            {
+              "maxSummaries": 64,
+              "summaryCodeUnits": 245216,
+              "modelVersion": 19,
+              "canvases": 16,
+              "maxSummaryBytes": 262144,
+              "maxSummaryTotalCodeUnits": 2097152,
+              "sessionId": 12,
+              "queued": 0,
+              "failures": 0,
+              "summaries": 1,
+              "activeJobId": null,
+              "generation": 1,
+              "active": 0
+            }
+          ],
+          "jobs": {
+            "pendingCount": 0,
+            "cancellations": 0,
+            "peakTemporaryCanvasBytes": 3875040,
+            "listenerNotifications": 0,
+            "peakStagingBytes": 3875040,
+            "inFlightEstimatedBytes": 0,
+            "capacityNotifications": 0,
+            "maxFrameBytes": 67108864,
+            "expiryTimerTicks": 0,
+            "resourceLimits": 0,
+            "expiryTimerActive": false,
+            "retryCount": 0,
+            "expiryTimerStarts": 750,
+            "backupImageDataBytes": 0,
+            "activeLeaseEstimatedBytes": 0,
+            "activeJobs": 0,
+            "activeLeaseCount": 0,
+            "maxPending": 2,
+            "transientEstimatedBytes": 0,
+            "loadAttempts": 0,
+            "uniqueResourceCount": 0,
+            "readyLeaseCount": 0,
+            "temporaryCanvasBytes": 0,
+            "maxOwnedBytes": 268435456,
+            "maxStagingBytes": 134217728,
+            "ownedEstimatedBytes": 0,
+            "maxResources": 256,
+            "errors": 0,
+            "peakBackupImageDataBytes": 968760,
+            "completionNotifications": 0
+          },
+          "cache": {
+            "decoded": {
+              "maxBytes": 268435456,
+              "bytes": 0,
+              "misses": 0,
+              "maxEntryBytes": 67108864,
+              "oversize": 0,
+              "maxEntries": 256,
+              "evictions": 0,
+              "hits": 0,
+              "entries": 0,
+              "pendingEntries": 0,
+              "negativeEntries": 0,
+              "rejected": 0,
+              "transientEntries": 0
+            },
+            "images": {
+              "maxBytes": 67108864,
+              "bytes": 0,
+              "misses": 0,
+              "maxEntryBytes": 16777216,
+              "oversize": 0,
+              "maxEntries": 256,
+              "evictions": 0,
+              "hits": 0,
+              "entries": 0,
+              "pendingEntries": 0,
+              "negativeEntries": 0,
+              "rejected": 0,
+              "transientEntries": 0
+            }
+          },
+          "subscribers": 1
+        }
+      },
+      "closed": {
+        "processes": [
+          {
+            "pid": 2575697,
+            "rssBytes": 443764736
+          }
+        ],
+        "aggregateRssBytes": 443764736,
+        "wasmBytes": 25165824,
+        "canvasPixels": 0,
+        "canvasCount": 0,
+        "owners": [],
+        "engineSurfaces": {
+          "externrefSlots": 1156,
+          "canvasPixels": 0,
+          "imageCount": 0,
+          "detachedCanvases": 0,
+          "canvasCount": 0,
+          "imagePixels": 0
+        },
+        "lastDisposal": {
+          "liveAtFree": 7,
+          "discards": 0,
+          "id": 11,
+          "saves": 7
+        },
+        "renderer": {
+          "sessions": [],
+          "jobs": {
+            "pendingCount": 0,
+            "cancellations": 0,
+            "peakTemporaryCanvasBytes": 3875040,
+            "listenerNotifications": 0,
+            "peakStagingBytes": 3875040,
+            "inFlightEstimatedBytes": 0,
+            "capacityNotifications": 0,
+            "maxFrameBytes": 67108864,
+            "expiryTimerTicks": 0,
+            "resourceLimits": 0,
+            "expiryTimerActive": false,
+            "retryCount": 0,
+            "expiryTimerStarts": 752,
+            "backupImageDataBytes": 0,
+            "activeLeaseEstimatedBytes": 0,
+            "activeJobs": 0,
+            "activeLeaseCount": 0,
+            "maxPending": 2,
+            "transientEstimatedBytes": 0,
+            "loadAttempts": 0,
+            "uniqueResourceCount": 0,
+            "readyLeaseCount": 0,
+            "temporaryCanvasBytes": 0,
+            "maxOwnedBytes": 268435456,
+            "maxStagingBytes": 134217728,
+            "ownedEstimatedBytes": 0,
+            "maxResources": 256,
+            "errors": 0,
+            "peakBackupImageDataBytes": 968760,
+            "completionNotifications": 0
+          },
+          "cache": {
+            "decoded": {
+              "maxBytes": 268435456,
+              "bytes": 0,
+              "misses": 0,
+              "maxEntryBytes": 67108864,
+              "oversize": 0,
+              "maxEntries": 256,
+              "evictions": 0,
+              "hits": 0,
+              "entries": 0,
+              "pendingEntries": 0,
+              "negativeEntries": 0,
+              "rejected": 0,
+              "transientEntries": 0
+            },
+            "images": {
+              "maxBytes": 67108864,
+              "bytes": 0,
+              "misses": 0,
+              "maxEntryBytes": 16777216,
+              "oversize": 0,
+              "maxEntries": 256,
+              "evictions": 0,
+              "hits": 0,
+              "entries": 0,
+              "pendingEntries": 0,
+              "negativeEntries": 0,
+              "rejected": 0,
+              "transientEntries": 0
+            }
+          },
+          "subscribers": 0
+        }
+      }
+    },
+    {
+      "mode": "undoRedo",
+      "cycle": 11,
+      "before": {
+        "processes": [
+          {
+            "pid": 2575697,
+            "rssBytes": 443777024
+          }
+        ],
+        "aggregateRssBytes": 443777024,
+        "wasmBytes": 25165824,
+        "canvasPixels": 0,
+        "canvasCount": 0,
+        "owners": [],
+        "engineSurfaces": {
+          "externrefSlots": 1156,
+          "canvasPixels": 0,
+          "imageCount": 0,
+          "detachedCanvases": 0,
+          "canvasCount": 0,
+          "imagePixels": 0
+        },
+        "lastDisposal": {
+          "liveAtFree": 7,
+          "discards": 0,
+          "id": 11,
+          "saves": 7
+        },
+        "renderer": {
+          "sessions": [],
+          "jobs": {
+            "pendingCount": 0,
+            "cancellations": 0,
+            "peakTemporaryCanvasBytes": 3875040,
+            "listenerNotifications": 0,
+            "peakStagingBytes": 3875040,
+            "inFlightEstimatedBytes": 0,
+            "capacityNotifications": 0,
+            "maxFrameBytes": 67108864,
+            "expiryTimerTicks": 0,
+            "resourceLimits": 0,
+            "expiryTimerActive": false,
+            "retryCount": 0,
+            "expiryTimerStarts": 752,
+            "backupImageDataBytes": 0,
+            "activeLeaseEstimatedBytes": 0,
+            "activeJobs": 0,
+            "activeLeaseCount": 0,
+            "maxPending": 2,
+            "transientEstimatedBytes": 0,
+            "loadAttempts": 0,
+            "uniqueResourceCount": 0,
+            "readyLeaseCount": 0,
+            "temporaryCanvasBytes": 0,
+            "maxOwnedBytes": 268435456,
+            "maxStagingBytes": 134217728,
+            "ownedEstimatedBytes": 0,
+            "maxResources": 256,
+            "errors": 0,
+            "peakBackupImageDataBytes": 968760,
+            "completionNotifications": 0
+          },
+          "cache": {
+            "decoded": {
+              "maxBytes": 268435456,
+              "bytes": 0,
+              "misses": 0,
+              "maxEntryBytes": 67108864,
+              "oversize": 0,
+              "maxEntries": 256,
+              "evictions": 0,
+              "hits": 0,
+              "entries": 0,
+              "pendingEntries": 0,
+              "negativeEntries": 0,
+              "rejected": 0,
+              "transientEntries": 0
+            },
+            "images": {
+              "maxBytes": 67108864,
+              "bytes": 0,
+              "misses": 0,
+              "maxEntryBytes": 16777216,
+              "oversize": 0,
+              "maxEntries": 256,
+              "evictions": 0,
+              "hits": 0,
+              "entries": 0,
+              "pendingEntries": 0,
+              "negativeEntries": 0,
+              "rejected": 0,
+              "transientEntries": 0
+            }
+          },
+          "subscribers": 0
+        }
+      },
+      "opened": {
+        "processes": [
+          {
+            "pid": 2575697,
+            "rssBytes": 509820928
+          }
+        ],
+        "aggregateRssBytes": 509820928,
+        "wasmBytes": 25165824,
+        "canvasPixels": 3632850,
+        "canvasCount": 60,
+        "owners": [
+          {
+            "discards": 0,
+            "nativeCapacity": 100,
+            "id": 12,
+            "saves": 7,
+            "live": 7
+          }
+        ],
+        "engineSurfaces": {
+          "externrefSlots": 1156,
+          "canvasPixels": 0,
+          "imageCount": 0,
+          "detachedCanvases": 0,
+          "canvasCount": 0,
+          "imagePixels": 0
+        },
+        "lastDisposal": {
+          "liveAtFree": 7,
+          "discards": 0,
+          "id": 11,
+          "saves": 7
+        },
+        "renderer": {
+          "sessions": [
+            {
+              "maxSummaries": 64,
+              "summaryCodeUnits": 245216,
+              "modelVersion": 19,
+              "canvases": 15,
+              "maxSummaryBytes": 262144,
+              "maxSummaryTotalCodeUnits": 2097152,
+              "sessionId": 13,
+              "queued": 0,
+              "failures": 0,
+              "summaries": 1,
+              "activeJobId": null,
+              "generation": 1,
+              "active": 0
+            }
+          ],
+          "jobs": {
+            "pendingCount": 0,
+            "cancellations": 0,
+            "peakTemporaryCanvasBytes": 3875040,
+            "listenerNotifications": 0,
+            "peakStagingBytes": 3875040,
+            "inFlightEstimatedBytes": 0,
+            "capacityNotifications": 0,
+            "maxFrameBytes": 67108864,
+            "expiryTimerTicks": 0,
+            "resourceLimits": 0,
+            "expiryTimerActive": false,
+            "retryCount": 0,
+            "expiryTimerStarts": 817,
+            "backupImageDataBytes": 0,
+            "activeLeaseEstimatedBytes": 0,
+            "activeJobs": 0,
+            "activeLeaseCount": 0,
+            "maxPending": 2,
+            "transientEstimatedBytes": 0,
+            "loadAttempts": 0,
+            "uniqueResourceCount": 0,
+            "readyLeaseCount": 0,
+            "temporaryCanvasBytes": 0,
+            "maxOwnedBytes": 268435456,
+            "maxStagingBytes": 134217728,
+            "ownedEstimatedBytes": 0,
+            "maxResources": 256,
+            "errors": 0,
+            "peakBackupImageDataBytes": 968760,
+            "completionNotifications": 0
+          },
+          "cache": {
+            "decoded": {
+              "maxBytes": 268435456,
+              "bytes": 0,
+              "misses": 0,
+              "maxEntryBytes": 67108864,
+              "oversize": 0,
+              "maxEntries": 256,
+              "evictions": 0,
+              "hits": 0,
+              "entries": 0,
+              "pendingEntries": 0,
+              "negativeEntries": 0,
+              "rejected": 0,
+              "transientEntries": 0
+            },
+            "images": {
+              "maxBytes": 67108864,
+              "bytes": 0,
+              "misses": 0,
+              "maxEntryBytes": 16777216,
+              "oversize": 0,
+              "maxEntries": 256,
+              "evictions": 0,
+              "hits": 0,
+              "entries": 0,
+              "pendingEntries": 0,
+              "negativeEntries": 0,
+              "rejected": 0,
+              "transientEntries": 0
+            }
+          },
+          "subscribers": 1
+        }
+      },
+      "closed": {
+        "processes": [
+          {
+            "pid": 2575697,
+            "rssBytes": 512303104
+          }
+        ],
+        "aggregateRssBytes": 512303104,
+        "wasmBytes": 25165824,
+        "canvasPixels": 0,
+        "canvasCount": 0,
+        "owners": [],
+        "engineSurfaces": {
+          "externrefSlots": 1156,
+          "canvasPixels": 0,
+          "imageCount": 0,
+          "detachedCanvases": 0,
+          "canvasCount": 0,
+          "imagePixels": 0
+        },
+        "lastDisposal": {
+          "liveAtFree": 7,
+          "discards": 0,
+          "id": 12,
+          "saves": 7
+        },
+        "renderer": {
+          "sessions": [],
+          "jobs": {
+            "pendingCount": 0,
+            "cancellations": 0,
+            "peakTemporaryCanvasBytes": 3875040,
+            "listenerNotifications": 0,
+            "peakStagingBytes": 3875040,
+            "inFlightEstimatedBytes": 0,
+            "capacityNotifications": 0,
+            "maxFrameBytes": 67108864,
+            "expiryTimerTicks": 0,
+            "resourceLimits": 0,
+            "expiryTimerActive": false,
+            "retryCount": 0,
+            "expiryTimerStarts": 819,
+            "backupImageDataBytes": 0,
+            "activeLeaseEstimatedBytes": 0,
+            "activeJobs": 0,
+            "activeLeaseCount": 0,
+            "maxPending": 2,
+            "transientEstimatedBytes": 0,
+            "loadAttempts": 0,
+            "uniqueResourceCount": 0,
+            "readyLeaseCount": 0,
+            "temporaryCanvasBytes": 0,
+            "maxOwnedBytes": 268435456,
+            "maxStagingBytes": 134217728,
+            "ownedEstimatedBytes": 0,
+            "maxResources": 256,
+            "errors": 0,
+            "peakBackupImageDataBytes": 968760,
+            "completionNotifications": 0
+          },
+          "cache": {
+            "decoded": {
+              "maxBytes": 268435456,
+              "bytes": 0,
+              "misses": 0,
+              "maxEntryBytes": 67108864,
+              "oversize": 0,
+              "maxEntries": 256,
+              "evictions": 0,
+              "hits": 0,
+              "entries": 0,
+              "pendingEntries": 0,
+              "negativeEntries": 0,
+              "rejected": 0,
+              "transientEntries": 0
+            },
+            "images": {
+              "maxBytes": 67108864,
+              "bytes": 0,
+              "misses": 0,
+              "maxEntryBytes": 16777216,
+              "oversize": 0,
+              "maxEntries": 256,
+              "evictions": 0,
+              "hits": 0,
+              "entries": 0,
+              "pendingEntries": 0,
+              "negativeEntries": 0,
+              "rejected": 0,
+              "transientEntries": 0
+            }
+          },
+          "subscribers": 0
+        }
+      }
+    },
+    {
+      "mode": "undoRedo",
+      "cycle": 12,
+      "before": {
+        "processes": [
+          {
+            "pid": 2575697,
+            "rssBytes": 512008192
+          }
+        ],
+        "aggregateRssBytes": 512008192,
+        "wasmBytes": 25165824,
+        "canvasPixels": 0,
+        "canvasCount": 0,
+        "owners": [],
+        "engineSurfaces": {
+          "externrefSlots": 1156,
+          "canvasPixels": 0,
+          "imageCount": 0,
+          "detachedCanvases": 0,
+          "canvasCount": 0,
+          "imagePixels": 0
+        },
+        "lastDisposal": {
+          "liveAtFree": 7,
+          "discards": 0,
+          "id": 12,
+          "saves": 7
+        },
+        "renderer": {
+          "sessions": [],
+          "jobs": {
+            "pendingCount": 0,
+            "cancellations": 0,
+            "peakTemporaryCanvasBytes": 3875040,
+            "listenerNotifications": 0,
+            "peakStagingBytes": 3875040,
+            "inFlightEstimatedBytes": 0,
+            "capacityNotifications": 0,
+            "maxFrameBytes": 67108864,
+            "expiryTimerTicks": 0,
+            "resourceLimits": 0,
+            "expiryTimerActive": false,
+            "retryCount": 0,
+            "expiryTimerStarts": 819,
+            "backupImageDataBytes": 0,
+            "activeLeaseEstimatedBytes": 0,
+            "activeJobs": 0,
+            "activeLeaseCount": 0,
+            "maxPending": 2,
+            "transientEstimatedBytes": 0,
+            "loadAttempts": 0,
+            "uniqueResourceCount": 0,
+            "readyLeaseCount": 0,
+            "temporaryCanvasBytes": 0,
+            "maxOwnedBytes": 268435456,
+            "maxStagingBytes": 134217728,
+            "ownedEstimatedBytes": 0,
+            "maxResources": 256,
+            "errors": 0,
+            "peakBackupImageDataBytes": 968760,
+            "completionNotifications": 0
+          },
+          "cache": {
+            "decoded": {
+              "maxBytes": 268435456,
+              "bytes": 0,
+              "misses": 0,
+              "maxEntryBytes": 67108864,
+              "oversize": 0,
+              "maxEntries": 256,
+              "evictions": 0,
+              "hits": 0,
+              "entries": 0,
+              "pendingEntries": 0,
+              "negativeEntries": 0,
+              "rejected": 0,
+              "transientEntries": 0
+            },
+            "images": {
+              "maxBytes": 67108864,
+              "bytes": 0,
+              "misses": 0,
+              "maxEntryBytes": 16777216,
+              "oversize": 0,
+              "maxEntries": 256,
+              "evictions": 0,
+              "hits": 0,
+              "entries": 0,
+              "pendingEntries": 0,
+              "negativeEntries": 0,
+              "rejected": 0,
+              "transientEntries": 0
+            }
+          },
+          "subscribers": 0
+        }
+      },
+      "opened": {
+        "processes": [
+          {
+            "pid": 2575697,
+            "rssBytes": 533835776
+          }
+        ],
+        "aggregateRssBytes": 533835776,
+        "wasmBytes": 25165824,
+        "canvasPixels": 3390660,
+        "canvasCount": 60,
+        "owners": [
+          {
+            "discards": 0,
+            "nativeCapacity": 100,
+            "id": 13,
+            "saves": 7,
+            "live": 7
+          }
+        ],
+        "engineSurfaces": {
+          "externrefSlots": 1156,
+          "canvasPixels": 0,
+          "imageCount": 0,
+          "detachedCanvases": 0,
+          "canvasCount": 0,
+          "imagePixels": 0
+        },
+        "lastDisposal": {
+          "liveAtFree": 7,
+          "discards": 0,
+          "id": 12,
+          "saves": 7
+        },
+        "renderer": {
+          "sessions": [
+            {
+              "maxSummaries": 64,
+              "summaryCodeUnits": 245216,
+              "modelVersion": 19,
+              "canvases": 14,
+              "maxSummaryBytes": 262144,
+              "maxSummaryTotalCodeUnits": 2097152,
+              "sessionId": 14,
+              "queued": 0,
+              "failures": 0,
+              "summaries": 1,
+              "activeJobId": null,
+              "generation": 1,
+              "active": 0
+            }
+          ],
+          "jobs": {
+            "pendingCount": 0,
+            "cancellations": 0,
+            "peakTemporaryCanvasBytes": 3875040,
+            "listenerNotifications": 0,
+            "peakStagingBytes": 3875040,
+            "inFlightEstimatedBytes": 0,
+            "capacityNotifications": 0,
+            "maxFrameBytes": 67108864,
+            "expiryTimerTicks": 0,
+            "resourceLimits": 0,
+            "expiryTimerActive": false,
+            "retryCount": 0,
+            "expiryTimerStarts": 881,
+            "backupImageDataBytes": 0,
+            "activeLeaseEstimatedBytes": 0,
+            "activeJobs": 0,
+            "activeLeaseCount": 0,
+            "maxPending": 2,
+            "transientEstimatedBytes": 0,
+            "loadAttempts": 0,
+            "uniqueResourceCount": 0,
+            "readyLeaseCount": 0,
+            "temporaryCanvasBytes": 0,
+            "maxOwnedBytes": 268435456,
+            "maxStagingBytes": 134217728,
+            "ownedEstimatedBytes": 0,
+            "maxResources": 256,
+            "errors": 0,
+            "peakBackupImageDataBytes": 968760,
+            "completionNotifications": 0
+          },
+          "cache": {
+            "decoded": {
+              "maxBytes": 268435456,
+              "bytes": 0,
+              "misses": 0,
+              "maxEntryBytes": 67108864,
+              "oversize": 0,
+              "maxEntries": 256,
+              "evictions": 0,
+              "hits": 0,
+              "entries": 0,
+              "pendingEntries": 0,
+              "negativeEntries": 0,
+              "rejected": 0,
+              "transientEntries": 0
+            },
+            "images": {
+              "maxBytes": 67108864,
+              "bytes": 0,
+              "misses": 0,
+              "maxEntryBytes": 16777216,
+              "oversize": 0,
+              "maxEntries": 256,
+              "evictions": 0,
+              "hits": 0,
+              "entries": 0,
+              "pendingEntries": 0,
+              "negativeEntries": 0,
+              "rejected": 0,
+              "transientEntries": 0
+            }
+          },
+          "subscribers": 1
+        }
+      },
+      "closed": {
+        "processes": [
+          {
+            "pid": 2575697,
+            "rssBytes": 542777344
+          }
+        ],
+        "aggregateRssBytes": 542777344,
+        "wasmBytes": 25165824,
+        "canvasPixels": 0,
+        "canvasCount": 0,
+        "owners": [],
+        "engineSurfaces": {
+          "externrefSlots": 1156,
+          "canvasPixels": 0,
+          "imageCount": 0,
+          "detachedCanvases": 0,
+          "canvasCount": 0,
+          "imagePixels": 0
+        },
+        "lastDisposal": {
+          "liveAtFree": 7,
+          "discards": 0,
+          "id": 13,
+          "saves": 7
+        },
+        "renderer": {
+          "sessions": [],
+          "jobs": {
+            "pendingCount": 0,
+            "cancellations": 0,
+            "peakTemporaryCanvasBytes": 3875040,
+            "listenerNotifications": 0,
+            "peakStagingBytes": 3875040,
+            "inFlightEstimatedBytes": 0,
+            "capacityNotifications": 0,
+            "maxFrameBytes": 67108864,
+            "expiryTimerTicks": 0,
+            "resourceLimits": 0,
+            "expiryTimerActive": false,
+            "retryCount": 0,
+            "expiryTimerStarts": 885,
+            "backupImageDataBytes": 0,
+            "activeLeaseEstimatedBytes": 0,
+            "activeJobs": 0,
+            "activeLeaseCount": 0,
+            "maxPending": 2,
+            "transientEstimatedBytes": 0,
+            "loadAttempts": 0,
+            "uniqueResourceCount": 0,
+            "readyLeaseCount": 0,
+            "temporaryCanvasBytes": 0,
+            "maxOwnedBytes": 268435456,
+            "maxStagingBytes": 134217728,
+            "ownedEstimatedBytes": 0,
+            "maxResources": 256,
+            "errors": 0,
+            "peakBackupImageDataBytes": 968760,
+            "completionNotifications": 0
+          },
+          "cache": {
+            "decoded": {
+              "maxBytes": 268435456,
+              "bytes": 0,
+              "misses": 0,
+              "maxEntryBytes": 67108864,
+              "oversize": 0,
+              "maxEntries": 256,
+              "evictions": 0,
+              "hits": 0,
+              "entries": 0,
+              "pendingEntries": 0,
+              "negativeEntries": 0,
+              "rejected": 0,
+              "transientEntries": 0
+            },
+            "images": {
+              "maxBytes": 67108864,
+              "bytes": 0,
+              "misses": 0,
+              "maxEntryBytes": 16777216,
+              "oversize": 0,
+              "maxEntries": 256,
+              "evictions": 0,
+              "hits": 0,
+              "entries": 0,
+              "pendingEntries": 0,
+              "negativeEntries": 0,
+              "rejected": 0,
+              "transientEntries": 0
+            }
+          },
+          "subscribers": 0
+        }
+      }
+    },
+    {
+      "mode": "undoRedo",
+      "cycle": 13,
+      "before": {
+        "processes": [
+          {
+            "pid": 2575697,
+            "rssBytes": 542785536
+          }
+        ],
+        "aggregateRssBytes": 542785536,
+        "wasmBytes": 25165824,
+        "canvasPixels": 0,
+        "canvasCount": 0,
+        "owners": [],
+        "engineSurfaces": {
+          "externrefSlots": 1156,
+          "canvasPixels": 0,
+          "imageCount": 0,
+          "detachedCanvases": 0,
+          "canvasCount": 0,
+          "imagePixels": 0
+        },
+        "lastDisposal": {
+          "liveAtFree": 7,
+          "discards": 0,
+          "id": 13,
+          "saves": 7
+        },
+        "renderer": {
+          "sessions": [],
+          "jobs": {
+            "pendingCount": 0,
+            "cancellations": 0,
+            "peakTemporaryCanvasBytes": 3875040,
+            "listenerNotifications": 0,
+            "peakStagingBytes": 3875040,
+            "inFlightEstimatedBytes": 0,
+            "capacityNotifications": 0,
+            "maxFrameBytes": 67108864,
+            "expiryTimerTicks": 0,
+            "resourceLimits": 0,
+            "expiryTimerActive": false,
+            "retryCount": 0,
+            "expiryTimerStarts": 885,
+            "backupImageDataBytes": 0,
+            "activeLeaseEstimatedBytes": 0,
+            "activeJobs": 0,
+            "activeLeaseCount": 0,
+            "maxPending": 2,
+            "transientEstimatedBytes": 0,
+            "loadAttempts": 0,
+            "uniqueResourceCount": 0,
+            "readyLeaseCount": 0,
+            "temporaryCanvasBytes": 0,
+            "maxOwnedBytes": 268435456,
+            "maxStagingBytes": 134217728,
+            "ownedEstimatedBytes": 0,
+            "maxResources": 256,
+            "errors": 0,
+            "peakBackupImageDataBytes": 968760,
+            "completionNotifications": 0
+          },
+          "cache": {
+            "decoded": {
+              "maxBytes": 268435456,
+              "bytes": 0,
+              "misses": 0,
+              "maxEntryBytes": 67108864,
+              "oversize": 0,
+              "maxEntries": 256,
+              "evictions": 0,
+              "hits": 0,
+              "entries": 0,
+              "pendingEntries": 0,
+              "negativeEntries": 0,
+              "rejected": 0,
+              "transientEntries": 0
+            },
+            "images": {
+              "maxBytes": 67108864,
+              "bytes": 0,
+              "misses": 0,
+              "maxEntryBytes": 16777216,
+              "oversize": 0,
+              "maxEntries": 256,
+              "evictions": 0,
+              "hits": 0,
+              "entries": 0,
+              "pendingEntries": 0,
+              "negativeEntries": 0,
+              "rejected": 0,
+              "transientEntries": 0
+            }
+          },
+          "subscribers": 0
+        }
+      },
+      "opened": {
+        "processes": [
+          {
+            "pid": 2575697,
+            "rssBytes": 500731904
+          }
+        ],
+        "aggregateRssBytes": 500731904,
+        "wasmBytes": 25165824,
+        "canvasPixels": 3390660,
+        "canvasCount": 60,
+        "owners": [
+          {
+            "discards": 0,
+            "nativeCapacity": 100,
+            "id": 14,
+            "saves": 7,
+            "live": 7
+          }
+        ],
+        "engineSurfaces": {
+          "externrefSlots": 1156,
+          "canvasPixels": 0,
+          "imageCount": 0,
+          "detachedCanvases": 0,
+          "canvasCount": 0,
+          "imagePixels": 0
+        },
+        "lastDisposal": {
+          "liveAtFree": 7,
+          "discards": 0,
+          "id": 13,
+          "saves": 7
+        },
+        "renderer": {
+          "sessions": [
+            {
+              "maxSummaries": 64,
+              "summaryCodeUnits": 245216,
+              "modelVersion": 19,
+              "canvases": 14,
+              "maxSummaryBytes": 262144,
+              "maxSummaryTotalCodeUnits": 2097152,
+              "sessionId": 15,
+              "queued": 0,
+              "failures": 0,
+              "summaries": 1,
+              "activeJobId": null,
+              "generation": 1,
+              "active": 0
+            }
+          ],
+          "jobs": {
+            "pendingCount": 0,
+            "cancellations": 0,
+            "peakTemporaryCanvasBytes": 3875040,
+            "listenerNotifications": 0,
+            "peakStagingBytes": 3875040,
+            "inFlightEstimatedBytes": 0,
+            "capacityNotifications": 0,
+            "maxFrameBytes": 67108864,
+            "expiryTimerTicks": 0,
+            "resourceLimits": 0,
+            "expiryTimerActive": false,
+            "retryCount": 0,
+            "expiryTimerStarts": 950,
+            "backupImageDataBytes": 0,
+            "activeLeaseEstimatedBytes": 0,
+            "activeJobs": 0,
+            "activeLeaseCount": 0,
+            "maxPending": 2,
+            "transientEstimatedBytes": 0,
+            "loadAttempts": 0,
+            "uniqueResourceCount": 0,
+            "readyLeaseCount": 0,
+            "temporaryCanvasBytes": 0,
+            "maxOwnedBytes": 268435456,
+            "maxStagingBytes": 134217728,
+            "ownedEstimatedBytes": 0,
+            "maxResources": 256,
+            "errors": 0,
+            "peakBackupImageDataBytes": 968760,
+            "completionNotifications": 0
+          },
+          "cache": {
+            "decoded": {
+              "maxBytes": 268435456,
+              "bytes": 0,
+              "misses": 0,
+              "maxEntryBytes": 67108864,
+              "oversize": 0,
+              "maxEntries": 256,
+              "evictions": 0,
+              "hits": 0,
+              "entries": 0,
+              "pendingEntries": 0,
+              "negativeEntries": 0,
+              "rejected": 0,
+              "transientEntries": 0
+            },
+            "images": {
+              "maxBytes": 67108864,
+              "bytes": 0,
+              "misses": 0,
+              "maxEntryBytes": 16777216,
+              "oversize": 0,
+              "maxEntries": 256,
+              "evictions": 0,
+              "hits": 0,
+              "entries": 0,
+              "pendingEntries": 0,
+              "negativeEntries": 0,
+              "rejected": 0,
+              "transientEntries": 0
+            }
+          },
+          "subscribers": 1
+        }
+      },
+      "closed": {
+        "processes": [
+          {
+            "pid": 2575697,
+            "rssBytes": 456990720
+          }
+        ],
+        "aggregateRssBytes": 456990720,
+        "wasmBytes": 25165824,
+        "canvasPixels": 0,
+        "canvasCount": 0,
+        "owners": [],
+        "engineSurfaces": {
+          "externrefSlots": 1156,
+          "canvasPixels": 0,
+          "imageCount": 0,
+          "detachedCanvases": 0,
+          "canvasCount": 0,
+          "imagePixels": 0
+        },
+        "lastDisposal": {
+          "liveAtFree": 7,
+          "discards": 0,
+          "id": 14,
+          "saves": 7
+        },
+        "renderer": {
+          "sessions": [],
+          "jobs": {
+            "pendingCount": 0,
+            "cancellations": 0,
+            "peakTemporaryCanvasBytes": 3875040,
+            "listenerNotifications": 0,
+            "peakStagingBytes": 3875040,
+            "inFlightEstimatedBytes": 0,
+            "capacityNotifications": 0,
+            "maxFrameBytes": 67108864,
+            "expiryTimerTicks": 0,
+            "resourceLimits": 0,
+            "expiryTimerActive": false,
+            "retryCount": 0,
+            "expiryTimerStarts": 953,
+            "backupImageDataBytes": 0,
+            "activeLeaseEstimatedBytes": 0,
+            "activeJobs": 0,
+            "activeLeaseCount": 0,
+            "maxPending": 2,
+            "transientEstimatedBytes": 0,
+            "loadAttempts": 0,
+            "uniqueResourceCount": 0,
+            "readyLeaseCount": 0,
+            "temporaryCanvasBytes": 0,
+            "maxOwnedBytes": 268435456,
+            "maxStagingBytes": 134217728,
+            "ownedEstimatedBytes": 0,
+            "maxResources": 256,
+            "errors": 0,
+            "peakBackupImageDataBytes": 968760,
+            "completionNotifications": 0
+          },
+          "cache": {
+            "decoded": {
+              "maxBytes": 268435456,
+              "bytes": 0,
+              "misses": 0,
+              "maxEntryBytes": 67108864,
+              "oversize": 0,
+              "maxEntries": 256,
+              "evictions": 0,
+              "hits": 0,
+              "entries": 0,
+              "pendingEntries": 0,
+              "negativeEntries": 0,
+              "rejected": 0,
+              "transientEntries": 0
+            },
+            "images": {
+              "maxBytes": 67108864,
+              "bytes": 0,
+              "misses": 0,
+              "maxEntryBytes": 16777216,
+              "oversize": 0,
+              "maxEntries": 256,
+              "evictions": 0,
+              "hits": 0,
+              "entries": 0,
+              "pendingEntries": 0,
+              "negativeEntries": 0,
+              "rejected": 0,
+              "transientEntries": 0
+            }
+          },
+          "subscribers": 0
+        }
+      }
+    },
+    {
+      "mode": "undoRedo",
+      "cycle": 14,
+      "before": {
+        "processes": [
+          {
+            "pid": 2575697,
+            "rssBytes": 457003008
+          }
+        ],
+        "aggregateRssBytes": 457003008,
+        "wasmBytes": 25165824,
+        "canvasPixels": 0,
+        "canvasCount": 0,
+        "owners": [],
+        "engineSurfaces": {
+          "externrefSlots": 1156,
+          "canvasPixels": 0,
+          "imageCount": 0,
+          "detachedCanvases": 0,
+          "canvasCount": 0,
+          "imagePixels": 0
+        },
+        "lastDisposal": {
+          "liveAtFree": 7,
+          "discards": 0,
+          "id": 14,
+          "saves": 7
+        },
+        "renderer": {
+          "sessions": [],
+          "jobs": {
+            "pendingCount": 0,
+            "cancellations": 0,
+            "peakTemporaryCanvasBytes": 3875040,
+            "listenerNotifications": 0,
+            "peakStagingBytes": 3875040,
+            "inFlightEstimatedBytes": 0,
+            "capacityNotifications": 0,
+            "maxFrameBytes": 67108864,
+            "expiryTimerTicks": 0,
+            "resourceLimits": 0,
+            "expiryTimerActive": false,
+            "retryCount": 0,
+            "expiryTimerStarts": 953,
+            "backupImageDataBytes": 0,
+            "activeLeaseEstimatedBytes": 0,
+            "activeJobs": 0,
+            "activeLeaseCount": 0,
+            "maxPending": 2,
+            "transientEstimatedBytes": 0,
+            "loadAttempts": 0,
+            "uniqueResourceCount": 0,
+            "readyLeaseCount": 0,
+            "temporaryCanvasBytes": 0,
+            "maxOwnedBytes": 268435456,
+            "maxStagingBytes": 134217728,
+            "ownedEstimatedBytes": 0,
+            "maxResources": 256,
+            "errors": 0,
+            "peakBackupImageDataBytes": 968760,
+            "completionNotifications": 0
+          },
+          "cache": {
+            "decoded": {
+              "maxBytes": 268435456,
+              "bytes": 0,
+              "misses": 0,
+              "maxEntryBytes": 67108864,
+              "oversize": 0,
+              "maxEntries": 256,
+              "evictions": 0,
+              "hits": 0,
+              "entries": 0,
+              "pendingEntries": 0,
+              "negativeEntries": 0,
+              "rejected": 0,
+              "transientEntries": 0
+            },
+            "images": {
+              "maxBytes": 67108864,
+              "bytes": 0,
+              "misses": 0,
+              "maxEntryBytes": 16777216,
+              "oversize": 0,
+              "maxEntries": 256,
+              "evictions": 0,
+              "hits": 0,
+              "entries": 0,
+              "pendingEntries": 0,
+              "negativeEntries": 0,
+              "rejected": 0,
+              "transientEntries": 0
+            }
+          },
+          "subscribers": 0
+        }
+      },
+      "opened": {
+        "processes": [
+          {
+            "pid": 2575697,
+            "rssBytes": 525385728
+          }
+        ],
+        "aggregateRssBytes": 525385728,
+        "wasmBytes": 25165824,
+        "canvasPixels": 3875040,
+        "canvasCount": 60,
+        "owners": [
+          {
+            "discards": 0,
+            "nativeCapacity": 100,
+            "id": 15,
+            "saves": 7,
+            "live": 7
+          }
+        ],
+        "engineSurfaces": {
+          "externrefSlots": 1156,
+          "canvasPixels": 0,
+          "imageCount": 0,
+          "detachedCanvases": 0,
+          "canvasCount": 0,
+          "imagePixels": 0
+        },
+        "lastDisposal": {
+          "liveAtFree": 7,
+          "discards": 0,
+          "id": 14,
+          "saves": 7
+        },
+        "renderer": {
+          "sessions": [
+            {
+              "maxSummaries": 64,
+              "summaryCodeUnits": 245216,
+              "modelVersion": 19,
+              "canvases": 17,
+              "maxSummaryBytes": 262144,
+              "maxSummaryTotalCodeUnits": 2097152,
+              "sessionId": 16,
+              "queued": 0,
+              "failures": 0,
+              "summaries": 1,
+              "activeJobId": null,
+              "generation": 1,
+              "active": 0
+            }
+          ],
+          "jobs": {
+            "pendingCount": 0,
+            "cancellations": 0,
+            "peakTemporaryCanvasBytes": 3875040,
+            "listenerNotifications": 0,
+            "peakStagingBytes": 3875040,
+            "inFlightEstimatedBytes": 0,
+            "capacityNotifications": 0,
+            "maxFrameBytes": 67108864,
+            "expiryTimerTicks": 0,
+            "resourceLimits": 0,
+            "expiryTimerActive": false,
+            "retryCount": 0,
+            "expiryTimerStarts": 1019,
+            "backupImageDataBytes": 0,
+            "activeLeaseEstimatedBytes": 0,
+            "activeJobs": 0,
+            "activeLeaseCount": 0,
+            "maxPending": 2,
+            "transientEstimatedBytes": 0,
+            "loadAttempts": 0,
+            "uniqueResourceCount": 0,
+            "readyLeaseCount": 0,
+            "temporaryCanvasBytes": 0,
+            "maxOwnedBytes": 268435456,
+            "maxStagingBytes": 134217728,
+            "ownedEstimatedBytes": 0,
+            "maxResources": 256,
+            "errors": 0,
+            "peakBackupImageDataBytes": 968760,
+            "completionNotifications": 0
+          },
+          "cache": {
+            "decoded": {
+              "maxBytes": 268435456,
+              "bytes": 0,
+              "misses": 0,
+              "maxEntryBytes": 67108864,
+              "oversize": 0,
+              "maxEntries": 256,
+              "evictions": 0,
+              "hits": 0,
+              "entries": 0,
+              "pendingEntries": 0,
+              "negativeEntries": 0,
+              "rejected": 0,
+              "transientEntries": 0
+            },
+            "images": {
+              "maxBytes": 67108864,
+              "bytes": 0,
+              "misses": 0,
+              "maxEntryBytes": 16777216,
+              "oversize": 0,
+              "maxEntries": 256,
+              "evictions": 0,
+              "hits": 0,
+              "entries": 0,
+              "pendingEntries": 0,
+              "negativeEntries": 0,
+              "rejected": 0,
+              "transientEntries": 0
+            }
+          },
+          "subscribers": 1
+        }
+      },
+      "closed": {
+        "processes": [
+          {
+            "pid": 2575697,
+            "rssBytes": 529821696
+          }
+        ],
+        "aggregateRssBytes": 529821696,
+        "wasmBytes": 25427968,
+        "canvasPixels": 0,
+        "canvasCount": 0,
+        "owners": [],
+        "engineSurfaces": {
+          "externrefSlots": 1156,
+          "canvasPixels": 0,
+          "imageCount": 0,
+          "detachedCanvases": 0,
+          "canvasCount": 0,
+          "imagePixels": 0
+        },
+        "lastDisposal": {
+          "liveAtFree": 7,
+          "discards": 0,
+          "id": 15,
+          "saves": 7
+        },
+        "renderer": {
+          "sessions": [],
+          "jobs": {
+            "pendingCount": 0,
+            "cancellations": 0,
+            "peakTemporaryCanvasBytes": 3875040,
+            "listenerNotifications": 0,
+            "peakStagingBytes": 3875040,
+            "inFlightEstimatedBytes": 0,
+            "capacityNotifications": 0,
+            "maxFrameBytes": 67108864,
+            "expiryTimerTicks": 0,
+            "resourceLimits": 0,
+            "expiryTimerActive": false,
+            "retryCount": 0,
+            "expiryTimerStarts": 1022,
+            "backupImageDataBytes": 0,
+            "activeLeaseEstimatedBytes": 0,
+            "activeJobs": 0,
+            "activeLeaseCount": 0,
+            "maxPending": 2,
+            "transientEstimatedBytes": 0,
+            "loadAttempts": 0,
+            "uniqueResourceCount": 0,
+            "readyLeaseCount": 0,
+            "temporaryCanvasBytes": 0,
+            "maxOwnedBytes": 268435456,
+            "maxStagingBytes": 134217728,
+            "ownedEstimatedBytes": 0,
+            "maxResources": 256,
+            "errors": 0,
+            "peakBackupImageDataBytes": 968760,
+            "completionNotifications": 0
+          },
+          "cache": {
+            "decoded": {
+              "maxBytes": 268435456,
+              "bytes": 0,
+              "misses": 0,
+              "maxEntryBytes": 67108864,
+              "oversize": 0,
+              "maxEntries": 256,
+              "evictions": 0,
+              "hits": 0,
+              "entries": 0,
+              "pendingEntries": 0,
+              "negativeEntries": 0,
+              "rejected": 0,
+              "transientEntries": 0
+            },
+            "images": {
+              "maxBytes": 67108864,
+              "bytes": 0,
+              "misses": 0,
+              "maxEntryBytes": 16777216,
+              "oversize": 0,
+              "maxEntries": 256,
+              "evictions": 0,
+              "hits": 0,
+              "entries": 0,
+              "pendingEntries": 0,
+              "negativeEntries": 0,
+              "rejected": 0,
+              "transientEntries": 0
+            }
+          },
+          "subscribers": 0
+        }
+      }
+    },
+    {
+      "mode": "undoRedo",
+      "cycle": 15,
+      "before": {
+        "processes": [
+          {
+            "pid": 2575697,
+            "rssBytes": 529829888
+          }
+        ],
+        "aggregateRssBytes": 529829888,
+        "wasmBytes": 25427968,
+        "canvasPixels": 0,
+        "canvasCount": 0,
+        "owners": [],
+        "engineSurfaces": {
+          "externrefSlots": 1156,
+          "canvasPixels": 0,
+          "imageCount": 0,
+          "detachedCanvases": 0,
+          "canvasCount": 0,
+          "imagePixels": 0
+        },
+        "lastDisposal": {
+          "liveAtFree": 7,
+          "discards": 0,
+          "id": 15,
+          "saves": 7
+        },
+        "renderer": {
+          "sessions": [],
+          "jobs": {
+            "pendingCount": 0,
+            "cancellations": 0,
+            "peakTemporaryCanvasBytes": 3875040,
+            "listenerNotifications": 0,
+            "peakStagingBytes": 3875040,
+            "inFlightEstimatedBytes": 0,
+            "capacityNotifications": 0,
+            "maxFrameBytes": 67108864,
+            "expiryTimerTicks": 0,
+            "resourceLimits": 0,
+            "expiryTimerActive": false,
+            "retryCount": 0,
+            "expiryTimerStarts": 1022,
+            "backupImageDataBytes": 0,
+            "activeLeaseEstimatedBytes": 0,
+            "activeJobs": 0,
+            "activeLeaseCount": 0,
+            "maxPending": 2,
+            "transientEstimatedBytes": 0,
+            "loadAttempts": 0,
+            "uniqueResourceCount": 0,
+            "readyLeaseCount": 0,
+            "temporaryCanvasBytes": 0,
+            "maxOwnedBytes": 268435456,
+            "maxStagingBytes": 134217728,
+            "ownedEstimatedBytes": 0,
+            "maxResources": 256,
+            "errors": 0,
+            "peakBackupImageDataBytes": 968760,
+            "completionNotifications": 0
+          },
+          "cache": {
+            "decoded": {
+              "maxBytes": 268435456,
+              "bytes": 0,
+              "misses": 0,
+              "maxEntryBytes": 67108864,
+              "oversize": 0,
+              "maxEntries": 256,
+              "evictions": 0,
+              "hits": 0,
+              "entries": 0,
+              "pendingEntries": 0,
+              "negativeEntries": 0,
+              "rejected": 0,
+              "transientEntries": 0
+            },
+            "images": {
+              "maxBytes": 67108864,
+              "bytes": 0,
+              "misses": 0,
+              "maxEntryBytes": 16777216,
+              "oversize": 0,
+              "maxEntries": 256,
+              "evictions": 0,
+              "hits": 0,
+              "entries": 0,
+              "pendingEntries": 0,
+              "negativeEntries": 0,
+              "rejected": 0,
+              "transientEntries": 0
+            }
+          },
+          "subscribers": 0
+        }
+      },
+      "opened": {
+        "processes": [
+          {
+            "pid": 2575697,
+            "rssBytes": 517296128
+          }
+        ],
+        "aggregateRssBytes": 517296128,
+        "wasmBytes": 25427968,
+        "canvasPixels": 3632850,
+        "canvasCount": 60,
+        "owners": [
+          {
+            "discards": 0,
+            "nativeCapacity": 100,
+            "id": 16,
+            "saves": 7,
+            "live": 7
+          }
+        ],
+        "engineSurfaces": {
+          "externrefSlots": 1156,
+          "canvasPixels": 0,
+          "imageCount": 0,
+          "detachedCanvases": 0,
+          "canvasCount": 0,
+          "imagePixels": 0
+        },
+        "lastDisposal": {
+          "liveAtFree": 7,
+          "discards": 0,
+          "id": 15,
+          "saves": 7
+        },
+        "renderer": {
+          "sessions": [
+            {
+              "maxSummaries": 64,
+              "summaryCodeUnits": 245216,
+              "modelVersion": 19,
+              "canvases": 15,
+              "maxSummaryBytes": 262144,
+              "maxSummaryTotalCodeUnits": 2097152,
+              "sessionId": 17,
+              "queued": 0,
+              "failures": 0,
+              "summaries": 1,
+              "activeJobId": null,
+              "generation": 1,
+              "active": 0
+            }
+          ],
+          "jobs": {
+            "pendingCount": 0,
+            "cancellations": 0,
+            "peakTemporaryCanvasBytes": 3875040,
+            "listenerNotifications": 0,
+            "peakStagingBytes": 3875040,
+            "inFlightEstimatedBytes": 0,
+            "capacityNotifications": 0,
+            "maxFrameBytes": 67108864,
+            "expiryTimerTicks": 0,
+            "resourceLimits": 0,
+            "expiryTimerActive": false,
+            "retryCount": 0,
+            "expiryTimerStarts": 1086,
+            "backupImageDataBytes": 0,
+            "activeLeaseEstimatedBytes": 0,
+            "activeJobs": 0,
+            "activeLeaseCount": 0,
+            "maxPending": 2,
+            "transientEstimatedBytes": 0,
+            "loadAttempts": 0,
+            "uniqueResourceCount": 0,
+            "readyLeaseCount": 0,
+            "temporaryCanvasBytes": 0,
+            "maxOwnedBytes": 268435456,
+            "maxStagingBytes": 134217728,
+            "ownedEstimatedBytes": 0,
+            "maxResources": 256,
+            "errors": 0,
+            "peakBackupImageDataBytes": 968760,
+            "completionNotifications": 0
+          },
+          "cache": {
+            "decoded": {
+              "maxBytes": 268435456,
+              "bytes": 0,
+              "misses": 0,
+              "maxEntryBytes": 67108864,
+              "oversize": 0,
+              "maxEntries": 256,
+              "evictions": 0,
+              "hits": 0,
+              "entries": 0,
+              "pendingEntries": 0,
+              "negativeEntries": 0,
+              "rejected": 0,
+              "transientEntries": 0
+            },
+            "images": {
+              "maxBytes": 67108864,
+              "bytes": 0,
+              "misses": 0,
+              "maxEntryBytes": 16777216,
+              "oversize": 0,
+              "maxEntries": 256,
+              "evictions": 0,
+              "hits": 0,
+              "entries": 0,
+              "pendingEntries": 0,
+              "negativeEntries": 0,
+              "rejected": 0,
+              "transientEntries": 0
+            }
+          },
+          "subscribers": 1
+        }
+      },
+      "closed": {
+        "processes": [
+          {
+            "pid": 2575697,
+            "rssBytes": 406147072
+          }
+        ],
+        "aggregateRssBytes": 406147072,
+        "wasmBytes": 25427968,
+        "canvasPixels": 0,
+        "canvasCount": 0,
+        "owners": [],
+        "engineSurfaces": {
+          "externrefSlots": 1156,
+          "canvasPixels": 0,
+          "imageCount": 0,
+          "detachedCanvases": 0,
+          "canvasCount": 0,
+          "imagePixels": 0
+        },
+        "lastDisposal": {
+          "liveAtFree": 7,
+          "discards": 0,
+          "id": 16,
+          "saves": 7
+        },
+        "renderer": {
+          "sessions": [],
+          "jobs": {
+            "pendingCount": 0,
+            "cancellations": 0,
+            "peakTemporaryCanvasBytes": 3875040,
+            "listenerNotifications": 0,
+            "peakStagingBytes": 3875040,
+            "inFlightEstimatedBytes": 0,
+            "capacityNotifications": 0,
+            "maxFrameBytes": 67108864,
+            "expiryTimerTicks": 0,
+            "resourceLimits": 0,
+            "expiryTimerActive": false,
+            "retryCount": 0,
+            "expiryTimerStarts": 1088,
+            "backupImageDataBytes": 0,
+            "activeLeaseEstimatedBytes": 0,
+            "activeJobs": 0,
+            "activeLeaseCount": 0,
+            "maxPending": 2,
+            "transientEstimatedBytes": 0,
+            "loadAttempts": 0,
+            "uniqueResourceCount": 0,
+            "readyLeaseCount": 0,
+            "temporaryCanvasBytes": 0,
+            "maxOwnedBytes": 268435456,
+            "maxStagingBytes": 134217728,
+            "ownedEstimatedBytes": 0,
+            "maxResources": 256,
+            "errors": 0,
+            "peakBackupImageDataBytes": 968760,
+            "completionNotifications": 0
+          },
+          "cache": {
+            "decoded": {
+              "maxBytes": 268435456,
+              "bytes": 0,
+              "misses": 0,
+              "maxEntryBytes": 67108864,
+              "oversize": 0,
+              "maxEntries": 256,
+              "evictions": 0,
+              "hits": 0,
+              "entries": 0,
+              "pendingEntries": 0,
+              "negativeEntries": 0,
+              "rejected": 0,
+              "transientEntries": 0
+            },
+            "images": {
+              "maxBytes": 67108864,
+              "bytes": 0,
+              "misses": 0,
+              "maxEntryBytes": 16777216,
+              "oversize": 0,
+              "maxEntries": 256,
+              "evictions": 0,
+              "hits": 0,
+              "entries": 0,
+              "pendingEntries": 0,
+              "negativeEntries": 0,
+              "rejected": 0,
+              "transientEntries": 0
+            }
+          },
+          "subscribers": 0
+        }
+      }
+    },
+    {
+      "mode": "undoRedo",
+      "cycle": 16,
+      "before": {
+        "processes": [
+          {
+            "pid": 2575697,
+            "rssBytes": 406159360
+          }
+        ],
+        "aggregateRssBytes": 406159360,
+        "wasmBytes": 25427968,
+        "canvasPixels": 0,
+        "canvasCount": 0,
+        "owners": [],
+        "engineSurfaces": {
+          "externrefSlots": 1156,
+          "canvasPixels": 0,
+          "imageCount": 0,
+          "detachedCanvases": 0,
+          "canvasCount": 0,
+          "imagePixels": 0
+        },
+        "lastDisposal": {
+          "liveAtFree": 7,
+          "discards": 0,
+          "id": 16,
+          "saves": 7
+        },
+        "renderer": {
+          "sessions": [],
+          "jobs": {
+            "pendingCount": 0,
+            "cancellations": 0,
+            "peakTemporaryCanvasBytes": 3875040,
+            "listenerNotifications": 0,
+            "peakStagingBytes": 3875040,
+            "inFlightEstimatedBytes": 0,
+            "capacityNotifications": 0,
+            "maxFrameBytes": 67108864,
+            "expiryTimerTicks": 0,
+            "resourceLimits": 0,
+            "expiryTimerActive": false,
+            "retryCount": 0,
+            "expiryTimerStarts": 1088,
+            "backupImageDataBytes": 0,
+            "activeLeaseEstimatedBytes": 0,
+            "activeJobs": 0,
+            "activeLeaseCount": 0,
+            "maxPending": 2,
+            "transientEstimatedBytes": 0,
+            "loadAttempts": 0,
+            "uniqueResourceCount": 0,
+            "readyLeaseCount": 0,
+            "temporaryCanvasBytes": 0,
+            "maxOwnedBytes": 268435456,
+            "maxStagingBytes": 134217728,
+            "ownedEstimatedBytes": 0,
+            "maxResources": 256,
+            "errors": 0,
+            "peakBackupImageDataBytes": 968760,
+            "completionNotifications": 0
+          },
+          "cache": {
+            "decoded": {
+              "maxBytes": 268435456,
+              "bytes": 0,
+              "misses": 0,
+              "maxEntryBytes": 67108864,
+              "oversize": 0,
+              "maxEntries": 256,
+              "evictions": 0,
+              "hits": 0,
+              "entries": 0,
+              "pendingEntries": 0,
+              "negativeEntries": 0,
+              "rejected": 0,
+              "transientEntries": 0
+            },
+            "images": {
+              "maxBytes": 67108864,
+              "bytes": 0,
+              "misses": 0,
+              "maxEntryBytes": 16777216,
+              "oversize": 0,
+              "maxEntries": 256,
+              "evictions": 0,
+              "hits": 0,
+              "entries": 0,
+              "pendingEntries": 0,
+              "negativeEntries": 0,
+              "rejected": 0,
+              "transientEntries": 0
+            }
+          },
+          "subscribers": 0
+        }
+      },
+      "opened": {
+        "processes": [
+          {
+            "pid": 2575697,
+            "rssBytes": 501301248
+          }
+        ],
+        "aggregateRssBytes": 501301248,
+        "wasmBytes": 25427968,
+        "canvasPixels": 3632850,
+        "canvasCount": 60,
+        "owners": [
+          {
+            "discards": 0,
+            "nativeCapacity": 100,
+            "id": 17,
+            "saves": 7,
+            "live": 7
+          }
+        ],
+        "engineSurfaces": {
+          "externrefSlots": 1156,
+          "canvasPixels": 0,
+          "imageCount": 0,
+          "detachedCanvases": 0,
+          "canvasCount": 0,
+          "imagePixels": 0
+        },
+        "lastDisposal": {
+          "liveAtFree": 7,
+          "discards": 0,
+          "id": 16,
+          "saves": 7
+        },
+        "renderer": {
+          "sessions": [
+            {
+              "maxSummaries": 64,
+              "summaryCodeUnits": 245216,
+              "modelVersion": 19,
+              "canvases": 15,
+              "maxSummaryBytes": 262144,
+              "maxSummaryTotalCodeUnits": 2097152,
+              "sessionId": 18,
+              "queued": 0,
+              "failures": 0,
+              "summaries": 1,
+              "activeJobId": null,
+              "generation": 1,
+              "active": 0
+            }
+          ],
+          "jobs": {
+            "pendingCount": 0,
+            "cancellations": 0,
+            "peakTemporaryCanvasBytes": 3875040,
+            "listenerNotifications": 0,
+            "peakStagingBytes": 3875040,
+            "inFlightEstimatedBytes": 0,
+            "capacityNotifications": 0,
+            "maxFrameBytes": 67108864,
+            "expiryTimerTicks": 0,
+            "resourceLimits": 0,
+            "expiryTimerActive": false,
+            "retryCount": 0,
+            "expiryTimerStarts": 1150,
+            "backupImageDataBytes": 0,
+            "activeLeaseEstimatedBytes": 0,
+            "activeJobs": 0,
+            "activeLeaseCount": 0,
+            "maxPending": 2,
+            "transientEstimatedBytes": 0,
+            "loadAttempts": 0,
+            "uniqueResourceCount": 0,
+            "readyLeaseCount": 0,
+            "temporaryCanvasBytes": 0,
+            "maxOwnedBytes": 268435456,
+            "maxStagingBytes": 134217728,
+            "ownedEstimatedBytes": 0,
+            "maxResources": 256,
+            "errors": 0,
+            "peakBackupImageDataBytes": 968760,
+            "completionNotifications": 0
+          },
+          "cache": {
+            "decoded": {
+              "maxBytes": 268435456,
+              "bytes": 0,
+              "misses": 0,
+              "maxEntryBytes": 67108864,
+              "oversize": 0,
+              "maxEntries": 256,
+              "evictions": 0,
+              "hits": 0,
+              "entries": 0,
+              "pendingEntries": 0,
+              "negativeEntries": 0,
+              "rejected": 0,
+              "transientEntries": 0
+            },
+            "images": {
+              "maxBytes": 67108864,
+              "bytes": 0,
+              "misses": 0,
+              "maxEntryBytes": 16777216,
+              "oversize": 0,
+              "maxEntries": 256,
+              "evictions": 0,
+              "hits": 0,
+              "entries": 0,
+              "pendingEntries": 0,
+              "negativeEntries": 0,
+              "rejected": 0,
+              "transientEntries": 0
+            }
+          },
+          "subscribers": 1
+        }
+      },
+      "closed": {
+        "processes": [
+          {
+            "pid": 2575697,
+            "rssBytes": 504115200
+          }
+        ],
+        "aggregateRssBytes": 504115200,
+        "wasmBytes": 25427968,
+        "canvasPixels": 0,
+        "canvasCount": 0,
+        "owners": [],
+        "engineSurfaces": {
+          "externrefSlots": 1156,
+          "canvasPixels": 0,
+          "imageCount": 0,
+          "detachedCanvases": 0,
+          "canvasCount": 0,
+          "imagePixels": 0
+        },
+        "lastDisposal": {
+          "liveAtFree": 7,
+          "discards": 0,
+          "id": 17,
+          "saves": 7
+        },
+        "renderer": {
+          "sessions": [],
+          "jobs": {
+            "pendingCount": 0,
+            "cancellations": 0,
+            "peakTemporaryCanvasBytes": 3875040,
+            "listenerNotifications": 0,
+            "peakStagingBytes": 3875040,
+            "inFlightEstimatedBytes": 0,
+            "capacityNotifications": 0,
+            "maxFrameBytes": 67108864,
+            "expiryTimerTicks": 0,
+            "resourceLimits": 0,
+            "expiryTimerActive": false,
+            "retryCount": 0,
+            "expiryTimerStarts": 1152,
+            "backupImageDataBytes": 0,
+            "activeLeaseEstimatedBytes": 0,
+            "activeJobs": 0,
+            "activeLeaseCount": 0,
+            "maxPending": 2,
+            "transientEstimatedBytes": 0,
+            "loadAttempts": 0,
+            "uniqueResourceCount": 0,
+            "readyLeaseCount": 0,
+            "temporaryCanvasBytes": 0,
+            "maxOwnedBytes": 268435456,
+            "maxStagingBytes": 134217728,
+            "ownedEstimatedBytes": 0,
+            "maxResources": 256,
+            "errors": 0,
+            "peakBackupImageDataBytes": 968760,
+            "completionNotifications": 0
+          },
+          "cache": {
+            "decoded": {
+              "maxBytes": 268435456,
+              "bytes": 0,
+              "misses": 0,
+              "maxEntryBytes": 67108864,
+              "oversize": 0,
+              "maxEntries": 256,
+              "evictions": 0,
+              "hits": 0,
+              "entries": 0,
+              "pendingEntries": 0,
+              "negativeEntries": 0,
+              "rejected": 0,
+              "transientEntries": 0
+            },
+            "images": {
+              "maxBytes": 67108864,
+              "bytes": 0,
+              "misses": 0,
+              "maxEntryBytes": 16777216,
+              "oversize": 0,
+              "maxEntries": 256,
+              "evictions": 0,
+              "hits": 0,
+              "entries": 0,
+              "pendingEntries": 0,
+              "negativeEntries": 0,
+              "rejected": 0,
+              "transientEntries": 0
+            }
+          },
+          "subscribers": 0
+        }
+      }
+    },
+    {
+      "mode": "undoRedo",
+      "cycle": 17,
+      "before": {
+        "processes": [
+          {
+            "pid": 2575697,
+            "rssBytes": 504127488
+          }
+        ],
+        "aggregateRssBytes": 504127488,
+        "wasmBytes": 25427968,
+        "canvasPixels": 0,
+        "canvasCount": 0,
+        "owners": [],
+        "engineSurfaces": {
+          "externrefSlots": 1156,
+          "canvasPixels": 0,
+          "imageCount": 0,
+          "detachedCanvases": 0,
+          "canvasCount": 0,
+          "imagePixels": 0
+        },
+        "lastDisposal": {
+          "liveAtFree": 7,
+          "discards": 0,
+          "id": 17,
+          "saves": 7
+        },
+        "renderer": {
+          "sessions": [],
+          "jobs": {
+            "pendingCount": 0,
+            "cancellations": 0,
+            "peakTemporaryCanvasBytes": 3875040,
+            "listenerNotifications": 0,
+            "peakStagingBytes": 3875040,
+            "inFlightEstimatedBytes": 0,
+            "capacityNotifications": 0,
+            "maxFrameBytes": 67108864,
+            "expiryTimerTicks": 0,
+            "resourceLimits": 0,
+            "expiryTimerActive": false,
+            "retryCount": 0,
+            "expiryTimerStarts": 1152,
+            "backupImageDataBytes": 0,
+            "activeLeaseEstimatedBytes": 0,
+            "activeJobs": 0,
+            "activeLeaseCount": 0,
+            "maxPending": 2,
+            "transientEstimatedBytes": 0,
+            "loadAttempts": 0,
+            "uniqueResourceCount": 0,
+            "readyLeaseCount": 0,
+            "temporaryCanvasBytes": 0,
+            "maxOwnedBytes": 268435456,
+            "maxStagingBytes": 134217728,
+            "ownedEstimatedBytes": 0,
+            "maxResources": 256,
+            "errors": 0,
+            "peakBackupImageDataBytes": 968760,
+            "completionNotifications": 0
+          },
+          "cache": {
+            "decoded": {
+              "maxBytes": 268435456,
+              "bytes": 0,
+              "misses": 0,
+              "maxEntryBytes": 67108864,
+              "oversize": 0,
+              "maxEntries": 256,
+              "evictions": 0,
+              "hits": 0,
+              "entries": 0,
+              "pendingEntries": 0,
+              "negativeEntries": 0,
+              "rejected": 0,
+              "transientEntries": 0
+            },
+            "images": {
+              "maxBytes": 67108864,
+              "bytes": 0,
+              "misses": 0,
+              "maxEntryBytes": 16777216,
+              "oversize": 0,
+              "maxEntries": 256,
+              "evictions": 0,
+              "hits": 0,
+              "entries": 0,
+              "pendingEntries": 0,
+              "negativeEntries": 0,
+              "rejected": 0,
+              "transientEntries": 0
+            }
+          },
+          "subscribers": 0
+        }
+      },
+      "opened": {
+        "processes": [
+          {
+            "pid": 2575697,
+            "rssBytes": 541573120
+          }
+        ],
+        "aggregateRssBytes": 541573120,
+        "wasmBytes": 25427968,
+        "canvasPixels": 3390660,
+        "canvasCount": 60,
+        "owners": [
+          {
+            "discards": 0,
+            "nativeCapacity": 100,
+            "id": 18,
+            "saves": 7,
+            "live": 7
+          }
+        ],
+        "engineSurfaces": {
+          "externrefSlots": 1156,
+          "canvasPixels": 0,
+          "imageCount": 0,
+          "detachedCanvases": 0,
+          "canvasCount": 0,
+          "imagePixels": 0
+        },
+        "lastDisposal": {
+          "liveAtFree": 7,
+          "discards": 0,
+          "id": 17,
+          "saves": 7
+        },
+        "renderer": {
+          "sessions": [
+            {
+              "maxSummaries": 64,
+              "summaryCodeUnits": 245216,
+              "modelVersion": 19,
+              "canvases": 15,
+              "maxSummaryBytes": 262144,
+              "maxSummaryTotalCodeUnits": 2097152,
+              "sessionId": 19,
+              "queued": 0,
+              "failures": 0,
+              "summaries": 1,
+              "activeJobId": null,
+              "generation": 1,
+              "active": 0
+            }
+          ],
+          "jobs": {
+            "pendingCount": 0,
+            "cancellations": 0,
+            "peakTemporaryCanvasBytes": 3875040,
+            "listenerNotifications": 0,
+            "peakStagingBytes": 3875040,
+            "inFlightEstimatedBytes": 0,
+            "capacityNotifications": 0,
+            "maxFrameBytes": 67108864,
+            "expiryTimerTicks": 0,
+            "resourceLimits": 0,
+            "expiryTimerActive": false,
+            "retryCount": 0,
+            "expiryTimerStarts": 1218,
+            "backupImageDataBytes": 0,
+            "activeLeaseEstimatedBytes": 0,
+            "activeJobs": 0,
+            "activeLeaseCount": 0,
+            "maxPending": 2,
+            "transientEstimatedBytes": 0,
+            "loadAttempts": 0,
+            "uniqueResourceCount": 0,
+            "readyLeaseCount": 0,
+            "temporaryCanvasBytes": 0,
+            "maxOwnedBytes": 268435456,
+            "maxStagingBytes": 134217728,
+            "ownedEstimatedBytes": 0,
+            "maxResources": 256,
+            "errors": 0,
+            "peakBackupImageDataBytes": 968760,
+            "completionNotifications": 0
+          },
+          "cache": {
+            "decoded": {
+              "maxBytes": 268435456,
+              "bytes": 0,
+              "misses": 0,
+              "maxEntryBytes": 67108864,
+              "oversize": 0,
+              "maxEntries": 256,
+              "evictions": 0,
+              "hits": 0,
+              "entries": 0,
+              "pendingEntries": 0,
+              "negativeEntries": 0,
+              "rejected": 0,
+              "transientEntries": 0
+            },
+            "images": {
+              "maxBytes": 67108864,
+              "bytes": 0,
+              "misses": 0,
+              "maxEntryBytes": 16777216,
+              "oversize": 0,
+              "maxEntries": 256,
+              "evictions": 0,
+              "hits": 0,
+              "entries": 0,
+              "pendingEntries": 0,
+              "negativeEntries": 0,
+              "rejected": 0,
+              "transientEntries": 0
+            }
+          },
+          "subscribers": 1
+        }
+      },
+      "closed": {
+        "processes": [
+          {
+            "pid": 2575697,
+            "rssBytes": 551780352
+          }
+        ],
+        "aggregateRssBytes": 551780352,
+        "wasmBytes": 25427968,
+        "canvasPixels": 0,
+        "canvasCount": 0,
+        "owners": [],
+        "engineSurfaces": {
+          "externrefSlots": 1156,
+          "canvasPixels": 0,
+          "imageCount": 0,
+          "detachedCanvases": 0,
+          "canvasCount": 0,
+          "imagePixels": 0
+        },
+        "lastDisposal": {
+          "liveAtFree": 7,
+          "discards": 0,
+          "id": 18,
+          "saves": 7
+        },
+        "renderer": {
+          "sessions": [],
+          "jobs": {
+            "pendingCount": 0,
+            "cancellations": 0,
+            "peakTemporaryCanvasBytes": 3875040,
+            "listenerNotifications": 0,
+            "peakStagingBytes": 3875040,
+            "inFlightEstimatedBytes": 0,
+            "capacityNotifications": 0,
+            "maxFrameBytes": 67108864,
+            "expiryTimerTicks": 0,
+            "resourceLimits": 0,
+            "expiryTimerActive": false,
+            "retryCount": 0,
+            "expiryTimerStarts": 1220,
+            "backupImageDataBytes": 0,
+            "activeLeaseEstimatedBytes": 0,
+            "activeJobs": 0,
+            "activeLeaseCount": 0,
+            "maxPending": 2,
+            "transientEstimatedBytes": 0,
+            "loadAttempts": 0,
+            "uniqueResourceCount": 0,
+            "readyLeaseCount": 0,
+            "temporaryCanvasBytes": 0,
+            "maxOwnedBytes": 268435456,
+            "maxStagingBytes": 134217728,
+            "ownedEstimatedBytes": 0,
+            "maxResources": 256,
+            "errors": 0,
+            "peakBackupImageDataBytes": 968760,
+            "completionNotifications": 0
+          },
+          "cache": {
+            "decoded": {
+              "maxBytes": 268435456,
+              "bytes": 0,
+              "misses": 0,
+              "maxEntryBytes": 67108864,
+              "oversize": 0,
+              "maxEntries": 256,
+              "evictions": 0,
+              "hits": 0,
+              "entries": 0,
+              "pendingEntries": 0,
+              "negativeEntries": 0,
+              "rejected": 0,
+              "transientEntries": 0
+            },
+            "images": {
+              "maxBytes": 67108864,
+              "bytes": 0,
+              "misses": 0,
+              "maxEntryBytes": 16777216,
+              "oversize": 0,
+              "maxEntries": 256,
+              "evictions": 0,
+              "hits": 0,
+              "entries": 0,
+              "pendingEntries": 0,
+              "negativeEntries": 0,
+              "rejected": 0,
+              "transientEntries": 0
+            }
+          },
+          "subscribers": 0
+        }
+      }
+    },
+    {
+      "mode": "undoRedo",
+      "cycle": 18,
+      "before": {
+        "processes": [
+          {
+            "pid": 2575697,
+            "rssBytes": 551796736
+          }
+        ],
+        "aggregateRssBytes": 551796736,
+        "wasmBytes": 25427968,
+        "canvasPixels": 0,
+        "canvasCount": 0,
+        "owners": [],
+        "engineSurfaces": {
+          "externrefSlots": 1156,
+          "canvasPixels": 0,
+          "imageCount": 0,
+          "detachedCanvases": 0,
+          "canvasCount": 0,
+          "imagePixels": 0
+        },
+        "lastDisposal": {
+          "liveAtFree": 7,
+          "discards": 0,
+          "id": 18,
+          "saves": 7
+        },
+        "renderer": {
+          "sessions": [],
+          "jobs": {
+            "pendingCount": 0,
+            "cancellations": 0,
+            "peakTemporaryCanvasBytes": 3875040,
+            "listenerNotifications": 0,
+            "peakStagingBytes": 3875040,
+            "inFlightEstimatedBytes": 0,
+            "capacityNotifications": 0,
+            "maxFrameBytes": 67108864,
+            "expiryTimerTicks": 0,
+            "resourceLimits": 0,
+            "expiryTimerActive": false,
+            "retryCount": 0,
+            "expiryTimerStarts": 1220,
+            "backupImageDataBytes": 0,
+            "activeLeaseEstimatedBytes": 0,
+            "activeJobs": 0,
+            "activeLeaseCount": 0,
+            "maxPending": 2,
+            "transientEstimatedBytes": 0,
+            "loadAttempts": 0,
+            "uniqueResourceCount": 0,
+            "readyLeaseCount": 0,
+            "temporaryCanvasBytes": 0,
+            "maxOwnedBytes": 268435456,
+            "maxStagingBytes": 134217728,
+            "ownedEstimatedBytes": 0,
+            "maxResources": 256,
+            "errors": 0,
+            "peakBackupImageDataBytes": 968760,
+            "completionNotifications": 0
+          },
+          "cache": {
+            "decoded": {
+              "maxBytes": 268435456,
+              "bytes": 0,
+              "misses": 0,
+              "maxEntryBytes": 67108864,
+              "oversize": 0,
+              "maxEntries": 256,
+              "evictions": 0,
+              "hits": 0,
+              "entries": 0,
+              "pendingEntries": 0,
+              "negativeEntries": 0,
+              "rejected": 0,
+              "transientEntries": 0
+            },
+            "images": {
+              "maxBytes": 67108864,
+              "bytes": 0,
+              "misses": 0,
+              "maxEntryBytes": 16777216,
+              "oversize": 0,
+              "maxEntries": 256,
+              "evictions": 0,
+              "hits": 0,
+              "entries": 0,
+              "pendingEntries": 0,
+              "negativeEntries": 0,
+              "rejected": 0,
+              "transientEntries": 0
+            }
+          },
+          "subscribers": 0
+        }
+      },
+      "opened": {
+        "processes": [
+          {
+            "pid": 2575697,
+            "rssBytes": 559026176
+          }
+        ],
+        "aggregateRssBytes": 559026176,
+        "wasmBytes": 25427968,
+        "canvasPixels": 3875040,
+        "canvasCount": 60,
+        "owners": [
+          {
+            "discards": 0,
+            "nativeCapacity": 100,
+            "id": 19,
+            "saves": 7,
+            "live": 7
+          }
+        ],
+        "engineSurfaces": {
+          "externrefSlots": 1156,
+          "canvasPixels": 0,
+          "imageCount": 0,
+          "detachedCanvases": 0,
+          "canvasCount": 0,
+          "imagePixels": 0
+        },
+        "lastDisposal": {
+          "liveAtFree": 7,
+          "discards": 0,
+          "id": 18,
+          "saves": 7
+        },
+        "renderer": {
+          "sessions": [
+            {
+              "maxSummaries": 64,
+              "summaryCodeUnits": 245216,
+              "modelVersion": 19,
+              "canvases": 16,
+              "maxSummaryBytes": 262144,
+              "maxSummaryTotalCodeUnits": 2097152,
+              "sessionId": 20,
+              "queued": 0,
+              "failures": 0,
+              "summaries": 1,
+              "activeJobId": null,
+              "generation": 1,
+              "active": 0
+            }
+          ],
+          "jobs": {
+            "pendingCount": 0,
+            "cancellations": 0,
+            "peakTemporaryCanvasBytes": 3875040,
+            "listenerNotifications": 0,
+            "peakStagingBytes": 3875040,
+            "inFlightEstimatedBytes": 0,
+            "capacityNotifications": 0,
+            "maxFrameBytes": 67108864,
+            "expiryTimerTicks": 0,
+            "resourceLimits": 0,
+            "expiryTimerActive": false,
+            "retryCount": 0,
+            "expiryTimerStarts": 1286,
+            "backupImageDataBytes": 0,
+            "activeLeaseEstimatedBytes": 0,
+            "activeJobs": 0,
+            "activeLeaseCount": 0,
+            "maxPending": 2,
+            "transientEstimatedBytes": 0,
+            "loadAttempts": 0,
+            "uniqueResourceCount": 0,
+            "readyLeaseCount": 0,
+            "temporaryCanvasBytes": 0,
+            "maxOwnedBytes": 268435456,
+            "maxStagingBytes": 134217728,
+            "ownedEstimatedBytes": 0,
+            "maxResources": 256,
+            "errors": 0,
+            "peakBackupImageDataBytes": 968760,
+            "completionNotifications": 0
+          },
+          "cache": {
+            "decoded": {
+              "maxBytes": 268435456,
+              "bytes": 0,
+              "misses": 0,
+              "maxEntryBytes": 67108864,
+              "oversize": 0,
+              "maxEntries": 256,
+              "evictions": 0,
+              "hits": 0,
+              "entries": 0,
+              "pendingEntries": 0,
+              "negativeEntries": 0,
+              "rejected": 0,
+              "transientEntries": 0
+            },
+            "images": {
+              "maxBytes": 67108864,
+              "bytes": 0,
+              "misses": 0,
+              "maxEntryBytes": 16777216,
+              "oversize": 0,
+              "maxEntries": 256,
+              "evictions": 0,
+              "hits": 0,
+              "entries": 0,
+              "pendingEntries": 0,
+              "negativeEntries": 0,
+              "rejected": 0,
+              "transientEntries": 0
+            }
+          },
+          "subscribers": 1
+        }
+      },
+      "closed": {
+        "processes": [
+          {
+            "pid": 2575697,
+            "rssBytes": 560685056
+          }
+        ],
+        "aggregateRssBytes": 560685056,
+        "wasmBytes": 25427968,
+        "canvasPixels": 0,
+        "canvasCount": 0,
+        "owners": [],
+        "engineSurfaces": {
+          "externrefSlots": 1156,
+          "canvasPixels": 0,
+          "imageCount": 0,
+          "detachedCanvases": 0,
+          "canvasCount": 0,
+          "imagePixels": 0
+        },
+        "lastDisposal": {
+          "liveAtFree": 7,
+          "discards": 0,
+          "id": 19,
+          "saves": 7
+        },
+        "renderer": {
+          "sessions": [],
+          "jobs": {
+            "pendingCount": 0,
+            "cancellations": 0,
+            "peakTemporaryCanvasBytes": 3875040,
+            "listenerNotifications": 0,
+            "peakStagingBytes": 3875040,
+            "inFlightEstimatedBytes": 0,
+            "capacityNotifications": 0,
+            "maxFrameBytes": 67108864,
+            "expiryTimerTicks": 0,
+            "resourceLimits": 0,
+            "expiryTimerActive": false,
+            "retryCount": 0,
+            "expiryTimerStarts": 1289,
+            "backupImageDataBytes": 0,
+            "activeLeaseEstimatedBytes": 0,
+            "activeJobs": 0,
+            "activeLeaseCount": 0,
+            "maxPending": 2,
+            "transientEstimatedBytes": 0,
+            "loadAttempts": 0,
+            "uniqueResourceCount": 0,
+            "readyLeaseCount": 0,
+            "temporaryCanvasBytes": 0,
+            "maxOwnedBytes": 268435456,
+            "maxStagingBytes": 134217728,
+            "ownedEstimatedBytes": 0,
+            "maxResources": 256,
+            "errors": 0,
+            "peakBackupImageDataBytes": 968760,
+            "completionNotifications": 0
+          },
+          "cache": {
+            "decoded": {
+              "maxBytes": 268435456,
+              "bytes": 0,
+              "misses": 0,
+              "maxEntryBytes": 67108864,
+              "oversize": 0,
+              "maxEntries": 256,
+              "evictions": 0,
+              "hits": 0,
+              "entries": 0,
+              "pendingEntries": 0,
+              "negativeEntries": 0,
+              "rejected": 0,
+              "transientEntries": 0
+            },
+            "images": {
+              "maxBytes": 67108864,
+              "bytes": 0,
+              "misses": 0,
+              "maxEntryBytes": 16777216,
+              "oversize": 0,
+              "maxEntries": 256,
+              "evictions": 0,
+              "hits": 0,
+              "entries": 0,
+              "pendingEntries": 0,
+              "negativeEntries": 0,
+              "rejected": 0,
+              "transientEntries": 0
+            }
+          },
+          "subscribers": 0
+        }
+      }
+    },
+    {
+      "mode": "undoRedo",
+      "cycle": 19,
+      "before": {
+        "processes": [
+          {
+            "pid": 2575697,
+            "rssBytes": 560697344
+          }
+        ],
+        "aggregateRssBytes": 560697344,
+        "wasmBytes": 25427968,
+        "canvasPixels": 0,
+        "canvasCount": 0,
+        "owners": [],
+        "engineSurfaces": {
+          "externrefSlots": 1156,
+          "canvasPixels": 0,
+          "imageCount": 0,
+          "detachedCanvases": 0,
+          "canvasCount": 0,
+          "imagePixels": 0
+        },
+        "lastDisposal": {
+          "liveAtFree": 7,
+          "discards": 0,
+          "id": 19,
+          "saves": 7
+        },
+        "renderer": {
+          "sessions": [],
+          "jobs": {
+            "pendingCount": 0,
+            "cancellations": 0,
+            "peakTemporaryCanvasBytes": 3875040,
+            "listenerNotifications": 0,
+            "peakStagingBytes": 3875040,
+            "inFlightEstimatedBytes": 0,
+            "capacityNotifications": 0,
+            "maxFrameBytes": 67108864,
+            "expiryTimerTicks": 0,
+            "resourceLimits": 0,
+            "expiryTimerActive": false,
+            "retryCount": 0,
+            "expiryTimerStarts": 1289,
+            "backupImageDataBytes": 0,
+            "activeLeaseEstimatedBytes": 0,
+            "activeJobs": 0,
+            "activeLeaseCount": 0,
+            "maxPending": 2,
+            "transientEstimatedBytes": 0,
+            "loadAttempts": 0,
+            "uniqueResourceCount": 0,
+            "readyLeaseCount": 0,
+            "temporaryCanvasBytes": 0,
+            "maxOwnedBytes": 268435456,
+            "maxStagingBytes": 134217728,
+            "ownedEstimatedBytes": 0,
+            "maxResources": 256,
+            "errors": 0,
+            "peakBackupImageDataBytes": 968760,
+            "completionNotifications": 0
+          },
+          "cache": {
+            "decoded": {
+              "maxBytes": 268435456,
+              "bytes": 0,
+              "misses": 0,
+              "maxEntryBytes": 67108864,
+              "oversize": 0,
+              "maxEntries": 256,
+              "evictions": 0,
+              "hits": 0,
+              "entries": 0,
+              "pendingEntries": 0,
+              "negativeEntries": 0,
+              "rejected": 0,
+              "transientEntries": 0
+            },
+            "images": {
+              "maxBytes": 67108864,
+              "bytes": 0,
+              "misses": 0,
+              "maxEntryBytes": 16777216,
+              "oversize": 0,
+              "maxEntries": 256,
+              "evictions": 0,
+              "hits": 0,
+              "entries": 0,
+              "pendingEntries": 0,
+              "negativeEntries": 0,
+              "rejected": 0,
+              "transientEntries": 0
+            }
+          },
+          "subscribers": 0
+        }
+      },
+      "opened": {
+        "processes": [
+          {
+            "pid": 2575697,
+            "rssBytes": 534839296
+          }
+        ],
+        "aggregateRssBytes": 534839296,
+        "wasmBytes": 25427968,
+        "canvasPixels": 3632850,
+        "canvasCount": 60,
+        "owners": [
+          {
+            "discards": 0,
+            "nativeCapacity": 100,
+            "id": 20,
+            "saves": 7,
+            "live": 7
+          }
+        ],
+        "engineSurfaces": {
+          "externrefSlots": 1156,
+          "canvasPixels": 0,
+          "imageCount": 0,
+          "detachedCanvases": 0,
+          "canvasCount": 0,
+          "imagePixels": 0
+        },
+        "lastDisposal": {
+          "liveAtFree": 7,
+          "discards": 0,
+          "id": 19,
+          "saves": 7
+        },
+        "renderer": {
+          "sessions": [
+            {
+              "maxSummaries": 64,
+              "summaryCodeUnits": 245216,
+              "modelVersion": 19,
+              "canvases": 15,
+              "maxSummaryBytes": 262144,
+              "maxSummaryTotalCodeUnits": 2097152,
+              "sessionId": 21,
+              "queued": 0,
+              "failures": 0,
+              "summaries": 1,
+              "activeJobId": null,
+              "generation": 1,
+              "active": 0
+            }
+          ],
+          "jobs": {
+            "pendingCount": 0,
+            "cancellations": 0,
+            "peakTemporaryCanvasBytes": 3875040,
+            "listenerNotifications": 0,
+            "peakStagingBytes": 3875040,
+            "inFlightEstimatedBytes": 0,
+            "capacityNotifications": 0,
+            "maxFrameBytes": 67108864,
+            "expiryTimerTicks": 0,
+            "resourceLimits": 0,
+            "expiryTimerActive": false,
+            "retryCount": 0,
+            "expiryTimerStarts": 1355,
+            "backupImageDataBytes": 0,
+            "activeLeaseEstimatedBytes": 0,
+            "activeJobs": 0,
+            "activeLeaseCount": 0,
+            "maxPending": 2,
+            "transientEstimatedBytes": 0,
+            "loadAttempts": 0,
+            "uniqueResourceCount": 0,
+            "readyLeaseCount": 0,
+            "temporaryCanvasBytes": 0,
+            "maxOwnedBytes": 268435456,
+            "maxStagingBytes": 134217728,
+            "ownedEstimatedBytes": 0,
+            "maxResources": 256,
+            "errors": 0,
+            "peakBackupImageDataBytes": 968760,
+            "completionNotifications": 0
+          },
+          "cache": {
+            "decoded": {
+              "maxBytes": 268435456,
+              "bytes": 0,
+              "misses": 0,
+              "maxEntryBytes": 67108864,
+              "oversize": 0,
+              "maxEntries": 256,
+              "evictions": 0,
+              "hits": 0,
+              "entries": 0,
+              "pendingEntries": 0,
+              "negativeEntries": 0,
+              "rejected": 0,
+              "transientEntries": 0
+            },
+            "images": {
+              "maxBytes": 67108864,
+              "bytes": 0,
+              "misses": 0,
+              "maxEntryBytes": 16777216,
+              "oversize": 0,
+              "maxEntries": 256,
+              "evictions": 0,
+              "hits": 0,
+              "entries": 0,
+              "pendingEntries": 0,
+              "negativeEntries": 0,
+              "rejected": 0,
+              "transientEntries": 0
+            }
+          },
+          "subscribers": 1
+        }
+      },
+      "closed": {
+        "processes": [
+          {
+            "pid": 2575697,
+            "rssBytes": 535277568
+          }
+        ],
+        "aggregateRssBytes": 535277568,
+        "wasmBytes": 25427968,
+        "canvasPixels": 0,
+        "canvasCount": 0,
+        "owners": [],
+        "engineSurfaces": {
+          "externrefSlots": 1156,
+          "canvasPixels": 0,
+          "imageCount": 0,
+          "detachedCanvases": 0,
+          "canvasCount": 0,
+          "imagePixels": 0
+        },
+        "lastDisposal": {
+          "liveAtFree": 7,
+          "discards": 0,
+          "id": 20,
+          "saves": 7
+        },
+        "renderer": {
+          "sessions": [],
+          "jobs": {
+            "pendingCount": 0,
+            "cancellations": 0,
+            "peakTemporaryCanvasBytes": 3875040,
+            "listenerNotifications": 0,
+            "peakStagingBytes": 3875040,
+            "inFlightEstimatedBytes": 0,
+            "capacityNotifications": 0,
+            "maxFrameBytes": 67108864,
+            "expiryTimerTicks": 0,
+            "resourceLimits": 0,
+            "expiryTimerActive": false,
+            "retryCount": 0,
+            "expiryTimerStarts": 1357,
+            "backupImageDataBytes": 0,
+            "activeLeaseEstimatedBytes": 0,
+            "activeJobs": 0,
+            "activeLeaseCount": 0,
+            "maxPending": 2,
+            "transientEstimatedBytes": 0,
+            "loadAttempts": 0,
+            "uniqueResourceCount": 0,
+            "readyLeaseCount": 0,
+            "temporaryCanvasBytes": 0,
+            "maxOwnedBytes": 268435456,
+            "maxStagingBytes": 134217728,
+            "ownedEstimatedBytes": 0,
+            "maxResources": 256,
+            "errors": 0,
+            "peakBackupImageDataBytes": 968760,
+            "completionNotifications": 0
+          },
+          "cache": {
+            "decoded": {
+              "maxBytes": 268435456,
+              "bytes": 0,
+              "misses": 0,
+              "maxEntryBytes": 67108864,
+              "oversize": 0,
+              "maxEntries": 256,
+              "evictions": 0,
+              "hits": 0,
+              "entries": 0,
+              "pendingEntries": 0,
+              "negativeEntries": 0,
+              "rejected": 0,
+              "transientEntries": 0
+            },
+            "images": {
+              "maxBytes": 67108864,
+              "bytes": 0,
+              "misses": 0,
+              "maxEntryBytes": 16777216,
+              "oversize": 0,
+              "maxEntries": 256,
+              "evictions": 0,
+              "hits": 0,
+              "entries": 0,
+              "pendingEntries": 0,
+              "negativeEntries": 0,
+              "rejected": 0,
+              "transientEntries": 0
+            }
+          },
+          "subscribers": 0
+        }
+      },
+      "closedAfter10s": {
+        "processes": [
+          {
+            "pid": 2575697,
+            "rssBytes": 533803008
+          }
+        ],
+        "aggregateRssBytes": 533803008,
+        "wasmBytes": 25427968,
+        "canvasPixels": 0,
+        "canvasCount": 0,
+        "owners": [],
+        "engineSurfaces": {
+          "externrefSlots": 1156,
+          "canvasPixels": 0,
+          "imageCount": 0,
+          "detachedCanvases": 0,
+          "canvasCount": 0,
+          "imagePixels": 0
+        },
+        "lastDisposal": {
+          "liveAtFree": 7,
+          "discards": 0,
+          "id": 20,
+          "saves": 7
+        },
+        "renderer": {
+          "sessions": [],
+          "jobs": {
+            "pendingCount": 0,
+            "cancellations": 0,
+            "peakTemporaryCanvasBytes": 3875040,
+            "listenerNotifications": 0,
+            "peakStagingBytes": 3875040,
+            "inFlightEstimatedBytes": 0,
+            "capacityNotifications": 0,
+            "maxFrameBytes": 67108864,
+            "expiryTimerTicks": 0,
+            "resourceLimits": 0,
+            "expiryTimerActive": false,
+            "retryCount": 0,
+            "expiryTimerStarts": 1357,
+            "backupImageDataBytes": 0,
+            "activeLeaseEstimatedBytes": 0,
+            "activeJobs": 0,
+            "activeLeaseCount": 0,
+            "maxPending": 2,
+            "transientEstimatedBytes": 0,
+            "loadAttempts": 0,
+            "uniqueResourceCount": 0,
+            "readyLeaseCount": 0,
+            "temporaryCanvasBytes": 0,
+            "maxOwnedBytes": 268435456,
+            "maxStagingBytes": 134217728,
+            "ownedEstimatedBytes": 0,
+            "maxResources": 256,
+            "errors": 0,
+            "peakBackupImageDataBytes": 968760,
+            "completionNotifications": 0
+          },
+          "cache": {
+            "decoded": {
+              "maxBytes": 268435456,
+              "bytes": 0,
+              "misses": 0,
+              "maxEntryBytes": 67108864,
+              "oversize": 0,
+              "maxEntries": 256,
+              "evictions": 0,
+              "hits": 0,
+              "entries": 0,
+              "pendingEntries": 0,
+              "negativeEntries": 0,
+              "rejected": 0,
+              "transientEntries": 0
+            },
+            "images": {
+              "maxBytes": 67108864,
+              "bytes": 0,
+              "misses": 0,
+              "maxEntryBytes": 16777216,
+              "oversize": 0,
+              "maxEntries": 256,
+              "evictions": 0,
+              "hits": 0,
+              "entries": 0,
+              "pendingEntries": 0,
+              "negativeEntries": 0,
+              "rejected": 0,
+              "transientEntries": 0
+            }
+          },
+          "subscribers": 0
+        }
+      }
+    }
+  ],
+  "cleanupChecks": [
+    {
+      "cycle": 0,
+      "status": "PASS"
+    },
+    {
+      "cycle": 1,
+      "status": "PASS"
+    },
+    {
+      "cycle": 2,
+      "status": "PASS"
+    },
+    {
+      "cycle": 3,
+      "status": "PASS"
+    },
+    {
+      "cycle": 4,
+      "status": "PASS"
+    },
+    {
+      "cycle": 5,
+      "status": "PASS"
+    },
+    {
+      "cycle": 6,
+      "status": "PASS"
+    },
+    {
+      "cycle": 7,
+      "status": "PASS"
+    },
+    {
+      "cycle": 8,
+      "status": "PASS"
+    },
+    {
+      "cycle": 9,
+      "status": "PASS"
+    },
+    {
+      "cycle": 10,
+      "status": "PASS"
+    },
+    {
+      "cycle": 11,
+      "status": "PASS"
+    },
+    {
+      "cycle": 12,
+      "status": "PASS"
+    },
+    {
+      "cycle": 13,
+      "status": "PASS"
+    },
+    {
+      "cycle": 14,
+      "status": "PASS"
+    },
+    {
+      "cycle": 15,
+      "status": "PASS"
+    },
+    {
+      "cycle": 16,
+      "status": "PASS"
+    },
+    {
+      "cycle": 17,
+      "status": "PASS"
+    },
+    {
+      "cycle": 18,
+      "status": "PASS"
+    },
+    {
+      "cycle": 19,
+      "status": "PASS"
+    }
+  ],
+  "sourceSha256": "97b5d6c571a6b7626321c6a53d797e3511978447497bb73309bd23eaa8e7ea77",
+  "measurementComplete": true,
+  "measurements": {},
+  "gates": [],
+  "officialGateStatus": "INCONCLUSIVE",
+  "testedSourceSha256": {
+    "tests/integration/rhwp/ownership-poc/session.mjs": "fe14f40f63bae2b471c84f30dda947283f8664fc387d16c86fb7ec138b6a2c22",
+    "tests/integration/rhwp/ownership-poc/history-perf.py": "fd2175b55a9520a7cf878bd46c72b586ed5e06b5d1c31c617edb4a8d5529f55e",
+    "tests/integration/rhwp/undo_native.py": "1d0982fa18c155bbd1e7b009307253815148f841fe1116ec92d818a3ea195445",
+    "tests/integration/rhwp/native_probe.py": "8f4be7dcd57bf5f284dda7ca94d12c9bad8a8f718d543ca57b500166b50c39a0",
+    "/tmp/geul-caret-lifecycle-direct-native.py": "780077914ca73b7e7f4fde3797d0d13607d93f6a749473b9d9304533a4482b82"
+  },
+  "parentExit": 0,
+  "processFinished": true,
+  "elapsedSeconds": 259.6,
+  "command": [
+    "dbus-run-session",
+    "--",
+    "python3",
+    "/tmp/geul-caret-lifecycle-direct-native.py",
+    "--app",
+    "<workspace>/src-tauri/target/debug/geul",
+    "--driver",
+    "/tmp/geul-t010-ownership-tools/bin/tauri-driver",
+    "--webkit-driver",
+    "/nix/store/p7h9r90h1vmk4wq1964nhd8vfp0kf27b-webkitgtk-2.54.1+abi=4.1/bin/WebKitWebDriver",
+    "--xvfb",
+    "/nix/store/7yz3bnmll7fy11n0xci85mbhnf6p5669-xvfb-21.1.23/bin/Xvfb",
+    "--output",
+    "<workspace>/tests/integration/rhwp/evidence/t010-caret-geometry/diagnostic-d4-lifecycle-direct.json",
+    "--xdotool",
+    "/nix/store/kyp2r08w6hs0l1zj3cya6d2ciba9v47h-xdotool-3.20211022.1/bin/xdotool"
+  ],
+  "activationFlags": {
+    "VITE_GEUL_TEST_HOOKS": "1",
+    "GEUL_T010_DAMAGE_POC": "1",
+    "GEUL_T010_OWNERSHIP_POC": "1",
+    "GEUL_T010_SCHEDULER_POC": "1",
+    "GEUL_T010_CANDIDATE": "<isolated>/candidate-package",
+    "GEUL_T010_EVIDENCE": "<workspace>/tests/integration/rhwp/evidence/t010-caret-geometry",
+    "VITE_GEUL_TEST_RHWP_HISTORY": "1",
+    "GEUL_T010_HISTORY_SAFETY_ONLY": "1"
+  },
+  "devServerCommand": [
+    "node",
+    "node_modules/vite/bin/vite.js",
+    "--host",
+    "127.0.0.1",
+    "--config",
+    "tests/integration/rhwp/ownership-poc/vite.config.mjs"
+  ],
+  "appSha256": "48b7b8364cb4b91ae0b4c3cb3113977c15fd92aa9ca3d60f0406f331749d45c1"
+}

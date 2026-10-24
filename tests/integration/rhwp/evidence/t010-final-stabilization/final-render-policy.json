@@ -1,0 +1,166 @@
+{
+  "status": "PASS",
+  "scope": "final measured candidate configuration counters; no regional optimization or latency pass claim",
+  "rows": [
+    {
+      "arm": "full",
+      "sample": "basic-ko.hwp",
+      "counters": {
+        "polls": 122,
+        "staleDropped": 0,
+        "reused": 0,
+        "regionalPatchJobs": 0,
+        "completed": 122,
+        "unchangedFrames": 0,
+        "notifications": 0,
+        "patchJobs": 0,
+        "wholePagePatchJobs": 0,
+        "limits": 0,
+        "replacements": 0,
+        "fullJobs": 122,
+        "errors": 0,
+        "canceled": 0
+      }
+    },
+    {
+      "arm": "full",
+      "sample": "basic-ko.hwpx",
+      "counters": {
+        "polls": 122,
+        "staleDropped": 0,
+        "reused": 0,
+        "regionalPatchJobs": 0,
+        "completed": 122,
+        "unchangedFrames": 0,
+        "notifications": 0,
+        "patchJobs": 0,
+        "wholePagePatchJobs": 0,
+        "limits": 0,
+        "replacements": 0,
+        "fullJobs": 122,
+        "errors": 0,
+        "canceled": 0
+      }
+    },
+    {
+      "arm": "full",
+      "sample": "연구노트(화학).hwp",
+      "counters": {
+        "polls": 598,
+        "staleDropped": 0,
+        "reused": 0,
+        "regionalPatchJobs": 0,
+        "completed": 598,
+        "unchangedFrames": 0,
+        "notifications": 0,
+        "patchJobs": 0,
+        "wholePagePatchJobs": 0,
+        "limits": 0,
+        "replacements": 0,
+        "fullJobs": 598,
+        "errors": 0,
+        "canceled": 0
+      }
+    },
+    {
+      "arm": "full",
+      "sample": "3249937_asset_management_rules.hwpx",
+      "counters": {
+        "polls": 522,
+        "staleDropped": 1,
+        "reused": 0,
+        "regionalPatchJobs": 0,
+        "completed": 522,
+        "unchangedFrames": 0,
+        "notifications": 0,
+        "patchJobs": 0,
+        "wholePagePatchJobs": 0,
+        "limits": 0,
+        "replacements": 0,
+        "fullJobs": 522,
+        "errors": 0,
+        "canceled": 0
+      }
+    },
+    {
+      "arm": "damage",
+      "sample": "basic-ko.hwp",
+      "counters": {
+        "polls": 122,
+        "staleDropped": 0,
+        "reused": 0,
+        "regionalPatchJobs": 0,
+        "completed": 122,
+        "unchangedFrames": 0,
+        "notifications": 0,
+        "patchJobs": 0,
+        "wholePagePatchJobs": 0,
+        "limits": 0,
+        "replacements": 0,
+        "fullJobs": 122,
+        "errors": 0,
+        "canceled": 0
+      }
+    },
+    {
+      "arm": "damage",
+      "sample": "basic-ko.hwpx",
+      "counters": {
+        "polls": 122,
+        "staleDropped": 0,
+        "reused": 0,
+        "regionalPatchJobs": 0,
+        "completed": 122,
+        "unchangedFrames": 0,
+        "notifications": 0,
+        "patchJobs": 0,
+        "wholePagePatchJobs": 0,
+        "limits": 0,
+        "replacements": 0,
+        "fullJobs": 122,
+        "errors": 0,
+        "canceled": 0
+      }
+    },
+    {
+      "arm": "damage",
+      "sample": "연구노트(화학).hwp",
+      "counters": {
+        "polls": 270,
+        "staleDropped": 5,
+        "reused": 7,
+        "regionalPatchJobs": 0,
+        "completed": 270,
+        "unchangedFrames": 418,
+        "notifications": 0,
+        "patchJobs": 0,
+        "wholePagePatchJobs": 0,
+        "limits": 0,
+        "replacements": 0,
+        "fullJobs": 270,
+        "errors": 0,
+        "canceled": 0
+      }
+    },
+    {
+      "arm": "damage",
+      "sample": "3249937_asset_management_rules.hwpx",
+      "counters": {
+        "polls": 399,
+        "staleDropped": 0,
+        "reused": 2,
+        "regionalPatchJobs": 0,
+        "completed": 399,
+        "unchangedFrames": 1,
+        "notifications": 0,
+        "patchJobs": 0,
+        "wholePagePatchJobs": 0,
+        "limits": 0,
+        "replacements": 0,
+        "fullJobs": 399,
+        "errors": 0,
+        "canceled": 0
+      }
+    }
+  ]
+}

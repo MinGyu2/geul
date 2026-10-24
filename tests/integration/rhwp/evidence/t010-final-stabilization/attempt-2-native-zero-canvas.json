@@ -1,0 +1,264 @@
+{
+  "status": "FAIL",
+  "classification": "VERIFIED only for executed checks",
+  "target": "real Tauri/WebKitGTK, gated candidate dev-server injection",
+  "expectedWasmSha256": "4844264afff69f84fff489262b42437b4fde7932c686663f8fbd2e769ce2ecdf",
+  "tests": [
+    {
+      "name": "candidate-dev-origin",
+      "status": "PASS"
+    },
+    {
+      "name": "hwp-candidate-identity",
+      "status": "PASS",
+      "identity": {
+        "wasmSha256": "4844264afff69f84fff489262b42437b4fde7932c686663f8fbd2e769ce2ecdf",
+        "baseline": "1a76570e833917d15817415a53c09ad61ab3203f"
+      }
+    },
+    {
+      "name": "hwp-images-visible",
+      "status": "PASS",
+      "measurements": {
+        "width": 1588,
+        "height": 2245,
+        "color": 86400
+      }
+    },
+    {
+      "name": "hwp-exact-native-pixels",
+      "status": "PASS",
+      "measurements": {
+        "width": 1588,
+        "height": 2245,
+        "pixelMismatchCount": 0
+      }
+    },
+    {
+      "name": "hwpx-candidate-identity",
+      "status": "PASS",
+      "identity": {
+        "wasmSha256": "4844264afff69f84fff489262b42437b4fde7932c686663f8fbd2e769ce2ecdf",
+        "baseline": "1a76570e833917d15817415a53c09ad61ab3203f"
+      }
+    },
+    {
+      "name": "runner-completion",
+      "status": "FAIL"
+    }
+  ],
+  "budgets": [],
+  "scope": "full native matrix",
+  "lastObserved": {
+    "origin": "http://localhost:1420",
+    "ownership": {
+      "counters": {
+        "polls": 5,
+        "staleDropped": 0,
+        "reused": 0,
+        "completed": 2,
+        "unchangedFrames": 0,
+        "notifications": 1,
+        "patchJobs": 0,
+        "limits": 0,
+        "replacements": 0,
+        "fullJobs": 3,
+        "errors": 0,
+        "canceled": 1
+      },
+      "stats": {
+        "sessions": [
+          {
+            "activeJobId": null,
+            "failures": 0,
+            "modelVersion": 1,
+            "canvases": 0,
+            "sessionId": 1,
+            "generation": 1,
+            "queued": 0,
+            "active": 0
+          },
+          {
+            "activeJobId": null,
+            "failures": 0,
+            "modelVersion": 1,
+            "canvases": 0,
+            "sessionId": 2,
+            "generation": 1,
+            "queued": 0,
+            "active": 0
+          }
+        ],
+        "jobs": {
+          "pendingCount": 0,
+          "cancellations": 1,
+          "peakTemporaryCanvasBytes": 14260240,
+          "listenerNotifications": 1,
+          "peakStagingBytes": 14260240,
+          "inFlightEstimatedBytes": 0,
+          "capacityNotifications": 0,
+          "maxFrameBytes": 67108864,
+          "expiryTimerTicks": 0,
+          "resourceLimits": 0,
+          "expiryTimerActive": false,
+          "retryCount": 2,
+          "expiryTimerStarts": 2,
+          "backupImageDataBytes": 0,
+          "activeLeaseEstimatedBytes": 0,
+          "activeJobs": 0,
+          "activeLeaseCount": 0,
+          "maxPending": 2,
+          "transientEstimatedBytes": 0,
+          "loadAttempts": 4,
+          "uniqueResourceCount": 2,
+          "readyLeaseCount": 0,
+          "temporaryCanvasBytes": 0,
+          "maxOwnedBytes": 268435456,
+          "maxStagingBytes": 134217728,
+          "ownedEstimatedBytes": 11617460,
+          "maxResources": 256,
+          "errors": 0,
+          "peakBackupImageDataBytes": 0,
+          "completionNotifications": 2
+        },
+        "cache": {
+          "decoded": {
+            "maxBytes": 268435456,
+            "bytes": 128,
+            "misses": 2,
+            "maxEntryBytes": 67108864,
+            "oversize": 0,
+            "maxEntries": 256,
+            "evictions": 0,
+            "hits": 8,
+            "entries": 2,
+            "pendingEntries": 0,
+            "negativeEntries": 2,
+            "rejected": 0,
+            "transientEntries": 0
+          },
+          "images": {
+            "maxBytes": 67108864,
+            "bytes": 11617460,
+            "misses": 4,
+            "maxEntryBytes": 16777216,
+            "oversize": 0,
+            "maxEntries": 256,
+            "evictions": 0,
+            "hits": 2,
+            "entries": 2,
+            "pendingEntries": 0,
+            "negativeEntries": 0,
+            "rejected": 0,
+            "transientEntries": 0
+          }
+        },
+        "subscribers": 2
+      },
+      "identity": {
+        "wasmSha256": "4844264afff69f84fff489262b42437b4fde7932c686663f8fbd2e769ce2ecdf",
+        "baseline": "1a76570e833917d15817415a53c09ad61ab3203f"
+      }
+    },
+    "status": [
+      {
+        "pages": "1",
+        "status": "ready",
+        "dirty": "false",
+        "revision": "0"
+      }
+    ]
+  },
+  "error": "WebDriver POST /execute/sync: 500 b'{\"value\":{\"error\":\"javascript error\",\"message\":\"The index is not in the allowed range.\",\"stacktrace\":\"\"}}'",
+  "passed": 5,
+  "failed": 1,
+  "skippedOrIgnored": 0,
+  "parentExit": 1,
+  "processFinished": true,
+  "elapsedSeconds": 4.42,
+  "command": [
+    "dbus-run-session",
+    "--",
+    "python3",
+    "tests/integration/rhwp/ownership-poc/native.py",
+    "--scheduler",
+    "--evidence-dir",
+    "<workspace>/tests/integration/rhwp/evidence/t010-final-stabilization",
+    "--extended",
+    "--matrix",
+    "--app",
+    "<workspace>/src-tauri/target/debug/geul",
+    "--driver",
+    "/tmp/geul-t010-ownership-tools/bin/tauri-driver",
+    "--webkit-driver",
+    "/nix/store/p7h9r90h1vmk4wq1964nhd8vfp0kf27b-webkitgtk-2.54.1+abi=4.1/bin/WebKitWebDriver",
+    "--xvfb",
+    "/nix/store/7yz3bnmll7fy11n0xci85mbhnf6p5669-xvfb-21.1.23/bin/Xvfb",
+    "--output",
+    "<workspace>/tests/integration/rhwp/evidence/t010-final-stabilization/native-44-regressions.json",
+    "--driver-log",
+    "/tmp/geul-final-driver-full.log"
+  ],
+  "activationFlags": {
+    "VITE_GEUL_TEST_HOOKS": "1",
+    "GEUL_T010_DAMAGE_POC": "1",
+    "GEUL_T010_OWNERSHIP_POC": "1",
+    "GEUL_T010_SCHEDULER_POC": "1",
+    "GEUL_T010_CANDIDATE": "<isolated>/candidate-package",
+    "GEUL_T010_EVIDENCE": "<workspace>/tests/integration/rhwp/evidence/t010-final-stabilization"
+  },
+  "devServerCommand": [
+    "node",
+    "node_modules/vite/bin/vite.js",
+    "--host",
+    "127.0.0.1",
+    "--config",
+    "tests/integration/rhwp/ownership-poc/vite.config.mjs"
+  ],
+  "appSha256": "48b7b8364cb4b91ae0b4c3cb3113977c15fd92aa9ca3d60f0406f331749d45c1",
+  "existing44": {
+    "expected": 44,
+    "passed": 5,
+    "missing": [
+      "hwpx-images-visible",
+      "hwpx-exact-native-pixels",
+      "two-live-session-listeners",
+      "close-one-keeps-other",
+      "close-final",
+      "multisection-native-page-0",
+      "multisection-native-page-1",
+      "multisection-native-page-2",
+      "scroll-zoom-150-page-2",
+      "scroll-zoom-150-page-0",
+      "scroll-zoom-50-page-2",
+      "scroll-zoom-50-page-0",
+      "scroll-zoom-100-page-2",
+      "scroll-zoom-100-page-0",
+      "close-multisection",
+      "pending-zoom-no-false-complete",
+      "pending-replacement-latest-pixels",
+      "close-pending-document",
+      "pending-close-releases-leases",
+      "late-load-cannot-paint-reopened-document",
+      "close-reopened-document",
+      "multi-budget-256-zoom-50-page-2",
+      "multi-budget-256-zoom-100-page-0",
+      "multi-budget-256-zoom-150-page-2",
+      "multi-budget-256-three-subscribers",
+      "multi-budget-384-zoom-50-page-2",
+      "multi-budget-384-zoom-100-page-0",
+      "multi-budget-384-zoom-150-page-2",
+      "multi-budget-384-three-subscribers",
+      "multi-budget-512-zoom-50-page-2",
+      "multi-budget-512-zoom-100-page-0",
+      "multi-budget-512-zoom-150-page-2",
+      "multi-budget-512-three-subscribers",
+      "matrix-close-ownership-hwp.hwp",
+      "matrix-close-ownership-hwpx.hwpx",
+      "matrix-close-multiple-sections.hwpx",
+      "closed-host-and-transient-zero",
+      "pressure-trim-owned-zero",
+      "no-host-errors-or-limits"
+    ]
+  }
+}

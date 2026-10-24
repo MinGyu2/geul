@@ -1,0 +1,17 @@
+{
+  "portalEnvironment": "unset",
+  "schemaOverride": "hangul",
+  "waylandDisplay": "unset",
+  "runtimeDir": "isolated0700",
+  "manualEngineEarlyExit": null,
+  "explicitDiscoveredAddress": true,
+  "setExit": 1,
+  "setError": "\n(process:2453757): IBUS-WARNING **: 05:14:43.119: main.vala:536: Execute setxkbmap failed: Failed to execute child process \u201csetxkbmap\u201d (No such file or directory)\n",
+  "queryExit": 0,
+  "engine": "hangul",
+  "queryError": "",
+  "manualEngineExitBeforeCleanup": null,
+  "daemonLog": "portal is not running: GDBus.Error:org.freedesktop.DBus.Error.ServiceUnknown: The name org.freedesktop.portal.IBus was not provided by any .service files\n",
+  "scope": "isolated IBus startup only; no app composition/history behavior claim",
+  "finding": "With --config=disable explicit Hangul engine exited3: Unable to connect to IBus config component. Enabling isolated ibus-dconf keeps engine alive and global engine is hangul; CLI setter exit1 because setxkbmap absent. Portal unset and separate X11 runtime alone did not resolve activation timeout."
+}

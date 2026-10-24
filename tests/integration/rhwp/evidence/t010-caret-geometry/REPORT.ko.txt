@@ -1,0 +1,126 @@
+T010 D1 빈 floating-picture 문단 caret geometry 후속 보고서
+
+1. 범위와 판정
+D1의 관찰된 빈 Picture-host caret 결함은 격리 후보에서 PASS다. T010 전체는 미완료다.
+D2 목표 IME 순서, D4 지연과 장시간 RSS는 남는다. 제품 활성화·commit·push·T011은 수행하지 않았다.
+이 보고서는 직전 t010-final-stabilization/REPORT.ko.txt의 실패 결과를 덮어쓰지 않는다.
+
+2. 기준과 후보 식별
+pinned rhwp: 1a76570e833917d15817415a53c09ad61ab3203f
+부모 WASM: d49e654fffee380b48266801e2bd8e52a64fbdfbc494e5b1fcafe935b182745a
+새 WASM: 48adaa0f748484d12f59f4805deda0480635f915368392a87e76e95962ec0b27
+새 완전 패치: upstream-rhwp-caret-geometry.patch
+SHA256: f6d847cc3bbf3e6edd8446fd7e0e672c965d3483fc74ca568bec9276c40e16cb
+부모 전용 delta: delta-from-final-stabilization.patch
+SHA256: 44e0b10db8f560bbd3a8260ec0bddf155eff574e89fc1a6870e7122ae32ebeef
+각 패치는 해당 기준에만 적용한다. 전체 패치들을 겹쳐 적용하지 않는다.
+engine.json/patch.json과 각 실행 JSON이 소스7개·산출물·실제 실행 identity를 연결한다.
+
+3. 독립 재현과 원인
+공개 원본 연구노트(화학).hwp의 빈24문단 중21개 Picture host는 부모에서 getCursorRect가 실패했다.
+16/17/18의 기존 object 경로3개는 정상이었다. 첫 페이지 검색 오류 가설은 실제 tree 관찰로 폐기했다.
+layout.rs의 textless-float FullParagraph 경로는 phantom flow/overflow를 막기 위해 문단 layout을 생략한다.
+별도 Shape는 그림을 그리지만 TextLine도 빠져 cursor_rect fallback에 source anchor가 없었다.
+원본 para23의 line은 vpos0/height1000HU/baseline850HU, body 원점은2835HU=37.8px다.
+그림의38HU offset은 그림 y38.3을 만들며 caret 원점의 근거가 아니다.
+독립 typed clone의 실제 TextLine x/y37.8/37.8·height13.3으로 line 원점을 대조했다.
+
+4. 구현과 제한
+부모 대비 layout.rs와 새 layout/caret_geometry_tests.rs만 바뀐다.
+실제 저장된 단일 visual line이 있는 빈 Picture host에서, 이미 계산된 para_start_y와 source column_start,
+height/baseline으로 paint 자식 없는 TextLine metadata를 보존한다. 문단 flow 진행은 바꾸지 않는다.
+양의 높이·column 안 anchor·line bottom 경계를 검사한다. 임의 caret 좌표·그림 bbox 기반 추정은 없다.
+synthetic·multiline·범위 밖 anchor 지원 확대는 주장하지 않는다. 기존3개 object 좌표를 그대로 유지했다.
+원자적 Full·요약 재사용·timer·자원 한도는 부모 구현을 유지한다. 지역 clip을 다시 켜지 않았다.
+
+5. 수정 전후 native 계약
+baseline-native.json: 정확한5계약 중1PASS/4FAIL(누락 caret). 초기4실패 실행도 baseline-v1-native.json에 보존했다.
+focused-native.json: 동일5계약 모두 PASS. 원본21anchor, 독립 typed-line oracle, 이동된 그림 offset 반례,
+snapshot restore, 기존3object 좌표를 검사했다. 재현 실패를 지우거나 기존 assertion을 약화하지 않았다.
+
+6. 실제 WASM API와 재현성
+api-geometry.json: 부모 대비21caret 복구·3좌표 보존·24paint-owning tree 동일성 PASS.
+이는 Node/no browser font provider의 API/tree 검사이며 raster 통과 근거와 구분한다.
+새 prepare.py는 caret test 존재 시 layout/test까지7개 소스를 빌드 전후 감시한다. 이전5개 manifest는 유지한다.
+build-source-contract.json의2계약과 실제7/5 manifest 비교가 PASS다.
+fresh-apply.json: 새 pinned archive에 완전 패치 적용 후 src/crates/Cargo/build 입력1329개 비교, 차이0.
+독립 fresh WASM 재빌드는 수행하지 않았다. patch/delta apply check는 각각 exit0이다.
+
+7. 컴파일·Rust 검증
+wasm-checks.json: WASM Clippy/fmt/release no-opt 실제 빌드 PASS, 소스7개 빌드 전후 동일.
+native-clippy.json: native all-targets Clippy PASS.
+library-native.json:4068PASS/0FAIL/13ignored(ignored는 통과 수에 합산하지 않음).
+prepare_native.py가 원래28harness 입력을 재구성했다. 초기 누락 입력으로 fmt가 실패한 사실도 보존했다.
+engine-safety-gates.json은 변경 없는 cache/render-job/API 해시를 대조해 pure29계약만 제한적으로 재사용한다.
+이전 app779/security86 등의 통과를 새 엔진 실행으로 다시 세지 않는다.
+
+8. 브라우저 검증
+chrome.json/webkit.json: 각각 ownership52+scheduler73 PASS. 기존125 이름과 historical12시나리오/50관측을 보존했다.
+실제 새 WASM identity와 exact RGBA goldens를 검사한다. timer/한도/알림·복수 job·취소·명시적 Full fallback
+필수 gate를 유지했다. 원래 pinned 픽셀을 허용 오차로 덮지 않았다.
+
+9. 실제 native D1/소유권/표시
+native-44-regressions.json:53PASS, 기존44 모두 유지, parent exit0.
+geul-native-focused.json:11PASS. candidate-native-safety.json:14PASS.
+d1-native-visual.json:66PASS. d1-native-history-pending.json:22PASS.
+d1-four-document-native.json:39PASS/exit0, diagnosticContinuation=false, 엄격한 caret 조건 유지.
+화학 HWP 원본 빈 문단 복원 후 Undo caret0:23:0이 보인다. 네 문서24RGBA 참조 모두 pixels/maxDelta0.
+실제 부착 Canvas readback을 authoritative Full replay와 비교하며 cleanup/원본 보존도 통과했다.
+이는 표시 정확성 검증이다. native 지연 관문 통과로 해석하지 않는다.
+실행 app SHA:48b7b8364cb4b91ae0b4c3cb3113977c15fd92aa9ca3d60f0406f331749d45c1
+실행 command/activation flags/실제 engineIdentity/검사 source SHA는 각 JSON에 기록했다.
+
+10. 저장·API·제품 격리
+integration-checks.json: real-WASM37PASS+optional export1skip, DTS/typecheck/lint PASS.
+candidate-d3-service-save.json: 실제 service::save19고정 사례 모두 PASS,9게시/10거부, 원본 보존·재열기 조건 유지.
+각 사례의 독립 expected 분류를 유지하며 observed policy와의 자기 비교로 승인하지 않는다.
+제품 src/backend/public/명령 registry/계획·submodule은 교체하지 않는다. 후보는 dev-server 시험 주입 전용이다.
+전체 문서 형식의 일반 저장 보증이나 제품 활성화 승인이 아니다.
+
+11. D2·D4와 미완료 관문
+새 geometry 후보의 D2 및 D4 공식 네 문서/세 arm 승인 실행은 하지 않았다. 부모 결과를 새 후보 통과로 옮기지 않는다.
+추가 단일 화학 HWP 계측은110stage/timeout0으로 완료됐지만 group p95378ms FAIL/Undo p95170ms PASS다.
+관측자 추가 비용이 있고 보안 검사와 일부 겹쳤으므로 교차 실행 개선이나 공식 승인 증거로 쓰지 않는다.
+새 이미지 upload가 있는14poll의 p50/p95는133/160ms, 없는97poll은10/13ms였다.
+별도 trim0 후 같은 page0/5/23 Full cold→warm은65→8/144→6/115→9ms다. 각 cold는 decoded miss+1,
+warm은 hit+1/miss+0이었다. Rust 내부 CPU 시간은 계측하지 않았다. 큰 입력 전달 지연238ms/poll8ms 표본도 있다.
+정확한 원시 결과와 해석은 diagnostic-d4-render-phases.json/diagnostic-d4-cold-warm.json/d4-attribution.json을 따른다.
+부모 D2: 실제 composition preflight3events와36safe 시도, 목표 순서0/안전 실패0으로 INCONCLUSIVE였다.
+부모 D4: pinned/Full/reuse 모든 측정 완료·timeout0이나4개 group-start p95 관문 모두 FAIL, Undo4개는 PASS.
+group p95(ms): pinned83/85/134/135, Full95/89/283/138, reuse91/94/394/155.
+화학 reuse는 job598→270/reuse418에도 p95가283→394로 악화했다. job 수 감소를 지연 성공으로 세지 않는다.
+공식 native keydown→revision RAF→추가2RAF,50ms/1500ms 기준은 유지한다. p95나 비동기 ack를 합산하지 않는다.
+장기 RSS 관문은 미통과다. 2문서×3모드×20회 계획은963.2초/110회 지점에서 WebDriver 연결 단절로 중단됐다.
+앱/WebProcess/driver는 오류 당시 살아 있었다. crash로 분류하지 않는다. 완료110회/335memory point는
+d4-lifecycle-partial-observed.json과 d4-lifecycle-analysis.json에 보존했다.120회 연속 성공으로 세지 않는다.
+화학 HWP 각 모드 종료10초 뒤 RSS는991.6/1099.8/1380.5MiB였고 명확한 장기 안정화를 입증하지 못했다.
+관찰된 정리·선언 cache/job 상한은 PASS지만 RSS의 hard cap이나 allocator 회수 보증은 아니다.
+실패 trial은 종료 시점 runtime identity를 기록하지 못했으므로 frozen gated-server 설정과 소스 바인딩을
+실제 runtime identity 관찰과 구분한다. 별도 fresh-process HWPX 창들은 아래처럼 독립 판정했다.
+기존110회와 합쳐 연속120회를 달성했다고 주장하지 않는다.
+추가 forwarded fresh HWPX 창도139.22초/11회에서 같은 연결 오류로 중단됐다.
+이번 로그는 tauri-driver의 hyper SendRequest→native peer connection reset을 보여 주며 정확한 reset 원인은 미확정이다.
+Python urllib는 이미 Connection:close이므로 그 header 추가로 해결됐다고 주장하지 않는다.
+마지막 독립 창은 원래 tauri session/capability 변환 후 같은 native WebKitWebDriver session4445에 직접 명령을 보냈다.
+실패 POST 재시도는 없었다. direct20회/61memory point를 완료했고 원래 후보 runtime identity도 시작 전에 관찰했다.
+직접 연결20회 범위의 실행 성공이며 장기120회 연속 성공이나 reset 원인 확정으로 세지 않는다.
+직접 창의 종료10초 뒤 RSS는509.1MiB, WASM24.25MiB, decoded cache0이었다.
+마지막10회 RSS 범위387.3~534.7MiB/median pairwise slope약+7MiB/cycle로 전역 plateau 통과 근거는 아니다.
+raw diagnostic-d4-lifecycle-hwpx/direct.json과 d4-independent-memory-analysis.json에 별도 창으로 남겼다.
+d4-source-image-inventory.json의21PNG 중10개는 opaque gray8,11개는 RGB8과 color metadata가 있다.
+세 원본 PNG의 browser decode/metadata 제거 실험은 natural/display12대조 모두 exact RGBA였다.
+다만 decode Promise wall 시간은24~415ms로 개선 근거가 없고 event-loop/배경 작업 영향도 분리하지 않았다.
+d4-png-parity-analysis.json의 좁은 실험 결과만으로 렌더러를 변경하지 않았다.
+다음 성능 구현은 정확한 픽셀·취소·소유권을 보존하는 입력 경로 밖 준비 가능성 검토다.
+관찰된 부모 느린 pollRenderJob126~130ms는 원인 단서이며 Rust CPU나 cold decode 원인 확정은 아니다.
+
+12. 무결성·보안 및 다음 단계
+initial-integrity.json은 부모191개 evidence의 집계 해시와 HEAD를 고정했다.
+현재 final-integrity.json은443보호파일/부모191증거/후보7소스와산출물/6native identity PASS다.
+security-final.json은 compile/민감정보 changed+tracked/gitleaks/diff-check 모두 PASS, security-unit-final.json은86PASS다.
+공개 wasm_api 소스 checksum10탐지를 독립 재계산·부모 byte동일성으로 확인하고 정확한9경로+digest만 예외로 뒀다.
+검토 전 실패는 security-before-public-hash-review.json에 보존했다. 후속 추가 파일을 포함한 최종 검사는 동일 JSON의 최신 결과로 기록한다.
+최종 actual 결과는 해당 JSON을 따른다. 실행 중/실패 검사를 PASS로 세지 않는다.
+원본443보호파일·부모 evidence 전체·candidate7소스/산출물·Git/staged/submodule·제품 WASM을 대조한다.
+남은 T010 작업은 D2 목표 native 순서, D4 공식 지연 개선과 재측정, 장시간 RSS다.
+제품 활성화와 T011은 계속 NO-GO다. .agent-tmp.md는 미완료 T010의 다음 재개점을 유지한다.

@@ -1,0 +1,8 @@
+{
+  "status": "PASS",
+  "command": "python3 -m unittest discover -s tests/security",
+  "cwd": "<workspace>",
+  "exit": 0,
+  "elapsedSeconds": 56.96,
+  "outputTail": "......................................................................................\n----------------------------------------------------------------------\nRan 86 tests in 56.794s\n\nOK"
+}

@@ -1,0 +1,22 @@
+from pathlib import Path
+import sys,importlib.util,json,hashlib
+root=Path('<workspace>');here=root/'tests/integration/rhwp/ownership-poc';sys.path.insert(0,str(here))
+import native
+mode=sys.argv.pop(1)
+modules={'full':'native.py','focused':'native.py','safety':'candidate-safety.py','visual':'visual-native.py','pending':'history-pending-native.py','perf-visual':'performance-visual-native.py'}
+original=native.smoke.WebDriver.start
+def start_direct(self,app):
+ original(self,app)
+ self.base='http://127.0.0.1:4445'
+native.smoke.WebDriver.start=start_direct
+native.smoke.DRIVER_LOG='/tmp/geul-admission-direct-'+mode+'.log'
+source=here/modules[mode]
+if source.name=='native.py':module=native
+else:
+ spec=importlib.util.spec_from_file_location('admission_'+mode.replace('-','_'),source);module=importlib.util.module_from_spec(spec);spec.loader.exec_module(module)
+try:code=module.main()
+except SystemExit as error:code=error.code
+output=Path(sys.argv[sys.argv.index('--output')+1])
+if output.is_file():
+ d=json.loads(output.read_text());d['transport']='tauri session/capability creation then direct same native WebKitWebDriver4445; no retries';d['actualNativeModuleSourceSha256']={str(source.relative_to(root)):hashlib.sha256(source.read_bytes()).hexdigest()};d['routingSourceSha256']=hashlib.sha256(Path(__file__).read_bytes()).hexdigest();output.write_text(json.dumps(d,ensure_ascii=False,indent=2).replace(str(root),'<workspace>').replace(str(Path.home()),'<home>')+'\n')
+raise SystemExit(code)

@@ -61,7 +61,9 @@ def main():
     parser.add_argument('--matrix', action='store_true', help='also compare multi-document budget/scroll/zoom cases')
     for name in ('app', 'driver', 'webkit-driver', 'xvfb', 'output'):
         parser.add_argument('--' + name, required=True, type=Path)
+    parser.add_argument('--driver-log', type=Path)
     args = parser.parse_args()
+    smoke.DRIVER_LOG = args.driver_log
     if args.scheduler_only and not args.scheduler:
         parser.error('--scheduler-only requires --scheduler')
     evidence = args.evidence_dir or ROOT / ('tests/integration/rhwp/evidence/t010-resource-scheduler' if args.scheduler else 'tests/integration/rhwp/evidence/t010-render-ownership')
@@ -116,7 +118,7 @@ def main():
                             smoke.wait_until(driver, "return !!window.__geulOwnership && window.__geulOwnership.counters.completed>arguments[0] && window.__geulOwnership.stats().sessions.every(s=>!s.active&&!s.queued)", before, timeout=30)
                             loaded = driver.js('return window.__geulOwnership.identity')
                             check(format + '-candidate-identity', loaded['wasmSha256'] == gate['wasmSha256'], identity=loaded)
-                            pixels = driver.js("const c=document.querySelector('.rhwp-page__canvas');const p=c.getContext('2d').getImageData(0,0,c.width,c.height).data;let color=0;for(let i=0;i<p.length;i+=4)if(p[i+3]>200&&Math.max(p[i],p[i+1],p[i+2])-Math.min(p[i],p[i+1],p[i+2])>100)color++;return {width:c.width,height:c.height,color};")
+                            pixels = driver.js("const c=document.querySelector('.rhwp-page__canvas');if(!c?.width||!c.height)return {width:c?.width??0,height:c?.height??0,color:0,incomplete:true};const p=c.getContext('2d').getImageData(0,0,c.width,c.height).data;let color=0;for(let i=0;i<p.length;i+=4)if(p[i+3]>200&&Math.max(p[i],p[i+1],p[i+2])-Math.min(p[i],p[i+1],p[i+2])>100)color++;return {width:c.width,height:c.height,color};")
                             check(format + '-images-visible', pixels['color'] > 1000, measurements=pixels)
                             driver.js(PIXELS, list((work / ('ownership-' + format + '.' + format)).read_bytes()), 0)
                             smoke.wait_until(driver, 'return !!window.__ownershipPixelResult', timeout=15)

@@ -1,0 +1,59 @@
+{
+  "status": "PASS",
+  "scope": "permits conditional test-only native evaluation; no production activation",
+  "patchSha256": "b054b20506075e0f07582dd1aa4af22f46126f4de7a7fce0a299acfeca724479",
+  "wasmSha256": "4844264afff69f84fff489262b42437b4fde7932c686663f8fbd2e769ce2ecdf",
+  "sourceStableDuringBuild": true,
+  "browsers": [
+    {
+      "browser": "chrome",
+      "ownershipPass": 52,
+      "schedulerPass": 66,
+      "existingScheduler": 58,
+      "newScheduler": 8,
+      "failed": 0,
+      "skipped": 0,
+      "historicalScenarios": 12,
+      "exactHistoricalDraws": 50
+    },
+    {
+      "browser": "webkit",
+      "ownershipPass": 52,
+      "schedulerPass": 66,
+      "existingScheduler": 58,
+      "newScheduler": 8,
+      "failed": 0,
+      "skipped": 0,
+      "historicalScenarios": 12,
+      "exactHistoricalDraws": 50
+    }
+  ],
+  "mandatoryRustContracts": {
+    "internal": 11,
+    "externalOwnership": 13,
+    "externalScheduler": 5,
+    "failed": 0,
+    "ignored": 0
+  },
+  "nativeClippy": "PASS",
+  "wasmClippy": "PASS",
+  "releaseBuild": "PASS",
+  "finalLibrary": {
+    "status": "PASS",
+    "pass": 4063,
+    "fail": 0,
+    "ignored": 13
+  },
+  "finalHarnessSha256": {
+    "index.html": "cc18200cbad7bf69fa04d79325d6654d74bbdc027d1f4929863e43e6eec6a1a9",
+    "browser.mjs": "628876b78a3ad700a7535247ddfac4e9c7f37d978196b55d380331bdc5648438",
+    "historical.mjs": "a858c95480f21b8aa1274247adfb396efdd90b4f316fa145276c8860b61780b6",
+    "fixtures.mjs": "df417a5f5d1a38ee2eec00738fb6225d83dee86dd93124cc96acb73be831b06a",
+    "historical-expected.json": "4f3594d3d413f0e2c1fc0e86ba1015e7414e3f9c7df294c5ee27005190c7cc48",
+    "ownership.mjs": "fa3472b82a9b2ab0f78532bb382130f79b2e2112df436a162c3d5f93913b24fa",
+    "job-historical.mjs": "c28b195c0bfff7027388cb30104f744f9d40afc44927ff4ddb56aa3e59327070",
+    "scheduler.mjs": "67b757281424703505c28061ab15537c048538c07da677abe3b0bef09deacaa8",
+    "multisection.hwpx": "48a17e96bfbcd060bb693e655fd3a38c6102da4a5262c255b24d27ef51ecea88",
+    "run.py": "9a9efd2b23127c132dd3375112fad2845b1ddac5fb0a5c9417129d3e9a6ce66b"
+  }
+}

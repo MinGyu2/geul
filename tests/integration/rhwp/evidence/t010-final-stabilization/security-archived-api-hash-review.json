@@ -1,0 +1,20 @@
+{
+  "status": "PASS",
+  "initialScanExit": 1,
+  "findingCount": 7,
+  "publicSource": "src/wasm_api.rs",
+  "sha256": "ad4122eb9a8dbcf7ec9e9f747db5dfc28fefcdf50c19a64e393eb977ce8109b4",
+  "baseline": "1a76570e833917d15817415a53c09ad61ab3203f",
+  "baselineSourceSha256": "850357a5a4557b51ddaeac8f3ba59fbca561bcd9293ad7110daf31b5f471b23b",
+  "preservedPatch": "before-integer-full-fallback-upstream-rhwp-final-stabilization.patch",
+  "preservedPatchSha256": "ae5c180e8508dbc79c69ae20b5743bd37c026c11eb64b89624af1aa5cfecec34",
+  "method": "Export exact pinned source using git show; git apply --include=src/wasm_api.rs archived complete patch in fresh temporary directory; SHA256 reconstructed bytes; compare reported archived source digests. No private credential involved.",
+  "exactPaths": [
+    "tests/integration/rhwp/evidence/t010-final-stabilization/before-integer-full-fallback-candidate-d3-service-save.json",
+    "tests/integration/rhwp/evidence/t010-final-stabilization/before-integer-full-fallback-chrome.json",
+    "tests/integration/rhwp/evidence/t010-final-stabilization/before-integer-full-fallback-engine.json",
+    "tests/integration/rhwp/evidence/t010-final-stabilization/before-integer-full-fallback-final-wasm-checks.json",
+    "tests/integration/rhwp/evidence/t010-final-stabilization/before-integer-full-fallback-patch.json",
+    "tests/integration/rhwp/evidence/t010-final-stabilization/before-integer-full-fallback-webkit.json"
+  ]
+}

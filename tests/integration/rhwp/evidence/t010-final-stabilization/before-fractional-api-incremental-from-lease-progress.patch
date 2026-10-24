@@ -1,0 +1,361 @@
+diff --git a/src/renderer/render_job.rs b/src/renderer/render_job.rs
+--- a/src/renderer/render_job.rs
++++ b/src/renderer/render_job.rs
+@@ -77,6 +77,7 @@
+         apply_to: u8,
+     },
+     Patch {
++        device_aligned: bool,
+         layer: String,
+         profile: String,
+         x: f64,
+@@ -127,6 +128,8 @@
+             });
+         }
+         self.state = state;
++        // Reconcile the module timer after all mutable job borrows have ended.
++        queue_notification(false, false);
+         let inactive_before =
+             (!self.resources.is_empty()).then(super::web_canvas::inactive_image_capacity);
+         self.resources = HashMap::new();
+@@ -173,7 +176,6 @@
+     ) -> Result<u32, JsValue> {
+         self.cancel();
+         let scale = request_scale(scale);
+-        ensure_timer()?;
+         // A new generation targeting the same Canvas immediately releases stale leases,
+         // including a job owned by another live document.
+         let previous = POOL.with(|p| p.borrow().jobs.clone());
+@@ -215,6 +217,7 @@
+         }));
+         POOL.with(|p| p.borrow_mut().jobs.push(Rc::downgrade(&job)));
+         *self.current.borrow_mut() = Some(job);
++        ensure_timer()?;
+         Ok(id)
+     }
+     pub fn compatible(
+@@ -280,12 +283,14 @@
+     static BACKUP_PEAK: Cell<usize> = const { Cell::new(0) };
+     static STAGING_PEAK: Cell<usize> = const { Cell::new(0) };
+     static FRAME_PEAK: Cell<usize> = const { Cell::new(0) };
+-    static TIMER: Cell<bool> = const { Cell::new(false) };
++    static TIMER: Cell<Option<i32>> = const { Cell::new(None) };
++    static TIMER_STARTS: Cell<u64> = const { Cell::new(0) };
++    static TIMER_TICKS: Cell<u64> = const { Cell::new(0) };
+     static NOTIFY_QUEUED: Cell<bool> = const { Cell::new(false) };
+     static CAPACITY_RELEASED: Cell<bool> = const { Cell::new(false) };
+     static COMPLETION_READY: Cell<bool> = const { Cell::new(false) };
+     static NOTIFY: JsValue = Closure::<dyn FnMut()>::new(flush_notifications).into_js_value();
+-    static TICK: JsValue = Closure::<dyn FnMut()>::new(expire).into_js_value();
++    static TICK: JsValue = Closure::<dyn FnMut()>::new(timer_tick).into_js_value();
+ }
+ 
+ // Drops may run inside a mutable cache/job borrow. Never invoke JS listeners there.
+@@ -311,6 +316,7 @@
+     }
+ }
+ fn flush_notifications() {
++    sync_timer();
+     NOTIFY_QUEUED.with(|v| v.set(false));
+     let capacity = CAPACITY_RELEASED.with(|v| v.replace(false));
+     let completion = COMPLETION_READY.with(|v| v.replace(false));
+@@ -402,17 +408,42 @@
+     }
+ }
+ 
++fn has_pending_jobs() -> bool {
++    POOL.with(|p| {
++        p.borrow()
++            .jobs
++            .iter()
++            .filter_map(Weak::upgrade)
++            .any(|j| j.borrow().state == Outcome::Pending)
++    })
++}
+ fn ensure_timer() -> Result<(), JsValue> {
+-    if TIMER.with(Cell::get) {
++    if TIMER.with(Cell::get).is_some() || !has_pending_jobs() {
+         return Ok(());
+     }
+-    TICK.with(|tick| {
++    let id = TICK.with(|tick| {
+         web_sys::window()
+             .ok_or_else(|| JsValue::from_str("ERROR: no window"))?
+-            .set_interval_with_callback_and_timeout_and_arguments_0(tick.unchecked_ref(), 250)
++            .set_timeout_with_callback_and_timeout_and_arguments_0(tick.unchecked_ref(), 250)
+     })?;
+-    TIMER.with(|t| t.set(true));
++    TIMER.with(|t| t.set(Some(id)));
++    TIMER_STARTS.with(|n| n.set(n.get() + 1));
+     Ok(())
++}
++fn sync_timer() {
++    if has_pending_jobs() {
++        let _ = ensure_timer();
++    } else if let Some(id) = TIMER.with(|t| t.replace(None)) {
++        if let Some(window) = web_sys::window() {
++            window.clear_timeout_with_handle(id);
++        }
++    }
++}
++fn timer_tick() {
++    TIMER.with(|t| t.set(None));
++    TIMER_TICKS.with(|n| n.set(n.get() + 1));
++    expire();
++    sync_timer();
+ }
+ fn expire() {
+     let mut changed = false;
+@@ -665,6 +696,7 @@
+ }
+ pub fn stats() -> serde_json::Value {
+     expire();
++    sync_timer();
+     POOL.with(|p| {
+         let p = p.borrow();
+         let resources: Vec<_> = p.resources.values().filter_map(Weak::upgrade).collect();
+@@ -672,7 +704,7 @@
+             j.borrow().resources.values().cloned().collect::<Vec<_>>()
+         }).collect();
+         let pending: Vec<_> = resources.iter().filter(|r| r.pending.get()).collect();
+-        serde_json::json!({"uniqueResourceCount": resources.len(), "activeLeaseCount": active.len(), "pendingCount": pending.len(), "inFlightEstimatedBytes": pending.iter().map(|r|r.bytes.get()).sum::<usize>(),
++        serde_json::json!({"expiryTimerActive": TIMER.with(Cell::get).is_some(), "expiryTimerStarts": TIMER_STARTS.with(Cell::get), "expiryTimerTicks": TIMER_TICKS.with(Cell::get), "uniqueResourceCount": resources.len(), "activeLeaseCount": active.len(), "pendingCount": pending.len(), "inFlightEstimatedBytes": pending.iter().map(|r|r.bytes.get()).sum::<usize>(),
+             "readyLeaseCount": active.iter().filter(|r| !r.pending.get()).count(),
+             "activeLeaseEstimatedBytes": active.iter().map(|r| r.bytes.get()).sum::<usize>(),
+             "transientEstimatedBytes": active.iter().filter(|r| !r.pending.get()).map(|r| r.bytes.get()).sum::<usize>(),
+diff --git a/src/renderer/web_canvas.rs b/src/renderer/web_canvas.rs
+--- a/src/renderer/web_canvas.rs
++++ b/src/renderer/web_canvas.rs
+@@ -531,6 +531,7 @@
+     /// 보수적인 ink envelope와 겹치지 않을 때만 Canvas 호출 전에 건너뛴다.
+     partial_clip: Option<BoundingBox>,
+     partial_context_saved: bool,
++    device_aligned_partial_clip: bool,
+     /// [#6028] soft-wrap 줄의 마지막 텍스트 run 이 가진 줄-말미 공백 수 —
+     /// svg.rs 와 같은 계약(밑줄/취소선 길이에서 제외). 문단 마지막 줄·강제
+     /// 줄바꿈 줄(서명란 밑줄 공백)은 대상 아님.
+@@ -562,6 +563,7 @@
+             layer_clip_enabled: true,
+             partial_clip: None,
+             partial_context_saved: false,
++            device_aligned_partial_clip: false,
+             soft_wrap_decoration_trim: None,
+             active_decoration_trim: 0,
+             suppress_text_glyphs: false,
+@@ -582,6 +584,12 @@
+     /// 기존 Canvas를 유지한 채 page-space의 좁은 영역만 다시 그린다.
+     pub fn set_partial_clip(&mut self, clip: BoundingBox) {
+         self.partial_clip = Some(clip);
++    }
++
++    /// Explicit atomic damage jobs clear whole device pixels before repainting.
++    /// Legacy compatibility replay keeps its original clipping behavior.
++    pub fn set_device_aligned_partial_clip(&mut self, enabled: bool) {
++        self.device_aligned_partial_clip = enabled;
+     }
+ 
+     /// PaintOp replay plane 이 현재 layer_filter 와 일치하는지 판정.
+@@ -2283,16 +2291,40 @@
+             self.partial_context_saved = true;
+             let _ = self.ctx.set_transform(1.0, 0.0, 0.0, 1.0, 0.0, 0.0);
+         }
++        if self.device_aligned_partial_clip {
++            if let Some(clip) = self.partial_clip {
++                // Clip/clear under identity transform. Clipping at fractional paper
++                // edges multiplies coverage and leaves alpha from the old frame.
++                let left = (clip.x * self.scale).floor();
++                let top = (clip.y * self.scale).floor();
++                let right = ((clip.x + clip.width) * self.scale).ceil();
++                let bottom = ((clip.y + clip.height) * self.scale).ceil();
++                self.ctx.begin_path();
++                self.ctx.rect(left, top, right - left, bottom - top);
++                self.ctx.clip();
++                self.ctx.clear_rect(left, top, right - left, bottom - top);
++                // Culling must include every cleared pixel, including the expanded edge.
++                self.partial_clip = Some(BoundingBox::new(
++                    left / self.scale,
++                    top / self.scale,
++                    (right - left) / self.scale,
++                    (bottom - top) / self.scale,
++                ));
++            }
++        }
+         // 줌 스케일 적용: 렌더트리 좌표(문서 단위)를 캔버스 해상도에 맞게 확대
+         if self.scale != 1.0 {
+             let _ = self.ctx.scale(self.scale, self.scale);
+         }
+-        if let Some(clip) = self.partial_clip {
++        if let Some(clip) = self
++            .partial_clip
++            .filter(|_| !self.device_aligned_partial_clip)
++        {
+             self.ctx.begin_path();
+             self.ctx.rect(clip.x, clip.y, clip.width, clip.height);
+             self.ctx.clip();
+             self.ctx.clear_rect(clip.x, clip.y, clip.width, clip.height);
+-        } else {
++        } else if self.partial_clip.is_none() {
+             self.ctx.clear_rect(0.0, 0.0, width, height);
+         }
+         // 캔버스 초기화 (흰색 배경). 분리된 flow/behind/front layer 는
+diff --git a/src/wasm_api.rs b/src/wasm_api.rs
+--- a/src/wasm_api.rs
++++ b/src/wasm_api.rs
+@@ -212,6 +212,23 @@
+     profile: &str,
+     patch: crate::renderer::render_tree::BoundingBox,
+ ) -> Result<(), JsValue> {
++    render_page_patch_aligned_impl(
++        document, page_num, canvas, scale, layer_kind, profile, patch, false,
++    )
++}
++
++#[cfg(target_arch = "wasm32")]
++#[allow(clippy::too_many_arguments)]
++fn render_page_patch_aligned_impl(
++    document: &HwpDocument,
++    page_num: u32,
++    canvas: &HtmlCanvasElement,
++    scale: f64,
++    layer_kind: &str,
++    profile: &str,
++    patch: crate::renderer::render_tree::BoundingBox,
++    device_aligned: bool,
++) -> Result<(), JsValue> {
+     use crate::paint::RenderProfile;
+     use crate::renderer::layer_renderer::LayerRenderer;
+     use crate::renderer::render_tree::BoundingBox;
+@@ -259,6 +276,7 @@
+     renderer.set_scale(scale);
+     renderer.set_layer_filter(filter);
+     renderer.set_partial_clip(BoundingBox::new(left, top, right - left, bottom - top));
++    renderer.set_device_aligned_partial_clip(device_aligned);
+     renderer.render_page(&tree).map_err(JsValue::from)?;
+     Ok(())
+ }
+@@ -893,6 +911,49 @@
+         scale: f64,
+     ) -> Result<u32, JsValue> {
+         self.render_owner.begin(page, canvas, scale)
++    }
++
++    /// Experimental atomic damage replay. Host must supply a verified previous frame
++    /// for this page/scale/generation; otherwise use beginRenderJob (full replay).
++    /// Rectangle validation is identical to the existing filtered patch API.
++    #[cfg(target_arch = "wasm32")]
++    #[wasm_bindgen(js_name = beginRenderPatchJob)]
++    #[allow(clippy::too_many_arguments)]
++    pub fn begin_render_patch_job(
++        &self,
++        page: u32,
++        canvas: &HtmlCanvasElement,
++        scale: f64,
++        x: f64,
++        y: f64,
++        width: f64,
++        height: f64,
++    ) -> Result<u32, JsValue> {
++        if ![x, y, width, height, scale].iter().all(|v| v.is_finite())
++            || x < 0.0
++            || y < 0.0
++            || width <= 0.0
++            || height <= 0.0
++            || scale <= 0.0
++            || canvas.width() == 0
++            || canvas.height() == 0
++        {
++            return Err(JsValue::from_str("ERROR: invalid patch request"));
++        }
++        self.render_owner.begin_replay(
++            page,
++            canvas,
++            scale,
++            crate::renderer::render_job::Replay::Patch {
++                device_aligned: true,
++                layer: "all".into(),
++                profile: "screen".into(),
++                x,
++                y,
++                width,
++                height,
++            },
++        )
+     }
+ 
+     /// The current generation token, including jobs started by compatibility replay APIs.
+@@ -1035,6 +1096,7 @@
+                     page, *section, *header, *apply_to, &frame.0, scale,
+                 )?,
+                 Replay::Patch {
++                    device_aligned,
+                     layer,
+                     profile,
+                     x,
+@@ -1049,17 +1111,35 @@
+                         .ok_or_else(|| JsValue::from_str("ERROR: no staging context"))?
+                         .dyn_into::<web_sys::CanvasRenderingContext2d>()?
+                         .draw_image_with_html_canvas_element(&target, 0.0, 0.0)?;
+-                    self.render_page_patch_to_canvas_filtered_with_profile(
+-                        page,
+-                        &frame.0,
+-                        scale,
+-                        layer,
+-                        profile,
+-                        *x,
+-                        *y,
+-                        *region_width,
+-                        *region_height,
+-                    )?;
++                    if *device_aligned {
++                        render_page_patch_aligned_impl(
++                            self,
++                            page,
++                            &frame.0,
++                            scale,
++                            layer,
++                            profile,
++                            crate::renderer::render_tree::BoundingBox::new(
++                                *x,
++                                *y,
++                                *region_width,
++                                *region_height,
++                            ),
++                            true,
++                        )?;
++                    } else {
++                        self.render_page_patch_to_canvas_filtered_with_profile(
++                            page,
++                            &frame.0,
++                            scale,
++                            layer,
++                            profile,
++                            *x,
++                            *y,
++                            *region_width,
++                            *region_height,
++                        )?;
++                    }
+                 }
+             }
+             let mut state = job.borrow_mut();
+@@ -1252,6 +1332,7 @@
+                 canvas,
+                 scale,
+                 crate::renderer::render_job::Replay::Patch {
++                    device_aligned: false,
+                     layer: layer_kind.into(),
+                     profile: profile.into(),
+                     x,
+@@ -9404,9 +9485,9 @@
+     serde_json::json!({ "decoded": json(decoded), "images": json(images) }).to_string()
+ }
+ 
+-/// 두 전역 캐시를 각각 `maxBytes` 이하로 줄인다(0 = 로드 중이 아닌 것 모두). 내보낸 Canvas는 크기 0으로 바로
+-/// 놓는다. 열린 다른 문서는 다음 그리기에서 다시 디코드하므로 그림이 틀리지 않는다(비용만 다시 든다). 로드 중인
+-/// 브라우저 이미지는 취소하지 않는다.
++/// 활성 렌더 job을 먼저 무효화한 뒤 두 전역 캐시의 소유 참조를 각각 maxBytes 이하로 줄인다.
++/// 0은 모든 resident/negative 항목을 제거한다. 마지막 참조가 놓인 이미지 decode는 취소되며,
++/// 독립 Rc lease가 남아 있는 자원은 그 참조가 해제될 때까지 유효하다. 다음 렌더는 다시 decode할 수 있다.
+ #[cfg(target_arch = "wasm32")]
+ #[wasm_bindgen(js_name = trimRendererCaches)]
+ pub fn trim_renderer_caches(max_bytes: f64) {

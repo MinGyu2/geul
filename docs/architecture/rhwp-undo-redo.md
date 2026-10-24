@@ -710,7 +710,7 @@ D2 native 목표 순서는 새 플랫폼에서 관찰하지 못했다. 결정적
   진행을 15초 기한에 의존시키지 않는다. 취소·만료 job을 다시 시작하지 않는다.
 - **시험 adapter의 요청 식별:** Canvas 객체·page·유효 scale·문서 generation·modelVersion 전체가 같으면 active/queued
   작업을 재사용한다. 동일 요청은 decode·job·기한을 재시작하지 않는다. 변경된 요청은 교체하며 failed/painted 식별도
-  같은 필드를 사용한다. 현 adapter는 full-page mode만 사용하므로 별도 mode 필드는 없다.
+  같은 필드를 사용한다. 그 당시 adapter는 full-page mode만 사용했다. 아래 최종 안정화 adapter는 mode도 식별한다.
 
 실행 범위·정확한 결과·누락은 [새 한국어 보고서](../../tests/integration/rhwp/evidence/t010-resource-scheduler/REPORT.ko.txt)에 기록한다.
 D2 native IME 증거 공백, D3/D5 전체 후보 통합 미검증 및 공식 D4 지연 FAIL은 이 소유권/스케줄링 교정과 별도 관문이다.
@@ -729,3 +729,58 @@ resident를 다시 대조한다. decode 완료만 기다리는 작업이나 필�
 통과했다. 자세한 후보 식별·실패 재현·D3/D5 검증 범위·D4 측정은
 [후속 보고서](../../tests/integration/rhwp/evidence/t010-lease-progress/REPORT.ko.txt)를 따른다.
 D2 native IME 증거 공백과 D4 지연 실패는 남으며 T010/T011 및 제품 활성화 상태는 바꾸지 않는다.
+
+## T010 최종 안정화의 격리 계약
+
+`t010-final-stabilization`은 실제 paint 입력 요약을 기존 `changedBand`로 비교하며 caret 위치로
+손상을 추측하지 않는다. 페이지·배율·문서 세대·modelVersion·렌더 모드와 backing extent가 유효하고
+paint 입력이 동일한 쪽만 재사용한다. 변경된 쪽은 항상 원자적 Full 재생을 수행한다.
+새 `beginRenderPatchJob`도 유효한 사각형을 검사한 뒤 Full로 실행한다. 실제 Tauri/WebKitGTK에서
+정수 배율의 복잡한 HWP를 지역 재생하면 내부23픽셀이 Full과 달랐고, 소수 배율에서도 차이가 있었다.
+따라서 새 지역 clip 실험은 제거했다. 기존 호환 Patch/Filtered/Legacy 경로는 유지한다.
+여러 쪽 HWP의 긴 편집 후 Undo에서는 길이0 원본 문단 caret 조회가 실패한다. 네 문서 Full 대조와
+원본 pinned/candidate 독립 조회도 실패하므로 summary 원인 가설은 폐기했다. D1의 별도 실패로 남긴다.
+표 셀·snapshot 복원·명시적 repaint는 Full이며, 첫 프레임은 React 정리 이후 게시하도록 대기시킨다.
+확인된 이전 프레임의 변경만 같은 effect 안에서 첫 poll을 허용한다. staging/backup 한도, 현재 세대
+검사 및 COMPLETE 전 비게시는 동일하다. 요약은 세션마다 최대64개·각262144·합계2097152 UTF-16 code unit으로 제한한다.
+합계는 이전8개×개별 상한과 같고 새 항목은 MRU로 옮긴다.
+초과 시 화면 밖 요약부터 LRU로 버려, 백그라운드 쪽 완료가 편집 중인 표시 프레임의 근거를 밀어내지 않게 한다. failed 요청에는
+요약을 보유하지 않는다. 이는 renderer의 이미지 예산이나 프로세스 RSS 상한을 늘리는 승인이 아니다.
+
+만료 검사는 pending job이 있을 때만250ms 단발 타이머를 이어 간다. 종료/취소 뒤에는 mutable borrow가
+끝난 지연 작업에서 타이머를 정리한다. 공유 job이 남으면 검사하며, 유휴 후 새 job은 재시작한다. 무한
+interval·job별 callback 누적은 없고, 마지막 활성 lease→cache-only 회수 가능량 및 실제 대기 byte 예약에
+근거한 용량 알림 계약을 유지한다. CPU·전력 감소를 측정 없이 주장하지 않는다.
+
+성능 명령은 네 문서의 측정 완료와 공식 관문 통과를 구분한다. 실패한 지연 관문은 종료 코드1과
+`OFFICIAL_GATE_FAILURE`이며, driver/cleanup 오류·결과 누락은 별도 실패다. 기준은 native keydown→revision
+관찰 RAF→추가2RAF, group-start p95≤50ms·Undo p95≤1500ms 그대로다. 같은 후보의 Full/damage 비교와
+pinned 비교를 나누며 비동기 commit-ack나 서로 다른 p95를 합산하지 않는다.
+
+실행 범위·후보 SHA·실패 재현·D1 표시 RGBA·D3 고정 분류·D2 native 및 D4 최종 관문은
+[이번 보고서](../../tests/integration/rhwp/evidence/t010-final-stabilization/REPORT.ko.txt)를 따른다.
+제품 엔진/명령은 교체하지 않으며 T010 미완료와 T011 선행 조건은 유지한다.
+## T010 빈 floating-picture 문단 caret 복구 후속 (2026-10-24)
+
+`t010-caret-geometry` 후보는 위 최종 안정화에서 남은 D1 원본 빈 문단 실패를 수정한다.
+원본 화학 연구노트의 빈24문단 중21개 Picture host는 textless-float 경로가 문단 레이아웃을 생략하면서
+caret 조회에 필요한 TextLine도 버렸다. 기존에 정상인3개 object 경로는 보존한다. 실제 문단 시작 위치와
+저장된 단일 line segment의 높이·baseline·column 시작으로 paint 자식이 없는 TextLine metadata만 남긴다.
+그림 bbox나 caret 추정값을 쓰지 않으며 flow 진행과 paint 입력은 그대로다. 유효한 양의 높이와 column 경계를
+검사한다. synthetic·multiline·범위 밖 line의 일반 지원까지 확장했다고 주장하지 않는다.
+
+실제 후보 WASM에서21개 caret 복구·3개 기존 좌표 보존·24개 paint-owning tree 동일성을 확인했다.
+새 native5계약은 수정 전1통과/4실패에서5통과가 됐다. 전체 Rust4068통과/13 ignored, Chrome/WebKit 각각
+ownership52+scheduler73, 실제 native 전체53·focused11·safety14·visual66·pending22가 통과했다.
+엄격한 네 문서 native39검사에서도 원본 `0:23:0` Undo caret이 보이고24개 Full RGBA 참조가 모두 일치한다.
+표시 정확성 검사를 공식 지연 측정으로 세지 않는다. 실제 서비스 저장19고정 사례와 real-WASM37도 통과했다.
+
+[후속 보고서](../../tests/integration/rhwp/evidence/t010-caret-geometry/REPORT.ko.txt)에 새 완전 패치·WASM 식별과
+실행 증거를 남긴다. 이전 실패 보고서는 보존한다. D2 목표 native IME 순서, D4 지연 및 장시간 RSS는
+미완료이며 제품 활성화와 T011 선행 조건은 유지한다.
+
+T010 D4 decoded-cache admission [후속 실험](../../tests/integration/rhwp/evidence/t010-decoded-admission/REPORT.ko.txt)은
+동일 키 연속 요청2회로 admission 빈도 판정만 우회하며 기존 byte/count/per-entry 한도를 유지한다.
+새 후보 Rust4071·browser125각각·native6종·24개 정확한 RGBA 비교는 통과했다.
+그러나 단일 추가 계측 실행에서 group p95 342→279ms는50ms를 충족하지 않고 중앙값/최대값과 Undo가 악화됐다.
+재현 가능한 성능 개선으로 승격하지 않으며48adaa 기준과 제품 비활성 상태를 유지한다. 전체 T010은 미완료다.

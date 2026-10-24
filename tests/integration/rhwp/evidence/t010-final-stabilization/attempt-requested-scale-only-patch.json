@@ -1,0 +1,15 @@
+{
+  "baseline": "1a76570e833917d15817415a53c09ad61ab3203f",
+  "patch": "upstream-rhwp-final-stabilization.patch",
+  "sha256": "b86d6b2fa81488a903719bf89c544abba870b3f89e97931ca739fc9c4edc843f",
+  "application": "Apply this COMPLETE patch alone to pinned baseline; do not combine with v2 or notify patches.",
+  "applyCheckExit": 0,
+  "applyCheckOutput": "",
+  "sourceSha256": {
+    "src/renderer/mod.rs": "417872f6330bda18ba30fdb2b644e4f1bb46f3a365cda11d794d0861ac32fc8f",
+    "src/renderer/surface_cache.rs": "ef2a93b56ea85b2f619b013a97239e22eff92b93fcbaebc941e0de476dba4a0f",
+    "src/renderer/render_job.rs": "678be5755db42c9767c96e9a828ffefa8bbb3bff396b1a3e3b6aa26cd0a7c7b1",
+    "src/renderer/web_canvas.rs": "820650f06f855a0190682a9193066322f71b3a5bc75590984bde6034e3e1a06d",
+    "src/wasm_api.rs": "70a9ea59665327761873adea0d19827cda0bb66f07a0e74d6b5a8d984611898d"
+  }
+}

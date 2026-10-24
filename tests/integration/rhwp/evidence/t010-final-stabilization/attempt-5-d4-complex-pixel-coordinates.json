@@ -1,0 +1,474 @@
+{
+  "status": "FAIL",
+  "tests": [
+    {
+      "name": "bootstrap-clean-close",
+      "status": "PASS"
+    },
+    {
+      "name": "연구노트(화학).hwp-warm-full-reference-exact",
+      "status": "PASS",
+      "reference": {
+        "strongPixels": 0,
+        "pixels": 0,
+        "edgePixels": 0,
+        "height": 585,
+        "surface": "attached page Canvas readback",
+        "width": 414,
+        "verified": true,
+        "maxDelta": 0,
+        "oracle": "authoritative model full replay; browser historical full pixels independently pinned-verified"
+      }
+    },
+    {
+      "name": "연구노트(화학).hwp-typed-10-full-reference-exact",
+      "status": "FAIL",
+      "reference": {
+        "strongPixels": 0,
+        "pixels": 3,
+        "edgePixels": 0,
+        "height": 585,
+        "diffSamples": [
+          {
+            "x": 143,
+            "reference": [
+              252,
+              252,
+              252,
+              255
+            ],
+            "y": 25,
+            "shown": [
+              252,
+              253,
+              253,
+              255
+            ]
+          },
+          {
+            "x": 101,
+            "reference": [
+              243,
+              243,
+              243,
+              255
+            ],
+            "y": 27,
+            "shown": [
+              243,
+              243,
+              244,
+              255
+            ]
+          },
+          {
+            "x": 100,
+            "reference": [
+              245,
+              246,
+              247,
+              255
+            ],
+            "y": 29,
+            "shown": [
+              246,
+              246,
+              247,
+              255
+            ]
+          }
+        ],
+        "surface": "attached page Canvas readback",
+        "width": 414,
+        "verified": true,
+        "recentPatches": [
+          {
+            "page": 9,
+            "ms": 1,
+            "rect": [
+              0,
+              23.031453171674574,
+              793.7,
+              42.22433081473672
+            ],
+            "name": "beginRenderPatchJob",
+            "at": 8283
+          },
+          {
+            "page": 10,
+            "ms": 0,
+            "rect": [
+              0,
+              23.031453171674574,
+              793.7,
+              42.22433081473672
+            ],
+            "name": "beginRenderPatchJob",
+            "at": 8752
+          },
+          {
+            "page": 11,
+            "ms": 0,
+            "rect": [
+              0,
+              23.031453171674574,
+              793.7,
+              42.22433081473672
+            ],
+            "name": "beginRenderPatchJob",
+            "at": 9225
+          },
+          {
+            "page": 12,
+            "ms": 0,
+            "rect": [
+              0,
+              23.031453171674574,
+              793.7,
+              42.22433081473672
+            ],
+            "name": "beginRenderPatchJob",
+            "at": 9677
+          },
+          {
+            "page": 13,
+            "ms": 0,
+            "rect": [
+              0,
+              23.031453171674574,
+              793.7,
+              42.22433081473672
+            ],
+            "name": "beginRenderPatchJob",
+            "at": 10099
+          }
+        ],
+        "maxDelta": 1,
+        "oracle": "authoritative model full replay; browser historical full pixels independently pinned-verified"
+      }
+    }
+  ],
+  "scope": "actual candidate native performance fixtures, same zoom50/warmup3/caret region; separate correctness run, no latency claim",
+  "observerAliasDiagnostic": {
+    "sameConstructor": false,
+    "resources": [
+      "/__ownership_candidate__/rhwp.js?import",
+      "/__ownership_candidate__/rhwp.js"
+    ]
+  },
+  "visualReferences": [
+    {
+      "name": "연구노트(화학).hwp-warm",
+      "strongPixels": 0,
+      "pixels": 0,
+      "edgePixels": 0,
+      "height": 585,
+      "surface": "attached page Canvas readback",
+      "width": 414,
+      "verified": true,
+      "maxDelta": 0,
+      "oracle": "authoritative model full replay; browser historical full pixels independently pinned-verified"
+    },
+    {
+      "name": "연구노트(화학).hwp-typed-10",
+      "strongPixels": 0,
+      "pixels": 3,
+      "edgePixels": 0,
+      "height": 585,
+      "diffSamples": [
+        {
+          "x": 143,
+          "reference": [
+            252,
+            252,
+            252,
+            255
+          ],
+          "y": 25,
+          "shown": [
+            252,
+            253,
+            253,
+            255
+          ]
+        },
+        {
+          "x": 101,
+          "reference": [
+            243,
+            243,
+            243,
+            255
+          ],
+          "y": 27,
+          "shown": [
+            243,
+            243,
+            244,
+            255
+          ]
+        },
+        {
+          "x": 100,
+          "reference": [
+            245,
+            246,
+            247,
+            255
+          ],
+          "y": 29,
+          "shown": [
+            246,
+            246,
+            247,
+            255
+          ]
+        }
+      ],
+      "surface": "attached page Canvas readback",
+      "width": 414,
+      "verified": true,
+      "recentPatches": [
+        {
+          "page": 9,
+          "ms": 1,
+          "rect": [
+            0,
+            23.031453171674574,
+            793.7,
+            42.22433081473672
+          ],
+          "name": "beginRenderPatchJob",
+          "at": 8283
+        },
+        {
+          "page": 10,
+          "ms": 0,
+          "rect": [
+            0,
+            23.031453171674574,
+            793.7,
+            42.22433081473672
+          ],
+          "name": "beginRenderPatchJob",
+          "at": 8752
+        },
+        {
+          "page": 11,
+          "ms": 0,
+          "rect": [
+            0,
+            23.031453171674574,
+            793.7,
+            42.22433081473672
+          ],
+          "name": "beginRenderPatchJob",
+          "at": 9225
+        },
+        {
+          "page": 12,
+          "ms": 0,
+          "rect": [
+            0,
+            23.031453171674574,
+            793.7,
+            42.22433081473672
+          ],
+          "name": "beginRenderPatchJob",
+          "at": 9677
+        },
+        {
+          "page": 13,
+          "ms": 0,
+          "rect": [
+            0,
+            23.031453171674574,
+            793.7,
+            42.22433081473672
+          ],
+          "name": "beginRenderPatchJob",
+          "at": 10099
+        }
+      ],
+      "maxDelta": 1,
+      "oracle": "authoritative model full replay; browser historical full pixels independently pinned-verified"
+    }
+  ],
+  "documents": [],
+  "lastObserved": {
+    "throwAfterDiscard": null,
+    "status": {
+      "uncertain": "false",
+      "history": null,
+      "status": "ready",
+      "dirty": "true",
+      "localRevision": "26",
+      "revision": "26"
+    },
+    "snapshotCalls": [
+      {
+        "ms": 2,
+        "name": "saveSnapshot",
+        "at": 3918
+      },
+      {
+        "ms": 1,
+        "name": "saveSnapshot",
+        "at": 4358
+      },
+      {
+        "ms": 0,
+        "name": "saveSnapshot",
+        "at": 4902
+      },
+      {
+        "ms": 0,
+        "name": "saveSnapshot",
+        "at": 6029
+      },
+      {
+        "ms": 1,
+        "name": "saveSnapshot",
+        "at": 6514
+      },
+      {
+        "ms": 1,
+        "name": "saveSnapshot",
+        "at": 6978
+      },
+      {
+        "ms": 1,
+        "name": "saveSnapshot",
+        "at": 7436
+      },
+      {
+        "ms": 0,
+        "name": "saveSnapshot",
+        "at": 7888
+      },
+      {
+        "ms": 0,
+        "name": "saveSnapshot",
+        "at": 8233
+      },
+      {
+        "ms": 0,
+        "name": "saveSnapshot",
+        "at": 8706
+      },
+      {
+        "ms": 1,
+        "name": "saveSnapshot",
+        "at": 9162
+      },
+      {
+        "ms": 0,
+        "name": "saveSnapshot",
+        "at": 9617
+      },
+      {
+        "ms": 1,
+        "name": "saveSnapshot",
+        "at": 10049
+      }
+    ],
+    "owners": [
+      {
+        "discards": 0,
+        "nativeCapacity": 100,
+        "id": 1,
+        "saves": 13,
+        "live": 13
+      }
+    ],
+    "jobs": {
+      "pendingCount": 0,
+      "cancellations": 0,
+      "peakTemporaryCanvasBytes": 3875040,
+      "listenerNotifications": 0,
+      "peakStagingBytes": 3875040,
+      "inFlightEstimatedBytes": 0,
+      "capacityNotifications": 0,
+      "maxFrameBytes": 67108864,
+      "expiryTimerTicks": 0,
+      "resourceLimits": 0,
+      "expiryTimerActive": false,
+      "retryCount": 0,
+      "expiryTimerStarts": 59,
+      "backupImageDataBytes": 0,
+      "activeLeaseEstimatedBytes": 0,
+      "activeJobs": 0,
+      "activeLeaseCount": 0,
+      "maxPending": 2,
+      "transientEstimatedBytes": 0,
+      "loadAttempts": 0,
+      "uniqueResourceCount": 0,
+      "readyLeaseCount": 0,
+      "temporaryCanvasBytes": 0,
+      "maxOwnedBytes": 268435456,
+      "maxStagingBytes": 134217728,
+      "ownedEstimatedBytes": 0,
+      "maxResources": 256,
+      "errors": 0,
+      "peakBackupImageDataBytes": 968760,
+      "completionNotifications": 0
+    },
+    "identity": {
+      "wasmSha256": "2aa0b5ac0ed09019d1c738f88668a56e2f63c609a78bb3d478f1260a92ce7d6c",
+      "baseline": "1a76570e833917d15817415a53c09ad61ab3203f"
+    }
+  },
+  "error": "연구노트(화학).hwp-typed-10-full-reference-exact",
+  "existingSaveAssertions": [],
+  "historyGates": [],
+  "historyChecks": [],
+  "testedSourceSha256": {
+    "tests/integration/rhwp/ownership-poc/session.mjs": "e74c59879817f8ac9cbafde7e62561d2b766454fe203afd1768752f39e8f5a6a",
+    "tests/integration/rhwp/ownership-poc/history-perf.py": "fd2175b55a9520a7cf878bd46c72b586ed5e06b5d1c31c617edb4a8d5529f55e",
+    "tests/integration/rhwp/undo_native.py": "1d0982fa18c155bbd1e7b009307253815148f841fe1116ec92d818a3ea195445",
+    "tests/integration/rhwp/native_probe.py": "8f4be7dcd57bf5f284dda7ca94d12c9bad8a8f718d543ca57b500166b50c39a0",
+    "tests/integration/rhwp/ownership-poc/performance-visual-native.py": "dcdccc125c6ff6b716d296a4fc501ecaf482f21bb44691e7bc71977b506226d7"
+  },
+  "parentExit": 1,
+  "processFinished": true,
+  "elapsedSeconds": 14.54,
+  "command": [
+    "dbus-run-session",
+    "--",
+    "python3",
+    "tests/integration/rhwp/ownership-poc/performance-visual-native.py",
+    "--app",
+    "<workspace>/src-tauri/target/debug/geul",
+    "--driver",
+    "/tmp/geul-t010-ownership-tools/bin/tauri-driver",
+    "--webkit-driver",
+    "/nix/store/p7h9r90h1vmk4wq1964nhd8vfp0kf27b-webkitgtk-2.54.1+abi=4.1/bin/WebKitWebDriver",
+    "--xvfb",
+    "/nix/store/7yz3bnmll7fy11n0xci85mbhnf6p5669-xvfb-21.1.23/bin/Xvfb",
+    "--output",
+    "<workspace>/tests/integration/rhwp/evidence/t010-final-stabilization/diagnostic-d4-complex-pixels.json",
+    "--xdotool",
+    "/nix/store/kyp2r08w6hs0l1zj3cya6d2ciba9v47h-xdotool-3.20211022.1/bin/xdotool",
+    "--sample",
+    "연구노트(화학).hwp"
+  ],
+  "activationFlags": {
+    "VITE_GEUL_TEST_HOOKS": "1",
+    "GEUL_T010_DAMAGE_POC": "1",
+    "GEUL_T010_OWNERSHIP_POC": "1",
+    "GEUL_T010_SCHEDULER_POC": "1",
+    "GEUL_T010_CANDIDATE": "<isolated>/candidate-package",
+    "GEUL_T010_EVIDENCE": "<workspace>/tests/integration/rhwp/evidence/t010-final-stabilization",
+    "VITE_GEUL_TEST_RHWP_HISTORY": "1",
+    "GEUL_T010_HISTORY_SAFETY_ONLY": "1"
+  },
+  "devServerCommand": [
+    "node",
+    "node_modules/vite/bin/vite.js",
+    "--host",
+    "127.0.0.1",
+    "--config",
+    "tests/integration/rhwp/ownership-poc/vite.config.mjs"
+  ],
+  "appSha256": "48b7b8364cb4b91ae0b4c3cb3113977c15fd92aa9ca3d60f0406f331749d45c1"
+}

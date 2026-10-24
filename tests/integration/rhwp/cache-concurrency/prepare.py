@@ -20,6 +20,14 @@ def sha(path):
     return hashlib.sha256(path.read_bytes()).hexdigest()
 
 
+def source_hashes(work):
+    names = CHANGED
+    # The caret candidate also changes layout; keep older candidate manifests stable.
+    if (work / 'src/renderer/layout/caret_geometry_tests.rs').is_file():
+        names += ('src/renderer/layout.rs', 'src/renderer/layout/caret_geometry_tests.rs')
+    return {name: sha(work / name) for name in names if (work / name).is_file()}
+
+
 def export_declared_inputs(source, work):
     """Include pinned static Rust test inputs without exporting unrelated document archives."""
     for directory in ('src', 'tests', 'crates', 'tools', 'bindings'):
@@ -83,13 +91,17 @@ def main():
     env.setdefault('CARGO_BUILD_JOBS', '2')
     version = lambda cmd: subprocess.check_output(cmd, env=env, text=True).strip()
     manifest = {'schema': 1, 'baseline': BASELINE, 'patchSha256': None if a.baseline_only else sha(a.patch),
-                'sourceSha256': {name: sha(work / name) for name in CHANGED if (work / name).is_file()},
+                'sourceSha256': source_hashes(work),
                 'compiler': version(['rustc', '--version']), 'cargo': version(['cargo', '--version']),
                 'wasmPack': version(['wasm-pack', '--version']), 'target': 'wasm32-unknown-unknown',
                 'profile': 'release', 'targetCache': 'explicit cache' if a.target_dir else 'isolated target/pr-review', 'sourceExport': 'build/test inputs; documentation/PDF archives excluded', 'buildStatus': 'NOT EXECUTED'}
     job_source = work / 'src/renderer/render_job.rs'
     manifest['rendererJobAPI'] = job_source.is_file()
     manifest['schedulerAPI'] = job_source.is_file() and 'capacityNotifications' in job_source.read_text() and 'reclaim_inactive_image' in job_source.read_text()
+    manifest['stabilizationAPI'] = job_source.is_file() and 'expiryTimerActive' in job_source.read_text() and 'beginRenderPatchJob' in (work / 'src/wasm_api.rs').read_text()
+    api_source = (work / 'src/wasm_api.rs').read_text()
+    manifest['explicitPatchFullFallbackAPI'] = 'all valid rectangles' in api_source
+    manifest['fractionalPatchFullFallbackAPI'] = manifest['explicitPatchFullFallbackAPI'] or 'if scale.fract() != 0.0' in api_source
     manifest['sourceStableDuringBuild'] = False
     package = work / 'test-package'
     command = ['scripts/wasm-pack-locked.sh', '--release', '--target', 'web', '--out-dir', 'test-package']
@@ -100,7 +112,7 @@ def main():
     try:
         if not a.prepare_only:
             subprocess.run(command, cwd=work, env=env, check=True)
-            after_sources = {name: sha(work / name) for name in CHANGED if (work / name).is_file()}
+            after_sources = source_hashes(work)
             if manifest['sourceSha256'] != after_sources:
                 manifest['buildStatus'] = 'STALE'
                 raise RuntimeError('source changed during build; artifacts are not verified')

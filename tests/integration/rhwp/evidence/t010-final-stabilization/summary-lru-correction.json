@@ -1,0 +1,7 @@
+{
+  "before": "before-summary-lru.json",
+  "beforeAdapter": "pre-lru-session.mjs.txt",
+  "reproduction": "With9Canvases, an evicted oldest frame was immediately evicted again on completion because Map.set does not update insertion order; subsequent edits never used Patch.",
+  "correction": "Move completed and verified-unchanged frames to MRU before capping8 summaries. Strip derived summary on failed requests.",
+  "afterTests": "after-adapter.json"
+}

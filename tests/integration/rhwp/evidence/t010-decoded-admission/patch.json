@@ -1,0 +1,17 @@
+{
+  "baseline": "1a76570e833917d15817415a53c09ad61ab3203f",
+  "patch": "upstream-rhwp-decoded-admission.patch",
+  "sha256": "daf58f579e2ca7203256bd5eed55cf6733e6f11354a89cdbf358d2756cca2191",
+  "applyCheckExit": 0,
+  "application": "Apply complete patch alone to pinned revision",
+  "sourceSha256": {
+    "src/renderer/mod.rs": "417872f6330bda18ba30fdb2b644e4f1bb46f3a365cda11d794d0861ac32fc8f",
+    "src/renderer/surface_cache.rs": "e487ea79aa8a0d13f489958f69822476ef457c61bad95dc70c13bac5eec72ed4",
+    "src/renderer/render_job.rs": "6ebaf2d87e79d4fcb8fb94782af017052553d4e44ea9a2725822983cddeafbfd",
+    "src/renderer/web_canvas.rs": "c353c72224d0b70f0db5b42443d18e175028b9cd6e2e5ce347b3fa30a6d85ec6",
+    "src/wasm_api.rs": "9563a9ef26b5d0c22997e9beb8cb8c037e852df7ca95a8362800e7bd0cf24c5d",
+    "src/renderer/layout.rs": "c4e348d4b6926ce3d8a0b431a0d5b8202d717c5573e62f12725f17ef145f0eac",
+    "src/renderer/layout/caret_geometry_tests.rs": "2b08a10fa355bb70cd7d4bced4e106f6a2d079d7bdb51bf9835cc3f45d852220"
+  },
+  "scope": "Experimental burst admission candidate; limits/pixel gates unchanged; no production activation"
+}

@@ -1,0 +1,25 @@
+{
+  "status": "RUNNING",
+  "checks": [
+    {
+      "name": "native-clippy",
+      "command": [
+        "cargo",
+        "clippy",
+        "--locked",
+        "--all-targets",
+        "--",
+        "-D",
+        "warnings"
+      ],
+      "status": "PASS",
+      "exit": 0,
+      "elapsedSeconds": 92.35,
+      "counts": null,
+      "outputTail": "    Blocking waiting for file lock on package cache\n    Blocking waiting for file lock on package cache\n    Checking rhwp v0.8.7 (<isolated>)\n    Finished `dev` profile [unoptimized + debuginfo] target(s) in 1m 31s",
+      "compiler": "Rust1.93.1",
+      "cwd": "<isolated>",
+      "sourceIdentity": "patch.json"
+    }
+  ]
+}

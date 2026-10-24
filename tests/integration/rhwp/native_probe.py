@@ -29,10 +29,35 @@ import('/rhwp/rhwp.js').then(async mod => {
       finally{p.record(name==='drawImage'?'canvasVisibleDraw':'canvasReadback',at);}
     };
   }
+  p.selectionAt = key => {
+    if(!active||key.includes('@'))return null;
+    const [section,paragraph,offset]=key.split(':').map(Number);
+    return JSON.parse(active.getSelectionRects(section,paragraph,offset,paragraph,offset+1));
+  };
   p.paragraphCheck = (expected,section,paragraph) => {
     if(!active)return null;
     const text=active.getTextRange(section,paragraph,0,active.getParagraphLength(section,paragraph));
     return {equals:text===expected,expectedLength:[...expected].length,actualLength:[...text].length,section,paragraph};
+  };
+  // Test-only independent full replay of the authoritative live model. Compare
+  // actual attached Canvas RGBA; never retain a reference frame or document bytes.
+  p.fullFrameCheck = page => {
+    const shown=document.querySelectorAll('.rhwp-page__canvas')[page];
+    if(!active||!shown?.isConnected||!shown.width)return {verified:false};
+    const scale=parseInt(document.querySelector('.statusbar__zoom-value').textContent)/100*devicePixelRatio;
+    const reference=document.createElement('canvas');
+    try {
+      active.renderPageToCanvas(page,reference,scale);
+      if(reference.width!==shown.width||reference.height!==shown.height)return {verified:false,reason:'extent'};
+      const a=shown.getContext('2d').getImageData(0,0,shown.width,shown.height).data;
+      const b=reference.getContext('2d').getImageData(0,0,reference.width,reference.height).data;
+      let pixels=0,maxDelta=0,strongPixels=0,edgePixels=0;const diffSamples=[];
+      for(let i=0;i<a.length;i+=4){const dd=Math.max(...[0,1,2,3].map(k=>Math.abs(a[i+k]-b[i+k])));if(!dd)continue;
+        pixels++;maxDelta=Math.max(maxDelta,dd);if(dd>32)strongPixels++;
+        const n=i/4,x=n%shown.width,y=Math.floor(n/shown.width);if(diffSamples.length<8)diffSamples.push({x,y,shown:[...a.slice(i,i+4)],reference:[...b.slice(i,i+4)]});if(x===0||y===0||x===shown.width-1||y===shown.height-1)edgePixels++;
+      }
+      return {verified:true,pixels,maxDelta,strongPixels,edgePixels,...(pixels?{diffSamples,recentPatches:p.calls.filter(c=>c.name==='beginRenderPatchJob').slice(-5)}:{}),width:shown.width,height:shown.height,surface:'attached page Canvas readback',oracle:'authoritative model full replay; browser historical full pixels independently pinned-verified'};
+    } finally {reference.width=reference.height=0;}
   };
   p.owners = () => [...docs.values()].map(d=>({id:d.id,live:d.live.size,saves:d.saves,discards:d.discards,nativeCapacity:d.nativeCapacity??null}));
   p.cursor = key => {
@@ -49,7 +74,7 @@ import('/rhwp/rhwp.js').then(async mod => {
   };
   for (const name of ['getPageInfo','saveSnapshot','restoreSnapshot','discardSnapshot','insertText','insertTextInCell',
     'snapshotCapacity','deleteText','deleteTextInCell','splitParagraph','splitParagraphInCell','getPageLayerTreeWithProfile',
-    'renderPageToCanvas','renderPagePatchToCanvasFilteredWithProfile','beginRenderJob','pollRenderJob','hitTest','free']) {
+    'renderPageToCanvas','renderPagePatchToCanvasFilteredWithProfile','beginRenderJob','beginRenderPatchJob','pollRenderJob','hitTest','free']) {
     const original=mod.HwpDocument.prototype[name]; if(!original) continue;
     mod.HwpDocument.prototype[name]=function(...args) {
       const doc=tracked(this), start=performance.now(); let value,completed=false;
@@ -66,7 +91,7 @@ import('/rhwp/rhwp.js').then(async mod => {
         return value;
       } finally {
         if(name==='free' && completed) {p.disposals.push({id:doc.id,liveAtFree:doc.live.size,saves:doc.saves,discards:doc.discards});if(p.disposals.length>50)p.disposals.shift();docs.delete(doc.id);if(active===this) active=null;}
-        p.calls.push({name,ms:performance.now()-start,at:start,...(name==='pollRenderJob'&&completed?{outcome:value}:{})});
+        p.calls.push({name,ms:performance.now()-start,at:start,...(name==='pollRenderJob'&&completed?{outcome:value}:{}),...(name==='beginRenderPatchJob'?{page:args[0],rect:args.slice(3)}:{})});
         if(p.calls.length>20000) p.calls.splice(0,10000);
       }
     };

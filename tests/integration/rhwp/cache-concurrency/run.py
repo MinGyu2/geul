@@ -84,7 +84,7 @@ def stop(process):
             process.wait(timeout=10)
 
 
-def validate_result(value, require_ownership=False, require_scheduler=False):
+def validate_result(value, require_ownership=False, require_scheduler=False, require_stabilization=False, require_fractional_fallback=False, require_explicit_fallback=False):
     """Independently validate mandatory gates; a browser's top-level PASS is not proof."""
     if value.get('schema') != 1 or value.get('status') not in ('PASS', 'FAIL'):
         raise RuntimeError('invalid completion status')
@@ -159,6 +159,17 @@ def validate_result(value, require_ownership=False, require_scheduler=False):
                           'shared-resident-close-one-preserves-pixels'}
         if scheduler.get('status') not in ('PASS', 'FAIL') or not required_names <= {r.get('name') for r in rows}:
             raise RuntimeError('incomplete scheduler scenarios')
+        if require_stabilization or any('expiryTimerActive' in p.get('jobs', {}) for p in scheduler.get('checkpoints', [])):
+            final_names = {'timer-idle-no-ticks', 'timer-shared-lifetime', 'timer-final-cancel-stops',
+                           'timer-restart-and-expire', 'timer-repeated-complete-idle',
+                           'patch-job-exact-pinned-replay', 'patch-job-mutation-stale-rejected', 'patch-job-invalid-bounds-rejected',
+                           'patch-job-legacy-compat-exact', 'patch-job-fractional-edge-full-exact'}
+            if not final_names <= {r.get('name') for r in rows}:
+                raise RuntimeError('missing stabilization lifecycle/patch scenarios')
+        if require_explicit_fallback and 'integer-patch-policy-full-fallback' not in {r.get('name') for r in rows}:
+            raise RuntimeError('missing explicit fallback policy scenario')
+        if require_fractional_fallback and not {'fractional-patch-policy-full-fallback','normalized-integer-patch-policy-full-fallback','complex-integer-patch-full-reference','complex-fractional-patch-full-reference'} <= {r.get('name') for r in rows}:
+            raise RuntimeError('missing fractional fallback policy scenario')
         gates += [scheduler['status']] + [r.get('status') for r in rows]
         for row in rows:
             if row.get('status') not in ('PASS', 'FAIL'):
@@ -171,6 +182,8 @@ def validate_result(value, require_ownership=False, require_scheduler=False):
             raise RuntimeError('missing scheduler accounting')
         for point in points:
             job = point.get('jobs', {})
+            if require_stabilization and (type(job.get('expiryTimerActive')) is not bool or any(type(job.get(k)) is not int or job[k] < 0 for k in ('expiryTimerStarts','expiryTimerTicks'))):
+                raise RuntimeError('missing timer lifecycle measurements')
             if require_scheduler and any(type(job.get(k)) is not int or job[k] < 0 for k in
                     ('uniqueResourceCount', 'activeLeaseCount', 'capacityNotifications', 'listenerNotifications',
                      'pendingCount', 'ownedEstimatedBytes', 'activeJobs', 'maxPending', 'maxOwnedBytes', 'maxResources')):
@@ -206,6 +219,7 @@ def main():
         for name in ('index.html', 'browser.mjs', 'historical.mjs', 'fixtures.mjs', 'historical-expected.json', 'ownership.mjs', 'job-historical.mjs', 'scheduler.mjs'):
             shutil.copy2(HERE / name, web / name)
         multisection_fixture(web / 'multisection.hwpx')
+        shutil.copy2(HERE.parents[3] / 'external/rhwp/samples/rnote/연구노트(화학).hwp', web / 'complex-hwp.hwp')
         result['testSourcesSha256'] = {path.name: sha(path) for path in web.iterdir() if path.is_file()}
         result['testSourcesSha256']['run.py'] = sha(HERE / 'run.py')
         event = threading.Event()
@@ -318,7 +332,7 @@ def main():
             candidate_manifest = result['identities']['candidate'].get('ENGINE.json', {})
             require_ownership = candidate_manifest.get('rendererJobAPI') is True or 'src/renderer/render_job.rs' in candidate_manifest.get('sourceSha256', {})
             result['run'] = value  # Preserve rejected payload for failure diagnosis.
-            validate_result(value, require_ownership=require_ownership, require_scheduler=candidate_manifest.get('schedulerAPI') is True)
+            validate_result(value, require_ownership=require_ownership, require_scheduler=candidate_manifest.get('schedulerAPI') is True, require_stabilization=candidate_manifest.get('stabilizationAPI') is True, require_fractional_fallback=candidate_manifest.get('fractionalPatchFullFallbackAPI') is True, require_explicit_fallback=candidate_manifest.get('explicitPatchFullFallbackAPI') is True)
             result['status'] = value['status']
         except Exception as e:
             result['error'] = str(e).replace(str(temporary), '<temporary>')

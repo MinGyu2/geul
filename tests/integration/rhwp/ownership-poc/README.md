@@ -87,3 +87,32 @@ D4는 동일 native 입력·revision 관찰 RAF·추가2RAF 계약의 `history-p
 두 arm의 렌더 경로와 WASM build provenance 차이가 있으므로 scheduler 수정만의 인과 효과라고 부르지 않는다.
 D3/D5의 실제 검증 범위와 공식 D4 FAIL은 새 한국어 보고서에 구분한다. 모든 injection은 시험 config에만
 있으며 production Undo/Redo와 formatting 지원·저장/preview 정책은 변경하지 않는다.
+
+## 최종 안정화 실행
+
+`GEUL_T010_EVIDENCE=<t010-final-stabilization evidence>`와 검증된 새 candidate package를 지정한다.
+`GEUL_T010_DAMAGE_POC=1`이면 확인된 warm frame의 동일 paint 입력을 재사용하며,0이면 같은 후보의 Full 대조군이다.
+변경된 모든 쪽은 Full이다. 정수·소수 지역 replay의 실제 native RGBA 차이 때문에 지역 재생 실험을 제거했으며, 새 `beginRenderPatchJob`도 Full로 실행한다. 길이0 HWP 문단의 기존 caret 좌표 결함은 별도 FAIL로 기록한다. 제품 config와 Session/Surface 파일은 수정하지 않는다.
+요약은 최대64개·각262144·합계2097152 UTF-16 code unit로 제한한다(이전8개×개별 상한과 같은 합계). 초과 시 화면 밖 요약부터 LRU로 버려 표시 페이지의 damage 근거를 보호한다. 동일 요청의 job/decode/deadline 재시작은 하지 않는다.
+
+- `native.py --scheduler --extended --matrix`: 기존 전체 기능+새 engine 검사.
+- `native.py --scheduler --scheduler-only`: 별도 집중 검사(전체 검사를 대신하지 않음).
+- `visual-native.py`: 실제 키/포인터·본문/셀/여러 구역 history, 부착된 Canvas readback을 별도 Full
+  재생과 비교하며 caret/selection/scroll/zoom/revision을 확인한다. `HISTORY_SAFETY_ONLY` 시험 flag가 필요하다.
+- `history-pending-native.py`: HTTP 이미지 응답을 실제 보류한 채 history·trim·문서 교체·늦은 콜백과 표시 RGBA를 확인한다.
+- `candidate-safety.py`: 실제 저장·통제된 history 실패 경계. 동일 safety flag로 별도 실행한다.
+- `performance-visual-native.py`: 성능용 네 문서의 같은 warm-up/배율/편집 위치에서 표시 RGBA·Undo/Redo를 별도 확인한다(성능 표본에 readback을 끼우지 않음).
+- `history-perf.py --engine pinned|candidate`: 기존 공식 입력·RAF·표본·문턱을 그대로 쓰며,
+  pinned/damage와 candidate Full/damage를 각각 별도 서버에서 순차 측정한다. `HISTORY_PERF_ONLY`와
+  pinned 전용 config의 명시적 flag를 사용한다. `exitReason`은 관문 실패와 측정 누락/도구 오류를 구분한다.
+- `ime-native.py`: 호환 GTK IBus module/IBus·hangul 엔진이 있을 때 격리된 Xvfb/DBus 실제 입력만
+  실행한다. `--ibus-root --hangul-root --gtk-query --glib-compile --setxkbmap`과 공통 app/driver/xdotool 인자가 필요하다.
+  Hangul이 요구하는 IBus config component도 격리된 D-Bus/XDG 디렉터리에서 실행한다.
+
+모든 스크립트의 공통 `--app --driver --webkit-driver --xvfb --output` 인자와 actual argv·flags는 새 증거에
+기록한다. 활성 native 실행 중 adapter/config를 편집하지 않는다. 실패한 중간 결과를 보존하고 원인을
+교정한 뒤 별도 파일로 재실행한다. D1~D5와 제품 활성화 판정은 새 보고서의 검증 범위대로만 해석한다.
+
+현재 adapter 단위 검사는 기존10개를 유지한23개다. `node --experimental-strip-types --test tests/integration/rhwp/ownership-poc/test-session.mjs`로 실행한다. fake loader 검사와 실제 native/decoder 결과는 합산하지 않는다.
+
+`performance-visual-native.py --continue-after-caret-failure`는 실패 뒤 나머지 픽셀 진단을 수집한다. caret FAIL과 최종 exit1은 그대로 유지하며 이 옵션으로 D1을 PASS로 올리지 않는다.

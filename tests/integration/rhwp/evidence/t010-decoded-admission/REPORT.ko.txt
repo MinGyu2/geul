@@ -1,0 +1,78 @@
+T010 D4 decoded-cache admission 후속 — 실험 후보, 성능 혼재 / 미승격
+
+1. 범위와 상태
+동일 T010의 D4 후속이다. 이전 D1 caret 수정과 증거는 보존한다. 제품 적용/commit/push/T011은 없다.
+새 후보의 기능 검증은 통과했으나 단일 성능 비교는 혼재한다. 48adaa 기준을 유지하며 제품에 승격하지 않는다. 전체 T010은 미완료다.
+
+2. 기준과 보호
+기준은 t010-caret-geometry의 WASM48adaa0f748484d12f59f4805deda0480635f915368392a87e76e95962ec0b27이다.
+initial-integrity.json은 이전 caret 증거55개 전체 집계와 기준 소스7개/HEAD를 고정한다.
+제품 src/backend/public/planning 및 submodule은 수정하지 않는다. 새 결과는 이 디렉터리에만 쓴다.
+
+3. 실제 native 관찰
+native-admission.json은 실제 기준 후보에서 canonical scenario_perf/MEASURE를 실행한 별도 진단이다.
+같은 tauri session 생성 후 native WebKitWebDriver로 직접 요청하며 실패 명령 재시도는 없다.
+112poll 중 decoded miss14/rejected13/hit92를 관찰했다. 추가 계측 비용이 있으며 공식 승인 실행이 아니다.
+page14/15/19/20/22는 group-start/extend 양쪽에서 같은 쪽 그림을 거부했고, page23도3회 거부 후 보관했다.
+거부 poll은38~156ms, 대부분의 적중 poll은10ms 안팎이었다. Rust 내부 CPU 시간과 구분한다.
+단일 chemical HWP의 group p95342ms FAIL/Undo p95144ms PASS다. 이 실행 중 다른 build/scan을 돌리지 않았다.
+
+4. 구현 가설
+기존 요청 빈도는 한번 훑는 큰 작업 집합이 자주 쓰인 resident를 전부 밀어내지 않게 한다.
+새 실험은 실제 같은 키 조회가2번 연속이면 과거 빈도보다 새 작업 집합 신호를 우선한다.
+키 하나/2까지의 streak metadata만 추가한다. 합성 hit나 빈도 가산, 이미지 보유량/예산 증가는 없다.
+기존 byte/count/per-entry/oversize/pending guard 이후에만 admission 빈도 검사를 우회한다.
+trim/예산 변경은 streak를 지운다. 한 번 훑는 순차 scan의 기존 빈도 정책은 유지한다.
+변경은 별도 소스의 surface_cache.rs 한 파일이며 그림 decode/paint/게시·timer·caret 코드는 보존한다.
+
+5. 수정 전후 계약
+기준 구현+새3계약:13PASS/1FAIL, 컴파일0. 새 연속 재요청 계약이 실패하는 것을 먼저 관찰했다.
+구현과 fmt 이후14/14PASS. 기존 stable-scan 최소16hit assertion은 수정하지 않았다.
+새 계약은 hot set 뒤 연속 newcomer, interleaved scan 보호, oversize/zero-budget 한도를 검사한다.
+
+6. 소유권·스케줄러 계약
+ownership raw14내부+13외부=27PASS, scheduler14내부+5외부=19PASS다.
+중복 내부를 제거한32개가 모두 통과했다. 변경된 cache 구현의 이전29개 통과를 재사용하지 않는다.
+
+7. 패치·재현성
+upstream-rhwp-decoded-admission.patch SHA daf58f579e2ca7203256bd5eed55cf6733e6f11354a89cdbf358d2756cca2191
+pinned1a76570e833917d15817415a53c09ad61ab3203f에 단독 적용한다.
+delta-from-caret-geometry.patch SHA a718ee1762847a39355b9da98da20ddabd21972ecd0f52e0a577589f0ecfedf1
+이 delta는 기준48adaa 소스에만 적용한다. 두 패치를 겹쳐 적용하지 않는다. 각각 apply check0이다.
+fresh-apply.json: 새 pinned+완전 패치의 src/crates Rust 및 root Cargo/build 입력1057개 비교, 차이0.
+독립 fresh WASM 재빌드는 하지 않았다. patch.json에 변경된7소스 해시를 고정한다.
+
+8. 컴파일과 Rust — PASS
+WASM Clippy/fmt와 native all-targets Clippy는 exit0을 관찰했다.
+release WASM는 exit0, 실제 SHA e300102883740f29896cc834513a473b793a61bba8c56ba32f441b325ff541df다.
+전체 native library4071PASS/0FAIL/13ignored를 실제 관찰했다. ignored는 통과 수에 포함하지 않는다.
+소스는 format 이후 고정했으며 빌드 전후 해시를 대조한다. native suite 입력28개를 재구성했다.
+
+9. 브라우저·API·저장 — PASS
+실제 새 binary에서 geometry21복구/3기존좌표보존/24paint-owning tree 동일성을 확인했다.
+real-WASM37PASS+optional1skip, 실제 service 저장19고정 사례9게시/10거부, DTS/typecheck/lint 모두 exit0이다.
+Chrome/WebKit 각각 기존 ownership52/scheduler73 및 historical goldens가 통과했다.
+이전 검사 이름 집합도 유지했다. engine-safety-gates.json은 조건부 native 실험만 허용한다.
+새 candidate의 actual WASM identity를 기록하기 전에는 기준 후보의 통과를 새 후보 결과로 옮기지 않는다.
+
+10. 후보 native 검증과 성능 — 기능 PASS / 성능 혼재
+새 e300 실제 identity의 native full53/focused11/safety14/visual66/pending22/strict four-document39가 모두 PASS/exit0이다.
+엄격한 실행은 diagnosticContinuation=false, Full 참조24개 모두 pixels=0/maxDelta=0이다.
+같은 observer/앱/시나리오에서 기준112poll→후보114poll, miss14→11/reject13→5/hit92→97/eviction3→8이다.
+comparison.json은110단계의 고유 job ID와 동일 예산256MiB/256개/entry64MiB를 검증한다. 집계는 측정 단계 창 안의 값이다.
+group p50/p95/max는78/342/418→84/279/430ms, extend96/242/243→96/221/265ms다.
+Undo p95는144→172ms, Redo139→143ms이며 양쪽 timeout0이다. group50ms는 여전히 FAIL, Undo1500ms는 PASS다.
+연속 요청 admission은 작동하지만 median/max·Undo 지연이 악화돼 재현 가능한 개선으로 판정하지 않는다.
+추가 observer를 쓴 단일 chemical 진단이며 공식 네 문서×세 arm 승인이나 최초 cold decode 해결을 주장하지 않는다.
+기준48adaa를 유지하고 e300은 실험 패치로 보관한다. 기존 native canonical 파일은 수정하지 않았다.
+
+11. 미완료 관문
+공식 D4 keydown→revision RAF→추가2RAF, group p95≤50ms/Undo≤1500ms는 그대로다.
+D2 실제 native 목표 ordering과 장기 RSS도 미완료다. 이전 실패·부분 실행·독립 창들은 보존한다.
+PNG3개 lab의 픽셀 일치로 browser decode 경로를 도입하지 않았다. 지역 clip/픽셀 허용 오차를 바꾸지 않는다.
+
+12. 최종 검사와 남은 작업
+final-integrity.json과 security-final.json에 보호 증거·소스·패키지·하네스·보안 검사 실제 결과를 기록한다.
+기존443보호파일·parent191·caret55 증거를 보존한다. public source digest 오탐은 독립 검증 후 정확한 경로와 digest에만 예외를 둔다.
+기능 검증 PASS를 공식 지연/RSS/IME 승인으로 바꾸지 않는다. 다음 작업은 cold decode와 입력 전달/RAF 대기를 분리한 원인 조사다.
+제품 활성화/commit/push/T011은 없으며 필수 관문이 남아 .agent-tmp.md는 in_progress로 유지한다.

@@ -1,0 +1,234 @@
+{
+  "status": "PASS",
+  "scope": "three source PNGs; original vs color-metadata-stripped browser decode against fresh Rust decoded Canvas; laboratory pixel test only",
+  "protocol": "source Canvas exact RGBA at natural/display sizes; no production renderer change or D4 acceptance claim",
+  "observerSourceSha256": "fa30631c49977a5ca5c349d80102877027da03ad958ebbf2f809c742cef28d60",
+  "pngParity": [
+    {
+      "page": 0,
+      "modes": [
+        {
+          "mode": "original",
+          "comparisons": [
+            {
+              "width": 1898,
+              "pixels": 0,
+              "height": 2472,
+              "label": "natural",
+              "maxDelta": 0
+            },
+            {
+              "width": 414,
+              "pixels": 0,
+              "height": 585,
+              "label": "display",
+              "maxDelta": 0
+            }
+          ],
+          "decodeMs": 179
+        },
+        {
+          "mode": "normalized",
+          "comparisons": [
+            {
+              "width": 1898,
+              "pixels": 0,
+              "height": 2472,
+              "label": "natural",
+              "maxDelta": 0
+            },
+            {
+              "width": 414,
+              "pixels": 0,
+              "height": 585,
+              "label": "display",
+              "maxDelta": 0
+            }
+          ],
+          "decodeMs": 415
+        }
+      ],
+      "height": 2472,
+      "key": "bin:0:1:src",
+      "width": 1898,
+      "removed": [
+        "sRGB",
+        "gAMA"
+      ]
+    },
+    {
+      "page": 5,
+      "modes": [
+        {
+          "mode": "original",
+          "comparisons": [
+            {
+              "width": 1796,
+              "pixels": 0,
+              "height": 2339,
+              "label": "natural",
+              "maxDelta": 0
+            },
+            {
+              "width": 414,
+              "pixels": 0,
+              "height": 585,
+              "label": "display",
+              "maxDelta": 0
+            }
+          ],
+          "decodeMs": 113
+        },
+        {
+          "mode": "normalized",
+          "comparisons": [
+            {
+              "width": 1796,
+              "pixels": 0,
+              "height": 2339,
+              "label": "natural",
+              "maxDelta": 0
+            },
+            {
+              "width": 414,
+              "pixels": 0,
+              "height": 585,
+              "label": "display",
+              "maxDelta": 0
+            }
+          ],
+          "decodeMs": 24
+        }
+      ],
+      "height": 2339,
+      "key": "bin:0:5:src",
+      "width": 1796,
+      "removed": []
+    },
+    {
+      "page": 23,
+      "modes": [
+        {
+          "mode": "original",
+          "comparisons": [
+            {
+              "width": 2693,
+              "pixels": 0,
+              "height": 3508,
+              "label": "natural",
+              "maxDelta": 0
+            },
+            {
+              "width": 414,
+              "pixels": 0,
+              "height": 585,
+              "label": "display",
+              "maxDelta": 0
+            }
+          ],
+          "decodeMs": 295
+        },
+        {
+          "mode": "normalized",
+          "comparisons": [
+            {
+              "width": 2693,
+              "pixels": 0,
+              "height": 3508,
+              "label": "natural",
+              "maxDelta": 0
+            },
+            {
+              "width": 414,
+              "pixels": 0,
+              "height": 585,
+              "label": "display",
+              "maxDelta": 0
+            }
+          ],
+          "decodeMs": 164
+        }
+      ],
+      "height": 3508,
+      "key": "bin:0:20:src",
+      "width": 2693,
+      "removed": [
+        "gAMA",
+        "iCCP",
+        "cHRM"
+      ]
+    }
+  ],
+  "engineIdentity": {
+    "wasmSha256": "48adaa0f748484d12f59f4805deda0480635f915368392a87e76e95962ec0b27",
+    "baseline": "1a76570e833917d15817415a53c09ad61ab3203f"
+  },
+  "adapterCounters": {
+    "polls": 23,
+    "staleDropped": 0,
+    "reused": 0,
+    "regionalPatchJobs": 0,
+    "completed": 23,
+    "unchangedFrames": 0,
+    "notifications": 0,
+    "patchJobs": 0,
+    "wholePagePatchJobs": 0,
+    "limits": 0,
+    "replacements": 0,
+    "fullJobs": 23,
+    "errors": 0,
+    "canceled": 0
+  },
+  "sourceSha256": "6717eca43c6fdd9b0530530cf17d33b6687da0c462a433d37eb652afb5394f91",
+  "measurementComplete": true,
+  "measurements": {},
+  "gates": [],
+  "officialGateStatus": "NOT_EXECUTED",
+  "testedSourceSha256": {
+    "tests/integration/rhwp/ownership-poc/session.mjs": "fe14f40f63bae2b471c84f30dda947283f8664fc387d16c86fb7ec138b6a2c22",
+    "tests/integration/rhwp/ownership-poc/history-perf.py": "fd2175b55a9520a7cf878bd46c72b586ed5e06b5d1c31c617edb4a8d5529f55e",
+    "tests/integration/rhwp/undo_native.py": "1d0982fa18c155bbd1e7b009307253815148f841fe1116ec92d818a3ea195445",
+    "tests/integration/rhwp/native_probe.py": "8f4be7dcd57bf5f284dda7ca94d12c9bad8a8f718d543ca57b500166b50c39a0",
+    "/tmp/geul-caret-png-parity-native.py": "fa30631c49977a5ca5c349d80102877027da03ad958ebbf2f809c742cef28d60"
+  },
+  "parentExit": 0,
+  "processFinished": true,
+  "elapsedSeconds": 11.34,
+  "command": [
+    "dbus-run-session",
+    "--",
+    "python3",
+    "/tmp/geul-caret-png-parity-native.py",
+    "--app",
+    "<workspace>/src-tauri/target/debug/geul",
+    "--driver",
+    "/tmp/geul-t010-ownership-tools/bin/tauri-driver",
+    "--webkit-driver",
+    "/nix/store/p7h9r90h1vmk4wq1964nhd8vfp0kf27b-webkitgtk-2.54.1+abi=4.1/bin/WebKitWebDriver",
+    "--xvfb",
+    "/nix/store/7yz3bnmll7fy11n0xci85mbhnf6p5669-xvfb-21.1.23/bin/Xvfb",
+    "--output",
+    "<workspace>/tests/integration/rhwp/evidence/t010-caret-geometry/diagnostic-d4-png-parity.json",
+    "--xdotool",
+    "/nix/store/kyp2r08w6hs0l1zj3cya6d2ciba9v47h-xdotool-3.20211022.1/bin/xdotool"
+  ],
+  "activationFlags": {
+    "VITE_GEUL_TEST_HOOKS": "1",
+    "GEUL_T010_DAMAGE_POC": "1",
+    "GEUL_T010_OWNERSHIP_POC": "1",
+    "GEUL_T010_SCHEDULER_POC": "1",
+    "GEUL_T010_CANDIDATE": "<isolated>/candidate-package",
+    "GEUL_T010_EVIDENCE": "<workspace>/tests/integration/rhwp/evidence/t010-caret-geometry",
+    "VITE_GEUL_TEST_RHWP_HISTORY": "1",
+    "GEUL_T010_HISTORY_SAFETY_ONLY": "1"
+  },
+  "devServerCommand": [
+    "node",
+    "node_modules/vite/bin/vite.js",
+    "--host",
+    "127.0.0.1",
+    "--config",
+    "tests/integration/rhwp/ownership-poc/vite.config.mjs"
+  ],
+  "appSha256": "48b7b8364cb4b91ae0b4c3cb3113977c15fd92aa9ca3d60f0406f331749d45c1"
+}

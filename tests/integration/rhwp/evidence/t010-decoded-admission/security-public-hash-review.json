@@ -1,0 +1,21 @@
+{
+  "status": "PASS",
+  "findings": 11,
+  "exactPaths": [
+    "tests/integration/rhwp/evidence/t010-decoded-admission/candidate-d3-service-save.json",
+    "tests/integration/rhwp/evidence/t010-decoded-admission/chrome.json",
+    "tests/integration/rhwp/evidence/t010-decoded-admission/delta.json",
+    "tests/integration/rhwp/evidence/t010-decoded-admission/engine.json",
+    "tests/integration/rhwp/evidence/t010-decoded-admission/initial-integrity.json",
+    "tests/integration/rhwp/evidence/t010-decoded-admission/library-native.json",
+    "tests/integration/rhwp/evidence/t010-decoded-admission/native-clippy.json",
+    "tests/integration/rhwp/evidence/t010-decoded-admission/patch.json",
+    "tests/integration/rhwp/evidence/t010-decoded-admission/wasm-checks.json",
+    "tests/integration/rhwp/evidence/t010-decoded-admission/webkit.json"
+  ],
+  "source": "src/wasm_api.rs",
+  "independentlyHashed": true,
+  "byteIdenticalToPriorCandidate": true,
+  "digestDescription": "verified public source checksum; value bound in engine.json",
+  "scope": "exact paths AND exact digest; no credential rule disabled"
+}

@@ -1,0 +1,435 @@
+{
+  "status": "PASS",
+  "scope": "Node WASM/no browser font provider; API and render-tree geometry, not raster acceptance",
+  "fixtureSha256": "6717eca43c6fdd9b0530530cf17d33b6687da0c462a433d37eb652afb5394f91",
+  "sourceSha256": "a6731608f6085c49c64109ce079a228b5eb1ef018691aeb75b8f080df9ccd12c",
+  "beforeWasmSha256": "d49e654fffee380b48266801e2bd8e52a64fbdfbc494e5b1fcafe935b182745a",
+  "afterWasmSha256": "e300102883740f29896cc834513a473b793a61bba8c56ba32f441b325ff541df",
+  "rows": [
+    {
+      "paragraph": 0,
+      "before": {
+        "status": "FAIL",
+        "error": "렌더링 오류: 커서 위치를 찾을 수 없습니다: sec=0, para=0, offset=0"
+      },
+      "after": {
+        "status": "PASS",
+        "rect": {
+          "pageIndex": 0,
+          "x": 37.8,
+          "y": 37.8,
+          "height": 13.3
+        }
+      },
+      "paintGeometryUnchanged": true
+    },
+    {
+      "paragraph": 1,
+      "before": {
+        "status": "FAIL",
+        "error": "렌더링 오류: 커서 위치를 찾을 수 없습니다: sec=0, para=1, offset=0"
+      },
+      "after": {
+        "status": "PASS",
+        "rect": {
+          "pageIndex": 1,
+          "x": 37.8,
+          "y": 37.8,
+          "height": 13.3
+        }
+      },
+      "paintGeometryUnchanged": true
+    },
+    {
+      "paragraph": 2,
+      "before": {
+        "status": "FAIL",
+        "error": "렌더링 오류: 커서 위치를 찾을 수 없습니다: sec=0, para=2, offset=0"
+      },
+      "after": {
+        "status": "PASS",
+        "rect": {
+          "pageIndex": 2,
+          "x": 37.8,
+          "y": 37.8,
+          "height": 13.3
+        }
+      },
+      "paintGeometryUnchanged": true
+    },
+    {
+      "paragraph": 3,
+      "before": {
+        "status": "FAIL",
+        "error": "렌더링 오류: 커서 위치를 찾을 수 없습니다: sec=0, para=3, offset=0"
+      },
+      "after": {
+        "status": "PASS",
+        "rect": {
+          "pageIndex": 3,
+          "x": 37.8,
+          "y": 37.8,
+          "height": 13.3
+        }
+      },
+      "paintGeometryUnchanged": true
+    },
+    {
+      "paragraph": 4,
+      "before": {
+        "status": "FAIL",
+        "error": "렌더링 오류: 커서 위치를 찾을 수 없습니다: sec=0, para=4, offset=0"
+      },
+      "after": {
+        "status": "PASS",
+        "rect": {
+          "pageIndex": 4,
+          "x": 37.8,
+          "y": 37.8,
+          "height": 13.3
+        }
+      },
+      "paintGeometryUnchanged": true
+    },
+    {
+      "paragraph": 5,
+      "before": {
+        "status": "FAIL",
+        "error": "렌더링 오류: 커서 위치를 찾을 수 없습니다: sec=0, para=5, offset=0"
+      },
+      "after": {
+        "status": "PASS",
+        "rect": {
+          "pageIndex": 5,
+          "x": 37.8,
+          "y": 37.8,
+          "height": 13.3
+        }
+      },
+      "paintGeometryUnchanged": true
+    },
+    {
+      "paragraph": 6,
+      "before": {
+        "status": "FAIL",
+        "error": "렌더링 오류: 커서 위치를 찾을 수 없습니다: sec=0, para=6, offset=0"
+      },
+      "after": {
+        "status": "PASS",
+        "rect": {
+          "pageIndex": 6,
+          "x": 37.8,
+          "y": 37.8,
+          "height": 13.3
+        }
+      },
+      "paintGeometryUnchanged": true
+    },
+    {
+      "paragraph": 7,
+      "before": {
+        "status": "FAIL",
+        "error": "렌더링 오류: 커서 위치를 찾을 수 없습니다: sec=0, para=7, offset=0"
+      },
+      "after": {
+        "status": "PASS",
+        "rect": {
+          "pageIndex": 7,
+          "x": 37.8,
+          "y": 37.8,
+          "height": 13.3
+        }
+      },
+      "paintGeometryUnchanged": true
+    },
+    {
+      "paragraph": 8,
+      "before": {
+        "status": "FAIL",
+        "error": "렌더링 오류: 커서 위치를 찾을 수 없습니다: sec=0, para=8, offset=0"
+      },
+      "after": {
+        "status": "PASS",
+        "rect": {
+          "pageIndex": 8,
+          "x": 37.8,
+          "y": 37.8,
+          "height": 13.3
+        }
+      },
+      "paintGeometryUnchanged": true
+    },
+    {
+      "paragraph": 9,
+      "before": {
+        "status": "FAIL",
+        "error": "렌더링 오류: 커서 위치를 찾을 수 없습니다: sec=0, para=9, offset=0"
+      },
+      "after": {
+        "status": "PASS",
+        "rect": {
+          "pageIndex": 9,
+          "x": 37.8,
+          "y": 37.8,
+          "height": 13.3
+        }
+      },
+      "paintGeometryUnchanged": true
+    },
+    {
+      "paragraph": 10,
+      "before": {
+        "status": "FAIL",
+        "error": "렌더링 오류: 커서 위치를 찾을 수 없습니다: sec=0, para=10, offset=0"
+      },
+      "after": {
+        "status": "PASS",
+        "rect": {
+          "pageIndex": 10,
+          "x": 37.8,
+          "y": 37.8,
+          "height": 13.3
+        }
+      },
+      "paintGeometryUnchanged": true
+    },
+    {
+      "paragraph": 11,
+      "before": {
+        "status": "FAIL",
+        "error": "렌더링 오류: 커서 위치를 찾을 수 없습니다: sec=0, para=11, offset=0"
+      },
+      "after": {
+        "status": "PASS",
+        "rect": {
+          "pageIndex": 11,
+          "x": 37.8,
+          "y": 37.8,
+          "height": 13.3
+        }
+      },
+      "paintGeometryUnchanged": true
+    },
+    {
+      "paragraph": 12,
+      "before": {
+        "status": "FAIL",
+        "error": "렌더링 오류: 커서 위치를 찾을 수 없습니다: sec=0, para=12, offset=0"
+      },
+      "after": {
+        "status": "PASS",
+        "rect": {
+          "pageIndex": 12,
+          "x": 37.8,
+          "y": 37.8,
+          "height": 13.3
+        }
+      },
+      "paintGeometryUnchanged": true
+    },
+    {
+      "paragraph": 13,
+      "before": {
+        "status": "FAIL",
+        "error": "렌더링 오류: 커서 위치를 찾을 수 없습니다: sec=0, para=13, offset=0"
+      },
+      "after": {
+        "status": "PASS",
+        "rect": {
+          "pageIndex": 13,
+          "x": 37.8,
+          "y": 37.8,
+          "height": 13.3
+        }
+      },
+      "paintGeometryUnchanged": true
+    },
+    {
+      "paragraph": 14,
+      "before": {
+        "status": "FAIL",
+        "error": "렌더링 오류: 커서 위치를 찾을 수 없습니다: sec=0, para=14, offset=0"
+      },
+      "after": {
+        "status": "PASS",
+        "rect": {
+          "pageIndex": 14,
+          "x": 37.8,
+          "y": 37.8,
+          "height": 13.3
+        }
+      },
+      "paintGeometryUnchanged": true
+    },
+    {
+      "paragraph": 15,
+      "before": {
+        "status": "FAIL",
+        "error": "렌더링 오류: 커서 위치를 찾을 수 없습니다: sec=0, para=15, offset=0"
+      },
+      "after": {
+        "status": "PASS",
+        "rect": {
+          "pageIndex": 15,
+          "x": 37.8,
+          "y": 37.8,
+          "height": 13.3
+        }
+      },
+      "paintGeometryUnchanged": true
+    },
+    {
+      "paragraph": 16,
+      "before": {
+        "status": "PASS",
+        "rect": {
+          "pageIndex": 16,
+          "x": 41.6,
+          "y": 917.6,
+          "height": 12
+        }
+      },
+      "after": {
+        "status": "PASS",
+        "rect": {
+          "pageIndex": 16,
+          "x": 41.6,
+          "y": 917.6,
+          "height": 12
+        }
+      },
+      "paintGeometryUnchanged": true
+    },
+    {
+      "paragraph": 17,
+      "before": {
+        "status": "PASS",
+        "rect": {
+          "pageIndex": 17,
+          "x": 41.6,
+          "y": 914.3,
+          "height": 12
+        }
+      },
+      "after": {
+        "status": "PASS",
+        "rect": {
+          "pageIndex": 17,
+          "x": 41.6,
+          "y": 914.3,
+          "height": 12
+        }
+      },
+      "paintGeometryUnchanged": true
+    },
+    {
+      "paragraph": 18,
+      "before": {
+        "status": "PASS",
+        "rect": {
+          "pageIndex": 18,
+          "x": 41.6,
+          "y": 914.3,
+          "height": 12
+        }
+      },
+      "after": {
+        "status": "PASS",
+        "rect": {
+          "pageIndex": 18,
+          "x": 41.6,
+          "y": 914.3,
+          "height": 12
+        }
+      },
+      "paintGeometryUnchanged": true
+    },
+    {
+      "paragraph": 19,
+      "before": {
+        "status": "FAIL",
+        "error": "렌더링 오류: 커서 위치를 찾을 수 없습니다: sec=0, para=19, offset=0"
+      },
+      "after": {
+        "status": "PASS",
+        "rect": {
+          "pageIndex": 19,
+          "x": 37.8,
+          "y": 37.8,
+          "height": 13.3
+        }
+      },
+      "paintGeometryUnchanged": true
+    },
+    {
+      "paragraph": 20,
+      "before": {
+        "status": "FAIL",
+        "error": "렌더링 오류: 커서 위치를 찾을 수 없습니다: sec=0, para=20, offset=0"
+      },
+      "after": {
+        "status": "PASS",
+        "rect": {
+          "pageIndex": 20,
+          "x": 37.8,
+          "y": 37.8,
+          "height": 13.3
+        }
+      },
+      "paintGeometryUnchanged": true
+    },
+    {
+      "paragraph": 21,
+      "before": {
+        "status": "FAIL",
+        "error": "렌더링 오류: 커서 위치를 찾을 수 없습니다: sec=0, para=21, offset=0"
+      },
+      "after": {
+        "status": "PASS",
+        "rect": {
+          "pageIndex": 21,
+          "x": 37.8,
+          "y": 37.8,
+          "height": 13.3
+        }
+      },
+      "paintGeometryUnchanged": true
+    },
+    {
+      "paragraph": 22,
+      "before": {
+        "status": "FAIL",
+        "error": "렌더링 오류: 커서 위치를 찾을 수 없습니다: sec=0, para=22, offset=0"
+      },
+      "after": {
+        "status": "PASS",
+        "rect": {
+          "pageIndex": 22,
+          "x": 37.8,
+          "y": 37.8,
+          "height": 13.3
+        }
+      },
+      "paintGeometryUnchanged": true
+    },
+    {
+      "paragraph": 23,
+      "before": {
+        "status": "FAIL",
+        "error": "렌더링 오류: 커서 위치를 찾을 수 없습니다: sec=0, para=23, offset=0"
+      },
+      "after": {
+        "status": "PASS",
+        "rect": {
+          "pageIndex": 23,
+          "x": 37.8,
+          "y": 37.8,
+          "height": 13.3
+        }
+      },
+      "paintGeometryUnchanged": true
+    }
+  ],
+  "repaired": 21,
+  "existingUnchanged": 3
+}

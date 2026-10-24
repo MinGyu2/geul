@@ -1,0 +1,7 @@
+{
+  "status": "PASS",
+  "beforeSha256": "30e8665220fa8dc46210fa253b6f6a1b2783561317078183c5a19fb4e01010ae",
+  "afterSha256": "36be715af4a4717829253825061f009659e63f324a812e1ce674cb26d02491bf",
+  "executableTokensSha256": "d90418394be8bd4fb4ac285fbb896005d87f0ccfb3f6da77526af00b8e2a7f6c",
+  "method": "TypeScript scanner skipTrivia=true; all executable token kinds/text identical. Only summary-bound unit comments clarified after the D1 run."
+}

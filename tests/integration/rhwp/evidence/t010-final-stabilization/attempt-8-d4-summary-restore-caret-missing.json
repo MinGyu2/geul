@@ -1,0 +1,181 @@
+{
+  "status": "FAIL",
+  "tests": [
+    {
+      "name": "bootstrap-clean-close",
+      "status": "PASS"
+    },
+    {
+      "name": "연구노트(화학).hwp-warm-full-reference-exact",
+      "status": "PASS",
+      "reference": {
+        "strongPixels": 0,
+        "pixels": 0,
+        "edgePixels": 0,
+        "height": 585,
+        "surface": "attached page Canvas readback",
+        "width": 414,
+        "verified": true,
+        "maxDelta": 0,
+        "oracle": "authoritative model full replay; browser historical full pixels independently pinned-verified"
+      }
+    },
+    {
+      "name": "연구노트(화학).hwp-typed-10-full-reference-exact",
+      "status": "PASS",
+      "reference": {
+        "strongPixels": 0,
+        "pixels": 0,
+        "edgePixels": 0,
+        "height": 585,
+        "surface": "attached page Canvas readback",
+        "width": 414,
+        "verified": true,
+        "maxDelta": 0,
+        "oracle": "authoritative model full replay; browser historical full pixels independently pinned-verified"
+      }
+    },
+    {
+      "name": "연구노트(화학).hwp-typed-20-full-reference-exact",
+      "status": "PASS",
+      "reference": {
+        "strongPixels": 0,
+        "pixels": 0,
+        "edgePixels": 0,
+        "height": 585,
+        "surface": "attached page Canvas readback",
+        "width": 414,
+        "verified": true,
+        "maxDelta": 0,
+        "oracle": "authoritative model full replay; browser historical full pixels independently pinned-verified"
+      }
+    },
+    {
+      "name": "연구노트(화학).hwp-typed-30-full-reference-exact",
+      "status": "PASS",
+      "reference": {
+        "strongPixels": 0,
+        "pixels": 0,
+        "edgePixels": 0,
+        "height": 585,
+        "surface": "attached page Canvas readback",
+        "width": 414,
+        "verified": true,
+        "maxDelta": 0,
+        "oracle": "authoritative model full replay; browser historical full pixels independently pinned-verified"
+      }
+    }
+  ],
+  "scope": "actual candidate native performance fixtures, same zoom50/warmup3/caret region; separate correctness run, no latency claim",
+  "observerAliasDiagnostic": {
+    "sameConstructor": false,
+    "resources": [
+      "/__ownership_candidate__/rhwp.js?import",
+      "/__ownership_candidate__/rhwp.js"
+    ]
+  },
+  "visualReferences": [
+    {
+      "name": "연구노트(화학).hwp-warm",
+      "strongPixels": 0,
+      "pixels": 0,
+      "edgePixels": 0,
+      "height": 585,
+      "surface": "attached page Canvas readback",
+      "width": 414,
+      "verified": true,
+      "maxDelta": 0,
+      "oracle": "authoritative model full replay; browser historical full pixels independently pinned-verified"
+    },
+    {
+      "name": "연구노트(화학).hwp-typed-10",
+      "strongPixels": 0,
+      "pixels": 0,
+      "edgePixels": 0,
+      "height": 585,
+      "surface": "attached page Canvas readback",
+      "width": 414,
+      "verified": true,
+      "maxDelta": 0,
+      "oracle": "authoritative model full replay; browser historical full pixels independently pinned-verified"
+    },
+    {
+      "name": "연구노트(화학).hwp-typed-20",
+      "strongPixels": 0,
+      "pixels": 0,
+      "edgePixels": 0,
+      "height": 585,
+      "surface": "attached page Canvas readback",
+      "width": 414,
+      "verified": true,
+      "maxDelta": 0,
+      "oracle": "authoritative model full replay; browser historical full pixels independently pinned-verified"
+    },
+    {
+      "name": "연구노트(화학).hwp-typed-30",
+      "strongPixels": 0,
+      "pixels": 0,
+      "edgePixels": 0,
+      "height": 585,
+      "surface": "attached page Canvas readback",
+      "width": 414,
+      "verified": true,
+      "maxDelta": 0,
+      "oracle": "authoritative model full replay; browser historical full pixels independently pinned-verified"
+    }
+  ],
+  "documents": [],
+  "error": "조건을 만족하지 않음: return !!document.querySelector('[data-testid=rhwp-caret]')",
+  "existingSaveAssertions": [],
+  "historyGates": [],
+  "historyChecks": [],
+  "testedSourceSha256": {
+    "tests/integration/rhwp/ownership-poc/session.mjs": "6ee0a20551fd70b9e1325d2c298d695476e4ca32f4ed51fd07e62741500e6c48",
+    "tests/integration/rhwp/ownership-poc/history-perf.py": "fd2175b55a9520a7cf878bd46c72b586ed5e06b5d1c31c617edb4a8d5529f55e",
+    "tests/integration/rhwp/undo_native.py": "1d0982fa18c155bbd1e7b009307253815148f841fe1116ec92d818a3ea195445",
+    "tests/integration/rhwp/native_probe.py": "8f4be7dcd57bf5f284dda7ca94d12c9bad8a8f718d543ca57b500166b50c39a0",
+    "tests/integration/rhwp/ownership-poc/performance-visual-native.py": "065fb3e0847443be6c6de8b7842a4458c1d3682fe645fed2cac5ec3c100fba8f"
+  },
+  "parentExit": 1,
+  "processFinished": true,
+  "elapsedSeconds": 56.54,
+  "command": [
+    "dbus-run-session",
+    "--",
+    "python3",
+    "tests/integration/rhwp/ownership-poc/performance-visual-native.py",
+    "--app",
+    "<workspace>/src-tauri/target/debug/geul",
+    "--driver",
+    "/tmp/geul-t010-ownership-tools/bin/tauri-driver",
+    "--webkit-driver",
+    "/nix/store/p7h9r90h1vmk4wq1964nhd8vfp0kf27b-webkitgtk-2.54.1+abi=4.1/bin/WebKitWebDriver",
+    "--xvfb",
+    "/nix/store/7yz3bnmll7fy11n0xci85mbhnf6p5669-xvfb-21.1.23/bin/Xvfb",
+    "--output",
+    "<workspace>/tests/integration/rhwp/evidence/t010-final-stabilization/diagnostic-d4-complex-pixels.json",
+    "--xdotool",
+    "/nix/store/kyp2r08w6hs0l1zj3cya6d2ciba9v47h-xdotool-3.20211022.1/bin/xdotool",
+    "--sample",
+    "연구노트(화학).hwp"
+  ],
+  "activationFlags": {
+    "VITE_GEUL_TEST_HOOKS": "1",
+    "GEUL_T010_DAMAGE_POC": "1",
+    "GEUL_T010_OWNERSHIP_POC": "1",
+    "GEUL_T010_SCHEDULER_POC": "1",
+    "GEUL_T010_CANDIDATE": "<isolated>/candidate-package",
+    "GEUL_T010_EVIDENCE": "<workspace>/tests/integration/rhwp/evidence/t010-final-stabilization",
+    "VITE_GEUL_TEST_RHWP_HISTORY": "1",
+    "GEUL_T010_HISTORY_SAFETY_ONLY": "1"
+  },
+  "devServerCommand": [
+    "node",
+    "node_modules/vite/bin/vite.js",
+    "--host",
+    "127.0.0.1",
+    "--config",
+    "tests/integration/rhwp/ownership-poc/vite.config.mjs"
+  ],
+  "appSha256": "48b7b8364cb4b91ae0b4c3cb3113977c15fd92aa9ca3d60f0406f331749d45c1"
+}

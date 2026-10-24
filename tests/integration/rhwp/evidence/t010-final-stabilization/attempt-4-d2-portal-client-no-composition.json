@@ -1,0 +1,380 @@
+{
+  "status": "FAIL",
+  "tests": [
+    {
+      "name": "bootstrap-clean-close",
+      "status": "PASS"
+    },
+    {
+      "name": "native-hangul-engine-active",
+      "status": "PASS"
+    },
+    {
+      "name": "native-real-composition-preflight",
+      "status": "FAIL"
+    }
+  ],
+  "scope": "actual IBus-Hangul native event/history protocol and bounded36-attempt ordering matrix; no synthetic DOM composition",
+  "inputEnvironment": {
+    "ibusVersion": "IBus 1.5.33",
+    "hangul": "1.5.5",
+    "GTK_IM_MODULE": "ibus",
+    "nativeKeys": true,
+    "isolatedDisplay": true,
+    "settingsBackend": "memory; temporary Hangul schema initial-input-mode=hangul override, no host settings writes"
+  },
+  "observerAliasDiagnostic": {
+    "sameConstructor": false,
+    "resources": [
+      "/__ownership_candidate__/rhwp.js?import",
+      "/__ownership_candidate__/rhwp.js"
+    ]
+  },
+  "activationProbe": {
+    "setExit": 0,
+    "setError": "",
+    "queryExit": 0,
+    "engine": "hangul",
+    "portalDisabled": true
+  },
+  "compositionPreflight": {
+    "events": [
+      [
+        "keydown",
+        false,
+        null,
+        0
+      ],
+      [
+        "keydown",
+        false,
+        null,
+        0
+      ],
+      [
+        "keydown",
+        false,
+        null,
+        0
+      ],
+      [
+        "keydown",
+        false,
+        null,
+        0
+      ],
+      [
+        "input",
+        false,
+        "insertText",
+        1
+      ],
+      [
+        "input",
+        false,
+        "insertText",
+        1
+      ],
+      [
+        "keydown",
+        false,
+        null,
+        0
+      ],
+      [
+        "keydown",
+        false,
+        null,
+        0
+      ],
+      [
+        "input",
+        false,
+        "insertText",
+        1
+      ],
+      [
+        "input",
+        false,
+        "insertText",
+        1
+      ],
+      [
+        "keydown",
+        false,
+        null,
+        0
+      ],
+      [
+        "keydown",
+        false,
+        null,
+        0
+      ],
+      [
+        "input",
+        false,
+        "insertText",
+        1
+      ],
+      [
+        "input",
+        false,
+        "insertText",
+        1
+      ]
+    ],
+    "compositionEvents": 0,
+    "activeElement": "TEXTAREA"
+  },
+  "compositionPreflightAttempts": [
+    {
+      "mode": "initial engine mode",
+      "events": [
+        [
+          "keydown",
+          false,
+          null,
+          0
+        ],
+        [
+          "input",
+          false,
+          "insertText",
+          1
+        ],
+        [
+          "keydown",
+          false,
+          null,
+          0
+        ],
+        [
+          "input",
+          false,
+          "insertText",
+          1
+        ]
+      ],
+      "compositionEvents": 0
+    },
+    {
+      "mode": "native Shift+space switch",
+      "events": [
+        [
+          "keydown",
+          false,
+          null,
+          0
+        ],
+        [
+          "keydown",
+          false,
+          null,
+          0
+        ],
+        [
+          "keydown",
+          false,
+          null,
+          0
+        ],
+        [
+          "keydown",
+          false,
+          null,
+          0
+        ],
+        [
+          "input",
+          false,
+          "insertText",
+          1
+        ],
+        [
+          "input",
+          false,
+          "insertText",
+          1
+        ],
+        [
+          "keydown",
+          false,
+          null,
+          0
+        ],
+        [
+          "keydown",
+          false,
+          null,
+          0
+        ],
+        [
+          "input",
+          false,
+          "insertText",
+          1
+        ],
+        [
+          "input",
+          false,
+          "insertText",
+          1
+        ],
+        [
+          "keydown",
+          false,
+          null,
+          0
+        ],
+        [
+          "keydown",
+          false,
+          null,
+          0
+        ],
+        [
+          "input",
+          false,
+          "insertText",
+          1
+        ],
+        [
+          "input",
+          false,
+          "insertText",
+          1
+        ]
+      ],
+      "compositionEvents": 0,
+      "activeElement": "TEXTAREA"
+    }
+  ],
+  "lastObserved": {
+    "throwAfterDiscard": null,
+    "status": {
+      "uncertain": "false",
+      "history": null,
+      "status": "ready",
+      "dirty": "true",
+      "localRevision": "5",
+      "revision": "5"
+    },
+    "snapshotCalls": [
+      {
+        "ms": 0,
+        "name": "saveSnapshot",
+        "at": 2441
+      }
+    ],
+    "owners": [
+      {
+        "discards": 0,
+        "nativeCapacity": 100,
+        "id": 1,
+        "saves": 1,
+        "live": 1
+      }
+    ],
+    "jobs": {
+      "pendingCount": 0,
+      "cancellations": 0,
+      "peakTemporaryCanvasBytes": 3875040,
+      "listenerNotifications": 0,
+      "peakStagingBytes": 7750080,
+      "inFlightEstimatedBytes": 0,
+      "capacityNotifications": 0,
+      "maxFrameBytes": 67108864,
+      "expiryTimerTicks": 0,
+      "resourceLimits": 0,
+      "expiryTimerActive": false,
+      "retryCount": 0,
+      "expiryTimerStarts": 7,
+      "backupImageDataBytes": 0,
+      "activeLeaseEstimatedBytes": 0,
+      "activeJobs": 0,
+      "activeLeaseCount": 0,
+      "maxPending": 2,
+      "transientEstimatedBytes": 0,
+      "loadAttempts": 0,
+      "uniqueResourceCount": 0,
+      "readyLeaseCount": 0,
+      "temporaryCanvasBytes": 0,
+      "maxOwnedBytes": 268435456,
+      "maxStagingBytes": 134217728,
+      "ownedEstimatedBytes": 0,
+      "maxResources": 256,
+      "errors": 0,
+      "peakBackupImageDataBytes": 3875040,
+      "completionNotifications": 0
+    },
+    "identity": {
+      "wasmSha256": "d49e654fffee380b48266801e2bd8e52a64fbdfbc494e5b1fcafe935b182745a",
+      "baseline": "1a76570e833917d15817415a53c09ad61ab3203f"
+    }
+  },
+  "driverLogTail": "libEGL warning: DRI3 error: Could not get DRI3 device\nlibEGL warning: Ensure your X server supports DRI3 to get accelerated rendering\n",
+  "error": "native-real-composition-preflight",
+  "ibusLogTail": "portal is not running: GDBus.Error:org.freedesktop.DBus.Error.ServiceUnknown: The name org.freedesktop.portal.IBus was not provided by any .service files\n",
+  "nativeOrdering": {},
+  "nativeHelperAssertions": [],
+  "historyGates": [],
+  "historyChecks": [],
+  "testedSourceSha256": {
+    "tests/integration/rhwp/ownership-poc/session.mjs": "fe14f40f63bae2b471c84f30dda947283f8664fc387d16c86fb7ec138b6a2c22",
+    "tests/integration/rhwp/ownership-poc/history-perf.py": "fd2175b55a9520a7cf878bd46c72b586ed5e06b5d1c31c617edb4a8d5529f55e",
+    "tests/integration/rhwp/undo_native.py": "1d0982fa18c155bbd1e7b009307253815148f841fe1116ec92d818a3ea195445",
+    "tests/integration/rhwp/native_probe.py": "8f4be7dcd57bf5f284dda7ca94d12c9bad8a8f718d543ca57b500166b50c39a0",
+    "tests/integration/rhwp/ownership-poc/ime-native.py": "e75dc44ee2cfd55aee7baa22245c81c49762a4e2bb0b53fa26ce4f13cf91d83b"
+  },
+  "parentExit": 1,
+  "processFinished": true,
+  "elapsedSeconds": 8.52,
+  "command": [
+    "dbus-run-session",
+    "--",
+    "python3",
+    "tests/integration/rhwp/ownership-poc/ime-native.py",
+    "--app",
+    "<workspace>/src-tauri/target/debug/geul",
+    "--driver",
+    "/tmp/geul-t010-ownership-tools/bin/tauri-driver",
+    "--webkit-driver",
+    "/nix/store/p7h9r90h1vmk4wq1964nhd8vfp0kf27b-webkitgtk-2.54.1+abi=4.1/bin/WebKitWebDriver",
+    "--xvfb",
+    "/nix/store/7yz3bnmll7fy11n0xci85mbhnf6p5669-xvfb-21.1.23/bin/Xvfb",
+    "--output",
+    "<workspace>/tests/integration/rhwp/evidence/t010-final-stabilization/d2-native.json",
+    "--xdotool",
+    "/nix/store/kyp2r08w6hs0l1zj3cya6d2ciba9v47h-xdotool-3.20211022.1/bin/xdotool",
+    "--ibus-root",
+    "/nix/store/0mvrqxsy82n54jvps5v7i3xsd7c28f9m-ibus-1.5.33",
+    "--hangul-root",
+    "/nix/store/f3b4mgv2xq1nlr37gbkfcrz2hp46chmm-ibus-hangul-1.5.5",
+    "--gtk-query",
+    "/nix/store/jljcyz0c3nld95ra16sz80p3jjda446d-gtk+3-3.24.52-dev/bin/gtk-query-immodules-3.0",
+    "--glib-compile",
+    "/nix/store/jipb8y1xzhxjga5iccw8jmas0bc0px47-glib-2.88.3-dev/bin/glib-compile-schemas",
+    "--setxkbmap",
+    "/nix/store/pdjr2wcgg0s8xxb5yslsbqpw4mvffs81-setxkbmap-1.3.4/bin/setxkbmap"
+  ],
+  "activationFlags": {
+    "VITE_GEUL_TEST_HOOKS": "1",
+    "GEUL_T010_DAMAGE_POC": "1",
+    "GEUL_T010_OWNERSHIP_POC": "1",
+    "GEUL_T010_SCHEDULER_POC": "1",
+    "GEUL_T010_CANDIDATE": "<isolated>/candidate-final-package",
+    "GEUL_T010_EVIDENCE": "<workspace>/tests/integration/rhwp/evidence/t010-final-stabilization",
+    "VITE_GEUL_TEST_RHWP_HISTORY": "1",
+    "GEUL_T010_HISTORY_SAFETY_ONLY": "1"
+  },
+  "devServerCommand": [
+    "node",
+    "node_modules/vite/bin/vite.js",
+    "--host",
+    "127.0.0.1",
+    "--config",
+    "tests/integration/rhwp/ownership-poc/vite.config.mjs"
+  ],
+  "appSha256": "48b7b8364cb4b91ae0b4c3cb3113977c15fd92aa9ca3d60f0406f331749d45c1"
+}

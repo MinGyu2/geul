@@ -1,0 +1,17 @@
+{
+  "records": [
+    {
+      "kind": "initial pre-rustfmt source reconstructed by exact isolated edit script from verified lease source",
+      "sha256": "f0d06a3fecdd22b24399704947293710e70ffae0ba649a5ece81dc43ffae4dbb"
+    },
+    {
+      "kind": "independent patched source geul-t010-final-aligned-fresh",
+      "sha256": "e6d1a2a7c25bd0ba96cbb423bded39110ab4db8bfa449570a34a6005318abfb8"
+    },
+    {
+      "kind": "same source after pinned Rust1.93.1 rustfmt skip_children (standalone file)",
+      "sha256": "b4a9be1d81a9be107b998fb119dc035156800e14e19e596d5a90477e25deb94d",
+      "exit": 0
+    }
+  ]
+}

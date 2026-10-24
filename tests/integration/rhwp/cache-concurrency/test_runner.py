@@ -187,3 +187,20 @@ class SchedulerValidation(unittest.TestCase):
     def test_scheduler_declared_limits_cannot_be_relaxed(self):
         v = self.value(); v['scheduler']['checkpoints'][0]['jobs']['maxResources'] = 1000
         with self.assertRaisesRegex(RuntimeError, 'declared limits'): runner.validate_result(v, require_scheduler=True)
+
+    def test_stabilization_cannot_omit_all_new_scenarios(self):
+        with self.assertRaisesRegex(RuntimeError,'stabilization'):
+            runner.validate_result(self.value(),require_scheduler=True,require_stabilization=True)
+
+    def test_explicit_fallback_requires_integer_case(self):
+        with self.assertRaisesRegex(RuntimeError, "explicit fallback"):
+            runner.validate_result(self.value(), require_scheduler=True, require_explicit_fallback=True)
+
+    def test_fractional_fallback_cannot_omit_policy_scenario(self):
+        with self.assertRaisesRegex(RuntimeError, "fractional fallback"):
+            runner.validate_result(self.value(), require_scheduler=True, require_fractional_fallback=True)
+
+    def test_fractional_fallback_requires_normalized_integer_case(self):
+        value=self.value();value["scheduler"]["tests"].append({"name":"fractional-patch-policy-full-fallback","status":"PASS"})
+        with self.assertRaisesRegex(RuntimeError, "fractional fallback"):
+            runner.validate_result(value, require_scheduler=True, require_fractional_fallback=True)

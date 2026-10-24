@@ -52,3 +52,99 @@ condition = "AND"
 paths = ['''^tests/integration/rhwp/evidence/t010-lease-progress/initial-integrity\.json$''']
 regexTarget = "secret"
 regexes = ['''^6c35cd4ff761272ec034bf09d1fde054ee79ad483aa785c984e243d465e094b4$''','''^a49f8417b3beace7a3d415c64e5536b5e7c336642469b6e524f322caf1571646$''']
+
+# Final-stabilization public source/token digests, independently reconstructed.
+# Require the exact evidence JSON paths AND exact checked SHA-256; no credential rule disabled.
+
+[[allowlists]]
+description = "T010 final stabilization verified public checksum 40f8a2faf5e2"
+condition = "AND"
+paths = ['''^tests/integration/rhwp/evidence/t010-final-stabilization/(before-chrome|before-webkit)\.json$''']
+regexTarget = "secret"
+regexes = ['''^40f8a2faf5e279127b391fc9d4222ce48770cbd30bcea77cd51511d8082e8d7f$''']
+
+[[allowlists]]
+description = "T010 final stabilization verified public checksum 6c35cd4ff761"
+condition = "AND"
+paths = ['''^tests/integration/rhwp/evidence/t010-final-stabilization/(initial-integrity)\.json$''']
+regexTarget = "secret"
+regexes = ['''^6c35cd4ff761272ec034bf09d1fde054ee79ad483aa785c984e243d465e094b4$''']
+
+[[allowlists]]
+description = "T010 final stabilization verified public checksum a49f8417b3be"
+condition = "AND"
+paths = ['''^tests/integration/rhwp/evidence/t010-final-stabilization/(initial-integrity)\.json$''']
+regexTarget = "secret"
+regexes = ['''^a49f8417b3beace7a3d415c64e5536b5e7c336642469b6e524f322caf1571646$''']
+
+[[allowlists]]
+description = "T010 final stabilization verified public checksum b4a9be1d81a9"
+condition = "AND"
+paths = ['''^tests/integration/rhwp/evidence/t010-final-stabilization/(attempt-1-candidate-d3-service-save|attempt-1-chrome|attempt-1-engine|attempt-1-final-wasm-checks|attempt-1-patch|attempt-1-webkit|before-alignment-chrome|before-alignment-webkit|diagnostic-format-build-overlap)\.json$''']
+regexTarget = "secret"
+regexes = ['''^b4a9be1d81a9be107b998fb119dc035156800e14e19e596d5a90477e25deb94d$''']
+
+[[allowlists]]
+description = "T010 final stabilization verified public checksum d90418394be8"
+condition = "AND"
+paths = ['''^tests/integration/rhwp/evidence/t010-final-stabilization/(adapter-comment-equivalence)\.json$''']
+regexTarget = "secret"
+regexes = ['''^d90418394be8bd4fb4ac285fbb896005d87f0ccfb3f6da77526af00b8e2a7f6c$''']
+
+[[allowlists]]
+description = "T010 final stabilization verified public checksum e6d1a2a7c25b"
+condition = "AND"
+paths = ['''^tests/integration/rhwp/evidence/t010-final-stabilization/(before-final-timer-chrome|before-final-timer-webkit|candidate-d3-service-save|chrome|engine|final-wasm-checks|patch|webkit)\.json$''']
+regexTarget = "secret"
+regexes = ['''^e6d1a2a7c25bd0ba96cbb423bded39110ab4db8bfa449570a34a6005318abfb8$''']
+
+[[allowlists]]
+description = "T010 archived integer replay verified public API source checksum ad4122eb9a8d"
+condition = "AND"
+paths = ['''^tests/integration/rhwp/evidence/t010-final-stabilization/before-integer-full-fallback-(candidate-d3-service-save|chrome|engine|final-wasm-checks|patch|webkit)\.json$''']
+regexTarget = "secret"
+regexes = ['''^ad4122eb9a8dbcf7ec9e9f747db5dfc28fefcdf50c19a64e393eb977ce8109b4$''']
+
+[[allowlists]]
+description = "T010 final stabilization verified public checksum f0d06a3fecdd"
+condition = "AND"
+paths = ['''^tests/integration/rhwp/evidence/t010-final-stabilization/(diagnostic-format-build-overlap)\.json$''']
+regexTarget = "secret"
+regexes = ['''^f0d06a3fecdd22b24399704947293710e70ffae0ba649a5ece81dc43ffae4dbb$''']
+
+[[allowlists]]
+description = "T010 final effective-scale API verified public source checksum 70a9ea596653"
+condition = "AND"
+paths = ['''^tests/integration/rhwp/evidence/t010-final-stabilization/(attempt-requested-scale-only-final-wasm-checks|attempt-requested-scale-only-patch)\.json$''']
+regexTarget = "secret"
+regexes = ['''^70a9ea59665327761873adea0d19827cda0bb66f07a0e74d6b5a8d984611898d$''']
+
+[[allowlists]]
+description = "T010 final effective-scale API verified public source checksum e6d1a2a7c25b"
+condition = "AND"
+paths = ['''^tests/integration/rhwp/evidence/t010-final-stabilization/(before-fractional-api-candidate-d3-service-save|before-fractional-api-chrome|before-fractional-api-engine|before-fractional-api-final-wasm-checks|before-fractional-api-patch|before-fractional-api-webkit|repro-complex-patch-api-chrome|repro-fractional-api-policy-chrome)\.json$''']
+regexTarget = "secret"
+regexes = ['''^e6d1a2a7c25bd0ba96cbb423bded39110ab4db8bfa449570a34a6005318abfb8$''']
+
+[[allowlists]]
+description = "T010 caret verified unchanged public wasm_api source checksum"
+condition = "AND"
+paths = ['''^tests/integration/rhwp/evidence/t010-caret-geometry/(candidate-d3-service-save|chrome|delta|engine-safety-gates|engine|native-clippy|patch|wasm-checks|webkit)\.json$''']
+regexTarget = "secret"
+regexes = ['''^9563a9ef26b5d0c22997e9beb8cb8c037e852df7ca95a8362800e7bd0cf24c5d$''']
+
+# Independently verified unchanged public source SHA; exact evidence paths AND digest.
+[[allowlists]]
+description = "T010 decoded admission unchanged public wasm_api checksum"
+condition = "AND"
+paths = ['''^tests/integration/rhwp/evidence/t010-decoded-admission/(candidate-d3-service-save|chrome|delta|engine|initial-integrity|library-native|native-clippy|patch|wasm-checks|webkit)\.json$''']
+regexTarget = "secret"
+regexes = ['''^9563a9ef26b5d0c22997e9beb8cb8c037e852df7ca95a8362800e7bd0cf24c5d$''']
+
+# Commit-hook review: exact archived paths AND independently verified public source digest.
+[[allowlists]]
+description = "T010 final stabilization unchanged public wasm_api checksum"
+condition = "AND"
+paths = ['''^tests/integration/rhwp/evidence/t010-final-stabilization/(candidate-d3-service-save|chrome|engine|final-wasm-checks|patch|webkit)\.json$''']
+regexTarget = "secret"
+regexes = ['''^9563a9ef26b5d0c22997e9beb8cb8c037e852df7ca95a8362800e7bd0cf24c5d$''']

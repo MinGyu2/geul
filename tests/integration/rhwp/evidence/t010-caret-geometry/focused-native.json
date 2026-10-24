@@ -1,0 +1,43 @@
+{
+  "status": "PASS",
+  "command": [
+    "cargo",
+    "test",
+    "--locked",
+    "--lib",
+    "t010_caret_",
+    "--",
+    "--nocapture"
+  ],
+  "cwd": "<isolated>",
+  "exit": 0,
+  "elapsedSeconds": 45.8,
+  "sourceStableDuringCheck": true,
+  "sourceSha256": {
+    "src/renderer/layout.rs": "c4e348d4b6926ce3d8a0b431a0d5b8202d717c5573e62f12725f17ef145f0eac",
+    "src/renderer/layout/caret_geometry_tests.rs": "2b08a10fa355bb70cd7d4bced4e106f6a2d079d7bdb51bf9835cc3f45d852220"
+  },
+  "counts": [
+    [
+      5,
+      0,
+      0
+    ],
+    [
+      0,
+      0,
+      0
+    ],
+    [
+      0,
+      0,
+      0
+    ],
+    [
+      0,
+      0,
+      0
+    ]
+  ],
+  "output": "\nrunning 5 tests\ntest renderer::layout::caret_geometry_tests::t010_caret_empty_host_matches_the_independently_rendered_insertion_line ... ok\ntest renderer::layout::caret_geometry_tests::t010_caret_anchor_is_independent_of_the_floating_picture_offset ... ok\ntest renderer::layout::caret_geometry_tests::t010_caret_original_empty_float_hosts_keep_their_line_geometry ... ok\ntest renderer::layout::caret_geometry_tests::t010_caret_snapshot_restore_recovers_original_empty_geometry ... ok\ntest renderer::layout::caret_geometry_tests::t010_caret_existing_non_picture_object_carets_keep_their_geometry ... ok\n\ntest result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 3894 filtered out; finished in 0.67s\n\n\nrunning 0 tests\n\ntest result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 15 filtered out; finished in 0.00s\n\n\nrunning 0 tests\n\ntest result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 165 filtered out; finished in 0.00s\n\n\nrunning 0 tests\n\ntest result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 2 filtered out; finished in 0.00s\n\n   Compiling rhwp v0.8.7 (<isolated>)\n    Finished `test` profile [unoptimized + debuginfo] target(s) in 45.06s\n     Running unittests src/lib.rs (/tmp/geul-t010-ownership-target/debug/deps/rhwp-cf0c39c1bb611e78)\n     Running unittests src/lib.rs (/tmp/geul-t010-ownership-target/debug/deps/rhwp_contracts-6432449a54159706)\n     Running unittests src/lib.rs (/tmp/geul-t010-ownership-target/debug/deps/rhwp_ooxml_chart-82527c5b8fa6bf51)\n     Running unittests src/lib.rs (/tmp/geul-t010-ownership-target/debug/deps/rhwp_password_crypto-fa37347695d4f73f)\n"
+}

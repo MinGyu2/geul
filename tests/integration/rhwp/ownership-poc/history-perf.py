@@ -23,6 +23,26 @@ import native_probe
 from native import smoke
 
 
+def classify_result(result):
+    """Measurement completion is independent from the official gate verdict."""
+    rows = result.get('measurements', {}).get('perf', [])
+    complete = len(rows) == 4 and all(
+        row.get(key, {}).get('n') == count and row[key].get('timeouts') == 0
+        for row in rows for key, count in [('groupStart',30),('extend',30),('undo',25),('redo',20),('afterUndo',5)])
+    gates = result.get('gates', [])
+    if result.get('error'):
+        reason = 'HARNESS_ERROR'
+    elif not complete or len(gates) != 8:
+        reason = 'INCOMPLETE_MEASUREMENT'
+    elif any(g.get('result') != 'PASS' for g in gates):
+        reason = 'OFFICIAL_GATE_FAILURE'
+    else:
+        reason = 'PASS'
+    return {'measurementComplete':complete,'exitReason':reason,
+            'status':'PASS' if reason == 'PASS' else 'FAIL',
+            'failedGateCount':sum(g.get('result') != 'PASS' for g in gates)}
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     for name in ('app', 'driver', 'webkit-driver', 'xvfb', 'xdotool', 'output'):
@@ -30,6 +50,7 @@ def main():
     parser.add_argument("--engine", choices=("pinned", "candidate"), default="candidate")
     args = parser.parse_args()
     result = {'status': 'RUNNING', 'protocol': 'unmodified undo_native.scenario_perf/MEASURE',
+              'rendererMode': 'pinned-damage' if args.engine == 'pinned' else 'candidate-damage' if os.environ.get('GEUL_T010_DAMAGE_POC') == '1' else 'candidate-full',
               'engine': args.engine, 'historyEnabled': True, 'keyDelivery': 'native X11 xdotool',
               'environment': {'platform': platform.system(), 'webkitGTK': subprocess.check_output(['pkg-config','--modversion','webkit2gtk-4.1'],text=True).strip(),
                               'debugAppSha256': hashlib.sha256(args.app.read_bytes()).hexdigest(),
@@ -76,6 +97,8 @@ def main():
                         driver.native_key_tool = str(args.xdotool)
                         driver.busy_probe = False
                         historical.scenario_perf(driver, source, work)
+                        if args.engine == 'candidate':
+                            historical.REPORT['perf'][-1]['adapterCounters'] = driver.js('return window.__geulOwnership.counters')
                         result['engineIdentity'] = driver.js('return window.__geulOwnership?.identity||null') if args.engine == 'candidate' else {'wasmSha256': hashlib.sha256((ROOT / 'public/rhwp/rhwp_bg.wasm').read_bytes()).hexdigest()}
                         result['sourceSha256'] = hashlib.sha256(source.read_bytes()).hexdigest()
                     finally:
@@ -93,6 +116,7 @@ def main():
         result['measurements'] = historical.REPORT
         result['gates'] = historical.GATES
         result['environment']['loadAverageAfter'] = os.getloadavg()
+        result.update(classify_result(result))
         # Keep public metrics; remove absolute task paths from inherited diagnostics.
         result = json.loads(json.dumps(result).replace(str(ROOT), '<workspace>').replace(str(Path.home()), '<home>'))
         save()

@@ -1,0 +1,28 @@
+{
+  "status": "PASS",
+  "initialScanExit": 1,
+  "newFindingCount": 11,
+  "reason": "Public source SHA-256 values independently verified against final and two preserved fresh exports; default rules unchanged; exact path AND digest only.",
+  "exceptions": [
+    {
+      "sha256": "70a9ea59665327761873adea0d19827cda0bb66f07a0e74d6b5a8d984611898d",
+      "filenames": [
+        "attempt-requested-scale-only-final-wasm-checks",
+        "attempt-requested-scale-only-patch"
+      ]
+    },
+    {
+      "sha256": "e6d1a2a7c25bd0ba96cbb423bded39110ab4db8bfa449570a34a6005318abfb8",
+      "filenames": [
+        "before-fractional-api-candidate-d3-service-save",
+        "before-fractional-api-chrome",
+        "before-fractional-api-engine",
+        "before-fractional-api-final-wasm-checks",
+        "before-fractional-api-patch",
+        "before-fractional-api-webkit",
+        "repro-complex-patch-api-chrome",
+        "repro-fractional-api-policy-chrome"
+      ]
+    }
+  ]
+}

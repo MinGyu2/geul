@@ -152,3 +152,66 @@ byte 지배 포화, 256개 활성 lease, 불가능한 working set, cell 위치�
 덮어쓰지 않는다. native library4063 PASS/13 ignored와 내부11+외부 ownership13+외부 scheduler5 결과는
 서로 구별한다. 정확한 실행 명령·후보 WASM SHA·통과/실패와 남은 관문은
 `../evidence/t010-lease-progress/REPORT.ko.txt`에 기록한다.
+
+## 최종 안정화: explicit damage와 expiry 수명
+
+새 완전 패치는 `../evidence/t010-final-stabilization/upstream-rhwp-final-stabilization.patch`다.
+`prepare.py --patch <이 패치> --work <새 격리 경로> --toolchain-bin <Rust1.93.1/bin> --no-opt`를 사용한다.
+이전 완전 패치와 겹쳐 적용하지 않는다. native 입력은 기존 `prepare_native.py`로 재구성한다.
+`stabilizationAPI` manifest가 있으면 runner는 timer/explicit Patch 필수 검사와 timer 계측 누락을 거부한다.
+
+기존 ownership52/scheduler58 및 역사50 RGBA를 유지하고 유휴·복수 job·마지막 취소·실제 만료·유휴 뒤
+재시작, 명시적 Patch의 잘못된 경계·오래된 세대·소수 DPR·호환 Patch 보존 검사를 추가한다.
+새 explicit API의 oracle은 pinned Full의 모든 RGBA다. 기존 호환 API는 pinned 호환 Patch와 비교한다.
+소수 paper edge의 alpha 차이를 허용 오차로 덮지 않는다. 전역 interval observer는 이전 후보의
+pending0/interval1 경계와 새 후보의 idle 수명을 실제 브라우저에서 구분한다.
+정확한 count/실패/skip 및 최종 해시는 새 한국어 보고서와 각 JSON을 따른다.
+
+최종 후보는 정수 배율에서도 복잡한 HWP의 native 지역 replay가 Full과23픽셀 달라진 재현을 보존한다.
+새 explicit API는 모든 배율에서 Full로 제한하고 기존 호환 Patch는 유지한다.
+현재 scheduler 필수 검사는73개(기존58개 유지)이며, `explicitPatchFullFallbackAPI`는 정수 배율의
+Full 정책 검사 누락도 거부한다. 실제 브라우저·native 결과와 최종 WASM 해시는 새 보고서를 따른다.
+
+## 빈 floating-picture 문단 caret geometry 후속
+
+`../evidence/t010-caret-geometry/upstream-rhwp-caret-geometry.patch`는 pinned 기준의 독립 완전 패치다.
+직전 최종 안정화 소스에만 `delta-from-final-stabilization.patch`를 적용한다. 두 패치를 겹쳐 적용하지 않는다.
+기존 `prepare.py --patch <완전 패치> --work <새 격리 경로> --toolchain-bin <Rust1.93.1/bin> --no-opt`
+명령으로 빌드한다. 새 caret test가 있는 후보는 layout과 test를 포함한7개 소스 해시를 빌드 전후 비교한다.
+이전 후보의5개 manifest 형식은 유지한다. native 입력은 `prepare_native.py`로 재구성한다.
+
+```sh
+node tests/integration/rhwp/cache-concurrency/caret-geometry.mjs \
+  --before "$CACHE_WORK/final-stabilization/test-package" \
+  --after "$CACHE_WORK/caret/test-package" \
+  --sample 'external/rhwp/samples/rnote/연구노트(화학).hwp' \
+  --output "$CACHE_WORK/caret-api-geometry.json"
+python3 -m unittest discover -s tests/integration/rhwp/cache-concurrency -p test_prepare.py -v
+```
+
+이 검사는 실제 WASM에서21개 누락 caret의 복구·3개 기존 좌표 보존·24개 paint-owning tree 동일성을 비교한다.
+Node의 API/tree 검사는 raster 증거가 아니다. 실제 native caret·RGBA·history 검증과 제한은
+[후속 보고서](../evidence/t010-caret-geometry/REPORT.ko.txt)를 따른다. 제품 활성화나 D2/D4 통과를 뜻하지 않는다.
+
+D4의 별도 `../ownership-poc/render-phases-native.py`는 기존 native app/driver/Xvfb/xdotool/output 인자를
+받으며 후보 시험 dev-server가 실행 중이어야 한다. 실제 chemical HWP의 canonical scenario/MEASURE를
+그대로 부르고 detached Canvas와 image src/load의 숫자 계측만 더한다. 원래 probe와 엔진은 바꾸지 않는다.
+추가 observer의 비용이 있으므로 측정 완료 PASS와 `officialGateStatus`를 구별하며 D4 승인에 쓰지 않는다.
+`d4-attribution.json`과 원시 단계 결과는 cold-image 준비 비용과 입력 전달 지연을 구분한다.
+`cold-warm-driver.py.txt`는 별도의 cache trim0/microbenchmark 재현용 snapshot이다. `<workspace>`를 실제
+checkout 절대 경로로 바꾸어 실행하며 native 키 지연/공식 승인/장기 RSS를 측정하는 명령으로 쓰지 않는다.
+
+RSS 반복은 `diagnostic-d4-lifecycle.json`의110/120 중단 결과와 이후 독립 창들을 구분한다.
+`d4-lifecycle-analysis.json`은 실제 stdout에서 복구한335개 점만 분석한다. 완료된 cycle의 정리 PASS를
+전체 실행 PASS나 RSS 안정성으로 바꾸지 않는다. `d4-independent-memory-analysis.json`은 forwarded11회
+중단과 direct20회 완료를 각각 기록하며 표본을 합쳐 연속 창으로 세지 않는다.
+`lifecycle-direct-driver.py.txt` snapshot은 tauri-driver로 세션/capability를 만든 뒤 같은 session ID의
+native WebKitWebDriver4445에 직접 명령을 보낸다. 요청 본문·키·수면·샘플 경계는 유지하며 재시도는 없다.
+실행 전 다른 native/1420 서버가 종료됐는지 확인하고, 기존 output을 보존한다. 이 방식의20회 성공을
+중계 reset 원인의 확정이나 전체120회 신뢰성/RSS 승인으로 보지 않는다. 실패 로그·한계는 보고서를 따른다.
+
+D4 decoded admission 후속은 [실험 보고서](../evidence/t010-decoded-admission/REPORT.ko.txt)를 따른다.
+`../ownership-poc/decoded-admission-native.py`는 기존 canonical native 시나리오에 숫자 cache/job 관찰만 추가한다.
+별도 캐시 후보는 native 6종과24개 정확한 RGBA 비교를 통과했지만 group p95 342→279ms로50ms 기준은 실패한다.
+중앙값/최대값과 Undo 지연이 악화된 단일 진단이므로 기준48adaa를 유지하며 새 e300은 실험 패치로 보관한다.
+공식 네 문서×세 arm 성능, D2 목표 IME 순서, 장기 RSS 승인과 구분한다.

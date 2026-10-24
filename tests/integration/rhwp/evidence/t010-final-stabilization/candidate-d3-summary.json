@@ -1,0 +1,10 @@
+{
+  "status": "PASS",
+  "scope": "fixed fixture classifications and required findings, real Rust service::save plus native save interactions; not full candidate product preservation certification",
+  "wasmSha256": "d49e654fffee380b48266801e2bd8e52a64fbdfbc494e5b1fcafe935b182745a",
+  "actualServiceSaveCases": 19,
+  "published": 9,
+  "refused": 10,
+  "nativeT009Assertions": 9,
+  "fixedExpectationCases": 19
+}

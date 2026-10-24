@@ -1,0 +1,14 @@
+{
+  "sensitive": [
+    {
+      "name": "sensitive-changed",
+      "exit": 0
+    },
+    {
+      "name": "sensitive-all-tracked",
+      "exit": 0
+    }
+  ],
+  "gitleaksExit": 0,
+  "findings": []
+}

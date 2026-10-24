@@ -1,0 +1,19 @@
+{
+  "status": "VERIFIED_PUBLIC_SHA256",
+  "source": "pinned + public complete patch: src/wasm_api.rs",
+  "sha256": "9563a9ef26b5d0c22997e9beb8cb8c037e852df7ca95a8362800e7bd0cf24c5d",
+  "parentSourceByteIdentical": true,
+  "findingCount": 10,
+  "paths": [
+    "tests/integration/rhwp/evidence/t010-caret-geometry/candidate-d3-service-save.json",
+    "tests/integration/rhwp/evidence/t010-caret-geometry/chrome.json",
+    "tests/integration/rhwp/evidence/t010-caret-geometry/delta.json",
+    "tests/integration/rhwp/evidence/t010-caret-geometry/engine-safety-gates.json",
+    "tests/integration/rhwp/evidence/t010-caret-geometry/engine.json",
+    "tests/integration/rhwp/evidence/t010-caret-geometry/native-clippy.json",
+    "tests/integration/rhwp/evidence/t010-caret-geometry/patch.json",
+    "tests/integration/rhwp/evidence/t010-caret-geometry/wasm-checks.json",
+    "tests/integration/rhwp/evidence/t010-caret-geometry/webkit.json"
+  ],
+  "scope": "Exact path AND exact independently reconstructed public source digest; no credential rule disabled"
+}

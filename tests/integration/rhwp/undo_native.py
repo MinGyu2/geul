@@ -619,6 +619,7 @@ def scenario_perf(d, path: Path, scratch: Path, control=False) -> None:
         poc.press(d,"Right"); poc.type_ascii(d,"ab")
     time.sleep(1)
     rss_open=memory_sample(d)
+    edited_region={"caret":status(d)["caret"],"page":caret_page(d)}
     d.js("window.__lat=null; window.__gaps=null;window.__rhwpProbe.calls=[];window.__geulTrace={seq:0,dropped:0,records:[]}")
     if getattr(d,"busy_probe",False): d.js(BUSY_PROBE)
     d.js(MEASURE)
@@ -648,7 +649,7 @@ def scenario_perf(d, path: Path, scratch: Path, control=False) -> None:
     rss_closed=memory_sample(d);poc.set_zoom(d,100)
     spans=d.js("return (window.__geulTrace?.records||[]).filter(r=>typeof r[3]?.ms==='number').map(r=>({name:r[2],ms:r[3].ms}))")
     session_spans={kind:pct([r["ms"] for r in spans if r["name"]==kind]) for kind in {r["name"] for r in spans}}
-    row={"sample":path.name,"sourceSha256":hashlib.sha256(path.read_bytes()).hexdigest(),"dpr":d.js("return window.devicePixelRatio"),"sessionSpansMs":session_spans,"control":"injected capacity refusal" if control else "normal history","fileBytes":path.stat().st_size,
+    row={"sample":path.name,"sourceSha256":hashlib.sha256(path.read_bytes()).hexdigest(),"editedRegion":edited_region,"dpr":d.js("return window.devicePixelRatio"),"sessionSpansMs":session_spans,"control":"injected capacity refusal" if control else "normal history","fileBytes":path.stat().st_size,
          "pages":int(st["pages"]),"zoom":50,"warmupGroups":3,**{k:pct(v) for k,v in lat.items()},
          "stages":stages,"timelineSamples":timeline_samples(raw),"busyProbe":getattr(d,"busy_probe",False),"threadCpuDuringTypingMs":cpu_typing,"zeroWorkFrameFloorMs":pct(floor),"frameGapDuringHistoryAndFollowingInputMs":pct(gaps),"frameGapDuringUndoRedoMs":pct(undo_redo_gaps),"memory":{"beforeOpen":rss0,"afterOpen":rss_open,"afterUndoRedo":rss_ops,"afterClose":rss_closed}}
     REPORT.setdefault("perf",[]).append(row)

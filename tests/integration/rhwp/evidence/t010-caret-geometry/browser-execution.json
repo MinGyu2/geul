@@ -1,0 +1,46 @@
+{
+  "checks": [
+    {
+      "browser": "chrome",
+      "command": [
+        "python3",
+        "tests/integration/rhwp/cache-concurrency/run.py",
+        "--pinned",
+        "public/rhwp",
+        "--candidate",
+        "<isolated>/candidate-package",
+        "--browser",
+        "chrome",
+        "--timeout",
+        "300",
+        "--output",
+        "<workspace>/tests/integration/rhwp/evidence/t010-caret-geometry/chrome.json"
+      ],
+      "exit": 0,
+      "elapsedSeconds": 107.81
+    },
+    {
+      "browser": "webkit",
+      "command": [
+        "python3",
+        "tests/integration/rhwp/cache-concurrency/run.py",
+        "--pinned",
+        "public/rhwp",
+        "--candidate",
+        "<isolated>/candidate-package",
+        "--browser",
+        "webkit",
+        "--timeout",
+        "300",
+        "--output",
+        "<workspace>/tests/integration/rhwp/evidence/t010-caret-geometry/webkit.json",
+        "--webkit-driver",
+        "/nix/store/p7h9r90h1vmk4wq1964nhd8vfp0kf27b-webkitgtk-2.54.1+abi=4.1/bin/WebKitWebDriver",
+        "--xvfb",
+        "/nix/store/7yz3bnmll7fy11n0xci85mbhnf6p5669-xvfb-21.1.23/bin/Xvfb"
+      ],
+      "exit": 0,
+      "elapsedSeconds": 115.22
+    }
+  ]
+}

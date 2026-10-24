@@ -1,0 +1,7 @@
+{
+  "classification": "VERIFIED",
+  "beforeEvidence": "attempt-3-d1-cell-typing-drift.json",
+  "reproduction": "After integer edge correction, actual HWPX cell typing still differs63 interior pixels, maxDelta21; exact assertion retained.",
+  "correction": "Conservative Full replay for current cell context; ordinary body typing keeps damage, restoreSnapshot remains Full. No resource/metric threshold change.",
+  "limitation": "Cell damage equivalence is not certified; enabling it requires separate stroke/glyph ink-envelope investigation."
+}

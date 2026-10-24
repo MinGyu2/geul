@@ -1,0 +1,23 @@
+from pathlib import Path
+import json,hashlib
+root=Path('<workspace>');out=root/'tests/integration/rhwp/evidence/t010-decoded-admission'
+read=lambda n:json.loads((out/(n+'.json')).read_text());before=read('native-admission');after=read('candidate-admission')
+assert all(d['status']=='PASS' and d['parentExit']==0 and d['processFinished'] and d['measurementComplete'] for d in [before,after])
+assert before['observerSourceSha256']==after['observerSourceSha256'] and before['testedSourceSha256']==after['testedSourceSha256'] and before['appSha256']==after['appSha256']
+eng=read('engine');assert after['engineIdentity']['wasmSha256']==eng['artifacts']['rhwp_bg.wasm']
+old=json.loads((out.parent/'t010-caret-geometry/engine.json').read_text());changed=[n for n,h in eng['sourceSha256'].items() if old['sourceSha256'][n]!=h];assert changed==['src/renderer/surface_cache.rs']
+results=[]
+for name,d in [('baseline',before),('candidate',after)]:
+ calls=[c for stage in d['rawStages'] for c in stage['calls'] if c['name']=='pollRenderJob']
+ assert len({c['job'] for c in calls})==len(calls) and all(c['outcome']=='COMPLETE' for c in calls)
+ assert len(d['rawStages'])==110
+ for c in calls:
+  for k in ['hits','misses','rejected','evictions']:assert c['decodedAfter'][k]>=c['decodedBefore'][k]
+  for side in ['decodedBefore','decodedAfter']:
+   assert c[side]['bytes']<=c[side]['maxBytes'] and c[side]['entries']<=c[side]['maxEntries']
+   assert c[side]['maxBytes']==268435456 and c[side]['maxEntries']==256 and c[side]['maxEntryBytes']==67108864
+ row=d['measurements']['perf'][0]
+ results.append({'arm':name,'runtimeIdentity':d['engineIdentity'],'sampleSha256':row['sourceSha256'],'perSampleWindowUniqueTerminalPolls':len(calls),'cacheDeltas':{k:sum(c['decodedAfter'][k]-c['decodedBefore'][k] for c in calls) for k in ['hits','misses','rejected','evictions']},'latenciesMs':{k:row[k] for k in ['groupStart','extend','undo','redo','afterUndo']},'rejectionRows':[{'job':c['job'],'page':c['page'],'pollMs':c['ms']} for c in calls if c['decodedAfter']['rejected']>c['decodedBefore']['rejected']]})
+assert results[0]['sampleSha256']==results[1]['sampleSha256']
+r={'status':'SCOPED_DIAGNOSTIC_COMPLETE','implementationChanges':changed,'sourceAndObserverControlled':True,'evidence':{n+'.json':hashlib.sha256((out/(n+'.json')).read_bytes()).hexdigest() for n in ['native-admission','candidate-admission']},'arms':results,'scope':'One chemical HWP trace per arm, unchanged canonical key/RAF protocol with extra observers. Counters cover measured-stage windows, not the whole renderer run. No official four-document/three-arm acceptance.','interpretation':['Consecutive-request admission reduces observed rejections13→5 and misses14→11 while evictions increase3→8 under identical cache limits.','Group p95342→279ms remains above50ms. Median78→84ms and maximum418→430ms worsen; Undo p95144→172ms also increases within1500ms.','A single pair with mixed tail/median outcomes does not establish reproducible performance improvement.','Keep48adaa as the prior working basis; e300 remains an experimental candidate, not a production/default promotion.'],'officialD4Acceptance':'NOT PASSED','remaining':'Initial cold-image preparation and input/frame delays; D2 native target ordering and long RSS acceptance.'}
+(out/'comparison.json').write_text(json.dumps(r,ensure_ascii=False,indent=2)+'\n');print('Scoped comparison written; D4 NOT PASSED')

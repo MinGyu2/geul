@@ -1,0 +1,103 @@
+{
+  "implementation": "session.mjs factory; only module loader replaced with deterministic fake engine",
+  "sourceSha256": "218c7bbaa264e62fe5dfa1069c0425a8954ab40ce4c993f1cf33cae3aeae517c",
+  "testSha256": "5d3710e74eece427d01235ea0acbb2b8a03a68f310cc37f1188603e208495216",
+  "tests": [
+    {
+      "name": "identical-pending",
+      "status": "PASS"
+    },
+    {
+      "name": "different-page",
+      "status": "PASS"
+    },
+    {
+      "name": "different-scale",
+      "status": "PASS"
+    },
+    {
+      "name": "mutation",
+      "status": "PASS"
+    },
+    {
+      "name": "reload",
+      "status": "PASS"
+    },
+    {
+      "name": "complete-after-duplicates",
+      "status": "PASS"
+    },
+    {
+      "name": "error-then-other-page",
+      "status": "PASS"
+    },
+    {
+      "name": "disconnected",
+      "status": "PASS"
+    },
+    {
+      "name": "queued-identical",
+      "status": "PASS"
+    },
+    {
+      "name": "damage-retains-valid-previous-frame",
+      "status": "PASS"
+    },
+    {
+      "name": "fractional-region-replays-complete-page",
+      "status": "PASS"
+    },
+    {
+      "name": "damage-resize-falls-back-full",
+      "status": "PASS"
+    },
+    {
+      "name": "cell-edit-falls-back-full",
+      "status": "PASS"
+    },
+    {
+      "name": "summary-lru-keeps-newly-touched-frame",
+      "status": "PASS"
+    },
+    {
+      "name": "background-pages-preserve-visible-damage-basis",
+      "status": "PASS"
+    },
+    {
+      "name": "unchanged-background-pages-reuse-bounded-summaries",
+      "status": "PASS"
+    },
+    {
+      "name": "summary-aggregate-budget-remains-bounded",
+      "status": "PASS"
+    },
+    {
+      "name": "snapshot-restore-invalidates-damage-basis",
+      "status": "PASS"
+    },
+    {
+      "name": "restored-version-does-not-query-damage-summary",
+      "status": "PASS"
+    },
+    {
+      "name": "initial-mount-cleanup-preserves-pending",
+      "status": "PASS"
+    },
+    {
+      "name": "completed-external-resize-rerenders",
+      "status": "PASS"
+    },
+    {
+      "name": "damage-identical-paint-skips-job",
+      "status": "PASS"
+    },
+    {
+      "name": "explicit-repaint-runs-full-even-unchanged",
+      "status": "PASS"
+    },
+    {
+      "name": "terminal-no-restart",
+      "status": "PASS"
+    }
+  ]
+}

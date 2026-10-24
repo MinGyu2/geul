@@ -1,0 +1,69 @@
+{
+  "status": "PASS",
+  "sourceBeforeSha256": {
+    "src/renderer/mod.rs": "417872f6330bda18ba30fdb2b644e4f1bb46f3a365cda11d794d0861ac32fc8f",
+    "src/renderer/surface_cache.rs": "ef2a93b56ea85b2f619b013a97239e22eff92b93fcbaebc941e0de476dba4a0f",
+    "src/renderer/render_job.rs": "678be5755db42c9767c96e9a828ffefa8bbb3bff396b1a3e3b6aa26cd0a7c7b1",
+    "src/renderer/web_canvas.rs": "820650f06f855a0190682a9193066322f71b3a5bc75590984bde6034e3e1a06d",
+    "src/wasm_api.rs": "ad4122eb9a8dbcf7ec9e9f747db5dfc28fefcdf50c19a64e393eb977ce8109b4"
+  },
+  "sourceAfterSha256": {
+    "src/renderer/mod.rs": "417872f6330bda18ba30fdb2b644e4f1bb46f3a365cda11d794d0861ac32fc8f",
+    "src/renderer/surface_cache.rs": "ef2a93b56ea85b2f619b013a97239e22eff92b93fcbaebc941e0de476dba4a0f",
+    "src/renderer/render_job.rs": "678be5755db42c9767c96e9a828ffefa8bbb3bff396b1a3e3b6aa26cd0a7c7b1",
+    "src/renderer/web_canvas.rs": "820650f06f855a0190682a9193066322f71b3a5bc75590984bde6034e3e1a06d",
+    "src/wasm_api.rs": "ad4122eb9a8dbcf7ec9e9f747db5dfc28fefcdf50c19a64e393eb977ce8109b4"
+  },
+  "checks": [
+    {
+      "name": "wasm-clippy",
+      "command": [
+        "cargo",
+        "clippy",
+        "--locked",
+        "--target",
+        "wasm32-unknown-unknown",
+        "--lib",
+        "--release",
+        "--",
+        "-D",
+        "warnings"
+      ],
+      "cwd": "<isolated>",
+      "exit": 0,
+      "status": "PASS",
+      "elapsedSeconds": 84.7,
+      "output": "    Blocking waiting for file lock on package cache\n    Blocking waiting for file lock on package cache\n    Checking rhwp v0.8.7 (<isolated>)\n    Finished `release` profile [optimized] target(s) in 1m 24s\n"
+    },
+    {
+      "name": "fmt",
+      "command": [
+        "cargo",
+        "fmt",
+        "--check"
+      ],
+      "cwd": "<isolated>",
+      "exit": 0,
+      "status": "PASS",
+      "elapsedSeconds": 19.75,
+      "output": ""
+    },
+    {
+      "name": "wasm-build",
+      "command": [
+        "scripts/wasm-pack-locked.sh",
+        "--release",
+        "--no-opt",
+        "--target",
+        "web",
+        "--out-dir",
+        "candidate-final-package"
+      ],
+      "cwd": "<isolated>",
+      "exit": 0,
+      "status": "PASS",
+      "elapsedSeconds": 493.49,
+      "output": "[INFO]: \ud83c\udfaf  Checking for the Wasm target...\n[INFO]: \ud83c\udf00  Compiling to Wasm...\n   Compiling rhwp v0.8.7 (<isolated>)\n    Finished `release` profile [optimized] target(s) in 8m 08s\n[INFO]: \u2b07\ufe0f  Installing wasm-bindgen...\n[INFO]: \u2728   Done in 8m 13s\n[INFO]: \ud83d\udce6   Your wasm pkg is ready to publish at <isolated>/candidate-final-package.\n"
+    }
+  ]
+}

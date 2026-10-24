@@ -1,0 +1,220 @@
+{
+  "status": "SCOPED_DIAGNOSTIC_COMPLETE",
+  "implementationChanges": [
+    "src/renderer/surface_cache.rs"
+  ],
+  "sourceAndObserverControlled": true,
+  "evidence": {
+    "native-admission.json": "badb9d60283a4213edd3db163895d2a66c01a1c6a7265f0e2129dd936d3e199d",
+    "candidate-admission.json": "41553354e5ce737d45cca5d269bf81dcedbd1cd60f4f931864c6592bc2627e9e"
+  },
+  "arms": [
+    {
+      "arm": "baseline",
+      "runtimeIdentity": {
+        "wasmSha256": "48adaa0f748484d12f59f4805deda0480635f915368392a87e76e95962ec0b27",
+        "baseline": "1a76570e833917d15817415a53c09ad61ab3203f"
+      },
+      "sampleSha256": "6717eca43c6fdd9b0530530cf17d33b6687da0c462a433d37eb652afb5394f91",
+      "perSampleWindowUniqueTerminalPolls": 112,
+      "cacheDeltas": {
+        "hits": 92,
+        "misses": 14,
+        "rejected": 13,
+        "evictions": 3
+      },
+      "latenciesMs": {
+        "groupStart": {
+          "n": 30,
+          "p50": 78,
+          "p95": 342,
+          "max": 418,
+          "timeouts": 0
+        },
+        "extend": {
+          "n": 30,
+          "p50": 96,
+          "p95": 242,
+          "max": 243,
+          "timeouts": 0
+        },
+        "undo": {
+          "n": 25,
+          "p50": 116,
+          "p95": 144,
+          "max": 182,
+          "timeouts": 0
+        },
+        "redo": {
+          "n": 20,
+          "p50": 114,
+          "p95": 139,
+          "max": 148,
+          "timeouts": 0
+        },
+        "afterUndo": {
+          "n": 5,
+          "p50": 110,
+          "p95": 131,
+          "max": 131,
+          "timeouts": 0
+        }
+      },
+      "rejectionRows": [
+        {
+          "job": 66,
+          "page": 14,
+          "pollMs": 156
+        },
+        {
+          "job": 68,
+          "page": 14,
+          "pollMs": 153
+        },
+        {
+          "job": 70,
+          "page": 15,
+          "pollMs": 154
+        },
+        {
+          "job": 72,
+          "page": 15,
+          "pollMs": 154
+        },
+        {
+          "job": 85,
+          "page": 19,
+          "pollMs": 154
+        },
+        {
+          "job": 87,
+          "page": 19,
+          "pollMs": 150
+        },
+        {
+          "job": 90,
+          "page": 20,
+          "pollMs": 132
+        },
+        {
+          "job": 91,
+          "page": 20,
+          "pollMs": 130
+        },
+        {
+          "job": 96,
+          "page": 22,
+          "pollMs": 38
+        },
+        {
+          "job": 97,
+          "page": 22,
+          "pollMs": 40
+        },
+        {
+          "job": 99,
+          "page": 23,
+          "pollMs": 110
+        },
+        {
+          "job": 100,
+          "page": 23,
+          "pollMs": 105
+        },
+        {
+          "job": 102,
+          "page": 23,
+          "pollMs": 111
+        }
+      ]
+    },
+    {
+      "arm": "candidate",
+      "runtimeIdentity": {
+        "wasmSha256": "e300102883740f29896cc834513a473b793a61bba8c56ba32f441b325ff541df",
+        "baseline": "1a76570e833917d15817415a53c09ad61ab3203f"
+      },
+      "sampleSha256": "6717eca43c6fdd9b0530530cf17d33b6687da0c462a433d37eb652afb5394f91",
+      "perSampleWindowUniqueTerminalPolls": 114,
+      "cacheDeltas": {
+        "hits": 97,
+        "misses": 11,
+        "rejected": 5,
+        "evictions": 8
+      },
+      "latenciesMs": {
+        "groupStart": {
+          "n": 30,
+          "p50": 84,
+          "p95": 279,
+          "max": 430,
+          "timeouts": 0
+        },
+        "extend": {
+          "n": 30,
+          "p50": 96,
+          "p95": 221,
+          "max": 265,
+          "timeouts": 0
+        },
+        "undo": {
+          "n": 25,
+          "p50": 117,
+          "p95": 172,
+          "max": 183,
+          "timeouts": 0
+        },
+        "redo": {
+          "n": 20,
+          "p50": 118,
+          "p95": 143,
+          "max": 147,
+          "timeouts": 0
+        },
+        "afterUndo": {
+          "n": 5,
+          "p50": 105,
+          "p95": 111,
+          "max": 111,
+          "timeouts": 0
+        }
+      },
+      "rejectionRows": [
+        {
+          "job": 66,
+          "page": 14,
+          "pollMs": 152
+        },
+        {
+          "job": 69,
+          "page": 15,
+          "pollMs": 156
+        },
+        {
+          "job": 83,
+          "page": 19,
+          "pollMs": 158
+        },
+        {
+          "job": 87,
+          "page": 20,
+          "pollMs": 128
+        },
+        {
+          "job": 96,
+          "page": 23,
+          "pollMs": 112
+        }
+      ]
+    }
+  ],
+  "scope": "One chemical HWP trace per arm, unchanged canonical key/RAF protocol with extra observers. Counters cover measured-stage windows, not the whole renderer run. No official four-document/three-arm acceptance.",
+  "interpretation": [
+    "Consecutive-request admission reduces observed rejections13→5 and misses14→11 while evictions increase3→8 under identical cache limits.",
+    "Group p95342→279ms remains above50ms. Median78→84ms and maximum418→430ms worsen; Undo p95144→172ms also increases within1500ms.",
+    "A single pair with mixed tail/median outcomes does not establish reproducible performance improvement.",
+    "Keep48adaa as the prior working basis; e300 remains an experimental candidate, not a production/default promotion."
+  ],
+  "officialD4Acceptance": "NOT PASSED",
+  "remaining": "Initial cold-image preparation and input/frame delays; D2 native target ordering and long RSS acceptance."
+}

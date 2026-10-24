@@ -1,0 +1,7 @@
+{
+  "status": "PASS",
+  "sourceFilesIdentical": 1314,
+  "cargoAndBuildInputsIdentical": true,
+  "patchSha256": "757d24647bcbcc7c64d58a8d28f16ac894bfcc79b37a3fca339ae555cc9ca824",
+  "method": "Independent pinned export+complete patch; all actual built source bytes match; fresh export not separately WASM-built"
+}

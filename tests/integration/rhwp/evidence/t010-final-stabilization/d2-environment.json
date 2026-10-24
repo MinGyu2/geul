@@ -1,0 +1,100 @@
+{
+  "status": "INCONCLUSIVE",
+  "executedNativeKoreanSequences": 0,
+  "binaries": {
+    "ibus": null,
+    "ibus-daemon": null,
+    "ibus-engine-hangul": null,
+    "fcitx5": null,
+    "fcitx5-remote": null,
+    "xdotool": null,
+    "weston": null
+  },
+  "sessionEnvironment": {
+    "DISPLAY": null,
+    "WAYLAND_DISPLAY": "wayland-1",
+    "GTK_IM_MODULE": null,
+    "XMODIFIERS": null
+  },
+  "prerequisite": "A compatible ibus-hangul GTK input module in the actual Tauri/WebKit process plus isolated native input session. Tool files alone are insufficient.",
+  "storeInputPackages": [
+    {
+      "package": "sklp68pzhi1zxdmav50103v50n84snvk-libusb-1.0.29",
+      "inputBinaries": []
+    },
+    {
+      "package": "hnkayv28ql48gyvil8d663lknsgsyw12-libusb-1.0.30",
+      "inputBinaries": []
+    },
+    {
+      "package": "0mvrqxsy82n54jvps5v7i3xsd7c28f9m-ibus-1.5.33",
+      "inputBinaries": [
+        ".ibus-daemon-wrapped",
+        ".ibus-setup-wrapped",
+        ".ibus-wrapped",
+        "ibus",
+        "ibus-daemon",
+        "ibus-setup",
+        ".ibus-dconf-wrapped",
+        ".ibus-desktop-testing-autostart-wrapped",
+        ".ibus-desktop-testing-module-wrapped",
+        ".ibus-engine-simple-wrapped",
+        ".ibus-extension-gtk3-wrapped",
+        ".ibus-portal-wrapped",
+        ".ibus-ui-emojier-wrapped",
+        ".ibus-ui-gtk3-wrapped",
+        ".ibus-wayland-wrapped",
+        ".ibus-x11-wrapped",
+        "ibus-dconf",
+        "ibus-desktop-testing-autostart",
+        "ibus-desktop-testing-module",
+        "ibus-engine-simple",
+        "ibus-extension-gtk3",
+        "ibus-portal",
+        "ibus-ui-emojier",
+        "ibus-ui-gtk3",
+        "ibus-wayland",
+        "ibus-x11"
+      ]
+    },
+    {
+      "package": "f3b4mgv2xq1nlr37gbkfcrz2hp46chmm-ibus-hangul-1.5.5",
+      "inputBinaries": [
+        "ibus-setup-hangul",
+        ".ibus-engine-hangul-wrapped",
+        ".ibus-setup-hangul-wrapped",
+        "ibus-engine-hangul",
+        "ibus-setup-hangul"
+      ]
+    },
+    {
+      "package": "s4z0zcvvj8fkmjisipxf2wyhqn3x6j82-libhangul-0.1.0",
+      "inputBinaries": [
+        "hangul"
+      ]
+    },
+    {
+      "package": "f3b4mgv2xq1nlr37gbkfcrz2hp46chmm-ibus-hangul-1.5.5",
+      "inputBinaries": [
+        "ibus-setup-hangul",
+        ".ibus-engine-hangul-wrapped",
+        ".ibus-setup-hangul-wrapped",
+        "ibus-engine-hangul",
+        "ibus-setup-hangul"
+      ]
+    }
+  ],
+  "gtkModuleProbe": {
+    "command": [
+      "/nix/store/jljcyz0c3nld95ra16sz80p3jjda446d-gtk+3-3.24.52-dev/bin/gtk-query-immodules-3.0",
+      "/nix/store/0mvrqxsy82n54jvps5v7i3xsd7c28f9m-ibus-1.5.33/lib/gtk-3.0/3.0.0/immodules/im-ibus.so"
+    ],
+    "exit": 0,
+    "stdout": "# GTK+ Input Method Modules file\n# Automatically generated file, do not edit\n# Created by /nix/store/jljcyz0c3nld95ra16sz80p3jjda446d-gtk+3-3.24.52-dev/bin/gtk-query-immodules-3.0 from gtk+-3.24.52\n#\n\"/nix/store/0mvrqxsy82n54jvps5v7i3xsd7c28f9m-ibus-1.5.33/lib/gtk-3.0/3.0.0/immodules/im-ibus.so\" \n\"ibus\" \"IBus (Intelligent Input Bus)\" \"ibus\" \"\" \"ja:ko:zh:*\" \n\n\n",
+    "stderr": ""
+  },
+  "ibusExecutableProbe": {
+    "defaultEnvironment": "GLIBC_2.43 dependency unavailable via current loader/library path",
+    "cleanChildEnvironment": "ibus-daemon --help succeeds after removing LD_LIBRARY_PATH; does not establish app GTK module compatibility"
+  }
+}

@@ -1,0 +1,20 @@
+{
+  "status": "PASS",
+  "command": [
+    "cargo",
+    "test",
+    "--locked",
+    "--manifest-path",
+    "src-tauri/Cargo.toml",
+    "--lib"
+  ],
+  "exit": 0,
+  "compiler": "rustc 1.99.0 (b940084d7 2026-09-28)",
+  "counts": {
+    "passed": 174,
+    "failed": 0,
+    "ignored": 4
+  },
+  "elapsedSeconds": 4.22,
+  "outputTail": "test services::save::tests::t010_\uad75\uac8c\uc640_\uc2e4\ud589_\ucde8\uc18c\ub85c_\ubc14\uafbc_docx\ub294_\ubcf4\uc874_\uac80\uc0ac\ub97c_\ud1b5\uacfc\ud574_\uc800\uc7a5\ub418\uace0_\ub2e4\uc2dc_\uc5f4\uba74_\uac19\ub2e4 ... ok\ntest services::save::tests::\uc911\ub2e8\ub41c_\uc800\uc7a5\uc774_\ub0a8\uae34_\uc784\uc2dc_\ud30c\uc77c\uc740_\uc9c0\uc6b0\uac70\ub098_\ub2e4\uc2dc_\uc4f0\uc9c0_\uc54a\uace0_\uc6d0\ubcf8\ub9cc_\ubc14\uafbc\ub2e4 ... ok\ntest services::save::tests::\uc4f0\uae30_\uad8c\ud55c_\uacf5\uac04_\ub418\uc77d\uae30_\uad50\uccb4_\uc678\ubd80_\uc218\uc815_\uc2e4\ud328\ub294_\uc6d0\ubcf8\uc744_\ubcf4\uc874\ud558\uace0_\uc784\uc2dc_\ud30c\uc77c\uc744_\ub0a8\uae30\uc9c0_\uc54a\ub294\ub2e4 ... ok\ntest services::save::tests::\uc2e4\uc81c_\uad8c\ud55c_\ud558\ub4dc_\ub9c1\ud06c_\uc2ec\ubcfc\ub9ad_\ub9c1\ud06c\uc640_\uad8c\ud55c_\ube44\ud2b8 ... ok\ntest services::save::tests::a6_\uce21\uc815\ud558\uc9c0_\ubabb\ud55c_\ub514\ub809\ud130\ub9ac\ub294_\ud1b5\uacfc\uc758_\uadfc\uac70\uac00_\uc544\ub2c8\uace0_\ud655\uc778\ub41c_\uc704\ubc18\uc740_\uc2e4\ud328\ub2e4 ... ok\ntest services::save::tests::a5_\ud0d0\uce68\uc740_\uc2e4\uc81c_\uc800\uc7a5_\uacbd\ub85c\uc5d0\uc11c_\ud1b5\uacfc\ud558\uace0_\uc8fc\uc785\ud55c_\uc704\ubc18\uc744_\uc2e4\ud328\ub85c_\uc7a1\ub294\ub2e4 ... ok\ntest services::save::tests::h5_\uc784\uc2dc_\ud30c\uc77c_\uc774\ub984\uc740_\uc6b4\uc601\uccb4\uc81c_\ub09c\uc218\ub85c_\uc815\ud558\uace0_\ucda9\ub3cc_\uc18c\uc9c4_\ub09c\uc218_\uc2e4\ud328\ub294_\uc6d0\ubcf8\uc744_\uc9c0\ud0a8\ub2e4 ... ok\n\ntest result: ok. 174 passed; 0 failed; 4 ignored; 0 measured; 0 filtered out; finished in 3.77s\n\n    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.34s\n     Running unittests src/lib.rs (src-tauri/target/debug/deps/geul_lib-3adaa6c3835a04b6)"
+}

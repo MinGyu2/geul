@@ -8,7 +8,7 @@
 3) 저장 전후 원본 사본 SHA-256·디렉터리 목록. 다시 실행한 HWPX 출력의 본문 참조 하나를 없는 모양으로 고친 사본도 넣어 T009 참조 검사가
    실행 취소 뒤에도 그대로인지 본다.
 
-기대(T009 정책 그대로): 모두 되돌린 출력은 원본과 같은 내용 → safe·게시. 다시 실행한 출력: HWPX 글자 편집 → safe·게시, HWP → 미리보기
+기대(T009 정책 그대로): 모두 되돌린 출력은 원본과 같은 내용 → safe·게시(패키지 자체가 unsafe인 여러 구역 HWPX는 계속 거부). 다시 실행한 출력: HWPX 글자 편집 → safe·게시, HWP → 미리보기
 낡음(previewStale)으로 거부. 고친 참조 → referenceInvalid로 거부. 다르면 종료 코드 1.
 """
 from __future__ import annotations
@@ -41,12 +41,31 @@ def sha(path: Path) -> str:
 
 
 PREVIEW = [["previewStale", "PrvText"], ["previewStale", "PrvImage"]]
-EXPECT = {  # 생성 픽스처 사례 → (check_saved, 게시됨, 근거). 여러 구역 예제는 아래 규칙(사전 검사에 따름).
-    "basic-hwp-undone": ("safe", True, []), "basic-hwpx-undone": ("safe", True, []),
-    "basic-hwp-redone": ("unsafe", False, PREVIEW), "basic-hwpx-redone": ("safe", True, []),
-    "basic-hwp-newAfterUndo": ("unsafe", False, PREVIEW), "basic-hwpx-newAfterUndo": ("safe", True, []),
-    "basic-hwpx-redone-dangling": ("unsafe", False, [["referenceInvalid", "Contents/section0.xml"]]),
-}
+# Expectations follow the T009 contract: changed previews/unknown package parts
+# cannot be published even if the engine can reopen them. No output-derived fallback.
+EXPECT = {}
+for kind in ("basic", "cell", "multi"):
+    for fmt in ("hwp", "hwpx"):
+        for phase in ("undone", "redone", "newAfterUndo"):
+            stale = fmt == "hwp" and phase != "undone"
+            EXPECT[f"{kind}-{fmt}-{phase}"] = {
+                "preflight": "safe", "preflightRequired": [],
+                "checkSaved": "unsafe" if stale else "safe", "published": not stale,
+                "findings": PREVIEW if stale else [],
+            }
+# The public three-section HWPX has no preview image. Its roundtrip adds that
+# opaque part and rewrites package metadata; no conservation proof permits saving.
+for phase in ("undone", "redone", "newAfterUndo"):
+    EXPECT[f"multi-hwpx-{phase}"] = {
+        "preflight": "unsafe", "preflightRequired": [["partAdded", "Preview/PrvImage.png"],
+            ["partChanged", "Contents/content.hpf"], ["partChanged", "Contents/section0.xml"]],
+        "checkSaved": "unsafe", "published": False,
+        "findings": [["partAdded", "Preview/PrvImage.png"], ["partChanged", "Contents/content.hpf"],
+                     ["previewStale", "Preview/PrvText.txt"]],
+    }
+EXPECT["basic-hwpx-redone-dangling"] = {"preflight": "safe", "preflightRequired": [],
+    "checkSaved": "unsafe", "published": False,
+    "findings": [["referenceInvalid", "Contents/section0.xml"]]}
 
 
 def main() -> int:
@@ -60,6 +79,14 @@ def main() -> int:
         out = tmp / "out"
         run(["npx", "vitest", "run", "--config", "tests/integration/rhwp/vitest.config.ts", "undo-save"], {"GEUL_UNDO_SAVE_OUT": str(out), **({"GEUL_RHWP_TEST_PACKAGE": str(args.candidate.resolve())} if args.candidate else {})})
         cases = json.loads((out / "cases.json").read_text())
+        # Independently establish the package fixture premises, not its classifier output.
+        multi_hwpx = next(c for c in cases if c["tag"] == "multi-hwpx")
+        with zipfile.ZipFile(multi_hwpx["original"]) as source:
+            assert "Preview/PrvText.txt" in source.namelist() and "Preview/PrvImage.png" not in source.namelist()
+            assert "Contents/content.hpf" in source.namelist() and "Contents/section1.xml" in source.namelist()
+        with zipfile.ZipFile(multi_hwpx["unedited"]["file"]) as roundtrip:
+            assert "Preview/PrvImage.png" in roundtrip.namelist(), "fixture roundtrip no longer has its known added opaque part"
+
         manifest, rows = [], []
         for c in cases:
             fmt, tag = c["fmt"], c["tag"]
@@ -72,7 +99,8 @@ def main() -> int:
                     for i in zin.infolist():
                         data = zin.read(i.filename)
                         if i.filename == "Contents/section0.xml":
-                            data = re.sub(rb'<hp:run charPrIDRef="\d+"><hp:t>', b'<hp:run charPrIDRef="9999"><hp:t>', data, count=1)
+                            data, replaced = re.subn(rb'<hp:run charPrIDRef="\d+"><hp:t>', b'<hp:run charPrIDRef="9999"><hp:t>', data, count=1)
+                            assert replaced == 1, "invalid-reference fixture was not injected"
                         zout.writestr(i, data)
                 shutil.copyfile(f"{src}.loss.json", f"{bad}.loss.json")
                 manifest.append(("basic-hwpx-redone-dangling", fmt, c["original"], c["unedited"], {**c["redone"], "file": str(bad)}))
@@ -100,14 +128,18 @@ def main() -> int:
             preserved = preserved and r["sessionAfter"]["revision"] == r["committedRevision"] == 1 \
                 and r["dirtyBeforeSave"] and r["sessionAfter"]["dirty"] == (not published) \
                 and (not published or r["save"]["durable"])
-            if want is not None:
-                ok = r["preflight"]["outcome"] == "safe" and r["checkSaved"]["outcome"] == want[0] and published == want[1] \
-                    and sorted(findings) == sorted(want[2]) and preserved
-            else:
-                # 여러 구역 공개 예제: 기대를 정하지 않고 정책대로인지만 — 게시는 사전 검사·출력 검사가 모두 safe일 때만, 아니면 거부하고
-                # 원본 바이트 그대로. 엔진 내보내기 성공(파일이 만들어짐)과 안전한 게시를 구별한다.
-                ok = preserved and published == (r["preflight"]["outcome"] == "safe" and r["checkSaved"]["outcome"] == "safe")
-            rows.append({"case": name, "reopen": e["reopen"], "preflight": r["preflight"]["outcome"],
+            if want is None:
+                raise RuntimeError("Missing independent fixture expectation: " + name)
+            preflight_findings = [[f["code"], f.get("part")] for f in r["preflight"]["findings"]]
+            ok = r["preflight"]["outcome"] == want["preflight"] \
+                and all(f in preflight_findings for f in want["preflightRequired"]) \
+                and r["checkSaved"]["outcome"] == want["checkSaved"] \
+                and published == want["published"] and sorted(findings) == sorted(want["findings"]) and preserved
+            if want["preflight"] == "safe":
+                ok = ok and not preflight_findings
+            if published:
+                ok = ok and all(e["reopen"].values())
+            rows.append({"case": name, "expected": want, "reopen": e["reopen"], "preflight": r["preflight"]["outcome"],
                          "preflightFindings": [[f["code"], f.get("part")] for f in r["preflight"]["findings"]][:6],
                          "checkSaved": r["checkSaved"]["outcome"], "findings": findings,
                          "published": published, "originalSha256": before[name], "afterSha256": after,

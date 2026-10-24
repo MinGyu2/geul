@@ -1,0 +1,616 @@
+{
+  "status": "PASS",
+  "tests": [
+    {
+      "name": "bootstrap-clean-close",
+      "status": "PASS"
+    },
+    {
+      "name": "hwp-genuine-pending-history-document",
+      "status": "PASS",
+      "resources": {
+        "pendingCount": 1,
+        "cancellations": 0,
+        "peakTemporaryCanvasBytes": 3875040,
+        "listenerNotifications": 1,
+        "peakStagingBytes": 3875040,
+        "inFlightEstimatedBytes": 100663826,
+        "capacityNotifications": 0,
+        "maxFrameBytes": 67108864,
+        "expiryTimerTicks": 0,
+        "resourceLimits": 0,
+        "expiryTimerActive": true,
+        "retryCount": 1,
+        "expiryTimerStarts": 2,
+        "backupImageDataBytes": 0,
+        "activeLeaseEstimatedBytes": 106520756,
+        "activeJobs": 1,
+        "activeLeaseCount": 2,
+        "maxPending": 2,
+        "transientEstimatedBytes": 5856930,
+        "loadAttempts": 2,
+        "uniqueResourceCount": 2,
+        "readyLeaseCount": 1,
+        "temporaryCanvasBytes": 0,
+        "maxOwnedBytes": 268435456,
+        "maxStagingBytes": 134217728,
+        "ownedEstimatedBytes": 106520756,
+        "maxResources": 256,
+        "errors": 0,
+        "peakBackupImageDataBytes": 0,
+        "completionNotifications": 1
+      }
+    },
+    {
+      "name": "hwp-edit-supersedes-pending-exact",
+      "status": "PASS",
+      "reference": {
+        "strongPixels": 0,
+        "pixels": 0,
+        "edgePixels": 0,
+        "height": 1170,
+        "surface": "attached page Canvas readback",
+        "width": 828,
+        "verified": true,
+        "maxDelta": 0,
+        "oracle": "authoritative model full replay; browser historical full pixels independently pinned-verified"
+      }
+    },
+    {
+      "name": "hwp-undo-images-exact",
+      "status": "PASS",
+      "reference": {
+        "strongPixels": 0,
+        "pixels": 0,
+        "edgePixels": 0,
+        "height": 1170,
+        "surface": "attached page Canvas readback",
+        "width": 828,
+        "verified": true,
+        "maxDelta": 0,
+        "oracle": "authoritative model full replay; browser historical full pixels independently pinned-verified"
+      }
+    },
+    {
+      "name": "hwp-redo-images-exact",
+      "status": "PASS",
+      "reference": {
+        "strongPixels": 0,
+        "pixels": 0,
+        "edgePixels": 0,
+        "height": 1170,
+        "surface": "attached page Canvas readback",
+        "width": 828,
+        "verified": true,
+        "maxDelta": 0,
+        "oracle": "authoritative model full replay; browser historical full pixels independently pinned-verified"
+      }
+    },
+    {
+      "name": "hwp-pending-history-model-revisions",
+      "status": "PASS",
+      "revisions": [
+        0,
+        1,
+        2,
+        3
+      ]
+    },
+    {
+      "name": "hwp-trim-pending-preserves-visible-frame",
+      "status": "PASS"
+    },
+    {
+      "name": "hwp-replacement-before-late-exact",
+      "status": "PASS",
+      "reference": {
+        "strongPixels": 0,
+        "pixels": 0,
+        "edgePixels": 0,
+        "height": 1170,
+        "surface": "attached page Canvas readback",
+        "width": 828,
+        "verified": true,
+        "maxDelta": 0,
+        "oracle": "authoritative model full replay; browser historical full pixels independently pinned-verified"
+      }
+    },
+    {
+      "name": "hwp-replacement-after-late-exact",
+      "status": "PASS",
+      "reference": {
+        "strongPixels": 0,
+        "pixels": 0,
+        "edgePixels": 0,
+        "height": 1170,
+        "surface": "attached page Canvas readback",
+        "width": 828,
+        "verified": true,
+        "maxDelta": 0,
+        "oracle": "authoritative model full replay; browser historical full pixels independently pinned-verified"
+      }
+    },
+    {
+      "name": "hwp-late-callback-no-publication-or-mutation",
+      "status": "PASS"
+    },
+    {
+      "name": "hwp-history-close-all-resources-zero",
+      "status": "PASS",
+      "resources": {
+        "pendingCount": 0,
+        "cancellations": 2,
+        "peakTemporaryCanvasBytes": 3875040,
+        "listenerNotifications": 2,
+        "peakStagingBytes": 7750080,
+        "inFlightEstimatedBytes": 0,
+        "capacityNotifications": 0,
+        "maxFrameBytes": 67108864,
+        "expiryTimerTicks": 2,
+        "resourceLimits": 0,
+        "expiryTimerActive": false,
+        "retryCount": 2,
+        "expiryTimerStarts": 14,
+        "backupImageDataBytes": 0,
+        "activeLeaseEstimatedBytes": 0,
+        "activeJobs": 0,
+        "activeLeaseCount": 0,
+        "maxPending": 2,
+        "transientEstimatedBytes": 0,
+        "loadAttempts": 6,
+        "uniqueResourceCount": 0,
+        "readyLeaseCount": 0,
+        "temporaryCanvasBytes": 0,
+        "maxOwnedBytes": 268435456,
+        "maxStagingBytes": 134217728,
+        "ownedEstimatedBytes": 0,
+        "maxResources": 256,
+        "errors": 0,
+        "peakBackupImageDataBytes": 3875040,
+        "completionNotifications": 2
+      }
+    },
+    {
+      "name": "hwpx-genuine-pending-history-document",
+      "status": "PASS",
+      "resources": {
+        "pendingCount": 1,
+        "cancellations": 2,
+        "peakTemporaryCanvasBytes": 3875040,
+        "listenerNotifications": 2,
+        "peakStagingBytes": 7750080,
+        "inFlightEstimatedBytes": 100663826,
+        "capacityNotifications": 0,
+        "maxFrameBytes": 67108864,
+        "expiryTimerTicks": 2,
+        "resourceLimits": 0,
+        "expiryTimerActive": true,
+        "retryCount": 2,
+        "expiryTimerStarts": 15,
+        "backupImageDataBytes": 0,
+        "activeLeaseEstimatedBytes": 106520756,
+        "activeJobs": 1,
+        "activeLeaseCount": 2,
+        "maxPending": 2,
+        "transientEstimatedBytes": 5856930,
+        "loadAttempts": 8,
+        "uniqueResourceCount": 2,
+        "readyLeaseCount": 1,
+        "temporaryCanvasBytes": 0,
+        "maxOwnedBytes": 268435456,
+        "maxStagingBytes": 134217728,
+        "ownedEstimatedBytes": 106520756,
+        "maxResources": 256,
+        "errors": 0,
+        "peakBackupImageDataBytes": 3875040,
+        "completionNotifications": 2
+      }
+    },
+    {
+      "name": "hwpx-edit-supersedes-pending-exact",
+      "status": "PASS",
+      "reference": {
+        "strongPixels": 0,
+        "pixels": 0,
+        "edgePixels": 0,
+        "height": 1170,
+        "surface": "attached page Canvas readback",
+        "width": 828,
+        "verified": true,
+        "maxDelta": 0,
+        "oracle": "authoritative model full replay; browser historical full pixels independently pinned-verified"
+      }
+    },
+    {
+      "name": "hwpx-undo-images-exact",
+      "status": "PASS",
+      "reference": {
+        "strongPixels": 0,
+        "pixels": 0,
+        "edgePixels": 0,
+        "height": 1170,
+        "surface": "attached page Canvas readback",
+        "width": 828,
+        "verified": true,
+        "maxDelta": 0,
+        "oracle": "authoritative model full replay; browser historical full pixels independently pinned-verified"
+      }
+    },
+    {
+      "name": "hwpx-redo-images-exact",
+      "status": "PASS",
+      "reference": {
+        "strongPixels": 0,
+        "pixels": 0,
+        "edgePixels": 0,
+        "height": 1170,
+        "surface": "attached page Canvas readback",
+        "width": 828,
+        "verified": true,
+        "maxDelta": 0,
+        "oracle": "authoritative model full replay; browser historical full pixels independently pinned-verified"
+      }
+    },
+    {
+      "name": "hwpx-pending-history-model-revisions",
+      "status": "PASS",
+      "revisions": [
+        0,
+        1,
+        2,
+        3
+      ]
+    },
+    {
+      "name": "hwpx-trim-pending-preserves-visible-frame",
+      "status": "PASS"
+    },
+    {
+      "name": "hwpx-replacement-before-late-exact",
+      "status": "PASS",
+      "reference": {
+        "strongPixels": 0,
+        "pixels": 0,
+        "edgePixels": 0,
+        "height": 1170,
+        "surface": "attached page Canvas readback",
+        "width": 828,
+        "verified": true,
+        "maxDelta": 0,
+        "oracle": "authoritative model full replay; browser historical full pixels independently pinned-verified"
+      }
+    },
+    {
+      "name": "hwpx-replacement-after-late-exact",
+      "status": "PASS",
+      "reference": {
+        "strongPixels": 0,
+        "pixels": 0,
+        "edgePixels": 0,
+        "height": 1170,
+        "surface": "attached page Canvas readback",
+        "width": 828,
+        "verified": true,
+        "maxDelta": 0,
+        "oracle": "authoritative model full replay; browser historical full pixels independently pinned-verified"
+      }
+    },
+    {
+      "name": "hwpx-late-callback-no-publication-or-mutation",
+      "status": "PASS"
+    },
+    {
+      "name": "hwpx-history-close-all-resources-zero",
+      "status": "PASS",
+      "resources": {
+        "pendingCount": 0,
+        "cancellations": 4,
+        "peakTemporaryCanvasBytes": 3875040,
+        "listenerNotifications": 2,
+        "peakStagingBytes": 7750080,
+        "inFlightEstimatedBytes": 0,
+        "capacityNotifications": 0,
+        "maxFrameBytes": 67108864,
+        "expiryTimerTicks": 4,
+        "resourceLimits": 0,
+        "expiryTimerActive": false,
+        "retryCount": 2,
+        "expiryTimerStarts": 27,
+        "backupImageDataBytes": 0,
+        "activeLeaseEstimatedBytes": 0,
+        "activeJobs": 0,
+        "activeLeaseCount": 0,
+        "maxPending": 2,
+        "transientEstimatedBytes": 0,
+        "loadAttempts": 12,
+        "uniqueResourceCount": 0,
+        "readyLeaseCount": 0,
+        "temporaryCanvasBytes": 0,
+        "maxOwnedBytes": 268435456,
+        "maxStagingBytes": 134217728,
+        "ownedEstimatedBytes": 0,
+        "maxResources": 256,
+        "errors": 0,
+        "peakBackupImageDataBytes": 3875040,
+        "completionNotifications": 2
+      }
+    },
+    {
+      "name": "native-final-resource-cleanup",
+      "status": "PASS"
+    }
+  ],
+  "scope": "actual native HWP/HWPX image history, cancellation, trim, late completion and attached Canvas RGBA",
+  "observerAliasDiagnostic": {
+    "sameConstructor": false,
+    "resources": [
+      "/__ownership_candidate__/rhwp.js?import",
+      "/__ownership_candidate__/rhwp.js"
+    ]
+  },
+  "visualReferences": [
+    {
+      "name": "hwp-edit-supersedes-pending-exact",
+      "strongPixels": 0,
+      "pixels": 0,
+      "edgePixels": 0,
+      "height": 1170,
+      "surface": "attached page Canvas readback",
+      "width": 828,
+      "verified": true,
+      "maxDelta": 0,
+      "oracle": "authoritative model full replay; browser historical full pixels independently pinned-verified"
+    },
+    {
+      "name": "hwp-undo-images-exact",
+      "strongPixels": 0,
+      "pixels": 0,
+      "edgePixels": 0,
+      "height": 1170,
+      "surface": "attached page Canvas readback",
+      "width": 828,
+      "verified": true,
+      "maxDelta": 0,
+      "oracle": "authoritative model full replay; browser historical full pixels independently pinned-verified"
+    },
+    {
+      "name": "hwp-redo-images-exact",
+      "strongPixels": 0,
+      "pixels": 0,
+      "edgePixels": 0,
+      "height": 1170,
+      "surface": "attached page Canvas readback",
+      "width": 828,
+      "verified": true,
+      "maxDelta": 0,
+      "oracle": "authoritative model full replay; browser historical full pixels independently pinned-verified"
+    },
+    {
+      "name": "hwp-replacement-before-late-exact",
+      "strongPixels": 0,
+      "pixels": 0,
+      "edgePixels": 0,
+      "height": 1170,
+      "surface": "attached page Canvas readback",
+      "width": 828,
+      "verified": true,
+      "maxDelta": 0,
+      "oracle": "authoritative model full replay; browser historical full pixels independently pinned-verified"
+    },
+    {
+      "name": "hwp-replacement-after-late-exact",
+      "strongPixels": 0,
+      "pixels": 0,
+      "edgePixels": 0,
+      "height": 1170,
+      "surface": "attached page Canvas readback",
+      "width": 828,
+      "verified": true,
+      "maxDelta": 0,
+      "oracle": "authoritative model full replay; browser historical full pixels independently pinned-verified"
+    },
+    {
+      "name": "hwpx-edit-supersedes-pending-exact",
+      "strongPixels": 0,
+      "pixels": 0,
+      "edgePixels": 0,
+      "height": 1170,
+      "surface": "attached page Canvas readback",
+      "width": 828,
+      "verified": true,
+      "maxDelta": 0,
+      "oracle": "authoritative model full replay; browser historical full pixels independently pinned-verified"
+    },
+    {
+      "name": "hwpx-undo-images-exact",
+      "strongPixels": 0,
+      "pixels": 0,
+      "edgePixels": 0,
+      "height": 1170,
+      "surface": "attached page Canvas readback",
+      "width": 828,
+      "verified": true,
+      "maxDelta": 0,
+      "oracle": "authoritative model full replay; browser historical full pixels independently pinned-verified"
+    },
+    {
+      "name": "hwpx-redo-images-exact",
+      "strongPixels": 0,
+      "pixels": 0,
+      "edgePixels": 0,
+      "height": 1170,
+      "surface": "attached page Canvas readback",
+      "width": 828,
+      "verified": true,
+      "maxDelta": 0,
+      "oracle": "authoritative model full replay; browser historical full pixels independently pinned-verified"
+    },
+    {
+      "name": "hwpx-replacement-before-late-exact",
+      "strongPixels": 0,
+      "pixels": 0,
+      "edgePixels": 0,
+      "height": 1170,
+      "surface": "attached page Canvas readback",
+      "width": 828,
+      "verified": true,
+      "maxDelta": 0,
+      "oracle": "authoritative model full replay; browser historical full pixels independently pinned-verified"
+    },
+    {
+      "name": "hwpx-replacement-after-late-exact",
+      "strongPixels": 0,
+      "pixels": 0,
+      "edgePixels": 0,
+      "height": 1170,
+      "surface": "attached page Canvas readback",
+      "width": 828,
+      "verified": true,
+      "maxDelta": 0,
+      "oracle": "authoritative model full replay; browser historical full pixels independently pinned-verified"
+    }
+  ],
+  "engineIdentity": {
+    "wasmSha256": "e300102883740f29896cc834513a473b793a61bba8c56ba32f441b325ff541df",
+    "baseline": "1a76570e833917d15817415a53c09ad61ab3203f"
+  },
+  "lastObserved": {
+    "throwAfterDiscard": null,
+    "status": null,
+    "snapshotCalls": [
+      {
+        "ms": 1,
+        "name": "saveSnapshot",
+        "at": 2457
+      },
+      {
+        "ms": 1,
+        "name": "saveSnapshot",
+        "at": 3516
+      },
+      {
+        "ms": 3,
+        "name": "restoreSnapshot",
+        "at": 3517
+      },
+      {
+        "ms": 2,
+        "name": "restoreSnapshot",
+        "at": 4435
+      },
+      {
+        "ms": 0,
+        "name": "saveSnapshot",
+        "at": 10386
+      },
+      {
+        "ms": 0,
+        "name": "saveSnapshot",
+        "at": 11369
+      },
+      {
+        "ms": 2,
+        "name": "restoreSnapshot",
+        "at": 11370
+      },
+      {
+        "ms": 2,
+        "name": "restoreSnapshot",
+        "at": 12267
+      }
+    ],
+    "owners": [],
+    "jobs": {
+      "pendingCount": 0,
+      "cancellations": 4,
+      "peakTemporaryCanvasBytes": 3875040,
+      "listenerNotifications": 2,
+      "peakStagingBytes": 7750080,
+      "inFlightEstimatedBytes": 0,
+      "capacityNotifications": 0,
+      "maxFrameBytes": 67108864,
+      "expiryTimerTicks": 4,
+      "resourceLimits": 0,
+      "expiryTimerActive": false,
+      "retryCount": 2,
+      "expiryTimerStarts": 27,
+      "backupImageDataBytes": 0,
+      "activeLeaseEstimatedBytes": 0,
+      "activeJobs": 0,
+      "activeLeaseCount": 0,
+      "maxPending": 2,
+      "transientEstimatedBytes": 0,
+      "loadAttempts": 12,
+      "uniqueResourceCount": 0,
+      "readyLeaseCount": 0,
+      "temporaryCanvasBytes": 0,
+      "maxOwnedBytes": 268435456,
+      "maxStagingBytes": 134217728,
+      "ownedEstimatedBytes": 0,
+      "maxResources": 256,
+      "errors": 0,
+      "peakBackupImageDataBytes": 3875040,
+      "completionNotifications": 2
+    },
+    "identity": {
+      "wasmSha256": "e300102883740f29896cc834513a473b793a61bba8c56ba32f441b325ff541df",
+      "baseline": "1a76570e833917d15817415a53c09ad61ab3203f"
+    }
+  },
+  "nativeHelperAssertions": [],
+  "historyGates": [],
+  "historyChecks": [],
+  "transport": "tauri session/capability creation then direct same native WebKitWebDriver4445; no retries",
+  "actualNativeModuleSourceSha256": {
+    "tests/integration/rhwp/ownership-poc/history-pending-native.py": "c3c5779c6bf126c2714ddae455c92be9dfad9fa1bd9b1ac945f2e746558dd2d1"
+  },
+  "routingSourceSha256": "1dadc415629276486cbee847a4c80d3a4a3e11ee86b7cc07a3054f89dc331d00",
+  "testedSourceSha256": {
+    "tests/integration/rhwp/ownership-poc/session.mjs": "fe14f40f63bae2b471c84f30dda947283f8664fc387d16c86fb7ec138b6a2c22",
+    "tests/integration/rhwp/ownership-poc/history-perf.py": "fd2175b55a9520a7cf878bd46c72b586ed5e06b5d1c31c617edb4a8d5529f55e",
+    "tests/integration/rhwp/undo_native.py": "1d0982fa18c155bbd1e7b009307253815148f841fe1116ec92d818a3ea195445",
+    "tests/integration/rhwp/native_probe.py": "8f4be7dcd57bf5f284dda7ca94d12c9bad8a8f718d543ca57b500166b50c39a0",
+    "/tmp/geul-admission-native-route.py": "1dadc415629276486cbee847a4c80d3a4a3e11ee86b7cc07a3054f89dc331d00"
+  },
+  "parentExit": 0,
+  "processFinished": true,
+  "elapsedSeconds": 21.6,
+  "command": [
+    "dbus-run-session",
+    "--",
+    "python3",
+    "/tmp/geul-admission-native-route.py",
+    "pending",
+    "--app",
+    "<workspace>/src-tauri/target/debug/geul",
+    "--driver",
+    "/tmp/geul-t010-ownership-tools/bin/tauri-driver",
+    "--webkit-driver",
+    "/nix/store/p7h9r90h1vmk4wq1964nhd8vfp0kf27b-webkitgtk-2.54.1+abi=4.1/bin/WebKitWebDriver",
+    "--xvfb",
+    "/nix/store/7yz3bnmll7fy11n0xci85mbhnf6p5669-xvfb-21.1.23/bin/Xvfb",
+    "--output",
+    "<workspace>/tests/integration/rhwp/evidence/t010-decoded-admission/d1-native-history-pending.json",
+    "--xdotool",
+    "/nix/store/kyp2r08w6hs0l1zj3cya6d2ciba9v47h-xdotool-3.20211022.1/bin/xdotool"
+  ],
+  "activationFlags": {
+    "VITE_GEUL_TEST_HOOKS": "1",
+    "GEUL_T010_DAMAGE_POC": "1",
+    "GEUL_T010_OWNERSHIP_POC": "1",
+    "GEUL_T010_SCHEDULER_POC": "1",
+    "GEUL_T010_CANDIDATE": "<isolated>/candidate-package",
+    "GEUL_T010_EVIDENCE": "<workspace>/tests/integration/rhwp/evidence/t010-decoded-admission",
+    "VITE_GEUL_TEST_RHWP_HISTORY": "1",
+    "GEUL_T010_HISTORY_SAFETY_ONLY": "1"
+  },
+  "devServerCommand": [
+    "node",
+    "node_modules/vite/bin/vite.js",
+    "--host",
+    "127.0.0.1",
+    "--config",
+    "tests/integration/rhwp/ownership-poc/vite.config.mjs"
+  ],
+  "appSha256": "48b7b8364cb4b91ae0b4c3cb3113977c15fd92aa9ca3d60f0406f331749d45c1"
+}

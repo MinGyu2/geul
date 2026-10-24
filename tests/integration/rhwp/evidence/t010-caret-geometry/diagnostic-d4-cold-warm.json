@@ -1,0 +1,1019 @@
+{
+  "status": "PASS",
+  "scope": "separate cold/warm synchronous Full microbenchmark; explicit cache trim; no native key latency or D4 acceptance claim",
+  "protocol": "three actual document pages; trim0 then two direct Full renders at scale0.5; no cache budget changes",
+  "observerSourceSha256": "7524b59842ed7f7728e80a44dcd2e6b2649443cec56279b5f66b0950b7ca8ad8",
+  "coldWarm": [
+    {
+      "page": 0,
+      "rounds": [
+        {
+          "calls": [
+            {
+              "ms": 0,
+              "source": null,
+              "at": 5665,
+              "phase": "renderPageToCanvas",
+              "target": {
+                "width": 397,
+                "pageCanvas": false,
+                "id": 48,
+                "height": 562,
+                "attached": false
+              },
+              "name": "canvas:clearRect"
+            },
+            {
+              "ms": 6,
+              "source": null,
+              "at": 5718,
+              "phase": "renderPageToCanvas",
+              "target": {
+                "width": 1898,
+                "pageCanvas": false,
+                "id": 49,
+                "height": 2472,
+                "attached": false
+              },
+              "name": "canvas:putImageData"
+            },
+            {
+              "ms": 3,
+              "source": {
+                "pageCanvas": false,
+                "height": 2472,
+                "attached": false,
+                "width": 1898,
+                "kind": "canvas",
+                "id": 49
+              },
+              "at": 5724,
+              "phase": "renderPageToCanvas",
+              "target": {
+                "width": 397,
+                "pageCanvas": false,
+                "id": 48,
+                "height": 562,
+                "attached": false
+              },
+              "name": "canvas:drawImage"
+            },
+            {
+              "ms": 1,
+              "source": null,
+              "at": 5727,
+              "phase": "renderPageToCanvas",
+              "target": {
+                "width": 300,
+                "pageCanvas": false,
+                "id": 50,
+                "height": 150,
+                "attached": false
+              },
+              "name": "canvas:getImageData"
+            },
+            {
+              "ms": 1,
+              "source": {
+                "pageCanvas": false,
+                "height": 562,
+                "attached": false,
+                "width": 397,
+                "kind": "canvas",
+                "id": 48
+              },
+              "at": 5728,
+              "phase": "renderPageToCanvas",
+              "target": {
+                "width": 397,
+                "pageCanvas": false,
+                "id": 50,
+                "height": 562,
+                "attached": false
+              },
+              "name": "canvas:drawImage"
+            },
+            {
+              "ms": 65,
+              "name": "renderPageToCanvas",
+              "at": 5664
+            }
+          ],
+          "ms": 65,
+          "height": 562,
+          "after": {
+            "decoded": {
+              "maxBytes": 268435456,
+              "bytes": 18767424,
+              "misses": 14,
+              "maxEntryBytes": 67108864,
+              "oversize": 0,
+              "maxEntries": 256,
+              "evictions": 13,
+              "hits": 8,
+              "entries": 1,
+              "pendingEntries": 0,
+              "negativeEntries": 0,
+              "rejected": 0,
+              "transientEntries": 0
+            },
+            "images": {
+              "maxBytes": 67108864,
+              "bytes": 0,
+              "misses": 0,
+              "maxEntryBytes": 16777216,
+              "oversize": 0,
+              "maxEntries": 256,
+              "evictions": 0,
+              "hits": 0,
+              "entries": 0,
+              "pendingEntries": 0,
+              "negativeEntries": 0,
+              "rejected": 0,
+              "transientEntries": 0
+            }
+          },
+          "before": {
+            "decoded": {
+              "maxBytes": 268435456,
+              "bytes": 0,
+              "misses": 13,
+              "maxEntryBytes": 67108864,
+              "oversize": 0,
+              "maxEntries": 256,
+              "evictions": 13,
+              "hits": 8,
+              "entries": 0,
+              "pendingEntries": 0,
+              "negativeEntries": 0,
+              "rejected": 0,
+              "transientEntries": 0
+            },
+            "images": {
+              "maxBytes": 67108864,
+              "bytes": 0,
+              "misses": 0,
+              "maxEntryBytes": 16777216,
+              "oversize": 0,
+              "maxEntries": 256,
+              "evictions": 0,
+              "hits": 0,
+              "entries": 0,
+              "pendingEntries": 0,
+              "negativeEntries": 0,
+              "rejected": 0,
+              "transientEntries": 0
+            }
+          },
+          "width": 397,
+          "kind": "cold"
+        },
+        {
+          "calls": [
+            {
+              "ms": 1,
+              "source": null,
+              "at": 5729,
+              "phase": "renderPageToCanvas",
+              "target": {
+                "width": 397,
+                "pageCanvas": false,
+                "id": 51,
+                "height": 562,
+                "attached": false
+              },
+              "name": "canvas:clearRect"
+            },
+            {
+              "ms": 3,
+              "source": {
+                "pageCanvas": false,
+                "height": 2472,
+                "attached": false,
+                "width": 1898,
+                "kind": "canvas",
+                "id": 49
+              },
+              "at": 5732,
+              "phase": "renderPageToCanvas",
+              "target": {
+                "width": 397,
+                "pageCanvas": false,
+                "id": 51,
+                "height": 562,
+                "attached": false
+              },
+              "name": "canvas:drawImage"
+            },
+            {
+              "ms": 2,
+              "source": null,
+              "at": 5735,
+              "phase": "renderPageToCanvas",
+              "target": {
+                "width": 397,
+                "pageCanvas": false,
+                "id": 50,
+                "height": 562,
+                "attached": false
+              },
+              "name": "canvas:getImageData"
+            },
+            {
+              "ms": 0,
+              "source": {
+                "pageCanvas": false,
+                "height": 562,
+                "attached": false,
+                "width": 397,
+                "kind": "canvas",
+                "id": 51
+              },
+              "at": 5737,
+              "phase": "renderPageToCanvas",
+              "target": {
+                "width": 397,
+                "pageCanvas": false,
+                "id": 50,
+                "height": 562,
+                "attached": false
+              },
+              "name": "canvas:drawImage"
+            },
+            {
+              "ms": 8,
+              "name": "renderPageToCanvas",
+              "at": 5729
+            }
+          ],
+          "ms": 8,
+          "height": 562,
+          "after": {
+            "decoded": {
+              "maxBytes": 268435456,
+              "bytes": 18767424,
+              "misses": 14,
+              "maxEntryBytes": 67108864,
+              "oversize": 0,
+              "maxEntries": 256,
+              "evictions": 13,
+              "hits": 9,
+              "entries": 1,
+              "pendingEntries": 0,
+              "negativeEntries": 0,
+              "rejected": 0,
+              "transientEntries": 0
+            },
+            "images": {
+              "maxBytes": 67108864,
+              "bytes": 0,
+              "misses": 0,
+              "maxEntryBytes": 16777216,
+              "oversize": 0,
+              "maxEntries": 256,
+              "evictions": 0,
+              "hits": 0,
+              "entries": 0,
+              "pendingEntries": 0,
+              "negativeEntries": 0,
+              "rejected": 0,
+              "transientEntries": 0
+            }
+          },
+          "before": {
+            "decoded": {
+              "maxBytes": 268435456,
+              "bytes": 18767424,
+              "misses": 14,
+              "maxEntryBytes": 67108864,
+              "oversize": 0,
+              "maxEntries": 256,
+              "evictions": 13,
+              "hits": 8,
+              "entries": 1,
+              "pendingEntries": 0,
+              "negativeEntries": 0,
+              "rejected": 0,
+              "transientEntries": 0
+            },
+            "images": {
+              "maxBytes": 67108864,
+              "bytes": 0,
+              "misses": 0,
+              "maxEntryBytes": 16777216,
+              "oversize": 0,
+              "maxEntries": 256,
+              "evictions": 0,
+              "hits": 0,
+              "entries": 0,
+              "pendingEntries": 0,
+              "negativeEntries": 0,
+              "rejected": 0,
+              "transientEntries": 0
+            }
+          },
+          "width": 397,
+          "kind": "warm"
+        }
+      ]
+    },
+    {
+      "page": 5,
+      "rounds": [
+        {
+          "calls": [
+            {
+              "ms": 0,
+              "source": null,
+              "at": 5738,
+              "phase": "renderPageToCanvas",
+              "target": {
+                "width": 397,
+                "pageCanvas": false,
+                "id": 52,
+                "height": 562,
+                "attached": false
+              },
+              "name": "canvas:clearRect"
+            },
+            {
+              "ms": 3,
+              "source": null,
+              "at": 5875,
+              "phase": "renderPageToCanvas",
+              "target": {
+                "width": 1796,
+                "pageCanvas": false,
+                "id": 53,
+                "height": 2339,
+                "attached": false
+              },
+              "name": "canvas:putImageData"
+            },
+            {
+              "ms": 4,
+              "source": {
+                "pageCanvas": false,
+                "height": 2339,
+                "attached": false,
+                "width": 1796,
+                "kind": "canvas",
+                "id": 53
+              },
+              "at": 5878,
+              "phase": "renderPageToCanvas",
+              "target": {
+                "width": 397,
+                "pageCanvas": false,
+                "id": 52,
+                "height": 562,
+                "attached": false
+              },
+              "name": "canvas:drawImage"
+            },
+            {
+              "ms": 0,
+              "source": null,
+              "at": 5882,
+              "phase": "renderPageToCanvas",
+              "target": {
+                "width": 300,
+                "pageCanvas": false,
+                "id": 54,
+                "height": 150,
+                "attached": false
+              },
+              "name": "canvas:getImageData"
+            },
+            {
+              "ms": 0,
+              "source": {
+                "pageCanvas": false,
+                "height": 562,
+                "attached": false,
+                "width": 397,
+                "kind": "canvas",
+                "id": 52
+              },
+              "at": 5882,
+              "phase": "renderPageToCanvas",
+              "target": {
+                "width": 397,
+                "pageCanvas": false,
+                "id": 54,
+                "height": 562,
+                "attached": false
+              },
+              "name": "canvas:drawImage"
+            },
+            {
+              "ms": 144,
+              "name": "renderPageToCanvas",
+              "at": 5738
+            }
+          ],
+          "ms": 144,
+          "height": 562,
+          "after": {
+            "decoded": {
+              "maxBytes": 268435456,
+              "bytes": 16803376,
+              "misses": 15,
+              "maxEntryBytes": 67108864,
+              "oversize": 0,
+              "maxEntries": 256,
+              "evictions": 14,
+              "hits": 9,
+              "entries": 1,
+              "pendingEntries": 0,
+              "negativeEntries": 0,
+              "rejected": 0,
+              "transientEntries": 0
+            },
+            "images": {
+              "maxBytes": 67108864,
+              "bytes": 0,
+              "misses": 0,
+              "maxEntryBytes": 16777216,
+              "oversize": 0,
+              "maxEntries": 256,
+              "evictions": 0,
+              "hits": 0,
+              "entries": 0,
+              "pendingEntries": 0,
+              "negativeEntries": 0,
+              "rejected": 0,
+              "transientEntries": 0
+            }
+          },
+          "before": {
+            "decoded": {
+              "maxBytes": 268435456,
+              "bytes": 0,
+              "misses": 14,
+              "maxEntryBytes": 67108864,
+              "oversize": 0,
+              "maxEntries": 256,
+              "evictions": 14,
+              "hits": 9,
+              "entries": 0,
+              "pendingEntries": 0,
+              "negativeEntries": 0,
+              "rejected": 0,
+              "transientEntries": 0
+            },
+            "images": {
+              "maxBytes": 67108864,
+              "bytes": 0,
+              "misses": 0,
+              "maxEntryBytes": 16777216,
+              "oversize": 0,
+              "maxEntries": 256,
+              "evictions": 0,
+              "hits": 0,
+              "entries": 0,
+              "pendingEntries": 0,
+              "negativeEntries": 0,
+              "rejected": 0,
+              "transientEntries": 0
+            }
+          },
+          "width": 397,
+          "kind": "cold"
+        },
+        {
+          "calls": [
+            {
+              "ms": 0,
+              "source": null,
+              "at": 5882,
+              "phase": "renderPageToCanvas",
+              "target": {
+                "width": 397,
+                "pageCanvas": false,
+                "id": 55,
+                "height": 562,
+                "attached": false
+              },
+              "name": "canvas:clearRect"
+            },
+            {
+              "ms": 3,
+              "source": {
+                "pageCanvas": false,
+                "height": 2339,
+                "attached": false,
+                "width": 1796,
+                "kind": "canvas",
+                "id": 53
+              },
+              "at": 5883,
+              "phase": "renderPageToCanvas",
+              "target": {
+                "width": 397,
+                "pageCanvas": false,
+                "id": 55,
+                "height": 562,
+                "attached": false
+              },
+              "name": "canvas:drawImage"
+            },
+            {
+              "ms": 1,
+              "source": null,
+              "at": 5886,
+              "phase": "renderPageToCanvas",
+              "target": {
+                "width": 397,
+                "pageCanvas": false,
+                "id": 54,
+                "height": 562,
+                "attached": false
+              },
+              "name": "canvas:getImageData"
+            },
+            {
+              "ms": 0,
+              "source": {
+                "pageCanvas": false,
+                "height": 562,
+                "attached": false,
+                "width": 397,
+                "kind": "canvas",
+                "id": 55
+              },
+              "at": 5888,
+              "phase": "renderPageToCanvas",
+              "target": {
+                "width": 397,
+                "pageCanvas": false,
+                "id": 54,
+                "height": 562,
+                "attached": false
+              },
+              "name": "canvas:drawImage"
+            },
+            {
+              "ms": 6,
+              "name": "renderPageToCanvas",
+              "at": 5882
+            }
+          ],
+          "ms": 6,
+          "height": 562,
+          "after": {
+            "decoded": {
+              "maxBytes": 268435456,
+              "bytes": 16803376,
+              "misses": 15,
+              "maxEntryBytes": 67108864,
+              "oversize": 0,
+              "maxEntries": 256,
+              "evictions": 14,
+              "hits": 10,
+              "entries": 1,
+              "pendingEntries": 0,
+              "negativeEntries": 0,
+              "rejected": 0,
+              "transientEntries": 0
+            },
+            "images": {
+              "maxBytes": 67108864,
+              "bytes": 0,
+              "misses": 0,
+              "maxEntryBytes": 16777216,
+              "oversize": 0,
+              "maxEntries": 256,
+              "evictions": 0,
+              "hits": 0,
+              "entries": 0,
+              "pendingEntries": 0,
+              "negativeEntries": 0,
+              "rejected": 0,
+              "transientEntries": 0
+            }
+          },
+          "before": {
+            "decoded": {
+              "maxBytes": 268435456,
+              "bytes": 16803376,
+              "misses": 15,
+              "maxEntryBytes": 67108864,
+              "oversize": 0,
+              "maxEntries": 256,
+              "evictions": 14,
+              "hits": 9,
+              "entries": 1,
+              "pendingEntries": 0,
+              "negativeEntries": 0,
+              "rejected": 0,
+              "transientEntries": 0
+            },
+            "images": {
+              "maxBytes": 67108864,
+              "bytes": 0,
+              "misses": 0,
+              "maxEntryBytes": 16777216,
+              "oversize": 0,
+              "maxEntries": 256,
+              "evictions": 0,
+              "hits": 0,
+              "entries": 0,
+              "pendingEntries": 0,
+              "negativeEntries": 0,
+              "rejected": 0,
+              "transientEntries": 0
+            }
+          },
+          "width": 397,
+          "kind": "warm"
+        }
+      ]
+    },
+    {
+      "page": 23,
+      "rounds": [
+        {
+          "calls": [
+            {
+              "ms": 0,
+              "source": null,
+              "at": 5890,
+              "phase": "renderPageToCanvas",
+              "target": {
+                "width": 397,
+                "pageCanvas": false,
+                "id": 56,
+                "height": 562,
+                "attached": false
+              },
+              "name": "canvas:clearRect"
+            },
+            {
+              "ms": 8,
+              "source": null,
+              "at": 5991,
+              "phase": "renderPageToCanvas",
+              "target": {
+                "width": 2693,
+                "pageCanvas": false,
+                "id": 57,
+                "height": 3508,
+                "attached": false
+              },
+              "name": "canvas:putImageData"
+            },
+            {
+              "ms": 4,
+              "source": {
+                "pageCanvas": false,
+                "height": 3508,
+                "attached": false,
+                "width": 2693,
+                "kind": "canvas",
+                "id": 57
+              },
+              "at": 5999,
+              "phase": "renderPageToCanvas",
+              "target": {
+                "width": 397,
+                "pageCanvas": false,
+                "id": 56,
+                "height": 562,
+                "attached": false
+              },
+              "name": "canvas:drawImage"
+            },
+            {
+              "ms": 0,
+              "source": null,
+              "at": 6003,
+              "phase": "renderPageToCanvas",
+              "target": {
+                "width": 300,
+                "pageCanvas": false,
+                "id": 58,
+                "height": 150,
+                "attached": false
+              },
+              "name": "canvas:getImageData"
+            },
+            {
+              "ms": 0,
+              "source": {
+                "pageCanvas": false,
+                "height": 562,
+                "attached": false,
+                "width": 397,
+                "kind": "canvas",
+                "id": 56
+              },
+              "at": 6003,
+              "phase": "renderPageToCanvas",
+              "target": {
+                "width": 397,
+                "pageCanvas": false,
+                "id": 58,
+                "height": 562,
+                "attached": false
+              },
+              "name": "canvas:drawImage"
+            },
+            {
+              "ms": 115,
+              "name": "renderPageToCanvas",
+              "at": 5888
+            }
+          ],
+          "ms": 115,
+          "height": 562,
+          "after": {
+            "decoded": {
+              "maxBytes": 268435456,
+              "bytes": 37788176,
+              "misses": 16,
+              "maxEntryBytes": 67108864,
+              "oversize": 0,
+              "maxEntries": 256,
+              "evictions": 15,
+              "hits": 10,
+              "entries": 1,
+              "pendingEntries": 0,
+              "negativeEntries": 0,
+              "rejected": 0,
+              "transientEntries": 0
+            },
+            "images": {
+              "maxBytes": 67108864,
+              "bytes": 0,
+              "misses": 0,
+              "maxEntryBytes": 16777216,
+              "oversize": 0,
+              "maxEntries": 256,
+              "evictions": 0,
+              "hits": 0,
+              "entries": 0,
+              "pendingEntries": 0,
+              "negativeEntries": 0,
+              "rejected": 0,
+              "transientEntries": 0
+            }
+          },
+          "before": {
+            "decoded": {
+              "maxBytes": 268435456,
+              "bytes": 0,
+              "misses": 15,
+              "maxEntryBytes": 67108864,
+              "oversize": 0,
+              "maxEntries": 256,
+              "evictions": 15,
+              "hits": 10,
+              "entries": 0,
+              "pendingEntries": 0,
+              "negativeEntries": 0,
+              "rejected": 0,
+              "transientEntries": 0
+            },
+            "images": {
+              "maxBytes": 67108864,
+              "bytes": 0,
+              "misses": 0,
+              "maxEntryBytes": 16777216,
+              "oversize": 0,
+              "maxEntries": 256,
+              "evictions": 0,
+              "hits": 0,
+              "entries": 0,
+              "pendingEntries": 0,
+              "negativeEntries": 0,
+              "rejected": 0,
+              "transientEntries": 0
+            }
+          },
+          "width": 397,
+          "kind": "cold"
+        },
+        {
+          "calls": [
+            {
+              "ms": 0,
+              "source": null,
+              "at": 6004,
+              "phase": "renderPageToCanvas",
+              "target": {
+                "width": 397,
+                "pageCanvas": false,
+                "id": 59,
+                "height": 562,
+                "attached": false
+              },
+              "name": "canvas:clearRect"
+            },
+            {
+              "ms": 4,
+              "source": {
+                "pageCanvas": false,
+                "height": 3508,
+                "attached": false,
+                "width": 2693,
+                "kind": "canvas",
+                "id": 57
+              },
+              "at": 6007,
+              "phase": "renderPageToCanvas",
+              "target": {
+                "width": 397,
+                "pageCanvas": false,
+                "id": 59,
+                "height": 562,
+                "attached": false
+              },
+              "name": "canvas:drawImage"
+            },
+            {
+              "ms": 1,
+              "source": null,
+              "at": 6011,
+              "phase": "renderPageToCanvas",
+              "target": {
+                "width": 397,
+                "pageCanvas": false,
+                "id": 58,
+                "height": 562,
+                "attached": false
+              },
+              "name": "canvas:getImageData"
+            },
+            {
+              "ms": 1,
+              "source": {
+                "pageCanvas": false,
+                "height": 562,
+                "attached": false,
+                "width": 397,
+                "kind": "canvas",
+                "id": 59
+              },
+              "at": 6012,
+              "phase": "renderPageToCanvas",
+              "target": {
+                "width": 397,
+                "pageCanvas": false,
+                "id": 58,
+                "height": 562,
+                "attached": false
+              },
+              "name": "canvas:drawImage"
+            },
+            {
+              "ms": 9,
+              "name": "renderPageToCanvas",
+              "at": 6004
+            }
+          ],
+          "ms": 9,
+          "height": 562,
+          "after": {
+            "decoded": {
+              "maxBytes": 268435456,
+              "bytes": 37788176,
+              "misses": 16,
+              "maxEntryBytes": 67108864,
+              "oversize": 0,
+              "maxEntries": 256,
+              "evictions": 15,
+              "hits": 11,
+              "entries": 1,
+              "pendingEntries": 0,
+              "negativeEntries": 0,
+              "rejected": 0,
+              "transientEntries": 0
+            },
+            "images": {
+              "maxBytes": 67108864,
+              "bytes": 0,
+              "misses": 0,
+              "maxEntryBytes": 16777216,
+              "oversize": 0,
+              "maxEntries": 256,
+              "evictions": 0,
+              "hits": 0,
+              "entries": 0,
+              "pendingEntries": 0,
+              "negativeEntries": 0,
+              "rejected": 0,
+              "transientEntries": 0
+            }
+          },
+          "before": {
+            "decoded": {
+              "maxBytes": 268435456,
+              "bytes": 37788176,
+              "misses": 16,
+              "maxEntryBytes": 67108864,
+              "oversize": 0,
+              "maxEntries": 256,
+              "evictions": 15,
+              "hits": 10,
+              "entries": 1,
+              "pendingEntries": 0,
+              "negativeEntries": 0,
+              "rejected": 0,
+              "transientEntries": 0
+            },
+            "images": {
+              "maxBytes": 67108864,
+              "bytes": 0,
+              "misses": 0,
+              "maxEntryBytes": 16777216,
+              "oversize": 0,
+              "maxEntries": 256,
+              "evictions": 0,
+              "hits": 0,
+              "entries": 0,
+              "pendingEntries": 0,
+              "negativeEntries": 0,
+              "rejected": 0,
+              "transientEntries": 0
+            }
+          },
+          "width": 397,
+          "kind": "warm"
+        }
+      ]
+    }
+  ],
+  "engineIdentity": {
+    "wasmSha256": "48adaa0f748484d12f59f4805deda0480635f915368392a87e76e95962ec0b27",
+    "baseline": "1a76570e833917d15817415a53c09ad61ab3203f"
+  },
+  "adapterCounters": {
+    "polls": 23,
+    "staleDropped": 0,
+    "reused": 0,
+    "regionalPatchJobs": 0,
+    "completed": 23,
+    "unchangedFrames": 0,
+    "notifications": 0,
+    "patchJobs": 0,
+    "wholePagePatchJobs": 0,
+    "limits": 0,
+    "replacements": 0,
+    "fullJobs": 23,
+    "errors": 0,
+    "canceled": 0
+  },
+  "sourceSha256": "6717eca43c6fdd9b0530530cf17d33b6687da0c462a433d37eb652afb5394f91",
+  "measurementComplete": true,
+  "measurements": {},
+  "gates": [],
+  "officialGateStatus": "NOT_EXECUTED",
+  "testedSourceSha256": {
+    "tests/integration/rhwp/ownership-poc/session.mjs": "fe14f40f63bae2b471c84f30dda947283f8664fc387d16c86fb7ec138b6a2c22",
+    "tests/integration/rhwp/ownership-poc/history-perf.py": "fd2175b55a9520a7cf878bd46c72b586ed5e06b5d1c31c617edb4a8d5529f55e",
+    "tests/integration/rhwp/undo_native.py": "1d0982fa18c155bbd1e7b009307253815148f841fe1116ec92d818a3ea195445",
+    "tests/integration/rhwp/native_probe.py": "8f4be7dcd57bf5f284dda7ca94d12c9bad8a8f718d543ca57b500166b50c39a0",
+    "/tmp/geul-caret-cold-warm-native.py": "7524b59842ed7f7728e80a44dcd2e6b2649443cec56279b5f66b0950b7ca8ad8"
+  },
+  "parentExit": 0,
+  "processFinished": true,
+  "elapsedSeconds": 8.96,
+  "command": [
+    "dbus-run-session",
+    "--",
+    "python3",
+    "/tmp/geul-caret-cold-warm-native.py",
+    "--app",
+    "<workspace>/src-tauri/target/debug/geul",
+    "--driver",
+    "/tmp/geul-t010-ownership-tools/bin/tauri-driver",
+    "--webkit-driver",
+    "/nix/store/p7h9r90h1vmk4wq1964nhd8vfp0kf27b-webkitgtk-2.54.1+abi=4.1/bin/WebKitWebDriver",
+    "--xvfb",
+    "/nix/store/7yz3bnmll7fy11n0xci85mbhnf6p5669-xvfb-21.1.23/bin/Xvfb",
+    "--output",
+    "<workspace>/tests/integration/rhwp/evidence/t010-caret-geometry/diagnostic-d4-cold-warm.json",
+    "--xdotool",
+    "/nix/store/kyp2r08w6hs0l1zj3cya6d2ciba9v47h-xdotool-3.20211022.1/bin/xdotool"
+  ],
+  "activationFlags": {
+    "VITE_GEUL_TEST_HOOKS": "1",
+    "GEUL_T010_DAMAGE_POC": "1",
+    "GEUL_T010_OWNERSHIP_POC": "1",
+    "GEUL_T010_SCHEDULER_POC": "1",
+    "GEUL_T010_CANDIDATE": "<isolated>/candidate-package",
+    "GEUL_T010_EVIDENCE": "<workspace>/tests/integration/rhwp/evidence/t010-caret-geometry",
+    "VITE_GEUL_TEST_RHWP_HISTORY": "1",
+    "GEUL_T010_HISTORY_SAFETY_ONLY": "1"
+  },
+  "devServerCommand": [
+    "node",
+    "node_modules/vite/bin/vite.js",
+    "--host",
+    "127.0.0.1",
+    "--config",
+    "tests/integration/rhwp/ownership-poc/vite.config.mjs"
+  ],
+  "appSha256": "48b7b8364cb4b91ae0b4c3cb3113977c15fd92aa9ca3d60f0406f331749d45c1"
+}

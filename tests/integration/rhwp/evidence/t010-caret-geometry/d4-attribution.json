@@ -1,0 +1,153 @@
+{
+  "status": "DIAGNOSTIC_COMPLETE",
+  "engineIdentity": {
+    "wasmSha256": "48adaa0f748484d12f59f4805deda0480635f915368392a87e76e95962ec0b27",
+    "baseline": "1a76570e833917d15817415a53c09ad61ab3203f"
+  },
+  "acceptance": "D4 not passed; single fixture + extra observers, not official three-arm evidence",
+  "evidence": {
+    "diagnostic-d4-render-phases.json": "251061b05fe1ddff2d53eb39ea1e90b3d337105ab7eb73ea099760ac7c228330",
+    "diagnostic-d4-cold-warm.json": "1d37efb28aaec3704ddab98e323b1ff11230482a14e0caad258b081877d50ae3"
+  },
+  "canonicalFixtureGroupStart": {
+    "n": 30,
+    "p50": 71,
+    "p95": 378,
+    "max": 447,
+    "timeouts": 0
+  },
+  "canonicalFixtureUndo": {
+    "n": 25,
+    "p50": 117,
+    "p95": 170,
+    "max": 171,
+    "timeouts": 0
+  },
+  "pollAttribution": {
+    "withUpload": {
+      "pollMs": {
+        "n": 14,
+        "p50": 133,
+        "p95": 160,
+        "max": 160
+      },
+      "unobservedInsidePollMs": {
+        "n": 14,
+        "p50": 119,
+        "p95": 151,
+        "max": 151
+      }
+    },
+    "withoutUpload": {
+      "pollMs": {
+        "n": 97,
+        "p50": 10,
+        "p95": 13,
+        "max": 22
+      },
+      "unobservedInsidePollMs": {
+        "n": 97,
+        "p50": 4,
+        "p95": 8,
+        "max": 17
+      }
+    }
+  },
+  "coldWarm": [
+    {
+      "page": 0,
+      "coldMs": 65,
+      "warmMs": 8,
+      "coldDecodedMissDelta": 1,
+      "coldDecodedEntryDelta": 1,
+      "warmDecodedHitDelta": 1,
+      "warmDecodedMissDelta": 0
+    },
+    {
+      "page": 5,
+      "coldMs": 144,
+      "warmMs": 6,
+      "coldDecodedMissDelta": 1,
+      "coldDecodedEntryDelta": 1,
+      "warmDecodedHitDelta": 1,
+      "warmDecodedMissDelta": 0
+    },
+    {
+      "page": 23,
+      "coldMs": 115,
+      "warmMs": 9,
+      "coldDecodedMissDelta": 1,
+      "coldDecodedEntryDelta": 1,
+      "warmDecodedHitDelta": 1,
+      "warmDecodedMissDelta": 0
+    }
+  ],
+  "slowestGroupSamples": [
+    {
+      "sampleIndex": 30,
+      "kind": "groupStart",
+      "keyToFrameMs": 246,
+      "inputDeliveryMs": 1,
+      "pollMs": 160,
+      "canvasCallsMs": 10,
+      "uploads": 1,
+      "beforeFirstUploadMs": 150,
+      "imageDimensions": [
+        {
+          "width": 1796,
+          "height": 2339
+        }
+      ]
+    },
+    {
+      "sampleIndex": 20,
+      "kind": "groupStart",
+      "keyToFrameMs": 247,
+      "inputDeliveryMs": 3,
+      "pollMs": 158,
+      "canvasCallsMs": 9,
+      "uploads": 1,
+      "beforeFirstUploadMs": 148,
+      "imageDimensions": [
+        {
+          "width": 1796,
+          "height": 2339
+        }
+      ]
+    },
+    {
+      "sampleIndex": 0,
+      "kind": "groupStart",
+      "keyToFrameMs": 378,
+      "inputDeliveryMs": 238,
+      "pollMs": 8,
+      "canvasCallsMs": 6,
+      "uploads": 0,
+      "beforeFirstUploadMs": null,
+      "imageDimensions": []
+    },
+    {
+      "sampleIndex": 32,
+      "kind": "groupStart",
+      "keyToFrameMs": 447,
+      "inputDeliveryMs": 137,
+      "pollMs": 133,
+      "canvasCallsMs": 14,
+      "uploads": 1,
+      "beforeFirstUploadMs": 119,
+      "imageDimensions": [
+        {
+          "width": 2693,
+          "height": 3508
+        }
+      ]
+    }
+  ],
+  "interpretation": [
+    "Cold decoded-image preparation is a material cost: controlled same-page warm renders have decoded-cache hits, no new misses/uploads and much shorter wall duration.",
+    "Exact time within Rust decode/key/tree work is not measured. Unobserved poll duration is not Rust CPU time.",
+    "A 378ms group sample has input delivery238ms and poll8ms; cold preparation alone cannot explain the latency tail.",
+    "First trace overlapped security scans/unit tests; no cross-run speedup or official latency acceptance is inferred. Cold/warm microbenchmark ran after those tools stopped."
+  ],
+  "next": "Evaluate exact-pixel asynchronous decoding or bounded preparation off the input path, preserving ownership/cancellation and all pixel oracles; separately diagnose input delivery/frame waiting. No arbitrary cache-budget increase or protocol change."
+}
