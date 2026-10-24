@@ -784,3 +784,21 @@ T010 D4 decoded-cache admission [후속 실험](../../tests/integration/rhwp/evi
 새 후보 Rust4071·browser125각각·native6종·24개 정확한 RGBA 비교는 통과했다.
 그러나 단일 추가 계측 실행에서 group p95 342→279ms는50ms를 충족하지 않고 중앙값/최대값과 Undo가 악화됐다.
 재현 가능한 성능 개선으로 승격하지 않으며48adaa 기준과 제품 비활성 상태를 유지한다. 전체 T010은 미완료다.
+
+## T010 native 검증 관문 보강·D4 병목 후속 (2026-10-24)
+
+`performance-visual-native.py`는 `--sample`이 아무 문서도 고르지 않아도 PASS가 될 수 있었다(문서0·참조0으로 exit0).
+이제 기본 네 문서 또는 알려진 fixture 하나만 받고, 선택한 문서 집합·문서당 정확한 Full RGBA 참조6개(전체24)·
+모든 필수 caret/history assertion·세션/driver/display 정리가 모두 맞을 때만 PASS다. 모르는 sample은 native 실행 전에 거부한다.
+가짜 native 도구로 main()을 돌리는 음성 시험15개와 판정 규칙 변이10개로 고정했다. 실제 native 엄격 네 문서39/39·참조24와
+단일 화학 문서12/12·참조6이 같은48adaa 후보에서 다시 통과했다.
+
+유지 후보48adaa의 첫 공식 D4 실행은 측정 완료·timeout0이지만 group-start p95 88/89/266/138ms로 네 문서 모두 FAIL,
+Undo p95 152/150/133/247ms는 PASS다. 기존 trace 재분석에서 group-start 중앙값 자체가50ms를 넘고(71~102ms),
+이미지 upload 없는 표본도 p50 67~73ms, revision 뒤 첫 RAF 대기가 p50 35ms다. decode 초과분을 모두 없애도 p95가
+213~327ms로 계산되므로 renderer decode/admission 최적화는 구현하지 않았다. e300 실험은 승격하지 않는다.
+tauri-driver로 세션만 만든 뒤 같은 native WebKitWebDriver 세션에 직접 보내는 경로로 2문서×3모드×20회=120회를 한 앱/WebProcess에서
+연속 완료했다(전송 오류0, cycle 정리120/120, 366 memory point 상한 PASS). 닫은 뒤 RSS는679~1841MiB 사이를 오가며 기존 기준에
+plateau 한도가 없어 RSS 판정은 INCONCLUSIVE다. 이전 110/11/20회 창과 합산하지 않는다.
+D2 목표 IME 순서는 기존 실제36회 모두 늦은 final이 Ctrl+Z보다 먼저 와 INCONCLUSIVE로 유지한다.
+[후속 보고서](../../tests/integration/rhwp/evidence/t010-native-gate-followup/REPORT.ko.txt). T010 전체는 미완료이며 제품 활성화와 T011은 계속 NO-GO다.

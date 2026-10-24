@@ -116,3 +116,9 @@ D3/D5의 실제 검증 범위와 공식 D4 FAIL은 새 한국어 보고서에 �
 현재 adapter 단위 검사는 기존10개를 유지한23개다. `node --experimental-strip-types --test tests/integration/rhwp/ownership-poc/test-session.mjs`로 실행한다. fake loader 검사와 실제 native/decoder 결과는 합산하지 않는다.
 
 `performance-visual-native.py --continue-after-caret-failure`는 실패 뒤 나머지 픽셀 진단을 수집한다. caret FAIL과 최종 exit1은 그대로 유지하며 이 옵션으로 D1을 PASS로 올리지 않는다.
+
+`performance-visual-native.py`의 PASS는 선택한 문서 집합 전체에만 준다. 기본은 네 문서 엄격 실행(Full RGBA 참조24개)이고,
+`--sample`은 네 fixture 이름 중 하나만 받는다(참조6개). 모르는 이름이나 빈 이름은 Xvfb/앱을 띄우기 전에 exit2로 거부한다.
+문서 목록·참조 이름/순서·verified·pixels0·필수 assertion·history gate·세션/driver/display 정리가 모두 맞아야 PASS다.
+`python3 -I -m unittest discover -s tests/integration/rhwp/ownership-poc -p 'test_*.py'`가 가짜 native 도구로 main()을 돌려
+알 수 없는 sample·빈 선택·참조 누락·미검증 참조·픽셀 차이·필수 caret 실패·정리 미완료를 거부하는지 검사한다.

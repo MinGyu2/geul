@@ -1,0 +1,19 @@
+"""Run the final negative tests against the original (7e439b47) and fixed harness; run from verified workspace root."""
+import sys,shutil,subprocess,json,pathlib,re,hashlib
+before_copy=pathlib.Path(sys.argv[1]);src=pathlib.Path('tests/integration/rhwp/ownership-poc').resolve();d=src.parent/'ownership-poc-before-tmp'
+assert not d.exists()
+sha=lambda p:hashlib.sha256(p.read_bytes()).hexdigest()
+out={}
+try:
+    shutil.copytree(src,d,ignore=shutil.ignore_patterns('__pycache__'))
+    shutil.copyfile(before_copy,d/'performance-visual-native.py')
+    assert sha(d/'performance-visual-native.py')=='7e439b47ff5f492090ab1681482112527a3a424232fc58885a862ed7ce705278'
+    for label,folder in (('before',d),('after',src)):
+        p=subprocess.run([sys.executable,'-I','-m','unittest','discover','-v','-s',str(folder),'-p','test_performance_visual_native.py'],capture_output=True,text=True)
+        res=dict(re.findall(r'^(test_\w+) \(.*?\) \.\.\. (ok|FAIL|ERROR)$',p.stderr,re.M))
+        out[label]={'harnessSha256':sha(folder/'performance-visual-native.py'),'testSha256':sha(folder/'test_performance_visual_native.py'),'exit':p.returncode,
+                    'ran':int(re.search(r'^Ran (\d+) test',p.stderr,re.M).group(1)),'summary':[l for l in p.stderr.splitlines() if l.startswith(('OK','FAILED'))][-1],
+                    'counts':{k:list(res.values()).count(k) for k in ('ok','FAIL','ERROR')},'results':res}
+finally:
+    if d.exists(): shutil.rmtree(d)
+print(json.dumps(out,indent=1))

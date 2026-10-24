@@ -1,0 +1,247 @@
+{
+ "status": "VERIFIED",
+ "defect": "performance-visual-native.py --sample filter could select zero documents and still PASS; pixelReferencesComplete was computed but not part of PASS; empty --sample silently ran all four fixtures",
+ "rootCause": [
+  "status = all(tests PASS) only; tests contained just bootstrap-clean-close and native-final-resource-cleanup when the sample matched nothing",
+  "--sample was never validated against the fixture set (falsy empty string meant no filter)",
+  "pixelReferencesComplete/document set/cleanup were recorded but not required for PASS"
+ ],
+ "harnessBeforeSha256": "7e439b47ff5f492090ab1681482112527a3a424232fc58885a862ed7ce705278",
+ "harnessAfterSha256": "ae424463eb317b9a16bf061c81b9fcc999f69b2b2ebee25db71efd2680e48643",
+ "testFileSha256": "df85428feea7c236dae69184e1dc206d6df51c07b42eb503f6fd275c8296a0db",
+ "reproductionOnOriginalHarness": {
+  "method": "main() driven with fake native tools (no real app), VERIFIED observed outputs",
+  "observations": [
+   {
+    "argv": [
+     "--sample",
+     "missing.hwp"
+    ],
+    "exit": 0,
+    "status": "PASS",
+    "documents": 0,
+    "visualReferences": 0,
+    "tests": [
+     "bootstrap-clean-close",
+     "native-final-resource-cleanup"
+    ],
+    "pixelReferencesComplete": false,
+    "xvfbStarted": true
+   },
+   {
+    "argv": [
+     "--sample",
+     ""
+    ],
+    "exit": 0,
+    "status": "PASS",
+    "documents": 4,
+    "visualReferences": 24,
+    "tests": [
+     "bootstrap-clean-close",
+     "basic-ko.hwp-warm-full-reference-exact",
+     "basic-ko.hwp-typed-10-full-reference-exact",
+     "basic-ko.hwp-typed-20-full-reference-exact",
+     "basic-ko.hwp-typed-30-full-reference-exact",
+     "basic-ko.hwp-undo-caret-visible",
+     "basic-ko.hwp-undo-full-reference-exact",
+     "basic-ko.hwp-redo-full-reference-exact",
+     "basic-ko.hwp-history-model-caret",
+     "basic-ko.hwp-original-preserved",
+     "basic-ko.hwpx-warm-full-reference-exact",
+     "basic-ko.hwpx-typed-10-full-reference-exact",
+     "basic-ko.hwpx-typed-20-full-reference-exact",
+     "basic-ko.hwpx-typed-30-full-reference-exact",
+     "basic-ko.hwpx-undo-caret-visible",
+     "basic-ko.hwpx-undo-full-reference-exact",
+     "basic-ko.hwpx-redo-full-reference-exact",
+     "basic-ko.hwpx-history-model-caret",
+     "basic-ko.hwpx-original-preserved",
+     "연구노트(화학).hwp-warm-full-reference-exact",
+     "연구노트(화학).hwp-typed-10-full-reference-exact",
+     "연구노트(화학).hwp-typed-20-full-reference-exact",
+     "연구노트(화학).hwp-typed-30-full-reference-exact",
+     "연구노트(화학).hwp-original-empty-paragraph-restored",
+     "연구노트(화학).hwp-undo-caret-visible",
+     "연구노트(화학).hwp-undo-full-reference-exact",
+     "연구노트(화학).hwp-redo-full-reference-exact",
+     "연구노트(화학).hwp-history-model-caret",
+     "연구노트(화학).hwp-original-preserved",
+     "3249937_asset_management_rules.hwpx-warm-full-reference-exact",
+     "3249937_asset_management_rules.hwpx-typed-10-full-reference-exact",
+     "3249937_asset_management_rules.hwpx-typed-20-full-reference-exact",
+     "3249937_asset_management_rules.hwpx-typed-30-full-reference-exact",
+     "3249937_asset_management_rules.hwpx-undo-caret-visible",
+     "3249937_asset_management_rules.hwpx-undo-full-reference-exact",
+     "3249937_asset_management_rules.hwpx-redo-full-reference-exact",
+     "3249937_asset_management_rules.hwpx-history-model-caret",
+     "3249937_asset_management_rules.hwpx-original-preserved",
+     "native-final-resource-cleanup"
+    ],
+    "pixelReferencesComplete": true,
+    "xvfbStarted": true
+   }
+  ]
+ },
+ "negativeTestsBeforeAfter": {
+  "before": {
+   "harnessSha256": "7e439b47ff5f492090ab1681482112527a3a424232fc58885a862ed7ce705278",
+   "testSha256": "df85428feea7c236dae69184e1dc206d6df51c07b42eb503f6fd275c8296a0db",
+   "exit": 1,
+   "ran": 15,
+   "summary": "FAILED (failures=2, errors=9)",
+   "counts": {
+    "ok": 4,
+    "FAIL": 2,
+    "ERROR": 9
+   },
+   "results": {
+    "test_failed_history_gate_fails": "ERROR",
+    "test_incomplete_cleanup_fails": "ERROR",
+    "test_mandatory_caret_failure_stays_nonzero_with_continuation": "ok",
+    "test_mandatory_caret_failure_strict": "ok",
+    "test_missing_document_fails": "ERROR",
+    "test_missing_mandatory_assertion_fails": "ERROR",
+    "test_missing_references_fail": "ERROR",
+    "test_pixel_mismatch_fails": "ERROR",
+    "test_single_document_diagnostic_pass": "ok",
+    "test_strict_four_documents_pass": "ok",
+    "test_unverified_reference_fails": "ERROR",
+    "test_empty_sample_name_rejected": "FAIL",
+    "test_empty_selection_cannot_pass": "ERROR",
+    "test_selection_is_exact_fixture_set": "ERROR",
+    "test_unknown_sample_rejected_before_native_infrastructure": "FAIL"
+   }
+  },
+  "after": {
+   "harnessSha256": "ae424463eb317b9a16bf061c81b9fcc999f69b2b2ebee25db71efd2680e48643",
+   "testSha256": "df85428feea7c236dae69184e1dc206d6df51c07b42eb503f6fd275c8296a0db",
+   "exit": 0,
+   "ran": 15,
+   "summary": "OK",
+   "counts": {
+    "ok": 15,
+    "FAIL": 0,
+    "ERROR": 0
+   },
+   "results": {
+    "test_failed_history_gate_fails": "ok",
+    "test_incomplete_cleanup_fails": "ok",
+    "test_mandatory_caret_failure_stays_nonzero_with_continuation": "ok",
+    "test_mandatory_caret_failure_strict": "ok",
+    "test_missing_document_fails": "ok",
+    "test_missing_mandatory_assertion_fails": "ok",
+    "test_missing_references_fail": "ok",
+    "test_pixel_mismatch_fails": "ok",
+    "test_single_document_diagnostic_pass": "ok",
+    "test_strict_four_documents_pass": "ok",
+    "test_unverified_reference_fails": "ok",
+    "test_empty_sample_name_rejected": "ok",
+    "test_empty_selection_cannot_pass": "ok",
+    "test_selection_is_exact_fixture_set": "ok",
+    "test_unknown_sample_rejected_before_native_infrastructure": "ok"
+   }
+  }
+ },
+ "mutationCheck": {
+  "method": "each acceptance rule disabled in a temporary sibling copy; final test file must fail",
+  "result": {
+   "status": "PASS",
+   "survivors": [],
+   "mutants": {
+    "baseline-unmutated": {
+     "exit": 0,
+     "summary": "OK",
+     "killedBy": []
+    },
+    "documents-not-required": {
+     "exit": 1,
+     "summary": "FAILED (failures=1)",
+     "killedBy": [
+      "test_missing_document_fails"
+     ]
+    },
+    "references-not-required": {
+     "exit": 1,
+     "summary": "FAILED (failures=1)",
+     "killedBy": [
+      "test_missing_references_fail"
+     ]
+    },
+    "unverified-allowed": {
+     "exit": 1,
+     "summary": "FAILED (failures=1)",
+     "killedBy": [
+      "test_unverified_reference_fails"
+     ]
+    },
+    "pixel-mismatch-allowed": {
+     "exit": 1,
+     "summary": "FAILED (failures=1)",
+     "killedBy": [
+      "test_pixel_mismatch_fails"
+     ]
+    },
+    "cleanup-not-required": {
+     "exit": 1,
+     "summary": "FAILED (failures=1)",
+     "killedBy": [
+      "test_incomplete_cleanup_fails"
+     ]
+    },
+    "history-gates-ignored": {
+     "exit": 1,
+     "summary": "FAILED (failures=1)",
+     "killedBy": [
+      "test_failed_history_gate_fails"
+     ]
+    },
+    "unknown-sample-accepted": {
+     "exit": 1,
+     "summary": "FAILED (failures=2)",
+     "killedBy": [
+      "test_empty_sample_name_rejected",
+      "test_unknown_sample_rejected_before_native_infrastructure"
+     ]
+    },
+    "empty-selection-allowed": {
+     "exit": 1,
+     "summary": "FAILED (failures=1)",
+     "killedBy": [
+      "test_empty_selection_cannot_pass"
+     ]
+    },
+    "failed-assertions-ignored": {
+     "exit": 1,
+     "summary": "FAILED (failures=1)",
+     "killedBy": [
+      "test_mandatory_caret_failure_stays_nonzero_with_continuation"
+     ]
+    },
+    "missing-assertions-ignored": {
+     "exit": 1,
+     "summary": "FAILED (failures=1)",
+     "killedBy": [
+      "test_missing_mandatory_assertion_fails"
+     ]
+    }
+   }
+  }
+ },
+ "realArgvUnknownSample": {
+  "command": "python3 tests/integration/rhwp/ownership-poc/performance-visual-native.py <real --app/--driver/--webkit-driver/--xvfb/--xdotool> --output <tmp> --sample missing.hwp",
+  "exit": 2,
+  "stderrLastLine": "performance-visual-native.py: error: unknown --sample 'missing.hwp'; expected one of ['basic-ko.hwp', 'basic-ko.hwpx', '연구노트(화학).hwp', '3249937_asset_management_rules.hwpx']",
+  "outputWritten": false,
+  "nativeInfrastructureStarted": "not started: rejection happens in argument validation before Xvfb Popen (unit test asserts Popen not called)"
+ },
+ "newAcceptance": {
+  "selection": "default exact four fixtures in order; --sample must equal one known fixture name",
+  "perDocumentReferences": 6,
+  "fullRunReferences": 24,
+  "pass": "no error; every test PASS; all required assertions present (39 strict/12 chemical/9 other single); history gates PASS; document list == selection; reference names/order exact; every reference verified and pixels==0/maxDelta==0; cleanup sessionEnded+driverStopped+displayTerminated",
+  "continuation": "--continue-after-caret-failure still records mandatory caret FAIL and exits 1"
+ },
+ "unitCommand": "python3 -I -m unittest discover -s tests/integration/rhwp/ownership-poc -p 'test_*.py'",
+ "unitObserved": "Ran 21 tests OK (15 new + 6 existing history-perf exit policy)"
+}

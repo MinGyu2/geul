@@ -1,0 +1,41 @@
+"""Integrity for T010 native-gate follow-up: run from verified workspace root."""
+from pathlib import Path
+import subprocess,json,hashlib,sys
+root=Path('<workspace>');E=root/'tests/integration/rhwp/evidence/t010-native-gate-followup'
+git=lambda *a:subprocess.check_output(['git',*a],cwd=root,text=True)
+sha=lambda p:hashlib.sha256(Path(p).read_bytes()).hexdigest()
+allowed_modified={'tests/integration/rhwp/ownership-poc/performance-visual-native.py','tests/integration/rhwp/ownership-poc/README.md','docs/architecture/rhwp-undo-redo.md'}
+allowed_new_prefix=('tests/integration/rhwp/evidence/t010-native-gate-followup/','tests/integration/rhwp/ownership-poc/test_performance_visual_native.py')
+modified=set(git('diff','--name-only','HEAD').split());untracked=set(git('ls-files','--others','--exclude-standard').split())
+staged_extra=set(git('diff','--cached','--name-only').split())-allowed_modified-{u for u in untracked}
+checks={}
+checks['onlyAuthorizedTrackedChanges']={'modified':sorted(modified),'unexpected':sorted(modified-allowed_modified)}
+checks['onlyAuthorizedNewFiles']={'count':len(untracked),'unexpected':sorted(u for u in untracked if not u.startswith(allowed_new_prefix))}
+protected=['src','src-tauri','public','planning','external','tests/integration/rhwp/evidence/t010-caret-geometry','tests/integration/rhwp/evidence/t010-decoded-admission','tests/integration/rhwp/evidence/t010-final-stabilization','.gitleaks.toml','package.json','package-lock.json']
+changed_protected=[p for p in protected if subprocess.run(['git','diff','--quiet','HEAD','--',p],cwd=root).returncode!=0]
+checks['protectedPathsUnchangedVsHEAD']={'paths':protected,'trackedFilesUnderPaths':int(subprocess.check_output(f"git ls-files -- {' '.join(protected)} | wc -l",shell=True,cwd=root,text=True)),'changed':changed_protected}
+sub=git('submodule','status').rstrip('\n').splitlines()
+checks['submodulesPinnedClean']={'status':sub,'ok':all(l.startswith(' ') for l in sub) and '1a76570e833917d15817415a53c09ad61ab3203f' in sub[0] and 'fc41918814f62645b6746ed68e71e8c2c2e85d6f' in sub[1],
+  'dirty':[l for l in git('submodule','foreach','--quiet','git status --porcelain').splitlines()]}
+eng=json.loads(Path('/tmp/geul-t010-caret-geometry/candidate-package/ENGINE.json').read_text())
+art={n:sha(Path('/tmp/geul-t010-caret-geometry/candidate-package')/n) for n in ('rhwp.js','rhwp_bg.wasm','rhwp.d.ts')}
+checks['candidateArtifacts48adaa']={'actual':art,'ok':art['rhwp_bg.wasm']=='48adaa0f748484d12f59f4805deda0480635f915368392a87e76e95962ec0b27' and all(eng['artifacts'][n]==v for n,v in art.items())}
+patch=root/'tests/integration/rhwp/evidence/t010-caret-geometry/upstream-rhwp-caret-geometry.patch'
+checks['caretPatchIdentity']={'sha256':sha(patch),'ok':sha(patch)=='f6d847cc3bbf3e6edd8446fd7e0e672c965d3483fc74ca568bec9276c40e16cb'}
+app=sha(root/'src-tauri/target/debug/geul');checks['nativeAppIdentity']={'sha256':app,'ok':app=='48b7b8364cb4b91ae0b4c3cb3113977c15fd92aa9ca3d60f0406f331749d45c1'}
+pub=[l for l in git('ls-files','public').split() if l.endswith('.wasm')]
+checks['publicWasm']={'files':{p:sha(root/p) for p in pub},'unchangedVsHEAD':'public' not in changed_protected}
+canon=root/'tests/integration/rhwp/undo_native.py';measure=[l for l in canon.read_text().splitlines() if 'MEASURE' in l][:3]
+checks['canonicalProtocolFilesUnchanged']={'files':['tests/integration/rhwp/undo_native.py','tests/integration/rhwp/ownership-poc/history-perf.py','tests/integration/rhwp/native_probe.py','tests/integration/rhwp/ownership-poc/session.mjs'],
+  'changed':[f for f in ['tests/integration/rhwp/undo_native.py','tests/integration/rhwp/ownership-poc/history-perf.py','tests/integration/rhwp/native_probe.py','tests/integration/rhwp/ownership-poc/session.mjs'] if subprocess.run(['git','diff','--quiet','HEAD','--',f],cwd=root).returncode]}
+checks['stagedEmptyOrAuthorized']={'unexpectedStaged':sorted(staged_extra)}
+checks['checkpointNotTracked']={'tracked':subprocess.run(['git','ls-files','--error-unmatch','.agent-tmp.md'],cwd=root,capture_output=True).returncode==0}
+head=git('rev-parse','HEAD').strip();checks['head']={'sha':head,'branch':git('rev-parse','--abbrev-ref','HEAD').strip(),'upstream':git('rev-list','--left-right','--count','HEAD...@{u}').strip()}
+evidence={p.name:sha(p) for p in sorted(E.iterdir()) if p.is_file() and p.name!='final-integrity.json'}
+ok=(not checks['onlyAuthorizedTrackedChanges']['unexpected'] and not checks['onlyAuthorizedNewFiles']['unexpected'] and not changed_protected and checks['submodulesPinnedClean']['ok'] and not checks['submodulesPinnedClean']['dirty']
+    and checks['candidateArtifacts48adaa']['ok'] and checks['caretPatchIdentity']['ok'] and checks['nativeAppIdentity']['ok'] and not checks['canonicalProtocolFilesUnchanged']['changed'] and not checks['stagedEmptyOrAuthorized']['unexpectedStaged'] and not checks['checkpointNotTracked']['tracked'])
+out={'status':'PASS' if ok else 'FAIL','checks':checks,'evidenceSha256':evidence}
+text=json.dumps(out,ensure_ascii=False,indent=1).replace(str(root),'<workspace>')
+if '--write' in sys.argv:(E/'final-integrity.json').write_text(text+'\n')
+print(out['status']);print(json.dumps({k:{kk:vv for kk,vv in v.items() if kk in ('ok','unexpected','changed','dirty','unexpectedStaged','tracked','modified')} for k,v in checks.items()},ensure_ascii=False))
+sys.exit(0 if ok else 1)

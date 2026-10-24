@@ -1,0 +1,98 @@
+"""T010 D4 critical-path decomposition from existing raw native traces (no new measurement). Run from verified workspace root."""
+import json,collections,math,hashlib,sys
+from pathlib import Path
+E=Path('tests/integration/rhwp/evidence')
+SRC={'renderPhases48adaa':E/'t010-caret-geometry/diagnostic-d4-render-phases.json','admissionBaseline48adaa':E/'t010-decoded-admission/native-admission.json','admissionCandidateE300':E/'t010-decoded-admission/candidate-admission.json',
+     'coldWarm48adaa':E/'t010-caret-geometry/diagnostic-d4-cold-warm.json','attribution':E/'t010-caret-geometry/d4-attribution.json','lifecycleAnalysis':E/'t010-caret-geometry/d4-lifecycle-analysis.json','admissionComparison':E/'t010-decoded-admission/comparison.json'}
+def pct(v,p):
+    v=sorted(x for x in v if x is not None);return v[max(0,math.ceil(p/100*len(v))-1)] if v else None
+def stat(v):
+    v=[x for x in v if x is not None];return {'n':len(v),'p50':pct(v,50),'p95':pct(v,95),'max':max(v) if v else None}
+def d(a,b): return None if a is None or b is None else a-b
+def stages(path):
+    data=json.loads(path.read_text());out=[]
+    for i,x in enumerate(data['rawStages']):
+        a=x['at'];calls=x['calls'];polls=[c for c in calls if c.get('name')=='pollRenderJob']
+        miss=sum(c['decodedAfter']['misses']-c['decodedBefore']['misses'] for c in polls if 'decodedAfter' in c) if any('decodedAfter' in c for c in polls) else None
+        upload=sum(c.get('name')=='canvas:putImageData' for c in calls)
+        lo,hi=a.get('input'),a.get('handlerEnd')
+        inside=[c for c in calls if lo is not None and hi is not None and lo<=c['at']<=hi and not str(c.get('name')).startswith('canvas:') and c.get('name')!='adapterRenderRequest']
+        instrumented=sum(c.get('ms') or 0 for c in inside)
+        out.append({'index':i,'kind':x['kind'],'keyToFrameMs':x['keyToFrame'],'handlerInstrumentedWasmMs':instrumented if hi is not None else None,
+          'handlerUninstrumentedMs':(hi-lo-instrumented) if hi is not None and lo is not None else None,
+          'nativeKeyToInputMs':d(a.get('input'),a.get('key')),'inputHandlerMs':d(a.get('handlerEnd'),a.get('input')),'handlerToRevisionObservedMs':d(a.get('observed'),a.get('handlerEnd')),
+          'revisionToRaf1Ms':d(a.get('raf1'),a.get('observed')),'raf1ToRaf2EndMs':d(a.get('end'),a.get('raf1')),
+          'pollWallMs':sum(c['ms'] for c in polls),'layerTreeWallMs':sum(c['ms'] for c in calls if c.get('name')=='getPageLayerTreeWithProfile'),
+          'pageInfoWallMs':sum(c['ms'] for c in calls if c.get('name')=='getPageInfo'),'canvasCallWallMs':sum(c['ms'] for c in calls if str(c.get('name')).startswith('canvas:')),
+          'imageUploads':upload,'decodedMisses':miss,'instrumentedWorkBeforeInputMs':sum((c.get('ms') or 0) for c in calls if a.get('input') is not None and c['at']<a['input']),'missingMarks':sorted(k for k,v in a.items() if v is None)})
+    return data,out
+def summarize(rows,kind):
+    g=[r for r in rows if r['kind']==kind];keys=['keyToFrameMs','nativeKeyToInputMs','inputHandlerMs','handlerInstrumentedWasmMs','handlerUninstrumentedMs','handlerToRevisionObservedMs','revisionToRaf1Ms','raf1ToRaf2EndMs','pollWallMs','layerTreeWallMs','pageInfoWallMs','canvasCallWallMs']
+    s={k:stat([r[k] for r in g]) for k in keys}
+    up=[r for r in g if r['imageUploads']];noup=[r for r in g if not r['imageUploads']]
+    s['samplesWithImageUpload']={'n':len(up),'keyToFrameMs':stat([r['keyToFrameMs'] for r in up]),'pollWallMs':stat([r['pollWallMs'] for r in up])}
+    s['samplesWithoutImageUpload']={'n':len(noup),'keyToFrameMs':stat([r['keyToFrameMs'] for r in noup]),'nativeKeyToInputMs':stat([r['nativeKeyToInputMs'] for r in noup])}
+    s['samplesOver50ms']=len([r for r in g if r['keyToFrameMs']>50])
+    s['samplesWithMissingIntervalMarks']=sum(bool(r['missingMarks']) for r in g)
+    return s
+def decode_split(path):
+    st=json.loads(path.read_text())['rawStages'];seen=collections.Counter();rows=[]
+    for si,x in enumerate(st):
+        for c in x['calls']:
+            if c.get('name')!='pollRenderJob' or 'decodedAfter' not in c:continue
+            b,a=c['decodedBefore'],c['decodedAfter'];miss=a['misses']-b['misses']
+            rows.append({'kind':x['kind'],'page':c['page'],'ms':c['ms'],'miss':miss,'rejected':a['rejected']-b['rejected'],'repeatPage':miss>0 and seen[c['page']]>0})
+            if miss:seen[c['page']]+=1
+    m=[r for r in rows if r['miss']]
+    return {'polls':len(rows),'missPolls':len(m),'firstMissForPageInWindow':stat([r['ms'] for r in m if not r['repeatPage']]),'repeatedMissForPage':stat([r['ms'] for r in m if r['repeatPage']]),
+            'noMissPolls':stat([r['ms'] for r in rows if not r['miss']]),'missKinds':dict(collections.Counter(r['kind'] for r in m)),'repeatedPages':dict(collections.Counter(str(r['page']) for r in m if r['repeatPage'])),
+            'repeatedDecodePollWallMsTotal':sum(r['ms'] for r in m if r['repeatPage'])}
+def counterfactual(rows):
+    g=[r for r in rows if r['kind']=='groupStart'];base=stat([r['keyToFrameMs'] for r in g])
+    noUploadExcess=[r['keyToFrameMs']-max(0,r['pollWallMs']-13) if r['imageUploads'] else r['keyToFrameMs'] for r in g]
+    return {'groupStartObserved':base,'withoutUploadPollExcessOver13ms':stat(noUploadExcess),
+            'method':'INFERRED arithmetic: subtract upload-poll wall time above no-upload poll p95 (13ms) from the same sample; assumes no other change, not a measurement'}
+result={'status':'DIAGNOSTIC_COMPLETE','classification':'INFERRED from VERIFIED raw traces; no new latency measurement in this file','officialD4':'NOT PASSED; unchanged contract keydown->revision RAF->2 RAF, group-start p95<=50ms, Undo p95<=1500ms',
+  'sources':{k:{'path':str(v),'sha256':hashlib.sha256(v.read_bytes()).hexdigest()} for k,v in SRC.items()},
+  'timeBasis':{'allMs':'JS performance.now wall time on the WebView main thread observed by in-page wrappers; includes WASM execution, GC, preemption and observer cost',
+     'rustCpu':'NOT MEASURED; no Rust CPU/profile counters exist in these traces','observerOverhead':'NOT ISOLATED inside a trace; cross-run comparison only (see officialComparison)'},'traces':{}}
+for key in ('renderPhases48adaa','admissionBaseline48adaa','admissionCandidateE300'):
+    data,rows=stages(SRC[key])
+    result['traces'][key]={'wasm':data.get('engineIdentity',{}).get('wasmSha256'),'groupStart':summarize(rows,'groupStart'),'undo':summarize(rows,'undo'),'counterfactual':counterfactual(rows),
+        'slowestGroupStart':sorted([r for r in rows if r['kind']=='groupStart'],key=lambda r:-r['keyToFrameMs'])[:6]}
+    if key!='renderPhases48adaa':result['traces'][key]['decodedMisses']=decode_split(SRC[key])
+cw=json.loads(SRC['coldWarm48adaa'].read_text())
+result['coldVsWarmSamePage48adaa']=json.loads(SRC['attribution'].read_text())['coldWarm']
+lc=json.loads(SRC['lifecycleAnalysis'].read_text());result['lifecycleContext']={'status':lc['status'],'cycles':lc['cycles'],'rssVerdict':lc['rssVerdict'],'note':'memory, not latency; referenced for completeness'}
+cmp_=json.loads(SRC['admissionComparison'].read_text());result['admissionComparisonContext']={'status':cmp_['status'],'officialD4Acceptance':cmp_['officialD4Acceptance']}
+def official(path):
+    data=json.loads(Path(path).read_text())
+    return {'path':str(path),'sha256':hashlib.sha256(Path(path).read_bytes()).hexdigest(),'wasm':data.get('engineIdentity',{}).get('wasmSha256'),'rendererMode':data.get('rendererMode'),
+            'status':data.get('status'),'exitReason':data.get('exitReason'),'measurementComplete':data.get('measurementComplete'),
+            'documents':{m['sample']:{k:{x:m[k][x] for x in ('n','p50','p95','max','timeouts')} for k in ('groupStart','undo')} for m in data['measurements']['perf']}}
+chem='연구노트(화학).hwp'
+runs={'officialNoObserver48adaa':official(sys.argv[1]),'officialParentFullD49e':official(E/'t010-final-stabilization/d4-full.json')}
+result['officialRuns']=runs
+spread={'officialNoObserver48adaa':runs['officialNoObserver48adaa']['documents'][chem]['groupStart'],'officialParentFullD49e(differentWasm)':runs['officialParentFullD49e']['documents'][chem]['groupStart']}
+for key in ('renderPhases48adaa','admissionBaseline48adaa','admissionCandidateE300'):spread[key+'(observer)']=result['traces'][key]['groupStart']['keyToFrameMs']
+result['chemicalGroupStartAcrossRuns']={'values':spread,'interpretation':'Same 48adaa renderer gives chemical group-start p95 266 (no observer) / 342 / 378 ms (observer runs); p50 71-102 ms. Single-run p95 differences of tens of ms are within observed run-to-run spread, so e300 342->279 is not evidence of reproducible improvement. Observer runs do not show a consistently higher p50 than the no-observer run, so observer overhead is not isolated by these data (INFERRED).'}
+t=result['traces'];rp,ab,ec=t['renderPhases48adaa']['groupStart'],t['admissionBaseline48adaa']['groupStart'],t['admissionCandidateE300']['groupStart']
+def rng(key,field='p50'):
+    return [x[key][field] for x in (rp,ab)]
+result['componentSeparation']={
+ 'coldImageDecodePreparation':{'class':'VERIFIED wall time','firstMissForPageInWindowPollMs':t['admissionBaseline48adaa']['decodedMisses']['firstMissForPageInWindow'],'coldVsWarmSamePage':result['coldVsWarmSamePage48adaa'],'note':'decode happens inside synchronous pollRenderJob on the WebView main thread; Rust CPU split not measured'},
+ 'repeatedDecodedImageWork':{'class':'VERIFIED wall time; page-level repeat INFERRED (miss for a page already missed in the window)','baseline48adaa':t['admissionBaseline48adaa']['decodedMisses']['repeatedMissForPage'],'candidateE300':t['admissionCandidateE300']['decodedMisses']['repeatedMissForPage']},
+ 'wasmLayerTreeAndRender':{'class':'VERIFIED wall time','layerTreeWallMs':{'p50':rng('layerTreeWallMs'),'p95':rng('layerTreeWallMs','p95')},'noMissPollWallMs':t['admissionBaseline48adaa']['decodedMisses']['noMissPolls']},
+ 'applicationScheduling':{'class':'VERIFIED interval minus instrumented WASM calls; content of residual UNVERIFIED (React/render/JS/GC)','handlerUninstrumentedMs':{'p50':rng('handlerUninstrumentedMs'),'p95':rng('handlerUninstrumentedMs','p95')},'handlerToRevisionObservedMs':{'p50':rng('handlerToRevisionObservedMs'),'p95':rng('handlerToRevisionObservedMs','p95')}},
+ 'nativeKeyToInputDelivery':{'class':'VERIFIED interval; cause UNVERIFIED (no instrumented page work precedes input)','p50':rng('nativeKeyToInputMs'),'p95':rng('nativeKeyToInputMs','p95'),'max':[rp['nativeKeyToInputMs']['max'],ab['nativeKeyToInputMs']['max']]},
+ 'postRevisionFrameResidual':{'class':'VERIFIED interval','revisionToRaf1Ms':{'p50':rng('revisionToRaf1Ms'),'p95':rng('revisionToRaf1Ms','p95')},'raf1ToRaf2EndMs':{'p50':rng('raf1ToRaf2EndMs'),'p95':rng('raf1ToRaf2EndMs','p95')}},
+ 'traceOrder':'renderPhases48adaa, admissionBaseline48adaa'}
+result['conclusions']=[
+ {'class':'VERIFIED','text':'In all three observer traces 22-27 of 30 chemical group-start samples exceed 50ms; group-start p50 is 71-84ms (official no-observer run p50 102ms).'},
+ {'class':'VERIFIED','text':'Samples without any image upload still have key-to-frame p50 67-73ms; the post-revision first RAF alone has p50 35-36ms.'},
+ {'class':'INFERRED','text':'Removing all upload-poll excess would leave group-start p95 213-327ms and unchanged p50, so image decode/admission work cannot by itself satisfy the 50ms gate.'},
+ {'class':'VERIFIED','text':'The 378ms p95 sample of the render-phase trace is dominated by 238ms native key-to-input delivery with no instrumented page work before input.'},
+ {'class':'VERIFIED','text':'Decode misses occur only in group-start/extend polls; baseline 6 first-in-window + 8 repeated page misses, e300 6 + 5.'},
+ {'class':'INFERRED','text':'No minimal renderer optimization is demonstrated to improve the real input critical path within the gate; 48adaa is retained and e300 stays an experiment.'},
+ {'class':'UNVERIFIED','text':'Rust CPU time, WebKit compositor time inside RAF waits, and the cause of native delivery outliers.'}]
+print(json.dumps(result,ensure_ascii=False,indent=1))
