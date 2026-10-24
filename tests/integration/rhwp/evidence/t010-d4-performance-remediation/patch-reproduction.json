@@ -1,0 +1,47 @@
+{
+  "status": "PASS",
+  "baseline": "1a76570e833917d15817415a53c09ad61ab3203f",
+  "method": "fresh exact pinned blobs + complete patch, byte comparison to executing source",
+  "files": [
+    {
+      "path": "src/renderer/mod.rs",
+      "sha256": "2edce7a1fb7f918556d812fa9d27abd82d6380ba7a7dcde77bafaf82de66ac00",
+      "matchesExecutingSource": true
+    },
+    {
+      "path": "src/renderer/surface_cache.rs",
+      "sha256": "ef2a93b56ea85b2f619b013a97239e22eff92b93fcbaebc941e0de476dba4a0f",
+      "matchesExecutingSource": true
+    },
+    {
+      "path": "src/renderer/render_job.rs",
+      "sha256": "6ebaf2d87e79d4fcb8fb94782af017052553d4e44ea9a2725822983cddeafbfd",
+      "matchesExecutingSource": true
+    },
+    {
+      "path": "src/renderer/web_canvas.rs",
+      "sha256": "aa88c236624bef20842cbc77acf04f58bf48e0accf63de76385c21d9e2c9bf09",
+      "matchesExecutingSource": true
+    },
+    {
+      "path": "src/wasm_api.rs",
+      "sha256": "9563a9ef26b5d0c22997e9beb8cb8c037e852df7ca95a8362800e7bd0cf24c5d",
+      "matchesExecutingSource": true
+    },
+    {
+      "path": "src/renderer/layout.rs",
+      "sha256": "c4e348d4b6926ce3d8a0b431a0d5b8202d717c5573e62f12725f17ef145f0eac",
+      "matchesExecutingSource": true
+    },
+    {
+      "path": "src/renderer/layout/caret_geometry_tests.rs",
+      "sha256": "2b08a10fa355bb70cd7d4bced4e106f6a2d079d7bdb51bf9835cc3f45d852220",
+      "matchesExecutingSource": true
+    },
+    {
+      "path": "src/renderer/canvas_rgba.rs",
+      "sha256": "13666e65ee0ae839514a268d899bf230b07d2686ad7987a93a2e83e74df03651",
+      "matchesExecutingSource": true
+    }
+  ]
+}

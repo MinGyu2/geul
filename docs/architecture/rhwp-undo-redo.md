@@ -931,3 +931,41 @@ RGBA 변환·ImageData·Canvas 생성/업로드·입장 시도를 포함한 나�
 cache 활동 없는 page16은 tree 약39~42ms/replay 약16ms로 나뉜다. 따라서 decode나 cache 한 가지로 모든 긴 poll을 설명하지 않는다.
 이 별도 Chrome 진단의21개 baseline/진단 Full frame은 exact RGBA이며 최종 trim 뒤 job/lease/cache가0이다. native D4 성능 비교는 아니다.
 다음 구현 경계는 이미지 준비/재생/게시 상태 전이와 tree 작성의 긴 동기 단위, layout은 dirty section typeset의 영향 범위 증명이다.
+
+## T010 D4 진단 무결성 및 정확한 grayscale 변환 실험 (2026-10-24)
+
+분석 CLI는 진단 JSON이 주장하는 해시를 기대값으로 다시 쓰지 않는다. `--expected-wasm`과 `--candidate`의 실제 WASM/JS·ENGINE manifest를
+대조하고 `--fixture`의 실제 바이트에서 source SHA를 계산한다. 현재 schema는 `probeCallDropped`와 `traceDropped`가 모두 정확한 정수0이어야
+완전하다. 누락된 과거 probe loss는 `--legacy`에서만 INCONCLUSIVE이며, 실패/불완전 분석은 각각 exit1/2다. malformed 구조는 계산 전에
+검사한다. 이전 interval union·30표본 pairing 검증을 보존했고 Python153개가 통과했다. 공식 MEASURE에는 변경이 없다.
+
+새 비공식 Chrome 경계 계측에서 page14/15/19의 codec은5~8ms, codec 종료부터 ImageData 호출까지는133~139ms, putImageData는약7ms였다.
+가운데 구간은 RGBA 변환·소량의 binding 작업을 포함하는 벽시계 구간이지 독립 Rust CPU 시간은 아니다. 이 세 이미지는8bit grayscale PNG이며,
+image0.25.10의 `Luma8 -> RGBA`가 픽셀마다 RGB32F 색 변환을 반복한다. 반면 RGB PNG page20/23의 codec은이번에도약96/73ms였다.
+앞선80/101ms 관찰과 함께 이미지 codec을 문서 전체에서5~9ms라고 일반화해서는 안 된다. page16은 이미지 없이 tree/replay가 길고,
+page21은 decoded hit 경로였다. Right가 직접 full render를 새로 만든다는 가설은 이전 호출별 관찰과 여전히 맞지 않는다.
+
+격리 패치는4096픽셀 이상 Luma8에 한해 동일한 CICP를 가진256값 ramp를 원래 `to_rgba8()`로 변환하고 결과를 픽셀별로 복사한다.
+직접 gamma를 근사하지 않으며 다른 표현·작은 이미지·색공간 설정 실패는 원래 경로로 간다. 전역 table이나 추가 이미지 cache를 유지하지 않는다.
+job 상태·lease·취소·세대·게시·캐시 예산·history·pagination 정책은 바꾸지 않는다. 변경 후보는 `ae34c12b…`이며 승인48adaa를 덮어쓰지 않았다.
+세 번의 고정 비교에서 page14/15/19 첫 poll 중앙값은186.8/178.8/183.4ms에서25.2/22.8/26.4ms로 줄었고,
+63쌍 Full RGBA와 대응 cache counter/예산은 같았다. 정확한 수치는 후속 보고서와 원본 JSON이 기준이다. 다른 페이지의 개선이나 공식 D4 PASS를
+뜻하지 않는다. 다른 프로젝트의 작업이 있는 공유 host이므로 시스템 전체 무부하를 보장한 실험도 아니다.
+
+60쪽 문서는 문단4/100/500에서 편집해도 API p50 25.6~27.5ms, section typeset24.6~26.0ms였다. `run_section`은 새 TypesetState에서
+dirty 구역 전체를 순회한다. 기존 convergence는 전체 typeset 뒤에 검사하며 보통 삽입에서는 para_offset0 경로다. paragraph index·쪽수만으로는
+deferred table/picture·footnote 예약·wrap band·column/page geometry·header/footer/numbering carry가 같은지 증명하지 못한다.
+따라서 layout 최적화는 적용하지 않았다. 다음 단위는 완료 페이지 경계에서 source/style/font/geometry 세대와 전체 flow continuation 상태의
+읽기 전용 fingerprint를 만들고 Full oracle과 이후 배치·caret을 대조하는 것이다. 문단4 앞 prefix만 재사용해서는 큰 개선도 기대하기 어렵다.
+
+[성능 보완 보고서](../../tests/integration/rhwp/evidence/t010-d4-performance-remediation/REPORT.ko.txt)에 실제 회귀·네이티브·공식 비교 결과와
+승인 여부를 기록한다. 비공식 이미지 poll 개선, 공식 D4 측정, threshold 통과는 별개다. T010 전체 미완료, D2·RSS INCONCLUSIVE,
+생산 RHWP Undo/Redo와 T011 NO-GO를 유지한다.
+
+실험 후보의 새 Rust 검사는4070 PASS/13 ignored이며 Chrome·WebKit 소유권/스케줄러, 네이티브 D1(39 assertion·24 exact RGBA·정리3/3),
+pending-image22개와 D3/D5 검사도 통과했다. 같은 설정의 공식 비교에서 승인48adaa group-start p95는87/87/292/135ms,
+변경 후보는88/84/165/133ms였다. Undo p95는150/147/158/276ms에서171/149/152/255ms였으며 모두1500ms 이하다.
+첫 후보 시도는 세 문서 뒤 네 번째 WebDriver session 생성 전송 실패로 불완전했고(화학189ms), 별도 한 차례 재시도의 첫 완전 결과를
+보존했다. 실패 원인은 UNVERIFIED이며 제품 회귀로 단정하지 않는다. 유효 비교에서도 화학 max는326→359ms라 모든 tail이 줄었다고
+말할 수 없다. 화학 p95 감소와 반복된 grayscale poll 개선은 관찰됐지만, 공유 host의 한 공식 비교로 범용 안정 개선을 확정하지 않는다.
+네 문서 모두50ms를 넘으므로 공식 D4는 FAIL이다. 실험 patch는 보존하되 승인48adaa를 교체하지 않는다.

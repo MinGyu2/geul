@@ -1,0 +1,6 @@
+{
+  "exit": 0,
+  "method": "relative directory scan from mirror root; anchored repository-relative path allowlists",
+  "output": "11:53PM INF scanned ~12228000 bytes (12.23 MB) in 2.26s\n11:53PM INF no leaks found\n",
+  "fileCount": 68
+}

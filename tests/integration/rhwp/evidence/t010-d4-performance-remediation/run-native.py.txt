@@ -1,0 +1,44 @@
+"""Frozen native verification/comparison; one result per named mode, no retries."""
+from pathlib import Path
+import subprocess,os,json,sys,time,urllib.request,socket,hashlib
+root=Path('<workspace>');out=root/'tests/integration/rhwp/evidence/t010-d4-performance-remediation';mode=sys.argv[1]
+optimized=mode!='baseline-perf';candidate=Path('/tmp/geul-d4-remediation-gray/candidate-package' if optimized else '/tmp/geul-t010-caret-geometry/candidate-package')
+gates=out/'engine-gates' if optimized else root/'tests/integration/rhwp/evidence/t010-caret-geometry'
+expected='ae34c12bd0d20aeb9f94610682bc678ec61f55722df74ea946d09782d7c87983' if optimized else '48adaa0f748484d12f59f4805deda0480635f915368392a87e76e95962ec0b27'
+P='tests/integration/rhwp/ownership-poc/'
+modes={'d1':('performance-visual-native.py','optimized-d1-native.json'), 'pending':('history-pending-native.py','optimized-pending-native.json'), 'safety':('candidate-safety.py','optimized-safety-native.json'),'baseline-perf':('history-perf.py','baseline-official-frozen-comparison.json'),'candidate-perf':('history-perf.py','optimized-official-first.json')}
+script,name=modes[mode];output=out/name
+if output.exists():raise SystemExit('preserve previous result')
+sha=lambda p:hashlib.sha256(p.read_bytes()).hexdigest()
+assert sha(candidate/'rhwp_bg.wasm')==expected
+relevant=[root/(P+n) for n in ('session.mjs','vite.config.mjs','native.py','generate.mjs',script)]+[root/n for n in ('tests/integration/rhwp/undo_native.py','tests/integration/rhwp/native_probe.py','tests/integration/rhwp/rhwp_poc.py','tests/e2e/tauri_smoke.py','tests/fixtures/rhwp/generate.mjs','src-tauri/target/debug/geul')]+[candidate/n for n in ('rhwp.js','rhwp_bg.wasm','ENGINE.json')]
+relevant += [gates/n for n in ('engine-safety-gates.json','chrome.json','webkit.json')]
+def digest():return {str(p):sha(p) for p in relevant}
+env=dict(os.environ);env.update(VITE_GEUL_TEST_HOOKS='1',GEUL_T010_OWNERSHIP_POC='1',GEUL_T010_SCHEDULER_POC='1',GEUL_T010_DAMAGE_POC='0',GEUL_T010_CANDIDATE=str(candidate),GEUL_T010_EVIDENCE=str(gates),VITE_GEUL_TEST_RHWP_HISTORY='1')
+env['GEUL_T010_HISTORY_PERF_ONLY' if mode.endswith('perf') else 'GEUL_T010_HISTORY_SAFETY_ONLY']='1'
+with socket.socket() as port:port.bind(('127.0.0.1',1420))
+serve=['node','node_modules/vite/bin/vite.js','--host','127.0.0.1','--config',P+'vite.config.mjs']
+with open('/tmp/geul-d4-remediation/vite-'+mode+'.log','w') as log:
+ process=subprocess.Popen(serve,cwd=root,env=env,stdout=log,stderr=subprocess.STDOUT)
+ try:
+  deadline=time.monotonic()+30
+  while True:
+   if process.poll() is not None:raise RuntimeError('Vite exited')
+   try:
+    with urllib.request.urlopen('http://localhost:1420',timeout=1) as r:
+     if r.status==200:break
+   except OSError:
+    if time.monotonic()>deadline:raise RuntimeError('Vite timeout')
+    time.sleep(.1)
+  cmd=['dbus-run-session','--','python3',P+script,'--app',str(root/'src-tauri/target/debug/geul'),'--driver','/tmp/geul-t010-ownership-tools/bin/tauri-driver','--webkit-driver','/nix/store/p7h9r90h1vmk4wq1964nhd8vfp0kf27b-webkitgtk-2.54.1+abi=4.1/bin/WebKitWebDriver','--xvfb','/nix/store/7yz3bnmll7fy11n0xci85mbhnf6p5669-xvfb-21.1.23/bin/Xvfb','--xdotool','/nix/store/kyp2r08w6hs0l1zj3cya6d2ciba9v47h-xdotool-3.20211022.1/bin/xdotool','--output',str(output)]
+  before=digest();start=time.monotonic()
+  with open('/tmp/geul-d4-remediation/native-'+mode+'.log','w') as native_log:p=subprocess.run(cmd,cwd=root,env=env,stdout=native_log,stderr=subprocess.STDOUT)
+  result=json.loads(output.read_text()) if output.exists() else dict(status='FAIL',error='no result')
+  result.update(parentExit=p.returncode,executedDependenciesStable=digest()==before,executedDependencySha256=before,candidateWasmSha256=expected,command=cmd,activationFlags={k:v for k,v in env.items() if k.startswith(('GEUL_T010','VITE_GEUL'))},elapsedSeconds=time.monotonic()-start)
+  output.write_text(json.dumps(result,ensure_ascii=False,indent=2).replace(str(root),'<workspace>').replace(str(Path.home()),'<home>')+'\n')
+  print(mode,p.returncode,result.get('status'),result.get('error'),result.get('executedDependenciesStable'),flush=True)
+ finally:
+  process.terminate()
+  try:process.wait(timeout=10)
+  except subprocess.TimeoutExpired:process.kill();process.wait(timeout=10)
+raise SystemExit(p.returncode)

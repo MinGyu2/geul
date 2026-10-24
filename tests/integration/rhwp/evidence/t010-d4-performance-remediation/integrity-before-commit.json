@@ -1,0 +1,260 @@
+{
+  "status": "PASS",
+  "beforeCommit": true,
+  "head": "76c07c054e1ebe246b048cf8180ed6a7168ccb91",
+  "branch": "master",
+  "upstream": "76c07c054e1ebe246b048cf8180ed6a7168ccb91",
+  "protectedTrackedChanges": "",
+  "historicalEvidenceTrackedChanges": "",
+  "submodules": {
+    "rhwp": "1a76570e833917d15817415a53c09ad61ab3203f",
+    "wordcraft": "fc41918814f62645b6746ed68e71e8c2c2e85d6f"
+  },
+  "submoduleWorkingTrees": {
+    "rhwp": "",
+    "wordcraft": ""
+  },
+  "approvedWasmUnchanged": true,
+  "newEvidenceTextOnly": [
+    {
+      "path": "tests/integration/rhwp/evidence/t010-d4-performance-remediation/REPORT.ko.txt",
+      "bytes": 11507
+    },
+    {
+      "path": "tests/integration/rhwp/evidence/t010-d4-performance-remediation/REPRODUCE.ko.txt",
+      "bytes": 3987
+    },
+    {
+      "path": "tests/integration/rhwp/evidence/t010-d4-performance-remediation/baseline-official-frozen-comparison.json",
+      "bytes": 3619753
+    },
+    {
+      "path": "tests/integration/rhwp/evidence/t010-d4-performance-remediation/baseline-old-cache-contracts.json",
+      "bytes": 3749
+    },
+    {
+      "path": "tests/integration/rhwp/evidence/t010-d4-performance-remediation/cache-python-final.json",
+      "bytes": 329
+    },
+    {
+      "path": "tests/integration/rhwp/evidence/t010-d4-performance-remediation/chrome.json",
+      "bytes": 5708
+    },
+    {
+      "path": "tests/integration/rhwp/evidence/t010-d4-performance-remediation/engine-gates/chrome.json",
+      "bytes": 520709
+    },
+    {
+      "path": "tests/integration/rhwp/evidence/t010-d4-performance-remediation/engine-gates/engine-safety-gates.json",
+      "bytes": 847
+    },
+    {
+      "path": "tests/integration/rhwp/evidence/t010-d4-performance-remediation/engine-gates/webkit.json",
+      "bytes": 520864
+    },
+    {
+      "path": "tests/integration/rhwp/evidence/t010-d4-performance-remediation/focused-regressions.json",
+      "bytes": 2612
+    },
+    {
+      "path": "tests/integration/rhwp/evidence/t010-d4-performance-remediation/gray-before-after-chrome-1.json",
+      "bytes": 248285
+    },
+    {
+      "path": "tests/integration/rhwp/evidence/t010-d4-performance-remediation/gray-before-after-chrome-2.json",
+      "bytes": 248113
+    },
+    {
+      "path": "tests/integration/rhwp/evidence/t010-d4-performance-remediation/gray-before-after-chrome-3.json",
+      "bytes": 247908
+    },
+    {
+      "path": "tests/integration/rhwp/evidence/t010-d4-performance-remediation/gray-build.json",
+      "bytes": 1905
+    },
+    {
+      "path": "tests/integration/rhwp/evidence/t010-d4-performance-remediation/gray-comparison-execution.json",
+      "bytes": 2140
+    },
+    {
+      "path": "tests/integration/rhwp/evidence/t010-d4-performance-remediation/gray-lut-incremental.patch",
+      "bytes": 3547
+    },
+    {
+      "path": "tests/integration/rhwp/evidence/t010-d4-performance-remediation/gray-performance-summary.json",
+      "bytes": 32701
+    },
+    {
+      "path": "tests/integration/rhwp/evidence/t010-d4-performance-remediation/gray-quiet-comparison-1.json",
+      "bytes": 248070
+    },
+    {
+      "path": "tests/integration/rhwp/evidence/t010-d4-performance-remediation/gray-quiet-comparison-2.json",
+      "bytes": 248148
+    },
+    {
+      "path": "tests/integration/rhwp/evidence/t010-d4-performance-remediation/gray-quiet-comparison-3.json",
+      "bytes": 248295
+    },
+    {
+      "path": "tests/integration/rhwp/evidence/t010-d4-performance-remediation/gray-resource-job-correlation.json",
+      "bytes": 255977
+    },
+    {
+      "path": "tests/integration/rhwp/evidence/t010-d4-performance-remediation/identities.json",
+      "bytes": 1023
+    },
+    {
+      "path": "tests/integration/rhwp/evidence/t010-d4-performance-remediation/image-boundaries-chrome.json",
+      "bytes": 209008
+    },
+    {
+      "path": "tests/integration/rhwp/evidence/t010-d4-performance-remediation/image-boundary-analysis.json",
+      "bytes": 10427
+    },
+    {
+      "path": "tests/integration/rhwp/evidence/t010-d4-performance-remediation/image-preparation-primary.mjs.txt",
+      "bytes": 4757
+    },
+    {
+      "path": "tests/integration/rhwp/evidence/t010-d4-performance-remediation/image-resource-identities.json",
+      "bytes": 2078
+    },
+    {
+      "path": "tests/integration/rhwp/evidence/t010-d4-performance-remediation/native-safety-preflight-failure.json",
+      "bytes": 484
+    },
+    {
+      "path": "tests/integration/rhwp/evidence/t010-d4-performance-remediation/obsolete-contract-baseline-comparison.json",
+      "bytes": 1312
+    },
+    {
+      "path": "tests/integration/rhwp/evidence/t010-d4-performance-remediation/official-comparison-execution.json",
+      "bytes": 1072
+    },
+    {
+      "path": "tests/integration/rhwp/evidence/t010-d4-performance-remediation/official-comparison.json",
+      "bytes": 4681
+    },
+    {
+      "path": "tests/integration/rhwp/evidence/t010-d4-performance-remediation/official-retry-driver-log.json",
+      "bytes": 272
+    },
+    {
+      "path": "tests/integration/rhwp/evidence/t010-d4-performance-remediation/official-transport-failure-analysis.json",
+      "bytes": 698
+    },
+    {
+      "path": "tests/integration/rhwp/evidence/t010-d4-performance-remediation/optimized-d1-native.json",
+      "bytes": 35021
+    },
+    {
+      "path": "tests/integration/rhwp/evidence/t010-d4-performance-remediation/optimized-official-first.json",
+      "bytes": 2205241
+    },
+    {
+      "path": "tests/integration/rhwp/evidence/t010-d4-performance-remediation/optimized-official-retry.json",
+      "bytes": 3618352
+    },
+    {
+      "path": "tests/integration/rhwp/evidence/t010-d4-performance-remediation/optimized-pending-native.json",
+      "bytes": 19896
+    },
+    {
+      "path": "tests/integration/rhwp/evidence/t010-d4-performance-remediation/optimized-safety-native.json",
+      "bytes": 16060
+    },
+    {
+      "path": "tests/integration/rhwp/evidence/t010-d4-performance-remediation/p0-current-verified.json",
+      "bytes": 273801
+    },
+    {
+      "path": "tests/integration/rhwp/evidence/t010-d4-performance-remediation/p0-original-defects.json",
+      "bytes": 635
+    },
+    {
+      "path": "tests/integration/rhwp/evidence/t010-d4-performance-remediation/patch-reproduction.json",
+      "bytes": 1615
+    },
+    {
+      "path": "tests/integration/rhwp/evidence/t010-d4-performance-remediation/perf-driver-log.py.txt",
+      "bytes": 312
+    },
+    {
+      "path": "tests/integration/rhwp/evidence/t010-d4-performance-remediation/primary-probe-provenance.json",
+      "bytes": 290
+    },
+    {
+      "path": "tests/integration/rhwp/evidence/t010-d4-performance-remediation/quiet-comparison-execution.json",
+      "bytes": 523
+    },
+    {
+      "path": "tests/integration/rhwp/evidence/t010-d4-performance-remediation/rgba-unit-rust-bfd.json",
+      "bytes": 1830
+    },
+    {
+      "path": "tests/integration/rhwp/evidence/t010-d4-performance-remediation/rgba-unit-rust.json",
+      "bytes": 2306
+    },
+    {
+      "path": "tests/integration/rhwp/evidence/t010-d4-performance-remediation/run-native-final.py.txt",
+      "bytes": 4382
+    },
+    {
+      "path": "tests/integration/rhwp/evidence/t010-d4-performance-remediation/run-native-retry.py.txt",
+      "bytes": 4620
+    },
+    {
+      "path": "tests/integration/rhwp/evidence/t010-d4-performance-remediation/run-native.py.txt",
+      "bytes": 4322
+    },
+    {
+      "path": "tests/integration/rhwp/evidence/t010-d4-performance-remediation/rust-cache-contracts.json",
+      "bytes": 3749
+    },
+    {
+      "path": "tests/integration/rhwp/evidence/t010-d4-performance-remediation/rust-library.json",
+      "bytes": 14398
+    },
+    {
+      "path": "tests/integration/rhwp/evidence/t010-d4-performance-remediation/rust-ownership-contracts.json",
+      "bytes": 3361
+    },
+    {
+      "path": "tests/integration/rhwp/evidence/t010-d4-performance-remediation/rust-scheduler-contracts.json",
+      "bytes": 2861
+    },
+    {
+      "path": "tests/integration/rhwp/evidence/t010-d4-performance-remediation/security-initial.json",
+      "bytes": 881
+    },
+    {
+      "path": "tests/integration/rhwp/evidence/t010-d4-performance-remediation/security-pre-final.json",
+      "bytes": 368
+    },
+    {
+      "path": "tests/integration/rhwp/evidence/t010-d4-performance-remediation/security-public-source-review.json",
+      "bytes": 363
+    },
+    {
+      "path": "tests/integration/rhwp/evidence/t010-d4-performance-remediation/security-relative-scan.json",
+      "bytes": 238
+    },
+    {
+      "path": "tests/integration/rhwp/evidence/t010-d4-performance-remediation/shared-host-timing-limitations.json",
+      "bytes": 512
+    },
+    {
+      "path": "tests/integration/rhwp/evidence/t010-d4-performance-remediation/typeset-decision.json",
+      "bytes": 2151
+    },
+    {
+      "path": "tests/integration/rhwp/evidence/t010-d4-performance-remediation/typeset-prefix-hypothesis.json",
+      "bytes": 79974
+    },
+    {
+      "path": "tests/integration/rhwp/evidence/t010-d4-performance-remediation/upstream-rhwp-exact-gray-lut.patch",
+      "bytes": 116794
+    }
+  ]
+}

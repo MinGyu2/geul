@@ -1,0 +1,14 @@
+{
+  "command": [
+    "python3",
+    "-m",
+    "unittest",
+    "discover",
+    "-s",
+    "tests/integration/rhwp/cache-concurrency",
+    "-p",
+    "test_*.py"
+  ],
+  "exit": 0,
+  "output": "................................\n----------------------------------------------------------------------\nRan 32 tests in 3.207s\n\nOK\n"
+}

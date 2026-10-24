@@ -1,0 +1,1005 @@
+{
+  "status": "PASS",
+  "scope": "72 staged files before adding final review/security receipts; all full content UTF8 scanned, JSON parsed, index/worktree bytes equal; source/test diffs reviewed; diagnostic FAIL records intentionally retained",
+  "stagedFiles": [
+    {
+      "path": ".gitleaks.toml",
+      "bytes": 10607,
+      "sha256": "5d6ce23a07f43f5e4cd71b759a52ab6bc3d4a7afb9a7f82ef937fb41a80a36eb"
+    },
+    {
+      "path": "docs/architecture/rhwp-undo-redo.md",
+      "bytes": 105671,
+      "sha256": "e3c7d58c7e5aa4233c211d194dd7ff369cee3695140389ff4157cb946f85e9ab"
+    },
+    {
+      "path": "tests/integration/rhwp/cache-concurrency/prepare.py",
+      "bytes": 7823,
+      "sha256": "1c82814b093cff79afcc2a843a691a0a80edda9ebd13709d2c5cfa5f19e9be54"
+    },
+    {
+      "path": "tests/integration/rhwp/cache-concurrency/test_prepare.py",
+      "bytes": 2297,
+      "sha256": "8d07e3a5e80a55c88f6a1f5be8435c486fef092a323ccf0040fa9dbf40992dbc"
+    },
+    {
+      "path": "tests/integration/rhwp/evidence/t010-d4-performance-remediation/REPORT.ko.txt",
+      "bytes": 16180,
+      "sha256": "79c26f081df7fca5810d87c854d8af94ec2d0b505087d7bd346c7f690c81c28d"
+    },
+    {
+      "path": "tests/integration/rhwp/evidence/t010-d4-performance-remediation/REPRODUCE.ko.txt",
+      "bytes": 4574,
+      "sha256": "68a122573a24f550746a4deef0821730f16501dc44923574046be72b748f8902"
+    },
+    {
+      "path": "tests/integration/rhwp/evidence/t010-d4-performance-remediation/baseline-official-frozen-comparison.json",
+      "bytes": 3619753,
+      "sha256": "c5c85470d84314aba4a153810972eb991c1e8c6947bb483da887e75c77b9d669",
+      "jsonType": "dict",
+      "topLevelKeys": [
+        "status",
+        "protocol",
+        "rendererMode",
+        "engine",
+        "historyEnabled",
+        "keyDelivery",
+        "environment",
+        "engineIdentity",
+        "sourceSha256",
+        "measurements",
+        "gates",
+        "measurementComplete",
+        "exitReason",
+        "failedGateCount",
+        "parentExit",
+        "executedDependenciesStable",
+        "executedDependencySha256",
+        "candidateWasmSha256",
+        "command",
+        "activationFlags",
+        "elapsedSeconds"
+      ],
+      "status": "FAIL"
+    },
+    {
+      "path": "tests/integration/rhwp/evidence/t010-d4-performance-remediation/baseline-old-cache-contracts.json",
+      "bytes": 3749,
+      "sha256": "dc1843e84b06d07a4f3e0ef9cc4074e2fb7f3e4790d1c1ba7126238c1ad68a6f",
+      "jsonType": "dict",
+      "topLevelKeys": [
+        "sourceSha256",
+        "contractSha256",
+        "schema",
+        "patchSha256",
+        "compiler",
+        "checks",
+        "status"
+      ],
+      "status": "FAIL"
+    },
+    {
+      "path": "tests/integration/rhwp/evidence/t010-d4-performance-remediation/cache-python-final.json",
+      "bytes": 329,
+      "sha256": "c160ffcf1636dff8d12a715ba02d87bf3d3acc8c5c6c9cb0077d604e2da5dff3",
+      "jsonType": "dict",
+      "topLevelKeys": [
+        "command",
+        "exit",
+        "output"
+      ],
+      "status": null
+    },
+    {
+      "path": "tests/integration/rhwp/evidence/t010-d4-performance-remediation/chrome.json",
+      "bytes": 5708,
+      "sha256": "b1bee3429177bf8532e16fbc799e10031292764d1767a9b84f111b088c426e97",
+      "jsonType": "dict",
+      "topLevelKeys": [
+        "schema",
+        "browser",
+        "status",
+        "identities",
+        "testSourcesSha256",
+        "version",
+        "run"
+      ],
+      "status": "FAIL"
+    },
+    {
+      "path": "tests/integration/rhwp/evidence/t010-d4-performance-remediation/engine-gates/chrome.json",
+      "bytes": 520709,
+      "sha256": "1a3c2fc108bb099c216df5ffe02c5ce625b6b9bbe92677bd013aeb7deece6781",
+      "jsonType": "dict",
+      "topLevelKeys": [
+        "schema",
+        "browser",
+        "status",
+        "identities",
+        "testSourcesSha256",
+        "version",
+        "run"
+      ],
+      "status": "PASS"
+    },
+    {
+      "path": "tests/integration/rhwp/evidence/t010-d4-performance-remediation/engine-gates/engine-safety-gates.json",
+      "bytes": 847,
+      "sha256": "df390ee089c9ce4984c88fcbbff6bbcb997b87437fd2cbbac80a3fd646e8098e",
+      "jsonType": "dict",
+      "topLevelKeys": [
+        "status",
+        "scope",
+        "wasmSha256",
+        "browsers",
+        "libraryCounts"
+      ],
+      "status": "PASS"
+    },
+    {
+      "path": "tests/integration/rhwp/evidence/t010-d4-performance-remediation/engine-gates/webkit.json",
+      "bytes": 520864,
+      "sha256": "73185b9586ebe3b723f55eaa8233e045be4dca002c84d2e06710edd599e21dd0",
+      "jsonType": "dict",
+      "topLevelKeys": [
+        "schema",
+        "browser",
+        "status",
+        "identities",
+        "testSourcesSha256",
+        "version",
+        "run"
+      ],
+      "status": "PASS"
+    },
+    {
+      "path": "tests/integration/rhwp/evidence/t010-d4-performance-remediation/focused-regressions.json",
+      "bytes": 2612,
+      "sha256": "400b34a7ea3b6714c820566666ede37857375d8eef17ee836a0a2bfaf62bce8f",
+      "jsonType": "dict",
+      "topLevelKeys": [
+        "python",
+        "node-adapter",
+        "cache-python",
+        "security-tests"
+      ],
+      "status": null
+    },
+    {
+      "path": "tests/integration/rhwp/evidence/t010-d4-performance-remediation/gray-before-after-chrome-1.json",
+      "bytes": 248285,
+      "sha256": "f246d4fcf2daf97b0b3abe54b13e7cd1829cc576122a4f816600d75e1c52a5fb",
+      "jsonType": "dict",
+      "topLevelKeys": [
+        "status",
+        "official",
+        "scope",
+        "rows",
+        "cleanup",
+        "browserLogTail",
+        "parentExit",
+        "command",
+        "identities",
+        "executedDependenciesStable",
+        "browserVersion"
+      ],
+      "status": "DIAGNOSTIC_COMPLETE"
+    },
+    {
+      "path": "tests/integration/rhwp/evidence/t010-d4-performance-remediation/gray-before-after-chrome-2.json",
+      "bytes": 248113,
+      "sha256": "53d9731fbc5b868f5183d2115aafc4538ab8fb1c50193d6351f329722b7f03b7",
+      "jsonType": "dict",
+      "topLevelKeys": [
+        "status",
+        "official",
+        "scope",
+        "rows",
+        "cleanup",
+        "browserLogTail",
+        "parentExit",
+        "command",
+        "identities",
+        "executedDependenciesStable",
+        "browserVersion"
+      ],
+      "status": "DIAGNOSTIC_COMPLETE"
+    },
+    {
+      "path": "tests/integration/rhwp/evidence/t010-d4-performance-remediation/gray-before-after-chrome-3.json",
+      "bytes": 247908,
+      "sha256": "6bc93a2c52067549bdce42916e1505c498f384a5b0033728de13f37ec2e2567e",
+      "jsonType": "dict",
+      "topLevelKeys": [
+        "status",
+        "official",
+        "scope",
+        "rows",
+        "cleanup",
+        "browserLogTail",
+        "parentExit",
+        "command",
+        "identities",
+        "executedDependenciesStable",
+        "browserVersion"
+      ],
+      "status": "DIAGNOSTIC_COMPLETE"
+    },
+    {
+      "path": "tests/integration/rhwp/evidence/t010-d4-performance-remediation/gray-build.json",
+      "bytes": 1905,
+      "sha256": "2088e2b9ab2cc4d6809603a52570c681f05d2d8d26abdc2913c2925275acfe46",
+      "jsonType": "dict",
+      "topLevelKeys": [
+        "baseline",
+        "parentWasmSha256",
+        "buildStatus",
+        "sourceStableDuringBuild",
+        "rendererJobAPI",
+        "schedulerAPI",
+        "stabilizationAPI",
+        "explicitPatchFullFallbackAPI",
+        "fractionalPatchFullFallbackAPI",
+        "caretGeometryAPI",
+        "sourceSha256",
+        "compiler",
+        "cargo",
+        "wasmPack",
+        "wasmBindgen",
+        "cargoLockSha256",
+        "profile",
+        "wasmOpt",
+        "artifacts",
+        "experiment",
+        "elapsedSeconds"
+      ],
+      "status": null
+    },
+    {
+      "path": "tests/integration/rhwp/evidence/t010-d4-performance-remediation/gray-comparison-execution.json",
+      "bytes": 2140,
+      "sha256": "224d29d32967efa8d7770a55f855c1027dc16fa47bba5543dcaa835bb764a7ab",
+      "jsonType": "dict",
+      "topLevelKeys": [
+        "policy",
+        "runs"
+      ],
+      "status": null
+    },
+    {
+      "path": "tests/integration/rhwp/evidence/t010-d4-performance-remediation/gray-lut-incremental.patch",
+      "bytes": 3547,
+      "sha256": "d36986ac8ce266e61b2953ac3e188418cb760dd1987e95a3f757b2cb6a8a52a0"
+    },
+    {
+      "path": "tests/integration/rhwp/evidence/t010-d4-performance-remediation/gray-performance-summary.json",
+      "bytes": 32701,
+      "sha256": "774ba6b3c3ec711d65cdde2ea6a9a19b51c380b2e60bebab39f15c1b0be32a13",
+      "jsonType": "dict",
+      "topLevelKeys": [
+        "scope",
+        "summary",
+        "all63Exact",
+        "cacheBudgetsAdmissionAndCounterSequenceIdentical",
+        "rows"
+      ],
+      "status": null
+    },
+    {
+      "path": "tests/integration/rhwp/evidence/t010-d4-performance-remediation/gray-quiet-comparison-1.json",
+      "bytes": 248070,
+      "sha256": "ffe27c2a386401a32d76b32fd0112ffd49cbc8faf064763201080337144ce46e",
+      "jsonType": "dict",
+      "topLevelKeys": [
+        "status",
+        "official",
+        "scope",
+        "rows",
+        "cleanup",
+        "browserLogTail",
+        "parentExit",
+        "command",
+        "identities",
+        "executedDependenciesStable",
+        "browserVersion"
+      ],
+      "status": "DIAGNOSTIC_COMPLETE"
+    },
+    {
+      "path": "tests/integration/rhwp/evidence/t010-d4-performance-remediation/gray-quiet-comparison-2.json",
+      "bytes": 248148,
+      "sha256": "9e9e25b56921ba29f1f1674df6712eaf78f21c5037a7cbf4009af800379c2849",
+      "jsonType": "dict",
+      "topLevelKeys": [
+        "status",
+        "official",
+        "scope",
+        "rows",
+        "cleanup",
+        "browserLogTail",
+        "parentExit",
+        "command",
+        "identities",
+        "executedDependenciesStable",
+        "browserVersion"
+      ],
+      "status": "DIAGNOSTIC_COMPLETE"
+    },
+    {
+      "path": "tests/integration/rhwp/evidence/t010-d4-performance-remediation/gray-quiet-comparison-3.json",
+      "bytes": 248295,
+      "sha256": "0b15e0f7586844d863ebddde3c24fc8fe0797e2c154d284f897851c1cae5af05",
+      "jsonType": "dict",
+      "topLevelKeys": [
+        "status",
+        "official",
+        "scope",
+        "rows",
+        "cleanup",
+        "browserLogTail",
+        "parentExit",
+        "command",
+        "identities",
+        "executedDependenciesStable",
+        "browserVersion"
+      ],
+      "status": "DIAGNOSTIC_COMPLETE"
+    },
+    {
+      "path": "tests/integration/rhwp/evidence/t010-d4-performance-remediation/gray-resource-job-correlation.json",
+      "bytes": 255977,
+      "sha256": "9d3166da7e9132e2e49465b02387d6516a930038242e729672794f8bb16a8e53",
+      "jsonType": "dict",
+      "topLevelKeys": [
+        "status",
+        "official",
+        "scope",
+        "rows",
+        "cleanup",
+        "browserLogTail",
+        "parentExit",
+        "command",
+        "identities",
+        "executedDependenciesStable",
+        "browserVersion"
+      ],
+      "status": "DIAGNOSTIC_COMPLETE"
+    },
+    {
+      "path": "tests/integration/rhwp/evidence/t010-d4-performance-remediation/identities.json",
+      "bytes": 2209,
+      "sha256": "5ad847adabe13278b14c621068592d15b188c61e1f58acc311f1676d9b7104cd",
+      "jsonType": "dict",
+      "topLevelKeys": [
+        "start",
+        "approvedWasm",
+        "approvedCaretPatch",
+        "experimentalWasm",
+        "completePatch",
+        "incrementalPatch",
+        "app",
+        "fixtures",
+        "nativeCanonicalFixtures"
+      ],
+      "status": null
+    },
+    {
+      "path": "tests/integration/rhwp/evidence/t010-d4-performance-remediation/image-boundaries-chrome.json",
+      "bytes": 209008,
+      "sha256": "e4ec0a4f305ad301876a7028f45111da6bb638a79d062b781b044e37d59a89a7",
+      "jsonType": "dict",
+      "topLevelKeys": [
+        "status",
+        "official",
+        "scope",
+        "rows",
+        "cleanup",
+        "browserLogTail",
+        "parentExit",
+        "command",
+        "identities",
+        "executedDependenciesStable",
+        "browserVersion"
+      ],
+      "status": "DIAGNOSTIC_COMPLETE"
+    },
+    {
+      "path": "tests/integration/rhwp/evidence/t010-d4-performance-remediation/image-boundary-analysis.json",
+      "bytes": 10427,
+      "sha256": "3efb73ab37bb654e3a2a06e0b29795f6bfcd2709025d8c1c5108198d58a4aece",
+      "jsonType": "dict",
+      "topLevelKeys": [
+        "rows",
+        "rgbaInterval",
+        "allExact"
+      ],
+      "status": null
+    },
+    {
+      "path": "tests/integration/rhwp/evidence/t010-d4-performance-remediation/image-preparation-primary.mjs.txt",
+      "bytes": 4757,
+      "sha256": "7e40e9f76a53811fb52330d814f26381c1cef747b13a39a46ab825151b96ef43"
+    },
+    {
+      "path": "tests/integration/rhwp/evidence/t010-d4-performance-remediation/image-resource-identities.json",
+      "bytes": 2078,
+      "sha256": "e0e35233ed7aa16cf4b92384d5af13f9357d7d1c3fb4c0d0ed906751faaffe6b",
+      "jsonType": "list",
+      "topLevelKeys": [],
+      "status": null
+    },
+    {
+      "path": "tests/integration/rhwp/evidence/t010-d4-performance-remediation/integrity-before-commit.json",
+      "bytes": 9074,
+      "sha256": "b5f5301aa13962776bbcf82ebe20a396330c64499dff9faddde9b705c80f0be9",
+      "jsonType": "dict",
+      "topLevelKeys": [
+        "status",
+        "beforeCommit",
+        "head",
+        "branch",
+        "upstream",
+        "protectedTrackedChanges",
+        "historicalEvidenceTrackedChanges",
+        "submodules",
+        "submoduleWorkingTrees",
+        "approvedWasmUnchanged",
+        "newEvidenceTextOnly"
+      ],
+      "status": "PASS"
+    },
+    {
+      "path": "tests/integration/rhwp/evidence/t010-d4-performance-remediation/native-safety-preflight-failure.json",
+      "bytes": 484,
+      "sha256": "e2d6f7f5cfa7f2b7fe3d796671d8e76fd418c309eb20980c876156cdd8a46f6c",
+      "jsonType": "dict",
+      "topLevelKeys": [
+        "status",
+        "mode",
+        "exit",
+        "error",
+        "observations",
+        "productCorrectness",
+        "retryPolicy"
+      ],
+      "status": "FAIL before native launch"
+    },
+    {
+      "path": "tests/integration/rhwp/evidence/t010-d4-performance-remediation/obsolete-contract-baseline-comparison.json",
+      "bytes": 1312,
+      "sha256": "2b8e29b35138696f8eb20e7bf0c6fac315b2c1568f5e0c0a790f6e281dd6750d",
+      "jsonType": "dict",
+      "topLevelKeys": [
+        "verifiedByteIdenticalSource",
+        "sameFailuresOnApprovedBaseline",
+        "results",
+        "currentContracts",
+        "interpretation"
+      ],
+      "status": null
+    },
+    {
+      "path": "tests/integration/rhwp/evidence/t010-d4-performance-remediation/official-comparison-execution.json",
+      "bytes": 1072,
+      "sha256": "96e8036ec53c8ddcdda9a040cfe7c33112d26137efd6150dfc9fe3872ef69e2f",
+      "jsonType": "dict",
+      "topLevelKeys": [
+        "policy",
+        "approvedHistoricalGroupP95",
+        "executions",
+        "retryDecision"
+      ],
+      "status": null
+    },
+    {
+      "path": "tests/integration/rhwp/evidence/t010-d4-performance-remediation/official-comparison.json",
+      "bytes": 4681,
+      "sha256": "c1895a657a5a6792e6587b11079463a3cca54faa53983443b6b81523272469c5",
+      "jsonType": "dict",
+      "topLevelKeys": [
+        "status",
+        "protocol",
+        "rows",
+        "sharedExecutingDependenciesIdentical",
+        "configuration",
+        "limitation",
+        "promotion",
+        "initialCandidateAttempt",
+        "firstValidCandidateAttempt"
+      ],
+      "status": "VALID OFFICIAL COMPARISON; D4 FAIL"
+    },
+    {
+      "path": "tests/integration/rhwp/evidence/t010-d4-performance-remediation/official-retry-driver-log.json",
+      "bytes": 272,
+      "sha256": "b0906fc9c6b4db432c25e20facd33dd772f871ceeb01d906d14afcdbabbb0f68",
+      "jsonType": "dict",
+      "topLevelKeys": [
+        "captured",
+        "bytes",
+        "sha256",
+        "output",
+        "note"
+      ],
+      "status": null
+    },
+    {
+      "path": "tests/integration/rhwp/evidence/t010-d4-performance-remediation/official-transport-failure-analysis.json",
+      "bytes": 698,
+      "sha256": "6e1479bb49f42dec8e815829505a2b6060a6362e08ba514b1d14e6247b059039",
+      "jsonType": "dict",
+      "topLevelKeys": [
+        "status",
+        "attempt",
+        "completedDocuments",
+        "failure",
+        "postCleanup",
+        "productRegression",
+        "retry"
+      ],
+      "status": "VERIFIED harness transport failure; root cause UNVERIFIED"
+    },
+    {
+      "path": "tests/integration/rhwp/evidence/t010-d4-performance-remediation/optimized-d1-native.json",
+      "bytes": 35021,
+      "sha256": "0bee34da45470960ee5e9e22e1374145854c515c573409c83b7112b2bc8746ca",
+      "jsonType": "dict",
+      "topLevelKeys": [
+        "status",
+        "tests",
+        "scope",
+        "selectedSamples",
+        "diagnosticContinuation",
+        "cleanup",
+        "observerAliasDiagnostic",
+        "visualReferences",
+        "documents",
+        "engineIdentity",
+        "adapterCounters",
+        "lastObserved",
+        "existingSaveAssertions",
+        "historyGates",
+        "historyChecks",
+        "failures",
+        "expectedSamples",
+        "expectedAssertionCount",
+        "expectedReferenceCount",
+        "verifiedExactReferenceCount",
+        "historyGateContract",
+        "measurementComplete",
+        "pixelReferencesComplete",
+        "parentExit",
+        "executedDependenciesStable",
+        "executedDependencySha256",
+        "candidateWasmSha256",
+        "command",
+        "activationFlags",
+        "elapsedSeconds"
+      ],
+      "status": "PASS"
+    },
+    {
+      "path": "tests/integration/rhwp/evidence/t010-d4-performance-remediation/optimized-official-first.json",
+      "bytes": 2205241,
+      "sha256": "25748abaf0618d0490f1db51f21c29080ba2eb5e2f5854430c7725875c84082a",
+      "jsonType": "dict",
+      "topLevelKeys": [
+        "status",
+        "protocol",
+        "rendererMode",
+        "engine",
+        "historyEnabled",
+        "keyDelivery",
+        "environment",
+        "engineIdentity",
+        "sourceSha256",
+        "measurements",
+        "gates",
+        "error",
+        "measurementComplete",
+        "exitReason",
+        "failedGateCount",
+        "parentExit",
+        "executedDependenciesStable",
+        "executedDependencySha256",
+        "candidateWasmSha256",
+        "command",
+        "activationFlags",
+        "elapsedSeconds"
+      ],
+      "status": "FAIL"
+    },
+    {
+      "path": "tests/integration/rhwp/evidence/t010-d4-performance-remediation/optimized-official-retry.json",
+      "bytes": 3618352,
+      "sha256": "2d6c5f1be28fc98fc6a848f9373d1013c430dbf343655db26fef53b91a906dd0",
+      "jsonType": "dict",
+      "topLevelKeys": [
+        "status",
+        "protocol",
+        "rendererMode",
+        "engine",
+        "historyEnabled",
+        "keyDelivery",
+        "environment",
+        "engineIdentity",
+        "sourceSha256",
+        "measurements",
+        "gates",
+        "measurementComplete",
+        "exitReason",
+        "failedGateCount",
+        "parentExit",
+        "executedDependenciesStable",
+        "executedDependencySha256",
+        "candidateWasmSha256",
+        "command",
+        "activationFlags",
+        "elapsedSeconds"
+      ],
+      "status": "FAIL"
+    },
+    {
+      "path": "tests/integration/rhwp/evidence/t010-d4-performance-remediation/optimized-pending-native.json",
+      "bytes": 19896,
+      "sha256": "50103978532ed90b5f9e3f5ea642c83536cc217d96ec006c213a05252a68a98d",
+      "jsonType": "dict",
+      "topLevelKeys": [
+        "status",
+        "tests",
+        "scope",
+        "observerAliasDiagnostic",
+        "visualReferences",
+        "engineIdentity",
+        "lastObserved",
+        "nativeHelperAssertions",
+        "historyGates",
+        "historyChecks",
+        "parentExit",
+        "executedDependenciesStable",
+        "executedDependencySha256",
+        "candidateWasmSha256",
+        "command",
+        "activationFlags",
+        "elapsedSeconds"
+      ],
+      "status": "PASS"
+    },
+    {
+      "path": "tests/integration/rhwp/evidence/t010-d4-performance-remediation/optimized-safety-native.json",
+      "bytes": 16060,
+      "sha256": "7674a8801e5ff50886577e3d3dce8591d01d3610dfedb1a5ac4c7d8c17c69763",
+      "jsonType": "dict",
+      "topLevelKeys": [
+        "status",
+        "tests",
+        "scope",
+        "observerAliasDiagnostic",
+        "engineIdentity",
+        "lastObserved",
+        "existingSaveAssertions",
+        "historyGates",
+        "historyChecks",
+        "parentExit",
+        "executedDependenciesStable",
+        "executedDependencySha256",
+        "candidateWasmSha256",
+        "command",
+        "activationFlags",
+        "elapsedSeconds"
+      ],
+      "status": "PASS"
+    },
+    {
+      "path": "tests/integration/rhwp/evidence/t010-d4-performance-remediation/p0-current-verified.json",
+      "bytes": 273801,
+      "sha256": "202d6fe07dcc4bc45ae8ab836ca11313a91f692a0dc432bda97c1cf44640cb4b",
+      "jsonType": "dict",
+      "topLevelKeys": [
+        "status",
+        "official",
+        "method",
+        "source",
+        "independentIdentity",
+        "pairing",
+        "rows",
+        "slowRows"
+      ],
+      "status": "DIAGNOSTIC_COMPLETE"
+    },
+    {
+      "path": "tests/integration/rhwp/evidence/t010-d4-performance-remediation/p0-original-defects.json",
+      "bytes": 635,
+      "sha256": "2851041189537ae11af2779c5ab081d3898828fa4fe0506144cac32e9ac0a5cd",
+      "jsonType": "list",
+      "topLevelKeys": [],
+      "status": null
+    },
+    {
+      "path": "tests/integration/rhwp/evidence/t010-d4-performance-remediation/patch-reproduction.json",
+      "bytes": 1615,
+      "sha256": "419907264caa15149d72c7e5edaf9c0e8db28d2def605c148bade2709d9bb041",
+      "jsonType": "dict",
+      "topLevelKeys": [
+        "status",
+        "baseline",
+        "method",
+        "files"
+      ],
+      "status": "PASS"
+    },
+    {
+      "path": "tests/integration/rhwp/evidence/t010-d4-performance-remediation/perf-driver-log.py.txt",
+      "bytes": 312,
+      "sha256": "7af37c776d21204b5ef2c28a3f0ed080094664ebbd0e816e08ff493dd64048bf"
+    },
+    {
+      "path": "tests/integration/rhwp/evidence/t010-d4-performance-remediation/primary-probe-provenance.json",
+      "bytes": 290,
+      "sha256": "c0597b523cdc344fd290eaf65c11267cdf199d75be7082804c96589845aaba69",
+      "jsonType": "dict",
+      "topLevelKeys": [
+        "status",
+        "source",
+        "sha256",
+        "matchesAllThree"
+      ],
+      "status": "VERIFIED"
+    },
+    {
+      "path": "tests/integration/rhwp/evidence/t010-d4-performance-remediation/quiet-comparison-execution.json",
+      "bytes": 523,
+      "sha256": "a480b46796c9d9b80c2a2f69bbd1dbb3295fa2a3793b4c1d3503db57dc8c23ec",
+      "jsonType": "dict",
+      "topLevelKeys": [
+        "policy",
+        "executions"
+      ],
+      "status": null
+    },
+    {
+      "path": "tests/integration/rhwp/evidence/t010-d4-performance-remediation/rgba-unit-rust-bfd.json",
+      "bytes": 1830,
+      "sha256": "2031b421b4f322939023680d4c6799d4aa6f95c54dd988dd2d821bb1067bf3d2",
+      "jsonType": "dict",
+      "topLevelKeys": [
+        "exit",
+        "elapsedSeconds",
+        "scope",
+        "outputTail"
+      ],
+      "status": null
+    },
+    {
+      "path": "tests/integration/rhwp/evidence/t010-d4-performance-remediation/rgba-unit-rust.json",
+      "bytes": 2306,
+      "sha256": "c9c58606b6dd553577143fd86620d4c0b1188ebbe897fc7f0650658401133a1c",
+      "jsonType": "dict",
+      "topLevelKeys": [
+        "exit",
+        "elapsedSeconds",
+        "command",
+        "scope",
+        "outputTail"
+      ],
+      "status": null
+    },
+    {
+      "path": "tests/integration/rhwp/evidence/t010-d4-performance-remediation/run-native-final.py.txt",
+      "bytes": 4382,
+      "sha256": "8086eda77376e5c24435568c8d807dbdb2223a66ac91ffac0bba1671805c37d5"
+    },
+    {
+      "path": "tests/integration/rhwp/evidence/t010-d4-performance-remediation/run-native-retry.py.txt",
+      "bytes": 4620,
+      "sha256": "96fc6e32305d1ddc3d19ec4a42c2c869f6ca990e499458548734c2c1e6a5ce37"
+    },
+    {
+      "path": "tests/integration/rhwp/evidence/t010-d4-performance-remediation/run-native.py.txt",
+      "bytes": 4322,
+      "sha256": "5fc8efd81d5597af58c6929a62241791954f687e460167f6b5f6af6df85aedae"
+    },
+    {
+      "path": "tests/integration/rhwp/evidence/t010-d4-performance-remediation/rust-cache-contracts.json",
+      "bytes": 3749,
+      "sha256": "e8e1cf40a68199f8697e726930e8e92d04df853fa544486a8cfd0749eff2b307",
+      "jsonType": "dict",
+      "topLevelKeys": [
+        "sourceSha256",
+        "contractSha256",
+        "schema",
+        "patchSha256",
+        "compiler",
+        "checks",
+        "status"
+      ],
+      "status": "FAIL"
+    },
+    {
+      "path": "tests/integration/rhwp/evidence/t010-d4-performance-remediation/rust-library.json",
+      "bytes": 14398,
+      "sha256": "975be8b067dd0c05248314a2cb7358aa6713cf818d39beb322297e8c059278e2",
+      "jsonType": "dict",
+      "topLevelKeys": [
+        "exit",
+        "elapsedSeconds",
+        "command",
+        "compiler",
+        "outputTail"
+      ],
+      "status": null
+    },
+    {
+      "path": "tests/integration/rhwp/evidence/t010-d4-performance-remediation/rust-ownership-contracts.json",
+      "bytes": 3361,
+      "sha256": "a09d3b6c04806ca14195ab08790fd970c1a9776adbfb9b5f25219d886d7f5b26",
+      "jsonType": "dict",
+      "topLevelKeys": [
+        "sourceSha256",
+        "contractSha256",
+        "schema",
+        "patchSha256",
+        "compiler",
+        "checks",
+        "status"
+      ],
+      "status": "PASS"
+    },
+    {
+      "path": "tests/integration/rhwp/evidence/t010-d4-performance-remediation/rust-scheduler-contracts.json",
+      "bytes": 2861,
+      "sha256": "51096638ecb92661cdb033ea293281ff7f88f71819d0425a41219638b37f1fdd",
+      "jsonType": "dict",
+      "topLevelKeys": [
+        "sourceSha256",
+        "contractSha256",
+        "schema",
+        "patchSha256",
+        "compiler",
+        "checks",
+        "status"
+      ],
+      "status": "PASS"
+    },
+    {
+      "path": "tests/integration/rhwp/evidence/t010-d4-performance-remediation/security-initial.json",
+      "bytes": 881,
+      "sha256": "bbf0cdb55c945e5a2f5ee281b5eb77df5988ef47172458367b50c6d372353c0f",
+      "jsonType": "dict",
+      "topLevelKeys": [
+        "exit",
+        "findings"
+      ],
+      "status": null
+    },
+    {
+      "path": "tests/integration/rhwp/evidence/t010-d4-performance-remediation/security-pre-final.json",
+      "bytes": 368,
+      "sha256": "99cc1909e6c90294c0e577acad3d7f5b2a12005b9db46695480519ad7cfb784f",
+      "jsonType": "dict",
+      "topLevelKeys": [
+        "sensitive-all",
+        "sensitive-changed",
+        "gitleaks-changed"
+      ],
+      "status": null
+    },
+    {
+      "path": "tests/integration/rhwp/evidence/t010-d4-performance-remediation/security-public-source-review.json",
+      "bytes": 363,
+      "sha256": "c8966b3e0c077854de5af9099bb611466b1488aca2be0068f13b42f34cbef568",
+      "jsonType": "dict",
+      "topLevelKeys": [
+        "status",
+        "findingCount",
+        "sourcePath",
+        "sha256",
+        "approvedAndOptimizedSourceIdentical",
+        "scope"
+      ],
+      "status": "VERIFIED_PUBLIC_SHA256"
+    },
+    {
+      "path": "tests/integration/rhwp/evidence/t010-d4-performance-remediation/security-relative-scan.json",
+      "bytes": 238,
+      "sha256": "206bb7cf4d6446b37c6ad77e2e038cf1f57ceffbd194eeb3bb37a8ff18a1ed95",
+      "jsonType": "dict",
+      "topLevelKeys": [
+        "exit",
+        "method",
+        "output",
+        "fileCount"
+      ],
+      "status": null
+    },
+    {
+      "path": "tests/integration/rhwp/evidence/t010-d4-performance-remediation/shared-host-timing-limitations.json",
+      "bytes": 512,
+      "sha256": "8bcaebc539bbbdcd9e54dea2bfda1ccc3fb9dd0827e094983bfef8789daa0e99",
+      "jsonType": "dict",
+      "topLevelKeys": [
+        "classification",
+        "taskLocalQuiet",
+        "sharedHostObservation",
+        "interpretation"
+      ],
+      "status": null
+    },
+    {
+      "path": "tests/integration/rhwp/evidence/t010-d4-performance-remediation/typeset-decision.json",
+      "bytes": 2151,
+      "sha256": "eebdaf4be48fd9b23d272509c85ec821d23f2c50352a63203bb1e3554499a4e9",
+      "jsonType": "dict",
+      "topLevelKeys": [
+        "status",
+        "positions",
+        "decision",
+        "source",
+        "blockingState",
+        "nextUnit"
+      ],
+      "status": "VERIFIED investigation; no layout optimization"
+    },
+    {
+      "path": "tests/integration/rhwp/evidence/t010-d4-performance-remediation/typeset-prefix-hypothesis.json",
+      "bytes": 79974,
+      "sha256": "9cb855d1df95b46770f92666ebc69a2585427ffb99e401dc5f9b1569f313d93b",
+      "jsonType": "dict",
+      "topLevelKeys": [
+        "status",
+        "official",
+        "hypothesis",
+        "positions",
+        "browserLogTail",
+        "parentExit",
+        "command",
+        "identities",
+        "executedDependenciesStable",
+        "browserVersion"
+      ],
+      "status": "DIAGNOSTIC_COMPLETE"
+    },
+    {
+      "path": "tests/integration/rhwp/evidence/t010-d4-performance-remediation/upstream-rhwp-exact-gray-lut.patch",
+      "bytes": 116794,
+      "sha256": "ba2242e154067ab441806677e8cf8b5d69e3de5bfbecdad8baef1bb379c10f17"
+    },
+    {
+      "path": "tests/integration/rhwp/ownership-poc/analyze-d4.py",
+      "bytes": 5138,
+      "sha256": "ae15745c67f6cbcaa8adf8d486c89a826a41c10b79c30bae90a3ccaeb4e831eb"
+    },
+    {
+      "path": "tests/integration/rhwp/ownership-poc/d4_evidence.py",
+      "bytes": 13708,
+      "sha256": "c8b28aae397d2aaad3b68e9f8a9dab3727f33f293f7d954ff37c56b318d4e280"
+    },
+    {
+      "path": "tests/integration/rhwp/ownership-poc/image-preparation-browser.mjs",
+      "bytes": 4849,
+      "sha256": "1c15332180d164d212febccff5783085eb204924a664fe971ff977e0eb1adbf6"
+    },
+    {
+      "path": "tests/integration/rhwp/ownership-poc/run-edit-phases.py",
+      "bytes": 4892,
+      "sha256": "3985c999404ac5d11918456ce2a95fa3498fad08c2859fbea529aea976c43057"
+    },
+    {
+      "path": "tests/integration/rhwp/ownership-poc/test_d4_analysis_cli.py",
+      "bytes": 5921,
+      "sha256": "cb45a8124c5fc2735ae09524de451ff00041b6d78156b144d0e6eaa614a2120e"
+    },
+    {
+      "path": "tests/integration/rhwp/ownership-poc/test_d4_evidence.py",
+      "bytes": 5935,
+      "sha256": "b1d1b9daab9041c25639e2764aa12df00f40cdca41fd35063d441116079ffee8"
+    },
+    {
+      "path": "tests/integration/rhwp/ownership-poc/typeset-reuse-browser.mjs",
+      "bytes": 1725,
+      "sha256": "c57ddffed5275796e929922ac30ead85fdf484331790ff1d6a14b7641b456100"
+    }
+  ],
+  "untracked": "",
+  "diffCheckExit": 0
+}

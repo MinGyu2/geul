@@ -1,0 +1,64 @@
+{
+  "start": {
+    "branch": "master",
+    "head": "76c07c054e1ebe246b048cf8180ed6a7168ccb91",
+    "originMaster": "76c07c054e1ebe246b048cf8180ed6a7168ccb91",
+    "status": "clean; verified before edits"
+  },
+  "approvedWasm": "48adaa0f748484d12f59f4805deda0480635f915368392a87e76e95962ec0b27",
+  "approvedCaretPatch": "f6d847cc3bbf3e6edd8446fd7e0e672c965d3483fc74ca568bec9276c40e16cb",
+  "experimentalWasm": "ae34c12bd0d20aeb9f94610682bc678ec61f55722df74ea946d09782d7c87983",
+  "completePatch": "ba2242e154067ab441806677e8cf8b5d69e3de5bfbecdad8baef1bb379c10f17",
+  "incrementalPatch": "d36986ac8ce266e61b2953ac3e188418cb760dd1987e95a3f757b2cb6a8a52a0",
+  "app": "48b7b8364cb4b91ae0b4c3cb3113977c15fd92aa9ca3d60f0406f331749d45c1",
+  "fixtures": {
+    "external/rhwp/samples/rnote/연구노트(화학).hwp": "6717eca43c6fdd9b0530530cf17d33b6687da0c462a433d37eb652afb5394f91",
+    "external/rhwp/samples/issue6031/3249937_asset_management_rules.hwpx": "97b5d6c571a6b7626321c6a53d797e3511978447497bb73309bd23eaa8e7ea77"
+  },
+  "nativeCanonicalFixtures": [
+    {
+      "sample": "basic-ko.hwp",
+      "sourceSha256": "57c901cc394abf6f58f4838315d1ea2c5ecf8a03d9934d3fc098fd8be6e6e12f",
+      "pages": 1,
+      "editedRegion": {
+        "caret": "0:3:9",
+        "page": 0
+      },
+      "zoom": 50,
+      "dpr": 1.04205322265625
+    },
+    {
+      "sample": "basic-ko.hwpx",
+      "sourceSha256": "26d434b7b427149110751c6ef5b19e9ecb4818f3ba7eadfe201b5afd3de442a8",
+      "pages": 1,
+      "editedRegion": {
+        "caret": "0:3:9",
+        "page": 0
+      },
+      "zoom": 50,
+      "dpr": 1.04205322265625
+    },
+    {
+      "sample": "연구노트(화학).hwp",
+      "sourceSha256": "6717eca43c6fdd9b0530530cf17d33b6687da0c462a433d37eb652afb5394f91",
+      "pages": 24,
+      "editedRegion": {
+        "caret": "0:3:2",
+        "page": 3
+      },
+      "zoom": 50,
+      "dpr": 1.04205322265625
+    },
+    {
+      "sample": "3249937_asset_management_rules.hwpx",
+      "sourceSha256": "97b5d6c571a6b7626321c6a53d797e3511978447497bb73309bd23eaa8e7ea77",
+      "pages": 60,
+      "editedRegion": {
+        "caret": "0:4:51",
+        "page": 0
+      },
+      "zoom": 50,
+      "dpr": 1.04205322265625
+    }
+  ]
+}

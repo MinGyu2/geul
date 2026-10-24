@@ -13,11 +13,11 @@ import threading
 def main():
     p=argparse.ArgumentParser(description=__doc__)
     for name in ('baseline','phase','chrome','fixtures','output'):p.add_argument('--'+name,type=Path,required=True)
-    p.add_argument('--probe',choices=('edit','render'),default='edit')
+    p.add_argument('--probe',choices=('edit','render','image','typeset'),default='edit')
     a=p.parse_args()
     if a.output.exists():p.error('preserve previous output')
     here=Path(__file__).resolve().parent
-    probe=here/('edit-phases-browser.mjs' if a.probe=='edit' else 'render-phases-browser.mjs')
+    probe=here/({'edit':'edit-phases-browser.mjs','render':'render-phases-browser.mjs','image':'image-preparation-browser.mjs','typeset':'typeset-reuse-browser.mjs'}[a.probe])
     chemical=here.parents[3]/'external/rhwp/samples/rnote/연구노트(화학).hwp'
     asset=here.parents[3]/'external/rhwp/samples/issue6031/3249937_asset_management_rules.hwpx'
     def hashes():

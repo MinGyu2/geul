@@ -1,0 +1,35 @@
+[
+  {
+    "case": "self_expected_wasm",
+    "oldStatus": "DIAGNOSTIC_COMPLETE"
+  },
+  {
+    "case": "self_expected_source",
+    "oldStatus": "DIAGNOSTIC_COMPLETE"
+  },
+  {
+    "case": "missing_drop",
+    "oldStatus": "DIAGNOSTIC_COMPLETE"
+  },
+  {
+    "case": "malformed_events",
+    "oldStatus": "AttributeError"
+  },
+  {
+    "case": "malformed_engineIdentity",
+    "oldStatus": "AttributeError"
+  },
+  {
+    "case": "malformed_measure",
+    "oldStatus": "AttributeError"
+  },
+  {
+    "case": "malformed_samples",
+    "oldStatus": "FAIL"
+  },
+  {
+    "case": "invalid_cli_exit",
+    "oldExit": 0,
+    "serializedStatus": "FAIL"
+  }
+]

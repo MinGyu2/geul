@@ -130,17 +130,53 @@ def handler_accounting(sample):
                 intervalCoverage='rounded interval estimate' if complete else 'UNVERIFIED: missing boundaries')
 
 
-def validate(result, expected_wasm, expected_source):
+def structure_errors(result):
+    """Supported input-delay schema, checked before any semantic lookup/arithmetic."""
+    if not isinstance(result, dict):
+        return ['result must be an object']
+    errors = []
+    for name in ('events', 'engineIdentity', 'measure'):
+        if not isinstance(result.get(name), dict): errors.append(name+' must be an object')
+    for name in ('probeCalls', 'traceSpans', 'samples'):
+        value = result.get(name)
+        if not isinstance(value, list) or not all(isinstance(x, dict) for x in value):
+            errors.append(name+' must be an array of objects')
+    if errors: return errors
+    for name in ('keys','inputs'):
+        value=result['events'].get(name)
+        if not isinstance(value,list) or not all(isinstance(e,dict) and number(e.get('t')) and number(e.get('seen')) for e in value):
+            errors.append('invalid '+name+' timestamp records')
+    if not isinstance(result['measure'].get('groupStart'),dict): errors.append('groupStart measure must be an object')
+    for name in ('probeCalls','traceSpans'):
+        for c in result[name]:
+            if (not isinstance(c.get('name'),str) or not number(c.get('at')) or
+                not (name=='traceSpans' and c.get('ms') is None or number(c.get('ms')) and c['ms']>=0)):
+                errors.append('invalid '+name+' interval');break
+    for sample in result['samples']:
+        if not isinstance(sample.get('kind'),str) or not isinstance(sample.get('at'),dict):
+            errors.append('invalid canonical sample');continue
+        if sample['kind'] not in EDIT_KINDS: continue
+        if not all(number(sample['at'].get(n)) for n in ('key','input','handlerEnd','observed','raf1','end')):
+            errors.append('invalid canonical timestamps')
+        local=sample.get('engineTimeline')
+        if not isinstance(local,list) or not all(isinstance(c,dict) and isinstance(c.get('name'),str) and
+                number(c.get('at')) and number(c.get('ms')) and c['ms']>=0 for c in local):
+            errors.append('invalid canonical call boundaries')
+    return errors
+
+
+def validate(result, expected_wasm, expected_source, *, legacy=False):
     """Focused causal-evidence contract; missing logs cannot mean complete."""
-    failures = []
+    failures = structure_errors(result)
+    if failures: return dict(status='FAIL',failures=failures,official=False)
+    missing_loss = 'probeCallDropped' not in result
     def require(ok, message):
         if not ok: failures.append(message)
     require(not result.get('error'), 'recorded harness error')
     require(result.get('sourceSha256') == expected_source, 'fixture identity')
     require(result.get('sample') == '연구노트(화학).hwp', 'fixture name')
     require((result.get('engineIdentity') or {}).get('wasmSha256') == expected_wasm, 'candidate identity')
-    if 'probeCallDropped' in result:
-        require(type(result['probeCallDropped']) is int and result['probeCallDropped']==0, 'probe call loss')
+    require(legacy and missing_loss or type(result.get('probeCallDropped')) is int and result['probeCallDropped']==0, 'probe call loss/unknown')
     require(result.get('traceDropped') == 0 and type(result.get('traceDropped')) is int, 'trace loss/unknown')
     for name in ('probeCalls','traceSpans','samples'):
         require(isinstance(result.get(name),list) and bool(result[name]), 'missing '+name)
@@ -183,8 +219,9 @@ def validate(result, expected_wasm, expected_source):
             require(any(c['name']=='pollRenderJob' for c in result['probeCalls']), 'no render coverage')
             # Each canonical input should have a trace observation at the same origin.
             require(all(any(t['name']=='dom:input' and abs(t['at']-i['seen'])<=2 for t in result['traceSpans']) for _,_,i in pairs), 'trace input association')
-        except (ValueError,KeyError,TypeError) as error:
+        except ValueError as error:
             failures.append('pairing: '+str(error))
-    return dict(status='FAIL' if failures else 'DIAGNOSTIC_COMPLETE', failures=failures,
+    return dict(status='FAIL' if failures else 'INCONCLUSIVE' if missing_loss else 'DIAGNOSTIC_COMPLETE', failures=failures,
+                lossEvidence='UNVERIFIED: legacy result has no probeCallDropped' if missing_loss else 'verified zero loss' if not failures else 'not established',
                 pairing='ordered insertText anchors independently checked against absolute key/input timestamps; no shared trial ID',
                 official=False)

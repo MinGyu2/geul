@@ -1,0 +1,14 @@
+{
+  "sensitive-all": {
+    "exit": 0,
+    "output": "민감정보 검사 통과 (추적 파일 989개)\n"
+  },
+  "sensitive-changed": {
+    "exit": 0,
+    "output": "민감정보 검사 통과 (지정 파일 52개)\n"
+  },
+  "gitleaks-changed": {
+    "exit": 1,
+    "output": "11:41PM INF scanned ~3734710 bytes (3.73 MB) in 338ms\n11:41PM WRN leaks found: 5\n"
+  }
+}

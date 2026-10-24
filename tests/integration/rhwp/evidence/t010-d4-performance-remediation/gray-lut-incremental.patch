@@ -1,0 +1,91 @@
+--- a/src/renderer/mod.rs
++++ b/src/renderer/mod.rs
+@@ -9,6 +9,8 @@
+ use crate::model::paragraph::LineSeg;
+ use crate::model::style::{LineSpacingType, UnderlineType};
+
++#[cfg(any(target_arch = "wasm32", test))]
++mod canvas_rgba;
+ pub mod canvas;
+ pub mod canvas_text_font;
+ pub mod canvaskit_policy;
+--- a/src/renderer/web_canvas.rs
++++ b/src/renderer/web_canvas.rs
+@@ -269,7 +269,7 @@
+         }
+     }
+     let dynimg = image::load_from_memory(data).ok()?;
+-    let rgba = dynimg.to_rgba8();
++    let rgba = super::canvas_rgba::canvas_rgba(&dynimg);
+     let (iw, ih) = (rgba.width(), rgba.height());
+     if iw == 0 || ih == 0 {
+         return None;
+--- /dev/null
++++ b/src/renderer/canvas_rgba.rs
+@@ -0,0 +1,66 @@
++//! Exact Canvas preparation for large 8-bit grayscale images.
++//!
++//! image 0.25.10 casts Luma8 through pointwise RGB32F color conversion. Evaluate
++//! that same conversion once for each of the 256 possible channel values rather
++//! than repeating it for every pixel. No hand-written gamma approximation, global
++//! table, retained image, or cache-policy change is involved.
++use image::{DynamicImage, GrayImage, Luma, RgbaImage};
++
++pub(crate) fn canvas_rgba(image: &DynamicImage) -> RgbaImage {
++    if let DynamicImage::ImageLuma8(gray) = image {
++        if gray.as_raw().len() >= 4096 {
++            let color = gray.color_space();
++            let mut ramp = GrayImage::from_fn(256, 1, |x, _| Luma([x as u8]));
++            if ramp.set_color_space(color).is_ok() {
++                let table = DynamicImage::ImageLuma8(ramp).to_rgba8();
++                let mut out = RgbaImage::new(gray.width(), gray.height());
++                if out.set_color_space(color).is_ok() {
++                    for (pixel, value) in out.as_mut().chunks_exact_mut(4).zip(gray.as_raw()) {
++                        let start = usize::from(*value) * 4;
++                        pixel.copy_from_slice(&table.as_raw()[start..start + 4]);
++                    }
++                    return out;
++                }
++            }
++        }
++    }
++    image.to_rgba8()
++}
++
++#[cfg(test)]
++mod tests {
++    use super::*;
++    use image::metadata::Cicp;
++
++    #[test]
++    fn every_luma_value_matches_original_across_chunk_edges_and_color_spaces() {
++        for color in [Cicp::SRGB, Cicp::SRGB_LINEAR, Cicp::DISPLAY_P3] {
++            for (width, height) in [(257, 257), (4097, 1), (1, 4097)] {
++                let mut gray = GrayImage::from_fn(width, height, |x, y| {
++                    Luma([((x * 17 + y * 31) % 256) as u8])
++                });
++                gray.set_color_space(color).unwrap();
++                let input = DynamicImage::ImageLuma8(gray);
++                let expected = input.to_rgba8();
++                let actual = canvas_rgba(&input);
++                assert_eq!(actual.dimensions(), expected.dimensions());
++                assert_eq!(actual.color_space(), expected.color_space());
++                assert_eq!(actual.as_raw(), expected.as_raw());
++            }
++        }
++    }
++
++    #[test]
++    fn small_gray_and_other_representations_keep_original_path() {
++        let inputs = [
++            DynamicImage::ImageLuma8(GrayImage::from_fn(17, 19, |x, y| Luma([(x + y) as u8]))),
++            DynamicImage::new_rgb8(257, 257),
++            DynamicImage::new_rgba8(257, 257),
++            DynamicImage::new_luma16(257, 257),
++            DynamicImage::new_luma_a8(257, 257),
++        ];
++        for input in inputs {
++            assert_eq!(canvas_rgba(&input), input.to_rgba8());
++        }
++    }
++}

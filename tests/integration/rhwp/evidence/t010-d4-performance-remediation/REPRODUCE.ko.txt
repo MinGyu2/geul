@@ -1,0 +1,43 @@
+T010 D4 성능 보완 재현 지침
+
+이 디렉터리는 새 격리 실험이다. 승인48adaa 패키지와 public WASM은 유지한다.
+전체 patch는 pinned RHWP1a76570 위에 적용하며 approved caret/cache/scheduler 선행 변경을 포함한다.
+gray-lut-incremental.patch는 승인 caret source와의 차이만 보이는 검토 자료다.
+
+1. 독립 identity 검증
+python3 tests/integration/rhwp/ownership-poc/analyze-d4.py input-delay RAW.json NEW.json --expected-wasm 48adaa0f748484d12f59f4805deda0480635f915368392a87e76e95962ec0b27 --candidate APPROVED_PACKAGE --fixture 'external/rhwp/samples/rnote/연구노트(화학).hwp'
+과거 probeCallDropped 누락 evidence만 --legacy를 쓰며 exit2/INCONCLUSIVE가 정상이다.
+공식 handler 분석 mode는 handler이며 같은 --expected-wasm/--candidate를 요구한다.
+
+2. 새 source/빌드 (외부 디렉터리, 기존 work를 덮어쓰지 않음)
+python3 tests/integration/rhwp/cache-concurrency/prepare.py --work NEW_OUTSIDE_WORKSPACE --patch tests/integration/rhwp/evidence/t010-d4-performance-remediation/upstream-rhwp-exact-gray-lut.patch --toolchain-bin RUST_1_93_1_BIN --no-opt --target-dir EXCLUSIVE_CARGO_TARGET
+실제 이번 빌드는 동일 prepare-only source에 LUT 변경 후 scripts/wasm-pack-locked.sh --release --no-opt --target web --out-dir candidate-package로 수행했다.
+Rust1.93.1, wasm-pack0.15.0, wasm-bindgen0.2.127, Cargo.lock은 gray-build.json 참조.
+prepare.py는 새 canvas_rgba.rs도 sourceStableDuringBuild fingerprint에 포함한다.
+패키지 이름 test-package/candidate-package는 위치 차이이며 실행 JS/WASM hash가 판단 기준이다.
+
+3. 비공식 Chrome 비교
+python3 tests/integration/rhwp/ownership-poc/run-edit-phases.py --probe image --baseline APPROVED_PACKAGE --phase OPTIMIZED_PACKAGE --chrome CHROME --fixtures GENERATED_CANONICAL_FIXTURES --output NEW.json
+image-preparation-browser.mjs는 동일 JS observer를 양쪽에 적용하며 각 arm에서7쪽*3회 Full render를 비교한다.
+image-preparation-primary.mjs.txt는 세 주 비교 당시의 정확한 byte snapshot이며 frozen hash와 일치한다.
+현재 probe는 timed poll 뒤 job/source metadata를 추가한 판본이다. 이를 주 비교 script와 혼동하지 않는다.
+quiet-comparison-1/2/3은 검사 작업을 동시에 실행하지 않은 고정3회다. 공유 host 전체 무부하는 보장하지 못한다.
+initial gray-before-after 결과는 기능 검사 시작과 겹친 시도이며 성능 주 근거로 선택하지 않았다. 모두 보존했다.
+image-boundaries-chrome는 이전 deep 진단 패치 WASM과의 경계 분해이며 grayscale 개선 후보의 공식 측정이 아니다.
+typeset --phase는 이전 instrument-edit-phases 진단 패키지다. typeset-decision.json에 적용하지 않은 layout 경계와 이유를 기록했다.
+
+4. 회귀
+python3 -m unittest discover -s tests/integration/rhwp/ownership-poc -p 'test_*.py'
+node --test tests/integration/rhwp/ownership-poc/test-session.mjs
+python3 -m unittest discover -s tests/integration/rhwp/cache-concurrency -p 'test_*.py'
+Rust library: isolated source에서 cargo test --locked --lib, Rust1.93.1, offline, CARGO_BUILD_JOBS=2, EXCLUSIVE_CARGO_TARGET, 이 환경에서는 bfd linker wrapper/RUSTFLAGS=-C link-arg=-fuse-ld=bfd 사용.
+브라우저: cache-concurrency/run.py의 --pinned는 historical API를 가진 public/rhwp, --candidate는 실험 package. 승인48adaa는 baseline 비교 arm이며 historical 슬롯이 아니다.
+처음 잘못된 historical 슬롯 실행 실패와 구형 cache_contract 실패2개는 숨기지 않는다. 구형 계약 실패는 승인 source에서도 동일하다.
+
+5. 네이티브
+run-native.py.txt는 실제 실행한 wrapper의 보존본이다. d1/pending/safety 통과 후 baseline-perf/candidate-perf를 각각1회 실행한다.
+실행 파일·소스·package·gate hashes를 전후 비교하고 Vite server/driver/process를 정리한다.
+공식 MEASURE/threshold/표본/RAF 완료 경계는 바꾸지 않는다. 공식 결과의 measurementComplete와 각 문서 p95로 판단한다.
+최초 후보 공식 시도는 네 번째 driver session 시작 실패로 불완전했다. run-native-retry.py.txt/perf-driver-log.py.txt는 별도1회 재시도에 쓰인 wrapper이며 canonical MEASURE는 같다.
+첫 완전 결과 optimized-official-retry.json을 사용하고 불완전 optimized-official-first.json도 보존한다.
+모든 실제 exit와 실패는 원본 결과 및 REPORT.ko.txt를 따른다. 이 지침 자체는 실행 성공 증거가 아니다.

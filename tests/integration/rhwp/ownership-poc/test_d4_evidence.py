@@ -11,7 +11,7 @@ SOURCE='6'*64
 
 def complete():
     r=dict(sample='연구노트(화학).hwp',sourceSha256=SOURCE,engineIdentity={'wasmSha256':WASM},
-           traceDropped=0,measure={'groupStart':{'n':30,'timeouts':0}},samples=[],
+           probeCallDropped=0,traceDropped=0,measure={'groupStart':{'n':30,'timeouts':0}},samples=[],
            events={'keys':[], 'inputs':[]},probeCalls=[],traceSpans=[])
     for j in range(30):
         key=j*100+100
@@ -95,7 +95,7 @@ class HistoricalRegression(unittest.TestCase):
     def test_real_alignment_and_ten_slow(self):
         path=Path(__file__).resolve().parent.parent/'evidence/t010-validation-d4-investigation/diagnostic-d4-input-delay-chemical.json'
         r=json.loads(path.read_text())
-        self.assertEqual(d.validate(r,r['engineIdentity']['wasmSha256'],r['sourceSha256'])['status'],'DIAGNOSTIC_COMPLETE')
+        self.assertEqual(d.validate(r,'48adaa0f748484d12f59f4805deda0480635f915368392a87e76e95962ec0b27','6717eca43c6fdd9b0530530cf17d33b6687da0c462a433d37eb652afb5394f91',legacy=True)['status'],'INCONCLUSIVE')
         rows=d.analyze_delay(r);self.assertEqual(len(rows),30)
         slow=[x for x in rows if x['deliveryMs']>=50]
         self.assertEqual(len(slow),10)

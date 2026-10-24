@@ -25,6 +25,8 @@ def source_hashes(work):
     # The caret candidate also changes layout; keep older candidate manifests stable.
     if (work / 'src/renderer/layout/caret_geometry_tests.rs').is_file():
         names += ('src/renderer/layout.rs', 'src/renderer/layout/caret_geometry_tests.rs')
+    if (work / 'src/renderer/canvas_rgba.rs').is_file():
+        names += ('src/renderer/canvas_rgba.rs',)
     return {name: sha(work / name) for name in names if (work / name).is_file()}
 
 

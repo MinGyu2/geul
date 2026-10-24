@@ -1,0 +1,30 @@
+{
+  "exit": 1,
+  "findings": [
+    {
+      "File": "tests/integration/rhwp/evidence/t010-d4-performance-remediation/chrome.json",
+      "StartLine": 25,
+      "RuleID": "generic-api-key"
+    },
+    {
+      "File": "tests/integration/rhwp/evidence/t010-d4-performance-remediation/chrome.json",
+      "StartLine": 62,
+      "RuleID": "generic-api-key"
+    },
+    {
+      "File": "tests/integration/rhwp/evidence/t010-d4-performance-remediation/gray-build.json",
+      "StartLine": 17,
+      "RuleID": "generic-api-key"
+    },
+    {
+      "File": "tests/integration/rhwp/evidence/t010-d4-performance-remediation/engine-gates/webkit.json",
+      "StartLine": 33,
+      "RuleID": "generic-api-key"
+    },
+    {
+      "File": "tests/integration/rhwp/evidence/t010-d4-performance-remediation/engine-gates/chrome.json",
+      "StartLine": 33,
+      "RuleID": "generic-api-key"
+    }
+  ]
+}

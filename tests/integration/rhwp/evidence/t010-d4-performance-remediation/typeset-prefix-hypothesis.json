@@ -1,0 +1,2495 @@
+{
+  "status": "DIAGNOSTIC_COMPLETE",
+  "official": false,
+  "hypothesis": "same section early/late edit; existing prefix reuse boundary",
+  "positions": [
+    {
+      "paragraph": 4,
+      "arms": {
+        "baseline": {
+          "originalLength": 113,
+          "pagesBefore": 60,
+          "pagesAfter": 60,
+          "edits": [
+            {
+              "ms": 26.799999982118607,
+              "phases": null
+            },
+            {
+              "ms": 25.900000005960464,
+              "phases": null
+            },
+            {
+              "ms": 29.599999994039536,
+              "phases": null
+            },
+            {
+              "ms": 26.099999994039536,
+              "phases": null
+            },
+            {
+              "ms": 26.19999998807907,
+              "phases": null
+            },
+            {
+              "ms": 27.5,
+              "phases": null
+            },
+            {
+              "ms": 26.80000001192093,
+              "phases": null
+            },
+            {
+              "ms": 25.599999994039536,
+              "phases": null
+            },
+            {
+              "ms": 25.599999994039536,
+              "phases": null
+            },
+            {
+              "ms": 25.30000001192093,
+              "phases": null
+            }
+          ],
+          "caret": {
+            "pageIndex": 0,
+            "x": 233.4,
+            "y": 356.5,
+            "height": 18.7
+          }
+        },
+        "phase": {
+          "originalLength": 113,
+          "pagesBefore": 60,
+          "pagesAfter": 60,
+          "edits": [
+            {
+              "ms": 30.30000001192093,
+              "phases": [
+                {
+                  "name": "insert.pictureBand",
+                  "at": 1574.7000000178814,
+                  "ms": 0.19999998807907104
+                },
+                {
+                  "name": "insert.mutation",
+                  "at": 1574.9000000059605,
+                  "ms": 0
+                },
+                {
+                  "name": "reflow.paragraph",
+                  "at": 1574.9000000059605,
+                  "ms": 0.4000000059604645
+                },
+                {
+                  "name": "insert.reflow",
+                  "at": 1574.9000000059605,
+                  "ms": 0.4000000059604645
+                },
+                {
+                  "name": "insert.sectionVpos",
+                  "at": 1575.300000011921,
+                  "ms": 0.09999999403953552
+                },
+                {
+                  "name": "compose.paragraph",
+                  "at": 1575.4000000059605,
+                  "ms": 0.09999999403953552
+                },
+                {
+                  "name": "insert.compose",
+                  "at": 1575.4000000059605,
+                  "ms": 0.09999999403953552
+                },
+                {
+                  "name": "paginate.normalize",
+                  "at": 1575.5,
+                  "ms": 0.20000001788139343
+                },
+                {
+                  "name": "paginate.measure",
+                  "at": 1575.7000000178814,
+                  "ms": 0.29999998211860657
+                },
+                {
+                  "name": "paginate.typeset",
+                  "at": 1576,
+                  "ms": 28.099999994039536
+                },
+                {
+                  "name": "paginate.pass",
+                  "at": 1575.5,
+                  "ms": 29.30000001192093
+                },
+                {
+                  "name": "paginate.total",
+                  "at": 1575.5,
+                  "ms": 29.30000001192093
+                },
+                {
+                  "name": "insert.pagination",
+                  "at": 1575.5,
+                  "ms": 29.30000001192093
+                },
+                {
+                  "name": "insert.total",
+                  "at": 1574.7000000178814,
+                  "ms": 30.099999994039536
+                }
+              ]
+            },
+            {
+              "ms": 29.400000005960464,
+              "phases": [
+                {
+                  "name": "insert.pictureBand",
+                  "at": 1609.0999999940395,
+                  "ms": 0
+                },
+                {
+                  "name": "insert.mutation",
+                  "at": 1609.0999999940395,
+                  "ms": 0
+                },
+                {
+                  "name": "reflow.paragraph",
+                  "at": 1609.0999999940395,
+                  "ms": 0.5
+                },
+                {
+                  "name": "insert.reflow",
+                  "at": 1609.0999999940395,
+                  "ms": 0.5
+                },
+                {
+                  "name": "insert.sectionVpos",
+                  "at": 1609.5999999940395,
+                  "ms": 0.10000002384185791
+                },
+                {
+                  "name": "compose.paragraph",
+                  "at": 1609.7000000178814,
+                  "ms": 0
+                },
+                {
+                  "name": "insert.compose",
+                  "at": 1609.7000000178814,
+                  "ms": 0
+                },
+                {
+                  "name": "paginate.normalize",
+                  "at": 1609.9000000059605,
+                  "ms": 0.09999999403953552
+                },
+                {
+                  "name": "paginate.measure",
+                  "at": 1610,
+                  "ms": 0.4000000059604645
+                },
+                {
+                  "name": "paginate.typeset",
+                  "at": 1610.4000000059605,
+                  "ms": 27.599999994039536
+                },
+                {
+                  "name": "paginate.pass",
+                  "at": 1609.7000000178814,
+                  "ms": 28.69999998807907
+                },
+                {
+                  "name": "paginate.total",
+                  "at": 1609.7000000178814,
+                  "ms": 28.69999998807907
+                },
+                {
+                  "name": "insert.pagination",
+                  "at": 1609.7000000178814,
+                  "ms": 28.69999998807907
+                },
+                {
+                  "name": "insert.total",
+                  "at": 1609.0999999940395,
+                  "ms": 29.400000005960464
+                }
+              ]
+            },
+            {
+              "ms": 28.900000005960464,
+              "phases": [
+                {
+                  "name": "insert.pictureBand",
+                  "at": 1642.7000000178814,
+                  "ms": 0
+                },
+                {
+                  "name": "insert.mutation",
+                  "at": 1642.7000000178814,
+                  "ms": 0
+                },
+                {
+                  "name": "reflow.paragraph",
+                  "at": 1642.7000000178814,
+                  "ms": 0.5
+                },
+                {
+                  "name": "insert.reflow",
+                  "at": 1642.7000000178814,
+                  "ms": 0.5
+                },
+                {
+                  "name": "insert.sectionVpos",
+                  "at": 1643.2000000178814,
+                  "ms": 0
+                },
+                {
+                  "name": "compose.paragraph",
+                  "at": 1643.2000000178814,
+                  "ms": 0.09999999403953552
+                },
+                {
+                  "name": "insert.compose",
+                  "at": 1643.2000000178814,
+                  "ms": 0.09999999403953552
+                },
+                {
+                  "name": "paginate.normalize",
+                  "at": 1643.4000000059605,
+                  "ms": 0.19999998807907104
+                },
+                {
+                  "name": "paginate.measure",
+                  "at": 1643.5999999940395,
+                  "ms": 0.20000001788139343
+                },
+                {
+                  "name": "paginate.typeset",
+                  "at": 1643.800000011921,
+                  "ms": 27.19999998807907
+                },
+                {
+                  "name": "paginate.pass",
+                  "at": 1643.300000011921,
+                  "ms": 28.19999998807907
+                },
+                {
+                  "name": "paginate.total",
+                  "at": 1643.300000011921,
+                  "ms": 28.19999998807907
+                },
+                {
+                  "name": "insert.pagination",
+                  "at": 1643.300000011921,
+                  "ms": 28.19999998807907
+                },
+                {
+                  "name": "insert.total",
+                  "at": 1642.7000000178814,
+                  "ms": 28.799999982118607
+                }
+              ]
+            },
+            {
+              "ms": 26.799999982118607,
+              "phases": [
+                {
+                  "name": "insert.pictureBand",
+                  "at": 1675.800000011921,
+                  "ms": 0
+                },
+                {
+                  "name": "insert.mutation",
+                  "at": 1675.800000011921,
+                  "ms": 0
+                },
+                {
+                  "name": "reflow.paragraph",
+                  "at": 1675.800000011921,
+                  "ms": 0.699999988079071
+                },
+                {
+                  "name": "insert.reflow",
+                  "at": 1675.800000011921,
+                  "ms": 0.699999988079071
+                },
+                {
+                  "name": "insert.sectionVpos",
+                  "at": 1676.5,
+                  "ms": 0
+                },
+                {
+                  "name": "compose.paragraph",
+                  "at": 1676.5,
+                  "ms": 0.09999999403953552
+                },
+                {
+                  "name": "insert.compose",
+                  "at": 1676.5,
+                  "ms": 0.09999999403953552
+                },
+                {
+                  "name": "paginate.normalize",
+                  "at": 1676.800000011921,
+                  "ms": 0.09999999403953552
+                },
+                {
+                  "name": "paginate.measure",
+                  "at": 1676.9000000059605,
+                  "ms": 0.30000001192092896
+                },
+                {
+                  "name": "paginate.typeset",
+                  "at": 1677.2000000178814,
+                  "ms": 24.899999976158142
+                },
+                {
+                  "name": "paginate.pass",
+                  "at": 1676.5999999940395,
+                  "ms": 25.80000001192093
+                },
+                {
+                  "name": "paginate.total",
+                  "at": 1676.5999999940395,
+                  "ms": 25.900000005960464
+                },
+                {
+                  "name": "insert.pagination",
+                  "at": 1676.5999999940395,
+                  "ms": 25.900000005960464
+                },
+                {
+                  "name": "insert.total",
+                  "at": 1675.800000011921,
+                  "ms": 26.69999998807907
+                }
+              ]
+            },
+            {
+              "ms": 27.100000023841858,
+              "phases": [
+                {
+                  "name": "insert.pictureBand",
+                  "at": 1706.7000000178814,
+                  "ms": 0
+                },
+                {
+                  "name": "insert.mutation",
+                  "at": 1706.7000000178814,
+                  "ms": 0
+                },
+                {
+                  "name": "reflow.paragraph",
+                  "at": 1706.7000000178814,
+                  "ms": 0.3999999761581421
+                },
+                {
+                  "name": "insert.reflow",
+                  "at": 1706.7000000178814,
+                  "ms": 0.3999999761581421
+                },
+                {
+                  "name": "insert.sectionVpos",
+                  "at": 1707.0999999940395,
+                  "ms": 0.10000002384185791
+                },
+                {
+                  "name": "compose.paragraph",
+                  "at": 1707.2000000178814,
+                  "ms": 0.09999999403953552
+                },
+                {
+                  "name": "insert.compose",
+                  "at": 1707.2000000178814,
+                  "ms": 0.09999999403953552
+                },
+                {
+                  "name": "paginate.normalize",
+                  "at": 1707.300000011921,
+                  "ms": 0.09999999403953552
+                },
+                {
+                  "name": "paginate.measure",
+                  "at": 1707.4000000059605,
+                  "ms": 0.30000001192092896
+                },
+                {
+                  "name": "paginate.typeset",
+                  "at": 1707.7000000178814,
+                  "ms": 25.599999994039536
+                },
+                {
+                  "name": "paginate.pass",
+                  "at": 1707.300000011921,
+                  "ms": 26.299999982118607
+                },
+                {
+                  "name": "paginate.total",
+                  "at": 1707.300000011921,
+                  "ms": 26.299999982118607
+                },
+                {
+                  "name": "insert.pagination",
+                  "at": 1707.300000011921,
+                  "ms": 26.299999982118607
+                },
+                {
+                  "name": "insert.total",
+                  "at": 1706.7000000178814,
+                  "ms": 27
+                }
+              ]
+            },
+            {
+              "ms": 27.599999994039536,
+              "phases": [
+                {
+                  "name": "insert.pictureBand",
+                  "at": 1737.9000000059605,
+                  "ms": 0
+                },
+                {
+                  "name": "insert.mutation",
+                  "at": 1737.9000000059605,
+                  "ms": 0
+                },
+                {
+                  "name": "reflow.paragraph",
+                  "at": 1737.9000000059605,
+                  "ms": 0.4000000059604645
+                },
+                {
+                  "name": "insert.reflow",
+                  "at": 1737.9000000059605,
+                  "ms": 0.4000000059604645
+                },
+                {
+                  "name": "insert.sectionVpos",
+                  "at": 1738.300000011921,
+                  "ms": 0.19999998807907104
+                },
+                {
+                  "name": "compose.paragraph",
+                  "at": 1738.5,
+                  "ms": 0
+                },
+                {
+                  "name": "insert.compose",
+                  "at": 1738.5,
+                  "ms": 0
+                },
+                {
+                  "name": "paginate.normalize",
+                  "at": 1738.5999999940395,
+                  "ms": 0.20000001788139343
+                },
+                {
+                  "name": "paginate.measure",
+                  "at": 1738.800000011921,
+                  "ms": 0.19999998807907104
+                },
+                {
+                  "name": "paginate.typeset",
+                  "at": 1739,
+                  "ms": 26
+                },
+                {
+                  "name": "paginate.pass",
+                  "at": 1738.5,
+                  "ms": 26.900000005960464
+                },
+                {
+                  "name": "paginate.total",
+                  "at": 1738.5,
+                  "ms": 26.900000005960464
+                },
+                {
+                  "name": "insert.pagination",
+                  "at": 1738.5,
+                  "ms": 26.900000005960464
+                },
+                {
+                  "name": "insert.total",
+                  "at": 1737.9000000059605,
+                  "ms": 27.599999994039536
+                }
+              ]
+            },
+            {
+              "ms": 26.5,
+              "phases": [
+                {
+                  "name": "insert.pictureBand",
+                  "at": 1769.7000000178814,
+                  "ms": 0
+                },
+                {
+                  "name": "insert.mutation",
+                  "at": 1769.7000000178814,
+                  "ms": 0.09999999403953552
+                },
+                {
+                  "name": "reflow.paragraph",
+                  "at": 1769.800000011921,
+                  "ms": 0.4000000059604645
+                },
+                {
+                  "name": "insert.reflow",
+                  "at": 1769.800000011921,
+                  "ms": 0.4000000059604645
+                },
+                {
+                  "name": "insert.sectionVpos",
+                  "at": 1770.2000000178814,
+                  "ms": 0.09999999403953552
+                },
+                {
+                  "name": "compose.paragraph",
+                  "at": 1770.300000011921,
+                  "ms": 0.09999999403953552
+                },
+                {
+                  "name": "insert.compose",
+                  "at": 1770.300000011921,
+                  "ms": 0.09999999403953552
+                },
+                {
+                  "name": "paginate.normalize",
+                  "at": 1770.5,
+                  "ms": 0.20000001788139343
+                },
+                {
+                  "name": "paginate.measure",
+                  "at": 1770.7000000178814,
+                  "ms": 0.19999998807907104
+                },
+                {
+                  "name": "paginate.typeset",
+                  "at": 1770.9000000059605,
+                  "ms": 24.900000005960464
+                },
+                {
+                  "name": "paginate.pass",
+                  "at": 1770.4000000059605,
+                  "ms": 25.599999994039536
+                },
+                {
+                  "name": "paginate.total",
+                  "at": 1770.4000000059605,
+                  "ms": 25.599999994039536
+                },
+                {
+                  "name": "insert.pagination",
+                  "at": 1770.4000000059605,
+                  "ms": 25.69999998807907
+                },
+                {
+                  "name": "insert.total",
+                  "at": 1769.7000000178814,
+                  "ms": 26.399999976158142
+                }
+              ]
+            },
+            {
+              "ms": 25.799999982118607,
+              "phases": [
+                {
+                  "name": "insert.pictureBand",
+                  "at": 1800.300000011921,
+                  "ms": 0
+                },
+                {
+                  "name": "insert.mutation",
+                  "at": 1800.300000011921,
+                  "ms": 0
+                },
+                {
+                  "name": "reflow.paragraph",
+                  "at": 1800.300000011921,
+                  "ms": 0.5
+                },
+                {
+                  "name": "insert.reflow",
+                  "at": 1800.300000011921,
+                  "ms": 0.5
+                },
+                {
+                  "name": "insert.sectionVpos",
+                  "at": 1800.800000011921,
+                  "ms": 0.09999999403953552
+                },
+                {
+                  "name": "compose.paragraph",
+                  "at": 1800.9000000059605,
+                  "ms": 0
+                },
+                {
+                  "name": "insert.compose",
+                  "at": 1800.9000000059605,
+                  "ms": 0
+                },
+                {
+                  "name": "paginate.normalize",
+                  "at": 1801,
+                  "ms": 0.09999999403953552
+                },
+                {
+                  "name": "paginate.measure",
+                  "at": 1801.0999999940395,
+                  "ms": 0.30000001192092896
+                },
+                {
+                  "name": "paginate.typeset",
+                  "at": 1801.4000000059605,
+                  "ms": 24.30000001192093
+                },
+                {
+                  "name": "paginate.pass",
+                  "at": 1800.9000000059605,
+                  "ms": 25.099999994039536
+                },
+                {
+                  "name": "paginate.total",
+                  "at": 1800.9000000059605,
+                  "ms": 25.099999994039536
+                },
+                {
+                  "name": "insert.pagination",
+                  "at": 1800.9000000059605,
+                  "ms": 25.099999994039536
+                },
+                {
+                  "name": "insert.total",
+                  "at": 1800.300000011921,
+                  "ms": 25.69999998807907
+                }
+              ]
+            },
+            {
+              "ms": 26.599999994039536,
+              "phases": [
+                {
+                  "name": "insert.pictureBand",
+                  "at": 1830.2000000178814,
+                  "ms": 0
+                },
+                {
+                  "name": "insert.mutation",
+                  "at": 1830.2000000178814,
+                  "ms": 0
+                },
+                {
+                  "name": "reflow.paragraph",
+                  "at": 1830.2000000178814,
+                  "ms": 0.5
+                },
+                {
+                  "name": "insert.reflow",
+                  "at": 1830.2000000178814,
+                  "ms": 0.5
+                },
+                {
+                  "name": "insert.sectionVpos",
+                  "at": 1830.7000000178814,
+                  "ms": 0
+                },
+                {
+                  "name": "compose.paragraph",
+                  "at": 1830.7000000178814,
+                  "ms": 0
+                },
+                {
+                  "name": "insert.compose",
+                  "at": 1830.7000000178814,
+                  "ms": 0
+                },
+                {
+                  "name": "paginate.normalize",
+                  "at": 1830.800000011921,
+                  "ms": 0.19999998807907104
+                },
+                {
+                  "name": "paginate.measure",
+                  "at": 1831,
+                  "ms": 0.20000001788139343
+                },
+                {
+                  "name": "paginate.typeset",
+                  "at": 1831.2000000178814,
+                  "ms": 25.19999998807907
+                },
+                {
+                  "name": "paginate.pass",
+                  "at": 1830.7000000178814,
+                  "ms": 26.099999994039536
+                },
+                {
+                  "name": "paginate.total",
+                  "at": 1830.7000000178814,
+                  "ms": 26.099999994039536
+                },
+                {
+                  "name": "insert.pagination",
+                  "at": 1830.7000000178814,
+                  "ms": 26.099999994039536
+                },
+                {
+                  "name": "insert.total",
+                  "at": 1830.2000000178814,
+                  "ms": 26.599999994039536
+                }
+              ]
+            },
+            {
+              "ms": 25.700000017881393,
+              "phases": [
+                {
+                  "name": "insert.pictureBand",
+                  "at": 1861,
+                  "ms": 0
+                },
+                {
+                  "name": "insert.mutation",
+                  "at": 1861,
+                  "ms": 0
+                },
+                {
+                  "name": "reflow.paragraph",
+                  "at": 1861,
+                  "ms": 0.4000000059604645
+                },
+                {
+                  "name": "insert.reflow",
+                  "at": 1861,
+                  "ms": 0.4000000059604645
+                },
+                {
+                  "name": "insert.sectionVpos",
+                  "at": 1861.4000000059605,
+                  "ms": 0
+                },
+                {
+                  "name": "compose.paragraph",
+                  "at": 1861.4000000059605,
+                  "ms": 0
+                },
+                {
+                  "name": "insert.compose",
+                  "at": 1861.4000000059605,
+                  "ms": 0
+                },
+                {
+                  "name": "paginate.normalize",
+                  "at": 1861.5,
+                  "ms": 0.20000001788139343
+                },
+                {
+                  "name": "paginate.measure",
+                  "at": 1861.7000000178814,
+                  "ms": 0.19999998807907104
+                },
+                {
+                  "name": "paginate.typeset",
+                  "at": 1861.9000000059605,
+                  "ms": 24.400000005960464
+                },
+                {
+                  "name": "paginate.pass",
+                  "at": 1861.4000000059605,
+                  "ms": 25.30000001192093
+                },
+                {
+                  "name": "paginate.total",
+                  "at": 1861.4000000059605,
+                  "ms": 25.30000001192093
+                },
+                {
+                  "name": "insert.pagination",
+                  "at": 1861.4000000059605,
+                  "ms": 25.30000001192093
+                },
+                {
+                  "name": "insert.total",
+                  "at": 1861,
+                  "ms": 25.700000017881393
+                }
+              ]
+            }
+          ],
+          "caret": {
+            "pageIndex": 0,
+            "x": 233.4,
+            "y": 356.5,
+            "height": 18.7
+          }
+        }
+      }
+    },
+    {
+      "paragraph": 100,
+      "arms": {
+        "baseline": {
+          "originalLength": 86,
+          "pagesBefore": 60,
+          "pagesAfter": 60,
+          "edits": [
+            {
+              "ms": 25.099999994039536,
+              "phases": null
+            },
+            {
+              "ms": 25.19999998807907,
+              "phases": null
+            },
+            {
+              "ms": 25.900000005960464,
+              "phases": null
+            },
+            {
+              "ms": 25.099999994039536,
+              "phases": null
+            },
+            {
+              "ms": 25.599999994039536,
+              "phases": null
+            },
+            {
+              "ms": 26.599999994039536,
+              "phases": null
+            },
+            {
+              "ms": 27.400000005960464,
+              "phases": null
+            },
+            {
+              "ms": 26.30000001192093,
+              "phases": null
+            },
+            {
+              "ms": 25.5,
+              "phases": null
+            },
+            {
+              "ms": 28.599999994039536,
+              "phases": null
+            }
+          ],
+          "caret": {
+            "pageIndex": 6,
+            "x": 373.4,
+            "y": 636.5,
+            "height": 18.7
+          }
+        },
+        "phase": {
+          "originalLength": 86,
+          "pagesBefore": 60,
+          "pagesAfter": 60,
+          "edits": [
+            {
+              "ms": 32.900000005960464,
+              "phases": [
+                {
+                  "name": "insert.pictureBand",
+                  "at": 2718.2000000178814,
+                  "ms": 0
+                },
+                {
+                  "name": "insert.mutation",
+                  "at": 2718.2000000178814,
+                  "ms": 0
+                },
+                {
+                  "name": "reflow.paragraph",
+                  "at": 2718.2000000178814,
+                  "ms": 0.5
+                },
+                {
+                  "name": "insert.reflow",
+                  "at": 2718.2000000178814,
+                  "ms": 0.5
+                },
+                {
+                  "name": "insert.sectionVpos",
+                  "at": 2718.7000000178814,
+                  "ms": 0.09999999403953552
+                },
+                {
+                  "name": "compose.paragraph",
+                  "at": 2718.800000011921,
+                  "ms": 0
+                },
+                {
+                  "name": "insert.compose",
+                  "at": 2718.800000011921,
+                  "ms": 0
+                },
+                {
+                  "name": "paginate.normalize",
+                  "at": 2719,
+                  "ms": 0.09999999403953552
+                },
+                {
+                  "name": "paginate.measure",
+                  "at": 2719.0999999940395,
+                  "ms": 0.4000000059604645
+                },
+                {
+                  "name": "paginate.typeset",
+                  "at": 2719.5,
+                  "ms": 31.099999994039536
+                },
+                {
+                  "name": "paginate.pass",
+                  "at": 2718.800000011921,
+                  "ms": 32.099999994039536
+                },
+                {
+                  "name": "paginate.total",
+                  "at": 2718.800000011921,
+                  "ms": 32.099999994039536
+                },
+                {
+                  "name": "insert.pagination",
+                  "at": 2718.800000011921,
+                  "ms": 32.099999994039536
+                },
+                {
+                  "name": "insert.total",
+                  "at": 2718.2000000178814,
+                  "ms": 32.69999998807907
+                }
+              ]
+            },
+            {
+              "ms": 27.100000023841858,
+              "phases": [
+                {
+                  "name": "insert.pictureBand",
+                  "at": 2755.0999999940395,
+                  "ms": 0
+                },
+                {
+                  "name": "insert.mutation",
+                  "at": 2755.0999999940395,
+                  "ms": 0
+                },
+                {
+                  "name": "reflow.paragraph",
+                  "at": 2755.0999999940395,
+                  "ms": 0.30000001192092896
+                },
+                {
+                  "name": "insert.reflow",
+                  "at": 2755.0999999940395,
+                  "ms": 0.4000000059604645
+                },
+                {
+                  "name": "insert.sectionVpos",
+                  "at": 2755.5,
+                  "ms": 0
+                },
+                {
+                  "name": "compose.paragraph",
+                  "at": 2755.5,
+                  "ms": 0.09999999403953552
+                },
+                {
+                  "name": "insert.compose",
+                  "at": 2755.5,
+                  "ms": 0.09999999403953552
+                },
+                {
+                  "name": "paginate.normalize",
+                  "at": 2755.7000000178814,
+                  "ms": 0.09999999403953552
+                },
+                {
+                  "name": "paginate.measure",
+                  "at": 2755.800000011921,
+                  "ms": 0.29999998211860657
+                },
+                {
+                  "name": "paginate.typeset",
+                  "at": 2756.0999999940395,
+                  "ms": 25.80000001192093
+                },
+                {
+                  "name": "paginate.pass",
+                  "at": 2755.5999999940395,
+                  "ms": 26.600000023841858
+                },
+                {
+                  "name": "paginate.total",
+                  "at": 2755.5999999940395,
+                  "ms": 26.600000023841858
+                },
+                {
+                  "name": "insert.pagination",
+                  "at": 2755.5999999940395,
+                  "ms": 26.600000023841858
+                },
+                {
+                  "name": "insert.total",
+                  "at": 2755.0999999940395,
+                  "ms": 27.100000023841858
+                }
+              ]
+            },
+            {
+              "ms": 27.299999982118607,
+              "phases": [
+                {
+                  "name": "insert.pictureBand",
+                  "at": 2786.4000000059605,
+                  "ms": 0
+                },
+                {
+                  "name": "insert.mutation",
+                  "at": 2786.4000000059605,
+                  "ms": 0
+                },
+                {
+                  "name": "reflow.paragraph",
+                  "at": 2786.4000000059605,
+                  "ms": 0.30000001192092896
+                },
+                {
+                  "name": "insert.reflow",
+                  "at": 2786.4000000059605,
+                  "ms": 0.30000001192092896
+                },
+                {
+                  "name": "insert.sectionVpos",
+                  "at": 2786.7000000178814,
+                  "ms": 0.09999999403953552
+                },
+                {
+                  "name": "compose.paragraph",
+                  "at": 2786.800000011921,
+                  "ms": 0
+                },
+                {
+                  "name": "insert.compose",
+                  "at": 2786.800000011921,
+                  "ms": 0
+                },
+                {
+                  "name": "paginate.normalize",
+                  "at": 2786.9000000059605,
+                  "ms": 0.09999999403953552
+                },
+                {
+                  "name": "paginate.measure",
+                  "at": 2787,
+                  "ms": 0.20000001788139343
+                },
+                {
+                  "name": "paginate.typeset",
+                  "at": 2787.2000000178814,
+                  "ms": 26
+                },
+                {
+                  "name": "paginate.pass",
+                  "at": 2786.800000011921,
+                  "ms": 26.69999998807907
+                },
+                {
+                  "name": "paginate.total",
+                  "at": 2786.800000011921,
+                  "ms": 26.69999998807907
+                },
+                {
+                  "name": "insert.pagination",
+                  "at": 2786.800000011921,
+                  "ms": 26.69999998807907
+                },
+                {
+                  "name": "insert.total",
+                  "at": 2786.4000000059605,
+                  "ms": 27.099999994039536
+                }
+              ]
+            },
+            {
+              "ms": 31.69999998807907,
+              "phases": [
+                {
+                  "name": "insert.pictureBand",
+                  "at": 2817.800000011921,
+                  "ms": 0
+                },
+                {
+                  "name": "insert.mutation",
+                  "at": 2817.800000011921,
+                  "ms": 0
+                },
+                {
+                  "name": "reflow.paragraph",
+                  "at": 2817.800000011921,
+                  "ms": 0.29999998211860657
+                },
+                {
+                  "name": "insert.reflow",
+                  "at": 2817.800000011921,
+                  "ms": 0.29999998211860657
+                },
+                {
+                  "name": "insert.sectionVpos",
+                  "at": 2818.0999999940395,
+                  "ms": 0.10000002384185791
+                },
+                {
+                  "name": "compose.paragraph",
+                  "at": 2818.2000000178814,
+                  "ms": 0.09999999403953552
+                },
+                {
+                  "name": "insert.compose",
+                  "at": 2818.2000000178814,
+                  "ms": 0.09999999403953552
+                },
+                {
+                  "name": "paginate.normalize",
+                  "at": 2818.300000011921,
+                  "ms": 0.19999998807907104
+                },
+                {
+                  "name": "paginate.measure",
+                  "at": 2818.5,
+                  "ms": 0.20000001788139343
+                },
+                {
+                  "name": "paginate.typeset",
+                  "at": 2818.7000000178814,
+                  "ms": 30.399999976158142
+                },
+                {
+                  "name": "paginate.pass",
+                  "at": 2818.300000011921,
+                  "ms": 31.099999994039536
+                },
+                {
+                  "name": "paginate.total",
+                  "at": 2818.300000011921,
+                  "ms": 31.099999994039536
+                },
+                {
+                  "name": "insert.pagination",
+                  "at": 2818.300000011921,
+                  "ms": 31.19999998807907
+                },
+                {
+                  "name": "insert.total",
+                  "at": 2817.800000011921,
+                  "ms": 31.69999998807907
+                }
+              ]
+            },
+            {
+              "ms": 28.200000017881393,
+              "phases": [
+                {
+                  "name": "insert.pictureBand",
+                  "at": 2853.7000000178814,
+                  "ms": 0
+                },
+                {
+                  "name": "insert.mutation",
+                  "at": 2853.7000000178814,
+                  "ms": 0.09999999403953552
+                },
+                {
+                  "name": "reflow.paragraph",
+                  "at": 2853.800000011921,
+                  "ms": 0.29999998211860657
+                },
+                {
+                  "name": "insert.reflow",
+                  "at": 2853.800000011921,
+                  "ms": 0.29999998211860657
+                },
+                {
+                  "name": "insert.sectionVpos",
+                  "at": 2854.0999999940395,
+                  "ms": 0.10000002384185791
+                },
+                {
+                  "name": "compose.paragraph",
+                  "at": 2854.2000000178814,
+                  "ms": 0
+                },
+                {
+                  "name": "insert.compose",
+                  "at": 2854.2000000178814,
+                  "ms": 0
+                },
+                {
+                  "name": "paginate.normalize",
+                  "at": 2854.4000000059605,
+                  "ms": 0.19999998807907104
+                },
+                {
+                  "name": "paginate.measure",
+                  "at": 2854.5999999940395,
+                  "ms": 0.20000001788139343
+                },
+                {
+                  "name": "paginate.typeset",
+                  "at": 2854.800000011921,
+                  "ms": 26.599999994039536
+                },
+                {
+                  "name": "paginate.pass",
+                  "at": 2854.2000000178814,
+                  "ms": 27.5
+                },
+                {
+                  "name": "paginate.total",
+                  "at": 2854.2000000178814,
+                  "ms": 27.5
+                },
+                {
+                  "name": "insert.pagination",
+                  "at": 2854.2000000178814,
+                  "ms": 27.5
+                },
+                {
+                  "name": "insert.total",
+                  "at": 2853.7000000178814,
+                  "ms": 28.099999994039536
+                }
+              ]
+            },
+            {
+              "ms": 26.30000001192093,
+              "phases": [
+                {
+                  "name": "insert.pictureBand",
+                  "at": 2885.9000000059605,
+                  "ms": 0
+                },
+                {
+                  "name": "insert.mutation",
+                  "at": 2885.9000000059605,
+                  "ms": 0
+                },
+                {
+                  "name": "reflow.paragraph",
+                  "at": 2885.9000000059605,
+                  "ms": 0.4000000059604645
+                },
+                {
+                  "name": "insert.reflow",
+                  "at": 2885.9000000059605,
+                  "ms": 0.4000000059604645
+                },
+                {
+                  "name": "insert.sectionVpos",
+                  "at": 2886.300000011921,
+                  "ms": 0
+                },
+                {
+                  "name": "compose.paragraph",
+                  "at": 2886.300000011921,
+                  "ms": 0.09999999403953552
+                },
+                {
+                  "name": "insert.compose",
+                  "at": 2886.300000011921,
+                  "ms": 0.09999999403953552
+                },
+                {
+                  "name": "paginate.normalize",
+                  "at": 2886.4000000059605,
+                  "ms": 0.19999998807907104
+                },
+                {
+                  "name": "paginate.measure",
+                  "at": 2886.5999999940395,
+                  "ms": 0.10000002384185791
+                },
+                {
+                  "name": "paginate.typeset",
+                  "at": 2886.7000000178814,
+                  "ms": 25.19999998807907
+                },
+                {
+                  "name": "paginate.pass",
+                  "at": 2886.4000000059605,
+                  "ms": 25.80000001192093
+                },
+                {
+                  "name": "paginate.total",
+                  "at": 2886.4000000059605,
+                  "ms": 25.80000001192093
+                },
+                {
+                  "name": "insert.pagination",
+                  "at": 2886.4000000059605,
+                  "ms": 25.80000001192093
+                },
+                {
+                  "name": "insert.total",
+                  "at": 2885.9000000059605,
+                  "ms": 26.30000001192093
+                }
+              ]
+            },
+            {
+              "ms": 27.700000017881393,
+              "phases": [
+                {
+                  "name": "insert.pictureBand",
+                  "at": 2916.5,
+                  "ms": 0
+                },
+                {
+                  "name": "insert.mutation",
+                  "at": 2916.5,
+                  "ms": 0
+                },
+                {
+                  "name": "reflow.paragraph",
+                  "at": 2916.5,
+                  "ms": 0.5
+                },
+                {
+                  "name": "insert.reflow",
+                  "at": 2916.5,
+                  "ms": 0.5
+                },
+                {
+                  "name": "insert.sectionVpos",
+                  "at": 2917,
+                  "ms": 0
+                },
+                {
+                  "name": "compose.paragraph",
+                  "at": 2917,
+                  "ms": 0.20000001788139343
+                },
+                {
+                  "name": "insert.compose",
+                  "at": 2917,
+                  "ms": 0.20000001788139343
+                },
+                {
+                  "name": "paginate.normalize",
+                  "at": 2917.300000011921,
+                  "ms": 0.09999999403953552
+                },
+                {
+                  "name": "paginate.measure",
+                  "at": 2917.4000000059605,
+                  "ms": 0.30000001192092896
+                },
+                {
+                  "name": "paginate.typeset",
+                  "at": 2917.7000000178814,
+                  "ms": 26.099999994039536
+                },
+                {
+                  "name": "paginate.pass",
+                  "at": 2917.2000000178814,
+                  "ms": 26.899999976158142
+                },
+                {
+                  "name": "paginate.total",
+                  "at": 2917.2000000178814,
+                  "ms": 26.899999976158142
+                },
+                {
+                  "name": "insert.pagination",
+                  "at": 2917.2000000178814,
+                  "ms": 26.899999976158142
+                },
+                {
+                  "name": "insert.total",
+                  "at": 2916.5,
+                  "ms": 27.700000017881393
+                }
+              ]
+            },
+            {
+              "ms": 26.5,
+              "phases": [
+                {
+                  "name": "insert.pictureBand",
+                  "at": 2948.5,
+                  "ms": 0
+                },
+                {
+                  "name": "insert.mutation",
+                  "at": 2948.5,
+                  "ms": 0.09999999403953552
+                },
+                {
+                  "name": "reflow.paragraph",
+                  "at": 2948.5999999940395,
+                  "ms": 0.30000001192092896
+                },
+                {
+                  "name": "insert.reflow",
+                  "at": 2948.5999999940395,
+                  "ms": 0.30000001192092896
+                },
+                {
+                  "name": "insert.sectionVpos",
+                  "at": 2948.9000000059605,
+                  "ms": 0
+                },
+                {
+                  "name": "compose.paragraph",
+                  "at": 2948.9000000059605,
+                  "ms": 0.09999999403953552
+                },
+                {
+                  "name": "insert.compose",
+                  "at": 2948.9000000059605,
+                  "ms": 0.09999999403953552
+                },
+                {
+                  "name": "paginate.normalize",
+                  "at": 2949.0999999940395,
+                  "ms": 0.20000001788139343
+                },
+                {
+                  "name": "paginate.measure",
+                  "at": 2949.300000011921,
+                  "ms": 0.19999998807907104
+                },
+                {
+                  "name": "paginate.typeset",
+                  "at": 2949.5,
+                  "ms": 25
+                },
+                {
+                  "name": "paginate.pass",
+                  "at": 2949,
+                  "ms": 25.900000005960464
+                },
+                {
+                  "name": "paginate.total",
+                  "at": 2949,
+                  "ms": 25.900000005960464
+                },
+                {
+                  "name": "insert.pagination",
+                  "at": 2949,
+                  "ms": 25.900000005960464
+                },
+                {
+                  "name": "insert.total",
+                  "at": 2948.5,
+                  "ms": 26.400000005960464
+                }
+              ]
+            },
+            {
+              "ms": 34.30000001192093,
+              "phases": [
+                {
+                  "name": "insert.pictureBand",
+                  "at": 2979,
+                  "ms": 0.09999999403953552
+                },
+                {
+                  "name": "insert.mutation",
+                  "at": 2979.0999999940395,
+                  "ms": 0
+                },
+                {
+                  "name": "reflow.paragraph",
+                  "at": 2979.0999999940395,
+                  "ms": 0.30000001192092896
+                },
+                {
+                  "name": "insert.reflow",
+                  "at": 2979.0999999940395,
+                  "ms": 0.30000001192092896
+                },
+                {
+                  "name": "insert.sectionVpos",
+                  "at": 2979.4000000059605,
+                  "ms": 0
+                },
+                {
+                  "name": "compose.paragraph",
+                  "at": 2979.4000000059605,
+                  "ms": 0.09999999403953552
+                },
+                {
+                  "name": "insert.compose",
+                  "at": 2979.4000000059605,
+                  "ms": 0.09999999403953552
+                },
+                {
+                  "name": "paginate.normalize",
+                  "at": 2979.5999999940395,
+                  "ms": 0
+                },
+                {
+                  "name": "paginate.measure",
+                  "at": 2979.5999999940395,
+                  "ms": 0.20000001788139343
+                },
+                {
+                  "name": "paginate.typeset",
+                  "at": 2979.800000011921,
+                  "ms": 33.099999994039536
+                },
+                {
+                  "name": "paginate.pass",
+                  "at": 2979.5,
+                  "ms": 33.70000001788139
+                },
+                {
+                  "name": "paginate.total",
+                  "at": 2979.5,
+                  "ms": 33.80000001192093
+                },
+                {
+                  "name": "insert.pagination",
+                  "at": 2979.5,
+                  "ms": 33.80000001192093
+                },
+                {
+                  "name": "insert.total",
+                  "at": 2979,
+                  "ms": 34.30000001192093
+                }
+              ]
+            },
+            {
+              "ms": 25.69999998807907,
+              "phases": [
+                {
+                  "name": "insert.pictureBand",
+                  "at": 3017.4000000059605,
+                  "ms": 0
+                },
+                {
+                  "name": "insert.mutation",
+                  "at": 3017.4000000059605,
+                  "ms": 0
+                },
+                {
+                  "name": "reflow.paragraph",
+                  "at": 3017.4000000059605,
+                  "ms": 0.4000000059604645
+                },
+                {
+                  "name": "insert.reflow",
+                  "at": 3017.4000000059605,
+                  "ms": 0.4000000059604645
+                },
+                {
+                  "name": "insert.sectionVpos",
+                  "at": 3017.800000011921,
+                  "ms": 0.09999999403953552
+                },
+                {
+                  "name": "compose.paragraph",
+                  "at": 3017.9000000059605,
+                  "ms": 0
+                },
+                {
+                  "name": "insert.compose",
+                  "at": 3017.9000000059605,
+                  "ms": 0
+                },
+                {
+                  "name": "paginate.normalize",
+                  "at": 3018,
+                  "ms": 0.09999999403953552
+                },
+                {
+                  "name": "paginate.measure",
+                  "at": 3018.2000000178814,
+                  "ms": 0.09999999403953552
+                },
+                {
+                  "name": "paginate.typeset",
+                  "at": 3018.300000011921,
+                  "ms": 24.400000005960464
+                },
+                {
+                  "name": "paginate.pass",
+                  "at": 3017.9000000059605,
+                  "ms": 25.19999998807907
+                },
+                {
+                  "name": "paginate.total",
+                  "at": 3017.9000000059605,
+                  "ms": 25.19999998807907
+                },
+                {
+                  "name": "insert.pagination",
+                  "at": 3017.9000000059605,
+                  "ms": 25.19999998807907
+                },
+                {
+                  "name": "insert.total",
+                  "at": 3017.4000000059605,
+                  "ms": 25.69999998807907
+                }
+              ]
+            }
+          ],
+          "caret": {
+            "pageIndex": 6,
+            "x": 373.4,
+            "y": 636.5,
+            "height": 18.7
+          }
+        }
+      }
+    },
+    {
+      "paragraph": 500,
+      "arms": {
+        "baseline": {
+          "originalLength": 6,
+          "pagesBefore": 60,
+          "pagesAfter": 60,
+          "edits": [
+            {
+              "ms": 29.299999982118607,
+              "phases": null
+            },
+            {
+              "ms": 26.899999976158142,
+              "phases": null
+            },
+            {
+              "ms": 28.400000005960464,
+              "phases": null
+            },
+            {
+              "ms": 28.69999998807907,
+              "phases": null
+            },
+            {
+              "ms": 26.5,
+              "phases": null
+            },
+            {
+              "ms": 32,
+              "phases": null
+            },
+            {
+              "ms": 28.30000001192093,
+              "phases": null
+            },
+            {
+              "ms": 27.30000001192093,
+              "phases": null
+            },
+            {
+              "ms": 26.5,
+              "phases": null
+            },
+            {
+              "ms": 24.900000005960464,
+              "phases": null
+            }
+          ],
+          "caret": {
+            "pageIndex": 34,
+            "x": 271.6,
+            "y": 76.5,
+            "height": 18.7
+          }
+        },
+        "phase": {
+          "originalLength": 6,
+          "pagesBefore": 60,
+          "pagesAfter": 60,
+          "edits": [
+            {
+              "ms": 25.400000005960464,
+              "phases": [
+                {
+                  "name": "insert.pictureBand",
+                  "at": 3863.5999999940395,
+                  "ms": 0
+                },
+                {
+                  "name": "insert.mutation",
+                  "at": 3863.5999999940395,
+                  "ms": 0
+                },
+                {
+                  "name": "reflow.paragraph",
+                  "at": 3863.5999999940395,
+                  "ms": 0.10000002384185791
+                },
+                {
+                  "name": "insert.reflow",
+                  "at": 3863.5999999940395,
+                  "ms": 0.10000002384185791
+                },
+                {
+                  "name": "insert.sectionVpos",
+                  "at": 3863.7000000178814,
+                  "ms": 0
+                },
+                {
+                  "name": "compose.paragraph",
+                  "at": 3863.7000000178814,
+                  "ms": 0
+                },
+                {
+                  "name": "insert.compose",
+                  "at": 3863.7000000178814,
+                  "ms": 0
+                },
+                {
+                  "name": "paginate.normalize",
+                  "at": 3863.800000011921,
+                  "ms": 0.09999999403953552
+                },
+                {
+                  "name": "paginate.measure",
+                  "at": 3863.9000000059605,
+                  "ms": 0.19999998807907104
+                },
+                {
+                  "name": "paginate.typeset",
+                  "at": 3864.0999999940395,
+                  "ms": 24.600000023841858
+                },
+                {
+                  "name": "paginate.pass",
+                  "at": 3863.7000000178814,
+                  "ms": 25.299999982118607
+                },
+                {
+                  "name": "paginate.total",
+                  "at": 3863.7000000178814,
+                  "ms": 25.299999982118607
+                },
+                {
+                  "name": "insert.pagination",
+                  "at": 3863.7000000178814,
+                  "ms": 25.299999982118607
+                },
+                {
+                  "name": "insert.total",
+                  "at": 3863.5999999940395,
+                  "ms": 25.400000005960464
+                }
+              ]
+            },
+            {
+              "ms": 25.400000005960464,
+              "phases": [
+                {
+                  "name": "insert.pictureBand",
+                  "at": 3893.2000000178814,
+                  "ms": 0
+                },
+                {
+                  "name": "insert.mutation",
+                  "at": 3893.2000000178814,
+                  "ms": 0
+                },
+                {
+                  "name": "reflow.paragraph",
+                  "at": 3893.2000000178814,
+                  "ms": 0.19999998807907104
+                },
+                {
+                  "name": "insert.reflow",
+                  "at": 3893.2000000178814,
+                  "ms": 0.19999998807907104
+                },
+                {
+                  "name": "insert.sectionVpos",
+                  "at": 3893.4000000059605,
+                  "ms": 0
+                },
+                {
+                  "name": "compose.paragraph",
+                  "at": 3893.4000000059605,
+                  "ms": 0
+                },
+                {
+                  "name": "insert.compose",
+                  "at": 3893.4000000059605,
+                  "ms": 0
+                },
+                {
+                  "name": "paginate.normalize",
+                  "at": 3893.5,
+                  "ms": 0.20000001788139343
+                },
+                {
+                  "name": "paginate.measure",
+                  "at": 3893.7000000178814,
+                  "ms": 0
+                },
+                {
+                  "name": "paginate.typeset",
+                  "at": 3893.7000000178814,
+                  "ms": 24.5
+                },
+                {
+                  "name": "paginate.pass",
+                  "at": 3893.4000000059605,
+                  "ms": 25
+                },
+                {
+                  "name": "paginate.total",
+                  "at": 3893.4000000059605,
+                  "ms": 25
+                },
+                {
+                  "name": "insert.pagination",
+                  "at": 3893.4000000059605,
+                  "ms": 25
+                },
+                {
+                  "name": "insert.total",
+                  "at": 3893.2000000178814,
+                  "ms": 25.299999982118607
+                }
+              ]
+            },
+            {
+              "ms": 26.099999994039536,
+              "phases": [
+                {
+                  "name": "insert.pictureBand",
+                  "at": 3922.7000000178814,
+                  "ms": 0
+                },
+                {
+                  "name": "insert.mutation",
+                  "at": 3922.7000000178814,
+                  "ms": 0
+                },
+                {
+                  "name": "reflow.paragraph",
+                  "at": 3922.7000000178814,
+                  "ms": 0.19999998807907104
+                },
+                {
+                  "name": "insert.reflow",
+                  "at": 3922.7000000178814,
+                  "ms": 0.19999998807907104
+                },
+                {
+                  "name": "insert.sectionVpos",
+                  "at": 3922.9000000059605,
+                  "ms": 0
+                },
+                {
+                  "name": "compose.paragraph",
+                  "at": 3922.9000000059605,
+                  "ms": 0
+                },
+                {
+                  "name": "insert.compose",
+                  "at": 3922.9000000059605,
+                  "ms": 0
+                },
+                {
+                  "name": "paginate.normalize",
+                  "at": 3923,
+                  "ms": 0.09999999403953552
+                },
+                {
+                  "name": "paginate.measure",
+                  "at": 3923.0999999940395,
+                  "ms": 0.20000001788139343
+                },
+                {
+                  "name": "paginate.typeset",
+                  "at": 3923.300000011921,
+                  "ms": 25.099999994039536
+                },
+                {
+                  "name": "paginate.pass",
+                  "at": 3922.9000000059605,
+                  "ms": 25.80000001192093
+                },
+                {
+                  "name": "paginate.total",
+                  "at": 3922.9000000059605,
+                  "ms": 25.80000001192093
+                },
+                {
+                  "name": "insert.pagination",
+                  "at": 3922.9000000059605,
+                  "ms": 25.80000001192093
+                },
+                {
+                  "name": "insert.total",
+                  "at": 3922.7000000178814,
+                  "ms": 26
+                }
+              ]
+            },
+            {
+              "ms": 34.60000002384186,
+              "phases": [
+                {
+                  "name": "insert.pictureBand",
+                  "at": 3954.2000000178814,
+                  "ms": 0
+                },
+                {
+                  "name": "insert.mutation",
+                  "at": 3954.2000000178814,
+                  "ms": 0
+                },
+                {
+                  "name": "reflow.paragraph",
+                  "at": 3954.2000000178814,
+                  "ms": 0.09999999403953552
+                },
+                {
+                  "name": "insert.reflow",
+                  "at": 3954.2000000178814,
+                  "ms": 0.09999999403953552
+                },
+                {
+                  "name": "insert.sectionVpos",
+                  "at": 3954.300000011921,
+                  "ms": 0
+                },
+                {
+                  "name": "compose.paragraph",
+                  "at": 3954.300000011921,
+                  "ms": 0.09999999403953552
+                },
+                {
+                  "name": "insert.compose",
+                  "at": 3954.300000011921,
+                  "ms": 0.09999999403953552
+                },
+                {
+                  "name": "paginate.normalize",
+                  "at": 3954.4000000059605,
+                  "ms": 0.19999998807907104
+                },
+                {
+                  "name": "paginate.measure",
+                  "at": 3954.5999999940395,
+                  "ms": 0.20000001788139343
+                },
+                {
+                  "name": "paginate.typeset",
+                  "at": 3954.800000011921,
+                  "ms": 33.5
+                },
+                {
+                  "name": "paginate.pass",
+                  "at": 3954.4000000059605,
+                  "ms": 34.30000001192093
+                },
+                {
+                  "name": "paginate.total",
+                  "at": 3954.4000000059605,
+                  "ms": 34.30000001192093
+                },
+                {
+                  "name": "insert.pagination",
+                  "at": 3954.4000000059605,
+                  "ms": 34.30000001192093
+                },
+                {
+                  "name": "insert.total",
+                  "at": 3954.2000000178814,
+                  "ms": 34.5
+                }
+              ]
+            },
+            {
+              "ms": 25,
+              "phases": [
+                {
+                  "name": "insert.pictureBand",
+                  "at": 3993,
+                  "ms": 0
+                },
+                {
+                  "name": "insert.mutation",
+                  "at": 3993,
+                  "ms": 0
+                },
+                {
+                  "name": "reflow.paragraph",
+                  "at": 3993,
+                  "ms": 0.09999999403953552
+                },
+                {
+                  "name": "insert.reflow",
+                  "at": 3993,
+                  "ms": 0.09999999403953552
+                },
+                {
+                  "name": "insert.sectionVpos",
+                  "at": 3993.0999999940395,
+                  "ms": 0
+                },
+                {
+                  "name": "compose.paragraph",
+                  "at": 3993.0999999940395,
+                  "ms": 0.10000002384185791
+                },
+                {
+                  "name": "insert.compose",
+                  "at": 3993.0999999940395,
+                  "ms": 0.10000002384185791
+                },
+                {
+                  "name": "paginate.normalize",
+                  "at": 3993.2000000178814,
+                  "ms": 0.09999999403953552
+                },
+                {
+                  "name": "paginate.measure",
+                  "at": 3993.300000011921,
+                  "ms": 0.19999998807907104
+                },
+                {
+                  "name": "paginate.typeset",
+                  "at": 3993.5,
+                  "ms": 24.099999994039536
+                },
+                {
+                  "name": "paginate.pass",
+                  "at": 3993.2000000178814,
+                  "ms": 24.69999998807907
+                },
+                {
+                  "name": "paginate.total",
+                  "at": 3993.2000000178814,
+                  "ms": 24.69999998807907
+                },
+                {
+                  "name": "insert.pagination",
+                  "at": 3993.2000000178814,
+                  "ms": 24.69999998807907
+                },
+                {
+                  "name": "insert.total",
+                  "at": 3993,
+                  "ms": 24.900000005960464
+                }
+              ]
+            },
+            {
+              "ms": 25.5,
+              "phases": [
+                {
+                  "name": "insert.pictureBand",
+                  "at": 4022.2000000178814,
+                  "ms": 0
+                },
+                {
+                  "name": "insert.mutation",
+                  "at": 4022.2000000178814,
+                  "ms": 0
+                },
+                {
+                  "name": "reflow.paragraph",
+                  "at": 4022.2000000178814,
+                  "ms": 0.09999999403953552
+                },
+                {
+                  "name": "insert.reflow",
+                  "at": 4022.2000000178814,
+                  "ms": 0.09999999403953552
+                },
+                {
+                  "name": "insert.sectionVpos",
+                  "at": 4022.300000011921,
+                  "ms": 0
+                },
+                {
+                  "name": "compose.paragraph",
+                  "at": 4022.300000011921,
+                  "ms": 0
+                },
+                {
+                  "name": "insert.compose",
+                  "at": 4022.300000011921,
+                  "ms": 0
+                },
+                {
+                  "name": "paginate.normalize",
+                  "at": 4022.4000000059605,
+                  "ms": 0.19999998807907104
+                },
+                {
+                  "name": "paginate.measure",
+                  "at": 4022.5999999940395,
+                  "ms": 0.10000002384185791
+                },
+                {
+                  "name": "paginate.typeset",
+                  "at": 4022.7000000178814,
+                  "ms": 24.599999994039536
+                },
+                {
+                  "name": "paginate.pass",
+                  "at": 4022.300000011921,
+                  "ms": 25.400000005960464
+                },
+                {
+                  "name": "paginate.total",
+                  "at": 4022.300000011921,
+                  "ms": 25.400000005960464
+                },
+                {
+                  "name": "insert.pagination",
+                  "at": 4022.300000011921,
+                  "ms": 25.400000005960464
+                },
+                {
+                  "name": "insert.total",
+                  "at": 4022.2000000178814,
+                  "ms": 25.5
+                }
+              ]
+            },
+            {
+              "ms": 25.599999994039536,
+              "phases": [
+                {
+                  "name": "insert.pictureBand",
+                  "at": 4051.800000011921,
+                  "ms": 0.09999999403953552
+                },
+                {
+                  "name": "insert.mutation",
+                  "at": 4051.9000000059605,
+                  "ms": 0
+                },
+                {
+                  "name": "reflow.paragraph",
+                  "at": 4051.9000000059605,
+                  "ms": 0.09999999403953552
+                },
+                {
+                  "name": "insert.reflow",
+                  "at": 4051.9000000059605,
+                  "ms": 0.09999999403953552
+                },
+                {
+                  "name": "insert.sectionVpos",
+                  "at": 4052,
+                  "ms": 0
+                },
+                {
+                  "name": "compose.paragraph",
+                  "at": 4052,
+                  "ms": 0
+                },
+                {
+                  "name": "insert.compose",
+                  "at": 4052,
+                  "ms": 0
+                },
+                {
+                  "name": "paginate.normalize",
+                  "at": 4052.2000000178814,
+                  "ms": 0.09999999403953552
+                },
+                {
+                  "name": "paginate.measure",
+                  "at": 4052.300000011921,
+                  "ms": 0.19999998807907104
+                },
+                {
+                  "name": "paginate.typeset",
+                  "at": 4052.5,
+                  "ms": 24.5
+                },
+                {
+                  "name": "paginate.pass",
+                  "at": 4052,
+                  "ms": 25.30000001192093
+                },
+                {
+                  "name": "paginate.total",
+                  "at": 4052,
+                  "ms": 25.30000001192093
+                },
+                {
+                  "name": "insert.pagination",
+                  "at": 4052,
+                  "ms": 25.30000001192093
+                },
+                {
+                  "name": "insert.total",
+                  "at": 4051.800000011921,
+                  "ms": 25.5
+                }
+              ]
+            },
+            {
+              "ms": 26,
+              "phases": [
+                {
+                  "name": "insert.pictureBand",
+                  "at": 4081.7000000178814,
+                  "ms": 0
+                },
+                {
+                  "name": "insert.mutation",
+                  "at": 4081.7000000178814,
+                  "ms": 0
+                },
+                {
+                  "name": "reflow.paragraph",
+                  "at": 4081.7000000178814,
+                  "ms": 0.19999998807907104
+                },
+                {
+                  "name": "insert.reflow",
+                  "at": 4081.7000000178814,
+                  "ms": 0.19999998807907104
+                },
+                {
+                  "name": "insert.sectionVpos",
+                  "at": 4081.9000000059605,
+                  "ms": 0
+                },
+                {
+                  "name": "compose.paragraph",
+                  "at": 4081.9000000059605,
+                  "ms": 0.09999999403953552
+                },
+                {
+                  "name": "insert.compose",
+                  "at": 4081.9000000059605,
+                  "ms": 0.09999999403953552
+                },
+                {
+                  "name": "paginate.normalize",
+                  "at": 4082,
+                  "ms": 0.20000001788139343
+                },
+                {
+                  "name": "paginate.measure",
+                  "at": 4082.2000000178814,
+                  "ms": 0.19999998807907104
+                },
+                {
+                  "name": "paginate.typeset",
+                  "at": 4082.4000000059605,
+                  "ms": 24.900000005960464
+                },
+                {
+                  "name": "paginate.pass",
+                  "at": 4082,
+                  "ms": 25.599999994039536
+                },
+                {
+                  "name": "paginate.total",
+                  "at": 4082,
+                  "ms": 25.599999994039536
+                },
+                {
+                  "name": "insert.pagination",
+                  "at": 4082,
+                  "ms": 25.599999994039536
+                },
+                {
+                  "name": "insert.total",
+                  "at": 4081.7000000178814,
+                  "ms": 25.899999976158142
+                }
+              ]
+            },
+            {
+              "ms": 26.19999998807907,
+              "phases": [
+                {
+                  "name": "insert.pictureBand",
+                  "at": 4111.800000011921,
+                  "ms": 0.09999999403953552
+                },
+                {
+                  "name": "insert.mutation",
+                  "at": 4111.9000000059605,
+                  "ms": 0
+                },
+                {
+                  "name": "reflow.paragraph",
+                  "at": 4111.9000000059605,
+                  "ms": 0.09999999403953552
+                },
+                {
+                  "name": "insert.reflow",
+                  "at": 4111.9000000059605,
+                  "ms": 0.09999999403953552
+                },
+                {
+                  "name": "insert.sectionVpos",
+                  "at": 4112,
+                  "ms": 0
+                },
+                {
+                  "name": "compose.paragraph",
+                  "at": 4112,
+                  "ms": 0.09999999403953552
+                },
+                {
+                  "name": "insert.compose",
+                  "at": 4112,
+                  "ms": 0.09999999403953552
+                },
+                {
+                  "name": "paginate.normalize",
+                  "at": 4112.300000011921,
+                  "ms": 0.09999999403953552
+                },
+                {
+                  "name": "paginate.measure",
+                  "at": 4112.4000000059605,
+                  "ms": 0.19999998807907104
+                },
+                {
+                  "name": "paginate.typeset",
+                  "at": 4112.5999999940395,
+                  "ms": 25
+                },
+                {
+                  "name": "paginate.pass",
+                  "at": 4112.0999999940395,
+                  "ms": 25.80000001192093
+                },
+                {
+                  "name": "paginate.total",
+                  "at": 4112.0999999940395,
+                  "ms": 25.80000001192093
+                },
+                {
+                  "name": "insert.pagination",
+                  "at": 4112.0999999940395,
+                  "ms": 25.80000001192093
+                },
+                {
+                  "name": "insert.total",
+                  "at": 4111.800000011921,
+                  "ms": 26.099999994039536
+                }
+              ]
+            },
+            {
+              "ms": 25.599999994039536,
+              "phases": [
+                {
+                  "name": "insert.pictureBand",
+                  "at": 4142.300000011921,
+                  "ms": 0
+                },
+                {
+                  "name": "insert.mutation",
+                  "at": 4142.300000011921,
+                  "ms": 0
+                },
+                {
+                  "name": "reflow.paragraph",
+                  "at": 4142.300000011921,
+                  "ms": 0.19999998807907104
+                },
+                {
+                  "name": "insert.reflow",
+                  "at": 4142.300000011921,
+                  "ms": 0.19999998807907104
+                },
+                {
+                  "name": "insert.sectionVpos",
+                  "at": 4142.5,
+                  "ms": 0
+                },
+                {
+                  "name": "compose.paragraph",
+                  "at": 4142.5,
+                  "ms": 0.09999999403953552
+                },
+                {
+                  "name": "insert.compose",
+                  "at": 4142.5,
+                  "ms": 0.09999999403953552
+                },
+                {
+                  "name": "paginate.normalize",
+                  "at": 4142.700000017881,
+                  "ms": 0.19999998807907104
+                },
+                {
+                  "name": "paginate.measure",
+                  "at": 4142.9000000059605,
+                  "ms": 0.09999999403953552
+                },
+                {
+                  "name": "paginate.typeset",
+                  "at": 4143,
+                  "ms": 24.5
+                },
+                {
+                  "name": "paginate.pass",
+                  "at": 4142.5999999940395,
+                  "ms": 25.200000017881393
+                },
+                {
+                  "name": "paginate.total",
+                  "at": 4142.5999999940395,
+                  "ms": 25.200000017881393
+                },
+                {
+                  "name": "insert.pagination",
+                  "at": 4142.5999999940395,
+                  "ms": 25.200000017881393
+                },
+                {
+                  "name": "insert.total",
+                  "at": 4142.300000011921,
+                  "ms": 25.5
+                }
+              ]
+            }
+          ],
+          "caret": {
+            "pageIndex": 34,
+            "x": 271.6,
+            "y": 76.5,
+            "height": 18.7
+          }
+        }
+      }
+    }
+  ],
+  "browserLogTail": "ktop.DBus.NameHasOwner: object_path= /org/freedesktop/DBus: unknown error type: \n[2954744:2954744:1024/231508.719205:ERROR:dbus/object_proxy.cc:572] Failed to call method: org.freedesktop.DBus.NameHasOwner: object_path= /org/freedesktop/DBus: unknown error type: \n[2954744:2954766:1024/231508.721700:ERROR:dbus/bus.cc:405] Failed to connect to the bus: Could not parse server address: Unknown address type (examples of valid types are \"tcp\" and on UNIX \"unix\")\n[2954744:2954744:1024/231508.723914:ERROR:dbus/object_proxy.cc:572] Failed to call method: org.freedesktop.DBus.NameHasOwner: object_path= /org/freedesktop/DBus: unknown error type: \n[2954744:2954744:1024/231508.752511:ERROR:dbus/object_proxy.cc:572] Failed to call method: org.freedesktop.DBus.NameHasOwner: object_path= /org/freedesktop/DBus: unknown error type: \n[2954744:2954766:1024/231508.752670:ERROR:dbus/bus.cc:405] Failed to connect to the bus: Could not parse server address: Unknown address type (examples of valid types are \"tcp\" and on UNIX \"unix\")\n[2954744:2954744:1024/231508.752747:ERROR:dbus/object_proxy.cc:572] Failed to call method: org.freedesktop.DBus.Properties.GetAll: object_path= /org/freedesktop/UPower/devices/DisplayDevice: org.freedesktop.DBus.Error.ServiceUnknown: The name is not activatable\n[2954744:2954744:1024/231508.766451:ERROR:dbus/object_proxy.cc:572] Failed to call method: org.freedesktop.DBus.NameHasOwner: object_path= /org/freedesktop/DBus: unknown error type: \n[2954744:2954766:1024/231508.766574:ERROR:dbus/bus.cc:405] Failed to connect to the bus: Could not parse server address: Unknown address type (examples of valid types are \"tcp\" and on UNIX \"unix\")\n[2954744:2954744:1024/231508.791636:ERROR:dbus/object_proxy.cc:572] Failed to call method: org.freedesktop.DBus.NameHasOwner: object_path= /org/freedesktop/DBus: unknown error type: \n[2954744:2954769:1024/231512.327778:ERROR:google_apis/gcm/engine/registration_request.cc:291] Registration response error message: DEPRECATED_ENDPOINT\n",
+  "parentExit": 0,
+  "command": [
+    "/nix/store/k1lvk4d36zsv6wpvqc1wrczid08lb2r4-google-chrome/bin/google-chrome",
+    "--headless=new",
+    "--no-sandbox",
+    "--disable-dev-shm-usage",
+    "--disable-gpu",
+    "--user-data-dir=/tmp/nix-shell.FNr9XN/geul-d4-phase-chrome-b_ef92o8",
+    "http://127.0.0.1:44393"
+  ],
+  "identities": {
+    "<workspace>/tests/integration/rhwp/ownership-poc/typeset-reuse-browser.mjs": "c57ddffed5275796e929922ac30ead85fdf484331790ff1d6a14b7641b456100",
+    "<workspace>/tests/integration/rhwp/ownership-poc/run-edit-phases.py": "3985c999404ac5d11918456ce2a95fa3498fad08c2859fbea529aea976c43057",
+    "<workspace>/external/rhwp/samples/issue6031/3249937_asset_management_rules.hwpx": "97b5d6c571a6b7626321c6a53d797e3511978447497bb73309bd23eaa8e7ea77",
+    "<workspace>/external/rhwp/samples/rnote/연구노트(화학).hwp": "6717eca43c6fdd9b0530530cf17d33b6687da0c462a433d37eb652afb5394f91",
+    "/tmp/geul-d4-critical-path/fixtures/basic-ko.hwpx": "26d434b7b427149110751c6ef5b19e9ecb4818f3ba7eadfe201b5afd3de442a8",
+    "/tmp/geul-t010-caret-geometry/candidate-package/rhwp.js": "b69e920c8fb1e9d05dacadf3ebae2396b043da385137ad2b4b3386a9b3433252",
+    "/tmp/geul-t010-caret-geometry/candidate-package/rhwp_bg.wasm": "48adaa0f748484d12f59f4805deda0480635f915368392a87e76e95962ec0b27",
+    "/tmp/geul-d4-deep-source/phase-package/rhwp.js": "706ae353dcdd21f48731b31f91269708f53cba2ae0bca5728ff9fa6422e54954",
+    "/tmp/geul-d4-deep-source/phase-package/rhwp_bg.wasm": "6f2ee87214944e6aa27c495be6613b68508f9575baa42ae0f4458aff045551d0",
+    "/tmp/geul-d4-deep-source/phase-package/snippets/rhwp-594b72360f448ee6/inline0.js": "0f2619d563a0e87e628d82025ac91128bb790660744ff4b7c66cc43e40b6be3b"
+  },
+  "executedDependenciesStable": true,
+  "browserVersion": "Google Chrome 155.0.8059.39"
+}

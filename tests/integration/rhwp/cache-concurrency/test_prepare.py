@@ -10,6 +10,16 @@ spec.loader.exec_module(prepare)
 
 
 class CandidateSourceIdentity(unittest.TestCase):
+    def test_canvas_conversion_change_invalidates_candidate_identity(self):
+        with tempfile.TemporaryDirectory() as folder:
+            work = Path(folder)
+            helper = work / 'src/renderer/canvas_rgba.rs'
+            helper.parent.mkdir(parents=True)
+            helper.write_text('original conversion')
+            before = prepare.source_hashes(work)
+            helper.write_text('changed during build')
+            self.assertNotEqual(before, prepare.source_hashes(work))
+
     def test_layout_and_geometry_contract_changes_invalidate_candidate_identity(self):
         with tempfile.TemporaryDirectory() as folder:
             work = Path(folder)

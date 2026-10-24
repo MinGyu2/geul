@@ -1,0 +1,65 @@
+
+// Observe real JS allocation/transfer boundaries without retaining pixel arguments.
+const jsRows=[];let serial=0;const ids=new WeakMap();
+const id=x=>{if(!ids.has(x))ids.set(x,++serial);return ids.get(x);};
+const record=(name,at,extra={})=>{if(globalThis.__d4phase && jsRows.length<4096)jsRows.push({name,at,ms:performance.now()-at,...extra});};
+const ImageDataBase=globalThis.ImageData;
+globalThis.ImageData=new Proxy(ImageDataBase,{construct(target,args){const at=performance.now();try{return Reflect.construct(target,args);}finally{record('js.ImageData',at,{width:args[1],height:args[2],bytes:args[0]?.byteLength??null});}}});
+for(const name of ['putImageData','drawImage']) {
+ const original=CanvasRenderingContext2D.prototype[name];
+ CanvasRenderingContext2D.prototype[name]=function(...args){const at=performance.now();try{return original.apply(this,args);}finally{record('js.'+name,at,{canvas:id(this.canvas),width:this.canvas.width,height:this.canvas.height,source:name==='drawImage'&&args[0] instanceof HTMLCanvasElement?id(args[0]):null});}};
+}
+for(const name of ['width','height']) {
+ const original=Object.getOwnPropertyDescriptor(HTMLCanvasElement.prototype,name);
+ Object.defineProperty(HTMLCanvasElement.prototype,name,{...original,set(value){const at=performance.now();try{return original.set.call(this,value);}finally{record('js.canvas.'+name,at,{canvas:id(this),value});}}});
+}
+const getContext=HTMLCanvasElement.prototype.getContext;
+HTMLCanvasElement.prototype.getContext=function(...args){const at=performance.now();try{return getContext.apply(this,args);}finally{record('js.getContext',at,{canvas:id(this),width:this.width,height:this.height});}};
+// Isolated diagnostic of tree/decode/replay boundaries, exact Full pixels per pair.
+const result={status:'RUNNING',official:false,scope:'Chrome direct full jobs; chemical fixture, not native app latency',rows:[]};
+const docs={},canvases={},modules={};
+try {
+  const bytes=new Uint8Array(await(await fetch('/fixtures/chemical.hwp')).arrayBuffer());
+  for(const name of ['baseline','phase']) {
+    const mod=modules[name]=await import(`/${name}/rhwp.js`);await mod.default();
+    const doc=docs[name]=new mod.HwpDocument(bytes),canvas=canvases[name]=document.createElement('canvas');
+    // Fill the same existing decoded budget, without retaining additional frames.
+    for(let page=0;page<doc.pageCount();page++) {
+      const id=doc.beginRenderJob(page,canvas,.5),state=doc.pollRenderJob(id);
+      if(state!=='COMPLETE')throw new Error('warm full job '+state);
+    }
+  }
+  for(let trial=0;trial<3;trial++) {
+    for(const doc of Object.values(docs))doc.insertText(0,3,trial,'a');
+    for(const page of [14,15,16,19,20,21,23]) {
+      const row={trial,page,arms:{}};
+      for(const name of ['baseline','phase']) {
+        const mod=modules[name],doc=docs[name],canvas=canvases[name];
+        const before=JSON.parse(mod.rendererCacheStats());jsRows.length=0;
+        const id=doc.beginRenderJob(page,canvas,.5);
+        globalThis.__d4phase=[]; // identical JS observers in baseline and candidate
+        const at=performance.now(),outcome=doc.pollRenderJob(id),ms=performance.now()-at;
+        const phases=globalThis.__d4phase;globalThis.__d4phase=null;
+        row.arms[name]={ms,outcome,phases,renderJobId:id,documentOwner:name,sourceImages:JSON.parse(doc.getPageSourceImageKeys(page)),jsPhases:jsRows.slice(),cacheBefore:before,cacheAfter:JSON.parse(mod.rendererCacheStats()),jobs:JSON.parse(mod.rendererJobStats())};
+        if(outcome!=='COMPLETE')throw new Error('full job '+outcome);
+      }
+      const a=canvases.baseline,b=canvases.phase;
+      if(a.width!==b.width||a.height!==b.height)throw new Error('frame extent mismatch');
+      const x=a.getContext('2d').getImageData(0,0,a.width,a.height).data,y=b.getContext('2d').getImageData(0,0,b.width,b.height).data;
+      let pixels=0,maxDelta=0;
+      for(let n=0;n<x.length;n+=4){const delta=Math.max(...[0,1,2,3].map(k=>Math.abs(x[n+k]-y[n+k])));if(delta){pixels++;maxDelta=Math.max(maxDelta,delta);}}
+      row.exactRGBA={pixels,maxDelta,width:a.width,height:a.height};result.rows.push(row);
+      if(pixels)throw new Error('diagnostic patch changed Full pixels');
+      await new Promise(r=>setTimeout(r,0));
+    }
+  }
+  result.status='DIAGNOSTIC_COMPLETE';
+} catch(error){result.status='FAIL';result.error=String(error);}
+finally {
+  globalThis.__d4phase=null;
+  for(const doc of Object.values(docs))doc.free();
+  for(const canvas of Object.values(canvases))canvas.width=canvas.height=0;
+  result.cleanup={};
+  for(const [name,mod] of Object.entries(modules)){mod.trimRendererCaches(0);result.cleanup[name]={jobs:JSON.parse(mod.rendererJobStats()),cache:JSON.parse(mod.rendererCacheStats())};}
+}
+await fetch('/result',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(result)});
