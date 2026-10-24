@@ -119,6 +119,22 @@ D3/D5의 실제 검증 범위와 공식 D4 FAIL은 새 한국어 보고서에 �
 
 `performance-visual-native.py`의 PASS는 선택한 문서 집합 전체에만 준다. 기본은 네 문서 엄격 실행(Full RGBA 참조24개)이고,
 `--sample`은 네 fixture 이름 중 하나만 받는다(참조6개). 모르는 이름이나 빈 이름은 Xvfb/앱을 띄우기 전에 exit2로 거부한다.
-문서 목록·참조 이름/순서·verified·pixels0·필수 assertion·history gate·세션/driver/display 정리가 모두 맞아야 PASS다.
+문서 목록·참조(sample/frame/이름/순서)·verified·pixels0·maxDelta0·필수 assertion·세션/driver/display 정리가 모두 맞아야 PASS다.
+공식 네 문서 목록은 이 harness의 `OFFICIAL_FIXTURES`에 직접 적으며 공유 `undo_native.LARGE`에서 만들지 않는다. 공개 예제가 없으면 실행 실패다.
+필수 assertion은 실제 실행 순서 그대로 각각 정확히 한 번 나와야 하며 중복·예상 밖 이름·순서 바뀜은 FAIL이다.
+`pixels`/`maxDelta`는 0 이상 정수(bool/실수/누락 불가)여야 하고, 참조의 sample/frame/이름은 엔진 반환값이 아니라 harness가 정한다.
+Undo/Redo는 이름 붙은 필수 assertion(모델 revision·caret·복원 문단·exact frame)으로 검사한다. 이 harness는 `undo_native` gate를
+만들지 않으므로 `historyGates`/`historyChecks`는 반드시 비어 있어야 하며, 빈 목록을 별도 history gate 통과로 보고하지 않는다.
 `python3 -I -m unittest discover -s tests/integration/rhwp/ownership-poc -p 'test_*.py'`가 가짜 native 도구로 main()을 돌려
-알 수 없는 sample·빈 선택·참조 누락·미검증 참조·픽셀 차이·필수 caret 실패·정리 미완료를 거부하는지 검사한다.
+알 수 없는 sample·빈 선택·참조 누락·미검증/잘못된 픽셀 증거·중복/예상 밖 assertion·필수 caret 실패·정리 미완료를 거부하는지 검사한다.
+
+`lifecycle-continuous-native.py`: 2문서×3모드×20회=120회를 한 앱/WebDriver 세션에서 연속 실행한다(`scenario_lifecycle` 그대로,
+강제 GC·cache trim 없음, 요청 재시도 없음). 판정은 순수 함수 `lifecycle_evidence.classify`만 내린다. 모든 memory point(366개)가
+sequence·문서·세션에 묶여 순서대로 있어야 하고, WebProcess는 정확히 하나·양의 정수 PID·`/proc` start time이 시작부터 끝까지 같아야
+한다(PID 재사용 구분). RSS는 양의 정수여야 하지만 승인된 RSS 기준이 없어 판정은 항상 INCONCLUSIVE다. 닫힌 상태의 owner/Canvas/session/
+job/lease/staging/backup/timer 정리, 선언 예산 필드(누락·변경 불가)와 상한, 엔진 detached Canvas가 decoded cache 상주 항목과 정확히
+일치하는지 확인한다. 선언 예산은 renderer/cache 추정치이며 process RSS/GPU 상한이 아니다.
+`cache-trim-native.py`: trim 없는 open/close 반복·idle 뒤 명시적 trim, 다시 열기를 별도로 실행하는 cache 소유 진단이다.
+`d4-frame-attribution-native.py --graphics software|gpu`: 공식 `scenario_perf`/MEASURE 그대로에 revision 관찰자 하나를 더해
+rendering update 작업과 다음 frame 대기를 나눈다. 관찰자가 일정을 조금 바꾸므로 그 실행의 지연 값은 공식 D4가 아니다.
+실제 graphics backend는 `/proc`의 DRM fd·fdinfo engine counter·GL 라이브러리로 기록한다.

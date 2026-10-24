@@ -1,0 +1,159 @@
+{
+ "status": "PASS",
+ "harness": "tests/integration/rhwp/ownership-poc/performance-visual-native.py",
+ "beforeSha256": "ae424463eb317b9a16bf061c81b9fcc999f69b2b2ebee25db71efd2680e48643",
+ "afterSha256": "9a35dcef886d23dc4ba17e5324092a79e9d2622877fbb2bc8c1f82e50bff6447",
+ "testFileSha256": "fc27c8f08516f098855e952d670440df311168c2569e21ed62c66a0a0ab7b879",
+ "reproductionBefore": {
+  "class": "VERIFIED",
+  "command": "python3 -I <scratchpad>/repro.py <committed 7efb162 harness copy>",
+  "result": {
+   "duplicate-required-assertion": "PASS",
+   "unexpected-assertion": "PASS",
+   "missing-maxDelta": "PASS",
+   "boolean-pixels-False": "PASS",
+   "float-pixels-0.0": "PASS",
+   "empty-historyGates-reported-as": "PASS",
+   "unexpected-history-gate-PASS": "PASS",
+   "engine-row-name-overrides-label": {
+    "exit": 1,
+    "firstName": "spoof"
+   },
+   "shared-LARGE-shrunk-default-selection": [
+    "basic-ko.hwp",
+    "basic-ko.hwpx",
+    "연구노트(화학).hwp"
+   ]
+  }
+ },
+ "reproductionAfter": {
+  "duplicate-required-assertion": "FAIL",
+  "unexpected-assertion": "FAIL",
+  "missing-maxDelta": "FAIL",
+  "boolean-pixels-False": "FAIL",
+  "float-pixels-0.0": "FAIL",
+  "empty-historyGates-reported-as": "PASS",
+  "unexpected-history-gate-PASS": "FAIL",
+  "engine-row-name-overrides-label": {
+   "exit": 0,
+   "firstName": "basic-ko.hwp-warm"
+  },
+  "shared-LARGE-shrunk-default-selection": [
+   "basic-ko.hwp",
+   "basic-ko.hwpx",
+   "연구노트(화학).hwp",
+   "3249937_asset_management_rules.hwpx"
+  ]
+ },
+ "rootCauses": [
+  "assertion presence was checked with a set: duplicate and unexpected assertions and wrong order still passed",
+  "pixel evidence used row.get('maxDelta', 0) and != 0: a missing maxDelta, False or 0.0 passed",
+  "reference rows were {'name': label, **engineRow}: an engine-supplied name replaced the harness label",
+  "the official matrix and the test expectation were both derived from undo_native.LARGE (common-mode shrink)",
+  "historyGates accepted an empty list although this harness never produces undo_native gates (contract unclear)"
+ ],
+ "historyGateContract": "Option A: named mandatory assertions are the history contract; historyGates/historyChecks must be empty and are not reported as independently passed",
+ "unitTests": {
+  "command": "python3 -I -m unittest discover -s tests/integration/rhwp/ownership-poc -p 'test_performance_visual_native.py'",
+  "finalTestsAgainstBeforeHarness": {
+   "ran": 26,
+   "summary": "FAILED (failures=12, errors=2)",
+   "failingMethods": [
+    "ERROR test_malformed_reference_rows_fail",
+    "ERROR test_missing_official_sample_fails_instead_of_shrinking",
+    "FAIL test_assertions_out_of_execution_order_fail",
+    "FAIL test_duplicate_or_mislabelled_reference_fails",
+    "FAIL test_duplicate_required_assertion_fails",
+    "FAIL test_engine_row_cannot_override_reference_identity",
+    "FAIL test_history_evidence_from_another_contract_fails",
+    "FAIL test_missing_max_delta_fails",
+    "FAIL test_non_integer_pixel_evidence_fails",
+    "FAIL test_shared_large_list_cannot_shrink_official_matrix",
+    "FAIL test_unexpected_assertion_fails"
+   ],
+   "failingMethodCount": 11
+  },
+  "finalTestsAgainstAfterHarness": {
+   "ran": 26,
+   "summary": "OK"
+  }
+ },
+ "mutation": {
+  "status": "PASS",
+  "mutants": 21,
+  "survivors": [],
+  "killedBy": {
+   "baseline-unmutated": [],
+   "documents-not-required": [
+    "test_missing_document_fails"
+   ],
+   "references-not-required": [
+    "test_duplicate_or_mislabelled_reference_fails",
+    "test_missing_references_fail"
+   ],
+   "reference-labels-unchecked": [
+    "test_duplicate_or_mislabelled_reference_fails"
+   ],
+   "unverified-allowed": [
+    "test_unverified_reference_fails"
+   ],
+   "invalid-counts-allowed": [
+    "test_missing_max_delta_fails",
+    "test_non_integer_pixel_evidence_fails",
+    "test_non_integer_pixel_evidence_fails"
+   ],
+   "exact-count-accepts-any-number": [
+    "test_non_integer_pixel_evidence_fails",
+    "test_non_integer_pixel_evidence_fails",
+    "test_non_integer_pixel_evidence_fails"
+   ],
+   "maxDelta-optional": [
+    "test_pixel_mismatch_fails"
+   ],
+   "pixel-mismatch-allowed": [
+    "test_pixel_mismatch_fails"
+   ],
+   "cleanup-not-required": [
+    "test_incomplete_cleanup_fails"
+   ],
+   "history-evidence-ignored": [
+    "test_failed_history_gate_fails",
+    "test_history_evidence_from_another_contract_fails"
+   ],
+   "unknown-sample-accepted": [
+    "test_empty_sample_name_rejected",
+    "test_unknown_sample_rejected_before_native_infrastructure"
+   ],
+   "empty-selection-allowed": [
+    "test_empty_selection_cannot_pass"
+   ],
+   "failed-assertions-ignored": [
+    "test_mandatory_caret_failure_stays_nonzero_with_continuation"
+   ],
+   "missing-assertions-ignored": [
+    "test_missing_mandatory_assertion_fails"
+   ],
+   "duplicate-assertions-ignored": [
+    "test_duplicate_required_assertion_fails"
+   ],
+   "unexpected-assertions-ignored": [
+    "test_unexpected_assertion_fails"
+   ],
+   "assertion-order-ignored": [
+    "test_assertions_out_of_execution_order_fail"
+   ],
+   "malformed-rows-accepted": [
+    "test_malformed_reference_rows_fail"
+   ],
+   "fixture-matrix-from-shared-list": [
+    "test_shared_large_list_cannot_shrink_official_matrix"
+   ],
+   "missing-sample-tolerated": [
+    "test_missing_official_sample_fails_instead_of_shrinking"
+   ],
+   "engine-row-overrides-identity": [
+    "test_engine_row_cannot_override_reference_identity"
+   ]
+  }
+ }
+}

@@ -1,0 +1,34 @@
+"""Reproduce remaining acceptance gaps of the committed harness (7efb162) with fake native tools."""
+import copy, importlib, importlib.util, json, sys
+from pathlib import Path
+HERE = Path('<workspace>/tests/integration/rhwp/ownership-poc')
+harness = Path(sys.argv[1])
+sys.path.insert(0, str(HERE))
+spec = importlib.util.spec_from_file_location('test_pvn', HERE / 'test_performance_visual_native.py')
+# load test helpers bound to the chosen harness file
+src = (HERE / 'test_performance_visual_native.py').read_text().replace("Path(__file__).with_name('performance-visual-native.py')", repr(str(harness)))
+mod = type(sys)('test_pvn'); mod.__file__ = str(HERE / 'test_performance_visual_native.py'); exec(compile(src, 'test_pvn', 'exec'), mod.__dict__)
+runner = mod.runner; FOUR = list(runner.FIXTURES)
+code, base = mod.FakeNative().execute(); assert code == 0, base.get('failures')
+cases = {}
+def run(name, change):
+    r = copy.deepcopy(base); change(r); v = runner.classify(r, FOUR); cases[name] = v['status']
+run('duplicate-required-assertion', lambda r: r['tests'].append(dict(r['tests'][3])))
+run('unexpected-assertion', lambda r: r['tests'].append({'name': 'unrelated-extra', 'status': 'PASS'}))
+run('missing-maxDelta', lambda r: r['visualReferences'][2].pop('maxDelta'))
+run('boolean-pixels-False', lambda r: r['visualReferences'][4].update(pixels=False))
+run('float-pixels-0.0', lambda r: r['visualReferences'][4].update(pixels=0.0))
+run('empty-historyGates-reported-as', lambda r: r.update(historyGates=[]))
+run('unexpected-history-gate-PASS', lambda r: r.update(historyGates=[{'gate': 'D1', 'item': 'x', 'result': 'PASS'}]))
+# engine row carrying its own 'name' replaces the harness label
+code2, over = mod.FakeNative(frame=lambda i: {'verified': True, 'pixels': 0, 'maxDelta': 0, 'name': 'spoof'}).execute()
+cases['engine-row-name-overrides-label'] = {'exit': code2, 'firstName': over['visualReferences'][0]['name']}
+# common-mode fixture list: shrink the shared history.LARGE and reload the harness
+import undo_native
+saved = list(undo_native.LARGE); undo_native.LARGE[:] = saved[:1]
+try:
+    s2 = importlib.util.spec_from_file_location('h2', harness); h2 = importlib.util.module_from_spec(s2); s2.loader.exec_module(h2)
+    cases['shared-LARGE-shrunk-default-selection'] = h2.select_samples(None)
+finally:
+    undo_native.LARGE[:] = saved
+print(json.dumps({'harness': str(harness), 'baseStatus': base['status'], 'historyGatesInRealRunShape': base['historyGates'], 'cases': cases}, ensure_ascii=False, indent=1))

@@ -1,0 +1,64 @@
+"""D4 frame attribution analysis: official 48adaa run (re-analysis) + software/gpu frame-observer diagnostics."""
+from pathlib import Path
+import json,hashlib,re
+root=Path('<workspace>/tests/integration/rhwp/evidence')
+out=root/'t010-native-completeness'
+official_path=root/'t010-native-gate-followup/d4-official-48adaa-full.json'
+def pct(v):
+  v=sorted(x for x in v if x is not None)
+  if not v:return None
+  q=lambda p:v[min(len(v)-1,int(round(p*(len(v)-1))))]
+  return {'n':len(v),'p50':round(q(.5),1),'p95':round(q(.95),1),'max':round(v[-1],1)}
+def frames(x,period):return None if x is None else round(x/period,2)
+result={'definitions':{
+ 'contract':'official keyToFrame = native keydown -> RAF poll that sees the revision -> 2 more RAFs (unchanged, official run only)',
+ 'zeroWorkFrameFloorMs':'existing FRAME_FLOOR: setTimeout -> 3 RAFs with no document work (same 3-RAF structure as the contract)',
+ 'observer':'diagnostic MutationObserver on data-local-revision: rev=commit; rafA/rafB/rafC = next RAFs; taskX = first MessageChannel task after rafX rendering update',
+ 'renderUpdateMs':'rafX -> taskX: upper bound of main-thread work in that rendering update (RAF callbacks, style/layout/paint/canvas commit, queued tasks)',
+ 'frameWaitMs':'taskX -> next raf: main thread free but next frame not yet scheduled (display-refresh/compositor pacing outside the page main thread)',
+ 'notGpuTime':'no interval here is GPU execution time; GPU use is shown only by DRM fdinfo engine counters'},
+ 'officialRun':{'path':str(official_path.relative_to(root.parent.parent.parent.parent)),'sha256':hashlib.sha256(official_path.read_bytes()).hexdigest(),'documents':[]}}
+official=json.loads(official_path.read_text())
+for row in official['measurements']['perf']:
+  gs=[s['at'] for s in row['timelineSamples'] if s['kind']=='groupStart']
+  result['officialRun']['documents'].append({'sample':row['sample'],'groupStartKeyToFrame':pct([a['end'] for a in gs]),'zeroWorkFrameFloorMs':row['zeroWorkFrameFloorMs'],
+   'keyToHandlerEnd':pct([a['handlerEnd'] for a in gs]),'keyToRevisionPoll':pct([a['observed'] for a in gs]),'pollToRaf1':pct([a['raf1']-a['observed'] for a in gs]),'raf1ToEnd':pct([a['end']-a['raf1'] for a in gs]),
+   'postRevisionTwoRafs':pct([a['end']-a['observed'] for a in gs]),'samplesOver50':sum(a['end']>50 for a in gs),'samplesWithPostRevisionTwoRafsOver42':sum(a['end']-a['observed']>42 for a in gs)})
+def backend(doc):
+  procs={}
+  for when in ('backendBefore','backendAfter'):
+    for p in doc.get(when) or []:
+      e=procs.setdefault(p['comm'],{'drmDevices':set(),'counters':{},'glLibraries':set()})
+      e['glLibraries'].update(p.get('glLibraries',[]))
+      for fd in p.get('drm',[]):
+        e['drmDevices'].add(fd['device']+' '+fd.get('drm-driver',''))
+        for k,v in fd.items():
+          m=re.match(r'(\d+)',v)
+          if k.startswith(('drm-engine','drm-cycles')) and m:e['counters'].setdefault(k+'@'+fd.get('drm-client-id',''),{})[when]=int(m.group(1))
+  return {c:{'drmDevices':sorted(e['drmDevices']),'gpuEngineCounterDelta':{k:v.get('backendAfter',0)-v.get('backendBefore',0) for k,v in e['counters'].items() if v.get('backendAfter',0)!=v.get('backendBefore',0)},
+    'glLibraries':sorted(l for l in e['glLibraries'] if re.search(r'gallium|EGL|GLX|libGL|gbm|vulkan|dri',l))} for c,e in procs.items()}
+for config in ('software','gpu'):
+  path=out/f'diagnostic-d4-frame-attribution-{config}.json'
+  if not path.exists():result[config]={'status':'NOT RUN'};continue
+  d=json.loads(path.read_text());docs=[]
+  for doc in d.get('documents',[]):
+    obs=[r for r in doc['observer'] if r.get('kind')=='groupStart']
+    meas=[s for s in doc['measureTimeline'] if s['kind']=='groupStart']
+    joined=[(o,m) for o,m in zip(obs,meas)]
+    agree=sum(1 for o,m in joined if o.get('key') is not None and o.get('rafC') is not None and abs((o['rafC']-o['key'])-m['at']['end'])<=2)
+    period=doc['zeroWorkFrameFloorMs']['p50']/2.5 if doc.get('zeroWorkFrameFloorMs',{}).get('p50') else None
+    f=lambda g:pct([g(o) for o in obs if all(o.get(k) is not None for k in ('rev','rafA','taskA','rafB','taskB','rafC'))])
+    docs.append({'sample':doc['sample'],'dpr':doc['dpr'],'zoom':doc['zoom'],'sourceSha256':doc['sourceSha256'],
+      'diagnosticGroupStartKeyToFrame':doc['groupStart'],'diagnosticUndo':doc['undo'],'zeroWorkFrameFloorMs':doc['zeroWorkFrameFloorMs'],
+      'observerJoinedSamples':len(joined),'observerAgreesWithMeasureEndWithin2ms':agree,
+      'keyToCommit':f(lambda o:o['rev']-o['key'] if o.get('key') is not None else None),'commitToRafA':f(lambda o:o['rafA']-o['rev']),
+      'renderUpdateA':f(lambda o:o['taskA']-o['rafA']),'frameWaitA':f(lambda o:o['rafB']-o['taskA']),'rafAtoRafB':f(lambda o:o['rafB']-o['rafA']),
+      'renderUpdateB':f(lambda o:o['taskB']-o['rafB']),'frameWaitB':f(lambda o:o['rafC']-o['taskB']),'rafBtoRafC':f(lambda o:o['rafC']-o['rafB']),
+      'backend':backend(doc)})
+  result[config]={'status':d.get('status'),'measurementComplete':d.get('measurementComplete'),'error':d.get('error'),'graphicsEnvironment':d['environment'].get('graphicsEnvironment'),
+    'environment':d['environment'],'engineIdentity':(d.get('engineIdentity') or {}).get('wasmSha256'),'executedDependenciesStable':d.get('executedDependenciesStable'),
+    'workspaceChanged':(d.get('workspaceMutationDuringRun') or {}).get('changed'),'rawSha256':hashlib.sha256(path.read_bytes()).hexdigest(),'documents':docs}
+(out/'d4-frame-attribution-analysis.json').write_text(json.dumps(result,ensure_ascii=False,indent=1)+'\n')
+for d in result['officialRun']['documents']:print('OFFICIAL',d['sample'][:12],'K2F',d['groupStartKeyToFrame'],'floor',d['zeroWorkFrameFloorMs']['p50'],d['zeroWorkFrameFloorMs']['p95'],'poll->raf1',d['pollToRaf1'],'2raf',d['postRevisionTwoRafs'])
+for c in ('software','gpu'):
+  for d in result[c].get('documents',[]):print(c,d['sample'][:12],'K2F',d['diagnosticGroupStartKeyToFrame'].get('p50'),d['diagnosticGroupStartKeyToFrame'].get('p95'),'floor',d['zeroWorkFrameFloorMs'].get('p50'),'agree',d['observerAgreesWithMeasureEndWithin2ms'],'rUpdA',d['renderUpdateA'],'waitA',d['frameWaitA'],'A->B',d['rafAtoRafB'],'B->C',d['rafBtoRafC'],{k:(v['drmDevices'],len(v['gpuEngineCounterDelta'])) for k,v in d['backend'].items()})

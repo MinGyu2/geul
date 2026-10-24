@@ -1,0 +1,41 @@
+"""Mutation check for performance-visual-native.py acceptance rules (run from verified workspace root)."""
+import sys,shutil,subprocess,json,pathlib,re
+src=pathlib.Path('tests/integration/rhwp/ownership-poc').resolve();d=src.parent/'ownership-poc-mutation-p0-tmp'
+assert not d.exists()
+muts={
+ 'baseline-unmutated':None,
+ 'documents-not-required':("    if documents != selected: failures.append","    if False: failures.append"),
+ 'references-not-required':("    if identities != expected or not labels_ok:","    if False:"),
+ 'reference-labels-unchecked':("    labels_ok = all(","    labels_ok = True or all("),
+ 'unverified-allowed':("    if unverified: failures.append","    if False: failures.append"),
+ 'invalid-counts-allowed':("    if invalid: failures.append","    if False: failures.append"),
+ 'exact-count-accepts-any-number':("    return type(value) is int and value >= 0","    return isinstance(value, (int, float))"),
+ 'maxDelta-optional':("and row['pixels'] == 0 and row['maxDelta'] == 0","and row['pixels'] == 0"),
+ 'pixel-mismatch-allowed':("    if mismatched: failures.append","    if False: failures.append"),
+ 'cleanup-not-required':("    if incomplete: failures.append","    if False: failures.append"),
+ 'history-evidence-ignored':("        if result.get(key) != []: failures.append","        if False: failures.append"),
+ 'unknown-sample-accepted':("    if sample not in FIXTURES: raise","    if False: raise"),
+ 'empty-selection-allowed':("    if not selected: failures.append","    if False: failures.append"),
+ 'failed-assertions-ignored':("    if failed: failures.append","    if False: failures.append"),
+ 'missing-assertions-ignored':("    if missing: failures.append","    if False: failures.append"),
+ 'duplicate-assertions-ignored':("    if duplicate: failures.append","    if False: failures.append"),
+ 'unexpected-assertions-ignored':("    if unexpected: failures.append","    if False: failures.append"),
+ 'assertion-order-ignored':("names != expected_tests: failures.append('assertions out","False: failures.append('assertions out"),
+ 'malformed-rows-accepted':("        if not isinstance(value, list) or not all(isinstance(row, dict) for row in value):","        if not isinstance(value, list):"),
+ 'fixture-matrix-from-shared-list':("FIXTURES = tuple(name for name, _ in OFFICIAL_FIXTURES)","FIXTURES = ('basic-ko.hwp', 'basic-ko.hwpx', *(path.name for path in history.LARGE))"),
+ 'missing-sample-tolerated':("    if missing: raise RuntimeError('official fixtures missing","    if False: raise RuntimeError('official fixtures missing"),
+ 'engine-row-overrides-identity':("{**row,'name':label,'sample':sample,'frame':frame_label}","{'name':label,'sample':sample,'frame':frame_label,**row}"),
+}
+out={}
+try:
+  for name,m in muts.items():
+    shutil.copytree(src,d,ignore=shutil.ignore_patterns('__pycache__'))
+    f=d/'performance-visual-native.py';t=f.read_text()
+    if m: assert t.count(m[0])==1,name;f.write_text(t.replace(m[0],m[1]))
+    p=subprocess.run([sys.executable,'-I','-m','unittest','discover','-s',str(d),'-p','test_performance_visual_native.py'],capture_output=True,text=True)
+    out[name]={'exit':p.returncode,'summary':[l for l in p.stderr.splitlines() if l.startswith(('OK','FAILED'))][-1],'killedBy':re.findall(r'^(?:FAIL|ERROR): (\w+)',p.stderr,re.M)}
+    shutil.rmtree(d)
+finally:
+  if d.exists(): shutil.rmtree(d)
+survivors=[k for k,v in out.items() if k!='baseline-unmutated' and v['exit']==0]
+print(json.dumps({'status':'PASS' if out['baseline-unmutated']['exit']==0 and not survivors else 'FAIL','survivors':survivors,'mutants':out},indent=1))

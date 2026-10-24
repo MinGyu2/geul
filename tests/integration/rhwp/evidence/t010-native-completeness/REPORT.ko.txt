@@ -1,0 +1,126 @@
+T010 native 검증 완전성 및 메모리 수명주기 관문 강화 보고서
+작성: 2026-10-24 (KST)
+분류: VERIFIED=실제 실행/소스 대조, INFERRED=관측에 근거한 해석, UNVERIFIED=미입증.
+
+1. 범위와 판정
+범위 작업 판정: PARTIALLY COMPLETED. 범위 안의 수정(P0 native 판정 완전성, P1 수명주기 identity/판정, Canvas 소유 조사,
+D4 귀속 개선)은 구현·검증했다. 전체 T010은 미완료다: D4 공식 FAIL, D2 INCONCLUSIVE, RSS INCONCLUSIVE.
+제품 RHWP Undo/Redo는 NO-GO이며 T011은 시작하지 않았다. D1~D5 판정은 서로 독립이다.
+시작 HEAD=7efb162e3511e78486c8f71afb14286d50168e83(master, origin/master와 같음, 작업 트리 clean, staged 없음).
+rhwp=1a76570e833917d15817415a53c09ad61ab3203f, WordCraft=fc41918814f62645b6746ed68e71e8c2c2e85d6f(변경 없음).
+후보 WASM 48adaa0f748484d12f59f4805deda0480635f915368392a87e76e95962ec0b27, app 48b7b8364cb4b91ae0b4c3cb3113977c15fd92aa9ca3d60f0406f331749d45c1.
+이전 증거 디렉터리(t010-native-gate-followup 포함)는 바꾸지 않았다.
+
+2. P0 결함 재현과 원인 — VERIFIED (harness-completeness-fix.json)
+7efb162 harness(SHA ae424463…)를 가짜 native 도구로 돌려 다음이 모두 PASS인 것을 재현했다:
+필수 assertion 중복, 예상 밖 assertion, 참조의 maxDelta 누락, pixels=False, pixels=0.0, 공유 history.LARGE 축소
+(기본 선택이 3문서로 줄고 시험 기대값도 같은 목록에서 만들어 함께 줄어듦), PASS인 외부 history gate 행.
+엔진 반환 행에 name이 있으면 harness 라벨을 덮었다({'name':label, **row}).
+원인: assertion 존재를 set으로만 확인, row.get('maxDelta',0)·!= 0 비교, 엔진 행이 식별자를 덮는 dict 순서,
+공식 목록과 시험 기대값이 같은 공유 목록에서 파생(공통 모드), historyGates 계약 불명확.
+historyGates 계약 결정(Option A): 이 harness는 undo_native.gate()/check()를 부르지 않으므로 history.GATES는 구조적으로 항상
+비어 있다(실제 native 결과 두 건 모두 []). Undo/Redo는 이름 붙은 필수 assertion(모델 revision·caret·복원 문단·exact frame)으로
+검사하는 것이 실제 계약이다. 따라서 historyGates/historyChecks는 비어 있어야 하며 항목이 있으면 다른 계약의 증거로 보고 FAIL,
+빈 목록을 별도 history gate 통과로 보고하지 않는다(결과에 historyGateContract 문구로 표시). 가짜 gate 행은 만들지 않았다.
+
+3. P0 수정 — VERIFIED
+performance-visual-native.py(새 SHA 9a35dcef…):
+- OFFICIAL_FIXTURES: 네 문서를 harness 안에 직접 적고 공개 예제 경로를 history.S에서 풀며 없으면 실행 실패(fixture_paths).
+- required_tests: 실제 실행 순서(warm, typed-10/20/30, [화학 빈 문단 복원], undo caret, undo, redo, history-model-caret,
+  original-preserved). 실제 native 결과 두 건의 assertion 순서와 정확히 일치함을 확인했다.
+- classify: 결과 행이 dict 목록이어야 함, 누락/중복/예상 밖/순서 오류 각각 FAIL, 참조는 (sample, frame) 순서와 이름 일치,
+  verified is True, pixels/maxDelta는 bool이 아닌 0 이상 정수이고 0. 세션/driver/display 정리, 문서 목록은 기존대로 필수.
+- 참조 행은 {**엔진행, name, sample, frame}으로 harness 식별자가 이긴다. 기존 assertion·caret 조건은 약화하지 않았다.
+test_performance_visual_native.py(SHA fc27c8f0…) 26개: 최종 시험을 수정 전 harness에 돌리면 26개 중 11개 메서드 실패
+(FAIL 12건=하위 시험 포함, ERROR 2), 수정 후 26/26 OK. 판정 규칙 변이 21개 모두 검출(p0-mutation.json, 생존 0).
+변이 과정에서 약한 시험 두 개(빈 선택 시험이 historyGates 누락 때문에 실패하던 것, maxDelta만 다른 행)를 찾아 고쳤다.
+
+4. P1 WebProcess identity·메모리 표본 완전성 — VERIFIED
+원인: 이전 진단은 {PID 튜플} 집합 크기 1이면 안정으로 봤다. 모든 표본이 빈 목록이어도 PASS였고 PID 재사용을 구분하지 못했다.
+새 tests/integration/rhwp/ownership-poc/lifecycle_evidence.py(SHA 4fa94447…, 순수 함수):
+- WebProcess는 정확히 1개, PID와 /proc start time(clock tick)이 양의 정수, 시작 전 관찰과 모든 표본에서 같아야 함.
+- RSS는 양의 정수이고 합계와 일치. 120 cycle(2문서×3모드×20), 366 point(=2×3×(20×3+1)), 모드/cycle 순서, 마지막 cycle만
+  closedAfter10s, point sequence 0..365 연속(누락·중복·재정렬 FAIL), 각 point가 문서·세션에 묶임.
+- 선언 예산(jobs 256MiB/2/256/staging128MiB/frame64MiB, decoded 256MiB/256/64MiB, images 64MiB/256/16MiB)은 누락·변경 불가,
+  상한 확인. 닫힌 상태의 owner/Canvas/session/subscriber, active job/lease/pending/ready/transient/staging/backup/in-flight,
+  timer, pending/transient cache 항목 0. 엔진 detached Canvas 수·RGBA 바이트가 decoded cache 상주 항목과 같아야 함.
+- cycle 정리 gate 120개 PASS, run 정리 3단계, 실행 전후 엔진 identity, run error 없음. RSS 판정은 항상 INCONCLUSIVE.
+새 lifecycle-continuous-native.py(SHA a5257e51…, 추적되는 재사용 driver): 각 point에 sequence/doc/sessionId/start time을 기록하고
+PASS는 classify에서만 나온다. test_lifecycle_evidence.py 26개(빈 WebProcess, PID 누락/bool/0, start time 누락, PID 재사용+세대 변경,
+WebProcess 추가, RSS 0/음수/실수/None/불일치, cycle 누락·중복·재정렬, point 누락·중복·예상 밖, 세션/문서 불일치, 정리 미완료,
+예산 필드 누락·변경, 상한 초과, 고아 Canvas, gate 실패, run 정리/identity/오류, 완전한 합성 결과 PASS). 변이 26개 모두 검출(p1-mutation.json).
+변이에서 단독으로 잡을 수 없는 중복 규칙(point 수)을 sequence 규칙에 합쳤다.
+기존 연속 실행 증거에 새 판정을 적용하면 366 point 모두 기존 검사(예산·상한·정리·Canvas 소유)는 통과하고 start time·바인딩 등
+새 필드 부재로만 FAIL이다. 따라서 이전 "단일 WebProcess" 판정은 PID 근거의 INFERRED로 정정한다.
+새 실제 120회 연속 실행(diagnostic-lifecycle-continuous-identity.json): PASS/exit0, 120 cycle, 366 point, WebProcess
+(PID 2668118, start 27797308) 처음부터 끝까지 동일, 전송 오류0, 정리3단계 완료, 엔진 identity 전후 48adaa, 1048.0초.
+주의: 실행 시작(18:14:42) 3분 뒤 판정 모듈을 편집(같은 의미의 규칙 병합)해 executedDependenciesStable=false가 기록됐다.
+실행 프로세스는 편집 전 모듈(SHA d064ad67…, 실행 전 기록 해시와 재구성 해시 일치)을 썼다. 실행 시점·최종 판정 모두 PASS이고
+재실행으로 숨기지 않았다(lifecycle-continuous-identity-analysis.json).
+
+5. Detached Canvas·decoded cache 소유 — VERIFIED
+소스: web_canvas.rs DECODED_CANVAS_CACHE는 Rust가 디코드해 그린 detached HtmlCanvasElement를 문서와 무관한 전역 BoundedCache
+(256MiB/256항목)에 둔다. 각 항목이 externref를 잡으므로 문서를 닫아도 남는 것이 설계다(Release는 width/height=0).
+두 연속 실행의 모든 정착 상태(before 120, closed 120, closed10s 6)에서 detachedCanvases=decoded 상주 항목, canvasPixels×4=decoded bytes.
+불일치는 render job이 진행 중인 opened 상태 5~6건뿐이다(일시 lease/staging). externref slot은 내내 1156(증가 없음).
+별도 통제 실험(diagnostic-cache-ownership-trim.json, PASS, 51초): trim 없는 open/close 5회에서 9→13→14항목·248.85MiB plateau,
+idle 10초 뒤에도 14개(지연 GC 대상 아님), 명시적 trim 직후 0개·0MiB·RSS 717→374MiB, 다시 열면 첫 회와 같은 7/9항목.
+판정: (1) 예산 안의 정상 cache 소유. (2) slot 재사용은 table 크기 일정으로 확인. (3) 지연 GC 후보 아님. (4) 소유자 없는 보유 없음.
+엔진 수정·예산 변경·공식 수명주기 안 trim 삽입은 하지 않았다. WASM 선형 메모리는 132.94MiB에서 증가가 멈췄다(줄지 않음은 정상).
+
+6. RSS — INCONCLUSIVE
+새 실행 RSS 297.3~2024.3MiB(유한 peak). 닫은 뒤 그룹별 마지막10회 기울기 +14.4/+6.4/+13.4/+34.0/−32.9/−12.4MiB/cycle로 단조 증가
+근거도 plateau 근거도 아니다. decoded cache만 최대 약250MiB를 차지하고 trim으로 회수됨을 확인했다. 누수 증명 없음, 승인된 기준 없음.
+(승인 전 제안, 공식 관문 아님) 같은 앱/WebProcess에서 명시적 trim 뒤 closedAfter10s RSS를 독립 3회 이상 실행에서 측정하고,
+cycle 대비 기울기 신뢰구간이 0을 포함하며 상한(예: 첫 cycle 대비 +X MiB)을 넘지 않는지 보는 기준을 별도로 승인받아야 판정할 수 있다.
+
+7. D4 지연 귀속과 공식 결과 — 공식 FAIL 유지
+공식 결과는 첫 유효 공식 실행 t010-native-gate-followup/d4-official-48adaa-full.json(group-start p95 88/89/266/138ms 네 문서 FAIL,
+Undo p95 152/150/133/247ms PASS)을 유지한다. 새 공식 실행은 하지 않았다(문턱·측정 경계·MEASURE·exit 계약 변경 없음).
+재분석(VERIFIED, d4-frame-attribution-analysis.json officialRun): 공식 측정은 revision을 RAF poll에서 보고 RAF 두 번을 더 기다린다.
+같은 3-RAF 구조의 무작업 바닥(FRAME_FLOOR)이 p50 40~46/p95 48~49ms이고, revision 뒤 RAF 두 번만 p50 43~50ms, poll→raf1 p50 34~36ms다.
+새 진단 관찰자(d4-frame-attribution-native.py; MutationObserver로 revision commit, 다음 RAF 3개, 각 RAF 뒤 MessageChannel 작업 하나):
+관찰자 end와 MEASURE end가 문서마다 30/30 표본에서 2ms 안에 일치했다. 관찰자가 일정을 조금 바꾸므로 이 실행 값은 비공식이다.
+- software(공식과 같은 LIBGL_ALWAYS_SOFTWARE=1, DMABUF 끔; WebProcess DRM fd 없음 VERIFIED): revision 다음 frame의 주 스레드
+  rendering update p50 35/35/60/36ms, 그 뒤 frame 대기 p50 0ms. 즉 지연은 compositor/화면 대기가 아니라 주 스레드 그리기 작업이다.
+  key→commit p50 15/16/31/59ms. 비공식 group-start p50/p95 65/94, 66/86, 111/249, 112/137ms.
+- gpu(두 변수 해제; WebProcess가 /dev/dri/renderD128 xe를 열고 drm-cycles-rcs가 문서마다 1183만/1368만/2354만/2259만 증가 VERIFIED; UI 프로세스는 DRM fd 없음,
+  표시는 Xvfb이며 실제 화면/하드웨어 표시 아님): rendering update p50 2/3/7/7ms, frame 대기 p50 3~4ms, 비공식 group-start
+  p50/p95 41/77, 40/57, 73/187, 87/104ms. 기본 문서 중앙값이 무작업 바닥까지 내려오지만 p95는 여전히 50ms 초과.
+  남는 큰 몫은 큰 문서의 key→commit(p50 29/60ms, p95 153/75ms, 최대164ms)이다.
+GPU 실행 시간을 RAF 대기로 부르지 않았다. 환경: WebKitGTK 2.54.1, Xvfb 1280x1024x24, GDK_BACKEND=x11, DPR 1.042, 배율50,
+fixture SHA는 각 결과 파일에 기록. 두 진단 모두 executedDependenciesStable=true, 작업 공간 변경 없음.
+최적화는 구현하지 않았다(공식 환경 변경은 측정 정의 변경이 되고, 엔진 쪽 개선의 인과 근거가 아직 없음). 48adaa 유지, Full 유지.
+
+8. D2 — INCONCLUSIVE (새 실행 없음, d2-status.json)
+기존 실제 IBus/GTK/X11 36회 모두 빈 compositionend → 늦은 final insertFromComposition(7~15ms) → Ctrl+Z 순서(VERIFIED).
+목표 순서(빈 compositionend → Ctrl+Z → 늦은 final)는 관찰되지 않았고 주장하지 않는다. 이번 범위는 IME/입력 코드를 바꾸지 않았고
+새 유발 근거가 없어 추가 실행을 하지 않았다. 합성 DOM 이벤트는 쓰지 않았다. 정책 변경 없음.
+
+9. 회귀 범위
+변경은 Python 시험 harness·진단·시험·문서·증거뿐이다. Rust/TypeScript/WASM/renderer/제품 코드 변경이 없다.
+새로 실행: ownership-poc Python 단위 63개 OK, adapter node 시험 23개 OK, native 엄격 네 문서·단일 화학·120회 연속·trim·D4 진단2.
+재실행하지 않음(보관 증거, 같은 48adaa): D3 service::save 19사례(9게시/10거부), D5 폐기 뒤 예외 경계, Chrome/WebKit scheduler 125,
+마지막 lease 해제 알림, pending/byte 예산, Rust 4068. 새 실행으로 주장하지 않는다.
+
+10. 실행 명령과 결과(이번 세션 실제 관찰)
+- python3 -I -m unittest discover -s tests/integration/rhwp/ownership-poc -p 'test_*.py' → 63 OK, exit0.
+- node --experimental-strip-types --test tests/integration/rhwp/ownership-poc/test-session.mjs → 23 pass/0 fail, exit0.
+- 변이: p0 21/21, p1 26/26 검출(생존0).
+- run.py perf-visual → exit0 PASS, 39/39, 참조24/24, 정리 3/3, 85.5초. perf-visual-focus → exit0 PASS 12/12, 6/6, 29.3초.
+- run.py lifecycle → exit0 PASS 120/366, 1048.0초. trim → exit0 PASS, 51.0초.
+- run.py frame-software / frame-gpu → 각 exit0 DIAGNOSTIC_COMPLETE(공식 판정 아님).
+- 보안·무결성 결과는 security-final.json, final-integrity.json.
+runner(run.py.txt)는 실행 의존 파일 해시(실행 전후)와 작업 공간 변경(git status·내용 해시, 이 증거 디렉터리 제외)을 따로 기록한다.
+
+11. 무결성·보안
+security-final.json: harness 구문, 민감정보(변경/추적), gitleaks(변경 파일), git diff --check. gitleaks 예외는 넓히지 않았다.
+final-integrity.json: 변경 파일이 ownership-poc·새 증거·아키텍처 문서 안에만 있음, 제품/공식 측정 파일(undo_native, native_probe,
+session.mjs, vite config, history-perf, tauri_smoke)·이전 증거·submodule 변경 없음, 후보 WASM/app 식별 일치, checkpoint 미추적.
+
+12. 남은 작업과 다음 우선순위
+미해결 필수 관문: D4 공식 group-start p95≤50ms(FAIL), D2 목표 IME 순서(INCONCLUSIVE), 장기 RSS 기준(INCONCLUSIVE, 기준 미승인).
+다음 구현 우선순위: (1) software GL 공식 환경에서 revision 다음 frame의 주 스레드 rendering update(p50 35~60ms)를 무엇이 차지하는지
+WebKit 쪽 그리기 경로(2D canvas 합성/업로드)에서 분해, (2) 큰 문서 key→commit(동기 handler/엔진 작업, p95 최대164ms) 분해,
+(3) 공식 측정 환경(software GL)과 3-RAF 바닥(p95 약49ms)이 50ms 문턱과 맞는지 별도 승인 판단(문턱은 바꾸지 않음),
+(4) RSS 기준 승인. T010 완료나 제품 활성화를 선언하지 않는다.

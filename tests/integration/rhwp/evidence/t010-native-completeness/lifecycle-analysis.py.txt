@@ -1,0 +1,45 @@
+"""Analysis of the new continuous lifecycle run: final-classifier recheck, process identity, surfaces vs cache, RSS shape."""
+from pathlib import Path
+import json,hashlib,statistics,sys,collections
+root=Path('<workspace>/tests/integration/rhwp');out=root/'evidence/t010-native-completeness'
+sys.path.insert(0,str(root/'ownership-poc'));import lifecycle_evidence as L
+p=out/'diagnostic-lifecycle-continuous-identity.json';d=json.loads(p.read_text())
+hist=root/'evidence/t010-native-gate-followup/diagnostic-d4-lifecycle-continuous.json';h=json.loads(hist.read_text())
+W='48adaa0f748484d12f59f4805deda0480635f915368392a87e76e95962ec0b27'
+final=L.classify(d,W)
+def surfaces(doc_rows):
+  c=collections.Counter()
+  for row in doc_rows:
+    for l in ('before','opened','closed','closedAfter10s'):
+      if l in row:
+        v=row[l];e=v['engineSurfaces'];k=v['renderer']['cache']['decoded']
+        c[(l if l!='closedAfter10s' else 'closed10s', e['detachedCanvases']==k['entries']-k['negativeEntries'] and e['canvasPixels']*4==k['bytes']-64*k['negativeEntries'])]+=1
+  return c
+groups=[]
+for doc in d['measurements']['lifecycle']:
+  for mode in L.MODES:
+    rows=[r for r in doc['rows'] if r['mode']==mode];closed=[r['closed']['aggregateRssBytes'] for r in rows];tail=closed[-10:]
+    slopes=[(tail[b]-tail[a])/(b-a) for a in range(len(tail)) for b in range(a+1,len(tail))]
+    s=rows[-1]['closedAfter10s']
+    groups.append({'sample':doc['sample'],'mode':mode,'closedRssMiB':{'min':round(min(closed)/2**20,1),'max':round(max(closed)/2**20,1),'first':round(closed[0]/2**20,1),'last':round(closed[-1]/2**20,1)},
+     'last10MedianPairwiseSlopeMiBPerCycle':round(statistics.median(slopes)/2**20,2),'closedAfter10sRssMiB':round(s['aggregateRssBytes']/2**20,1),'wasmMiB':round(s['wasmBytes']/2**20,2),
+     'decodedEntries':s['renderer']['cache']['decoded']['entries'],'decodedMiB':round(s['renderer']['cache']['decoded']['bytes']/2**20,2),'detachedCanvases':s['engineSurfaces']['detachedCanvases'],'externrefSlots':s['engineSurfaces']['externrefSlots']})
+allc=collections.Counter()
+for doc in d['measurements']['lifecycle']:allc.update(surfaces(doc['rows']))
+hc=collections.Counter()
+for doc in h['measurements']['lifecycle']:hc.update(surfaces(doc['rows']))
+rss=[s['aggregateRssBytes'] for s in d['samples']]
+r={'status':final['status'],'rawEvidenceSha256':hashlib.sha256(p.read_bytes()).hexdigest(),
+ 'classificationAtRun':d['classification']['status'],'classificationWithFinalClassifier':{'status':final['status'],'failures':final['failures'],'sha256':hashlib.sha256((root/'ownership-poc/lifecycle_evidence.py').read_bytes()).hexdigest()},
+ 'executedClassifierNote':'lifecycle_evidence.py was edited 3 min after the run imported it (two failure rules merged into one, same semantics). The run used the pre-edit module (sha d064ad67..., recorded as executedDependencySha256 before the run); executedDependenciesStable=false is therefore reported. Both the at-run and the final classifier return PASS.',
+ 'executedDependenciesStable':d['executedDependenciesStable'],'workspaceChangedDuringRun':d['workspaceMutationDuringRun']['changed'],
+ 'completedCycles':final['completedCycles'],'memoryPoints':final['memoryPoints'],'webProcessIdentity':final['webProcessIdentity'],'elapsedSeconds':d['elapsedSeconds'],
+ 'engineIdentity':[d['engineIdentity']['wasmSha256'],d['engineIdentityAtEnd']['wasmSha256']],'transport':d['transport'],'runError':d.get('error'),
+ 'surfaceOwnership':{'newRun':{f'{k[0]}:{"accounted" if k[1] else "MISMATCH"}':v for k,v in sorted(allc.items())},'historicalRun':{f'{k[0]}:{"accounted" if k[1] else "MISMATCH"}':v for k,v in sorted(hc.items())},
+   'interpretation':'VERIFIED: every settled (before/closed/closed10s) engine-held detached Canvas equals a resident decoded-cache entry in both runs; mismatches occur only in opened states while render jobs are active (transient leases/staging)'},
+ 'rss':{'minMiB':round(min(rss)/2**20,1),'maxMiB':round(max(rss)/2**20,1),'groups':groups,
+  'verdict':'INCONCLUSIVE: finite measured peak; no monotonic growth claim and no plateau proof; decoded cache alone holds up to ~250 MiB (removable by explicit trim, see cache-trim experiment); no approved RSS criterion exists'},
+ 'historicalIdentityCorrection':'The earlier continuous run (t010-native-gate-followup) proved single WebProcess identity by PID only (no start time); that claim is INFERRED, not VERIFIED. All its other retained checks pass the new classifier on all 366 points.'}
+(out/'lifecycle-continuous-identity-analysis.json').write_text(json.dumps(r,ensure_ascii=False,indent=1)+'\n')
+print(r['status'],r['surfaceOwnership']['newRun'],r['surfaceOwnership']['historicalRun'],r['rss']['minMiB'],r['rss']['maxMiB'])
+for g in groups:print(g)

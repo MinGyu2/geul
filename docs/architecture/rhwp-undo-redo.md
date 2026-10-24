@@ -802,3 +802,33 @@ tauri-driver로 세션만 만든 뒤 같은 native WebKitWebDriver 세션에 직
 plateau 한도가 없어 RSS 판정은 INCONCLUSIVE다. 이전 110/11/20회 창과 합산하지 않는다.
 D2 목표 IME 순서는 기존 실제36회 모두 늦은 final이 Ctrl+Z보다 먼저 와 INCONCLUSIVE로 유지한다.
 [후속 보고서](../../tests/integration/rhwp/evidence/t010-native-gate-followup/REPORT.ko.txt). T010 전체는 미완료이며 제품 활성화와 T011은 계속 NO-GO다.
+
+## T010 native 검증 완전성·메모리 수명주기 관문 강화 (2026-10-24)
+
+`performance-visual-native.py`에 남아 있던 빈 증거 PASS 경로를 막았다. 필수 assertion은 실제 실행 순서대로 각각 정확히
+한 번 있어야 하고(중복·예상 밖·순서 바뀜 FAIL), Full RGBA 참조는 harness가 정한 sample/frame/이름과 0 이상 정수
+`pixels`/`maxDelta`가 모두 0이어야 한다(`maxDelta` 누락·bool·실수 FAIL). 공식 네 문서는 harness 안의 독립 목록으로 정하며
+공유 `undo_native.LARGE`가 줄어도 범위가 함께 줄지 않는다. 이 harness의 history 계약은 이름 붙은 필수 assertion이고
+`undo_native` gate를 만들지 않으므로 `historyGates`/`historyChecks`는 비어 있어야 하며 빈 목록을 history gate 통과로 보고하지 않는다.
+수정 뒤 실제 native 엄격 네 문서39/39·참조24와 단일 화학 문서12/12·참조6이 같은48adaa에서 다시 통과했다.
+
+연속 수명주기 판정은 순수 함수 `lifecycle_evidence.classify`로 옮겼다. WebProcess는 정확히 하나·PID와 `/proc` start time이
+처음부터 끝까지 같아야 하고, 120 cycle·366 memory point가 sequence·문서·세션에 묶여 순서대로 있어야 하며, 선언 예산 필드는
+누락·변경될 수 없다. 새 실제 120회 연속 실행은 PASS(전송 오류0, identity 검증, 정리·상한 PASS)다. 이전 연속 실행의
+"단일 WebProcess" 판정은 PID만 근거였으므로 INFERRED로 정정한다. 새 실행 중 판정 모듈을 편집해(같은 의미의 규칙 병합)
+`executedDependenciesStable=false`가 기록됐으며, 실행 시점 모듈과 최종 모듈 모두 PASS다.
+
+엔진 externref table의 detached Canvas는 decoded cache의 상주 항목이다. 두 연속 실행의 모든 정착 상태(before/closed/closed10s)에서
+개수와 RGBA 바이트가 cache 항목과 정확히 같고 externref slot은1156으로 일정하다. 별도 trim 실험에서 14항목·248.85MiB plateau가
+idle 10초로는 줄지 않고(GC 대상 아님) 명시적 trim에서 즉시0이 되며 RSS가717→374MiB로 줄고, 다시 열면 같은 크기로 채워진다.
+즉 예산(256MiB) 안의 정상 cache 소유이며 누수가 아니다. 엔진 수정이나 예산 변경은 하지 않았다. RSS는 297~2024MiB의 유한 peak를
+보이지만 승인된 기준이 없어 INCONCLUSIVE다.
+
+D4 공식 결과는 첫 유효 공식 실행(group-start p95 88/89/266/138ms FAIL)을 유지한다. 공식 측정은 revision을 RAF poll에서 보고
+RAF 두 번을 더 기다리므로, 일이 없어도 3-RAF 바닥이 p50 40~46/p95 48~49ms다. 진단 관찰자로 나누면 software GL(공식 환경)에서는
+revision 다음 frame의 주 스레드 rendering update가 p50 35~60ms이고 frame 대기는0이다(compositor 대기가 아니라 주 스레드 그리기 비용).
+WebProcess가 실제 Intel xe GPU(renderD128, render engine cycle 증가 확인)를 쓰는 설정에서는 그 구간이 p50 2~7ms로 줄어
+기본 문서 group-start p50이40~41ms가 되지만, p95는 77/57/187/104ms로 여전히50ms를 넘는다(Xvfb 표시, 실제 화면 아님, 비공식 진단).
+남는 큰 몫은 큰 문서의 key→revision commit(p50 29~60ms, p95 최대164ms)이다. 문턱·측정 경계는 바꾸지 않았다.
+D2는 새 근거가 없어 INCONCLUSIVE를 유지한다.
+[완전성 보고서](../../tests/integration/rhwp/evidence/t010-native-completeness/REPORT.ko.txt). T010 전체는 미완료이며 제품 활성화와 T011은 계속 NO-GO다.

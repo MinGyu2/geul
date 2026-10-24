@@ -11,8 +11,9 @@ from unittest import mock
 
 spec = importlib.util.spec_from_file_location('ownership_performance_visual', Path(__file__).with_name('performance-visual-native.py'))
 runner = importlib.util.module_from_spec(spec); spec.loader.exec_module(runner)
-FOUR = ['basic-ko.hwp', 'basic-ko.hwpx', *(p.name for p in runner.history.LARGE)]
-CHEMICAL = runner.history.LARGE[0].name
+# Independent copy of the official matrix: never derived from the harness or history.LARGE.
+FOUR = ['basic-ko.hwp', 'basic-ko.hwpx', '연구노트(화학).hwp', '3249937_asset_management_rules.hwpx']
+CHEMICAL = '연구노트(화학).hwp'
 LABELS = ('warm', 'typed-10', 'typed-20', 'typed-30', 'undo', 'redo')
 
 
@@ -121,13 +122,34 @@ class SampleSelection(unittest.TestCase):
     def test_empty_selection_cannot_pass(self):
         # Shape of the observed false PASS: only the two global assertions, zero documents and references.
         tests = [{'name': name, 'status': 'PASS'} for name in ('bootstrap-clean-close', 'native-final-resource-cleanup')]
-        verdict = runner.classify({'tests': tests, 'documents': [], 'visualReferences': [], 'cleanup': dict.fromkeys(runner.CLEANUP_STEPS, True)}, [])
+        verdict = runner.classify({'tests': tests, 'documents': [], 'visualReferences': [], 'historyGates': [], 'historyChecks': [],
+                                   'cleanup': dict.fromkeys(runner.CLEANUP_STEPS, True)}, [])
         self.assertEqual(verdict['status'], 'FAIL')
+        self.assertEqual(verdict['failures'], ['empty sample selection'])
         self.assertFalse(verdict['pixelReferencesComplete'])
 
     def test_selection_is_exact_fixture_set(self):
         self.assertEqual(runner.select_samples(None), FOUR)
         self.assertEqual(runner.select_samples(CHEMICAL), [CHEMICAL])
+
+    def test_shared_large_list_cannot_shrink_official_matrix(self):
+        saved = list(runner.history.LARGE)
+        runner.history.LARGE[:] = saved[:1]
+        try:
+            spec = importlib.util.spec_from_file_location('reloaded_visual', Path(__file__).with_name('performance-visual-native.py'))
+            reloaded = importlib.util.module_from_spec(spec); spec.loader.exec_module(reloaded)
+            self.assertEqual(reloaded.select_samples(None), FOUR)
+            self.assertEqual(reloaded.required_tests(FOUR), runner.required_tests(FOUR))
+            with tempfile.TemporaryDirectory() as folder:
+                for name in FOUR[:2]: (Path(folder) / name).write_bytes(b'x')
+                self.assertEqual([path.name for path in reloaded.fixture_paths(Path(folder))], FOUR)
+        finally:
+            runner.history.LARGE[:] = saved
+
+    def test_missing_official_sample_fails_instead_of_shrinking(self):
+        with mock.patch.object(runner.history, 'S', Path('/nonexistent-samples')):
+            with self.assertRaisesRegex(RuntimeError, 'official fixtures missing'):
+                runner.fixture_paths(Path('/nonexistent-generated'))
 
 
 class Acceptance(unittest.TestCase):
@@ -162,6 +184,8 @@ class Acceptance(unittest.TestCase):
         self.assertEqual(code, 1); self.assertEqual(result['status'], 'FAIL'); self.assertFalse(result['pixelReferencesComplete'])
         verdict = self.verdict(lambda refs: refs[9].update(pixels=1, maxDelta=1))
         self.assertEqual(verdict['status'], 'FAIL')
+        verdict = self.verdict(lambda refs: refs[9].update(pixels=0, maxDelta=5))  # inconsistent row is still a mismatch
+        self.assertEqual(verdict['status'], 'FAIL'); self.assertFalse(verdict['pixelReferencesComplete'])
 
     def test_mandatory_caret_failure_stays_nonzero_with_continuation(self):
         code, result = FakeNative(caret_missing_after_undo=True).execute('--continue-after-caret-failure')
@@ -186,6 +210,60 @@ class Acceptance(unittest.TestCase):
     def test_failed_history_gate_fails(self):
         verdict = self.verdict(lambda refs: None, gates=[{'gate': 'D1', 'item': 'x', 'result': 'FAIL'}])
         self.assertEqual(verdict['status'], 'FAIL')
+
+    def test_history_evidence_from_another_contract_fails(self):
+        # The harness never produces undo_native gates; a passing entry is not evidence for this contract.
+        self.assertEqual(self.verdict(lambda refs: None, gates=[{'gate': 'D1', 'item': 'x', 'result': 'PASS'}])['status'], 'FAIL')
+        self.assertEqual(self.mutated(lambda r: r.update(historyChecks=['x']))['status'], 'FAIL')
+        self.assertEqual(self.mutated(lambda r: r.pop('historyGates'))['status'], 'FAIL')
+        verdict = self.verdict(lambda refs: None)
+        self.assertEqual(verdict['status'], 'PASS'); self.assertIn('named mandatory assertions', verdict['historyGateContract'])
+
+    def test_duplicate_required_assertion_fails(self):
+        verdict = self.mutated(lambda r: r['tests'].insert(4, dict(r['tests'][3])))
+        self.assertEqual(verdict['status'], 'FAIL'); self.assertTrue(any('duplicate' in f for f in verdict['failures']))
+
+    def test_unexpected_assertion_fails(self):
+        verdict = self.mutated(lambda r: r['tests'].append({'name': 'extra-check', 'status': 'PASS'}))
+        self.assertEqual(verdict['status'], 'FAIL'); self.assertTrue(any('unexpected' in f for f in verdict['failures']))
+
+    def test_assertions_out_of_execution_order_fail(self):
+        verdict = self.mutated(lambda r: r['tests'].insert(1, r['tests'].pop(5)))
+        self.assertEqual(verdict['status'], 'FAIL'); self.assertIn('assertions out of execution order', verdict['failures'])
+
+    def test_missing_max_delta_fails(self):
+        self.assertEqual(self.verdict(lambda refs: refs[2].pop('maxDelta'))['status'], 'FAIL')
+        code, result = FakeNative(frame=lambda index: {'verified': True, 'pixels': 0}).execute()
+        self.assertEqual((code, result['status']), (1, 'FAIL'))
+
+    def test_non_integer_pixel_evidence_fails(self):
+        for field, value in (('pixels', False), ('pixels', 0.0), ('pixels', '0'), ('pixels', None), ('pixels', -1),
+                             ('maxDelta', False), ('maxDelta', 0.0), ('maxDelta', -1)):
+            with self.subTest(field=field, value=value):
+                verdict = self.verdict(lambda refs: refs[4].update({field: value}))
+                self.assertEqual(verdict['status'], 'FAIL'); self.assertFalse(verdict['pixelReferencesComplete'])
+
+    def test_malformed_reference_rows_fail(self):
+        self.assertEqual(self.mutated(lambda r: r['visualReferences'].__setitem__(0, 'ok'))['status'], 'FAIL')
+        self.assertEqual(self.mutated(lambda r: r.update(visualReferences={}))['status'], 'FAIL')
+        self.assertEqual(self.mutated(lambda r: r['tests'].__setitem__(0, None))['status'], 'FAIL')
+
+    def test_duplicate_or_mislabelled_reference_fails(self):
+        self.assertEqual(self.verdict(lambda refs: refs.__setitem__(1, dict(refs[0])))['status'], 'FAIL')
+        self.assertEqual(self.verdict(lambda refs: refs[7].update(sample=FOUR[0]))['status'], 'FAIL')
+        self.assertEqual(self.verdict(lambda refs: refs[7].update(name='other'))['status'], 'FAIL')
+
+    def test_engine_row_cannot_override_reference_identity(self):
+        spoof = lambda index: {'verified': True, 'pixels': 0, 'maxDelta': 0, 'name': 'spoof', 'sample': 'x', 'frame': 'y'}
+        code, result = FakeNative(frame=spoof).execute()
+        self.assertEqual((code, result['status']), (0, 'PASS'), result.get('failures'))
+        self.assertEqual(result['visualReferences'][0]['name'], 'basic-ko.hwp-warm')
+
+    def mutated(self, change):
+        code, result = FakeNative().execute()
+        self.assertEqual(code, 0)
+        change(result)
+        return runner.classify(result, FOUR)
 
     def verdict(self, change, documents=None, cleanup=None, gates=()):
         # Start from the actual successful run's result and break one field.
