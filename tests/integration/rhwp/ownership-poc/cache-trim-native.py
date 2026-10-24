@@ -158,9 +158,12 @@ def classify_checked(result, expected_wasm):
                     'rssMiB': round(point['aggregateRssBytes'] / 2**20, 1), 'wasmMiB': round(point['wasmBytes'] / 2**20, 2)}
         except (KeyError, TypeError):
             return None
+    summaries = {p.get('phase'): summary(p) for p in points}
+    missing = [str(phase) for phase, value in summaries.items() if value is None]
+    if missing: failures.append('summary evidence not computable for: ' + ', '.join(missing))
     return {'status': 'FAIL' if failures else 'PASS', 'failures': failures,
             'imageCachePopulatedBeforeTrim': bool(not failures and images(f'closed-A{CYCLES - 1}')['entries']),
-            'summary': {p.get('phase'): summary(p) for p in points}}
+            'summary': summaries}
 
 if __name__ == '__main__':
     raise SystemExit(main())

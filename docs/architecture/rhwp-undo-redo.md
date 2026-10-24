@@ -856,3 +856,17 @@ graphics 경로가 지연에 크게 작용한다는 추론까지다. D4 진단 �
 timestamp와 인과 순서, revision 중복 없음을 요구하며 `DIAGNOSTIC_COMPLETE`는 공식 D4 PASS가 아니다. 관찰자와 MEASURE 표본은
 공통 trial 식별자가 없어 순서로만 짝지으며 이를 한계로 남긴다. 공식 D4는 FAIL 그대로다.
 [진단 무결성 보고서](../../tests/integration/rhwp/evidence/t010-diagnostic-integrity/REPORT.ko.txt). T010 전체는 미완료이며 제품 활성화와 T011은 계속 NO-GO다.
+
+## T010 진단 입력 검증·캐시 수명주기 회귀 보완 (2026-10-24)
+
+`lifecycle_evidence.check_point`는 이제 열린 상태를 포함한 모든 관찰에서 `engineSurfaces` 다섯 counter(0 이상 정수)를 요구한다.
+열린 상태는 owner/job/lease/staging Canvas를 가질 수 있으므로 정리·소유 대조는 정착 상태에만 적용한다. cache-trim 요약을 계산할 수
+없는 phase는 FAIL이다. 문서별 cache/RSS 요약 gate도 cycle gate처럼 gate 식별자가 `D4`여야 한다(INCONCLUSIVE 결과만으로 D4로 보지 않음).
+D4 진단 판정은 기대 WASM이 소문자 SHA-256인지 먼저 확인하고, sample·engineIdentity·measureTimeline·observer·revision·groupStart의
+형식을 조회·hash·비교 전에 검사해 잘못된 JSON에도 예외 없이 FAIL을 낸다. 수정 전에는 이 경우들 중 24건이 PASS, 4건이 예외였다.
+
+브라우저 이미지 cache trim을 실제로 확인했다(`image-cache-trim-native.py`). SVG 그림 두 개가 든 생성 문서를 열면 image cache에
+2항목·11.6MB가 생기고 표시 frame이 exact이며, 닫고 10초 두어도 유지되고(전역 cache 소유), 명시적 trim에서 image/decoded cache와 엔진
+image surface가 모두 0이 되며, 다시 열면 같은 크기로 채워지고 frame이 다시 exact다. 늦은 이미지 콜백이 교체된 문서에 게시되지
+않는 것은 `history-pending-native.py`(22/22)로 다시 확인했다. 앞 절의 "image cache 해제는 trim 뒤 비어 있음까지만 확인" 한계는 해소됐다.
+[입력 검증 보고서](../../tests/integration/rhwp/evidence/t010-diagnostic-input-validation/REPORT.ko.txt). D4 공식 FAIL, D2·RSS INCONCLUSIVE, T010 미완료, 제품 활성화와 T011은 계속 NO-GO다.

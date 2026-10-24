@@ -91,43 +91,61 @@ def timestamp(value):
     return type(value) in (int, float) and math.isfinite(value)
 
 
+def sha256_hex(value):
+    return isinstance(value, str) and re.fullmatch(r'[0-9a-f]{64}', value) is not None
+
+
+def records(value):
+    """A required list whose every item is an object; anything else is malformed (None)."""
+    return value if isinstance(value, list) and all(isinstance(item, dict) for item in value) else None
+
+
 def classify(result, expected_wasm):
     """Diagnostic completeness only (never official D4): exact fixtures/order/identity, 30 canonical and 30 observer
-    group-start records per document with finite, causally ordered timestamps and unique revisions."""
+    group-start records per document with finite, causally ordered timestamps and unique revisions. Every field is
+    type-checked before lookup, hashing or comparison, so malformed JSON yields FAIL rather than an exception."""
     failures, unavailable = [], []
     if not isinstance(result, dict): return {'status': 'FAIL', 'failures': ['result is not an object'], 'unavailableEvidence': []}
+    if not sha256_hex(expected_wasm): return {'status': 'FAIL', 'failures': ['expected WASM identity is not a lowercase SHA-256'], 'unavailableEvidence': []}
     if result.get('error'): failures.append('run error: ' + str(result['error'])[:200])
-    documents = result.get('documents') if isinstance(result.get('documents'), list) else []
-    if [d.get('sample') if isinstance(d, dict) else None for d in documents] != [name for name, _ in FIXTURES]:
+    documents = records(result.get('documents'))
+    if documents is None: failures.append('documents missing or malformed'); documents = []
+    names = [d.get('sample') for d in documents]
+    if names != [name for name, _ in FIXTURES]:
         failures.append('documents missing, duplicated, reordered or unexpected')
     for doc in documents:
-        if not isinstance(doc, dict): continue
         name = doc.get('sample')
-        if doc.get('sourceSha256') != EXPECTED_SOURCE_SHA256.get(name): failures.append(f'{name}: source fixture identity mismatch')
+        if not isinstance(name, str): continue  # already a failure above; never hash a malformed sample
+        if doc.get('sourceSha256') != EXPECTED_SOURCE_SHA256.get(name):
+            failures.append(f'{name}: source fixture identity mismatch')
         if 'engineIdentity' not in doc: unavailable.append(f'{name}: per-document engine identity')
-        elif (doc.get('engineIdentity') or {}).get('wasmSha256') != expected_wasm: failures.append(f'{name}: engine identity != expected WASM')
-        measured = doc.get('groupStart') if isinstance(doc.get('groupStart'), dict) else {}
-        timeline = [s for s in doc.get('measureTimeline') or [] if isinstance(s, dict) and s.get('kind') == 'groupStart']
-        if measured.get('n') != 30 or measured.get('timeouts') != 0 or len(timeline) != 30 \
-                or not all(timestamp(s.get('keyToFrame')) and s['keyToFrame'] >= 0 for s in timeline):
-            failures.append(f'{name}: canonical MEASURE group-start incomplete or timed out')
-        observer = doc.get('observer') if isinstance(doc.get('observer'), list) else None
-        records = [r for r in observer or [] if isinstance(r, dict) and r.get('kind') == 'groupStart']
-        if observer is None or not all(isinstance(r, dict) for r in observer) or len(records) != 30:
-            failures.append(f'{name}: observer group-start records {len(records)} != 30 or malformed'); continue
-        bad = [i for i, r in enumerate(records) if not all(timestamp(r.get(k)) for k in TIMES)]
+        elif not isinstance(doc['engineIdentity'], dict) or doc['engineIdentity'].get('wasmSha256') != expected_wasm:
+            failures.append(f'{name}: engine identity missing, malformed or != expected WASM')
+        measured, timeline = doc.get('groupStart'), records(doc.get('measureTimeline'))
+        group = [s for s in timeline or [] if s.get('kind') == 'groupStart']
+        if not isinstance(measured, dict) or type(measured.get('n')) is not int or measured['n'] != 30 \
+                or type(measured.get('timeouts')) is not int or measured['timeouts'] != 0 or timeline is None or len(group) != 30 \
+                or not all(timestamp(s.get('keyToFrame')) and s['keyToFrame'] >= 0 for s in group):
+            failures.append(f'{name}: canonical MEASURE group-start missing, malformed, incomplete or timed out')
+        observer = records(doc.get('observer'))
+        starts = [r for r in observer or [] if r.get('kind') == 'groupStart']
+        if observer is None or len(starts) != 30:
+            failures.append(f'{name}: observer group-start records {len(starts)} != 30 or malformed'); continue
+        bad = [i for i, r in enumerate(starts) if not all(timestamp(r.get(k)) for k in TIMES)]
         if bad: failures.append(f'{name}: observer records with missing/non-finite/boolean timestamps {bad[:5]}'); continue
-        disordered = [i for i, r in enumerate(records) if any(r[a] > r[b] for a, b in CAUSAL_ORDER)]
+        disordered = [i for i, r in enumerate(starts) if any(r[a] > r[b] for a, b in CAUSAL_ORDER)]
         if disordered: failures.append(f'{name}: observer records violate causal callback order {disordered[:5]}')
-        revisions = [r.get('revision') for r in records]
-        if any(v is None for v in revisions): unavailable.append(f'{name}: observer revision identifiers')
+        revisions = [r.get('revision') for r in starts]
+        if all(v is None for v in revisions) and not any('revision' in r for r in starts): unavailable.append(f'{name}: observer revision identifiers')
+        elif not all(isinstance(v, str) and v for v in revisions): failures.append(f'{name}: observer revision missing or not a non-empty string')
         elif len(set(revisions)) != len(revisions): failures.append(f'{name}: duplicated observer revisions')
-    identity = (result.get('engineIdentity') or {}).get('wasmSha256') if isinstance(result.get('engineIdentity'), dict) else None
-    if identity != expected_wasm: failures.append('final engine identity != expected WASM')
+    final = result.get('engineIdentity')
+    if not isinstance(final, dict) or final.get('wasmSha256') != expected_wasm: failures.append('final engine identity missing, malformed or != expected WASM')
     status = 'FAIL' if failures else 'INCONCLUSIVE' if unavailable else 'DIAGNOSTIC_COMPLETE'
     return {'measurementComplete': status == 'DIAGNOSTIC_COMPLETE', 'status': status, 'failures': failures, 'unavailableEvidence': unavailable,
             'observerMeasurePairing': 'by order only: canonical MEASURE records no trial identifier; agreement of end times is a consistency check, not identity',
             'officialD4': 'not evaluated: diagnostic observer perturbs scheduling; official result stays the first valid official run'}
+
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)

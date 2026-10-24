@@ -142,3 +142,5 @@ rendering update 작업과 다음 frame 대기를 나눈다. 관찰자가 일정
 모두 요구한다. `lifecycle_evidence.classify`는 durable sample과 lifecycle 행을 전체 내용으로 맞대고, cycle gate는 생성 시점에 붙인
 문서·세션·sample 연결로 확인한다(연결 없는 이전 실행은 INCONCLUSIVE). `d4-frame-attribution-native.py --expected-wasm`의 판정은
 fixture 순서·해시, 엔진 identity, 유한하고 인과 순서가 맞는 timestamp를 요구한다. RAF→작업 간격은 그리기/GPU/compositor 시간이 아니다.
+모든 memory 관찰(열린 상태 포함)은 `engineSurfaces` counter가 0 이상 정수여야 하고, 요약 gate도 `D4` 식별자가 필요하며, D4 진단 판정은 잘못된 JSON 형식에 예외 대신 FAIL을 낸다.
+`image-cache-trim-native.py`: SVG 그림 문서로 브라우저 이미지 cache를 실제로 채운 뒤 닫기·idle 유지, 명시적 trim 해제, 다시 열기와 exact frame을 확인하는 별도 진단이다.

@@ -1,0 +1,45 @@
+{
+ "status": "PASS",
+ "baseline": "1a06482d32553e782e0fc1569a49f693bf2fe387",
+ "head": "1a06482d32553e782e0fc1569a49f693bf2fe387",
+ "checks": {
+  "headIsBaseOrChild": true,
+  "changedFilesInScope": true,
+  "protectedUnchanged": true,
+  "priorEvidenceUnchanged": true,
+  "submodulesPinned": true,
+  "candidateWasm": true,
+  "appBinary": true,
+  "checkpointNotStaged": true,
+  "previousCompletenessEvidenceUnchanged": true,
+  "diffCheck": true
+ },
+ "changedFiles": {
+  "docs/architecture/rhwp-undo-redo.md": "4899503f420a67995f3a071afc49e258f26e89972450f7d03760a5045b953c52",
+  "tests/integration/rhwp/evidence/t010-diagnostic-input-validation/REPORT.ko.txt": "60b86db260a12eff33bc92299ef8a7e118b83ec4d316fa9b27ac6cc6016099f8",
+  "tests/integration/rhwp/evidence/t010-diagnostic-input-validation/d1-four-document-native.json": "c00bf14a4abf9b2441ba50b478fc03f9afbaa49db6b28ebe69c260443ef59811",
+  "tests/integration/rhwp/evidence/t010-diagnostic-input-validation/defect-reproduction.json": "48b6de5cf4c94137ba607483ea88c0af411ef020abf3b1827fc00b032db8ccf2",
+  "tests/integration/rhwp/evidence/t010-diagnostic-input-validation/diagnostic-cache-ownership-trim.json": "4db5677555b87aac41746604995befcbb4fefbd269d88c46c4e1ed452c156b12",
+  "tests/integration/rhwp/evidence/t010-diagnostic-input-validation/diagnostic-image-cache-trim.json": "c86a2727b09b620c132013671fc4353b3d5c1a766475b8fd7b9a1aca5c0defdb",
+  "tests/integration/rhwp/evidence/t010-diagnostic-input-validation/history-pending-native.json": "4edebdada5389359840d568808de3318dd78e2affb2f50dc2b29a3796d404923",
+  "tests/integration/rhwp/evidence/t010-diagnostic-input-validation/integrity.py.txt": "eeb4ecc959d137d02e87eb6ea6d4d162bc781939df12f4edf12470eb32dcbda0",
+  "tests/integration/rhwp/evidence/t010-diagnostic-input-validation/r-mutation.json": "85fb4647ac800ba740f7e9c7056446acea8f73ec87850d458d02918fd7d9fc2e",
+  "tests/integration/rhwp/evidence/t010-diagnostic-input-validation/r-mutation.py.txt": "c89a7eb1820be8fdca53f20a2ab01ff14f27d118e9df3cc40772a661858d1266",
+  "tests/integration/rhwp/evidence/t010-diagnostic-input-validation/reclassification.json": "213eea94866b163d61cbad4032e1cd7afff574f42e6c24b3e2d207d479baa959",
+  "tests/integration/rhwp/evidence/t010-diagnostic-input-validation/run.py.txt": "4f6da2391b48df96875fafba39d4d0e358675e2ceece3f50237bd20276ba5245",
+  "tests/integration/rhwp/evidence/t010-diagnostic-input-validation/security-final.json": "c9f64b38939c94cfc717e0de4ef9cbfe931d3b1cb12f8b2bdb43716146c00af4",
+  "tests/integration/rhwp/evidence/t010-diagnostic-input-validation/security.py.txt": "0d51c88d71e0e8a42fcaa481fee5f244563988540a0ae2c6ffe85fbf116318e0",
+  "tests/integration/rhwp/ownership-poc/README.md": "9d7a00e958214e990336da3a580c04debea3571724a84f5a419f9b9fba12066d",
+  "tests/integration/rhwp/ownership-poc/cache-trim-native.py": "f86451dda04034dee6032999b96dfaeb23fac041fa2471db72b23975d839207e",
+  "tests/integration/rhwp/ownership-poc/d4-frame-attribution-native.py": "a740160d0f57092b783217f043382ef310e8a899ec12b753624e344701d1699a",
+  "tests/integration/rhwp/ownership-poc/image-cache-trim-native.py": "eb95f49e0ef2e241fb43efa5e251275d945f5118115705544d4bb4cf5ac3eff6",
+  "tests/integration/rhwp/ownership-poc/lifecycle_evidence.py": "4437dd7b4f458dda3d155336c5abf45308340af7bd9f637e4ae5fc323134fed6",
+  "tests/integration/rhwp/ownership-poc/test_lifecycle_evidence.py": "eeee12fa13eee91ebea56337e2d58f8b5c72ecde587db7d6b238b607331a3022",
+  "tests/integration/rhwp/ownership-poc/test_native_diagnostics.py": "c204bbfc1355c50a3424245f9b1ba7dc3f55446e9adcbb6cb5f03eb5cac282d9"
+ },
+ "priorEvidenceChanged": [],
+ "submodules": [
+  " 1a76570e833917d15817415a53c09ad61ab3203f external/rhwp (v0.8.7)",
+  " fc41918814f62645b6746ed68e71e8c2c2e85d6f external/wordcraft (v0.7.0)"
+ ]
+}

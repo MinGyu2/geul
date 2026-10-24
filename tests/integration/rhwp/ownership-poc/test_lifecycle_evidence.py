@@ -239,6 +239,23 @@ class LifecycleEvidence(unittest.TestCase):
             for point in (rows(result)[3]['closed'], result['samples'][rows(result)[3]['closed']['sequence']]): point['canvasCount'] = 1
         self.assertIndependentFails(dirty_but_pass, 'disagrees')
 
+    def test_summary_gate_identity_is_mandatory(self):
+        for gate_id in ('D5', None, ['D4'], 'd4', ''):
+            with self.subTest(gate=gate_id):
+                self.assertIndependentFails(lambda r: r['gates'][60].update(gate=gate_id), 'summary gate')
+        self.assertIndependentFails(lambda r: r['gates'][121].pop('gate'), 'summary gate')
+
+    def test_summary_gate_association_must_identify_its_document(self):
+        self.assertIndependentFails(lambda r: r['gates'][60]['association'].update(doc=evidence.DOCUMENTS[1]), 'does not identify')
+        self.assertIndependentFails(lambda r: r['gates'][60]['association'].update(sessionId='other'), 'does not identify')
+        self.assertIndependentFails(lambda r: r['gates'][60]['association'].update(afterSequence=5), 'does not identify')
+        self.assertIndependentFails(lambda r: r['gates'].insert(120, r['gates'].pop(121)), 'displaced')
+
+    def test_complete_122_gate_result_passes(self):
+        result = detached_samples(complete())
+        self.assertEqual(len(result['gates']), 122)
+        self.assertEqual(evidence.classify(result, WASM)['status'], 'PASS')
+
     def test_unassociated_gates_are_inconclusive_not_pass(self):
         def historical(result):
             for gate in result['gates']: gate.pop('association')

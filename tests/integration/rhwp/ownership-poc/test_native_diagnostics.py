@@ -14,6 +14,7 @@ def load(name):
 
 
 trim = load('cache-trim-native')
+images = load('image-cache-trim-native')
 frames = load('d4-frame-attribution-native')
 
 
@@ -145,8 +146,121 @@ class CacheTrim(unittest.TestCase):
         self.assertTrimFails(lambda r: r.pop('engineIdentityAtEnd'), 'engineIdentityAtEnd')
         self.assertTrimFails(lambda r: r['engineIdentity'].update(wasmSha256='e300'), 'engineIdentity')
 
+    def test_opened_state_engine_surfaces_are_mandatory(self):
+        def opened(change):
+            def apply(result):
+                point = result['points'][5]; self.assertEqual(point['phase'], 'opened-A2'); change(point)
+            return apply
+        cases = {'missing': lambda p: p.pop('engineSurfaces'), 'none': lambda p: p.update(engineSurfaces=None),
+                 'list': lambda p: p.update(engineSurfaces=[]),
+                 **{f'missing-{k}': (lambda k: lambda p: p['engineSurfaces'].pop(k))(k) for k in ('detachedCanvases', 'canvasCount', 'canvasPixels', 'imageCount', 'externrefSlots')},
+                 'negative': lambda p: p['engineSurfaces'].update(detachedCanvases=-1), 'bool': lambda p: p['engineSurfaces'].update(canvasCount=True),
+                 'float': lambda p: p['engineSurfaces'].update(canvasPixels=1.5)}
+        for name, change in cases.items():
+            with self.subTest(case=name):
+                self.assertTrimFails(opened(change), 'engine surface')
+
+    def test_opened_state_cache_counters_are_mandatory(self):
+        self.assertTrimFails(lambda r: r['points'][5]['renderer']['cache']['decoded'].pop('entries'), 'decoded cache')
+        self.assertTrimFails(lambda r: r['points'][5]['renderer']['cache']['images'].update(bytes='0'), 'images cache')
+
+    def test_opened_state_may_hold_active_resources(self):
+        result = trim_result()
+        point = result['points'][5]
+        point['engineSurfaces'].update(detachedCanvases=9, canvasCount=9, canvasPixels=999)  # staging beyond the cache
+        point['renderer']['jobs'].update(activeJobs=3, activeLeaseCount=2, pendingCount=2)
+        self.assertEqual(trim.classify(result, WASM)['status'], 'PASS', trim.classify(result, WASM)['failures'])
+
+    def test_every_phase_has_a_summary(self):
+        verdict = trim.classify(trim_result(), WASM)
+        self.assertTrue(all(isinstance(v, dict) for v in verdict['summary'].values()))
+
     def test_unhashable_phase_is_a_failure_not_an_exception(self):
         self.assertTrimFails(lambda r: r['points'][3].update(phase=['closed-A1']))
+
+
+def image_result():
+    points = []
+    for phase in images.PHASES:
+        value = point(len(points), 'x', phase not in ('opened', 'reopened'))
+        populated = phase in ('opened', 'closed', 'idle10s-without-trim', 'reopened', 'reclosed')
+        value['renderer']['cache']['images'].update(entries=2 if populated else 0, bytes=8_000_000 if populated else 0)
+        value['renderer']['cache']['decoded'].update(entries=2 if populated else 0, negativeEntries=2 if populated else 0, bytes=128 if populated else 0)
+        value['engineSurfaces'].update(imageCount=2 if populated else 0, detachedCanvases=0, canvasCount=0, canvasPixels=0, imagePixels=2_000_000 if populated else 0)
+        value['phase'] = phase
+        points.append(value)
+    exact = {'verified': True, 'pixels': 0, 'maxDelta': 0}
+    return {'points': points, 'frames': {'opened': dict(exact), 'reopened': dict(exact)}, 'engineIdentity': {'wasmSha256': WASM},
+            'engineIdentityAtEnd': {'wasmSha256': WASM}, 'cleanup': dict.fromkeys(trim.lifecycle_evidence.CLEANUP_STEPS, True)}
+
+
+class ImageCacheTrim(unittest.TestCase):
+    def assertImageFails(self, change, text=None):
+        result = image_result(); change(result)
+        verdict = images.classify(result, WASM)
+        self.assertEqual(verdict['status'], 'FAIL', 'false PASS')
+        if text: self.assertTrue(any(text in f for f in verdict['failures']), verdict['failures'][:5])
+
+    def test_complete_populated_image_experiment_passes(self):
+        verdict = images.classify(image_result(), WASM)
+        self.assertEqual(verdict['status'], 'PASS', verdict['failures'])
+        self.assertEqual(verdict['summary']['opened']['imageEntries'], 2)
+
+    def test_never_populated_image_cache_is_not_proof(self):
+        def empty(result):
+            for value in result['points']:
+                value['renderer']['cache']['images'].update(entries=0, bytes=0); value['engineSurfaces'].update(imageCount=0)
+        self.assertImageFails(empty, 'not populated')
+
+    def test_decoded_entries_cannot_substitute_for_image_entries(self):
+        def substitute(result):
+            for value in result['points']:
+                value['renderer']['cache']['images'].update(entries=0, bytes=0); value['engineSurfaces'].update(imageCount=0)
+                if value['phase'] in ('opened', 'closed', 'idle10s-without-trim', 'reopened', 'reclosed'):
+                    value['renderer']['cache']['decoded'].update(entries=4, negativeEntries=2, bytes=528)
+                    value['engineSurfaces'].update(detachedCanvases=2, canvasCount=2, canvasPixels=100)
+        self.assertImageFails(substitute, 'not populated')
+
+    def test_image_cache_must_survive_close_and_idle(self):
+        def lost(result):
+            value = result['points'][3]; value['renderer']['cache']['images'].update(entries=1, bytes=4_000_000); value['engineSurfaces'].update(imageCount=1)
+        self.assertImageFails(lost, 'keep')
+
+    def test_trim_must_release_images_and_surfaces(self):
+        self.assertImageFails(lambda r: r['points'][4]['renderer']['cache']['images'].update(entries=1, bytes=10) or r['points'][4]['engineSurfaces'].update(imageCount=1), 'trim')
+        self.assertImageFails(lambda r: r['points'][9]['renderer']['cache']['images'].update(entries=1, bytes=10) or r['points'][9]['engineSurfaces'].update(imageCount=1), 'trim')
+
+    def test_orphan_engine_image_in_settled_state_fails(self):
+        self.assertImageFails(lambda r: r['points'][2]['engineSurfaces'].update(imageCount=3), 'image surfaces not accounted')
+
+    def test_reopen_must_repopulate_with_exact_frames(self):
+        def empty(result):
+            for value in result['points'][7:9]:
+                value['renderer']['cache']['images'].update(entries=0, bytes=0); value['engineSurfaces'].update(imageCount=0)
+                value['renderer']['cache']['decoded'].update(entries=0, negativeEntries=0, bytes=0)
+        self.assertImageFails(empty, 'repopulate')
+        self.assertImageFails(lambda r: r['frames']['reopened'].update(pixels=4), 'not exact')
+        self.assertImageFails(lambda r: r['frames'].pop('opened'), 'not exact')
+        self.assertImageFails(lambda r: r['frames']['opened'].update(maxDelta=False), 'not exact')
+
+    def test_baseline_must_start_empty(self):
+        self.assertImageFails(lambda r: r['points'][0]['renderer']['cache']['images'].update(entries=2, bytes=10) or r['points'][0]['engineSurfaces'].update(imageCount=2), 'baseline')
+
+    def test_process_generation_must_stay_stable(self):
+        def regenerated(result):
+            for value in result['points'][5:]: value['processes'][0]['startTime'] = 999
+        self.assertImageFails(regenerated, 'identity')
+
+    def test_malformed_or_incomplete_evidence_fails(self):
+        self.assertImageFails(lambda r: r['points'].pop(3), 'phases')
+        self.assertImageFails(lambda r: r['points'][3].update(phase=['closed']), 'phases')
+        self.assertImageFails(lambda r: r['points'][1].pop('engineSurfaces'), 'engine surface')
+        self.assertImageFails(lambda r: r['points'][1]['processes'][0].update(startTime=None), 'pid/startTime')
+        self.assertImageFails(lambda r: r.update(error='lost'), 'run error')
+        self.assertImageFails(lambda r: r['cleanup'].update(displayTerminated=False), 'cleanup')
+        self.assertImageFails(lambda r: r['engineIdentity'].update(wasmSha256='e300'), 'engineIdentity')
+        for broken in (None, [], {'points': None}):
+            self.assertEqual(images.classify(broken, WASM)['status'], 'FAIL')
 
 
 def frame_result():
@@ -204,6 +318,35 @@ class FrameAttribution(unittest.TestCase):
             with self.subTest(result=broken):
                 self.assertEqual(frames.classify(broken, WASM)['status'], 'FAIL')
         self.assertEqual(self.verdict(lambda r: r['documents'][0]['observer'].__setitem__(3, 'x'))['status'], 'FAIL')
+
+    def test_malformed_json_fields_fail_without_exception(self):
+        cases = {
+            'sample-list': lambda r: r['documents'][0].update(sample=[]), 'sample-dict': lambda r: r['documents'][1].update(sample={}),
+            'revision-list': lambda r: r['documents'][0]['observer'][2].update(revision=[]), 'revision-dict': lambda r: r['documents'][0]['observer'][2].update(revision={}),
+            'revision-number': lambda r: r['documents'][0]['observer'][2].update(revision=7),
+            'engine-identity-list': lambda r: r['documents'][2].update(engineIdentity=[]), 'engine-identity-none': lambda r: r['documents'][2].update(engineIdentity=None),
+            'engine-identity-nonempty-list': lambda r: r['documents'][2].update(engineIdentity=['x']), 'engine-identity-string': lambda r: r['documents'][2].update(engineIdentity=WASM),
+            'group-start-n-float': lambda r: r['documents'][1]['groupStart'].update(n=30.0), 'group-start-timeouts-bool': lambda r: r['documents'][1]['groupStart'].update(timeouts=False),
+            'final-identity-list': lambda r: r.update(engineIdentity=[]),
+            'timeline-string': lambda r: r['documents'][0].update(measureTimeline='x'), 'timeline-dict': lambda r: r['documents'][0].update(measureTimeline={'a': 1}),
+            'timeline-nested-list': lambda r: r['documents'][0]['measureTimeline'].__setitem__(0, []),
+            'timeline-key-to-frame-bool': lambda r: r['documents'][0]['measureTimeline'][0].update(keyToFrame=True),
+            'observer-dict': lambda r: r['documents'][3].update(observer={'a': 1}), 'observer-nested-list': lambda r: r['documents'][3]['observer'].__setitem__(4, [1]),
+            'observer-kind-list': lambda r: r['documents'][3]['observer'][4].update(kind=[]),
+            'group-start-list': lambda r: r['documents'][1].update(groupStart=[]), 'group-start-n-bool': lambda r: r['documents'][1]['groupStart'].update(n=True),
+            'source-sha-list': lambda r: r['documents'][1].update(sourceSha256=[]), 'documents-dict': lambda r: r.update(documents={'a': 1}),
+            'error-list': lambda r: r.update(error=['x'])}
+        for name, change in cases.items():
+            with self.subTest(case=name):
+                self.assertEqual(self.verdict(change)['status'], 'FAIL')
+
+    def test_invalid_expected_wasm_identity_fails(self):
+        for expected in (None, '', 'abc', 123, ['x'], WASM.upper()):
+            with self.subTest(expected=expected):
+                result = frame_result()
+                for doc in result['documents']: doc['engineIdentity'] = {'wasmSha256': expected}
+                result['engineIdentity'] = {'wasmSha256': expected}
+                self.assertEqual(frames.classify(result, expected)['status'], 'FAIL')
 
     def test_records_without_new_identity_fields_are_inconclusive(self):
         def historical(result):

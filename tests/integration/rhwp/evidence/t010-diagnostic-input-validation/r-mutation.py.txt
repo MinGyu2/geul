@@ -1,0 +1,43 @@
+"""Mutation check for the new cache-trim, lifecycle cross-check/gate and D4 classifier rules (run from verified root)."""
+import sys,shutil,subprocess,json,pathlib,re
+src=pathlib.Path('tests/integration/rhwp/ownership-poc').resolve();d=src.parent/'ownership-poc-mutation-r-tmp'
+assert not d.exists()
+T,L,D,I='cache-trim-native.py','lifecycle_evidence.py','d4-frame-attribution-native.py','image-cache-trim-native.py'
+muts={
+ 'baseline-unmutated':None,
+ 'opened-surfaces-unchecked':(L,"    if not isinstance(surfaces, dict) or not all(count(surfaces.get(k)) for k in SURFACE_COUNTERS):\n        failures.append(f'{where}: engine surface observation missing or invalid'); return","    if False: return"),
+ 'surface-count-type-relaxed':(L,"not all(count(surfaces.get(k)) for k in SURFACE_COUNTERS)","not all(k in surfaces for k in SURFACE_COUNTERS)"),
+ 'trim-summary-none-ignored':(T,"    if missing: failures.append('summary evidence","    if False: failures.append('summary evidence"),
+ 'summary-gate-id-unchecked':(L,"gate.get('gate') != 'D4' or gate.get('result') != 'INCONCLUSIVE'","gate.get('result') != 'INCONCLUSIVE'"),
+ 'd4-expected-wasm-unvalidated':(D,"    if not sha256_hex(expected_wasm): return","    if False: return"),
+ 'd4-records-accept-any-items':(D,"    return value if isinstance(value, list) and all(isinstance(item, dict) for item in value) else None","    return value if isinstance(value, list) else None"),
+ 'd4-engine-identity-type-unchecked':(D,"elif not isinstance(doc['engineIdentity'], dict) or doc['engineIdentity'].get('wasmSha256') != expected_wasm:","elif (doc['engineIdentity'] or {}).get('wasmSha256') != expected_wasm:"),
+ 'd4-revision-type-unchecked':(D,"        elif not all(isinstance(v, str) and v for v in revisions): failures.append","        elif False: failures.append"),
+ 'd4-group-start-int-unchecked':(D,"type(measured.get('n')) is not int or measured['n'] != 30","measured.get('n') != 30"),
+ 'img-phases-unchecked':(I,"if not all(isinstance(phase, str) for phase in phases) or phases != PHASES or","if False and"),
+ 'img-baseline-unchecked':(I,"        if resident('baseline') or images['baseline']['bytes']: failures.append","        if False: failures.append"),
+ 'img-populated-unchecked':(I,"            failures.append('image cache not populated by the open document')","            pass"),
+ 'img-kept-unchecked':(I,"        if kept: failures.append","        if False: failures.append"),
+ 'img-trim-unchecked':(I,"        if left: failures.append","        if False: failures.append"),
+ 'img-trim-images-only-decoded':(I,"if images[phase]['entries'] or images[phase]['bytes'] or surfaces[phase]['imageCount']\n                or decoded","if decoded"),
+ 'img-repopulate-unchecked':(I,"if not (resident('reopened') >= IMAGES and surfaces['reopened']['imageCount'] >= IMAGES): failures.append","if False: failures.append"),
+ 'img-frames-unchecked':(I,"    if inexact: failures.append","    if False: failures.append"),
+ 'img-settled-as-opened':(I,"lifecycle_evidence.check_point(point, point['phase'], not point['phase'].startswith(('opened', 'reopened')), failures)","lifecycle_evidence.check_point(point, point['phase'], False, failures)"),
+ 'img-identity-unchecked':(I,"    if len(identities) != 1 or None in identities: failures.append","    if False: failures.append"),
+ 'img-error-ignored':(I,"    if result.get('error'): failures.append","    if False: failures.append"),
+ 'img-cleanup-ignored':(I,"    if any(cleanup.get(step) is not True for step in lifecycle_evidence.CLEANUP_STEPS): failures.append","    if False: failures.append"),
+ 'img-wasm-ignored':(I,"result[key].get('wasmSha256') != expected_wasm: failures.append","False: failures.append"),
+}
+out={}
+try:
+  for name,m in muts.items():
+    shutil.copytree(src,d,ignore=shutil.ignore_patterns('__pycache__'))
+    if m:
+      f=d/m[0];t=f.read_text();assert t.count(m[1])==1,(name,t.count(m[1]));f.write_text(t.replace(m[1],m[2]))
+    p=subprocess.run([sys.executable,'-I','-m','unittest','discover','-s',str(d),'-p','test_*.py'],capture_output=True,text=True)
+    out[name]={'exit':p.returncode,'summary':[l for l in p.stderr.splitlines() if l.startswith(('OK','FAILED'))][-1:],'killedBy':sorted(set(re.findall(r'^(?:FAIL|ERROR): (\w+)',p.stderr,re.M)))}
+    shutil.rmtree(d)
+finally:
+  if d.exists(): shutil.rmtree(d)
+survivors=[k for k,v in out.items() if k!='baseline-unmutated' and v['exit']==0]
+print(json.dumps({'status':'PASS' if out['baseline-unmutated']['exit']==0 and not survivors else 'FAIL','survivors':survivors,'mutants':out},indent=1,ensure_ascii=False))

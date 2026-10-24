@@ -27,6 +27,7 @@ RELEASED_JOB_FIELDS = ('activeJobs', 'activeLeaseCount', 'pendingCount', 'readyL
 JOB_COUNTERS = ('ownedEstimatedBytes', 'uniqueResourceCount', 'peakStagingBytes', 'peakTemporaryCanvasBytes', 'peakBackupImageDataBytes')
 CACHE_COUNTERS = ('bytes', 'entries', 'pendingEntries', 'negativeEntries', 'transientEntries')
 CLEANUP_STEPS = ('sessionEnded', 'driverStopped', 'displayTerminated')
+SURFACE_COUNTERS = ('detachedCanvases', 'canvasCount', 'canvasPixels', 'imageCount', 'externrefSlots')
 
 
 def count(value):
@@ -78,6 +79,11 @@ def check_point_fields(point, where, closed, failures):
         if not isinstance(cache, dict) or any(cache.get(k) != v for k, v in declared.items()) or not all(count(cache.get(k)) for k in CACHE_COUNTERS):
             failures.append(f'{where}: {name} cache budget/counters missing or changed'); return
         if cache['bytes'] > cache['maxBytes'] or cache['entries'] > cache['maxEntries']: failures.append(f'{where}: {name} cache bound exceeded')
+    # Every observation, opened or settled, must carry a structurally valid engine-surface count.
+    surfaces = point.get('engineSurfaces')
+    if not isinstance(surfaces, dict) or not all(count(surfaces.get(k)) for k in SURFACE_COUNTERS):
+        failures.append(f'{where}: engine surface observation missing or invalid'); return
+    # Opened states legitimately hold owners, jobs, leases and staging Canvases: no cleanup/accounting there.
     if not closed: return
     if point.get('owners') != [] or point.get('canvasCount') != 0 or renderer.get('sessions') != [] or renderer.get('subscribers') != 0:
         failures.append(f'{where}: document owner/visible Canvas/session/subscriber retained')
@@ -87,9 +93,7 @@ def check_point_fields(point, where, closed, failures):
     if any(caches[name]['pendingEntries'] or caches[name]['transientEntries'] for name in DECLARED_CACHES):
         failures.append(f'{where}: pending/transient cache entries after close')
     # Every engine-held detached Canvas must be a resident decoded-cache surface (no orphaned surface).
-    surfaces, decoded = point.get('engineSurfaces'), caches['decoded']
-    if not isinstance(surfaces, dict) or not all(count(surfaces.get(k)) for k in ('detachedCanvases', 'canvasCount', 'canvasPixels', 'imageCount', 'externrefSlots')):
-        failures.append(f'{where}: engine surface observation missing'); return
+    decoded = caches['decoded']
     resident = decoded['entries'] - decoded['negativeEntries']
     if surfaces['detachedCanvases'] != resident or surfaces['canvasCount'] != resident \
             or surfaces['canvasPixels'] * 4 != decoded['bytes'] - decoded['negativeEntries'] * NEGATIVE_ENTRY_BYTES:
@@ -135,7 +139,7 @@ def gate_association(gates, row_order, session):
             clean = 'PASS' if closed.get('owners') == [] and closed.get('canvasCount') == 0 else 'FAIL'
             if gate.get('gate') != 'D4' or not str(gate.get('item', '')).startswith(f'{row.get("mode")} cycle{row.get("cycle")}:') or gate.get('result') != clean:
                 failures.append(f'{where}: missing, displaced or disagrees with the recorded closed observation ({gate.get("item")!r}, {gate.get("result")})'[:240])
-        elif gate.get('result') != 'INCONCLUSIVE' or not str(gate.get('item', '')).startswith(('.' + str(doc).rpartition('.')[2]) + ':'):
+        elif gate.get('gate') != 'D4' or gate.get('result') != 'INCONCLUSIVE' or not str(gate.get('item', '')).startswith(('.' + str(doc).rpartition('.')[2]) + ':'):
             failures.append(f'gate {doc}: per-document cache/RSS summary gate missing or displaced')
         if not unavailable and gate.get('association') != {'doc': doc, 'sessionId': session, 'afterSequence': last_sequence(row)}:
             failures.append(f'{where}: association {gate.get("association")} does not identify this document/session/cycle'[:240])
