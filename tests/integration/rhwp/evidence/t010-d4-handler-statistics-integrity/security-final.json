@@ -1,0 +1,25 @@
+{
+ "sensitive-all": {
+  "exit": 0,
+  "output": "민감정보 검사 통과 (추적 파일 1092개)\n"
+ },
+ "sensitive-changed": {
+  "exit": 0,
+  "output": "민감정보 검사 통과 (지정 파일 24개)\n",
+  "scope": "4 modified + 20 new files"
+ },
+ "gitleaks": {
+  "exit": 0,
+  "version": "8.30.1",
+  "output": "scanned ~289727 bytes; no leaks found",
+  "scope": "changed and new files copied to relative-path mirror with repository .gitleaks.toml; no allowlist change"
+ },
+ "security-unittests": {
+  "exit": 0,
+  "output": [
+   "Ran 86 tests in 55.569s",
+   "",
+   "OK"
+  ]
+ }
+}

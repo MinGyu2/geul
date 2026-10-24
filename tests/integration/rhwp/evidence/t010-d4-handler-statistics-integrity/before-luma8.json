@@ -1,0 +1,72 @@
+{
+  "source": {
+    "path": "tests/integration/rhwp/evidence/t010-d4-performance-remediation/optimized-official-retry.json",
+    "sha256": "2d6c5f1be28fc98fc6a848f9373d1013c430dbf343655db26fef53b91a906dd0"
+  },
+  "expectedWasm": "ae34c12bd0d20aeb9f94610682bc678ec61f55722df74ea946d09782d7c87983",
+  "validatorSha256": "951691871132c8d401f3b92d6302816a80743df0bfdf0e6fa1959597a2ab3879",
+  "falseSuccessCount": 18,
+  "cases": {
+    "unmodified": {
+      "result": "ACCEPTED"
+    },
+    "P0: measurementComplete=False": {
+      "result": "ACCEPTED"
+    },
+    "P0: measurementComplete missing": {
+      "result": "ACCEPTED"
+    },
+    "P0: measurementComplete=None": {
+      "result": "ACCEPTED"
+    },
+    "P0: measurementComplete=0": {
+      "result": "ACCEPTED"
+    },
+    "P0: measurementComplete=1": {
+      "result": "ACCEPTED"
+    },
+    "P0: measurementComplete=\"true\"": {
+      "result": "ACCEPTED"
+    },
+    "P0: measurementComplete=[]": {
+      "result": "ACCEPTED"
+    },
+    "P1: groupStart.p95 moved between p50 and max": {
+      "result": "ACCEPTED"
+    },
+    "P1: groupStart.p50 lowered, order preserved": {
+      "result": "ACCEPTED"
+    },
+    "P1: groupStart.max raised, order preserved": {
+      "result": "ACCEPTED"
+    },
+    "P1: groupStart p50=p95=max plausible": {
+      "result": "ACCEPTED"
+    },
+    "P1: undo.p95 altered": {
+      "result": "ACCEPTED"
+    },
+    "P1: redo.p50 altered": {
+      "result": "ACCEPTED"
+    },
+    "P1: extend.max altered": {
+      "result": "ACCEPTED"
+    },
+    "P1: afterUndo.p50 altered": {
+      "result": "ACCEPTED"
+    },
+    "P1: one groupStart raw sample raised, stale aggregate": {
+      "result": "ACCEPTED"
+    },
+    "P1: one undo raw sample raised, stale aggregate": {
+      "result": "ACCEPTED"
+    },
+    "P1: groupStart raw sample duplicated in place of another": {
+      "result": "ACCEPTED"
+    },
+    "P1: groupStart raw sample missing": {
+      "result": "REJECTED",
+      "error": "canonical timeline counts"
+    }
+  }
+}

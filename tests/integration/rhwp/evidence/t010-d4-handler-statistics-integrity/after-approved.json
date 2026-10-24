@@ -1,0 +1,90 @@
+{
+  "source": {
+    "path": "tests/integration/rhwp/evidence/t010-d4-performance-remediation/baseline-official-frozen-comparison.json",
+    "sha256": "c5c85470d84314aba4a153810972eb991c1e8c6947bb483da887e75c77b9d669"
+  },
+  "expectedWasm": "48adaa0f748484d12f59f4805deda0480635f915368392a87e76e95962ec0b27",
+  "validatorSha256": "76c04322ec9fe960007872f70c3ca98baaddd9af6533ad831dd7f5e161262b25",
+  "falseSuccessCount": 0,
+  "cases": {
+    "unmodified": {
+      "result": "ACCEPTED"
+    },
+    "P0: measurementComplete=False": {
+      "result": "REJECTED",
+      "error": "official measurement incomplete: measurementComplete must be exactly true, got False"
+    },
+    "P0: measurementComplete missing": {
+      "result": "REJECTED",
+      "error": "official measurement incomplete: measurementComplete must be exactly true, got '<missing>'"
+    },
+    "P0: measurementComplete=None": {
+      "result": "REJECTED",
+      "error": "official measurement incomplete: measurementComplete must be exactly true, got None"
+    },
+    "P0: measurementComplete=0": {
+      "result": "REJECTED",
+      "error": "official measurement incomplete: measurementComplete must be exactly true, got 0"
+    },
+    "P0: measurementComplete=1": {
+      "result": "REJECTED",
+      "error": "official measurement incomplete: measurementComplete must be exactly true, got 1"
+    },
+    "P0: measurementComplete=\"true\"": {
+      "result": "REJECTED",
+      "error": "official measurement incomplete: measurementComplete must be exactly true, got 'true'"
+    },
+    "P0: measurementComplete=[]": {
+      "result": "REJECTED",
+      "error": "official measurement incomplete: measurementComplete must be exactly true, got []"
+    },
+    "P1: groupStart.p95 moved between p50 and max": {
+      "result": "REJECTED",
+      "error": "statistic mismatch: 연구노트(화학).hwp groupStart.p95 reported 200.0, recomputed 292"
+    },
+    "P1: groupStart.p50 lowered, order preserved": {
+      "result": "REJECTED",
+      "error": "statistic mismatch: basic-ko.hwp groupStart.p50 reported 60, recomputed 61"
+    },
+    "P1: groupStart.max raised, order preserved": {
+      "result": "REJECTED",
+      "error": "statistic mismatch: basic-ko.hwp groupStart.max reported 97, recomputed 87"
+    },
+    "P1: groupStart p50=p95=max plausible": {
+      "result": "REJECTED",
+      "error": "statistic mismatch: basic-ko.hwp groupStart.p50 reported 40, recomputed 61"
+    },
+    "P1: undo.p95 altered": {
+      "result": "REJECTED",
+      "error": "statistic mismatch: basic-ko.hwpx undo.p95 reported 166, recomputed 147"
+    },
+    "P1: redo.p50 altered": {
+      "result": "REJECTED",
+      "error": "statistic mismatch: 3249937_asset_management_rules.hwpx redo.p50 reported 239, recomputed 240"
+    },
+    "P1: extend.max altered": {
+      "result": "REJECTED",
+      "error": "statistic mismatch: 연구노트(화학).hwp extend.max reported 243, recomputed 242"
+    },
+    "P1: afterUndo.p50 altered": {
+      "result": "REJECTED",
+      "error": "statistic mismatch: basic-ko.hwp afterUndo.p50 reported 129, recomputed 130"
+    },
+    "P1: one groupStart raw sample raised, stale aggregate": {
+      "result": "REJECTED",
+      "error": "statistic mismatch: basic-ko.hwp groupStart.max reported 87, recomputed 112"
+    },
+    "P1: one undo raw sample raised, stale aggregate": {
+      "result": "REJECTED",
+      "error": "statistic mismatch: basic-ko.hwpx undo.max reported 166, recomputed 191"
+    },
+    "P1: groupStart raw sample duplicated in place of another": {
+      "result": "REJECTED",
+      "error": "statistic mismatch: basic-ko.hwp groupStart.p95 reported 87, recomputed 85"
+    },
+    "P1: groupStart raw sample missing": {
+      "result": "REJECTED",
+      "error": "canonical timeline counts"
+    }
+  }
+}

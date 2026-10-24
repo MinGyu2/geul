@@ -147,6 +147,137 @@ class HandlerCLI(unittest.TestCase):
     def test_invalid_measurements(self):
         for name,value in [('n',30.0),('timeouts',False)]:
             self.reject(lambda r:r['measurements']['perf'][0]['groupStart'].update({name:value}),'completion')
+    def test_incomplete_measurement_nonzero(self):
+        for value in (False,None,1,'true'):
+            with self.subTest(value=value):self.reject(lambda r:r.update(measurementComplete=value),'measurementComplete')
+        self.reject(lambda r:r.pop('measurementComplete'),'measurementComplete')
+    def test_complete_pass_format_is_analyzable(self):
+        p,out=self.run_handler(lambda r:r.update(status='PASS',exitReason='PASS'));self.assertEqual(p.returncode,0);self.assertEqual(out['status'],'ANALYZED')
+        self.assertFalse(out['official'])
+    def test_false_statistic_nonzero(self):
+        self.reject(lambda r:r['measurements']['perf'][2]['groupStart'].update(p95=200),'statistic mismatch: 연구노트(화학).hwp groupStart.p95 reported 200, recomputed 292')
+
+
+
+ROOT=Path(__file__).resolve().parents[4]
+EVIDENCE=ROOT/'tests/integration/rhwp/evidence/t010-d4-performance-remediation'
+OFFICIAL={'baseline-official-frozen-comparison.json':'48adaa0f748484d12f59f4805deda0480635f915368392a87e76e95962ec0b27',
+          'optimized-official-retry.json':'ae34c12bd0d20aeb9f94610682bc678ec61f55722df74ea946d09782d7c87983'}
+
+
+def producer():
+    """undo_native.pct compiled alone; importing the module would load the native harness."""
+    tree=ast.parse((ROOT/'tests/integration/rhwp/undo_native.py').read_text())
+    node=next(n for n in tree.body if isinstance(n,ast.FunctionDef) and n.name=='pct')
+    namespace={};exec(compile(ast.Module(body=[node],type_ignores=[]),'undo_native.pct','exec'),namespace)
+    return namespace['pct']
+
+
+class ProducerPercentile(unittest.TestCase):
+    def test_equivalent_to_official_producer(self):
+        import random
+        from d4_handler import producer_pct
+        pct=producer();rng=random.Random(10)
+        for n in (1,2,3,5,19,20,21,24,25,26,29,30,31,40):
+            for _ in range(50):
+                values=[rng.choice((rng.randint(0,400),round(rng.uniform(0,400),2),rng.uniform(0,400),-1)) for _ in range(n)]
+                with self.subTest(values=values):self.assertEqual(producer_pct(values),pct(values))
+        self.assertEqual(producer_pct([]),pct([]))
+    def test_nearest_rank_canonical_counts(self):
+        from d4_handler import producer_pct
+        # ceil(p*n)-1 on ascending 1..n: never interpolated or averaged.
+        for n,p50,p95 in ((30,15,29),(25,13,24),(20,10,19),(5,3,5)):
+            with self.subTest(n=n):
+                values=list(range(n,0,-1))
+                self.assertEqual(producer_pct(values),dict(n=n,p50=p50,p95=p95,max=n,timeouts=0))
+    def test_one_decimal_rounding_boundary(self):
+        from d4_handler import producer_pct
+        # Binary floats: 0.25 -> 0.2 and 0.35 -> 0.3; a decimal half-up policy would give 0.3/0.4.
+        self.assertEqual(producer_pct([0.25])['p50'],0.2);self.assertEqual(producer_pct([0.35])['max'],0.3)
+        self.assertEqual(producer_pct([12.34,12.36])['p95'],12.4)
+
+
+class HandlerStatistics(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        from d4_handler import verified_fixtures
+        cls.generated=tempfile.TemporaryDirectory();cls.addClassCleanup(cls.generated.cleanup)
+        subprocess.run(['node',str(ROOT/'tests/fixtures/rhwp/generate.mjs'),cls.generated.name],check=True,capture_output=True)
+        cls.identities=verified_fixtures(Path(cls.generated.name))
+        cls.records={name:json.loads((EVIDENCE/name).read_text()) for name in OFFICIAL}
+
+    def check(self,mutate=lambda r:None,record='baseline-official-frozen-comparison.json'):
+        from d4_handler import validate_handler
+        r=copy.deepcopy(self.records[record]);mutate(r);validate_handler(r,OFFICIAL[record],self.identities)
+    def reject(self,mutate,reason):
+        with self.assertRaises(ValueError) as caught:self.check(mutate)
+        self.assertIn(reason,str(caught.exception));return str(caught.exception)
+    def doc(self,r,index=0):return r['measurements']['perf'][index]
+    def samples(self,r,kind,index=0):return [s for s in self.doc(r,index)['timelineSamples'] if s['kind']==kind]
+    def shift(self,sample,delta):
+        # Keep keyToFrame == end-key and end >= raf1 so only the aggregate contract is exercised.
+        sample['keyToFrame']=round(sample['keyToFrame']+delta,1);sample['at']['end']=round(sample['at']['end']+delta,1)
+
+    def test_genuine_official_records_all_twenty_groups(self):
+        from d4_handler import COUNTS
+        pct=producer()
+        for name,record in self.records.items():
+            with self.subTest(record=name):
+                self.assertIs(record['measurementComplete'],True);self.assertEqual(record['status'],'FAIL')
+                self.check(record=name)
+                groups=[(doc['sample'],kind) for doc in record['measurements']['perf'] for kind in COUNTS
+                        if pct([s['keyToFrame'] for s in doc['timelineSamples'] if s['kind']==kind])=={k:doc[kind][k] for k in ('n','p50','p95','max','timeouts')}]
+                self.assertEqual(len(groups),20)
+    def test_pass_format_complete_is_valid(self):
+        self.check(lambda r:r.update(status='PASS',exitReason='PASS',failedGateCount=0))
+    def test_measurement_complete_exact_boolean(self):
+        self.check(lambda r:r.update(measurementComplete=True))
+        for value in (False,None,0,1,'true',[],0.0,'True'):
+            with self.subTest(value=value):self.reject(lambda r:r.update(measurementComplete=value),'measurementComplete')
+        self.assertIn("'<missing>'",self.reject(lambda r:r.pop('measurementComplete'),'measurementComplete'))
+    def test_false_reported_statistics(self):
+        for index,kind,key,value in ((0,'groupStart','p50',60),(2,'groupStart','p95',200),(0,'groupStart','max',97),
+                                     (1,'undo','p95',166),(3,'redo','p50',239),(1,'undo','max',171),(0,'redo','max',999),
+                                     (2,'extend','max',243),(0,'extend','p50',63),(0,'afterUndo','p50',129),(3,'afterUndo','max',999)):
+            with self.subTest(kind=kind,key=key):
+                reason=self.reject(lambda r:self.doc(r,index)[kind].update({key:value}),'statistic mismatch')
+                self.assertIn(f"{self.records['baseline-official-frozen-comparison.json']['measurements']['perf'][index]['sample']} {kind}.{key} reported {value}",reason)
+    def test_plausible_ordered_statistics(self):
+        self.reject(lambda r:self.doc(r)['groupStart'].update(p50=40,p95=40,max=40),'groupStart.p50 reported 40, recomputed 61')
+    def test_float_equal_reported_value_and_integer_types(self):
+        self.check(lambda r:self.doc(r)['groupStart'].update(p50=61.0))
+        for key,value in (('p95',True),('max',float('nan')),('p50',float('inf')),('p95','87'),('max',None)):
+            with self.subTest(key=key,value=value):self.reject(lambda r:self.doc(r)['groupStart'].update({key:value}),'invalid measurement statistics')
+        for key,value in (('n',30.0),('n',True),('timeouts',0.0)):
+            with self.subTest(key=key,value=value):self.reject(lambda r:self.doc(r)['undo'].update({key:value}),'invalid canonical completion')
+    def test_modified_raw_sample_with_stale_aggregate(self):
+        self.reject(lambda r:self.shift(max(self.samples(r,'groupStart'),key=lambda s:s['keyToFrame']),25),'groupStart.max reported 87, recomputed 112')
+        self.reject(lambda r:self.shift(max(self.samples(r,'redo',1),key=lambda s:s['keyToFrame']),25),'basic-ko.hwpx redo.max')
+        self.reject(lambda r:self.shift(max(self.samples(r,'afterUndo',3),key=lambda s:s['keyToFrame']),25),'afterUndo.p95')
+    def test_missing_duplicate_and_mislabelled_samples(self):
+        def duplicate(r):
+            groups=self.samples(r,'groupStart');timeline=self.doc(r)['timelineSamples']
+            timeline[timeline.index(max(groups,key=lambda s:s['keyToFrame']))]=copy.deepcopy(min(groups,key=lambda s:s['keyToFrame']))
+        self.reject(duplicate,'groupStart.p95 reported 87, recomputed 85')
+        self.reject(lambda r:self.doc(r)['timelineSamples'].remove(self.samples(r,'undo')[0]),'canonical timeline counts')
+        self.reject(lambda r:self.doc(r)['timelineSamples'].append(copy.deepcopy(self.samples(r,'redo')[0])),'canonical timeline counts')
+        def relabel_extreme(r):
+            redo=max(self.samples(r,'redo'),key=lambda s:s['keyToFrame']);undo=min(self.samples(r,'undo'),key=lambda s:s['keyToFrame'])
+            redo['kind'],undo['kind']='undo','redo'
+        self.reject(relabel_extreme,'statistic mismatch')
+    def test_invalid_raw_latencies(self):
+        for value in (-1,float('nan'),float('inf'),True,None,'61'):
+            with self.subTest(value=value):
+                self.reject(lambda r:self.samples(r,'extend')[0].update(keyToFrame=value),'invalid canonical timeline measurement')
+    def test_rounding_boundary_against_raw_sample(self):
+        def boundary(reported):
+            def mutate(r):
+                top=max(self.samples(r,'groupStart'),key=lambda s:s['keyToFrame'])
+                top['keyToFrame']=87.25;top['at']['end']=round(top['at']['key']+87.25,2)
+                self.doc(r)['groupStart'].update(max=reported)
+            return mutate
+        self.check(boundary(87.2))
+        self.reject(boundary(87.3),'groupStart.max reported 87.3, recomputed 87.2')
 
 
 if __name__=='__main__':unittest.main()

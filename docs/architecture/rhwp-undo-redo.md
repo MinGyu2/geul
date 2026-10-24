@@ -1019,5 +1019,10 @@ resource cursor를 추가한 다음에만 Preparing → ResourcesReady 반환 �
 누락/중복/미지 fixture, manifest와 함께 바뀐 JS, 실수30.0/불리언False 완료 값은 FAIL이다.
 공식 MEASURE와 기존 증거는 변경하지 않는다. ANALYZED는 공식 D4 PASS가 아니다.
 
+handler 분석기는 추가로 `measurementComplete is True`(수집 완전성)를 요구하고, 20개 문서/종류 묶음의
+보고 통계를 원 timeline keyToFrame에서 producer `pct`와 같은 nearest-rank·한 자리 반올림으로 재계산해
+정확히 대조한다(통계 정합성). 둘 다 공식 성능 수용과 별개다. 완전한 공식 FAIL 기록 두 개(48adaa·ae34)는
+40개 묶음 모두 일치하고 ANALYZED다. 근거: `tests/integration/rhwp/evidence/t010-d4-handler-statistics-integrity/`.
+
 T010 전체 INCOMPLETE, 공식 D4 FAIL, D2 native 한국어 IME·RSS INCONCLUSIVE를 유지한다.
 생산 RHWP Undo/Redo NO-GO이며 T011은 시작하지 않는다.

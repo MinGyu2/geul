@@ -174,6 +174,15 @@ handler는 basic-ko.hwp → basic-ko.hwpx → 연구노트(화학).hwp →
 input-delay의 과거 loss 누락은 명시적 `--legacy`에서만 INCONCLUSIVE/exit2다.
 이전 evidence의 명령 예시는 보존된 당시 버전이며 현재 CLI에는 위 두 독립 해시가 필요하다.
 
+handler는 네 가지 서로 다른 성질을 구분한다. (1) 측정 완전성: 최상위 `measurementComplete`가
+정확히 불리언 true여야 한다. 누락·None·0/1·문자열·false는 FAIL/exit1이다. (2) 통계 정합성:
+네 문서×다섯 종류(groupStart30·extend30·undo25·redo20·afterUndo5) 20개 묶음마다 보고된
+n/p50/p95/max/timeouts를 실제 `timelineSamples[kind].keyToFrame`에서 `undo_native.pct`와 같은
+nearest-rank(ceil(p·n)−1, 한 자리 반올림)로 재계산해 정확히 같아야 한다. 불일치는 문서·종류·통계·
+보고값·재계산값을 담은 FAIL/exit1이며 원본을 고치지 않는다. (3) 진단 분석 성공은 ANALYZED/exit0이다.
+(4) 공식 성능 수용은 원본의 gate/status이며 handler가 판정하지 않는다. 완전하게 수집된 공식 FAIL
+(group-start p95>50ms)은 계속 분석 가능하고 ANALYZED여도 공식 D4 PASS가 아니다.
+
 `run-edit-phases.py --probe contract`는 승인·실험 엔진을 바꾸지 않고 decoded Canvas의
 캐시 퇴거/임시 해제와 실제 poll 반환 경계를 검사한다. 새 Preparing 상태를 구현하지 않는다.
 실행 명령과 제한은 `../evidence/t010-render-preparation-boundary/REPRODUCE.ko.txt`를 따른다.

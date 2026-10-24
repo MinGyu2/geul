@@ -1,0 +1,45 @@
+{
+ "startingGit": {
+  "branch": "master",
+  "head": "b6f5c5c8260314ee24a42a4effe327b7efddc926",
+  "upstream": "origin/master (equal, ahead 0 behind 0)",
+  "worktree": "clean (no staged/unstaged/untracked)",
+  "checkpoint": "none"
+ },
+ "originalSourceSha256": {
+  "tests/integration/rhwp/ownership-poc/d4_handler.py": "951691871132c8d401f3b92d6302816a80743df0bfdf0e6fa1959597a2ab3879"
+ },
+ "inputs": {
+  "tests/integration/rhwp/evidence/t010-d4-performance-remediation/baseline-official-frozen-comparison.json": "c5c85470d84314aba4a153810972eb991c1e8c6947bb483da887e75c77b9d669",
+  "tests/integration/rhwp/evidence/t010-d4-performance-remediation/optimized-official-retry.json": "2d6c5f1be28fc98fc6a848f9373d1013c430dbf343655db26fef53b91a906dd0"
+ },
+ "producer": {
+  "tests/integration/rhwp/undo_native.py": "1d0982fa18c155bbd1e7b009307253815148f841fe1116ec92d818a3ea195445",
+  "unchanged": true
+ },
+ "candidates": {
+  "approved": {
+   "path": "/tmp/geul-t010-caret-geometry/candidate-package",
+   "wasm": "48adaa0f748484d12f59f4805deda0480635f915368392a87e76e95962ec0b27",
+   "js": "b69e920c8fb1e9d05dacadf3ebae2396b043da385137ad2b4b3386a9b3433252",
+   "manifest": "4ecda13f2d611e6f8ba4291b939efaeeccb6e812e68de7f8b539b11526c20ce2"
+  },
+  "luma8": {
+   "path": "/tmp/geul-d4-remediation-gray/candidate-package",
+   "wasm": "ae34c12bd0d20aeb9f94610682bc678ec61f55722df74ea946d09782d7c87983",
+   "js": "b69e920c8fb1e9d05dacadf3ebae2396b043da385137ad2b4b3386a9b3433252",
+   "manifest": "2088e2b9ab2cc4d6809603a52570c681f05d2d8d26abdc2913c2925275acfe46"
+  }
+ },
+ "trustedExpectations": {
+  "approvedWasm": "48adaa0f748484d12f59f4805deda0480635f915368392a87e76e95962ec0b27",
+  "luma8Wasm": "ae34c12bd0d20aeb9f94610682bc678ec61f55722df74ea946d09782d7c87983",
+  "js": "b69e920c8fb1e9d05dacadf3ebae2396b043da385137ad2b4b3386a9b3433252",
+  "source": "task-supplied identities, not read from evidence/manifest"
+ },
+ "fixtures": "node tests/fixtures/rhwp/generate.mjs into scratch; verified_fixtures() matched all 4 canonical SHA-256 (see *-handler.json independentIdentity.fixtures)",
+ "pinned": {
+  "rhwp": "1a76570e833917d15817415a53c09ad61ab3203f",
+  "wordcraft": "fc41918814f62645b6746ed68e71e8c2c2e85d6f"
+ }
+}

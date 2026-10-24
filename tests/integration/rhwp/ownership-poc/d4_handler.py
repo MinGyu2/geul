@@ -16,6 +16,19 @@ FIXTURES = (
     ('3249937_asset_management_rules.hwpx', 'issue6031/3249937_asset_management_rules.hwpx', '97b5d6c571a6b7626321c6a53d797e3511978447497bb73309bd23eaa8e7ea77', 60),
 )
 COUNTS = dict(groupStart=30, extend=30, undo=25, redo=20, afterUndo=5)
+STATISTICS = ('n', 'p50', 'p95', 'max', 'timeouts')
+
+
+def producer_pct(values):
+    """Pure copy of undo_native.pct: nearest rank ceil(p*n)-1, one-decimal round (equivalence is tested).
+
+    Importing undo_native would pull native/WebDriver harness modules into the analyzer.
+    """
+    v = sorted(x for x in values if x >= 0)
+    if not v:
+        return {"n": 0}
+    q = lambda p: v[min(len(v) - 1, max(0, int(-(-p * len(v) // 1)) - 1))]  # noqa: E731
+    return {"n": len(v), "p50": round(q(0.5), 1), "p95": round(q(0.95), 1), "max": round(v[-1], 1), "timeouts": len(values) - len(v)}
 
 
 def verified_fixtures(generated):
@@ -34,6 +47,10 @@ def validate_handler(result, expected_wasm, identities):
         if not ok: raise ValueError(reason)
     require(isinstance(result, dict), 'official evidence must be an object')
     require(not result.get('error'), 'recorded harness error')
+    # Collection completeness only; a complete run whose official gate is FAIL stays analyzable.
+    require(result.get('measurementComplete') is True,
+            'official measurement incomplete: measurementComplete must be exactly true, got '
+            + repr(result.get('measurementComplete', '<missing>')))
     measurements = result.get('measurements')
     require(isinstance(measurements, dict), 'missing official measurements')
     perf = measurements.get('perf')
@@ -88,3 +105,10 @@ def validate_handler(result, expected_wasm, identities):
                 require(all(number(at.get(k)) for k in keys) and at['input'] >= at['key'] - 2
                         and all(at[a] <= at[b] for a, b in zip(keys[1:], keys[2:])),
                         'invalid group-start timestamps/order')
+        # The reported aggregates must be exactly what the producer derives from these raw samples.
+        for kind in COUNTS:
+            recomputed = producer_pct([s['keyToFrame'] for s in samples if s['kind'] == kind])
+            for k in STATISTICS:
+                reported = doc[kind].get(k)
+                require(number(reported) and reported == recomputed[k],
+                        f'statistic mismatch: {name} {kind}.{k} reported {reported!r}, recomputed {recomputed[k]!r}')
