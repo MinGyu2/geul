@@ -1,0 +1,25 @@
+{
+  "branch": "master",
+  "startHEAD": "b974f974ecad558dd407f1d281d8737eba336f58",
+  "originMaster": "b974f974ecad558dd407f1d281d8737eba336f58",
+  "startWorktree": "clean; no staged/unstaged/untracked files before checkpoint",
+  "submodules": " 1a76570e833917d15817415a53c09ad61ab3203f external/rhwp (v0.8.7)\n fc41918814f62645b6746ed68e71e8c2c2e85d6f external/wordcraft (v0.7.0)\n",
+  "recentCommits": "b974f974ecad558dd407f1d281d8737eba336f58 T010 D4 렌더 병목 개선 및 진단 무결성 보완\n76c07c054e1ebe246b048cf8180ed6a7168ccb91 T010 D4 입력 지연 귀속 교정 및 렌더 병목 분석\n0ee6720638fb52d8e6a606ca4c3a5bb9aae1f424 T010 이미지·RSS·D4 진단 검증 보완 및 성능 원인 분석\n312fedc4eb636932c6e912925eb288dcd7b191cd T010 진단 입력 검증 및 캐시 수명주기 회귀 보완\n1a06482d32553e782e0fc1569a49f693bf2fe387 T010 진단 판정 무결성 및 D4 계측 정합성 보완\n6a58ff82b14a8fd6e37f295f4f8699891e4585cb T010 네이티브 검증 완전성 및 메모리 수명주기 관문 강화\n",
+  "protectedTreeHashes": {
+    "src": "ab92342e4e78db78a677f2654e4c84e217572a21",
+    "src-tauri": "e3dbfd913235053deb49566f91773a184997bb37",
+    "external/rhwp": "1a76570e833917d15817415a53c09ad61ab3203f",
+    "external/wordcraft": "fc41918814f62645b6746ed68e71e8c2c2e85d6f",
+    "tests/integration/rhwp/undo_native.py": "1650da80cb1d21caab467012ec403043207e7c2c",
+    "tests/integration/rhwp/evidence/t010-d4-performance-remediation": "ec12b1359124421e1edd795793f08798dd8042e6"
+  },
+  "publicArtifacts": {
+    "public/rhwp/rhwp_bg.wasm": "a91fa6a4336d34441c0d8f52afd0971aebe34019f7caf9eddad100f7a568f94d",
+    "public/rhwp/rhwp.js": "70cde06a369fa7fd4fc8bc8f3d6acaee158596ba1a116a2c72159002b0b5654e",
+    "public/rhwp/BUILD.json": "bac96306df081aeabe1569bd91954e051c7803c56ef013a3bb8158f86b8919ba"
+  },
+  "publicTracking": "public is ignored/generated, not a HEAD tree; record actual file hashes instead",
+  "notes": [
+    "initial identity collection tried HEAD:public and failed read-only; corrected to actual hashes"
+  ]
+}

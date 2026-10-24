@@ -146,3 +146,34 @@ fixture 순서·해시, 엔진 identity, 유한하고 인과 순서가 맞는 ti
 `image-cache-trim-native.py`: SVG 그림 문서로 브라우저 이미지 cache를 실제로 채운 뒤 닫기·idle 유지, 명시적 trim 해제, 다시 열기와 exact frame을 확인하는 별도 진단이다.
 `imagePixels`는 생성 문서의 두 SVG 크기에서 정한 2,904,100px(상주)·0(trim 뒤)과 같아야 하고, `aggregateRssBytes`는 정수여야 한다.
 `d4-input-delay-native.py`: 화학 HWP 하나에서 공식 `scenario_perf`에 기존 busy probe와 절대 keydown/input 시각, probe 호출·trace 기록을 더해 key→input 지연을 무엇이 막는지 보는 비공식 진단이다.
+
+## D4 분석의 독립 신원과 완전성 (2026-10-25)
+
+현재 `analyze-d4.py`는 두 mode 모두 패키지·분석 JSON 밖에서 신뢰한 WASM과 JS SHA-256을
+각각 `--expected-wasm`, `--expected-js`로 요구한다. 실제 두 파일과 ENGINE manifest가 모두
+일치하고 buildStatus PASS/sourceStableDuringBuild true여야 한다. manifest에서 읽은 JS 해시를
+다시 `--expected-js`로 공급하면 독립 승인 검증이 되지 않는다.
+
+```sh
+python3 tests/integration/rhwp/ownership-poc/analyze-d4.py input-delay RAW.json NEW.json \
+  --candidate "$PACKAGE" --expected-wasm "$TRUSTED_WASM_SHA256" --expected-js "$TRUSTED_JS_SHA256" \
+  --fixture 'external/rhwp/samples/rnote/연구노트(화학).hwp'
+
+node tests/fixtures/rhwp/generate.mjs "$GENERATED_FIXTURES"
+python3 tests/integration/rhwp/ownership-poc/analyze-d4.py handler OFFICIAL.json NEW_HANDLER.json \
+  --candidate "$PACKAGE" --expected-wasm "$TRUSTED_WASM_SHA256" --expected-js "$TRUSTED_JS_SHA256" \
+  --fixtures "$GENERATED_FIXTURES"
+```
+
+handler는 basic-ko.hwp → basic-ko.hwpx → 연구노트(화학).hwp →
+3249937_asset_management_rules.hwpx의 완전한 네 문서만 받는다. 생성한 basic 파일과 pinned 공개
+샘플의 실제 bytes를 기존 canonical SHA와 대조하고 각 row의 sourceSha256을 검사한다.
+이 producer는 per-document sourceSha256을 제공하므로 누락된 과거 row를 추정·보충하지 않는다.
+단일 문서 handler mode는 제공하지 않는다. 필수 측정·timeline·groupStart 30개가 누락/잘못되면
+구조화 FAIL/exit1이다. 정상 ANALYZED/exit0도 공식 D4 gate PASS를 뜻하지 않는다.
+input-delay의 과거 loss 누락은 명시적 `--legacy`에서만 INCONCLUSIVE/exit2다.
+이전 evidence의 명령 예시는 보존된 당시 버전이며 현재 CLI에는 위 두 독립 해시가 필요하다.
+
+`run-edit-phases.py --probe contract`는 승인·실험 엔진을 바꾸지 않고 decoded Canvas의
+캐시 퇴거/임시 해제와 실제 poll 반환 경계를 검사한다. 새 Preparing 상태를 구현하지 않는다.
+실행 명령과 제한은 `../evidence/t010-render-preparation-boundary/REPRODUCE.ko.txt`를 따른다.

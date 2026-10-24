@@ -1,0 +1,1149 @@
+{
+  "status": "DIAGNOSTIC_COMPLETE",
+  "scope": "unchanged approved vs unchanged Luma8 experiment; no new preparation optimization; diagnostic JS observer affects timings",
+  "exactPairs": 21,
+  "allExact": true,
+  "executedDependenciesStable": true,
+  "pages": {
+    "14": {
+      "arms": {
+        "baseline": {
+          "pollMs": [
+            160.5,
+            3.699999988079071,
+            3.9000000059604645
+          ],
+          "medianPollMs": 3.9000000059604645,
+          "longestUninterruptedMeasuredPollMs": 160.5,
+          "outcomes": [
+            "COMPLETE",
+            "COMPLETE",
+            "COMPLETE"
+          ],
+          "pollsPerMeasuredJob": 1,
+          "jsPreparationMs": [
+            [
+              {
+                "name": "js.ImageData",
+                "at": 4850.4000000059605,
+                "ms": 0.09999999403953552,
+                "width": 1796,
+                "height": 2339,
+                "bytes": 16803376
+              },
+              {
+                "name": "js.putImageData",
+                "at": 4850.699999988079,
+                "ms": 6.9000000059604645,
+                "canvas": 94,
+                "width": 1796,
+                "height": 2339,
+                "source": null
+              }
+            ],
+            [],
+            []
+          ],
+          "decodedCacheDelta": [
+            {
+              "hits": 0,
+              "misses": 1,
+              "rejected": 0
+            },
+            {
+              "hits": 1,
+              "misses": 0,
+              "rejected": 0
+            },
+            {
+              "hits": 1,
+              "misses": 0,
+              "rejected": 0
+            }
+          ],
+          "codecDuration": "UNVERIFIED in uninstrumented unchanged WASM",
+          "rgbaConversionDuration": "UNVERIFIED separately; prior boundary evidence preserved",
+          "preparationAndReplaySplit": "UNVERIFIED separately; same synchronous poll",
+          "inputBlocking": "UNVERIFIED; direct Chrome probe has no native input",
+          "firstTrialPollMs": 160.5,
+          "laterWarmPollMs": [
+            3.699999988079071,
+            3.9000000059604645
+          ],
+          "medianInterpretation": "mixed first miss/later hits; not comparable to prior medians of cold first polls from three separate runs"
+        },
+        "phase": {
+          "pollMs": [
+            23,
+            3.4000000059604645,
+            3
+          ],
+          "medianPollMs": 3.4000000059604645,
+          "longestUninterruptedMeasuredPollMs": 23,
+          "outcomes": [
+            "COMPLETE",
+            "COMPLETE",
+            "COMPLETE"
+          ],
+          "pollsPerMeasuredJob": 1,
+          "jsPreparationMs": [
+            [
+              {
+                "name": "js.ImageData",
+                "at": 4875.5,
+                "ms": 0,
+                "width": 1796,
+                "height": 2339,
+                "bytes": 16803376
+              },
+              {
+                "name": "js.putImageData",
+                "at": 4875.699999988079,
+                "ms": 7,
+                "canvas": 96,
+                "width": 1796,
+                "height": 2339,
+                "source": null
+              }
+            ],
+            [],
+            []
+          ],
+          "decodedCacheDelta": [
+            {
+              "hits": 0,
+              "misses": 1,
+              "rejected": 0
+            },
+            {
+              "hits": 1,
+              "misses": 0,
+              "rejected": 0
+            },
+            {
+              "hits": 1,
+              "misses": 0,
+              "rejected": 0
+            }
+          ],
+          "codecDuration": "UNVERIFIED in uninstrumented unchanged WASM",
+          "rgbaConversionDuration": "UNVERIFIED separately; prior boundary evidence preserved",
+          "preparationAndReplaySplit": "UNVERIFIED separately; same synchronous poll",
+          "inputBlocking": "UNVERIFIED; direct Chrome probe has no native input",
+          "firstTrialPollMs": 23,
+          "laterWarmPollMs": [
+            3.4000000059604645,
+            3
+          ],
+          "medianInterpretation": "mixed first miss/later hits; not comparable to prior medians of cold first polls from three separate runs"
+        }
+      },
+      "exactRGBA": [
+        {
+          "pixels": 0,
+          "maxDelta": 0,
+          "width": 397,
+          "height": 562
+        },
+        {
+          "pixels": 0,
+          "maxDelta": 0,
+          "width": 397,
+          "height": 562
+        },
+        {
+          "pixels": 0,
+          "maxDelta": 0,
+          "width": 397,
+          "height": 562
+        }
+      ]
+    },
+    "15": {
+      "arms": {
+        "baseline": {
+          "pollMs": [
+            154.19999998807907,
+            3.4000000059604645,
+            3.300000011920929
+          ],
+          "medianPollMs": 3.4000000059604645,
+          "longestUninterruptedMeasuredPollMs": 154.19999998807907,
+          "outcomes": [
+            "COMPLETE",
+            "COMPLETE",
+            "COMPLETE"
+          ],
+          "pollsPerMeasuredJob": 1,
+          "jsPreparationMs": [
+            [
+              {
+                "name": "js.ImageData",
+                "at": 5068.300000011921,
+                "ms": 0,
+                "width": 1796,
+                "height": 2339,
+                "bytes": 16803376
+              },
+              {
+                "name": "js.putImageData",
+                "at": 5068.4000000059605,
+                "ms": 6.699999988079071,
+                "canvas": 98,
+                "width": 1796,
+                "height": 2339,
+                "source": null
+              }
+            ],
+            [],
+            []
+          ],
+          "decodedCacheDelta": [
+            {
+              "hits": 0,
+              "misses": 1,
+              "rejected": 0
+            },
+            {
+              "hits": 1,
+              "misses": 0,
+              "rejected": 0
+            },
+            {
+              "hits": 1,
+              "misses": 0,
+              "rejected": 0
+            }
+          ],
+          "codecDuration": "UNVERIFIED in uninstrumented unchanged WASM",
+          "rgbaConversionDuration": "UNVERIFIED separately; prior boundary evidence preserved",
+          "preparationAndReplaySplit": "UNVERIFIED separately; same synchronous poll",
+          "inputBlocking": "UNVERIFIED; direct Chrome probe has no native input",
+          "firstTrialPollMs": 154.19999998807907,
+          "laterWarmPollMs": [
+            3.4000000059604645,
+            3.300000011920929
+          ],
+          "medianInterpretation": "mixed first miss/later hits; not comparable to prior medians of cold first polls from three separate runs"
+        },
+        "phase": {
+          "pollMs": [
+            20.400000005960464,
+            2.899999976158142,
+            3.0999999940395355
+          ],
+          "medianPollMs": 3.0999999940395355,
+          "longestUninterruptedMeasuredPollMs": 20.400000005960464,
+          "outcomes": [
+            "COMPLETE",
+            "COMPLETE",
+            "COMPLETE"
+          ],
+          "pollsPerMeasuredJob": 1,
+          "jsPreparationMs": [
+            [
+              {
+                "name": "js.ImageData",
+                "at": 5089.199999988079,
+                "ms": 0,
+                "width": 1796,
+                "height": 2339,
+                "bytes": 16803376
+              },
+              {
+                "name": "js.putImageData",
+                "at": 5089.300000011921,
+                "ms": 6.5,
+                "canvas": 100,
+                "width": 1796,
+                "height": 2339,
+                "source": null
+              }
+            ],
+            [],
+            []
+          ],
+          "decodedCacheDelta": [
+            {
+              "hits": 0,
+              "misses": 1,
+              "rejected": 0
+            },
+            {
+              "hits": 1,
+              "misses": 0,
+              "rejected": 0
+            },
+            {
+              "hits": 1,
+              "misses": 0,
+              "rejected": 0
+            }
+          ],
+          "codecDuration": "UNVERIFIED in uninstrumented unchanged WASM",
+          "rgbaConversionDuration": "UNVERIFIED separately; prior boundary evidence preserved",
+          "preparationAndReplaySplit": "UNVERIFIED separately; same synchronous poll",
+          "inputBlocking": "UNVERIFIED; direct Chrome probe has no native input",
+          "firstTrialPollMs": 20.400000005960464,
+          "laterWarmPollMs": [
+            2.899999976158142,
+            3.0999999940395355
+          ],
+          "medianInterpretation": "mixed first miss/later hits; not comparable to prior medians of cold first polls from three separate runs"
+        }
+      },
+      "exactRGBA": [
+        {
+          "pixels": 0,
+          "maxDelta": 0,
+          "width": 397,
+          "height": 562
+        },
+        {
+          "pixels": 0,
+          "maxDelta": 0,
+          "width": 397,
+          "height": 562
+        },
+        {
+          "pixels": 0,
+          "maxDelta": 0,
+          "width": 397,
+          "height": 562
+        }
+      ]
+    },
+    "16": {
+      "arms": {
+        "baseline": {
+          "pollMs": [
+            61.79999998211861,
+            58.19999998807907,
+            55.69999998807907
+          ],
+          "medianPollMs": 58.19999998807907,
+          "longestUninterruptedMeasuredPollMs": 61.79999998211861,
+          "outcomes": [
+            "COMPLETE",
+            "COMPLETE",
+            "COMPLETE"
+          ],
+          "pollsPerMeasuredJob": 1,
+          "jsPreparationMs": [
+            [],
+            [],
+            []
+          ],
+          "decodedCacheDelta": [
+            {
+              "hits": 0,
+              "misses": 0,
+              "rejected": 0
+            },
+            {
+              "hits": 0,
+              "misses": 0,
+              "rejected": 0
+            },
+            {
+              "hits": 0,
+              "misses": 0,
+              "rejected": 0
+            }
+          ],
+          "codecDuration": "UNVERIFIED in uninstrumented unchanged WASM",
+          "rgbaConversionDuration": "UNVERIFIED separately; prior boundary evidence preserved",
+          "preparationAndReplaySplit": "UNVERIFIED separately; same synchronous poll",
+          "inputBlocking": "UNVERIFIED; direct Chrome probe has no native input",
+          "firstTrialPollMs": 61.79999998211861,
+          "laterWarmPollMs": [
+            58.19999998807907,
+            55.69999998807907
+          ],
+          "medianInterpretation": "mixed first miss/later hits; not comparable to prior medians of cold first polls from three separate runs"
+        },
+        "phase": {
+          "pollMs": [
+            68.2000000178814,
+            57.70000001788139,
+            54
+          ],
+          "medianPollMs": 57.70000001788139,
+          "longestUninterruptedMeasuredPollMs": 68.2000000178814,
+          "outcomes": [
+            "COMPLETE",
+            "COMPLETE",
+            "COMPLETE"
+          ],
+          "pollsPerMeasuredJob": 1,
+          "jsPreparationMs": [
+            [],
+            [],
+            []
+          ],
+          "decodedCacheDelta": [
+            {
+              "hits": 0,
+              "misses": 0,
+              "rejected": 0
+            },
+            {
+              "hits": 0,
+              "misses": 0,
+              "rejected": 0
+            },
+            {
+              "hits": 0,
+              "misses": 0,
+              "rejected": 0
+            }
+          ],
+          "codecDuration": "UNVERIFIED in uninstrumented unchanged WASM",
+          "rgbaConversionDuration": "UNVERIFIED separately; prior boundary evidence preserved",
+          "preparationAndReplaySplit": "UNVERIFIED separately; same synchronous poll",
+          "inputBlocking": "UNVERIFIED; direct Chrome probe has no native input",
+          "firstTrialPollMs": 68.2000000178814,
+          "laterWarmPollMs": [
+            57.70000001788139,
+            54
+          ],
+          "medianInterpretation": "mixed first miss/later hits; not comparable to prior medians of cold first polls from three separate runs"
+        }
+      },
+      "exactRGBA": [
+        {
+          "pixels": 0,
+          "maxDelta": 0,
+          "width": 397,
+          "height": 562
+        },
+        {
+          "pixels": 0,
+          "maxDelta": 0,
+          "width": 397,
+          "height": 562
+        },
+        {
+          "pixels": 0,
+          "maxDelta": 0,
+          "width": 397,
+          "height": 562
+        }
+      ]
+    },
+    "19": {
+      "arms": {
+        "baseline": {
+          "pollMs": [
+            185.7999999821186,
+            3.5,
+            3.399999976158142
+          ],
+          "medianPollMs": 3.5,
+          "longestUninterruptedMeasuredPollMs": 185.7999999821186,
+          "outcomes": [
+            "COMPLETE",
+            "COMPLETE",
+            "COMPLETE"
+          ],
+          "pollsPerMeasuredJob": 1,
+          "jsPreparationMs": [
+            [
+              {
+                "name": "js.ImageData",
+                "at": 5480.4000000059605,
+                "ms": 0,
+                "width": 1796,
+                "height": 2339,
+                "bytes": 16803376
+              },
+              {
+                "name": "js.putImageData",
+                "at": 5480.699999988079,
+                "ms": 7.5,
+                "canvas": 104,
+                "width": 1796,
+                "height": 2339,
+                "source": null
+              }
+            ],
+            [],
+            []
+          ],
+          "decodedCacheDelta": [
+            {
+              "hits": 0,
+              "misses": 1,
+              "rejected": 0
+            },
+            {
+              "hits": 1,
+              "misses": 0,
+              "rejected": 0
+            },
+            {
+              "hits": 1,
+              "misses": 0,
+              "rejected": 0
+            }
+          ],
+          "codecDuration": "UNVERIFIED in uninstrumented unchanged WASM",
+          "rgbaConversionDuration": "UNVERIFIED separately; prior boundary evidence preserved",
+          "preparationAndReplaySplit": "UNVERIFIED separately; same synchronous poll",
+          "inputBlocking": "UNVERIFIED; direct Chrome probe has no native input",
+          "firstTrialPollMs": 185.7999999821186,
+          "laterWarmPollMs": [
+            3.5,
+            3.399999976158142
+          ],
+          "medianInterpretation": "mixed first miss/later hits; not comparable to prior medians of cold first polls from three separate runs"
+        },
+        "phase": {
+          "pollMs": [
+            25.900000005960464,
+            2.800000011920929,
+            2.800000011920929
+          ],
+          "medianPollMs": 2.800000011920929,
+          "longestUninterruptedMeasuredPollMs": 25.900000005960464,
+          "outcomes": [
+            "COMPLETE",
+            "COMPLETE",
+            "COMPLETE"
+          ],
+          "pollsPerMeasuredJob": 1,
+          "jsPreparationMs": [
+            [
+              {
+                "name": "js.ImageData",
+                "at": 5507.0999999940395,
+                "ms": 0,
+                "width": 1796,
+                "height": 2339,
+                "bytes": 16803376
+              },
+              {
+                "name": "js.putImageData",
+                "at": 5507.199999988079,
+                "ms": 7.5,
+                "canvas": 106,
+                "width": 1796,
+                "height": 2339,
+                "source": null
+              }
+            ],
+            [],
+            []
+          ],
+          "decodedCacheDelta": [
+            {
+              "hits": 0,
+              "misses": 1,
+              "rejected": 0
+            },
+            {
+              "hits": 1,
+              "misses": 0,
+              "rejected": 0
+            },
+            {
+              "hits": 1,
+              "misses": 0,
+              "rejected": 0
+            }
+          ],
+          "codecDuration": "UNVERIFIED in uninstrumented unchanged WASM",
+          "rgbaConversionDuration": "UNVERIFIED separately; prior boundary evidence preserved",
+          "preparationAndReplaySplit": "UNVERIFIED separately; same synchronous poll",
+          "inputBlocking": "UNVERIFIED; direct Chrome probe has no native input",
+          "firstTrialPollMs": 25.900000005960464,
+          "laterWarmPollMs": [
+            2.800000011920929,
+            2.800000011920929
+          ],
+          "medianInterpretation": "mixed first miss/later hits; not comparable to prior medians of cold first polls from three separate runs"
+        }
+      },
+      "exactRGBA": [
+        {
+          "pixels": 0,
+          "maxDelta": 0,
+          "width": 397,
+          "height": 562
+        },
+        {
+          "pixels": 0,
+          "maxDelta": 0,
+          "width": 397,
+          "height": 562
+        },
+        {
+          "pixels": 0,
+          "maxDelta": 0,
+          "width": 397,
+          "height": 562
+        }
+      ]
+    },
+    "20": {
+      "arms": {
+        "baseline": {
+          "pollMs": [
+            129.39999997615814,
+            8.900000005960464,
+            8.400000005960464
+          ],
+          "medianPollMs": 8.900000005960464,
+          "longestUninterruptedMeasuredPollMs": 129.39999997615814,
+          "outcomes": [
+            "COMPLETE",
+            "COMPLETE",
+            "COMPLETE"
+          ],
+          "pollsPerMeasuredJob": 1,
+          "jsPreparationMs": [
+            [
+              {
+                "name": "js.ImageData",
+                "at": 5645.800000011921,
+                "ms": 0.09999999403953552,
+                "width": 2693,
+                "height": 3508,
+                "bytes": 37788176
+              },
+              {
+                "name": "js.putImageData",
+                "at": 5646,
+                "ms": 11.400000005960464,
+                "canvas": 108,
+                "width": 2693,
+                "height": 3508,
+                "source": null
+              }
+            ],
+            [],
+            []
+          ],
+          "decodedCacheDelta": [
+            {
+              "hits": 0,
+              "misses": 1,
+              "rejected": 0
+            },
+            {
+              "hits": 1,
+              "misses": 0,
+              "rejected": 0
+            },
+            {
+              "hits": 1,
+              "misses": 0,
+              "rejected": 0
+            }
+          ],
+          "codecDuration": "UNVERIFIED in uninstrumented unchanged WASM",
+          "rgbaConversionDuration": "UNVERIFIED separately; prior boundary evidence preserved",
+          "preparationAndReplaySplit": "UNVERIFIED separately; same synchronous poll",
+          "inputBlocking": "UNVERIFIED; direct Chrome probe has no native input",
+          "firstTrialPollMs": 129.39999997615814,
+          "laterWarmPollMs": [
+            8.900000005960464,
+            8.400000005960464
+          ],
+          "medianInterpretation": "mixed first miss/later hits; not comparable to prior medians of cold first polls from three separate runs"
+        },
+        "phase": {
+          "pollMs": [
+            127.59999999403954,
+            9.599999994039536,
+            7.800000011920929
+          ],
+          "medianPollMs": 9.599999994039536,
+          "longestUninterruptedMeasuredPollMs": 127.59999999403954,
+          "outcomes": [
+            "COMPLETE",
+            "COMPLETE",
+            "COMPLETE"
+          ],
+          "pollsPerMeasuredJob": 1,
+          "jsPreparationMs": [
+            [
+              {
+                "name": "js.ImageData",
+                "at": 5774.199999988079,
+                "ms": 0.10000002384185791,
+                "width": 2693,
+                "height": 3508,
+                "bytes": 37788176
+              },
+              {
+                "name": "js.putImageData",
+                "at": 5774.4000000059605,
+                "ms": 11.299999982118607,
+                "canvas": 110,
+                "width": 2693,
+                "height": 3508,
+                "source": null
+              }
+            ],
+            [],
+            []
+          ],
+          "decodedCacheDelta": [
+            {
+              "hits": 0,
+              "misses": 1,
+              "rejected": 0
+            },
+            {
+              "hits": 1,
+              "misses": 0,
+              "rejected": 0
+            },
+            {
+              "hits": 1,
+              "misses": 0,
+              "rejected": 0
+            }
+          ],
+          "codecDuration": "UNVERIFIED in uninstrumented unchanged WASM",
+          "rgbaConversionDuration": "UNVERIFIED separately; prior boundary evidence preserved",
+          "preparationAndReplaySplit": "UNVERIFIED separately; same synchronous poll",
+          "inputBlocking": "UNVERIFIED; direct Chrome probe has no native input",
+          "firstTrialPollMs": 127.59999999403954,
+          "laterWarmPollMs": [
+            9.599999994039536,
+            7.800000011920929
+          ],
+          "medianInterpretation": "mixed first miss/later hits; not comparable to prior medians of cold first polls from three separate runs"
+        }
+      },
+      "exactRGBA": [
+        {
+          "pixels": 0,
+          "maxDelta": 0,
+          "width": 397,
+          "height": 562
+        },
+        {
+          "pixels": 0,
+          "maxDelta": 0,
+          "width": 397,
+          "height": 562
+        },
+        {
+          "pixels": 0,
+          "maxDelta": 0,
+          "width": 397,
+          "height": 562
+        }
+      ]
+    },
+    "21": {
+      "arms": {
+        "baseline": {
+          "pollMs": [
+            4.5,
+            4.4000000059604645,
+            4.799999982118607
+          ],
+          "medianPollMs": 4.5,
+          "longestUninterruptedMeasuredPollMs": 4.799999982118607,
+          "outcomes": [
+            "COMPLETE",
+            "COMPLETE",
+            "COMPLETE"
+          ],
+          "pollsPerMeasuredJob": 1,
+          "jsPreparationMs": [
+            [],
+            [],
+            []
+          ],
+          "decodedCacheDelta": [
+            {
+              "hits": 1,
+              "misses": 0,
+              "rejected": 0
+            },
+            {
+              "hits": 1,
+              "misses": 0,
+              "rejected": 0
+            },
+            {
+              "hits": 1,
+              "misses": 0,
+              "rejected": 0
+            }
+          ],
+          "codecDuration": "UNVERIFIED in uninstrumented unchanged WASM",
+          "rgbaConversionDuration": "UNVERIFIED separately; prior boundary evidence preserved",
+          "preparationAndReplaySplit": "UNVERIFIED separately; same synchronous poll",
+          "inputBlocking": "UNVERIFIED; direct Chrome probe has no native input",
+          "firstTrialPollMs": 4.5,
+          "laterWarmPollMs": [
+            4.4000000059604645,
+            4.799999982118607
+          ],
+          "medianInterpretation": "mixed first miss/later hits; not comparable to prior medians of cold first polls from three separate runs"
+        },
+        "phase": {
+          "pollMs": [
+            4.9000000059604645,
+            4,
+            4.0999999940395355
+          ],
+          "medianPollMs": 4.0999999940395355,
+          "longestUninterruptedMeasuredPollMs": 4.9000000059604645,
+          "outcomes": [
+            "COMPLETE",
+            "COMPLETE",
+            "COMPLETE"
+          ],
+          "pollsPerMeasuredJob": 1,
+          "jsPreparationMs": [
+            [],
+            [],
+            []
+          ],
+          "decodedCacheDelta": [
+            {
+              "hits": 1,
+              "misses": 0,
+              "rejected": 0
+            },
+            {
+              "hits": 1,
+              "misses": 0,
+              "rejected": 0
+            },
+            {
+              "hits": 1,
+              "misses": 0,
+              "rejected": 0
+            }
+          ],
+          "codecDuration": "UNVERIFIED in uninstrumented unchanged WASM",
+          "rgbaConversionDuration": "UNVERIFIED separately; prior boundary evidence preserved",
+          "preparationAndReplaySplit": "UNVERIFIED separately; same synchronous poll",
+          "inputBlocking": "UNVERIFIED; direct Chrome probe has no native input",
+          "firstTrialPollMs": 4.9000000059604645,
+          "laterWarmPollMs": [
+            4,
+            4.0999999940395355
+          ],
+          "medianInterpretation": "mixed first miss/later hits; not comparable to prior medians of cold first polls from three separate runs"
+        }
+      },
+      "exactRGBA": [
+        {
+          "pixels": 0,
+          "maxDelta": 0,
+          "width": 397,
+          "height": 562
+        },
+        {
+          "pixels": 0,
+          "maxDelta": 0,
+          "width": 397,
+          "height": 562
+        },
+        {
+          "pixels": 0,
+          "maxDelta": 0,
+          "width": 397,
+          "height": 562
+        }
+      ]
+    },
+    "23": {
+      "arms": {
+        "baseline": {
+          "pollMs": [
+            110.80000001192093,
+            7.700000017881393,
+            7.4000000059604645
+          ],
+          "medianPollMs": 7.700000017881393,
+          "longestUninterruptedMeasuredPollMs": 110.80000001192093,
+          "outcomes": [
+            "COMPLETE",
+            "COMPLETE",
+            "COMPLETE"
+          ],
+          "pollsPerMeasuredJob": 1,
+          "jsPreparationMs": [
+            [
+              {
+                "name": "js.ImageData",
+                "at": 5918.9000000059605,
+                "ms": 0,
+                "width": 2693,
+                "height": 3508,
+                "bytes": 37788176
+              },
+              {
+                "name": "js.putImageData",
+                "at": 5919.0999999940395,
+                "ms": 11.800000011920929,
+                "canvas": 114,
+                "width": 2693,
+                "height": 3508,
+                "source": null
+              }
+            ],
+            [],
+            []
+          ],
+          "decodedCacheDelta": [
+            {
+              "hits": 0,
+              "misses": 1,
+              "rejected": 0
+            },
+            {
+              "hits": 1,
+              "misses": 0,
+              "rejected": 0
+            },
+            {
+              "hits": 1,
+              "misses": 0,
+              "rejected": 0
+            }
+          ],
+          "codecDuration": "UNVERIFIED in uninstrumented unchanged WASM",
+          "rgbaConversionDuration": "UNVERIFIED separately; prior boundary evidence preserved",
+          "preparationAndReplaySplit": "UNVERIFIED separately; same synchronous poll",
+          "inputBlocking": "UNVERIFIED; direct Chrome probe has no native input",
+          "firstTrialPollMs": 110.80000001192093,
+          "laterWarmPollMs": [
+            7.700000017881393,
+            7.4000000059604645
+          ],
+          "medianInterpretation": "mixed first miss/later hits; not comparable to prior medians of cold first polls from three separate runs"
+        },
+        "phase": {
+          "pollMs": [
+            106.90000000596046,
+            7.5,
+            6.699999988079071
+          ],
+          "medianPollMs": 7.5,
+          "longestUninterruptedMeasuredPollMs": 106.90000000596046,
+          "outcomes": [
+            "COMPLETE",
+            "COMPLETE",
+            "COMPLETE"
+          ],
+          "pollsPerMeasuredJob": 1,
+          "jsPreparationMs": [
+            [
+              {
+                "name": "js.ImageData",
+                "at": 6026.4000000059605,
+                "ms": 0,
+                "width": 2693,
+                "height": 3508,
+                "bytes": 37788176
+              },
+              {
+                "name": "js.putImageData",
+                "at": 6026.5,
+                "ms": 11.800000011920929,
+                "canvas": 116,
+                "width": 2693,
+                "height": 3508,
+                "source": null
+              }
+            ],
+            [],
+            []
+          ],
+          "decodedCacheDelta": [
+            {
+              "hits": 0,
+              "misses": 1,
+              "rejected": 0
+            },
+            {
+              "hits": 1,
+              "misses": 0,
+              "rejected": 0
+            },
+            {
+              "hits": 1,
+              "misses": 0,
+              "rejected": 0
+            }
+          ],
+          "codecDuration": "UNVERIFIED in uninstrumented unchanged WASM",
+          "rgbaConversionDuration": "UNVERIFIED separately; prior boundary evidence preserved",
+          "preparationAndReplaySplit": "UNVERIFIED separately; same synchronous poll",
+          "inputBlocking": "UNVERIFIED; direct Chrome probe has no native input",
+          "firstTrialPollMs": 106.90000000596046,
+          "laterWarmPollMs": [
+            7.5,
+            6.699999988079071
+          ],
+          "medianInterpretation": "mixed first miss/later hits; not comparable to prior medians of cold first polls from three separate runs"
+        }
+      },
+      "exactRGBA": [
+        {
+          "pixels": 0,
+          "maxDelta": 0,
+          "width": 397,
+          "height": 562
+        },
+        {
+          "pixels": 0,
+          "maxDelta": 0,
+          "width": 397,
+          "height": 562
+        },
+        {
+          "pixels": 0,
+          "maxDelta": 0,
+          "width": 397,
+          "height": 562
+        }
+      ]
+    }
+  },
+  "cleanup": {
+    "baseline": {
+      "jobs": {
+        "activeJobs": 0,
+        "activeLeaseCount": 0,
+        "activeLeaseEstimatedBytes": 0,
+        "backupImageDataBytes": 0,
+        "cancellations": 0,
+        "capacityNotifications": 0,
+        "completionNotifications": 0,
+        "errors": 0,
+        "expiryTimerActive": false,
+        "expiryTimerStarts": 22,
+        "expiryTimerTicks": 0,
+        "inFlightEstimatedBytes": 0,
+        "listenerNotifications": 0,
+        "loadAttempts": 0,
+        "maxFrameBytes": 67108864,
+        "maxOwnedBytes": 268435456,
+        "maxPending": 2,
+        "maxResources": 256,
+        "maxStagingBytes": 134217728,
+        "ownedEstimatedBytes": 0,
+        "peakBackupImageDataBytes": 892456,
+        "peakStagingBytes": 1784912,
+        "peakTemporaryCanvasBytes": 892456,
+        "pendingCount": 0,
+        "readyLeaseCount": 0,
+        "resourceLimits": 0,
+        "retryCount": 0,
+        "temporaryCanvasBytes": 0,
+        "transientEstimatedBytes": 0,
+        "uniqueResourceCount": 0
+      },
+      "cache": {
+        "decoded": {
+          "bytes": 0,
+          "entries": 0,
+          "evictions": 20,
+          "hits": 13,
+          "maxBytes": 268435456,
+          "maxEntries": 256,
+          "maxEntryBytes": 67108864,
+          "misses": 26,
+          "negativeEntries": 0,
+          "oversize": 0,
+          "pendingEntries": 0,
+          "rejected": 6,
+          "transientEntries": 0
+        },
+        "images": {
+          "bytes": 0,
+          "entries": 0,
+          "evictions": 0,
+          "hits": 0,
+          "maxBytes": 67108864,
+          "maxEntries": 256,
+          "maxEntryBytes": 16777216,
+          "misses": 0,
+          "negativeEntries": 0,
+          "oversize": 0,
+          "pendingEntries": 0,
+          "rejected": 0,
+          "transientEntries": 0
+        }
+      }
+    },
+    "phase": {
+      "jobs": {
+        "activeJobs": 0,
+        "activeLeaseCount": 0,
+        "activeLeaseEstimatedBytes": 0,
+        "backupImageDataBytes": 0,
+        "cancellations": 0,
+        "capacityNotifications": 0,
+        "completionNotifications": 0,
+        "errors": 0,
+        "expiryTimerActive": false,
+        "expiryTimerStarts": 21,
+        "expiryTimerTicks": 0,
+        "inFlightEstimatedBytes": 0,
+        "listenerNotifications": 0,
+        "loadAttempts": 0,
+        "maxFrameBytes": 67108864,
+        "maxOwnedBytes": 268435456,
+        "maxPending": 2,
+        "maxResources": 256,
+        "maxStagingBytes": 134217728,
+        "ownedEstimatedBytes": 0,
+        "peakBackupImageDataBytes": 892456,
+        "peakStagingBytes": 1784912,
+        "peakTemporaryCanvasBytes": 892456,
+        "pendingCount": 0,
+        "readyLeaseCount": 0,
+        "resourceLimits": 0,
+        "retryCount": 0,
+        "temporaryCanvasBytes": 0,
+        "transientEstimatedBytes": 0,
+        "uniqueResourceCount": 0
+      },
+      "cache": {
+        "decoded": {
+          "bytes": 0,
+          "entries": 0,
+          "evictions": 20,
+          "hits": 13,
+          "maxBytes": 268435456,
+          "maxEntries": 256,
+          "maxEntryBytes": 67108864,
+          "misses": 26,
+          "negativeEntries": 0,
+          "oversize": 0,
+          "pendingEntries": 0,
+          "rejected": 6,
+          "transientEntries": 0
+        },
+        "images": {
+          "bytes": 0,
+          "entries": 0,
+          "evictions": 0,
+          "hits": 0,
+          "maxBytes": 67108864,
+          "maxEntries": 256,
+          "maxEntryBytes": 16777216,
+          "misses": 0,
+          "negativeEntries": 0,
+          "oversize": 0,
+          "pendingEntries": 0,
+          "rejected": 0,
+          "transientEntries": 0
+        }
+      }
+    }
+  }
+}

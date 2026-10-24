@@ -1,0 +1,20 @@
+{
+  "sensitive-all": {
+    "exit": 0,
+    "output": "민감정보 검사 통과 (추적 파일 1055개)\n"
+  },
+  "sensitive-changed": {
+    "exit": 0,
+    "output": "민감정보 검사 통과 (지정 파일 42개)\n"
+  },
+  "gitleaks-final": {
+    "exit": 0,
+    "output": "1:16AM INF scanned ~875491 bytes (875.49 KB) in 200ms\n1:16AM INF no leaks found\n",
+    "scope": "all changed and new intended files copied to relative-path mirror",
+    "version": "8.30.1"
+  },
+  "sensitive-staged": {
+    "exit": 0,
+    "output": "민감정보 검사 통과 (스테이징 파일 44개)\n"
+  }
+}

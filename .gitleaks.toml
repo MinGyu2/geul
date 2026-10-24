@@ -156,3 +156,11 @@ condition = "AND"
 paths = ['''^tests/integration/rhwp/evidence/t010-d4-performance-remediation/(chrome|gray-build|engine-gates/(chrome|webkit))\.json$''']
 regexTarget = "secret"
 regexes = ['''^9563a9ef26b5d0c22997e9beb8cb8c037e852df7ca95a8362800e7bd0cf24c5d$''']
+
+# Exact new evidence paths AND reproduced unchanged public wasm_api source digest.
+[[allowlists]]
+description = "T010 preparation contract unchanged public source checksum"
+condition = "AND"
+paths = ['''^tests/integration/rhwp/evidence/t010-render-preparation-boundary/(identities-and-reproduction|chrome|webkit)\.json$''']
+regexTarget = "secret"
+regexes = ['''^9563a9ef26b5d0c22997e9beb8cb8c037e852df7ca95a8362800e7bd0cf24c5d$''']

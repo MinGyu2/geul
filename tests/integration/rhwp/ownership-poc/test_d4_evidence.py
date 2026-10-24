@@ -49,6 +49,10 @@ class Intervals(unittest.TestCase):
 class Completeness(unittest.TestCase):
     def check_fail(self,r): self.assertEqual(d.validate(r,WASM,SOURCE)['status'],'FAIL')
     def test_complete(self): self.assertEqual(d.validate(complete(),WASM,SOURCE)['status'],'DIAGNOSTIC_COMPLETE')
+    def test_completion_exact_integer_types(self):
+        for name,value in [('n',30.0),('timeouts',False)]:
+            with self.subTest(name=name,value=value):
+                r=complete();r['measure']['groupStart'][name]=value;self.check_fail(r)
     def test_missing_logs(self):
         for name in ('probeCalls','traceSpans','samples'):
             with self.subTest(name=name):

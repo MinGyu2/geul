@@ -969,3 +969,55 @@ pending-image22개와 D3/D5 검사도 통과했다. 같은 설정의 공식 비�
 보존했다. 실패 원인은 UNVERIFIED이며 제품 회귀로 단정하지 않는다. 유효 비교에서도 화학 max는326→359ms라 모든 tail이 줄었다고
 말할 수 없다. 화학 p95 감소와 반복된 grayscale poll 개선은 관찰됐지만, 공유 host의 한 공식 비교로 범용 안정 개선을 확정하지 않는다.
 네 문서 모두50ms를 넘으므로 공식 D4는 FAIL이다. 실험 patch는 보존하되 승인48adaa를 교체하지 않는다.
+
+## T010 렌더 준비 경계의 소유권 계약·진단 무결성 (2026-10-25)
+
+이번 변경은 분석기 교정과 **읽기 전용 경계 검사**다. 새로운 런타임 Preparing/ResourcesReady 상태는
+추가하지 않았다. [보고서](../../tests/integration/rhwp/evidence/t010-render-preparation-boundary/REPORT.ko.txt)와
+[소유권·후속 구현 계약](../../tests/integration/rhwp/evidence/t010-render-preparation-boundary/OWNERSHIP.ko.txt)을 따른다.
+승인 WASM48adaa와 실험 Luma8 ae34·원래 패치는 그대로다. 이후 준비 실험의 기준은 ae34로 정했지만
+이번에는 새 WASM을 만들거나 후보를 승격하지 않았다.
+
+**VERIFIED, 실제 경계:** `Owner::begin_replay`는 job ID·target token·기한·replay 메타데이터만 보유한다.
+`HwpDocument::poll_render_job`의 한 동기 호출이 layer tree 취득 → scratch 생성 → replay 안의
+`decoded_canvas`/브라우저 이미지 요청 → waiting/기한/target 검증 → 완성 프레임 게시를 수행한다.
+PENDING이면 tree·scratch는 반환 전에 사라지고 브라우저 ImageLease만 job에 남는다. 브라우저 완료는
+알림만 예약하며 프레임을 게시하지 않는다. tree 뒤·codec 중간·replay 뒤 게시 전에는 호스트가
+취소를 끼워 넣을 반환 경계가 없다. 이 내부 위치를 별도 취소 가능 상태로 표시하지 않는다.
+
+**VERIFIED, immutable 값의 가능성과 비용:** `paint/layer_tree.rs::PageLayerTree`와 ResourceArena는
+소유된 Vec/String 및 font Arc 데이터를 담으며 모델에 대한 빌린 참조를 보관하지 않는다. 현재
+`build_canvas_page_layer_tree_with_profile`은 문서 캐시의 값을 clone해서 돌려준다. 이를 job에 보관할
+타입 기반 가능성과, 그 clone의 image/text/metadata 비용을 여러 poll 동안 보유할 예산 승인은 다르다.
+현재 job은 tree/revision 필드가 없으며 편집 시 Owner 무효화에 의존한다. 향후 tree는 같은 문서
+owner·job ID·모델/출력/font 세대에 고정하고 변경/닫기/기한 만료 시 버려야 한다. 별도 모델 snapshot은 불필요하다.
+
+**VERIFIED, 준비 경계를 막는 수명 제약:** decoded 캐시는 `BoundedCache<HtmlCanvasElement>`이고
+Release는 width/height를0으로 만든다. `get()`의 DOM clone은 cache 퇴거를 막지 않는다. 새 Chrome
+검사에서 두 후보 모두 다른 job의 정상 입장/퇴거 뒤 보관했던 handle이0×0이 됐다. 첫 newcomer는
+frequency admission으로 거절될 수 있어 bounded 반복으로 실제 교체를 기다린다. 입장하지 못한
+임시 Canvas도 draw 직후 해제돼 poll 밖에서 사용할 수 없었다. `Job.resources`의 기존 Rc<ImageResource>는
+HtmlImageElement만 지원하며 decoded Canvas·트리·codec/RGBA/ImageData 임시 할당은 그 소유 byte에 포함하지 않는다.
+따라서 cache hit와 raw DOM handle을 준비 완료의 근거로 삼는 cursor 구현은 적용하지 않았다.
+
+**후속 구현 조건, 아직 미구현:** 기존 Rc lease/unique-resource ledger를 decoded backing까지 일관되게
+확장하고, cache-only 퇴거는 참조만 놓으며 마지막 소유자가 backing을 해제해야 한다. 준비 전 예약·실제
+크기 조정·입장 거절·최종 lease 해제 알림을 기존 pending/count/byte 예산과 통합해야 한다. cache+job
+공유분은 한 번만 세고 비상주 job 소유분도 놓치지 않아야 한다. 현재 decoded256MiB/browser64MiB 캐시,
+각256항목, browser pool256MiB·pending2·job8·한 이미지96MiB·URL32MiB, scratch64MiB/backup64MiB 한도를
+늘리지 않는다. 이는 RSS 하드 상한이 아니다. 트리와 변환 임시 peak의 추가 회계가 증명되기 전에는
+기존 MAX_OWNED_BYTES 수치를 전체 준비 메모리 보증으로 쓰지 않는다.
+
+이 lease·예약 계약의 브라우저 회귀를 먼저 작성하고, 실제 변환된 payload identity를 쓰는 bounded
+resource cursor를 추가한 다음에만 Preparing → ResourcesReady 반환 경계를 만들 수 있다.
+일반 이미지뿐 아니라 crop/fill/watermark/RawSvg/방정식 등 실제 replay의 자원 요청을 빠뜨리지 않아야 한다.
+준비 완료 뒤 replay와 최종 세대 검사는 같은 scratch 원자 게시 계약을 유지한다. 자원 사이 반환으로도
+단일 동기 RGB codec100ms급 호출은 중단되지 않으며 tree-heavy page16도 별도 문제다.
+
+분석기는 이제 WASM뿐 아니라 독립적으로 신뢰한 `--expected-js`도 요구한다. handler에는 독립 생성
+`--fixtures`가 필요하며 canonical 네 문서/순서/바이트/row SHA·측정·timeline을 검사한다. 빈 perf,
+누락/중복/미지 fixture, manifest와 함께 바뀐 JS, 실수30.0/불리언False 완료 값은 FAIL이다.
+공식 MEASURE와 기존 증거는 변경하지 않는다. ANALYZED는 공식 D4 PASS가 아니다.
+
+T010 전체 INCOMPLETE, 공식 D4 FAIL, D2 native 한국어 IME·RSS INCONCLUSIVE를 유지한다.
+생산 RHWP Undo/Redo NO-GO이며 T011은 시작하지 않는다.

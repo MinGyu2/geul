@@ -198,7 +198,8 @@ def validate(result, expected_wasm, expected_source, *, legacy=False):
     groups = [s for s in result.get('samples',[]) if isinstance(s,dict) and s.get('kind')=='groupStart']
     require(len(groups)==30, 'canonical group count')
     measure = (result.get('measure') or {}).get('groupStart') or {}
-    require(measure.get('n')==30 and measure.get('timeouts')==0, 'canonical completion')
+    require(type(measure.get('n')) is int and measure['n']==30 and
+            type(measure.get('timeouts')) is int and measure['timeouts']==0, 'canonical completion')
     for s in groups:
         at=s.get('at') or {}
         require(all(number(at.get(n)) for n in ('key','input','handlerEnd','observed','raf1','end')) and
