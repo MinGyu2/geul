@@ -1,0 +1,87 @@
+{
+  "candidate": {
+    "engineManifest": {
+      "schema": 1,
+      "baseline": "1a76570e833917d15817415a53c09ad61ab3203f",
+      "patchSha256": "555f11aa2139a9087ff4eeb5c8a5f57a3ee7af120d69d333d284e07e4c8a8a96",
+      "sourceSha256": {
+        "src/renderer/mod.rs": "2edce7a1fb7f918556d812fa9d27abd82d6380ba7a7dcde77bafaf82de66ac00",
+        "src/renderer/surface_cache.rs": "9d5aa73e8167a59d85f7f09cf5165be99c703bdaaa4d1a491a116409744cbfcb",
+        "src/renderer/render_job.rs": "3a1325abd19065ff1be4c1c2607013d0324ef76c254e827b9869fa27d5326e6a",
+        "src/renderer/web_canvas.rs": "71e03cd2611d86ba32333ee82b35d582b6499a750274c708b9e61a6cff282517",
+        "src/wasm_api.rs": "3dfa6723ae9c89768157f26aac22566d18055c9074acfaa28b0686c3687ecacb",
+        "src/renderer/layout.rs": "c4e348d4b6926ce3d8a0b431a0d5b8202d717c5573e62f12725f17ef145f0eac",
+        "src/renderer/layout/caret_geometry_tests.rs": "2b08a10fa355bb70cd7d4bced4e106f6a2d079d7bdb51bf9835cc3f45d852220",
+        "src/renderer/canvas_rgba.rs": "f1e1d2bf1bd47d836c52a01b5f4a6dede90fee704fc99a8ef9eb8aa9cec559d1"
+      },
+      "compiler": "rustc 1.93.1 (01f6ddf75 2026-02-11)",
+      "cargo": "cargo 1.93.1 (083ac5135 2025-12-15)",
+      "wasmPack": "wasm-pack 0.15.0",
+      "target": "wasm32-unknown-unknown",
+      "profile": "release",
+      "targetCache": "explicit cache",
+      "sourceExport": "build/test inputs; documentation/PDF archives excluded",
+      "buildStatus": "PASS",
+      "rendererJobAPI": true,
+      "schedulerAPI": true,
+      "stabilizationAPI": true,
+      "explicitPatchFullFallbackAPI": true,
+      "fractionalPatchFullFallbackAPI": true,
+      "sourceStableDuringBuild": true,
+      "wasmOpt": false,
+      "command": [
+        "scripts/wasm-pack-locked.sh",
+        "--release",
+        "--no-opt",
+        "--target",
+        "web",
+        "--out-dir",
+        "test-package"
+      ],
+      "artifacts": {
+        "rhwp.js": "b69e920c8fb1e9d05dacadf3ebae2396b043da385137ad2b4b3386a9b3433252",
+        "rhwp_bg.wasm": "ca5c0b8443230ba719c07f4d8c835a94fb6e12eb4b50a7123ce5c8b6a8048d45",
+        "rhwp.d.ts": "bce4ef51719a5ba738b26afc34ce62e0ab19224bef4ea7937b761e894eb21e9d"
+      }
+    },
+    "actualArtifacts": {
+      "rhwp_bg.wasm": "ca5c0b8443230ba719c07f4d8c835a94fb6e12eb4b50a7123ce5c8b6a8048d45",
+      "rhwp.js": "b69e920c8fb1e9d05dacadf3ebae2396b043da385137ad2b4b3386a9b3433252",
+      "rhwp.d.ts": "bce4ef51719a5ba738b26afc34ce62e0ab19224bef4ea7937b761e894eb21e9d"
+    },
+    "manifestSha256": "9d3b638a4dbbd38dde3cb640df3b5b78f16e685736da38a561099c870288b5d4",
+    "completePatchSha256": "555f11aa2139a9087ff4eeb5c8a5f57a3ee7af120d69d333d284e07e4c8a8a96",
+    "incrementalPatchSha256": "e812bd50fdd8de3debde3208049d2d5ae0dcf4b28e3b2fd0a304ac2b0ded4ef8",
+    "incrementalBase": "previous hardening candidate source (pinned 1a76570 + 7a48b2ae…6f8a complete patch, WASM 94603ed3…)",
+    "changedFiles": [
+      "src/renderer/canvas_rgba.rs",
+      "src/renderer/web_canvas.rs"
+    ],
+    "note": "new identity; 94603ed3… is not reused. JS glue and d.ts unchanged (no wasm_bindgen signature change). Binaries are not committed.",
+    "patchEncoding": "blank context as empty lines (git diff.suppressBlankEmpty), same method as the previous T010 patches"
+  },
+  "previousCandidate": {
+    "wasm": "94603ed3cd5a6693e543145168020a16e71fbdefa42620710c96c9c0c7da59e8",
+    "js": "b69e920c8fb1e9d05dacadf3ebae2396b043da385137ad2b4b3386a9b3433252",
+    "recordedWasm": "94603ed3cd5a6693e543145168020a16e71fbdefa42620710c96c9c0c7da59e8",
+    "recordedPatches": {
+      "complete": "7a48b2ae0bcaa911916acd73e3a934eef52f0322e994c8c138502ab79f566f8a",
+      "incremental": "3a62a2489fb02d018177789fefc4260db18f76f4dade04c57f19b6d7a59477cb"
+    },
+    "committedPatchFiles": {
+      "upstream-rhwp-decoded-lease-hardening-complete.patch": "7a48b2ae0bcaa911916acd73e3a934eef52f0322e994c8c138502ab79f566f8a",
+      "upstream-rhwp-decoded-lease-hardening-incremental.patch": "3a62a2489fb02d018177789fefc4260db18f76f4dade04c57f19b6d7a59477cb"
+    },
+    "localPackageCheck": {
+      "rhwp_bg.wasm": "94603ed3cd5a6693e543145168020a16e71fbdefa42620710c96c9c0c7da59e8",
+      "rhwp.js": "b69e920c8fb1e9d05dacadf3ebae2396b043da385137ad2b4b3386a9b3433252",
+      "rhwp.d.ts": "bce4ef51719a5ba738b26afc34ce62e0ab19224bef4ea7937b761e894eb21e9d"
+    },
+    "sourceCheck": "previous candidate src tree (built from the committed 7a48b2ae complete patch) equals the scratch source this task patched (diff -r clean before editing)"
+  },
+  "experimentalBaseline": {
+    "wasm": "ae34c12bd0d20aeb9f94610682bc678ec61f55722df74ea946d09782d7c87983",
+    "expected": "ae34c12bd0d20aeb9f94610682bc678ec61f55722df74ea946d09782d7c87983"
+  },
+  "untrustedInputs": "expected identities come from committed evidence files (candidate-identity.json, patch files), not from measurement output"
+}

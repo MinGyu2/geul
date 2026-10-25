@@ -1,0 +1,22 @@
+{
+  "sourceSha256": "9d5aa73e8167a59d85f7f09cf5165be99c703bdaaa4d1a491a116409744cbfcb",
+  "contractSha256": "e93375c3e305842fa79c8b4a2c6c0c433b274529b2e46534df28e4d469201398",
+  "schema": 1,
+  "patchSha256": null,
+  "compiler": "rustc 1.93.1 (01f6ddf75 2026-02-11)",
+  "checks": [
+    {
+      "name": "historical",
+      "status": "PASS",
+      "exit": 0,
+      "output": "\nrunning 11 tests\ntest tests::a_repeatedly_requested_newcomer_displaces_a_once_used_resident ... ok\ntest tests::admission_keeps_a_stable_subset_when_a_scan_exceeds_the_budget ... ok\ntest tests::aging_lets_a_new_working_set_replace_an_old_hot_one ... ok\ntest tests::byte_budget_evicts_least_recently_used_and_releases_it ... ok\ntest tests::content_key_distinguishes_length_and_bytes ... ok\ntest tests::negative_entries_are_bounded_by_count_and_lru ... ok\ntest tests::oversize_entry_is_not_retained_and_does_not_evict_others ... ok\ntest tests::pending_admission_rejects_and_trim_cancels ... ok\ntest tests::ready_lease_is_transferred_without_resident_eviction ... ok\ntest tests::replacing_a_key_releases_the_previous_value_without_double_counting ... ok\ntest tests::trim_and_budget_reduction_release_everything_they_drop ... ok\n\ntest result: ok. 11 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s\n\n"
+    },
+    {
+      "name": "contracts",
+      "status": "FAIL",
+      "exit": 101,
+      "output": "\nrunning 17 tests\ntest decoded_smaller_than_header ... header (100, 100) decoded (90, 90): old decode path accepted = true\nFAILED\ntest decoded_taller_than_header ... header (100, 100) decoded (100, 101): old decode path accepted = false\nok\ntest decoded_wider_than_header ... header (100, 100) decoded (101, 100): old decode path accepted = false\nok\ntest exact_dimensions_are_accepted ... ok\ntest other_shape_identical_rgba_bytes ... header (200, 20) decoded (100, 40): old decode path accepted = true\nFAILED\ntest surface_cache::tests::a_repeatedly_requested_newcomer_displaces_a_once_used_resident ... ok\ntest surface_cache::tests::admission_keeps_a_stable_subset_when_a_scan_exceeds_the_budget ... ok\ntest surface_cache::tests::aging_lets_a_new_working_set_replace_an_old_hot_one ... ok\ntest surface_cache::tests::byte_budget_evicts_least_recently_used_and_releases_it ... ok\ntest surface_cache::tests::content_key_distinguishes_length_and_bytes ... ok\ntest surface_cache::tests::negative_entries_are_bounded_by_count_and_lru ... ok\ntest surface_cache::tests::oversize_entry_is_not_retained_and_does_not_evict_others ... ok\ntest surface_cache::tests::pending_admission_rejects_and_trim_cancels ... ok\ntest surface_cache::tests::ready_lease_is_transferred_without_resident_eviction ... ok\ntest surface_cache::tests::replacing_a_key_releases_the_previous_value_without_double_counting ... ok\ntest surface_cache::tests::trim_and_budget_reduction_release_everything_they_drop ... ok\ntest transposed_same_pixel_count ... header (100, 40) decoded (40, 100): old decode path accepted = true\nFAILED\n\nfailures:\n\nfailures:\n    decoded_smaller_than_header\n    other_shape_identical_rgba_bytes\n    transposed_same_pixel_count\n\ntest result: FAILED. 14 passed; 3 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s\n\n\nthread 'decoded_smaller_than_header' (190738) panicked at <temporary>/cache_contract.rs:22:5:\nmismatched image (90, 90) for header (100, 100) was authorized\nnote: run with `RUST_BACKTRACE=1` environment variable to display a backtrace\n\nthread 'other_shape_identical_rgba_bytes' (190742) panicked at <temporary>/cache_contract.rs:22:5:\nmismatched image (100, 40) for header (200, 20) was authorized\n\nthread 'transposed_same_pixel_count' (190754) panicked at <temporary>/cache_contract.rs:22:5:\nmismatched image (40, 100) for header (100, 40) was authorized\n"
+    }
+  ],
+  "status": "FAIL"
+}

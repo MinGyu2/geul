@@ -129,16 +129,31 @@ def check_ledger(label, point, metadata):
         require(l['jobLeaseReferences'] <= MAX_JOBS * MAX_JOB_DECODED_LEASES, f'job lease references exceed the bound at {label}')
         require(jobs['decodedRegistryLive'] <= jobs['decodedRegistryEntries'], f'inconsistent registry counters at {label}')
         require(l['rejectedCommits'] == 0 and l['preallocationRejections'] == 0, f'unexpected size mismatch at {label}')
+        # Added after the first contract-2 evidence; when reported it must be an exact zero.
+        if 'dimensionMismatches' in l:
+            require(is_int(l['dimensionMismatches']) and l['dimensionMismatches'] == 0,
+                    f'unexpected header/decoded dimension mismatch at {label}')
+
+
+def require_version(value, name, expected, optional=False):
+    """Versions are exact ints (not bool, float, str): True == 1 and 2.0 == 2 must not pass."""
+    if name not in value:
+        require(optional, f'{name} version is missing')
+        return
+    require(type(value[name]) is int and value[name] == expected, f'{name} version must be the integer {expected}')
 
 
 def validate(value, contract=CURRENT_CONTRACT):
     """A PASS must prove every named test and checkpoint of `contract` was supplied and holds."""
-    require(type(value) is dict and value.get('schema') == 1 and value.get('status') in ('PASS', 'FAIL'),
-            'invalid completion status')
+    require(type(contract) is int and contract in CONTRACTS, 'unsupported validation contract')
+    require(type(value) is dict, 'invalid completion status')
+    require_version(value, 'schema', 1)
+    require(type(value.get('status')) is str and value['status'] in ('PASS', 'FAIL'), 'invalid completion status')
     if value['status'] != 'PASS':
         return
     spec = CONTRACTS[contract]
-    require(value.get('contract', 1) == contract, 'result contract differs from the served test contract')
+    # Contract 1 evidence predates the field; only an explicit contract-1 validation may omit it.
+    require_version(value, 'contract', contract, optional=contract == 1)
     require('error' not in value, 'top-level PASS carries an error')
     tests = value.get('tests')
     require(type(tests) is list and all(type(t) is dict for t in tests), 'malformed tests')

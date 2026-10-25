@@ -1,0 +1,41 @@
+{
+  "status": "PASS",
+  "scope": "fresh full Rust library and Chrome/WebKit ownership/scheduler gate for isolated native evaluation of the decoded-lease finalization candidate; no default candidate replacement",
+  "wasmSha256": "ca5c0b8443230ba719c07f4d8c835a94fb6e12eb4b50a7123ce5c8b6a8048d45",
+  "browsers": [
+    {
+      "browser": "chrome",
+      "ownershipPass": 52,
+      "schedulerPass": 73,
+      "wasmSha256": "ca5c0b8443230ba719c07f4d8c835a94fb6e12eb4b50a7123ce5c8b6a8048d45"
+    },
+    {
+      "browser": "webkit",
+      "ownershipPass": 52,
+      "schedulerPass": 73,
+      "wasmSha256": "ca5c0b8443230ba719c07f4d8c835a94fb6e12eb4b50a7123ce5c8b6a8048d45"
+    }
+  ],
+  "libraryCounts": [
+    [
+      "3901",
+      "0",
+      "13"
+    ],
+    [
+      "15",
+      "0",
+      "0"
+    ],
+    [
+      "165",
+      "0",
+      "0"
+    ],
+    [
+      "2",
+      "0",
+      "0"
+    ]
+  ]
+}

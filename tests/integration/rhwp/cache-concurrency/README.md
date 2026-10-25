@@ -245,3 +245,7 @@ D4 decoded admission 후속은 [실험 보고서](../evidence/t010-decoded-admis
   runner는 자기 계약으로만 검증하며, 낮은 계약 번호를 주장하는 결과는 거절한다.
 - `test_decoded_lease_validator.py`: 실제 PASS 결과(계약 1·2, Chrome·WebKit)의 변조를 모두 거절하고
   원본은 받아들이는지 확인한다.
+- 계약 마무리([보고서](../evidence/t010-decoded-lease-contract-finalization/REPORT.ko.txt)): `schema`와 `contract`는
+  `type(x) is int`로 검사한다. 계약 2는 `contract` 필드가 필수이고, 필드가 없는 이력 결과는 명시적인 계약 1 검증에서만
+  받아들인다. 엔진은 디코드 이미지의 width·height가 헤더와 정확히 같아야 Canvas를 할당한다
+  (`canvas_rgba::authorize_decoded`). 일반 예약은 계속 `actual ≤ reserved`다.

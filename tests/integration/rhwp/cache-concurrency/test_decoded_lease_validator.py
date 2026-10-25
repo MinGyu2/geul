@@ -15,8 +15,10 @@ EVIDENCE = HERE.parent / 'evidence'
 GENUINE = {
     # Previous evidence (contract 1, 32 tests / 43 checkpoints per browser); never rewritten.
     1: [EVIDENCE / 't010-decoded-resource-lease-accounting/browser' / f'decoded-lease-{b}.json' for b in ('chrome', 'webkit')],
-    # This task's corrected candidate (contract 2).
-    2: [EVIDENCE / 't010-decoded-lease-accounting-hardening/browser' / f'decoded-lease-{b}.json' for b in ('chrome', 'webkit')],
+    # Hardening candidate and the finalization candidate (contract 2; the latter reports dimensionMismatches).
+    2: [EVIDENCE / directory / 'browser' / f'decoded-lease-{b}.json'
+        for directory in ('t010-decoded-lease-accounting-hardening', 't010-decoded-lease-contract-finalization')
+        for b in ('chrome', 'webkit')],
 }
 
 spec = importlib.util.spec_from_file_location('decoded_lease_run', HERE / 'decoded_lease_run.py')
@@ -204,6 +206,79 @@ class Mutations(unittest.TestCase):
                      lambda v: set_ledger(point(v, 'final'), 'uniqueBytes', 4)):
             self.rejects(case, contract=1)
 
+
+
+INVALID_VERSIONS = (True, False, 1.0, 2.0, '1', '2', None, [], {}, -1, 0, 3)
+
+
+class VersionTyping(unittest.TestCase):
+    """schema/contract are exact ints: Python's True == 1 and 2.0 == 2 must not produce PASS."""
+
+    def check(self, value, contract):
+        with self.assertRaises(runner.Invalid):
+            runner.outcome(value, contract)
+
+    def test_invalid_schema_values(self):
+        for contract in (1, 2):
+            for index in range(len(GENUINE[contract])):
+                for bad in INVALID_VERSIONS:
+                    with self.subTest(contract=contract, index=index, schema=bad):
+                        value = copy.deepcopy(genuine(contract, index))
+                        value['schema'] = bad
+                        self.check(value, contract)
+                value = copy.deepcopy(genuine(contract, index))
+                del value['schema']
+                self.check(value, contract)
+
+    def test_invalid_schema_is_rejected_even_for_a_fail_result(self):
+        for bad in (True, 1.0, '1', None):
+            value = copy.deepcopy(genuine(2))
+            value.update(status='FAIL', schema=bad)
+            self.check(value, 2)
+
+    def test_invalid_contract_values_under_contract_2(self):
+        for index in range(len(GENUINE[2])):
+            for bad in INVALID_VERSIONS + (1,):
+                with self.subTest(index=index, contract=bad):
+                    value = copy.deepcopy(genuine(2, index))
+                    value['contract'] = bad
+                    self.check(value, 2)
+            value = copy.deepcopy(genuine(2, index))
+            del value['contract']
+            self.check(value, 2)
+
+    def test_contract_1_compatibility_is_explicit(self):
+        for index in range(len(GENUINE[1])):
+            value = genuine(1, index)
+            self.assertNotIn('contract', value, 'historical contract-1 evidence omits the field')
+            self.assertEqual(runner.outcome(copy.deepcopy(value), 1), 'PASS')
+            explicit = copy.deepcopy(value)
+            explicit['contract'] = 1
+            self.assertEqual(runner.outcome(explicit, 1), 'PASS')
+            for bad in (True, 1.0, '1', None, [], {}, 2):
+                with self.subTest(index=index, contract=bad):
+                    mutated = copy.deepcopy(value)
+                    mutated['contract'] = bad
+                    self.check(mutated, 1)
+            # Omission never falls back to contract 1 during current validation.
+            self.check(copy.deepcopy(value), 2)
+
+    def test_validation_contract_argument_is_exact(self):
+        for bad in (True, 2.0, '2', None, 3):
+            with self.assertRaises(runner.Invalid):
+                runner.outcome(copy.deepcopy(genuine(2)), bad)
+
+    def test_dimension_mismatch_counter_when_reported(self):
+        def report(number):
+            value = copy.deepcopy(genuine(2))
+            for p in value['ledger']:
+                set_ledger(p, 'dimensionMismatches', number)
+            value['transitions'][1]['cleanup']['jobs'] = value['ledger'][-1]['jobs']
+            return value
+        self.assertEqual(runner.outcome(report(0), 2), 'PASS')
+        for bad in (1, False, 0.0, '0', None):
+            with self.subTest(dimensionMismatches=bad):
+                self.check(report(bad), 2)
 
 if __name__ == '__main__':
     unittest.main()

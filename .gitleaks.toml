@@ -182,3 +182,12 @@ condition = "AND"
 paths = ['''^tests/integration/rhwp/evidence/t010-decoded-lease-accounting-hardening/(candidate-identity|engine-gates/chrome|engine-gates/webkit|rust/library-and-lint|browser/decoded-lease-chrome|browser/decoded-lease-webkit|browser/before-prev-candidate-decoded-lease-chrome|browser/before-prev-candidate-decoded-lease-webkit|browser/iteration1-s11-expectation-chrome)\.json$''']
 regexTarget = "secret"
 regexes = ['''^9563a9ef26b5d0c22997e9beb8cb8c037e852df7ca95a8362800e7bd0cf24c5d$''','''^3dfa6723ae9c89768157f26aac22566d18055c9074acfaa28b0686c3687ecacb$''']
+
+# Decoded lease contract finalization evidence: the same verified public wasm_api.rs source checksums
+# (ae34 9563a9…, wasm_api.rs unchanged by the candidate 3dfa67…) recorded in ENGINE.json sourceSha256.
+[[allowlists]]
+description = "T010 decoded lease finalization verified public wasm_api.rs source checksums"
+condition = "AND"
+paths = ['''^tests/integration/rhwp/evidence/t010-decoded-lease-contract-finalization/(candidate-identity|engine-gates/chrome|engine-gates/webkit|browser/decoded-lease-chrome|browser/decoded-lease-webkit)\.json$''']
+regexTarget = "secret"
+regexes = ['''^9563a9ef26b5d0c22997e9beb8cb8c037e852df7ca95a8362800e7bd0cf24c5d$''','''^3dfa6723ae9c89768157f26aac22566d18055c9074acfaa28b0686c3687ecacb$''']

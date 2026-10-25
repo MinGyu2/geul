@@ -1,0 +1,72 @@
+{
+  "tool": "gitleaks (pre-commit environment binary)",
+  "scannedSet": "final staged index via git checkout-index into a relative mirror, 40 files",
+  "defaultRules": {
+    "output": "6:46PM WRN leaks found: 7",
+    "count": 7,
+    "findings": [
+      {
+        "rule": "generic-api-key",
+        "file": "tests/integration/rhwp/evidence/t010-decoded-lease-contract-finalization/candidate-identity.json",
+        "line": 12,
+        "checksum": "3dfa6723ae9c…",
+        "verified": true,
+        "identity": "candidate src/wasm_api.rs (unchanged; ENGINE.json sourceSha256)"
+      },
+      {
+        "rule": "generic-api-key",
+        "file": "tests/integration/rhwp/evidence/t010-decoded-lease-contract-finalization/browser/decoded-lease-chrome.json",
+        "line": 18,
+        "checksum": "9563a9ef26b5…",
+        "verified": true,
+        "identity": "ae34 src/wasm_api.rs (ENGINE.json sourceSha256)"
+      },
+      {
+        "rule": "generic-api-key",
+        "file": "tests/integration/rhwp/evidence/t010-decoded-lease-contract-finalization/browser/decoded-lease-chrome.json",
+        "line": 66,
+        "checksum": "3dfa6723ae9c…",
+        "verified": true,
+        "identity": "candidate src/wasm_api.rs (unchanged; ENGINE.json sourceSha256)"
+      },
+      {
+        "rule": "generic-api-key",
+        "file": "tests/integration/rhwp/evidence/t010-decoded-lease-contract-finalization/browser/decoded-lease-webkit.json",
+        "line": 18,
+        "checksum": "9563a9ef26b5…",
+        "verified": true,
+        "identity": "ae34 src/wasm_api.rs (ENGINE.json sourceSha256)"
+      },
+      {
+        "rule": "generic-api-key",
+        "file": "tests/integration/rhwp/evidence/t010-decoded-lease-contract-finalization/browser/decoded-lease-webkit.json",
+        "line": 66,
+        "checksum": "3dfa6723ae9c…",
+        "verified": true,
+        "identity": "candidate src/wasm_api.rs (unchanged; ENGINE.json sourceSha256)"
+      },
+      {
+        "rule": "generic-api-key",
+        "file": "tests/integration/rhwp/evidence/t010-decoded-lease-contract-finalization/engine-gates/webkit.json",
+        "line": 26,
+        "checksum": "3dfa6723ae9c…",
+        "verified": true,
+        "identity": "candidate src/wasm_api.rs (unchanged; ENGINE.json sourceSha256)"
+      },
+      {
+        "rule": "generic-api-key",
+        "file": "tests/integration/rhwp/evidence/t010-decoded-lease-contract-finalization/engine-gates/chrome.json",
+        "line": 26,
+        "checksum": "3dfa6723ae9c…",
+        "verified": true,
+        "identity": "candidate src/wasm_api.rs (unchanged; ENGINE.json sourceSha256)"
+      }
+    ],
+    "allVerifiedSourceChecksums": true
+  },
+  "repositoryConfig": {
+    "output": "6:46PM INF no leaks found",
+    "count": 0
+  },
+  "allowlistChange": "one [[allowlists]] entry: condition AND, 5 exact paths of this evidence directory, 2 exact digests, regexTarget secret; no rule disabled or broadened. Needed because the digests are inside runner outputs and ENGINE.json copies that must not be edited."
+}

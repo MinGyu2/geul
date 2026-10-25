@@ -1,0 +1,148 @@
+T010 Decoded Lease 계약 마무리 — 2026-10-25
+
+1. 판정: COMPLETED(격리 실험 후보 범위)
+- 두 P2 지적을 모두 재현했고, 범위 안에서 수정했으며, 필수 회귀를 실행했다.
+- Preparing → ResourcesReady, tree 보존, cursor, worker, D4 최적화는 구현하지 않았다.
+- 제품 소스, public WASM, gitlink, 공식 MEASURE·D4 증거, 이전 증거 디렉터리는 바꾸지 않았다.
+범주: VERIFIED=소스 또는 이번 실행, INFERRED=근거 해석, UNVERIFIED=입증하지 못함.
+
+2. Git 상태
+- 시작: master 9a7c4ceabacc11b5f70ae3896ce32b672b0d969c, 작업 트리 clean, RHWP 1a76570e83…, WordCraft fc41918814….
+- 종료: 로컬 commit 1개를 더한다. SHA와 push 없음은 commit 뒤 최종 응답에서 확인한다(이 파일은 commit 전에 썼다).
+- 기준 신원(VERIFIED): 이전 후보 94603ed3…, JS b69e920c…, complete 7a48b2ae…, incremental 3a62a248…가
+  커밋된 증거 파일(candidate-identity.json, 패치 파일)과 일치한다. 작업 전 scratch 소스는 커밋한 complete patch로
+  빌드한 후보 src와 같았다(diff -r 없음). ae34 baseline은 ae34c12b…다.
+
+3. P2-A 헤더/디코드 크기 동일성 — 계약 결함 확인·수정. 실행 중 결함은 아니다.
+- 원인(VERIFIED 소스): reserve_decode는 헤더 (w,h)를 rgba_bytes로 바꿔 예약한 뒤 크기를 버렸다.
+  decode_image_to_canvas는 헤더 경로에서 r.authorizes(actual)만 검사했다. 그래서 일반 용량 규칙
+  (actual ≤ reserved)만 남고, 이미지 크기 동일성은 검사하지 않았다.
+- 재현(VERIFIED, rust/before-dimension-repro.json): 이전 판정을 그대로 옮긴 모델로 실행했다.
+  · 승인되어 단언이 실패한 3건:
+    - 100×100 헤더에 90×90
+    - 100×40에 40×100(같은 픽셀 수)
+    - 200×20에 100×40(같은 RGBA bytes)
+  · 기존 용량 검사로 거절된 2건: 더 넓은 경우, 더 높은 경우
+  · 정확히 같은 크기는 승인했다.
+  이는 함수 수준의 재현이며, 실제 decoder가 이런 결과를 냈다는 주장이 아니다.
+- 도달성(VERIFIED 시험 + 소스): image 0.25.10은 decoder.dimensions()로 버퍼를 만들고 방향 변환을 적용하지 않는다.
+  후보도 apply_orientation을 쓰지 않는다. 기존 corpus·손상 시험과 새 real_supported_images 시험에서
+  헤더 = DynamicImage = RGBA였다. 정상적으로 크기를 바꾸는 변환은 없으므로 정확한 일치가 생산자 계약이다(INFERRED).
+- 심각도: 계약 무결성 결함(P2). 현재 decoder에서는 실행 중 발생을 관찰하지 못했다.
+- 수정(격리 RHWP, 2파일):
+  · canvas_rgba.rs: DimensionMismatch, check_decoded_dimensions, DecodedRefusal{Mismatch, Capacity, Reserve}, authorize_decoded
+    (헤더 예약과 크기를 함께 받아 Canvas 할당 전에 "크기 동일성 → bytes 승인"을 하고, 헤더가 없으면 "사후 예약 → bytes 승인"을 한다).
+  · web_canvas.rs: reserve_decode가 (헤더 크기, 예약)을 돌려준다. decoded_canvas가 이를 decode_image_to_canvas로 넘긴다.
+    · DynamicImage 크기와 RGBA 크기가 같은지, 그리고 헤더 크기와 같은지 검사한다.
+    · Mismatch는 Decoded::Rejected(job ERROR, 음성 entry 없음, Canvas 없음, 예약 해제)이고, dimensionMismatches를 센다.
+    · 기존 사후 예약 closure와 Refused/Oversize 분류는 그대로다.
+  · surface_cache.rs의 일반 예약 계약은 바꾸지 않았다(actual ≤ reserved, 더 작은 할당은 실제 크기로 계상).
+- 이후(VERIFIED, cargo test --lib canvas_rgba::tests::dimension_contract 신규 7개):
+  · 같은 크기 commit.
+  · 넓음·높음·작음·전치·같은 bytes 다른 모양 5건 모두 Mismatch. 각 경우:
+    할당 0, reserved 0, 오류 0, 기존 공유 backing 보존(dispose 0, unique 256 유지).
+  · 일반 예약은 90×90을 승인한다(32,400 bytes 계상). 같은 경우를 이미지 검사는 거절한다.
+  · UnknownDimensions: 예산 안이면 실제 bytes를 예약하고, 예산 거절이면 할당 0·refused 1.
+  · 헤더 예약이 부족하면 Capacity.
+  · 실제 PNG/JPEG/BMP/TIFF(Luma8 포함)는 헤더로 승인된다.
+- 브라우저: 실제 decoder에서는 불일치를 만들 수 없어 브라우저 불일치 시나리오는 없다(UNVERIFIED-불가).
+  기존 S9(절단·헤더만·헤더 없음)와 S10(초대형 헤더)이 새 경로에서 통과했다. 모든 checkpoint의
+  dimensionMismatches는 0이었다.
+
+4. P2-B schema/contract 숫자 강제 변환 — validator 결함 확인·수정.
+- 원인(VERIFIED 소스): value.get('schema') == 1, value.get('contract', 1) == contract를 썼다.
+  Python에서 True == 1, 2.0 == 2이고, 필드가 없으면 1로 대체됐다.
+- 재현(VERIFIED, python/version-typing-before-after.json): 실제 결과의 변조 21개를 이전 validator(9a7c4ce)와 비교했다.
+  이전 validator가 PASS로 받은 5개:
+  · 계약 2: schema=True, schema=1.0, contract=2.0
+  · 계약 1: contract=True, contract=1.0
+  새 validator는 0개를 받고, 원본 두 건은 PASS다.
+- 수정(decoded_lease_run.py):
+  · require_version: 있으면 type(x) is int이고 정확한 값이어야 한다. 없으면 optional일 때만 허용한다.
+  · schema는 항상 필수 1이다(FAIL 결과도).
+  · contract: 계약 2에서는 필수 2. 계약 1에서는 생략을 허용하지만, 있으면 int 1이어야 한다.
+  · 검증 계약 인자도 int여야 하고 CONTRACTS에 있어야 한다.
+  · checkpoint에 dimensionMismatches가 있으면 정확한 int 0이어야 한다(선택 필드).
+  CONTRACTS 1·2의 시험·checkpoint 이름과 수는 바꾸지 않았다.
+- 이력 호환(VERIFIED): 실제 계약 1 증거(32/43)는 contract 필드가 없고, 계약 1 검증에서 PASS다.
+  계약 2 검증에서는 거절된다(생략이 옛 계약으로 내려가지 않음).
+  계약 2 증거 4건(hardening·finalization × Chrome·WebKit)은 계약 2에서 PASS다.
+- 시험: test_decoded_lease_validator.py에 VersionTyping 6개를 추가했다(15 → 21).
+  · schema 12종 값과 누락(계약 1·2 모든 원본)
+  · FAIL 결과의 잘못된 schema
+  · contract 12종 값, 1, 누락(계약 2)
+  · 계약 1 명시 호환
+  · 검증 인자 타입
+  · dimensionMismatches 0/1/False/0.0/'0'/None
+  기존 변조 시험은 모두 유지했다.
+
+5. 크기·예약 계약 요약 (CONTRACT.ko.txt)
+- 메모리: actual ≤ reserved(일반, 변경 없음).
+- 이미지: 헤더 (w,h) = DynamicImage (w,h) = RGBA (w,h) = Canvas (w,h), 그 다음 bytes ≤ 예약.
+- UnknownDimensions: 기대 크기를 만들지 않고, 사후 예약과 96 MiB 강제(활성 job)를 따른다.
+- 거절: Canvas 할당 전에 예약을 해제하고 lease를 만들지 않는다. 음성 entry 없이 ERROR로 끝나며 게시하지 않는다.
+  회계는 불변이다.
+
+6. 시험 결과 (모두 이번 실행)
+Rust(rustc 1.93.1):
+- standalone 계약(최종 surface_cache 9d5aa73e…, 이번 작업에서 변경 없음):
+  hardening 24/24, decoded_lease 21/21, ownership 24/24, scheduler 16/16.
+- cache_contract 18 PASS / 2 FAIL: 기존 두 실패가 그대로다(trim_during_load_does_not_release_the_pending_handle,
+  two_oversize_completions_can_be_available_for_one_full_page_draw). PASS로 바꾸지 않았다.
+- 라이브러리: 4,083 passed / 0 failed / 13 ignored(3901+15+165+2). 이전 4,076에 dimension_contract 7개가 더해졌다. 경고 0.
+- clippy native lib, wasm32 release lib: -D warnings 통과. rustfmt(변경 2파일 포함 6파일) clean.
+Python: cache-concurrency 53 OK(이전 47 + 6), validator 21 OK, ownership-poc 214 OK, 보안 회귀 86 OK.
+브라우저(Chrome 155, WebKitGTK 2.54.1, baseline ae34, candidate ca5c0b84):
+- decoded lease 계약 2: Chrome 41/41, WebKit 41/41(checkpoint 57). 강화된 runner가 contract=2(int)로 검증했다.
+  최대 비상주 81,120,000, job당 lease 최대 256, final 고유 0, created=disposed, dimensionMismatches 0.
+- run.py: ownership 52/52, scheduler 73/73. historical·HWP·HWPX·pending·concurrent PASS(두 브라우저).
+- 화학 문서 Full RGBA: 14/15/16/19/20/21/23쪽 × 3회 = 21/21, pixels 0 / maxDelta 0.
+- preparation contract: ae34 14/14, 후보 14/14.
+- 다중 이미지, 작은 이미지(S7·S8·S11), 손상 입력(S9), 초대형 헤더(S10)는 계약 2 안에서 통과했다.
+네이티브(debug 앱 48b7b836…, 후보 ca5c0b84, 공식 D4 아님):
+- strict D1 39/39, exact reference 24/24, cleanup 완료. 세 번째 시도에서 통과했다.
+  · 1차(native-d1-attempt1-infra-webdriver-lost.json): 첫 상호작용에서 WebDriver 연결이 끊겼다.
+    앱·WebProcess·드라이버는 살아 있었고 통과 항목은 0이다.
+  · 2차(native-d1-attempt2-cleanup-timeout.json): 단언 39/39와 exact 24/24는 통과했다. 그러나 드라이버 종료 뒤
+    이 시나리오의 XDG_DATA_HOME을 가진 프로세스가 30초 안에 끝나지 않아 FAIL로 판정됐다.
+  · 두 시도 모두 다른 프로젝트의 headless Chrome(이 작업과 무관, 건드리지 않음)이 load를 올리던 때였다.
+    load가 내려간 뒤 3차 실행이 통과했다.
+  · 실패 시도는 그대로 보존했다. 인프라 원인은 INFERRED다(앱 동작 결함의 근거는 없음).
+- pending-image 22/22. safety 14/14 + history gate 8 + save matrix 9. 실행 의존성 hash는 전후 안정적이다.
+
+7. 후보 신원 (candidate-identity.json, reproducibility.json)
+- WASM ca5c0b8443230ba719c07f4d8c835a94fb6e12eb4b50a7123ce5c8b6a8048d45(새 신원; 94603ed3… 재사용 안 함).
+- JS b69e920c…3252, d.ts bce4ef51…: 바인딩 시그니처 변경이 없어 같다.
+- complete patch 555f11aa2139a9087ff4eeb5c8a5f57a3ee7af120d69d333d284e07e4c8a8a96(pinned 기준 10파일).
+- incremental e812bd50fdd8de3debde3208049d2d5ae0dcf4b28e3b2fd0a304ac2b0ded4ef8(94603ed3 후보 기준 2파일).
+- 커밋한 complete patch로 빌드했다. 재사용 cache와 빈 cache 두 빌드가 바이트 단위로 같다.
+  source: web_canvas.rs 71e03cd2…, canvas_rgba.rs f1e1d2bf…(ENGINE.json). 바이너리는 commit하지 않는다.
+
+8. 보안·무결성 (security/, integrity.json)
+- 민감정보 --all, --history, --staged 결과와 보안 회귀 86 OK는 security/에 있다(commit 직전 staged index 기준).
+- Gitleaks(저장소 설정, staged mirror):
+  · 처음 7건이었고, 모두 이전과 같은 공개 wasm_api.rs 소스 SHA-256 2종이었다.
+    3dfa67…은 이 후보에서도 바뀌지 않은 파일, 9563a9…는 ae34 파일이다. 실제 파일 해시로 확인했다.
+  · 값은 runner 출력과 후보 ENGINE.json sourceSha256에 들어 있어, 측정 결과를 고치지 않고는 피할 수 없다.
+  · 그래서 정확한 증거 경로 5개 AND digest 2개만 허용하는 항목 1개를 더했다. 규칙은 끄지 않았다.
+  · 그 뒤 탐지 0이다. 기본 규칙도 같은 7건만 냈다(security/gitleaks-review.json).
+- git diff --check clean. 보호 경로, 이전 증거 파일, gitlink를 staged하지 않았다. external/rhwp 작업 트리 clean.
+  public/rhwp a91fa6a4…/70cde06a… 불변. 개인 절대 경로는 <scratch>, <workspace>, <temporary-profile>로 정규화했다.
+
+9. 남은 한계
+- 크기 불일치는 실제 decoder로 만들 수 없어 통제된 seam(값 주입)으로만 시험했다. 브라우저 실행 경로에서 Mismatch 분기
+  자체는 실행되지 않았다(UNVERIFIED).
+- decoder 임시 메모리, tree text/geometry, RSS는 이전처럼 강제하지 않는다. RSS는 INCONCLUSIVE다.
+- native D1은 외부 부하 속에서 인프라 실패 2회 뒤 통과했다. 끊김 원인 확정은 이 작업 범위 밖이다.
+
+10. 공식 판정 (변경 없음)
+T010: INCOMPLETE / D1: PASS(과거 증거) / D2: INCONCLUSIVE / D3: PASS(과거 증거) / D4: FAIL /
+D5: PASS(과거 증거) / RSS: INCONCLUSIVE / Production RHWP Undo/Redo: NO-GO / T011: NOT STARTED.
+이번 native 통과와 계수기 정확성은 공식 판정이나 RSS를 바꾸지 않는다.
+
+11. 다음 단계 준비도
+decoded resource 기반은 크기·예약·증거 버전 계약까지 닫혀, 별도 Preparing → ResourcesReady 구현을 시작할 수 있는
+수준이다(INFERRED). 그 구현의 결정 사항은 이전 보고서 11절과 같다.
+- 준비 완료 자원의 회수 금지 예약과 256 entry 한도
+- 사전 예약과 decoder 임시 상한
+- 새 반환 경계별 정리 회귀

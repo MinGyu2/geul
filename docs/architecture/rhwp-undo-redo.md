@@ -1074,3 +1074,11 @@ Canvas 전에 같은 예약 함수(활성 job은 96 MiB 강제)를 거친다. im
 순서, 중복·오귀속·형식·회계식·최종 정리)을 검사한다. 이전 validator는 변조 23개 중 15개를 PASS로
 받아들였다. 한도는 늘리지 않았고, 공식 판정과 RSS INCONCLUSIVE는 그대로다.
 새 검증 근거: `tests/integration/rhwp/evidence/t010-decoded-lease-accounting-hardening/`.
+
+Decoded lease 계약 마무리(2026-10-25, 격리 실험 후보 ca5c0b84, 제품 미적용): 메모리 예약(`actual ≤ reserved`)과
+이미지 무결성(헤더 width·height = 디코드 width·height)을 분리했다. 이전 후보는 헤더 크기를 bytes로만 바꿔 예약해서,
+더 작거나 모양만 다른(같은 bytes) 디코드 결과를 승인할 수 있었다(통제된 seam으로 재현; 현재 image 0.25.10에서는
+관찰되지 않음). 이제 Canvas 할당 전에 정확한 크기 일치를 요구하고, 불일치는 음성 캐시 entry 없이 ERROR로 끝난다.
+헤더 크기가 없으면 기존 사후 예약과 96 MiB 강제를 따른다. 브라우저 증거의 schema·contract는 정확한 int만 받는다
+(True·1.0·2.0 거절, 계약 2는 필드 필수, 계약 1 이력의 생략은 명시적 계약 1 검증에서만 허용). 한도와 소유권 구조,
+공식 판정은 그대로다. 새 검증 근거: `tests/integration/rhwp/evidence/t010-decoded-lease-contract-finalization/`.

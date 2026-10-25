@@ -1,0 +1,83 @@
+{
+  "schema": 1,
+  "stagedFiles": 45,
+  "protectedPathsStaged": [],
+  "previousEvidenceFilesStaged": [],
+  "nonEvidenceStaged": [
+    ".gitleaks.toml",
+    "docs/architecture/rhwp-undo-redo.md",
+    "tests/integration/rhwp/cache-concurrency/README.md",
+    "tests/integration/rhwp/cache-concurrency/decoded_lease_run.py",
+    "tests/integration/rhwp/cache-concurrency/test_decoded_lease_validator.py"
+  ],
+  "submodules": [
+    "1a76570e833917d15817415a53c09ad61ab3203f external/rhwp (v0.8.7)",
+    " fc41918814f62645b6746ed68e71e8c2c2e85d6f external/wordcraft (v0.7.0)"
+  ],
+  "gitlinksUnchanged": true,
+  "externalRhwpWorktreeClean": true,
+  "publicRhwp": {
+    "wasm": "a91fa6a4336d34441c0d8f52afd0971aebe34019f7caf9eddad100f7a568f94d",
+    "js": "70cde06a369fa7fd4fc8bc8f3d6acaee158596ba1a116a2c72159002b0b5654e"
+  },
+  "previousHardeningPatchesUnchanged": {
+    "upstream-rhwp-decoded-lease-hardening-complete.patch": "7a48b2ae0bcaa911916acd73e3a934eef52f0322e994c8c138502ab79f566f8a",
+    "upstream-rhwp-decoded-lease-hardening-incremental.patch": "3a62a2489fb02d018177789fefc4260db18f76f4dade04c57f19b6d7a59477cb"
+  },
+  "browserResultSources": {
+    "chrome": {
+      "decoded-lease.mjs": true,
+      "fixtures.mjs": true,
+      "decoded_lease_run.py": true,
+      "candidateWasm": true,
+      "baselineWasm": true,
+      "contract": 2,
+      "status": "PASS"
+    },
+    "webkit": {
+      "decoded-lease.mjs": true,
+      "fixtures.mjs": true,
+      "decoded_lease_run.py": true,
+      "candidateWasm": true,
+      "baselineWasm": true,
+      "contract": 2,
+      "status": "PASS"
+    }
+  },
+  "rustContracts": {
+    "decoded_lease_hardening_contract": {
+      "contractMatchesCommitted": true,
+      "sourceIsCandidate": true,
+      "status": "PASS"
+    },
+    "decoded_lease_contract": {
+      "contractMatchesCommitted": true,
+      "sourceIsCandidate": true,
+      "status": "PASS"
+    },
+    "ownership_contract": {
+      "contractMatchesCommitted": true,
+      "sourceIsCandidate": true,
+      "status": "PASS"
+    },
+    "scheduler_contract": {
+      "contractMatchesCommitted": true,
+      "sourceIsCandidate": true,
+      "status": "PASS"
+    },
+    "cache_contract": {
+      "contractMatchesCommitted": true,
+      "sourceIsCandidate": true,
+      "status": "FAIL"
+    }
+  },
+  "nativeCandidateWasm": {
+    "native-d1": true,
+    "native-pending": true,
+    "native-safety": true
+  },
+  "patches": {
+    "upstream-rhwp-decoded-lease-finalization-complete.patch": "555f11aa2139a9087ff4eeb5c8a5f57a3ee7af120d69d333d284e07e4c8a8a96",
+    "upstream-rhwp-decoded-lease-finalization-incremental.patch": "e812bd50fdd8de3debde3208049d2d5ae0dcf4b28e3b2fd0a304ac2b0ded4ef8"
+  }
+}

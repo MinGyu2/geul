@@ -1,0 +1,176 @@
+{
+  "schema": 1,
+  "oldCommit": "9a7c4ceabacc11b5f70ae3896ce32b672b0d969c",
+  "oldRunnerSha256": "ebab07d9a0b4f7cb42cedd125d3fc0f74513a14a78436772e623f51ea1e1b2e2",
+  "currentRunnerSha256": "55f989bc5dbc40f1ba0584b19469be1119aa2b3e030f4d6f6f8bdcd8065ae614",
+  "genuineInputs": {
+    "1": "tests/integration/rhwp/evidence/t010-decoded-resource-lease-accounting/browser/decoded-lease-chrome.json",
+    "2": "tests/integration/rhwp/evidence/t010-decoded-lease-accounting-hardening/browser/decoded-lease-chrome.json"
+  },
+  "rows": [
+    {
+      "contract": 1,
+      "field": "unmodified",
+      "value": "genuine",
+      "previousValidator": "ACCEPT: PASS",
+      "currentValidator": "ACCEPT: PASS"
+    },
+    {
+      "contract": 2,
+      "field": "unmodified",
+      "value": "genuine",
+      "previousValidator": "ACCEPT: PASS",
+      "currentValidator": "ACCEPT: PASS"
+    },
+    {
+      "contract": 2,
+      "field": "schema",
+      "value": "True",
+      "previousValidator": "ACCEPT: PASS",
+      "currentValidator": "REJECT: Invalid: schema version must be the integer 1"
+    },
+    {
+      "contract": 2,
+      "field": "schema",
+      "value": "False",
+      "previousValidator": "REJECT: Invalid: invalid completion status",
+      "currentValidator": "REJECT: Invalid: schema version must be the integer 1"
+    },
+    {
+      "contract": 2,
+      "field": "schema",
+      "value": "1.0",
+      "previousValidator": "ACCEPT: PASS",
+      "currentValidator": "REJECT: Invalid: schema version must be the integer 1"
+    },
+    {
+      "contract": 2,
+      "field": "schema",
+      "value": "'1'",
+      "previousValidator": "REJECT: Invalid: invalid completion status",
+      "currentValidator": "REJECT: Invalid: schema version must be the integer 1"
+    },
+    {
+      "contract": 2,
+      "field": "schema",
+      "value": "None",
+      "previousValidator": "REJECT: Invalid: invalid completion status",
+      "currentValidator": "REJECT: Invalid: schema version must be the integer 1"
+    },
+    {
+      "contract": 2,
+      "field": "schema",
+      "value": "[]",
+      "previousValidator": "REJECT: Invalid: invalid completion status",
+      "currentValidator": "REJECT: Invalid: schema version must be the integer 1"
+    },
+    {
+      "contract": 2,
+      "field": "schema",
+      "value": "{}",
+      "previousValidator": "REJECT: Invalid: invalid completion status",
+      "currentValidator": "REJECT: Invalid: schema version must be the integer 1"
+    },
+    {
+      "contract": 2,
+      "field": "schema",
+      "value": "<missing>",
+      "previousValidator": "REJECT: Invalid: invalid completion status",
+      "currentValidator": "REJECT: Invalid: schema version is missing"
+    },
+    {
+      "contract": 2,
+      "field": "contract",
+      "value": "True",
+      "previousValidator": "REJECT: Invalid: result contract differs from the served test contract",
+      "currentValidator": "REJECT: Invalid: contract version must be the integer 2"
+    },
+    {
+      "contract": 2,
+      "field": "contract",
+      "value": "False",
+      "previousValidator": "REJECT: Invalid: result contract differs from the served test contract",
+      "currentValidator": "REJECT: Invalid: contract version must be the integer 2"
+    },
+    {
+      "contract": 2,
+      "field": "contract",
+      "value": "2.0",
+      "previousValidator": "ACCEPT: PASS",
+      "currentValidator": "REJECT: Invalid: contract version must be the integer 2"
+    },
+    {
+      "contract": 2,
+      "field": "contract",
+      "value": "'2'",
+      "previousValidator": "REJECT: Invalid: result contract differs from the served test contract",
+      "currentValidator": "REJECT: Invalid: contract version must be the integer 2"
+    },
+    {
+      "contract": 2,
+      "field": "contract",
+      "value": "None",
+      "previousValidator": "REJECT: Invalid: result contract differs from the served test contract",
+      "currentValidator": "REJECT: Invalid: contract version must be the integer 2"
+    },
+    {
+      "contract": 2,
+      "field": "contract",
+      "value": "[]",
+      "previousValidator": "REJECT: Invalid: result contract differs from the served test contract",
+      "currentValidator": "REJECT: Invalid: contract version must be the integer 2"
+    },
+    {
+      "contract": 2,
+      "field": "contract",
+      "value": "{}",
+      "previousValidator": "REJECT: Invalid: result contract differs from the served test contract",
+      "currentValidator": "REJECT: Invalid: contract version must be the integer 2"
+    },
+    {
+      "contract": 2,
+      "field": "contract",
+      "value": "1",
+      "previousValidator": "REJECT: Invalid: result contract differs from the served test contract",
+      "currentValidator": "REJECT: Invalid: contract version must be the integer 2"
+    },
+    {
+      "contract": 2,
+      "field": "contract",
+      "value": "<missing>",
+      "previousValidator": "REJECT: Invalid: result contract differs from the served test contract",
+      "currentValidator": "REJECT: Invalid: contract version is missing"
+    },
+    {
+      "contract": 1,
+      "field": "contract",
+      "value": "True",
+      "previousValidator": "ACCEPT: PASS",
+      "currentValidator": "REJECT: Invalid: contract version must be the integer 1"
+    },
+    {
+      "contract": 1,
+      "field": "contract",
+      "value": "1.0",
+      "previousValidator": "ACCEPT: PASS",
+      "currentValidator": "REJECT: Invalid: contract version must be the integer 1"
+    },
+    {
+      "contract": 1,
+      "field": "contract",
+      "value": "'1'",
+      "previousValidator": "REJECT: Invalid: result contract differs from the served test contract",
+      "currentValidator": "REJECT: Invalid: contract version must be the integer 1"
+    },
+    {
+      "contract": 1,
+      "field": "contract",
+      "value": "2",
+      "previousValidator": "REJECT: Invalid: result contract differs from the served test contract",
+      "currentValidator": "REJECT: Invalid: contract version must be the integer 1"
+    }
+  ],
+  "previousAccepted": 5,
+  "currentAccepted": 0,
+  "mutations": 21
+}
