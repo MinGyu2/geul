@@ -1,6 +1,7 @@
 T010 격리 render preparation runtime
 
-현재 상태: 검증 진행 중. native 실행 전 선행 후보/신뢰 계약 커밋용 중간 기록이다.
+현재 상태: 격리 구현·브라우저 회귀 완료. native D1 3회 PASS/1회 FAIL과 보조 회귀를 보존한다.
+이 보고서는 공식 T010 완료나 production 활성화 승인을 뜻하지 않는다.
 시작 master db5c9a42a9c60c72f4763a3eacf6beae8cb85f0b, 작업 트리 clean이었다.
 RHWP/WordCraft gitlink는 사용자 지정 고정 revision과 일치한다. production/public/과거 증거는 변경하지 않았다.
 
@@ -46,14 +47,34 @@ page16은38poll이며 준비 on 총지연이 대체로490~590ms로 off 약50~80m
 진단 readback/continuation 비용을 포함한다. 실제 input event 지연의 별도 측정은 UNVERIFIED다.
 공식 D4 MEASURE·threshold·fixture·기존 결과는 건드리지 않았다.
 
-신뢰 계약과 남은 검증
+신뢰 계약과 실제 native 검증
 새 candidate 신원은 candidate-identity.json, 두 patch 적용 검증은 patch-verification.json에 있다.
 새 native 계약4/manifest4 및 보조 pending/D3/D5 계약5를 과거 계약과 별도 작성했다.
-기존 native anchor는 변경하지 않았다. 새 anchor가 커밋된 뒤 실제 native 실행을 계속한다.
-실제 native D1/보조 회귀와 최종 보안·이력·보호경로 검사가 아직 남아 있으므로 COMPLETED가 아니다.
+기존 native anchor는 변경하지 않았다. 선행 local commit796deb4 뒤 같은 후보와 동결된 의존 파일로 실행했다.
+실제 native D1 attempt1/2/4가 각각39단언·24직접RGBA·4fixture·cleanup/lifecycle를 통과했다.
+최대 preparation poll은 각각182/178/175ms였다. 입력 선점이나 D4 개선의 증거가 아니다.
+attempt3은29단언·18참조 후 POST execute/sync WebDriver 연결이 끊겨 FAIL이다.
+당시 앱·WebProcess·WebDriver가 살아 있었다는 관찰만 있으며 원인은 미확정이다.
+세 번 PASS가 이 실패를 해소하거나 실행 안정성을 보장한다고 주장하지 않는다.
+attempt3의 teardown/lifecycle 잔존은0이나 producer cleanup.driverStopped=false다.
+strict cleanup도 FAIL이며, 이 차이와 실패 원본/verdict를 native/에 보존한다.
+첫 sandbox 실행은 socket EPERM으로 producer 시작 전 실패했다. 권한 변경 후 실제 attempt3을 실행했다.
+native-review.json은 모든 실제 실행의 원본 byte SHA와 현재 validator 재판정 및 의존 일치를 기록한다.
+결과·lifecycle·wrapper verdict는 wrapper가 저장한 바이트 그대로 복사한다.
+보조 계약5 pending22개(10참조), safety14개도 실제 PASS이며 기존 producer의 정확한 시험 집합을 확인했다.
+모든 실행의 manifest 전후/현재파일이 같고 마지막 준비ownedBytes0, lifecycle잔존0이었다.
+보조 wrapper는 producer의 실제 smoke teardown을 관찰하며 session DELETE/driver 종료도 검사했다.
+기존 공식 native producer/공식 anchor/실행 gate는 수정하지 않았다.
 원본 ENGINE 파일별 소스 hash map은 정제 증거에서 생략하고 원본SHA/전체source·patch신원을 보존했다.
 시스템 library/node_modules/font/toolchain 전체 인증, RSS 상한, 입력 선점은 UNVERIFIED다.
 저장소 anchor는 독립 서명이나 공급망 전체 attestation이 아니다.
+
+보안·보호경로
+선행 commit 이후 민감정보 이력2331버전 및 Gitleaks87commit/0탐지 PASS.
+상대경로 mirror의 전체tree1547개/0탐지, 초기최종 staged22개 민감정보·Gitleaks PASS.
+allowlist 음성24경우 PASS, 규칙·예외 변경0. 보호경로58변경/위반0 및 gitlink 일치.
+최종 security 증거 추가와 이 문서 교정은 재stage 검사 및 실제 commit hook으로 검사한다.
+검사 시점과 원본 로그 신원은 security/summary.json에 구분했다.
 
 공식 상태 유지
 T010 INCOMPLETE. D1 PASS(과거 공식), D2 INCONCLUSIVE, D3 PASS(과거 공식), D4 FAIL,

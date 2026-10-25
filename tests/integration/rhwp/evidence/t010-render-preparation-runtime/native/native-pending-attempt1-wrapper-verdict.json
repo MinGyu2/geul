@@ -1,0 +1,22 @@
+{
+  "schema": 1,
+  "record": "wrapper verdict (not harness output)",
+  "attempt": 1,
+  "harnessExit": 0,
+  "resultFile": "native-pending-attempt1.json",
+  "resultError": null,
+  "resultRewritten": true,
+  "lifecycleFile": "native-pending-attempt1-lifecycle.json",
+  "verdict": {
+    "schema": 5,
+    "status": "PASS",
+    "failures": [],
+    "categories": [],
+    "dependencyManifest": 5,
+    "trustAnchor": {
+      "path": "tests/integration/rhwp/evidence/t010-render-preparation-runtime/candidate-identity.json",
+      "sha256": "043b25321baa00e0cd3384e3ed7d59bb5dd503bc6890d098a8dbcb8053ef9b29"
+    },
+    "auxiliary": "pending"
+  }
+}
