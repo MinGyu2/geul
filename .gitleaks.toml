@@ -173,3 +173,12 @@ condition = "AND"
 paths = ['''^tests/integration/rhwp/evidence/t010-decoded-resource-lease-accounting/(candidate-identity|engine-gates/chrome|engine-gates/webkit|browser/decoded-lease-chrome|browser/decoded-lease-webkit|browser/regression-ae34-chrome|browser/regression-ae34-webkit)\.json$''']
 regexTarget = "secret"
 regexes = ['''^9563a9ef26b5d0c22997e9beb8cb8c037e852df7ca95a8362800e7bd0cf24c5d$''','''^3dfa6723ae9c89768157f26aac22566d18055c9074acfaa28b0686c3687ecacb$''']
+
+# Decoded lease accounting hardening evidence: the same verified public wasm_api.rs source checksums
+# (ae34 9563a9…, unchanged candidate wasm_api.rs 3dfa67…) in ENGINE.json sourceSha256. Exact paths AND digests.
+[[allowlists]]
+description = "T010 decoded lease hardening verified public wasm_api.rs source checksums"
+condition = "AND"
+paths = ['''^tests/integration/rhwp/evidence/t010-decoded-lease-accounting-hardening/(candidate-identity|engine-gates/chrome|engine-gates/webkit|rust/library-and-lint|browser/decoded-lease-chrome|browser/decoded-lease-webkit|browser/before-prev-candidate-decoded-lease-chrome|browser/before-prev-candidate-decoded-lease-webkit|browser/iteration1-s11-expectation-chrome)\.json$''']
+regexTarget = "secret"
+regexes = ['''^9563a9ef26b5d0c22997e9beb8cb8c037e852df7ca95a8362800e7bd0cf24c5d$''','''^3dfa6723ae9c89768157f26aac22566d18055c9074acfaa28b0686c3687ecacb$''']

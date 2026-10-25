@@ -231,3 +231,17 @@ D4 decoded admission 후속은 [실험 보고서](../evidence/t010-decoded-admis
   (unique=resident+nonresident, nonresident ≤ 96 MiB, reserved=0, 선언 한도 불변)을 다시 검증한다.
   페이지가 보고한 PASS만으로는 통과하지 않는다.
 - ledger의 bytes는 RGBA backing 추정이다. 프로세스 RSS, GPU 사용량, 브라우저 allocator의 상한이 아니다.
+
+## Decoded lease 회계 보강 (T010, 2026-10-25)
+
+계약과 근거는 [보고서](../evidence/t010-decoded-lease-accounting-hardening/REPORT.ko.txt)와 같은 디렉터리의
+`CONTRACT.ko.txt`, 실행 명령은 `REPRODUCE.ko.txt`에 있다.
+
+- `decoded_lease_hardening_contract.rs`: `Reservation::commit`의 `Result` 계약(실제 < / = / > 예약, 0 bytes,
+  overflow, 거절 뒤 정리, 여러 예약, `Rc` 공유 소유자)과 lease entry 한도·죽은 registry 정리를 검사한다.
+  mock backing이 할당과 dispose를 따로 세어 할당 전 거절과 할당 뒤 1회 dispose를 구분한다.
+- `decoded_lease_run.py`의 `CONTRACTS`가 브라우저 시험 이름과 필수 ledger checkpoint의 권위 있는 목록이다.
+  계약 1은 이전 증거, 계약 2는 현재 `decoded-lease.mjs`다. 시험을 추가하면 여기에 이름을 더한다.
+  runner는 자기 계약으로만 검증하며, 낮은 계약 번호를 주장하는 결과는 거절한다.
+- `test_decoded_lease_validator.py`: 실제 PASS 결과(계약 1·2, Chrome·WebKit)의 변조를 모두 거절하고
+  원본은 받아들이는지 확인한다.

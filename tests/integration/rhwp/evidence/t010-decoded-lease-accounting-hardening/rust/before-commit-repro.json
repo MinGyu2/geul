@@ -1,0 +1,22 @@
+{
+  "sourceSha256": "4e0bea0fc55cf52433da9ea23e9e818a5e94dfbb84eb436c1bda5e6c47842296",
+  "contractSha256": "7760a305724da2716d3e69bb672832f911786083cef97f0bcbd29bf96684efa4",
+  "schema": 1,
+  "patchSha256": null,
+  "compiler": "rustc 1.93.1 (01f6ddf75 2026-02-11)",
+  "checks": [
+    {
+      "name": "historical",
+      "status": "PASS",
+      "exit": 0,
+      "output": "\nrunning 11 tests\ntest tests::a_repeatedly_requested_newcomer_displaces_a_once_used_resident ... ok\ntest tests::admission_keeps_a_stable_subset_when_a_scan_exceeds_the_budget ... ok\ntest tests::aging_lets_a_new_working_set_replace_an_old_hot_one ... ok\ntest tests::byte_budget_evicts_least_recently_used_and_releases_it ... ok\ntest tests::content_key_distinguishes_length_and_bytes ... ok\ntest tests::negative_entries_are_bounded_by_count_and_lru ... ok\ntest tests::oversize_entry_is_not_retained_and_does_not_evict_others ... ok\ntest tests::pending_admission_rejects_and_trim_cancels ... ok\ntest tests::ready_lease_is_transferred_without_resident_eviction ... ok\ntest tests::replacing_a_key_releases_the_previous_value_without_double_counting ... ok\ntest tests::trim_and_budget_reduction_release_everything_they_drop ... ok\n\ntest result: ok. 11 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s\n\n"
+    },
+    {
+      "name": "contracts",
+      "status": "FAIL",
+      "exit": 101,
+      "output": "\nrunning 13 tests\ntest enforced_commit_above_reserved_capacity_must_not_charge_past_limit ... observed: unique_bytes=8 unique_count=1 reserved=0 lease.bytes=8 disposed=0\nFAILED\ntest overflowing_commit_must_not_return_a_disposed_backing_as_success ... observed: returned lease bytes=0 backing disposed=1 accounting_errors=1 unique_count=1\nFAILED\ntest surface_cache::tests::a_repeatedly_requested_newcomer_displaces_a_once_used_resident ... ok\ntest surface_cache::tests::admission_keeps_a_stable_subset_when_a_scan_exceeds_the_budget ... ok\ntest surface_cache::tests::aging_lets_a_new_working_set_replace_an_old_hot_one ... ok\ntest surface_cache::tests::byte_budget_evicts_least_recently_used_and_releases_it ... ok\ntest surface_cache::tests::content_key_distinguishes_length_and_bytes ... ok\ntest surface_cache::tests::negative_entries_are_bounded_by_count_and_lru ... ok\ntest surface_cache::tests::oversize_entry_is_not_retained_and_does_not_evict_others ... ok\ntest surface_cache::tests::pending_admission_rejects_and_trim_cancels ... ok\ntest surface_cache::tests::ready_lease_is_transferred_without_resident_eviction ... ok\ntest surface_cache::tests::replacing_a_key_releases_the_previous_value_without_double_counting ... ok\ntest surface_cache::tests::trim_and_budget_reduction_release_everything_they_drop ... ok\n\nfailures:\n\nfailures:\n    enforced_commit_above_reserved_capacity_must_not_charge_past_limit\n    overflowing_commit_must_not_return_a_disposed_backing_as_success\n\ntest result: FAILED. 11 passed; 2 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s\n\n\nthread 'enforced_commit_above_reserved_capacity_must_not_charge_past_limit' (24216) panicked at <temporary>/cache_contract.rs:32:5:\nenforced limit 4 but 8 unique bytes were charged\nnote: run with `RUST_BACKTRACE=1` environment variable to display a backtrace\n\nthread 'overflowing_commit_must_not_return_a_disposed_backing_as_success' (24217) panicked at <temporary>/cache_contract.rs:56:5:\nassertion `left == right` failed: commit returned a lease whose backing was already disposed\n  left: 1\n right: 0\n"
+    }
+  ],
+  "status": "FAIL"
+}

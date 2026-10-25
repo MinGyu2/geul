@@ -2,7 +2,8 @@
 // experimental engine (raw HtmlCanvasElement decoded cache); "candidate" is the lease engine.
 // putImageData observes each Rust decode's Canvas so backing lifetime (width/height) is checked
 // directly; the observer holds a DOM reference only, never an engine lease.
-const result = {schema: 1, status: 'RUNNING', tests: [], ledger: [], transitions: []};
+// contract 2: decoded_lease_run.py CONTRACTS[2] names every test and required checkpoint.
+const result = {schema: 1, contract: 2, status: 'RUNNING', tests: [], ledger: [], transitions: []};
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 const COLORS = [[230,20,20],[20,200,20],[20,20,230],[10,10,10]];
 let observed = null;
@@ -31,6 +32,24 @@ async function png(w, h, n) {
   const blob = await new Promise(r => c.toBlob(r, 'image/png')); c.width = c.height = 0;
   return new Uint8Array(await blob.arrayBuffer());
 }
+// Distinct 1x1 PNGs: almost no RGBA bytes, one decoded backing and lease entry each.
+async function tinyPng(n) {
+  const c = document.createElement('canvas'); c.width = c.height = 1; const x = c.getContext('2d');
+  x.fillStyle = `rgb(${n % 256},${20 + 40 * (n >> 8)},${(n * 7) % 256})`; x.fillRect(0, 0, 1, 1);
+  const blob = await new Promise(r => c.toBlob(r, 'image/png')); c.width = c.height = 0;
+  return new Uint8Array(await blob.arrayBuffer());
+}
+function crc32(bytes) {
+  let c = ~0;
+  for (const b of bytes) { c ^= b; for (let k = 0; k < 8; k++) c = (c >>> 1) ^ (0xEDB88320 & -(c & 1)); }
+  return ~c >>> 0;
+}
+// Same PNG body with an IHDR that declares w x h (valid CRC), so only the header is oversized.
+function withHeaderSize(bytes, w, h) {
+  const out = bytes.slice(), view = new DataView(out.buffer);
+  view.setUint32(16, w); view.setUint32(20, h); view.setUint32(29, crc32(out.subarray(12, 29)));
+  return out;
+}
 function svg(n) {
   return new TextEncoder().encode(`<svg xmlns="http://www.w3.org/2000/svg" width="8" height="8"><!--${n}--><rect width="4" height="8" fill="rgb(20,20,230)"/><rect x="4" width="4" height="8" fill="rgb(230,20,20)"/></svg>`);
 }
@@ -44,6 +63,18 @@ function build(mod, pngs, svgs = 0, sizes = []) {
   };
   pngs.forEach((data, i) => place(data, 'png', sizes[i] || 64, sizes[i] || 64, i));
   for (let s = 0; s < svgs; s++) place(svg(1000 + s + serial), 'svg', 8, 8, pngs.length + s);
+  return d;
+}
+// Up to 300 small pictures on one page (20 per row).
+function buildGrid(mod, pngs, svgs = 0) {
+  const d = mod.HwpDocument.createEmpty();
+  const place = (data, ext, w, i) => {
+    const p = JSON.parse(d.insertPicture(0, 0, 0, '', data, 2400, 2400, w, w, ext, '', null, null));
+    d.setPictureProperties(0, p.paraIdx, p.controlIdx, JSON.stringify({treatAsChar: false, horzRelTo: 'Paper', vertRelTo: 'Paper',
+      horzAlign: 'Left', vertAlign: 'Top', horzOffset: 3000 + (i % 20) * 2600, vertOffset: 3000 + Math.floor(i / 20) * 2600}));
+  };
+  pngs.forEach((data, i) => place(data, 'png', 1, i));
+  for (let s = 0; s < svgs; s++) place(svg(2000 + s + serial), 'svg', 8, pngs.length + s);
   return d;
 }
 function pixels(c) { return c.getContext('2d').getImageData(0, 0, c.width, c.height).data; }
@@ -266,6 +297,91 @@ try {
             after.capacityNotifications === before.capacityNotifications && after.listenerNotifications === before.listenerNotifications,
             {before: {capacity: before.capacityNotifications, listener: before.listenerNotifications}, after: {capacity: after.capacityNotifications, listener: after.listenerNotifications}});
           waiting.d.cancelRenderJob(waiting.id); await release(waiting.key); await release(holder.key); await sleep(30); }
+
+        // S7: 300 distinct tiny images (4 bytes each) bound job lease entries, not only bytes.
+        reset(0, 2 << 20, 1);
+        { const tiny = []; for (let n = 0; n < 300; n++) tiny.push(await tinyPng(n));
+          const before = snap('s7-before').jobs;
+          const keyA = hold(), a = keep(buildGrid(mod, tiny, 1)), ca = canvas(); observed = [];
+          const ida = a.beginRenderJob(0, ca, 0.5), sa = a.pollRenderJob(ida), handles = observed; observed = null;
+          const pa = snap('s7-a-pending').jobs, la = pa.decodedLedger, alive = () => handles.filter(h => h.width > 0).length;
+          const aliveA = alive();
+          check('tiny-images-job-lease-entries-bounded', sa === 'PENDING' && handles.length === 300 && pa.maxJobDecodedLeases === 256 &&
+            pa.maxJobLeaseEntries === 256 && la.jobLeaseReferences === 256 && aliveA === 256 && la.uniqueCount === 256 &&
+            la.nonresidentBytes === 1024 && pa.decodedAttachRefusals - before.decodedAttachRefusals === 44 && pa.decodedRegistryEntries <= la.uniqueCount + 1,
+            {state: sa, decodes: handles.length, alive: aliveA, maxJobLeaseEntries: pa.maxJobLeaseEntries, refusals: pa.decodedAttachRefusals - before.decodedAttachRefusals,
+             registryEntries: pa.decodedRegistryEntries, ledger: la});
+          const keyB = hold(), b = keep(buildGrid(mod, tiny, 1)), cb = canvas(); observed = [];
+          const idb = b.beginRenderJob(0, cb, 0.5), sb = b.pollRenderJob(idb), decodesB = observed.length; observed = null;
+          const pb = snap('s7-b-pending').jobs, lb = pb.decodedLedger;
+          check('tiny-images-shared-across-jobs-bounded', sb === 'PENDING' && decodesB === 44 && lb.uniqueCount === 256 && lb.jobLeaseReferences === 512 &&
+            pb.maxJobLeaseEntries === 256 && pb.decodedSharedLookups - pa.decodedSharedLookups >= 256 && alive() === 256,
+            {state: sb, decodes: decodesB, ledger: lb, sharedLookups: pb.decodedSharedLookups - pa.decodedSharedLookups});
+          a.cancelRenderJob(ida);
+          const lc = L('s7-cancel-a');
+          check('tiny-images-cancel-keeps-shared-backing', alive() === 256 && lc.uniqueCount === 256 && lc.jobLeaseReferences === 256 && lc.reservedBytes === 0,
+            {alive: alive(), ledger: lc});
+          await release(keyA);
+          const note = notes[arm]; await release(keyB); await waitNote(arm, note);
+          const done = b.pollRenderJob(idb), complete = snap('s7-complete').jobs;
+          const oracle = await settle('baseline', modules.baseline, m => buildGrid(m, tiny, 1)), diff = mismatch(cb, oracle.canvas);
+          check('tiny-images-full-frame-exact', done === 'COMPLETE' && oracle.state === 'COMPLETE' && diff.extent && diff.differences === 0 &&
+            alive() === 0 && complete.decodedLedger.uniqueBytes === 0 && complete.decodedLedger.jobLeaseReferences === 0 && complete.decodedRegistryEntries === 0,
+            {...diff, state: done, alive: alive(), registryEntries: complete.decodedRegistryEntries, ledger: complete.decodedLedger}); }
+
+        // S8: the same metadata bound with cache hits, admission and eviction (16 entries).
+        reset(1 << 20, 2 << 20, 16);
+        { const tiny = []; for (let n = 300; n < 600; n++) tiny.push(await tinyPng(n));
+          const key = hold(), d = keep(buildGrid(mod, tiny, 1)), c = canvas();
+          const id = d.beginRenderJob(0, c, 0.5), state = d.pollRenderJob(id), p8 = snap('s8-pending').jobs, l = p8.decodedLedger;
+          check('tiny-images-cache-pressure-bounded', state === 'PENDING' && l.residentCount >= 1 && l.residentCount <= 16 && l.jobLeaseReferences === 256 &&
+            p8.maxJobLeaseEntries === 256 && l.uniqueCount <= 256 + l.residentCount && l.nonresidentCount <= 256 && l.reservedBytes === 0,
+            {state, ledger: l, maxJobLeaseEntries: p8.maxJobLeaseEntries});
+          const note = notes[arm]; await release(key); await waitNote(arm, note);
+          const done = d.pollRenderJob(id), l2 = L('s8-complete');
+          const oracle = await settle('baseline', modules.baseline, m => buildGrid(m, tiny, 1)), diff = mismatch(c, oracle.canvas);
+          mod.trimRendererCaches(0);
+          const trimmed = snap('s8-trimmed').jobs;
+          check('tiny-images-cache-pressure-full-frame-exact', done === 'COMPLETE' && oracle.state === 'COMPLETE' && diff.extent && diff.differences === 0 &&
+            l2.jobLeaseReferences === 0 && l2.uniqueCount === l2.residentCount && trimmed.decodedLedger.uniqueBytes === 0 && trimmed.decodedRegistryEntries === 0,
+            {...diff, state: done, complete: l2, trimmed: trimmed.decodedLedger}); }
+
+        // S9: malformed data — truncated body, header without body, no header at all. A failed
+        // decode releases its reservation and allocates no backing; the outcome equals baseline.
+        reset(4 << 20, 2 << 20, 8);
+        { const good = await png(64, 64, 70);
+          const inputs = [good.slice(0, Math.floor(good.length / 2)), good.slice(0, 33), new TextEncoder().encode('not an image at all')];
+          const before = L('s9-before');
+          const cand = await settle(arm, mod, m => build(m, inputs)), base = await settle('baseline', modules.baseline, m => build(m, inputs));
+          const after = L('s9-after'), diff = mismatch(cand.canvas, base.canvas);
+          check('malformed-preflight-matches-baseline', cand.state === base.state && cand.state !== 'PENDING' && diff.extent && diff.differences === 0 &&
+            after.created === before.created && after.reservedBytes === 0 && after.uniqueBytes === 0 && after.refusedReservations === before.refusedReservations &&
+            after.rejectedCommits === 0 && after.preallocationRejections === 0 && after.unreservedDecodes > before.unreservedDecodes,
+            {state: cand.state, baseline: base.state, ...diff, before, after}); }
+
+        // S10: a header declaring 6000 x 6000 (144 MB RGBA) is refused before any allocation.
+        reset(4 << 20, 2 << 20, 8);
+        { const big = withHeaderSize(await png(64, 64, 71), 6000, 6000), before = L('s10-before');
+          const job = m => { const d = keep(build(m, [big])), c = canvas(); return d.pollRenderJob(d.beginRenderJob(0, c, 0.5)); };
+          observed = []; const state = job(mod), allocated = observed.length; observed = null;
+          const baseState = job(modules.baseline), after = L('s10-after');
+          check('oversize-header-refused-before-allocation', state === 'RESOURCE_LIMIT' && baseState === state && allocated === 0 &&
+            after.created === before.created && after.reservedBytes === 0 && after.uniqueBytes === 0 && after.rejectedCommits === 0,
+            {state, baseline: baseState, allocated, before, after}); }
+
+        // S11: the synchronous API keeps its contract. renderPageToCanvas is a one-poll job here,
+        // so the entry bound applies inside it (44 retentions refused) with identical pixels.
+        reset(0, 2 << 20, 1);
+        { const tiny = []; for (let n = 0; n < 300; n++) tiny.push(await tinyPng(n + 600));
+          const before = snap('s11-before').jobs;
+          const render = m => { const d = keep(buildGrid(m, tiny)), c = canvas(); d.renderPageToCanvas(0, c, 0.5); return c; };
+          const cand = render(mod), base = render(modules.baseline), after = snap('s11-after').jobs, diff = mismatch(cand, base);
+          check('legacy-sync-tiny-images-exact', diff.extent && diff.differences === 0 && after.decodedLedger.uniqueBytes === 0 &&
+            after.decodedLedger.created - before.decodedLedger.created === 300 && after.decodedAttachRefusals - before.decodedAttachRefusals === 44 &&
+            after.decodedLedger.jobLeaseReferences === 0 && after.activeJobs === 0 && after.decodedRegistryEntries === 0 &&
+            after.decodedLedger.unenforcedOverLimit === before.decodedLedger.unenforcedOverLimit,
+            {...diff, created: after.decodedLedger.created - before.decodedLedger.created,
+             refusals: after.decodedAttachRefusals - before.decodedAttachRefusals, ledger: after.decodedLedger}); }
       }
     } finally {
       observed = null; holdQueue.length = 0;
@@ -276,7 +392,9 @@ try {
       if (lease(arm)) {
         const l = cleanup.jobs.decodedLedger;
         check('final-ledger-zero', l.uniqueBytes === 0 && l.uniqueCount === 0 && l.reservedBytes === 0 && l.created === l.disposed &&
-          l.accountingErrors === 0 && cleanup.jobs.activeJobs === 0 && cleanup.jobs.ownedEstimatedBytes === 0, {ledger: l});
+          l.accountingErrors === 0 && cleanup.jobs.activeJobs === 0 && cleanup.jobs.ownedEstimatedBytes === 0 &&
+          l.jobLeaseReferences === 0 && cleanup.jobs.decodedRegistryEntries === 0 && cleanup.jobs.maxJobLeaseEntries === 0,
+          {ledger: l, registryEntries: cleanup.jobs.decodedRegistryEntries, maxJobLeaseEntries: cleanup.jobs.maxJobLeaseEntries});
       }
       result.transitions.push({arm, cleanup});
     }

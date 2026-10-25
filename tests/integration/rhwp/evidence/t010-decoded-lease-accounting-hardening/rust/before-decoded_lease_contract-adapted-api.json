@@ -1,0 +1,22 @@
+{
+  "sourceSha256": "4e0bea0fc55cf52433da9ea23e9e818a5e94dfbb84eb436c1bda5e6c47842296",
+  "contractSha256": "625077d4c417768f270c7e3459c7038e92214d39b46a2c129a2aa8b851a4e11d",
+  "schema": 1,
+  "patchSha256": null,
+  "compiler": "rustc 1.93.1 (01f6ddf75 2026-02-11)",
+  "checks": [
+    {
+      "name": "historical",
+      "status": "PASS",
+      "exit": 0,
+      "output": "\nrunning 11 tests\ntest tests::a_repeatedly_requested_newcomer_displaces_a_once_used_resident ... ok\ntest tests::admission_keeps_a_stable_subset_when_a_scan_exceeds_the_budget ... ok\ntest tests::aging_lets_a_new_working_set_replace_an_old_hot_one ... ok\ntest tests::byte_budget_evicts_least_recently_used_and_releases_it ... ok\ntest tests::content_key_distinguishes_length_and_bytes ... ok\ntest tests::negative_entries_are_bounded_by_count_and_lru ... ok\ntest tests::oversize_entry_is_not_retained_and_does_not_evict_others ... ok\ntest tests::pending_admission_rejects_and_trim_cancels ... ok\ntest tests::ready_lease_is_transferred_without_resident_eviction ... ok\ntest tests::replacing_a_key_releases_the_previous_value_without_double_counting ... ok\ntest tests::trim_and_budget_reduction_release_everything_they_drop ... ok\n\ntest result: ok. 11 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s\n\n"
+    },
+    {
+      "name": "contracts",
+      "status": "FAIL",
+      "compileExit": 1,
+      "output": "error[E0599]: no method named `expect` found for struct `Rc<SharedBacking<Canvas>>` in the current scope\n  --> <temporary>/cache_contract.rs:25:48\n   |\n25 |     (r.commit(Canvas(disposed.clone()), bytes).expect(\"authorized commit\"), disposed)\n   |                                                ^^^^^^ method not found in `Rc<SharedBacking<Canvas>>`\n\nerror[E0599]: no method named `expect` found for struct `Rc<SharedBacking<Canvas>>` in the current scope\n   --> <temporary>/cache_contract.rs:103:62\n    |\n103 |     let lease = r.commit(Canvas(Rc::new(Cell::new(0))), 200).expect(\"authorized commit\");\n    |                                                              ^^^^^^ method not found in `Rc<SharedBacking<Canvas>>`\n\nerror[E0599]: no method named `expect` found for struct `Rc<SharedBacking<Canvas>>` in the current scope\n   --> <temporary>/cache_contract.rs:131:61\n    |\n131 |     let lease = r.commit(Canvas(Rc::new(Cell::new(0))), 80).expect(\"authorized commit\");\n    |                                                             ^^^^^^ method not found in `Rc<SharedBacking<Canvas>>`\n\nerror: aborting due to 3 previous errors\n\nFor more information about this error, try `rustc --explain E0599`.\n"
+    }
+  ],
+  "status": "FAIL"
+}

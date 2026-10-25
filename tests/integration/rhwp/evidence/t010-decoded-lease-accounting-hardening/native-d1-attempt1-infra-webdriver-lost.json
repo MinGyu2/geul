@@ -1,0 +1,562 @@
+{
+  "status": "FAIL",
+  "tests": [
+    {
+      "name": "bootstrap-clean-close",
+      "status": "PASS"
+    },
+    {
+      "name": "basic-ko.hwp-warm-full-reference-exact",
+      "status": "PASS",
+      "reference": {
+        "strongPixels": 0,
+        "pixels": 0,
+        "edgePixels": 0,
+        "height": 585,
+        "surface": "attached page Canvas readback",
+        "width": 414,
+        "verified": true,
+        "maxDelta": 0,
+        "oracle": "authoritative model full replay; browser historical full pixels independently pinned-verified"
+      }
+    },
+    {
+      "name": "basic-ko.hwp-typed-10-full-reference-exact",
+      "status": "PASS",
+      "reference": {
+        "strongPixels": 0,
+        "pixels": 0,
+        "edgePixels": 0,
+        "height": 585,
+        "surface": "attached page Canvas readback",
+        "width": 414,
+        "verified": true,
+        "maxDelta": 0,
+        "oracle": "authoritative model full replay; browser historical full pixels independently pinned-verified"
+      }
+    },
+    {
+      "name": "basic-ko.hwp-typed-20-full-reference-exact",
+      "status": "PASS",
+      "reference": {
+        "strongPixels": 0,
+        "pixels": 0,
+        "edgePixels": 0,
+        "height": 585,
+        "surface": "attached page Canvas readback",
+        "width": 414,
+        "verified": true,
+        "maxDelta": 0,
+        "oracle": "authoritative model full replay; browser historical full pixels independently pinned-verified"
+      }
+    },
+    {
+      "name": "basic-ko.hwp-typed-30-full-reference-exact",
+      "status": "PASS",
+      "reference": {
+        "strongPixels": 0,
+        "pixels": 0,
+        "edgePixels": 0,
+        "height": 585,
+        "surface": "attached page Canvas readback",
+        "width": 414,
+        "verified": true,
+        "maxDelta": 0,
+        "oracle": "authoritative model full replay; browser historical full pixels independently pinned-verified"
+      }
+    },
+    {
+      "name": "basic-ko.hwp-undo-caret-visible",
+      "status": "PASS",
+      "caret": "0:3:34",
+      "knownOriginalEndpointFailureEvidence": null
+    },
+    {
+      "name": "basic-ko.hwp-undo-full-reference-exact",
+      "status": "PASS",
+      "reference": {
+        "strongPixels": 0,
+        "pixels": 0,
+        "edgePixels": 0,
+        "height": 585,
+        "surface": "attached page Canvas readback",
+        "width": 414,
+        "verified": true,
+        "maxDelta": 0,
+        "oracle": "authoritative model full replay; browser historical full pixels independently pinned-verified"
+      }
+    },
+    {
+      "name": "basic-ko.hwp-redo-full-reference-exact",
+      "status": "PASS",
+      "reference": {
+        "strongPixels": 0,
+        "pixels": 0,
+        "edgePixels": 0,
+        "height": 585,
+        "surface": "attached page Canvas readback",
+        "width": 414,
+        "verified": true,
+        "maxDelta": 0,
+        "oracle": "authoritative model full replay; browser historical full pixels independently pinned-verified"
+      }
+    },
+    {
+      "name": "basic-ko.hwp-history-model-caret",
+      "status": "PASS"
+    }
+  ],
+  "scope": "actual candidate native performance fixtures, same zoom50/warmup3/caret region; separate correctness run, no latency claim",
+  "selectedSamples": [
+    "basic-ko.hwp",
+    "basic-ko.hwpx",
+    "연구노트(화학).hwp",
+    "3249937_asset_management_rules.hwpx"
+  ],
+  "diagnosticContinuation": false,
+  "cleanup": {
+    "sessionEnded": true,
+    "driverStopped": false,
+    "displayTerminated": true
+  },
+  "observerAliasDiagnostic": {
+    "sameConstructor": false,
+    "resources": [
+      "/__ownership_candidate__/rhwp.js?import",
+      "/__ownership_candidate__/rhwp.js"
+    ]
+  },
+  "visualReferences": [
+    {
+      "strongPixels": 0,
+      "pixels": 0,
+      "edgePixels": 0,
+      "height": 585,
+      "surface": "attached page Canvas readback",
+      "width": 414,
+      "verified": true,
+      "maxDelta": 0,
+      "oracle": "authoritative model full replay; browser historical full pixels independently pinned-verified",
+      "name": "basic-ko.hwp-warm",
+      "sample": "basic-ko.hwp",
+      "frame": "warm"
+    },
+    {
+      "strongPixels": 0,
+      "pixels": 0,
+      "edgePixels": 0,
+      "height": 585,
+      "surface": "attached page Canvas readback",
+      "width": 414,
+      "verified": true,
+      "maxDelta": 0,
+      "oracle": "authoritative model full replay; browser historical full pixels independently pinned-verified",
+      "name": "basic-ko.hwp-typed-10",
+      "sample": "basic-ko.hwp",
+      "frame": "typed-10"
+    },
+    {
+      "strongPixels": 0,
+      "pixels": 0,
+      "edgePixels": 0,
+      "height": 585,
+      "surface": "attached page Canvas readback",
+      "width": 414,
+      "verified": true,
+      "maxDelta": 0,
+      "oracle": "authoritative model full replay; browser historical full pixels independently pinned-verified",
+      "name": "basic-ko.hwp-typed-20",
+      "sample": "basic-ko.hwp",
+      "frame": "typed-20"
+    },
+    {
+      "strongPixels": 0,
+      "pixels": 0,
+      "edgePixels": 0,
+      "height": 585,
+      "surface": "attached page Canvas readback",
+      "width": 414,
+      "verified": true,
+      "maxDelta": 0,
+      "oracle": "authoritative model full replay; browser historical full pixels independently pinned-verified",
+      "name": "basic-ko.hwp-typed-30",
+      "sample": "basic-ko.hwp",
+      "frame": "typed-30"
+    },
+    {
+      "strongPixels": 0,
+      "pixels": 0,
+      "edgePixels": 0,
+      "height": 585,
+      "surface": "attached page Canvas readback",
+      "width": 414,
+      "verified": true,
+      "maxDelta": 0,
+      "oracle": "authoritative model full replay; browser historical full pixels independently pinned-verified",
+      "name": "basic-ko.hwp-undo",
+      "sample": "basic-ko.hwp",
+      "frame": "undo"
+    },
+    {
+      "strongPixels": 0,
+      "pixels": 0,
+      "edgePixels": 0,
+      "height": 585,
+      "surface": "attached page Canvas readback",
+      "width": 414,
+      "verified": true,
+      "maxDelta": 0,
+      "oracle": "authoritative model full replay; browser historical full pixels independently pinned-verified",
+      "name": "basic-ko.hwp-redo",
+      "sample": "basic-ko.hwp",
+      "frame": "redo"
+    }
+  ],
+  "documents": [
+    {
+      "sample": "basic-ko.hwp",
+      "sourceSha256": "57c901cc394abf6f58f4838315d1ea2c5ecf8a03d9934d3fc098fd8be6e6e12f",
+      "pages": 1,
+      "editedRegion": {
+        "caret": "0:3:9",
+        "page": 0
+      },
+      "zoom": 50,
+      "dpr": 1.04205322265625
+    }
+  ],
+  "lastObserved": {
+    "caretHTML": null,
+    "throwAfterDiscard": null,
+    "rendering": {
+      "sessions": [],
+      "jobs": {
+        "decodedSharedLookups": 0,
+        "pendingCount": 0,
+        "cancellations": 0,
+        "decodedLedger": {
+          "accountingErrors": 0,
+          "residentBytes": 0,
+          "postDecodeReservations": 0,
+          "uniqueCount": 0,
+          "created": 0,
+          "jobLeaseReferenceBytes": 0,
+          "maxNonresidentBytes": 100663296,
+          "preallocationRejections": 0,
+          "reservedBytes": 0,
+          "residentCount": 0,
+          "decodedCacheMaxEntries": 256,
+          "jobLeaseReferences": 0,
+          "decodedCacheMaxBytes": 268435456,
+          "peakTreePayloadEstimatedBytes": 0,
+          "lastTreeSharedFontBytes": 0,
+          "unenforcedOverLimit": 0,
+          "estimate": "RGBA backing estimates; not RSS, GPU or browser allocator memory",
+          "peakUniquePlusReservedBytes": 0,
+          "unreservedDecodes": 0,
+          "uniqueBytes": 0,
+          "peakDecodeTransientEstimatedBytes": 0,
+          "lastTreePayloadEstimatedBytes": 0,
+          "rejectedCommits": 0,
+          "nonresidentCount": 0,
+          "disposed": 0,
+          "nonresidentBytes": 0,
+          "refusedReservations": 0
+        },
+        "peakTemporaryCanvasBytes": 3875040,
+        "listenerNotifications": 0,
+        "peakStagingBytes": 3875040,
+        "inFlightEstimatedBytes": 0,
+        "capacityNotifications": 0,
+        "maxFrameBytes": 67108864,
+        "expiryTimerTicks": 0,
+        "resourceLimits": 0,
+        "expiryTimerActive": false,
+        "decodedRegistryEntries": 0,
+        "decodedAttachRefusals": 0,
+        "expiryTimerStarts": 80,
+        "decodedRevocations": 0,
+        "activeLeaseEstimatedBytes": 0,
+        "backupImageDataBytes": 0,
+        "activeJobs": 0,
+        "activeLeaseCount": 0,
+        "decodedRegistryLive": 0,
+        "retryCount": 0,
+        "maxJobDecodedLeases": 256,
+        "maxPending": 2,
+        "transientEstimatedBytes": 0,
+        "loadAttempts": 0,
+        "uniqueResourceCount": 0,
+        "readyLeaseCount": 0,
+        "maxJobLeaseEntries": 0,
+        "maxOwnedBytes": 268435456,
+        "maxStagingBytes": 134217728,
+        "temporaryCanvasBytes": 0,
+        "ownedEstimatedBytes": 0,
+        "maxResources": 256,
+        "errors": 0,
+        "peakBackupImageDataBytes": 968760,
+        "completionNotifications": 0
+      },
+      "cache": {
+        "decoded": {
+          "maxBytes": 268435456,
+          "bytes": 0,
+          "misses": 0,
+          "maxEntryBytes": 67108864,
+          "oversize": 0,
+          "maxEntries": 256,
+          "evictions": 0,
+          "hits": 0,
+          "entries": 0,
+          "pendingEntries": 0,
+          "negativeEntries": 0,
+          "rejected": 0,
+          "transientEntries": 0
+        },
+        "images": {
+          "maxBytes": 67108864,
+          "bytes": 0,
+          "misses": 0,
+          "maxEntryBytes": 16777216,
+          "oversize": 0,
+          "maxEntries": 256,
+          "evictions": 0,
+          "hits": 0,
+          "entries": 0,
+          "pendingEntries": 0,
+          "negativeEntries": 0,
+          "rejected": 0,
+          "transientEntries": 0
+        }
+      },
+      "subscribers": 0
+    },
+    "engineCaret": null,
+    "status": null,
+    "snapshotCalls": [
+      {
+        "ms": 1,
+        "name": "saveSnapshot",
+        "at": 2931
+      },
+      {
+        "ms": 1,
+        "name": "saveSnapshot",
+        "at": 3311
+      },
+      {
+        "ms": 0,
+        "name": "saveSnapshot",
+        "at": 3659
+      },
+      {
+        "ms": 1,
+        "name": "saveSnapshot",
+        "at": 4644
+      },
+      {
+        "ms": 0,
+        "name": "saveSnapshot",
+        "at": 4987
+      },
+      {
+        "ms": 1,
+        "name": "saveSnapshot",
+        "at": 5327
+      },
+      {
+        "ms": 0,
+        "name": "saveSnapshot",
+        "at": 5666
+      },
+      {
+        "ms": 0,
+        "name": "saveSnapshot",
+        "at": 6044
+      },
+      {
+        "ms": 0,
+        "name": "saveSnapshot",
+        "at": 6400
+      },
+      {
+        "ms": 0,
+        "name": "saveSnapshot",
+        "at": 6769
+      },
+      {
+        "ms": 0,
+        "name": "saveSnapshot",
+        "at": 7127
+      },
+      {
+        "ms": 0,
+        "name": "saveSnapshot",
+        "at": 7494
+      },
+      {
+        "ms": 0,
+        "name": "saveSnapshot",
+        "at": 16798
+      },
+      {
+        "ms": 5,
+        "name": "restoreSnapshot",
+        "at": 16798
+      },
+      {
+        "ms": 2,
+        "name": "restoreSnapshot",
+        "at": 17521
+      }
+    ],
+    "owners": [],
+    "jobs": {
+      "decodedSharedLookups": 0,
+      "pendingCount": 0,
+      "cancellations": 0,
+      "decodedLedger": {
+        "accountingErrors": 0,
+        "residentBytes": 0,
+        "postDecodeReservations": 0,
+        "uniqueCount": 0,
+        "created": 0,
+        "jobLeaseReferenceBytes": 0,
+        "maxNonresidentBytes": 100663296,
+        "preallocationRejections": 0,
+        "reservedBytes": 0,
+        "residentCount": 0,
+        "decodedCacheMaxEntries": 256,
+        "jobLeaseReferences": 0,
+        "decodedCacheMaxBytes": 268435456,
+        "peakTreePayloadEstimatedBytes": 0,
+        "lastTreeSharedFontBytes": 0,
+        "unenforcedOverLimit": 0,
+        "estimate": "RGBA backing estimates; not RSS, GPU or browser allocator memory",
+        "peakUniquePlusReservedBytes": 0,
+        "unreservedDecodes": 0,
+        "uniqueBytes": 0,
+        "peakDecodeTransientEstimatedBytes": 0,
+        "lastTreePayloadEstimatedBytes": 0,
+        "rejectedCommits": 0,
+        "nonresidentCount": 0,
+        "disposed": 0,
+        "nonresidentBytes": 0,
+        "refusedReservations": 0
+      },
+      "peakTemporaryCanvasBytes": 3875040,
+      "listenerNotifications": 0,
+      "peakStagingBytes": 3875040,
+      "inFlightEstimatedBytes": 0,
+      "capacityNotifications": 0,
+      "maxFrameBytes": 67108864,
+      "expiryTimerTicks": 0,
+      "resourceLimits": 0,
+      "expiryTimerActive": false,
+      "decodedRegistryEntries": 0,
+      "decodedAttachRefusals": 0,
+      "expiryTimerStarts": 80,
+      "decodedRevocations": 0,
+      "activeLeaseEstimatedBytes": 0,
+      "backupImageDataBytes": 0,
+      "activeJobs": 0,
+      "activeLeaseCount": 0,
+      "decodedRegistryLive": 0,
+      "retryCount": 0,
+      "maxJobDecodedLeases": 256,
+      "maxPending": 2,
+      "transientEstimatedBytes": 0,
+      "loadAttempts": 0,
+      "uniqueResourceCount": 0,
+      "readyLeaseCount": 0,
+      "maxJobLeaseEntries": 0,
+      "maxOwnedBytes": 268435456,
+      "maxStagingBytes": 134217728,
+      "temporaryCanvasBytes": 0,
+      "ownedEstimatedBytes": 0,
+      "maxResources": 256,
+      "errors": 0,
+      "peakBackupImageDataBytes": 968760,
+      "completionNotifications": 0
+    },
+    "identity": {
+      "wasmSha256": "94603ed3cd5a6693e543145168020a16e71fbdefa42620710c96c9c0c7da59e8",
+      "baseline": "1a76570e833917d15817415a53c09ad61ab3203f"
+    }
+  },
+  "error": "WebDriver 연결 끊김(판단 불가(상호작용 중, 앱·WebProcess·WebDriver 모두 살아 있음); POST /execute/sync): Remote end closed connection without response — 마지막 통과 항목 '없음', tauri-driver 종료 코드 None, 이 세션에서 본 프로세스 ['WebKitWebDriver', 'WebKitWebProces', 'geul'], 1초 뒤 프로세스 ['WebKitNetworkPr', 'WebKitWebDriver', 'WebKitWebProces', 'geul', 'tauri-driver']",
+  "existingSaveAssertions": [],
+  "historyGates": [],
+  "historyChecks": [],
+  "failures": [
+    "error: WebDriver 연결 끊김(판단 불가(상호작용 중, 앱·WebProcess·WebDriver 모두 살아 있음); POST /execute/sync): Remote end closed connection without response — 마지막 통과 항목 '없음', tauri-driver 종료 코드 None, 이 세션에서 본 프로세스 ['WebKitWebDriver', 'WebKitWebProces', 'geul'], 1초 뒤 프로세스 ['WebKitNetworkPr', 'WebKitWebDriver', 'WebKitWebProces', 'geul', 'tauri-driver']",
+    "missing assertions: basic-ko.hwp-original-preserved, basic-ko.hwpx-warm-full-reference-exact, basic-ko.hwpx-typed-10-full-reference-exact, basic-ko.hwpx-typed-20-full-reference-exact, basic-ko.hwpx-typed-30-full-reference-exact, basic-ko.hwpx-undo-caret-visible, basic-ko.hwpx-undo-full-reference-exact, basic-ko.hwpx-redo-full-reference-exact, basic-ko.hwpx-history-model-caret, basic-ko.hwpx-original-preserved, 연구노트(화학).hwp-warm-full-reference-exact, 연구노트(화학).hwp-typed-10-full-reference-exact, 연구노트(화학).hwp-typed-20-full-reference-exact, 연구노트(화학).hwp-typed-30-full-reference-exact, 연구노트(화학).hwp-original-empty-paragraph-restored, 연구노트(화학).hwp-undo-caret-visible, 연구노트(화학).hwp-undo-full-reference-exact, 연구노트(화학).hwp-redo-full-reference-exact, 연구노트(화학).hwp-history-model-caret, 연구노트(화학).hwp-original-preserved, 3249937_asset_management_rules.hwpx-warm-full-reference-exact, 3249937_asset_management_rules.hwpx-typed-10-full-reference-exact, 3249937_asset_management_rules.hwpx-typed-20-full-reference-exact, 3249937_asset_management_rules.hwpx-typed-30-full-reference-exact, 3249937_asset_management_rules.hwpx-undo-caret-visible, 3249937_asset_management_rules.hwpx-undo-full-reference-exact, 3249937_asset_management_rules.hwpx-redo-full-reference-exact, 3249937_asset_management_rules.hwpx-history-model-caret, 3249937_asset_management_rules.hwpx-original-preserved, native-final-resource-cleanup",
+    "documents ['basic-ko.hwp'] != selected ['basic-ko.hwp', 'basic-ko.hwpx', '연구노트(화학).hwp', '3249937_asset_management_rules.hwpx']",
+    "6 references ['basic-ko.hwp-warm', 'basic-ko.hwp-typed-10', 'basic-ko.hwp-typed-20', 'basic-ko.hwp-typed-30', 'basic-ko.hwp-undo', 'basic-ko.hwp-redo'] != expected 24 (sample, frame) in order",
+    "cleanup incomplete: driverStopped"
+  ],
+  "expectedSamples": [
+    "basic-ko.hwp",
+    "basic-ko.hwpx",
+    "연구노트(화학).hwp",
+    "3249937_asset_management_rules.hwpx"
+  ],
+  "expectedAssertionCount": 39,
+  "expectedReferenceCount": 24,
+  "verifiedExactReferenceCount": 6,
+  "historyGateContract": "named mandatory assertions; undo_native historyGates/historyChecks not produced and must be empty",
+  "measurementComplete": false,
+  "pixelReferencesComplete": false,
+  "parentExit": 1,
+  "executedDependenciesStable": true,
+  "executedDependencySha256": {
+    "<workspace>/tests/integration/rhwp/ownership-poc/session.mjs": "9456f31cc3ab2cb747954839e711a09e2816d51a14b39b320d37d0ac150f4a6e",
+    "<workspace>/tests/integration/rhwp/ownership-poc/vite.config.mjs": "343ac106593e425a2d08551fa43c47057b39bcb862db4b98433af0bd83362378",
+    "<workspace>/tests/integration/rhwp/ownership-poc/native.py": "49bbfcc827fdd193b3976719bb5779c64350d4cbc3d03d4c81910a5929af7ca6",
+    "<workspace>/tests/integration/rhwp/ownership-poc/generate.mjs": "b7cf1b9cc56828019ce14b95bc46ddbfd177b89d3b1a98144ab63c5a559862c1",
+    "<workspace>/tests/integration/rhwp/ownership-poc/performance-visual-native.py": "9a35dcef886d23dc4ba17e5324092a79e9d2622877fbb2bc8c1f82e50bff6447",
+    "<workspace>/tests/integration/rhwp/undo_native.py": "1d0982fa18c155bbd1e7b009307253815148f841fe1116ec92d818a3ea195445",
+    "<workspace>/tests/integration/rhwp/native_probe.py": "8f4be7dcd57bf5f284dda7ca94d12c9bad8a8f718d543ca57b500166b50c39a0",
+    "<workspace>/tests/integration/rhwp/rhwp_poc.py": "fc3c2f03a0e774e6653f4d7054336f10cc3d01b116e2eb4dbbebf8c172ae581a",
+    "<workspace>/tests/e2e/tauri_smoke.py": "2b87db47c928b523c4fce11a44b42ec7a08dd4944ee0ab943dbf166691cb6229",
+    "<workspace>/tests/fixtures/rhwp/generate.mjs": "a5699770df0dff01e31e1bcc248186b663c2da848229b5193d1c9218c5a86c40",
+    "<workspace>/src-tauri/target/debug/geul": "48b7b8364cb4b91ae0b4c3cb3113977c15fd92aa9ca3d60f0406f331749d45c1",
+    "<scratch>/candpkg/test-package/rhwp.js": "b69e920c8fb1e9d05dacadf3ebae2396b043da385137ad2b4b3386a9b3433252",
+    "<scratch>/candpkg/test-package/rhwp_bg.wasm": "94603ed3cd5a6693e543145168020a16e71fbdefa42620710c96c9c0c7da59e8",
+    "<scratch>/candpkg/test-package/ENGINE.json": "7db9a541a38816fc35f0ae171784a824e0db0517568c37992cda0dbec086b23b",
+    "<workspace>/tests/integration/rhwp/evidence/t010-decoded-lease-accounting-hardening/engine-gates/engine-safety-gates.json": "07372ce9e6e250c2f6c887ec78c53912aba451a9aea5938eaabfb14f03ac22b5",
+    "<workspace>/tests/integration/rhwp/evidence/t010-decoded-lease-accounting-hardening/engine-gates/chrome.json": "e68a7d010609545e70c4e75982489eb3e34b8bde4bf7c91021646923083d228b",
+    "<workspace>/tests/integration/rhwp/evidence/t010-decoded-lease-accounting-hardening/engine-gates/webkit.json": "6688195dd175e98798d2776fcad24109fab67617a55823b47ce7906ac19278b6"
+  },
+  "candidateWasmSha256": "94603ed3cd5a6693e543145168020a16e71fbdefa42620710c96c9c0c7da59e8",
+  "command": [
+    "dbus-run-session",
+    "--",
+    "python3",
+    "tests/integration/rhwp/ownership-poc/performance-visual-native.py",
+    "--app",
+    "<workspace>/src-tauri/target/debug/geul",
+    "--driver",
+    "<scratch>/tools/bin/tauri-driver",
+    "--webkit-driver",
+    "/nix/store/p7h9r90h1vmk4wq1964nhd8vfp0kf27b-webkitgtk-2.54.1+abi=4.1/bin/WebKitWebDriver",
+    "--xvfb",
+    "/nix/store/7yz3bnmll7fy11n0xci85mbhnf6p5669-xvfb-21.1.23/bin/Xvfb",
+    "--xdotool",
+    "/nix/store/kyp2r08w6hs0l1zj3cya6d2ciba9v47h-xdotool-3.20211022.1/bin/xdotool",
+    "--output",
+    "<workspace>/tests/integration/rhwp/evidence/t010-decoded-lease-accounting-hardening/native-d1.json"
+  ],
+  "activationFlags": {
+    "VITE_GEUL_TEST_HOOKS": "1",
+    "GEUL_T010_OWNERSHIP_POC": "1",
+    "GEUL_T010_SCHEDULER_POC": "1",
+    "GEUL_T010_DAMAGE_POC": "0",
+    "GEUL_T010_CANDIDATE": "<scratch>/candpkg/test-package",
+    "GEUL_T010_EVIDENCE": "<workspace>/tests/integration/rhwp/evidence/t010-decoded-lease-accounting-hardening/engine-gates",
+    "VITE_GEUL_TEST_RHWP_HISTORY": "1",
+    "GEUL_T010_HISTORY_SAFETY_ONLY": "1"
+  },
+  "elapsedSeconds": 24.618504246000157
+}

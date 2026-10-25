@@ -22,7 +22,7 @@ fn ledger() -> Rc<DecodedLedger> {
 fn decode(l: &Rc<DecodedLedger>, bytes: usize) -> (Lease, Rc<Cell<u32>>) {
     let disposed = Rc::new(Cell::new(0));
     let r = l.reserve(bytes, 0, usize::MAX, true).unwrap();
-    (r.commit(Canvas(disposed.clone()), bytes), disposed)
+    (r.commit(Canvas(disposed.clone()), bytes).expect("authorized commit"), disposed)
 }
 
 #[test]
@@ -100,7 +100,7 @@ fn unenforced_legacy_reservation_is_explicit() {
     let l = ledger();
     let r = l.reserve(200, 0, 100, false).unwrap();
     assert_eq!(l.stats().over_limit, 1);
-    let lease = r.commit(Canvas(Rc::new(Cell::new(0))), 200);
+    let lease = r.commit(Canvas(Rc::new(Cell::new(0))), 200).expect("authorized commit");
     assert_eq!(l.stats().unique_bytes, 200);
     drop(lease);
     assert_eq!(l.stats().unique_bytes, 0);
@@ -128,7 +128,7 @@ fn commit_uses_actual_bytes_and_peak_tracks_unique_plus_reserved() {
     let l = ledger();
     let r = l.reserve(100, 0, 1000, true).unwrap();
     let pending = l.reserve(50, 0, 1000, true).unwrap();
-    let lease = r.commit(Canvas(Rc::new(Cell::new(0))), 80);
+    let lease = r.commit(Canvas(Rc::new(Cell::new(0))), 80).expect("authorized commit");
     assert_eq!((l.stats().unique_bytes, l.stats().reserved_bytes), (80, 50));
     assert_eq!(l.stats().peak_bytes, 150);
     drop(pending);

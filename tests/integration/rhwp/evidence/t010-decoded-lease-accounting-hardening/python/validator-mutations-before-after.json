@@ -1,0 +1,135 @@
+{
+  "schema": 1,
+  "genuineInput": "tests/integration/rhwp/evidence/t010-decoded-resource-lease-accounting/browser/decoded-lease-chrome.json",
+  "oldCommit": "1323ca5403aa201f2ab3a9b809528d165989a454",
+  "oldRunnerSha256": "8ea3e990842bc395c6b05f9bf8e97d72e563a394326d78a9d48f608babd9ce40",
+  "currentRunnerSha256": "ebab07d9a0b4f7cb42cedd125d3fc0f74513a14a78436772e623f51ea1e1b2e2",
+  "rows": [
+    {
+      "mutation": "unmodified genuine result",
+      "previousValidator": "ACCEPT",
+      "currentValidatorContract1": "ACCEPT"
+    },
+    {
+      "mutation": "ledger=[]",
+      "previousValidator": "ACCEPT",
+      "currentValidatorContract1": "REJECT: Invalid: ledger observations are missing"
+    },
+    {
+      "mutation": "ledger field absent",
+      "previousValidator": "ACCEPT",
+      "currentValidatorContract1": "REJECT: Invalid: ledger observations are missing"
+    },
+    {
+      "mutation": "final checkpoint removed",
+      "previousValidator": "ACCEPT",
+      "currentValidatorContract1": "REJECT: Invalid: missing ledger checkpoints: final"
+    },
+    {
+      "mutation": "required test removed (final-ledger-zero)",
+      "previousValidator": "REJECT: RuntimeError: missing required checks: final-ledger-zero",
+      "currentValidatorContract1": "REJECT: Invalid: test contract mismatch: {\"missing\": [[\"candidate\", \"final-ledger-zero\"]], \"duplicate\": [], \"unexpected\": [], \"outOfOrder\": false}"
+    },
+    {
+      "mutation": "required test duplicated",
+      "previousValidator": "ACCEPT",
+      "currentValidatorContract1": "REJECT: Invalid: test contract mismatch: {\"missing\": [], \"duplicate\": [[\"candidate\", \"last-job-release-disposes-evicted-backing\"]], \"unexpected\": [], \"outOfOrder\": false}"
+    },
+    {
+      "mutation": "baseline test attributed to candidate arm",
+      "previousValidator": "ACCEPT",
+      "currentValidatorContract1": "REJECT: Invalid: test contract mismatch: {\"missing\": [[\"baseline\", \"baseline-raw-handle-invalidated-by-unrelated-eviction\"]], \"duplicate\": [], \"unexpected\": [[\"candidate\", \"base"
+    },
+    {
+      "mutation": "candidate-only result (no baseline arm)",
+      "previousValidator": "REJECT: RuntimeError: missing required checks: baseline-pending-job-handle-invalidated, baseline-pending-job-redecodes-after-eviction, baseline-raw-handle-invalidated-by-unrelated-ev",
+      "currentValidatorContract1": "REJECT: Invalid: test contract mismatch: {\"missing\": [[\"baseline\", \"baseline-full-frame-exact\"], [\"baseline\", \"baseline-pending-job-handle-invalidated\"], [\"baseline\", \"baseline-"
+    },
+    {
+      "mutation": "status 'pass' (lowercase)",
+      "previousValidator": "REJECT: RuntimeError: top-level PASS contradicts a check",
+      "currentValidatorContract1": "REJECT: Invalid: check baseline:baseline-zero-budget-temporary-released is not PASS"
+    },
+    {
+      "mutation": "status true (boolean)",
+      "previousValidator": "REJECT: RuntimeError: top-level PASS contradicts a check",
+      "currentValidatorContract1": "REJECT: Invalid: check baseline:baseline-zero-budget-temporary-released is not PASS"
+    },
+    {
+      "mutation": "budget field maxNonresidentBytes removed",
+      "previousValidator": "REJECT: RuntimeError: invalid ledger measurement at candidate:s2-pending",
+      "currentValidatorContract1": "REJECT: Invalid: invalid ledger field maxNonresidentBytes at s2-pending"
+    },
+    {
+      "mutation": "jobs.maxFrameBytes changed",
+      "previousValidator": "ACCEPT",
+      "currentValidatorContract1": "REJECT: Invalid: declared limits changed at s5b-pending"
+    },
+    {
+      "mutation": "unique != resident + nonresident",
+      "previousValidator": "REJECT: RuntimeError: ledger invariant violated at candidate:s1-evicted",
+      "currentValidatorContract1": "REJECT: Invalid: unique != resident + nonresident bytes at s1-evicted"
+    },
+    {
+      "mutation": "uniqueCount != resident + nonresident count",
+      "previousValidator": "ACCEPT",
+      "currentValidatorContract1": "REJECT: Invalid: unique != resident + nonresident count at s1-evicted"
+    },
+    {
+      "mutation": "created - disposed != uniqueCount",
+      "previousValidator": "ACCEPT",
+      "currentValidatorContract1": "REJECT: Invalid: created - disposed != live backings at s3-shared"
+    },
+    {
+      "mutation": "final created != disposed",
+      "previousValidator": "ACCEPT",
+      "currentValidatorContract1": "REJECT: Invalid: created - disposed != live backings at final"
+    },
+    {
+      "mutation": "final leaks one backing (equations hold)",
+      "previousValidator": "ACCEPT",
+      "currentValidatorContract1": "REJECT: Invalid: created - disposed != live backings at final"
+    },
+    {
+      "mutation": "final activeJobs=1",
+      "previousValidator": "ACCEPT",
+      "currentValidatorContract1": "REJECT: Invalid: final checkpoint has active jobs or owned resources"
+    },
+    {
+      "mutation": "accountingErrors=false (bool as int)",
+      "previousValidator": "REJECT: RuntimeError: invalid ledger measurement at candidate:s0-after",
+      "currentValidatorContract1": "REJECT: Invalid: invalid ledger field accountingErrors at s0-after"
+    },
+    {
+      "mutation": "decodedLedger=null",
+      "previousValidator": "REJECT: AttributeError: 'NoneType' object has no attribute 'get'",
+      "currentValidatorContract1": "REJECT: Invalid: malformed ledger objects at s0-after"
+    },
+    {
+      "mutation": "duplicate checkpoint label",
+      "previousValidator": "ACCEPT",
+      "currentValidatorContract1": "REJECT: Invalid: duplicate ledger checkpoint"
+    },
+    {
+      "mutation": "checkpoint attributed to baseline arm",
+      "previousValidator": "ACCEPT",
+      "currentValidatorContract1": "REJECT: Invalid: ledger checkpoint attributed to the wrong arm"
+    },
+    {
+      "mutation": "job statistics copy disagrees with ledger",
+      "previousValidator": "ACCEPT",
+      "currentValidatorContract1": "REJECT: Invalid: ledger copy differs from job statistics at s3-shared"
+    },
+    {
+      "mutation": "transitions removed",
+      "previousValidator": "ACCEPT",
+      "currentValidatorContract1": "REJECT: Invalid: cleanup transitions are incomplete"
+    }
+  ],
+  "previousAcceptedMutations": 15,
+  "currentAcceptedMutations": 0,
+  "genuineAccepted": {
+    "previous": "ACCEPT",
+    "current": "ACCEPT"
+  }
+}

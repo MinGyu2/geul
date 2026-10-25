@@ -1061,3 +1061,16 @@ Decoded resource lease·회계 기반(2026-10-25, 격리 실험 후보 a9222205,
 ResourcesReady, tree 보존, cursor는 구현하지 않았다. decode 임시 사본(최대 약 3×RGBA)과 tree의 text·geometry는
 추정이나 하한만 기록하며 강제하지 않는다. RSS는 계속 INCONCLUSIVE다.
 새 검증 근거: `tests/integration/rhwp/evidence/t010-decoded-resource-lease-accounting/`.
+
+Decoded lease 회계 보강(2026-10-25, 격리 실험 후보 94603ed3, 제품 미적용): 이전 후보의 `Reservation::commit`은
+예약을 넘는 실제 크기를 검사 없이 계상했고(예약 4·한도 4에 8 bytes 계상), overflow 때는 이미 dispose한
+backing을 성공 lease로 돌려줬다(함수 수준 재현; 현재 decoder에서는 헤더 크기 = 실제 크기라 런타임 도달은
+확인되지 않음). 이제 commit은 `Result`이고 예약을 넘거나 넘치면 backing을 한 번 dispose하고 거절한다.
+web_canvas는 Canvas 생성 전에 `authorizes`로 같은 규칙을 검사한다. 헤더 크기를 모르는 decode가 성공하면
+Canvas 전에 같은 예약 함수(활성 job은 96 MiB 강제)를 거친다. image 0.25.10에서는 그 성공 경로가 도달하지
+않음을 시험으로 보였다. job 하나의 decoded lease 키는 256개(decoded 캐시 entry 한도와 같음)까지만 보유하고,
+넘으면 그리기용 참조만 쓰고 다음 poll에서 다시 찾는다(1×1 이미지 300개에서 이전 후보는 300개 보유, 후보는
+256개, 픽셀 동일). Weak registry는 종료 정리 뒤 0이다. 브라우저 증거 validator는 이름 계약(시험·checkpoint
+순서, 중복·오귀속·형식·회계식·최종 정리)을 검사한다. 이전 validator는 변조 23개 중 15개를 PASS로
+받아들였다. 한도는 늘리지 않았고, 공식 판정과 RSS INCONCLUSIVE는 그대로다.
+새 검증 근거: `tests/integration/rhwp/evidence/t010-decoded-lease-accounting-hardening/`.

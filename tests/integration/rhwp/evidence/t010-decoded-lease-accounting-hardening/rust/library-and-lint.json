@@ -1,0 +1,78 @@
+{
+  "schema": 1,
+  "source": "pinned 1a76570 + upstream-rhwp-decoded-lease-hardening-complete.patch (sourceSha256 below)",
+  "sourceSha256": {
+    "src/renderer/mod.rs": "2edce7a1fb7f918556d812fa9d27abd82d6380ba7a7dcde77bafaf82de66ac00",
+    "src/renderer/surface_cache.rs": "9d5aa73e8167a59d85f7f09cf5165be99c703bdaaa4d1a491a116409744cbfcb",
+    "src/renderer/render_job.rs": "3a1325abd19065ff1be4c1c2607013d0324ef76c254e827b9869fa27d5326e6a",
+    "src/renderer/web_canvas.rs": "bb119dbe4a5271d974f9e8a500311836f530faa957b1c8d87815038e01840ae7",
+    "src/wasm_api.rs": "3dfa6723ae9c89768157f26aac22566d18055c9074acfaa28b0686c3687ecacb",
+    "src/renderer/layout.rs": "c4e348d4b6926ce3d8a0b431a0d5b8202d717c5573e62f12725f17ef145f0eac",
+    "src/renderer/layout/caret_geometry_tests.rs": "2b08a10fa355bb70cd7d4bced4e106f6a2d079d7bdb51bf9835cc3f45d852220",
+    "src/renderer/canvas_rgba.rs": "86c79e3fd15076a4176ea98432620612736a802cda84a8be837923daa5455508"
+  },
+  "compiler": "rustc 1.93.1 (01f6ddf75 2026-02-11)",
+  "commands": {
+    "test": "cargo test --locked --offline --lib (RUSTFLAGS=-C link-arg=-fuse-ld=bfd, explicit CARGO_TARGET_DIR)",
+    "clippyNative": "cargo clippy --locked --offline --lib -- -D warnings",
+    "clippyWasm": "cargo clippy --locked --offline --target wasm32-unknown-unknown --lib --release -- -D warnings",
+    "rustfmt": "rustfmt --edition 2021 --check src/renderer/{surface_cache,render_job,web_canvas,canvas_rgba}.rs src/paint/{resources,layer_tree}.rs"
+  },
+  "libraryTest": {
+    "exit": 0,
+    "counts": [
+      {
+        "passed": 3894,
+        "failed": 0,
+        "ignored": 13
+      },
+      {
+        "passed": 15,
+        "failed": 0,
+        "ignored": 0
+      },
+      {
+        "passed": 165,
+        "failed": 0,
+        "ignored": 0
+      },
+      {
+        "passed": 2,
+        "failed": 0,
+        "ignored": 0
+      }
+    ],
+    "passedTotal": 4076,
+    "failedTotal": 0,
+    "ignoredTotal": 13,
+    "warnings": 0,
+    "newTests": [
+      [
+        "renderer::canvas_rgba::tests::oversized_header_is_known_before_decode_and_does_not_decode",
+        "ok"
+      ],
+      [
+        "renderer::canvas_rgba::tests::unsupported_and_malformed_inputs_have_no_dimensions_and_do_not_decode",
+        "ok"
+      ],
+      [
+        "renderer::canvas_rgba::tests::valid_supported_images_have_exact_header_dimensions",
+        "ok"
+      ],
+      [
+        "renderer::canvas_rgba::tests::truncated_and_corrupted_images_never_decode_without_header_dimensions",
+        "ok"
+      ]
+    ]
+  },
+  "clippyNative": {
+    "exit": 0,
+    "warnings": 0
+  },
+  "clippyWasm": {
+    "exit": 0,
+    "warnings": 0
+  },
+  "rustfmt": "clean (rustfmt applied to the four changed files during implementation, then --check clean)",
+  "previousCandidateComparison": "previous evidence: 4,072 passed / 13 ignored; +4 new canvas_rgba tests"
+}

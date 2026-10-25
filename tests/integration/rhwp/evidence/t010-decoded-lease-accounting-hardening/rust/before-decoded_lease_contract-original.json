@@ -1,0 +1,22 @@
+{
+  "sourceSha256": "4e0bea0fc55cf52433da9ea23e9e818a5e94dfbb84eb436c1bda5e6c47842296",
+  "contractSha256": "dae5297b73109257d4e8a4469184531108ebd86e6ca43ebc297a3cc9b838c2cd",
+  "schema": 1,
+  "patchSha256": null,
+  "compiler": "rustc 1.93.1 (01f6ddf75 2026-02-11)",
+  "checks": [
+    {
+      "name": "historical",
+      "status": "PASS",
+      "exit": 0,
+      "output": "\nrunning 11 tests\ntest tests::a_repeatedly_requested_newcomer_displaces_a_once_used_resident ... ok\ntest tests::admission_keeps_a_stable_subset_when_a_scan_exceeds_the_budget ... ok\ntest tests::aging_lets_a_new_working_set_replace_an_old_hot_one ... ok\ntest tests::byte_budget_evicts_least_recently_used_and_releases_it ... ok\ntest tests::content_key_distinguishes_length_and_bytes ... ok\ntest tests::negative_entries_are_bounded_by_count_and_lru ... ok\ntest tests::oversize_entry_is_not_retained_and_does_not_evict_others ... ok\ntest tests::pending_admission_rejects_and_trim_cancels ... ok\ntest tests::ready_lease_is_transferred_without_resident_eviction ... ok\ntest tests::replacing_a_key_releases_the_previous_value_without_double_counting ... ok\ntest tests::trim_and_budget_reduction_release_everything_they_drop ... ok\n\ntest result: ok. 11 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s\n\n"
+    },
+    {
+      "name": "contracts",
+      "status": "PASS",
+      "exit": 0,
+      "output": "\nrunning 21 tests\ntest cache_only_eviction_disposes_backing ... ok\ntest commit_uses_actual_bytes_and_peak_tracks_unique_plus_reserved ... ok\ntest enforced_reservation_refuses_before_allocation_and_releases_on_drop ... ok\ntest many_jobs_and_images_under_cache_pressure_balance_to_zero ... ok\ntest nonresident_temporary_is_counted_until_released ... ok\ntest peek_does_not_change_lru_or_statistics ... ok\ntest repeated_release_and_trim_never_double_dispose ... ok\ntest shared_cache_and_jobs_are_counted_once ... ok\ntest surface_cache::tests::a_repeatedly_requested_newcomer_displaces_a_once_used_resident ... ok\ntest surface_cache::tests::admission_keeps_a_stable_subset_when_a_scan_exceeds_the_budget ... ok\ntest surface_cache::tests::aging_lets_a_new_working_set_replace_an_old_hot_one ... ok\ntest surface_cache::tests::byte_budget_evicts_least_recently_used_and_releases_it ... ok\ntest surface_cache::tests::content_key_distinguishes_length_and_bytes ... ok\ntest surface_cache::tests::negative_entries_are_bounded_by_count_and_lru ... ok\ntest surface_cache::tests::oversize_entry_is_not_retained_and_does_not_evict_others ... ok\ntest surface_cache::tests::pending_admission_rejects_and_trim_cancels ... ok\ntest surface_cache::tests::ready_lease_is_transferred_without_resident_eviction ... ok\ntest surface_cache::tests::replacing_a_key_releases_the_previous_value_without_double_counting ... ok\ntest surface_cache::tests::trim_and_budget_reduction_release_everything_they_drop ... ok\ntest unenforced_legacy_reservation_is_explicit ... ok\ntest unrelated_eviction_keeps_job_lease_backing_until_last_owner ... ok\n\ntest result: ok. 21 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s\n\n"
+    }
+  ],
+  "status": "PASS"
+}

@@ -25,48 +25,174 @@ import sys
 sys.path.insert(0, str(HERE))
 from run import engine, free_port, request, stop  # noqa: E402
 
-REQUIRED = {
+# Authoritative named contract for decoded-lease.mjs. Each arm runs its tests in this order;
+# checkpoints are the candidate ledger snapshots the tests assert on (extra snapshots, such as
+# eviction attempts, are allowed but must be unique and satisfy the same equations).
+BASELINE_TESTS = (
     'baseline-raw-handle-invalidated-by-unrelated-eviction', 'baseline-pending-job-handle-invalidated',
-    'baseline-pending-job-redecodes-after-eviction', 'baseline-temporary-released-before-pending-return',
-    'cache-only-eviction-disposes-backing',
-    'job-lease-survives-unrelated-eviction', 'evicted-leased-backing-counted-once-nonresident',
-    'leased-job-completes-without-redecode', 'last-job-release-disposes-evicted-backing',
-    'decoded-cache-policy-identical-to-baseline',
+    'baseline-pending-job-redecodes-after-eviction', 'baseline-full-frame-exact',
+    'baseline-temporary-released-before-pending-return', 'baseline-zero-budget-temporary-released',
+)
+CANDIDATE_TESTS_1 = (
+    'cache-only-eviction-disposes-backing', 'job-lease-survives-unrelated-eviction',
+    'evicted-leased-backing-counted-once-nonresident', 'leased-job-completes-without-redecode',
+    'last-job-release-disposes-evicted-backing', 'decoded-cache-policy-identical-to-baseline',
     'leased-full-frame-exact', 'nonresident-temporary-retained-across-pending',
     'nonresident-temporary-released-at-completion', 'zero-budget-synchronous-temporary-released',
     'shared-jobs-one-backing', 'shared-cancel-one-keeps-backing', 'shared-final-cancel-disposes',
     'cancel-pending-releases', 'close-pending-releases', 'mutation-releases', 'stale-generation-releases',
     'expiry-releases', 'resource-error-releases', 'repeated-terminal-no-double-release',
-    'pressure-many-images-bounded', 'pressure-revocation-bounds-nonresident', 'pressure-full-frame-exact',
-    'decoded-release-no-false-capacity-notification', 'cross-engine-full-frame-exact', 'final-ledger-zero',
+    'pressure-many-images-bounded', 'cross-engine-full-frame-exact', 'pressure-revocation-bounds-nonresident',
+    'pressure-full-frame-exact', 'decoded-release-no-false-capacity-notification',
+)
+CANDIDATE_TESTS_2 = CANDIDATE_TESTS_1 + (
+    'tiny-images-job-lease-entries-bounded', 'tiny-images-shared-across-jobs-bounded',
+    'tiny-images-cancel-keeps-shared-backing', 'tiny-images-full-frame-exact',
+    'tiny-images-cache-pressure-bounded', 'tiny-images-cache-pressure-full-frame-exact',
+    'malformed-preflight-matches-baseline', 'oversize-header-refused-before-allocation',
+    'legacy-sync-tiny-images-exact',
+)
+LIFECYCLE = ('cancel-pending-releases', 'close-pending-releases', 'mutation-releases',
+             'stale-generation-releases', 'expiry-releases', 'resource-error-releases')
+CHECKPOINTS_1 = (
+    's0-after', 's1-pending', 's1-evicted', 's1-complete', 's1-trimmed', 's2-pending', 's2-complete', 's2-sync',
+    's3-shared', 's3-cancel-one', 's3-cancel-both',
+    *(f'{name}-{phase}' for name in LIFECYCLE for phase in ('pending', 'after')),
+    'repeat-before', 'repeat-after', 's5a-pending', 's5b-pending', 's5b-stats', 's5b-revocations', 's5b-complete',
+    's6-before', 's6-after',
+)
+CHECKPOINTS_2 = CHECKPOINTS_1 + (
+    's7-before', 's7-a-pending', 's7-b-pending', 's7-cancel-a', 's7-complete', 's8-pending', 's8-complete',
+    's8-trimmed', 's9-before', 's9-after', 's10-before', 's10-after', 's11-before', 's11-after',
+)
+CONTRACTS = {
+    1: {'baseline': BASELINE_TESTS, 'candidate': CANDIDATE_TESTS_1 + ('final-ledger-zero',),
+        'checkpoints': CHECKPOINTS_1 + ('final',), 'metadata': False},
+    2: {'baseline': BASELINE_TESTS, 'candidate': CANDIDATE_TESTS_2 + ('final-ledger-zero',),
+        'checkpoints': CHECKPOINTS_2 + ('final',), 'metadata': True},
 }
+CURRENT_CONTRACT = 2
+MIB = 1 << 20
+# Declared limits (source constants); a result reporting other values is rejected.
+JOB_LIMITS = {'maxPending': 2, 'maxResources': 256, 'maxOwnedBytes': 256 * MIB, 'maxFrameBytes': 64 * MIB,
+              'maxStagingBytes': 128 * MIB}
+MAX_NONRESIDENT = 96 * MIB
+MAX_JOB_DECODED_LEASES = 256
+MAX_JOBS = 8
+LEDGER_INTS = ('uniqueBytes', 'uniqueCount', 'residentBytes', 'residentCount', 'nonresidentBytes', 'nonresidentCount',
+               'jobLeaseReferences', 'jobLeaseReferenceBytes', 'reservedBytes', 'peakUniquePlusReservedBytes',
+               'maxNonresidentBytes', 'decodedCacheMaxBytes', 'decodedCacheMaxEntries', 'created', 'disposed',
+               'refusedReservations', 'unenforcedOverLimit', 'accountingErrors', 'unreservedDecodes')
+LEDGER_INTS_2 = ('rejectedCommits', 'postDecodeReservations', 'preallocationRejections')
+JOB_INTS = ('activeJobs', 'ownedEstimatedBytes', 'pendingCount', 'capacityNotifications', 'listenerNotifications',
+            'decodedRevocations', 'decodedSharedLookups', 'decodedRegistryLive', *JOB_LIMITS)
+JOB_INTS_2 = ('decodedRegistryEntries', 'decodedAttachRefusals', 'maxJobDecodedLeases', 'maxJobLeaseEntries')
 
 
-def validate(value):
-    if value.get('schema') != 1 or value.get('status') not in ('PASS', 'FAIL'):
-        raise RuntimeError('invalid completion status')
-    tests = value.get('tests', [])
-    names = {t.get('name') for t in tests}
-    if value['status'] == 'PASS':
-        if not REQUIRED <= names:
-            raise RuntimeError('missing required checks: ' + ', '.join(sorted(REQUIRED - names)))
-        if any(t.get('status') != 'PASS' for t in tests) or value.get('error'):
-            raise RuntimeError('top-level PASS contradicts a check')
-        for point in value.get('ledger', []):
-            l = point['decodedLedger']
-            ints = ('uniqueBytes', 'residentBytes', 'nonresidentBytes', 'reservedBytes', 'maxNonresidentBytes',
-                    'decodedCacheMaxBytes', 'accountingErrors', 'created', 'disposed')
-            if any(type(l.get(k)) is not int or l[k] < 0 for k in ints):
-                raise RuntimeError('invalid ledger measurement at ' + point.get('label', '?'))
-            if (l['uniqueBytes'] != l['residentBytes'] + l['nonresidentBytes'] or l['accountingErrors'] != 0
-                    or l['nonresidentBytes'] > l['maxNonresidentBytes'] or l['reservedBytes'] != 0
-                    or l['uniqueBytes'] > l['decodedCacheMaxBytes'] + l['maxNonresidentBytes']
-                    or l['disposed'] > l['created']):
-                raise RuntimeError('ledger invariant violated at ' + point.get('label', '?'))
-            jobs = point['jobs']
-            if jobs['maxPending'] != 2 or jobs['maxResources'] != 256 or jobs['maxOwnedBytes'] != 256 << 20 \
-                    or l['maxNonresidentBytes'] != 96 << 20:
-                raise RuntimeError('declared limits changed')
+class Invalid(RuntimeError):
+    pass
+
+
+def require(condition, message):
+    if not condition:
+        raise Invalid(message)
+
+
+def is_int(value):
+    return type(value) is int and value >= 0
+
+
+def check_ledger(label, point, metadata):
+    require(type(point) is dict and set(point) == {'label', 'decodedLedger', 'jobs'}, f'malformed checkpoint {label}')
+    l, jobs = point['decodedLedger'], point['jobs']
+    require(type(l) is dict and type(jobs) is dict, f'malformed ledger objects at {label}')
+    for name in LEDGER_INTS + (LEDGER_INTS_2 if metadata else ()):
+        require(is_int(l.get(name)), f'invalid ledger field {name} at {label}')
+    for name in JOB_INTS + (JOB_INTS_2 if metadata else ()):
+        require(is_int(jobs.get(name)), f'invalid job field {name} at {label}')
+    require(jobs.get('decodedLedger') == l, f'ledger copy differs from job statistics at {label}')
+    require(l['maxNonresidentBytes'] == MAX_NONRESIDENT and all(jobs[k] == v for k, v in JOB_LIMITS.items()),
+            f'declared limits changed at {label}')
+    require(l['uniqueBytes'] == l['residentBytes'] + l['nonresidentBytes'], f'unique != resident + nonresident bytes at {label}')
+    require(l['uniqueCount'] == l['residentCount'] + l['nonresidentCount'], f'unique != resident + nonresident count at {label}')
+    require(l['created'] - l['disposed'] == l['uniqueCount'], f'created - disposed != live backings at {label}')
+    require(l['accountingErrors'] == 0 and l['reservedBytes'] == 0, f'accounting error or open reservation at {label}')
+    require(l['nonresidentBytes'] <= l['maxNonresidentBytes'], f'nonresident budget exceeded at {label}')
+    require(l['residentBytes'] <= l['decodedCacheMaxBytes'] and l['residentCount'] <= l['decodedCacheMaxEntries'],
+            f'resident cache budget exceeded at {label}')
+    require(l['uniqueBytes'] <= l['decodedCacheMaxBytes'] + l['maxNonresidentBytes'], f'unique bound exceeded at {label}')
+    require(l['peakUniquePlusReservedBytes'] >= l['uniqueBytes'], f'peak below current at {label}')
+    require(jobs['decodedRegistryLive'] <= l['uniqueCount'], f'registry reports more live backings than exist at {label}')
+    if metadata:
+        require(jobs['maxJobDecodedLeases'] == MAX_JOB_DECODED_LEASES, f'declared lease entry limit changed at {label}')
+        require(jobs['maxJobLeaseEntries'] <= MAX_JOB_DECODED_LEASES, f'job lease entries exceed the bound at {label}')
+        require(l['jobLeaseReferences'] <= MAX_JOBS * MAX_JOB_DECODED_LEASES, f'job lease references exceed the bound at {label}')
+        require(jobs['decodedRegistryLive'] <= jobs['decodedRegistryEntries'], f'inconsistent registry counters at {label}')
+        require(l['rejectedCommits'] == 0 and l['preallocationRejections'] == 0, f'unexpected size mismatch at {label}')
+
+
+def validate(value, contract=CURRENT_CONTRACT):
+    """A PASS must prove every named test and checkpoint of `contract` was supplied and holds."""
+    require(type(value) is dict and value.get('schema') == 1 and value.get('status') in ('PASS', 'FAIL'),
+            'invalid completion status')
+    if value['status'] != 'PASS':
+        return
+    spec = CONTRACTS[contract]
+    require(value.get('contract', 1) == contract, 'result contract differs from the served test contract')
+    require('error' not in value, 'top-level PASS carries an error')
+    tests = value.get('tests')
+    require(type(tests) is list and all(type(t) is dict for t in tests), 'malformed tests')
+    for t in tests:
+        require(type(t.get('name')) is str and t.get('arm') in ('baseline', 'candidate'), 'malformed test identity')
+        require(t.get('status') == 'PASS', f'check {t.get("arm")}:{t.get("name")} is not PASS')
+    actual = [(t['arm'], t['name']) for t in tests]
+    expected = [('baseline', n) for n in spec['baseline']] + [('candidate', n) for n in spec['candidate']]
+    if actual != expected:
+        seen, duplicate = set(), []
+        for item in actual:
+            if item in seen:
+                duplicate.append(item)
+            seen.add(item)
+        missing = sorted(set(expected) - seen)
+        unexpected = sorted(seen - set(expected))
+        raise Invalid('test contract mismatch: ' + json.dumps({'missing': missing, 'duplicate': duplicate,
+                                                               'unexpected': unexpected,
+                                                               'outOfOrder': not (missing or duplicate or unexpected)}))
+    ledger = value.get('ledger')
+    require(type(ledger) is list and ledger, 'ledger observations are missing')
+    labels = []
+    for point in ledger:
+        require(type(point) is dict and type(point.get('label')) is str, 'malformed checkpoint label')
+        require(point['label'].startswith('candidate:'), 'ledger checkpoint attributed to the wrong arm')
+        labels.append(point['label'].removeprefix('candidate:'))
+    require(len(labels) == len(set(labels)), 'duplicate ledger checkpoint')
+    position = {label: i for i, label in enumerate(labels)}
+    missing = [c for c in spec['checkpoints'] if c not in position]
+    require(not missing, 'missing ledger checkpoints: ' + ', '.join(missing))
+    order = [position[c] for c in spec['checkpoints']]
+    require(order == sorted(order), 'ledger checkpoints out of order')
+    require(labels[-1] == 'final', 'final cleanup checkpoint is not last')
+    for label, point in zip(labels, ledger):
+        check_ledger(label, point, spec['metadata'])
+    final = ledger[-1]
+    l, jobs = final['decodedLedger'], final['jobs']
+    require(l['uniqueBytes'] == l['uniqueCount'] == l['residentBytes'] == l['nonresidentBytes'] == 0
+            and l['jobLeaseReferences'] == l['jobLeaseReferenceBytes'] == 0 and l['created'] == l['disposed'] > 0,
+            'final checkpoint does not prove released decoded backings')
+    require(jobs['activeJobs'] == jobs['ownedEstimatedBytes'] == jobs['pendingCount'] == jobs['decodedRegistryLive'] == 0,
+            'final checkpoint has active jobs or owned resources')
+    if spec['metadata']:
+        require(jobs['decodedRegistryEntries'] == jobs['maxJobLeaseEntries'] == 0, 'final checkpoint keeps lease metadata')
+    transitions = value.get('transitions')
+    require(type(transitions) is list and [t.get('arm') if type(t) is dict else None for t in transitions]
+            == ['baseline', 'candidate'], 'cleanup transitions are incomplete')
+    require(transitions[1].get('cleanup', {}).get('jobs') == jobs, 'candidate cleanup differs from the final checkpoint')
+
+
+def outcome(value, contract=CURRENT_CONTRACT):
+    """Recorded status: only a fully validated PASS is PASS; anything malformed raises."""
+    validate(value, contract)
+    return value['status']
 
 
 def main():
@@ -188,8 +314,8 @@ def main():
             if len(received) != 1:
                 raise RuntimeError('invalid or duplicate result')
             result['run'] = received[0]
-            validate(received[0])
-            result['status'] = received[0]['status']
+            result['status'] = outcome(received[0])
+            result['contract'] = CURRENT_CONTRACT
         except Exception as error:  # noqa: BLE001 - every failure is a recorded FAIL
             result['error'] = str(error).replace(str(temporary), '<temporary>')
         finally:
