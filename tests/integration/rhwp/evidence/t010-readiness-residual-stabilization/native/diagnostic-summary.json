@@ -1,0 +1,181 @@
+{
+ "schema": 1,
+ "scope": "read-only teardown diagnostics (tests/e2e/tauri_smoke.py TEARDOWN) and the wrapper token observer; cleanup order, 30 s/10 s waits, failure decision and signal targets unchanged",
+ "coverage": [
+  {
+   "question": "DELETE /session을 보냈는가",
+   "before": "기록 없음(실패할 때만 CleanupFailure/DriverLost 예외)",
+   "now": "teardown.sessionDeletes[].outcome(ok/httpError/driverLost/error)·seconds"
+  },
+  {
+   "question": "DELETE가 성공으로 응답했는가",
+   "before": "성공은 기록 없음",
+   "now": "outcome == ok"
+  },
+  {
+   "question": "WebKitWebDriver가 앱보다 먼저 끝났는가",
+   "before": "하네스 기록 없음. wrapper 관찰기(100 ms 표본)의 gone 시각으로만 추정",
+   "now": "beforeDriverStop(DELETE 응답 뒤, 드라이버 종료 전)·afterDriverStop(드라이버 종료 뒤)의 소유 프로세스 이름·상태·부모 PID + 관찰기 시각"
+  },
+  {
+   "question": "드라이버 종료 뒤 앱이 살아 있었는가",
+   "before": "30초 뒤 남으면 pid·상태·ppid만(이름 없음)",
+   "now": "afterDriverStop, remainingAfterWait에 comm 포함"
+  },
+  {
+   "question": "프로세스가 이 시험 소유인가",
+   "before": "XDG_DATA_HOME 표식(하네스), 시도별 token(wrapper)",
+   "now": "같음(바꾸지 않음). 진단도 같은 소유 목록만 읽음"
+  },
+  {
+   "question": "SIGTERM 정리를 시도했는가",
+   "before": "앞선 오류가 없을 때만 Failure 메시지로 암시. 앞선 오류가 있으면 진단 전체가 버려짐. kill 오류는 조용히 무시",
+   "now": "sigtermSent, sigtermErrors(오류 이름). 앞선 오류가 있으면 그 예외에 note로 덧붙임(예외 종류·종료 코드는 그대로)"
+  },
+  {
+   "question": "SIGTERM 뒤에도 남았는가",
+   "before": "두 번째 대기 결과를 버림",
+   "now": "survivorsAfterSigterm, 실패 메시지에 \"SIGTERM 10초 뒤에도 남음\""
+  }
+ ],
+ "runs": [
+  {
+   "attempt": 1,
+   "d1": {
+    "status": "PASS",
+    "assertions": 39,
+    "exactRgba": 24,
+    "cleanup": {
+     "sessionEnded": true,
+     "driverStopped": true,
+     "displayTerminated": true
+    }
+   },
+   "sessionDelete": [
+    {
+     "outcome": "ok",
+     "seconds": 0.008
+    }
+   ],
+   "appAliveWhenDeleteReturned": false,
+   "ownedAtDeleteReturn": [
+    "tauri-driver",
+    "WebKitWebDriver",
+    "WebKitNetworkPr",
+    "WebKitWebProces"
+   ],
+   "ownedAfterDriverStop": [
+    "WebKitNetworkPr",
+    "WebKitWebProces"
+   ],
+   "driverExit": 0,
+   "driverKilled": false,
+   "driverStopSeconds": 0.011,
+   "remainingAfter30sWait": [],
+   "sigtermSent": [],
+   "survivorsAfterSigterm": [],
+   "observerGoneSeconds": {
+    "tauri-driver": 81.49,
+    "WebKitWebDriver": 81.49,
+    "geul": 81.49,
+    "WebKitNetworkPr": 81.49,
+    "WebKitWebProces": 81.6
+   },
+   "observerLeftAtEnd": [],
+   "loadAverageStart": 0.4501953125,
+   "wrapperVerdict": "PASS"
+  },
+  {
+   "attempt": 2,
+   "d1": {
+    "status": "PASS",
+    "assertions": 39,
+    "exactRgba": 24,
+    "cleanup": {
+     "sessionEnded": true,
+     "driverStopped": true,
+     "displayTerminated": true
+    }
+   },
+   "sessionDelete": [
+    {
+     "outcome": "ok",
+     "seconds": 0.009
+    }
+   ],
+   "appAliveWhenDeleteReturned": false,
+   "ownedAtDeleteReturn": [
+    "tauri-driver",
+    "WebKitWebDriver",
+    "WebKitNetworkPr",
+    "WebKitWebProces"
+   ],
+   "ownedAfterDriverStop": [
+    "WebKitWebProces"
+   ],
+   "driverExit": 0,
+   "driverKilled": false,
+   "driverStopSeconds": 0.012,
+   "remainingAfter30sWait": [],
+   "sigtermSent": [],
+   "survivorsAfterSigterm": [],
+   "observerGoneSeconds": {
+    "tauri-driver": 82.21,
+    "WebKitWebDriver": 82.21,
+    "geul": 82.21,
+    "WebKitNetworkPr": 82.21,
+    "WebKitWebProces": 82.32
+   },
+   "observerLeftAtEnd": [],
+   "loadAverageStart": 1.44677734375,
+   "wrapperVerdict": "PASS"
+  },
+  {
+   "attempt": 3,
+   "d1": {
+    "status": "PASS",
+    "assertions": 39,
+    "exactRgba": 24,
+    "cleanup": {
+     "sessionEnded": true,
+     "driverStopped": true,
+     "displayTerminated": true
+    }
+   },
+   "sessionDelete": [
+    {
+     "outcome": "ok",
+     "seconds": 0.009
+    }
+   ],
+   "appAliveWhenDeleteReturned": false,
+   "ownedAtDeleteReturn": [
+    "tauri-driver",
+    "WebKitWebDriver",
+    "WebKitNetworkPr",
+    "WebKitWebProces"
+   ],
+   "ownedAfterDriverStop": [
+    "WebKitNetworkPr",
+    "WebKitWebProces"
+   ],
+   "driverExit": 0,
+   "driverKilled": false,
+   "driverStopSeconds": 0.013,
+   "remainingAfter30sWait": [],
+   "sigtermSent": [],
+   "survivorsAfterSigterm": [],
+   "observerGoneSeconds": {
+    "tauri-driver": 81.12,
+    "WebKitWebDriver": 81.12,
+    "geul": 81.12,
+    "WebKitNetworkPr": 81.22,
+    "WebKitWebProces": 81.22
+   },
+   "observerLeftAtEnd": [],
+   "loadAverageStart": 1.66552734375,
+   "wrapperVerdict": "PASS"
+  }
+ ],
+ "historicalRootCause": "UNVERIFIED: three passing runs do not show that the earlier shutdown failure cannot recur; the new fields only make a future failure attributable"
+}

@@ -1,0 +1,333 @@
+{
+ "schema": 1,
+ "oldCommit": "2636a6509beec66debe8dc7c17d3f2889ea722eb",
+ "previousWrapper": "tests/integration/rhwp/evidence/t010-decoded-lease-readiness-closure/run-native.py",
+ "correctedWrapper": "tests/integration/rhwp/evidence/t010-readiness-residual-stabilization/run-native.py",
+ "previousWrapperSha256": "c319e97bb3dbf43235a21b13d3eaf2f3043098218c37e3a5edae5b28a33369f8",
+ "correctedWrapperSha256": "e995d7a83791b930a5e5da9f2a682c1d73df862633cf42886519415713a776c7",
+ "validatorSha256": "d7a00580cd59902456983b7b9c5a71b7780c00528f4d28babe0d011a0e4bde6b",
+ "method": "both wrappers copied verbatim into a temporary tree; fake node/dbus-run-session/geul on PATH; no real native run",
+ "summary": {
+  "previous": {
+   "exit0": [
+    "exit0-complete-pass",
+    "exit0-json-fail",
+    "exit0-missing-json",
+    "exit0-cleanup-false",
+    "exit0-cleanup-field-missing",
+    "exit0-incomplete-assertions",
+    "exit0-incomplete-rgba",
+    "exit0-identity-mismatch",
+    "exit0-dependency-mutation"
+   ],
+   "failOpen": [
+    "exit0-json-fail",
+    "exit0-missing-json",
+    "exit0-cleanup-false",
+    "exit0-cleanup-field-missing",
+    "exit0-incomplete-assertions",
+    "exit0-incomplete-rgba",
+    "exit0-identity-mismatch",
+    "exit0-dependency-mutation"
+   ]
+  },
+  "corrected": {
+   "exit0": [
+    "exit0-complete-pass"
+   ],
+   "failOpen": []
+  }
+ },
+ "runs": {
+  "previous": [
+   {
+    "scenario": "exit0-complete-pass",
+    "harnessExit": 0,
+    "wrapperExit": 0,
+    "files": [
+     "native-d1-attempt1-lifecycle.json",
+     "native-d1-attempt1.json"
+    ],
+    "resultStatus": "PASS"
+   },
+   {
+    "scenario": "exit0-json-fail",
+    "harnessExit": 0,
+    "wrapperExit": 0,
+    "files": [
+     "native-d1-attempt1-lifecycle.json",
+     "native-d1-attempt1.json"
+    ],
+    "resultStatus": "FAIL"
+   },
+   {
+    "scenario": "exit0-missing-json",
+    "harnessExit": 0,
+    "wrapperExit": 0,
+    "files": [
+     "native-d1-attempt1-lifecycle.json",
+     "native-d1-attempt1.json"
+    ],
+    "resultStatus": "FAIL"
+   },
+   {
+    "scenario": "exit0-malformed-json",
+    "harnessExit": 0,
+    "wrapperExit": 1,
+    "files": [
+     "native-d1-attempt1-lifecycle.json",
+     "native-d1-attempt1.json"
+    ],
+    "resultStatus": "unparseable (left as written by the harness)",
+    "stderrTail": "json.decoder.JSONDecodeError: Expecting value: line 1 column 30 (char 29)"
+   },
+   {
+    "scenario": "exit0-cleanup-false",
+    "harnessExit": 0,
+    "wrapperExit": 0,
+    "files": [
+     "native-d1-attempt1-lifecycle.json",
+     "native-d1-attempt1.json"
+    ],
+    "resultStatus": "PASS"
+   },
+   {
+    "scenario": "exit0-cleanup-field-missing",
+    "harnessExit": 0,
+    "wrapperExit": 0,
+    "files": [
+     "native-d1-attempt1-lifecycle.json",
+     "native-d1-attempt1.json"
+    ],
+    "resultStatus": "PASS"
+   },
+   {
+    "scenario": "exit0-incomplete-assertions",
+    "harnessExit": 0,
+    "wrapperExit": 0,
+    "files": [
+     "native-d1-attempt1-lifecycle.json",
+     "native-d1-attempt1.json"
+    ],
+    "resultStatus": "PASS"
+   },
+   {
+    "scenario": "exit0-incomplete-rgba",
+    "harnessExit": 0,
+    "wrapperExit": 0,
+    "files": [
+     "native-d1-attempt1-lifecycle.json",
+     "native-d1-attempt1.json"
+    ],
+    "resultStatus": "PASS"
+   },
+   {
+    "scenario": "exit0-identity-mismatch",
+    "harnessExit": 0,
+    "wrapperExit": 0,
+    "files": [
+     "native-d1-attempt1-lifecycle.json",
+     "native-d1-attempt1.json"
+    ],
+    "resultStatus": "PASS"
+   },
+   {
+    "scenario": "exit0-dependency-mutation",
+    "harnessExit": 0,
+    "wrapperExit": 0,
+    "files": [
+     "native-d1-attempt1-lifecycle.json",
+     "native-d1-attempt1.json"
+    ],
+    "resultStatus": "PASS"
+   },
+   {
+    "scenario": "exit1-json-pass",
+    "harnessExit": 1,
+    "wrapperExit": 1,
+    "files": [
+     "native-d1-attempt1-lifecycle.json",
+     "native-d1-attempt1.json"
+    ],
+    "resultStatus": "PASS",
+    "stderrTail": ""
+   }
+  ],
+  "corrected": [
+   {
+    "scenario": "exit0-complete-pass",
+    "harnessExit": 0,
+    "wrapperExit": 0,
+    "files": [
+     "native-d1-attempt1-lifecycle.json",
+     "native-d1-attempt1-wrapper-verdict.json",
+     "native-d1-attempt1.json"
+    ],
+    "verdict": "PASS",
+    "categories": [],
+    "resultError": null,
+    "resultStatus": "PASS"
+   },
+   {
+    "scenario": "exit0-json-fail",
+    "harnessExit": 0,
+    "wrapperExit": 3,
+    "files": [
+     "native-d1-attempt1-lifecycle.json",
+     "native-d1-attempt1-wrapper-verdict.json",
+     "native-d1-attempt1.json"
+    ],
+    "verdict": "FAIL",
+    "categories": [
+     "failed-assertions"
+    ],
+    "resultError": null,
+    "resultStatus": "FAIL"
+   },
+   {
+    "scenario": "exit0-missing-json",
+    "harnessExit": 0,
+    "wrapperExit": 3,
+    "files": [
+     "native-d1-attempt1-lifecycle.json",
+     "native-d1-attempt1-wrapper-verdict.json"
+    ],
+    "verdict": "FAIL",
+    "categories": [
+     "missing-result"
+    ],
+    "resultError": "missing",
+    "resultStatus": null
+   },
+   {
+    "scenario": "exit0-malformed-json",
+    "harnessExit": 0,
+    "wrapperExit": 3,
+    "files": [
+     "native-d1-attempt1-lifecycle.json",
+     "native-d1-attempt1-wrapper-verdict.json",
+     "native-d1-attempt1.json"
+    ],
+    "verdict": "FAIL",
+    "categories": [
+     "malformed-result"
+    ],
+    "resultError": "JSONDecodeError: Expecting value: line 1 column 30 (char 29)",
+    "resultStatus": "unparseable (left as written by the harness)"
+   },
+   {
+    "scenario": "exit0-cleanup-false",
+    "harnessExit": 0,
+    "wrapperExit": 3,
+    "files": [
+     "native-d1-attempt1-lifecycle.json",
+     "native-d1-attempt1-wrapper-verdict.json",
+     "native-d1-attempt1.json"
+    ],
+    "verdict": "FAIL",
+    "categories": [
+     "cleanup"
+    ],
+    "resultError": null,
+    "resultStatus": "PASS"
+   },
+   {
+    "scenario": "exit0-cleanup-field-missing",
+    "harnessExit": 0,
+    "wrapperExit": 3,
+    "files": [
+     "native-d1-attempt1-lifecycle.json",
+     "native-d1-attempt1-wrapper-verdict.json",
+     "native-d1-attempt1.json"
+    ],
+    "verdict": "FAIL",
+    "categories": [
+     "cleanup"
+    ],
+    "resultError": null,
+    "resultStatus": "PASS"
+   },
+   {
+    "scenario": "exit0-incomplete-assertions",
+    "harnessExit": 0,
+    "wrapperExit": 3,
+    "files": [
+     "native-d1-attempt1-lifecycle.json",
+     "native-d1-attempt1-wrapper-verdict.json",
+     "native-d1-attempt1.json"
+    ],
+    "verdict": "FAIL",
+    "categories": [
+     "incomplete-verification"
+    ],
+    "resultError": null,
+    "resultStatus": "PASS"
+   },
+   {
+    "scenario": "exit0-incomplete-rgba",
+    "harnessExit": 0,
+    "wrapperExit": 3,
+    "files": [
+     "native-d1-attempt1-lifecycle.json",
+     "native-d1-attempt1-wrapper-verdict.json",
+     "native-d1-attempt1.json"
+    ],
+    "verdict": "FAIL",
+    "categories": [
+     "incomplete-verification"
+    ],
+    "resultError": null,
+    "resultStatus": "PASS"
+   },
+   {
+    "scenario": "exit0-identity-mismatch",
+    "harnessExit": 0,
+    "wrapperExit": 3,
+    "files": [
+     "native-d1-attempt1-lifecycle.json",
+     "native-d1-attempt1-wrapper-verdict.json",
+     "native-d1-attempt1.json"
+    ],
+    "verdict": "FAIL",
+    "categories": [
+     "candidate-identity"
+    ],
+    "resultError": null,
+    "resultStatus": "PASS"
+   },
+   {
+    "scenario": "exit0-dependency-mutation",
+    "harnessExit": 0,
+    "wrapperExit": 3,
+    "files": [
+     "native-d1-attempt1-lifecycle.json",
+     "native-d1-attempt1-wrapper-verdict.json",
+     "native-d1-attempt1.json"
+    ],
+    "verdict": "FAIL",
+    "categories": [
+     "dependency-mutation"
+    ],
+    "resultError": null,
+    "resultStatus": "PASS"
+   },
+   {
+    "scenario": "exit1-json-pass",
+    "harnessExit": 1,
+    "wrapperExit": 1,
+    "files": [
+     "native-d1-attempt1-lifecycle.json",
+     "native-d1-attempt1-wrapper-verdict.json",
+     "native-d1-attempt1.json"
+    ],
+    "verdict": "FAIL",
+    "categories": [
+     "native-subprocess"
+    ],
+    "resultError": null,
+    "resultStatus": "PASS"
+   }
+  ]
+ },
+ "status": "PASS"
+}

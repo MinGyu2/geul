@@ -254,9 +254,21 @@ class WebDriver:
 
     def quit(self) -> None:
         if self.session:
+            # 정리 진단(TEARDOWN): 세션 삭제를 보냈는지와 그 결과. 결과에 따라 예외를 바꾸지 않고 기록만 한다.
+            deletes = ACTIVE["teardown"]["sessionDeletes"] if "teardown" in ACTIVE else None
+            started, outcome = time.monotonic(), "error"
             try:
                 self.call("DELETE", "")
+                outcome = "ok"
+            except CleanupFailure:
+                outcome = "httpError"
+                raise
+            except DriverLost:
+                outcome = "driverLost"
+                raise
             finally:
+                if deletes is not None:
+                    deletes.append({"outcome": outcome, "seconds": round(time.monotonic() - started, 3)})
                 self.session = ""
 
     def js(self, script: str, *args):
@@ -331,6 +343,9 @@ DRIVER_LOG: Path | None = None
 LAST_CHECK = [""]  # 마지막으로 통과한 항목(끊김 진단용)
 CHECKS_PASSED = [0]  # 통과한 항목 수(시나리오 함수가 결과를 돌려주기 전에 끊겨도 셈)
 ACTIVE: dict = {}  # 지금 시나리오의 tauri-driver 프로세스·XDG_DATA_HOME·이 세션에서 본 프로세스 이름(끊김 진단용)
+# tauri_driver() 시나리오마다 하나씩 쌓는 정리 관찰(진단용): 세션 삭제 결과, tauri-driver 종료 코드, 드라이버 종료 직전·직후와
+# 30초 대기 뒤 남은 소유 프로세스, SIGTERM 대상과 그 뒤에도 남은 것. 관찰만 하며 정리 순서·시간·판정은 바꾸지 않는다.
+TEARDOWN: list[dict] = []
 
 
 def owned_processes() -> list[dict]:
@@ -513,6 +528,19 @@ def wait_app_exit(results: list[str], name: str) -> None:
             time.sleep(0.2)
         remaining = app_processes()
         check(results, name, not remaining, " ".join(f"pid={pid}({process_state(pid)})" for pid in remaining))
+
+
+def process_rows(pids: list[int]) -> list[dict]:
+    """정리 진단용: 이 시나리오 소유 PID의 /proc 이름(comm)·상태·부모 PID. 읽기만 하며 명령줄·환경 값은 남기지 않는다."""
+    rows = []
+    for pid in pids:
+        try:
+            comm = Path(f"/proc/{pid}/comm").read_text().strip()
+            fields = Path(f"/proc/{pid}/stat").read_text().rsplit(")", 1)[1].split()
+            rows.append({"pid": pid, "comm": comm, "state": fields[0], "ppid": int(fields[1])})
+        except (OSError, IndexError, ValueError):
+            rows.append({"pid": pid, "gone": True})
+    return rows
 
 
 def process_state(pid: int) -> str:
@@ -1074,7 +1102,9 @@ def tauri_driver(path: str, port: int, data_home: str):
     environment = {**os.environ, "XDG_DATA_HOME": data_home}
     log = open(DRIVER_LOG, "ab") if DRIVER_LOG else subprocess.DEVNULL
     process = subprocess.Popen([path, "--port", str(port)], stdout=log, stderr=subprocess.STDOUT, env=environment)
-    ACTIVE.update(driver=process, data_home=data_home)
+    teardown = {"sessionDeletes": [], "complete": False}
+    TEARDOWN.append(teardown)
+    ACTIVE.update(driver=process, data_home=data_home, teardown=teardown)
     try:
         wait_port(port)
 
@@ -1085,25 +1115,44 @@ def tauri_driver(path: str, port: int, data_home: str):
         yield start_session
     finally:
         ACTIVE.clear()
+        started = time.monotonic()
+        teardown["beforeDriverStop"] = process_rows(pids_with(data_home))
         process.terminate()
         try:
             process.wait(timeout=10)
+            teardown["driverKilled"] = False
         except subprocess.TimeoutExpired:
             process.kill()
+            teardown["driverKilled"] = True
+        teardown.update(driverExit=process.poll(), afterDriverStop=process_rows(pids_with(data_home)),
+                        driverStopSeconds=round(time.monotonic() - started, 3))
         # 앱과 WebKit 보조 프로세스가 끝날 때까지 기다린다. 기다리지 않으면 다음 시나리오의 프로세스 종료 검사나
         # 임시 데이터 디렉터리 삭제가 아직 저장소를 쓰는 프로세스와 겹친다. 그래도 남으면(세션이 비정상으로 끝나 앱이
         # 고아가 된 경우) 이 시나리오의 임시 XDG_DATA_HOME을 가진 프로세스만 끝내고, 앞선 오류가 없으면 실패로 보고한다.
         if DRIVER_LOG:
             log.close()
         remaining = wait_processes_gone(data_home, timeout=30)
+        rows = process_rows(remaining)
+        teardown.update(remainingAfterWait=rows, sigtermSent=[], sigtermErrors=[], survivorsAfterSigterm=[])
         if remaining:
-            detail = " ".join(f"pid={pid}({process_state(pid)})" for pid in remaining)
+            detail = " ".join(f"pid={row['pid']}({row.get('comm', '사라짐')} {process_state(row['pid'])})" for row in rows)
             for pid in remaining:
-                with contextlib.suppress(OSError):
+                try:
                     os.kill(pid, signal.SIGTERM)
-            wait_processes_gone(data_home, timeout=10)
-            if sys.exc_info()[0] is None:
-                raise Failure(f"시나리오 종료 후에도 남은 프로세스(종료 요청함): {detail}")
+                    teardown["sigtermSent"].append(pid)
+                except OSError as error:
+                    teardown["sigtermErrors"].append({"pid": pid, "error": type(error).__name__})
+            survivors = process_rows(wait_processes_gone(data_home, timeout=10))
+            teardown["survivorsAfterSigterm"] = survivors
+            if survivors:
+                detail += " — SIGTERM 10초 뒤에도 남음: " + " ".join(f"pid={row['pid']}({row.get('comm', '사라짐')})" for row in survivors)
+            teardown["complete"] = True
+            message = f"시나리오 종료 후에도 남은 프로세스(종료 요청함): {detail}"
+            pending = sys.exc_info()[1]
+            if pending is None:
+                raise Failure(message)
+            pending.add_note(message)  # 앞선 오류가 있어도 남은 프로세스 진단을 버리지 않는다(종료 코드는 앞선 오류의 것)
+        teardown["complete"] = True
 
 
 def wait_processes_gone(data_home: str, timeout: float) -> list[int]:

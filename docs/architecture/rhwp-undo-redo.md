@@ -1093,3 +1093,18 @@ Decoded lease 준비 마감(2026-10-25, 격리 실험 후보 ca5c0b84 그대로,
 gitleaks 설정의 모든 `[[allowlists]]`에 `targetRules`를 붙였다. 붙이기 전에는 `dir` 검사가 해당 경로 파일을 통째로
 건너뛰었다(`git` 검사는 영향 없음). 공식 판정은 그대로다.
 새 검증 근거: `tests/integration/rhwp/evidence/t010-decoded-lease-readiness-closure/`.
+
+잔여 안정화(2026-10-25).
+- native D1 증거 wrapper가 fail-closed가 되었다. 이전 wrapper는 하네스 종료 코드를 그대로 돌려줬다. 그래서 하네스가 0으로
+  끝나면 결과 JSON이 없거나 FAIL이어도, cleanup이 false여도 0으로 끝났다(controlled fake로 재현: 무효 10가지 중 8가지).
+  지금은 `native_d1_result.validate()`가 39 단언, exact RGBA 24, cleanup, teardown, 신원, 의존 파일, 관찰기를 모두 다시
+  확인해야 0이다.
+- cache 계약을 둘로 나눴다.
+  · 현재 지원 계약은 `cache_current_contract.rs`로, 21개 시험이 PASS다.
+  · 역사적 v2 기대는 `cache_contract.rs`로, 바꾸지 않았고 18 PASS / 2 FAIL이다. 두 결과는 따로 보고한다.
+- `tauri_smoke.tauri_driver()`가 정리 과정을 읽기 전용으로 기록한다(`TEARDOWN`). 기록 내용은 DELETE 결과, tauri-driver
+  종료 코드, 드라이버 종료 직전·직후와 30초 뒤에 남은 소유 프로세스(이름·상태·부모 PID), SIGTERM 대상과 그 뒤에도 남은
+  프로세스다. 앞선 오류가 있어도 남은 프로세스 진단을 그 오류에 덧붙인다. 정리 순서, 30초 기준, 실패 판정은 같다.
+  과거 D1 정리 실패의 원인은 여전히 UNVERIFIED다.
+- 2636a65가 Gitleaks 예외를 다른 작업과 한 commit에 넣은 것을 정책 편차로 기록했다(PENDING_APPROVAL). 이력은 다시 쓰지 않았다.
+- 공식 판정은 그대로다. 근거: `tests/integration/rhwp/evidence/t010-readiness-residual-stabilization/`.

@@ -244,6 +244,9 @@ def main():
         result['existingSaveAssertions'] = poc.RESULTS
         result['historyGates'] = history.GATES
         result['historyChecks'] = history.RESULTS
+        # Read-only teardown observations (DELETE outcome, driver exit, owned survivors, SIGTERM); classify() is unchanged,
+        # the evidence wrapper's native_d1_result.validate() requires them.
+        result['teardown'] = smoke.TEARDOWN
         result.update(classify(result, selected))
         args.output.write_text(json.dumps(result, ensure_ascii=False, indent=2).replace(str(ROOT), '<workspace>').replace(str(Path.home()), '<home>') + '\n')
     return 0 if result['status']=='PASS' else 1

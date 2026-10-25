@@ -1055,5 +1055,174 @@ class HttpErrorReadClosePrecedence(WebDriverPaths):
         self.assertEqual(caught.exception.transport, "readTimeout")
 
 
+
+class FakePopen:
+    """tauri-driver 대신: terminate 뒤 wait가 곧 끝나거나(hang=False) 10초 시간 초과를 낸다."""
+
+    def __init__(self, *args, hang: bool = False, **kwargs):
+        self.code, self.hang, self.signals = None, hang, []
+
+    def terminate(self):
+        self.signals.append("TERM")
+
+    def kill(self):
+        self.signals.append("KILL")
+        self.code = -9
+
+    def wait(self, timeout=None):
+        if self.hang and "KILL" not in self.signals:
+            raise smoke.subprocess.TimeoutExpired("tauri-driver", timeout)
+        self.code = -15 if self.code is None else self.code
+        return self.code
+
+    def poll(self):
+        return self.code
+
+
+class TeardownDiagnostics(unittest.TestCase):
+    """tauri_driver() 정리 관찰(TEARDOWN): 기록만 더하고 정리 순서·30초·10초·실패 판정·신호 대상은 그대로인지 확인한다."""
+
+    APP_ROWS = {12: {"pid": 12, "comm": "geul", "state": "S", "ppid": 1},
+                14: {"pid": 14, "comm": "WebKitNetworkPr", "state": "S", "ppid": 12}}
+
+    def setUp(self):
+        self.clock = Clock()
+        self.kills: list[tuple[int, int]] = []
+        self.waits: list[float] = []
+        self.gone_after: list[list[int]] = []  # wait_processes_gone가 차례로 돌려줄 남은 PID 목록
+        self.snapshots: list[list[int]] = []   # pids_with가 차례로 돌려줄 목록(드라이버 종료 직전·직후)
+        self.kill_error: Exception | None = None
+        self.popen = FakePopen
+        stack = contextlib.ExitStack()
+        self.addCleanup(stack.close)
+        stack.enter_context(mock.patch.object(smoke, "time", self.clock))
+        stack.enter_context(mock.patch.object(smoke, "wait_port", lambda port: None))
+        stack.enter_context(mock.patch.object(smoke.subprocess, "Popen", lambda *a, **k: self.make_popen(*a, **k)))
+        stack.enter_context(mock.patch.object(smoke, "pids_with", self.pids_with))
+        stack.enter_context(mock.patch.object(smoke, "wait_processes_gone", self.wait_gone))
+        stack.enter_context(mock.patch.object(smoke, "process_rows",
+                                              lambda pids: [self.APP_ROWS.get(pid, {"pid": pid, "gone": True}) for pid in pids]))
+        stack.enter_context(mock.patch.object(smoke, "process_state", lambda pid: "state=S ppid=1"))
+        stack.enter_context(mock.patch.object(smoke.os, "kill", self.kill))
+        stack.enter_context(mock.patch.object(smoke, "TEARDOWN", []))
+        stack.enter_context(mock.patch.object(smoke, "DRIVER_LOG", None))
+        stack.enter_context(mock.patch.dict(smoke.ACTIVE, {}, clear=True))
+
+    def make_popen(self, *args, **kwargs):
+        self.process = self.popen(*args, **kwargs)
+        return self.process
+
+    def pids_with(self, data_home):
+        self.assertEqual(data_home, "/scenario-data")
+        return self.snapshots.pop(0) if self.snapshots else []
+
+    def wait_gone(self, data_home, timeout):
+        self.assertEqual(data_home, "/scenario-data")
+        self.waits.append(timeout)
+        return self.gone_after.pop(0) if self.gone_after else []
+
+    def kill(self, pid, sig):
+        if self.kill_error is not None:
+            raise self.kill_error
+        self.kills.append((pid, sig))
+
+    def scenario(self, body=None, delete=lambda method, path, b: {}):
+        transport = Transport(lambda method, path, b: {"sessionId": "s1"} if method == "POST" else delete(method, path, b))
+        with mock.patch.object(smoke.urllib.request, "urlopen", transport.urlopen), \
+                mock.patch.object(smoke, "owned_processes", lambda: ALIVE), \
+                mock.patch.object(smoke, "webdriver_listeners", lambda: []), \
+                contextlib.redirect_stderr(io.StringIO()):
+            with smoke.tauri_driver("/driver", 4444, "/scenario-data") as start:
+                driver = start()
+                try:
+                    if body:
+                        body()
+                finally:
+                    smoke.end_session(driver)
+        return smoke.TEARDOWN
+
+    def test_clean_teardown_records_answered_delete_and_no_survivors(self):
+        self.snapshots = [[14], []]
+        record, = self.scenario()
+        self.assertEqual([d["outcome"] for d in record["sessionDeletes"]], ["ok"])
+        self.assertEqual((record["driverExit"], record["driverKilled"], record["complete"]), (-15, False, True))
+        self.assertEqual(record["beforeDriverStop"], [self.APP_ROWS[14]])
+        self.assertEqual(record["afterDriverStop"], [])
+        self.assertEqual((record["remainingAfterWait"], record["sigtermSent"], record["sigtermErrors"], record["survivorsAfterSigterm"]),
+                         ([], [], [], []))
+        self.assertEqual(self.waits, [30])
+        self.assertEqual(self.kills, [])
+
+    def test_orphan_after_30s_is_signaled_and_still_fails_with_names(self):
+        self.snapshots = [[12, 14], [12, 14]]
+        self.gone_after = [[12, 14], []]
+        with self.assertRaises(smoke.Failure) as caught:
+            self.scenario()
+        self.assertIn("pid=12(geul state=S ppid=1)", str(caught.exception))
+        record, = smoke.TEARDOWN
+        self.assertEqual(self.waits, [30, 10])
+        self.assertEqual(self.kills, [(12, smoke.signal.SIGTERM), (14, smoke.signal.SIGTERM)])
+        self.assertEqual(record["sigtermSent"], [12, 14])
+        self.assertEqual([r["comm"] for r in record["remainingAfterWait"]], ["geul", "WebKitNetworkPr"])
+        self.assertEqual([r["comm"] for r in record["afterDriverStop"]], ["geul", "WebKitNetworkPr"])
+        self.assertEqual(record["survivorsAfterSigterm"], [])
+
+    def test_survivor_after_sigterm_is_recorded_and_reported(self):
+        self.gone_after = [[12], [12]]
+        with self.assertRaises(smoke.Failure) as caught:
+            self.scenario()
+        self.assertIn("SIGTERM 10초 뒤에도 남음: pid=12(geul)", str(caught.exception))
+        self.assertEqual(smoke.TEARDOWN[0]["survivorsAfterSigterm"], [self.APP_ROWS[12]])
+
+    def test_prior_failure_keeps_its_type_and_gains_the_survivor_note(self):
+        self.gone_after = [[12], []]
+
+        def body():
+            raise smoke.Failure("기능 실패")
+        with self.assertRaises(smoke.Failure) as caught:
+            self.scenario(body)
+        self.assertEqual(str(caught.exception), "기능 실패")
+        self.assertTrue(any("pid=12(geul" in note for note in caught.exception.__notes__))
+        self.assertEqual(smoke.TEARDOWN[0]["sigtermSent"], [12])
+
+    def test_signal_error_is_recorded_without_hiding_the_failure(self):
+        self.gone_after = [[12], []]
+        self.kill_error = ProcessLookupError(3, "No such process")
+        with self.assertRaises(smoke.Failure):
+            self.scenario()
+        self.assertEqual(smoke.TEARDOWN[0]["sigtermErrors"], [{"pid": 12, "error": "ProcessLookupError"}])
+        self.assertEqual(smoke.TEARDOWN[0]["sigtermSent"], [])
+
+    def test_lost_delete_is_recorded_as_driver_lost(self):
+        with self.assertRaises(smoke.DriverLost):
+            self.scenario(delete=lambda method, path, b: Transport.LOST)
+        self.assertEqual([d["outcome"] for d in smoke.TEARDOWN[0]["sessionDeletes"]], ["driverLost"])
+
+    def test_http_error_delete_is_recorded(self):
+        error = urllib.error.HTTPError("http://127.0.0.1:4444/session/s1", 500, "err", {}, io.BytesIO(b"{}"))
+        with self.assertRaises(smoke.CleanupFailure):
+            self.scenario(delete=lambda method, path, b: error)
+        self.assertEqual([d["outcome"] for d in smoke.TEARDOWN[0]["sessionDeletes"]], ["httpError"])
+
+    def test_hung_driver_kill_is_recorded(self):
+        self.popen = lambda *a, **k: FakePopen(hang=True)
+        record, = self.scenario()
+        self.assertEqual((record["driverKilled"], record["driverExit"]), (True, -9))
+        self.assertEqual(self.process.signals, ["TERM", "KILL"])
+
+
+class ProcessRows(unittest.TestCase):
+    """process_rows는 /proc의 comm·상태·부모 PID만 읽는다(명령줄·환경 없음). 없는 PID는 gone으로 남긴다."""
+
+    def test_reads_only_name_state_and_parent(self):
+        row, = smoke.process_rows([smoke.os.getpid()])
+        self.assertEqual(set(row), {"pid", "comm", "state", "ppid"})
+        self.assertEqual(row["ppid"], smoke.os.getppid())
+        self.assertEqual(row["comm"], Path(f"/proc/{smoke.os.getpid()}/comm").read_text().strip())
+
+    def test_missing_process_is_gone(self):
+        self.assertEqual(smoke.process_rows([2 ** 22 + 7]), [{"pid": 2 ** 22 + 7, "gone": True}])
+
+
 if __name__ == "__main__":
     unittest.main()

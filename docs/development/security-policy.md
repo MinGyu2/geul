@@ -234,3 +234,10 @@ PRE_COMMIT=<pre-commit 경로> GITLEAKS=<gitleaks 경로> tests/security/test-pr
    - `--history`, CI: `HEAD`에 커밋된 버전을 사용합니다. 예외를 지우는 커밋을 하면 과거 커밋의 해당 내용도
      다시 보고됩니다.
 4. 예외 추가는 별도 커밋으로 하고 PR 설명에 근거를 남깁니다. 리뷰어는 예외 범위가 넓지 않은지 확인합니다.
+   - 대상은 `.gitleaks.toml`과 `.sensitive-info-allowlist`의 항목을 추가하거나 바꾸는 모든 변경입니다. 범위를 좁히는
+     변경(예: `targetRules` 추가)도 포함합니다. 그 커밋에는 예외 변경과 그 근거 기록만 둡니다.
+   - 작업 지시가 커밋 하나를 요구해도 이 항목이 우선합니다. 예외 커밋을 분리하고, 분리했다는 사실을 보고에 적습니다.
+   - PR 없이 커밋할 때는 근거(정확한 경로·값, 공개 출처 재검증, 음성 검사 결과)를 커밋 메시지 본문에 적습니다.
+   - 이미 다른 작업과 합쳐진 커밋은 이력을 다시 쓰지 않습니다. 대신 편차 기록을 남기고, 관리자 승인 전까지
+     승인 상태를 `PENDING_APPROVAL`로 둡니다. 2636a65의 기록:
+     [policy-deviation.ko.txt](../../tests/integration/rhwp/evidence/t010-readiness-residual-stabilization/security/policy-deviation.ko.txt).

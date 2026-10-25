@@ -1,0 +1,25 @@
+{
+  "schema": 1,
+  "record": "wrapper verdict (not harness output)",
+  "attempt": 1,
+  "harnessExit": 0,
+  "resultFile": "native-d1-attempt1.json",
+  "resultError": null,
+  "resultRewritten": true,
+  "lifecycleFile": "native-d1-attempt1-lifecycle.json",
+  "verdict": {
+    "schema": 1,
+    "status": "PASS",
+    "failures": [],
+    "categories": [],
+    "harnessExit": 0,
+    "expectedAssertions": 39,
+    "expectedReferences": 24,
+    "expectedCleanup": [
+      "sessionEnded",
+      "driverStopped",
+      "displayTerminated"
+    ],
+    "expectedWasmSha256": "ca5c0b8443230ba719c07f4d8c835a94fb6e12eb4b50a7123ce5c8b6a8048d45"
+  }
+}

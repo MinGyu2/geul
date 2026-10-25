@@ -227,3 +227,18 @@ at.input-2 이후여야 한다. 경계 이전에 확실히 발행된 같은 이�
 이후의 다음 입력 기록은 허용한다. 호출 하한은 발행 0.1ms 반올림과 직렬화 반올림을 모두 둔
 그 anchor 구간이다. undo/redo에는 같은 clock 하한이 직렬화되지 않으므로 anchor 자체와 호출을 함께
 옮긴 변조는 provenance 한계로 남는다. 근거: `../evidence/t010-d4-anchor-causality-hardening/`.
+
+native D1 wrapper fail-closed(2026-10-25): 증거 wrapper의 종료 코드는 `native_d1_result.validate()`가 정한다.
+하네스 종료 코드나 결과의 status 문자열만으로 정하지 않는다. 0은 다음을 모두 만족할 때만 나온다.
+- 하네스가 0으로 끝났다.
+- JSON이 있고 해석된다.
+- 시험 39개와 Full RGBA 참조 24개가 정확하다(int는 `type(x) is int`).
+- cleanup 세 단계가 모두 정확히 `True`다.
+- `teardown` 기록에 DELETE 응답이 있고, 남은 프로세스와 SIGTERM 대상이 없다.
+- 실행 의존 파일과 후보 WASM 바이트가 바뀌지 않았고, 독립적으로 정한 기대 신원과 같다.
+- token 관찰기가 실제로 돌았고, 끝에 남은 소유 프로세스가 없다.
+
+실패 범주는 서로 섞지 않는다: 하네스, 결과 없음, 해석 실패, 단언, 검증 불완전, cleanup, 신원, 의존 파일 변경, 관찰기·기록 실패.
+`performance-visual-native.py`의 `teardown` 필드는 `tests/e2e/tauri_smoke.py`의 `TEARDOWN`이다.
+읽기 전용 진단으로, `/proc`의 comm·상태·부모 PID만 담는다. `classify()`의 판정, 30초 정리 기준, 신호 대상은 바꾸지 않았다.
+시험: `test_native_d1_result.py`. 근거: `../evidence/t010-readiness-residual-stabilization/`.

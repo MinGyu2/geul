@@ -1,0 +1,220 @@
+T010 준비도 잔여 안정화 보고 (2026-10-25)
+
+범주: VERIFIED는 소스나 이번 실행으로 확인한 것, INFERRED는 근거를 해석한 것, UNVERIFIED는 입증하지 못한 것이다.
+
+1. 판정: COMPLETED(이 작업 범위)
+- A. native D1 wrapper의 fail-open: 확인했고 고쳤다(VERIFIED).
+- B. cache 계약: 현재 지원 계약과 역사적 계약을 나눴다. 현재 계약은 PASS, 역사적 계약은 18 PASS / 2 FAIL이고 따로 보고한다.
+- C. native 정리 진단: 읽기 전용 기록을 더했다. 과거 실패의 원인은 여전히 UNVERIFIED다.
+- D. Gitleaks 정책 편차: 기록했다. 승인 상태는 PENDING_APPROVAL이다.
+- 남은 작업 범위 안의 구현 결함은 없다.
+
+2. Git 상태
+- 시작: master 2636a6509beec66debe8dc7c17d3f2889ea722eb, 작업 트리 clean.
+  gitlink는 RHWP 1a76570e833917d15817415a53c09ad61ab3203f, WordCraft fc41918814f62645b6746ed68e71e8c2c2e85d6f.
+- 시작 시점에 로컬 추적 ref origin/master도 2636a65를 가리켰다. 이 세션은 push하지 않았다.
+- 끝: 로컬 commit 하나. SHA는 최종 보고에 적는다(이 파일은 그 commit 안에 있어서 자기 SHA를 담을 수 없다).
+  push, amend, rebase, reset, merge는 하지 않았다. gitlink는 그대로다(security/protected-paths-*.json).
+
+3. A — wrapper fail-open: 확인하고 고침(VERIFIED)
+- 결함(이전 ../t010-decoded-lease-readiness-closure/run-native.py, 고치지 않고 보존함):
+  · 결과가 없으면 dict(status='FAIL')로 채워 쓴다.
+  · 그러고도 raise SystemExit(p.returncode)로 하네스 종료 코드를 그대로 돌려준다.
+  · 결과의 status, cleanup, 의존 파일 안정성, 신원 중 어느 것도 종료 코드에 반영되지 않았다.
+- 재현(wrapper/before-after.json): 두 wrapper를 그대로 복사해 가짜 하네스로 실행했다. 실제 native 실행은 없었다.
+  · 이전 wrapper는 무효 결과 10가지 중 8가지에서 exit 0이었다: JSON FAIL, JSON 없음, cleanup false,
+    cleanup 필드 없음, 단언 부족, RGBA 부족, 신원 불일치, 실행 중 의존 파일 변경.
+  · 해석할 수 없는 JSON은 traceback으로 exit 1이었다. 하네스가 1이고 JSON이 PASS인 경우는 1이었다.
+  · 고친 wrapper는 완전한 PASS에서만 exit 0이었다. 나머지 10가지는 모두 0이 아니었다.
+    하네스가 0인 경우는 3, 하네스가 1인 경우는 1이다.
+- 고친 내용:
+  · tests/integration/rhwp/ownership-poc/native_d1_result.py: 순수 판정 함수 validate()와 exit_code().
+    기대값은 독립 상수다. 네 문서, 단언 39개(하네스 required_tests()와 같음을 시험으로 확인), 참조 24개, cleanup 세 단계.
+  · 결과의 값을 기대값으로 쓰지 않는다. 기대 WASM은 명령 인자로 받고, 실행 전후 바이트와 대조한다.
+  · 확인 항목:
+    - 하네스 종료 코드가 정확히 int 0이다.
+    - JSON이 있고 객체다.
+    - status가 정확히 'PASS'다. failures는 빈 list이고 error는 없다.
+    - 단언 39개가 이름과 순서까지 맞고 모두 PASS다.
+    - RGBA 참조 24개가 모두 verified True이고 pixels와 maxDelta가 int 0이다.
+    - 완료 표시(measurementComplete, pixelReferencesComplete)는 정확히 True이고, 수(expectedAssertionCount 39,
+      verifiedExactReferenceCount 24)는 정확한 int다. bool 1이나 float는 거절한다.
+    - cleanup은 정확히 세 key이고 모두 True다.
+    - teardown 기록이 정확히 하나다. DELETE는 ok, tauri-driver 종료 코드는 int이고, 남은 프로세스와 SIGTERM 목록은 비었다.
+    - 실행 의존 파일이 전후로 같고, 그 안의 WASM digest가 기대값과 같다.
+    - 엔진이 보고한 WASM이 기대값과 같다.
+    - 관찰기가 오류 없이 표본을 모았고 정지했다. 소유한 geul을 보았고, 끝에 남은 소유 프로세스가 없다.
+  · 실패 범주는 섞지 않는다: native-subprocess, missing-result, malformed-result, failed-assertions,
+    incomplete-verification, cleanup, candidate-identity, dependency-mutation, lifecycle, evidence-write.
+    시각 단언이 모두 통과해도 cleanup 실패는 cleanup 범주로 남는다.
+  · 새 wrapper(이 디렉터리 run-native.py): 실행, 정리, 소유 규칙은 이전과 같다. 달라진 점은 다음이다.
+    - 종료 코드: PASS면 0이다. 하네스가 0이 아닌 코드로 끝났으면 그 코드를 쓰고, 하네스가 0이면 3이다.
+    - 판정 기록 native-d1-attemptN-wrapper-verdict.json을 따로 쓴다. 결과가 없거나 해석할 수 없으면 하네스 파일을
+      만들거나 덮어쓰지 않는다.
+    - 관찰기의 예외를 observerError로 남긴다(이전에는 thread가 조용히 죽었다).
+    - 재사용된 PID를 소유 프로세스로 보지 않는다.
+    - 도구 경로를 환경 변수로 받는다(호스트 고정 경로를 없앴다).
+    - 판정 기록이나 결과 파일을 쓰지 못하면 0을 내지 않는다.
+- 시험: test_native_d1_result.py 24개 OK. 과제가 요구한 음성 사례를 모두 넣었다.
+  · 완전한 PASS와, 하네스 0에 JSON FAIL·JSON 없음·해석 불가·cleanup 필드 없음·cleanup false·단언 부족·RGBA 부족·
+    의존 파일 변경·신원 불일치.
+  · 하네스가 0이 아닌데 JSON이 PASS인 경우.
+  · 타입이 틀린 필드 11가지.
+  · teardown과 lifecycle이 cleanup 성공과 모순되는 경우.
+  · 관찰기나 기록 실패.
+  · 실제 증거 3건이 PASS이고, cleanup 한 단계를 뒤집으면 FAIL인 것.
+- 실제 실행(VERIFIED): 고친 wrapper로 native D1을 3회 실행했다. 3/3 모두 exit 0, PASS, 단언 39/39, exact RGBA 24/24,
+  cleanup 세 단계 True, wrapper 판정 PASS다(native-d1-attempt{1,2,3}*.json).
+
+4. B — cache 계약: 현재와 역사 분리(VERIFIED)
+- 역사적 suite: cache_contract.rs. 바꾸지 않았다(SHA-256 5abb3878…, 2636a65 증거에 기록된 값과 같음).
+  · 결과(cache-contract/historical-suite.json, 커밋된 complete patch 555f11aa…에서 추출한 source 9d5aa73e…): 18 PASS / 2 FAIL.
+  · 실패: trim_during_load_does_not_release_the_pending_handle, two_oversize_completions_can_be_available_for_one_full_page_draw.
+  · 진단 명령: unit.py --suite historical. 그대로 실행할 수 있다.
+- 현재 지원 suite: cache_current_contract.rs
+  · 결과(cache-contract/current-suite.json): 21 PASS / 0 FAIL. 내부 11개와 외부 10개다.
+    계약 binary가 mod surface_cache로 내부 시험을 함께 컴파일하기 때문이다. 내부 시험만 돌리는 check도 11 PASS다.
+  · 외부 10개 = 역사적 시험 중 지금도 유효한 7개(글자 그대로) + 폐기된 기대 2개를 대신하는 현재 정책 시험 3개
+    (../t010-decoded-lease-readiness-closure/repro/cache_disposition_contract.rs에서 글자 그대로).
+  · 구성은 cache_contract_mapping.json이 정한다. test_cache_contract_suites.py(7개 OK)가 다음을 확인한다.
+    - 역사적 파일의 SHA-256이 그대로다.
+    - 현재 suite가 정확히 옮긴 시험과 대체 시험으로만 되어 있다.
+    - 옮긴 시험이 글자 그대로다.
+    - 내부 시험 목록이 complete patch와 같다.
+    - 요구 동작마다 실제 시험이 있다.
+    - unit.py가 suite 지정을 요구한다.
+  · 개수 21은 고정 목표로 두지 않았다. 소스에서 세었다(내부 11은 complete patch, 외부 10은 mapping).
+- 두 결과를 합치지 않는다.
+  · 현재 지원 cache 계약: PASS (21/21)
+  · 역사적 legacy 계약: 18 PASS / 2 FAIL
+- 실행 설정: unit.py는 --suite current|historical 또는 --contract FILE 중 하나를 꼭 받는다. 기본값이 없어서 예전 명령이
+  다른 계약으로 조용히 바뀌지 않는다. 결과 schema는 2다.
+  · suite와 suiteCounts(passed, failed, ignored, 실패 이름)를 기록한다.
+  · 내부 시험 check의 이름을 historical에서 internal로 바꿨다. 역사적 suite와 헷갈리지 않게 하려는 것이다.
+- 현재와 역사가 다른 이유(이전 보고서 5절의 소스 근거를 다시 확인함):
+  · 지원 렌더러는 BoundedCache의 pending API를 호출하지 않는다. 이미지는 job이 소유하는 Rc lease다.
+  · trim은 cache의 pending 참조를 한 번 놓는다. job의 clone은 계속 유효하다.
+  · oversize 완료는 resident가 되지 않고 ready lease를 넘긴다.
+  · 두 역사적 기대는 v2 정책이다. cache 동작은 바꾸지 않았다.
+- 요구 동작과 시험의 대응: mapping의 requiredBehaviors.
+  · pending 상한, byte·entry 상한, 축출·release, 예산 축소, trim 뒤 늦은 완료, 작은 resident 보호, oversize ready lease,
+    한 Full 렌더의 여러 ready lease, 중복 release 없음, trim이 job lease를 무효화하지 않음.
+  · pending 시험 4개는 cache 수준의 상한이다. 렌더러 경로의 증거로 보지 않는다.
+- 지원 렌더링 경로의 증거는 8절에 있다.
+
+5. C — native 정리 진단(구현 VERIFIED, 과거 원인 UNVERIFIED)
+- 이전에 알 수 없던 것(VERIFIED 소스, tests/e2e/tauri_smoke.py 2636a65):
+  · DELETE 성공은 기록되지 않았다.
+  · 30초 뒤 남은 프로세스는 pid, 상태, ppid만 남고 이름이 없었다.
+  · SIGTERM 뒤 두 번째 대기의 결과를 버렸다.
+  · kill 오류를 조용히 무시했다.
+  · 앞선 오류가 있으면 남은 프로세스 진단 전체가 사라졌다(실패 판정은 앞선 오류로 이미 FAIL).
+- 더한 것(읽기 전용, 정리 순서·30초/10초·실패 판정·신호 대상은 그대로):
+  · TEARDOWN에 시나리오마다 기록 하나를 남긴다.
+    - sessionDeletes: outcome은 ok/httpError/driverLost/error이고 걸린 초도 남긴다.
+    - beforeDriverStop: DELETE 뒤 드라이버 종료 직전. afterDriverStop: 드라이버 종료 직후.
+    - driverExit, driverKilled, remainingAfterWait.
+    - sigtermSent, sigtermErrors(오류 이름), survivorsAfterSigterm.
+  · 프로세스 기록은 process_rows()가 /proc에서 comm, 상태, ppid만 읽는다. 명령줄, 환경 값, 사용자 이름, 경로는 없다.
+    대상은 이 시나리오의 XDG_DATA_HOME을 가진 소유 프로세스뿐이다.
+  · 앞선 오류가 있으면 남은 프로세스 진단을 그 예외에 note로 덧붙인다. 예외 종류와 종료 코드는 그대로다.
+  · SIGTERM 뒤에도 남은 것은 실패 메시지에 이름과 함께 적는다.
+  · performance-visual-native.py는 이 기록을 result['teardown']에 담는다. classify()는 바꾸지 않았다.
+- 시험: tests/e2e 76개 OK(66 → 76). TeardownDiagnostics 8개, ProcessRows 2개를 더했다. 다음을 확인한다.
+  · 깨끗한 종료의 기록, 30초 orphan의 SIGTERM과 FAIL 유지(이름 포함), SIGTERM 뒤 생존 보고.
+  · 앞선 실패의 종류와 메시지 보존, kill 오류 기록, DELETE driverLost·httpError 기록, 드라이버 kill 기록.
+  · 대기 시간 [30], [30, 10]이 그대로이고, 신호 대상이 소유 PID뿐이다.
+- 실제 관찰(VERIFIED, native/diagnostic-summary.json, 3회):
+  · DELETE는 ok, 0.008–0.009초다.
+  · DELETE 응답 시점에 geul은 이미 없었다(3/3). tauri-driver, WebKitWebDriver, WebKit 보조 프로세스는 살아 있었다.
+    100 ms 관찰기는 같은 표본에서 사라졌다고만 보여 주므로, 이 순서는 새 기록에서 처음 확인한 것이다.
+  · 드라이버 종료(exit 0, kill 없음, 0.01초) 직후에는 보조 프로세스만 잠깐 남았고, 관찰기 기준 0.1초 안에 사라졌다.
+  · 30초 대기 뒤 남은 것, SIGTERM, 생존은 모두 없었다.
+- 원인 판단: 과거 실패 2의 모양(앱이 ppid 1로 남음)은 "드라이버 체인이 앱보다 먼저 사라짐"과 맞는다.
+  · 정상 순서에서는 앱이 DELETE 응답 전에 끝난다. 이번 3회, 이전 probe 13회, 이전 D1 3회에서 재현되지 않았다.
+  · 하네스 결함은 확인되지 않았고, 앱 동작(window_close.rs)도 바꾸지 않았다.
+  · 과거 원인은 UNVERIFIED로 둔다. 통과 3회가 재발하지 않는다는 증명은 아니다.
+  · 다음 실패에서는 DELETE 결과, 앱 생존 여부, 남은 프로세스의 이름, SIGTERM 결과가 결과 JSON에 남는다.
+
+6. D — Gitleaks 정책 편차: PENDING_APPROVAL(security/policy-deviation.ko.txt)
+- 조항: security-policy.md 6절 4항 "예외 추가는 별도 커밋으로 하고 PR 설명에 근거를 남깁니다."
+- 2636a65: 기존 23개 항목에 targetRules를 더한 것(범위 축소)과 신규 1개 항목을 다른 47개 파일과 한 commit에 넣었다.
+  · 이유는 작업 지시의 "one focused local commit"이었다. 분리는 가능했으므로 선택이었다.
+  · 그 지시는 정책 예외의 명시적 승인이 아니다.
+- 이력(VERIFIED): 예외를 추가한 commit은 11개이고, 24개 항목이 모두 다른 작업과 함께 들어왔다. merge commit은 0개라
+  PR 절차는 쓰인 적이 없다.
+- 분류: 형식적 정책 편차이고 문서 모호성도 있었다. 승인은 여전히 필요하다. 승인을 만들어 내지 않았다.
+- 정책 문서는 좁혀서 명확히 했다(6절 4항, 더 엄격하게만 바꿈):
+  · 범위를 좁히는 변경도 대상이다.
+  · 작업 지시보다 이 항목이 우선한다.
+  · PR이 없으면 근거를 commit 메시지 본문에 적는다.
+  · 합쳐진 commit은 이력을 다시 쓰지 않고 편차를 기록한다.
+- 이번 commit은 .gitleaks.toml과 .sensitive-info-allowlist를 바꾸지 않았다. 그래서 분리 대상이 없다.
+
+7. 보안 검사(gitleaks 8.30.1, pre-commit 환경 binary sha256 9e07ca57…)
+- commit 전, 작업 tree mirror(추적 파일과 새 파일 1,391개, external/ 제외):
+  · 저장소 설정 dir 검사 0건.
+  · 기본 규칙 201건. 모두 generic-api-key이고 64자리 16진수이며, 각각 allowlist 항목 정확히 하나와 맞는다.
+    24개 항목이 모두 쓰인다. 이번 작업이 바꾼 파일에서는 0건이다(security/gitleaks-review.json).
+  · 전체 이력 git 검사: 83 commit, 0건.
+  · allowlist 음성 검사: 24/24 기대대로다.
+  · git diff --check 통과.
+- commit 뒤의 검사(HEAD tree, 이력, 민감정보 --all·--history·--staged, 보안 시험 86개)는 최종 보고에 적는다.
+  이 파일은 commit 안에 있어서 commit 뒤의 결과를 담을 수 없다.
+- 설정한 규칙에서 0건이라는 것이 모든 역사적 checksum을 이번에 다시 계산했다는 뜻은 아니다(policy-deviation.ko.txt 6절).
+
+8. 시험 결과(모두 이번 실행이고, 마지막 코드 변경 뒤에 돌렸다)
+- Python:
+  · tests/e2e 76 OK.
+  · ownership-poc 238 OK(214 + native_d1_result 24).
+  · cache-concurrency 69 OK(62 + suite 분리 7). 그중 decoded lease validator 30 OK.
+  · security 86 OK.
+- Rust(standalone rustc 1.93.1): 현재 cache suite 21/0 PASS, 역사적 suite 18/2(실패 유지).
+  · 엔진 소스가 바뀌지 않아 library 전체(4,083/13 ignored), rustfmt, clippy는 다시 돌리지 않았다.
+  · decoded lease 계약도 소유권 코드가 바뀌지 않아 다시 돌리지 않았다.
+- native: 고친 wrapper로 D1 3회, 3/3 PASS(39/39, 24/24, cleanup 완료, 판정 PASS). pending과 safety는 다시 돌리지 않았다
+  (엔진과 그 하네스가 그대로다).
+- 브라우저(보조 재실행, browser/regression-summary.json): 하네스와 후보가 2636a65 이후 바뀌지 않았으므로 꼭 다시 돌릴 필요는
+  없었다. 지원 경로의 현재 증거로 다시 돌렸다.
+  · Chrome, WebKit 각각 PASS. ownership 52/52, scheduler 73/73, historical 50/50 exact.
+  · two-oversize-complete, oversize-preserves-normal-resident, job-complete-releases-transients, resident-budget,
+    notification-progress-trim 모두 PASS.
+  · 시험 source digest가 이전 실행과 같고, 후보 신원이 기대값과 같다.
+  · 원본 출력은 커밋하지 않았다. 원본에 든 ENGINE.json source checksum이 gitleaks에 걸리므로, 새 경로에 커밋하려면 별도
+    commit의 새 allowlist 항목이 필요하다. 원본의 SHA-256만 기록했다.
+    이 때문에 이번 재실행은 보조 증거다. 1차 증거는 2636a65에 커밋된 regression-{chrome,webkit}.json이다.
+  · decoded lease 브라우저 시험(41/41, ledger 57)은 다시 돌리지 않았다. decoded-lease.mjs, runner, 후보가 그대로다.
+- 렌더링: 화학 문서 Full RGBA(21/21)는 다시 돌리지 않았다. run-edit-phases 하네스와 후보가 그대로다.
+
+9. 후보 신원(VERIFIED, candidate-identity.json): 바뀌지 않았다.
+- 대조한 값: WASM ca5c0b84…8d45, JS b69e920c…3252, d.ts bce4ef51…, ENGINE.json 9d3b638a…,
+  complete patch 555f11aa…, incremental patch e812bd50….
+  기준은 커밋된 기록이고, 로컬 package, native 실행 보고, cache source(9d5aa73e…)가 모두 이와 같다.
+- debug 앱 48b7b836…은 이전 native 증거와 같다. 새 WASM 신원은 없다.
+
+10. 보호 경로(VERIFIED, security/protected-paths-worktree.json)
+- 제품 소스(src/, src-tauri/src/, Cargo.toml, tauri.conf.json), public/, external/, .gitleaks.toml, .sensitive-info-allowlist,
+  이전 증거 디렉터리: 바꾼 것 0건. gitlink는 그대로다.
+- tests/e2e/tauri_smoke.py는 제품 소스가 아니라 시험 하네스다. 공식 D4 하네스도 이 파일을 쓴다.
+  · 이번 변경은 진단 필드만 더한다. 공식 D4 MEASURE와 측정 JSON은 바뀌지 않았다.
+  · 앞으로 D4를 다시 실행하면 그 의존 digest는 달라진다(INFERRED, 실행하지 않음).
+
+11. 남은 한계
+- 과거 native 정리 실패의 원인은 UNVERIFIED다.
+- 크기 불일치 거절 분기의 브라우저 실행은 UNVERIFIED다(이전과 같다).
+- RSS는 INCONCLUSIVE다. 자원 계수기나 D1 통과로 RSS 안정성을 추론하지 않는다.
+- 정책 편차의 승인은 PENDING_APPROVAL이다.
+- 현재 cache suite의 pending 시험은 cache 수준 증거다.
+- cache_current_contract.rs의 대체 시험 3개는 원본과 같게 두려고 rustfmt를 적용하지 않았다. 형식 hook 대상이 아니다.
+
+12. 공식 판정(변경 없음)
+T010 INCOMPLETE / D1 PASS(과거 증거) / D2 INCONCLUSIVE / D3 PASS(과거 증거) / D4 FAIL / D5 PASS(과거 증거) /
+RSS INCONCLUSIVE / Production RHWP Undo/Redo NO-GO / T011 NOT STARTED.
+이번 작업은 공식 D4 재측정이 아니다.
+
+13. Preparing → ResourcesReady로 넘길 준비(INFERRED)
+- 넘길 수 있다. 그 작업을 막는 결함은 없다.
+- native 증거는 fail-closed wrapper와 teardown 기록으로 남긴다.
+- cache 검증은 --suite current로 한다.
+- pending API를 다시 쓰려면 먼저 별도의 승인된 계약 변경이 필요하다.
+- RSS는 별도로 다룬다.

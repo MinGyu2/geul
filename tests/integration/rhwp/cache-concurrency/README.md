@@ -28,7 +28,7 @@ python3 tests/integration/rhwp/cache-concurrency/run.py \
   --pinned "$CACHE_WORK/pinned/test-package" --candidate "$CACHE_WORK/candidate/test-package" \
   --browser webkit --output "$CACHE_WORK/webkit.json"
 
-python3 tests/integration/rhwp/cache-concurrency/unit.py \
+python3 tests/integration/rhwp/cache-concurrency/unit.py --suite historical \
   --rustc "$RUST_193_BIN/rustc" \
   --patch tests/integration/rhwp/evidence/t010-cache-concurrency/upstream-rhwp-no-redundant-notify.patch \
   --output "$CACHE_WORK/contracts.json"
@@ -49,6 +49,7 @@ python3 -m unittest discover -s tests/integration/rhwp/cache-concurrency -p test
 - 이미지별 load/error 시도는 data URL 해시와 크기만 보존한다. `src=""` 해제 뒤의 error 이벤트는 실제 디코더 오류와 구별한다. Canvas·이미지 handle·data URL·픽셀 원문은 결과 JSON에 넣지 않는다.
 - pending/transient/estimated bytes/evictions와 닫기·idle·trim 뒤 상태를 보존한다. 이는 캐시 보유량 **추정**이며 RSS·브라우저 decoder·GPU 상한이 아니다.
 - `cache_contract.rs`: 100바이트·2항목/3×90, 200 pending, 큰 encoded 요청, 예산 축소, pending trim, transient와 작은 resident, tiny-budget 음성 항목, late callback, 초대형 이미지 2개의 동시 가용성. 기존 캐시의 12개 테스트와 별도로 실행하며 실패를 감추지 않는다.
+  이 파일은 v2 시기의 **역사적 계약**이다(`unit.py --suite historical`). 현재 지원 계약은 아래 "현재·역사적 cache 계약" 절의 `cache_current_contract.rs`다.
 - `test_runner.py`: 타임아웃, 결과 없는 정상 종료, 일부 필드만 있는 거짓 PASS를 실제 CLI 프로세스로 주입해 모두 실패하는지 확인한다.
 
 이는 primitive renderer 회귀 검사다. **RhwpEditorSession/RhwpSurface 통합, native Tauri 상호작용, D2 native IME, D4 편집 지연 및 RSS 관문을 대체하지 않는다.** 두 브라우저 중 하나를 실행하지 않았다면 그 관문은 UNVERIFIED로 남긴다. 알려진 메모리 결함 때문에 현재 패치를 운영에 통합해서는 안 된다.
@@ -255,3 +256,29 @@ D4 decoded admission 후속은 [실험 보고서](../evidence/t010-decoded-admis
 - `cache_contract.rs`의 두 실패(`trim_during_load_does_not_release_the_pending_handle`,
   `two_oversize_completions_can_be_available_for_one_full_page_draw`)는 그대로 FAIL로 남긴다. render-ownership 이후
   `BoundedCache`의 pending API는 엔진에서 호출되지 않으며, 두 기대는 job 소유 계약과 충돌한다(보고서 5절).
+
+## 현재·역사적 cache 계약 ([보고서](../evidence/t010-readiness-residual-stabilization/REPORT.ko.txt))
+
+`unit.py`는 외부 계약을 반드시 지정해야 한다. 기본값이 없어서 예전 명령이 다른 계약으로 조용히 바뀌지 않는다.
+
+- `--suite current` → `cache_current_contract.rs`: 현재 지원 계약이다. 일상 검증은 이것으로 한다.
+  구성은 `cache_contract_mapping.json`이 정한다.
+  · `cache_contract.rs`에서 지금도 유효한 7개를 글자 그대로 옮겼다.
+  · 폐기된 v2 기대 2개를 대신하는 현재 정책 시험 3개를 처분 계약(`../evidence/t010-decoded-lease-readiness-closure/repro/cache_disposition_contract.rs`)에서 글자 그대로 옮겼다.
+  · 계약 binary는 `mod surface_cache;`로 cache 자신의 내부 시험 11개를 함께 컴파일한다. 그래서 결과는 21개(11+10)다.
+- `--suite historical` → `cache_contract.rs`: 역사적 진단이다. 내용을 바꾸지 않았고, 현재 후보에서 18 PASS / 2 FAIL이다.
+  `trim_during_load_does_not_release_the_pending_handle`과 `two_oversize_completions_can_be_available_for_one_full_page_draw`가 실패한다.
+  두 결과를 합쳐 하나의 PASS로 보고하지 않는다.
+- `--contract FILE`: 그 밖의 계약(`decoded_lease_contract.rs`, `ownership_contract.rs`, `scheduler_contract.rs` 등)을 실행한다.
+- 결과 JSON(schema 2)에는 `suite`와 `suiteCounts`(계약 binary의 passed·failed·ignored와 실패 이름)가 있다.
+  내부 시험만 따로 돌리는 check의 이름은 `internal`이다(schema 1에서는 `historical`이었다).
+- `test_cache_contract_suites.py`가 다음을 정적으로 확인한다.
+  · 역사적 파일이 기록된 SHA-256(5abb3878…)과 같다.
+  · 현재 suite가 정확히 "옮긴 시험 + 대체 시험"이고, 옮긴 시험은 글자 그대로다.
+  · 내부 시험 목록이 커밋된 complete patch의 목록과 같다.
+  · 요구 동작마다 실제 시험이 있다.
+  · `unit.py`가 suite 없이 실행되면 거절한다.
+- pending 시험 4개는 `BoundedCache` 자신의 pending API를 쓴다. 지원 렌더러는 이 API를 호출하지 않는다(이미지는 job이 소유하는 `Rc` lease다).
+  그래서 이 시험들은 cache 수준의 상한을 확인할 뿐, 렌더러 경로의 증거는 아니다. 렌더러 경로의 같은 상황은 `run.py`가 맡는다
+  (ownership `two-oversize-complete`, `oversize-preserves-normal-resident`, `job-complete-releases-transients`, scheduler `notification-progress-trim`).
+  이후 Preparing 구현은 별도로 승인된 계약 변경 없이 이 pending API를 다시 쓰지 않는다.

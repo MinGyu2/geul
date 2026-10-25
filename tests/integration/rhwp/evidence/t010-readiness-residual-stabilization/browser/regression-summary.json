@@ -1,0 +1,106 @@
+{
+ "schema": 1,
+ "candidatePackage": "NEW/test-package (identity: candidate-identity.json)",
+ "pinned": "public/rhwp",
+ "rawOutputsCommitted": false,
+ "whyRawNotCommitted": "the raw run.py outputs embed ENGINE.json sourceSha256 values (public wasm_api.rs checksums) that gitleaks generic-api-key reports; committing them at a new path would need a new allowlist entry, which security-policy.md 6.4 requires in a separate reviewed commit. The harness and candidate are unchanged since 2636a65, whose committed regression-{chrome,webkit}.json remain the primary evidence; this rerun is supplementary.",
+ "browsers": {
+  "chrome": {
+   "rawSha256": "40cccf4e09c4b713e5b469196fd090bb584d1bda4fbe2a9d12396b5f34ca6318",
+   "status": "PASS",
+   "runStatus": "PASS",
+   "testSourcesSha256MatchesPrevious": true,
+   "unhandledErrors": 0,
+   "ownership": {
+    "status": "PASS",
+    "passed": 52,
+    "total": 52,
+    "focus": {
+     "two-oversize-complete": [
+      "PASS"
+     ],
+     "oversize-preserves-normal-resident": [
+      "PASS"
+     ],
+     "job-complete-releases-transients": [
+      "PASS"
+     ],
+     "resident-budget": [
+      "PASS"
+     ]
+    }
+   },
+   "scheduler": {
+    "status": "PASS",
+    "passed": 73,
+    "total": 73,
+    "focus": {
+     "notification-progress-trim": [
+      "PASS"
+     ]
+    }
+   },
+   "historical": {
+    "status": "PASS",
+    "draws": 50,
+    "exactPixelMatches": 50
+   },
+   "identityChecks": {
+    "candidateWasmMatchesExpected": true,
+    "candidateJsMatchesExpected": true,
+    "enginePatchMatchesCompletePatch": true,
+    "engineBaseline": "1a76570e833917d15817415a53c09ad61ab3203f",
+    "pinnedBuildCommit": "1a76570e833917d15817415a53c09ad61ab3203f"
+   }
+  },
+  "webkit": {
+   "rawSha256": "88c8dd27ea1bca198578cffd3f70ea0516311da15ce023767e8ae4c1084db762",
+   "status": "PASS",
+   "runStatus": "PASS",
+   "testSourcesSha256MatchesPrevious": true,
+   "unhandledErrors": 0,
+   "ownership": {
+    "status": "PASS",
+    "passed": 52,
+    "total": 52,
+    "focus": {
+     "two-oversize-complete": [
+      "PASS"
+     ],
+     "oversize-preserves-normal-resident": [
+      "PASS"
+     ],
+     "job-complete-releases-transients": [
+      "PASS"
+     ],
+     "resident-budget": [
+      "PASS"
+     ]
+    }
+   },
+   "scheduler": {
+    "status": "PASS",
+    "passed": 73,
+    "total": 73,
+    "focus": {
+     "notification-progress-trim": [
+      "PASS"
+     ]
+    }
+   },
+   "historical": {
+    "status": "PASS",
+    "draws": 50,
+    "exactPixelMatches": 50
+   },
+   "identityChecks": {
+    "candidateWasmMatchesExpected": true,
+    "candidateJsMatchesExpected": true,
+    "enginePatchMatchesCompletePatch": true,
+    "engineBaseline": "1a76570e833917d15817415a53c09ad61ab3203f",
+    "pinnedBuildCommit": "1a76570e833917d15817415a53c09ad61ab3203f"
+   }
+  }
+ },
+ "identityNote": "identities are reduced to match checks against candidate-identity.json; ENGINE.json per-file source digests are omitted for the same reason as the raw outputs (see whyRawNotCommitted)"
+}

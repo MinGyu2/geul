@@ -1,0 +1,62 @@
+보안 정책 편차 기록: 2636a65의 Gitleaks 예외 변경 (2026-10-25)
+
+승인 상태: PENDING_APPROVAL
+이 기록은 승인이 아니다. 저장소 관리자의 승인 기록은 아직 없다. 이 기록을 남기면서 승인을 만들어 내거나 추정하지 않았다.
+
+1. 대상 commit
+- 2636a6509beec66debe8dc7c17d3f2889ea722eb "T010 decoded lease 준비 마감: 증거 계약 3·gitleaks 범위·역사적 실패 처분".
+  48개 파일이 바뀌었다. .gitleaks.toml 외에 시험·증거·문서가 같은 commit에 있다.
+- 이 기록을 쓸 때(2026-10-25) 로컬 추적 ref origin/master가 이 commit을 가리킨다. 이 작업 세션은 push하지 않았다.
+  공개된 이력이므로 다시 쓰지 않는다(reset·amend·rebase·force-push 없음).
+
+2. 해당 조항(docs/development/security-policy.md 6절 "오탐 예외 절차" 4항, 2636a65 시점 원문)
+  "예외 추가는 별도 커밋으로 하고 PR 설명에 근거를 남깁니다. 리뷰어는 예외 범위가 넓지 않은지 확인합니다."
+
+3. 2636a65가 바꾼 예외(VERIFIED, git show 2636a65 -- .gitleaks.toml)
+- 기존 전역 [[allowlists]] 23개 항목: 각각에 targetRules = ["generic-api-key"]를 추가했다.
+  범위를 좁히는 변경이다. gitleaks 8.30.1 dir 검사에서 targetRules가 없는 항목은 paths가 맞는 파일 전체를 모든 규칙에서
+  빼 버렸다(../t010-decoded-lease-readiness-closure/REPORT.ko.txt 4절). 넓어진 항목은 없다.
+- 신규 1개 항목: t010-decoded-lease-readiness-closure/browser/의 정확한 파일 4개와 정확한 SHA-256 값 2개
+  (9563a9ef…, 3dfa6723…). condition = "AND", regexTarget = "secret", targetRules = ["generic-api-key"].
+- 지금 .gitleaks.toml: 24개 항목, 모두 targetRules = ["generic-api-key"](VERIFIED, 이번 작업에서 셈).
+
+4. 왜 한 commit에 합쳤나(VERIFIED 기록, INFERRED 판단)
+- 그 작업 지시가 "one focused local commit"을 요구했다. 작성자(에이전트)는 그 지시를 따르고, 충돌을 최종 보고에서
+  알리고, 분리 commit을 제안했다. 분리는 기술적으로 가능했다(예외 commit을 먼저 두고 증거 commit을 뒤에 두면 된다).
+  따라서 합친 것은 불가피한 일이 아니라 선택이었다.
+- 작업 지시가 commit 하나를 요구했다는 사실은 정책 예외를 명시적으로 승인한 것이 아니다. 지시에는 이 조항이나
+  예외 승인에 대한 언급이 없다.
+- 이력 조사(VERIFIED, git log -- .gitleaks.toml): 예외를 추가한 commit은 11개(f06fa28 … 2636a65)이고, 24개 항목이 모두
+  거기서 들어왔다. 11개 모두 35–314개 파일을 함께 바꾼 commit이다. 별도 예외 commit은 한 번도 없었다.
+  모든 commit이 PR 없이 master에 들어갔으므로 "PR 설명" 부분도 적용된 적이 없다.
+
+5. 분류
+- 형식적 정책 편차다. 조항은 명령형이고 예외 규정이 없다. 2636a65는 그 조항을 지키지 않았다.
+- 명시적으로 승인된 일회성 예외가 아니다. 그런 승인 기록이 없다.
+- 문서 모호성도 있었다: (a) PR 없이 직접 commit할 때 근거를 어디에 남기는지, (b) 작업 지시와 충돌할 때 무엇이
+  우선인지, (c) 기존 항목을 좁히는 변경도 "예외 추가"에 드는지가 적혀 있지 않았다. 이 모호성이 편차를 정당화하지는 않는다.
+- 결론: 관리자의 사후 검토와 승인이 여전히 필요하다. 상태는 PENDING_APPROVAL이다.
+
+6. 지금 확인할 수 있는 독립 보안 검증(승인을 대신하지 않는다)
+- 2636a65 작업의 증거: ../t010-decoded-lease-readiness-closure/security/
+  (allowlist-negative-check.json 24/24 경우가 dir·git·staged 세 모드에서 기대대로 나옴. 신규 digest 2개는 pinned 1a76570에
+  커밋된 패치를 적용해 다시 계산했고 일치함. 비밀이 아닌 공개 소스 checksum).
+- 이번 작업의 재검사(이 디렉터리 security/): 설정한 규칙으로 전체 tree를 dir 검사, 기본 규칙 비교, 전체 이력 git 검사,
+  allowlist 음성 검사 재실행, 민감정보 --all·--history·--staged, 보안 단위 시험. 결과는 REPORT.ko.txt 7절.
+- 설정한 규칙에서 0건이라는 결과는, 그 예외가 정한 경로와 값에서는 다른 비밀이 가려지지 않았다는 뜻이다.
+  모든 역사적 checksum을 이번에 독립적으로 다시 계산했다는 뜻은 아니다. 다시 계산한 값은 위 2개다.
+  기존 23개 항목의 값은 각 항목을 추가한 commit의 검토 기록에 의존한다.
+
+7. 관리자가 검토할 항목
+- 신규 항목의 범위(파일 4개, 값 2개)가 충분히 좁은가.
+- targetRules 추가가 기존 23개 항목의 의도를 바꾸지 않는가(범위 축소만 있는가).
+- 승인하면 승인자, 날짜, 근거를 이 파일 옆의 별도 기록에 남긴다. 이 파일의 상태 줄을 에이전트가 고치지 않는다.
+
+8. 앞으로의 규칙(security-policy.md 6절 4항에 명확히 적음, 기존 조항보다 엄격하게만 바꿈)
+- .gitleaks.toml과 .sensitive-info-allowlist의 항목을 추가하거나 바꾸는 변경은, 범위를 좁히는 변경이라도, 그 변경과
+  근거 기록만 담은 별도 commit으로 한다.
+- 작업 지시가 commit 하나를 요구해도 이 규칙이 우선한다. 분리했다는 사실을 보고에 적는다.
+- PR이 없으면 근거(정확한 경로·값, 공개 출처 재검증, 음성 검사)를 commit 메시지 본문에 적는다.
+- 이미 합쳐진 commit은 이력을 다시 쓰지 않는다. 편차를 기록하고 PENDING_APPROVAL로 둔다.
+- 이번 작업은 예외를 추가하거나 바꾸지 않았다(.gitleaks.toml, .sensitive-info-allowlist 변경 없음).
+  그래서 이번 commit 하나에는 이 규칙이 요구하는 분리 대상이 없다.

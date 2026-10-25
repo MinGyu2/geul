@@ -1,0 +1,1980 @@
+{
+ "schema": 2,
+ "attempt": 2,
+ "observer": "read-only /proc sampling, 100 ms; processes carrying this attempt token only",
+ "samples": 801,
+ "observerError": null,
+ "observerStopped": true,
+ "loadAverage": {
+  "start": [
+   1.44677734375,
+   0.8427734375,
+   0.60400390625
+  ],
+  "end": [
+   1.810546875,
+   1.1259765625,
+   0.728515625
+  ]
+ },
+ "cpuCount": 8,
+ "processes": [
+  {
+   "pid": 399334,
+   "comm": "MainThread",
+   "firstSeen": 0.11,
+   "ppid": 399332,
+   "pgid": 399331,
+   "states": {
+    "R": 10,
+    "S": 780
+   },
+   "lastSeen": 83.26,
+   "gone": 83.36
+  },
+  {
+   "pid": 399379,
+   "comm": "dbus-run-sessio",
+   "firstSeen": 1.26,
+   "ppid": 399332,
+   "pgid": 399331,
+   "states": {
+    "S": 771
+   },
+   "lastSeen": 82.42,
+   "gone": 82.53
+  },
+  {
+   "pid": 399380,
+   "comm": "dbus-daemon",
+   "firstSeen": 1.26,
+   "ppid": 399379,
+   "pgid": 399331,
+   "states": {
+    "S": 770,
+    "R": 1
+   },
+   "lastSeen": 82.42,
+   "gone": 82.53
+  },
+  {
+   "pid": 399381,
+   "comm": "python3",
+   "firstSeen": 1.26,
+   "ppid": 399379,
+   "pgid": 399331,
+   "states": {
+    "R": 16,
+    "S": 753,
+    "D": 2
+   },
+   "lastSeen": 82.42,
+   "gone": 82.53
+  },
+  {
+   "pid": 399382,
+   "comm": "Xvfb",
+   "firstSeen": 1.47,
+   "ppid": 399381,
+   "pgid": 399331,
+   "states": {
+    "S": 615,
+    "R": 154
+   },
+   "lastSeen": 82.42,
+   "gone": 82.53
+  },
+  {
+   "pid": 399384,
+   "comm": "MainThread",
+   "firstSeen": 1.47,
+   "ppid": 399381,
+   "pgid": 399331,
+   "states": {
+    "R": 3,
+    "S": 8
+   },
+   "lastSeen": 2.51,
+   "gone": 2.62
+  },
+  {
+   "pid": 399391,
+   "comm": "MainThread",
+   "firstSeen": 2.72,
+   "ppid": 399381,
+   "pgid": 399331,
+   "states": {
+    "R": 2,
+    "S": 9
+   },
+   "lastSeen": 3.78,
+   "gone": 3.88
+  },
+  {
+   "pid": 399411,
+   "comm": "tauri-driver",
+   "firstSeen": 3.88,
+   "ppid": 399381,
+   "pgid": 399331,
+   "states": {
+    "S": 734,
+    "R": 9
+   },
+   "lastSeen": 82.11,
+   "gone": 82.21
+  },
+  {
+   "pid": 399412,
+   "comm": "WebKitWebDriver",
+   "firstSeen": 3.88,
+   "ppid": 399411,
+   "pgid": 399331,
+   "states": {
+    "S": 729,
+    "R": 14
+   },
+   "lastSeen": 82.11,
+   "gone": 82.21
+  },
+  {
+   "pid": 399414,
+   "comm": "geul",
+   "firstSeen": 4.1,
+   "ppid": 399412,
+   "pgid": 399331,
+   "states": {
+    "R": 92,
+    "S": 649
+   },
+   "lastSeen": 82.11,
+   "gone": 82.21
+  },
+  {
+   "pid": 399427,
+   "comm": "WebKitNetworkPr",
+   "firstSeen": 4.41,
+   "ppid": 399414,
+   "pgid": 399331,
+   "states": {
+    "R": 2,
+    "S": 736
+   },
+   "lastSeen": 82.11,
+   "gone": 82.21
+  },
+  {
+   "pid": 399447,
+   "comm": "WebKitWebProces",
+   "firstSeen": 4.41,
+   "ppid": 1,
+   "pgid": 399331,
+   "states": {
+    "R": 335,
+    "S": 404
+   },
+   "lastSeen": 82.21,
+   "gone": 82.32
+  },
+  {
+   "pid": 399522,
+   "comm": "xdotool",
+   "firstSeen": 6.96,
+   "ppid": 399381,
+   "pgid": 399331,
+   "states": {
+    "S": 1
+   },
+   "lastSeen": 6.96,
+   "gone": 7.06
+  },
+  {
+   "pid": 399528,
+   "comm": "xdotool",
+   "firstSeen": 7.91,
+   "ppid": 399381,
+   "pgid": 399331,
+   "states": {
+    "S": 1
+   },
+   "lastSeen": 7.91,
+   "gone": 8.01
+  },
+  {
+   "pid": 399530,
+   "comm": "xdotool",
+   "firstSeen": 8.86,
+   "ppid": 399381,
+   "pgid": 399331,
+   "states": {
+    "S": 1
+   },
+   "lastSeen": 8.86,
+   "gone": 8.96
+  },
+  {
+   "pid": 399533,
+   "comm": "xdotool",
+   "firstSeen": 9.39,
+   "ppid": 399381,
+   "pgid": 399331,
+   "states": {
+    "S": 1
+   },
+   "lastSeen": 9.39,
+   "gone": 9.49
+  },
+  {
+   "pid": 399543,
+   "comm": "xdotool",
+   "firstSeen": 10.76,
+   "ppid": 399381,
+   "pgid": 399331,
+   "states": {
+    "S": 1
+   },
+   "lastSeen": 10.76,
+   "gone": 10.87
+  },
+  {
+   "pid": 399548,
+   "comm": "xdotool",
+   "firstSeen": 11.61,
+   "ppid": 399381,
+   "pgid": 399331,
+   "states": {
+    "S": 1
+   },
+   "lastSeen": 11.61,
+   "gone": 11.72
+  },
+  {
+   "pid": 399551,
+   "comm": "xdotool",
+   "firstSeen": 12.15,
+   "ppid": 399381,
+   "pgid": 399331,
+   "states": {
+    "S": 1
+   },
+   "lastSeen": 12.15,
+   "gone": 12.25
+  },
+  {
+   "pid": 399553,
+   "comm": "xdotool",
+   "firstSeen": 13.1,
+   "ppid": 399381,
+   "pgid": 399331,
+   "states": {
+    "S": 1
+   },
+   "lastSeen": 13.1,
+   "gone": 13.21
+  },
+  {
+   "pid": 399556,
+   "comm": "xdotool",
+   "firstSeen": 13.63,
+   "ppid": 399381,
+   "pgid": 399331,
+   "states": {
+    "S": 1
+   },
+   "lastSeen": 13.63,
+   "gone": 13.74
+  },
+  {
+   "pid": 399563,
+   "comm": "xdotool",
+   "firstSeen": 14.91,
+   "ppid": 399381,
+   "pgid": 399331,
+   "states": {
+    "S": 1
+   },
+   "lastSeen": 14.91,
+   "gone": 15.01
+  },
+  {
+   "pid": 399569,
+   "comm": "xdotool",
+   "firstSeen": 15.95,
+   "ppid": 399381,
+   "pgid": 399331,
+   "states": {
+    "S": 1
+   },
+   "lastSeen": 15.95,
+   "gone": 16.06
+  },
+  {
+   "pid": 399572,
+   "comm": "xdotool",
+   "firstSeen": 17.1,
+   "ppid": 399381,
+   "pgid": 399331,
+   "states": {
+    "S": 1
+   },
+   "lastSeen": 17.1,
+   "gone": 17.21
+  },
+  {
+   "pid": 399573,
+   "comm": "xdotool",
+   "firstSeen": 17.31,
+   "ppid": 399381,
+   "pgid": 399331,
+   "states": {
+    "S": 1
+   },
+   "lastSeen": 17.31,
+   "gone": 17.42
+  },
+  {
+   "pid": 399576,
+   "comm": "xdotool",
+   "firstSeen": 17.83,
+   "ppid": 399381,
+   "pgid": 399331,
+   "states": {
+    "S": 1
+   },
+   "lastSeen": 17.83,
+   "gone": 17.94
+  },
+  {
+   "pid": 399577,
+   "comm": "xdotool",
+   "firstSeen": 18.04,
+   "ppid": 399381,
+   "pgid": 399331,
+   "states": {
+    "S": 1
+   },
+   "lastSeen": 18.04,
+   "gone": 18.15
+  },
+  {
+   "pid": 399583,
+   "comm": "xdotool",
+   "firstSeen": 19.09,
+   "ppid": 399381,
+   "pgid": 399331,
+   "states": {
+    "R": 1
+   },
+   "lastSeen": 19.09,
+   "gone": 19.19
+  },
+  {
+   "pid": 399587,
+   "comm": "xdotool",
+   "firstSeen": 19.82,
+   "ppid": 399381,
+   "pgid": 399331,
+   "states": {
+    "R": 1
+   },
+   "lastSeen": 19.82,
+   "gone": 19.93
+  },
+  {
+   "pid": 399590,
+   "comm": "xdotool",
+   "firstSeen": 20.34,
+   "ppid": 399381,
+   "pgid": 399331,
+   "states": {
+    "R": 1
+   },
+   "lastSeen": 20.34,
+   "gone": 20.45
+  },
+  {
+   "pid": 399592,
+   "comm": "xdotool",
+   "firstSeen": 21.3,
+   "ppid": 399381,
+   "pgid": 399331,
+   "states": {
+    "S": 1
+   },
+   "lastSeen": 21.3,
+   "gone": 21.4
+  },
+  {
+   "pid": 399605,
+   "comm": "xdotool",
+   "firstSeen": 24.48,
+   "ppid": 399381,
+   "pgid": 399331,
+   "states": {
+    "S": 1
+   },
+   "lastSeen": 24.48,
+   "gone": 24.59
+  },
+  {
+   "pid": 399611,
+   "comm": "xdotool",
+   "firstSeen": 26.16,
+   "ppid": 399381,
+   "pgid": 399331,
+   "states": {
+    "S": 1
+   },
+   "lastSeen": 26.16,
+   "gone": 26.26
+  },
+  {
+   "pid": 399617,
+   "comm": "xdotool",
+   "firstSeen": 26.89,
+   "ppid": 399381,
+   "pgid": 399331,
+   "states": {
+    "S": 1
+   },
+   "lastSeen": 26.89,
+   "gone": 26.99
+  },
+  {
+   "pid": 399624,
+   "comm": "xdotool",
+   "firstSeen": 28.14,
+   "ppid": 399381,
+   "pgid": 399331,
+   "states": {
+    "S": 1
+   },
+   "lastSeen": 28.14,
+   "gone": 28.25
+  },
+  {
+   "pid": 399630,
+   "comm": "xdotool",
+   "firstSeen": 29.19,
+   "ppid": 399381,
+   "pgid": 399331,
+   "states": {
+    "S": 1
+   },
+   "lastSeen": 29.19,
+   "gone": 29.29
+  },
+  {
+   "pid": 399635,
+   "comm": "xdotool",
+   "firstSeen": 30.65,
+   "ppid": 399381,
+   "pgid": 399331,
+   "states": {
+    "S": 1
+   },
+   "lastSeen": 30.65,
+   "gone": 30.76
+  },
+  {
+   "pid": 399636,
+   "comm": "xdotool",
+   "firstSeen": 30.86,
+   "ppid": 399381,
+   "pgid": 399331,
+   "states": {
+    "S": 1
+   },
+   "lastSeen": 30.86,
+   "gone": 30.97
+  },
+  {
+   "pid": 399639,
+   "comm": "xdotool",
+   "firstSeen": 31.38,
+   "ppid": 399381,
+   "pgid": 399331,
+   "states": {
+    "S": 1
+   },
+   "lastSeen": 31.38,
+   "gone": 31.49
+  },
+  {
+   "pid": 399640,
+   "comm": "xdotool",
+   "firstSeen": 31.59,
+   "ppid": 399381,
+   "pgid": 399331,
+   "states": {
+    "S": 1
+   },
+   "lastSeen": 31.59,
+   "gone": 31.7
+  },
+  {
+   "pid": 399643,
+   "comm": "xdotool",
+   "firstSeen": 32.12,
+   "ppid": 399381,
+   "pgid": 399331,
+   "states": {
+    "S": 1
+   },
+   "lastSeen": 32.12,
+   "gone": 32.22
+  },
+  {
+   "pid": 399650,
+   "comm": "xdotool",
+   "firstSeen": 33.37,
+   "ppid": 399381,
+   "pgid": 399331,
+   "states": {
+    "S": 1
+   },
+   "lastSeen": 33.37,
+   "gone": 33.48
+  },
+  {
+   "pid": 399658,
+   "comm": "xdotool",
+   "firstSeen": 35.05,
+   "ppid": 399381,
+   "pgid": 399331,
+   "states": {
+    "S": 1
+   },
+   "lastSeen": 35.05,
+   "gone": 35.15
+  },
+  {
+   "pid": 399661,
+   "comm": "xdotool",
+   "firstSeen": 35.57,
+   "ppid": 399381,
+   "pgid": 399331,
+   "states": {
+    "S": 1
+   },
+   "lastSeen": 35.57,
+   "gone": 35.68
+  },
+  {
+   "pid": 399668,
+   "comm": "xdotool",
+   "firstSeen": 36.84,
+   "ppid": 399381,
+   "pgid": 399331,
+   "states": {
+    "S": 1
+   },
+   "lastSeen": 36.84,
+   "gone": 36.94
+  },
+  {
+   "pid": 399672,
+   "comm": "xdotool",
+   "firstSeen": 37.37,
+   "ppid": 399381,
+   "pgid": 399331,
+   "states": {
+    "S": 1
+   },
+   "lastSeen": 37.37,
+   "gone": 37.47
+  },
+  {
+   "pid": 399675,
+   "comm": "xdotool",
+   "firstSeen": 37.9,
+   "ppid": 399381,
+   "pgid": 399331,
+   "states": {
+    "S": 1
+   },
+   "lastSeen": 37.9,
+   "gone": 38.01
+  },
+  {
+   "pid": 399684,
+   "comm": "xdotool",
+   "firstSeen": 39.39,
+   "ppid": 399381,
+   "pgid": 399331,
+   "states": {
+    "S": 1
+   },
+   "lastSeen": 39.39,
+   "gone": 39.49
+  },
+  {
+   "pid": 399686,
+   "comm": "xdotool",
+   "firstSeen": 41.82,
+   "ppid": 399381,
+   "pgid": 399331,
+   "states": {
+    "S": 1
+   },
+   "lastSeen": 41.82,
+   "gone": 41.93
+  },
+  {
+   "pid": 399692,
+   "comm": "xdotool",
+   "firstSeen": 43.2,
+   "ppid": 399381,
+   "pgid": 399331,
+   "states": {
+    "R": 1
+   },
+   "lastSeen": 43.2,
+   "gone": 43.3
+  },
+  {
+   "pid": 399693,
+   "comm": "xdotool",
+   "firstSeen": 43.41,
+   "ppid": 399381,
+   "pgid": 399331,
+   "states": {
+    "S": 1
+   },
+   "lastSeen": 43.41,
+   "gone": 43.51
+  },
+  {
+   "pid": 399698,
+   "comm": "xdotool",
+   "firstSeen": 44.89,
+   "ppid": 399381,
+   "pgid": 399331,
+   "states": {
+    "S": 1
+   },
+   "lastSeen": 44.89,
+   "gone": 44.99
+  },
+  {
+   "pid": 399699,
+   "comm": "xdotool",
+   "firstSeen": 45.1,
+   "ppid": 399381,
+   "pgid": 399331,
+   "states": {
+    "S": 1
+   },
+   "lastSeen": 45.1,
+   "gone": 45.2
+  },
+  {
+   "pid": 399702,
+   "comm": "xdotool",
+   "firstSeen": 45.62,
+   "ppid": 399381,
+   "pgid": 399331,
+   "states": {
+    "S": 1
+   },
+   "lastSeen": 45.62,
+   "gone": 45.73
+  },
+  {
+   "pid": 399711,
+   "comm": "xdotool",
+   "firstSeen": 47.1,
+   "ppid": 399381,
+   "pgid": 399331,
+   "states": {
+    "S": 1
+   },
+   "lastSeen": 47.1,
+   "gone": 47.21
+  },
+  {
+   "pid": 399712,
+   "comm": "xdotool",
+   "firstSeen": 47.31,
+   "ppid": 399381,
+   "pgid": 399331,
+   "states": {
+    "S": 1
+   },
+   "lastSeen": 47.31,
+   "gone": 47.42
+  },
+  {
+   "pid": 399713,
+   "comm": "xdotool",
+   "firstSeen": 47.52,
+   "ppid": 399381,
+   "pgid": 399331,
+   "states": {
+    "S": 1
+   },
+   "lastSeen": 47.52,
+   "gone": 47.63
+  },
+  {
+   "pid": 399720,
+   "comm": "xdotool",
+   "firstSeen": 49.43,
+   "ppid": 399381,
+   "pgid": 399331,
+   "states": {
+    "S": 1
+   },
+   "lastSeen": 49.43,
+   "gone": 49.53
+  },
+  {
+   "pid": 399727,
+   "comm": "xdotool",
+   "firstSeen": 51.32,
+   "ppid": 399381,
+   "pgid": 399331,
+   "states": {
+    "S": 1
+   },
+   "lastSeen": 51.32,
+   "gone": 51.42
+  },
+  {
+   "pid": 399729,
+   "comm": "xdotool",
+   "firstSeen": 51.94,
+   "ppid": 399381,
+   "pgid": 399331,
+   "states": {
+    "S": 1
+   },
+   "lastSeen": 51.94,
+   "gone": 52.05
+  },
+  {
+   "pid": 399738,
+   "comm": "xdotool",
+   "firstSeen": 54.55,
+   "ppid": 399381,
+   "pgid": 399331,
+   "states": {
+    "S": 1
+   },
+   "lastSeen": 54.55,
+   "gone": 54.66
+  },
+  {
+   "pid": 399740,
+   "comm": "xdotool",
+   "firstSeen": 54.97,
+   "ppid": 399381,
+   "pgid": 399331,
+   "states": {
+    "S": 1
+   },
+   "lastSeen": 54.97,
+   "gone": 55.07
+  },
+  {
+   "pid": 399745,
+   "comm": "xdotool",
+   "firstSeen": 55.91,
+   "ppid": 399381,
+   "pgid": 399331,
+   "states": {
+    "S": 1
+   },
+   "lastSeen": 55.91,
+   "gone": 56.01
+  },
+  {
+   "pid": 399748,
+   "comm": "xdotool",
+   "firstSeen": 56.54,
+   "ppid": 399381,
+   "pgid": 399331,
+   "states": {
+    "S": 1
+   },
+   "lastSeen": 56.54,
+   "gone": 56.64
+  },
+  {
+   "pid": 399755,
+   "comm": "xdotool",
+   "firstSeen": 58.53,
+   "ppid": 399381,
+   "pgid": 399331,
+   "states": {
+    "S": 1
+   },
+   "lastSeen": 58.53,
+   "gone": 58.64
+  },
+  {
+   "pid": 399756,
+   "comm": "xdotool",
+   "firstSeen": 59.38,
+   "ppid": 399381,
+   "pgid": 399331,
+   "states": {
+    "S": 1
+   },
+   "lastSeen": 59.38,
+   "gone": 59.48
+  },
+  {
+   "pid": 399761,
+   "comm": "xdotool",
+   "firstSeen": 62.34,
+   "ppid": 399381,
+   "pgid": 399331,
+   "states": {
+    "S": 1
+   },
+   "lastSeen": 62.34,
+   "gone": 62.44
+  },
+  {
+   "pid": 399767,
+   "comm": "xdotool",
+   "firstSeen": 64.24,
+   "ppid": 399381,
+   "pgid": 399331,
+   "states": {
+    "S": 1
+   },
+   "lastSeen": 64.24,
+   "gone": 64.34
+  },
+  {
+   "pid": 399776,
+   "comm": "xdotool",
+   "firstSeen": 66.14,
+   "ppid": 399381,
+   "pgid": 399331,
+   "states": {
+    "S": 1
+   },
+   "lastSeen": 66.14,
+   "gone": 66.25
+  },
+  {
+   "pid": 399777,
+   "comm": "xdotool",
+   "firstSeen": 66.35,
+   "ppid": 399381,
+   "pgid": 399331,
+   "states": {
+    "S": 1
+   },
+   "lastSeen": 66.35,
+   "gone": 66.46
+  },
+  {
+   "pid": 399780,
+   "comm": "xdotool",
+   "firstSeen": 66.99,
+   "ppid": 399381,
+   "pgid": 399331,
+   "states": {
+    "S": 1
+   },
+   "lastSeen": 66.99,
+   "gone": 67.1
+  },
+  {
+   "pid": 399781,
+   "comm": "xdotool",
+   "firstSeen": 67.2,
+   "ppid": 399381,
+   "pgid": 399331,
+   "states": {
+    "R": 1
+   },
+   "lastSeen": 67.2,
+   "gone": 67.31
+  },
+  {
+   "pid": 399800,
+   "comm": "xdotool",
+   "firstSeen": 71.76,
+   "ppid": 399381,
+   "pgid": 399331,
+   "states": {
+    "R": 1
+   },
+   "lastSeen": 71.76,
+   "gone": 71.86
+  },
+  {
+   "pid": 399801,
+   "comm": "xdotool",
+   "firstSeen": 71.97,
+   "ppid": 399381,
+   "pgid": 399331,
+   "states": {
+    "S": 1
+   },
+   "lastSeen": 71.97,
+   "gone": 72.07
+  },
+  {
+   "pid": 399812,
+   "comm": "xdotool",
+   "firstSeen": 75.24,
+   "ppid": 399381,
+   "pgid": 399331,
+   "states": {
+    "S": 1
+   },
+   "lastSeen": 75.24,
+   "gone": 75.35
+  },
+  {
+   "pid": 399813,
+   "comm": "xdotool",
+   "firstSeen": 75.46,
+   "ppid": 399381,
+   "pgid": 399331,
+   "states": {
+    "S": 1
+   },
+   "lastSeen": 75.46,
+   "gone": 75.56
+  },
+  {
+   "pid": 399843,
+   "comm": "xkbcomp",
+   "firstSeen": 82.21,
+   "ppid": 399382,
+   "pgid": 399331,
+   "states": {
+    "R": 1
+   },
+   "lastSeen": 82.21,
+   "gone": 82.32
+  }
+ ],
+ "events": [
+  {
+   "t": 0.11,
+   "event": "appeared",
+   "pid": 399334,
+   "comm": "MainThread",
+   "ppid": 399332
+  },
+  {
+   "t": 1.24,
+   "event": "harness-start"
+  },
+  {
+   "t": 1.26,
+   "event": "appeared",
+   "pid": 399379,
+   "comm": "dbus-run-sessio",
+   "ppid": 399332
+  },
+  {
+   "t": 1.26,
+   "event": "appeared",
+   "pid": 399380,
+   "comm": "dbus-daemon",
+   "ppid": 399379
+  },
+  {
+   "t": 1.26,
+   "event": "appeared",
+   "pid": 399381,
+   "comm": "python3",
+   "ppid": 399379
+  },
+  {
+   "t": 1.47,
+   "event": "appeared",
+   "pid": 399382,
+   "comm": "Xvfb",
+   "ppid": 399381
+  },
+  {
+   "t": 1.47,
+   "event": "appeared",
+   "pid": 399384,
+   "comm": "MainThread",
+   "ppid": 399381
+  },
+  {
+   "t": 2.62,
+   "event": "gone",
+   "pid": 399384,
+   "comm": "MainThread"
+  },
+  {
+   "t": 2.72,
+   "event": "appeared",
+   "pid": 399391,
+   "comm": "MainThread",
+   "ppid": 399381
+  },
+  {
+   "t": 3.88,
+   "event": "appeared",
+   "pid": 399411,
+   "comm": "tauri-driver",
+   "ppid": 399381
+  },
+  {
+   "t": 3.88,
+   "event": "appeared",
+   "pid": 399412,
+   "comm": "WebKitWebDriver",
+   "ppid": 399411
+  },
+  {
+   "t": 3.88,
+   "event": "gone",
+   "pid": 399391,
+   "comm": "MainThread"
+  },
+  {
+   "t": 4.1,
+   "event": "appeared",
+   "pid": 399414,
+   "comm": "geul",
+   "ppid": 399412
+  },
+  {
+   "t": 4.41,
+   "event": "appeared",
+   "pid": 399427,
+   "comm": "WebKitNetworkPr",
+   "ppid": 399414
+  },
+  {
+   "t": 4.41,
+   "event": "appeared",
+   "pid": 399447,
+   "comm": "WebKitWebProces",
+   "ppid": 399414
+  },
+  {
+   "t": 6.96,
+   "event": "appeared",
+   "pid": 399522,
+   "comm": "xdotool",
+   "ppid": 399381
+  },
+  {
+   "t": 7.06,
+   "event": "gone",
+   "pid": 399522,
+   "comm": "xdotool"
+  },
+  {
+   "t": 7.91,
+   "event": "appeared",
+   "pid": 399528,
+   "comm": "xdotool",
+   "ppid": 399381
+  },
+  {
+   "t": 8.01,
+   "event": "gone",
+   "pid": 399528,
+   "comm": "xdotool"
+  },
+  {
+   "t": 8.86,
+   "event": "appeared",
+   "pid": 399530,
+   "comm": "xdotool",
+   "ppid": 399381
+  },
+  {
+   "t": 8.96,
+   "event": "gone",
+   "pid": 399530,
+   "comm": "xdotool"
+  },
+  {
+   "t": 9.39,
+   "event": "appeared",
+   "pid": 399533,
+   "comm": "xdotool",
+   "ppid": 399381
+  },
+  {
+   "t": 9.49,
+   "event": "gone",
+   "pid": 399533,
+   "comm": "xdotool"
+  },
+  {
+   "t": 10.76,
+   "event": "appeared",
+   "pid": 399543,
+   "comm": "xdotool",
+   "ppid": 399381
+  },
+  {
+   "t": 10.87,
+   "event": "gone",
+   "pid": 399543,
+   "comm": "xdotool"
+  },
+  {
+   "t": 11.61,
+   "event": "appeared",
+   "pid": 399548,
+   "comm": "xdotool",
+   "ppid": 399381
+  },
+  {
+   "t": 11.72,
+   "event": "gone",
+   "pid": 399548,
+   "comm": "xdotool"
+  },
+  {
+   "t": 12.15,
+   "event": "appeared",
+   "pid": 399551,
+   "comm": "xdotool",
+   "ppid": 399381
+  },
+  {
+   "t": 12.25,
+   "event": "gone",
+   "pid": 399551,
+   "comm": "xdotool"
+  },
+  {
+   "t": 13.1,
+   "event": "appeared",
+   "pid": 399553,
+   "comm": "xdotool",
+   "ppid": 399381
+  },
+  {
+   "t": 13.21,
+   "event": "gone",
+   "pid": 399553,
+   "comm": "xdotool"
+  },
+  {
+   "t": 13.63,
+   "event": "appeared",
+   "pid": 399556,
+   "comm": "xdotool",
+   "ppid": 399381
+  },
+  {
+   "t": 13.74,
+   "event": "gone",
+   "pid": 399556,
+   "comm": "xdotool"
+  },
+  {
+   "t": 14.91,
+   "event": "appeared",
+   "pid": 399563,
+   "comm": "xdotool",
+   "ppid": 399381
+  },
+  {
+   "t": 15.01,
+   "event": "gone",
+   "pid": 399563,
+   "comm": "xdotool"
+  },
+  {
+   "t": 15.95,
+   "event": "appeared",
+   "pid": 399569,
+   "comm": "xdotool",
+   "ppid": 399381
+  },
+  {
+   "t": 16.06,
+   "event": "gone",
+   "pid": 399569,
+   "comm": "xdotool"
+  },
+  {
+   "t": 17.1,
+   "event": "appeared",
+   "pid": 399572,
+   "comm": "xdotool",
+   "ppid": 399381
+  },
+  {
+   "t": 17.21,
+   "event": "gone",
+   "pid": 399572,
+   "comm": "xdotool"
+  },
+  {
+   "t": 17.31,
+   "event": "appeared",
+   "pid": 399573,
+   "comm": "xdotool",
+   "ppid": 399381
+  },
+  {
+   "t": 17.42,
+   "event": "gone",
+   "pid": 399573,
+   "comm": "xdotool"
+  },
+  {
+   "t": 17.83,
+   "event": "appeared",
+   "pid": 399576,
+   "comm": "xdotool",
+   "ppid": 399381
+  },
+  {
+   "t": 17.94,
+   "event": "gone",
+   "pid": 399576,
+   "comm": "xdotool"
+  },
+  {
+   "t": 18.04,
+   "event": "appeared",
+   "pid": 399577,
+   "comm": "xdotool",
+   "ppid": 399381
+  },
+  {
+   "t": 18.15,
+   "event": "gone",
+   "pid": 399577,
+   "comm": "xdotool"
+  },
+  {
+   "t": 19.09,
+   "event": "appeared",
+   "pid": 399583,
+   "comm": "xdotool",
+   "ppid": 399381
+  },
+  {
+   "t": 19.19,
+   "event": "gone",
+   "pid": 399583,
+   "comm": "xdotool"
+  },
+  {
+   "t": 19.82,
+   "event": "appeared",
+   "pid": 399587,
+   "comm": "xdotool",
+   "ppid": 399381
+  },
+  {
+   "t": 19.93,
+   "event": "gone",
+   "pid": 399587,
+   "comm": "xdotool"
+  },
+  {
+   "t": 20.34,
+   "event": "appeared",
+   "pid": 399590,
+   "comm": "xdotool",
+   "ppid": 399381
+  },
+  {
+   "t": 20.45,
+   "event": "gone",
+   "pid": 399590,
+   "comm": "xdotool"
+  },
+  {
+   "t": 21.3,
+   "event": "appeared",
+   "pid": 399592,
+   "comm": "xdotool",
+   "ppid": 399381
+  },
+  {
+   "t": 21.4,
+   "event": "gone",
+   "pid": 399592,
+   "comm": "xdotool"
+  },
+  {
+   "t": 24.48,
+   "event": "appeared",
+   "pid": 399605,
+   "comm": "xdotool",
+   "ppid": 399381
+  },
+  {
+   "t": 24.59,
+   "event": "gone",
+   "pid": 399605,
+   "comm": "xdotool"
+  },
+  {
+   "t": 26.16,
+   "event": "appeared",
+   "pid": 399611,
+   "comm": "xdotool",
+   "ppid": 399381
+  },
+  {
+   "t": 26.26,
+   "event": "gone",
+   "pid": 399611,
+   "comm": "xdotool"
+  },
+  {
+   "t": 26.89,
+   "event": "appeared",
+   "pid": 399617,
+   "comm": "xdotool",
+   "ppid": 399381
+  },
+  {
+   "t": 26.99,
+   "event": "gone",
+   "pid": 399617,
+   "comm": "xdotool"
+  },
+  {
+   "t": 28.14,
+   "event": "appeared",
+   "pid": 399624,
+   "comm": "xdotool",
+   "ppid": 399381
+  },
+  {
+   "t": 28.25,
+   "event": "gone",
+   "pid": 399624,
+   "comm": "xdotool"
+  },
+  {
+   "t": 29.19,
+   "event": "appeared",
+   "pid": 399630,
+   "comm": "xdotool",
+   "ppid": 399381
+  },
+  {
+   "t": 29.29,
+   "event": "gone",
+   "pid": 399630,
+   "comm": "xdotool"
+  },
+  {
+   "t": 30.65,
+   "event": "appeared",
+   "pid": 399635,
+   "comm": "xdotool",
+   "ppid": 399381
+  },
+  {
+   "t": 30.76,
+   "event": "gone",
+   "pid": 399635,
+   "comm": "xdotool"
+  },
+  {
+   "t": 30.86,
+   "event": "appeared",
+   "pid": 399636,
+   "comm": "xdotool",
+   "ppid": 399381
+  },
+  {
+   "t": 30.97,
+   "event": "gone",
+   "pid": 399636,
+   "comm": "xdotool"
+  },
+  {
+   "t": 31.38,
+   "event": "appeared",
+   "pid": 399639,
+   "comm": "xdotool",
+   "ppid": 399381
+  },
+  {
+   "t": 31.49,
+   "event": "gone",
+   "pid": 399639,
+   "comm": "xdotool"
+  },
+  {
+   "t": 31.59,
+   "event": "appeared",
+   "pid": 399640,
+   "comm": "xdotool",
+   "ppid": 399381
+  },
+  {
+   "t": 31.7,
+   "event": "gone",
+   "pid": 399640,
+   "comm": "xdotool"
+  },
+  {
+   "t": 32.12,
+   "event": "appeared",
+   "pid": 399643,
+   "comm": "xdotool",
+   "ppid": 399381
+  },
+  {
+   "t": 32.22,
+   "event": "gone",
+   "pid": 399643,
+   "comm": "xdotool"
+  },
+  {
+   "t": 33.37,
+   "event": "appeared",
+   "pid": 399650,
+   "comm": "xdotool",
+   "ppid": 399381
+  },
+  {
+   "t": 33.48,
+   "event": "gone",
+   "pid": 399650,
+   "comm": "xdotool"
+  },
+  {
+   "t": 35.05,
+   "event": "appeared",
+   "pid": 399658,
+   "comm": "xdotool",
+   "ppid": 399381
+  },
+  {
+   "t": 35.15,
+   "event": "gone",
+   "pid": 399658,
+   "comm": "xdotool"
+  },
+  {
+   "t": 35.57,
+   "event": "appeared",
+   "pid": 399661,
+   "comm": "xdotool",
+   "ppid": 399381
+  },
+  {
+   "t": 35.68,
+   "event": "gone",
+   "pid": 399661,
+   "comm": "xdotool"
+  },
+  {
+   "t": 36.84,
+   "event": "appeared",
+   "pid": 399668,
+   "comm": "xdotool",
+   "ppid": 399381
+  },
+  {
+   "t": 36.94,
+   "event": "gone",
+   "pid": 399668,
+   "comm": "xdotool"
+  },
+  {
+   "t": 37.37,
+   "event": "appeared",
+   "pid": 399672,
+   "comm": "xdotool",
+   "ppid": 399381
+  },
+  {
+   "t": 37.47,
+   "event": "gone",
+   "pid": 399672,
+   "comm": "xdotool"
+  },
+  {
+   "t": 37.9,
+   "event": "appeared",
+   "pid": 399675,
+   "comm": "xdotool",
+   "ppid": 399381
+  },
+  {
+   "t": 38.01,
+   "event": "gone",
+   "pid": 399675,
+   "comm": "xdotool"
+  },
+  {
+   "t": 39.39,
+   "event": "appeared",
+   "pid": 399684,
+   "comm": "xdotool",
+   "ppid": 399381
+  },
+  {
+   "t": 39.49,
+   "event": "gone",
+   "pid": 399684,
+   "comm": "xdotool"
+  },
+  {
+   "t": 41.82,
+   "event": "appeared",
+   "pid": 399686,
+   "comm": "xdotool",
+   "ppid": 399381
+  },
+  {
+   "t": 41.93,
+   "event": "gone",
+   "pid": 399686,
+   "comm": "xdotool"
+  },
+  {
+   "t": 43.2,
+   "event": "appeared",
+   "pid": 399692,
+   "comm": "xdotool",
+   "ppid": 399381
+  },
+  {
+   "t": 43.3,
+   "event": "gone",
+   "pid": 399692,
+   "comm": "xdotool"
+  },
+  {
+   "t": 43.41,
+   "event": "appeared",
+   "pid": 399693,
+   "comm": "xdotool",
+   "ppid": 399381
+  },
+  {
+   "t": 43.51,
+   "event": "gone",
+   "pid": 399693,
+   "comm": "xdotool"
+  },
+  {
+   "t": 44.89,
+   "event": "appeared",
+   "pid": 399698,
+   "comm": "xdotool",
+   "ppid": 399381
+  },
+  {
+   "t": 44.99,
+   "event": "gone",
+   "pid": 399698,
+   "comm": "xdotool"
+  },
+  {
+   "t": 45.1,
+   "event": "appeared",
+   "pid": 399699,
+   "comm": "xdotool",
+   "ppid": 399381
+  },
+  {
+   "t": 45.2,
+   "event": "gone",
+   "pid": 399699,
+   "comm": "xdotool"
+  },
+  {
+   "t": 45.62,
+   "event": "appeared",
+   "pid": 399702,
+   "comm": "xdotool",
+   "ppid": 399381
+  },
+  {
+   "t": 45.73,
+   "event": "gone",
+   "pid": 399702,
+   "comm": "xdotool"
+  },
+  {
+   "t": 47.1,
+   "event": "appeared",
+   "pid": 399711,
+   "comm": "xdotool",
+   "ppid": 399381
+  },
+  {
+   "t": 47.21,
+   "event": "gone",
+   "pid": 399711,
+   "comm": "xdotool"
+  },
+  {
+   "t": 47.31,
+   "event": "appeared",
+   "pid": 399712,
+   "comm": "xdotool",
+   "ppid": 399381
+  },
+  {
+   "t": 47.42,
+   "event": "gone",
+   "pid": 399712,
+   "comm": "xdotool"
+  },
+  {
+   "t": 47.52,
+   "event": "appeared",
+   "pid": 399713,
+   "comm": "xdotool",
+   "ppid": 399381
+  },
+  {
+   "t": 47.63,
+   "event": "gone",
+   "pid": 399713,
+   "comm": "xdotool"
+  },
+  {
+   "t": 49.43,
+   "event": "appeared",
+   "pid": 399720,
+   "comm": "xdotool",
+   "ppid": 399381
+  },
+  {
+   "t": 49.53,
+   "event": "gone",
+   "pid": 399720,
+   "comm": "xdotool"
+  },
+  {
+   "t": 51.32,
+   "event": "appeared",
+   "pid": 399727,
+   "comm": "xdotool",
+   "ppid": 399381
+  },
+  {
+   "t": 51.42,
+   "event": "gone",
+   "pid": 399727,
+   "comm": "xdotool"
+  },
+  {
+   "t": 51.94,
+   "event": "appeared",
+   "pid": 399729,
+   "comm": "xdotool",
+   "ppid": 399381
+  },
+  {
+   "t": 52.05,
+   "event": "gone",
+   "pid": 399729,
+   "comm": "xdotool"
+  },
+  {
+   "t": 54.55,
+   "event": "appeared",
+   "pid": 399738,
+   "comm": "xdotool",
+   "ppid": 399381
+  },
+  {
+   "t": 54.66,
+   "event": "gone",
+   "pid": 399738,
+   "comm": "xdotool"
+  },
+  {
+   "t": 54.97,
+   "event": "appeared",
+   "pid": 399740,
+   "comm": "xdotool",
+   "ppid": 399381
+  },
+  {
+   "t": 55.07,
+   "event": "gone",
+   "pid": 399740,
+   "comm": "xdotool"
+  },
+  {
+   "t": 55.91,
+   "event": "appeared",
+   "pid": 399745,
+   "comm": "xdotool",
+   "ppid": 399381
+  },
+  {
+   "t": 56.01,
+   "event": "gone",
+   "pid": 399745,
+   "comm": "xdotool"
+  },
+  {
+   "t": 56.54,
+   "event": "appeared",
+   "pid": 399748,
+   "comm": "xdotool",
+   "ppid": 399381
+  },
+  {
+   "t": 56.64,
+   "event": "gone",
+   "pid": 399748,
+   "comm": "xdotool"
+  },
+  {
+   "t": 58.53,
+   "event": "appeared",
+   "pid": 399755,
+   "comm": "xdotool",
+   "ppid": 399381
+  },
+  {
+   "t": 58.64,
+   "event": "gone",
+   "pid": 399755,
+   "comm": "xdotool"
+  },
+  {
+   "t": 59.38,
+   "event": "appeared",
+   "pid": 399756,
+   "comm": "xdotool",
+   "ppid": 399381
+  },
+  {
+   "t": 59.48,
+   "event": "gone",
+   "pid": 399756,
+   "comm": "xdotool"
+  },
+  {
+   "t": 62.34,
+   "event": "appeared",
+   "pid": 399761,
+   "comm": "xdotool",
+   "ppid": 399381
+  },
+  {
+   "t": 62.44,
+   "event": "gone",
+   "pid": 399761,
+   "comm": "xdotool"
+  },
+  {
+   "t": 64.24,
+   "event": "appeared",
+   "pid": 399767,
+   "comm": "xdotool",
+   "ppid": 399381
+  },
+  {
+   "t": 64.34,
+   "event": "gone",
+   "pid": 399767,
+   "comm": "xdotool"
+  },
+  {
+   "t": 66.14,
+   "event": "appeared",
+   "pid": 399776,
+   "comm": "xdotool",
+   "ppid": 399381
+  },
+  {
+   "t": 66.25,
+   "event": "gone",
+   "pid": 399776,
+   "comm": "xdotool"
+  },
+  {
+   "t": 66.35,
+   "event": "appeared",
+   "pid": 399777,
+   "comm": "xdotool",
+   "ppid": 399381
+  },
+  {
+   "t": 66.46,
+   "event": "gone",
+   "pid": 399777,
+   "comm": "xdotool"
+  },
+  {
+   "t": 66.99,
+   "event": "appeared",
+   "pid": 399780,
+   "comm": "xdotool",
+   "ppid": 399381
+  },
+  {
+   "t": 67.1,
+   "event": "gone",
+   "pid": 399780,
+   "comm": "xdotool"
+  },
+  {
+   "t": 67.2,
+   "event": "appeared",
+   "pid": 399781,
+   "comm": "xdotool",
+   "ppid": 399381
+  },
+  {
+   "t": 67.31,
+   "event": "gone",
+   "pid": 399781,
+   "comm": "xdotool"
+  },
+  {
+   "t": 71.76,
+   "event": "appeared",
+   "pid": 399800,
+   "comm": "xdotool",
+   "ppid": 399381
+  },
+  {
+   "t": 71.86,
+   "event": "gone",
+   "pid": 399800,
+   "comm": "xdotool"
+  },
+  {
+   "t": 71.97,
+   "event": "appeared",
+   "pid": 399801,
+   "comm": "xdotool",
+   "ppid": 399381
+  },
+  {
+   "t": 72.07,
+   "event": "gone",
+   "pid": 399801,
+   "comm": "xdotool"
+  },
+  {
+   "t": 75.24,
+   "event": "appeared",
+   "pid": 399812,
+   "comm": "xdotool",
+   "ppid": 399381
+  },
+  {
+   "t": 75.35,
+   "event": "gone",
+   "pid": 399812,
+   "comm": "xdotool"
+  },
+  {
+   "t": 75.46,
+   "event": "appeared",
+   "pid": 399813,
+   "comm": "xdotool",
+   "ppid": 399381
+  },
+  {
+   "t": 75.56,
+   "event": "gone",
+   "pid": 399813,
+   "comm": "xdotool"
+  },
+  {
+   "t": 82.21,
+   "event": "reparented",
+   "pid": 399447,
+   "comm": "WebKitWebProces",
+   "from": 399414,
+   "to": 1
+  },
+  {
+   "t": 82.21,
+   "event": "appeared",
+   "pid": 399843,
+   "comm": "xkbcomp",
+   "ppid": 399382
+  },
+  {
+   "t": 82.21,
+   "event": "gone",
+   "pid": 399411,
+   "comm": "tauri-driver"
+  },
+  {
+   "t": 82.21,
+   "event": "gone",
+   "pid": 399412,
+   "comm": "WebKitWebDriver"
+  },
+  {
+   "t": 82.21,
+   "event": "gone",
+   "pid": 399414,
+   "comm": "geul"
+  },
+  {
+   "t": 82.21,
+   "event": "gone",
+   "pid": 399427,
+   "comm": "WebKitNetworkPr"
+  },
+  {
+   "t": 82.32,
+   "event": "gone",
+   "pid": 399447,
+   "comm": "WebKitWebProces"
+  },
+  {
+   "t": 82.32,
+   "event": "gone",
+   "pid": 399843,
+   "comm": "xkbcomp"
+  },
+  {
+   "t": 82.48,
+   "event": "harness-exit",
+   "exit": 0
+  },
+  {
+   "t": 82.53,
+   "event": "gone",
+   "pid": 399379,
+   "comm": "dbus-run-sessio"
+  },
+  {
+   "t": 82.53,
+   "event": "gone",
+   "pid": 399380,
+   "comm": "dbus-daemon"
+  },
+  {
+   "t": 82.53,
+   "event": "gone",
+   "pid": 399381,
+   "comm": "python3"
+  },
+  {
+   "t": 82.53,
+   "event": "gone",
+   "pid": 399382,
+   "comm": "Xvfb"
+  },
+  {
+   "t": 83.36,
+   "event": "gone",
+   "pid": 399334,
+   "comm": "MainThread"
+  }
+ ],
+ "leftAtEnd": []
+}
