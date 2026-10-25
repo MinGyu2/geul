@@ -1,0 +1,752 @@
+{
+  "records": {
+    "baseline-official-frozen-comparison.json": {
+      "bytes": 3619753,
+      "sha256": "c5c85470d84314aba4a153810972eb991c1e8c6947bb483da887e75c77b9d669",
+      "measurementComplete": true,
+      "officialStatus": "FAIL",
+      "wasmClaimed": "48adaa0f748484d12f59f4805deda0480635f915368392a87e76e95962ec0b27",
+      "independentIdentity": {
+        "wasmSha256": "48adaa0f748484d12f59f4805deda0480635f915368392a87e76e95962ec0b27",
+        "manifestSha256": "4ecda13f2d611e6f8ba4291b939efaeeccb6e812e68de7f8b539b11526c20ce2",
+        "glueSha256": "b69e920c8fb1e9d05dacadf3ebae2396b043da385137ad2b4b3386a9b3433252",
+        "fixtures": {
+          "basic-ko.hwp": "57c901cc394abf6f58f4838315d1ea2c5ecf8a03d9934d3fc098fd8be6e6e12f",
+          "basic-ko.hwpx": "26d434b7b427149110751c6ef5b19e9ecb4818f3ba7eadfe201b5afd3de442a8",
+          "연구노트(화학).hwp": "6717eca43c6fdd9b0530530cf17d33b6687da0c462a433d37eb652afb5394f91",
+          "3249937_asset_management_rules.hwpx": "97b5d6c571a6b7626321c6a53d797e3511978447497bb73309bd23eaa8e7ea77"
+        }
+      },
+      "analysis": {
+        "before": {
+          "status": "ANALYZED",
+          "official": false
+        },
+        "after": {
+          "status": "ANALYZED",
+          "official": false
+        },
+        "previousVerified": {
+          "status": "ANALYZED",
+          "official": false
+        }
+      },
+      "groups": [
+        {
+          "sample": "basic-ko.hwp",
+          "kind": "groupStart",
+          "statistics": {
+            "n": 30,
+            "p50": 61,
+            "p95": 87,
+            "max": 87,
+            "timeouts": 0
+          },
+          "producerRecomputedExactMatch": true
+        },
+        {
+          "sample": "basic-ko.hwp",
+          "kind": "extend",
+          "statistics": {
+            "n": 30,
+            "p50": 64,
+            "p95": 90,
+            "max": 93,
+            "timeouts": 0
+          },
+          "producerRecomputedExactMatch": true
+        },
+        {
+          "sample": "basic-ko.hwp",
+          "kind": "undo",
+          "statistics": {
+            "n": 25,
+            "p50": 140,
+            "p95": 150,
+            "max": 170,
+            "timeouts": 0
+          },
+          "producerRecomputedExactMatch": true
+        },
+        {
+          "sample": "basic-ko.hwp",
+          "kind": "redo",
+          "statistics": {
+            "n": 20,
+            "p50": 141,
+            "p95": 150,
+            "max": 240,
+            "timeouts": 0
+          },
+          "producerRecomputedExactMatch": true
+        },
+        {
+          "sample": "basic-ko.hwp",
+          "kind": "afterUndo",
+          "statistics": {
+            "n": 5,
+            "p50": 130,
+            "p95": 131,
+            "max": 131,
+            "timeouts": 0
+          },
+          "producerRecomputedExactMatch": true
+        },
+        {
+          "sample": "basic-ko.hwpx",
+          "kind": "groupStart",
+          "statistics": {
+            "n": 30,
+            "p50": 68,
+            "p95": 87,
+            "max": 88,
+            "timeouts": 0
+          },
+          "producerRecomputedExactMatch": true
+        },
+        {
+          "sample": "basic-ko.hwpx",
+          "kind": "extend",
+          "statistics": {
+            "n": 30,
+            "p50": 64,
+            "p95": 84,
+            "max": 89,
+            "timeouts": 0
+          },
+          "producerRecomputedExactMatch": true
+        },
+        {
+          "sample": "basic-ko.hwpx",
+          "kind": "undo",
+          "statistics": {
+            "n": 25,
+            "p50": 140,
+            "p95": 147,
+            "max": 166,
+            "timeouts": 0
+          },
+          "producerRecomputedExactMatch": true
+        },
+        {
+          "sample": "basic-ko.hwpx",
+          "kind": "redo",
+          "statistics": {
+            "n": 20,
+            "p50": 142,
+            "p95": 149,
+            "max": 210,
+            "timeouts": 0
+          },
+          "producerRecomputedExactMatch": true
+        },
+        {
+          "sample": "basic-ko.hwpx",
+          "kind": "afterUndo",
+          "statistics": {
+            "n": 5,
+            "p50": 132,
+            "p95": 133,
+            "max": 133,
+            "timeouts": 0
+          },
+          "producerRecomputedExactMatch": true
+        },
+        {
+          "sample": "연구노트(화학).hwp",
+          "kind": "groupStart",
+          "statistics": {
+            "n": 30,
+            "p50": 108,
+            "p95": 292,
+            "max": 326,
+            "timeouts": 0
+          },
+          "producerRecomputedExactMatch": true
+        },
+        {
+          "sample": "연구노트(화학).hwp",
+          "kind": "extend",
+          "statistics": {
+            "n": 30,
+            "p50": 99,
+            "p95": 186,
+            "max": 242,
+            "timeouts": 0
+          },
+          "producerRecomputedExactMatch": true
+        },
+        {
+          "sample": "연구노트(화학).hwp",
+          "kind": "undo",
+          "statistics": {
+            "n": 25,
+            "p50": 114,
+            "p95": 158,
+            "max": 208,
+            "timeouts": 0
+          },
+          "producerRecomputedExactMatch": true
+        },
+        {
+          "sample": "연구노트(화학).hwp",
+          "kind": "redo",
+          "statistics": {
+            "n": 20,
+            "p50": 114,
+            "p95": 137,
+            "max": 146,
+            "timeouts": 0
+          },
+          "producerRecomputedExactMatch": true
+        },
+        {
+          "sample": "연구노트(화학).hwp",
+          "kind": "afterUndo",
+          "statistics": {
+            "n": 5,
+            "p50": 115,
+            "p95": 120,
+            "max": 120,
+            "timeouts": 0
+          },
+          "producerRecomputedExactMatch": true
+        },
+        {
+          "sample": "3249937_asset_management_rules.hwpx",
+          "kind": "groupStart",
+          "statistics": {
+            "n": 30,
+            "p50": 113,
+            "p95": 135,
+            "max": 153,
+            "timeouts": 0
+          },
+          "producerRecomputedExactMatch": true
+        },
+        {
+          "sample": "3249937_asset_management_rules.hwpx",
+          "kind": "extend",
+          "statistics": {
+            "n": 30,
+            "p50": 101,
+            "p95": 124,
+            "max": 128,
+            "timeouts": 0
+          },
+          "producerRecomputedExactMatch": true
+        },
+        {
+          "sample": "3249937_asset_management_rules.hwpx",
+          "kind": "undo",
+          "statistics": {
+            "n": 25,
+            "p50": 240,
+            "p95": 276,
+            "max": 342,
+            "timeouts": 0
+          },
+          "producerRecomputedExactMatch": true
+        },
+        {
+          "sample": "3249937_asset_management_rules.hwpx",
+          "kind": "redo",
+          "statistics": {
+            "n": 20,
+            "p50": 240,
+            "p95": 261,
+            "max": 264,
+            "timeouts": 0
+          },
+          "producerRecomputedExactMatch": true
+        },
+        {
+          "sample": "3249937_asset_management_rules.hwpx",
+          "kind": "afterUndo",
+          "statistics": {
+            "n": 5,
+            "p50": 155,
+            "p95": 167,
+            "max": 167,
+            "timeouts": 0
+          },
+          "producerRecomputedExactMatch": true
+        }
+      ],
+      "groupsExactMatch": 20,
+      "handlerRows": 120,
+      "handlerOutputIdentical": {
+        "beforeVsAfter": true,
+        "afterVsPreviousVerified": true
+      },
+      "anchorCharacterization": {
+        "kindAnchorCountIndex": {
+          "afterUndo|count=1|index=0": 20,
+          "extend|count=1|index=0": 120,
+          "groupStart|count=1|index=0": 120,
+          "redo|count=1|index=1": 80,
+          "undo|count=1|index=1": 100
+        },
+        "ranges": {
+          "groupStart": {
+            "anchorMinusInput": [
+              0,
+              1
+            ],
+            "boundaryMinusAnchor": [
+              15,
+              100
+            ],
+            "firstCallMinusAnchor": [
+              0,
+              1
+            ],
+            "domKeydown": null
+          },
+          "extend": {
+            "anchorMinusInput": [
+              0,
+              1
+            ],
+            "boundaryMinusAnchor": [
+              15,
+              98
+            ],
+            "firstCallMinusAnchor": [
+              0,
+              1
+            ],
+            "domKeydown": null
+          },
+          "undo": {
+            "anchorMinusInput": [
+              -2,
+              51
+            ],
+            "boundaryMinusAnchor": [
+              8,
+              182
+            ],
+            "firstCallMinusAnchor": [
+              0,
+              3
+            ],
+            "domKeydown": [
+              -2,
+              51
+            ]
+          },
+          "redo": {
+            "anchorMinusInput": [
+              -2,
+              6
+            ],
+            "boundaryMinusAnchor": [
+              9,
+              111
+            ],
+            "firstCallMinusAnchor": [
+              0,
+              1
+            ],
+            "domKeydown": [
+              -2,
+              6
+            ]
+          },
+          "afterUndo": {
+            "anchorMinusInput": [
+              0,
+              1
+            ],
+            "boundaryMinusAnchor": [
+              15,
+              64
+            ],
+            "firstCallMinusAnchor": [
+              0,
+              1
+            ],
+            "domKeydown": null
+          }
+        }
+      }
+    },
+    "optimized-official-retry.json": {
+      "bytes": 3618352,
+      "sha256": "2d6c5f1be28fc98fc6a848f9373d1013c430dbf343655db26fef53b91a906dd0",
+      "measurementComplete": true,
+      "officialStatus": "FAIL",
+      "wasmClaimed": "ae34c12bd0d20aeb9f94610682bc678ec61f55722df74ea946d09782d7c87983",
+      "independentIdentity": {
+        "wasmSha256": "ae34c12bd0d20aeb9f94610682bc678ec61f55722df74ea946d09782d7c87983",
+        "manifestSha256": "2088e2b9ab2cc4d6809603a52570c681f05d2d8d26abdc2913c2925275acfe46",
+        "glueSha256": "b69e920c8fb1e9d05dacadf3ebae2396b043da385137ad2b4b3386a9b3433252",
+        "fixtures": {
+          "basic-ko.hwp": "57c901cc394abf6f58f4838315d1ea2c5ecf8a03d9934d3fc098fd8be6e6e12f",
+          "basic-ko.hwpx": "26d434b7b427149110751c6ef5b19e9ecb4818f3ba7eadfe201b5afd3de442a8",
+          "연구노트(화학).hwp": "6717eca43c6fdd9b0530530cf17d33b6687da0c462a433d37eb652afb5394f91",
+          "3249937_asset_management_rules.hwpx": "97b5d6c571a6b7626321c6a53d797e3511978447497bb73309bd23eaa8e7ea77"
+        }
+      },
+      "analysis": {
+        "before": {
+          "status": "ANALYZED",
+          "official": false
+        },
+        "after": {
+          "status": "ANALYZED",
+          "official": false
+        },
+        "previousVerified": {
+          "status": "ANALYZED",
+          "official": false
+        }
+      },
+      "groups": [
+        {
+          "sample": "basic-ko.hwp",
+          "kind": "groupStart",
+          "statistics": {
+            "n": 30,
+            "p50": 65,
+            "p95": 88,
+            "max": 122,
+            "timeouts": 0
+          },
+          "producerRecomputedExactMatch": true
+        },
+        {
+          "sample": "basic-ko.hwp",
+          "kind": "extend",
+          "statistics": {
+            "n": 30,
+            "p50": 68,
+            "p95": 93,
+            "max": 94,
+            "timeouts": 0
+          },
+          "producerRecomputedExactMatch": true
+        },
+        {
+          "sample": "basic-ko.hwp",
+          "kind": "undo",
+          "statistics": {
+            "n": 25,
+            "p50": 147,
+            "p95": 171,
+            "max": 173,
+            "timeouts": 0
+          },
+          "producerRecomputedExactMatch": true
+        },
+        {
+          "sample": "basic-ko.hwp",
+          "kind": "redo",
+          "statistics": {
+            "n": 20,
+            "p50": 148,
+            "p95": 159,
+            "max": 177,
+            "timeouts": 0
+          },
+          "producerRecomputedExactMatch": true
+        },
+        {
+          "sample": "basic-ko.hwp",
+          "kind": "afterUndo",
+          "statistics": {
+            "n": 5,
+            "p50": 143,
+            "p95": 150,
+            "max": 150,
+            "timeouts": 0
+          },
+          "producerRecomputedExactMatch": true
+        },
+        {
+          "sample": "basic-ko.hwpx",
+          "kind": "groupStart",
+          "statistics": {
+            "n": 30,
+            "p50": 68,
+            "p95": 84,
+            "max": 92,
+            "timeouts": 0
+          },
+          "producerRecomputedExactMatch": true
+        },
+        {
+          "sample": "basic-ko.hwpx",
+          "kind": "extend",
+          "statistics": {
+            "n": 30,
+            "p50": 68,
+            "p95": 93,
+            "max": 94,
+            "timeouts": 0
+          },
+          "producerRecomputedExactMatch": true
+        },
+        {
+          "sample": "basic-ko.hwpx",
+          "kind": "undo",
+          "statistics": {
+            "n": 25,
+            "p50": 140,
+            "p95": 149,
+            "max": 195,
+            "timeouts": 0
+          },
+          "producerRecomputedExactMatch": true
+        },
+        {
+          "sample": "basic-ko.hwpx",
+          "kind": "redo",
+          "statistics": {
+            "n": 20,
+            "p50": 141,
+            "p95": 146,
+            "max": 200,
+            "timeouts": 0
+          },
+          "producerRecomputedExactMatch": true
+        },
+        {
+          "sample": "basic-ko.hwpx",
+          "kind": "afterUndo",
+          "statistics": {
+            "n": 5,
+            "p50": 133,
+            "p95": 139,
+            "max": 139,
+            "timeouts": 0
+          },
+          "producerRecomputedExactMatch": true
+        },
+        {
+          "sample": "연구노트(화학).hwp",
+          "kind": "groupStart",
+          "statistics": {
+            "n": 30,
+            "p50": 96,
+            "p95": 165,
+            "max": 359,
+            "timeouts": 0
+          },
+          "producerRecomputedExactMatch": true
+        },
+        {
+          "sample": "연구노트(화학).hwp",
+          "kind": "extend",
+          "statistics": {
+            "n": 30,
+            "p50": 98,
+            "p95": 194,
+            "max": 194,
+            "timeouts": 0
+          },
+          "producerRecomputedExactMatch": true
+        },
+        {
+          "sample": "연구노트(화학).hwp",
+          "kind": "undo",
+          "statistics": {
+            "n": 25,
+            "p50": 115,
+            "p95": 152,
+            "max": 166,
+            "timeouts": 0
+          },
+          "producerRecomputedExactMatch": true
+        },
+        {
+          "sample": "연구노트(화학).hwp",
+          "kind": "redo",
+          "statistics": {
+            "n": 20,
+            "p50": 112,
+            "p95": 139,
+            "max": 164,
+            "timeouts": 0
+          },
+          "producerRecomputedExactMatch": true
+        },
+        {
+          "sample": "연구노트(화학).hwp",
+          "kind": "afterUndo",
+          "statistics": {
+            "n": 5,
+            "p50": 117,
+            "p95": 134,
+            "max": 134,
+            "timeouts": 0
+          },
+          "producerRecomputedExactMatch": true
+        },
+        {
+          "sample": "3249937_asset_management_rules.hwpx",
+          "kind": "groupStart",
+          "statistics": {
+            "n": 30,
+            "p50": 113,
+            "p95": 133,
+            "max": 186,
+            "timeouts": 0
+          },
+          "producerRecomputedExactMatch": true
+        },
+        {
+          "sample": "3249937_asset_management_rules.hwpx",
+          "kind": "extend",
+          "statistics": {
+            "n": 30,
+            "p50": 101,
+            "p95": 123,
+            "max": 124,
+            "timeouts": 0
+          },
+          "producerRecomputedExactMatch": true
+        },
+        {
+          "sample": "3249937_asset_management_rules.hwpx",
+          "kind": "undo",
+          "statistics": {
+            "n": 25,
+            "p50": 235,
+            "p95": 255,
+            "max": 261,
+            "timeouts": 0
+          },
+          "producerRecomputedExactMatch": true
+        },
+        {
+          "sample": "3249937_asset_management_rules.hwpx",
+          "kind": "redo",
+          "statistics": {
+            "n": 20,
+            "p50": 234,
+            "p95": 242,
+            "max": 243,
+            "timeouts": 0
+          },
+          "producerRecomputedExactMatch": true
+        },
+        {
+          "sample": "3249937_asset_management_rules.hwpx",
+          "kind": "afterUndo",
+          "statistics": {
+            "n": 5,
+            "p50": 154,
+            "p95": 177,
+            "max": 177,
+            "timeouts": 0
+          },
+          "producerRecomputedExactMatch": true
+        }
+      ],
+      "groupsExactMatch": 20,
+      "handlerRows": 120,
+      "handlerOutputIdentical": {
+        "beforeVsAfter": true,
+        "afterVsPreviousVerified": true
+      },
+      "anchorCharacterization": {
+        "kindAnchorCountIndex": {
+          "afterUndo|count=1|index=0": 20,
+          "extend|count=1|index=0": 120,
+          "groupStart|count=1|index=0": 120,
+          "redo|count=1|index=1": 80,
+          "undo|count=1|index=1": 100
+        },
+        "ranges": {
+          "groupStart": {
+            "anchorMinusInput": [
+              0,
+              1
+            ],
+            "boundaryMinusAnchor": [
+              15,
+              98
+            ],
+            "firstCallMinusAnchor": [
+              0,
+              1
+            ],
+            "domKeydown": null
+          },
+          "extend": {
+            "anchorMinusInput": [
+              0,
+              1
+            ],
+            "boundaryMinusAnchor": [
+              15,
+              97
+            ],
+            "firstCallMinusAnchor": [
+              0,
+              1
+            ],
+            "domKeydown": null
+          },
+          "undo": {
+            "anchorMinusInput": [
+              -2,
+              25
+            ],
+            "boundaryMinusAnchor": [
+              8,
+              111
+            ],
+            "firstCallMinusAnchor": [
+              0,
+              3
+            ],
+            "domKeydown": [
+              -3,
+              25
+            ]
+          },
+          "redo": {
+            "anchorMinusInput": [
+              -2,
+              3
+            ],
+            "boundaryMinusAnchor": [
+              9,
+              99
+            ],
+            "firstCallMinusAnchor": [
+              0,
+              1
+            ],
+            "domKeydown": [
+              -2,
+              3
+            ]
+          },
+          "afterUndo": {
+            "anchorMinusInput": [
+              0,
+              1
+            ],
+            "boundaryMinusAnchor": [
+              16,
+              63
+            ],
+            "firstCallMinusAnchor": [
+              0,
+              1
+            ],
+            "domKeydown": null
+          }
+        }
+      }
+    }
+  },
+  "totalGroups": 40,
+  "totalHandlerRows": 240,
+  "allGroupsExact": true,
+  "allRowsIdentical": true
+}

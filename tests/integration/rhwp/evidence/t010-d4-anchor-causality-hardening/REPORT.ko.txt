@@ -1,0 +1,147 @@
+T010 D4 handler 분석 trace anchor 인과성 보강 보고서 (2026-10-25)
+
+1. 결론
+- 상태: 범위 안 수정·회귀 시험·공식 기록 CLI 검증·보안 검사 완료.
+- 보고된 우회는 현재 코드(b80892d)에서 함수 단위와 실제 handler CLI 단위 모두 재현되었다.
+  수정 후 같은 변조는 구조화 FAIL/exit 1로 거부된다.
+- 두 공식 기록(baseline 48adaa, Luma8 ae34c1)은 계속 ANALYZED/exit 0이며, 분석 출력은
+  수정 전 분석기 출력 및 이전 보강 증거의 verified 출력과 바이트 단위로 같다.
+- ANALYZED는 공식 D4 PASS가 아니다. 공식 성능 측정은 다시 하지 않았다.
+
+2. 시작 상태
+- HEAD b80892d41a65facb8738917239d72ae6d3aaf556 (master), 작업 트리 clean.
+- submodule: external/rhwp 1a76570e833917d15817415a53c09ad61ab3203f,
+  external/wordcraft fc41918814f62645b6746ed68e71e8c2c2e85d6f (변경 없음).
+
+3. 재현 (b80892d 분석기)
+첫 문서(basic-ko.hwp)의 첫 groupStart 표본. insertText 호출은 목록 위치가 아니라 이름으로
+골랐다(같은 이름의 첫 engineTimeline 항목 = firstAt 근원).
+  timeline 앞에 {"name":"dom:input","at":-10000,"ms":null} 삽입
+  insertText.at = -9999, calls.insertText.firstAt = -9999
+- 원본 표본: 수용. handlerMs 19, recordedUnionMs 7, uncoveredMs 12.
+- 변조 표본: 수용(함수 validate_sample_contract, CLI 모두 ANALYZED/exit 0).
+  handlerMs 19, recordedUnionMs 5, uncoveredMs 14 → 진단 해석이 바뀐다.
+- Luma8 같은 변조: ANALYZED, 첫 행 recordedUnion 6→5, uncovered 13→14.
+- 허용 범위 안 변조(at.input-2 위치의 가짜 dom:input + insertText input-1.9): 원본은 수용,
+  recordedUnion 7→5.1. 즉 극단값뿐 아니라 그럴듯한 값으로도 하한이 약해졌다.
+- undo/redo: 가짜 dom:keydown·command:request 쌍 삽입 + restoreSnapshot -9999도 수용.
+- 별도 확인: 가짜 anchor 없이 insertText만 앞당기면 원본도 거부(invalid call execution interval).
+전체 결과: before/summary.json, after/summary.json.
+
+4. 생산자 계약 조사 (읽기 전용)
+- undo_native.MEASURE: input은 document capture listener에서 watch()를 부르고, 그때
+  __geulTrace.seq를 잡는다. 실제 dom:input은 textarea target listener(textInput.ts)에서
+  그 뒤에 발행되고, handler.end는 document bubble listener에서 기록된다. 따라서 측정
+  dispatch의 dom:input은 창의 첫 dom:input이며 handlerEnd 이전에 발행된다.
+- 단축키: window capture keydown에서 watch(key=input=e.timeStamp). 이어 textarea의
+  dom:keydown, window bubble(App.tsx→shortcuts→executeCommand)의 command:request가 같은
+  dispatch 안에서 발행된다. tick RAF는 이 dispatch 뒤에 실행되므로 command:request는
+  observed 이전이다. handlerEnd는 직렬화되지 않는다(null).
+- trace 시각: imeTrace.ts now() = Math.round(performance.now()*10)/10, 이후 timeline_samples가
+  r[1]-key를 한 자리로 다시 반올림한다. 호출 at/ms는 native_probe의 동기 wrapper가
+  performance.now()로 시작을 잡고 반환 시 push하며 두 자리로 직렬화된다.
+- 하네스는 revision 변화(type_ascii, wait_revision)만 기다리고 최종 RAF는 기다리지 않는다.
+  다음 입력의 같은 이름 기록이 이전 표본 창에 들어갈 수 있으므로 "창 전체에서 정확히 하나"는
+  생산자 보장이 아니다. 단일 thread 실행상 다음 입력은 측정 dispatch가 끝난 뒤(편집:
+  handlerEnd 이후)에만 시작한다.
+- 공식 두 기록(440 표본 ×2): 모든 표본에 해당 anchor가 정확히 하나. 편집 anchor는 trace
+  index 0, anchor-input 0..1ms, 첫 호출-anchor 0..1ms. undo/redo는 [dom:keydown,
+  command:request] 순서(index 1), command:request -2..51ms, Luma8 dom:keydown 최소 -3ms
+  (해당 표본 command:request -2). 비동기 렌더 호출이 handlerEnd 뒤에 끝나는 편집 표본은
+  기록마다 59개. 수치 전체: historical-comparison.json anchorCharacterization.
+
+5. 근본 원인
+validate_sample_contract가 같은 이름 anchor 전체의 min()을 호출 시작 하한으로 썼다. 편집
+연관 검사는 "조건을 만족하는 dom:input이 하나라도 있으면" 통과했으므로, 진짜 anchor가 남아
+있는 한 더 이른 가짜 기록이 연관 검사 없이 하한만 낮췄다. 기록을 더할수록 허용 범위가
+넓어지는 비단조 규칙이었다.
+
+6. 수정 (tests/integration/rhwp/ownership-poc/d4_handler.py)
+- TRACE_EMISSION_HALF_QUANTUM, trace_emission_bounds(): 발행 0.1ms 반올림과 직렬화
+  rounding_bounds를 합친 key 기준 발행 구간. 임의 epsilon이 아니라 생산자 반올림 절반폭.
+- validate_sample_contract의 anchor 부분:
+  a) anchor = 같은 이름의 첫 trace 기록(편집 dom:input, undo/redo command:request).
+  b) ms는 null이어야 함(duration).
+  c) 발행 구간 하한 <= 경계 상한: 편집 handlerEnd, undo/redo observed (after ...).
+  d) 편집은 기존 허용 at.input-2 <= anchor.at (before input). 새 허용값은 추가하지 않음.
+  e) 경계 하한보다 확실히 앞서 발행된 같은 이름 기록이 더 있으면 FAIL
+     (ambiguous ... duplicate ... before handlerEnd/observed). 경계 이후 기록은 허용.
+  f) 호출 하한은 선택된 anchor의 발행 구간 하한. 최종 RAF 상한, 호출/합계 duration,
+     n, firstAt, insertText 동기 상한은 그대로.
+- 기존 편집 any(dom:input ...) 검사는 a~d로 대체되었다.
+- 규칙은 기록 추가에 대해 단조다: 앞에 끼운 기록은 anchor가 되어 연관 검사를 받거나,
+  진짜 anchor를 경계 이전 중복으로 만들어 FAIL이 된다. 뒤의 기록은 하한을 바꾸지 않는다.
+- 정밀도 영향: 호출 하한이 발행 반올림 0.05ms만큼 정확해졌다(anchor 1.0에서 0.90 허용,
+  0.89 거부). 공식 기록은 1ms 해상도라 결과가 같다.
+- 변경하지 않음: 백분위·반올림 계산, 공식 임계값, measurementComplete 검사, 통계 재계산,
+  JSON 파서, 독립 WASM/JS/manifest/fixture 검사, analyze-d4.py, d4_evidence.py(input-delay).
+
+7. 시험
+- 신규 test_d4_hardening.AnchorCausality 11개 + HandlerCliHardening 2개(CLI).
+  음성: 이른 가짜 dom:input, 이른 insertText+firstAt, 결합 변조(3 편집 종류 × 2 기록),
+  경계 이전 중복 anchor(5 종류), 가짜 command:request(undo/redo × 2 기록), observed 이후/
+  ms 있는 command:request, 허용 범위 안 가짜 anchor(편집/undo), handlerEnd 이후 dom:input,
+  실제 CLI FAIL/exit 1(정확한 오류 문자열, documents 없음).
+  양성: 두 기록 전체 440×2 표본·5 종류, 단일 anchor 확인, Luma8 -3ms dom:keydown 표본,
+  음수 anchor·음수 호출, handlerEnd를 넘는 비동기 호출 59개×2, 경계 이후 다음 입력 기록
+  (5 종류 × 2 기록), 발행/직렬화 반올림 경계, 두 공식 FAIL 기록 CLI ANALYZED/exit 0.
+- 수정 전 분석기(b80892d d4_handler.py)로 신규 시험 실행: assertion 실패 20, 오류 1
+  (신규 helper trace_emission_bounds import 실패 = 시험 인프라 사유, 해당 시험은 원본
+  비교 대상 아님), 양성 시험과 기존 거부 사례(early-insertText)는 통과. new-tests-original.txt.
+- 집중: 원본 트리 87 OK → 수정 후 100 OK (focused-original.txt, focused-after.txt).
+- 전체 ownership-poc Python: 원본 트리 201 OK → 수정 후 214 OK (full-*.txt).
+  원본 트리 실행은 scratch mirror(b80892d tests/ 전체, 변경 없는 evidence·fixtures/rhwp·
+  external은 저장소 경로 연결)에서 했다. 첫 mirror 시도는 형제 모듈 누락으로 오류가 있어
+  tests/ 전체로 다시 실행했다.
+- 기존 회귀는 삭제·skip·완화하지 않았다.
+
+8. 공식 기록 CLI 검증 (reproduce.py, compare.py)
+- 독립 신원: 후보 패키지 /tmp/geul-t010-caret-geometry/candidate-package,
+  /tmp/geul-d4-remediation-gray/candidate-package. 기대 WASM은 커밋된
+  t010-d4-performance-remediation/identities.json(approvedWasm/experimentalWasm), JS는
+  이전 커밋 증거 상수 b69e920c…3252. 실제 파일 SHA와 ENGINE.json 기록이 일치하고 manifest
+  SHA(4ecda13f…, 2088e2b9…)도 이전 verified 출력과 같다. 입력 JSON의 engineIdentity는
+  기대값으로 쓰지 않았다.
+- 원본 SHA-256: baseline c5c85470…d669 (3,619,753 bytes),
+  Luma8 2d6c5f1b…6dd0 (3,618,352 bytes). 실행 전후 바이트 불변.
+- 두 기록 measurementComplete true, 공식 status FAIL.
+- 40개 문서/종류 통계 묶음: producer pct 재계산과 모두 정확히 일치.
+- 수정 전/후 CLI: 둘 다 ANALYZED/exit 0, official false.
+- 240개 handler 행(문서 4 × groupStart 30 × 기록 2): 수정 전 출력, 수정 후 출력, 이전
+  verified-baseline/luma8-handler.json이 모두 바이트 동일(after/*-genuine.json SHA
+  92cd365f…, d1a349d0…). 진단 해석 변화 없음.
+- input-delay mode: analyze-d4.py, d4_evidence.py 무변경. 기존 input-delay 시험 통과.
+
+9. 보안·무결성 (security-summary.json, integrity.json)
+- tests/security 86 OK. check-sensitive-info --all/--history 통과, --staged는 커밋 직전 실행.
+- gitleaks 8.30.1(Nix store 실행 파일)로 변경·신규 파일의 상대 경로 mirror 검사.
+- git diff --check 통과. 보호 경로(src, src-tauri, external/*, undo_native.py, 이전 evidence
+  디렉터리) 무변경, submodule pointer 동일.
+- 증거에는 홈 절대 경로·비밀·호스트 정보를 넣지 않았다(scratch 경로는 SCRATCH/REPO로 치환).
+  reproduce.py에는 후보 패키지 위치(/tmp/…)만 이전 증거와 같은 형식으로 남는다.
+
+10. 남은 한계 (생산자 provenance)
+- undo/redo에는 같은 performance clock의 하한이 직렬화되지 않는다(handler 시작·delivered
+  없음, handlerEnd null). key는 native event 시각이라 clock이 다르다(-3ms 관찰). 따라서
+  기록을 끼우는 변조는 거부하지만, 유일한 진짜 command:request와 호출을 함께 앞당긴 변조는
+  판별할 수 없다. 고정 허용값(-2ms 등)은 Luma8 -3ms dom:keydown 근거로 정상 측정을 거부할
+  위험이 있어 도입하지 않았다.
+- 편집 하한 at.input-2는 기존 계약값이다. 같은 기록에서 native/performance 차이가 3ms까지
+  관찰되었으므로, 향후 측정에서 기존 at.input >= -2 검사와 함께 재검토가 필요할 수 있다.
+- undo/redo 중복 판정 경계는 observed다. 다음 단축키의 command:request가 측정 변화가
+  관찰되는 RAF보다 먼저 발행되면(하네스가 RAF 전에 revision 변화를 보고 다음 키를 보낸
+  경우) 모호한 연관으로 FAIL이 된다. 공식 440×2 표본에서는 최종 RAF까지 두 번째 기록이 한
+  번도 없었다. 이 경계를 엄밀히 하려면 생산자가 단축키 dispatch 종료 시각이나 이벤트
+  순번/trial ID를 직렬화해야 한다.
+- 절대 key·trial ID·이벤트 순번이 없어 표본 provenance 자체는 증명하지 않는다. 생산자는
+  바꾸지 않았다.
+
+11. 판정 (변경 없음)
+T010: INCOMPLETE / D1: PASS(과거 증거) / D2: INCONCLUSIVE / D3: PASS(과거 증거) /
+D4: FAIL(공식 group-start p95 > 50 ms) / D5: PASS(과거 증거) / RSS: INCONCLUSIVE /
+생산 RHWP Undo/Redo: NO-GO / T011: NOT STARTED
+
+12. 다음 작업
+D4 분석기 무결성 보강은 범위 안에서 충분하다. 남은 항목은 생산자 직렬화 한계이며 분석기
+수정으로 해결할 대상이 아니다. 별도 계획된 decoded-resource lease·memory-accounting 계약
+작업을 진행할 수 있다. 최종 커밋 SHA는 커밋 뒤 사용자 보고에 기록한다. push하지 않는다.

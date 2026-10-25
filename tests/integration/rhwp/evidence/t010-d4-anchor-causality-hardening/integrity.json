@@ -1,0 +1,33 @@
+{
+  "startHead": "b80892d41a65facb8738917239d72ae6d3aaf556",
+  "branch": "master",
+  "startWorktree": "clean",
+  "changedFiles": [
+    "tests/integration/rhwp/ownership-poc/d4_handler.py",
+    "tests/integration/rhwp/ownership-poc/test_d4_hardening.py",
+    "tests/integration/rhwp/ownership-poc/README.md",
+    "docs/architecture/rhwp-undo-redo.md",
+    "tests/integration/rhwp/evidence/t010-d4-anchor-causality-hardening/ (new)"
+  ],
+  "protectedPathsUnchanged": [
+    "external/rhwp",
+    "external/wordcraft",
+    "tests/integration/rhwp/undo_native.py",
+    "tests/integration/rhwp/evidence/t010-d4-performance-remediation",
+    "tests/integration/rhwp/evidence/t010-d4-handler-statistics-integrity",
+    "tests/integration/rhwp/evidence/t010-d4-handler-integrity-hardening",
+    "src",
+    "src-tauri",
+    "tests/integration/rhwp/ownership-poc/analyze-d4.py",
+    "tests/integration/rhwp/ownership-poc/d4_evidence.py"
+  ],
+  "protectedDiffExit": 0,
+  "diffCheck": "PASS",
+  "submodules": [
+    " 1a76570e833917d15817415a53c09ad61ab3203f external/rhwp (v0.8.7)",
+    " fc41918814f62645b6746ed68e71e8c2c2e85d6f external/wordcraft (v0.7.0)"
+  ],
+  "officialSourceBytesUnchanged": true,
+  "newOfficialMeasurement": false,
+  "pushPerformed": false
+}

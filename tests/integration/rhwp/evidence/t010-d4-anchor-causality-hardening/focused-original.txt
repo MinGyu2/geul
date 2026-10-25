@@ -1,0 +1,4 @@
+$ python3 -I -m unittest discover -s tests/integration/rhwp/ownership-poc -p 'test_d4*.py'  # b80892d tree (scratch mirror)
+Ran 87 tests in 27.778s
+
+OK

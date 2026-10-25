@@ -1,0 +1,172 @@
+{
+  "original": true,
+  "analyzer": "b80892d41a65facb8738917239d72ae6d3aaf556",
+  "sourceHashes": {
+    "baseline-official-frozen-comparison.json": "c5c85470d84314aba4a153810972eb991c1e8c6947bb483da887e75c77b9d669",
+    "optimized-official-retry.json": "2d6c5f1be28fc98fc6a848f9373d1013c430dbf343655db26fef53b91a906dd0"
+  },
+  "results": [
+    {
+      "record": "baseline-official-frozen-comparison.json",
+      "case": "genuine",
+      "exit": 0,
+      "status": "ANALYZED",
+      "error": null,
+      "traceback": false
+    },
+    {
+      "record": "baseline-official-frozen-comparison.json",
+      "case": "early-input-anchor",
+      "exit": 0,
+      "status": "ANALYZED",
+      "error": null,
+      "strictJson": true,
+      "traceback": false,
+      "inputUnchanged": true,
+      "firstGroupStartRow": {
+        "handlerMs": 19,
+        "recordedUnionMs": 7,
+        "uncoveredMs": 12
+      }
+    },
+    {
+      "record": "baseline-official-frozen-comparison.json",
+      "case": "early-insertText-call",
+      "exit": 1,
+      "status": "FAIL",
+      "error": "invalid call execution interval",
+      "strictJson": true,
+      "traceback": false,
+      "inputUnchanged": true,
+      "firstGroupStartRow": null
+    },
+    {
+      "record": "baseline-official-frozen-comparison.json",
+      "case": "anchor-and-call",
+      "exit": 0,
+      "status": "ANALYZED",
+      "error": null,
+      "strictJson": true,
+      "traceback": false,
+      "inputUnchanged": true,
+      "firstGroupStartRow": {
+        "handlerMs": 19,
+        "recordedUnionMs": 5,
+        "uncoveredMs": 14
+      }
+    },
+    {
+      "record": "baseline-official-frozen-comparison.json",
+      "case": "duplicate-input-anchor",
+      "exit": 0,
+      "status": "ANALYZED",
+      "error": null,
+      "strictJson": true,
+      "traceback": false,
+      "inputUnchanged": true,
+      "firstGroupStartRow": {
+        "handlerMs": 19,
+        "recordedUnionMs": 7,
+        "uncoveredMs": 12
+      }
+    },
+    {
+      "record": "baseline-official-frozen-comparison.json",
+      "case": "duplicate-command-anchor",
+      "exit": 0,
+      "status": "ANALYZED",
+      "error": null,
+      "strictJson": true,
+      "traceback": false,
+      "inputUnchanged": true,
+      "firstGroupStartRow": {
+        "handlerMs": 19,
+        "recordedUnionMs": 7,
+        "uncoveredMs": 12
+      }
+    },
+    {
+      "record": "baseline-official-frozen-comparison.json",
+      "case": "fabricated-command-anchor",
+      "exit": 0,
+      "status": "ANALYZED",
+      "error": null,
+      "strictJson": true,
+      "traceback": false,
+      "inputUnchanged": true,
+      "firstGroupStartRow": {
+        "handlerMs": 19,
+        "recordedUnionMs": 7,
+        "uncoveredMs": 12
+      }
+    },
+    {
+      "record": "baseline-official-frozen-comparison.json",
+      "case": "in-tolerance-input-anchor",
+      "exit": 0,
+      "status": "ANALYZED",
+      "error": null,
+      "strictJson": true,
+      "traceback": false,
+      "inputUnchanged": true,
+      "firstGroupStartRow": {
+        "handlerMs": 19,
+        "recordedUnionMs": 5.1,
+        "uncoveredMs": 13.9
+      }
+    },
+    {
+      "record": "baseline-official-frozen-comparison.json",
+      "case": "in-tolerance-command-anchor",
+      "exit": 0,
+      "status": "ANALYZED",
+      "error": null,
+      "strictJson": true,
+      "traceback": false,
+      "inputUnchanged": true,
+      "firstGroupStartRow": {
+        "handlerMs": 19,
+        "recordedUnionMs": 7,
+        "uncoveredMs": 12
+      }
+    },
+    {
+      "record": "optimized-official-retry.json",
+      "case": "genuine",
+      "exit": 0,
+      "status": "ANALYZED",
+      "error": null,
+      "traceback": false
+    },
+    {
+      "record": "optimized-official-retry.json",
+      "case": "anchor-and-call",
+      "exit": 0,
+      "status": "ANALYZED",
+      "error": null,
+      "strictJson": true,
+      "traceback": false,
+      "inputUnchanged": true,
+      "firstGroupStartRow": {
+        "handlerMs": 19,
+        "recordedUnionMs": 5,
+        "uncoveredMs": 14
+      }
+    },
+    {
+      "record": "optimized-official-retry.json",
+      "case": "fabricated-command-anchor",
+      "exit": 0,
+      "status": "ANALYZED",
+      "error": null,
+      "strictJson": true,
+      "traceback": false,
+      "inputUnchanged": true,
+      "firstGroupStartRow": {
+        "handlerMs": 19,
+        "recordedUnionMs": 6,
+        "uncoveredMs": 13
+      }
+    }
+  ]
+}

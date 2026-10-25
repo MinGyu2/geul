@@ -219,3 +219,11 @@ CLI는 입력과 ENGINE.json에 같은 엄격 JSON 파서를 적용한다. 중�
 않는다. 독립 WASM/JS/manifest/fixture 검사는 유지하지만 표본의 독립 provenance를
 증명하지는 않는다. 새 근거: `../evidence/t010-d4-handler-integrity-hardening/`.
 ANALYZED는 계속 공식 D4 PASS와 별개이며 T010/D4 FAIL 판정은 변하지 않는다.
+
+trace anchor 인과성(2026-10-25): anchor는 같은 이름의 첫 trace 기록이다. MEASURE의 capture
+listener가 측정 dispatch의 anchor 발행 전에 trace 순번을 잡기 때문이다. 편집 dom:input은
+handlerEnd, undo/redo command:request는 observed 이전에 발행되고 ms가 없어야 한다. 편집은
+at.input-2 이후여야 한다. 경계 이전에 확실히 발행된 같은 이름 기록이 더 있으면 FAIL이며, 경계
+이후의 다음 입력 기록은 허용한다. 호출 하한은 발행 0.1ms 반올림과 직렬화 반올림을 모두 둔
+그 anchor 구간이다. undo/redo에는 같은 clock 하한이 직렬화되지 않으므로 anchor 자체와 호출을 함께
+옮긴 변조는 provenance 한계로 남는다. 근거: `../evidence/t010-d4-anchor-causality-hardening/`.

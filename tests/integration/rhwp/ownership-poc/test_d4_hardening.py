@@ -106,6 +106,136 @@ class HandlerHardening(unittest.TestCase):
         with self.assertRaises(ValueError):handler_accounting(sample)
 
 
+BASELINE, LUMA8 = existing.OFFICIAL
+
+
+def insert_trace(sample, record, index=0):
+    sample['timeline'].insert(index, dict(record, ms=None, page=None))
+
+
+def move_first_call(sample, name, at):
+    # The first engineTimeline entry of a name is the aggregate firstAt source.
+    call = next(c for c in sample['engineTimeline'] if c['name'] == name)
+    call['at'] = at; sample['calls'][name]['firstAt'] = at
+
+
+def anchor(sample):
+    name = 'command:request' if sample['kind'] in ('undo','redo') else 'dom:input'
+    return next(t for t in sample['timeline'] if t['name'] == name)
+
+
+class AnchorCausality(unittest.TestCase):
+    """Deep copies of genuine official samples; only targeted fields are changed."""
+    setUpClass = classmethod(existing.HandlerStatistics.setUpClass.__func__)
+    check = existing.HandlerStatistics.check
+    doc = existing.HandlerStatistics.doc
+    samples = existing.HandlerStatistics.samples
+
+    def first(self, change, kind='groupStart', index=0):
+        return lambda r: change(self.samples(r,kind,index)[0])
+
+    def reject(self, mutate, reason, record=BASELINE):
+        with self.assertRaises(ValueError) as caught: self.check(mutate, record)
+        self.assertIn(reason, str(caught.exception)); return str(caught.exception)
+
+    def test_early_fabricated_input_anchor(self):
+        self.reject(self.first(lambda s:insert_trace(s,dict(name='dom:input',at=-10000))), 'groupStart dom:input before input')
+
+    def test_early_insert_text_call_with_matching_first_at(self):
+        self.reject(self.first(lambda s:move_first_call(s,'insertText',-9999)), 'invalid call execution interval')
+
+    def test_reported_anchor_and_call_bypass(self):
+        def bypass(s):
+            insert_trace(s,dict(name='dom:input',at=-10000)); move_first_call(s,'insertText',-9999)
+        for kind in ('groupStart','extend','afterUndo'):
+            for record in (BASELINE, LUMA8):
+                with self.subTest(kind=kind, record=record):
+                    self.reject(self.first(bypass,kind), kind+' dom:input before input', record)
+
+    def test_duplicate_anchor_inside_measured_dispatch(self):
+        def duplicate(s):
+            a = anchor(s); insert_trace(s, a, s['timeline'].index(a)+1)
+        for kind in ('groupStart','extend','afterUndo','undo','redo'):
+            with self.subTest(kind=kind):self.reject(self.first(duplicate,kind),'duplicate')
+        self.assertIn('dom:input before handlerEnd', self.reject(self.first(duplicate),'duplicate'))
+        self.assertIn('command:request before observed', self.reject(self.first(duplicate,'undo'),'duplicate'))
+
+    def test_fabricated_history_command_anchor(self):
+        def fabricate(s):
+            insert_trace(s,dict(name='dom:keydown',at=-10001)); insert_trace(s,dict(name='command:request',at=-10000),1)
+            move_first_call(s,'restoreSnapshot',-9999)
+        for kind in ('undo','redo'):
+            for record in (BASELINE, LUMA8):
+                with self.subTest(kind=kind, record=record):
+                    self.reject(self.first(fabricate,kind),kind+' duplicate command:request before observed',record)
+        # Same-clock upper relation: the command precedes the frame that observes it.
+        self.reject(self.first(lambda s:anchor(s).update(at=s['at']['observed']+1),'undo'), 'undo command:request after observed')
+        self.reject(self.first(lambda s:anchor(s).update(ms=0),'redo'), 'redo command:request duration')
+
+    def test_in_tolerance_anchor_no_longer_weakens_call_bound(self):
+        # The pre-fix validator accepted any one associated dom:input and took
+        # min() over all of them: a fabricated input-2 anchor lowered the bound.
+        def edit(s):
+            insert_trace(s,dict(name='dom:input',at=s['at']['input']-2)); move_first_call(s,'insertText',s['at']['input']-1.9)
+        def history(s):
+            insert_trace(s,dict(name='command:request',at=-3)); move_first_call(s,'restoreSnapshot',-2.9)
+        self.reject(self.first(edit), 'groupStart duplicate dom:input before handlerEnd')
+        self.reject(self.first(history,'undo'), 'undo duplicate command:request before observed')
+        self.reject(self.first(lambda s:anchor(s).update(at=s['at']['handlerEnd']+1)), 'dom:input after handlerEnd')
+
+    def test_genuine_anchor_contract_both_records_all_kinds(self):
+        from d4_handler import validate_sample_contract
+        for record in (BASELINE, LUMA8):
+            kinds = set()
+            for doc in self.records[record]['measurements']['perf']:
+                for s in doc['timelineSamples']:
+                    validate_sample_contract(copy.deepcopy(s)); kinds.add(s['kind'])
+                    self.assertEqual(sum(t['name']==anchor(s)['name'] for t in s['timeline']), 1)
+            self.assertEqual(kinds, {'groupStart','extend','undo','redo','afterUndo'})
+            self.check(record=record)
+
+    def test_genuine_negative_native_timestamps_accepted(self):
+        luma = [s for doc in self.records[LUMA8]['measurements']['perf'] for s in doc['timelineSamples']]
+        keydown = [s for s in luma if s['kind'] in ('undo','redo') and any(t['name']=='dom:keydown' and t['at']==-3 for t in s['timeline'])]
+        self.assertEqual(len(keydown), 1); self.assertEqual(anchor(keydown[0])['at'], -2)
+        for record in (BASELINE, LUMA8):
+            negative = [s for doc in self.records[record]['measurements']['perf'] for s in doc['timelineSamples']
+                        if anchor(s)['at'] < 0 and any(c['at'] < 0 for c in s['engineTimeline'])]
+            self.assertTrue(negative)
+        self.check(record=LUMA8)
+
+    def test_genuine_async_calls_cross_handler_end(self):
+        from d4_handler import validate_sample_contract
+        for record in (BASELINE, LUMA8):
+            late = [s for doc in self.records[record]['measurements']['perf'] for s in doc['timelineSamples']
+                    if s['at']['handlerEnd'] is not None and any(c['at']+c['ms'] > s['at']['handlerEnd'] for c in s['engineTimeline'])]
+            self.assertEqual(len(late), 59)
+            for s in late: validate_sample_contract(copy.deepcopy(s))
+
+    def test_later_harness_input_after_boundary_remains_valid(self):
+        # The harness waits for the revision, not the final RAF: a following
+        # input may add its anchor once the measured dispatch ended/was observed.
+        def later(s):
+            boundary = s['at']['handlerEnd'] if s['at']['handlerEnd'] is not None else s['at']['observed']
+            name = anchor(s)['name']
+            index = next((i for i,t in enumerate(s['timeline']) if t['at'] > boundary), len(s['timeline']))
+            insert_trace(s, dict(name=name,at=boundary), index)
+            if len(s['timeline']) > 80: s['timeline'].pop()
+        for kind in ('groupStart','extend','afterUndo','undo','redo'):
+            for record in (BASELINE, LUMA8):
+                with self.subTest(kind=kind, record=record):self.check(self.first(later,kind), record)
+
+    def test_emission_and_serialization_rounding_boundary(self):
+        from d4_handler import trace_emission_bounds
+        lo, hi = trace_emission_bounds(1)
+        # Two half-quanta (0.1 ms emission, one-decimal serialization) on each side.
+        self.assertAlmostEqual(lo, .9, places=12); self.assertAlmostEqual(hi, 1.1, places=12)
+        # Genuine groupStart anchor is at 1: emission rounding admits a 0.90 call start, not 0.89.
+        self.assertEqual(anchor(self.samples(self.records[BASELINE],'groupStart')[0])['at'], 1)
+        self.check(self.first(lambda s:move_first_call(s,'insertText',.9)))
+        self.reject(self.first(lambda s:move_first_call(s,'insertText',.89)), 'invalid call execution interval')
+
+
 class JsonHardening(unittest.TestCase):
     setUp=existing.CLI.setUp
     run_cli=existing.CLI.run_cli
@@ -171,6 +301,25 @@ class HandlerCliHardening(unittest.TestCase):
                        lambda s:s['at'].update(handlerEnd={})):
             p,out=self.run_handler(lambda r:change(r['measurements']['perf'][0]['timelineSamples'][0]))
             self.assertNotEqual(p.returncode,0);self.assertEqual(out['status'],'FAIL')
+
+    def test_anchor_bypass_fails_through_handler_cli(self):
+        def bypass(r):
+            s=next(s for s in r['measurements']['perf'][0]['timelineSamples'] if s['kind']=='groupStart')
+            insert_trace(s,dict(name='dom:input',at=-10000)); move_first_call(s,'insertText',-9999)
+        p,out=self.run_handler(bypass)
+        self.assertEqual(p.returncode,1);self.assertEqual(out['status'],'FAIL');self.assertFalse(out['official'])
+        self.assertEqual(out['error'],'invalid execution trace association: groupStart dom:input before input')
+        self.assertNotIn('documents',out)
+
+    def test_both_complete_official_failures_remain_analyzable(self):
+        root=Path(__file__).resolve().parents[4]
+        for name in existing.OFFICIAL:
+            with self.subTest(record=name):
+                record=json.loads((root/'tests/integration/rhwp/evidence/t010-d4-performance-remediation'/name).read_text())
+                self.assertIs(record['measurementComplete'],True);self.assertEqual(record['status'],'FAIL')
+                with patch.object(self,'historical',record):p,out=self.run_handler()
+                self.assertEqual(p.returncode,0);self.assertEqual(out['status'],'ANALYZED');self.assertFalse(out['official'])
+                self.assertEqual([len(d['rows']) for d in out['documents']],[30]*4)
 
     def test_manifest_duplicate_identity_is_rejected(self):
         manifest=self.package/'ENGINE.json';data=manifest.read_text()

@@ -1,0 +1,54 @@
+{
+  "securityTests": {
+    "tests": 86,
+    "result": "PASS",
+    "log": "security-tests.txt"
+  },
+  "sensitiveAll": {
+    "result": "PASS",
+    "trackedFiles": 1164,
+    "log": "sensitive-all.txt"
+  },
+  "sensitiveHistory": {
+    "result": "PASS",
+    "versions": 1928,
+    "log": "sensitive-history.txt"
+  },
+  "sensitiveStaged": {
+    "result": "PASS",
+    "log": "sensitive-staged.txt",
+    "note": "final staged scan immediately before commit"
+  },
+  "gitleaksChanged": {
+    "result": "PASS",
+    "version": "8.30.1",
+    "log": "gitleaks-changed.txt",
+    "note": "relative-path mirror of 22 changed/new files before summary files; pre-commit hook scans the final staged set"
+  },
+  "diffCheck": "PASS",
+  "protectedPaths": "unchanged (integrity.json)",
+  "sourceSha256": {
+    "analyze-d4.py": "f63944eb11fcbe9e96ff8efa0bc17e672175696126137b667baf7d5793a3490e",
+    "d4_handler.py": "a602606f1e6f25bec305b1b468a6e3be224ecdb70a94af2c81a322b9fb195728",
+    "d4_evidence.py": "d6345dc5d3432d5205c63deb4d5a12bc624af7bfe78b1b7b69312fbc01e6607d",
+    "test_d4_analysis_cli.py": "9b4557934c96b2b87573e606126c66dd5f4caa2b201148a16608048077944c36",
+    "test_d4_hardening.py": "c65655103cb0714dec6663b96dc1e7f89766648dd3cb48c60a6d6b89926ee2b7"
+  },
+  "verification": {
+    "focused": {
+      "original": 87,
+      "after": 100
+    },
+    "full": {
+      "original": 201,
+      "after": 214
+    },
+    "afterLatestSourceChanges": true,
+    "newTestsAgainstOriginal": {
+      "assertionFailures": 20,
+      "infrastructureErrors": 1,
+      "note": "ImportError for new helper trace_emission_bounds"
+    }
+  },
+  "pushPerformed": false
+}

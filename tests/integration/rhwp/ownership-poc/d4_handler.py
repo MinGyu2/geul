@@ -60,6 +60,18 @@ def rounding_bounds(value, digits):
     return lo, hi
 
 
+# imeTrace.ts now() stores Math.round(performance.now()*10)/10 before
+# timeline_samples subtracts key and rounds again at one decimal.
+TRACE_EMISSION_HALF_QUANTUM = Fraction(1, 20)
+
+
+def trace_emission_bounds(value):
+    """Key-relative emission interval of a serialized trace time (both roundings)."""
+    lo, hi = rounding_bounds(value, 1)
+    return (finite(math.nextafter(float(Fraction(lo) - TRACE_EMISSION_HALF_QUANTUM), -math.inf)),
+            finite(math.nextafter(float(Fraction(hi) + TRACE_EMISSION_HALF_QUANTUM), math.inf)))
+
+
 def validate_sample_contract(s):
     """Internal serialized MEASURE consistency, not independent event provenance."""
     def require(ok, message):
@@ -79,10 +91,24 @@ def validate_sample_contract(s):
             and all(v['n'] > 0 for v in calls.values()), 'aggregate/timeline count mismatch or zero-call entry')
     # Event timeStamp can precede/follow the performance clock (historical
     # shortcut trace reaches -3 ms). Use same-clock emission anchors instead.
-    anchor_name = 'command:request' if s['kind'] in ('undo','redo') else 'dom:input'
+    # MEASURE snapshots the trace sequence in its capture listener, before the
+    # measured dispatch emits its anchor, so that anchor is the first record of
+    # the name. The harness waits only for the revision, so a later input may add
+    # one, but never before this dispatch ends (handlerEnd) or is observed.
+    edit = s['kind'] in ('groupStart','extend','afterUndo')
+    anchor_name, boundary_name = ('dom:input','handlerEnd') if edit else ('command:request','observed')
     anchors = [t for t in trace if t['name'] == anchor_name]
-    require(bool(anchors), 'missing execution trace association')
-    anchor_lo = min(rounding_bounds(t['at'],1)[0] for t in anchors)
+    require(bool(anchors), f'missing execution trace association: {s["kind"]} {anchor_name}')
+    anchor_lo, _ = trace_emission_bounds(anchors[0]['at'])
+    boundary_lo, boundary_hi = rounding_bounds(at[boundary_name], 1)
+    require(anchors[0]['ms'] is None, f'invalid execution trace association: {s["kind"]} {anchor_name} duration')
+    require(anchor_lo <= boundary_hi,
+            f'invalid execution trace association: {s["kind"]} {anchor_name} after {boundary_name}')
+    # Edit lower bound reuses the existing input timestamp tolerance (at.input >= -2).
+    require(not edit or at['input']-2 <= anchors[0]['at'],
+            f'invalid execution trace association: {s["kind"]} {anchor_name} before input')
+    require(all(trace_emission_bounds(t['at'])[1] >= boundary_lo for t in anchors[1:]),
+            f'ambiguous execution trace association: {s["kind"]} duplicate {anchor_name} before {boundary_name}')
     # Calls append on return (render spans can cross handlerEnd).
     # Their two-decimal start/duration must admit completion by the final RAF.
     final_hi = rounding_bounds(at['end'], 1)[1]
@@ -111,11 +137,9 @@ def validate_sample_contract(s):
         require(lo <= final_hi, 'invalid trace emission interval')
         if t['ms'] is not None: rounding_bounds(t['ms'], 2)
     require(all(a['at'] <= b['at'] for a,b in zip(trace,trace[1:])), 'invalid trace emission order')
-    if s['kind'] in ('groupStart','extend','afterUndo'):
-        # dom:input is emitted synchronously by the real input handler. Other
-        # trace names/order and async span starts are not a stable contract.
-        require(any(t['name']=='dom:input' and at['input']-2 <= t['at'] <= at['handlerEnd']
-                    and t['ms'] is None for t in trace), 'missing/invalid input trace association')
+    if edit:
+        # dom:input (associated above) is emitted synchronously by the real input
+        # handler. Other trace names/order and async span starts are not a stable contract.
         inserts = [c for c in timeline if c['name']=='insertText']
         require(len(inserts)==1, 'missing edit insertText coverage')
         c=inserts[0]

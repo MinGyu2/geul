@@ -1,0 +1,4 @@
+$ gitleaks dir --redact --no-banner --no-color <changed-file relative mirror, 22 files>  # gitleaks 8.30.1
+INF scanned ~410283 bytes (410.28 KB) in 64.5ms
+INF no leaks found
+exit=0

@@ -1036,3 +1036,15 @@ D4 분석 무결성 후속 보강(2026-10-25)은 모든 연산의 호출 n/순�
 검증한다. 절대 이벤트 ID 없는 표본의 구별 불가능한 복제나 범위 안의 합계 변조는
 현재 기록만으로 판별할 수 없다. 생산자를 바꾸거나 독립 provenance를 발명하지 않았다.
 새 검증 근거: `tests/integration/rhwp/evidence/t010-d4-handler-integrity-hardening/`.
+
+D4 trace anchor 인과성 보강(2026-10-25): 이전 분석기는 같은 이름 anchor 전체의 최솟값을 호출
+하한으로 써서, 더 이른 가짜 `dom:input` 하나를 끼우면 실제 입력보다 약 10초 앞선 insertText를
+받아들이고 handler 구간 해석(recordedUnion 7→5ms)을 바꿀 수 있었다. 이제 MEASURE가 측정 dispatch의
+anchor 발행 전에 trace 순번을 잡는다는 생산자 계약에 따라 같은 이름의 **첫 기록**만 anchor로 쓴다.
+anchor는 ms가 없어야 하고 편집은 handlerEnd, undo/redo는 observed 이전에 발행되어야 하며, 편집은
+기존 입력 시각 허용(at.input-2)을 하한으로 쓴다. 이 경계 이전에 확실히 발행된 같은 이름 기록이
+더 있으면 모호한 연관으로 FAIL이다. 경계 이후 기록(대기하지 않는 다음 입력)은 허용한다. 발행 시
+0.1ms 반올림(imeTrace)과 직렬화 반올림을 함께 구간으로 둔다. 두 공식 FAIL 기록의 40개 묶음과
+240개 handler 행은 바뀌지 않았다. undo/redo는 같은 clock의 하한(handler 시작)이 직렬화되지 않아
+삽입이 아닌 anchor·호출의 일관된 동시 이동은 판별할 수 없다.
+새 검증 근거: `tests/integration/rhwp/evidence/t010-d4-anchor-causality-hardening/`.
