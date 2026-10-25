@@ -1,0 +1,1723 @@
+diff --git a/src/document_core/commands/document.rs b/src/document_core/commands/document.rs
+--- a/src/document_core/commands/document.rs
++++ b/src/document_core/commands/document.rs
+@@ -279,6 +279,7 @@
+         let sec_count = document.sections.len();
+         let mut doc = DocumentCore {
+             document,
++            preparation_generation: std::cell::Cell::new(Some(0)),
+             pagination: Vec::new(),
+             styles,
+             canvas_metrics: None,
+diff --git a/src/document_core/mod.rs b/src/document_core/mod.rs
+--- a/src/document_core/mod.rs
++++ b/src/document_core/mod.rs
+@@ -49,7 +49,7 @@
+ use crate::renderer::style_resolver::ResolvedStyleSet;
+ use crate::renderer::typeset::ResumableTablePaginationJob;
+ use crate::renderer::DEFAULT_DPI;
+-use std::cell::RefCell;
++use std::cell::{Cell, RefCell};
+ use std::collections::HashMap;
+ use std::sync::Arc;
+
+@@ -243,6 +243,7 @@
+     pub(crate) pending_pagination_job: Option<PendingPaginationJob>,
+     /// 페이지별 렌더 트리 캐시 (지연 구축, 부분 무효화)
+     pub(crate) page_tree_cache: RefCell<Vec<Option<PageRenderTree>>>,
++    pub(crate) preparation_generation: Cell<Option<u64>>,
+     /// [#6452] 구역 첫 페이지에 임시 투영한 머리말/꼬리말 편집 tree의 단일-entry 캐시.
+     ///
+     /// Studio는 한 번에 한 HF 정의만 편집하므로 마지막 `(page, section, header,
+@@ -540,6 +541,7 @@
+             deferred_pagination_descriptor: None,
+             pending_pagination_job: None,
+             page_tree_cache: RefCell::new(Vec::new()),
++            preparation_generation: Cell::new(Some(0)),
+             header_footer_preview_tree_cache: RefCell::new(None),
+             layer_tree_json_cache: RefCell::new(Vec::new()),
+             page_layer_tree_cache: RefCell::new(Vec::new()),
+diff --git a/src/document_core/queries/rendering.rs b/src/document_core/queries/rendering.rs
+--- a/src/document_core/queries/rendering.rs
++++ b/src/document_core/queries/rendering.rs
+@@ -2227,6 +2227,40 @@
+
+     /// [Task #2222] 레이어 출력옵션 5종과 profile의 비트 지문 — JSON 캐시 키.
+     /// [Task #3315/#4969] 그림·font 바이트 생략 여부를 서로 다른 비트에 함께 접는다.
++    #[cfg(any(target_arch = "wasm32", test))]
++    pub(crate) fn preparation_identity(&self) -> Option<crate::renderer::preparation::Identity> {
++        if self.render_normalization.section_revisions.len() > 4096
++            || self.fallback_font.len() > 4096
++        {
++            return None;
++        }
++        Some(crate::renderer::preparation::Identity {
++            cache_generation: self.preparation_generation.get()?,
++            document_epoch: self.render_normalization.document_epoch,
++            sections: self.render_normalization.section_revisions.clone(),
++            dpi: self.dpi.to_bits(),
++            image_epoch: self.bin_data_epoch,
++            options: self.layer_output_options_fingerprint(
++                RenderProfile::Screen,
++                crate::paint::LayerJsonOptions::default(),
++            ),
++            fallback: self.fallback_font.clone(),
++        })
++    }
++    #[cfg(any(target_arch = "wasm32", test))]
++    pub(crate) fn preparation_matches(&self, id: &crate::renderer::preparation::Identity) -> bool {
++        self.preparation_generation.get() == Some(id.cache_generation)
++            && self.render_normalization.document_epoch == id.document_epoch
++            && self.render_normalization.section_revisions == id.sections
++            && self.dpi.to_bits() == id.dpi
++            && self.bin_data_epoch == id.image_epoch
++            && self.fallback_font == id.fallback
++            && self.layer_output_options_fingerprint(
++                RenderProfile::Screen,
++                crate::paint::LayerJsonOptions::default(),
++            ) == id.options
++    }
++
+     fn layer_output_options_fingerprint(
+         &self,
+         profile: RenderProfile,
+@@ -6998,6 +7032,11 @@
+
+     /// 페이지 렌더 트리 캐시 무효화 (from_page 이상 페이지만 무효화).
+     pub(crate) fn invalidate_page_tree_cache_from(&self, from_page: u32) {
++        self.preparation_generation.set(
++            self.preparation_generation
++                .get()
++                .and_then(|g| g.checked_add(1)),
++        );
+         let mut cache = self.page_tree_cache.borrow_mut();
+         let from = from_page as usize;
+         for i in from..cache.len() {
+@@ -7019,6 +7058,11 @@
+
+     /// 한 페이지의 렌더 트리와 그 파생 표현을 함께 무효화한다.
+     pub(crate) fn invalidate_page_tree_cache_page(&self, page_num: u32) {
++        self.preparation_generation.set(
++            self.preparation_generation
++                .get()
++                .and_then(|g| g.checked_add(1)),
++        );
+         let idx = page_num as usize;
+         if let Some(slot) = self.page_tree_cache.borrow_mut().get_mut(idx) {
+             *slot = None;
+@@ -7291,6 +7335,11 @@
+         {
+             variants.clear();
+         }
++        self.preparation_generation.set(
++            self.preparation_generation
++                .get()
++                .and_then(|g| g.checked_add(1)),
++        );
+         self.header_footer_preview_tree_cache.borrow_mut().take();
+         Some(FocusedPageTreePatch {
+             page_index: template.page_index as u32,
+@@ -7305,6 +7354,11 @@
+
+     /// 페이지 렌더 트리 캐시 전체 무효화.
+     pub(crate) fn invalidate_page_tree_cache(&self) {
++        self.preparation_generation.set(
++            self.preparation_generation
++                .get()
++                .and_then(|g| g.checked_add(1)),
++        );
+         self.page_tree_cache.borrow_mut().clear();
+         self.header_footer_preview_tree_cache.borrow_mut().take();
+         self.layer_tree_json_cache.borrow_mut().clear();
+diff --git a/src/renderer/mod.rs b/src/renderer/mod.rs
+--- a/src/renderer/mod.rs
++++ b/src/renderer/mod.rs
+@@ -9,9 +9,9 @@
+ use crate::model::paragraph::LineSeg;
+ use crate::model::style::{LineSpacingType, UnderlineType};
+
++pub mod canvas;
+ #[cfg(any(target_arch = "wasm32", test))]
+ mod canvas_rgba;
+-pub mod canvas;
+ pub mod canvas_text_font;
+ pub mod canvaskit_policy;
+ pub mod composer;
+@@ -55,6 +55,8 @@
+ pub mod pdf;
+ #[cfg(not(target_arch = "wasm32"))]
+ pub mod pdf_raster_fidelity;
++#[cfg(any(target_arch = "wasm32", test))]
++pub mod preparation;
+ pub mod pua_oldhangul;
+ #[cfg(target_arch = "wasm32")]
+ pub mod render_job;
+diff --git a/src/renderer/preparation.rs b/src/renderer/preparation.rs
+new file mode 100644
+--- /dev/null
++++ b/src/renderer/preparation.rs
+@@ -0,0 +1,718 @@
++//! Bounded retained Canvas Full preparation. Allocation capacities, not RSS.
++//! The Canvas projection retains mandatory text provenance, and drops only
++//! arena/glyph/group data the Canvas path does not consume; it does not
++//! change the document cache or its source tree. Unknown metric snapshots refuse.
++use crate::paint::{
++    layer_tree::{GroupKind, LayerNode, LayerNodeKind, PageLayerTree},
++    paint_op::PaintOp,
++    resources::ResourceArena,
++};
++use std::{cell::Cell, mem::size_of};
++
++pub const MAX_JOB_BYTES: usize = 32 << 20;
++pub const MAX_TOTAL_BYTES: usize = 64 << 20;
++pub const METADATA_BYTES: usize = 128 << 10;
++pub const MAX_DEPTH: usize = 64;
++pub const MAX_NODES: usize = 65_536;
++pub const MAX_KEYS: usize = 256;
++pub const RESOURCE_QUANTUM: usize = 4;
++pub const STEP_QUANTUM: usize = 256;
++
++#[derive(Clone, Copy, Debug, PartialEq, Eq)]
++pub enum Phase {
++    Compatibility,
++    Preparing,
++    ResourcesReady,
++    FullReplay,
++    Terminal,
++}
++impl Phase {
++    pub fn ready(self) -> Option<Self> {
++        (self == Self::Preparing).then_some(Self::ResourcesReady)
++    }
++    pub fn replay(self) -> Option<Self> {
++        (self == Self::ResourcesReady).then_some(Self::FullReplay)
++    }
++    pub fn finish(self) -> Self {
++        Self::Terminal
++    }
++    pub fn name(self) -> &'static str {
++        match self {
++            Self::Compatibility => "Compatibility",
++            Self::Preparing => "Preparing",
++            Self::ResourcesReady => "ResourcesReady",
++            Self::FullReplay => "FullReplay",
++            Self::Terminal => "Terminal",
++        }
++    }
++}
++thread_local! {
++    static OWNED: Cell<usize> = const { Cell::new(0) };
++    static PEAK: Cell<usize> = const { Cell::new(0) };
++}
++/// One reservation owns the retained tree AND memoized transformed payloads. Rc
++/// sharing this reservation never charges twice. Drop is the final release.
++#[derive(Debug)]
++pub struct Reservation {
++    bytes: Cell<usize>,
++}
++impl Reservation {
++    pub fn new(bytes: usize) -> Option<Self> {
++        let r = Self {
++            bytes: Cell::new(0),
++        };
++        r.grow(bytes).then_some(r)
++    }
++    pub fn grow(&self, additional: usize) -> bool {
++        let Some(job) = self
++            .bytes
++            .get()
++            .checked_add(additional)
++            .filter(|n| *n <= MAX_JOB_BYTES)
++        else {
++            return false;
++        };
++        OWNED.with(|total| {
++            let Some(next) = total
++                .get()
++                .checked_add(additional)
++                .filter(|n| *n <= MAX_TOTAL_BYTES)
++            else {
++                return false;
++            };
++            total.set(next);
++            self.bytes.set(job);
++            PEAK.with(|p| p.set(p.get().max(next)));
++            true
++        })
++    }
++    pub fn bytes(&self) -> usize {
++        self.bytes.get()
++    }
++}
++impl Drop for Reservation {
++    fn drop(&mut self) {
++        OWNED.with(|n| {
++            n.set(
++                n.get()
++                    .checked_sub(self.bytes.get())
++                    .expect("preparation reservation ownership"),
++            )
++        });
++    }
++}
++pub fn accounting() -> (usize, usize) {
++    (OWNED.with(Cell::get), PEAK.with(Cell::get))
++}
++
++struct Counter {
++    bytes: usize,
++    nodes: usize,
++}
++impl Counter {
++    fn add(&mut self, n: usize) -> Option<()> {
++        self.bytes = self.bytes.checked_add(n)?;
++        (self.bytes <= MAX_JOB_BYTES).then_some(())
++    }
++    fn vec<T>(&mut self, v: &Vec<T>) -> Option<()> {
++        self.add(v.capacity().checked_mul(size_of::<T>())?)
++    }
++    fn string(&mut self, s: &String) -> Option<()> {
++        self.add(s.capacity())
++    }
++    fn optional_string(&mut self, s: &Option<String>) -> Option<()> {
++        if let Some(s) = s {
++            self.string(s)?;
++        }
++        Some(())
++    }
++    fn cell(&mut self, c: &Option<super::layout::CellContext>) -> Option<()> {
++        if let Some(c) = c {
++            self.vec(&c.path)?;
++        }
++        Some(())
++    }
++    fn gradient(&mut self, g: &Option<Box<super::GradientFillInfo>>) -> Option<()> {
++        if let Some(g) = g {
++            self.add(size_of::<super::GradientFillInfo>())?;
++            self.vec(&g.colors)?;
++            self.vec(&g.positions)?;
++        }
++        Some(())
++    }
++    fn text(&mut self, r: &super::render_tree::TextRunNode) -> Option<()> {
++        // All remaining fields are inline. Supplemental snapshots own private maps,
++        // possibly font Arcs: refuse instead of using a lower-bound estimate.
++        if r.style.supplemental_metrics.is_some() {
++            return None;
++        }
++        self.string(&r.text)?;
++        self.optional_string(&r.display_text)?;
++        self.cell(&r.cell_context)?;
++        self.string(&r.style.font_family)?;
++        self.optional_string(&r.style.metric_font_family)?;
++        self.vec(&r.style.tab_stops)?;
++        self.vec(&r.style.tab_leaders)?;
++        self.vec(&r.style.inline_tabs)?;
++        if let Some(v) = &r.layout_positions {
++            self.vec(v)?;
++        }
++        if let Some(l) = &r.style.ascii_punct_latin {
++            self.add(size_of::<super::LatinSlotMetrics>())?;
++            self.string(&l.font_family)?;
++            self.optional_string(&l.metric_font_family)?;
++        }
++        Some(())
++    }
++    fn equation(&mut self, b: &super::equation::layout::LayoutBox, depth: usize) -> Option<()> {
++        use super::equation::layout::LayoutKind::*;
++        if depth > MAX_DEPTH {
++            return None;
++        }
++        self.nodes = self.nodes.checked_add(1)?;
++        if self.nodes > MAX_NODES {
++            return None;
++        }
++        match &b.kind {
++            Row(v) => {
++                self.vec(v)?;
++                for b in v {
++                    self.equation(b, depth + 1)?;
++                }
++            }
++            Text(s) | Number(s) | Symbol(s) | MathSymbol(s) | Function(s) => self.string(s)?,
++            Fraction { numer, denom } => {
++                self.box_eq(numer, depth)?;
++                self.box_eq(denom, depth)?;
++            }
++            Atop { top, bottom } => {
++                self.box_eq(top, depth)?;
++                self.box_eq(bottom, depth)?;
++            }
++            Sqrt { index, body } => {
++                if let Some(i) = index {
++                    self.box_eq(i, depth)?;
++                }
++                self.box_eq(body, depth)?;
++            }
++            Superscript { base, sup } => {
++                self.box_eq(base, depth)?;
++                self.box_eq(sup, depth)?;
++            }
++            Subscript { base, sub } => {
++                self.box_eq(base, depth)?;
++                self.box_eq(sub, depth)?;
++            }
++            SubSup { base, sub, sup } => {
++                self.box_eq(base, depth)?;
++                self.box_eq(sub, depth)?;
++                self.box_eq(sup, depth)?;
++            }
++            BigOp { symbol, sub, sup } => {
++                self.string(symbol)?;
++                for v in [sub, sup].into_iter().flatten() {
++                    self.box_eq(v, depth)?;
++                }
++            }
++            Limit { sub, .. } => {
++                if let Some(v) = sub {
++                    self.box_eq(v, depth)?;
++                }
++            }
++            Matrix { cells, .. } => {
++                self.vec(cells)?;
++                for row in cells {
++                    self.vec(row)?;
++                    for v in row {
++                        self.equation(v, depth + 1)?;
++                    }
++                }
++            }
++            Rel { arrow, over, under } => {
++                self.box_eq(arrow, depth)?;
++                self.box_eq(over, depth)?;
++                if let Some(v) = under {
++                    self.box_eq(v, depth)?;
++                }
++            }
++            EqAlign { rows } => {
++                self.vec(rows)?;
++                for (l, r) in rows {
++                    self.equation(l, depth + 1)?;
++                    self.equation(r, depth + 1)?;
++                }
++            }
++            Paren { left, right, body } => {
++                self.string(left)?;
++                self.string(right)?;
++                self.box_eq(body, depth)?;
++            }
++            Decoration { body, .. } | FontStyle { body, .. } => self.box_eq(body, depth)?,
++            Space(_) | Newline | Empty => {}
++        }
++        Some(())
++    }
++    fn box_eq(&mut self, b: &super::equation::layout::LayoutBox, d: usize) -> Option<()> {
++        self.add(size_of::<super::equation::layout::LayoutBox>())?;
++        self.equation(b, d + 1)
++    }
++    fn node(&mut self, n: &mut LayerNode, depth: usize) -> Option<()> {
++        if depth > MAX_DEPTH {
++            return None;
++        }
++        self.nodes = self.nodes.checked_add(1)?;
++        if self.nodes > MAX_NODES {
++            return None;
++        }
++        match &mut n.kind {
++            LayerNodeKind::Group {
++                children,
++                group_kind,
++                ..
++            } => {
++                *group_kind = GroupKind::Generic; // Canvas consumes children/layer/clip only.
++                self.vec(children)?;
++                for c in children {
++                    self.node(c, depth + 1)?;
++                }
++            }
++            LayerNodeKind::ClipRect { child, .. } => {
++                self.add(size_of::<LayerNode>())?;
++                self.node(child, depth + 1)?;
++            }
++            LayerNodeKind::Leaf { ops } => {
++                // Canvas ignores glyph alternatives. Keep all actual Canvas visuals.
++                ops.retain(|op| {
++                    !matches!(op, PaintOp::GlyphRun { .. } | PaintOp::GlyphOutline { .. })
++                });
++                self.vec(ops)?;
++                for op in ops {
++                    self.nodes = self.nodes.checked_add(1)?;
++                    if self.nodes > MAX_NODES {
++                        return None;
++                    }
++                    match op {
++                        PaintOp::TextRun { run, source, .. }
++                        | PaintOp::CharOverlap { run, source, .. }
++                        | PaintOp::TextControlMark { run, source, .. }
++                        | PaintOp::TabLeader { run, source, .. }
++                        | PaintOp::TextDecoration { run, source, .. } => {
++                            if let Some(source) = source {
++                                self.optional_string(&source.stable_source_key)?;
++                            }
++                            self.add(size_of::<super::render_tree::TextRunNode>())?;
++                            self.text(run)?;
++                        }
++                        PaintOp::Image {
++                            image, resolved, ..
++                        } => {
++                            self.add(size_of::<super::render_tree::ImageNode>())?;
++                            if let Some(v) = &image.data {
++                                self.vec(v)?;
++                            }
++                            self.optional_string(&image.external_path)?;
++                            self.cell(&image.cell_context)?;
++                            if let Some(v) = resolved {
++                                self.add(size_of::<crate::paint::paint_op::ResolvedImagePayload>())?;
++                                self.vec(&v.data)?;
++                            }
++                        }
++                        PaintOp::RawSvg { raw, .. } => {
++                            self.add(size_of::<super::render_tree::RawSvgNode>())?;
++                            self.string(&raw.svg)?;
++                            self.cell(&raw.cell_context)?;
++                        }
++                        PaintOp::PageBackground { background, .. } => {
++                            self.add(size_of::<super::render_tree::PageBackgroundNode>())?;
++                            self.gradient(&background.gradient)?;
++                            if let Some(i) = &background.image {
++                                self.vec(&i.data)?;
++                            }
++                        }
++                        PaintOp::Equation { equation, .. } => {
++                            self.add(size_of::<super::render_tree::EquationNode>())?;
++                            self.string(&equation.svg_content)?;
++                            self.string(&equation.color_str)?;
++                            self.string(&equation.script)?;
++                            if let Some(r) = &equation.note_ref {
++                                self.string(&r.kind)?;
++                            }
++                            self.equation(&equation.layout_box, 0)?;
++                        }
++                        PaintOp::Path { path, .. } => {
++                            self.add(size_of::<super::render_tree::PathNode>())?;
++                            self.vec(&path.commands)?;
++                            self.gradient(&path.gradient)?;
++                        }
++                        PaintOp::Rectangle { rect, .. } => {
++                            self.add(size_of::<super::render_tree::RectangleNode>())?;
++                            self.gradient(&rect.gradient)?;
++                        }
++                        PaintOp::Ellipse { ellipse, .. } => {
++                            self.add(size_of::<super::render_tree::EllipseNode>())?;
++                            self.gradient(&ellipse.gradient)?;
++                        }
++                        PaintOp::Line { .. } => {
++                            self.add(size_of::<super::render_tree::LineNode>())?
++                        }
++                        PaintOp::FootnoteMarker { marker, .. } => {
++                            self.add(size_of::<super::render_tree::FootnoteMarkerNode>())?;
++                            self.string(&marker.text)?;
++                            self.string(&marker.font_family)?;
++                        }
++                        PaintOp::FormObject { form, .. } => {
++                            self.add(size_of::<super::render_tree::FormObjectNode>())?;
++                            for s in [
++                                &form.caption,
++                                &form.text,
++                                &form.fore_color,
++                                &form.back_color,
++                                &form.name,
++                                &form.appearance.font_family,
++                            ] {
++                                self.string(s)?;
++                            }
++                            self.optional_string(&form.display_text)?;
++                        }
++                        PaintOp::Placeholder { placeholder, .. } => {
++                            self.add(size_of::<super::render_tree::PlaceholderNode>())?;
++                            self.string(&placeholder.label)?;
++                            self.cell(&placeholder.cell_context)?;
++                        }
++                        PaintOp::ControlLabel { label, .. } => self.string(label)?,
++                        PaintOp::GlyphRun { .. } | PaintOp::GlyphOutline { .. } => unreachable!(),
++                    }
++                }
++            }
++        }
++        Some(())
++    }
++}
++/// Moves/prunes an already owned tree; no second retained tree or copy of its
++/// image payload. Counts all capacities of the supported Canvas projection.
++pub fn canvas_projection(tree: &mut PageLayerTree) -> Option<usize> {
++    tree.resources = ResourceArena::default();
++    let mut c = Counter {
++        bytes: size_of::<PageLayerTree>().checked_add(METADATA_BYTES)?,
++        nodes: 0,
++    };
++    c.vec(&tree.text_sources.entries)?;
++    for entry in &tree.text_sources.entries {
++        c.string(&entry.text)?;
++        c.optional_string(&entry.stable_source_key)?;
++        c.vec(&entry.annotations)?;
++    }
++    c.node(&mut tree.root, 0)?;
++    Some(c.bytes)
++}
++
++/// DFS continuation: path components refer to owned immutable tree nodes. No
++/// document pointers or references escape a poll. Tree depth is admitted first.
++#[derive(Debug, Default)]
++pub struct Cursor {
++    path: Vec<usize>,
++    offsets: Vec<usize>,
++    pub steps: u64,
++    pub resources: u64,
++    pub done: bool,
++}
++impl Cursor {
++    pub fn new() -> Self {
++        Self {
++            path: Vec::with_capacity(MAX_DEPTH),
++            offsets: vec![0],
++            ..Default::default()
++        }
++    }
++    fn node<'a>(&self, tree: &'a PageLayerTree) -> &'a LayerNode {
++        let mut n = &tree.root;
++        for &i in &self.path {
++            n = match &n.kind {
++                LayerNodeKind::Group { children, .. } => &children[i],
++                LayerNodeKind::ClipRect { child, .. } => child,
++                _ => unreachable!(),
++            };
++        }
++        n
++    }
++    /// One bounded cursor step; Some(op) stays current until advance_op.
++    pub fn current<'a>(&mut self, tree: &'a PageLayerTree) -> Option<&'a PaintOp> {
++        if self.done {
++            return None;
++        }
++        let n = self.node(tree);
++        let index = *self.offsets.last().unwrap();
++        self.steps += 1;
++        match &n.kind {
++            LayerNodeKind::Leaf { ops } if index < ops.len() => return Some(&ops[index]),
++            LayerNodeKind::Group { children, .. } if index < children.len() => {
++                *self.offsets.last_mut().unwrap() += 1;
++                self.path.push(index);
++                self.offsets.push(0);
++                return None;
++            }
++            LayerNodeKind::ClipRect { .. } if index == 0 => {
++                *self.offsets.last_mut().unwrap() = 1;
++                self.path.push(0);
++                self.offsets.push(0);
++                return None;
++            }
++            _ => {}
++        }
++        self.offsets.pop();
++        if self.path.pop().is_none() {
++            self.done = true;
++        }
++        None
++    }
++    pub fn advance_op(&mut self) {
++        *self.offsets.last_mut().unwrap() += 1;
++    }
++}
++
++#[derive(Debug, PartialEq)]
++pub struct Identity {
++    pub cache_generation: u64,
++    pub document_epoch: u64,
++    pub sections: Vec<u64>,
++    pub dpi: u64,
++    pub image_epoch: u32,
++    pub options: u16,
++    pub fallback: String,
++}
++
++#[cfg(test)]
++mod tests {
++    use super::*;
++    use crate::{
++        paint::{
++            layer_tree::{CacheHint, GroupKind},
++            paint_op::PaintOp,
++        },
++        renderer::render_tree::{BoundingBox, ImageNode, RawSvgNode},
++    };
++    use std::rc::Rc;
++    fn box_() -> BoundingBox {
++        BoundingBox::new(0., 0., 100., 100.)
++    }
++    fn tree(ops: Vec<PaintOp>) -> PageLayerTree {
++        PageLayerTree::new(100., 100., LayerNode::leaf(box_(), None, ops))
++    }
++    #[test]
++    fn phase_order_and_terminal_idempotence() {
++        assert_eq!(Phase::Preparing.ready(), Some(Phase::ResourcesReady));
++        assert_eq!(Phase::ResourcesReady.replay(), Some(Phase::FullReplay));
++        for p in [
++            Phase::Compatibility,
++            Phase::Preparing,
++            Phase::ResourcesReady,
++            Phase::FullReplay,
++            Phase::Terminal,
++        ] {
++            assert_eq!(p.finish().finish(), Phase::Terminal);
++            if p != Phase::Preparing {
++                assert_eq!(p.ready(), None);
++            }
++            if p != Phase::ResourcesReady {
++                assert_eq!(p.replay(), None);
++            }
++        }
++    }
++    #[test]
++    fn reservations_refuse_overflow_and_release_on_last_owner() {
++        let before = accounting().0;
++        assert!(Reservation::new(usize::MAX).is_none());
++        let a = Rc::new(Reservation::new(MAX_JOB_BYTES).unwrap());
++        let alias = a.clone();
++        assert!(!a.grow(1));
++        let b = Reservation::new(MAX_JOB_BYTES).unwrap();
++        assert!(Reservation::new(1).is_none());
++        drop(a);
++        assert_eq!(accounting().0, before + MAX_TOTAL_BYTES);
++        drop(alias);
++        drop(b);
++        assert_eq!(accounting().0, before);
++    }
++    #[test]
++    fn payload_capacity_and_not_just_length_is_charged() {
++        let mut data = Vec::with_capacity(8192);
++        data.push(1);
++        let mut t = tree(vec![PaintOp::image(
++            box_(),
++            ImageNode::new(1, Some(data)),
++            None,
++        )]);
++        let old = t.payload_estimate().owned_bytes();
++        let bytes = canvas_projection(&mut t).unwrap();
++        assert!(bytes >= old + METADATA_BYTES + size_of::<PageLayerTree>());
++        assert_eq!(t.resources.image_count(), 0);
++    }
++    #[test]
++    fn unused_canvas_metadata_is_not_retained() {
++        let mut t = tree(vec![PaintOp::RawSvg {
++            bbox: box_(),
++            raw: Box::new(RawSvgNode::new("<g/>".into())),
++        }]);
++        t.resources.intern_image_bytes(&vec![0; 1 << 20]);
++        let n = canvas_projection(&mut t).unwrap();
++        assert!(n < 1 << 20);
++        assert_eq!(t.resources.image_count(), 0);
++        assert!(t.text_sources.is_empty());
++    }
++    #[test]
++    fn oversize_tree_refuses_before_retention() {
++        let mut t = tree(vec![PaintOp::image(
++            box_(),
++            ImageNode::new(1, Some(Vec::with_capacity(MAX_JOB_BYTES))),
++            None,
++        )]);
++        assert!(canvas_projection(&mut t).is_none());
++    }
++    #[test]
++    fn cursor_resumes_without_restarting_completed_operations() {
++        let mut t = PageLayerTree::new(
++            100.,
++            100.,
++            LayerNode::group(
++                box_(),
++                None,
++                (0..5)
++                    .map(|i| {
++                        LayerNode::leaf(
++                            box_(),
++                            None,
++                            vec![PaintOp::ControlLabel {
++                                bbox: box_(),
++                                label: i.to_string(),
++                            }],
++                        )
++                    })
++                    .collect(),
++                CacheHint::None,
++                GroupKind::Body,
++            ),
++        );
++        canvas_projection(&mut t).unwrap();
++        let mut c = Cursor::new();
++        let mut seen = Vec::new();
++        let mut polls = 0;
++        while !c.done {
++            polls += 1;
++            for _ in 0..3 {
++                if let Some(PaintOp::ControlLabel { label, .. }) = c.current(&t) {
++                    seen.push(label.clone());
++                    c.advance_op();
++                }
++                if c.done {
++                    break;
++                }
++            }
++        }
++        assert!(polls > 1);
++        assert_eq!(seen, vec!["0", "1", "2", "3", "4"]);
++        assert!(c.current(&t).is_none());
++    }
++    #[test]
++    fn pending_operation_stays_current_until_explicit_advance() {
++        let t = tree(vec![PaintOp::ControlLabel {
++            bbox: box_(),
++            label: "pending".into(),
++        }]);
++        let mut c = Cursor::new();
++        let a = c.current(&t).unwrap() as *const _;
++        let b = c.current(&t).unwrap() as *const _;
++        assert_eq!(a, b);
++        c.advance_op();
++        assert!(c.current(&t).is_none());
++        assert!(c.done);
++    }
++    #[test]
++    fn excessive_tree_depth_is_refused() {
++        let mut root = LayerNode::leaf(box_(), None, vec![]);
++        for _ in 0..MAX_DEPTH + 2 {
++            root = LayerNode::clip_rect(
++                box_(),
++                None,
++                box_(),
++                root,
++                crate::paint::layer_tree::ClipKind::Generic,
++            );
++        }
++        assert!(canvas_projection(&mut PageLayerTree::new(100., 100., root)).is_none());
++    }
++    #[test]
++    fn model_output_and_cache_generations_are_distinct_from_target() {
++        let mut d = crate::document_core::DocumentCore::new_empty();
++        let id = d.preparation_identity().unwrap();
++        assert!(d.preparation_matches(&id));
++        d.invalidate_page_tree_cache();
++        assert!(!d.preparation_matches(&id));
++        let id = d.preparation_identity().unwrap();
++        d.show_control_codes = !d.show_control_codes;
++        assert!(!d.preparation_matches(&id));
++        let id = d.preparation_identity().unwrap();
++        d.render_normalization.document_epoch += 1;
++        assert!(!d.preparation_matches(&id));
++        let id = d.preparation_identity().unwrap();
++        d.bin_data_epoch += 1;
++        assert!(!d.preparation_matches(&id));
++        d.preparation_generation.set(Some(u64::MAX));
++        d.invalidate_page_tree_cache();
++        assert!(d.preparation_identity().is_none());
++    }
++}
++
++impl Identity {
++    pub fn retained_bytes(&self) -> Option<usize> {
++        self.sections
++            .capacity()
++            .checked_mul(size_of::<u64>())?
++            .checked_add(self.fallback.capacity())?
++            .checked_add(size_of::<Self>())
++    }
++}
++#[cfg(test)]
++mod text_contract_tests {
++    use super::*;
++    #[test]
++    fn retained_projection_preserves_mandatory_text_provenance() {
++        use crate::renderer::{
++            render_tree::{BoundingBox, TextRunNode},
++            TextStyle,
++        };
++        let run = TextRunNode {
++            text: "한글 Text".into(),
++            style: TextStyle::default(),
++            char_shape_id: None,
++            para_shape_id: None,
++            section_index: None,
++            para_index: None,
++            char_start: None,
++            cell_context: None,
++            is_para_end: false,
++            is_line_break_end: false,
++            rotation: 0.,
++            is_vertical: false,
++            char_overlap: None,
++            border_fill_id: 0,
++            baseline: 12.,
++            field_marker: Default::default(),
++            layout_positions: None,
++            display_text: None,
++        };
++        let bbox = BoundingBox::new(0., 0., 100., 100.);
++        let mut tree = PageLayerTree::new(
++            100.,
++            100.,
++            LayerNode::leaf(bbox, None, vec![PaintOp::text_run(bbox, run)]),
++        );
++        assert!(crate::paint::validate_text_variant_scope(&tree).is_ok());
++        let count = tree.text_sources.entries.len();
++        let before = tree.text_sources.entries[0].text.clone();
++        let bytes = canvas_projection(&mut tree).unwrap();
++        assert!(bytes > METADATA_BYTES);
++        assert_eq!(tree.text_sources.entries.len(), count);
++        assert_eq!(tree.text_sources.entries[0].text, before);
++        assert!(crate::paint::validate_text_variant_scope(&tree).is_ok());
++    }
++}
+diff --git a/src/renderer/render_job.rs b/src/renderer/render_job.rs
+--- a/src/renderer/render_job.rs
++++ b/src/renderer/render_job.rs
+@@ -1,9 +1,11 @@
+ //! Experimental, module-bounded asynchronous Canvas jobs. No callback paints.
+ //! A job borrows document sources only during poll; waiting jobs retain keys/DOM leases,
+ //! never document bytes or deferred data URLs. Host polls after coalesced notifications.
++use super::preparation::{self, Phase};
+ use super::surface_cache::{
+     insert_lease_bounded, prune_dead_leases, rgba_bytes, ImageKey, Release, SharedBacking,
+ };
++use crate::paint::layer_tree::PageLayerTree;
+ use std::{
+     cell::{Cell, RefCell},
+     collections::HashMap,
+@@ -107,8 +109,159 @@
+     }
+ }
+
++pub struct Preparation {
++    pub tree: PageLayerTree,
++    pub identity: preparation::Identity,
++    pub cursor: preparation::Cursor,
++    // Keeps the reservation alive when taken out of Job during a synchronous poll.
++    pub budget: Rc<preparation::Reservation>,
++}
++#[derive(Clone, Copy, Debug, PartialEq, Eq)]
++pub struct RecipeKey {
++    pub source: ImageKey,
++    pub operation: u8,
++    pub geometry: [u64; 4],
++}
++pub struct ResolvedPayload {
++    pub data: Option<Vec<u8>>,
++    pub baked: bool,
++}
++pub fn memo(key: RecipeKey) -> Option<Rc<ResolvedPayload>> {
++    let job = active_job()?;
++    let mut j = job.borrow_mut();
++    let found = j
++        .memos
++        .iter()
++        .find(|(k, _)| *k == key)
++        .map(|(_, v)| v.clone());
++    if found.is_some() {
++        j.memo_hits += 1;
++    }
++    found
++}
++pub fn note_decode() {
++    if let Some(job) = active_job() {
++        let mut j = job.borrow_mut();
++        if j.phase == Phase::Preparing {
++            j.decode_attempts += 1;
++        }
++    }
++}
++pub fn note_transform() {
++    if let Some(job) = active_job() {
++        let mut j = job.borrow_mut();
++        if j.phase == Phase::Preparing {
++            j.transform_attempts += 1;
++        }
++    }
++}
++pub fn memoize(key: RecipeKey, data: Option<Vec<u8>>, baked: bool) -> Option<Rc<ResolvedPayload>> {
++    let job = active_job()?;
++    let mut j = job.borrow_mut();
++    if j.phase != Phase::Preparing {
++        return None;
++    }
++    if j.memos.len() >= preparation::MAX_KEYS
++        || !j.preparation_budget.as_ref()?.grow(
++            data.as_ref().map_or(0, Vec::capacity).checked_add(
++                std::mem::size_of::<ResolvedPayload>() + 2 * std::mem::size_of::<usize>(),
++            )?,
++        )
++    {
++        drop(j);
++        mark_limit();
++        return None;
++    }
++    let value = Rc::new(ResolvedPayload { data, baked });
++    j.memos.push((key, value.clone()));
++    Some(value)
++}
++pub fn is_full_replay() -> bool {
++    active_job().is_some_and(|j| j.borrow().phase == Phase::FullReplay)
++}
++pub fn browser_owned(key: ImageKey) -> bool {
++    active_job().is_some_and(|j| j.borrow().resources.contains_key(&key))
++}
++pub fn key_capacity() -> bool {
++    active_job().is_some_and(|j| j.borrow().prepared_keys.len() < preparation::MAX_KEYS)
++}
++pub fn is_preparing() -> bool {
++    active_job().is_some_and(|j| {
++        j.borrow().phase == Phase::Preparing && j.borrow().state == Outcome::Pending
++    })
++}
++pub fn verify_replay_key(key: ImageKey) -> bool {
++    let okay = active_job().is_none_or(|j| {
++        let j = j.borrow();
++        j.phase != Phase::FullReplay
++            || (j.prepared_keys.contains(&key)
++                && (j.decoded.contains_key(&key)
++                    || j.resources
++                        .get(&key)
++                        .is_some_and(|r| !r.pending.get() && !r.error.get() && !r.limited.get())))
++    });
++    if !okay {
++        mark_error();
++    }
++    okay
++}
++pub fn prepared(key: ImageKey) -> bool {
++    active_job().is_some_and(|j| {
++        let mut j = j.borrow_mut();
++        let found = j.prepared_keys.contains(&key);
++        if found {
++            j.ready_reuses += 1;
++        }
++        found
++    })
++}
++pub fn record_prepared(key: ImageKey) -> bool {
++    let Some(job) = active_job() else {
++        return false;
++    };
++    let mut j = job.borrow_mut();
++    if !j.prepared_keys.contains(&key) {
++        if j.prepared_keys.len() >= preparation::MAX_KEYS {
++            drop(j);
++            mark_limit();
++            return false;
++        }
++        // A decoded resource must really have a job lease, not a cache-only handle.
++        if !j.decoded.contains_key(&key) && !j.resources.contains_key(&key) {
++            drop(j);
++            mark_error();
++            return false;
++        }
++        j.prepared_keys.push(key);
++    }
++    true
++}
++pub fn continue_preparation() {
++    if let Some(job) = active_job() {
++        job.borrow_mut().preparation_yields += 1;
++    }
++    // Exactly one coalesced task, only when a poll made bounded forward progress.
++    // No self-rescheduling loop; an idle host expires on the existing timer.
++    CONTINUATION_READY.with(|v| v.set(true));
++    queue_notification(false, false);
++}
++
+ pub struct Job {
+     pub id: u32,
++    pub phase: Phase,
++    pub preparation: Option<Preparation>,
++    pub preparation_budget: Option<Rc<preparation::Reservation>>,
++    pub prepared_keys: Vec<ImageKey>,
++    pub memos: Vec<(RecipeKey, Rc<ResolvedPayload>)>,
++    pub preparation_steps: u64,
++    pub preparation_attempts: u64,
++    pub preparation_ready: u64,
++    pub preparation_yields: u64,
++    pub replay_count: u64,
++    pub decode_attempts: u64,
++    pub transform_attempts: u64,
++    pub ready_reuses: u64,
++    pub memo_hits: u64,
+     pub page: u32,
+     pub replay: Replay,
+     pub scale: f64,
+@@ -143,6 +296,11 @@
+             });
+         }
+         self.state = state;
++        self.phase = self.phase.finish();
++        self.preparation = None;
++        self.memos = Vec::new();
++        self.prepared_keys = Vec::new();
++        self.preparation_budget = None;
+         // Reconcile the module timer after all mutable job borrows have ended.
+         queue_notification(false, false);
+         let inactive_before =
+@@ -183,7 +341,11 @@
+         }
+     }
+     pub fn begin(&self, page: u32, target: &HtmlCanvasElement, scale: f64) -> Result<u32, JsValue> {
+-        self.begin_replay(page, target, scale, Replay::Full)
++        let id = self.begin_replay(page, target, scale, Replay::Full)?;
++        if PREPARATION_ENABLED.with(Cell::get) {
++            self.get(id).unwrap().borrow_mut().phase = Phase::Preparing;
++        }
++        Ok(id)
+     }
+     pub fn begin_replay(
+         &self,
+@@ -222,6 +384,20 @@
+         js_sys::Reflect::set(target, &TARGET_TOKEN.into(), &JsValue::from(id))?;
+         let job = Rc::new(RefCell::new(Job {
+             id,
++            phase: Phase::Compatibility,
++            preparation: None,
++            preparation_budget: None,
++            prepared_keys: Vec::new(),
++            memos: Vec::new(),
++            preparation_steps: 0,
++            preparation_attempts: 0,
++            preparation_ready: 0,
++            preparation_yields: 0,
++            replay_count: 0,
++            decode_attempts: 0,
++            transform_attempts: 0,
++            ready_reuses: 0,
++            memo_hits: 0,
+             page,
+             replay,
+             scale,
+@@ -297,8 +473,10 @@
+     retries: u64,
+     capacity_notifications: u64,
+     listener_notifications: u64,
++    preparation_notifications: u64,
+ }
+ thread_local! {
++    static PREPARATION_ENABLED: Cell<bool> = const {Cell::new(false)};
+     static POOL: RefCell<Pool> = RefCell::new(Pool::default());
+     static ACTIVE: RefCell<Option<Rc<RefCell<Job>>>> = const { RefCell::new(None) };
+     static EVENT: JsValue = Closure::<dyn FnMut(JsValue)>::new(image_event).into_js_value();
+@@ -312,6 +490,7 @@
+     static TIMER_TICKS: Cell<u64> = const { Cell::new(0) };
+     static NOTIFY_QUEUED: Cell<bool> = const { Cell::new(false) };
+     static CAPACITY_RELEASED: Cell<bool> = const { Cell::new(false) };
++    static CONTINUATION_READY:Cell<bool> = const {Cell::new(false)};
+     static COMPLETION_READY: Cell<bool> = const { Cell::new(false) };
+     static NOTIFY: JsValue = Closure::<dyn FnMut()>::new(flush_notifications).into_js_value();
+     static TICK: JsValue = Closure::<dyn FnMut()>::new(timer_tick).into_js_value();
+@@ -387,10 +566,22 @@
+     } else {
+         false
+     };
+-    if completion || available {
++    let continuation = CONTINUATION_READY.with(|v| v.replace(false))
++        && POOL.with(|p| {
++            p.borrow().jobs.iter().filter_map(Weak::upgrade).any(|j| {
++                let j = j.borrow();
++                j.state == Outcome::Pending
++                    && !j.waiting
++                    && matches!(j.phase, Phase::Preparing | Phase::ResourcesReady)
++            })
++        });
++    if completion || available || continuation {
+         POOL.with(|p| {
+             let mut p = p.borrow_mut();
+             p.listener_notifications += 1;
++            if continuation {
++                p.preparation_notifications += 1;
++            }
+             if available {
+                 p.capacity_notifications += 1;
+             }
+@@ -484,6 +675,13 @@
+     }
+     POOL.with(|p| p.borrow_mut().resources.retain(|_, r| r.strong_count() > 0));
+ }
++/// Explicit experimental gate. Switching mode cancels all owned generations;
++/// old callers retain their exact compatibility behavior without migration.
++pub fn set_preparation_enabled(enabled: bool) {
++    if PREPARATION_ENABLED.with(|v| v.replace(enabled)) != enabled {
++        invalidate_all();
++    }
++}
+ pub fn invalidate_all() {
+     let mut changed = false;
+     let jobs = POOL.with(|p| p.borrow().jobs.clone());
+@@ -618,9 +816,13 @@
+         }
+         let jobs = POOL.with(|p| p.borrow().jobs.clone());
+         for job in jobs.into_iter().filter_map(|j| j.upgrade()) {
+-            job.borrow_mut()
+-                .decoded
+-                .retain(|_, l| !Rc::ptr_eq(l, &lease));
++            let mut j = job.borrow_mut();
++            if j.phase != Phase::Compatibility && j.decoded.values().any(|v| Rc::ptr_eq(v, &lease))
++            {
++                j.finish(Outcome::ResourceLimit);
++            } else {
++                j.decoded.retain(|_, l| !Rc::ptr_eq(l, &lease));
++            }
+         }
+         POOL.with(|p| p.borrow_mut().decoded_revocations += 1);
+         drop(lease);
+@@ -685,6 +887,12 @@
+         match admission(url.len().saturating_add(MAX_DECODED_BYTES), current_id) {
+             0 => {}
+             1 => {
++                // Do not repeat a completed expanding URL conversion while a
++                // retained preparation waits. This path refuses, never loops.
++                if is_preparing() {
++                    mark_limit();
++                    return Err(Outcome::ResourceLimit);
++                }
+                 job.borrow_mut()
+                     .wait_for_capacity(url.len().saturating_add(MAX_DECODED_BYTES));
+                 return Ok(None);
+@@ -858,6 +1066,14 @@
+             "maxJobDecodedLeases": MAX_JOB_DECODED_LEASES,
+             "maxJobLeaseEntries": p.jobs.iter().filter_map(Weak::upgrade).map(|j| j.borrow().decoded.len()).max().unwrap_or(0)})
+     });
++    let (owned, peak) = preparation::accounting();
++    if let Some(o) = value.as_object_mut() {
++        o.insert("preparation".into(),POOL.with(|p|serde_json::json!({
++            "enabled":PREPARATION_ENABLED.with(Cell::get),"notifications":p.borrow().preparation_notifications,"ownedBytes":owned,"peakBytes":peak,"maxOwnedBytes":preparation::MAX_TOTAL_BYTES,
++            "maxJobBytes":preparation::MAX_JOB_BYTES,"resourceQuantum":preparation::RESOURCE_QUANTUM,"stepQuantum":preparation::STEP_QUANTUM,
++            "jobs":p.borrow().jobs.iter().filter_map(Weak::upgrade).map(|j|{let j=j.borrow();serde_json::json!({"id":j.id,"phase":j.phase.name(),"steps":j.preparation_steps,"attempts":j.preparation_attempts,"readyTransitions":j.preparation_ready,"yields":j.preparation_yields,"replays":j.replay_count,"keys":j.prepared_keys.len(),"decodeAttempts":j.decode_attempts,"transformAttempts":j.transform_attempts,"readyReuses":j.ready_reuses,"memoHits":j.memo_hits,"memoCount":j.memos.len(),"retainedBytes":j.preparation_budget.as_ref().map_or(0,|b|b.bytes())})}).collect::<Vec<_>>()
++        })));
++    }
+     let (references, reference_bytes) = decoded_reference_observation();
+     if let Some(object) = value.as_object_mut() {
+         object.insert(
+diff --git a/src/renderer/web_canvas.rs b/src/renderer/web_canvas.rs
+--- a/src/renderer/web_canvas.rs
++++ b/src/renderer/web_canvas.rs
+@@ -285,6 +285,9 @@
+ /// this draw-scoped owner drops (the pre-lease synchronous temporary behaviour).
+ #[cfg(target_arch = "wasm32")]
+ fn decoded_canvas(key: ImageKey, data: &[u8]) -> Option<super::render_job::DecodedLease> {
++    if super::render_job::is_full_replay() {
++        return super::render_job::job_decoded(key);
++    }
+     // Same cache request/frequency accounting as before the lease change.
+     let slot = DECODED_CANVAS_CACHE.with(|cache| cache.borrow_mut().get(&key));
+     if let Some(slot) = slot {
+@@ -405,6 +408,164 @@
+ /// 실패를 기억한 그림이다(로드 중이면 끝날 때 알림이 온다 — 새 이미지를 만들어 앞 로드를 취소하지 않는다).
+ /// `Err`는 이미지 요소를 만들지 못한 경우다(호출자가 자리 표시를 그린다). 그리기는 받은 handle을 바로 쓴다:
+ /// 이 함수가 돌려준 뒤에는 그리기가 끝날 때까지 캐시를 바꾸지 않는다.
++/// The very same resolver feeds preparation and replay. Recipe memo keys only
++/// avoid repeating transforms; drawable identity is always ImageKey::of(bytes).
++#[cfg(target_arch = "wasm32")]
++enum CanvasPayload<'a> {
++    Borrowed(&'a [u8]),
++    Owned(Vec<u8>),
++    Memo(std::rc::Rc<super::render_job::ResolvedPayload>, &'a [u8]),
++}
++#[cfg(target_arch = "wasm32")]
++impl AsRef<[u8]> for CanvasPayload<'_> {
++    fn as_ref(&self) -> &[u8] {
++        match self {
++            Self::Borrowed(v) => v,
++            Self::Owned(v) => v,
++            Self::Memo(v, original) => v.data.as_deref().unwrap_or(original),
++        }
++    }
++}
++#[cfg(target_arch = "wasm32")]
++fn canvas_image_payload(data: &[u8], operation: u8) -> (CanvasPayload<'_>, bool) {
++    use super::render_job::{self, RecipeKey};
++    if operation == 0 {
++        return (CanvasPayload::Borrowed(data), false);
++    }
++    let key = RecipeKey {
++        source: ImageKey::of(data),
++        operation,
++        geometry: [0; 4],
++    };
++    if let Some(v) = render_job::memo(key) {
++        let baked = v.baked;
++        return (CanvasPayload::Memo(v, data), baked);
++    }
++    super::render_job::note_transform();
++    let result = match operation {
++        1 => super::image_resolver::real_picture_watermark_bytes_to_hancom_tone_png_bytes(data),
++        2 => {
++            super::image_resolver::real_picture_watermark_fill_bytes_to_hancom_tone_png_bytes(data)
++        }
++        3 => super::image_resolver::watermark_jpeg_bytes_to_hancom_baked_png_bytes(data),
++        _ => unreachable!(),
++    };
++    let baked = result.is_some();
++    if render_job::is_preparing() {
++        return match render_job::memoize(key, result, baked) {
++            Some(v) => (CanvasPayload::Memo(v, data), baked),
++            None => (CanvasPayload::Borrowed(data), false),
++        };
++    }
++    (
++        result.map_or(CanvasPayload::Borrowed(data), CanvasPayload::Owned),
++        baked,
++    )
++}
++#[cfg(target_arch = "wasm32")]
++fn canvas_svg_payload<'a>(raw: &'a RawSvgNode, bbox: &BoundingBox) -> Option<CanvasPayload<'a>> {
++    use super::{
++        render_job::{self, RecipeKey},
++        svg_fragment::{
++            decode_base64_data_url, try_parse_single_image_data_url, wrap_svg_fragment,
++        },
++    };
++    let key = RecipeKey {
++        source: ImageKey::of(raw.svg.as_bytes()),
++        operation: 4,
++        geometry: [
++            bbox.x.to_bits(),
++            bbox.y.to_bits(),
++            bbox.width.to_bits(),
++            bbox.height.to_bits(),
++        ],
++    };
++    if let Some(v) = render_job::memo(key) {
++        return v.data.is_some().then_some(CanvasPayload::Memo(v, &[]));
++    }
++    super::render_job::note_transform();
++    let bytes = if let Some(url) = try_parse_single_image_data_url(&raw.svg) {
++        decode_base64_data_url(url).map(|(_, v)| v)
++    } else {
++        Some(wrap_svg_fragment(&raw.svg, bbox.x, bbox.y, bbox.width, bbox.height).into_bytes())
++    };
++    if render_job::is_preparing() {
++        let v = render_job::memoize(key, bytes, false)?;
++        return v.data.is_some().then_some(CanvasPayload::Memo(v, &[]));
++    }
++    bytes.map(CanvasPayload::Owned)
++}
++/// True only for an actually drawable, job-owned resource; never an unleased
++/// cache handle. Does not allocate a target/scratch or run any draw operation.
++#[cfg(target_arch = "wasm32")]
++fn prepare_payload(data: &[u8]) -> bool {
++    use super::render_job;
++    let key = ImageKey::of(data);
++    if render_job::prepared(key) {
++        return true;
++    }
++    if !render_job::key_capacity() {
++        render_job::mark_limit();
++        return false;
++    }
++    if !render_job::browser_owned(key) && decoded_canvas(key, data).is_some() {
++        return render_job::record_prepared(key);
++    }
++    if !render_job::is_preparing() {
++        return false;
++    }
++    match browser_image(key, data) {
++        Ok(Some(_)) => render_job::record_prepared(key),
++        _ => false,
++    }
++}
++#[cfg(target_arch = "wasm32")]
++pub(crate) fn prepare_op(op: &PaintOp) -> bool {
++    match op {
++        PaintOp::Image {
++            image, resolved, ..
++        } => {
++            // Use the existing producer's resolved-payload effects adjustment too.
++            let resolved_image = resolved
++                .as_deref()
++                .map(|v| super::image_resolver::image_node_with_resolved_payload(image, Some(v)));
++            let image = resolved_image.as_ref().unwrap_or(image);
++            if let Some(data) = &image.data {
++                let operation = if image.is_real_picture_watermark_tone_preset() {
++                    2
++                } else if image.is_watermark()
++                    && super::image_resolver::detect_image_mime_type(data) == "image/jpeg"
++                {
++                    3
++                } else {
++                    0
++                };
++                let (payload, _) = canvas_image_payload(data, operation);
++                prepare_payload(payload.as_ref())
++            } else {
++                true
++            }
++        }
++        PaintOp::PageBackground { background, .. } => {
++            if let Some(image) = &background.image {
++                let (payload, _) = canvas_image_payload(
++                    &image.data,
++                    u8::from(image.is_real_picture_watermark_tone_preset()),
++                );
++                prepare_payload(payload.as_ref())
++            } else {
++                true
++            }
++        }
++        PaintOp::RawSvg { raw, bbox } => {
++            canvas_svg_payload(raw, bbox).is_none_or(|p| prepare_payload(p.as_ref()))
++        }
++        // Equation Canvas replay is vector/text, pattern fills use a tiny draw-scoped
++        // tile Canvas: neither requests an independently retained image backing.
++        _ => true,
++    }
++}
++
+ #[cfg(target_arch = "wasm32")]
+ fn browser_image(key: ImageKey, data: &[u8]) -> Result<Option<HtmlImageElement>, ()> {
+     super::render_job::image(key, data).map_err(|_| ())
+@@ -468,6 +629,7 @@
+     data: &[u8],
+     reservation: Option<((u32, u32), super::surface_cache::Reservation)>,
+ ) -> Decoded {
++    super::render_job::note_decode();
+     if reservation.is_none() {
+         UNRESERVED_DECODES.with(|c| c.set(c.get() + 1));
+     }
+@@ -1229,20 +1391,8 @@
+         }
+         if let Some(img) = &bg.image {
+             let preserve_color_watermark = img.is_real_picture_watermark_tone_preset();
+-            let mut baked_color_watermark = false;
+-            let render_data: std::borrow::Cow<[u8]> = if preserve_color_watermark {
+-                match crate::renderer::image_resolver::real_picture_watermark_bytes_to_hancom_tone_png_bytes(
+-                    &img.data,
+-                ) {
+-                    Some(png) => {
+-                        baked_color_watermark = true;
+-                        std::borrow::Cow::Owned(png)
+-                    }
+-                    None => std::borrow::Cow::Borrowed(&img.data[..]),
+-                }
+-            } else {
+-                std::borrow::Cow::Borrowed(&img.data[..])
+-            };
++            let (render_data, baked_color_watermark) =
++                canvas_image_payload(&img.data, u8::from(preserve_color_watermark));
+             let filter_str = if preserve_color_watermark {
+                 if baked_color_watermark {
+                     None
+@@ -1486,32 +1636,16 @@
+         if let Some(ref data) = img.data {
+             let preserve_color_watermark = img.is_real_picture_watermark_tone_preset();
+             let is_watermark_image = img.is_watermark();
+-            let mut baked_watermark = false;
+-            let render_data: std::borrow::Cow<[u8]> = if preserve_color_watermark {
+-                match crate::renderer::image_resolver::real_picture_watermark_fill_bytes_to_hancom_tone_png_bytes(
+-                    data,
+-                ) {
+-                    Some(png) => {
+-                        baked_watermark = true;
+-                        std::borrow::Cow::Owned(png)
+-                    }
+-                    None => std::borrow::Cow::Borrowed(&data[..]),
+-                }
++            let operation = if preserve_color_watermark {
++                2
+             } else if is_watermark_image
+                 && crate::renderer::image_resolver::detect_image_mime_type(data) == "image/jpeg"
+             {
+-                match crate::renderer::image_resolver::watermark_jpeg_bytes_to_hancom_baked_png_bytes(
+-                    data,
+-                ) {
+-                    Some(png) => {
+-                        baked_watermark = true;
+-                        std::borrow::Cow::Owned(png)
+-                    }
+-                    None => std::borrow::Cow::Borrowed(&data[..]),
+-                }
++                3
+             } else {
+-                std::borrow::Cow::Borrowed(&data[..])
++                0
+             };
++            let (render_data, baked_watermark) = canvas_image_payload(data, operation);
+             let filter_str = if baked_watermark {
+                 None
+             } else if preserve_color_watermark {
+@@ -1682,16 +1816,8 @@
+     }
+
+     fn render_raw_svg(&mut self, bbox: &BoundingBox, raw: &RawSvgNode) {
+-        use super::svg_fragment::{
+-            decode_base64_data_url, try_parse_single_image_data_url, wrap_svg_fragment,
+-        };
+-        if let Some(data_url) = try_parse_single_image_data_url(&raw.svg) {
+-            if let Some((_mime, bytes)) = decode_base64_data_url(data_url) {
+-                self.draw_image(&bytes, bbox.x, bbox.y, bbox.width, bbox.height);
+-            }
+-        } else {
+-            let svg_doc = wrap_svg_fragment(&raw.svg, bbox.x, bbox.y, bbox.width, bbox.height);
+-            self.draw_image(svg_doc.as_bytes(), bbox.x, bbox.y, bbox.width, bbox.height);
++        if let Some(data) = canvas_svg_payload(raw, bbox) {
++            self.draw_image(data.as_ref(), bbox.x, bbox.y, bbox.width, bbox.height);
+         }
+     }
+
+@@ -3121,7 +3247,9 @@
+
+     fn draw_image(&mut self, data: &[u8], x: f64, y: f64, w: f64, h: f64) {
+         let key = ImageKey::of(data);
+-
++        if !super::render_job::verify_replay_key(key) {
++            return;
++        }
+         if let Some(lease) = decoded_canvas(key, data) {
+             if self
+                 .ctx
+@@ -3172,7 +3300,9 @@
+         dh: f64,
+     ) {
+         let key = ImageKey::of(data);
+-
++        if !super::render_job::verify_replay_key(key) {
++            return;
++        }
+         if let Some(lease) = decoded_canvas(key, data) {
+             if self
+                 .ctx
+diff --git a/src/wasm_api.rs b/src/wasm_api.rs
+--- a/src/wasm_api.rs
++++ b/src/wasm_api.rs
+@@ -923,8 +923,7 @@
+         {
+             return Err(JsValue::from_str("ERROR: invalid patch request"));
+         }
+-        let replay = crate::renderer::render_job::Replay::Full;
+-        self.render_owner.begin_replay(page, canvas, scale, replay)
++        self.render_owner.begin(page, canvas, scale)
+     }
+
+     /// The current generation token, including jobs started by compatibility replay APIs.
+@@ -981,14 +980,154 @@
+             let j = job.borrow();
+             (j.page, j.scale, j.replay.clone())
+         };
++        // Compatibility APIs keep their established one-poll replay path. Only
++        // explicit Full jobs enter retained resource preparation.
++        let incremental = job.borrow().phase != crate::renderer::preparation::Phase::Compatibility;
++        let mut prepared = job.borrow_mut().preparation.take();
++        if incremental {
++            let progress = (|| -> Result<bool, JsValue> {
++                use crate::renderer::preparation::{self, Phase};
++                if prepared.is_none() {
++                    let mut tree = self
++                        .build_canvas_page_layer_tree_with_profile(
++                            page,
++                            crate::paint::RenderProfile::Screen,
++                        )
++                        .map_err(JsValue::from)?;
++                    let Some(identity) = self.core.preparation_identity() else {
++                        job.borrow_mut().finish(Outcome::ResourceLimit);
++                        return Ok(false);
++                    };
++                    // Validate the original contract before dropping Canvas-unused
++                    // alternatives; the final replay validates the projection again.
++                    crate::paint::validate_text_variant_scope(&tree).map_err(|e| {
++                        JsValue::from_str(&format!("invalid preparation text contract: {e}"))
++                    })?;
++                    let Some(bytes) = preparation::canvas_projection(&mut tree) else {
++                        job.borrow_mut().finish(Outcome::ResourceLimit);
++                        return Ok(false);
++                    };
++                    let Some(bytes) = identity.retained_bytes().and_then(|n| bytes.checked_add(n))
++                    else {
++                        job.borrow_mut().finish(Outcome::ResourceLimit);
++                        return Ok(false);
++                    };
++                    let Some(reservation) = preparation::Reservation::new(bytes) else {
++                        job.borrow_mut().finish(Outcome::ResourceLimit);
++                        return Ok(false);
++                    };
++                    let budget = std::rc::Rc::new(reservation);
++                    {
++                        let mut j = job.borrow_mut();
++                        j.preparation_budget = Some(budget.clone());
++                        j.prepared_keys = Vec::with_capacity(preparation::MAX_KEYS);
++                        j.memos = Vec::with_capacity(preparation::MAX_KEYS);
++                    }
++                    prepared = Some(render_job::Preparation {
++                        tree,
++                        identity,
++                        cursor: preparation::Cursor::new(),
++                        budget,
++                    });
++                }
++                let p = prepared.as_mut().unwrap();
++                if !self.core.preparation_matches(&p.identity) {
++                    job.borrow_mut().finish(Outcome::Canceled);
++                    return Ok(false);
++                }
++                let _active = render_job::enter(job.clone());
++                if job.borrow().phase == Phase::Preparing {
++                    let mut attempts = 0;
++                    for _ in 0..preparation::STEP_QUANTUM {
++                        let op = p.cursor.current(&p.tree);
++                        if let Some(op) = op {
++                            let resource = matches!(
++                                op,
++                                crate::paint::PaintOp::Image { .. }
++                                    | crate::paint::PaintOp::PageBackground { .. }
++                                    | crate::paint::PaintOp::RawSvg { .. }
++                            );
++                            if resource {
++                                attempts += 1;
++                                p.cursor.resources += 1;
++                            }
++                            if !crate::renderer::web_canvas::prepare_op(op) {
++                                break;
++                            }
++                            p.cursor.advance_op();
++                        }
++                        if p.cursor.done
++                            || attempts >= preparation::RESOURCE_QUANTUM
++                            || job.borrow().state != Outcome::Pending
++                        {
++                            break;
++                        }
++                    }
++                    {
++                        let mut j = job.borrow_mut();
++                        j.preparation_steps = p.cursor.steps;
++                        j.preparation_attempts = p.cursor.resources;
++                        if j.state != Outcome::Pending {
++                            let state = j.state;
++                            j.finish(state);
++                            return Ok(false);
++                        }
++                        if js_sys::Date::now() >= j.deadline {
++                            j.finish(Outcome::Error);
++                            return Ok(false);
++                        }
++                        if !render_job::target_current(&j)
++                            || !self.core.preparation_matches(&p.identity)
++                        {
++                            j.finish(Outcome::Canceled);
++                            return Ok(false);
++                        }
++                        if p.cursor.done {
++                            j.phase = j.phase.ready().expect("preparation transition");
++                            j.preparation_ready += 1;
++                        }
++                    }
++                    if !job.borrow().waiting {
++                        render_job::continue_preparation();
++                    }
++                    return Ok(false); // genuine ResourcesReady/quantum boundary, no scratch allocated.
++                }
++                if job.borrow().phase == Phase::ResourcesReady {
++                    let mut j = job.borrow_mut();
++                    j.phase = j.phase.replay().expect("ready transition");
++                    j.replay_count += 1;
++                    return Ok(true);
++                }
++                job.borrow_mut().finish(Outcome::Error);
++                Ok(false)
++            })();
++            match progress {
++                Ok(true) => {}
++                other => {
++                    if other.is_err() {
++                        job.borrow_mut().finish(Outcome::Error);
++                    }
++                    if job.borrow().state == Outcome::Pending {
++                        job.borrow_mut().preparation = prepared;
++                    }
++                    return Ok(job.borrow().state.name().into());
++                }
++            }
++        }
+         let result = (|| -> Result<(), JsValue> {
+-            let tree = self
+-                .build_canvas_page_layer_tree_with_profile(
+-                    page,
+-                    crate::paint::RenderProfile::Screen,
+-                )
+-                .map_err(JsValue::from)?;
+-            // Observational only: the tree is dropped at the end of this poll.
++            let compatibility_tree;
++            let tree = if let Some(p) = &prepared {
++                &p.tree
++            } else {
++                compatibility_tree = self
++                    .build_canvas_page_layer_tree_with_profile(
++                        page,
++                        crate::paint::RenderProfile::Screen,
++                    )
++                    .map_err(JsValue::from)?;
++                &compatibility_tree
++            };
++            // Lower-bound payload observation only; admission uses preparation::canvas_projection.
+             let payload = tree.payload_estimate();
+             crate::renderer::web_canvas::note_tree_payload(
+                 payload.owned_bytes(),
+@@ -1107,6 +1246,9 @@
+                 return Ok(());
+             }
+             if state.waiting {
++                if incremental {
++                    state.finish(Outcome::Error);
++                }
+                 return Ok(());
+             }
+             if js_sys::Date::now() >= state.deadline {
+@@ -1114,6 +1256,13 @@
+                 return Ok(());
+             }
+             if !render_job::target_current(&state) {
++                state.finish(Outcome::Canceled);
++                return Ok(());
++            }
++            if prepared
++                .as_ref()
++                .is_some_and(|p| !self.core.preparation_matches(&p.identity))
++            {
+                 state.finish(Outcome::Canceled);
+                 return Ok(());
+             }
+@@ -1138,6 +1287,20 @@
+             } else {
+                 None
+             };
++            // Recheck after backup too: custom Canvas methods must not smuggle
++            // a replacement token through a synchronous JS call.
++            if !render_job::target_current(&state)
++                || prepared
++                    .as_ref()
++                    .is_some_and(|p| !self.core.preparation_matches(&p.identity))
++            {
++                state.finish(Outcome::Canceled);
++                return Ok(());
++            }
++            if js_sys::Date::now() >= state.deadline {
++                state.finish(Outcome::Error);
++                return Ok(());
++            }
+             // No async boundary exists between validation and publication.
+             target.set_width(width);
+             target.set_height(height);
+@@ -9516,6 +9679,14 @@
+ #[cfg(test)]
+ mod tests;
+
++/// Enable the isolated bounded Full preparation experiment. Default false;
++/// synchronous compatibility APIs and other replay variants keep their contract.
++#[cfg(target_arch = "wasm32")]
++#[wasm_bindgen(js_name = setRendererPreparationEnabled)]
++pub fn set_renderer_preparation_enabled(enabled: bool) {
++    crate::renderer::render_job::set_preparation_enabled(enabled);
++}
++
+ #[cfg(target_arch = "wasm32")]
+ #[wasm_bindgen(js_name = rendererJobStats)]
+ pub fn renderer_job_stats() -> String {

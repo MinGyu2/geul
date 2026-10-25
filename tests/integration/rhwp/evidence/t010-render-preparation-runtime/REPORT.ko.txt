@@ -1,0 +1,62 @@
+T010 격리 render preparation runtime
+
+현재 상태: 검증 진행 중. native 실행 전 선행 후보/신뢰 계약 커밋용 중간 기록이다.
+시작 master db5c9a42a9c60c72f4763a3eacf6beae8cb85f0b, 작업 트리 clean이었다.
+RHWP/WordCraft gitlink는 사용자 지정 고정 revision과 일치한다. production/public/과거 증거는 변경하지 않았다.
+
+VERIFIED 구현
+기존 poll은 tree 구축·scratch·리소스 해소·replay·publication을 한 번의 동기 호출에서 수행했다.
+새 격리 Full 경로는 owned tree/모델 신원/실제 PaintOp cursor를 job에 보존한다.
+step256/resource operation4 양자와 ResourcesReady PENDING 반환을 구현했다. 다음 poll만 replay한다.
+원자 scratch publication 및 기존 backup/restore, 15초 deadline과 기존 모든 memory limit은 유지했다.
+새 retained 영역은 job32MiB/module64MiB checked 예약, depth64/node65536/key256으로 제한한다.
+상세 함수·자원 분류·호환 경로·거부 정책은 CONTRACT.ko.txt와 두 독립 검증 patch에 있다.
+production 활성화 없이 명시적 실험 opt-in만 사용한다. 기존 public poll status를 바꾸지 않았다.
+
+VERIFIED 실패와 교정
+첫 후보는 이미지 전용 실제 probe를 통과했으나 텍스트 반례에서 ERROR였다.
+Canvas가 drawing 전 검증하는 text provenance까지 제거한 것이 원인이었다.
+원 검증을 유지하고 text_sources/op binding을 보존·계상했으며 회귀를 추가했다.
+후보2에서 같은 텍스트 반례가 Chrome/WebKit 모두 COMPLETE였다. 실패 원본과 이전 후보도 보존했다.
+첫 확장 하네스의 listener API명 오류, pattern 입력 property명 오류도 실패로 보존했다.
+패턴 호출 횟수가0인 결과를 PASS로 바꾸지 않고 실제 source API에 맞춘 입력으로 교정했다.
+패치 도구의 불필요한 전체 archive와 new-file mode 누락도 중단/실패를 보존하고 src 범위·정규 patch로 교정했다.
+기록된 인공 scratch/replay/publication 예외는 통제된 주입이며 실제 장애가 발생했다고 주장하지 않는다.
+
+VERIFIED 회귀
+전체 Rust library4093 PASS/13 기존 ignored. 새 준비 Rust10개 포함.
+native/wasm32 clippy -D warnings PASS. 변경 Rust8파일 rustfmt check PASS.
+export의 없는 생성 integration 경로로 초기 cargo fmt --all은 실패했으며 검사 범위를 명시한다.
+현재 cache21 PASS; 과거 cache18 PASS/2 FAIL은 별도 보존했다.
+decoded lease21, hardening24, ownership24, scheduler16 Rust 계약 PASS(각 suite 내부 중복을 합산하지 않는다).
+Python ownership292/e2e76/cache69/security86 PASS. 새 계약 Python23 PASS.
+Chrome/WebKit 각각 새 runtime49 PASS, 실제 다중 poll와 Ready/lease/cleanup 관찰.
+기존 ownership52/scheduler73/decoded lease41·ledger57 checkpoints PASS.
+기존 preparation 관찰 script14개/arm도 두 브라우저에서 gate off 호환 경로로 재실행 PASS.
+Full 독립 oracle chemical7페이지×cold/warm×3회=42개/브라우저 직접 RGBA 일치.
+그중 warm21개는 기존 행렬이다. 별도 crop/회전/watermark/JPEG/RawSvg/패턴/배경/수식도 직접 비교했다.
+동일 원본의 일반/변환 variant가 Ready에서2keys/decode2로 분리되는 것을 관찰했다.
+wrapper 통제11경우: 정상만0, 나머지 모두 nonzero. 가짜 native 시험이며 실제 D1이 아니다.
+
+VERIFIED 실험 성능 관찰
+같은 실행물의 독립 모듈에서 gate만 바꿔3페이지16/20/23×cold/warm×3회18쌍/브라우저를 측정했다.
+모든 쌍이 직접 RGBA 일치했다. 별도 performance JSON에 총지연·poll수·최대poll·양자·메모리·decode 계수를 보존한다.
+page16은38poll이며 준비 on 총지연이 대체로490~590ms로 off 약50~80ms보다 늘었다.
+동기 decode가 있는20/23은2poll이다. 준비 분할이 decode 자체를 선점하거나 총지연을 줄인다는 주장은 하지 않는다.
+진단 readback/continuation 비용을 포함한다. 실제 input event 지연의 별도 측정은 UNVERIFIED다.
+공식 D4 MEASURE·threshold·fixture·기존 결과는 건드리지 않았다.
+
+신뢰 계약과 남은 검증
+새 candidate 신원은 candidate-identity.json, 두 patch 적용 검증은 patch-verification.json에 있다.
+새 native 계약4/manifest4 및 보조 pending/D3/D5 계약5를 과거 계약과 별도 작성했다.
+기존 native anchor는 변경하지 않았다. 새 anchor가 커밋된 뒤 실제 native 실행을 계속한다.
+실제 native D1/보조 회귀와 최종 보안·이력·보호경로 검사가 아직 남아 있으므로 COMPLETED가 아니다.
+원본 ENGINE 파일별 소스 hash map은 정제 증거에서 생략하고 원본SHA/전체source·patch신원을 보존했다.
+시스템 library/node_modules/font/toolchain 전체 인증, RSS 상한, 입력 선점은 UNVERIFIED다.
+저장소 anchor는 독립 서명이나 공급망 전체 attestation이 아니다.
+
+공식 상태 유지
+T010 INCOMPLETE. D1 PASS(과거 공식), D2 INCONCLUSIVE, D3 PASS(과거 공식), D4 FAIL,
+D5 PASS(과거 공식), RSS INCONCLUSIVE, production RHWP Undo/Redo NO-GO, T011 NOT STARTED.
+기존 정책 편차2636a650 PENDING_APPROVAL을 이번 작업으로 승인하지 않는다.
+push/deploy/production 활성화는 하지 않았다. 공식 D4 PASS 후보라는 주장은 하지 않는다.

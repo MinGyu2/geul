@@ -1,0 +1,68 @@
+T010 격리 준비 runtime 재현
+
+환경 변수는 각 작업자의 검증된 경로로 설정한다. 비공개 절대 경로를 문서에 복사하지 않는다.
+ROOT는 git rev-parse --show-toplevel로 확인한다. SCRATCH는 저장소 밖 새 작업 디렉터리,
+TOOLCHAIN은 Rust1.93.1 bin, TARGET은 새 Cargo cache, PREVIOUS는 변경하지 않은 기존 fin1 소스,
+REFERENCE는 기존 독립 Full oracle web package, CANDIDATE는 새 candidate-attempt2 web package다.
+기존 파일이 있는 output/attempt를 재사용하지 않는다. 실패 시 새 번호로 보존하고 원인을 기록한다.
+이 명령은 production public, submodule checkout, 기존 candidate를 쓰기 대상으로 사용하지 않는다.
+
+소스와 빌드
+python3 tests/integration/rhwp/cache-concurrency/prepare.py --work "$SCRATCH/source" \
+ --patch tests/integration/rhwp/evidence/t010-render-preparation-runtime/upstream-rhwp-render-preparation-complete.patch \
+ --toolchain-bin "$TOOLCHAIN" --prepare-only --no-opt
+python3 tests/integration/rhwp/render-preparation/build_candidate.py --source "$SCRATCH/source" \
+ --toolchain-bin "$TOOLCHAIN" --target-dir "$TARGET" --attempt 2
+python3 tests/integration/rhwp/render-preparation/patches.py --source "$SCRATCH/source" \
+ --previous "$PREVIOUS" --output "$SCRATCH/patch-check"
+ENGINE.json/artifacts/sourceTreeSha256와 candidate-identity.json을 독립 비교한다.
+단순히 새 빌드의 ENGINE에 기대 hash를 복사하지 않는다. wasm-opt는 사용하지 않았다.
+패치는 전체 Rust src 집계와 독립 적용으로 검증한다. Cargo.lock/도구/시스템 라이브러리의 전체 공급망 인증은 아니다.
+
+Rust: 격리 source 작업 디렉터리에서
+PATH="$TOOLCHAIN:$PATH" CARGO_NET_OFFLINE=true CARGO_TARGET_DIR="$TARGET" \
+ RUSTFLAGS='-C link-arg=-fuse-ld=bfd' cargo test --locked --offline --lib
+같은 환경에서 cargo clippy --locked --offline --lib -- -D warnings
+wasm은 host RUSTFLAGS를 빼고 cargo clippy --locked --offline --release --target wasm32-unknown-unknown --lib -- -D warnings
+변경된 8개 Rust 파일은 rustfmt --edition 2021 --config skip_children=true --check로 검사했다.
+export에 없는 생성 integration test 경로 때문에 초기 cargo fmt --all은 실패했다. 해당 실패를 숨기지 않는다.
+cache-concurrency/unit.py --source "$SCRATCH/source/src/renderer/surface_cache.rs" --rustc "$HOST_RUSTC" \
+ (--suite current | --suite historical | --contract CONTRACT.rs) --output 새경로
+historical의 기존18PASS/2FAIL을 성공 계약에 합치거나 제외하지 않는다.
+
+브라우저: 저장소 root에서
+python3 tests/integration/rhwp/render-preparation/run.py --baseline "$PREVIOUS/test-package" \
+ --reference "$REFERENCE" --candidate "$CANDIDATE" --browser chrome --output "$SCRATCH/chrome.json"
+WebKit은 --browser webkit --webkit-driver "$WEBKIT_DRIVER" --xvfb "$XVFB"를 사용한다.
+--probe는 진단만 한다. full 49개 계약이나 native 승인 증거로 대체하지 않는다.
+--historical-preparation은 변경하지 않은 기존 preparation-contract-browser.mjs의 gate off 호환14개/arm 검사다.
+동일 실행물 성능은 --baseline "$CANDIDATE" --candidate "$CANDIDATE" --performance로 실행한다.
+독립 WASM instance의 gate를 각각 off/on으로 설정하고3페이지×cold/warm×3회18쌍을 비교한다.
+최종 총시간에는 진단 readback/continuation scheduling 비용이 포함된다. 공식 MEASURE가 아니다.
+기존 cache-concurrency/run.py --pinned public/rhwp --candidate "$CANDIDATE"와
+cache-concurrency/decoded_lease_run.py --baseline "$REFERENCE" --candidate "$CANDIDATE"도 양 브라우저에서 실행한다.
+기존 계약을 수정하거나 default gate를 켜서 과거 시험 의미를 바꾸지 않는다.
+
+Python
+python3 -m unittest discover -s tests/integration/rhwp/render-preparation -p 'test_*.py'
+같은 명령의 -s를 ownership-poc, cache-concurrency, tests/e2e, tests/security로 바꿔 각각 실행한다.
+wrapper_negative.py --candidate "$CANDIDATE" --output 새경로는 가짜 native 하네스11경우를 실행한다.
+이는 실제 Tauri native D1이 아니다. 관찰하는 fake geul process도 통제된 시험이다.
+
+새 native
+새 candidate-identity.json이 커밋되어야 한다. native_result.load_trust_anchor는 git show HEAD:로 읽고
+고정된 anchor 파일 hash와 대조한다. 기존 native_d1_result.TRUST_ANCHOR를 수정하지 않는다.
+GEUL_TAURI_DRIVER, GEUL_WEBKIT_DRIVER, GEUL_XVFB, GEUL_XDOTOOL을 실제 도구 경로로 설정한다.
+python3 tests/integration/rhwp/evidence/t010-render-preparation-runtime/run-native.py \
+ --attempt N --candidate "$CANDIDATE" --expected-wasm 새anchor의WASM --output-dir "$SCRATCH/native"
+wrapper는 독립 fixture 생성, 고정 sample 검증, manifest4 전후 비교,39/24 D1, strict cleanup/lifecycle 및
+실제 준비 opt-in/Ready 반환 관찰을 검증한다. 결과·lifecycle·wrapper verdict와 종료를 모두 보존한다.
+입력 변경 또는 기록 실패도 성공으로 바꾸지 않는다. 포트1420과 driver port가 비어 있어야 한다.
+
+증거/보안
+원본 JSON은 비커밋 작업 공간에 보존한다. engine의 파일별 src hash map은 새 path의 Gitleaks 오탐을
+allowlist 확대로 처리하지 않고, raw SHA256과 전체 source/patch 신원을 가진 정제 증거에서 생략한다.
+실제 측정 수치와 실패 상태는 바꾸지 않는다. SHA는 정제 전 실제 원본 파일 바이트에 대해 계산한다.
+민감정보 --all/--history/--staged, configured Gitleaks 상대 tree mirror/history/staged,
+기존 allowlist 음성 검사, Python security, diff --check, 시작HEAD 대비 보호 경로/gitlink를 검사한다.
+이전 정책 편차2636a650은 계속 PENDING_APPROVAL이다. push/deploy/production 활성화는 하지 않는다.

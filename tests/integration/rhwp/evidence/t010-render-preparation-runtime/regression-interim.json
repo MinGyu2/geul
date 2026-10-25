@@ -1,0 +1,83 @@
+{
+  "schema": 1,
+  "분류": "VERIFIED",
+  "기준": "db5c9a42a9c60c72f4763a3eacf6beae8cb85f0b",
+  "변경8파일": "이전 candidate 대비; pinned 대비 완전 patch는 기존 lease 변경도 포함",
+  "판정기회귀": {
+    "새Python": 17,
+    "ownership": 292,
+    "e2e": 76,
+    "security": 86
+  },
+  "cache": [
+    {
+      "name": "current",
+      "status": "PASS",
+      "counts": {
+        "passed": 21,
+        "failed": 0,
+        "ignored": 0,
+        "failedTests": []
+      },
+      "rawSha256": "6825474032c422a5fcf4f90e738f067443ad44e53d0a160d05d8a60663eb9262"
+    },
+    {
+      "name": "historical",
+      "status": "FAIL",
+      "counts": {
+        "passed": 18,
+        "failed": 2,
+        "ignored": 0,
+        "failedTests": [
+          "trim_during_load_does_not_release_the_pending_handle",
+          "two_oversize_completions_can_be_available_for_one_full_page_draw"
+        ]
+      },
+      "rawSha256": "74a6d9c0a2402d64d3a65747dc83723eebbd181b0c042ac2da3ccdf27544041a"
+    },
+    {
+      "name": "decoded_lease_contract",
+      "status": "PASS",
+      "counts": {
+        "passed": 21,
+        "failed": 0,
+        "ignored": 0,
+        "failedTests": []
+      },
+      "rawSha256": "800a368f63b9424d5c4a8170a71a2dd9b43ea6d17b35cb4306fc4b46ae99f8f7"
+    },
+    {
+      "name": "decoded_lease_hardening_contract",
+      "status": "PASS",
+      "counts": {
+        "passed": 24,
+        "failed": 0,
+        "ignored": 0,
+        "failedTests": []
+      },
+      "rawSha256": "97a9929ab49cbc554a4b4bd4d81127557996e5be2e5803577077431559633770"
+    },
+    {
+      "name": "ownership_contract",
+      "status": "PASS",
+      "counts": {
+        "passed": 24,
+        "failed": 0,
+        "ignored": 0,
+        "failedTests": []
+      },
+      "rawSha256": "a0b3676046c15c838a4e2c7d82dd76f4ba8b6ee0193bff938b1ac6edbda9a734"
+    },
+    {
+      "name": "scheduler_contract",
+      "status": "PASS",
+      "counts": {
+        "passed": 16,
+        "failed": 0,
+        "ignored": 0,
+        "failedTests": []
+      },
+      "rawSha256": "85978835da468b2aaaa9a11bb209d654acdec23b9dcf1d1e6e64bc77a56c0596"
+    }
+  ]
+}

@@ -1,0 +1,109 @@
+{
+  "분류": "VERIFIED 통제된 가짜 하네스; 실제 native D1 아님",
+  "검사": [
+    {
+      "경우": "complete-pass",
+      "wrapper종료": 0,
+      "상태": "PASS",
+      "범주": [],
+      "stderr_SHA256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "진단": ""
+    },
+    {
+      "경우": "wrong-fixture",
+      "wrapper종료": 3,
+      "상태": "FAIL",
+      "범주": [
+        "fixture-identity"
+      ],
+      "stderr_SHA256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "진단": ""
+    },
+    {
+      "경우": "missing-fixture-hash",
+      "wrapper종료": 3,
+      "상태": "FAIL",
+      "범주": [
+        "fixture-identity"
+      ],
+      "stderr_SHA256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "진단": ""
+    },
+    {
+      "경우": "forced-kill",
+      "wrapper종료": 3,
+      "상태": "FAIL",
+      "범주": [
+        "cleanup"
+      ],
+      "stderr_SHA256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "진단": ""
+    },
+    {
+      "경우": "duplicate-json",
+      "wrapper종료": 3,
+      "상태": "FAIL",
+      "범주": [
+        "cleanup",
+        "incomplete-verification",
+        "malformed-result"
+      ],
+      "stderr_SHA256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "진단": ""
+    },
+    {
+      "경우": "dependency-changed",
+      "wrapper종료": 3,
+      "상태": "FAIL",
+      "범주": [
+        "dependency-mutation"
+      ],
+      "stderr_SHA256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "진단": ""
+    },
+    {
+      "경우": "harness-exit1",
+      "wrapper종료": 1,
+      "상태": "FAIL",
+      "범주": [
+        "native-subprocess"
+      ],
+      "stderr_SHA256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "진단": ""
+    },
+    {
+      "경우": "no-geul",
+      "wrapper종료": 3,
+      "상태": "FAIL",
+      "범주": [
+        "lifecycle"
+      ],
+      "stderr_SHA256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "진단": ""
+    },
+    {
+      "경우": "missing-package",
+      "wrapper종료": 1,
+      "상태": "실행 전 거부",
+      "범주": [],
+      "stderr_SHA256": "2388672c1f5fdcf127ad0ade8310890eeefc02444b34da7ea0cffc5613ad208a",
+      "진단": "dependency preflight failed: [{'category': 'dependency-manifest', 'invariant': 'before 비정규 이름/digest'}, {'category': 'dependency-manifest', 'invariant': 'after 비정규 이름/digest'}, {'category': 'dependency-manifest', 'invariant': \"before digests not sha256 text: ['package.json']\"}, {'category': 'dependency-manifest', 'invariant': \"after digests not sha256 text: ['package.json']\"}]\n"
+    },
+    {
+      "경우": "untracked-src",
+      "wrapper종료": 1,
+      "상태": "실행 전 거부",
+      "범주": [],
+      "stderr_SHA256": "0bbdb2452d27049b68654f2cf644dfd33db609633985e57b98cc49b5c4b78ee8",
+      "진단": "dependency preflight failed: [{'category': 'dependency-manifest', 'invariant': 'before 비정규 이름/digest'}, {'category': 'dependency-manifest', 'invariant': 'after 비정규 이름/digest'}, {'category': 'dependency-manifest', 'invariant': \"before digests not sha256 text: ['tree:src']\"}, {'category': 'dependency-manifest', 'invariant': \"after digests not sha256 text: ['tree:src']\"}]\n"
+    },
+    {
+      "경우": "missing-sample",
+      "wrapper종료": 1,
+      "상태": "실행 전 거부",
+      "범주": [],
+      "stderr_SHA256": "0d8f652c0c207042098f6a1d3c35ec6e3ff8f59bdb6994f33ddba7cb4e74022b",
+      "진단": ", 'external/rhwp/samples/issue6031/3249937_asset_management_rules.hwpx']\"}, {'category': 'fixture-identity', 'invariant': 'before pinned fixture differs from independent identity: 연구노트(화학).hwp'}, {'category': 'fixture-identity', 'invariant': 'before pinned fixture differs from independent identity: 3249937_asset_management_rules.hwpx'}, {'category': 'dependency-manifest', 'invariant': \"after digests not sha256 text: ['external/rhwp/samples/rnote/연구노트(화학).hwp', 'external/rhwp/samples/issue6031/3249937_asset_management_rules.hwpx']\"}, {'category': 'fixture-identity', 'invariant': 'after pinned fixture differs from independent identity: 연구노트(화학).hwp'}, {'category': 'fixture-identity', 'invariant': 'after pinned fixture differs from independent identity: 3249937_asset_management_rules.hwpx'}]\n"
+    }
+  ]
+}
