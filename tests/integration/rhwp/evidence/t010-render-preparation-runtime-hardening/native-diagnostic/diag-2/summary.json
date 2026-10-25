@@ -1,0 +1,26 @@
+{
+ "schema": 1,
+ "record": "native disconnect diagnostic (not acceptance evidence)",
+ "label": "diag-2",
+ "loadStart": [
+  0.94287109375,
+  1.0478515625,
+  1.30419921875
+ ],
+ "harnessExit": 0,
+ "elapsedSeconds": 78.83,
+ "loadEnd": [
+  1.7880859375,
+  1.2646484375,
+  1.35986328125
+ ],
+ "status": "PASS",
+ "assertions": 39,
+ "references": 24,
+ "error": null,
+ "cleanup": {
+  "sessionEnded": true,
+  "driverStopped": true,
+  "displayTerminated": true
+ }
+}

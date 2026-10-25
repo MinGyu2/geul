@@ -1,0 +1,45 @@
+T010 준비 runtime 하드닝 재현
+
+경로는 각 작업자가 검증한 값으로 둔다. ROOT=git rev-parse --show-toplevel, SCRATCH=저장소 밖 새 디렉터리,
+TARGET=하나의 공유 Cargo target. 도구는 이미 설치된 Rust 1.99.0만 쓴다. 설치·다운로드 명령은 쓰지 않는다.
+rustc --version / cargo --version / rustc --print sysroot로 1.99.0을 먼저 확인한다(rustup 없음).
+
+소스와 빌드
+python3 tests/integration/rhwp/cache-concurrency/prepare.py --work "$SCRATCH/source" \
+ --patch tests/integration/rhwp/evidence/t010-render-preparation-runtime-hardening/upstream-rhwp-render-preparation-complete.patch \
+ --prepare-only --no-opt
+python3 tests/integration/rhwp/render-preparation/build_candidate.py --source "$SCRATCH/source" \
+ --toolchain-bin "$(dirname "$(command -v rustc)")" --target-dir "$TARGET" --attempt 1
+candidate-identity.json의 artifacts·sourceTreeSha256과 실제 바이트를 독립 비교한다(기대값을 결과에 복사하지 않는다).
+patch 검증: python3 tests/integration/rhwp/render-preparation/patches.py --source "$SCRATCH/source" \
+ --previous <이전 runtime 후보 소스> --output <새 디렉터리>. 산출 incremental patch를 이 디렉터리에서는
+upstream-rhwp-render-preparation-hardening-incremental.patch로 저장했다(SHA는 patch-verification.json과 같다).
+
+Rust(격리 source, CARGO_NET_OFFLINE=true CARGO_TARGET_DIR="$TARGET" CARGO_INCREMENTAL=0)
+host: RUSTFLAGS='-C link-arg=-fuse-ld=bfd' cargo test --locked --offline --lib
+clippy: cargo clippy --locked --offline --lib -- -D warnings, 그리고 -p rhwp --lib --no-deps 변형,
+wasm32는 RUSTFLAGS 없이 --release --target wasm32-unknown-unknown. Rust 1.99에서는 신규 lint로 FAIL이 예상된다(REPORT 8절).
+rustfmt --edition 2021 --config skip_children=true --check <변경 Rust 8파일>
+cache-concurrency/unit.py --source "$SCRATCH/source/src/renderer/surface_cache.rs" --rustc "$(command -v rustc)" \
+ --suite current|historical, --contract <decoded_lease|decoded_lease_hardening|ownership|scheduler>_contract.rs
+
+브라우저
+하드닝 재현: python3 tests/integration/rhwp/render-preparation-hardening/run.py --candidate <패키지> --browser chrome --output <새 파일>
+WebKit은 --browser webkit --xvfb <Xvfb>. 수정 전 후보(e88d…)는 FAIL, 수정 후보(908146…)는 PASS여야 한다.
+기존 계약: render-preparation/run.py --baseline B --reference B --candidate C (B=사전준비 엔진, 준비 API 없음),
+--performance는 --baseline C --candidate C. decoded_lease_run.py는 lease 이전 엔진(decoded-admission patch)을 baseline으로 쓴다.
+B는 decoded-lease-contract-finalization complete patch, lease 이전 엔진은 t010-decoded-admission patch를
+prepare.py로 내보낸 뒤 scripts/wasm-pack-locked.sh --release --no-opt --target web로 빌드한다(RUSTFLAGS 제거).
+cache-concurrency/run.py --pinned public/rhwp --candidate C 는 public을 읽기만 한다.
+
+native 진단(승인 아님)
+GEUL_TAURI_DRIVER/GEUL_WEBKIT_DRIVER/GEUL_XVFB/GEUL_XDOTOOL을 실제 경로로 두고, 포트 1420이 비어 있어야 한다.
+python3 tests/integration/rhwp/render-preparation-hardening/diagnose_native.py --candidate <패키지> \
+ --gates <그 후보의 engine-gates> --label <새 이름> --output-dir <새 디렉터리>
+driver.log는 저장소 ignore 규칙으로 커밋되지 않으며 원본 SHA는 results.json rawSha256에 있다.
+producer와 기존 wrapper는 수정하지 않으며 DRIVER_LOG와 DriverLost 진단만 추가 보존한다. strict D1 verdict를 만들지 않는다.
+새 후보의 gate는 비커밋 scratch 진단 전용이었다. 새 후보의 native 승인에는 별도 승인된 신뢰 계약이 필요하다.
+
+보안
+python3 scripts/check-sensitive-info.py --all / --history / --staged, gitleaks git/dir(.gitleaks.toml), git diff --check,
+python3 -m unittest discover -s tests/security. allowlist는 넓히지 않는다.

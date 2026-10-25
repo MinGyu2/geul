@@ -1,0 +1,40 @@
+{
+  "schema": 1,
+  "pinned": "1a76570e833917d15817415a53c09ad61ab3203f",
+  "sourceTreeSha256": "e8bb5b772caf31628d21fb39bc2ff16a2848ab0efeaa25ed972af93eea114c6b",
+  "patches": [
+    {
+      "name": "complete",
+      "paths": [
+        "src/document_core/commands/document.rs",
+        "src/document_core/mod.rs",
+        "src/document_core/queries/rendering.rs",
+        "src/paint/layer_tree.rs",
+        "src/paint/resources.rs",
+        "src/renderer/canvas_rgba.rs",
+        "src/renderer/layout.rs",
+        "src/renderer/layout/caret_geometry_tests.rs",
+        "src/renderer/mod.rs",
+        "src/renderer/preparation.rs",
+        "src/renderer/render_job.rs",
+        "src/renderer/surface_cache.rs",
+        "src/renderer/web_canvas.rs",
+        "src/wasm_api.rs"
+      ],
+      "sha256": "607737a9fea673206c6e9c628fd30b71e8e8f80c35534b916fcabdc488d5a668",
+      "appliedSourceTreeSha256": "e8bb5b772caf31628d21fb39bc2ff16a2848ab0efeaa25ed972af93eea114c6b",
+      "status": "PASS"
+    },
+    {
+      "name": "incremental",
+      "paths": [
+        "src/renderer/preparation.rs",
+        "src/renderer/render_job.rs",
+        "src/renderer/web_canvas.rs"
+      ],
+      "sha256": "3a4ab0565232e4ce935daa4bd67cae82de35df3f5695c411b11388f3d71b10f9",
+      "appliedSourceTreeSha256": "e8bb5b772caf31628d21fb39bc2ff16a2848ab0efeaa25ed972af93eea114c6b",
+      "status": "PASS"
+    }
+  ]
+}

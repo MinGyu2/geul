@@ -1,0 +1,48 @@
+{
+  "sourceSha256": "9d5aa73e8167a59d85f7f09cf5165be99c703bdaaa4d1a491a116409744cbfcb",
+  "contractSha256": "5abb3878eddf81603438599c060d1429ecd0189caa6c764223555b8fe1c50fc5",
+  "schema": 2,
+  "patchSha256": null,
+  "suite": "historical",
+  "contract": "cache_contract.rs",
+  "compiler": "rustc 1.99.0 (b940084d7 2026-09-28)",
+  "checks": [
+    {
+      "name": "internal",
+      "status": "PASS",
+      "exit": 0,
+      "counts": {
+        "passed": 11,
+        "failed": 0,
+        "ignored": 0,
+        "failedTests": []
+      },
+      "output": "\nrunning 11 tests\ntest tests::a_repeatedly_requested_newcomer_displaces_a_once_used_resident ... ok\ntest tests::admission_keeps_a_stable_subset_when_a_scan_exceeds_the_budget ... ok\ntest tests::aging_lets_a_new_working_set_replace_an_old_hot_one ... ok\ntest tests::byte_budget_evicts_least_recently_used_and_releases_it ... ok\ntest tests::content_key_distinguishes_length_and_bytes ... ok\ntest tests::negative_entries_are_bounded_by_count_and_lru ... ok\ntest tests::oversize_entry_is_not_retained_and_does_not_evict_others ... ok\ntest tests::pending_admission_rejects_and_trim_cancels ... ok\ntest tests::ready_lease_is_transferred_without_resident_eviction ... ok\ntest tests::replacing_a_key_releases_the_previous_value_without_double_counting ... ok\ntest tests::trim_and_budget_reduction_release_everything_they_drop ... ok\n\ntest result: ok. 11 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s\n\n"
+    },
+    {
+      "name": "contracts",
+      "status": "FAIL",
+      "exit": 101,
+      "counts": {
+        "passed": 18,
+        "failed": 2,
+        "ignored": 0,
+        "failedTests": [
+          "trim_during_load_does_not_release_the_pending_handle",
+          "two_oversize_completions_can_be_available_for_one_full_page_draw"
+        ]
+      },
+      "output": "\nrunning 20 tests\ntest budget_reduction_cannot_increase_pending_overcommit ... ok\ntest failure_accounting_respects_tiny_budget ... ok\ntest late_completion_after_release_does_not_revive_entry ... ok\ntest never_completing_requests_are_bounded ... ok\ntest one_large_encoded_request_has_a_hard_bound ... ok\ntest surface_cache::tests::a_repeatedly_requested_newcomer_displaces_a_once_used_resident ... ok\ntest surface_cache::tests::admission_keeps_a_stable_subset_when_a_scan_exceeds_the_budget ... ok\ntest surface_cache::tests::aging_lets_a_new_working_set_replace_an_old_hot_one ... ok\ntest surface_cache::tests::byte_budget_evicts_least_recently_used_and_releases_it ... ok\ntest surface_cache::tests::content_key_distinguishes_length_and_bytes ... ok\ntest surface_cache::tests::negative_entries_are_bounded_by_count_and_lru ... ok\ntest surface_cache::tests::oversize_entry_is_not_retained_and_does_not_evict_others ... ok\ntest surface_cache::tests::pending_admission_rejects_and_trim_cancels ... ok\ntest surface_cache::tests::ready_lease_is_transferred_without_resident_eviction ... ok\ntest surface_cache::tests::replacing_a_key_releases_the_previous_value_without_double_counting ... ok\ntest surface_cache::tests::trim_and_budget_reduction_release_everything_they_drop ... ok\ntest three_pending_requests_respect_100_bytes_and_two_entries ... ok\ntest transient_completion_does_not_evict_useful_small_residents ... ok\ntest trim_during_load_does_not_release_the_pending_handle ... FAILED\ntest two_oversize_completions_can_be_available_for_one_full_page_draw ... FAILED\n\nfailures:\n\nfailures:\n    trim_during_load_does_not_release_the_pending_handle\n    two_oversize_completions_can_be_available_for_one_full_page_draw\n\ntest result: FAILED. 18 passed; 2 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s\n\nobserved entries=1 bytes=90\n\nthread 'trim_during_load_does_not_release_the_pending_handle' (564658) panicked at <temporary>/cache_contract.rs:62:5:\nassertion `left == right` failed\n  left: 1\n right: 0\nnote: run with `RUST_BACKTRACE=1` environment variable to display a backtrace\n\nthread 'two_oversize_completions_can_be_available_for_one_full_page_draw' (564659) panicked at <temporary>/cache_contract.rs:101:5:\ncannot repaint the complete page\n"
+    }
+  ],
+  "status": "FAIL",
+  "suiteCounts": {
+    "passed": 18,
+    "failed": 2,
+    "ignored": 0,
+    "failedTests": [
+      "trim_during_load_does_not_release_the_pending_handle",
+      "two_oversize_completions_can_be_available_for_one_full_page_draw"
+    ]
+  }
+}
