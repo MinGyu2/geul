@@ -25,7 +25,7 @@ def complete_result():
     tests = [{'name': name, 'status': 'PASS'} for name in contract.required_tests()]
     refs = [{'name': f'{s}-{f}', 'sample': s, 'frame': f, 'verified': True, 'pixels': 0, 'maxDelta': 0} for s in FOUR for f in LABELS]
     return {'status': 'PASS', 'failures': [], 'tests': tests, 'visualReferences': refs, 'selectedSamples': list(FOUR), 'expectedSamples': list(FOUR),
-            'diagnosticContinuation': False, 'historyGates': [], 'historyChecks': [], 'documents': [{'sample': s} for s in FOUR],
+            'diagnosticContinuation': False, 'historyGates': [], 'historyChecks': [], 'documents': [{'sample': s, 'sourceSha256': contract.FIXTURE_SHA256[s]} for s in FOUR],
             'expectedAssertionCount': 39, 'expectedReferenceCount': 24, 'verifiedExactReferenceCount': 24,
             'measurementComplete': True, 'pixelReferencesComplete': True,
             'cleanup': {'sessionEnded': True, 'driverStopped': True, 'displayTerminated': True},
@@ -41,23 +41,26 @@ def complete_teardown():
 
 
 def complete_dependencies(version=contract.CURRENT_MANIFEST):
-    return {name: TRUSTED.get(name, format(index + 1, '064x')) for index, name in enumerate(contract.DEPENDENCY_MANIFESTS[version])}
+    return {name: TRUSTED.get(name, {path: contract.FIXTURE_SHA256[sample] for sample, path in contract.PINNED_FIXTURES.items()}.get(name, format(index + 1, '064x'))) for index, name in enumerate(contract.DEPENDENCY_MANIFESTS[version])}
 
 
 def complete_lifecycle():
-    return {'schema': 2, 'samples': 900, 'observerError': None, 'observerStopped': True, 'leftAtEnd': [],
-            'processes': [{'pid': 20, 'comm': 'tauri-driver', 'gone': 80.1}, {'pid': 22, 'comm': 'geul', 'gone': 80.1},
-                          {'pid': 23, 'comm': 'WebKitWebProces', 'gone': 80.3}]}
+    previous = HERE.parent / 'evidence/t010-native-evidence-security-hardening/native-d1-attempt1-lifecycle.json'
+    return json.loads(previous.read_text())
 
 
 def run(result=None, *, missing=False, error=None, harness_exit=0, lifecycle=None, deps=None, deps_after=None,
-        wasm_before=WASM, wasm_after=WASM, expected=WASM, evidence_errors=(), trusted=TRUSTED, manifest=contract.CURRENT_MANIFEST):
+        wasm_before=WASM, wasm_after=WASM, expected=WASM, evidence_errors=(), trusted=TRUSTED, manifest=contract.CURRENT_MANIFEST, attempt=1):
+    if lifecycle is None:
+        lifecycle = complete_lifecycle()
+        if type(harness_exit) is int:
+            next(e for e in lifecycle['events'] if e['event'] == 'harness-exit')['exit'] = harness_exit
     deps = complete_dependencies() if deps is None else deps
     return contract.validate(harness_exit=harness_exit, result=None if missing or error else (complete_result() if result is None else result),
                              result_error='missing' if missing else error, expected_wasm=expected, candidate_wasm_before=wasm_before,
                              candidate_wasm_after=wasm_after, dependencies_before=deps, dependencies_after=copy.deepcopy(deps) if deps_after is None else deps_after,
                              lifecycle=complete_lifecycle() if lifecycle is None else lifecycle, evidence_errors=evidence_errors,
-                             trusted_identity=trusted, manifest_version=manifest)
+                             trusted_identity=trusted, manifest_version=manifest, attempt=attempt)
 
 
 def changed(name, value, deps=None):
@@ -241,7 +244,7 @@ class GenuineEvidence(unittest.TestCase):
     def test_recorded_v2_records_name_the_current_manifest_and_driver_policy(self):
         for attempt in self.attempts(2):
             result = json.loads((self.EVIDENCE / self.SETS[2] / f'native-d1-attempt{attempt}.json').read_text())
-            self.assertEqual(result['dependencyManifest'], contract.CURRENT_MANIFEST)
+            self.assertEqual(result['dependencyManifest'], 2)
             self.assertEqual((result['teardown'][0]['driverKilled'], result['teardown'][0]['driverExit']), (False, 0))
             self.assertEqual(result['wrapperVerdict']['trustAnchor'], contract.TRUST_ANCHOR)
 
@@ -379,7 +382,7 @@ class DependencyManifest(unittest.TestCase):
     def test_manifest_is_the_independent_list(self):
         self.assertEqual(list(contract.DEPENDENCY_MANIFESTS[2]), self.V2)
         self.assertEqual(list(contract.DEPENDENCY_MANIFESTS[1]), self.V2[:18])
-        self.assertEqual(contract.CURRENT_MANIFEST, 2)
+        self.assertEqual(contract.CURRENT_MANIFEST, 3)
         self.assertEqual(len(set(self.V2)), len(self.V2))
 
     def test_only_wasm(self):
@@ -408,7 +411,7 @@ class DependencyManifest(unittest.TestCase):
         self.assertEqual(verdict['categories'], ['dependency-manifest'])
 
     def test_unsupported_manifest_versions(self):
-        for version in (0, 3, '2', 2.0, True, None):
+        for version in (0, 4, '2', 2.0, True, None):
             self.bad('dependency-manifest', manifest=version)
 
     def test_unexpected_noncanonical_and_duplicate_names(self):
@@ -474,6 +477,170 @@ class ExitCode(unittest.TestCase):
     def test_real_verdict_round_trip(self):
         self.assertEqual(contract.exit_code(run(), 0), 0)
         self.assertEqual(contract.exit_code(run(harness_exit=1), 1), 1)
+
+
+class FinalIntegrity(unittest.TestCase):
+    def reject(self, **kwargs):
+        v = run(**kwargs)
+        self.assertEqual(v['status'], 'FAIL', v)
+        self.assertNotEqual(contract.exit_code(v, 0), 0)
+        return v
+
+    def lifecycle_bad(self, change):
+        l = complete_lifecycle(); change(l); return self.reject(lifecycle=l)
+
+    def test_v3_all_entries_and_new_inputs_exist(self):
+        root = HERE.parents[3]
+        required = contract.DEPENDENCY_MANIFESTS[3]
+        self.assertTrue(set(contract.DEPENDENCY_MANIFESTS[2]) < set(required))
+        self.assertEqual(len(required), len(set(required)))
+        for name in (contract.NATIVE_WRAPPER, 'package.json', 'tsconfig.json', 'public/rhwp/rhwp.js',
+                     'public/rhwp/rhwp_bg.wasm', 'public/rhwp/BUILD.json',
+                     'tests/integration/rhwp/cache-concurrency/fixtures.mjs', *contract.PINNED_FIXTURES.values()):
+            self.assertIn(name, required)
+            self.assertTrue((root / name).is_file(), name)
+
+    def test_every_v3_entry_missing_changed_unreadable_or_malformed(self):
+        for name in contract.DEPENDENCY_MANIFESTS[3]:
+            with self.subTest(name=name):
+                d = complete_dependencies(); d.pop(name); self.reject(deps=d)
+                self.reject(deps=changed(name, None))
+                self.reject(deps=changed(name, 'A' * 64))
+                self.reject(deps_after=changed(name, OTHER))
+
+    def test_read_failure_and_missing_file_digest_fail_closed(self):
+        from unittest.mock import patch
+        root = HERE.parents[3]
+        original = Path.read_bytes
+        for failure in (PermissionError, FileNotFoundError):
+            def read(path):
+                if str(path).endswith('package.json'): raise failure('controlled read failure')
+                return original(path)
+            with patch.object(Path, 'read_bytes', read):
+                d = contract.dependency_digests(root, root / 'public/rhwp')
+            self.assertIsNone(d['package.json'])
+            self.reject(deps=d)
+
+    def test_submodule_revision_and_sample_bytes(self):
+        from unittest.mock import patch
+        root = HERE.parents[3]
+        self.assertTrue(contract.pinned_samples_valid(root))
+        with patch.object(contract.subprocess, 'check_output', return_value='160000 wrong 0\texternal/rhwp'):
+            self.assertFalse(contract.pinned_samples_valid(root))
+        original = Path.read_bytes
+        for failure in (FileNotFoundError, PermissionError):
+            def read(path):
+                if str(path).endswith('연구노트(화학).hwp'): raise failure('controlled missing sample')
+                return original(path)
+            with patch.object(Path, 'read_bytes', read):
+                self.assertFalse(contract.pinned_samples_valid(root))
+        def altered(path):
+            data = original(path)
+            return data + b'x' if str(path).endswith('연구노트(화학).hwp') else data
+        with patch.object(Path, 'read_bytes', altered): self.assertFalse(contract.pinned_samples_valid(root))
+
+    def test_untracked_and_ignored_frontend_inputs_fail_closed(self):
+        import tempfile, subprocess
+        with tempfile.TemporaryDirectory() as tmp:
+            r = Path(tmp); (r/'src').mkdir(); (r/'src/main.ts').write_text('export {};')
+            subprocess.run(['git','init','-q',tmp], check=True)
+            subprocess.run(['git','-C',tmp,'add','src/main.ts'], check=True)
+            self.assertTrue(contract.frontend_inputs_valid(r))
+            (r/'src/extra.ts').write_text('export {};')
+            self.assertFalse(contract.frontend_inputs_valid(r))
+            (r/'src/extra.ts').unlink(); (r/'.env.local').write_text('VITE_X=1')
+            self.assertFalse(contract.frontend_inputs_valid(r))
+
+    def test_missing_duplicate_reordered_documents(self):
+        for change in (lambda r:r.pop('documents'), lambda r:r['documents'].pop(),
+                       lambda r:r['documents'].append(r['documents'][0]), lambda r:r['documents'].reverse()):
+            self.reject(result=mutated(change))
+
+    def test_each_fixture_digest_must_be_independent_exact_sha256(self):
+        for i in range(4):
+            for value in (None, True, 1, [], {}, 'A'*64, '0'*63, OTHER):
+                self.reject(result=mutated(lambda r:r['documents'][i].update(sourceSha256=value)))
+            self.reject(result=mutated(lambda r:r['documents'][i].pop('sourceSha256')))
+        self.reject(result=mutated(lambda r:[d.update(sourceSha256=OTHER) for d in r['documents']]))
+
+    def test_lifecycle_missing_pid_or_name(self):
+        for key in ('pid', 'comm', 'ppid', 'pgid', 'firstSeen', 'lastSeen', 'states'):
+            self.lifecycle_bad(lambda l:l['processes'][0].pop(key))
+
+    def test_lifecycle_pid_types(self):
+        for key in ('pid', 'ppid', 'pgid'):
+            for value in (True, 2.0, '2', None, -1):
+                self.lifecycle_bad(lambda l:l['processes'][0].update({key:value}))
+
+    def test_lifecycle_state_counters(self):
+        for value in ({}, None, [], {'S':True}, {'S':1.0}, {'S':-1}, {'S':0}, {'Q':1}, {'SS':1}, {'S':999999}):
+            self.lifecycle_bad(lambda l:l['processes'][0].update(states=value))
+
+    def test_lifecycle_times(self):
+        for key in ('firstSeen','lastSeen','gone'):
+            for value in (True, -1, float('nan'), float('inf'), '0', None, 10**400):
+                self.lifecycle_bad(lambda l:l['processes'][0].update({key:value}))
+        self.lifecycle_bad(lambda l:l['processes'][0].update(firstSeen=9999))
+        self.lifecycle_bad(lambda l:l['processes'][0].update(gone=0))
+
+    def test_lifecycle_duplicate_identity(self):
+        self.lifecycle_bad(lambda l:l['processes'].append(copy.deepcopy(l['processes'][0])))
+
+    def test_lifecycle_metadata(self):
+        for key in ('schema','attempt','observer','observerError','observerStopped','samples','events','leftAtEnd','cpuCount','loadAverage'):
+            self.lifecycle_bad(lambda l:l.pop(key))
+        for key, values in (('schema',(2.0,'2',True,3)), ('attempt',(0,True,'1',1.0)),
+                            ('samples',(True,1.0,-1,None)), ('observerStopped',(None,1,False)),
+                            ('observerError',('controlled observer failure',1))):
+            for value in values:self.lifecycle_bad(lambda l:l.update({key:value}))
+
+    def test_lifecycle_events(self):
+        for value in (None, {}, [None], [{}], [{'t':0,'event':'gone','pid':True,'comm':'geul'}]):
+            self.lifecycle_bad(lambda l:l.update(events=value))
+        for key,value in (('pid',999999),('comm','wrong'),('t',-1),('t',True),('event','unknown')):
+            self.lifecycle_bad(lambda l:l['events'][0].update({key:value}))
+        self.lifecycle_bad(lambda l:l['events'].pop(0))
+
+    def test_strict_attempt_is_independent_and_required(self):
+        for attempt in (None, True, 1.0, '1', 0, 2):
+            self.reject(attempt=attempt)
+        self.assertEqual(run(attempt=1)['status'], 'PASS')
+
+    def test_lifecycle_harness_exit_identity_and_times(self):
+        self.lifecycle_bad(lambda l:next(e for e in l['events'] if e['event']=='harness-exit').update(exit=1))
+        self.lifecycle_bad(lambda l:next(e for e in l['events'] if e['event']=='harness-exit').update(t=0))
+
+    def test_lifecycle_survivor_and_final_consistency(self):
+        self.lifecycle_bad(lambda l:l['processes'][0].pop('gone'))
+        self.lifecycle_bad(lambda l:l.update(leftAtEnd=[l['processes'][0]]))
+        self.lifecycle_bad(lambda l:l.update(leftAtEnd=None))
+        self.lifecycle_bad(lambda l:l.update(processes=[{'comm':'geul','gone':1}]))
+
+    def test_legitimate_disappearance_and_empty_driver_snapshots(self):
+        l=complete_lifecycle()
+        self.assertTrue(all('gone' in p for p in l['processes']))
+        self.assertEqual(run(lifecycle=l)['status'],'PASS')
+        r=complete_result();r['teardown'][0].update(beforeDriverStop=[],afterDriverStop=[])
+        self.assertEqual(run(r,lifecycle=l)['status'],'PASS')
+
+    def test_all_three_real_lifecycles_satisfy_structure(self):
+        for attempt in (1,2,3):
+            l=json.loads((HERE.parent/f'evidence/t010-native-evidence-security-hardening/native-d1-attempt{attempt}-lifecycle.json').read_text())
+            v=contract.Verdict();contract.check_lifecycle(v,l,attempt)
+            self.assertEqual(v.failures,[])
+            v=contract.Verdict();contract.check_lifecycle(v,l,attempt+1)
+            self.assertTrue(v.failures)
+
+    def test_exit_schema_exact_integer(self):
+        good={'schema':contract.SCHEMA,'status':'PASS','failures':[],'categories':[]}
+        for value in (float(contract.SCHEMA),2.0,'2',True,False,None,0,99):
+            self.assertNotEqual(contract.exit_code(dict(good,schema=value),0),0)
+        self.assertEqual(contract.exit_code(good,0),0)
+
+    def test_v2_does_not_claim_v3(self):
+        verdict=GenuineEvidence().verdict(2,1,manifest=3)
+        self.assertIn('dependency-manifest',verdict['categories'])
+        self.assertEqual(GenuineEvidence().verdict(2,1)['schema'],2)
 
 
 if __name__ == '__main__':

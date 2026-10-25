@@ -1,0 +1,45 @@
+{
+  "분류": "VERIFIED 실제 unittest 출력 확인, subTest 수 별도 가산 없음",
+  "결과": [
+    {
+      "검사": "native 판정",
+      "명령": "python3 -I -m unittest discover -s tests/integration/rhwp/ownership-poc -p test_native_d1_result.py",
+      "작업디렉터리": "저장소 root",
+      "개수": 78,
+      "결과": "OK",
+      "최종관련수정후": true
+    },
+    {
+      "검사": "ownership-poc",
+      "명령": "python3 -I -m unittest discover -s tests/integration/rhwp/ownership-poc -p 'test_*.py'",
+      "작업디렉터리": "저장소 root",
+      "개수": 292,
+      "결과": "OK",
+      "최종관련수정후": true
+    },
+    {
+      "검사": "e2e",
+      "명령": "python3 -m unittest discover -s tests/e2e",
+      "작업디렉터리": "저장소 root",
+      "개수": 76,
+      "결과": "OK",
+      "최종관련수정후": true
+    },
+    {
+      "검사": "cache-concurrency",
+      "명령": "python3 -I -m unittest discover -s tests/integration/rhwp/cache-concurrency -p 'test_*.py'",
+      "작업디렉터리": "저장소 root",
+      "개수": 69,
+      "결과": "OK",
+      "최종관련수정후": true
+    },
+    {
+      "검사": "security",
+      "명령": "python3 -m unittest discover -s tests/security",
+      "작업디렉터리": "저장소 root",
+      "개수": 86,
+      "결과": "OK",
+      "최종관련수정후": true
+    }
+  ]
+}

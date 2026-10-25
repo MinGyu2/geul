@@ -1,0 +1,10 @@
+{
+  "분류": "VERIFIED 합성 호출 seam; 과거 wrapper로 실제 native 실행하지 않음",
+  "근거": "이전 wrapper는 CURRENT_MANIFEST를 읽지만 validate 호출에 attempt를 전달하지 않는다. 현재 v3에는 독립 호출 attempt가 필수다.",
+  "직접검사": "FAIL",
+  "범주": [
+    "lifecycle-evidence"
+  ],
+  "종료": 3,
+  "기존증거변경": false
+}

@@ -1,0 +1,40 @@
+{
+  "분류": "VERIFIED 커밋 전 실제 검사 결과, 검사 시점 구분",
+  "Python보안": "86 OK",
+  "민감정보_all_초기": "PASS, 추적 파일 1429개",
+  "민감정보_history_커밋전": "PASS, 파일 버전/경로 2230개",
+  "Gitleaks버전": "8.30.1",
+  "Gitleaks_tree_상대경로_초기": "PASS, 탐지 0, 1444개 파일 mirror",
+  "Gitleaks_history_커밋전": "PASS, 85 commits, 탐지 0",
+  "Gitleaks_최초절대경로": "탐지 201, 기존 공개 checksum의 경로 예외 불일치, 새 작업 파일 탐지 0. 상대경로로 재검사. 규칙 변경 없음.",
+  "allowlist음성": {
+    "전체성공": true,
+    "경우수": 24
+  },
+  "최종tree_staged_all": {
+    "Gitleaks상대tree": {
+      "파일수": 1489,
+      "탐지": 0,
+      "종료": 0
+    },
+    "Gitleaksstaged": {
+      "파일수": 62,
+      "탐지": 0,
+      "종료": 0
+    },
+    "민감정보all": {
+      "파일수": 1489,
+      "결과": "PASS"
+    },
+    "민감정보staged": {
+      "파일수": 62,
+      "결과": "PASS"
+    }
+  },
+  "diff_check": "PASS",
+  "보호경로": "PASS, 위반0 및 gitlink 일치",
+  "allowlist변경": false,
+  "정책편차2636a650": "PENDING_APPROVAL, 이번 작업에서 승인하지 않음",
+  "문서기입후검사": "이 결과를 문서에 기입한 최종 index는 실제 commit hook으로 검사한다. commit 후 추가 결과와 SHA는 최종 대화 보고에 기록한다.",
+  "초기absolute탐지검토": "security-absolute-scan-review.json: 201건 모두 실제 줄의 단일 SHA-256과 기존 정확 경로/해시 예외에 일치."
+}

@@ -1,0 +1,17 @@
+{
+  "분류": "VERIFIED 합성 변조, 실제 native 사건 아님",
+  "원본": "PASS",
+  "B_전체해시교체": "PASS",
+  "C_PID없는행": "PASS",
+  "D_float_schema_exit": 0,
+  "A_v2_누락": [
+    "package.json",
+    "public/rhwp/rhwp.js",
+    "public/rhwp/rhwp_bg.wasm",
+    "public/rhwp/BUILD.json",
+    "tests/integration/rhwp/cache-concurrency/fixtures.mjs",
+    "external/rhwp/samples/rnote/연구노트(화학).hwp",
+    "external/rhwp/samples/issue6031/3249937_asset_management_rules.hwpx",
+    "tsconfig.json"
+  ]
+}

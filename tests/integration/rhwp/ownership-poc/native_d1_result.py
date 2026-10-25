@@ -16,7 +16,7 @@ import math
 import signal
 import subprocess
 
-SCHEMA = 2
+SCHEMA = 3
 SAMPLES = ('basic-ko.hwp', 'basic-ko.hwpx', '연구노트(화학).hwp', '3249937_asset_management_rules.hwpx')
 EMPTY_ORIGINAL_PARAGRAPH = '연구노트(화학).hwp'
 FRAMES = ('warm', 'typed-10', 'typed-20', 'typed-30', 'undo', 'redo')
@@ -29,7 +29,7 @@ EXPECTED_REFERENCES = 24
 # 'dependency-manifest' = the dependency maps are incomplete, ambiguous or malformed; 'dependency-mutation' = bytes changed.
 CATEGORIES = ('native-subprocess', 'missing-result', 'malformed-result', 'failed-assertions', 'incomplete-verification',
               'cleanup', 'teardown-evidence', 'candidate-identity', 'dependency-manifest', 'dependency-mutation', 'lifecycle',
-              'evidence-write')
+              'evidence-write', 'fixture-identity', 'lifecycle-evidence', 'observer-failure')
 
 # Strict D1 driver-termination contract (Linux). tauri_driver() sends SIGTERM and waits 10 s; driverKilled=True means
 # that wait timed out and SIGKILL followed, which is never a clean D1 shutdown. tauri-driver 2.0.4 handles SIGTERM and
@@ -38,7 +38,7 @@ ACCEPTED_DRIVER_EXITS = (0, -signal.SIGTERM)
 
 # Mandatory executed dependencies, by recorded name: repository paths, candidate files by bare name ('candidate'),
 # and 'tree:<dir>' aggregate digests of the git-tracked files under <dir> (tree_digest). Version 1 is the set recorded by
-# ../evidence/t010-readiness-residual-stabilization (historical); version 2 is the current strict set. Exact set policy:
+# ../evidence/t010-readiness-residual-stabilization (historical); versions 1 and 2 retain their historical sets; version 3 is the current strict set. Exact set policy:
 # a missing, extra or non-canonical name fails.
 _P = 'tests/integration/rhwp/ownership-poc/'
 _GATES = 'tests/integration/rhwp/evidence/t010-decoded-lease-contract-finalization/engine-gates/'
@@ -50,7 +50,22 @@ _V1 = tuple(_P + n for n in ('session.mjs', 'vite.config.mjs', 'native.py', 'gen
 # v2 adds what the D1 run also executes: the served candidate d.ts, the base Vite config merged by vite.config.mjs, the
 # Vite entry page, and the application frontend Vite serves to the app (session.mjs imports two of its modules).
 DEPENDENCY_MANIFESTS = {1: _V1, 2: _V1 + ('rhwp.d.ts', 'vite.config.ts', 'index.html', 'tree:src')}
-CURRENT_MANIFEST = 2
+NATIVE_WRAPPER = 'tests/integration/rhwp/evidence/t010-native-evidence-final-integrity/run-native.py'
+RHWP_REVISION = '1a76570e833917d15817415a53c09ad61ab3203f'
+PINNED_FIXTURES = dict(zip(SAMPLES[2:], (
+    'external/rhwp/samples/rnote/연구노트(화학).hwp',
+    'external/rhwp/samples/issue6031/3249937_asset_management_rules.hwpx')))
+# Independent contract: generated twice in clean directories and a third time in a new Node process;
+# pinned samples checked against the pinned submodule blobs. See final-integrity/fixtures.json.
+FIXTURE_SHA256 = dict(zip(SAMPLES, (
+    '57c901cc394abf6f58f4838315d1ea2c5ecf8a03d9934d3fc098fd8be6e6e12f',
+    '26d434b7b427149110751c6ef5b19e9ecb4818f3ba7eadfe201b5afd3de442a8',
+    '6717eca43c6fdd9b0530530cf17d33b6687da0c462a433d37eb652afb5394f91',
+    '97b5d6c571a6b7626321c6a53d797e3511978447497bb73309bd23eaa8e7ea77')))
+DEPENDENCY_MANIFESTS[3] = DEPENDENCY_MANIFESTS[2] + (
+    NATIVE_WRAPPER, 'package.json', 'tsconfig.json', 'public/rhwp/rhwp.js', 'public/rhwp/rhwp_bg.wasm',
+    'public/rhwp/BUILD.json', 'tests/integration/rhwp/cache-concurrency/fixtures.mjs', *PINNED_FIXTURES.values())
+CURRENT_MANIFEST = 3
 CANDIDATE_FILES = ('rhwp.js', 'rhwp_bg.wasm', 'ENGINE.json', 'rhwp.d.ts')
 
 # Trust anchor: committed in 2636a65 and protected since; read from the committed tree (git show HEAD:path), never from
@@ -96,6 +111,31 @@ def tree_digest(root, directory):
     return hashlib.sha256(b''.join(lines)).hexdigest() if lines else None
 
 
+def pinned_samples_valid(root):
+    """Verify the superproject gitlink, checked-out revision and exact pinned sample blobs independently."""
+    try:
+        link = subprocess.check_output(['git', '-C', str(root), 'ls-files', '--stage', '--', 'external/rhwp'], text=True).strip()
+        if link != '160000 ' + RHWP_REVISION + ' 0\texternal/rhwp': return False
+        sub = root / 'external/rhwp'
+        if subprocess.check_output(['git', '-C', str(sub), 'rev-parse', 'HEAD'], text=True).strip() != RHWP_REVISION: return False
+        for name, path in PINNED_FIXTURES.items():
+            blob = subprocess.check_output(['git', '-C', str(sub), 'show', RHWP_REVISION + ':' + path[len('external/rhwp/'):]])
+            if hashlib.sha256(blob).hexdigest() != FIXTURE_SHA256[name]: return False
+            if (root / path).read_bytes() != blob: return False
+        return True
+    except (OSError, subprocess.CalledProcessError): return False
+
+
+def frontend_inputs_valid(root):
+    """Tracked tree covers only tracked bytes: reject even ignored extra src files and Vite's implicit env files."""
+    try:
+        tracked = set(subprocess.check_output(['git', '-C', str(root), 'ls-files', '-z', '--', 'src']).split(b'\0')) - {b''}
+        actual = {str(p.relative_to(root)).encode() for p in (root / 'src').rglob('*') if p.is_file() or p.is_symlink()}
+        return actual == tracked and not any((root / n.decode()).is_symlink() for n in tracked) and not any(
+            (root / n).exists() or (root / n).is_symlink() for n in ('.env', '.env.local', '.env.development', '.env.development.local'))
+    except (OSError, subprocess.CalledProcessError): return False
+
+
 def dependency_digests(root, candidate, version=CURRENT_MANIFEST):
     """{name: sha256 or None} for exactly the manifest names; unreadable files are None (and fail validation)."""
     digests = {}
@@ -104,6 +144,10 @@ def dependency_digests(root, candidate, version=CURRENT_MANIFEST):
         path = candidate / name if name in CANDIDATE_FILES else root / name
         try: digests[name] = hashlib.sha256(path.read_bytes()).hexdigest()
         except OSError: digests[name] = None
+    if version == 3:
+        if not frontend_inputs_valid(root): digests['tree:src'] = None
+        if not pinned_samples_valid(root):
+            for name in PINNED_FIXTURES.values(): digests[name] = None
     return digests
 
 
@@ -139,7 +183,7 @@ class Verdict:
         return condition
 
 
-def check_result(v, result, expected_wasm):
+def check_result(v, result, expected_wasm, strict=True):
     """The harness result's own fields; returns nothing, records every violated invariant."""
     v.require(result.get('status') == 'PASS' and type(result.get('status')) is str, 'failed-assertions',
               f'status is {result.get("status")!r}, not exact PASS')
@@ -181,6 +225,12 @@ def check_result(v, result, expected_wasm):
     documents = result.get('documents')
     v.require(isinstance(documents, list) and [d.get('sample') if isinstance(d, dict) else None for d in documents] == list(SAMPLES),
               'incomplete-verification', 'documents are not the four required samples in order')
+    if strict and isinstance(documents, list):
+        for d in documents:
+            if isinstance(d, dict):
+                digest = d.get('sourceSha256')
+                v.require(type(d.get('sample')) is str and sha256_text(digest) and digest == FIXTURE_SHA256.get(d['sample']),
+                          'fixture-identity', f'document source identity invalid: {d.get("sample")!r}')
     cleanup = result.get('cleanup')
     if v.require(isinstance(cleanup, dict) and sorted(cleanup) == sorted(CLEANUP_STEPS), 'cleanup',
                  f'cleanup fields are {sorted(cleanup) if isinstance(cleanup, dict) else cleanup!r}, not exactly {list(CLEANUP_STEPS)}'):
@@ -198,7 +248,8 @@ PROCESS_STATES = set('RSDZTtWXxKPI')
 
 def duration(value):
     """A finite, nonnegative int or float (bool, NaN, infinity, strings rejected)."""
-    return type(value) in (int, float) and math.isfinite(value) and value >= 0
+    try: return type(value) in (int, float) and math.isfinite(value) and value >= 0
+    except OverflowError: return False
 
 
 def process_row(row):
@@ -269,7 +320,7 @@ def check_dependencies(v, before, after, version, trusted):
     for label, supplied in (('before', before), ('after', after)):
         if isinstance(supplied, list):  # (name, digest) pairs, e.g. read back from JSON: duplicates are ambiguous
             names = [p[0] if isinstance(p, (list, tuple)) and len(p) == 2 else None for p in supplied]
-            if not v.require(None not in names and len(names) == len(set(names)), 'dependency-manifest', f'{label} has duplicate or malformed names'):
+            if not v.require(all(type(n) is str for n in names) and len(names) == len(set(names)), 'dependency-manifest', f'{label} has duplicate or malformed names'):
                 continue
             supplied = dict(supplied)
         if not v.require(isinstance(supplied, dict), 'dependency-manifest', f'{label} dependency map missing'):
@@ -280,6 +331,10 @@ def check_dependencies(v, before, after, version, trusted):
         v.require(not extra, 'dependency-manifest', f'{label} has unexpected or non-canonical names: {extra}'[:300])
         bad = [n for n in required if n in supplied and not sha256_text(supplied[n])]
         v.require(not bad, 'dependency-manifest', f'{label} digests not sha256 text: {bad}'[:300])
+        if version == 3:
+            for sample, path in PINNED_FIXTURES.items():
+                v.require(supplied.get(path) == FIXTURE_SHA256[sample], 'fixture-identity',
+                          f'{label} pinned fixture differs from independent identity: {sample}')
         maps[label] = supplied
     if len(maps) == 2:
         changed = [n for n in required if n in maps['before'] and n in maps['after'] and maps['before'][n] != maps['after'][n]]
@@ -289,7 +344,7 @@ def check_dependencies(v, before, after, version, trusted):
         v.require(not wrong, 'candidate-identity', f'executed candidate files differ from the trust anchor: {wrong}')
 
 
-def check_lifecycle(v, lifecycle):
+def check_lifecycle_historical(v, lifecycle):
     """The wrapper's own read-only token observer must have run and must not contradict cleanup success."""
     if not v.require(isinstance(lifecycle, dict), 'evidence-write', 'lifecycle record missing'):
         return
@@ -306,8 +361,96 @@ def check_lifecycle(v, lifecycle):
     v.require(lifecycle.get('leftAtEnd') == [], 'lifecycle', f'leftAtEnd is {lifecycle.get("leftAtEnd")!r}'[:300])
 
 
+OBSERVER = 'read-only /proc sampling, 100 ms; processes carrying this attempt token only'
+LIFECYCLE_KEYS = {'schema', 'attempt', 'observer', 'samples', 'observerError', 'observerStopped',
+                  'loadAverage', 'cpuCount', 'processes', 'events', 'leftAtEnd'}
+
+
+def positive_pid(x):
+    return type(x) is int and x > 0
+
+
+def check_lifecycle(v, lifecycle, attempt=None, harness_exit=None):
+    """Schema 2 producer structure, plus producer-guaranteed row/event consistency; no cross-process exit ordering."""
+    if not v.require(isinstance(lifecycle, dict), 'evidence-write', 'lifecycle record missing'): return
+    def require(ok, text): return v.require(ok, 'lifecycle-evidence', text)
+    require(set(lifecycle) == LIFECYCLE_KEYS, 'lifecycle fields missing or unsupported')
+    require(type(lifecycle.get('schema')) is int and lifecycle['schema'] == 2, 'unsupported lifecycle schema')
+    require(positive_pid(attempt) and positive_pid(lifecycle.get('attempt')) and lifecycle['attempt'] == attempt, 'invalid lifecycle attempt identity')
+    require(lifecycle.get('observer') == OBSERVER, 'invalid observer metadata')
+    require('observerError' in lifecycle and (lifecycle['observerError'] is None or type(lifecycle['observerError']) is str), 'invalid observerError')
+    v.require(lifecycle.get('observerError') is None, 'evidence-write', 'observer failed to produce complete evidence')
+    v.require(lifecycle.get('observerError') is None, 'observer-failure', 'observer failed')
+    v.require(lifecycle.get('observerStopped') is True, 'evidence-write', 'observer did not stop')
+    v.require(lifecycle.get('observerStopped') is True, 'observer-failure', 'observer thread did not stop')
+    v.require(positive_pid(lifecycle.get('samples')), 'evidence-write', 'observer took no valid samples')
+    require(positive_pid(lifecycle.get('samples')), 'sample count must be a positive exact integer')
+    require(positive_pid(lifecycle.get('cpuCount')), 'invalid cpuCount')
+    load = lifecycle.get('loadAverage')
+    require(isinstance(load, dict) and set(load) == {'start', 'end'} and all(
+        isinstance(load[k], (list, tuple)) and len(load[k]) == 3 and all(duration(x) for x in load[k]) for k in load), 'invalid loadAverage')
+    rows = lifecycle.get('processes'); events = lifecycle.get('events'); final = lifecycle.get('leftAtEnd')
+    if not require(type(rows) is list and all(isinstance(p, dict) for p in rows), 'processes must be object list'): return
+    by_pid = {}
+    for p in rows:
+        keys = {'pid', 'comm', 'ppid', 'pgid', 'firstSeen', 'lastSeen', 'states'}
+        valid = (set(p) in (keys, keys | {'gone'}) and positive_pid(p.get('pid'))
+                 and type(p.get('ppid')) is int and p['ppid'] >= 0 and positive_pid(p.get('pgid'))
+                 and type(p.get('comm')) is str and 0 < len(p['comm']) <= 15
+                 and duration(p.get('firstSeen')) and duration(p.get('lastSeen')))
+        if not require(valid, 'malformed process observation'): continue
+        require(p['firstSeen'] <= p['lastSeen'], 'lastSeen before firstSeen')
+        if 'gone' in p: require(duration(p['gone']) and p['gone'] >= p['lastSeen'], 'invalid terminal gone time')
+        states = p['states']
+        require(isinstance(states, dict) and bool(states) and all(type(k) is str and len(k) == 1 and k in PROCESS_STATES
+                and positive_pid(n) for k, n in states.items()) and positive_pid(lifecycle.get('samples'))
+                and sum(states.values()) <= lifecycle['samples'], 'invalid process state counters')
+        require(p['pid'] not in by_pid, 'duplicate process identity')
+        by_pid[p['pid']] = p
+    require(type(final) is list and all(isinstance(p, dict) for p in final), 'invalid leftAtEnd structure')
+    expected_final = [p for p in rows if 'gone' not in p]
+    require(final == expected_final, 'leftAtEnd inconsistent with terminal observations')
+    v.require(not expected_final and final == [], 'lifecycle', 'owned processes survive final boundary')
+    v.require(any(p.get('comm') == 'geul' for p in rows), 'lifecycle', 'observer never saw owned geul')
+    if not require(type(events) is list and all(isinstance(e, dict) for e in events), 'invalid event list'): return
+    per_pid = {pid: [] for pid in by_pid}; harness = []; harness_times = []
+    for e in events:
+        kind = e.get('event'); t = e.get('t')
+        if not require(duration(t), 'invalid event time'): continue
+        if kind in ('harness-start', 'harness-exit'):
+            keys = {'t', 'event'} | ({'exit'} if kind == 'harness-exit' else set())
+            require(set(e) == keys and (kind != 'harness-exit' or type(e.get('exit')) is int), 'invalid harness event')
+            harness.append(kind); harness_times.append(t)
+            if kind == 'harness-exit' and harness_exit is not None:
+                require(e.get('exit') == harness_exit, 'harness exit event differs from subprocess')
+            continue
+        keys = {'t', 'event', 'pid', 'comm'} | ({'ppid'} if kind == 'appeared' else {'from', 'to'} if kind == 'reparented' else set())
+        if not require(kind in ('appeared', 'reparented', 'gone') and set(e) == keys and positive_pid(e.get('pid')),
+                       'malformed process event'): continue
+        p = by_pid.get(e['pid'])
+        if not require(p is not None and e.get('comm') == p['comm'], 'unknown or inconsistent event identity'): continue
+        if kind == 'appeared': require(type(e.get('ppid')) is int and e['ppid'] >= 0 and t == p['firstSeen'], 'invalid appeared event')
+        if kind == 'gone': require('gone' in p and t == p['gone'], 'invalid gone event')
+        if kind == 'reparented':
+            require(all(type(e.get(k)) is int and e[k] >= 0 for k in ('from', 'to'))
+                    and e.get('from') != e.get('to') and p['firstSeen'] <= t <= p['lastSeen'], 'invalid reparented event')
+        per_pid[e['pid']].append(e)
+    require(harness == ['harness-start', 'harness-exit'], 'incomplete harness event sequence')
+    require(harness_times == sorted(harness_times), 'harness exit precedes start')
+    for pid, p in by_pid.items():
+        es = per_pid[pid]; kinds = [e['event'] for e in es]
+        require([e['t'] for e in es] == sorted(e['t'] for e in es), 'process events go backwards')
+        want = ['appeared'] + ['reparented'] * kinds.count('reparented') + (['gone'] if 'gone' in p else [])
+        require(kinds == want, 'inconsistent process event sequence')
+        parent = es[0].get('ppid') if es else None
+        for e in es:
+            if e['event'] == 'reparented':
+                require(e.get('from') == parent, 'inconsistent parent transition'); parent = e.get('to')
+        require(parent == p['ppid'], 'final parent differs from event chain')
+
+
 def validate(*, harness_exit, result, result_error, expected_wasm, candidate_wasm_before, candidate_wasm_after,
-             dependencies_before, dependencies_after, lifecycle, trusted_identity, manifest_version, evidence_errors=()):
+             dependencies_before, dependencies_after, lifecycle, trusted_identity, manifest_version, evidence_errors=(), attempt=None):
     """Return {'schema','status','failures','categories',...}; PASS only when no invariant failed.
 
     result is the parsed harness JSON (dict) or None; result_error is 'missing' or a parse error text when None.
@@ -327,13 +470,14 @@ def validate(*, harness_exit, result, result_error, expected_wasm, candidate_was
     elif not isinstance(result, dict):
         v.fail('malformed-result', f'result is {type(result).__name__}, not an object')
     else:
-        check_result(v, result, trusted_wasm)
+        check_result(v, result, trusted_wasm, strict=manifest_version == 3)
         check_teardown(v, result.get('teardown'))
-    check_lifecycle(v, lifecycle)
+    if manifest_version == 3: check_lifecycle(v, lifecycle, attempt, harness_exit)
+    else: check_lifecycle_historical(v, lifecycle)
     for error in evidence_errors:
         v.fail('evidence-write', str(error))
     categories = sorted({f['category'] for f in v.failures})
-    return {'schema': SCHEMA, 'status': 'FAIL' if v.failures else 'PASS', 'failures': v.failures, 'categories': categories,
+    return {'schema': SCHEMA if manifest_version == 3 else 2, 'status': 'FAIL' if v.failures else 'PASS', 'failures': v.failures, 'categories': categories,
             'harnessExit': harness_exit, 'expectedAssertions': EXPECTED_ASSERTIONS, 'expectedReferences': EXPECTED_REFERENCES,
             'expectedCleanup': list(CLEANUP_STEPS), 'acceptedDriverExits': list(ACCEPTED_DRIVER_EXITS),
             'dependencyManifest': manifest_version, 'trustAnchor': dict(TRUST_ANCHOR), 'expectedWasmSha256': trusted_wasm}
@@ -342,7 +486,7 @@ def validate(*, harness_exit, result, result_error, expected_wasm, candidate_was
 def exit_code(verdict, harness_exit):
     """0 only when the known harness exit is exactly 0 AND the verdict is a well-formed PASS with no failures.
     Otherwise a nonzero harness code is kept; anything else (harness 0 with a failed or malformed verdict) is 3."""
-    passed = (type(harness_exit) is int and harness_exit == 0 and isinstance(verdict, dict) and verdict.get('schema') == SCHEMA
+    passed = (type(harness_exit) is int and harness_exit == 0 and isinstance(verdict, dict) and type(verdict.get('schema')) is int and verdict.get('schema') == SCHEMA
               and verdict.get('status') == 'PASS' and type(verdict.get('status')) is str
               and verdict.get('failures') == [] and type(verdict.get('failures')) is list
               and verdict.get('categories') == [] and type(verdict.get('categories')) is list)
