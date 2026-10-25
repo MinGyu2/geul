@@ -1,0 +1,310 @@
+{
+ "schema": 1,
+ "kind": "diagnostic probe (not D1, not a gate)",
+ "order": "delete-wait",
+ "window": 35.0,
+ "loadAverage": {
+  "start": [
+   2.0146484375,
+   3.533203125,
+   3.9345703125
+  ],
+  "end": [
+   1.85791015625,
+   3.44921875,
+   3.90234375
+  ]
+ },
+ "cpuCount": 8,
+ "runs": [
+  {
+   "order": "delete-wait",
+   "events": [
+    {
+     "t": 0.982,
+     "event": "session-started"
+    },
+    {
+     "t": 1.664,
+     "event": "ui-ready",
+     "processes": [
+      "MainThread",
+      "WebKitNetworkPr",
+      "WebKitWebDriver",
+      "WebKitWebProces",
+      "Xvfb",
+      "geul",
+      "tauri-driver"
+     ]
+    },
+    {
+     "t": 1.686,
+     "event": "delete-replied",
+     "alive": [
+      "WebKitNetworkPr",
+      "WebKitWebDriver",
+      "WebKitWebProces",
+      "tauri-driver"
+     ]
+    },
+    {
+     "t": 1.691,
+     "event": "observed",
+     "processes": [
+      [
+       "WebKitWebDriver",
+       "S",
+       "parented"
+      ],
+      [
+       "WebKitWebProces",
+       "S",
+       "orphan"
+      ],
+      [
+       "tauri-driver",
+       "S",
+       "parented"
+      ]
+     ]
+    },
+    {
+     "t": 1.748,
+     "event": "observed",
+     "processes": [
+      [
+       "WebKitWebDriver",
+       "S",
+       "parented"
+      ],
+      [
+       "tauri-driver",
+       "S",
+       "parented"
+      ]
+     ]
+    },
+    {
+     "t": 3.737,
+     "event": "window-end",
+     "survivors": []
+    },
+    {
+     "t": 3.739,
+     "event": "tauri-driver-exit",
+     "code": 0
+    },
+    {
+     "t": 3.749,
+     "event": "done",
+     "remaining": []
+    }
+   ],
+   "survivedWindow": false,
+   "survivors": [],
+   "remainingAfterCleanup": []
+  },
+  {
+   "order": "delete-wait",
+   "events": [
+    {
+     "t": 4.215,
+     "event": "session-started"
+    },
+    {
+     "t": 4.806,
+     "event": "ui-ready",
+     "processes": [
+      "MainThread",
+      "WebKitNetworkPr",
+      "WebKitWebDriver",
+      "WebKitWebProces",
+      "Xvfb",
+      "geul",
+      "tauri-driver"
+     ]
+    },
+    {
+     "t": 4.825,
+     "event": "delete-replied",
+     "alive": [
+      "WebKitNetworkPr",
+      "WebKitWebDriver",
+      "WebKitWebProces",
+      "tauri-driver"
+     ]
+    },
+    {
+     "t": 4.829,
+     "event": "observed",
+     "processes": [
+      [
+       "WebKitNetworkPr",
+       "S",
+       "orphan"
+      ],
+      [
+       "WebKitWebDriver",
+       "S",
+       "parented"
+      ],
+      [
+       "WebKitWebProces",
+       "S",
+       "orphan"
+      ],
+      [
+       "tauri-driver",
+       "S",
+       "parented"
+      ]
+     ]
+    },
+    {
+     "t": 4.884,
+     "event": "observed",
+     "processes": [
+      [
+       "WebKitWebDriver",
+       "S",
+       "parented"
+      ],
+      [
+       "WebKitWebProces",
+       "S",
+       "orphan"
+      ],
+      [
+       "tauri-driver",
+       "S",
+       "parented"
+      ]
+     ]
+    },
+    {
+     "t": 4.94,
+     "event": "observed",
+     "processes": [
+      [
+       "WebKitWebDriver",
+       "S",
+       "parented"
+      ],
+      [
+       "tauri-driver",
+       "S",
+       "parented"
+      ]
+     ]
+    },
+    {
+     "t": 6.88,
+     "event": "window-end",
+     "survivors": []
+    },
+    {
+     "t": 6.881,
+     "event": "tauri-driver-exit",
+     "code": 0
+    },
+    {
+     "t": 6.894,
+     "event": "done",
+     "remaining": []
+    }
+   ],
+   "survivedWindow": false,
+   "survivors": [],
+   "remainingAfterCleanup": []
+  },
+  {
+   "order": "delete-wait",
+   "events": [
+    {
+     "t": 7.344,
+     "event": "session-started"
+    },
+    {
+     "t": 7.993,
+     "event": "ui-ready",
+     "processes": [
+      "MainThread",
+      "WebKitNetworkPr",
+      "WebKitWebDriver",
+      "WebKitWebProces",
+      "Xvfb",
+      "geul",
+      "tauri-driver"
+     ]
+    },
+    {
+     "t": 8.015,
+     "event": "delete-replied",
+     "alive": [
+      "WebKitNetworkPr",
+      "WebKitWebDriver",
+      "WebKitWebProces",
+      "tauri-driver"
+     ]
+    },
+    {
+     "t": 8.02,
+     "event": "observed",
+     "processes": [
+      [
+       "WebKitWebDriver",
+       "S",
+       "parented"
+      ],
+      [
+       "WebKitWebProces",
+       "S",
+       "orphan"
+      ],
+      [
+       "tauri-driver",
+       "S",
+       "parented"
+      ]
+     ]
+    },
+    {
+     "t": 8.076,
+     "event": "observed",
+     "processes": [
+      [
+       "WebKitWebDriver",
+       "S",
+       "parented"
+      ],
+      [
+       "tauri-driver",
+       "S",
+       "parented"
+      ]
+     ]
+    },
+    {
+     "t": 10.023,
+     "event": "window-end",
+     "survivors": []
+    },
+    {
+     "t": 10.024,
+     "event": "tauri-driver-exit",
+     "code": 0
+    },
+    {
+     "t": 10.036,
+     "event": "done",
+     "remaining": []
+    }
+   ],
+   "survivedWindow": false,
+   "survivors": [],
+   "remainingAfterCleanup": []
+  }
+ ],
+ "survivedWindow": 0,
+ "errors": 0
+}

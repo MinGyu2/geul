@@ -225,7 +225,9 @@ PRE_COMMIT=<pre-commit 경로> GITLEAKS=<gitleaks 경로> tests/security/test-pr
      - glob은 저장소 상대 경로이며 첫 경로 요소에 와일드카드를 쓸 수 없습니다(`*`, `**/*`, `*.md` 거부,
        `src-tauri/icons/*.png` 허용). 절대 경로와 `..`도 거부합니다.
      - 형식 오류·사유 누락·알 수 없는 규칙·넓은 glob은 종료 코드 2로 검사를 실패시킵니다.
-   - Gitleaks: `.gitleaks.toml`의 `[[allowlists]]`에 `description`과 좁은 `paths`/`regexes`를 함께 적습니다.
+   - Gitleaks: `.gitleaks.toml`의 `[[allowlists]]`에 `description`과 좁은 `paths`/`regexes`를 함께 적고,
+     대상 규칙을 `targetRules`로 지정합니다. gitleaks 8.30.1의 `dir` 검사는 `targetRules`가 없는 전역 항목의
+     `paths`가 맞으면 `condition = "AND"`여도 그 파일 전체를 검사하지 않습니다(`git` 검사는 탐지마다 판정).
 3. 예외 목록은 검사 대상과 같은 스냅샷에서 읽습니다.
    - `--staged`: 스테이징된 `.sensitive-info-allowlist`만 사용합니다. 작업 트리에서만 바꾼 예외는 반영되지 않습니다.
    - `--all`, 경로 지정: Git이 추적하는 경우에만 작업 트리 버전을 사용합니다.

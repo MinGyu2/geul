@@ -12,10 +12,15 @@ title = "geul gitleaks config"
 [extend]
 useDefault = true
 
+# 모든 [[allowlists]] 항목에는 targetRules가 필요하다. gitleaks 8.30.1은 targetRules 없는 전역 항목의 paths가
+# 맞으면 condition = "AND"여도 그 파일을 아예 검사하지 않는다(모든 규칙 미적용). targetRules를 두면 그 규칙의
+# 탐지마다 paths AND regexes를 검사하므로 같은 파일의 다른 비밀값은 계속 탐지된다.
+
 # T010 evidence records the verified SHA-256 of isolated src/wasm_api.rs.
 # The filename's api token causes generic-api-key to misclassify this public source checksum.
 [[allowlists]]
 description = "T010 verified wasm_api.rs source checksum, evidence JSON only"
+targetRules = ["generic-api-key"]
 condition = "AND"
 paths = ['''^tests/integration/rhwp/evidence/t010-cache-concurrency/(engine-identity|fresh-chrome|fresh-webkit|repro-chrome|notify-chrome|notify-webkit|v2-chrome|v2-webkit)\.json$''']
 regexTarget = "secret"
@@ -25,6 +30,7 @@ regexes = ['''^941a33bd400941f2d3f590f6194e5f476044042fa6e7cdcf08ff4f1d5f295ec2$
 # Keep the default credential rules; exception requires both exact evidence path and digest.
 [[allowlists]]
 description = "T010 isolated renderer public wasm_api.rs checksums; source/patch reconstruction verified"
+targetRules = ["generic-api-key"]
 condition = "AND"
 paths = ['''^tests/integration/rhwp/evidence/t010-render-ownership/(engine|patch|fresh-apply|full-page-engine|full-page-chrome|full-page-webkit|full-page-fresh-apply|final-wasm-checks|url-reservation-stale-build|pre-publication-engine|historical-chrome|historical-webkit|pre-publication-fix-chrome|pre-publication-fix-webkit|getter-blocked-chrome|getter-detail-chrome|getter-diagnostic-chrome|getter-diagnostic-webkit|chrome|webkit)\.json$''']
 regexTarget = "secret"
@@ -33,6 +39,7 @@ regexes = ['''^941a33bd400941f2d3f590f6194e5f476044042fa6e7cdcf08ff4f1d5f295ec2$
 # Resource-scheduler evidence reuses the unchanged public wasm_api source.
 [[allowlists]]
 description = "T010 resource scheduler verified public wasm_api.rs checksum"
+targetRules = ["generic-api-key"]
 condition = "AND"
 paths = ['''^tests/integration/rhwp/evidence/t010-resource-scheduler/(before-chrome|attempt-1-(chrome|webkit|engine|patch|final-wasm-checks)|diagnostic-harness-(chrome|webkit)|pre-shared-(chrome|webkit)|chrome|webkit|engine|patch|final-wasm-checks)\.json$''']
 regexTarget = "secret"
@@ -41,6 +48,7 @@ regexes = ['''^ab73fb12f34b08cd621362c6f6d0f44340b0007bf89baeaba3b97bcd92c5afcf$
 # Limit both the exact JSON filenames and the exact public SHA-256 values.
 [[allowlists]]
 description = "T010 lease progress verified public wasm_api.rs source checksums"
+targetRules = ["generic-api-key"]
 condition = "AND"
 paths = ['''^tests/integration/rhwp/evidence/t010-lease-progress/(attempt-1-candidate-d3-service-save|attempt-1-chrome|attempt-1-engine|attempt-1-final-wasm-checks|attempt-1-notification-chrome|attempt-1-patch|attempt-1-webkit|before-chrome|before-webkit|byte-before-chrome|byte-before-webkit|byte-single-owner-before-chrome|candidate-d3-service-save|chrome|diagnostic-baseline-resident-assertion|diagnostic-byte-fixture-type|diagnostic-fmt-generated-inputs|diagnostic-fmt-generated-order|diagnostic-harness-count|engine|final-wasm-checks|fresh-apply|patch|pre-byte-before-chrome|pre-byte-before-webkit|pre-byte-candidate-d3-service-save|pre-byte-chrome|pre-byte-engine|pre-byte-final-wasm-checks|pre-byte-fresh-apply|pre-byte-patch|pre-byte-webkit|pre-native-fixture-before-chrome|pre-native-fixture-before-webkit|pre-native-fixture-chrome|pre-native-fixture-webkit|security-false-positive-review|webkit)\.json$''']
 regexTarget = "secret"
@@ -48,6 +56,7 @@ regexes = ['''^40f8a2faf5e279127b391fc9d4222ce48770cbd30bcea77cd51511d8082e8d7f$
 
 [[allowlists]]
 description = "T010 initial integrity hashes of two pre-existing public API evidence files"
+targetRules = ["generic-api-key"]
 condition = "AND"
 paths = ['''^tests/integration/rhwp/evidence/t010-lease-progress/initial-integrity\.json$''']
 regexTarget = "secret"
@@ -58,6 +67,7 @@ regexes = ['''^6c35cd4ff761272ec034bf09d1fde054ee79ad483aa785c984e243d465e094b4$
 
 [[allowlists]]
 description = "T010 final stabilization verified public checksum 40f8a2faf5e2"
+targetRules = ["generic-api-key"]
 condition = "AND"
 paths = ['''^tests/integration/rhwp/evidence/t010-final-stabilization/(before-chrome|before-webkit)\.json$''']
 regexTarget = "secret"
@@ -65,6 +75,7 @@ regexes = ['''^40f8a2faf5e279127b391fc9d4222ce48770cbd30bcea77cd51511d8082e8d7f$
 
 [[allowlists]]
 description = "T010 final stabilization verified public checksum 6c35cd4ff761"
+targetRules = ["generic-api-key"]
 condition = "AND"
 paths = ['''^tests/integration/rhwp/evidence/t010-final-stabilization/(initial-integrity)\.json$''']
 regexTarget = "secret"
@@ -72,6 +83,7 @@ regexes = ['''^6c35cd4ff761272ec034bf09d1fde054ee79ad483aa785c984e243d465e094b4$
 
 [[allowlists]]
 description = "T010 final stabilization verified public checksum a49f8417b3be"
+targetRules = ["generic-api-key"]
 condition = "AND"
 paths = ['''^tests/integration/rhwp/evidence/t010-final-stabilization/(initial-integrity)\.json$''']
 regexTarget = "secret"
@@ -79,6 +91,7 @@ regexes = ['''^a49f8417b3beace7a3d415c64e5536b5e7c336642469b6e524f322caf1571646$
 
 [[allowlists]]
 description = "T010 final stabilization verified public checksum b4a9be1d81a9"
+targetRules = ["generic-api-key"]
 condition = "AND"
 paths = ['''^tests/integration/rhwp/evidence/t010-final-stabilization/(attempt-1-candidate-d3-service-save|attempt-1-chrome|attempt-1-engine|attempt-1-final-wasm-checks|attempt-1-patch|attempt-1-webkit|before-alignment-chrome|before-alignment-webkit|diagnostic-format-build-overlap)\.json$''']
 regexTarget = "secret"
@@ -86,6 +99,7 @@ regexes = ['''^b4a9be1d81a9be107b998fb119dc035156800e14e19e596d5a90477e25deb94d$
 
 [[allowlists]]
 description = "T010 final stabilization verified public checksum d90418394be8"
+targetRules = ["generic-api-key"]
 condition = "AND"
 paths = ['''^tests/integration/rhwp/evidence/t010-final-stabilization/(adapter-comment-equivalence)\.json$''']
 regexTarget = "secret"
@@ -93,6 +107,7 @@ regexes = ['''^d90418394be8bd4fb4ac285fbb896005d87f0ccfb3f6da77526af00b8e2a7f6c$
 
 [[allowlists]]
 description = "T010 final stabilization verified public checksum e6d1a2a7c25b"
+targetRules = ["generic-api-key"]
 condition = "AND"
 paths = ['''^tests/integration/rhwp/evidence/t010-final-stabilization/(before-final-timer-chrome|before-final-timer-webkit|candidate-d3-service-save|chrome|engine|final-wasm-checks|patch|webkit)\.json$''']
 regexTarget = "secret"
@@ -100,6 +115,7 @@ regexes = ['''^e6d1a2a7c25bd0ba96cbb423bded39110ab4db8bfa449570a34a6005318abfb8$
 
 [[allowlists]]
 description = "T010 archived integer replay verified public API source checksum ad4122eb9a8d"
+targetRules = ["generic-api-key"]
 condition = "AND"
 paths = ['''^tests/integration/rhwp/evidence/t010-final-stabilization/before-integer-full-fallback-(candidate-d3-service-save|chrome|engine|final-wasm-checks|patch|webkit)\.json$''']
 regexTarget = "secret"
@@ -107,6 +123,7 @@ regexes = ['''^ad4122eb9a8dbcf7ec9e9f747db5dfc28fefcdf50c19a64e393eb977ce8109b4$
 
 [[allowlists]]
 description = "T010 final stabilization verified public checksum f0d06a3fecdd"
+targetRules = ["generic-api-key"]
 condition = "AND"
 paths = ['''^tests/integration/rhwp/evidence/t010-final-stabilization/(diagnostic-format-build-overlap)\.json$''']
 regexTarget = "secret"
@@ -114,6 +131,7 @@ regexes = ['''^f0d06a3fecdd22b24399704947293710e70ffae0ba649a5ece81dc43ffae4dbb$
 
 [[allowlists]]
 description = "T010 final effective-scale API verified public source checksum 70a9ea596653"
+targetRules = ["generic-api-key"]
 condition = "AND"
 paths = ['''^tests/integration/rhwp/evidence/t010-final-stabilization/(attempt-requested-scale-only-final-wasm-checks|attempt-requested-scale-only-patch)\.json$''']
 regexTarget = "secret"
@@ -121,6 +139,7 @@ regexes = ['''^70a9ea59665327761873adea0d19827cda0bb66f07a0e74d6b5a8d984611898d$
 
 [[allowlists]]
 description = "T010 final effective-scale API verified public source checksum e6d1a2a7c25b"
+targetRules = ["generic-api-key"]
 condition = "AND"
 paths = ['''^tests/integration/rhwp/evidence/t010-final-stabilization/(before-fractional-api-candidate-d3-service-save|before-fractional-api-chrome|before-fractional-api-engine|before-fractional-api-final-wasm-checks|before-fractional-api-patch|before-fractional-api-webkit|repro-complex-patch-api-chrome|repro-fractional-api-policy-chrome)\.json$''']
 regexTarget = "secret"
@@ -128,6 +147,7 @@ regexes = ['''^e6d1a2a7c25bd0ba96cbb423bded39110ab4db8bfa449570a34a6005318abfb8$
 
 [[allowlists]]
 description = "T010 caret verified unchanged public wasm_api source checksum"
+targetRules = ["generic-api-key"]
 condition = "AND"
 paths = ['''^tests/integration/rhwp/evidence/t010-caret-geometry/(candidate-d3-service-save|chrome|delta|engine-safety-gates|engine|native-clippy|patch|wasm-checks|webkit)\.json$''']
 regexTarget = "secret"
@@ -136,6 +156,7 @@ regexes = ['''^9563a9ef26b5d0c22997e9beb8cb8c037e852df7ca95a8362800e7bd0cf24c5d$
 # Independently verified unchanged public source SHA; exact evidence paths AND digest.
 [[allowlists]]
 description = "T010 decoded admission unchanged public wasm_api checksum"
+targetRules = ["generic-api-key"]
 condition = "AND"
 paths = ['''^tests/integration/rhwp/evidence/t010-decoded-admission/(candidate-d3-service-save|chrome|delta|engine|initial-integrity|library-native|native-clippy|patch|wasm-checks|webkit)\.json$''']
 regexTarget = "secret"
@@ -144,6 +165,7 @@ regexes = ['''^9563a9ef26b5d0c22997e9beb8cb8c037e852df7ca95a8362800e7bd0cf24c5d$
 # Commit-hook review: exact archived paths AND independently verified public source digest.
 [[allowlists]]
 description = "T010 final stabilization unchanged public wasm_api checksum"
+targetRules = ["generic-api-key"]
 condition = "AND"
 paths = ['''^tests/integration/rhwp/evidence/t010-final-stabilization/(candidate-d3-service-save|chrome|engine|final-wasm-checks|patch|webkit)\.json$''']
 regexTarget = "secret"
@@ -152,6 +174,7 @@ regexes = ['''^9563a9ef26b5d0c22997e9beb8cb8c037e852df7ca95a8362800e7bd0cf24c5d$
 # Exact new evidence paths AND independently verified unchanged public source digest.
 [[allowlists]]
 description = "T010 D4 remediation unchanged public source checksum"
+targetRules = ["generic-api-key"]
 condition = "AND"
 paths = ['''^tests/integration/rhwp/evidence/t010-d4-performance-remediation/(chrome|gray-build|engine-gates/(chrome|webkit))\.json$''']
 regexTarget = "secret"
@@ -160,6 +183,7 @@ regexes = ['''^9563a9ef26b5d0c22997e9beb8cb8c037e852df7ca95a8362800e7bd0cf24c5d$
 # Exact new evidence paths AND reproduced unchanged public wasm_api source digest.
 [[allowlists]]
 description = "T010 preparation contract unchanged public source checksum"
+targetRules = ["generic-api-key"]
 condition = "AND"
 paths = ['''^tests/integration/rhwp/evidence/t010-render-preparation-boundary/(identities-and-reproduction|chrome|webkit)\.json$''']
 regexTarget = "secret"
@@ -169,6 +193,7 @@ regexes = ['''^9563a9ef26b5d0c22997e9beb8cb8c037e852df7ca95a8362800e7bd0cf24c5d$
 # experimental source (9563a9…) and the decoded-lease candidate (3dfa67…). Exact paths AND digests.
 [[allowlists]]
 description = "T010 decoded lease verified public wasm_api.rs source checksums"
+targetRules = ["generic-api-key"]
 condition = "AND"
 paths = ['''^tests/integration/rhwp/evidence/t010-decoded-resource-lease-accounting/(candidate-identity|engine-gates/chrome|engine-gates/webkit|browser/decoded-lease-chrome|browser/decoded-lease-webkit|browser/regression-ae34-chrome|browser/regression-ae34-webkit)\.json$''']
 regexTarget = "secret"
@@ -178,6 +203,7 @@ regexes = ['''^9563a9ef26b5d0c22997e9beb8cb8c037e852df7ca95a8362800e7bd0cf24c5d$
 # (ae34 9563a9…, unchanged candidate wasm_api.rs 3dfa67…) in ENGINE.json sourceSha256. Exact paths AND digests.
 [[allowlists]]
 description = "T010 decoded lease hardening verified public wasm_api.rs source checksums"
+targetRules = ["generic-api-key"]
 condition = "AND"
 paths = ['''^tests/integration/rhwp/evidence/t010-decoded-lease-accounting-hardening/(candidate-identity|engine-gates/chrome|engine-gates/webkit|rust/library-and-lint|browser/decoded-lease-chrome|browser/decoded-lease-webkit|browser/before-prev-candidate-decoded-lease-chrome|browser/before-prev-candidate-decoded-lease-webkit|browser/iteration1-s11-expectation-chrome)\.json$''']
 regexTarget = "secret"
@@ -187,7 +213,19 @@ regexes = ['''^9563a9ef26b5d0c22997e9beb8cb8c037e852df7ca95a8362800e7bd0cf24c5d$
 # (ae34 9563a9…, wasm_api.rs unchanged by the candidate 3dfa67…) recorded in ENGINE.json sourceSha256.
 [[allowlists]]
 description = "T010 decoded lease finalization verified public wasm_api.rs source checksums"
+targetRules = ["generic-api-key"]
 condition = "AND"
 paths = ['''^tests/integration/rhwp/evidence/t010-decoded-lease-contract-finalization/(candidate-identity|engine-gates/chrome|engine-gates/webkit|browser/decoded-lease-chrome|browser/decoded-lease-webkit)\.json$''']
+regexTarget = "secret"
+regexes = ['''^9563a9ef26b5d0c22997e9beb8cb8c037e852df7ca95a8362800e7bd0cf24c5d$''','''^3dfa6723ae9c89768157f26aac22566d18055c9074acfaa28b0686c3687ecacb$''']
+
+# Decoded lease readiness closure evidence: genuine runner outputs (contract-3 decoded lease, ownership/scheduler
+# regressions) embed ENGINE.json sourceSha256 for wasm_api.rs, reconstructed in this task from pinned 1a76570 plus
+# the committed ae34 patch (9563a9…) and finalization complete patch (3dfa67…). Exact paths AND exact digests.
+[[allowlists]]
+description = "T010 decoded lease readiness closure verified public wasm_api.rs source checksums"
+targetRules = ["generic-api-key"]
+condition = "AND"
+paths = ['''^tests/integration/rhwp/evidence/t010-decoded-lease-readiness-closure/browser/(decoded-lease-chrome|decoded-lease-webkit|regression-chrome|regression-webkit)\.json$''']
 regexTarget = "secret"
 regexes = ['''^9563a9ef26b5d0c22997e9beb8cb8c037e852df7ca95a8362800e7bd0cf24c5d$''','''^3dfa6723ae9c89768157f26aac22566d18055c9074acfaa28b0686c3687ecacb$''']

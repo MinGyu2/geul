@@ -1,0 +1,147 @@
+{
+ "schema": 1,
+ "tool": {
+  "binary": "pre-commit environment gitleaks (.pre-commit-config.yaml rev v8.30.1; binary prints \"version is set by build process\")",
+  "binarySha256": "9e07ca5707114687ca590d4c4053fa089f7d96223f9bb5bfa818ded442c8221b",
+  "ci": "scripts/security-scan-ci.sh uses gitleaks 8.30.1 git mode"
+ },
+ "previousMirrorAudit": {
+  "commit": "45c91501524494602c13c7c2a429814395430bdc",
+  "commitFiles": 45,
+  "mirrorFiles": 39,
+  "mirrorIncludedConfig": false,
+  "missingFromMirror": [
+   ".gitleaks.toml",
+   "tests/integration/rhwp/evidence/t010-decoded-lease-contract-finalization/security/gitleaks-review.json",
+   "tests/integration/rhwp/evidence/t010-decoded-lease-contract-finalization/security/security-summary.json",
+   "tests/integration/rhwp/evidence/t010-decoded-lease-contract-finalization/security/sensitive-all.txt",
+   "tests/integration/rhwp/evidence/t010-decoded-lease-contract-finalization/security/sensitive-history.txt",
+   "tests/integration/rhwp/evidence/t010-decoded-lease-contract-finalization/security/sensitive-staged.txt"
+  ],
+  "changedAfterMirror": [
+   "tests/integration/rhwp/evidence/t010-decoded-lease-contract-finalization/integrity.json"
+  ],
+  "cause": "staging order: these security files were written after the mirror scan; only the commit-time pre-commit hook (git --pre-commit --staged) saw them and its output was not preserved"
+ },
+ "head45c9150": {
+  "tree": {
+   "command": "git archive 45c9150 | tar -x; move .gitleaks.toml out; gitleaks dir --redact --no-banner [-c CONFIG] . --report-format json",
+   "files": 1326,
+   "gitlinksExcluded": [
+    "external/rhwp",
+    "external/wordcraft"
+   ],
+   "repositoryConfigAt45c9150": {
+    "findings": 0,
+    "bytesScanned": 115730647
+   },
+   "defaultRules": {
+    "findings": 195,
+    "bytesScanned": 151422497,
+    "allSha256Hex": true,
+    "unmatched": 0,
+    "matchedExactlyOneEntry": true,
+    "jsonKeys": {
+     "src/wasm_api.rs": 190,
+     "executableTokensSha256": 1,
+     "tests/integration/rhwp/evidence/t010-cache-concurrency/api-verification.json": 2,
+     "tests/integration/rhwp/evidence/t010-render-ownership/generated-api-check.json": 2
+    }
+   },
+   "correctedConfig": {
+    "findings": 0,
+    "bytesScanned": 151422497
+   },
+   "filesSkippedByOldConfigInDirMode": {
+    "files": 166,
+    "bytes": 35691850
+   }
+  },
+  "commitFileSet": {
+   "files": 44,
+   "plusConfig": ".gitleaks.toml",
+   "repositoryConfigFindings": 0,
+   "defaultFindings": 7,
+   "bytesScannedOldConfig": 980560,
+   "bytesScannedDefault": 3021908,
+   "correctedConfigFindings": 0,
+   "bytesScannedCorrectedConfig": 3021908
+  },
+  "history": {
+   "command": "gitleaks git --redact --no-banner -c .gitleaks.toml --log-opts=--all .",
+   "commits": 82,
+   "findingsOldConfig": 0,
+   "findingsCorrectedConfig": 0
+  }
+ },
+ "stagedIndexBeforeThisReview": {
+  "command": "git checkout-index -a --prefix=MIRROR/; move .gitleaks.toml out; gitleaks dir --redact --no-banner [-c STAGED_CONFIG] .",
+  "indexEntries": 1361,
+  "filesScanned": 1360,
+  "note": "this review file and integrity.json are written after this scan; the post-commit full-tree scan is reported in the final answer",
+  "repositoryConfig": {
+   "findings": 0,
+   "bytesScanned": 154140183
+  },
+  "defaultRules": {
+   "findings": 201,
+   "bytesScanned": 154140183,
+   "allSha256Hex": true,
+   "unmatched": 0,
+   "matchedExactlyOneEntry": true,
+   "jsonKeys": {
+    "src/wasm_api.rs": 196,
+    "executableTokensSha256": 1,
+    "tests/integration/rhwp/evidence/t010-cache-concurrency/api-verification.json": 2,
+    "tests/integration/rhwp/evidence/t010-render-ownership/generated-api-check.json": 2
+   },
+   "digestPrefixes": {
+    "9563a9ef26b5": 50,
+    "941a33bd4009": 12,
+    "3dfa6723ae9c": 23,
+    "d90418394be8": 1,
+    "b4a9be1d81a9": 10,
+    "70a9ea596653": 2,
+    "e6d1a2a7c25b": 11,
+    "ad4122eb9a8d": 7,
+    "40f8a2faf5e2": 10,
+    "f0d06a3fecdd": 1,
+    "ab73fb12f34b": 48,
+    "6c35cd4ff761": 2,
+    "a49f8417b3be": 2,
+    "ae555376191b": 14,
+    "dba5751a411c": 5,
+    "de0a59a3c774": 3
+   }
+  }
+ },
+ "configDefect": {
+  "finding": "gitleaks 8.30.1 dir mode skips whole files whose path matches a global [[allowlists]] entry without targetRules, even with condition = \"AND\"",
+  "affected": "dir-mode scans (evidence mirror scans); git-mode hooks and CI unaffected (see allowlist-negative-check-without-targetrules.json)",
+  "fix": "targetRules = [\"generic-api-key\"] on every [[allowlists]] entry; strictly narrower",
+  "entries": 24,
+  "allTargeted": true
+ },
+ "newAllowlistEntry": {
+  "description": "T010 decoded lease readiness closure verified public wasm_api.rs source checksums",
+  "paths": [
+   "^tests/integration/rhwp/evidence/t010-decoded-lease-readiness-closure/browser/(decoded-lease-chrome|decoded-lease-webkit|regression-chrome|regression-webkit)\\.json$"
+  ],
+  "regexes": [
+   "^9563a9ef26b5d0c22997e9beb8cb8c037e852df7ca95a8362800e7bd0cf24c5d$",
+   "^3dfa6723ae9c89768157f26aac22566d18055c9074acfaa28b0686c3687ecacb$"
+  ],
+  "condition": "AND",
+  "regexTarget": "secret",
+  "targetRules": [
+   "generic-api-key"
+  ],
+  "independentVerification": {
+   "9563a9ef26b5…": "pinned 1a76570 src/wasm_api.rs + committed t010-d4-performance-remediation/upstream-rhwp-exact-gray-lut.patch (ae34)",
+   "3dfa6723ae9c…": "pinned 1a76570 src/wasm_api.rs + committed t010-decoded-lease-contract-finalization complete patch (ca5c0b84)"
+  },
+  "negativeCheck": "allowlist-negative-check.json (24 cases, 3 modes, allOk)"
+ },
+ "unexplainedFindings": 0,
+ "notIndependentlyReverified": "earlier evidence digests other than 9563a9, 3dfa67, 6c35cd and a49f84 (e.g. executableTokensSha256 d90418…) rely on the reviews recorded with their allowlist entries"
+}

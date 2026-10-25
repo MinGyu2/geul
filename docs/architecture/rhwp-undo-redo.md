@@ -1082,3 +1082,14 @@ Decoded lease 계약 마무리(2026-10-25, 격리 실험 후보 ca5c0b84, 제품
 헤더 크기가 없으면 기존 사후 예약과 96 MiB 강제를 따른다. 브라우저 증거의 schema·contract는 정확한 int만 받는다
 (True·1.0·2.0 거절, 계약 2는 필드 필수, 계약 1 이력의 생략은 명시적 계약 1 검증에서만 허용). 한도와 소유권 구조,
 공식 판정은 그대로다. 새 검증 근거: `tests/integration/rhwp/evidence/t010-decoded-lease-contract-finalization/`.
+
+Decoded lease 준비 마감(2026-10-25, 격리 실험 후보 ca5c0b84 그대로, 제품 미적용): 브라우저 증거 계약 3을 도입했다.
+계약 3은 모든 ledger checkpoint에 `dimensionMismatches`를 요구하고, 중복 ledger 복사본이 JSON 타입까지 같아야 한다.
+계약 1·2 이력 증거는 바꾸지 않았고 각자의 계약에서만 PASS다. `cache_contract.rs`의 두 역사적 실패는 FAIL로 남는다.
+둘 다 render-ownership 이후 엔진이 호출하지 않는 `BoundedCache` pending API를 검사하며, 기대가 위 job 소유 계약
+(trim은 활성 job을 취소, oversize 완료는 job이 ready lease로 보유)과 충돌한다. 지원 API 경로의 같은 상황은
+브라우저 `two-oversize-complete`·`notification-progress-trim`이 통과한다. native D1 cleanup 실패는 앱이 WebDriver 체인보다
+오래 살아남은 orphan 모양과 같지만(통제 실험으로 재현), 실제 하네스 순서에서는 재현되지 않아 원인을 확정하지 못했다.
+gitleaks 설정의 모든 `[[allowlists]]`에 `targetRules`를 붙였다. 붙이기 전에는 `dir` 검사가 해당 경로 파일을 통째로
+건너뛰었다(`git` 검사는 영향 없음). 공식 판정은 그대로다.
+새 검증 근거: `tests/integration/rhwp/evidence/t010-decoded-lease-readiness-closure/`.

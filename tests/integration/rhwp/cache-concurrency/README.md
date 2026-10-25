@@ -249,3 +249,9 @@ D4 decoded admission 후속은 [실험 보고서](../evidence/t010-decoded-admis
   `type(x) is int`로 검사한다. 계약 2는 `contract` 필드가 필수이고, 필드가 없는 이력 결과는 명시적인 계약 1 검증에서만
   받아들인다. 엔진은 디코드 이미지의 width·height가 헤더와 정확히 같아야 Canvas를 할당한다
   (`canvas_rgba::authorize_decoded`). 일반 예약은 계속 `actual ≤ reserved`다.
+- 준비 마감([보고서](../evidence/t010-decoded-lease-readiness-closure/REPORT.ko.txt)): 현재 계약은 3이다. 시험·checkpoint는
+  계약 2와 같고, 모든 ledger checkpoint에 `dimensionMismatches`(정확한 int)가 있어야 하며, `jobs.decodedLedger`와
+  cleanup 복사본이 JSON 타입까지 같아야 한다(`same_json`). 계약 1·2 이력 결과는 각자의 계약에서만 PASS다.
+- `cache_contract.rs`의 두 실패(`trim_during_load_does_not_release_the_pending_handle`,
+  `two_oversize_completions_can_be_available_for_one_full_page_draw`)는 그대로 FAIL로 남긴다. render-ownership 이후
+  `BoundedCache`의 pending API는 엔진에서 호출되지 않으며, 두 기대는 job 소유 계약과 충돌한다(보고서 5절).

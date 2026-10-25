@@ -1,0 +1,53 @@
+T010 decoded lease 브라우저 증거 계약 1·2·3 (2026-10-25)
+
+범주: VERIFIED=소스 또는 이번 실행, INFERRED=근거 해석, UNVERIFIED=입증하지 못함.
+기준: ../t010-decoded-lease-contract-finalization/CONTRACT.ko.txt. 엔진 계약(크기 동일성, actual ≤ reserved,
+소유권, 한도)은 바꾸지 않았다. 아래는 브라우저 증거(decoded-lease.mjs 결과)를 받아들이는 규칙이다.
+
+1. 계약 선택
+- 검증 계약은 runner(decoded_lease_run.py)가 정한다: CURRENT_CONTRACT = 3. validate()·outcome()의 기본값도 3이다.
+- 결과가 스스로 밝힌 contract 값은 검증 계약을 고르는 데 쓰지 않는다. 계약 3 검증에서 contract가 2·1이면 거절한다
+  (낮은 번호 주장으로 규칙이 내려가지 않음).
+- 검증 계약 인자 자체도 정확한 int이고 CONTRACTS에 있어야 한다(1, 2, 3).
+
+2. 공통 규칙(계약 1·2·3, 변경 없음)
+- schema: 정확한 int 1(FAIL 결과도).
+- status: 'PASS' 또는 'FAIL' 문자열. FAIL은 FAIL로 기록되고 PASS가 되지 않는다.
+- PASS: 시험 arm·이름·순서가 계약과 정확히 같고 모두 PASS, top-level error 없음.
+- checkpoint: 모두 'candidate:' 접두사, 중복 없음, 필수 checkpoint가 모두 있고 순서대로, 마지막이 final.
+- 각 checkpoint의 회계식: unique = resident + nonresident(bytes·count), created − disposed = uniqueCount,
+  reserved 0·accountingErrors 0, nonresident ≤ 96 MiB, resident ≤ cache 한도, 선언 한도 불변.
+- final: 모든 backing 해제(unique·resident·nonresident·job lease 0, created = disposed > 0), 활성 job·소유·pending·
+  registry 0. transitions는 baseline·candidate 두 개이고, candidate cleanup이 final job 통계와 같다.
+
+3. 계약별 차이
+- 계약 1(이력: t010-decoded-resource-lease-accounting/browser/*.json, 32 시험·43 checkpoint):
+  contract 필드가 없다. 명시적 계약 1 검증에서만 생략을 허용하고, 있으면 정확한 int 1이어야 한다. metadata 필드 없음.
+- 계약 2(이력: t010-decoded-lease-accounting-hardening, t010-decoded-lease-contract-finalization의 browser/*.json,
+  41 시험·47 필수 checkpoint): contract 필드 필수(정확한 int 2). metadata 필드(rejectedCommits, postDecodeReservations,
+  preallocationRejections, decodedRegistryEntries, decodedAttachRefusals, maxJobDecodedLeases, maxJobLeaseEntries) 필수.
+  dimensionMismatches는 선택이다(hardening 증거에는 없다). 있으면 정확한 int 0.
+- 계약 3(신규: 이 디렉터리의 browser/decoded-lease-*.json): 시험 이름·순서·checkpoint는 계약 2와 같다(새 시험 없음).
+  · contract는 정확한 int 3이어야 하고, 없으면 거절한다.
+  · 모든 ledger checkpoint(필수와 추가 checkpoint 모두)의 decodedLedger에 dimensionMismatches가 있어야 하고,
+    정확한 int ≥ 0이어야 한다(bool·float·문자열·null·배열·객체·음수 거절).
+  · 이 시나리오들은 모두 정상 디코드이므로 값은 0이어야 한다(계약 2와 같은 zero 요구).
+  · jobs.decodedLedger 복사본과 decodedLedger가 JSON 타입까지 같아야 한다(same_json).
+    Python ==는 False == 0, 0.0 == 0을 같게 보므로, 그것만으로는 타입이 다른 복사본을 걸러내지 못한다.
+  · candidate cleanup의 jobs와 final checkpoint의 jobs도 same_json으로 비교한다.
+  · 어느 한 checkpoint에서만, 또는 jobs.decodedLedger에서만 필드가 빠져도 거절한다.
+
+4. 이력 호환(VERIFIED, python/validator.txt, python/dimension-contract-before-after.json)
+- 계약 1 원본 2건은 계약 1에서 PASS, 계약 2·3에서 거절.
+- 계약 2 원본 4건은 계약 2에서 PASS, 계약 3에서 거절(contract 2). 이력 파일은 고치지 않았다.
+- 계약 3 원본 2건(실제 Chrome·WebKit 실행)은 계약 3에서 PASS.
+- 계약 2의 타입 동치 허용(예: 복사본 uniqueBytes가 float)은 이력 호환을 위해 계약 2에 그대로 남긴다.
+  계약 3에서만 거절한다. 이 차이는 시험(test_inconsistent_duplicated_copies)으로 고정했다.
+
+5. producer
+- decoded-lease.mjs는 contract: 3을 내보낸다. ledger checkpoint는 엔진의 jobs.decodedLedger 객체를 그대로 복사한다.
+  dimensionMismatches는 엔진(ca5c0b84)이 내보내는 값이며, producer가 만들어 넣지 않는다.
+- runner 결과의 contract 필드는 runner의 CURRENT_CONTRACT다.
+
+6. 바꾸지 않은 것
+엔진 소스와 WASM, 시험 이름과 checkpoint 이름, 다른 schema 버전, 한도, 소유권, cache·scheduler 정책, Full replay.

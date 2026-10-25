@@ -1,0 +1,69 @@
+T010 decoded lease 준비 마감 재현 절차
+
+저장소 root에서 실행한다. 출력은 새 경로로 쓰고, 기존 증거·external/·public/·제품 소스는 수정하지 않는다.
+도구와 호스트 우회(RUSTC_BFD, 격리 Rust 1.93.1, Xvfb, WebKitWebDriver, tauri-driver 2.0.4)는
+../t010-decoded-lease-accounting-hardening/REPRODUCE.ko.txt와 같다. 브라우저·native 실행은 서로 겹치지 않게 직렬로 한다.
+결과 파일이 이미 있으면 각 스크립트가 거절한다. 다시 하려면 이전 결과의 이름을 바꿔 보존한다.
+
+R=tests/integration/rhwp/evidence/t010-decoded-lease-readiness-closure
+F=tests/integration/rhwp/evidence/t010-decoded-lease-contract-finalization
+H=tests/integration/rhwp/cache-concurrency
+
+0) 후보(엔진은 이번 작업에서 바뀌지 않았다)
+python3 $H/prepare.py --work NEW --patch $F/upstream-rhwp-decoded-lease-finalization-complete.patch \
+  --toolchain-bin RUST_1_93_1_BIN --no-opt --target-dir CACHE
+  -> rhwp_bg.wasm ca5c0b84…8d45, rhwp.js b69e920c…3252, rhwp.d.ts bce4ef51…(candidate-identity.json).
+  baseline arm은 ae34(ae34c12b…, ../t010-decoded-lease-accounting-hardening/REPRODUCE.ko.txt 1번).
+
+1) 계약 3 브라우저 증거
+python3 $H/decoded_lease_run.py --baseline AE34/test-package --candidate NEW/test-package --browser chrome \
+  --timeout 400 --output $R/browser/decoded-lease-chrome.json
+python3 $H/decoded_lease_run.py --baseline AE34/test-package --candidate NEW/test-package --browser webkit \
+  --webkit-driver WEBKIT_DRIVER --xvfb XVFB --timeout 800 --output $R/browser/decoded-lease-webkit.json
+
+2) 이전/이후 validator 비교와 Python
+python3 -I $R/repro/dimension_contract_before_after.py --old-commit 45c91501524494602c13c7c2a429814395430bdc \
+  --output OUT.json
+python3 -I -m unittest discover -s $H -p 'test_decoded_lease_validator.py' -v
+python3 -I -m unittest discover -s $H -p 'test_*.py'
+python3 -I -m unittest discover -s tests/integration/rhwp/ownership-poc -p 'test_*.py'
+python3 -m unittest discover -s tests/security
+
+3) cache 계약 처분
+python3 $H/unit.py --source NEW/src/renderer/surface_cache.rs --contract $H/cache_contract.rs --rustc RUSTC_BFD --output OUT.json
+  (기대: 18 PASS / 2 FAIL, 실패 이름은 REPORT.ko.txt 5절)
+python3 $H/unit.py --source NEW/src/renderer/surface_cache.rs --contract $R/repro/cache_disposition_contract.rs \
+  --rustc RUSTC_BFD --output OUT.json
+python3 $H/unit.py --patch tests/integration/rhwp/evidence/t010-cache-hardening/upstream-rhwp-bounded-image-cache-v2.patch \
+  --contract $R/repro/cache_disposition_contract.rs --rustc RUSTC_BFD --output OUT.json   (v2 API에서는 컴파일 오류)
+python3 -I $R/repro/cache_history_survey.py --rustc RUSTC_BFD --output OUT.json
+python3 $H/run.py --pinned public/rhwp --candidate NEW/test-package --browser chrome --timeout 600 --output OUT.json
+python3 $H/run.py --pinned public/rhwp --candidate NEW/test-package --browser webkit --webkit-driver WEBKIT_DRIVER \
+  --xvfb XVFB --timeout 1200 --output OUT.json
+
+4) 렌더링(화학 문서 Full RGBA)
+node tests/fixtures/rhwp/generate.mjs FIXTURES
+python3 tests/integration/rhwp/ownership-poc/run-edit-phases.py --probe image --baseline AE34/test-package \
+  --phase NEW/test-package --chrome CHROME --fixtures FIXTURES --output OUT.json
+
+5) native D1과 종료 순서 진단(시험 활성화 debug 앱 src-tauri/target/debug/geul, 공식 D4 아님)
+GEUL_TAURI_DRIVER=TAURI_DRIVER GEUL_EVIDENCE_SCRATCH=SCRATCH_PREFIX \
+  python3 $R/run-native.py N NEW/test-package ca5c0b8443230ba719c07f4d8c835a94fb6e12eb4b50a7123ce5c8b6a8048d45
+  (N = 시도 번호. engine gates는 $F/engine-gates를 읽는다. native-d1-attemptN.json과 -lifecycle.json을 쓴다)
+GEUL_T010_CANDIDATE=NEW/test-package dbus-run-session -- python3 $R/repro/driver_teardown_probe.py \
+  --driver TAURI_DRIVER --webkit-driver WEBKIT_DRIVER --xvfb XVFB --order terminate-only|delete-terminate|delete-wait \
+  --repeat N --window 35 --output OUT.json
+  probe와 관찰기는 시도마다 만든 무작위 GEUL_NATIVE_OBSERVE token을 환경에 가진 프로세스만 본다.
+  신호를 보내는 것은 probe 자신의 종료 정리뿐이며, 대상도 그 token을 가진 프로세스로 한정한다.
+
+6) 보안
+python3 scripts/check-sensitive-info.py --all / --history / --staged
+GITLEAKS = pre-commit 환경의 gitleaks 8.30.1(.pre-commit-config.yaml rev v8.30.1).
+- 전체 tree(dir): git archive HEAD를 빈 디렉터리에 풀고 .gitleaks.toml을 꺼낸 뒤
+  GITLEAKS dir --redact --no-banner -c CONFIG . --report-format json --report-path OUT.json
+  기본 규칙 비교는 -c 없이 같은 디렉터리를 검사한다(디렉터리 안에 .gitleaks.toml이 남아 있으면 자동으로 읽히므로 꺼낸다).
+- 전체 이력(git): GITLEAKS git --redact --no-banner -c .gitleaks.toml --log-opts=--all --report-format json --report-path OUT.json .
+- allowlist 음성 검사: python3 -I $R/repro/gitleaks_allowlist_negative_check.py --gitleaks GITLEAKS --config .gitleaks.toml --output OUT.json
+git diff --check, 보호 경로·gitlink 확인(integrity.json).
+증거의 scratchpad 경로는 <scratch>, 임시 Chrome profile은 <temporary-profile>, 저장소는 <workspace>로 정규화했다
+(browser/preparation-image-chrome.json, native-d1-attempt*.json).

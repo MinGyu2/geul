@@ -2,8 +2,9 @@
 // experimental engine (raw HtmlCanvasElement decoded cache); "candidate" is the lease engine.
 // putImageData observes each Rust decode's Canvas so backing lifetime (width/height) is checked
 // directly; the observer holds a DOM reference only, never an engine lease.
-// contract 2: decoded_lease_run.py CONTRACTS[2] names every test and required checkpoint.
-const result = {schema: 1, contract: 2, status: 'RUNNING', tests: [], ledger: [], transitions: []};
+// contract 3: decoded_lease_run.py CONTRACTS[3] names every test and required checkpoint; every ledger
+// checkpoint must carry the engine's dimensionMismatches counter (contract 2 evidence predates it).
+const result = {schema: 1, contract: 3, status: 'RUNNING', tests: [], ledger: [], transitions: []};
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 const COLORS = [[230,20,20],[20,200,20],[20,20,230],[10,10,10]];
 let observed = null;

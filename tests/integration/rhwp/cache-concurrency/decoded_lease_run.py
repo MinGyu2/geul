@@ -65,13 +65,17 @@ CHECKPOINTS_2 = CHECKPOINTS_1 + (
     's7-before', 's7-a-pending', 's7-b-pending', 's7-cancel-a', 's7-complete', 's8-pending', 's8-complete',
     's8-trimmed', 's9-before', 's9-after', 's10-before', 's10-after', 's11-before', 's11-after',
 )
+# Contract 3 keeps contract 2's tests and checkpoints; it makes dimensionMismatches mandatory in every
+# checkpoint and requires the duplicated ledger copies to agree with exact JSON types.
 CONTRACTS = {
     1: {'baseline': BASELINE_TESTS, 'candidate': CANDIDATE_TESTS_1 + ('final-ledger-zero',),
-        'checkpoints': CHECKPOINTS_1 + ('final',), 'metadata': False},
+        'checkpoints': CHECKPOINTS_1 + ('final',), 'metadata': False, 'dimensions': False},
     2: {'baseline': BASELINE_TESTS, 'candidate': CANDIDATE_TESTS_2 + ('final-ledger-zero',),
-        'checkpoints': CHECKPOINTS_2 + ('final',), 'metadata': True},
+        'checkpoints': CHECKPOINTS_2 + ('final',), 'metadata': True, 'dimensions': False},
+    3: {'baseline': BASELINE_TESTS, 'candidate': CANDIDATE_TESTS_2 + ('final-ledger-zero',),
+        'checkpoints': CHECKPOINTS_2 + ('final',), 'metadata': True, 'dimensions': True},
 }
-CURRENT_CONTRACT = 2
+CURRENT_CONTRACT = 3
 MIB = 1 << 20
 # Declared limits (source constants); a result reporting other values is rejected.
 JOB_LIMITS = {'maxPending': 2, 'maxResources': 256, 'maxOwnedBytes': 256 * MIB, 'maxFrameBytes': 64 * MIB,
@@ -102,7 +106,18 @@ def is_int(value):
     return type(value) is int and value >= 0
 
 
-def check_ledger(label, point, metadata):
+def same_json(a, b):
+    """Equality without Python's numeric coercion: False/0/0.0 and True/1 differ, as they do in JSON."""
+    if type(a) is not type(b):
+        return False
+    if type(a) is dict:
+        return a.keys() == b.keys() and all(same_json(a[k], b[k]) for k in a)
+    if type(a) is list:
+        return len(a) == len(b) and all(same_json(x, y) for x, y in zip(a, b))
+    return a == b
+
+
+def check_ledger(label, point, metadata, dimensions=False):
     require(type(point) is dict and set(point) == {'label', 'decodedLedger', 'jobs'}, f'malformed checkpoint {label}')
     l, jobs = point['decodedLedger'], point['jobs']
     require(type(l) is dict and type(jobs) is dict, f'malformed ledger objects at {label}')
@@ -111,6 +126,9 @@ def check_ledger(label, point, metadata):
     for name in JOB_INTS + (JOB_INTS_2 if metadata else ()):
         require(is_int(jobs.get(name)), f'invalid job field {name} at {label}')
     require(jobs.get('decodedLedger') == l, f'ledger copy differs from job statistics at {label}')
+    if dimensions:
+        require(is_int(l.get('dimensionMismatches')), f'invalid ledger field dimensionMismatches at {label}')
+        require(same_json(jobs['decodedLedger'], l), f'ledger copy differs in type from job statistics at {label}')
     require(l['maxNonresidentBytes'] == MAX_NONRESIDENT and all(jobs[k] == v for k, v in JOB_LIMITS.items()),
             f'declared limits changed at {label}')
     require(l['uniqueBytes'] == l['residentBytes'] + l['nonresidentBytes'], f'unique != resident + nonresident bytes at {label}')
@@ -129,7 +147,8 @@ def check_ledger(label, point, metadata):
         require(l['jobLeaseReferences'] <= MAX_JOBS * MAX_JOB_DECODED_LEASES, f'job lease references exceed the bound at {label}')
         require(jobs['decodedRegistryLive'] <= jobs['decodedRegistryEntries'], f'inconsistent registry counters at {label}')
         require(l['rejectedCommits'] == 0 and l['preallocationRejections'] == 0, f'unexpected size mismatch at {label}')
-        # Added after the first contract-2 evidence; when reported it must be an exact zero.
+        # Added after the first contract-2 evidence: optional for contract 2, mandatory for contract 3
+        # (checked above); when reported it must be an exact zero in these ordinary scenarios.
         if 'dimensionMismatches' in l:
             require(is_int(l['dimensionMismatches']) and l['dimensionMismatches'] == 0,
                     f'unexpected header/decoded dimension mismatch at {label}')
@@ -188,7 +207,7 @@ def validate(value, contract=CURRENT_CONTRACT):
     require(order == sorted(order), 'ledger checkpoints out of order')
     require(labels[-1] == 'final', 'final cleanup checkpoint is not last')
     for label, point in zip(labels, ledger):
-        check_ledger(label, point, spec['metadata'])
+        check_ledger(label, point, spec['metadata'], spec['dimensions'])
     final = ledger[-1]
     l, jobs = final['decodedLedger'], final['jobs']
     require(l['uniqueBytes'] == l['uniqueCount'] == l['residentBytes'] == l['nonresidentBytes'] == 0
@@ -202,6 +221,8 @@ def validate(value, contract=CURRENT_CONTRACT):
     require(type(transitions) is list and [t.get('arm') if type(t) is dict else None for t in transitions]
             == ['baseline', 'candidate'], 'cleanup transitions are incomplete')
     require(transitions[1].get('cleanup', {}).get('jobs') == jobs, 'candidate cleanup differs from the final checkpoint')
+    if spec['dimensions']:
+        require(same_json(transitions[1]['cleanup']['jobs'], jobs), 'candidate cleanup differs in type from the final checkpoint')
 
 
 def outcome(value, contract=CURRENT_CONTRACT):

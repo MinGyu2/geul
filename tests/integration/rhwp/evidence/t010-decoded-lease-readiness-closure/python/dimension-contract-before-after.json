@@ -1,0 +1,173 @@
+{
+  "schema": 1,
+  "oldCommit": "45c91501524494602c13c7c2a429814395430bdc",
+  "oldRunnerSha256": "55f989bc5dbc40f1ba0584b19469be1119aa2b3e030f4d6f6f8bdcd8065ae614",
+  "currentRunnerSha256": "b041e7274ab1c34fa76efac3f6389a3d970875d98fc80dcdd7bc087c9f677642",
+  "genuineInputs": {
+    "contract1": "tests/integration/rhwp/evidence/t010-decoded-resource-lease-accounting/browser/decoded-lease-chrome.json",
+    "contract2-hardening": "tests/integration/rhwp/evidence/t010-decoded-lease-accounting-hardening/browser/decoded-lease-chrome.json",
+    "contract2-finalization": "tests/integration/rhwp/evidence/t010-decoded-lease-contract-finalization/browser/decoded-lease-chrome.json",
+    "contract3-chrome": "tests/integration/rhwp/evidence/t010-decoded-lease-readiness-closure/browser/decoded-lease-chrome.json",
+    "contract3-webkit": "tests/integration/rhwp/evidence/t010-decoded-lease-readiness-closure/browser/decoded-lease-webkit.json"
+  },
+  "rows": [
+    {
+      "case": "genuine contract-1 (historical)",
+      "previousValidatorContract": 1,
+      "currentValidatorContract": 1,
+      "previousValidator": "ACCEPT: PASS",
+      "currentValidator": "ACCEPT: PASS"
+    },
+    {
+      "case": "genuine contract-2 hardening (historical, no field)",
+      "previousValidatorContract": 2,
+      "currentValidatorContract": 2,
+      "previousValidator": "ACCEPT: PASS",
+      "currentValidator": "ACCEPT: PASS"
+    },
+    {
+      "case": "genuine contract-2 finalization (historical, field present)",
+      "previousValidatorContract": 2,
+      "currentValidatorContract": 2,
+      "previousValidator": "ACCEPT: PASS",
+      "currentValidator": "ACCEPT: PASS"
+    },
+    {
+      "case": "genuine contract-3 chrome",
+      "previousValidatorContract": 2,
+      "currentValidatorContract": 3,
+      "previousValidator": "ACCEPT: PASS",
+      "currentValidator": "ACCEPT: PASS"
+    },
+    {
+      "case": "genuine contract-3 webkit",
+      "previousValidatorContract": 2,
+      "currentValidatorContract": 3,
+      "previousValidator": "ACCEPT: PASS",
+      "currentValidator": "ACCEPT: PASS"
+    },
+    {
+      "case": "contract-1 evidence verified as contract 3",
+      "previousValidatorContract": 2,
+      "currentValidatorContract": 3,
+      "previousValidator": "REJECT: Invalid: contract version is missing",
+      "currentValidator": "REJECT: Invalid: contract version is missing"
+    },
+    {
+      "case": "contract-2 hardening evidence verified as contract 3",
+      "previousValidatorContract": 2,
+      "currentValidatorContract": 3,
+      "previousValidator": "ACCEPT: PASS",
+      "currentValidator": "REJECT: Invalid: contract version must be the integer 3"
+    },
+    {
+      "case": "contract-2 finalization evidence verified as contract 3",
+      "previousValidatorContract": 2,
+      "currentValidatorContract": 3,
+      "previousValidator": "ACCEPT: PASS",
+      "currentValidator": "REJECT: Invalid: contract version must be the integer 3"
+    },
+    {
+      "case": "new result relabelled contract 2 (downgrade claim)",
+      "previousValidatorContract": 2,
+      "currentValidatorContract": 3,
+      "previousValidator": "ACCEPT: PASS",
+      "currentValidator": "REJECT: Invalid: contract version must be the integer 3"
+    },
+    {
+      "case": "new result: field removed everywhere",
+      "previousValidatorContract": 2,
+      "currentValidatorContract": 3,
+      "previousValidator": "ACCEPT: PASS",
+      "currentValidator": "REJECT: Invalid: invalid ledger field dimensionMismatches at s0-before"
+    },
+    {
+      "case": "new result: field removed in one checkpoint (s9-after)",
+      "previousValidatorContract": 2,
+      "currentValidatorContract": 3,
+      "previousValidator": "ACCEPT: PASS",
+      "currentValidator": "REJECT: Invalid: invalid ledger field dimensionMismatches at s9-after"
+    },
+    {
+      "case": "new result: field removed in final only",
+      "previousValidatorContract": 2,
+      "currentValidatorContract": 3,
+      "previousValidator": "ACCEPT: PASS",
+      "currentValidator": "REJECT: Invalid: invalid ledger field dimensionMismatches at final"
+    },
+    {
+      "case": "new result: field removed only from jobs.decodedLedger (s9-after)",
+      "previousValidatorContract": 2,
+      "currentValidatorContract": 3,
+      "previousValidator": "REJECT: Invalid: ledger copy differs from job statistics at s9-after",
+      "currentValidator": "REJECT: Invalid: ledger copy differs from job statistics at s9-after"
+    },
+    {
+      "case": "new result: copy dimensionMismatches False (s9-after)",
+      "previousValidatorContract": 2,
+      "currentValidatorContract": 3,
+      "previousValidator": "ACCEPT: PASS",
+      "currentValidator": "REJECT: Invalid: ledger copy differs in type from job statistics at s9-after"
+    },
+    {
+      "case": "new result: copy dimensionMismatches 0.0 (s9-after)",
+      "previousValidatorContract": 2,
+      "currentValidatorContract": 3,
+      "previousValidator": "ACCEPT: PASS",
+      "currentValidator": "REJECT: Invalid: ledger copy differs in type from job statistics at s9-after"
+    },
+    {
+      "case": "new result: copy uniqueBytes as float (s3-shared)",
+      "previousValidatorContract": 2,
+      "currentValidatorContract": 3,
+      "previousValidator": "ACCEPT: PASS",
+      "currentValidator": "REJECT: Invalid: ledger copy differs in type from job statistics at s3-shared"
+    },
+    {
+      "case": "new result: dimensionMismatches 1 in both copies (s9-after)",
+      "previousValidatorContract": 2,
+      "currentValidatorContract": 3,
+      "previousValidator": "REJECT: Invalid: unexpected header/decoded dimension mismatch at s9-after",
+      "currentValidator": "REJECT: Invalid: unexpected header/decoded dimension mismatch at s9-after"
+    },
+    {
+      "case": "new result: dimensionMismatches -1 in both copies (final)",
+      "previousValidatorContract": 2,
+      "currentValidatorContract": 3,
+      "previousValidator": "REJECT: Invalid: unexpected header/decoded dimension mismatch at final",
+      "currentValidator": "REJECT: Invalid: invalid ledger field dimensionMismatches at final"
+    },
+    {
+      "case": "new result: dimensionMismatches null in both copies (s1-pending)",
+      "previousValidatorContract": 2,
+      "currentValidatorContract": 3,
+      "previousValidator": "REJECT: Invalid: unexpected header/decoded dimension mismatch at s1-pending",
+      "currentValidator": "REJECT: Invalid: invalid ledger field dimensionMismatches at s1-pending"
+    },
+    {
+      "case": "new result: dimensionMismatches true in both copies (s1-pending)",
+      "previousValidatorContract": 2,
+      "currentValidatorContract": 3,
+      "previousValidator": "REJECT: Invalid: unexpected header/decoded dimension mismatch at s1-pending",
+      "currentValidator": "REJECT: Invalid: invalid ledger field dimensionMismatches at s1-pending"
+    },
+    {
+      "case": "new result: dimensionMismatches 0.0 in both copies (s1-pending)",
+      "previousValidatorContract": 2,
+      "currentValidatorContract": 3,
+      "previousValidator": "REJECT: Invalid: unexpected header/decoded dimension mismatch at s1-pending",
+      "currentValidator": "REJECT: Invalid: invalid ledger field dimensionMismatches at s1-pending"
+    },
+    {
+      "case": "new result: dimensionMismatches \"0\" in both copies (s1-pending)",
+      "previousValidatorContract": 2,
+      "currentValidatorContract": 3,
+      "previousValidator": "REJECT: Invalid: unexpected header/decoded dimension mismatch at s1-pending",
+      "currentValidator": "REJECT: Invalid: invalid ledger field dimensionMismatches at s1-pending"
+    }
+  ],
+  "previousAcceptedInvalid": 9,
+  "currentAcceptedInvalid": 0,
+  "invalidCases": 17,
+  "genuineAcceptedByCurrent": 5
+}
