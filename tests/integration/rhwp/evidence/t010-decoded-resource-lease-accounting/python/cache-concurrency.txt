@@ -1,0 +1,4 @@
+$ python3 -I -m unittest discover -s tests/integration/rhwp/cache-concurrency -p test_*.py
+Ran 32 tests in 3.578s
+
+OK

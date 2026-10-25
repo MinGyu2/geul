@@ -1,0 +1,88 @@
+{
+  "tool": "gitleaks (pre-commit environment binary; Nix 8.30.1 store path was garbage-collected during the session)",
+  "scannedSet": "final staged index (git checkout-index), 47 files",
+  "defaultRulesWithoutAllowlist": {
+    "output": "INF scanned ~3744506 bytes (3.74 MB) in 407ms\nWRN leaks found: 9",
+    "findings": [
+      {
+        "rule": "generic-api-key",
+        "file": "tests/integration/rhwp/evidence/t010-decoded-resource-lease-accounting/candidate-identity.json",
+        "line": 12,
+        "checksum": "3dfa6723ae9c…",
+        "verified": true,
+        "identity": "candidate src/wasm_api.rs (final ENGINE.json sourceSha256)"
+      },
+      {
+        "rule": "generic-api-key",
+        "file": "tests/integration/rhwp/evidence/t010-decoded-resource-lease-accounting/browser/regression-ae34-webkit.json",
+        "line": 33,
+        "checksum": "9563a9ef26b5…",
+        "verified": true,
+        "identity": "ae34 src/wasm_api.rs (ENGINE.json sourceSha256)"
+      },
+      {
+        "rule": "generic-api-key",
+        "file": "tests/integration/rhwp/evidence/t010-decoded-resource-lease-accounting/engine-gates/webkit.json",
+        "line": 26,
+        "checksum": "3dfa6723ae9c…",
+        "verified": true,
+        "identity": "candidate src/wasm_api.rs (final ENGINE.json sourceSha256)"
+      },
+      {
+        "rule": "generic-api-key",
+        "file": "tests/integration/rhwp/evidence/t010-decoded-resource-lease-accounting/engine-gates/chrome.json",
+        "line": 26,
+        "checksum": "3dfa6723ae9c…",
+        "verified": true,
+        "identity": "candidate src/wasm_api.rs (final ENGINE.json sourceSha256)"
+      },
+      {
+        "rule": "generic-api-key",
+        "file": "tests/integration/rhwp/evidence/t010-decoded-resource-lease-accounting/browser/decoded-lease-chrome.json",
+        "line": 25,
+        "checksum": "9563a9ef26b5…",
+        "verified": true,
+        "identity": "ae34 src/wasm_api.rs (ENGINE.json sourceSha256)"
+      },
+      {
+        "rule": "generic-api-key",
+        "file": "tests/integration/rhwp/evidence/t010-decoded-resource-lease-accounting/browser/decoded-lease-chrome.json",
+        "line": 58,
+        "checksum": "3dfa6723ae9c…",
+        "verified": true,
+        "identity": "candidate src/wasm_api.rs (final ENGINE.json sourceSha256)"
+      },
+      {
+        "rule": "generic-api-key",
+        "file": "tests/integration/rhwp/evidence/t010-decoded-resource-lease-accounting/browser/regression-ae34-chrome.json",
+        "line": 33,
+        "checksum": "9563a9ef26b5…",
+        "verified": true,
+        "identity": "ae34 src/wasm_api.rs (ENGINE.json sourceSha256)"
+      },
+      {
+        "rule": "generic-api-key",
+        "file": "tests/integration/rhwp/evidence/t010-decoded-resource-lease-accounting/browser/decoded-lease-webkit.json",
+        "line": 25,
+        "checksum": "9563a9ef26b5…",
+        "verified": true,
+        "identity": "ae34 src/wasm_api.rs (ENGINE.json sourceSha256)"
+      },
+      {
+        "rule": "generic-api-key",
+        "file": "tests/integration/rhwp/evidence/t010-decoded-resource-lease-accounting/browser/decoded-lease-webkit.json",
+        "line": 58,
+        "checksum": "3dfa6723ae9c…",
+        "verified": true,
+        "identity": "candidate src/wasm_api.rs (final ENGINE.json sourceSha256)"
+      }
+    ],
+    "allVerifiedChecksums": true
+  },
+  "repositoryConfig": {
+    "output": "INF scanned ~939218 bytes (939.22 KB) in 228ms\nINF no leaks found",
+    "note": "paths matched by an allowlist entry are skipped by gitleaks; therefore the default-rule run above is the content review of those 7 files"
+  },
+  "allowlistChange": ".gitleaks.toml: one [[allowlists]] entry, exact 7 evidence paths AND exact 2 public checksums; no rule disabled",
+  "selfReference": "this file is written after the scan; it contains only 12-character checksum prefixes"
+}

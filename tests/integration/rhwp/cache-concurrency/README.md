@@ -215,3 +215,19 @@ D4 decoded admission 후속은 [실험 보고서](../evidence/t010-decoded-admis
 별도 캐시 후보는 native 6종과24개 정확한 RGBA 비교를 통과했지만 group p95 342→279ms로50ms 기준은 실패한다.
 중앙값/최대값과 Undo 지연이 악화된 단일 진단이므로 기준48adaa를 유지하며 새 e300은 실험 패치로 보관한다.
 공식 네 문서×세 arm 성능, D2 목표 IME 순서, 장기 RSS 승인과 구분한다.
+
+## Decoded resource lease·회계 후보 (T010, 2026-10-25)
+
+전체 계약, 근거, 한계는 [보고서](../evidence/t010-decoded-resource-lease-accounting/REPORT.ko.txt)와
+`CONTRACT.ko.txt`에 있다. 후보는 ae34 실험 소스에 decoded lease를 더한 격리 엔진이다. 제품 엔진이나
+`public/rhwp`를 바꾸지 않는다. 실행 명령은 그 디렉터리의 `REPRODUCE.ko.txt`를 따른다.
+
+- `decoded_lease_contract.rs`: `unit.py --contract`로 실행하는 순수 Rust 계약이다. 대상은 고유 backing 1회 계상,
+  cache/job `Rc` 분리, 마지막 소유자 1회 dispose, checked 예약·거절·해제, 반복 trim, 압박 아래 0 복귀다.
+  이 타입들이 없는 이전 `surface_cache.rs`에서는 컴파일되지 않는다.
+- `decoded_lease_run.py` + `decoded-lease.mjs`: 실제 Chrome/WebKitGTK에서 baseline(이전 실험)과 candidate를
+  실행한다. `putImageData` 관찰로 Canvas backing의 width/height를 직접 확인한다. server-held SVG로
+  PENDING 경계를 결정적으로 만든다. runner는 필수 check와 모든 ledger checkpoint의 불변식
+  (unique=resident+nonresident, nonresident ≤ 96 MiB, reserved=0, 선언 한도 불변)을 다시 검증한다.
+  페이지가 보고한 PASS만으로는 통과하지 않는다.
+- ledger의 bytes는 RGBA backing 추정이다. 프로세스 RSS, GPU 사용량, 브라우저 allocator의 상한이 아니다.

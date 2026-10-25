@@ -1,0 +1,5 @@
+$ python3 -I -m unittest discover -s tests/security
+Ran 86 tests in 54.795s
+
+OK
+exit=0

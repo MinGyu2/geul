@@ -164,3 +164,12 @@ condition = "AND"
 paths = ['''^tests/integration/rhwp/evidence/t010-render-preparation-boundary/(identities-and-reproduction|chrome|webkit)\.json$''']
 regexTarget = "secret"
 regexes = ['''^9563a9ef26b5d0c22997e9beb8cb8c037e852df7ca95a8362800e7bd0cf24c5d$''']
+
+# Decoded lease/accounting evidence: verified public wasm_api.rs source checksums of the ae34
+# experimental source (9563a9…) and the decoded-lease candidate (3dfa67…). Exact paths AND digests.
+[[allowlists]]
+description = "T010 decoded lease verified public wasm_api.rs source checksums"
+condition = "AND"
+paths = ['''^tests/integration/rhwp/evidence/t010-decoded-resource-lease-accounting/(candidate-identity|engine-gates/chrome|engine-gates/webkit|browser/decoded-lease-chrome|browser/decoded-lease-webkit|browser/regression-ae34-chrome|browser/regression-ae34-webkit)\.json$''']
+regexTarget = "secret"
+regexes = ['''^9563a9ef26b5d0c22997e9beb8cb8c037e852df7ca95a8362800e7bd0cf24c5d$''','''^3dfa6723ae9c89768157f26aac22566d18055c9074acfaa28b0686c3687ecacb$''']

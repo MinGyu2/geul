@@ -1,0 +1,167 @@
+T010 Decoded Resource Lease·메모리 회계 기반 — 2026-10-25
+
+1. 판정: COMPLETED(격리 실험 후보 범위)
+- 격리 후보에 실제로 실행되는 decoded 소유권 lease를 구현했다. 무관한 캐시 퇴거가 활성 lease를
+  무효화하지 못함을 Rust, 실제 Chrome, 실제 WebKitGTK에서 확인했다. 고유 backing 회계, 예약·회수,
+  최종 해제와 취소 정리, Full 픽셀 동일성도 확인했다.
+- Preparing → ResourcesReady, tree 보존, cursor, worker는 구현하지 않았다. 공식 D4 재측정도 아니다.
+- 제품 소스, public WASM, RHWP/WordCraft gitlink, undo_native.py, 과거 증거는 변경하지 않았다.
+범주: VERIFIED=소스 또는 이번 실행, INFERRED=근거 해석, UNVERIFIED=입증하지 못함.
+
+2. Git 상태
+시작: master 342101f9a4a8e6a8e2ef245c155d9ef34320efa1, 작업 트리 clean, RHWP 1a76570e83…,
+WordCraft fc41918814…. 종료 시 로컬 commit 1개를 추가한다. SHA, clean 상태, push 없음은 commit 뒤
+최종 응답에서 확인한다(이 파일은 commit 전에 작성).
+
+3. 기준선 재현 (VERIFIED, 이번 실행; baseline-reproduction.json)
+ae34(WASM ae34c12b…) 실험 엔진의 결과는 Chrome과 WebKit에서 같았다.
+- 완료된 job 뒤 상주 decoded Canvas가 무관한 입장으로 퇴거되면, 보관한 원시 handle이 0×0이 된다.
+- 실제 PENDING 경계에서도 같다. 대기 job이 그린 decoded handle이 다른 job의 퇴거로 0×0이 되고,
+  다음 poll에서 다시 decode한다(decodes=1).
+- 캐시 예산 0의 임시 Canvas는 PENDING 반환 전에 이미 0×0이다.
+기존 preparation-contract probe도 ae34 arm 14/14로 같은 사실을 다시 보였다.
+
+4. 확인한 근본 원인 (VERIFIED: 소스)
+web_canvas.rs의 DECODED_CANVAS_CACHE는 BoundedCache<HtmlCanvasElement>였다.
+- get은 원시 handle을 clone하고, surface_cache remove는 Release로 width/height를 0으로 만든다.
+- 원시 clone은 소유권이 아니다. 그래서 캐시 퇴거가 유일한 backing 해제 지점이었다.
+- job에는 decoded 소유 필드가 없었다. 비상주 임시는 그린 직후 release되어 수명이 동기 범위에만 묶였다.
+- browser 이미지는 이미 Rc<ImageResource> + Weak pool이었지만, decoded는 그 구조 밖에 있었다.
+
+5. 구현 (격리 후보; 패치 upstream-rhwp-decoded-lease-*.patch)
+- surface_cache.rs(순수 Rust): Backing, DecodedLedger(checked 산술), Reservation(drop 시 해제),
+  SharedBacking<B>(마지막 drop에서 1회 dispose), Release for Rc<SharedBacking>(no-op),
+  BoundedCache::peek(LRU와 통계를 바꾸지 않는 조회).
+- render_job.rs: DecodedLease = Rc<SharedBacking<HtmlCanvasElement>>, Job.decoded, Pool.decoded(Weak).
+  job_decoded/shared_decoded/register_decoded/attach_decoded/revoke_decoded,
+  MAX_NONRESIDENT_DECODED_BYTES = MAX_DECODED_BYTES(96 MiB). finish가 lease를 놓는다.
+  stats에 decodedLedger를 추가했다.
+- web_canvas.rs: lease 캐시, decoded_canvas 재작성(조회 순서, live backing 재제출), reserve_decode
+  (헤더 크기로 할당 전 예약, 강제·회수·거절은 음성 entry 없음), decode_image_to_canvas
+  (commit/실패 시 dispose, 임시 추정), draw_image·draw_image_cropped는 lease.backing()으로 그린다.
+  decoded_ledger_json과 note_tree_payload를 추가했다.
+- paint/resources.rs: ResourcePayloadEstimate, ResourceArena::payload_estimate.
+  paint/layer_tree.rs: PageLayerTree::payload_estimate(image node, 변환 payload, RawSvg).
+  wasm_api.rs: poll에서 tree payload를 관찰용으로만 기록한다(6줄).
+- Geul: tests/integration/rhwp/cache-concurrency/decoded_lease_contract.rs, decoded_lease_run.py,
+  decoded-lease.mjs, README 절. docs/architecture/rhwp-undo-redo.md 절. 이 증거 디렉터리.
+- 기존 Rc/Weak pool 구조를 확장했고, 두 번째 lease 관리자는 만들지 않았다. 캐시 입장 정책, 한도,
+  스케줄러, 알림, Full replay, 원자 게시는 바꾸지 않았다.
+- 구현 중 교정 2건(실패 보존): (a) arena만 세던 tree 추정이 화학 문서에서 0이었다.
+  → layer tree walker를 추가했다. (b) 시험이 1-entry 캐시를 가정했지만, SVG도 Rust decode를 먼저
+  시도해 음성 entry를 남긴다는 기존 동작 때문에 기대가 틀렸다. → 시험 예산을 교정했다. 엔진 결함은 아니다.
+  같은 이유로 완료 시 X가 다시 입장하는 것이 정책상 맞음을 확인했다.
+  이에 따라 캐시 통계 전체를 baseline과 대조하는 검사를 추가했다.
+
+6. 수명 비교 (VERIFIED)
+- 상주 + 활성 job / 무관한 퇴거: 이전 0×0, 다음 poll 재decode → 이후 job lease가 유지, 재decode 0.
+  job 종료 시 dispose되며, 정책상 재입장했으면 캐시 소유로 남고 trim(0)에서 dispose된다.
+- 캐시 단독 / 퇴거: 이전·이후 모두 즉시 dispose.
+- 비상주 임시 / PENDING: 이전 반환 전 0×0 → 이후 job 소유로 유지(16384 bytes 계상), 완료 시 dispose.
+- job 없는 동기 그리기: 이전과 같다(그리기 직후 dispose).
+- 공유 job 2개: 이후 backing 1개, 참조 2개. 한 job 취소 후 유지, 마지막 취소 시 dispose.
+
+7. 예산과 회계 정의 (CONTRACT.ko.txt 4–5절)
+decoded cache 256 MiB/256, browser cache 64 MiB/256, browser pool 256 MiB, pending 2,
+resource 256, URL 32 MiB, 단일 decode 96 MiB, job 8, deadline 15 s, scratch/backup 각 64 MiB.
+모두 소스에서 확인했고 늘리지 않았다. 고유 bytes(A)와 job 참조(C)는 구분한다.
+비상주 D ≤ 96 MiB, 상주 B ≤ cache 예산이므로 A ≤ cache + 96 MiB(이전 엔진과 같은 상한).
+- 직접 계상(추정값): decoded backing RGBA, 예약, browser unique 소유, scratch/backup.
+- 관찰만 하고 강제하지 않음: decode 임시(peakDecodeTransientEstimatedBytes, 화학 문서에서 103,917,484
+  관찰, 즉 단일 96 MiB RGBA 한도와 별개로 최대 약 3×RGBA), tree payload 하한
+  (화학 문서 peak 2,168,706; text/geometry 제외).
+- 이 카운터들은 RSS·GPU·브라우저 allocator 측정이 아니다. RSS는 INCONCLUSIVE를 유지한다.
+
+8. 예약·정리 결과 (VERIFIED, ledger-lifecycle.json)
+- 43개 ledger checkpoint(브라우저별) 모두 다음을 만족했다(runner가 재검증):
+  unique=resident+nonresident, reserved=0, accountingErrors=0, nonresident ≤ 96 MiB.
+  관찰 최대 nonresident는 81,120,000이다.
+- 압박: 2600² PNG 4개(108,160,000 bytes)를 캐시 예산 0에서 처리했다. 1개 회수, 살아 있는 3개 =
+  81,120,000 ≤ 100,663,296. 완료 후 픽셀이 같고 고유 0이다.
+- cancel, close, mutation, stale target, expiry, resource error 각각 lease 해제와 예약 0을 확인했다.
+  반복 terminal 5회에서 created/disposed는 불변이다. 최종 고유 0, created=disposed.
+- decoded 해제는 capacity/listener 알림을 만들지 않았다(대기 대상 없음, 거짓 진행 없음).
+- 거절 경로: Rust 계약으로 거절, 예약 해제, overflow 거절을 확인했다. 브라우저 job 경로에서는 회수 뒤
+  단일 이미지가 96 MiB guard 안이므로 거절이 일어나지 않았다(refusedReservations=0, INFERRED 도달 불가).
+  legacy 동기 API는 한도를 넘으면 unenforcedOverLimit으로 명시적으로 센다.
+
+9. 시험 결과 (이번 실행; 과거 수와 합산하지 않음)
+- Rust unit.py(rust/*.json), rustc 1.93.1:
+  · decoded_lease_contract: 이전 surface_cache에서는 컴파일 실패(타입 없음), 이후 21/21
+    (신규 10 + 기존 11).
+  · ownership 24/24, scheduler 16/16: 이전·이후 같다.
+  · cache_contract 18/2: 이전·이후 같은 두 실패
+    (trim_during_load_does_not_release_the_pending_handle, two_oversize_completions_…).
+    이번 변경과 무관하고 원래부터 있던 실패다.
+- 엔진 library(최종 소스): 4,072 passed / 0 failed / 13 ignored(3890+15+165+2). 경고 0.
+  clippy wasm32 release와 native lib 모두 -D warnings 통과. rustfmt 변경 5파일 clean.
+  ae34의 과거 4,070과 비교하면 신규 2개만큼 늘었다(과거 실행과 합산하지 않음).
+- decoded lease 브라우저 계약: Chrome 155 32/32, WebKitGTK 2.54.1 32/32
+  (baseline arm 재현 6 + candidate 26).
+- 기존 cache-concurrency(run.py), ownership/scheduler: 후보 Chrome 52/73, WebKit 52/73.
+  ae34 재실행도 52/73 두 브라우저. historical/HWP/HWPX/pending/concurrent는 모두 PASS.
+- preparation contract probe: ae34 arm 14/14, 후보 arm 14/14.
+- Full RGBA: 화학 문서 14/15/16/19/20/21/23쪽 × 3회 = 21/21, pixels 0 / maxDelta 0(ae34 대 후보).
+  브라우저 계약 안의 교차 엔진 exact도 3건 통과.
+- 네이티브(시험 활성화 debug 앱, 후보 a9222205):
+  · strict D1 39/39, exact reference 24/24, cleanup 완료.
+  · pending-image 22/22.
+  · safety 14/14 + history gate 8 + save matrix 9.
+  · 실행 의존성 hash는 전후 안정적이다.
+  · 첫 D1 시도는 시험 시작 전 인프라 실패였다. 기록된 xdotool Nix store 경로가 GC로 사라졌기
+    때문이다(native-d1-attempt1-infra-missing-xdotool.json 보존). 같은 store hash를 binary cache에서
+    복원한 뒤 다시 실행했다.
+- Geul Python: cache-concurrency 32 OK, ownership-poc 214 OK. 보안 회귀 86 OK.
+
+10. 실행하지 못했거나 범위 밖인 것
+- 공식 D4, 장기 RSS, GPU 메모리, D2 native 한국어 IME: 실행하지 않았다(UNVERIFIED, 판정 불변).
+- decode 임시와 tree text/geometry의 강제 상한: 미구현(관찰만).
+- decoded backing 수준의 OOM/JS 예외 복구 경로 일반화: UNVERIFIED.
+- ImageKey는 비암호 해시이므로 충돌 부재를 증명하지 않는다(기존과 같음).
+
+11. 후보 신원 (candidate-identity.json, reproducibility.json)
+- 후보 WASM a9222205879b9f31b6ccdf0d0d633d2a9906fb5f980ca424e0cd3198256f98c5 (새 신원).
+- JS b69e920c8fb1e9d05dacadf3ebae2396b043da385137ad2b4b3386a9b3433252(glue 불변), d.ts bce4ef51….
+- commit한 complete patch 9afebd08d39abf4d5a6c8cbfab9580d440d78d2c7c8d69540b13784c08227f70
+  (pinned 1a76570 기준, 10파일). incremental 7e06da0e3b32c9f894de81dabd94ce481cf54fce9797b6162e44125d9a0214e6
+  (ae34 소스 기준, 6파일).
+- 검증 빌드는 같은 diff를 blank context를 공백 1칸으로 표기한 형태(a70236ed…/ed8696dc…)로 만들었다.
+  commit본은 기존 T010 patch처럼 빈 줄로 표기해 git diff --check가 깨끗하다. 두 표기 모두 같은
+  소스를 만든다. commit본으로 다시 빌드한 결과도 reproducibility.json에 있다.
+- 빈 cache로 독립 재빌드한 결과의 artifacts가 바이트 단위로 같다.
+- ae34(ae34c12b…)와 승인(48adaa0f…) 패키지는 실제 bytes와 보존된 기대값으로 대조했다.
+  측정 JSON에서는 기대값을 가져오지 않았다. 반복 빌드 61693f9f…는 중간본이며 최종 근거로 쓰지 않았다.
+
+12. 보안·무결성 (security/, integrity.json)
+- 민감정보 --all, --history 통과. --staged는 commit 직전 결과를 기록한다.
+- Gitleaks(변경·신규 파일 상대 mirror)를 두 번 돌렸다(security/gitleaks-review.json).
+  · 기본 규칙만: generic-api-key 9건이 나왔고, 모두 공개 소스 checksum 2개
+    (ae34 wasm_api.rs 9563a9…, 후보 wasm_api.rs 3dfa67…)였다.
+  · 저장소 설정: 탐지 없음.
+  · .gitleaks.toml에는 기존 T010 방식 그대로 정확한 증거 경로 7개 AND 정확한 SHA 2개만 더했다.
+    규칙은 끄지 않았다.
+  · Nix 8.30.1 binary는 세션 중 GC되어 pre-commit 환경의 gitleaks binary를 썼다.
+- git diff --check, 보호 경로와 gitlink 불변을 확인했다.
+- 결과 JSON의 임시 Chrome profile 경로 2곳은 <temporary-profile>로 정규화했다. 측정값은 바꾸지 않았다.
+- 후보 바이너리, 개인 경로, credential, checkpoint는 commit하지 않는다.
+
+13. 남은 한계
+- 대기 job의 비상주 lease 보유는 기회적이다. 96 MiB 압박 때는 경계에서 회수하고 다음 poll에서
+  다시 decode한다. 특정 job이 준비한 자원을 끝까지 보장하는 예약은 미래 Preparing 설계 결정이다.
+- decoded와 browser 이미지는 같은 Rc 구조를 쓰지만 예산 ledger는 분리돼 있다(의도적, 정책 불변).
+- 동기 poll 내부에는 취소 지점이 없다. lease 경계는 PENDING 반환과 terminal뿐이다.
+
+14. 공식 판정 (변경 없음)
+T010: INCOMPLETE / D1: PASS(과거 증거; 이번 후보 strict D1도 통과했으나 공식 판정을 바꾸지 않음) /
+D2: INCONCLUSIVE / D3: PASS(과거 증거) / D4: FAIL / D5: PASS(과거 증거) / RSS: INCONCLUSIVE /
+Production RHWP Undo/Redo: NO-GO / T011: NOT STARTED.
+소유권 정확성을 성능 개선으로 해석하지 않는다.
+
+15. 다음 단계 준비도
+decoded lease와 회계 기반은 별도의 Preparing → ResourcesReady 구현을 시작할 수 있는 수준이다(INFERRED).
+그 구현에서 결정할 일:
+- 준비 완료 자원에 대한 회수 금지 예약(현재는 기회적 보유).
+- tree 보존의 byte 상한과 세대 계약.
+- 변환된 payload 키.
+- 새 반환 경계마다 cancel/expiry/close/stale 회귀.
+- decode 임시 상한 강제 여부.

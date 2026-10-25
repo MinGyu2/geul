@@ -1,0 +1,32 @@
+{
+  "startHead": "342101f9a4a8e6a8e2ef245c155d9ef34320efa1",
+  "branch": "master",
+  "startWorktree": "clean",
+  "submodules": [
+    " 1a76570e833917d15817415a53c09ad61ab3203f external/rhwp (v0.8.7)",
+    " fc41918814f62645b6746ed68e71e8c2c2e85d6f external/wordcraft (v0.7.0)"
+  ],
+  "externalRhwpPorcelain": "",
+  "protectedPathsUnchangedVsHead": [
+    "external",
+    "src",
+    "src-tauri",
+    "tests/integration/rhwp/undo_native.py",
+    "tests/integration/rhwp/evidence/t010-render-preparation-boundary",
+    "tests/integration/rhwp/evidence/t010-d4-performance-remediation",
+    "tests/integration/rhwp/evidence/t010-resource-scheduler",
+    "tests/integration/rhwp/evidence/t010-final-stabilization",
+    "tests/integration/rhwp/evidence/t010-d4-anchor-causality-hardening"
+  ],
+  "protectedDiffExit": 0,
+  "diffCheck": "PASS",
+  "publicArtifactsUntracked": {
+    "public/rhwp/rhwp_bg.wasm": "a91fa6a4336d34441c0d8f52afd0971aebe34019f7caf9eddad100f7a568f94d",
+    "public/rhwp/rhwp.js": "70cde06a369fa7fd4fc8bc8f3d6acaee158596ba1a116a2c72159002b0b5654e",
+    "note": "equal to t010-render-preparation-boundary/starting-state.json; only read as run.py historical slot"
+  },
+  "productionActivation": false,
+  "officialD4Run": false,
+  "pushPerformed": false,
+  "candidateBinariesCommitted": false
+}

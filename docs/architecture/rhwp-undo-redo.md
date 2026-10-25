@@ -1048,3 +1048,16 @@ anchor는 ms가 없어야 하고 편집은 handlerEnd, undo/redo는 observed 이
 240개 handler 행은 바뀌지 않았다. undo/redo는 같은 clock의 하한(handler 시작)이 직렬화되지 않아
 삽입이 아닌 anchor·호출의 일관된 동시 이동은 판별할 수 없다.
 새 검증 근거: `tests/integration/rhwp/evidence/t010-d4-anchor-causality-hardening/`.
+
+Decoded resource lease·회계 기반(2026-10-25, 격리 실험 후보 a9222205, 제품 미적용): 이전 decoded 캐시는
+원시 `HtmlCanvasElement`를 보관했다. 그래서 다른 job의 정상 퇴거가 대기 job이 쓴 backing을 0×0으로
+만들었다(이번 실행에서 Chrome/WebKit 재현). 후보는 기존 browser 이미지의 `Rc` lease + `Weak` pool
+구조를 decoded backing으로 확장한다. 캐시와 job은 같은 `SharedBacking`에 대해 각자 `Rc`를 갖고, 퇴거는
+캐시 참조만 놓는다. 마지막 소유자가 놓을 때만 정확히 한 번 dispose한다. 고유 decoded bytes는 참조 수와
+무관하게 할당마다 한 번 센다. 비상주(job 보유·임시) 합계는 기존 단일 decode 한도 96 MiB 이하로
+예약(checked) 및 회수로 강제한다. 따라서 고유 합계는 decoded 캐시 예산 + 96 MiB를 넘지 않으며,
+이는 이전 엔진의 상한과 같다. 기존 한도는 늘리지 않았다. 캐시 입장 정책, 알림, Full 게시는 같다.
+캐시 통계는 baseline과 일치하고, Full RGBA와 native strict D1은 정확히 일치한다. Preparing →
+ResourcesReady, tree 보존, cursor는 구현하지 않았다. decode 임시 사본(최대 약 3×RGBA)과 tree의 text·geometry는
+추정이나 하한만 기록하며 강제하지 않는다. RSS는 계속 INCONCLUSIVE다.
+새 검증 근거: `tests/integration/rhwp/evidence/t010-decoded-resource-lease-accounting/`.
