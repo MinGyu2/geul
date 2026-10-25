@@ -1,0 +1,30 @@
+{
+ "schema": 1,
+ "tool": "gitleaks 8.30.1 (pre-commit environment binary, sha256 9e07ca5707114687\u2026)",
+ "when": "before commit",
+ "scope": "working-tree mirror: tracked + new files (1424), external/ excluded, .gitleaks.toml moved out of the scanned directory",
+ "configuredRules": {
+  "findings": 0
+ },
+ "defaultRules": {
+  "findings": 201,
+  "byRule": {
+   "generic-api-key": 201
+  },
+  "allSha256HexMatchingExactlyOneEntry": true,
+  "unmatched": 0,
+  "entriesUsed": 24,
+  "entries": 24,
+  "findingsInFilesOfThisTask": 0
+ },
+ "history": {
+  "mode": "gitleaks git --log-opts=--all -c .gitleaks.toml",
+  "findings": 0
+ },
+ "allowlistNegativeCheck": {
+  "allOk": true,
+  "cases": 24
+ },
+ "allowlistChanged": false,
+ "limits": "zero configured findings does not mean every historical checksum was independently recomputed in this task"
+}

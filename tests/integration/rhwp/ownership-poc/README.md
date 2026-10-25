@@ -242,3 +242,21 @@ native D1 wrapper fail-closed(2026-10-25): 증거 wrapper의 종료 코드는 `n
 `performance-visual-native.py`의 `teardown` 필드는 `tests/e2e/tauri_smoke.py`의 `TEARDOWN`이다.
 읽기 전용 진단으로, `/proc`의 comm·상태·부모 PID만 담는다. `classify()`의 판정, 30초 정리 기준, 신호 대상은 바꾸지 않았다.
 시험: `test_native_d1_result.py`. 근거: `../evidence/t010-readiness-residual-stabilization/`.
+
+native D1 증거 보안 강화(2026-10-26): `native_d1_result.py`(verdict schema 2)가 받아들이는 증거의 계약이다.
+자세한 내용은 `../evidence/t010-native-evidence-security-hardening/CONTRACT.ko.txt`에 있다.
+- 드라이버 종료: `driverKilled`는 정확한 bool이어야 하고 `False`여야 한다. `driverExit`는 정확한 int이고 0 또는 -SIGTERM이어야 한다.
+  강제 kill, 기록 없는 -SIGKILL, 그 밖의 종료 코드는 `cleanup` FAIL이다.
+- teardown: 지원 필드 11개가 모두 있어야 하고, 지원하지 않는 필드는 거절한다. 프로세스 행은
+  `{pid, comm, state, ppid}` 또는 `{pid, gone: True}`이고, 시간은 유한한 0 이상의 수다.
+  기록 자체가 틀리면 `teardown-evidence`, 실제로 남은 프로세스는 `cleanup`이다.
+- 의존 파일: `DEPENDENCY_MANIFESTS`가 정하는 집합과 정확히 같아야 한다.
+  · v1(18개)은 이전 기록용이다. v2(22개)는 현재 엄격 집합이고 `rhwp.d.ts`, `vite.config.ts`, `index.html`, `tree:src`를 더한다.
+  · 빠진 이름, 남는 이름, 정규형이 아닌 이름, 중복은 `dependency-manifest`, 바뀐 바이트는 `dependency-mutation`이다.
+- 후보 신원: `TRUST_ANCHOR`(커밋된 `candidate-identity.json`, 바이트 고정)를 `git show HEAD:`로 읽는다.
+  인자, 실행 전후 WASM 바이트, 의존 파일 map의 후보 항목, 엔진이 보고한 WASM이 모두 이 값과 같아야 한다.
+- `exit_code()`: 하네스 종료 코드가 0이고 verdict가 형식이 맞는 PASS일 때만 0이다.
+- 결과 JSON은 `loads_strict`로 읽는다. 중복 key, NaN, Infinity는 해석 실패로 본다.
+- `../evidence/t010-readiness-residual-stabilization/run-native.py`는 이전 판정 API를 쓴다. 지금 validator와 함께 쓰면 판정 단계에서
+  TypeError로 끝나고 종료 코드가 0이 아니다(fail-closed).
+  새 실행에는 `../evidence/t010-native-evidence-security-hardening/run-native.py`를 쓴다.

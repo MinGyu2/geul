@@ -1108,3 +1108,19 @@ gitleaks 설정의 모든 `[[allowlists]]`에 `targetRules`를 붙였다. 붙이
   과거 D1 정리 실패의 원인은 여전히 UNVERIFIED다.
 - 2636a65가 Gitleaks 예외를 다른 작업과 한 commit에 넣은 것을 정책 편차로 기록했다(PENDING_APPROVAL). 이력은 다시 쓰지 않았다.
 - 공식 판정은 그대로다. 근거: `tests/integration/rhwp/evidence/t010-readiness-residual-stabilization/`.
+
+native D1 증거 보안 강화(2026-10-26).
+- 이전 판정은 진짜 증거를 하나씩 바꾼 합성 입력 32가지 중 29가지를 받아들였다(재현). 받아들인 것은 다음이다.
+  · 강제 kill된 드라이버, 지원하지 않는 종료 코드.
+  · 새 teardown 필드가 빠지거나 타입이 틀린 것.
+  · 필수 의존 파일이 빠진 것, 의존 파일 digest 형식이 틀린 것.
+  · 신뢰 기준과 다른 후보 JS, 인자와 결과가 함께 틀린 WASM에 맞춘 것.
+- `exit_code()`는 verdict가 PASS라고 하면 하네스 종료 코드 2도 0으로 바꿨다.
+- 지금은 다음을 모두 요구한다.
+  · 드라이버 종료 계약(강제 kill 없음, 종료 코드 0 또는 -SIGTERM).
+  · teardown 전체 schema.
+  · 버전이 있는 필수 의존 파일 manifest(v2, 22개, 프런트엔드 `src/` 집계 포함).
+  · 커밋된 후보 신원 기준(바이트 고정).
+  · 하네스 종료 코드 0과 형식이 맞는 PASS의 동시 충족.
+- 강화한 판정으로 실제 native D1을 3/3 다시 실행해 PASS였다. 공식 판정은 그대로다.
+- 근거: `tests/integration/rhwp/evidence/t010-native-evidence-security-hardening/`.

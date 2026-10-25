@@ -1,0 +1,107 @@
+native D1 증거 수용 계약 — verdict schema 2 (2026-10-26)
+
+권위 있는 구현: tests/integration/rhwp/ownership-poc/native_d1_result.py (validate, exit_code, check_teardown,
+check_dependencies, DEPENDENCY_MANIFESTS, TRUST_ANCHOR, ACCEPTED_DRIVER_EXITS).
+wrapper: 이 디렉터리의 run-native.py. 기대값은 모두 이 두 파일의 코드와 커밋된 신뢰 기준에서 온다.
+결과 JSON에서 가져오는 기대값은 없다.
+
+1. 판정 순서와 PASS 조건(모두 만족해야 PASS)
+- 하네스 종료 코드: 정확한 int 0.
+- 결과 JSON
+  · loads_strict로 해석되는 객체여야 한다. 중복 key, NaN, Infinity는 malformed-result다.
+  · status는 정확한 문자열 'PASS'이고, failures는 빈 list이며, error 필드가 없다.
+  · 네 문서 행렬과 단언 39개(이름·순서)가 정확하고, 모두 PASS다.
+  · RGBA 참조 24개가 모두 verified True이고, pixels와 maxDelta가 int 0이다. 완료 표시와 수는 정확한 타입이다.
+  · cleanup은 정확히 sessionEnded, driverStopped, displayTerminated 세 key이고, 모두 True다.
+- teardown: 2절. 의존 파일: 3절. 신뢰 기준: 4절.
+- lifecycle 관찰기:
+  · observerError가 None이고, 관찰기가 정지했고, 표본 수가 1 이상이다.
+  · 소유 geul을 보았고, 끝에 남은 소유 프로세스가 없다.
+- wrapper 기록 실패(lifecycle, 결과, verdict 파일)는 evidence-write다. verdict 파일을 쓰지 못하면 0이 아니다.
+
+2. teardown(tauri_smoke.TEARDOWN, D1 시나리오 하나)
+- 형식
+  · list이고 항목은 정확히 1개다.
+  · 그 항목의 key 집합은 정확히 다음 11개다(빠지거나 남으면 teardown-evidence):
+    sessionDeletes, complete, beforeDriverStop, driverKilled, driverExit, afterDriverStop, driverStopSeconds,
+    remainingAfterWait, sigtermSent, sigtermErrors, survivorsAfterSigterm.
+- sessionDeletes
+  · 정확히 1개다. 그 key는 정확히 {outcome, seconds}이고, outcome은 문자열, seconds는 유한한 0 이상의 수다.
+  · outcome이 'ok'가 아니면 cleanup이다.
+- 프로세스 행(beforeDriverStop, afterDriverStop, remainingAfterWait, survivorsAfterSigterm)
+  · {pid, comm, state, ppid}: pid는 int > 0, comm은 1–15자 문자열, state는 /proc 상태 문자, ppid는 int ≥ 0.
+  · 또는 사라진 프로세스 표현 {pid, gone: True}.
+  · bool은 int로 인정하지 않는다. 다른 key가 있으면(예: cmdline) 거절한다.
+- 스냅샷
+  · beforeDriverStop과 afterDriverStop은 비어 있어도 된다(앱이 먼저 끝날 수 있다).
+  · 두 스냅샷이 서로 달라도 된다.
+  · afterDriverStop에 있던 프로세스가 30초 경계 전에 끝나는 것은 실패가 아니다.
+  · 멈췄다고 보고된 tauri-driver가 afterDriverStop에 남아 있으면 teardown-evidence(모순)다.
+- 최종 경계
+  · remainingAfterWait와 survivorsAfterSigterm은 빈 list여야 한다. 비어 있지 않으면 cleanup(실제 누수)이다.
+  · sigtermSent(int > 0의 list)와 sigtermErrors({pid, error}의 list)도 비어 있어야 한다. 비어 있지 않으면 cleanup이다.
+- driverStopSeconds: 유한한 0 이상의 int 또는 float. bool, NaN, Infinity, 음수, 문자열은 teardown-evidence다.
+- complete: 정확히 True.
+
+3. 드라이버 종료 계약(엄격 D1, Linux)
+- driverKilled: 정확한 bool. driverExit: 정확한 int. None은 관찰되지 않았다는 뜻이다. 타입이 틀리거나 없으면 teardown-evidence다.
+- 다음 경우는 cleanup이다.
+  · driverKilled True: 10초 SIGTERM 대기가 끝난 뒤 SIGKILL을 보낸 것이다. 종료 코드가 무엇이든, 자식이 모두 끝났더라도
+    깨끗한 D1 종료가 아니다.
+  · driverKilled False이고 driverExit가 -SIGKILL(-9): kill 기록이 없는 예상 밖 신호 종료다.
+  · 그 밖에 ACCEPTED_DRIVER_EXITS = (0, -SIGTERM) 밖의 값: 0이 아닌 종료나 다른 신호다.
+- 수용 근거
+  · 0: VERIFIED. tauri-driver 2.0.4는 SIGTERM을 처리하고 0으로 끝난다(native/driver-termination-semantics.json 3/3,
+    실제 D1 6회 모두 0).
+  · -SIGTERM: INFERRED. SIGTERM 기본 처리로 끝날 때 subprocess가 보고하는 값이다. 이 binary에서는 관찰되지 않았다.
+- 강제 kill이 해롭다는 근거(VERIFIED, 통제 실험): tauri-driver를 SIGKILL하자 그 자식 WebKitWebDriver가 ppid 1로 약 8분
+  남았다. 이 세션이 그 PID 하나만 종료했다.
+- tauri_driver()의 시간 제한, 순서, 신호 대상은 바꾸지 않았다(tests/e2e/tauri_smoke.py 변경 없음).
+
+4. 의존 파일 manifest
+- DEPENDENCY_MANIFESTS
+  · 1 = 이전 18개(t010-readiness-residual-stabilization 기록용).
+  · 2 = 현재 엄격 22개 = v1 + rhwp.d.ts, vite.config.ts, index.html, tree:src.
+  · CURRENT_MANIFEST = 2. 그 밖의 버전(0, 3, '2', 2.0, True, None)은 dependency-manifest다.
+- 이름
+  · 저장소 상대 경로, 후보 파일은 bare name, tree:<dir>은 git 추적 파일 집계 digest다.
+  · 정규형 문자열만 인정한다(예: ./tests/... 거절).
+- 정책
+  · before와 after는 각각 manifest와 정확히 같은 집합이어야 한다. 빠진 이름, 남는 이름, (name, digest) 쌍 입력의 중복은
+    dependency-manifest다.
+  · 값은 소문자 64자리 16진 문자열이어야 한다. None, 대문자, 길이 오류, bytes, int는 dependency-manifest다.
+    읽을 수 없는 파일은 None으로 기록되어 실패한다.
+  · before와 after의 값이 다르면 dependency-mutation이다.
+- wrapper는 dependency_digests(root, candidate, CURRENT_MANIFEST)로 같은 manifest를 계산한다. 결과가 버전이나 이름을
+  고르지 않는다.
+- 이전 v1 기록은 v1으로만 PASS다. v2로 판정하면 dependency-manifest FAIL이다(시험으로 고정함).
+- 해시하지 않는 것(UNVERIFIED):
+  · node_modules의 서드파티 dev-server 모듈.
+  · src/의 추적되지 않은 파일.
+  · Rust 쪽 소스. 실행 binary src-tauri/target/debug/geul 자체는 해시한다.
+
+5. 후보 신원 기준
+- TRUST_ANCHOR
+  · 파일: tests/integration/rhwp/evidence/t010-decoded-lease-readiness-closure/candidate-identity.json
+    (2636a65에서 추가되었고 그 뒤 바뀐 적이 없으며, 보호 경로다).
+  · 그 파일 바이트의 SHA-256 1699dfbe…8271을 고정한다.
+  · wrapper가 git show HEAD:로 읽는다. 작업 트리의 파일이나 결과에서는 읽지 않는다.
+- 신뢰 값
+  · candidate.expected의 rhwp_bg.wasm ca5c0b84…8d45, rhwp.js b69e920c…3252, rhwp.d.ts bce4ef51….
+  · engineManifestSha256(ENGINE.json) 9d3b638a….
+- wrapper는 기준을 읽지 못하거나, 바이트가 다르거나, --expected-wasm이 기준과 다르거나, 후보 WASM 바이트가 다르면
+  아무것도 실행하지 않고 0이 아닌 코드로 끝난다.
+- validate()가 다시 확인하는 것: 기준 형식(4개 key, sha256), 인자 = 기준, 실행 전후 WASM 바이트 = 기준, 의존 파일
+  map의 rhwp_bg.wasm·rhwp.js·rhwp.d.ts·ENGINE.json = 기준, 엔진이 보고한 WASM = 기준.
+  · ENGINE.json은 기준과 대조할 대상일 뿐, 신원의 출처가 아니다.
+  · 결과에 들어 있는 trustedIdentity 같은 필드는 무시한다.
+
+6. 종료 코드(exit_code)
+- 0이 되는 조건: harness_exit가 정확한 int 0이고, verdict가 dict이며 schema가 2, status가 문자열 'PASS', failures와
+  categories가 빈 list.
+- 실패이고 하네스 종료 코드가 1–255면 그 코드를 그대로 쓴다. 그 밖(음수, 256, None, bool, float, 하네스 0이지만 실패)은 3이다.
+
+7. 실패 범주
+native-subprocess, missing-result, malformed-result, failed-assertions, incomplete-verification,
+cleanup(실제 정리나 드라이버 lifecycle 실패), teardown-evidence(기록 결손이나 모순), candidate-identity,
+dependency-manifest(집합·형식), dependency-mutation(바이트 변경), lifecycle, evidence-write.

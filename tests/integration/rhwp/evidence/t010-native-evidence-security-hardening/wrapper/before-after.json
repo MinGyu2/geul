@@ -1,0 +1,346 @@
+{
+ "schema": 1,
+ "kind": "controlled fake harness (synthetic results, not runtime observations)",
+ "oldCommit": "c7a4cd35ceb9cba1464f5a11b6900e20a8aa565b",
+ "previousWrapperSha256": "e995d7a83791b930a5e5da9f2a682c1d73df862633cf42886519415713a776c7",
+ "hardenedWrapperSha256": "0f3d04ac47c37dbf0aa61f67c13f51505cf10e0b42ac14a43124a13c7ac58e99",
+ "previousValidatorSha256": "d7a00580cd59902456983b7b9c5a71b7780c00528f4d28babe0d011a0e4bde6b",
+ "hardenedValidatorSha256": "ff080e4dacebbeed3ef21b29bfee6ce5323fd6f47d7df030146affaedd12509d",
+ "summary": {
+  "previous": {
+   "exit0": [
+    "complete-pass",
+    "forced-kill",
+    "teardown-field-missing",
+    "driver-exit-unsupported",
+    "duplicate-json-key",
+    "nan-in-json",
+    "anchor-bytes-tampered"
+   ]
+  },
+  "hardened": {
+   "exit0": [
+    "complete-pass"
+   ]
+  }
+ },
+ "runs": {
+  "previous": [
+   {
+    "scenario": "complete-pass",
+    "harnessExit": 0,
+    "wrapperExit": 0,
+    "files": [
+     "native-d1-attempt1-lifecycle.json",
+     "native-d1-attempt1-wrapper-verdict.json",
+     "native-d1-attempt1.json"
+    ],
+    "verdict": "PASS",
+    "categories": [],
+    "resultError": null,
+    "harnessFieldsPreserved": true
+   },
+   {
+    "scenario": "forced-kill",
+    "harnessExit": 0,
+    "wrapperExit": 0,
+    "files": [
+     "native-d1-attempt1-lifecycle.json",
+     "native-d1-attempt1-wrapper-verdict.json",
+     "native-d1-attempt1.json"
+    ],
+    "verdict": "PASS",
+    "categories": [],
+    "resultError": null,
+    "harnessFieldsPreserved": true
+   },
+   {
+    "scenario": "teardown-field-missing",
+    "harnessExit": 0,
+    "wrapperExit": 0,
+    "files": [
+     "native-d1-attempt1-lifecycle.json",
+     "native-d1-attempt1-wrapper-verdict.json",
+     "native-d1-attempt1.json"
+    ],
+    "verdict": "PASS",
+    "categories": [],
+    "resultError": null,
+    "harnessFieldsPreserved": true
+   },
+   {
+    "scenario": "driver-exit-unsupported",
+    "harnessExit": 0,
+    "wrapperExit": 0,
+    "files": [
+     "native-d1-attempt1-lifecycle.json",
+     "native-d1-attempt1-wrapper-verdict.json",
+     "native-d1-attempt1.json"
+    ],
+    "verdict": "PASS",
+    "categories": [],
+    "resultError": null,
+    "harnessFieldsPreserved": true
+   },
+   {
+    "scenario": "duplicate-json-key",
+    "harnessExit": 0,
+    "wrapperExit": 0,
+    "files": [
+     "native-d1-attempt1-lifecycle.json",
+     "native-d1-attempt1-wrapper-verdict.json",
+     "native-d1-attempt1.json"
+    ],
+    "verdict": "PASS",
+    "categories": [],
+    "resultError": null,
+    "harnessFieldsPreserved": true
+   },
+   {
+    "scenario": "nan-in-json",
+    "harnessExit": 0,
+    "wrapperExit": 0,
+    "files": [
+     "native-d1-attempt1-lifecycle.json",
+     "native-d1-attempt1-wrapper-verdict.json",
+     "native-d1-attempt1.json"
+    ],
+    "verdict": "PASS",
+    "categories": [],
+    "resultError": null,
+    "harnessFieldsPreserved": true
+   },
+   {
+    "scenario": "dependency-file-missing",
+    "harnessExit": 0,
+    "wrapperExit": 3,
+    "files": [
+     "native-d1-attempt1-lifecycle.json",
+     "native-d1-attempt1-wrapper-verdict.json"
+    ],
+    "verdict": "FAIL",
+    "categories": [
+     "candidate-identity",
+     "dependency-mutation",
+     "evidence-write",
+     "lifecycle",
+     "missing-result",
+     "native-subprocess"
+    ],
+    "resultError": "missing"
+   },
+   {
+    "scenario": "dependency-changed",
+    "harnessExit": 0,
+    "wrapperExit": 3,
+    "files": [
+     "native-d1-attempt1-lifecycle.json",
+     "native-d1-attempt1-wrapper-verdict.json",
+     "native-d1-attempt1.json"
+    ],
+    "verdict": "FAIL",
+    "categories": [
+     "dependency-mutation"
+    ],
+    "resultError": null,
+    "harnessFieldsPreserved": true
+   },
+   {
+    "scenario": "expected-wasm-not-anchor",
+    "harnessExit": 0,
+    "wrapperExit": 1,
+    "files": [],
+    "refusal": "candidate WASM ca5c0b8443230ba719c07f4d8c835a94fb6e12eb4b50a7123ce5c8b6a8048d45 != expected 0000000000000000000000000000000000000000000000000000000000000000; not run"
+   },
+   {
+    "scenario": "anchor-bytes-tampered",
+    "harnessExit": 0,
+    "wrapperExit": 0,
+    "files": [
+     "native-d1-attempt1-lifecycle.json",
+     "native-d1-attempt1-wrapper-verdict.json",
+     "native-d1-attempt1.json"
+    ],
+    "verdict": "PASS",
+    "categories": [],
+    "resultError": null,
+    "harnessFieldsPreserved": true
+   },
+   {
+    "scenario": "harness-exit1-json-pass",
+    "harnessExit": 1,
+    "wrapperExit": 1,
+    "files": [
+     "native-d1-attempt1-lifecycle.json",
+     "native-d1-attempt1-wrapper-verdict.json",
+     "native-d1-attempt1.json"
+    ],
+    "verdict": "FAIL",
+    "categories": [
+     "native-subprocess"
+    ],
+    "resultError": null,
+    "harnessFieldsPreserved": true
+   }
+  ],
+  "hardened": [
+   {
+    "scenario": "complete-pass",
+    "harnessExit": 0,
+    "wrapperExit": 0,
+    "files": [
+     "native-d1-attempt1-lifecycle.json",
+     "native-d1-attempt1-wrapper-verdict.json",
+     "native-d1-attempt1.json"
+    ],
+    "verdict": "PASS",
+    "categories": [],
+    "resultError": null,
+    "harnessFieldsPreserved": true
+   },
+   {
+    "scenario": "forced-kill",
+    "harnessExit": 0,
+    "wrapperExit": 3,
+    "files": [
+     "native-d1-attempt1-lifecycle.json",
+     "native-d1-attempt1-wrapper-verdict.json",
+     "native-d1-attempt1.json"
+    ],
+    "verdict": "FAIL",
+    "categories": [
+     "cleanup"
+    ],
+    "resultError": null,
+    "harnessFieldsPreserved": true
+   },
+   {
+    "scenario": "teardown-field-missing",
+    "harnessExit": 0,
+    "wrapperExit": 3,
+    "files": [
+     "native-d1-attempt1-lifecycle.json",
+     "native-d1-attempt1-wrapper-verdict.json",
+     "native-d1-attempt1.json"
+    ],
+    "verdict": "FAIL",
+    "categories": [
+     "teardown-evidence"
+    ],
+    "resultError": null,
+    "harnessFieldsPreserved": true
+   },
+   {
+    "scenario": "driver-exit-unsupported",
+    "harnessExit": 0,
+    "wrapperExit": 3,
+    "files": [
+     "native-d1-attempt1-lifecycle.json",
+     "native-d1-attempt1-wrapper-verdict.json",
+     "native-d1-attempt1.json"
+    ],
+    "verdict": "FAIL",
+    "categories": [
+     "cleanup"
+    ],
+    "resultError": null,
+    "harnessFieldsPreserved": true
+   },
+   {
+    "scenario": "duplicate-json-key",
+    "harnessExit": 0,
+    "wrapperExit": 3,
+    "files": [
+     "native-d1-attempt1-lifecycle.json",
+     "native-d1-attempt1-wrapper-verdict.json",
+     "native-d1-attempt1.json"
+    ],
+    "verdict": "FAIL",
+    "categories": [
+     "malformed-result"
+    ],
+    "resultError": "ValueError: duplicate keys: ['status']",
+    "harnessFieldsPreserved": true
+   },
+   {
+    "scenario": "nan-in-json",
+    "harnessExit": 0,
+    "wrapperExit": 3,
+    "files": [
+     "native-d1-attempt1-lifecycle.json",
+     "native-d1-attempt1-wrapper-verdict.json",
+     "native-d1-attempt1.json"
+    ],
+    "verdict": "FAIL",
+    "categories": [
+     "malformed-result"
+    ],
+    "resultError": "ValueError: non-finite number NaN",
+    "harnessFieldsPreserved": true
+   },
+   {
+    "scenario": "dependency-file-missing",
+    "harnessExit": 0,
+    "wrapperExit": 3,
+    "files": [
+     "native-d1-attempt1-lifecycle.json",
+     "native-d1-attempt1-wrapper-verdict.json",
+     "native-d1-attempt1.json"
+    ],
+    "verdict": "FAIL",
+    "categories": [
+     "dependency-manifest"
+    ],
+    "resultError": null,
+    "harnessFieldsPreserved": true
+   },
+   {
+    "scenario": "dependency-changed",
+    "harnessExit": 0,
+    "wrapperExit": 3,
+    "files": [
+     "native-d1-attempt1-lifecycle.json",
+     "native-d1-attempt1-wrapper-verdict.json",
+     "native-d1-attempt1.json"
+    ],
+    "verdict": "FAIL",
+    "categories": [
+     "dependency-mutation"
+    ],
+    "resultError": null,
+    "harnessFieldsPreserved": true
+   },
+   {
+    "scenario": "expected-wasm-not-anchor",
+    "harnessExit": 0,
+    "wrapperExit": 1,
+    "files": [],
+    "refusal": "--expected-wasm 0000000000000000000000000000000000000000000000000000000000000000 != committed trust anchor ca5c0b8443230ba719c07f4d8c835a94fb6e12eb4b50a7123ce5c8b6a8048d45; not run"
+   },
+   {
+    "scenario": "anchor-bytes-tampered",
+    "harnessExit": 0,
+    "wrapperExit": 1,
+    "files": [],
+    "refusal": "trust anchor unavailable (ValueError); not run"
+   },
+   {
+    "scenario": "harness-exit1-json-pass",
+    "harnessExit": 1,
+    "wrapperExit": 1,
+    "files": [
+     "native-d1-attempt1-lifecycle.json",
+     "native-d1-attempt1-wrapper-verdict.json",
+     "native-d1-attempt1.json"
+    ],
+    "verdict": "FAIL",
+    "categories": [
+     "native-subprocess"
+    ],
+    "resultError": null,
+    "harnessFieldsPreserved": true
+   }
+  ]
+ },
+ "status": "PASS"
+}
