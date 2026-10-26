@@ -1,0 +1,28 @@
+Final golden unittest: 13 methods PASS; normal/-O/PYTHONOPTIMIZE=1 CLI cases, including source/asset divergence with only Git revision mocked. Actual pinned upstream normal/-O separately PASS; valid -OO also PASS.
+
+.............
+----------------------------------------------------------------------
+Ran 13 tests in 5.616s
+
+OK
+
+Node actual boundary test runner:
+✔ correct independent artifacts pass preflight and load/init the engine (236.896172ms)
+✔ modified WASM with correct BUILD revision fails before any engine import (506.839968ms)
+✔ modified JS with correct BUILD revision fails before execution (462.729445ms)
+✔ missing BUILD.json fails closed (459.78072ms)
+✔ missing rhwp.js fails closed (381.34435ms)
+✔ missing rhwp_bg.wasm fails closed (423.586489ms)
+✔ malformed BUILD fails before engine execution (419.420702ms)
+✔ wrong pinned revision fails even with a matching test-only BUILD hash (445.681437ms)
+✔ incorrect expected hash metadata fails (501.596897ms)
+✔ malformed expected hash metadata fails (453.089783ms)
+✔ BUILD bytes matter even when its engine/revision fields are unchanged (467.589508ms)
+ℹ tests 11
+ℹ suites 0
+ℹ pass 11
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 4903.543704

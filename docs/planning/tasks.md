@@ -214,3 +214,12 @@ T009 XML 메모리 위험은 `docs/architecture/t009-xml-resource-followup.md`�
 증거: `tests/integration/rhwp/evidence/t010-ci-fixture-stabilization/`.
 D1 NOT RUN, D2 INCONCLUSIVE, D4 FAIL, D5 archived PASS, RSS INCONCLUSIVE 유지.
 제품 RHWP Undo/Redo NO-GO, formatting unsupported, T010 미체크, T011 NOT STARTED 유지.
+
+### T010 verification integrity hardening (2026-10-26, T010 미완료)
+
+기준 `7486df3`의 원격 frontend/Rust/sensitive-information PASS는 기존 결과로 유지한다.
+골든 verifier의 Python 최적화 assert 제거 우회와 선택적 formCharPr helper의 실행 전 artifact identity
+검사 공백을 교정한다. 기존 독립 생산 해시 기록을 재사용하며 production bundle과 trust anchor는 바꾸지 않는다.
+증거: `tests/integration/rhwp/evidence/t010-verification-integrity-hardening/`.
+전체 T010 미체크, D1 NOT RUN, D2 INCONCLUSIVE, D4 FAIL, D5 archived PASS, RSS INCONCLUSIVE 유지.
+제품 Undo/Redo NO-GO·formatting unsupported, T011 NOT STARTED. T009 자원 예산 제안은 별도 미구현 상태다.

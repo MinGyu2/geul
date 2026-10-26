@@ -1,0 +1,32 @@
+[
+  {
+    "command": "cargo fmt --check",
+    "cwd": "src-tauri",
+    "exit": 0
+  },
+  {
+    "command": "cargo check --locked --offline --all-targets",
+    "cwd": "src-tauri",
+    "exit": 0
+  },
+  {
+    "command": "cargo clippy --locked --offline --all-targets -- -D warnings",
+    "cwd": "src-tauri",
+    "exit": 0
+  },
+  {
+    "command": "cargo test --locked --offline",
+    "cwd": "src-tauri",
+    "exit": 0
+  },
+  {
+    "command": "cargo test --locked --offline --lib c_고정_rhwp가_만드는_빈_hwpx_미리보기는_그_바이트일_때만_받는다",
+    "cwd": "src-tauri",
+    "exit": 0
+  },
+  {
+    "command": "cargo test --locked --offline --lib services::save::tests",
+    "cwd": "src-tauri",
+    "exit": 0
+  }
+]

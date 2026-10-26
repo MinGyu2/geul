@@ -530,3 +530,26 @@ XML 정규화의 메모리 증폭은 기존 T009 위험이다. 현 할당 경계
 본문 상세 API의 `properties.CharShapeID`, 본문/셀의 해석된 모델 재직렬화와 해당 기울임 정의,
 주변 글/서식, dirty 해제와 임시 파일 정리를 검증한다. 셀의 indexed 상세 API나 실제 픽셀 모양 검증으로
 주장하지 않는다. 이 검사는 일반 Rust CI에 RHWP 의존성을 추가하지 않는다.
+
+선택적 formCharPr 회귀의 엔진 identity 검사는 `production-identity.mjs`가 맡는다.
+독립 기대 해시는 기존 커밋 `db5c9a4`의
+`tests/integration/rhwp/evidence/t010-native-evidence-final-integrity/protected-runtime-inputs.json`
+기록을 그대로 재사용한다. `7486df3`의 별도 기록과 현재 실제 파일 바이트도 대조했다.
+이 기록은 생산 산출물 동일성 시험 기준이며 서명·native D1 후보 승인·TRUST_ANCHOR를 대체하지 않는다.
+
+`BUILD.json`의 전체 바이트 해시와 engine/revision, `rhwp.js`와 WASM의 실제 SHA-256이 모두 맞아야 한다.
+Python 실행기는 문서 생성기를 부르기 전에 검사하고, Node helper는 검사 후에만 dynamic import와
+WASM 초기화를 수행한다. 검증한 WASM 버퍼를 그대로 초기화에 사용한다. 불일치/누락은 문서 생성·저장·
+성공 증거 쓰기 전에 실패하며 bypass나 대체 엔진은 없다. 로컬 파일이 검사와 dynamic import 사이에서
+동시에 바뀌지 않는 실행 환경을 전제로 하며 원자적 파일시스템 인증/서명을 주장하지 않는다.
+일반 Rust 골든 검사는 이 선택적 엔진 검사나 RHWP checkout을 요구하지 않는다.
+
+```sh
+node tests/integration/rhwp/production-identity.mjs
+node --test tests/integration/rhwp/production-identity.test.mjs
+python3 tests/integration/rhwp/formcharpr_save.py
+```
+
+음성 시험은 격리 파일에서 실제 preflight/load/helper/Python 실행기 경계를 호출한다. 일부 시험은
+WASM 검사까지 도달하도록 격리된 test-only JS sentinel의 해시만 허용하고, import/init/document/success
+표지가 생기지 않는지 확인한다. 이것을 생산용 대체 아티팩트 승인으로 해석하지 않는다.

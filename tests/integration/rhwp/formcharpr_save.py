@@ -36,6 +36,9 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--evidence", type=Path)
     args = parser.parse_args()
+    # Gate before generate.mjs can import/initialize RHWP or create a document.
+    # The helper independently gates each later engine process as well.
+    run(["node", str(HELPER.with_name("production-identity.mjs"))])
     with tempfile.TemporaryDirectory(prefix="geul-formcharpr-") as scratch:
         tmp = Path(scratch)
         run(["node", str(ROOT / "tests/fixtures/rhwp/generate.mjs"), str(tmp)])

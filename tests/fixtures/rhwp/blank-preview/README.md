@@ -28,3 +28,17 @@ updates fixtures. Without `--upstream`, upstream comparison is explicitly NOT RU
 
 Hex text avoids binary scanner exceptions and preserves CRLF without Git newline normalization.
 Hashes record both encoded files and decoded upstream bytes. No security allowlist changes.
+
+Integrity failures use explicit errors, including under `python3 -O`, `-OO`, or
+`PYTHONOPTIMIZE=1`. The verifier never repairs assets or recalculates expectations.
+Missing/invalid metadata, wrong hashes or sizes, invalid hex and upstream divergence
+all exit nonzero before printing PASS. Regression mutations use temporary copies:
+
+```sh
+python3 -O tests/fixtures/rhwp/blank-preview/verify.py
+PYTHONOPTIMIZE=1 python3 tests/fixtures/rhwp/blank-preview/verify.py
+python3 -m unittest discover -s tests/fixtures/rhwp/blank-preview -p test_verify.py
+```
+
+The hermetic upstream-negative tests stub only Git's revision response; the actual
+`--upstream external/rhwp` command separately verifies the real pinned checkout.

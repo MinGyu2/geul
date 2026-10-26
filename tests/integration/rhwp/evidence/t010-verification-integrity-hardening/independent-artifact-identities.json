@@ -1,0 +1,30 @@
+{
+  "status": "PASS",
+  "historicalCommit": "db5c9a42a9c60c72f4763a3eacf6beae8cb85f0b",
+  "reusedRecord": "tests/integration/rhwp/evidence/t010-native-evidence-final-integrity/protected-runtime-inputs.json",
+  "referenceCommit": "7486df3757d69cfafaa6b747bdba614c6493726f",
+  "artifacts": [
+    {
+      "artifact": "BUILD.json",
+      "bytes": 70,
+      "sha256": "bac96306df081aeabe1569bd91954e051c7803c56ef013a3bb8158f86b8919ba",
+      "historicalRecordMatch": true,
+      "referenceRecordMatch": true
+    },
+    {
+      "artifact": "rhwp.js",
+      "bytes": 454520,
+      "sha256": "70cde06a369fa7fd4fc8bc8f3d6acaee158596ba1a116a2c72159002b0b5654e",
+      "historicalRecordMatch": true,
+      "referenceRecordMatch": true
+    },
+    {
+      "artifact": "rhwp_bg.wasm",
+      "bytes": 11588081,
+      "sha256": "a91fa6a4336d34441c0d8f52afd0971aebe34019f7caf9eddad100f7a568f94d",
+      "historicalRecordMatch": true,
+      "referenceRecordMatch": true
+    }
+  ],
+  "scope": "test production-byte identity only, not signing or native D1 approval"
+}

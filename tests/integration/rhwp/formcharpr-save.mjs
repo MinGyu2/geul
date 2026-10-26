@@ -2,12 +2,9 @@
 import assert from "node:assert/strict";
 import { readFileSync, writeFileSync } from "node:fs";
 import { zipEntries, charPrs } from "../../poc/t010-phase0/analysis.mjs";
-import * as rhwp from "../../../public/rhwp/rhwp.js";
+import { loadVerifiedRhwp } from "./production-identity.mjs";
 
-const root = new URL("../../../", import.meta.url);
-assert.equal(JSON.parse(readFileSync(new URL("public/rhwp/BUILD.json", root))).commit,
-  "1a76570e833917d15817415a53c09ad61ab3203f");
-rhwp.initSync({ module: readFileSync(new URL("public/rhwp/rhwp_bg.wasm", root)) });
+const rhwp = await loadVerifiedRhwp();
 
 function inspect(file) {
   const bytes = readFileSync(file);

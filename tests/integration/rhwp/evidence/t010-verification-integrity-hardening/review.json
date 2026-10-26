@@ -1,0 +1,41 @@
+{
+  "status": "PASS (self-review; no independent reviewer claimed)",
+  "reviewedSourceSha256": {
+    "docs/architecture/save-preservation.md": "eb2ef877c420ca9efe7c9c6ec88943c062a876eab3b0ba1251ceafd923b11c8a",
+    "docs/planning/tasks.md": "b7a89b350d09eae475d0c0e654ae8e3929475b68115c8e17de4796db34226768",
+    "tests/fixtures/rhwp/blank-preview/README.md": "0cd25deb17b7873a395132123ed9728ac3e835db31d6126310aefe1d31918d3a",
+    "tests/fixtures/rhwp/blank-preview/test_verify.py": "99e0968b7bad3c4d6ea6e1f8b863090806c04709d3cc9bb2863eb44cef8175f9",
+    "tests/fixtures/rhwp/blank-preview/verify.py": "c05fc574add19b8b5074d9e0e71b34472aacdfa206b19ac71748ee06c43e885b",
+    "tests/integration/rhwp/formcharpr-save.mjs": "820f63138941b58e03418d549c519b6bc66bc8a0a4f5fc75889018a4bd667431",
+    "tests/integration/rhwp/formcharpr_save.py": "fbd952cb94f140442a58dc663c0958ff80c9d2bb97b9ea04d823fe5930bfadfa",
+    "tests/integration/rhwp/production-identity.mjs": "b5a3b4d6e1953191a95b20cd08fbf984b4172779b23b20506cd6e3ad211600a9",
+    "tests/integration/rhwp/production-identity.test.mjs": "bd379239c6164da038ac159e8ea2df998996c47573eb2842164237a559ceb2c4"
+  },
+  "protectedPathsUnchanged": [
+    "src",
+    "src-tauri",
+    "external",
+    ".github",
+    ".gitmodules",
+    "Cargo.lock",
+    "docs/architecture/t009-xml-resource-followup.md",
+    "tests/fixtures/rhwp/blank-preview/provenance.json",
+    "tests/fixtures/rhwp/blank-preview/prv-image.hex",
+    "tests/fixtures/rhwp/blank-preview/prv-text-utf8.hex",
+    "tests/fixtures/rhwp/blank-preview/prv-text-utf16le.hex"
+  ],
+  "allPriorEvidenceDirectoriesUnchanged": true,
+  "ignoredProductionArtifactActualHashesUnchanged": true,
+  "submodulesUnchanged": true,
+  "findings": [
+    "Golden CLI contains no assert; checks and schema validation raise explicit errors under optimization. All mutations remain in isolated copies.",
+    "Expected production identities reuse historical committed evidence independently of current artifacts; BUILD does not authorize mismatched JS or WASM. No official anchor or candidate approval changes.",
+    "Python entry preflights before its generator; helper imports RHWP dynamically only after all hashes/metadata pass. Checked WASM buffer reused. Current form/save assertions unchanged.",
+    "Negative tests exercise actual gate/load/helper/Python paths and prove no execution or success markers. Test-only sentinel hashes are confined to temporary metadata.",
+    "No Rust/product code, CI workflow, T009 canonical representation/limits, D4 contracts, or T011 changes."
+  ],
+  "limitations": [
+    "No rendered pixel/full Hancom interoperability claim.",
+    "No filesystem race/signed artifact guarantee; trusted version-controlled expectation record and stable local files are assumed."
+  ]
+}

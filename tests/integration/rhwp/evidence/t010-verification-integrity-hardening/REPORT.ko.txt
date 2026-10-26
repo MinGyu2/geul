@@ -1,0 +1,52 @@
+T010 Verification Integrity Hardening — bounded local correction
+
+시작 master 7486df3757d69cfafaa6b747bdba614c6493726f, 작업 트리 clean.
+최종 HEAD는 이 증거를 담은 한 개의 로컬 커밋으로 식별한다. 실제 SHA와 커밋 후 검증은 최종 보고서 및
+로컬 .git/t010-verification-integrity-hardening-final.json에 기록한다(자기 커밋 hash의 순환 방지).
+기준 커밋의 remote frontend/Rust/sensitive-information PASS는 사용자 제공 확정 결과다.
+새 로컬 커밋의 remote CI는 NOT RUN이며 push하지 않는다.
+
+A — VERIFIED
+격리 복사본의 유효 hex 바이트/expected revision 변조: 일반 Python은 exit 1, -O 및 PYTHONOPTIMIZE=1은
+exit 0/PASS. 명시적 VerificationError/조건 검사로 교체하여 최적화와 무관하게 거부한다.
+13개 unittest 메서드가 normal/-O/env-optimize에서 성공/실패 CLI를 확인한다.
+대상: content/encoded hash/decoded hash/length/missing/invalid hex/JSON/schema/pin/upstream source 및 asset divergence.
+각 음성 결과는 nonzero + 식별 오류 + PASS 없음. 원래 tracked goldens는 매 시험 후 byte 비교로 불변 확인.
+hermetic source 시험은 Git revision 응답만 mock한다. 실제 pinned source의 normal 및 -O 대조도 별도 PASS.
+원본 provenance와 골든의 모든 기존 encoded/decoded SHA-256은 변경하지 않았다.
+
+B — VERIFIED
+원래 helper를 Git 객체에서 실행한 격리 재현: BUILD revision이 맞아도 대체 JS import/init/document 호출에 도달.
+BUILD revision이 틀려도 static ESM import는 먼저 실행됐다(의도한 probe 예외로 종료; 정상 회귀 PASS 아님).
+현재 gate는 BUILD 전체 hash + engine/revision + JS/WASM 실제 바이트를 검사한 뒤 dynamic import/init한다.
+Python 진입점도 generate.mjs 이전에 gate를 호출한다. 검증한 WASM 버퍼를 그대로 사용한다.
+기존 독립 기록 evidence/t010-native-evidence-final-integrity/protected-runtime-inputs.json을 재사용한다.
+그 기록의 역사 커밋 db5c9a4 객체, 7486df3의 별도 기록, 현 실제 byte hash가 모두 일치했다.
+identity 값/크기/출처: independent-artifact-identities.json. 새로운 trust anchor나 후보 승인은 아니다.
+
+Node 11개 시험 PASS: 올바른 artifact의 실제 load/init, 변조 WASM/JS, 파일별 누락, malformed BUILD,
+잘못된 source pin/expected hash metadata/BUILD bytes. 실제 CLI/load/helper/Python entry를 호출하고,
+음성에서 import/init/document/success 표지가 없음을 검증했다. 일부 격리 시험의 test-only sentinel JS hash
+허용은 WASM 검사 순서를 관측하기 위한 장치이며 생산 JS 대체 승인이 아니다. 생산 파일은 변경하지 않았다.
+파일 읽기/해시와 dynamic import 사이에서 파일이 동시에 교체되지 않는 로컬 실행 환경을 가정한다.
+원자적인 파일 인증/암호학적 서명을 주장하지 않는다.
+
+실제 formCharPr — PASS
+body/cell 둘 다 서비스 게시 후 정확한 saved bytes를 pinned production 엔진으로 다시 열었다.
+named form 위치/개수, ID 8/italic 정의, 주변 text/formatting, dirty 해제/temp 정리 유지.
+body 상세 API와 cell interpreted-model reserialization의 관측 차이는 그대로 기록했다.
+정확한 렌더 픽셀과 전체 한컴 상호운용성은 UNVERIFIED.
+
+회귀 — PASS
+Rust 1.99.0 fmt/check/strict Clippy/full tests/preview/save subset: rust-results.json, rust-test-summary.txt.
+lib 186 PASS + 8 ignored, DOCX 1 PASS, 별도 harness 2 ignored; save subset 79 PASS + 7 ignored.
+기존 target/cache만 사용, dependency-resolving Cargo는 --locked --offline.
+save_service.py strict 23행, undo_save.py 19행, 불일치 없음. 기존 CARGO list에 실행 시 --offline만 추가했다.
+preview exact-byte/PNG/zlib/CRC 음성, HWP previewStale, HWPX appended-charPr, 원본 SHA/dirty/temp/DOCX 유지.
+frontend typecheck/ESLint/819 Vitest/production build PASS; WASM 재빌드 없음.
+보안·보호 경로 검토의 실제 완료 결과는 results.json/review.json 참조.
+
+현재 공식 상태 유지: D1 NOT RUN, D2 INCONCLUSIVE, D3 해당 로컬 저장 회귀 PASS,
+D4 FAIL, D5 archived PASS(새 native PASS 아님), RSS INCONCLUSIVE.
+T010 INCOMPLETE/unchecked, Undo/Redo NO-GO, formatting unsupported, T011 NOT STARTED.
+T009 자원 예산/streaming 후속 제안은 미구현 상태이며 XML 표현/패키지 상한을 바꾸지 않았다.
