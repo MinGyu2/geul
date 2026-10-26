@@ -235,3 +235,20 @@ streaming 큰 text/header 비교·전역 admission·서비스 budget/cancellatio
 검토용 finite retained-payload API는 production None이며 호환성 제한 승인 없이 켜지 않는다.
 근거: `docs/architecture/t009-xml-memory-accounting.md`, `tests/integration/rhwp/evidence/t009-xml-memory-remediation/`.
 T010 backend와 WASM/브라우저 예산은 별개이며 T010 RSS INCONCLUSIVE/제품 NO-GO 상태를 바꾸지 않는다.
+
+
+### 2026-10-26 T010 native gate 복구 및 현재 D4 검증 (미완료)
+
+T009 부분 개선 `1ae3cde`와 별도 작업이다. full555f patch의10파일 replay/8 source SHA는 PASS지만
+exact ca5c 후보와 Rust1.93.1은 없어 D1 NOT RUN이다. 추가 후보 경로 없음은 사용자 확인 사항이다.
+초기 driver 부재 후 cached2.0.4를 Rust1.99 offline으로 복구하고 current app을 빌드했다.
+IBus/Hangul은 여전히 없어 D2 INCONCLUSIVE이며 awaiting-final guard는 유지한다.
+현재 native D4 OFF/ON 각각 첫 완주에서4문서 group p95는91/87/241/130 및94/90/226/130ms로 모두 FAIL,
+Undo p95는 모두1500ms 이하다. 동일 e88d 실험 신원·공식3RAF·50/1500ms 문턱을 유지했다.
+preparation은 일부 handler를 줄였지만 gate를 해결하지 못해 생산 승격/추측 renderer 패치를 하지 않았다.
+no-new-input witness는 queued work를 포함할 수 있어 물리 frame floor로 단정하거나 지연에서 빼지 않는다.
+현재 trace/신원/cleanup과 첫 구성 오류도 보존했다. D4는 trusted native D1 승인을 대신하지 않는다.
+별도 Chrome/WebKit49단언/42 exactRGBA PASS, native 두 run 관찰된 프로세스 잔존 없음.
+D3 현재 저장 PASS, D5 archived PASS, RSS INCONCLUSIVE. backend T009 HWM은 T010 RSS와 별개다.
+증거: `tests/integration/rhwp/evidence/t010-native-gate-remediation/`.
+Undo/Redo NO-GO·formatting unsupported·T010 미체크·T011 NOT STARTED. 설치/다운로드/push/anchor·gitlink 변경 없음.

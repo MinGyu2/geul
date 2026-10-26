@@ -1,0 +1,1632 @@
+{
+  "scope": "existing isolated experimental renderer browser regression only; NOT official D1/D2/D4/D5, no new optimization",
+  "attempt": "chrome-attempt2",
+  "status": "PASS",
+  "exit": 0,
+  "error": null,
+  "rawSha256": "b7cf6f233b3a591171130741974526643192db56ae1f2145b745810156defb99",
+  "localRawArchive": ".git/t010-native-gate-remediation-raw/chrome-attempt2.json",
+  "browser": "Google Chrome 155.0.8059.39",
+  "dependenciesStable": true,
+  "identities": {
+    "baseline": {
+      "rhwp.js": "da7472d88dc966d7e731651b784b2eb64380a2e3eddf649099d8f5c83e00e29b",
+      "rhwp_bg.wasm": "eaa88f65a54a7f333005f9971e4ad5ab45072457a63593cd2592d6d319952768"
+    },
+    "reference": {
+      "rhwp.js": "29124c937d46b4d7433d258d06d0a43f4c7fc056f93216fddabc1c5dff98f743",
+      "rhwp_bg.wasm": "e88d85de471073f5c60035bcf4b18e5a0fa16193717dcd800968e43c19d1dc88"
+    },
+    "candidate": {
+      "rhwp.js": "29124c937d46b4d7433d258d06d0a43f4c7fc056f93216fddabc1c5dff98f743",
+      "rhwp_bg.wasm": "e88d85de471073f5c60035bcf4b18e5a0fa16193717dcd800968e43c19d1dc88"
+    }
+  },
+  "tests": [
+    {
+      "name": "baseline-single-poll",
+      "status": "PASS"
+    },
+    {
+      "name": "default-compatibility",
+      "status": "PASS"
+    },
+    {
+      "name": "actual-multi-poll",
+      "status": "PASS",
+      "polls": 6
+    },
+    {
+      "name": "ready-before-replay",
+      "status": "PASS"
+    },
+    {
+      "name": "retained-before-publication",
+      "status": "PASS"
+    },
+    {
+      "name": "quantum-bound-and-monotonic-cursor",
+      "status": "PASS"
+    },
+    {
+      "name": "notification-only-continuation",
+      "status": "PASS"
+    },
+    {
+      "name": "deduplicated-no-redecode",
+      "status": "PASS",
+      "job": {
+        "attempts": 17,
+        "decodeAttempts": 12,
+        "id": 2,
+        "keys": 0,
+        "memoCount": 0,
+        "memoHits": 0,
+        "phase": "Terminal",
+        "readyReuses": 4,
+        "readyTransitions": 1,
+        "replays": 1,
+        "retainedBytes": 0,
+        "steps": 64,
+        "transformAttempts": 0,
+        "yields": 5
+      }
+    },
+    {
+      "name": "incremental-full-exact",
+      "status": "PASS"
+    },
+    {
+      "name": "prepared-lease-survives-other-job-eviction",
+      "status": "PASS",
+      "dimensions": [
+        64,
+        64
+      ]
+    },
+    {
+      "name": "eviction-resume-exact",
+      "status": "PASS"
+    },
+    {
+      "name": "shared-decoded-backing-counted-once",
+      "status": "PASS"
+    },
+    {
+      "name": "cancel-one-shared-owner-preserves-other",
+      "status": "PASS"
+    },
+    {
+      "name": "shared-owner-full-exact",
+      "status": "PASS"
+    },
+    {
+      "name": "cancel-before-first-poll",
+      "status": "PASS"
+    },
+    {
+      "name": "cancel-after-partial-preparation",
+      "status": "PASS"
+    },
+    {
+      "name": "cancel-resources-ready-before-replay",
+      "status": "PASS"
+    },
+    {
+      "name": "mutation-during-partial",
+      "status": "PASS",
+      "outcome": "CANCELED"
+    },
+    {
+      "name": "output-generation-invalidates",
+      "status": "PASS",
+      "outcome": "CANCELED"
+    },
+    {
+      "name": "model-replacement-invalidates",
+      "status": "PASS",
+      "outcome": "CANCELED"
+    },
+    {
+      "name": "same-target-replacement-cancels",
+      "status": "PASS"
+    },
+    {
+      "name": "replacement-only-publishes",
+      "status": "PASS"
+    },
+    {
+      "name": "trim-cancels",
+      "status": "PASS"
+    },
+    {
+      "name": "budget-reduction-cancels",
+      "status": "PASS"
+    },
+    {
+      "name": "deadline-expires-without-poll",
+      "status": "PASS",
+      "waitMs": 15400.70000000298
+    },
+    {
+      "name": "close-during-preparation",
+      "status": "PASS"
+    },
+    {
+      "name": "cancel-browser-pending-and-late-completion",
+      "status": "PASS"
+    },
+    {
+      "name": "pending-completion-resumes-without-redecode",
+      "status": "PASS",
+      "job": {
+        "attempts": 6,
+        "decodeAttempts": 3,
+        "id": 26,
+        "keys": 0,
+        "memoCount": 0,
+        "memoHits": 0,
+        "phase": "Terminal",
+        "readyReuses": 0,
+        "readyTransitions": 1,
+        "replays": 1,
+        "retainedBytes": 0,
+        "steps": 27,
+        "transformAttempts": 0,
+        "yields": 1
+      }
+    },
+    {
+      "name": "multi-job-browser-contention-bounded",
+      "status": "PASS"
+    },
+    {
+      "name": "more-than-256-refuses-without-publication",
+      "status": "PASS",
+      "job": {
+        "attempts": 258,
+        "decodeAttempts": 256,
+        "id": 30,
+        "keys": 0,
+        "memoCount": 0,
+        "memoHits": 0,
+        "phase": "Terminal",
+        "readyReuses": 0,
+        "readyTransitions": 0,
+        "replays": 0,
+        "retainedBytes": 0,
+        "steps": 783,
+        "transformAttempts": 0,
+        "yields": 64
+      },
+      "polls": 65
+    },
+    {
+      "name": "scratch-failure-preserves-old-frame",
+      "status": "PASS",
+      "outcome": "ERROR"
+    },
+    {
+      "name": "replay-failure-preserves-old-frame",
+      "status": "PASS",
+      "outcome": "ERROR"
+    },
+    {
+      "name": "publication-failure-preserves-old-frame",
+      "status": "PASS",
+      "outcome": "ERROR"
+    },
+    {
+      "name": "repeated-jobs-and-terminal-polls-stable",
+      "status": "PASS"
+    },
+    {
+      "name": "resource-decode-error-fails-closed",
+      "status": "PASS"
+    },
+    {
+      "name": "retained-tree-admission-refuses-before-decode",
+      "status": "PASS"
+    },
+    {
+      "name": "transformed-variants-separate-identities",
+      "status": "PASS",
+      "ready": {
+        "attempts": 3,
+        "decodeAttempts": 2,
+        "id": 44,
+        "keys": 2,
+        "memoCount": 1,
+        "memoHits": 0,
+        "phase": "ResourcesReady",
+        "readyReuses": 0,
+        "readyTransitions": 1,
+        "replays": 0,
+        "retainedBytes": 136161,
+        "steps": 22,
+        "transformAttempts": 1,
+        "yields": 1
+      }
+    },
+    {
+      "name": "jpeg-watermark-conversion-full-exact",
+      "status": "PASS",
+      "job": {
+        "attempts": 3,
+        "decodeAttempts": 1,
+        "id": 45,
+        "keys": 0,
+        "memoCount": 0,
+        "memoHits": 3,
+        "phase": "Terminal",
+        "readyReuses": 1,
+        "readyTransitions": 1,
+        "replays": 1,
+        "retainedBytes": 0,
+        "steps": 22,
+        "transformAttempts": 1,
+        "yields": 1
+      }
+    },
+    {
+      "name": "crop-transformed-full-exact",
+      "status": "PASS",
+      "job": {
+        "attempts": 3,
+        "decodeAttempts": 1,
+        "id": 46,
+        "keys": 0,
+        "memoCount": 0,
+        "memoHits": 0,
+        "phase": "Terminal",
+        "readyReuses": 1,
+        "readyTransitions": 1,
+        "replays": 1,
+        "retainedBytes": 0,
+        "steps": 22,
+        "transformAttempts": 0,
+        "yields": 1
+      },
+      "rgba": {
+        "pixels": 0,
+        "maxDelta": 0,
+        "width": 397,
+        "height": 562,
+        "referenceNonWhite": 1093
+      }
+    },
+    {
+      "name": "watermark-full-exact",
+      "status": "PASS",
+      "job": {
+        "attempts": 3,
+        "decodeAttempts": 1,
+        "id": 47,
+        "keys": 0,
+        "memoCount": 0,
+        "memoHits": 3,
+        "phase": "Terminal",
+        "readyReuses": 1,
+        "readyTransitions": 1,
+        "replays": 1,
+        "retainedBytes": 0,
+        "steps": 22,
+        "transformAttempts": 1,
+        "yields": 1
+      },
+      "rgba": {
+        "pixels": 0,
+        "maxDelta": 0,
+        "width": 397,
+        "height": 562,
+        "referenceNonWhite": 578
+      }
+    },
+    {
+      "name": "watermark-inverse-full-exact",
+      "status": "PASS",
+      "job": {
+        "attempts": 3,
+        "decodeAttempts": 1,
+        "id": 48,
+        "keys": 0,
+        "memoCount": 0,
+        "memoHits": 0,
+        "phase": "Terminal",
+        "readyReuses": 1,
+        "readyTransitions": 1,
+        "replays": 1,
+        "retainedBytes": 0,
+        "steps": 22,
+        "transformAttempts": 0,
+        "yields": 1
+      },
+      "rgba": {
+        "pixels": 0,
+        "maxDelta": 0,
+        "width": 397,
+        "height": 562,
+        "referenceNonWhite": 578
+      }
+    },
+    {
+      "name": "equation-vector-full-exact",
+      "status": "PASS",
+      "rgba": {
+        "pixels": 0,
+        "maxDelta": 0,
+        "width": 397,
+        "height": 562,
+        "referenceNonWhite": 223
+      },
+      "job": {
+        "attempts": 1,
+        "decodeAttempts": 0,
+        "id": 49,
+        "keys": 0,
+        "memoCount": 0,
+        "memoHits": 0,
+        "phase": "Terminal",
+        "readyReuses": 0,
+        "readyTransitions": 1,
+        "replays": 1,
+        "retainedBytes": 0,
+        "steps": 25,
+        "transformAttempts": 0,
+        "yields": 1
+      }
+    },
+    {
+      "name": "raw-svg-resolved-full-exact",
+      "status": "PASS",
+      "rgba": {
+        "pixels": 0,
+        "maxDelta": 0,
+        "width": 397,
+        "height": 562,
+        "referenceNonWhite": 5600
+      },
+      "job": {
+        "attempts": 3,
+        "decodeAttempts": 1,
+        "id": 50,
+        "keys": 0,
+        "memoCount": 0,
+        "memoHits": 2,
+        "phase": "Terminal",
+        "readyReuses": 0,
+        "readyTransitions": 1,
+        "replays": 1,
+        "retainedBytes": 0,
+        "steps": 21,
+        "transformAttempts": 1,
+        "yields": 1
+      },
+      "rawSvgInLayer": true
+    },
+    {
+      "name": "pattern-draw-scoped-full-exact",
+      "status": "PASS",
+      "patternDrawCalls": 1,
+      "rgba": {
+        "pixels": 0,
+        "maxDelta": 0,
+        "width": 397,
+        "height": 562,
+        "referenceNonWhite": 7560
+      }
+    },
+    {
+      "name": "background-image-full-exact",
+      "status": "PASS",
+      "rgba": {
+        "pixels": 0,
+        "maxDelta": 0,
+        "width": 397,
+        "height": 562,
+        "referenceNonWhite": 137202
+      },
+      "job": {
+        "attempts": 2,
+        "decodeAttempts": 1,
+        "id": 52,
+        "keys": 0,
+        "memoCount": 0,
+        "memoHits": 0,
+        "phase": "Terminal",
+        "readyReuses": 0,
+        "readyTransitions": 1,
+        "replays": 1,
+        "retainedBytes": 0,
+        "steps": 228,
+        "transformAttempts": 0,
+        "yields": 1
+      }
+    },
+    {
+      "name": "chemical-cold-full-rgba-exact",
+      "status": "PASS"
+    },
+    {
+      "name": "chemical-warm-historical-matrix-exact",
+      "status": "PASS"
+    },
+    {
+      "name": "pending-frames-never-published",
+      "status": "PASS"
+    },
+    {
+      "name": "final-cleanup",
+      "status": "PASS",
+      "jobs": {
+        "activeJobs": 0,
+        "activeLeaseCount": 0,
+        "activeLeaseEstimatedBytes": 0,
+        "backupImageDataBytes": 0,
+        "cancellations": 14,
+        "capacityNotifications": 0,
+        "completionNotifications": 5,
+        "decodedAttachRefusals": 0,
+        "decodedLedger": {
+          "accountingErrors": 0,
+          "created": 378,
+          "decodedCacheMaxBytes": 268435456,
+          "decodedCacheMaxEntries": 256,
+          "dimensionMismatches": 0,
+          "disposed": 378,
+          "estimate": "RGBA backing estimates; not RSS, GPU or browser allocator memory",
+          "jobLeaseReferenceBytes": 0,
+          "jobLeaseReferences": 0,
+          "lastTreePayloadEstimatedBytes": 1090758,
+          "lastTreeSharedFontBytes": 0,
+          "maxNonresidentBytes": 100663296,
+          "nonresidentBytes": 0,
+          "nonresidentCount": 0,
+          "peakDecodeTransientEstimatedBytes": 103917484,
+          "peakTreePayloadEstimatedBytes": 2015842,
+          "peakUniquePlusReservedBytes": 132376972,
+          "postDecodeReservations": 0,
+          "preallocationRejections": 0,
+          "refusedReservations": 0,
+          "rejectedCommits": 0,
+          "reservedBytes": 0,
+          "residentBytes": 0,
+          "residentCount": 0,
+          "unenforcedOverLimit": 0,
+          "uniqueBytes": 0,
+          "uniqueCount": 0,
+          "unreservedDecodes": 8
+        },
+        "decodedRegistryEntries": 0,
+        "decodedRegistryLive": 0,
+        "decodedRevocations": 0,
+        "decodedSharedLookups": 3,
+        "errors": 5,
+        "expiryTimerActive": false,
+        "expiryTimerStarts": 150,
+        "expiryTimerTicks": 68,
+        "inFlightEstimatedBytes": 0,
+        "listenerNotifications": 390,
+        "loadAttempts": 7,
+        "maxFrameBytes": 67108864,
+        "maxJobDecodedLeases": 256,
+        "maxJobLeaseEntries": 0,
+        "maxOwnedBytes": 268435456,
+        "maxPending": 2,
+        "maxResources": 256,
+        "maxStagingBytes": 134217728,
+        "ownedEstimatedBytes": 0,
+        "peakBackupImageDataBytes": 892456,
+        "peakStagingBytes": 1784912,
+        "peakTemporaryCanvasBytes": 892456,
+        "pendingCount": 0,
+        "preparation": {
+          "enabled": true,
+          "jobs": [],
+          "maxJobBytes": 33554432,
+          "maxOwnedBytes": 67108864,
+          "notifications": 383,
+          "ownedBytes": 0,
+          "peakBytes": 2557326,
+          "resourceQuantum": 4,
+          "stepQuantum": 256
+        },
+        "readyLeaseCount": 0,
+        "resourceLimits": 2,
+        "retryCount": 395,
+        "temporaryCanvasBytes": 0,
+        "transientEstimatedBytes": 0,
+        "uniqueResourceCount": 0
+      }
+    }
+  ],
+  "rgba": [
+    {
+      "temperature": "cold",
+      "trial": 0,
+      "page": 14,
+      "scale": 0.5,
+      "dpr": 1,
+      "sourceSha256": "6717eca43c6fdd9b0530530cf17d33b6687da0c462a433d37eb652afb5394f91",
+      "candidateOutcome": "COMPLETE",
+      "referenceOutcome": "COMPLETE",
+      "pixels": 0,
+      "maxDelta": 0,
+      "width": 397,
+      "height": 562,
+      "referenceNonWhite": 51422
+    },
+    {
+      "temperature": "cold",
+      "trial": 0,
+      "page": 15,
+      "scale": 0.5,
+      "dpr": 1,
+      "sourceSha256": "6717eca43c6fdd9b0530530cf17d33b6687da0c462a433d37eb652afb5394f91",
+      "candidateOutcome": "COMPLETE",
+      "referenceOutcome": "COMPLETE",
+      "pixels": 0,
+      "maxDelta": 0,
+      "width": 397,
+      "height": 562,
+      "referenceNonWhite": 6593
+    },
+    {
+      "temperature": "cold",
+      "trial": 0,
+      "page": 16,
+      "scale": 0.5,
+      "dpr": 1,
+      "sourceSha256": "6717eca43c6fdd9b0530530cf17d33b6687da0c462a433d37eb652afb5394f91",
+      "candidateOutcome": "COMPLETE",
+      "referenceOutcome": "COMPLETE",
+      "pixels": 0,
+      "maxDelta": 0,
+      "width": 397,
+      "height": 562,
+      "referenceNonWhite": 36549
+    },
+    {
+      "temperature": "cold",
+      "trial": 0,
+      "page": 19,
+      "scale": 0.5,
+      "dpr": 1,
+      "sourceSha256": "6717eca43c6fdd9b0530530cf17d33b6687da0c462a433d37eb652afb5394f91",
+      "candidateOutcome": "COMPLETE",
+      "referenceOutcome": "COMPLETE",
+      "pixels": 0,
+      "maxDelta": 0,
+      "width": 397,
+      "height": 562,
+      "referenceNonWhite": 171198
+    },
+    {
+      "temperature": "cold",
+      "trial": 0,
+      "page": 20,
+      "scale": 0.5,
+      "dpr": 1,
+      "sourceSha256": "6717eca43c6fdd9b0530530cf17d33b6687da0c462a433d37eb652afb5394f91",
+      "candidateOutcome": "COMPLETE",
+      "referenceOutcome": "COMPLETE",
+      "pixels": 0,
+      "maxDelta": 0,
+      "width": 397,
+      "height": 562,
+      "referenceNonWhite": 79488
+    },
+    {
+      "temperature": "cold",
+      "trial": 0,
+      "page": 21,
+      "scale": 0.5,
+      "dpr": 1,
+      "sourceSha256": "6717eca43c6fdd9b0530530cf17d33b6687da0c462a433d37eb652afb5394f91",
+      "candidateOutcome": "COMPLETE",
+      "referenceOutcome": "COMPLETE",
+      "pixels": 0,
+      "maxDelta": 0,
+      "width": 397,
+      "height": 562,
+      "referenceNonWhite": 91499
+    },
+    {
+      "temperature": "cold",
+      "trial": 0,
+      "page": 23,
+      "scale": 0.5,
+      "dpr": 1,
+      "sourceSha256": "6717eca43c6fdd9b0530530cf17d33b6687da0c462a433d37eb652afb5394f91",
+      "candidateOutcome": "COMPLETE",
+      "referenceOutcome": "COMPLETE",
+      "pixels": 0,
+      "maxDelta": 0,
+      "width": 397,
+      "height": 562,
+      "referenceNonWhite": 76107
+    },
+    {
+      "temperature": "cold",
+      "trial": 1,
+      "page": 14,
+      "scale": 0.5,
+      "dpr": 1,
+      "sourceSha256": "6717eca43c6fdd9b0530530cf17d33b6687da0c462a433d37eb652afb5394f91",
+      "candidateOutcome": "COMPLETE",
+      "referenceOutcome": "COMPLETE",
+      "pixels": 0,
+      "maxDelta": 0,
+      "width": 397,
+      "height": 562,
+      "referenceNonWhite": 51422
+    },
+    {
+      "temperature": "cold",
+      "trial": 1,
+      "page": 15,
+      "scale": 0.5,
+      "dpr": 1,
+      "sourceSha256": "6717eca43c6fdd9b0530530cf17d33b6687da0c462a433d37eb652afb5394f91",
+      "candidateOutcome": "COMPLETE",
+      "referenceOutcome": "COMPLETE",
+      "pixels": 0,
+      "maxDelta": 0,
+      "width": 397,
+      "height": 562,
+      "referenceNonWhite": 6593
+    },
+    {
+      "temperature": "cold",
+      "trial": 1,
+      "page": 16,
+      "scale": 0.5,
+      "dpr": 1,
+      "sourceSha256": "6717eca43c6fdd9b0530530cf17d33b6687da0c462a433d37eb652afb5394f91",
+      "candidateOutcome": "COMPLETE",
+      "referenceOutcome": "COMPLETE",
+      "pixels": 0,
+      "maxDelta": 0,
+      "width": 397,
+      "height": 562,
+      "referenceNonWhite": 36549
+    },
+    {
+      "temperature": "cold",
+      "trial": 1,
+      "page": 19,
+      "scale": 0.5,
+      "dpr": 1,
+      "sourceSha256": "6717eca43c6fdd9b0530530cf17d33b6687da0c462a433d37eb652afb5394f91",
+      "candidateOutcome": "COMPLETE",
+      "referenceOutcome": "COMPLETE",
+      "pixels": 0,
+      "maxDelta": 0,
+      "width": 397,
+      "height": 562,
+      "referenceNonWhite": 171198
+    },
+    {
+      "temperature": "cold",
+      "trial": 1,
+      "page": 20,
+      "scale": 0.5,
+      "dpr": 1,
+      "sourceSha256": "6717eca43c6fdd9b0530530cf17d33b6687da0c462a433d37eb652afb5394f91",
+      "candidateOutcome": "COMPLETE",
+      "referenceOutcome": "COMPLETE",
+      "pixels": 0,
+      "maxDelta": 0,
+      "width": 397,
+      "height": 562,
+      "referenceNonWhite": 79488
+    },
+    {
+      "temperature": "cold",
+      "trial": 1,
+      "page": 21,
+      "scale": 0.5,
+      "dpr": 1,
+      "sourceSha256": "6717eca43c6fdd9b0530530cf17d33b6687da0c462a433d37eb652afb5394f91",
+      "candidateOutcome": "COMPLETE",
+      "referenceOutcome": "COMPLETE",
+      "pixels": 0,
+      "maxDelta": 0,
+      "width": 397,
+      "height": 562,
+      "referenceNonWhite": 91499
+    },
+    {
+      "temperature": "cold",
+      "trial": 1,
+      "page": 23,
+      "scale": 0.5,
+      "dpr": 1,
+      "sourceSha256": "6717eca43c6fdd9b0530530cf17d33b6687da0c462a433d37eb652afb5394f91",
+      "candidateOutcome": "COMPLETE",
+      "referenceOutcome": "COMPLETE",
+      "pixels": 0,
+      "maxDelta": 0,
+      "width": 397,
+      "height": 562,
+      "referenceNonWhite": 76107
+    },
+    {
+      "temperature": "cold",
+      "trial": 2,
+      "page": 14,
+      "scale": 0.5,
+      "dpr": 1,
+      "sourceSha256": "6717eca43c6fdd9b0530530cf17d33b6687da0c462a433d37eb652afb5394f91",
+      "candidateOutcome": "COMPLETE",
+      "referenceOutcome": "COMPLETE",
+      "pixels": 0,
+      "maxDelta": 0,
+      "width": 397,
+      "height": 562,
+      "referenceNonWhite": 51422
+    },
+    {
+      "temperature": "cold",
+      "trial": 2,
+      "page": 15,
+      "scale": 0.5,
+      "dpr": 1,
+      "sourceSha256": "6717eca43c6fdd9b0530530cf17d33b6687da0c462a433d37eb652afb5394f91",
+      "candidateOutcome": "COMPLETE",
+      "referenceOutcome": "COMPLETE",
+      "pixels": 0,
+      "maxDelta": 0,
+      "width": 397,
+      "height": 562,
+      "referenceNonWhite": 6593
+    },
+    {
+      "temperature": "cold",
+      "trial": 2,
+      "page": 16,
+      "scale": 0.5,
+      "dpr": 1,
+      "sourceSha256": "6717eca43c6fdd9b0530530cf17d33b6687da0c462a433d37eb652afb5394f91",
+      "candidateOutcome": "COMPLETE",
+      "referenceOutcome": "COMPLETE",
+      "pixels": 0,
+      "maxDelta": 0,
+      "width": 397,
+      "height": 562,
+      "referenceNonWhite": 36549
+    },
+    {
+      "temperature": "cold",
+      "trial": 2,
+      "page": 19,
+      "scale": 0.5,
+      "dpr": 1,
+      "sourceSha256": "6717eca43c6fdd9b0530530cf17d33b6687da0c462a433d37eb652afb5394f91",
+      "candidateOutcome": "COMPLETE",
+      "referenceOutcome": "COMPLETE",
+      "pixels": 0,
+      "maxDelta": 0,
+      "width": 397,
+      "height": 562,
+      "referenceNonWhite": 171198
+    },
+    {
+      "temperature": "cold",
+      "trial": 2,
+      "page": 20,
+      "scale": 0.5,
+      "dpr": 1,
+      "sourceSha256": "6717eca43c6fdd9b0530530cf17d33b6687da0c462a433d37eb652afb5394f91",
+      "candidateOutcome": "COMPLETE",
+      "referenceOutcome": "COMPLETE",
+      "pixels": 0,
+      "maxDelta": 0,
+      "width": 397,
+      "height": 562,
+      "referenceNonWhite": 79488
+    },
+    {
+      "temperature": "cold",
+      "trial": 2,
+      "page": 21,
+      "scale": 0.5,
+      "dpr": 1,
+      "sourceSha256": "6717eca43c6fdd9b0530530cf17d33b6687da0c462a433d37eb652afb5394f91",
+      "candidateOutcome": "COMPLETE",
+      "referenceOutcome": "COMPLETE",
+      "pixels": 0,
+      "maxDelta": 0,
+      "width": 397,
+      "height": 562,
+      "referenceNonWhite": 91499
+    },
+    {
+      "temperature": "cold",
+      "trial": 2,
+      "page": 23,
+      "scale": 0.5,
+      "dpr": 1,
+      "sourceSha256": "6717eca43c6fdd9b0530530cf17d33b6687da0c462a433d37eb652afb5394f91",
+      "candidateOutcome": "COMPLETE",
+      "referenceOutcome": "COMPLETE",
+      "pixels": 0,
+      "maxDelta": 0,
+      "width": 397,
+      "height": 562,
+      "referenceNonWhite": 76107
+    },
+    {
+      "temperature": "warm",
+      "trial": 0,
+      "page": 14,
+      "scale": 0.5,
+      "dpr": 1,
+      "sourceSha256": "6717eca43c6fdd9b0530530cf17d33b6687da0c462a433d37eb652afb5394f91",
+      "candidateOutcome": "COMPLETE",
+      "referenceOutcome": "COMPLETE",
+      "pixels": 0,
+      "maxDelta": 0,
+      "width": 397,
+      "height": 562,
+      "referenceNonWhite": 51422
+    },
+    {
+      "temperature": "warm",
+      "trial": 0,
+      "page": 15,
+      "scale": 0.5,
+      "dpr": 1,
+      "sourceSha256": "6717eca43c6fdd9b0530530cf17d33b6687da0c462a433d37eb652afb5394f91",
+      "candidateOutcome": "COMPLETE",
+      "referenceOutcome": "COMPLETE",
+      "pixels": 0,
+      "maxDelta": 0,
+      "width": 397,
+      "height": 562,
+      "referenceNonWhite": 6593
+    },
+    {
+      "temperature": "warm",
+      "trial": 0,
+      "page": 16,
+      "scale": 0.5,
+      "dpr": 1,
+      "sourceSha256": "6717eca43c6fdd9b0530530cf17d33b6687da0c462a433d37eb652afb5394f91",
+      "candidateOutcome": "COMPLETE",
+      "referenceOutcome": "COMPLETE",
+      "pixels": 0,
+      "maxDelta": 0,
+      "width": 397,
+      "height": 562,
+      "referenceNonWhite": 36549
+    },
+    {
+      "temperature": "warm",
+      "trial": 0,
+      "page": 19,
+      "scale": 0.5,
+      "dpr": 1,
+      "sourceSha256": "6717eca43c6fdd9b0530530cf17d33b6687da0c462a433d37eb652afb5394f91",
+      "candidateOutcome": "COMPLETE",
+      "referenceOutcome": "COMPLETE",
+      "pixels": 0,
+      "maxDelta": 0,
+      "width": 397,
+      "height": 562,
+      "referenceNonWhite": 171198
+    },
+    {
+      "temperature": "warm",
+      "trial": 0,
+      "page": 20,
+      "scale": 0.5,
+      "dpr": 1,
+      "sourceSha256": "6717eca43c6fdd9b0530530cf17d33b6687da0c462a433d37eb652afb5394f91",
+      "candidateOutcome": "COMPLETE",
+      "referenceOutcome": "COMPLETE",
+      "pixels": 0,
+      "maxDelta": 0,
+      "width": 397,
+      "height": 562,
+      "referenceNonWhite": 79488
+    },
+    {
+      "temperature": "warm",
+      "trial": 0,
+      "page": 21,
+      "scale": 0.5,
+      "dpr": 1,
+      "sourceSha256": "6717eca43c6fdd9b0530530cf17d33b6687da0c462a433d37eb652afb5394f91",
+      "candidateOutcome": "COMPLETE",
+      "referenceOutcome": "COMPLETE",
+      "pixels": 0,
+      "maxDelta": 0,
+      "width": 397,
+      "height": 562,
+      "referenceNonWhite": 91499
+    },
+    {
+      "temperature": "warm",
+      "trial": 0,
+      "page": 23,
+      "scale": 0.5,
+      "dpr": 1,
+      "sourceSha256": "6717eca43c6fdd9b0530530cf17d33b6687da0c462a433d37eb652afb5394f91",
+      "candidateOutcome": "COMPLETE",
+      "referenceOutcome": "COMPLETE",
+      "pixels": 0,
+      "maxDelta": 0,
+      "width": 397,
+      "height": 562,
+      "referenceNonWhite": 76107
+    },
+    {
+      "temperature": "warm",
+      "trial": 1,
+      "page": 14,
+      "scale": 0.5,
+      "dpr": 1,
+      "sourceSha256": "6717eca43c6fdd9b0530530cf17d33b6687da0c462a433d37eb652afb5394f91",
+      "candidateOutcome": "COMPLETE",
+      "referenceOutcome": "COMPLETE",
+      "pixels": 0,
+      "maxDelta": 0,
+      "width": 397,
+      "height": 562,
+      "referenceNonWhite": 51422
+    },
+    {
+      "temperature": "warm",
+      "trial": 1,
+      "page": 15,
+      "scale": 0.5,
+      "dpr": 1,
+      "sourceSha256": "6717eca43c6fdd9b0530530cf17d33b6687da0c462a433d37eb652afb5394f91",
+      "candidateOutcome": "COMPLETE",
+      "referenceOutcome": "COMPLETE",
+      "pixels": 0,
+      "maxDelta": 0,
+      "width": 397,
+      "height": 562,
+      "referenceNonWhite": 6593
+    },
+    {
+      "temperature": "warm",
+      "trial": 1,
+      "page": 16,
+      "scale": 0.5,
+      "dpr": 1,
+      "sourceSha256": "6717eca43c6fdd9b0530530cf17d33b6687da0c462a433d37eb652afb5394f91",
+      "candidateOutcome": "COMPLETE",
+      "referenceOutcome": "COMPLETE",
+      "pixels": 0,
+      "maxDelta": 0,
+      "width": 397,
+      "height": 562,
+      "referenceNonWhite": 36549
+    },
+    {
+      "temperature": "warm",
+      "trial": 1,
+      "page": 19,
+      "scale": 0.5,
+      "dpr": 1,
+      "sourceSha256": "6717eca43c6fdd9b0530530cf17d33b6687da0c462a433d37eb652afb5394f91",
+      "candidateOutcome": "COMPLETE",
+      "referenceOutcome": "COMPLETE",
+      "pixels": 0,
+      "maxDelta": 0,
+      "width": 397,
+      "height": 562,
+      "referenceNonWhite": 171198
+    },
+    {
+      "temperature": "warm",
+      "trial": 1,
+      "page": 20,
+      "scale": 0.5,
+      "dpr": 1,
+      "sourceSha256": "6717eca43c6fdd9b0530530cf17d33b6687da0c462a433d37eb652afb5394f91",
+      "candidateOutcome": "COMPLETE",
+      "referenceOutcome": "COMPLETE",
+      "pixels": 0,
+      "maxDelta": 0,
+      "width": 397,
+      "height": 562,
+      "referenceNonWhite": 79488
+    },
+    {
+      "temperature": "warm",
+      "trial": 1,
+      "page": 21,
+      "scale": 0.5,
+      "dpr": 1,
+      "sourceSha256": "6717eca43c6fdd9b0530530cf17d33b6687da0c462a433d37eb652afb5394f91",
+      "candidateOutcome": "COMPLETE",
+      "referenceOutcome": "COMPLETE",
+      "pixels": 0,
+      "maxDelta": 0,
+      "width": 397,
+      "height": 562,
+      "referenceNonWhite": 91499
+    },
+    {
+      "temperature": "warm",
+      "trial": 1,
+      "page": 23,
+      "scale": 0.5,
+      "dpr": 1,
+      "sourceSha256": "6717eca43c6fdd9b0530530cf17d33b6687da0c462a433d37eb652afb5394f91",
+      "candidateOutcome": "COMPLETE",
+      "referenceOutcome": "COMPLETE",
+      "pixels": 0,
+      "maxDelta": 0,
+      "width": 397,
+      "height": 562,
+      "referenceNonWhite": 76107
+    },
+    {
+      "temperature": "warm",
+      "trial": 2,
+      "page": 14,
+      "scale": 0.5,
+      "dpr": 1,
+      "sourceSha256": "6717eca43c6fdd9b0530530cf17d33b6687da0c462a433d37eb652afb5394f91",
+      "candidateOutcome": "COMPLETE",
+      "referenceOutcome": "COMPLETE",
+      "pixels": 0,
+      "maxDelta": 0,
+      "width": 397,
+      "height": 562,
+      "referenceNonWhite": 51422
+    },
+    {
+      "temperature": "warm",
+      "trial": 2,
+      "page": 15,
+      "scale": 0.5,
+      "dpr": 1,
+      "sourceSha256": "6717eca43c6fdd9b0530530cf17d33b6687da0c462a433d37eb652afb5394f91",
+      "candidateOutcome": "COMPLETE",
+      "referenceOutcome": "COMPLETE",
+      "pixels": 0,
+      "maxDelta": 0,
+      "width": 397,
+      "height": 562,
+      "referenceNonWhite": 6593
+    },
+    {
+      "temperature": "warm",
+      "trial": 2,
+      "page": 16,
+      "scale": 0.5,
+      "dpr": 1,
+      "sourceSha256": "6717eca43c6fdd9b0530530cf17d33b6687da0c462a433d37eb652afb5394f91",
+      "candidateOutcome": "COMPLETE",
+      "referenceOutcome": "COMPLETE",
+      "pixels": 0,
+      "maxDelta": 0,
+      "width": 397,
+      "height": 562,
+      "referenceNonWhite": 36549
+    },
+    {
+      "temperature": "warm",
+      "trial": 2,
+      "page": 19,
+      "scale": 0.5,
+      "dpr": 1,
+      "sourceSha256": "6717eca43c6fdd9b0530530cf17d33b6687da0c462a433d37eb652afb5394f91",
+      "candidateOutcome": "COMPLETE",
+      "referenceOutcome": "COMPLETE",
+      "pixels": 0,
+      "maxDelta": 0,
+      "width": 397,
+      "height": 562,
+      "referenceNonWhite": 171198
+    },
+    {
+      "temperature": "warm",
+      "trial": 2,
+      "page": 20,
+      "scale": 0.5,
+      "dpr": 1,
+      "sourceSha256": "6717eca43c6fdd9b0530530cf17d33b6687da0c462a433d37eb652afb5394f91",
+      "candidateOutcome": "COMPLETE",
+      "referenceOutcome": "COMPLETE",
+      "pixels": 0,
+      "maxDelta": 0,
+      "width": 397,
+      "height": 562,
+      "referenceNonWhite": 79488
+    },
+    {
+      "temperature": "warm",
+      "trial": 2,
+      "page": 21,
+      "scale": 0.5,
+      "dpr": 1,
+      "sourceSha256": "6717eca43c6fdd9b0530530cf17d33b6687da0c462a433d37eb652afb5394f91",
+      "candidateOutcome": "COMPLETE",
+      "referenceOutcome": "COMPLETE",
+      "pixels": 0,
+      "maxDelta": 0,
+      "width": 397,
+      "height": 562,
+      "referenceNonWhite": 91499
+    },
+    {
+      "temperature": "warm",
+      "trial": 2,
+      "page": 23,
+      "scale": 0.5,
+      "dpr": 1,
+      "sourceSha256": "6717eca43c6fdd9b0530530cf17d33b6687da0c462a433d37eb652afb5394f91",
+      "candidateOutcome": "COMPLETE",
+      "referenceOutcome": "COMPLETE",
+      "pixels": 0,
+      "maxDelta": 0,
+      "width": 397,
+      "height": 562,
+      "referenceNonWhite": 76107
+    }
+  ],
+  "cleanup": {
+    "baseline": {
+      "activeJobs": 0,
+      "activeLeaseCount": 0,
+      "pendingCount": 0,
+      "uniqueResourceCount": 0,
+      "ownedEstimatedBytes": 0,
+      "temporaryCanvasBytes": 0,
+      "backupImageDataBytes": 0,
+      "expiryTimerActive": false,
+      "preparedOwnedBytes": null
+    },
+    "reference": {
+      "activeJobs": 0,
+      "activeLeaseCount": 0,
+      "pendingCount": 0,
+      "uniqueResourceCount": 0,
+      "ownedEstimatedBytes": 0,
+      "temporaryCanvasBytes": 0,
+      "backupImageDataBytes": 0,
+      "expiryTimerActive": false,
+      "preparedOwnedBytes": 0
+    },
+    "candidate": {
+      "activeJobs": 0,
+      "activeLeaseCount": 0,
+      "pendingCount": 0,
+      "uniqueResourceCount": 0,
+      "ownedEstimatedBytes": 0,
+      "temporaryCanvasBytes": 0,
+      "backupImageDataBytes": 0,
+      "expiryTimerActive": false,
+      "preparedOwnedBytes": 0
+    }
+  },
+  "performance": [
+    {
+      "temperature": "cold",
+      "trial": 0,
+      "page": 14,
+      "outcome": "COMPLETE",
+      "polls": 2,
+      "totalMs": 52.8999999910593,
+      "maxPollMs": 48.5,
+      "id": 53
+    },
+    {
+      "temperature": "cold",
+      "trial": 0,
+      "page": 15,
+      "outcome": "COMPLETE",
+      "polls": 2,
+      "totalMs": 49.80000001192093,
+      "maxPollMs": 33.70000000298023,
+      "id": 54
+    },
+    {
+      "temperature": "cold",
+      "trial": 0,
+      "page": 16,
+      "outcome": "COMPLETE",
+      "polls": 38,
+      "totalMs": 585.2000000029802,
+      "maxPollMs": 72.90000000596046,
+      "id": 55
+    },
+    {
+      "temperature": "cold",
+      "trial": 0,
+      "page": 19,
+      "outcome": "COMPLETE",
+      "polls": 2,
+      "totalMs": 63.5,
+      "maxPollMs": 37.400000005960464,
+      "id": 56
+    },
+    {
+      "temperature": "cold",
+      "trial": 0,
+      "page": 20,
+      "outcome": "COMPLETE",
+      "polls": 2,
+      "totalMs": 193.09999999403954,
+      "maxPollMs": 171,
+      "id": 57
+    },
+    {
+      "temperature": "cold",
+      "trial": 0,
+      "page": 21,
+      "outcome": "COMPLETE",
+      "polls": 2,
+      "totalMs": 42,
+      "maxPollMs": 25,
+      "id": 58
+    },
+    {
+      "temperature": "cold",
+      "trial": 0,
+      "page": 23,
+      "outcome": "COMPLETE",
+      "polls": 2,
+      "totalMs": 163.3999999910593,
+      "maxPollMs": 143.79999999701977,
+      "id": 59
+    },
+    {
+      "temperature": "cold",
+      "trial": 1,
+      "page": 14,
+      "outcome": "COMPLETE",
+      "polls": 2,
+      "totalMs": 51,
+      "maxPollMs": 34.79999999701977,
+      "id": 60
+    },
+    {
+      "temperature": "cold",
+      "trial": 1,
+      "page": 15,
+      "outcome": "COMPLETE",
+      "polls": 2,
+      "totalMs": 34.29999999701977,
+      "maxPollMs": 18.100000008940697,
+      "id": 61
+    },
+    {
+      "temperature": "cold",
+      "trial": 1,
+      "page": 16,
+      "outcome": "COMPLETE",
+      "polls": 38,
+      "totalMs": 483.09999999403954,
+      "maxPollMs": 45.79999999701977,
+      "id": 62
+    },
+    {
+      "temperature": "cold",
+      "trial": 1,
+      "page": 19,
+      "outcome": "COMPLETE",
+      "polls": 2,
+      "totalMs": 34,
+      "maxPollMs": 19.599999994039536,
+      "id": 63
+    },
+    {
+      "temperature": "cold",
+      "trial": 1,
+      "page": 20,
+      "outcome": "COMPLETE",
+      "polls": 2,
+      "totalMs": 133.20000000298023,
+      "maxPollMs": 114.5,
+      "id": 64
+    },
+    {
+      "temperature": "cold",
+      "trial": 1,
+      "page": 21,
+      "outcome": "COMPLETE",
+      "polls": 2,
+      "totalMs": 36.599999994039536,
+      "maxPollMs": 20.900000005960464,
+      "id": 65
+    },
+    {
+      "temperature": "cold",
+      "trial": 1,
+      "page": 23,
+      "outcome": "COMPLETE",
+      "polls": 2,
+      "totalMs": 127.90000000596046,
+      "maxPollMs": 108.09999999403954,
+      "id": 66
+    },
+    {
+      "temperature": "cold",
+      "trial": 2,
+      "page": 14,
+      "outcome": "COMPLETE",
+      "polls": 2,
+      "totalMs": 39.400000005960464,
+      "maxPollMs": 20,
+      "id": 67
+    },
+    {
+      "temperature": "cold",
+      "trial": 2,
+      "page": 15,
+      "outcome": "COMPLETE",
+      "polls": 2,
+      "totalMs": 35.400000005960464,
+      "maxPollMs": 18.5,
+      "id": 68
+    },
+    {
+      "temperature": "cold",
+      "trial": 2,
+      "page": 16,
+      "outcome": "COMPLETE",
+      "polls": 38,
+      "totalMs": 488.1000000089407,
+      "maxPollMs": 44.1000000089407,
+      "id": 69
+    },
+    {
+      "temperature": "cold",
+      "trial": 2,
+      "page": 19,
+      "outcome": "COMPLETE",
+      "polls": 2,
+      "totalMs": 34.79999999701977,
+      "maxPollMs": 19.900000005960464,
+      "id": 70
+    },
+    {
+      "temperature": "cold",
+      "trial": 2,
+      "page": 20,
+      "outcome": "COMPLETE",
+      "polls": 2,
+      "totalMs": 129,
+      "maxPollMs": 111.90000000596046,
+      "id": 71
+    },
+    {
+      "temperature": "cold",
+      "trial": 2,
+      "page": 21,
+      "outcome": "COMPLETE",
+      "polls": 2,
+      "totalMs": 34.5,
+      "maxPollMs": 19.700000002980232,
+      "id": 72
+    },
+    {
+      "temperature": "cold",
+      "trial": 2,
+      "page": 23,
+      "outcome": "COMPLETE",
+      "polls": 2,
+      "totalMs": 113.29999999701977,
+      "maxPollMs": 95.90000000596046,
+      "id": 73
+    },
+    {
+      "temperature": "warm",
+      "trial": 0,
+      "page": 14,
+      "outcome": "COMPLETE",
+      "polls": 2,
+      "totalMs": 34.70000000298023,
+      "maxPollMs": 17.799999997019768,
+      "id": 74
+    },
+    {
+      "temperature": "warm",
+      "trial": 0,
+      "page": 15,
+      "outcome": "COMPLETE",
+      "polls": 2,
+      "totalMs": 30.799999997019768,
+      "maxPollMs": 16.5,
+      "id": 75
+    },
+    {
+      "temperature": "warm",
+      "trial": 0,
+      "page": 16,
+      "outcome": "COMPLETE",
+      "polls": 38,
+      "totalMs": 503.5,
+      "maxPollMs": 41.19999998807907,
+      "id": 76
+    },
+    {
+      "temperature": "warm",
+      "trial": 0,
+      "page": 19,
+      "outcome": "COMPLETE",
+      "polls": 2,
+      "totalMs": 39.20000000298023,
+      "maxPollMs": 22.200000002980232,
+      "id": 77
+    },
+    {
+      "temperature": "warm",
+      "trial": 0,
+      "page": 20,
+      "outcome": "COMPLETE",
+      "polls": 2,
+      "totalMs": 138.79999999701977,
+      "maxPollMs": 120.29999999701977,
+      "id": 78
+    },
+    {
+      "temperature": "warm",
+      "trial": 0,
+      "page": 21,
+      "outcome": "COMPLETE",
+      "polls": 2,
+      "totalMs": 39.29999999701977,
+      "maxPollMs": 21.700000002980232,
+      "id": 79
+    },
+    {
+      "temperature": "warm",
+      "trial": 0,
+      "page": 23,
+      "outcome": "COMPLETE",
+      "polls": 2,
+      "totalMs": 22.19999998807907,
+      "maxPollMs": 5.799999997019768,
+      "id": 80
+    },
+    {
+      "temperature": "warm",
+      "trial": 1,
+      "page": 14,
+      "outcome": "COMPLETE",
+      "polls": 2,
+      "totalMs": 15.5,
+      "maxPollMs": 2.9000000059604645,
+      "id": 81
+    },
+    {
+      "temperature": "warm",
+      "trial": 1,
+      "page": 15,
+      "outcome": "COMPLETE",
+      "polls": 2,
+      "totalMs": 15,
+      "maxPollMs": 2.7000000029802322,
+      "id": 82
+    },
+    {
+      "temperature": "warm",
+      "trial": 1,
+      "page": 16,
+      "outcome": "COMPLETE",
+      "polls": 38,
+      "totalMs": 469.59999999403954,
+      "maxPollMs": 41.5,
+      "id": 83
+    },
+    {
+      "temperature": "warm",
+      "trial": 1,
+      "page": 19,
+      "outcome": "COMPLETE",
+      "polls": 2,
+      "totalMs": 14.700000002980232,
+      "maxPollMs": 2.7000000029802322,
+      "id": 84
+    },
+    {
+      "temperature": "warm",
+      "trial": 1,
+      "page": 20,
+      "outcome": "COMPLETE",
+      "polls": 2,
+      "totalMs": 27.399999991059303,
+      "maxPollMs": 6.5,
+      "id": 85
+    },
+    {
+      "temperature": "warm",
+      "trial": 1,
+      "page": 21,
+      "outcome": "COMPLETE",
+      "polls": 2,
+      "totalMs": 16.299999997019768,
+      "maxPollMs": 3,
+      "id": 86
+    },
+    {
+      "temperature": "warm",
+      "trial": 1,
+      "page": 23,
+      "outcome": "COMPLETE",
+      "polls": 2,
+      "totalMs": 21.099999994039536,
+      "maxPollMs": 5.200000002980232,
+      "id": 87
+    },
+    {
+      "temperature": "warm",
+      "trial": 2,
+      "page": 14,
+      "outcome": "COMPLETE",
+      "polls": 2,
+      "totalMs": 16.5,
+      "maxPollMs": 4,
+      "id": 88
+    },
+    {
+      "temperature": "warm",
+      "trial": 2,
+      "page": 15,
+      "outcome": "COMPLETE",
+      "polls": 2,
+      "totalMs": 15.400000005960464,
+      "maxPollMs": 2.8999999910593033,
+      "id": 89
+    },
+    {
+      "temperature": "warm",
+      "trial": 2,
+      "page": 16,
+      "outcome": "COMPLETE",
+      "polls": 38,
+      "totalMs": 473.70000000298023,
+      "maxPollMs": 43.900000005960464,
+      "id": 90
+    },
+    {
+      "temperature": "warm",
+      "trial": 2,
+      "page": 19,
+      "outcome": "COMPLETE",
+      "polls": 2,
+      "totalMs": 14.599999994039536,
+      "maxPollMs": 2.7000000029802322,
+      "id": 91
+    },
+    {
+      "temperature": "warm",
+      "trial": 2,
+      "page": 20,
+      "outcome": "COMPLETE",
+      "polls": 2,
+      "totalMs": 22.399999991059303,
+      "maxPollMs": 6.299999997019768,
+      "id": 92
+    },
+    {
+      "temperature": "warm",
+      "trial": 2,
+      "page": 21,
+      "outcome": "COMPLETE",
+      "polls": 2,
+      "totalMs": 16.299999997019768,
+      "maxPollMs": 3.5,
+      "id": 93
+    },
+    {
+      "temperature": "warm",
+      "trial": 2,
+      "page": 23,
+      "outcome": "COMPLETE",
+      "polls": 2,
+      "totalMs": 19.799999997019768,
+      "maxPollMs": 5.200000002980232,
+      "id": 94
+    }
+  ]
+}

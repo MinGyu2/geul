@@ -1,0 +1,80 @@
+{
+  "scope": "current-source native D4, unchanged producer boundary; experimental engine, NOT D1 approval",
+  "preparation": "on",
+  "attempt": 1,
+  "parentExit": 1,
+  "error": null,
+  "elapsedSeconds": 177.95214181499614,
+  "inputsBefore": {
+    "tests/integration/rhwp/ownership-poc/history-perf.py": "fd2175b55a9520a7cf878bd46c72b586ed5e06b5d1c31c617edb4a8d5529f55e",
+    "tests/integration/rhwp/ownership-poc/session.mjs": "e766e012007d9188b12a61e50466dbb123f0018ba5b95fc9d6c0a14f25227670",
+    "tests/integration/rhwp/ownership-poc/vite.config.mjs": "343ac106593e425a2d08551fa43c47057b39bcb862db4b98433af0bd83362378",
+    "tests/integration/rhwp/ownership-poc/native.py": "49bbfcc827fdd193b3976719bb5779c64350d4cbc3d03d4c81910a5929af7ca6",
+    "tests/integration/rhwp/evidence/t010-native-gate-remediation/run-current-perf.py": "245be04ea4f28b3704f61755a25794d936e39010dad44620cec41cf4e33ee4c6",
+    "tests/integration/rhwp/render-preparation/native-vite.config.mjs": "26b81a086d913ee02aaa3de9da45c1ac4b556167b76b0c500cd88c16ecfba166",
+    "tests/integration/rhwp/undo_native.py": "1d0982fa18c155bbd1e7b009307253815148f841fe1116ec92d818a3ea195445",
+    "tests/integration/rhwp/native_probe.py": "8f4be7dcd57bf5f284dda7ca94d12c9bad8a8f718d543ca57b500166b50c39a0",
+    "tests/e2e/tauri_smoke.py": "b68fd9650b6339bd8c06b42534f3034e035dacb2fa47b1244f9ff54e10b4bbbb",
+    "src-tauri/target/debug/geul": "5167fe50bf25e58a207caf3a1bb73be364e446b118c9650448328c9e0121c5b4",
+    "src-tauri/target/release/tauri-driver": "f8bc223a2398df185dfbacbe9c0adf8ce1b04431a89021c3446ed344a3630ddf",
+    "tree:src": "178c71d3c6949bef3d6ebfc2a7fadcd80932faebbc7994431828252de3495a55",
+    "candidate/rhwp_bg.wasm": "e88d85de471073f5c60035bcf4b18e5a0fa16193717dcd800968e43c19d1dc88",
+    "candidate/rhwp.js": "29124c937d46b4d7433d258d06d0a43f4c7fc056f93216fddabc1c5dff98f743",
+    "candidate/rhwp.d.ts": "0324e6d406fbb4e4c99744a5e365bd9f05fdb1614cb57d41238259dc38b2e313",
+    "candidate/ENGINE.json": "bb86adc4bb3ff6560c2df5432ca9b161f0ddc39ea0788f52e9e2cc312c9e274a"
+  },
+  "inputsAfter": {
+    "tests/integration/rhwp/ownership-poc/history-perf.py": "fd2175b55a9520a7cf878bd46c72b586ed5e06b5d1c31c617edb4a8d5529f55e",
+    "tests/integration/rhwp/ownership-poc/session.mjs": "e766e012007d9188b12a61e50466dbb123f0018ba5b95fc9d6c0a14f25227670",
+    "tests/integration/rhwp/ownership-poc/vite.config.mjs": "343ac106593e425a2d08551fa43c47057b39bcb862db4b98433af0bd83362378",
+    "tests/integration/rhwp/ownership-poc/native.py": "49bbfcc827fdd193b3976719bb5779c64350d4cbc3d03d4c81910a5929af7ca6",
+    "tests/integration/rhwp/evidence/t010-native-gate-remediation/run-current-perf.py": "245be04ea4f28b3704f61755a25794d936e39010dad44620cec41cf4e33ee4c6",
+    "tests/integration/rhwp/render-preparation/native-vite.config.mjs": "26b81a086d913ee02aaa3de9da45c1ac4b556167b76b0c500cd88c16ecfba166",
+    "tests/integration/rhwp/undo_native.py": "1d0982fa18c155bbd1e7b009307253815148f841fe1116ec92d818a3ea195445",
+    "tests/integration/rhwp/native_probe.py": "8f4be7dcd57bf5f284dda7ca94d12c9bad8a8f718d543ca57b500166b50c39a0",
+    "tests/e2e/tauri_smoke.py": "b68fd9650b6339bd8c06b42534f3034e035dacb2fa47b1244f9ff54e10b4bbbb",
+    "src-tauri/target/debug/geul": "5167fe50bf25e58a207caf3a1bb73be364e446b118c9650448328c9e0121c5b4",
+    "src-tauri/target/release/tauri-driver": "f8bc223a2398df185dfbacbe9c0adf8ce1b04431a89021c3446ed344a3630ddf",
+    "tree:src": "178c71d3c6949bef3d6ebfc2a7fadcd80932faebbc7994431828252de3495a55",
+    "candidate/rhwp_bg.wasm": "e88d85de471073f5c60035bcf4b18e5a0fa16193717dcd800968e43c19d1dc88",
+    "candidate/rhwp.js": "29124c937d46b4d7433d258d06d0a43f4c7fc056f93216fddabc1c5dff98f743",
+    "candidate/rhwp.d.ts": "0324e6d406fbb4e4c99744a5e365bd9f05fdb1614cb57d41238259dc38b2e313",
+    "candidate/ENGINE.json": "bb86adc4bb3ff6560c2df5432ca9b161f0ddc39ea0788f52e9e2cc312c9e274a"
+  },
+  "inputsStable": true,
+  "sourceCommit": "1ae3cde923ea46442e3b8d4f84ff2cef3447ec02",
+  "candidateIdentity": {
+    "rhwp_bg.wasm": "e88d85de471073f5c60035bcf4b18e5a0fa16193717dcd800968e43c19d1dc88",
+    "rhwp.js": "29124c937d46b4d7433d258d06d0a43f4c7fc056f93216fddabc1c5dff98f743",
+    "rhwp.d.ts": "0324e6d406fbb4e4c99744a5e365bd9f05fdb1614cb57d41238259dc38b2e313",
+    "ENGINE.json": "bb86adc4bb3ff6560c2df5432ca9b161f0ddc39ea0788f52e9e2cc312c9e274a"
+  },
+  "fixtureSha256": {
+    "basic-ko.hwp": "57c901cc394abf6f58f4838315d1ea2c5ecf8a03d9934d3fc098fd8be6e6e12f",
+    "basic-ko.hwpx": "26d434b7b427149110751c6ef5b19e9ecb4818f3ba7eadfe201b5afd3de442a8",
+    "연구노트(화학).hwp": "6717eca43c6fdd9b0530530cf17d33b6687da0c462a433d37eb652afb5394f91",
+    "3249937_asset_management_rules.hwpx": "97b5d6c571a6b7626321c6a53d797e3511978447497bb73309bd23eaa8e7ea77"
+  },
+  "processCleanup": {
+    "observed": 162,
+    "roles": [
+      "MainThread",
+      "WebKitNetworkPr",
+      "WebKitWebDriver",
+      "WebKitWebProces",
+      "Xvfb",
+      "dbus-daemon",
+      "dbus-run-sessio",
+      "geul",
+      "python3",
+      "tauri-driver",
+      "xdotool"
+    ],
+    "survivors": [],
+    "forcedKill": [],
+    "observerErrors": []
+  },
+  "measurementComplete": true,
+  "producerStatus": "FAIL",
+  "verdict": "FAIL"
+}

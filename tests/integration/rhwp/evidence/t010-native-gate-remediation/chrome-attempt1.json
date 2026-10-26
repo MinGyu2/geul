@@ -1,0 +1,69 @@
+{
+  "scope": "existing isolated experimental renderer browser regression only; NOT official D1/D2/D4/D5, no new optimization",
+  "attempt": "chrome-attempt1",
+  "status": "FAIL",
+  "exit": 1,
+  "error": "browser FAIL: Error: baseline-single-poll",
+  "rawSha256": "4094cca79a8eddba1bee3a58f5b24dfcb0af94c75d1ba99310be18e58f69de4d",
+  "localRawArchive": ".git/t010-native-gate-remediation-raw/chrome-attempt1.json",
+  "browser": "Google Chrome 155.0.8059.39",
+  "dependenciesStable": true,
+  "identities": {
+    "baseline": {
+      "rhwp.js": "29124c937d46b4d7433d258d06d0a43f4c7fc056f93216fddabc1c5dff98f743",
+      "rhwp_bg.wasm": "e88d85de471073f5c60035bcf4b18e5a0fa16193717dcd800968e43c19d1dc88"
+    },
+    "reference": {
+      "rhwp.js": "29124c937d46b4d7433d258d06d0a43f4c7fc056f93216fddabc1c5dff98f743",
+      "rhwp_bg.wasm": "e88d85de471073f5c60035bcf4b18e5a0fa16193717dcd800968e43c19d1dc88"
+    },
+    "candidate": {
+      "rhwp.js": "29124c937d46b4d7433d258d06d0a43f4c7fc056f93216fddabc1c5dff98f743",
+      "rhwp_bg.wasm": "e88d85de471073f5c60035bcf4b18e5a0fa16193717dcd800968e43c19d1dc88"
+    }
+  },
+  "tests": [
+    {
+      "name": "baseline-single-poll",
+      "status": "FAIL"
+    }
+  ],
+  "rgba": [],
+  "cleanup": {
+    "baseline": {
+      "activeJobs": 0,
+      "activeLeaseCount": 0,
+      "pendingCount": 0,
+      "uniqueResourceCount": 0,
+      "ownedEstimatedBytes": 0,
+      "temporaryCanvasBytes": 0,
+      "backupImageDataBytes": 0,
+      "expiryTimerActive": false,
+      "preparedOwnedBytes": 0
+    },
+    "reference": {
+      "activeJobs": 0,
+      "activeLeaseCount": 0,
+      "pendingCount": 0,
+      "uniqueResourceCount": 0,
+      "ownedEstimatedBytes": 0,
+      "temporaryCanvasBytes": 0,
+      "backupImageDataBytes": 0,
+      "expiryTimerActive": false,
+      "preparedOwnedBytes": 0
+    },
+    "candidate": {
+      "activeJobs": 0,
+      "activeLeaseCount": 0,
+      "pendingCount": 0,
+      "uniqueResourceCount": 0,
+      "ownedEstimatedBytes": 0,
+      "temporaryCanvasBytes": 0,
+      "backupImageDataBytes": 0,
+      "expiryTimerActive": false,
+      "preparedOwnedBytes": 0
+    }
+  },
+  "performance": [],
+  "configurationFailure": "Incorrect baseline role used preparation-enabled API candidate; baseline-single-poll assertion requires legacy API without preparation export. Preserved; corrected configuration is separate attempt2, not fastest retry selection."
+}

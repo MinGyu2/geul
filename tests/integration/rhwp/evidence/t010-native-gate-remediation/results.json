@@ -1,0 +1,77 @@
+{
+  "executionStatus": "PARTIALLY COMPLETED overall; D1/D2 native blocked; current native D4 reproducibly FAIL",
+  "startHead": "47eb6160180307a422b08eaa68655c36fb4d1fd6",
+  "finalHead": "commit containing this native evidence; exact delivery HEAD in final report/local .git metadata",
+  "frontendGitTree": "68082a94a4acf3acc3f8520a46b65a640855729d",
+  "frontendUnchanged": true,
+  "submodules": {
+    "rhwp": "1a76570e833917d15817415a53c09ad61ab3203f",
+    "wordcraft": "fc41918814f62645b6746ed68e71e8c2c2e85d6f"
+  },
+  "D1": {
+    "execution": "PARTIALLY COMPLETED source recovery verification; native gate BLOCKED",
+    "gate": "NOT RUN",
+    "trustedPackageFound": false,
+    "trustedArtifactsAndFullPatch": "verified against committed validator/anchor; see d1-contract.json",
+    "toolchains": "installed default Rust/Cargo1.99; ~/.rustup contains1.97.1 only;1.93.1 absent; rustup not on PATH",
+    "noSubstitution": true,
+    "currentAppBuild": "PASS current1ae3 backend app built offline; digest in driver-recovery.json; no D1 substitute execution",
+    "sourceReplay": "PASS: full patch applied to 10 pinned source files; all8 recorded source SHA fields match, no binary build. Attempt1 incomplete source export failed and is preserved."
+  },
+  "D2": {
+    "execution": "BLOCKED for native; deterministic regressions PASS",
+    "gate": "INCONCLUSIVE",
+    "newNativeAttempts": 0,
+    "nativeTargetOrderingObservedThisSession": null,
+    "available": "WebKitWebDriver2.54.1, Xvfb, xdotool; WAYLAND_DISPLAY variable exists but does not establish an available alternative input method; cached tauri-driver2.0.4 recovered offline",
+    "missing": [
+      "IBus/Hangul GTK module/engine",
+      "setxkbmap",
+      "fcitx5/weston alternatives not found in targeted installed-package audit"
+    ],
+    "userConfirmedNoAdditionalPaths": true,
+    "target": "empty compositionend -> Ctrl+Z -> late insertFromComposition",
+    "historicalEvidence": "native-completeness/d2-status.json:36 trials, final insert7-15ms before CtrlZ; target0, safetyFailures0; not a new native observation",
+    "currentSyntheticAndRealWasm": "npm Vitest819 and RHWP integration42 PASS/3 existing config-specific skipped; categories retained separately",
+    "imeCorrection": "none; existing await-final/generation/cancellation guards retained; no new deterministic application defect reproduced"
+  },
+  "D4": {
+    "execution": "FAILED to meet official responsiveness thresholds; two complete current-source native settings",
+    "gate": "FAIL (current native WebKitGTK four-document protocol)",
+    "newOfficialMeasurements": "OFF attempt1 and ON attempt1 complete; same unchanged keydown/revision RAF +2RAF boundary; no threshold subtraction",
+    "diagnostics": [
+      "chrome-attempt1 FAIL wrong baseline role, preserved",
+      "chrome-attempt2 PASS49/42RGBA",
+      "webkit-attempt1 PASS49/42RGBA"
+    ],
+    "currentExperimentalCandidate": "e88d85de471073f5c60035bcf4b18e5a0fa16193717dcd800968e43c19d1dc88",
+    "candidateMatchesCommittedRecord": "t010-render-preparation-runtime/candidate-identity.json",
+    "recordedSourceFilesRechecked": 1044,
+    "recordedSourceFilesMatch": true,
+    "baseline": "eaa88f65a54a7f333005f9971e4ad5ab45072457a63593cd2592d6d319952768, matches runtime-hardening-followup/runtime-summary.json; not trusted native candidate",
+    "maxDiagnosticPollMs": {
+      "chrome": 171,
+      "webkit": 146
+    },
+    "noOfficialPromotion": true,
+    "review": "current-native-review.json",
+    "optimizationEvaluation": "existing preparation opt-in evaluated with same e88d engine; group p95 OFF91/87/241/130, ON94/90/226/130ms; no production promotion or new engine patch justified",
+    "sourceCommit": "1ae3cde923ea46442e3b8d4f84ff2cef3447ec02"
+  },
+  "D3": "PASS current local save regressions (resource evidence directory)",
+  "D5": "Archived PASS; browser cleanup counters do not establish fresh native D5",
+  "RSS": "INCONCLUSIVE for T010; backend T009 metrics are separate",
+  "production": "Undo/Redo NO-GO; formatting unsupported; T010 INCOMPLETE/unchecked; T011 NOT STARTED",
+  "nativeRawArchive": ".git/t010-native-gate-remediation-raw/ (all browser/native attempts exact bytes); compact native summaries include all30 group timestamps per document",
+  "ownershipPythonRegressions": {
+    "command": "python3 -m unittest discover -s tests/integration/rhwp/ownership-poc -p test_*.py",
+    "exit": 0,
+    "tests": 292
+  },
+  "security": "final source B staged/all/history/Gitleaks results recorded in security-review.json and final report",
+  "provisioningPlan": "PROVISIONING.ko.txt; no install/download or system reconfiguration performed",
+  "resourceImplementationCommit": "1ae3cde923ea46442e3b8d4f84ff2cef3447ec02",
+  "normalRustChecks": "PASS at resource implementation (190 library +1DOCX); source/native workstreams remain separate",
+  "frontendChecks": "PASS type/lint/819/build and realWASM42; no frontend source changes",
+  "driverRecovery": "cached source2.0.4 built with Rust1.99 --locked --offline, no install/download; see driver-recovery.json"
+}

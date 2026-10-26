@@ -1,0 +1,7060 @@
+{
+  "status": "FAIL",
+  "protocol": "unmodified undo_native.scenario_perf/MEASURE",
+  "rendererMode": "candidate-full",
+  "engineIdentity": {
+    "wasmSha256": "e88d85de471073f5c60035bcf4b18e5a0fa16193717dcd800968e43c19d1dc88",
+    "baseline": "1a76570e833917d15817415a53c09ad61ab3203f"
+  },
+  "environment": {
+    "platform": "Linux",
+    "webkitGTK": "2.54.1",
+    "debugAppSha256": "5167fe50bf25e58a207caf3a1bb73be364e446b118c9650448328c9e0121c5b4",
+    "cpuAffinity": [
+      0,
+      1,
+      2,
+      3,
+      4,
+      5,
+      6,
+      7
+    ],
+    "loadAverageBefore": [
+      1.5419921875,
+      1.07763671875,
+      0.98974609375
+    ],
+    "softwareGLRequested": true,
+    "webkitDmabufDisabled": true,
+    "GDK_BACKEND": "x11",
+    "busyProbe": false,
+    "warmupGroups": 3,
+    "groupStartSamplesPerDocument": 30,
+    "probeBootstrapDocument": "basic-ko.hwpx in both arms",
+    "loadAverageAfter": [
+      1.54736328125,
+      1.30615234375,
+      1.0947265625
+    ]
+  },
+  "gates": [
+    {
+      "gate": "D4",
+      "item": ".hwp: group-start key→frame p95 ≤50ms",
+      "result": "FAIL",
+      "detail": "{'n': 30, 'p50': 69, 'p95': 91, 'max': 94, 'timeouts': 0}"
+    },
+    {
+      "gate": "D4",
+      "item": ".hwp: Undo p95 ≤1500ms",
+      "result": "PASS",
+      "detail": "{'n': 25, 'p50': 141, 'p95': 150, 'max': 174, 'timeouts': 0}"
+    },
+    {
+      "gate": "D4",
+      "item": ".hwpx: group-start key→frame p95 ≤50ms",
+      "result": "FAIL",
+      "detail": "{'n': 30, 'p50': 65, 'p95': 87, 'max': 88, 'timeouts': 0}"
+    },
+    {
+      "gate": "D4",
+      "item": ".hwpx: Undo p95 ≤1500ms",
+      "result": "PASS",
+      "detail": "{'n': 25, 'p50': 141, 'p95': 207, 'max': 227, 'timeouts': 0}"
+    },
+    {
+      "gate": "D4",
+      "item": ".hwp: group-start key→frame p95 ≤50ms",
+      "result": "FAIL",
+      "detail": "{'n': 30, 'p50': 95, 'p95': 241, 'max': 436, 'timeouts': 0}"
+    },
+    {
+      "gate": "D4",
+      "item": ".hwp: Undo p95 ≤1500ms",
+      "result": "PASS",
+      "detail": "{'n': 25, 'p50': 114, 'p95': 153, 'max': 156, 'timeouts': 0}"
+    },
+    {
+      "gate": "D4",
+      "item": ".hwpx: group-start key→frame p95 ≤50ms",
+      "result": "FAIL",
+      "detail": "{'n': 30, 'p50': 112, 'p95': 130, 'max': 148, 'timeouts': 0}"
+    },
+    {
+      "gate": "D4",
+      "item": ".hwpx: Undo p95 ≤1500ms",
+      "result": "PASS",
+      "detail": "{'n': 25, 'p50': 233, 'p95': 244, 'max': 261, 'timeouts': 0}"
+    }
+  ],
+  "measurementComplete": true,
+  "exitReason": "OFFICIAL_GATE_FAILURE",
+  "failedGateCount": 4,
+  "rawSha256": "788e9d65955f6acbe7bed1f1d31f4bffa9559f2a9a468e4db25711d11ada90ff",
+  "rawBytes": 3616117,
+  "rawLocalArchive": ".git/t010-native-gate-remediation-raw/native-d4-off-attempt1.json",
+  "measurements": [
+    {
+      "sample": "basic-ko.hwp",
+      "sourceSha256": "57c901cc394abf6f58f4838315d1ea2c5ecf8a03d9934d3fc098fd8be6e6e12f",
+      "editedRegion": {
+        "caret": "0:3:9",
+        "page": 0
+      },
+      "dpr": 1.04205322265625,
+      "groupStart": {
+        "n": 30,
+        "p50": 69,
+        "p95": 91,
+        "max": 94,
+        "timeouts": 0
+      },
+      "extend": {
+        "n": 30,
+        "p50": 66,
+        "p95": 90,
+        "max": 91,
+        "timeouts": 0
+      },
+      "undo": {
+        "n": 25,
+        "p50": 141,
+        "p95": 150,
+        "max": 174,
+        "timeouts": 0
+      },
+      "redo": {
+        "n": 20,
+        "p50": 144,
+        "p95": 152,
+        "max": 173,
+        "timeouts": 0
+      },
+      "afterUndo": {
+        "n": 5,
+        "p50": 131,
+        "p95": 133,
+        "max": 133,
+        "timeouts": 0
+      },
+      "zeroWorkFrameFloorMs": {
+        "n": 30,
+        "p50": 41,
+        "p95": 48,
+        "max": 65,
+        "timeouts": 0
+      },
+      "adapterCounters": {
+        "polls": 122,
+        "staleDropped": 0,
+        "reused": 0,
+        "regionalPatchJobs": 0,
+        "completed": 122,
+        "unchangedFrames": 0,
+        "notifications": 0,
+        "patchJobs": 0,
+        "wholePagePatchJobs": 0,
+        "limits": 0,
+        "replacements": 0,
+        "fullJobs": 122,
+        "errors": 0,
+        "canceled": 0
+      },
+      "nonOverlappingTimestampIntervalsMs": {
+        "keyToInput": {
+          "n": 30,
+          "p50": 1,
+          "p95": 6,
+          "max": 26
+        },
+        "inputThroughHandlerEnd": {
+          "n": 30,
+          "p50": 18,
+          "p95": 19,
+          "max": 19
+        },
+        "handlerEndToObservedRevision": {
+          "n": 30,
+          "p50": 1,
+          "p95": 8,
+          "max": 16
+        },
+        "observedThroughTwoRafs": {
+          "n": 30,
+          "p50": 47,
+          "p95": 65,
+          "max": 66
+        }
+      },
+      "groupStartTimeline": [
+        {
+          "kind": "groupStart",
+          "keyToFrame": 86,
+          "at": {
+            "handlerEnd": 19,
+            "input": 0,
+            "observed": 27,
+            "raf1": 57,
+            "end": 86,
+            "key": 0
+          },
+          "calls": {
+            "snapshotCapacity": {
+              "n": 2,
+              "ms": 0.0,
+              "firstAt": 0
+            },
+            "saveSnapshot": {
+              "n": 1,
+              "ms": 1.0,
+              "firstAt": 0
+            },
+            "insertText": {
+              "n": 1,
+              "ms": 1.0,
+              "firstAt": 1
+            },
+            "getPageInfo": {
+              "n": 1,
+              "ms": 0.0,
+              "firstAt": 2
+            },
+            "beginRenderJob": {
+              "n": 1,
+              "ms": 0.0,
+              "firstAt": 9
+            },
+            "canvasReadback": {
+              "n": 1,
+              "ms": 1.0,
+              "firstAt": 12
+            },
+            "canvasVisibleDraw": {
+              "n": 1,
+              "ms": 0.0,
+              "firstAt": 14
+            },
+            "pollRenderJob": {
+              "n": 1,
+              "ms": 5.0,
+              "firstAt": 9
+            },
+            "adapterRenderRequest": {
+              "n": 1,
+              "ms": 5.0,
+              "firstAt": 9
+            }
+          }
+        },
+        {
+          "kind": "groupStart",
+          "keyToFrame": 85,
+          "at": {
+            "handlerEnd": 19,
+            "input": 0,
+            "observed": 21,
+            "raf1": 56,
+            "end": 85,
+            "key": 0
+          },
+          "calls": {
+            "snapshotCapacity": {
+              "n": 2,
+              "ms": 1.0,
+              "firstAt": 0
+            },
+            "saveSnapshot": {
+              "n": 1,
+              "ms": 0.0,
+              "firstAt": 1
+            },
+            "insertText": {
+              "n": 1,
+              "ms": 1.0,
+              "firstAt": 1
+            },
+            "getPageInfo": {
+              "n": 1,
+              "ms": 0.0,
+              "firstAt": 2
+            },
+            "beginRenderJob": {
+              "n": 1,
+              "ms": 0.0,
+              "firstAt": 8
+            },
+            "canvasReadback": {
+              "n": 1,
+              "ms": 2.0,
+              "firstAt": 11
+            },
+            "canvasVisibleDraw": {
+              "n": 1,
+              "ms": 0.0,
+              "firstAt": 13
+            },
+            "pollRenderJob": {
+              "n": 1,
+              "ms": 6.0,
+              "firstAt": 8
+            },
+            "adapterRenderRequest": {
+              "n": 1,
+              "ms": 7.0,
+              "firstAt": 7
+            }
+          }
+        },
+        {
+          "kind": "groupStart",
+          "keyToFrame": 88,
+          "at": {
+            "handlerEnd": 22,
+            "input": 6,
+            "observed": 28,
+            "raf1": 59,
+            "end": 88,
+            "key": 0
+          },
+          "calls": {
+            "snapshotCapacity": {
+              "n": 2,
+              "ms": 0.0,
+              "firstAt": 6
+            },
+            "saveSnapshot": {
+              "n": 1,
+              "ms": 0.0,
+              "firstAt": 6
+            },
+            "insertText": {
+              "n": 1,
+              "ms": 1.0,
+              "firstAt": 6
+            },
+            "getPageInfo": {
+              "n": 1,
+              "ms": 0.0,
+              "firstAt": 7
+            },
+            "beginRenderJob": {
+              "n": 1,
+              "ms": 0.0,
+              "firstAt": 12
+            },
+            "canvasReadback": {
+              "n": 1,
+              "ms": 2.0,
+              "firstAt": 15
+            },
+            "canvasVisibleDraw": {
+              "n": 1,
+              "ms": 0.0,
+              "firstAt": 17
+            },
+            "pollRenderJob": {
+              "n": 1,
+              "ms": 5.0,
+              "firstAt": 12
+            },
+            "adapterRenderRequest": {
+              "n": 1,
+              "ms": 5.0,
+              "firstAt": 12
+            }
+          }
+        },
+        {
+          "kind": "groupStart",
+          "keyToFrame": 85,
+          "at": {
+            "handlerEnd": 19,
+            "input": 1,
+            "observed": 21,
+            "raf1": 56,
+            "end": 85,
+            "key": 0
+          },
+          "calls": {
+            "snapshotCapacity": {
+              "n": 2,
+              "ms": 0.0,
+              "firstAt": 1
+            },
+            "saveSnapshot": {
+              "n": 1,
+              "ms": 0.0,
+              "firstAt": 1
+            },
+            "insertText": {
+              "n": 1,
+              "ms": 1.0,
+              "firstAt": 1
+            },
+            "getPageInfo": {
+              "n": 1,
+              "ms": 0.0,
+              "firstAt": 3
+            },
+            "beginRenderJob": {
+              "n": 1,
+              "ms": 1.0,
+              "firstAt": 8
+            },
+            "canvasReadback": {
+              "n": 1,
+              "ms": 2.0,
+              "firstAt": 12
+            },
+            "canvasVisibleDraw": {
+              "n": 1,
+              "ms": 0.0,
+              "firstAt": 14
+            },
+            "pollRenderJob": {
+              "n": 1,
+              "ms": 5.0,
+              "firstAt": 9
+            },
+            "adapterRenderRequest": {
+              "n": 1,
+              "ms": 6.0,
+              "firstAt": 8
+            }
+          }
+        },
+        {
+          "kind": "groupStart",
+          "keyToFrame": 94,
+          "at": {
+            "handlerEnd": 18,
+            "input": 0,
+            "observed": 34,
+            "raf1": 65,
+            "end": 94,
+            "key": 0
+          },
+          "calls": {
+            "snapshotCapacity": {
+              "n": 2,
+              "ms": 0.0,
+              "firstAt": 0
+            },
+            "saveSnapshot": {
+              "n": 1,
+              "ms": 1.0,
+              "firstAt": 0
+            },
+            "insertText": {
+              "n": 1,
+              "ms": 1.0,
+              "firstAt": 1
+            },
+            "getPageInfo": {
+              "n": 1,
+              "ms": 0.0,
+              "firstAt": 2
+            },
+            "beginRenderJob": {
+              "n": 1,
+              "ms": 0.0,
+              "firstAt": 7
+            },
+            "canvasReadback": {
+              "n": 1,
+              "ms": 2.0,
+              "firstAt": 11
+            },
+            "canvasVisibleDraw": {
+              "n": 1,
+              "ms": 0.0,
+              "firstAt": 13
+            },
+            "pollRenderJob": {
+              "n": 1,
+              "ms": 6.0,
+              "firstAt": 7
+            },
+            "adapterRenderRequest": {
+              "n": 1,
+              "ms": 6.0,
+              "firstAt": 7
+            }
+          }
+        },
+        {
+          "kind": "groupStart",
+          "keyToFrame": 71,
+          "at": {
+            "handlerEnd": 21,
+            "input": 2,
+            "observed": 23,
+            "raf1": 58,
+            "end": 71,
+            "key": 0
+          },
+          "calls": {
+            "snapshotCapacity": {
+              "n": 2,
+              "ms": 0.0,
+              "firstAt": 2
+            },
+            "saveSnapshot": {
+              "n": 1,
+              "ms": 0.0,
+              "firstAt": 2
+            },
+            "insertText": {
+              "n": 1,
+              "ms": 1.0,
+              "firstAt": 2
+            },
+            "getPageInfo": {
+              "n": 1,
+              "ms": 0.0,
+              "firstAt": 4
+            },
+            "beginRenderJob": {
+              "n": 1,
+              "ms": 0.0,
+              "firstAt": 10
+            },
+            "canvasReadback": {
+              "n": 1,
+              "ms": 1.0,
+              "firstAt": 14
+            },
+            "canvasVisibleDraw": {
+              "n": 1,
+              "ms": 0.0,
+              "firstAt": 15
+            },
+            "pollRenderJob": {
+              "n": 1,
+              "ms": 5.0,
+              "firstAt": 10
+            },
+            "adapterRenderRequest": {
+              "n": 1,
+              "ms": 5.0,
+              "firstAt": 10
+            }
+          }
+        },
+        {
+          "kind": "groupStart",
+          "keyToFrame": 60,
+          "at": {
+            "handlerEnd": 19,
+            "input": 1,
+            "observed": 20,
+            "raf1": 54,
+            "end": 60,
+            "key": 0
+          },
+          "calls": {
+            "snapshotCapacity": {
+              "n": 2,
+              "ms": 0.0,
+              "firstAt": 1
+            },
+            "saveSnapshot": {
+              "n": 1,
+              "ms": 0.0,
+              "firstAt": 1
+            },
+            "insertText": {
+              "n": 1,
+              "ms": 1.0,
+              "firstAt": 1
+            },
+            "getPageInfo": {
+              "n": 1,
+              "ms": 0.0,
+              "firstAt": 3
+            },
+            "beginRenderJob": {
+              "n": 1,
+              "ms": 0.0,
+              "firstAt": 8
+            },
+            "canvasReadback": {
+              "n": 1,
+              "ms": 1.0,
+              "firstAt": 12
+            },
+            "canvasVisibleDraw": {
+              "n": 1,
+              "ms": 0.0,
+              "firstAt": 14
+            },
+            "pollRenderJob": {
+              "n": 1,
+              "ms": 6.0,
+              "firstAt": 8
+            },
+            "adapterRenderRequest": {
+              "n": 1,
+              "ms": 6.0,
+              "firstAt": 8
+            }
+          }
+        },
+        {
+          "kind": "groupStart",
+          "keyToFrame": 66,
+          "at": {
+            "handlerEnd": 18,
+            "input": 0,
+            "observed": 20,
+            "raf1": 55,
+            "end": 66,
+            "key": 0
+          },
+          "calls": {
+            "snapshotCapacity": {
+              "n": 2,
+              "ms": 0.0,
+              "firstAt": 1
+            },
+            "saveSnapshot": {
+              "n": 1,
+              "ms": 0.0,
+              "firstAt": 1
+            },
+            "insertText": {
+              "n": 1,
+              "ms": 1.0,
+              "firstAt": 1
+            },
+            "getPageInfo": {
+              "n": 1,
+              "ms": 0.0,
+              "firstAt": 2
+            },
+            "beginRenderJob": {
+              "n": 1,
+              "ms": 0.0,
+              "firstAt": 8
+            },
+            "canvasReadback": {
+              "n": 1,
+              "ms": 2.0,
+              "firstAt": 11
+            },
+            "canvasVisibleDraw": {
+              "n": 1,
+              "ms": 1.0,
+              "firstAt": 13
+            },
+            "pollRenderJob": {
+              "n": 1,
+              "ms": 6.0,
+              "firstAt": 8
+            },
+            "adapterRenderRequest": {
+              "n": 1,
+              "ms": 7.0,
+              "firstAt": 7
+            }
+          }
+        },
+        {
+          "kind": "groupStart",
+          "keyToFrame": 58,
+          "at": {
+            "handlerEnd": 20,
+            "input": 2,
+            "observed": 21,
+            "raf1": 56,
+            "end": 58,
+            "key": 0
+          },
+          "calls": {
+            "snapshotCapacity": {
+              "n": 2,
+              "ms": 0.0,
+              "firstAt": 2
+            },
+            "saveSnapshot": {
+              "n": 1,
+              "ms": 0.0,
+              "firstAt": 2
+            },
+            "insertText": {
+              "n": 1,
+              "ms": 1.0,
+              "firstAt": 2
+            },
+            "getPageInfo": {
+              "n": 1,
+              "ms": 0.0,
+              "firstAt": 3
+            },
+            "beginRenderJob": {
+              "n": 1,
+              "ms": 0.0,
+              "firstAt": 9
+            },
+            "canvasReadback": {
+              "n": 1,
+              "ms": 2.0,
+              "firstAt": 12
+            },
+            "canvasVisibleDraw": {
+              "n": 1,
+              "ms": 0.0,
+              "firstAt": 14
+            },
+            "pollRenderJob": {
+              "n": 1,
+              "ms": 5.0,
+              "firstAt": 9
+            },
+            "adapterRenderRequest": {
+              "n": 1,
+              "ms": 5.0,
+              "firstAt": 9
+            }
+          }
+        },
+        {
+          "kind": "groupStart",
+          "keyToFrame": 55,
+          "at": {
+            "handlerEnd": 19,
+            "input": 1,
+            "observed": 20,
+            "raf1": 54,
+            "end": 55,
+            "key": 0
+          },
+          "calls": {
+            "insertText": {
+              "n": 1,
+              "ms": 1.0,
+              "firstAt": 1
+            },
+            "getPageInfo": {
+              "n": 1,
+              "ms": 0.0,
+              "firstAt": 3
+            },
+            "beginRenderJob": {
+              "n": 1,
+              "ms": 0.0,
+              "firstAt": 9
+            },
+            "canvasReadback": {
+              "n": 1,
+              "ms": 1.0,
+              "firstAt": 12
+            },
+            "canvasVisibleDraw": {
+              "n": 1,
+              "ms": 1.0,
+              "firstAt": 13
+            },
+            "pollRenderJob": {
+              "n": 1,
+              "ms": 5.0,
+              "firstAt": 9
+            },
+            "adapterRenderRequest": {
+              "n": 1,
+              "ms": 5.0,
+              "firstAt": 9
+            }
+          }
+        },
+        {
+          "kind": "groupStart",
+          "keyToFrame": 63,
+          "at": {
+            "handlerEnd": 19,
+            "input": 1,
+            "observed": 20,
+            "raf1": 55,
+            "end": 63,
+            "key": 0
+          },
+          "calls": {
+            "insertText": {
+              "n": 1,
+              "ms": 1.0,
+              "firstAt": 1
+            },
+            "getPageInfo": {
+              "n": 1,
+              "ms": 0.0,
+              "firstAt": 4
+            },
+            "beginRenderJob": {
+              "n": 1,
+              "ms": 0.0,
+              "firstAt": 9
+            },
+            "canvasReadback": {
+              "n": 1,
+              "ms": 2.0,
+              "firstAt": 12
+            },
+            "canvasVisibleDraw": {
+              "n": 1,
+              "ms": 0.0,
+              "firstAt": 14
+            },
+            "pollRenderJob": {
+              "n": 1,
+              "ms": 4.0,
+              "firstAt": 10
+            },
+            "adapterRenderRequest": {
+              "n": 1,
+              "ms": 6.0,
+              "firstAt": 9
+            }
+          }
+        },
+        {
+          "kind": "groupStart",
+          "keyToFrame": 69,
+          "at": {
+            "handlerEnd": 20,
+            "input": 2,
+            "observed": 21,
+            "raf1": 56,
+            "end": 69,
+            "key": 0
+          },
+          "calls": {
+            "insertText": {
+              "n": 1,
+              "ms": 1.0,
+              "firstAt": 2
+            },
+            "getPageInfo": {
+              "n": 1,
+              "ms": 0.0,
+              "firstAt": 4
+            },
+            "beginRenderJob": {
+              "n": 1,
+              "ms": 0.0,
+              "firstAt": 10
+            },
+            "canvasReadback": {
+              "n": 1,
+              "ms": 1.0,
+              "firstAt": 13
+            },
+            "canvasVisibleDraw": {
+              "n": 1,
+              "ms": 1.0,
+              "firstAt": 14
+            },
+            "pollRenderJob": {
+              "n": 1,
+              "ms": 5.0,
+              "firstAt": 10
+            },
+            "adapterRenderRequest": {
+              "n": 1,
+              "ms": 5.0,
+              "firstAt": 10
+            }
+          }
+        },
+        {
+          "kind": "groupStart",
+          "keyToFrame": 85,
+          "at": {
+            "handlerEnd": 18,
+            "input": 1,
+            "observed": 19,
+            "raf1": 54,
+            "end": 85,
+            "key": 0
+          },
+          "calls": {
+            "insertText": {
+              "n": 1,
+              "ms": 1.0,
+              "firstAt": 1
+            },
+            "getPageInfo": {
+              "n": 1,
+              "ms": 0.0,
+              "firstAt": 3
+            },
+            "beginRenderJob": {
+              "n": 1,
+              "ms": 0.0,
+              "firstAt": 8
+            },
+            "canvasReadback": {
+              "n": 1,
+              "ms": 1.0,
+              "firstAt": 12
+            },
+            "canvasVisibleDraw": {
+              "n": 1,
+              "ms": 1.0,
+              "firstAt": 13
+            },
+            "pollRenderJob": {
+              "n": 1,
+              "ms": 6.0,
+              "firstAt": 8
+            },
+            "adapterRenderRequest": {
+              "n": 1,
+              "ms": 6.0,
+              "firstAt": 8
+            }
+          }
+        },
+        {
+          "kind": "groupStart",
+          "keyToFrame": 84,
+          "at": {
+            "handlerEnd": 19,
+            "input": 0,
+            "observed": 20,
+            "raf1": 54,
+            "end": 84,
+            "key": 0
+          },
+          "calls": {
+            "insertText": {
+              "n": 1,
+              "ms": 1.0,
+              "firstAt": 1
+            },
+            "getPageInfo": {
+              "n": 1,
+              "ms": 0.0,
+              "firstAt": 2
+            },
+            "beginRenderJob": {
+              "n": 1,
+              "ms": 0.0,
+              "firstAt": 8
+            },
+            "canvasReadback": {
+              "n": 1,
+              "ms": 1.0,
+              "firstAt": 12
+            },
+            "canvasVisibleDraw": {
+              "n": 1,
+              "ms": 1.0,
+              "firstAt": 13
+            },
+            "pollRenderJob": {
+              "n": 1,
+              "ms": 6.0,
+              "firstAt": 8
+            },
+            "adapterRenderRequest": {
+              "n": 1,
+              "ms": 6.0,
+              "firstAt": 8
+            }
+          }
+        },
+        {
+          "kind": "groupStart",
+          "keyToFrame": 91,
+          "at": {
+            "handlerEnd": 43,
+            "input": 26,
+            "observed": 44,
+            "raf1": 79,
+            "end": 91,
+            "key": 0
+          },
+          "calls": {
+            "insertText": {
+              "n": 1,
+              "ms": 1.0,
+              "firstAt": 27
+            },
+            "getPageInfo": {
+              "n": 1,
+              "ms": 0.0,
+              "firstAt": 28
+            },
+            "beginRenderJob": {
+              "n": 1,
+              "ms": 0.0,
+              "firstAt": 33
+            },
+            "canvasReadback": {
+              "n": 1,
+              "ms": 1.0,
+              "firstAt": 36
+            },
+            "canvasVisibleDraw": {
+              "n": 1,
+              "ms": 1.0,
+              "firstAt": 37
+            },
+            "pollRenderJob": {
+              "n": 1,
+              "ms": 5.0,
+              "firstAt": 33
+            },
+            "adapterRenderRequest": {
+              "n": 1,
+              "ms": 5.0,
+              "firstAt": 33
+            }
+          }
+        },
+        {
+          "kind": "groupStart",
+          "keyToFrame": 62,
+          "at": {
+            "handlerEnd": 19,
+            "input": 1,
+            "observed": 20,
+            "raf1": 55,
+            "end": 62,
+            "key": 0
+          },
+          "calls": {
+            "insertText": {
+              "n": 1,
+              "ms": 1.0,
+              "firstAt": 2
+            },
+            "getPageInfo": {
+              "n": 1,
+              "ms": 0.0,
+              "firstAt": 3
+            },
+            "beginRenderJob": {
+              "n": 1,
+              "ms": 0.0,
+              "firstAt": 8
+            },
+            "canvasReadback": {
+              "n": 1,
+              "ms": 1.0,
+              "firstAt": 12
+            },
+            "canvasVisibleDraw": {
+              "n": 1,
+              "ms": 0.0,
+              "firstAt": 14
+            },
+            "pollRenderJob": {
+              "n": 1,
+              "ms": 6.0,
+              "firstAt": 8
+            },
+            "adapterRenderRequest": {
+              "n": 1,
+              "ms": 6.0,
+              "firstAt": 8
+            }
+          }
+        },
+        {
+          "kind": "groupStart",
+          "keyToFrame": 65,
+          "at": {
+            "handlerEnd": 17,
+            "input": 0,
+            "observed": 18,
+            "raf1": 53,
+            "end": 65,
+            "key": 0
+          },
+          "calls": {
+            "insertText": {
+              "n": 1,
+              "ms": 1.0,
+              "firstAt": 1
+            },
+            "getPageInfo": {
+              "n": 1,
+              "ms": 0.0,
+              "firstAt": 2
+            },
+            "beginRenderJob": {
+              "n": 1,
+              "ms": 0.0,
+              "firstAt": 8
+            },
+            "canvasReadback": {
+              "n": 1,
+              "ms": 1.0,
+              "firstAt": 11
+            },
+            "canvasVisibleDraw": {
+              "n": 1,
+              "ms": 0.0,
+              "firstAt": 13
+            },
+            "pollRenderJob": {
+              "n": 1,
+              "ms": 5.0,
+              "firstAt": 8
+            },
+            "adapterRenderRequest": {
+              "n": 1,
+              "ms": 5.0,
+              "firstAt": 8
+            }
+          }
+        },
+        {
+          "kind": "groupStart",
+          "keyToFrame": 61,
+          "at": {
+            "handlerEnd": 18,
+            "input": 1,
+            "observed": 19,
+            "raf1": 54,
+            "end": 61,
+            "key": 0
+          },
+          "calls": {
+            "insertText": {
+              "n": 1,
+              "ms": 1.0,
+              "firstAt": 1
+            },
+            "getPageInfo": {
+              "n": 1,
+              "ms": 0.0,
+              "firstAt": 2
+            },
+            "beginRenderJob": {
+              "n": 1,
+              "ms": 0.0,
+              "firstAt": 8
+            },
+            "canvasReadback": {
+              "n": 1,
+              "ms": 1.0,
+              "firstAt": 11
+            },
+            "canvasVisibleDraw": {
+              "n": 1,
+              "ms": 0.0,
+              "firstAt": 13
+            },
+            "pollRenderJob": {
+              "n": 1,
+              "ms": 5.0,
+              "firstAt": 8
+            },
+            "adapterRenderRequest": {
+              "n": 1,
+              "ms": 5.0,
+              "firstAt": 8
+            }
+          }
+        },
+        {
+          "kind": "groupStart",
+          "keyToFrame": 55,
+          "at": {
+            "handlerEnd": 18,
+            "input": 1,
+            "observed": 19,
+            "raf1": 54,
+            "end": 55,
+            "key": 0
+          },
+          "calls": {
+            "insertText": {
+              "n": 1,
+              "ms": 1.0,
+              "firstAt": 1
+            },
+            "getPageInfo": {
+              "n": 1,
+              "ms": 0.0,
+              "firstAt": 3
+            },
+            "beginRenderJob": {
+              "n": 1,
+              "ms": 0.0,
+              "firstAt": 9
+            },
+            "canvasReadback": {
+              "n": 1,
+              "ms": 1.0,
+              "firstAt": 12
+            },
+            "canvasVisibleDraw": {
+              "n": 1,
+              "ms": 0.0,
+              "firstAt": 13
+            },
+            "pollRenderJob": {
+              "n": 1,
+              "ms": 4.0,
+              "firstAt": 9
+            },
+            "adapterRenderRequest": {
+              "n": 1,
+              "ms": 5.0,
+              "firstAt": 8
+            }
+          }
+        },
+        {
+          "kind": "groupStart",
+          "keyToFrame": 63,
+          "at": {
+            "handlerEnd": 18,
+            "input": 1,
+            "observed": 20,
+            "raf1": 54,
+            "end": 63,
+            "key": 0
+          },
+          "calls": {
+            "insertText": {
+              "n": 1,
+              "ms": 1.0,
+              "firstAt": 1
+            },
+            "getPageInfo": {
+              "n": 1,
+              "ms": 0.0,
+              "firstAt": 2
+            },
+            "beginRenderJob": {
+              "n": 1,
+              "ms": 0.0,
+              "firstAt": 8
+            },
+            "canvasReadback": {
+              "n": 1,
+              "ms": 2.0,
+              "firstAt": 11
+            },
+            "canvasVisibleDraw": {
+              "n": 1,
+              "ms": 0.0,
+              "firstAt": 13
+            },
+            "pollRenderJob": {
+              "n": 1,
+              "ms": 6.0,
+              "firstAt": 8
+            },
+            "adapterRenderRequest": {
+              "n": 1,
+              "ms": 6.0,
+              "firstAt": 8
+            }
+          }
+        },
+        {
+          "kind": "groupStart",
+          "keyToFrame": 70,
+          "at": {
+            "handlerEnd": 19,
+            "input": 1,
+            "observed": 20,
+            "raf1": 55,
+            "end": 70,
+            "key": 0
+          },
+          "calls": {
+            "insertText": {
+              "n": 1,
+              "ms": 1.0,
+              "firstAt": 1
+            },
+            "getPageInfo": {
+              "n": 1,
+              "ms": 0.0,
+              "firstAt": 3
+            },
+            "beginRenderJob": {
+              "n": 1,
+              "ms": 0.0,
+              "firstAt": 9
+            },
+            "canvasReadback": {
+              "n": 1,
+              "ms": 1.0,
+              "firstAt": 12
+            },
+            "canvasVisibleDraw": {
+              "n": 1,
+              "ms": 1.0,
+              "firstAt": 13
+            },
+            "pollRenderJob": {
+              "n": 1,
+              "ms": 5.0,
+              "firstAt": 9
+            },
+            "adapterRenderRequest": {
+              "n": 1,
+              "ms": 5.0,
+              "firstAt": 9
+            }
+          }
+        },
+        {
+          "kind": "groupStart",
+          "keyToFrame": 69,
+          "at": {
+            "handlerEnd": 20,
+            "input": 2,
+            "observed": 21,
+            "raf1": 58,
+            "end": 69,
+            "key": 0
+          },
+          "calls": {
+            "insertText": {
+              "n": 1,
+              "ms": 1.0,
+              "firstAt": 2
+            },
+            "getPageInfo": {
+              "n": 1,
+              "ms": 1.0,
+              "firstAt": 3
+            },
+            "beginRenderJob": {
+              "n": 1,
+              "ms": 0.0,
+              "firstAt": 9
+            },
+            "canvasReadback": {
+              "n": 1,
+              "ms": 1.0,
+              "firstAt": 13
+            },
+            "canvasVisibleDraw": {
+              "n": 1,
+              "ms": 0.0,
+              "firstAt": 15
+            },
+            "pollRenderJob": {
+              "n": 1,
+              "ms": 6.0,
+              "firstAt": 9
+            },
+            "adapterRenderRequest": {
+              "n": 1,
+              "ms": 6.0,
+              "firstAt": 9
+            }
+          }
+        },
+        {
+          "kind": "groupStart",
+          "keyToFrame": 69,
+          "at": {
+            "handlerEnd": 17,
+            "input": 1,
+            "observed": 19,
+            "raf1": 53,
+            "end": 69,
+            "key": 0
+          },
+          "calls": {
+            "insertText": {
+              "n": 1,
+              "ms": 1.0,
+              "firstAt": 1
+            },
+            "getPageInfo": {
+              "n": 1,
+              "ms": 0.0,
+              "firstAt": 2
+            },
+            "beginRenderJob": {
+              "n": 1,
+              "ms": 0.0,
+              "firstAt": 7
+            },
+            "canvasReadback": {
+              "n": 1,
+              "ms": 1.0,
+              "firstAt": 11
+            },
+            "canvasVisibleDraw": {
+              "n": 1,
+              "ms": 1.0,
+              "firstAt": 12
+            },
+            "pollRenderJob": {
+              "n": 1,
+              "ms": 6.0,
+              "firstAt": 7
+            },
+            "adapterRenderRequest": {
+              "n": 1,
+              "ms": 6.0,
+              "firstAt": 7
+            }
+          }
+        },
+        {
+          "kind": "groupStart",
+          "keyToFrame": 65,
+          "at": {
+            "handlerEnd": 19,
+            "input": 1,
+            "observed": 20,
+            "raf1": 54,
+            "end": 65,
+            "key": 0
+          },
+          "calls": {
+            "insertText": {
+              "n": 1,
+              "ms": 1.0,
+              "firstAt": 1
+            },
+            "getPageInfo": {
+              "n": 1,
+              "ms": 0.0,
+              "firstAt": 2
+            },
+            "beginRenderJob": {
+              "n": 1,
+              "ms": 0.0,
+              "firstAt": 8
+            },
+            "canvasReadback": {
+              "n": 1,
+              "ms": 1.0,
+              "firstAt": 12
+            },
+            "canvasVisibleDraw": {
+              "n": 1,
+              "ms": 1.0,
+              "firstAt": 13
+            },
+            "pollRenderJob": {
+              "n": 1,
+              "ms": 6.0,
+              "firstAt": 8
+            },
+            "adapterRenderRequest": {
+              "n": 1,
+              "ms": 6.0,
+              "firstAt": 8
+            }
+          }
+        },
+        {
+          "kind": "groupStart",
+          "keyToFrame": 71,
+          "at": {
+            "handlerEnd": 19,
+            "input": 1,
+            "observed": 21,
+            "raf1": 55,
+            "end": 71,
+            "key": 0
+          },
+          "calls": {
+            "insertText": {
+              "n": 1,
+              "ms": 1.0,
+              "firstAt": 1
+            },
+            "getPageInfo": {
+              "n": 1,
+              "ms": 0.0,
+              "firstAt": 3
+            },
+            "beginRenderJob": {
+              "n": 1,
+              "ms": 0.0,
+              "firstAt": 8
+            },
+            "canvasReadback": {
+              "n": 1,
+              "ms": 2.0,
+              "firstAt": 12
+            },
+            "canvasVisibleDraw": {
+              "n": 1,
+              "ms": 0.0,
+              "firstAt": 14
+            },
+            "pollRenderJob": {
+              "n": 1,
+              "ms": 6.0,
+              "firstAt": 8
+            },
+            "adapterRenderRequest": {
+              "n": 1,
+              "ms": 6.0,
+              "firstAt": 8
+            }
+          }
+        },
+        {
+          "kind": "groupStart",
+          "keyToFrame": 60,
+          "at": {
+            "handlerEnd": 18,
+            "input": 0,
+            "observed": 19,
+            "raf1": 54,
+            "end": 60,
+            "key": 0
+          },
+          "calls": {
+            "insertText": {
+              "n": 1,
+              "ms": 1.0,
+              "firstAt": 1
+            },
+            "getPageInfo": {
+              "n": 1,
+              "ms": 0.0,
+              "firstAt": 2
+            },
+            "beginRenderJob": {
+              "n": 1,
+              "ms": 0.0,
+              "firstAt": 8
+            },
+            "canvasReadback": {
+              "n": 1,
+              "ms": 1.0,
+              "firstAt": 12
+            },
+            "canvasVisibleDraw": {
+              "n": 1,
+              "ms": 0.0,
+              "firstAt": 13
+            },
+            "pollRenderJob": {
+              "n": 1,
+              "ms": 5.0,
+              "firstAt": 8
+            },
+            "adapterRenderRequest": {
+              "n": 1,
+              "ms": 5.0,
+              "firstAt": 8
+            }
+          }
+        },
+        {
+          "kind": "groupStart",
+          "keyToFrame": 70,
+          "at": {
+            "handlerEnd": 19,
+            "input": 1,
+            "observed": 20,
+            "raf1": 55,
+            "end": 70,
+            "key": 0
+          },
+          "calls": {
+            "insertText": {
+              "n": 1,
+              "ms": 1.0,
+              "firstAt": 1
+            },
+            "getPageInfo": {
+              "n": 1,
+              "ms": 1.0,
+              "firstAt": 2
+            },
+            "beginRenderJob": {
+              "n": 1,
+              "ms": 0.0,
+              "firstAt": 8
+            },
+            "canvasReadback": {
+              "n": 1,
+              "ms": 1.0,
+              "firstAt": 12
+            },
+            "canvasVisibleDraw": {
+              "n": 1,
+              "ms": 0.0,
+              "firstAt": 14
+            },
+            "pollRenderJob": {
+              "n": 1,
+              "ms": 6.0,
+              "firstAt": 8
+            },
+            "adapterRenderRequest": {
+              "n": 1,
+              "ms": 6.0,
+              "firstAt": 8
+            }
+          }
+        },
+        {
+          "kind": "groupStart",
+          "keyToFrame": 66,
+          "at": {
+            "handlerEnd": 19,
+            "input": 1,
+            "observed": 21,
+            "raf1": 55,
+            "end": 66,
+            "key": 0
+          },
+          "calls": {
+            "insertText": {
+              "n": 1,
+              "ms": 1.0,
+              "firstAt": 2
+            },
+            "getPageInfo": {
+              "n": 1,
+              "ms": 1.0,
+              "firstAt": 3
+            },
+            "beginRenderJob": {
+              "n": 1,
+              "ms": 0.0,
+              "firstAt": 9
+            },
+            "canvasReadback": {
+              "n": 1,
+              "ms": 1.0,
+              "firstAt": 13
+            },
+            "canvasVisibleDraw": {
+              "n": 1,
+              "ms": 0.0,
+              "firstAt": 14
+            },
+            "pollRenderJob": {
+              "n": 1,
+              "ms": 5.0,
+              "firstAt": 9
+            },
+            "adapterRenderRequest": {
+              "n": 1,
+              "ms": 5.0,
+              "firstAt": 9
+            }
+          }
+        },
+        {
+          "kind": "groupStart",
+          "keyToFrame": 87,
+          "at": {
+            "handlerEnd": 20,
+            "input": 1,
+            "observed": 22,
+            "raf1": 58,
+            "end": 87,
+            "key": 0
+          },
+          "calls": {
+            "insertText": {
+              "n": 1,
+              "ms": 2.0,
+              "firstAt": 1
+            },
+            "getPageInfo": {
+              "n": 1,
+              "ms": 0.0,
+              "firstAt": 4
+            },
+            "beginRenderJob": {
+              "n": 1,
+              "ms": 0.0,
+              "firstAt": 9
+            },
+            "canvasReadback": {
+              "n": 1,
+              "ms": 1.0,
+              "firstAt": 13
+            },
+            "canvasVisibleDraw": {
+              "n": 1,
+              "ms": 0.0,
+              "firstAt": 15
+            },
+            "pollRenderJob": {
+              "n": 1,
+              "ms": 6.0,
+              "firstAt": 9
+            },
+            "adapterRenderRequest": {
+              "n": 1,
+              "ms": 6.0,
+              "firstAt": 9
+            }
+          }
+        },
+        {
+          "kind": "groupStart",
+          "keyToFrame": 58,
+          "at": {
+            "handlerEnd": 18,
+            "input": 1,
+            "observed": 20,
+            "raf1": 54,
+            "end": 58,
+            "key": 0
+          },
+          "calls": {
+            "insertText": {
+              "n": 1,
+              "ms": 1.0,
+              "firstAt": 1
+            },
+            "getPageInfo": {
+              "n": 1,
+              "ms": 0.0,
+              "firstAt": 3
+            },
+            "beginRenderJob": {
+              "n": 1,
+              "ms": 0.0,
+              "firstAt": 8
+            },
+            "canvasReadback": {
+              "n": 1,
+              "ms": 2.0,
+              "firstAt": 11
+            },
+            "canvasVisibleDraw": {
+              "n": 1,
+              "ms": 0.0,
+              "firstAt": 13
+            },
+            "pollRenderJob": {
+              "n": 1,
+              "ms": 6.0,
+              "firstAt": 8
+            },
+            "adapterRenderRequest": {
+              "n": 1,
+              "ms": 6.0,
+              "firstAt": 8
+            }
+          }
+        }
+      ]
+    },
+    {
+      "sample": "basic-ko.hwpx",
+      "sourceSha256": "26d434b7b427149110751c6ef5b19e9ecb4818f3ba7eadfe201b5afd3de442a8",
+      "editedRegion": {
+        "caret": "0:3:9",
+        "page": 0
+      },
+      "dpr": 1.04205322265625,
+      "groupStart": {
+        "n": 30,
+        "p50": 65,
+        "p95": 87,
+        "max": 88,
+        "timeouts": 0
+      },
+      "extend": {
+        "n": 30,
+        "p50": 68,
+        "p95": 88,
+        "max": 95,
+        "timeouts": 0
+      },
+      "undo": {
+        "n": 25,
+        "p50": 141,
+        "p95": 207,
+        "max": 227,
+        "timeouts": 0
+      },
+      "redo": {
+        "n": 20,
+        "p50": 144,
+        "p95": 150,
+        "max": 207,
+        "timeouts": 0
+      },
+      "afterUndo": {
+        "n": 5,
+        "p50": 131,
+        "p95": 132,
+        "max": 132,
+        "timeouts": 0
+      },
+      "zeroWorkFrameFloorMs": {
+        "n": 30,
+        "p50": 40,
+        "p95": 49,
+        "max": 49,
+        "timeouts": 0
+      },
+      "adapterCounters": {
+        "polls": 122,
+        "staleDropped": 0,
+        "reused": 0,
+        "regionalPatchJobs": 0,
+        "completed": 122,
+        "unchangedFrames": 0,
+        "notifications": 0,
+        "patchJobs": 0,
+        "wholePagePatchJobs": 0,
+        "limits": 0,
+        "replacements": 0,
+        "fullJobs": 122,
+        "errors": 0,
+        "canceled": 0
+      },
+      "nonOverlappingTimestampIntervalsMs": {
+        "keyToInput": {
+          "n": 30,
+          "p50": 0,
+          "p95": 4,
+          "max": 16
+        },
+        "inputThroughHandlerEnd": {
+          "n": 30,
+          "p50": 18,
+          "p95": 21,
+          "max": 23
+        },
+        "handlerEndToObservedRevision": {
+          "n": 30,
+          "p50": 1,
+          "p95": 6,
+          "max": 7
+        },
+        "observedThroughTwoRafs": {
+          "n": 30,
+          "p50": 43,
+          "p95": 64,
+          "max": 67
+        }
+      },
+      "groupStartTimeline": [
+        {
+          "kind": "groupStart",
+          "keyToFrame": 86,
+          "at": {
+            "handlerEnd": 20,
+            "input": 0,
+            "observed": 26,
+            "raf1": 57,
+            "end": 86,
+            "key": 0
+          },
+          "calls": {
+            "snapshotCapacity": {
+              "n": 2,
+              "ms": 0.0,
+              "firstAt": 1
+            },
+            "saveSnapshot": {
+              "n": 1,
+              "ms": 0.0,
+              "firstAt": 1
+            },
+            "insertText": {
+              "n": 1,
+              "ms": 2.0,
+              "firstAt": 1
+            },
+            "getPageInfo": {
+              "n": 1,
+              "ms": 0.0,
+              "firstAt": 3
+            },
+            "beginRenderJob": {
+              "n": 1,
+              "ms": 0.0,
+              "firstAt": 10
+            },
+            "canvasReadback": {
+              "n": 1,
+              "ms": 1.0,
+              "firstAt": 13
+            },
+            "canvasVisibleDraw": {
+              "n": 1,
+              "ms": 0.0,
+              "firstAt": 15
+            },
+            "pollRenderJob": {
+              "n": 1,
+              "ms": 5.0,
+              "firstAt": 10
+            },
+            "adapterRenderRequest": {
+              "n": 1,
+              "ms": 5.0,
+              "firstAt": 10
+            }
+          }
+        },
+        {
+          "kind": "groupStart",
+          "keyToFrame": 88,
+          "at": {
+            "handlerEnd": 23,
+            "input": 4,
+            "observed": 24,
+            "raf1": 59,
+            "end": 88,
+            "key": 0
+          },
+          "calls": {
+            "snapshotCapacity": {
+              "n": 2,
+              "ms": 0.0,
+              "firstAt": 4
+            },
+            "saveSnapshot": {
+              "n": 1,
+              "ms": 0.0,
+              "firstAt": 4
+            },
+            "insertText": {
+              "n": 1,
+              "ms": 1.0,
+              "firstAt": 4
+            },
+            "getPageInfo": {
+              "n": 1,
+              "ms": 0.0,
+              "firstAt": 6
+            },
+            "beginRenderJob": {
+              "n": 1,
+              "ms": 0.0,
+              "firstAt": 12
+            },
+            "canvasReadback": {
+              "n": 1,
+              "ms": 2.0,
+              "firstAt": 15
+            },
+            "canvasVisibleDraw": {
+              "n": 1,
+              "ms": 0.0,
+              "firstAt": 17
+            },
+            "pollRenderJob": {
+              "n": 1,
+              "ms": 5.0,
+              "firstAt": 12
+            },
+            "adapterRenderRequest": {
+              "n": 1,
+              "ms": 5.0,
+              "firstAt": 12
+            }
+          }
+        },
+        {
+          "kind": "groupStart",
+          "keyToFrame": 82,
+          "at": {
+            "handlerEnd": 16,
+            "input": -1,
+            "observed": 22,
+            "raf1": 53,
+            "end": 82,
+            "key": 0
+          },
+          "calls": {
+            "snapshotCapacity": {
+              "n": 2,
+              "ms": 0.0,
+              "firstAt": -1
+            },
+            "saveSnapshot": {
+              "n": 1,
+              "ms": 0.0,
+              "firstAt": 0
+            },
+            "insertText": {
+              "n": 1,
+              "ms": 0.0,
+              "firstAt": 0
+            },
+            "getPageInfo": {
+              "n": 1,
+              "ms": 0.0,
+              "firstAt": 1
+            },
+            "beginRenderJob": {
+              "n": 1,
+              "ms": 0.0,
+              "firstAt": 6
+            },
+            "canvasReadback": {
+              "n": 1,
+              "ms": 1.0,
+              "firstAt": 9
+            },
+            "canvasVisibleDraw": {
+              "n": 1,
+              "ms": 0.0,
+              "firstAt": 11
+            },
+            "pollRenderJob": {
+              "n": 1,
+              "ms": 5.0,
+              "firstAt": 6
+            },
+            "adapterRenderRequest": {
+              "n": 1,
+              "ms": 5.0,
+              "firstAt": 6
+            }
+          }
+        },
+        {
+          "kind": "groupStart",
+          "keyToFrame": 81,
+          "at": {
+            "handlerEnd": 16,
+            "input": -1,
+            "observed": 22,
+            "raf1": 53,
+            "end": 81,
+            "key": 0
+          },
+          "calls": {
+            "snapshotCapacity": {
+              "n": 2,
+              "ms": 0.0,
+              "firstAt": 0
+            },
+            "saveSnapshot": {
+              "n": 1,
+              "ms": 0.0,
+              "firstAt": 0
+            },
+            "insertText": {
+              "n": 1,
+              "ms": 1.0,
+              "firstAt": 0
+            },
+            "getPageInfo": {
+              "n": 1,
+              "ms": 0.0,
+              "firstAt": 1
+            },
+            "beginRenderJob": {
+              "n": 1,
+              "ms": 0.0,
+              "firstAt": 6
+            },
+            "canvasReadback": {
+              "n": 1,
+              "ms": 2.0,
+              "firstAt": 9
+            },
+            "canvasVisibleDraw": {
+              "n": 1,
+              "ms": 0.0,
+              "firstAt": 11
+            },
+            "pollRenderJob": {
+              "n": 1,
+              "ms": 5.0,
+              "firstAt": 6
+            },
+            "adapterRenderRequest": {
+              "n": 1,
+              "ms": 5.0,
+              "firstAt": 6
+            }
+          }
+        },
+        {
+          "kind": "groupStart",
+          "keyToFrame": 82,
+          "at": {
+            "handlerEnd": 16,
+            "input": -1,
+            "observed": 23,
+            "raf1": 53,
+            "end": 82,
+            "key": 0
+          },
+          "calls": {
+            "snapshotCapacity": {
+              "n": 2,
+              "ms": 0.0,
+              "firstAt": 0
+            },
+            "saveSnapshot": {
+              "n": 1,
+              "ms": 0.0,
+              "firstAt": 0
+            },
+            "insertText": {
+              "n": 1,
+              "ms": 1.0,
+              "firstAt": 0
+            },
+            "getPageInfo": {
+              "n": 1,
+              "ms": 1.0,
+              "firstAt": 1
+            },
+            "beginRenderJob": {
+              "n": 1,
+              "ms": 0.0,
+              "firstAt": 7
+            },
+            "canvasReadback": {
+              "n": 1,
+              "ms": 2.0,
+              "firstAt": 9
+            },
+            "canvasVisibleDraw": {
+              "n": 1,
+              "ms": 0.0,
+              "firstAt": 11
+            },
+            "pollRenderJob": {
+              "n": 1,
+              "ms": 4.0,
+              "firstAt": 7
+            },
+            "adapterRenderRequest": {
+              "n": 1,
+              "ms": 6.0,
+              "firstAt": 6
+            }
+          }
+        },
+        {
+          "kind": "groupStart",
+          "keyToFrame": 71,
+          "at": {
+            "handlerEnd": 18,
+            "input": 0,
+            "observed": 19,
+            "raf1": 54,
+            "end": 71,
+            "key": 0
+          },
+          "calls": {
+            "snapshotCapacity": {
+              "n": 2,
+              "ms": 0.0,
+              "firstAt": 0
+            },
+            "saveSnapshot": {
+              "n": 1,
+              "ms": 1.0,
+              "firstAt": 0
+            },
+            "insertText": {
+              "n": 1,
+              "ms": 0.0,
+              "firstAt": 1
+            },
+            "getPageInfo": {
+              "n": 1,
+              "ms": 0.0,
+              "firstAt": 2
+            },
+            "beginRenderJob": {
+              "n": 1,
+              "ms": 0.0,
+              "firstAt": 8
+            },
+            "canvasReadback": {
+              "n": 1,
+              "ms": 1.0,
+              "firstAt": 11
+            },
+            "canvasVisibleDraw": {
+              "n": 1,
+              "ms": 0.0,
+              "firstAt": 13
+            },
+            "pollRenderJob": {
+              "n": 1,
+              "ms": 5.0,
+              "firstAt": 8
+            },
+            "adapterRenderRequest": {
+              "n": 1,
+              "ms": 5.0,
+              "firstAt": 8
+            }
+          }
+        },
+        {
+          "kind": "groupStart",
+          "keyToFrame": 60,
+          "at": {
+            "handlerEnd": 18,
+            "input": 1,
+            "observed": 20,
+            "raf1": 54,
+            "end": 60,
+            "key": 0
+          },
+          "calls": {
+            "snapshotCapacity": {
+              "n": 2,
+              "ms": 0.0,
+              "firstAt": 1
+            },
+            "saveSnapshot": {
+              "n": 1,
+              "ms": 0.0,
+              "firstAt": 1
+            },
+            "insertText": {
+              "n": 1,
+              "ms": 1.0,
+              "firstAt": 1
+            },
+            "getPageInfo": {
+              "n": 1,
+              "ms": 0.0,
+              "firstAt": 3
+            },
+            "beginRenderJob": {
+              "n": 1,
+              "ms": 0.0,
+              "firstAt": 9
+            },
+            "canvasReadback": {
+              "n": 1,
+              "ms": 1.0,
+              "firstAt": 12
+            },
+            "canvasVisibleDraw": {
+              "n": 1,
+              "ms": 0.0,
+              "firstAt": 13
+            },
+            "pollRenderJob": {
+              "n": 1,
+              "ms": 4.0,
+              "firstAt": 9
+            },
+            "adapterRenderRequest": {
+              "n": 1,
+              "ms": 6.0,
+              "firstAt": 8
+            }
+          }
+        },
+        {
+          "kind": "groupStart",
+          "keyToFrame": 67,
+          "at": {
+            "handlerEnd": 19,
+            "input": 0,
+            "observed": 20,
+            "raf1": 56,
+            "end": 67,
+            "key": 0
+          },
+          "calls": {
+            "snapshotCapacity": {
+              "n": 2,
+              "ms": 0.0,
+              "firstAt": 0
+            },
+            "saveSnapshot": {
+              "n": 1,
+              "ms": 0.0,
+              "firstAt": 0
+            },
+            "insertText": {
+              "n": 1,
+              "ms": 1.0,
+              "firstAt": 0
+            },
+            "getPageInfo": {
+              "n": 1,
+              "ms": 0.0,
+              "firstAt": 2
+            },
+            "beginRenderJob": {
+              "n": 1,
+              "ms": 0.0,
+              "firstAt": 8
+            },
+            "canvasReadback": {
+              "n": 1,
+              "ms": 1.0,
+              "firstAt": 12
+            },
+            "canvasVisibleDraw": {
+              "n": 1,
+              "ms": 0.0,
+              "firstAt": 14
+            },
+            "pollRenderJob": {
+              "n": 1,
+              "ms": 6.0,
+              "firstAt": 8
+            },
+            "adapterRenderRequest": {
+              "n": 1,
+              "ms": 6.0,
+              "firstAt": 8
+            }
+          }
+        },
+        {
+          "kind": "groupStart",
+          "keyToFrame": 59,
+          "at": {
+            "handlerEnd": 17,
+            "input": 0,
+            "observed": 19,
+            "raf1": 53,
+            "end": 59,
+            "key": 0
+          },
+          "calls": {
+            "snapshotCapacity": {
+              "n": 2,
+              "ms": 0.0,
+              "firstAt": 0
+            },
+            "saveSnapshot": {
+              "n": 1,
+              "ms": 0.0,
+              "firstAt": 0
+            },
+            "insertText": {
+              "n": 1,
+              "ms": 1.0,
+              "firstAt": 0
+            },
+            "getPageInfo": {
+              "n": 1,
+              "ms": 0.0,
+              "firstAt": 2
+            },
+            "beginRenderJob": {
+              "n": 1,
+              "ms": 0.0,
+              "firstAt": 7
+            },
+            "canvasReadback": {
+              "n": 1,
+              "ms": 2.0,
+              "firstAt": 10
+            },
+            "canvasVisibleDraw": {
+              "n": 1,
+              "ms": 0.0,
+              "firstAt": 12
+            },
+            "pollRenderJob": {
+              "n": 1,
+              "ms": 5.0,
+              "firstAt": 7
+            },
+            "adapterRenderRequest": {
+              "n": 1,
+              "ms": 5.0,
+              "firstAt": 7
+            }
+          }
+        },
+        {
+          "kind": "groupStart",
+          "keyToFrame": 69,
+          "at": {
+            "handlerEnd": 19,
+            "input": 1,
+            "observed": 20,
+            "raf1": 54,
+            "end": 69,
+            "key": 0
+          },
+          "calls": {
+            "insertText": {
+              "n": 1,
+              "ms": 1.0,
+              "firstAt": 1
+            },
+            "getPageInfo": {
+              "n": 1,
+              "ms": 0.0,
+              "firstAt": 3
+            },
+            "beginRenderJob": {
+              "n": 1,
+              "ms": 0.0,
+              "firstAt": 8
+            },
+            "canvasReadback": {
+              "n": 1,
+              "ms": 1.0,
+              "firstAt": 12
+            },
+            "canvasVisibleDraw": {
+              "n": 1,
+              "ms": 1.0,
+              "firstAt": 13
+            },
+            "pollRenderJob": {
+              "n": 1,
+              "ms": 6.0,
+              "firstAt": 8
+            },
+            "adapterRenderRequest": {
+              "n": 1,
+              "ms": 6.0,
+              "firstAt": 8
+            }
+          }
+        },
+        {
+          "kind": "groupStart",
+          "keyToFrame": 61,
+          "at": {
+            "handlerEnd": 18,
+            "input": 0,
+            "observed": 19,
+            "raf1": 54,
+            "end": 61,
+            "key": 0
+          },
+          "calls": {
+            "insertText": {
+              "n": 1,
+              "ms": 1.0,
+              "firstAt": 0
+            },
+            "getPageInfo": {
+              "n": 1,
+              "ms": 0.0,
+              "firstAt": 2
+            },
+            "beginRenderJob": {
+              "n": 1,
+              "ms": 0.0,
+              "firstAt": 7
+            },
+            "canvasReadback": {
+              "n": 1,
+              "ms": 2.0,
+              "firstAt": 10
+            },
+            "canvasVisibleDraw": {
+              "n": 1,
+              "ms": 1.0,
+              "firstAt": 12
+            },
+            "pollRenderJob": {
+              "n": 1,
+              "ms": 6.0,
+              "firstAt": 7
+            },
+            "adapterRenderRequest": {
+              "n": 1,
+              "ms": 6.0,
+              "firstAt": 7
+            }
+          }
+        },
+        {
+          "kind": "groupStart",
+          "keyToFrame": 59,
+          "at": {
+            "handlerEnd": 18,
+            "input": 0,
+            "observed": 19,
+            "raf1": 54,
+            "end": 59,
+            "key": 0
+          },
+          "calls": {
+            "insertText": {
+              "n": 1,
+              "ms": 1.0,
+              "firstAt": 1
+            },
+            "getPageInfo": {
+              "n": 1,
+              "ms": 0.0,
+              "firstAt": 2
+            },
+            "beginRenderJob": {
+              "n": 1,
+              "ms": 0.0,
+              "firstAt": 8
+            },
+            "canvasReadback": {
+              "n": 1,
+              "ms": 1.0,
+              "firstAt": 11
+            },
+            "canvasVisibleDraw": {
+              "n": 1,
+              "ms": 0.0,
+              "firstAt": 13
+            },
+            "pollRenderJob": {
+              "n": 1,
+              "ms": 5.0,
+              "firstAt": 8
+            },
+            "adapterRenderRequest": {
+              "n": 1,
+              "ms": 5.0,
+              "firstAt": 8
+            }
+          }
+        },
+        {
+          "kind": "groupStart",
+          "keyToFrame": 83,
+          "at": {
+            "handlerEnd": 18,
+            "input": 1,
+            "observed": 19,
+            "raf1": 53,
+            "end": 83,
+            "key": 0
+          },
+          "calls": {
+            "insertText": {
+              "n": 1,
+              "ms": 1.0,
+              "firstAt": 1
+            },
+            "getPageInfo": {
+              "n": 1,
+              "ms": 0.0,
+              "firstAt": 3
+            },
+            "beginRenderJob": {
+              "n": 1,
+              "ms": 0.0,
+              "firstAt": 8
+            },
+            "canvasReadback": {
+              "n": 1,
+              "ms": 2.0,
+              "firstAt": 11
+            },
+            "canvasVisibleDraw": {
+              "n": 1,
+              "ms": 0.0,
+              "firstAt": 13
+            },
+            "pollRenderJob": {
+              "n": 1,
+              "ms": 5.0,
+              "firstAt": 8
+            },
+            "adapterRenderRequest": {
+              "n": 1,
+              "ms": 5.0,
+              "firstAt": 8
+            }
+          }
+        },
+        {
+          "kind": "groupStart",
+          "keyToFrame": 65,
+          "at": {
+            "handlerEnd": 22,
+            "input": 1,
+            "observed": 24,
+            "raf1": 60,
+            "end": 65,
+            "key": 0
+          },
+          "calls": {
+            "insertText": {
+              "n": 1,
+              "ms": 1.0,
+              "firstAt": 2
+            },
+            "getPageInfo": {
+              "n": 1,
+              "ms": 0.0,
+              "firstAt": 4
+            },
+            "beginRenderJob": {
+              "n": 1,
+              "ms": 0.0,
+              "firstAt": 11
+            },
+            "canvasReadback": {
+              "n": 1,
+              "ms": 1.0,
+              "firstAt": 16
+            },
+            "canvasVisibleDraw": {
+              "n": 1,
+              "ms": 1.0,
+              "firstAt": 17
+            },
+            "pollRenderJob": {
+              "n": 1,
+              "ms": 7.0,
+              "firstAt": 11
+            },
+            "adapterRenderRequest": {
+              "n": 1,
+              "ms": 7.0,
+              "firstAt": 11
+            }
+          }
+        },
+        {
+          "kind": "groupStart",
+          "keyToFrame": 58,
+          "at": {
+            "handlerEnd": 17,
+            "input": 1,
+            "observed": 18,
+            "raf1": 52,
+            "end": 58,
+            "key": 0
+          },
+          "calls": {
+            "insertText": {
+              "n": 1,
+              "ms": 1.0,
+              "firstAt": 1
+            },
+            "getPageInfo": {
+              "n": 1,
+              "ms": 1.0,
+              "firstAt": 2
+            },
+            "beginRenderJob": {
+              "n": 1,
+              "ms": 0.0,
+              "firstAt": 7
+            },
+            "canvasReadback": {
+              "n": 1,
+              "ms": 2.0,
+              "firstAt": 10
+            },
+            "canvasVisibleDraw": {
+              "n": 1,
+              "ms": 0.0,
+              "firstAt": 12
+            },
+            "pollRenderJob": {
+              "n": 1,
+              "ms": 5.0,
+              "firstAt": 7
+            },
+            "adapterRenderRequest": {
+              "n": 1,
+              "ms": 5.0,
+              "firstAt": 7
+            }
+          }
+        },
+        {
+          "kind": "groupStart",
+          "keyToFrame": 66,
+          "at": {
+            "handlerEnd": 18,
+            "input": 0,
+            "observed": 19,
+            "raf1": 54,
+            "end": 66,
+            "key": 0
+          },
+          "calls": {
+            "insertText": {
+              "n": 1,
+              "ms": 1.0,
+              "firstAt": 0
+            },
+            "getPageInfo": {
+              "n": 1,
+              "ms": 0.0,
+              "firstAt": 2
+            },
+            "beginRenderJob": {
+              "n": 1,
+              "ms": 0.0,
+              "firstAt": 7
+            },
+            "canvasReadback": {
+              "n": 1,
+              "ms": 1.0,
+              "firstAt": 11
+            },
+            "canvasVisibleDraw": {
+              "n": 1,
+              "ms": 0.0,
+              "firstAt": 13
+            },
+            "pollRenderJob": {
+              "n": 1,
+              "ms": 6.0,
+              "firstAt": 7
+            },
+            "adapterRenderRequest": {
+              "n": 1,
+              "ms": 6.0,
+              "firstAt": 7
+            }
+          }
+        },
+        {
+          "kind": "groupStart",
+          "keyToFrame": 57,
+          "at": {
+            "handlerEnd": 20,
+            "input": 0,
+            "observed": 21,
+            "raf1": 56,
+            "end": 57,
+            "key": 0
+          },
+          "calls": {
+            "insertText": {
+              "n": 1,
+              "ms": 1.0,
+              "firstAt": 1
+            },
+            "getPageInfo": {
+              "n": 1,
+              "ms": 0.0,
+              "firstAt": 2
+            },
+            "beginRenderJob": {
+              "n": 1,
+              "ms": 0.0,
+              "firstAt": 8
+            },
+            "canvasReadback": {
+              "n": 1,
+              "ms": 2.0,
+              "firstAt": 12
+            },
+            "canvasVisibleDraw": {
+              "n": 1,
+              "ms": 0.0,
+              "firstAt": 14
+            },
+            "pollRenderJob": {
+              "n": 1,
+              "ms": 6.0,
+              "firstAt": 8
+            },
+            "adapterRenderRequest": {
+              "n": 1,
+              "ms": 7.0,
+              "firstAt": 8
+            }
+          }
+        },
+        {
+          "kind": "groupStart",
+          "keyToFrame": 55,
+          "at": {
+            "handlerEnd": 17,
+            "input": 0,
+            "observed": 18,
+            "raf1": 54,
+            "end": 55,
+            "key": 0
+          },
+          "calls": {
+            "insertText": {
+              "n": 1,
+              "ms": 1.0,
+              "firstAt": 1
+            },
+            "getPageInfo": {
+              "n": 1,
+              "ms": 0.0,
+              "firstAt": 2
+            },
+            "beginRenderJob": {
+              "n": 1,
+              "ms": 0.0,
+              "firstAt": 7
+            },
+            "canvasReadback": {
+              "n": 1,
+              "ms": 1.0,
+              "firstAt": 11
+            },
+            "canvasVisibleDraw": {
+              "n": 1,
+              "ms": 0.0,
+              "firstAt": 12
+            },
+            "pollRenderJob": {
+              "n": 1,
+              "ms": 6.0,
+              "firstAt": 7
+            },
+            "adapterRenderRequest": {
+              "n": 1,
+              "ms": 6.0,
+              "firstAt": 7
+            }
+          }
+        },
+        {
+          "kind": "groupStart",
+          "keyToFrame": 69,
+          "at": {
+            "handlerEnd": 17,
+            "input": 0,
+            "observed": 18,
+            "raf1": 54,
+            "end": 69,
+            "key": 0
+          },
+          "calls": {
+            "insertText": {
+              "n": 1,
+              "ms": 1.0,
+              "firstAt": 0
+            },
+            "getPageInfo": {
+              "n": 1,
+              "ms": 0.0,
+              "firstAt": 2
+            },
+            "beginRenderJob": {
+              "n": 1,
+              "ms": 0.0,
+              "firstAt": 7
+            },
+            "canvasReadback": {
+              "n": 1,
+              "ms": 2.0,
+              "firstAt": 10
+            },
+            "canvasVisibleDraw": {
+              "n": 1,
+              "ms": 0.0,
+              "firstAt": 12
+            },
+            "pollRenderJob": {
+              "n": 1,
+              "ms": 5.0,
+              "firstAt": 7
+            },
+            "adapterRenderRequest": {
+              "n": 1,
+              "ms": 5.0,
+              "firstAt": 7
+            }
+          }
+        },
+        {
+          "kind": "groupStart",
+          "keyToFrame": 57,
+          "at": {
+            "handlerEnd": 18,
+            "input": 0,
+            "observed": 19,
+            "raf1": 54,
+            "end": 57,
+            "key": 0
+          },
+          "calls": {
+            "insertText": {
+              "n": 1,
+              "ms": 1.0,
+              "firstAt": 0
+            },
+            "getPageInfo": {
+              "n": 1,
+              "ms": 0.0,
+              "firstAt": 2
+            },
+            "beginRenderJob": {
+              "n": 1,
+              "ms": 0.0,
+              "firstAt": 7
+            },
+            "canvasReadback": {
+              "n": 1,
+              "ms": 2.0,
+              "firstAt": 11
+            },
+            "canvasVisibleDraw": {
+              "n": 1,
+              "ms": 0.0,
+              "firstAt": 13
+            },
+            "pollRenderJob": {
+              "n": 1,
+              "ms": 5.0,
+              "firstAt": 8
+            },
+            "adapterRenderRequest": {
+              "n": 1,
+              "ms": 6.0,
+              "firstAt": 7
+            }
+          }
+        },
+        {
+          "kind": "groupStart",
+          "keyToFrame": 63,
+          "at": {
+            "handlerEnd": 18,
+            "input": 1,
+            "observed": 20,
+            "raf1": 54,
+            "end": 63,
+            "key": 0
+          },
+          "calls": {
+            "insertText": {
+              "n": 1,
+              "ms": 1.0,
+              "firstAt": 1
+            },
+            "getPageInfo": {
+              "n": 1,
+              "ms": 0.0,
+              "firstAt": 3
+            },
+            "beginRenderJob": {
+              "n": 1,
+              "ms": 0.0,
+              "firstAt": 8
+            },
+            "canvasReadback": {
+              "n": 1,
+              "ms": 2.0,
+              "firstAt": 11
+            },
+            "canvasVisibleDraw": {
+              "n": 1,
+              "ms": 0.0,
+              "firstAt": 13
+            },
+            "pollRenderJob": {
+              "n": 1,
+              "ms": 5.0,
+              "firstAt": 8
+            },
+            "adapterRenderRequest": {
+              "n": 1,
+              "ms": 5.0,
+              "firstAt": 8
+            }
+          }
+        },
+        {
+          "kind": "groupStart",
+          "keyToFrame": 70,
+          "at": {
+            "handlerEnd": 23,
+            "input": 0,
+            "observed": 25,
+            "raf1": 59,
+            "end": 70,
+            "key": 0
+          },
+          "calls": {
+            "insertText": {
+              "n": 1,
+              "ms": 1.0,
+              "firstAt": 0
+            },
+            "getPageInfo": {
+              "n": 1,
+              "ms": 0.0,
+              "firstAt": 2
+            },
+            "beginRenderJob": {
+              "n": 1,
+              "ms": 0.0,
+              "firstAt": 11
+            },
+            "canvasReadback": {
+              "n": 1,
+              "ms": 1.0,
+              "firstAt": 15
+            },
+            "canvasVisibleDraw": {
+              "n": 1,
+              "ms": 0.0,
+              "firstAt": 16
+            },
+            "pollRenderJob": {
+              "n": 1,
+              "ms": 5.0,
+              "firstAt": 11
+            },
+            "adapterRenderRequest": {
+              "n": 1,
+              "ms": 7.0,
+              "firstAt": 10
+            }
+          }
+        },
+        {
+          "kind": "groupStart",
+          "keyToFrame": 69,
+          "at": {
+            "handlerEnd": 17,
+            "input": 0,
+            "observed": 18,
+            "raf1": 53,
+            "end": 69,
+            "key": 0
+          },
+          "calls": {
+            "insertText": {
+              "n": 1,
+              "ms": 1.0,
+              "firstAt": 0
+            },
+            "getPageInfo": {
+              "n": 1,
+              "ms": 0.0,
+              "firstAt": 2
+            },
+            "beginRenderJob": {
+              "n": 1,
+              "ms": 0.0,
+              "firstAt": 7
+            },
+            "canvasReadback": {
+              "n": 1,
+              "ms": 2.0,
+              "firstAt": 10
+            },
+            "canvasVisibleDraw": {
+              "n": 1,
+              "ms": 0.0,
+              "firstAt": 12
+            },
+            "pollRenderJob": {
+              "n": 1,
+              "ms": 6.0,
+              "firstAt": 7
+            },
+            "adapterRenderRequest": {
+              "n": 1,
+              "ms": 6.0,
+              "firstAt": 7
+            }
+          }
+        },
+        {
+          "kind": "groupStart",
+          "keyToFrame": 61,
+          "at": {
+            "handlerEnd": 17,
+            "input": 0,
+            "observed": 18,
+            "raf1": 52,
+            "end": 61,
+            "key": 0
+          },
+          "calls": {
+            "insertText": {
+              "n": 1,
+              "ms": 1.0,
+              "firstAt": 0
+            },
+            "getPageInfo": {
+              "n": 1,
+              "ms": 0.0,
+              "firstAt": 1
+            },
+            "beginRenderJob": {
+              "n": 1,
+              "ms": 0.0,
+              "firstAt": 7
+            },
+            "canvasReadback": {
+              "n": 1,
+              "ms": 2.0,
+              "firstAt": 10
+            },
+            "canvasVisibleDraw": {
+              "n": 1,
+              "ms": 0.0,
+              "firstAt": 12
+            },
+            "pollRenderJob": {
+              "n": 1,
+              "ms": 5.0,
+              "firstAt": 7
+            },
+            "adapterRenderRequest": {
+              "n": 1,
+              "ms": 5.0,
+              "firstAt": 7
+            }
+          }
+        },
+        {
+          "kind": "groupStart",
+          "keyToFrame": 55,
+          "at": {
+            "handlerEnd": 19,
+            "input": 0,
+            "observed": 20,
+            "raf1": 54,
+            "end": 55,
+            "key": 0
+          },
+          "calls": {
+            "insertText": {
+              "n": 1,
+              "ms": 2.0,
+              "firstAt": 0
+            },
+            "getPageInfo": {
+              "n": 1,
+              "ms": 0.0,
+              "firstAt": 2
+            },
+            "beginRenderJob": {
+              "n": 1,
+              "ms": 0.0,
+              "firstAt": 8
+            },
+            "canvasReadback": {
+              "n": 1,
+              "ms": 1.0,
+              "firstAt": 12
+            },
+            "canvasVisibleDraw": {
+              "n": 1,
+              "ms": 1.0,
+              "firstAt": 13
+            },
+            "pollRenderJob": {
+              "n": 1,
+              "ms": 6.0,
+              "firstAt": 8
+            },
+            "adapterRenderRequest": {
+              "n": 1,
+              "ms": 6.0,
+              "firstAt": 8
+            }
+          }
+        },
+        {
+          "kind": "groupStart",
+          "keyToFrame": 63,
+          "at": {
+            "handlerEnd": 19,
+            "input": 0,
+            "observed": 20,
+            "raf1": 55,
+            "end": 63,
+            "key": 0
+          },
+          "calls": {
+            "insertText": {
+              "n": 1,
+              "ms": 1.0,
+              "firstAt": 0
+            },
+            "getPageInfo": {
+              "n": 1,
+              "ms": 0.0,
+              "firstAt": 2
+            },
+            "beginRenderJob": {
+              "n": 1,
+              "ms": 0.0,
+              "firstAt": 8
+            },
+            "canvasReadback": {
+              "n": 1,
+              "ms": 1.0,
+              "firstAt": 12
+            },
+            "canvasVisibleDraw": {
+              "n": 1,
+              "ms": 0.0,
+              "firstAt": 14
+            },
+            "pollRenderJob": {
+              "n": 1,
+              "ms": 6.0,
+              "firstAt": 8
+            },
+            "adapterRenderRequest": {
+              "n": 1,
+              "ms": 6.0,
+              "firstAt": 8
+            }
+          }
+        },
+        {
+          "kind": "groupStart",
+          "keyToFrame": 87,
+          "at": {
+            "handlerEnd": 19,
+            "input": 0,
+            "observed": 20,
+            "raf1": 55,
+            "end": 87,
+            "key": 0
+          },
+          "calls": {
+            "insertText": {
+              "n": 1,
+              "ms": 1.0,
+              "firstAt": 0
+            },
+            "getPageInfo": {
+              "n": 1,
+              "ms": 0.0,
+              "firstAt": 2
+            },
+            "beginRenderJob": {
+              "n": 1,
+              "ms": 0.0,
+              "firstAt": 8
+            },
+            "canvasReadback": {
+              "n": 1,
+              "ms": 1.0,
+              "firstAt": 12
+            },
+            "canvasVisibleDraw": {
+              "n": 1,
+              "ms": 0.0,
+              "firstAt": 13
+            },
+            "pollRenderJob": {
+              "n": 1,
+              "ms": 6.0,
+              "firstAt": 8
+            },
+            "adapterRenderRequest": {
+              "n": 1,
+              "ms": 6.0,
+              "firstAt": 8
+            }
+          }
+        },
+        {
+          "kind": "groupStart",
+          "keyToFrame": 64,
+          "at": {
+            "handlerEnd": 20,
+            "input": 0,
+            "observed": 21,
+            "raf1": 56,
+            "end": 64,
+            "key": 0
+          },
+          "calls": {
+            "insertText": {
+              "n": 1,
+              "ms": 2.0,
+              "firstAt": 0
+            },
+            "getPageInfo": {
+              "n": 1,
+              "ms": 0.0,
+              "firstAt": 2
+            },
+            "beginRenderJob": {
+              "n": 1,
+              "ms": 0.0,
+              "firstAt": 8
+            },
+            "canvasReadback": {
+              "n": 1,
+              "ms": 2.0,
+              "firstAt": 12
+            },
+            "canvasVisibleDraw": {
+              "n": 1,
+              "ms": 1.0,
+              "firstAt": 14
+            },
+            "pollRenderJob": {
+              "n": 1,
+              "ms": 7.0,
+              "firstAt": 8
+            },
+            "adapterRenderRequest": {
+              "n": 1,
+              "ms": 7.0,
+              "firstAt": 8
+            }
+          }
+        },
+        {
+          "kind": "groupStart",
+          "keyToFrame": 81,
+          "at": {
+            "handlerEnd": 33,
+            "input": 16,
+            "observed": 35,
+            "raf1": 69,
+            "end": 81,
+            "key": 0
+          },
+          "calls": {
+            "insertText": {
+              "n": 1,
+              "ms": 2.0,
+              "firstAt": 16
+            },
+            "getPageInfo": {
+              "n": 1,
+              "ms": 0.0,
+              "firstAt": 18
+            },
+            "beginRenderJob": {
+              "n": 1,
+              "ms": 0.0,
+              "firstAt": 23
+            },
+            "canvasReadback": {
+              "n": 1,
+              "ms": 2.0,
+              "firstAt": 26
+            },
+            "canvasVisibleDraw": {
+              "n": 1,
+              "ms": 0.0,
+              "firstAt": 28
+            },
+            "pollRenderJob": {
+              "n": 1,
+              "ms": 5.0,
+              "firstAt": 23
+            },
+            "adapterRenderRequest": {
+              "n": 1,
+              "ms": 5.0,
+              "firstAt": 23
+            }
+          }
+        },
+        {
+          "kind": "groupStart",
+          "keyToFrame": 55,
+          "at": {
+            "handlerEnd": 17,
+            "input": 0,
+            "observed": 18,
+            "raf1": 53,
+            "end": 55,
+            "key": 0
+          },
+          "calls": {
+            "insertText": {
+              "n": 1,
+              "ms": 1.0,
+              "firstAt": 0
+            },
+            "getPageInfo": {
+              "n": 1,
+              "ms": 0.0,
+              "firstAt": 2
+            },
+            "beginRenderJob": {
+              "n": 1,
+              "ms": 0.0,
+              "firstAt": 7
+            },
+            "canvasReadback": {
+              "n": 1,
+              "ms": 1.0,
+              "firstAt": 11
+            },
+            "canvasVisibleDraw": {
+              "n": 1,
+              "ms": 0.0,
+              "firstAt": 12
+            },
+            "pollRenderJob": {
+              "n": 1,
+              "ms": 5.0,
+              "firstAt": 7
+            },
+            "adapterRenderRequest": {
+              "n": 1,
+              "ms": 6.0,
+              "firstAt": 7
+            }
+          }
+        }
+      ]
+    },
+    {
+      "sample": "연구노트(화학).hwp",
+      "sourceSha256": "6717eca43c6fdd9b0530530cf17d33b6687da0c462a433d37eb652afb5394f91",
+      "editedRegion": {
+        "caret": "0:3:2",
+        "page": 3
+      },
+      "dpr": 1.04205322265625,
+      "groupStart": {
+        "n": 30,
+        "p50": 95,
+        "p95": 241,
+        "max": 436,
+        "timeouts": 0
+      },
+      "extend": {
+        "n": 30,
+        "p50": 99,
+        "p95": 146,
+        "max": 169,
+        "timeouts": 0
+      },
+      "undo": {
+        "n": 25,
+        "p50": 114,
+        "p95": 153,
+        "max": 156,
+        "timeouts": 0
+      },
+      "redo": {
+        "n": 20,
+        "p50": 113,
+        "p95": 158,
+        "max": 163,
+        "timeouts": 0
+      },
+      "afterUndo": {
+        "n": 5,
+        "p50": 115,
+        "p95": 124,
+        "max": 124,
+        "timeouts": 0
+      },
+      "zeroWorkFrameFloorMs": {
+        "n": 30,
+        "p50": 40,
+        "p95": 55,
+        "max": 66,
+        "timeouts": 0
+      },
+      "adapterCounters": {
+        "polls": 578,
+        "staleDropped": 0,
+        "reused": 0,
+        "regionalPatchJobs": 0,
+        "completed": 578,
+        "unchangedFrames": 0,
+        "notifications": 0,
+        "patchJobs": 0,
+        "wholePagePatchJobs": 0,
+        "limits": 0,
+        "replacements": 0,
+        "fullJobs": 578,
+        "errors": 0,
+        "canceled": 0
+      },
+      "nonOverlappingTimestampIntervalsMs": {
+        "keyToInput": {
+          "n": 30,
+          "p50": 8,
+          "p95": 59,
+          "max": 189
+        },
+        "inputThroughHandlerEnd": {
+          "n": 30,
+          "p50": 24,
+          "p95": 98,
+          "max": 128
+        },
+        "handlerEndToObservedRevision": {
+          "n": 30,
+          "p50": 10,
+          "p95": 16,
+          "max": 17
+        },
+        "observedThroughTwoRafs": {
+          "n": 30,
+          "p50": 47,
+          "p95": 89,
+          "max": 147
+        }
+      },
+      "groupStartTimeline": [
+        {
+          "kind": "groupStart",
+          "keyToFrame": 124,
+          "at": {
+            "handlerEnd": 25,
+            "input": 1,
+            "observed": 35,
+            "raf1": 124,
+            "end": 124,
+            "key": 0
+          },
+          "calls": {
+            "snapshotCapacity": {
+              "n": 2,
+              "ms": 0.0,
+              "firstAt": 2
+            },
+            "saveSnapshot": {
+              "n": 1,
+              "ms": 1.0,
+              "firstAt": 2
+            },
+            "insertText": {
+              "n": 1,
+              "ms": 2.0,
+              "firstAt": 3
+            },
+            "getPageInfo": {
+              "n": 24,
+              "ms": 1.0,
+              "firstAt": 5
+            },
+            "beginRenderJob": {
+              "n": 2,
+              "ms": 0.0,
+              "firstAt": 11
+            },
+            "canvasReadback": {
+              "n": 2,
+              "ms": 4.0,
+              "firstAt": 16
+            },
+            "canvasVisibleDraw": {
+              "n": 2,
+              "ms": 0.0,
+              "firstAt": 18
+            },
+            "pollRenderJob": {
+              "n": 2,
+              "ms": 15.0,
+              "firstAt": 11
+            },
+            "adapterRenderRequest": {
+              "n": 2,
+              "ms": 15.0,
+              "firstAt": 11
+            }
+          }
+        },
+        {
+          "kind": "groupStart",
+          "keyToFrame": 95,
+          "at": {
+            "handlerEnd": 40,
+            "input": 18,
+            "observed": 50,
+            "raf1": 88,
+            "end": 95,
+            "key": 0
+          },
+          "calls": {
+            "snapshotCapacity": {
+              "n": 2,
+              "ms": 0.0,
+              "firstAt": 18
+            },
+            "saveSnapshot": {
+              "n": 1,
+              "ms": 1.0,
+              "firstAt": 18
+            },
+            "insertText": {
+              "n": 1,
+              "ms": 1.0,
+              "firstAt": 19
+            },
+            "getPageInfo": {
+              "n": 24,
+              "ms": 0.0,
+              "firstAt": 21
+            },
+            "beginRenderJob": {
+              "n": 2,
+              "ms": 0.0,
+              "firstAt": 27
+            },
+            "canvasReadback": {
+              "n": 2,
+              "ms": 3.0,
+              "firstAt": 32
+            },
+            "canvasVisibleDraw": {
+              "n": 2,
+              "ms": 1.0,
+              "firstAt": 34
+            },
+            "pollRenderJob": {
+              "n": 2,
+              "ms": 15.0,
+              "firstAt": 27
+            },
+            "adapterRenderRequest": {
+              "n": 2,
+              "ms": 15.0,
+              "firstAt": 27
+            }
+          }
+        },
+        {
+          "kind": "groupStart",
+          "keyToFrame": 69,
+          "at": {
+            "handlerEnd": 22,
+            "input": 5,
+            "observed": 31,
+            "raf1": 67,
+            "end": 69,
+            "key": 0
+          },
+          "calls": {
+            "snapshotCapacity": {
+              "n": 2,
+              "ms": 0.0,
+              "firstAt": 5
+            },
+            "saveSnapshot": {
+              "n": 1,
+              "ms": 0.0,
+              "firstAt": 5
+            },
+            "insertText": {
+              "n": 1,
+              "ms": 1.0,
+              "firstAt": 5
+            },
+            "getPageInfo": {
+              "n": 24,
+              "ms": 0.0,
+              "firstAt": 7
+            },
+            "beginRenderJob": {
+              "n": 2,
+              "ms": 0.0,
+              "firstAt": 11
+            },
+            "canvasReadback": {
+              "n": 2,
+              "ms": 2.0,
+              "firstAt": 16
+            },
+            "canvasVisibleDraw": {
+              "n": 2,
+              "ms": 1.0,
+              "firstAt": 17
+            },
+            "pollRenderJob": {
+              "n": 2,
+              "ms": 14.0,
+              "firstAt": 11
+            },
+            "adapterRenderRequest": {
+              "n": 2,
+              "ms": 14.0,
+              "firstAt": 11
+            }
+          }
+        },
+        {
+          "kind": "groupStart",
+          "keyToFrame": 88,
+          "at": {
+            "handlerEnd": 28,
+            "input": 8,
+            "observed": 37,
+            "raf1": 74,
+            "end": 88,
+            "key": 0
+          },
+          "calls": {
+            "snapshotCapacity": {
+              "n": 2,
+              "ms": 0.0,
+              "firstAt": 8
+            },
+            "saveSnapshot": {
+              "n": 1,
+              "ms": 1.0,
+              "firstAt": 8
+            },
+            "insertText": {
+              "n": 1,
+              "ms": 1.0,
+              "firstAt": 9
+            },
+            "getPageInfo": {
+              "n": 24,
+              "ms": 0.0,
+              "firstAt": 10
+            },
+            "beginRenderJob": {
+              "n": 2,
+              "ms": 0.0,
+              "firstAt": 16
+            },
+            "canvasReadback": {
+              "n": 2,
+              "ms": 2.0,
+              "firstAt": 21
+            },
+            "canvasVisibleDraw": {
+              "n": 2,
+              "ms": 0.0,
+              "firstAt": 22
+            },
+            "pollRenderJob": {
+              "n": 2,
+              "ms": 13.0,
+              "firstAt": 16
+            },
+            "adapterRenderRequest": {
+              "n": 2,
+              "ms": 14.0,
+              "firstAt": 15
+            }
+          }
+        },
+        {
+          "kind": "groupStart",
+          "keyToFrame": 81,
+          "at": {
+            "handlerEnd": 24,
+            "input": 4,
+            "observed": 33,
+            "raf1": 69,
+            "end": 81,
+            "key": 0
+          },
+          "calls": {
+            "snapshotCapacity": {
+              "n": 2,
+              "ms": 0.0,
+              "firstAt": 4
+            },
+            "saveSnapshot": {
+              "n": 1,
+              "ms": 1.0,
+              "firstAt": 4
+            },
+            "insertText": {
+              "n": 1,
+              "ms": 1.0,
+              "firstAt": 5
+            },
+            "getPageInfo": {
+              "n": 24,
+              "ms": 1.0,
+              "firstAt": 6
+            },
+            "beginRenderJob": {
+              "n": 2,
+              "ms": 1.0,
+              "firstAt": 11
+            },
+            "canvasReadback": {
+              "n": 2,
+              "ms": 2.0,
+              "firstAt": 17
+            },
+            "canvasVisibleDraw": {
+              "n": 2,
+              "ms": 1.0,
+              "firstAt": 18
+            },
+            "pollRenderJob": {
+              "n": 2,
+              "ms": 15.0,
+              "firstAt": 11
+            },
+            "adapterRenderRequest": {
+              "n": 2,
+              "ms": 16.0,
+              "firstAt": 11
+            }
+          }
+        },
+        {
+          "kind": "groupStart",
+          "keyToFrame": 104,
+          "at": {
+            "handlerEnd": 48,
+            "input": 19,
+            "observed": 58,
+            "raf1": 96,
+            "end": 104,
+            "key": 0
+          },
+          "calls": {
+            "snapshotCapacity": {
+              "n": 2,
+              "ms": 0.0,
+              "firstAt": 19
+            },
+            "saveSnapshot": {
+              "n": 1,
+              "ms": 0.0,
+              "firstAt": 20
+            },
+            "insertText": {
+              "n": 1,
+              "ms": 1.0,
+              "firstAt": 20
+            },
+            "getPageInfo": {
+              "n": 24,
+              "ms": 1.0,
+              "firstAt": 21
+            },
+            "beginRenderJob": {
+              "n": 2,
+              "ms": 0.0,
+              "firstAt": 29
+            },
+            "canvasReadback": {
+              "n": 2,
+              "ms": 2.0,
+              "firstAt": 40
+            },
+            "canvasVisibleDraw": {
+              "n": 2,
+              "ms": 1.0,
+              "firstAt": 41
+            },
+            "pollRenderJob": {
+              "n": 2,
+              "ms": 21.0,
+              "firstAt": 29
+            },
+            "adapterRenderRequest": {
+              "n": 2,
+              "ms": 21.0,
+              "firstAt": 29
+            }
+          }
+        },
+        {
+          "kind": "groupStart",
+          "keyToFrame": 100,
+          "at": {
+            "handlerEnd": 33,
+            "input": 10,
+            "observed": 49,
+            "raf1": 87,
+            "end": 100,
+            "key": 0
+          },
+          "calls": {
+            "snapshotCapacity": {
+              "n": 2,
+              "ms": 0.0,
+              "firstAt": 11
+            },
+            "saveSnapshot": {
+              "n": 1,
+              "ms": 0.0,
+              "firstAt": 11
+            },
+            "insertText": {
+              "n": 1,
+              "ms": 1.0,
+              "firstAt": 11
+            },
+            "getPageInfo": {
+              "n": 24,
+              "ms": 0.0,
+              "firstAt": 13
+            },
+            "beginRenderJob": {
+              "n": 2,
+              "ms": 0.0,
+              "firstAt": 18
+            },
+            "canvasReadback": {
+              "n": 2,
+              "ms": 4.0,
+              "firstAt": 25
+            },
+            "canvasVisibleDraw": {
+              "n": 2,
+              "ms": 0.0,
+              "firstAt": 27
+            },
+            "pollRenderJob": {
+              "n": 2,
+              "ms": 22.0,
+              "firstAt": 18
+            },
+            "adapterRenderRequest": {
+              "n": 2,
+              "ms": 22.0,
+              "firstAt": 18
+            }
+          }
+        },
+        {
+          "kind": "groupStart",
+          "keyToFrame": 143,
+          "at": {
+            "handlerEnd": 85,
+            "input": 53,
+            "observed": 98,
+            "raf1": 136,
+            "end": 143,
+            "key": 0
+          },
+          "calls": {
+            "snapshotCapacity": {
+              "n": 2,
+              "ms": 0.0,
+              "firstAt": 53
+            },
+            "saveSnapshot": {
+              "n": 1,
+              "ms": 1.0,
+              "firstAt": 53
+            },
+            "insertText": {
+              "n": 1,
+              "ms": 1.0,
+              "firstAt": 54
+            },
+            "getPageInfo": {
+              "n": 24,
+              "ms": 1.0,
+              "firstAt": 56
+            },
+            "beginRenderJob": {
+              "n": 2,
+              "ms": 0.0,
+              "firstAt": 64
+            },
+            "canvasReadback": {
+              "n": 2,
+              "ms": 4.0,
+              "firstAt": 76
+            },
+            "canvasVisibleDraw": {
+              "n": 2,
+              "ms": 0.0,
+              "firstAt": 78
+            },
+            "pollRenderJob": {
+              "n": 2,
+              "ms": 24.0,
+              "firstAt": 64
+            },
+            "adapterRenderRequest": {
+              "n": 2,
+              "ms": 24.0,
+              "firstAt": 64
+            }
+          }
+        },
+        {
+          "kind": "groupStart",
+          "keyToFrame": 87,
+          "at": {
+            "handlerEnd": 31,
+            "input": 3,
+            "observed": 48,
+            "raf1": 86,
+            "end": 87,
+            "key": 0
+          },
+          "calls": {
+            "snapshotCapacity": {
+              "n": 2,
+              "ms": 0.0,
+              "firstAt": 4
+            },
+            "saveSnapshot": {
+              "n": 1,
+              "ms": 0.0,
+              "firstAt": 4
+            },
+            "insertText": {
+              "n": 1,
+              "ms": 2.0,
+              "firstAt": 4
+            },
+            "getPageInfo": {
+              "n": 24,
+              "ms": 0.0,
+              "firstAt": 6
+            },
+            "beginRenderJob": {
+              "n": 2,
+              "ms": 0.0,
+              "firstAt": 12
+            },
+            "canvasReadback": {
+              "n": 2,
+              "ms": 3.0,
+              "firstAt": 23
+            },
+            "canvasVisibleDraw": {
+              "n": 2,
+              "ms": 0.0,
+              "firstAt": 25
+            },
+            "pollRenderJob": {
+              "n": 2,
+              "ms": 28.0,
+              "firstAt": 12
+            },
+            "adapterRenderRequest": {
+              "n": 2,
+              "ms": 28.0,
+              "firstAt": 12
+            }
+          }
+        },
+        {
+          "kind": "groupStart",
+          "keyToFrame": 92,
+          "at": {
+            "handlerEnd": 31,
+            "input": 1,
+            "observed": 46,
+            "raf1": 81,
+            "end": 92,
+            "key": 0
+          },
+          "calls": {
+            "snapshotCapacity": {
+              "n": 2,
+              "ms": 0.0,
+              "firstAt": 1
+            },
+            "saveSnapshot": {
+              "n": 1,
+              "ms": 1.0,
+              "firstAt": 1
+            },
+            "insertText": {
+              "n": 1,
+              "ms": 2.0,
+              "firstAt": 2
+            },
+            "getPageInfo": {
+              "n": 24,
+              "ms": 0.0,
+              "firstAt": 4
+            },
+            "beginRenderJob": {
+              "n": 2,
+              "ms": 0.0,
+              "firstAt": 9
+            },
+            "canvasReadback": {
+              "n": 2,
+              "ms": 3.0,
+              "firstAt": 21
+            },
+            "canvasVisibleDraw": {
+              "n": 2,
+              "ms": 0.0,
+              "firstAt": 23
+            },
+            "pollRenderJob": {
+              "n": 2,
+              "ms": 30.0,
+              "firstAt": 9
+            },
+            "adapterRenderRequest": {
+              "n": 2,
+              "ms": 30.0,
+              "firstAt": 9
+            }
+          }
+        },
+        {
+          "kind": "groupStart",
+          "keyToFrame": 92,
+          "at": {
+            "handlerEnd": 32,
+            "input": 11,
+            "observed": 45,
+            "raf1": 84,
+            "end": 92,
+            "key": 0
+          },
+          "calls": {
+            "snapshotCapacity": {
+              "n": 2,
+              "ms": 1.0,
+              "firstAt": 11
+            },
+            "saveSnapshot": {
+              "n": 1,
+              "ms": 0.0,
+              "firstAt": 12
+            },
+            "insertText": {
+              "n": 1,
+              "ms": 1.0,
+              "firstAt": 12
+            },
+            "getPageInfo": {
+              "n": 24,
+              "ms": 0.0,
+              "firstAt": 14
+            },
+            "beginRenderJob": {
+              "n": 2,
+              "ms": 0.0,
+              "firstAt": 19
+            },
+            "canvasReadback": {
+              "n": 2,
+              "ms": 3.0,
+              "firstAt": 25
+            },
+            "canvasVisibleDraw": {
+              "n": 2,
+              "ms": 1.0,
+              "firstAt": 26
+            },
+            "pollRenderJob": {
+              "n": 2,
+              "ms": 18.0,
+              "firstAt": 19
+            },
+            "adapterRenderRequest": {
+              "n": 2,
+              "ms": 18.0,
+              "firstAt": 19
+            }
+          }
+        },
+        {
+          "kind": "groupStart",
+          "keyToFrame": 74,
+          "at": {
+            "handlerEnd": 22,
+            "input": 2,
+            "observed": 31,
+            "raf1": 64,
+            "end": 74,
+            "key": 0
+          },
+          "calls": {
+            "snapshotCapacity": {
+              "n": 2,
+              "ms": 0.0,
+              "firstAt": 2
+            },
+            "saveSnapshot": {
+              "n": 1,
+              "ms": 1.0,
+              "firstAt": 2
+            },
+            "insertText": {
+              "n": 1,
+              "ms": 1.0,
+              "firstAt": 3
+            },
+            "getPageInfo": {
+              "n": 24,
+              "ms": 0.0,
+              "firstAt": 5
+            },
+            "beginRenderJob": {
+              "n": 2,
+              "ms": 0.0,
+              "firstAt": 10
+            },
+            "canvasReadback": {
+              "n": 2,
+              "ms": 2.0,
+              "firstAt": 15
+            },
+            "canvasVisibleDraw": {
+              "n": 2,
+              "ms": 1.0,
+              "firstAt": 16
+            },
+            "pollRenderJob": {
+              "n": 2,
+              "ms": 14.0,
+              "firstAt": 10
+            },
+            "adapterRenderRequest": {
+              "n": 2,
+              "ms": 14.0,
+              "firstAt": 10
+            }
+          }
+        },
+        {
+          "kind": "groupStart",
+          "keyToFrame": 436,
+          "at": {
+            "handlerEnd": 287,
+            "input": 189,
+            "observed": 289,
+            "raf1": 353,
+            "end": 436,
+            "key": 0
+          },
+          "calls": {
+            "snapshotCapacity": {
+              "n": 2,
+              "ms": 0.0,
+              "firstAt": 189
+            },
+            "saveSnapshot": {
+              "n": 1,
+              "ms": 1.0,
+              "firstAt": 189
+            },
+            "insertText": {
+              "n": 1,
+              "ms": 27.0,
+              "firstAt": 190
+            },
+            "getPageInfo": {
+              "n": 24,
+              "ms": 0.0,
+              "firstAt": 218
+            },
+            "beginRenderJob": {
+              "n": 1,
+              "ms": 0.0,
+              "firstAt": 257
+            },
+            "canvasReadback": {
+              "n": 1,
+              "ms": 1.0,
+              "firstAt": 277
+            },
+            "canvasVisibleDraw": {
+              "n": 1,
+              "ms": 1.0,
+              "firstAt": 278
+            },
+            "pollRenderJob": {
+              "n": 1,
+              "ms": 22.0,
+              "firstAt": 257
+            },
+            "adapterRenderRequest": {
+              "n": 1,
+              "ms": 22.0,
+              "firstAt": 257
+            }
+          }
+        },
+        {
+          "kind": "groupStart",
+          "keyToFrame": 143,
+          "at": {
+            "handlerEnd": 68,
+            "input": 47,
+            "observed": 70,
+            "raf1": 132,
+            "end": 143,
+            "key": 0
+          },
+          "calls": {
+            "snapshotCapacity": {
+              "n": 2,
+              "ms": 0.0,
+              "firstAt": 47
+            },
+            "saveSnapshot": {
+              "n": 1,
+              "ms": 0.0,
+              "firstAt": 48
+            },
+            "insertText": {
+              "n": 1,
+              "ms": 3.0,
+              "firstAt": 48
+            },
+            "getPageInfo": {
+              "n": 24,
+              "ms": 0.0,
+              "firstAt": 52
+            },
+            "beginRenderJob": {
+              "n": 1,
+              "ms": 0.0,
+              "firstAt": 58
+            },
+            "canvasReadback": {
+              "n": 1,
+              "ms": 1.0,
+              "firstAt": 61
+            },
+            "canvasVisibleDraw": {
+              "n": 1,
+              "ms": 0.0,
+              "firstAt": 63
+            },
+            "pollRenderJob": {
+              "n": 1,
+              "ms": 5.0,
+              "firstAt": 58
+            },
+            "adapterRenderRequest": {
+              "n": 1,
+              "ms": 5.0,
+              "firstAt": 58
+            }
+          }
+        },
+        {
+          "kind": "groupStart",
+          "keyToFrame": 75,
+          "at": {
+            "handlerEnd": 25,
+            "input": 7,
+            "observed": 26,
+            "raf1": 60,
+            "end": 75,
+            "key": 0
+          },
+          "calls": {
+            "snapshotCapacity": {
+              "n": 2,
+              "ms": 0.0,
+              "firstAt": 7
+            },
+            "saveSnapshot": {
+              "n": 1,
+              "ms": 1.0,
+              "firstAt": 7
+            },
+            "insertText": {
+              "n": 1,
+              "ms": 2.0,
+              "firstAt": 8
+            },
+            "getPageInfo": {
+              "n": 24,
+              "ms": 0.0,
+              "firstAt": 10
+            },
+            "beginRenderJob": {
+              "n": 1,
+              "ms": 0.0,
+              "firstAt": 16
+            },
+            "canvasReadback": {
+              "n": 1,
+              "ms": 1.0,
+              "firstAt": 18
+            },
+            "canvasVisibleDraw": {
+              "n": 1,
+              "ms": 1.0,
+              "firstAt": 19
+            },
+            "pollRenderJob": {
+              "n": 1,
+              "ms": 4.0,
+              "firstAt": 16
+            },
+            "adapterRenderRequest": {
+              "n": 1,
+              "ms": 4.0,
+              "firstAt": 16
+            }
+          }
+        },
+        {
+          "kind": "groupStart",
+          "keyToFrame": 77,
+          "at": {
+            "handlerEnd": 28,
+            "input": 5,
+            "observed": 35,
+            "raf1": 68,
+            "end": 77,
+            "key": 0
+          },
+          "calls": {
+            "snapshotCapacity": {
+              "n": 2,
+              "ms": 0.0,
+              "firstAt": 6
+            },
+            "saveSnapshot": {
+              "n": 1,
+              "ms": 0.0,
+              "firstAt": 6
+            },
+            "insertText": {
+              "n": 1,
+              "ms": 2.0,
+              "firstAt": 6
+            },
+            "getPageInfo": {
+              "n": 24,
+              "ms": 0.0,
+              "firstAt": 9
+            },
+            "beginRenderJob": {
+              "n": 2,
+              "ms": 0.0,
+              "firstAt": 14
+            },
+            "canvasReadback": {
+              "n": 2,
+              "ms": 4.0,
+              "firstAt": 19
+            },
+            "canvasVisibleDraw": {
+              "n": 2,
+              "ms": 0.0,
+              "firstAt": 21
+            },
+            "pollRenderJob": {
+              "n": 2,
+              "ms": 12.0,
+              "firstAt": 14
+            },
+            "adapterRenderRequest": {
+              "n": 2,
+              "ms": 12.0,
+              "firstAt": 14
+            }
+          }
+        },
+        {
+          "kind": "groupStart",
+          "keyToFrame": 143,
+          "at": {
+            "handlerEnd": 91,
+            "input": 59,
+            "observed": 100,
+            "raf1": 139,
+            "end": 143,
+            "key": 0
+          },
+          "calls": {
+            "snapshotCapacity": {
+              "n": 3,
+              "ms": 0.0,
+              "firstAt": 59
+            },
+            "saveSnapshot": {
+              "n": 1,
+              "ms": 0.0,
+              "firstAt": 59
+            },
+            "insertText": {
+              "n": 1,
+              "ms": 2.0,
+              "firstAt": 59
+            },
+            "discardSnapshot": {
+              "n": 1,
+              "ms": 4.0,
+              "firstAt": 62
+            },
+            "getPageInfo": {
+              "n": 24,
+              "ms": 1.0,
+              "firstAt": 66
+            },
+            "beginRenderJob": {
+              "n": 2,
+              "ms": 0.0,
+              "firstAt": 73
+            },
+            "canvasReadback": {
+              "n": 2,
+              "ms": 3.0,
+              "firstAt": 83
+            },
+            "canvasVisibleDraw": {
+              "n": 2,
+              "ms": 0.0,
+              "firstAt": 85
+            },
+            "pollRenderJob": {
+              "n": 2,
+              "ms": 19.0,
+              "firstAt": 73
+            },
+            "adapterRenderRequest": {
+              "n": 2,
+              "ms": 19.0,
+              "firstAt": 73
+            }
+          }
+        },
+        {
+          "kind": "groupStart",
+          "keyToFrame": 113,
+          "at": {
+            "handlerEnd": 23,
+            "input": 1,
+            "observed": 36,
+            "raf1": 97,
+            "end": 113,
+            "key": 0
+          },
+          "calls": {
+            "snapshotCapacity": {
+              "n": 3,
+              "ms": 0.0,
+              "firstAt": 1
+            },
+            "saveSnapshot": {
+              "n": 1,
+              "ms": 1.0,
+              "firstAt": 1
+            },
+            "insertText": {
+              "n": 1,
+              "ms": 1.0,
+              "firstAt": 2
+            },
+            "discardSnapshot": {
+              "n": 1,
+              "ms": 0.0,
+              "firstAt": 3
+            },
+            "getPageInfo": {
+              "n": 24,
+              "ms": 0.0,
+              "firstAt": 4
+            },
+            "beginRenderJob": {
+              "n": 2,
+              "ms": 0.0,
+              "firstAt": 9
+            },
+            "canvasReadback": {
+              "n": 2,
+              "ms": 0.0,
+              "firstAt": 16
+            },
+            "canvasVisibleDraw": {
+              "n": 2,
+              "ms": 0.0,
+              "firstAt": 17
+            },
+            "pollRenderJob": {
+              "n": 2,
+              "ms": 20.0,
+              "firstAt": 9
+            },
+            "adapterRenderRequest": {
+              "n": 2,
+              "ms": 20.0,
+              "firstAt": 9
+            }
+          }
+        },
+        {
+          "kind": "groupStart",
+          "keyToFrame": 105,
+          "at": {
+            "handlerEnd": 23,
+            "input": 1,
+            "observed": 33,
+            "raf1": 96,
+            "end": 105,
+            "key": 0
+          },
+          "calls": {
+            "snapshotCapacity": {
+              "n": 3,
+              "ms": 0.0,
+              "firstAt": 1
+            },
+            "saveSnapshot": {
+              "n": 1,
+              "ms": 1.0,
+              "firstAt": 1
+            },
+            "insertText": {
+              "n": 1,
+              "ms": 1.0,
+              "firstAt": 2
+            },
+            "discardSnapshot": {
+              "n": 1,
+              "ms": 0.0,
+              "firstAt": 3
+            },
+            "getPageInfo": {
+              "n": 24,
+              "ms": 0.0,
+              "firstAt": 4
+            },
+            "beginRenderJob": {
+              "n": 2,
+              "ms": 0.0,
+              "firstAt": 9
+            },
+            "canvasReadback": {
+              "n": 2,
+              "ms": 3.0,
+              "firstAt": 16
+            },
+            "canvasVisibleDraw": {
+              "n": 2,
+              "ms": 0.0,
+              "firstAt": 17
+            },
+            "pollRenderJob": {
+              "n": 2,
+              "ms": 17.0,
+              "firstAt": 9
+            },
+            "adapterRenderRequest": {
+              "n": 2,
+              "ms": 17.0,
+              "firstAt": 9
+            }
+          }
+        },
+        {
+          "kind": "groupStart",
+          "keyToFrame": 241,
+          "at": {
+            "handlerEnd": 185,
+            "input": 57,
+            "observed": 196,
+            "raf1": 232,
+            "end": 241,
+            "key": 0
+          },
+          "calls": {
+            "snapshotCapacity": {
+              "n": 3,
+              "ms": 0.0,
+              "firstAt": 58
+            },
+            "saveSnapshot": {
+              "n": 1,
+              "ms": 0.0,
+              "firstAt": 58
+            },
+            "insertText": {
+              "n": 1,
+              "ms": 2.0,
+              "firstAt": 58
+            },
+            "discardSnapshot": {
+              "n": 1,
+              "ms": 0.0,
+              "firstAt": 60
+            },
+            "getPageInfo": {
+              "n": 24,
+              "ms": 0.0,
+              "firstAt": 61
+            },
+            "beginRenderJob": {
+              "n": 2,
+              "ms": 1.0,
+              "firstAt": 68
+            },
+            "canvasReadback": {
+              "n": 2,
+              "ms": 4.0,
+              "firstAt": 176
+            },
+            "canvasVisibleDraw": {
+              "n": 2,
+              "ms": 0.0,
+              "firstAt": 178
+            },
+            "pollRenderJob": {
+              "n": 2,
+              "ms": 119.0,
+              "firstAt": 68
+            },
+            "adapterRenderRequest": {
+              "n": 2,
+              "ms": 120.0,
+              "firstAt": 68
+            }
+          }
+        },
+        {
+          "kind": "groupStart",
+          "keyToFrame": 71,
+          "at": {
+            "handlerEnd": 36,
+            "input": 11,
+            "observed": 46,
+            "raf1": 62,
+            "end": 71,
+            "key": 0
+          },
+          "calls": {
+            "insertText": {
+              "n": 1,
+              "ms": 2.0,
+              "firstAt": 11
+            },
+            "getPageInfo": {
+              "n": 24,
+              "ms": 1.0,
+              "firstAt": 13
+            },
+            "beginRenderJob": {
+              "n": 2,
+              "ms": 0.0,
+              "firstAt": 19
+            },
+            "canvasReadback": {
+              "n": 2,
+              "ms": 4.0,
+              "firstAt": 28
+            },
+            "canvasVisibleDraw": {
+              "n": 2,
+              "ms": 0.0,
+              "firstAt": 30
+            },
+            "pollRenderJob": {
+              "n": 2,
+              "ms": 19.0,
+              "firstAt": 19
+            },
+            "adapterRenderRequest": {
+              "n": 2,
+              "ms": 19.0,
+              "firstAt": 19
+            }
+          }
+        },
+        {
+          "kind": "groupStart",
+          "keyToFrame": 62,
+          "at": {
+            "handlerEnd": 31,
+            "input": 8,
+            "observed": 40,
+            "raf1": 53,
+            "end": 62,
+            "key": 0
+          },
+          "calls": {
+            "insertText": {
+              "n": 1,
+              "ms": 1.0,
+              "firstAt": 9
+            },
+            "getPageInfo": {
+              "n": 24,
+              "ms": 0.0,
+              "firstAt": 11
+            },
+            "beginRenderJob": {
+              "n": 2,
+              "ms": 1.0,
+              "firstAt": 16
+            },
+            "canvasReadback": {
+              "n": 2,
+              "ms": 2.0,
+              "firstAt": 25
+            },
+            "canvasVisibleDraw": {
+              "n": 2,
+              "ms": 0.0,
+              "firstAt": 26
+            },
+            "pollRenderJob": {
+              "n": 2,
+              "ms": 16.0,
+              "firstAt": 17
+            },
+            "adapterRenderRequest": {
+              "n": 2,
+              "ms": 18.0,
+              "firstAt": 16
+            }
+          }
+        },
+        {
+          "kind": "groupStart",
+          "keyToFrame": 100,
+          "at": {
+            "handlerEnd": 38,
+            "input": 12,
+            "observed": 49,
+            "raf1": 93,
+            "end": 100,
+            "key": 0
+          },
+          "calls": {
+            "insertText": {
+              "n": 1,
+              "ms": 2.0,
+              "firstAt": 12
+            },
+            "getPageInfo": {
+              "n": 24,
+              "ms": 0.0,
+              "firstAt": 15
+            },
+            "beginRenderJob": {
+              "n": 2,
+              "ms": 0.0,
+              "firstAt": 21
+            },
+            "canvasReadback": {
+              "n": 2,
+              "ms": 3.0,
+              "firstAt": 30
+            },
+            "canvasVisibleDraw": {
+              "n": 2,
+              "ms": 1.0,
+              "firstAt": 31
+            },
+            "pollRenderJob": {
+              "n": 2,
+              "ms": 19.0,
+              "firstAt": 21
+            },
+            "adapterRenderRequest": {
+              "n": 2,
+              "ms": 19.0,
+              "firstAt": 21
+            }
+          }
+        },
+        {
+          "kind": "groupStart",
+          "keyToFrame": 110,
+          "at": {
+            "handlerEnd": 36,
+            "input": 10,
+            "observed": 46,
+            "raf1": 83,
+            "end": 110,
+            "key": 0
+          },
+          "calls": {
+            "insertText": {
+              "n": 1,
+              "ms": 2.0,
+              "firstAt": 10
+            },
+            "getPageInfo": {
+              "n": 24,
+              "ms": 0.0,
+              "firstAt": 13
+            },
+            "beginRenderJob": {
+              "n": 2,
+              "ms": 0.0,
+              "firstAt": 19
+            },
+            "canvasReadback": {
+              "n": 2,
+              "ms": 3.0,
+              "firstAt": 28
+            },
+            "canvasVisibleDraw": {
+              "n": 2,
+              "ms": 0.0,
+              "firstAt": 30
+            },
+            "pollRenderJob": {
+              "n": 2,
+              "ms": 20.0,
+              "firstAt": 19
+            },
+            "adapterRenderRequest": {
+              "n": 2,
+              "ms": 20.0,
+              "firstAt": 19
+            }
+          }
+        },
+        {
+          "kind": "groupStart",
+          "keyToFrame": 94,
+          "at": {
+            "handlerEnd": 24,
+            "input": 1,
+            "observed": 34,
+            "raf1": 67,
+            "end": 94,
+            "key": 0
+          },
+          "calls": {
+            "insertText": {
+              "n": 1,
+              "ms": 2.0,
+              "firstAt": 1
+            },
+            "getPageInfo": {
+              "n": 24,
+              "ms": 1.0,
+              "firstAt": 3
+            },
+            "beginRenderJob": {
+              "n": 2,
+              "ms": 0.0,
+              "firstAt": 9
+            },
+            "canvasReadback": {
+              "n": 2,
+              "ms": 3.0,
+              "firstAt": 18
+            },
+            "canvasVisibleDraw": {
+              "n": 2,
+              "ms": 1.0,
+              "firstAt": 19
+            },
+            "pollRenderJob": {
+              "n": 2,
+              "ms": 19.0,
+              "firstAt": 9
+            },
+            "adapterRenderRequest": {
+              "n": 2,
+              "ms": 19.0,
+              "firstAt": 9
+            }
+          }
+        },
+        {
+          "kind": "groupStart",
+          "keyToFrame": 110,
+          "at": {
+            "handlerEnd": 36,
+            "input": 9,
+            "observed": 46,
+            "raf1": 84,
+            "end": 110,
+            "key": 0
+          },
+          "calls": {
+            "insertText": {
+              "n": 1,
+              "ms": 2.0,
+              "firstAt": 10
+            },
+            "getPageInfo": {
+              "n": 24,
+              "ms": 0.0,
+              "firstAt": 12
+            },
+            "beginRenderJob": {
+              "n": 2,
+              "ms": 0.0,
+              "firstAt": 20
+            },
+            "canvasReadback": {
+              "n": 2,
+              "ms": 2.0,
+              "firstAt": 29
+            },
+            "canvasVisibleDraw": {
+              "n": 2,
+              "ms": 1.0,
+              "firstAt": 30
+            },
+            "pollRenderJob": {
+              "n": 2,
+              "ms": 19.0,
+              "firstAt": 20
+            },
+            "adapterRenderRequest": {
+              "n": 2,
+              "ms": 19.0,
+              "firstAt": 20
+            }
+          }
+        },
+        {
+          "kind": "groupStart",
+          "keyToFrame": 106,
+          "at": {
+            "handlerEnd": 33,
+            "input": 9,
+            "observed": 44,
+            "raf1": 79,
+            "end": 106,
+            "key": 0
+          },
+          "calls": {
+            "insertText": {
+              "n": 1,
+              "ms": 3.0,
+              "firstAt": 9
+            },
+            "getPageInfo": {
+              "n": 24,
+              "ms": 0.0,
+              "firstAt": 12
+            },
+            "beginRenderJob": {
+              "n": 2,
+              "ms": 0.0,
+              "firstAt": 17
+            },
+            "canvasReadback": {
+              "n": 2,
+              "ms": 4.0,
+              "firstAt": 26
+            },
+            "canvasVisibleDraw": {
+              "n": 2,
+              "ms": 0.0,
+              "firstAt": 28
+            },
+            "pollRenderJob": {
+              "n": 2,
+              "ms": 19.0,
+              "firstAt": 17
+            },
+            "adapterRenderRequest": {
+              "n": 2,
+              "ms": 19.0,
+              "firstAt": 17
+            }
+          }
+        },
+        {
+          "kind": "groupStart",
+          "keyToFrame": 105,
+          "at": {
+            "handlerEnd": 30,
+            "input": 4,
+            "observed": 40,
+            "raf1": 77,
+            "end": 105,
+            "key": 0
+          },
+          "calls": {
+            "insertText": {
+              "n": 1,
+              "ms": 2.0,
+              "firstAt": 4
+            },
+            "getPageInfo": {
+              "n": 24,
+              "ms": 0.0,
+              "firstAt": 7
+            },
+            "beginRenderJob": {
+              "n": 2,
+              "ms": 1.0,
+              "firstAt": 13
+            },
+            "canvasReadback": {
+              "n": 2,
+              "ms": 2.0,
+              "firstAt": 22
+            },
+            "canvasVisibleDraw": {
+              "n": 2,
+              "ms": 0.0,
+              "firstAt": 24
+            },
+            "pollRenderJob": {
+              "n": 2,
+              "ms": 18.0,
+              "firstAt": 13
+            },
+            "adapterRenderRequest": {
+              "n": 2,
+              "ms": 19.0,
+              "firstAt": 13
+            }
+          }
+        },
+        {
+          "kind": "groupStart",
+          "keyToFrame": 84,
+          "at": {
+            "handlerEnd": 33,
+            "input": 6,
+            "observed": 43,
+            "raf1": 83,
+            "end": 84,
+            "key": 0
+          },
+          "calls": {
+            "insertText": {
+              "n": 1,
+              "ms": 2.0,
+              "firstAt": 6
+            },
+            "getPageInfo": {
+              "n": 24,
+              "ms": 0.0,
+              "firstAt": 9
+            },
+            "beginRenderJob": {
+              "n": 2,
+              "ms": 0.0,
+              "firstAt": 16
+            },
+            "canvasReadback": {
+              "n": 2,
+              "ms": 2.0,
+              "firstAt": 25
+            },
+            "canvasVisibleDraw": {
+              "n": 2,
+              "ms": 0.0,
+              "firstAt": 27
+            },
+            "pollRenderJob": {
+              "n": 2,
+              "ms": 20.0,
+              "firstAt": 16
+            },
+            "adapterRenderRequest": {
+              "n": 2,
+              "ms": 20.0,
+              "firstAt": 16
+            }
+          }
+        },
+        {
+          "kind": "groupStart",
+          "keyToFrame": 71,
+          "at": {
+            "handlerEnd": 35,
+            "input": 11,
+            "observed": 46,
+            "raf1": 58,
+            "end": 71,
+            "key": 0
+          },
+          "calls": {
+            "insertText": {
+              "n": 1,
+              "ms": 2.0,
+              "firstAt": 11
+            },
+            "getPageInfo": {
+              "n": 24,
+              "ms": 0.0,
+              "firstAt": 14
+            },
+            "beginRenderJob": {
+              "n": 2,
+              "ms": 0.0,
+              "firstAt": 19
+            },
+            "canvasReadback": {
+              "n": 2,
+              "ms": 3.0,
+              "firstAt": 28
+            },
+            "canvasVisibleDraw": {
+              "n": 2,
+              "ms": 0.0,
+              "firstAt": 30
+            },
+            "pollRenderJob": {
+              "n": 2,
+              "ms": 18.0,
+              "firstAt": 20
+            },
+            "adapterRenderRequest": {
+              "n": 2,
+              "ms": 19.0,
+              "firstAt": 19
+            }
+          }
+        }
+      ]
+    },
+    {
+      "sample": "3249937_asset_management_rules.hwpx",
+      "sourceSha256": "97b5d6c571a6b7626321c6a53d797e3511978447497bb73309bd23eaa8e7ea77",
+      "editedRegion": {
+        "caret": "0:4:51",
+        "page": 0
+      },
+      "dpr": 1.04205322265625,
+      "groupStart": {
+        "n": 30,
+        "p50": 112,
+        "p95": 130,
+        "max": 148,
+        "timeouts": 0
+      },
+      "extend": {
+        "n": 30,
+        "p50": 101,
+        "p95": 124,
+        "max": 126,
+        "timeouts": 0
+      },
+      "undo": {
+        "n": 25,
+        "p50": 233,
+        "p95": 244,
+        "max": 261,
+        "timeouts": 0
+      },
+      "redo": {
+        "n": 20,
+        "p50": 236,
+        "p95": 245,
+        "max": 249,
+        "timeouts": 0
+      },
+      "afterUndo": {
+        "n": 5,
+        "p50": 156,
+        "p95": 179,
+        "max": 179,
+        "timeouts": 0
+      },
+      "zeroWorkFrameFloorMs": {
+        "n": 30,
+        "p50": 44,
+        "p95": 180,
+        "max": 245,
+        "timeouts": 0
+      },
+      "adapterCounters": {
+        "polls": 519,
+        "staleDropped": 1,
+        "reused": 0,
+        "regionalPatchJobs": 0,
+        "completed": 519,
+        "unchangedFrames": 0,
+        "notifications": 0,
+        "patchJobs": 0,
+        "wholePagePatchJobs": 0,
+        "limits": 0,
+        "replacements": 0,
+        "fullJobs": 519,
+        "errors": 0,
+        "canceled": 0
+      },
+      "nonOverlappingTimestampIntervalsMs": {
+        "keyToInput": {
+          "n": 30,
+          "p50": 4,
+          "p95": 13,
+          "max": 20
+        },
+        "inputThroughHandlerEnd": {
+          "n": 30,
+          "p50": 59,
+          "p95": 62,
+          "max": 65
+        },
+        "handlerEndToObservedRevision": {
+          "n": 30,
+          "p50": 2,
+          "p95": 2,
+          "max": 2
+        },
+        "observedThroughTwoRafs": {
+          "n": 30,
+          "p50": 45,
+          "p95": 65,
+          "max": 66
+        }
+      },
+      "groupStartTimeline": [
+        {
+          "kind": "groupStart",
+          "keyToFrame": 148,
+          "at": {
+            "handlerEnd": 81,
+            "input": 20,
+            "observed": 83,
+            "raf1": 119,
+            "end": 148,
+            "key": 0
+          },
+          "calls": {
+            "snapshotCapacity": {
+              "n": 2,
+              "ms": 0.0,
+              "firstAt": 21
+            },
+            "saveSnapshot": {
+              "n": 1,
+              "ms": 2.0,
+              "firstAt": 21
+            },
+            "insertText": {
+              "n": 1,
+              "ms": 26.0,
+              "firstAt": 23
+            },
+            "getPageInfo": {
+              "n": 60,
+              "ms": 1.0,
+              "firstAt": 50
+            },
+            "beginRenderJob": {
+              "n": 1,
+              "ms": 0.0,
+              "firstAt": 60
+            },
+            "canvasReadback": {
+              "n": 1,
+              "ms": 2.0,
+              "firstAt": 70
+            },
+            "canvasVisibleDraw": {
+              "n": 1,
+              "ms": 1.0,
+              "firstAt": 72
+            },
+            "pollRenderJob": {
+              "n": 1,
+              "ms": 13.0,
+              "firstAt": 60
+            },
+            "adapterRenderRequest": {
+              "n": 1,
+              "ms": 13.0,
+              "firstAt": 60
+            }
+          }
+        },
+        {
+          "kind": "groupStart",
+          "keyToFrame": 130,
+          "at": {
+            "handlerEnd": 62,
+            "input": 2,
+            "observed": 64,
+            "raf1": 101,
+            "end": 130,
+            "key": 0
+          },
+          "calls": {
+            "snapshotCapacity": {
+              "n": 2,
+              "ms": 0.0,
+              "firstAt": 2
+            },
+            "saveSnapshot": {
+              "n": 1,
+              "ms": 3.0,
+              "firstAt": 2
+            },
+            "insertText": {
+              "n": 1,
+              "ms": 26.0,
+              "firstAt": 5
+            },
+            "getPageInfo": {
+              "n": 60,
+              "ms": 0.0,
+              "firstAt": 32
+            },
+            "beginRenderJob": {
+              "n": 1,
+              "ms": 0.0,
+              "firstAt": 41
+            },
+            "canvasReadback": {
+              "n": 1,
+              "ms": 1.0,
+              "firstAt": 52
+            },
+            "canvasVisibleDraw": {
+              "n": 1,
+              "ms": 1.0,
+              "firstAt": 53
+            },
+            "pollRenderJob": {
+              "n": 1,
+              "ms": 13.0,
+              "firstAt": 41
+            },
+            "adapterRenderRequest": {
+              "n": 1,
+              "ms": 13.0,
+              "firstAt": 41
+            }
+          }
+        },
+        {
+          "kind": "groupStart",
+          "keyToFrame": 128,
+          "at": {
+            "handlerEnd": 62,
+            "input": 6,
+            "observed": 63,
+            "raf1": 99,
+            "end": 128,
+            "key": 0
+          },
+          "calls": {
+            "snapshotCapacity": {
+              "n": 2,
+              "ms": 0.0,
+              "firstAt": 6
+            },
+            "saveSnapshot": {
+              "n": 1,
+              "ms": 2.0,
+              "firstAt": 6
+            },
+            "insertText": {
+              "n": 1,
+              "ms": 26.0,
+              "firstAt": 8
+            },
+            "getPageInfo": {
+              "n": 60,
+              "ms": 0.0,
+              "firstAt": 34
+            },
+            "beginRenderJob": {
+              "n": 1,
+              "ms": 0.0,
+              "firstAt": 43
+            },
+            "canvasReadback": {
+              "n": 1,
+              "ms": 1.0,
+              "firstAt": 54
+            },
+            "canvasVisibleDraw": {
+              "n": 1,
+              "ms": 0.0,
+              "firstAt": 56
+            },
+            "pollRenderJob": {
+              "n": 1,
+              "ms": 13.0,
+              "firstAt": 43
+            },
+            "adapterRenderRequest": {
+              "n": 1,
+              "ms": 13.0,
+              "firstAt": 43
+            }
+          }
+        },
+        {
+          "kind": "groupStart",
+          "keyToFrame": 114,
+          "at": {
+            "handlerEnd": 71,
+            "input": 13,
+            "observed": 73,
+            "raf1": 109,
+            "end": 114,
+            "key": 0
+          },
+          "calls": {
+            "snapshotCapacity": {
+              "n": 2,
+              "ms": 0.0,
+              "firstAt": 13
+            },
+            "saveSnapshot": {
+              "n": 1,
+              "ms": 1.0,
+              "firstAt": 13
+            },
+            "insertText": {
+              "n": 1,
+              "ms": 25.0,
+              "firstAt": 14
+            },
+            "getPageInfo": {
+              "n": 60,
+              "ms": 1.0,
+              "firstAt": 40
+            },
+            "beginRenderJob": {
+              "n": 1,
+              "ms": 0.0,
+              "firstAt": 50
+            },
+            "canvasReadback": {
+              "n": 1,
+              "ms": 2.0,
+              "firstAt": 60
+            },
+            "canvasVisibleDraw": {
+              "n": 1,
+              "ms": 0.0,
+              "firstAt": 63
+            },
+            "pollRenderJob": {
+              "n": 1,
+              "ms": 13.0,
+              "firstAt": 50
+            },
+            "adapterRenderRequest": {
+              "n": 1,
+              "ms": 13.0,
+              "firstAt": 50
+            }
+          }
+        },
+        {
+          "kind": "groupStart",
+          "keyToFrame": 107,
+          "at": {
+            "handlerEnd": 60,
+            "input": 4,
+            "observed": 61,
+            "raf1": 96,
+            "end": 107,
+            "key": 0
+          },
+          "calls": {
+            "snapshotCapacity": {
+              "n": 2,
+              "ms": 0.0,
+              "firstAt": 4
+            },
+            "saveSnapshot": {
+              "n": 1,
+              "ms": 2.0,
+              "firstAt": 4
+            },
+            "insertText": {
+              "n": 1,
+              "ms": 26.0,
+              "firstAt": 6
+            },
+            "getPageInfo": {
+              "n": 60,
+              "ms": 1.0,
+              "firstAt": 32
+            },
+            "beginRenderJob": {
+              "n": 1,
+              "ms": 0.0,
+              "firstAt": 40
+            },
+            "canvasReadback": {
+              "n": 1,
+              "ms": 2.0,
+              "firstAt": 51
+            },
+            "canvasVisibleDraw": {
+              "n": 1,
+              "ms": 0.0,
+              "firstAt": 53
+            },
+            "pollRenderJob": {
+              "n": 1,
+              "ms": 13.0,
+              "firstAt": 40
+            },
+            "adapterRenderRequest": {
+              "n": 1,
+              "ms": 13.0,
+              "firstAt": 40
+            }
+          }
+        },
+        {
+          "kind": "groupStart",
+          "keyToFrame": 112,
+          "at": {
+            "handlerEnd": 67,
+            "input": 7,
+            "observed": 68,
+            "raf1": 104,
+            "end": 112,
+            "key": 0
+          },
+          "calls": {
+            "snapshotCapacity": {
+              "n": 2,
+              "ms": 0.0,
+              "firstAt": 7
+            },
+            "saveSnapshot": {
+              "n": 1,
+              "ms": 2.0,
+              "firstAt": 7
+            },
+            "insertText": {
+              "n": 1,
+              "ms": 27.0,
+              "firstAt": 9
+            },
+            "getPageInfo": {
+              "n": 60,
+              "ms": 0.0,
+              "firstAt": 37
+            },
+            "beginRenderJob": {
+              "n": 1,
+              "ms": 0.0,
+              "firstAt": 46
+            },
+            "canvasReadback": {
+              "n": 1,
+              "ms": 1.0,
+              "firstAt": 57
+            },
+            "canvasVisibleDraw": {
+              "n": 1,
+              "ms": 0.0,
+              "firstAt": 59
+            },
+            "pollRenderJob": {
+              "n": 1,
+              "ms": 13.0,
+              "firstAt": 46
+            },
+            "adapterRenderRequest": {
+              "n": 1,
+              "ms": 13.0,
+              "firstAt": 46
+            }
+          }
+        },
+        {
+          "kind": "groupStart",
+          "keyToFrame": 110,
+          "at": {
+            "handlerEnd": 63,
+            "input": 5,
+            "observed": 64,
+            "raf1": 101,
+            "end": 110,
+            "key": 0
+          },
+          "calls": {
+            "snapshotCapacity": {
+              "n": 2,
+              "ms": 0.0,
+              "firstAt": 5
+            },
+            "saveSnapshot": {
+              "n": 1,
+              "ms": 2.0,
+              "firstAt": 5
+            },
+            "insertText": {
+              "n": 1,
+              "ms": 26.0,
+              "firstAt": 7
+            },
+            "getPageInfo": {
+              "n": 60,
+              "ms": 1.0,
+              "firstAt": 34
+            },
+            "beginRenderJob": {
+              "n": 1,
+              "ms": 0.0,
+              "firstAt": 43
+            },
+            "canvasReadback": {
+              "n": 1,
+              "ms": 2.0,
+              "firstAt": 54
+            },
+            "canvasVisibleDraw": {
+              "n": 1,
+              "ms": 0.0,
+              "firstAt": 56
+            },
+            "pollRenderJob": {
+              "n": 1,
+              "ms": 14.0,
+              "firstAt": 43
+            },
+            "adapterRenderRequest": {
+              "n": 1,
+              "ms": 14.0,
+              "firstAt": 43
+            }
+          }
+        },
+        {
+          "kind": "groupStart",
+          "keyToFrame": 111,
+          "at": {
+            "handlerEnd": 69,
+            "input": 12,
+            "observed": 70,
+            "raf1": 105,
+            "end": 111,
+            "key": 0
+          },
+          "calls": {
+            "snapshotCapacity": {
+              "n": 2,
+              "ms": 0.0,
+              "firstAt": 12
+            },
+            "saveSnapshot": {
+              "n": 1,
+              "ms": 2.0,
+              "firstAt": 12
+            },
+            "insertText": {
+              "n": 1,
+              "ms": 26.0,
+              "firstAt": 14
+            },
+            "getPageInfo": {
+              "n": 60,
+              "ms": 1.0,
+              "firstAt": 41
+            },
+            "beginRenderJob": {
+              "n": 1,
+              "ms": 0.0,
+              "firstAt": 49
+            },
+            "canvasReadback": {
+              "n": 1,
+              "ms": 2.0,
+              "firstAt": 60
+            },
+            "canvasVisibleDraw": {
+              "n": 1,
+              "ms": 0.0,
+              "firstAt": 62
+            },
+            "pollRenderJob": {
+              "n": 1,
+              "ms": 13.0,
+              "firstAt": 49
+            },
+            "adapterRenderRequest": {
+              "n": 1,
+              "ms": 13.0,
+              "firstAt": 49
+            }
+          }
+        },
+        {
+          "kind": "groupStart",
+          "keyToFrame": 109,
+          "at": {
+            "handlerEnd": 61,
+            "input": 1,
+            "observed": 63,
+            "raf1": 98,
+            "end": 109,
+            "key": 0
+          },
+          "calls": {
+            "snapshotCapacity": {
+              "n": 2,
+              "ms": 0.0,
+              "firstAt": 1
+            },
+            "saveSnapshot": {
+              "n": 1,
+              "ms": 3.0,
+              "firstAt": 1
+            },
+            "insertText": {
+              "n": 1,
+              "ms": 26.0,
+              "firstAt": 4
+            },
+            "getPageInfo": {
+              "n": 60,
+              "ms": 0.0,
+              "firstAt": 31
+            },
+            "beginRenderJob": {
+              "n": 1,
+              "ms": 0.0,
+              "firstAt": 40
+            },
+            "canvasReadback": {
+              "n": 1,
+              "ms": 2.0,
+              "firstAt": 51
+            },
+            "canvasVisibleDraw": {
+              "n": 1,
+              "ms": 0.0,
+              "firstAt": 53
+            },
+            "pollRenderJob": {
+              "n": 1,
+              "ms": 13.0,
+              "firstAt": 40
+            },
+            "adapterRenderRequest": {
+              "n": 1,
+              "ms": 13.0,
+              "firstAt": 40
+            }
+          }
+        },
+        {
+          "kind": "groupStart",
+          "keyToFrame": 117,
+          "at": {
+            "handlerEnd": 65,
+            "input": 7,
+            "observed": 67,
+            "raf1": 103,
+            "end": 117,
+            "key": 0
+          },
+          "calls": {
+            "snapshotCapacity": {
+              "n": 2,
+              "ms": 0.0,
+              "firstAt": 8
+            },
+            "saveSnapshot": {
+              "n": 1,
+              "ms": 1.0,
+              "firstAt": 8
+            },
+            "insertText": {
+              "n": 1,
+              "ms": 26.0,
+              "firstAt": 9
+            },
+            "getPageInfo": {
+              "n": 60,
+              "ms": 0.0,
+              "firstAt": 36
+            },
+            "beginRenderJob": {
+              "n": 1,
+              "ms": 0.0,
+              "firstAt": 45
+            },
+            "canvasReadback": {
+              "n": 1,
+              "ms": 2.0,
+              "firstAt": 56
+            },
+            "canvasVisibleDraw": {
+              "n": 1,
+              "ms": 0.0,
+              "firstAt": 58
+            },
+            "pollRenderJob": {
+              "n": 1,
+              "ms": 13.0,
+              "firstAt": 45
+            },
+            "adapterRenderRequest": {
+              "n": 1,
+              "ms": 14.0,
+              "firstAt": 45
+            }
+          }
+        },
+        {
+          "kind": "groupStart",
+          "keyToFrame": 114,
+          "at": {
+            "handlerEnd": 68,
+            "input": 11,
+            "observed": 70,
+            "raf1": 105,
+            "end": 114,
+            "key": 0
+          },
+          "calls": {
+            "snapshotCapacity": {
+              "n": 2,
+              "ms": 0.0,
+              "firstAt": 11
+            },
+            "saveSnapshot": {
+              "n": 1,
+              "ms": 2.0,
+              "firstAt": 11
+            },
+            "insertText": {
+              "n": 1,
+              "ms": 26.0,
+              "firstAt": 13
+            },
+            "getPageInfo": {
+              "n": 60,
+              "ms": 1.0,
+              "firstAt": 40
+            },
+            "beginRenderJob": {
+              "n": 1,
+              "ms": 0.0,
+              "firstAt": 48
+            },
+            "canvasReadback": {
+              "n": 1,
+              "ms": 2.0,
+              "firstAt": 59
+            },
+            "canvasVisibleDraw": {
+              "n": 1,
+              "ms": 0.0,
+              "firstAt": 61
+            },
+            "pollRenderJob": {
+              "n": 1,
+              "ms": 13.0,
+              "firstAt": 48
+            },
+            "adapterRenderRequest": {
+              "n": 1,
+              "ms": 13.0,
+              "firstAt": 48
+            }
+          }
+        },
+        {
+          "kind": "groupStart",
+          "keyToFrame": 121,
+          "at": {
+            "handlerEnd": 68,
+            "input": 9,
+            "observed": 70,
+            "raf1": 105,
+            "end": 121,
+            "key": 0
+          },
+          "calls": {
+            "snapshotCapacity": {
+              "n": 2,
+              "ms": 0.0,
+              "firstAt": 9
+            },
+            "saveSnapshot": {
+              "n": 1,
+              "ms": 3.0,
+              "firstAt": 9
+            },
+            "insertText": {
+              "n": 1,
+              "ms": 26.0,
+              "firstAt": 12
+            },
+            "getPageInfo": {
+              "n": 60,
+              "ms": 0.0,
+              "firstAt": 38
+            },
+            "beginRenderJob": {
+              "n": 1,
+              "ms": 1.0,
+              "firstAt": 48
+            },
+            "canvasReadback": {
+              "n": 1,
+              "ms": 1.0,
+              "firstAt": 60
+            },
+            "canvasVisibleDraw": {
+              "n": 1,
+              "ms": 0.0,
+              "firstAt": 61
+            },
+            "pollRenderJob": {
+              "n": 1,
+              "ms": 13.0,
+              "firstAt": 49
+            },
+            "adapterRenderRequest": {
+              "n": 1,
+              "ms": 14.0,
+              "firstAt": 48
+            }
+          }
+        },
+        {
+          "kind": "groupStart",
+          "keyToFrame": 100,
+          "at": {
+            "handlerEnd": 62,
+            "input": 3,
+            "observed": 64,
+            "raf1": 99,
+            "end": 100,
+            "key": 0
+          },
+          "calls": {
+            "snapshotCapacity": {
+              "n": 2,
+              "ms": 0.0,
+              "firstAt": 3
+            },
+            "saveSnapshot": {
+              "n": 1,
+              "ms": 2.0,
+              "firstAt": 3
+            },
+            "insertText": {
+              "n": 1,
+              "ms": 26.0,
+              "firstAt": 5
+            },
+            "getPageInfo": {
+              "n": 60,
+              "ms": 1.0,
+              "firstAt": 32
+            },
+            "beginRenderJob": {
+              "n": 1,
+              "ms": 0.0,
+              "firstAt": 41
+            },
+            "canvasReadback": {
+              "n": 1,
+              "ms": 1.0,
+              "firstAt": 54
+            },
+            "canvasVisibleDraw": {
+              "n": 1,
+              "ms": 1.0,
+              "firstAt": 55
+            },
+            "pollRenderJob": {
+              "n": 1,
+              "ms": 15.0,
+              "firstAt": 41
+            },
+            "adapterRenderRequest": {
+              "n": 1,
+              "ms": 15.0,
+              "firstAt": 41
+            }
+          }
+        },
+        {
+          "kind": "groupStart",
+          "keyToFrame": 129,
+          "at": {
+            "handlerEnd": 64,
+            "input": 6,
+            "observed": 65,
+            "raf1": 100,
+            "end": 129,
+            "key": 0
+          },
+          "calls": {
+            "snapshotCapacity": {
+              "n": 2,
+              "ms": 0.0,
+              "firstAt": 6
+            },
+            "saveSnapshot": {
+              "n": 1,
+              "ms": 3.0,
+              "firstAt": 6
+            },
+            "insertText": {
+              "n": 1,
+              "ms": 25.0,
+              "firstAt": 9
+            },
+            "getPageInfo": {
+              "n": 60,
+              "ms": 0.0,
+              "firstAt": 35
+            },
+            "beginRenderJob": {
+              "n": 1,
+              "ms": 0.0,
+              "firstAt": 44
+            },
+            "canvasReadback": {
+              "n": 1,
+              "ms": 1.0,
+              "firstAt": 56
+            },
+            "canvasVisibleDraw": {
+              "n": 1,
+              "ms": 1.0,
+              "firstAt": 57
+            },
+            "pollRenderJob": {
+              "n": 1,
+              "ms": 14.0,
+              "firstAt": 44
+            },
+            "adapterRenderRequest": {
+              "n": 1,
+              "ms": 14.0,
+              "firstAt": 44
+            }
+          }
+        },
+        {
+          "kind": "groupStart",
+          "keyToFrame": 111,
+          "at": {
+            "handlerEnd": 67,
+            "input": 10,
+            "observed": 69,
+            "raf1": 104,
+            "end": 111,
+            "key": 0
+          },
+          "calls": {
+            "snapshotCapacity": {
+              "n": 2,
+              "ms": 0.0,
+              "firstAt": 10
+            },
+            "saveSnapshot": {
+              "n": 1,
+              "ms": 1.0,
+              "firstAt": 11
+            },
+            "insertText": {
+              "n": 1,
+              "ms": 26.0,
+              "firstAt": 12
+            },
+            "getPageInfo": {
+              "n": 60,
+              "ms": 0.0,
+              "firstAt": 38
+            },
+            "beginRenderJob": {
+              "n": 1,
+              "ms": 0.0,
+              "firstAt": 48
+            },
+            "canvasReadback": {
+              "n": 1,
+              "ms": 1.0,
+              "firstAt": 58
+            },
+            "canvasVisibleDraw": {
+              "n": 1,
+              "ms": 0.0,
+              "firstAt": 60
+            },
+            "pollRenderJob": {
+              "n": 1,
+              "ms": 12.0,
+              "firstAt": 48
+            },
+            "adapterRenderRequest": {
+              "n": 1,
+              "ms": 13.0,
+              "firstAt": 47
+            }
+          }
+        },
+        {
+          "kind": "groupStart",
+          "keyToFrame": 110,
+          "at": {
+            "handlerEnd": 60,
+            "input": 1,
+            "observed": 62,
+            "raf1": 97,
+            "end": 110,
+            "key": 0
+          },
+          "calls": {
+            "snapshotCapacity": {
+              "n": 2,
+              "ms": 0.0,
+              "firstAt": 1
+            },
+            "saveSnapshot": {
+              "n": 1,
+              "ms": 3.0,
+              "firstAt": 1
+            },
+            "insertText": {
+              "n": 1,
+              "ms": 25.0,
+              "firstAt": 4
+            },
+            "getPageInfo": {
+              "n": 60,
+              "ms": 1.0,
+              "firstAt": 30
+            },
+            "beginRenderJob": {
+              "n": 1,
+              "ms": 0.0,
+              "firstAt": 39
+            },
+            "canvasReadback": {
+              "n": 1,
+              "ms": 1.0,
+              "firstAt": 51
+            },
+            "canvasVisibleDraw": {
+              "n": 1,
+              "ms": 0.0,
+              "firstAt": 53
+            },
+            "pollRenderJob": {
+              "n": 1,
+              "ms": 14.0,
+              "firstAt": 39
+            },
+            "adapterRenderRequest": {
+              "n": 1,
+              "ms": 14.0,
+              "firstAt": 39
+            }
+          }
+        },
+        {
+          "kind": "groupStart",
+          "keyToFrame": 100,
+          "at": {
+            "handlerEnd": 58,
+            "input": 2,
+            "observed": 60,
+            "raf1": 94,
+            "end": 100,
+            "key": 0
+          },
+          "calls": {
+            "snapshotCapacity": {
+              "n": 2,
+              "ms": 0.0,
+              "firstAt": 2
+            },
+            "saveSnapshot": {
+              "n": 1,
+              "ms": 2.0,
+              "firstAt": 2
+            },
+            "insertText": {
+              "n": 1,
+              "ms": 26.0,
+              "firstAt": 4
+            },
+            "getPageInfo": {
+              "n": 60,
+              "ms": 0.0,
+              "firstAt": 31
+            },
+            "beginRenderJob": {
+              "n": 1,
+              "ms": 0.0,
+              "firstAt": 39
+            },
+            "canvasReadback": {
+              "n": 1,
+              "ms": 1.0,
+              "firstAt": 51
+            },
+            "canvasVisibleDraw": {
+              "n": 1,
+              "ms": 1.0,
+              "firstAt": 52
+            },
+            "pollRenderJob": {
+              "n": 1,
+              "ms": 14.0,
+              "firstAt": 39
+            },
+            "adapterRenderRequest": {
+              "n": 1,
+              "ms": 14.0,
+              "firstAt": 39
+            }
+          }
+        },
+        {
+          "kind": "groupStart",
+          "keyToFrame": 116,
+          "at": {
+            "handlerEnd": 62,
+            "input": 2,
+            "observed": 64,
+            "raf1": 100,
+            "end": 116,
+            "key": 0
+          },
+          "calls": {
+            "snapshotCapacity": {
+              "n": 2,
+              "ms": 0.0,
+              "firstAt": 3
+            },
+            "saveSnapshot": {
+              "n": 1,
+              "ms": 1.0,
+              "firstAt": 3
+            },
+            "insertText": {
+              "n": 1,
+              "ms": 26.0,
+              "firstAt": 4
+            },
+            "getPageInfo": {
+              "n": 60,
+              "ms": 1.0,
+              "firstAt": 31
+            },
+            "beginRenderJob": {
+              "n": 1,
+              "ms": 0.0,
+              "firstAt": 41
+            },
+            "canvasReadback": {
+              "n": 1,
+              "ms": 1.0,
+              "firstAt": 53
+            },
+            "canvasVisibleDraw": {
+              "n": 1,
+              "ms": 0.0,
+              "firstAt": 55
+            },
+            "pollRenderJob": {
+              "n": 1,
+              "ms": 14.0,
+              "firstAt": 41
+            },
+            "adapterRenderRequest": {
+              "n": 1,
+              "ms": 14.0,
+              "firstAt": 41
+            }
+          }
+        },
+        {
+          "kind": "groupStart",
+          "keyToFrame": 112,
+          "at": {
+            "handlerEnd": 64,
+            "input": 2,
+            "observed": 65,
+            "raf1": 101,
+            "end": 112,
+            "key": 0
+          },
+          "calls": {
+            "snapshotCapacity": {
+              "n": 2,
+              "ms": 0.0,
+              "firstAt": 2
+            },
+            "saveSnapshot": {
+              "n": 1,
+              "ms": 3.0,
+              "firstAt": 2
+            },
+            "insertText": {
+              "n": 1,
+              "ms": 26.0,
+              "firstAt": 5
+            },
+            "getPageInfo": {
+              "n": 60,
+              "ms": 0.0,
+              "firstAt": 32
+            },
+            "beginRenderJob": {
+              "n": 1,
+              "ms": 1.0,
+              "firstAt": 41
+            },
+            "canvasReadback": {
+              "n": 1,
+              "ms": 2.0,
+              "firstAt": 53
+            },
+            "canvasVisibleDraw": {
+              "n": 1,
+              "ms": 0.0,
+              "firstAt": 56
+            },
+            "pollRenderJob": {
+              "n": 1,
+              "ms": 14.0,
+              "firstAt": 42
+            },
+            "adapterRenderRequest": {
+              "n": 1,
+              "ms": 15.0,
+              "firstAt": 41
+            }
+          }
+        },
+        {
+          "kind": "groupStart",
+          "keyToFrame": 113,
+          "at": {
+            "handlerEnd": 68,
+            "input": 3,
+            "observed": 70,
+            "raf1": 105,
+            "end": 113,
+            "key": 0
+          },
+          "calls": {
+            "snapshotCapacity": {
+              "n": 2,
+              "ms": 0.0,
+              "firstAt": 3
+            },
+            "saveSnapshot": {
+              "n": 1,
+              "ms": 2.0,
+              "firstAt": 3
+            },
+            "insertText": {
+              "n": 1,
+              "ms": 26.0,
+              "firstAt": 5
+            },
+            "getPageInfo": {
+              "n": 60,
+              "ms": 7.0,
+              "firstAt": 33
+            },
+            "beginRenderJob": {
+              "n": 1,
+              "ms": 0.0,
+              "firstAt": 48
+            },
+            "canvasReadback": {
+              "n": 1,
+              "ms": 2.0,
+              "firstAt": 60
+            },
+            "canvasVisibleDraw": {
+              "n": 1,
+              "ms": 0.0,
+              "firstAt": 62
+            },
+            "pollRenderJob": {
+              "n": 1,
+              "ms": 14.0,
+              "firstAt": 48
+            },
+            "adapterRenderRequest": {
+              "n": 1,
+              "ms": 15.0,
+              "firstAt": 48
+            }
+          }
+        },
+        {
+          "kind": "groupStart",
+          "keyToFrame": 114,
+          "at": {
+            "handlerEnd": 62,
+            "input": 1,
+            "observed": 63,
+            "raf1": 99,
+            "end": 114,
+            "key": 0
+          },
+          "calls": {
+            "snapshotCapacity": {
+              "n": 2,
+              "ms": 0.0,
+              "firstAt": 1
+            },
+            "saveSnapshot": {
+              "n": 1,
+              "ms": 3.0,
+              "firstAt": 1
+            },
+            "insertText": {
+              "n": 1,
+              "ms": 26.0,
+              "firstAt": 4
+            },
+            "getPageInfo": {
+              "n": 60,
+              "ms": 1.0,
+              "firstAt": 30
+            },
+            "beginRenderJob": {
+              "n": 1,
+              "ms": 0.0,
+              "firstAt": 40
+            },
+            "canvasReadback": {
+              "n": 1,
+              "ms": 1.0,
+              "firstAt": 52
+            },
+            "canvasVisibleDraw": {
+              "n": 1,
+              "ms": 0.0,
+              "firstAt": 54
+            },
+            "pollRenderJob": {
+              "n": 1,
+              "ms": 14.0,
+              "firstAt": 40
+            },
+            "adapterRenderRequest": {
+              "n": 1,
+              "ms": 14.0,
+              "firstAt": 40
+            }
+          }
+        },
+        {
+          "kind": "groupStart",
+          "keyToFrame": 113,
+          "at": {
+            "handlerEnd": 70,
+            "input": 12,
+            "observed": 71,
+            "raf1": 107,
+            "end": 113,
+            "key": 0
+          },
+          "calls": {
+            "snapshotCapacity": {
+              "n": 2,
+              "ms": 0.0,
+              "firstAt": 12
+            },
+            "saveSnapshot": {
+              "n": 1,
+              "ms": 2.0,
+              "firstAt": 12
+            },
+            "insertText": {
+              "n": 1,
+              "ms": 26.0,
+              "firstAt": 14
+            },
+            "getPageInfo": {
+              "n": 60,
+              "ms": 1.0,
+              "firstAt": 41
+            },
+            "beginRenderJob": {
+              "n": 1,
+              "ms": 0.0,
+              "firstAt": 49
+            },
+            "canvasReadback": {
+              "n": 1,
+              "ms": 2.0,
+              "firstAt": 61
+            },
+            "canvasVisibleDraw": {
+              "n": 1,
+              "ms": 0.0,
+              "firstAt": 63
+            },
+            "pollRenderJob": {
+              "n": 1,
+              "ms": 15.0,
+              "firstAt": 49
+            },
+            "adapterRenderRequest": {
+              "n": 1,
+              "ms": 15.0,
+              "firstAt": 49
+            }
+          }
+        },
+        {
+          "kind": "groupStart",
+          "keyToFrame": 103,
+          "at": {
+            "handlerEnd": 61,
+            "input": 1,
+            "observed": 63,
+            "raf1": 99,
+            "end": 103,
+            "key": 0
+          },
+          "calls": {
+            "snapshotCapacity": {
+              "n": 2,
+              "ms": 0.0,
+              "firstAt": 1
+            },
+            "saveSnapshot": {
+              "n": 1,
+              "ms": 2.0,
+              "firstAt": 1
+            },
+            "insertText": {
+              "n": 1,
+              "ms": 27.0,
+              "firstAt": 3
+            },
+            "getPageInfo": {
+              "n": 60,
+              "ms": 1.0,
+              "firstAt": 30
+            },
+            "beginRenderJob": {
+              "n": 1,
+              "ms": 0.0,
+              "firstAt": 40
+            },
+            "canvasReadback": {
+              "n": 1,
+              "ms": 1.0,
+              "firstAt": 52
+            },
+            "canvasVisibleDraw": {
+              "n": 1,
+              "ms": 0.0,
+              "firstAt": 54
+            },
+            "pollRenderJob": {
+              "n": 1,
+              "ms": 14.0,
+              "firstAt": 40
+            },
+            "adapterRenderRequest": {
+              "n": 1,
+              "ms": 14.0,
+              "firstAt": 40
+            }
+          }
+        },
+        {
+          "kind": "groupStart",
+          "keyToFrame": 101,
+          "at": {
+            "handlerEnd": 63,
+            "input": 2,
+            "observed": 65,
+            "raf1": 100,
+            "end": 101,
+            "key": 0
+          },
+          "calls": {
+            "snapshotCapacity": {
+              "n": 2,
+              "ms": 0.0,
+              "firstAt": 2
+            },
+            "saveSnapshot": {
+              "n": 1,
+              "ms": 2.0,
+              "firstAt": 2
+            },
+            "insertText": {
+              "n": 1,
+              "ms": 26.0,
+              "firstAt": 4
+            },
+            "getPageInfo": {
+              "n": 60,
+              "ms": 0.0,
+              "firstAt": 31
+            },
+            "beginRenderJob": {
+              "n": 1,
+              "ms": 0.0,
+              "firstAt": 41
+            },
+            "canvasReadback": {
+              "n": 1,
+              "ms": 1.0,
+              "firstAt": 54
+            },
+            "canvasVisibleDraw": {
+              "n": 1,
+              "ms": 0.0,
+              "firstAt": 56
+            },
+            "pollRenderJob": {
+              "n": 1,
+              "ms": 15.0,
+              "firstAt": 41
+            },
+            "adapterRenderRequest": {
+              "n": 1,
+              "ms": 15.0,
+              "firstAt": 41
+            }
+          }
+        },
+        {
+          "kind": "groupStart",
+          "keyToFrame": 108,
+          "at": {
+            "handlerEnd": 61,
+            "input": 4,
+            "observed": 62,
+            "raf1": 97,
+            "end": 108,
+            "key": 0
+          },
+          "calls": {
+            "snapshotCapacity": {
+              "n": 2,
+              "ms": 0.0,
+              "firstAt": 4
+            },
+            "saveSnapshot": {
+              "n": 1,
+              "ms": 3.0,
+              "firstAt": 4
+            },
+            "insertText": {
+              "n": 1,
+              "ms": 26.0,
+              "firstAt": 7
+            },
+            "getPageInfo": {
+              "n": 60,
+              "ms": 0.0,
+              "firstAt": 34
+            },
+            "beginRenderJob": {
+              "n": 1,
+              "ms": 0.0,
+              "firstAt": 42
+            },
+            "canvasReadback": {
+              "n": 1,
+              "ms": 2.0,
+              "firstAt": 53
+            },
+            "canvasVisibleDraw": {
+              "n": 1,
+              "ms": 0.0,
+              "firstAt": 55
+            },
+            "pollRenderJob": {
+              "n": 1,
+              "ms": 13.0,
+              "firstAt": 42
+            },
+            "adapterRenderRequest": {
+              "n": 1,
+              "ms": 14.0,
+              "firstAt": 42
+            }
+          }
+        },
+        {
+          "kind": "groupStart",
+          "keyToFrame": 109,
+          "at": {
+            "handlerEnd": 62,
+            "input": 3,
+            "observed": 64,
+            "raf1": 100,
+            "end": 109,
+            "key": 0
+          },
+          "calls": {
+            "snapshotCapacity": {
+              "n": 2,
+              "ms": 0.0,
+              "firstAt": 3
+            },
+            "saveSnapshot": {
+              "n": 1,
+              "ms": 2.0,
+              "firstAt": 3
+            },
+            "insertText": {
+              "n": 1,
+              "ms": 26.0,
+              "firstAt": 5
+            },
+            "getPageInfo": {
+              "n": 60,
+              "ms": 1.0,
+              "firstAt": 32
+            },
+            "beginRenderJob": {
+              "n": 1,
+              "ms": 0.0,
+              "firstAt": 41
+            },
+            "canvasReadback": {
+              "n": 1,
+              "ms": 1.0,
+              "firstAt": 53
+            },
+            "canvasVisibleDraw": {
+              "n": 1,
+              "ms": 0.0,
+              "firstAt": 54
+            },
+            "pollRenderJob": {
+              "n": 1,
+              "ms": 14.0,
+              "firstAt": 41
+            },
+            "adapterRenderRequest": {
+              "n": 1,
+              "ms": 14.0,
+              "firstAt": 41
+            }
+          }
+        },
+        {
+          "kind": "groupStart",
+          "keyToFrame": 114,
+          "at": {
+            "handlerEnd": 71,
+            "input": 11,
+            "observed": 72,
+            "raf1": 107,
+            "end": 114,
+            "key": 0
+          },
+          "calls": {
+            "snapshotCapacity": {
+              "n": 2,
+              "ms": 1.0,
+              "firstAt": 11
+            },
+            "saveSnapshot": {
+              "n": 1,
+              "ms": 2.0,
+              "firstAt": 12
+            },
+            "insertText": {
+              "n": 1,
+              "ms": 26.0,
+              "firstAt": 14
+            },
+            "getPageInfo": {
+              "n": 60,
+              "ms": 0.0,
+              "firstAt": 41
+            },
+            "beginRenderJob": {
+              "n": 1,
+              "ms": 0.0,
+              "firstAt": 50
+            },
+            "canvasReadback": {
+              "n": 1,
+              "ms": 1.0,
+              "firstAt": 62
+            },
+            "canvasVisibleDraw": {
+              "n": 1,
+              "ms": 0.0,
+              "firstAt": 64
+            },
+            "pollRenderJob": {
+              "n": 1,
+              "ms": 14.0,
+              "firstAt": 50
+            },
+            "adapterRenderRequest": {
+              "n": 1,
+              "ms": 14.0,
+              "firstAt": 50
+            }
+          }
+        },
+        {
+          "kind": "groupStart",
+          "keyToFrame": 112,
+          "at": {
+            "handlerEnd": 63,
+            "input": 6,
+            "observed": 64,
+            "raf1": 98,
+            "end": 112,
+            "key": 0
+          },
+          "calls": {
+            "snapshotCapacity": {
+              "n": 2,
+              "ms": 0.0,
+              "firstAt": 6
+            },
+            "saveSnapshot": {
+              "n": 1,
+              "ms": 2.0,
+              "firstAt": 6
+            },
+            "insertText": {
+              "n": 1,
+              "ms": 26.0,
+              "firstAt": 8
+            },
+            "getPageInfo": {
+              "n": 60,
+              "ms": 1.0,
+              "firstAt": 35
+            },
+            "beginRenderJob": {
+              "n": 1,
+              "ms": 0.0,
+              "firstAt": 43
+            },
+            "canvasReadback": {
+              "n": 1,
+              "ms": 1.0,
+              "firstAt": 55
+            },
+            "canvasVisibleDraw": {
+              "n": 1,
+              "ms": 0.0,
+              "firstAt": 57
+            },
+            "pollRenderJob": {
+              "n": 1,
+              "ms": 14.0,
+              "firstAt": 43
+            },
+            "adapterRenderRequest": {
+              "n": 1,
+              "ms": 14.0,
+              "firstAt": 43
+            }
+          }
+        },
+        {
+          "kind": "groupStart",
+          "keyToFrame": 103,
+          "at": {
+            "handlerEnd": 62,
+            "input": 2,
+            "observed": 63,
+            "raf1": 100,
+            "end": 103,
+            "key": 0
+          },
+          "calls": {
+            "snapshotCapacity": {
+              "n": 2,
+              "ms": 0.0,
+              "firstAt": 2
+            },
+            "saveSnapshot": {
+              "n": 1,
+              "ms": 2.0,
+              "firstAt": 2
+            },
+            "insertText": {
+              "n": 1,
+              "ms": 27.0,
+              "firstAt": 4
+            },
+            "getPageInfo": {
+              "n": 60,
+              "ms": 0.0,
+              "firstAt": 31
+            },
+            "beginRenderJob": {
+              "n": 1,
+              "ms": 0.0,
+              "firstAt": 41
+            },
+            "canvasReadback": {
+              "n": 1,
+              "ms": 1.0,
+              "firstAt": 53
+            },
+            "canvasVisibleDraw": {
+              "n": 1,
+              "ms": 0.0,
+              "firstAt": 55
+            },
+            "pollRenderJob": {
+              "n": 1,
+              "ms": 14.0,
+              "firstAt": 41
+            },
+            "adapterRenderRequest": {
+              "n": 1,
+              "ms": 14.0,
+              "firstAt": 41
+            }
+          }
+        },
+        {
+          "kind": "groupStart",
+          "keyToFrame": 108,
+          "at": {
+            "handlerEnd": 62,
+            "input": 2,
+            "observed": 63,
+            "raf1": 100,
+            "end": 108,
+            "key": 0
+          },
+          "calls": {
+            "snapshotCapacity": {
+              "n": 2,
+              "ms": 0.0,
+              "firstAt": 3
+            },
+            "saveSnapshot": {
+              "n": 1,
+              "ms": 3.0,
+              "firstAt": 3
+            },
+            "insertText": {
+              "n": 1,
+              "ms": 26.0,
+              "firstAt": 6
+            },
+            "getPageInfo": {
+              "n": 60,
+              "ms": 1.0,
+              "firstAt": 32
+            },
+            "beginRenderJob": {
+              "n": 1,
+              "ms": 0.0,
+              "firstAt": 42
+            },
+            "canvasReadback": {
+              "n": 1,
+              "ms": 1.0,
+              "firstAt": 54
+            },
+            "canvasVisibleDraw": {
+              "n": 1,
+              "ms": 0.0,
+              "firstAt": 56
+            },
+            "pollRenderJob": {
+              "n": 1,
+              "ms": 14.0,
+              "firstAt": 42
+            },
+            "adapterRenderRequest": {
+              "n": 1,
+              "ms": 14.0,
+              "firstAt": 42
+            }
+          }
+        }
+      ]
+    }
+  ],
+  "qualification": "Native D4 protocol, e88d experimental identity; NOT trusted D1 approval. First completed run per explicit preparation setting."
+}

@@ -1,0 +1,40 @@
+Native 선행 조건 — 승인 없이 실행하지 않은 최소 계획
+
+1) 가장 작은 D1 복구는 과거 exact package 네 파일을 오프라인으로 제공하는 것이다.
+WASM ca5c..., JS b69e..., d.ts bce4..., ENGINE 9d3b... 전체 SHA는 d1-contract.json의 권위 계약을 따른다.
+기존 후보/production을 덮지 않는 새 격리 디렉터리에서 네 파일을 모두 대조한다.
+추가 경로 없음은 사용자 확인 사항이다. 현재 찾아진 e88d/8d10/5728/eaa8 후보는 대체할 수 없다.
+정확한 패키지의 byte length/압축 크기는 기록에서 확인되지 않아 exact 추가 디스크 비용은 UNVERIFIED다.
+전달 전 파일별 길이/해시 목록을 요구하고 그 합계만큼 격리 공간을 예약해야 한다. 현재 여유 약99GiB다.
+이미 있는 실험 WASM 약12MiB는 크기 참고일 뿐 trusted package의 크기나 신뢰 증명이 아니다.
+
+2) 네 파일을 복원할 수 없어 재빌드가 필요하면 Rust1.93.1 native+wasm32 도구가 선행 조건이다.
+권위 full patch는 decoded-lease-contract-finalization/upstream-rhwp-decoded-lease-finalization-complete.patch,
+SHA555f11aa2139a9087ff4eeb5c8a5f57a3ee7af120d69d333d284e07e4c8a8a96 이다.
+앞선 hardening-only patch(7a48...)만으로 재현하지 않는다. 이번에 full patch의10파일 replay와8개 기록 SHA를 확인했다.
+이 source-only export의 patched bytes는1,687,485이며 build target/cache는 만들지 않았다. 실제 package/toolchain 크기는 여전히 별도다. 별도 RUSTUP_HOME/격리 source와 기존 재사용 가능한
+캐시를 조사한 뒤, 외부 취득/설치의 범위·source provenance·압축/해제/빌드 공간을 확정하여 승인을 받아야 한다.
+도구 archive/cache가 없으므로 현재 exact 다운로드/설치 디스크 비용을 계산했다고 주장하지 않는다.
+보수적 provisioning 제안치는 toolchain+wasm target0.3~1GiB, build/source scratch1~4GiB이나 미검증 추정이다.
+1.99/1.97 빌드를 byte-identical 후보로 대체하지 않는다. expected hash/anchor를 바꾸지 않는다.
+
+3) native producer에는 tauri-driver(기존 계약2.0.4), WebKitWebDriver, Xvfb, xdotool이 필요하다.
+초기 binary 경로는 없었지만 cached tauri-driver2.0.4 source를 발견해 offline17.31초 빌드했다.
+현재 driver/app SHA는 driver-recovery.json에 기록했다. driver provisioning은 더 이상 blocker가 아니다.
+D2는 IBus/Hangul/GTK module, schema 도구와 setxkbmap도 필요하다. 현재 IBus/Hangul/fcitx5/weston은 없다.
+허용된 추가 설치/외부 artifact 취득이 아니므로 수행하지 않았다. 시스템 전역 IME 설정을 바꾸지 않는다.
+도구가 제공되면 기존 producer의 private D-Bus/XDG/schema/display 격리를 사용한다.
+
+4) 현재 backend app은 Rust1.99 --locked --offline으로 빌드 완료하고 identity를 고정했다.
+exact trusted candidate가 제공되면 authoritative run-native.py --help의 v3/31 dependency preflight부터 실행한다.
+39 assertions/24 exact references/4fixtures/cleanup/lifecycle를 같은 source/candidate로 만족해야 D1 PASS다.
+D2는 실제 empty end -> CtrlZ -> late final을 관측해야 하며 합성 입력으로 대체하지 않는다.
+D4는 같은 공식3RAF 경계와50/1500ms의 현재 OFF/ON 첫 완주를 보존했다(FAIL). historical48adaa와 현재e88d를 합치지 않는다.
+
+5) 현재 native OFF/ON attribution과 official D4를 실행했으나 group p95는 모두50ms를 넘었다.
+새 codec/layout/GPU 원인 분리 실험과 증거가 필요하다. 기존 준비 API의 양자는 하나의
+동기 codec/layout 호출을 선점하지 못한다(현재 diagnostic max poll171/146ms). 진짜 incremental codec/worker
+가능성은 DOM/Canvas/wasm-bindgen ownership과 pixels/cleanup을 검증해야 하며 지원되지 않은 API를 가정하지 않는다.
+과거 no-work3RAF floor가50ms에 근접/초과했다는 점은 host/display/측정 계약 검토의 근거지만 문턱 완화 승인이 아니다.
+
+생산 Undo/Redo·formatting 활성화, 후보 승격, gitlink/anchor 변경, D4 문턱 변경은 이 계획의 승인이 아니다.

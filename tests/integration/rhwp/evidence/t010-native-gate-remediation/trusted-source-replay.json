@@ -1,0 +1,86 @@
+{
+  "status": "PASS (source only; not binary reproduction)",
+  "attempts": [
+    {
+      "attempt": 1,
+      "status": "FAIL (audit setup)",
+      "exit": 1,
+      "reason": "Only 8 manifest-recorded sources exported; full patch also requires paint/layer_tree.rs and paint/resources.rs. No source/product defect inferred."
+    },
+    {
+      "attempt": 2,
+      "status": "PASS",
+      "commands": [
+        {
+          "command": "git apply --check <committed complete patch>",
+          "exit": 0
+        },
+        {
+          "command": "git apply <committed complete patch>",
+          "exit": 0
+        }
+      ],
+      "scope": "Export all 10 full-patch paths from pinned Git objects; compare 8 manifest SHA fields exactly."
+    }
+  ],
+  "sourceRecordAt": "47eb616:tests/integration/rhwp/evidence/t010-decoded-lease-contract-finalization/candidate-identity.json",
+  "pinnedUpstream": "1a76570e833917d15817415a53c09ad61ab3203f",
+  "fullPatchSha256": "555f11aa2139a9087ff4eeb5c8a5f57a3ee7af120d69d333d284e07e4c8a8a96",
+  "recordedSourceMatches": {
+    "src/renderer/mod.rs": true,
+    "src/renderer/surface_cache.rs": true,
+    "src/renderer/render_job.rs": true,
+    "src/renderer/web_canvas.rs": true,
+    "src/wasm_api.rs": true,
+    "src/renderer/layout.rs": true,
+    "src/renderer/layout/caret_geometry_tests.rs": true,
+    "src/renderer/canvas_rgba.rs": true
+  },
+  "exportedInputBytes": 1553210,
+  "patchedSourceBytes": 1687485,
+  "scope": "Only 10 required source files; temporary export removed, no external source mutation, no build/download/toolchain install.",
+  "binaryReproduction": "NOT RUN (Rust1.93.1/exact package absent)",
+  "patchedSources": [
+    {
+      "sha256": "14aec9b8cf19358bab5950cf90e0f074b9917d8376d062cf9c9d80b1116ed821",
+      "sourcePath": "src/paint/layer_tree.rs"
+    },
+    {
+      "sha256": "9db6302236e221bbf687ab72f110eb2f23c9e31a138ededfaa17074e13504eff",
+      "sourcePath": "src/paint/resources.rs"
+    },
+    {
+      "sha256": "f1e1d2bf1bd47d836c52a01b5f4a6dede90fee704fc99a8ef9eb8aa9cec559d1",
+      "sourcePath": "src/renderer/canvas_rgba.rs"
+    },
+    {
+      "sha256": "c4e348d4b6926ce3d8a0b431a0d5b8202d717c5573e62f12725f17ef145f0eac",
+      "sourcePath": "src/renderer/layout.rs"
+    },
+    {
+      "sha256": "2b08a10fa355bb70cd7d4bced4e106f6a2d079d7bdb51bf9835cc3f45d852220",
+      "sourcePath": "src/renderer/layout/caret_geometry_tests.rs"
+    },
+    {
+      "sha256": "2edce7a1fb7f918556d812fa9d27abd82d6380ba7a7dcde77bafaf82de66ac00",
+      "sourcePath": "src/renderer/mod.rs"
+    },
+    {
+      "sha256": "3a1325abd19065ff1be4c1c2607013d0324ef76c254e827b9869fa27d5326e6a",
+      "sourcePath": "src/renderer/render_job.rs"
+    },
+    {
+      "sha256": "9d5aa73e8167a59d85f7f09cf5165be99c703bdaaa4d1a491a116409744cbfcb",
+      "sourcePath": "src/renderer/surface_cache.rs"
+    },
+    {
+      "sha256": "71e03cd2611d86ba32333ee82b35d582b6499a750274c708b9e61a6cff282517",
+      "sourcePath": "src/renderer/web_canvas.rs"
+    },
+    {
+      "sha256": "3dfa6723ae9c89768157f26aac22566d18055c9074acfaa28b0686c3687ecacb",
+      "sourcePath": "src/wasm_api.rs"
+    }
+  ],
+  "securityRepresentation": "Public SHA256 values are explicit sha256 fields with separate sourcePath; workspace path replaced by placeholder in command record. No value or trust-anchor change."
+}

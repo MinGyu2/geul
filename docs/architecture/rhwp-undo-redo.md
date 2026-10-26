@@ -1194,3 +1194,20 @@ fixture와 native PoC 어댑터(`ownership-poc/session.mjs`)는 실제 wasm-bind
 이 호스트에 없고(큰 WASM 8개 해시 대조 불일치, 로컬 도구 1.99.0·1.97.1), 도구 설치는 이번 범위 밖이다. 다른 컴파일러로는 신뢰 바이트를
 만들 수 없으므로 재빌드하지 않았고 신뢰 기준을 바꾸지 않았다. 관문: D1 NOT RUN(이번 소스), D2 INCONCLUSIVE, D3 PASS(이번 실행),
 D4 FAIL, D5 보관 PASS, RSS INCONCLUSIVE → **제품 rhwp 실행 취소·다시 실행 NO-GO**, T010 미완료, T011 시작하지 않음.
+
+
+### 2026-10-26 T010 native gate 복구 및 현재 D4 검증 (미완료)
+
+T009 부분 개선 `1ae3cde`와 별도 작업이다. full555f patch의10파일 replay/8 source SHA는 PASS지만
+exact ca5c 후보와 Rust1.93.1은 없어 D1 NOT RUN이다. 추가 후보 경로 없음은 사용자 확인 사항이다.
+초기 driver 부재 후 cached2.0.4를 Rust1.99 offline으로 복구하고 current app을 빌드했다.
+IBus/Hangul은 여전히 없어 D2 INCONCLUSIVE이며 awaiting-final guard는 유지한다.
+현재 native D4 OFF/ON 각각 첫 완주에서4문서 group p95는91/87/241/130 및94/90/226/130ms로 모두 FAIL,
+Undo p95는 모두1500ms 이하다. 동일 e88d 실험 신원·공식3RAF·50/1500ms 문턱을 유지했다.
+preparation은 일부 handler를 줄였지만 gate를 해결하지 못해 생산 승격/추측 renderer 패치를 하지 않았다.
+no-new-input witness는 queued work를 포함할 수 있어 물리 frame floor로 단정하거나 지연에서 빼지 않는다.
+현재 trace/신원/cleanup과 첫 구성 오류도 보존했다. D4는 trusted native D1 승인을 대신하지 않는다.
+별도 Chrome/WebKit49단언/42 exactRGBA PASS, native 두 run 관찰된 프로세스 잔존 없음.
+D3 현재 저장 PASS, D5 archived PASS, RSS INCONCLUSIVE. backend T009 HWM은 T010 RSS와 별개다.
+증거: `tests/integration/rhwp/evidence/t010-native-gate-remediation/`.
+Undo/Redo NO-GO·formatting unsupported·T010 미체크·T011 NOT STARTED. 설치/다운로드/push/anchor·gitlink 변경 없음.
