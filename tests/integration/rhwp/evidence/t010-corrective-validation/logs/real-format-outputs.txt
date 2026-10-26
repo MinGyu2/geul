@@ -1,0 +1,16 @@
+   Compiling geul v0.1.0 (<repo>/src-tauri)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 13.21s
+     Running unittests src/lib.rs (target/debug/deps/geul_lib-5c8df1bb1e26c929)
+
+running 1 test
+{"findings":"Preservation { outcome: Safe, findings: [] }","output":"bold-0.hwpx","safe":true}
+{"findings":"Preservation { outcome: Safe, findings: [] }","output":"italic-0.hwpx","safe":true}
+{"findings":"Preservation { outcome: Safe, findings: [] }","output":"underline-0.hwpx","safe":true}
+{"findings":"Preservation { outcome: Safe, findings: [] }","output":"strikethrough-0.hwpx","safe":true}
+{"findings":"Preservation { outcome: Safe, findings: [] }","output":"cell-strike-underline.hwpx","safe":true}
+{"findings":"Preservation { outcome: Safe, findings: [] }","output":"boldoff-1.hwpx","safe":true}
+{"findings":"Preservation { outcome: Safe, findings: [] }","output":"unedited.hwpx","safe":true}
+{"findings":"Preservation { outcome: Unsafe, findings: [Finding { code: PartChanged, part: Some(\"Contents/header.xml\") }] }","output":"italic-toggle-0.hwpx","safe":false}
+test services::save::tests::실제_엔진_서식_출력_판정 ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 189 filtered out; finished in 0.16s

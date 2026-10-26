@@ -22,3 +22,13 @@ export function loadTestEngine(root: string) {
   // Native Node loader also supports isolated packages outside Vite's workspace.
   return createRequire(import.meta.url)(join(testPackage(root), "rhwp.js"));
 }
+
+/**
+ * 실제 wasm-bindgen 초기화 결과(exports)의 선형 메모리 측정(앱 rhwpModule.ts와 같은 출처). 기록을 켠 세션은 이것이 있어야 기록을
+ * 만든다. memory가 없으면 시험이 바로 실패한다(감시 없는 기록으로 대신 돌지 않음).
+ */
+export function wasmMemoryBytes(exports: unknown): () => number {
+  const memory = (exports as { memory?: unknown } | null)?.memory;
+  if (!(memory instanceof WebAssembly.Memory)) throw new Error("wasm-bindgen exports have no WebAssembly.Memory");
+  return () => memory.buffer.byteLength;
+}

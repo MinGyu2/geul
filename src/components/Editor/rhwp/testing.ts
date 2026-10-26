@@ -160,6 +160,9 @@ export const info = (patch: Partial<SessionInfo>): SessionInfo => ({ ...base, ..
 /** document_load 응답(불러오기 시도 번호 + 문서 바이트). */
 export const loaded = (bytes: Uint8Array = new Uint8Array([1]), generation = 1): Result<LoadedBytes> => ok({ generation, bytes });
 
+/** 가짜 모듈의 선형 메모리 측정값(유효·고정 — 감시의 경계는 memoryMonitoring.test.ts가 따로 본다). */
+export const FIXED_MEMORY_BYTES = 64 * 1024 * 1024;
+
 /**
  * 열고 불러온 세션. 백엔드 응답은 테스트가 직접 준다. options는 세션 선택이다: 기본은 실행 취소 기록을 켠 구성(시험 활성화 빌드와
  * 같음 — 기록을 다루는 시험들의 전제), `{}`면 이 빌드의 레지스트리를 따른다(제품 빌드 구성, productionHistory.test.ts).
@@ -171,7 +174,8 @@ export async function readySession(text = ["가나다", "abc"], options: { histo
   take("open").reply(ok(base));
   await opening;
   const doc = new FakeDocument(text);
-  const module: RhwpModule = { openDocument: () => doc as unknown as RhwpDocument };
+  // 기록을 켠 구성은 선형 메모리 측정이 있어야 한다(없으면 세션이 기록을 만들지 않음): 결정적인 고정 값.
+  const module: RhwpModule = { openDocument: () => doc as unknown as RhwpDocument, memoryBytes: () => FIXED_MEMORY_BYTES };
   const editor = new RhwpEditorSession(1, backend, sessions, async () => module, options);
   const loading = editor.load();
   take("load").reply(loaded());

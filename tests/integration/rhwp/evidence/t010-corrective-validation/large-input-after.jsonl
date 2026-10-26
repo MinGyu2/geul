@@ -1,0 +1,7 @@
+{"accepted":true,"appended":10,"compareMs":3.6,"headerBytes":26781,"original":100,"zipBytes":1665}
+{"accepted":true,"appended":100,"compareMs":37.4,"headerBytes":266552,"original":1000,"zipBytes":7311}
+{"accepted":true,"appended":2000,"compareMs":103.0,"headerBytes":991152,"original":2000,"zipBytes":30294}
+{"accepted":true,"appended":1000,"compareMs":164.3,"headerBytes":1463152,"original":5000,"zipBytes":36739}
+{"accepted":true,"appended":5000,"compareMs":392.5,"headerBytes":3696153,"original":10000,"zipBytes":98492}
+{"accepted":true,"appended":10000,"compareMs":1142.9,"headerBytes":9860153,"original":30000,"zipBytes":248667}
+{"accepted":true,"appended":5535,"compareMs":2013.9,"headerBytes":16037113,"original":60000,"zipBytes":369946}

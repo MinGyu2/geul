@@ -9,6 +9,10 @@ import {
 } from "./rhwpHistory";
 import { FakeDocument, flush, info, ok, readySession } from "./testing";
 
+/** 알고리즘 시험의 선형 메모리 측정: 늘 같은 유효 값(감시는 memoryMonitoring.test.ts가 따로 본다). */
+const FIXED_MEMORY = () => 0;
+const NOW = () => performance.now();
+
 /** 고정 rhwp 스냅숏 저장소 흉내. 상태는 정수(편집마다 바뀜). capacity는 바꿀 수 있다(고정 판이 바뀐 경우). */
 function engine(initialCapacity = 100) {
   let state = 0;
@@ -52,7 +56,7 @@ function group(history: RhwpHistory, e: ReturnType<typeof engine>, k: number) {
 describe("RhwpHistory 알고리즘(엔진 흉내)", () => {
   it.each([4, 5])("깊이 %i: 10그룹 → 정확히 깊이만큼 실행 취소 → 모두 다시 실행, 상태가 그 시점과 같음", (depth) => {
     const e = engine();
-    const h = new RhwpHistory(e, depth);
+    const h = new RhwpHistory(e, depth, NOW, FIXED_MEMORY);
     const timeline = [e.state];
     for (let k = 0; k < 10; k++) {
       group(h, e, k);
@@ -76,7 +80,7 @@ describe("RhwpHistory 알고리즘(엔진 흉내)", () => {
 
   it("깊이 상한 97(스냅숏 98) · 누적 할당 130회: 엔진 저장소가 98을 넘지 않고 참조 ID가 모두 남음", () => {
     const e = engine();
-    const h = new RhwpHistory(e, 97);
+    const h = new RhwpHistory(e, 97, NOW, FIXED_MEMORY);
     for (let k = 0; k < 130; k++) group(h, e, k);
     for (let k = 0; k < 97; k++) h.undo(() => null);
     expect(h.canUndo).toBe(false);
@@ -88,7 +92,7 @@ describe("RhwpHistory 알고리즘(엔진 흉내)", () => {
 
   it("다시 실행은 할당하지 않고, 실행 취소 뒤 새 편집은 다시 실행 스냅숏을 엔진에서 버림", () => {
     const e = engine();
-    const h = new RhwpHistory(e, 5);
+    const h = new RhwpHistory(e, 5, NOW, FIXED_MEMORY);
     for (let k = 0; k < 4; k++) group(h, e, k);
     h.undo(() => null);
     h.undo(() => null);
@@ -105,7 +109,7 @@ describe("RhwpHistory 알고리즘(엔진 흉내)", () => {
 
   it("엔진 상한이 줄면: 실행 취소 대상(ID 보호)은 남기고 가장 오래된 과거를 지움", () => {
     const e = engine();
-    const h = new RhwpHistory(e, 5);
+    const h = new RhwpHistory(e, 5, NOW, FIXED_MEMORY);
     const timeline = [e.state];
     for (let k = 0; k < 3; k++) {
       group(h, e, k);
@@ -120,7 +124,7 @@ describe("RhwpHistory 알고리즘(엔진 흉내)", () => {
 
   it("지울 수 있는 후보가 없으면 엔진을 부르기 전에 거절하고 상태·기록이 그대로", () => {
     const e = engine();
-    const h = new RhwpHistory(e, 5);
+    const h = new RhwpHistory(e, 5, NOW, FIXED_MEMORY);
     group(h, e, 0);
     e.capacity = 3; // limit 1: 대상만 남아 지금 상태를 찍을 자리가 없음
     const state = e.state;
@@ -132,7 +136,7 @@ describe("RhwpHistory 알고리즘(엔진 흉내)", () => {
   it("이어 쓰기: 같은 종류·이어진 자리·쉼 ≤ 1.5초만, 쉼이 길면 새 단계", () => {
     const e = engine();
     let now = 0;
-    const h = new RhwpHistory(e, 10, () => now);
+    const h = new RhwpHistory(e, 10, () => now, FIXED_MEMORY);
     for (const [start, end] of [["a", "b"], ["b", "c"], ["c", "d"]]) {
       h.begin("typing", start!, () => null);
       e.edit(1);
@@ -157,7 +161,7 @@ describe("RhwpHistory 알고리즘(엔진 흉내)", () => {
 
   it("취소한 트랜잭션은 찍은 스냅숏을 버리고 단계를 만들지 않음 / 트랜잭션 중 실행 취소 거절", () => {
     const e = engine();
-    const h = new RhwpHistory(e, 5);
+    const h = new RhwpHistory(e, 5, NOW, FIXED_MEMORY);
     group(h, e, 0);
     h.begin("typing", "z", () => null);
     expect(() => h.undo(() => null)).toThrow(expect.objectContaining({ reason: "transaction" }));
@@ -167,18 +171,18 @@ describe("RhwpHistory 알고리즘(엔진 흉내)", () => {
 
   it("실패: 찍기 예외는 불확실·broken, 기록 밖에서 버려진 ID는 '없음'(불확실 아님), 그 밖의 복원 예외는 불확실", () => {
     const e1 = engine();
-    const h1 = new RhwpHistory({ ...e1, snapshotCapacity: () => 100, saveSnapshot: () => { throw new Error("RuntimeError: unreachable"); } }, 5);
+    const h1 = new RhwpHistory({ ...e1, snapshotCapacity: () => 100, saveSnapshot: () => { throw new Error("RuntimeError: unreachable"); } }, 5, NOW, FIXED_MEMORY);
     expect(() => h1.begin("other", "a", () => null)).toThrow(expect.objectContaining({ kind: "snapshot-failed", uncertain: true }));
     expect(h1.state).toBe("broken");
     const e2 = engine();
-    const h2 = new RhwpHistory(e2, 5);
+    const h2 = new RhwpHistory(e2, 5, NOW, FIXED_MEMORY);
     group(h2, e2, 0);
     e2.discardSnapshot(h2.referenced()[0]!);
     const state = e2.state;
     expect(() => h2.undo(() => null)).toThrow(expect.objectContaining({ kind: "snapshot-missing", uncertain: false }));
     expect(e2.state).toBe(state);
     const e3 = engine();
-    const h3 = new RhwpHistory({ ...e3, snapshotCapacity: () => 100, saveSnapshot: e3.saveSnapshot, restoreSnapshot: () => { throw new Error("RuntimeError: unreachable"); } }, 5);
+    const h3 = new RhwpHistory({ ...e3, snapshotCapacity: () => 100, saveSnapshot: e3.saveSnapshot, restoreSnapshot: () => { throw new Error("RuntimeError: unreachable"); } }, 5, NOW, FIXED_MEMORY);
     group(h3, e3, 0);
     expect(() => h3.undo(() => null)).toThrow(HistoryFailure);
     expect(h3.state).toBe("broken");
@@ -187,7 +191,7 @@ describe("RhwpHistory 알고리즘(엔진 흉내)", () => {
   it("무작위 2만 단계(깊이 4·5·97): 매 단계 불변식, 엔진 저장소 ≤ 상한 − 2, 끝에 참조 ID 모두 남음", () => {
     for (const depth of [4, 5, 97]) {
       const e = engine();
-      const h = new RhwpHistory(e, depth);
+      const h = new RhwpHistory(e, depth, NOW, FIXED_MEMORY);
       let seed = 7 + depth;
       const rand = () => (seed = (seed * 1103515245 + 12345) % 2 ** 31) / 2 ** 31;
       let end = 0;
@@ -432,7 +436,7 @@ describe("스냅숏 폐기 예외의 실패 계약", () => {
       calls.push(id);
       if (fails) throw new Error("RuntimeError: unreachable");
       e.discardSnapshot(id);
-    } }, depth);
+    } }, depth, NOW, FIXED_MEMORY);
     return { e, h, calls, fail: () => { fails = true; } };
   }
   it.each(["reserve", "redo", "cancel", "release", "commit"] as const)("%s: 폐기 실패는 즉시 중단·typed uncertain, 같은 ID 재폐기 없음", (boundary) => {

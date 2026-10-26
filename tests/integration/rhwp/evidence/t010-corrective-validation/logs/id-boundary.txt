@@ -1,0 +1,10 @@
+   Compiling geul v0.1.0 (<repo>/src-tauri)
+    Finished `release` profile [optimized] target(s) in 27.62s
+     Running unittests src/lib.rs (target/release/deps/geul_lib-faaf99dc20d7ab56)
+
+running 1 test
+{"accepted":true,"appended":1,"compareMs":2054,"lastId":65535,"original":65535}
+{"accepted":false,"appended":1,"compareMs":1511,"lastId":65536,"original":65536}
+test services::save::tests::hwpx_id_상한_경계 ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 188 filtered out; finished in 3.86s

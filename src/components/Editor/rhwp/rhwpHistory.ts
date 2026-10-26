@@ -144,22 +144,43 @@ export class RhwpHistory {
   state: "ok" | "broken" = "ok";
   /** 시험·진단용: 이 기록이 찍은 수(saveSnapshot 호출). */
   allocations = 0;
-  /** 기록을 켤 때의 WASM 선형 메모리 크기(memory가 있을 때). */
-  private readonly memoryAtStart: number | null;
+  /** 기록을 켤 때의 WASM 선형 메모리 크기와 마지막으로 읽은 값(단조성 확인). */
+  private readonly memoryAtStart: number;
+  private memoryLast: number;
 
   /**
-   * memory는 모듈 WASM 선형 메모리 크기(줄지 않는 상한선). 주면 새 그룹을 찍기 전에 기록을 켠 뒤의 증가가 HISTORY_BUDGET_BYTES를
-   * 넘었는지 보고, 넘었으면 찍지 않고 거절한다(limit — 세션은 기록을 끄고 편집은 계속한다). 실행 취소의 지금 상태 찍기는 I2의 자리
-   * 안이라 막지 않는다.
+   * memory는 모듈 WASM 선형 메모리 크기(줄지 않는 상한선)를 읽는 함수다 — 필수(감시 없는 기록은 만들지 않는다). 읽은 값은
+   * `readMemory`의 계약(0 이상의 안전한 정수, 줄지 않음, 예외 없음)을 지켜야 하고, 아니면 측정 불가(unavailable)다.
+   * 스냅숏을 새로 찍는 경로(새 그룹의 before, 실행 취소의 지금 상태)는 엔진을 부르기 전에 읽는다:
+   * - 측정 불가: unavailable로 거절(세션은 기록을 끄고 편집은 계속). 0 같은 그럴듯한 값으로 바꾸지 않는다.
+   * - 새 그룹에서 켠 뒤 증가가 HISTORY_BUDGET_BYTES를 넘음: limit으로 거절. 실행 취소의 지금 상태 찍기는 I2의 자리 안이라
+   *   예산 초과로는 막지 않는다(되돌릴 수 있는 기록을 쓸 수 있게).
+   * 할당하지 않는 전이(이어 쓰기, 찍혀 있는 상태의 실행 취소·다시 실행·새 편집 시작)는 읽지 않는다.
    */
   constructor(
     private readonly engine: SnapshotEngine,
     private readonly depth: number,
-    private readonly now: () => number = () => performance.now(),
-    private readonly memory: (() => number) | null = null,
+    private readonly now: () => number,
+    private readonly memory: () => number,
   ) {
     if (!(this.limit >= 2)) throw new HistoryRefused("limit");
-    this.memoryAtStart = memory ? memory() : null;
+    this.memoryLast = -1;
+    this.memoryAtStart = this.readMemory();
+  }
+
+  /** 측정 계약. 어긋나면 HistoryRefused("unavailable") — 예산 초과(limit)로 보고하지 않는다. */
+  private readMemory(): number {
+    let value: unknown;
+    try {
+      value = this.memory();
+    } catch {
+      throw new HistoryRefused("unavailable");
+    }
+    if (typeof value !== "number" || !Number.isSafeInteger(value) || value < 0 || value < this.memoryLast) {
+      throw new HistoryRefused("unavailable");
+    }
+    this.memoryLast = value;
+    return value;
   }
 
   /**
@@ -280,9 +301,7 @@ export class RhwpHistory {
     let previousCheckpoint: Pending["previousCheckpoint"] = null;
     if (!extending && this.states[this.cursor] === null) {
       // 지금 상태 = 새 그룹의 before. 다시 실행 기록이 있으면 지금 상태는 이미 찍혀 있다(실행 취소가 찍음).
-      if (this.memory && this.memoryAtStart !== null && this.memory() - this.memoryAtStart > HISTORY_BUDGET_BYTES) {
-        throw new HistoryRefused("limit");
-      }
+      if (this.readMemory() - this.memoryAtStart > HISTORY_BUDGET_BYTES) throw new HistoryRefused("limit");
       this.reserve(1, new Set(), ["past"]);
       this.states[this.cursor] = this.save(checkpoint());
       captured = true;
@@ -351,11 +370,12 @@ export class RhwpHistory {
     if (this.state !== "ok") throw new HistoryRefused("unavailable");
     if (this.pending) throw new HistoryRefused("transaction");
     if (this.cursor === 0) throw new HistoryRefused("nothingToUndo");
-    this.group = null;
     if (this.states[this.cursor] === null) {
+      this.readMemory(); // 측정 불가면 지우거나 찍기 전에 거절(예산 초과는 I2 자리라 받는다)
       this.reserve(1, new Set([this.states[this.cursor - 1]!]), ["future", "past"]);
       this.states[this.cursor] = this.save(current());
     }
+    this.group = null;
     const target = this.states[this.cursor - 1]!;
     this.restore(target);
     this.cursor -= 1;

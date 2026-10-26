@@ -1,4 +1,4 @@
-import { loadTestEngine, testPackage } from "./test-package";
+import { loadTestEngine, testPackage, wasmMemoryBytes } from "./test-package";
 // T010 Phase 2 Gate D3 입력(선택 실행, GEUL_UNDO_SAVE_OUT=<디렉터리>): 제품 RhwpEditorSession(실제 WASM)에서 편집 → 실행 취소 →
 // 다시 실행한 모델을 앱과 같은 방식(내보내기 + 손실 보고 + 다시 열기 네 값 — exportAndCompare와 같은 비교)으로 파일에 쓴다.
 // 판정·저장은 tests/integration/rhwp/undo_save.py가 실제 service::save(Rust 시험 t010_phase0_save_service)로 한다.
@@ -21,7 +21,7 @@ describe.runIf(OUT)("D3 입력: 실행 취소·다시 실행한 실제 세션 �
     mkdirSync(join(out, "fixtures"), { recursive: true });
     execFileSync("node", [join(ROOT, "tests/fixtures/rhwp/generate.mjs"), join(out, "fixtures")]);
     const mod = loadTestEngine(ROOT);
-    mod.initSync({ module: readFileSync(join(testPackage(ROOT), "rhwp_bg.wasm")) });
+    const memoryBytes = wasmMemoryBytes(mod.initSync({ module: readFileSync(join(testPackage(ROOT), "rhwp_bg.wasm")) }));
     const cases: unknown[] = [];
     // 생성 픽스처 둘 + 여러 구역 공개 예제 둘(사본 — 원본 예제는 읽기만).
     const multi = [["aift.hwp", "external/rhwp/samples/aift.hwp"], ["assets.hwpx", "external/rhwp/samples/issue6031/3249937_asset_management_rules.hwpx"]];
@@ -36,7 +36,7 @@ describe.runIf(OUT)("D3 입력: 실행 취소·다시 실행한 실제 세션 �
       take("open").reply(ok({ ...base, format: fmt }));
       await opening;
       let doc: Doc | null = null;
-      const module: RhwpModule = { openDocument: (b) => { const d = new mod.HwpDocument(b) as Doc; doc ??= d; return d; } };
+      const module: RhwpModule = { openDocument: (b) => { const d = new mod.HwpDocument(b) as Doc; doc ??= d; return d; }, memoryBytes };
       const editor = new RhwpEditorSession(1, backend, sessions, async () => module, { history: true }); // 실행 취소 기록을 켠 구성(시험 활성화 빌드와 같음)
       const loading = editor.load();
       take("load").reply(loaded(new Uint8Array(readFileSync(original))));

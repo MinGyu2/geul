@@ -68,7 +68,7 @@ async function mounted({ pages = 1, zoom = 100, text = ["가나다"], size = { w
   const doc = new LayeredDocument(text);
   doc.pages = pages;
   doc.size = size;
-  const module: RhwpModule = { openDocument: () => doc as unknown as RhwpDocument };
+  const module: RhwpModule = { openDocument: () => doc as unknown as RhwpDocument, memoryBytes: () => 64 * 1024 * 1024 };
   // Undo/Redo 그리기 순서를 보는 시험이 있어 기록을 켠 구성(시험 활성화 빌드와 같음)으로 연다.
   const editor = new RhwpEditorSession(1, backend, sessions, async () => module, { history: true });
   const loading = editor.load();

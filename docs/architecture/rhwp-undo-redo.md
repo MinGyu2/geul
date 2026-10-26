@@ -1168,3 +1168,29 @@ native D1 증거 보안 강화(2026-10-26).
 D2 INCONCLUSIVE(새 native 근거 없음, 가드 유지). D3 PASS(`undo_save.py` 이번 실행 불일치 0, `save_service.py --strict-desired` 23행 불일치 0).
 D4 FAIL(첫 유효 공식 기록 유지, 이번에 재측정하지 않음 — 렌더 경로를 바꾸지 않았다). D5 보관 PASS(실제 WASM 폐기 예외 시험 이번에 통과,
 native 재실행 없음). RSS INCONCLUSIVE. **결정: 제품 rhwp 실행 취소·다시 실행 NO-GO**, T010 미완료, T011 시작하지 않음.
+
+## T010 교정: 메모리 감시 fail-closed·구성 분리·D1 재구성 (2026-10-26)
+
+기준 `a342a90`(submodule·제품 WASM·후보·신뢰 기준 그대로). 증거: `tests/integration/rhwp/evidence/t010-corrective-validation/`
+([보고서](../../tests/integration/rhwp/evidence/t010-corrective-validation/REPORT.ko.txt)).
+
+**메모리 감시(CONFIRMED DEFECT — FIXED).** 이전 판은 두 경로로 감시를 건너뛰었다(수정 전 재현 32/34 실패): 모듈에 측정이 없거나 시작
+측정이 실패하면 감시 없는 기록을 만들었고(`{undo:false,redo:false}`), 시작 뒤 측정이 실패하면 세션이 0으로 바꿔 넘겨 증가가 음수가 되어
+예산 검사를 통과했다. 지금 계약(`RhwpHistory.readMemory`): 측정 함수는 필수이고 읽은 값은 0 이상의 안전한 정수이며 같은 기록 안에서
+줄지 않아야 한다. 없음·예외·NaN·Infinity·음수·소수·다른 타입·안전 정수 밖·감소는 측정 불가 → `HistoryRefused("unavailable")`로,
+예산 초과(`limit`)와 구별한다. 스냅숏을 새로 찍는 두 경로(새 그룹의 before, 실행 취소의 지금 상태)는 지우거나 찍기 **전에** 읽는다;
+할당하지 않는 전이는 읽지 않는다. 세션은 측정이 없거나 시작 측정이 어긋나면 기록을 만들지 않고(`unavailable`), 도중의 측정 불가는
+기록을 끄고 참조 스냅숏을 엔진에서 버린다(엔진은 믿을 수 있으므로) — 문서·revision·IME는 그대로이고 그 편집은 한다. 진짜 찍기 trap은
+지금처럼 불확실·편집 멈춤. 실행 취소의 지금 상태 찍기는 예산 초과로는 막지 않는다(I2 자리 안, 이전 판과 같음). 기록을 켜는 시험
+fixture와 native PoC 어댑터(`ownership-poc/session.mjs`)는 실제 wasm-bindgen `memory`(PoC)나 결정적 값(가짜)을 준다.
+
+**구성 분리(VERIFIED).** 번들: 일반·검사 훅만 켠 빌드는 rhwp 지원 상수가 `unsupported`, 시험 활성화 빌드만 표지와 함께 `supported`
+(`bundle-configs.jsonl`). 실제 WASM + 앱 로더(`loadRhwpModule`, 실제 exports의 `memory`): 일반·훅 구성에서 실제 편집에 `saveSnapshot`
+0회·명령 거절, 시험 활성화 구성에서 4인자 생성 세션이 기록을 켜고 `execute("edit.undo"/"edit.redo")`가 실제 문서를 되돌리며 새 그룹
+전에 실제 측정을 읽음, 한 모듈의 두 문서에서 한 문서를 닫아도 다른 문서의 기록이 그대로(`history-config.wasm.test.ts`,
+`history-enabled.wasm.test.ts`).
+
+**D1(NOT RUN).** 신뢰 기준(`1699dfbe…` 파일, 후보 WASM `ca5c0b84…`)은 격리 rustc 1.93.1로 빌드되었다. 그 도구와 정확한 후보 바이트가
+이 호스트에 없고(큰 WASM 8개 해시 대조 불일치, 로컬 도구 1.99.0·1.97.1), 도구 설치는 이번 범위 밖이다. 다른 컴파일러로는 신뢰 바이트를
+만들 수 없으므로 재빌드하지 않았고 신뢰 기준을 바꾸지 않았다. 관문: D1 NOT RUN(이번 소스), D2 INCONCLUSIVE, D3 PASS(이번 실행),
+D4 FAIL, D5 보관 PASS, RSS INCONCLUSIVE → **제품 rhwp 실행 취소·다시 실행 NO-GO**, T010 미완료, T011 시작하지 않음.

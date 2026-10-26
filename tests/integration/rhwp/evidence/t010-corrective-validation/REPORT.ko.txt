@@ -1,0 +1,59 @@
+T010 교정 검증: 메모리 감시 fail-closed·HWPX 서식 쓰임/값·큰 입력·구성 분리·D1 재구성 (2026-10-26)
+
+분류: VERIFIED / INFERRED / UNVERIFIED, 판정: PASS / FAIL / INCONCLUSIVE / NOT RUN. T010 완료 판정이 아니다.
+교정 세션 상태: PARTIALLY COMPLETED(A–D 완료, E는 신뢰 후보 재구성 불가로 D1 NOT RUN).
+T010 전체: INCOMPLETE. 제품 rhwp 실행 취소·다시 실행: NO-GO. T011: NOT STARTED.
+
+1. 기준 (VERIFIED)
+- 시작 HEAD a342a90fbea836d9f064d82abacc49c14d868a79, master, 작업 트리 clean. 종료 HEAD는 커밋 뒤 최종 응답에 적는다.
+- rhwp 1a76570e833917d15817415a53c09ad61ab3203f, WordCraft fc41918814f62645b6746ed68e71e8c2c2e85d6f(변경 없음).
+- 제품 WASM a91fa6a4…, rhwp.js 70cde06a…(변경 없음). 신뢰 기준 파일 sha256 1699dfbe…(커밋본=작업본=판정기 고정값, 변경 없음).
+- rustc/cargo 1.99.0, Node v24.21.0, Python 3.14.7, Gitleaks 8.30.1. Cargo는 모두 --locked --offline, 기존 src-tauri/target
+  (debug, 기존 release 프로필 디렉터리 재사용). 설치·clean·캐시 삭제·Cargo.lock 변경 없음.
+
+2. A 메모리 감시 (CONFIRMED DEFECT — FIXED)
+- 재현(logs/memory-before.txt, 수정 전 34개 중 32 실패): 측정 없음·시작 측정 예외/NaN/음수에서 감시 없는 기록 생성
+  (history {undo:false,redo:false}), 유효 시작 뒤 null/예외/Infinity/감소에서 거절 없음(세션이 0으로 바꿔 넘김).
+- 수정: RhwpHistory 측정 함수 필수, readMemory 계약(0 이상 안전 정수, 단조, 예외 없음) 위반 = HistoryRefused("unavailable").
+  새 그룹 찍기·실행 취소의 지금 상태 찍기 모두 지우기·찍기 전에 검사. 예산 초과(limit)와 구별. 세션은 측정 없으면 기록을 만들지 않고,
+  도중 측정 불가면 기록을 끄고(참조 스냅숏은 엔진에서 버림) 편집은 계속. 진짜 찍기 trap은 그대로 불확실·편집 멈춤.
+- 시험: memoryMonitoring.test.ts 34개(경계 정확히 256 MiB 받음/+1 limit, 다시 실행 가지·release, 세션 revision·불확실 아님 등),
+  rhwpHistory.test.ts 알고리즘 시험은 고정 유효 측정을 명시. 실제 wasm-bindgen memory: history-config.wasm.test.ts가 앱 로더로 확인.
+
+3. B HWPX 쓰임 검증 (CONFIRMED DEFECT — FIXED)
+- 근거(VERIFIED 소스): 고정 rhwp parser/hwpx/section.rs는 run(713·909행)과 formCharPr(7312행)에서만 charPrIDRef를 글자 모양으로
+  읽고 지역 이름만 본다. 판정은 더 좁게 hp(2011 paragraph) 이름공간 + 구조(run의 부모 hp:p, formCharPr의 부모 hp 요소).
+- 재현(logs/rust-bc-before.txt): 가짜 <hp:fake charPrIDRef="3"/>로 쓰이지 않는 덧붙임이 받아짐(기대 partChanged, 실제 []).
+- 시험: 음성 9 + 중복 id(정확한 근거 [partChanged, unsupported]), 양성 본문·빈 run·표 셀·formCharPr·여러 구역.
+
+4. C 값·큰 입력
+- C1 근거(VERIFIED 소스): serializer/hwpx/char_shapes.rs write_char_pr, char_shape_tables/underline.rs(NONE·BOTTOM·TOP),
+  line_shape.rs(13종, 취소선 꺼짐 NONE), color_hex(none·#RRGGBB·#AARRGGBB 대문자). 파서는 모르는 값을 말없이 기본값으로 읽는다.
+  정책: 덧붙인 정의의 서식 자식은 직렬화기가 쓰는 속성 집합·값만. 원본 정의는 소급 거부하지 않음. 수정 전 type="CENTER" 등 받아짐.
+- C2 측정(release, large-input-before/after.jsonl, 같은 입력·판정 모두 accepted): 원본/덧붙임 30000/10000 13683.7→1142.9 ms,
+  60000/5535(header 16.0 MB, zip 370 KB) 19332.2→2013.9 ms. 수정: 원본 정의를 한 번 정규화한 HashSet(Cow로 사건 빌림),
+  Canonical에 Hash 추가 — 같음은 집합의 전체 값 비교(해시만으로 같다고 보지 않음). 수정 뒤 측정 프로세스 최대 RSS 약 1.0 GiB
+  (수정 전 RSS는 재지 않음 — 비교 주장 없음).
+- C3: 빈 원본, u32 밖·최댓값·부호 itemCnt, 원본 수 불일치, 잘린 header(outputMalformed), 400단계 중첩, 같은 덧붙임 둘(둘 다 쓰임만),
+  id 경계 65535 받음/65536 막음(id-boundary.jsonl, release). 새 크기 상한은 두지 않음.
+- 실제 엔진(real-engine-format-outputs.jsonl): 생성 픽스처 HWPX의 굵게·기울임·밑줄·취소선·셀 취소선+밑줄·굵게 끔·편집 없음 safe,
+  기울임 켰다 끔(쓰이지 않는 덧붙임) partChanged. 셀 출력 다시 열기: 범위 안 id 8·서식 참, 밖 id 0(cell-format-reopen.json).
+- save_service.py --strict-desired 23행 CURRENT 0·DESIRED 0(HWP 거부 그대로), undo_save.py 불일치 0(D3).
+
+5. D 구성 분리 (VERIFIED)
+- 번들(bundle-configs.jsonl): 일반·훅만 g=h(unsupported), 시험 활성화 g=(console.info 표지, supported). 표지 0/0/1.
+- 실제 WASM: 일반(logs/wasm-config-normal.txt)·훅(…-hooks.txt) 5 PASS·1 건너뜀(활성화 전용), 활성화(…-history.txt) 1 PASS:
+  4인자 세션 기록 켬, execute로 실행 취소·다시 실행, 새 그룹 전 실제 측정 읽음, format.bold 거절.
+- native PoC 어댑터 session.mjs가 실제 exports.memory를 준다(아니면 활성화 native 빌드에서 기록이 꺼짐). 준비 실험 주입 앵커 문자열 유지.
+
+6. E D1 (NOT RUN)
+- candidate-reproduction.json: 신뢰 후보는 격리 rustc 1.93.1(01f6ddf75)·wasm-pack 0.15.0로 patch 555f11aa…에서 빌드. 그 도구 없음
+  (로컬 1.99.0·1.97.1), 큰 WASM 8개 해시 불일치. 설치는 범위 밖, 다른 컴파일러 재빌드는 신뢰 바이트를 만들 수 없어 시도하지 않음.
+  원인: 환경(도구 부재) + 승인 필요(도구 설치). 제품 결함 아님. 다음: 승인 후 1.93.1 격리 설치 → 재빌드 바이트 일치 → v3 D1.
+
+7. 검증 명령(종료 코드)
+tsc 0, eslint 0, vitest src 42파일 819 통과 0, WASM 통합 42 통과·3 건너뜀 0, poc 50 0, npm run build 0(dist 표지 0),
+구성별 vitest 3회 0, cargo fmt --check 0, cargo clippy --all-targets -D warnings 0, cargo test 183+통합 0,
+release 측정 2회·경계 1회 0, 실제 엔진 판정 0, save_service 0, undo_save 0, ownership-poc Python 292 0. 보안은 최종 응답.
+
+8. 관문: D1 NOT RUN(이번 소스) · D2 INCONCLUSIVE · D3 PASS · D4 FAIL · D5 보관 PASS · RSS INCONCLUSIVE.

@@ -1,4 +1,4 @@
-import { loadTestEngine, testPackage } from "./test-package";
+import { loadTestEngine, testPackage, wasmMemoryBytes } from "./test-package";
 // T010 Phase 2 실제 rhwp WASM 통합 시험: 제품 RhwpEditorSession(기록 rhwpHistory.ts 포함)을 고정 WASM 문서로 열고 세션 메서드로
 // 편집·실행 취소·다시 실행한다. 백엔드는 시험 응답(controlledBackend), 입력은 세션 메서드 호출(입력기 아님 — 네이티브 ibus-hangul은
 // tests/integration/rhwp/rhwp_poc.py). 픽스처는 generate.mjs가 임시 디렉터리에 만든다.
@@ -17,6 +17,7 @@ import { base, controlledBackend, flush, info, loaded, ok } from "../../../src/c
 const ROOT = resolve(__dirname, "../../..");
 type Doc = RhwpDocument & { getTextFileText(): string; getControls(): string };
 let engine: { HwpDocument: new (bytes: Uint8Array) => Doc };
+let memoryBytes: () => number;
 const fixtures: Record<"hwp" | "hwpx", Uint8Array> = {} as never;
 let scratch: string;
 
@@ -25,7 +26,7 @@ beforeAll(async () => {
   execFileSync("node", [join(ROOT, "tests/fixtures/rhwp/generate.mjs"), scratch]);
   for (const fmt of ["hwp", "hwpx"] as const) fixtures[fmt] = new Uint8Array(readFileSync(join(scratch, `basic-ko.${fmt}`)));
   const mod = loadTestEngine(ROOT);
-  mod.initSync({ module: readFileSync(join(testPackage(ROOT), "rhwp_bg.wasm")) });
+  memoryBytes = wasmMemoryBytes(mod.initSync({ module: readFileSync(join(testPackage(ROOT), "rhwp_bg.wasm")) }));
   engine = mod;
 });
 afterAll(() => rmSync(scratch, { recursive: true, force: true }));
@@ -44,6 +45,7 @@ async function open(fmt: "hwp" | "hwpx") {
       doc ??= opened;
       return opened;
     },
+    memoryBytes: () => memoryBytes(),
   };
   const editor = new RhwpEditorSession(1, backend, sessions, async () => module, { history: true }); // 실행 취소 기록을 켠 구성(시험 활성화 빌드와 같음)
   const loading = editor.load();

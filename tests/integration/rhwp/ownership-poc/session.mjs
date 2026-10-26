@@ -10,7 +10,7 @@ const MAX_SUMMARIES = 64, MAX_SUMMARY_UNITS = 262144, MAX_SUMMARY_TOTAL_UNITS = 
 const subscribers = new Set();
 const sessions = new Set();
 const counters = { completed: 0, canceled: 0, errors: 0, limits: 0, notifications: 0, polls: 0, staleDropped: 0, reused: 0, replacements: 0, fullJobs: 0, patchJobs: 0, regionalPatchJobs: 0, wholePagePatchJobs: 0, unchangedFrames: 0 };
-let scheduled = false, loading, probeListener = null;
+let scheduled = false, loading, probeListener = null, wasmMemory = null;
 const wake = () => {
   if (scheduled) return;
   scheduled = true;
@@ -24,7 +24,9 @@ async function module() {
     if (identity.buildStatus !== 'PASS' || !identity.sourceStableDuringBuild || hash !== identity.artifacts['rhwp_bg.wasm']) throw new Error('PoC runtime engine identity mismatch');
     const url = '/__ownership_candidate__/rhwp.js';
     const engine = await import(/* @vite-ignore */ url);
-    await engine.default({ module_or_path: bytes });
+    const exports = await engine.default({ module_or_path: bytes });
+    // History monitoring needs the real linear memory (RhwpEditorSession refuses unmonitored history).
+    if (exports?.memory instanceof WebAssembly.Memory) wasmMemory = exports.memory;
     engine.setRendererImageLoadListener(() => { counters.notifications++; wake(); probeListener?.(); });
     window.__geulOwnership = {
       probeEngine: () => ({ ...engine, setRendererImageLoadListener: listener => { probeListener = listener; } }),
@@ -54,7 +56,8 @@ export function createOwnershipSession(Session, sessionId, backend, registry) {
   };
   const session = new Session(sessionId, backend, registry, async () => {
     const engine = await module();
-    return { openDocument(bytes) {
+    const memory = wasmMemory;
+    return { ...(memory ? { memoryBytes: () => memory.buffer.byteLength } : {}), openDocument(bytes) {
       // Save validation reopens are independent read-only handles, never replace
       // this session's authoritative live document or listener registration.
       if (doc) return new engine.HwpDocument(bytes);

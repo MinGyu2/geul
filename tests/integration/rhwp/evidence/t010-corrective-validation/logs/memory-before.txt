@@ -1,0 +1,265 @@
+
+ RUN  v5.0.3 <repo>
+
+ ❯ src/components/Editor/rhwp/memoryMonitoring.test.ts (34 tests | 32 failed) 133ms
+   ❯ RhwpHistory 측정 계약 (24)
+     × 시작 측정이 없음(null)이면 기록을 만들지 않는다(unavailable) 10ms
+     × 시작 측정이 없음(undefined)이면 기록을 만들지 않는다(unavailable) 1ms
+     × 시작 측정이 예외이면 기록을 만들지 않는다(unavailable) 8ms
+     × 시작 측정이 NaN이면 기록을 만들지 않는다(unavailable) 1ms
+     × 시작 측정이 Infinity이면 기록을 만들지 않는다(unavailable) 1ms
+     × 시작 측정이 음수이면 기록을 만들지 않는다(unavailable) 1ms
+     × 시작 측정이 소수이면 기록을 만들지 않는다(unavailable) 1ms
+     × 시작 측정이 문자열이면 기록을 만들지 않는다(unavailable) 1ms
+     × 시작 측정이 bigint이면 기록을 만들지 않는다(unavailable) 1ms
+     × 시작 측정이 안전 정수 밖이면 기록을 만들지 않는다(unavailable) 1ms
+     × 유효한 시작 뒤 없음(null): 새 그룹을 찍기 전에 unavailable로 거절, 엔진·시간선·트랜잭션 그대로 3ms
+     × 유효한 시작 뒤 없음(undefined): 새 그룹을 찍기 전에 unavailable로 거절, 엔진·시간선·트랜잭션 그대로 1ms
+     × 유효한 시작 뒤 예외: 새 그룹을 찍기 전에 unavailable로 거절, 엔진·시간선·트랜잭션 그대로 2ms
+     × 유효한 시작 뒤 NaN: 새 그룹을 찍기 전에 unavailable로 거절, 엔진·시간선·트랜잭션 그대로 1ms
+     × 유효한 시작 뒤 Infinity: 새 그룹을 찍기 전에 unavailable로 거절, 엔진·시간선·트랜잭션 그대로 3ms
+     × 유효한 시작 뒤 음수: 새 그룹을 찍기 전에 unavailable로 거절, 엔진·시간선·트랜잭션 그대로 1ms
+     × 유효한 시작 뒤 소수: 새 그룹을 찍기 전에 unavailable로 거절, 엔진·시간선·트랜잭션 그대로 1ms
+     × 유효한 시작 뒤 문자열: 새 그룹을 찍기 전에 unavailable로 거절, 엔진·시간선·트랜잭션 그대로 1ms
+     × 유효한 시작 뒤 bigint: 새 그룹을 찍기 전에 unavailable로 거절, 엔진·시간선·트랜잭션 그대로 1ms
+     × 유효한 시작 뒤 안전 정수 밖: 새 그룹을 찍기 전에 unavailable로 거절, 엔진·시간선·트랜잭션 그대로 1ms
+     × 감소(단조성 위반)는 측정 불가다 1ms
+     × 실행 취소의 지금 상태 찍기: 측정 불가면 복원 전에 거절(문서·커서·저장소 그대로), 예산 초과는 I2 자리라 받는다 1ms
+     × 다시 실행 가지가 있을 때: 할당 없는 실행 취소·다시 실행·새 편집 시작은 측정하지 않는다, 할당하는 다음 그룹은 거절 2ms
+   ❯ 세션: 측정을 믿을 수 없으면 기록을 켜지 않거나 끈다(편집은 계속) (10)
+     × 모듈에 측정 없음: 기록 없음(unavailable — limit 아님), 편집은 스냅숏 없이 됨 18ms
+     × 시작 측정 예외: 기록 없음(unavailable — limit 아님), 편집은 스냅숏 없이 됨 6ms
+     × 시작 측정 NaN: 기록 없음(unavailable — limit 아님), 편집은 스냅숏 없이 됨 6ms
+     × 시작 측정 음수: 기록 없음(unavailable — limit 아님), 편집은 스냅숏 없이 됨 13ms
+     × 유효한 시작 뒤 null: 다음 그룹에서 기록을 끄고(스냅숏 버림) 그 편집은 한다, revision +1, 불확실 아님 10ms
+     × 유효한 시작 뒤 예외: 다음 그룹에서 기록을 끄고(스냅숏 버림) 그 편집은 한다, revision +1, 불확실 아님 7ms
+     × 유효한 시작 뒤 Infinity: 다음 그룹에서 기록을 끄고(스냅숏 버림) 그 편집은 한다, revision +1, 불확실 아님 7ms
+     × 유효한 시작 뒤 감소: 다음 그룹에서 기록을 끄고(스냅숏 버림) 그 편집은 한다, revision +1, 불확실 아님 7ms
+     × 실행 취소 중 측정 불가: 문서·revision 그대로, 기록을 끔(unavailable) 8ms
+
+⎯⎯⎯⎯⎯⎯ Failed Tests 32 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  src/components/Editor/rhwp/memoryMonitoring.test.ts > RhwpHistory 측정 계약 > 시작 측정이 없음(null)이면 기록을 만들지 않는다(unavailable)
+ FAIL  src/components/Editor/rhwp/memoryMonitoring.test.ts > RhwpHistory 측정 계약 > 시작 측정이 없음(undefined)이면 기록을 만들지 않는다(unavailable)
+ FAIL  src/components/Editor/rhwp/memoryMonitoring.test.ts > RhwpHistory 측정 계약 > 시작 측정이 NaN이면 기록을 만들지 않는다(unavailable)
+ FAIL  src/components/Editor/rhwp/memoryMonitoring.test.ts > RhwpHistory 측정 계약 > 시작 측정이 Infinity이면 기록을 만들지 않는다(unavailable)
+ FAIL  src/components/Editor/rhwp/memoryMonitoring.test.ts > RhwpHistory 측정 계약 > 시작 측정이 음수이면 기록을 만들지 않는다(unavailable)
+ FAIL  src/components/Editor/rhwp/memoryMonitoring.test.ts > RhwpHistory 측정 계약 > 시작 측정이 소수이면 기록을 만들지 않는다(unavailable)
+ FAIL  src/components/Editor/rhwp/memoryMonitoring.test.ts > RhwpHistory 측정 계약 > 시작 측정이 문자열이면 기록을 만들지 않는다(unavailable)
+ FAIL  src/components/Editor/rhwp/memoryMonitoring.test.ts > RhwpHistory 측정 계약 > 시작 측정이 bigint이면 기록을 만들지 않는다(unavailable)
+ FAIL  src/components/Editor/rhwp/memoryMonitoring.test.ts > RhwpHistory 측정 계약 > 시작 측정이 안전 정수 밖이면 기록을 만들지 않는다(unavailable)
+AssertionError: expected function to throw an error, but it didn't
+ ❯ src/components/Editor/rhwp/memoryMonitoring.test.ts:58:75
+     56|     const e = engine();
+     57|     const p = probe(value);
+     58|     expect(() => new RhwpHistory(e, 10, () => 0, p.read as () => numbe…
+       |                                                                           ^
+     59|     expect(e.saves).toBe(0);
+     60|   });
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/32]⎯
+
+ FAIL  src/components/Editor/rhwp/memoryMonitoring.test.ts > RhwpHistory 측정 계약 > 시작 측정이 예외이면 기록을 만들지 않는다(unavailable)
+AssertionError: expected a thrown error to be Error: unavailable { reason: 'unavai…' }
+
+- Expected
++ Received
+
+- HistoryRefused {
+-   "message": "unavailable",
+-   "reason": "unavailable",
++ Error {
++   "message": "memory",
+  }
+
+ ❯ src/components/Editor/rhwp/memoryMonitoring.test.ts:58:75
+     56|     const e = engine();
+     57|     const p = probe(value);
+     58|     expect(() => new RhwpHistory(e, 10, () => 0, p.read as () => numbe…
+       |                                                                           ^
+     59|     expect(e.saves).toBe(0);
+     60|   });
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/32]⎯
+
+ FAIL  src/components/Editor/rhwp/memoryMonitoring.test.ts > RhwpHistory 측정 계약 > 유효한 시작 뒤 없음(null): 새 그룹을 찍기 전에 unavailable로 거절, 엔진·시간선·트랜잭션 그대로
+ FAIL  src/components/Editor/rhwp/memoryMonitoring.test.ts > RhwpHistory 측정 계약 > 유효한 시작 뒤 없음(undefined): 새 그룹을 찍기 전에 unavailable로 거절, 엔진·시간선·트랜잭션 그대로
+ FAIL  src/components/Editor/rhwp/memoryMonitoring.test.ts > RhwpHistory 측정 계약 > 유효한 시작 뒤 NaN: 새 그룹을 찍기 전에 unavailable로 거절, 엔진·시간선·트랜잭션 그대로
+ FAIL  src/components/Editor/rhwp/memoryMonitoring.test.ts > RhwpHistory 측정 계약 > 유효한 시작 뒤 음수: 새 그룹을 찍기 전에 unavailable로 거절, 엔진·시간선·트랜잭션 그대로
+ FAIL  src/components/Editor/rhwp/memoryMonitoring.test.ts > RhwpHistory 측정 계약 > 유효한 시작 뒤 소수: 새 그룹을 찍기 전에 unavailable로 거절, 엔진·시간선·트랜잭션 그대로
+ FAIL  src/components/Editor/rhwp/memoryMonitoring.test.ts > RhwpHistory 측정 계약 > 유효한 시작 뒤 문자열: 새 그룹을 찍기 전에 unavailable로 거절, 엔진·시간선·트랜잭션 그대로
+AssertionError: expected undefined to be an instance of HistoryRefused
+ ❯ src/components/Editor/rhwp/memoryMonitoring.test.ts:69:21
+     67|     let refused: unknown;
+     68|     try { h.begin("other", null, () => null); } catch (error) { refuse…
+     69|     expect(refused).toBeInstanceOf(HistoryRefused);
+       |                     ^
+     70|     expect((refused as HistoryRefused).reason).toBe("unavailable");
+     71|     expect({ saves: e.saves, discards: e.discards, steps: h.steps, ref…
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[3/32]⎯
+
+ FAIL  src/components/Editor/rhwp/memoryMonitoring.test.ts > RhwpHistory 측정 계약 > 유효한 시작 뒤 예외: 새 그룹을 찍기 전에 unavailable로 거절, 엔진·시간선·트랜잭션 그대로
+AssertionError: expected Error: memory to be an instance of HistoryRefused
+ ❯ src/components/Editor/rhwp/memoryMonitoring.test.ts:69:21
+     67|     let refused: unknown;
+     68|     try { h.begin("other", null, () => null); } catch (error) { refuse…
+     69|     expect(refused).toBeInstanceOf(HistoryRefused);
+       |                     ^
+     70|     expect((refused as HistoryRefused).reason).toBe("unavailable");
+     71|     expect({ saves: e.saves, discards: e.discards, steps: h.steps, ref…
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[4/32]⎯
+
+ FAIL  src/components/Editor/rhwp/memoryMonitoring.test.ts > RhwpHistory 측정 계약 > 유효한 시작 뒤 Infinity: 새 그룹을 찍기 전에 unavailable로 거절, 엔진·시간선·트랜잭션 그대로
+ FAIL  src/components/Editor/rhwp/memoryMonitoring.test.ts > RhwpHistory 측정 계약 > 유효한 시작 뒤 안전 정수 밖: 새 그룹을 찍기 전에 unavailable로 거절, 엔진·시간선·트랜잭션 그대로
+AssertionError: expected 'limit' to be 'unavailable' // Object.is equality
+
+Expected: "unavailable"
+Received: "limit"
+
+ ❯ src/components/Editor/rhwp/memoryMonitoring.test.ts:70:48
+     68|     try { h.begin("other", null, () => null); } catch (error) { refuse…
+     69|     expect(refused).toBeInstanceOf(HistoryRefused);
+     70|     expect((refused as HistoryRefused).reason).toBe("unavailable");
+       |                                                ^
+     71|     expect({ saves: e.saves, discards: e.discards, steps: h.steps, ref…
+     72|     expect(h.transactionOpen).toBe(false);
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[5/32]⎯
+
+ FAIL  src/components/Editor/rhwp/memoryMonitoring.test.ts > RhwpHistory 측정 계약 > 유효한 시작 뒤 bigint: 새 그룹을 찍기 전에 unavailable로 거절, 엔진·시간선·트랜잭션 그대로
+AssertionError: expected TypeError: Cannot mix BigInt and other ty… to be an instance of HistoryRefused
+ ❯ src/components/Editor/rhwp/memoryMonitoring.test.ts:69:21
+     67|     let refused: unknown;
+     68|     try { h.begin("other", null, () => null); } catch (error) { refuse…
+     69|     expect(refused).toBeInstanceOf(HistoryRefused);
+       |                     ^
+     70|     expect((refused as HistoryRefused).reason).toBe("unavailable");
+     71|     expect({ saves: e.saves, discards: e.discards, steps: h.steps, ref…
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[6/32]⎯
+
+ FAIL  src/components/Editor/rhwp/memoryMonitoring.test.ts > RhwpHistory 측정 계약 > 감소(단조성 위반)는 측정 불가다
+AssertionError: expected function to throw an error, but it didn't
+ ❯ src/components/Editor/rhwp/memoryMonitoring.test.ts:80:54
+     78|     group(h, 0);
+     79|     p.value = START - 1;
+     80|     expect(() => h.begin("other", null, () => null)).toThrow(new Histo…
+       |                                                      ^
+     81|     expect(e.saves).toBe(1);
+     82|   });
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[7/32]⎯
+
+ FAIL  src/components/Editor/rhwp/memoryMonitoring.test.ts > RhwpHistory 측정 계약 > 실행 취소의 지금 상태 찍기: 측정 불가면 복원 전에 거절(문서·커서·저장소 그대로), 예산 초과는 I2 자리라 받는다
+AssertionError: expected function to throw an error, but it didn't
+ ❯ src/components/Editor/rhwp/memoryMonitoring.test.ts:99:38
+     97|     group(h, 1);
+     98|     p.value = Number.NaN;
+     99|     expect(() => h.undo(() => null)).toThrow(new HistoryRefused("unava…
+       |                                      ^
+    100|     expect(e.restores).toBe(0);
+    101|     expect(e.saves).toBe(2);
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[8/32]⎯
+
+ FAIL  src/components/Editor/rhwp/memoryMonitoring.test.ts > RhwpHistory 측정 계약 > 다시 실행 가지가 있을 때: 할당 없는 실행 취소·다시 실행·새 편집 시작은 측정하지 않는다, 할당하는 다음 그룹은 거절
+AssertionError: expected a thrown error to be Error: unavailable { reason: 'unavai…' }
+
+- Expected
++ Received
+
+- HistoryRefused {
+-   "message": "unavailable",
+-   "reason": "unavailable",
++ Error {
++   "message": "memory",
+  }
+
+ ❯ src/components/Editor/rhwp/memoryMonitoring.test.ts:124:54
+    122|     h.commit("x"); // 다시 실행을 버림
+    123|     expect(h.steps).toEqual({ undo: 2, redo: 0 });
+    124|     expect(() => h.begin("other", null, () => null)).toThrow(new Histo…
+       |                                                      ^
+    125|     expect(h.violations()).toEqual([]);
+    126|     const live = e.stored;
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[9/32]⎯
+
+ FAIL  src/components/Editor/rhwp/memoryMonitoring.test.ts > 세션: 측정을 믿을 수 없으면 기록을 켜지 않거나 끈다(편집은 계속) > 모듈에 측정 없음: 기록 없음(unavailable — limit 아님), 편집은 스냅숏 없이 됨
+ FAIL  src/components/Editor/rhwp/memoryMonitoring.test.ts > 세션: 측정을 믿을 수 없으면 기록을 켜지 않거나 끈다(편집은 계속) > 시작 측정 예외: 기록 없음(unavailable — limit 아님), 편집은 스냅숏 없이 됨
+ FAIL  src/components/Editor/rhwp/memoryMonitoring.test.ts > 세션: 측정을 믿을 수 없으면 기록을 켜지 않거나 끈다(편집은 계속) > 시작 측정 NaN: 기록 없음(unavailable — limit 아님), 편집은 스냅숏 없이 됨
+ FAIL  src/components/Editor/rhwp/memoryMonitoring.test.ts > 세션: 측정을 믿을 수 없으면 기록을 켜지 않거나 끈다(편집은 계속) > 시작 측정 음수: 기록 없음(unavailable — limit 아님), 편집은 스냅숏 없이 됨
+AssertionError: expected { undo: false, redo: false } to be null
+
+- Expected:
+null
+
++ Received:
+{
+  "redo": false,
+  "undo": false,
+}
+
+ ❯ src/components/Editor/rhwp/memoryMonitoring.test.ts:159:41
+    157|     async (_label, memory) => {
+    158|       const { editor, doc } = await session(memory);
+    159|       expect(editor.snapshot().history).toBeNull();
+       |                                         ^
+    160|       expect(editor.snapshot().historyLimited).toBe(false);
+    161|       expect(editor.typeText("x")).toBe(true);
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[10/32]⎯
+
+ FAIL  src/components/Editor/rhwp/memoryMonitoring.test.ts > 세션: 측정을 믿을 수 없으면 기록을 켜지 않거나 끈다(편집은 계속) > 유효한 시작 뒤 null: 다음 그룹에서 기록을 끄고(스냅숏 버림) 그 편집은 한다, revision +1, 불확실 아님
+ FAIL  src/components/Editor/rhwp/memoryMonitoring.test.ts > 세션: 측정을 믿을 수 없으면 기록을 켜지 않거나 끈다(편집은 계속) > 유효한 시작 뒤 예외: 다음 그룹에서 기록을 끄고(스냅숏 버림) 그 편집은 한다, revision +1, 불확실 아님
+ FAIL  src/components/Editor/rhwp/memoryMonitoring.test.ts > 세션: 측정을 믿을 수 없으면 기록을 켜지 않거나 끈다(편집은 계속) > 유효한 시작 뒤 Infinity: 다음 그룹에서 기록을 끄고(스냅숏 버림) 그 편집은 한다, revision +1, 불확실 아님
+ FAIL  src/components/Editor/rhwp/memoryMonitoring.test.ts > 세션: 측정을 믿을 수 없으면 기록을 켜지 않거나 끈다(편집은 계속) > 유효한 시작 뒤 감소: 다음 그룹에서 기록을 끄고(스냅숏 버림) 그 편집은 한다, revision +1, 불확실 아님
+AssertionError: expected { undo: true, redo: false } to be null
+
+- Expected:
+null
+
++ Received:
+{
+  "redo": false,
+  "undo": true,
+}
+
+ ❯ src/components/Editor/rhwp/memoryMonitoring.test.ts:179:41
+    177|       expect(doc.paragraphs[0]).toContain("y");
+    178|       expect(editor.localRevision).toBe(revision + 1);
+    179|       expect(editor.snapshot().history).toBeNull();
+       |                                         ^
+    180|       expect(editor.snapshot().historyLimited).toBe(false);
+    181|       expect(editor.snapshot().editable).toBe(true);
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[11/32]⎯
+
+ FAIL  src/components/Editor/rhwp/memoryMonitoring.test.ts > 세션: 측정을 믿을 수 없으면 기록을 켜지 않거나 끈다(편집은 계속) > 실행 취소 중 측정 불가: 문서·revision 그대로, 기록을 끔(unavailable)
+AssertionError: expected true to be false // Object.is equality
+
+- Expected
++ Received
+
+- false
++ true
+
+ ❯ src/components/Editor/rhwp/memoryMonitoring.test.ts:194:27
+    192|     const revision = editor.localRevision;
+    193|     p.value = thrower;
+    194|     expect(editor.undo()).toBe(false);
+       |                           ^
+    195|     expect(doc.paragraphs).toEqual(text);
+    196|     expect(editor.localRevision).toBe(revision);
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[12/32]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  32 failed | 2 passed (34)
+   Start at  15:33:58
+   Duration  1.81s (environment 54%, transform 24%, tests 9%, setup 9%, import 3%)
+
+exit=1

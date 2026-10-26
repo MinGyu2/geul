@@ -1,4 +1,4 @@
-import { loadTestEngine, testPackage } from "./test-package";
+import { loadTestEngine, testPackage, wasmMemoryBytes } from "./test-package";
 // 여러 구역 문서의 쪽 계약(T010 Phase 2 안정화 A): 고정 rhwp는 getPageInfo(page)의 pageIndex를 구역 안 순번으로 주고, 쪽 번호 인자·
 // 그리기·hit test·커서·선택 사각형은 문서 전체 물리 순번을 쓴다. 제품 RhwpEditorSession을 실제 WASM으로 열어 공개 예제(external/rhwp/
 // samples)의 여러 구역 HWP·HWPX가 열리고, 구역 경계 앞뒤 쪽에서 클릭한 쪽·커서 쪽·선택 쪽이 같은 물리 쪽이며, 편집·실행 취소 뒤에도
@@ -15,9 +15,10 @@ import { base, controlledBackend, flush, info, loaded, ok } from "../../../src/c
 const ROOT = resolve(__dirname, "../../..");
 type Doc = RhwpDocument & { getTextFileText(): string };
 let engine: { HwpDocument: new (bytes: Uint8Array) => Doc };
+let memoryBytes: () => number;
 beforeAll(async () => {
   const mod = loadTestEngine(ROOT);
-  mod.initSync({ module: readFileSync(join(testPackage(ROOT), "rhwp_bg.wasm")) });
+  memoryBytes = wasmMemoryBytes(mod.initSync({ module: readFileSync(join(testPackage(ROOT), "rhwp_bg.wasm")) }));
   engine = mod;
 });
 
@@ -42,7 +43,7 @@ async function open(path: string, fmt: "hwp" | "hwpx") {
   take("open").reply(ok({ ...base, format: fmt }));
   await opening;
   let doc: Doc | null = null;
-  const module: RhwpModule = { openDocument: (b) => { const d = new engine.HwpDocument(b); doc ??= d; return d; } };
+  const module: RhwpModule = { openDocument: (b) => { const d = new engine.HwpDocument(b); doc ??= d; return d; }, memoryBytes: () => memoryBytes() };
   const editor = new RhwpEditorSession(1, backend, sessions, async () => module, { history: true }); // 실행 취소 기록을 켠 구성(시험 활성화 빌드와 같음)
   const loading = editor.load();
   take("load").reply(loaded(new Uint8Array(readFileSync(join(ROOT, path)))));

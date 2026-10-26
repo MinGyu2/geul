@@ -208,16 +208,6 @@ const MAX_SAMPLES = 1000;
 const RHWP_HISTORY_DECLARED = (["edit.undo", "edit.redo"] as const)
   .every((id) => commandDefinition(id)?.engines?.rhwp.level === "supported");
 
-/** 모듈 WASM 선형 메모리 크기. 모르거나 읽지 못하면 null. */
-function moduleMemory(module: RhwpModule): number | null {
-  try {
-    const bytes = module.memoryBytes?.();
-    return typeof bytes === "number" && Number.isFinite(bytes) && bytes >= 0 ? bytes : null;
-  } catch {
-    return null;
-  }
-}
-
 export class RhwpEditorSession implements DocumentCommandTarget {
   readonly engine = "rhwp" as const;
   status: EditorStatus = { kind: "idle" };
@@ -775,8 +765,9 @@ export class RhwpEditorSession implements DocumentCommandTarget {
 
   /**
    * 문서를 열 때: 이 빌드가 rhwp 실행 취소를 쓰고(`options.history`, 없으면 레지스트리 선언) 예산(원본 크기 대용 — 보수적이지 않음,
-   * rhwpHistory.ts historyBudget)이 최소 깊이를 담을 때만 기록을 켠다. 모듈이 선형 메모리 크기를 알려 주면 증가 감시를 붙인다. 기록을
-   * 만들지 못해도 문서 세션은 그대로다.
+   * rhwpHistory.ts historyBudget)이 최소 깊이를 담고, 모듈이 선형 메모리를 잴 수 있을 때만 기록을 켠다. 측정이 없거나 시작 측정이
+   * 계약에 어긋나면 감시 없는 기록을 만들지 않고 unavailable로 둔다(RhwpHistory가 읽은 값을 검사한다 — 여기서 대신 채우지 않는다).
+   * 기록을 만들지 못해도 문서 세션은 그대로다.
    */
   private startHistory(doc: RhwpDocument, bytes: number) {
     this.history = null;
@@ -789,8 +780,12 @@ export class RhwpEditorSession implements DocumentCommandTarget {
         this.historyOff = "limit";
         return;
       }
-      const memory = module && moduleMemory(module) !== null ? () => moduleMemory(module) ?? 0 : null;
-      this.history = new RhwpHistory(doc, budget.depth, undefined, memory);
+      const read = module?.memoryBytes;
+      if (!module || typeof read !== "function") {
+        this.historyOff = "unavailable";
+        return;
+      }
+      this.history = new RhwpHistory(doc, budget.depth, () => performance.now(), () => read.call(module));
     } catch {
       this.historyOff = "unavailable";
     }
@@ -889,8 +884,11 @@ export class RhwpEditorSession implements DocumentCommandTarget {
         this.failEditing();
         return false;
       }
-      // 엔진을 부르기 전 거절, 또는 바꾸기 전 오류("스냅샷 N 없음" — 기록의 셈이 엔진과 어긋남): 문서는 그대로다.
-      if (error instanceof HistoryFailure) this.dropHistory("unavailable");
+      // 엔진을 부르기 전 거절, 또는 바꾸기 전 오류("스냅샷 N 없음" — 기록의 셈이 엔진과 어긋남): 문서는 그대로다. 메모리 측정
+      // 불가(unavailable)도 기록을 끈다 — 감시 없이 기록을 이어 쓰지 않는다.
+      if (error instanceof HistoryFailure || (error instanceof HistoryRefused && error.reason === "unavailable")) {
+        this.dropHistory("unavailable");
+      }
       this.emit();
       return false;
     }

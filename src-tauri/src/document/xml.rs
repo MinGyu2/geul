@@ -199,7 +199,7 @@ fn walk(
 
 /// 정규화한 XML 사건(T009 보존 비교). 이름은 이름공간 URI와 지역 이름이고(접두사 무시), 속성은 이름순, 문자 데이터는
 /// 참조를 풀어 이어 붙인 그대로다(공백도 같아야 한다). XML 선언은 넣지 않는다. 주석·처리 명령은 내용째 넣는다.
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub enum Canonical {
     Start {
         namespace: Option<String>,

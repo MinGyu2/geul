@@ -131,6 +131,19 @@ safe·플랫폼 지원일 때만:
   모양을 복제해 새 `charPr` 하나를 끝에 붙이고 `itemCnt`만 올린다(나머지 header 바이트 같음), 굵게는 있는 모양을 다시 쓴다. 실제
   `service::save`로 본문 기울임·표 셀 밑줄 출력이 게시되고(원본 교체, 세션 깨끗), 다시 열면 그 범위만 서식이 같다. 섞인 다른 header 변경은
   거부·원본 SHA-256 그대로(Rust 시험 `실제_저장_서비스는_서식_덧붙임_hwpx를…`, 음성 변이 20가지 `hwpx_header의_서식_덧붙임_밖_변경은…`).
+  2026-10-26 교정(B·C, 증거 `tests/integration/rhwp/evidence/t010-corrective-validation/`): (B) "쓰임"은 이름공간 없는
+  `charPrIDRef`가 `hp`(2011 paragraph) 이름공간의 `run`(부모 `hp:p` — 본문·표 셀·중첩 문단, 내용 없는 run 포함) 또는
+  `formCharPr`(부모가 `hp` 요소)에 있을 때만 센다. 고정 rhwp 구역 파서가 글자 모양으로 읽는 자리가 이 둘뿐이고(그 파서는 지역 이름만
+  본다 — 판정이 더 좁다), 이전 판은 본문의 아무 요소의 `charPrIDRef`나 셌다(수정 전 재현: `<hp:fake charPrIDRef="3"/>`로 쓰이지
+  않는 덧붙임이 받아짐). 다른 요소·다른 이름공간·구역 뿌리·이름공간 붙은 속성·주석·글 안의 문자열·숫자가 아닌 값은 세지 않는다.
+  (C1) 덧붙인 정의의 서식 자식은 고정 rhwp 직렬화기(`serializer/hwpx/char_shapes.rs` `write_char_pr`, 표
+  `char_shape_tables/{underline,line_shape}.rs`)가 쓰는 모양만: 굵게·기울임은 속성 없음, 밑줄은 `type` ∈ {NONE, BOTTOM, TOP}·
+  `shape` ∈ 선 모양 13종·`color` 셋 모두, 취소선은 `shape` ∈ {NONE} ∪ 선 모양 13종·`color` 둘 모두, 색은 `none`·`#RRGGBB`·
+  `#AARRGGBB`(대문자 — `color_hex`). 이전 판의 "16자 이하 영숫자" 문자 거르개는 엔진이 기본값으로 바꿔 읽는 값(예: `type="CENTER"`)을
+  받았다. 원본 정의는 소급해 거부하지 않는다(내용 없는 서식 자식이면 값과 관계없이 빼고 비교). (C2) 원본 정의를 한 번씩 정규화한
+  해시 집합으로 찾는다(같음은 집합이 전체 값으로 판정 — 해시 일치만으로 같다고 보지 않음). 이전 판은 덧붙임마다 원본 전체를 훑었다:
+  release 측정 원본 30000·덧붙임 10000에서 13.7초 → 1.1초, 60000·5535(header 16 MB, zip 370 KB)에서 19.3초 → 2.0초, 판정 같음.
+  id 상한 경계(마지막 덧붙임 65535 받음, 65536 막음)를 시험했다. 새 크기 상한은 두지 않았다(기존 부분 256 MiB·id 65535가 범위를 정함).
   한계: 쓰이지 않는 덧붙임(예: 기울임을 켰다 끈 뒤 남은 모양)은 받지 않는다(저장 거부, 원본 보존). HWP DocInfo에는 같은 규칙을 두지
   않았다(본문을 바꾼 HWP는 미리보기 규칙이 따로 막는다, Phase 3C). 이 규칙은 저장 판정만이며 rhwp 서식 명령은 여전히 `unsupported`다
   ([command-registry.md](command-registry.md)).

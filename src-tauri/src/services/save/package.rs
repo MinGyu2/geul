@@ -466,22 +466,73 @@ const HWPML_HEAD: &str = "http://www.hancom.co.kr/hwpml/2011/head";
 /// 정의 요소 → 그 정의를 담는 목록 요소(`hh:charProperties`·`hh:paraProperties`).
 const HWPX_SHAPE_LISTS: [&str; 2] = ["charProperties", "paraProperties"];
 
-/// 글자 서식이 바꿀 수 있는 글자 모양 정의의 자식(T010 Phase 3B): (지역 이름, 가질 수 있는 속성). 모두 내용 없는 `hh` 요소다
-/// (고정 rhwp `serializer/hwpx/header.rs`가 굵게·기울임은 속성 없이, 밑줄·취소선은 모양·색 속성으로 쓴다).
-const HWPX_FORMAT_CHILDREN: [(&str, &[&str]); 4] = [
-    ("bold", &[]),
-    ("italic", &[]),
-    ("underline", &["type", "shape", "color"]),
-    ("strikeout", &["shape", "color"]),
+/// HWPML paragraph 이름공간(고정 rhwp `hp:` — `serializer/hwpx/content.rs`, 한컴 출력과 같음).
+const HWPML_PARAGRAPH: &str = "http://www.hancom.co.kr/hwpml/2011/paragraph";
+
+/// 선 모양 토큰 13종(고정 rhwp `serializer/hwpx/char_shape_tables/line_shape.rs` `LINE_SHAPE_HWPX` — 파서
+/// `parser/hwpx/header.rs`의 밑줄·취소선 `shape` 표와 같다).
+const HWPX_LINE_SHAPES: [&str; 13] = [
+    "SOLID",
+    "DASH",
+    "DOT",
+    "DASH_DOT",
+    "DASH_DOT_DOT",
+    "LONG_DASH",
+    "CIRCLE",
+    "DOUBLE_SLIM",
+    "SLIM_THICK",
+    "THICK_SLIM",
+    "SLIM_THICK_SLIM",
+    "WAVE",
+    "DOUBLE_WAVE",
 ];
 
-/// 서식 자식 속성 값의 모양: 짧은 영숫자·`#`·`_`(열거 값과 `#RRGGBB` 색). 그 밖의 값은 서식 변경으로 보지 않는다.
-fn format_value(value: &str) -> bool {
-    !value.is_empty()
-        && value.len() <= 16
-        && value
-            .bytes()
-            .all(|b| b.is_ascii_alphanumeric() || b == b'#' || b == b'_')
+/// 글자 서식이 바꿀 수 있는 글자 모양 정의의 자식(T010 Phase 3B): 모두 내용 없는 `hh` 요소다.
+const HWPX_FORMAT_CHILDREN: [&str; 4] = ["bold", "italic", "underline", "strikeout"];
+
+/// 고정 rhwp 직렬화기 `color_hex`가 쓰는 색: `none`, `#RRGGBB`, `#AARRGGBB`(대문자 16진).
+fn serializer_color(value: &str) -> bool {
+    value == "none"
+        || value.strip_prefix('#').is_some_and(|hex| {
+            (hex.len() == 6 || hex.len() == 8)
+                && hex
+                    .bytes()
+                    .all(|b| b.is_ascii_digit() || (b'A'..=b'F').contains(&b))
+        })
+}
+
+/// 덧붙인 정의의 서식 자식 하나가 고정 rhwp 직렬화기(`serializer/hwpx/char_shapes.rs` `write_char_pr`)가 쓰는 모양과 값인지(T010
+/// 교정 C1). 굵게·기울임은 속성 없음, 밑줄은 `type`(NONE·BOTTOM·TOP)·`shape`(선 모양 13종)·`color` 셋 모두, 취소선은
+/// `shape`(NONE 또는 선 모양 13종)·`color` 둘 모두 — 빠지거나 더한 속성, 이름공간 붙은 속성, 그 밖의 값은 받지 않는다(엔진이 모르는
+/// 값을 말없이 기본값으로 읽어 서식 의미를 증명할 수 없음).
+fn serializer_format_child(local: &str, attributes: &[(Option<String>, String, String)]) -> bool {
+    let value = |key: &str| {
+        attributes
+            .iter()
+            .find(|(ns, name, _)| ns.is_none() && name == key)
+            .map(|(_, _, value)| value.as_str())
+    };
+    let exactly = |keys: &[&str]| {
+        attributes.len() == keys.len()
+            && attributes
+                .iter()
+                .all(|(ns, name, _)| ns.is_none() && keys.contains(&name.as_str()))
+    };
+    match local {
+        "bold" | "italic" => attributes.is_empty(),
+        "underline" => {
+            exactly(&["type", "shape", "color"])
+                && value("type").is_some_and(|t| ["NONE", "BOTTOM", "TOP"].contains(&t))
+                && value("shape").is_some_and(|s| HWPX_LINE_SHAPES.contains(&s))
+                && value("color").is_some_and(serializer_color)
+        }
+        "strikeout" => {
+            exactly(&["shape", "color"])
+                && value("shape").is_some_and(|s| s == "NONE" || HWPX_LINE_SHAPES.contains(&s))
+                && value("color").is_some_and(serializer_color)
+        }
+        _ => false,
+    }
 }
 
 /// `events[start]`(Start)와 짝인 End의 위치.
@@ -517,9 +568,22 @@ fn plain_attribute<'a>(event: &'a xml::Canonical, key: &str) -> Option<&'a str> 
         .map(|(_, _, value)| value.as_str())
 }
 
-/// 글자 모양 정의 하나(`hh:charPr` 사건 묶음)에서 `id`와 서식 자식을 뺀 나머지. 서식 자식은 내용 없는 요소이고 허용 속성만
-/// 가져야 하며 같은 자식이 두 번 나오면 None(서식 변경으로 설명할 수 없음).
-fn without_format(definition: &[xml::Canonical]) -> Option<Vec<xml::Canonical>> {
+/// 서식 자식을 어떻게 다루나: 덧붙인 정의는 직렬화기 정책(`serializer_format_child`)을 지켜야 하고, 원본 정의는 소급해 거부하지
+/// 않는다(내용 없는 서식 자식이면 값과 관계없이 뺀다).
+#[derive(Clone, Copy, PartialEq)]
+enum FormatPolicy {
+    Appended,
+    Original,
+}
+
+/// 글자 모양 정의 하나(`hh:charPr` 사건 묶음)에서 `id`와 서식 자식을 뺀 나머지. 첫 사건(`id`를 뺀 시작)만 새로 만들고 나머지는
+/// 원래 사건을 빌린다(큰 정의 집합에서 사건 벡터를 복제하지 않음). 같은 서식 자식이 두 번이거나 덧붙인 정의의 서식 자식이
+/// 정책에 어긋나면 None.
+fn without_format(
+    definition: &[xml::Canonical],
+    policy: FormatPolicy,
+) -> Option<Vec<std::borrow::Cow<'_, xml::Canonical>>> {
+    use std::borrow::Cow;
     let xml::Canonical::Start {
         namespace,
         name,
@@ -528,7 +592,7 @@ fn without_format(definition: &[xml::Canonical]) -> Option<Vec<xml::Canonical>> 
     else {
         return None;
     };
-    let mut rest = vec![xml::Canonical::Start {
+    let mut rest = vec![Cow::Owned(xml::Canonical::Start {
         namespace: namespace.clone(),
         name: name.clone(),
         attributes: attributes
@@ -536,24 +600,22 @@ fn without_format(definition: &[xml::Canonical]) -> Option<Vec<xml::Canonical>> 
             .filter(|(ns, key, _)| !(ns.is_none() && key == "id"))
             .cloned()
             .collect(),
-    }];
+    })];
     let mut seen = [false; HWPX_FORMAT_CHILDREN.len()];
     let mut index = 1;
     while index < definition.len() {
         let event = &definition[index];
         let format = HWPX_FORMAT_CHILDREN
             .iter()
-            .position(|(local, _)| is_head(event, local));
-        // 정의의 바로 아래 자식인 서식 요소만(깊이 1): 내용이 없고(곧바로 End) 허용 속성뿐이어야 한다.
+            .position(|local| is_head(event, local));
+        // 정의의 바로 아래 자식인 서식 요소만(깊이 1): 내용이 없어야(곧바로 End) 서식 자식이다.
         if let (Some(slot), Some(xml::Canonical::End)) = (format, definition.get(index + 1)) {
             let xml::Canonical::Start { attributes, .. } = event else {
                 return None;
             };
-            let allowed = HWPX_FORMAT_CHILDREN[slot].1;
             if seen[slot]
-                || !attributes.iter().all(|(ns, key, value)| {
-                    ns.is_none() && allowed.contains(&key.as_str()) && format_value(value)
-                })
+                || (policy == FormatPolicy::Appended
+                    && !serializer_format_child(HWPX_FORMAT_CHILDREN[slot], attributes))
             {
                 return None;
             }
@@ -564,24 +626,66 @@ fn without_format(definition: &[xml::Canonical]) -> Option<Vec<xml::Canonical>> 
         if let xml::Canonical::Start { .. } = event {
             // 서식이 아닌 자식은 통째로 그대로 둔다(그 안의 같은 이름 요소는 서식 자식이 아니다).
             let end = element_end(definition, index)?;
-            rest.extend_from_slice(&definition[index..=end]);
+            rest.extend(definition[index..=end].iter().map(Cow::Borrowed));
             index = end + 1;
             continue;
         }
-        rest.push(event.clone());
+        rest.push(Cow::Borrowed(event));
         index += 1;
     }
     Some(rest)
 }
 
-/// 원본과 출력 header의 차이가 글자 서식의 글자 모양 덧붙임뿐인지(T010 Phase 3B 좁은 header 규칙). 모두 성립해야 참:
+/// 출력 본문 구역들에서 엔진이 **글자 모양 참조로 읽는** 자리의 id(T010 교정 B). 고정 rhwp 구역 파서(`parser/hwpx/section.rs`)는
+/// `run`(내용 있는 것·자기 닫힘 모두)과 양식의 `formCharPr`에서만 `charPrIDRef`를 글자 모양으로 읽는다(그 파서는 지역 이름만 본다).
+/// 판정은 더 좁게: 이름공간 없는 `charPrIDRef` 속성이 `hp` 이름공간의 `run`(부모가 `hp:p` — 본문·표 셀·글상자 문단)이나
+/// `formCharPr`(부모가 `hp` 양식 요소)에 있을 때만 센다. 다른 요소·다른 이름공간·구역 뿌리·주석·글 안의 같은 문자열은 세지 않는다.
+/// 읽을 수 없는 구역이면 None.
+fn hwpx_char_shape_uses(output: &Package) -> Option<std::collections::BTreeSet<u32>> {
+    let paragraph = |namespace: &Option<String>| namespace.as_deref() == Some(HWPML_PARAGRAPH);
+    let mut used = std::collections::BTreeSet::new();
+    for (name, (_, data)) in &output.parts {
+        if !hwpx_body(name) {
+            continue;
+        }
+        for element in xml::element_starts(data).ok()? {
+            let in_context = paragraph(&element.namespace)
+                && match element.name.as_str() {
+                    "run" => element
+                        .parent
+                        .as_ref()
+                        .is_some_and(|(namespace, local)| paragraph(namespace) && local == "p"),
+                    "formCharPr" => element
+                        .parent
+                        .as_ref()
+                        .is_some_and(|(namespace, _)| paragraph(namespace)),
+                    _ => false,
+                };
+            if !in_context {
+                continue;
+            }
+            for (ns, key, value) in &element.attributes {
+                if ns.is_none() && key == "charPrIDRef" {
+                    if let Some(id) = hwpx_id(value) {
+                        used.insert(id);
+                    }
+                }
+            }
+        }
+    }
+    Some(used)
+}
+
+/// 원본과 출력 header의 차이가 글자 서식의 글자 모양 덧붙임뿐인지(T010 Phase 3B 좁은 header 규칙, 교정 B·C). 모두 성립해야 참:
 /// - 두 header 모두 끝까지 읽히고 `hh:charProperties`가 정확히 하나이며, 그 앞뒤 사건이 같다.
 /// - 목록 시작의 속성은 `itemCnt`만 다르고, 원본 `itemCnt` = 원본 정의 수 n이며 원본 정의 id가 정확히 0..n(고정 rhwp는 새 모양
 ///   id를 배열 길이로 정한다 — `model/document.rs` `find_or_create_char_shape`), 출력 `itemCnt` = n + k(k ≥ 1).
 /// - 출력 목록은 원본 목록 내용 그대로 뒤에 `hh:charPr` 정의 k개만 덧붙였다(사이 글·주석 없음). 덧붙인 id는 n..n+k이고
 ///   엔진이 버리는 상한(65535) 이하.
-/// - 덧붙인 정의 각각은 `id`와 서식 자식(굵게·기울임·밑줄·취소선, `HWPX_FORMAT_CHILDREN`)을 빼면 원본 정의 하나와 같다.
-/// - 덧붙인 정의 각각을 출력 본문(`Contents/section<N>.xml`)의 `charPrIDRef`가 가리킨다(쓰이지 않는 덧붙임은 받지 않는다).
+/// - 덧붙인 정의 각각은 서식 자식이 직렬화기 정책(`serializer_format_child`)을 지키고, `id`와 서식 자식을 빼면 원본 정의 하나와
+///   **정확히** 같다. 원본 정의를 정규화한 값의 해시 집합으로 찾는다(해시가 같아도 집합이 전체 값을 비교한다 — 해시 일치만으로
+///   같다고 보지 않음). 원본 정의마다 한 번만 정규화한다(이전 판은 덧붙임마다 원본 전체를 훑어 n·k에 비례했다).
+/// - 덧붙인 정의 각각을 출력 본문이 엔진이 읽는 글자 모양 참조로 가리킨다(`hwpx_char_shape_uses`).
 ///   정의가 엔진이 등록하는 모양(내용 있는 요소)인지는 `validate_hwpx_references`가 따로 확인한다.
 fn hwpx_char_shapes_appended(before: &[u8], after: &[u8], output: &Package) -> bool {
     let (Ok(before), Ok(after)) = (xml::canonical(before), xml::canonical(after)) else {
@@ -632,7 +736,8 @@ fn hwpx_char_shapes_appended(before: &[u8], after: &[u8], output: &Package) -> b
     let Some(appended) = after[a_start + 1..a_end].strip_prefix(original) else {
         return false;
     };
-    let definitions = |events: &[xml::Canonical]| -> Option<Vec<(u32, Vec<xml::Canonical>)>> {
+    let definitions = |events| -> Option<Vec<(u32, &[xml::Canonical])>> {
+        let events: &[xml::Canonical] = events;
         let mut out = Vec::new();
         let mut index = 0;
         while index < events.len() {
@@ -641,7 +746,7 @@ fn hwpx_char_shapes_appended(before: &[u8], after: &[u8], output: &Package) -> b
             }
             let end = element_end(events, index)?;
             let id = plain_attribute(&events[index], "id").and_then(hwpx_id)?;
-            out.push((id, events[index..=end].to_vec()));
+            out.push((id, &events[index..=end]));
             index = end + 1;
         }
         Some(out)
@@ -649,43 +754,31 @@ fn hwpx_char_shapes_appended(before: &[u8], after: &[u8], output: &Package) -> b
     let (Some(old), Some(new)) = (definitions(original), definitions(appended)) else {
         return false;
     };
-    let k = new.len() as u32;
+    let (Ok(n_defs), Ok(k)) = (u32::try_from(old.len()), u32::try_from(new.len())) else {
+        return false;
+    };
     if k == 0
-        || old.len() as u32 != n
+        || n_defs != n
         || n.checked_add(k) != Some(total)
         || total - 1 > HWPX_MAX_RESOURCE_ID
-        || !old.iter().enumerate().all(|(i, (id, _))| *id == i as u32)
-        || !new
-            .iter()
-            .enumerate()
-            .all(|(i, (id, _))| *id == n + i as u32)
+        || !old.iter().zip(0u32..).all(|((id, _), i)| *id == i)
+        || !new.iter().zip(n..).all(|((id, _), i)| *id == i)
     {
         return false;
     }
-    let Some(bases) = old
-        .iter()
-        .map(|(_, events)| without_format(events))
-        .collect::<Option<Vec<_>>>()
-    else {
+    let Some(used) = hwpx_char_shape_uses(output) else {
         return false;
     };
-    let mut referenced = std::collections::BTreeSet::new();
-    for (name, (_, data)) in &output.parts {
-        if !hwpx_body(name) {
-            continue;
-        }
-        let Ok(events) = xml::canonical(data) else {
-            return false;
-        };
-        for event in &events {
-            if let Some(id) = plain_attribute(event, "charPrIDRef").and_then(hwpx_id) {
-                referenced.insert(id);
-            }
-        }
+    if !new.iter().all(|(id, _)| used.contains(id)) {
+        return false;
     }
-    new.iter().all(|(id, events)| {
-        referenced.contains(id)
-            && without_format(events).is_some_and(|stripped| bases.contains(&stripped))
+    // 원본 정의는 소급해 거부하지 않는다: 같은 서식 자식이 둘인 정의는 덧붙임의 바탕이 될 수 없을 뿐이다.
+    let bases: std::collections::HashSet<_> = old
+        .iter()
+        .filter_map(|(_, events)| without_format(events, FormatPolicy::Original))
+        .collect();
+    new.iter().all(|(_, events)| {
+        without_format(events, FormatPolicy::Appended).is_some_and(|key| bases.contains(&key))
     })
 }
 
