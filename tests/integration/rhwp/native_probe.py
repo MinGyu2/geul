@@ -29,6 +29,28 @@ import('/rhwp/rhwp.js').then(async mod => {
       finally{p.record(name==='drawImage'?'canvasVisibleDraw':'canvasReadback',at);}
     };
   }
+  // Synchronous offscreen replay and browser decode await are distinct intervals.
+  // These observers do not request resources or change Promise completion order.
+  const drawImage = CanvasRenderingContext2D.prototype.drawImage;
+  CanvasRenderingContext2D.prototype.drawImage = function(...args) {
+    if(this.canvas.isConnected) return drawImage.apply(this,args);
+    const at=performance.now();try{return drawImage.apply(this,args);}
+    finally{p.record('canvasOffscreenDraw',at);}
+  };
+  if(typeof createImageBitmap==='function') {
+    const create=self.createImageBitmap;
+    self.createImageBitmap=function(...args) {
+      const at=performance.now();const result=create.apply(this,args);
+      result.then(()=>p.record('createImageBitmapAwait',at),()=>p.record('createImageBitmapRejected',at));
+      return result;
+    };
+  }
+  const decodeImage=HTMLImageElement.prototype.decode;
+  if(decodeImage) HTMLImageElement.prototype.decode=function(...args) {
+    const at=performance.now();const result=decodeImage.apply(this,args);
+    result.then(()=>p.record('imageDecodeAwait',at),()=>p.record('imageDecodeRejected',at));
+    return result;
+  };
   p.selectionAt = key => {
     if(!active||key.includes('@'))return null;
     const [section,paragraph,offset]=key.split(':').map(Number);
@@ -73,7 +95,8 @@ import('/rhwp/rhwp.js').then(async mod => {
     return {...caret,page:JSON.parse(active.getPageInfo(caret.pageIndex))};
   };
   for (const name of ['getPageInfo','saveSnapshot','restoreSnapshot','discardSnapshot','insertText','insertTextInCell',
-    'snapshotCapacity','deleteText','deleteTextInCell','splitParagraph','splitParagraphInCell','getPageLayerTreeWithProfile',
+    'snapshotCapacity','pageCount','getCursorRect','getCursorRectInCell','getParagraphLength','getCellParagraphLength','deleteText','deleteTextInCell','splitParagraph','splitParagraphInCell','getPageLayerTreeWithProfile',
+    'getPageRenderTree','getPageTextLayout','getPageControlLayout','prepareRenderJob','cancelRenderJob',
     'renderPageToCanvas','renderPagePatchToCanvasFilteredWithProfile','beginRenderJob','beginRenderPatchJob','pollRenderJob','hitTest','free']) {
     const original=mod.HwpDocument.prototype[name]; if(!original) continue;
     mod.HwpDocument.prototype[name]=function(...args) {

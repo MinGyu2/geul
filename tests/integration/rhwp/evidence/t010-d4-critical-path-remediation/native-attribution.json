@@ -1,0 +1,4059 @@
+{
+  "measurementComplete": true,
+  "producerStatus": "FAIL",
+  "engineIdentity": {
+    "wasmSha256": "e88d85de471073f5c60035bcf4b18e5a0fa16193717dcd800968e43c19d1dc88",
+    "baseline": "1a76570e833917d15817415a53c09ad61ab3203f"
+  },
+  "environment": {
+    "platform": "Linux",
+    "webkitGTK": "2.54.1",
+    "debugAppSha256": "53aefa96ffc7e0c4289cdf2d4b60fe468ffbe325179b892cd39824b1eebd3c97",
+    "cpuAffinity": [
+      0,
+      1,
+      2,
+      3,
+      4,
+      5,
+      6,
+      7
+    ],
+    "loadAverageBefore": [
+      1.291015625,
+      2.779296875,
+      2.5908203125
+    ],
+    "softwareGLRequested": true,
+    "webkitDmabufDisabled": true,
+    "GDK_BACKEND": "x11",
+    "busyProbe": false,
+    "warmupGroups": 3,
+    "groupStartSamplesPerDocument": 30,
+    "probeBootstrapDocument": "basic-ko.hwpx in both arms",
+    "loadAverageAfter": [
+      1.21337890625,
+      2.09619140625,
+      2.3525390625
+    ]
+  },
+  "rows": [
+    {
+      "sample": "basic-ko.hwp",
+      "sourceSha256": "57c901cc394abf6f58f4838315d1ea2c5ecf8a03d9934d3fc098fd8be6e6e12f",
+      "fileBytes": 13312,
+      "official": {
+        "groupStart": {
+          "n": 30,
+          "p50": 68,
+          "p95": 93,
+          "max": 93,
+          "timeouts": 0
+        },
+        "extend": {
+          "n": 30,
+          "p50": 65,
+          "p95": 87,
+          "max": 89,
+          "timeouts": 0
+        },
+        "undo": {
+          "n": 25,
+          "p50": 141,
+          "p95": 151,
+          "max": 171,
+          "timeouts": 0
+        },
+        "redo": {
+          "n": 20,
+          "p50": 144,
+          "p95": 149,
+          "max": 247,
+          "timeouts": 0
+        },
+        "afterUndo": {
+          "n": 5,
+          "p50": 131,
+          "p95": 136,
+          "max": 136,
+          "timeouts": 0
+        }
+      },
+      "intervalsMs": {
+        "keyToInput": {
+          "n": 30,
+          "min": 1,
+          "p50": 2,
+          "p95": 24,
+          "max": 29
+        },
+        "inputThroughHandlerEnd": {
+          "n": 30,
+          "min": 15,
+          "p50": 18,
+          "p95": 23,
+          "max": 27
+        },
+        "handlerEndToObservedRevision": {
+          "n": 30,
+          "min": 1,
+          "p50": 1,
+          "p95": 6,
+          "max": 8
+        },
+        "observedThroughTwoRafs": {
+          "n": 30,
+          "min": 36,
+          "p50": 45,
+          "p95": 65,
+          "max": 65
+        }
+      },
+      "stagePerGroupUnionMs": {
+        "snapshot": {
+          "n": 30,
+          "min": 0,
+          "p50": 0,
+          "p95": 0,
+          "max": 1
+        },
+        "mutation": {
+          "n": 30,
+          "min": 0,
+          "p50": 1,
+          "p95": 2,
+          "max": 2
+        },
+        "pageAndGeometryQueries": {
+          "n": 30,
+          "min": 0,
+          "p50": 1,
+          "p95": 3,
+          "max": 3
+        },
+        "jobCreation": {
+          "n": 30,
+          "min": 0,
+          "p50": 0,
+          "p95": 1,
+          "max": 1
+        },
+        "jobPollingIncludesLayoutCodecReplay": {
+          "n": 30,
+          "min": 4,
+          "p50": 5,
+          "p95": 6,
+          "max": 7
+        },
+        "canvasReplayNestedInJob": {
+          "n": 30,
+          "min": 1,
+          "p50": 2,
+          "p95": 3,
+          "max": 3
+        },
+        "browserDecodeAwaitNotExclusiveCPU": {
+          "n": 30,
+          "min": 0,
+          "p50": 0,
+          "p95": 0,
+          "max": 0
+        },
+        "explicitLegacyLayoutCalls": {
+          "n": 30,
+          "min": 0,
+          "p50": 0,
+          "p95": 0,
+          "max": 0
+        }
+      },
+      "individualSyncAndAwaitCallsMs": {
+        "snapshotCapacity": {
+          "n": 18,
+          "min": 0,
+          "p50": 0,
+          "p95": 0,
+          "max": 0
+        },
+        "getParagraphLength": {
+          "n": 198,
+          "min": 0,
+          "p50": 0,
+          "p95": 0,
+          "max": 1
+        },
+        "saveSnapshot": {
+          "n": 9,
+          "min": 0,
+          "p50": 0,
+          "p95": 1,
+          "max": 1
+        },
+        "insertText": {
+          "n": 30,
+          "min": 0,
+          "p50": 1,
+          "p95": 2,
+          "max": 2
+        },
+        "pageCount": {
+          "n": 30,
+          "min": 0,
+          "p50": 0,
+          "p95": 0,
+          "max": 0
+        },
+        "getPageInfo": {
+          "n": 30,
+          "min": 0,
+          "p50": 0,
+          "p95": 0,
+          "max": 0
+        },
+        "getCursorRect": {
+          "n": 210,
+          "min": 0,
+          "p50": 0,
+          "p95": 1,
+          "max": 2
+        },
+        "beginRenderJob": {
+          "n": 30,
+          "min": 0,
+          "p50": 0,
+          "p95": 1,
+          "max": 1
+        },
+        "canvasReadback": {
+          "n": 30,
+          "min": 1,
+          "p50": 1,
+          "p95": 2,
+          "max": 3
+        },
+        "canvasVisibleDraw": {
+          "n": 30,
+          "min": 0,
+          "p50": 0,
+          "p95": 1,
+          "max": 1
+        },
+        "pollRenderJob": {
+          "n": 30,
+          "min": 4,
+          "p50": 5,
+          "p95": 6,
+          "max": 7
+        },
+        "adapterRenderRequest": {
+          "n": 30,
+          "min": 4,
+          "p50": 5,
+          "p95": 7,
+          "max": 8
+        }
+      },
+      "overlapWithFailingSamples": {
+        "snapshot": {
+          "failingSampleCount": 30,
+          "presentCount": 1,
+          "p95MsWithinFailingSamples": 0
+        },
+        "mutation": {
+          "failingSampleCount": 30,
+          "presentCount": 29,
+          "p95MsWithinFailingSamples": 2
+        },
+        "pageAndGeometryQueries": {
+          "failingSampleCount": 30,
+          "presentCount": 29,
+          "p95MsWithinFailingSamples": 3
+        },
+        "jobCreation": {
+          "failingSampleCount": 30,
+          "presentCount": 3,
+          "p95MsWithinFailingSamples": 1
+        },
+        "jobPollingIncludesLayoutCodecReplay": {
+          "failingSampleCount": 30,
+          "presentCount": 30,
+          "p95MsWithinFailingSamples": 6
+        },
+        "canvasReplayNestedInJob": {
+          "failingSampleCount": 30,
+          "presentCount": 30,
+          "p95MsWithinFailingSamples": 3
+        },
+        "browserDecodeAwaitNotExclusiveCPU": {
+          "failingSampleCount": 30,
+          "presentCount": 0,
+          "p95MsWithinFailingSamples": 0
+        },
+        "explicitLegacyLayoutCalls": {
+          "failingSampleCount": 30,
+          "presentCount": 0,
+          "p95MsWithinFailingSamples": 0
+        }
+      },
+      "negativeTimestampOffsets": [],
+      "groupCorrelations": [
+        {
+          "sampleIndex": 0,
+          "officialMs": 93,
+          "officialFail": true,
+          "at": {
+            "handlerEnd": 24,
+            "input": 1,
+            "observed": 32,
+            "raf1": 63,
+            "end": 93,
+            "key": 0
+          },
+          "stageUnionMs": {
+            "snapshot": 0,
+            "mutation": 1,
+            "pageAndGeometryQueries": 2,
+            "jobCreation": 0,
+            "jobPollingIncludesLayoutCodecReplay": 5,
+            "canvasReplayNestedInJob": 2,
+            "browserDecodeAwaitNotExclusiveCPU": 0,
+            "explicitLegacyLayoutCalls": 0
+          },
+          "knownSyncUnionMs": 9
+        },
+        {
+          "sampleIndex": 1,
+          "officialMs": 87,
+          "officialFail": true,
+          "at": {
+            "handlerEnd": 20,
+            "input": 2,
+            "observed": 22,
+            "raf1": 57,
+            "end": 87,
+            "key": 0
+          },
+          "stageUnionMs": {
+            "snapshot": 0,
+            "mutation": 2,
+            "pageAndGeometryQueries": 1,
+            "jobCreation": 0,
+            "jobPollingIncludesLayoutCodecReplay": 5,
+            "canvasReplayNestedInJob": 2,
+            "browserDecodeAwaitNotExclusiveCPU": 0,
+            "explicitLegacyLayoutCalls": 0
+          },
+          "knownSyncUnionMs": 8
+        },
+        {
+          "sampleIndex": 2,
+          "officialMs": 82,
+          "officialFail": true,
+          "at": {
+            "handlerEnd": 17,
+            "input": 1,
+            "observed": 18,
+            "raf1": 52,
+            "end": 82,
+            "key": 0
+          },
+          "stageUnionMs": {
+            "snapshot": 0,
+            "mutation": 1,
+            "pageAndGeometryQueries": 0,
+            "jobCreation": 0,
+            "jobPollingIncludesLayoutCodecReplay": 5,
+            "canvasReplayNestedInJob": 1,
+            "browserDecodeAwaitNotExclusiveCPU": 0,
+            "explicitLegacyLayoutCalls": 0
+          },
+          "knownSyncUnionMs": 6
+        },
+        {
+          "sampleIndex": 3,
+          "officialMs": 86,
+          "officialFail": true,
+          "at": {
+            "handlerEnd": 20,
+            "input": 1,
+            "observed": 21,
+            "raf1": 57,
+            "end": 86,
+            "key": 0
+          },
+          "stageUnionMs": {
+            "snapshot": 0,
+            "mutation": 1,
+            "pageAndGeometryQueries": 2,
+            "jobCreation": 0,
+            "jobPollingIncludesLayoutCodecReplay": 5,
+            "canvasReplayNestedInJob": 2,
+            "browserDecodeAwaitNotExclusiveCPU": 0,
+            "explicitLegacyLayoutCalls": 0
+          },
+          "knownSyncUnionMs": 9
+        },
+        {
+          "sampleIndex": 4,
+          "officialMs": 87,
+          "officialFail": true,
+          "at": {
+            "handlerEnd": 21,
+            "input": 2,
+            "observed": 27,
+            "raf1": 58,
+            "end": 87,
+            "key": 0
+          },
+          "stageUnionMs": {
+            "snapshot": 0,
+            "mutation": 2,
+            "pageAndGeometryQueries": 1,
+            "jobCreation": 0,
+            "jobPollingIncludesLayoutCodecReplay": 5,
+            "canvasReplayNestedInJob": 2,
+            "browserDecodeAwaitNotExclusiveCPU": 0,
+            "explicitLegacyLayoutCalls": 0
+          },
+          "knownSyncUnionMs": 8
+        },
+        {
+          "sampleIndex": 5,
+          "officialMs": 67,
+          "officialFail": true,
+          "at": {
+            "handlerEnd": 20,
+            "input": 2,
+            "observed": 21,
+            "raf1": 56,
+            "end": 67,
+            "key": 0
+          },
+          "stageUnionMs": {
+            "snapshot": 0,
+            "mutation": 1,
+            "pageAndGeometryQueries": 2,
+            "jobCreation": 0,
+            "jobPollingIncludesLayoutCodecReplay": 6,
+            "canvasReplayNestedInJob": 1,
+            "browserDecodeAwaitNotExclusiveCPU": 0,
+            "explicitLegacyLayoutCalls": 0
+          },
+          "knownSyncUnionMs": 9
+        },
+        {
+          "sampleIndex": 6,
+          "officialMs": 68,
+          "officialFail": true,
+          "at": {
+            "handlerEnd": 29,
+            "input": 2,
+            "observed": 30,
+            "raf1": 65,
+            "end": 68,
+            "key": 0
+          },
+          "stageUnionMs": {
+            "snapshot": 0,
+            "mutation": 1,
+            "pageAndGeometryQueries": 1,
+            "jobCreation": 0,
+            "jobPollingIncludesLayoutCodecReplay": 6,
+            "canvasReplayNestedInJob": 3,
+            "browserDecodeAwaitNotExclusiveCPU": 0,
+            "explicitLegacyLayoutCalls": 0
+          },
+          "knownSyncUnionMs": 9
+        },
+        {
+          "sampleIndex": 7,
+          "officialMs": 63,
+          "officialFail": true,
+          "at": {
+            "handlerEnd": 23,
+            "input": 2,
+            "observed": 24,
+            "raf1": 60,
+            "end": 63,
+            "key": 0
+          },
+          "stageUnionMs": {
+            "snapshot": 0,
+            "mutation": 1,
+            "pageAndGeometryQueries": 1,
+            "jobCreation": 0,
+            "jobPollingIncludesLayoutCodecReplay": 7,
+            "canvasReplayNestedInJob": 2,
+            "browserDecodeAwaitNotExclusiveCPU": 0,
+            "explicitLegacyLayoutCalls": 0
+          },
+          "knownSyncUnionMs": 10
+        },
+        {
+          "sampleIndex": 8,
+          "officialMs": 87,
+          "officialFail": true,
+          "at": {
+            "handlerEnd": 20,
+            "input": 2,
+            "observed": 22,
+            "raf1": 57,
+            "end": 87,
+            "key": 0
+          },
+          "stageUnionMs": {
+            "snapshot": 1,
+            "mutation": 0,
+            "pageAndGeometryQueries": 1,
+            "jobCreation": 0,
+            "jobPollingIncludesLayoutCodecReplay": 5,
+            "canvasReplayNestedInJob": 1,
+            "browserDecodeAwaitNotExclusiveCPU": 0,
+            "explicitLegacyLayoutCalls": 0
+          },
+          "knownSyncUnionMs": 8
+        },
+        {
+          "sampleIndex": 9,
+          "officialMs": 66,
+          "officialFail": true,
+          "at": {
+            "handlerEnd": 20,
+            "input": 2,
+            "observed": 22,
+            "raf1": 58,
+            "end": 66,
+            "key": 0
+          },
+          "stageUnionMs": {
+            "snapshot": 0,
+            "mutation": 1,
+            "pageAndGeometryQueries": 1,
+            "jobCreation": 0,
+            "jobPollingIncludesLayoutCodecReplay": 6,
+            "canvasReplayNestedInJob": 2,
+            "browserDecodeAwaitNotExclusiveCPU": 0,
+            "explicitLegacyLayoutCalls": 0
+          },
+          "knownSyncUnionMs": 8
+        },
+        {
+          "sampleIndex": 10,
+          "officialMs": 90,
+          "officialFail": true,
+          "at": {
+            "handlerEnd": 41,
+            "input": 24,
+            "observed": 43,
+            "raf1": 77,
+            "end": 90,
+            "key": 0
+          },
+          "stageUnionMs": {
+            "snapshot": 0,
+            "mutation": 1,
+            "pageAndGeometryQueries": 2,
+            "jobCreation": 0,
+            "jobPollingIncludesLayoutCodecReplay": 4,
+            "canvasReplayNestedInJob": 1,
+            "browserDecodeAwaitNotExclusiveCPU": 0,
+            "explicitLegacyLayoutCalls": 0
+          },
+          "knownSyncUnionMs": 8
+        },
+        {
+          "sampleIndex": 11,
+          "officialMs": 65,
+          "officialFail": true,
+          "at": {
+            "handlerEnd": 20,
+            "input": 2,
+            "observed": 22,
+            "raf1": 56,
+            "end": 65,
+            "key": 0
+          },
+          "stageUnionMs": {
+            "snapshot": 0,
+            "mutation": 1,
+            "pageAndGeometryQueries": 1,
+            "jobCreation": 0,
+            "jobPollingIncludesLayoutCodecReplay": 6,
+            "canvasReplayNestedInJob": 1,
+            "browserDecodeAwaitNotExclusiveCPU": 0,
+            "explicitLegacyLayoutCalls": 0
+          },
+          "knownSyncUnionMs": 8
+        },
+        {
+          "sampleIndex": 12,
+          "officialMs": 57,
+          "officialFail": true,
+          "at": {
+            "handlerEnd": 19,
+            "input": 2,
+            "observed": 21,
+            "raf1": 55,
+            "end": 57,
+            "key": 0
+          },
+          "stageUnionMs": {
+            "snapshot": 0,
+            "mutation": 1,
+            "pageAndGeometryQueries": 2,
+            "jobCreation": 1,
+            "jobPollingIncludesLayoutCodecReplay": 5,
+            "canvasReplayNestedInJob": 2,
+            "browserDecodeAwaitNotExclusiveCPU": 0,
+            "explicitLegacyLayoutCalls": 0
+          },
+          "knownSyncUnionMs": 9
+        },
+        {
+          "sampleIndex": 13,
+          "officialMs": 54,
+          "officialFail": true,
+          "at": {
+            "handlerEnd": 17,
+            "input": 1,
+            "observed": 18,
+            "raf1": 51,
+            "end": 54,
+            "key": 0
+          },
+          "stageUnionMs": {
+            "snapshot": 0,
+            "mutation": 1,
+            "pageAndGeometryQueries": 2,
+            "jobCreation": 0,
+            "jobPollingIncludesLayoutCodecReplay": 5,
+            "canvasReplayNestedInJob": 2,
+            "browserDecodeAwaitNotExclusiveCPU": 0,
+            "explicitLegacyLayoutCalls": 0
+          },
+          "knownSyncUnionMs": 8
+        },
+        {
+          "sampleIndex": 14,
+          "officialMs": 55,
+          "officialFail": true,
+          "at": {
+            "handlerEnd": 18,
+            "input": 2,
+            "observed": 19,
+            "raf1": 53,
+            "end": 55,
+            "key": 0
+          },
+          "stageUnionMs": {
+            "snapshot": 0,
+            "mutation": 1,
+            "pageAndGeometryQueries": 1,
+            "jobCreation": 0,
+            "jobPollingIncludesLayoutCodecReplay": 5,
+            "canvasReplayNestedInJob": 1,
+            "browserDecodeAwaitNotExclusiveCPU": 0,
+            "explicitLegacyLayoutCalls": 0
+          },
+          "knownSyncUnionMs": 7
+        },
+        {
+          "sampleIndex": 15,
+          "officialMs": 77,
+          "officialFail": true,
+          "at": {
+            "handlerEnd": 18,
+            "input": 1,
+            "observed": 20,
+            "raf1": 63,
+            "end": 77,
+            "key": 0
+          },
+          "stageUnionMs": {
+            "snapshot": 0,
+            "mutation": 1,
+            "pageAndGeometryQueries": 1,
+            "jobCreation": 0,
+            "jobPollingIncludesLayoutCodecReplay": 5,
+            "canvasReplayNestedInJob": 2,
+            "browserDecodeAwaitNotExclusiveCPU": 0,
+            "explicitLegacyLayoutCalls": 0
+          },
+          "knownSyncUnionMs": 7
+        },
+        {
+          "sampleIndex": 16,
+          "officialMs": 71,
+          "officialFail": true,
+          "at": {
+            "handlerEnd": 17,
+            "input": 1,
+            "observed": 18,
+            "raf1": 54,
+            "end": 71,
+            "key": 0
+          },
+          "stageUnionMs": {
+            "snapshot": 0,
+            "mutation": 1,
+            "pageAndGeometryQueries": 3,
+            "jobCreation": 0,
+            "jobPollingIncludesLayoutCodecReplay": 4,
+            "canvasReplayNestedInJob": 1,
+            "browserDecodeAwaitNotExclusiveCPU": 0,
+            "explicitLegacyLayoutCalls": 0
+          },
+          "knownSyncUnionMs": 9
+        },
+        {
+          "sampleIndex": 17,
+          "officialMs": 57,
+          "officialFail": true,
+          "at": {
+            "handlerEnd": 16,
+            "input": 1,
+            "observed": 18,
+            "raf1": 53,
+            "end": 57,
+            "key": 0
+          },
+          "stageUnionMs": {
+            "snapshot": 0,
+            "mutation": 1,
+            "pageAndGeometryQueries": 1,
+            "jobCreation": 0,
+            "jobPollingIncludesLayoutCodecReplay": 5,
+            "canvasReplayNestedInJob": 1,
+            "browserDecodeAwaitNotExclusiveCPU": 0,
+            "explicitLegacyLayoutCalls": 0
+          },
+          "knownSyncUnionMs": 7
+        },
+        {
+          "sampleIndex": 18,
+          "officialMs": 72,
+          "officialFail": true,
+          "at": {
+            "handlerEnd": 19,
+            "input": 2,
+            "observed": 21,
+            "raf1": 56,
+            "end": 72,
+            "key": 0
+          },
+          "stageUnionMs": {
+            "snapshot": 0,
+            "mutation": 1,
+            "pageAndGeometryQueries": 2,
+            "jobCreation": 0,
+            "jobPollingIncludesLayoutCodecReplay": 6,
+            "canvasReplayNestedInJob": 2,
+            "browserDecodeAwaitNotExclusiveCPU": 0,
+            "explicitLegacyLayoutCalls": 0
+          },
+          "knownSyncUnionMs": 9
+        },
+        {
+          "sampleIndex": 19,
+          "officialMs": 71,
+          "officialFail": true,
+          "at": {
+            "handlerEnd": 24,
+            "input": 2,
+            "observed": 26,
+            "raf1": 60,
+            "end": 71,
+            "key": 0
+          },
+          "stageUnionMs": {
+            "snapshot": 0,
+            "mutation": 1,
+            "pageAndGeometryQueries": 1,
+            "jobCreation": 0,
+            "jobPollingIncludesLayoutCodecReplay": 6,
+            "canvasReplayNestedInJob": 3,
+            "browserDecodeAwaitNotExclusiveCPU": 0,
+            "explicitLegacyLayoutCalls": 0
+          },
+          "knownSyncUnionMs": 8
+        },
+        {
+          "sampleIndex": 20,
+          "officialMs": 65,
+          "officialFail": true,
+          "at": {
+            "handlerEnd": 19,
+            "input": 1,
+            "observed": 21,
+            "raf1": 55,
+            "end": 65,
+            "key": 0
+          },
+          "stageUnionMs": {
+            "snapshot": 0,
+            "mutation": 2,
+            "pageAndGeometryQueries": 2,
+            "jobCreation": 0,
+            "jobPollingIncludesLayoutCodecReplay": 6,
+            "canvasReplayNestedInJob": 1,
+            "browserDecodeAwaitNotExclusiveCPU": 0,
+            "explicitLegacyLayoutCalls": 0
+          },
+          "knownSyncUnionMs": 10
+        },
+        {
+          "sampleIndex": 21,
+          "officialMs": 59,
+          "officialFail": true,
+          "at": {
+            "handlerEnd": 19,
+            "input": 1,
+            "observed": 20,
+            "raf1": 55,
+            "end": 59,
+            "key": 0
+          },
+          "stageUnionMs": {
+            "snapshot": 0,
+            "mutation": 1,
+            "pageAndGeometryQueries": 1,
+            "jobCreation": 1,
+            "jobPollingIncludesLayoutCodecReplay": 5,
+            "canvasReplayNestedInJob": 1,
+            "browserDecodeAwaitNotExclusiveCPU": 0,
+            "explicitLegacyLayoutCalls": 0
+          },
+          "knownSyncUnionMs": 8
+        },
+        {
+          "sampleIndex": 22,
+          "officialMs": 69,
+          "officialFail": true,
+          "at": {
+            "handlerEnd": 17,
+            "input": 1,
+            "observed": 18,
+            "raf1": 52,
+            "end": 69,
+            "key": 0
+          },
+          "stageUnionMs": {
+            "snapshot": 0,
+            "mutation": 1,
+            "pageAndGeometryQueries": 1,
+            "jobCreation": 1,
+            "jobPollingIncludesLayoutCodecReplay": 4,
+            "canvasReplayNestedInJob": 2,
+            "browserDecodeAwaitNotExclusiveCPU": 0,
+            "explicitLegacyLayoutCalls": 0
+          },
+          "knownSyncUnionMs": 7
+        },
+        {
+          "sampleIndex": 23,
+          "officialMs": 58,
+          "officialFail": true,
+          "at": {
+            "handlerEnd": 19,
+            "input": 2,
+            "observed": 21,
+            "raf1": 55,
+            "end": 58,
+            "key": 0
+          },
+          "stageUnionMs": {
+            "snapshot": 0,
+            "mutation": 1,
+            "pageAndGeometryQueries": 1,
+            "jobCreation": 0,
+            "jobPollingIncludesLayoutCodecReplay": 5,
+            "canvasReplayNestedInJob": 2,
+            "browserDecodeAwaitNotExclusiveCPU": 0,
+            "explicitLegacyLayoutCalls": 0
+          },
+          "knownSyncUnionMs": 8
+        },
+        {
+          "sampleIndex": 24,
+          "officialMs": 68,
+          "officialFail": true,
+          "at": {
+            "handlerEnd": 20,
+            "input": 2,
+            "observed": 21,
+            "raf1": 55,
+            "end": 68,
+            "key": 0
+          },
+          "stageUnionMs": {
+            "snapshot": 0,
+            "mutation": 1,
+            "pageAndGeometryQueries": 1,
+            "jobCreation": 0,
+            "jobPollingIncludesLayoutCodecReplay": 6,
+            "canvasReplayNestedInJob": 2,
+            "browserDecodeAwaitNotExclusiveCPU": 0,
+            "explicitLegacyLayoutCalls": 0
+          },
+          "knownSyncUnionMs": 8
+        },
+        {
+          "sampleIndex": 25,
+          "officialMs": 63,
+          "officialFail": true,
+          "at": {
+            "handlerEnd": 18,
+            "input": 1,
+            "observed": 19,
+            "raf1": 53,
+            "end": 63,
+            "key": 0
+          },
+          "stageUnionMs": {
+            "snapshot": 0,
+            "mutation": 1,
+            "pageAndGeometryQueries": 2,
+            "jobCreation": 0,
+            "jobPollingIncludesLayoutCodecReplay": 4,
+            "canvasReplayNestedInJob": 1,
+            "browserDecodeAwaitNotExclusiveCPU": 0,
+            "explicitLegacyLayoutCalls": 0
+          },
+          "knownSyncUnionMs": 7
+        },
+        {
+          "sampleIndex": 26,
+          "officialMs": 87,
+          "officialFail": true,
+          "at": {
+            "handlerEnd": 21,
+            "input": 2,
+            "observed": 22,
+            "raf1": 57,
+            "end": 87,
+            "key": 0
+          },
+          "stageUnionMs": {
+            "snapshot": 0,
+            "mutation": 1,
+            "pageAndGeometryQueries": 3,
+            "jobCreation": 0,
+            "jobPollingIncludesLayoutCodecReplay": 5,
+            "canvasReplayNestedInJob": 2,
+            "browserDecodeAwaitNotExclusiveCPU": 0,
+            "explicitLegacyLayoutCalls": 0
+          },
+          "knownSyncUnionMs": 9
+        },
+        {
+          "sampleIndex": 27,
+          "officialMs": 83,
+          "officialFail": true,
+          "at": {
+            "handlerEnd": 19,
+            "input": 1,
+            "observed": 20,
+            "raf1": 54,
+            "end": 83,
+            "key": 0
+          },
+          "stageUnionMs": {
+            "snapshot": 0,
+            "mutation": 1,
+            "pageAndGeometryQueries": 1,
+            "jobCreation": 0,
+            "jobPollingIncludesLayoutCodecReplay": 5,
+            "canvasReplayNestedInJob": 1,
+            "browserDecodeAwaitNotExclusiveCPU": 0,
+            "explicitLegacyLayoutCalls": 0
+          },
+          "knownSyncUnionMs": 7
+        },
+        {
+          "sampleIndex": 28,
+          "officialMs": 93,
+          "officialFail": true,
+          "at": {
+            "handlerEnd": 47,
+            "input": 29,
+            "observed": 49,
+            "raf1": 83,
+            "end": 93,
+            "key": 0
+          },
+          "stageUnionMs": {
+            "snapshot": 0,
+            "mutation": 1,
+            "pageAndGeometryQueries": 1,
+            "jobCreation": 0,
+            "jobPollingIncludesLayoutCodecReplay": 5,
+            "canvasReplayNestedInJob": 2,
+            "browserDecodeAwaitNotExclusiveCPU": 0,
+            "explicitLegacyLayoutCalls": 0
+          },
+          "knownSyncUnionMs": 7
+        },
+        {
+          "sampleIndex": 29,
+          "officialMs": 60,
+          "officialFail": true,
+          "at": {
+            "handlerEnd": 21,
+            "input": 2,
+            "observed": 22,
+            "raf1": 58,
+            "end": 60,
+            "key": 0
+          },
+          "stageUnionMs": {
+            "snapshot": 0,
+            "mutation": 1,
+            "pageAndGeometryQueries": 2,
+            "jobCreation": 0,
+            "jobPollingIncludesLayoutCodecReplay": 5,
+            "canvasReplayNestedInJob": 2,
+            "browserDecodeAwaitNotExclusiveCPU": 0,
+            "explicitLegacyLayoutCalls": 0
+          },
+          "knownSyncUnionMs": 8
+        }
+      ],
+      "adapterCounters": {
+        "polls": 122,
+        "staleDropped": 0,
+        "reused": 0,
+        "regionalPatchJobs": 0,
+        "completed": 122,
+        "unchangedFrames": 0,
+        "notifications": 0,
+        "patchJobs": 0,
+        "wholePagePatchJobs": 0,
+        "limits": 0,
+        "replacements": 0,
+        "fullJobs": 122,
+        "errors": 0,
+        "canceled": 0
+      }
+    },
+    {
+      "sample": "basic-ko.hwpx",
+      "sourceSha256": "26d434b7b427149110751c6ef5b19e9ecb4818f3ba7eadfe201b5afd3de442a8",
+      "fileBytes": 8064,
+      "official": {
+        "groupStart": {
+          "n": 30,
+          "p50": 68,
+          "p95": 86,
+          "max": 88,
+          "timeouts": 0
+        },
+        "extend": {
+          "n": 30,
+          "p50": 66,
+          "p95": 86,
+          "max": 86,
+          "timeouts": 0
+        },
+        "undo": {
+          "n": 25,
+          "p50": 141,
+          "p95": 152,
+          "max": 170,
+          "timeouts": 0
+        },
+        "redo": {
+          "n": 20,
+          "p50": 144,
+          "p95": 150,
+          "max": 175,
+          "timeouts": 0
+        },
+        "afterUndo": {
+          "n": 5,
+          "p50": 131,
+          "p95": 135,
+          "max": 135,
+          "timeouts": 0
+        }
+      },
+      "intervalsMs": {
+        "keyToInput": {
+          "n": 30,
+          "min": 0,
+          "p50": 1,
+          "p95": 21,
+          "max": 23
+        },
+        "inputThroughHandlerEnd": {
+          "n": 30,
+          "min": 15,
+          "p50": 18,
+          "p95": 29,
+          "max": 31
+        },
+        "handlerEndToObservedRevision": {
+          "n": 30,
+          "min": 1,
+          "p50": 2,
+          "p95": 6,
+          "max": 7
+        },
+        "observedThroughTwoRafs": {
+          "n": 30,
+          "min": 35,
+          "p50": 46,
+          "p95": 64,
+          "max": 64
+        }
+      },
+      "stagePerGroupUnionMs": {
+        "snapshot": {
+          "n": 30,
+          "min": 0,
+          "p50": 0,
+          "p95": 1,
+          "max": 1
+        },
+        "mutation": {
+          "n": 30,
+          "min": 0,
+          "p50": 1,
+          "p95": 2,
+          "max": 2
+        },
+        "pageAndGeometryQueries": {
+          "n": 30,
+          "min": 0,
+          "p50": 1,
+          "p95": 3,
+          "max": 5
+        },
+        "jobCreation": {
+          "n": 30,
+          "min": 0,
+          "p50": 0,
+          "p95": 1,
+          "max": 1
+        },
+        "jobPollingIncludesLayoutCodecReplay": {
+          "n": 30,
+          "min": 4,
+          "p50": 5,
+          "p95": 9,
+          "max": 17
+        },
+        "canvasReplayNestedInJob": {
+          "n": 30,
+          "min": 1,
+          "p50": 2,
+          "p95": 3,
+          "max": 9
+        },
+        "browserDecodeAwaitNotExclusiveCPU": {
+          "n": 30,
+          "min": 0,
+          "p50": 0,
+          "p95": 0,
+          "max": 0
+        },
+        "explicitLegacyLayoutCalls": {
+          "n": 30,
+          "min": 0,
+          "p50": 0,
+          "p95": 0,
+          "max": 0
+        }
+      },
+      "individualSyncAndAwaitCallsMs": {
+        "snapshotCapacity": {
+          "n": 18,
+          "min": 0,
+          "p50": 0,
+          "p95": 0,
+          "max": 0
+        },
+        "getParagraphLength": {
+          "n": 198,
+          "min": 0,
+          "p50": 0,
+          "p95": 0,
+          "max": 1
+        },
+        "saveSnapshot": {
+          "n": 9,
+          "min": 0,
+          "p50": 0,
+          "p95": 1,
+          "max": 1
+        },
+        "insertText": {
+          "n": 30,
+          "min": 0,
+          "p50": 1,
+          "p95": 2,
+          "max": 2
+        },
+        "pageCount": {
+          "n": 30,
+          "min": 0,
+          "p50": 0,
+          "p95": 0,
+          "max": 0
+        },
+        "getPageInfo": {
+          "n": 30,
+          "min": 0,
+          "p50": 0,
+          "p95": 1,
+          "max": 1
+        },
+        "getCursorRect": {
+          "n": 210,
+          "min": 0,
+          "p50": 0,
+          "p95": 1,
+          "max": 2
+        },
+        "beginRenderJob": {
+          "n": 30,
+          "min": 0,
+          "p50": 0,
+          "p95": 1,
+          "max": 1
+        },
+        "canvasReadback": {
+          "n": 30,
+          "min": 1,
+          "p50": 1,
+          "p95": 3,
+          "max": 9
+        },
+        "canvasVisibleDraw": {
+          "n": 30,
+          "min": 0,
+          "p50": 0,
+          "p95": 1,
+          "max": 1
+        },
+        "pollRenderJob": {
+          "n": 30,
+          "min": 4,
+          "p50": 5,
+          "p95": 9,
+          "max": 17
+        },
+        "adapterRenderRequest": {
+          "n": 30,
+          "min": 5,
+          "p50": 5,
+          "p95": 9,
+          "max": 18
+        }
+      },
+      "overlapWithFailingSamples": {
+        "snapshot": {
+          "failingSampleCount": 30,
+          "presentCount": 2,
+          "p95MsWithinFailingSamples": 1
+        },
+        "mutation": {
+          "failingSampleCount": 30,
+          "presentCount": 28,
+          "p95MsWithinFailingSamples": 2
+        },
+        "pageAndGeometryQueries": {
+          "failingSampleCount": 30,
+          "presentCount": 29,
+          "p95MsWithinFailingSamples": 3
+        },
+        "jobCreation": {
+          "failingSampleCount": 30,
+          "presentCount": 2,
+          "p95MsWithinFailingSamples": 1
+        },
+        "jobPollingIncludesLayoutCodecReplay": {
+          "failingSampleCount": 30,
+          "presentCount": 30,
+          "p95MsWithinFailingSamples": 9
+        },
+        "canvasReplayNestedInJob": {
+          "failingSampleCount": 30,
+          "presentCount": 30,
+          "p95MsWithinFailingSamples": 3
+        },
+        "browserDecodeAwaitNotExclusiveCPU": {
+          "failingSampleCount": 30,
+          "presentCount": 0,
+          "p95MsWithinFailingSamples": 0
+        },
+        "explicitLegacyLayoutCalls": {
+          "failingSampleCount": 30,
+          "presentCount": 0,
+          "p95MsWithinFailingSamples": 0
+        }
+      },
+      "negativeTimestampOffsets": [],
+      "groupCorrelations": [
+        {
+          "sampleIndex": 0,
+          "officialMs": 86,
+          "officialFail": true,
+          "at": {
+            "handlerEnd": 20,
+            "input": 0,
+            "observed": 26,
+            "raf1": 56,
+            "end": 86,
+            "key": 0
+          },
+          "stageUnionMs": {
+            "snapshot": 0,
+            "mutation": 2,
+            "pageAndGeometryQueries": 0,
+            "jobCreation": 0,
+            "jobPollingIncludesLayoutCodecReplay": 5,
+            "canvasReplayNestedInJob": 1,
+            "browserDecodeAwaitNotExclusiveCPU": 0,
+            "explicitLegacyLayoutCalls": 0
+          },
+          "knownSyncUnionMs": 7
+        },
+        {
+          "sampleIndex": 1,
+          "officialMs": 83,
+          "officialFail": true,
+          "at": {
+            "handlerEnd": 17,
+            "input": 1,
+            "observed": 19,
+            "raf1": 53,
+            "end": 83,
+            "key": 0
+          },
+          "stageUnionMs": {
+            "snapshot": 0,
+            "mutation": 1,
+            "pageAndGeometryQueries": 2,
+            "jobCreation": 0,
+            "jobPollingIncludesLayoutCodecReplay": 5,
+            "canvasReplayNestedInJob": 1,
+            "browserDecodeAwaitNotExclusiveCPU": 0,
+            "explicitLegacyLayoutCalls": 0
+          },
+          "knownSyncUnionMs": 8
+        },
+        {
+          "sampleIndex": 2,
+          "officialMs": 84,
+          "officialFail": true,
+          "at": {
+            "handlerEnd": 19,
+            "input": 1,
+            "observed": 25,
+            "raf1": 55,
+            "end": 84,
+            "key": 0
+          },
+          "stageUnionMs": {
+            "snapshot": 1,
+            "mutation": 0,
+            "pageAndGeometryQueries": 2,
+            "jobCreation": 0,
+            "jobPollingIncludesLayoutCodecReplay": 4,
+            "canvasReplayNestedInJob": 1,
+            "browserDecodeAwaitNotExclusiveCPU": 0,
+            "explicitLegacyLayoutCalls": 0
+          },
+          "knownSyncUnionMs": 8
+        },
+        {
+          "sampleIndex": 3,
+          "officialMs": 85,
+          "officialFail": true,
+          "at": {
+            "handlerEnd": 17,
+            "input": 0,
+            "observed": 24,
+            "raf1": 55,
+            "end": 85,
+            "key": 0
+          },
+          "stageUnionMs": {
+            "snapshot": 0,
+            "mutation": 1,
+            "pageAndGeometryQueries": 1,
+            "jobCreation": 0,
+            "jobPollingIncludesLayoutCodecReplay": 5,
+            "canvasReplayNestedInJob": 2,
+            "browserDecodeAwaitNotExclusiveCPU": 0,
+            "explicitLegacyLayoutCalls": 0
+          },
+          "knownSyncUnionMs": 7
+        },
+        {
+          "sampleIndex": 4,
+          "officialMs": 84,
+          "officialFail": true,
+          "at": {
+            "handlerEnd": 19,
+            "input": 1,
+            "observed": 25,
+            "raf1": 55,
+            "end": 84,
+            "key": 0
+          },
+          "stageUnionMs": {
+            "snapshot": 0,
+            "mutation": 2,
+            "pageAndGeometryQueries": 1,
+            "jobCreation": 0,
+            "jobPollingIncludesLayoutCodecReplay": 5,
+            "canvasReplayNestedInJob": 2,
+            "browserDecodeAwaitNotExclusiveCPU": 0,
+            "explicitLegacyLayoutCalls": 0
+          },
+          "knownSyncUnionMs": 8
+        },
+        {
+          "sampleIndex": 5,
+          "officialMs": 68,
+          "officialFail": true,
+          "at": {
+            "handlerEnd": 20,
+            "input": 1,
+            "observed": 21,
+            "raf1": 56,
+            "end": 68,
+            "key": 0
+          },
+          "stageUnionMs": {
+            "snapshot": 0,
+            "mutation": 1,
+            "pageAndGeometryQueries": 1,
+            "jobCreation": 1,
+            "jobPollingIncludesLayoutCodecReplay": 5,
+            "canvasReplayNestedInJob": 1,
+            "browserDecodeAwaitNotExclusiveCPU": 0,
+            "explicitLegacyLayoutCalls": 0
+          },
+          "knownSyncUnionMs": 8
+        },
+        {
+          "sampleIndex": 6,
+          "officialMs": 65,
+          "officialFail": true,
+          "at": {
+            "handlerEnd": 19,
+            "input": 1,
+            "observed": 20,
+            "raf1": 54,
+            "end": 65,
+            "key": 0
+          },
+          "stageUnionMs": {
+            "snapshot": 0,
+            "mutation": 1,
+            "pageAndGeometryQueries": 2,
+            "jobCreation": 0,
+            "jobPollingIncludesLayoutCodecReplay": 5,
+            "canvasReplayNestedInJob": 2,
+            "browserDecodeAwaitNotExclusiveCPU": 0,
+            "explicitLegacyLayoutCalls": 0
+          },
+          "knownSyncUnionMs": 8
+        },
+        {
+          "sampleIndex": 7,
+          "officialMs": 73,
+          "officialFail": true,
+          "at": {
+            "handlerEnd": 33,
+            "input": 2,
+            "observed": 34,
+            "raf1": 69,
+            "end": 73,
+            "key": 0
+          },
+          "stageUnionMs": {
+            "snapshot": 1,
+            "mutation": 0,
+            "pageAndGeometryQueries": 1,
+            "jobCreation": 0,
+            "jobPollingIncludesLayoutCodecReplay": 17,
+            "canvasReplayNestedInJob": 9,
+            "browserDecodeAwaitNotExclusiveCPU": 0,
+            "explicitLegacyLayoutCalls": 0
+          },
+          "knownSyncUnionMs": 20
+        },
+        {
+          "sampleIndex": 8,
+          "officialMs": 65,
+          "officialFail": true,
+          "at": {
+            "handlerEnd": 19,
+            "input": 1,
+            "observed": 20,
+            "raf1": 55,
+            "end": 65,
+            "key": 0
+          },
+          "stageUnionMs": {
+            "snapshot": 0,
+            "mutation": 1,
+            "pageAndGeometryQueries": 1,
+            "jobCreation": 0,
+            "jobPollingIncludesLayoutCodecReplay": 6,
+            "canvasReplayNestedInJob": 3,
+            "browserDecodeAwaitNotExclusiveCPU": 0,
+            "explicitLegacyLayoutCalls": 0
+          },
+          "knownSyncUnionMs": 8
+        },
+        {
+          "sampleIndex": 9,
+          "officialMs": 66,
+          "officialFail": true,
+          "at": {
+            "handlerEnd": 19,
+            "input": 2,
+            "observed": 20,
+            "raf1": 55,
+            "end": 66,
+            "key": 0
+          },
+          "stageUnionMs": {
+            "snapshot": 0,
+            "mutation": 1,
+            "pageAndGeometryQueries": 1,
+            "jobCreation": 0,
+            "jobPollingIncludesLayoutCodecReplay": 5,
+            "canvasReplayNestedInJob": 2,
+            "browserDecodeAwaitNotExclusiveCPU": 0,
+            "explicitLegacyLayoutCalls": 0
+          },
+          "knownSyncUnionMs": 8
+        },
+        {
+          "sampleIndex": 10,
+          "officialMs": 69,
+          "officialFail": true,
+          "at": {
+            "handlerEnd": 19,
+            "input": 2,
+            "observed": 20,
+            "raf1": 54,
+            "end": 69,
+            "key": 0
+          },
+          "stageUnionMs": {
+            "snapshot": 0,
+            "mutation": 1,
+            "pageAndGeometryQueries": 1,
+            "jobCreation": 0,
+            "jobPollingIncludesLayoutCodecReplay": 5,
+            "canvasReplayNestedInJob": 1,
+            "browserDecodeAwaitNotExclusiveCPU": 0,
+            "explicitLegacyLayoutCalls": 0
+          },
+          "knownSyncUnionMs": 7
+        },
+        {
+          "sampleIndex": 11,
+          "officialMs": 70,
+          "officialFail": true,
+          "at": {
+            "handlerEnd": 20,
+            "input": 2,
+            "observed": 22,
+            "raf1": 56,
+            "end": 70,
+            "key": 0
+          },
+          "stageUnionMs": {
+            "snapshot": 0,
+            "mutation": 2,
+            "pageAndGeometryQueries": 1,
+            "jobCreation": 0,
+            "jobPollingIncludesLayoutCodecReplay": 5,
+            "canvasReplayNestedInJob": 1,
+            "browserDecodeAwaitNotExclusiveCPU": 0,
+            "explicitLegacyLayoutCalls": 0
+          },
+          "knownSyncUnionMs": 8
+        },
+        {
+          "sampleIndex": 12,
+          "officialMs": 55,
+          "officialFail": true,
+          "at": {
+            "handlerEnd": 19,
+            "input": 1,
+            "observed": 20,
+            "raf1": 54,
+            "end": 55,
+            "key": 0
+          },
+          "stageUnionMs": {
+            "snapshot": 0,
+            "mutation": 1,
+            "pageAndGeometryQueries": 1,
+            "jobCreation": 0,
+            "jobPollingIncludesLayoutCodecReplay": 5,
+            "canvasReplayNestedInJob": 1,
+            "browserDecodeAwaitNotExclusiveCPU": 0,
+            "explicitLegacyLayoutCalls": 0
+          },
+          "knownSyncUnionMs": 7
+        },
+        {
+          "sampleIndex": 13,
+          "officialMs": 86,
+          "officialFail": true,
+          "at": {
+            "handlerEnd": 21,
+            "input": 2,
+            "observed": 22,
+            "raf1": 56,
+            "end": 86,
+            "key": 0
+          },
+          "stageUnionMs": {
+            "snapshot": 0,
+            "mutation": 1,
+            "pageAndGeometryQueries": 2,
+            "jobCreation": 0,
+            "jobPollingIncludesLayoutCodecReplay": 6,
+            "canvasReplayNestedInJob": 3,
+            "browserDecodeAwaitNotExclusiveCPU": 0,
+            "explicitLegacyLayoutCalls": 0
+          },
+          "knownSyncUnionMs": 9
+        },
+        {
+          "sampleIndex": 14,
+          "officialMs": 55,
+          "officialFail": true,
+          "at": {
+            "handlerEnd": 18,
+            "input": 1,
+            "observed": 20,
+            "raf1": 54,
+            "end": 55,
+            "key": 0
+          },
+          "stageUnionMs": {
+            "snapshot": 0,
+            "mutation": 1,
+            "pageAndGeometryQueries": 2,
+            "jobCreation": 0,
+            "jobPollingIncludesLayoutCodecReplay": 5,
+            "canvasReplayNestedInJob": 1,
+            "browserDecodeAwaitNotExclusiveCPU": 0,
+            "explicitLegacyLayoutCalls": 0
+          },
+          "knownSyncUnionMs": 8
+        },
+        {
+          "sampleIndex": 15,
+          "officialMs": 88,
+          "officialFail": true,
+          "at": {
+            "handlerEnd": 39,
+            "input": 23,
+            "observed": 41,
+            "raf1": 76,
+            "end": 88,
+            "key": 0
+          },
+          "stageUnionMs": {
+            "snapshot": 0,
+            "mutation": 1,
+            "pageAndGeometryQueries": 1,
+            "jobCreation": 0,
+            "jobPollingIncludesLayoutCodecReplay": 6,
+            "canvasReplayNestedInJob": 2,
+            "browserDecodeAwaitNotExclusiveCPU": 0,
+            "explicitLegacyLayoutCalls": 0
+          },
+          "knownSyncUnionMs": 8
+        },
+        {
+          "sampleIndex": 16,
+          "officialMs": 64,
+          "officialFail": true,
+          "at": {
+            "handlerEnd": 19,
+            "input": 1,
+            "observed": 21,
+            "raf1": 55,
+            "end": 64,
+            "key": 0
+          },
+          "stageUnionMs": {
+            "snapshot": 0,
+            "mutation": 1,
+            "pageAndGeometryQueries": 2,
+            "jobCreation": 0,
+            "jobPollingIncludesLayoutCodecReplay": 5,
+            "canvasReplayNestedInJob": 2,
+            "browserDecodeAwaitNotExclusiveCPU": 0,
+            "explicitLegacyLayoutCalls": 0
+          },
+          "knownSyncUnionMs": 8
+        },
+        {
+          "sampleIndex": 17,
+          "officialMs": 69,
+          "officialFail": true,
+          "at": {
+            "handlerEnd": 20,
+            "input": 2,
+            "observed": 21,
+            "raf1": 57,
+            "end": 69,
+            "key": 0
+          },
+          "stageUnionMs": {
+            "snapshot": 0,
+            "mutation": 2,
+            "pageAndGeometryQueries": 2,
+            "jobCreation": 0,
+            "jobPollingIncludesLayoutCodecReplay": 5,
+            "canvasReplayNestedInJob": 2,
+            "browserDecodeAwaitNotExclusiveCPU": 0,
+            "explicitLegacyLayoutCalls": 0
+          },
+          "knownSyncUnionMs": 9
+        },
+        {
+          "sampleIndex": 18,
+          "officialMs": 60,
+          "officialFail": true,
+          "at": {
+            "handlerEnd": 20,
+            "input": 2,
+            "observed": 22,
+            "raf1": 56,
+            "end": 60,
+            "key": 0
+          },
+          "stageUnionMs": {
+            "snapshot": 0,
+            "mutation": 1,
+            "pageAndGeometryQueries": 2,
+            "jobCreation": 0,
+            "jobPollingIncludesLayoutCodecReplay": 5,
+            "canvasReplayNestedInJob": 2,
+            "browserDecodeAwaitNotExclusiveCPU": 0,
+            "explicitLegacyLayoutCalls": 0
+          },
+          "knownSyncUnionMs": 8
+        },
+        {
+          "sampleIndex": 19,
+          "officialMs": 66,
+          "officialFail": true,
+          "at": {
+            "handlerEnd": 20,
+            "input": 2,
+            "observed": 22,
+            "raf1": 56,
+            "end": 66,
+            "key": 0
+          },
+          "stageUnionMs": {
+            "snapshot": 0,
+            "mutation": 1,
+            "pageAndGeometryQueries": 2,
+            "jobCreation": 0,
+            "jobPollingIncludesLayoutCodecReplay": 6,
+            "canvasReplayNestedInJob": 1,
+            "browserDecodeAwaitNotExclusiveCPU": 0,
+            "explicitLegacyLayoutCalls": 0
+          },
+          "knownSyncUnionMs": 9
+        },
+        {
+          "sampleIndex": 20,
+          "officialMs": 58,
+          "officialFail": true,
+          "at": {
+            "handlerEnd": 19,
+            "input": 1,
+            "observed": 21,
+            "raf1": 55,
+            "end": 58,
+            "key": 0
+          },
+          "stageUnionMs": {
+            "snapshot": 0,
+            "mutation": 1,
+            "pageAndGeometryQueries": 1,
+            "jobCreation": 0,
+            "jobPollingIncludesLayoutCodecReplay": 6,
+            "canvasReplayNestedInJob": 1,
+            "browserDecodeAwaitNotExclusiveCPU": 0,
+            "explicitLegacyLayoutCalls": 0
+          },
+          "knownSyncUnionMs": 8
+        },
+        {
+          "sampleIndex": 21,
+          "officialMs": 64,
+          "officialFail": true,
+          "at": {
+            "handlerEnd": 18,
+            "input": 1,
+            "observed": 20,
+            "raf1": 55,
+            "end": 64,
+            "key": 0
+          },
+          "stageUnionMs": {
+            "snapshot": 0,
+            "mutation": 1,
+            "pageAndGeometryQueries": 2,
+            "jobCreation": 0,
+            "jobPollingIncludesLayoutCodecReplay": 6,
+            "canvasReplayNestedInJob": 3,
+            "browserDecodeAwaitNotExclusiveCPU": 0,
+            "explicitLegacyLayoutCalls": 0
+          },
+          "knownSyncUnionMs": 9
+        },
+        {
+          "sampleIndex": 22,
+          "officialMs": 66,
+          "officialFail": true,
+          "at": {
+            "handlerEnd": 17,
+            "input": 2,
+            "observed": 19,
+            "raf1": 53,
+            "end": 66,
+            "key": 0
+          },
+          "stageUnionMs": {
+            "snapshot": 0,
+            "mutation": 1,
+            "pageAndGeometryQueries": 1,
+            "jobCreation": 0,
+            "jobPollingIncludesLayoutCodecReplay": 5,
+            "canvasReplayNestedInJob": 2,
+            "browserDecodeAwaitNotExclusiveCPU": 0,
+            "explicitLegacyLayoutCalls": 0
+          },
+          "knownSyncUnionMs": 7
+        },
+        {
+          "sampleIndex": 23,
+          "officialMs": 75,
+          "officialFail": true,
+          "at": {
+            "handlerEnd": 32,
+            "input": 3,
+            "observed": 34,
+            "raf1": 70,
+            "end": 75,
+            "key": 0
+          },
+          "stageUnionMs": {
+            "snapshot": 0,
+            "mutation": 2,
+            "pageAndGeometryQueries": 5,
+            "jobCreation": 0,
+            "jobPollingIncludesLayoutCodecReplay": 9,
+            "canvasReplayNestedInJob": 3,
+            "browserDecodeAwaitNotExclusiveCPU": 0,
+            "explicitLegacyLayoutCalls": 0
+          },
+          "knownSyncUnionMs": 16
+        },
+        {
+          "sampleIndex": 24,
+          "officialMs": 68,
+          "officialFail": true,
+          "at": {
+            "handlerEnd": 20,
+            "input": 2,
+            "observed": 22,
+            "raf1": 57,
+            "end": 68,
+            "key": 0
+          },
+          "stageUnionMs": {
+            "snapshot": 0,
+            "mutation": 1,
+            "pageAndGeometryQueries": 3,
+            "jobCreation": 0,
+            "jobPollingIncludesLayoutCodecReplay": 5,
+            "canvasReplayNestedInJob": 2,
+            "browserDecodeAwaitNotExclusiveCPU": 0,
+            "explicitLegacyLayoutCalls": 0
+          },
+          "knownSyncUnionMs": 10
+        },
+        {
+          "sampleIndex": 25,
+          "officialMs": 65,
+          "officialFail": true,
+          "at": {
+            "handlerEnd": 18,
+            "input": 2,
+            "observed": 20,
+            "raf1": 54,
+            "end": 65,
+            "key": 0
+          },
+          "stageUnionMs": {
+            "snapshot": 0,
+            "mutation": 1,
+            "pageAndGeometryQueries": 1,
+            "jobCreation": 0,
+            "jobPollingIncludesLayoutCodecReplay": 5,
+            "canvasReplayNestedInJob": 1,
+            "browserDecodeAwaitNotExclusiveCPU": 0,
+            "explicitLegacyLayoutCalls": 0
+          },
+          "knownSyncUnionMs": 7
+        },
+        {
+          "sampleIndex": 26,
+          "officialMs": 65,
+          "officialFail": true,
+          "at": {
+            "handlerEnd": 19,
+            "input": 1,
+            "observed": 20,
+            "raf1": 56,
+            "end": 65,
+            "key": 0
+          },
+          "stageUnionMs": {
+            "snapshot": 0,
+            "mutation": 1,
+            "pageAndGeometryQueries": 1,
+            "jobCreation": 0,
+            "jobPollingIncludesLayoutCodecReplay": 6,
+            "canvasReplayNestedInJob": 1,
+            "browserDecodeAwaitNotExclusiveCPU": 0,
+            "explicitLegacyLayoutCalls": 0
+          },
+          "knownSyncUnionMs": 8
+        },
+        {
+          "sampleIndex": 27,
+          "officialMs": 84,
+          "officialFail": true,
+          "at": {
+            "handlerEnd": 19,
+            "input": 2,
+            "observed": 21,
+            "raf1": 54,
+            "end": 84,
+            "key": 0
+          },
+          "stageUnionMs": {
+            "snapshot": 0,
+            "mutation": 1,
+            "pageAndGeometryQueries": 1,
+            "jobCreation": 1,
+            "jobPollingIncludesLayoutCodecReplay": 4,
+            "canvasReplayNestedInJob": 1,
+            "browserDecodeAwaitNotExclusiveCPU": 0,
+            "explicitLegacyLayoutCalls": 0
+          },
+          "knownSyncUnionMs": 7
+        },
+        {
+          "sampleIndex": 28,
+          "officialMs": 83,
+          "officialFail": true,
+          "at": {
+            "handlerEnd": 19,
+            "input": 1,
+            "observed": 20,
+            "raf1": 53,
+            "end": 83,
+            "key": 0
+          },
+          "stageUnionMs": {
+            "snapshot": 0,
+            "mutation": 2,
+            "pageAndGeometryQueries": 2,
+            "jobCreation": 0,
+            "jobPollingIncludesLayoutCodecReplay": 5,
+            "canvasReplayNestedInJob": 2,
+            "browserDecodeAwaitNotExclusiveCPU": 0,
+            "explicitLegacyLayoutCalls": 0
+          },
+          "knownSyncUnionMs": 9
+        },
+        {
+          "sampleIndex": 29,
+          "officialMs": 86,
+          "officialFail": true,
+          "at": {
+            "handlerEnd": 37,
+            "input": 21,
+            "observed": 39,
+            "raf1": 73,
+            "end": 86,
+            "key": 0
+          },
+          "stageUnionMs": {
+            "snapshot": 0,
+            "mutation": 1,
+            "pageAndGeometryQueries": 3,
+            "jobCreation": 0,
+            "jobPollingIncludesLayoutCodecReplay": 6,
+            "canvasReplayNestedInJob": 3,
+            "browserDecodeAwaitNotExclusiveCPU": 0,
+            "explicitLegacyLayoutCalls": 0
+          },
+          "knownSyncUnionMs": 10
+        }
+      ],
+      "adapterCounters": {
+        "polls": 122,
+        "staleDropped": 0,
+        "reused": 0,
+        "regionalPatchJobs": 0,
+        "completed": 122,
+        "unchangedFrames": 0,
+        "notifications": 0,
+        "patchJobs": 0,
+        "wholePagePatchJobs": 0,
+        "limits": 0,
+        "replacements": 0,
+        "fullJobs": 122,
+        "errors": 0,
+        "canceled": 0
+      }
+    },
+    {
+      "sample": "연구노트(화학).hwp",
+      "sourceSha256": "6717eca43c6fdd9b0530530cf17d33b6687da0c462a433d37eb652afb5394f91",
+      "fileBytes": 11956736,
+      "official": {
+        "groupStart": {
+          "n": 30,
+          "p50": 94,
+          "p95": 148,
+          "max": 271,
+          "timeouts": 0
+        },
+        "extend": {
+          "n": 30,
+          "p50": 105,
+          "p95": 166,
+          "max": 198,
+          "timeouts": 0
+        },
+        "undo": {
+          "n": 25,
+          "p50": 114,
+          "p95": 160,
+          "max": 167,
+          "timeouts": 0
+        },
+        "redo": {
+          "n": 20,
+          "p50": 113,
+          "p95": 138,
+          "max": 160,
+          "timeouts": 0
+        },
+        "afterUndo": {
+          "n": 5,
+          "p50": 116,
+          "p95": 126,
+          "max": 126,
+          "timeouts": 0
+        }
+      },
+      "intervalsMs": {
+        "keyToInput": {
+          "n": 30,
+          "min": 1,
+          "p50": 6,
+          "p95": 44,
+          "max": 45
+        },
+        "inputThroughHandlerEnd": {
+          "n": 30,
+          "min": 19,
+          "p50": 23,
+          "p95": 98,
+          "max": 151
+        },
+        "handlerEndToObservedRevision": {
+          "n": 30,
+          "min": 2,
+          "p50": 10,
+          "p95": 16,
+          "max": 16
+        },
+        "observedThroughTwoRafs": {
+          "n": 30,
+          "min": 13,
+          "p50": 51,
+          "p95": 75,
+          "max": 91
+        }
+      },
+      "stagePerGroupUnionMs": {
+        "snapshot": {
+          "n": 30,
+          "min": 0,
+          "p50": 0,
+          "p95": 2,
+          "max": 4
+        },
+        "mutation": {
+          "n": 30,
+          "min": 1,
+          "p50": 2,
+          "p95": 3,
+          "max": 29
+        },
+        "pageAndGeometryQueries": {
+          "n": 30,
+          "min": 0,
+          "p50": 2,
+          "p95": 4,
+          "max": 40
+        },
+        "jobCreation": {
+          "n": 30,
+          "min": 0,
+          "p50": 0,
+          "p95": 0,
+          "max": 1
+        },
+        "jobPollingIncludesLayoutCodecReplay": {
+          "n": 30,
+          "min": 4,
+          "p50": 18,
+          "p95": 28,
+          "max": 137
+        },
+        "canvasReplayNestedInJob": {
+          "n": 30,
+          "min": 1,
+          "p50": 11,
+          "p95": 13,
+          "max": 13
+        },
+        "browserDecodeAwaitNotExclusiveCPU": {
+          "n": 30,
+          "min": 0,
+          "p50": 0,
+          "p95": 0,
+          "max": 0
+        },
+        "explicitLegacyLayoutCalls": {
+          "n": 30,
+          "min": 0,
+          "p50": 0,
+          "p95": 0,
+          "max": 0
+        }
+      },
+      "individualSyncAndAwaitCallsMs": {
+        "snapshotCapacity": {
+          "n": 44,
+          "min": 0,
+          "p50": 0,
+          "p95": 0,
+          "max": 0
+        },
+        "getParagraphLength": {
+          "n": 266,
+          "min": 0,
+          "p50": 0,
+          "p95": 0,
+          "max": 0
+        },
+        "saveSnapshot": {
+          "n": 20,
+          "min": 0,
+          "p50": 0,
+          "p95": 1,
+          "max": 1
+        },
+        "insertText": {
+          "n": 30,
+          "min": 1,
+          "p50": 2,
+          "p95": 3,
+          "max": 29
+        },
+        "pageCount": {
+          "n": 30,
+          "min": 0,
+          "p50": 0,
+          "p95": 0,
+          "max": 0
+        },
+        "getPageInfo": {
+          "n": 720,
+          "min": 0,
+          "p50": 0,
+          "p95": 0,
+          "max": 1
+        },
+        "getCursorRect": {
+          "n": 256,
+          "min": 0,
+          "p50": 0,
+          "p95": 1,
+          "max": 34
+        },
+        "beginRenderJob": {
+          "n": 57,
+          "min": 0,
+          "p50": 0,
+          "p95": 0,
+          "max": 1
+        },
+        "canvasOffscreenDraw": {
+          "n": 53,
+          "min": 3,
+          "p50": 4,
+          "p95": 5,
+          "max": 5
+        },
+        "canvasReadback": {
+          "n": 57,
+          "min": 1,
+          "p50": 1,
+          "p95": 2,
+          "max": 2
+        },
+        "canvasVisibleDraw": {
+          "n": 57,
+          "min": 0,
+          "p50": 0,
+          "p95": 1,
+          "max": 1
+        },
+        "pollRenderJob": {
+          "n": 57,
+          "min": 4,
+          "p50": 8,
+          "p95": 15,
+          "max": 130
+        },
+        "adapterRenderRequest": {
+          "n": 57,
+          "min": 4,
+          "p50": 9,
+          "p95": 15,
+          "max": 130
+        },
+        "discardSnapshot": {
+          "n": 4,
+          "min": 0,
+          "p50": 1,
+          "p95": 4,
+          "max": 4
+        }
+      },
+      "overlapWithFailingSamples": {
+        "snapshot": {
+          "failingSampleCount": 30,
+          "presentCount": 8,
+          "p95MsWithinFailingSamples": 2
+        },
+        "mutation": {
+          "failingSampleCount": 30,
+          "presentCount": 30,
+          "p95MsWithinFailingSamples": 3
+        },
+        "pageAndGeometryQueries": {
+          "failingSampleCount": 30,
+          "presentCount": 28,
+          "p95MsWithinFailingSamples": 4
+        },
+        "jobCreation": {
+          "failingSampleCount": 30,
+          "presentCount": 1,
+          "p95MsWithinFailingSamples": 0
+        },
+        "jobPollingIncludesLayoutCodecReplay": {
+          "failingSampleCount": 30,
+          "presentCount": 30,
+          "p95MsWithinFailingSamples": 28
+        },
+        "canvasReplayNestedInJob": {
+          "failingSampleCount": 30,
+          "presentCount": 30,
+          "p95MsWithinFailingSamples": 13
+        },
+        "browserDecodeAwaitNotExclusiveCPU": {
+          "failingSampleCount": 30,
+          "presentCount": 0,
+          "p95MsWithinFailingSamples": 0
+        },
+        "explicitLegacyLayoutCalls": {
+          "failingSampleCount": 30,
+          "presentCount": 0,
+          "p95MsWithinFailingSamples": 0
+        }
+      },
+      "negativeTimestampOffsets": [],
+      "groupCorrelations": [
+        {
+          "sampleIndex": 0,
+          "officialMs": 125,
+          "officialFail": true,
+          "at": {
+            "handlerEnd": 24,
+            "input": 1,
+            "observed": 34,
+            "raf1": 120,
+            "end": 125,
+            "key": 0
+          },
+          "stageUnionMs": {
+            "snapshot": 0,
+            "mutation": 3,
+            "pageAndGeometryQueries": 1,
+            "jobCreation": 0,
+            "jobPollingIncludesLayoutCodecReplay": 15,
+            "canvasReplayNestedInJob": 12,
+            "browserDecodeAwaitNotExclusiveCPU": 0,
+            "explicitLegacyLayoutCalls": 0
+          },
+          "knownSyncUnionMs": 19
+        },
+        {
+          "sampleIndex": 1,
+          "officialMs": 75,
+          "officialFail": true,
+          "at": {
+            "handlerEnd": 27,
+            "input": 6,
+            "observed": 36,
+            "raf1": 74,
+            "end": 75,
+            "key": 0
+          },
+          "stageUnionMs": {
+            "snapshot": 1,
+            "mutation": 1,
+            "pageAndGeometryQueries": 0,
+            "jobCreation": 0,
+            "jobPollingIncludesLayoutCodecReplay": 15,
+            "canvasReplayNestedInJob": 11,
+            "browserDecodeAwaitNotExclusiveCPU": 0,
+            "explicitLegacyLayoutCalls": 0
+          },
+          "knownSyncUnionMs": 17
+        },
+        {
+          "sampleIndex": 2,
+          "officialMs": 76,
+          "officialFail": true,
+          "at": {
+            "handlerEnd": 28,
+            "input": 9,
+            "observed": 38,
+            "raf1": 74,
+            "end": 76,
+            "key": 0
+          },
+          "stageUnionMs": {
+            "snapshot": 0,
+            "mutation": 1,
+            "pageAndGeometryQueries": 2,
+            "jobCreation": 0,
+            "jobPollingIncludesLayoutCodecReplay": 14,
+            "canvasReplayNestedInJob": 11,
+            "browserDecodeAwaitNotExclusiveCPU": 0,
+            "explicitLegacyLayoutCalls": 0
+          },
+          "knownSyncUnionMs": 18
+        },
+        {
+          "sampleIndex": 3,
+          "officialMs": 79,
+          "officialFail": true,
+          "at": {
+            "handlerEnd": 26,
+            "input": 6,
+            "observed": 36,
+            "raf1": 73,
+            "end": 79,
+            "key": 0
+          },
+          "stageUnionMs": {
+            "snapshot": 0,
+            "mutation": 1,
+            "pageAndGeometryQueries": 1,
+            "jobCreation": 0,
+            "jobPollingIncludesLayoutCodecReplay": 14,
+            "canvasReplayNestedInJob": 12,
+            "browserDecodeAwaitNotExclusiveCPU": 0,
+            "explicitLegacyLayoutCalls": 0
+          },
+          "knownSyncUnionMs": 17
+        },
+        {
+          "sampleIndex": 4,
+          "officialMs": 84,
+          "officialFail": true,
+          "at": {
+            "handlerEnd": 23,
+            "input": 4,
+            "observed": 33,
+            "raf1": 70,
+            "end": 84,
+            "key": 0
+          },
+          "stageUnionMs": {
+            "snapshot": 0,
+            "mutation": 2,
+            "pageAndGeometryQueries": 0,
+            "jobCreation": 0,
+            "jobPollingIncludesLayoutCodecReplay": 15,
+            "canvasReplayNestedInJob": 11,
+            "browserDecodeAwaitNotExclusiveCPU": 0,
+            "explicitLegacyLayoutCalls": 0
+          },
+          "knownSyncUnionMs": 18
+        },
+        {
+          "sampleIndex": 5,
+          "officialMs": 93,
+          "officialFail": true,
+          "at": {
+            "handlerEnd": 43,
+            "input": 16,
+            "observed": 52,
+            "raf1": 89,
+            "end": 93,
+            "key": 0
+          },
+          "stageUnionMs": {
+            "snapshot": 0,
+            "mutation": 1,
+            "pageAndGeometryQueries": 2,
+            "jobCreation": 0,
+            "jobPollingIncludesLayoutCodecReplay": 19,
+            "canvasReplayNestedInJob": 12,
+            "browserDecodeAwaitNotExclusiveCPU": 0,
+            "explicitLegacyLayoutCalls": 0
+          },
+          "knownSyncUnionMs": 24
+        },
+        {
+          "sampleIndex": 6,
+          "officialMs": 107,
+          "officialFail": true,
+          "at": {
+            "handlerEnd": 38,
+            "input": 15,
+            "observed": 54,
+            "raf1": 91,
+            "end": 107,
+            "key": 0
+          },
+          "stageUnionMs": {
+            "snapshot": 0,
+            "mutation": 1,
+            "pageAndGeometryQueries": 1,
+            "jobCreation": 0,
+            "jobPollingIncludesLayoutCodecReplay": 23,
+            "canvasReplayNestedInJob": 12,
+            "browserDecodeAwaitNotExclusiveCPU": 0,
+            "explicitLegacyLayoutCalls": 0
+          },
+          "knownSyncUnionMs": 25
+        },
+        {
+          "sampleIndex": 7,
+          "officialMs": 92,
+          "officialFail": true,
+          "at": {
+            "handlerEnd": 29,
+            "input": 3,
+            "observed": 41,
+            "raf1": 77,
+            "end": 92,
+            "key": 0
+          },
+          "stageUnionMs": {
+            "snapshot": 0,
+            "mutation": 1,
+            "pageAndGeometryQueries": 3,
+            "jobCreation": 0,
+            "jobPollingIncludesLayoutCodecReplay": 22,
+            "canvasReplayNestedInJob": 12,
+            "browserDecodeAwaitNotExclusiveCPU": 0,
+            "explicitLegacyLayoutCalls": 0
+          },
+          "knownSyncUnionMs": 26
+        },
+        {
+          "sampleIndex": 8,
+          "officialMs": 101,
+          "officialFail": true,
+          "at": {
+            "handlerEnd": 34,
+            "input": 4,
+            "observed": 50,
+            "raf1": 90,
+            "end": 101,
+            "key": 0
+          },
+          "stageUnionMs": {
+            "snapshot": 1,
+            "mutation": 1,
+            "pageAndGeometryQueries": 2,
+            "jobCreation": 0,
+            "jobPollingIncludesLayoutCodecReplay": 28,
+            "canvasReplayNestedInJob": 13,
+            "browserDecodeAwaitNotExclusiveCPU": 0,
+            "explicitLegacyLayoutCalls": 0
+          },
+          "knownSyncUnionMs": 32
+        },
+        {
+          "sampleIndex": 9,
+          "officialMs": 78,
+          "officialFail": true,
+          "at": {
+            "handlerEnd": 26,
+            "input": 4,
+            "observed": 42,
+            "raf1": 77,
+            "end": 78,
+            "key": 0
+          },
+          "stageUnionMs": {
+            "snapshot": 0,
+            "mutation": 2,
+            "pageAndGeometryQueries": 3,
+            "jobCreation": 0,
+            "jobPollingIncludesLayoutCodecReplay": 23,
+            "canvasReplayNestedInJob": 12,
+            "browserDecodeAwaitNotExclusiveCPU": 0,
+            "explicitLegacyLayoutCalls": 0
+          },
+          "knownSyncUnionMs": 29
+        },
+        {
+          "sampleIndex": 10,
+          "officialMs": 94,
+          "officialFail": true,
+          "at": {
+            "handlerEnd": 29,
+            "input": 9,
+            "observed": 40,
+            "raf1": 77,
+            "end": 94,
+            "key": 0
+          },
+          "stageUnionMs": {
+            "snapshot": 0,
+            "mutation": 2,
+            "pageAndGeometryQueries": 2,
+            "jobCreation": 0,
+            "jobPollingIncludesLayoutCodecReplay": 17,
+            "canvasReplayNestedInJob": 10,
+            "browserDecodeAwaitNotExclusiveCPU": 0,
+            "explicitLegacyLayoutCalls": 0
+          },
+          "knownSyncUnionMs": 21
+        },
+        {
+          "sampleIndex": 11,
+          "officialMs": 108,
+          "officialFail": true,
+          "at": {
+            "handlerEnd": 23,
+            "input": 2,
+            "observed": 33,
+            "raf1": 94,
+            "end": 108,
+            "key": 0
+          },
+          "stageUnionMs": {
+            "snapshot": 1,
+            "mutation": 2,
+            "pageAndGeometryQueries": 1,
+            "jobCreation": 0,
+            "jobPollingIncludesLayoutCodecReplay": 15,
+            "canvasReplayNestedInJob": 12,
+            "browserDecodeAwaitNotExclusiveCPU": 0,
+            "explicitLegacyLayoutCalls": 0
+          },
+          "knownSyncUnionMs": 19
+        },
+        {
+          "sampleIndex": 12,
+          "officialMs": 148,
+          "officialFail": true,
+          "at": {
+            "handlerEnd": 99,
+            "input": 1,
+            "observed": 101,
+            "raf1": 135,
+            "end": 148,
+            "key": 0
+          },
+          "stageUnionMs": {
+            "snapshot": 0,
+            "mutation": 29,
+            "pageAndGeometryQueries": 40,
+            "jobCreation": 0,
+            "jobPollingIncludesLayoutCodecReplay": 22,
+            "canvasReplayNestedInJob": 1,
+            "browserDecodeAwaitNotExclusiveCPU": 0,
+            "explicitLegacyLayoutCalls": 0
+          },
+          "knownSyncUnionMs": 91
+        },
+        {
+          "sampleIndex": 13,
+          "officialMs": 93,
+          "officialFail": true,
+          "at": {
+            "handlerEnd": 24,
+            "input": 4,
+            "observed": 26,
+            "raf1": 87,
+            "end": 93,
+            "key": 0
+          },
+          "stageUnionMs": {
+            "snapshot": 0,
+            "mutation": 3,
+            "pageAndGeometryQueries": 2,
+            "jobCreation": 0,
+            "jobPollingIncludesLayoutCodecReplay": 4,
+            "canvasReplayNestedInJob": 1,
+            "browserDecodeAwaitNotExclusiveCPU": 0,
+            "explicitLegacyLayoutCalls": 0
+          },
+          "knownSyncUnionMs": 9
+        },
+        {
+          "sampleIndex": 14,
+          "officialMs": 109,
+          "officialFail": true,
+          "at": {
+            "handlerEnd": 35,
+            "input": 16,
+            "observed": 37,
+            "raf1": 98,
+            "end": 109,
+            "key": 0
+          },
+          "stageUnionMs": {
+            "snapshot": 0,
+            "mutation": 2,
+            "pageAndGeometryQueries": 1,
+            "jobCreation": 0,
+            "jobPollingIncludesLayoutCodecReplay": 5,
+            "canvasReplayNestedInJob": 3,
+            "browserDecodeAwaitNotExclusiveCPU": 0,
+            "explicitLegacyLayoutCalls": 0
+          },
+          "knownSyncUnionMs": 8
+        },
+        {
+          "sampleIndex": 15,
+          "officialMs": 67,
+          "officialFail": true,
+          "at": {
+            "handlerEnd": 24,
+            "input": 4,
+            "observed": 30,
+            "raf1": 64,
+            "end": 67,
+            "key": 0
+          },
+          "stageUnionMs": {
+            "snapshot": 1,
+            "mutation": 1,
+            "pageAndGeometryQueries": 1,
+            "jobCreation": 0,
+            "jobPollingIncludesLayoutCodecReplay": 12,
+            "canvasReplayNestedInJob": 7,
+            "browserDecodeAwaitNotExclusiveCPU": 0,
+            "explicitLegacyLayoutCalls": 0
+          },
+          "knownSyncUnionMs": 15
+        },
+        {
+          "sampleIndex": 16,
+          "officialMs": 271,
+          "officialFail": true,
+          "at": {
+            "handlerEnd": 195,
+            "input": 44,
+            "observed": 204,
+            "raf1": 243,
+            "end": 271,
+            "key": 0
+          },
+          "stageUnionMs": {
+            "snapshot": 4,
+            "mutation": 2,
+            "pageAndGeometryQueries": 4,
+            "jobCreation": 0,
+            "jobPollingIncludesLayoutCodecReplay": 137,
+            "canvasReplayNestedInJob": 11,
+            "browserDecodeAwaitNotExclusiveCPU": 0,
+            "explicitLegacyLayoutCalls": 0
+          },
+          "knownSyncUnionMs": 147
+        },
+        {
+          "sampleIndex": 17,
+          "officialMs": 107,
+          "officialFail": true,
+          "at": {
+            "handlerEnd": 23,
+            "input": 1,
+            "observed": 37,
+            "raf1": 97,
+            "end": 107,
+            "key": 0
+          },
+          "stageUnionMs": {
+            "snapshot": 1,
+            "mutation": 1,
+            "pageAndGeometryQueries": 1,
+            "jobCreation": 1,
+            "jobPollingIncludesLayoutCodecReplay": 19,
+            "canvasReplayNestedInJob": 11,
+            "browserDecodeAwaitNotExclusiveCPU": 0,
+            "explicitLegacyLayoutCalls": 0
+          },
+          "knownSyncUnionMs": 23
+        },
+        {
+          "sampleIndex": 18,
+          "officialMs": 115,
+          "officialFail": true,
+          "at": {
+            "handlerEnd": 66,
+            "input": 44,
+            "observed": 76,
+            "raf1": 113,
+            "end": 115,
+            "key": 0
+          },
+          "stageUnionMs": {
+            "snapshot": 2,
+            "mutation": 1,
+            "pageAndGeometryQueries": 1,
+            "jobCreation": 0,
+            "jobPollingIncludesLayoutCodecReplay": 16,
+            "canvasReplayNestedInJob": 11,
+            "browserDecodeAwaitNotExclusiveCPU": 0,
+            "explicitLegacyLayoutCalls": 0
+          },
+          "knownSyncUnionMs": 20
+        },
+        {
+          "sampleIndex": 19,
+          "officialMs": 120,
+          "officialFail": true,
+          "at": {
+            "handlerEnd": 71,
+            "input": 45,
+            "observed": 82,
+            "raf1": 118,
+            "end": 120,
+            "key": 0
+          },
+          "stageUnionMs": {
+            "snapshot": 2,
+            "mutation": 1,
+            "pageAndGeometryQueries": 3,
+            "jobCreation": 0,
+            "jobPollingIncludesLayoutCodecReplay": 20,
+            "canvasReplayNestedInJob": 10,
+            "browserDecodeAwaitNotExclusiveCPU": 0,
+            "explicitLegacyLayoutCalls": 0
+          },
+          "knownSyncUnionMs": 26
+        },
+        {
+          "sampleIndex": 20,
+          "officialMs": 63,
+          "officialFail": true,
+          "at": {
+            "handlerEnd": 37,
+            "input": 13,
+            "observed": 48,
+            "raf1": 62,
+            "end": 63,
+            "key": 0
+          },
+          "stageUnionMs": {
+            "snapshot": 0,
+            "mutation": 2,
+            "pageAndGeometryQueries": 2,
+            "jobCreation": 0,
+            "jobPollingIncludesLayoutCodecReplay": 18,
+            "canvasReplayNestedInJob": 12,
+            "browserDecodeAwaitNotExclusiveCPU": 0,
+            "explicitLegacyLayoutCalls": 0
+          },
+          "knownSyncUnionMs": 24
+        },
+        {
+          "sampleIndex": 21,
+          "officialMs": 59,
+          "officialFail": true,
+          "at": {
+            "handlerEnd": 36,
+            "input": 12,
+            "observed": 46,
+            "raf1": 59,
+            "end": 59,
+            "key": 0
+          },
+          "stageUnionMs": {
+            "snapshot": 0,
+            "mutation": 2,
+            "pageAndGeometryQueries": 3,
+            "jobCreation": 0,
+            "jobPollingIncludesLayoutCodecReplay": 20,
+            "canvasReplayNestedInJob": 13,
+            "browserDecodeAwaitNotExclusiveCPU": 0,
+            "explicitLegacyLayoutCalls": 0
+          },
+          "knownSyncUnionMs": 25
+        },
+        {
+          "sampleIndex": 22,
+          "officialMs": 61,
+          "officialFail": true,
+          "at": {
+            "handlerEnd": 35,
+            "input": 10,
+            "observed": 45,
+            "raf1": 60,
+            "end": 61,
+            "key": 0
+          },
+          "stageUnionMs": {
+            "snapshot": 0,
+            "mutation": 2,
+            "pageAndGeometryQueries": 3,
+            "jobCreation": 0,
+            "jobPollingIncludesLayoutCodecReplay": 18,
+            "canvasReplayNestedInJob": 12,
+            "browserDecodeAwaitNotExclusiveCPU": 0,
+            "explicitLegacyLayoutCalls": 0
+          },
+          "knownSyncUnionMs": 23
+        },
+        {
+          "sampleIndex": 23,
+          "officialMs": 105,
+          "officialFail": true,
+          "at": {
+            "handlerEnd": 32,
+            "input": 9,
+            "observed": 42,
+            "raf1": 78,
+            "end": 105,
+            "key": 0
+          },
+          "stageUnionMs": {
+            "snapshot": 0,
+            "mutation": 2,
+            "pageAndGeometryQueries": 4,
+            "jobCreation": 0,
+            "jobPollingIncludesLayoutCodecReplay": 18,
+            "canvasReplayNestedInJob": 10,
+            "browserDecodeAwaitNotExclusiveCPU": 0,
+            "explicitLegacyLayoutCalls": 0
+          },
+          "knownSyncUnionMs": 24
+        },
+        {
+          "sampleIndex": 24,
+          "officialMs": 108,
+          "officialFail": true,
+          "at": {
+            "handlerEnd": 33,
+            "input": 8,
+            "observed": 44,
+            "raf1": 81,
+            "end": 108,
+            "key": 0
+          },
+          "stageUnionMs": {
+            "snapshot": 0,
+            "mutation": 2,
+            "pageAndGeometryQueries": 4,
+            "jobCreation": 0,
+            "jobPollingIncludesLayoutCodecReplay": 18,
+            "canvasReplayNestedInJob": 12,
+            "browserDecodeAwaitNotExclusiveCPU": 0,
+            "explicitLegacyLayoutCalls": 0
+          },
+          "knownSyncUnionMs": 24
+        },
+        {
+          "sampleIndex": 25,
+          "officialMs": 102,
+          "officialFail": true,
+          "at": {
+            "handlerEnd": 28,
+            "input": 4,
+            "observed": 38,
+            "raf1": 75,
+            "end": 102,
+            "key": 0
+          },
+          "stageUnionMs": {
+            "snapshot": 0,
+            "mutation": 1,
+            "pageAndGeometryQueries": 1,
+            "jobCreation": 0,
+            "jobPollingIncludesLayoutCodecReplay": 19,
+            "canvasReplayNestedInJob": 12,
+            "browserDecodeAwaitNotExclusiveCPU": 0,
+            "explicitLegacyLayoutCalls": 0
+          },
+          "knownSyncUnionMs": 22
+        },
+        {
+          "sampleIndex": 26,
+          "officialMs": 103,
+          "officialFail": true,
+          "at": {
+            "handlerEnd": 31,
+            "input": 6,
+            "observed": 41,
+            "raf1": 75,
+            "end": 103,
+            "key": 0
+          },
+          "stageUnionMs": {
+            "snapshot": 0,
+            "mutation": 2,
+            "pageAndGeometryQueries": 4,
+            "jobCreation": 0,
+            "jobPollingIncludesLayoutCodecReplay": 18,
+            "canvasReplayNestedInJob": 10,
+            "browserDecodeAwaitNotExclusiveCPU": 0,
+            "explicitLegacyLayoutCalls": 0
+          },
+          "knownSyncUnionMs": 24
+        },
+        {
+          "sampleIndex": 27,
+          "officialMs": 108,
+          "officialFail": true,
+          "at": {
+            "handlerEnd": 34,
+            "input": 10,
+            "observed": 45,
+            "raf1": 81,
+            "end": 108,
+            "key": 0
+          },
+          "stageUnionMs": {
+            "snapshot": 0,
+            "mutation": 2,
+            "pageAndGeometryQueries": 2,
+            "jobCreation": 0,
+            "jobPollingIncludesLayoutCodecReplay": 19,
+            "canvasReplayNestedInJob": 11,
+            "browserDecodeAwaitNotExclusiveCPU": 0,
+            "explicitLegacyLayoutCalls": 0
+          },
+          "knownSyncUnionMs": 23
+        },
+        {
+          "sampleIndex": 28,
+          "officialMs": 55,
+          "officialFail": true,
+          "at": {
+            "handlerEnd": 25,
+            "input": 3,
+            "observed": 35,
+            "raf1": 49,
+            "end": 55,
+            "key": 0
+          },
+          "stageUnionMs": {
+            "snapshot": 0,
+            "mutation": 2,
+            "pageAndGeometryQueries": 2,
+            "jobCreation": 0,
+            "jobPollingIncludesLayoutCodecReplay": 18,
+            "canvasReplayNestedInJob": 11,
+            "browserDecodeAwaitNotExclusiveCPU": 0,
+            "explicitLegacyLayoutCalls": 0
+          },
+          "knownSyncUnionMs": 22
+        },
+        {
+          "sampleIndex": 29,
+          "officialMs": 91,
+          "officialFail": true,
+          "at": {
+            "handlerEnd": 37,
+            "input": 11,
+            "observed": 48,
+            "raf1": 86,
+            "end": 91,
+            "key": 0
+          },
+          "stageUnionMs": {
+            "snapshot": 0,
+            "mutation": 2,
+            "pageAndGeometryQueries": 4,
+            "jobCreation": 0,
+            "jobPollingIncludesLayoutCodecReplay": 21,
+            "canvasReplayNestedInJob": 12,
+            "browserDecodeAwaitNotExclusiveCPU": 0,
+            "explicitLegacyLayoutCalls": 0
+          },
+          "knownSyncUnionMs": 27
+        }
+      ],
+      "adapterCounters": {
+        "polls": 589,
+        "staleDropped": 2,
+        "reused": 0,
+        "regionalPatchJobs": 0,
+        "completed": 589,
+        "unchangedFrames": 0,
+        "notifications": 0,
+        "patchJobs": 0,
+        "wholePagePatchJobs": 0,
+        "limits": 0,
+        "replacements": 0,
+        "fullJobs": 589,
+        "errors": 0,
+        "canceled": 0
+      }
+    },
+    {
+      "sample": "3249937_asset_management_rules.hwpx",
+      "sourceSha256": "97b5d6c571a6b7626321c6a53d797e3511978447497bb73309bd23eaa8e7ea77",
+      "fileBytes": 423622,
+      "official": {
+        "groupStart": {
+          "n": 30,
+          "p50": 110,
+          "p95": 141,
+          "max": 304,
+          "timeouts": 0
+        },
+        "extend": {
+          "n": 30,
+          "p50": 104,
+          "p95": 122,
+          "max": 126,
+          "timeouts": 0
+        },
+        "undo": {
+          "n": 25,
+          "p50": 236,
+          "p95": 275,
+          "max": 296,
+          "timeouts": 0
+        },
+        "redo": {
+          "n": 20,
+          "p50": 239,
+          "p95": 245,
+          "max": 246,
+          "timeouts": 0
+        },
+        "afterUndo": {
+          "n": 5,
+          "p50": 153,
+          "p95": 158,
+          "max": 158,
+          "timeouts": 0
+        }
+      },
+      "intervalsMs": {
+        "keyToInput": {
+          "n": 30,
+          "min": 2,
+          "p50": 6,
+          "p95": 16,
+          "max": 89
+        },
+        "inputThroughHandlerEnd": {
+          "n": 30,
+          "min": 55,
+          "p50": 58,
+          "p95": 67,
+          "max": 68
+        },
+        "handlerEndToObservedRevision": {
+          "n": 30,
+          "min": 1,
+          "p50": 2,
+          "p95": 2,
+          "max": 2
+        },
+        "observedThroughTwoRafs": {
+          "n": 30,
+          "min": 36,
+          "p50": 43,
+          "p95": 64,
+          "max": 152
+        }
+      },
+      "stagePerGroupUnionMs": {
+        "snapshot": {
+          "n": 30,
+          "min": 1,
+          "p50": 2,
+          "p95": 3,
+          "max": 3
+        },
+        "mutation": {
+          "n": 30,
+          "min": 25,
+          "p50": 26,
+          "p95": 27,
+          "max": 27
+        },
+        "pageAndGeometryQueries": {
+          "n": 30,
+          "min": 2,
+          "p50": 4,
+          "p95": 6,
+          "max": 7
+        },
+        "jobCreation": {
+          "n": 30,
+          "min": 0,
+          "p50": 0,
+          "p95": 0,
+          "max": 1
+        },
+        "jobPollingIncludesLayoutCodecReplay": {
+          "n": 30,
+          "min": 12,
+          "p50": 14,
+          "p95": 15,
+          "max": 15
+        },
+        "canvasReplayNestedInJob": {
+          "n": 30,
+          "min": 1,
+          "p50": 2,
+          "p95": 2,
+          "max": 2
+        },
+        "browserDecodeAwaitNotExclusiveCPU": {
+          "n": 30,
+          "min": 0,
+          "p50": 0,
+          "p95": 0,
+          "max": 0
+        },
+        "explicitLegacyLayoutCalls": {
+          "n": 30,
+          "min": 0,
+          "p50": 0,
+          "p95": 0,
+          "max": 0
+        }
+      },
+      "individualSyncAndAwaitCallsMs": {
+        "snapshotCapacity": {
+          "n": 60,
+          "min": 0,
+          "p50": 0,
+          "p95": 0,
+          "max": 0
+        },
+        "getParagraphLength": {
+          "n": 240,
+          "min": 0,
+          "p50": 0,
+          "p95": 0,
+          "max": 1
+        },
+        "saveSnapshot": {
+          "n": 30,
+          "min": 1,
+          "p50": 2,
+          "p95": 3,
+          "max": 3
+        },
+        "insertText": {
+          "n": 30,
+          "min": 25,
+          "p50": 26,
+          "p95": 27,
+          "max": 27
+        },
+        "pageCount": {
+          "n": 30,
+          "min": 0,
+          "p50": 0,
+          "p95": 0,
+          "max": 0
+        },
+        "getPageInfo": {
+          "n": 1800,
+          "min": 0,
+          "p50": 0,
+          "p95": 0,
+          "max": 1
+        },
+        "getCursorRect": {
+          "n": 210,
+          "min": 0,
+          "p50": 0,
+          "p95": 3,
+          "max": 3
+        },
+        "beginRenderJob": {
+          "n": 30,
+          "min": 0,
+          "p50": 0,
+          "p95": 0,
+          "max": 1
+        },
+        "canvasReadback": {
+          "n": 30,
+          "min": 1,
+          "p50": 1,
+          "p95": 2,
+          "max": 2
+        },
+        "canvasVisibleDraw": {
+          "n": 30,
+          "min": 0,
+          "p50": 0,
+          "p95": 1,
+          "max": 1
+        },
+        "pollRenderJob": {
+          "n": 30,
+          "min": 12,
+          "p50": 14,
+          "p95": 15,
+          "max": 15
+        },
+        "adapterRenderRequest": {
+          "n": 30,
+          "min": 13,
+          "p50": 14,
+          "p95": 15,
+          "max": 15
+        }
+      },
+      "overlapWithFailingSamples": {
+        "snapshot": {
+          "failingSampleCount": 30,
+          "presentCount": 30,
+          "p95MsWithinFailingSamples": 3
+        },
+        "mutation": {
+          "failingSampleCount": 30,
+          "presentCount": 30,
+          "p95MsWithinFailingSamples": 27
+        },
+        "pageAndGeometryQueries": {
+          "failingSampleCount": 30,
+          "presentCount": 30,
+          "p95MsWithinFailingSamples": 6
+        },
+        "jobCreation": {
+          "failingSampleCount": 30,
+          "presentCount": 1,
+          "p95MsWithinFailingSamples": 0
+        },
+        "jobPollingIncludesLayoutCodecReplay": {
+          "failingSampleCount": 30,
+          "presentCount": 30,
+          "p95MsWithinFailingSamples": 15
+        },
+        "canvasReplayNestedInJob": {
+          "failingSampleCount": 30,
+          "presentCount": 30,
+          "p95MsWithinFailingSamples": 2
+        },
+        "browserDecodeAwaitNotExclusiveCPU": {
+          "failingSampleCount": 30,
+          "presentCount": 0,
+          "p95MsWithinFailingSamples": 0
+        },
+        "explicitLegacyLayoutCalls": {
+          "failingSampleCount": 30,
+          "presentCount": 0,
+          "p95MsWithinFailingSamples": 0
+        }
+      },
+      "negativeTimestampOffsets": [],
+      "groupCorrelations": [
+        {
+          "sampleIndex": 0,
+          "officialMs": 304,
+          "officialFail": true,
+          "at": {
+            "handlerEnd": 150,
+            "input": 89,
+            "observed": 152,
+            "raf1": 246,
+            "end": 304,
+            "key": 0
+          },
+          "stageUnionMs": {
+            "snapshot": 2,
+            "mutation": 25,
+            "pageAndGeometryQueries": 5,
+            "jobCreation": 0,
+            "jobPollingIncludesLayoutCodecReplay": 14,
+            "canvasReplayNestedInJob": 2,
+            "browserDecodeAwaitNotExclusiveCPU": 0,
+            "explicitLegacyLayoutCalls": 0
+          },
+          "knownSyncUnionMs": 46
+        },
+        {
+          "sampleIndex": 1,
+          "officialMs": 141,
+          "officialFail": true,
+          "at": {
+            "handlerEnd": 75,
+            "input": 7,
+            "observed": 77,
+            "raf1": 112,
+            "end": 141,
+            "key": 0
+          },
+          "stageUnionMs": {
+            "snapshot": 2,
+            "mutation": 26,
+            "pageAndGeometryQueries": 2,
+            "jobCreation": 0,
+            "jobPollingIncludesLayoutCodecReplay": 13,
+            "canvasReplayNestedInJob": 2,
+            "browserDecodeAwaitNotExclusiveCPU": 0,
+            "explicitLegacyLayoutCalls": 0
+          },
+          "knownSyncUnionMs": 43
+        },
+        {
+          "sampleIndex": 2,
+          "officialMs": 119,
+          "officialFail": true,
+          "at": {
+            "handlerEnd": 70,
+            "input": 11,
+            "observed": 71,
+            "raf1": 105,
+            "end": 119,
+            "key": 0
+          },
+          "stageUnionMs": {
+            "snapshot": 2,
+            "mutation": 25,
+            "pageAndGeometryQueries": 5,
+            "jobCreation": 0,
+            "jobPollingIncludesLayoutCodecReplay": 13,
+            "canvasReplayNestedInJob": 1,
+            "browserDecodeAwaitNotExclusiveCPU": 0,
+            "explicitLegacyLayoutCalls": 0
+          },
+          "knownSyncUnionMs": 45
+        },
+        {
+          "sampleIndex": 3,
+          "officialMs": 103,
+          "officialFail": true,
+          "at": {
+            "handlerEnd": 59,
+            "input": 3,
+            "observed": 60,
+            "raf1": 94,
+            "end": 103,
+            "key": 0
+          },
+          "stageUnionMs": {
+            "snapshot": 2,
+            "mutation": 25,
+            "pageAndGeometryQueries": 3,
+            "jobCreation": 0,
+            "jobPollingIncludesLayoutCodecReplay": 13,
+            "canvasReplayNestedInJob": 1,
+            "browserDecodeAwaitNotExclusiveCPU": 0,
+            "explicitLegacyLayoutCalls": 0
+          },
+          "knownSyncUnionMs": 43
+        },
+        {
+          "sampleIndex": 4,
+          "officialMs": 100,
+          "officialFail": true,
+          "at": {
+            "handlerEnd": 62,
+            "input": 3,
+            "observed": 64,
+            "raf1": 100,
+            "end": 100,
+            "key": 0
+          },
+          "stageUnionMs": {
+            "snapshot": 2,
+            "mutation": 26,
+            "pageAndGeometryQueries": 5,
+            "jobCreation": 0,
+            "jobPollingIncludesLayoutCodecReplay": 13,
+            "canvasReplayNestedInJob": 2,
+            "browserDecodeAwaitNotExclusiveCPU": 0,
+            "explicitLegacyLayoutCalls": 0
+          },
+          "knownSyncUnionMs": 46
+        },
+        {
+          "sampleIndex": 5,
+          "officialMs": 106,
+          "officialFail": true,
+          "at": {
+            "handlerEnd": 63,
+            "input": 4,
+            "observed": 65,
+            "raf1": 101,
+            "end": 106,
+            "key": 0
+          },
+          "stageUnionMs": {
+            "snapshot": 1,
+            "mutation": 26,
+            "pageAndGeometryQueries": 3,
+            "jobCreation": 0,
+            "jobPollingIncludesLayoutCodecReplay": 14,
+            "canvasReplayNestedInJob": 2,
+            "browserDecodeAwaitNotExclusiveCPU": 0,
+            "explicitLegacyLayoutCalls": 0
+          },
+          "knownSyncUnionMs": 44
+        },
+        {
+          "sampleIndex": 6,
+          "officialMs": 107,
+          "officialFail": true,
+          "at": {
+            "handlerEnd": 63,
+            "input": 5,
+            "observed": 65,
+            "raf1": 99,
+            "end": 107,
+            "key": 0
+          },
+          "stageUnionMs": {
+            "snapshot": 3,
+            "mutation": 26,
+            "pageAndGeometryQueries": 3,
+            "jobCreation": 0,
+            "jobPollingIncludesLayoutCodecReplay": 14,
+            "canvasReplayNestedInJob": 2,
+            "browserDecodeAwaitNotExclusiveCPU": 0,
+            "explicitLegacyLayoutCalls": 0
+          },
+          "knownSyncUnionMs": 46
+        },
+        {
+          "sampleIndex": 7,
+          "officialMs": 105,
+          "officialFail": true,
+          "at": {
+            "handlerEnd": 66,
+            "input": 8,
+            "observed": 67,
+            "raf1": 101,
+            "end": 105,
+            "key": 0
+          },
+          "stageUnionMs": {
+            "snapshot": 2,
+            "mutation": 25,
+            "pageAndGeometryQueries": 4,
+            "jobCreation": 0,
+            "jobPollingIncludesLayoutCodecReplay": 13,
+            "canvasReplayNestedInJob": 2,
+            "browserDecodeAwaitNotExclusiveCPU": 0,
+            "explicitLegacyLayoutCalls": 0
+          },
+          "knownSyncUnionMs": 44
+        },
+        {
+          "sampleIndex": 8,
+          "officialMs": 116,
+          "officialFail": true,
+          "at": {
+            "handlerEnd": 66,
+            "input": 7,
+            "observed": 67,
+            "raf1": 102,
+            "end": 116,
+            "key": 0
+          },
+          "stageUnionMs": {
+            "snapshot": 2,
+            "mutation": 26,
+            "pageAndGeometryQueries": 2,
+            "jobCreation": 0,
+            "jobPollingIncludesLayoutCodecReplay": 13,
+            "canvasReplayNestedInJob": 2,
+            "browserDecodeAwaitNotExclusiveCPU": 0,
+            "explicitLegacyLayoutCalls": 0
+          },
+          "knownSyncUnionMs": 43
+        },
+        {
+          "sampleIndex": 9,
+          "officialMs": 98,
+          "officialFail": true,
+          "at": {
+            "handlerEnd": 60,
+            "input": 4,
+            "observed": 61,
+            "raf1": 95,
+            "end": 98,
+            "key": 0
+          },
+          "stageUnionMs": {
+            "snapshot": 1,
+            "mutation": 26,
+            "pageAndGeometryQueries": 2,
+            "jobCreation": 0,
+            "jobPollingIncludesLayoutCodecReplay": 13,
+            "canvasReplayNestedInJob": 1,
+            "browserDecodeAwaitNotExclusiveCPU": 0,
+            "explicitLegacyLayoutCalls": 0
+          },
+          "knownSyncUnionMs": 42
+        },
+        {
+          "sampleIndex": 10,
+          "officialMs": 122,
+          "officialFail": true,
+          "at": {
+            "handlerEnd": 70,
+            "input": 11,
+            "observed": 71,
+            "raf1": 107,
+            "end": 122,
+            "key": 0
+          },
+          "stageUnionMs": {
+            "snapshot": 3,
+            "mutation": 26,
+            "pageAndGeometryQueries": 5,
+            "jobCreation": 0,
+            "jobPollingIncludesLayoutCodecReplay": 13,
+            "canvasReplayNestedInJob": 1,
+            "browserDecodeAwaitNotExclusiveCPU": 0,
+            "explicitLegacyLayoutCalls": 0
+          },
+          "knownSyncUnionMs": 47
+        },
+        {
+          "sampleIndex": 11,
+          "officialMs": 112,
+          "officialFail": true,
+          "at": {
+            "handlerEnd": 58,
+            "input": 2,
+            "observed": 60,
+            "raf1": 96,
+            "end": 112,
+            "key": 0
+          },
+          "stageUnionMs": {
+            "snapshot": 2,
+            "mutation": 26,
+            "pageAndGeometryQueries": 3,
+            "jobCreation": 0,
+            "jobPollingIncludesLayoutCodecReplay": 12,
+            "canvasReplayNestedInJob": 2,
+            "browserDecodeAwaitNotExclusiveCPU": 0,
+            "explicitLegacyLayoutCalls": 0
+          },
+          "knownSyncUnionMs": 45
+        },
+        {
+          "sampleIndex": 12,
+          "officialMs": 110,
+          "officialFail": true,
+          "at": {
+            "handlerEnd": 64,
+            "input": 7,
+            "observed": 66,
+            "raf1": 99,
+            "end": 110,
+            "key": 0
+          },
+          "stageUnionMs": {
+            "snapshot": 2,
+            "mutation": 26,
+            "pageAndGeometryQueries": 3,
+            "jobCreation": 0,
+            "jobPollingIncludesLayoutCodecReplay": 14,
+            "canvasReplayNestedInJob": 2,
+            "browserDecodeAwaitNotExclusiveCPU": 0,
+            "explicitLegacyLayoutCalls": 0
+          },
+          "knownSyncUnionMs": 45
+        },
+        {
+          "sampleIndex": 13,
+          "officialMs": 123,
+          "officialFail": true,
+          "at": {
+            "handlerEnd": 69,
+            "input": 9,
+            "observed": 70,
+            "raf1": 106,
+            "end": 123,
+            "key": 0
+          },
+          "stageUnionMs": {
+            "snapshot": 2,
+            "mutation": 26,
+            "pageAndGeometryQueries": 4,
+            "jobCreation": 0,
+            "jobPollingIncludesLayoutCodecReplay": 14,
+            "canvasReplayNestedInJob": 1,
+            "browserDecodeAwaitNotExclusiveCPU": 0,
+            "explicitLegacyLayoutCalls": 0
+          },
+          "knownSyncUnionMs": 46
+        },
+        {
+          "sampleIndex": 14,
+          "officialMs": 109,
+          "officialFail": true,
+          "at": {
+            "handlerEnd": 65,
+            "input": 6,
+            "observed": 66,
+            "raf1": 101,
+            "end": 109,
+            "key": 0
+          },
+          "stageUnionMs": {
+            "snapshot": 3,
+            "mutation": 25,
+            "pageAndGeometryQueries": 3,
+            "jobCreation": 0,
+            "jobPollingIncludesLayoutCodecReplay": 14,
+            "canvasReplayNestedInJob": 1,
+            "browserDecodeAwaitNotExclusiveCPU": 0,
+            "explicitLegacyLayoutCalls": 0
+          },
+          "knownSyncUnionMs": 45
+        },
+        {
+          "sampleIndex": 15,
+          "officialMs": 110,
+          "officialFail": true,
+          "at": {
+            "handlerEnd": 62,
+            "input": 6,
+            "observed": 64,
+            "raf1": 98,
+            "end": 110,
+            "key": 0
+          },
+          "stageUnionMs": {
+            "snapshot": 2,
+            "mutation": 25,
+            "pageAndGeometryQueries": 4,
+            "jobCreation": 0,
+            "jobPollingIncludesLayoutCodecReplay": 14,
+            "canvasReplayNestedInJob": 1,
+            "browserDecodeAwaitNotExclusiveCPU": 0,
+            "explicitLegacyLayoutCalls": 0
+          },
+          "knownSyncUnionMs": 45
+        },
+        {
+          "sampleIndex": 16,
+          "officialMs": 100,
+          "officialFail": true,
+          "at": {
+            "handlerEnd": 58,
+            "input": 2,
+            "observed": 59,
+            "raf1": 95,
+            "end": 100,
+            "key": 0
+          },
+          "stageUnionMs": {
+            "snapshot": 2,
+            "mutation": 25,
+            "pageAndGeometryQueries": 3,
+            "jobCreation": 1,
+            "jobPollingIncludesLayoutCodecReplay": 12,
+            "canvasReplayNestedInJob": 1,
+            "browserDecodeAwaitNotExclusiveCPU": 0,
+            "explicitLegacyLayoutCalls": 0
+          },
+          "knownSyncUnionMs": 43
+        },
+        {
+          "sampleIndex": 17,
+          "officialMs": 106,
+          "officialFail": true,
+          "at": {
+            "handlerEnd": 60,
+            "input": 2,
+            "observed": 61,
+            "raf1": 96,
+            "end": 106,
+            "key": 0
+          },
+          "stageUnionMs": {
+            "snapshot": 3,
+            "mutation": 26,
+            "pageAndGeometryQueries": 4,
+            "jobCreation": 0,
+            "jobPollingIncludesLayoutCodecReplay": 14,
+            "canvasReplayNestedInJob": 2,
+            "browserDecodeAwaitNotExclusiveCPU": 0,
+            "explicitLegacyLayoutCalls": 0
+          },
+          "knownSyncUnionMs": 47
+        },
+        {
+          "sampleIndex": 18,
+          "officialMs": 112,
+          "officialFail": true,
+          "at": {
+            "handlerEnd": 72,
+            "input": 11,
+            "observed": 74,
+            "raf1": 109,
+            "end": 112,
+            "key": 0
+          },
+          "stageUnionMs": {
+            "snapshot": 2,
+            "mutation": 27,
+            "pageAndGeometryQueries": 5,
+            "jobCreation": 0,
+            "jobPollingIncludesLayoutCodecReplay": 14,
+            "canvasReplayNestedInJob": 2,
+            "browserDecodeAwaitNotExclusiveCPU": 0,
+            "explicitLegacyLayoutCalls": 0
+          },
+          "knownSyncUnionMs": 48
+        },
+        {
+          "sampleIndex": 19,
+          "officialMs": 101,
+          "officialFail": true,
+          "at": {
+            "handlerEnd": 63,
+            "input": 3,
+            "observed": 65,
+            "raf1": 100,
+            "end": 101,
+            "key": 0
+          },
+          "stageUnionMs": {
+            "snapshot": 2,
+            "mutation": 27,
+            "pageAndGeometryQueries": 7,
+            "jobCreation": 0,
+            "jobPollingIncludesLayoutCodecReplay": 14,
+            "canvasReplayNestedInJob": 2,
+            "browserDecodeAwaitNotExclusiveCPU": 0,
+            "explicitLegacyLayoutCalls": 0
+          },
+          "knownSyncUnionMs": 50
+        },
+        {
+          "sampleIndex": 20,
+          "officialMs": 105,
+          "officialFail": true,
+          "at": {
+            "handlerEnd": 61,
+            "input": 3,
+            "observed": 62,
+            "raf1": 96,
+            "end": 105,
+            "key": 0
+          },
+          "stageUnionMs": {
+            "snapshot": 3,
+            "mutation": 25,
+            "pageAndGeometryQueries": 5,
+            "jobCreation": 0,
+            "jobPollingIncludesLayoutCodecReplay": 14,
+            "canvasReplayNestedInJob": 1,
+            "browserDecodeAwaitNotExclusiveCPU": 0,
+            "explicitLegacyLayoutCalls": 0
+          },
+          "knownSyncUnionMs": 47
+        },
+        {
+          "sampleIndex": 21,
+          "officialMs": 111,
+          "officialFail": true,
+          "at": {
+            "handlerEnd": 63,
+            "input": 5,
+            "observed": 65,
+            "raf1": 100,
+            "end": 111,
+            "key": 0
+          },
+          "stageUnionMs": {
+            "snapshot": 2,
+            "mutation": 26,
+            "pageAndGeometryQueries": 5,
+            "jobCreation": 0,
+            "jobPollingIncludesLayoutCodecReplay": 13,
+            "canvasReplayNestedInJob": 1,
+            "browserDecodeAwaitNotExclusiveCPU": 0,
+            "explicitLegacyLayoutCalls": 0
+          },
+          "knownSyncUnionMs": 46
+        },
+        {
+          "sampleIndex": 22,
+          "officialMs": 113,
+          "officialFail": true,
+          "at": {
+            "handlerEnd": 65,
+            "input": 6,
+            "observed": 67,
+            "raf1": 102,
+            "end": 113,
+            "key": 0
+          },
+          "stageUnionMs": {
+            "snapshot": 2,
+            "mutation": 26,
+            "pageAndGeometryQueries": 3,
+            "jobCreation": 0,
+            "jobPollingIncludesLayoutCodecReplay": 14,
+            "canvasReplayNestedInJob": 1,
+            "browserDecodeAwaitNotExclusiveCPU": 0,
+            "explicitLegacyLayoutCalls": 0
+          },
+          "knownSyncUnionMs": 45
+        },
+        {
+          "sampleIndex": 23,
+          "officialMs": 112,
+          "officialFail": true,
+          "at": {
+            "handlerEnd": 65,
+            "input": 8,
+            "observed": 67,
+            "raf1": 100,
+            "end": 112,
+            "key": 0
+          },
+          "stageUnionMs": {
+            "snapshot": 3,
+            "mutation": 26,
+            "pageAndGeometryQueries": 5,
+            "jobCreation": 0,
+            "jobPollingIncludesLayoutCodecReplay": 14,
+            "canvasReplayNestedInJob": 2,
+            "browserDecodeAwaitNotExclusiveCPU": 0,
+            "explicitLegacyLayoutCalls": 0
+          },
+          "knownSyncUnionMs": 48
+        },
+        {
+          "sampleIndex": 24,
+          "officialMs": 101,
+          "officialFail": true,
+          "at": {
+            "handlerEnd": 62,
+            "input": 3,
+            "observed": 64,
+            "raf1": 99,
+            "end": 101,
+            "key": 0
+          },
+          "stageUnionMs": {
+            "snapshot": 2,
+            "mutation": 26,
+            "pageAndGeometryQueries": 4,
+            "jobCreation": 0,
+            "jobPollingIncludesLayoutCodecReplay": 15,
+            "canvasReplayNestedInJob": 2,
+            "browserDecodeAwaitNotExclusiveCPU": 0,
+            "explicitLegacyLayoutCalls": 0
+          },
+          "knownSyncUnionMs": 47
+        },
+        {
+          "sampleIndex": 25,
+          "officialMs": 101,
+          "officialFail": true,
+          "at": {
+            "handlerEnd": 63,
+            "input": 5,
+            "observed": 65,
+            "raf1": 100,
+            "end": 101,
+            "key": 0
+          },
+          "stageUnionMs": {
+            "snapshot": 1,
+            "mutation": 26,
+            "pageAndGeometryQueries": 4,
+            "jobCreation": 0,
+            "jobPollingIncludesLayoutCodecReplay": 15,
+            "canvasReplayNestedInJob": 2,
+            "browserDecodeAwaitNotExclusiveCPU": 0,
+            "explicitLegacyLayoutCalls": 0
+          },
+          "knownSyncUnionMs": 46
+        },
+        {
+          "sampleIndex": 26,
+          "officialMs": 111,
+          "officialFail": true,
+          "at": {
+            "handlerEnd": 68,
+            "input": 11,
+            "observed": 70,
+            "raf1": 103,
+            "end": 111,
+            "key": 0
+          },
+          "stageUnionMs": {
+            "snapshot": 2,
+            "mutation": 25,
+            "pageAndGeometryQueries": 4,
+            "jobCreation": 0,
+            "jobPollingIncludesLayoutCodecReplay": 14,
+            "canvasReplayNestedInJob": 1,
+            "browserDecodeAwaitNotExclusiveCPU": 0,
+            "explicitLegacyLayoutCalls": 0
+          },
+          "knownSyncUnionMs": 45
+        },
+        {
+          "sampleIndex": 27,
+          "officialMs": 128,
+          "officialFail": true,
+          "at": {
+            "handlerEnd": 77,
+            "input": 10,
+            "observed": 79,
+            "raf1": 115,
+            "end": 128,
+            "key": 0
+          },
+          "stageUnionMs": {
+            "snapshot": 2,
+            "mutation": 26,
+            "pageAndGeometryQueries": 6,
+            "jobCreation": 0,
+            "jobPollingIncludesLayoutCodecReplay": 15,
+            "canvasReplayNestedInJob": 2,
+            "browserDecodeAwaitNotExclusiveCPU": 0,
+            "explicitLegacyLayoutCalls": 0
+          },
+          "knownSyncUnionMs": 49
+        },
+        {
+          "sampleIndex": 28,
+          "officialMs": 104,
+          "officialFail": true,
+          "at": {
+            "handlerEnd": 61,
+            "input": 6,
+            "observed": 63,
+            "raf1": 97,
+            "end": 104,
+            "key": 0
+          },
+          "stageUnionMs": {
+            "snapshot": 2,
+            "mutation": 26,
+            "pageAndGeometryQueries": 3,
+            "jobCreation": 0,
+            "jobPollingIncludesLayoutCodecReplay": 14,
+            "canvasReplayNestedInJob": 1,
+            "browserDecodeAwaitNotExclusiveCPU": 0,
+            "explicitLegacyLayoutCalls": 0
+          },
+          "knownSyncUnionMs": 45
+        },
+        {
+          "sampleIndex": 29,
+          "officialMs": 122,
+          "officialFail": true,
+          "at": {
+            "handlerEnd": 73,
+            "input": 16,
+            "observed": 75,
+            "raf1": 109,
+            "end": 122,
+            "key": 0
+          },
+          "stageUnionMs": {
+            "snapshot": 2,
+            "mutation": 25,
+            "pageAndGeometryQueries": 4,
+            "jobCreation": 0,
+            "jobPollingIncludesLayoutCodecReplay": 13,
+            "canvasReplayNestedInJob": 2,
+            "browserDecodeAwaitNotExclusiveCPU": 0,
+            "explicitLegacyLayoutCalls": 0
+          },
+          "knownSyncUnionMs": 44
+        }
+      ],
+      "adapterCounters": {
+        "polls": 529,
+        "staleDropped": 0,
+        "reused": 0,
+        "regionalPatchJobs": 0,
+        "completed": 529,
+        "unchangedFrames": 0,
+        "notifications": 0,
+        "patchJobs": 0,
+        "wholePagePatchJobs": 0,
+        "limits": 0,
+        "replacements": 0,
+        "fullJobs": 529,
+        "errors": 0,
+        "canceled": 0
+      }
+    }
+  ],
+  "schema": {
+    "clock": "WebView performance.now and event.timeStamp; signed offsets preserved",
+    "official": "native keydown -> revision-observing RAF -> two additional RAFs",
+    "percentile": "nearest rank, ceil(p*n)-1, unchanged",
+    "union": "per sample, clip synchronous call spans to official [key,end]; merge overlaps, never sum nested APIs",
+    "limits": [
+      "no physical display refresh floor inferred",
+      "browser decode await is elapsed time, not CPU",
+      "WASM internal codec/layout and GPU/driver not independently timed",
+      "no-work RAF probe may include queued rendering",
+      "timestamp rounding may affect sub-ms spans"
+    ]
+  },
+  "officialVerdict": "FAIL",
+  "producerSha256": "b172fa0fad0fc0c083c80096161a2dd2cd588be42a399a9f7ab3b86e4ad7f4af"
+}
