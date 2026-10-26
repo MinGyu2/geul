@@ -1,0 +1,135 @@
+T010 격리 후보 Rust 1.99 strict Clippy 호환성 보고서
+
+판정 범위와 최종 기록
+이 문서는 증거 커밋 직전에 동결한 기술 기록이다. 관찰된 구현·strict·회귀 검증은 모두 PASS다.
+최종 작업 상태/종료 HEAD/커밋 이후 전체 이력 검사 결과는 최종 응답 및
+<scratch>/postcommit-final/verification.json에 기록한다. 커밋 자신을 포함한 이력 결과를 그 커밋에
+미리 넣었다고 주장하지 않는다. 최종 이력 검사 실패가 있으면 전체 완료 판정도 하지 않는다.
+이 별도 Clippy 작업과 공식 T010/native 승인 경계를 구분한다.
+
+1. 기준·도구·디스크 (VERIFIED)
+시작 master HEAD8f776474862aedcba568a165a19f126d1031c09f, 작업 트리 clean.
+구현 커밋d38da2b001b445185a503eaebd59596c978143d9. 최종 증거 커밋 SHA는 최종 응답에 기록한다.
+RHWP1a76570e833917d15817415a53c09ad61ab3203f, WordCraftfc41918814f62645b6746ed68e71e8c2c2e85d6f 불변.
+rustc1.99.0(b940084d7 2026-09-28), cargo1.99.0(5f94df478 2026-08-27).
+기존 Nix rust-default-1.99.0 sysroot의 host/wasm32 target을 실제 확인했다. upstream1.93.1 지정 파일은 그대로다.
+설치·업데이트·다운로드·cargo clean·공유 캐시 삭제 없음. 모든 Cargo build/test/clippy는 locked/offline,
+CARGO_NET_OFFLINE=true/CARGO_INCREMENTAL=0/JOBS2, 기존 target/rhwp-wasm 하나를 사용했다.
+strict 환경의 RUSTFLAGS/CARGO_ENCODED_RUSTFLAGS/RUSTC_WRAPPER는 없다. 시험의 BFD linker 옵션은 경고 억제가 아니다.
+기존 wasm-bindgen0.2.127을 직접 썼고 wasm-pack 설치 단계/wasm-opt/npm/pip/브라우저 설치는 호출하지 않았다.
+시작 가용 공간은 저장소 약115GiB, /tmp약42GiB. 기존 target은 약2.4GiB, 끝 측정은 results.json/disk 참조.
+이전 source와 패키지를 보존하고 src/crates만 복사했다. 불변 입력 hardlink로 새 export1.3GiB 중복을 피했다.
+새 scratch의 단독 du값은 공유 inode를 포함하므로, 기존 scratch를 먼저 측정한 추가 사용량도 구분해 기록했다.
+기존 /tmp/geul-prep-followup 약2.9GiB 및 원본 증거는 미삭제. /tmp/geul-prep-hardening은 여전히 부재다.
+
+2. 실제 실패와 중복 제거 (VERIFIED)
+새 격리 복사본에서 수정 전 네 명령 모두 exit101:
+workspace host2/wasm322, RHWP no-deps host39/wasm3238.
+중복 제거41위치: chunks_exact_to_as_chunks31, manual_slice_fill5, unnecessary_sort_by2,
+manual_checked_ops1, explicit_counter_loop1, drain_collect1.
+첫 교정 뒤 RHWP 단독은 양쪽 PASS였으나 workspace에서 rhwp-ooxml-chart의 collapsible_match1건이 드러났다.
+최종 고유42위치/32파일이다. host-only fingerprint1건을 양 타깃으로 중복 계산하지 않았다.
+모든 원래 진단 줄은 고정 upstream blob에 존재함을 대조했다. 일부 파일은 기존 후보에도 변경되어 있었으므로
+그 여부를 별도 기록했다. file/line/function/crate/target/위험/교정 이유는 correction-inventory.json에 있다.
+각 lint의 최초 도입 버전은 UNVERIFIED다. Rust1.99에서 관찰했다는 사실을 최초 도입 시점과 혼동하지 않는다.
+수정 전/중간 실패와 최종 진단은 clippy-runs.json 및 raw SHA로 보존한다.
+
+3. 최소 교정 (VERIFIED 소스, 회귀로 뒷받침)
+31개 고정 폭 chunks_exact를 as_chunks().0.iter()/as_chunks_mut().0.iter_mut()로 대체했다.
+폭2/3/4/8/16/36과 순서·가변 참조·완전 블록 수는 같다. 기존처럼 tail을 처리하지 않는다.
+WMF의 짝수 길이 검증은 유지하고 보장된2바이트 배열을 복사해 u16로 바꾼다.
+fill5건은 bool/정수/f64 Copy 대입만 바꾼다. revision 증가 등 부수 효과가 있는 루프는 그대로다.
+stable sort_by_key(Reverse)2건은 동일 내림차순/동률 삽입순서다.
+checked_div는 usize count0에서만 None이다. 기존 0회 source 측정 생략과 좌표 검증/checked 곱셈/거부를 보존한다.
+enumerate는 Unicode char 기준 index를 유지한다. empty/usizeMAX/잘못된 위치/잘린 문자열 회귀를 추가했다.
+mem::take는 임시 parent의 children을 같은 순서로 이전한다. 부모는 이후 사용되지 않고 drop된다.
+수신 insert_before_para_text는 값과 순서만 사용하며 capacity에 의존하지 않는다(INFERRED: 소스 의미 분석).
+차트 guard는 cur 존재→spPr depth→marker depth의 원래 평가 순서다. 실패 시 기존 no-op와 같은 wildcard다.
+최상위/marker 내부/중첩 spPr3조건을 실제 스캐너 시험으로 확인했다.
+새 allow/경고 완화/의존 교체/feature 제외/멤버 제외/lock 수정은 없다.
+
+4. 변경 파일
+암호 crate/lib.rs와 chart crate/data.rs, RHWP src의 diagnostics5파일, document-core commands3파일,
+queries4파일, model/style, ole_chart2파일, parser8파일, renderer5파일, WMF2파일이다.
+전체 정확한32파일 목록과42함수 위치는 correction-inventory.json 및 compatibility patch에 있다.
+기존 preparation/render_job/web_canvas/surface_cache/canvas_rgba/wasm_api6파일은 이전 후보와 바이트 동일하다.
+즉 Outcome::record/finish/marker/memo/record_prepared/prepare_payload 구현을 다시 쓰지 않았다.
+첫 terminal 사유·양자256/4·job32MiB/module64MiB·key256·기한·lease·원자 게시·기본 gate off를 유지했다.
+
+5. 암호 호환성 (VERIFIED 실행, 상수 시간의 형식 증명은 UNVERIFIED)
+AES의 기존 패딩/bit feedback/키 유도/truncate는 유지했다. DES의 block 변환만 길이 보장 배열로 받는다.
+바이트 분할과 순회 순서가 같아 기존 알고리즘의 입력과 반복을 유지한다. 새 데이터 의존 분기는 없다(INFERRED).
+기존 HWP5 외부 벡터와 partial roundtrip2시험은 수정 전/후 통과했다.
+수정 전 production 코드에서 길이0..65×비밀번호3종=198조건의 암호화/원시복호화 결과 digest를 확보했다:
+6f83a048fd7dd6bbdc2a6d5cd39bdb9d831072967d9cacb5b7dc03520ddcc8d3.
+수정 후 같은 digest, 길이 보존, roundtrip을 검증했다. 이는 새 독립 암호 oracle이라고 주장하지 않는다.
+DES known-answer 및 길이0..33의 완전8바이트/부분tail 보존과 역변환도 통과했다.
+실제 HWP3 fixture는 올바른/틀린 비밀번호, malformed 길이 거부, 재암호화 동등성을 검사했다.
+실제 HWPX fixture는 비밀번호 거부, 항목 목록 및 재암호화 후 모든 비-manifest payload 동등성을 검사했다.
+manifest는 기존 암호 저장 구현이 재작성한다. 이를 원본 bytes와 같아야 한다고 가정한 신규 시험은
+수정 전에도 실패하여 전제를 바로잡았다. production 알고리즘을 바꿔 시험을 통과시키지 않았다.
+시험 도입 중 타입 오류와 이 전제 실패 원본은 scratch에 보존하고 큰 바이너리 dump는 Git에 복제하지 않았다.
+최종 암호6시험 PASS. 타이밍/부채널의 새 형식 검증은 하지 않았다.
+
+6. Strict Clippy 최종 결과 (VERIFIED)
+host --workspace --lib: exit0, warning0/error0.
+wasm32 --workspace --lib --release --target wasm32-unknown-unknown: exit0, warning0/error0.
+host -p rhwp --lib --no-deps: exit0, warning0/error0.
+wasm32 -p rhwp --lib --no-deps --release --target wasm32-unknown-unknown: exit0, warning0/error0.
+모두 --locked --offline --message-format=json -- -D warnings다. 원래 실패한 실제 전체 명령을 통과했다.
+최근 수정 파일만 진단0이라는 범위 판정으로 바꾸지 않았다.
+
+7. 실제 회귀 (VERIFIED)
+rustfmt32파일 PASS. 전체 cargo test --locked --offline --workspace --lib를1회 실행:
+4169 PASS/13 ignored/0 FAIL. RHWP3916, 암호6, 차트166, 나머지 workspace81이다.
+파서/문서 코어/렌더 등32파일 변경 때문에 전체 라이브러리 확장을 정당화했다. 장시간 기존 survey도 완료됐다.
+RHWP 안에 준비11/Canvas13/새 예산2/새 Unicode index1이 포함된다. 중복으로 더하지 않는다.
+별도 기존 계약: cache current21, decoded lease21, hardening24, ownership24, scheduler16 PASS.
+실제 marker 본문 추출5 PASS(전체 DOM 시험과 구분). Python identity2/security86 PASS. allowlist 음성24 PASS.
+기존 ownership/e2e Python 대규모 suite와 전체 CLI/integration 행렬은 관련 source 변경이 없어 별도 반복하지 않았다.
+양 브라우저 각각 hardening10+3, runtime49/49, ownership52/52(측정15), scheduler73/73 PASS.
+양 RGBA42/42 exact(pixels0/maxDelta0), 화학7쪽14/15/16/19/20/21/23×cold-warm×3회다.
+같은 고정 source SHA6717eca4…, scale0.5/DPR1/extent, 비어 있지 않은 기준 조건을 유지했다.
+브라우저 관찰의 full/pending/cleanup 의미와 원래 하네스/문턱은 바꾸지 않았다.
+기준 eaa88f65… 실제 바이트를 확인해 재사용했고 재빌드하지 않았다. 원래 ae34 oracle 비교는 UNVERIFIED다.
+과거 cache18 PASS/2 FAIL, native attempt3 FAIL 등 이전 결과를 재분류하지 않았다.
+
+8. 새 후보와 재현 (VERIFIED)
+WASM57280d578800d7b4b6cf22cd4004ca27f450fa73472c17592e01a5fd3203c63d.
+JS37cea466d25ecbd12c5586cdeddada1c97aa4fd45860e857160e12e83e668e5d.
+d.ts9d46972b79edcf09c9d87e732cd5c91ea4bfded79457639162b0c7d6e7530cb1.
+ENGINE8c830e740cd007667b531fb212884c5163ebc478fa06462a7ea05f5ab352172b.
+workspace 입력 source digest a108c3e6be678a1b5114643cf7c7114b1650ca814e7896aac0871c7c54511631.
+과거와 같은 범위의 RHWP src-only digest d4e5babed58e355493916399673561ef11b99f543ebfde38519464cee6ef3598.
+새 workspace digest는 crypto/chart crate 및 선언된 tools/bindings/Rust와 Cargo 메타데이터를 포함한다.
+초기 신원 도구의 Path 대 문자열 정렬 불일치를 잡아 기존 src 계약으로 교정했고 Python2회귀를 추가했다.
+원본 src4be2… 바이트 변경이 아니었다. 혼동한 최초 결과도 scratch에 보존했다.
+완전 patch b249d6cd59c1d9cb2fe16a17d2d86a2a8fc1d843d60814f3d6fc52e80ed553da.
+호환 patch a0440e0a1f08daae9780c7e27d02e8ddedf8134f8c94c3d493d156539d0a36fb.
+고정 RHWP/직전 후보에 독립 적용하여 동일 workspace digest를 확인했다. metadata/lock은 바이트 동일하다.
+후보 build6m19s, source 전후 신원 동일. 커밋된 빌드 도구의 캐시 재현은 Cargo0.23s이며4파일 모두 byte-identical.
+새 LLVM 재빌드 없이 확인했고 새 중복 패키지만 제거했다. 기존 후보/기준 패키지는 보존했다.
+후보/patch hash는 실제 bytes에서 측정했고 최종 commit 후에도 verify_final.py로 재대조한다.
+
+9. 보안과 최종 커밋 경계
+민감정보 all/staged, configured Gitleaks tree/staged, security86 및 allowlist24를 실행한다.
+최종 커밋 뒤 verify_final.py로 실제 종료 HEAD의 민감정보 --history와 Gitleaks 전체 history를 다시 검사한다.
+검사 시점/exit/로그SHA는 results.json과 외부 postcommit-final/verification.json을 구분해 보존한다.
+모든 변경은 새 compatibility harness/새 evidence에만 있어야 하며 public/production/과거증거/정책/gitlink 변경은0이다.
+로컬 정상 훅의 기존 Gitleaks8.30.1 환경을 확인했고 설치·허용목록 확대 없이 사용했다.
+첫 evidence staged/tree 검사는 fixture명(password 포함)을 키로 한 SHA256 두 개를 generic-api-key로 탐지해 FAIL이었다.
+고정 blob과 일치하는 공개 fixture hash임을 확인했다. sample/sha256 항목 목록으로 같은 정보를 보존하고
+규칙/예외 변경 없이 재검사하여 staged/tree 모두 탐지0 PASS다. 최초 탐지·원본 identity SHA도 보존했다.
+push/deploy/production 활성화/T011/공식 D4 실행은 하지 않았다.
+
+10. 남은 별도 경계와 준비 상태
+새 후보 native 승인 PENDING. 과거 attempt3 FAIL/원인 UNVERIFIED. 이후 진단 성공으로 원인이 해소됐다고 주장하지 않는다.
+원래 ae34 직접 비교, 전체 시스템 공급망/폰트/부채널/RSS/장기 native 안정성은 이번에 새로 검증하지 않았다.
+이번 내부 identity는 외부 서명·공급망 attestation·TRUST_ANCHOR가 아니다.
+별도 native 수용 작업에는 승인된 후보별 신뢰 계약과 실제 native 필수 증거가 필요하다.
+Strict4개, 암호/파싱/렌더 회귀, 완전·증분 패치 및 후보 bytes를 그 검토의 입력으로 준비했다.
+
+11. 공식 상태 불변
+T010 INCOMPLETE. D1 PASS(과거 공식), D2 INCONCLUSIVE, D3 PASS(과거 공식), D4 FAIL,
+D5 PASS(과거 공식), RSS INCONCLUSIVE, production RHWP Undo/Redo NO-GO, T011 NOT STARTED.
+Gitleaks 정책 편차2636a650 PENDING_APPROVAL. 호환성 성공으로 어떤 공식 판정이나 승인도 바꾸지 않는다.

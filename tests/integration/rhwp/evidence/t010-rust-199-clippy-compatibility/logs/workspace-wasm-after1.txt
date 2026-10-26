@@ -1,0 +1,5 @@
+   Compiling rhwp v0.8.7 (<scratch>/source)
+    Checking rhwp-password-crypto v0.1.0 (<scratch>/source/crates/rhwp-password-crypto)
+    Checking rhwp-ooxml-chart v0.1.0 (<scratch>/source/crates/rhwp-ooxml-chart)
+error: could not compile `rhwp-ooxml-chart` (lib) due to 1 previous error
+warning: build failed, waiting for other jobs to finish...

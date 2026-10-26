@@ -1,0 +1,722 @@
+{
+ "schema": 1,
+ "uniqueDiagnostics": 42,
+ "changedFiles": 32,
+ "originalUnique": 41,
+ "newlyExposed": 1,
+ "diagnostics": [
+  {
+   "file": "crates/rhwp-password-crypto/src/lib.rs",
+   "lineBefore": 177,
+   "function": "hwp5_transform",
+   "lint": "clippy::chunks_exact_to_as_chunks",
+   "crate": "rhwp-password-crypto",
+   "targets": [
+    "x86_64-unknown-linux-gnu",
+    "wasm32-unknown-unknown"
+   ],
+   "exposedPhase": "before",
+   "pinnedDiagnosticLinesVerified": true,
+   "fileAlreadyModifiedByCandidate": false,
+   "risk": "암호/블록 경계",
+   "rationale": "같은 폭의 as_chunks(.0) 배열 slice를 iter/iter_mut로 순회; 원래 버린 tail은 동일하게 미처리. crypto 알고리즘/검증 불변.",
+   "lintIntroductionVersion": "UNVERIFIED; 1.99 실행에서 관찰한 사실과 최초 도입 시점을 구분"
+  },
+  {
+   "file": "crates/rhwp-password-crypto/src/lib.rs",
+   "lineBefore": 284,
+   "function": "hwp3_des_ecb",
+   "lint": "clippy::chunks_exact_to_as_chunks",
+   "crate": "rhwp-password-crypto",
+   "targets": [
+    "x86_64-unknown-linux-gnu",
+    "wasm32-unknown-unknown"
+   ],
+   "exposedPhase": "before",
+   "pinnedDiagnosticLinesVerified": true,
+   "fileAlreadyModifiedByCandidate": false,
+   "risk": "암호/블록 경계",
+   "rationale": "같은 폭의 as_chunks(.0) 배열 slice를 iter/iter_mut로 순회; 원래 버린 tail은 동일하게 미처리. crypto 알고리즘/검증 불변.",
+   "lintIntroductionVersion": "UNVERIFIED; 1.99 실행에서 관찰한 사실과 최초 도입 시점을 구분"
+  },
+  {
+   "file": "src/diagnostics/hwp5_anchor_trace.rs",
+   "lineBefore": 283,
+   "function": "ctrl_header_key",
+   "lint": "clippy::chunks_exact_to_as_chunks",
+   "crate": "rhwp",
+   "targets": [
+    "x86_64-unknown-linux-gnu",
+    "wasm32-unknown-unknown"
+   ],
+   "exposedPhase": "before",
+   "pinnedDiagnosticLinesVerified": true,
+   "fileAlreadyModifiedByCandidate": false,
+   "risk": "기계적",
+   "rationale": "같은 폭의 as_chunks(.0) 배열 slice를 iter/iter_mut로 순회; 원래 버린 tail은 동일하게 미처리. crypto 알고리즘/검증 불변.",
+   "lintIntroductionVersion": "UNVERIFIED; 1.99 실행에서 관찰한 사실과 최초 도입 시점을 구분"
+  },
+  {
+   "file": "src/diagnostics/hwp5_anchor_trace.rs",
+   "lineBefore": 389,
+   "function": "decode_para_text",
+   "lint": "clippy::chunks_exact_to_as_chunks",
+   "crate": "rhwp",
+   "targets": [
+    "x86_64-unknown-linux-gnu",
+    "wasm32-unknown-unknown"
+   ],
+   "exposedPhase": "before",
+   "pinnedDiagnosticLinesVerified": true,
+   "fileAlreadyModifiedByCandidate": false,
+   "risk": "기계적",
+   "rationale": "같은 폭의 as_chunks(.0) 배열 slice를 iter/iter_mut로 순회; 원래 버린 tail은 동일하게 미처리. crypto 알고리즘/검증 불변.",
+   "lintIntroductionVersion": "UNVERIFIED; 1.99 실행에서 관찰한 사실과 최초 도입 시점을 구분"
+  },
+  {
+   "file": "src/diagnostics/hwp5_char_shape_audit.rs",
+   "lineBefore": 505,
+   "function": "decode_char_shape_ids",
+   "lint": "clippy::chunks_exact_to_as_chunks",
+   "crate": "rhwp",
+   "targets": [
+    "x86_64-unknown-linux-gnu",
+    "wasm32-unknown-unknown"
+   ],
+   "exposedPhase": "before",
+   "pinnedDiagnosticLinesVerified": true,
+   "fileAlreadyModifiedByCandidate": false,
+   "risk": "기계적",
+   "rationale": "같은 폭의 as_chunks(.0) 배열 slice를 iter/iter_mut로 순회; 원래 버린 tail은 동일하게 미처리. crypto 알고리즘/검증 불변.",
+   "lintIntroductionVersion": "UNVERIFIED; 1.99 실행에서 관찰한 사실과 최초 도입 시점을 구분"
+  },
+  {
+   "file": "src/diagnostics/hwp5_char_shape_audit.rs",
+   "lineBefore": 511,
+   "function": "decode_line_seg_tags",
+   "lint": "clippy::chunks_exact_to_as_chunks",
+   "crate": "rhwp",
+   "targets": [
+    "x86_64-unknown-linux-gnu",
+    "wasm32-unknown-unknown"
+   ],
+   "exposedPhase": "before",
+   "pinnedDiagnosticLinesVerified": true,
+   "fileAlreadyModifiedByCandidate": false,
+   "risk": "기계적",
+   "rationale": "같은 폭의 as_chunks(.0) 배열 slice를 iter/iter_mut로 순회; 원래 버린 tail은 동일하게 미처리. crypto 알고리즘/검증 불변.",
+   "lintIntroductionVersion": "UNVERIFIED; 1.99 실행에서 관찰한 사실과 최초 도입 시점을 구분"
+  },
+  {
+   "file": "src/diagnostics/hwp5_char_shape_audit.rs",
+   "lineBefore": 518,
+   "function": "decode_para_text",
+   "lint": "clippy::chunks_exact_to_as_chunks",
+   "crate": "rhwp",
+   "targets": [
+    "x86_64-unknown-linux-gnu",
+    "wasm32-unknown-unknown"
+   ],
+   "exposedPhase": "before",
+   "pinnedDiagnosticLinesVerified": true,
+   "fileAlreadyModifiedByCandidate": false,
+   "risk": "기계적",
+   "rationale": "같은 폭의 as_chunks(.0) 배열 slice를 iter/iter_mut로 순회; 원래 버린 tail은 동일하게 미처리. crypto 알고리즘/검증 불변.",
+   "lintIntroductionVersion": "UNVERIFIED; 1.99 실행에서 관찰한 사실과 최초 도입 시점을 구분"
+  },
+  {
+   "file": "src/diagnostics/hwp5_contract_analyze.rs",
+   "lineBefore": 960,
+   "function": "u32_values",
+   "lint": "clippy::chunks_exact_to_as_chunks",
+   "crate": "rhwp",
+   "targets": [
+    "x86_64-unknown-linux-gnu",
+    "wasm32-unknown-unknown"
+   ],
+   "exposedPhase": "before",
+   "pinnedDiagnosticLinesVerified": true,
+   "fileAlreadyModifiedByCandidate": false,
+   "risk": "기계적",
+   "rationale": "같은 폭의 as_chunks(.0) 배열 slice를 iter/iter_mut로 순회; 원래 버린 tail은 동일하게 미처리. crypto 알고리즘/검증 불변.",
+   "lintIntroductionVersion": "UNVERIFIED; 1.99 실행에서 관찰한 사실과 최초 도입 시점을 구분"
+  },
+  {
+   "file": "src/diagnostics/hwp5_ctrl_data_trace.rs",
+   "lineBefore": 373,
+   "function": "decode_utf16le",
+   "lint": "clippy::chunks_exact_to_as_chunks",
+   "crate": "rhwp",
+   "targets": [
+    "x86_64-unknown-linux-gnu",
+    "wasm32-unknown-unknown"
+   ],
+   "exposedPhase": "before",
+   "pinnedDiagnosticLinesVerified": true,
+   "fileAlreadyModifiedByCandidate": false,
+   "risk": "기계적",
+   "rationale": "같은 폭의 as_chunks(.0) 배열 slice를 iter/iter_mut로 순회; 원래 버린 tail은 동일하게 미처리. crypto 알고리즘/검증 불변.",
+   "lintIntroductionVersion": "UNVERIFIED; 1.99 실행에서 관찰한 사실과 최초 도입 시점을 구분"
+  },
+  {
+   "file": "src/diagnostics/hwp5_first_para_control_probe.rs",
+   "lineBefore": 1254,
+   "function": "format_char_shape_entries",
+   "lint": "clippy::chunks_exact_to_as_chunks",
+   "crate": "rhwp",
+   "targets": [
+    "x86_64-unknown-linux-gnu",
+    "wasm32-unknown-unknown"
+   ],
+   "exposedPhase": "before",
+   "pinnedDiagnosticLinesVerified": true,
+   "fileAlreadyModifiedByCandidate": false,
+   "risk": "기계적",
+   "rationale": "같은 폭의 as_chunks(.0) 배열 slice를 iter/iter_mut로 순회; 원래 버린 tail은 동일하게 미처리. crypto 알고리즘/검증 불변.",
+   "lintIntroductionVersion": "UNVERIFIED; 1.99 실행에서 관찰한 사실과 최초 도입 시점을 구분"
+  },
+  {
+   "file": "src/document_core/commands/paragraph_block/template.rs",
+   "lineBefore": 419,
+   "function": "prepare_source",
+   "lint": "clippy::unnecessary_sort_by",
+   "crate": "rhwp",
+   "targets": [
+    "x86_64-unknown-linux-gnu",
+    "wasm32-unknown-unknown"
+   ],
+   "exposedPhase": "before",
+   "pinnedDiagnosticLinesVerified": true,
+   "fileAlreadyModifiedByCandidate": false,
+   "risk": "의미/소유/경계 검토",
+   "rationale": "stable sort_by_key(Reverse)로 동일 내림차순과 동률 삽입순서 유지.",
+   "lintIntroductionVersion": "UNVERIFIED; 1.99 실행에서 관찰한 사실과 최초 도입 시점을 구분"
+  },
+  {
+   "file": "src/document_core/commands/paragraph_block/validation/support.rs",
+   "lineBefore": 177,
+   "function": "para",
+   "lint": "clippy::chunks_exact_to_as_chunks",
+   "crate": "rhwp",
+   "targets": [
+    "x86_64-unknown-linux-gnu",
+    "wasm32-unknown-unknown"
+   ],
+   "exposedPhase": "before",
+   "pinnedDiagnosticLinesVerified": true,
+   "fileAlreadyModifiedByCandidate": false,
+   "risk": "기계적",
+   "rationale": "같은 폭의 as_chunks(.0) 배열 slice를 iter/iter_mut로 순회; 원래 버린 tail은 동일하게 미처리. crypto 알고리즘/검증 불변.",
+   "lintIntroductionVersion": "UNVERIFIED; 1.99 실행에서 관찰한 사실과 최초 도입 시점을 구분"
+  },
+  {
+   "file": "src/document_core/commands/paragraph_block.rs",
+   "lineBefore": 181,
+   "function": "document_block_budget",
+   "lint": "clippy::manual_checked_ops",
+   "crate": "rhwp",
+   "targets": [
+    "x86_64-unknown-linux-gnu",
+    "wasm32-unknown-unknown"
+   ],
+   "exposedPhase": "before",
+   "pinnedDiagnosticLinesVerified": true,
+   "fileAlreadyModifiedByCandidate": false,
+   "risk": "의미/소유/경계 검토",
+   "rationale": "usize checked_div의 None은 count0에만 해당. 0회 source 측정 생략과 기존 checked_mul/refusal 유지.",
+   "lintIntroductionVersion": "UNVERIFIED; 1.99 실행에서 관찰한 사실과 최초 도입 시점을 구분"
+  },
+  {
+   "file": "src/document_core/queries/explore.rs",
+   "lineBefore": 290,
+   "function": "build_menu",
+   "lint": "clippy::unnecessary_sort_by",
+   "crate": "rhwp",
+   "targets": [
+    "x86_64-unknown-linux-gnu",
+    "wasm32-unknown-unknown"
+   ],
+   "exposedPhase": "before",
+   "pinnedDiagnosticLinesVerified": true,
+   "fileAlreadyModifiedByCandidate": false,
+   "risk": "의미/소유/경계 검토",
+   "rationale": "stable sort_by_key(Reverse)로 동일 내림차순과 동률 삽입순서 유지.",
+   "lintIntroductionVersion": "UNVERIFIED; 1.99 실행에서 관찰한 사실과 최초 도입 시점을 구분"
+  },
+  {
+   "file": "src/document_core/queries/form_query.rs",
+   "lineBefore": 334,
+   "function": "decode_hwp_script",
+   "lint": "clippy::chunks_exact_to_as_chunks",
+   "crate": "rhwp",
+   "targets": [
+    "x86_64-unknown-linux-gnu",
+    "wasm32-unknown-unknown"
+   ],
+   "exposedPhase": "before",
+   "pinnedDiagnosticLinesVerified": true,
+   "fileAlreadyModifiedByCandidate": false,
+   "risk": "기계적",
+   "rationale": "같은 폭의 as_chunks(.0) 배열 slice를 iter/iter_mut로 순회; 원래 버린 tail은 동일하게 미처리. crypto 알고리즘/검증 불변.",
+   "lintIntroductionVersion": "UNVERIFIED; 1.99 실행에서 관찰한 사실과 최초 도입 시점을 구분"
+  },
+  {
+   "file": "src/document_core/queries/rendering.rs",
+   "lineBefore": 4539,
+   "function": "mark_all_sections_dirty",
+   "lint": "clippy::manual_slice_fill",
+   "crate": "rhwp",
+   "targets": [
+    "x86_64-unknown-linux-gnu",
+    "wasm32-unknown-unknown"
+   ],
+   "exposedPhase": "before",
+   "pinnedDiagnosticLinesVerified": true,
+   "fileAlreadyModifiedByCandidate": true,
+   "risk": "기계적",
+   "rationale": "Copy 타입 bool/정수/f64의 같은 값 대입을 fill로 대체; 원소 순서·값 불변.",
+   "lintIntroductionVersion": "UNVERIFIED; 1.99 실행에서 관찰한 사실과 최초 도입 시점을 구분"
+  },
+  {
+   "file": "src/document_core/queries/rendering.rs",
+   "lineBefore": 4874,
+   "function": "step_deferred_pagination",
+   "lint": "clippy::manual_slice_fill",
+   "crate": "rhwp",
+   "targets": [
+    "x86_64-unknown-linux-gnu",
+    "wasm32-unknown-unknown"
+   ],
+   "exposedPhase": "before",
+   "pinnedDiagnosticLinesVerified": true,
+   "fileAlreadyModifiedByCandidate": true,
+   "risk": "기계적",
+   "rationale": "Copy 타입 bool/정수/f64의 같은 값 대입을 fill로 대체; 원소 순서·값 불변.",
+   "lintIntroductionVersion": "UNVERIFIED; 1.99 실행에서 관찰한 사실과 최초 도입 시점을 구분"
+  },
+  {
+   "file": "src/document_core/queries/rendering.rs",
+   "lineBefore": 5718,
+   "function": "paginate_pass",
+   "lint": "clippy::manual_slice_fill",
+   "crate": "rhwp",
+   "targets": [
+    "x86_64-unknown-linux-gnu",
+    "wasm32-unknown-unknown"
+   ],
+   "exposedPhase": "before",
+   "pinnedDiagnosticLinesVerified": true,
+   "fileAlreadyModifiedByCandidate": true,
+   "risk": "기계적",
+   "rationale": "Copy 타입 bool/정수/f64의 같은 값 대입을 fill로 대체; 원소 순서·값 불변.",
+   "lintIntroductionVersion": "UNVERIFIED; 1.99 실행에서 관찰한 사실과 최초 도입 시점을 구분"
+  },
+  {
+   "file": "src/document_core/queries/extract_data.rs",
+   "lineBefore": 284,
+   "function": "starts_with",
+   "lint": "clippy::explicit_counter_loop",
+   "crate": "rhwp",
+   "targets": [
+    "x86_64-unknown-linux-gnu",
+    "wasm32-unknown-unknown"
+   ],
+   "exposedPhase": "before",
+   "pinnedDiagnosticLinesVerified": true,
+   "fileAlreadyModifiedByCandidate": false,
+   "risk": "의미/소유/경계 검토",
+   "rationale": "enumerate offset+기준 index; Unicode/empty/usizeMAX/범위 초과 회귀 추가.",
+   "lintIntroductionVersion": "UNVERIFIED; 1.99 실행에서 관찰한 사실과 최초 도입 시점을 구분"
+  },
+  {
+   "file": "src/model/style.rs",
+   "lineBefore": 938,
+   "function": "apply_to",
+   "lint": "clippy::manual_slice_fill",
+   "crate": "rhwp",
+   "targets": [
+    "x86_64-unknown-linux-gnu",
+    "wasm32-unknown-unknown"
+   ],
+   "exposedPhase": "before",
+   "pinnedDiagnosticLinesVerified": true,
+   "fileAlreadyModifiedByCandidate": false,
+   "risk": "기계적",
+   "rationale": "Copy 타입 bool/정수/f64의 같은 값 대입을 fill로 대체; 원소 순서·값 불변.",
+   "lintIntroductionVersion": "UNVERIFIED; 1.99 실행에서 관찰한 사실과 최초 도입 시점을 구분"
+  },
+  {
+   "file": "src/ole_chart/grid.rs",
+   "lineBefore": 508,
+   "function": "decode_cell_text",
+   "lint": "clippy::chunks_exact_to_as_chunks",
+   "crate": "rhwp",
+   "targets": [
+    "x86_64-unknown-linux-gnu",
+    "wasm32-unknown-unknown"
+   ],
+   "exposedPhase": "before",
+   "pinnedDiagnosticLinesVerified": true,
+   "fileAlreadyModifiedByCandidate": false,
+   "risk": "기계적",
+   "rationale": "같은 폭의 as_chunks(.0) 배열 slice를 iter/iter_mut로 순회; 원래 버린 tail은 동일하게 미처리. crypto 알고리즘/검증 불변.",
+   "lintIntroductionVersion": "UNVERIFIED; 1.99 실행에서 관찰한 사실과 최초 도입 시점을 구분"
+  },
+  {
+   "file": "src/ole_chart/parser.rs",
+   "lineBefore": 228,
+   "function": "probe_ole_chart_contents",
+   "lint": "clippy::chunks_exact_to_as_chunks",
+   "crate": "rhwp",
+   "targets": [
+    "x86_64-unknown-linux-gnu",
+    "wasm32-unknown-unknown"
+   ],
+   "exposedPhase": "before",
+   "pinnedDiagnosticLinesVerified": true,
+   "fileAlreadyModifiedByCandidate": false,
+   "risk": "기계적",
+   "rationale": "같은 폭의 as_chunks(.0) 배열 slice를 iter/iter_mut로 순회; 원래 버린 tail은 동일하게 미처리. crypto 알고리즘/검증 불변.",
+   "lintIntroductionVersion": "UNVERIFIED; 1.99 실행에서 관찰한 사실과 최초 도입 시점을 구분"
+  },
+  {
+   "file": "src/parser/body_text.rs",
+   "lineBefore": 477,
+   "function": "parse_para_text",
+   "lint": "clippy::chunks_exact_to_as_chunks",
+   "crate": "rhwp",
+   "targets": [
+    "x86_64-unknown-linux-gnu",
+    "wasm32-unknown-unknown"
+   ],
+   "exposedPhase": "before",
+   "pinnedDiagnosticLinesVerified": true,
+   "fileAlreadyModifiedByCandidate": false,
+   "risk": "기계적",
+   "rationale": "같은 폭의 as_chunks(.0) 배열 slice를 iter/iter_mut로 순회; 원래 버린 tail은 동일하게 미처리. crypto 알고리즘/검증 불변.",
+   "lintIntroductionVersion": "UNVERIFIED; 1.99 실행에서 관찰한 사실과 최초 도입 시점을 구분"
+  },
+  {
+   "file": "src/parser/body_text.rs",
+   "lineBefore": 1252,
+   "function": "parse_ctrl_data_field_name",
+   "lint": "clippy::chunks_exact_to_as_chunks",
+   "crate": "rhwp",
+   "targets": [
+    "x86_64-unknown-linux-gnu",
+    "wasm32-unknown-unknown"
+   ],
+   "exposedPhase": "before",
+   "pinnedDiagnosticLinesVerified": true,
+   "fileAlreadyModifiedByCandidate": false,
+   "risk": "기계적",
+   "rationale": "같은 폭의 as_chunks(.0) 배열 slice를 iter/iter_mut로 순회; 원래 버린 tail은 동일하게 미처리. crypto 알고리즘/검증 불변.",
+   "lintIntroductionVersion": "UNVERIFIED; 1.99 실행에서 관찰한 사실과 최초 도입 시점을 구분"
+  },
+  {
+   "file": "src/parser/byte_reader.rs",
+   "lineBefore": 121,
+   "function": "read_utf16_string",
+   "lint": "clippy::chunks_exact_to_as_chunks",
+   "crate": "rhwp",
+   "targets": [
+    "x86_64-unknown-linux-gnu",
+    "wasm32-unknown-unknown"
+   ],
+   "exposedPhase": "before",
+   "pinnedDiagnosticLinesVerified": true,
+   "fileAlreadyModifiedByCandidate": false,
+   "risk": "기계적",
+   "rationale": "같은 폭의 as_chunks(.0) 배열 slice를 iter/iter_mut로 순회; 원래 버린 tail은 동일하게 미처리. crypto 알고리즘/검증 불변.",
+   "lintIntroductionVersion": "UNVERIFIED; 1.99 실행에서 관찰한 사실과 최초 도입 시점을 구분"
+  },
+  {
+   "file": "src/parser/cfb_reader.rs",
+   "lineBefore": 1266,
+   "function": "hwp_summary_indicates_hwp3_era",
+   "lint": "clippy::chunks_exact_to_as_chunks",
+   "crate": "rhwp",
+   "targets": [
+    "x86_64-unknown-linux-gnu",
+    "wasm32-unknown-unknown"
+   ],
+   "exposedPhase": "before",
+   "pinnedDiagnosticLinesVerified": true,
+   "fileAlreadyModifiedByCandidate": false,
+   "risk": "기계적",
+   "rationale": "같은 폭의 as_chunks(.0) 배열 slice를 iter/iter_mut로 순회; 원래 버린 tail은 동일하게 미처리. crypto 알고리즘/검증 불변.",
+   "lintIntroductionVersion": "UNVERIFIED; 1.99 실행에서 관찰한 사실과 최초 도입 시점을 구분"
+  },
+  {
+   "file": "src/parser/control.rs",
+   "lineBefore": 421,
+   "function": "parse_cell_field_name",
+   "lint": "clippy::chunks_exact_to_as_chunks",
+   "crate": "rhwp",
+   "targets": [
+    "x86_64-unknown-linux-gnu",
+    "wasm32-unknown-unknown"
+   ],
+   "exposedPhase": "before",
+   "pinnedDiagnosticLinesVerified": true,
+   "fileAlreadyModifiedByCandidate": false,
+   "risk": "기계적",
+   "rationale": "같은 폭의 as_chunks(.0) 배열 slice를 iter/iter_mut로 순회; 원래 버린 tail은 동일하게 미처리. crypto 알고리즘/검증 불변.",
+   "lintIntroductionVersion": "UNVERIFIED; 1.99 실행에서 관찰한 사실과 최초 도입 시점을 구분"
+  },
+  {
+   "file": "src/parser/control.rs",
+   "lineBefore": 1051,
+   "function": "decode_utf16le",
+   "lint": "clippy::chunks_exact_to_as_chunks",
+   "crate": "rhwp",
+   "targets": [
+    "x86_64-unknown-linux-gnu",
+    "wasm32-unknown-unknown"
+   ],
+   "exposedPhase": "before",
+   "pinnedDiagnosticLinesVerified": true,
+   "fileAlreadyModifiedByCandidate": false,
+   "risk": "기계적",
+   "rationale": "같은 폭의 as_chunks(.0) 배열 slice를 iter/iter_mut로 순회; 원래 버린 tail은 동일하게 미처리. crypto 알고리즘/검증 불변.",
+   "lintIntroductionVersion": "UNVERIFIED; 1.99 실행에서 관찰한 사실과 최초 도입 시점을 구분"
+  },
+  {
+   "file": "src/parser/doc_info.rs",
+   "lineBefore": 173,
+   "function": "parse_doc_data_print_method",
+   "lint": "clippy::chunks_exact_to_as_chunks",
+   "crate": "rhwp",
+   "targets": [
+    "x86_64-unknown-linux-gnu",
+    "wasm32-unknown-unknown"
+   ],
+   "exposedPhase": "before",
+   "pinnedDiagnosticLinesVerified": true,
+   "fileAlreadyModifiedByCandidate": false,
+   "risk": "기계적",
+   "rationale": "같은 폭의 as_chunks(.0) 배열 slice를 iter/iter_mut로 순회; 원래 버린 tail은 동일하게 미처리. crypto 알고리즘/검증 불변.",
+   "lintIntroductionVersion": "UNVERIFIED; 1.99 실행에서 관찰한 사실과 최초 도입 시점을 구분"
+  },
+  {
+   "file": "src/parser/hml/encoding.rs",
+   "lineBefore": 83,
+   "function": "utf16_units",
+   "lint": "clippy::chunks_exact_to_as_chunks",
+   "crate": "rhwp",
+   "targets": [
+    "x86_64-unknown-linux-gnu",
+    "wasm32-unknown-unknown"
+   ],
+   "exposedPhase": "before",
+   "pinnedDiagnosticLinesVerified": true,
+   "fileAlreadyModifiedByCandidate": false,
+   "risk": "기계적",
+   "rationale": "같은 폭의 as_chunks(.0) 배열 slice를 iter/iter_mut로 순회; 원래 버린 tail은 동일하게 미처리. crypto 알고리즘/검증 불변.",
+   "lintIntroductionVersion": "UNVERIFIED; 1.99 실행에서 관찰한 사실과 최초 도입 시점을 구분"
+  },
+  {
+   "file": "src/parser/hwp_summary.rs",
+   "lineBefore": 152,
+   "function": "decode_utf16le",
+   "lint": "clippy::chunks_exact_to_as_chunks",
+   "crate": "rhwp",
+   "targets": [
+    "x86_64-unknown-linux-gnu",
+    "wasm32-unknown-unknown"
+   ],
+   "exposedPhase": "before",
+   "pinnedDiagnosticLinesVerified": true,
+   "fileAlreadyModifiedByCandidate": false,
+   "risk": "기계적",
+   "rationale": "같은 폭의 as_chunks(.0) 배열 slice를 iter/iter_mut로 순회; 원래 버린 tail은 동일하게 미처리. crypto 알고리즘/검증 불변.",
+   "lintIntroductionVersion": "UNVERIFIED; 1.99 실행에서 관찰한 사실과 최초 도입 시점을 구분"
+  },
+  {
+   "file": "src/parser/ole_container.rs",
+   "lineBefore": 271,
+   "function": "parse_equation_contents_script",
+   "lint": "clippy::chunks_exact_to_as_chunks",
+   "crate": "rhwp",
+   "targets": [
+    "x86_64-unknown-linux-gnu",
+    "wasm32-unknown-unknown"
+   ],
+   "exposedPhase": "before",
+   "pinnedDiagnosticLinesVerified": true,
+   "fileAlreadyModifiedByCandidate": false,
+   "risk": "기계적",
+   "rationale": "같은 폭의 as_chunks(.0) 배열 slice를 iter/iter_mut로 순회; 원래 버린 tail은 동일하게 미처리. crypto 알고리즘/검증 불변.",
+   "lintIntroductionVersion": "UNVERIFIED; 1.99 실행에서 관찰한 사실과 최초 도입 시점을 구분"
+  },
+  {
+   "file": "src/renderer/height_measurer.rs",
+   "lineBefore": 1233,
+   "function": "fit_measured_table_to_declared_height_with_outcome",
+   "lint": "clippy::manual_slice_fill",
+   "crate": "rhwp",
+   "targets": [
+    "x86_64-unknown-linux-gnu",
+    "wasm32-unknown-unknown"
+   ],
+   "exposedPhase": "before",
+   "pinnedDiagnosticLinesVerified": true,
+   "fileAlreadyModifiedByCandidate": false,
+   "risk": "기계적",
+   "rationale": "Copy 타입 bool/정수/f64의 같은 값 대입을 fill로 대체; 원소 순서·값 불변.",
+   "lintIntroductionVersion": "UNVERIFIED; 1.99 실행에서 관찰한 사실과 최초 도입 시점을 구분"
+  },
+  {
+   "file": "src/renderer/image_resolver.rs",
+   "lineBefore": 695,
+   "function": "uncompressed_palette_tiff_to_png_bytes",
+   "lint": "clippy::chunks_exact_to_as_chunks",
+   "crate": "rhwp",
+   "targets": [
+    "x86_64-unknown-linux-gnu",
+    "wasm32-unknown-unknown"
+   ],
+   "exposedPhase": "before",
+   "pinnedDiagnosticLinesVerified": true,
+   "fileAlreadyModifiedByCandidate": false,
+   "risk": "기계적",
+   "rationale": "같은 폭의 as_chunks(.0) 배열 slice를 iter/iter_mut로 순회; 원래 버린 tail은 동일하게 미처리. crypto 알고리즘/검증 불변.",
+   "lintIntroductionVersion": "UNVERIFIED; 1.99 실행에서 관찰한 사실과 최초 도입 시점을 구분"
+  },
+  {
+   "file": "src/renderer/image_resolver.rs",
+   "lineBefore": 804,
+   "function": "pcx_bytes_to_png_bytes_uncached",
+   "lint": "clippy::chunks_exact_to_as_chunks",
+   "crate": "rhwp",
+   "targets": [
+    "x86_64-unknown-linux-gnu",
+    "wasm32-unknown-unknown"
+   ],
+   "exposedPhase": "before",
+   "pinnedDiagnosticLinesVerified": true,
+   "fileAlreadyModifiedByCandidate": false,
+   "risk": "기계적",
+   "rationale": "같은 폭의 as_chunks(.0) 배열 slice를 iter/iter_mut로 순회; 원래 버린 tail은 동일하게 미처리. crypto 알고리즘/검증 불변.",
+   "lintIntroductionVersion": "UNVERIFIED; 1.99 실행에서 관찰한 사실과 최초 도입 시점을 구분"
+  },
+  {
+   "file": "src/renderer/image_resolver.rs",
+   "lineBefore": 823,
+   "function": "pcx_bytes_to_png_bytes_uncached",
+   "lint": "clippy::chunks_exact_to_as_chunks",
+   "crate": "rhwp",
+   "targets": [
+    "x86_64-unknown-linux-gnu",
+    "wasm32-unknown-unknown"
+   ],
+   "exposedPhase": "before",
+   "pinnedDiagnosticLinesVerified": true,
+   "fileAlreadyModifiedByCandidate": false,
+   "risk": "기계적",
+   "rationale": "같은 폭의 as_chunks(.0) 배열 slice를 iter/iter_mut로 순회; 원래 버린 tail은 동일하게 미처리. crypto 알고리즘/검증 불변.",
+   "lintIntroductionVersion": "UNVERIFIED; 1.99 실행에서 관찰한 사실과 최초 도입 시점을 구분"
+  },
+  {
+   "file": "src/renderer/layout.rs",
+   "lineBefore": 16472,
+   "function": "layout_column_shapes_pass",
+   "lint": "clippy::drain_collect",
+   "crate": "rhwp",
+   "targets": [
+    "x86_64-unknown-linux-gnu",
+    "wasm32-unknown-unknown"
+   ],
+   "exposedPhase": "before",
+   "pinnedDiagnosticLinesVerified": true,
+   "fileAlreadyModifiedByCandidate": true,
+   "risk": "의미/소유/경계 검토",
+   "rationale": "mem::take로 같은 자식 순서를 이전하고 임시 parent를 비움. 이후 parent 사용 없이 scope 종료; 수신 함수는 값/순서만 소비.",
+   "lintIntroductionVersion": "UNVERIFIED; 1.99 실행에서 관찰한 사실과 최초 도입 시점을 구분"
+  },
+  {
+   "file": "src/renderer/pdf_raster_fidelity/fingerprint.rs",
+   "lineBefore": 40,
+   "function": "blank",
+   "lint": "clippy::chunks_exact_to_as_chunks",
+   "crate": "rhwp",
+   "targets": [
+    "x86_64-unknown-linux-gnu"
+   ],
+   "exposedPhase": "before",
+   "pinnedDiagnosticLinesVerified": true,
+   "fileAlreadyModifiedByCandidate": false,
+   "risk": "기계적",
+   "rationale": "같은 폭의 as_chunks(.0) 배열 slice를 iter/iter_mut로 순회; 원래 버린 tail은 동일하게 미처리. crypto 알고리즘/검증 불변.",
+   "lintIntroductionVersion": "UNVERIFIED; 1.99 실행에서 관찰한 사실과 최초 도입 시점을 구분"
+  },
+  {
+   "file": "src/renderer/svg.rs",
+   "lineBefore": 4704,
+   "function": "svg_outline_font_data",
+   "lint": "clippy::chunks_exact_to_as_chunks",
+   "crate": "rhwp",
+   "targets": [
+    "x86_64-unknown-linux-gnu",
+    "wasm32-unknown-unknown"
+   ],
+   "exposedPhase": "before",
+   "pinnedDiagnosticLinesVerified": true,
+   "fileAlreadyModifiedByCandidate": false,
+   "risk": "기계적",
+   "rationale": "같은 폭의 as_chunks(.0) 배열 slice를 iter/iter_mut로 순회; 원래 버린 tail은 동일하게 미처리. crypto 알고리즘/검증 불변.",
+   "lintIntroductionVersion": "UNVERIFIED; 1.99 실행에서 관찰한 사실과 최초 도입 시점을 구분"
+  },
+  {
+   "file": "src/wmf/converter/svg/ternary_raster_operator.rs",
+   "lineBefore": 223,
+   "function": "brush_is_8x8_halftone",
+   "lint": "clippy::chunks_exact_to_as_chunks",
+   "crate": "rhwp",
+   "targets": [
+    "x86_64-unknown-linux-gnu",
+    "wasm32-unknown-unknown"
+   ],
+   "exposedPhase": "before",
+   "pinnedDiagnosticLinesVerified": true,
+   "fileAlreadyModifiedByCandidate": false,
+   "risk": "기계적",
+   "rationale": "같은 폭의 as_chunks(.0) 배열 slice를 iter/iter_mut로 순회; 원래 버린 tail은 동일하게 미처리. crypto 알고리즘/검증 불변.",
+   "lintIntroductionVersion": "UNVERIFIED; 1.99 실행에서 관찰한 사실과 최초 도입 시점을 구분"
+  },
+  {
+   "file": "src/wmf/parser/objects/structure/mod.rs",
+   "lineBefore": 42,
+   "function": "utf16le_bytes_to_string",
+   "lint": "clippy::chunks_exact_to_as_chunks",
+   "crate": "rhwp",
+   "targets": [
+    "x86_64-unknown-linux-gnu",
+    "wasm32-unknown-unknown"
+   ],
+   "exposedPhase": "before",
+   "pinnedDiagnosticLinesVerified": true,
+   "fileAlreadyModifiedByCandidate": false,
+   "risk": "기계적",
+   "rationale": "같은 폭의 as_chunks(.0) 배열 slice를 iter/iter_mut로 순회; 원래 버린 tail은 동일하게 미처리. crypto 알고리즘/검증 불변.",
+   "lintIntroductionVersion": "UNVERIFIED; 1.99 실행에서 관찰한 사실과 최초 도입 시점을 구분"
+  },
+  {
+   "file": "crates/rhwp-ooxml-chart/src/data.rs",
+   "lineBefore": 709,
+   "function": "scan_chart_values",
+   "lint": "clippy::collapsible_match",
+   "crate": "rhwp-ooxml-chart",
+   "targets": [
+    "x86_64-unknown-linux-gnu",
+    "wasm32-unknown-unknown"
+   ],
+   "exposedPhase": "after1",
+   "pinnedDiagnosticLinesVerified": true,
+   "fileAlreadyModifiedByCandidate": false,
+   "risk": "의미/소유/경계 검토",
+   "rationale": "동일 조건을 match guard에 순서대로 이동. 실패 시 기존 no-op와 동일한 wildcard arm; nesting 회귀 추가.",
+   "lintIntroductionVersion": "UNVERIFIED; 1.99 실행에서 관찰한 사실과 최초 도입 시점을 구분"
+  }
+ ]
+}

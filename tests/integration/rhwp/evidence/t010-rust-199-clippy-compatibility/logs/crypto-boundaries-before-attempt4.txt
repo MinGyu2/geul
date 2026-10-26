@@ -1,0 +1,14 @@
+   Compiling rhwp-password-crypto v0.1.0 (<scratch>/source/crates/rhwp-password-crypto)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 3.63s
+     Running unittests src/lib.rs (<workspace>/target/rhwp-wasm/debug/deps/rhwp_password_crypto-3e51a05364ff2c8b)
+
+running 6 tests
+test tests::hwp5_decrypt_matches_external_vector ... ok
+test tests::hwp5_stream_roundtrip_preserves_partial_block ... ok
+test tests::hwp3_des_known_answer_and_partial_tail ... ok
+precompatibility HWP5 boundary digest: 6f83a048fd7dd6bbdc2a6d5cd39bdb9d831072967d9cacb5b7dc03520ddcc8d3
+test tests::hwp5_all_chunk_boundaries_preserve_precompatibility_digest ... ok
+test tests::hwp3_fixture_password_validation_and_reencryption ... ok
+test tests::hwpx_fixture_password_validation_and_reencryption ... ok
+
+test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.70s

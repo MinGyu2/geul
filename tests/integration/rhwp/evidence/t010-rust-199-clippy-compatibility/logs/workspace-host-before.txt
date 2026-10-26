@@ -1,0 +1,19 @@
+   Compiling bytemuck_derive v1.12.0
+   Compiling serde_derive v1.0.229
+    Checking bytemuck v1.25.2
+    Checking font-types v0.11.3
+    Checking read-fonts v0.39.2
+    Checking tiny-skia-path v0.11.4
+    Checking rustybuzz v0.20.1
+    Checking serde v1.0.229
+    Checking usvg v0.45.1
+    Checking tiny-skia v0.11.4
+    Checking skrifa v0.42.1
+    Checking write-fonts v0.48.1
+    Checking rgb v0.8.53
+    Checking image v0.25.10
+    Checking resvg v0.45.1
+   Compiling rhwp v0.8.7 (<scratch>/source)
+    Checking rhwp-password-crypto v0.1.0 (<scratch>/source/crates/rhwp-password-crypto)
+error: could not compile `rhwp-password-crypto` (lib) due to 2 previous errors
+warning: build failed, waiting for other jobs to finish...
