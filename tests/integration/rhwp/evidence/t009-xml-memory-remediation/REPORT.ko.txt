@@ -1,0 +1,48 @@
+T009 XML memory remediation — PARTIALLY COMPLETED
+
+실제 메모리/CPU 개선과 기존 논리 동등성·저장 회귀는 검증했으나 전체 OOM/heap 예산 수용은 INCOMPLETE다.
+시작 HEAD47eb6160180307a422b08eaa68655c36fb4d1fd6; source commit은 이 증거를 포함한 커밋이다.
+최종 delivery SHA와 커밋 후 검증은 최종 보고서/.git local metadata에 별도로 기록한다.
+
+VERIFIED 구현
+UTF8 decode borrowing, UTF16 직접 해독(no intermediate Vec<u16>), 작업별 immutable Atom 공유,
+보관 없는 전체 parser validation, header 정의 visitor를 구현했다. 비교는 문자열 값 전체 기준이다.
+새 opaque Atom은 model/history 객체를 보유하지 않는다. body formCharPr 조상·Start/Empty/charPr 규칙 유지.
+과대 IPC frame은 기존 limit 판정을 복사 전에 한다. 정상 문서 수용 상한은 변경하지 않았다.
+
+VERIFIED 측정
+header16037113 bytes, ZIP369946 bytes, Rust1.99 release 별도 프로세스.
+전체 check_saved: baseline2304.0ms/529360KiB(stage HWM) -> final1650.0ms/195932KiB.
+중간 구현 측정도 measurements.json에 따로 보존했다. 최종 source의 첫 완주 결과이며 다른 시도를 최속으로 골라
+공식 결과로 삼은 것이 아니다. 단일 before/after이고 production corpus p95/RSS cap이 아니다.
+각 stage clear_refs/status 성공을 기록했다. 직접 retained payload61134007 bytes는 한 header의 일부 heap 범주다.
+255MiB text 독립 process-wide HWM: legacy790140/new529040/validation268004 KiB.
+새 canonical text 자체는 약255MiB retained라 제안128MiB scratch 목표를 만족한 것으로 볼 수 없다.
+validation retained-event payload0은 process memory0이 아니다. 오류/측정 불가는 null이며 RSS를0으로 대체하지 않았다.
+
+VERIFIED 회귀
+reference47eb616 decoder/materializer/name/attribute parser를 test-only oracle로 보존했다.
+6개의 생성/공개 pinned HWPX/DOCX,53 XML parts,2712055 bytes에서 값 전체 차등 일치.
+기준 component corpus7회 p95는69.964ms, 새78.211ms(약1.12배); ZIP/save/engine 경로 제외, 짧은 진단이다.
+normal/large definitions/repeated ns/attributes/dense/deep/text/UTF16/CDATA/refs/comments/PI/bad-tail/entity/ns,
+standalone payload refusal,4 parallel canonical/4 check_saved, 기존 저장 취소·원본/dirty/temp 테스트 PASS.
+corpus 첫 실행은 relative fixture 경로가 Cargo test cwd에서 없어서 실패했고 절대 경로로 같은 corpus를 재실행했다.
+이는 비교 실패가 아니며 누락을 skip/PASS로 처리하지 않았다.
+
+Rust fmt/check/strict Clippy/full test PASS: lib190 +DOCX1, 기존/명시 진단 ignored12 +save integration2.
+별도 save subset80 PASS/8 ignored. strict save_service23행/undo_save19행 불일치0,
+실제 body/cell formCharPr service publication+exact-byte reopen PASS.
+Frontend type/lint/819 Vitest/build, RHWP real-WASM42 PASS/3 기존 구성별 skipped.
+관련 explicit resource/id-boundary probe 결과는 별도 파일을 따른다.
+
+미완료 경계
+retained-payload finite admission API는 성공 결과의 직접 계상 범주만 제한하며 product는 None이다.
+128MiB 정책은 이전에 허용한255MiB text도 거부하므로 승인 없이 켜지 않았다.
+Arc/allocator/hash metadata, parser/normalization/decode 임시 공간, Vec 재할당 중첩, packages/input,
+동시 request를 포함한 전역 예산/취소가 남았다. 일부 예약만 fallible이며 모든 OOM의 Result 회복을 주장하지 않는다.
+standalone PayloadLimit를 서비스 limitExceeded에 연결한 강제 고갈/취소·원본보존 시험은 NOT RUN이다.
+일반 unsafe/malformed/limit/취소의 저장 보존 회귀 PASS와 이를 혼동하지 않는다.
+
+후속: bounded large-text/header comparison, fallible parser 경계, 호환성/전체 admission 예산 승인,
+service resource 분류와 실제 저장 고갈·취소를 통합 검증한다. 논리 사건/원본 보호는 계속 유지해야 한다.
+T010 native gates는 별도 directory이며 backend RSS를 T010 RSS PASS로 사용하지 않는다.

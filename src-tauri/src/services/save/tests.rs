@@ -7793,3 +7793,45 @@ fn hwpx_저장_판정_단계별_자원() {
         json!({"original": n, "appended": k, "mode": mode, "zipBytes": after.len(), "headerBytes": header_bytes, "expandedOutputBytes": expanded, "fixtureCreationIncluded": false, "stages": stages})
     );
 }
+
+#[test]
+#[ignore = "isolated retained XML payload accounting; GEUL_T010_STAGE_CASE=n,k"]
+fn hwpx_header_canonical_payload() {
+    let case = std::env::var("GEUL_T010_STAGE_CASE").unwrap();
+    let fields: Vec<_> = case.split(',').collect();
+    let (n, k) = (fields[0].parse().unwrap(), fields[1].parse().unwrap());
+    let (_, output) = large_header_pair(n, k);
+    let package = package::open(&output, package::Side::Output).unwrap();
+    let header = package.get("Contents/header.xml").unwrap();
+    let reset = peak_reset();
+    let started = std::time::Instant::now();
+    let (events, m) = crate::document::xml::canonical_with_payload_limit(header, None).unwrap();
+    let mut evidence = peak_evidence(reset, peak_kib());
+    evidence["headerBytes"] = json!(header.len());
+    evidence["events"] = json!(m.events);
+    evidence["retainedPayloadBytes"] = json!(m.retained_payload_bytes);
+    evidence["eventCapacityBytes"] = json!(m.event_capacity_bytes);
+    evidence["attributeCapacityBytes"] = json!(m.attribute_capacity_bytes);
+    evidence["atomPayloadBytes"] = json!(m.atom_payload_bytes);
+    evidence["textCapacityBytes"] = json!(m.text_capacity_bytes);
+    evidence["excluded"] = json!("Arc/allocator/hash metadata, parser/decoded transients, package/input buffers, vector reallocation overlap");
+    evidence["ms"] = json!(started.elapsed().as_secs_f64() * 1000.0);
+    assert_eq!(events.len(), m.events);
+    println!("{evidence}");
+}
+
+#[test]
+fn overlapping_hwpx_checks_keep_independent_canonical_state() {
+    let (before, after) = large_header_pair(100, 5);
+    let loss = report("hwpx", json!([]));
+    std::thread::scope(|scope| {
+        for _ in 0..4 {
+            scope.spawn(|| {
+                assert_eq!(
+                    service::check_saved(Format::Hwpx, &before, &after, Some(&loss), true).outcome,
+                    Outcome::Safe
+                )
+            });
+        }
+    });
+}

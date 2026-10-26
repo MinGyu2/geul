@@ -157,7 +157,7 @@ pub fn malformed_xml(package: &Package, side: Side) -> Vec<Finding> {
     package
         .parts
         .iter()
-        .filter(|(name, (_, data))| is_xml(name, data) && xml::canonical(data).is_err())
+        .filter(|(name, (_, data))| is_xml(name, data) && xml::canonical_valid(data).is_err())
         .map(|(name, _)| Finding::at(side.malformed(), name))
         .collect()
 }
@@ -516,7 +516,10 @@ fn serializer_color(value: &str) -> bool {
 /// 교정 C1). 굵게·기울임은 속성 없음, 밑줄은 `type`(NONE·BOTTOM·TOP)·`shape`(선 모양 13종)·`color` 셋 모두, 취소선은
 /// `shape`(NONE 또는 선 모양 13종)·`color` 둘 모두 — 빠지거나 더한 속성, 이름공간 붙은 속성, 그 밖의 값은 받지 않는다(엔진이 모르는
 /// 값을 말없이 기본값으로 읽어 서식 의미를 증명할 수 없음).
-fn serializer_format_child(local: &str, attributes: &[(Option<String>, String, String)]) -> bool {
+fn serializer_format_child(
+    local: &str,
+    attributes: &[(Option<xml::Atom>, xml::Atom, xml::Atom)],
+) -> bool {
     let value = |key: &str| {
         attributes
             .iter()
@@ -854,37 +857,40 @@ fn hwpx_char_shapes_appended(
 /// - 엔진이 등록하지만 정의로 확인할 수 없는 요소(다른 이름공간·다른 위치의 내용 있는 `charPr`/`paraPr` — 엔진은 그것도 같은 배열에
 ///   넣어 정의를 덮을 수 있다), id가 없거나 숫자가 아님(엔진은 등장 순서·0으로 넣는다), 등록되는 요소끼리 같은 id(뒤의 것이 덮는다)이면
 ///   None: 참조가 무엇을 가리키는지 증명할 수 없다.
-fn hwpx_definitions(header: &[xml::ElementStart]) -> Option<[std::collections::BTreeSet<u32>; 2]> {
+fn hwpx_definitions(header: &[u8]) -> Option<[std::collections::BTreeSet<u32>; 2]> {
     let mut sets = [
         std::collections::BTreeSet::new(),
         std::collections::BTreeSet::new(),
     ];
-    for element in header {
+    xml::visit_element_starts(header, |element| {
         let Some(slot) = HWPX_SHAPE_REFERENCES
             .iter()
             .position(|(_, name)| *name == element.name)
         else {
-            continue;
+            return Ok(());
         };
         if element.self_closing {
-            continue; // 엔진이 등록하지 않는다
+            return Ok(()); // 엔진이 등록하지 않는다
         }
         let in_list = element.namespace.as_deref() == Some(HWPML_HEAD)
             && element.parent.as_ref().is_some_and(|(namespace, name)| {
                 namespace.as_deref() == Some(HWPML_HEAD) && name == HWPX_SHAPE_LISTS[slot]
             });
         if !in_list {
-            return None;
+            return Err(xml::Invalid);
         }
         let id = element
             .attributes
             .iter()
             .find(|(ns, key, _)| ns.is_none() && key == "id")
-            .and_then(|(_, _, value)| hwpx_id(value))?;
+            .and_then(|(_, _, value)| hwpx_id(value))
+            .ok_or(xml::Invalid)?;
         if !sets[slot].insert(id) {
-            return None;
+            return Err(xml::Invalid);
         }
-    }
+        Ok(())
+    })
+    .ok()?;
     // 엔진이 버리는 id의 정의는 정의가 아니다(가리키면 기본 모양으로 대체된다).
     for set in &mut sets {
         set.retain(|id| *id <= HWPX_MAX_RESOURCE_ID);
@@ -914,13 +920,10 @@ pub fn validate_hwpx_references(output: &Package) -> Vec<Finding> {
         return vec![Finding::at(FindingCode::Unsupported, HWPX_HEADER)];
     };
     // 읽을 수 없는 header는 malformed_xml(validate_hwpx)이 이미 `outputMalformed`로 막는다(같은 까닭을 두 번 적지 않음).
-    if xml::canonical(header).is_err() {
+    if xml::canonical_valid(header).is_err() {
         return Vec::new();
     }
-    let Some(definitions) = xml::element_starts(header)
-        .ok()
-        .and_then(|elements| hwpx_definitions(&elements))
-    else {
+    let Some(definitions) = hwpx_definitions(header) else {
         return vec![Finding::at(FindingCode::Unsupported, HWPX_HEADER)];
     };
     let mut findings = Vec::new();

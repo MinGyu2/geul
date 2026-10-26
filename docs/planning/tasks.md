@@ -223,3 +223,15 @@ D1 NOT RUN, D2 INCONCLUSIVE, D4 FAIL, D5 archived PASS, RSS INCONCLUSIVE 유지.
 증거: `tests/integration/rhwp/evidence/t010-verification-integrity-hardening/`.
 전체 T010 미체크, D1 NOT RUN, D2 INCONCLUSIVE, D4 FAIL, D5 archived PASS, RSS INCONCLUSIVE 유지.
 제품 Undo/Redo NO-GO·formatting unsupported, T011 NOT STARTED. T009 자원 예산 제안은 별도 미구현 상태다.
+
+
+### T009 XML 메모리 부분 개선 (2026-10-26, 자원 수용 미완료)
+
+기준 `47eb616`: UTF-8 borrowing/UTF-16 직접 해독, immutable Atom 공유, 전체 검증 visitor,
+header 정의 stream visitor, 과대 저장 프레임의 복사 전 거부를 구현했다. 기존 논리 동등성과 ZIP/이벤트 상한은 유지한다.
+16MiB header 사례 전체 check_saved 2304ms/529360KiB →1650ms/195932KiB(stage HWM 단일 before/after).
+실문서53 XML 부분·legacy 차등/정상·음성·동시 검사/strict 저장 회귀 PASS. 전체 OOM 안전성,
+streaming 큰 text/header 비교·전역 admission·서비스 budget/cancellation 통합은 남는다.
+검토용 finite retained-payload API는 production None이며 호환성 제한 승인 없이 켜지 않는다.
+근거: `docs/architecture/t009-xml-memory-accounting.md`, `tests/integration/rhwp/evidence/t009-xml-memory-remediation/`.
+T010 backend와 WASM/브라우저 예산은 별개이며 T010 RSS INCONCLUSIVE/제품 NO-GO 상태를 바꾸지 않는다.

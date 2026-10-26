@@ -48,7 +48,7 @@ pub fn parse_frame(body: &[u8], max_payload: u64) -> Result<Frame, DocumentError
     }
     let meta: Value = serde_json::from_slice(&body[FRAME_HEADER..FRAME_HEADER + meta_len])
         .map_err(|_| DocumentError::InvalidRequest)?;
-    let payload = body[FRAME_HEADER + meta_len..].to_vec();
+    let payload = &body[FRAME_HEADER + meta_len..];
     if payload.is_empty() {
         return Err(DocumentError::InvalidRequest);
     }
@@ -57,6 +57,8 @@ pub fn parse_frame(body: &[u8], max_payload: u64) -> Result<Frame, DocumentError
             limit: crate::document::LimitKind::FileSize,
         });
     }
+    // Refuse oversized frames before duplicating their potentially large IPC payload.
+    let payload = payload.to_vec();
     Ok(Frame {
         session_id: u64_at(body, 4),
         generation: u64_at(body, 12),

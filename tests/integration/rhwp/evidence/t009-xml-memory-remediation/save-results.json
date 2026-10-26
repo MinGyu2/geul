@@ -1,0 +1,20 @@
+[
+  {
+    "harness": "tests/poc/t010-phase0/save_service.py",
+    "flags": [
+      "--strict-desired"
+    ],
+    "explicitOfflineInjectedIntoUnchangedCargoList": true,
+    "exit": 0
+  },
+  {
+    "harness": "tests/integration/rhwp/undo_save.py",
+    "flags": [],
+    "explicitOfflineInjectedIntoUnchangedCargoList": true,
+    "exit": 0
+  },
+  {
+    "command": "python3 tests/integration/rhwp/formcharpr_save.py --evidence tests/integration/rhwp/evidence/t009-xml-memory-remediation/formcharpr-save.json",
+    "exit": 0
+  }
+]

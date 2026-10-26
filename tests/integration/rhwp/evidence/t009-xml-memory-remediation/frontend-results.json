@@ -1,0 +1,22 @@
+[
+  {
+    "command": "npm run typecheck",
+    "exit": 0
+  },
+  {
+    "command": "npm run lint",
+    "exit": 0
+  },
+  {
+    "command": "npm test",
+    "exit": 0
+  },
+  {
+    "command": "npm run build",
+    "exit": 0
+  },
+  {
+    "command": "node node_modules/vitest/vitest.mjs run --config tests/integration/rhwp/vitest.config.ts",
+    "exit": 0
+  }
+]

@@ -553,3 +553,12 @@ python3 tests/integration/rhwp/formcharpr_save.py
 음성 시험은 격리 파일에서 실제 preflight/load/helper/Python 실행기 경계를 호출한다. 일부 시험은
 WASM 검사까지 도달하도록 격리된 test-only JS sentinel의 해시만 허용하고, import/init/document/success
 표지가 생기지 않는지 확인한다. 이것을 생산용 대체 아티팩트 승인으로 해석하지 않는다.
+
+
+### T009 XML 메모리 부분 개선
+
+UTF-8 borrowing, UTF-16 직접 해독, 작업별 immutable 문자열 공유, 사건열을 보관하지 않는 전체 검증과
+header 정의 visitor를 적용했다. canonical 값/정확한 charPr·formCharPr 판정은 유지한다.
+직접 계상되는 retained payload와 별도 검토용 finite admission API의 범위 및 미승인 호환성 정책은
+[t009-xml-memory-accounting.md](t009-xml-memory-accounting.md)에 명시한다.
+현재 제품에 유한 예산을 활성화하지 않았고 전체 OOM 안전성/전체 RSS cap은 아직 보장하지 않는다.
