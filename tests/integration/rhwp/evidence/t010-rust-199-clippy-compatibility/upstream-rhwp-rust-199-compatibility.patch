@@ -1,0 +1,801 @@
+diff --git a/crates/rhwp-ooxml-chart/src/data.rs b/crates/rhwp-ooxml-chart/src/data.rs
+--- a/crates/rhwp-ooxml-chart/src/data.rs
++++ b/crates/rhwp-ooxml-chart/src/data.rs
+@@ -705,12 +705,14 @@
+                     // 자기닫힘 `<c:marker/>` 는 열고 바로 닫는다.
+                     b"marker" if state.cur.is_some() => {}
+                     // 자기닫힘 `<c:spPr/>`(코퍼스 0건, 방어) — 계열 최상위일 때만 구간으로.
+-                    b"spPr" if state.cur.is_some() => {
+-                        if state.sp_pr_depth == 0 && state.marker_depth == 0 {
+-                            if let Some(ser) = state.cur.as_mut() {
+-                                if ser.sp_pr_span.is_none() {
+-                                    ser.sp_pr_span = Some(tag_range.clone());
+-                                }
++                    b"spPr"
++                        if state.cur.is_some()
++                            && state.sp_pr_depth == 0
++                            && state.marker_depth == 0 =>
++                    {
++                        if let Some(ser) = state.cur.as_mut() {
++                            if ser.sp_pr_span.is_none() {
++                                ser.sp_pr_span = Some(tag_range.clone());
+                             }
+                         }
+                     }
+@@ -901,6 +903,23 @@
+     );
+
+     #[test]
++    fn empty_series_shape_properties_respect_nesting() {
++        for (content, expected) in [
++            ("<c:spPr/>", Some("<c:spPr/>")),
++            ("<c:marker><c:spPr/></c:marker>", None),
++            (
++                "<c:spPr><c:spPr/></c:spPr>",
++                Some("<c:spPr><c:spPr/></c:spPr>"),
++            ),
++        ] {
++            let xml = format!("<c:chartSpace><c:chart><c:plotArea><c:lineChart><c:ser>{content}</c:ser></c:lineChart></c:plotArea></c:chart></c:chartSpace>");
++            let data = scan_chart_values(xml.as_bytes()).unwrap();
++            let span = data.series[0].sp_pr_span.clone();
++            assert_eq!(span.map(|range| &xml[range]), expected);
++        }
++    }
++
++    #[test]
+     fn scans_name_labels_and_values() {
+         let data = scan_chart_values(CATEGORY_CHART.as_bytes()).expect("스캔");
+         assert_eq!(data.series.len(), 1);
+diff --git a/crates/rhwp-password-crypto/src/lib.rs b/crates/rhwp-password-crypto/src/lib.rs
+--- a/crates/rhwp-password-crypto/src/lib.rs
++++ b/crates/rhwp-password-crypto/src/lib.rs
+@@ -174,7 +174,7 @@
+     let mut register = [0_u8; 16];
+     let mut output = Vec::with_capacity(input.len());
+
+-    for block in padded.chunks_exact(16) {
++    for block in padded.as_chunks::<16>().0.iter() {
+         let mut transformed = [0_u8; 16];
+         for bit_index in 0..128 {
+             let byte_index = bit_index / 8;
+@@ -281,8 +281,7 @@
+
+ fn hwp3_des_ecb(payload: &mut [u8], key: &[u8; 8], encrypt: bool) {
+     let cipher = Des::new_from_slice(key).expect("DES key size");
+-    for block in payload.chunks_exact_mut(8) {
+-        let block: &mut [u8; 8] = block.try_into().expect("HWP3 DES block size");
++    for block in payload.as_chunks_mut::<8>().0.iter_mut() {
+         let block: &mut Block<Des> = block.into();
+         if encrypt {
+             cipher.encrypt_block(block);
+@@ -1043,6 +1042,109 @@
+     use super::*;
+
+     #[test]
++    fn hwp5_all_chunk_boundaries_preserve_precompatibility_digest() {
++        let mut digest = Sha256::new();
++        for password in [
++            b"".as_slice(),
++            b"password".as_slice(),
++            b"\x00\xff\x81".as_slice(),
++        ] {
++            for len in 0_u32..=65 {
++                let plain: Vec<u8> = (0..len)
++                    .map(|i| (i as u8).wrapping_mul(37).wrapping_add(11))
++                    .collect();
++                let encrypted = encrypt_hwp5_stream(&plain, password);
++                assert_eq!(encrypted.len(), plain.len());
++                assert_eq!(decrypt_hwp5_stream(&encrypted, password), plain);
++                digest.update(len.to_le_bytes());
++                digest.update(&encrypted);
++                digest.update(decrypt_hwp5_stream(&plain, password));
++            }
++        }
++        let mut observed = String::new();
++        for byte in digest.finalize() {
++            write!(observed, "{byte:02x}").unwrap();
++        }
++        assert_eq!(
++            observed,
++            "6f83a048fd7dd6bbdc2a6d5cd39bdb9d831072967d9cacb5b7dc03520ddcc8d3"
++        );
++    }
++
++    #[test]
++    fn hwp3_des_known_answer_and_partial_tail() {
++        let key = [0x13, 0x34, 0x57, 0x79, 0x9b, 0xbc, 0xdf, 0xf1];
++        let plain_block = [0x01, 0x23, 0x45, 0x67, 0x89, 0xab, 0xcd, 0xef];
++        let encrypted_block = [0x85, 0xe8, 0x13, 0x54, 0x0f, 0x0a, 0xb4, 0x05];
++        for len in 0..=33 {
++            let plain: Vec<u8> = (0..len).map(|i| plain_block[i % 8]).collect();
++            let mut payload = plain.clone();
++            hwp3_des_ecb(&mut payload, &key, true);
++            let whole = len / 8 * 8;
++            assert_eq!(payload[..whole], encrypted_block.repeat(len / 8));
++            assert_eq!(payload[whole..], plain[whole..]);
++            hwp3_des_ecb(&mut payload, &key, false);
++            assert_eq!(payload, plain);
++        }
++    }
++
++    #[test]
++    fn hwp3_fixture_password_validation_and_reencryption() {
++        let source = include_bytes!("../../../samples/HWP3-password-123456.hwp");
++        let plain = decrypt_hwp3_password_document(source, b"123456").unwrap();
++        let encrypted = encrypt_hwp3_password_document(&plain, b"123456").unwrap();
++        assert_eq!(
++            decrypt_hwp3_password_document(&encrypted, b"123456").unwrap(),
++            plain
++        );
++        assert!(matches!(
++            decrypt_hwp3_password_document(source, b"wrong-password"),
++            Err(PasswordCryptoError::WrongPasswordOrCorruptPayload)
++        ));
++        assert!(matches!(
++            decrypt_hwp3_password_document(&source[..source.len() - 1], b"123456"),
++            Err(PasswordCryptoError::InvalidHwp3(_))
++        ));
++    }
++
++    #[test]
++    fn hwpx_fixture_password_validation_and_reencryption() {
++        let source = include_bytes!("../../../samples/HWP5-password-123456.hwpx");
++        let plain = decrypt_hwpx_package(source, b"123456").unwrap().unwrap();
++        assert!(decrypt_hwpx_package(source, b"wrong-password").is_err());
++        let encrypted = encrypt_hwpx_package(&plain, b"123456").unwrap();
++        fn entries(bytes: &[u8]) -> std::collections::BTreeMap<String, Vec<u8>> {
++            let mut zip = ZipArchive::new(Cursor::new(bytes)).unwrap();
++            let mut entries = std::collections::BTreeMap::new();
++            for index in 0..zip.len() {
++                let mut entry = zip.by_index(index).unwrap();
++                let mut data = Vec::new();
++                entry.read_to_end(&mut data).unwrap();
++                entries.insert(entry.name().to_string(), data);
++            }
++            entries
++        }
++        let reopened = decrypt_hwpx_package(&encrypted, b"123456")
++            .unwrap()
++            .unwrap();
++        // Encryption rebuilds manifest metadata; all non-manifest package bytes must survive.
++        let before = entries(&plain);
++        let after = entries(&reopened);
++        assert_eq!(
++            before.keys().collect::<Vec<_>>(),
++            after.keys().collect::<Vec<_>>()
++        );
++        for (name, data) in &before {
++            if name != HWPX_MANIFEST_PATH {
++                assert!(
++                    after.get(name) == Some(data),
++                    "package entry changed: {name}"
++                );
++            }
++        }
++    }
++
++    #[test]
+     fn hwp5_stream_roundtrip_preserves_partial_block() {
+         for plaintext in [b"HWP5 password".as_slice(), b"0123456789abcdef".as_slice()] {
+             let ciphertext = encrypt_hwp5_stream(plaintext, b"password");
+diff --git a/src/diagnostics/hwp5_anchor_trace.rs b/src/diagnostics/hwp5_anchor_trace.rs
+--- a/src/diagnostics/hwp5_anchor_trace.rs
++++ b/src/diagnostics/hwp5_anchor_trace.rs
+@@ -280,7 +280,9 @@
+     let command_end = command_start + command_len * 2;
+     let command = if command_end <= data.len() {
+         let chars: Vec<u16> = data[command_start..command_end]
+-            .chunks_exact(2)
++            .as_chunks::<2>()
++            .0
++            .iter()
+             .map(|chunk| u16::from_le_bytes([chunk[0], chunk[1]]))
+             .collect();
+         String::from_utf16_lossy(&chars)
+@@ -386,7 +388,9 @@
+
+ fn decode_para_text(data: &[u8]) -> DecodedParaText {
+     let units: Vec<u16> = data
+-        .chunks_exact(2)
++        .as_chunks::<2>()
++        .0
++        .iter()
+         .map(|chunk| u16::from_le_bytes([chunk[0], chunk[1]]))
+         .collect();
+     let mut plain = String::new();
+diff --git a/src/diagnostics/hwp5_char_shape_audit.rs b/src/diagnostics/hwp5_char_shape_audit.rs
+--- a/src/diagnostics/hwp5_char_shape_audit.rs
++++ b/src/diagnostics/hwp5_char_shape_audit.rs
+@@ -502,20 +502,26 @@
+ }
+
+ fn decode_char_shape_ids(data: &[u8]) -> Vec<usize> {
+-    data.chunks_exact(8)
++    data.as_chunks::<8>()
++        .0
++        .iter()
+         .map(|entry| u32::from_le_bytes(entry[4..8].try_into().expect("8-byte entry")) as usize)
+         .collect()
+ }
+
+ fn decode_line_seg_tags(data: &[u8]) -> Vec<u32> {
+-    data.chunks_exact(36)
++    data.as_chunks::<36>()
++        .0
++        .iter()
+         .map(|entry| u32::from_le_bytes(entry[32..36].try_into().expect("36-byte entry")))
+         .collect()
+ }
+
+ fn decode_para_text(data: &[u8]) -> String {
+     let units: Vec<u16> = data
+-        .chunks_exact(2)
++        .as_chunks::<2>()
++        .0
++        .iter()
+         .map(|chunk| u16::from_le_bytes([chunk[0], chunk[1]]))
+         .collect();
+     let mut text = String::new();
+diff --git a/src/diagnostics/hwp5_contract_analyze.rs b/src/diagnostics/hwp5_contract_analyze.rs
+--- a/src/diagnostics/hwp5_contract_analyze.rs
++++ b/src/diagnostics/hwp5_contract_analyze.rs
+@@ -957,7 +957,9 @@
+
+ fn u32_values(bytes: &[u8]) -> Vec<u32> {
+     bytes
+-        .chunks_exact(4)
++        .as_chunks::<4>()
++        .0
++        .iter()
+         .map(|chunk| u32::from_le_bytes([chunk[0], chunk[1], chunk[2], chunk[3]]))
+         .collect()
+ }
+diff --git a/src/diagnostics/hwp5_ctrl_data_trace.rs b/src/diagnostics/hwp5_ctrl_data_trace.rs
+--- a/src/diagnostics/hwp5_ctrl_data_trace.rs
++++ b/src/diagnostics/hwp5_ctrl_data_trace.rs
+@@ -370,7 +370,9 @@
+
+ fn decode_utf16le(data: &[u8]) -> String {
+     let units: Vec<u16> = data
+-        .chunks_exact(2)
++        .as_chunks::<2>()
++        .0
++        .iter()
+         .map(|chunk| u16::from_le_bytes([chunk[0], chunk[1]]))
+         .collect();
+     String::from_utf16_lossy(&units)
+diff --git a/src/diagnostics/hwp5_first_para_control_probe.rs b/src/diagnostics/hwp5_first_para_control_probe.rs
+--- a/src/diagnostics/hwp5_first_para_control_probe.rs
++++ b/src/diagnostics/hwp5_first_para_control_probe.rs
+@@ -1251,7 +1251,9 @@
+         return "없음".to_string();
+     };
+     let entries: Vec<String> = payload
+-        .chunks_exact(8)
++        .as_chunks::<8>()
++        .0
++        .iter()
+         .map(|chunk| {
+             let pos = u32::from_le_bytes(chunk[0..4].try_into().unwrap());
+             let shape = u32::from_le_bytes(chunk[4..8].try_into().unwrap());
+diff --git a/src/document_core/commands/paragraph_block.rs b/src/document_core/commands/paragraph_block.rs
+--- a/src/document_core/commands/paragraph_block.rs
++++ b/src/document_core/commands/paragraph_block.rs
+@@ -178,32 +178,32 @@
+         .checked_add(shift)
+         .ok_or_else(|| invalid("source end overflow"))?;
+     // A zero-copy request does not inspect unsupported or large source content.
+-    let (structure_bytes, added_nodes, owned_depth, mapping_bytes, document_nodes) = if r.count == 0
+-    {
+-        (0, 0, 0, 0, 0)
+-    } else {
+-        let source = &section.paragraphs[r.source_start..r.source_end];
+-        let cost = owned::source(source, r.limits.max_nodes / r.count, r.limits.max_depth)?;
+-        let nodes = cost
+-            .nodes
+-            .checked_mul(r.count)
+-            .ok_or_else(|| invalid("owned node count overflow"))?;
+-        let mappings = cost
+-            .mapping_bytes
+-            .checked_mul(r.count)
+-            .ok_or_else(|| invalid("mapping size overflow"))?;
+-        if mappings > r.limits.max_mapping_bytes {
+-            return Err(invalid("mapping byte budget exceeded"));
+-        }
+-        let bytes = budget::measure(
+-            source,
+-            r.count,
+-            r.limits.max_structure_bytes,
+-            cost.skipped_bytes,
+-        )?;
+-        let document_nodes = owned::document(document, r.limits.max_document_nodes)?;
+-        (bytes, nodes, cost.depth, mappings, document_nodes)
+-    };
++    let (structure_bytes, added_nodes, owned_depth, mapping_bytes, document_nodes) =
++        if let Some(max_nodes_per_copy) = r.limits.max_nodes.checked_div(r.count) {
++            let source = &section.paragraphs[r.source_start..r.source_end];
++            let cost = owned::source(source, max_nodes_per_copy, r.limits.max_depth)?;
++            let nodes = cost
++                .nodes
++                .checked_mul(r.count)
++                .ok_or_else(|| invalid("owned node count overflow"))?;
++            let mappings = cost
++                .mapping_bytes
++                .checked_mul(r.count)
++                .ok_or_else(|| invalid("mapping size overflow"))?;
++            if mappings > r.limits.max_mapping_bytes {
++                return Err(invalid("mapping byte budget exceeded"));
++            }
++            let bytes = budget::measure(
++                source,
++                r.count,
++                r.limits.max_structure_bytes,
++                cost.skipped_bytes,
++            )?;
++            let document_nodes = owned::document(document, r.limits.max_document_nodes)?;
++            (bytes, nodes, cost.depth, mappings, document_nodes)
++        } else {
++            (0, 0, 0, 0, 0)
++        };
+     Ok(ParagraphBlockBudget {
+         added_paragraphs: added,
+         structure_bytes,
+@@ -216,3 +216,51 @@
+         inserted_end,
+     })
+ }
++
++#[cfg(test)]
++mod rust_199_compatibility_tests {
++    use super::*;
++
++    fn request(count: usize) -> RepeatParagraphBlockRequest {
++        RepeatParagraphBlockRequest {
++            section_index: 0,
++            source_start: 0,
++            source_end: 1,
++            insert_before: 1,
++            count,
++            limits: ParagraphBlockLimits::default(),
++        }
++    }
++
++    #[test]
++    fn zero_copies_skip_measurement_but_still_validate_coordinates() {
++        let doc = crate::wasm_api::HwpDocument::create_empty();
++        let core: &DocumentCore = &doc;
++        let mut request = request(0);
++        request.limits.max_structure_bytes = 1;
++        request.limits.max_nodes = 1;
++        let budget = core.paragraph_block_budget_native(&request).unwrap();
++        assert_eq!(budget.added_paragraphs, 0);
++        assert_eq!(budget.structure_bytes, 0);
++        assert_eq!(budget.added_nodes, 0);
++        assert_eq!(budget.mapping_bytes, 0);
++        assert_eq!(budget.document_nodes, 0);
++        request.source_end = 2;
++        assert!(core.paragraph_block_budget_native(&request).is_err());
++    }
++
++    #[test]
++    fn positive_copies_measure_and_enforce_existing_budgets() {
++        let doc = crate::wasm_api::HwpDocument::create_empty();
++        let core: &DocumentCore = &doc;
++        let mut request = request(1);
++        let budget = core.paragraph_block_budget_native(&request).unwrap();
++        assert_eq!(budget.added_paragraphs, 1);
++        assert!(budget.structure_bytes > 0);
++        assert!(budget.added_nodes > 0);
++        request.limits.max_structure_bytes = 1;
++        assert!(core.paragraph_block_budget_native(&request).is_err());
++        request.count = usize::MAX;
++        assert!(core.paragraph_block_budget_native(&request).is_err());
++    }
++}
+diff --git a/src/document_core/commands/paragraph_block/template.rs b/src/document_core/commands/paragraph_block/template.rs
+--- a/src/document_core/commands/paragraph_block/template.rs
++++ b/src/document_core/commands/paragraph_block/template.rs
+@@ -416,7 +416,7 @@
+             edits.push((binding, selection.range));
+         }
+         // All coordinates refer to the input. Right-to-left edits preserve later anchors.
+-        edits.sort_by(|a, b| b.1.start.cmp(&a.1.start));
++        edits.sort_by_key(|edit| std::cmp::Reverse(edit.1.start));
+
+         Ok(Self {
+             edits,
+diff --git a/src/document_core/commands/paragraph_block/validation/support.rs b/src/document_core/commands/paragraph_block/validation/support.rs
+--- a/src/document_core/commands/paragraph_block/validation/support.rs
++++ b/src/document_core/commands/paragraph_block/validation/support.rs
+@@ -174,7 +174,9 @@
+                     && data[..10] == [0x1b, 2, 1, 0, 0, 0, 0, 0x40, 1, 0]
+                     && data.len() == 12 + usize::from(u16::from_le_bytes([data[10], data[11]])) * 2
+                     && name.encode_utf16().eq(data[12..]
+-                        .chunks_exact(2)
++                        .as_chunks::<2>()
++                        .0
++                        .iter()
+                         .map(|b| u16::from_le_bytes([b[0], b[1]])))
+             });
+             if !supported {
+diff --git a/src/document_core/queries/explore.rs b/src/document_core/queries/explore.rs
+--- a/src/document_core/queries/explore.rs
++++ b/src/document_core/queries/explore.rs
+@@ -287,6 +287,6 @@
+     ));
+
+     // 우선순위 내림차순 안정 정렬 — 같은 우선순위는 삽입 순서를 유지한다.
+-    items.sort_by(|a, b| b.0.cmp(&a.0));
++    items.sort_by_key(|item| std::cmp::Reverse(item.0));
+     items.into_iter().map(|(_, a)| a).collect()
+ }
+diff --git a/src/document_core/queries/extract_data.rs b/src/document_core/queries/extract_data.rs
+--- a/src/document_core/queries/extract_data.rs
++++ b/src/document_core/queries/extract_data.rs
+@@ -280,12 +280,10 @@
+
+ /// `chars[at..]` 가 `needle` 로 시작하는가.
+ fn starts_with(chars: &[char], at: usize, needle: &str) -> bool {
+-    let mut i = at;
+-    for expected in needle.chars() {
+-        if chars.get(i) != Some(&expected) {
++    for (offset, expected) in needle.chars().enumerate() {
++        if chars.get(at + offset) != Some(&expected) {
+             return false;
+         }
+-        i += 1;
+     }
+     true
+ }
+@@ -961,6 +959,19 @@
+     }
+
+     #[test]
++    fn starts_with_preserves_unicode_empty_and_out_of_bounds_indices() {
++        let chars: Vec<char> = "가나다🙂".chars().collect();
++        assert!(starts_with(&chars, 1, "나다"));
++        assert!(starts_with(&chars, 3, "🙂"));
++        assert!(!starts_with(&chars, 1, "다"));
++        assert!(!starts_with(&chars, 3, "🙂끝"));
++        assert!(starts_with(&chars, usize::MAX, ""));
++        assert!(!starts_with(&chars, usize::MAX, "가"));
++        assert!(starts_with(&[], 0, ""));
++        assert!(!starts_with(&[], 0, "가"));
++    }
++
++    #[test]
+     fn dates_in_real_notations() {
+         assert_eq!(iso("2026년 8월 2일").as_deref(), Some("2026-08-02"));
+         assert_eq!(iso("2026년 8월 2일(월)").as_deref(), Some("2026-08-02"));
+diff --git a/src/document_core/queries/form_query.rs b/src/document_core/queries/form_query.rs
+--- a/src/document_core/queries/form_query.rs
++++ b/src/document_core/queries/form_query.rs
+@@ -331,7 +331,9 @@
+         return None;
+     }
+     let u16s: Vec<u16> = decompressed
+-        .chunks_exact(2)
++        .as_chunks::<2>()
++        .0
++        .iter()
+         .map(|c| u16::from_le_bytes([c[0], c[1]]))
+         .collect();
+     Some(String::from_utf16_lossy(&u16s))
+diff --git a/src/document_core/queries/rendering.rs b/src/document_core/queries/rendering.rs
+--- a/src/document_core/queries/rendering.rs
++++ b/src/document_core/queries/rendering.rs
+@@ -4536,9 +4536,7 @@
+
+     /// 모든 구역을 dirty로 표시한다.
+     pub(crate) fn mark_all_sections_dirty(&mut self) {
+-        for d in &mut self.dirty_sections {
+-            *d = true;
+-        }
++        self.dirty_sections.fill(true);
+         self.render_normalization
+             .section_revisions
+             .resize(self.document.sections.len(), 0);
+@@ -4871,9 +4869,7 @@
+         self.para_column_map
+             .resize_with(self.document.sections.len(), Vec::new);
+         self.para_column_map[section_index] = vec![0; paragraph_count];
+-        for offset in &mut self.para_offset {
+-            *offset = 0;
+-        }
++        self.para_offset.fill(0);
+         self.deferred_pagination_descriptor = None;
+         self.invalidate_page_tree_cache();
+         DeferredPaginationStepResult {
+@@ -5715,9 +5711,7 @@
+
+         let issue2424_cleanup_started = issue2424_profile_enabled.then(std::time::Instant::now);
+         // para_offset 리셋 (수렴 감지 완료)
+-        for off in &mut self.para_offset {
+-            *off = 0;
+-        }
++        self.para_offset.fill(0);
+
+         let issue2424_cleanup_elapsed = issue2424_cleanup_started
+             .map(|started| started.elapsed())
+diff --git a/src/model/style.rs b/src/model/style.rs
+--- a/src/model/style.rs
++++ b/src/model/style.rs
+@@ -935,9 +935,7 @@
+         }
+         if let Some(id) = self.font_id {
+             // 모든 언어에 동일한 글꼴 ID 적용
+-            for fid in &mut cs.font_ids {
+-                *fid = id;
+-            }
++            cs.font_ids.fill(id);
+         }
+         if let Some(v) = self.base_size {
+             cs.base_size = v;
+diff --git a/src/ole_chart/grid.rs b/src/ole_chart/grid.rs
+--- a/src/ole_chart/grid.rs
++++ b/src/ole_chart/grid.rs
+@@ -505,7 +505,9 @@
+
+     let text = if tail.len() >= 2 && tail.ends_with(&[0, 0]) && (tail.len() - 2) % 2 == 0 {
+         let units: Vec<u16> = tail[..tail.len() - 2]
+-            .chunks_exact(2)
++            .as_chunks::<2>()
++            .0
++            .iter()
+             .map(|pair| u16::from_le_bytes([pair[0], pair[1]]))
+             .collect();
+         String::from_utf16(&units).ok()?
+diff --git a/src/ole_chart/parser.rs b/src/ole_chart/parser.rs
+--- a/src/ole_chart/parser.rs
++++ b/src/ole_chart/parser.rs
+@@ -225,7 +225,7 @@
+     signature.copy_from_slice(&bytes[..16]);
+
+     let mut first_words_le = [0u32; 4];
+-    for (i, chunk) in bytes[..16].chunks_exact(4).enumerate() {
++    for (i, chunk) in bytes[..16].as_chunks::<4>().0.iter().enumerate() {
+         first_words_le[i] = u32::from_le_bytes([chunk[0], chunk[1], chunk[2], chunk[3]]);
+     }
+
+diff --git a/src/parser/body_text.rs b/src/parser/body_text.rs
+--- a/src/parser/body_text.rs
++++ b/src/parser/body_text.rs
+@@ -474,7 +474,7 @@
+             }
+             let end_cu = (pos / 2) as u32;
+             char_offsets.extend(start_cu..end_cu);
+-            text.extend(data[run_start..pos].chunks_exact(2).map(|c| {
++            text.extend(data[run_start..pos].as_chunks::<2>().0.iter().map(|c| {
+                 char::from_u32(u16::from_le_bytes([c[0], c[1]]) as u32).unwrap_or('\u{FFFD}')
+             }));
+             char_count += (end_cu - start_cu) as usize;
+@@ -1249,7 +1249,9 @@
+         return None;
+     }
+     let wchars: Vec<u16> = name_bytes[..name_len * 2]
+-        .chunks_exact(2)
++        .as_chunks::<2>()
++        .0
++        .iter()
+         .map(|c| u16::from_le_bytes([c[0], c[1]]))
+         .collect();
+     let name = String::from_utf16_lossy(&wchars);
+diff --git a/src/parser/byte_reader.rs b/src/parser/byte_reader.rs
+--- a/src/parser/byte_reader.rs
++++ b/src/parser/byte_reader.rs
+@@ -118,7 +118,9 @@
+         let bytes = self.read_bytes(byte_count)?;
+
+         let utf16: Vec<u16> = bytes
+-            .chunks_exact(2)
++            .as_chunks::<2>()
++            .0
++            .iter()
+             .map(|chunk| u16::from_le_bytes([chunk[0], chunk[1]]))
+             .collect();
+
+diff --git a/src/parser/cfb_reader.rs b/src/parser/cfb_reader.rs
+--- a/src/parser/cfb_reader.rs
++++ b/src/parser/cfb_reader.rs
+@@ -1263,7 +1263,9 @@
+     }
+     // UTF-16LE 디코딩
+     let utf16: Vec<u16> = raw
+-        .chunks_exact(2)
++        .as_chunks::<2>()
++        .0
++        .iter()
+         .map(|c| u16::from_le_bytes([c[0], c[1]]))
+         .collect();
+     let text = String::from_utf16_lossy(&utf16);
+diff --git a/src/parser/control.rs b/src/parser/control.rs
+--- a/src/parser/control.rs
++++ b/src/parser/control.rs
+@@ -418,7 +418,9 @@
+         return None;
+     }
+     let wchars: Vec<u16> = extra[17..17 + name_len * 2]
+-        .chunks_exact(2)
++        .as_chunks::<2>()
++        .0
++        .iter()
+         .map(|c| u16::from_le_bytes([c[0], c[1]]))
+         .collect();
+     let name = String::from_utf16_lossy(&wchars);
+@@ -1048,7 +1050,9 @@
+ /// UTF-16LE 바이트를 String으로 디코딩
+ fn decode_utf16le(data: &[u8]) -> String {
+     let u16s: Vec<u16> = data
+-        .chunks_exact(2)
++        .as_chunks::<2>()
++        .0
++        .iter()
+         .map(|c| u16::from_le_bytes([c[0], c[1]]))
+         .collect();
+     String::from_utf16_lossy(&u16s)
+diff --git a/src/parser/doc_info.rs b/src/parser/doc_info.rs
+--- a/src/parser/doc_info.rs
++++ b/src/parser/doc_info.rs
+@@ -170,7 +170,9 @@
+ /// HWPX 는 같은 값을 `settings.xml` 의
+ /// `<config:config-item name="PrintMethod">` 로 싣는다.
+ fn parse_doc_data_print_method(data: &[u8]) -> Option<u32> {
+-    data.chunks_exact(8)
++    data.as_chunks::<8>()
++        .0
++        .iter()
+         .find(|kv| {
+             u32::from_le_bytes([kv[0], kv[1], kv[2], kv[3]])
+                 == crate::model::document::HWP5_DOC_DATA_KEY_PRINT_METHOD
+diff --git a/src/parser/hml/encoding.rs b/src/parser/hml/encoding.rs
+--- a/src/parser/hml/encoding.rs
++++ b/src/parser/hml/encoding.rs
+@@ -80,7 +80,9 @@
+
+ fn utf16_units(bytes: &[u8], encoding: HmlEncoding) -> Vec<u16> {
+     bytes
+-        .chunks_exact(2)
++        .as_chunks::<2>()
++        .0
++        .iter()
+         .map(|pair| match encoding {
+             HmlEncoding::Utf16Le => u16::from_le_bytes([pair[0], pair[1]]),
+             HmlEncoding::Utf16Be => u16::from_be_bytes([pair[0], pair[1]]),
+diff --git a/src/parser/hwp_summary.rs b/src/parser/hwp_summary.rs
+--- a/src/parser/hwp_summary.rs
++++ b/src/parser/hwp_summary.rs
+@@ -149,7 +149,9 @@
+
+ fn decode_utf16le(data: &[u8]) -> Option<String> {
+     let units = data
+-        .chunks_exact(2)
++        .as_chunks::<2>()
++        .0
++        .iter()
+         .map(|bytes| u16::from_le_bytes([bytes[0], bytes[1]]))
+         .take_while(|unit| *unit != 0)
+         .collect::<Vec<_>>();
+diff --git a/src/parser/ole_container.rs b/src/parser/ole_container.rs
+--- a/src/parser/ole_container.rs
++++ b/src/parser/ole_container.rs
+@@ -268,7 +268,9 @@
+         return None;
+     }
+     let units: Vec<u16> = data[72..72 + len]
+-        .chunks_exact(2)
++        .as_chunks::<2>()
++        .0
++        .iter()
+         .map(|c| u16::from_le_bytes([c[0], c[1]]))
+         .collect();
+     let script = String::from_utf16_lossy(&units)
+diff --git a/src/renderer/height_measurer.rs b/src/renderer/height_measurer.rs
+--- a/src/renderer/height_measurer.rs
++++ b/src/renderer/height_measurer.rs
+@@ -1230,9 +1230,7 @@
+             }
+         } else {
+             let per_row = target_row_sum / row_count as f64;
+-            for row_height in &mut fitted.row_heights {
+-                *row_height = per_row;
+-            }
++            fitted.row_heights.fill(per_row);
+         }
+     }
+
+diff --git a/src/renderer/image_resolver.rs b/src/renderer/image_resolver.rs
+--- a/src/renderer/image_resolver.rs
++++ b/src/renderer/image_resolver.rs
+@@ -692,7 +692,7 @@
+     }
+
+     let mut rgba = vec![0u8; pixel_count.checked_mul(4)?];
+-    for (dst, &idx) in rgba.chunks_exact_mut(4).zip(indices.iter()) {
++    for (dst, &idx) in rgba.as_chunks_mut::<4>().0.iter_mut().zip(indices.iter()) {
+         dst[0] = palette_component(idx as usize)?;
+         dst[1] = palette_component(256 + idx as usize)?;
+         dst[2] = palette_component(512 + idx as usize)?;
+@@ -801,7 +801,7 @@
+         }
+         let mut palette = vec![0u8; 256 * 3];
+         reader.read_palette(&mut palette).ok()?;
+-        for (dst, &idx) in rgba.chunks_exact_mut(4).zip(indices.iter()) {
++        for (dst, &idx) in rgba.as_chunks_mut::<4>().0.iter_mut().zip(indices.iter()) {
+             let p = idx as usize * 3;
+             let r = palette[p];
+             let g = palette[p + 1];
+@@ -820,7 +820,7 @@
+         let mut rgb_row = vec![0u8; row_bytes_rgb];
+         for y in 0..height as usize {
+             reader.next_row_rgb(&mut rgb_row).ok()?;
+-            for (x, src) in rgb_row.chunks_exact(3).enumerate() {
++            for (x, src) in rgb_row.as_chunks::<3>().0.iter().enumerate() {
+                 let dst = &mut rgba[(y * width as usize + x) * 4..(y * width as usize + x) * 4 + 4];
+                 dst[0] = src[0];
+                 dst[1] = src[1];
+diff --git a/src/renderer/layout.rs b/src/renderer/layout.rs
+--- a/src/renderer/layout.rs
++++ b/src/renderer/layout.rs
+@@ -16469,7 +16469,7 @@
+                 insert_before_para_text(
+                     col_node,
+                     para_index,
+-                    temp_parent.children.drain(..).collect(),
++                    std::mem::take(&mut temp_parent.children),
+                 );
+             } else if is_paper_based {
+                 let mut temp_parent = RenderNode::new(
+diff --git a/src/renderer/pdf_raster_fidelity/fingerprint.rs b/src/renderer/pdf_raster_fidelity/fingerprint.rs
+--- a/src/renderer/pdf_raster_fidelity/fingerprint.rs
++++ b/src/renderer/pdf_raster_fidelity/fingerprint.rs
+@@ -37,7 +37,7 @@
+             .and_then(|n| n.checked_mul(4))
+             .ok_or_else(|| "rgba page size overflow".to_string())?;
+         let mut pixels = vec![0u8; len];
+-        for chunk in pixels.chunks_exact_mut(4) {
++        for chunk in pixels.as_chunks_mut::<4>().0.iter_mut() {
+             chunk.copy_from_slice(&fill);
+         }
+         Self::new(width, height, pixels)
+diff --git a/src/renderer/svg.rs b/src/renderer/svg.rs
+--- a/src/renderer/svg.rs
++++ b/src/renderer/svg.rs
+@@ -4701,7 +4701,7 @@
+     let mut tables = Vec::with_capacity(table_count);
+     let mut has_bitmap = false;
+     let mut repaired_cmap = false;
+-    for record in directory.chunks_exact(16) {
++    for record in directory.as_chunks::<16>().0.iter() {
+         if matches!(&record[..4], b"EBDT" | b"EBLC") {
+             has_bitmap = true;
+             continue;
+diff --git a/src/wmf/converter/svg/ternary_raster_operator.rs b/src/wmf/converter/svg/ternary_raster_operator.rs
+--- a/src/wmf/converter/svg/ternary_raster_operator.rs
++++ b/src/wmf/converter/svg/ternary_raster_operator.rs
+@@ -220,7 +220,9 @@
+         if data.len() != 32 || !matches!(data[0], 0x55 | 0xAA) {
+             return false;
+         }
+-        data.chunks_exact(4)
++        data.as_chunks::<4>()
++            .0
++            .iter()
+             .enumerate()
+             .all(|(row, bytes)| bytes[0] == if row % 2 == 0 { data[0] } else { !data[0] })
+     }
+diff --git a/src/wmf/parser/objects/structure/mod.rs b/src/wmf/parser/objects/structure/mod.rs
+--- a/src/wmf/parser/objects/structure/mod.rs
++++ b/src/wmf/parser/objects/structure/mod.rs
+@@ -39,8 +39,10 @@
+     }
+
+     let u16_vec = bytes
+-        .chunks_exact(2)
+-        .map(|chunk| u16::from_le_bytes(chunk.try_into().expect("should be converted")))
++        .as_chunks::<2>()
++        .0
++        .iter()
++        .map(|chunk| u16::from_le_bytes(*chunk))
+         .collect::<Vec<_>>();
+
+     String::from_utf16(&u16_vec).map_err(|err| crate::wmf::parser::ParseError::UnexpectedPattern {
