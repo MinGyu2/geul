@@ -1,0 +1,154 @@
+diff --git a/src/renderer/canvas_rgba.rs b/src/renderer/canvas_rgba.rs
+--- a/src/renderer/canvas_rgba.rs
++++ b/src/renderer/canvas_rgba.rs
+@@ -83,7 +83,13 @@
+                 let table = DynamicImage::ImageLuma8(ramp).to_rgba8();
+                 let mut out = RgbaImage::new(gray.width(), gray.height());
+                 if out.set_color_space(color).is_ok() {
+-                    for (pixel, value) in out.as_mut().chunks_exact_mut(4).zip(gray.as_raw()) {
++                    for (pixel, value) in out
++                        .as_mut()
++                        .as_chunks_mut::<4>()
++                        .0
++                        .iter_mut()
++                        .zip(gray.as_raw())
++                    {
+                         let start = usize::from(*value) * 4;
+                         pixel.copy_from_slice(&table.as_raw()[start..start + 4]);
+                     }
+diff --git a/src/renderer/preparation.rs b/src/renderer/preparation.rs
+--- a/src/renderer/preparation.rs
++++ b/src/renderer/preparation.rs
+@@ -17,6 +17,33 @@
+ pub const MAX_KEYS: usize = 256;
+ pub const RESOURCE_QUANTUM: usize = 4;
+ pub const STEP_QUANTUM: usize = 256;
++
++#[derive(Clone, Copy, Debug, PartialEq, Eq)]
++pub enum Outcome {
++    Complete,
++    Pending,
++    ResourceLimit,
++    Canceled,
++    Error,
++}
++impl Outcome {
++    /// The first terminal reason is authoritative. Cleanup must run separately.
++    pub fn record(&mut self, next: Self) {
++        if *self == Self::Pending {
++            *self = next;
++        }
++    }
++
++    pub fn name(self) -> &'static str {
++        match self {
++            Self::Complete => "COMPLETE",
++            Self::Pending => "PENDING",
++            Self::ResourceLimit => "RESOURCE_LIMIT",
++            Self::Canceled => "CANCELED",
++            Self::Error => "ERROR",
++        }
++    }
++}
+
+ #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+ pub enum Phase {
+@@ -498,6 +525,19 @@
+     fn tree(ops: Vec<PaintOp>) -> PageLayerTree {
+         PageLayerTree::new(100., 100., LayerNode::leaf(box_(), None, ops))
+     }
++    #[test]
++    fn first_terminal_reason_survives_all_later_outcomes() {
++        use Outcome::*;
++        for first in [Complete, Canceled, Error, ResourceLimit] {
++            let mut state = Pending;
++            state.record(first);
++            for late in [Pending, Complete, Canceled, Error, ResourceLimit, first] {
++                state.record(late);
++                assert_eq!(state, first, "late {late:?}");
++            }
++        }
++    }
++
+     #[test]
+     fn phase_order_and_terminal_idempotence() {
+         assert_eq!(Phase::Preparing.ready(), Some(Phase::ResourcesReady));
+diff --git a/src/renderer/render_job.rs b/src/renderer/render_job.rs
+--- a/src/renderer/render_job.rs
++++ b/src/renderer/render_job.rs
+@@ -34,25 +34,7 @@
+ const DEADLINE_MS: f64 = 15_000.0;
+ const TARGET_TOKEN: &str = "__rhwpExperimentalRenderJob";
+
+-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+-pub enum Outcome {
+-    Complete,
+-    Pending,
+-    ResourceLimit,
+-    Canceled,
+-    Error,
+-}
+-impl Outcome {
+-    pub fn name(self) -> &'static str {
+-        match self {
+-            Self::Complete => "COMPLETE",
+-            Self::Pending => "PENDING",
+-            Self::ResourceLimit => "RESOURCE_LIMIT",
+-            Self::Canceled => "CANCELED",
+-            Self::Error => "ERROR",
+-        }
+-    }
+-}
++pub use super::preparation::Outcome;
+
+ pub struct ImageResource {
+     pub image: HtmlImageElement,
+@@ -158,7 +140,7 @@
+ pub fn memoize(key: RecipeKey, data: Option<Vec<u8>>, baked: bool) -> Option<Rc<ResolvedPayload>> {
+     let job = active_job()?;
+     let mut j = job.borrow_mut();
+-    if j.phase != Phase::Preparing {
++    if j.phase != Phase::Preparing || j.state != Outcome::Pending {
+         return None;
+     }
+     if j.memos.len() >= preparation::MAX_KEYS
+@@ -288,10 +270,12 @@
+         );
+     }
+     pub fn finish(&mut self, state: Outcome) {
+-        if self.state == Outcome::Pending || self.target.is_some() {
++        // Recording is separate from cleanup: a marker may already have latched a failure.
++        self.state.record(state);
++        if self.target.is_some() {
+             POOL.with(|p| {
+                 let mut p = p.borrow_mut();
+-                match state {
++                match self.state {
+                     Outcome::Canceled => p.cancellations += 1,
+                     Outcome::ResourceLimit => p.limits += 1,
+                     Outcome::Error => p.errors += 1,
+@@ -299,7 +283,6 @@
+                 }
+             });
+         }
+-        self.state = state;
+         self.phase = self.phase.finish();
+         self.preparation = None;
+         self.memos = Vec::new();
+@@ -720,14 +703,14 @@
+ pub fn mark_error() {
+     ACTIVE.with(|a| {
+         if let Some(j) = a.borrow().as_ref() {
+-            j.borrow_mut().state = Outcome::Error;
++            j.borrow_mut().state.record(Outcome::Error);
+         }
+     });
+ }
+ pub fn mark_limit() {
+     ACTIVE.with(|a| {
+         if let Some(j) = a.borrow().as_ref() {
+-            j.borrow_mut().state = Outcome::ResourceLimit;
++            j.borrow_mut().state.record(Outcome::ResourceLimit);
+         }
+     });
+ }

@@ -15,6 +15,8 @@ from run import engine, free_port, request, stop  # noqa: E402
 sys.path.insert(0, str(HERE.parent / 'ownership-poc'))
 from native_d1_result import loads_strict  # noqa: E402
 
+from validation import validate_run, validate_identity  # noqa: E402
+
 RUNTIME = HERE.parent / 'render-preparation/runtime.mjs'
 
 
@@ -34,8 +36,8 @@ def main():
     a = p.parse_args()
     if a.output.exists():
         p.error('기존 실행 증거 보존')
-    inputs = lambda: {'hardening.mjs': sha(HERE / 'hardening.mjs'), 'run.py': sha(HERE / 'run.py'), 'runtime.mjs': sha(RUNTIME),
-                      **{'candidate/' + n: sha(a.candidate / n) for n in ('rhwp.js', 'rhwp_bg.wasm')}}
+    inputs = lambda: {'hardening.mjs': sha(HERE / 'hardening.mjs'), 'run.py': sha(HERE / 'run.py'), 'runtime.mjs': sha(RUNTIME), 'validation.py': sha(HERE / 'validation.py'),
+                      **{'candidate/' + n: sha(a.candidate / n) for n in ('rhwp.js', 'rhwp_bg.wasm', 'rhwp.d.ts', 'ENGINE.json')}}
     before = inputs()
     result = {'schema': 1, 'browser': a.browser, 'status': 'FAIL'}
     received, complete = [], threading.Event()
@@ -134,15 +136,8 @@ def main():
             if len(received) != 1:
                 raise RuntimeError('중복 완료 결과')
             run = result['run'] = received[0]
-            # 브라우저가 보낸 status를 그대로 믿지 않고 항목을 다시 판정한다.
-            names = [t.get('name') for t in run.get('tests', [])]
-            expected = ['control-small-watermark-complete', 'control-cleanup', 'large-source-fits-job-reservation',
-                        'memo-refusal-is-resource-limit', 'memo-refusal-transform-attempted', 'memo-refusal-no-decode-after-refusal',
-                        'memo-refusal-no-ready-no-replay', 'memo-refusal-not-published', 'memo-refusal-reservation-bounded', 'memo-refusal-cleanup']
-            failed = [t['name'] for t in run.get('tests', []) if t.get('status') != 'PASS']
-            result['failedChecks'] = failed
-            if names == expected and not failed and not run.get('error') and run.get('status') == 'PASS':
-                result['status'] = 'PASS'
+            validate_run(run)
+            result['status'] = 'PASS'
         except Exception as error:
             result['error'] = str(error).replace(str(tmp), '<temporary>')[:1500]
         finally:
@@ -150,8 +145,11 @@ def main():
             result['browserLogTail'] = log.read().decode(errors='replace')[-1500:].replace(str(tmp), '<temporary>')
             after = inputs()
             result.update(inputsBefore=before, inputsAfter=after, executedDependenciesStable=before == after)
-            if before != after:
+            try:
+                validate_identity(result['identity'], before, after)
+            except (ValueError, TypeError, AttributeError) as error:
                 result['status'] = 'FAIL'
+                result['identityError'] = str(error)
             text = json.dumps(result, ensure_ascii=False, indent=1).replace(str(ROOT), '<workspace>').replace(str(Path.home()), '<home>')
             a.output.parent.mkdir(parents=True, exist_ok=True)
             a.output.write_text(text + '\n')
