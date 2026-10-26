@@ -1,0 +1,155 @@
+[
+  {
+    "probe": "events-pair-v2",
+    "measurement": {
+      "events": 1000002,
+      "inputBytes": 6500007,
+      "mode": "pair",
+      "ms": 725.380486,
+      "processHighWaterKiB": "124884"
+    }
+  },
+  {
+    "probe": "events-stream-v2",
+    "measurement": {
+      "events": 1000002,
+      "inputBytes": 6500007,
+      "mode": "stream",
+      "ms": 678.4640039999999,
+      "processHighWaterKiB": "19308"
+    }
+  },
+  {
+    "probe": "header-16MiB-v2",
+    "measurement": {
+      "appended": 5535,
+      "expandedOutputBytes": 16319855,
+      "fixtureCreationIncluded": false,
+      "headerBytes": 16037113,
+      "mode": "valid",
+      "original": 60000,
+      "stages": [
+        {
+          "ms": 14.5,
+          "peakResetError": null,
+          "peakRssKiB": 69412,
+          "processPeakRssKiB": null,
+          "result": "",
+          "rssAfterKiB": 69412,
+          "rssMethod": "linux-clear_refs-5-stage",
+          "rssReadError": null,
+          "stage": "package::open 둘(압축 풀기)"
+        },
+        {
+          "ms": 218.9,
+          "peakResetError": null,
+          "peakRssKiB": 69876,
+          "processPeakRssKiB": null,
+          "result": "[]",
+          "rssAfterKiB": 69876,
+          "rssMethod": "linux-clear_refs-5-stage",
+          "rssReadError": null,
+          "stage": "validate_hwpx"
+        },
+        {
+          "ms": 1165.3,
+          "peakResetError": null,
+          "peakRssKiB": 175480,
+          "processPeakRssKiB": null,
+          "result": "[]",
+          "rssAfterKiB": 124680,
+          "rssMethod": "linux-clear_refs-5-stage",
+          "rssReadError": null,
+          "stage": "compare_saved_hwpx"
+        },
+        {
+          "ms": 446.7,
+          "peakResetError": null,
+          "peakRssKiB": 124680,
+          "processPeakRssKiB": null,
+          "result": "[]",
+          "rssAfterKiB": 124680,
+          "rssMethod": "linux-clear_refs-5-stage",
+          "rssReadError": null,
+          "stage": "validate_hwpx_references"
+        },
+        {
+          "ms": 1856.3,
+          "peakResetError": null,
+          "peakRssKiB": 196292,
+          "processPeakRssKiB": null,
+          "result": "Safe",
+          "rssAfterKiB": 145300,
+          "rssMethod": "linux-clear_refs-5-stage",
+          "rssReadError": null,
+          "stage": "service::check_saved 전체"
+        }
+      ],
+      "zipBytes": 369946
+    }
+  },
+  {
+    "probe": "id-boundary-v2",
+    "measurement": {
+      "accepted": true,
+      "appended": 1,
+      "compareMs": 1221,
+      "lastId": 65535,
+      "original": 65535
+    }
+  },
+  {
+    "probe": "id-boundary-v2",
+    "measurement": {
+      "accepted": false,
+      "appended": 1,
+      "compareMs": 920,
+      "lastId": 65536,
+      "original": 65536
+    }
+  },
+  {
+    "probe": "text-16-pair-v2",
+    "measurement": {
+      "inputBytes": 16777216,
+      "mode": "pair",
+      "ms": 20.995991,
+      "processHighWaterKiB": 56464,
+      "retainedEventPayloadBytes": null,
+      "scope": "isolated process HWM; excludes source/input from retained event payload; legacy payload unmeasured"
+    }
+  },
+  {
+    "probe": "text-16-stream-v2",
+    "measurement": {
+      "inputBytes": 16777216,
+      "mode": "stream",
+      "ms": 11.094876,
+      "processHighWaterKiB": 23900,
+      "retainedEventPayloadBytes": 32768,
+      "scope": "isolated process HWM; excludes source/input from retained event payload; legacy payload unmeasured"
+    }
+  },
+  {
+    "probe": "text-255-pair-v2",
+    "measurement": {
+      "inputBytes": 267386880,
+      "mode": "pair",
+      "ms": 521.652659,
+      "processHighWaterKiB": 790656,
+      "retainedEventPayloadBytes": null,
+      "scope": "isolated process HWM; excludes source/input from retained event payload; legacy payload unmeasured"
+    }
+  },
+  {
+    "probe": "text-255-stream-v2",
+    "measurement": {
+      "inputBytes": 267386880,
+      "mode": "stream",
+      "ms": 152.428908,
+      "processHighWaterKiB": 268636,
+      "retainedEventPayloadBytes": 32768,
+      "scope": "isolated process HWM; excludes source/input from retained event payload; legacy payload unmeasured"
+    }
+  }
+]

@@ -1,0 +1,58 @@
+{
+  "sourceIdentity": "source-identity.json",
+  "observed": {
+    "rust": {
+      "fmt": "PASS",
+      "checkAllTargets": "PASS",
+      "clippyAllTargetsStrict": "PASS",
+      "test": "193 library + 1 DOCX passed; 13 library and 2 integration ignored"
+    },
+    "frontend": {
+      "typecheck": "PASS",
+      "eslint": "PASS",
+      "vitest": "819 PASS",
+      "realWasm": "42 PASS, 3 existing skipped"
+    },
+    "runnerTests": "separate D4 evidence"
+  },
+  "rawLogs": ".git/t009-resource-boundary-hardening-raw",
+  "limitations": [
+    "whole T009 resource safety INCOMPLETE",
+    "header append/statistics still materialized",
+    "no global byte admission policy",
+    "no complete OOM recovery"
+  ],
+  "security": {
+    "unitTests": 86,
+    "allPrestage": 1844,
+    "historyPrecommit": 2711,
+    "integratedScript": "FAIL: gitleaks absent PATH",
+    "cachedGitleaksHistory": "PASS: 101 commits, 168628011 bytes"
+  },
+  "developmentFailures": [
+    "initial raw Request return lifetime E0106; fixed by borrowing InvokeBody",
+    "wrong WordCraft .mjs generator invocation; used existing independently generated corpus"
+  ],
+  "logSha256": {
+    "geul-boundary-xml-first.log": "85fa7e9ce406ab52dd15421ed3636593bdcb51442a521066f07ba124f4f5b8c7",
+    "geul-boundary-lib-first.log": "7c128ff171c079aca85ea8aa44c79d89a588be0ad30d8b03f1d7bfc7878b1db8",
+    "geul-boundary-lib-second.log": "2e85a840b8cd60b7c54555d61236482e2315adb661ac58888bff98a0f688f4cb",
+    "geul-boundary-clippy.log": "11f4b10cae91c1d5739c9b329a5f29dd558d5f86be78883a91a5bb766a47261d",
+    "geul-boundary-typecheck.log": "84289470c4ab3e54625fbaee53eecea7677e0d45cb4c7d76adfdc4d865fe5771",
+    "geul-boundary-lint.log": "97117f34558193dfac87899d0c44d60c89f74c9e6d8dc917f73e419c46dab3ee",
+    "geul-boundary-vitest.log": "03c432f404d1d27b10bc90d5056f6553bd804f32936477c7bedf906d69702184",
+    "geul-boundary-release-build.log": "fe6b7d71d01c5ef92efd2df134590af7fe253f5dd0cb06afad70921b71c9157d",
+    "geul-boundary-release-final-build.log": "f850c5a0684d01290cc98d2fc979c951cf365972eeb667eb55f02c096589d053",
+    "geul-boundary-specialized-build.log": "033f410b6e560afb53f85687ef361fd0340dcdedd0820a0cdbf3ea2cefa952ca",
+    "geul-boundary-security-tests.log": "00adebed6251ba2a7215a514fde43c713b3fbe1f9585a23b3852a25c1438b1fa",
+    "geul-boundary-real-wasm.log": "6365cd577b3c98f128befdadee5151ca81cec6eec42b54311de2377b7242ff28",
+    "geul-boundary-security-integrated.log": "2c2f4418480f6b3345e37eb75f27e666fa2aa71760c482572e422f4380cbb1f0",
+    "geul-boundary-native-build.log": "1644ed9c02c34ea53b538e239f0791efa2953d8a81a3dc6cca8c8ca5df221b59",
+    "geul-boundary-gitleaks-history.log": "0c194ff5631c6665b767a6aa9688f62d82330c99cf2a96a67d8e1a6c454626a6",
+    "geul-boundary-security-all-prestage.log": "8c6400575f3b289f5ddce69cb1a35e0583f9d35ff2cdb82e6a500cb15091dc35",
+    "geul-boundary-final-build.log": "77825e53e5e178545c6e4375d085a5e4c08e53bc5c4d8267dfd3a278f2bd3134",
+    "geul-boundary-security-history-precommit.log": "23cc46e09328a0fb89a02d451da9482a91ff07f302e649b5bb6d9bdeb6129e59",
+    "geul-boundary-native-final-build.log": "a178c7902ac24dda0e2c0cd4cf0e47a2a6976ef30481cb4015f2f71620380d8b",
+    "geul-boundary-native-delivery-build.log": "a178c7902ac24dda0e2c0cd4cf0e47a2a6976ef30481cb4015f2f71620380d8b"
+  }
+}

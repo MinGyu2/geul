@@ -1,0 +1,81 @@
+[
+  {
+    "name": "fmt-v2",
+    "command": [
+      "cargo",
+      "fmt",
+      "--manifest-path",
+      "src-tauri/Cargo.toml",
+      "--check"
+    ],
+    "env": {},
+    "exit": 0,
+    "seconds": 0.505,
+    "logSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "observedSummary": []
+  },
+  {
+    "name": "check-v2",
+    "command": [
+      "cargo",
+      "check",
+      "--locked",
+      "--offline",
+      "--manifest-path",
+      "src-tauri/Cargo.toml",
+      "--all-targets"
+    ],
+    "env": {},
+    "exit": 0,
+    "seconds": 1.704,
+    "logSha256": "bc6ff1bc1bddce33dccf5fe8966ec77f0c75d452e55bcf898bf1a4a1fdab89c6",
+    "observedSummary": [
+      "    Finished `dev` profile [unoptimized + debuginfo] target(s) in 1.63s"
+    ]
+  },
+  {
+    "name": "clippy-v2",
+    "command": [
+      "cargo",
+      "clippy",
+      "--locked",
+      "--offline",
+      "--manifest-path",
+      "src-tauri/Cargo.toml",
+      "--all-targets",
+      "--",
+      "-D",
+      "warnings"
+    ],
+    "env": {},
+    "exit": 0,
+    "seconds": 2.497,
+    "logSha256": "d8a15a8d4560d84706dd503ba116d6e2e5a4081843fecfcc15fce17eec356a14",
+    "observedSummary": [
+      "    Finished `dev` profile [unoptimized + debuginfo] target(s) in 2.39s"
+    ]
+  },
+  {
+    "name": "test-v2",
+    "command": [
+      "cargo",
+      "test",
+      "--locked",
+      "--offline",
+      "--manifest-path",
+      "src-tauri/Cargo.toml"
+    ],
+    "env": {},
+    "exit": 0,
+    "seconds": 24.33,
+    "logSha256": "d200661acb9ec2f6fa5815d866962517637713156c09e9900d5987de82f17634",
+    "observedSummary": [
+      "    Finished `test` profile [unoptimized + debuginfo] target(s) in 19.28s",
+      "test result: ok. 193 passed; 0 failed; 13 ignored; 0 measured; 0 filtered out; finished in 4.58s",
+      "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s",
+      "test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s",
+      "test result: ok. 0 passed; 0 failed; 2 ignored; 0 measured; 0 filtered out; finished in 0.00s",
+      "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s"
+    ]
+  }
+]

@@ -39,6 +39,21 @@ fn u64_at(bytes: &[u8], at: usize) -> u64 {
 
 /// 프레임을 읽는다. 모양이 맞지 않으면 `InvalidRequest`, 출력이 문서 크기 상한을 넘으면 `ResourceLimit`.
 pub fn parse_frame(body: &[u8], max_payload: u64) -> Result<Frame, DocumentError> {
+    parse_frame_copy(body, max_payload, |payload| {
+        let mut owned = Vec::new();
+        owned
+            .try_reserve_exact(payload.len())
+            .map_err(|_| DocumentError::Internal)?;
+        owned.extend_from_slice(payload);
+        Ok(owned)
+    })
+}
+
+fn parse_frame_copy(
+    body: &[u8],
+    max_payload: u64,
+    copy: impl FnOnce(&[u8]) -> Result<Vec<u8>, DocumentError>,
+) -> Result<Frame, DocumentError> {
     if body.len() < FRAME_HEADER || &body[..4] != FRAME_MAGIC {
         return Err(DocumentError::InvalidRequest);
     }
@@ -58,7 +73,7 @@ pub fn parse_frame(body: &[u8], max_payload: u64) -> Result<Frame, DocumentError
         });
     }
     // Refuse oversized frames before duplicating their potentially large IPC payload.
-    let payload = payload.to_vec();
+    let payload = copy(payload)?;
     Ok(Frame {
         session_id: u64_at(body, 4),
         generation: u64_at(body, 12),
@@ -84,9 +99,9 @@ pub fn reopen_equal(reopen: &Value) -> bool {
     })
 }
 
-fn raw(request: &Request<'_>) -> Result<Vec<u8>, DocumentError> {
-    match request.body() {
-        InvokeBody::Raw(bytes) => Ok(bytes.clone()),
+fn raw(body: &InvokeBody) -> Result<&[u8], DocumentError> {
+    match body {
+        InvokeBody::Raw(bytes) => Ok(bytes.as_slice()),
         InvokeBody::Json(_) => Err(DocumentError::InvalidRequest),
     }
 }
@@ -113,7 +128,7 @@ pub async fn document_preflight(
     state: State<'_, DocumentState>,
     request: Request<'_>,
 ) -> Result<SaveCheck, DocumentError> {
-    let frame = parse_frame(&raw(&request)?, state.limits().max_file_bytes)?;
+    let frame = parse_frame(raw(request.body())?, state.limits().max_file_bytes)?;
     state.frontend_model(frame.session_id)?;
     let report = exactly(&frame.meta, &["contentLoss"])
         .and_then(|meta| meta.get("contentLoss"))
@@ -150,7 +165,7 @@ pub async fn document_save(
     state: State<'_, DocumentState>,
     request: Request<'_>,
 ) -> Result<SaveOutcome, DocumentError> {
-    let frame = parse_frame(&raw(&request)?, state.limits().max_file_bytes)?;
+    let frame = parse_frame(raw(request.body())?, state.limits().max_file_bytes)?;
     state.frontend_model(frame.session_id)?;
     let meta =
         exactly(&frame.meta, &["contentLoss", "reopen"]).ok_or(DocumentError::InvalidRequest)?;
@@ -171,4 +186,96 @@ pub async fn document_save(
             )
         })
         .await
+}
+
+#[cfg(test)]
+mod admission_tests {
+    use super::*;
+    fn frame(meta: &[u8], payload: &[u8]) -> Vec<u8> {
+        let mut b = FRAME_MAGIC.to_vec();
+        for n in [1u64, 2, 3] {
+            b.extend(n.to_le_bytes());
+        }
+        b.extend((meta.len() as u32).to_le_bytes());
+        b.extend(meta);
+        b.extend(payload);
+        b
+    }
+    #[test]
+    fn both_commands_borrow_before_the_only_validated_payload_copy() {
+        // Both command entry points use raw(request.body()) -> parse_frame before
+        // session lookup/run_blocking. Exercise their distinct metadata here.
+        for meta in [
+            br#"{"contentLoss":null}"#.as_slice(),
+            br#"{"contentLoss":null,"reopen":null}"#.as_slice(),
+        ] {
+            let body = InvokeBody::Raw(frame(meta, &[7; 32]));
+            let InvokeBody::Raw(source) = &body else {
+                unreachable!()
+            };
+            let borrowed = raw(&body).unwrap();
+            assert_eq!(borrowed.as_ptr(), source.as_ptr());
+            let mut copies = 0;
+            let valid = parse_frame_copy(borrowed, 32, |payload| {
+                copies += 1;
+                assert_eq!(
+                    payload.as_ptr(),
+                    source[FRAME_HEADER + meta.len()..].as_ptr()
+                );
+                Ok(payload.to_vec())
+            })
+            .unwrap();
+            assert_eq!(copies, 1);
+            assert_eq!(valid.payload, [7; 32]);
+            assert_eq!(
+                (valid.session_id, valid.generation, valid.revision),
+                (1, 2, 3)
+            );
+            let mut malformed_magic = frame(meta, b"a");
+            malformed_magic[0] = 0;
+            let mut huge_meta = frame(meta, b"a");
+            huge_meta[28..32].copy_from_slice(&u32::MAX.to_le_bytes());
+            let mut truncated_meta = frame(meta, b"");
+            truncated_meta.pop();
+            for (bad, expected) in [
+                (malformed_magic, DocumentError::InvalidRequest),
+                (b"GSV1".to_vec(), DocumentError::InvalidRequest),
+                (huge_meta, DocumentError::InvalidRequest),
+                (truncated_meta, DocumentError::InvalidRequest),
+                (frame(b"{", &[1; 33]), DocumentError::InvalidRequest),
+                (frame(meta, b""), DocumentError::InvalidRequest),
+                (
+                    frame(meta, &[1; 33]),
+                    DocumentError::ResourceLimit {
+                        limit: crate::document::LimitKind::FileSize,
+                    },
+                ),
+                (
+                    frame(meta, &[1; 1024 * 1024]),
+                    DocumentError::ResourceLimit {
+                        limit: crate::document::LimitKind::FileSize,
+                    },
+                ),
+            ] {
+                assert_eq!(
+                    parse_frame_copy(&bad, 32, |_| panic!("rejected payload copied")).err(),
+                    Some(expected)
+                );
+            }
+            std::thread::scope(|scope| {
+                for _ in 0..4 {
+                    scope.spawn(|| {
+                        assert!(parse_frame(borrowed, 32).is_ok());
+                        assert!(
+                            parse_frame_copy(borrowed, 1, |_| panic!("oversized copy")).is_err()
+                        );
+                    });
+                }
+            });
+        }
+        assert_eq!(
+            raw(&InvokeBody::Json(Value::Null)),
+            Err(DocumentError::InvalidRequest)
+        );
+    }
 }

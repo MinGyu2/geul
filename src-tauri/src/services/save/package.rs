@@ -119,13 +119,16 @@ fn compare_part(name: &str, before: &[u8], after: &[u8]) -> Option<Finding> {
     if !is_xml(name, before) {
         return Some(Finding::at(FindingCode::PartChanged, name));
     }
-    let Ok(before) = xml::canonical(before) else {
-        return Some(Finding::at(FindingCode::OriginalMalformed, name));
-    };
-    let Ok(after) = xml::canonical(after) else {
-        return Some(Finding::at(FindingCode::OutputMalformed, name));
-    };
-    (before != after).then(|| Finding::at(FindingCode::PartChanged, name))
+    match xml::canonical_equal(before, after) {
+        Ok(true) => None,
+        Ok(false) => Some(Finding::at(FindingCode::PartChanged, name)),
+        Err(xml::ComparisonFailure::OriginalInvalid) => {
+            Some(Finding::at(FindingCode::OriginalMalformed, name))
+        }
+        Err(xml::ComparisonFailure::OutputInvalid) => {
+            Some(Finding::at(FindingCode::OutputMalformed, name))
+        }
+    }
 }
 
 /// 원본과 엔진 출력(같은 형식)을 비교한 근거. `skip`의 부분은 비교하지 않는다(편집한 저장에서 본문처럼 바뀌어야

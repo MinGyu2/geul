@@ -1,0 +1,35 @@
+[
+  {
+    "name": "save-service-save-delivery",
+    "command": [
+      "python3",
+      "tests/poc/t010-phase0/save_service.py",
+      "--strict-desired",
+      "--evidence",
+      "<workspace>/tests/integration/rhwp/evidence/t009-resource-boundary-hardening/save-service.json"
+    ],
+    "env": {
+      "CARGO_NET_OFFLINE": "true"
+    },
+    "exit": 0,
+    "seconds": 5.868,
+    "logSha256": "39ca5ce4c94880810216f42d7446e113ce6cf81d7a40c79db01b5b5fc96a72ac",
+    "observedSummary": []
+  },
+  {
+    "name": "undo-save-save-delivery",
+    "command": [
+      "python3",
+      "tests/integration/rhwp/undo_save.py",
+      "--evidence",
+      "<workspace>/tests/integration/rhwp/evidence/t009-resource-boundary-hardening/undo-save.json"
+    ],
+    "env": {
+      "CARGO_NET_OFFLINE": "true"
+    },
+    "exit": 0,
+    "seconds": 23.808,
+    "logSha256": "4c8fd1bcc0dd46f82a75a3f60afc031efef39a1ae54dfe6a11ca0c8969db7180",
+    "observedSummary": []
+  }
+]

@@ -7835,3 +7835,47 @@ fn overlapping_hwpx_checks_keep_independent_canonical_state() {
         }
     });
 }
+
+#[test]
+fn resource_refusal_in_save_service_preserves_bytes_hash_dirty_and_ticket_release() {
+    let state = DocumentState::default();
+    let dir = TempDir::new();
+    let original = hwp_doc(0, &docinfo(0, b"font"), &section("hello"), &[]);
+    let info = rhwp_session(&state, &dir, "resource.hwp", &original);
+    let registry = state.registry();
+    registry
+        .commit(info.session_id, info.load_generation, 0, 1)
+        .unwrap();
+    let before = registry.get(info.session_id).unwrap();
+    let limits = Limits {
+        max_file_bytes: original.len() as u64 - 1,
+        ..Limits::default()
+    };
+    let hash = crate::document::content_hash(&original);
+    for _ in 0..2 {
+        let ticket = registry
+            .begin_save(info.session_id, info.load_generation, 1)
+            .unwrap();
+        assert_eq!(
+            service::save(
+                registry,
+                &ticket,
+                &limits,
+                &original,
+                Some(&report("hwp", json!([]))),
+                true
+            )
+            .unwrap_err(),
+            DocumentError::ResourceLimit {
+                limit: crate::document::LimitKind::FileSize
+            }
+        );
+        drop(ticket);
+        let bytes = std::fs::read(dir.path().join("resource.hwp")).unwrap();
+        assert_eq!(bytes, original);
+        assert_eq!(crate::document::content_hash(&bytes), hash);
+        assert_eq!(registry.get(info.session_id).unwrap(), before);
+        assert!(before.dirty);
+        assert_eq!(std::fs::read_dir(dir.path()).unwrap().count(), 1);
+    }
+}

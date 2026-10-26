@@ -28,7 +28,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[3]
 HERE = Path(__file__).resolve().parent
-CARGO = ["cargo", "test", "--quiet", "--locked", "--manifest-path", str(ROOT / "src-tauri/Cargo.toml"),
+CARGO = ["cargo", "test", "--quiet", "--locked", "--offline", "--manifest-path", str(ROOT / "src-tauri/Cargo.toml"),
          "--test", "t010_phase0_save_service", "--", "--ignored", "--exact"]
 
 

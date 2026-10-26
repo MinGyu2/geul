@@ -138,6 +138,11 @@ pub fn save(
     report: Option<&Value>,
     reopen_equal: bool,
 ) -> Result<SaveOutcome, DocumentError> {
+    if output.len() as u64 > limits.max_file_bytes {
+        return Err(DocumentError::ResourceLimit {
+            limit: crate::document::LimitKind::FileSize,
+        });
+    }
     let format = ticket.source.load.format;
     let original = read_original(&ticket.source, limits)?;
     match &ticket.source.preflight {

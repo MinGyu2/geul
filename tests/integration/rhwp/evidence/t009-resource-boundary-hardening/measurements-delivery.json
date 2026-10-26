@@ -1,0 +1,155 @@
+[
+  {
+    "probe": "events-pair-benchmarks-delivery",
+    "measurement": {
+      "events": 1000002,
+      "inputBytes": 6500007,
+      "mode": "pair",
+      "ms": 672.620467,
+      "processHighWaterKiB": "124916"
+    }
+  },
+  {
+    "probe": "events-stream-benchmarks-delivery",
+    "measurement": {
+      "events": 1000002,
+      "inputBytes": 6500007,
+      "mode": "stream",
+      "ms": 646.7207139999999,
+      "processHighWaterKiB": "19300"
+    }
+  },
+  {
+    "probe": "header-16MiB-benchmarks-delivery",
+    "measurement": {
+      "appended": 5535,
+      "expandedOutputBytes": 16319855,
+      "fixtureCreationIncluded": false,
+      "headerBytes": 16037113,
+      "mode": "valid",
+      "original": 60000,
+      "stages": [
+        {
+          "ms": 14.1,
+          "peakResetError": null,
+          "peakRssKiB": 69388,
+          "processPeakRssKiB": null,
+          "result": "",
+          "rssAfterKiB": 69388,
+          "rssMethod": "linux-clear_refs-5-stage",
+          "rssReadError": null,
+          "stage": "package::open 둘(압축 풀기)"
+        },
+        {
+          "ms": 222.7,
+          "peakResetError": null,
+          "peakRssKiB": 69856,
+          "processPeakRssKiB": null,
+          "result": "[]",
+          "rssAfterKiB": 69856,
+          "rssMethod": "linux-clear_refs-5-stage",
+          "rssReadError": null,
+          "stage": "validate_hwpx"
+        },
+        {
+          "ms": 1140.6,
+          "peakResetError": null,
+          "peakRssKiB": 175544,
+          "processPeakRssKiB": null,
+          "result": "[]",
+          "rssAfterKiB": 124660,
+          "rssMethod": "linux-clear_refs-5-stage",
+          "rssReadError": null,
+          "stage": "compare_saved_hwpx"
+        },
+        {
+          "ms": 449.7,
+          "peakResetError": null,
+          "peakRssKiB": 124660,
+          "processPeakRssKiB": null,
+          "result": "[]",
+          "rssAfterKiB": 124660,
+          "rssMethod": "linux-clear_refs-5-stage",
+          "rssReadError": null,
+          "stage": "validate_hwpx_references"
+        },
+        {
+          "ms": 1751.6,
+          "peakResetError": null,
+          "peakRssKiB": 196148,
+          "processPeakRssKiB": null,
+          "result": "Safe",
+          "rssAfterKiB": 145200,
+          "rssMethod": "linux-clear_refs-5-stage",
+          "rssReadError": null,
+          "stage": "service::check_saved 전체"
+        }
+      ],
+      "zipBytes": 369946
+    }
+  },
+  {
+    "probe": "id-boundary-benchmarks-delivery",
+    "measurement": {
+      "accepted": true,
+      "appended": 1,
+      "compareMs": 1145,
+      "lastId": 65535,
+      "original": 65535
+    }
+  },
+  {
+    "probe": "id-boundary-benchmarks-delivery",
+    "measurement": {
+      "accepted": false,
+      "appended": 1,
+      "compareMs": 912,
+      "lastId": 65536,
+      "original": 65536
+    }
+  },
+  {
+    "probe": "text-16-pair-benchmarks-delivery",
+    "measurement": {
+      "inputBytes": 16777216,
+      "mode": "pair",
+      "ms": 19.486779,
+      "processHighWaterKiB": 56208,
+      "retainedEventPayloadBytes": null,
+      "scope": "isolated process HWM; excludes source/input from retained event payload; legacy payload unmeasured"
+    }
+  },
+  {
+    "probe": "text-16-stream-benchmarks-delivery",
+    "measurement": {
+      "inputBytes": 16777216,
+      "mode": "stream",
+      "ms": 10.16946,
+      "processHighWaterKiB": 23860,
+      "retainedEventPayloadBytes": 32768,
+      "scope": "isolated process HWM; excludes source/input from retained event payload; legacy payload unmeasured"
+    }
+  },
+  {
+    "probe": "text-255-pair-benchmarks-delivery",
+    "measurement": {
+      "inputBytes": 267386880,
+      "mode": "pair",
+      "ms": 520.527117,
+      "processHighWaterKiB": 790688,
+      "retainedEventPayloadBytes": null,
+      "scope": "isolated process HWM; excludes source/input from retained event payload; legacy payload unmeasured"
+    }
+  },
+  {
+    "probe": "text-255-stream-benchmarks-delivery",
+    "measurement": {
+      "inputBytes": 267386880,
+      "mode": "stream",
+      "ms": 154.94560800000002,
+      "processHighWaterKiB": 268596,
+      "retainedEventPayloadBytes": 32768,
+      "scope": "isolated process HWM; excludes source/input from retained event payload; legacy payload unmeasured"
+    }
+  }
+]

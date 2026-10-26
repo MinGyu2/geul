@@ -1,0 +1,25 @@
+{
+  "comparison": "full normalized event values, no hash-only equality",
+  "cpuScope": "seven counterbalanced materialization+drop passes over expanded XML corpus; excludes ZIP/service/engine/native work",
+  "currentCorpusMs": [
+    78.391501,
+    77.931837,
+    78.319422,
+    78.277078,
+    78.959004,
+    78.56672,
+    82.85485
+  ],
+  "invalidBoth": 0,
+  "legacyCorpusMs": [
+    63.715163000000004,
+    65.007931,
+    66.183195,
+    67.184544,
+    66.84847400000001,
+    67.724675,
+    67.108711
+  ],
+  "parts": 53,
+  "xmlBytes": 2712055
+}

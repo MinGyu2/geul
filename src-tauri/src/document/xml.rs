@@ -97,7 +97,7 @@ enum Node<'a> {
 fn namespace(resolved: ResolveResult<'_>) -> Result<Option<String>, Invalid> {
     match resolved {
         ResolveResult::Unbound => Ok(None),
-        ResolveResult::Bound(namespace) => Ok(Some(namespace.as_ref().to_owned())),
+        ResolveResult::Bound(namespace) => Ok(Some(fallible_string(namespace.as_ref())?)),
         ResolveResult::Unknown(_) => Err(Invalid), // 선언하지 않은 접두사
     }
 }
@@ -114,14 +114,22 @@ fn element(
         let (resolved, local) = reader.resolver().resolve_attribute(attribute.key);
         let value = attribute
             .normalized_value(XmlVersion::Implicit1_0)
-            .map_err(|_| Invalid)?
-            .into_owned();
-        attributes.push((namespace(resolved)?, local.as_ref().to_owned(), value));
+            .map_err(|_| Invalid)?;
+        let value = match value {
+            Cow::Owned(value) => value,
+            Cow::Borrowed(value) => fallible_string(value)?,
+        };
+        attributes.try_reserve(1).map_err(|_| Invalid)?;
+        attributes.push((
+            namespace(resolved)?,
+            fallible_string(local.as_ref())?,
+            value,
+        ));
     }
     Ok(Element {
         depth,
         namespace: namespace(resolved)?,
-        name: local.as_ref().to_owned(),
+        name: fallible_string(local.as_ref())?,
         attributes,
     })
 }
@@ -301,6 +309,9 @@ pub struct CanonicalMemory {
 #[derive(Debug, PartialEq, Eq)]
 pub enum CanonicalFailure {
     Invalid,
+    /// Explicit retained event/text Vec reservation failed. Other parser/Arc
+    /// allocations are not comprehensively fallible and may still abort.
+    Allocation,
     PayloadLimit,
 }
 
@@ -314,6 +325,7 @@ pub fn canonical_with_payload_limit(
     let mut attributes = 0usize;
     let mut memory = CanonicalMemory::default();
     let mut limited = false;
+    let mut allocation_failed = false;
     let result = canonical_walk(bytes, true, |event, atoms| {
         let extra = match &event {
             Canonical::Start {
@@ -331,7 +343,10 @@ pub fn canonical_with_payload_limit(
                     return Err(Invalid);
                 };
                 let old = text.capacity();
-                text.try_reserve(piece.len()).map_err(|_| Invalid)?;
+                text.try_reserve(piece.len()).map_err(|_| {
+                    allocation_failed = true;
+                    Invalid
+                })?;
                 text.push_str(&piece);
                 strings = strings.checked_add(text.capacity() - old).ok_or(Invalid)?;
             }
@@ -341,7 +356,10 @@ pub fn canonical_with_payload_limit(
                 } else {
                     strings = strings.checked_add(extra).ok_or(Invalid)?;
                 }
-                out.try_reserve(1).map_err(|_| Invalid)?;
+                out.try_reserve(1).map_err(|_| {
+                    allocation_failed = true;
+                    Invalid
+                })?;
                 out.push(event);
             }
         }
@@ -368,6 +386,8 @@ pub fn canonical_with_payload_limit(
     if result.is_err() {
         return Err(if limited {
             CanonicalFailure::PayloadLimit
+        } else if allocation_failed {
+            CanonicalFailure::Allocation
         } else {
             CanonicalFailure::Invalid
         });
@@ -387,6 +407,227 @@ pub fn canonical_valid(bytes: &[u8]) -> Result<(), Invalid> {
     canonical_walk(bytes, false, |_, _| Ok(()))
 }
 
+/// Comparison retains two parser cursors, one event per side, and at most 16 KiB
+/// of owned text per cursor. Attributes/comments/PI, namespace stacks and decoded
+/// UTF-16 remain proportional to their input; this is not a total heap cap.
+const TEXT_CHUNK: usize = 16 * 1024;
+
+struct CanonicalCursor<'a, const RETAIN: bool, const STREAM: bool> {
+    reader: NsReader<&'a [u8]>,
+    atoms: Atoms,
+    depth: usize,
+    roots: usize,
+    count: usize,
+    last_text: bool,
+    pending_end: bool,
+    pending_text: Option<(&'a str, usize)>,
+    validation_name: Atom,
+}
+
+impl<'a, const RETAIN: bool, const STREAM: bool> CanonicalCursor<'a, RETAIN, STREAM> {
+    fn new(text: &'a str) -> Self {
+        Self {
+            reader: NsReader::from_str(text),
+            atoms: Atoms::default(),
+            depth: 0,
+            roots: 0,
+            count: 0,
+            last_text: false,
+            pending_end: false,
+            pending_text: None,
+            validation_name: Atom(Arc::new(String::new())),
+        }
+    }
+
+    fn text(&mut self, piece: Cow<'a, str>) -> Result<Canonical, Invalid> {
+        if !RETAIN {
+            return Ok(Canonical::Text(String::new()));
+        }
+        // Slice-reader text and CDATA borrow the immutable decoded input.
+        // No full text-node copy is needed by the comparison cursor.
+        let piece = match piece {
+            Cow::Borrowed(piece) if STREAM && piece.len() > TEXT_CHUNK => {
+                self.pending_text = Some((piece, 0));
+                return self.text_chunk();
+            }
+            piece => piece,
+        };
+        Ok(Canonical::Text(fallible_string(&piece)?))
+    }
+
+    fn text_chunk(&mut self) -> Result<Canonical, Invalid> {
+        let (piece, start) = self.pending_text.ok_or(Invalid)?;
+        let mut end = piece.len().min(start + TEXT_CHUNK);
+        while !piece.is_char_boundary(end) {
+            end -= 1;
+        }
+        self.pending_text = (end < piece.len()).then_some((piece, end));
+        Ok(Canonical::Text(fallible_string(&piece[start..end])?))
+    }
+
+    #[inline]
+    fn next(&mut self) -> Result<Option<Canonical>, Invalid> {
+        if STREAM {
+            self.atoms = Atoms::default();
+        }
+        let event = loop {
+            let event = self.read()?;
+            if self.last_text && matches!(&event, Some(Canonical::Text(s)) if s.is_empty()) {
+                continue;
+            }
+            break event;
+        };
+        if let Some(event) = &event {
+            let text = matches!(event, Canonical::Text(_));
+            if !text || !self.last_text {
+                self.count += 1;
+            }
+            self.last_text = text;
+            if self.count > MAX_CANONICAL_EVENTS {
+                return Err(Invalid);
+            }
+        }
+        Ok(event)
+    }
+
+    #[inline]
+    fn read(&mut self) -> Result<Option<Canonical>, Invalid> {
+        if self.pending_text.is_some() {
+            return self.text_chunk().map(Some);
+        }
+        if self.pending_end {
+            self.pending_end = false;
+            return Ok(Some(Canonical::End));
+        }
+        loop {
+            let event = self.reader.read_event().map_err(|_| Invalid)?;
+            let normalized = match event {
+                Event::Start(ref start) | Event::Empty(ref start) => {
+                    if self.depth == 0 {
+                        self.roots += 1;
+                        if self.roots > 1 {
+                            return Err(Invalid);
+                        }
+                    }
+                    let mut element = element(&self.reader, start, self.depth)?;
+                    if matches!(event, Event::Start(_)) {
+                        self.depth += 1;
+                    } else {
+                        self.pending_end = true;
+                    }
+                    if RETAIN {
+                        element.attributes.retain(|(namespace, name, _)| {
+                            namespace.as_deref() != Some(XMLNS)
+                                && !(namespace.is_none() && name == "xmlns")
+                        });
+                        element.attributes.sort();
+                        let namespace = element
+                            .namespace
+                            .map(|v| self.atoms.intern(v))
+                            .transpose()?;
+                        let name = self.atoms.intern(element.name)?;
+                        let mut attributes = Vec::new();
+                        attributes
+                            .try_reserve_exact(element.attributes.len())
+                            .map_err(|_| Invalid)?;
+                        for (ns, key, value) in element.attributes {
+                            attributes.push((
+                                ns.map(|v| self.atoms.intern(v)).transpose()?,
+                                self.atoms.intern(key)?,
+                                self.atoms.intern(value)?,
+                            ));
+                        }
+                        Canonical::Start {
+                            namespace,
+                            name,
+                            attributes,
+                        }
+                    } else {
+                        Canonical::Start {
+                            namespace: None,
+                            name: self.validation_name.clone(),
+                            attributes: Vec::new(),
+                        }
+                    }
+                }
+                Event::End(_) => {
+                    self.depth = self.depth.checked_sub(1).ok_or(Invalid)?;
+                    Canonical::End
+                }
+                Event::Text(content) => {
+                    if self.depth == 0 {
+                        if !content.as_ref().bytes().all(|b| b.is_ascii_whitespace()) {
+                            return Err(Invalid);
+                        }
+                        continue;
+                    }
+                    self.text(content.into_inner())?
+                }
+                Event::CData(content) => {
+                    if self.depth == 0 {
+                        return Err(Invalid);
+                    }
+                    self.text(content.into_inner())?
+                }
+                Event::GeneralRef(reference) => {
+                    check_reference(&reference)?;
+                    if self.depth == 0 {
+                        return Err(Invalid);
+                    }
+                    let piece = match reference.resolve_char_ref() {
+                        Ok(Some(c)) => c.to_string(),
+                        _ => match reference.as_ref() {
+                            "lt" => "<".to_owned(),
+                            "gt" => ">".to_owned(),
+                            "amp" => "&".to_owned(),
+                            "apos" => "'".to_owned(),
+                            "quot" => "\"".to_owned(),
+                            _ => return Err(Invalid),
+                        },
+                    };
+                    Canonical::Text(piece)
+                }
+                Event::Decl(declaration) => {
+                    if let Some(encoding) = declaration.encoding() {
+                        let encoding = encoding.map_err(|_| Invalid)?;
+                        if !["utf-8", "utf-16"]
+                            .iter()
+                            .any(|name| encoding.eq_ignore_ascii_case(name))
+                        {
+                            return Err(Invalid);
+                        }
+                    }
+                    continue;
+                }
+                Event::DocType(_) => return Err(Invalid),
+                Event::Comment(content) => Canonical::Comment(if RETAIN {
+                    fallible_string(content.as_ref())?
+                } else {
+                    String::new()
+                }),
+                Event::PI(content) => Canonical::Instruction(if RETAIN {
+                    fallible_string(content.as_ref())?
+                } else {
+                    String::new()
+                }),
+                Event::Eof if self.depth == 0 && self.roots == 1 => return Ok(None),
+                Event::Eof => return Err(Invalid),
+            };
+            return Ok(Some(normalized));
+        }
+    }
+}
+
+fn fallible_string(value: &str) -> Result<String, Invalid> {
+    let mut out = String::new();
+    out.try_reserve_exact(value.len()).map_err(|_| Invalid)?;
+    out.push_str(value);
+    Ok(out)
+}
+
+// Keep the materialization/validation hot loop independent of the resumable
+// comparison cursor. Both use the same decoder, namespace/attribute reader and
+// entity checks; the frozen differential oracle covers their event semantics.
 fn canonical_walk(
     bytes: &[u8],
     retain_content: bool,
@@ -560,6 +801,93 @@ fn canonical_walk(
             Event::Eof if depth == 0 && roots == 1 => return Ok(()),
             Event::Eof => return Err(Invalid),
         }
+    }
+}
+
+#[derive(Debug, PartialEq, Eq)]
+pub enum ComparisonFailure {
+    OriginalInvalid,
+    OutputInvalid,
+}
+
+/// Lockstep semantic equality. Text chunks may have different segmentation.
+/// Always drain both parsers after a mismatch; original malformed takes precedence.
+/// No hashes, retained event vectors or document-wide interning are used.
+pub fn canonical_equal(before: &[u8], after: &[u8]) -> Result<bool, ComparisonFailure> {
+    let before = decode(before).map_err(|_| ComparisonFailure::OriginalInvalid)?;
+    let after = decode(after).map_err(|_| {
+        if canonical_valid(before.as_bytes()).is_err() {
+            ComparisonFailure::OriginalInvalid
+        } else {
+            ComparisonFailure::OutputInvalid
+        }
+    })?;
+    let mut a = CanonicalCursor::<true, true>::new(&before);
+    let mut b = CanonicalCursor::<true, true>::new(&after);
+    let mut left = a.next();
+    let mut right = b.next();
+    let mut offsets = (0, 0);
+    let mut equal = true;
+    while let (Ok(Some(x)), Ok(Some(y))) = (&left, &right) {
+        match (x, y) {
+            (Canonical::Text(x), Canonical::Text(y)) => {
+                let x = &x.as_bytes()[offsets.0..];
+                let y = &y.as_bytes()[offsets.1..];
+                let n = x.len().min(y.len());
+                equal &= x[..n] == y[..n];
+                offsets.0 += n;
+                offsets.1 += n;
+                if n == x.len() {
+                    left = a.next();
+                    offsets.0 = 0;
+                }
+                if n == y.len() {
+                    right = b.next();
+                    offsets.1 = 0;
+                }
+            }
+            _ => {
+                equal &= offsets == (0, 0) && x == y;
+                left = a.next();
+                right = b.next();
+                offsets = (0, 0);
+            }
+        }
+    }
+    equal &= matches!((&left, &right), (Ok(None), Ok(None)));
+    // Result errors are retained even when the other cursor failed first.
+    let mut original_invalid = left.is_err();
+    let mut output_invalid = right.is_err();
+    if matches!(left, Ok(Some(_))) {
+        loop {
+            match a.next() {
+                Ok(Some(_)) => {}
+                Ok(None) => break,
+                Err(_) => {
+                    original_invalid = true;
+                    break;
+                }
+            }
+        }
+    }
+    if matches!(right, Ok(Some(_))) {
+        loop {
+            match b.next() {
+                Ok(Some(_)) => {}
+                Ok(None) => break,
+                Err(_) => {
+                    output_invalid = true;
+                    break;
+                }
+            }
+        }
+    }
+    if original_invalid {
+        Err(ComparisonFailure::OriginalInvalid)
+    } else if output_invalid {
+        Err(ComparisonFailure::OutputInvalid)
+    } else {
+        Ok(equal)
     }
 }
 
@@ -941,6 +1269,84 @@ mod resource_tests {
         assert!(canonical_valid(b"<r/><bad").is_err());
     }
     #[test]
+    fn streaming_comparison_matches_frozen_oracle_and_validates_both_tails() {
+        let corpus = [
+            "<r/>",
+            "<r></r>",
+            "<r><![CDATA[]]></r>",
+            "<r>a</r>",
+            "<r>a<![CDATA[]]></r>",
+            "<r><![CDATA[]]>a</r>",
+            "<r>a&amp;b&#99;</r>",
+            "<r><![CDATA[a&bc]]></r>",
+            "<p:r xmlns:p=\"u\" a=\"1\" b=\"2\"/>",
+            "<q:r xmlns:q=\"u\" b=\"2\" a=\"1\"></q:r>",
+            "<r xmlns:p=\"u\" a=\"p:x\"/>",
+            "<r xmlns:q=\"u\" a=\"q:x\"/>",
+            "<!--c--><r><?p i?> </r>",
+            "<!--c--><r><?p i?>  </r>",
+            "<r>different</r><bad",
+            "<r/><s/>",
+            "<r>&bad;</r>",
+            "<p:r/>",
+            "<!DOCTYPE r><r/>",
+            "<r a=\"1\" a=\"2\"/>",
+        ];
+        for a in corpus {
+            for b in corpus {
+                let old_a = legacy_test::canonical_legacy(a.as_bytes());
+                let old_b = legacy_test::canonical_legacy(b.as_bytes());
+                let expected = match (old_a, old_b) {
+                    (Err(_), _) => Err(ComparisonFailure::OriginalInvalid),
+                    (_, Err(_)) => Err(ComparisonFailure::OutputInvalid),
+                    (Ok(a), Ok(b)) => Ok(a == b),
+                };
+                assert_eq!(
+                    canonical_equal(a.as_bytes(), b.as_bytes()),
+                    expected,
+                    "{a} vs {b}"
+                );
+                let utf16: Vec<u8> = [255, 254]
+                    .into_iter()
+                    .chain(b.encode_utf16().flat_map(u16::to_le_bytes))
+                    .collect();
+                assert_eq!(
+                    canonical_equal(a.as_bytes(), &utf16),
+                    expected,
+                    "utf16 {a} vs {b}"
+                );
+            }
+        }
+        assert_eq!(
+            canonical_equal(b"<r><bad", &[255]),
+            Err(ComparisonFailure::OriginalInvalid)
+        );
+        for n in [1, TEXT_CHUNK - 1, TEXT_CHUNK, TEXT_CHUNK + 1, 1024 * 1024] {
+            let text = "가&".repeat(n);
+            let a = format!("<r><![CDATA[{text}]]></r>");
+            let b = format!("<r>{}</r>", "가&amp;".repeat(n));
+            assert_eq!(canonical_equal(a.as_bytes(), b.as_bytes()), Ok(true));
+            assert_eq!(
+                canonical_equal(a.as_bytes(), format!("{b}<bad").as_bytes()),
+                Err(ComparisonFailure::OutputInvalid)
+            );
+        }
+        let many = format!("<r>{}</r>", "<a x=\"same\"/>".repeat(100_000));
+        assert_eq!(canonical_equal(many.as_bytes(), many.as_bytes()), Ok(true));
+        let deep = format!("{}x{}", "<a>".repeat(4096), "</a>".repeat(4096));
+        assert_eq!(canonical_equal(deep.as_bytes(), deep.as_bytes()), Ok(true));
+        let text = format!("<r>{}</r>", "x".repeat(TEXT_CHUNK * 4));
+        let mut cursor = CanonicalCursor::<true, true>::new(&text);
+        while let Some(event) = cursor.next().unwrap() {
+            if let Canonical::Text(s) = event {
+                assert!(s.capacity() <= TEXT_CHUNK);
+            }
+            // No document-wide atom pool; max spellings for this fixture is one.
+            assert!(cursor.atoms.values.len() <= 1);
+        }
+    }
+
+    #[test]
     fn payload_policy_is_explicit_local_and_not_a_product_limit() {
         let bytes = format!("<r>{}</r>", "<a x=\"repeated\"/>".repeat(2048));
         let (events, memory) = canonical_with_payload_limit(bytes.as_bytes(), None).unwrap();
@@ -984,6 +1390,16 @@ mod resource_tests {
                 assert_eq!(events.len(), 3);
                 Some(m.retained_payload_bytes)
             }
+            "stream" => {
+                assert_eq!(canonical_equal(&bytes, &bytes), Ok(true));
+                Some(2 * TEXT_CHUNK)
+            }
+            "pair" => {
+                let a = canonical(&bytes).unwrap();
+                let b = canonical(&bytes).unwrap();
+                assert_eq!(a, b);
+                None
+            }
             "validate" => {
                 canonical_valid(&bytes).unwrap();
                 Some(0usize)
@@ -1022,6 +1438,7 @@ mod resource_tests {
                 let new = canonical(&data);
                 assert_eq!(old.is_ok(), new.is_ok(), "{name}");
                 assert_eq!(canonical_valid(&data).is_ok(), old.is_ok(), "{name}");
+                assert_eq!(canonical_equal(&data, &data), Ok(true), "{name}");
                 if let (Ok(old), Ok(new)) = (old, new) {
                     assert_eq!(format!("{old:?}"), format!("{new:?}"), "{name}");
                 } else {
@@ -1065,6 +1482,38 @@ mod resource_tests {
             serde_json::json!({"parts":parts,"invalidBoth":invalid,"xmlBytes":bytes,"comparison":"full normalized event values, no hash-only equality","legacyCorpusMs":legacy_ms,"currentCorpusMs":current_ms,"cpuScope":"seven counterbalanced materialization+drop passes over expanded XML corpus; excludes ZIP/service/engine/native work"})
         );
     }
+    #[test]
+    #[ignore = "explicit high-event comparison; GEUL_XML_EVENTS and GEUL_XML_MODE=pair/stream"]
+    fn canonical_comparison_event_probe() {
+        let n: usize = std::env::var("GEUL_XML_EVENTS").unwrap().parse().unwrap();
+        let mode = std::env::var("GEUL_XML_MODE").unwrap();
+        let bytes = format!("<r>{}</r>", "<a x=\"same\"/>".repeat(n));
+        let started = std::time::Instant::now();
+        if mode == "stream" {
+            assert_eq!(
+                canonical_equal(bytes.as_bytes(), bytes.as_bytes()),
+                Ok(true)
+            );
+        } else {
+            assert_eq!(mode, "pair");
+            let a = canonical(bytes.as_bytes()).unwrap();
+            let b = canonical(bytes.as_bytes()).unwrap();
+            assert_eq!(a, b);
+        }
+        let status = std::fs::read_to_string("/proc/self/status").unwrap();
+        let hwm = status
+            .lines()
+            .find(|l| l.starts_with("VmHWM:"))
+            .unwrap()
+            .split_whitespace()
+            .nth(1)
+            .unwrap();
+        println!(
+            "{}",
+            serde_json::json!({"mode": mode, "events":n*2+2, "inputBytes": bytes.len(), "ms":started.elapsed().as_secs_f64()*1000., "processHighWaterKiB":hwm})
+        );
+    }
+
     #[test]
     #[ignore = "isolated XML accounting probe; GEUL_XML_EVENTS=n"]
     fn canonical_accounting_probe() {
