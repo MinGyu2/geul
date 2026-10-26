@@ -1,0 +1,4 @@
+   Compiling syn v3.0.3
+    Checking rhwp-password-crypto v0.1.0 (<scratch>/source/crates/rhwp-password-crypto)
+error: could not compile `rhwp-password-crypto` (lib) due to 2 previous errors
+warning: build failed, waiting for other jobs to finish...

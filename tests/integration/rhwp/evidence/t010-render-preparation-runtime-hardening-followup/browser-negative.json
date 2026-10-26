@@ -1,0 +1,95 @@
+{
+ "schema": 1,
+ "분류": "실제 Chrome 성공 결과의 통제된 변조 시험; native 승인 아님",
+ "validSourceSha256": "3cb685e704393867f5e1033f168eb1b98a3da8a11dcba668a17c28a4fdc2f218",
+ "validSourceStatus": "PASS",
+ "cases": [
+  {
+   "name": "decode1",
+   "status": "REJECTED",
+   "reason": "job counters inconsistent"
+  },
+  {
+   "name": "wrong-outcome",
+   "status": "REJECTED",
+   "reason": "wrong outcome"
+  },
+  {
+   "name": "replay1",
+   "status": "REJECTED",
+   "reason": "job counters inconsistent"
+  },
+  {
+   "name": "memory-over",
+   "status": "REJECTED",
+   "reason": "job memory bound"
+  },
+  {
+   "name": "cleanup",
+   "status": "REJECTED",
+   "reason": "cleanup activeJobs"
+  },
+  {
+   "name": "missing-case",
+   "status": "REJECTED",
+   "reason": "exactly two cases required"
+  },
+  {
+   "name": "bool-counter",
+   "status": "REJECTED",
+   "reason": "nonnegative exact integer required"
+  },
+  {
+   "name": "float-counter",
+   "status": "REJECTED",
+   "reason": "nonnegative exact integer required"
+  },
+  {
+   "name": "negative-counter",
+   "status": "REJECTED",
+   "reason": "nonnegative exact integer required"
+  },
+  {
+   "name": "nan-counter",
+   "status": "REJECTED",
+   "reason": "nonnegative exact integer required"
+  },
+  {
+   "name": "infinity-counter",
+   "status": "REJECTED",
+   "reason": "nonnegative exact integer required"
+  },
+  {
+   "name": "duplicate-test",
+   "status": "REJECTED",
+   "reason": "case names/order/status"
+  },
+  {
+   "name": "late-complete",
+   "status": "REJECTED",
+   "reason": "terminal reason changed"
+  },
+  {
+   "name": "candidate-identity",
+   "status": "REJECTED",
+   "reason": "candidate copy identity mismatch"
+  }
+ ],
+ "legacyClassifierReproduction": [
+  {
+   "mutatedCounter": "decodeAttempts",
+   "value": 1,
+   "legacyVerdict": "PASS"
+  },
+  {
+   "mutatedCounter": "replays",
+   "value": 1,
+   "legacyVerdict": "PASS"
+  },
+  {
+   "mutatedCounter": "readyTransitions",
+   "value": 1,
+   "legacyVerdict": "PASS"
+  }
+ ]
+}

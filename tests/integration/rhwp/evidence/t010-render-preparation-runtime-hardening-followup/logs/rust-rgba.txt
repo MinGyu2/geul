@@ -1,0 +1,37 @@
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.33s
+     Running unittests src/lib.rs (<workspace>/target/rhwp-wasm/debug/deps/rhwp-5efd8b8eb719471e)
+
+running 13 tests
+test renderer::canvas_rgba::tests::dimension_contract::unknown_dimensions_reserve_the_actual_size_within_the_budget ... ok
+test renderer::canvas_rgba::tests::dimension_contract::generic_reservation_still_allows_a_smaller_allocation ... ok
+test renderer::canvas_rgba::tests::dimension_contract::unknown_dimensions_budget_refusal_allocates_nothing ... ok
+test renderer::canvas_rgba::tests::dimension_contract::exact_header_dimensions_commit ... ok
+test renderer::canvas_rgba::tests::dimension_contract::every_dimension_mismatch_is_refused_before_allocation ... ok
+test renderer::canvas_rgba::tests::dimension_contract::header_reservation_below_actual_is_a_capacity_refusal ... ok
+test renderer::canvas_rgba::tests::unsupported_and_malformed_inputs_have_no_dimensions_and_do_not_decode ... ok
+test renderer::canvas_rgba::tests::oversized_header_is_known_before_decode_and_does_not_decode ... ok
+test renderer::canvas_rgba::tests::valid_supported_images_have_exact_header_dimensions ... ok
+test renderer::canvas_rgba::tests::dimension_contract::real_supported_images_authorize_with_their_header ... ok
+test renderer::canvas_rgba::tests::every_luma_value_matches_original_across_chunk_edges_and_color_spaces ... ok
+test renderer::canvas_rgba::tests::small_gray_and_other_representations_keep_original_path ... ok
+test renderer::canvas_rgba::tests::truncated_and_corrupted_images_never_decode_without_header_dimensions ... ok
+
+test result: ok. 13 passed; 0 failed; 0 ignored; 0 measured; 3913 filtered out; finished in 11.83s
+
+     Running unittests src/lib.rs (<workspace>/target/rhwp-wasm/debug/deps/rhwp_contracts-eef00753189628e7)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 15 filtered out; finished in 0.00s
+
+     Running unittests src/lib.rs (<workspace>/target/rhwp-wasm/debug/deps/rhwp_ooxml_chart-7be4ef69d359d38f)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 165 filtered out; finished in 0.00s
+
+     Running unittests src/lib.rs (<workspace>/target/rhwp-wasm/debug/deps/rhwp_password_crypto-049fb219fba03820)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 2 filtered out; finished in 0.00s

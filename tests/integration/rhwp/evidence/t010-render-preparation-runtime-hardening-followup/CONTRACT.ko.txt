@@ -1,0 +1,43 @@
+T010 준비 런타임 후속 하드닝 계약
+
+적용 범위
+격리된 RHWP 고정 소스+완전 패치의 실험 Full 준비 경로. production과 public/rhwp는 변경하지 않는다.
+기존 record_prepared의 Pending 검사와 prepare_payload의 is_preparing 검사를 유지한다.
+
+종료 상태와 정리
+Outcome::record는 Pending에서만 상태를 기록한다. COMPLETE/CANCELED/ERROR/RESOURCE_LIMIT은 이후
+오류·용량 거부·취소·완료 요청으로 바뀌지 않는다. Pending인 실제 오류는 ERROR로 기록한다.
+Job::finish는 먼저 이 규칙을 적용하고 보존된 이유로 계수한다. target 소유를 정리 완료 표식으로 사용하여
+계수는 한 번만 증가한다. 이미 기록된 이유가 있어도 tree/memo/예약/lease/target 해제를 건너뛰지 않는다.
+반복 정리는 빈 컨테이너와 None을 유지한다. COMPLETE는 정상 원자 publication 이후 기존 경로에서만 요청한다.
+취소/close는 보유 resources를 비우므로 늦은 image_event가 해당 job을 다시 종료할 수 없다.
+동시에 공유된 자원이 다른 Pending job에서 실패하면 그 job의 실제 오류는 정상 기록한다.
+revoke_decoded는 준비 lease를 가진 job을 LIMIT으로 정리한다. 호환 경로의 기존 재해소 정책은 유지한다.
+memoize는 준비 단계와 Pending을 함께 요구한다. 예약 거부 뒤 fallback decode는 계속 금지한다.
+
+브라우저 독립 판정 (schema2, t010-preparation-hardening-2)
+기존 열 개 시험의 이름/순서/PASS 및 정확히 두 control/refusal 사례를 요구한다.
+refusal은 LIMIT/transform1/decode0/Ready0/replay0, 키·memo·retained0, 32MiB job/64MiB module bound다.
+중첩 row/job/outcome/bytes/peak의 값과 타입이 원시 사례와 같아야 한다.
+정수 계수는 정확한 비음수 int만 허용한다. bool/float/NaN/Infinity/음수/누락은 거부한다.
+정리 결과는 활성 job·자원·lease·pending·decoded/reserved/preparation bytes0, registry0, timer off,
+created=disposed, 예상 limit/error/cancel 계수를 요구한다. 살아 있는 문서의 자원0인 Terminal 메타데이터는
+명시된 cancel 사례에서만 하나 허용한다. 활성 job이나 임의의 추가 job은 허용하지 않는다.
+추가 세 사례는 cancel+late error, close+pending image, 실제 준비 자원 회수다.
+각각 실제 pending/회수 관찰값, 세 번 반복 poll, 미게시, 정리를 검사한다.
+프레임 전후 width/height/SHA256 관찰값을 비교한다. Python이 직접 원시 RGBA를 다시 읽었다는 뜻은 아니다.
+pendingNeverPublished/unchanged는 여전히 JS 관찰에 의존한다. 이 경계를 독립 픽셀 증명으로 표현하지 않는다.
+실행 전후 harness/runtime/validator/후보 JS/WASM/d.ts/ENGINE 해시가 같아야 한다.
+복사된 후보와 실제 입력, ENGINE.artifacts, 고정 RHWP와 기본 gate off를 교차 검사한다.
+과거 schema1 결과는 변경하지 않는다. 새 스키마 요구 실패가 과거 실행 결과를 재분류하지 않는다.
+
+native 진단 (공식 D1 검증기 아님)
+producer exit0, strict JSON object/PASS, 비어 있지 않은 tests/references, 전 시험 PASS,
+세 cleanup 필드 true, driver/vite/producer 로그와 빈 driver.lost JSON을 요구한다.
+producer 실패·출력 누락·JSON 오류·FAIL·cleanup 실패·실행 예외는 요약 FAIL과 nonzero다.
+생성된 부분 로그/결과를 보존하고 기존 label 디렉터리를 덮어쓰지 않는다.
+통제된 fake subprocess 시험의 성공은 실제 Tauri 실행이나 native 신뢰 승인이 아니다.
+
+필수 경계
+엄격 clippy -D warnings 실패를 범위 진단0으로 대체하지 않는다. lint 수준/allowlist/lock/gitlink 불변.
+새 후보 native 승인 PENDING. attempt3 FAIL/원인 UNVERIFIED. T010 INCOMPLETE 및 공식 상태 불변.

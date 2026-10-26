@@ -1,0 +1,70 @@
+T010 후속 하드닝 재현 (설치/다운로드 없이)
+
+ROOT는 git rev-parse --show-toplevel로 확인한다. SCRATCH는 새 외부 작업 폴더,
+TARGET은 기존 target/rhwp-wasm 단일 캐시다. 기존 출력은 덮어쓰지 않는다.
+이번 실제 경로는 비커밋 .agent-tmp.md와 보존된 scratch에 있으며 문서 명령은 ROOT에서 실행한다.
+먼저 rustc --version, cargo --version, rustc --print sysroot로 설치된 1.99.0을 확인한다.
+공통 환경: CARGO_NET_OFFLINE=true, CARGO_INCREMENTAL=0, CARGO_TARGET_DIR="$TARGET", CARGO_BUILD_JOBS=2.
+Cargo 명령은 전부 --locked --offline다. rustup/설치/cargo update/clean을 실행하지 않는다.
+
+소스 및 후보
+python3 tests/integration/rhwp/cache-concurrency/prepare.py --work "$SCRATCH/source" \
+ --patch tests/integration/rhwp/evidence/t010-render-preparation-runtime-hardening-followup/upstream-rhwp-render-preparation-complete.patch --prepare-only --no-opt
+격리 source 작업 디렉터리에서:
+cargo build --locked --offline --release --target wasm32-unknown-unknown --lib
+기존 로컬 wasm-bindgen 0.2.127을 절대 경로로 호출한다:
+"$BINDGEN" --target web --out-dir "$SCRATCH/source/candidate-followup" --out-name rhwp \
+ "$TARGET/wasm32-unknown-unknown/release/rhwp.wasm"
+이번 빌드는 wasm-pack의 설치 단계 자체를 호출하지 않았다. wasm-opt도 호출하지 않았다.
+전체 Rust src hash와 실제 JS/WASM/d.ts SHA를 계산하고 ENGINE.json 및 candidate-identity.json과 비교한다.
+prepare-only가 만든 test-package/ENGINE은 NOT EXECUTED이며 실제 후보와 혼동하면 안 된다.
+기존 하드닝 완전 패치로 별도 before 소스를 내보내 두 source의 src를 patches.py로 비교한다.
+python3 tests/integration/rhwp/render-preparation/patches.py --source "$SCRATCH/source" \
+ --previous "$SCRATCH/previous" --output <새 패치 검증 디렉터리>
+완전·증분을 독립 적용한 전체 src digest가 새 후보 소스와 같아야 한다.
+커밋된 패치는 git show HEAD:경로의 실제 바이트를 SHA256으로 다시 계산한다.
+
+Rust (격리 source)
+RUSTFLAGS='-C link-arg=-fuse-ld=bfd' cargo test --locked --offline --lib renderer::preparation::tests
+RUSTFLAGS='-C link-arg=-fuse-ld=bfd' cargo test --locked --offline --lib renderer::canvas_rgba::tests
+cargo clippy --locked --offline --lib --message-format=json -- -D warnings
+cargo clippy --locked --offline -p rhwp --lib --no-deps --message-format=json -- -D warnings
+전체 workspace 명시 검사도 cargo clippy --locked --offline --workspace --lib --message-format=json -- -D warnings로 실행했다.
+위 clippy의 wasm32 변형은 --release --target wasm32-unknown-unknown을 추가한다.
+clippy는 현재 필수 FAIL이다. lint inventory에서 file/line/target/component/고정 코드 선행 여부를 확인한다.
+rustfmt --edition 2021 --config skip_children=true --check src/renderer/{preparation,render_job,canvas_rgba}.rs
+ROOT에서 terminal_probe.py --source "$SCRATCH/source"를 실행한다. 이는 실제 함수 본문 추출 시험이며 전체 DOM 시험이 아니다.
+기존 before source로 실행하면 terminal marker4 FAIL/1 PASS, 새 소스면5 PASS다.
+cache-concurrency/unit.py의 --source는 source/src/renderer/surface_cache.rs이며 --suite current와
+--contract decoded_lease_contract.rs / decoded_lease_hardening_contract.rs / ownership_contract.rs / scheduler_contract.rs를
+각각 새 --output에 실행한다. 계약 바이너리에 내부 시험이 포함되므로 suiteCounts를 중복 합산하지 않는다.
+
+Python
+python3 -m unittest discover -s tests/integration/rhwp/render-preparation-hardening
+-s를 render-preparation, cache-concurrency, ownership-poc, tests/e2e, tests/security로 바꾸어 관련 기존 계약을 실행했다.
+새 native 단위시험은 fake subprocess다. 실제 native 진단 실행이나 후보 승인이 아니다.
+과거 native 스크립트의 재현은 git show 7a5a180:.../diagnose_native.py를 별도 모듈로 로드하고
+동일한 통제 producer를 넣는다. nonzero/누락/FAIL 세 경우 모두 잘못된 exit0을 관찰했다.
+새 테스트는 exit/status/부분 로그/재실행 시 원본 보존을 각각 검사한다.
+브라우저 단위 입력의 frame hash는 시험용 값이다. 이를 실제 프레임 hash로 사용하지 않는다.
+browser-negative.json의 14개 변조는 보존된 실제 Chrome 최종 성공 결과를 복제한 통제 시험이다.
+
+실제 브라우저
+python3 tests/integration/rhwp/render-preparation-hardening/run.py --candidate "$CANDIDATE" \
+ --browser chrome --output <새 JSON>
+WebKit은 --browser webkit --xvfb "$XVFB" --webkit-driver "$WEBKIT_DRIVER"를 쓴다.
+기존 render-preparation/run.py는 --baseline "$BASELINE" --reference "$BASELINE" --candidate "$CANDIDATE"와
+브라우저/새 출력 인자를 준다. 49개 계약과 화학7쪽 cold/warm 3회=42 RGBA 비교의 원래 의미를 유지한다.
+BASELINE은 decoded-lease-contract-finalization 완전 패치로 내보내 같은1.99/target에서 한 번 빌드했다.
+원래 ae34 oracle이 아니다. baseline ENGINE과 실제 bytes를 새 후보와 구별한다.
+기존 cache-concurrency/run.py --pinned public/rhwp --candidate "$CANDIDATE"도 양 브라우저에서 실행한다.
+production 패키지는 읽기 전용 대조다. ownership52/scheduler73 시험 수와 체크포인트 수를 구분한다.
+
+보안
+python3 scripts/check-sensitive-info.py --all / --history / --staged
+설치된 Gitleaks8.30.1을 .gitleaks.toml로 git/history, git --pre-commit --staged, 상대경로 추적 파일 mirror의 dir 모드에서 실행한다.
+기존 gitleaks_allowlist_negative_check.py의 --gitleaks/--config/--output으로 음성24경우를 검사한다.
+git diff --check 및 시작 HEAD 대비 모든 변경 경로가 새 evidence와 hardening harness에만 있는지 검사한다.
+양 gitlink의 HEAD/index/실제 checkout 및 submodule status도 확인한다.
+기존 pre-commit Gitleaks 환경이 캐시에 설치되어 있음을 확인한 뒤 정상 git commit 훅을 실행했다.
+어떤 push/deploy/production gate 활성화/신뢰 anchor 승인도 재현 절차에 포함되지 않는다.

@@ -1,0 +1,2 @@
+   Compiling rhwp v0.8.7 (<scratch>/source)
+    Finished `release` profile [optimized] target(s) in 6m 48s
