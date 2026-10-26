@@ -1,0 +1,26 @@
+7317,7319c7317,7330
+<         let [original, output, expected] = parts[..] else { panic!("case: {case}") };
+<         let (o, out) = (std::fs::read(original).unwrap(), std::fs::read(output).unwrap());
+<         let checked = service::check_saved(Format::Hwpx, &o, &out, Some(&report("hwpx", json!([]))), true);
+---
+>         let [original, output, expected] = parts[..] else {
+>             panic!("case: {case}")
+>         };
+>         let (o, out) = (
+>             std::fs::read(original).unwrap(),
+>             std::fs::read(output).unwrap(),
+>         );
+>         let checked = service::check_saved(
+>             Format::Hwpx,
+>             &o,
+>             &out,
+>             Some(&report("hwpx", json!([]))),
+>             true,
+>         );
+7321c7332,7335
+<         println!("{}", json!({"output": Path::new(output).file_name().unwrap().to_string_lossy(), "safe": safe, "findings": format!("{:?}", checked)}));
+---
+>         println!(
+>             "{}",
+>             json!({"output": Path::new(output).file_name().unwrap().to_string_lossy(), "safe": safe, "findings": format!("{:?}", checked)})
+>         );

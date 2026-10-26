@@ -144,6 +144,20 @@ safe·플랫폼 지원일 때만:
   해시 집합으로 찾는다(같음은 집합이 전체 값으로 판정 — 해시 일치만으로 같다고 보지 않음). 이전 판은 덧붙임마다 원본 전체를 훑었다:
   release 측정 원본 30000·덧붙임 10000에서 13.7초 → 1.1초, 60000·5535(header 16 MB, zip 370 KB)에서 19.3초 → 2.0초, 판정 같음.
   id 상한 경계(마지막 덧붙임 65535 받음, 65536 막음)를 시험했다. 새 크기 상한은 두지 않았다(기존 부분 256 MiB·id 65535가 범위를 정함).
+  2026-10-26 강화(증거 `tests/integration/rhwp/evidence/t010-post-corrective-hardening/`): 위 (B)의 "부모가 `hp` 요소인
+  `formCharPr`"와 "부모가 `hp:p`인 run"은 엔진이 읽지 않는 자리도 셌다(수정 전 재현: 음성 14경우 중 9경우를 받음 — `hp:p` 바로 아래
+  `formCharPr`, `hp:ctrl` 안 양식, 내용 있는 `formCharPr`, 건너뛰는 컨테이너 안 문단의 run 등; 실제 `service::save`가 그 출력을
+  게시). 고정 rhwp 구역 파서의 실제 경로로 좁혔다: run은 **읽히는 문단**(구역 뿌리 `hs:sec` 바로 아래 `hp:p`, 또는 `hp:subList` ←
+  `hp:tc` ← `hp:tr` ← `hp:tbl` ← `hp:run` ← 읽히는 문단 — 표 셀·중첩 표)의 자식일 때, `formCharPr`는 자기 닫힘(Start는
+  `parse_form_object`가 `skip_element`)이고 부모가 내용 있는 `hp:btn`·`checkBtn`·`radioBtn`·`comboBox`·`edit`(문단 루프가 Start에서만
+  `parse_form_object`를 부름)이며 그 양식이 읽히는 문단의 `hp:run` 바로 아래일 때(직렬화기 위치; `hp:ctrl` 안은 `parse_ctrl`이
+  건너뜀)만 센다. 조상 경로는 `xml::ElementStart.parent_index`로 따라 올라간다. 글상자·머리말·각주 문단의 run은 세지 않는다
+  (fail-closed — 엔진이 읽는지 이 판정이 증명하지 않음; 그런 자리의 덧붙임 저장은 거부). 이전 증거의 양성 사례
+  `hp:run/hp:ctrl/hp:checkBtn/hp:formCharPr`는 엔진이 읽지 않는 자리였으므로 음성으로 옮겼다(이전 증거는 그대로 둠).
+  자원: header를 한 번만 정규화해 같음 비교와 덧붙임 규칙이 함께 쓰고 본문 바이트를 복사하지 않는다 — release 전체
+  `check_saved` 원본 60000·덧붙임 5535(header 16.0 MB, zip 370 KB) 3031 → 2339 ms, 판정 같음. 최대 RSS는 그대로 약 516 MiB:
+  두 header의 정규화 사건 열을 함께 드는 기존 T009 부분 비교(`compare_part`와 같은 표현)가 지배하며 이 규칙만의 비용이 아니다
+  (펼친 header의 약 32배, INFERRED: 부분 상한 256 MiB 근처의 XML 부분은 수 GiB가 될 수 있는 기존 위험). 새 크기 상한은 두지 않았다.
   한계: 쓰이지 않는 덧붙임(예: 기울임을 켰다 끈 뒤 남은 모양)은 받지 않는다(저장 거부, 원본 보존). HWP DocInfo에는 같은 규칙을 두지
   않았다(본문을 바꾼 HWP는 미리보기 규칙이 따로 막는다, Phase 3C). 이 규칙은 저장 판정만이며 rhwp 서식 명령은 여전히 `unsupported`다
   ([command-registry.md](command-registry.md)).

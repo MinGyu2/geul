@@ -338,13 +338,15 @@ pub struct ElementStart {
     pub self_closing: bool,
     /// 부모 요소의 (이름공간, 지역 이름). 루트는 None.
     pub parent: Option<(Option<String>, String)>,
+    /// 부모 요소가 결과 목록에서 차지하는 위치(조상 경로를 따라 올라가는 데 쓴다). 루트는 None.
+    pub parent_index: Option<usize>,
 }
 
 /// 문서의 모든 요소 시작을 문서 순서로 읽는다. 형식 오류·선언하지 않은 접두사·DTD는 `Invalid`.
 pub fn element_starts(bytes: &[u8]) -> Result<Vec<ElementStart>, Invalid> {
     let text = decode(bytes)?;
     let mut reader = NsReader::from_str(&text);
-    let mut stack: Vec<(Option<String>, String)> = Vec::new();
+    let mut stack: Vec<(Option<String>, String, usize)> = Vec::new();
     let mut out = Vec::new();
     loop {
         if out.len() > MAX_CANONICAL_EVENTS {
@@ -355,15 +357,19 @@ pub fn element_starts(bytes: &[u8]) -> Result<Vec<ElementStart>, Invalid> {
             Event::Start(ref start) | Event::Empty(ref start) => {
                 let element = element(&reader, start, stack.len())?;
                 let self_closing = matches!(event, Event::Empty(_));
+                let index = out.len();
                 out.push(ElementStart {
                     namespace: element.namespace.clone(),
                     name: element.name.clone(),
                     attributes: element.attributes,
                     self_closing,
-                    parent: stack.last().cloned(),
+                    parent: stack
+                        .last()
+                        .map(|(namespace, name, _)| (namespace.clone(), name.clone())),
+                    parent_index: stack.last().map(|(_, _, at)| *at),
                 });
                 if !self_closing {
-                    stack.push((element.namespace, element.name));
+                    stack.push((element.namespace, element.name, index));
                 }
             }
             Event::End(_) => {

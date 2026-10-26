@@ -1,0 +1,2 @@
+    Checking geul v0.1.0 (<repo>/src-tauri)
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 4.85s

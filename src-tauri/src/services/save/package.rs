@@ -408,21 +408,32 @@ pub fn compare_saved_hwpx(original: &Package, output: &Package) -> Vec<Finding> 
     });
     // header는 원본과 같거나, 글자 서식이 덧붙인 글자 모양 정의만 다를 수 있다(T010 Phase 3B, `hwpx_char_shapes_appended`).
     // 빠지거나 생긴 header는 위 `compare`가 이미 적었다.
+    // `compare_part`와 같은 판정이지만 header를 한 번만 정규화해 같음 비교와 덧붙임 규칙이 함께 쓴다(큰 header를 두 번씩 읽지 않음).
     if let (Some(before), Some(after)) = (original.get(HWPX_HEADER), output.get(HWPX_HEADER)) {
-        if let Some(finding) = compare_part(HWPX_HEADER, before, after) {
-            if finding.code != FindingCode::PartChanged
-                || !hwpx_char_shapes_appended(before, after, output)
-            {
-                findings.push(finding);
+        if before != after {
+            match (xml::canonical(before), xml::canonical(after)) {
+                (Err(_), _) => {
+                    findings.push(Finding::at(FindingCode::OriginalMalformed, HWPX_HEADER))
+                }
+                (_, Err(_)) => {
+                    findings.push(Finding::at(FindingCode::OutputMalformed, HWPX_HEADER))
+                }
+                (Ok(b), Ok(a)) => {
+                    if b != a && !hwpx_char_shapes_appended(&b, &a, output) {
+                        findings.push(Finding::at(FindingCode::PartChanged, HWPX_HEADER));
+                    }
+                }
             }
         }
     }
-    let body = |package: &Package| -> Vec<(String, Vec<u8>)> {
+    // 본문 부분 바이트를 복사하지 않고 비교한다.
+    let body = |package| -> Vec<(&String, &Vec<u8>)> {
+        let package: &Package = package;
         package
             .parts
             .iter()
             .filter(|(name, _)| hwpx_body(name))
-            .map(|(name, (_, data))| (name.clone(), data.clone()))
+            .map(|(name, (_, data))| (name, data))
             .collect()
     };
     if body(original) != body(output) {
@@ -636,32 +647,82 @@ fn without_format(
     Some(rest)
 }
 
-/// 출력 본문 구역들에서 엔진이 **글자 모양 참조로 읽는** 자리의 id(T010 교정 B). 고정 rhwp 구역 파서(`parser/hwpx/section.rs`)는
-/// `run`(내용 있는 것·자기 닫힘 모두)과 양식의 `formCharPr`에서만 `charPrIDRef`를 글자 모양으로 읽는다(그 파서는 지역 이름만 본다).
-/// 판정은 더 좁게: 이름공간 없는 `charPrIDRef` 속성이 `hp` 이름공간의 `run`(부모가 `hp:p` — 본문·표 셀·글상자 문단)이나
-/// `formCharPr`(부모가 `hp` 양식 요소)에 있을 때만 센다. 다른 요소·다른 이름공간·구역 뿌리·주석·글 안의 같은 문자열은 세지 않는다.
-/// 읽을 수 없는 구역이면 None.
+/// HWPML section 이름공간(구역 뿌리 `hs:sec`).
+const HWPML_SECTION: &str = "http://www.hancom.co.kr/hwpml/2011/section";
+/// 고정 rhwp 문단 본문 루프가 `parse_form_object`로 읽는 양식 요소(`parser/hwpx/section.rs` `parse_paragraph_body`).
+const HWPX_FORM_OBJECTS: [&str; 5] = ["btn", "checkBtn", "radioBtn", "comboBox", "edit"];
+
+/// 출력 본문 구역들에서 엔진이 **글자 모양 참조로 읽는** 자리의 id(T010 교정 B, 2026-10-26 강화). 고정 rhwp 구역 파서
+/// (`parser/hwpx/section.rs`)의 실제 경로만 센다(그 파서는 지역 이름만 보지만 판정은 `hp`/`hs` 이름공간까지 요구해 더 좁다):
+/// - `run`(내용 있는 것·자기 닫힘 모두)의 `charPrIDRef`: 그 run의 부모가 **읽히는 문단**일 때.
+/// - `formCharPr`의 `charPrIDRef`: 자기 닫힘(Empty — Start는 `parse_form_object`가 `skip_element`)이고, 부모가 내용 있는 양식 요소
+///   (`HWPX_FORM_OBJECTS`, 문단 루프가 Start에서만 `parse_form_object`를 부름)이며, 그 양식의 부모가 읽히는 문단의 `run`일 때
+///   (직렬화기는 양식을 `hp:run` 바로 아래에 쓴다. `hp:ctrl` 안은 `parse_ctrl`이 건너뛴다).
+/// - 읽히는 문단 = 구역 뿌리 `hs:sec` 바로 아래 `hp:p`, 또는 `hp:subList` ← `hp:tc` ← `hp:tr` ← `hp:tbl` ← `hp:run` ← 읽히는 문단
+///   (표 셀, 중첩 표 포함 — 실제 엔진 서식 출력의 경로). 글상자·머리말·각주 등 그 밖의 문단은 세지 않는다(fail-closed: 그 자리의
+///   덧붙임 저장은 거부된다).
+///
+/// 이름공간 없는 `charPrIDRef` 속성만 보고, 주석·글은 세지 않는다. 읽을 수 없는 구역이면 None.
 fn hwpx_char_shape_uses(output: &Package) -> Option<std::collections::BTreeSet<u32>> {
-    let paragraph = |namespace: &Option<String>| namespace.as_deref() == Some(HWPML_PARAGRAPH);
     let mut used = std::collections::BTreeSet::new();
     for (name, (_, data)) in &output.parts {
         if !hwpx_body(name) {
             continue;
         }
-        for element in xml::element_starts(data).ok()? {
-            let in_context = paragraph(&element.namespace)
-                && match element.name.as_str() {
-                    "run" => element
-                        .parent
-                        .as_ref()
-                        .is_some_and(|(namespace, local)| paragraph(namespace) && local == "p"),
-                    "formCharPr" => element
-                        .parent
-                        .as_ref()
-                        .is_some_and(|(namespace, _)| paragraph(namespace)),
-                    _ => false,
-                };
-            if !in_context {
+        let elements = xml::element_starts(data).ok()?;
+        let is = |index: Option<usize>, namespace: &str, local: &str| {
+            index.and_then(|i| elements.get(i)).is_some_and(|e| {
+                e.namespace.as_deref() == Some(namespace) && e.name == local && !e.self_closing
+            })
+        };
+        let up = |index: Option<usize>| {
+            index
+                .and_then(|i| elements.get(i))
+                .and_then(|e| e.parent_index)
+        };
+        // 읽히는 문단인지: 조상 사슬을 따라 반복으로 올라간다(깊이는 요소 수로 유한).
+        let paragraph = |mut at: Option<usize>| loop {
+            if !is(at, HWPML_PARAGRAPH, "p") {
+                return false;
+            }
+            let parent = up(at);
+            if is(parent, HWPML_SECTION, "sec") && up(parent).is_none() {
+                return true;
+            }
+            let (list, cell) = (parent, up(parent));
+            let (row, table) = (up(cell), up(up(cell)));
+            let run = up(table);
+            if !(is(list, HWPML_PARAGRAPH, "subList")
+                && is(cell, HWPML_PARAGRAPH, "tc")
+                && is(row, HWPML_PARAGRAPH, "tr")
+                && is(table, HWPML_PARAGRAPH, "tbl")
+                && is(run, HWPML_PARAGRAPH, "run"))
+            {
+                return false;
+            }
+            at = up(run);
+        };
+        let run_in_paragraph =
+            |index: Option<usize>| is(index, HWPML_PARAGRAPH, "run") && paragraph(up(index));
+        for element in &elements {
+            if element.namespace.as_deref() != Some(HWPML_PARAGRAPH) {
+                continue;
+            }
+            let reads = match element.name.as_str() {
+                "run" => paragraph(element.parent_index),
+                "formCharPr" => {
+                    let form = element.parent_index;
+                    element.self_closing
+                        && form.and_then(|i| elements.get(i)).is_some_and(|f| {
+                            !f.self_closing
+                                && f.namespace.as_deref() == Some(HWPML_PARAGRAPH)
+                                && HWPX_FORM_OBJECTS.contains(&f.name.as_str())
+                        })
+                        && run_in_paragraph(up(form))
+                }
+                _ => false,
+            };
+            if !reads {
                 continue;
             }
             for (ns, key, value) in &element.attributes {
@@ -687,10 +748,11 @@ fn hwpx_char_shape_uses(output: &Package) -> Option<std::collections::BTreeSet<u
 ///   같다고 보지 않음). 원본 정의마다 한 번만 정규화한다(이전 판은 덧붙임마다 원본 전체를 훑어 n·k에 비례했다).
 /// - 덧붙인 정의 각각을 출력 본문이 엔진이 읽는 글자 모양 참조로 가리킨다(`hwpx_char_shape_uses`).
 ///   정의가 엔진이 등록하는 모양(내용 있는 요소)인지는 `validate_hwpx_references`가 따로 확인한다.
-fn hwpx_char_shapes_appended(before: &[u8], after: &[u8], output: &Package) -> bool {
-    let (Ok(before), Ok(after)) = (xml::canonical(before), xml::canonical(after)) else {
-        return false;
-    };
+fn hwpx_char_shapes_appended(
+    before: &[xml::Canonical],
+    after: &[xml::Canonical],
+    output: &Package,
+) -> bool {
     let list = |events: &[xml::Canonical]| -> Option<(usize, usize)> {
         let mut found = events
             .iter()
@@ -702,7 +764,7 @@ fn hwpx_char_shapes_appended(before: &[u8], after: &[u8], output: &Package) -> b
         }
         Some((start, element_end(events, start)?))
     };
-    let (Some((b_start, b_end)), Some((a_start, a_end))) = (list(&before), list(&after)) else {
+    let (Some((b_start, b_end)), Some((a_start, a_end))) = (list(before), list(after)) else {
         return false;
     };
     if before[..b_start] != after[..a_start] || before[b_end..] != after[a_end..] {

@@ -1,0 +1,26 @@
+
+running 1 test
+test services::save::tests::formcharpr는_엔진이_읽는_양식_자리만_쓰임이다 ... FAILED
+
+failures:
+
+---- services::save::tests::formcharpr는_엔진이_읽는_양식_자리만_쓰임이다 stdout ----
+
+thread 'services::save::tests::formcharpr는_엔진이_읽는_양식_자리만_쓰임이다' (739144) panicked at src/services/save/tests.rs:7483:5:
+판정이 다른 음성 사례:
+A hp:p 바로 아래: []
+B 양식이 아닌 hp 요소 아래: []
+C hp:ctrl 안의 양식(parse_ctrl이 건너뜀): []
+C2 hp:p 바로 아래 양식(run 밖): []
+D 내용 있는 formCharPr(Start — skip_element): []
+D2 양식 자식 안에 둔 formCharPr: []
+G 건너뛰는 컨테이너 안 문단의 run: []
+G2 표 셀이 아닌 subList(글상자 — 이 규칙 밖, fail-closed): []
+G3 tbl 구조가 아닌 tc 경로: []
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+
+failures:
+    services::save::tests::formcharpr는_엔진이_읽는_양식_자리만_쓰임이다
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 191 filtered out; finished in 0.02s

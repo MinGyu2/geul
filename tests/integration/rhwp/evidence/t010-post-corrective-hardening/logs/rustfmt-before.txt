@@ -1,0 +1,31 @@
+Diff in <repo>/src-tauri/src/services/save/tests.rs:7314:
+     let mut ran = 0;
+     for case in cases.split(';').filter(|c| !c.is_empty()) {
+         let parts: Vec<&str> = case.split('|').collect();
+-        let [original, output, expected] = parts[..] else { panic!("case: {case}") };
+-        let (o, out) = (std::fs::read(original).unwrap(), std::fs::read(output).unwrap());
+-        let checked = service::check_saved(Format::Hwpx, &o, &out, Some(&report("hwpx", json!([]))), true);
++        let [original, output, expected] = parts[..] else {
++            panic!("case: {case}")
++        };
++        let (o, out) = (
++            std::fs::read(original).unwrap(),
++            std::fs::read(output).unwrap(),
++        );
++        let checked = service::check_saved(
++            Format::Hwpx,
++            &o,
++            &out,
++            Some(&report("hwpx", json!([]))),
++            true,
++        );
+         let safe = checked.is_safe();
+-        println!("{}", json!({"output": Path::new(output).file_name().unwrap().to_string_lossy(), "safe": safe, "findings": format!("{:?}", checked)}));
++        println!(
++            "{}",
++            json!({"output": Path::new(output).file_name().unwrap().to_string_lossy(), "safe": safe, "findings": format!("{:?}", checked)})
++        );
+         assert_eq!(safe.to_string(), expected, "{output}");
+         ran += 1;
+     }
+exit=1

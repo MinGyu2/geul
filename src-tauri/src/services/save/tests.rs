@@ -6922,10 +6922,12 @@ fn 덧붙인_글자_모양은_엔진이_읽는_본문_참조로_쓰인다() {
                 r#"<hp:run charPrIDRef="0"><hp:tbl><hp:tr><hp:tc><hp:subList><hp:p id="1" paraPrIDRef="0" styleIDRef="0"><hp:run charPrIDRef="3"><hp:t>c</hp:t></hp:run></hp:p></hp:subList></hp:tc></hp:tr></hp:tbl></hp:run>"#,
             ),
         ),
+        // (2026-10-26 교정: 이전 판의 `hp:run/hp:ctrl/hp:checkBtn/hp:formCharPr` 양성 사례는 고정 rhwp `parse_ctrl`이 모르는 자식을
+        // `skip_element`로 건너뛰어 엔진이 읽지 않는 자리였다 — 음성으로 옮김, `formcharpr는_엔진이_읽는_양식_자리만_쓰임이다`.)
         (
-            "양식 개체의 formCharPr",
+            "양식 개체(hp:run 바로 아래)의 formCharPr",
             sec_with(
-                r#"<hp:run charPrIDRef="0"><hp:ctrl><hp:checkBtn><hp:formCharPr charPrIDRef="3"/></hp:checkBtn></hp:ctrl></hp:run>"#,
+                r#"<hp:run charPrIDRef="0"><hp:checkBtn><hp:formCharPr charPrIDRef="3"/></hp:checkBtn></hp:run>"#,
             ),
         ),
     ];
@@ -7314,13 +7316,391 @@ fn 실제_엔진_서식_출력_판정() {
     let mut ran = 0;
     for case in cases.split(';').filter(|c| !c.is_empty()) {
         let parts: Vec<&str> = case.split('|').collect();
-        let [original, output, expected] = parts[..] else { panic!("case: {case}") };
-        let (o, out) = (std::fs::read(original).unwrap(), std::fs::read(output).unwrap());
-        let checked = service::check_saved(Format::Hwpx, &o, &out, Some(&report("hwpx", json!([]))), true);
+        let [original, output, expected] = parts[..] else {
+            panic!("case: {case}")
+        };
+        let (o, out) = (
+            std::fs::read(original).unwrap(),
+            std::fs::read(output).unwrap(),
+        );
+        let checked = service::check_saved(
+            Format::Hwpx,
+            &o,
+            &out,
+            Some(&report("hwpx", json!([]))),
+            true,
+        );
         let safe = checked.is_safe();
-        println!("{}", json!({"output": Path::new(output).file_name().unwrap().to_string_lossy(), "safe": safe, "findings": format!("{:?}", checked)}));
+        println!(
+            "{}",
+            json!({"output": Path::new(output).file_name().unwrap().to_string_lossy(), "safe": safe, "findings": format!("{:?}", checked)})
+        );
         assert_eq!(safe.to_string(), expected, "{output}");
         ran += 1;
     }
     assert!(ran > 0, "실행한 사례 0건");
+}
+
+// ---- T010 강화: formCharPr·run의 "쓰임"은 고정 rhwp 파서가 실제로 읽는 자리만 ----
+//
+// 근거(고정 rhwp `parser/hwpx/section.rs`): 문단 본문 루프는 `btn`·`checkBtn`·`radioBtn`·`comboBox`·`edit`의 Start에서만
+// `parse_form_object`를 부르고, 그 안에서 `formCharPr`는 양식 요소의 **바로 아래 Empty**(자기 닫힘)일 때만 읽는다(Start 자식은
+// `text` 말고 `skip_element`). `hp:ctrl`은 `parse_ctrl`이 모르는 자식을 `skip_element`로 건너뛴다. 직렬화기는 양식을 `hp:run`의
+// 바로 아래에 쓴다(`serializer/hwpx/section.rs` "폼은 <hp:run> 직접 자식"). 실제 엔진 출력의 서식 run 경로: 본문
+// `sec/p/run`, 표 셀 `sec/p/run/tbl/tr/tc/subList/p/run`.
+
+fn form_in_run(form: &str, inner: &str) -> String {
+    sec_with(&format!(
+        r#"<hp:run charPrIDRef="0"><hp:{form}>{inner}</hp:{form}></hp:run>"#
+    ))
+}
+
+#[test]
+fn formcharpr는_엔진이_읽는_양식_자리만_쓰임이다() {
+    let header = appended_italic_header();
+    let ok = vec![];
+    let changed = vec![header_changed()];
+    let empty_form =
+        r#"<hp:formCharPr charPrIDRef="3" followContext="0" autoSz="0" wordWrap="0"/>"#;
+    // 양성: 다섯 양식 종류 모두, hp:run 바로 아래 양식의 바로 아래 자기 닫힘 formCharPr.
+    for form in ["btn", "checkBtn", "radioBtn", "comboBox", "edit"] {
+        assert_eq!(
+            fmt_check(&header, &form_in_run(form, empty_form)),
+            ok,
+            "{form}"
+        );
+    }
+    // 표 셀 안 문단의 양식.
+    let in_cell = sec_with(&format!(
+        r#"<hp:run charPrIDRef="0"><hp:tbl><hp:tr><hp:tc><hp:subList><hp:p id="1" paraPrIDRef="0" styleIDRef="0"><hp:run charPrIDRef="0"><hp:edit>{empty_form}<hp:text/></hp:edit></hp:run></hp:p></hp:subList></hp:tc></hp:tr></hp:tbl></hp:run>"#
+    ));
+    assert_eq!(fmt_check(&header, &in_cell), ok, "표 셀 안 양식");
+    let negative: Vec<(&str, String, Vec<Finding>)> = vec![
+        (
+            "A hp:p 바로 아래",
+            sec_with(&format!(
+                r#"<hp:run charPrIDRef="0"><hp:t>a</hp:t></hp:run>{empty_form}"#
+            )),
+            changed.clone(),
+        ),
+        (
+            "B 양식이 아닌 hp 요소 아래",
+            form_in_run("fake", empty_form),
+            changed.clone(),
+        ),
+        (
+            "C hp:ctrl 안의 양식(parse_ctrl이 건너뜀)",
+            sec_with(&format!(
+                r#"<hp:run charPrIDRef="0"><hp:ctrl><hp:checkBtn>{empty_form}</hp:checkBtn></hp:ctrl></hp:run>"#
+            )),
+            changed.clone(),
+        ),
+        (
+            "C2 hp:p 바로 아래 양식(run 밖)",
+            sec_with(&format!(
+                r#"<hp:run charPrIDRef="0"><hp:t>a</hp:t></hp:run><hp:checkBtn>{empty_form}</hp:checkBtn>"#
+            )),
+            changed.clone(),
+        ),
+        (
+            "D 내용 있는 formCharPr(Start — skip_element)",
+            form_in_run(
+                "checkBtn",
+                r#"<hp:formCharPr charPrIDRef="3"></hp:formCharPr>"#,
+            ),
+            changed.clone(),
+        ),
+        (
+            "D2 양식 자식 안에 둔 formCharPr",
+            form_in_run("edit", &format!("<hp:text>{empty_form}</hp:text>")),
+            changed.clone(),
+        ),
+        (
+            "E 다른 이름공간의 formCharPr",
+            form_in_run(
+                "checkBtn",
+                r#"<o:formCharPr xmlns:o="urn:other" charPrIDRef="3"/>"#,
+            ),
+            changed.clone(),
+        ),
+        (
+            "E2 다른 이름공간의 양식",
+            sec_with(&format!(
+                r#"<hp:run charPrIDRef="0"><o:checkBtn xmlns:o="urn:other">{empty_form}</o:checkBtn></hp:run>"#
+            )),
+            changed.clone(),
+        ),
+        (
+            "F 이름공간 붙은 charPrIDRef",
+            form_in_run(
+                "checkBtn",
+                r#"<hp:formCharPr xmlns:x="urn:x" x:charPrIDRef="3" charPrIDRef="0"/>"#,
+            ),
+            changed.clone(),
+        ),
+        (
+            "G 건너뛰는 컨테이너 안 문단의 run",
+            sec_with(
+                r#"<hp:run charPrIDRef="0"><hp:ctrl><hp:unknown><hp:subList><hp:p id="1" paraPrIDRef="0" styleIDRef="0"><hp:run charPrIDRef="3"><hp:t>b</hp:t></hp:run></hp:p></hp:subList></hp:unknown></hp:ctrl></hp:run>"#,
+            ),
+            changed.clone(),
+        ),
+        (
+            "G2 표 셀이 아닌 subList(글상자 — 이 규칙 밖, fail-closed)",
+            sec_with(
+                r#"<hp:run charPrIDRef="0"><hp:rect><hp:drawText><hp:subList><hp:p id="1" paraPrIDRef="0" styleIDRef="0"><hp:run charPrIDRef="3"><hp:t>b</hp:t></hp:run></hp:p></hp:subList></hp:drawText></hp:rect></hp:run>"#,
+            ),
+            changed.clone(),
+        ),
+        (
+            "G3 tbl 구조가 아닌 tc 경로",
+            sec_with(
+                r#"<hp:run charPrIDRef="0"><hp:fake><hp:tr><hp:tc><hp:subList><hp:p id="1" paraPrIDRef="0" styleIDRef="0"><hp:run charPrIDRef="3"/></hp:p></hp:subList></hp:tc></hp:tr></hp:fake></hp:run>"#,
+            ),
+            changed.clone(),
+        ),
+        (
+            "J 숫자가 아닌 formCharPr 참조",
+            form_in_run("checkBtn", r#"<hp:formCharPr charPrIDRef="x3"/>"#),
+            vec![
+                header_changed(),
+                Finding::at(FindingCode::ReferenceInvalid, "Contents/section0.xml"),
+            ],
+        ),
+        (
+            "J2 참조 없는 formCharPr",
+            form_in_run("checkBtn", r#"<hp:formCharPr followContext="0"/>"#),
+            changed.clone(),
+        ),
+    ];
+    let wrong: Vec<String> = negative
+        .iter()
+        .filter_map(|(label, body, expected)| {
+            let got = fmt_check(&header, body);
+            (&got != expected).then(|| format!("{label}: {got:?}"))
+        })
+        .collect();
+    assert!(
+        wrong.is_empty(),
+        "판정이 다른 음성 사례:\n{}",
+        wrong.join("\n")
+    );
+    // I: 덧붙임 둘 중 하나는 진짜 run, 하나는 무시되는 양식 자리에서만 쓰임.
+    let (defs, _) = fmt_original();
+    let d: Vec<&str> = defs.iter().map(String::as_str).collect();
+    let two = fmt_header(
+        5,
+        &d,
+        &[&italic_of_zero(), &fmt_def(4, 1600, "<hh:italic/>")],
+        "JUSTIFY",
+    );
+    let body = sec_with(
+        r#"<hp:run charPrIDRef="3"><hp:ctrl><hp:checkBtn><hp:formCharPr charPrIDRef="4"/></hp:checkBtn></hp:ctrl></hp:run>"#,
+    );
+    assert_eq!(
+        fmt_check(&two, &body),
+        changed,
+        "I 하나는 무시되는 자리에서만"
+    );
+    let body = sec_with(
+        r#"<hp:run charPrIDRef="3"><hp:checkBtn><hp:formCharPr charPrIDRef="4"/></hp:checkBtn></hp:run>"#,
+    );
+    assert_eq!(fmt_check(&two, &body), ok, "I 대조: 둘 다 읽히는 자리");
+    // 표 안 표의 셀(중첩)도 엔진이 읽는다.
+    let nested = sec_with(
+        r#"<hp:run charPrIDRef="0"><hp:tbl><hp:tr><hp:tc><hp:subList><hp:p id="1" paraPrIDRef="0" styleIDRef="0"><hp:run charPrIDRef="0"><hp:tbl><hp:tr><hp:tc><hp:subList><hp:p id="2" paraPrIDRef="0" styleIDRef="0"><hp:run charPrIDRef="3"><hp:t>c</hp:t></hp:run></hp:p></hp:subList></hp:tc></hp:tr></hp:tbl></hp:run></hp:p></hp:subList></hp:tc></hp:tr></hp:tbl></hp:run>"#,
+    );
+    assert_eq!(fmt_check(&header, &nested), ok, "표 안 표");
+}
+
+#[test]
+fn 실제_저장_서비스는_무시되는_formcharpr_자리로_덧붙임을_게시하지_않는다() {
+    let state = DocumentState::default();
+    let dir = TempDir::new();
+    let (_, header) = fmt_original();
+    let original = zip(
+        &hwpx_package(&fmt_body(&[0, 1]), &header, true, true),
+        false,
+    );
+    let info = rhwp_session(&state, &dir, "a.hwpx", &original);
+    let registry = state.registry();
+    let (id, generation) = (info.session_id, info.load_generation);
+    let source = registry.preflight_source(id, generation).unwrap();
+    let read = service::read_original(&source, &Limits::default()).unwrap();
+    let check = service::preflight(
+        Format::Hwpx,
+        &read,
+        &original,
+        Some(&report("hwpx", json!([]))),
+    );
+    assert!(check.is_safe(), "{check:?}");
+    registry
+        .record_preflight(id, generation, source.content_hash, check)
+        .unwrap();
+    registry.commit(id, generation, 0, 1).unwrap();
+    let appended = appended_italic_header();
+    let empty_form = r#"<hp:formCharPr charPrIDRef="3"/>"#;
+    for (label, body) in [
+        (
+            "hp:p 바로 아래",
+            sec_with(&format!(
+                r#"<hp:run charPrIDRef="0"><hp:t>a</hp:t></hp:run>{empty_form}"#
+            )),
+        ),
+        (
+            "hp:ctrl 안 양식",
+            sec_with(&format!(
+                r#"<hp:run charPrIDRef="0"><hp:ctrl><hp:checkBtn>{empty_form}</hp:checkBtn></hp:ctrl></hp:run>"#
+            )),
+        ),
+        (
+            "내용 있는 formCharPr",
+            form_in_run(
+                "checkBtn",
+                r#"<hp:formCharPr charPrIDRef="3"></hp:formCharPr>"#,
+            ),
+        ),
+    ] {
+        let output = zip(&hwpx_package(&body, &appended, true, true), false);
+        let ticket = registry.begin_save(id, generation, 1).unwrap();
+        let error = service::save(
+            registry,
+            &ticket,
+            &Limits::default(),
+            &output,
+            Some(&report("hwpx", json!([]))),
+            true,
+        )
+        .unwrap_err();
+        drop(ticket);
+        assert!(
+            matches!(&error, DocumentError::UnsafeSave { preservation }
+                if preservation.findings == vec![header_changed()]),
+            "{label}: {error:?}"
+        );
+        assert_eq!(
+            std::fs::read(dir.path().join("a.hwpx")).unwrap(),
+            original,
+            "{label}"
+        );
+        assert_eq!(std::fs::read_dir(dir.path()).unwrap().count(), 1, "{label}");
+        assert!(registry.get(id).unwrap().dirty);
+    }
+    // 대조: 엔진이 읽는 양식 자리는 게시.
+    let valid = zip(
+        &hwpx_package(&form_in_run("checkBtn", empty_form), &appended, true, true),
+        false,
+    );
+    let ticket = registry.begin_save(id, generation, 1).unwrap();
+    let saved = service::save(
+        registry,
+        &ticket,
+        &Limits::default(),
+        &valid,
+        Some(&report("hwpx", json!([]))),
+        true,
+    )
+    .unwrap();
+    assert!(!saved.session.dirty);
+    assert_eq!(std::fs::read(dir.path().join("a.hwpx")).unwrap(), valid);
+}
+
+// ---- T010 강화 P2-C: HWPX 저장 판정 전체 경로의 자원(측정, 명시 실행) ----
+
+/// 이 프로세스의 최대 RSS(VmHWM)를 0으로 되돌리고(커널 `clear_refs` 5) 단계 뒤 VmHWM·VmRSS를 KiB로 읽는다. Linux 전용 측정 도구.
+fn peak_reset() {
+    let _ = std::fs::write("/proc/self/clear_refs", "5");
+}
+fn peak_kib() -> (u64, u64) {
+    let status = std::fs::read_to_string("/proc/self/status").unwrap_or_default();
+    let field = |key: &str| {
+        status
+            .lines()
+            .find(|l| l.starts_with(key))
+            .and_then(|l| l.split_whitespace().nth(1))
+            .and_then(|v| v.parse().ok())
+            .unwrap_or(0)
+    };
+    (field("VmHWM:"), field("VmRSS:"))
+}
+
+#[test]
+#[ignore = "측정: GEUL_T010_STAGE_CASE=n,k[,mode] cargo test --release --lib -- --ignored --nocapture hwpx_저장_판정_단계별_자원"]
+fn hwpx_저장_판정_단계별_자원() {
+    let case = std::env::var("GEUL_T010_STAGE_CASE").expect("GEUL_T010_STAGE_CASE");
+    let fields: Vec<&str> = case.split(',').collect();
+    let (n, k): (u32, u32) = (fields[0].parse().unwrap(), fields[1].parse().unwrap());
+    let mode = fields.get(2).copied().unwrap_or("valid");
+    let (before, mut after) = large_header_pair(n, k);
+    if mode == "rejected" {
+        // 같은 크기에서 독립된 까닭(쓰이지 않는 덧붙임)으로 거부되는 출력.
+        let a = package::open(&after, package::Side::Output).unwrap();
+        let header = a.get("Contents/header.xml").unwrap().to_vec();
+        after = zip(
+            &hwpx_package(
+                &fmt_body(&[0]),
+                std::str::from_utf8(&header).unwrap(),
+                true,
+                true,
+            ),
+            false,
+        );
+    } else if mode == "malformed" {
+        // 같은 크기 header를 끝 근처에서 잘라 읽을 수 없게 만든 출력.
+        let a = package::open(&after, package::Side::Output).unwrap();
+        let header = a.get("Contents/header.xml").unwrap();
+        let cut = std::str::from_utf8(&header[..header.len() - 64])
+            .unwrap()
+            .to_string();
+        after = zip(&hwpx_package(&fmt_body(&[0]), &cut, true, true), false);
+    } else {
+        assert_eq!(mode, "valid", "모르는 측정 모드");
+    }
+    let mut stages = Vec::new();
+    let mut stage = |name: &str, run: &mut dyn FnMut() -> String| {
+        peak_reset();
+        let started = std::time::Instant::now();
+        let result = run();
+        let ms = started.elapsed().as_secs_f64() * 1000.0;
+        let (hwm, rss) = peak_kib();
+        stages.push(json!({"stage": name, "ms": (ms * 10.0).round() / 10.0, "peakRssKiB": hwm, "rssAfterKiB": rss, "result": result}));
+    };
+    let mut opened = None;
+    stage("package::open 둘(압축 풀기)", &mut || {
+        opened = Some((
+            package::open(&before, package::Side::Original).unwrap(),
+            package::open(&after, package::Side::Output).unwrap(),
+        ));
+        String::new()
+    });
+    let (b, a) = opened.unwrap();
+    let header_bytes = a.get("Contents/header.xml").unwrap().len();
+    let expanded: usize = a.parts.values().map(|(_, d)| d.len()).sum();
+    stage("validate_hwpx", &mut || {
+        format!("{:?}", package::validate_hwpx(&b, &a))
+    });
+    stage("compare_saved_hwpx", &mut || {
+        format!("{:?}", package::compare_saved_hwpx(&b, &a))
+    });
+    stage("validate_hwpx_references", &mut || {
+        format!("{:?}", package::validate_hwpx_references(&a))
+    });
+    drop((b, a));
+    stage("service::check_saved 전체", &mut || {
+        format!(
+            "{:?}",
+            service::check_saved(
+                Format::Hwpx,
+                &before,
+                &after,
+                Some(&report("hwpx", json!([]))),
+                true
+            )
+            .outcome
+        )
+    });
+    println!(
+        "{}",
+        json!({"original": n, "appended": k, "mode": mode, "zipBytes": after.len(), "headerBytes": header_bytes, "expandedOutputBytes": expanded, "fixtureCreationIncluded": false, "stages": stages})
+    );
 }
