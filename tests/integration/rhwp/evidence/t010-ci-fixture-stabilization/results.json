@@ -1,0 +1,140 @@
+{
+  "status": "PASS (pre-commit local verification); final commit identity and post-commit results recorded in final report",
+  "startHead": "719b5ad335e81bc1c55782ae4c484ee58a0134f8",
+  "finalHead": "the single commit containing this evidence; resolve with git log -1 --format=%H -- tests/integration/rhwp/evidence/t010-ci-fixture-stabilization/results.json (actual ID in final report)",
+  "branch": "master",
+  "initialWorkingTree": "clean; existing ignored broader T010 checkpoint retained/reconciled",
+  "pins": {
+    "rhwp": "1a76570e833917d15817415a53c09ad61ab3203f",
+    "wordcraft": "fc41918814f62645b6746ed68e71e8c2c2e85d6f"
+  },
+  "baselineRemote": {
+    "attribution": "user-provided established results, not a fresh remote query",
+    "workflow": "quality",
+    "run": 40290711343,
+    "rustJob": 121464844830,
+    "head": "719b5ad335e81bc1c55782ae4c484ee58a0134f8",
+    "frontend": "PASS",
+    "sensitiveInformation": "PASS",
+    "rust": "FAIL",
+    "rustTests": {
+      "passed": 184,
+      "failed": 1,
+      "ignored": 8
+    },
+    "failure": "preview test reads uninitialized RHWP source"
+  },
+  "baselineLocalRhwpFree": {
+    "status": "FAIL (expected reproduction)",
+    "exit": 101,
+    "location": "src-tauri/src/services/save/tests.rs:2938:89",
+    "error": "Os { code: 2, kind: NotFound, message: \"No such file or directory\" }"
+  },
+  "rhwpFreeSetup": {
+    "kind": "detached worktree at reference plus reviewed changes",
+    "rhwp": "empty gitlink directory; no src tree, symlink or checkout",
+    "wordcraft": "symlink to existing clean pinned checkout, no network",
+    "target": "reused existing main src-tauri/target; no copied target or separate cache",
+    "scope": "local Linux reproduction of checkout dependency, not a GitHub-hosted runner reproduction"
+  },
+  "rust": {
+    "version": "rustc 1.99.0 (b940084d7 2026-09-28)",
+    "cargo": "1.99.0 (5f94df478 2026-08-27)",
+    "rustfmt": "1.10.0-stable (b940084d7e 2026-09-28)",
+    "library": {
+      "passed": 186,
+      "failed": 0,
+      "ignored": 8
+    },
+    "docxIntegration": {
+      "passed": 1,
+      "failed": 0
+    },
+    "savePreservation": {
+      "passed": 79,
+      "ignored": 7,
+      "failed": 0
+    },
+    "integrationHarnessIgnoredByDefault": 2,
+    "offline": true,
+    "toolchainInstalled": false,
+    "lockChanged": false,
+    "cacheDeleted": false
+  },
+  "frontend": {
+    "vitestFiles": 42,
+    "vitestTests": 819,
+    "productionRhwpRebuild": false
+  },
+  "fixture": {
+    "upstream": "https://github.com/edwardkim/rhwp",
+    "revision": "1a76570e833917d15817415a53c09ad61ab3203f",
+    "sourceSha256": "8a090d7753108d3d1629c33a674f777d1220e4b3c3bc56af90b54b7596d051f8",
+    "assets": [
+      {
+        "file": "prv-image.hex",
+        "source": "src/serializer/hwpx/static_assets.rs#PRV_IMAGE_PNG",
+        "bytes": 68,
+        "sha256": "c1bf607dd7214cb64486934b72c335a64b31d7f5203c40afdea5a1b95c826cf8",
+        "encoding": "hex (decoded-byte hash below)",
+        "encodedSha256": "ac57df4402cbdb36041c47f15f1daa4a653e1a6d019d8cdf9e7c1730e09cbefa"
+      },
+      {
+        "file": "prv-text-utf8.hex",
+        "source": "src/serializer/hwpx/static_assets.rs#PRV_TEXT",
+        "bytes": 2,
+        "sha256": "7eb70257593da06f682a3ddda54a9d260d4fc514f645237f5ca74b08f8da61a6",
+        "encoding": "hex (decoded-byte hash below)",
+        "encodedSha256": "a5671e2c9db817c6757747455484aeadb02c60dd6fd55eb265a2f4a1a084b319"
+      },
+      {
+        "file": "prv-text-utf16le.hex",
+        "source": "src/parser/hwpx/blank2010_assets/prvtext.bin",
+        "bytes": 4,
+        "sha256": "b7f560303ee2cca55615b53fcff87c6ab2c55f9e71a6cea93c61b572213e7075",
+        "encoding": "hex (decoded-byte hash below)",
+        "encodedSha256": "544d9f061b2266c6d02157d731dc21f3db3c6b534049910f6972ba3eda98daca"
+      }
+    ]
+  },
+  "upstreamVerification": "PASS; exact HEAD and current source SHA/bytes checked; data extracted from pinned Git objects",
+  "formcharpr": "PASS: body + cell, synthetic controls in engine-generated document; actual service-saved bytes parsed and interpreted re-export checked. Body properties API and both resolved italic definitions verified. No raster appearance assertion.",
+  "rss": "actual Linux clear_refs reset + status read PASS for 5 stages; pure cross-platform failure regression PASS; official RSS remains INCONCLUSIVE",
+  "risk": "see docs/architecture/t009-xml-resource-followup.md; no canonical representation or acceptance limit changes",
+  "gates": {
+    "D1": "NOT RUN (current source; historical trusted candidate unavailable; no rebuild)",
+    "D2": "INCONCLUSIVE",
+    "D3": "PASS (local save_service/undo_save at this change; see evidence)",
+    "D4": "FAIL (unchanged official outcome)",
+    "D5": "PASS (archived only; no new native run)",
+    "RSS": "INCONCLUSIVE"
+  },
+  "overallT010": "INCOMPLETE; unchecked",
+  "productionRhwpUndoRedo": "NO-GO",
+  "productionRhwpFormatting": "unsupported",
+  "T011": "NOT STARTED",
+  "remoteCiForNewCommit": "NOT RUN",
+  "notRun": [
+    "new remote CI (no push authorized/requested)",
+    "new native D1/D2/D4/D5 or official RSS gates (out of scope)",
+    "full XML comparison rewrite / OOM stress at 256 MiB (risk assessment only)",
+    "new RHWP WASM build (existing pinned production engine used)"
+  ],
+  "fixtureRepresentation": "hex text (74 decoded upstream bytes); no binary scanner exemptions or Git newline normalization; compile-time include_str and strict hex decoder",
+  "engineAssetsSha256": {
+    "BUILD.json": "bac96306df081aeabe1569bd91954e051c7803c56ef013a3bb8158f86b8919ba",
+    "rhwp.js": "70cde06a369fa7fd4fc8bc8f3d6acaee158596ba1a116a2c72159002b0b5654e",
+    "rhwp_bg.wasm": "a91fa6a4336d34441c0d8f52afd0971aebe34019f7caf9eddad100f7a568f94d"
+  },
+  "security": {
+    "staged": "PASS (23-file snapshot; final evidence rechecked by normal commit hook)",
+    "all": "PASS (1790 tracked/index files at scan)",
+    "history": "PASS before new commit (97 commits); post-commit recheck in final report",
+    "regressions": "PASS (86 tests)",
+    "gitleaksStaged": "PASS (0 leaks)",
+    "gitleaksHistory": "PASS (97 commits, 167.74 MB; cached v8.30.1 source 83d9cd684c87d95d656c1458ef04895a7f1cbd8e; binary reports version is set by build process)",
+    "allowlistChanges": false,
+    "hooks": "normal pre-commit hooks during single final commit; actual outcome in final report"
+  },
+  "protected": "PASS: protected paths/gitlinks and every prior evidence directory unchanged against reference; see review.json"
+}

@@ -1,0 +1,53 @@
+T010 CI fixture stabilization — 로컬 교정 세션 (전체 T010 완료 아님)
+
+기준: master 719b5ad335e81bc1c55782ae4c484ee58a0134f8, 초기 작업 트리 clean.
+최종 HEAD는 이 증거를 담은 단일 로컬 커밋이며 실제 hash는 최종 보고서와 Git log에서 확인한다.
+자기 커밋 hash를 동일 커밋 내용에 넣는 순환을 피한다. 원격 새 커밋 CI: NOT RUN (push 안 함).
+
+VERIFIED: CI 실패는 테스트가 external/rhwp 소스를 런타임에 읽는 의존이다.
+기준 커밋의 detached worktree(RHWP 비어 있음, pinned WordCraft만 기존 checkout symlink)에서
+정확한 테스트가 NotFound/exit 101로 실패했다. 수정 후 같은 구성에서 targeted/fmt/offline check/
+strict Clippy/offline full test/save tests 모두 PASS. 실제 GitHub runner 전체 환경 재현 주장은 아니다.
+확정한 최종 hex fixture 버전에서 전부 다시 실행했다. 기존 target만 재사용하고 cache는 삭제하지 않았다.
+
+골든: pinned RHWP Git 객체 1a76570e833917d15817415a53c09ad61ab3203f에서 직접 추출.
+main repo의 hex 3개에 decoded 68+2+4바이트를 담았다. 원본 source 경로와 encoded/decoded SHA-256은
+fixtures/rhwp/blank-preview/provenance.json 및 results.json에 있다. 현재 pinned 소스 hash/byte 대조 PASS.
+일반 Rust는 include_str와 strict hex decode만 사용한다. 누락, 골든 바이트 손상, production 상수 변경은
+각각 실패하고 복원 후 PASS(fixture-mutations.json). 바이너리 보안 예외나 allowlist 확장은 없다.
+기존 malformed PNG/CRC/Adler-32/byte mutation 및 previewStale 검사는 그대로다.
+
+Rust 1.99.0, Cargo 1.99.0, rustfmt 1.10.0 사용. toolchain/dependency 설치, Cargo.lock 변경 없음.
+lib 186 PASS / 8 ignored, DOCX integration 1 PASS / 별도 save harness 2 ignored.
+저장 보존 부분집합 79 PASS / 7 ignored. 명령과 결과는 rust-rhwp-free.json, rust-results.txt.
+Frontend typecheck/ESLint/Vitest(42 files, 819 tests)/production build PASS; WASM 재빌드 없음.
+
+save_service.py --strict-desired: 23행, currentMismatch/unresolvedDesired 없음.
+undo_save.py: 19행, failures 없음. HWP previewStale 거부, HWPX 좁은 appended-charPr 허용과 잘못된 참조
+거부, 원본 보존/dirty/temp 정리 확인. DOCX 보존은 전체 Rust의 기존 integration으로 확인.
+
+formcharpr_save.py: 실제 pinned 엔진으로 생성한 문서에 합성 양식을 넣은 집중 회귀다.
+본문/셀 각각 service::save 성공 → 디스크의 정확한 output bytes 다시 열기 → form 1개/identity와 위치 유지,
+CharShapeID 8 및 기울임 정의 유지, 주변 글과 모든 글 위치의 서식 불변, dirty 해제/temp 정리 PASS.
+본문은 getFormObjectInfo.properties.CharShapeID로 직접 조회한다. 셀은 indexed 상세 API가 없으므로
+실제 파싱된 Control::Form의 재직렬화가 내보낸 formCharPr/charPr를 대조한다(입력 XML 검사만이 아님).
+참조/정의의 엔진 해석은 VERIFIED. 실제 픽셀 외형 또는 모든 양식 유형/실물 한컴 호환성은 UNVERIFIED.
+문서/snapshot 소유권과 제품 API는 바꾸지 않았다.
+
+RSS: reset/읽기/값 검증 실패 시 null+오류; reset 실패 때 읽힌 HWM은 processPeakRssKiB에만 기록한다.
+일반 테스트는 합성 status/결과로 실패 분류를 검증하고 /proc을 읽지 않는다.
+명시 실행 release smoke(100,10)의 5단계는 linux-clear_refs-5-stage로 reset/read 성공.
+이는 기능 확인이며 공식 D4/RSS 승인 측정이 아니다. 프로세스의 다른 스레드/allocator 영향이 남고,
+이전 오류 무시 측정과 무조건 직접 비교하지 않는다. rss-capability.json 참조.
+
+T009: canonical 양쪽 사건열, decode 문자열, 두 압축 해제 패키지와 덧붙임 HashSet 복제가 공존한다.
+256 MiB/부분, 1 GiB/패키지, 1600만 사건 제한은 실용적인 heap 바이트 예산을 보장하지 않는다.
+16 MiB header/약 516 MiB 프로세스 RSS는 관측값, 정확한 peak allocation/최악 배수/OOM 증명은 아니다.
+정상 오류는 게시 전 fail-closed이나 할당 실패의 안전한 Result 반환은 UNVERIFIED.
+별도 budget/streaming 설계는 INFERRED 타당; docs/architecture/t009-xml-resource-followup.md에 계약 제안.
+이번 세션은 canonical 표현, 수용 제한을 변경하지 않았다.
+
+공식 게이트 유지: D1 NOT RUN, D2 INCONCLUSIVE, D3 로컬 관련 저장 회귀 PASS,
+D4 FAIL, D5 archived PASS(새 native 실행 아님), RSS INCONCLUSIVE.
+T010 미완료/미체크, production Undo/Redo NO-GO, formatting unsupported, T011 NOT STARTED.
+기존 trusted candidate를 재구성/승격하지 않았다. protected paths/gitlinks 및 보안 결과는 results.json 참조.

@@ -2932,27 +2932,33 @@ fn c_고정_rhwp가_만드는_빈_hwpx_미리보기는_그_바이트일_때만_�
     use super::preview::{
         blank_utf16, blank_utf8, known_blank_png, RHWP_BLANK_PREVIEW_PNG, RHWP_BLANK_PREVIEW_TEXT,
     };
-    // 출처: 고정 rhwp `serializer/hwpx/static_assets.rs`의 `PRV_IMAGE_PNG`·`PRV_TEXT`와 바이트가 같다(68바이트 1×1
-    // 회색조+알파 투명, IDAT CRC와 zlib Adler-32가 틀림 — 실측). HWP 빈 글 미리보기는 blank2010 자산과 같다.
-    let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../external/rhwp/src");
-    let assets = std::fs::read_to_string(root.join("serializer/hwpx/static_assets.rs")).unwrap();
-    let array = assets
-        .split("pub const PRV_IMAGE_PNG: &[u8] = &[")
-        .nth(1)
-        .and_then(|rest| rest.split("];").next())
-        .unwrap();
-    let bytes: Vec<u8> = array
-        .split(|c: char| c == ',' || c.is_whitespace())
-        .filter_map(|token| token.strip_prefix("0x"))
-        .map(|hex| u8::from_str_radix(hex, 16).unwrap())
-        .collect();
-    assert_eq!(bytes, RHWP_BLANK_PREVIEW_PNG);
-    assert!(assets.contains(r#"pub const PRV_TEXT: &[u8] = b"\r\n";"#));
-    assert_eq!(RHWP_BLANK_PREVIEW_TEXT, b"\r\n");
-    assert_eq!(
-        std::fs::read(root.join("parser/hwpx/blank2010_assets/prvtext.bin")).unwrap(),
-        utf16("\r\n")
-    );
+    // 고정 upstream Git 객체에서 추출한 독립 골든. 출처·SHA-256은 fixture의 provenance.json 참조.
+    // include_str!: RHWP checkout 없이 실행하며 골든 누락은 컴파일 실패, 손상은 비교 실패다.
+    // hex 표현은 원본 CRLF/바이너리를 변형 없이 추적하면서 보안 검사도 가능하게 한다.
+    let decode = |hex: &str| -> Vec<u8> {
+        let hex = hex.trim_end_matches('\n');
+        assert_eq!(hex.len() % 2, 0);
+        hex.as_bytes()
+            .as_chunks::<2>()
+            .0
+            .iter()
+            .map(|pair| u8::from_str_radix(std::str::from_utf8(pair).unwrap(), 16).unwrap())
+            .collect()
+    };
+    let png = decode(include_str!(
+        "../../../../tests/fixtures/rhwp/blank-preview/prv-image.hex"
+    ));
+    let text = decode(include_str!(
+        "../../../../tests/fixtures/rhwp/blank-preview/prv-text-utf8.hex"
+    ));
+    let hwp_text = decode(include_str!(
+        "../../../../tests/fixtures/rhwp/blank-preview/prv-text-utf16le.hex"
+    ));
+    assert_eq!(png, RHWP_BLANK_PREVIEW_PNG);
+    assert_eq!(text, RHWP_BLANK_PREVIEW_TEXT);
+    assert_eq!(text, b"\r\n");
+    assert_eq!(hwp_text, utf16("\r\n"));
+    assert_eq!(png.len(), 68);
     assert_eq!(RHWP_BLANK_PREVIEW_PNG.len(), 68);
     assert!(known_blank_png(RHWP_BLANK_PREVIEW_PNG));
     // 한 바이트·한 비트라도 다르면(같은 그림으로 풀리더라도) 받지 않는다.
@@ -7607,21 +7613,101 @@ fn 실제_저장_서비스는_무시되는_formcharpr_자리로_덧붙임을_게
 
 // ---- T010 강화 P2-C: HWPX 저장 판정 전체 경로의 자원(측정, 명시 실행) ----
 
-/// 이 프로세스의 최대 RSS(VmHWM)를 0으로 되돌리고(커널 `clear_refs` 5) 단계 뒤 VmHWM·VmRSS를 KiB로 읽는다. Linux 전용 측정 도구.
-fn peak_reset() {
-    let _ = std::fs::write("/proc/self/clear_refs", "5");
+/// 명시 실행하는 측정 도구. reset 실패 시 단계 peak는 null, 읽힌 HWM은 process-wide로만 표시한다.
+fn peak_reset() -> Result<(), String> {
+    if !cfg!(target_os = "linux") {
+        return Err("Linux /proc unavailable".into());
+    }
+    let path = Path::new("/proc/self/clear_refs");
+    if !path.is_file() {
+        return Err("clear_refs unavailable".into());
+    }
+    std::fs::write(path, "5").map_err(|error| format!("clear_refs reset failed: {error}"))
 }
-fn peak_kib() -> (u64, u64) {
-    let status = std::fs::read_to_string("/proc/self/status").unwrap_or_default();
+
+fn parse_peak_kib(status: &str) -> Result<(u64, u64), String> {
     let field = |key: &str| {
-        status
+        let mut words = status
             .lines()
-            .find(|l| l.starts_with(key))
-            .and_then(|l| l.split_whitespace().nth(1))
-            .and_then(|v| v.parse().ok())
-            .unwrap_or(0)
+            .find(|line| line.starts_with(key))
+            .ok_or_else(|| format!("missing {key}"))?
+            .split_whitespace();
+        let _key = words.next();
+        let value = words.next().and_then(|word| word.parse::<u64>().ok());
+        match (value, words.next(), words.next()) {
+            (Some(value), Some("kB"), None) if value > 0 => Ok(value),
+            _ => Err(format!("invalid {key}")),
+        }
     };
-    (field("VmHWM:"), field("VmRSS:"))
+    let (hwm, rss) = (field("VmHWM:")?, field("VmRSS:")?);
+    if hwm < rss {
+        return Err("VmHWM below VmRSS".into());
+    }
+    Ok((hwm, rss))
+}
+
+fn peak_kib() -> Result<(u64, u64), String> {
+    if !cfg!(target_os = "linux") {
+        return Err("Linux /proc unavailable".into());
+    }
+    let status = std::fs::read_to_string("/proc/self/status")
+        .map_err(|error| format!("status read failed: {error}"))?;
+    parse_peak_kib(&status)
+}
+
+fn peak_evidence(
+    reset: Result<(), String>,
+    reading: Result<(u64, u64), String>,
+) -> serde_json::Value {
+    let method = match (&reset, &reading) {
+        (_, Err(_)) => "unavailable",
+        (Ok(()), Ok(_)) => "linux-clear_refs-5-stage",
+        (Err(_), Ok(_)) => "linux-process-high-water-no-reset",
+    };
+    let (hwm, rss) = reading
+        .as_ref()
+        .map_or((None, None), |&(hwm, rss)| (Some(hwm), Some(rss)));
+    json!({
+        "rssMethod": method,
+        "peakRssKiB": if reset.is_ok() { hwm } else { None },
+        "processPeakRssKiB": if reset.is_err() { hwm } else { None },
+        "rssAfterKiB": rss,
+        "peakResetError": reset.err(),
+        "rssReadError": reading.err(),
+    })
+}
+
+#[test]
+fn rss_측정_실패는_영이나_단계_peak로_보이지_않는다() {
+    // 합성 status·결과만 사용: 일반 테스트는 /proc 또는 Linux를 요구하지 않는다.
+    assert_eq!(parse_peak_kib("VmHWM: 42 kB\nVmRSS: 21 kB\n"), Ok((42, 21)));
+    for status in [
+        "",
+        "VmHWM: 0 kB\nVmRSS: 1 kB",
+        "VmHWM: 9 MB\nVmRSS: 1 kB",
+        "VmHWM: nope kB\nVmRSS: 1 kB",
+        "VmHWM: 9 kB",
+        "VmHWM: 9 kB\nVmRSS: 10 kB",
+        "VmHWM: 18446744073709551616 kB\nVmRSS: 1 kB",
+    ] {
+        assert!(parse_peak_kib(status).is_err(), "{status}");
+    }
+    for reason in ["not Linux", "clear_refs missing", "write denied"] {
+        let value = peak_evidence(Err(reason.into()), Ok((42, 21)));
+        assert!(value["peakRssKiB"].is_null());
+        assert_eq!(value["processPeakRssKiB"], 42);
+        assert_eq!(value["rssMethod"], "linux-process-high-water-no-reset");
+        assert_eq!(value["peakResetError"], reason);
+    }
+    for reset in [Ok(()), Err("write denied".into())] {
+        let value = peak_evidence(reset, Err("status unreadable".into()));
+        assert!(value["peakRssKiB"].is_null() && value["rssAfterKiB"].is_null());
+        assert!(value["processPeakRssKiB"].is_null());
+        assert_eq!(value["rssMethod"], "unavailable");
+    }
+    let value = peak_evidence(Ok(()), Ok((42, 21)));
+    assert_eq!(value["peakRssKiB"], 42);
+    assert_eq!(value["rssMethod"], "linux-clear_refs-5-stage");
 }
 
 #[test]
@@ -7658,12 +7744,15 @@ fn hwpx_저장_판정_단계별_자원() {
     }
     let mut stages = Vec::new();
     let mut stage = |name: &str, run: &mut dyn FnMut() -> String| {
-        peak_reset();
+        let reset = peak_reset();
         let started = std::time::Instant::now();
         let result = run();
         let ms = started.elapsed().as_secs_f64() * 1000.0;
-        let (hwm, rss) = peak_kib();
-        stages.push(json!({"stage": name, "ms": (ms * 10.0).round() / 10.0, "peakRssKiB": hwm, "rssAfterKiB": rss, "result": result}));
+        let mut measurement = peak_evidence(reset, peak_kib());
+        measurement["stage"] = json!(name);
+        measurement["ms"] = json!((ms * 10.0).round() / 10.0);
+        measurement["result"] = json!(result);
+        stages.push(measurement);
     };
     let mut opened = None;
     stage("package::open 둘(압축 풀기)", &mut || {

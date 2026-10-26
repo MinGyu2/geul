@@ -510,3 +510,23 @@ Xvfb 60/60, 새 weston 세션 59/59로 통과했다(저장과 무관한 앞 단�
 - 내구성은 디렉터리 `fsync` 성공까지다(정전 시험은 T014). 중단 뒤 남은 `.geul-save-*.tmp`의 정리는 T014.
 - 확장 속성·ACL·inode 플래그는 옮기지 않고, 원본에 있어 새 파일과 다르면 저장을 막는다. SELinux 등에서 새 파일이 다른 레이블을 받는
   환경은 저장이 막힌다(정직한 결과). Windows·macOS는 저장하지 않는다(T014·T016).
+
+### CI 독립 미리보기 근거와 XML 자원 후속
+
+고정 RHWP 빈 미리보기의 독립 골든은 `tests/fixtures/rhwp/blank-preview/`에 있다.
+일반 Rust 검사는 이 main-repository 파일을 포함하며 RHWP checkout을 읽지 않는다.
+출처·고정 revision·SHA-256 및 선택적 upstream 대조 방법은 해당 README를 따른다.
+정확한 68바이트 예외와 다른 PNG의 CRC/zlib 검사는 유지한다.
+
+XML 정규화의 메모리 증폭은 기존 T009 위험이다. 현 할당 경계와 별도 예산/streaming 비교 제안은
+[t009-xml-resource-followup.md](t009-xml-resource-followup.md)에 기록한다. 현재 표현/수용 상한은 그대로다.
+명시 실행 RSS 도구는 reset 성공 여부와 측정 방법을 출력하며 reset 실패 시 단계 peak를 `null`로 둔다.
+그때 읽힌 HWM은 `processPeakRssKiB`일 뿐 단계 측정이 아니다. `/proc` 읽기/값 검증 실패도 `null`과 오류로
+기록한다. 성공한 reset도 프로세스 전체의 해당 구간 HWM이므로 다른 스레드/allocator 영향을 포함한다.
+이전 오류 무시 측정과 조건 확인 없이 직접 동등하다고 비교하지 않는다.
+
+양성 formCharPr 엔진 회귀는 `python3 tests/integration/rhwp/formcharpr_save.py`로 별도 실행한다.
+기존 고정 WASM과 생성한 문서에 합성한 본문/셀 양식을 사용하며, 저장된 정확한 바이트를 다시 읽는다.
+본문 상세 API의 `properties.CharShapeID`, 본문/셀의 해석된 모델 재직렬화와 해당 기울임 정의,
+주변 글/서식, dirty 해제와 임시 파일 정리를 검증한다. 셀의 indexed 상세 API나 실제 픽셀 모양 검증으로
+주장하지 않는다. 이 검사는 일반 Rust CI에 RHWP 의존성을 추가하지 않는다.

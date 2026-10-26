@@ -205,3 +205,12 @@ T017(프로젝트+submodule) → T018(로컬 사전 검사) → T019(L, 로컬 �
 - 작업 흐름: `spec.md` → `plan.md` → `tasks.md` → 구현 → 테스트 → `tasks.md` 검증 기록 → 로컬 Git 커밋. 세 문서는 직접 수정하며 Spec Kit·Specify 등 별도 계획 도구와 `.specify/`, `specs/` 디렉터리는 쓰지 않는다.
 - 분석과 구현 테스트는 별개이며 빌드·실행·무손실 검증을 하지 않았다면 완료라고 보고하지 않는다.
 
+### T010 CI fixture stabilization (2026-10-26, T010 미완료)
+
+기준 `719b5ad` quality run 40290711343 / Rust job 121464844830의 테스트 실패는 RHWP 소스 checkout 의존이다.
+독립 upstream 골든으로 일반 Rust 테스트를 자급화하고, 본문/셀 formCharPr의 실제 저장 파일을 고정 엔진으로
+다시 여는 선택적 회귀를 추가했다. RSS reset/읽기 실패는 단계 peak로 보고하지 않는다.
+T009 XML 메모리 위험은 `docs/architecture/t009-xml-resource-followup.md`의 별도 제안으로 남긴다.
+증거: `tests/integration/rhwp/evidence/t010-ci-fixture-stabilization/`.
+D1 NOT RUN, D2 INCONCLUSIVE, D4 FAIL, D5 archived PASS, RSS INCONCLUSIVE 유지.
+제품 RHWP Undo/Redo NO-GO, formatting unsupported, T010 미체크, T011 NOT STARTED 유지.

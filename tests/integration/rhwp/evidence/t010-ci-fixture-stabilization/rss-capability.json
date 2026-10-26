@@ -1,0 +1,72 @@
+{
+  "classification": "capability smoke only; not an official D4 or T010 RSS acceptance measurement",
+  "command": "GEUL_T010_STAGE_CASE=100,10 cargo test --locked --offline --release --lib hwpx_저장_판정_단계별_자원 -- --ignored --nocapture",
+  "cwd": "src-tauri",
+  "exit": 0,
+  "measurement": {
+    "appended": 10,
+    "expandedOutputBytes": 27728,
+    "fixtureCreationIncluded": false,
+    "headerBytes": 26781,
+    "mode": "valid",
+    "original": 100,
+    "stages": [
+      {
+        "ms": 0.2,
+        "peakResetError": null,
+        "peakRssKiB": 8556,
+        "processPeakRssKiB": null,
+        "result": "",
+        "rssAfterKiB": 8556,
+        "rssMethod": "linux-clear_refs-5-stage",
+        "rssReadError": null,
+        "stage": "package::open 둘(압축 풀기)"
+      },
+      {
+        "ms": 0.7,
+        "peakResetError": null,
+        "peakRssKiB": 8796,
+        "processPeakRssKiB": null,
+        "result": "[]",
+        "rssAfterKiB": 8796,
+        "rssMethod": "linux-clear_refs-5-stage",
+        "rssReadError": null,
+        "stage": "validate_hwpx"
+      },
+      {
+        "ms": 1.7,
+        "peakResetError": null,
+        "peakRssKiB": 9136,
+        "processPeakRssKiB": null,
+        "result": "[]",
+        "rssAfterKiB": 9136,
+        "rssMethod": "linux-clear_refs-5-stage",
+        "rssReadError": null,
+        "stage": "compare_saved_hwpx"
+      },
+      {
+        "ms": 1.4,
+        "peakResetError": null,
+        "peakRssKiB": 9148,
+        "processPeakRssKiB": null,
+        "result": "[]",
+        "rssAfterKiB": 9148,
+        "rssMethod": "linux-clear_refs-5-stage",
+        "rssReadError": null,
+        "stage": "validate_hwpx_references"
+      },
+      {
+        "ms": 3.7,
+        "peakResetError": null,
+        "peakRssKiB": 9316,
+        "processPeakRssKiB": null,
+        "result": "Safe",
+        "rssAfterKiB": 9316,
+        "rssMethod": "linux-clear_refs-5-stage",
+        "rssReadError": null,
+        "stage": "service::check_saved 전체"
+      }
+    ],
+    "zipBytes": 1665
+  }
+}

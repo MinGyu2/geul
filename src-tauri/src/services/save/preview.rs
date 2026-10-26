@@ -18,7 +18,7 @@
 //! 이 판정은 숨긴 정보를 찾는 검사기가 아니다: 무관함을 증명할 수 없으면 받지 않을 뿐이다(저장을 막음, `previewStale`).
 
 /// 고정 rhwp(`1a76570`, `src/serializer/hwpx/static_assets.rs` `PRV_IMAGE_PNG`)가 HWPX `Preview/PrvImage.png`로 쓰는 1×1
-/// 회색조+알파 투명 PNG, 바이트 그대로(시험이 고정 소스의 배열과 대조한다). IDAT CRC(`6F6867BC`, 맞는 값 `386A482B`)와
+/// 회색조+알파 투명 PNG, 바이트 그대로(일반 시험은 독립 골든, 선택적 검증은 고정 소스와 대조한다). IDAT CRC(`6F6867BC`, 맞는 값 `386A482B`)와
 /// Adler-32(`00050001`, 맞는 값 `00060002`)가 틀리다. 문서와 무관한 엔진 상수이므로 정확히 이 바이트일 때만 받는다.
 pub const RHWP_BLANK_PREVIEW_PNG: &[u8] = &[
     0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A, 0x00, 0x00, 0x00, 0x0D, 0x49, 0x48, 0x44, 0x52,

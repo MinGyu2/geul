@@ -1,0 +1,39 @@
+{
+  "status": "PASS (self-review, no independent reviewer claimed)",
+  "scope": "test-only fixture/RSS changes, optional engine regression, focused docs/evidence; no product logic change",
+  "reviewedSourceSha256": {
+    "docs/architecture/save-preservation.md": "380e12e1239b45b2a015afccd066a559401e026d4697430dbf9a7fd778863a2a",
+    "docs/architecture/t009-xml-resource-followup.md": "415e205f5823e6c5a4dfd21d01dd5602108d0c38e724631b2db353572d12f09f",
+    "docs/planning/tasks.md": "d158778c2c3647fa9a9480d022d636439dd69fc9d2b65e988086300186cb6ec0",
+    "src-tauri/src/services/save/preview.rs": "13a60d72734bad5e281414b3862c9dcd41af1b9af0a09745551c9a7d343a67a8",
+    "src-tauri/src/services/save/tests.rs": "500900ed79f0c87f1c0b2c3f818cfa5281cad1b52c3cb31242d824ecb85209db",
+    "tests/fixtures/rhwp/blank-preview/README.md": "06bb1baf521a47c9479fb5c986174d6b9e1edb108a5969632ff2e767682a03dc",
+    "tests/fixtures/rhwp/blank-preview/provenance.json": "72f7d1d60d448a8361aa778cbb5e95b9d68cf5e7ec0012ee507bd1909222ba9a",
+    "tests/fixtures/rhwp/blank-preview/prv-image.hex": "ac57df4402cbdb36041c47f15f1daa4a653e1a6d019d8cdf9e7c1730e09cbefa",
+    "tests/fixtures/rhwp/blank-preview/prv-text-utf16le.hex": "544d9f061b2266c6d02157d731dc21f3db3c6b534049910f6972ba3eda98daca",
+    "tests/fixtures/rhwp/blank-preview/prv-text-utf8.hex": "a5671e2c9db817c6757747455484aeadb02c60dd6fd55eb265a2f4a1a084b319",
+    "tests/fixtures/rhwp/blank-preview/verify.py": "7ae0af649980a619bffded4ffcf85a154c47706fce2993352845208328c1aca1",
+    "tests/integration/rhwp/formcharpr-save.mjs": "bb7f9e6273934fab2ae209194a7feba4d369cb8431d5ae3286a9c2b268dc9151",
+    "tests/integration/rhwp/formcharpr_save.py": "38689466277a33c9cd51e3f1a27332052357cdc77510e87b16326bf3ab8c1d3e"
+  },
+  "protectedAgainst": "719b5ad335e81bc1c55782ae4c484ee58a0134f8",
+  "protectedPathsUnchanged": [
+    "external/rhwp",
+    "external/wordcraft",
+    "public/rhwp",
+    ".github",
+    "src-tauri/Cargo.lock",
+    "src-tauri/src/document/xml.rs",
+    "src-tauri/src/services/save/package.rs",
+    "src-tauri/src/document/registry.rs"
+  ],
+  "allPriorEvidenceDirectoriesUnchanged": true,
+  "gitlinksUnchanged": true,
+  "findings": [
+    "Golden fixture data derives from pinned upstream Git objects, not production constants. Hex representation preserves bytes without scanner exemptions.",
+    "Normal unit test has no upstream source read, network call or skip. Negative PNG/text/CRC/zlib cases remain.",
+    "RSS read/reset errors are explicit; optional numeric fields never use zero on failure; benchmark remains ignored.",
+    "Engine regression opens exact service-published file, tests body and table-cell form identity/reference and surrounding formatting; no rendered-pixel claim.",
+    "No production history/formatting command activation or ownership changes; no XML canonical representation/limits change."
+  ]
+}
