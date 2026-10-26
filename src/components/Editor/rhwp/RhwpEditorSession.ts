@@ -37,14 +37,15 @@
 // - 저장은 없다(T009). 내보내기 검사는 메모리에서만 내보내고 다시 열어 비교한다(파일을 쓰지 않음).
 // - 명령(T010, src/commands/): 저장(save())과 실행 취소·다시 실행(undo()·redo(), T010 Phase 2). 고정 rhwp에는 엔진이 가진 실행 취소
 //   기록이 없어, 문서·스냅숏 내용은 엔진이 갖고 이 세션의 RhwpHistory(rhwpHistory.ts)가 스냅숏 ID·시간선·커서 체크포인트·타자 그룹만
-//   조정한다(문서 모델은 하나). 레지스트리가 rhwp 실행 취소를 지원으로 두기 전에는 execute가 거절한다. 글자 서식은 보존 검사가 저장을
-//   막으므로 받지 않는다.
+//   조정한다(문서 모델은 하나). 기록은 레지스트리가 rhwp 실행 취소를 지원으로 두는 빌드(지금은 시험 활성화 빌드)에서만 켠다: 제품
+//   빌드는 쓸 수 없는 실행 취소를 위해 그룹 시작마다 스냅숏을 찍거나 붙들지 않는다(세션 선택 `history`로 시험이 명시할 수 있음).
+//   글자 서식은 보존 검사가 저장을 막으므로 받지 않는다.
 import { trace } from "../imeTrace";
 import type { DocumentBackend, ReopenEvidence } from "../../../adapters/backend";
 import type { DocumentError, Result, SaveCheck, SaveOutcome, SessionInfo } from "../../../adapters/contract";
 import { blockedBy, type SaveCheckRecord, type SaveState } from "../saveState";
 import { documentCommandState } from "../../../commands/capability";
-import type { DocumentCommandId } from "../../../commands/registry";
+import { commandDefinition, type DocumentCommandId } from "../../../commands/registry";
 import type { CommandDispatch, DocumentCommandSnapshot, DocumentCommandTarget } from "../../../commands/target";
 import type { DocumentSessions } from "../../../adapters/sessions";
 import { changedBand, summarizeLayerTree, type PaintBox, type PaintedPage } from "./paintDiff";
@@ -203,6 +204,20 @@ const hasSignature = (bytes: Uint8Array, format: "hwp" | "hwpx") =>
 const START: DocPosition = { section: 0, paragraph: 0, offset: 0 };
 const MAX_SAMPLES = 1000;
 
+/** 레지스트리가 rhwp 실행 취소·다시 실행을 지원으로 선언했는지(빌드 때 정해짐 — 제품 빌드는 아니다). */
+const RHWP_HISTORY_DECLARED = (["edit.undo", "edit.redo"] as const)
+  .every((id) => commandDefinition(id)?.engines?.rhwp.level === "supported");
+
+/** 모듈 WASM 선형 메모리 크기. 모르거나 읽지 못하면 null. */
+function moduleMemory(module: RhwpModule): number | null {
+  try {
+    const bytes = module.memoryBytes?.();
+    return typeof bytes === "number" && Number.isFinite(bytes) && bytes >= 0 ? bytes : null;
+  } catch {
+    return null;
+  }
+}
+
 export class RhwpEditorSession implements DocumentCommandTarget {
   readonly engine = "rhwp" as const;
   status: EditorStatus = { kind: "idle" };
@@ -276,6 +291,8 @@ export class RhwpEditorSession implements DocumentCommandTarget {
     private readonly backend: DocumentBackend,
     private readonly sessions: DocumentSessions,
     private readonly loadModule: () => Promise<RhwpModule>,
+    /** history: 실행 취소 기록을 켤지. 없으면 레지스트리가 rhwp 실행 취소·다시 실행을 지원으로 선언했을 때만(빌드 때 정해짐). */
+    private readonly options: { history?: boolean } = {},
   ) {}
 
   subscribe(listener: () => void): () => void {
@@ -756,17 +773,24 @@ export class RhwpEditorSession implements DocumentCommandTarget {
 
   // ---- 실행 취소 기록(T010 Phase 2) ----
 
-  /** 문서를 열 때: 예산(원본 크기 대용)이 최소 깊이를 담을 때만 기록을 켠다. 기록을 만들지 못해도 문서 세션은 그대로다. */
+  /**
+   * 문서를 열 때: 이 빌드가 rhwp 실행 취소를 쓰고(`options.history`, 없으면 레지스트리 선언) 예산(원본 크기 대용 — 보수적이지 않음,
+   * rhwpHistory.ts historyBudget)이 최소 깊이를 담을 때만 기록을 켠다. 모듈이 선형 메모리 크기를 알려 주면 증가 감시를 붙인다. 기록을
+   * 만들지 못해도 문서 세션은 그대로다.
+   */
   private startHistory(doc: RhwpDocument, bytes: number) {
     this.history = null;
     this.historyOff = null;
+    if (!(this.options.history ?? RHWP_HISTORY_DECLARED)) return;
+    const module = this.module;
     try {
       const budget = historyBudget(bytes, doc.snapshotCapacity());
       if (!budget.enabled) {
         this.historyOff = "limit";
         return;
       }
-      this.history = new RhwpHistory(doc, budget.depth);
+      const memory = module && moduleMemory(module) !== null ? () => moduleMemory(module) ?? 0 : null;
+      this.history = new RhwpHistory(doc, budget.depth, undefined, memory);
     } catch {
       this.historyOff = "unavailable";
     }

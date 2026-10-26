@@ -100,8 +100,10 @@ CURRENT = {
     "hwp-italic-body": ("unsafe", False, DOCINFO + PREVIEW_HWP), "hwp-bold-body": ("unsafe", False, DOCINFO + PREVIEW_HWP),
     "hwp-underline-cell": ("unsafe", False, DOCINFO + PREVIEW_HWP), "hwp-text-body": ("unsafe", False, PREVIEW_HWP),
     "hwp-italic-restored": ("safe", True, []),
-    "hwpx-italic-body": ("unsafe", False, HEADER), "hwpx-bold-body": ("safe", True, []),
-    "hwpx-underline-cell": ("unsafe", False, HEADER), "hwpx-text-body": ("safe", True, []), "hwpx-italic-restored": ("safe", True, []),
+    # T010 Phase 3B(2026-10-26): 새 모양을 덧붙인 HWPX 기울임·셀 밑줄은 좁은 header 규칙(package.rs `hwpx_char_shapes_appended` —
+    # 덧붙인 charPr만, 서식 자식 밖은 원본 정의와 같음, 본문이 참조)으로 safe·게시. 이전 기록은 ("unsafe", False, HEADER)였다.
+    "hwpx-italic-body": ("safe", True, []), "hwpx-bold-body": ("safe", True, []),
+    "hwpx-underline-cell": ("safe", True, []), "hwpx-text-body": ("safe", True, []), "hwpx-italic-restored": ("safe", True, []),
     **{name: ("unsafe", False, REF_HWPX) for name in [
         "hwpx-b-body-9999", "hwpx-b-cell-9999", "hwpx-b-body-hole-8", "hwpx-b-body-overflow-70000", "hwpx-b-body-nonnumeric",
         "hwpx-b-body-negative", "hwpx-b-secpr-run-9999", "hwpx-b-parapr-9999"]},

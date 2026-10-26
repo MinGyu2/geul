@@ -120,6 +120,20 @@ safe·플랫폼 지원일 때만:
   - 사전 검사(편집 없는 왕복)에는 더하지 않았다(그 출력은 원본과 같아야 한다). 업스트림 예제 1076개의 편집 없는 rhwp 출력에서 이 검사로 새로
     막힌 문서는 없다(실측, `referenceInvalid` 0건). 범위 밖: 다른 참조 이름공간(`borderFillIDRef`·`styleIDRef`·`tabPrIDRef` 등), header 안의
     참조(header는 원본과 같아야 하므로 원본의 것), 모양 정의 내용 자체의 올바름.
+- 글자 서식 덧붙임(2026-10-26, T010 Phase 3B — HWPX 편집 저장만): `Contents/header.xml`은 원본과 같거나, 차이가 **글자 서식이 덧붙인
+  글자 모양 정의뿐**일 때만 받는다(`package::hwpx_char_shapes_appended`). 모두 성립해야 한다: 두 header가 끝까지 읽히고 `hh:charProperties`가
+  정확히 하나, 그 앞뒤 사건이 같음 · 목록 시작은 `itemCnt`만 다르고 원본 `itemCnt` = 원본 정의 수 n이며 원본 id가 정확히 0..n · 출력 목록 =
+  원본 목록 내용 그대로 + 끝에 `hh:charPr` k개(k ≥ 1, 사이 글·주석 없음), 덧붙인 id = n..n+k(65535 이하), 출력 `itemCnt` = n + k · 덧붙인 정의
+  각각이 `id`와 서식 자식(내용 없는 `hh:bold`·`hh:italic`, 속성이 `type`·`shape`·`color`뿐인 `hh:underline`, `shape`·`color`뿐인
+  `hh:strikeout`, 값은 16자 이하 영숫자·`#`·`_`, 같은 자식 하나씩)을 빼면 원본 정의 하나와 같음 · 덧붙인 정의 각각을 출력 본문의
+  `charPrIDRef`가 가리킴. 하나라도 어긋나면 지금처럼 `partChanged{header}`(unsafe)이고, 덧붙인 정의가 엔진이 등록하지 않는 자기 닫힘이면
+  위 참조 무결성이 `referenceInvalid`로 막는다. 근거(VERIFIED 실측, 생성 픽스처·고정 rhwp `a91fa6a4…`): 기울임·밑줄·취소선은 엔진이 원래
+  모양을 복제해 새 `charPr` 하나를 끝에 붙이고 `itemCnt`만 올린다(나머지 header 바이트 같음), 굵게는 있는 모양을 다시 쓴다. 실제
+  `service::save`로 본문 기울임·표 셀 밑줄 출력이 게시되고(원본 교체, 세션 깨끗), 다시 열면 그 범위만 서식이 같다. 섞인 다른 header 변경은
+  거부·원본 SHA-256 그대로(Rust 시험 `실제_저장_서비스는_서식_덧붙임_hwpx를…`, 음성 변이 20가지 `hwpx_header의_서식_덧붙임_밖_변경은…`).
+  한계: 쓰이지 않는 덧붙임(예: 기울임을 켰다 끈 뒤 남은 모양)은 받지 않는다(저장 거부, 원본 보존). HWP DocInfo에는 같은 규칙을 두지
+  않았다(본문을 바꾼 HWP는 미리보기 규칙이 따로 막는다, Phase 3C). 이 규칙은 저장 판정만이며 rhwp 서식 명령은 여전히 `unsupported`다
+  ([command-registry.md](command-registry.md)).
 - 손실 보고(G): rhwp 형식(HWP·HWPX)은 보고가 반드시 있어야 한다(없으면 `lossReportInvalid`, unknown). DOCX는 보고를 받지 않는다(들어오면
   `lossReportInvalid`).
 - HWPX·DOCX: 항목 이름 집합, XML 부분은 정규화한 사건 열(이름공간 URI·지역 이름·정렬한 속성·문자 데이터 그대로; 접두사·속성 순서·

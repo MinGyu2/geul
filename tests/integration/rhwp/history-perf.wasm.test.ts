@@ -38,7 +38,7 @@ describe.runIf(process.env.GEUL_PERF)("실행 취소 성능(큰 공개 예제, �
       take("open").reply(ok({ ...base, format: fmt }));
       await opening;
       const module: RhwpModule = { openDocument: (b) => new mod.HwpDocument(b) as RhwpDocument };
-      const editor = new RhwpEditorSession(1, backend, sessions, async () => module);
+      const editor = new RhwpEditorSession(1, backend, sessions, async () => module, { history: true }); // 실행 취소 기록을 켠 구성(시험 활성화 빌드와 같음)
       const t0 = performance.now();
       const loading = editor.load();
       take("load").reply(loaded(bytes));

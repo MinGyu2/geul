@@ -160,8 +160,11 @@ export const info = (patch: Partial<SessionInfo>): SessionInfo => ({ ...base, ..
 /** document_load 응답(불러오기 시도 번호 + 문서 바이트). */
 export const loaded = (bytes: Uint8Array = new Uint8Array([1]), generation = 1): Result<LoadedBytes> => ok({ generation, bytes });
 
-/** 열고 불러온 세션. 백엔드 응답은 테스트가 직접 준다. */
-export async function readySession(text = ["가나다", "abc"]) {
+/**
+ * 열고 불러온 세션. 백엔드 응답은 테스트가 직접 준다. options는 세션 선택이다: 기본은 실행 취소 기록을 켠 구성(시험 활성화 빌드와
+ * 같음 — 기록을 다루는 시험들의 전제), `{}`면 이 빌드의 레지스트리를 따른다(제품 빌드 구성, productionHistory.test.ts).
+ */
+export async function readySession(text = ["가나다", "abc"], options: { history?: boolean } = { history: true }) {
   const { backend, calls, take } = controlledBackend();
   const sessions = new DocumentSessions(backend);
   const opening = sessions.open("/a.hwp");
@@ -169,7 +172,7 @@ export async function readySession(text = ["가나다", "abc"]) {
   await opening;
   const doc = new FakeDocument(text);
   const module: RhwpModule = { openDocument: () => doc as unknown as RhwpDocument };
-  const editor = new RhwpEditorSession(1, backend, sessions, async () => module);
+  const editor = new RhwpEditorSession(1, backend, sessions, async () => module, options);
   const loading = editor.load();
   take("load").reply(loaded());
   await flush();

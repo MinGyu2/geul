@@ -45,7 +45,7 @@ async function open(fmt: "hwp" | "hwpx") {
       return opened;
     },
   };
-  const editor = new RhwpEditorSession(1, backend, sessions, async () => module);
+  const editor = new RhwpEditorSession(1, backend, sessions, async () => module, { history: true }); // 실행 취소 기록을 켠 구성(시험 활성화 빌드와 같음)
   const loading = editor.load();
   take("load").reply(loaded(fixtures[fmt]));
   await flush();

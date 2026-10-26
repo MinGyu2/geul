@@ -43,7 +43,7 @@ async function open(path: string, fmt: "hwp" | "hwpx") {
   await opening;
   let doc: Doc | null = null;
   const module: RhwpModule = { openDocument: (b) => { const d = new engine.HwpDocument(b); doc ??= d; return d; } };
-  const editor = new RhwpEditorSession(1, backend, sessions, async () => module);
+  const editor = new RhwpEditorSession(1, backend, sessions, async () => module, { history: true }); // 실행 취소 기록을 켠 구성(시험 활성화 빌드와 같음)
   const loading = editor.load();
   take("load").reply(loaded(new Uint8Array(readFileSync(join(ROOT, path)))));
   await flush();

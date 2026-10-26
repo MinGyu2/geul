@@ -1,0 +1,151 @@
+{
+ "schema": 1,
+ "분류": "이번 세션의 명령·종료 코드 기록(T010 승인 아님)",
+ "startHead": "1614e15e2aabb4ad160cb6f8933c14bec48b238e",
+ "submodules": {
+  "external/rhwp": "1a76570e833917d15817415a53c09ad61ab3203f",
+  "external/wordcraft": "fc41918814f62645b6746ed68e71e8c2c2e85d6f"
+ },
+ "productionEngine": {
+  "rhwp_bg.wasm": "a91fa6a4336d34441c0d8f52afd0971aebe34019f7caf9eddad100f7a568f94d",
+  "rhwp.js": "70cde06a369fa7fd4fc8bc8f3d6acaee158596ba1a116a2c72159002b0b5654e"
+ },
+ "candidates": {
+  "nativeD1TrustAnchorWasm": "ca5c0b8443230ba719c07f4d8c835a94fb6e12eb4b50a7123ce5c8b6a8048d45",
+  "nativeD1TrustAnchorPackageOnDisk": false,
+  "rust199CandidateWasm": "57280d578800d7b4b6cf22cd4004ca27f450fa73472c17592e01a5fd3203c63d",
+  "promoted": false
+ },
+ "toolchain": {
+  "rustc": "1.99.0 (b940084d7 2026-09-28)",
+  "cargo": "1.99.0 (5f94df478 2026-08-27)",
+  "node": "v24.21.0",
+  "python": "3.14.7",
+  "gitleaks": "8.30.1 (pre-commit env)"
+ },
+ "commands": [
+  [
+   "npx vitest run src/components/Editor/rhwp/productionHistory.test.ts (수정 전 재현)",
+   1,
+   "logs/production-history-before.log"
+  ],
+  [
+   "npx tsc --noEmit",
+   0,
+   "logs/typecheck.log"
+  ],
+  [
+   "npx eslint .",
+   0,
+   "logs/eslint.log"
+  ],
+  [
+   "npm run build",
+   0,
+   "logs/build.log"
+  ],
+  [
+   "npx vitest run src/",
+   0,
+   "785 passed"
+  ],
+  [
+   "npx vitest run --config tests/integration/rhwp/vitest.config.ts",
+   0,
+   "37 passed, 2 skipped(env-gated)"
+  ],
+  [
+   "npx vitest run --config tests/poc/t010-phase0/vitest.config.ts",
+   0,
+   "logs/poc-vitest.log"
+  ],
+  [
+   "cargo fmt -- --check",
+   0,
+   "logs/rustfmt.log"
+  ],
+  [
+   "cargo clippy --locked --offline -j4 --all-targets -- -D warnings",
+   0,
+   "logs/clippy.log"
+  ],
+  [
+   "cargo test --locked --offline -j4",
+   0,
+   "logs/cargo-test.log"
+  ],
+  [
+   "python3 tests/poc/t010-phase0/save_service.py --strict-desired (기대값 수정 전)",
+   1,
+   "logs/save-service-after-rule-unchanged-expectations.log"
+  ],
+  [
+   "python3 tests/poc/t010-phase0/save_service.py --strict-desired --evidence",
+   0,
+   "save-service.json"
+  ],
+  [
+   "python3 tests/integration/rhwp/undo_save.py --evidence",
+   0,
+   "undo-save.json"
+  ],
+  [
+   "python3 scripts/check-sensitive-info.py --staged",
+   0,
+   null
+  ],
+  [
+   "python3 scripts/check-sensitive-info.py --all",
+   0,
+   null
+  ],
+  [
+   "python3 scripts/check-sensitive-info.py --history",
+   0,
+   null
+  ],
+  [
+   "gitleaks git --pre-commit --staged",
+   0,
+   null
+  ],
+  [
+   "gitleaks dir (index mirror)",
+   0,
+   "0 findings"
+  ],
+  [
+   "python3 -m unittest discover -s tests/security",
+   0,
+   "86 tests"
+  ],
+  [
+   "gitleaks_allowlist_negative_check.py",
+   0,
+   "allOk"
+  ],
+  [
+   "git diff --cached --check",
+   0,
+   null
+  ]
+ ],
+ "notRun": {
+  "nativeD1": "신뢰 기준 후보 ca5c0b84 패키지 없음",
+  "nativeD2": "새 native 실행 없음",
+  "officialD4": "렌더 경로 변경 없음, 첫 유효 기록 유지",
+  "nativeD5": "native 재실행 없음",
+  "rss": "승인 기준 없음",
+  "e2eSmoke": "이번 범위 밖"
+ },
+ "gates": {
+  "D1": "NOT RUN (이전 소스 PASS 기록 유지)",
+  "D2": "INCONCLUSIVE",
+  "D3": "PASS",
+  "D4": "FAIL",
+  "D5": "PASS (보관, WASM 시험 이번 통과)",
+  "RSS": "INCONCLUSIVE",
+  "productionRhwpUndoRedo": "NO-GO",
+  "rhwpFormatting": "unsupported"
+ }
+}

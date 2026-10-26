@@ -1,0 +1,141 @@
+{
+ "분류": "VERIFIED 측정(node, 고정 제품 WASM, 그리기 없음). 선형 메모리 상한선 증가이며 살아 있는 메모리·RSS가 아님",
+ "engine": {
+  "rhwp_bg.wasm": "a91fa6a4336d34441c0d8f52afd0971aebe34019f7caf9eddad100f7a568f94d",
+  "rhwp.js": "70cde06a369fa7fd4fc8bc8f3d6acaee158596ba1a116a2c72159002b0b5654e",
+  "commit": "1a76570e833917d15817415a53c09ad61ab3203f"
+ },
+ "method": "scripts/measure-snapshot-memory.mjs: 파일마다 새 node 프로세스, 열기 전후·saveSnapshot 24회(붙듦) 뒤 memory.buffer.byteLength; perSnapshot = (끝 - 첫 증가 직전)/(남은 횟수). 표본: external/rhwp/samples의 .hwp/.hwpx 전부, 6병렬, 파일당 제한 180초",
+ "samples": 1204,
+ "opened": 1201,
+ "withGrowth": 1189,
+ "zeroGrowthIn24": 12,
+ "ratioPerSnapshotToFileBytes": {
+  "p50": 2.378,
+  "p90": 7.992,
+  "p99": 19.25,
+  "max": 62.256
+ },
+ "openGrowthBelowPerSnapshot": 0,
+ "depthWouldDifferIfSlopeUsed": [
+  {
+   "file": "1130000-201900011_D0150004-1-002_2017년기준 시장구조조사.hwp",
+   "bytes": 2348032,
+   "perSnapshotBytes": 32546816,
+   "snapshotsByFileSize": 51,
+   "snapshotsByMeasuredSlope": 6,
+   "projectedMiBByFileSize": 1583.0
+  },
+  {
+   "file": "1342000_edu_curriculum_map.hwp",
+   "bytes": 1324032,
+   "perSnapshotBytes": 21378389,
+   "snapshotsByFileSize": 51,
+   "snapshotsByMeasuredSlope": 10,
+   "projectedMiBByFileSize": 1039.8
+  },
+  {
+   "file": "hwp3-sample10-hwp5.hwp",
+   "bytes": 1136128,
+   "perSnapshotBytes": 18918059,
+   "snapshotsByFileSize": 51,
+   "snapshotsByMeasuredSlope": 12,
+   "projectedMiBByFileSize": 920.1
+  },
+  {
+   "file": "hwp3-sample16.hwp",
+   "bytes": 2949937,
+   "perSnapshotBytes": 16173145,
+   "snapshotsByFileSize": 51,
+   "snapshotsByMeasuredSlope": 14,
+   "projectedMiBByFileSize": 786.6
+  },
+  {
+   "file": "hwp3-sample10-hwpx.hwpx",
+   "bytes": 847607,
+   "perSnapshotBytes": 14150315,
+   "snapshotsByFileSize": 51,
+   "snapshotsByMeasuredSlope": 16,
+   "projectedMiBByFileSize": 688.2
+  },
+  {
+   "file": "hwp3-sample10.hwp",
+   "bytes": 945360,
+   "perSnapshotBytes": 13860864,
+   "snapshotsByFileSize": 51,
+   "snapshotsByMeasuredSlope": 17,
+   "projectedMiBByFileSize": 674.2
+  },
+  {
+   "file": "hwpspec.hwp",
+   "bytes": 2752512,
+   "perSnapshotBytes": 9950549,
+   "snapshotsByFileSize": 51,
+   "snapshotsByMeasuredSlope": 24,
+   "projectedMiBByFileSize": 484.0
+  },
+  {
+   "file": "10857_delegation_rules.hwp",
+   "bytes": 303104,
+   "perSnapshotBytes": 8645291,
+   "snapshotsByFileSize": 51,
+   "snapshotsByMeasuredSlope": 29,
+   "projectedMiBByFileSize": 420.5
+  },
+  {
+   "file": "hwp3-sample11-hwp5.hwp",
+   "bytes": 587264,
+   "perSnapshotBytes": 6791168,
+   "snapshotsByFileSize": 51,
+   "snapshotsByMeasuredSlope": 37,
+   "projectedMiBByFileSize": 330.3
+  },
+  {
+   "file": "hwp-3.0-HWPML.hwp",
+   "bytes": 1310720,
+   "perSnapshotBytes": 5824512,
+   "snapshotsByFileSize": 51,
+   "snapshotsByMeasuredSlope": 44,
+   "projectedMiBByFileSize": 283.3
+  },
+  {
+   "file": "text_footnote_tail_overpagination.hwp",
+   "bytes": 911360,
+   "perSnapshotBytes": 5671595,
+   "snapshotsByFileSize": 51,
+   "snapshotsByMeasuredSlope": 45,
+   "projectedMiBByFileSize": 275.9
+  },
+  {
+   "file": "hwp3-sample4.hwp",
+   "bytes": 635108,
+   "perSnapshotBytes": 5472256,
+   "snapshotsByFileSize": 51,
+   "snapshotsByMeasuredSlope": 47,
+   "projectedMiBByFileSize": 266.2
+  },
+  {
+   "file": "press_release_cell_logo.hwpx",
+   "bytes": 679201,
+   "perSnapshotBytes": 5328077,
+   "snapshotsByFileSize": 51,
+   "snapshotsByMeasuredSlope": 48,
+   "projectedMiBByFileSize": 259.1
+  }
+ ],
+ "gateDocuments90Snapshots": {
+  "연구노트(화학).hwp": {
+   "perSnapshotBytes": 817588,
+   "openGrowth": 38600704,
+   "note": "24회에는 증가 0(빈 공간)"
+  },
+  "3249937_asset_management_rules.hwpx": {
+   "perSnapshotBytes": 1300411,
+   "openGrowth": 6356992
+  },
+  "basic-ko.hwpx(생성)": {
+   "perSnapshotBytes": 21579
+  }
+ },
+ "한계": "allocator 단위·빈 공간 때문에 스냅숏 하나의 정확한 바이트가 아님. 같은 모듈에서 여러 문서를 연 앱 상태와 다름. WebView·Canvas·RSS 아님."
+}

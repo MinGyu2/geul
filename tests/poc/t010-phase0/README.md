@@ -57,7 +57,7 @@ DESIRED 9건 실패 — 재현 기록은 이 파일의 git 이력과 아래 Stag
 | HWP 기울임·굵게(본문), 밑줄(셀) — 새 모양 9번째 | unsafe `recordsChanged(DocInfo)` + `previewStale(PrvText, PrvImage)` | `UnsafeSave` | SHA-256 그대로, 임시 파일 없음 |
 | HWP 글자 넣기(대조) | unsafe `previewStale` ×2 | `UnsafeSave` | 그대로 |
 | HWP 기울임 뒤 스냅숏 복원 | safe | 게시(원본과 같은 바이트) | 바이트 같음 |
-| HWPX 기울임(본문)·밑줄(셀) — 새 `charPr` | unsafe `partChanged(Contents/header.xml)` | `UnsafeSave` | 그대로 |
+| HWPX 기울임(본문)·밑줄(셀) — 새 `charPr` | unsafe `partChanged(Contents/header.xml)` (2026-10-26 Phase 3B 뒤: safe, **게시**) | `UnsafeSave` (뒤: 게시) | 그대로 (뒤: 출력과 같음) |
 | HWPX 굵게 — 엔진이 있는 모양 7을 재사용, header 그대로 | safe | **게시**(서식 바뀐 파일로 교체) | 출력과 같음, `dirty=false` |
 | HWPX 글자 넣기·기울임 뒤 복원(대조) | safe | 게시 | 출력과 같음 |
 
@@ -124,7 +124,7 @@ HWPX·HWP, 실제 `service::save`와 원본 보존). 오탐 확인: 업스트림
 |------|-----------|---------|-----------|-----------|
 | Phase 2 rhwp 실행 취소 | [rhwp-undo-redo.md](../../../docs/architecture/rhwp-undo-redo.md)(2026-10-22 고침) 승인, 열린 질문 1·4 PoC | `RhwpEditorSession`, `rhwpModule.ts`(스냅숏 함수 타입), `target.ts`·`capability.ts`(한도 이유), 시험 | 설계 §11 표 전부(실제 WASM 세션·Rust·네이티브 ibus-hangul) | 참조 중 스냅숏을 엔진이 지우지 않음, 실행 취소 p95 ≤ 1.5초(WebView), 레지스트리는 아직 `unsupported` |
 | Phase 3A T009 참조 무결성 — **2026-10-22 완료** | Stage B 결과 승인 | `services/save/package.rs`(+ `hwp.rs`), `preserve.rs`(근거 코드), 시험 | `save_service.py --strict-desired` 통과, 기존 T009 시험·`roundtrip.py` 그대로 | 해석 불가 = unsafe, header 전체 허용 없음, 기존 규칙 완화 없음 |
-| Phase 3B HWPX 서식 | 3A 완료 | `package.rs`의 좁은 header 규칙(덧붙인 `charPr` + `itemCnt` +1만, 기존 정의·다른 속성 바이트 같음, 새 정의는 출력 본문에서 참조), 서식 명령 | Phase 0 F 음성 대조 4개가 계속 unsafe, 새 모양 기울임·밑줄·취소선이 게시되고 다시 열어 서식 같음(서식 비교를 다시 열기 근거에 추가) | 바뀐 header 부분은 덧붙임 하나뿐 |
+| Phase 3B HWPX 서식 — **2026-10-26 판정 규칙만 완료** | 3A 완료 | `package.rs`의 좁은 header 규칙(완료: `hwpx_char_shapes_appended`, [save-preservation.md](../../../docs/architecture/save-preservation.md) "글자 서식 덧붙임"), 서식 명령(미구현) | 완료: `save_service.py --strict-desired` CURRENT 0·DESIRED 0(HWPX 기울임·셀 밑줄 safe·게시, 음성 대조 그대로), 다시 연 서식 같음(생성 픽스처). 남음: 세션 서식 명령, 서식 비교를 다시 열기 근거에 추가, 실제 앱 | 바뀐 header 부분은 덧붙임뿐 |
 | Phase 3C HWP 서식 | 3B와 별개 | `hwp.rs` DocInfo 규칙(덧붙인 CHAR_SHAPE + `ID_MAPPINGS[9]`), 미리보기 | 미리보기 규칙을 풀 근거가 생기기 전에는 저장 불가가 맞는 결과. 모양 재사용 실패·고아 모양(Phase 0 D) 처리 | HWPX가 되어도 HWP를 준비됨으로 보지 않음 |
 | Phase 4 명령 켜기 | 2·3 해당 부분 완료 | `registry.ts`, 문서 | SC-003 rhwp 몫, 네이티브 앱 시험 | 검증한 명령만 `supported`, T010 체크는 그때 판정 |
 

@@ -197,6 +197,9 @@ if snapshots < minSnaps:  기록 끔
 limit = snapshots; depth = snapshots − 1
 ```
 
+> 2026-10-26 정정: 위 `estimate`의 "첫 스냅숏 전후 WASM 메모리 증가"는 구현되지 않았다. 구현(`startHistory`)은 원본 파일 바이트만 쓰며,
+> 이 대용은 보수적이지 않다(실측: 스냅숏당 선형 메모리 증가가 파일 크기의 p50 2.4배·최대 62배). 정정과 증가 감시는 아래 "T010 설계 검토".
+
 관계: 최고 살아 있는 스냅숏 수 = `limit` ≤ `capacity − 2`(I3). 논리 단계 ≤ `depth` = `limit − 1`. 최고 메모리 어림 = (`limit` + 2) × estimate(복원 중
 임시 복제 포함). 경계(VERIFIED 산술): raw 5 → 켬·깊이 4, raw 4 → 끔, 용량 6 → 6 − 2 = 4 < 5라 끔.
 
@@ -1124,3 +1127,44 @@ native D1 증거 보안 강화(2026-10-26).
   · 하네스 종료 코드 0과 형식이 맞는 PASS의 동시 충족.
 - 강화한 판정으로 실제 native D1을 3/3 다시 실행해 PASS였다. 공식 판정은 그대로다.
 - 근거: `tests/integration/rhwp/evidence/t010-native-evidence-security-hardening/`.
+
+## T010 설계 검토: 기록 수용·메모리 회계·HWPX 서식 header 규칙 (2026-10-26)
+
+기준 `1614e15`(submodule rhwp `1a76570`·WordCraft `fc41918` 그대로, 제품 WASM `a91fa6a4…`, 공식 판정과 후보는 바꾸지 않음).
+증거·명령·종료 코드: `tests/integration/rhwp/evidence/t010-design-review-admission/`([보고서](../../tests/integration/rhwp/evidence/t010-design-review-admission/REPORT.ko.txt)).
+
+**고친 결함(CONFIRMED DEFECT — FIXED).** 제품 빌드의 세션이 기록을 만들었다: `startHistory()`가 레지스트리 지원과 무관하게
+`RhwpHistory`를 켜서, rhwp `edit.undo`·`edit.redo`가 `unsupported`인 제품에서도 그룹 시작마다 `saveSnapshot`(큰 문서에서 ≈25 ms)을
+부르고 최대 51개를 붙들었다(수정 전 재현: 제품 구성 세션에서 편집 그룹 4개 → 스냅숏 4개). 쓸 수 없는 기능을 위한 지연·메모리이고,
+찍기 trap은 편집을 멈추는(불확실) 실패 경로다. 지금은 레지스트리가 rhwp 실행 취소·다시 실행을 지원으로 선언한 빌드(지금은 시험 활성화
+빌드)에서만 켠다. 시험은 세션 선택 `{ history: true }`로 명시한다(`testing.ts` `readySession` 기본, WASM 통합 시험). native 하네스는
+`VITE_GEUL_TEST_RHWP_HISTORY=1`로 빌드하므로 D1–D5의 구성은 같다(INFERRED: 이번에 native를 다시 실행하지 못함, 아래).
+
+**메모리 예산(문서/구현 불일치 정정).** §10은 `max(원본 크기, 첫 스냅숏 전후 WASM 증가)`라 했지만 구현은 원본 크기만 썼다. 고정 WASM으로
+공개 예제 1204개 중 1201개를 새 프로세스마다 열고 스냅숏 24개를 붙들어 선형 메모리 상한선 증가를 쟀다(node, 그리기 없음):
+스냅숏당 증가/파일 크기 p50 2.4·p90 8.0·p99 19.3·최대 62.3(증가가 보인 1189개). 원본 크기 대용으로 깊이 50이 되는 2.3 MB HWP는 스냅숏당
+≈31 MiB라 살아 있는 51개면 ≈1.5 GiB다(어림, 13개 문서에서 정정된 어림이면 깊이가 달라짐). "첫 스냅숏 증가"는 빈 공간 때문에 대부분 0이라
+측정으로 쓸 수 없고, 문서를 열 때의 증가는 표본 모두에서 스냅숏당 증가 이상이었지만 그림 많은 문서에서 수십 배 과대(12 MB 화학 HWP:
+열기 38.6 MB, 스냅숏당 ≈0.8 MiB)라 D1·D4 문서의 기록을 끌 것이므로 쓰지 않았다. 그래서 어림은 원본 크기 그대로 두고(보수적이지 않다고
+문서화) **관찰값 감시**를 더했다: 모듈이 선형 메모리 크기를 알려 주면(`RhwpModule.memoryBytes`, 앱 로더가 wasm-bindgen `memory`에서 읽음)
+기록을 켠 뒤 상한선이 `HISTORY_BUDGET_BYTES`(256 MiB)보다 더 자랐을 때 새 그룹을 찍지 않고 `limit`으로 거절 → 세션이 기록을 끄고 편집은
+계속한다. 실행 취소의 지금 상태 찍기는 I2의 자리 안이라 막지 않는다. 구별: 스냅숏 수·깊이 상한(I2·I3, 엔진 상한 100) / 회계 예산(256 MiB,
+선형 메모리 증가로 감시 — 기록 밖 증가도 세므로 보수적) / 어림(원본 크기) / 프로세스 RSS(이 규칙과 무관, 승인 기준 없음 — INCONCLUSIVE).
+256 MiB는 RSS 상한이 아니며 바이트 정확한 기록 크기도 아니다. D1 문서의 실측 스냅숏당 증가(화학 ≈0.8 MiB, 60쪽 HWPX ≈1.3 MiB)로는 51개도
+감시 한도에 크게 못 미친다(INFERRED).
+
+**검토했지만 결함이 아닌 것.** I1–I3·ID 보호 예약·끝에서만 지움·다시 실행 무할당·취소한 트랜잭션의 스냅숏 버림·쉼 1.5초·포커스/문서 전환
+경계는 코드와 기존 시험(알고리즘 11·세션 14·초점 10·무작위 2만 단계×3)이 맞다. "용량이 줄었을 때 예약 뒤 취소하면 기존 기록을 잃는가":
+잃는다 — 다만 그 지우기는 줄어든 상한에서 I2를 되살리는 것이고(줄기 전 상태는 이미 I2 위반), 고정 판의 `snapshotCapacity()`는 상수
+100이라 도달하지 않는다(UNVERIFIED 이론 위험, 결함 아님). 시간선 알고리즘은 바꾸지 않았다.
+
+**HWPX 서식(Phase 3B).** 실측(생성 픽스처): 기울임·밑줄·취소선 → 새 `charPr` 하나 + `itemCnt` +1, 나머지 header 바이트 같음; 굵게 → 있는
+모양 재사용. T009에 좁은 header 규칙을 더했다([save-preservation.md](save-preservation.md) "글자 서식 덧붙임"). 실제 엔진 출력 → 실제
+`service::save`: 본문 기울임·셀 밑줄 게시, 다시 열어 서식 같음, HWP는 계속 거부(`recordsChanged{DocInfo}`+`previewStale`), 음성 대조 그대로.
+서식 명령은 구현하지 않았다(SC-003 공백, 아래).
+
+**관문(이번 세션에서 바뀐 것 없음).** D1 native: 이번 프런트엔드로 **NOT RUN** — v3 wrapper의 신뢰 기준 후보 `ca5c0b84…` 패키지가 디스크에
+없다(남은 것: Rust 1.99 `57280d57…`·`8fb44739…`·기준 `eaa88f65…`). 기준을 옮기지 않았다. 마지막 PASS 39/39·RGBA 24는 이전 소스의 기록이다.
+D2 INCONCLUSIVE(새 native 근거 없음, 가드 유지). D3 PASS(`undo_save.py` 이번 실행 불일치 0, `save_service.py --strict-desired` 23행 불일치 0).
+D4 FAIL(첫 유효 공식 기록 유지, 이번에 재측정하지 않음 — 렌더 경로를 바꾸지 않았다). D5 보관 PASS(실제 WASM 폐기 예외 시험 이번에 통과,
+native 재실행 없음). RSS INCONCLUSIVE. **결정: 제품 rhwp 실행 취소·다시 실행 NO-GO**, T010 미완료, T011 시작하지 않음.

@@ -1,0 +1,94 @@
+T010 설계 검토: 기록 수용·메모리 회계·HWPX 서식 header 규칙 (2026-10-26)
+
+분류: VERIFIED(실행·코드·바이트로 확인) / INFERRED(근거의 해석) / UNVERIFIED(미확인).
+판정: PASS / FAIL / INCONCLUSIVE / NOT RUN. 이 문서는 T010 완료 판정이 아니다.
+
+1. 기준과 범위 (VERIFIED)
+- 시작 HEAD 1614e15e2aabb4ad160cb6f8933c14bec48b238e, master, 작업 트리 clean.
+- submodule rhwp 1a76570e833917d15817415a53c09ad61ab3203f, WordCraft fc41918814f62645b6746ed68e71e8c2c2e85d6f (바꾸지 않음).
+- 제품 엔진 public/rhwp: rhwp_bg.wasm a91fa6a4336d34441c0d8f52afd0971aebe34019f7caf9eddad100f7a568f94d,
+  rhwp.js 70cde06a369fa7fd4fc8bc8f3d6acaee158596ba1a116a2c72159002b0b5654e (바꾸지 않음).
+- 격리 후보: native D1 신뢰 기준(TRUST_ANCHOR) ca5c0b84…, 최신 Rust 1.99 호환 후보 57280d57…(native 승인 아님). 어느 것도
+  승격·교체하지 않았고 신뢰 기준 파일을 고치지 않았다.
+- 도구: rustc 1.99.0 (b940084d7 2026-09-28), cargo 1.99.0 (5f94df478 2026-08-27), Node v24.21.0, Python 3.14.7,
+  Gitleaks 8.30.1(pre-commit 환경). 모든 Cargo 명령은 --locked --offline, -j4, CARGO_INCREMENTAL=0, 기존 src-tauri/target.
+  rustup·cargo clean·캐시 삭제·설치 없음. Cargo.lock·toolchain 파일 변경 없음.
+
+2. 고친 결함과 정정
+2.1 제품 빌드의 rhwp 기록 (CONFIRMED DEFECT — FIXED)
+- 원인(VERIFIED 코드): RhwpEditorSession.startHistory()가 레지스트리 지원과 무관하게 RhwpHistory를 만들었다. 제품 빌드는
+  rhwp edit.undo/redo가 unsupported라 실행 취소를 쓸 수 없는데도 그룹 시작마다 saveSnapshot을 부르고 최대 51개를 붙들었다.
+- 수정 전 재현(VERIFIED): logs/production-history-before.log — 제품 구성 세션에서 편집 그룹 4개 → 스냅숏 4개(기대 0), exit 1.
+- 수정: 레지스트리가 rhwp edit.undo·edit.redo를 supported로 선언한 빌드(지금은 VITE_GEUL_TEST_HOOKS=1 +
+  VITE_GEUL_TEST_RHWP_HISTORY=1 시험 활성화 빌드)에서만 기록을 켠다. 세션 생성자 선택 { history }로 시험이 명시한다.
+  testing.ts readySession 기본은 기록을 켠 구성(기존 시험의 전제 유지), WASM 통합 시험 4개도 명시.
+- 영향(INFERRED): native 하네스는 시험 활성화 빌드라 D1–D5 구성은 같다. ownership PoC 어댑터는 4인자 생성자를 그대로 쓴다.
+
+2.2 기록 메모리 예산 (문서/구현 불일치 — 정정, 관찰값 감시 추가)
+- 불일치(VERIFIED): 설계 §10은 estimate = max(원본 크기, 첫 스냅숏 전후 WASM 증가)였지만 구현은 원본 크기만 썼다.
+- 측정(VERIFIED, snapshot-memory.jsonl, snapshot-memory-summary.json, scripts/measure-snapshot-memory.mjs): 제품 WASM으로
+  external/rhwp/samples 1204개 중 1201개를 파일마다 새 node 프로세스로 열고 스냅숏 24개를 붙든 뒤 선형 메모리 상한선을 쟀다.
+  스냅숏당 증가/파일 크기(증가가 보인 1189개): p50 2.378, p90 7.992, p99 19.25, 최대 62.256. 원본 크기 대용은 보수적이지 않다.
+  측정 기울기를 쓰면 깊이가 달라지는 문서 13개, 가장 큰 어림은 2.3 MB HWP(스냅숏당 ≈31 MiB × 51 ≈ 1.5 GiB).
+- 쓰지 않은 대안: (a) 첫 스냅숏 증가 — 빈 공간 때문에 거의 0(측정 불가). (b) 열기 때의 증가 — 표본 1189개 모두에서 스냅숏당 증가
+  이상이었지만 그림 많은 문서에서 수십 배 과대(연구노트(화학).hwp: 열기 38.6 MB, 스냅숏 90개 기울기 ≈0.8 MiB). 이를 쓰면 D1·D4
+  문서의 기록이 꺼진다. 정밀도를 만들어 내지 않으려고 어림은 원본 크기 그대로 두고 문서에 "보수적이지 않음"으로 적었다.
+- 추가(fail-closed): RhwpModule.memoryBytes()(앱 로더가 wasm-bindgen memory에서 읽음). RhwpHistory는 기록을 켠 뒤 선형
+  메모리 상한선 증가가 HISTORY_BUDGET_BYTES(256 MiB)를 넘으면 새 그룹을 찍기 전에 limit으로 거절하고, 세션은 기록을 끄고 편집은
+  계속한다(불확실 아님). 실행 취소의 지금 상태 찍기는 I2 자리 안이라 막지 않는다. 감시는 기록 밖 증가도 세므로 보수적이다.
+- 구별: 스냅숏 수·깊이 상한(I2·I3, 엔진 상한 100) / 회계 예산 256 MiB(선형 메모리 증가로 감시) / 어림(원본 크기) /
+  프로세스 RSS(이 규칙과 무관, 승인 기준 없음). 256 MiB는 RSS 상한이 아니고 바이트 정확한 기록 크기도 아니다.
+- D1 문서(INFERRED): 화학 HWP ≈0.8 MiB/스냅숏, 60쪽 HWPX ≈1.3 MiB/스냅숏 → 51개도 ≈66 MiB 이하로 감시 한도와 멀다.
+
+2.3 HWPX 서식 Phase 3B (T009 좁은 header 규칙 — 구현, 서식 명령은 미구현)
+- 실측(VERIFIED, scripts/hwpx-format-probe.mjs, 생성 픽스처 basic-ko.hwpx): 기울임·밑줄·취소선은 원래 모양을 복제한 새 charPr
+  하나(id 8)를 끝에 붙이고 itemCnt 8→9, 나머지 header 바이트 같음. 굵게는 있는 모양 7 재사용(header 그대로). 기울임 켰다 끄면 쓰이지
+  않는 id 8이 남는다(italic-toggle.json).
+- 규칙(package.rs hwpx_char_shapes_appended): 덧붙인 charPr k개만, 원본 목록 그대로 + 끝에 덧붙임, id n..n+k, itemCnt +k,
+  서식 자식(bold·italic·underline·strikeout, 허용 속성·값 모양) 밖은 원본 정의 하나와 같음, 출력 본문이 참조. 어긋나면 기존처럼
+  partChanged{header}. 자기 닫힘 덧붙임은 기존 참조 무결성이 referenceInvalid로 막는다.
+- 시험(VERIFIED): Rust 새 시험 4개(양성 3형태, 음성 변이 20가지, 자기 닫힘, 실제 service::save 게시/거부·원본 SHA 보존).
+- 실제 엔진 → 실제 service::save(VERIFIED, save-service.json, logs/save-service-after*.log): 규칙만 바꾼 상태에서 기존 기대값 그대로
+  돌리면 CURRENT 불일치 2건(hwpx-italic-body, hwpx-underline-cell: unsafe→safe·게시) 외 변화 없음. 그 두 기록만 근거와 함께
+  고친 뒤 --strict-desired 23행 CURRENT 0·DESIRED 0, exit 0. HWP 서식은 계속 recordsChanged{DocInfo}+previewStale로 거부.
+- 다시 열기(VERIFIED, format-reopen.json): 기울임·밑줄·취소선 범위 안 id 8·서식 참, 밖 id 0·거짓. 게시 파일 = 출력 바이트(SHA 같음).
+- 남은 SC-003 공백: rhwp 세션 서식 명령(선택·셀·다문단 범위, 기록·revision·그리기), 앱 다시 열기 근거에 서식 비교, 형식별(HWPX만)
+  지원 선언, 쓰이지 않는 덧붙임 처리, 실제 앱 검증. 레지스트리의 rhwp format.*는 unsupported 그대로.
+
+3. 검토했지만 결함이 아닌 것 (요약, 자세한 것은 rhwp-undo-redo.md "T010 설계 검토")
+- I1–I3, ID 보호 예약, 끝에서만 지움, 최대 깊이에서 실행 취소, 다시 실행 무할당, 실행 취소 뒤 새 편집의 다시 실행 버림, 예약 뒤 취소,
+  타자·지우기 묶기·쉼 1.5초, 선택 바꾸기, IME provisional, 초점·문서 전환, 다시 불러오기·닫기, 찍기·복원·폐기 실패: 코드와 기존
+  시험이 일치(VERIFIED 기존 시험 통과).
+- 상한이 줄 때 예약 뒤 취소: 과거를 지운 것이 되돌려지지 않는다. 그러나 그 지우기는 줄어든 상한의 I2 회복이며 고정 판 상한은 상수
+  100이라 도달하지 않는다 — UNVERIFIED 이론 위험, 결함 아님. 시간선 알고리즘은 바꾸지 않았다.
+- revision·dirty: 성공한 실행 취소·다시 실행 = recordMutation 1회(revision +1), 두 번째 권한 없음, 실패는 문서를 바꾸지 않음,
+  trap은 불확실·편집 멈춤(기존 시험·D5).
+
+4. 실행한 검증 (명령, 종료 코드)
+- npx tsc --noEmit → 0. npx eslint . → 0. npm run build(tsc + vite) → 0, dist에 geul-test-build·rhwp-history-commands 표지 0.
+- npx vitest run src/ → 41 파일 785 통과(새 historyAdmission.test.ts 6개 포함; 수정 전 재현은 logs/production-history-before.log).
+- npx vitest run --config tests/integration/rhwp/vitest.config.ts → 37 통과, 2 건너뜀(환경 변수 필요: history-perf GEUL_PERF,
+  undo-save GEUL_UNDO_SAVE_OUT — 뒤의 undo_save.py가 실행).
+- npx vitest run --config tests/poc/t010-phase0/vitest.config.ts → 50 통과.
+- cargo fmt -- --check → 0. cargo clippy --locked --offline --all-targets -- -D warnings → 0.
+- cargo test --locked --offline → lib 178 통과/4 무시(기존), document_fd_cleanup 1, t010_phase0_save_service 2 무시(하네스용).
+- TMPDIR=… python3 tests/poc/t010-phase0/save_service.py --strict-desired → 0 (23행).
+- TMPDIR=… python3 tests/integration/rhwp/undo_save.py → 0 (19행 불일치 0, D3).
+- 보안: check-sensitive-info --staged/--all/--history → 0, Gitleaks staged·index mirror dir → 0건, tests/security 86 통과,
+  allowlist 음성 24경우 allOk. git diff --check → 0. 커밋 뒤 이력 검사는 최종 응답에 적는다(이 파일에 미리 적지 않음).
+
+5. 관문 (이번 세션)
+- D1 native: NOT RUN. v3 wrapper가 요구하는 신뢰 기준 후보 ca5c0b84 패키지가 디스크에 없다(남은 패키지: 57280d57, 8fb44739,
+  기준 eaa88f65). 신뢰 기준을 옮기거나 다른 후보 결과로 대신하지 않았다. 마지막 PASS(39/39·RGBA 24)는 이전 소스의 기록이다.
+- D2: INCONCLUSIVE 유지(새 native 근거 없음, IME 가드 그대로).
+- D3: PASS(이번 실행: undo_save.py 19행·save_service.py 23행 불일치 0, 위험 출력 게시 0, 거부 시 원본 SHA 그대로).
+- D4: FAIL 유지(첫 유효 공식 측정 그대로, 렌더·조판 경로를 바꾸지 않아 재측정하지 않음, 문턱·측정 계약 그대로).
+- D5: 보관 PASS. 실제 WASM 폐기 예외 시험(undo.wasm.test.ts) 이번 통과, native 재실행 없음.
+- RSS: INCONCLUSIVE(승인 기준 없음).
+- 결정: 제품 rhwp 실행 취소·다시 실행 NO-GO(레지스트리 unsupported 그대로). T010 미완료, T011 시작하지 않음.
+
+6. 다음 독립 작업
+- 신뢰 후보 ca5c0b84를 커밋된 patch에서 격리 재현 빌드(바이트 일치 확인)하거나 별도 승인된 새 신뢰 기준으로 이번 프런트엔드의
+  native D1을 실행.
+- D4: 공식 계약 변경 승인 없이는 FAIL. 큰 문서의 group-start 경로(조판·그리기) 개선이 필요.
+- SC-003 서식: 위 2.3의 남은 공백을 HWPX에 한해 구현·실제 앱 검증. HWP는 미리보기 규칙(Phase 3C) 근거가 생기기 전까지 미지원.

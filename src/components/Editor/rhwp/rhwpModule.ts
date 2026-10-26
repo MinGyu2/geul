@@ -77,6 +77,11 @@ export interface RhwpDocument {
 export interface RhwpModule {
   /** 문서 바이트로 문서를 만든다. 형식이 맞지 않으면 예외. */
   openDocument(bytes: Uint8Array): RhwpDocument;
+  /**
+   * 모듈 WASM 선형 메모리의 지금 크기(바이트). 줄지 않는 상한선(high-water)이라 살아 있는 메모리가 아니고, 문서 하나의 크기도
+   * 아니다(같은 모듈의 다른 문서·해제한 빈 공간을 포함). 실행 취소 기록의 예산 어림과 증가 감시에만 쓴다(rhwpHistory.ts). 모르면 없음.
+   */
+  memoryBytes?(): number;
 }
 
 type GeneratedModule = {
@@ -100,9 +105,13 @@ export function loadRhwpModule(importer: (url: string) => Promise<unknown> = (ur
     if (typeof generated?.default !== "function" || typeof generated.HwpDocument !== "function") {
       throw new Error("rhwp module shape");
     }
-    await generated.default({ module_or_path: RHWP_WASM_URL });
+    const exports = await generated.default({ module_or_path: RHWP_WASM_URL });
     const HwpDocument = generated.HwpDocument;
-    return { openDocument: (bytes: Uint8Array) => new HwpDocument(bytes) };
+    const memory = (exports as { memory?: unknown } | null)?.memory;
+    return {
+      openDocument: (bytes: Uint8Array) => new HwpDocument(bytes),
+      ...(memory instanceof WebAssembly.Memory ? { memoryBytes: () => memory.buffer.byteLength } : {}),
+    };
   })().catch((reason: unknown) => {
     loading = null;
     throw reason;

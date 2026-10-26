@@ -24,7 +24,11 @@ export interface SnapshotEngine {
 export const HISTORY_HEADROOM = 2;
 export const HISTORY_MIN_DEPTH = 4;
 export const HISTORY_MAX_DEPTH = 50;
-/** 기록 메모리 목표(보장이 아님: 엔진에 스냅숏 크기 질의가 없고 WASM 메모리는 줄지 않는다). */
+/**
+ * 기록 메모리 예산(회계 값이지 RSS·바이트 정확한 상한이 아님: 엔진에 스냅숏 크기 질의가 없고 WASM 선형 메모리는 줄지 않는다). 두 곳에
+ * 쓴다: 깊이를 정하는 어림(`historyBudget`)과, 기록을 켠 뒤 선형 메모리 상한선이 이만큼 넘게 자라면 새 그룹을 찍지 않고 기록을 끄는
+ * 감시(`RhwpHistory` memory). 감시는 기록 밖의 증가(그리기·조판 캐시)도 세므로 보수적이다.
+ */
 export const HISTORY_BUDGET_BYTES = 256 * 1024 * 1024;
 /** 타자 그룹을 이어 쓰는 최대 쉼(ms). 그보다 오래 쉬고 친 글자는 새 단계다(긴 문장이 한 번에 사라지지 않게). */
 export const HISTORY_IDLE_MS = 1500;
@@ -33,8 +37,11 @@ export type HistoryKind = "typing" | "deleteBack" | "deleteForward" | "other";
 const EXTENDABLE = new Set<HistoryKind>(["typing", "deleteBack", "deleteForward"]);
 
 /**
- * 기록 깊이(설계 §10). 자르지 않은 추정을 먼저 보고 최소 깊이를 확인한 뒤에만 상한을 건다. estimate는 스냅숏 하나의 바이트 대용
- * (원본 파일 크기 — 살아 있는 메모리의 측정이 아님). 살아 있는 문서 1 + 복원 중 임시 복제 1을 뺀다.
+ * 기록 깊이(설계 §10). 자르지 않은 추정을 먼저 보고 최소 깊이를 확인한 뒤에만 상한을 건다. estimate는 스냅숏 하나의 바이트 대용으로
+ * 세션은 원본 파일 크기를 준다. 이 대용은 보수적이지 않다(공개 예제 1189개 실측: 스냅숏당 선형 메모리 증가가 파일 크기의 p50 2.4배·
+ * 최대 62배). 문서를 열 때의 선형 메모리 증가는 그 표본 모두에서 스냅숏당 증가 이상이었지만 그림이 많은 문서에서 수십 배 과대(12MB
+ * HWP: 열기 38.6MB, 스냅숏 24개에 증가 0)라 쓰지 않는다. 어림의 부족은 `RhwpHistory`의 선형 메모리 증가 감시가 받친다.
+ * 살아 있는 문서 1 + 복원 중 임시 복제 1을 뺀다.
  */
 export function historyBudget(estimate: number, capacity: number): { enabled: boolean; depth: number; snapshots: number } {
   const raw = Math.floor(HISTORY_BUDGET_BYTES / Math.max(1, estimate)) - 2;
@@ -137,13 +144,22 @@ export class RhwpHistory {
   state: "ok" | "broken" = "ok";
   /** 시험·진단용: 이 기록이 찍은 수(saveSnapshot 호출). */
   allocations = 0;
+  /** 기록을 켤 때의 WASM 선형 메모리 크기(memory가 있을 때). */
+  private readonly memoryAtStart: number | null;
 
+  /**
+   * memory는 모듈 WASM 선형 메모리 크기(줄지 않는 상한선). 주면 새 그룹을 찍기 전에 기록을 켠 뒤의 증가가 HISTORY_BUDGET_BYTES를
+   * 넘었는지 보고, 넘었으면 찍지 않고 거절한다(limit — 세션은 기록을 끄고 편집은 계속한다). 실행 취소의 지금 상태 찍기는 I2의 자리
+   * 안이라 막지 않는다.
+   */
   constructor(
     private readonly engine: SnapshotEngine,
     private readonly depth: number,
     private readonly now: () => number = () => performance.now(),
+    private readonly memory: (() => number) | null = null,
   ) {
     if (!(this.limit >= 2)) throw new HistoryRefused("limit");
+    this.memoryAtStart = memory ? memory() : null;
   }
 
   /**
@@ -264,6 +280,9 @@ export class RhwpHistory {
     let previousCheckpoint: Pending["previousCheckpoint"] = null;
     if (!extending && this.states[this.cursor] === null) {
       // 지금 상태 = 새 그룹의 before. 다시 실행 기록이 있으면 지금 상태는 이미 찍혀 있다(실행 취소가 찍음).
+      if (this.memory && this.memoryAtStart !== null && this.memory() - this.memoryAtStart > HISTORY_BUDGET_BYTES) {
+        throw new HistoryRefused("limit");
+      }
       this.reserve(1, new Set(), ["past"]);
       this.states[this.cursor] = this.save(checkpoint());
       captured = true;

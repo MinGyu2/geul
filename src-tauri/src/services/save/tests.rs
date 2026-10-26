@@ -6401,3 +6401,399 @@ fn 실제_저장_서비스는_없는_모양_참조의_hwpx를_게시하지_않�
     assert!(!saved.session.dirty);
     assert_eq!(std::fs::read(dir.path().join("a.hwpx")).unwrap(), valid);
 }
+
+// ---- T010 Phase 3B: HWPX 글자 서식의 좁은 header 규칙 ----
+
+/// 고정 rhwp HWPX header와 같은 모양의 글자 모양 정의 목록(id 0..n). `extra`는 목록 끝에 덧붙일 정의, `count`는 `itemCnt`.
+fn fmt_header(count: usize, defs: &[&str], extra: &[&str], para: &str) -> String {
+    format!(
+        r#"<hh:head xmlns:hh="http://www.hancom.co.kr/hwpml/2011/head"><hh:refList><hh:charProperties itemCnt="{count}">{}{}</hh:charProperties><hh:paraProperties itemCnt="1"><hh:paraPr id="0"><hh:align horizontal="{para}"/></hh:paraPr></hh:paraProperties></hh:refList></hh:head>"#,
+        defs.concat(),
+        extra.concat()
+    )
+}
+
+/// 엔진이 쓰는 순서의 정의 하나(fontRef → 서식 자식 → 그림자). `format`은 서식 자식 자리.
+fn fmt_def(id: u32, height: u32, format: &str) -> String {
+    format!(
+        r##"<hh:charPr id="{id}" height="{height}" textColor="#000000"><hh:fontRef hangul="1" latin="1"/>{format}<hh:underline type="NONE" shape="SOLID" color="#000000"/><hh:strikeout shape="NONE" color="#000000"/><hh:shadow type="NONE" color="#B2B2B2"/></hh:charPr>"##
+    )
+}
+
+/// 정의 셋(0 보통, 1 큰 글자, 2 굵게)의 원본 header.
+fn fmt_original() -> (Vec<String>, String) {
+    let defs = vec![
+        fmt_def(0, 1000, ""),
+        fmt_def(1, 1600, ""),
+        fmt_def(2, 1000, "<hh:bold/>"),
+    ];
+    let refs: Vec<&str> = defs.iter().map(String::as_str).collect();
+    let header = fmt_header(3, &refs, &[], "JUSTIFY");
+    (defs, header)
+}
+
+fn fmt_body(refs: &[u32]) -> String {
+    let runs: String = refs
+        .iter()
+        .map(|id| format!(r#"<hp:run charPrIDRef="{id}"><hp:t>a</hp:t></hp:run>"#))
+        .collect();
+    format!(
+        r#"<hs:sec xmlns:hs="http://www.hancom.co.kr/hwpml/2011/section" xmlns:hp="http://www.hancom.co.kr/hwpml/2011/paragraph"><hp:p id="0" paraPrIDRef="0" styleIDRef="0">{runs}</hp:p></hs:sec>"#
+    )
+}
+
+/// 엔진 기울임 출력 모양: 정의 0을 복제해 `hh:italic`을 더한 id 3.
+fn italic_of_zero() -> String {
+    fmt_def(3, 1000, "<hh:italic/>")
+}
+
+fn fmt_check(header: &str, body: &str) -> Vec<Finding> {
+    let (_, original) = fmt_original();
+    let before = pkg(&hwpx_package(&fmt_body(&[0, 1]), &original, true, true));
+    let after = pkg(&hwpx_package(body, header, true, true));
+    let mut findings = package::compare_saved_hwpx(&before, &after);
+    findings.extend(package::validate_hwpx_references(&after));
+    findings
+}
+
+#[test]
+fn hwpx_header는_서식이_덧붙인_참조되는_글자_모양만_다를_수_있다() {
+    let (defs, original) = fmt_original();
+    let d: Vec<&str> = defs.iter().map(String::as_str).collect();
+    // 바뀌지 않은 header(대조).
+    assert_eq!(fmt_check(&original, &fmt_body(&[0, 1])), vec![]);
+    // 덧붙임 하나: 기울임(엔진 실측 모양).
+    let italic = italic_of_zero();
+    assert_eq!(
+        fmt_check(
+            &fmt_header(4, &d, &[&italic], "JUSTIFY"),
+            &fmt_body(&[3, 1])
+        ),
+        vec![]
+    );
+    // 서식 자식을 바꾸거나 빼서 만든 덧붙임 둘(밑줄 모양 바꿈, 굵게 정의에서 굵게 뺌 + 취소선).
+    let underline = fmt_def(3, 1600, "").replace(
+        r#"<hh:underline type="NONE""#,
+        r#"<hh:underline type="BOTTOM""#,
+    );
+    let unbold_strike = fmt_def(4, 1000, "").replace(
+        r#"<hh:strikeout shape="NONE""#,
+        r#"<hh:strikeout shape="SOLID""#,
+    );
+    assert_eq!(
+        fmt_check(
+            &fmt_header(5, &d, &[&underline, &unbold_strike], "JUSTIFY"),
+            &fmt_body(&[3, 4, 0])
+        ),
+        vec![]
+    );
+    // 접두사·속성 순서만 다른 header는 지금처럼 같다.
+    let prefixed = original
+        .replace("hh:", "x:")
+        .replace("xmlns:hh=", "xmlns:x=");
+    assert_eq!(fmt_check(&prefixed, &fmt_body(&[0])), vec![]);
+}
+
+#[test]
+fn hwpx_header의_서식_덧붙임_밖_변경은_계속_partchanged다() {
+    let (defs, _) = fmt_original();
+    let d: Vec<&str> = defs.iter().map(String::as_str).collect();
+    let italic = italic_of_zero();
+    let changed = vec![Finding::at(FindingCode::PartChanged, "Contents/header.xml")];
+    let cases: Vec<(&str, String, String)> = vec![
+        (
+            "쓰이지 않는 덧붙임",
+            fmt_header(4, &d, &[&italic], "JUSTIFY"),
+            fmt_body(&[0, 1]),
+        ),
+        (
+            "itemCnt 그대로",
+            fmt_header(3, &d, &[&italic], "JUSTIFY"),
+            fmt_body(&[3]),
+        ),
+        (
+            "itemCnt +2",
+            fmt_header(5, &d, &[&italic], "JUSTIFY"),
+            fmt_body(&[3]),
+        ),
+        (
+            "id가 n이 아님",
+            fmt_header(4, &d, &[&fmt_def(4, 1000, "<hh:italic/>")], "JUSTIFY"),
+            fmt_body(&[4]),
+        ),
+        (
+            "서식 밖 속성(height) 다름",
+            fmt_header(4, &d, &[&fmt_def(3, 1200, "")], "JUSTIFY"),
+            fmt_body(&[3]),
+        ),
+        (
+            "서식 밖 자식 값 다름",
+            fmt_header(
+                4,
+                &d,
+                &[&italic.replace(r#"latin="1""#, r#"latin="2""#)],
+                "JUSTIFY",
+            ),
+            fmt_body(&[3]),
+        ),
+        (
+            "서식 밖 자식 더함",
+            fmt_header(
+                4,
+                &d,
+                &[&italic.replace("<hh:italic/>", "<hh:italic/><hh:outline type=\"SOLID\"/>")],
+                "JUSTIFY",
+            ),
+            fmt_body(&[3]),
+        ),
+        (
+            "서식 자식에 내용",
+            fmt_header(
+                4,
+                &d,
+                &[&fmt_def(3, 1000, "<hh:italic>x</hh:italic>")],
+                "JUSTIFY",
+            ),
+            fmt_body(&[3]),
+        ),
+        (
+            "서식 자식의 모르는 속성",
+            fmt_header(
+                4,
+                &d,
+                &[&fmt_def(3, 1000, r#"<hh:italic x="1"/>"#)],
+                "JUSTIFY",
+            ),
+            fmt_body(&[3]),
+        ),
+        (
+            "서식 자식 값에 다른 글자",
+            fmt_header(
+                4,
+                &d,
+                &[&fmt_def(3, 1000, "").replace(
+                    r##"<hh:underline type="NONE" shape="SOLID" color="#000000"/>"##,
+                    r##"<hh:underline type="NONE" shape="SOLID" color="#00 00;0"/>"##,
+                )],
+                "JUSTIFY",
+            ),
+            fmt_body(&[3]),
+        ),
+        (
+            "같은 서식 자식 둘",
+            fmt_header(
+                4,
+                &d,
+                &[&fmt_def(3, 1000, "<hh:italic/><hh:italic/>")],
+                "JUSTIFY",
+            ),
+            fmt_body(&[3]),
+        ),
+        (
+            "다른 header 부분도 바뀜",
+            fmt_header(4, &d, &[&italic], "LEFT"),
+            fmt_body(&[3]),
+        ),
+        (
+            "기존 정의도 바뀜",
+            fmt_header(
+                4,
+                &[d[0], d[1], &fmt_def(2, 1000, "")],
+                &[&italic],
+                "JUSTIFY",
+            ),
+            fmt_body(&[3]),
+        ),
+        (
+            "가운데 끼움",
+            fmt_header(4, &[d[0], &italic, d[1], d[2]], &[], "JUSTIFY"),
+            fmt_body(&[3]),
+        ),
+        (
+            "덧붙임 사이 글",
+            fmt_header(
+                5,
+                &d,
+                &[&italic, " ", &fmt_def(4, 1600, "<hh:italic/>")],
+                "JUSTIFY",
+            ),
+            fmt_body(&[3, 4]),
+        ),
+        (
+            "글자 모양이 아닌 덧붙임",
+            fmt_header(
+                4,
+                &d,
+                &[r#"<hh:paraPr id="3"><hh:align horizontal="LEFT"/></hh:paraPr>"#],
+                "JUSTIFY",
+            ),
+            fmt_body(&[0]),
+        ),
+        (
+            "다른 이름공간의 덧붙임",
+            fmt_header(
+                4,
+                &d,
+                &[&italic
+                    .replace("<hh:charPr ", r#"<o:charPr xmlns:o="urn:o" "#)
+                    .replace("</hh:charPr>", "</o:charPr>")],
+                "JUSTIFY",
+            ),
+            fmt_body(&[0]),
+        ),
+    ];
+    for (label, header, body) in &cases {
+        let findings = fmt_check(header, body);
+        assert!(findings.contains(&changed[0]), "{label}: {findings:?}");
+    }
+    // 원본 정의 id가 0..n이 아니면(빈 번호) 덧붙임 규칙을 쓰지 않는다.
+    let gap = [fmt_def(0, 1000, ""), fmt_def(2, 1000, "")];
+    let gap: Vec<&str> = gap.iter().map(String::as_str).collect();
+    let before = pkg(&hwpx_package(
+        &fmt_body(&[0]),
+        &fmt_header(2, &gap, &[], "JUSTIFY"),
+        true,
+        true,
+    ));
+    let after = pkg(&hwpx_package(
+        &fmt_body(&[3]),
+        &fmt_header(3, &gap, &[&fmt_def(3, 1000, "<hh:italic/>")], "JUSTIFY"),
+        true,
+        true,
+    ));
+    assert_eq!(package::compare_saved_hwpx(&before, &after), changed);
+    // 목록이 둘이면 받지 않는다.
+    let (_, original) = fmt_original();
+    let twice = original.replace(
+        "<hh:paraProperties",
+        r#"<hh:charProperties itemCnt="0"></hh:charProperties><hh:paraProperties"#,
+    );
+    let before = pkg(&hwpx_package(&fmt_body(&[0]), &twice, true, true));
+    let after = pkg(&hwpx_package(
+        &fmt_body(&[3]),
+        &twice
+            .replacen(r#"itemCnt="3">"#, r#"itemCnt="4">"#, 1)
+            .replacen(
+                "</hh:charProperties>",
+                &format!("{italic}</hh:charProperties>"),
+                1,
+            ),
+        true,
+        true,
+    ));
+    assert_eq!(package::compare_saved_hwpx(&before, &after), changed);
+    // 읽을 수 없는 출력 header는 지금처럼 outputMalformed.
+    let (_, original) = fmt_original();
+    let before = pkg(&hwpx_package(&fmt_body(&[0]), &original, true, true));
+    let after = pkg(&hwpx_package(&fmt_body(&[0]), "<hh:head", true, true));
+    assert_eq!(
+        package::compare_saved_hwpx(&before, &after),
+        vec![Finding::at(
+            FindingCode::OutputMalformed,
+            "Contents/header.xml"
+        )]
+    );
+}
+
+#[test]
+fn hwpx_덧붙인_정의가_자기_닫힘이면_참조_무결성이_막는다() {
+    let (defs, _) = fmt_original();
+    let d: Vec<&str> = defs.iter().map(String::as_str).collect();
+    // 정규화한 사건 열로는 `<a/>`와 `<a></a>`가 같아 덧붙임 규칙은 통과하지만, 엔진이 등록하지 않는 정의라 참조가 막힌다.
+    let empty = r##"<hh:charPr id="3" height="1000" textColor="#000000"/>"##;
+    let base = r##"<hh:charPr id="0" height="1000" textColor="#000000"></hh:charPr>"##;
+    let header = fmt_header(2, &[base, d[1]], &[empty], "JUSTIFY")
+        .replace(r#"itemCnt="2""#, r#"itemCnt="3""#)
+        .replace(r#"id="3""#, r#"id="2""#);
+    let original = fmt_header(2, &[base, d[1]], &[], "JUSTIFY");
+    let before = pkg(&hwpx_package(&fmt_body(&[0]), &original, true, true));
+    let after = pkg(&hwpx_package(&fmt_body(&[2]), &header, true, true));
+    assert_eq!(package::compare_saved_hwpx(&before, &after), vec![]);
+    assert_eq!(
+        package::validate_hwpx_references(&after),
+        vec![Finding::at(
+            FindingCode::ReferenceInvalid,
+            "Contents/section0.xml"
+        )]
+    );
+}
+
+#[test]
+fn 실제_저장_서비스는_서식_덧붙임_hwpx를_게시하고_다른_header_변경은_원본을_지킨다() {
+    let state = DocumentState::default();
+    let dir = TempDir::new();
+    let (defs, header) = fmt_original();
+    let d: Vec<&str> = defs.iter().map(String::as_str).collect();
+    let original = zip(
+        &hwpx_package(&fmt_body(&[0, 1]), &header, true, true),
+        false,
+    );
+    let info = rhwp_session(&state, &dir, "a.hwpx", &original);
+    let registry = state.registry();
+    let (id, generation) = (info.session_id, info.load_generation);
+    let source = registry.preflight_source(id, generation).unwrap();
+    let read = service::read_original(&source, &Limits::default()).unwrap();
+    let check = service::preflight(
+        Format::Hwpx,
+        &read,
+        &original,
+        Some(&report("hwpx", json!([]))),
+    );
+    assert!(check.is_safe(), "{check:?}");
+    registry
+        .record_preflight(id, generation, source.content_hash, check)
+        .unwrap();
+    registry.commit(id, generation, 0, 1).unwrap();
+    // 서식 덧붙임 + 다른 header 변경: 거부, 원본·디렉터리 그대로.
+    let italic = italic_of_zero();
+    let mixed = zip(
+        &hwpx_package(
+            &fmt_body(&[3, 1]),
+            &fmt_header(4, &d, &[&italic], "LEFT"),
+            true,
+            true,
+        ),
+        false,
+    );
+    let ticket = registry.begin_save(id, generation, 1).unwrap();
+    let error = service::save(
+        registry,
+        &ticket,
+        &Limits::default(),
+        &mixed,
+        Some(&report("hwpx", json!([]))),
+        true,
+    )
+    .unwrap_err();
+    drop(ticket);
+    assert!(
+        matches!(&error, DocumentError::UnsafeSave { preservation }
+            if preservation.findings == vec![Finding::at(FindingCode::PartChanged, "Contents/header.xml")]),
+        "{error:?}"
+    );
+    assert_eq!(std::fs::read(dir.path().join("a.hwpx")).unwrap(), original);
+    assert_eq!(std::fs::read_dir(dir.path()).unwrap().count(), 1);
+    assert!(registry.get(id).unwrap().dirty);
+    // 서식 덧붙임만: 게시.
+    let formatted = zip(
+        &hwpx_package(
+            &fmt_body(&[3, 1]),
+            &fmt_header(4, &d, &[&italic], "JUSTIFY"),
+            true,
+            true,
+        ),
+        false,
+    );
+    let ticket = registry.begin_save(id, generation, 1).unwrap();
+    let saved = service::save(
+        registry,
+        &ticket,
+        &Limits::default(),
+        &formatted,
+        Some(&report("hwpx", json!([]))),
+        true,
+    )
+    .unwrap();
+    assert!(!saved.session.dirty);
+    assert_eq!(std::fs::read(dir.path().join("a.hwpx")).unwrap(), formatted);
+}
