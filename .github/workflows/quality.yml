@@ -133,3 +133,10 @@ jobs:
 
       - name: 환경변수 최적화에서도 무결성 검사 유지
         run: PYTHONOPTIMIZE=1 python3 -m unittest discover -s tests/integration/rhwp/evidence/t010-d4-critical-path-remediation -p test_analysis.py
+
+      # 가짜 브라우저 프로세스·로컬 HTTP 서버·합성 fixture만 사용(실제 브라우저·submodule·native 바이너리 없음).
+      - name: engine-phases runner 실패 경로·checksum catalog·native attribution 회귀 검사
+        run: python3 -I -m unittest discover -s tests/integration/rhwp/engine-phases -p 'test_*.py'
+
+      - name: engine-phases 회귀 검사 (최적화 모드)
+        run: python3 -I -O -m unittest discover -s tests/integration/rhwp/engine-phases -p 'test_*.py'

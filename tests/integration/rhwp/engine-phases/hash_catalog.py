@@ -11,6 +11,8 @@ TAG = 'sha256Catalog'
 
 def encode(value):
     if isinstance(value, dict):
+        # The tag is reserved: input that already carries it would decode into a different value.
+        if TAG in value: raise ValueError(f'reserved key {TAG!r} in input; refusing an ambiguous catalog')
         if value and all(isinstance(v, str) and HEX.fullmatch(v) for v in value.values()):
             return {TAG: [{'path': k, 'sha256': v} for k, v in value.items()]}
         return {k: encode(v) for k, v in value.items()}
@@ -20,6 +22,7 @@ def encode(value):
 
 def decode(value):
     if isinstance(value, dict):
+        if TAG in value and len(value) != 1: raise ValueError('checksum catalog must be the only key of its object')
         if set(value) == {TAG}:
             if not isinstance(value[TAG], list): raise ValueError('checksum catalog must be a list')
             result = {}
@@ -35,7 +38,7 @@ def decode(value):
 
 
 def load_json(path):
-    return decode(json.loads(Path(path).read_text()))
+    return decode(json.loads(Path(path).read_text(encoding='utf-8')))
 
 
 def main():
@@ -43,9 +46,9 @@ def main():
     p.add_argument('mode', choices=['encode', 'decode']); p.add_argument('--input', type=Path, required=True); p.add_argument('--output', type=Path, required=True)
     a = p.parse_args()
     if a.output.exists(): p.error('preserve previous artifact')
-    value = json.loads(a.input.read_text()); result = encode(value) if a.mode == 'encode' else decode(value)
+    value = json.loads(a.input.read_text(encoding='utf-8')); result = encode(value) if a.mode == 'encode' else decode(value)
     if a.mode == 'encode' and decode(result) != value: raise ValueError('checksum catalog round trip failed')
-    a.output.write_text(json.dumps(result, ensure_ascii=False, indent=2)+'\n')
+    a.output.write_text(json.dumps(result, ensure_ascii=False, indent=2)+'\n', encoding='utf-8')
 
 
 if __name__ == '__main__': main()

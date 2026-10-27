@@ -1,0 +1,352 @@
+{
+ "scope": "engine-phases runner failure persistence; not a performance measurement and not official D4",
+ "baselineRunnerAtHEAD3b777f1": {
+  "method": "HEAD run.py driven through the same fake-browser fixtures (temporary probe, not committed)",
+  "cases": {
+   "popen-missing": {
+    "outcome": "FileNotFoundError: [Errno 2] missing",
+    "recordWritten": false,
+    "status": null
+   },
+   "permission-denied": {
+    "outcome": "PermissionError: [Errno 13] Permission denied: '<temp>/fake-browser'",
+    "recordWritten": false,
+    "status": null
+   },
+   "non-object-json": {
+    "outcome": "TypeError: list indices must be integers or slices, not str",
+    "recordWritten": false,
+    "status": null
+   },
+   "metadata-fail": {
+    "outcome": "exit 1",
+    "recordWritten": true,
+    "status": "FAIL"
+   }
+  },
+  "conclusion": "3 of 4 probed failure paths left no evidence file (uncaught exception before write)"
+ },
+ "regressions": {
+  "command": "python3 -I [-O] -m unittest discover -s tests/integration/rhwp/engine-phases -p 'test_*.py'",
+  "python3.14.7": {
+   "normal": "33 PASS",
+   "optimized(-O)": "33 PASS"
+  },
+  "python3.13.13": {
+   "normal": "33 PASS"
+  },
+  "logSha256": {
+   "normal": "21e603792190b84cbdc9306f28d0abca6d58e44dce46b270a6488ef789c5f5aa",
+   "optimized": "15875b92e90d263f7b1b2538fd92c6e2338c4f7199b18d554131c7f93b7c5bc7",
+   "py313": "fd613058db7c6e549705e2c2a0dee96adf483f2185fd4a4dcd13b725bea02e12"
+  },
+  "tests": [
+   {
+    "test": "test_duplicate_and_invalid_checksums_are_rejected",
+    "module": "test_hash_catalog",
+    "normal": "ok",
+    "optimized": "ok"
+   },
+   {
+    "test": "test_malformed_records_are_rejected",
+    "module": "test_hash_catalog",
+    "normal": "ok",
+    "optimized": "ok"
+   },
+   {
+    "test": "test_maps_round_trip_without_changing_measurements",
+    "module": "test_hash_catalog",
+    "normal": "ok",
+    "optimized": "ok"
+   },
+   {
+    "test": "test_repeated_encoding_is_refused_and_repeated_decoding_is_stable",
+    "module": "test_hash_catalog",
+    "normal": "ok",
+    "optimized": "ok"
+   },
+   {
+    "test": "test_reserved_tag_collision_is_refused_not_reinterpreted",
+    "module": "test_hash_catalog",
+    "normal": "ok",
+    "optimized": "ok"
+   },
+   {
+    "test": "test_utf8_paths_survive_file_round_trip",
+    "module": "test_hash_catalog",
+    "normal": "ok",
+    "optimized": "ok"
+   },
+   {
+    "test": "test_incomplete_or_inconsistent_samples_fail_closed",
+    "module": "test_native_attribution",
+    "normal": "ok",
+    "optimized": "ok"
+   },
+   {
+    "test": "test_segments_partition_and_nested_calls_are_not_double_counted",
+    "module": "test_native_attribution",
+    "normal": "ok",
+    "optimized": "ok"
+   },
+   {
+    "test": "test_summary_requires_every_group_start_sample",
+    "module": "test_native_attribution",
+    "normal": "ok",
+    "optimized": "ok"
+   },
+   {
+    "test": "test_01_browser_executable_missing",
+    "module": "test_runner_failures",
+    "normal": "ok",
+    "optimized": "ok"
+   },
+   {
+    "test": "test_01b_missing_launcher_is_preflight_without_attempt",
+    "module": "test_runner_failures",
+    "normal": "ok",
+    "optimized": "ok"
+   },
+   {
+    "test": "test_02_permission_denied_launch",
+    "module": "test_runner_failures",
+    "normal": "ok",
+    "optimized": "ok"
+   },
+   {
+    "test": "test_03_browser_exits_before_reporting",
+    "module": "test_runner_failures",
+    "normal": "ok",
+    "optimized": "ok"
+   },
+   {
+    "test": "test_04_browser_never_returns",
+    "module": "test_runner_failures",
+    "normal": "ok",
+    "optimized": "ok"
+   },
+   {
+    "test": "test_05_malformed_result_json",
+    "module": "test_runner_failures",
+    "normal": "ok",
+    "optimized": "ok"
+   },
+   {
+    "test": "test_06_duplicate_submission",
+    "module": "test_runner_failures",
+    "normal": "ok",
+    "optimized": "ok"
+   },
+   {
+    "test": "test_07_08_09_invalid_matrix_preserves_partial_rows",
+    "module": "test_runner_failures",
+    "normal": "ok",
+    "optimized": "ok"
+   },
+   {
+    "test": "test_10_termination_timeout_escalates_to_kill",
+    "module": "test_runner_failures",
+    "normal": "ok",
+    "optimized": "ok"
+   },
+   {
+    "test": "test_11_forced_termination_before_report",
+    "module": "test_runner_failures",
+    "normal": "ok",
+    "optimized": "ok"
+   },
+   {
+    "test": "test_11b_unreaped_leader_is_cleanup_failure",
+    "module": "test_runner_failures",
+    "normal": "ok",
+    "optimized": "ok"
+   },
+   {
+    "test": "test_12_unexpected_cleanup_exception_releases_other_resources",
+    "module": "test_runner_failures",
+    "normal": "ok",
+    "optimized": "ok"
+   },
+   {
+    "test": "test_12b_owned_descendants_including_setsid_are_released",
+    "module": "test_runner_failures",
+    "normal": "ok",
+    "optimized": "ok"
+   },
+   {
+    "test": "test_13_dependency_changed_during_execution",
+    "module": "test_runner_failures",
+    "normal": "ok",
+    "optimized": "ok"
+   },
+   {
+    "test": "test_14_browser_metadata_failure",
+    "module": "test_runner_failures",
+    "normal": "ok",
+    "optimized": "ok"
+   },
+   {
+    "test": "test_15_existing_output_is_preserved",
+    "module": "test_runner_failures",
+    "normal": "ok",
+    "optimized": "ok"
+   },
+   {
+    "test": "test_15b_output_created_during_attempt_is_not_replaced",
+    "module": "test_runner_failures",
+    "normal": "ok",
+    "optimized": "ok"
+   },
+   {
+    "test": "test_16_persistence_failure_is_reported",
+    "module": "test_runner_failures",
+    "normal": "ok",
+    "optimized": "ok"
+   },
+   {
+    "test": "test_16b_unrelated_pending_name_is_not_removed",
+    "module": "test_runner_failures",
+    "normal": "ok",
+    "optimized": "ok"
+   },
+   {
+    "test": "test_positive_complete_matrix",
+    "module": "test_runner_failures",
+    "normal": "ok",
+    "optimized": "ok"
+   },
+   {
+    "test": "test_candidate_matrix_and_observed_execution_balance",
+    "module": "test_validation",
+    "normal": "ok",
+    "optimized": "ok"
+   },
+   {
+    "test": "test_controlled_complete_matrix",
+    "module": "test_validation",
+    "normal": "ok",
+    "optimized": "ok"
+   },
+   {
+    "test": "test_matrix_cleanup_pixels_and_completeness",
+    "module": "test_validation",
+    "normal": "ok",
+    "optimized": "ok"
+   },
+   {
+    "test": "test_span_context_parent_and_intervals",
+    "module": "test_validation",
+    "normal": "ok",
+    "optimized": "ok"
+   }
+  ],
+  "leakedFakeProcessesAfterSuite": 0,
+  "resourceWarnings": "expected: test_11b leaves its leader unreaped by design and test_12 reaps its leader with os.waitpid, so their Popen objects warn at collection",
+  "ranAfterLatestChange": true
+ },
+ "rawLocation": "local-only .git/t010-d4-harness-stabilization-raw (not committed; a fresh checkout cannot replay the smoke without the uncommitted candidate packages)",
+ "realBrowserSmoke": {
+  "note": "3 trials x 4 arms (baseline99/deep99 off+on/final candidate), success-path compatibility of the hardened runner only; timings not used",
+  "final": {
+   "chrome": {
+    "status": "DIAGNOSTIC_COMPLETE",
+    "rows": 33,
+    "allExactRGBA": true,
+    "requestConfig": {
+     "arms": [
+      "baseline",
+      "off",
+      "on",
+      "candidate"
+     ],
+     "trials": 3
+    },
+    "failures": [],
+    "browserProcess": {
+     "leaderExitedBeforeStop": false,
+     "terminateAttempted": true,
+     "residualTerminateAttempted": false,
+     "killAttempted": false,
+     "exitCode": 0,
+     "exitSignal": null,
+     "reaped": true,
+     "trackedDescendants": 13,
+     "survivors": [],
+     "gracefulExit": true,
+     "cleanupSucceeded": true,
+     "errors": []
+    },
+    "server": {
+     "started": true,
+     "shutdown": true,
+     "error": null
+    },
+    "profileRemoved": true,
+    "executedDependenciesStable": true,
+    "browserVersion": "Google Chrome 155.0.8059.39",
+    "candidateWasm": {
+     "candidate/rhwp_bg.wasm": "0cb73f70cd98dbef89718534e1bc283f1cb4c200af200703d40b137be1cde956"
+    },
+    "baselineWasm": {
+     "baseline/rhwp_bg.wasm": "ccea3046182be02ebae9383176f9e04c6354aea51cf4b988fe37ae67798fd58e"
+    },
+    "rawSha256": "f0faaf93726b9099da075319fd279f6e5b6f2bfe960de7d3228ea1b0ae16dba9",
+    "analyzeExit": 0,
+    "analysisRawSha256": "674eae3492e1740820f476aa5683d5763bfbe49b38ea25e34b33a3642bfe60b8"
+   },
+   "webkit": {
+    "status": "DIAGNOSTIC_COMPLETE",
+    "rows": 33,
+    "allExactRGBA": true,
+    "requestConfig": {
+     "arms": [
+      "baseline",
+      "off",
+      "on",
+      "candidate"
+     ],
+     "trials": 3
+    },
+    "failures": [],
+    "browserProcess": {
+     "leaderExitedBeforeStop": false,
+     "terminateAttempted": true,
+     "residualTerminateAttempted": false,
+     "killAttempted": false,
+     "exitCode": 0,
+     "exitSignal": null,
+     "reaped": true,
+     "trackedDescendants": 7,
+     "survivors": [],
+     "gracefulExit": true,
+     "cleanupSucceeded": true,
+     "errors": []
+    },
+    "server": {
+     "started": true,
+     "shutdown": true,
+     "error": null
+    },
+    "profileRemoved": true,
+    "executedDependenciesStable": true,
+    "browserVersion": "version API unavailable; WebKitWebDriver sha256=97eb7ac4745734bf090198a29a07a42afec95790933dd347e1ef67a0d4b9dcc1",
+    "candidateWasm": {
+     "candidate/rhwp_bg.wasm": "0cb73f70cd98dbef89718534e1bc283f1cb4c200af200703d40b137be1cde956"
+    },
+    "baselineWasm": {
+     "baseline/rhwp_bg.wasm": "ccea3046182be02ebae9383176f9e04c6354aea51cf4b988fe37ae67798fd58e"
+    },
+    "rawSha256": "cc961281db1978a7e20769851f615c2abf6db28cc620e5d3c28ebf29b0341064",
+    "analyzeExit": 0,
+    "analysisRawSha256": "4e60b7eeed7a8c3f7212cf8828f1d19263ab77083b2f5c177bd06a9def79ce19"
+   }
+  },
+  "earlierRun": {
+   "what": "same command before the final persist()/stop() review fix; also DIAGNOSTIC_COMPLETE 33 rows both backends, survivors [] (tracked 12/7)",
+   "rawSha256": {
+    "chrome": "3aead48f8722cb974084f3abaea752fece442641968eab0a61b633299d961837",
+    "webkit": "bc8e6b1cffe57f75ee84754ed2ab1619bd0beaeb0cef87da0ce39deef924e9a3"
+   }
+  }
+ }
+}

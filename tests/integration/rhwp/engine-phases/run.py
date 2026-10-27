@@ -7,13 +7,20 @@ import json
 import math
 import os
 from pathlib import Path
+import shutil
+import signal
 import subprocess
+import sys
 import tempfile
 import threading
 import time
+import uuid
 
 HERE = Path(__file__).resolve().parent
 ROOT = HERE.parents[3]
+# Module constants so failure-path tests can shorten them; the real defaults are unchanged.
+RESULT_TIMEOUT = 240; TERM_TIMEOUT = 10; KILL_TIMEOUT = 10; METADATA_TIMEOUT = 60
+UNAVAILABLE = 'UNAVAILABLE'
 
 
 def validate(result, config=None):
@@ -78,27 +85,150 @@ def validate(result, config=None):
             raise ValueError('resource leak')
 
 
-def main():
+def _stat(pid):
+    """(ppid, pgid, start time, state) of a live /proc entry, or None once the PID is gone."""
+    try: raw = Path(f'/proc/{pid}/stat').read_text()
+    except OSError: return None
+    fields = raw[raw.rindex(')')+2:].split()
+    return int(fields[1]), int(fields[2]), int(fields[19]), fields[0]
+
+
+class Browser:
+    """One launched browser: its own process group plus descendants seen as (pid, start time).
+
+    The leader is reaped only at the very end, so its PGID cannot be reused while signals are sent.
+    A descendant that calls setsid (the WebKit launcher's driver) is recognised by its recorded start
+    time, and is signalled through a pidfd so a reused PID is never touched.
+    """
+    def __init__(self, process):
+        self.process = process; self.tracked = {}
+        self.record = {'pid': process.pid, 'pgid': process.pid, 'leaderExitedBeforeStop': None,
+            'terminateAttempted': False, 'residualTerminateAttempted': False, 'killAttempted': False,
+            'exitCode': None, 'exitSignal': None, 'reaped': False, 'trackedDescendants': 0,
+            'survivors': UNAVAILABLE, 'gracefulExit': False, 'cleanupSucceeded': False, 'errors': []}
+
+    def exited(self):
+        if self.process.returncode is not None: return True
+        try: return os.waitid(os.P_PID, self.process.pid, os.WEXITED | os.WNOHANG | os.WNOWAIT) is not None
+        except ChildProcessError: return True
+
+    def observe(self):
+        try: entries = [int(e.name) for e in Path('/proc').iterdir() if e.name.isdigit()]
+        except OSError as error: self.record['errors'].append('process table: '+str(error)); return
+        table = {pid: info for pid in entries if (info := _stat(pid))}
+        leader = self.process.pid; seen = {leader}; frontier = {leader}
+        while frontier:
+            frontier = {pid for pid, info in table.items() if info[0] in frontier and pid not in seen}; seen |= frontier
+        for pid, info in table.items():
+            if pid != leader and (pid in seen or info[1] == leader): self.tracked.setdefault(pid, info[2])
+        self.record['trackedDescendants'] = len(self.tracked)
+
+    def alive(self):
+        return sorted(pid for pid, start in self.tracked.items()
+                      if (info := _stat(pid)) and info[2] == start and info[3] != 'Z')
+
+    def _send(self, sig, group):
+        if group and not self.record['reaped']:
+            try: os.killpg(self.process.pid, sig)
+            except ProcessLookupError: pass
+            except OSError as error: self.record['errors'].append(f'killpg {sig}: {error}')
+        for pid in self.alive():
+            try: fd = os.pidfd_open(pid)
+            except ProcessLookupError: continue
+            except OSError as error: self.record['errors'].append(f'pidfd {pid}: {error}'); continue
+            try:
+                info = _stat(pid)
+                if info and info[2] == self.tracked[pid]: signal.pidfd_send_signal(fd, sig)
+            except ProcessLookupError: pass
+            except OSError as error: self.record['errors'].append(f'signal {pid} {sig}: {error}')
+            finally: os.close(fd)
+
+    def _wait(self, timeout):
+        deadline = time.monotonic()+timeout
+        while not self.exited() or self.alive():
+            if time.monotonic() > deadline: return False
+            time.sleep(.05)
+        return True
+
+    def stop(self):
+        """Idempotent. Graceful leader SIGTERM first, so the launcher can close its own session."""
+        r = self.record
+        if r['reaped']: return r
+        if not Path('/proc/self/stat').exists(): r['errors'].append('process table unavailable')
+        self.observe(); r['leaderExitedBeforeStop'] = self.exited()
+        if not r['leaderExitedBeforeStop']:
+            r['terminateAttempted'] = True
+            try: self.process.send_signal(signal.SIGTERM)
+            except OSError as error: r['errors'].append('terminate: '+str(error))
+        released = self._wait(TERM_TIMEOUT)
+        if not released and self.exited():  # leader gone, owned descendants remain: ask them too
+            r['residualTerminateAttempted'] = True; self._send(signal.SIGTERM, group=True); released = self._wait(TERM_TIMEOUT)
+        if not released:
+            r['killAttempted'] = True; self._send(signal.SIGKILL, group=True); self._wait(KILL_TIMEOUT)
+        try: self.process.wait(timeout=KILL_TIMEOUT); r['reaped'] = True
+        except subprocess.TimeoutExpired: r['errors'].append('leader not reaped after SIGKILL')
+        code = self.process.returncode
+        if code is not None: r['exitCode'], r['exitSignal'] = (code, None) if code >= 0 else (None, -code)
+        r['survivors'] = self.alive()
+        r['gracefulExit'] = code in (0, -signal.SIGTERM) and not r['killAttempted'] and not r['residualTerminateAttempted']
+        r['cleanupSucceeded'] = r['reaped'] and not r['survivors'] and not r['errors']
+        return r
+
+
+def persist(output, result, attempt_id):
+    """Never replaces an existing file: write a unique sibling, then hard-link it into place."""
+    data = (json.dumps(result, ensure_ascii=False, indent=2)+'\n').encode()
+    pending = output.with_name(f'{output.name}.{attempt_id}.pending'); created = False
+    try:
+        with open(pending, 'xb') as f:
+            created = True; f.write(data); f.flush(); os.fsync(f.fileno())
+    except OSError as error:
+        if created:  # only our own incomplete file; an unrelated file of the same name is left alone
+            try: pending.unlink()
+            except OSError: pass
+        sys.stderr.write(f'EVIDENCE_PERSISTENCE_FAILED {type(error).__name__}: {error}\n{data.decode()}'); return None
+    try: os.link(pending, output)
+    except OSError as error:
+        sys.stderr.write(f'EVIDENCE_PERSISTENCE_FAILED {type(error).__name__}: {error}; record kept at {pending}\n'); return pending
+    try: pending.unlink()
+    except OSError as error: sys.stderr.write(f'evidence written; pending copy not removed: {error}\n')
+    return output
+
+
+def main(argv=None):
     p=argparse.ArgumentParser(description=__doc__)
     for name in ['baseline','phase','chrome','fixtures','output']:p.add_argument('--'+name,type=Path,required=True)
     p.add_argument('--candidate', type=Path)
     p.add_argument('--trials', type=int, choices=[3, 8], default=3)
     p.add_argument('--backend', choices=['chrome', 'webkit'], default='chrome')
-    a=p.parse_args()
-    if a.output.exists():p.error('preserve previous output')
+    p.add_argument('--samples', type=Path, default=ROOT/'external/rhwp/samples', help='rhwp sample root (default: pinned submodule)')
+    a=p.parse_args(argv)
+    # Preflight: nothing launched yet, so a failure here is a usage error without an attempt record.
+    if a.output.exists() or a.output.is_symlink():p.error('preserve previous output')
+    if not a.output.parent.is_dir():p.error('output directory does not exist')
     bases={'baseline':a.baseline.resolve(),'off':a.phase.resolve(),'on':a.phase.resolve()}
     if a.candidate: bases['candidate']=a.candidate.resolve()
     config={'arms':list(bases),'trials':a.trials}
     fixtures={'basic-ko.hwp':a.fixtures/'basic-ko.hwp','basic-ko.hwpx':a.fixtures/'basic-ko.hwpx',
-              'chemical.hwp':ROOT/'external/rhwp/samples/rnote/연구노트(화학).hwp',
-              'asset.hwpx':ROOT/'external/rhwp/samples/issue6031/3249937_asset_management_rules.hwpx'}
+              'chemical.hwp':a.samples/'rnote/연구노트(화학).hwp',
+              'asset.hwpx':a.samples/'issue6031/3249937_asset_management_rules.hwpx'}
     inputs={'harness':Path(__file__),'browser':HERE/'browser.mjs','browserLauncher':a.chrome.resolve(),**fixtures}
     for label,base in bases.items():
+        if not base.is_dir():p.error(f'{label} package directory missing')
         for f in base.rglob('*'):
             if f.is_file():inputs[label+'/'+str(f.relative_to(base))]=f
     hashes=lambda:{k:hashlib.sha256(f.read_bytes()).hexdigest() for k,f in inputs.items()}
+    try: before=hashes()
+    except OSError as error: p.error(f'input unavailable: {error}')
     load_before=os.getloadavg()
-    before=hashes();received=[];complete=threading.Event()
+
+    # Execution attempt: from here every outcome is persisted, failures included.
+    attempt={'attemptId':uuid.uuid4().hex,'stage':'server-start','failures':[],'browserProcess':None,
+             'server':{'started':False,'shutdown':False,'error':None},'receivedResultCount':0,'validated':False,
+             'profileRemoved':None,'validDiagnosticEvidence':False}
+    def fail(category,error):
+        attempt['failures'].append({'stage':attempt['stage'],'category':category,'type':type(error).__name__,'message':str(error)})
+    received=[];complete=threading.Event()
     class Handler(BaseHTTPRequestHandler):
         def log_message(self,*args):pass
         def do_POST(self):
@@ -121,35 +251,79 @@ def main():
                         if f.is_relative_to(base) and f.is_file():data=f.read_bytes();mime='application/wasm' if f.suffix=='.wasm' else 'text/javascript'
             if data is None:self.send_error(404);return
             self.send_response(200);self.send_header('Content-Type',mime);self.end_headers();self.wfile.write(data)
-    server=ThreadingHTTPServer(('127.0.0.1',0),Handler);server.daemon_threads=True
-    thread=threading.Thread(target=server.serve_forever,daemon=True);thread.start();result={}
+    server=thread=browser=profile=log=None;interrupted=None
     try:
-        with tempfile.TemporaryDirectory(prefix='geul-engine-phases-') as profile,tempfile.TemporaryFile(mode='w+') as log:
-            process=subprocess.Popen([str(a.chrome),'--headless=new','--no-sandbox','--disable-gpu','--disable-dev-shm-usage','--disable-background-networking','--disable-component-update','--disable-sync','--user-data-dir='+profile,'http://127.0.0.1:'+str(server.server_port)],stdout=log,stderr=log)
-            try:
-                deadline=time.monotonic()+240
-                while not complete.wait(1):
-                    if process.poll() is not None or time.monotonic()>deadline:raise RuntimeError('no complete browser result')
-                time.sleep(.2)
-                if len(received)!=1:raise ValueError('duplicate completion')
-                result=received[0];validate(result,config)
-            except Exception as error:
-                result=received[0] if received else {'status':'FAIL'};result.update(status='FAIL',validationError=str(error))
-            finally:
-                process.terminate()
-                try:process.wait(timeout=10)
-                except subprocess.TimeoutExpired:process.kill();process.wait(timeout=10)
-                result['browserExitAfterStop']=process.returncode
-                if process.returncode not in (0, -15): result.update(status='FAIL', launcherError='browser launcher failed during shutdown')
-                log.seek(0);result['browserLogTail']=log.read()[-1500:]
-        result.update(system={'loadBefore':load_before,'loadAfter':os.getloadavg(),'logicalCpuCount':os.cpu_count(),'allowedCpuCount':len(os.sched_getaffinity(0))},requestConfig=config,identities=before,executedDependenciesStable=hashes()==before,browserBackend=a.backend,official=False)
-        try: result['browserVersion']=subprocess.check_output([str(a.chrome),'--version'],text=True).strip()
-        except Exception as error: result.update(status='FAIL',browserMetadataError=str(error))
-        if not result['executedDependenciesStable']:result['status']='FAIL'
-        a.output.write_text(json.dumps(result,ensure_ascii=False,indent=2)+'\n')
-        print(result['status'],result.get('validationError'),flush=True)
-        return 0 if result['status']=='DIAGNOSTIC_COMPLETE' else 1
-    finally:server.shutdown();server.server_close();thread.join()
+        server=ThreadingHTTPServer(('127.0.0.1',0),Handler);server.daemon_threads=True
+        thread=threading.Thread(target=server.serve_forever,daemon=True);thread.start();attempt['server']['started']=True
+        attempt['stage']='browser-launch'
+        profile=tempfile.mkdtemp(prefix='geul-engine-phases-');log=tempfile.TemporaryFile(mode='w+')
+        process=subprocess.Popen([str(a.chrome),'--headless=new','--no-sandbox','--disable-gpu','--disable-dev-shm-usage','--disable-background-networking','--disable-component-update','--disable-sync','--user-data-dir='+profile,'http://127.0.0.1:'+str(server.server_port)],stdout=log,stderr=log,start_new_session=True)
+        browser=Browser(process);attempt['browserProcess']=browser.record
+        attempt['stage']='await-result'
+        deadline=time.monotonic()+RESULT_TIMEOUT
+        while not complete.wait(1):
+            browser.observe()
+            if browser.exited():raise RuntimeError('browser exited before reporting')
+            if time.monotonic()>deadline:raise TimeoutError('no browser result before deadline')
+        time.sleep(.2);browser.observe()
+        attempt['stage']='validate'
+        if len(received)!=1:raise ValueError('duplicate completion')
+        if not isinstance(received[0],dict):raise ValueError('browser result is not a JSON object')
+        validate(received[0],config);attempt['validated']=True
+    except Exception as error:
+        fail({'browser-launch':'launch','await-result':'browser-result','validate':'validation'}.get(attempt['stage'],'setup'),error)
+    except BaseException as error:
+        fail('interrupted',error);interrupted=error
+    # Cleanup: each owned resource is released independently; one failure never skips the others.
+    attempt['stage']='cleanup'
+    if browser:
+        try:browser.stop()
+        except Exception as error:fail('browser-cleanup',error)
+    tail=None
+    if log:
+        try:log.seek(0);tail=log.read()[-1500:]
+        except Exception as error:fail('log-collection',error)
+        try:log.close()
+        except Exception as error:fail('log-collection',error)
+    if server:
+        try:
+            server.shutdown();server.server_close();thread.join(timeout=10)
+            attempt['server']['shutdown']=not thread.is_alive()
+            if thread.is_alive():raise RuntimeError('server thread still running')
+        except Exception as error:attempt['server']['error']=str(error);fail('server-cleanup',error)
+    if profile:
+        try:shutil.rmtree(profile);attempt['profileRemoved']=True
+        except Exception as error:attempt['profileRemoved']=False;fail('profile-cleanup',error)
+    attempt['receivedResultCount']=len(received)
+    if len(received)>1 and attempt['validated']:fail('browser-result',ValueError('duplicate completion after validation'))
+    payload=received[0] if received else None
+    result=dict(payload) if isinstance(payload,dict) else {}
+    if payload is not None and not isinstance(payload,dict):result['invalidBrowserResult']=payload
+    result['browserReportedStatus']=payload.get('status',UNAVAILABLE) if isinstance(payload,dict) else UNAVAILABLE
+    attempt['stage']='dependency-recheck';stable=None
+    try:stable=hashes()==before
+    except Exception as error:fail('dependency-recheck',error)
+    if stable is False:fail('dependency-recheck',RuntimeError('executed dependency hashes changed'))
+    attempt['stage']='metadata';version=None
+    try:version=subprocess.check_output([str(a.chrome),'--version'],text=True,timeout=METADATA_TIMEOUT,stderr=subprocess.DEVNULL).strip()
+    except Exception as error:result['browserMetadataError']=str(error);fail('metadata',error)
+    record=browser.record if browser else None
+    if record and not record['cleanupSucceeded']:fail('browser-cleanup',RuntimeError('owned browser processes not fully released'))
+    if record and record['cleanupSucceeded'] and not record['gracefulExit']:
+        result['launcherError']='browser launcher failed during shutdown';fail('browser-cleanup',RuntimeError(result['launcherError']))
+    attempt['stage']='persist'
+    ok=not attempt['failures'] and attempt['validated'] and stable is True and version is not None
+    attempt['validDiagnosticEvidence']=ok
+    result.update(status='DIAGNOSTIC_COMPLETE' if ok else 'FAIL',attempt=attempt,candidate={k:v for k,v in before.items() if k.startswith('candidate/') and k.endswith('.wasm')} or None,
+        browserExitAfterStop=browser.process.returncode if browser else None,
+        browserLogTail=tail,system={'loadBefore':load_before,'loadAfter':os.getloadavg(),'logicalCpuCount':os.cpu_count(),'allowedCpuCount':len(os.sched_getaffinity(0))},
+        requestConfig=config,identities=before,executedDependenciesStable=stable,browserBackend=a.backend,official=False,browserVersion=version)
+    if attempt['failures']:result['validationError']=attempt['failures'][0]['message']
+    written=persist(a.output,result,attempt['attemptId'])
+    print(result['status'],result.get('validationError'),flush=True)
+    if interrupted is not None:raise interrupted
+    if written!=a.output:return 3
+    return 0 if ok else 1
 
 
 if __name__=='__main__':raise SystemExit(main())

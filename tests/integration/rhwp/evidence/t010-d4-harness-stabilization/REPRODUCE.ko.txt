@@ -1,0 +1,34 @@
+재현 (저장소 루트에서, 표준 라이브러리 Python만 사용)
+
+1. 회귀 시험 — 새 checkout에서 그대로 재현 가능(가짜 브라우저·합성 fixture, submodule·브라우저·native 불필요, Linux /proc·pidfd 필요)
+python3 -I -m unittest discover -s tests/integration/rhwp/engine-phases -p 'test_*.py'
+python3 -I -O -m unittest discover -s tests/integration/rhwp/engine-phases -p 'test_*.py'
+기대: 33개 OK. runner 시험은 timeout 상수만 줄이며 실제 기본값(결과 240 s, 종료 10 s, kill 10 s, 메타데이터 60 s)은 바꾸지 않는다.
+
+2. native D4 attribution — 커밋된 입력에서 새 checkout으로 재현 가능
+python3 tests/integration/rhwp/engine-phases/native_attribution.py \
+ --input tests/integration/rhwp/evidence/t010-d4-engine-phase-optimization/final-native-d4.json --output NEW.json
+NEW.json은 native-d4-attribution.json과 같아야 한다(inputSha256으로 입력 확인). 기존 출력은 덮어쓰지 않는다(배타 생성).
+
+3. 증거 크기 — 새 checkout으로 재현 가능(Git object 필요, objectBytesOnDisk는 clone·pack 상태에 따라 달라짐)
+python3 tests/integration/rhwp/engine-phases/evidence_size.py --tree 3b777f1 \
+ --path tests/integration/rhwp/evidence/t010-d4-engine-phase-optimization --output NEW.json
+bytes·class·contentSha256은 evidence-size-3b777f1.json과 같아야 한다.
+
+4. catalog 원본 재검증 — 원본 작업 공간 전용
+3b777f1 변환 전 원본 46개는 커밋하지 않은 .git/t009-special-xml-resource-hardening-raw/*.before-checksum-catalog에만 있다.
+새 checkout에서는 bytes 비교를 재현할 수 없고, 커밋된 checksum-catalog-roundtrip.json의 SHA-256과 decode 구조만 확인할 수 있다.
+
+5. 실제 브라우저 runner smoke — 원본 작업 공간 전용(미커밋 후보 패키지 필요)
+python3 tests/integration/rhwp/engine-phases/run.py --baseline BASELINE99 --phase DEEP99 --candidate FINAL99 --trials 3 \
+ --chrome CHROME --fixtures FIXTURE_DIRECTORY --output NEW_CHROME.json
+WebKit은 --backend webkit --chrome tests/integration/rhwp/engine-phases/webkit-launcher.py와 GEUL_D4_WEBKIT_DRIVER/GEUL_D4_XVFB.
+새 옵션 --samples(기본: external/rhwp/samples, 고정 submodule)는 시험용이며 기본 계약은 같다.
+종료 코드: 0 DIAGNOSTIC_COMPLETE, 1 진단 실패(기록 저장됨), 2 사전 검사 오류(실행 없음·기록 없음), 3 증거 저장 실패
+(<output>.<attemptId>.pending 보존 또는 stderr에 EVIDENCE_PERSISTENCE_FAILED와 전체 기록). raw와 SHA-256은 runner-hardening.json에 있다.
+이 smoke는 성공 경로 호환 확인이며 성능 측정·공식 D4가 아니다.
+
+앞으로의 compact 증거 절차
+- 커밋: 판정·요약·분석, producer/후보 신원(WASM·source SHA-256), 입력 SHA-256 manifest, 정확한 명령, raw 위치와 가용성(local-only 여부).
+- 미커밋: 1 MiB 이상 per-row raw 출력(evidence_size.py class C)은 .git/<task>-raw에 두고 SHA-256만 기록.
+- raw가 로컬 전용이면 새 checkout에서 그 raw로 재분석할 수 있다고 쓰지 않는다. 경로는 정제하고 machine 고유 경로를 커밋하지 않는다.
