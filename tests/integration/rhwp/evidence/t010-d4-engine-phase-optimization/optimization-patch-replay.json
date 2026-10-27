@@ -1,0 +1,45 @@
+{
+  "status": "PASS",
+  "scope": "apply incremental patch to exact e88d source, compare all three changed files",
+  "patchSha256": "9a7e0365db77cf8a74942d52b95bd3af97103a70b40178ca2792a9d070c92e33",
+  "changedFiles": {
+    "src/renderer/layout/text_measurement.rs": {
+      "sha256Catalog": [
+        {
+          "path": "before",
+          "sha256": "d8d40c5aec1868f6198f0f7fdd37f237ee151fe2bfdf7bbdb7424734ab5b27ff"
+        },
+        {
+          "path": "after",
+          "sha256": "a42b0363c240ff99ed818e82b07a2947e590a35188c20eeea99b949f0743906b"
+        }
+      ]
+    },
+    "src/renderer/layout.rs": {
+      "sha256Catalog": [
+        {
+          "path": "before",
+          "sha256": "c4e348d4b6926ce3d8a0b431a0d5b8202d717c5573e62f12725f17ef145f0eac"
+        },
+        {
+          "path": "after",
+          "sha256": "b23d903c1bdb710ed07eb96471dd467f1c29d6228a706b7c88dced2640f2b455"
+        }
+      ]
+    },
+    "src/renderer/composer.rs": {
+      "sha256Catalog": [
+        {
+          "path": "before",
+          "sha256": "22b2bfe0e80332d1696babd6ae413aab42ad778bbb83250ae83dce9902912d7b"
+        },
+        {
+          "path": "after",
+          "sha256": "0a32264aa57e27a8f1b486e0809a67d918f4c26ccdb858b8cef266e3fed2bf60"
+        }
+      ]
+    }
+  },
+  "originalBuildPatchSha256": "0d53ff62b23dfcbb0cd39d2de64f5164cc6aaa3f60d708836a4ecae9186f1dc1",
+  "contextNormalizationSourceReplay": "PASS"
+}

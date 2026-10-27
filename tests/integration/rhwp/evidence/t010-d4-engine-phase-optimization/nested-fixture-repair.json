@@ -1,0 +1,14 @@
+{
+  "scope": "restore unchanged authoritative test fixture directory omitted by copy filter",
+  "files": {
+    "sha256Catalog": [
+      {
+        "path": "issue1949_giant_cell_nested_tables_perf.hwp",
+        "sha256": "ef10261cd29325116028e4f4f3e6be1a72c675eb771bddfd8484e7fe5aa94b4e"
+      }
+    ]
+  },
+  "consumingTest": "wasm_api::tests::test_get_table_bbox_at_page_for_giant_multi_page_cell",
+  "sourceChanged": false,
+  "firstFullRun": "one missing-fixture failure; overall outcome pending"
+}

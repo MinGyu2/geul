@@ -1,0 +1,53 @@
+{
+  "status": "PASS",
+  "scope": "final B staged set after lossless sha256Catalog conversion; security rules unchanged",
+  "checks": {
+    "stagedSensitiveInfo": {
+      "exit": 0,
+      "files": 92,
+      "logSha256": "139793a140edfc02436715f196244739af0a1850d05039ebb347c96d1e0e90eb"
+    },
+    "gitleaksStaged": {
+      "exit": 0,
+      "findings": 0,
+      "logSha256": "8be87a41b562b087bea24fe627acadd4cc979ae2aa63d4e4df4e098026cd79c8"
+    },
+    "securityRegressionUnits": {
+      "exit": 0,
+      "tests": 86,
+      "logSha256": "de31b526096f6366c423b850b38babd58e906126c4d864b6101c10b3ef988699"
+    },
+    "trackedSensitiveInfo": {
+      "exit": 0,
+      "files": 2011,
+      "logSha256": "7b9f7d0790d7a43298086f1bd5752b3a0c7fe711fa40654d84d3f44677e6294a"
+    },
+    "historySensitiveInfo": {
+      "exit": 0,
+      "fileVersions": 2816,
+      "logSha256": "b99c68b44919490111f99961f0fdf68f434fc06389c2864fd645bf76db14ce0b"
+    },
+    "earlierGitleaksStagedBeforeCatalog": {
+      "findings": 559,
+      "rule": "generic-api-key",
+      "classification": "SHA-256 checksums; see secret-scan-checksum-review.json"
+    },
+    "catalogRoundTrip": {
+      "files": 46,
+      "decodedEqual": 46,
+      "recordedShaMatch": 46
+    },
+    "engineHarnessUnits": {
+      "exit": 0,
+      "tests": 6
+    }
+  },
+  "stagedScope": {
+    "onlyAllowedPrefixes": true,
+    "gitlinks": 0,
+    "checkpointStaged": false,
+    "diffCachedCheck": "PASS"
+  },
+  "frozenLegacyTestSha256": "3ad85522b1f1a61f3910a4f7e4c5b43968080baed7d4cb7ab19cd2b612235fb7",
+  "remoteCI": "NOT RUN"
+}

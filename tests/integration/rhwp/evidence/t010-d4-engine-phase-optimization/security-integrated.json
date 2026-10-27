@@ -1,0 +1,6 @@
+{
+  "exit": 0,
+  "scope": "security86/all1992/history/Gitleaks106commits; final evidence additions checked at staging/commit",
+  "logSha256": "da0485632053ad4fdb744e027cdc36c0e1ed0eaa9a941596e65139f6684090a4",
+  "outputTail": "::group::검사기 회귀 테스트\n......................................................................................\n----------------------------------------------------------------------\nRan 86 tests in 56.187s\n\nOK\n[통과] 검사기 회귀 테스트\n::endgroup::\n::group::추적 파일 민감정보 검사\n민감정보 검사 통과 (추적 파일 1992개)\n[통과] 추적 파일 민감정보 검사\n::endgroup::\n::group::Git 이력 민감정보 검사\n민감정보 검사 통과 (전체 Git 이력, 검사한 (파일 버전, 경로) 2816개)\n[통과] Git 이력 민감정보 검사\n::endgroup::\nversion is set by build process\n::group::Gitleaks 전체 이력 검사\n2:57PM INF 106 commits scanned.\n2:57PM INF scanned ~169477073 bytes (169.48 MB) in 19.2s\n2:57PM INF no leaks found\n[통과] Gitleaks 전체 이력 검사\n::endgroup::\n모든 보안 검사 통과\n"
+}

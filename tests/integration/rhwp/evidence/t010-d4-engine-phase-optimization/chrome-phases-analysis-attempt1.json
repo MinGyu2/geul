@@ -1,0 +1,2804 @@
+{
+  "inputSha256": "98229fd9cc9be0514b6cec6f18a15419cf7929ec2ebfb9f7d56a16f89ead27bc",
+  "official": false,
+  "scope": "real-time Chrome diagnostic, three trials; wall time includes instrumentation, not CPU; first pass cold, subsequent natural caches",
+  "nestedAccounting": "selfWallMs subtracts direct-child interval union; never sum inclusive parents and children",
+  "rows": [
+    {
+      "sample": "basic-ko.hwp",
+      "page": 0,
+      "medianWallMs": {
+        "baseline": 5.9000000059604645,
+        "off": 5.200000002980232,
+        "on": 6.299999997019768
+      },
+      "disabledInstrumentationDeltaMs": [
+        -49.79999999701977,
+        -0.7000000029802322,
+        -1.4901161193847656e-08
+      ],
+      "enabledInstrumentationDeltaMs": [
+        -59.00000001490116,
+        0.29999999701976776,
+        2.2999999970197678
+      ],
+      "trials": [
+        {
+          "trial": 0,
+          "phases": {
+            "layout.pageTree.inclusive": {
+              "inclusiveWallMs": 1.2000000029802322,
+              "selfWallMs": 1.2000000029802322,
+              "calls": 1
+            },
+            "tree.layer.construct": {
+              "inclusiveWallMs": 0.09999999403953552,
+              "selfWallMs": 0.09999999403953552,
+              "calls": 1
+            },
+            "tree.cache.storeClone": {
+              "inclusiveWallMs": 0.09999999403953552,
+              "selfWallMs": 0.09999999403953552,
+              "calls": 1
+            },
+            "tree.build.inclusive": {
+              "inclusiveWallMs": 1.5,
+              "selfWallMs": 0.10000000894069672,
+              "calls": 1
+            },
+            "poll.tree": {
+              "inclusiveWallMs": 1.5,
+              "selfWallMs": 0,
+              "calls": 1
+            },
+            "poll.scratch.allocate": {
+              "inclusiveWallMs": 0.20000000298023224,
+              "selfWallMs": 0.20000000298023224,
+              "calls": 1
+            },
+            "poll.replay": {
+              "inclusiveWallMs": 2.4000000059604645,
+              "selfWallMs": 2.4000000059604645,
+              "calls": 1
+            },
+            "poll.validate": {
+              "inclusiveWallMs": 0,
+              "selfWallMs": 0,
+              "calls": 1
+            },
+            "poll.backup.readback": {
+              "inclusiveWallMs": 0,
+              "selfWallMs": 0,
+              "calls": 1
+            },
+            "poll.validate.afterBackup": {
+              "inclusiveWallMs": 0,
+              "selfWallMs": 0,
+              "calls": 1
+            },
+            "poll.publish.atomic": {
+              "inclusiveWallMs": 1.5,
+              "selfWallMs": 1.5,
+              "calls": 1
+            },
+            "poll.total": {
+              "inclusiveWallMs": 6.199999988079071,
+              "selfWallMs": 0.5999999791383743,
+              "calls": 1
+            }
+          }
+        },
+        {
+          "trial": 1,
+          "phases": {
+            "layout.pageTree.inclusive": {
+              "inclusiveWallMs": 1.0999999940395355,
+              "selfWallMs": 1.0999999940395355,
+              "calls": 1
+            },
+            "tree.layer.construct": {
+              "inclusiveWallMs": 0.09999999403953552,
+              "selfWallMs": 0.09999999403953552,
+              "calls": 1
+            },
+            "tree.cache.storeClone": {
+              "inclusiveWallMs": 0,
+              "selfWallMs": 0,
+              "calls": 1
+            },
+            "tree.build.inclusive": {
+              "inclusiveWallMs": 1.199999988079071,
+              "selfWallMs": 0,
+              "calls": 1
+            },
+            "poll.tree": {
+              "inclusiveWallMs": 1.199999988079071,
+              "selfWallMs": 0,
+              "calls": 1
+            },
+            "poll.scratch.allocate": {
+              "inclusiveWallMs": 0,
+              "selfWallMs": 0,
+              "calls": 1
+            },
+            "poll.replay": {
+              "inclusiveWallMs": 2.0999999940395355,
+              "selfWallMs": 2.0999999940395355,
+              "calls": 1
+            },
+            "poll.validate": {
+              "inclusiveWallMs": 0,
+              "selfWallMs": 0,
+              "calls": 1
+            },
+            "poll.backup.readback": {
+              "inclusiveWallMs": 1.1000000089406967,
+              "selfWallMs": 1.1000000089406967,
+              "calls": 1
+            },
+            "poll.validate.afterBackup": {
+              "inclusiveWallMs": 0,
+              "selfWallMs": 0,
+              "calls": 1
+            },
+            "poll.publish.atomic": {
+              "inclusiveWallMs": 1,
+              "selfWallMs": 1,
+              "calls": 1
+            },
+            "poll.total": {
+              "inclusiveWallMs": 5.5,
+              "selfWallMs": 0.10000000894069672,
+              "calls": 1
+            }
+          }
+        },
+        {
+          "trial": 2,
+          "phases": {
+            "layout.pageTree.inclusive": {
+              "inclusiveWallMs": 1.4000000059604645,
+              "selfWallMs": 1.4000000059604645,
+              "calls": 1
+            },
+            "tree.layer.construct": {
+              "inclusiveWallMs": 0.20000000298023224,
+              "selfWallMs": 0.20000000298023224,
+              "calls": 1
+            },
+            "tree.cache.storeClone": {
+              "inclusiveWallMs": 0,
+              "selfWallMs": 0,
+              "calls": 1
+            },
+            "tree.build.inclusive": {
+              "inclusiveWallMs": 1.7000000029802322,
+              "selfWallMs": 0.09999999403953552,
+              "calls": 1
+            },
+            "poll.tree": {
+              "inclusiveWallMs": 1.7000000029802322,
+              "selfWallMs": 0,
+              "calls": 1
+            },
+            "poll.scratch.allocate": {
+              "inclusiveWallMs": 0.09999999403953552,
+              "selfWallMs": 0.09999999403953552,
+              "calls": 1
+            },
+            "poll.replay": {
+              "inclusiveWallMs": 3.4000000059604645,
+              "selfWallMs": 3.4000000059604645,
+              "calls": 1
+            },
+            "poll.validate": {
+              "inclusiveWallMs": 0.09999999403953552,
+              "selfWallMs": 0.09999999403953552,
+              "calls": 1
+            },
+            "poll.backup.readback": {
+              "inclusiveWallMs": 1.300000011920929,
+              "selfWallMs": 1.300000011920929,
+              "calls": 1
+            },
+            "poll.validate.afterBackup": {
+              "inclusiveWallMs": 0,
+              "selfWallMs": 0,
+              "calls": 1
+            },
+            "poll.publish.atomic": {
+              "inclusiveWallMs": 0.5999999940395355,
+              "selfWallMs": 0.5999999940395355,
+              "calls": 1
+            },
+            "poll.total": {
+              "inclusiveWallMs": 7.399999991059303,
+              "selfWallMs": 0.19999998807907104,
+              "calls": 1
+            }
+          }
+        }
+      ]
+    },
+    {
+      "sample": "basic-ko.hwpx",
+      "page": 0,
+      "medianWallMs": {
+        "baseline": 5.799999997019768,
+        "off": 6.0999999940395355,
+        "on": 5.9000000059604645
+      },
+      "disabledInstrumentationDeltaMs": [
+        0.29999999701976776,
+        0.5,
+        0.29999999701976776
+      ],
+      "enabledInstrumentationDeltaMs": [
+        -1.0999999940395355,
+        0.30000001192092896,
+        -0.19999998807907104
+      ],
+      "trials": [
+        {
+          "trial": 0,
+          "phases": {
+            "layout.pageTree.inclusive": {
+              "inclusiveWallMs": 0.8999999910593033,
+              "selfWallMs": 0.8999999910593033,
+              "calls": 1
+            },
+            "tree.layer.construct": {
+              "inclusiveWallMs": 0,
+              "selfWallMs": 0,
+              "calls": 1
+            },
+            "tree.cache.storeClone": {
+              "inclusiveWallMs": 0.09999999403953552,
+              "selfWallMs": 0.09999999403953552,
+              "calls": 1
+            },
+            "tree.build.inclusive": {
+              "inclusiveWallMs": 1.0999999940395355,
+              "selfWallMs": 0.10000000894069672,
+              "calls": 1
+            },
+            "poll.tree": {
+              "inclusiveWallMs": 1.0999999940395355,
+              "selfWallMs": 0,
+              "calls": 1
+            },
+            "poll.scratch.allocate": {
+              "inclusiveWallMs": 0.10000000894069672,
+              "selfWallMs": 0.10000000894069672,
+              "calls": 1
+            },
+            "poll.replay": {
+              "inclusiveWallMs": 2,
+              "selfWallMs": 2,
+              "calls": 1
+            },
+            "poll.validate": {
+              "inclusiveWallMs": 0,
+              "selfWallMs": 0,
+              "calls": 1
+            },
+            "poll.backup.readback": {
+              "inclusiveWallMs": 0.09999999403953552,
+              "selfWallMs": 0.09999999403953552,
+              "calls": 1
+            },
+            "poll.validate.afterBackup": {
+              "inclusiveWallMs": 0,
+              "selfWallMs": 0,
+              "calls": 1
+            },
+            "poll.publish.atomic": {
+              "inclusiveWallMs": 1.5999999940395355,
+              "selfWallMs": 1.5999999940395355,
+              "calls": 1
+            },
+            "poll.total": {
+              "inclusiveWallMs": 5.100000008940697,
+              "selfWallMs": 0.20000001788139343,
+              "calls": 1
+            }
+          }
+        },
+        {
+          "trial": 1,
+          "phases": {
+            "layout.pageTree.inclusive": {
+              "inclusiveWallMs": 0.5999999940395355,
+              "selfWallMs": 0.5999999940395355,
+              "calls": 1
+            },
+            "tree.layer.construct": {
+              "inclusiveWallMs": 0.10000000894069672,
+              "selfWallMs": 0.10000000894069672,
+              "calls": 1
+            },
+            "tree.cache.storeClone": {
+              "inclusiveWallMs": 0,
+              "selfWallMs": 0,
+              "calls": 1
+            },
+            "tree.build.inclusive": {
+              "inclusiveWallMs": 0.7000000029802322,
+              "selfWallMs": 0,
+              "calls": 1
+            },
+            "poll.tree": {
+              "inclusiveWallMs": 0.7000000029802322,
+              "selfWallMs": 0,
+              "calls": 1
+            },
+            "poll.scratch.allocate": {
+              "inclusiveWallMs": 0.09999999403953552,
+              "selfWallMs": 0.09999999403953552,
+              "calls": 1
+            },
+            "poll.replay": {
+              "inclusiveWallMs": 3.2000000029802322,
+              "selfWallMs": 3.2000000029802322,
+              "calls": 1
+            },
+            "poll.validate": {
+              "inclusiveWallMs": 0,
+              "selfWallMs": 0,
+              "calls": 1
+            },
+            "poll.backup.readback": {
+              "inclusiveWallMs": 1.5,
+              "selfWallMs": 1.5,
+              "calls": 1
+            },
+            "poll.validate.afterBackup": {
+              "inclusiveWallMs": 0,
+              "selfWallMs": 0,
+              "calls": 1
+            },
+            "poll.publish.atomic": {
+              "inclusiveWallMs": 0.5,
+              "selfWallMs": 0.5,
+              "calls": 1
+            },
+            "poll.total": {
+              "inclusiveWallMs": 6.100000008940697,
+              "selfWallMs": 0.10000000894069672,
+              "calls": 1
+            }
+          }
+        },
+        {
+          "trial": 2,
+          "phases": {
+            "layout.pageTree.inclusive": {
+              "inclusiveWallMs": 0.8999999910593033,
+              "selfWallMs": 0.8999999910593033,
+              "calls": 1
+            },
+            "tree.layer.construct": {
+              "inclusiveWallMs": 0.20000000298023224,
+              "selfWallMs": 0.20000000298023224,
+              "calls": 1
+            },
+            "tree.cache.storeClone": {
+              "inclusiveWallMs": 0.10000000894069672,
+              "selfWallMs": 0.10000000894069672,
+              "calls": 1
+            },
+            "tree.build.inclusive": {
+              "inclusiveWallMs": 1.2000000029802322,
+              "selfWallMs": 0,
+              "calls": 1
+            },
+            "poll.tree": {
+              "inclusiveWallMs": 1.2000000029802322,
+              "selfWallMs": 0,
+              "calls": 1
+            },
+            "poll.scratch.allocate": {
+              "inclusiveWallMs": 0.09999999403953552,
+              "selfWallMs": 0.09999999403953552,
+              "calls": 1
+            },
+            "poll.replay": {
+              "inclusiveWallMs": 2.5999999940395355,
+              "selfWallMs": 2.5999999940395355,
+              "calls": 1
+            },
+            "poll.validate": {
+              "inclusiveWallMs": 0,
+              "selfWallMs": 0,
+              "calls": 1
+            },
+            "poll.backup.readback": {
+              "inclusiveWallMs": 1.2000000029802322,
+              "selfWallMs": 1.2000000029802322,
+              "calls": 1
+            },
+            "poll.validate.afterBackup": {
+              "inclusiveWallMs": 0.10000000894069672,
+              "selfWallMs": 0.10000000894069672,
+              "calls": 1
+            },
+            "poll.publish.atomic": {
+              "inclusiveWallMs": 0.5,
+              "selfWallMs": 0.5,
+              "calls": 1
+            },
+            "poll.total": {
+              "inclusiveWallMs": 5.799999997019768,
+              "selfWallMs": 0.09999999403953552,
+              "calls": 1
+            }
+          }
+        }
+      ]
+    },
+    {
+      "sample": "chemical.hwp",
+      "page": 0,
+      "medianWallMs": {
+        "baseline": 7.100000008940697,
+        "off": 7.0999999940395355,
+        "on": 6.600000008940697
+      },
+      "disabledInstrumentationDeltaMs": [
+        -1.4999999850988388,
+        -0.4000000059604645,
+        0.3999999910593033
+      ],
+      "enabledInstrumentationDeltaMs": [
+        -29.00000001490116,
+        -0.9000000059604645,
+        -0.4999999850988388
+      ],
+      "trials": [
+        {
+          "trial": 0,
+          "phases": {
+            "layout.pageTree.inclusive": {
+              "inclusiveWallMs": 0.5999999940395355,
+              "selfWallMs": 0.5999999940395355,
+              "calls": 1
+            },
+            "tree.layer.construct": {
+              "inclusiveWallMs": 0.10000000894069672,
+              "selfWallMs": 0.10000000894069672,
+              "calls": 1
+            },
+            "tree.cache.storeClone": {
+              "inclusiveWallMs": 0.09999999403953552,
+              "selfWallMs": 0.09999999403953552,
+              "calls": 1
+            },
+            "tree.build.inclusive": {
+              "inclusiveWallMs": 0.7999999970197678,
+              "selfWallMs": 0,
+              "calls": 1
+            },
+            "poll.tree": {
+              "inclusiveWallMs": 0.7999999970197678,
+              "selfWallMs": 0,
+              "calls": 1
+            },
+            "poll.scratch.allocate": {
+              "inclusiveWallMs": 0.09999999403953552,
+              "selfWallMs": 0.09999999403953552,
+              "calls": 1
+            },
+            "image.codec": {
+              "inclusiveWallMs": 57.1000000089407,
+              "selfWallMs": 57.1000000089407,
+              "calls": 1
+            },
+            "image.rgba": {
+              "inclusiveWallMs": 10.400000005960464,
+              "selfWallMs": 10.400000005960464,
+              "calls": 1
+            },
+            "image.imageData": {
+              "inclusiveWallMs": 0.10000000894069672,
+              "selfWallMs": 0.10000000894069672,
+              "calls": 1
+            },
+            "image.canvas.allocate": {
+              "inclusiveWallMs": 0,
+              "selfWallMs": 0,
+              "calls": 1
+            },
+            "image.canvas.putImageData": {
+              "inclusiveWallMs": 9.700000002980232,
+              "selfWallMs": 9.700000002980232,
+              "calls": 1
+            },
+            "image.prepare.total": {
+              "inclusiveWallMs": 77.6000000089407,
+              "selfWallMs": 0.29999998211860657,
+              "calls": 1
+            },
+            "resource.decoded.lookup": {
+              "inclusiveWallMs": 77.6000000089407,
+              "selfWallMs": 0,
+              "calls": 1
+            },
+            "resource.image.draw.inclusive": {
+              "inclusiveWallMs": 79.5,
+              "selfWallMs": 1.8999999910593033,
+              "calls": 1
+            },
+            "poll.replay": {
+              "inclusiveWallMs": 79.90000000596046,
+              "selfWallMs": 0.4000000059604645,
+              "calls": 1
+            },
+            "poll.validate": {
+              "inclusiveWallMs": 0.09999999403953552,
+              "selfWallMs": 0.09999999403953552,
+              "calls": 1
+            },
+            "poll.backup.readback": {
+              "inclusiveWallMs": 0.20000000298023224,
+              "selfWallMs": 0.20000000298023224,
+              "calls": 1
+            },
+            "poll.validate.afterBackup": {
+              "inclusiveWallMs": 0,
+              "selfWallMs": 0,
+              "calls": 1
+            },
+            "poll.publish.atomic": {
+              "inclusiveWallMs": 2.7000000029802322,
+              "selfWallMs": 2.7000000029802322,
+              "calls": 1
+            },
+            "poll.total": {
+              "inclusiveWallMs": 83.8999999910593,
+              "selfWallMs": 0.09999999403953552,
+              "calls": 1
+            }
+          }
+        },
+        {
+          "trial": 1,
+          "phases": {
+            "layout.pageTree.inclusive": {
+              "inclusiveWallMs": 0.4000000059604645,
+              "selfWallMs": 0.4000000059604645,
+              "calls": 1
+            },
+            "tree.layer.construct": {
+              "inclusiveWallMs": 0.09999999403953552,
+              "selfWallMs": 0.09999999403953552,
+              "calls": 1
+            },
+            "tree.cache.storeClone": {
+              "inclusiveWallMs": 0.09999999403953552,
+              "selfWallMs": 0.09999999403953552,
+              "calls": 1
+            },
+            "tree.build.inclusive": {
+              "inclusiveWallMs": 0.5999999940395355,
+              "selfWallMs": 0,
+              "calls": 1
+            },
+            "poll.tree": {
+              "inclusiveWallMs": 0.5999999940395355,
+              "selfWallMs": 0,
+              "calls": 1
+            },
+            "poll.scratch.allocate": {
+              "inclusiveWallMs": 0,
+              "selfWallMs": 0,
+              "calls": 1
+            },
+            "resource.decoded.lookup": {
+              "inclusiveWallMs": 0,
+              "selfWallMs": 0,
+              "calls": 1
+            },
+            "resource.image.draw.inclusive": {
+              "inclusiveWallMs": 1.7000000029802322,
+              "selfWallMs": 1.7000000029802322,
+              "calls": 1
+            },
+            "poll.replay": {
+              "inclusiveWallMs": 2.800000011920929,
+              "selfWallMs": 1.1000000089406967,
+              "calls": 1
+            },
+            "poll.validate": {
+              "inclusiveWallMs": 0.09999999403953552,
+              "selfWallMs": 0.09999999403953552,
+              "calls": 1
+            },
+            "poll.backup.readback": {
+              "inclusiveWallMs": 0.7999999970197678,
+              "selfWallMs": 0.7999999970197678,
+              "calls": 1
+            },
+            "poll.validate.afterBackup": {
+              "inclusiveWallMs": 0,
+              "selfWallMs": 0,
+              "calls": 1
+            },
+            "poll.publish.atomic": {
+              "inclusiveWallMs": 1.4000000059604645,
+              "selfWallMs": 1.4000000059604645,
+              "calls": 1
+            },
+            "poll.total": {
+              "inclusiveWallMs": 5.799999997019768,
+              "selfWallMs": 0.09999999403953552,
+              "calls": 1
+            }
+          }
+        },
+        {
+          "trial": 2,
+          "phases": {
+            "layout.pageTree.inclusive": {
+              "inclusiveWallMs": 0.6000000089406967,
+              "selfWallMs": 0.6000000089406967,
+              "calls": 1
+            },
+            "tree.layer.construct": {
+              "inclusiveWallMs": 0.29999999701976776,
+              "selfWallMs": 0.29999999701976776,
+              "calls": 1
+            },
+            "tree.cache.storeClone": {
+              "inclusiveWallMs": 0,
+              "selfWallMs": 0,
+              "calls": 1
+            },
+            "tree.build.inclusive": {
+              "inclusiveWallMs": 0.9000000059604645,
+              "selfWallMs": 0,
+              "calls": 1
+            },
+            "poll.tree": {
+              "inclusiveWallMs": 0.9000000059604645,
+              "selfWallMs": 0,
+              "calls": 1
+            },
+            "poll.scratch.allocate": {
+              "inclusiveWallMs": 0,
+              "selfWallMs": 0,
+              "calls": 1
+            },
+            "resource.decoded.lookup": {
+              "inclusiveWallMs": 0,
+              "selfWallMs": 0,
+              "calls": 1
+            },
+            "resource.image.draw.inclusive": {
+              "inclusiveWallMs": 2.2000000029802322,
+              "selfWallMs": 2.2000000029802322,
+              "calls": 1
+            },
+            "poll.replay": {
+              "inclusiveWallMs": 2.7000000029802322,
+              "selfWallMs": 0.5,
+              "calls": 1
+            },
+            "poll.validate": {
+              "inclusiveWallMs": 0,
+              "selfWallMs": 0,
+              "calls": 1
+            },
+            "poll.backup.readback": {
+              "inclusiveWallMs": 1.199999988079071,
+              "selfWallMs": 1.199999988079071,
+              "calls": 1
+            },
+            "poll.validate.afterBackup": {
+              "inclusiveWallMs": 0,
+              "selfWallMs": 0,
+              "calls": 1
+            },
+            "poll.publish.atomic": {
+              "inclusiveWallMs": 1.800000011920929,
+              "selfWallMs": 1.800000011920929,
+              "calls": 1
+            },
+            "poll.total": {
+              "inclusiveWallMs": 6.600000008940697,
+              "selfWallMs": 0,
+              "calls": 1
+            }
+          }
+        }
+      ]
+    },
+    {
+      "sample": "chemical.hwp",
+      "page": 14,
+      "medianWallMs": {
+        "baseline": 4.100000008940697,
+        "off": 5.4000000059604645,
+        "on": 4
+      },
+      "disabledInstrumentationDeltaMs": [
+        0.3999999910593033,
+        0.6000000089406967,
+        1.2999999970197678
+      ],
+      "enabledInstrumentationDeltaMs": [
+        -5.399999991059303,
+        -0.20000000298023224,
+        -1.7000000029802322
+      ],
+      "trials": [
+        {
+          "trial": 0,
+          "phases": {
+            "layout.pageTree.inclusive": {
+              "inclusiveWallMs": 0.29999999701976776,
+              "selfWallMs": 0.29999999701976776,
+              "calls": 1
+            },
+            "tree.layer.construct": {
+              "inclusiveWallMs": 0,
+              "selfWallMs": 0,
+              "calls": 1
+            },
+            "tree.cache.storeClone": {
+              "inclusiveWallMs": 0,
+              "selfWallMs": 0,
+              "calls": 1
+            },
+            "tree.build.inclusive": {
+              "inclusiveWallMs": 0.29999999701976776,
+              "selfWallMs": 0,
+              "calls": 1
+            },
+            "poll.tree": {
+              "inclusiveWallMs": 0.29999999701976776,
+              "selfWallMs": 0,
+              "calls": 1
+            },
+            "poll.scratch.allocate": {
+              "inclusiveWallMs": 0.20000000298023224,
+              "selfWallMs": 0.20000000298023224,
+              "calls": 1
+            },
+            "image.codec": {
+              "inclusiveWallMs": 7.299999997019768,
+              "selfWallMs": 7.299999997019768,
+              "calls": 1
+            },
+            "image.rgba": {
+              "inclusiveWallMs": 5.200000002980232,
+              "selfWallMs": 5.200000002980232,
+              "calls": 1
+            },
+            "image.imageData": {
+              "inclusiveWallMs": 0,
+              "selfWallMs": 0,
+              "calls": 1
+            },
+            "image.canvas.allocate": {
+              "inclusiveWallMs": 0,
+              "selfWallMs": 0,
+              "calls": 1
+            },
+            "image.canvas.putImageData": {
+              "inclusiveWallMs": 7.4000000059604645,
+              "selfWallMs": 7.4000000059604645,
+              "calls": 1
+            },
+            "image.prepare.total": {
+              "inclusiveWallMs": 20,
+              "selfWallMs": 0.09999999403953552,
+              "calls": 1
+            },
+            "resource.decoded.lookup": {
+              "inclusiveWallMs": 20,
+              "selfWallMs": 0,
+              "calls": 1
+            },
+            "resource.image.draw.inclusive": {
+              "inclusiveWallMs": 20.299999997019768,
+              "selfWallMs": 0.29999999701976776,
+              "calls": 1
+            },
+            "poll.replay": {
+              "inclusiveWallMs": 20.69999998807907,
+              "selfWallMs": 0.3999999910593033,
+              "calls": 1
+            },
+            "poll.validate": {
+              "inclusiveWallMs": 0,
+              "selfWallMs": 0,
+              "calls": 1
+            },
+            "poll.backup.readback": {
+              "inclusiveWallMs": 0.9000000059604645,
+              "selfWallMs": 0.9000000059604645,
+              "calls": 1
+            },
+            "poll.validate.afterBackup": {
+              "inclusiveWallMs": 0,
+              "selfWallMs": 0,
+              "calls": 1
+            },
+            "poll.publish.atomic": {
+              "inclusiveWallMs": 1.2999999970197678,
+              "selfWallMs": 1.2999999970197678,
+              "calls": 1
+            },
+            "poll.total": {
+              "inclusiveWallMs": 23.5,
+              "selfWallMs": 0.10000000894069672,
+              "calls": 1
+            }
+          }
+        },
+        {
+          "trial": 1,
+          "phases": {
+            "layout.pageTree.inclusive": {
+              "inclusiveWallMs": 0.19999998807907104,
+              "selfWallMs": 0.19999998807907104,
+              "calls": 1
+            },
+            "tree.layer.construct": {
+              "inclusiveWallMs": 0,
+              "selfWallMs": 0,
+              "calls": 1
+            },
+            "tree.cache.storeClone": {
+              "inclusiveWallMs": 0,
+              "selfWallMs": 0,
+              "calls": 1
+            },
+            "tree.build.inclusive": {
+              "inclusiveWallMs": 0.19999998807907104,
+              "selfWallMs": 0,
+              "calls": 1
+            },
+            "poll.tree": {
+              "inclusiveWallMs": 0.19999998807907104,
+              "selfWallMs": 0,
+              "calls": 1
+            },
+            "poll.scratch.allocate": {
+              "inclusiveWallMs": 0,
+              "selfWallMs": 0,
+              "calls": 1
+            },
+            "resource.decoded.lookup": {
+              "inclusiveWallMs": 0.09999999403953552,
+              "selfWallMs": 0.09999999403953552,
+              "calls": 1
+            },
+            "resource.image.draw.inclusive": {
+              "inclusiveWallMs": 0.20000000298023224,
+              "selfWallMs": 0.10000000894069672,
+              "calls": 1
+            },
+            "poll.replay": {
+              "inclusiveWallMs": 1.4000000059604645,
+              "selfWallMs": 1.2000000029802322,
+              "calls": 1
+            },
+            "poll.validate": {
+              "inclusiveWallMs": 0,
+              "selfWallMs": 0,
+              "calls": 1
+            },
+            "poll.backup.readback": {
+              "inclusiveWallMs": 0.9000000059604645,
+              "selfWallMs": 0.9000000059604645,
+              "calls": 1
+            },
+            "poll.validate.afterBackup": {
+              "inclusiveWallMs": 0,
+              "selfWallMs": 0,
+              "calls": 1
+            },
+            "poll.publish.atomic": {
+              "inclusiveWallMs": 1.3999999910593033,
+              "selfWallMs": 1.3999999910593033,
+              "calls": 1
+            },
+            "poll.total": {
+              "inclusiveWallMs": 4,
+              "selfWallMs": 0.10000000894069672,
+              "calls": 1
+            }
+          }
+        },
+        {
+          "trial": 2,
+          "phases": {
+            "layout.pageTree.inclusive": {
+              "inclusiveWallMs": 0.20000000298023224,
+              "selfWallMs": 0.20000000298023224,
+              "calls": 1
+            },
+            "tree.layer.construct": {
+              "inclusiveWallMs": 0,
+              "selfWallMs": 0,
+              "calls": 1
+            },
+            "tree.cache.storeClone": {
+              "inclusiveWallMs": 0,
+              "selfWallMs": 0,
+              "calls": 1
+            },
+            "tree.build.inclusive": {
+              "inclusiveWallMs": 0.20000000298023224,
+              "selfWallMs": 0,
+              "calls": 1
+            },
+            "poll.tree": {
+              "inclusiveWallMs": 0.20000000298023224,
+              "selfWallMs": 0,
+              "calls": 1
+            },
+            "poll.scratch.allocate": {
+              "inclusiveWallMs": 0.09999999403953552,
+              "selfWallMs": 0.09999999403953552,
+              "calls": 1
+            },
+            "resource.decoded.lookup": {
+              "inclusiveWallMs": 0,
+              "selfWallMs": 0,
+              "calls": 1
+            },
+            "resource.image.draw.inclusive": {
+              "inclusiveWallMs": 0.20000000298023224,
+              "selfWallMs": 0.20000000298023224,
+              "calls": 1
+            },
+            "poll.replay": {
+              "inclusiveWallMs": 0.6000000089406967,
+              "selfWallMs": 0.4000000059604645,
+              "calls": 1
+            },
+            "poll.validate": {
+              "inclusiveWallMs": 0,
+              "selfWallMs": 0,
+              "calls": 1
+            },
+            "poll.backup.readback": {
+              "inclusiveWallMs": 1.2000000029802322,
+              "selfWallMs": 1.2000000029802322,
+              "calls": 1
+            },
+            "poll.validate.afterBackup": {
+              "inclusiveWallMs": 0,
+              "selfWallMs": 0,
+              "calls": 1
+            },
+            "poll.publish.atomic": {
+              "inclusiveWallMs": 1.5,
+              "selfWallMs": 1.5,
+              "calls": 1
+            },
+            "poll.total": {
+              "inclusiveWallMs": 3.7000000029802322,
+              "selfWallMs": 0.09999999403953552,
+              "calls": 1
+            }
+          }
+        }
+      ]
+    },
+    {
+      "sample": "chemical.hwp",
+      "page": 15,
+      "medianWallMs": {
+        "baseline": 4.4000000059604645,
+        "off": 4,
+        "on": 3.5999999940395355
+      },
+      "disabledInstrumentationDeltaMs": [
+        0.20000000298023224,
+        -0.4000000059604645,
+        -0.29999999701976776
+      ],
+      "enabledInstrumentationDeltaMs": [
+        -0.4000000059604645,
+        -0.5,
+        0.3999999910593033
+      ],
+      "trials": [
+        {
+          "trial": 0,
+          "phases": {
+            "layout.pageTree.inclusive": {
+              "inclusiveWallMs": 0.20000000298023224,
+              "selfWallMs": 0.20000000298023224,
+              "calls": 1
+            },
+            "tree.layer.construct": {
+              "inclusiveWallMs": 0.09999999403953552,
+              "selfWallMs": 0.09999999403953552,
+              "calls": 1
+            },
+            "tree.cache.storeClone": {
+              "inclusiveWallMs": 0,
+              "selfWallMs": 0,
+              "calls": 1
+            },
+            "tree.build.inclusive": {
+              "inclusiveWallMs": 0.29999999701976776,
+              "selfWallMs": 0,
+              "calls": 1
+            },
+            "poll.tree": {
+              "inclusiveWallMs": 0.29999999701976776,
+              "selfWallMs": 0,
+              "calls": 1
+            },
+            "poll.scratch.allocate": {
+              "inclusiveWallMs": 0,
+              "selfWallMs": 0,
+              "calls": 1
+            },
+            "image.codec": {
+              "inclusiveWallMs": 5.600000008940697,
+              "selfWallMs": 5.600000008940697,
+              "calls": 1
+            },
+            "image.rgba": {
+              "inclusiveWallMs": 5,
+              "selfWallMs": 5,
+              "calls": 1
+            },
+            "image.imageData": {
+              "inclusiveWallMs": 0,
+              "selfWallMs": 0,
+              "calls": 1
+            },
+            "image.canvas.allocate": {
+              "inclusiveWallMs": 0.09999999403953552,
+              "selfWallMs": 0.09999999403953552,
+              "calls": 1
+            },
+            "image.canvas.putImageData": {
+              "inclusiveWallMs": 7.200000002980232,
+              "selfWallMs": 7.200000002980232,
+              "calls": 1
+            },
+            "image.prepare.total": {
+              "inclusiveWallMs": 17.900000005960464,
+              "selfWallMs": 0,
+              "calls": 1
+            },
+            "resource.decoded.lookup": {
+              "inclusiveWallMs": 17.900000005960464,
+              "selfWallMs": 0,
+              "calls": 1
+            },
+            "resource.image.draw.inclusive": {
+              "inclusiveWallMs": 18.099999994039536,
+              "selfWallMs": 0.19999998807907104,
+              "calls": 1
+            },
+            "poll.replay": {
+              "inclusiveWallMs": 18.5,
+              "selfWallMs": 0.4000000059604645,
+              "calls": 1
+            },
+            "poll.validate": {
+              "inclusiveWallMs": 0,
+              "selfWallMs": 0,
+              "calls": 1
+            },
+            "poll.backup.readback": {
+              "inclusiveWallMs": 0.9000000059604645,
+              "selfWallMs": 0.9000000059604645,
+              "calls": 1
+            },
+            "poll.validate.afterBackup": {
+              "inclusiveWallMs": 0,
+              "selfWallMs": 0,
+              "calls": 1
+            },
+            "poll.publish.atomic": {
+              "inclusiveWallMs": 1.2999999970197678,
+              "selfWallMs": 1.2999999970197678,
+              "calls": 1
+            },
+            "poll.total": {
+              "inclusiveWallMs": 21.099999994039536,
+              "selfWallMs": 0.09999999403953552,
+              "calls": 1
+            }
+          }
+        },
+        {
+          "trial": 1,
+          "phases": {
+            "layout.pageTree.inclusive": {
+              "inclusiveWallMs": 0.10000000894069672,
+              "selfWallMs": 0.10000000894069672,
+              "calls": 1
+            },
+            "tree.layer.construct": {
+              "inclusiveWallMs": 0.09999999403953552,
+              "selfWallMs": 0.09999999403953552,
+              "calls": 1
+            },
+            "tree.cache.storeClone": {
+              "inclusiveWallMs": 0,
+              "selfWallMs": 0,
+              "calls": 1
+            },
+            "tree.build.inclusive": {
+              "inclusiveWallMs": 0.29999999701976776,
+              "selfWallMs": 0.09999999403953552,
+              "calls": 1
+            },
+            "poll.tree": {
+              "inclusiveWallMs": 0.29999999701976776,
+              "selfWallMs": 0,
+              "calls": 1
+            },
+            "poll.scratch.allocate": {
+              "inclusiveWallMs": 0.09999999403953552,
+              "selfWallMs": 0.09999999403953552,
+              "calls": 1
+            },
+            "resource.decoded.lookup": {
+              "inclusiveWallMs": 0,
+              "selfWallMs": 0,
+              "calls": 1
+            },
+            "resource.image.draw.inclusive": {
+              "inclusiveWallMs": 0.09999999403953552,
+              "selfWallMs": 0.09999999403953552,
+              "calls": 1
+            },
+            "poll.replay": {
+              "inclusiveWallMs": 0.5,
+              "selfWallMs": 0.4000000059604645,
+              "calls": 1
+            },
+            "poll.validate": {
+              "inclusiveWallMs": 0,
+              "selfWallMs": 0,
+              "calls": 1
+            },
+            "poll.backup.readback": {
+              "inclusiveWallMs": 1,
+              "selfWallMs": 1,
+              "calls": 1
+            },
+            "poll.validate.afterBackup": {
+              "inclusiveWallMs": 0,
+              "selfWallMs": 0,
+              "calls": 1
+            },
+            "poll.publish.atomic": {
+              "inclusiveWallMs": 1.6000000089406967,
+              "selfWallMs": 1.6000000089406967,
+              "calls": 1
+            },
+            "poll.total": {
+              "inclusiveWallMs": 3.5,
+              "selfWallMs": 0,
+              "calls": 1
+            }
+          }
+        },
+        {
+          "trial": 2,
+          "phases": {
+            "layout.pageTree.inclusive": {
+              "inclusiveWallMs": 0.20000000298023224,
+              "selfWallMs": 0.20000000298023224,
+              "calls": 1
+            },
+            "tree.layer.construct": {
+              "inclusiveWallMs": 0.09999999403953552,
+              "selfWallMs": 0.09999999403953552,
+              "calls": 1
+            },
+            "tree.cache.storeClone": {
+              "inclusiveWallMs": 0,
+              "selfWallMs": 0,
+              "calls": 1
+            },
+            "tree.build.inclusive": {
+              "inclusiveWallMs": 0.29999999701976776,
+              "selfWallMs": 0,
+              "calls": 1
+            },
+            "poll.tree": {
+              "inclusiveWallMs": 0.29999999701976776,
+              "selfWallMs": 0,
+              "calls": 1
+            },
+            "poll.scratch.allocate": {
+              "inclusiveWallMs": 0,
+              "selfWallMs": 0,
+              "calls": 1
+            },
+            "resource.decoded.lookup": {
+              "inclusiveWallMs": 0,
+              "selfWallMs": 0,
+              "calls": 1
+            },
+            "resource.image.draw.inclusive": {
+              "inclusiveWallMs": 0.20000000298023224,
+              "selfWallMs": 0.20000000298023224,
+              "calls": 1
+            },
+            "poll.replay": {
+              "inclusiveWallMs": 0.5,
+              "selfWallMs": 0.29999999701976776,
+              "calls": 1
+            },
+            "poll.validate": {
+              "inclusiveWallMs": 0,
+              "selfWallMs": 0,
+              "calls": 1
+            },
+            "poll.backup.readback": {
+              "inclusiveWallMs": 1.1000000089406967,
+              "selfWallMs": 1.1000000089406967,
+              "calls": 1
+            },
+            "poll.validate.afterBackup": {
+              "inclusiveWallMs": 0,
+              "selfWallMs": 0,
+              "calls": 1
+            },
+            "poll.publish.atomic": {
+              "inclusiveWallMs": 1.5999999940395355,
+              "selfWallMs": 1.5999999940395355,
+              "calls": 1
+            },
+            "poll.total": {
+              "inclusiveWallMs": 3.5999999940395355,
+              "selfWallMs": 0.09999999403953552,
+              "calls": 1
+            }
+          }
+        }
+      ]
+    },
+    {
+      "sample": "chemical.hwp",
+      "page": 16,
+      "medianWallMs": {
+        "baseline": 85,
+        "off": 76,
+        "on": 75.5
+      },
+      "disabledInstrumentationDeltaMs": [
+        -7.0999999940395355,
+        -9,
+        -3.8999999910593033
+      ],
+      "enabledInstrumentationDeltaMs": [
+        -28.400000005960464,
+        -0.5,
+        -0.5
+      ],
+      "trials": [
+        {
+          "trial": 0,
+          "phases": {
+            "layout.pageTree.inclusive": {
+              "inclusiveWallMs": 44.5,
+              "selfWallMs": 44.5,
+              "calls": 1
+            },
+            "tree.layer.construct": {
+              "inclusiveWallMs": 6.100000008940697,
+              "selfWallMs": 6.100000008940697,
+              "calls": 1
+            },
+            "tree.cache.storeClone": {
+              "inclusiveWallMs": 0.699999988079071,
+              "selfWallMs": 0.699999988079071,
+              "calls": 1
+            },
+            "tree.build.inclusive": {
+              "inclusiveWallMs": 51.29999999701977,
+              "selfWallMs": 0,
+              "calls": 1
+            },
+            "poll.tree": {
+              "inclusiveWallMs": 51.29999999701977,
+              "selfWallMs": 0,
+              "calls": 1
+            },
+            "poll.scratch.allocate": {
+              "inclusiveWallMs": 0.09999999403953552,
+              "selfWallMs": 0.09999999403953552,
+              "calls": 1
+            },
+            "poll.replay": {
+              "inclusiveWallMs": 22.599999994039536,
+              "selfWallMs": 22.599999994039536,
+              "calls": 1
+            },
+            "poll.validate": {
+              "inclusiveWallMs": 0.10000000894069672,
+              "selfWallMs": 0.10000000894069672,
+              "calls": 1
+            },
+            "poll.backup.readback": {
+              "inclusiveWallMs": 2.0999999940395355,
+              "selfWallMs": 2.0999999940395355,
+              "calls": 1
+            },
+            "poll.validate.afterBackup": {
+              "inclusiveWallMs": 0,
+              "selfWallMs": 0,
+              "calls": 1
+            },
+            "poll.publish.atomic": {
+              "inclusiveWallMs": 4,
+              "selfWallMs": 4,
+              "calls": 1
+            },
+            "poll.total": {
+              "inclusiveWallMs": 81.70000000298023,
+              "selfWallMs": 1.5000000149011612,
+              "calls": 1
+            }
+          }
+        },
+        {
+          "trial": 1,
+          "phases": {
+            "layout.pageTree.inclusive": {
+              "inclusiveWallMs": 46.20000000298023,
+              "selfWallMs": 46.20000000298023,
+              "calls": 1
+            },
+            "tree.layer.construct": {
+              "inclusiveWallMs": 6.199999988079071,
+              "selfWallMs": 6.199999988079071,
+              "calls": 1
+            },
+            "tree.cache.storeClone": {
+              "inclusiveWallMs": 0.5999999940395355,
+              "selfWallMs": 0.5999999940395355,
+              "calls": 1
+            },
+            "tree.build.inclusive": {
+              "inclusiveWallMs": 53.599999994039536,
+              "selfWallMs": 0.6000000089406967,
+              "calls": 1
+            },
+            "poll.tree": {
+              "inclusiveWallMs": 53.599999994039536,
+              "selfWallMs": 0,
+              "calls": 1
+            },
+            "poll.scratch.allocate": {
+              "inclusiveWallMs": 0.09999999403953552,
+              "selfWallMs": 0.09999999403953552,
+              "calls": 1
+            },
+            "poll.replay": {
+              "inclusiveWallMs": 16.5,
+              "selfWallMs": 16.5,
+              "calls": 1
+            },
+            "poll.validate": {
+              "inclusiveWallMs": 0,
+              "selfWallMs": 0,
+              "calls": 1
+            },
+            "poll.backup.readback": {
+              "inclusiveWallMs": 1,
+              "selfWallMs": 1,
+              "calls": 1
+            },
+            "poll.validate.afterBackup": {
+              "inclusiveWallMs": 0,
+              "selfWallMs": 0,
+              "calls": 1
+            },
+            "poll.publish.atomic": {
+              "inclusiveWallMs": 3.5999999940395355,
+              "selfWallMs": 3.5999999940395355,
+              "calls": 1
+            },
+            "poll.total": {
+              "inclusiveWallMs": 75.5,
+              "selfWallMs": 0.7000000178813934,
+              "calls": 1
+            }
+          }
+        },
+        {
+          "trial": 2,
+          "phases": {
+            "layout.pageTree.inclusive": {
+              "inclusiveWallMs": 35.5,
+              "selfWallMs": 35.5,
+              "calls": 1
+            },
+            "tree.layer.construct": {
+              "inclusiveWallMs": 3.5999999940395355,
+              "selfWallMs": 3.5999999940395355,
+              "calls": 1
+            },
+            "tree.cache.storeClone": {
+              "inclusiveWallMs": 0.7000000029802322,
+              "selfWallMs": 0.7000000029802322,
+              "calls": 1
+            },
+            "tree.build.inclusive": {
+              "inclusiveWallMs": 39.900000005960464,
+              "selfWallMs": 0.10000000894069672,
+              "calls": 1
+            },
+            "poll.tree": {
+              "inclusiveWallMs": 39.900000005960464,
+              "selfWallMs": 0,
+              "calls": 1
+            },
+            "poll.scratch.allocate": {
+              "inclusiveWallMs": 0.09999999403953552,
+              "selfWallMs": 0.09999999403953552,
+              "calls": 1
+            },
+            "poll.replay": {
+              "inclusiveWallMs": 14.800000011920929,
+              "selfWallMs": 14.800000011920929,
+              "calls": 1
+            },
+            "poll.validate": {
+              "inclusiveWallMs": 0,
+              "selfWallMs": 0,
+              "calls": 1
+            },
+            "poll.backup.readback": {
+              "inclusiveWallMs": 1.0999999940395355,
+              "selfWallMs": 1.0999999940395355,
+              "calls": 1
+            },
+            "poll.validate.afterBackup": {
+              "inclusiveWallMs": 0,
+              "selfWallMs": 0,
+              "calls": 1
+            },
+            "poll.publish.atomic": {
+              "inclusiveWallMs": 3.4000000059604645,
+              "selfWallMs": 3.4000000059604645,
+              "calls": 1
+            },
+            "poll.total": {
+              "inclusiveWallMs": 59.80000001192093,
+              "selfWallMs": 0.5,
+              "calls": 1
+            }
+          }
+        }
+      ]
+    },
+    {
+      "sample": "chemical.hwp",
+      "page": 19,
+      "medianWallMs": {
+        "baseline": 3.9000000059604645,
+        "off": 5.299999997019768,
+        "on": 4.699999988079071
+      },
+      "disabledInstrumentationDeltaMs": [
+        1.2000000029802322,
+        1.3999999910593033,
+        0.20000000298023224
+      ],
+      "enabledInstrumentationDeltaMs": [
+        -0.7000000178813934,
+        -0.6000000089406967,
+        0.29999999701976776
+      ],
+      "trials": [
+        {
+          "trial": 0,
+          "phases": {
+            "layout.pageTree.inclusive": {
+              "inclusiveWallMs": 0.29999999701976776,
+              "selfWallMs": 0.29999999701976776,
+              "calls": 1
+            },
+            "tree.layer.construct": {
+              "inclusiveWallMs": 0.10000000894069672,
+              "selfWallMs": 0.10000000894069672,
+              "calls": 1
+            },
+            "tree.cache.storeClone": {
+              "inclusiveWallMs": 0,
+              "selfWallMs": 0,
+              "calls": 1
+            },
+            "tree.build.inclusive": {
+              "inclusiveWallMs": 0.4000000059604645,
+              "selfWallMs": 0,
+              "calls": 1
+            },
+            "poll.tree": {
+              "inclusiveWallMs": 0.4000000059604645,
+              "selfWallMs": 0,
+              "calls": 1
+            },
+            "poll.scratch.allocate": {
+              "inclusiveWallMs": 0.09999999403953552,
+              "selfWallMs": 0.09999999403953552,
+              "calls": 1
+            },
+            "image.codec": {
+              "inclusiveWallMs": 7.4000000059604645,
+              "selfWallMs": 7.4000000059604645,
+              "calls": 1
+            },
+            "image.rgba": {
+              "inclusiveWallMs": 7.299999997019768,
+              "selfWallMs": 7.299999997019768,
+              "calls": 1
+            },
+            "image.imageData": {
+              "inclusiveWallMs": 0.09999999403953552,
+              "selfWallMs": 0.09999999403953552,
+              "calls": 1
+            },
+            "image.canvas.allocate": {
+              "inclusiveWallMs": 0.10000000894069672,
+              "selfWallMs": 0.10000000894069672,
+              "calls": 1
+            },
+            "image.canvas.putImageData": {
+              "inclusiveWallMs": 6.0999999940395355,
+              "selfWallMs": 6.0999999940395355,
+              "calls": 1
+            },
+            "image.prepare.total": {
+              "inclusiveWallMs": 21,
+              "selfWallMs": 0,
+              "calls": 1
+            },
+            "resource.decoded.lookup": {
+              "inclusiveWallMs": 21.099999994039536,
+              "selfWallMs": 0.09999999403953552,
+              "calls": 1
+            },
+            "resource.image.draw.inclusive": {
+              "inclusiveWallMs": 21.200000002980232,
+              "selfWallMs": 0.10000000894069672,
+              "calls": 1
+            },
+            "poll.replay": {
+              "inclusiveWallMs": 21.900000005960464,
+              "selfWallMs": 0.7000000029802322,
+              "calls": 1
+            },
+            "poll.validate": {
+              "inclusiveWallMs": 0,
+              "selfWallMs": 0,
+              "calls": 1
+            },
+            "poll.backup.readback": {
+              "inclusiveWallMs": 1,
+              "selfWallMs": 1,
+              "calls": 1
+            },
+            "poll.validate.afterBackup": {
+              "inclusiveWallMs": 0,
+              "selfWallMs": 0,
+              "calls": 1
+            },
+            "poll.publish.atomic": {
+              "inclusiveWallMs": 1.3999999910593033,
+              "selfWallMs": 1.3999999910593033,
+              "calls": 1
+            },
+            "poll.total": {
+              "inclusiveWallMs": 24.799999997019768,
+              "selfWallMs": 0,
+              "calls": 1
+            }
+          }
+        },
+        {
+          "trial": 1,
+          "phases": {
+            "layout.pageTree.inclusive": {
+              "inclusiveWallMs": 0.3999999910593033,
+              "selfWallMs": 0.3999999910593033,
+              "calls": 1
+            },
+            "tree.layer.construct": {
+              "inclusiveWallMs": 0.10000000894069672,
+              "selfWallMs": 0.10000000894069672,
+              "calls": 1
+            },
+            "tree.cache.storeClone": {
+              "inclusiveWallMs": 0,
+              "selfWallMs": 0,
+              "calls": 1
+            },
+            "tree.build.inclusive": {
+              "inclusiveWallMs": 0.5,
+              "selfWallMs": 0,
+              "calls": 1
+            },
+            "poll.tree": {
+              "inclusiveWallMs": 0.5,
+              "selfWallMs": 0,
+              "calls": 1
+            },
+            "poll.scratch.allocate": {
+              "inclusiveWallMs": 0,
+              "selfWallMs": 0,
+              "calls": 1
+            },
+            "resource.decoded.lookup": {
+              "inclusiveWallMs": 0,
+              "selfWallMs": 0,
+              "calls": 1
+            },
+            "resource.image.draw.inclusive": {
+              "inclusiveWallMs": 0.10000000894069672,
+              "selfWallMs": 0.10000000894069672,
+              "calls": 1
+            },
+            "poll.replay": {
+              "inclusiveWallMs": 0.7999999970197678,
+              "selfWallMs": 0.699999988079071,
+              "calls": 1
+            },
+            "poll.validate": {
+              "inclusiveWallMs": 0,
+              "selfWallMs": 0,
+              "calls": 1
+            },
+            "poll.backup.readback": {
+              "inclusiveWallMs": 1.2000000029802322,
+              "selfWallMs": 1.2000000029802322,
+              "calls": 1
+            },
+            "poll.validate.afterBackup": {
+              "inclusiveWallMs": 0,
+              "selfWallMs": 0,
+              "calls": 1
+            },
+            "poll.publish.atomic": {
+              "inclusiveWallMs": 1.9000000059604645,
+              "selfWallMs": 1.9000000059604645,
+              "calls": 1
+            },
+            "poll.total": {
+              "inclusiveWallMs": 4.699999988079071,
+              "selfWallMs": 0.29999998211860657,
+              "calls": 1
+            }
+          }
+        },
+        {
+          "trial": 2,
+          "phases": {
+            "layout.pageTree.inclusive": {
+              "inclusiveWallMs": 0.29999999701976776,
+              "selfWallMs": 0.29999999701976776,
+              "calls": 1
+            },
+            "tree.layer.construct": {
+              "inclusiveWallMs": 0.09999999403953552,
+              "selfWallMs": 0.09999999403953552,
+              "calls": 1
+            },
+            "tree.cache.storeClone": {
+              "inclusiveWallMs": 0,
+              "selfWallMs": 0,
+              "calls": 1
+            },
+            "tree.build.inclusive": {
+              "inclusiveWallMs": 0.3999999910593033,
+              "selfWallMs": 0,
+              "calls": 1
+            },
+            "poll.tree": {
+              "inclusiveWallMs": 0.3999999910593033,
+              "selfWallMs": 0,
+              "calls": 1
+            },
+            "poll.scratch.allocate": {
+              "inclusiveWallMs": 0,
+              "selfWallMs": 0,
+              "calls": 1
+            },
+            "resource.decoded.lookup": {
+              "inclusiveWallMs": 0,
+              "selfWallMs": 0,
+              "calls": 1
+            },
+            "resource.image.draw.inclusive": {
+              "inclusiveWallMs": 0.10000000894069672,
+              "selfWallMs": 0.10000000894069672,
+              "calls": 1
+            },
+            "poll.replay": {
+              "inclusiveWallMs": 0.6000000089406967,
+              "selfWallMs": 0.5,
+              "calls": 1
+            },
+            "poll.validate": {
+              "inclusiveWallMs": 0,
+              "selfWallMs": 0,
+              "calls": 1
+            },
+            "poll.backup.readback": {
+              "inclusiveWallMs": 1.199999988079071,
+              "selfWallMs": 1.199999988079071,
+              "calls": 1
+            },
+            "poll.validate.afterBackup": {
+              "inclusiveWallMs": 0,
+              "selfWallMs": 0,
+              "calls": 1
+            },
+            "poll.publish.atomic": {
+              "inclusiveWallMs": 1.7000000029802322,
+              "selfWallMs": 1.7000000029802322,
+              "calls": 1
+            },
+            "poll.total": {
+              "inclusiveWallMs": 3.8999999910593033,
+              "selfWallMs": 0,
+              "calls": 1
+            }
+          }
+        }
+      ]
+    },
+    {
+      "sample": "chemical.hwp",
+      "page": 20,
+      "medianWallMs": {
+        "baseline": 10.100000008940697,
+        "off": 11.700000002980232,
+        "on": 12.800000011920929
+      },
+      "disabledInstrumentationDeltaMs": [
+        13.899999991059303,
+        -1.4901161193847656e-08,
+        2.000000014901161
+      ],
+      "enabledInstrumentationDeltaMs": [
+        -0.7999999970197678,
+        -1.0,
+        1.1000000089406967
+      ],
+      "trials": [
+        {
+          "trial": 0,
+          "phases": {
+            "layout.pageTree.inclusive": {
+              "inclusiveWallMs": 1,
+              "selfWallMs": 1,
+              "calls": 1
+            },
+            "tree.layer.construct": {
+              "inclusiveWallMs": 0.3999999910593033,
+              "selfWallMs": 0.3999999910593033,
+              "calls": 1
+            },
+            "tree.cache.storeClone": {
+              "inclusiveWallMs": 0.10000000894069672,
+              "selfWallMs": 0.10000000894069672,
+              "calls": 1
+            },
+            "tree.build.inclusive": {
+              "inclusiveWallMs": 1.5,
+              "selfWallMs": 0,
+              "calls": 1
+            },
+            "poll.tree": {
+              "inclusiveWallMs": 1.5,
+              "selfWallMs": 0,
+              "calls": 1
+            },
+            "poll.scratch.allocate": {
+              "inclusiveWallMs": 0.09999999403953552,
+              "selfWallMs": 0.09999999403953552,
+              "calls": 1
+            },
+            "image.codec": {
+              "inclusiveWallMs": 102.5,
+              "selfWallMs": 102.5,
+              "calls": 1
+            },
+            "image.rgba": {
+              "inclusiveWallMs": 18.099999994039536,
+              "selfWallMs": 18.099999994039536,
+              "calls": 1
+            },
+            "image.imageData": {
+              "inclusiveWallMs": 0,
+              "selfWallMs": 0,
+              "calls": 1
+            },
+            "image.canvas.allocate": {
+              "inclusiveWallMs": 0.09999999403953552,
+              "selfWallMs": 0.09999999403953552,
+              "calls": 1
+            },
+            "image.canvas.putImageData": {
+              "inclusiveWallMs": 12.600000008940697,
+              "selfWallMs": 12.600000008940697,
+              "calls": 1
+            },
+            "image.prepare.total": {
+              "inclusiveWallMs": 133.29999999701977,
+              "selfWallMs": 0,
+              "calls": 1
+            },
+            "resource.decoded.lookup": {
+              "inclusiveWallMs": 133.40000000596046,
+              "selfWallMs": 0.10000000894069672,
+              "calls": 1
+            },
+            "resource.image.draw.inclusive": {
+              "inclusiveWallMs": 137.5,
+              "selfWallMs": 4.0999999940395355,
+              "calls": 1
+            },
+            "poll.replay": {
+              "inclusiveWallMs": 139.29999999701977,
+              "selfWallMs": 1.7999999970197678,
+              "calls": 1
+            },
+            "poll.validate": {
+              "inclusiveWallMs": 0.10000000894069672,
+              "selfWallMs": 0.10000000894069672,
+              "calls": 1
+            },
+            "poll.backup.readback": {
+              "inclusiveWallMs": 0.7999999970197678,
+              "selfWallMs": 0.7999999970197678,
+              "calls": 1
+            },
+            "poll.validate.afterBackup": {
+              "inclusiveWallMs": 0,
+              "selfWallMs": 0,
+              "calls": 1
+            },
+            "poll.publish.atomic": {
+              "inclusiveWallMs": 0,
+              "selfWallMs": 0,
+              "calls": 1
+            },
+            "poll.total": {
+              "inclusiveWallMs": 141.8999999910593,
+              "selfWallMs": 0.09999999403953552,
+              "calls": 1
+            }
+          }
+        },
+        {
+          "trial": 1,
+          "phases": {
+            "layout.pageTree.inclusive": {
+              "inclusiveWallMs": 1.5999999940395355,
+              "selfWallMs": 1.5999999940395355,
+              "calls": 1
+            },
+            "tree.layer.construct": {
+              "inclusiveWallMs": 0.30000001192092896,
+              "selfWallMs": 0.30000001192092896,
+              "calls": 1
+            },
+            "tree.cache.storeClone": {
+              "inclusiveWallMs": 0.19999998807907104,
+              "selfWallMs": 0.19999998807907104,
+              "calls": 1
+            },
+            "tree.build.inclusive": {
+              "inclusiveWallMs": 2.0999999940395355,
+              "selfWallMs": 0,
+              "calls": 1
+            },
+            "poll.tree": {
+              "inclusiveWallMs": 2.2000000029802322,
+              "selfWallMs": 0.10000000894069672,
+              "calls": 1
+            },
+            "poll.scratch.allocate": {
+              "inclusiveWallMs": 0.09999999403953552,
+              "selfWallMs": 0.09999999403953552,
+              "calls": 1
+            },
+            "resource.decoded.lookup": {
+              "inclusiveWallMs": 0.09999999403953552,
+              "selfWallMs": 0.09999999403953552,
+              "calls": 1
+            },
+            "resource.image.draw.inclusive": {
+              "inclusiveWallMs": 3.7000000029802322,
+              "selfWallMs": 3.6000000089406967,
+              "calls": 1
+            },
+            "poll.replay": {
+              "inclusiveWallMs": 5.5,
+              "selfWallMs": 1.7999999970197678,
+              "calls": 1
+            },
+            "poll.validate": {
+              "inclusiveWallMs": 0,
+              "selfWallMs": 0,
+              "calls": 1
+            },
+            "poll.backup.readback": {
+              "inclusiveWallMs": 1.2000000029802322,
+              "selfWallMs": 1.2000000029802322,
+              "calls": 1
+            },
+            "poll.validate.afterBackup": {
+              "inclusiveWallMs": 0,
+              "selfWallMs": 0,
+              "calls": 1
+            },
+            "poll.publish.atomic": {
+              "inclusiveWallMs": 0,
+              "selfWallMs": 0,
+              "calls": 1
+            },
+            "poll.total": {
+              "inclusiveWallMs": 9.099999994039536,
+              "selfWallMs": 0.09999999403953552,
+              "calls": 1
+            }
+          }
+        },
+        {
+          "trial": 2,
+          "phases": {
+            "layout.pageTree.inclusive": {
+              "inclusiveWallMs": 1.5999999940395355,
+              "selfWallMs": 1.5999999940395355,
+              "calls": 1
+            },
+            "tree.layer.construct": {
+              "inclusiveWallMs": 0.5,
+              "selfWallMs": 0.5,
+              "calls": 1
+            },
+            "tree.cache.storeClone": {
+              "inclusiveWallMs": 0.20000000298023224,
+              "selfWallMs": 0.20000000298023224,
+              "calls": 1
+            },
+            "tree.build.inclusive": {
+              "inclusiveWallMs": 2.2999999970197678,
+              "selfWallMs": 0,
+              "calls": 1
+            },
+            "poll.tree": {
+              "inclusiveWallMs": 2.2999999970197678,
+              "selfWallMs": 0,
+              "calls": 1
+            },
+            "poll.scratch.allocate": {
+              "inclusiveWallMs": 0.20000000298023224,
+              "selfWallMs": 0.20000000298023224,
+              "calls": 1
+            },
+            "resource.decoded.lookup": {
+              "inclusiveWallMs": 0.10000000894069672,
+              "selfWallMs": 0.10000000894069672,
+              "calls": 1
+            },
+            "resource.image.draw.inclusive": {
+              "inclusiveWallMs": 5,
+              "selfWallMs": 4.899999991059303,
+              "calls": 1
+            },
+            "poll.replay": {
+              "inclusiveWallMs": 8.599999994039536,
+              "selfWallMs": 3.5999999940395355,
+              "calls": 1
+            },
+            "poll.validate": {
+              "inclusiveWallMs": 0,
+              "selfWallMs": 0,
+              "calls": 1
+            },
+            "poll.backup.readback": {
+              "inclusiveWallMs": 1.2999999970197678,
+              "selfWallMs": 1.2999999970197678,
+              "calls": 1
+            },
+            "poll.validate.afterBackup": {
+              "inclusiveWallMs": 0,
+              "selfWallMs": 0,
+              "calls": 1
+            },
+            "poll.publish.atomic": {
+              "inclusiveWallMs": 0.20000000298023224,
+              "selfWallMs": 0.20000000298023224,
+              "calls": 1
+            },
+            "poll.total": {
+              "inclusiveWallMs": 12.700000002980232,
+              "selfWallMs": 0.10000000894069672,
+              "calls": 1
+            }
+          }
+        }
+      ]
+    },
+    {
+      "sample": "chemical.hwp",
+      "page": 21,
+      "medianWallMs": {
+        "baseline": 5.799999997019768,
+        "off": 6.5999999940395355,
+        "on": 7.0999999940395355
+      },
+      "disabledInstrumentationDeltaMs": [
+        1.4999999850988388,
+        -0.6000000238418579,
+        0.7999999970197678
+      ],
+      "enabledInstrumentationDeltaMs": [
+        1.5000000149011612,
+        0.20000000298023224,
+        0.5
+      ],
+      "trials": [
+        {
+          "trial": 0,
+          "phases": {
+            "layout.pageTree.inclusive": {
+              "inclusiveWallMs": 0.6000000089406967,
+              "selfWallMs": 0.6000000089406967,
+              "calls": 1
+            },
+            "tree.layer.construct": {
+              "inclusiveWallMs": 0.09999999403953552,
+              "selfWallMs": 0.09999999403953552,
+              "calls": 1
+            },
+            "tree.cache.storeClone": {
+              "inclusiveWallMs": 0,
+              "selfWallMs": 0,
+              "calls": 1
+            },
+            "tree.build.inclusive": {
+              "inclusiveWallMs": 0.7000000029802322,
+              "selfWallMs": 0,
+              "calls": 1
+            },
+            "poll.tree": {
+              "inclusiveWallMs": 0.7000000029802322,
+              "selfWallMs": 0,
+              "calls": 1
+            },
+            "poll.scratch.allocate": {
+              "inclusiveWallMs": 0.09999999403953552,
+              "selfWallMs": 0.09999999403953552,
+              "calls": 1
+            },
+            "image.codec": {
+              "inclusiveWallMs": 16,
+              "selfWallMs": 16,
+              "calls": 1
+            },
+            "image.rgba": {
+              "inclusiveWallMs": 2.4000000059604645,
+              "selfWallMs": 2.4000000059604645,
+              "calls": 1
+            },
+            "image.imageData": {
+              "inclusiveWallMs": 0,
+              "selfWallMs": 0,
+              "calls": 1
+            },
+            "image.canvas.allocate": {
+              "inclusiveWallMs": 0.09999999403953552,
+              "selfWallMs": 0.09999999403953552,
+              "calls": 1
+            },
+            "image.canvas.putImageData": {
+              "inclusiveWallMs": 3.5999999940395355,
+              "selfWallMs": 3.5999999940395355,
+              "calls": 1
+            },
+            "image.prepare.total": {
+              "inclusiveWallMs": 22.099999994039536,
+              "selfWallMs": 0,
+              "calls": 1
+            },
+            "resource.decoded.lookup": {
+              "inclusiveWallMs": 22.400000005960464,
+              "selfWallMs": 0.30000001192092896,
+              "calls": 1
+            },
+            "resource.image.draw.inclusive": {
+              "inclusiveWallMs": 23.5,
+              "selfWallMs": 1.0999999940395355,
+              "calls": 1
+            },
+            "poll.replay": {
+              "inclusiveWallMs": 24.100000008940697,
+              "selfWallMs": 0.6000000089406967,
+              "calls": 1
+            },
+            "poll.validate": {
+              "inclusiveWallMs": 0,
+              "selfWallMs": 0,
+              "calls": 1
+            },
+            "poll.backup.readback": {
+              "inclusiveWallMs": 1,
+              "selfWallMs": 1,
+              "calls": 1
+            },
+            "poll.validate.afterBackup": {
+              "inclusiveWallMs": 0,
+              "selfWallMs": 0,
+              "calls": 1
+            },
+            "poll.publish.atomic": {
+              "inclusiveWallMs": 1.5,
+              "selfWallMs": 1.5,
+              "calls": 1
+            },
+            "poll.total": {
+              "inclusiveWallMs": 27.600000008940697,
+              "selfWallMs": 0.20000000298023224,
+              "calls": 1
+            }
+          }
+        },
+        {
+          "trial": 1,
+          "phases": {
+            "layout.pageTree.inclusive": {
+              "inclusiveWallMs": 0.5,
+              "selfWallMs": 0.5,
+              "calls": 1
+            },
+            "tree.layer.construct": {
+              "inclusiveWallMs": 0,
+              "selfWallMs": 0,
+              "calls": 1
+            },
+            "tree.cache.storeClone": {
+              "inclusiveWallMs": 0,
+              "selfWallMs": 0,
+              "calls": 1
+            },
+            "tree.build.inclusive": {
+              "inclusiveWallMs": 0.5,
+              "selfWallMs": 0,
+              "calls": 1
+            },
+            "poll.tree": {
+              "inclusiveWallMs": 0.5,
+              "selfWallMs": 0,
+              "calls": 1
+            },
+            "poll.scratch.allocate": {
+              "inclusiveWallMs": 0.10000000894069672,
+              "selfWallMs": 0.10000000894069672,
+              "calls": 1
+            },
+            "resource.decoded.lookup": {
+              "inclusiveWallMs": 0,
+              "selfWallMs": 0,
+              "calls": 1
+            },
+            "resource.image.draw.inclusive": {
+              "inclusiveWallMs": 1.2000000029802322,
+              "selfWallMs": 1.2000000029802322,
+              "calls": 1
+            },
+            "poll.replay": {
+              "inclusiveWallMs": 1.5999999940395355,
+              "selfWallMs": 0.3999999910593033,
+              "calls": 1
+            },
+            "poll.validate": {
+              "inclusiveWallMs": 0,
+              "selfWallMs": 0,
+              "calls": 1
+            },
+            "poll.backup.readback": {
+              "inclusiveWallMs": 1,
+              "selfWallMs": 1,
+              "calls": 1
+            },
+            "poll.validate.afterBackup": {
+              "inclusiveWallMs": 0,
+              "selfWallMs": 0,
+              "calls": 1
+            },
+            "poll.publish.atomic": {
+              "inclusiveWallMs": 1.5999999940395355,
+              "selfWallMs": 1.5999999940395355,
+              "calls": 1
+            },
+            "poll.total": {
+              "inclusiveWallMs": 4.799999997019768,
+              "selfWallMs": 0,
+              "calls": 1
+            }
+          }
+        },
+        {
+          "trial": 2,
+          "phases": {
+            "layout.pageTree.inclusive": {
+              "inclusiveWallMs": 0.7999999970197678,
+              "selfWallMs": 0.7999999970197678,
+              "calls": 1
+            },
+            "tree.layer.construct": {
+              "inclusiveWallMs": 0,
+              "selfWallMs": 0,
+              "calls": 1
+            },
+            "tree.cache.storeClone": {
+              "inclusiveWallMs": 0.10000000894069672,
+              "selfWallMs": 0.10000000894069672,
+              "calls": 1
+            },
+            "tree.build.inclusive": {
+              "inclusiveWallMs": 0.9000000059604645,
+              "selfWallMs": 0,
+              "calls": 1
+            },
+            "poll.tree": {
+              "inclusiveWallMs": 0.9000000059604645,
+              "selfWallMs": 0,
+              "calls": 1
+            },
+            "poll.scratch.allocate": {
+              "inclusiveWallMs": 0.09999999403953552,
+              "selfWallMs": 0.09999999403953552,
+              "calls": 1
+            },
+            "resource.decoded.lookup": {
+              "inclusiveWallMs": 0.09999999403953552,
+              "selfWallMs": 0.09999999403953552,
+              "calls": 1
+            },
+            "resource.image.draw.inclusive": {
+              "inclusiveWallMs": 1.3999999910593033,
+              "selfWallMs": 1.2999999970197678,
+              "calls": 1
+            },
+            "poll.replay": {
+              "inclusiveWallMs": 2.0999999940395355,
+              "selfWallMs": 0.7000000029802322,
+              "calls": 1
+            },
+            "poll.validate": {
+              "inclusiveWallMs": 0.10000000894069672,
+              "selfWallMs": 0.10000000894069672,
+              "calls": 1
+            },
+            "poll.backup.readback": {
+              "inclusiveWallMs": 1.5,
+              "selfWallMs": 1.5,
+              "calls": 1
+            },
+            "poll.validate.afterBackup": {
+              "inclusiveWallMs": 0,
+              "selfWallMs": 0,
+              "calls": 1
+            },
+            "poll.publish.atomic": {
+              "inclusiveWallMs": 2.2000000029802322,
+              "selfWallMs": 2.2000000029802322,
+              "calls": 1
+            },
+            "poll.total": {
+              "inclusiveWallMs": 7.0999999940395355,
+              "selfWallMs": 0.19999998807907104,
+              "calls": 1
+            }
+          }
+        }
+      ]
+    },
+    {
+      "sample": "chemical.hwp",
+      "page": 23,
+      "medianWallMs": {
+        "baseline": 8.400000005960464,
+        "off": 9.799999997019768,
+        "on": 10.799999997019768
+      },
+      "disabledInstrumentationDeltaMs": [
+        13.0,
+        0.29999999701976776,
+        1.3999999910593033
+      ],
+      "enabledInstrumentationDeltaMs": [
+        -2.5,
+        -0.10000000894069672,
+        1.0
+      ],
+      "trials": [
+        {
+          "trial": 0,
+          "phases": {
+            "layout.pageTree.inclusive": {
+              "inclusiveWallMs": 0.7000000029802322,
+              "selfWallMs": 0.7000000029802322,
+              "calls": 1
+            },
+            "tree.layer.construct": {
+              "inclusiveWallMs": 0.20000000298023224,
+              "selfWallMs": 0.20000000298023224,
+              "calls": 1
+            },
+            "tree.cache.storeClone": {
+              "inclusiveWallMs": 0,
+              "selfWallMs": 0,
+              "calls": 1
+            },
+            "tree.build.inclusive": {
+              "inclusiveWallMs": 0.9000000059604645,
+              "selfWallMs": 0,
+              "calls": 1
+            },
+            "poll.tree": {
+              "inclusiveWallMs": 0.9000000059604645,
+              "selfWallMs": 0,
+              "calls": 1
+            },
+            "poll.scratch.allocate": {
+              "inclusiveWallMs": 0.09999999403953552,
+              "selfWallMs": 0.09999999403953552,
+              "calls": 1
+            },
+            "image.codec": {
+              "inclusiveWallMs": 79,
+              "selfWallMs": 79,
+              "calls": 1
+            },
+            "image.rgba": {
+              "inclusiveWallMs": 12,
+              "selfWallMs": 12,
+              "calls": 1
+            },
+            "image.imageData": {
+              "inclusiveWallMs": 0,
+              "selfWallMs": 0,
+              "calls": 1
+            },
+            "image.canvas.allocate": {
+              "inclusiveWallMs": 0.10000000894069672,
+              "selfWallMs": 0.10000000894069672,
+              "calls": 1
+            },
+            "image.canvas.putImageData": {
+              "inclusiveWallMs": 11.900000005960464,
+              "selfWallMs": 11.900000005960464,
+              "calls": 1
+            },
+            "image.prepare.total": {
+              "inclusiveWallMs": 103.1000000089407,
+              "selfWallMs": 0.09999999403953552,
+              "calls": 1
+            },
+            "resource.decoded.lookup": {
+              "inclusiveWallMs": 103.30000001192093,
+              "selfWallMs": 0.20000000298023224,
+              "calls": 1
+            },
+            "resource.image.draw.inclusive": {
+              "inclusiveWallMs": 106,
+              "selfWallMs": 2.699999988079071,
+              "calls": 1
+            },
+            "poll.replay": {
+              "inclusiveWallMs": 107.70000000298023,
+              "selfWallMs": 1.7000000029802322,
+              "calls": 1
+            },
+            "poll.validate": {
+              "inclusiveWallMs": 0,
+              "selfWallMs": 0,
+              "calls": 1
+            },
+            "poll.backup.readback": {
+              "inclusiveWallMs": 0.7999999970197678,
+              "selfWallMs": 0.7999999970197678,
+              "calls": 1
+            },
+            "poll.validate.afterBackup": {
+              "inclusiveWallMs": 0,
+              "selfWallMs": 0,
+              "calls": 1
+            },
+            "poll.publish.atomic": {
+              "inclusiveWallMs": 0.09999999403953552,
+              "selfWallMs": 0.09999999403953552,
+              "calls": 1
+            },
+            "poll.total": {
+              "inclusiveWallMs": 109.70000000298023,
+              "selfWallMs": 0.10000000894069672,
+              "calls": 1
+            }
+          }
+        },
+        {
+          "trial": 1,
+          "phases": {
+            "layout.pageTree.inclusive": {
+              "inclusiveWallMs": 0.7000000029802322,
+              "selfWallMs": 0.7000000029802322,
+              "calls": 1
+            },
+            "tree.layer.construct": {
+              "inclusiveWallMs": 0.10000000894069672,
+              "selfWallMs": 0.10000000894069672,
+              "calls": 1
+            },
+            "tree.cache.storeClone": {
+              "inclusiveWallMs": 0.19999998807907104,
+              "selfWallMs": 0.19999998807907104,
+              "calls": 1
+            },
+            "tree.build.inclusive": {
+              "inclusiveWallMs": 1,
+              "selfWallMs": 0,
+              "calls": 1
+            },
+            "poll.tree": {
+              "inclusiveWallMs": 1,
+              "selfWallMs": 0,
+              "calls": 1
+            },
+            "poll.scratch.allocate": {
+              "inclusiveWallMs": 0,
+              "selfWallMs": 0,
+              "calls": 1
+            },
+            "resource.decoded.lookup": {
+              "inclusiveWallMs": 0,
+              "selfWallMs": 0,
+              "calls": 1
+            },
+            "resource.image.draw.inclusive": {
+              "inclusiveWallMs": 3,
+              "selfWallMs": 3,
+              "calls": 1
+            },
+            "poll.replay": {
+              "inclusiveWallMs": 5,
+              "selfWallMs": 2.0,
+              "calls": 1
+            },
+            "poll.validate": {
+              "inclusiveWallMs": 0,
+              "selfWallMs": 0,
+              "calls": 1
+            },
+            "poll.backup.readback": {
+              "inclusiveWallMs": 1,
+              "selfWallMs": 1,
+              "calls": 1
+            },
+            "poll.validate.afterBackup": {
+              "inclusiveWallMs": 0,
+              "selfWallMs": 0,
+              "calls": 1
+            },
+            "poll.publish.atomic": {
+              "inclusiveWallMs": 0.10000000894069672,
+              "selfWallMs": 0.10000000894069672,
+              "calls": 1
+            },
+            "poll.total": {
+              "inclusiveWallMs": 7.299999997019768,
+              "selfWallMs": 0.19999998807907104,
+              "calls": 1
+            }
+          }
+        },
+        {
+          "trial": 2,
+          "phases": {
+            "layout.pageTree.inclusive": {
+              "inclusiveWallMs": 1.4000000059604645,
+              "selfWallMs": 1.4000000059604645,
+              "calls": 1
+            },
+            "tree.layer.construct": {
+              "inclusiveWallMs": 0.20000000298023224,
+              "selfWallMs": 0.20000000298023224,
+              "calls": 1
+            },
+            "tree.cache.storeClone": {
+              "inclusiveWallMs": 0.29999999701976776,
+              "selfWallMs": 0.29999999701976776,
+              "calls": 1
+            },
+            "tree.build.inclusive": {
+              "inclusiveWallMs": 2,
+              "selfWallMs": 0.09999999403953552,
+              "calls": 1
+            },
+            "poll.tree": {
+              "inclusiveWallMs": 2,
+              "selfWallMs": 0,
+              "calls": 1
+            },
+            "poll.scratch.allocate": {
+              "inclusiveWallMs": 0.09999999403953552,
+              "selfWallMs": 0.09999999403953552,
+              "calls": 1
+            },
+            "resource.decoded.lookup": {
+              "inclusiveWallMs": 0,
+              "selfWallMs": 0,
+              "calls": 1
+            },
+            "resource.image.draw.inclusive": {
+              "inclusiveWallMs": 3.7000000029802322,
+              "selfWallMs": 3.7000000029802322,
+              "calls": 1
+            },
+            "poll.replay": {
+              "inclusiveWallMs": 6.9000000059604645,
+              "selfWallMs": 3.2000000029802322,
+              "calls": 1
+            },
+            "poll.validate": {
+              "inclusiveWallMs": 0,
+              "selfWallMs": 0,
+              "calls": 1
+            },
+            "poll.backup.readback": {
+              "inclusiveWallMs": 1.5,
+              "selfWallMs": 1.5,
+              "calls": 1
+            },
+            "poll.validate.afterBackup": {
+              "inclusiveWallMs": 0,
+              "selfWallMs": 0,
+              "calls": 1
+            },
+            "poll.publish.atomic": {
+              "inclusiveWallMs": 0.10000000894069672,
+              "selfWallMs": 0.10000000894069672,
+              "calls": 1
+            },
+            "poll.total": {
+              "inclusiveWallMs": 10.799999997019768,
+              "selfWallMs": 0.19999998807907104,
+              "calls": 1
+            }
+          }
+        }
+      ]
+    },
+    {
+      "sample": "asset.hwpx",
+      "page": 0,
+      "medianWallMs": {
+        "baseline": 15.599999994039536,
+        "off": 13.799999997019768,
+        "on": 13.900000005960464
+      },
+      "disabledInstrumentationDeltaMs": [
+        -42,
+        0.9000000059604645,
+        -2.5
+      ],
+      "enabledInstrumentationDeltaMs": [
+        2.7999999970197678,
+        0.10000000894069672,
+        0.7999999970197678
+      ],
+      "trials": [
+        {
+          "trial": 0,
+          "phases": {
+            "layout.pageTree.inclusive": {
+              "inclusiveWallMs": 2.5999999940395355,
+              "selfWallMs": 2.5999999940395355,
+              "calls": 1
+            },
+            "tree.layer.construct": {
+              "inclusiveWallMs": 0.5,
+              "selfWallMs": 0.5,
+              "calls": 1
+            },
+            "tree.cache.storeClone": {
+              "inclusiveWallMs": 0.09999999403953552,
+              "selfWallMs": 0.09999999403953552,
+              "calls": 1
+            },
+            "tree.build.inclusive": {
+              "inclusiveWallMs": 3.199999988079071,
+              "selfWallMs": 0,
+              "calls": 1
+            },
+            "poll.tree": {
+              "inclusiveWallMs": 3.199999988079071,
+              "selfWallMs": 0,
+              "calls": 1
+            },
+            "poll.scratch.allocate": {
+              "inclusiveWallMs": 0.10000000894069672,
+              "selfWallMs": 0.10000000894069672,
+              "calls": 1
+            },
+            "poll.replay": {
+              "inclusiveWallMs": 10.599999994039536,
+              "selfWallMs": 10.599999994039536,
+              "calls": 1
+            },
+            "poll.validate": {
+              "inclusiveWallMs": 0.10000000894069672,
+              "selfWallMs": 0.10000000894069672,
+              "calls": 1
+            },
+            "poll.backup.readback": {
+              "inclusiveWallMs": 0,
+              "selfWallMs": 0,
+              "calls": 1
+            },
+            "poll.validate.afterBackup": {
+              "inclusiveWallMs": 0,
+              "selfWallMs": 0,
+              "calls": 1
+            },
+            "poll.publish.atomic": {
+              "inclusiveWallMs": 2.5,
+              "selfWallMs": 2.5,
+              "calls": 1
+            },
+            "poll.total": {
+              "inclusiveWallMs": 16.69999998807907,
+              "selfWallMs": 0.19999998807907104,
+              "calls": 1
+            }
+          }
+        },
+        {
+          "trial": 1,
+          "phases": {
+            "layout.pageTree.inclusive": {
+              "inclusiveWallMs": 2.1000000089406967,
+              "selfWallMs": 2.1000000089406967,
+              "calls": 1
+            },
+            "tree.layer.construct": {
+              "inclusiveWallMs": 0.4000000059604645,
+              "selfWallMs": 0.4000000059604645,
+              "calls": 1
+            },
+            "tree.cache.storeClone": {
+              "inclusiveWallMs": 0,
+              "selfWallMs": 0,
+              "calls": 1
+            },
+            "tree.build.inclusive": {
+              "inclusiveWallMs": 2.6000000089406967,
+              "selfWallMs": 0.09999999403953552,
+              "calls": 1
+            },
+            "poll.tree": {
+              "inclusiveWallMs": 2.6000000089406967,
+              "selfWallMs": 0,
+              "calls": 1
+            },
+            "poll.scratch.allocate": {
+              "inclusiveWallMs": 0.09999999403953552,
+              "selfWallMs": 0.09999999403953552,
+              "calls": 1
+            },
+            "poll.replay": {
+              "inclusiveWallMs": 8.5,
+              "selfWallMs": 8.5,
+              "calls": 1
+            },
+            "poll.validate": {
+              "inclusiveWallMs": 0,
+              "selfWallMs": 0,
+              "calls": 1
+            },
+            "poll.backup.readback": {
+              "inclusiveWallMs": 0.9000000059604645,
+              "selfWallMs": 0.9000000059604645,
+              "calls": 1
+            },
+            "poll.validate.afterBackup": {
+              "inclusiveWallMs": 0,
+              "selfWallMs": 0,
+              "calls": 1
+            },
+            "poll.publish.atomic": {
+              "inclusiveWallMs": 1.699999988079071,
+              "selfWallMs": 1.699999988079071,
+              "calls": 1
+            },
+            "poll.total": {
+              "inclusiveWallMs": 13.900000005960464,
+              "selfWallMs": 0.10000000894069672,
+              "calls": 1
+            }
+          }
+        },
+        {
+          "trial": 2,
+          "phases": {
+            "layout.pageTree.inclusive": {
+              "inclusiveWallMs": 2.3999999910593033,
+              "selfWallMs": 2.3999999910593033,
+              "calls": 1
+            },
+            "tree.layer.construct": {
+              "inclusiveWallMs": 0.4000000059604645,
+              "selfWallMs": 0.4000000059604645,
+              "calls": 1
+            },
+            "tree.cache.storeClone": {
+              "inclusiveWallMs": 0.09999999403953552,
+              "selfWallMs": 0.09999999403953552,
+              "calls": 1
+            },
+            "tree.build.inclusive": {
+              "inclusiveWallMs": 2.8999999910593033,
+              "selfWallMs": 0,
+              "calls": 1
+            },
+            "poll.tree": {
+              "inclusiveWallMs": 2.8999999910593033,
+              "selfWallMs": 0,
+              "calls": 1
+            },
+            "poll.scratch.allocate": {
+              "inclusiveWallMs": 0,
+              "selfWallMs": 0,
+              "calls": 1
+            },
+            "poll.replay": {
+              "inclusiveWallMs": 8.700000002980232,
+              "selfWallMs": 8.700000002980232,
+              "calls": 1
+            },
+            "poll.validate": {
+              "inclusiveWallMs": 0,
+              "selfWallMs": 0,
+              "calls": 1
+            },
+            "poll.backup.readback": {
+              "inclusiveWallMs": 1,
+              "selfWallMs": 1,
+              "calls": 1
+            },
+            "poll.validate.afterBackup": {
+              "inclusiveWallMs": 0,
+              "selfWallMs": 0,
+              "calls": 1
+            },
+            "poll.publish.atomic": {
+              "inclusiveWallMs": 1.0999999940395355,
+              "selfWallMs": 1.0999999940395355,
+              "calls": 1
+            },
+            "poll.total": {
+              "inclusiveWallMs": 13.799999997019768,
+              "selfWallMs": 0.10000000894069672,
+              "calls": 1
+            }
+          }
+        }
+      ]
+    }
+  ]
+}

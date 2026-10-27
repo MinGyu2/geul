@@ -1,0 +1,59 @@
+[
+  {
+    "check": "font",
+    "command": [
+      "cargo",
+      "test",
+      "--locked",
+      "--offline",
+      "--lib",
+      "-p",
+      "rhwp",
+      "kopub_family_equivalence_tests"
+    ],
+    "exit": 0,
+    "summary": [
+      "test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 3926 filtered out; finished in 0.61s"
+    ],
+    "logSha256": "e4e660c14a12951000a35a620c7f4ee288a8427c193e868685fb11a23fadb751"
+  },
+  {
+    "check": "canvas",
+    "command": [
+      "cargo",
+      "test",
+      "--locked",
+      "--offline",
+      "--lib",
+      "-p",
+      "rhwp",
+      "renderer::canvas_rgba::tests"
+    ],
+    "exit": 0,
+    "summary": [
+      "test result: ok. 13 passed; 0 failed; 0 ignored; 0 measured; 3915 filtered out; finished in 11.84s"
+    ],
+    "logSha256": "84fe431e376c9e080d5240d7108e2e054cf78cfa2b84a56dc1908e1a1fa158dd"
+  },
+  {
+    "check": "fmt",
+    "command": [
+      "rustfmt",
+      "--edition",
+      "2021",
+      "--config",
+      "skip_children=true",
+      "--check",
+      "src/renderer/layout/text_measurement.rs",
+      "src/renderer/layout.rs",
+      "src/renderer/composer.rs",
+      "src/renderer/canvas_rgba.rs",
+      "src/renderer/preparation.rs",
+      "src/renderer/render_job.rs",
+      "src/renderer/web_canvas.rs"
+    ],
+    "exit": 0,
+    "summary": "",
+    "logSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  }
+]

@@ -1,0 +1,104 @@
+T010 제한된 엔진 최적화 후보 — 구현·로컬 검증 완료
+
+사용자 범위: 검증된 후보를 전달하고 남은 D4 실패를 보고한다. 전체 D4가 통과할 때까지
+계속 최적화하거나 production을 활성화하는 작업이 아니다. 공식 producer/anchor/public/gitlink,
+기존 cache·job 예산과 문턱은 바꾸지 않는다. 최종 로컬 커밋은 이 파일의 git log로 확인한다.
+Remote CI NOT RUN. 선행 T009는 별도834ce2f에 구현·검증·보안·native DOCX75단언을 전달했다.
+
+후보와 독립 기준
+- 최종0cb73f70cd98dbef89718534e1bc283f1cb4c200af200703d40b137be1cde956,
+  Rust1.99/cargo --locked --offline/release, 기존 wasm-bindgen0.2.127, wasm-opt 없음.
+  final99-identity.json은 실제 고정 build manifest/JS·WASM·d.ts/1044개 source SHA를 기록한다.
+- 성능 대조 ccea3046...은 역사적 e88d 소스를 같은1.99로 재빌드한 것이다.
+  역사적1.93.1 e88d 및 더 오래된48adaa 수치를 동일 실행물처럼 합치지 않는다.
+- 기존49/42 정확성 계약은 preparation API가 없는 이전 엔진을 요구한다.
+  커밋된 decoded-lease-finalization 완전 패치를 pinned1a765에 적용하고1043개 파일을
+  독립 확인한 새 oracle d7b1c575...을1.99로 빌드했다. legacy-oracle99-identity.json 참조.
+  이는 성능 대조 ccea도, 원래 ae34 binary도 아니다.
+- 안전성 기준은 검증된 후속 완전 패치0339c225...이다. pinned 소스에 독립 적용한
+  1044개 Rust 파일이 보존된 후속 소스와 전부 byte-equal임을 확인한 뒤 새 최적화를 적용했다.
+  잘못된 predecessor의 증분만 적용했던76806...은 선택하지 않는다.
+- 최종 완전 패치 upstream-engine-phase-optimization-final-complete.patch는 pinned1a765에서
+  독립 replay하여 모든1044개 source bytes가 실제 후보 소스와 같았다. 기존 prototype까지
+  포함하는16경로이며 이번 이름 판정 변경 자체는 composer/layout/text_measurement3파일이다.
+  diff context 빈줄 표기만 정리한 전후 원문 SHA와 byte-equal replay는
+  patch-format-normalization.json/final99-delivery-identity.json에 있다. 실행물과 그 동결
+  build manifest는 고치지 않았고, 원문 hash와 배포용 patch hash를 구분한다.
+
+구현과 귀속
+기존 KoPub 판정은 각 glyph·문단에서 Unicode lowercase 문자열을 반복 생성했다.
+CPU sampling은 이 경로의 Unicode 변환·할당을 관찰했고, 더 깊은 실제 span은 화학 문서16쪽
+page-tree 비용 대부분이 body columns임을 보였다. 이름 판정은 영어 ASCII byte 검색으로
+처리하고 기존 한글 literal 판정을 보존한다. Kelvin sign이 있으면 종전 Unicode lowercase로
+돌아간다. 현재 Rust Unicode 표의 모든 scalar 및 영어 대소문자·경계·비ASCII 입력을
+기존 predicate와 비교했다. 새 font 규칙·문서별 예외·캐시·전역 직렬화·예산 증가는 없다.
+
+계측은 monotonic inclusive span/parent/job context를 기록한다. selfWallMs는 직접 자식
+interval union을 빼므로 부모·자식을 CPU 합으로 중복 계산하지 않는다. 별도의500us CPU
+sampling 수치와 무계측 wall time을 합치지 않는다. image.codec은 PNG가 주된 관찰이다.
+처음 단계 이름만 보고 JPEG로 부른 해석을 교정했고 sampling 근거를 별도로 남겼다.
+형상16쪽 layout과 PNG codec/upload는 각각 관찰된 비용이며 모든 native input 잔여 원인을
+이 계측만으로 확정하지 않는다.
+
+성능 — 최종 선택 후보0cb... 실제 측정
+4arm/8회/11쪽=브라우저당88행. 각 arm이 각 실행 순서 위치에2번 오는 rotation/reversal이며,
+첫 pass cold와 자연 warm을 구별한다. 무계측 baseline/candidate를 비교하고 span off/on은
+관찰 비용을 따로 확인한다. 두 브라우저 모두88행의 exactRGBA와 cleanup/dependency 안정 PASS.
+화학 문서16쪽 render-job wall time median:
+- chrome: 59.85→43.15ms (27.9% 감소), 8개 paired trial 전부 단축.
+- webkit: 57.00→40.00ms (29.8% 감소), 8개 paired trial 전부 단축.
+이는 느린 표 페이지의 render 시간이며 전체 input p95 통과나 모든 페이지의 속도 개선을 뜻하지 않는다.
+8회라는 작은 표본과 해당 환경의 관찰이다. Native D4를 이 수치로 대신 판정하지 않는다.
+별도 font-only49bd... 실험도 보존했다(Chrome59.2→40.8/WebKit65.5→43.5ms).
+최종 정량값과 실행 load/order/입력 SHA는 final-measurement-summary.json 및 원본 비교 JSON 참조.
+
+검증 — 현재 관찰된 결과
+- final Rust 준비11/새 font 판정2/Canvas RGBA13 및 변경7파일 rustfmt PASS.
+- 완전 native4096 PASS/13기존ignored는76806 단계에서 실행했다. 최종과의 차이는
+  WASM-only 모듈 guard, WASM-only 함수 guard, cfg(test)1개뿐이다.
+  final-native-source-equivalence.json이 나머지1041파일과 native production bytes의
+  동등성을 확인한다. 최종의 실제 focused 검사는 새 direct-core mutation test를 포함한다.
+  겹치는 focused/full 시험을 합산하여 개수를 부풀리지 않는다.
+- strict native Clippy는 기준39/최종39, WASM은 기준39/최종38 오류, 새 진단0.
+  전체 strict gate는 여전히 FAIL이며 scoped PASS나 production 승인으로 대체하지 않는다.
+  첫 cached baseline0 비교는 사용하지 않고, 사용하지 않는 서로 다른 audit cfg로
+  fresh 검사를 강제했다. 소스/lock/lint 수준/캐시를 고치거나 지우지 않았다.
+- Python engine-phases4, preparation-hardening32, preparation23, cache69, ownership292 PASS.
+- 최종 Chrome/WebKit: cache/ownership52(관찰checkpoint15)/scheduler73 계약 PASS;
+  memo/terminal10 top assertions+terminal cases PASS; 원래 runtime49 및 cold/warm
+  7쪽×3회×2=42 RGBA 비교 각각PASS(모든 pixel 차이0/maxDelta0, 빈 기준 거부).
+- 실제 native D1 최종39단언/24직접 pixel reference/cleanup3개 PASS, 실행 의존 파일 안정.
+  승인 anchor가 아닌 새 후보 진단이며 final-native-d1.json에 원본 SHA/정제 복사본이 있다.
+- 실제 native D4: 측정 COMPLETE, 4개 group-start gate FAIL/4개 Undo gate PASS.
+  기존 history-perf.py/MEASURE/문턱/4fixture/native X11을 그대로 사용하고 busy probe는 OFF.
+  각 문서30group-start/30extend/25Undo/20Redo/5afterUndo, timeout0; 동결 의존 파일 안정.
+  결과는 OFFICIAL_GATE_FAILURE이며 harness 오류나 미완성 표본을 PASS로 세지 않았다.
+  승인 anchor는 여전히 바꾸지 않는다. final-native-d4.json에 원본 SHA/정제 복사본을 기록했다.
+
+Native D4 p95(ms), group-start 문턱50 / Undo 문턱1500:
+- basic-ko.hwp: group-start 91 FAIL, Undo 149 PASS.
+- basic-ko.hwpx: group-start 89 FAIL, Undo 202 PASS.
+- 연구노트(화학).hwp: group-start 212 FAIL, Undo 152 PASS.
+- 3249937_asset_management_rules.hwpx: group-start 125 FAIL, Undo 273 PASS.
+
+기본1쪽 문서에서도 실패했으므로 남은 지연 전체를 PNG나 표 layout만으로 설명하지 않는다.
+
+보존한 실패와 제한
+잘못된 증분 predecessor에서 refusal 뒤 decode1회가 남은 실패를 실제 안전성 시험이 잡았다.
+완전 패치 전체 byte replay 후에만 최종 후보를 선택했다. 처음 full49/42에는 prep API가
+있는 성능 기준을 잘못 넣어 baseline-single-poll에서 중단됐다(0 RGBA). 원래 assertion을
+완화하지 않고 올바른 no-prep oracle을 재구축했다. font-only native 최초 full은 복사에서
+빠진 nested fixture 때문에1실패였고, 정확한 fixture 복구와 재실행 full PASS를 남겼다.
+초기 WebKit --version 미지원으로 결과 저장 전 중단, cached Clippy 비교, Chrome120s
+watchdog timeout도 보존한다. 최종 성공 실행으로 과거 실패 원문을 덮어쓰지 않았다.
+
+새 결과가 T010 전체 완료/production RHWP UndoRedo 허용을 뜻하지 않는다.
+공식 상태/anchor·public은 그대로이며 T010 INCOMPLETE/UndoRedo NO-GO/T011 미시작이다.
+D4와 기존 strict Clippy 실패 및 시스템 RSS/공급망 전체 보장은 이 후보에서 해결했다고
+주장하지 않는다. 최종 보안/보호경로/커밋 결과는 delivery.json과 security-final.json에 기록한다.
+
+체크섬 표현
+Gitleaks generic-api-key가 path→SHA-256 map 559건을 비밀값으로 오탐했다(검토:
+secret-scan-checksum-review.json). 보안 규칙은 바꾸지 않고 해당 map만 {"sha256Catalog":
+[{path,sha256}]} 목록으로 무손실 변환했다(engine-phases/hash_catalog.py). 변환한46개 JSON은
+원본과 decode 값이 모두 같고 원본/게시 bytes SHA-256은 checksum-catalog-roundtrip.json에 있다.

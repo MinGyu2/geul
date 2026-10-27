@@ -1,0 +1,178 @@
+{
+  "rawSha256": "eef33d8630122d4f69adc03f3dbc319f9169acc5780eedd659ebc8227defc20e",
+  "scope": "separate CPU sampling500us on33-row diagnostic across all3arms incl fixture loads/readbacks; not phase wall acceptance",
+  "rawLocalPath": ".git/t009-special-xml-resource-hardening-raw/chrome-cpu-profile.json",
+  "topSelfSamples": [
+    {
+      "function": "(idle)",
+      "estimatedMs": 3458.856
+    },
+    {
+      "function": "",
+      "estimatedMs": 1194.108
+    },
+    {
+      "function": "exact",
+      "estimatedMs": 422.654
+    },
+    {
+      "function": "png[4a8ef5a959bc287a]::filter::unfilter",
+      "estimatedMs": 404.282
+    },
+    {
+      "function": "(program)",
+      "estimatedMs": 293.834
+    },
+    {
+      "function": "<image[8b271b1a85ac6b92]::metadata::cicp::CicpRgb>::cast_pixels_by_layout::<u8, u8>",
+      "estimatedMs": 253.974
+    },
+    {
+      "function": "core[608f92abc48d28da]::unicode::unicode_data::conversions::lookup",
+      "estimatedMs": 247.941
+    },
+    {
+      "function": "<fdeflate[75e2c3e69555c90d]::decompress::Decompressor>::read",
+      "estimatedMs": 187.73
+    },
+    {
+      "function": "pixels",
+      "estimatedMs": 145.785
+    },
+    {
+      "function": "png[4a8ef5a959bc287a]::adam7::expand_pass",
+      "estimatedMs": 116.156
+    },
+    {
+      "function": "<core[608f92abc48d28da]::str::pattern::StrSearcher>::new",
+      "estimatedMs": 105.076
+    },
+    {
+      "function": "<rhwp[2c3a2008363d62c2]::renderer::web_canvas::WebCanvasRenderer>::draw_image_cropped",
+      "estimatedMs": 83.643
+    },
+    {
+      "function": "rhwp[2c3a2008363d62c2]::renderer::web_canvas::decoded_canvas",
+      "estimatedMs": 75.192
+    },
+    {
+      "function": "<dlmalloc[c66ed5ba1f893f92]::dlmalloc::Dlmalloc<dlmalloc[c66ed5ba1f893f92]::sys::System>>::malloc",
+      "estimatedMs": 52.702
+    },
+    {
+      "function": "<rhwp[2c3a2008363d62c2]::parser::cfb_reader::CfbReader>::open",
+      "estimatedMs": 52.167
+    },
+    {
+      "function": "__wbg_set_width_36ef6630b22fc519",
+      "estimatedMs": 46.647
+    },
+    {
+      "function": "rhwp[2c3a2008363d62c2]::renderer::composer::compose_paragraph_scoped",
+      "estimatedMs": 44.003
+    },
+    {
+      "function": "<png[4a8ef5a959bc287a]::decoder::Reader<core[608f92abc48d28da]::io::cursor::Cursor<&[u8]>>>::next_interlaced_row_impl[1]",
+      "estimatedMs": 43.623
+    },
+    {
+      "function": "<core[608f92abc48d28da]::str::pattern::StrSearcher as core[608f92abc48d28da]::str::pattern::Searcher>::next_match",
+      "estimatedMs": 42.964
+    },
+    {
+      "function": "__rustc[9d087a5ab36ea756]::__rdl_alloc_zeroed",
+      "estimatedMs": 39.137
+    },
+    {
+      "function": "<str>::to_lowercase",
+      "estimatedMs": 39.029
+    },
+    {
+      "function": "<blake3[6f2cbe9f21ad197]::ChunkState>::update",
+      "estimatedMs": 38.51
+    },
+    {
+      "function": "rhwp[2c3a2008363d62c2]::renderer::layout::text_measurement::measure_char_width_embedded_decision_for_font",
+      "estimatedMs": 38.038
+    },
+    {
+      "function": "rhwp[2c3a2008363d62c2]::paint::text_variants::validate_text_variant_scope",
+      "estimatedMs": 35.983
+    },
+    {
+      "function": "__wbg_restore_43a0248041b088b5",
+      "estimatedMs": 32.257
+    },
+    {
+      "function": "__wbg_clip_11b699e637bb5b4c",
+      "estimatedMs": 30.859
+    },
+    {
+      "function": "<blake3[6f2cbe9f21ad197]::Hasher>::update",
+      "estimatedMs": 29.449
+    },
+    {
+      "function": "<dlmalloc[c66ed5ba1f893f92]::dlmalloc::Dlmalloc<dlmalloc[c66ed5ba1f893f92]::sys::System>>::free",
+      "estimatedMs": 28.676
+    },
+    {
+      "function": "decodeText",
+      "estimatedMs": 28.473
+    },
+    {
+      "function": "<rhwp[2c3a2008363d62c2]::renderer::layout::LayoutEngine>::layout_composed_paragraph_in_frame",
+      "estimatedMs": 27.015
+    }
+  ],
+  "unicodeCallers": [
+    {
+      "stack": "<str>::to_lowercase <- rhwp[2c3a2008363d62c2]::renderer::composer::recompose_stored_lines_in_frame_with_known_square_band <- rhwp[2c3a2008363d62c2]::renderer::composer::recompose_cell_lines_in_frame <- <alloc[cb2b8d99256f33df]::vec::Vec<rhwp[2c3a2008363d62c2]::renderer::composer::ComposedParagraph> as alloc[cb2b8d99256f33df]::vec::spec_from_iter_nested::SpecFromIterNested<rhwp[2c3a2008363d62c2]::renderer::composer::ComposedParagraph, core[608f92abc48d28da]::iter::adapters::map::Map<core[608f92abc48d28da]::slice::iter::Iter<rhwp[2c3a2008363d62c2]::model::paragraph::Paragraph>, <rhwp[2c3a2008363d62c2]::renderer::layout::LayoutEngine>::calc_cell_paragraphs_content_parts::{closure#0}>>>::from_iter <- <rhwp[2c3a2008363d62c2]::renderer::layout::LayoutEngine>::resolve_row_heights_with_common_fit",
+      "estimatedMs": 95.865
+    },
+    {
+      "stack": "<str>::to_lowercase <- rhwp[2c3a2008363d62c2]::renderer::layout::text_measurement::measure_char_width_embedded_decision_for_font <- rhwp[2c3a2008363d62c2]::renderer::layout::text_measurement::char_width_decision <- <rhwp[2c3a2008363d62c2]::renderer::layout::text_measurement::EmbeddedTextMeasurer>::estimate_text_width_exact <- rhwp[2c3a2008363d62c2]::renderer::composer::estimate_composed_line_width",
+      "estimatedMs": 53.815
+    },
+    {
+      "stack": "<str>::to_lowercase <- rhwp[2c3a2008363d62c2]::renderer::composer::recompose_stored_lines_in_frame_with_known_square_band <- <rhwp[2c3a2008363d62c2]::renderer::typeset::TypesetEngine>::format_paragraph_for_flow <- <rhwp[2c3a2008363d62c2]::renderer::typeset::TypesetEngine>::run_section <- <rhwp[2c3a2008363d62c2]::document_core::DocumentCore>::paginate_pass",
+      "estimatedMs": 24.435
+    },
+    {
+      "stack": "<str>::to_lowercase <- rhwp[2c3a2008363d62c2]::renderer::composer::recompose_stored_lines_in_frame_with_known_square_band <- rhwp[2c3a2008363d62c2]::renderer::composer::recompose_cell_lines_in_frame <- <rhwp[2c3a2008363d62c2]::renderer::layout::LayoutEngine>::layout_table_cells <- <rhwp[2c3a2008363d62c2]::renderer::layout::LayoutEngine>::layout_table_with_wrapper_margin",
+      "estimatedMs": 19.253
+    },
+    {
+      "stack": "<str>::to_lowercase <- rhwp[2c3a2008363d62c2]::renderer::composer::recompose_stored_lines_in_frame_with_known_square_band <- rhwp[2c3a2008363d62c2]::renderer::composer::recompose_cell_lines_in_frame <- <rhwp[2c3a2008363d62c2]::renderer::height_measurer::HeightMeasurer>::measure_table_impl <- <rhwp[2c3a2008363d62c2]::renderer::height_measurer::HeightMeasurer>::measure_section",
+      "estimatedMs": 16.489
+    },
+    {
+      "stack": "<str>::to_lowercase <- rhwp[2c3a2008363d62c2]::renderer::composer::recompose_stored_lines_in_frame_with_known_square_band <- rhwp[2c3a2008363d62c2]::renderer::composer::recompose_cell_lines_in_frame <- <rhwp[2c3a2008363d62c2]::renderer::height_measurer::HeightMeasurer>::measure_table_impl <- core[608f92abc48d28da]::iter::adapters::map::map_fold::<(usize, &rhwp[2c3a2008363d62c2]::model::paragraph::Paragraph), f64, f64, <rhwp[2c3a2008363d62c2]::renderer::height_measurer::HeightMeasurer>::cell_nested_controls_bottom::{closure#3}, <f64>::max>::{closure#0}",
+      "estimatedMs": 13.019
+    },
+    {
+      "stack": "rhwp[2c3a2008363d62c2]::renderer::layout::text_measurement::measure_char_width_embedded_decision_for_font <- rhwp[2c3a2008363d62c2]::renderer::layout::text_measurement::char_width_decision <- <rhwp[2c3a2008363d62c2]::renderer::layout::text_measurement::EmbeddedTextMeasurer>::estimate_text_width_exact <- rhwp[2c3a2008363d62c2]::renderer::composer::estimate_composed_line_width <- rhwp[2c3a2008363d62c2]::renderer::composer::stored_rows_are_stale",
+      "estimatedMs": 11.716
+    },
+    {
+      "stack": "rhwp[2c3a2008363d62c2]::renderer::composer::recompose_stored_lines_in_frame_with_known_square_band <- rhwp[2c3a2008363d62c2]::renderer::composer::recompose_cell_lines_in_frame <- <alloc[cb2b8d99256f33df]::vec::Vec<rhwp[2c3a2008363d62c2]::renderer::composer::ComposedParagraph> as alloc[cb2b8d99256f33df]::vec::spec_from_iter_nested::SpecFromIterNested<rhwp[2c3a2008363d62c2]::renderer::composer::ComposedParagraph, core[608f92abc48d28da]::iter::adapters::map::Map<core[608f92abc48d28da]::slice::iter::Iter<rhwp[2c3a2008363d62c2]::model::paragraph::Paragraph>, <rhwp[2c3a2008363d62c2]::renderer::layout::LayoutEngine>::calc_cell_paragraphs_content_parts::{closure#0}>>>::from_iter <- <rhwp[2c3a2008363d62c2]::renderer::layout::LayoutEngine>::resolve_row_heights_with_common_fit <- <rhwp[2c3a2008363d62c2]::renderer::layout::LayoutEngine>::calc_nested_controls_bottom_height",
+      "estimatedMs": 9.427
+    },
+    {
+      "stack": "<str>::to_lowercase <- rhwp[2c3a2008363d62c2]::renderer::composer::recompose_stored_lines_in_frame_with_known_square_band <- <rhwp[2c3a2008363d62c2]::renderer::height_measurer::HeightMeasurer>::measure_paragraph <- <rhwp[2c3a2008363d62c2]::renderer::height_measurer::HeightMeasurer>::measure_section <- <rhwp[2c3a2008363d62c2]::document_core::DocumentCore>::paginate_pass",
+      "estimatedMs": 8.581
+    },
+    {
+      "stack": "<str>::to_lowercase <- rhwp[2c3a2008363d62c2]::renderer::layout::text_measurement::measure_char_width_embedded_decision_for_font <- rhwp[2c3a2008363d62c2]::renderer::layout::text_measurement::char_width_decision <- rhwp[2c3a2008363d62c2]::renderer::layout::text_measurement::estimate_text_width_unrounded <- <rhwp[2c3a2008363d62c2]::document_core::DocumentCore>::from_bytes_inner",
+      "estimatedMs": 5.797
+    },
+    {
+      "stack": "rhwp[2c3a2008363d62c2]::renderer::composer::recompose_stored_lines_in_frame_with_known_square_band <- <rhwp[2c3a2008363d62c2]::renderer::typeset::TypesetEngine>::format_paragraph_for_flow <- <rhwp[2c3a2008363d62c2]::renderer::typeset::TypesetEngine>::run_section <- <rhwp[2c3a2008363d62c2]::document_core::DocumentCore>::paginate_pass <- <rhwp[2c3a2008363d62c2]::document_core::DocumentCore>::paginate",
+      "estimatedMs": 3.745
+    },
+    {
+      "stack": "rhwp[2c3a2008363d62c2]::renderer::composer::recompose_stored_lines_in_frame_with_known_square_band <- rhwp[2c3a2008363d62c2]::renderer::composer::recompose_cell_lines_in_frame <- <rhwp[2c3a2008363d62c2]::renderer::layout::LayoutEngine>::layout_table_cells <- <rhwp[2c3a2008363d62c2]::renderer::layout::LayoutEngine>::layout_table_with_wrapper_margin <- <rhwp[2c3a2008363d62c2]::renderer::layout::LayoutEngine>::layout_horizontal_cell_paragraphs",
+      "estimatedMs": 3.58
+    }
+  ],
+  "correction": "phase image.codec does not imply JPEG; sampling shows PNG decode dominates this run"
+}

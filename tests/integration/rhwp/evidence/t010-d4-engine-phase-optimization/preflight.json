@@ -1,0 +1,29 @@
+{
+  "baseline": "1a76570e833917d15817415a53c09ad61ab3203f",
+  "historicalCandidate": {
+    "sha256Catalog": [
+      {
+        "path": "rhwp.js",
+        "sha256": "29124c937d46b4d7433d258d06d0a43f4c7fc056f93216fddabc1c5dff98f743"
+      },
+      {
+        "path": "rhwp_bg.wasm",
+        "sha256": "e88d85de471073f5c60035bcf4b18e5a0fa16193717dcd800968e43c19d1dc88"
+      },
+      {
+        "path": "rhwp.d.ts",
+        "sha256": "0324e6d406fbb4e4c99744a5e365bd9f05fdb1614cb57d41238259dc38b2e313"
+      }
+    ]
+  },
+  "manifestAgreement": true,
+  "declaredSources": 1044,
+  "sourceMismatches": [],
+  "compiler": "rustc 1.93.1 (01f6ddf75 2026-02-11)",
+  "sourceTreeSha256": "633c73de41b8468ee531f6da2de77bbb6f843b62542d1899feaf0180374aa7ad",
+  "olderDeepExperiment": "48adaa baseline; Rust1.93.1; Chrome real-time, not this e88d candidate",
+  "nativeTools": {
+    "src-tauri/target/debug/geul": true,
+    "src-tauri/target/release/tauri-driver": true
+  }
+}

@@ -1,0 +1,28 @@
+{
+  "status": "PASS",
+  "baseline": "1a76570e833917d15817415a53c09ad61ab3203f",
+  "changedPaths": [
+    "src/document_core/commands/document.rs",
+    "src/document_core/mod.rs",
+    "src/document_core/queries/rendering.rs",
+    "src/paint/layer_tree.rs",
+    "src/paint/resources.rs",
+    "src/renderer/canvas_rgba.rs",
+    "src/renderer/composer.rs",
+    "src/renderer/layout.rs",
+    "src/renderer/layout/caret_geometry_tests.rs",
+    "src/renderer/layout/text_measurement.rs",
+    "src/renderer/mod.rs",
+    "src/renderer/preparation.rs",
+    "src/renderer/render_job.rs",
+    "src/renderer/surface_cache.rs",
+    "src/renderer/web_canvas.rs",
+    "src/wasm_api.rs"
+  ],
+  "sourceFiles": 1044,
+  "patchSha256": "016f6a3c36c97292c9d6dbcd00c84a7ff88a765aea2f0eb36ef5f6d8ff85ec5b",
+  "safetyBaseFullReplay": "byte-equal all1044 verified followup source files",
+  "finalFullReplay": "all1044final source bytes equal independently replayed complete patch",
+  "originalBuildPatchSha256": "71a4acd8fa6b7e9e6b6f4c84830b850572aa0c1d4f6fe72b235c565a02bc3c4a",
+  "contextNormalizationSourceReplay": "PASS"
+}

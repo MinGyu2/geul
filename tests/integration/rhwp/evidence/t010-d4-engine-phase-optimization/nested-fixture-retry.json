@@ -1,0 +1,13 @@
+{
+  "exit": 0,
+  "binarySha256": "da43d753488dea7aca82f4811031d2e412c9a50a1830ec095a7e92e57705ded2",
+  "command": [
+    "rhwp-a7c80e72694f75fc",
+    "--exact",
+    "wasm_api::tests::test_get_table_bbox_at_page_for_giant_multi_page_cell",
+    "--nocapture"
+  ],
+  "cwd": "isolated optimization source",
+  "scope": "same compiled test binary, only test reading restored nested fixture path",
+  "previousLaunches": "guessed binary filename failed127; proc resolved after completed process disappeared failed before execution"
+}

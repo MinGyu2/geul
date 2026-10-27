@@ -1,0 +1,72 @@
+[
+  {
+    "suite": "engine-phases",
+    "command": [
+      "python3",
+      "-m",
+      "unittest",
+      "discover",
+      "-s",
+      "tests/integration/rhwp/engine-phases"
+    ],
+    "exit": 0,
+    "summary": "....\n----------------------------------------------------------------------\nRan 4 tests in 0.013s\n\nOK\n",
+    "logSha256": "03e2ce7efb78ca7222db4c9a68781f9953dd3bd674b491cc52a8a4986d74e6f4"
+  },
+  {
+    "suite": "render-preparation-hardening",
+    "command": [
+      "python3",
+      "-m",
+      "unittest",
+      "discover",
+      "-s",
+      "tests/integration/rhwp/render-preparation-hardening"
+    ],
+    "exit": 0,
+    "summary": "................................\n----------------------------------------------------------------------\nRan 32 tests in 0.061s\n\nOK\n",
+    "logSha256": "acea72dfae7c2ecf508b88c88b93faee6202af3d042b372c7eafc360c98bbe8f"
+  },
+  {
+    "suite": "render-preparation",
+    "command": [
+      "python3",
+      "-m",
+      "unittest",
+      "discover",
+      "-s",
+      "tests/integration/rhwp/render-preparation"
+    ],
+    "exit": 0,
+    "summary": ".......................\n----------------------------------------------------------------------\nRan 23 tests in 0.116s\n\nOK\n",
+    "logSha256": "32b3afc17a6de0e96a6498a401cb31327cca4a074a781e39e552412dd75ddf9f"
+  },
+  {
+    "suite": "cache-concurrency",
+    "command": [
+      "python3",
+      "-m",
+      "unittest",
+      "discover",
+      "-s",
+      "tests/integration/rhwp/cache-concurrency"
+    ],
+    "exit": 0,
+    "summary": ".....................................................................\n----------------------------------------------------------------------\nRan 69 tests in 7.359s\n\nOK\n",
+    "logSha256": "55ed369069c90da8ba1f55c6125280d76ac9cc73ba8085488e40968b5bb24f3d"
+  },
+  {
+    "suite": "ownership-poc",
+    "command": [
+      "python3",
+      "-m",
+      "unittest",
+      "discover",
+      "-s",
+      "tests/integration/rhwp/ownership-poc"
+    ],
+    "exit": 0,
+    "summary": "....................................................................................................................................................................................................................................................................................................\n----------------------------------------------------------------------\nRan 292 tests in 38.883s\n\nOK\n",
+    "logSha256": "d113fbde790ac2ba9a74de308cc53af1ae96736850126f907520e47b2fa6fc82"
+  }
+]

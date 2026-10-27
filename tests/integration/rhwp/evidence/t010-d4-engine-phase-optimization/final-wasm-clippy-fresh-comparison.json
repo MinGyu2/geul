@@ -1,0 +1,1079 @@
+{
+  "checks": [
+    {
+      "arm": "baseline",
+      "auditRustflags": "--cfg geul_d4_fresh_clippy_baseline",
+      "command": [
+        "cargo",
+        "clippy",
+        "--locked",
+        "--offline",
+        "-p",
+        "rhwp",
+        "--lib",
+        "--release",
+        "--target",
+        "wasm32-unknown-unknown",
+        "--no-deps",
+        "--message-format=json",
+        "--",
+        "-D",
+        "warnings"
+      ],
+      "exit": 101,
+      "sourceStable": true,
+      "diagnostics": [
+        {
+          "code": "clippy::chunks_exact_to_as_chunks",
+          "message": "using `chunks_exact` with a constant chunk size",
+          "spans": [
+            {
+              "file": "src/diagnostics/hwp5_anchor_trace.rs",
+              "line": 283,
+              "text": [
+                "            .chunks_exact(2)"
+              ]
+            }
+          ]
+        },
+        {
+          "code": "clippy::chunks_exact_to_as_chunks",
+          "message": "using `chunks_exact` with a constant chunk size",
+          "spans": [
+            {
+              "file": "src/diagnostics/hwp5_anchor_trace.rs",
+              "line": 389,
+              "text": [
+                "        .chunks_exact(2)"
+              ]
+            }
+          ]
+        },
+        {
+          "code": "clippy::chunks_exact_to_as_chunks",
+          "message": "using `chunks_exact` with a constant chunk size",
+          "spans": [
+            {
+              "file": "src/diagnostics/hwp5_char_shape_audit.rs",
+              "line": 505,
+              "text": [
+                "    data.chunks_exact(8)"
+              ]
+            }
+          ]
+        },
+        {
+          "code": "clippy::chunks_exact_to_as_chunks",
+          "message": "using `chunks_exact` with a constant chunk size",
+          "spans": [
+            {
+              "file": "src/diagnostics/hwp5_char_shape_audit.rs",
+              "line": 511,
+              "text": [
+                "    data.chunks_exact(36)"
+              ]
+            }
+          ]
+        },
+        {
+          "code": "clippy::chunks_exact_to_as_chunks",
+          "message": "using `chunks_exact` with a constant chunk size",
+          "spans": [
+            {
+              "file": "src/diagnostics/hwp5_char_shape_audit.rs",
+              "line": 518,
+              "text": [
+                "        .chunks_exact(2)"
+              ]
+            }
+          ]
+        },
+        {
+          "code": "clippy::chunks_exact_to_as_chunks",
+          "message": "using `chunks_exact` with a constant chunk size",
+          "spans": [
+            {
+              "file": "src/diagnostics/hwp5_contract_analyze.rs",
+              "line": 960,
+              "text": [
+                "        .chunks_exact(4)"
+              ]
+            }
+          ]
+        },
+        {
+          "code": "clippy::chunks_exact_to_as_chunks",
+          "message": "using `chunks_exact` with a constant chunk size",
+          "spans": [
+            {
+              "file": "src/diagnostics/hwp5_ctrl_data_trace.rs",
+              "line": 373,
+              "text": [
+                "        .chunks_exact(2)"
+              ]
+            }
+          ]
+        },
+        {
+          "code": "clippy::chunks_exact_to_as_chunks",
+          "message": "using `chunks_exact` with a constant chunk size",
+          "spans": [
+            {
+              "file": "src/diagnostics/hwp5_first_para_control_probe.rs",
+              "line": 1254,
+              "text": [
+                "        .chunks_exact(8)"
+              ]
+            }
+          ]
+        },
+        {
+          "code": "clippy::unnecessary_sort_by",
+          "message": "consider using `sort_by_key`",
+          "spans": [
+            {
+              "file": "src/document_core/commands/paragraph_block/template.rs",
+              "line": 419,
+              "text": [
+                "        edits.sort_by(|a, b| b.1.start.cmp(&a.1.start));"
+              ]
+            }
+          ]
+        },
+        {
+          "code": "clippy::chunks_exact_to_as_chunks",
+          "message": "using `chunks_exact` with a constant chunk size",
+          "spans": [
+            {
+              "file": "src/document_core/commands/paragraph_block/validation/support.rs",
+              "line": 177,
+              "text": [
+                "                        .chunks_exact(2)"
+              ]
+            }
+          ]
+        },
+        {
+          "code": "clippy::manual_checked_ops",
+          "message": "manual checked division",
+          "spans": [
+            {
+              "file": "src/document_core/commands/paragraph_block.rs",
+              "line": 181,
+              "text": [
+                "    let (structure_bytes, added_nodes, owned_depth, mapping_bytes, document_nodes) = if r.count == 0"
+              ]
+            }
+          ]
+        },
+        {
+          "code": "clippy::unnecessary_sort_by",
+          "message": "consider using `sort_by_key`",
+          "spans": [
+            {
+              "file": "src/document_core/queries/explore.rs",
+              "line": 290,
+              "text": [
+                "    items.sort_by(|a, b| b.0.cmp(&a.0));"
+              ]
+            }
+          ]
+        },
+        {
+          "code": "clippy::chunks_exact_to_as_chunks",
+          "message": "using `chunks_exact` with a constant chunk size",
+          "spans": [
+            {
+              "file": "src/document_core/queries/form_query.rs",
+              "line": 334,
+              "text": [
+                "        .chunks_exact(2)"
+              ]
+            }
+          ]
+        },
+        {
+          "code": "clippy::manual_slice_fill",
+          "message": "manually filling a slice",
+          "spans": [
+            {
+              "file": "src/document_core/queries/rendering.rs",
+              "line": 4539,
+              "text": [
+                "        for d in &mut self.dirty_sections {",
+                "            *d = true;",
+                "        }"
+              ]
+            }
+          ]
+        },
+        {
+          "code": "clippy::manual_slice_fill",
+          "message": "manually filling a slice",
+          "spans": [
+            {
+              "file": "src/document_core/queries/rendering.rs",
+              "line": 4874,
+              "text": [
+                "        for offset in &mut self.para_offset {",
+                "            *offset = 0;",
+                "        }"
+              ]
+            }
+          ]
+        },
+        {
+          "code": "clippy::manual_slice_fill",
+          "message": "manually filling a slice",
+          "spans": [
+            {
+              "file": "src/document_core/queries/rendering.rs",
+              "line": 5718,
+              "text": [
+                "        for off in &mut self.para_offset {",
+                "            *off = 0;",
+                "        }"
+              ]
+            }
+          ]
+        },
+        {
+          "code": "clippy::explicit_counter_loop",
+          "message": "the variable `i` is used as a loop counter",
+          "spans": [
+            {
+              "file": "src/document_core/queries/extract_data.rs",
+              "line": 284,
+              "text": [
+                "    for expected in needle.chars() {"
+              ]
+            }
+          ]
+        },
+        {
+          "code": "clippy::manual_slice_fill",
+          "message": "manually filling a slice",
+          "spans": [
+            {
+              "file": "src/model/style.rs",
+              "line": 938,
+              "text": [
+                "            for fid in &mut cs.font_ids {",
+                "                *fid = id;",
+                "            }"
+              ]
+            }
+          ]
+        },
+        {
+          "code": "clippy::chunks_exact_to_as_chunks",
+          "message": "using `chunks_exact` with a constant chunk size",
+          "spans": [
+            {
+              "file": "src/ole_chart/grid.rs",
+              "line": 508,
+              "text": [
+                "            .chunks_exact(2)"
+              ]
+            }
+          ]
+        },
+        {
+          "code": "clippy::chunks_exact_to_as_chunks",
+          "message": "using `chunks_exact` with a constant chunk size",
+          "spans": [
+            {
+              "file": "src/ole_chart/parser.rs",
+              "line": 228,
+              "text": [
+                "    for (i, chunk) in bytes[..16].chunks_exact(4).enumerate() {"
+              ]
+            }
+          ]
+        },
+        {
+          "code": "clippy::chunks_exact_to_as_chunks",
+          "message": "using `chunks_exact` with a constant chunk size",
+          "spans": [
+            {
+              "file": "src/parser/body_text.rs",
+              "line": 477,
+              "text": [
+                "            text.extend(data[run_start..pos].chunks_exact(2).map(|c| {"
+              ]
+            }
+          ]
+        },
+        {
+          "code": "clippy::chunks_exact_to_as_chunks",
+          "message": "using `chunks_exact` with a constant chunk size",
+          "spans": [
+            {
+              "file": "src/parser/body_text.rs",
+              "line": 1252,
+              "text": [
+                "        .chunks_exact(2)"
+              ]
+            }
+          ]
+        },
+        {
+          "code": "clippy::chunks_exact_to_as_chunks",
+          "message": "using `chunks_exact` with a constant chunk size",
+          "spans": [
+            {
+              "file": "src/parser/byte_reader.rs",
+              "line": 121,
+              "text": [
+                "            .chunks_exact(2)"
+              ]
+            }
+          ]
+        },
+        {
+          "code": "clippy::chunks_exact_to_as_chunks",
+          "message": "using `chunks_exact` with a constant chunk size",
+          "spans": [
+            {
+              "file": "src/parser/cfb_reader.rs",
+              "line": 1266,
+              "text": [
+                "        .chunks_exact(2)"
+              ]
+            }
+          ]
+        },
+        {
+          "code": "clippy::chunks_exact_to_as_chunks",
+          "message": "using `chunks_exact` with a constant chunk size",
+          "spans": [
+            {
+              "file": "src/parser/control.rs",
+              "line": 421,
+              "text": [
+                "        .chunks_exact(2)"
+              ]
+            }
+          ]
+        },
+        {
+          "code": "clippy::chunks_exact_to_as_chunks",
+          "message": "using `chunks_exact` with a constant chunk size",
+          "spans": [
+            {
+              "file": "src/parser/control.rs",
+              "line": 1051,
+              "text": [
+                "        .chunks_exact(2)"
+              ]
+            }
+          ]
+        },
+        {
+          "code": "clippy::chunks_exact_to_as_chunks",
+          "message": "using `chunks_exact` with a constant chunk size",
+          "spans": [
+            {
+              "file": "src/parser/doc_info.rs",
+              "line": 173,
+              "text": [
+                "    data.chunks_exact(8)"
+              ]
+            }
+          ]
+        },
+        {
+          "code": "clippy::chunks_exact_to_as_chunks",
+          "message": "using `chunks_exact` with a constant chunk size",
+          "spans": [
+            {
+              "file": "src/parser/hml/encoding.rs",
+              "line": 83,
+              "text": [
+                "        .chunks_exact(2)"
+              ]
+            }
+          ]
+        },
+        {
+          "code": "clippy::chunks_exact_to_as_chunks",
+          "message": "using `chunks_exact` with a constant chunk size",
+          "spans": [
+            {
+              "file": "src/parser/hwp_summary.rs",
+              "line": 152,
+              "text": [
+                "        .chunks_exact(2)"
+              ]
+            }
+          ]
+        },
+        {
+          "code": "clippy::chunks_exact_to_as_chunks",
+          "message": "using `chunks_exact` with a constant chunk size",
+          "spans": [
+            {
+              "file": "src/parser/ole_container.rs",
+              "line": 271,
+              "text": [
+                "        .chunks_exact(2)"
+              ]
+            }
+          ]
+        },
+        {
+          "code": "clippy::chunks_exact_to_as_chunks",
+          "message": "using `chunks_exact_mut` with a constant chunk size",
+          "spans": [
+            {
+              "file": "src/renderer/canvas_rgba.rs",
+              "line": 86,
+              "text": [
+                "                    for (pixel, value) in out.as_mut().chunks_exact_mut(4).zip(gray.as_raw()) {"
+              ]
+            }
+          ]
+        },
+        {
+          "code": "clippy::manual_slice_fill",
+          "message": "manually filling a slice",
+          "spans": [
+            {
+              "file": "src/renderer/height_measurer.rs",
+              "line": 1233,
+              "text": [
+                "            for row_height in &mut fitted.row_heights {",
+                "                *row_height = per_row;",
+                "            }"
+              ]
+            }
+          ]
+        },
+        {
+          "code": "clippy::chunks_exact_to_as_chunks",
+          "message": "using `chunks_exact_mut` with a constant chunk size",
+          "spans": [
+            {
+              "file": "src/renderer/image_resolver.rs",
+              "line": 695,
+              "text": [
+                "    for (dst, &idx) in rgba.chunks_exact_mut(4).zip(indices.iter()) {"
+              ]
+            }
+          ]
+        },
+        {
+          "code": "clippy::chunks_exact_to_as_chunks",
+          "message": "using `chunks_exact_mut` with a constant chunk size",
+          "spans": [
+            {
+              "file": "src/renderer/image_resolver.rs",
+              "line": 804,
+              "text": [
+                "        for (dst, &idx) in rgba.chunks_exact_mut(4).zip(indices.iter()) {"
+              ]
+            }
+          ]
+        },
+        {
+          "code": "clippy::chunks_exact_to_as_chunks",
+          "message": "using `chunks_exact` with a constant chunk size",
+          "spans": [
+            {
+              "file": "src/renderer/image_resolver.rs",
+              "line": 823,
+              "text": [
+                "            for (x, src) in rgb_row.chunks_exact(3).enumerate() {"
+              ]
+            }
+          ]
+        },
+        {
+          "code": "clippy::drain_collect",
+          "message": "draining all elements of a collection into a new collection of the same type",
+          "spans": [
+            {
+              "file": "src/renderer/layout.rs",
+              "line": 16472,
+              "text": [
+                "                    temp_parent.children.drain(..).collect(),"
+              ]
+            }
+          ]
+        },
+        {
+          "code": "clippy::chunks_exact_to_as_chunks",
+          "message": "using `chunks_exact` with a constant chunk size",
+          "spans": [
+            {
+              "file": "src/renderer/svg.rs",
+              "line": 4704,
+              "text": [
+                "    for record in directory.chunks_exact(16) {"
+              ]
+            }
+          ]
+        },
+        {
+          "code": "clippy::chunks_exact_to_as_chunks",
+          "message": "using `chunks_exact` with a constant chunk size",
+          "spans": [
+            {
+              "file": "src/wmf/converter/svg/ternary_raster_operator.rs",
+              "line": 223,
+              "text": [
+                "        data.chunks_exact(4)"
+              ]
+            }
+          ]
+        },
+        {
+          "code": "clippy::chunks_exact_to_as_chunks",
+          "message": "using `chunks_exact` with a constant chunk size",
+          "spans": [
+            {
+              "file": "src/wmf/parser/objects/structure/mod.rs",
+              "line": 42,
+              "text": [
+                "        .chunks_exact(2)"
+              ]
+            }
+          ]
+        }
+      ],
+      "stderrTail": "  Checking argon2 v0.6.0\n    Checking pcx v0.2.5\n    Checking ml-kem v0.3.2\n    Checking chacha20poly1305 v0.11.0\n    Checking strum v0.28.0\n    Checking snafu v0.9.2\n    Checking ed25519-dalek v3.0.0\n    Checking rhwp-contracts v0.1.0 (<source>/crates/rhwp-contracts)\n    Checking ml-dsa v0.1.1\n    Checking codepage v0.1.3\n    Checking web-sys v0.3.104\n    Checking rhwp-ooxml-chart v0.1.0 (<source>/crates/rhwp-ooxml-chart)\n    Checking console_error_panic_hook v0.1.7\n    Checking embedded-io v0.7.1\n    Checking unicode-segmentation v1.13.3\n    Checking unicode-width v0.2.2\nerror: could not compile `rhwp` (lib) due to 39 previous errors\n"
+    },
+    {
+      "arm": "final",
+      "auditRustflags": "--cfg geul_d4_fresh_clippy_final",
+      "command": [
+        "cargo",
+        "clippy",
+        "--locked",
+        "--offline",
+        "-p",
+        "rhwp",
+        "--lib",
+        "--release",
+        "--target",
+        "wasm32-unknown-unknown",
+        "--no-deps",
+        "--message-format=json",
+        "--",
+        "-D",
+        "warnings"
+      ],
+      "exit": 101,
+      "sourceStable": true,
+      "diagnostics": [
+        {
+          "code": "clippy::chunks_exact_to_as_chunks",
+          "message": "using `chunks_exact` with a constant chunk size",
+          "spans": [
+            {
+              "file": "src/diagnostics/hwp5_anchor_trace.rs",
+              "line": 283,
+              "text": [
+                "            .chunks_exact(2)"
+              ]
+            }
+          ]
+        },
+        {
+          "code": "clippy::chunks_exact_to_as_chunks",
+          "message": "using `chunks_exact` with a constant chunk size",
+          "spans": [
+            {
+              "file": "src/diagnostics/hwp5_anchor_trace.rs",
+              "line": 389,
+              "text": [
+                "        .chunks_exact(2)"
+              ]
+            }
+          ]
+        },
+        {
+          "code": "clippy::chunks_exact_to_as_chunks",
+          "message": "using `chunks_exact` with a constant chunk size",
+          "spans": [
+            {
+              "file": "src/diagnostics/hwp5_char_shape_audit.rs",
+              "line": 505,
+              "text": [
+                "    data.chunks_exact(8)"
+              ]
+            }
+          ]
+        },
+        {
+          "code": "clippy::chunks_exact_to_as_chunks",
+          "message": "using `chunks_exact` with a constant chunk size",
+          "spans": [
+            {
+              "file": "src/diagnostics/hwp5_char_shape_audit.rs",
+              "line": 511,
+              "text": [
+                "    data.chunks_exact(36)"
+              ]
+            }
+          ]
+        },
+        {
+          "code": "clippy::chunks_exact_to_as_chunks",
+          "message": "using `chunks_exact` with a constant chunk size",
+          "spans": [
+            {
+              "file": "src/diagnostics/hwp5_char_shape_audit.rs",
+              "line": 518,
+              "text": [
+                "        .chunks_exact(2)"
+              ]
+            }
+          ]
+        },
+        {
+          "code": "clippy::chunks_exact_to_as_chunks",
+          "message": "using `chunks_exact` with a constant chunk size",
+          "spans": [
+            {
+              "file": "src/diagnostics/hwp5_contract_analyze.rs",
+              "line": 960,
+              "text": [
+                "        .chunks_exact(4)"
+              ]
+            }
+          ]
+        },
+        {
+          "code": "clippy::chunks_exact_to_as_chunks",
+          "message": "using `chunks_exact` with a constant chunk size",
+          "spans": [
+            {
+              "file": "src/diagnostics/hwp5_ctrl_data_trace.rs",
+              "line": 373,
+              "text": [
+                "        .chunks_exact(2)"
+              ]
+            }
+          ]
+        },
+        {
+          "code": "clippy::chunks_exact_to_as_chunks",
+          "message": "using `chunks_exact` with a constant chunk size",
+          "spans": [
+            {
+              "file": "src/diagnostics/hwp5_first_para_control_probe.rs",
+              "line": 1254,
+              "text": [
+                "        .chunks_exact(8)"
+              ]
+            }
+          ]
+        },
+        {
+          "code": "clippy::unnecessary_sort_by",
+          "message": "consider using `sort_by_key`",
+          "spans": [
+            {
+              "file": "src/document_core/commands/paragraph_block/template.rs",
+              "line": 419,
+              "text": [
+                "        edits.sort_by(|a, b| b.1.start.cmp(&a.1.start));"
+              ]
+            }
+          ]
+        },
+        {
+          "code": "clippy::chunks_exact_to_as_chunks",
+          "message": "using `chunks_exact` with a constant chunk size",
+          "spans": [
+            {
+              "file": "src/document_core/commands/paragraph_block/validation/support.rs",
+              "line": 177,
+              "text": [
+                "                        .chunks_exact(2)"
+              ]
+            }
+          ]
+        },
+        {
+          "code": "clippy::manual_checked_ops",
+          "message": "manual checked division",
+          "spans": [
+            {
+              "file": "src/document_core/commands/paragraph_block.rs",
+              "line": 181,
+              "text": [
+                "    let (structure_bytes, added_nodes, owned_depth, mapping_bytes, document_nodes) = if r.count == 0"
+              ]
+            }
+          ]
+        },
+        {
+          "code": "clippy::unnecessary_sort_by",
+          "message": "consider using `sort_by_key`",
+          "spans": [
+            {
+              "file": "src/document_core/queries/explore.rs",
+              "line": 290,
+              "text": [
+                "    items.sort_by(|a, b| b.0.cmp(&a.0));"
+              ]
+            }
+          ]
+        },
+        {
+          "code": "clippy::chunks_exact_to_as_chunks",
+          "message": "using `chunks_exact` with a constant chunk size",
+          "spans": [
+            {
+              "file": "src/document_core/queries/form_query.rs",
+              "line": 334,
+              "text": [
+                "        .chunks_exact(2)"
+              ]
+            }
+          ]
+        },
+        {
+          "code": "clippy::manual_slice_fill",
+          "message": "manually filling a slice",
+          "spans": [
+            {
+              "file": "src/document_core/queries/rendering.rs",
+              "line": 4539,
+              "text": [
+                "        for d in &mut self.dirty_sections {",
+                "            *d = true;",
+                "        }"
+              ]
+            }
+          ]
+        },
+        {
+          "code": "clippy::manual_slice_fill",
+          "message": "manually filling a slice",
+          "spans": [
+            {
+              "file": "src/document_core/queries/rendering.rs",
+              "line": 4874,
+              "text": [
+                "        for offset in &mut self.para_offset {",
+                "            *offset = 0;",
+                "        }"
+              ]
+            }
+          ]
+        },
+        {
+          "code": "clippy::manual_slice_fill",
+          "message": "manually filling a slice",
+          "spans": [
+            {
+              "file": "src/document_core/queries/rendering.rs",
+              "line": 5718,
+              "text": [
+                "        for off in &mut self.para_offset {",
+                "            *off = 0;",
+                "        }"
+              ]
+            }
+          ]
+        },
+        {
+          "code": "clippy::explicit_counter_loop",
+          "message": "the variable `i` is used as a loop counter",
+          "spans": [
+            {
+              "file": "src/document_core/queries/extract_data.rs",
+              "line": 284,
+              "text": [
+                "    for expected in needle.chars() {"
+              ]
+            }
+          ]
+        },
+        {
+          "code": "clippy::manual_slice_fill",
+          "message": "manually filling a slice",
+          "spans": [
+            {
+              "file": "src/model/style.rs",
+              "line": 938,
+              "text": [
+                "            for fid in &mut cs.font_ids {",
+                "                *fid = id;",
+                "            }"
+              ]
+            }
+          ]
+        },
+        {
+          "code": "clippy::chunks_exact_to_as_chunks",
+          "message": "using `chunks_exact` with a constant chunk size",
+          "spans": [
+            {
+              "file": "src/ole_chart/grid.rs",
+              "line": 508,
+              "text": [
+                "            .chunks_exact(2)"
+              ]
+            }
+          ]
+        },
+        {
+          "code": "clippy::chunks_exact_to_as_chunks",
+          "message": "using `chunks_exact` with a constant chunk size",
+          "spans": [
+            {
+              "file": "src/ole_chart/parser.rs",
+              "line": 228,
+              "text": [
+                "    for (i, chunk) in bytes[..16].chunks_exact(4).enumerate() {"
+              ]
+            }
+          ]
+        },
+        {
+          "code": "clippy::chunks_exact_to_as_chunks",
+          "message": "using `chunks_exact` with a constant chunk size",
+          "spans": [
+            {
+              "file": "src/parser/body_text.rs",
+              "line": 477,
+              "text": [
+                "            text.extend(data[run_start..pos].chunks_exact(2).map(|c| {"
+              ]
+            }
+          ]
+        },
+        {
+          "code": "clippy::chunks_exact_to_as_chunks",
+          "message": "using `chunks_exact` with a constant chunk size",
+          "spans": [
+            {
+              "file": "src/parser/body_text.rs",
+              "line": 1252,
+              "text": [
+                "        .chunks_exact(2)"
+              ]
+            }
+          ]
+        },
+        {
+          "code": "clippy::chunks_exact_to_as_chunks",
+          "message": "using `chunks_exact` with a constant chunk size",
+          "spans": [
+            {
+              "file": "src/parser/byte_reader.rs",
+              "line": 121,
+              "text": [
+                "            .chunks_exact(2)"
+              ]
+            }
+          ]
+        },
+        {
+          "code": "clippy::chunks_exact_to_as_chunks",
+          "message": "using `chunks_exact` with a constant chunk size",
+          "spans": [
+            {
+              "file": "src/parser/cfb_reader.rs",
+              "line": 1266,
+              "text": [
+                "        .chunks_exact(2)"
+              ]
+            }
+          ]
+        },
+        {
+          "code": "clippy::chunks_exact_to_as_chunks",
+          "message": "using `chunks_exact` with a constant chunk size",
+          "spans": [
+            {
+              "file": "src/parser/control.rs",
+              "line": 421,
+              "text": [
+                "        .chunks_exact(2)"
+              ]
+            }
+          ]
+        },
+        {
+          "code": "clippy::chunks_exact_to_as_chunks",
+          "message": "using `chunks_exact` with a constant chunk size",
+          "spans": [
+            {
+              "file": "src/parser/control.rs",
+              "line": 1051,
+              "text": [
+                "        .chunks_exact(2)"
+              ]
+            }
+          ]
+        },
+        {
+          "code": "clippy::chunks_exact_to_as_chunks",
+          "message": "using `chunks_exact` with a constant chunk size",
+          "spans": [
+            {
+              "file": "src/parser/doc_info.rs",
+              "line": 173,
+              "text": [
+                "    data.chunks_exact(8)"
+              ]
+            }
+          ]
+        },
+        {
+          "code": "clippy::chunks_exact_to_as_chunks",
+          "message": "using `chunks_exact` with a constant chunk size",
+          "spans": [
+            {
+              "file": "src/parser/hml/encoding.rs",
+              "line": 83,
+              "text": [
+                "        .chunks_exact(2)"
+              ]
+            }
+          ]
+        },
+        {
+          "code": "clippy::chunks_exact_to_as_chunks",
+          "message": "using `chunks_exact` with a constant chunk size",
+          "spans": [
+            {
+              "file": "src/parser/hwp_summary.rs",
+              "line": 152,
+              "text": [
+                "        .chunks_exact(2)"
+              ]
+            }
+          ]
+        },
+        {
+          "code": "clippy::chunks_exact_to_as_chunks",
+          "message": "using `chunks_exact` with a constant chunk size",
+          "spans": [
+            {
+              "file": "src/parser/ole_container.rs",
+              "line": 271,
+              "text": [
+                "        .chunks_exact(2)"
+              ]
+            }
+          ]
+        },
+        {
+          "code": "clippy::manual_slice_fill",
+          "message": "manually filling a slice",
+          "spans": [
+            {
+              "file": "src/renderer/height_measurer.rs",
+              "line": 1233,
+              "text": [
+                "            for row_height in &mut fitted.row_heights {",
+                "                *row_height = per_row;",
+                "            }"
+              ]
+            }
+          ]
+        },
+        {
+          "code": "clippy::chunks_exact_to_as_chunks",
+          "message": "using `chunks_exact_mut` with a constant chunk size",
+          "spans": [
+            {
+              "file": "src/renderer/image_resolver.rs",
+              "line": 695,
+              "text": [
+                "    for (dst, &idx) in rgba.chunks_exact_mut(4).zip(indices.iter()) {"
+              ]
+            }
+          ]
+        },
+        {
+          "code": "clippy::chunks_exact_to_as_chunks",
+          "message": "using `chunks_exact_mut` with a constant chunk size",
+          "spans": [
+            {
+              "file": "src/renderer/image_resolver.rs",
+              "line": 804,
+              "text": [
+                "        for (dst, &idx) in rgba.chunks_exact_mut(4).zip(indices.iter()) {"
+              ]
+            }
+          ]
+        },
+        {
+          "code": "clippy::chunks_exact_to_as_chunks",
+          "message": "using `chunks_exact` with a constant chunk size",
+          "spans": [
+            {
+              "file": "src/renderer/image_resolver.rs",
+              "line": 823,
+              "text": [
+                "            for (x, src) in rgb_row.chunks_exact(3).enumerate() {"
+              ]
+            }
+          ]
+        },
+        {
+          "code": "clippy::drain_collect",
+          "message": "draining all elements of a collection into a new collection of the same type",
+          "spans": [
+            {
+              "file": "src/renderer/layout.rs",
+              "line": 16472,
+              "text": [
+                "                    temp_parent.children.drain(..).collect(),"
+              ]
+            }
+          ]
+        },
+        {
+          "code": "clippy::chunks_exact_to_as_chunks",
+          "message": "using `chunks_exact` with a constant chunk size",
+          "spans": [
+            {
+              "file": "src/renderer/svg.rs",
+              "line": 4704,
+              "text": [
+                "    for record in directory.chunks_exact(16) {"
+              ]
+            }
+          ]
+        },
+        {
+          "code": "clippy::chunks_exact_to_as_chunks",
+          "message": "using `chunks_exact` with a constant chunk size",
+          "spans": [
+            {
+              "file": "src/wmf/converter/svg/ternary_raster_operator.rs",
+              "line": 223,
+              "text": [
+                "        data.chunks_exact(4)"
+              ]
+            }
+          ]
+        },
+        {
+          "code": "clippy::chunks_exact_to_as_chunks",
+          "message": "using `chunks_exact` with a constant chunk size",
+          "spans": [
+            {
+              "file": "src/wmf/parser/objects/structure/mod.rs",
+              "line": 42,
+              "text": [
+                "        .chunks_exact(2)"
+              ]
+            }
+          ]
+        }
+      ],
+      "stderrTail": "-d4-engine-final/crates/rhwp-password-crypto)\n    Checking cfb v0.15.0\n    Checking ml-kem v0.3.2\n    Checking chacha20poly1305 v0.11.0\n    Checking strum v0.28.0\n    Checking snafu v0.9.2\n    Checking ed25519-dalek v3.0.0\n    Checking codepage v0.1.3\n    Checking rhwp-contracts v0.1.0 (<source>/crates/rhwp-contracts)\n    Checking ml-dsa v0.1.1\n    Checking web-sys v0.3.104\n    Checking rhwp-ooxml-chart v0.1.0 (<source>/crates/rhwp-ooxml-chart)\n    Checking console_error_panic_hook v0.1.7\n    Checking unicode-width v0.2.2\n    Checking embedded-io v0.7.1\n    Checking unicode-segmentation v1.13.3\nerror: could not compile `rhwp` (lib) due to 38 previous errors\n"
+    }
+  ],
+  "comparison": "same lint/code/message/primary source text; line offsets ignored",
+  "newDiagnostics": []
+}

@@ -1,0 +1,5 @@
+{
+  "scope": "actual helper+its test module extracted from optimized source; not full engine tests",
+  "exit": 0,
+  "output": "\nrunning 2 tests\ntest kopub_family_equivalence_tests::names_case_variants_boundaries_and_unicode_match_frozen_predicates ... ok\ntest kopub_family_equivalence_tests::unicode_tables_only_require_kelvin_fallback_for_these_needles ... ok\n\ntest result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.08s\n\n"
+}
