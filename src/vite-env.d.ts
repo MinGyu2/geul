@@ -8,4 +8,5 @@ interface ImportMetaEnv {
   readonly VITE_GEUL_TEST_HOOKS?: string;
   /** "1"이고 VITE_GEUL_TEST_HOOKS도 "1"이면 rhwp 실행 취소·다시 실행 명령을 시험 빌드에서만 켠다(src/commands/registry.ts). */
   readonly VITE_GEUL_TEST_RHWP_HISTORY?: string;
+  readonly VITE_GEUL_TEST_RHWP_FORMAT?: string;
 }

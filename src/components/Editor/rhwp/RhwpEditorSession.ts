@@ -44,9 +44,9 @@ import { trace } from "../imeTrace";
 import type { DocumentBackend, ReopenEvidence } from "../../../adapters/backend";
 import type { DocumentError, Result, SaveCheck, SaveOutcome, SessionInfo } from "../../../adapters/contract";
 import { blockedBy, type SaveCheckRecord, type SaveState } from "../saveState";
-import { documentCommandState } from "../../../commands/capability";
+import { documentCommandState, FORMAT_FLAG } from "../../../commands/capability";
 import { commandDefinition, type DocumentCommandId } from "../../../commands/registry";
-import type { CommandDispatch, DocumentCommandSnapshot, DocumentCommandTarget } from "../../../commands/target";
+import type { CharFormatFlag, CommandDispatch, DocumentCommandSnapshot, DocumentCommandTarget } from "../../../commands/target";
 import type { DocumentSessions } from "../../../adapters/sessions";
 import { changedBand, summarizeLayerTree, type PaintBox, type PaintedPage } from "./paintDiff";
 import type { RhwpDocument, RhwpModule } from "./rhwpModule";
@@ -208,6 +208,10 @@ const MAX_SAMPLES = 1000;
 const RHWP_HISTORY_DECLARED = (["edit.undo", "edit.redo"] as const)
   .every((id) => commandDefinition(id)?.engines?.rhwp.level === "supported");
 
+/** 레지스트리가 rhwp 글자 서식을 지원으로 선언했는지(시험 활성화 빌드만 — registry.ts `RHWP_FORMAT`). */
+const RHWP_FORMAT_DECLARED = (["format.bold", "format.italic", "format.underline", "format.strikethrough"] as const)
+  .every((id) => commandDefinition(id)?.engines?.rhwp.level === "supported");
+
 export class RhwpEditorSession implements DocumentCommandTarget {
   readonly engine = "rhwp" as const;
   status: EditorStatus = { kind: "idle" };
@@ -282,7 +286,8 @@ export class RhwpEditorSession implements DocumentCommandTarget {
     private readonly sessions: DocumentSessions,
     private readonly loadModule: () => Promise<RhwpModule>,
     /** history: 실행 취소 기록을 켤지. 없으면 레지스트리가 rhwp 실행 취소·다시 실행을 지원으로 선언했을 때만(빌드 때 정해짐). */
-    private readonly options: { history?: boolean } = {},
+    /** format: 글자 서식 명령을 받을지. 없으면 레지스트리 선언(시험 활성화 빌드만). */
+    private readonly options: { history?: boolean; format?: boolean } = {},
   ) {}
 
   subscribe(listener: () => void): () => void {
@@ -1376,8 +1381,45 @@ export class RhwpEditorSession implements DocumentCommandTarget {
       // 기록은 지역·동기라 대기 확정에 영향받지 않는다(queuedHistory 없음). 열린 트랜잭션(조합)은 composing이 막는다.
       history: this.history ? { undo: this.history.canUndo, redo: this.history.canRedo } : null,
       historyLimited: this.history === null && this.historyOff === "limit",
-      format: null, formatAccess: null,
+      format: this.formatState(), formatAccess: null,
     };
+  }
+
+  private formatCache: { key: string; value: Readonly<Record<CharFormatFlag, boolean>> | null } | null = null;
+
+  /**
+   * 선택의 글자 서식(T010 서식). 다음이 모두 맞을 때만 값을 낸다 — 아니면 null이라 서식 명령은 막힌다(fail closed):
+   * 서식 명령을 받는 빌드, HWPX(HWP는 글자 모양이 DocInfo를 바꾸고 미리보기가 낡아 T009 저장이 거부), 편집 가능, IME 트랜잭션 없음,
+   * 실행 취소 기록이 켜짐(서식도 되돌릴 수 있어야 함), 같은 문맥의 선택이 있음(빈 커서의 "다음 입력 서식"은 지원하지 않음).
+   * 눌림 상태는 선택 첫 글자의 서식이다. 모델 판·선택이 같으면 다시 읽지 않는다.
+   */
+  private formatState(): Readonly<Record<CharFormatFlag, boolean>> | null {
+    if (!(this.options.format ?? RHWP_FORMAT_DECLARED)) return null;
+    if (this.sessions.get(this.sessionId)?.format !== "hwpx") return null;
+    if (!this.editable || !this.doc || !this.text || !this.history || this.imeUnsettled) return null;
+    if (!this.hasSelection || !sameContext(this.anchor, this.caret)) return null;
+    const [from] = this.ordered();
+    const key = `${this.modelVersion}|${RhwpEditorSession.positionKey(this.anchor)}|${RhwpEditorSession.positionKey(this.caret)}`;
+    if (this.formatCache?.key !== key) this.formatCache = { key, value: this.text.charFormat(from) };
+    return this.formatCache.value;
+  }
+
+  /**
+   * 선택에 글자 서식을 켜거나 끈다(첫 글자가 이미 그 서식이면 끔). 한 변경·한 실행 취소 단계다: 앞뒤 타자 그룹과 섞이지 않게
+   * 기록 경계를 두고 `mutate`(기록 before 스냅숏 → 엔진 → 확정 대기열 → 다시 그리기)로 바꾼다. 선택은 그대로 둔다.
+   */
+  private applyFormat(flag: CharFormatFlag): boolean {
+    const state = this.formatState();
+    if (!state) return false;
+    const [from, to] = this.ordered();
+    const caret = this.caret, anchor = this.anchor;
+    this.history?.boundary();
+    const applied = this.mutate(() => {
+      this.text!.format(from, to, JSON.stringify({ [flag]: !state[flag] }));
+      return { caret, anchor };
+    }, true, "other", null);
+    this.history?.boundary();
+    return applied;
   }
 
   /** 명령을 이 세션에서 실행한다. 지금 상태로 다시 확인해 할 수 없으면(rhwp가 지원하지 않는 명령 포함) 아무것도 바꾸지 않는다. */
@@ -1385,6 +1427,8 @@ export class RhwpEditorSession implements DocumentCommandTarget {
     // 레지스트리 가용성(엔진 지원 표 포함)을 실행 직전에 다시 확인한다. rhwp 실행 취소는 그 표가 지원으로 바뀌기 전에는 오지 않는다.
     if (!documentCommandState(command, this.snapshot()).available) return { accepted: false };
     if (command === "edit.undo" || command === "edit.redo") return { accepted: command === "edit.undo" ? this.undo() : this.redo() };
+    const flag = FORMAT_FLAG[command];
+    if (flag) return { accepted: this.applyFormat(flag) };
     if (command !== "file.save") return { accepted: false };
     void this.save();
     return { accepted: true };

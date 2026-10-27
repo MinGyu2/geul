@@ -1,0 +1,34 @@
+T010 rhwp 글자 서식 명령 (2026-10-28, 시험 활성화 빌드 한정 — 제품 활성화 아님)
+
+범주: VERIFIED=이번 실행·소스, INFERRED=해석, UNVERIFIED=입증 못함.
+
+1. 구현(제품 소스, 시험 빌드 상수로만 켜짐)
+- registry.ts `RHWP_FORMAT`: 검사 훅 빌드이면서 VITE_GEUL_TEST_RHWP_FORMAT=1일 때만 rhwp format.bold/italic/underline/strikethrough가
+  supported. 일반·검사 훅 빌드 번들에는 표지 문자열 `rhwp-format-commands`가 없다(VERIFIED, vite build 3구성: normal 0, hooks 0,
+  enabled 1). 제품 레지스트리 시험(commands.test.ts "rhwp는 저장만")은 그대로 통과.
+- RhwpEditorSession `formatState`: 서식 명령을 받는 빌드 + HWPX + 편집 가능 + IME 트랜잭션 없음 + 실행 취소 기록 켜짐 + 같은 문맥의
+  선택이 있을 때만 서식 상태를 낸다. 아니면 null → capability가 engineUnsupported로 막는다(fail closed). 눌림 상태는 선택 첫 글자.
+  HWP는 글자 모양이 DocInfo를 바꾸고 미리보기가 낡아 T009 저장이 거부하므로 계속 막는다. 빈 커서의 "다음 입력 서식"은 지원하지 않는다.
+- `applyFormat`: 기록 경계 → `mutate`(기록 before 스냅숏 → 엔진 applyCharFormat(InCell) 문단별 범위 → 확정 대기열·revision →
+  다시 그리기) → 기록 경계. 한 명령 = 한 변경 = 한 실행 취소 단계, 선택 유지. 첫 글자가 이미 그 서식이면 끈다.
+- rhwpText `format`(같은 문맥의 여러 문단·셀 문단 범위)·`charFormat`, rhwpModule에 선택적 엔진 함수 선언.
+
+2. 검증(VERIFIED, 이번 실행)
+- format-enabled.wasm.test.ts(고정 rhwp 시험 패키지, 실제 WASM, 앱 명령 경로) 4 PASS: 네 서식 켬/끔·실행 취소/다시 실행 한 단계·
+  선택 밖 글자 불변·글자 불변·modelVersion+1·pending, 선택 없음·조합 중 막힘, 여러 문단 기울임·이미 굵은 첫 글자는 끄기·표 셀 밑줄과
+  실행 취소, HWP는 선택이 있어도 막힘.
+- format_save.py + format-save.wasm.test.ts → 실제 service::save(src-tauri t010_phase0_save_service, undo_save.py와 같은 시험)
+  7사례 불일치 0(format-save.json): HWPX 본문 굵게·여러 문단 기울임·셀 밑줄·굵게 끄기·취소선 → preflight safe·checkSaved safe·게시·
+  durable·다시 열기 4값 같음·다시 연 문서의 범위별 서식 같음. 굵게 뒤 실행 취소 → 원본과 같은 바이트로 게시. HWP 엔진 직접 굵게(음성 대조)
+  → recordsChanged{DocInfo}·previewStale{PrvText,PrvImage}로 거부, 원본 SHA 그대로, 세션 dirty 유지.
+- 실제 앱(format-native.py, attempt1 원본 .git/t010-rhwp-format-native-attempt1/format.json sha a4e1ba97…, 사본 format-native-attempt1.json)
+  12/12 PASS: tauri + WebKitGTK 2.54.1 + 실제 X11 키. 선택 없음이면 서식 단추 비활성 → Shift+→ 3번 선택 → 굵게 단추 활성·눌림 false →
+  Ctrl+B로 0..2만 굵게·글자와 문단 텍스트 그대로·revision+1 확정·dirty → 눌림 true → Ctrl+Z/Ctrl+Y로 서식만 되돌림/복원 → 리본 기울임
+  단추 → Ctrl+S 저장(saved, dirty false, 파일 바뀜) → 저장 파일을 새 엔진 문서로 열어 0..2 굵게+기울임, 3은 아님. HWP: 같은 선택·Ctrl+B·
+  리본 기울임에 단추 비활성, revision·dirty·문단 텍스트·서식·파일 SHA 그대로. 프로세스 범위 정리 PASS·생존자 0, teardown 현재 시도 일치.
+- 회귀: tsc, eslint, vitest 42 파일 819 PASS, WASM 통합 일반 구성 42 PASS/8 skip, 기록 활성화 구성 history-enabled 1 PASS.
+
+3. 남은 것(UNVERIFIED/NOT RUN)
+- 빈 커서 서식 상태(다음 입력)·머리말/꼬리말·중첩 표·글상자 안 선택은 지원하지 않는다(막힘).
+- HWP 서식: 저장 보존 규칙상 계속 미지원. 실제 IME 조합 중 단축키 서식 차단은 단위·WASM 시험으로만 확인(native IME 미실행).
+- 제품 활성화: rhwp 실행 취소가 제품 NO-GO이므로 서식도 시험 활성화 빌드에만 있다.

@@ -61,6 +61,15 @@ const RHWP_HISTORY: EngineSupport =
     : UNSUPPORTED;
 
 /**
+ * 시험 빌드 전용 rhwp 글자 서식(T010 서식): 검사 훅 빌드이면서 `VITE_GEUL_TEST_RHWP_FORMAT=1`일 때만 지원으로 본다(위와 같은 빌드 상수).
+ * 세션은 HWPX이고 선택이 있고 실행 취소 기록이 켜져 있을 때만 서식 상태를 내므로 HWP·선택 없음·기록 없음은 계속 막힌다.
+ */
+const RHWP_FORMAT: EngineSupport =
+  import.meta.env.VITE_GEUL_TEST_HOOKS === "1" && import.meta.env.VITE_GEUL_TEST_RHWP_FORMAT === "1"
+    ? (console.info("geul-test-build: rhwp-format-commands"), SUPPORTED)
+    : UNSUPPORTED;
+
+/**
  * 엔진별 지원(근거: docs/architecture/command-registry.md).
  * - WordCraft: 실행 취소·다시 실행은 엔진(`Session`)의 기록, 글자 서식은 WordCraft `format.*` 명령(Rust 시험·보존 검사 통과).
  * - rhwp: 고정 rhwp에는 실행 취소 기록이 없다(스냅숏 함수만). 세션의 기록(RhwpHistory, T010 Phase 2)은 구현했지만 활성화 관문을
@@ -71,10 +80,10 @@ const RHWP_HISTORY: EngineSupport =
 const DOCUMENT_COMMANDS: Record<DocumentCommandId, Omit<CommandDefinition, "id" | "labelKey" | "kind">> = {
   "edit.undo": { engines: { wordcraft: SUPPORTED, rhwp: RHWP_HISTORY }, shortcuts: ["Mod+Z"], scope: "document" },
   "edit.redo": { engines: { wordcraft: SUPPORTED, rhwp: RHWP_HISTORY }, shortcuts: ["Mod+Y", "Mod+Shift+Z"], scope: "document" },
-  "format.bold": { engines: { wordcraft: SUPPORTED, rhwp: UNSUPPORTED }, shortcuts: ["Mod+B"], scope: "document" },
-  "format.italic": { engines: { wordcraft: SUPPORTED, rhwp: UNSUPPORTED }, shortcuts: ["Mod+I"], scope: "document" },
-  "format.underline": { engines: { wordcraft: SUPPORTED, rhwp: UNSUPPORTED }, shortcuts: ["Mod+U"], scope: "document" },
-  "format.strikethrough": { engines: { wordcraft: SUPPORTED, rhwp: UNSUPPORTED } },
+  "format.bold": { engines: { wordcraft: SUPPORTED, rhwp: RHWP_FORMAT }, shortcuts: ["Mod+B"], scope: "document" },
+  "format.italic": { engines: { wordcraft: SUPPORTED, rhwp: RHWP_FORMAT }, shortcuts: ["Mod+I"], scope: "document" },
+  "format.underline": { engines: { wordcraft: SUPPORTED, rhwp: RHWP_FORMAT }, shortcuts: ["Mod+U"], scope: "document" },
+  "format.strikethrough": { engines: { wordcraft: SUPPORTED, rhwp: RHWP_FORMAT } },
   "file.save": { engines: { wordcraft: SUPPORTED, rhwp: SUPPORTED }, shortcuts: ["Mod+S"], scope: "document" },
 };
 

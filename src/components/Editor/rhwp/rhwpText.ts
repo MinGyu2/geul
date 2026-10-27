@@ -222,6 +222,40 @@ export class RhwpText {
     else this.doc.deleteRange(from.section, from.paragraph, from.offset, to.paragraph, to.offset);
   }
 
+  /**
+   * 같은 문맥(본문 또는 한 셀)의 [from, to) 범위에 글자 서식을 적용한다. 문단마다 그 문단 안의 범위만 넘긴다(빈 범위는 건너뜀).
+   * 엔진에 서식 함수가 없으면 아무것도 바꾸기 전에 던진다.
+   */
+  format(from: DocPosition, to: DocPosition, props: string): void {
+    const c = from.cell;
+    if (c ? !this.doc.applyCharFormatInCell : !this.doc.applyCharFormat) throw new Error("char format unavailable");
+    const first = paragraphOf(from), last = paragraphOf(to);
+    for (let paragraph = first; paragraph <= last; paragraph += 1) {
+      const at = withParagraph(from, paragraph, 0);
+      const start = paragraph === first ? from.offset : 0;
+      const end = paragraph === last ? to.offset : this.paragraphLength(at);
+      if (end <= start) continue;
+      if (c) this.doc.applyCharFormatInCell!(from.section, c.parentParagraph, c.control, c.cell, paragraph, start, end, props);
+      else this.doc.applyCharFormat!(from.section, paragraph, start, end, props);
+    }
+  }
+
+  /** 위치 글자의 서식(굵게·기울임·밑줄·취소선). 읽을 수 없으면 null. */
+  charFormat(at: DocPosition): Record<"bold" | "italic" | "underline" | "strikethrough", boolean> | null {
+    const c = at.cell;
+    try {
+      const value = json(c
+        ? this.doc.getCellCharPropertiesAt!(at.section, c.parentParagraph, c.control, c.cell, c.cellParagraph, at.offset)
+        : this.doc.getCharPropertiesAt!(at.section, at.paragraph, at.offset));
+      if (!isRecord(value)) return null;
+      const flags = ["bold", "italic", "underline", "strikethrough"] as const;
+      if (!flags.every((flag) => typeof value[flag] === "boolean")) return null;
+      return Object.fromEntries(flags.map((flag) => [flag, value[flag] as boolean])) as Record<(typeof flags)[number], boolean>;
+    } catch {
+      return null;
+    }
+  }
+
   /** 위치에서 문단을 나눈다(Enter). */
   split(at: DocPosition): void {
     const c = at.cell;

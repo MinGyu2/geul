@@ -54,6 +54,14 @@ export interface RhwpDocument {
   insertText(section: number, paragraph: number, offset: number, text: string): string;
   insertTextInCell(section: number, parentParagraph: number, control: number, cell: number, cellParagraph: number, offset: number, text: string): string;
   deleteText(section: number, paragraph: number, offset: number, count: number): string;
+  /** 글자 서식(T010 서식, HWPX만 쓴다): 문단의 [start, end) 범위에 `props`(예: `{"bold":true}`)를 적용한다. */
+  applyCharFormat?(section: number, paragraph: number, start: number, end: number, props: string): string;
+  applyCharFormatInCell?(
+    section: number, parentParagraph: number, control: number, cell: number, cellParagraph: number, start: number, end: number, props: string,
+  ): string;
+  /** 위치의 글자 서식 JSON(`bold`·`italic`·`underline`·`strikethrough` 등). */
+  getCharPropertiesAt?(section: number, paragraph: number, offset: number): string;
+  getCellCharPropertiesAt?(section: number, parentParagraph: number, control: number, cell: number, cellParagraph: number, offset: number): string;
   deleteTextInCell(section: number, parentParagraph: number, control: number, cell: number, cellParagraph: number, offset: number, count: number): string;
   deleteRange(section: number, startParagraph: number, startOffset: number, endParagraph: number, endOffset: number): string;
   deleteRangeInCell(

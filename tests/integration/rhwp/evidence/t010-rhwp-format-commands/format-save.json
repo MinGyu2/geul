@@ -1,0 +1,399 @@
+{
+ "rows": [
+  {
+   "case": "body-bold",
+   "fmt": "hwpx",
+   "preflight": "safe",
+   "preflightFindings": [],
+   "checkSaved": "safe",
+   "findings": [],
+   "published": true,
+   "originalSha256": "26d434b7b427149110751c6ef5b19e9ecb4818f3ba7eadfe201b5afd3de442a8",
+   "afterSha256": "18c71358abb31bbd02064ff8f5486ed58085bf8a16189a7d8a7ed33726374e47",
+   "durable": true,
+   "reopen": {
+    "formatEqual": true,
+    "pagesEqual": true,
+    "textEqual": true,
+    "controlsEqual": true
+   },
+   "reopenFormat": [
+    {
+     "at": {
+      "section": 0,
+      "paragraph": 0,
+      "offset": 0
+     },
+     "prop": "bold",
+     "value": true,
+     "model": true,
+     "reopened": true
+    },
+    {
+     "at": {
+      "section": 0,
+      "paragraph": 0,
+      "offset": 2
+     },
+     "prop": "bold",
+     "value": true,
+     "model": true,
+     "reopened": true
+    },
+    {
+     "at": {
+      "section": 0,
+      "paragraph": 0,
+      "offset": 3
+     },
+     "prop": "bold",
+     "value": false,
+     "model": false,
+     "reopened": false
+    }
+   ],
+   "sessionAfter": {
+    "dirty": false,
+    "revision": 1,
+    "state": "ready"
+   },
+   "dirAfter": [
+    "doc.hwpx"
+   ],
+   "ok": true
+  },
+  {
+   "case": "multi-italic",
+   "fmt": "hwpx",
+   "preflight": "safe",
+   "preflightFindings": [],
+   "checkSaved": "safe",
+   "findings": [],
+   "published": true,
+   "originalSha256": "26d434b7b427149110751c6ef5b19e9ecb4818f3ba7eadfe201b5afd3de442a8",
+   "afterSha256": "fb0857096ca427afe08e4753851a889233f4fc12e01d03c1787bf7b371ef01e7",
+   "durable": true,
+   "reopen": {
+    "formatEqual": true,
+    "pagesEqual": true,
+    "textEqual": true,
+    "controlsEqual": true
+   },
+   "reopenFormat": [
+    {
+     "at": {
+      "section": 0,
+      "paragraph": 0,
+      "offset": 2
+     },
+     "prop": "italic",
+     "value": false,
+     "model": false,
+     "reopened": false
+    },
+    {
+     "at": {
+      "section": 0,
+      "paragraph": 0,
+      "offset": 3
+     },
+     "prop": "italic",
+     "value": true,
+     "model": true,
+     "reopened": true
+    },
+    {
+     "at": {
+      "section": 0,
+      "paragraph": 1,
+      "offset": 1
+     },
+     "prop": "italic",
+     "value": true,
+     "model": true,
+     "reopened": true
+    },
+    {
+     "at": {
+      "section": 0,
+      "paragraph": 1,
+      "offset": 2
+     },
+     "prop": "italic",
+     "value": false,
+     "model": false,
+     "reopened": false
+    }
+   ],
+   "sessionAfter": {
+    "dirty": false,
+    "revision": 1,
+    "state": "ready"
+   },
+   "dirAfter": [
+    "doc.hwpx"
+   ],
+   "ok": true
+  },
+  {
+   "case": "cell-underline",
+   "fmt": "hwpx",
+   "preflight": "safe",
+   "preflightFindings": [],
+   "checkSaved": "safe",
+   "findings": [],
+   "published": true,
+   "originalSha256": "26d434b7b427149110751c6ef5b19e9ecb4818f3ba7eadfe201b5afd3de442a8",
+   "afterSha256": "ca1e48709635abd11c47fc5bd8e1e9d125c48f4f80062085ac3af4e6a978b2d0",
+   "durable": true,
+   "reopen": {
+    "formatEqual": true,
+    "pagesEqual": true,
+    "textEqual": true,
+    "controlsEqual": true
+   },
+   "reopenFormat": [
+    {
+     "at": {
+      "section": 0,
+      "paragraph": 2,
+      "offset": 0,
+      "cell": {
+       "parentParagraph": 2,
+       "control": 0,
+       "cell": 0,
+       "cellParagraph": 0
+      }
+     },
+     "prop": "underline",
+     "value": true,
+     "model": true,
+     "reopened": true
+    },
+    {
+     "at": {
+      "section": 0,
+      "paragraph": 2,
+      "offset": 2,
+      "cell": {
+       "parentParagraph": 2,
+       "control": 0,
+       "cell": 0,
+       "cellParagraph": 0
+      }
+     },
+     "prop": "underline",
+     "value": false,
+     "model": false,
+     "reopened": false
+    }
+   ],
+   "sessionAfter": {
+    "dirty": false,
+    "revision": 1,
+    "state": "ready"
+   },
+   "dirAfter": [
+    "doc.hwpx"
+   ],
+   "ok": true
+  },
+  {
+   "case": "bold-off",
+   "fmt": "hwpx",
+   "preflight": "safe",
+   "preflightFindings": [],
+   "checkSaved": "safe",
+   "findings": [],
+   "published": true,
+   "originalSha256": "26d434b7b427149110751c6ef5b19e9ecb4818f3ba7eadfe201b5afd3de442a8",
+   "afterSha256": "f317c60018d4f42b37ceabe8c796acd723532de8056521b9bdde16d458a3949b",
+   "durable": true,
+   "reopen": {
+    "formatEqual": true,
+    "pagesEqual": true,
+    "textEqual": true,
+    "controlsEqual": true
+   },
+   "reopenFormat": [
+    {
+     "at": {
+      "section": 0,
+      "paragraph": 1,
+      "offset": 0
+     },
+     "prop": "bold",
+     "value": false,
+     "model": false,
+     "reopened": false
+    },
+    {
+     "at": {
+      "section": 0,
+      "paragraph": 1,
+      "offset": 3
+     },
+     "prop": "bold",
+     "value": true,
+     "model": true,
+     "reopened": true
+    }
+   ],
+   "sessionAfter": {
+    "dirty": false,
+    "revision": 1,
+    "state": "ready"
+   },
+   "dirAfter": [
+    "doc.hwpx"
+   ],
+   "ok": true
+  },
+  {
+   "case": "strike",
+   "fmt": "hwpx",
+   "preflight": "safe",
+   "preflightFindings": [],
+   "checkSaved": "safe",
+   "findings": [],
+   "published": true,
+   "originalSha256": "26d434b7b427149110751c6ef5b19e9ecb4818f3ba7eadfe201b5afd3de442a8",
+   "afterSha256": "86dd10a6cee8a6c90a52faa6caa82c7744304d060d9c03861515e48d41b870b9",
+   "durable": true,
+   "reopen": {
+    "formatEqual": true,
+    "pagesEqual": true,
+    "textEqual": true,
+    "controlsEqual": true
+   },
+   "reopenFormat": [
+    {
+     "at": {
+      "section": 0,
+      "paragraph": 0,
+      "offset": 5
+     },
+     "prop": "strikethrough",
+     "value": true,
+     "model": true,
+     "reopened": true
+    },
+    {
+     "at": {
+      "section": 0,
+      "paragraph": 0,
+      "offset": 9
+     },
+     "prop": "strikethrough",
+     "value": false,
+     "model": false,
+     "reopened": false
+    }
+   ],
+   "sessionAfter": {
+    "dirty": false,
+    "revision": 1,
+    "state": "ready"
+   },
+   "dirAfter": [
+    "doc.hwpx"
+   ],
+   "ok": true
+  },
+  {
+   "case": "bold-undone",
+   "fmt": "hwpx",
+   "preflight": "safe",
+   "preflightFindings": [],
+   "checkSaved": "safe",
+   "findings": [],
+   "published": true,
+   "originalSha256": "26d434b7b427149110751c6ef5b19e9ecb4818f3ba7eadfe201b5afd3de442a8",
+   "afterSha256": "26d434b7b427149110751c6ef5b19e9ecb4818f3ba7eadfe201b5afd3de442a8",
+   "durable": true,
+   "reopen": {
+    "formatEqual": true,
+    "pagesEqual": true,
+    "textEqual": true,
+    "controlsEqual": true
+   },
+   "reopenFormat": [
+    {
+     "at": {
+      "section": 0,
+      "paragraph": 0,
+      "offset": 0
+     },
+     "prop": "bold",
+     "value": false,
+     "model": false,
+     "reopened": false
+    }
+   ],
+   "sessionAfter": {
+    "dirty": false,
+    "revision": 1,
+    "state": "ready"
+   },
+   "dirAfter": [
+    "doc.hwpx"
+   ],
+   "ok": true
+  },
+  {
+   "case": "hwp-engine-bold",
+   "fmt": "hwp",
+   "preflight": "safe",
+   "preflightFindings": [],
+   "checkSaved": "unsafe",
+   "findings": [
+    [
+     "recordsChanged",
+     "DocInfo"
+    ],
+    [
+     "previewStale",
+     "PrvText"
+    ],
+    [
+     "previewStale",
+     "PrvImage"
+    ]
+   ],
+   "published": false,
+   "originalSha256": "57c901cc394abf6f58f4838315d1ea2c5ecf8a03d9934d3fc098fd8be6e6e12f",
+   "afterSha256": "57c901cc394abf6f58f4838315d1ea2c5ecf8a03d9934d3fc098fd8be6e6e12f",
+   "durable": null,
+   "reopen": {
+    "formatEqual": true,
+    "pagesEqual": true,
+    "textEqual": true,
+    "controlsEqual": true
+   },
+   "reopenFormat": [
+    {
+     "at": {
+      "section": 0,
+      "paragraph": 0,
+      "offset": 0
+     },
+     "prop": "bold",
+     "value": true,
+     "model": true,
+     "reopened": true
+    }
+   ],
+   "sessionAfter": {
+    "dirty": true,
+    "revision": 1,
+    "state": "ready"
+   },
+   "dirAfter": [
+    "doc.hwp"
+   ],
+   "ok": true
+  }
+ ],
+ "failures": [],
+ "engine": "pinned test package"
+}
