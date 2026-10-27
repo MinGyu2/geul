@@ -39,13 +39,17 @@ def scenario(name):
     def blocking_handle(self):
         if stall['on']: time.sleep(3600)
         return real_handle(self)
+    real_encode = runner.encode_evidence
+    def inject_unserializable(result):
+        result['injectedUnserializable'] = object()
+        return real_encode(result)
     patches = {
         'thread-constructor': [mock.patch.object(runner.threading, 'Thread', side_effect=RuntimeError('injected Thread() failure'))],
         'thread-start': [mock.patch.object(runner.threading.Thread, 'start', side_effect=RuntimeError('injected start() failure'))],
         'bind': [mock.patch.object(runner, 'ThreadingHTTPServer', side_effect=OSError(98, 'Address already in use'))],
         'loop-exits-early': [mock.patch.object(runner.ThreadingHTTPServer, 'handle_request', side_effect=RuntimeError('injected loop failure'))],
         'close-exception': [mock.patch.object(runner.ThreadingHTTPServer, 'server_close', side_effect=OSError(9, 'injected close failure'))],
-        'surrogate-fail': [], 'surrogate-complete': [], 'unserializable': [mock.patch.object(runner.os, 'getloadavg', return_value=object())],
+        'surrogate-fail': [], 'surrogate-complete': [], 'unserializable': [mock.patch.object(runner, 'encode_evidence', side_effect=inject_unserializable)],
     }
     if name == 'surrogate-fail': tc.write_payload(b'{"status": "FAIL", "error": "\\ud800 \xed\x95\x9c"}')
     if name == 'surrogate-complete':

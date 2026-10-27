@@ -109,6 +109,28 @@ class ValidationTests(unittest.TestCase):
             value = sample([('insertText', 4, 1)]); mutate(value)
             with self.subTest(i), self.assertRaises(ValueError): attribution.sample_segments(value)
 
+    def test_derived_overflow_and_integer_conversion_are_rejected(self):
+        for calls in [[('x', 1e308, 1e308)], [('x', -(10**400), 1)],
+                      [('x', -1e308, 1e308), ('y', 0, 1e308)]]:
+            with self.subTest(calls=calls), self.assertRaises(ValueError): occ(calls)
+        value = sample(timeline=[{'name': 'dom:keyup', 'at': -1e308}])
+        value['at'].update(input=1e308, handlerEnd=1e308, observed=1e308, raf1=1e308, end=1e308)
+        value['keyToFrame'] = 1e308
+        with self.assertRaises(ValueError): attribution.sample_segments(value)
+        self.assertEqual(occ([('x', -1e100, 1e100), ('y', 1e100, 1e100)])['syncOccupiedInWindowMs'], 0)
+        self.assertEqual(occ([('x', -5, 0)])['syncOutsideWindowMs'], 0)
+
+    def test_key_to_frame_nonnegative_before_rounding_tolerance(self):
+        zero = dict.fromkeys(AT, 0)
+        for latency in (-0.05, -0.1):
+            value = sample(at=zero); value['keyToFrame'] = latency
+            with self.subTest(latency=latency), self.assertRaises(ValueError): attribution.sample_segments(value)
+        for latency in (0, 0.05, 0.1):
+            value = sample(at=zero); value['keyToFrame'] = latency
+            self.assertEqual(attribution.sample_segments(value)['keyToFrame'], latency)
+        value = sample(at=zero); value['keyToFrame'] = 0.11
+        with self.assertRaises(ValueError): attribution.sample_segments(value)
+
     def test_signed_offsets_are_preserved(self):
         row = occ([('restoreSnapshot', -12.5, 3)], timeline=[{'name': 'dom:keydown', 'at': -40, 'ms': None, 'page': None}])
         self.assertEqual((row['syncOutsideWindowMs'], row['syncOccupiedInWindowMs']), (3, 0))

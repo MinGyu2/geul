@@ -27,7 +27,11 @@ SUBTRACTION_CAVEAT = ('arithmetic only: keyToFrame minus clipped sync wrapper oc
 
 
 def finite(value, what):
-    if type(value) not in (int, float) or not math.isfinite(value): raise ValueError(f'{what} is not a finite number')
+    try:
+        valid = type(value) in (int, float) and math.isfinite(value)
+    except OverflowError:
+        valid = False
+    if not valid: raise ValueError(f'{what} is not a finite number')
     return value
 
 
@@ -46,7 +50,12 @@ def union(intervals):
 
 
 def occupied(merged, lo, hi):
-    return sum(max(0, min(end, hi)-max(start, lo)) for start, end in merged)
+    total = 0
+    for start, end in merged:
+        left, right = max(start, lo), min(end, hi)
+        overlap = finite(right-left, 'clipped interval length') if right > left else 0
+        total = finite(total+overlap, 'window occupation')
+    return total
 
 
 def calls_of(sample):
@@ -57,7 +66,9 @@ def calls_of(sample):
         if not isinstance(row, dict) or not isinstance(row.get('name'), str): raise ValueError('invalid call record')
         at, ms = finite(row.get('at'), 'call start'), finite(row.get('ms'), 'call duration')  # signed offsets allowed
         if ms < 0: raise ValueError('negative call duration')
-        calls.append((row['name'], at, at+ms))
+        end = finite(at+ms, 'call end')
+        if end < at: raise ValueError('reversed call interval')
+        calls.append((row['name'], at, end))
     return calls
 
 
@@ -78,7 +89,8 @@ def sample_segments(sample):
     if points[0] != 0: raise ValueError('key must be the time origin')
     if any(b < a for a, b in zip(points, points[1:])): raise ValueError('reversed segment boundaries')
     key_to_frame = finite(sample.get('keyToFrame'), 'keyToFrame')
-    if abs(points[-1]-points[0]-key_to_frame) > PARTITION_TOLERANCE_MS: raise ValueError('segments do not partition keyToFrame')
+    if key_to_frame < 0: raise ValueError('negative keyToFrame')
+    if abs(finite(points[-1]-points[0]-key_to_frame, 'partition difference')) > PARTITION_TOLERANCE_MS: raise ValueError('segments do not partition keyToFrame')
     check_timeline(sample)
     calls = calls_of(sample)
     sync = [(start, end) for name, start, end in calls if not name.endswith(ASYNC_SUFFIXES)]
@@ -90,19 +102,24 @@ def sample_segments(sample):
     partial = sum(any(s < end and start < e and not (s <= start and end <= e) and not (start <= s and e <= end) for s, e in others(i))
                   for i, (start, end) in enumerate(sync))
     timeline = {t['name']: t['at'] for t in reversed(sample['timeline'])}
-    seg = {name: at[b]-at[a] for name, a, b in SEGMENTS}
+    seg = {name: finite(at[b]-at[a], 'segment length') for name, a, b in SEGMENTS}
+    for name in seg:
+        if occupation[name] < 0 or occupation[name] > seg[name]: raise ValueError('occupation exceeds segment')
+    total = finite(sum(occupation.values()), 'total window occupation')
+    if total < 0 or total > points[-1]-points[0]: raise ValueError('occupation exceeds window')
+    outside = finite(occupied(merged, -math.inf, at['key'])+occupied(merged, at['end'], math.inf), 'outside occupation')
     return {'keyToFrame': key_to_frame, 'segments': seg,
-            'syncOccupiedMs': occupation, 'syncOccupiedInWindowMs': sum(occupation.values()),
+            'syncOccupiedMs': occupation, 'syncOccupiedInWindowMs': total,
             'unattributedMs': {name: seg[name]-occupation[name] for name in seg},
-            'syncOutsideWindowMs': occupied(merged, -math.inf, at['key'])+occupied(merged, at['end'], math.inf),
+            'syncOutsideWindowMs': outside,
             'callsCrossingSegmentBoundary': sum(any(start < at[b] < end for b in inside) for start, end in sync),
             'callsCrossingWindowEdge': sum(start < at['key'] < end or start < at['end'] < end for start, end in sync),
             'nestedSyncCalls': nested, 'partiallyOverlappingSyncCalls': partial,
             'asyncAwaitRecords': sum(name.endswith(ASYNC_SUFFIXES) for name, _, _ in calls),
             'renderJobs': sum(name == 'beginRenderJob' and at['key'] <= start < at['end'] for name, start, _ in calls),
-            'maxPollMs': max([end-start for name, start, end in calls if name == 'pollRenderJob' and start < at['end'] and end > at['key']], default=0),
-            'raf1AfterKeyupMs': None if 'dom:keyup' not in timeline else at['raf1']-timeline['dom:keyup'],
-            'raf1AfterCommitAckMs': None if 'rhwp:commit-ack' not in timeline else at['raf1']-timeline['rhwp:commit-ack']}
+            'maxPollMs': max([finite(end-start, 'poll duration') for name, start, end in calls if name == 'pollRenderJob' and start < at['end'] and end > at['key']], default=0),
+            'raf1AfterKeyupMs': None if 'dom:keyup' not in timeline else finite(at['raf1']-timeline['dom:keyup'], 'keyup offset'),
+            'raf1AfterCommitAckMs': None if 'rhwp:commit-ack' not in timeline else finite(at['raf1']-timeline['rhwp:commit-ack'], 'commit offset')}
 
 
 def summarize(perf):
@@ -116,7 +133,7 @@ def summarize(perf):
     two = lambda x: round(x, 2)
     dist = lambda key: {'p50': two(pct([key(r) for r in rows], .5)), 'p95': two(pct([key(r) for r in rows], .95)), 'max': two(max(key(r) for r in rows))}
     complete = lambda key: all(r[key] is not None for r in rows)
-    subtracted = [r['keyToFrame']-r['syncOccupiedInWindowMs'] for r in rows]
+    subtracted = [finite(r['keyToFrame']-r['syncOccupiedInWindowMs'], 'arithmetic subtraction') for r in rows]
     return {'sample': perf['sample'], 'n': len(rows), 'failingOverLimit': len(failing),
             'producerGroupStart': perf['groupStart'], 'diagnosticKeyToFrame': dist(lambda r: r['keyToFrame']),
             'zeroWorkFrameFloorMs': perf['zeroWorkFrameFloorMs'],

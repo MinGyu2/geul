@@ -384,12 +384,41 @@ def main(argv=None):
     if record and not record['cleanupSucceeded']:fail('browser-cleanup',RuntimeError('owned browser processes not fully released'))
     if record and record['cleanupSucceeded'] and not record['gracefulExit']:
         result['launcherError']='browser launcher failed during shutdown';fail('browser-cleanup',RuntimeError(result['launcherError']))
+    # System metadata is acceptance-relevant: collect independently before the verdict.
+    attempt['stage']='system-metadata'
+    system={}
+    def collect(field, getter, validate_value):
+        try:
+            value=getter(); validate_value(value); system[field]=value
+        except Exception as error:
+            system[field]=None
+            fail('system-metadata',error)
+            attempt['failures'][-1]['field']=field
+    def check_load(value):
+        if not isinstance(value, (tuple, list)) or len(value)!=3 or any(
+            type(x) not in (int, float) or not math.isfinite(x) or x<0 for x in value):
+            raise ValueError('load average must contain three finite nonnegative numbers')
+    def check_cpu(value):
+        # os.cpu_count() explicitly permits None when the count cannot be determined.
+        if value is not None and (type(value) is not int or value<1):
+            raise ValueError('logical CPU count must be a positive integer or None')
+    def check_allowed(value):
+        if type(value) is not int or value<1: raise ValueError('allowed CPU count must be a positive integer')
+    collect('loadBefore',lambda:load_before,check_load)
+    collect('loadAfter',os.getloadavg,check_load)
+    collect('logicalCpuCount',os.cpu_count,check_cpu)
+    def allowed_cpu_count():
+        cpus=os.sched_getaffinity(0)
+        if not isinstance(cpus, set) or any(type(cpu) is not int or cpu<0 for cpu in cpus):
+            raise ValueError('CPU affinity must be a set of nonnegative integers')
+        return len(cpus)
+    collect('allowedCpuCount',allowed_cpu_count,check_allowed)
     attempt['stage']='persist'
     ok=not attempt['failures'] and attempt['validated'] and stable is True and version is not None
     attempt['validDiagnosticEvidence']=ok
     result.update(status='DIAGNOSTIC_COMPLETE' if ok else 'FAIL',attempt=attempt,candidate={k:v for k,v in before.items() if k.startswith('candidate/') and k.endswith('.wasm')} or None,
         browserExitAfterStop=browser.process.returncode if browser else None,
-        browserLogTail=tail,system={'loadBefore':load_before,'loadAfter':os.getloadavg(),'logicalCpuCount':os.cpu_count(),'allowedCpuCount':len(os.sched_getaffinity(0))},
+        browserLogTail=tail,system=system,
         requestConfig=config,identities=before,executedDependenciesStable=stable,browserBackend=a.backend,official=False,browserVersion=version)
     if attempt['failures']:result['validationError']=attempt['failures'][0]['message']
     data,encoding,serialization_error=encode_evidence(result)

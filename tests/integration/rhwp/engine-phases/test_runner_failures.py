@@ -127,6 +127,74 @@ class RunnerLifecycleTests(unittest.TestCase):
         self.assertTrue(result['executedDependenciesStable']); self.assertEqual(result['browserVersion'], 'FakeBrowser 1.0')
         runner.validate(result)
 
+    def test_system_metadata_failures_are_persisted_independently(self):
+        scenarios = [({'loadAfter': OSError('load fault')}, False),
+                     ({'allowedCpuCount': OSError('affinity fault')}, False),
+                     ({'loadAfter': OSError('load fault'), 'allowedCpuCount': OSError('affinity fault')}, False),
+                     ({'loadAfter': RuntimeError('unexpected')}, False),
+                     ({'loadAfter': OSError('load fault')}, True),
+                     ({'loadAfter': (float('nan'), 0, 0)}, False),
+                     ({'logicalCpuCount': -1}, False),
+                     ({'allowedCpuCount': set()}, False),
+                     ({'allowedCpuCount': [0, 1]}, False)]
+        for i, (faults, invalid_browser) in enumerate(scenarios):
+            with self.subTest(i=i):
+                self.output = self.root/'out'/f'result-{i}.json'
+                payload = valid_payload()
+                if invalid_browser: payload['rows'][0]['exactRGBA'] = False
+                self.write_payload(payload)
+                real_load = os.getloadavg; count = [0]
+                def load():
+                    count[0] += 1
+                    value = real_load() if count[0] == 1 else faults.get('loadAfter', (1., 2., 3.))
+                    if isinstance(value, Exception): raise value
+                    return value
+                def affinity(_):
+                    value = faults.get('allowedCpuCount', {0, 1})
+                    if isinstance(value, Exception): raise value
+                    return value
+                with mock.patch.object(runner.os, 'getloadavg', side_effect=load), \
+                     mock.patch.object(runner.os, 'sched_getaffinity', side_effect=affinity), \
+                     mock.patch.object(runner.os, 'cpu_count', return_value=faults.get('logicalCpuCount', 4)):
+                    code, result = self.run_mode('ok')
+                self.assertEqual(count[0], 2)
+                self.assertEqual(code, 1); self.assert_failed(code, result, 'system-metadata')
+                self.assertTrue(self.output.read_bytes().decode('utf-8'))
+                errors = [e for e in result['attempt']['failures'] if e['category'] == 'system-metadata']
+                self.assertEqual([e['field'] for e in errors], list(faults))
+                self.assertTrue(all(e['stage'] == 'system-metadata' and e['message'] for e in errors))
+                for error in errors:
+                    fault = faults[error['field']]
+                    self.assertEqual(error['type'], type(fault).__name__ if isinstance(fault, Exception) else 'ValueError')
+                self.assertEqual(result['system']['logicalCpuCount'], None if 'logicalCpuCount' in faults else 4)
+                self.assertEqual(result['system']['allowedCpuCount'], None if 'allowedCpuCount' in faults else 2)
+                self.assertEqual(result['system']['loadAfter'], None if 'loadAfter' in faults else [1., 2., 3.])
+                self.assertEqual(len(result['system']['loadBefore']), 3)
+                self.assertTrue(result['attempt']['browserProcess']['cleanupSucceeded'])
+                self.assertTrue(result['attempt']['profileRemoved'])
+                self.assertEqual(len(result['rows']), len(payload['rows']))
+                if invalid_browser: self.assertEqual(result['attempt']['failures'][0]['category'], 'validation')
+                else: self.assertTrue(result['attempt']['validated'])
+
+    def test_metadata_failure_with_persistence_failure_returns_three(self):
+        real_load = os.getloadavg; count = [0]
+        def load():
+            count[0] += 1
+            if count[0] == 2: raise OSError('postflight fault')
+            return real_load()
+        with mock.patch.object(runner.os, 'getloadavg', side_effect=load), \
+             mock.patch.object(runner, 'persist', return_value=None) as persist:
+            code, result = self.run_mode('ok')
+        self.assertEqual(code, 3); self.assertIsNone(result); self.assertEqual(count[0], 2)
+        saved = json.loads(persist.call_args.args[1].decode('utf-8'))
+        self.assertEqual(saved['status'], 'FAIL')
+        self.assertEqual(saved['attempt']['failures'][-1]['field'], 'loadAfter')
+
+    def test_system_metadata_optional_cpu_count(self):
+        with mock.patch.object(runner.os, 'cpu_count', return_value=None):
+            code, result = self.run_mode('ok')
+        self.assertEqual(code, 0); self.assertIsNone(result['system']['logicalCpuCount'])
+
     def test_01_browser_executable_missing(self):
         with mock.patch.object(runner.subprocess, 'Popen', side_effect=FileNotFoundError(2, 'No such file')):
             code, result = self.run_mode('ok')
