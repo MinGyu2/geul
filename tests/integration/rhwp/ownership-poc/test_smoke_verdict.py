@@ -13,6 +13,16 @@ m = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(m)
 
 
+def good_teardown():
+    return {'complete':True,'driverKilled':False,'driverExit':0,'sessionDeletes':[{'outcome':'ok'}],
+            'remainingAfterWait':[],'survivorsAfterSigterm':[],'sigtermErrors':[]}
+
+
+def add_teardown(result):
+    result['attemptId']='current';result['teardownAttemptId']='current';result['teardown']=good_teardown()
+    return result
+
+
 class FakeProcess:
     def __init__(self, terminate_error=False, wait_timeout=False, kill_error=False):
         self.code = None; self.terminate_error = terminate_error; self.wait_timeout = wait_timeout; self.kill_error = kill_error; self.kills = 0
@@ -38,7 +48,7 @@ class SmokeVerdictTests(unittest.TestCase):
                     self.assertFalse(m.finalize(result,True)); self.assertEqual(result['status'],'FAIL')
                     self.assertIn(label+'-',result['failures'][0]['stage'])
     def test_normal_cleanup_and_failure_order(self):
-        result={'failures':[]}; m.stop_owned(FakeProcess(),'vite',result);m.stop_owned(FakeProcess(),'xvfb',result)
+        result=add_teardown({'failures':[]}); m.stop_owned(FakeProcess(),'vite',result);m.stop_owned(FakeProcess(),'xvfb',result)
         self.assertTrue(m.finalize(result,True)); self.assertEqual(result['cleanupStatus'],'PASS')
         m.failure(result,'webdriver',RuntimeError('original')); m.stop_owned(FakeProcess(terminate_error=True),'vite',result)
         m.stop_owned(FakeProcess(terminate_error=True),'xvfb',result)
@@ -128,11 +138,30 @@ class CorrectionTests(unittest.TestCase):
                         {'vite':{'ok':True,'returncode':None},'xvfb':{'ok':True}}, {'vite':{'ok':True,'survivors':[7]},'xvfb':{'ok':True}}):
             with self.subTest(cleanup=cleanup):
                 r={'failures':[],'cleanup':cleanup};self.assertFalse(m.finalize(r,True));self.assertEqual(r['executionStatus'],'FAIL')
-        r={'failures':[],'cleanup':{'vite':{'ok':True},'xvfb':{'ok':True}}}
+        r=add_teardown({'failures':[],'cleanup':{'vite':{'ok':True},'xvfb':{'ok':True}}})
         self.assertTrue(m.finalize(r,True));self.assertIn('not independently tracked',r['cleanupScope'])
         for td in ({'complete':False},{'complete':True,'driverKilled':False,'sessionDeletes':[{'outcome':'error'}]},
                    {'complete':True,'driverKilled':False,'sessionDeletes':[{'outcome':'ok'}],'remainingAfterWait':[1]}):
             r['teardown']=td;self.assertFalse(m.finalize(r,True))
+
+    def test_teardown_is_required_and_bound_to_attempt(self):
+        for bad in (None, {}, [], {'complete':False}, {**good_teardown(),'sessionDeletes':[]},
+                    {**good_teardown(),'sessionDeletes':[{'outcome':'error'}]},
+                    {**good_teardown(),'driverExit':None}, {**good_teardown(),'driverKilled':True},
+                    {**good_teardown(),'remainingAfterWait':[{'pid':1}]},
+                    {**good_teardown(),'survivorsAfterSigterm':[{'pid':2}]},
+                    {**good_teardown(),'sigtermErrors':['fault']}):
+            with self.subTest(teardown=bad):
+                r=add_teardown({'failures':[],'cleanup':{'vite':{'ok':True},'xvfb':{'ok':True}}});r['teardown']=bad
+                self.assertFalse(m.finalize(r,True));self.assertEqual(r['executionStatus'],'FAIL')
+        r=add_teardown({'failures':[],'cleanup':{'vite':{'ok':True},'xvfb':{'ok':True}}});del r['teardown']
+        self.assertFalse(m.finalize(r,True));self.assertEqual(r['status'],'FAIL')
+        r=add_teardown({'failures':[],'cleanup':{'vite':{'ok':True},'xvfb':{'ok':True}}});r['teardownAttemptId']='previous'
+        self.assertFalse(m.finalize(r,True))
+        records=[good_teardown()];r={'attemptId':'new'}
+        self.assertFalse(m.attach_teardown(r,records,1));self.assertNotIn('teardown',r)
+        records.append(good_teardown());self.assertTrue(m.attach_teardown(r,records,1));self.assertEqual(r['teardownAttemptId'],'new')
+        records.append(good_teardown());self.assertFalse(m.attach_teardown(r,records,1));self.assertNotIn('teardown',r)
 
     def test_oracle_fail_closed(self):
         def assess(comp=None, attached=None, version=2, stable=True, jobs=None):
@@ -147,7 +176,7 @@ class CorrectionTests(unittest.TestCase):
             self.assertEqual(assess(**kwargs)['status'],'FAIL')
         self.assertEqual(m.assess_oracle(False,None,None,None,None,None,None)['status'],'NOT RUN')
         self.assertEqual(m.assess_oracle(True,None,self.attached,2,2,True,self.completed)['status'],'FAIL')
-        r={'failures':[],'cleanup':{'vite':{'ok':True},'xvfb':{'ok':True}},'oracleEnabled':True,'oracleAssessment':{'status':'FAIL'}}
+        r=add_teardown({'failures':[],'cleanup':{'vite':{'ok':True},'xvfb':{'ok':True}},'oracleEnabled':True,'oracleAssessment':{'status':'FAIL'}})
         self.assertFalse(m.finalize(r,True));self.assertEqual(r['status'],'FAIL')
         del r['oracleAssessment'];self.assertFalse(m.finalize(r,True))
         r.update(oracleAssessment={'status':'PASS','errors':[]},fixtureExpectedSha256=m.EXPECTED_FIXTURE,fixtureSha256=m.EXPECTED_FIXTURE,fixtureUnchanged=True,

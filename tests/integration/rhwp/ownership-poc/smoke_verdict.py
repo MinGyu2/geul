@@ -103,21 +103,32 @@ def verify_observation(before, after, stage, before_count, after_count, key_coun
     return True
 
 
+def attach_teardown(result, records, start):
+    """Attach only the unique record created after this invocation's boundary."""
+    result.pop('teardown', None); result.pop('teardownAttemptId', None)
+    if type(start) is not int or start < 0 or len(records) != start + 1:
+        return False
+    result['teardown'] = records[start]
+    result['teardownAttemptId'] = result.get('attemptId')
+    return True
+
+
 def finalize(result, observations_complete):
     cleanup = result.get('cleanup', {})
     if not isinstance(cleanup, dict): cleanup = {}
     required = all(isinstance(cleanup.get(name), dict) and cleanup[name].get('ok') is True
                    and ('returncode' not in cleanup[name] or type(cleanup[name]['returncode']) is int)
                    and not cleanup[name].get('survivors') for name in ('vite', 'xvfb'))
-    teardown = result.get('teardown', {})
-    teardown_ok = isinstance(teardown, dict)
-    if 'teardown' in result and teardown_ok:
+    teardown = result.get('teardown')
+    teardown_ok = isinstance(teardown, dict) and bool(result.get('attemptId')) and result.get('teardownAttemptId') == result.get('attemptId')
+    if teardown_ok:
         deletions = teardown.get('sessionDeletes')
         teardown_ok = (teardown.get('complete') is True and teardown.get('driverKilled') is False
                        and isinstance(deletions, list) and bool(deletions)
                        and all(isinstance(row, dict) and row.get('outcome') == 'ok' for row in deletions)
                        and teardown.get('remainingAfterWait') == [] and teardown.get('survivorsAfterSigterm') == []
-                       and teardown.get('sigtermErrors') == [])
+                       and teardown.get('sigtermErrors') == [] and type(teardown.get('driverExit')) is int
+                       and teardown['driverExit'] in (0,-15,143))
     assessment = result.get('oracleAssessment')
     oracle_ok = result.get('oracleEnabled') is not True
     if oracle_ok: result['oracleAssessment'] = {'status':'NOT RUN', 'errors':[]}
