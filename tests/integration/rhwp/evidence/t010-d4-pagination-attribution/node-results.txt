@@ -1,0 +1,9 @@
+node v24.21.0 candidate rhwp_bg.wasm 0cb73f70cd98dbef89718534e1bc283f1cb4c200af200703d40b137be1cde956
+asset 97b5d6c571a6b7626321c6a53d797e3511978447497bb73309bd23eaa8e7ea77
+chemical 6717eca43c6fdd9b0530530cf17d33b6687da0c462a433d37eb652afb5394f91
+position asset run1: {"pages":60,"paras":593,"samples":{"para0":{"p50":16.6,"max":24.2},"para296":{"p50":15.3,"max":15.8},"para592":{"p50":15.1,"max":15.4}},"getPageInfoMs":1.1}
+position chemical run1: {"pages":24,"paras":24,"samples":{"para0":{"p50":0.5,"max":8.6},"para12":{"p50":0.5,"max":0.5},"para23":{"p50":0.5,"max":0.5}},"getPageInfoMs":0.9}
+batch asset run1: {"sections":3,"insertTextNormalMs":"15.5","insertTextInBatchMs":"0.2","endBatchPaginateMs":"15.3"}
+position asset run2: {"pages":60,"paras":593,"samples":{"para0":{"p50":16.8,"max":22.9},"para296":{"p50":15.4,"max":16},"para592":{"p50":14.4,"max":15.2}},"getPageInfoMs":1}
+position chemical run2: {"pages":24,"paras":24,"samples":{"para0":{"p50":0.5,"max":8.6},"para12":{"p50":0.5,"max":0.5},"para23":{"p50":0.5,"max":0.5}},"getPageInfoMs":0.9}
+batch asset run2: {"sections":3,"insertTextNormalMs":"15.4","insertTextInBatchMs":"0.2","endBatchPaginateMs":"15.2"}
