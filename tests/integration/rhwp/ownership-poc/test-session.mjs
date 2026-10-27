@@ -12,11 +12,11 @@ async function setup() {
  const frames=[];globalThis.requestAnimationFrame=f=>{frames.push(f);return 1;};globalThis.innerHeight=1000;
  const docs=[];
  class Doc {
-  constructor(){this.patches=0;this.starts=0;this.cancels=0;this.id=0;this.state='PENDING';docs.push(this);}
+  constructor(){this.patches=0;this.starts=0;this.cancels=0;this.id=0;this.state='PENDING';this.pollIds=[];this.canceledIds=[];docs.push(this);}
   beginRenderJob(page,canvas){this.canvas=canvas;this.starts++;return ++this.id;}
   beginRenderPatchJob(page,canvas,scale,...rect){this.lastPatchRect=rect;this.patches++;return this.beginRenderJob(page,canvas);}
-  cancelRenderJob(){this.cancels++;return 'CANCELED';}
-  pollRenderJob(){if(this.state==='COMPLETE'){this.canvas.width=1;this.canvas.height=1;}return this.state;}
+  cancelRenderJob(id){this.cancels++;this.canceledIds.push(id);return 'CANCELED';}
+  pollRenderJob(id){this.pollIds.push(id);if(this.state==='COMPLETE'){this.canvas.width=1;this.canvas.height=1;}return this.state;}
   getSourceFormat(){return this.sourceFormat??'hwpx';}
   restoreSnapshot(){}
   free(){if(this.failFree)throw new Error('free fault');}
@@ -252,4 +252,16 @@ test('terminal successful poll cannot be canceled or reused as pending', () => {
 test('completion state contradicting a successful poll is invalid', () => {
  const c=createLifecycleTrace();[sample('request'),sample('queue'),sample('job-start',{job:1}),sample('poll',{job:1,state:'COMPLETE'}),sample('complete',{job:1,state:'ERROR'})].forEach(r=>c.record(r));
  assert.equal(c.snapshot().lifecycleValid,'INVALID');
+});
+
+test('superseded pending job is canceled before the next revision completes', async () => {
+ const x=await setup(),c=createLifecycleTrace();window.__d4LifecycleTrace=c;
+ x.session.renderPage(0,x.canvas,1);x.flush();const old=x.doc.id;
+ x.session.modelVersion++;x.session.renderPage(0,x.canvas,1);x.doc.state='COMPLETE';x.flush();
+ const rows=c.snapshot().records, oldCancel=rows.findIndex(r=>r.event==='cancel' && r.job===old);
+ const fresh=rows.findIndex(r=>r.event==='complete' && r.version===2 && r.job!==old);
+ assert.ok(oldCancel>=0 && fresh>oldCancel);assert.deepEqual(x.doc.canceledIds,[old]);
+ assert.equal(x.doc.pollIds.filter(id=>id===old).length,1);
+ assert.equal(rows.some(r=>r.event==='complete' && r.job===old),false);
+ assert.equal(x.session.renderPage(0,x.canvas,1),true);x.session.dispose();
 });
