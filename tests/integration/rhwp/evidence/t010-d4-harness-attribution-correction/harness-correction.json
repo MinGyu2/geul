@@ -1,0 +1,339 @@
+{
+ "startingHead": "cbd16c05f4a057cfb2658780e87332690ae705b1",
+ "baseline": {
+  "method": "HEAD copies of run.py/native_attribution.py/test fixtures in an isolated temporary directory; probes kept local-only",
+  "P1-A serverThreadStartFailure": {
+   "result": "REPRODUCED",
+   "observed": "child killed by external 20 s timeout (exit 124) inside cleanup; no evidence file",
+   "rawTail": [
+    "START",
+    "server-probe exit 124"
+   ]
+  },
+  "P1-B loneSurrogate": {
+   "result": "REPRODUCED",
+   "observed": [
+    "json.loads ok '\\ud800'",
+    "UnicodeEncodeError on encode: surrogates not allowed",
+    "runner raised UnicodeEncodeError 'utf-8' codec can't encode character '\\ud800' in position 34: surrogates not all",
+    "evidence written: False pending files: []"
+   ]
+  },
+  "P2-A/P2-B timing": {
+   "result": "REPRODUCED",
+   "observed": [
+    "C crossing call [18,30): handler engine 12 (correct 2); observed->raf1 engine 0 (correct 8)",
+    "C overlapping independent [3,13)+[5,15): handler engine 20 (union 12)",
+    "C call starting before key [-5,5): beforeEnd 0 (in-window 5)",
+    "D keyToFrame NaN -> ACCEPTED {\"keyToFrame\": NaN, \"engineJsInHandlerMs\": 12, \"engineJsBeforeEndMs\": 12, \"handler\": 18}",
+    "D keyToFrame inf -> rejected ValueError",
+    "D at.end NaN -> ACCEPTED {\"keyToFrame\": 60, \"engineJsInHandlerMs\": 12, \"engineJsBeforeEndMs\": 0, \"handler\": 18}",
+    "D at.raf1 inf -> rejected ValueError",
+    "D at.input -inf -> rejected ValueError",
+    "D call ms NaN -> ACCEPTED {\"keyToFrame\": 60, \"engineJsInHandlerMs\": NaN, \"engineJsBeforeEndMs\": NaN, \"handler\": 18}",
+    "D call ms inf -> ACCEPTED {\"keyToFrame\": 60, \"engineJsInHandlerMs\": Infinity, \"engineJsBeforeEndMs\": Infinity, \"handler\": 18}",
+    "D call at NaN -> ACCEPTED {\"keyToFrame\": 60, \"engineJsInHandlerMs\": 0, \"engineJsBeforeEndMs\": 0, \"handler\": 18}",
+    "D call ms negative -> ACCEPTED {\"keyToFrame\": 60, \"engineJsInHandlerMs\": -3, \"engineJsBeforeEndMs\": -3, \"handler\": 18}",
+    "D bool timestamp -> rejected ValueError",
+    "D json.loads accepts NaN constant: {'x': nan}"
+   ]
+  }
+ },
+ "corrected": {
+  "scenariosRunAfterFix": {
+   "thread-start": {
+    "childSeconds": 0.4,
+    "exitCode": 1,
+    "evidenceWritten": true,
+    "status": "FAIL",
+    "failures": [
+     "setup:server-start"
+    ],
+    "server": {
+     "created": true,
+     "threadStarted": false,
+     "started": false,
+     "threadJoined": null,
+     "socketClosed": true,
+     "shutdown": true
+    },
+    "evidenceEncoding": "utf-8",
+    "socketsLeaked": 0,
+    "pendingLeft": []
+   },
+   "thread-constructor": {
+    "childSeconds": 0.3,
+    "exitCode": 1,
+    "evidenceWritten": true,
+    "status": "FAIL",
+    "failures": [
+     "setup:server-start"
+    ],
+    "server": {
+     "created": true,
+     "threadStarted": false,
+     "started": false,
+     "threadJoined": null,
+     "socketClosed": true,
+     "shutdown": true
+    },
+    "evidenceEncoding": "utf-8",
+    "socketsLeaked": 0,
+    "pendingLeft": []
+   },
+   "bind": {
+    "childSeconds": 0.3,
+    "exitCode": 1,
+    "evidenceWritten": true,
+    "status": "FAIL",
+    "failures": [
+     "setup:server-start"
+    ],
+    "server": {
+     "created": false,
+     "threadStarted": false,
+     "started": false,
+     "threadJoined": null,
+     "socketClosed": false,
+     "shutdown": false
+    },
+    "evidenceEncoding": "utf-8",
+    "socketsLeaked": 0,
+    "pendingLeft": []
+   },
+   "loop-exits-early": {
+    "childSeconds": 0.3,
+    "exitCode": 1,
+    "evidenceWritten": true,
+    "status": "FAIL",
+    "failures": [
+     "setup:server-start",
+     "server-cleanup:cleanup"
+    ],
+    "server": {
+     "created": true,
+     "threadStarted": true,
+     "started": false,
+     "threadJoined": true,
+     "socketClosed": true,
+     "shutdown": true
+    },
+    "evidenceEncoding": "utf-8",
+    "socketsLeaked": 0,
+    "pendingLeft": []
+   },
+   "server-stop-timeout": {
+    "childSeconds": 2.5,
+    "exitCode": null,
+    "evidenceWritten": null,
+    "status": null,
+    "failures": null,
+    "server": {
+     "created": true,
+     "threadStarted": true,
+     "started": true,
+     "threadJoined": false,
+     "socketClosed": true,
+     "shutdown": false
+    },
+    "evidenceEncoding": null,
+    "socketsLeaked": 0,
+    "pendingLeft": null,
+    "stopSeconds": 2.0
+   },
+   "surrogate-fail": {
+    "childSeconds": 0.8,
+    "exitCode": 1,
+    "evidenceWritten": true,
+    "status": "FAIL",
+    "failures": [
+     "validation:validate"
+    ],
+    "server": {
+     "created": true,
+     "threadStarted": true,
+     "started": true,
+     "threadJoined": true,
+     "socketClosed": true,
+     "shutdown": true
+    },
+    "evidenceEncoding": "ascii-escaped",
+    "socketsLeaked": 0,
+    "pendingLeft": []
+   },
+   "unserializable": {
+    "childSeconds": 0.8,
+    "exitCode": 3,
+    "evidenceWritten": true,
+    "status": "FAIL",
+    "failures": null,
+    "server": {},
+    "evidenceEncoding": null,
+    "socketsLeaked": 0,
+    "pendingLeft": []
+   }
+  }
+ },
+ "regressions": {
+  "engine-phases python3.14.7 -I": {
+   "line": "Ran 61 tests in 31.283s",
+   "result": "PASS",
+   "logSha256": "6e3aca4247ad5613032fcd91bc6cf1316cf6cb357b18804445d77e4bea9da128"
+  },
+  "engine-phases python3.14.7 -I -O": {
+   "line": "Ran 61 tests in 31.399s",
+   "result": "PASS",
+   "logSha256": "aba62161f8293e0cd579b82b162188f028bf8bbafe2395b2da77546b3e585b2e"
+  },
+  "engine-phases python3.13.13 -I": {
+   "line": "Ran 61 tests in 31.212s",
+   "result": "PASS",
+   "logSha256": "e63a10df7c1bcc36da4d3ad985f0e21b31c699bce02b67afb02e6ebbe201ba60"
+  },
+  "d4-analyzer (CI step 1)": {
+   "line": "Ran 35 tests in 9.067s",
+   "result": "PASS",
+   "logSha256": "fd0b5d5d4c0107190459b6af15d8d7edb13b79694d966ecf2fdb22789c17fbbc"
+  },
+  "d4-analyzer -O (CI step 2)": {
+   "line": "Ran 12 tests in 8.334s",
+   "result": "PASS",
+   "logSha256": "86b687de527e580d336fd9ae3080f019157e93e4d2cbb4c1484ca8882783e4d8"
+  },
+  "d4-analyzer PYTHONOPTIMIZE (CI step 3)": {
+   "line": "Ran 12 tests in 8.321s",
+   "result": "PASS",
+   "logSha256": "0c6c5a7376d010c0f8cfb570a17fc9b97d54d235a3bd5ba115b56f008570bed2"
+  },
+  "combined fresh interpreter (d4-analyzer + engine-phases)": {
+   "line": "exit 0 ran 96 skipped 0",
+   "logSha256": "47106d86eae60b2fe1c4af6b8243084be2a566153d6d2d0ff8012504ffc878c1"
+  },
+  "tests": [
+   "test_hash_catalog.test_duplicate_and_invalid_checksums_are_rejected",
+   "test_hash_catalog.test_malformed_records_are_rejected",
+   "test_hash_catalog.test_maps_round_trip_without_changing_measurements",
+   "test_hash_catalog.test_repeated_encoding_is_refused_and_repeated_decoding_is_stable",
+   "test_hash_catalog.test_reserved_tag_collision_is_refused_not_reinterpreted",
+   "test_hash_catalog.test_utf8_paths_survive_file_round_trip",
+   "test_native_attribution.test_async_await_is_not_sync_time",
+   "test_native_attribution.test_baseline_crossing_example_is_clipped",
+   "test_native_attribution.test_edge_crossing_and_outside_time",
+   "test_native_attribution.test_invariants_on_random_records_and_order",
+   "test_native_attribution.test_nested_overlapping_disjoint_and_multiple",
+   "test_native_attribution.test_percentile_matches_producer_rule",
+   "test_native_attribution.test_window_positions",
+   "test_native_attribution.test_cli_rejects_json_nan_constant_and_keeps_existing_output",
+   "test_native_attribution.test_non_finite_bool_missing_and_reversed_inputs_are_rejected",
+   "test_native_attribution.test_signed_offsets_are_preserved",
+   "test_native_attribution.test_summary_requires_every_group_start_sample",
+   "test_runner_failures.test_01_browser_executable_missing",
+   "test_runner_failures.test_01b_missing_launcher_is_preflight_without_attempt",
+   "test_runner_failures.test_02_permission_denied_launch",
+   "test_runner_failures.test_03_browser_exits_before_reporting",
+   "test_runner_failures.test_04_browser_never_returns",
+   "test_runner_failures.test_05_malformed_result_json",
+   "test_runner_failures.test_06_duplicate_submission",
+   "test_runner_failures.test_07_08_09_invalid_matrix_preserves_partial_rows",
+   "test_runner_failures.test_10_termination_timeout_escalates_to_kill",
+   "test_runner_failures.test_11_forced_termination_before_report",
+   "test_runner_failures.test_11b_unreaped_leader_is_cleanup_failure",
+   "test_runner_failures.test_12_unexpected_cleanup_exception_releases_other_resources",
+   "test_runner_failures.test_12b_owned_descendants_including_setsid_are_released",
+   "test_runner_failures.test_13_dependency_changed_during_execution",
+   "test_runner_failures.test_14_browser_metadata_failure",
+   "test_runner_failures.test_15_existing_output_is_preserved",
+   "test_runner_failures.test_15b_output_created_during_attempt_is_not_replaced",
+   "test_runner_failures.test_16_persistence_failure_is_reported",
+   "test_runner_failures.test_16b_unrelated_pending_name_is_not_removed",
+   "test_runner_failures.test_positive_complete_matrix",
+   "test_runner_server_evidence.test_attempt_records_the_encoding_used",
+   "test_runner_server_evidence.test_disk_full_and_write_failure_remove_only_own_pending",
+   "test_runner_server_evidence.test_existing_target_is_not_replaced",
+   "test_runner_server_evidence.test_hard_link_failure_keeps_pending",
+   "test_runner_server_evidence.test_inaccessible_directory",
+   "test_runner_server_evidence.test_successful_persist_is_valid_utf8_json",
+   "test_runner_server_evidence.test_unicode_values_round_trip_exactly",
+   "test_runner_server_evidence.test_unrelated_pending_is_kept",
+   "test_runner_server_evidence.test_unserializable_and_nan_fail_predictably",
+   "test_runner_server_evidence.test_surrogate_in_complete_result_keeps_success_and_value",
+   "test_runner_server_evidence.test_surrogate_in_failed_browser_result_is_persisted",
+   "test_runner_server_evidence.test_unserializable_value_writes_labelled_minimal_record",
+   "test_runner_server_evidence.test_bind_failure_before_thread",
+   "test_runner_server_evidence.test_loop_exiting_before_readiness",
+   "test_runner_server_evidence.test_normal_start_stop_is_idempotent",
+   "test_runner_server_evidence.test_server_close_exception_still_releases_browser_and_profile",
+   "test_runner_server_evidence.test_stalled_loop_is_bounded_and_reported",
+   "test_runner_server_evidence.test_stop_after_partial_startup_and_twice",
+   "test_runner_server_evidence.test_thread_constructor_failure",
+   "test_runner_server_evidence.test_thread_start_failure_does_not_block_cleanup",
+   "test_validation.test_candidate_matrix_and_observed_execution_balance",
+   "test_validation.test_controlled_complete_matrix",
+   "test_validation.test_matrix_cleanup_pixels_and_completeness",
+   "test_validation.test_span_context_parent_and_intervals"
+  ],
+  "leakedFakeProcessesAfterSuites": 0
+ },
+ "realBrowserSmoke": {
+  "note": "3 trials x 4 arms; compatibility of the corrected runner only, not a performance measurement",
+  "chrome": {
+   "status": "DIAGNOSTIC_COMPLETE",
+   "rows": 33,
+   "allExactRGBA": true,
+   "failures": [],
+   "evidenceEncoding": "utf-8",
+   "browserProcess": {
+    "gracefulExit": true,
+    "cleanupSucceeded": true,
+    "trackedDescendants": 12,
+    "survivors": [],
+    "killAttempted": false
+   },
+   "server": {
+    "started": true,
+    "threadJoined": true,
+    "socketClosed": true,
+    "shutdown": true,
+    "loopError": null
+   },
+   "profileRemoved": true,
+   "executedDependenciesStable": true,
+   "browserVersion": "Google Chrome 155.0.8059.39",
+   "candidateWasm": {
+    "candidate/rhwp_bg.wasm": "0cb73f70cd98dbef89718534e1bc283f1cb4c200af200703d40b137be1cde956"
+   },
+   "rawSha256": "c222e68c8513aba658cc34c57ccd1c5651f6fc62606a0b5932853a6df2b88b2e",
+   "analyzeExit": 0
+  },
+  "webkit": {
+   "status": "DIAGNOSTIC_COMPLETE",
+   "rows": 33,
+   "allExactRGBA": true,
+   "failures": [],
+   "evidenceEncoding": "utf-8",
+   "browserProcess": {
+    "gracefulExit": true,
+    "cleanupSucceeded": true,
+    "trackedDescendants": 7,
+    "survivors": [],
+    "killAttempted": false
+   },
+   "server": {
+    "started": true,
+    "threadJoined": true,
+    "socketClosed": true,
+    "shutdown": true,
+    "loopError": null
+   },
+   "profileRemoved": true,
+   "executedDependenciesStable": true,
+   "browserVersion": "version API unavailable; WebKitWebDriver sha256=97eb7ac47457",
+   "candidateWasm": {
+    "candidate/rhwp_bg.wasm": "0cb73f70cd98dbef89718534e1bc283f1cb4c200af200703d40b137be1cde956"
+   },
+   "rawSha256": "a1f20c1a1a4b108dd4d38b24f055b9f39e4072a0a5d0685eb91116e3c29b28b7",
+   "analyzeExit": 0
+  }
+ },
+ "rawLocation": "local-only .git/t010-d4-attribution-correction-raw (not committed)"
+}

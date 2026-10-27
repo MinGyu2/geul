@@ -1,0 +1,426 @@
+{
+ "scope": "historical 120 group-start samples re-attributed with the corrected analyzer; official producer values and gate verdicts unchanged (D4 FAIL)",
+ "input": {
+  "path": "t010-d4-engine-phase-optimization/final-native-d4.json",
+  "sha256": "84d68dc4c9af0f0640159c5aafcf14d3d9e091ecc730f670df9c2511ccf1cbb8",
+  "decode": "hash_catalog.decode, strict JSON (NaN/Infinity rejected)"
+ },
+ "originalAnalysis": {
+  "path": "t010-d4-harness-stabilization/native-d4-attribution.json",
+  "sha256": "07bac25988f006c6d31098c0700636a903d3b3397dc8d7b971ccd60f8d8e054a",
+  "unchanged": true
+ },
+ "correctedAnalysis": {
+  "path": "native-d4-attribution-corrected.json",
+  "sha256": "36054cfe553a25b9b14f88c720da05e4e268ccb73f64efe4b05b09ee07085a2b"
+ },
+ "percentile": "identical index for n=30 under both methods (original round(q*(n-1)), producer ceil(q*n)-1); corrected uses the producer rule",
+ "whyValuesChanged": "15 samples gain 1 ms of sync wrapper time: the original excluded adapterRenderRequest by name and summed its children, dropping wrapper time outside the children; the union counts it once. No historical call crosses a segment boundary or the key/end window edge, so clipping changes nothing here; nested wrappers were already excluded by name.",
+ "conclusionsChanged": "no: dominant segments, handler/observedToRaf1 composition and render-job counts identical; arithmetic subtraction differs by at most 1 ms / 1 sample and is now labelled as arithmetic, not a bound",
+ "interpretationRevised": "the earlier statement that removing all engine work could not pass D4 is withdrawn as a causal claim: subtraction is not a measured, best-case or predictive latency, and the WebKit display path remains INFERRED, not confirmed",
+ "documents": [
+  {
+   "sample": "basic-ko.hwp",
+   "n": 30,
+   "officialProducerGroupStartP95": 91,
+   "diagnosticKeyToFrame": {
+    "p50": 63,
+    "p95": 91,
+    "max": 91
+   },
+   "handlerSegment": {
+    "p50": 17,
+    "p95": 19,
+    "max": 23
+   },
+   "observedToRaf1Segment": {
+    "p50": 34,
+    "p95": 36,
+    "max": 36
+   },
+   "syncWrapperInHandler": {
+    "original": {
+     "p50": 7,
+     "p95": 9,
+     "max": 9
+    },
+    "corrected": {
+     "p50": 7,
+     "p95": 9,
+     "max": 9
+    }
+   },
+   "syncWrapperInObservedToRaf1": {
+    "original": {
+     "p50": 0,
+     "p95": 1,
+     "max": 1
+    },
+    "corrected": {
+     "p50": 0,
+     "p95": 1,
+     "max": 1
+    }
+   },
+   "syncWrapperInKeyToFrameWindow": {
+    "corrected": {
+     "p50": 7,
+     "p95": 9,
+     "max": 10
+    }
+   },
+   "unattributedHandler": {
+    "original(nonEngineHandlerMs)": {
+     "p50": 10,
+     "p95": 12,
+     "max": 14
+    },
+    "corrected": {
+     "p50": 10,
+     "p95": 12,
+     "max": 14
+    }
+   },
+   "unattributedObservedToRaf1": {
+    "p50": 34,
+    "p95": 36,
+    "max": 36
+   },
+   "samplesWithChangedValue": {
+    "handler": 2,
+    "keyToFrameWindow": 2
+   },
+   "callsCrossingSegmentBoundary": 0,
+   "callsCrossingWindowEdge": 0,
+   "nestedSyncCalls": 99,
+   "partiallyOverlappingSyncCalls": 0,
+   "asyncAwaitRecords": 0,
+   "invalidRecords": 0,
+   "renderJobsPerInput": {
+    "1": 30
+   },
+   "dominantSegmentInFailingSamples": {
+    "original": {
+     "observedToRaf1": 30
+    },
+    "corrected": {
+     "observedToRaf1": 30
+    }
+   },
+   "arithmeticSubtraction": {
+    "original": {
+     "p95": 81,
+     "samplesOverLimit": 24
+    },
+    "corrected": {
+     "keyToFrameMinusSyncOccupationP95Ms": 81,
+     "samplesStillOverLimit": 24
+    }
+   }
+  },
+  {
+   "sample": "basic-ko.hwpx",
+   "n": 30,
+   "officialProducerGroupStartP95": 89,
+   "diagnosticKeyToFrame": {
+    "p50": 65,
+    "p95": 89,
+    "max": 95
+   },
+   "handlerSegment": {
+    "p50": 18,
+    "p95": 23,
+    "max": 23
+   },
+   "observedToRaf1Segment": {
+    "p50": 34,
+    "p95": 36,
+    "max": 37
+   },
+   "syncWrapperInHandler": {
+    "original": {
+     "p50": 8,
+     "p95": 9,
+     "max": 10
+    },
+    "corrected": {
+     "p50": 8,
+     "p95": 9,
+     "max": 10
+    }
+   },
+   "syncWrapperInObservedToRaf1": {
+    "original": {
+     "p50": 0,
+     "p95": 1,
+     "max": 1
+    },
+    "corrected": {
+     "p50": 0,
+     "p95": 1,
+     "max": 1
+    }
+   },
+   "syncWrapperInKeyToFrameWindow": {
+    "corrected": {
+     "p50": 8,
+     "p95": 9,
+     "max": 11
+    }
+   },
+   "unattributedHandler": {
+    "original(nonEngineHandlerMs)": {
+     "p50": 10,
+     "p95": 15,
+     "max": 15
+    },
+    "corrected": {
+     "p50": 10,
+     "p95": 15,
+     "max": 15
+    }
+   },
+   "unattributedObservedToRaf1": {
+    "p50": 34,
+    "p95": 36,
+    "max": 37
+   },
+   "samplesWithChangedValue": {
+    "handler": 3,
+    "keyToFrameWindow": 3
+   },
+   "callsCrossingSegmentBoundary": 0,
+   "callsCrossingWindowEdge": 0,
+   "nestedSyncCalls": 96,
+   "partiallyOverlappingSyncCalls": 0,
+   "asyncAwaitRecords": 0,
+   "invalidRecords": 0,
+   "renderJobsPerInput": {
+    "1": 30
+   },
+   "dominantSegmentInFailingSamples": {
+    "original": {
+     "observedToRaf1": 29,
+     "raf1ToEnd": 1
+    },
+    "corrected": {
+     "observedToRaf1": 29,
+     "raf1ToEnd": 1
+    }
+   },
+   "arithmeticSubtraction": {
+    "original": {
+     "p95": 82,
+     "samplesOverLimit": 23
+    },
+    "corrected": {
+     "keyToFrameMinusSyncOccupationP95Ms": 82,
+     "samplesStillOverLimit": 22
+    }
+   }
+  },
+  {
+   "sample": "연구노트(화학).hwp",
+   "n": 30,
+   "officialProducerGroupStartP95": 212,
+   "diagnosticKeyToFrame": {
+    "p50": 95,
+    "p95": 212,
+    "max": 259
+   },
+   "handlerSegment": {
+    "p50": 23,
+    "p95": 128,
+    "max": 153
+   },
+   "observedToRaf1Segment": {
+    "p50": 37,
+    "p95": 62,
+    "max": 88
+   },
+   "syncWrapperInHandler": {
+    "original": {
+     "p50": 12,
+     "p95": 115,
+     "max": 139
+    },
+    "corrected": {
+     "p50": 12,
+     "p95": 115,
+     "max": 139
+    }
+   },
+   "syncWrapperInObservedToRaf1": {
+    "original": {
+     "p50": 0,
+     "p95": 2,
+     "max": 2
+    },
+    "corrected": {
+     "p50": 0,
+     "p95": 2,
+     "max": 2
+    }
+   },
+   "syncWrapperInKeyToFrameWindow": {
+    "corrected": {
+     "p50": 23,
+     "p95": 123,
+     "max": 147
+    }
+   },
+   "unattributedHandler": {
+    "original(nonEngineHandlerMs)": {
+     "p50": 11,
+     "p95": 14,
+     "max": 14
+    },
+    "corrected": {
+     "p50": 11,
+     "p95": 14,
+     "max": 14
+    }
+   },
+   "unattributedObservedToRaf1": {
+    "p50": 36,
+    "p95": 62,
+    "max": 88
+   },
+   "samplesWithChangedValue": {
+    "handler": 2,
+    "keyToFrameWindow": 4
+   },
+   "callsCrossingSegmentBoundary": 0,
+   "callsCrossingWindowEdge": 0,
+   "nestedSyncCalls": 233,
+   "partiallyOverlappingSyncCalls": 0,
+   "asyncAwaitRecords": 0,
+   "invalidRecords": 0,
+   "renderJobsPerInput": {
+    "1": 3,
+    "2": 27
+   },
+   "dominantSegmentInFailingSamples": {
+    "original": {
+     "observedToRaf1": 22,
+     "handler": 7,
+     "raf1ToEnd": 1
+    },
+    "corrected": {
+     "observedToRaf1": 22,
+     "handler": 7,
+     "raf1ToEnd": 1
+    }
+   },
+   "arithmeticSubtraction": {
+    "original": {
+     "p95": 131,
+     "samplesOverLimit": 27
+    },
+    "corrected": {
+     "keyToFrameMinusSyncOccupationP95Ms": 131,
+     "samplesStillOverLimit": 27
+    }
+   }
+  },
+  {
+   "sample": "3249937_asset_management_rules.hwpx",
+   "n": 30,
+   "officialProducerGroupStartP95": 125,
+   "diagnosticKeyToFrame": {
+    "p50": 100,
+    "p95": 125,
+    "max": 140
+   },
+   "handlerSegment": {
+    "p50": 50,
+    "p95": 52,
+    "max": 54
+   },
+   "observedToRaf1Segment": {
+    "p50": 35,
+    "p95": 37,
+    "max": 37
+   },
+   "syncWrapperInHandler": {
+    "original": {
+     "p50": 36,
+     "p95": 39,
+     "max": 40
+    },
+    "corrected": {
+     "p50": 36,
+     "p95": 39,
+     "max": 40
+    }
+   },
+   "syncWrapperInObservedToRaf1": {
+    "original": {
+     "p50": 0,
+     "p95": 1,
+     "max": 1
+    },
+    "corrected": {
+     "p50": 0,
+     "p95": 1,
+     "max": 1
+    }
+   },
+   "syncWrapperInKeyToFrameWindow": {
+    "corrected": {
+     "p50": 37,
+     "p95": 39,
+     "max": 40
+    }
+   },
+   "unattributedHandler": {
+    "original(nonEngineHandlerMs)": {
+     "p50": 13,
+     "p95": 16,
+     "max": 17
+    },
+    "corrected": {
+     "p50": 13,
+     "p95": 16,
+     "max": 16
+    }
+   },
+   "unattributedObservedToRaf1": {
+    "p50": 35,
+    "p95": 37,
+    "max": 37
+   },
+   "samplesWithChangedValue": {
+    "handler": 6,
+    "keyToFrameWindow": 6
+   },
+   "callsCrossingSegmentBoundary": 0,
+   "callsCrossingWindowEdge": 0,
+   "nestedSyncCalls": 89,
+   "partiallyOverlappingSyncCalls": 0,
+   "asyncAwaitRecords": 0,
+   "invalidRecords": 0,
+   "renderJobsPerInput": {
+    "1": 30
+   },
+   "dominantSegmentInFailingSamples": {
+    "original": {
+     "handler": 30
+    },
+    "corrected": {
+     "handler": 30
+    }
+   },
+   "arithmeticSubtraction": {
+    "original": {
+     "p95": 88,
+     "samplesOverLimit": 30
+    },
+    "corrected": {
+     "keyToFrameMinusSyncOccupationP95Ms": 87,
+     "samplesStillOverLimit": 30
+    }
+   }
+  }
+ ]
+}

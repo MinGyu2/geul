@@ -20,6 +20,7 @@ HERE = Path(__file__).resolve().parent
 ROOT = HERE.parents[3]
 # Module constants so failure-path tests can shorten them; the real defaults are unchanged.
 RESULT_TIMEOUT = 240; TERM_TIMEOUT = 10; KILL_TIMEOUT = 10; METADATA_TIMEOUT = 60
+SERVER_READY_TIMEOUT = 10; SERVER_STOP_TIMEOUT = 10
 UNAVAILABLE = 'UNAVAILABLE'
 
 
@@ -175,9 +176,86 @@ class Browser:
         return r
 
 
-def persist(output, result, attempt_id):
+class LocalServer:
+    """Local HTTP server driven by its own handle_request() loop.
+
+    BaseServer.shutdown() waits for serve_forever() to acknowledge and blocks forever if that loop never
+    started. Here stopping is a flag checked every POLL seconds, so stop() never depends on how far startup
+    got and its wait is bounded by SERVER_STOP_TIMEOUT. Readiness means one loop iteration completed.
+    """
+    POLL = 0.05
+
+    def __init__(self, handler):
+        self.handler = handler; self.server = self.thread = None
+        self.stopping = threading.Event(); self.settled = threading.Event(); self.exited = threading.Event()
+        self.record = {'created': False, 'threadCreated': False, 'threadStarted': False, 'started': False, 'loopError': None,
+                       'stopRequested': False, 'threadJoined': None, 'socketClosed': False, 'shutdown': False, 'error': None}
+
+    def _loop(self):
+        try:
+            while not self.stopping.is_set():
+                self.server.handle_request(); self.settled.set()
+        except BaseException as error: self.record['loopError'] = f'{type(error).__name__}: {error}'
+        finally: self.exited.set(); self.settled.set()
+
+    def start(self):
+        self.server = ThreadingHTTPServer(('127.0.0.1', 0), self.handler)
+        self.server.daemon_threads = True; self.server.timeout = self.POLL; self.record['created'] = True
+        self.thread = threading.Thread(target=self._loop, name='engine-phases-http', daemon=True); self.record['threadCreated'] = True
+        self.thread.start(); self.record['threadStarted'] = True
+        if not self.settled.wait(SERVER_READY_TIMEOUT): raise TimeoutError('server loop not ready before deadline')
+        if self.exited.is_set(): raise RuntimeError('server loop exited before readiness: '+str(self.record['loopError']))
+        self.record['started'] = True
+        return self.server.server_port
+
+    def stop(self):
+        """Idempotent; releases what exists and reports what could not be released."""
+        r = self.record
+        if r['shutdown'] or self.server is None: return r
+        errors = []
+        if r['threadStarted']:
+            self.stopping.set(); r['stopRequested'] = True
+            self.thread.join(SERVER_STOP_TIMEOUT); r['threadJoined'] = not self.thread.is_alive()
+            if not r['threadJoined']: errors.append('server thread still running after stop timeout')
+        if not r['socketClosed']:
+            try: self.server.server_close(); r['socketClosed'] = True
+            except Exception as error: errors.append(f'server_close {type(error).__name__}: {error}')
+        if r['loopError']: errors.append('server loop failed: '+r['loopError'])
+        r['shutdown'] = r['socketClosed'] and r['threadJoined'] is not False
+        if errors: r['error'] = '; '.join(errors); raise RuntimeError(r['error'])
+        return r
+
+
+def _text(value):
+    """Diagnostic text that can always be written: lone surrogates become backslash escapes."""
+    return str(value).encode('utf-8', 'backslashreplace').decode('utf-8')
+
+
+def encode_evidence(result):
+    """Strict UTF-8 JSON bytes, the encoding used, and the serialization error if a fallback was needed.
+
+    A lone surrogate (valid escaped JSON from a browser) cannot be UTF-8 encoded; one ASCII-escaped retry keeps
+    the identical value. Anything else unserializable (or NaN) yields a labelled minimal FAIL record instead.
+    """
+    attempt = result.get('attempt') if isinstance(result.get('attempt'), dict) else None
+    failure = None
+    for encoding, ascii_only in [('utf-8', False), ('ascii-escaped', True)]:
+        if attempt is not None: attempt['evidenceEncoding'] = encoding
+        try: return (json.dumps(result, ensure_ascii=ascii_only, allow_nan=False, indent=2)+'\n').encode('utf-8'), encoding, None
+        except UnicodeEncodeError as error: failure = error  # only a lone surrogate; the ASCII retry escapes it
+        except (TypeError, ValueError, RecursionError) as error: failure = error; break
+    if attempt is not None: attempt['evidenceEncoding'] = 'fallback'
+    error = failure
+    fallback = {'status': 'FAIL', 'official': False, 'validDiagnosticEvidence': False,
+                'evidenceSerializationError': _text(f'{type(error).__name__}: {error}'), 'originalStatus': _text(result.get('status')),
+                'attemptId': attempt and attempt.get('attemptId'), 'failures': attempt and attempt.get('failures'),
+                'note': 'full attempt record was not JSON-serializable; this minimal record replaces it'}
+    data = json.dumps(fallback, ensure_ascii=True, allow_nan=False, indent=2, default=lambda o: f'UNSERIALIZABLE {type(o).__name__}')
+    return (data+'\n').encode('utf-8'), 'fallback', error
+
+
+def persist(output, data, attempt_id):
     """Never replaces an existing file: write a unique sibling, then hard-link it into place."""
-    data = (json.dumps(result, ensure_ascii=False, indent=2)+'\n').encode()
     pending = output.with_name(f'{output.name}.{attempt_id}.pending'); created = False
     try:
         with open(pending, 'xb') as f:
@@ -186,12 +264,12 @@ def persist(output, result, attempt_id):
         if created:  # only our own incomplete file; an unrelated file of the same name is left alone
             try: pending.unlink()
             except OSError: pass
-        sys.stderr.write(f'EVIDENCE_PERSISTENCE_FAILED {type(error).__name__}: {error}\n{data.decode()}'); return None
+        sys.stderr.write(_text(f'EVIDENCE_PERSISTENCE_FAILED {type(error).__name__}: {error}')+'\n'+data.decode('utf-8')); return None
     try: os.link(pending, output)
     except OSError as error:
-        sys.stderr.write(f'EVIDENCE_PERSISTENCE_FAILED {type(error).__name__}: {error}; record kept at {pending}\n'); return pending
+        sys.stderr.write(_text(f'EVIDENCE_PERSISTENCE_FAILED {type(error).__name__}: {error}; record kept at {pending}')+'\n'); return pending
     try: pending.unlink()
-    except OSError as error: sys.stderr.write(f'evidence written; pending copy not removed: {error}\n')
+    except OSError as error: sys.stderr.write(_text(f'evidence written; pending copy not removed: {error}')+'\n')
     return output
 
 
@@ -224,10 +302,10 @@ def main(argv=None):
 
     # Execution attempt: from here every outcome is persisted, failures included.
     attempt={'attemptId':uuid.uuid4().hex,'stage':'server-start','failures':[],'browserProcess':None,
-             'server':{'started':False,'shutdown':False,'error':None},'receivedResultCount':0,'validated':False,
+             'server':None,'receivedResultCount':0,'validated':False,
              'profileRemoved':None,'validDiagnosticEvidence':False}
     def fail(category,error):
-        attempt['failures'].append({'stage':attempt['stage'],'category':category,'type':type(error).__name__,'message':str(error)})
+        attempt['failures'].append({'stage':attempt['stage'],'category':category,'type':type(error).__name__,'message':_text(error)})
     received=[];complete=threading.Event()
     class Handler(BaseHTTPRequestHandler):
         def log_message(self,*args):pass
@@ -251,13 +329,12 @@ def main(argv=None):
                         if f.is_relative_to(base) and f.is_file():data=f.read_bytes();mime='application/wasm' if f.suffix=='.wasm' else 'text/javascript'
             if data is None:self.send_error(404);return
             self.send_response(200);self.send_header('Content-Type',mime);self.end_headers();self.wfile.write(data)
-    server=thread=browser=profile=log=None;interrupted=None
+    server=LocalServer(Handler);attempt['server']=server.record;browser=profile=log=None;interrupted=None
     try:
-        server=ThreadingHTTPServer(('127.0.0.1',0),Handler);server.daemon_threads=True
-        thread=threading.Thread(target=server.serve_forever,daemon=True);thread.start();attempt['server']['started']=True
+        port=server.start()
         attempt['stage']='browser-launch'
         profile=tempfile.mkdtemp(prefix='geul-engine-phases-');log=tempfile.TemporaryFile(mode='w+')
-        process=subprocess.Popen([str(a.chrome),'--headless=new','--no-sandbox','--disable-gpu','--disable-dev-shm-usage','--disable-background-networking','--disable-component-update','--disable-sync','--user-data-dir='+profile,'http://127.0.0.1:'+str(server.server_port)],stdout=log,stderr=log,start_new_session=True)
+        process=subprocess.Popen([str(a.chrome),'--headless=new','--no-sandbox','--disable-gpu','--disable-dev-shm-usage','--disable-background-networking','--disable-component-update','--disable-sync','--user-data-dir='+profile,'http://127.0.0.1:'+str(port)],stdout=log,stderr=log,start_new_session=True)
         browser=Browser(process);attempt['browserProcess']=browser.record
         attempt['stage']='await-result'
         deadline=time.monotonic()+RESULT_TIMEOUT
@@ -285,12 +362,8 @@ def main(argv=None):
         except Exception as error:fail('log-collection',error)
         try:log.close()
         except Exception as error:fail('log-collection',error)
-    if server:
-        try:
-            server.shutdown();server.server_close();thread.join(timeout=10)
-            attempt['server']['shutdown']=not thread.is_alive()
-            if thread.is_alive():raise RuntimeError('server thread still running')
-        except Exception as error:attempt['server']['error']=str(error);fail('server-cleanup',error)
+    try:server.stop()
+    except Exception as error:fail('server-cleanup',error)
     if profile:
         try:shutil.rmtree(profile);attempt['profileRemoved']=True
         except Exception as error:attempt['profileRemoved']=False;fail('profile-cleanup',error)
@@ -319,10 +392,13 @@ def main(argv=None):
         browserLogTail=tail,system={'loadBefore':load_before,'loadAfter':os.getloadavg(),'logicalCpuCount':os.cpu_count(),'allowedCpuCount':len(os.sched_getaffinity(0))},
         requestConfig=config,identities=before,executedDependenciesStable=stable,browserBackend=a.backend,official=False,browserVersion=version)
     if attempt['failures']:result['validationError']=attempt['failures'][0]['message']
-    written=persist(a.output,result,attempt['attemptId'])
-    print(result['status'],result.get('validationError'),flush=True)
+    data,encoding,serialization_error=encode_evidence(result)
+    if serialization_error is not None:
+        sys.stderr.write(_text(f'EVIDENCE_SERIALIZATION_FAILED {type(serialization_error).__name__}: {serialization_error}; diagnostic status {result["status"]}; writing minimal FAIL record')+'\n')
+    written=persist(a.output,data,attempt['attemptId'])
+    print(result['status'],_text(result.get('validationError')),flush=True)
     if interrupted is not None:raise interrupted
-    if written!=a.output:return 3
+    if written!=a.output or serialization_error is not None:return 3
     return 0 if ok else 1
 
 
