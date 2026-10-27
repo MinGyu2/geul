@@ -1,0 +1,6 @@
+저장소 root에서 node --test tests/integration/rhwp/ownership-poc/test-session.mjs, npm run typecheck, npm run lint, npm test, npm run build. Node 24, 브라우저·RHWP submodule 없이 Node focused suite를 실행한다.
+Native 재현은 검증된 역사 후보, gate 3개와 동작하는 Geul debug app, driver, Xvfb, xdotool, WebKitWebDriver가 필요하다. 1420이 사용 중이면 실행하지 않는다. 아래 환경 변수에 해당 실행 파일의 절대경로를 설정하고 GEUL_SMOKE_RAW는 아직 존재하지 않는 .git 아래의 고유 디렉터리로 설정한다. 다른 세션을 종료하거나 gate를 조작하지 않는다.
+export GEUL_XVFB=<Xvfb> GEUL_XDOTOOL=<xdotool> GEUL_WEBKIT_DRIVER=<WebKitWebDriver> GEUL_TAURI_DRIVER=<tauri-driver>
+export GEUL_T010_CANDIDATE=<candidate-directory> GEUL_T010_EVIDENCE=<verified-gate-directory> GEUL_SMOKE_RAW=<new-private-raw-directory>
+dbus-run-session -- python3 tests/integration/rhwp/evidence/t010-d4-lifecycle-integrity-native-smoke/native-smoke.py
+스크립트는 app, manifest, candidate 및 gate SHA를 확인하고, private display, 임시 profile, 빈 driver 포트에서 실행한다. 단계별 raw 결과와 소유 프로세스 cleanup을 기록한다. 성공 exit 0은 관측된 smoke 단계의 실행 완료이며 전체 native readiness 또는 D4 PASS가 아니다. 최초 D-Bus 없이 실행한 실패는 별도 보존했다. 이 도구는 한 건의 basic HWPX 입력만 검사하고 비공식 진단이며 정확한 RGBA, stale publication, resource lease 및 overhead를 인증하지 않는다.
