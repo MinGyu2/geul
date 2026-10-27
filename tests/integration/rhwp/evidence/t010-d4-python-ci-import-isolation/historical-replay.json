@@ -1,0 +1,74 @@
+{
+  "replay": "PASS",
+  "source": "authenticated local raw bytes, not summary-derived samples",
+  "attempts": [
+    {
+      "attempt": 1,
+      "rawSha256": "b172fa0fad0fc0c083c80096161a2dd2cd588be42a399a9f7ab3b86e4ad7f4af",
+      "producerStatus": "FAIL",
+      "officialVerdict": "FAIL",
+      "gateResults": [
+        "FAIL",
+        "PASS",
+        "FAIL",
+        "PASS",
+        "FAIL",
+        "PASS",
+        "FAIL",
+        "PASS"
+      ],
+      "failedGateCount": 4,
+      "recordedAttributionEquality": "PASS",
+      "countsPercentilesTimeouts": "PASS",
+      "signedOffsetsPreserved": "PASS",
+      "overlapUnionUnchanged": "PASS",
+      "groupP95": [
+        93,
+        86,
+        148,
+        141
+      ],
+      "undoP95": [
+        151,
+        152,
+        160,
+        275
+      ],
+      "negativeTimestampCount": 0
+    },
+    {
+      "attempt": 2,
+      "rawSha256": "7d09ea9b2df87c30800c603912f45b5a6c82122f100c7262fd198579b08ed0ea",
+      "producerStatus": "FAIL",
+      "officialVerdict": "FAIL",
+      "gateResults": [
+        "FAIL",
+        "PASS",
+        "FAIL",
+        "PASS",
+        "FAIL",
+        "PASS",
+        "FAIL",
+        "PASS"
+      ],
+      "failedGateCount": 4,
+      "recordedAttributionEquality": "PASS",
+      "countsPercentilesTimeouts": "PASS",
+      "signedOffsetsPreserved": "PASS",
+      "overlapUnionUnchanged": "PASS",
+      "groupP95": [
+        88,
+        92,
+        172,
+        134
+      ],
+      "undoP95": [
+        175,
+        201,
+        148,
+        286
+      ],
+      "negativeTimestampCount": 6
+    }
+  ]
+}

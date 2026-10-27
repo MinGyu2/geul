@@ -1,0 +1,273 @@
+{
+  "phase": "precommit",
+  "python": "3.14.7 (main, Aug  5 2026, 10:29:49) [GCC 16.2.0]",
+  "python312": "NOT RUN: unavailable locally; no installation",
+  "environmentPolicy": "existing environment inherited, no PYTHONPATH adjustment; optimization env set only for required env test",
+  "checks": [
+    {
+      "name": "workspace-combined",
+      "command": [
+        "python3",
+        "-m",
+        "unittest",
+        "discover",
+        "-s",
+        "tests/integration/rhwp/evidence/t010-d4-critical-path-remediation",
+        "-p",
+        "test_*.py"
+      ],
+      "environment": {},
+      "exit": 0,
+      "output": "...................................\n----------------------------------------------------------------------\nRan 35 tests in 9.157s\n\nOK"
+    },
+    {
+      "name": "workspace-optimized",
+      "command": [
+        "python3",
+        "-O",
+        "-m",
+        "unittest",
+        "discover",
+        "-s",
+        "tests/integration/rhwp/evidence/t010-d4-critical-path-remediation",
+        "-p",
+        "test_analysis.py"
+      ],
+      "environment": {},
+      "exit": 0,
+      "output": "............\n----------------------------------------------------------------------\nRan 12 tests in 8.245s\n\nOK"
+    },
+    {
+      "name": "workspace-env-optimized",
+      "command": [
+        "python3",
+        "-m",
+        "unittest",
+        "discover",
+        "-s",
+        "tests/integration/rhwp/evidence/t010-d4-critical-path-remediation",
+        "-p",
+        "test_analysis.py"
+      ],
+      "environment": {
+        "PYTHONOPTIMIZE": "1"
+      },
+      "exit": 0,
+      "output": "............\n----------------------------------------------------------------------\nRan 12 tests in 8.283s\n\nOK"
+    },
+    {
+      "name": "fresh-import-optimized",
+      "command": [
+        "python3",
+        "-O",
+        "-m",
+        "unittest",
+        "discover",
+        "-s",
+        "tests/integration/rhwp/evidence/t010-d4-critical-path-remediation",
+        "-p",
+        "test_import_isolation.py"
+      ],
+      "environment": {},
+      "exit": 0,
+      "output": "....\n----------------------------------------------------------------------\nRan 4 tests in 0.799s\n\nOK"
+    },
+    {
+      "name": "fresh-import-env",
+      "command": [
+        "python3",
+        "-m",
+        "unittest",
+        "discover",
+        "-s",
+        "tests/integration/rhwp/evidence/t010-d4-critical-path-remediation",
+        "-p",
+        "test_import_isolation.py"
+      ],
+      "environment": {
+        "PYTHONOPTIMIZE": "1"
+      },
+      "exit": 0,
+      "output": "....\n----------------------------------------------------------------------\nRan 4 tests in 0.775s\n\nOK"
+    },
+    {
+      "name": "clean-combined",
+      "command": [
+        "python3",
+        "-m",
+        "unittest",
+        "discover",
+        "-s",
+        "tests/integration/rhwp/evidence/t010-d4-critical-path-remediation",
+        "-p",
+        "test_*.py"
+      ],
+      "environment": {},
+      "exit": 0,
+      "output": "....s..............................\n----------------------------------------------------------------------\nRan 35 tests in 8.490s\n\nOK (skipped=1)"
+    },
+    {
+      "name": "clean-optimized",
+      "command": [
+        "python3",
+        "-O",
+        "-m",
+        "unittest",
+        "discover",
+        "-s",
+        "tests/integration/rhwp/evidence/t010-d4-critical-path-remediation",
+        "-p",
+        "test_analysis.py"
+      ],
+      "environment": {},
+      "exit": 0,
+      "output": "....s.......\n----------------------------------------------------------------------\nRan 12 tests in 7.649s\n\nOK (skipped=1)"
+    },
+    {
+      "name": "clean-env-optimized",
+      "command": [
+        "python3",
+        "-m",
+        "unittest",
+        "discover",
+        "-s",
+        "tests/integration/rhwp/evidence/t010-d4-critical-path-remediation",
+        "-p",
+        "test_analysis.py"
+      ],
+      "environment": {
+        "PYTHONOPTIMIZE": "1"
+      },
+      "exit": 0,
+      "output": "....s.......\n----------------------------------------------------------------------\nRan 12 tests in 7.530s\n\nOK (skipped=1)"
+    }
+  ],
+  "cleanCheckout": {
+    "baseHead": "00a4884bdf847a170251cea9427901e05b90438b",
+    "method": "full tracked git clone --shared --no-checkout --no-recurse-submodules; detached reference; overlay exactly the 3 candidate Python files",
+    "overlayFiles": [
+      "tests/integration/rhwp/evidence/t010-d4-critical-path-remediation/analyze.py",
+      "tests/integration/rhwp/evidence/t010-d4-critical-path-remediation/run-current-perf.py",
+      "tests/integration/rhwp/evidence/t010-d4-critical-path-remediation/test_import_isolation.py"
+    ],
+    "shadowTypingPresent": true,
+    "nativeRawPresent": false,
+    "nativeBinariesPresent": false,
+    "wasmFiles": 0,
+    "initializedSubmodules": []
+  },
+  "freshInterpreterIdentities": [
+    {
+      "typingFile": "/nix/store/lb41b0anx1f98y9y5s9mdv97gjgsq740-python3-3.14.7/lib/python3.14/typing.py",
+      "stdlibTyping": true,
+      "finalAvailable": true,
+      "pathUnchanged": true,
+      "typingWasUncached": true,
+      "rows": [
+        {
+          "file": "analyze.py",
+          "identityFile": "tests/integration/rhwp/ownership-poc/native_d1_result.py",
+          "samples": [
+            "basic-ko.hwp",
+            "basic-ko.hwpx",
+            "연구노트(화학).hwp",
+            "3249937_asset_management_rules.hwpx"
+          ],
+          "hashes": {
+            "basic-ko.hwp": "57c901cc394abf6f58f4838315d1ea2c5ecf8a03d9934d3fc098fd8be6e6e12f",
+            "basic-ko.hwpx": "26d434b7b427149110751c6ef5b19e9ecb4818f3ba7eadfe201b5afd3de442a8",
+            "연구노트(화학).hwp": "6717eca43c6fdd9b0530530cf17d33b6687da0c462a433d37eb652afb5394f91",
+            "3249937_asset_management_rules.hwpx": "97b5d6c571a6b7626321c6a53d797e3511978447497bb73309bd23eaa8e7ea77"
+          }
+        },
+        {
+          "file": "run-current-perf.py",
+          "identityFile": "tests/integration/rhwp/ownership-poc/native_d1_result.py",
+          "samples": [
+            "basic-ko.hwp",
+            "basic-ko.hwpx",
+            "연구노트(화학).hwp",
+            "3249937_asset_management_rules.hwpx"
+          ],
+          "hashes": {
+            "basic-ko.hwp": "57c901cc394abf6f58f4838315d1ea2c5ecf8a03d9934d3fc098fd8be6e6e12f",
+            "basic-ko.hwpx": "26d434b7b427149110751c6ef5b19e9ecb4818f3ba7eadfe201b5afd3de442a8",
+            "연구노트(화학).hwp": "6717eca43c6fdd9b0530530cf17d33b6687da0c462a433d37eb652afb5394f91",
+            "3249937_asset_management_rules.hwpx": "97b5d6c571a6b7626321c6a53d797e3511978447497bb73309bd23eaa8e7ea77"
+          }
+        }
+      ],
+      "order": [
+        "analyze.py",
+        "run-current-perf.py"
+      ]
+    },
+    {
+      "typingFile": "/nix/store/lb41b0anx1f98y9y5s9mdv97gjgsq740-python3-3.14.7/lib/python3.14/typing.py",
+      "stdlibTyping": true,
+      "finalAvailable": true,
+      "pathUnchanged": true,
+      "typingWasUncached": true,
+      "rows": [
+        {
+          "file": "run-current-perf.py",
+          "identityFile": "tests/integration/rhwp/ownership-poc/native_d1_result.py",
+          "samples": [
+            "basic-ko.hwp",
+            "basic-ko.hwpx",
+            "연구노트(화학).hwp",
+            "3249937_asset_management_rules.hwpx"
+          ],
+          "hashes": {
+            "basic-ko.hwp": "57c901cc394abf6f58f4838315d1ea2c5ecf8a03d9934d3fc098fd8be6e6e12f",
+            "basic-ko.hwpx": "26d434b7b427149110751c6ef5b19e9ecb4818f3ba7eadfe201b5afd3de442a8",
+            "연구노트(화학).hwp": "6717eca43c6fdd9b0530530cf17d33b6687da0c462a433d37eb652afb5394f91",
+            "3249937_asset_management_rules.hwpx": "97b5d6c571a6b7626321c6a53d797e3511978447497bb73309bd23eaa8e7ea77"
+          }
+        },
+        {
+          "file": "analyze.py",
+          "identityFile": "tests/integration/rhwp/ownership-poc/native_d1_result.py",
+          "samples": [
+            "basic-ko.hwp",
+            "basic-ko.hwpx",
+            "연구노트(화학).hwp",
+            "3249937_asset_management_rules.hwpx"
+          ],
+          "hashes": {
+            "basic-ko.hwp": "57c901cc394abf6f58f4838315d1ea2c5ecf8a03d9934d3fc098fd8be6e6e12f",
+            "basic-ko.hwpx": "26d434b7b427149110751c6ef5b19e9ecb4818f3ba7eadfe201b5afd3de442a8",
+            "연구노트(화학).hwp": "6717eca43c6fdd9b0530530cf17d33b6687da0c462a433d37eb652afb5394f91",
+            "3249937_asset_management_rules.hwpx": "97b5d6c571a6b7626321c6a53d797e3511978447497bb73309bd23eaa8e7ea77"
+          }
+        }
+      ],
+      "order": [
+        "run-current-perf.py",
+        "analyze.py"
+      ]
+    }
+  ],
+  "newRegressionsAgainstReference": {
+    "reference": "00a4884bdf847a170251cea9427901e05b90438b",
+    "overlay": "test_import_isolation.py only; original analyzer and runner unchanged",
+    "command": [
+      "python3",
+      "-m",
+      "unittest",
+      "discover",
+      "-s",
+      "tests/integration/rhwp/evidence/t010-d4-critical-path-remediation",
+      "-p",
+      "test_import_isolation.py"
+    ],
+    "exit": 1,
+    "expected": "FAIL",
+    "summary": "----------------------------------------------------------------------\nRan 4 tests in 0.520s\n\nFAILED (failures=4)",
+    "detectedConditions": [
+      "ImportError: cannot import name 'SAMPLES' from 'unrelated_native_identity' (unknown location)",
+      "RuntimeError: run-current-perf.py changed sys.path",
+      "raise RuntimeError(filename + ' changed sys.path')"
+    ]
+  }
+}

@@ -1,0 +1,43 @@
+{
+  "sourceRevision": "00a4884bdf847a170251cea9427901e05b90438b",
+  "review": "sole main agent actual diff review; no independent reviewer claimed",
+  "changedImplementation": [
+    {
+      "path": "tests/integration/rhwp/evidence/t010-d4-critical-path-remediation/analyze.py",
+      "allFunctionsClassesUnchanged": true,
+      "sha256": "bb27373a4cd908ca3d5d6a2dddaceaf2c2250bfa28df9aa462db36b3bf7a2f61"
+    },
+    {
+      "path": "tests/integration/rhwp/evidence/t010-d4-critical-path-remediation/run-current-perf.py",
+      "allFunctionsClassesUnchanged": true,
+      "sha256": "e3315ae1d5647cb2514c2765daff2d43d3b6bb4433f376b5813b3a1a07267302"
+    }
+  ],
+  "authorityImports": [
+    "import hashlib",
+    "import json",
+    "import math",
+    "import signal",
+    "import subprocess"
+  ],
+  "qualityWorkflowUnchanged": true,
+  "existingIntegrityTestsUnchanged": true,
+  "gitlinks": [
+    "160000 commit 1a76570e833917d15817415a53c09ad61ab3203f\texternal/rhwp",
+    "160000 commit fc41918814f62645b6746ed68e71e8c2c2e85d6f\texternal/wordcraft"
+  ],
+  "protectedPaths": "PASS: git diff against starting HEAD confined to two loader sources, new import regression and new evidence directory",
+  "newRegressionSha256": "0fc49c078777496fe8fd062d2622be9635e36a738cd54ec26dac88d90ed74b02",
+  "actualChangedFiles": [
+    "tests/integration/rhwp/evidence/t010-d4-critical-path-remediation/analyze.py",
+    "tests/integration/rhwp/evidence/t010-d4-critical-path-remediation/run-current-perf.py",
+    "tests/integration/rhwp/evidence/t010-d4-critical-path-remediation/test_import_isolation.py",
+    "tests/integration/rhwp/evidence/t010-d4-python-ci-import-isolation/REPORT.ko.txt",
+    "tests/integration/rhwp/evidence/t010-d4-python-ci-import-isolation/baseline.json",
+    "tests/integration/rhwp/evidence/t010-d4-python-ci-import-isolation/historical-replay.json",
+    "tests/integration/rhwp/evidence/t010-d4-python-ci-import-isolation/remote-baseline.json",
+    "tests/integration/rhwp/evidence/t010-d4-python-ci-import-isolation/review.json",
+    "tests/integration/rhwp/evidence/t010-d4-python-ci-import-isolation/security.json",
+    "tests/integration/rhwp/evidence/t010-d4-python-ci-import-isolation/verification.json"
+  ]
+}

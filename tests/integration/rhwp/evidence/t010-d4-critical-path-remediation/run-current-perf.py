@@ -6,6 +6,7 @@ preparation off/on is explicit and never enables a product build.
 from pathlib import Path
 import argparse
 import hashlib
+import importlib.util
 import json
 import os
 import secrets
@@ -20,8 +21,12 @@ import urllib.request
 ROOT = Path(__file__).resolve().parents[5]
 HERE = Path(__file__).resolve().parent
 P = 'tests/integration/rhwp/ownership-poc/'
-sys.path.insert(0, str(ROOT / P))
-import native_d1_result as identity
+# Keep ownership-poc/typing.py out of global module lookup, including after import.
+# The authority has only stdlib imports, so loading this file needs no sibling path.
+_identity_spec = importlib.util.spec_from_file_location(
+    '_geul_d4_runner_identity', ROOT / P / 'native_d1_result.py')
+identity = importlib.util.module_from_spec(_identity_spec)
+_identity_spec.loader.exec_module(identity)
 
 
 def sha(path):

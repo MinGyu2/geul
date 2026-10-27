@@ -1,0 +1,105 @@
+T010 D4 Python CI import isolation / quality gate stabilization
+
+범위: Python import 경계 보정. native 성능 실행/제품 기능 활성화는 하지 않았다.
+시작: master, 00a4884bdf847a170251cea9427901e05b90438b, clean (VERIFIED).
+종료 SHA: 이 파일을 포함하는 단일 로컬 커밋. git log -1 --format=%H -- 이 파일로 확인.
+실제 종료 SHA/커밋 후 결과는 .git/t010-d4-python-ci-import-isolation-final.json 및 최종 응답에 기록한다.
+커밋 자기 SHA를 내부에 고정하지 않으며 amend/push를 사용하지 않는다.
+
+VERIFIED — 원격 기준 실패 (remote-baseline.json):
+GitHub connector로 job 로그와 run jobs를 직접 읽었다.
+run40437681739 / job121970191360 / .github/workflows/quality.yml / D4 증거 분석기 무결성 검사.
+https://github.com/MinGyu2/geul/actions/runs/40437681739/job/121970191360
+Ubuntu24.04.5, Python3.12 traceback, 기준 SHA00a4884bdf847a170251cea9427901e05b90438b.
+정확한 combined discover가13tests/errors1/skip1, exit1로 실패했다.
+test_runner -> unittest.mock -> asyncio -> typing.final 경로에서 ownership-poc/typing.py를 import하여
+ImportError: cannot import name 'final' from 'typing'. 이후 최적화 단계는 skip이었다.
+같은 quality run의 Rust/frontend 성공도 실제 job 목록에서 확인했다.
+민감정보 원격 scan 성공은 사용자 제공 정보이며 이 run의 별도 security workflow는 재조회하지 않았다.
+
+VERIFIED — 수정 전 로컬 재현 (baseline.json):
+Python3.14.7/Rust1.99.0/Node24.21.0, 시작 시 디스크99G 여유.
+Python3.12는 PATH 및 기존 Nix store Python3.12 위치에 없었다. 추가 설치하지 않았다.
+로컬 exact combined 명령은31 PASS, 전체 tracked archive도31 PASS/skip1이었다.
+하지만 새 프로세스에서 analyzer/runner 두 순서 모두 sys.path 앞에 ownership-poc를 주입했다.
+find_spec('typing')이 ownership-poc/typing.py를 가리키고 from typing import final이 exit1로 실패했다.
+로컬3.14의 mock/asyncio는 원격3.12와 같은 시점에 typing.final을 요구하지 않아 combined 성공으로 결함이 가려졌다.
+PYTHONPATH를 변경하지 않았다. 기준 source 수정 전에 이 결과를 기록했다.
+이전 로컬 검증이 Python3.12의 import 상호작용을 검증하지 못한 점을 이번 fresh-process 회귀로 보완했다.
+
+VERIFIED — 수정 내용 (review.json):
+- analyze.py와 관련 run-current-perf.py의 ownership-poc sys.path.insert를 제거했다.
+- importlib.util.spec_from_file_location/module_from_spec/exec_module로 지정된 native_d1_result.py만 로드한다.
+- SAMPLES/FIXTURE_SHA256는 계속 원본 authority에서 가져온다. production 상수 복제 없음.
+- 이름 기반 전역 모듈 캐시를 사용하거나 등록하지 않는다. 관련 없는 native_d1_result 캐시도 무시한다.
+- native_d1_result의 모든 import를 AST/소스로 검사: hashlib/json/math/signal/subprocess뿐이며 sibling import 없음.
+- 두 파일의 모든 함수/클래스 AST가 기준과 동일함을 비교했다. acceptance/threshold/runner 생명주기 로직은 바뀌지 않았다.
+- typing.py, authority, 기존 test_analysis.py/test_runner.py, quality.yml은 그대로다.
+- stdlib typing을 미리 로드하는 우회나 import 시스템 변경은 없다.
+
+VERIFIED — 신규 회귀 (test_import_isolation.py):
+매번 fresh subprocess에서 typing이 캐시되지 않았음을 먼저 확인한다.
+analyzer만/runner만/analyzer→runner/runner→analyzer의4가지 순서에서:
+  sys.path exact equality, authority 파일 경로/pinned4문서+해시,
+  unrelated named identity cache와의 분리, unittest.mock/asyncio/typing/final 성공,
+  typing.__file__ == sysconfig 표준 라이브러리 typing.py를 확인한다.
+명시적 final import로 로컬3.14에서도 원격3.12와 같은 잘못된 lookup을 검출한다.
+신규 회귀만 reference checkout에 주입하면4개 FAIL하여 기준 결함을 검출한다 (verification.json).
+수정 source에서는4개 PASS, -O와 PYTHONOPTIMIZE=1에서도 각각4개 PASS.
+
+VERIFIED — CI 명령 / 보존된 무결성 (verification.json):
+repository root에서 다음 기존 명령을 그대로 실행했다.
+python3 -m unittest discover -s tests/integration/rhwp/evidence/t010-d4-critical-path-remediation -p 'test_*.py'
+python3 -O -m unittest discover -s tests/integration/rhwp/evidence/t010-d4-critical-path-remediation -p test_analysis.py
+PYTHONOPTIMIZE=1 python3 -m unittest discover -s tests/integration/rhwp/evidence/t010-d4-critical-path-remediation -p test_analysis.py
+작업 트리:35 PASS/skip0 (analysis12+runner19+import4), 최적화 각각12 PASS/skip0.
+기존45개 integrity negative mutation/API+CLI 및 정상 PASS/유효 FAIL가 그대로 실행됐다.
+false-PASS, 잘못된 count/percentile/timeout/status/gate/completion/JSON/numeric은 계속 거부된다.
+critical validation은 명시적 예외이며 assert를 추가하지 않았다.
+4문서 pinned SHA/표본수/nearest-rank/8gate/failedGateCount/exitReason/HARNESS_ERROR/
+중복 JSON/음수 timestamp/overlap union 검증을 약화하거나 제거하지 않았다.
+
+VERIFIED — clean 체크아웃:
+전체 tracked source를 git clone --shared --no-checkout --no-recurse-submodules로 임시 저장소에 복제,
+reference SHA를 detached checkout한 뒤 후보 analyze.py/run-current-perf.py/test_import_isolation.py만 overlay했다.
+짧은 일부 파일 복사 대신 충돌 원인인 ownership-poc/typing.py를 포함한 전체 tracked tree를 사용했다.
+RHWP/WordCraft 미초기화, native binary 없음, WASM0개, clone .git에 역사 raw 없음을 검사했다.
+동일 combined35 PASS/skip1, -O12 PASS/skip1, 환경 최적화12 PASS/skip1, 모두 exit0.
+skip1은 인증된 raw가 없는 역사 replay 하나이며 가짜 역사 PASS로 대체하지 않았다.
+두 import 순서의 실제 stdlib 경로/sys.path 불변/pinned상수 결과도 JSON에 보관했다.
+CI job은 ubuntu-24.04/submodules:false/기존3명령 그대로이며 불필요한 추가 CI 단계나 설치는 없다.
+
+VERIFIED — 역사 원본 재분석 (historical-replay.json):
+현재 저장소 .git/t010-d4-critical-path-remediation-raw의 실제 파일을 사용했다.
+attempt1 b172fa0fad0fc0c083c80096161a2dd2cd588be42a399a9f7ab3b86e4ad7f4af
+attempt2 7d09ea9b2df87c30800c603912f45b5a6c82122f100c7262fd198579b08ed0ea
+기존 committed summary/attribution의 raw SHA와 독립 bytes hash 일치.
+두 시도 모두 producer/analyzer FAIL, group4 FAIL/Undo4 PASS, 실패수4.
+attempt1 group p95:93/86/148/141ms, Undo p95:151/152/160/275ms 그대로.
+모든 count/percentile/timeout, 기존 기록 attribution, signed offsets0/6개, overlap union 일치.
+공식 경계와50/1500ms threshold는 바꾸지 않았다. native 성능 새 실행 NOT RUN.
+재현은 기존 t010-d4-analyzer-integrity/replay.py에 새 출력 경로를 주어 실행할 수 있다.
+
+보안/커밋:
+VERIFIED: 기본 통합 실행 exit1 (Gitleaks PATH 부재만 FAIL), 승인 캐시를 GITLEAKS에 지정한 통합 실행 exit0/PASS.
+양쪽 security86, --all1895files, --history2767versions PASS; configured Gitleaks104commits PASS.
+security.json에 기본 PATH 조회와 두 실제 통합 실행 결과를 구분해 기록했다.
+--staged/--all/--history, security regressions, Gitleaks, diff --check와 정상 기존 hooks 사용.
+allowlist 수정/검사 우회/설치 없음. 최종 staged 검사와 커밋 후 저비용 검증을 별도 수행한다.
+보호 범위: public/rhwp/TRUST_ANCHOR/nativeD1 candidate/역사 raw·summary·attribution/
+제품 renderer/history/IME/registry/T009 XML·자원 예산/Cargo.lock 변경 없음.
+RHWP gitlink1a76570e833917d15817415a53c09ad61ab3203f,
+WordCraft gitlinkfc41918814f62645b6746ed68e71e8c2c2e85d6f 보존.
+Python 전용 변경이므로 Rust/frontend/WASM 재빌드·native 렌더 실행은 NOT RUN.
+
+UNVERIFIED — 최종 SHA의 실제 원격 CI: NOT RUN. push하지 않는다.
+Python3.12 로컬 실행: NOT RUN (미설치). file-loader API의3.12 호환성은 INFERRED,
+실제 Ubuntu3.12 job 해결 여부는 수정 커밋이 그 workflow를 통과하기 전까지 확정하지 않는다.
+로컬 correction 완료와 원격 CI 해결 확정, D4 성능 합격을 구분한다.
+
+공식 gate 상태 보존 (D4는 이번 원본 재분석 VERIFIED, 나머지 새 실행 NOT RUN):
+D1 NOT RUN / D2 INCONCLUSIVE / D3 기존 해당 로컬 저장 회귀 PASS /
+D4 FAIL / D5 archived PASS / RSS INCONCLUSIVE.
+Production Undo/Redo NO-GO / formatting unsupported / T010 INCOMPLETE / T011 NOT STARTED.
+이전 handoff에 기록된 T009 header/statistics 경계·parser/service 자원 정책 검증,
+T010 native 시각/D1·실제 IME/D2·성능 원인 분리/개선·RSS 확인은 이번 범위 밖으로 남는다.

@@ -7,13 +7,19 @@ from pathlib import Path
 import argparse
 import ast
 import hashlib
+import importlib.util
 import json
 import math
-import sys
 
-# Shared pinned document identities; this module has no native/submodule imports.
-sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "ownership-poc"))
-from native_d1_result import SAMPLES, FIXTURE_SHA256
+# Load the single authority by file: exposing its directory would shadow stdlib typing.
+# native_d1_result imports only stdlib modules; no sibling path or sys.modules entry is needed.
+_identity_spec = importlib.util.spec_from_file_location(
+    '_geul_d4_analyzer_identity',
+    Path(__file__).resolve().parents[2] / 'ownership-poc/native_d1_result.py')
+_identity = importlib.util.module_from_spec(_identity_spec)
+_identity_spec.loader.exec_module(_identity)
+SAMPLES = _identity.SAMPLES
+FIXTURE_SHA256 = _identity.FIXTURE_SHA256
 
 
 def stats(values):

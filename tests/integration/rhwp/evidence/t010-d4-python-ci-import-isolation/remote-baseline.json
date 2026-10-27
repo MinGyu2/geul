@@ -1,0 +1,41 @@
+{
+  "status": "VERIFIED",
+  "repository": "MinGyu2/geul",
+  "sourceRevision": "00a4884bdf847a170251cea9427901e05b90438b",
+  "workflow": ".github/workflows/quality.yml",
+  "runId": 40437681739,
+  "jobId": 121970191360,
+  "url": "https://github.com/MinGyu2/geul/actions/runs/40437681739/job/121970191360",
+  "environment": "Ubuntu 24.04.5 / Python 3.12 (observed traceback)",
+  "jobs": [
+    {
+      "id": 121970191360,
+      "name": "D4 증거 분석기 무결성 검사",
+      "status": "completed",
+      "conclusion": "failure"
+    },
+    {
+      "id": 121970191606,
+      "name": "Rust 검사",
+      "status": "completed",
+      "conclusion": "success"
+    },
+    {
+      "id": 121970191614,
+      "name": "프런트엔드 검사",
+      "status": "completed",
+      "conclusion": "success"
+    }
+  ],
+  "failureExcerpt": [
+    "2026-10-27T02:18:50.3758608Z ERROR: test_runner (unittest.loader._FailedTest.test_runner)",
+    "2026-10-27T02:18:50.3765218Z     from unittest.mock import Mock, patch",
+    "2026-10-27T02:18:50.3766352Z     import asyncio",
+    "2026-10-27T02:18:50.3771762Z     from typing import final, Optional, Type",
+    "2026-10-27T02:18:50.3772654Z ImportError: cannot import name 'final' from 'typing' (/home/runner/work/geul/geul/tests/integration/rhwp/ownership-poc/typing.py)",
+    "2026-10-27T02:18:50.3774214Z Ran 13 tests in 4.145s",
+    "2026-10-27T02:18:50.3774569Z FAILED (errors=1, skipped=1)",
+    "2026-10-27T02:18:50.3923812Z ##[error]Process completed with exit code 1."
+  ],
+  "finalShaCI": "NOT RUN"
+}

@@ -1,0 +1,60 @@
+{
+  "sourceRevision": "00a4884bdf847a170251cea9427901e05b90438b",
+  "python": "3.14.7 (main, Aug  5 2026, 10:29:49) [GCC 16.2.0]",
+  "python312": "NOT RUN: not found in PATH or existing Nix Python3.12 locations",
+  "environmentUnchanged": true,
+  "remoteRun": 40437681739,
+  "remoteJob": 121970191360,
+  "remoteReportSource": "independently verified GitHub job logs and job list; see remote-baseline.json",
+  "exactCombinedWorkingTree": {
+    "command": [
+      "python3",
+      "-m",
+      "unittest",
+      "discover",
+      "-s",
+      "tests/integration/rhwp/evidence/t010-d4-critical-path-remediation",
+      "-p",
+      "test_*.py"
+    ],
+    "exit": 0,
+    "output": "...............................\n----------------------------------------------------------------------\nRan 31 tests in 8.390s\n\nOK"
+  },
+  "trackedArchiveContainsShadow": true,
+  "exactCombinedCleanTrackedArchive": {
+    "command": [
+      "python3",
+      "-m",
+      "unittest",
+      "discover",
+      "-s",
+      "tests/integration/rhwp/evidence/t010-d4-critical-path-remediation",
+      "-p",
+      "test_*.py"
+    ],
+    "exit": 0,
+    "output": "....s..........................\n----------------------------------------------------------------------\nRan 31 tests in 7.511s\n\nOK (skipped=1)"
+  },
+  "freshOrder analyze.py,run-current-perf.py": {
+    "command": [
+      "python3",
+      "-c",
+      "import sys,importlib.util,json\nfrom pathlib import Path\nroot=Path.cwd(); here=root/\"tests/integration/rhwp/evidence/t010-d4-critical-path-remediation\"\nbefore=list(sys.path)\nprint(json.dumps({\"typingCachedBefore\": \"typing\" in sys.modules, \"pathBefore\":before}),flush=True)\nfor name in sys.argv[1:]:\n spec=importlib.util.spec_from_file_location(\"probe_\"+name.replace(\".\",\"_\"),here/name)\n module=importlib.util.module_from_spec(spec);spec.loader.exec_module(module)\n print(json.dumps({\"loaded\":name,\"pathAfter\":sys.path,\"typingSpec\":importlib.util.find_spec(\"typing\").origin,\"nativeIdentity\":sys.modules[\"native_d1_result\"].__file__}),flush=True)\nimport unittest.mock\nimport asyncio\nfrom typing import final\n",
+      "analyze.py",
+      "run-current-perf.py"
+    ],
+    "exit": 1,
+    "output": "{\"typingCachedBefore\": false, \"pathBefore\": [\"\", \"/nix/store/lb41b0anx1f98y9y5s9mdv97gjgsq740-python3-3.14.7/lib/python3.14/site-packages\", \"/nix/store/4g39rajyrxqn3na1kd4pykdigsr82af5-at-spi2-core-2.60.6/lib/python3.14/site-packages\", \"/nix/store/lb41b0anx1f98y9y5s9mdv97gjgsq740-python3-3.14.7/lib/python314.zip\", \"/nix/store/lb41b0anx1f98y9y5s9mdv97gjgsq740-python3-3.14.7/lib/python3.14\", \"/nix/store/lb41b0anx1f98y9y5s9mdv97gjgsq740-python3-3.14.7/lib/python3.14/lib-dynload\"]}\n{\"loaded\": \"analyze.py\", \"pathAfter\": [\"<clean-checkout>/tests/integration/rhwp/ownership-poc\", \"\", \"/nix/store/lb41b0anx1f98y9y5s9mdv97gjgsq740-python3-3.14.7/lib/python3.14/site-packages\", \"/nix/store/4g39rajyrxqn3na1kd4pykdigsr82af5-at-spi2-core-2.60.6/lib/python3.14/site-packages\", \"/nix/store/lb41b0anx1f98y9y5s9mdv97gjgsq740-python3-3.14.7/lib/python314.zip\", \"/nix/store/lb41b0anx1f98y9y5s9mdv97gjgsq740-python3-3.14.7/lib/python3.14\", \"/nix/store/lb41b0anx1f98y9y5s9mdv97gjgsq740-python3-3.14.7/lib/python3.14/lib-dynload\"], \"typingSpec\": \"<clean-checkout>/tests/integration/rhwp/ownership-poc/typing.py\", \"nativeIdentity\": \"<clean-checkout>/tests/integration/rhwp/ownership-poc/native_d1_result.py\"}\n{\"loaded\": \"run-current-perf.py\", \"pathAfter\": [\"<clean-checkout>/tests/integration/rhwp/ownership-poc\", \"<clean-checkout>/tests/integration/rhwp/ownership-poc\", \"\", \"/nix/store/lb41b0anx1f98y9y5s9mdv97gjgsq740-python3-3.14.7/lib/python3.14/site-packages\", \"/nix/store/4g39rajyrxqn3na1kd4pykdigsr82af5-at-spi2-core-2.60.6/lib/python3.14/site-packages\", \"/nix/store/lb41b0anx1f98y9y5s9mdv97gjgsq740-python3-3.14.7/lib/python314.zip\", \"/nix/store/lb41b0anx1f98y9y5s9mdv97gjgsq740-python3-3.14.7/lib/python3.14\", \"/nix/store/lb41b0anx1f98y9y5s9mdv97gjgsq740-python3-3.14.7/lib/python3.14/lib-dynload\"], \"typingSpec\": \"<clean-checkout>/tests/integration/rhwp/ownership-poc/typing.py\", \"nativeIdentity\": \"<clean-checkout>/tests/integration/rhwp/ownership-poc/native_d1_result.py\"}\nTraceback (most recent call last):\n  File \"<string>\", line 12, in <module>\n    from typing import final\nImportError: cannot import name 'final' from 'typing' (<clean-checkout>/tests/integration/rhwp/ownership-poc/typing.py)"
+  },
+  "freshOrder run-current-perf.py,analyze.py": {
+    "command": [
+      "python3",
+      "-c",
+      "import sys,importlib.util,json\nfrom pathlib import Path\nroot=Path.cwd(); here=root/\"tests/integration/rhwp/evidence/t010-d4-critical-path-remediation\"\nbefore=list(sys.path)\nprint(json.dumps({\"typingCachedBefore\": \"typing\" in sys.modules, \"pathBefore\":before}),flush=True)\nfor name in sys.argv[1:]:\n spec=importlib.util.spec_from_file_location(\"probe_\"+name.replace(\".\",\"_\"),here/name)\n module=importlib.util.module_from_spec(spec);spec.loader.exec_module(module)\n print(json.dumps({\"loaded\":name,\"pathAfter\":sys.path,\"typingSpec\":importlib.util.find_spec(\"typing\").origin,\"nativeIdentity\":sys.modules[\"native_d1_result\"].__file__}),flush=True)\nimport unittest.mock\nimport asyncio\nfrom typing import final\n",
+      "run-current-perf.py",
+      "analyze.py"
+    ],
+    "exit": 1,
+    "output": "{\"typingCachedBefore\": false, \"pathBefore\": [\"\", \"/nix/store/lb41b0anx1f98y9y5s9mdv97gjgsq740-python3-3.14.7/lib/python3.14/site-packages\", \"/nix/store/4g39rajyrxqn3na1kd4pykdigsr82af5-at-spi2-core-2.60.6/lib/python3.14/site-packages\", \"/nix/store/lb41b0anx1f98y9y5s9mdv97gjgsq740-python3-3.14.7/lib/python314.zip\", \"/nix/store/lb41b0anx1f98y9y5s9mdv97gjgsq740-python3-3.14.7/lib/python3.14\", \"/nix/store/lb41b0anx1f98y9y5s9mdv97gjgsq740-python3-3.14.7/lib/python3.14/lib-dynload\"]}\n{\"loaded\": \"run-current-perf.py\", \"pathAfter\": [\"<clean-checkout>/tests/integration/rhwp/ownership-poc\", \"\", \"/nix/store/lb41b0anx1f98y9y5s9mdv97gjgsq740-python3-3.14.7/lib/python3.14/site-packages\", \"/nix/store/4g39rajyrxqn3na1kd4pykdigsr82af5-at-spi2-core-2.60.6/lib/python3.14/site-packages\", \"/nix/store/lb41b0anx1f98y9y5s9mdv97gjgsq740-python3-3.14.7/lib/python314.zip\", \"/nix/store/lb41b0anx1f98y9y5s9mdv97gjgsq740-python3-3.14.7/lib/python3.14\", \"/nix/store/lb41b0anx1f98y9y5s9mdv97gjgsq740-python3-3.14.7/lib/python3.14/lib-dynload\"], \"typingSpec\": \"<clean-checkout>/tests/integration/rhwp/ownership-poc/typing.py\", \"nativeIdentity\": \"<clean-checkout>/tests/integration/rhwp/ownership-poc/native_d1_result.py\"}\n{\"loaded\": \"analyze.py\", \"pathAfter\": [\"<clean-checkout>/tests/integration/rhwp/ownership-poc\", \"<clean-checkout>/tests/integration/rhwp/ownership-poc\", \"\", \"/nix/store/lb41b0anx1f98y9y5s9mdv97gjgsq740-python3-3.14.7/lib/python3.14/site-packages\", \"/nix/store/4g39rajyrxqn3na1kd4pykdigsr82af5-at-spi2-core-2.60.6/lib/python3.14/site-packages\", \"/nix/store/lb41b0anx1f98y9y5s9mdv97gjgsq740-python3-3.14.7/lib/python314.zip\", \"/nix/store/lb41b0anx1f98y9y5s9mdv97gjgsq740-python3-3.14.7/lib/python3.14\", \"/nix/store/lb41b0anx1f98y9y5s9mdv97gjgsq740-python3-3.14.7/lib/python3.14/lib-dynload\"], \"typingSpec\": \"<clean-checkout>/tests/integration/rhwp/ownership-poc/typing.py\", \"nativeIdentity\": \"<clean-checkout>/tests/integration/rhwp/ownership-poc/native_d1_result.py\"}\nTraceback (most recent call last):\n  File \"<string>\", line 12, in <module>\n    from typing import final\nImportError: cannot import name 'final' from 'typing' (<clean-checkout>/tests/integration/rhwp/ownership-poc/typing.py)"
+  }
+}
