@@ -14,6 +14,7 @@ mod error;
 mod ole;
 mod open;
 mod package;
+pub(crate) mod resources;
 mod session;
 pub(crate) mod xml;
 pub(crate) mod zip;

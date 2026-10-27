@@ -1,0 +1,32 @@
+[
+  {
+    "check": "max-id",
+    "exit": 0,
+    "environment": {},
+    "outputTail": "\nrunning 1 test\ntest services::save::tests::hwpx_id_상한_경계 ... {\"accepted\":true,\"appended\":1,\"compareMs\":2725,\"lastId\":65535,\"original\":65535}\n{\"accepted\":false,\"appended\":1,\"compareMs\":477,\"lastId\":65536,\"original\":65536}\nok\n\ntest result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 221 filtered out; finished in 3.51s\n\n"
+  },
+  {
+    "check": "definition-sets",
+    "exit": 0,
+    "environment": {},
+    "outputTail": "\nrunning 1 test\ntest services::save::tests::hwpx_큰_정의_집합_측정 ... {\"accepted\":true,\"appended\":10,\"compareMs\":5.0,\"headerBytes\":26781,\"original\":100,\"zipBytes\":1665}\n{\"accepted\":true,\"appended\":100,\"compareMs\":47.1,\"headerBytes\":266552,\"original\":1000,\"zipBytes\":7311}\n{\"accepted\":true,\"appended\":2000,\"compareMs\":190.6,\"headerBytes\":991152,\"original\":2000,\"zipBytes\":30294}\n{\"accepted\":true,\"appended\":1000,\"compareMs\":261.9,\"headerBytes\":1463152,\"original\":5000,\"zipBytes\":36739}\n{\"accepted\":true,\"appended\":5000,\"compareMs\":693.8,\"headerBytes\":3696153,\"original\":10000,\"zipBytes\":98492}\n{\"accepted\":true,\"appended\":10000,\"compareMs\":1827.8,\"headerBytes\":9860153,\"original\":30000,\"zipBytes\":248667}\n{\"accepted\":true,\"appended\":5535,\"compareMs\":2953.6,\"headerBytes\":16037113,\"original\":60000,\"zipBytes\":369946}\nok\n\ntest result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 221 filtered out; finished in 6.28s\n\n"
+  },
+  {
+    "check": "large-text",
+    "exit": 0,
+    "environment": {
+      "GEUL_XML_MIB": "255",
+      "GEUL_XML_MODE": "stream"
+    },
+    "outputTail": "\nrunning 1 test\ntest document::xml::resource_tests::canonical_large_text_probe ... {\"inputBytes\":267386880,\"mode\":\"stream\",\"ms\":165.139291,\"processHighWaterKiB\":268552,\"retainedEventPayloadBytes\":32768,\"scope\":\"isolated process HWM; excludes source/input from retained event payload; legacy payload unmeasured\"}\nok\n\ntest result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 221 filtered out; finished in 0.30s\n\n"
+  },
+  {
+    "check": "high-events",
+    "exit": 0,
+    "environment": {
+      "GEUL_XML_EVENTS": "500000",
+      "GEUL_XML_MODE": "stream"
+    },
+    "outputTail": "\nrunning 1 test\ntest document::xml::resource_tests::canonical_comparison_event_probe ... {\"events\":1000002,\"inputBytes\":6500007,\"mode\":\"stream\",\"ms\":760.9182599999999,\"processHighWaterKiB\":\"19056\"}\nok\n\ntest result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 221 filtered out; finished in 0.77s\n\n"
+  }
+]

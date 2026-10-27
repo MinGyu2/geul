@@ -559,11 +559,22 @@ pub fn stage(target: &Path, bytes: &[u8]) -> Result<Staged, DocumentError> {
         return Err(metadata_unsupported());
     }
     // 같은 핸들로 디스크에서 다시 읽어 보낸 바이트와 같은지(쓰기 경로의 조용한 손상).
-    let mut back = Vec::with_capacity(bytes.len());
+    let capacity = bytes
+        .len()
+        .checked_add(1)
+        .ok_or_else(crate::document::resources::refused)?;
+    crate::document::resources::charge(crate::document::resources::Category::Staging, capacity)?;
+    let mut back = Vec::new();
+    back.try_reserve_exact(capacity)
+        .map_err(|_| crate::document::resources::refused())?;
     staged
         .file
         .seek(SeekFrom::Start(0))
-        .and_then(|_| staged.file.read_to_end(&mut back))
+        .and_then(|_| {
+            (&mut staged.file)
+                .take(capacity as u64)
+                .read_to_end(&mut back)
+        })
         .map_err(|error| failure(SaveStage::Write, &error))?;
     #[cfg(test)]
     if fault() == Some(Fault::Verify) {

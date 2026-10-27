@@ -37,6 +37,7 @@ describe("IPC 계약 검사", () => {
       { code: "ParseFailure", reason: "truncated" },
       { code: "ParseFailure", format: "docx", reason: "missing-part" },
       { code: "ResourceLimit", limit: "part-size" },
+      { code: "ResourceLimit", limit: "memory" },
       { code: "AlreadyOpen", sessionId: 3 },
       { code: "StaleSession", sessionId: 1 },
       { code: "InvalidState", sessionId: 2, state: "loading" },

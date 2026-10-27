@@ -499,6 +499,10 @@ pub(crate) async fn save(
                     }
                 }
             };
+            crate::document::resources::charge(
+                crate::document::resources::Category::Payload,
+                output.capacity(),
+            )?;
             service::save(&registry, &ticket, &limits, &output, None, reopen_equal)
         })
         .await

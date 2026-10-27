@@ -197,6 +197,8 @@ pub enum EngineStage {
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "kebab-case")]
 pub enum LimitKind {
+    /// Controlled byte reservation/allocation refusal, not a process RSS claim.
+    Memory,
     FileSize,
     EntryCount,
     MetadataSize,

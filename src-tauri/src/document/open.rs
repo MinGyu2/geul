@@ -286,7 +286,14 @@ pub fn read_identified(source: &LoadSource, limits: &Limits) -> Result<Vec<u8>, 
     let capacity = usize::try_from(len).map_err(|_| DocumentError::ResourceLimit {
         limit: LimitKind::FileSize,
     })?;
-    let mut bytes = Vec::with_capacity(capacity);
+    let capacity = capacity
+        .checked_add(1)
+        .ok_or_else(super::resources::refused)?;
+    super::resources::charge(super::resources::Category::Original, capacity)?;
+    let mut bytes = Vec::new();
+    bytes
+        .try_reserve_exact(capacity)
+        .map_err(|_| super::resources::refused())?;
     (&mut file)
         .take(len + 1)
         .read_to_end(&mut bytes)

@@ -36,13 +36,17 @@ pub struct DocumentState {
     registry: Arc<SessionRegistry>,
     limits: Limits,
     pending_opens: Arc<AtomicUsize>,
+    resources: Arc<super::resources::Pool>,
     /// 백엔드가 가진 WordCraft 문서 모델(T008). 세션을 닫으면 놓는다.
     wordcraft: WordcraftModels,
 }
 
 /// 진행 중인 판별 하나의 자리. 차단 작업과 함께 버려질 때(성공·실패·패닉, 작업이 시작되지 못한 경우 포함) 수를
 /// 돌려놓는다.
-struct PendingOpen(Arc<AtomicUsize>);
+pub(crate) struct PendingOpen(
+    Arc<AtomicUsize>,
+    pub(crate) Arc<super::resources::Operation>,
+);
 
 impl Drop for PendingOpen {
     fn drop(&mut self) {
@@ -51,6 +55,14 @@ impl Drop for PendingOpen {
 }
 
 impl DocumentState {
+    #[cfg(test)]
+    pub(crate) fn with_resource_pool(resources: Arc<super::resources::Pool>) -> Self {
+        Self {
+            resources,
+            ..Self::default()
+        }
+    }
+
     pub(crate) fn registry(&self) -> &Arc<SessionRegistry> {
         &self.registry
     }
@@ -71,9 +83,9 @@ impl DocumentState {
         }
     }
 
-    fn begin_open(&self) -> Result<PendingOpen, DocumentError> {
+    pub(crate) fn begin_open(&self) -> Result<PendingOpen, DocumentError> {
         let previous = self.pending_opens.fetch_add(1, Ordering::AcqRel);
-        let pending = PendingOpen(self.pending_opens.clone());
+        let pending = PendingOpen(self.pending_opens.clone(), self.resources.operation());
         if previous >= MAX_PENDING_OPENS {
             return Err(DocumentError::ResourceLimit {
                 limit: LimitKind::PendingOpens,
@@ -89,12 +101,28 @@ impl DocumentState {
         F: FnOnce() -> Result<T, DocumentError> + Send + 'static,
     {
         let pending = self.begin_open()?;
-        tauri::async_runtime::spawn_blocking(move || {
+        self.run_admitted(pending, work).await
+    }
+
+    pub(crate) async fn run_admitted<T, F>(
+        &self,
+        pending: PendingOpen,
+        work: F,
+    ) -> Result<T, DocumentError>
+    where
+        T: Send + 'static,
+        F: FnOnce() -> Result<T, DocumentError> + Send + 'static,
+    {
+        let mut cancellation = super::resources::Cancellation::new(pending.1.clone());
+        let result = tauri::async_runtime::spawn_blocking(move || {
+            let operation = pending.1.clone();
             let _pending = pending;
-            work()
+            super::resources::scope(operation, work)
         })
         .await
-        .map_err(|_| DocumentError::Internal)? // 작업 중 패닉은 내부 오류로만 알린다
+        .map_err(|_| DocumentError::Internal)?; // worker panic still owns/releases its resources
+        cancellation.disarm();
+        result
     }
 
     /// 판별(`identify`)을 차단 작업 스레드에서 실행하고 결과를 등록한다.

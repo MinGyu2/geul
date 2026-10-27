@@ -63,6 +63,17 @@ fn report_findings(format: Format, report: Option<&Value>) -> Vec<Finding> {
     }
 }
 
+fn resource_result(mut findings: Vec<Finding>) -> Preservation {
+    if crate::document::resources::failed()
+        && !findings
+            .iter()
+            .any(|f| f.code == FindingCode::LimitExceeded)
+    {
+        findings.push(Finding::new(FindingCode::LimitExceeded));
+    }
+    Preservation::from_findings(findings)
+}
+
 /// 사전 검사: 원본과 편집 없는 엔진 출력을 비교한다(rhwp는 그 출력의 손실 보고도).
 pub fn preflight(
     format: Format,
@@ -71,8 +82,14 @@ pub fn preflight(
     report: Option<&Value>,
 ) -> Preservation {
     let mut findings = report_findings(format, report);
+    let epoch = crate::document::resources::failure_epoch();
     if !same_format(unedited, format) {
-        findings.push(Finding::at(FindingCode::OutputMalformed, "container"));
+        let code = if crate::document::resources::failure_epoch() == epoch {
+            FindingCode::OutputMalformed
+        } else {
+            FindingCode::LimitExceeded
+        };
+        findings.push(Finding::at(code, "container"));
     }
     match format {
         Format::Hwp => findings.extend(hwp::compare(original, unedited)),
@@ -87,7 +104,7 @@ pub fn preflight(
             (Err(finding), _) | (_, Err(finding)) => findings.push(finding),
         },
     }
-    Preservation::from_findings(findings)
+    resource_result(findings)
 }
 
 /// 저장 출력 검사: 손실 보고(rhwp), 형식 판별, 패키지 무결성, 편집 부분 밖이 원본과 같음, 본문의 모양 참조가 정의를
@@ -104,8 +121,25 @@ pub fn check_saved(
     if !reopen_equal {
         findings.push(Finding::new(FindingCode::ReopenMismatch));
     }
+    let epoch = crate::document::resources::failure_epoch();
     if !same_format(output, format) {
-        findings.push(Finding::at(FindingCode::OutputMalformed, "container"));
+        let code = if crate::document::resources::failure_epoch() == epoch {
+            FindingCode::OutputMalformed
+        } else {
+            FindingCode::LimitExceeded
+        };
+        findings.push(Finding::at(code, "container"));
+        return resource_result(findings);
+    }
+    if crate::document::resources::charge(crate::document::resources::Category::Parsing, 0).is_err()
+    {
+        findings.push(Finding::new(FindingCode::LimitExceeded));
+        return Preservation::from_findings(findings);
+    }
+    if crate::document::resources::charge(crate::document::resources::Category::Comparison, 0)
+        .is_err()
+    {
+        findings.push(Finding::new(FindingCode::LimitExceeded));
         return Preservation::from_findings(findings);
     }
     match format {
@@ -126,7 +160,7 @@ pub fn check_saved(
             (Err(finding), _) | (_, Err(finding)) => findings.push(finding),
         },
     }
-    Preservation::from_findings(findings)
+    resource_result(findings)
 }
 
 /// 저장 표로 출력을 검사하고 원본을 바꾼다. `report`·`reopen_equal`은 엔진 쪽 근거다.
@@ -166,7 +200,9 @@ pub fn save(
             preservation: checked,
         });
     }
+    crate::document::resources::active()?;
     let target = ticket.source.load.identity.path().to_path_buf();
+    crate::document::resources::charge(crate::document::resources::Category::BeforePublication, 0)?;
     let mut staged = publish::stage(&target, output)?;
     // 쓰는 동안 원본이 바뀌었는지 내용으로 다시 확인한다(같은 크기·수정 시각으로 바뀐 경우). 교체 직전의 객체·지문
     // 확인은 기록 잠금 안에서 한다.
@@ -182,7 +218,10 @@ pub fn save(
         if !unchanged(identity, fingerprint) {
             return Err(DocumentError::FileConflict);
         }
-        let published = publish::publish(&mut staged, identity.path())?;
+        crate::document::resources::active()?;
+        let published = crate::document::resources::publication(|| {
+            publish::publish(&mut staged, identity.path())
+        })?;
         durable = published.durable;
         Ok(published)
     })?;

@@ -1,0 +1,63 @@
+{
+  "startingHead": "308961c0c8e5416b8a151d0125aa12e54466946b",
+  "scope": "T009 only; D4 files excluded",
+  "stagedPathsBeforeFinalEvidence": [
+    "docs/architecture/t009-xml-memory-accounting.md",
+    "src-tauri/src/adapters/wordcraft/commands.rs",
+    "src-tauri/src/document/commands.rs",
+    "src-tauri/src/document/error.rs",
+    "src-tauri/src/document/mod.rs",
+    "src-tauri/src/document/open.rs",
+    "src-tauri/src/document/resources.rs",
+    "src-tauri/src/document/xml.rs",
+    "src-tauri/src/document/zip.rs",
+    "src-tauri/src/services/save/commands.rs",
+    "src-tauri/src/services/save/mod.rs",
+    "src-tauri/src/services/save/package.rs",
+    "src-tauri/src/services/save/package_special_legacy_test.rs",
+    "src-tauri/src/services/save/publish.rs",
+    "src-tauri/src/services/save/service.rs",
+    "src-tauri/src/services/save/special.rs",
+    "src-tauri/src/services/save/tests.rs",
+    "src/adapters/adapters.test.ts",
+    "src/adapters/contract.ts",
+    "tests/integration/rhwp/evidence/t009-special-xml-resource-hardening/REPORT.ko.txt",
+    "tests/integration/rhwp/evidence/t009-special-xml-resource-hardening/concurrent-save.json",
+    "tests/integration/rhwp/evidence/t009-special-xml-resource-hardening/development-measurement-identity.json",
+    "tests/integration/rhwp/evidence/t009-special-xml-resource-hardening/formcharpr.json",
+    "tests/integration/rhwp/evidence/t009-special-xml-resource-hardening/frontend-attempt1.json",
+    "tests/integration/rhwp/evidence/t009-special-xml-resource-hardening/ignored-resource-tests.json",
+    "tests/integration/rhwp/evidence/t009-special-xml-resource-hardening/measurements-attempt1.json",
+    "tests/integration/rhwp/evidence/t009-special-xml-resource-hardening/measurements-attempt2.json",
+    "tests/integration/rhwp/evidence/t009-special-xml-resource-hardening/measurements-attempt3.json",
+    "tests/integration/rhwp/evidence/t009-special-xml-resource-hardening/resource-independent-sha256.json",
+    "tests/integration/rhwp/evidence/t009-special-xml-resource-hardening/rust-attempt1.json",
+    "tests/integration/rhwp/evidence/t009-special-xml-resource-hardening/rust-attempt2.json",
+    "tests/integration/rhwp/evidence/t009-special-xml-resource-hardening/strict-save.json",
+    "tests/integration/rhwp/evidence/t009-special-xml-resource-hardening/undo-save.json",
+    "tests/integration/rhwp/evidence/t009-special-xml-resource-hardening/verification-attempt3.json"
+  ],
+  "diffCheck": "PASS",
+  "frozenOracleSha256": "3ad85522b1f1a61f3910a4f7e4c5b43968080baed7d4cb7ab19cd2b612235fb7",
+  "protectedPathsUnchanged": [
+    "public",
+    "external/rhwp",
+    "external/wordcraft",
+    "Cargo.lock",
+    "src-tauri/Cargo.lock",
+    "package-lock.json",
+    "tests/integration/rhwp/ownership-poc"
+  ],
+  "gitlinks": {
+    "external/rhwp": {
+      "index": "1a76570e833917d15817415a53c09ad61ab3203f",
+      "checkout": "1a76570e833917d15817415a53c09ad61ab3203f"
+    },
+    "external/wordcraft": {
+      "index": "fc41918814f62645b6746ed68e71e8c2c2e85d6f",
+      "checkout": "fc41918814f62645b6746ed68e71e8c2c2e85d6f"
+    }
+  },
+  "remoteCI": "NOT RUN",
+  "push": "NOT RUN"
+}

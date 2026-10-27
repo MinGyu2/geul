@@ -39,14 +39,15 @@ fn u64_at(bytes: &[u8], at: usize) -> u64 {
 
 /// 프레임을 읽는다. 모양이 맞지 않으면 `InvalidRequest`, 출력이 문서 크기 상한을 넘으면 `ResourceLimit`.
 pub fn parse_frame(body: &[u8], max_payload: u64) -> Result<Frame, DocumentError> {
-    parse_frame_copy(body, max_payload, |payload| {
-        let mut owned = Vec::new();
-        owned
-            .try_reserve_exact(payload.len())
-            .map_err(|_| DocumentError::Internal)?;
-        owned.extend_from_slice(payload);
-        Ok(owned)
-    })
+    parse_frame_copy(body, max_payload, copy_payload)
+}
+fn copy_payload(payload: &[u8]) -> Result<Vec<u8>, DocumentError> {
+    let mut owned = Vec::new();
+    owned
+        .try_reserve_exact(payload.len())
+        .map_err(|_| crate::document::resources::refused())?;
+    owned.extend_from_slice(payload);
+    Ok(owned)
 }
 
 fn parse_frame_copy(
@@ -81,6 +82,25 @@ fn parse_frame_copy(
         meta,
         payload,
     })
+}
+
+/// Validate first, then acquire the shared operation slot BEFORE the payload copy.
+/// Pending owns charges across async cancellation until its blocking worker exits.
+fn admitted_frame(
+    body: &[u8],
+    state: &DocumentState,
+) -> Result<(Frame, crate::document::commands::PendingOpen), DocumentError> {
+    use crate::document::resources::Category;
+    let mut admission = None;
+    let frame = parse_frame_copy(body, state.limits().max_file_bytes, |payload| {
+        let pending = state.begin_open()?;
+        pending.1.charge(Category::Ipc, body.len())?;
+        pending.1.charge(Category::Payload, payload.len())?;
+        let owned = copy_payload(payload)?;
+        admission = Some(pending);
+        Ok(owned)
+    })?;
+    Ok((frame, admission.ok_or(DocumentError::Internal)?))
 }
 
 /// 메타가 정확히 `keys`만 가진 객체인지.
@@ -128,7 +148,7 @@ pub async fn document_preflight(
     state: State<'_, DocumentState>,
     request: Request<'_>,
 ) -> Result<SaveCheck, DocumentError> {
-    let frame = parse_frame(raw(request.body())?, state.limits().max_file_bytes)?;
+    let (frame, admission) = admitted_frame(raw(request.body())?, &state)?;
     state.frontend_model(frame.session_id)?;
     let report = exactly(&frame.meta, &["contentLoss"])
         .and_then(|meta| meta.get("contentLoss"))
@@ -140,7 +160,7 @@ pub async fn document_preflight(
     let limits = state.limits();
     let format = source.load.format;
     let (preservation, hash) = state
-        .run_blocking(move || {
+        .run_admitted(admission, move || {
             let original = read_original(&source, &limits)?;
             Ok((
                 service::preflight(format, &original, &frame.payload, Some(&report)),
@@ -165,7 +185,7 @@ pub async fn document_save(
     state: State<'_, DocumentState>,
     request: Request<'_>,
 ) -> Result<SaveOutcome, DocumentError> {
-    let frame = parse_frame(raw(request.body())?, state.limits().max_file_bytes)?;
+    let (frame, admission) = admitted_frame(raw(request.body())?, &state)?;
     state.frontend_model(frame.session_id)?;
     let meta =
         exactly(&frame.meta, &["contentLoss", "reopen"]).ok_or(DocumentError::InvalidRequest)?;
@@ -174,7 +194,7 @@ pub async fn document_save(
     let registry = state.registry().clone();
     let limits = state.limits();
     state
-        .run_blocking(move || {
+        .run_admitted(admission, move || {
             let ticket = registry.begin_save(frame.session_id, frame.generation, frame.revision)?;
             service::save(
                 &registry,
@@ -277,5 +297,46 @@ mod admission_tests {
             raw(&InvokeBody::Json(Value::Null)),
             Err(DocumentError::InvalidRequest)
         );
+    }
+}
+
+#[cfg(test)]
+mod reservation_tests {
+    use super::*;
+    use crate::document::resources::{refused, Pool};
+    #[test]
+    fn payload_copy_is_inside_operation_admission_and_exact_byte_reservation() {
+        let mut bytes = FRAME_MAGIC.to_vec();
+        for n in [1u64, 2, 3] {
+            bytes.extend(n.to_le_bytes());
+        }
+        bytes.extend(2u32.to_le_bytes());
+        bytes.extend(b"{}");
+        bytes.extend(b"payload");
+        let exact = bytes.len() + 7;
+        let pool = Pool::limited(exact);
+        let state = DocumentState::with_resource_pool(pool.clone());
+        let (frame, owner) = admitted_frame(&bytes, &state).unwrap();
+        assert_eq!(frame.payload, b"payload");
+        assert_eq!(pool.usage().0, exact);
+        assert!(matches!(admitted_frame(&bytes,&state),Err(error) if error==refused()));
+        drop(frame);
+        drop(owner);
+        assert_eq!(pool.usage().0, 0);
+        let small = Pool::limited(exact - 1);
+        let state = DocumentState::with_resource_pool(small.clone());
+        assert!(matches!(admitted_frame(&bytes,&state),Err(error) if error==refused()));
+        assert_eq!(small.usage().0, 0);
+        let state = DocumentState::default();
+        let owners: Vec<_> = (0..crate::document::commands::MAX_PENDING_OPENS)
+            .map(|_| state.begin_open().unwrap())
+            .collect();
+        assert!(matches!(
+            admitted_frame(&bytes, &state),
+            Err(DocumentError::ResourceLimit {
+                limit: crate::document::LimitKind::PendingOpens
+            })
+        ));
+        drop(owners);
     }
 }

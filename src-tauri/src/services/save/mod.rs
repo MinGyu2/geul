@@ -10,6 +10,7 @@ pub mod preserve;
 pub mod preview;
 pub mod publish;
 pub mod service;
+mod special;
 
 #[cfg(test)]
 mod tests;

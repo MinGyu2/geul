@@ -56,7 +56,7 @@ export type UnsupportedKind =
   | "extension" | "hwp3" | "hwp-version" | "legacy-word" | "other-ole" | "word-variant" | "other-ooxml" | "other-zip"
   | "ambiguous" | "unknown";
 export type ParseProblem = "empty" | "truncated" | "corrupt-container" | "missing-part" | "invalid-part";
-export type LimitKind = "file-size" | "entry-count" | "metadata-size" | "part-size" | "session-count" | "pending-opens";
+export type LimitKind = "memory" | "file-size" | "entry-count" | "metadata-size" | "part-size" | "session-count" | "pending-opens";
 
 /** 백엔드가 보내는 오류. */
 export type BackendError =
@@ -237,7 +237,7 @@ const ERROR_FIELDS: Record<
   ExtensionMismatch: { declared: "format", detected: "format" },
   Encrypted: { format: "optional-format" },
   ParseFailure: { format: "optional-format", reason: ["empty", "truncated", "corrupt-container", "missing-part", "invalid-part"] },
-  ResourceLimit: { limit: ["file-size", "entry-count", "metadata-size", "part-size", "session-count", "pending-opens"] },
+  ResourceLimit: { limit: ["memory", "file-size", "entry-count", "metadata-size", "part-size", "session-count", "pending-opens"] },
   AlreadyOpen: { sessionId: "session" },
   UnknownSession: { sessionId: "session" },
   StaleSession: { sessionId: "session" },

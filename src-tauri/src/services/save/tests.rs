@@ -7879,3 +7879,894 @@ fn resource_refusal_in_save_service_preserves_bytes_hash_dirty_and_ticket_releas
         assert_eq!(std::fs::read_dir(dir.path()).unwrap().count(), 1);
     }
 }
+
+// Frozen service dispatch from 308961c; special comparator bodies are frozen separately.
+fn special_legacy_check_saved(
+    format: Format,
+    original: &[u8],
+    output: &[u8],
+    report: Option<&Value>,
+    reopen_equal: bool,
+) -> Preservation {
+    let mut findings = match (format, report) {
+        (Format::Hwp | Format::Hwpx, Some(r)) => loss::check(r, format),
+        (Format::Docx, None) => vec![],
+        _ => vec![Finding::new(FindingCode::LossReportInvalid)],
+    };
+    if !reopen_equal {
+        findings.push(Finding::new(FindingCode::ReopenMismatch));
+    }
+    if !crate::document::detect(&mut std::io::Cursor::new(output), output.len() as u64)
+        .is_ok_and(|detected| detected == format)
+    {
+        findings.push(Finding::at(FindingCode::OutputMalformed, "container"));
+        return Preservation::from_findings(findings);
+    }
+    match format {
+        Format::Hwp => findings.extend(hwp::compare_saved(original, output)),
+        Format::Hwpx | Format::Docx => match (
+            package::open(original, package::Side::Original),
+            package::open(output, package::Side::Output),
+        ) {
+            (Ok(before), Ok(after)) if format == Format::Hwpx => {
+                findings.extend(package::validate_hwpx(&before, &after));
+                findings.extend(package::special_legacy::compare_saved_hwpx(&before, &after));
+                findings.extend(package::special_legacy::validate_hwpx_references(&after));
+            }
+            (Ok(before), Ok(after)) => {
+                findings.extend(package::validate_docx(&after));
+                findings.extend(package::special_legacy::compare_saved_docx(&before, &after));
+            }
+            (Err(finding), _) | (_, Err(finding)) => findings.push(finding),
+        },
+    }
+    Preservation::from_findings(findings)
+}
+
+#[test]
+fn special_header_full_findings_match_frozen_oracle() {
+    let (defs, original) = fmt_original();
+    let d: Vec<_> = defs.iter().map(String::as_str).collect();
+    let good = fmt_header(4, &d, &[&italic_of_zero()], "JUSTIFY");
+    let other = fmt_def(4, 1100, "<hh:bold/>");
+    let mut headers = vec![
+        original.clone(),
+        good.clone(),
+        fmt_header(5, &d, &[&italic_of_zero(), &other], "JUSTIFY"),
+        good.replace("hh:", "h:").replace("xmlns:hh", "xmlns:h"),
+        good.replace("height=\"1000\"", "height=\"999\""),
+        good.replace("id=\"3\"", "id=\"65536\""),
+        good.replace("id=\"3\"", "id=\"0\""),
+        good.replace(
+            "<hh:italic/>",
+            "<hh:underline type=\"CENTER\" shape=\"SOLID\" color=\"none\"/>",
+        ),
+        good.replace(
+            "<hh:italic/>",
+            "<hh:strikeout shape=\"3D\" color=\"none\"/>",
+        ),
+        good.replace("<hh:italic/>", "<hh:italic/><hh:italic/>"),
+        good.replace("<hh:italic/>", "<hh:unknown/>"),
+        good.replace("<hh:italic/>", "<hh:italic>text</hh:italic>"),
+        good.replace("itemCnt=\"4\"", "itemCnt=\"3\""),
+        good.replace("JUSTIFY", "LEFT"),
+        good.replace("http://www.hancom.co.kr/hwpml/2011/head", "wrong"),
+        format!("{good}<bad"),
+        format!("{good}<!--unfinished"),
+        good.replace(
+            "</hh:charProperties>",
+            "<hh:charProperties/></hh:charProperties>",
+        ),
+    ];
+    for text in ["a<![CDATA[b]]>&amp;", "x< hh:bad", "", "a< hh:bad"] {
+        headers.push(good.replace("<hh:italic/>", text));
+    }
+    let loss = report("hwpx", json!([]));
+    for before_header in [&original, &format!("{original}<bad")] {
+        let before = zip(
+            &hwpx_package(&fmt_body(&[0]), before_header, true, true),
+            false,
+        );
+        for (i, header) in headers.iter().enumerate() {
+            for body in [
+                fmt_body(&[3, 4]),
+                fmt_body(&[0]),
+                fmt_body(&[65536]),
+                format!(
+                    r#"<hs:sec xmlns:hs="{}" xmlns:hp="{}"><hp:p><hp:run><hp:ctrl><hp:edit><hp:formCharPr charPrIDRef="3"/></hp:edit></hp:ctrl></hp:run></hp:p></hs:sec>"#,
+                    "http://www.hancom.co.kr/hwpml/2011/section",
+                    "http://www.hancom.co.kr/hwpml/2011/paragraph"
+                ),
+            ] {
+                let after = zip(&hwpx_package(&body, header, true, true), false);
+                assert_eq!(
+                    service::check_saved(Format::Hwpx, &before, &after, Some(&loss), true),
+                    special_legacy_check_saved(Format::Hwpx, &before, &after, Some(&loss), true),
+                    "header case {i}"
+                );
+            }
+        }
+    }
+    // Large local text and attributes are not retained in a definition event vector.
+    for text in ["a<![CDATA[b]]>&amp;".to_string(), "x".repeat(256 * 1024)] {
+        let old = fmt_def(0, 1000, &text);
+        let new = fmt_def(1, 1000, &format!("{text}<hh:italic/>"));
+        let before = pkg(&hwpx_package(
+            &fmt_body(&[0]),
+            &fmt_header(1, &[&old], &[], "JUSTIFY"),
+            true,
+            true,
+        ));
+        let after = pkg(&hwpx_package(
+            &fmt_body(&[1]),
+            &fmt_header(2, &[&old], &[&new], "JUSTIFY"),
+            true,
+            true,
+        ));
+        assert_eq!(
+            package::compare_saved_hwpx(&before, &after),
+            package::special_legacy::compare_saved_hwpx(&before, &after)
+        );
+    }
+}
+
+#[test]
+fn special_statistics_full_findings_match_frozen_oracle() {
+    let ns = "http://schemas.openxmlformats.org/officeDocument/2006/extended-properties";
+    let wrap = |body: &str| format!(r#"<p:Properties xmlns:p="{ns}">{body}</p:Properties>"#);
+    let mut cases = vec![
+        wrap("<p:Words>1</p:Words><p:Company>A</p:Company>"),
+        wrap("<p:Words>222</p:Words><p:Company>A</p:Company>"),
+        wrap("<p:Words>1</p:Words><p:Company>B</p:Company>"),
+        wrap("<p:Words/><p:Company>A</p:Company>"),
+        wrap("<p:Words><![CDATA[]]></p:Words><p:Company>A</p:Company>"),
+        wrap("<p:Words>&#49;</p:Words><p:Company><![CDATA[A]]></p:Company>"),
+        wrap("<p:Words><p:Company>1</p:Company></p:Words>"),
+        wrap("<p:Words><p:Company>2</p:Company></p:Words>"),
+        wrap("<p:Words id=\"1\">1</p:Words>"),
+        wrap("<p:Words id=\"2\">1</p:Words>"),
+        wrap("<p:Words xmlns:p=\"wrong\">2</p:Words>"),
+        wrap("<p:Words>&unknown;</p:Words>"),
+        format!("{}<bad", wrap("<p:Words>2</p:Words>")),
+        wrap("<p:Words>1</p:Words><p:Pages>2</p:Pages>"),
+        wrap("<p:Words>3</p:Words><p:Pages>4</p:Pages>"),
+    ];
+    cases.push(wrap(&format!(
+        "<p:Words>{}</p:Words>",
+        "x".repeat(128 * 1024)
+    )));
+    for a in &cases {
+        for b in &cases {
+            let before = pkg(&[stored("docProps/app.xml", a.as_bytes())]);
+            let after = pkg(&[stored("docProps/app.xml", b.as_bytes())]);
+            assert_eq!(
+                package::compare_saved_docx(&before, &after),
+                package::special_legacy::compare_saved_docx(&before, &after)
+            );
+            assert_eq!(
+                package::same_except_statistics(a.as_bytes(), b.as_bytes()),
+                package::legacy_statistics(a.as_bytes(), b.as_bytes())
+            );
+        }
+    }
+    let value = wrap("<p:Words>123</p:Words><p:Company>a&amp;b</p:Company>");
+    let mut utf16 = vec![0xff, 0xfe];
+    for unit in value.encode_utf16() {
+        utf16.extend(unit.to_le_bytes());
+    }
+    assert_eq!(
+        package::same_except_statistics(value.as_bytes(), &utf16),
+        Some(true)
+    );
+    assert_eq!(
+        package::same_except_statistics(value.as_bytes(), value.replace("123", "9").as_bytes()),
+        Some(true)
+    );
+}
+
+#[test]
+fn reservation_refusal_preserves_real_save_and_allows_retry() {
+    use crate::document::resources::{self, Category, Pool};
+    let pool = Pool::limited(usize::MAX);
+    let state = DocumentState::with_resource_pool(pool.clone());
+    let dir = TempDir::new();
+    let original = hwp_doc(0, &docinfo(0, b"font"), &section("hello"), &[]);
+    let info = rhwp_session(&state, &dir, "reserved.hwp", &original);
+    let registry = state.registry();
+    let loss = report("hwp", json!([]));
+    let preflight = service::preflight(Format::Hwp, &original, &original, Some(&loss));
+    assert!(preflight.is_safe());
+    registry
+        .record_preflight(
+            info.session_id,
+            info.load_generation,
+            crate::document::content_hash(&original),
+            preflight,
+        )
+        .unwrap();
+    registry
+        .commit(info.session_id, info.load_generation, 0, 1)
+        .unwrap();
+    let before = registry.get(info.session_id).unwrap();
+    let bytes_hash = crate::document::content_hash(&original);
+    for category in [
+        Category::Original,
+        Category::Parsing,
+        Category::Comparison,
+        Category::BeforePublication,
+        Category::Staging,
+    ] {
+        pool.deny(Some(category));
+        let result = resources::scope(pool.operation(), || {
+            let ticket = registry
+                .begin_save(info.session_id, info.load_generation, 1)
+                .unwrap();
+            service::save(
+                registry,
+                &ticket,
+                &Limits::default(),
+                &original,
+                Some(&loss),
+                true,
+            )
+        });
+        if matches!(category, Category::Parsing | Category::Comparison) {
+            assert!(
+                matches!(&result,Err(DocumentError::UnsafeSave{preservation}) if preservation.findings==vec![Finding::new(FindingCode::LimitExceeded)]),
+                "{category:?}: {result:?}"
+            );
+        } else {
+            assert_eq!(result.unwrap_err(), resources::refused(), "{category:?}");
+        }
+        assert_eq!(pool.usage().0, 0, "{category:?}");
+        let bytes = std::fs::read(dir.path().join("reserved.hwp")).unwrap();
+        assert_eq!(bytes, original);
+        if let Some(path) = std::env::var_os("GEUL_T009_RESOURCE_AUDIT") {
+            let path = std::path::PathBuf::from(path);
+            std::fs::write(path.join("original.hwp"), &original).unwrap();
+            std::fs::write(path.join(format!("after-{category:?}.hwp")), &bytes).unwrap();
+        }
+        assert_eq!(crate::document::content_hash(&bytes), bytes_hash);
+        assert_eq!(registry.get(info.session_id).unwrap(), before);
+        assert!(before.dirty);
+        assert_eq!(std::fs::read_dir(dir.path()).unwrap().count(), 1);
+        // Ticket must already have released even after stage-created temporary-file refusal.
+        drop(
+            registry
+                .begin_save(info.session_id, info.load_generation, 1)
+                .unwrap(),
+        );
+    }
+    pool.deny(None);
+    let saved = resources::scope(pool.operation(), || {
+        let ticket = registry
+            .begin_save(info.session_id, info.load_generation, 1)
+            .unwrap();
+        service::save(
+            registry,
+            &ticket,
+            &Limits::default(),
+            &original,
+            Some(&loss),
+            true,
+        )
+        .unwrap()
+    });
+    assert!(!saved.session.dirty);
+    assert_eq!(pool.usage().0, 0);
+}
+
+#[test]
+fn reservation_xml_index_and_expansion_refusal_are_resource_not_malformed() {
+    use crate::document::resources::{self, Category, Pool};
+    let pool = Pool::limited(usize::MAX);
+    let (before, after) = large_header_pair(4, 2);
+    let loss = report("hwpx", json!([]));
+    for category in [Category::Expanded, Category::Index] {
+        pool.deny(Some(category));
+        let result = resources::scope(pool.operation(), || {
+            service::check_saved(Format::Hwpx, &before, &after, Some(&loss), true)
+        });
+        assert_eq!(
+            result.findings,
+            vec![Finding::at(
+                FindingCode::LimitExceeded,
+                if category == Category::Expanded {
+                    "container"
+                } else {
+                    "Contents/header.xml"
+                }
+            )]
+        );
+        assert_eq!(pool.usage().0, 0);
+    }
+    pool.deny(None);
+    assert!(resources::scope(pool.operation(), || service::check_saved(
+        Format::Hwpx,
+        &before,
+        &after,
+        Some(&loss),
+        true
+    ))
+    .is_safe());
+    assert_eq!(pool.usage().0, 0);
+}
+
+#[test]
+fn canceled_save_and_closed_session_keep_reservation_until_worker_exits() {
+    use crate::document::resources::{self, Category, Pool};
+    use std::{
+        pin::Pin,
+        sync::mpsc,
+        task::{Context, Poll, Waker},
+    };
+    for close in [false, true] {
+        let pool = Pool::limited(usize::MAX);
+        let state = DocumentState::with_resource_pool(pool.clone());
+        let dir = TempDir::new();
+        let original = hwp_doc(0, &docinfo(0, b"font"), &section("hello"), &[]);
+        let info = rhwp_session(&state, &dir, "cancel-reserved.hwp", &original);
+        let registry = state.registry().clone();
+        let loss = report("hwp", json!([]));
+        registry
+            .record_preflight(
+                info.session_id,
+                info.load_generation,
+                crate::document::content_hash(&original),
+                service::preflight(Format::Hwp, &original, &original, Some(&loss)),
+            )
+            .unwrap();
+        registry
+            .commit(info.session_id, info.load_generation, 0, 1)
+            .unwrap();
+        let (started, rx) = mpsc::channel();
+        let (release, released) = mpsc::channel();
+        let (finished, done) = mpsc::channel();
+        let bytes = original.clone();
+        let mut future = Box::pin(state.run_blocking(move || {
+            resources::charge(Category::Payload, bytes.capacity())?;
+            let ticket = registry.begin_save(info.session_id, info.load_generation, 1)?;
+            started.send(()).unwrap();
+            released.recv().unwrap();
+            let result = service::save(
+                &registry,
+                &ticket,
+                &Limits::default(),
+                &bytes,
+                Some(&loss),
+                true,
+            );
+            finished.send(result.clone()).unwrap();
+            result
+        }));
+        assert!(matches!(
+            Pin::as_mut(&mut future).poll(&mut Context::from_waker(Waker::noop())),
+            Poll::Pending
+        ));
+        rx.recv_timeout(std::time::Duration::from_secs(20)).unwrap();
+        drop(future);
+        assert_eq!(pool.usage().0, original.len());
+        if close {
+            state.registry().close(info.session_id).unwrap();
+        }
+        assert_eq!(
+            pool.usage().0,
+            original.len(),
+            "closing cannot release worker-owned buffers"
+        );
+        release.send(()).unwrap();
+        assert!(done
+            .recv_timeout(std::time::Duration::from_secs(20))
+            .unwrap()
+            .is_err());
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(20);
+        while pool.usage().0 != 0 {
+            assert!(std::time::Instant::now() < deadline);
+            std::thread::yield_now();
+        }
+        assert_eq!(
+            std::fs::read(dir.path().join("cancel-reserved.hwp")).unwrap(),
+            original
+        );
+        assert_eq!(std::fs::read_dir(dir.path()).unwrap().count(), 1);
+        if !close {
+            assert!(state.registry().get(info.session_id).unwrap().dirty);
+        }
+    }
+}
+
+#[test]
+#[ignore = "independent-process matched special comparator probe; GEUL_SPECIAL_CASE=header/stats/text/utf16/events and GEUL_SPECIAL_MODE=legacy/new"]
+fn special_resource_probe() {
+    use crate::document::resources::{self, Pool};
+    let case = std::env::var("GEUL_SPECIAL_CASE").unwrap();
+    let mode = std::env::var("GEUL_SPECIAL_MODE").unwrap();
+    let (format, before, after, xml_bytes) = match case.as_str() {
+        "header" | "maxid" => {
+            let (a, b) = if case == "maxid" {
+                large_header_pair(65535, 1)
+            } else {
+                large_header_pair(60000, 5535)
+            };
+            let xml_bytes = package::open(&b, package::Side::Output)
+                .unwrap()
+                .get("Contents/header.xml")
+                .unwrap()
+                .len();
+            (Format::Hwpx, a, b, xml_bytes)
+        }
+        "stats" | "utf16" => {
+            let size = std::env::var("GEUL_SPECIAL_MIB")
+                .unwrap_or("16".into())
+                .parse::<usize>()
+                .unwrap()
+                * 1024
+                * 1024;
+            let ns = "http://schemas.openxmlformats.org/officeDocument/2006/extended-properties";
+            let a = format!(
+                r#"<Properties xmlns="{ns}"><Words>{}</Words><Company>A</Company></Properties>"#,
+                "x".repeat(size)
+            );
+            let b = format!(
+                r#"<Properties xmlns="{ns}"><Words>{}</Words><Company>A</Company></Properties>"#,
+                "y".repeat(size)
+            );
+            let encode = |s: &str| {
+                if case == "utf16" {
+                    let mut v = vec![0xff, 0xfe];
+                    for u in s.encode_utf16() {
+                        v.extend(u.to_le_bytes());
+                    }
+                    v
+                } else {
+                    s.as_bytes().to_vec()
+                }
+            };
+            let (a, b) = (encode(&a), encode(&b));
+            let n = b.len();
+            let before = zip(
+                &docx_package("<d/>", vec![entry("docProps/app.xml", &a)], None),
+                false,
+            );
+            let after = zip(
+                &docx_package("<d/>", vec![entry("docProps/app.xml", &b)], None),
+                false,
+            );
+            (Format::Docx, before, after, n)
+        }
+        "text" | "text-component" | "events" => {
+            let text = if case == "events" {
+                "<hh:x/>".repeat(500000)
+            } else {
+                "x".repeat(
+                    std::env::var("GEUL_SPECIAL_MIB")
+                        .unwrap_or("255".into())
+                        .parse::<usize>()
+                        .unwrap()
+                        * 1024
+                        * 1024,
+                )
+            };
+            let old = fmt_def(0, 1000, "");
+            let new = fmt_def(1, 1000, "<hh:italic/>");
+            let prefix = format!("<hh:note>{text}</hh:note>");
+            let a = fmt_header(1, &[&old], &[], "JUSTIFY")
+                .replace("<hh:refList>", &format!("{prefix}<hh:refList>"));
+            let b = fmt_header(2, &[&old], &[&new], "JUSTIFY")
+                .replace("<hh:refList>", &format!("{prefix}<hh:refList>"));
+            let size = b.len();
+            (
+                Format::Hwpx,
+                zip(&hwpx_package(&fmt_body(&[0]), &a, true, true), false),
+                zip(&hwpx_package(&fmt_body(&[1]), &b, true, true), false),
+                size,
+            )
+        }
+        _ => panic!("unknown case"),
+    };
+    let baseline_rss = peak_kib().ok().map(|(_, r)| r);
+    let reset = peak_reset();
+    let start = std::time::Instant::now();
+    let pool = Pool::limited(usize::MAX);
+    let loss = report("hwpx", json!([]));
+    let report = (format == Format::Hwpx).then_some(&loss);
+    let result = resources::scope(pool.operation(), || {
+        if case == "text-component" {
+            let a = package::open(&before, package::Side::Original).unwrap();
+            let b = package::open(&after, package::Side::Output).unwrap();
+            Preservation::from_findings(match mode.as_str() {
+                "legacy" => package::special_legacy::compare_saved_hwpx(&a, &b),
+                "new" => package::compare_saved_hwpx(&a, &b),
+                _ => panic!("unknown mode"),
+            })
+        } else {
+            match mode.as_str() {
+                "legacy" => special_legacy_check_saved(format, &before, &after, report, true),
+                "new" => service::check_saved(format, &before, &after, report, true),
+                _ => panic!("unknown mode"),
+            }
+        }
+    });
+    let ms = start.elapsed().as_secs_f64() * 1000.0;
+    let mut measure = peak_evidence(reset, peak_kib());
+    if case == "text" {
+        assert_eq!(
+            result.findings,
+            vec![Finding::at(FindingCode::OutputMalformed, "container")]
+        );
+    } else {
+        assert!(result.is_safe(), "{result:?}");
+    }
+    assert_eq!(pool.usage().0, 0);
+    measure["case"] = json!(case);
+    measure["mode"] = json!(mode);
+    measure["xmlBytes"] = json!(xml_bytes);
+    measure["compressedInputBytes"] = json!(before.len());
+    measure["compressedOutputBytes"] = json!(after.len());
+    measure["ms"] = json!(ms);
+    measure["rssBeforeKiB"] = json!(baseline_rss);
+    measure["findings"] = json!(result);
+    measure["controlledReservationPeakBytes"] = json!(pool.usage().1);
+    measure["categoryReservationPeakBytes"] = json!([
+        "borrowedIpcLength",
+        "ownedPayload",
+        "originalReadCapacity",
+        "expandedBufferReservation",
+        "utf16DecodedBytes",
+        "indexSlotEstimate",
+        "stagingReadCapacity",
+        "parseBoundary",
+        "comparisonBoundary",
+        "beforePublication"
+    ]
+    .into_iter()
+    .zip(pool.category_peaks())
+    .collect::<std::collections::BTreeMap<_, _>>());
+    measure["scope"] = json!(if case == "text-component" {
+        "matched package open + special HWPX comparison only; exceeds existing format detector 64MiB; not full service acceptance"
+    } else {
+        "matched full check_saved; fixture creation excluded; conservative reservations not total heap/RSS"
+    });
+    println!("{measure}");
+}
+
+#[test]
+#[ignore = "special full-findings real corpus; GEUL_XML_CORPUS path list"]
+fn special_real_corpus_differential() {
+    let paths = std::env::var_os("GEUL_XML_CORPUS").unwrap();
+    let mut packages = 0;
+    let mut parts = 0;
+    for path in std::env::split_paths(&paths) {
+        let data = std::fs::read(&path).unwrap();
+        let format =
+            crate::document::detect(&mut std::io::Cursor::new(&data), data.len() as u64).unwrap();
+        let package = package::open(&data, package::Side::Original).unwrap();
+        for (name, (_, bytes)) in &package.parts {
+            if package::is_xml(name, bytes) {
+                parts += 1;
+            }
+        }
+        let loss = report("hwpx", json!([]));
+        let report = (format == Format::Hwpx).then_some(&loss);
+        assert_eq!(
+            service::check_saved(format, &data, &data, report, true),
+            special_legacy_check_saved(format, &data, &data, report, true),
+            "{}",
+            path.file_name().unwrap().to_string_lossy()
+        );
+        let changed: Vec<ZipEntry> = package
+            .order
+            .iter()
+            .map(|name| {
+                let (method, bytes) = &package.parts[name];
+                let bytes = if package::is_xml(name, bytes) {
+                    let text = crate::document::xml::decode(bytes).unwrap();
+                    let body = if text.starts_with("<?xml") {
+                        &text[text.find("?>").unwrap() + 2..]
+                    } else {
+                        &text
+                    };
+                    format!("<?xml version='1.0' encoding='utf-8'?>{body}").into_bytes()
+                } else {
+                    bytes.clone()
+                };
+                if *method == 0 {
+                    stored(name, &bytes)
+                } else {
+                    entry(name, &bytes)
+                }
+            })
+            .collect();
+        let serialized = zip(&changed, false);
+        assert_eq!(
+            service::check_saved(format, &data, &serialized, report, true),
+            special_legacy_check_saved(format, &data, &serialized, report, true),
+            "declaration-only {}",
+            path.file_name().unwrap().to_string_lossy()
+        );
+        packages += 1;
+    }
+    println!(
+        "{}",
+        json!({"packages":packages,"xmlParts":parts,"fullFindingsEqual":true})
+    );
+}
+
+#[test]
+fn reservation_real_save_exact_budget_and_one_byte_refusal() {
+    use crate::document::resources::{self, Pool};
+    let original = hwp_doc(0, &docinfo(0, b"font"), &section("hello"), &[]);
+    for extra in [0usize, 1] {
+        let pool = Pool::limited(3 * (original.len() + 1) - extra);
+        let state = DocumentState::with_resource_pool(pool.clone());
+        let dir = TempDir::new();
+        let info = rhwp_session(&state, &dir, "exact.hwp", &original);
+        let registry = state.registry();
+        let loss = report("hwp", json!([]));
+        registry
+            .record_preflight(
+                info.session_id,
+                info.load_generation,
+                crate::document::content_hash(&original),
+                service::preflight(Format::Hwp, &original, &original, Some(&loss)),
+            )
+            .unwrap();
+        registry
+            .commit(info.session_id, info.load_generation, 0, 1)
+            .unwrap();
+        let result = resources::scope(pool.operation(), || {
+            let ticket = registry
+                .begin_save(info.session_id, info.load_generation, 1)
+                .unwrap();
+            service::save(
+                registry,
+                &ticket,
+                &Limits::default(),
+                &original,
+                Some(&loss),
+                true,
+            )
+        });
+        if extra == 0 {
+            assert!(result.is_ok());
+            assert!(!registry.get(info.session_id).unwrap().dirty);
+        } else {
+            assert_eq!(result.unwrap_err(), resources::refused());
+            assert!(registry.get(info.session_id).unwrap().dirty);
+        }
+        assert_eq!(pool.usage().0, 0);
+        assert_eq!(
+            std::fs::read(dir.path().join("exact.hwp")).unwrap(),
+            original
+        );
+        assert_eq!(std::fs::read_dir(dir.path()).unwrap().count(), 1);
+        drop(
+            registry
+                .begin_save(info.session_id, info.load_generation, 1)
+                .unwrap(),
+        );
+    }
+}
+
+#[test]
+fn reservation_utf16_decoder_refusal_in_preflight_and_save_is_not_malformed() {
+    use crate::document::resources::{self, Category, Pool};
+    let (_, header) = fmt_original();
+    let mut utf16 = vec![0xff, 0xfe];
+    for unit in header.encode_utf16() {
+        utf16.extend(unit.to_le_bytes());
+    }
+    let a = zip(&hwpx_package(&fmt_body(&[0]), &header, true, true), false);
+    let mut entries = hwpx_package(&fmt_body(&[0]), &header, true, true);
+    entries.retain(|entry| entry.name != "Contents/header.xml");
+    entries.push(entry("Contents/header.xml", &utf16));
+    let b = zip(&entries, false);
+    let loss = report("hwpx", json!([]));
+    let pool = Pool::limited(usize::MAX);
+    pool.deny(Some(Category::Decoder));
+    for save in [false, true] {
+        let result = resources::scope(pool.operation(), || {
+            if save {
+                service::check_saved(Format::Hwpx, &a, &b, Some(&loss), true)
+            } else {
+                service::preflight(Format::Hwpx, &a, &b, Some(&loss))
+            }
+        });
+        assert_eq!(
+            result.findings,
+            vec![Finding::at(
+                FindingCode::LimitExceeded,
+                "Contents/header.xml"
+            )]
+        );
+        assert_eq!(pool.usage().0, 0);
+    }
+    pool.deny(None);
+    assert!(resources::scope(pool.operation(), || service::check_saved(
+        Format::Hwpx,
+        &a,
+        &b,
+        Some(&loss),
+        true
+    ))
+    .is_safe());
+}
+
+#[test]
+fn special_header_hash_collision_still_requires_full_semantic_equality() {
+    let (defs, _) = fmt_original();
+    let d: Vec<_> = defs.iter().map(String::as_str).collect();
+    let good = fmt_header(4, &d, &[&italic_of_zero()], "JUSTIFY");
+    let bad = fmt_header(4, &d, &[&fmt_def(3, 1200, "<hh:italic/>")], "JUSTIFY");
+    super::special::with_colliding_hashes(|| {
+        assert!(fmt_check(&good, &fmt_body(&[3])).is_empty());
+        assert_eq!(fmt_check(&bad, &fmt_body(&[3])), vec![header_changed()]);
+    });
+}
+
+#[test]
+fn reservation_output_refusal_does_not_hide_original_malformed_precedence() {
+    use crate::document::resources::{self, Category, Pool};
+    let (_, header) = fmt_original();
+    let mut encoded = vec![0xff, 0xfe];
+    for c in header.encode_utf16() {
+        encoded.extend(c.to_le_bytes());
+    }
+    let bad = format!("{header}<bad");
+    let before = zip(&hwpx_package(&fmt_body(&[0]), &bad, true, true), false);
+    let mut entries = hwpx_package(&fmt_body(&[0]), &header, true, true);
+    entries.retain(|part| part.name != "Contents/header.xml");
+    entries.push(entry("Contents/header.xml", &encoded));
+    let after = zip(&entries, false);
+    let pool = Pool::limited(usize::MAX);
+    pool.deny(Some(Category::Decoder));
+    let result = resources::scope(pool.operation(), || {
+        service::check_saved(
+            Format::Hwpx,
+            &before,
+            &after,
+            Some(&report("hwpx", json!([]))),
+            true,
+        )
+    });
+    assert_eq!(
+        result.findings,
+        vec![
+            Finding::at(FindingCode::LimitExceeded, "Contents/header.xml"),
+            Finding::at(FindingCode::OriginalMalformed, "Contents/header.xml")
+        ]
+    );
+    assert_eq!(pool.usage().0, 0);
+}
+
+#[test]
+fn special_header_sibling_namespace_restoration_and_large_attributes() {
+    let attrs = (0..512)
+        .map(|i| format!(" a{i}=\"value{i}\""))
+        .collect::<String>();
+    let first = fmt_def(0, 1000, "")
+        .replacen("height=", &format!("{attrs} height="), 1)
+        .replace(
+            "<hh:charPr",
+            r#"<hh:charPr xmlns:l="http://www.hancom.co.kr/hwpml/2011/head""#,
+        )
+        .replace("hh:fontRef", "l:fontRef");
+    let second = fmt_def(1, 1100, "").replace("<hh:charPr", r#"<hh:charPr xmlns:l="wrong-unused""#);
+    let new = first
+        .replace(r#"id="0""#, r#"id="2""#)
+        .replace("<hh:shadow", "<hh:italic/><hh:shadow");
+    let a = pkg(&hwpx_package(
+        &fmt_body(&[0]),
+        &fmt_header(2, &[&first, &second], &[], "JUSTIFY"),
+        true,
+        true,
+    ));
+    let b = pkg(&hwpx_package(
+        &fmt_body(&[2]),
+        &fmt_header(3, &[&first, &second], &[&new], "JUSTIFY"),
+        true,
+        true,
+    ));
+    assert!(package::compare_saved_hwpx(&a, &b).is_empty());
+    assert_eq!(
+        package::compare_saved_hwpx(&a, &b),
+        package::special_legacy::compare_saved_hwpx(&a, &b)
+    );
+}
+
+#[test]
+#[ignore = "independent shared-pool concurrent real save probe"]
+fn concurrent_save_resource_probe() {
+    use crate::document::resources::{self, Category, Pool};
+    use std::sync::Arc;
+    let pool = Pool::limited(usize::MAX);
+    let state = Arc::new(DocumentState::with_resource_pool(pool.clone()));
+    let dir = TempDir::new();
+    let large = std::env::var_os("GEUL_CONCURRENT_HEADER").is_some();
+    let (format, extension, original, output) = if large {
+        let (a, b) = large_header_pair(60000, 5535);
+        (Format::Hwpx, "hwpx", a, b)
+    } else {
+        let a = hwp_doc(0, &docinfo(0, b"font"), &section("hello"), &[]);
+        (Format::Hwp, "hwp", a.clone(), a)
+    };
+    let original = Arc::new(original);
+    let output = Arc::new(output);
+    let mut infos = Vec::new();
+    for i in 0..4 {
+        let info = rhwp_session(
+            &state,
+            &dir,
+            &format!("concurrent-{i}.{extension}"),
+            &original,
+        );
+        let preflight = service::preflight(
+            format,
+            &original,
+            &original,
+            Some(&report(extension, json!([]))),
+        );
+        assert!(preflight.is_safe());
+        state
+            .registry()
+            .record_preflight(
+                info.session_id,
+                info.load_generation,
+                crate::document::content_hash(&original),
+                preflight,
+            )
+            .unwrap();
+        state
+            .registry()
+            .commit(info.session_id, info.load_generation, 0, 1)
+            .unwrap();
+        infos.push(info);
+    }
+    let barrier = Arc::new(std::sync::Barrier::new(4));
+    let reset = peak_reset();
+    let start = std::time::Instant::now();
+    std::thread::scope(|threads| {
+        for info in &infos {
+            let state = state.clone();
+            let output = output.clone();
+            let barrier = barrier.clone();
+            let pool = pool.clone();
+            threads.spawn(move || {
+                resources::scope(pool.operation(), || {
+                    // The service API borrows this caller-owned payload; explicitly account
+                    // the retained request for this direct service (not Tauri IPC) probe.
+                    resources::charge(Category::Payload, output.len()).unwrap();
+                    barrier.wait();
+                    let ticket = state
+                        .registry()
+                        .begin_save(info.session_id, info.load_generation, 1)
+                        .unwrap();
+                    let result = service::save(
+                        state.registry(),
+                        &ticket,
+                        &Limits::default(),
+                        &output,
+                        Some(&report(extension, json!([]))),
+                        true,
+                    )
+                    .unwrap();
+                    assert!(!result.session.dirty);
+                });
+            });
+        }
+    });
+    assert_eq!(pool.usage().0, 0);
+    for i in 0..4 {
+        assert_eq!(
+            std::fs::read(dir.path().join(format!("concurrent-{i}.{extension}"))).unwrap(),
+            *output
+        );
+    }
+    assert_eq!(std::fs::read_dir(dir.path()).unwrap().count(), 4);
+    println!(
+        "{}",
+        json!({"operations":4,"fixtureBytes":original.len(),"largeHeader":large,"rss":peak_evidence(reset, peak_kib()),"ms":start.elapsed().as_secs_f64()*1000.0,
+        "reservationPeakBytes":pool.usage().1,"releasedBytes":pool.usage().0,"outputBytesVerified":true,"dirtyCleared":true,
+        "scope":"four direct real-service saves; caller payload deliberately accounted; not IPC throughput or RSS bound"})
+    );
+}

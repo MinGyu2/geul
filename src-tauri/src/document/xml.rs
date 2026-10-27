@@ -28,7 +28,7 @@ const OPF: [&str; 2] = [
 ];
 
 /// UTF-8(BOM 있음/없음)과 BOM이 있는 UTF-16만 받는다.
-fn decode(bytes: &[u8]) -> Result<Cow<'_, str>, Invalid> {
+pub(crate) fn decode(bytes: &[u8]) -> Result<Cow<'_, str>, Invalid> {
     let utf16 = |pairs: &[u8], little: bool| {
         let units = || {
             pairs.as_chunks::<2>().0.iter().map(|p| {
@@ -45,8 +45,13 @@ fn decode(bytes: &[u8]) -> Result<Cow<'_, str>, Invalid> {
             size.checked_add(ch.map_err(|_| Invalid)?.len_utf8())
                 .ok_or(Invalid)
         })?;
+        super::resources::charge(super::resources::Category::Decoder, needed)
+            .map_err(|_| Invalid)?;
         let mut out = String::new();
-        out.try_reserve_exact(needed).map_err(|_| Invalid)?;
+        out.try_reserve_exact(needed).map_err(|_| {
+            crate::document::resources::allocation_refused();
+            Invalid
+        })?;
         for ch in char::decode_utf16(units()) {
             out.push(ch.map_err(|_| Invalid)?);
         }
@@ -119,7 +124,10 @@ fn element(
             Cow::Owned(value) => value,
             Cow::Borrowed(value) => fallible_string(value)?,
         };
-        attributes.try_reserve(1).map_err(|_| Invalid)?;
+        attributes.try_reserve(1).map_err(|_| {
+            crate::document::resources::allocation_refused();
+            Invalid
+        })?;
         attributes.push((
             namespace(resolved)?,
             fallible_string(local.as_ref())?,
@@ -254,7 +262,7 @@ impl std::fmt::Debug for Atom {
     }
 }
 
-#[derive(Default)]
+#[derive(Clone, Default)]
 struct Atoms {
     values: HashSet<Atom>,
     payload: usize,
@@ -264,7 +272,10 @@ impl Atoms {
         if let Some(found) = self.values.get(value.as_str()) {
             return Ok(found.clone());
         }
-        self.values.try_reserve(1).map_err(|_| Invalid)?;
+        self.values.try_reserve(1).map_err(|_| {
+            crate::document::resources::allocation_refused();
+            Invalid
+        })?;
         self.payload = self.payload.checked_add(value.capacity()).ok_or(Invalid)?;
         let atom = Atom(Arc::new(value));
         self.values.insert(atom.clone());
@@ -345,6 +356,7 @@ pub fn canonical_with_payload_limit(
                 let old = text.capacity();
                 text.try_reserve(piece.len()).map_err(|_| {
                     allocation_failed = true;
+                    super::resources::allocation_refused();
                     Invalid
                 })?;
                 text.push_str(&piece);
@@ -358,6 +370,7 @@ pub fn canonical_with_payload_limit(
                 }
                 out.try_reserve(1).map_err(|_| {
                     allocation_failed = true;
+                    super::resources::allocation_refused();
                     Invalid
                 })?;
                 out.push(event);
@@ -402,6 +415,19 @@ pub fn canonical(bytes: &[u8]) -> Result<Vec<Canonical>, Invalid> {
         .map_err(|_| Invalid)
 }
 
+/// Preserve selected controlled allocation/refusal provenance without conflating
+/// syntax errors with exhausted resources in an active service operation.
+pub(crate) fn canonical_checked(bytes: &[u8]) -> Result<(), CanonicalFailure> {
+    let epoch = super::resources::failure_epoch();
+    canonical_valid(bytes).map_err(|_| {
+        if super::resources::failure_epoch() != epoch {
+            CanonicalFailure::Allocation
+        } else {
+            CanonicalFailure::Invalid
+        }
+    })
+}
+
 /// Same full parser validation, without retaining the event vector.
 pub fn canonical_valid(bytes: &[u8]) -> Result<(), Invalid> {
     canonical_walk(bytes, false, |_, _| Ok(()))
@@ -412,6 +438,7 @@ pub fn canonical_valid(bytes: &[u8]) -> Result<(), Invalid> {
 /// UTF-16 remain proportional to their input; this is not a total heap cap.
 const TEXT_CHUNK: usize = 16 * 1024;
 
+#[derive(Clone)]
 struct CanonicalCursor<'a, const RETAIN: bool, const STREAM: bool> {
     reader: NsReader<&'a [u8]>,
     atoms: Atoms,
@@ -529,7 +556,10 @@ impl<'a, const RETAIN: bool, const STREAM: bool> CanonicalCursor<'a, RETAIN, STR
                         let mut attributes = Vec::new();
                         attributes
                             .try_reserve_exact(element.attributes.len())
-                            .map_err(|_| Invalid)?;
+                            .map_err(|_| {
+                                crate::document::resources::allocation_refused();
+                                Invalid
+                            })?;
                         for (ns, key, value) in element.attributes {
                             attributes.push((
                                 ns.map(|v| self.atoms.intern(v)).transpose()?,
@@ -620,7 +650,10 @@ impl<'a, const RETAIN: bool, const STREAM: bool> CanonicalCursor<'a, RETAIN, STR
 
 fn fallible_string(value: &str) -> Result<String, Invalid> {
     let mut out = String::new();
-    out.try_reserve_exact(value.len()).map_err(|_| Invalid)?;
+    out.try_reserve_exact(value.len()).map_err(|_| {
+        crate::document::resources::allocation_refused();
+        Invalid
+    })?;
     out.push_str(value);
     Ok(out)
 }
@@ -676,7 +709,10 @@ fn canonical_walk(
                     let mut attributes = Vec::new();
                     attributes
                         .try_reserve_exact(element.attributes.len())
-                        .map_err(|_| Invalid)?;
+                        .map_err(|_| {
+                            crate::document::resources::allocation_refused();
+                            Invalid
+                        })?;
                     for (ns, key, value) in element.attributes {
                         attributes.push((
                             ns.map(|v| atoms.intern(v)).transpose()?,
@@ -808,6 +844,7 @@ fn canonical_walk(
 pub enum ComparisonFailure {
     OriginalInvalid,
     OutputInvalid,
+    Resource,
 }
 
 /// Lockstep semantic equality. Text chunks may have different segmentation.
@@ -891,6 +928,185 @@ pub fn canonical_equal(before: &[u8], after: &[u8]) -> Result<bool, ComparisonFa
     }
 }
 
+/// Bounded text pieces plus an explicit logical text boundary. Filtering a child
+/// must not merge previously distinct text nodes (the legacy special rules do not).
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+pub(crate) enum Piece {
+    Event(Canonical),
+    TextEnd,
+}
+
+/// A checkpoint borrows decoded input and clones only open parser/namespace state,
+/// a pending event and bounded text. An index of checkpoints is NOT constant space.
+#[derive(Clone)]
+pub(crate) struct SemanticCursor<'a> {
+    raw: CanonicalCursor<'a, true, true>,
+    pending: Option<Canonical>,
+    lookahead: Option<Piece>,
+    text: bool,
+    pub head_lists: usize,
+}
+
+impl<'a> SemanticCursor<'a> {
+    pub fn new(text: &'a str) -> Self {
+        Self {
+            raw: CanonicalCursor::new(text),
+            pending: None,
+            lookahead: None,
+            text: false,
+            head_lists: 0,
+        }
+    }
+    /// Only between direct sibling subtrees in an already fully validated input.
+    /// A shared parent anchor retains namespace/open-tag state once; the index
+    /// retains borrowed slice positions, never one parser clone per definition.
+    pub fn position(&self) -> Result<&'a [u8], Invalid> {
+        if self.pending.is_some()
+            || self.lookahead.is_some()
+            || self.text
+            || self.raw.pending_text.is_some()
+            || self.raw.pending_end
+        {
+            return Err(Invalid);
+        }
+        Ok(*self.raw.reader.get_ref())
+    }
+    pub fn sibling_at(&self, position: &'a [u8]) -> Self {
+        let mut cursor = self.clone();
+        *cursor.raw.reader.get_mut() = position;
+        cursor.raw.atoms = Atoms::default();
+        cursor
+    }
+    pub fn peek(&mut self) -> Result<Option<&Piece>, Invalid> {
+        if self.lookahead.is_none() {
+            self.lookahead = self.read()?;
+        }
+        Ok(self.lookahead.as_ref())
+    }
+    pub fn next(&mut self) -> Result<Option<Piece>, Invalid> {
+        if self.lookahead.is_some() {
+            return Ok(self.lookahead.take());
+        }
+        self.read()
+    }
+    fn read(&mut self) -> Result<Option<Piece>, Invalid> {
+        let event = match self.pending.take() {
+            Some(event) => Some(event),
+            None => self.raw.next()?,
+        };
+        if matches!(event, Some(Canonical::Text(_))) {
+            self.text = true;
+        } else if self.text {
+            self.text = false;
+            self.pending = event;
+            return Ok(Some(Piece::TextEnd));
+        }
+        if matches!(&event, Some(Canonical::Start {namespace, name, ..})
+            if namespace.as_deref() == Some("http://www.hancom.co.kr/hwpml/2011/head") && name == "charProperties")
+        {
+            self.head_lists += 1;
+        }
+        Ok(event.map(Piece::Event))
+    }
+}
+
+/// Compare transformed semantic pieces, independently of raw Text/CDATA/reference
+/// segmentation. TextEnd prevents filters from erasing logical text boundaries.
+pub(crate) fn pieces_equal(
+    mut left: impl FnMut() -> Result<Option<Piece>, Invalid>,
+    mut right: impl FnMut() -> Result<Option<Piece>, Invalid>,
+) -> Result<bool, Invalid> {
+    let (mut a, mut b) = (left()?, right()?);
+    let (mut x, mut y) = (0, 0);
+    loop {
+        match (&a, &b) {
+            (Some(Piece::Event(Canonical::Text(av))), Some(Piece::Event(Canonical::Text(bv)))) => {
+                let n = (av.len() - x).min(bv.len() - y);
+                if av.as_bytes()[x..x + n] != bv.as_bytes()[y..y + n] {
+                    return Ok(false);
+                }
+                x += n;
+                y += n;
+                let (advance_a, advance_b) = (x == av.len(), y == bv.len());
+                if advance_a {
+                    a = left()?;
+                    x = 0;
+                }
+                if advance_b {
+                    b = right()?;
+                    y = 0;
+                }
+            }
+            (None, None) => return Ok(true),
+            _ if x == 0 && y == 0 && a == b => {
+                a = left()?;
+                b = right()?;
+            }
+            _ => return Ok(false),
+        }
+    }
+}
+
+/// Same special-rule context as canonical-vector comparison: only text under the
+/// immediate matching element is ignored, and a Text event must exist on BOTH sides.
+/// The first pass fully validates both tails with original-error precedence.
+pub(crate) fn canonical_equal_except_text(
+    before: &[u8],
+    after: &[u8],
+    ignore: impl Fn(Option<&str>, &str) -> bool,
+) -> Result<bool, ComparisonFailure> {
+    let original = canonical_checked(before);
+    let output = canonical_checked(after);
+    match (original, output) {
+        (Err(CanonicalFailure::Invalid), _) => return Err(ComparisonFailure::OriginalInvalid),
+        (Err(_), _) => return Err(ComparisonFailure::Resource),
+        (_, Err(CanonicalFailure::Invalid)) => return Err(ComparisonFailure::OutputInvalid),
+        (_, Err(_)) => return Err(ComparisonFailure::Resource),
+        _ => {}
+    }
+    let before = decode(before).map_err(|_| ComparisonFailure::OriginalInvalid)?;
+    let after = decode(after).map_err(|_| ComparisonFailure::OutputInvalid)?;
+    let mut a = SemanticCursor::new(&before);
+    let mut b = SemanticCursor::new(&after);
+    // Filter replaces each logical statistic text with an empty Text, preserving
+    // its existence and boundary. Nested unrelated elements get their own context.
+    fn filtered(
+        c: &mut SemanticCursor<'_>,
+        stack: &mut Vec<bool>,
+        ignore: &impl Fn(Option<&str>, &str) -> bool,
+    ) -> Result<Option<Piece>, Invalid> {
+        let event = c.next()?;
+        match &event {
+            Some(Piece::Event(Canonical::Start {
+                namespace, name, ..
+            })) => {
+                stack.try_reserve(1).map_err(|_| {
+                    crate::document::resources::allocation_refused();
+                    Invalid
+                })?;
+                stack.push(ignore(namespace.as_deref(), name.as_str()));
+            }
+            Some(Piece::Event(Canonical::End)) => {
+                stack.pop();
+            }
+            Some(Piece::Event(Canonical::Text(_))) if stack.last() == Some(&true) => {
+                while matches!(c.peek()?, Some(Piece::Event(Canonical::Text(_)))) {
+                    c.next()?;
+                }
+                return Ok(Some(Piece::Event(Canonical::Text(String::new()))));
+            }
+            _ => {}
+        }
+        Ok(event)
+    }
+    let (mut sa, mut sb) = (Vec::new(), Vec::new());
+    pieces_equal(
+        || filtered(&mut a, &mut sa, &ignore),
+        || filtered(&mut b, &mut sb, &ignore),
+    )
+    .map_err(|_| ComparisonFailure::OutputInvalid)
+}
+
 /// 요소 하나의 시작(T009 모양 참조 무결성). `canonical`과 달리 자기 닫힘(`<a/>`)과 내용이 있는 요소(`<a></a>`)를 구별하고
 /// 부모 요소를 함께 준다: 고정 rhwp HWPX header 파서는 `Event::Start`에서만 `charPr`·`paraPr` 정의를 등록하고 `Event::Empty`는
 /// 건너뛴다(`parser/hwpx/header.rs`) — 정규화한 사건 열로는 그 차이를 볼 수 없다.
@@ -907,10 +1123,14 @@ pub struct ElementStart {
 }
 
 /// 문서의 모든 요소 시작을 문서 순서로 읽는다. 형식 오류·선언하지 않은 접두사·DTD는 `Invalid`.
+#[cfg(test)]
 pub fn element_starts(bytes: &[u8]) -> Result<Vec<ElementStart>, Invalid> {
     let mut out = Vec::new();
     visit_element_starts(bytes, |element| {
-        out.try_reserve(1).map_err(|_| Invalid)?;
+        out.try_reserve(1).map_err(|_| {
+            crate::document::resources::allocation_refused();
+            Invalid
+        })?;
         out.push(element);
         Ok(())
     })?;

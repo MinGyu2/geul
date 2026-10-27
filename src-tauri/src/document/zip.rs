@@ -336,7 +336,19 @@ impl Archive {
     ) -> Result<Vec<u8>, ZipProblem> {
         // 선언 크기는 아직 확인 전이므로 상한까지만 미리 잡는다.
         let capacity = usize::try_from(entry.uncompressed_size.min(max)).unwrap_or(0);
-        self.extract(reader, entry, max, Vec::with_capacity(capacity))
+        // Reserve lazily after extract validated local metadata/limits. Growth
+        // beyond an untrusted declared size must be charged before allocation too.
+        self.extract(
+            reader,
+            entry,
+            max,
+            ReservedBytes {
+                bytes: Vec::new(),
+                initial: capacity,
+                max_capacity: usize::try_from(max).unwrap_or(usize::MAX).saturating_add(1),
+            },
+        )
+        .map(|out| out.bytes)
     }
 
     /// 항목 하나를 `max` 바이트 안에서 풀며 크기와 CRC만 확인한다. 푼 내용은 메모리에 모으지 않는다.
@@ -410,6 +422,7 @@ impl Archive {
         };
         let corrupt = |error: io::Error| match error.kind() {
             // 압축 데이터 손상(flate2)·항목 범위 안에서 끝난 데이터
+            io::ErrorKind::OutOfMemory => ZipProblem::PartSize,
             io::ErrorKind::InvalidInput
             | io::ErrorKind::InvalidData
             | io::ErrorKind::UnexpectedEof => ZipProblem::Corrupt,
@@ -444,6 +457,48 @@ impl Archive {
     }
 }
 
+/// Fallible, operation-accounted ZIP buffer. Declaration is only an initial
+/// reservation hint; every growth is separately checked. No process-RSS promise.
+struct ReservedBytes {
+    bytes: Vec<u8>,
+    initial: usize,
+    max_capacity: usize,
+}
+impl Write for ReservedBytes {
+    fn write(&mut self, input: &[u8]) -> io::Result<usize> {
+        let oom = || io::Error::from(io::ErrorKind::OutOfMemory);
+        let needed = self.bytes.len().checked_add(input.len()).ok_or_else(oom)?;
+        if needed > self.bytes.capacity() {
+            if needed > self.max_capacity {
+                return Err(oom());
+            }
+            let growth = self
+                .bytes
+                .capacity()
+                .checked_mul(2)
+                .unwrap_or(self.max_capacity)
+                .min(self.max_capacity);
+            let target = needed.max(self.initial).max(growth);
+            super::resources::charge(
+                super::resources::Category::Expanded,
+                target - self.bytes.capacity(),
+            )
+            .map_err(|_| oom())?;
+            self.bytes
+                .try_reserve_exact(target - self.bytes.len())
+                .map_err(|_| {
+                    super::resources::allocation_refused();
+                    oom()
+                })?;
+        }
+        self.bytes.extend_from_slice(input);
+        Ok(input.len())
+    }
+    fn flush(&mut self) -> io::Result<()> {
+        Ok(())
+    }
+}
+
 /// 푼 데이터를 넘기면서 길이와 CRC를 센다.
 struct Checked<W> {
     out: W,
@@ -461,5 +516,37 @@ impl<W: Write> Write for Checked<W> {
 
     fn flush(&mut self) -> io::Result<()> {
         self.out.flush()
+    }
+}
+
+#[cfg(test)]
+mod resource_buffer_tests {
+    use super::*;
+    use crate::document::resources::{self, Pool};
+    #[test]
+    fn actual_growth_past_declared_size_is_reserved_before_write() {
+        for limit in [16, 17] {
+            let pool = Pool::limited(limit);
+            resources::scope(pool.operation(), || {
+                let mut out = ReservedBytes {
+                    bytes: Vec::new(),
+                    initial: 1,
+                    max_capacity: 17,
+                };
+                out.write_all(&[1; 12]).unwrap();
+                assert_eq!(pool.usage().0, 12);
+                let result = out.write_all(&[2; 5]);
+                if limit == 17 {
+                    result.unwrap();
+                    assert_eq!(out.bytes.len(), 17);
+                    assert_eq!(pool.usage().0, 17);
+                } else {
+                    assert_eq!(result.unwrap_err().kind(), io::ErrorKind::OutOfMemory);
+                    assert_eq!(out.bytes.len(), 12);
+                    assert_eq!(pool.usage().0, 12);
+                }
+            });
+            assert_eq!(pool.usage().0, 0);
+        }
     }
 }
