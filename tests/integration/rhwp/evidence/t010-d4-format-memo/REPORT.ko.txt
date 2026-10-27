@@ -37,7 +37,9 @@ T010 D4 — 본문 편집 쪽 나눔의 format 재사용(rhwp 격리 patch, 2026
 ORACLE(VERIFIED, native release 시험 바이너리, external/rhwp/samples의 4 MB 이하 HWP/HWPX 1150개, 문서당 편집 30회)
 - 1149개 문서 결과 요약 oracle-summary.json: 열림 1146, 편집 적용 34380(거절 0), 편집마다 쪽 나눔 전체 비교 + SVG 12637쪽 비교,
   재사용 항목 190668, 불일치 0. 열리지 않은 3개는 두 인스턴스 모두 열기 실패(비교 대상 아님).
-- 남은 1개 issue2063_huge_cellbreak_table.hwp(거대 표 분할)는 문서 하나로 따로 실행 중이며 결과가 나오기 전까지 이 문서는 UNVERIFIED.
+- 남은 1개 issue2063_huge_cellbreak_table.hwp(거대 표 분할)는 문서 하나만 따로 `timeout 5400`으로 실행했으나 시간 한도에 걸려
+  종료됨(EXIT=124, GEUL_ORACLE 요약 줄 없음, 불일치 보고도 없음). 이 문서의 등가는 UNVERIFIED — 판정 실패가 아니라 미완료다.
+  같은 묶음의 다른 문서 11개는 각각 불일치 0(위 1149개에 포함).
 - 실행 이력: 단일 실행(attempt1)은 진행 출력이 없어 시간 한도 전에 운영자가 끝냄(요약 없음). 12조각 병렬 실행 중 조각 01은 이 문서
   때문에 늦어 8개 하위 조각과 문서별 실행으로 다시 나눔(중복 실행은 끝냄). 조각 배정은 oracle-shard-index.txt.
 - 업스트림 쪽 나눔이 원래 출력하는 CONVERGENCE_* 진단 줄은 두 인스턴스 공통이며 오라클 불일치가 아니다.
