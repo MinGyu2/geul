@@ -1,0 +1,43 @@
+T010 D4 — 본문 편집 쪽 나눔의 format 재사용(rhwp 격리 patch, 2026-10-28)
+
+범주: VERIFIED=이번 실행·소스, INFERRED=해석, UNVERIFIED=입증 못함. 제품 WASM·gitlink는 바꾸지 않았다(격리 export + 검토용 patch).
+
+1. 원인(VERIFIED, native release, 후보 0cb73f70 소스와 바이트 동일한 export)
+- 자산 규칙 HWPX(60쪽, 구역 0에 593문단)에서 본문 글자 하나: paginate 14.8 ms 중 조판 14.3, 그 안 텍스트 문단 루프 12.8 ms
+  (RHWP_2424_PROFILE). insertText의 문서 변경 자체는 0.2 ms(batch로 분리). 본문 편집은 dirty 구역의 모든 문단을 다시 format한다.
+
+2. 교정(patch upstream-rhwp-format-memo-incremental.patch, 커밋본 sha256 abf438623d1c3a2e6d6425fb4364ad2385238e5d40b35e35b87b802cbf16d32a —
+   git diff 원문 41c376a5…에서 빈 문맥 줄 표기만 정리, 재현 동일: patch-format-normalization.json)
+- 새 모듈 renderer/typeset/format_memo.rs: 본문 흐름의 문단 format 결과를 패스 사이에 재사용한다. 다음이 모두 같을 때만(fail closed):
+  문단 dirty 아님(기존 측정 캐시와 같은 dirty 추적), 구역 키(배율, 레이아웃 프로파일, 통짜 사다리 판정, 용지/쪽 어울림 증거, 스타일
+  세대 번호, 문단 수), 문단 키(단 폭 비트, 어울림 플래그 2개, 번호 표지, 조합 문단 번호 문자열, 글자 수·텍스트 길이).
+- 스타일 동일성: DocumentCore.styles_revision — styles를 바꾸는 모든 지점(재해석, 보조 metrics 2곳, 커닝/셰이핑 컨텍스트 2곳,
+  외부 대입)에서 프로세스 전역 유일 값으로 바꾸고, staged 복제본은 같은 값을 받는다. 처음 시도한 스타일 Debug 문자열 비교는
+  패스마다 4.4 ms가 들어 버렸다. Debug/serde 직렬화는 완전한 동일성이 아니다(NumberingMarker Debug는 내용을 숨기고 serde는 6개 필드를
+  건너뜀) — 그래서 교차 문단 입력(번호)을 명시 키로 넣었다.
+- 메모는 MeasuredSection 안에 있어 측정 캐시와 같은 수명(교체·지움·문단 삽입/삭제 시 무효)을 따른다.
+- 시험 전용: DocumentCore.format_memo_enabled(대조용 끄기), src/document_core/geul_incremental_tests.rs(프로파일·차등 오라클).
+
+3. 효과(VERIFIED, native release, 같은 시험, 12회 중앙값)
+- 자산 문서 본문 insertText p50 15.1 → 6.4 ms(max 15.6 → 6.5). 텍스트 루프 12.8 → 4.1 ms, setup 0.06 ms. 적중 580/581.
+
+4. 등가 검증
+- 차등 오라클: 같은 문서를 메모 켬(A)/끔(B)으로 열어 같은 결정적 의사난수 편집(글자 삽입·삭제, 문단 나누기·합치기, 굵게) 30회를
+  적용하고 편집마다 쪽 나눔 결과 전체(모든 구조체를 `..` 없이 분해, 해시 컨테이너는 정렬)를 비교, 끝에 모든 쪽 SVG를 비교.
+  ORACLE 절 참고.
+- patch 재현: 0cb73f70 후보 소스에 patch를 적용한 결과가 export와 Rust 파일 1046개 바이트 동일, 메모 후보 WASM 빌드 manifest의
+  소스 해시 1046개와도 일치.
+- WASM 후보 97a575093aab7fde6400e3ce2a1c3ec243de28645f49ce27a55286ca8dff37e2(Rust 1.99 --locked --offline release, wasm-opt 없음,
+  rhwp.js·rhwp.d.ts는 0cb73f70과 같음 = 공개 API 변화 없음), 로컬 보관 .git/t010-d1-anchor-v2/candidate.
+  브라우저 계약 gate(cache-concurrency run.py) Chrome 155·WebKitGTK 2.54.1 모두 PASS(../t010-d1-trust-anchor-v2/engine-gates).
+
+5. 한계: 표·각주 안 문단, 표 분할 경로의 format 호출은 재사용하지 않는다. 화학 문서의 키당 다중 쪽 재렌더(../t010-d4-chemical-jobs)는
+   이 patch와 무관하다. strict Clippy는 실행하지 않았다.
+
+ORACLE(VERIFIED, native release 시험 바이너리, external/rhwp/samples의 4 MB 이하 HWP/HWPX 1150개, 문서당 편집 30회)
+- 1149개 문서 결과 요약 oracle-summary.json: 열림 1146, 편집 적용 34380(거절 0), 편집마다 쪽 나눔 전체 비교 + SVG 12637쪽 비교,
+  재사용 항목 190668, 불일치 0. 열리지 않은 3개는 두 인스턴스 모두 열기 실패(비교 대상 아님).
+- 남은 1개 issue2063_huge_cellbreak_table.hwp(거대 표 분할)는 문서 하나로 따로 실행 중이며 결과가 나오기 전까지 이 문서는 UNVERIFIED.
+- 실행 이력: 단일 실행(attempt1)은 진행 출력이 없어 시간 한도 전에 운영자가 끝냄(요약 없음). 12조각 병렬 실행 중 조각 01은 이 문서
+  때문에 늦어 8개 하위 조각과 문서별 실행으로 다시 나눔(중복 실행은 끝냄). 조각 배정은 oracle-shard-index.txt.
+- 업스트림 쪽 나눔이 원래 출력하는 CONVERGENCE_* 진단 줄은 두 인스턴스 공통이며 오라클 불일치가 아니다.
