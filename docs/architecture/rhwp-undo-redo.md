@@ -1211,3 +1211,28 @@ no-new-input witness는 queued work를 포함할 수 있어 물리 frame floor�
 D3 현재 저장 PASS, D5 archived PASS, RSS INCONCLUSIVE. backend T009 HWM은 T010 RSS와 별개다.
 증거: `tests/integration/rhwp/evidence/t010-native-gate-remediation/`.
 Undo/Redo NO-GO·formatting unsupported·T010 미체크·T011 NOT STARTED. 설치/다운로드/push/anchor·gitlink 변경 없음.
+
+## T010 native lease 소유권·프로세스 범위·D4 쪽 그림자 교정 (2026-10-28, 미완료)
+
+기준 `95ad88c`. gitlink·제품 WASM·신뢰 기준·문턱·공식 producer 그대로. 증거:
+`tests/integration/rhwp/evidence/t010-native-lease-ownership/`, `tests/integration/rhwp/evidence/t010-d4-frame-floor/`.
+
+**Lease(진단 PASS, 2회 재현).** 실제 앱·WebKitGTK·후보 0cb73f70에서 양의 lease를 처음 관측했다. 비동기 이미지 lease는 Rust가 decode하지
+못하는 그림(실제 SVG 픽스처)만, decoded lease는 preparation이 켜진 job만 여러 poll에 걸쳐 유지한다(소스 확인). 획득·두 문서 공유
+backing·한쪽 취소·멱등 취소·로드 완료까지 유지·완료 해제·재사용·캐시 비입장·resident 축출 중 lease 유지(decoded, 빈도 입장 정책상 B를
+2회 요청해야 축출)·마지막 해제 시 dispose·대기 중 문서 해제·늦은 콜백·앱 문서 revision 교체(옛 job CANCELED, Canvas 변화 0)·앱 문서
+닫기를 엔진 counter와 정확 RGBA로 확인했다. 이미지 경로의 resident 축출-중-lease는 NOT EXERCISED, 물리 메모리 해제는 UNVERIFIED.
+
+**프로세스(VERIFIED).** 하네스를 child subreaper로 만들고(pidfd·start ticks 신원) 개인 dbus-daemon을 자식으로 둔다. 실제 실행에서
+WebKitWebDriver·geul·WebKit 보조 프로세스가 부모보다 오래 살아 입양되었다 — 이전 관찰 방식에서는 빠져나갈 수 있던 경로다. 생존자 0.
+
+**D4(공식 FAIL 유지, 2개 문서 PASS).** 같은 앱·입력·3RAF 끝점의 대조군으로, `.rhwp-page`의 blur 그림자가 있으면 Canvas 갱신 뒤 프레임이
+약 60 ms가 되는 것을 개입 실험으로 확인했다(그림자를 다른 요소·합성 레이어로 옮겨도 같음, blur 없는 그림자·outline은 무작업 수준).
+`.rhwp-page`를 blur 없는 `--page-edge`로 바꿨다(문서 Canvas 픽셀 무관). 공식 producer 첫 완주 유효 시도: group-start p95 기본 HWP 91→47,
+HWPX 89→48 PASS, 화학 212→95, 자산 125→81 FAIL, Undo 모두 PASS. 남은 두 문서는 handler 안 엔진 작업(자산 p50 49 ms)이 주 단서다.
+앞선 시도 3개는 WebDriver 끊김·1420 TIME_WAIT 인프라 오류(측정 없음)로 보존했다.
+
+**관문.** D1 NOT RUN(신뢰 후보 ca5c0b84·Rust 1.93.1 없음), D2 INCONCLUSIVE(ibus·ibus-hangul 실행 파일 없음 — 설치 필요), D3 보관 PASS
+(이번 변경은 저장·명령 경로를 바꾸지 않아 다시 실행하지 않음), D4 FAIL, D5 보관 PASS, RSS INCONCLUSIVE(규범 한도 없음).
+**결정: 제품 rhwp 실행 취소·다시 실행 NO-GO, rhwp 서식 미지원(세션 서식 명령 미구현), T010 미완료(선행 T007–T009도 미체크), T011 시작하지 않음.**
+
