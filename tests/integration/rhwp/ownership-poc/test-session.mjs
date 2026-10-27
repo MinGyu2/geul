@@ -213,3 +213,43 @@ test('preparation failure is not misreported as job-start failure', async () => 
  assert.ok(c.snapshot().records.some(r=>r.event==='prepare-failed'));
  assert.ok(!c.snapshot().records.some(r=>r.event==='job-start-failed'));assert.equal(x.doc.starts,0);x.session.dispose();
 });
+test('poll outcome must justify completion', () => {
+ for(const [states,expected] of [[['PENDING','COMPLETE'],'VALID'],[['PENDING'],'INVALID'],[['ERROR'],'INVALID'],[['RESOURCE_LIMIT'],'INVALID'],[['COMPLETE'],'VALID'],[['UNKNOWN'],'INVALID']]) {
+  const c=createLifecycleTrace();[sample('request'),sample('queue'),sample('job-start',{job:1}),...states.map(state=>sample('poll',{job:1,state})),sample('complete',{job:1})].forEach(r=>c.record(r));
+  assert.equal(c.snapshot({terminal:true}).lifecycleValid,expected,states.join(','));
+ }
+});
+test('pending reuse requires actual render equivalence', () => {
+ for(const [field,value] of [['canvas',2],['page',2],['scale',2],['generation',2],['version',2],['mode','damage']]) {
+  const c=createLifecycleTrace();[sample('request'),sample('queue'),sample('request',{request:2,[field]:value}),sample('reuse-pending',{request:2,relatedRequest:1,[field]:value})].forEach(r=>c.record(r));
+  assert.equal(c.snapshot().lifecycleValid,'INVALID',field);
+ }
+});
+test('completed reuse requires matching target, with explicit unchanged summary exception', () => {
+ for(const [change,reason,expected] of [[{},null,'VALID'],[{version:2},null,'INVALID'],[{version:2,mode:'damage'},'unchanged-summary','VALID'],[{canvas:2},null,'INVALID']]) {
+  const sourceMode=reason?'damage':'full';const c=createLifecycleTrace();
+  [sample('request',{mode:sourceMode}),sample('queue',{mode:sourceMode}),sample('job-start',{job:1,mode:sourceMode}),sample('poll',{job:1,state:'COMPLETE',mode:sourceMode}),sample('complete',{job:1,mode:sourceMode}),sample('request',{request:2,mode:sourceMode,...change}),sample('reuse-complete',{request:2,relatedRequest:1,mode:sourceMode,...change,...(reason?{reason}:{})})].forEach(r=>c.record(r));
+  assert.equal(c.snapshot().lifecycleValid,expected);
+ }
+});
+test('release completion must match originating document', () => {
+ const c=createLifecycleTrace();[sample('request'),{event:'release-requested',at:1,session:1,document:1,reason:'document-free'},{event:'release-completed',at:1,session:1,document:2,reason:'document-free'}].forEach(r=>c.record(r));
+ assert.notEqual(c.snapshot().lifecycleValid,'VALID');
+});
+test('old document release retains original identity after replacement', async () => {
+ const x=await setup(),c=createLifecycleTrace();window.__d4LifecycleTrace=c;const old=x.doc;
+ old.free();x.session.doc=x.loader.openDocument(new Uint8Array());old.free();
+ const rows=c.snapshot().records.filter(r=>r.reason==='document-free');assert.deepEqual(rows.map(r=>r.document),[1,1,1,1]);x.session.dispose();
+});
+
+test('terminal successful poll cannot be canceled or reused as pending', () => {
+ const prefix=[sample('request'),sample('queue'),sample('job-start',{job:1}),sample('poll',{job:1,state:'COMPLETE'})];
+ for (const tail of [[sample('cancel',{job:1})],[sample('request',{request:2}),sample('reuse-pending',{request:2,relatedRequest:1})]]) {
+  const c=createLifecycleTrace();[...prefix,...tail].forEach(r=>c.record(r));assert.equal(c.snapshot().lifecycleValid,'INVALID');
+ }
+});
+
+test('completion state contradicting a successful poll is invalid', () => {
+ const c=createLifecycleTrace();[sample('request'),sample('queue'),sample('job-start',{job:1}),sample('poll',{job:1,state:'COMPLETE'}),sample('complete',{job:1,state:'ERROR'})].forEach(r=>c.record(r));
+ assert.equal(c.snapshot().lifecycleValid,'INVALID');
+});

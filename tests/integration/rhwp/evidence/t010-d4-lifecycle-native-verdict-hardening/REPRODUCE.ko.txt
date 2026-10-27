@@ -1,0 +1,5 @@
+저장소 root: node --test tests/integration/rhwp/ownership-poc/test-session.mjs
+python3 -I -m unittest discover -s tests/integration/rhwp/ownership-poc -p test_smoke_verdict.py
+python3 -I -m unittest discover -s tests/e2e -p test_harness_errors.py
+npm run typecheck; npm run lint; npm test; npm run build
+Native 재현: GEUL_XVFB, GEUL_XDOTOOL, GEUL_WEBKIT_DRIVER, GEUL_TAURI_DRIVER, GEUL_T010_CANDIDATE, GEUL_T010_EVIDENCE는 검증된 실물의 절대경로, GEUL_SMOKE_RAW는 아직 없는 개인 raw 디렉터리로 설정. Vite 포트 1420과 세션 충돌을 확인한다. dbus-run-session -- python3 tests/integration/rhwp/evidence/t010-d4-lifecycle-native-verdict-hardening/native-smoke.py. 기존 실제 model full-replay 비교는 GEUL_FULL_FRAME_ORACLE=1로 별도 실행. 정상 관측 subset exit 0도 native readiness나 공식 D4 PASS가 아니다. 각 실행은 새 디렉터리로 보존한다.

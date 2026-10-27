@@ -7,14 +7,20 @@ const JOB_EVENTS = new Set(['job-start','poll','complete','cancel']);
 
 function validateLifecycle(records, terminal) {
   if (!records.length) return 'INCOMPLETE';
-  const requests = new Map(), identities = new Map(), jobs = new Map(), releases = new Set(), polled = new Set(); let incomplete = false, invalid = false, last = -Infinity;
+  const requests = new Map(), identities = new Map(), jobs = new Map(), releases = new Set(), releaseFinished = new Set(), polled = new Map(); let incomplete = false, invalid = false, last = -Infinity;
   const key = r => JSON.stringify([r.session,r.document,r.request]);
   for (const r of records) {
     if (r.at < last) invalid = true; last = r.at;
     if (r.event.startsWith('release-')) {
-      const release = JSON.stringify([r.session,r.reason]);
-      if (r.event === 'release-requested') { if (releases.has(release)) invalid = true; releases.add(release); }
-      else { if (!releases.has(release)) incomplete = true; releases.delete(release); }
+      const release = JSON.stringify([r.session,r.document,r.reason]);
+      if (r.event === 'release-requested') { if (releases.has(release)) invalid = true; releases.add(release); releaseFinished.delete(release); }
+      else {
+        if (!releases.has(release)) {
+          const mismatched = [...releases].some(value => { const [session,,reason] = JSON.parse(value); return session === r.session && reason === r.reason; });
+          if (mismatched || releaseFinished.has(release)) invalid = true; else incomplete = true;
+        }
+        releases.delete(release); releaseFinished.add(release);
+      }
       continue;
     }
     if (!REQUEST_EVENTS.has(r.event)) continue;
@@ -33,8 +39,15 @@ function validateLifecycle(records, terminal) {
       if (previous !== 'active') invalid = true;
       else if (!jobs.has(j)) incomplete = true;
       else if (jobs.get(j) !== k) invalid = true;
-      if (r.event === 'poll') polled.add(k);
+      if (r.event === 'poll') {
+        if (!['PENDING','COMPLETE','ERROR','RESOURCE_LIMIT','CANCELED'].includes(r.state)) invalid = true;
+        if (polled.has(k) && polled.get(k) !== 'PENDING') invalid = true;
+        polled.set(k,r.state);
+      }
+      if (r.event === 'complete' && r.state != null && r.state !== 'COMPLETE') invalid = true;
       if (r.event === 'complete' && !polled.has(k)) incomplete = true;
+      else if (r.event === 'complete' && polled.get(k) !== 'COMPLETE') invalid = true;
+      if (r.event === 'cancel' && polled.get(k) === 'COMPLETE') invalid = true;
       if (r.event !== 'poll') { jobs.delete(j); requests.set(k,r.event); }
     } else if (r.event === 'stale-drop' || r.event === 'job-start-failed' || r.event === 'prepare-failed') {
       if (previous !== 'queued') invalid = true; requests.set(k,r.event);
@@ -44,7 +57,17 @@ function validateLifecycle(records, terminal) {
       const source = requests.get(related);
       if (!source) incomplete = true;
       else if (r.event === 'reuse-pending' && !['queued','active'].includes(source)) invalid = true;
+      else if (r.event === 'reuse-pending' && source === 'active' && polled.has(related) && polled.get(related) !== 'PENDING') invalid = true;
       else if (r.event === 'reuse-complete' && !['complete','reuse-complete'].includes(source)) invalid = true;
+      if (source) {
+        const sourceIdentity = identities.get(related);
+        const fields = ['canvas','page','scale','generation','mode'];
+        if (fields.some(field => sourceIdentity[field] !== r[field])) invalid = true;
+        if (r.event === 'reuse-pending' && sourceIdentity.version !== r.version) invalid = true;
+        if (r.event === 'reuse-complete' && r.reason !== 'unchanged-summary' && sourceIdentity.version !== r.version) invalid = true;
+        if (r.event === 'reuse-complete' && r.reason != null && r.reason !== 'unchanged-summary') invalid = true;
+        if (r.event === 'reuse-complete' && r.reason === 'unchanged-summary' && r.mode !== 'damage') invalid = true;
+      }
       requests.set(k,r.event);
     }
   }
@@ -79,7 +102,7 @@ export function createLifecycleTrace(limit = 4096, limits = {}) {
         if (JOB_EVENTS.has(item.event) && item.job == null) throw new TypeError('missing job');
         if (item.event.startsWith('reuse-') && item.relatedRequest == null) throw new TypeError('missing reused request');
         if (item.event === 'input' && item.input == null) throw new TypeError('missing input');
-        if (item.event.startsWith('release-') && (item.session == null || item.reason == null)) throw new TypeError('missing release field');
+        if (item.event.startsWith('release-') && (item.session == null || item.reason == null || !Number.isSafeInteger(item.document))) throw new TypeError('missing release field');
         const size = JSON.stringify(item).length;
         if (size > MAX_RECORD || units + size > totalLimit) { dropped++; return; }
         units += size; sequence++; records.push(item);

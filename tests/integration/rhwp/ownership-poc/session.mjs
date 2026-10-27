@@ -85,13 +85,13 @@ export function createOwnershipSession(Session, sessionId, backend, registry) {
       // replay after Undo/Redo; never accept a tolerant pixel match as exact.
       const restore = doc.restoreSnapshot?.bind(doc);
       if (restore) doc.restoreSnapshot = (...args) => { cancel(); return restore(...args); };
-      const opened = doc, free = doc.free.bind(doc);
+      const opened = doc, openedDocumentId = documentId, free = doc.free.bind(doc);
       doc.free = () => {
-        trace('release-requested', null, {reason:'document-free'});
+        trace('release-requested', null, {reason:'document-free',document:openedDocumentId});
         try {
           if (doc === opened) { cancel(); generation++; unsubscribe(); sessions.delete(handle); doc = null; }
-          free(); trace('release-completed', null, {reason:'document-free'});
-        } catch (error) { trace('release-failed', null, {reason:'document-free'}); throw error; }
+          free(); trace('release-completed', null, {reason:'document-free',document:openedDocumentId});
+        } catch (error) { trace('release-failed', null, {reason:'document-free',document:openedDocumentId}); throw error; }
       };
       subscribers.add(pump); sessions.add(handle);
       return doc;
