@@ -1,0 +1,34 @@
+{
+  "schema": 1,
+  "record": "wrapper verdict (not harness output)",
+  "attempt": 1,
+  "harnessExit": 0,
+  "resultFile": "native-d1-attempt1.json",
+  "resultError": null,
+  "resultRewritten": true,
+  "lifecycleFile": "native-d1-attempt1-lifecycle.json",
+  "verdict": {
+    "schema": 3,
+    "status": "PASS",
+    "failures": [],
+    "categories": [],
+    "harnessExit": 0,
+    "expectedAssertions": 39,
+    "expectedReferences": 24,
+    "expectedCleanup": [
+      "sessionEnded",
+      "driverStopped",
+      "displayTerminated"
+    ],
+    "acceptedDriverExits": [
+      0,
+      -15
+    ],
+    "dependencyManifest": 4,
+    "trustAnchor": {
+      "path": "tests/integration/rhwp/evidence/t010-d1-trust-anchor-v2/candidate-identity.json",
+      "sha256": "799d3e31f2f3d5e23b7ee8a003ede43928bf19bef43838d2377e82be03e5877e"
+    },
+    "expectedWasmSha256": "97a575093aab7fde6400e3ce2a1c3ec243de28645f49ce27a55286ca8dff37e2"
+  }
+}

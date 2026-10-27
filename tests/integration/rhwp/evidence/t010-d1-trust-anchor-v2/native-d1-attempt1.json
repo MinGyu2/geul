@@ -1,0 +1,1372 @@
+{
+  "status": "PASS",
+  "tests": [
+    {
+      "name": "bootstrap-clean-close",
+      "status": "PASS"
+    },
+    {
+      "name": "basic-ko.hwp-warm-full-reference-exact",
+      "status": "PASS",
+      "reference": {
+        "strongPixels": 0,
+        "pixels": 0,
+        "edgePixels": 0,
+        "height": 585,
+        "surface": "attached page Canvas readback",
+        "width": 414,
+        "verified": true,
+        "maxDelta": 0,
+        "oracle": "authoritative model full replay; browser historical full pixels independently pinned-verified"
+      }
+    },
+    {
+      "name": "basic-ko.hwp-typed-10-full-reference-exact",
+      "status": "PASS",
+      "reference": {
+        "strongPixels": 0,
+        "pixels": 0,
+        "edgePixels": 0,
+        "height": 585,
+        "surface": "attached page Canvas readback",
+        "width": 414,
+        "verified": true,
+        "maxDelta": 0,
+        "oracle": "authoritative model full replay; browser historical full pixels independently pinned-verified"
+      }
+    },
+    {
+      "name": "basic-ko.hwp-typed-20-full-reference-exact",
+      "status": "PASS",
+      "reference": {
+        "strongPixels": 0,
+        "pixels": 0,
+        "edgePixels": 0,
+        "height": 585,
+        "surface": "attached page Canvas readback",
+        "width": 414,
+        "verified": true,
+        "maxDelta": 0,
+        "oracle": "authoritative model full replay; browser historical full pixels independently pinned-verified"
+      }
+    },
+    {
+      "name": "basic-ko.hwp-typed-30-full-reference-exact",
+      "status": "PASS",
+      "reference": {
+        "strongPixels": 0,
+        "pixels": 0,
+        "edgePixels": 0,
+        "height": 585,
+        "surface": "attached page Canvas readback",
+        "width": 414,
+        "verified": true,
+        "maxDelta": 0,
+        "oracle": "authoritative model full replay; browser historical full pixels independently pinned-verified"
+      }
+    },
+    {
+      "name": "basic-ko.hwp-undo-caret-visible",
+      "status": "PASS",
+      "caret": "0:3:34",
+      "knownOriginalEndpointFailureEvidence": null
+    },
+    {
+      "name": "basic-ko.hwp-undo-full-reference-exact",
+      "status": "PASS",
+      "reference": {
+        "strongPixels": 0,
+        "pixels": 0,
+        "edgePixels": 0,
+        "height": 585,
+        "surface": "attached page Canvas readback",
+        "width": 414,
+        "verified": true,
+        "maxDelta": 0,
+        "oracle": "authoritative model full replay; browser historical full pixels independently pinned-verified"
+      }
+    },
+    {
+      "name": "basic-ko.hwp-redo-full-reference-exact",
+      "status": "PASS",
+      "reference": {
+        "strongPixels": 0,
+        "pixels": 0,
+        "edgePixels": 0,
+        "height": 585,
+        "surface": "attached page Canvas readback",
+        "width": 414,
+        "verified": true,
+        "maxDelta": 0,
+        "oracle": "authoritative model full replay; browser historical full pixels independently pinned-verified"
+      }
+    },
+    {
+      "name": "basic-ko.hwp-history-model-caret",
+      "status": "PASS"
+    },
+    {
+      "name": "basic-ko.hwp-original-preserved",
+      "status": "PASS"
+    },
+    {
+      "name": "basic-ko.hwpx-warm-full-reference-exact",
+      "status": "PASS",
+      "reference": {
+        "strongPixels": 0,
+        "pixels": 0,
+        "edgePixels": 0,
+        "height": 585,
+        "surface": "attached page Canvas readback",
+        "width": 414,
+        "verified": true,
+        "maxDelta": 0,
+        "oracle": "authoritative model full replay; browser historical full pixels independently pinned-verified"
+      }
+    },
+    {
+      "name": "basic-ko.hwpx-typed-10-full-reference-exact",
+      "status": "PASS",
+      "reference": {
+        "strongPixels": 0,
+        "pixels": 0,
+        "edgePixels": 0,
+        "height": 585,
+        "surface": "attached page Canvas readback",
+        "width": 414,
+        "verified": true,
+        "maxDelta": 0,
+        "oracle": "authoritative model full replay; browser historical full pixels independently pinned-verified"
+      }
+    },
+    {
+      "name": "basic-ko.hwpx-typed-20-full-reference-exact",
+      "status": "PASS",
+      "reference": {
+        "strongPixels": 0,
+        "pixels": 0,
+        "edgePixels": 0,
+        "height": 585,
+        "surface": "attached page Canvas readback",
+        "width": 414,
+        "verified": true,
+        "maxDelta": 0,
+        "oracle": "authoritative model full replay; browser historical full pixels independently pinned-verified"
+      }
+    },
+    {
+      "name": "basic-ko.hwpx-typed-30-full-reference-exact",
+      "status": "PASS",
+      "reference": {
+        "strongPixels": 0,
+        "pixels": 0,
+        "edgePixels": 0,
+        "height": 585,
+        "surface": "attached page Canvas readback",
+        "width": 414,
+        "verified": true,
+        "maxDelta": 0,
+        "oracle": "authoritative model full replay; browser historical full pixels independently pinned-verified"
+      }
+    },
+    {
+      "name": "basic-ko.hwpx-undo-caret-visible",
+      "status": "PASS",
+      "caret": "0:3:34",
+      "knownOriginalEndpointFailureEvidence": null
+    },
+    {
+      "name": "basic-ko.hwpx-undo-full-reference-exact",
+      "status": "PASS",
+      "reference": {
+        "strongPixels": 0,
+        "pixels": 0,
+        "edgePixels": 0,
+        "height": 585,
+        "surface": "attached page Canvas readback",
+        "width": 414,
+        "verified": true,
+        "maxDelta": 0,
+        "oracle": "authoritative model full replay; browser historical full pixels independently pinned-verified"
+      }
+    },
+    {
+      "name": "basic-ko.hwpx-redo-full-reference-exact",
+      "status": "PASS",
+      "reference": {
+        "strongPixels": 0,
+        "pixels": 0,
+        "edgePixels": 0,
+        "height": 585,
+        "surface": "attached page Canvas readback",
+        "width": 414,
+        "verified": true,
+        "maxDelta": 0,
+        "oracle": "authoritative model full replay; browser historical full pixels independently pinned-verified"
+      }
+    },
+    {
+      "name": "basic-ko.hwpx-history-model-caret",
+      "status": "PASS"
+    },
+    {
+      "name": "basic-ko.hwpx-original-preserved",
+      "status": "PASS"
+    },
+    {
+      "name": "연구노트(화학).hwp-warm-full-reference-exact",
+      "status": "PASS",
+      "reference": {
+        "strongPixels": 0,
+        "pixels": 0,
+        "edgePixels": 0,
+        "height": 585,
+        "surface": "attached page Canvas readback",
+        "width": 414,
+        "verified": true,
+        "maxDelta": 0,
+        "oracle": "authoritative model full replay; browser historical full pixels independently pinned-verified"
+      }
+    },
+    {
+      "name": "연구노트(화학).hwp-typed-10-full-reference-exact",
+      "status": "PASS",
+      "reference": {
+        "strongPixels": 0,
+        "pixels": 0,
+        "edgePixels": 0,
+        "height": 585,
+        "surface": "attached page Canvas readback",
+        "width": 414,
+        "verified": true,
+        "maxDelta": 0,
+        "oracle": "authoritative model full replay; browser historical full pixels independently pinned-verified"
+      }
+    },
+    {
+      "name": "연구노트(화학).hwp-typed-20-full-reference-exact",
+      "status": "PASS",
+      "reference": {
+        "strongPixels": 0,
+        "pixels": 0,
+        "edgePixels": 0,
+        "height": 585,
+        "surface": "attached page Canvas readback",
+        "width": 414,
+        "verified": true,
+        "maxDelta": 0,
+        "oracle": "authoritative model full replay; browser historical full pixels independently pinned-verified"
+      }
+    },
+    {
+      "name": "연구노트(화학).hwp-typed-30-full-reference-exact",
+      "status": "PASS",
+      "reference": {
+        "strongPixels": 0,
+        "pixels": 0,
+        "edgePixels": 0,
+        "height": 585,
+        "surface": "attached page Canvas readback",
+        "width": 414,
+        "verified": true,
+        "maxDelta": 0,
+        "oracle": "authoritative model full replay; browser historical full pixels independently pinned-verified"
+      }
+    },
+    {
+      "name": "연구노트(화학).hwp-original-empty-paragraph-restored",
+      "status": "PASS",
+      "undoSteps": 1
+    },
+    {
+      "name": "연구노트(화학).hwp-undo-caret-visible",
+      "status": "PASS",
+      "caret": "0:23:0",
+      "knownOriginalEndpointFailureEvidence": null
+    },
+    {
+      "name": "연구노트(화학).hwp-undo-full-reference-exact",
+      "status": "PASS",
+      "reference": {
+        "strongPixels": 0,
+        "pixels": 0,
+        "edgePixels": 0,
+        "height": 585,
+        "surface": "attached page Canvas readback",
+        "width": 414,
+        "verified": true,
+        "maxDelta": 0,
+        "oracle": "authoritative model full replay; browser historical full pixels independently pinned-verified"
+      }
+    },
+    {
+      "name": "연구노트(화학).hwp-redo-full-reference-exact",
+      "status": "PASS",
+      "reference": {
+        "strongPixels": 0,
+        "pixels": 0,
+        "edgePixels": 0,
+        "height": 585,
+        "surface": "attached page Canvas readback",
+        "width": 414,
+        "verified": true,
+        "maxDelta": 0,
+        "oracle": "authoritative model full replay; browser historical full pixels independently pinned-verified"
+      }
+    },
+    {
+      "name": "연구노트(화학).hwp-history-model-caret",
+      "status": "PASS"
+    },
+    {
+      "name": "연구노트(화학).hwp-original-preserved",
+      "status": "PASS"
+    },
+    {
+      "name": "3249937_asset_management_rules.hwpx-warm-full-reference-exact",
+      "status": "PASS",
+      "reference": {
+        "strongPixels": 0,
+        "pixels": 0,
+        "edgePixels": 0,
+        "height": 585,
+        "surface": "attached page Canvas readback",
+        "width": 414,
+        "verified": true,
+        "maxDelta": 0,
+        "oracle": "authoritative model full replay; browser historical full pixels independently pinned-verified"
+      }
+    },
+    {
+      "name": "3249937_asset_management_rules.hwpx-typed-10-full-reference-exact",
+      "status": "PASS",
+      "reference": {
+        "strongPixels": 0,
+        "pixels": 0,
+        "edgePixels": 0,
+        "height": 585,
+        "surface": "attached page Canvas readback",
+        "width": 414,
+        "verified": true,
+        "maxDelta": 0,
+        "oracle": "authoritative model full replay; browser historical full pixels independently pinned-verified"
+      }
+    },
+    {
+      "name": "3249937_asset_management_rules.hwpx-typed-20-full-reference-exact",
+      "status": "PASS",
+      "reference": {
+        "strongPixels": 0,
+        "pixels": 0,
+        "edgePixels": 0,
+        "height": 585,
+        "surface": "attached page Canvas readback",
+        "width": 414,
+        "verified": true,
+        "maxDelta": 0,
+        "oracle": "authoritative model full replay; browser historical full pixels independently pinned-verified"
+      }
+    },
+    {
+      "name": "3249937_asset_management_rules.hwpx-typed-30-full-reference-exact",
+      "status": "PASS",
+      "reference": {
+        "strongPixels": 0,
+        "pixels": 0,
+        "edgePixels": 0,
+        "height": 585,
+        "surface": "attached page Canvas readback",
+        "width": 414,
+        "verified": true,
+        "maxDelta": 0,
+        "oracle": "authoritative model full replay; browser historical full pixels independently pinned-verified"
+      }
+    },
+    {
+      "name": "3249937_asset_management_rules.hwpx-undo-caret-visible",
+      "status": "PASS",
+      "caret": "0:4:139",
+      "knownOriginalEndpointFailureEvidence": null
+    },
+    {
+      "name": "3249937_asset_management_rules.hwpx-undo-full-reference-exact",
+      "status": "PASS",
+      "reference": {
+        "strongPixels": 0,
+        "pixels": 0,
+        "edgePixels": 0,
+        "height": 585,
+        "surface": "attached page Canvas readback",
+        "width": 414,
+        "verified": true,
+        "maxDelta": 0,
+        "oracle": "authoritative model full replay; browser historical full pixels independently pinned-verified"
+      }
+    },
+    {
+      "name": "3249937_asset_management_rules.hwpx-redo-full-reference-exact",
+      "status": "PASS",
+      "reference": {
+        "strongPixels": 0,
+        "pixels": 0,
+        "edgePixels": 0,
+        "height": 585,
+        "surface": "attached page Canvas readback",
+        "width": 414,
+        "verified": true,
+        "maxDelta": 0,
+        "oracle": "authoritative model full replay; browser historical full pixels independently pinned-verified"
+      }
+    },
+    {
+      "name": "3249937_asset_management_rules.hwpx-history-model-caret",
+      "status": "PASS"
+    },
+    {
+      "name": "3249937_asset_management_rules.hwpx-original-preserved",
+      "status": "PASS"
+    },
+    {
+      "name": "native-final-resource-cleanup",
+      "status": "PASS"
+    }
+  ],
+  "scope": "actual candidate native performance fixtures, same zoom50/warmup3/caret region; separate correctness run, no latency claim",
+  "selectedSamples": [
+    "basic-ko.hwp",
+    "basic-ko.hwpx",
+    "연구노트(화학).hwp",
+    "3249937_asset_management_rules.hwpx"
+  ],
+  "diagnosticContinuation": false,
+  "cleanup": {
+    "sessionEnded": true,
+    "driverStopped": true,
+    "displayTerminated": true
+  },
+  "observerAliasDiagnostic": {
+    "sameConstructor": false,
+    "resources": [
+      "/__ownership_candidate__/rhwp.js?import",
+      "/__ownership_candidate__/rhwp.js"
+    ]
+  },
+  "visualReferences": [
+    {
+      "strongPixels": 0,
+      "pixels": 0,
+      "edgePixels": 0,
+      "height": 585,
+      "surface": "attached page Canvas readback",
+      "width": 414,
+      "verified": true,
+      "maxDelta": 0,
+      "oracle": "authoritative model full replay; browser historical full pixels independently pinned-verified",
+      "name": "basic-ko.hwp-warm",
+      "sample": "basic-ko.hwp",
+      "frame": "warm"
+    },
+    {
+      "strongPixels": 0,
+      "pixels": 0,
+      "edgePixels": 0,
+      "height": 585,
+      "surface": "attached page Canvas readback",
+      "width": 414,
+      "verified": true,
+      "maxDelta": 0,
+      "oracle": "authoritative model full replay; browser historical full pixels independently pinned-verified",
+      "name": "basic-ko.hwp-typed-10",
+      "sample": "basic-ko.hwp",
+      "frame": "typed-10"
+    },
+    {
+      "strongPixels": 0,
+      "pixels": 0,
+      "edgePixels": 0,
+      "height": 585,
+      "surface": "attached page Canvas readback",
+      "width": 414,
+      "verified": true,
+      "maxDelta": 0,
+      "oracle": "authoritative model full replay; browser historical full pixels independently pinned-verified",
+      "name": "basic-ko.hwp-typed-20",
+      "sample": "basic-ko.hwp",
+      "frame": "typed-20"
+    },
+    {
+      "strongPixels": 0,
+      "pixels": 0,
+      "edgePixels": 0,
+      "height": 585,
+      "surface": "attached page Canvas readback",
+      "width": 414,
+      "verified": true,
+      "maxDelta": 0,
+      "oracle": "authoritative model full replay; browser historical full pixels independently pinned-verified",
+      "name": "basic-ko.hwp-typed-30",
+      "sample": "basic-ko.hwp",
+      "frame": "typed-30"
+    },
+    {
+      "strongPixels": 0,
+      "pixels": 0,
+      "edgePixels": 0,
+      "height": 585,
+      "surface": "attached page Canvas readback",
+      "width": 414,
+      "verified": true,
+      "maxDelta": 0,
+      "oracle": "authoritative model full replay; browser historical full pixels independently pinned-verified",
+      "name": "basic-ko.hwp-undo",
+      "sample": "basic-ko.hwp",
+      "frame": "undo"
+    },
+    {
+      "strongPixels": 0,
+      "pixels": 0,
+      "edgePixels": 0,
+      "height": 585,
+      "surface": "attached page Canvas readback",
+      "width": 414,
+      "verified": true,
+      "maxDelta": 0,
+      "oracle": "authoritative model full replay; browser historical full pixels independently pinned-verified",
+      "name": "basic-ko.hwp-redo",
+      "sample": "basic-ko.hwp",
+      "frame": "redo"
+    },
+    {
+      "strongPixels": 0,
+      "pixels": 0,
+      "edgePixels": 0,
+      "height": 585,
+      "surface": "attached page Canvas readback",
+      "width": 414,
+      "verified": true,
+      "maxDelta": 0,
+      "oracle": "authoritative model full replay; browser historical full pixels independently pinned-verified",
+      "name": "basic-ko.hwpx-warm",
+      "sample": "basic-ko.hwpx",
+      "frame": "warm"
+    },
+    {
+      "strongPixels": 0,
+      "pixels": 0,
+      "edgePixels": 0,
+      "height": 585,
+      "surface": "attached page Canvas readback",
+      "width": 414,
+      "verified": true,
+      "maxDelta": 0,
+      "oracle": "authoritative model full replay; browser historical full pixels independently pinned-verified",
+      "name": "basic-ko.hwpx-typed-10",
+      "sample": "basic-ko.hwpx",
+      "frame": "typed-10"
+    },
+    {
+      "strongPixels": 0,
+      "pixels": 0,
+      "edgePixels": 0,
+      "height": 585,
+      "surface": "attached page Canvas readback",
+      "width": 414,
+      "verified": true,
+      "maxDelta": 0,
+      "oracle": "authoritative model full replay; browser historical full pixels independently pinned-verified",
+      "name": "basic-ko.hwpx-typed-20",
+      "sample": "basic-ko.hwpx",
+      "frame": "typed-20"
+    },
+    {
+      "strongPixels": 0,
+      "pixels": 0,
+      "edgePixels": 0,
+      "height": 585,
+      "surface": "attached page Canvas readback",
+      "width": 414,
+      "verified": true,
+      "maxDelta": 0,
+      "oracle": "authoritative model full replay; browser historical full pixels independently pinned-verified",
+      "name": "basic-ko.hwpx-typed-30",
+      "sample": "basic-ko.hwpx",
+      "frame": "typed-30"
+    },
+    {
+      "strongPixels": 0,
+      "pixels": 0,
+      "edgePixels": 0,
+      "height": 585,
+      "surface": "attached page Canvas readback",
+      "width": 414,
+      "verified": true,
+      "maxDelta": 0,
+      "oracle": "authoritative model full replay; browser historical full pixels independently pinned-verified",
+      "name": "basic-ko.hwpx-undo",
+      "sample": "basic-ko.hwpx",
+      "frame": "undo"
+    },
+    {
+      "strongPixels": 0,
+      "pixels": 0,
+      "edgePixels": 0,
+      "height": 585,
+      "surface": "attached page Canvas readback",
+      "width": 414,
+      "verified": true,
+      "maxDelta": 0,
+      "oracle": "authoritative model full replay; browser historical full pixels independently pinned-verified",
+      "name": "basic-ko.hwpx-redo",
+      "sample": "basic-ko.hwpx",
+      "frame": "redo"
+    },
+    {
+      "strongPixels": 0,
+      "pixels": 0,
+      "edgePixels": 0,
+      "height": 585,
+      "surface": "attached page Canvas readback",
+      "width": 414,
+      "verified": true,
+      "maxDelta": 0,
+      "oracle": "authoritative model full replay; browser historical full pixels independently pinned-verified",
+      "name": "연구노트(화학).hwp-warm",
+      "sample": "연구노트(화학).hwp",
+      "frame": "warm"
+    },
+    {
+      "strongPixels": 0,
+      "pixels": 0,
+      "edgePixels": 0,
+      "height": 585,
+      "surface": "attached page Canvas readback",
+      "width": 414,
+      "verified": true,
+      "maxDelta": 0,
+      "oracle": "authoritative model full replay; browser historical full pixels independently pinned-verified",
+      "name": "연구노트(화학).hwp-typed-10",
+      "sample": "연구노트(화학).hwp",
+      "frame": "typed-10"
+    },
+    {
+      "strongPixels": 0,
+      "pixels": 0,
+      "edgePixels": 0,
+      "height": 585,
+      "surface": "attached page Canvas readback",
+      "width": 414,
+      "verified": true,
+      "maxDelta": 0,
+      "oracle": "authoritative model full replay; browser historical full pixels independently pinned-verified",
+      "name": "연구노트(화학).hwp-typed-20",
+      "sample": "연구노트(화학).hwp",
+      "frame": "typed-20"
+    },
+    {
+      "strongPixels": 0,
+      "pixels": 0,
+      "edgePixels": 0,
+      "height": 585,
+      "surface": "attached page Canvas readback",
+      "width": 414,
+      "verified": true,
+      "maxDelta": 0,
+      "oracle": "authoritative model full replay; browser historical full pixels independently pinned-verified",
+      "name": "연구노트(화학).hwp-typed-30",
+      "sample": "연구노트(화학).hwp",
+      "frame": "typed-30"
+    },
+    {
+      "strongPixels": 0,
+      "pixels": 0,
+      "edgePixels": 0,
+      "height": 585,
+      "surface": "attached page Canvas readback",
+      "width": 414,
+      "verified": true,
+      "maxDelta": 0,
+      "oracle": "authoritative model full replay; browser historical full pixels independently pinned-verified",
+      "name": "연구노트(화학).hwp-undo",
+      "sample": "연구노트(화학).hwp",
+      "frame": "undo"
+    },
+    {
+      "strongPixels": 0,
+      "pixels": 0,
+      "edgePixels": 0,
+      "height": 585,
+      "surface": "attached page Canvas readback",
+      "width": 414,
+      "verified": true,
+      "maxDelta": 0,
+      "oracle": "authoritative model full replay; browser historical full pixels independently pinned-verified",
+      "name": "연구노트(화학).hwp-redo",
+      "sample": "연구노트(화학).hwp",
+      "frame": "redo"
+    },
+    {
+      "strongPixels": 0,
+      "pixels": 0,
+      "edgePixels": 0,
+      "height": 585,
+      "surface": "attached page Canvas readback",
+      "width": 414,
+      "verified": true,
+      "maxDelta": 0,
+      "oracle": "authoritative model full replay; browser historical full pixels independently pinned-verified",
+      "name": "3249937_asset_management_rules.hwpx-warm",
+      "sample": "3249937_asset_management_rules.hwpx",
+      "frame": "warm"
+    },
+    {
+      "strongPixels": 0,
+      "pixels": 0,
+      "edgePixels": 0,
+      "height": 585,
+      "surface": "attached page Canvas readback",
+      "width": 414,
+      "verified": true,
+      "maxDelta": 0,
+      "oracle": "authoritative model full replay; browser historical full pixels independently pinned-verified",
+      "name": "3249937_asset_management_rules.hwpx-typed-10",
+      "sample": "3249937_asset_management_rules.hwpx",
+      "frame": "typed-10"
+    },
+    {
+      "strongPixels": 0,
+      "pixels": 0,
+      "edgePixels": 0,
+      "height": 585,
+      "surface": "attached page Canvas readback",
+      "width": 414,
+      "verified": true,
+      "maxDelta": 0,
+      "oracle": "authoritative model full replay; browser historical full pixels independently pinned-verified",
+      "name": "3249937_asset_management_rules.hwpx-typed-20",
+      "sample": "3249937_asset_management_rules.hwpx",
+      "frame": "typed-20"
+    },
+    {
+      "strongPixels": 0,
+      "pixels": 0,
+      "edgePixels": 0,
+      "height": 585,
+      "surface": "attached page Canvas readback",
+      "width": 414,
+      "verified": true,
+      "maxDelta": 0,
+      "oracle": "authoritative model full replay; browser historical full pixels independently pinned-verified",
+      "name": "3249937_asset_management_rules.hwpx-typed-30",
+      "sample": "3249937_asset_management_rules.hwpx",
+      "frame": "typed-30"
+    },
+    {
+      "strongPixels": 0,
+      "pixels": 0,
+      "edgePixels": 0,
+      "height": 585,
+      "surface": "attached page Canvas readback",
+      "width": 414,
+      "verified": true,
+      "maxDelta": 0,
+      "oracle": "authoritative model full replay; browser historical full pixels independently pinned-verified",
+      "name": "3249937_asset_management_rules.hwpx-undo",
+      "sample": "3249937_asset_management_rules.hwpx",
+      "frame": "undo"
+    },
+    {
+      "strongPixels": 0,
+      "pixels": 0,
+      "edgePixels": 0,
+      "height": 585,
+      "surface": "attached page Canvas readback",
+      "width": 414,
+      "verified": true,
+      "maxDelta": 0,
+      "oracle": "authoritative model full replay; browser historical full pixels independently pinned-verified",
+      "name": "3249937_asset_management_rules.hwpx-redo",
+      "sample": "3249937_asset_management_rules.hwpx",
+      "frame": "redo"
+    }
+  ],
+  "documents": [
+    {
+      "sample": "basic-ko.hwp",
+      "sourceSha256": "57c901cc394abf6f58f4838315d1ea2c5ecf8a03d9934d3fc098fd8be6e6e12f",
+      "pages": 1,
+      "editedRegion": {
+        "caret": "0:3:9",
+        "page": 0
+      },
+      "zoom": 50,
+      "dpr": 1.04205322265625
+    },
+    {
+      "sample": "basic-ko.hwpx",
+      "sourceSha256": "26d434b7b427149110751c6ef5b19e9ecb4818f3ba7eadfe201b5afd3de442a8",
+      "pages": 1,
+      "editedRegion": {
+        "caret": "0:3:9",
+        "page": 0
+      },
+      "zoom": 50,
+      "dpr": 1.04205322265625
+    },
+    {
+      "sample": "연구노트(화학).hwp",
+      "sourceSha256": "6717eca43c6fdd9b0530530cf17d33b6687da0c462a433d37eb652afb5394f91",
+      "pages": 24,
+      "editedRegion": {
+        "caret": "0:3:2",
+        "page": 3
+      },
+      "zoom": 50,
+      "dpr": 1.04205322265625
+    },
+    {
+      "sample": "3249937_asset_management_rules.hwpx",
+      "sourceSha256": "97b5d6c571a6b7626321c6a53d797e3511978447497bb73309bd23eaa8e7ea77",
+      "pages": 60,
+      "editedRegion": {
+        "caret": "0:4:51",
+        "page": 0
+      },
+      "zoom": 50,
+      "dpr": 1.04205322265625
+    }
+  ],
+  "engineIdentity": {
+    "wasmSha256": "97a575093aab7fde6400e3ce2a1c3ec243de28645f49ce27a55286ca8dff37e2",
+    "baseline": "1a76570e833917d15817415a53c09ad61ab3203f"
+  },
+  "adapterCounters": {
+    "polls": 1030,
+    "staleDropped": 2,
+    "reused": 17,
+    "regionalPatchJobs": 0,
+    "completed": 1030,
+    "unchangedFrames": 0,
+    "notifications": 0,
+    "patchJobs": 0,
+    "wholePagePatchJobs": 0,
+    "limits": 0,
+    "replacements": 0,
+    "fullJobs": 1030,
+    "errors": 0,
+    "canceled": 0
+  },
+  "lastObserved": {
+    "caretHTML": null,
+    "throwAfterDiscard": null,
+    "rendering": {
+      "sessions": [],
+      "jobs": {
+        "decodedSharedLookups": 0,
+        "pendingCount": 0,
+        "cancellations": 0,
+        "decodedLedger": {
+          "accountingErrors": 0,
+          "residentBytes": 0,
+          "refusedReservations": 0,
+          "uniqueCount": 0,
+          "created": 60,
+          "jobLeaseReferenceBytes": 0,
+          "maxNonresidentBytes": 100663296,
+          "preallocationRejections": 0,
+          "reservedBytes": 0,
+          "residentCount": 0,
+          "decodedCacheMaxEntries": 256,
+          "jobLeaseReferences": 0,
+          "decodedCacheMaxBytes": 268435456,
+          "peakTreePayloadEstimatedBytes": 2168706,
+          "lastTreeSharedFontBytes": 0,
+          "dimensionMismatches": 0,
+          "unenforcedOverLimit": 0,
+          "estimate": "RGBA backing estimates; not RSS, GPU or browser allocator memory",
+          "peakUniquePlusReservedBytes": 303156800,
+          "unreservedDecodes": 0,
+          "uniqueBytes": 0,
+          "peakDecodeTransientEstimatedBytes": 103917484,
+          "lastTreePayloadEstimatedBytes": 0,
+          "rejectedCommits": 0,
+          "nonresidentCount": 0,
+          "disposed": 60,
+          "nonresidentBytes": 0,
+          "postDecodeReservations": 0
+        },
+        "peakTemporaryCanvasBytes": 3875040,
+        "listenerNotifications": 0,
+        "peakStagingBytes": 3875040,
+        "inFlightEstimatedBytes": 0,
+        "capacityNotifications": 0,
+        "maxFrameBytes": 67108864,
+        "expiryTimerTicks": 0,
+        "resourceLimits": 0,
+        "expiryTimerActive": false,
+        "decodedRegistryEntries": 0,
+        "decodedAttachRefusals": 0,
+        "expiryTimerStarts": 988,
+        "decodedRevocations": 0,
+        "activeLeaseEstimatedBytes": 0,
+        "backupImageDataBytes": 0,
+        "activeJobs": 0,
+        "activeLeaseCount": 0,
+        "decodedRegistryLive": 0,
+        "retryCount": 0,
+        "maxJobDecodedLeases": 256,
+        "preparation": {
+          "resourceQuantum": 4,
+          "enabled": false,
+          "peakBytes": 0,
+          "stepQuantum": 256,
+          "maxJobBytes": 33554432,
+          "maxOwnedBytes": 67108864,
+          "jobs": [],
+          "notifications": 0,
+          "ownedBytes": 0
+        },
+        "maxPending": 2,
+        "transientEstimatedBytes": 0,
+        "loadAttempts": 0,
+        "uniqueResourceCount": 0,
+        "readyLeaseCount": 0,
+        "maxJobLeaseEntries": 0,
+        "maxOwnedBytes": 268435456,
+        "maxStagingBytes": 134217728,
+        "temporaryCanvasBytes": 0,
+        "ownedEstimatedBytes": 0,
+        "maxResources": 256,
+        "errors": 0,
+        "peakBackupImageDataBytes": 968760,
+        "completionNotifications": 0
+      },
+      "cache": {
+        "decoded": {
+          "maxBytes": 268435456,
+          "bytes": 0,
+          "misses": 60,
+          "maxEntryBytes": 67108864,
+          "oversize": 0,
+          "maxEntries": 256,
+          "evictions": 23,
+          "hits": 375,
+          "entries": 0,
+          "pendingEntries": 0,
+          "negativeEntries": 0,
+          "rejected": 37,
+          "transientEntries": 0
+        },
+        "images": {
+          "maxBytes": 67108864,
+          "bytes": 0,
+          "misses": 0,
+          "maxEntryBytes": 16777216,
+          "oversize": 0,
+          "maxEntries": 256,
+          "evictions": 0,
+          "hits": 0,
+          "entries": 0,
+          "pendingEntries": 0,
+          "negativeEntries": 0,
+          "rejected": 0,
+          "transientEntries": 0
+        }
+      },
+      "subscribers": 0
+    },
+    "engineCaret": null,
+    "status": null,
+    "snapshotCalls": [
+      {
+        "ms": 0,
+        "name": "saveSnapshot",
+        "at": 64308
+      },
+      {
+        "ms": 1,
+        "name": "saveSnapshot",
+        "at": 64692
+      },
+      {
+        "ms": 1,
+        "name": "saveSnapshot",
+        "at": 65080
+      },
+      {
+        "ms": 1,
+        "name": "saveSnapshot",
+        "at": 65465
+      },
+      {
+        "ms": 1,
+        "name": "saveSnapshot",
+        "at": 65847
+      },
+      {
+        "ms": 1,
+        "name": "saveSnapshot",
+        "at": 66230
+      },
+      {
+        "ms": 1,
+        "name": "saveSnapshot",
+        "at": 66620
+      },
+      {
+        "ms": 1,
+        "name": "saveSnapshot",
+        "at": 67555
+      },
+      {
+        "ms": 0,
+        "name": "saveSnapshot",
+        "at": 67943
+      },
+      {
+        "ms": 0,
+        "name": "saveSnapshot",
+        "at": 68346
+      },
+      {
+        "ms": 1,
+        "name": "saveSnapshot",
+        "at": 68740
+      },
+      {
+        "ms": 1,
+        "name": "saveSnapshot",
+        "at": 69126
+      },
+      {
+        "ms": 0,
+        "name": "saveSnapshot",
+        "at": 69523
+      },
+      {
+        "ms": 1,
+        "name": "saveSnapshot",
+        "at": 69907
+      },
+      {
+        "ms": 1,
+        "name": "saveSnapshot",
+        "at": 70300
+      },
+      {
+        "ms": 1,
+        "name": "saveSnapshot",
+        "at": 70697
+      },
+      {
+        "ms": 1,
+        "name": "saveSnapshot",
+        "at": 71076
+      },
+      {
+        "ms": 1,
+        "name": "saveSnapshot",
+        "at": 71884
+      },
+      {
+        "ms": 64,
+        "name": "restoreSnapshot",
+        "at": 71885
+      },
+      {
+        "ms": 60,
+        "name": "restoreSnapshot",
+        "at": 72642
+      }
+    ],
+    "owners": [
+      {
+        "discards": 0,
+        "nativeCapacity": null,
+        "id": 1,
+        "saves": 0,
+        "live": 0
+      }
+    ],
+    "jobs": {
+      "decodedSharedLookups": 0,
+      "pendingCount": 0,
+      "cancellations": 0,
+      "decodedLedger": {
+        "accountingErrors": 0,
+        "residentBytes": 0,
+        "refusedReservations": 0,
+        "uniqueCount": 0,
+        "created": 60,
+        "jobLeaseReferenceBytes": 0,
+        "maxNonresidentBytes": 100663296,
+        "preallocationRejections": 0,
+        "reservedBytes": 0,
+        "residentCount": 0,
+        "decodedCacheMaxEntries": 256,
+        "jobLeaseReferences": 0,
+        "decodedCacheMaxBytes": 268435456,
+        "peakTreePayloadEstimatedBytes": 2168706,
+        "lastTreeSharedFontBytes": 0,
+        "dimensionMismatches": 0,
+        "unenforcedOverLimit": 0,
+        "estimate": "RGBA backing estimates; not RSS, GPU or browser allocator memory",
+        "peakUniquePlusReservedBytes": 303156800,
+        "unreservedDecodes": 0,
+        "uniqueBytes": 0,
+        "peakDecodeTransientEstimatedBytes": 103917484,
+        "lastTreePayloadEstimatedBytes": 0,
+        "rejectedCommits": 0,
+        "nonresidentCount": 0,
+        "disposed": 60,
+        "nonresidentBytes": 0,
+        "postDecodeReservations": 0
+      },
+      "peakTemporaryCanvasBytes": 3875040,
+      "listenerNotifications": 0,
+      "peakStagingBytes": 3875040,
+      "inFlightEstimatedBytes": 0,
+      "capacityNotifications": 0,
+      "maxFrameBytes": 67108864,
+      "expiryTimerTicks": 0,
+      "resourceLimits": 0,
+      "expiryTimerActive": false,
+      "decodedRegistryEntries": 0,
+      "decodedAttachRefusals": 0,
+      "expiryTimerStarts": 988,
+      "decodedRevocations": 0,
+      "activeLeaseEstimatedBytes": 0,
+      "backupImageDataBytes": 0,
+      "activeJobs": 0,
+      "activeLeaseCount": 0,
+      "decodedRegistryLive": 0,
+      "retryCount": 0,
+      "maxJobDecodedLeases": 256,
+      "preparation": {
+        "resourceQuantum": 4,
+        "enabled": false,
+        "peakBytes": 0,
+        "stepQuantum": 256,
+        "maxJobBytes": 33554432,
+        "maxOwnedBytes": 67108864,
+        "jobs": [],
+        "notifications": 0,
+        "ownedBytes": 0
+      },
+      "maxPending": 2,
+      "transientEstimatedBytes": 0,
+      "loadAttempts": 0,
+      "uniqueResourceCount": 0,
+      "readyLeaseCount": 0,
+      "maxJobLeaseEntries": 0,
+      "maxOwnedBytes": 268435456,
+      "maxStagingBytes": 134217728,
+      "temporaryCanvasBytes": 0,
+      "ownedEstimatedBytes": 0,
+      "maxResources": 256,
+      "errors": 0,
+      "peakBackupImageDataBytes": 968760,
+      "completionNotifications": 0
+    },
+    "identity": {
+      "wasmSha256": "97a575093aab7fde6400e3ce2a1c3ec243de28645f49ce27a55286ca8dff37e2",
+      "baseline": "1a76570e833917d15817415a53c09ad61ab3203f"
+    }
+  },
+  "existingSaveAssertions": [],
+  "historyGates": [],
+  "historyChecks": [],
+  "teardown": [
+    {
+      "sessionDeletes": [
+        {
+          "outcome": "ok",
+          "seconds": 0.008
+        }
+      ],
+      "complete": true,
+      "beforeDriverStop": [
+        {
+          "pid": 1106358,
+          "comm": "tauri-driver",
+          "state": "S",
+          "ppid": 1106328
+        },
+        {
+          "pid": 1106359,
+          "comm": "WebKitWebDriver",
+          "state": "S",
+          "ppid": 1106358
+        },
+        {
+          "pid": 1106374,
+          "comm": "WebKitNetworkPr",
+          "state": "S",
+          "ppid": 1106361
+        },
+        {
+          "pid": 1106399,
+          "comm": "WebKitWebProces",
+          "state": "S",
+          "ppid": 1106361
+        }
+      ],
+      "driverKilled": false,
+      "driverExit": 0,
+      "afterDriverStop": [
+        {
+          "pid": 1106374,
+          "comm": "WebKitNetworkPr",
+          "state": "S",
+          "ppid": 1106361
+        },
+        {
+          "pid": 1106399,
+          "comm": "WebKitWebProces",
+          "state": "S",
+          "ppid": 1106361
+        }
+      ],
+      "driverStopSeconds": 0.011,
+      "remainingAfterWait": [],
+      "sigtermSent": [],
+      "sigtermErrors": [],
+      "survivorsAfterSigterm": []
+    }
+  ],
+  "failures": [],
+  "expectedSamples": [
+    "basic-ko.hwp",
+    "basic-ko.hwpx",
+    "연구노트(화학).hwp",
+    "3249937_asset_management_rules.hwpx"
+  ],
+  "expectedAssertionCount": 39,
+  "expectedReferenceCount": 24,
+  "verifiedExactReferenceCount": 24,
+  "historyGateContract": "named mandatory assertions; undo_native historyGates/historyChecks not produced and must be empty",
+  "measurementComplete": true,
+  "pixelReferencesComplete": true,
+  "parentExit": 0,
+  "executedDependenciesStable": true,
+  "executedDependencySha256": {
+    "tests/integration/rhwp/ownership-poc/session.mjs": "6eaf1c36d4b207beffd4d9fcd7d2499ec2168d0b8f13e87b09e50e9de3bcebbe",
+    "tests/integration/rhwp/ownership-poc/vite.config.mjs": "343ac106593e425a2d08551fa43c47057b39bcb862db4b98433af0bd83362378",
+    "tests/integration/rhwp/ownership-poc/native.py": "49bbfcc827fdd193b3976719bb5779c64350d4cbc3d03d4c81910a5929af7ca6",
+    "tests/integration/rhwp/ownership-poc/generate.mjs": "b7cf1b9cc56828019ce14b95bc46ddbfd177b89d3b1a98144ab63c5a559862c1",
+    "tests/integration/rhwp/ownership-poc/performance-visual-native.py": "99d08f4a6ad662a0bcd24f40b799bc2eff6b3935d753f61bb167685cb3d91888",
+    "tests/integration/rhwp/ownership-poc/native_d1_result.py": "d0004da2944d69e39979d60792f024a0b25240011bd43a862412116aebe4caf9",
+    "tests/integration/rhwp/undo_native.py": "1d0982fa18c155bbd1e7b009307253815148f841fe1116ec92d818a3ea195445",
+    "tests/integration/rhwp/native_probe.py": "d81738939b8c39b239f5a9f7c96a8bbe2ad3fa76213df7ca0625c3a8f2f35665",
+    "tests/integration/rhwp/rhwp_poc.py": "fc3c2f03a0e774e6653f4d7054336f10cc3d01b116e2eb4dbbebf8c172ae581a",
+    "tests/e2e/tauri_smoke.py": "b68fd9650b6339bd8c06b42534f3034e035dacb2fa47b1244f9ff54e10b4bbbb",
+    "tests/fixtures/rhwp/generate.mjs": "a5699770df0dff01e31e1bcc248186b663c2da848229b5193d1c9218c5a86c40",
+    "src-tauri/target/debug/geul": "0fda84b2f91f686c26b235a48250e70892d4f16e9fd66d974f8c621a67c116cd",
+    "rhwp.js": "37cea466d25ecbd12c5586cdeddada1c97aa4fd45860e857160e12e83e668e5d",
+    "rhwp_bg.wasm": "97a575093aab7fde6400e3ce2a1c3ec243de28645f49ce27a55286ca8dff37e2",
+    "ENGINE.json": "14d223fff35ec9eb6b9e2764229684b8ba2fd2b2c48a92ea4aa1953173424212",
+    "tests/integration/rhwp/evidence/t010-d1-trust-anchor-v2/engine-gates/engine-safety-gates.json": "f31bd7d90906c52f95bdc02b45bb2e6cb59088ded32b603a6383e721bbc7a49e",
+    "tests/integration/rhwp/evidence/t010-d1-trust-anchor-v2/engine-gates/chrome.json": "5d290fba48661531957ad310e2567421acface3c9facb78a0094a87e72e4c558",
+    "tests/integration/rhwp/evidence/t010-d1-trust-anchor-v2/engine-gates/webkit.json": "067b9ff525fe656f03537628c680d268298f43e38b3a659aaaec1b1e84dd2409",
+    "rhwp.d.ts": "9d46972b79edcf09c9d87e732cd5c91ea4bfded79457639162b0c7d6e7530cb1",
+    "vite.config.ts": "a9026e5be6b3309011cd329c870c61c02d113b65f267c2eb367d298299649374",
+    "index.html": "14a7c15656d3c9f7f63a62fff73be86d7054fa4d53597d2443c642d518e37ec8",
+    "tree:src": "2f401469a7cd0f2867d767faef49afe94f926c1e490c8161f3d41ac5bbd0d84f",
+    "tests/integration/rhwp/evidence/t010-d1-trust-anchor-v2/run-native.py": "d3a35d7403a911e5b965a08bd4040281bf9e4cc39ffd716f05a1588a5babfbe7",
+    "package.json": "6884f183a90f0f75083e61bf128472208a9fd9b7ae5829cf7355f36a16d30d2b",
+    "tsconfig.json": "40ff657e8835d355693fe826d201789fd1a7c9f969f0416800d25a04dccde85f",
+    "public/rhwp/rhwp.js": "70cde06a369fa7fd4fc8bc8f3d6acaee158596ba1a116a2c72159002b0b5654e",
+    "public/rhwp/rhwp_bg.wasm": "a91fa6a4336d34441c0d8f52afd0971aebe34019f7caf9eddad100f7a568f94d",
+    "public/rhwp/BUILD.json": "bac96306df081aeabe1569bd91954e051c7803c56ef013a3bb8158f86b8919ba",
+    "tests/integration/rhwp/cache-concurrency/fixtures.mjs": "df417a5f5d1a38ee2eec00738fb6225d83dee86dd93124cc96acb73be831b06a",
+    "external/rhwp/samples/rnote/연구노트(화학).hwp": "6717eca43c6fdd9b0530530cf17d33b6687da0c462a433d37eb652afb5394f91",
+    "external/rhwp/samples/issue6031/3249937_asset_management_rules.hwpx": "97b5d6c571a6b7626321c6a53d797e3511978447497bb73309bd23eaa8e7ea77"
+  },
+  "executedDependencySha256After": {
+    "tests/integration/rhwp/ownership-poc/session.mjs": "6eaf1c36d4b207beffd4d9fcd7d2499ec2168d0b8f13e87b09e50e9de3bcebbe",
+    "tests/integration/rhwp/ownership-poc/vite.config.mjs": "343ac106593e425a2d08551fa43c47057b39bcb862db4b98433af0bd83362378",
+    "tests/integration/rhwp/ownership-poc/native.py": "49bbfcc827fdd193b3976719bb5779c64350d4cbc3d03d4c81910a5929af7ca6",
+    "tests/integration/rhwp/ownership-poc/generate.mjs": "b7cf1b9cc56828019ce14b95bc46ddbfd177b89d3b1a98144ab63c5a559862c1",
+    "tests/integration/rhwp/ownership-poc/performance-visual-native.py": "99d08f4a6ad662a0bcd24f40b799bc2eff6b3935d753f61bb167685cb3d91888",
+    "tests/integration/rhwp/ownership-poc/native_d1_result.py": "d0004da2944d69e39979d60792f024a0b25240011bd43a862412116aebe4caf9",
+    "tests/integration/rhwp/undo_native.py": "1d0982fa18c155bbd1e7b009307253815148f841fe1116ec92d818a3ea195445",
+    "tests/integration/rhwp/native_probe.py": "d81738939b8c39b239f5a9f7c96a8bbe2ad3fa76213df7ca0625c3a8f2f35665",
+    "tests/integration/rhwp/rhwp_poc.py": "fc3c2f03a0e774e6653f4d7054336f10cc3d01b116e2eb4dbbebf8c172ae581a",
+    "tests/e2e/tauri_smoke.py": "b68fd9650b6339bd8c06b42534f3034e035dacb2fa47b1244f9ff54e10b4bbbb",
+    "tests/fixtures/rhwp/generate.mjs": "a5699770df0dff01e31e1bcc248186b663c2da848229b5193d1c9218c5a86c40",
+    "src-tauri/target/debug/geul": "0fda84b2f91f686c26b235a48250e70892d4f16e9fd66d974f8c621a67c116cd",
+    "rhwp.js": "37cea466d25ecbd12c5586cdeddada1c97aa4fd45860e857160e12e83e668e5d",
+    "rhwp_bg.wasm": "97a575093aab7fde6400e3ce2a1c3ec243de28645f49ce27a55286ca8dff37e2",
+    "ENGINE.json": "14d223fff35ec9eb6b9e2764229684b8ba2fd2b2c48a92ea4aa1953173424212",
+    "tests/integration/rhwp/evidence/t010-d1-trust-anchor-v2/engine-gates/engine-safety-gates.json": "f31bd7d90906c52f95bdc02b45bb2e6cb59088ded32b603a6383e721bbc7a49e",
+    "tests/integration/rhwp/evidence/t010-d1-trust-anchor-v2/engine-gates/chrome.json": "5d290fba48661531957ad310e2567421acface3c9facb78a0094a87e72e4c558",
+    "tests/integration/rhwp/evidence/t010-d1-trust-anchor-v2/engine-gates/webkit.json": "067b9ff525fe656f03537628c680d268298f43e38b3a659aaaec1b1e84dd2409",
+    "rhwp.d.ts": "9d46972b79edcf09c9d87e732cd5c91ea4bfded79457639162b0c7d6e7530cb1",
+    "vite.config.ts": "a9026e5be6b3309011cd329c870c61c02d113b65f267c2eb367d298299649374",
+    "index.html": "14a7c15656d3c9f7f63a62fff73be86d7054fa4d53597d2443c642d518e37ec8",
+    "tree:src": "2f401469a7cd0f2867d767faef49afe94f926c1e490c8161f3d41ac5bbd0d84f",
+    "tests/integration/rhwp/evidence/t010-d1-trust-anchor-v2/run-native.py": "d3a35d7403a911e5b965a08bd4040281bf9e4cc39ffd716f05a1588a5babfbe7",
+    "package.json": "6884f183a90f0f75083e61bf128472208a9fd9b7ae5829cf7355f36a16d30d2b",
+    "tsconfig.json": "40ff657e8835d355693fe826d201789fd1a7c9f969f0416800d25a04dccde85f",
+    "public/rhwp/rhwp.js": "70cde06a369fa7fd4fc8bc8f3d6acaee158596ba1a116a2c72159002b0b5654e",
+    "public/rhwp/rhwp_bg.wasm": "a91fa6a4336d34441c0d8f52afd0971aebe34019f7caf9eddad100f7a568f94d",
+    "public/rhwp/BUILD.json": "bac96306df081aeabe1569bd91954e051c7803c56ef013a3bb8158f86b8919ba",
+    "tests/integration/rhwp/cache-concurrency/fixtures.mjs": "df417a5f5d1a38ee2eec00738fb6225d83dee86dd93124cc96acb73be831b06a",
+    "external/rhwp/samples/rnote/연구노트(화학).hwp": "6717eca43c6fdd9b0530530cf17d33b6687da0c462a433d37eb652afb5394f91",
+    "external/rhwp/samples/issue6031/3249937_asset_management_rules.hwpx": "97b5d6c571a6b7626321c6a53d797e3511978447497bb73309bd23eaa8e7ea77"
+  },
+  "dependencyManifest": 4,
+  "candidateWasmSha256": "97a575093aab7fde6400e3ce2a1c3ec243de28645f49ce27a55286ca8dff37e2",
+  "command": [
+    "dbus-run-session",
+    "--",
+    "python3",
+    "tests/integration/rhwp/ownership-poc/performance-visual-native.py",
+    "--app",
+    "<workspace>/src-tauri/target/debug/geul",
+    "--driver",
+    "<workspace>/src-tauri/target/release/tauri-driver",
+    "--webkit-driver",
+    "/nix/store/p7h9r90h1vmk4wq1964nhd8vfp0kf27b-webkitgtk-2.54.1+abi=4.1/bin/WebKitWebDriver",
+    "--xvfb",
+    "/nix/store/7yz3bnmll7fy11n0xci85mbhnf6p5669-xvfb-21.1.23/bin/Xvfb",
+    "--xdotool",
+    "/nix/store/kyp2r08w6hs0l1zj3cya6d2ciba9v47h-xdotool-3.20211022.1/bin/xdotool",
+    "--output",
+    ".git/t010-d1-anchor-v2/runs/native-d1-attempt1.json"
+  ],
+  "activationFlags": {
+    "VITE_GEUL_TEST_HOOKS": "1",
+    "GEUL_T010_OWNERSHIP_POC": "1",
+    "GEUL_T010_SCHEDULER_POC": "1",
+    "GEUL_T010_DAMAGE_POC": "0",
+    "GEUL_T010_CANDIDATE": ".git/t010-d1-anchor-v2/candidate",
+    "GEUL_T010_EVIDENCE": "<workspace>/tests/integration/rhwp/evidence/t010-d1-trust-anchor-v2/engine-gates",
+    "VITE_GEUL_TEST_RHWP_HISTORY": "1",
+    "GEUL_T010_HISTORY_SAFETY_ONLY": "1"
+  },
+  "elapsedSeconds": 80.12577191300807,
+  "wrapperVerdict": {
+    "schema": 3,
+    "status": "PASS",
+    "failures": [],
+    "categories": [],
+    "harnessExit": 0,
+    "expectedAssertions": 39,
+    "expectedReferences": 24,
+    "expectedCleanup": [
+      "sessionEnded",
+      "driverStopped",
+      "displayTerminated"
+    ],
+    "acceptedDriverExits": [
+      0,
+      -15
+    ],
+    "dependencyManifest": 4,
+    "trustAnchor": {
+      "path": "tests/integration/rhwp/evidence/t010-d1-trust-anchor-v2/candidate-identity.json",
+      "sha256": "799d3e31f2f3d5e23b7ee8a003ede43928bf19bef43838d2377e82be03e5877e"
+    },
+    "expectedWasmSha256": "97a575093aab7fde6400e3ce2a1c3ec243de28645f49ce27a55286ca8dff37e2"
+  }
+}

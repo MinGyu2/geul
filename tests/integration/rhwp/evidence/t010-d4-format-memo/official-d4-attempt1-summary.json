@@ -1,0 +1,306 @@
+{
+  "rawPath": ".git/t010-d4-format-memo-official-attempt1/result.json (local only)",
+  "rawSha256": "45b3213b54d5a49ace8b0124004abb65b22739aba6feb0261a402388d9185394",
+  "status": "FAIL",
+  "exitReason": "OFFICIAL_GATE_FAILURE",
+  "measurementComplete": true,
+  "engineIdentity": {
+    "wasmSha256": "97a575093aab7fde6400e3ce2a1c3ec243de28645f49ce27a55286ca8dff37e2",
+    "baseline": "1a76570e833917d15817415a53c09ad61ab3203f"
+  },
+  "environment": {
+    "platform": "Linux",
+    "webkitGTK": "2.54.1",
+    "debugAppSha256": "0fda84b2f91f686c26b235a48250e70892d4f16e9fd66d974f8c621a67c116cd",
+    "cpuAffinity": [
+      0,
+      1,
+      2,
+      3,
+      4,
+      5,
+      6,
+      7
+    ],
+    "loadAverageBefore": [
+      1.95703125,
+      1.75927734375,
+      1.50390625
+    ],
+    "softwareGLRequested": true,
+    "webkitDmabufDisabled": true,
+    "GDK_BACKEND": "x11",
+    "busyProbe": false,
+    "warmupGroups": 3,
+    "groupStartSamplesPerDocument": 30,
+    "probeBootstrapDocument": "basic-ko.hwpx in both arms",
+    "loadAverageAfter": [
+      1.96533203125,
+      1.78173828125,
+      1.5439453125
+    ]
+  },
+  "gates": [
+    {
+      "gate": "D4",
+      "item": ".hwp: group-start key→frame p95 ≤50ms",
+      "result": "PASS",
+      "detail": "{'n': 30, 'p50': 36, 'p95': 48, 'max': 48, 'timeouts': 0}"
+    },
+    {
+      "gate": "D4",
+      "item": ".hwp: Undo p95 ≤1500ms",
+      "result": "PASS",
+      "detail": "{'n': 25, 'p50': 45, 'p95': 53, 'max': 71, 'timeouts': 0}"
+    },
+    {
+      "gate": "D4",
+      "item": ".hwpx: group-start key→frame p95 ≤50ms",
+      "result": "PASS",
+      "detail": "{'n': 30, 'p50': 40, 'p95': 47, 'max': 49, 'timeouts': 0}"
+    },
+    {
+      "gate": "D4",
+      "item": ".hwpx: Undo p95 ≤1500ms",
+      "result": "PASS",
+      "detail": "{'n': 25, 'p50': 43, 'p95': 52, 'max': 71, 'timeouts': 0}"
+    },
+    {
+      "gate": "D4",
+      "item": ".hwp: group-start key→frame p95 ≤50ms",
+      "result": "FAIL",
+      "detail": "{'n': 30, 'p50': 56, 'p95': 104, 'max': 159, 'timeouts': 0}"
+    },
+    {
+      "gate": "D4",
+      "item": ".hwp: Undo p95 ≤1500ms",
+      "result": "PASS",
+      "detail": "{'n': 25, 'p50': 52, 'p95': 63, 'max': 64, 'timeouts': 0}"
+    },
+    {
+      "gate": "D4",
+      "item": ".hwpx: group-start key→frame p95 ≤50ms",
+      "result": "FAIL",
+      "detail": "{'n': 30, 'p50': 66, 'p95': 77, 'max': 80, 'timeouts': 0}"
+    },
+    {
+      "gate": "D4",
+      "item": ".hwpx: Undo p95 ≤1500ms",
+      "result": "PASS",
+      "detail": "{'n': 25, 'p50': 118, 'p95': 128, 'max': 136, 'timeouts': 0}"
+    }
+  ],
+  "cssIdentity": {
+    "src/styles/app.css": "88bf5d5b698921a06433fd06d9a0a49edaed46ed9e9c438de7203119915ab041"
+  },
+  "perDocument": [
+    {
+      "sample": "basic-ko.hwp",
+      "groupStart": {
+        "n": 30,
+        "p50": 36,
+        "p95": 48,
+        "max": 48,
+        "timeouts": 0
+      },
+      "extend": {
+        "n": 30,
+        "p50": 38,
+        "p95": 46,
+        "max": 47,
+        "timeouts": 0
+      },
+      "undo": {
+        "n": 25,
+        "p50": 45,
+        "p95": 53,
+        "max": 71,
+        "timeouts": 0
+      },
+      "redo": {
+        "n": 20,
+        "p50": 47,
+        "p95": 54,
+        "max": 56,
+        "timeouts": 0
+      },
+      "zeroWorkFrameFloorMs": {
+        "n": 30,
+        "p50": 40,
+        "p95": 48,
+        "max": 49,
+        "timeouts": 0
+      },
+      "frameGapDuringHistoryAndFollowingInputMs": {
+        "n": 308,
+        "p50": 16,
+        "p95": 25,
+        "max": 38,
+        "timeouts": 0
+      },
+      "groupStartInputHandlerMs": {
+        "n": 30,
+        "p50": 17,
+        "p95": 25,
+        "max": 26,
+        "timeouts": 0
+      }
+    },
+    {
+      "sample": "basic-ko.hwpx",
+      "groupStart": {
+        "n": 30,
+        "p50": 40,
+        "p95": 47,
+        "max": 49,
+        "timeouts": 0
+      },
+      "extend": {
+        "n": 30,
+        "p50": 36,
+        "p95": 45,
+        "max": 45,
+        "timeouts": 0
+      },
+      "undo": {
+        "n": 25,
+        "p50": 43,
+        "p95": 52,
+        "max": 71,
+        "timeouts": 0
+      },
+      "redo": {
+        "n": 20,
+        "p50": 45,
+        "p95": 51,
+        "max": 52,
+        "timeouts": 0
+      },
+      "zeroWorkFrameFloorMs": {
+        "n": 30,
+        "p50": 39,
+        "p95": 47,
+        "max": 48,
+        "timeouts": 0
+      },
+      "frameGapDuringHistoryAndFollowingInputMs": {
+        "n": 343,
+        "p50": 16,
+        "p95": 22,
+        "max": 37,
+        "timeouts": 0
+      },
+      "groupStartInputHandlerMs": {
+        "n": 30,
+        "p50": 17,
+        "p95": 21,
+        "max": 27,
+        "timeouts": 0
+      }
+    },
+    {
+      "sample": "연구노트(화학).hwp",
+      "groupStart": {
+        "n": 30,
+        "p50": 56,
+        "p95": 104,
+        "max": 159,
+        "timeouts": 0
+      },
+      "extend": {
+        "n": 30,
+        "p50": 54,
+        "p95": 65,
+        "max": 96,
+        "timeouts": 0
+      },
+      "undo": {
+        "n": 25,
+        "p50": 52,
+        "p95": 63,
+        "max": 64,
+        "timeouts": 0
+      },
+      "redo": {
+        "n": 20,
+        "p50": 50,
+        "p95": 58,
+        "max": 60,
+        "timeouts": 0
+      },
+      "zeroWorkFrameFloorMs": {
+        "n": 30,
+        "p50": 39,
+        "p95": 48,
+        "max": 48,
+        "timeouts": 0
+      },
+      "frameGapDuringHistoryAndFollowingInputMs": {
+        "n": 337,
+        "p50": 16,
+        "p95": 32,
+        "max": 48,
+        "timeouts": 0
+      },
+      "groupStartInputHandlerMs": {
+        "n": 30,
+        "p50": 23,
+        "p95": 69,
+        "max": 129,
+        "timeouts": 0
+      }
+    },
+    {
+      "sample": "3249937_asset_management_rules.hwpx",
+      "groupStart": {
+        "n": 30,
+        "p50": 66,
+        "p95": 77,
+        "max": 80,
+        "timeouts": 0
+      },
+      "extend": {
+        "n": 30,
+        "p50": 58,
+        "p95": 68,
+        "max": 77,
+        "timeouts": 0
+      },
+      "undo": {
+        "n": 25,
+        "p50": 118,
+        "p95": 128,
+        "max": 136,
+        "timeouts": 0
+      },
+      "redo": {
+        "n": 20,
+        "p50": 119,
+        "p95": 125,
+        "max": 131,
+        "timeouts": 0
+      },
+      "zeroWorkFrameFloorMs": {
+        "n": 30,
+        "p50": 39,
+        "p95": 45,
+        "max": 48,
+        "timeouts": 0
+      },
+      "frameGapDuringHistoryAndFollowingInputMs": {
+        "n": 311,
+        "p50": 16,
+        "p95": 82,
+        "max": 94,
+        "timeouts": 0
+      },
+      "groupStartInputHandlerMs": {
+        "n": 30,
+        "p50": 40,
+        "p95": 43,
+        "max": 48,
+        "timeouts": 0
+      }
+    }
+  ]
+}
