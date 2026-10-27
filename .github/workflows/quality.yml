@@ -112,3 +112,24 @@ jobs:
 
       - name: cargo test (문서 형식 판별·세션 T006, WordCraft 어댑터 T008)
         run: cargo test --locked
+
+  d4-analyzer:
+    name: D4 증거 분석기 무결성 검사
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - name: 저장소 체크아웃 (submodule 제외)
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          submodules: false
+          persist-credentials: false
+
+      # 표준 라이브러리와 합성 fixture만 사용. 비공개 raw가 없으면 역사 재분석 테스트만 skip.
+      - name: Python 분석기 및 runner 회귀 검사
+        run: python3 -m unittest discover -s tests/integration/rhwp/evidence/t010-d4-critical-path-remediation -p 'test_*.py'
+
+      - name: 최적화 모드에서도 무결성 검사 유지
+        run: python3 -O -m unittest discover -s tests/integration/rhwp/evidence/t010-d4-critical-path-remediation -p test_analysis.py
+
+      - name: 환경변수 최적화에서도 무결성 검사 유지
+        run: PYTHONOPTIMIZE=1 python3 -m unittest discover -s tests/integration/rhwp/evidence/t010-d4-critical-path-remediation -p test_analysis.py

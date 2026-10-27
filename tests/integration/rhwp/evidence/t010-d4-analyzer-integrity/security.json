@@ -1,0 +1,69 @@
+{
+  "phase": "precommit; standalone before staging, integrated runs during staged review; final staged/hook checks cover latest artifacts",
+  "checks": [
+    {
+      "name": "sensitive-all",
+      "command": [
+        "python3",
+        "scripts/check-sensitive-info.py",
+        "--all"
+      ],
+      "environment": {},
+      "exit": 0,
+      "outputTail": "민감정보 검사 통과 (추적 파일 1881개)\n"
+    },
+    {
+      "name": "sensitive-history",
+      "command": [
+        "python3",
+        "scripts/check-sensitive-info.py",
+        "--history"
+      ],
+      "environment": {},
+      "exit": 0,
+      "outputTail": "민감정보 검사 통과 (전체 Git 이력, 검사한 (파일 버전, 경로) 2756개)\n"
+    },
+    {
+      "name": "gitleaks-history",
+      "command": [
+        "<approved-cache>/gitleaks",
+        "git",
+        "--redact",
+        "--no-banner",
+        "."
+      ],
+      "environment": {},
+      "exit": 0,
+      "outputTail": "10:58AM INF 103 commits scanned.\n10:58AM INF scanned ~169072127 bytes (169.07 MB) in 17.5s\n10:58AM INF no leaks found\n"
+    },
+    {
+      "name": "integrated-default",
+      "command": [
+        "bash",
+        "scripts/security-scan-ci.sh",
+        "."
+      ],
+      "environment": {},
+      "exit": 1,
+      "outputTail": "::group::검사기 회귀 테스트\n[통과] 검사기 회귀 테스트\n::endgroup::\n::group::추적 파일 민감정보 검사\n민감정보 검사 통과 (추적 파일 1881개)\n[통과] 추적 파일 민감정보 검사\n::endgroup::\n::group::Git 이력 민감정보 검사\n민감정보 검사 통과 (전체 Git 이력, 검사한 (파일 버전, 경로) 2756개)\n[통과] Git 이력 민감정보 검사\n::endgroup::\n[실패] gitleaks 실행 파일을 찾을 수 없습니다: gitleaks\n보안 검사 실패: Gitleaks 설치\n......................................................................................\n----------------------------------------------------------------------\nRan 86 tests in 54.048s\n\nOK\n"
+    },
+    {
+      "name": "integrated-cached",
+      "command": [
+        "bash",
+        "scripts/security-scan-ci.sh",
+        "."
+      ],
+      "environment": {
+        "GITLEAKS": "<approved-cache>/gitleaks"
+      },
+      "exit": 0,
+      "outputTail": "::group::검사기 회귀 테스트\n[통과] 검사기 회귀 테스트\n::endgroup::\n::group::추적 파일 민감정보 검사\n민감정보 검사 통과 (추적 파일 1887개)\n[통과] 추적 파일 민감정보 검사\n::endgroup::\n::group::Git 이력 민감정보 검사\n민감정보 검사 통과 (전체 Git 이력, 검사한 (파일 버전, 경로) 2756개)\n[통과] Git 이력 민감정보 검사\n::endgroup::\nversion is set by build process\n::group::Gitleaks 전체 이력 검사\n[통과] Gitleaks 전체 이력 검사\n::endgroup::\n모든 보안 검사 통과\n......................................................................................\n----------------------------------------------------------------------\nRan 86 tests in 53.533s\n\nOK\n11:08AM INF 103 commits scanned.\n11:08AM INF scanned ~169072127 bytes (169.07 MB) in 20s\n11:08AM INF no leaks found\n"
+    }
+  ],
+  "finalStaged": {
+    "command": "python3 scripts/check-sensitive-info.py --staged",
+    "exit": 0,
+    "files": 11
+  }
+}

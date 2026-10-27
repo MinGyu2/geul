@@ -176,6 +176,8 @@ class MainFailureRecording(unittest.TestCase):
             stack.enter_context(patch.object(runner.identity, 'tree_digest', side_effect=tree))
             stack.enter_context(patch.object(runner.subprocess, 'check_output', side_effect=check_output))
             stack.enter_context(patch.object(runner.subprocess, 'run'))
+            # Native processes and digests are mocked; installed binaries are not prerequisites.
+            stack.enter_context(patch.object(runner.Path, 'is_file', return_value=True))
             stack.enter_context(patch.object(runner.subprocess, 'Popen', side_effect=[vite, native]))
             stack.enter_context(patch.object(runner.urllib.request, 'urlopen', return_value=response))
             stack.enter_context(patch.object(runner.threading, 'Thread', return_value=thread))

@@ -1,0 +1,51 @@
+{
+  "startingHead": "36e39ef7f92977198bcc1c8dc11567b46ebf3b31",
+  "falsePass": {
+    "producerStatus": "FAIL",
+    "baselineVerdict": "PASS"
+  },
+  "optimizationBypass": {
+    "count": {
+      "normal": {
+        "exit": 1,
+        "stdout": "",
+        "error": "AssertionError: ('basic-ko.hwp', 'afterUndo', 4)",
+        "outputCreated": false
+      },
+      "optimized": {
+        "exit": 0,
+        "stdout": "PASS",
+        "error": null,
+        "outputCreated": true
+      }
+    },
+    "percentile": {
+      "normal": {
+        "exit": 1,
+        "stdout": "",
+        "error": "AssertionError: ('basic-ko.hwp', 'groupStart', {'n': 30, 'min': 40, 'p50': 40, 'p95': 40, 'max': 40}, {'n': 30, 'p50': 40, 'p95': 1, 'max': 40, 'timeouts': 0})",
+        "outputCreated": false
+      },
+      "optimized": {
+        "exit": 0,
+        "stdout": "PASS",
+        "error": null,
+        "outputCreated": true
+      }
+    },
+    "timeout": {
+      "normal": {
+        "exit": 1,
+        "stdout": "",
+        "error": "AssertionError",
+        "outputCreated": false
+      },
+      "optimized": {
+        "exit": 0,
+        "stdout": "PASS",
+        "error": null,
+        "outputCreated": true
+      }
+    }
+  }
+}
