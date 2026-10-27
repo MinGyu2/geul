@@ -45,20 +45,21 @@ async function module() {
 }
 
 export function createOwnershipSession(Session, sessionId, backend, registry) {
-  let doc = null, generation = 0, active = null, timer = null, disposed = false;
+  let doc = null, generation = 0, documentId = 0, active = null, timer = null, disposed = false;
   // Optional observer never receives or retains actual canvas/document references.
   const canvasIds = new WeakMap(); let nextCanvas = 0, nextRequest = 0;
   const trace = (event, request, extra = {}) => {
-    const observer = globalThis.window?.__d4LifecycleTrace;
-    if (!observer) return;
+    let observer;
     try {
+      observer = globalThis.window?.__d4LifecycleTrace;
+      if (!observer) return;
       let canvas = null;
       if (request?.canvas) { canvas = canvasIds.get(request.canvas); if (!canvas) { canvas = ++nextCanvas; canvasIds.set(request.canvas, canvas); } }
-      observer.record({ event, at: performance.now(), session: sessionId, document: request?.generation ?? generation,
+      observer.record({ event, at: performance.now(), session: sessionId, document: request?.traceDocument ?? documentId,
         request: request?.traceRequest ?? null, input: request?.traceInput ?? null, canvas,
         page: request?.page, scale: request?.scale, generation: request?.generation ?? generation,
         version: request?.version ?? session.modelVersion, mode: request?.mode, ...extra });
-    } catch { /* diagnostics must not change renderer behavior */ }
+    } catch { try { observer.markFailure?.(); } catch { /* renderer must continue */ } }
   };
   const queue = new Map(), canvases = new Map(), failed = new Map(), painted = new Map(), listeners = new Set();
   const unsubscribe = () => subscribers.delete(pump);
@@ -78,7 +79,7 @@ export function createOwnershipSession(Session, sessionId, backend, registry) {
       if (doc) return new engine.HwpDocument(bytes);
       cancel(); generation++;
       if (disposed || subscribers.size >= MAX_SESSIONS) throw new Error('RESOURCE_LIMIT: PoC sessions');
-      doc = new engine.HwpDocument(bytes);
+      doc = new engine.HwpDocument(bytes); documentId++;
       // Snapshot restoration can change table paint structure/edge coverage beyond
       // the small serialized band. Discard the damage basis and use atomic full
       // replay after Undo/Redo; never accept a tolerant pixel match as exact.
@@ -86,8 +87,11 @@ export function createOwnershipSession(Session, sessionId, backend, registry) {
       if (restore) doc.restoreSnapshot = (...args) => { cancel(); return restore(...args); };
       const opened = doc, free = doc.free.bind(doc);
       doc.free = () => {
-        if (doc === opened) { cancel(); trace('release', null, {reason:'document-free'}); generation++; unsubscribe(); sessions.delete(handle); doc = null; }
-        free();
+        trace('release-requested', null, {reason:'document-free'});
+        try {
+          if (doc === opened) { cancel(); generation++; unsubscribe(); sessions.delete(handle); doc = null; }
+          free(); trace('release-completed', null, {reason:'document-free'});
+        } catch (error) { trace('release-failed', null, {reason:'document-free'}); throw error; }
       };
       subscribers.add(pump); sessions.add(handle);
       return doc;
@@ -118,6 +122,7 @@ export function createOwnershipSession(Session, sessionId, backend, registry) {
       const request = requests[0];
       if (!request) return;
       queue.delete(request.canvas);
+      let startAttempted = false;
       try {
         const previous = painted.get(request.canvas), size = session.pages?.[request.page];
         // Existing product summaries describe actual paint input; never guess from caret bounds.
@@ -134,18 +139,19 @@ export function createOwnershipSession(Session, sessionId, backend, registry) {
             painted.delete(request.canvas);
             painted.set(request.canvas, {...request, summary:bounded, summaryUnits:bounded ? summaryUnits : 0, width:request.canvas.width, height:request.canvas.height});
             trimSummaries();
-            trace('reuse-complete', request, {reason:'unchanged-summary'});
+            trace('reuse-complete', request, {reason:'unchanged-summary', relatedRequest:previous.traceRequest});
             counters.unchangedFrames++; queueMicrotask(() => { if (!disposed) for (const listener of listeners) listener(); }); wake(); return;
           }
           // Actual native integer and fractional regional replay differed from Full.
           // Only identical paint input can be skipped; every changed page uses Full.
         }
+        startAttempted = true;
         const id = doc.beginRenderJob(request.page, request.canvas, request.scale);
         trace('job-start', request, {job:id});
         counters.fullJobs++;
         active = { ...request, summary:bounded, summaryUnits:bounded ? summaryUnits : 0, id, polls: 0 };
       }
-      catch (error) { failed.set(request.canvas, request); counters.limits++; wake(); return; }
+      catch (error) { trace(startAttempted ? 'job-start-failed' : 'prepare-failed', request); failed.set(request.canvas, request); counters.limits++; wake(); return; }
     }
     const request = active;
     let state;
@@ -188,10 +194,10 @@ export function createOwnershipSession(Session, sessionId, backend, registry) {
   session.renderPage = (page, canvas, scale) => {
     if (disposed || !doc || !canvas.isConnected || !session.prepareRendering(scale)) return false;
     const request = { page, canvas, scale, generation, version: session.modelVersion, mode: typeof __T010_DAMAGE__ !== 'undefined' && __T010_DAMAGE__ ? 'damage' : 'full',
-      traceRequest: ++nextRequest, traceInput: globalThis.window?.__d4LifecycleInput ?? null };
+      traceDocument: documentId, traceRequest: ++nextRequest, traceInput: globalThis.window?.__d4LifecycleInput ?? null };
     trace('request', request, {reason:'renderPage'});
     const complete = painted.get(canvas);
-    if (sameRequest(complete, request) && complete.width === canvas.width && complete.height === canvas.height) { trace('reuse-complete', request); return true; }
+    if (sameRequest(complete, request) && complete.width === canvas.width && complete.height === canvas.height) { trace('reuse-complete', request, {relatedRequest:complete.traceRequest}); return true; }
     if (sameRequest(active, request) || sameRequest(queue.get(canvas), request)) { const matched = sameRequest(active, request) ? active : queue.get(canvas); trace('reuse-pending', request, {job:matched.id ?? null, relatedRequest:matched.traceRequest}); counters.reused++; return false; }
     if (active && active.version !== session.modelVersion) cancel(true);
     const previous = failed.get(canvas);
@@ -228,12 +234,14 @@ export function createOwnershipSession(Session, sessionId, backend, registry) {
     finally { globalThis.window?.__rhwpProbe?.record?.('adapterRenderRequest', at); }
   };
   session.releaseRendering = () => {
-    cancel(); trace('release', null, {reason:'releaseRendering'});
-    for (const canvas of canvases.keys()) { canvas.width = 0; canvas.height = 0; }
-    canvases.clear(); originalRelease();
+    trace('release-requested', null, {reason:'releaseRendering'});
+    try {
+      cancel(); for (const canvas of canvases.keys()) { canvas.width = 0; canvas.height = 0; }
+      canvases.clear(); originalRelease(); trace('release-completed', null, {reason:'releaseRendering'});
+    } catch (error) { trace('release-failed', null, {reason:'releaseRendering'}); throw error; }
   };
-  const handle = { cancel, repeat: count => { for(let n=0;n<Math.min(count,100);n++) for(const request of canvases.values()) session.renderPage(request.page,request.canvas,request.scale); }, repaint: () => { for(const [canvas, request] of canvases) { if(canvas.isConnected) { painted.delete(canvas); const next = {...request,generation,version:session.modelVersion,traceRequest:++nextRequest,traceInput:null}; const displaced=queue.get(canvas); if(displaced)trace('stale-drop',displaced,{reason:'explicit-repaint'}); queue.set(canvas,next); trace('queue',next,{reason:'explicit-repaint'}); } } }, stats: () => ({ sessionId, generation, queued: queue.size, active: active ? 1 : 0, activeJobId: active?.id ?? null,
+  const handle = { cancel, repeat: count => { for(let n=0;n<Math.min(count,100);n++) for(const request of canvases.values()) session.renderPage(request.page,request.canvas,request.scale); }, repaint: () => { for(const [canvas, request] of canvases) { if(canvas.isConnected) { painted.delete(canvas); const next = {...request,generation,version:session.modelVersion,traceDocument:documentId,traceRequest:++nextRequest,traceInput:null}; trace('request',next,{reason:'explicit-repaint',relatedRequest:request.traceRequest}); const displaced=queue.get(canvas); if(displaced)trace('stale-drop',displaced,{reason:'explicit-repaint'}); queue.set(canvas,next); trace('queue',next,{reason:'explicit-repaint'}); } } }, stats: () => ({ sessionId, generation, queued: queue.size, active: active ? 1 : 0, activeJobId: active?.id ?? null,
     canvases: canvases.size, summaries: [...painted.values()].filter(r=>r.summary).length, maxSummaries:MAX_SUMMARIES, summaryCodeUnits:[...painted.values()].reduce((sum,r)=>sum+(r.summary ? r.summaryUnits : 0),0), maxSummaryTotalCodeUnits:MAX_SUMMARY_TOTAL_UNITS, maxSummaryBytes:MAX_SUMMARY_UNITS /* legacy diagnostic name: serialized UTF-16 code units */, failures: failed.size, modelVersion: session.modelVersion }) };
-  session.dispose = () => { if (disposed) return; cancel(); trace('release', null, {reason:'dispose'}); unsubscribe(); disposed = true; sessions.delete(handle); originalDispose(); };
+  session.dispose = () => { if (disposed) return; trace('release-requested', null, {reason:'dispose'}); try { cancel(); unsubscribe(); disposed = true; sessions.delete(handle); originalDispose(); trace('release-completed', null, {reason:'dispose'}); } catch (error) { trace('release-failed', null, {reason:'dispose'}); throw error; } };
   return session;
 }

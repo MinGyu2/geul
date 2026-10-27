@@ -19,7 +19,7 @@ async function setup() {
   pollRenderJob(){if(this.state==='COMPLETE'){this.canvas.width=1;this.canvas.height=1;}return this.state;}
   getSourceFormat(){return this.sourceFormat??'hwpx';}
   restoreSnapshot(){}
-  free(){}
+  free(){if(this.failFree)throw new Error('free fault');}
  }
  globalThis.__testLoad=async()=>({HwpDocument:Doc});
  class Session {
@@ -28,8 +28,8 @@ async function setup() {
   paintedSummary(){return {structure:'s',leaves:[{ops:[String(this.modelVersion)],boxes:[{x:0,y:100,width:50,height:12}]}]};}
   get pages(){return [{width:600,height:800}];}
   subscribe(){return ()=>{};}
-  releaseRendering(){}
-  dispose(){this.doc?.free();}
+  releaseRendering(){if(this.failRelease)throw new Error('release fault');}
+  dispose(){if(this.failDispose)throw new Error('dispose fault');this.doc?.free();}
  }
  let source=readFileSync(new URL('./session.mjs',import.meta.url),'utf8');
  source=source.replace(/^import .*;\n/gm,'');
@@ -104,3 +104,112 @@ const cases={
  'terminal-no-restart':async x=>{x.doc.state='COMPLETE';x.session.renderPage(0,x.canvas,1);x.flush();for(let i=0;i<20;i++)assert.equal(x.session.renderPage(0,x.canvas,1),true);assert.equal(x.doc.starts,1);}
 };
 for(const [name,body] of Object.entries(cases))test(name,async()=>{const x=await setup();try{await body(x);results.push({name,status:'PASS'});}catch(e){results.push({name,status:'FAIL',error:e.message});throw e;}finally{x.session.dispose();if(process.env.SESSION_RESULT)writeFileSync(process.env.SESSION_RESULT,JSON.stringify({implementation:'session.mjs factory; only module loader replaced with deterministic fake engine',sourceSha256:createHash('sha256').update(readFileSync(new URL('./session.mjs',import.meta.url))).digest('hex'),testSha256:createHash('sha256').update(readFileSync(new URL('./test-session.mjs',import.meta.url))).digest('hex'),tests:results},null,2)+'\n');}});
+
+const sample = (event, extras={}) => ({event, at:1, session:1, document:1, request:1, input:null, page:0, canvas:1, scale:1, generation:1, version:1, mode:'full', ...extras});
+test('lifecycle validity is separate from capture integrity', () => {
+ const empty=createLifecycleTrace();assert.equal(empty.snapshot().lifecycleValid,'INCOMPLETE');assert.equal(empty.snapshot().complete,true);
+ for (const row of [{}, {event:'request'}, sample('unknown'), sample('request',{request:null})]) {
+  const c=createLifecycleTrace();assert.throws(()=>c.record(row));assert.equal(c.snapshot().captureComplete,false);
+ }
+ for(const rows of [[sample('job-start',{job:1})],[sample('poll',{job:1})],[sample('complete',{job:1})]]) {
+  const c=createLifecycleTrace();rows.forEach(r=>c.record(r));assert.equal(c.snapshot().lifecycleValid,'INCOMPLETE');
+ }
+ const c=createLifecycleTrace();[sample('request'),sample('queue'),sample('job-start',{job:3}),sample('poll',{job:3,state:'PENDING'})].forEach(r=>c.record(r));
+ assert.equal(c.snapshot().lifecycleValid,'VALID');assert.equal(c.snapshot({terminal:true}).lifecycleValid,'INCOMPLETE');
+ c.record(sample('cancel',{job:3,reason:'stale'}));assert.equal(c.snapshot({terminal:true}).lifecycleValid,'VALID');
+ c.record(sample('complete',{job:3}));assert.notEqual(c.snapshot({terminal:true}).lifecycleValid,'VALID');
+ assert.deepEqual(c.snapshot(),c.snapshot());assert.equal(c.snapshot().causalityComplete,false);
+});
+test('queue displacement and reuse have explicit source', () => {
+ const c=createLifecycleTrace();
+ [sample('request'),sample('queue'),sample('request',{request:2}),sample('reuse-pending',{request:2,relatedRequest:1}),sample('stale-drop',{reason:'replacement'})].forEach(r=>c.record(r));
+ assert.equal(c.snapshot({terminal:true}).lifecycleValid,'VALID');
+});
+test('bounded strings and aggregate use UTF-16 code units', () => {
+ const c=createLifecycleTrace(20,{total:300});
+ c.record({event:'input',at:1,input:1,reason:'한'.repeat(128)});
+ c.record({event:'input',at:2,input:2,reason:'😀'.repeat(64)});
+ assert.equal(c.snapshot().captureComplete,false);assert.ok(c.snapshot().dropped>0);
+ const d=createLifecycleTrace();assert.throws(()=>d.record({event:'input',at:1,input:1,reason:'😀'.repeat(65)}));
+ assert.equal(d.snapshot().invalid,1);assert.equal(d.snapshot().records.length,0);
+});
+test('adapter input event connects synchronous request only', async () => {
+ const x=await setup();let listener;window.document={addEventListener(_n,fn){listener=fn;},removeEventListener(){}};
+ const capture=installLifecycleTrace(window);listener({target:{classList:{contains:()=>true}}});
+ x.session.renderPage(0,x.canvas,1);x.flush();await Promise.resolve();x.session.renderPage(0,x.canvas,1);
+ const rows=capture.snapshot().records, requests=rows.filter(r=>r.event==='request');
+ assert.equal(requests[0].input,1);assert.equal(requests[1].input,null);
+ assert.equal(rows.find(r=>r.event==='job-start').request,requests[0].request);
+ x.session.dispose();capture.stop();
+});
+test('release and repaint identities match observed outcome', async () => {
+ const x=await setup();const c=createLifecycleTrace();window.__d4LifecycleTrace=c;x.doc.state='COMPLETE';
+ x.session.renderPage(0,x.canvas,1);x.flush();x.session.renderPage(0,x.canvas,1);x.handle.repaint();x.flush();
+ const rows=c.snapshot().records, complete=rows.find(r=>r.event==='complete'), reuse=rows.find(r=>r.event==='reuse-complete');
+ assert.equal(reuse.relatedRequest,complete.request);assert.ok(rows.some(r=>r.event==='request' && r.reason==='explicit-repaint' && r.relatedRequest===complete.request));
+ x.session.dispose();const events=c.snapshot().records.filter(r=>r.event.startsWith('release-'));
+ assert.ok(events.some(r=>r.event==='release-requested' && r.reason==='dispose'));
+ assert.ok(events.some(r=>r.event==='release-completed' && r.reason==='dispose'));
+});
+
+test('release failure is not reported as success', async () => {
+ for (const kind of ['document-free','releaseRendering','dispose']) {
+  const x=await setup(), trace=createLifecycleTrace();window.__d4LifecycleTrace=trace;
+  if(kind==='document-free')x.doc.failFree=true;
+  if(kind==='releaseRendering')x.session.failRelease=true;
+  if(kind==='dispose')x.session.failDispose=true;
+  const run=()=>kind==='document-free'?x.doc.free():kind==='releaseRendering'?x.session.releaseRendering():x.session.dispose();
+  assert.throws(run,/fault/);
+  const rows=trace.snapshot().records.filter(r=>r.reason===kind);
+  assert.deepEqual(rows.map(r=>r.event),['release-requested','release-failed']);
+  x.doc.failFree=false;x.session.failDispose=false;x.session.failRelease=false;x.session.dispose();
+ }
+});
+test('diagnostic failure preserves scheduler behavior and invalidates capture', async () => {
+ async function run(fail) {
+  const x=await setup(), collector=createLifecycleTrace();
+  if(fail){const record=collector.record;collector.record=()=>{throw Error('observer fault');};collector.originalRecord=record;window.__d4LifecycleTrace=collector;}
+  x.session.renderPage(0,x.canvas,1);x.flush();x.session.renderPage(0,x.canvas,1);x.doc.state='COMPLETE';x.notify();
+  const result=[x.doc.starts,x.doc.cancels,x.session.renderPage(0,x.canvas,1),x.canvas.width,x.canvas.height];
+  x.session.dispose();if(fail)assert.equal(collector.snapshot().captureComplete,false);return result;
+ }
+ assert.deepEqual(await run(false),await run(true));
+});
+test('job-start failure is recorded without invented job', async () => {
+ const x=await setup(),c=createLifecycleTrace();window.__d4LifecycleTrace=c;x.doc.beginRenderJob=()=>{throw Error('start fault');};
+ x.session.renderPage(0,x.canvas,1);x.flush();const event=c.snapshot().records.find(r=>r.event==='job-start-failed');
+ assert.ok(event);assert.equal(event.job,undefined);assert.equal(c.snapshot({terminal:true}).lifecycleValid,'VALID');x.session.dispose();
+});
+test('active cancellation and document replacement keep release boundaries distinct', async () => {
+ const x=await setup(), c=createLifecycleTrace();window.__d4LifecycleTrace=c;
+ x.session.renderPage(0,x.canvas,1);x.flush();x.doc.free();x.session.doc=x.loader.openDocument(new Uint8Array());
+ x.session.renderPage(0,x.canvas,1);x.flush();
+ const rows=c.snapshot().records, starts=rows.filter(r=>r.event==='job-start');
+ assert.equal(starts.length,2);assert.notEqual(starts[0].document,starts[1].document);
+ const cancel=rows.findIndex(r=>r.event==='cancel' && r.job===starts[0].job);
+ const release=rows.findIndex(r=>r.event==='release-completed' && r.reason==='document-free');
+ assert.ok(cancel>=0 && cancel<release);x.session.dispose();
+});
+test('repeated release reports each actual call', async () => {
+ const x=await setup(),c=createLifecycleTrace();window.__d4LifecycleTrace=c;
+ x.session.releaseRendering();x.session.releaseRendering();
+ assert.deepEqual(c.snapshot().records.filter(r=>r.reason==='releaseRendering').map(r=>r.event),
+ ['release-requested','release-completed','release-requested','release-completed']);x.session.dispose();
+});
+test('contradictory request identity and completion after cancel are invalid', () => {
+ for (const tail of [[sample('poll',{job:1,page:2})], [sample('cancel',{job:1}),sample('complete',{job:1})]]) {
+  const c=createLifecycleTrace();[sample('request'),sample('queue'),sample('job-start',{job:1}),...tail].forEach(r=>c.record(r));
+  assert.equal(c.snapshot().lifecycleValid,'INVALID');
+ }
+});
+test('completion without observed poll is incomplete', () => {
+ const c=createLifecycleTrace();[sample('request'),sample('queue'),sample('job-start',{job:1}),sample('complete',{job:1})].forEach(r=>c.record(r));
+ assert.equal(c.snapshot({terminal:true}).lifecycleValid,'INCOMPLETE');
+});
+
+test('preparation failure is not misreported as job-start failure', async () => {
+ const x=await setup(), c=createLifecycleTrace();window.__d4LifecycleTrace=c;globalThis.__T010_DAMAGE__=true;
+ x.session.paintedSummary=()=>{throw Error('preparation fault');};x.session.renderPage(0,x.canvas,1);x.flush();
+ assert.ok(c.snapshot().records.some(r=>r.event==='prepare-failed'));
+ assert.ok(!c.snapshot().records.some(r=>r.event==='job-start-failed'));assert.equal(x.doc.starts,0);x.session.dispose();
+});

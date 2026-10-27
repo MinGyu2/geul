@@ -46,6 +46,9 @@ jobs:
       - name: Vitest
         run: npm test
 
+      - name: RHWP 테스트 전용 렌더 스케줄러 및 lifecycle 추적 회귀 검사
+        run: node --test tests/integration/rhwp/ownership-poc/test-session.mjs
+
       - name: 프런트엔드 빌드
         run: npm run build
 
