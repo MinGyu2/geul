@@ -114,4 +114,122 @@ r={"failures":[]};m.stop_owned(P(),"vite",r);ok=m.finalize(r,True);sys.exit(0 if
         with self.assertRaises(ValueError):m.verify_observation(before,after,timed,0,1,1,1,10,13)
         with self.assertRaises(ValueError):m.verify_observation(before,after,{'kind':'undo','at':timed['at']},0,1,1,1,10,12)
 
+class CorrectionTests(unittest.TestCase):
+    def setUp(self):
+        self.before={'document':'1','localRevision':1,'revision':1,'modelVersion':1}
+        self.after={'document':'1','localRevision':2,'revision':2,'modelVersion':2}
+        self.comparison={'verified':True,'pixels':0,'width':828,'height':1170}
+        self.attached={'page':0,'connected':True,'width':828,'height':1170}
+        self.completed=[{'event':'complete','state':'COMPLETE','page':0,'version':2,'job':3}]
+
+    def test_cleanup_evidence_fail_closed(self):
+        for cleanup in ({},{'vite':{'ok':True}},{'xvfb':{'ok':True}},
+                        {'vite':{'ok':False},'xvfb':{'ok':True}}, {'vite':{'ok':True},'xvfb':{'ok':False}},
+                        {'vite':{'ok':True,'returncode':None},'xvfb':{'ok':True}}, {'vite':{'ok':True,'survivors':[7]},'xvfb':{'ok':True}}):
+            with self.subTest(cleanup=cleanup):
+                r={'failures':[],'cleanup':cleanup};self.assertFalse(m.finalize(r,True));self.assertEqual(r['executionStatus'],'FAIL')
+        r={'failures':[],'cleanup':{'vite':{'ok':True},'xvfb':{'ok':True}}}
+        self.assertTrue(m.finalize(r,True));self.assertIn('not independently tracked',r['cleanupScope'])
+        for td in ({'complete':False},{'complete':True,'driverKilled':False,'sessionDeletes':[{'outcome':'error'}]},
+                   {'complete':True,'driverKilled':False,'sessionDeletes':[{'outcome':'ok'}],'remainingAfterWait':[1]}):
+            r['teardown']=td;self.assertFalse(m.finalize(r,True))
+
+    def test_oracle_fail_closed(self):
+        def assess(comp=None, attached=None, version=2, stable=True, jobs=None):
+            return m.assess_oracle(True,self.comparison if comp is None else comp,self.attached if attached is None else attached,2,version,stable,self.completed if jobs is None else jobs)
+        self.assertEqual(assess()['status'],'PASS')
+        for bad in ({'verified':True,'pixels':8,'width':828,'height':1170}, {'verified':False,'pixels':0,'width':828,'height':1170},
+                    {'verified':True,'width':828,'height':1170}, {'verified':True,'pixels':None,'width':828,'height':1170},
+                    {'verified':True,'pixels':False,'width':828,'height':1170}, {'verified':True,'pixels':-1,'width':828,'height':1170},
+                    {'verified':True,'pixels':0,'width':0,'height':1170}, []):
+            with self.subTest(bad=bad): self.assertEqual(assess(comp=bad)['status'],'FAIL')
+        for kwargs in ({'stable':False},{'version':3},{'jobs':[]},{'jobs':[{'event':'complete','state':'COMPLETE','page':1,'version':2,'job':3}]},{'attached':{'page':1,'connected':True,'width':828,'height':1170}}):
+            self.assertEqual(assess(**kwargs)['status'],'FAIL')
+        self.assertEqual(m.assess_oracle(False,None,None,None,None,None,None)['status'],'NOT RUN')
+        self.assertEqual(m.assess_oracle(True,None,self.attached,2,2,True,self.completed)['status'],'FAIL')
+        r={'failures':[],'cleanup':{'vite':{'ok':True},'xvfb':{'ok':True}},'oracleEnabled':True,'oracleAssessment':{'status':'FAIL'}}
+        self.assertFalse(m.finalize(r,True));self.assertEqual(r['status'],'FAIL')
+        del r['oracleAssessment'];self.assertFalse(m.finalize(r,True))
+        r.update(oracleAssessment={'status':'PASS','errors':[]},fixtureExpectedSha256=m.EXPECTED_FIXTURE,fixtureSha256=m.EXPECTED_FIXTURE,fixtureUnchanged=True,
+                 candidate={'wasmSha256':'0cb73f70cd98dbef89718534e1bc283f1cb4c200af200703d40b137be1cde956'},revisionObservation={'after':{'modelVersion':2}},
+                 visibleFrame={'comparison':dict(self.comparison),'attached':self.attached,'modelVersion':2,'revisionStable':True,'completedJobs':self.completed})
+        self.assertTrue(m.finalize(r,True));r['visibleFrame']['comparison']['pixels']=8
+        self.assertFalse(m.finalize(r,True));self.assertEqual(r['status'],'FAIL')
+
+    def test_input_timeline_order_and_rounding(self):
+        def run(offset, observed, key=10, input_time=None):
+            stage={'kind':'type','at':{'key':0,'input':offset,'observed':observed,'raf1':observed+1,'end':observed+2}}
+            return m.verify_observation(self.before,self.after,stage,0,1,1,1,key,input_time if input_time is not None else key+offset)
+        self.assertTrue(run(2,3));self.assertTrue(run(-1,0));self.assertTrue(run(1.05,1))
+        for offset,observed in ((10,5),(10,2),(float('nan'),1),(float('inf'),1)):
+            with self.assertRaises(ValueError):run(offset,observed)
+        with self.assertRaises(ValueError):run(2,3,input_time=12.2)
+        stage={'kind':'type','at':{'key':0,'observed':1,'raf1':2,'end':3}}
+        with self.assertRaises(ValueError):m.verify_observation(self.before,self.after,stage,0,1,1,1,10,11)
+        with self.assertRaises(ValueError):m.verify_observation(self.before,self.after,stage,1,1,1,1)
+
+    def test_atomic_persist_and_serialization_failures(self):
+        with tempfile.TemporaryDirectory() as folder:
+            target=Path(folder)/'result.json';r={'text':'한😀','failures':[]}
+            self.assertTrue(m.persist_result(r,target));self.assertEqual(json.loads(target.read_text()),r)
+            previous=target.read_bytes()
+            with mock.patch('sys.stderr'):self.assertFalse(m.persist_result({'failures':[]},target))
+            self.assertEqual(target.read_bytes(),previous)
+            for value in (object(),float('nan'),float('inf')):
+                path=Path(folder)/('bad'+str(len(list(Path(folder).iterdir()))));result={'bad':value,'failures':[]}
+                with mock.patch('sys.stderr'):self.assertFalse(m.persist_result(result,path))
+                self.assertFalse(path.exists())
+
+    def test_atomic_storage_faults(self):
+        for method in ('mkstemp','fsync','link'):
+            with self.subTest(method=method), tempfile.TemporaryDirectory() as folder:
+                path=Path(folder)/'result.json';result={'failures':[]}
+                target=m.tempfile if method=='mkstemp' else m.os
+                with mock.patch.object(target,method,side_effect=OSError('injected')), mock.patch('sys.stderr'):
+                    self.assertFalse(m.persist_result(result,path))
+                self.assertFalse(path.exists());self.assertEqual(result['evidenceStatus'],'FAIL')
+                pending=list(Path(folder).glob('*.pending'))
+                self.assertEqual(len(pending),1 if method=='link' else 0)
+                if pending:self.assertEqual(json.loads(pending[0].read_text())['evidenceStatus'],'PASS')
+
+    def test_atomic_partial_write_and_flush_failure(self):
+        for method in ('write','short','flush'):
+            with self.subTest(method=method), tempfile.TemporaryDirectory() as folder:
+                path=Path(folder)/'result.json';result={'failures':[]};real_fdopen=m.os.fdopen
+                unrelated=Path(folder)/'other.pending';unrelated.write_text('keep')
+                class Broken:
+                    def __init__(self, fd, mode): self.real=real_fdopen(fd,mode)
+                    def __enter__(self): return self
+                    def __exit__(self,*args): self.real.close()
+                    def write(self,data):
+                        if method=='write': self.real.write(data[:4]); raise OSError('partial write')
+                        if method=='short': return self.real.write(data[:4])
+                        return self.real.write(data)
+                    def flush(self):
+                        if method=='flush': raise OSError('flush fault')
+                        return self.real.flush()
+                    def fileno(self): return self.real.fileno()
+                with mock.patch.object(m.os,'fdopen',side_effect=Broken), mock.patch('sys.stderr'):
+                    self.assertFalse(m.persist_result(result,path))
+                self.assertFalse(path.exists());self.assertEqual(unrelated.read_text(),'keep')
+                self.assertEqual(list(Path(folder).glob('*.pending')),[unrelated])
+
+    def test_exclusive_staging_collision_preserves_other_file(self):
+        with tempfile.TemporaryDirectory() as folder:
+            path=Path(folder)/'result.json'; other=Path(folder)/'.result.json.other.pending';other.write_text('unrelated')
+            with mock.patch.object(m.tempfile,'mkstemp',side_effect=FileExistsError('collision')), mock.patch('sys.stderr'):
+                self.assertFalse(m.persist_result({'failures':[]},path))
+            self.assertFalse(path.exists());self.assertEqual(other.read_text(),'unrelated')
+
+    def test_serialization_exception_does_not_create_final(self):
+        with tempfile.TemporaryDirectory() as folder:
+            path=Path(folder)/'result.json'
+            with mock.patch.object(m.json,'dumps',side_effect=RuntimeError('serialization fault')), mock.patch('sys.stderr'):
+                self.assertFalse(m.persist_result({'failures':[]},path))
+            self.assertFalse(path.exists());self.assertEqual(list(Path(folder).iterdir()),[])
+
+    def test_typing_is_stdlib(self):
+        import typing
+        self.assertNotEqual(Path(typing.__file__).resolve(),Path(__file__).with_name('typing.py').resolve())
+
 if __name__ == '__main__': unittest.main()

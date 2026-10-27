@@ -2,6 +2,8 @@
 import hashlib
 import json
 import math
+import os
+import tempfile
 import subprocess
 import sys
 from pathlib import Path
@@ -90,6 +92,10 @@ def verify_observation(before, after, stage, before_count, after_count, key_coun
     times = [at.get(k) for k in ('key', 'observed', 'raf1', 'end')]
     if any(type(x) not in (int,float) or not math.isfinite(x) for x in times) or times[0] != 0 or times != sorted(times):
         raise ValueError('invalid RAF timeline')
+    if 'input' in at or key_time is not None or input_time is not None:
+        input_offset = at.get('input')
+        if type(input_offset) not in (int,float) or not math.isfinite(input_offset) or input_offset > at['observed'] + 0.1:
+            raise ValueError('input occurs after revision observation or is invalid')
     if key_time is not None or input_time is not None:
         input_offset = at.get('input')
         if any(type(x) not in (int, float) or not math.isfinite(x) for x in (key_time, input_time, input_offset)) or abs((input_time-key_time)-input_offset)>0.1:
@@ -98,30 +104,95 @@ def verify_observation(before, after, stage, before_count, after_count, key_coun
 
 
 def finalize(result, observations_complete):
-    ok = observations_complete and not result.get('failures')
+    cleanup = result.get('cleanup', {})
+    if not isinstance(cleanup, dict): cleanup = {}
+    required = all(isinstance(cleanup.get(name), dict) and cleanup[name].get('ok') is True
+                   and ('returncode' not in cleanup[name] or type(cleanup[name]['returncode']) is int)
+                   and not cleanup[name].get('survivors') for name in ('vite', 'xvfb'))
+    teardown = result.get('teardown', {})
+    teardown_ok = isinstance(teardown, dict)
+    if 'teardown' in result and teardown_ok:
+        deletions = teardown.get('sessionDeletes')
+        teardown_ok = (teardown.get('complete') is True and teardown.get('driverKilled') is False
+                       and isinstance(deletions, list) and bool(deletions)
+                       and all(isinstance(row, dict) and row.get('outcome') == 'ok' for row in deletions)
+                       and teardown.get('remainingAfterWait') == [] and teardown.get('survivorsAfterSigterm') == []
+                       and teardown.get('sigtermErrors') == [])
+    assessment = result.get('oracleAssessment')
+    oracle_ok = result.get('oracleEnabled') is not True
+    if oracle_ok: result['oracleAssessment'] = {'status':'NOT RUN', 'errors':[]}
+    if result.get('oracleEnabled') is True:
+        frame = result.get('visibleFrame'); revision = result.get('revisionObservation')
+        if isinstance(frame, dict) and isinstance(revision, dict) and isinstance(revision.get('after'), dict):
+            checked = assess_oracle(True, frame.get('comparison'), frame.get('attached'), revision['after'].get('modelVersion'), frame.get('modelVersion'), frame.get('revisionStable'), frame.get('completedJobs'))
+            candidate = result.get('candidate')
+            oracle_ok = (isinstance(assessment, dict) and assessment.get('status') == 'PASS' and assessment.get('errors') == []
+                         and checked['status'] == 'PASS' and result.get('fixtureExpectedSha256') == EXPECTED_FIXTURE
+                         and result.get('fixtureSha256') == EXPECTED_FIXTURE and result.get('fixtureUnchanged') is True
+                         and isinstance(candidate, dict) and candidate.get('wasmSha256') == '0cb73f70cd98dbef89718534e1bc283f1cb4c200af200703d40b137be1cde956')
+    ok = bool(observations_complete and not result.get('failures') and required and teardown_ok and oracle_ok)
     result['status'] = 'PARTIAL' if ok else 'FAIL'
     result['executionStatus'] = 'PASS' if ok else 'FAIL'
     result['readinessVerdict'] = 'INCONCLUSIVE'
-    cleanup = result.get('cleanup', {})
     result['cleanupScope'] = 'direct Vite/Xvfb plus tauri-smoke XDG-owned processes; Vite descendants not independently tracked'
-    result['cleanupStatus'] = ('FAIL' if any(not item['ok'] for item in cleanup.values()) else
-                               'PASS' if all(name in cleanup for name in ('vite', 'xvfb')) and observations_complete and not result.get('failures') else 'UNKNOWN')
+    result['cleanupStatus'] = ('FAIL' if any(not isinstance(item, dict) or item.get('ok') is not True or ('returncode' in item and type(item['returncode']) is not int) or bool(item.get('survivors')) for item in cleanup.values()) or not teardown_ok else
+                               'PASS' if required else 'UNKNOWN')
     return ok
 
 
+def assess_oracle(enabled, comparison, attached, intended_version, current_version, revision_stable, completed, page=0):
+    """Evaluate actual comparison and observed target; never infer equality from verified alone."""
+    if not enabled:
+        return {'status': 'NOT RUN', 'errors': []}
+    errors = []
+    if not isinstance(comparison, dict): comparison = {}; errors.append('invalid comparison')
+    if comparison.get('verified') is not True: errors.append('comparison not verified')
+    if type(comparison.get('pixels')) is not int or comparison.get('pixels') != 0: errors.append('pixel mismatch or invalid count')
+    if not isinstance(attached, dict) or type(attached.get('page')) is not int or attached.get('page') != page or attached.get('connected') is not True:
+        errors.append('invalid attached page')
+    for dimension in ('width', 'height'):
+        value = comparison.get(dimension)
+        if type(value) is not int or value <= 0 or not isinstance(attached, dict) or type(attached.get(dimension)) is not int or value != attached[dimension]:
+            errors.append('invalid or mismatched ' + dimension)
+    if revision_stable is not True: errors.append('revision changed')
+    if type(intended_version) is not int or current_version != intended_version or type(current_version) is not int:
+        errors.append('model version mismatch')
+    if not isinstance(completed, list) or not any(isinstance(job, dict) and job.get('event') == 'complete' and job.get('state') == 'COMPLETE' and type(job.get('page')) is int and job.get('page') == page and type(job.get('version')) is int and job.get('version') == intended_version and type(job.get('job')) is int for job in completed):
+        errors.append('no matching completed job')
+    return {'status': 'FAIL' if errors else 'PASS', 'errors': errors}
+
+
 def persist_result(result, path):
-    """Exclusive creation, with stderr fallback; never turn persistence failure into success."""
-    result['evidenceStatus'] = 'PASS'
+    """Serialize before writing, then publish by exclusive hard link; preserve complete pending on link failure."""
+    result['evidenceStatus'] = 'PASS'; pending = None; created = False; complete = False
     try:
-        with open(path, 'x', encoding='utf-8') as output:
-            json.dump(result, output, ensure_ascii=True, indent=2, allow_nan=False)
-            output.write('\n')
+        data = (json.dumps(result, ensure_ascii=True, indent=2, allow_nan=False) + '\n').encode('utf-8')
+        path = Path(path)
+        fd, pending = tempfile.mkstemp(prefix='.' + path.name + '.', suffix='.pending', dir=path.parent)
+        created = True
+        try:
+            stream = os.fdopen(fd, 'wb')
+        except Exception:
+            os.close(fd); raise
+        with stream as output:
+            written = output.write(data)
+            if written != len(data): raise OSError('short evidence write')
+            output.flush(); os.fsync(output.fileno())
+        complete = True
+        os.link(pending, path)
+        try: os.unlink(pending)
+        except OSError as error:
+            try: print('evidence written; pending copy not removed: ' + str(error), file=sys.stderr)
+            except Exception: pass
         return True
     except Exception as error:
         result['evidenceStatus'] = 'FAIL'; result['status'] = 'FAIL'; result['executionStatus'] = 'FAIL'
         failure(result, 'evidence-persistence', error)
+        if created and pending and not complete:
+            try: os.unlink(pending)
+            except OSError: pass
         try:
-            print('EVIDENCE_PERSISTENCE_FAILED ' + json.dumps(result, ensure_ascii=True, default=str), file=sys.stderr)
+            print('EVIDENCE_PERSISTENCE_FAILED ' + str(error) + (f'; pending={pending}' if complete else ''), file=sys.stderr)
         except Exception:
             pass
         return False

@@ -143,7 +143,7 @@ jobs:
 
       - name: native smoke 정리 및 증거 회귀 검사 (브라우저 불필요)
         run: |
-          python3 -I -m unittest discover -s tests/integration/rhwp/ownership-poc -p test_smoke_verdict.py
+          python3 -I tests/integration/rhwp/ownership-poc/test_smoke_verdict.py
           python3 -I -m unittest discover -s tests/e2e -p test_harness_errors.py
 
       - name: engine-phases 회귀 검사 (최적화 모드)
