@@ -1236,3 +1236,32 @@ HWPX 89→48 PASS, 화학 212→95, 자산 125→81 FAIL, Undo 모두 PASS. 남�
 (이번 변경은 저장·명령 경로를 바꾸지 않아 다시 실행하지 않음), D4 FAIL, D5 보관 PASS, RSS INCONCLUSIVE(규범 한도 없음).
 **결정: 제품 rhwp 실행 취소·다시 실행 NO-GO, rhwp 서식 미지원(세션 서식 명령 미구현), T010 미완료(선행 T007–T009도 미체크), T011 시작하지 않음.**
 
+## T010 증분 쪽 나눔·서식 명령·D1 기준 v2·D2 실제 IME (2026-10-28, 미완료)
+
+사용자 승인: (1) 본문 증분 쪽 나눔, (2) 화학 문서 꼬리 귀속, (3) HWPX 서식 명령, D2용 ibus·ibus-hangul 설치(nix store만), D1 신뢰 기준 교체.
+gitlink·제품 WASM·문턱은 그대로. 증거: `t010-d4-pagination-attribution`, `t010-d4-format-memo`, `t010-d4-chemical-jobs`,
+`t010-rhwp-format-commands`, `t010-d2-native-ime`, `t010-d1-trust-anchor-v2`.
+
+**증분 쪽 나눔(격리 rhwp patch).** 본문 편집은 dirty 구역 전체를 다시 조판했고 그 대부분이 문단 format이었다(자산 문서 텍스트 루프
+12.8 ms). 깨끗한 문단의 format 결과를 패스 사이에 재사용한다 — dirty 비트, 번호 표지·조합 번호, 어울림 증거·사다리·프로파일, 스타일
+세대 번호(스타일을 바꾸는 모든 곳에서 전역 유일 값), 폭·플래그가 모두 같을 때만. native release에서 자산 문서 insertText 15.1→6.4 ms,
+앱 안 18→8 ms. 메모 켬/끔 차등 오라클: 공개 예제 1149개·편집 34380회·SVG 12637쪽 불일치 0(거대 표 예제 1개 실행 중).
+후보 WASM `97a57509…`, Chrome·WebKit 계약 gate PASS.
+
+**D4(공식 FAIL 유지).** 같은 producer 첫 완주: 기본 HWP/HWPX group p95 48/47 PASS, 화학 104·자산 77 FAIL, Undo 모두 PASS.
+남은 원인(관측): 화학 문서는 키마다 이미 그린 쪽 7–15개를 다시 그리고(250개 중 픽셀 변화 3개) 그 일이 다음 키 입력을 막는다(INFERRED),
+자산 문서는 렌더 13 ms·편집 뒤 프레임 간격 p95 82 ms. 다음은 바뀐 쪽만 다시 그리는 무효화(엔진의 쪽별 변경 정보)다.
+
+**서식(시험 활성화 빌드만).** rhwp 굵게·기울임·밑줄·취소선: HWPX·같은 문맥 선택·기록 켜짐·IME 안정일 때만, 한 변경 = 한 실행 취소
+단계. 실제 WASM 4, 실제 service::save 7사례(HWP 음성 대조 거부·원본 유지), 실제 앱 X11 키·리본 12/12 PASS. HWP는 저장 보존 규칙상 미지원.
+
+**D1 PASS(기준 v2).** 승인된 교체: manifest v4 = v3에서 기준·gate·wrapper 경로만 바꿈(이전 기준 보존). 새 후보로 39/39 단언,
+24/24 정확 RGBA(차이 0), 정리 3/3, 남은 프로세스 0.
+
+**D2 INCONCLUSIVE.** 실제 IBus 1.5.33·ibus-hangul 1.5.5로 동작 관문 25개 PASS, 순서 행렬 36회 모두 안전하지만 계약이 요구하는
+"빈 조합 끝 → Ctrl+Z → 늦은 최종 글자" 창은 관측되지 않았다.
+
+**결정.** 공식 D4 FAIL·D2 INCONCLUSIVE·선행 T007–T009 미체크 → T010 미완료, 제품 rhwp 실행 취소·다시 실행 NO-GO, rhwp 서식은 시험
+활성화 빌드의 HWPX만, T011 시작하지 않음. D1 PASS(v2 기준), D3 서식 저장 PASS, D5는 보관 PASS(이번 변경은 취소 경로를 바꾸지 않아
+다시 돌리지 않음).
+
