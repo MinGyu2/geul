@@ -1,0 +1,5 @@
+T010 D4 하니스 최종 정리
+시작 HEAD 6b5f06da5914dfa2747664530ee48dbb522a1d09; Python 3.14.7.
+VERIFIED: 기존 run.py를 HEAD에서 읽어 getloadavg에 OSError를 주입하면 예외가 경계 밖으로 나가고 출력은 생성되지 않았다. 새 경계는 예외 및 유한하지 않거나 잘못된 세 값 검증에 argparse exit 2를 사용한다. 서버, 브라우저, 출력 및 실행 시도는 생성되지 않는다. 정상 preflight와 사후 메타데이터 실패의 구조화 FAIL 경로는 회귀 시험으로 확인했다.
+VERIFIED: -W always::ResourceWarning 개별 재현에서 test_11b는 SIGTERM 후 wait 실패를 주입해 종료된 leader를 아직 회수하지 못한 Popen 참조가 먼저 사라졌다. test_12는 stop 예외를 주입해 아직 살아 있는 테스트 소유 leader의 Popen 참조가 테스트의 kill/wait보다 먼저 사라졌다. 둘 다 테스트가 Popen을 보유하고 원래 실패 판정 확인 후 유한 timeout으로 wait한다. 12는 소유 process group만 SIGKILL한다. 실제 runner cleanup 실패는 그대로 FAIL이며 경고 필터는 변경하지 않았다. 자식과 독립 세션, 무관한 bystander를 다루는 기존 회귀도 유지한다.
+검증: python3 -I -W always::ResourceWarning -m unittest discover -s tests/integration/rhwp/engine-phases -p 'test_*.py': 68 PASS, 경고 없음. python3 -I -O 동일 discover: 68 PASS. Python 3.12는 이 환경에서 확인되지 않아 NOT RUN. D4 analyzer ownership-poc test_d4*.py 100 PASS; critical-path-remediation test_*.py 35 PASS. 명령 실행은 저장소 root. 테스트는 코드 수정 후 실행했다.

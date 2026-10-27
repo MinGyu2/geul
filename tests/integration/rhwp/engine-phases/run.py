@@ -273,6 +273,12 @@ def persist(output, data, attempt_id):
     return output
 
 
+def check_load(value):
+    if not isinstance(value, (tuple, list)) or len(value)!=3 or any(
+        type(x) not in (int, float) or not math.isfinite(x) or x<0 for x in value):
+        raise ValueError('load average must contain three finite nonnegative numbers')
+
+
 def main(argv=None):
     p=argparse.ArgumentParser(description=__doc__)
     for name in ['baseline','phase','chrome','fixtures','output']:p.add_argument('--'+name,type=Path,required=True)
@@ -298,7 +304,10 @@ def main(argv=None):
     hashes=lambda:{k:hashlib.sha256(f.read_bytes()).hexdigest() for k,f in inputs.items()}
     try: before=hashes()
     except OSError as error: p.error(f'input unavailable: {error}')
-    load_before=os.getloadavg()
+    try:
+        load_before=os.getloadavg(); check_load(load_before)
+    except Exception as error:
+        p.error(f'load average unavailable or invalid: {_text(error)}')
 
     # Execution attempt: from here every outcome is persisted, failures included.
     attempt={'attemptId':uuid.uuid4().hex,'stage':'server-start','failures':[],'browserProcess':None,
@@ -394,10 +403,6 @@ def main(argv=None):
             system[field]=None
             fail('system-metadata',error)
             attempt['failures'][-1]['field']=field
-    def check_load(value):
-        if not isinstance(value, (tuple, list)) or len(value)!=3 or any(
-            type(x) not in (int, float) or not math.isfinite(x) or x<0 for x in value):
-            raise ValueError('load average must contain three finite nonnegative numbers')
     def check_cpu(value):
         # os.cpu_count() explicitly permits None when the count cannot be determined.
         if value is not None and (type(value) is not int or value<1):

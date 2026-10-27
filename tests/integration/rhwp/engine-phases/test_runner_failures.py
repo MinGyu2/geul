@@ -195,6 +195,22 @@ class RunnerLifecycleTests(unittest.TestCase):
             code, result = self.run_mode('ok')
         self.assertEqual(code, 0); self.assertIsNone(result['system']['logicalCpuCount'])
 
+    def test_preflight_load_failures_do_not_start_attempt(self):
+        for fault in (OSError('load fault'), RuntimeError('unexpected'),
+                      (float('nan'), 0, 0), (0, float('inf'), 0), (1, 2), 'malformed'):
+            with self.subTest(fault=fault), mock.patch.object(runner.os, 'getloadavg', side_effect=fault if isinstance(fault, Exception) else None, return_value=fault), \
+                 mock.patch.object(runner, 'LocalServer') as server, mock.patch.object(runner.subprocess, 'Popen') as popen, \
+                 mock.patch('sys.stderr'):
+                with self.assertRaises(SystemExit) as stop: self.run_mode('ok')
+                self.assertEqual(stop.exception.code, 2)
+                server.assert_not_called(); popen.assert_not_called()
+                self.assertEqual(list(self.output.parent.iterdir()), [])
+
+    def test_preflight_load_success(self):
+        with mock.patch.object(runner.os, 'getloadavg', return_value=(1., 2., 3.)):
+            code, result = self.run_mode('ok')
+        self.assertEqual(code, 0); self.assertEqual(result['system']['loadBefore'], [1., 2., 3.])
+
     def test_01_browser_executable_missing(self):
         with mock.patch.object(runner.subprocess, 'Popen', side_effect=FileNotFoundError(2, 'No such file')):
             code, result = self.run_mode('ok')
@@ -264,7 +280,11 @@ class RunnerLifecycleTests(unittest.TestCase):
         def wait(self, timeout=None):
             if timeout is not None: raise subprocess.TimeoutExpired(self.args, timeout)
             return real(self)
-        with mock.patch.object(runner.subprocess.Popen, 'wait', wait):
+        owned = []
+        init = runner.Browser.__init__
+        def capture(browser, process):
+            owned.append(process); init(browser, process)
+        with mock.patch.object(runner.Browser, '__init__', capture), mock.patch.object(runner.subprocess.Popen, 'wait', wait):
             code, result = self.run_mode('ok')
         process = result['attempt']['browserProcess']
         try:
@@ -272,11 +292,16 @@ class RunnerLifecycleTests(unittest.TestCase):
             self.assertFalse(process['reaped'] or process['cleanupSucceeded'])
             self.assertIsNone(process['exitCode']); self.assertIsNone(process['exitSignal'])
         finally:
-            try: os.waitpid(process['pid'], 0)
-            except ChildProcessError: pass  # already reaped when the Popen object was collected
+            self.assertEqual(len(owned), 1)
+            owned[0].wait(timeout=3)
+            self.assertIsNotNone(owned[0].returncode)
 
     def test_12_unexpected_cleanup_exception_releases_other_resources(self):
-        with mock.patch.object(runner.Browser, 'stop', side_effect=RuntimeError('injected cleanup fault')):
+        owned = []
+        init = runner.Browser.__init__
+        def capture(browser, process):
+            owned.append(process); init(browser, process)
+        with mock.patch.object(runner.Browser, '__init__', capture), mock.patch.object(runner.Browser, 'stop', side_effect=RuntimeError('injected cleanup fault')):
             code, result = self.run_mode('ok')
         pid = result['attempt']['browserProcess']['pid']
         try:
@@ -285,7 +310,8 @@ class RunnerLifecycleTests(unittest.TestCase):
             self.assertTrue(result['attempt']['server']['shutdown']); self.assertTrue(result['attempt']['profileRemoved'])
             self.assertFalse(result['attempt']['browserProcess']['cleanupSucceeded'])
         finally:
-            os.killpg(pid, signal.SIGKILL); os.waitpid(pid, 0)
+            os.killpg(pid, signal.SIGKILL); owned[0].wait(timeout=3)
+            self.assertIsNotNone(owned[0].returncode)
 
     def test_12b_owned_descendants_including_setsid_are_released(self):
         bystander = subprocess.Popen([sys.executable, '-c', 'import time; time.sleep(600)'], start_new_session=True)
