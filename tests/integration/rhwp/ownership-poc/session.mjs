@@ -46,13 +46,28 @@ async function module() {
 
 export function createOwnershipSession(Session, sessionId, backend, registry) {
   let doc = null, generation = 0, active = null, timer = null, disposed = false;
+  // Optional observer never receives or retains actual canvas/document references.
+  const canvasIds = new WeakMap(); let nextCanvas = 0, nextRequest = 0;
+  const trace = (event, request, extra = {}) => {
+    const observer = globalThis.window?.__d4LifecycleTrace;
+    if (!observer) return;
+    try {
+      let canvas = null;
+      if (request?.canvas) { canvas = canvasIds.get(request.canvas); if (!canvas) { canvas = ++nextCanvas; canvasIds.set(request.canvas, canvas); } }
+      observer.record({ event, at: performance.now(), session: sessionId, document: request?.generation ?? generation,
+        request: request?.traceRequest ?? null, input: request?.traceInput ?? null, canvas,
+        page: request?.page, scale: request?.scale, generation: request?.generation ?? generation,
+        version: request?.version ?? session.modelVersion, mode: request?.mode, ...extra });
+    } catch { /* diagnostics must not change renderer behavior */ }
+  };
   const queue = new Map(), canvases = new Map(), failed = new Map(), painted = new Map(), listeners = new Set();
   const unsubscribe = () => subscribers.delete(pump);
   const cancel = (keepPainted = false) => {
     if (timer !== null) clearTimeout(timer);
     timer = null;
-    if (active && doc) { doc.cancelRenderJob(active.id); counters.canceled++; }
-    active = null; queue.clear(); failed.clear(); if (!keepPainted) painted.clear();
+    if (active && doc) { doc.cancelRenderJob(active.id); trace('cancel', active, {job:active.id, reason:'session-cancel'}); counters.canceled++; }
+    active = null; for (const request of queue.values()) trace('stale-drop', request, {reason:'session-cancel'});
+    queue.clear(); failed.clear(); if (!keepPainted) painted.clear();
   };
   const session = new Session(sessionId, backend, registry, async () => {
     const engine = await module();
@@ -71,7 +86,7 @@ export function createOwnershipSession(Session, sessionId, backend, registry) {
       if (restore) doc.restoreSnapshot = (...args) => { cancel(); return restore(...args); };
       const opened = doc, free = doc.free.bind(doc);
       doc.free = () => {
-        if (doc === opened) { cancel(); generation++; unsubscribe(); sessions.delete(handle); doc = null; }
+        if (doc === opened) { cancel(); trace('release', null, {reason:'document-free'}); generation++; unsubscribe(); sessions.delete(handle); doc = null; }
         free();
       };
       subscribers.add(pump); sessions.add(handle);
@@ -96,8 +111,8 @@ export function createOwnershipSession(Session, sessionId, backend, registry) {
   };
   function pump() {
     if (disposed || !doc) return;
-    if (active && !valid(active)) { doc.cancelRenderJob(active.id); counters.staleDropped++; active = null; if(timer!==null)clearTimeout(timer);timer=null; wake(); }
-    for (const [canvas, request] of queue) if (!valid(request)) { queue.delete(canvas); counters.staleDropped++; }
+    if (active && !valid(active)) { doc.cancelRenderJob(active.id); trace('cancel', active, {job:active.id, reason:'stale'}); counters.staleDropped++; active = null; if(timer!==null)clearTimeout(timer);timer=null; wake(); }
+    for (const [canvas, request] of queue) if (!valid(request)) { queue.delete(canvas); trace('stale-drop', request, {reason:'invalid-queue'}); counters.staleDropped++; }
     if (!active) {
       const requests = [...queue.values()].sort((a, b) => Number(visible(b)) - Number(visible(a)));
       const request = requests[0];
@@ -119,12 +134,14 @@ export function createOwnershipSession(Session, sessionId, backend, registry) {
             painted.delete(request.canvas);
             painted.set(request.canvas, {...request, summary:bounded, summaryUnits:bounded ? summaryUnits : 0, width:request.canvas.width, height:request.canvas.height});
             trimSummaries();
+            trace('reuse-complete', request, {reason:'unchanged-summary'});
             counters.unchangedFrames++; queueMicrotask(() => { if (!disposed) for (const listener of listeners) listener(); }); wake(); return;
           }
           // Actual native integer and fractional regional replay differed from Full.
           // Only identical paint input can be skipped; every changed page uses Full.
         }
         const id = doc.beginRenderJob(request.page, request.canvas, request.scale);
+        trace('job-start', request, {job:id});
         counters.fullJobs++;
         active = { ...request, summary:bounded, summaryUnits:bounded ? summaryUnits : 0, id, polls: 0 };
       }
@@ -134,6 +151,7 @@ export function createOwnershipSession(Session, sessionId, backend, registry) {
     let state;
     try { state = ++request.polls > MAX_POLLS ? 'RESOURCE_LIMIT' : doc.pollRenderJob(request.id); }
     catch { state = 'ERROR'; }
+    trace('poll', request, {job:request.id, state});
     counters.polls++;
     if (timer !== null) clearTimeout(timer);
     timer = null;
@@ -143,6 +161,7 @@ export function createOwnershipSession(Session, sessionId, backend, registry) {
       return;
     }
     if (state === 'COMPLETE') {
+      trace('complete', request, {job:request.id, state});
       counters.completed++;
       painted.delete(request.canvas);
       painted.set(request.canvas, {...request, width:request.canvas.width, height:request.canvas.height});
@@ -153,6 +172,7 @@ export function createOwnershipSession(Session, sessionId, backend, registry) {
     }
     else {
       doc.cancelRenderJob(request.id);
+      trace('cancel', request, {job:request.id, reason:'terminal-'+state});
       if (state === 'CANCELED') counters.canceled++;
       else { failed.set(request.canvas, {...request, summary:null, summaryUnits:0}); counters[state === 'RESOURCE_LIMIT' ? 'limits' : 'errors']++; }
     }
@@ -167,20 +187,24 @@ export function createOwnershipSession(Session, sessionId, backend, registry) {
   };
   session.renderPage = (page, canvas, scale) => {
     if (disposed || !doc || !canvas.isConnected || !session.prepareRendering(scale)) return false;
-    const request = { page, canvas, scale, generation, version: session.modelVersion, mode: typeof __T010_DAMAGE__ !== 'undefined' && __T010_DAMAGE__ ? 'damage' : 'full' };
+    const request = { page, canvas, scale, generation, version: session.modelVersion, mode: typeof __T010_DAMAGE__ !== 'undefined' && __T010_DAMAGE__ ? 'damage' : 'full',
+      traceRequest: ++nextRequest, traceInput: globalThis.window?.__d4LifecycleInput ?? null };
+    trace('request', request, {reason:'renderPage'});
     const complete = painted.get(canvas);
-    if (sameRequest(complete, request) && complete.width === canvas.width && complete.height === canvas.height) return true;
-    if (sameRequest(active, request) || sameRequest(queue.get(canvas), request)) { counters.reused++; return false; }
+    if (sameRequest(complete, request) && complete.width === canvas.width && complete.height === canvas.height) { trace('reuse-complete', request); return true; }
+    if (sameRequest(active, request) || sameRequest(queue.get(canvas), request)) { const matched = sameRequest(active, request) ? active : queue.get(canvas); trace('reuse-pending', request, {job:matched.id ?? null, relatedRequest:matched.traceRequest}); counters.reused++; return false; }
     if (active && active.version !== session.modelVersion) cancel(true);
     const previous = failed.get(canvas);
     if (sameRequest(previous, request)) return false;
     failed.delete(canvas);
     if (!canvases.has(canvas) && canvases.size >= MAX_QUEUE) { counters.limits++; return false; }
     if (active?.canvas === canvas) {
-      doc.cancelRenderJob(active.id); counters.canceled++; counters.replacements++; active = null;
+      doc.cancelRenderJob(active.id); trace('cancel', active, {job:active.id, reason:'replacement'}); counters.canceled++; counters.replacements++; active = null;
       if (timer !== null) clearTimeout(timer); timer = null;
     }
-    queue.set(canvas, request); canvases.set(canvas, request);
+    const displaced = queue.get(canvas);
+    if (displaced) trace('stale-drop', displaced, {reason:'queue-replacement'});
+    queue.set(canvas, request); canvases.set(canvas, request); trace('queue', request);
     // Synchronous first poll matches the product effect boundary; async image continuation
     // still uses normal notifications. One job per request, no recursive renderer polling.
     wake();
@@ -204,12 +228,12 @@ export function createOwnershipSession(Session, sessionId, backend, registry) {
     finally { globalThis.window?.__rhwpProbe?.record?.('adapterRenderRequest', at); }
   };
   session.releaseRendering = () => {
-    cancel();
+    cancel(); trace('release', null, {reason:'releaseRendering'});
     for (const canvas of canvases.keys()) { canvas.width = 0; canvas.height = 0; }
     canvases.clear(); originalRelease();
   };
-  const handle = { cancel, repeat: count => { for(let n=0;n<Math.min(count,100);n++) for(const request of canvases.values()) session.renderPage(request.page,request.canvas,request.scale); }, repaint: () => { for(const [canvas, request] of canvases) { if(canvas.isConnected) { painted.delete(canvas); queue.set(canvas,{...request,generation,version:session.modelVersion}); } } }, stats: () => ({ sessionId, generation, queued: queue.size, active: active ? 1 : 0, activeJobId: active?.id ?? null,
+  const handle = { cancel, repeat: count => { for(let n=0;n<Math.min(count,100);n++) for(const request of canvases.values()) session.renderPage(request.page,request.canvas,request.scale); }, repaint: () => { for(const [canvas, request] of canvases) { if(canvas.isConnected) { painted.delete(canvas); const next = {...request,generation,version:session.modelVersion,traceRequest:++nextRequest,traceInput:null}; const displaced=queue.get(canvas); if(displaced)trace('stale-drop',displaced,{reason:'explicit-repaint'}); queue.set(canvas,next); trace('queue',next,{reason:'explicit-repaint'}); } } }, stats: () => ({ sessionId, generation, queued: queue.size, active: active ? 1 : 0, activeJobId: active?.id ?? null,
     canvases: canvases.size, summaries: [...painted.values()].filter(r=>r.summary).length, maxSummaries:MAX_SUMMARIES, summaryCodeUnits:[...painted.values()].reduce((sum,r)=>sum+(r.summary ? r.summaryUnits : 0),0), maxSummaryTotalCodeUnits:MAX_SUMMARY_TOTAL_UNITS, maxSummaryBytes:MAX_SUMMARY_UNITS /* legacy diagnostic name: serialized UTF-16 code units */, failures: failed.size, modelVersion: session.modelVersion }) };
-  session.dispose = () => { if (disposed) return; cancel(); unsubscribe(); disposed = true; sessions.delete(handle); originalDispose(); };
+  session.dispose = () => { if (disposed) return; cancel(); trace('release', null, {reason:'dispose'}); unsubscribe(); disposed = true; sessions.delete(handle); originalDispose(); };
   return session;
 }

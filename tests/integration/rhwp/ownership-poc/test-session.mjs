@@ -2,10 +2,12 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
 import { readFileSync, writeFileSync } from 'node:fs';
+import { createLifecycleTrace, installLifecycleTrace } from './lifecycle-trace.mjs';
 const results=[];
 globalThis.__testChangedBand=(await import('../../../../src/components/Editor/rhwp/paintDiff.ts')).changedBand;
 globalThis.__testDrawScale=(await import('../../../../src/components/Editor/rhwp/renderBudget.ts')).drawsAtRequestedScale;
 async function setup() {
+ globalThis.window = {};
  globalThis.__T010_DAMAGE__=false;
  const frames=[];globalThis.requestAnimationFrame=f=>{frames.push(f);return 1;};globalThis.innerHeight=1000;
  const docs=[];
@@ -40,7 +42,43 @@ async function setup() {
  let last;const flush=()=>{const f=frames.shift();if(f){last=f;f();}};const notify=()=>last?.();
  return {session,canvas,doc:docs[0],loader,flush,notify,frames,handle:globalThis.__testHandle};
 }
+test('input scope is bounded and removed', async () => {
+ let listener; const target={document:{addEventListener(_name, fn){listener=fn;},removeEventListener(_name, fn){assert.equal(listener,fn);listener=null;}}};
+ const installed=installLifecycleTrace(target, 3);
+ listener({target:{classList:{contains:()=>true}}, data:'must-not-be-recorded'});
+ assert.equal(target.__d4LifecycleInput,1);
+ await Promise.resolve();assert.equal(target.__d4LifecycleInput,null);
+ const snapshot=installed.snapshot();assert.equal(snapshot.complete,true);assert.equal(snapshot.records[0].input,1);
+ assert.ok(!JSON.stringify(snapshot).includes('must-not-be-recorded'));
+ installed.stop();assert.equal(listener,null);assert.equal(target.__d4LifecycleTrace,undefined);
+});
 const cases={
+ 'trace-correlates-cancel-and-replacement':async x=>{
+  const trace=createLifecycleTrace(); window.__d4LifecycleTrace=trace; window.__d4LifecycleInput=17;
+  x.session.renderPage(0,x.canvas,1);x.flush(); x.session.modelVersion++; window.__d4LifecycleInput=null;
+  x.session.renderPage(1,x.canvas,2);x.flush(); x.doc.state='COMPLETE';x.notify();
+  const rows=trace.snapshot().records, starts=rows.filter(r=>r.event==='job-start');
+  assert.equal(starts.length,2);assert.deepEqual(starts.map(r=>r.job),[1,2]);
+  assert.deepEqual(starts.map(r=>r.version),[1,2]);assert.deepEqual(starts.map(r=>r.page),[0,1]);
+  assert.equal(starts[0].input,17);assert.equal(starts[1].input,null);assert.equal(starts[0].canvas,starts[1].canvas);
+  assert.ok(rows.some(r=>r.event==='cancel' && r.job===1));
+  assert.ok(rows.some(r=>r.event==='complete' && r.job===2));
+  assert.ok(!rows.some(r=>r.event==='complete' && r.job===1));
+  assert.ok(rows.every(r=>!Object.values(r).some(v=>v && typeof v==='object')));
+ },
+ 'trace-different-targets':async x=>{
+  const trace=createLifecycleTrace();window.__d4LifecycleTrace=trace;
+  x.session.renderPage(0,x.canvas,1);x.flush();const other={...x.canvas};x.session.renderPage(0,other,1);
+  const requests=trace.snapshot().records.filter(r=>r.event==='request');
+  assert.notEqual(requests[0].canvas,requests[1].canvas);assert.notEqual(requests[0].request,requests[1].request);
+ },
+ 'trace-bounded-and-detached':async x=>{
+  const trace=createLifecycleTrace(2);window.__d4LifecycleTrace=trace;
+  x.session.renderPage(0,x.canvas,1);x.flush();x.session.renderPage(0,x.canvas,1);
+  const snap=trace.snapshot();assert.equal(snap.records.length,2);assert.ok(snap.dropped>0);assert.equal(snap.complete,false);assert.throws(()=>trace.requireComplete(),/incomplete/);
+  snap.records[0].event='tampered';assert.notEqual(trace.snapshot().records[0].event,'tampered');
+  assert.throws(()=>createLifecycleTrace().record({event:'test',canvas:{}}),TypeError);
+ },
  'identical-pending':async x=>{x.session.renderPage(0,x.canvas,1);x.flush();for(let i=0;i<20;i++)x.session.renderPage(0,x.canvas,1);assert.equal(x.doc.cancels,0);assert.equal(x.doc.starts,1);},
  'different-page':async x=>{x.session.renderPage(0,x.canvas,1);x.flush();x.session.renderPage(1,x.canvas,1);x.flush();assert.equal(x.doc.cancels,1);assert.equal(x.doc.starts,2);},
  'different-scale':async x=>{x.session.renderPage(0,x.canvas,1);x.flush();x.session.renderPage(0,x.canvas,2);x.flush();assert.equal(x.doc.cancels,1);assert.equal(x.doc.starts,2);},
