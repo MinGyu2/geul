@@ -1,0 +1,72 @@
+T010 Stage 2 — D4 critical path: 통제 대조군으로 찾은 쪽 그림자 비용과 교정 (2026-10-28)
+
+범주: VERIFIED=이번 실행·소스, INFERRED=해석, UNVERIFIED=입증 못함. frame-floor 실행은 진단이며 공식 D4가 아니다.
+기준 HEAD c54fe05(Stage 1 커밋) 위. 공식 producer(history-perf.py·undo_native.MEASURE)·문턱(50/1500 ms)·백분위·표본 수는 바꾸지 않았다.
+
+1. 출발점(VERIFIED, 과거 공식 증거 t010-d4-engine-phase-optimization/final-native-d4.json, 후보 0cb73f70·앱 0fda84b2)
+- 기본 HWP group-start key→frame p50 63 / p95 91 ms(문턱 50, FAIL). 표본 타임라인 예: 엔진·JS 동기 작업은 키 뒤 19 ms에 끝나고 revision
+  관측 25 ms, 그 뒤 RAF1 56·end 85 ms — 작업이 끝난 뒤 프레임 두 개가 각각 약 30 ms.
+- 같은 실행의 입력 없는 3RAF(zeroWorkFrameFloorMs) p50 41 ms(유휴 60 Hz와 맞음), 타자 중 RAF 간격 p50 53 / p95 72 ms.
+- 즉 편집 직후 프레임 자체가 길다. 이 관측만으로는 원인(앱 작업·IPC·Canvas 게시·합성)을 구별할 수 없었다.
+
+2. 진단 방법(frame-floor-native.py)
+- 같은 앱·후보·환경(Xvfb 소프트웨어 GL, DMABUF 끔, X11)·픽스처(basic-ko.hwp, 배율 50, 쪽 Canvas 414×585)·실제 xdotool 키.
+- 끝점은 MEASURE와 같다: keydown.timeStamp → 표지(편집 팔: localRevision 변화, 대조 팔: 시험 입력의 input 처리 끝)를 본 RAF → RAF → RAF(end).
+  아무것도 빼지 않는다. 팔마다 30표본, 10개 블록을 회전 순서로 섞어 같은 실행 안에서 비교한다. 대조 팔은 문서 revision이 바뀌면 무효.
+- 대조 팔: null(편집기 밖 시험 input에 키만), canvas(그 키의 처리기에서 보이는 쪽 Canvas를 앱의 게시와 같게 전체 readback + 같은 픽셀
+  drawImage — 엔진·IPC 없음), pixel(1픽셀만), tdefault/twrf(같은 크기의 시험 Canvas, 기본/willReadFrequently), 그리고 진단 전용 CSS
+  덮어쓰기(블록 동안만 적용 후 제거): caret 숨김·caret 애니메이션 끔·쪽 그림자 끔·Canvas 자체 레이어(will-change)·그림자를 ::before로·
+  그림자를 독립 합성 레이어로·작은 blur 그림자만·blur 없는 그림자·1px outline. editor 팔은 공식처럼 Right 뒤 'a'.
+- 프로세스: Stage 1의 subreaper 범위(process_scope.py)와 개인 dbus-daemon. 모든 실행 cleanup PASS·생존자 0.
+
+3. 결과(VERIFIED, 원본 .git/t010-d4-frame-floor-attemptN/frame-floor.json, key→frame p50/p95 ms, 각 30표본)
+- attempt1(load 1.55): null 28/95, canvas 75/96(관측→RAF1 p50 59), editor 91/144.
+- attempt3(load 2.04): null 27/47, canvas 73/121, pixel 23/38, tdefault 24/33, twrf 29/33, editor 89/119.
+  → 비용은 Canvas 크기·가속 방식이 아니라 쪽 Canvas가 놓인 자리에서 온다.
+- attempt4(load 3.01): canvas 77/122, caret 숨김 100/109, caret 애니메이션 끔 99/108, **쪽 그림자 끔 25/37**.
+- attempt5(load 3.52): editor 91/152, Canvas will-change 91/182, 그림자 ::before 86/158, **그림자 끔 42/53**.
+- attempt6(load 3.25): editor 90/155, 그림자 독립 합성 레이어 87/146, **그림자 끔 41/52**.
+- attempt7(load 2.78): editor 86/148, **그림자 끔 41/51**, 작은 blur(0 1px 3px)만 86/146, **blur 없는 그림자 42/55**, **1px outline 41/51**.
+- attempt2: runner 결함(사전 점검 예외 뒤 finally의 KeyError가 원래 오류를 가리고 증거를 남기지 못함) — 고친 뒤 다시 실행, 빈 디렉터리 보존.
+- 그림자가 있으면 편집 팔 RAF 간격 p95 64–68 ms, 없거나 blur가 없으면 25–29 ms.
+
+4. 해석
+- VERIFIED(개입): `.rhwp-page`의 blur 그림자(--page-shadow: 0 1px 3px …, 0 8px 24px …)가 있으면 Canvas 갱신 뒤 프레임이 약 60 ms로 늘고,
+  blur를 없애면(그림자 제거·blur 없는 그림자·outline) 같은 실행에서 editor key→frame p50 약 90 → 41 ms, p95 약 150 → 51–55 ms.
+  3 px blur도 같은 비용이므로 blur 크기가 아니라 blur 그림자의 존재가 원인이다. 그림자를 다른 요소·독립 합성 레이어로 옮겨도 줄지 않았다.
+- INFERRED: WebKitGTK 소프트웨어 합성에서 blur 그림자가 있는 영역의 손상 갱신이 매 프레임 blur 그리기를 다시 하거나 손상 영역을 넓힌다.
+  WebKit 내부 단계는 측정하지 않았다(UNVERIFIED). 실제 GPU 데스크톱에서의 크기도 UNVERIFIED.
+- 대조군의 부하(load 1.5–3.5)는 다른 세션이 있는 공유 호스트 값이다. 비교는 같은 실행 안의 섞인 블록끼리만 한다.
+
+5. 교정(제품, src/styles/app.css)
+- `.rhwp-page`(DOCX 표면도 같은 클래스)만 blur 없는 `--page-edge`(밝은 테마 `0 1px 0 rgb(15 23 42 / 0.18), 0 0 0 1px rgb(15 23 42 / 0.08)`,
+  어두운 테마 같은 모양의 검정 계열)로 바꿨다. 측정한 ehard와 같은 값이다. 문서 Canvas 픽셀·엔진·revision·IME·기록·저장과 무관한 장식이며,
+  빈 자리표시 쪽(.editor__page)과 대화상자 그림자는 편집 경로가 아니라 그대로 두었다. 외관: 부드러운 그림자 대신 1px 테두리와 아래 1px 선.
+- 측정 끝점·작업 순서·Canvas 게시·렌더 job은 바꾸지 않았다.
+
+6. OFFICIAL — 공식 D4 재측정(교정 후, 공식 producer 그대로)
+- 절차: engine-phases/native.py --mode d4(마지막 0cb73f70 공식 기록과 같은 wrapper) → dbus-run-session history-perf.py →
+  undo_native.scenario_perf/MEASURE, 4문서 × group-start 30·extend 30·Undo 25·Redo 20·afterUndo 5, 3RAF, busy probe 없음, 준비 OFF.
+  후보 0cb73f70…, 앱 0fda84b2…, gate 618105f8…, src/styles/app.css 88bf5d5b…(수정 02:54:25 KST, 실행 시작 02:56:37 이전).
+- 한계(VERIFIED): wrapper의 입력 카탈로그는 .ts/.tsx/.py/.mjs/.json만 해시한다 — CSS는 그 안정성 검사 밖이라 위 SHA와 시각을 따로 남겼다.
+- 시도(모두 보존, .git/t010-d4-page-edge-official-attemptN):
+  1 HARNESS_ERROR, 첫 문서에서 WebDriver 연결 끊김(측정 미완료; 앱·WebProcess·WebDriver 생존). 인프라 오류로 분류, 성능 판정 없음.
+    result ec88c186672140890595afe91a119d00847678bc4933cdb6a2d9649b73d9ff64
+  2·3 시작 전 실패: wrapper가 SO_REUSEADDR 없이 1420을 예약 bind하는데 직전 시도의 TIME_WAIT가 남아 EADDRINUSE. 측정 없음.
+    execution 514e9fb5f8f0b6d5b48e846fc575cb540f331cca894f6b640d735cd9e3368ae4(두 시도 같은 내용)
+  4 첫 완주 유효 시도(1420 소켓 0 확인 뒤): measurementComplete true, OFFICIAL_GATE_FAILURE, 실패 gate 2, 의존 파일 안정.
+    result dc1a731b3243dee990160ca157980e2e90d309aed5c35b59d9c24da54f2ca3af(로컬 4.8 MB, 요약 official-d4-attempt4-summary.json),
+    load 1.17 → 1.42.
+- 결과(group-start key→frame ms, 문턱 p95 ≤ 50 / Undo p95 ≤ 1500):
+  basic-ko.hwp   group p50 38 / p95 47 / max 47 PASS, Undo p95 52 PASS   (이전 공식 같은 후보·앱: 63/91 FAIL)
+  basic-ko.hwpx  group p50 38 / p95 48 / max 49 PASS, Undo p95 55 PASS   (이전 65/89 FAIL)
+  연구노트(화학).hwp group p50 58 / p95 95 / max 95 FAIL, Undo p95 60 PASS (이전 95/212 FAIL)
+  asset_management_rules.hwpx group p50 72 / p95 81 / max 82 FAIL, Undo p95 128 PASS (이전 100/125 FAIL)
+  같은 producer·후보·앱·문턱이므로 비교 가능(호스트 부하만 다름: 이전 기록의 load도 함께 보존됨).
+- 남은 원인 단서(VERIFIED 관측, 원인 UNVERIFIED): 자산 문서 group handler p50 49 / p95 52 ms(엔진 동기 작업), 타자 중 RAF 간격 p95 84 ms.
+  화학 문서 handler p95 32 ms, 꼬리 95 ms. 다음 단계는 이 두 문서의 handler 안 엔진 단계 귀속이며 엔진(upstream) 변경이 필요할 수 있다.
+- 판정: 공식 D4 FAIL 유지(8 gate 중 6 PASS·2 FAIL). 기본 두 문서의 group-start는 이번 첫 유효 시도에서 PASS.
+
+7. 회귀(이번 실행, 교정 뒤)
+- npm run typecheck PASS, npm run lint PASS, npx vitest run 42 파일 819 시험 PASS, vite build PASS(출력은 스크래치, dist 미변경).
+- 문서 Canvas 픽셀은 이 CSS와 무관하다(쪽 Canvas 바깥 장식). native D1 exact RGBA는 이번에 다시 돌리지 않았다(신뢰 후보 없음, NOT RUN).

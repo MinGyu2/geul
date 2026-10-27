@@ -1,0 +1,27 @@
+{
+  "officialApproval": false,
+  "mode": "d4",
+  "status": "FAIL",
+  "producerExit": 1,
+  "producerStatus": "FAIL",
+  "producerResultSha256": "dc1a731b3243dee990160ca157980e2e90d309aed5c35b59d9c24da54f2ca3af",
+  "classification": {
+    "measurementComplete": true,
+    "exitReason": "OFFICIAL_GATE_FAILURE",
+    "failedGateCount": 2
+  },
+  "executedDependenciesStable": true,
+  "inputsBeforeSelected": {
+    "app": "0fda84b2f91f686c26b235a48250e70892d4f16e9fd66d974f8c621a67c116cd",
+    "runner": "6fe89c7e43b9e15a3db1b016946da7eb1d1dee88954f7feed2385245d036741a",
+    "tests/integration/rhwp/ownership-poc/history-perf.py": "fd2175b55a9520a7cf878bd46c72b586ed5e06b5d1c31c617edb4a8d5529f55e",
+    "tests/integration/rhwp/undo_native.py": "1d0982fa18c155bbd1e7b009307253815148f841fe1116ec92d818a3ea195445",
+    "candidate/rhwp_bg.wasm": "0cb73f70cd98dbef89718534e1bc283f1cb4c200af200703d40b137be1cde956",
+    "candidate/rhwp.js": "37cea466d25ecbd12c5586cdeddada1c97aa4fd45860e857160e12e83e668e5d",
+    "candidate/rhwp.d.ts": "9d46972b79edcf09c9d87e732cd5c91ea4bfded79457639162b0c7d6e7530cb1",
+    "candidate/rhwp_bg.wasm.d.ts": "940e707689bac7279c1679c5db843bbe5e53013374cb70dbf5719d536edcf964",
+    "candidate/ENGINE.json": "a9ccd5a2c3fd7fa1cb9be6a810c2d2ec428abc0f917a93630230211d754b6069"
+  },
+  "inputsBeforeCount": 167,
+  "inputsAfterEqual": true
+}

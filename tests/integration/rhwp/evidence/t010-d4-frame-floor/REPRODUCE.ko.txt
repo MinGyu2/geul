@@ -1,0 +1,8 @@
+재현(저장소 root, 설치 없음):
+진단(공식 아님): Stage 1과 같은 GEUL_* 도구·후보·gate·GEUL_DBUS_DAEMON 환경, GEUL_SMOKE_RAW=<새 개인 디렉터리>,
+  GEUL_FF_ARMS=<팔 목록, 예 editor,enoshadow,ehard,eoutline> python3 tests/integration/rhwp/evidence/t010-d4-frame-floor/frame-floor-native.py
+  팔 이름: null, canvas, pixel, tdefault, twrf, c*/e*(CSS 덮어쓰기 — 스크립트의 OVERRIDES 참조). 결과 COMPLETE는 측정 완주일 뿐 판정이 아니다.
+  주의: 같은 호스트의 다른 native 실행과 동시에 돌리지 않는다. 직전 실행 뒤 `ss -tan | grep :1420`이 비었는지 확인한다.
+공식 D4: GEUL_TAURI_DRIVER/GEUL_WEBKIT_DRIVER/GEUL_XVFB/GEUL_XDOTOOL 절대 경로를 주고
+  python3 tests/integration/rhwp/engine-phases/native.py --candidate <0cb73f70 패키지> --gates <618105f8 gate 디렉터리> --mode d4 --output <새 디렉터리>
+  producer는 바꾸지 않은 ownership-poc/history-perf.py이다. 첫 완주 유효 시도를 판정으로 쓰고 이후 시도는 근거와 함께 따로 보존한다.

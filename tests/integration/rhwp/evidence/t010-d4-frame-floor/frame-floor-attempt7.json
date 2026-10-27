@@ -1,0 +1,1572 @@
+{
+  "status": "COMPLETE",
+  "stage": "shutdown",
+  "official": false,
+  "kind": "T010 D4 frame-floor diagnostic",
+  "failures": [],
+  "attemptId": "7e15bc3088fc4088840400ef5ba788bf",
+  "samples": [
+    {
+      "observed": 32,
+      "raf1": 64,
+      "keyToFrame": 94,
+      "end": 94,
+      "arm": "editor",
+      "handlerMs": null
+    },
+    {
+      "observed": 21,
+      "raf1": 89,
+      "keyToFrame": 104,
+      "end": 104,
+      "arm": "editor",
+      "handlerMs": null
+    },
+    {
+      "observed": 26,
+      "raf1": 97,
+      "keyToFrame": 126,
+      "end": 126,
+      "arm": "editor",
+      "handlerMs": null
+    },
+    {
+      "observed": 42,
+      "raf1": 112,
+      "keyToFrame": 142,
+      "end": 142,
+      "arm": "editor",
+      "handlerMs": null
+    },
+    {
+      "observed": 17,
+      "raf1": 52,
+      "keyToFrame": 82,
+      "end": 82,
+      "arm": "editor",
+      "handlerMs": null
+    },
+    {
+      "observed": 23,
+      "raf1": 53,
+      "keyToFrame": 82,
+      "end": 82,
+      "arm": "editor",
+      "handlerMs": null
+    },
+    {
+      "observed": 18,
+      "raf1": 52,
+      "keyToFrame": 82,
+      "end": 82,
+      "arm": "editor",
+      "handlerMs": null
+    },
+    {
+      "observed": 19,
+      "raf1": 53,
+      "keyToFrame": 81,
+      "end": 81,
+      "arm": "editor",
+      "handlerMs": null
+    },
+    {
+      "observed": 20,
+      "raf1": 55,
+      "keyToFrame": 72,
+      "end": 72,
+      "arm": "editor",
+      "handlerMs": null
+    },
+    {
+      "observed": 20,
+      "raf1": 89,
+      "keyToFrame": 101,
+      "end": 101,
+      "arm": "editor",
+      "handlerMs": null
+    },
+    {
+      "observed": 22,
+      "raf1": 28,
+      "keyToFrame": 38,
+      "end": 38,
+      "arm": "enoshadow",
+      "handlerMs": null
+    },
+    {
+      "observed": 20,
+      "raf1": 38,
+      "keyToFrame": 49,
+      "end": 49,
+      "arm": "enoshadow",
+      "handlerMs": null
+    },
+    {
+      "observed": 21,
+      "raf1": 29,
+      "keyToFrame": 41,
+      "end": 41,
+      "arm": "enoshadow",
+      "handlerMs": null
+    },
+    {
+      "observed": 20,
+      "raf1": 39,
+      "keyToFrame": 45,
+      "end": 45,
+      "arm": "enoshadow",
+      "handlerMs": null
+    },
+    {
+      "observed": 23,
+      "raf1": 29,
+      "keyToFrame": 40,
+      "end": 40,
+      "arm": "enoshadow",
+      "handlerMs": null
+    },
+    {
+      "observed": 27,
+      "raf1": 35,
+      "keyToFrame": 44,
+      "end": 44,
+      "arm": "enoshadow",
+      "handlerMs": null
+    },
+    {
+      "observed": 25,
+      "raf1": 33,
+      "keyToFrame": 51,
+      "end": 51,
+      "arm": "enoshadow",
+      "handlerMs": null
+    },
+    {
+      "observed": 21,
+      "raf1": 27,
+      "keyToFrame": 38,
+      "end": 38,
+      "arm": "enoshadow",
+      "handlerMs": null
+    },
+    {
+      "observed": 20,
+      "raf1": 38,
+      "keyToFrame": 50,
+      "end": 50,
+      "arm": "enoshadow",
+      "handlerMs": null
+    },
+    {
+      "observed": 19,
+      "raf1": 37,
+      "keyToFrame": 39,
+      "end": 39,
+      "arm": "enoshadow",
+      "handlerMs": null
+    },
+    {
+      "observed": 28,
+      "raf1": 66,
+      "keyToFrame": 100,
+      "end": 100,
+      "arm": "esmall",
+      "handlerMs": null
+    },
+    {
+      "observed": 18,
+      "raf1": 54,
+      "keyToFrame": 60,
+      "end": 60,
+      "arm": "esmall",
+      "handlerMs": null
+    },
+    {
+      "observed": 19,
+      "raf1": 88,
+      "keyToFrame": 90,
+      "end": 90,
+      "arm": "esmall",
+      "handlerMs": null
+    },
+    {
+      "observed": 41,
+      "raf1": 78,
+      "keyToFrame": 108,
+      "end": 108,
+      "arm": "esmall",
+      "handlerMs": null
+    },
+    {
+      "observed": 18,
+      "raf1": 53,
+      "keyToFrame": 84,
+      "end": 84,
+      "arm": "esmall",
+      "handlerMs": null
+    },
+    {
+      "observed": 23,
+      "raf1": 55,
+      "keyToFrame": 85,
+      "end": 85,
+      "arm": "esmall",
+      "handlerMs": null
+    },
+    {
+      "observed": 19,
+      "raf1": 55,
+      "keyToFrame": 87,
+      "end": 87,
+      "arm": "esmall",
+      "handlerMs": null
+    },
+    {
+      "observed": 20,
+      "raf1": 55,
+      "keyToFrame": 86,
+      "end": 86,
+      "arm": "esmall",
+      "handlerMs": null
+    },
+    {
+      "observed": 18,
+      "raf1": 88,
+      "keyToFrame": 90,
+      "end": 90,
+      "arm": "esmall",
+      "handlerMs": null
+    },
+    {
+      "observed": 20,
+      "raf1": 55,
+      "keyToFrame": 66,
+      "end": 66,
+      "arm": "esmall",
+      "handlerMs": null
+    },
+    {
+      "observed": 28,
+      "raf1": 33,
+      "keyToFrame": 44,
+      "end": 44,
+      "arm": "ehard",
+      "handlerMs": null
+    },
+    {
+      "observed": 20,
+      "raf1": 39,
+      "keyToFrame": 51,
+      "end": 51,
+      "arm": "ehard",
+      "handlerMs": null
+    },
+    {
+      "observed": 20,
+      "raf1": 38,
+      "keyToFrame": 42,
+      "end": 42,
+      "arm": "ehard",
+      "handlerMs": null
+    },
+    {
+      "observed": 20,
+      "raf1": 39,
+      "keyToFrame": 50,
+      "end": 50,
+      "arm": "ehard",
+      "handlerMs": null
+    },
+    {
+      "observed": 23,
+      "raf1": 34,
+      "keyToFrame": 40,
+      "end": 40,
+      "arm": "ehard",
+      "handlerMs": null
+    },
+    {
+      "observed": 20,
+      "raf1": 31,
+      "keyToFrame": 36,
+      "end": 36,
+      "arm": "ehard",
+      "handlerMs": null
+    },
+    {
+      "observed": 25,
+      "raf1": 32,
+      "keyToFrame": 34,
+      "end": 34,
+      "arm": "ehard",
+      "handlerMs": null
+    },
+    {
+      "observed": 24,
+      "raf1": 34,
+      "keyToFrame": 40,
+      "end": 40,
+      "arm": "ehard",
+      "handlerMs": null
+    },
+    {
+      "observed": 19,
+      "raf1": 37,
+      "keyToFrame": 38,
+      "end": 38,
+      "arm": "ehard",
+      "handlerMs": null
+    },
+    {
+      "observed": 20,
+      "raf1": 39,
+      "keyToFrame": 47,
+      "end": 47,
+      "arm": "ehard",
+      "handlerMs": null
+    },
+    {
+      "observed": 23,
+      "raf1": 34,
+      "keyToFrame": 40,
+      "end": 40,
+      "arm": "eoutline",
+      "handlerMs": null
+    },
+    {
+      "observed": 18,
+      "raf1": 27,
+      "keyToFrame": 41,
+      "end": 41,
+      "arm": "eoutline",
+      "handlerMs": null
+    },
+    {
+      "observed": 21,
+      "raf1": 39,
+      "keyToFrame": 47,
+      "end": 47,
+      "arm": "eoutline",
+      "handlerMs": null
+    },
+    {
+      "observed": 20,
+      "raf1": 39,
+      "keyToFrame": 44,
+      "end": 44,
+      "arm": "eoutline",
+      "handlerMs": null
+    },
+    {
+      "observed": 23,
+      "raf1": 29,
+      "keyToFrame": 40,
+      "end": 40,
+      "arm": "eoutline",
+      "handlerMs": null
+    },
+    {
+      "observed": 20,
+      "raf1": 26,
+      "keyToFrame": 36,
+      "end": 36,
+      "arm": "eoutline",
+      "handlerMs": null
+    },
+    {
+      "observed": 23,
+      "raf1": 33,
+      "keyToFrame": 41,
+      "end": 41,
+      "arm": "eoutline",
+      "handlerMs": null
+    },
+    {
+      "observed": 27,
+      "raf1": 33,
+      "keyToFrame": 44,
+      "end": 44,
+      "arm": "eoutline",
+      "handlerMs": null
+    },
+    {
+      "observed": 20,
+      "raf1": 38,
+      "keyToFrame": 46,
+      "end": 46,
+      "arm": "eoutline",
+      "handlerMs": null
+    },
+    {
+      "observed": 19,
+      "raf1": 27,
+      "keyToFrame": 31,
+      "end": 31,
+      "arm": "eoutline",
+      "handlerMs": null
+    },
+    {
+      "observed": 23,
+      "raf1": 31,
+      "keyToFrame": 40,
+      "end": 40,
+      "arm": "enoshadow",
+      "handlerMs": null
+    },
+    {
+      "observed": 20,
+      "raf1": 38,
+      "keyToFrame": 44,
+      "end": 44,
+      "arm": "enoshadow",
+      "handlerMs": null
+    },
+    {
+      "observed": 20,
+      "raf1": 39,
+      "keyToFrame": 44,
+      "end": 44,
+      "arm": "enoshadow",
+      "handlerMs": null
+    },
+    {
+      "observed": 20,
+      "raf1": 29,
+      "keyToFrame": 31,
+      "end": 31,
+      "arm": "enoshadow",
+      "handlerMs": null
+    },
+    {
+      "observed": 24,
+      "raf1": 30,
+      "keyToFrame": 41,
+      "end": 41,
+      "arm": "enoshadow",
+      "handlerMs": null
+    },
+    {
+      "observed": 23,
+      "raf1": 29,
+      "keyToFrame": 39,
+      "end": 39,
+      "arm": "enoshadow",
+      "handlerMs": null
+    },
+    {
+      "observed": 28,
+      "raf1": 33,
+      "keyToFrame": 44,
+      "end": 44,
+      "arm": "enoshadow",
+      "handlerMs": null
+    },
+    {
+      "observed": 24,
+      "raf1": 33,
+      "keyToFrame": 43,
+      "end": 43,
+      "arm": "enoshadow",
+      "handlerMs": null
+    },
+    {
+      "observed": 29,
+      "raf1": 50,
+      "keyToFrame": 52,
+      "end": 52,
+      "arm": "enoshadow",
+      "handlerMs": null
+    },
+    {
+      "observed": 19,
+      "raf1": 37,
+      "keyToFrame": 40,
+      "end": 40,
+      "arm": "enoshadow",
+      "handlerMs": null
+    },
+    {
+      "observed": 22,
+      "raf1": 54,
+      "keyToFrame": 86,
+      "end": 86,
+      "arm": "esmall",
+      "handlerMs": null
+    },
+    {
+      "observed": 44,
+      "raf1": 114,
+      "keyToFrame": 117,
+      "end": 117,
+      "arm": "esmall",
+      "handlerMs": null
+    },
+    {
+      "observed": 20,
+      "raf1": 88,
+      "keyToFrame": 103,
+      "end": 103,
+      "arm": "esmall",
+      "handlerMs": null
+    },
+    {
+      "observed": 46,
+      "raf1": 115,
+      "keyToFrame": 146,
+      "end": 146,
+      "arm": "esmall",
+      "handlerMs": null
+    },
+    {
+      "observed": 20,
+      "raf1": 54,
+      "keyToFrame": 85,
+      "end": 85,
+      "arm": "esmall",
+      "handlerMs": null
+    },
+    {
+      "observed": 22,
+      "raf1": 53,
+      "keyToFrame": 85,
+      "end": 85,
+      "arm": "esmall",
+      "handlerMs": null
+    },
+    {
+      "observed": 18,
+      "raf1": 55,
+      "keyToFrame": 86,
+      "end": 86,
+      "arm": "esmall",
+      "handlerMs": null
+    },
+    {
+      "observed": 18,
+      "raf1": 54,
+      "keyToFrame": 84,
+      "end": 84,
+      "arm": "esmall",
+      "handlerMs": null
+    },
+    {
+      "observed": 20,
+      "raf1": 89,
+      "keyToFrame": 105,
+      "end": 105,
+      "arm": "esmall",
+      "handlerMs": null
+    },
+    {
+      "observed": 20,
+      "raf1": 89,
+      "keyToFrame": 120,
+      "end": 120,
+      "arm": "esmall",
+      "handlerMs": null
+    },
+    {
+      "observed": 23,
+      "raf1": 29,
+      "keyToFrame": 35,
+      "end": 35,
+      "arm": "ehard",
+      "handlerMs": null
+    },
+    {
+      "observed": 19,
+      "raf1": 38,
+      "keyToFrame": 52,
+      "end": 52,
+      "arm": "ehard",
+      "handlerMs": null
+    },
+    {
+      "observed": 19,
+      "raf1": 38,
+      "keyToFrame": 47,
+      "end": 47,
+      "arm": "ehard",
+      "handlerMs": null
+    },
+    {
+      "observed": 19,
+      "raf1": 38,
+      "keyToFrame": 40,
+      "end": 40,
+      "arm": "ehard",
+      "handlerMs": null
+    },
+    {
+      "observed": 26,
+      "raf1": 33,
+      "keyToFrame": 43,
+      "end": 43,
+      "arm": "ehard",
+      "handlerMs": null
+    },
+    {
+      "observed": 25,
+      "raf1": 31,
+      "keyToFrame": 36,
+      "end": 36,
+      "arm": "ehard",
+      "handlerMs": null
+    },
+    {
+      "observed": 24,
+      "raf1": 33,
+      "keyToFrame": 41,
+      "end": 41,
+      "arm": "ehard",
+      "handlerMs": null
+    },
+    {
+      "observed": 24,
+      "raf1": 31,
+      "keyToFrame": 41,
+      "end": 41,
+      "arm": "ehard",
+      "handlerMs": null
+    },
+    {
+      "observed": 26,
+      "raf1": 36,
+      "keyToFrame": 43,
+      "end": 43,
+      "arm": "ehard",
+      "handlerMs": null
+    },
+    {
+      "observed": 19,
+      "raf1": 37,
+      "keyToFrame": 48,
+      "end": 48,
+      "arm": "ehard",
+      "handlerMs": null
+    },
+    {
+      "observed": 23,
+      "raf1": 29,
+      "keyToFrame": 36,
+      "end": 36,
+      "arm": "eoutline",
+      "handlerMs": null
+    },
+    {
+      "observed": 21,
+      "raf1": 39,
+      "keyToFrame": 40,
+      "end": 40,
+      "arm": "eoutline",
+      "handlerMs": null
+    },
+    {
+      "observed": 20,
+      "raf1": 39,
+      "keyToFrame": 48,
+      "end": 48,
+      "arm": "eoutline",
+      "handlerMs": null
+    },
+    {
+      "observed": 19,
+      "raf1": 37,
+      "keyToFrame": 40,
+      "end": 40,
+      "arm": "eoutline",
+      "handlerMs": null
+    },
+    {
+      "observed": 24,
+      "raf1": 31,
+      "keyToFrame": 41,
+      "end": 41,
+      "arm": "eoutline",
+      "handlerMs": null
+    },
+    {
+      "observed": 22,
+      "raf1": 31,
+      "keyToFrame": 36,
+      "end": 36,
+      "arm": "eoutline",
+      "handlerMs": null
+    },
+    {
+      "observed": 27,
+      "raf1": 33,
+      "keyToFrame": 39,
+      "end": 39,
+      "arm": "eoutline",
+      "handlerMs": null
+    },
+    {
+      "observed": 25,
+      "raf1": 30,
+      "keyToFrame": 41,
+      "end": 41,
+      "arm": "eoutline",
+      "handlerMs": null
+    },
+    {
+      "observed": 19,
+      "raf1": 37,
+      "keyToFrame": 47,
+      "end": 47,
+      "arm": "eoutline",
+      "handlerMs": null
+    },
+    {
+      "observed": 21,
+      "raf1": 39,
+      "keyToFrame": 41,
+      "end": 41,
+      "arm": "eoutline",
+      "handlerMs": null
+    },
+    {
+      "observed": 25,
+      "raf1": 56,
+      "keyToFrame": 86,
+      "end": 86,
+      "arm": "editor",
+      "handlerMs": null
+    },
+    {
+      "observed": 46,
+      "raf1": 114,
+      "keyToFrame": 143,
+      "end": 143,
+      "arm": "editor",
+      "handlerMs": null
+    },
+    {
+      "observed": 21,
+      "raf1": 89,
+      "keyToFrame": 91,
+      "end": 91,
+      "arm": "editor",
+      "handlerMs": null
+    },
+    {
+      "observed": 47,
+      "raf1": 118,
+      "keyToFrame": 148,
+      "end": 148,
+      "arm": "editor",
+      "handlerMs": null
+    },
+    {
+      "observed": 21,
+      "raf1": 55,
+      "keyToFrame": 84,
+      "end": 84,
+      "arm": "editor",
+      "handlerMs": null
+    },
+    {
+      "observed": 23,
+      "raf1": 52,
+      "keyToFrame": 81,
+      "end": 81,
+      "arm": "editor",
+      "handlerMs": null
+    },
+    {
+      "observed": 20,
+      "raf1": 54,
+      "keyToFrame": 83,
+      "end": 83,
+      "arm": "editor",
+      "handlerMs": null
+    },
+    {
+      "observed": 20,
+      "raf1": 54,
+      "keyToFrame": 83,
+      "end": 83,
+      "arm": "editor",
+      "handlerMs": null
+    },
+    {
+      "observed": 21,
+      "raf1": 88,
+      "keyToFrame": 100,
+      "end": 100,
+      "arm": "editor",
+      "handlerMs": null
+    },
+    {
+      "observed": 21,
+      "raf1": 89,
+      "keyToFrame": 151,
+      "end": 151,
+      "arm": "editor",
+      "handlerMs": null
+    },
+    {
+      "observed": 19,
+      "raf1": 54,
+      "keyToFrame": 85,
+      "end": 85,
+      "arm": "esmall",
+      "handlerMs": null
+    },
+    {
+      "observed": 20,
+      "raf1": 91,
+      "keyToFrame": 104,
+      "end": 104,
+      "arm": "esmall",
+      "handlerMs": null
+    },
+    {
+      "observed": 20,
+      "raf1": 90,
+      "keyToFrame": 96,
+      "end": 96,
+      "arm": "esmall",
+      "handlerMs": null
+    },
+    {
+      "observed": 45,
+      "raf1": 117,
+      "keyToFrame": 148,
+      "end": 148,
+      "arm": "esmall",
+      "handlerMs": null
+    },
+    {
+      "observed": 19,
+      "raf1": 54,
+      "keyToFrame": 85,
+      "end": 85,
+      "arm": "esmall",
+      "handlerMs": null
+    },
+    {
+      "observed": 24,
+      "raf1": 55,
+      "keyToFrame": 86,
+      "end": 86,
+      "arm": "esmall",
+      "handlerMs": null
+    },
+    {
+      "observed": 22,
+      "raf1": 53,
+      "keyToFrame": 85,
+      "end": 85,
+      "arm": "esmall",
+      "handlerMs": null
+    },
+    {
+      "observed": 24,
+      "raf1": 56,
+      "keyToFrame": 73,
+      "end": 73,
+      "arm": "esmall",
+      "handlerMs": null
+    },
+    {
+      "observed": 19,
+      "raf1": 88,
+      "keyToFrame": 97,
+      "end": 97,
+      "arm": "esmall",
+      "handlerMs": null
+    },
+    {
+      "observed": 19,
+      "raf1": 56,
+      "keyToFrame": 68,
+      "end": 68,
+      "arm": "esmall",
+      "handlerMs": null
+    },
+    {
+      "observed": 22,
+      "raf1": 28,
+      "keyToFrame": 39,
+      "end": 39,
+      "arm": "ehard",
+      "handlerMs": null
+    },
+    {
+      "observed": 22,
+      "raf1": 40,
+      "keyToFrame": 48,
+      "end": 48,
+      "arm": "ehard",
+      "handlerMs": null
+    },
+    {
+      "observed": 22,
+      "raf1": 41,
+      "keyToFrame": 42,
+      "end": 42,
+      "arm": "ehard",
+      "handlerMs": null
+    },
+    {
+      "observed": 23,
+      "raf1": 42,
+      "keyToFrame": 58,
+      "end": 58,
+      "arm": "ehard",
+      "handlerMs": null
+    },
+    {
+      "observed": 27,
+      "raf1": 33,
+      "keyToFrame": 44,
+      "end": 44,
+      "arm": "ehard",
+      "handlerMs": null
+    },
+    {
+      "observed": 26,
+      "raf1": 36,
+      "keyToFrame": 42,
+      "end": 42,
+      "arm": "ehard",
+      "handlerMs": null
+    },
+    {
+      "observed": 24,
+      "raf1": 33,
+      "keyToFrame": 40,
+      "end": 40,
+      "arm": "ehard",
+      "handlerMs": null
+    },
+    {
+      "observed": 23,
+      "raf1": 29,
+      "keyToFrame": 38,
+      "end": 38,
+      "arm": "ehard",
+      "handlerMs": null
+    },
+    {
+      "observed": 22,
+      "raf1": 41,
+      "keyToFrame": 55,
+      "end": 55,
+      "arm": "ehard",
+      "handlerMs": null
+    },
+    {
+      "observed": 22,
+      "raf1": 40,
+      "keyToFrame": 45,
+      "end": 45,
+      "arm": "ehard",
+      "handlerMs": null
+    },
+    {
+      "observed": 25,
+      "raf1": 36,
+      "keyToFrame": 42,
+      "end": 42,
+      "arm": "eoutline",
+      "handlerMs": null
+    },
+    {
+      "observed": 19,
+      "raf1": 28,
+      "keyToFrame": 44,
+      "end": 44,
+      "arm": "eoutline",
+      "handlerMs": null
+    },
+    {
+      "observed": 21,
+      "raf1": 39,
+      "keyToFrame": 51,
+      "end": 51,
+      "arm": "eoutline",
+      "handlerMs": null
+    },
+    {
+      "observed": 23,
+      "raf1": 41,
+      "keyToFrame": 56,
+      "end": 56,
+      "arm": "eoutline",
+      "handlerMs": null
+    },
+    {
+      "observed": 27,
+      "raf1": 33,
+      "keyToFrame": 42,
+      "end": 42,
+      "arm": "eoutline",
+      "handlerMs": null
+    },
+    {
+      "observed": 22,
+      "raf1": 31,
+      "keyToFrame": 39,
+      "end": 39,
+      "arm": "eoutline",
+      "handlerMs": null
+    },
+    {
+      "observed": 25,
+      "raf1": 33,
+      "keyToFrame": 43,
+      "end": 43,
+      "arm": "eoutline",
+      "handlerMs": null
+    },
+    {
+      "observed": 25,
+      "raf1": 32,
+      "keyToFrame": 39,
+      "end": 39,
+      "arm": "eoutline",
+      "handlerMs": null
+    },
+    {
+      "observed": 21,
+      "raf1": 39,
+      "keyToFrame": 41,
+      "end": 41,
+      "arm": "eoutline",
+      "handlerMs": null
+    },
+    {
+      "observed": 22,
+      "raf1": 41,
+      "keyToFrame": 43,
+      "end": 43,
+      "arm": "eoutline",
+      "handlerMs": null
+    },
+    {
+      "observed": 24,
+      "raf1": 55,
+      "keyToFrame": 86,
+      "end": 86,
+      "arm": "editor",
+      "handlerMs": null
+    },
+    {
+      "observed": 48,
+      "raf1": 115,
+      "keyToFrame": 122,
+      "end": 122,
+      "arm": "editor",
+      "handlerMs": null
+    },
+    {
+      "observed": 19,
+      "raf1": 87,
+      "keyToFrame": 116,
+      "end": 116,
+      "arm": "editor",
+      "handlerMs": null
+    },
+    {
+      "observed": 41,
+      "raf1": 108,
+      "keyToFrame": 137,
+      "end": 137,
+      "arm": "editor",
+      "handlerMs": null
+    },
+    {
+      "observed": 20,
+      "raf1": 54,
+      "keyToFrame": 83,
+      "end": 83,
+      "arm": "editor",
+      "handlerMs": null
+    },
+    {
+      "observed": 21,
+      "raf1": 56,
+      "keyToFrame": 86,
+      "end": 86,
+      "arm": "editor",
+      "handlerMs": null
+    },
+    {
+      "observed": 18,
+      "raf1": 53,
+      "keyToFrame": 83,
+      "end": 83,
+      "arm": "editor",
+      "handlerMs": null
+    },
+    {
+      "observed": 19,
+      "raf1": 53,
+      "keyToFrame": 59,
+      "end": 59,
+      "arm": "editor",
+      "handlerMs": null
+    },
+    {
+      "observed": 22,
+      "raf1": 91,
+      "keyToFrame": 91,
+      "end": 91,
+      "arm": "editor",
+      "handlerMs": null
+    },
+    {
+      "observed": 23,
+      "raf1": 93,
+      "keyToFrame": 101,
+      "end": 101,
+      "arm": "editor",
+      "handlerMs": null
+    },
+    {
+      "observed": 23,
+      "raf1": 34,
+      "keyToFrame": 39,
+      "end": 39,
+      "arm": "enoshadow",
+      "handlerMs": null
+    },
+    {
+      "observed": 21,
+      "raf1": 30,
+      "keyToFrame": 31,
+      "end": 31,
+      "arm": "enoshadow",
+      "handlerMs": null
+    },
+    {
+      "observed": 21,
+      "raf1": 38,
+      "keyToFrame": 49,
+      "end": 49,
+      "arm": "enoshadow",
+      "handlerMs": null
+    },
+    {
+      "observed": 22,
+      "raf1": 40,
+      "keyToFrame": 42,
+      "end": 42,
+      "arm": "enoshadow",
+      "handlerMs": null
+    },
+    {
+      "observed": 25,
+      "raf1": 31,
+      "keyToFrame": 38,
+      "end": 38,
+      "arm": "enoshadow",
+      "handlerMs": null
+    },
+    {
+      "observed": 25,
+      "raf1": 32,
+      "keyToFrame": 42,
+      "end": 42,
+      "arm": "enoshadow",
+      "handlerMs": null
+    },
+    {
+      "observed": 25,
+      "raf1": 31,
+      "keyToFrame": 39,
+      "end": 39,
+      "arm": "enoshadow",
+      "handlerMs": null
+    },
+    {
+      "observed": 22,
+      "raf1": 28,
+      "keyToFrame": 37,
+      "end": 37,
+      "arm": "enoshadow",
+      "handlerMs": null
+    },
+    {
+      "observed": 18,
+      "raf1": 36,
+      "keyToFrame": 46,
+      "end": 46,
+      "arm": "enoshadow",
+      "handlerMs": null
+    },
+    {
+      "observed": 23,
+      "raf1": 32,
+      "keyToFrame": 45,
+      "end": 45,
+      "arm": "enoshadow",
+      "handlerMs": null
+    }
+  ],
+  "cleanup": {
+    "vite": {
+      "returncode": 143,
+      "ok": true
+    },
+    "xvfb": {
+      "returncode": 0,
+      "ok": true
+    },
+    "dbus": {
+      "returncode": 0,
+      "ok": true
+    }
+  },
+  "environment": {
+    "loadAverageBefore": [
+      2.7783203125,
+      2.841796875,
+      2.26220703125
+    ],
+    "cpuAffinity": [
+      0,
+      1,
+      2,
+      3,
+      4,
+      5,
+      6,
+      7
+    ],
+    "loadAverageAfter": [
+      2.6328125,
+      2.7294921875,
+      2.29150390625
+    ]
+  },
+  "arms": [
+    "editor",
+    "enoshadow",
+    "esmall",
+    "ehard",
+    "eoutline"
+  ],
+  "sourceSha256": {
+    "runner": "dc6d598f8e03c9ac7e9743e21a74a9d08e33ac2a8c40c008ced3d0cb873c97f8",
+    "scope": "ec67aaed58882c664713b0a25be7e62eadfb5579ad7741ba2cbaa5c8a071c260",
+    "session": "6eaf1c36d4b207beffd4d9fcd7d2499ec2168d0b8f13e87b09e50e9de3bcebbe"
+  },
+  "fixtureSha256": "57c901cc394abf6f58f4838315d1ea2c5ecf8a03d9934d3fc098fd8be6e6e12f",
+  "canvasExtent": [
+    414,
+    585
+  ],
+  "blockOrder": [
+    "editor",
+    "enoshadow",
+    "esmall",
+    "ehard",
+    "eoutline",
+    "enoshadow",
+    "esmall",
+    "ehard",
+    "eoutline",
+    "editor",
+    "esmall",
+    "ehard",
+    "eoutline",
+    "editor",
+    "enoshadow"
+  ],
+  "summary": {
+    "editor": {
+      "keyToFrame": {
+        "n": 30,
+        "p50": 86,
+        "p95": 148,
+        "max": 151
+      },
+      "observed": {
+        "n": 30,
+        "p50": 21,
+        "p95": 47,
+        "max": 48
+      },
+      "observedToRaf1": {
+        "n": 30,
+        "p50": 35,
+        "p95": 71,
+        "max": 71
+      },
+      "raf1ToEnd": {
+        "n": 30,
+        "p50": 29,
+        "p95": 31,
+        "max": 62
+      },
+      "handlerMs": {
+        "n": 0
+      },
+      "rafGap": {
+        "n": 306,
+        "p50": 17,
+        "p95": 68,
+        "max": 72
+      }
+    },
+    "enoshadow": {
+      "keyToFrame": {
+        "n": 30,
+        "p50": 41,
+        "p95": 51,
+        "max": 52
+      },
+      "observed": {
+        "n": 30,
+        "p50": 22,
+        "p95": 28,
+        "max": 29
+      },
+      "observedToRaf1": {
+        "n": 30,
+        "p50": 9,
+        "p95": 19,
+        "max": 21
+      },
+      "raf1ToEnd": {
+        "n": 30,
+        "p50": 9,
+        "p95": 13,
+        "max": 18
+      },
+      "handlerMs": {
+        "n": 0
+      },
+      "rafGap": {
+        "n": 405,
+        "p50": 14,
+        "p95": 25,
+        "max": 44
+      }
+    },
+    "esmall": {
+      "keyToFrame": {
+        "n": 30,
+        "p50": 86,
+        "p95": 146,
+        "max": 148
+      },
+      "observed": {
+        "n": 30,
+        "p50": 20,
+        "p95": 45,
+        "max": 46
+      },
+      "observedToRaf1": {
+        "n": 30,
+        "p50": 36,
+        "p95": 71,
+        "max": 72
+      },
+      "raf1ToEnd": {
+        "n": 30,
+        "p50": 30,
+        "p95": 32,
+        "max": 34
+      },
+      "handlerMs": {
+        "n": 0
+      },
+      "rafGap": {
+        "n": 305,
+        "p50": 16,
+        "p95": 67,
+        "max": 72
+      }
+    },
+    "ehard": {
+      "keyToFrame": {
+        "n": 30,
+        "p50": 42,
+        "p95": 55,
+        "max": 58
+      },
+      "observed": {
+        "n": 30,
+        "p50": 22,
+        "p95": 27,
+        "max": 28
+      },
+      "observedToRaf1": {
+        "n": 30,
+        "p50": 11,
+        "p95": 19,
+        "max": 19
+      },
+      "raf1ToEnd": {
+        "n": 30,
+        "p50": 8,
+        "p95": 14,
+        "max": 16
+      },
+      "handlerMs": {
+        "n": 0
+      },
+      "rafGap": {
+        "n": 424,
+        "p50": 12,
+        "p95": 27,
+        "max": 44
+      }
+    },
+    "eoutline": {
+      "keyToFrame": {
+        "n": 30,
+        "p50": 41,
+        "p95": 51,
+        "max": 56
+      },
+      "observed": {
+        "n": 30,
+        "p50": 22,
+        "p95": 27,
+        "max": 27
+      },
+      "observedToRaf1": {
+        "n": 30,
+        "p50": 9,
+        "p95": 19,
+        "max": 19
+      },
+      "raf1ToEnd": {
+        "n": 30,
+        "p50": 8,
+        "p95": 15,
+        "max": 16
+      },
+      "handlerMs": {
+        "n": 0
+      },
+      "rafGap": {
+        "n": 429,
+        "p50": 12,
+        "p95": 25,
+        "max": 41
+      }
+    },
+    "idleRafGap": {
+      "n": 6550,
+      "p50": 15,
+      "p95": 19,
+      "max": 105
+    }
+  },
+  "teardown": {
+    "sessionDeletes": [
+      {
+        "outcome": "ok",
+        "seconds": 0.006
+      }
+    ],
+    "complete": true,
+    "beforeDriverStop": [
+      {
+        "pid": 1042601,
+        "comm": "tauri-driver",
+        "state": "S",
+        "ppid": 1042545
+      },
+      {
+        "pid": 1042602,
+        "comm": "WebKitWebDriver",
+        "state": "S",
+        "ppid": 1042601
+      },
+      {
+        "pid": 1042630,
+        "comm": "WebKitNetworkPr",
+        "state": "S",
+        "ppid": 1042604
+      },
+      {
+        "pid": 1042633,
+        "comm": "WebKitWebProces",
+        "state": "S",
+        "ppid": 1042604
+      }
+    ],
+    "driverKilled": false,
+    "driverExit": 0,
+    "afterDriverStop": [],
+    "driverStopSeconds": 0.01,
+    "remainingAfterWait": [],
+    "sigtermSent": [],
+    "sigtermErrors": [],
+    "survivorsAfterSigterm": []
+  },
+  "teardownAttemptId": "7e15bc3088fc4088840400ef5ba788bf",
+  "processScope": {
+    "root": 1042545,
+    "subreaper": true,
+    "mechanism": "PR_SET_CHILD_SUBREAPER+pidfd",
+    "observedDescendants": 4,
+    "adoptedOrphans": [],
+    "unownedRootChildren": [
+      1042602,
+      1042604,
+      1042630,
+      1042633
+    ],
+    "exitedBeforeTeardown": [],
+    "terminated": [],
+    "killed": [],
+    "reapedOrphans": 4,
+    "survivors": [],
+    "identityMismatchSkipped": [],
+    "errors": [],
+    "cleanupSucceeded": true,
+    "complete": true,
+    "observed": [
+      {
+        "pid": 1042602,
+        "start": 21161051,
+        "comm": "WebKitWebDriver",
+        "pgid": 1042544,
+        "sid": 1042542,
+        "firstParent": 1042545
+      },
+      {
+        "pid": 1042604,
+        "start": 21161071,
+        "comm": "geul",
+        "pgid": 1042544,
+        "sid": 1042542,
+        "firstParent": 1042545
+      },
+      {
+        "pid": 1042630,
+        "start": 21161103,
+        "comm": "WebKitNetworkPr",
+        "pgid": 1042544,
+        "sid": 1042542,
+        "firstParent": 1042545
+      },
+      {
+        "pid": 1042633,
+        "start": 21161104,
+        "comm": "WebKitWebProces",
+        "pgid": 1042544,
+        "sid": 1042542,
+        "firstParent": 1042545
+      }
+    ]
+  },
+  "oracleAssessment": {
+    "status": "NOT RUN",
+    "errors": []
+  },
+  "executionStatus": "PASS",
+  "readinessVerdict": "DIAGNOSTIC (not an official D4 gate)",
+  "cleanupScope": "direct Vite/Xvfb plus tauri-smoke XDG-owned processes; Vite descendants not independently tracked",
+  "cleanupStatus": "PASS",
+  "evidenceStatus": "PASS"
+}

@@ -14,6 +14,9 @@
   --page-bg: #ffffff;
   --page-text: #1f2328;
   --page-shadow: 0 1px 3px rgb(15 23 42 / 0.12), 0 8px 24px rgb(15 23 42 / 0.08);
+  /* 편집 쪽 가장자리: blur 없는 그림자만 쓴다. WebKitGTK(소프트웨어 합성)에서 blur 그림자가 있는 쪽은 Canvas를
+     갱신할 때마다 프레임이 약 60 ms로 늘었다(T010 D4, tests/integration/rhwp/evidence/t010-d4-frame-floor). */
+  --page-edge: 0 1px 0 rgb(15 23 42 / 0.18), 0 0 0 1px rgb(15 23 42 / 0.08);
   --text: #1f2430;
   --text-muted: #5c6475;
   --text-subtle: #7a8193;
@@ -44,6 +47,7 @@
     --panel-bg: #20232a;
     --canvas-bg: #15171c;
     --page-shadow: 0 1px 3px rgb(0 0 0 / 0.5), 0 8px 24px rgb(0 0 0 / 0.35);
+    --page-edge: 0 1px 0 rgb(0 0 0 / 0.6), 0 0 0 1px rgb(0 0 0 / 0.45);
     --text: #e4e7ee;
     --text-muted: #a7aebd;
     --text-subtle: #8c93a3;
@@ -67,6 +71,7 @@
   --panel-bg: #20232a;
   --canvas-bg: #15171c;
   --page-shadow: 0 1px 3px rgb(0 0 0 / 0.5), 0 8px 24px rgb(0 0 0 / 0.35);
+  --page-edge: 0 1px 0 rgb(0 0 0 / 0.6), 0 0 0 1px rgb(0 0 0 / 0.45);
   --text: #e4e7ee;
   --text-muted: #a7aebd;
   --text-subtle: #8c93a3;
@@ -714,7 +719,7 @@ button {
   position: relative;
   flex: none;
   background: #fff;
-  box-shadow: var(--page-shadow);
+  box-shadow: var(--page-edge);
   cursor: text;
 }
 
