@@ -229,3 +229,13 @@ condition = "AND"
 paths = ['''^tests/integration/rhwp/evidence/t010-decoded-lease-readiness-closure/browser/(decoded-lease-chrome|decoded-lease-webkit|regression-chrome|regression-webkit)\.json$''']
 regexTarget = "secret"
 regexes = ['''^9563a9ef26b5d0c22997e9beb8cb8c037e852df7ca95a8362800e7bd0cf24c5d$''','''^3dfa6723ae9c89768157f26aac22566d18055c9074acfaa28b0686c3687ecacb$''']
+
+# T010 D1 trust anchor v2 engine gates: candidate ENGINE.json source digests embedded by the browser runner.
+# Each value was verified as the SHA-256 of a public rhwp source file (shaping*/token*/wasm_api.rs); exact paths and digests only.
+[[allowlists]]
+description = "T010 D1 anchor v2 gate JSON public rhwp source checksums (verified against the isolated export)"
+targetRules = ["generic-api-key"]
+condition = "AND"
+paths = ['''^tests/integration/rhwp/evidence/t010-d1-trust-anchor-v2/engine-gates/(chrome|webkit)\.json$''']
+regexTarget = "secret"
+regexes = ['''^0c614f53f9708a413574b4c368c13a2e0a9424f7b95248d2a594b359304485f0$''','''^2149322baffeb9e41d8a23413f8620f6eb5e9e6be238eaa6d3e94f664d6d3acb$''','''^63759dd2642260d1bf859e208d04c9805172c0adedd2fc3a49cbac2341bba83b$''','''^6557b647317774b737e67f40e266d37e21f6ec924e866c59d18e9a7a6b3a99e2$''','''^822cafb8bbf0f9c61c6ce10882702366407195296ddc652cc9269b55164c158a$''','''^9c5ab657018201fd13df4bcd6499581c2f5b49154ba59ef6dd0c8ffa5cd33720$''','''^a2e4afc251ea6e23def308b07134ec600e41223a4b8456b93c74a5c52eea70ea$''','''^ce2c152fe3c8c3424effa73c8c171c6b4c3b949a029df215c5e8587719badeeb$''','''^d3d8a079e157a9e5fde8f47b42cd427641e4429302f59a7999df3dd116e5bdcb$''','''^d84b9816fb9f009a309f518b3b852ea51d71ef64d42d970ca7b5375182ad9672$''','''^f35641ace0445623f907ad3f9b16ba93da97edb6de2de3d899d8d7905a625ecb$''','''^feeacd2a047efbfc55eee52f46d7bcfd7ca792cdba37bbe9728c5b22a651afee$''']

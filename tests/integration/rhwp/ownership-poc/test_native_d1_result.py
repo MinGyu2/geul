@@ -40,7 +40,7 @@ def complete_teardown():
             'remainingAfterWait': [], 'sigtermSent': [], 'sigtermErrors': [], 'survivorsAfterSigterm': []}
 
 
-def complete_dependencies(version=contract.CURRENT_MANIFEST):
+def complete_dependencies(version=3):
     return {name: TRUSTED.get(name, {path: contract.FIXTURE_SHA256[sample] for sample, path in contract.PINNED_FIXTURES.items()}.get(name, format(index + 1, '064x'))) for index, name in enumerate(contract.DEPENDENCY_MANIFESTS[version])}
 
 
@@ -50,7 +50,7 @@ def complete_lifecycle():
 
 
 def run(result=None, *, missing=False, error=None, harness_exit=0, lifecycle=None, deps=None, deps_after=None,
-        wasm_before=WASM, wasm_after=WASM, expected=WASM, evidence_errors=(), trusted=TRUSTED, manifest=contract.CURRENT_MANIFEST, attempt=1):
+        wasm_before=WASM, wasm_after=WASM, expected=WASM, evidence_errors=(), trusted=TRUSTED, manifest=3, attempt=1):
     if lifecycle is None:
         lifecycle = complete_lifecycle()
         if type(harness_exit) is int:
@@ -246,7 +246,7 @@ class GenuineEvidence(unittest.TestCase):
             result = json.loads((self.EVIDENCE / self.SETS[2] / f'native-d1-attempt{attempt}.json').read_text())
             self.assertEqual(result['dependencyManifest'], 2)
             self.assertEqual((result['teardown'][0]['driverKilled'], result['teardown'][0]['driverExit']), (False, 0))
-            self.assertEqual(result['wrapperVerdict']['trustAnchor'], contract.TRUST_ANCHOR)
+            self.assertEqual(result['wrapperVerdict']['trustAnchor'], contract.TRUST_ANCHORS[3])
 
     def test_recorded_run_with_one_cleanup_step_false_fails(self):
         for version in (1, 2):
@@ -382,7 +382,7 @@ class DependencyManifest(unittest.TestCase):
     def test_manifest_is_the_independent_list(self):
         self.assertEqual(list(contract.DEPENDENCY_MANIFESTS[2]), self.V2)
         self.assertEqual(list(contract.DEPENDENCY_MANIFESTS[1]), self.V2[:18])
-        self.assertEqual(contract.CURRENT_MANIFEST, 3)
+        self.assertEqual(contract.CURRENT_MANIFEST, 4)  # v4: trust anchor replacement approved 2026-10-28 (AnchorV2 below)
         self.assertEqual(len(set(self.V2)), len(self.V2))
 
     def test_only_wasm(self):
@@ -411,7 +411,7 @@ class DependencyManifest(unittest.TestCase):
         self.assertEqual(verdict['categories'], ['dependency-manifest'])
 
     def test_unsupported_manifest_versions(self):
-        for version in (0, 4, '2', 2.0, True, None):
+        for version in (0, 5, '2', 2.0, True, None):
             self.bad('dependency-manifest', manifest=version)
 
     def test_unexpected_noncanonical_and_duplicate_names(self):
@@ -433,14 +433,14 @@ class DependencyManifest(unittest.TestCase):
 
 class TrustAnchor(unittest.TestCase):
     def test_committed_anchor_matches_the_independent_values(self):
-        self.assertEqual(contract.load_trust_anchor(HERE.parents[3]), TRUSTED)
-        data = (HERE.parents[3] / contract.TRUST_ANCHOR['path']).read_bytes()
-        self.assertEqual(contract.trust_anchor_from_bytes(data), TRUSTED)
+        self.assertEqual(contract.load_trust_anchor(HERE.parents[3], 3), TRUSTED)
+        data = (HERE.parents[3] / contract.TRUST_ANCHORS[3]['path']).read_bytes()
+        self.assertEqual(contract.trust_anchor_from_bytes(data, 3), TRUSTED)
 
     def test_altered_anchor_bytes_are_rejected(self):
-        data = (HERE.parents[3] / contract.TRUST_ANCHOR['path']).read_bytes()
+        data = (HERE.parents[3] / contract.TRUST_ANCHORS[3]['path']).read_bytes()
         with self.assertRaises(ValueError):
-            contract.trust_anchor_from_bytes(data.replace(WASM.encode(), OTHER.encode()))
+            contract.trust_anchor_from_bytes(data.replace(WASM.encode(), OTHER.encode()), 3)
 
     def test_unavailable_or_malformed_anchor_fails(self):
         for trusted in (None, {}, dict(TRUSTED, **{'rhwp.js': None}), {k: v for k, v in TRUSTED.items() if k != 'ENGINE.json'}):
@@ -641,6 +641,62 @@ class FinalIntegrity(unittest.TestCase):
         verdict=GenuineEvidence().verdict(2,1,manifest=3)
         self.assertIn('dependency-manifest',verdict['categories'])
         self.assertEqual(GenuineEvidence().verdict(2,1)['schema'],2)
+
+
+
+# Independent copies of the v2 anchor (t010-d1-trust-anchor-v2/candidate-identity.json), approved 2026-10-28.
+WASM_V2 = '97a575093aab7fde6400e3ce2a1c3ec243de28645f49ce27a55286ca8dff37e2'
+TRUSTED_V2 = {'rhwp_bg.wasm': WASM_V2, 'rhwp.js': '37cea466d25ecbd12c5586cdeddada1c97aa4fd45860e857160e12e83e668e5d',
+              'rhwp.d.ts': '9d46972b79edcf09c9d87e732cd5c91ea4bfded79457639162b0c7d6e7530cb1',
+              'ENGINE.json': '14d223fff35ec9eb6b9e2764229684b8ba2fd2b2c48a92ea4aa1953173424212'}
+ANCHOR_V2 = 'tests/integration/rhwp/evidence/t010-d1-trust-anchor-v2/'
+
+
+class AnchorV2(unittest.TestCase):
+    """v4 = the strict v3 contract with only the trust anchor, its engine gates and the wrapper path replaced."""
+    def test_v4_manifest_replaces_only_gates_and_wrapper(self):
+        v3, v4 = contract.DEPENDENCY_MANIFESTS[3], contract.DEPENDENCY_MANIFESTS[4]
+        old = 'tests/integration/rhwp/evidence/t010-decoded-lease-contract-finalization/engine-gates/'
+        expected = [ANCHOR_V2 + 'engine-gates/' + n[len(old):] if n.startswith(old)
+                    else ANCHOR_V2 + 'run-native.py' if n == 'tests/integration/rhwp/evidence/t010-native-evidence-final-integrity/run-native.py' else n
+                    for n in v3]
+        self.assertEqual(list(v4), expected)
+        self.assertEqual(sum(a != b for a, b in zip(v3, v4)), 4)
+        self.assertEqual(contract.NATIVE_WRAPPERS[4], ANCHOR_V2 + 'run-native.py')
+        root = HERE.parents[3]
+        for name in v4:
+            if '/' in name and not name.startswith('tree:'):
+                self.assertTrue((root / name).is_file(), name)
+
+    def test_v2_anchor_bytes_and_preserved_v1_anchor(self):
+        root = HERE.parents[3]
+        self.assertEqual(contract.TRUST_ANCHOR, contract.TRUST_ANCHORS[4])
+        self.assertEqual(contract.TRUST_ANCHORS[4]['path'], ANCHOR_V2 + 'candidate-identity.json')
+        data = (root / contract.TRUST_ANCHORS[4]['path']).read_bytes()
+        self.assertEqual(contract.trust_anchor_from_bytes(data, 4), TRUSTED_V2)
+        with self.assertRaises(ValueError):
+            contract.trust_anchor_from_bytes(data.replace(WASM_V2.encode(), OTHER.encode()), 4)
+        with self.assertRaises(ValueError):  # the old anchor bytes are not the v4 anchor
+            contract.trust_anchor_from_bytes((root / contract.TRUST_ANCHORS[3]['path']).read_bytes(), 4)
+        self.assertEqual(contract.TRUST_ANCHORS[3]['sha256'], '1699dfbe6d51409c1b7f852c838e1ab37bb3b27be7efe6fbf3dd70eda8048271')
+        self.assertEqual(contract.trust_anchor_from_bytes((root / contract.TRUST_ANCHORS[3]['path']).read_bytes(), 3), TRUSTED)
+
+    def v4(self, **kwargs):
+        deps = {name: TRUSTED_V2.get(name, {path: contract.FIXTURE_SHA256[sample] for sample, path in contract.PINNED_FIXTURES.items()}.get(name, format(i + 1, '064x')))
+                for i, name in enumerate(contract.DEPENDENCY_MANIFESTS[4])}
+        result = complete_result(); result['engineIdentity']['wasmSha256'] = WASM_V2
+        args = dict(result=result, deps=deps, deps_after=dict(deps), wasm_before=WASM_V2, wasm_after=WASM_V2, expected=WASM_V2, trusted=TRUSTED_V2, manifest=4)
+        args.update(kwargs)
+        return run(**args)
+
+    def test_complete_v4_run_passes_and_records_v2_anchor(self):
+        verdict = self.v4()
+        self.assertEqual(verdict['status'], 'PASS', verdict['failures'])
+        self.assertEqual((verdict['schema'], verdict['dependencyManifest'], verdict['trustAnchor']), (3, 4, contract.TRUST_ANCHORS[4]))
+
+    def test_v4_rejects_old_candidate_and_v3_dependency_set(self):
+        self.assertIn('candidate-identity', self.v4(expected=WASM, wasm_before=WASM, wasm_after=WASM)['categories'])
+        self.assertIn('dependency-manifest', self.v4(deps=complete_dependencies(3), deps_after=complete_dependencies(3))['categories'])
 
 
 if __name__ == '__main__':

@@ -1,0 +1,55 @@
+{
+  "schema": 1,
+  "trustedSource": "D1 trust anchor v2 — replacement approved by the repository owner on 2026-10-28 (session instruction). Native D1 output is checked against this file, never the reverse.",
+  "approval": {
+    "date": "2026-10-28",
+    "scope": "D1 trust anchor only: candidate identity, its engine gates and the v4 wrapper. Thresholds, the 39 assertions, the 24 exact RGBA references, fixtures and the cleanup contract are unchanged."
+  },
+  "previousAnchor": {
+    "path": "tests/integration/rhwp/evidence/t010-decoded-lease-readiness-closure/candidate-identity.json",
+    "sha256": "1699dfbe6d51409c1b7f852c838e1ab37bb3b27be7efe6fbf3dd70eda8048271",
+    "candidateWasm": "ca5c0b8443230ba719c07f4d8c835a94fb6e12eb4b50a7123ce5c8b6a8048d45",
+    "status": "preserved unchanged; v3 results keep it"
+  },
+  "candidate": {
+    "expected": {
+      "rhwp_bg.wasm": "97a575093aab7fde6400e3ce2a1c3ec243de28645f49ce27a55286ca8dff37e2",
+      "rhwp.js": "37cea466d25ecbd12c5586cdeddada1c97aa4fd45860e857160e12e83e668e5d",
+      "rhwp.d.ts": "9d46972b79edcf09c9d87e732cd5c91ea4bfded79457639162b0c7d6e7530cb1"
+    },
+    "engineManifestSha256": "14d223fff35ec9eb6b9e2764229684b8ba2fd2b2c48a92ea4aa1953173424212",
+    "build": {
+      "compiler": "rustc 1.99.0 (b940084d7 2026-09-28)",
+      "cargo": "cargo 1.99.0 (5f94df478 2026-08-27)",
+      "wasmPack": "wasm-pack 0.15.0",
+      "target": "wasm32-unknown-unknown",
+      "profile": "release",
+      "wasmOpt": false,
+      "command": [
+        "scripts/wasm-pack-locked.sh",
+        "--release",
+        "--no-opt",
+        "--target",
+        "web",
+        "--out-dir",
+        "candidate-attempt1"
+      ],
+      "sourceTreeSha256": "332b826ef33aa10ee73bb53deded5395c3b7eb12eba535359006a6bc00239680",
+      "baseline": "1a76570e833917d15817415a53c09ad61ab3203f"
+    },
+    "sourceFiles": 1046,
+    "patches": {
+      "base": "tests/integration/rhwp/evidence/t010-d4-engine-phase-optimization/upstream-engine-phase-optimization-final-complete.patch",
+      "baseSha256": "016f6a3c36c97292c9d6dbcd00c84a7ff88a765aea2f0eb36ef5f6d8ff85ec5b",
+      "incremental": "tests/integration/rhwp/evidence/t010-d4-format-memo/upstream-rhwp-format-memo-incremental.patch",
+      "incrementalSha256": "abf438623d1c3a2e6d6425fb4364ad2385238e5d40b35e35b87b802cbf16d32a",
+      "incrementalRawGitDiffSha256": "41c376a5b6438b629ef2ffbb569fa098ad84e80d0aa12a0bc439dccd6563a4c6"
+    },
+    "gates": {
+      "engine-safety-gates.json": "f31bd7d90906c52f95bdc02b45bb2e6cb59088ded32b603a6383e721bbc7a49e",
+      "chrome.json": "5d290fba48661531957ad310e2567421acface3c9facb78a0094a87e72e4c558",
+      "webkit.json": "067b9ff525fe656f03537628c680d268298f43e38b3a659aaaec1b1e84dd2409"
+    },
+    "localPackage": ".git/t010-d1-anchor-v2/candidate (not committed; 12 MB WASM)"
+  }
+}

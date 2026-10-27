@@ -51,6 +51,11 @@ _V1 = tuple(_P + n for n in ('session.mjs', 'vite.config.mjs', 'native.py', 'gen
 # Vite entry page, and the application frontend Vite serves to the app (session.mjs imports two of its modules).
 DEPENDENCY_MANIFESTS = {1: _V1, 2: _V1 + ('rhwp.d.ts', 'vite.config.ts', 'index.html', 'tree:src')}
 NATIVE_WRAPPER = 'tests/integration/rhwp/evidence/t010-native-evidence-final-integrity/run-native.py'
+# v4 (2026-10-28, trust anchor replacement approved by the repository owner): the same strict set as v3 with the
+# engine gates and the authoritative wrapper of the new anchor's directory. Assertions, references, fixtures and
+# the cleanup contract are unchanged; v1-v3 stay available for historical results.
+_ANCHOR_V2 = 'tests/integration/rhwp/evidence/t010-d1-trust-anchor-v2/'
+NATIVE_WRAPPERS = {3: NATIVE_WRAPPER, 4: _ANCHOR_V2 + 'run-native.py'}
 RHWP_REVISION = '1a76570e833917d15817415a53c09ad61ab3203f'
 PINNED_FIXTURES = dict(zip(SAMPLES[2:], (
     'external/rhwp/samples/rnote/연구노트(화학).hwp',
@@ -65,13 +70,26 @@ FIXTURE_SHA256 = dict(zip(SAMPLES, (
 DEPENDENCY_MANIFESTS[3] = DEPENDENCY_MANIFESTS[2] + (
     NATIVE_WRAPPER, 'package.json', 'tsconfig.json', 'public/rhwp/rhwp.js', 'public/rhwp/rhwp_bg.wasm',
     'public/rhwp/BUILD.json', 'tests/integration/rhwp/cache-concurrency/fixtures.mjs', *PINNED_FIXTURES.values())
-CURRENT_MANIFEST = 3
+DEPENDENCY_MANIFESTS[4] = tuple(
+    _ANCHOR_V2 + 'engine-gates/' + n[len(_GATES):] if n.startswith(_GATES) else NATIVE_WRAPPERS[4] if n == NATIVE_WRAPPER else n
+    for n in DEPENDENCY_MANIFESTS[3])
+CURRENT_MANIFEST = 4
+
+
+def strict_manifest(version):
+    """v3 and later use the strict checks; only an exact int qualifies (a str/bool/float never does)."""
+    return type(version) is int and version >= 3
 CANDIDATE_FILES = ('rhwp.js', 'rhwp_bg.wasm', 'ENGINE.json', 'rhwp.d.ts')
 
 # Trust anchor: committed in 2636a65 and protected since; read from the committed tree (git show HEAD:path), never from
 # the working tree or a result. Its own bytes are pinned so a later edit cannot move the anchor.
-TRUST_ANCHOR = {'path': 'tests/integration/rhwp/evidence/t010-decoded-lease-readiness-closure/candidate-identity.json',
-                'sha256': '1699dfbe6d51409c1b7f852c838e1ab37bb3b27be7efe6fbf3dd70eda8048271'}
+# v4 replaces the anchor (approved 2026-10-28); the v3 anchor file is preserved unchanged and still pinned for v3 results.
+TRUST_ANCHORS = {
+    3: {'path': 'tests/integration/rhwp/evidence/t010-decoded-lease-readiness-closure/candidate-identity.json',
+        'sha256': '1699dfbe6d51409c1b7f852c838e1ab37bb3b27be7efe6fbf3dd70eda8048271'},
+    4: {'path': _ANCHOR_V2 + 'candidate-identity.json', 'sha256': '799d3e31f2f3d5e23b7ee8a003ede43928bf19bef43838d2377e82be03e5877e'},
+}
+TRUST_ANCHOR = TRUST_ANCHORS[CURRENT_MANIFEST]
 TRUSTED_KEYS = ('rhwp_bg.wasm', 'rhwp.js', 'rhwp.d.ts', 'ENGINE.json')
 
 
@@ -85,9 +103,9 @@ def loads_strict(text):
     return json.loads(text, object_pairs_hook=pairs, parse_constant=constant)
 
 
-def trust_anchor_from_bytes(data):
+def trust_anchor_from_bytes(data, version=CURRENT_MANIFEST):
     """{name: sha256} for TRUSTED_KEYS from the committed anchor bytes; ValueError unless the bytes are the pinned ones."""
-    if hashlib.sha256(data).hexdigest() != TRUST_ANCHOR['sha256']: raise ValueError('trust anchor bytes differ from the pinned anchor')
+    if hashlib.sha256(data).hexdigest() != TRUST_ANCHORS[version]['sha256']: raise ValueError('trust anchor bytes differ from the pinned anchor')
     record = loads_strict(data.decode())
     expected = record['candidate']['expected']
     trusted = {k: expected[k] for k in ('rhwp_bg.wasm', 'rhwp.js', 'rhwp.d.ts')}
@@ -96,9 +114,9 @@ def trust_anchor_from_bytes(data):
     return trusted
 
 
-def load_trust_anchor(root):
-    data = subprocess.run(['git', '-C', str(root), 'show', 'HEAD:' + TRUST_ANCHOR['path']], capture_output=True, check=True).stdout
-    return trust_anchor_from_bytes(data)
+def load_trust_anchor(root, version=CURRENT_MANIFEST):
+    data = subprocess.run(['git', '-C', str(root), 'show', 'HEAD:' + TRUST_ANCHORS[version]['path']], capture_output=True, check=True).stdout
+    return trust_anchor_from_bytes(data, version)
 
 
 def tree_digest(root, directory):
@@ -144,7 +162,7 @@ def dependency_digests(root, candidate, version=CURRENT_MANIFEST):
         path = candidate / name if name in CANDIDATE_FILES else root / name
         try: digests[name] = hashlib.sha256(path.read_bytes()).hexdigest()
         except OSError: digests[name] = None
-    if version == 3:
+    if strict_manifest(version):
         if not frontend_inputs_valid(root): digests['tree:src'] = None
         if not pinned_samples_valid(root):
             for name in PINNED_FIXTURES.values(): digests[name] = None
@@ -331,7 +349,7 @@ def check_dependencies(v, before, after, version, trusted):
         v.require(not extra, 'dependency-manifest', f'{label} has unexpected or non-canonical names: {extra}'[:300])
         bad = [n for n in required if n in supplied and not sha256_text(supplied[n])]
         v.require(not bad, 'dependency-manifest', f'{label} digests not sha256 text: {bad}'[:300])
-        if version == 3:
+        if strict_manifest(version):
             for sample, path in PINNED_FIXTURES.items():
                 v.require(supplied.get(path) == FIXTURE_SHA256[sample], 'fixture-identity',
                           f'{label} pinned fixture differs from independent identity: {sample}')
@@ -470,17 +488,17 @@ def validate(*, harness_exit, result, result_error, expected_wasm, candidate_was
     elif not isinstance(result, dict):
         v.fail('malformed-result', f'result is {type(result).__name__}, not an object')
     else:
-        check_result(v, result, trusted_wasm, strict=manifest_version == 3)
+        check_result(v, result, trusted_wasm, strict=strict_manifest(manifest_version))
         check_teardown(v, result.get('teardown'))
-    if manifest_version == 3: check_lifecycle(v, lifecycle, attempt, harness_exit)
+    if strict_manifest(manifest_version): check_lifecycle(v, lifecycle, attempt, harness_exit)
     else: check_lifecycle_historical(v, lifecycle)
     for error in evidence_errors:
         v.fail('evidence-write', str(error))
     categories = sorted({f['category'] for f in v.failures})
-    return {'schema': SCHEMA if manifest_version == 3 else 2, 'status': 'FAIL' if v.failures else 'PASS', 'failures': v.failures, 'categories': categories,
+    return {'schema': SCHEMA if strict_manifest(manifest_version) else 2, 'status': 'FAIL' if v.failures else 'PASS', 'failures': v.failures, 'categories': categories,
             'harnessExit': harness_exit, 'expectedAssertions': EXPECTED_ASSERTIONS, 'expectedReferences': EXPECTED_REFERENCES,
             'expectedCleanup': list(CLEANUP_STEPS), 'acceptedDriverExits': list(ACCEPTED_DRIVER_EXITS),
-            'dependencyManifest': manifest_version, 'trustAnchor': dict(TRUST_ANCHOR), 'expectedWasmSha256': trusted_wasm}
+            'dependencyManifest': manifest_version, 'trustAnchor': dict(TRUST_ANCHORS.get(manifest_version, TRUST_ANCHOR)), 'expectedWasmSha256': trusted_wasm}
 
 
 def exit_code(verdict, harness_exit):
