@@ -1,0 +1,22 @@
+T010 D4 화학 문서 p95 꼬리 귀속 (2026-10-28, 진단 — 제품 변경 없음)
+
+범주: VERIFIED=이번 관측, INFERRED=해석, UNVERIFIED=입증 못함. 공식 D4 판정과 무관하다.
+
+1. 공식 attempt 4 원본에서(VERIFIED, .git/t010-d4-page-edge-official-attempt4/result.json sha dc1a731b…, group-start 30표본)
+- 꼬리 표본 3/30은 keydown→input이 31–38 ms(기본 문서는 약 1 ms)이고 그 사이 계측된 엔진 호출이 없다(main thread가 계측 밖 일로 막힘).
+- 키마다 측정 창 안에 렌더 job 2개(두 번째는 handler 뒤). 간헐적 느린 호출(insertText 15 ms, getCursorRect 20 ms)이 한 표본에 있다.
+
+2. job 정체 진단(chemical-jobs-native.py, 실제 앱·후보 0cb73f70·실제 X11 키, 원본 .git/t010-d4-chemical-jobs-attempt1 sha 40ac877f…,
+   요약 chemical-jobs-summary.json): 화학 HWP(24쪽, 쪽마다 문단 하나) 배율 50에서 Right + 'a'를 20번 친 뒤 앱이 idle할 때까지
+   beginRenderJob/beginRenderPatchJob의 쪽·Canvas·완료 결과와, job 시작 전과 완료 뒤 그 Canvas의 픽셀 표본 해시(4픽셀마다 1개)를 기록.
+- 키마다 렌더 job 7–15개(합 250), 모두 beginRenderJob(전체 쪽)·COMPLETE. 캐럿 쪽부터 ±1, ±2… 순서로 이미 그린 쪽들을 다시 그린다.
+- 픽셀이 바뀐 job은 250개 중 3개. 마지막 job 완료는 키 뒤 p50 484 ms. job begin→완료 wall p50 13 ms, 최대 166 ms
+  (poll 사이 대기를 포함한 구간이라 CPU 합이 아니다).
+- 보이는 쪽은 3개뿐이며 나머지는 화면 밖 쪽이다.
+3. 해석
+- INFERRED: modelVersion이 바뀌면 시험 어댑터(ownership-poc/session.mjs, 공식 D4가 쓰는 candidate-full 경로)가 이미 그린 모든 쪽을
+  다시 그리도록 예약하고, 대부분 같은 픽셀을 다시 만든다. 이 일이 다음 키의 keydown→input 앞에서 main thread를 차지해 꼬리를 만든다.
+  화학 문서는 쪽마다 큰 그림이 있어 쪽당 비용이 크다. 직접 인과(이 job을 없애면 꼬리가 사라짐)는 아직 시험하지 않았다(UNVERIFIED).
+- 한계: 픽셀 해시는 표본이라 아주 작은 변화를 놓칠 수 있다. 캐럿 쪽 job이 "변화 없음"인 것은 보이는 쪽을 다른(동기) 경로가 먼저 갱신했기
+  때문으로 보이나 확인하지 않았다(UNVERIFIED).
+4. 다음 행동: 바뀐 쪽만 다시 그리는 무효화(엔진 쪽 트리 차이 또는 쪽별 판 번호)를 설계하고, 꼬리 제거를 같은 대조군으로 확인한 뒤 공식 D4.
