@@ -1,0 +1,11 @@
+{
+  "schema": 1,
+  "status": "PASS",
+  "passed": 6,
+  "failed": 0,
+  "filtered": 3940,
+  "originalLocalEvidencePath": "tests/integration/rhwp/evidence/t010-final-20261028/page-identity-preparation-decoupling/identity-module-tests.json",
+  "originalLocalEvidenceSha256": "b4ea74069b687a955d05a9bec0761654c4166d546fef3dece64c8936d7874318",
+  "sourceLogPath": "tests/integration/rhwp/evidence/t010-final-20261028/page-identity-preparation-decoupling/identity-module-tests.log",
+  "sourceLogSha256": "567503013a6fd2c96c54a306ebe6b4749b307f6b3ce0b5ca7dcad0f8d1466900"
+}

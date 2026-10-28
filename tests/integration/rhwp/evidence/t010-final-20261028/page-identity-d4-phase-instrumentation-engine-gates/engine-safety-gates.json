@@ -1,0 +1,16 @@
+{
+  "status": "PASS",
+  "scope": "Experimental q2 diagnostic candidate only: cache-concurrency/run.py compared candidate with approved pinned public/rhwp in Chrome and WebKitGTK; HWP/HWPX exact pixel equality; ownership and scheduler gates. This is not D1 production approval or official D4.",
+  "wasmSha256": "e899677321e8022d7c16e023e4e63434d1d8bd4f0c9df869ae681b6c0d7b700a",
+  "sourceResultsSha256": {
+    "chrome": "cbcb414c647af92ce65a2173092f866f9f6ac1009631e06cd085b32f68d55cb6",
+    "webkit": "65af91c026b07c096a70a9e36e80aa449c5221472c8736a6c2b154569b9ba0f1"
+  },
+  "strictClippy": "NOT RUN for this isolated candidate; no activation approval",
+  "candidate": "page-order-v2-resource-q1-d4-diagnostics",
+  "candidateSourceTreeSha256": "6283ac1ad250e9e13d349655d143183f5400acd10091485679d92fa817a1fa2c",
+  "resourceQuantum": 1,
+  "stepQuantum": 256,
+  "experimental": true,
+  "productionApproval": "NOT_APPROVED"
+}

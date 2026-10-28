@@ -1,0 +1,25 @@
+<!doctype html>
+<meta charset="utf-8">
+<pre id="out">RUNNING</pre>
+<script>
+const ownBefore = Object.getOwnPropertyDescriptor(window, 'devicePixelRatio');
+let prototype = Object.getPrototypeOf(window), inheritedBefore = null;
+while (prototype && !inheritedBefore) {
+  inheritedBefore = Object.getOwnPropertyDescriptor(prototype, 'devicePixelRatio');
+  prototype = Object.getPrototypeOf(prototype);
+}
+const before = window.devicePixelRatio;
+let error = null;
+try { Object.defineProperty(window, 'devicePixelRatio', { configurable: true, value: before + 1 }); }
+catch (cause) { error = String(cause); }
+const after = window.devicePixelRatio;
+document.querySelector('#out').textContent = JSON.stringify({ status: 'PASS', before, after, changed: after !== before,
+  windowIsGlobalThis: window === globalThis, globalWindowDpr: globalThis.window?.devicePixelRatio ?? null,
+  ownBefore: ownBefore ? { configurable: ownBefore.configurable, enumerable: ownBefore.enumerable, writable: ownBefore.writable,
+    hasGetter: typeof ownBefore.get === 'function', hasValue: Object.hasOwn(ownBefore, 'value') } : null,
+  inheritedBefore: inheritedBefore ? { configurable: inheritedBefore.configurable, enumerable: inheritedBefore.enumerable,
+    writable: inheritedBefore.writable, hasGetter: typeof inheritedBefore.get === 'function', hasValue: Object.hasOwn(inheritedBefore, 'value') } : null,
+  ownAfter: Object.getOwnPropertyDescriptor(window, 'devicePixelRatio') ? { value: Object.getOwnPropertyDescriptor(window, 'devicePixelRatio').value,
+    configurable: Object.getOwnPropertyDescriptor(window, 'devicePixelRatio').configurable } : null,
+  error, userAgent: navigator.userAgent });
+</script>

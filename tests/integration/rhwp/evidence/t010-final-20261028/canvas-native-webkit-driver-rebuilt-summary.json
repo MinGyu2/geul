@@ -1,0 +1,39 @@
+{
+  "status": "FAIL",
+  "passed": 5,
+  "failed": 1,
+  "tests": [
+    {
+      "name": "candidate-dev-origin",
+      "status": "PASS",
+      "passed": null
+    },
+    {
+      "name": "focused-session-initialized-and-closed",
+      "status": "PASS",
+      "passed": null
+    },
+    {
+      "name": "native-resource-scheduler-matrix",
+      "status": "PASS",
+      "passed": 73
+    },
+    {
+      "name": "native-256-residents-seeded",
+      "status": "PASS",
+      "passed": null
+    },
+    {
+      "name": "native-app-image-after-saturation",
+      "status": "PASS",
+      "passed": null
+    },
+    {
+      "name": "runner-completion",
+      "status": "FAIL",
+      "passed": null
+    }
+  ],
+  "error": "\uc870\uac74\uc744 \ub9cc\uc871\ud558\uc9c0 \uc54a\uc74c: return window.__geulOwnership.stats().jobs.pendingCount===2",
+  "expectedWasmSha256": "97a575093aab7fde6400e3ce2a1c3ec243de28645f49ce27a55286ca8dff37e2"
+}

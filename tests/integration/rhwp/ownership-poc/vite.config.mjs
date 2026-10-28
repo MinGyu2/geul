@@ -11,11 +11,20 @@ if (process.env.GEUL_T010_OWNERSHIP_POC !== '1' || process.env.VITE_GEUL_TEST_HO
 if (process.env.VITE_GEUL_TEST_RHWP_HISTORY === '1' && process.env.GEUL_T010_HISTORY_PERF_ONLY !== '1' && process.env.GEUL_T010_HISTORY_SAFETY_ONLY !== '1') throw new Error('history requires a separate explicit native performance or safety experiment flag');
 const candidate = resolve(process.env.GEUL_T010_CANDIDATE || 'missing-candidate');
 const schedulerMode = process.env.GEUL_T010_SCHEDULER_POC === '1';
+const pageIdentityMode = process.env.GEUL_T010_PAGE_IDENTITY_POC === '1';
 const evidence = resolve(process.env.GEUL_T010_EVIDENCE || resolve(root, 'tests/integration/rhwp/evidence/' + (schedulerMode ? 't010-resource-scheduler' : 't010-render-ownership')));
 const json = path => JSON.parse(readFileSync(path, 'utf8'));
 const identity = json(resolve(candidate, 'ENGINE.json'));
 const gates = json(resolve(evidence, 'engine-safety-gates.json'));
 if (schedulerMode && identity.schedulerAPI !== true) throw new Error('scheduler candidate API required');
+if (pageIdentityMode && (process.env.GEUL_T010_HISTORY_PERF_ONLY !== '1'
+    || process.env.GEUL_T010_DAMAGE_POC === '1'
+    || identity.experimental !== true || identity.productionApproval !== 'NOT_APPROVED'
+    || identity.imagePageIdentityAPI !== true || identity.renderJobIdentityAPI !== true
+    || identity.pageIdentityBindsDocumentPageIndex !== true
+    || identity.pageIdentityIndependentOfPreparation !== true)) {
+  throw new Error('page identity requires the isolated experimental history-perf candidate');
+}
 if (gates.status !== 'PASS' || identity.buildStatus !== 'PASS' || !identity.sourceStableDuringBuild
     || gates.wasmSha256 !== identity.artifacts['rhwp_bg.wasm']) throw new Error('candidate engine gates are not satisfied');
 for (const name of ['rhwp.js', 'rhwp_bg.wasm', 'rhwp.d.ts']) {
@@ -25,6 +34,31 @@ for (const browser of ['chrome', 'webkit']) {
   const result = json(resolve(evidence, browser + '.json'));
   if (result.status !== 'PASS' || result.identities.candidate['rhwp_bg.wasm'] !== gates.wasmSha256) throw new Error('browser gate mismatch');
 }
+if (pageIdentityMode) {
+  const schedulerPath = resolve(evidence, 'native-scheduler-only.json');
+  const schedulerResult = json(schedulerPath);
+  const schedulerGate = gates.nativeScheduler;
+  const schedulerTests = schedulerResult.scheduler?.tests || [];
+  const ownership = schedulerResult.lastObserved?.ownership;
+  const stats = ownership?.stats;
+  const jobs = stats?.jobs;
+  const cleanupComplete = stats?.sessions?.length === 0 && stats?.subscribers === 0
+    && jobs?.activeJobs === 0 && jobs?.activeLeaseCount === 0
+    && jobs?.activeLeaseEstimatedBytes === 0
+    && jobs?.decodedLedger?.accountingErrors === 0;
+  const focusedChecks = schedulerResult.tests || [];
+  if (!schedulerGate || schedulerGate.status !== 'PASS'
+      || schedulerGate.path !== 'native-scheduler-only.json'
+      || schedulerGate.sha256 !== createHash('sha256').update(readFileSync(schedulerPath)).digest('hex')
+      || schedulerResult.status !== 'PASS' || schedulerResult.expectedWasmSha256 !== gates.wasmSha256
+      || schedulerResult.scheduler?.status !== 'PASS' || schedulerTests.length !== 73
+      || schedulerTests.some(test => test.status !== 'PASS')
+      || focusedChecks.length !== 11 || focusedChecks.some(test => test.status !== 'PASS')
+      || focusedChecks.find(test => test.name === 'native-resource-scheduler-matrix')?.passed !== 73
+      || !cleanupComplete) {
+    throw new Error('page identity requires the matching native 73-case scheduler safety gate');
+  }
+}
 
 export default mergeConfig(base, {
   root,
@@ -33,6 +67,14 @@ export default mergeConfig(base, {
   plugins: [{
     name: 'explicit-t010-ownership-poc',
     enforce: 'pre',
+    transformIndexHtml() {
+      if (!pageIdentityMode) return;
+      return [{
+        tag: 'script',
+        children: 'window.__GEUL_T010_PAGE_IDENTITY_POC__ = true;',
+        injectTo: 'head-prepend',
+      }];
+    },
     transform(code, id) {
       if (id.split('?')[0] === resolve(root, 'src/components/Editor/rhwp/RhwpSurface.tsx')) {
         const before = 'if (canvas) session.renderPage(page, canvas, scale * ratio);';

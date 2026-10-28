@@ -1,0 +1,3 @@
+실행: GEUL_T010_OWNERSHIP_POC=1 GEUL_T010_SCHEDULER_POC=1 VITE_GEUL_TEST_HOOKS=1 GEUL_T010_CANDIDATE=$PWD/.git/t010-d1-anchor-v2/candidate npm run dev -- --config tests/integration/rhwp/ownership-poc/vite.config.mjs --host 127.0.0.1 --port 1420 --strictPort
+결과: 종료 코드 1. `vite.config.mjs`가 기본 scheduler evidence `t010-resource-scheduler/engine-safety-gates.json`을 읽어 `candidate engine gates are not satisfied`를 반환했다. 기본 gate는 현재 후보 WASM SHA-256 `97a575093aab7fde6400e3ce2a1c3ec243de28645f49ce27a55286ca8dff37e2`와 다른 후보를 가리켰다.
+후속 선택: 해당 WASM SHA와 일치하는 승인된 독립 브라우저 gate 경로 `tests/integration/rhwp/evidence/t010-d1-trust-anchor-v2/engine-gates`를 `GEUL_T010_EVIDENCE`로 명시해 재실행한다.

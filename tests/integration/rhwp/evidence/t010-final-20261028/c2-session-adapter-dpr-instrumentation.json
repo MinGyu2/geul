@@ -1,0 +1,179 @@
+{
+  "implementation": "session.mjs factory; only module loader replaced with deterministic fake engine",
+  "sourceSha256": "b785f3ac0207823f531acbf2a728ab5bf4f45f776f2e7aa542c0386c27147c33",
+  "testSha256": "c9f1bfe143064dc683eecbece97dfe4a706de47a6c3107b44278666c9dcf99d6",
+  "tests": [
+    {
+      "name": "trace-correlates-cancel-and-replacement",
+      "status": "PASS"
+    },
+    {
+      "name": "trace-different-targets",
+      "status": "PASS"
+    },
+    {
+      "name": "trace-bounded-and-detached",
+      "status": "PASS"
+    },
+    {
+      "name": "identical-pending",
+      "status": "PASS"
+    },
+    {
+      "name": "different-page",
+      "status": "PASS"
+    },
+    {
+      "name": "different-scale",
+      "status": "PASS"
+    },
+    {
+      "name": "mutation",
+      "status": "PASS"
+    },
+    {
+      "name": "reload",
+      "status": "PASS"
+    },
+    {
+      "name": "complete-after-duplicates",
+      "status": "PASS"
+    },
+    {
+      "name": "error-then-other-page",
+      "status": "PASS"
+    },
+    {
+      "name": "disconnected",
+      "status": "PASS"
+    },
+    {
+      "name": "queued-identical",
+      "status": "PASS"
+    },
+    {
+      "name": "damage-retains-valid-previous-frame",
+      "status": "PASS"
+    },
+    {
+      "name": "fractional-region-replays-complete-page",
+      "status": "PASS"
+    },
+    {
+      "name": "damage-resize-falls-back-full",
+      "status": "PASS"
+    },
+    {
+      "name": "cell-edit-falls-back-full",
+      "status": "PASS"
+    },
+    {
+      "name": "summary-lru-keeps-newly-touched-frame",
+      "status": "PASS"
+    },
+    {
+      "name": "background-pages-preserve-visible-damage-basis",
+      "status": "PASS"
+    },
+    {
+      "name": "background-pages-rerender-without-exact-revision-identity",
+      "status": "PASS"
+    },
+    {
+      "name": "summary-aggregate-budget-remains-bounded",
+      "status": "PASS"
+    },
+    {
+      "name": "snapshot-restore-invalidates-damage-basis",
+      "status": "PASS"
+    },
+    {
+      "name": "initial-mount-cleanup-preserves-pending",
+      "status": "PASS"
+    },
+    {
+      "name": "damage-summary-cannot-reuse-foreign-owner",
+      "status": "PASS"
+    },
+    {
+      "name": "completed-foreign-owner-rerenders",
+      "status": "PASS"
+    },
+    {
+      "name": "completed-engine-token-mismatch-rerenders",
+      "status": "PASS"
+    },
+    {
+      "name": "completed-external-resize-rerenders",
+      "status": "PASS"
+    },
+    {
+      "name": "canvas-resize-while-job-pending-invalidates-owner",
+      "status": "PASS"
+    },
+    {
+      "name": "backing-store-reset-and-restore-invalidates-pending-job",
+      "status": "PASS"
+    },
+    {
+      "name": "new-revision-avoids-useless-summary-work",
+      "status": "PASS"
+    },
+    {
+      "name": "damage-lossy-summary-cannot-prove-new-revision",
+      "status": "PASS"
+    },
+    {
+      "name": "damage-identical-summary-does-not-skip-new-revision",
+      "status": "PASS"
+    },
+    {
+      "name": "completed-job-identity-skips-cross-revision-full-job",
+      "status": "PASS"
+    },
+    {
+      "name": "changed-page-identity-forces-full-job-then-new-identity-can-reuse",
+      "status": "PASS"
+    },
+    {
+      "name": "unsupported-page-identity-fails-closed-to-full",
+      "status": "PASS"
+    },
+    {
+      "name": "dpr-geometry-scale-page-order-and-canvas-replacement-invalidate-reuse",
+      "status": "PASS"
+    },
+    {
+      "name": "undo-redo-snapshot-revisions-reuse-identical-page-identity",
+      "status": "PASS"
+    },
+    {
+      "name": "cache-eviction-does-not-invalidate-an-owned-completed-frame",
+      "status": "PASS"
+    },
+    {
+      "name": "pending-render-identity-cannot-certify-reuse-before-completion",
+      "status": "PASS"
+    },
+    {
+      "name": "closed-document-frame-cannot-reuse-after-reload",
+      "status": "PASS"
+    },
+    {
+      "name": "explicit-repaint-runs-full-even-unchanged",
+      "status": "PASS"
+    },
+    {
+      "name": "terminal-no-restart",
+      "status": "PASS"
+    },
+    {
+      "name": "late-completion-after-foreign-canvas-owner-not-published",
+      "status": "PASS"
+    },
+    {
+      "name": "late-owner-completion-cancels-pending-taker-and-repairs",
+      "status": "PASS"
+    }
+  ]
+}

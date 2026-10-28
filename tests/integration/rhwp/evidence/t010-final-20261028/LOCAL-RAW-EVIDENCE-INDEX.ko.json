@@ -1,0 +1,333 @@
+{
+  "schema": 1,
+  "classification": "PUBLIC_COMMIT_EXCLUSION_INDEX",
+  "rule": "home-path-unix",
+  "files": [
+    {
+      "path": "tests/integration/rhwp/evidence/t010-final-20261028/canvas-native-webkit-missing-driver-correction.txt",
+      "sha256": "fb369de0454c3b6f5af3dafa29cd4ca5ff0f29a24512d1e8051df1d359360c56",
+      "reason": "원본 증거에 환경별 사용자 홈 절대경로가 포함되어 보안 정책에 따라 이번 공개 커밋에서 제외; 로컬 원본은 수정하지 않음"
+    },
+    {
+      "path": "tests/integration/rhwp/evidence/t010-final-20261028/engine-gates/chrome.json",
+      "sha256": "6b79496f8423344e1e03f85701046999413b975bbd603b46f26bf265099f1f1d",
+      "reason": "원본 증거에 환경별 사용자 홈 절대경로가 포함되어 보안 정책에 따라 이번 공개 커밋에서 제외; 로컬 원본은 수정하지 않음"
+    },
+    {
+      "path": "tests/integration/rhwp/evidence/t010-final-20261028/engine-gates/webkit.json",
+      "sha256": "1c4cf08399f3f088fee0512443ead430dac778165d616057f327ccb7935d09d9",
+      "reason": "원본 증거에 환경별 사용자 홈 절대경로가 포함되어 보안 정책에 따라 이번 공개 커밋에서 제외; 로컬 원본은 수정하지 않음"
+    },
+    {
+      "path": "tests/integration/rhwp/evidence/t010-final-20261028/oracle-strict-stage-a-debug-incomplete-result.json",
+      "sha256": "ebfe3b85f6aba2dd02afb8e22b357c8c5ab74f5e779ab6518e877cb96c9baf80",
+      "reason": "원본 증거에 환경별 사용자 홈 절대경로가 포함되어 보안 정책에 따라 이번 공개 커밋에서 제외; 로컬 원본은 수정하지 않음"
+    },
+    {
+      "path": "tests/integration/rhwp/evidence/t010-final-20261028/oracle-strict-stage-a-final-result.json",
+      "sha256": "9ebad50b98f9a9998fb6e5155f972c88184c972374b17fec3d4ab3c39444688e",
+      "reason": "원본 증거에 환경별 사용자 홈 절대경로가 포함되어 보안 정책에 따라 이번 공개 커밋에서 제외; 로컬 원본은 수정하지 않음"
+    },
+    {
+      "path": "tests/integration/rhwp/evidence/t010-final-20261028/oracle-strict-stage-a-post-stageb-result.json",
+      "sha256": "3c29e750a97a2569607ddab061880743960f0a951e8c0f0571985e6f88cb4060",
+      "reason": "원본 증거에 환경별 사용자 홈 절대경로가 포함되어 보안 정책에 따라 이번 공개 커밋에서 제외; 로컬 원본은 수정하지 않음"
+    },
+    {
+      "path": "tests/integration/rhwp/evidence/t010-final-20261028/oracle-strict-stage-a-release-result.json",
+      "sha256": "93cf0514ca33a852bc32d111b0bf072ef0ab3792c0e86082456fda923eb7862e",
+      "reason": "원본 증거에 환경별 사용자 홈 절대경로가 포함되어 보안 정책에 따라 이번 공개 커밋에서 제외; 로컬 원본은 수정하지 않음"
+    },
+    {
+      "path": "tests/integration/rhwp/evidence/t010-final-20261028/page-identity-adapter-page-order-webkit-attempt2.json",
+      "sha256": "3e8910eaf1d56cdd539584d1a21173dd2d73f54349213e155f1c449c5af323f7",
+      "reason": "원본 증거에 환경별 사용자 홈 절대경로가 포함되어 보안 정책에 따라 이번 공개 커밋에서 제외; 로컬 원본은 수정하지 않음"
+    },
+    {
+      "path": "tests/integration/rhwp/evidence/t010-final-20261028/page-identity-adapter-page-order-webkit-attempt3.json",
+      "sha256": "93596279d9d64a34ad3176e2a496fc2403639172d52b809541ab29344a840fec",
+      "reason": "원본 증거에 환경별 사용자 홈 절대경로가 포함되어 보안 정책에 따라 이번 공개 커밋에서 제외; 로컬 원본은 수정하지 않음"
+    },
+    {
+      "path": "tests/integration/rhwp/evidence/t010-final-20261028/page-identity-adapter-page-order-webkit-attempt4.json",
+      "sha256": "bafef3086ead8315c58e4e084dcde27cedfbcb3d0301100537f0e266bfcd688a",
+      "reason": "원본 증거에 환경별 사용자 홈 절대경로가 포함되어 보안 정책에 따라 이번 공개 커밋에서 제외; 로컬 원본은 수정하지 않음"
+    },
+    {
+      "path": "tests/integration/rhwp/evidence/t010-final-20261028/page-identity-adapter-page-order-webkit-final.json",
+      "sha256": "aaabf9d081e1bff3346f6e5c2d89280726d8f27b54b4eb64b7b0cc713a5ed59d",
+      "reason": "원본 증거에 환경별 사용자 홈 절대경로가 포함되어 보안 정책에 따라 이번 공개 커밋에서 제외; 로컬 원본은 수정하지 않음"
+    },
+    {
+      "path": "tests/integration/rhwp/evidence/t010-final-20261028/page-identity-adapter-page-order-webkit-final2.json",
+      "sha256": "6048f93b64dc8d189fe1a60c146deb697a8fd2a89a793f1a651a704ac672a97f",
+      "reason": "원본 증거에 환경별 사용자 홈 절대경로가 포함되어 보안 정책에 따라 이번 공개 커밋에서 제외; 로컬 원본은 수정하지 않음"
+    },
+    {
+      "path": "tests/integration/rhwp/evidence/t010-final-20261028/page-identity-adapter-page-order-webkit-final3.json",
+      "sha256": "02b98fbe10160abc7b0c9d20aab9376b5220995c9dbd3570e020aee17bc369c6",
+      "reason": "원본 증거에 환경별 사용자 홈 절대경로가 포함되어 보안 정책에 따라 이번 공개 커밋에서 제외; 로컬 원본은 수정하지 않음"
+    },
+    {
+      "path": "tests/integration/rhwp/evidence/t010-final-20261028/page-identity-adapter-page-order-webkit-final4.json",
+      "sha256": "02f6995dc04344f55b1f1e0450db05a1efd0bcad9b0d4848d441a95fb1c90d29",
+      "reason": "원본 증거에 환경별 사용자 홈 절대경로가 포함되어 보안 정책에 따라 이번 공개 커밋에서 제외; 로컬 원본은 수정하지 않음"
+    },
+    {
+      "path": "tests/integration/rhwp/evidence/t010-final-20261028/page-identity-adapter-page-order-webkit.json",
+      "sha256": "a93698daa97382fd8118e2008e0610307740e013c53890ab6507bd9451dc754d",
+      "reason": "원본 증거에 환경별 사용자 홈 절대경로가 포함되어 보안 정책에 따라 이번 공개 커밋에서 제외; 로컬 원본은 수정하지 않음"
+    },
+    {
+      "path": "tests/integration/rhwp/evidence/t010-final-20261028/page-identity-cache-admission-diagnostics-build-identity.json",
+      "sha256": "1e73bdcaecdd035ec5a796ac90ef1df003d06078b7c37a5224d38b52bd389b6d",
+      "reason": "원본 증거에 환경별 사용자 홈 절대경로가 포함되어 보안 정책에 따라 이번 공개 커밋에서 제외; 로컬 원본은 수정하지 않음"
+    },
+    {
+      "path": "tests/integration/rhwp/evidence/t010-final-20261028/page-identity-cost-aware-cache-analysis.json",
+      "sha256": "17eebefa6c65ddf213c2305e36d61a0b771c21f6fd01975a2f4e53d1218388d5",
+      "reason": "원본 증거에 환경별 사용자 홈 절대경로가 포함되어 보안 정책에 따라 이번 공개 커밋에서 제외; 로컬 원본은 수정하지 않음"
+    },
+    {
+      "path": "tests/integration/rhwp/evidence/t010-final-20261028/page-identity-cost-aware-cache-build-identity.json",
+      "sha256": "a8a26aaf0c59a0eb8fc7fa256216b5ce6105db2810c3c8a2e8930f46fafb9b46",
+      "reason": "원본 증거에 환경별 사용자 홈 절대경로가 포함되어 보안 정책에 따라 이번 공개 커밋에서 제외; 로컬 원본은 수정하지 않음"
+    },
+    {
+      "path": "tests/integration/rhwp/evidence/t010-final-20261028/page-identity-cost-aware-cache-focused-tests.json",
+      "sha256": "37a90b93bb6f60c4b70d1041a71e2e3d0f6803a72e49b569326d183cae30469d",
+      "reason": "원본 증거에 환경별 사용자 홈 절대경로가 포함되어 보안 정책에 따라 이번 공개 커밋에서 제외; 로컬 원본은 수정하지 않음"
+    },
+    {
+      "path": "tests/integration/rhwp/evidence/t010-final-20261028/page-identity-d4-phase-instrumentation-build-attempt2.json",
+      "sha256": "62f5ff2d7e24459b68ebde4333dc536c113877d13ec43b2cc2b772b521d191e6",
+      "reason": "원본 증거에 환경별 사용자 홈 절대경로가 포함되어 보안 정책에 따라 이번 공개 커밋에서 제외; 로컬 원본은 수정하지 않음"
+    },
+    {
+      "path": "tests/integration/rhwp/evidence/t010-final-20261028/page-identity-d4-phase-instrumentation-build-identity.json",
+      "sha256": "b766909f7ac07d55e8dd6836988768407dbbd0300bc92ed3444341617a310ac3",
+      "reason": "원본 증거에 환경별 사용자 홈 절대경로가 포함되어 보안 정책에 따라 이번 공개 커밋에서 제외; 로컬 원본은 수정하지 않음"
+    },
+    {
+      "path": "tests/integration/rhwp/evidence/t010-final-20261028/page-identity-d4-phase-instrumentation-build.json",
+      "sha256": "1b40cc6287736ddc88d5e46f481326a2111b01fbb340725ae2c5a1e74b6c5d08",
+      "reason": "원본 증거에 환경별 사용자 홈 절대경로가 포함되어 보안 정책에 따라 이번 공개 커밋에서 제외; 로컬 원본은 수정하지 않음"
+    },
+    {
+      "path": "tests/integration/rhwp/evidence/t010-final-20261028/page-identity-d4-phase-instrumentation-engine-gates/chrome-run.json",
+      "sha256": "9a1d4e97e2f4b9b4eadb078c34360f4ba5df8d77dccc118e29fe017d3d499c35",
+      "reason": "원본 증거에 환경별 사용자 홈 절대경로가 포함되어 보안 정책에 따라 이번 공개 커밋에서 제외; 로컬 원본은 수정하지 않음"
+    },
+    {
+      "path": "tests/integration/rhwp/evidence/t010-final-20261028/page-identity-d4-phase-instrumentation-engine-gates/chrome.json",
+      "sha256": "cbcb414c647af92ce65a2173092f866f9f6ac1009631e06cd085b32f68d55cb6",
+      "reason": "원본 증거에 환경별 사용자 홈 절대경로가 포함되어 보안 정책에 따라 이번 공개 커밋에서 제외; 로컬 원본은 수정하지 않음"
+    },
+    {
+      "path": "tests/integration/rhwp/evidence/t010-final-20261028/page-identity-d4-phase-instrumentation-engine-gates/webkit-run.json",
+      "sha256": "654292aef78ecb88c111f96f592fca55689fc6926f06e394ad478a250f8d75f7",
+      "reason": "원본 증거에 환경별 사용자 홈 절대경로가 포함되어 보안 정책에 따라 이번 공개 커밋에서 제외; 로컬 원본은 수정하지 않음"
+    },
+    {
+      "path": "tests/integration/rhwp/evidence/t010-final-20261028/page-identity-d4-phase-instrumentation-engine-gates/webkit.json",
+      "sha256": "65af91c026b07c096a70a9e36e80aa449c5221472c8736a6c2b154569b9ba0f1",
+      "reason": "원본 증거에 환경별 사용자 홈 절대경로가 포함되어 보안 정책에 따라 이번 공개 커밋에서 제외; 로컬 원본은 수정하지 않음"
+    },
+    {
+      "path": "tests/integration/rhwp/evidence/t010-final-20261028/page-identity-d4-resource-stage-instrumentation-build-identity.json",
+      "sha256": "732ce9bef598e2891f24e1c3ef9b6ff8a483717fb469ad694eedd2e62fcd8f11",
+      "reason": "원본 증거에 환경별 사용자 홈 절대경로가 포함되어 보안 정책에 따라 이번 공개 커밋에서 제외; 로컬 원본은 수정하지 않음"
+    },
+    {
+      "path": "tests/integration/rhwp/evidence/t010-final-20261028/page-identity-d4-resource-stage-instrumentation-build.json",
+      "sha256": "1a2a0fecaa5305d5f5a4ccf32ac54ba37d1155d54ce1609ce6481e5a0c9fa403",
+      "reason": "원본 증거에 환경별 사용자 홈 절대경로가 포함되어 보안 정책에 따라 이번 공개 커밋에서 제외; 로컬 원본은 수정하지 않음"
+    },
+    {
+      "path": "tests/integration/rhwp/evidence/t010-final-20261028/page-identity-dpr-property-probe-webkit-attempt2.json",
+      "sha256": "419e0799addcf4ad438b778a97e2bb7f141589e542cfa9eb8063462a7f155a0a",
+      "reason": "원본 증거에 환경별 사용자 홈 절대경로가 포함되어 보안 정책에 따라 이번 공개 커밋에서 제외; 로컬 원본은 수정하지 않음"
+    },
+    {
+      "path": "tests/integration/rhwp/evidence/t010-final-20261028/page-identity-dpr-property-probe-webkit.json",
+      "sha256": "5e50930ad7d674de1c7117af8199f87d5ec50453748f344e8bb090348f705ab7",
+      "reason": "원본 증거에 환경별 사용자 홈 절대경로가 포함되어 보안 정책에 따라 이번 공개 커밋에서 제외; 로컬 원본은 수정하지 않음"
+    },
+    {
+      "path": "tests/integration/rhwp/evidence/t010-final-20261028/page-identity-job-build-identity.json",
+      "sha256": "62ae9d3b755c66a1c2f4781ef81b983922aac870865f0d860036a6fd6b06dcdd",
+      "reason": "원본 증거에 환경별 사용자 홈 절대경로가 포함되어 보안 정책에 따라 이번 공개 커밋에서 제외; 로컬 원본은 수정하지 않음"
+    },
+    {
+      "path": "tests/integration/rhwp/evidence/t010-final-20261028/page-identity-job-page-order-build-identity.json",
+      "sha256": "1cdcec4d33aff294c6aefe94b7d006646ca7e4f11348c165eac4b435e1048d7d",
+      "reason": "원본 증거에 환경별 사용자 홈 절대경로가 포함되어 보안 정책에 따라 이번 공개 커밋에서 제외; 로컬 원본은 수정하지 않음"
+    },
+    {
+      "path": "tests/integration/rhwp/evidence/t010-final-20261028/page-identity-job-resource-q1-build-identity.json",
+      "sha256": "24bf69dc64093239be14390e616b80465096e61405386bdd40a0ed496d10d8ae",
+      "reason": "원본 증거에 환경별 사용자 홈 절대경로가 포함되어 보안 정책에 따라 이번 공개 커밋에서 제외; 로컬 원본은 수정하지 않음"
+    },
+    {
+      "path": "tests/integration/rhwp/evidence/t010-final-20261028/page-identity-official-d4-attempt1-handler-analysis.json",
+      "sha256": "fbce4630944a47fa9dcd83c7f865b99843c176ac1ef1b4411bb382a6b44c4e8b",
+      "reason": "원본 증거에 환경별 사용자 홈 절대경로가 포함되어 보안 정책에 따라 이번 공개 커밋에서 제외; 로컬 원본은 수정하지 않음"
+    },
+    {
+      "path": "tests/integration/rhwp/evidence/t010-final-20261028/page-identity-official-d4-attempt1-timing.json",
+      "sha256": "6c9ded4b36e7ea6440e6a088246f29949d16a2897b7aca503ed1c61625a3a7c2",
+      "reason": "원본 증거에 환경별 사용자 홈 절대경로가 포함되어 보안 정책에 따라 이번 공개 커밋에서 제외; 로컬 원본은 수정하지 않음"
+    },
+    {
+      "path": "tests/integration/rhwp/evidence/t010-final-20261028/page-identity-official-d4-attempt2-exit.json",
+      "sha256": "9ea59dbfe52fa51b258ae7570175bee428e1b3d60c1a1851ea9c2192a3dce509",
+      "reason": "원본 증거에 환경별 사용자 홈 절대경로가 포함되어 보안 정책에 따라 이번 공개 커밋에서 제외; 로컬 원본은 수정하지 않음"
+    },
+    {
+      "path": "tests/integration/rhwp/evidence/t010-final-20261028/page-identity-preparation-decoupling/build-identity.json",
+      "sha256": "e3054ee955752ecab33c294eabb7bedd8a1b759e91311af7670c29a65417ec09",
+      "reason": "원본 증거에 환경별 사용자 홈 절대경로가 포함되어 보안 정책에 따라 이번 공개 커밋에서 제외; 로컬 원본은 수정하지 않음"
+    },
+    {
+      "path": "tests/integration/rhwp/evidence/t010-final-20261028/page-identity-preparation-decoupling/identity-module-tests.json",
+      "sha256": "b4ea74069b687a955d05a9bec0761654c4166d546fef3dece64c8936d7874318",
+      "reason": "원본 증거에 환경별 사용자 홈 절대경로가 포함되어 보안 정책에 따라 이번 공개 커밋에서 제외; 로컬 원본은 수정하지 않음"
+    },
+    {
+      "path": "tests/integration/rhwp/evidence/t010-final-20261028/page-identity-preparation-decoupling/webkit.json",
+      "sha256": "d0680664d3d39892f7a15a373bce27b778ea1a78b2149730c94fb67e0a1aeaad",
+      "reason": "원본 증거에 환경별 사용자 홈 절대경로가 포함되어 보안 정책에 따라 이번 공개 커밋에서 제외; 로컬 원본은 수정하지 않음"
+    },
+    {
+      "path": "tests/integration/rhwp/evidence/t010-final-20261028/page-identity-promotion-retention-build-identity.json",
+      "sha256": "306bcc3bb8734b066e409b02bc4877ebc58f1967f27cee09b9c47d38d25a75ea",
+      "reason": "원본 증거에 환경별 사용자 홈 절대경로가 포함되어 보안 정책에 따라 이번 공개 커밋에서 제외; 로컬 원본은 수정하지 않음"
+    },
+    {
+      "path": "tests/integration/rhwp/evidence/t010-final-20261028/page-identity-promotion-retention-cargo-fmt-all.json",
+      "sha256": "98389d216c2f082af45965882b0853e22ac93c24bd5f33f22036e5bf206fd416",
+      "reason": "원본 증거에 환경별 사용자 홈 절대경로가 포함되어 보안 정책에 따라 이번 공개 커밋에서 제외; 로컬 원본은 수정하지 않음"
+    },
+    {
+      "path": "tests/integration/rhwp/evidence/t010-final-20261028/page-identity-promotion-retention-focused-tests.json",
+      "sha256": "11bbc7ed36fc439819a5383de3d79a55b5dc2304e6624d41d5111536ce54e647",
+      "reason": "원본 증거에 환경별 사용자 홈 절대경로가 포함되어 보안 정책에 따라 이번 공개 커밋에서 제외; 로컬 원본은 수정하지 않음"
+    },
+    {
+      "path": "tests/integration/rhwp/evidence/t010-final-20261028/page-identity-promotion-retention-pre-fix.json",
+      "sha256": "717491b0969bce56b259dd6c733aa1313712a3146b8801754a24b0d76cc3f941",
+      "reason": "원본 증거에 환경별 사용자 홈 절대경로가 포함되어 보안 정책에 따라 이번 공개 커밋에서 제외; 로컬 원본은 수정하지 않음"
+    },
+    {
+      "path": "tests/integration/rhwp/evidence/t010-final-20261028/page-identity-protected-cache-build-identity.json",
+      "sha256": "e985e9918c293ae745c890078d2d544fde1a8a72a76cea7d8a076cdd1e63e9f6",
+      "reason": "원본 증거에 환경별 사용자 홈 절대경로가 포함되어 보안 정책에 따라 이번 공개 커밋에서 제외; 로컬 원본은 수정하지 않음"
+    },
+    {
+      "path": "tests/integration/rhwp/evidence/t010-final-20261028/page-identity-protected-cache-focused-tests.json",
+      "sha256": "e64ca2fa41dcf6f9f0a2db02a8f4303bd7e05b1edefc84fcf9b24c311353dfb8",
+      "reason": "원본 증거에 환경별 사용자 홈 절대경로가 포함되어 보안 정책에 따라 이번 공개 커밋에서 제외; 로컬 원본은 수정하지 않음"
+    },
+    {
+      "path": "tests/integration/rhwp/evidence/t010-final-20261028/page-identity-protected-cache-webkit-dbus-session.json",
+      "sha256": "000b8fb0541f77085eb587bbba8ee752d99488b3d61c90cc25ae966f1d4f6212",
+      "reason": "원본 증거에 환경별 사용자 홈 절대경로가 포함되어 보안 정책에 따라 이번 공개 커밋에서 제외; 로컬 원본은 수정하지 않음"
+    },
+    {
+      "path": "tests/integration/rhwp/evidence/t010-final-20261028/page-identity-protected-cache-webkit.json",
+      "sha256": "ce3fbc3c01b2d0efead27805312d51c0742a27ed856357ff2889841d74145a53",
+      "reason": "원본 증거에 환경별 사용자 홈 절대경로가 포함되어 보안 정책에 따라 이번 공개 커밋에서 제외; 로컬 원본은 수정하지 않음"
+    },
+    {
+      "path": "tests/integration/rhwp/evidence/t010-final-20261028/page-identity-protected-reclaim-focused-test.json",
+      "sha256": "8c2d2a0e21347c1a074712af85a9775a2fdc768b55642087cc150cfb234ce4ba",
+      "reason": "원본 증거에 환경별 사용자 홈 절대경로가 포함되어 보안 정책에 따라 이번 공개 커밋에서 제외; 로컬 원본은 수정하지 않음"
+    },
+    {
+      "path": "tests/integration/rhwp/evidence/t010-final-20261028/page-identity-q1-engine-gates/chrome.json",
+      "sha256": "a926c27738a60ddf8ef21a75526e3f389dc67abdd31791a31ae86d6b8f5d9ab2",
+      "reason": "원본 증거에 환경별 사용자 홈 절대경로가 포함되어 보안 정책에 따라 이번 공개 커밋에서 제외; 로컬 원본은 수정하지 않음"
+    },
+    {
+      "path": "tests/integration/rhwp/evidence/t010-final-20261028/page-identity-q1-engine-gates/webkit.json",
+      "sha256": "466783f1a710e6f9f922c22dd9492b1a436ab45108ecf90cc2c970cca77f8a1e",
+      "reason": "원본 증거에 환경별 사용자 홈 절대경로가 포함되어 보안 정책에 따라 이번 공개 커밋에서 제외; 로컬 원본은 수정하지 않음"
+    },
+    {
+      "path": "tests/integration/rhwp/evidence/t010-final-20261028/page-identity-q1-webkit-final.json",
+      "sha256": "184066c013d2e665c39df3c357275484c315f15bc430ed9084977a03cf3eb399",
+      "reason": "원본 증거에 환경별 사용자 홈 절대경로가 포함되어 보안 정책에 따라 이번 공개 커밋에서 제외; 로컬 원본은 수정하지 않음"
+    },
+    {
+      "path": "tests/integration/rhwp/evidence/t010-final-20261028/page-identity-q2-webkit-final.json",
+      "sha256": "f3a39995aeb3d137f824875d43b815773366e5b938e16c2761b5438a6893c1bd",
+      "reason": "원본 증거에 환경별 사용자 홈 절대경로가 포함되어 보안 정책에 따라 이번 공개 커밋에서 제외; 로컬 원본은 수정하지 않음"
+    },
+    {
+      "path": "tests/integration/rhwp/evidence/t010-final-20261028/page-identity-q3-webkit-diagnostics.json",
+      "sha256": "842bbd4ac8794714504ff0dc12b46305f5022cc26ece34044e6ee96136955265",
+      "reason": "원본 증거에 환경별 사용자 홈 절대경로가 포함되어 보안 정책에 따라 이번 공개 커밋에서 제외; 로컬 원본은 수정하지 않음"
+    },
+    {
+      "path": "tests/integration/rhwp/evidence/t010-final-20261028/page-identity-q4-webkit.json",
+      "sha256": "3bd30e326e0031bd24fdb01b2a6d9a6c5c950105d33356e420c74803655237d3",
+      "reason": "원본 증거에 환경별 사용자 홈 절대경로가 포함되어 보안 정책에 따라 이번 공개 커밋에서 제외; 로컬 원본은 수정하지 않음"
+    },
+    {
+      "path": "tests/integration/rhwp/evidence/t010-final-20261028/page-identity-q5-webkit.json",
+      "sha256": "82006e664b54ef3d4696bc8e6d014cfe19ce2410ad9447fdc7a27d873ec05106",
+      "reason": "원본 증거에 환경별 사용자 홈 절대경로가 포함되어 보안 정책에 따라 이번 공개 커밋에서 제외; 로컬 원본은 수정하지 않음"
+    },
+    {
+      "path": "tests/integration/rhwp/evidence/t010-final-20261028/page-identity-rejection-aging-build-identity.json",
+      "sha256": "b6e381ee3fb445dc2e72f721f4783e987e7207091234ef72eea19d7f641f3a58",
+      "reason": "원본 증거에 환경별 사용자 홈 절대경로가 포함되어 보안 정책에 따라 이번 공개 커밋에서 제외; 로컬 원본은 수정하지 않음"
+    },
+    {
+      "path": "tests/integration/rhwp/evidence/t010-final-20261028/page-identity-rejection-aging-focused-tests.json",
+      "sha256": "6a22db7f279313f0ff6266b49b0d7c1dda103bbcbdccbcb2dcc0f88f0d6c2a06",
+      "reason": "원본 증거에 환경별 사용자 홈 절대경로가 포함되어 보안 정책에 따라 이번 공개 커밋에서 제외; 로컬 원본은 수정하지 않음"
+    },
+    {
+      "path": "tests/integration/rhwp/evidence/t010-final-20261028/page-identity-rejection-aging-pre-fix.json",
+      "sha256": "88f6c57665e3936e73ab07d05efad5ca294c2abfe5f3ac713c9475c786b9cd5f",
+      "reason": "원본 증거에 환경별 사용자 홈 절대경로가 포함되어 보안 정책에 따라 이번 공개 커밋에서 제외; 로컬 원본은 수정하지 않음"
+    },
+    {
+      "path": "tests/integration/rhwp/evidence/t010-final-20261028/page-identity-rejection-aging-webkit.json",
+      "sha256": "1406c2f0eae2abef544c63a395a8ee18ae5badb30979437774e7248f48e45186",
+      "reason": "원본 증거에 환경별 사용자 홈 절대경로가 포함되어 보안 정책에 따라 이번 공개 커밋에서 제외; 로컬 원본은 수정하지 않음"
+    },
+    {
+      "path": "tests/integration/rhwp/evidence/t010-final-20261028/page-identity-rejection-streak-build-identity.json",
+      "sha256": "ce72bae8f836d4fc7acae1defd10d9c58c08e93328e3fdc7992aee7191bcb55f",
+      "reason": "원본 증거에 환경별 사용자 홈 절대경로가 포함되어 보안 정책에 따라 이번 공개 커밋에서 제외; 로컬 원본은 수정하지 않음"
+    },
+    {
+      "path": "tests/integration/rhwp/evidence/t010-final-20261028/page-identity-rejection-streak-focused-tests.json",
+      "sha256": "8758fc0e25abb44a7b7b3f19385b6d5d2cc54f33806b89f934f3bf6748523797",
+      "reason": "원본 증거에 환경별 사용자 홈 절대경로가 포함되어 보안 정책에 따라 이번 공개 커밋에서 제외; 로컬 원본은 수정하지 않음"
+    },
+    {
+      "path": "tests/integration/rhwp/evidence/t010-final-20261028/page-identity-rejection-streak-webkit.json",
+      "sha256": "c367f2b812446bfbeb39ae4d0a471a35a721c63adfbc24a59dad70636c457bca",
+      "reason": "원본 증거에 환경별 사용자 홈 절대경로가 포함되어 보안 정책에 따라 이번 공개 커밋에서 제외; 로컬 원본은 수정하지 않음"
+    },
+    {
+      "path": "tests/integration/rhwp/evidence/t010-final-20261028/page-identity-resource-key-diagnostics-build-identity.json",
+      "sha256": "12f1abe4fd19ed983085458a37840d183891efedb4bc69edc92c9c20ecf80256",
+      "reason": "원본 증거에 환경별 사용자 홈 절대경로가 포함되어 보안 정책에 따라 이번 공개 커밋에서 제외; 로컬 원본은 수정하지 않음"
+    },
+    {
+      "path": "tests/integration/rhwp/evidence/t010-final-20261028/page-identity-streak-admission-pre-fix.json",
+      "sha256": "6640f5c1585a1c7657af50b5d1f99b908abd19b00c19be1b87661683055aaa0d",
+      "reason": "원본 증거에 환경별 사용자 홈 절대경로가 포함되어 보안 정책에 따라 이번 공개 커밋에서 제외; 로컬 원본은 수정하지 않음"
+    },
+    {
+      "path": "tests/integration/rhwp/evidence/t010-final-20261028/page-identity-unhit-promotion-pressure-pre-fix.json",
+      "sha256": "26870ef57269bae89de07dc0c2a0f65dd6b271ee772e36e38ca9c743d8a6fc03",
+      "reason": "원본 증거에 환경별 사용자 홈 절대경로가 포함되어 보안 정책에 따라 이번 공개 커밋에서 제외; 로컬 원본은 수정하지 않음"
+    }
+  ],
+  "note": "경로는 저장소 상대경로. 이 목록은 오탐 예외가 아니며 검사 규칙을 변경하지 않는다."
+}

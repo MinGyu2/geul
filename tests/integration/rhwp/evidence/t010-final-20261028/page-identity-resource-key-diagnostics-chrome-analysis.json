@@ -1,0 +1,72 @@
+{
+  "status": "PASS_DIAGNOSTIC_CAUSE_CONFIRMED_IN_CHROME",
+  "candidateWasmSha256": "f8eeb356f86458215fdd44c5b171c9a1ec2571c6c525d3526c903ff5b0bcdcef",
+  "sourceTreeSha256": "a857ce46534d74c2b63e59eec949cf2bfcdc9c1479eb1b08968eb20863874605",
+  "harnessPath": "tests/integration/rhwp/evidence/t010-final-20261028/page-identity-q5-chrome.json",
+  "harnessSha256": "b5066a51529837d0e026a6225ed5b1fd23f82db65d0b730088d1f051978ef4ef",
+  "renderPhases": [
+    {
+      "label": "initial-full",
+      "skipped": 0,
+      "full": 24,
+      "exactPages": 24
+    },
+    {
+      "label": "edited-revision",
+      "skipped": 20,
+      "full": 4,
+      "exactPages": 24
+    },
+    {
+      "label": "undo-restored-revision",
+      "skipped": 20,
+      "full": 4,
+      "exactPages": 24
+    },
+    {
+      "label": "redo-restored-revision",
+      "skipped": 20,
+      "full": 4,
+      "exactPages": 24
+    },
+    {
+      "label": "same-session-document-reload",
+      "skipped": 0,
+      "full": 24,
+      "exactPages": 24
+    }
+  ],
+  "slowestResource": {
+    "elapsedMs": 136,
+    "inputBytes": 1556446,
+    "kind": "image",
+    "stage": "resourcePreparation"
+  },
+  "decodedImage": {
+    "cacheAdmissions": 0,
+    "cacheHits": 0,
+    "cacheMisses": 7,
+    "cacheRejections": 7,
+    "decodeAttempts": 7,
+    "decodeReady": 7,
+    "inputBytes": 1556446,
+    "key": "ImageKey { fnv: 6964495909033783677, mix: 10537643061766239115, len: 1556446 }",
+    "lookups": 7,
+    "maxDecodeMs": 132,
+    "maxDecodedBytes": 37788176,
+    "sharedLeaseReuses": 0
+  },
+  "cacheLimits": {
+    "maxBytes": 268435456,
+    "maxEntries": 256,
+    "maxEntryBytes": 67108864
+  },
+  "cleanup": {
+    "activeJobs": 0,
+    "activeLeases": 0,
+    "errors": 0,
+    "accountingErrors": 0
+  },
+  "observation": "The 1,556,446-byte key produced a 37,788,176-byte decoded Canvas (< 67,108,864 per-entry limit), but all 7 lookups missed, all 7 synchronous decodes ran (max132ms), and all 7 resident-cache admissions were rejected by LFU. This directly ties the slow resource to repeated cache-admission refusal in Chrome.",
+  "nextCheck": "Reproduce the same key-level behavior in native WebKit before changing admission policy."
+}

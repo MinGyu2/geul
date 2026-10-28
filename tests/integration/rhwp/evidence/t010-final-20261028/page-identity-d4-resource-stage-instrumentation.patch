@@ -1,0 +1,124 @@
+--- a/src/renderer/render_job.rs
++++ b/src/renderer/render_job.rs
+@@ -456,7 +456,7 @@
+ #[derive(Default)]
+ struct Diagnostics {
+     stages: BTreeMap<&'static str, TimingSummary>,
+-    slowest_resource: Option<(f64, &'static str, usize)>,
++    slowest_resource: Option<(f64, &'static str, &'static str, usize)>,
+ }
+ 
+ #[derive(Default)]
+@@ -523,9 +523,9 @@
+             if pool
+                 .diagnostics
+                 .slowest_resource
+-                .is_none_or(|(old_ms, _, _)| elapsed_ms > old_ms)
++                .is_none_or(|(old_ms, _, _, _)| elapsed_ms > old_ms)
+             {
+-                pool.diagnostics.slowest_resource = Some((elapsed_ms, kind, bytes));
++                pool.diagnostics.slowest_resource = Some((elapsed_ms, stage, kind, bytes));
+             }
+         }
+     });
+@@ -548,8 +548,8 @@
+         .collect::<serde_json::Map<_, _>>();
+     let slowest_resource = diagnostics
+         .slowest_resource
+-        .map(|(elapsed_ms, kind, bytes)| {
+-            serde_json::json!({"kind":kind,"inputBytes":bytes,"elapsedMs":elapsed_ms})
++        .map(|(elapsed_ms, stage, kind, bytes)| {
++            serde_json::json!({"stage":stage,"kind":kind,"inputBytes":bytes,"elapsedMs":elapsed_ms})
+         });
+     serde_json::json!({"stages":stages,"slowestResource":slowest_resource})
+ }
+--- a/src/renderer/web_canvas.rs
++++ b/src/renderer/web_canvas.rs
+@@ -442,6 +442,7 @@
+         return (CanvasPayload::Memo(v, data), baked);
+     }
+     super::render_job::note_transform();
++    let started = js_sys::Date::now();
+     let result = match operation {
+         1 => super::image_resolver::real_picture_watermark_bytes_to_hancom_tone_png_bytes(data),
+         2 => {
+@@ -450,6 +451,17 @@
+         3 => super::image_resolver::watermark_jpeg_bytes_to_hancom_baked_png_bytes(data),
+         _ => unreachable!(),
+     };
++    let kind = match operation {
++        1 => "realPictureWatermarkTone",
++        2 => "realPictureWatermarkFillTone",
++        3 => "watermarkJpegBaked",
++        _ => "unknownImageTransform",
++    };
++    render_job::note_diagnostic(
++        "watermarkImageTransform",
++        js_sys::Date::now() - started,
++        Some((kind, data.len())),
++    );
+     let baked = result.is_some();
+     if render_job::is_preparing() {
+         return match render_job::memoize(key, result, baked) {
+@@ -513,13 +525,32 @@
+         render_job::mark_limit();
+         return false;
+     }
+-    if !render_job::browser_owned(key) && decoded_canvas(key, data).is_some() {
++    let decoded = if !render_job::browser_owned(key) {
++        let started = js_sys::Date::now();
++        let decoded = decoded_canvas(key, data);
++        render_job::note_diagnostic(
++            "decodedCanvasLookupAndDecode",
++            js_sys::Date::now() - started,
++            Some((detect_image_mime_type(data), data.len())),
++        );
++        decoded
++    } else {
++        None
++    };
++    if decoded.is_some() {
+         return render_job::record_prepared(key);
+     }
+     if !render_job::is_preparing() {
+         return false;
+     }
+-    match browser_image(key, data) {
++    let started = js_sys::Date::now();
++    let image = browser_image(key, data);
++    render_job::note_diagnostic(
++        "browserImagePrepare",
++        js_sys::Date::now() - started,
++        Some((detect_image_mime_type(data), data.len())),
++    );
++    match image {
+         Ok(Some(_)) => render_job::record_prepared(key),
+         _ => false,
+     }
+@@ -580,6 +611,7 @@
+ #[cfg(target_arch = "wasm32")]
+ pub(crate) fn browser_data_url(data: &[u8]) -> String {
+     let mime_type = detect_image_mime_type(data);
++    let conversion_started = js_sys::Date::now();
+     let (render_data, render_mime): (std::borrow::Cow<[u8]>, &str) = if mime_type == "image/x-wmf" {
+         match crate::renderer::svg::convert_wmf_to_svg(data) {
+             Some(svg_bytes) => (std::borrow::Cow::Owned(svg_bytes), "image/svg+xml"),
+@@ -608,7 +640,18 @@
+     } else {
+         (std::borrow::Cow::Borrowed(data), mime_type)
+     };
++    super::render_job::note_diagnostic(
++        "browserImageFormatConversion",
++        js_sys::Date::now() - conversion_started,
++        Some((mime_type, data.len())),
++    );
++    let base64_started = js_sys::Date::now();
+     let base64_data = base64::engine::general_purpose::STANDARD.encode(&*render_data);
++    super::render_job::note_diagnostic(
++        "browserImageBase64Encode",
++        js_sys::Date::now() - base64_started,
++        Some((render_mime, render_data.len())),
++    );
+     format!("data:{};base64,{}", render_mime, base64_data)
+ }
+ 

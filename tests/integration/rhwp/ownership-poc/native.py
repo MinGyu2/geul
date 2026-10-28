@@ -258,8 +258,24 @@ def main():
                             if(value&&window.__repeatKeys.length<2){const key='native-repeat-'+window.__repeatSerial+'-'+window.__repeatKeys.length;window.__repeatKeys.push(key);desc.set.call(this,'/held-image.svg?key='+key+'&data='+encodeURIComponent(value));}
                             else desc.set.call(this,value);
                           }});window.__geulOwnership.trim();window.__geulOwnership.repaint();'''
+                        def wait_for_two_pending(label):
+                            try:
+                                smoke.wait_until(driver, 'return window.__geulOwnership.stats().jobs.pendingCount===2', timeout=10)
+                            except smoke.ConditionTimeout:
+                                diagnostic = driver.js(r'''return (()=>{const s=window.__geulOwnership.stats();return {
+                                  label:arguments[0],pendingCount:s.jobs.pendingCount,activeJobs:s.jobs.activeJobs,
+                                  loadAttempts:s.jobs.loadAttempts,errors:s.jobs.errors,completionNotifications:s.jobs.completionNotifications,
+                                  sessions:s.sessions.map(x=>({sessionId:x.sessionId,active:x.active,activeJobId:x.activeJobId,queued:x.queued,canvases:x.canvases,failures:x.failures,modelVersion:x.modelVersion})),
+                                  counters:{...window.__geulOwnership.counters},repeatKeys:window.__repeatKeys.length,
+                                  lateImages:window.__lateImages?.length??0,
+                                  heldImages:[...document.images].filter(x=>x.src.includes('/held-image.svg')).map(x=>({complete:x.complete,width:x.naturalWidth,height:x.naturalHeight})),
+                                  canvases:[...document.querySelectorAll('.rhwp-page__canvas')].map(c=>({width:c.width,height:c.height,connected:c.isConnected}))
+                                };})()''', label)
+                                result['pendingCountDiagnostic'] = diagnostic
+                                save()
+                                raise
                         driver.js(block_images)
-                        smoke.wait_until(driver, 'return window.__geulOwnership.stats().jobs.pendingCount===2', timeout=10)
+                        wait_for_two_pending('first-pending-image-replay')
                         before = driver.js('return {stats:window.__geulOwnership.stats(),counters:{...window.__geulOwnership.counters}}')
                         driver.js('window.__geulOwnership.repeat(50)')
                         after = driver.js('return {stats:window.__geulOwnership.stats(),counters:{...window.__geulOwnership.counters}}')
@@ -271,7 +287,7 @@ def main():
                         smoke.wait_until(driver, 'return !!window.__ownershipPixelResult', timeout=15)
                         check('native-duplicate-request-completes-exact-pixels', driver.js('return window.__ownershipPixelResult.pixelMismatchCount') == 0)
                         driver.js(block_images)
-                        smoke.wait_until(driver, 'return window.__geulOwnership.stats().jobs.pendingCount===2', timeout=10)
+                        wait_for_two_pending('second-pending-image-replay')
                         # Switching real geul tabs cancels the old target; late HTTP replies cannot paint it.
                         driver.js('Object.defineProperty(HTMLImageElement.prototype,"src",window.__repeatSrc)')
                         poc.open_document(driver, work / 'ownership-hwp.hwp')

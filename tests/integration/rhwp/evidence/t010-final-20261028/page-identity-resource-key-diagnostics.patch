@@ -1,0 +1,208 @@
+--- a/src/renderer/render_job.rs
++++ b/src/renderer/render_job.rs
+@@ -454,9 +454,25 @@
+ }
+ 
+ #[derive(Default)]
++struct DecodedImageDiagnostic {
++    input_bytes: usize,
++    lookups: u64,
++    cache_hits: u64,
++    cache_misses: u64,
++    shared_lease_reuses: u64,
++    decode_attempts: u64,
++    decode_ready: u64,
++    max_decode_ms: f64,
++    max_decoded_bytes: usize,
++    cache_admissions: u64,
++    cache_rejections: u64,
++}
++
++#[derive(Default)]
+ struct Diagnostics {
+     stages: BTreeMap<&'static str, TimingSummary>,
+     slowest_resource: Option<(f64, &'static str, &'static str, usize)>,
++    decoded_images: HashMap<ImageKey, DecodedImageDiagnostic>,
+ }
+ 
+ #[derive(Default)]
+@@ -531,6 +547,85 @@
+     });
+ }
+ 
++fn decoded_image_diagnostic<'a>(
++    diagnostics: &'a mut Diagnostics,
++    key: ImageKey,
++    input_bytes: usize,
++) -> Option<&'a mut DecodedImageDiagnostic> {
++    const MIN_INPUT_BYTES: usize = 512 << 10;
++    const MAX_DIAGNOSTIC_IMAGES: usize = 256;
++    if input_bytes < MIN_INPUT_BYTES
++        || (!diagnostics.decoded_images.contains_key(&key)
++            && diagnostics.decoded_images.len() >= MAX_DIAGNOSTIC_IMAGES)
++    {
++        return None;
++    }
++    let image = diagnostics.decoded_images.entry(key).or_default();
++    image.input_bytes = input_bytes;
++    Some(image)
++}
++
++pub fn note_decoded_image_lookup(key: ImageKey, input_bytes: usize, cache_hit: bool) {
++    POOL.with(|p| {
++        let mut p = p.borrow_mut();
++        if let Some(image) = decoded_image_diagnostic(&mut p.diagnostics, key, input_bytes) {
++            image.lookups = image.lookups.saturating_add(1);
++            if cache_hit {
++                image.cache_hits = image.cache_hits.saturating_add(1);
++            } else {
++                image.cache_misses = image.cache_misses.saturating_add(1);
++            }
++        }
++    });
++}
++
++pub fn note_decoded_image_shared_lease(key: ImageKey, input_bytes: usize) {
++    POOL.with(|p| {
++        let mut p = p.borrow_mut();
++        if let Some(image) = decoded_image_diagnostic(&mut p.diagnostics, key, input_bytes) {
++            image.shared_lease_reuses = image.shared_lease_reuses.saturating_add(1);
++        }
++    });
++}
++
++pub fn note_decoded_image_attempt(
++    key: ImageKey,
++    input_bytes: usize,
++    elapsed_ms: f64,
++    decoded_bytes: Option<usize>,
++) {
++    POOL.with(|p| {
++        let mut p = p.borrow_mut();
++        if let Some(image) = decoded_image_diagnostic(&mut p.diagnostics, key, input_bytes) {
++            image.decode_attempts = image.decode_attempts.saturating_add(1);
++            image.max_decode_ms = image.max_decode_ms.max(elapsed_ms);
++            if let Some(bytes) = decoded_bytes {
++                image.decode_ready = image.decode_ready.saturating_add(1);
++                image.max_decoded_bytes = image.max_decoded_bytes.max(bytes);
++            }
++        }
++    });
++}
++
++pub fn note_decoded_image_cache_admission(
++    key: ImageKey,
++    input_bytes: usize,
++    decoded_bytes: usize,
++    admitted: bool,
++) {
++    POOL.with(|p| {
++        let mut p = p.borrow_mut();
++        if let Some(image) = decoded_image_diagnostic(&mut p.diagnostics, key, input_bytes) {
++            image.max_decoded_bytes = image.max_decoded_bytes.max(decoded_bytes);
++            if admitted {
++                image.cache_admissions = image.cache_admissions.saturating_add(1);
++            } else {
++                image.cache_rejections = image.cache_rejections.saturating_add(1);
++            }
++        }
++    });
++}
++
+ fn diagnostics_json(diagnostics: &Diagnostics) -> serde_json::Value {
+     let stages = diagnostics
+         .stages
+@@ -551,7 +646,33 @@
+         .map(|(elapsed_ms, stage, kind, bytes)| {
+             serde_json::json!({"stage":stage,"kind":kind,"inputBytes":bytes,"elapsedMs":elapsed_ms})
+         });
+-    serde_json::json!({"stages":stages,"slowestResource":slowest_resource})
++    let mut decoded_images: Vec<_> = diagnostics
++        .decoded_images
++        .iter()
++        .map(|(key, image)| {
++            serde_json::json!({
++                "key": format!("{key:?}"),
++                "inputBytes": image.input_bytes,
++                "lookups": image.lookups,
++                "cacheHits": image.cache_hits,
++                "cacheMisses": image.cache_misses,
++                "sharedLeaseReuses": image.shared_lease_reuses,
++                "decodeAttempts": image.decode_attempts,
++                "decodeReady": image.decode_ready,
++                "maxDecodeMs": image.max_decode_ms,
++                "maxDecodedBytes": image.max_decoded_bytes,
++                "cacheAdmissions": image.cache_admissions,
++                "cacheRejections": image.cache_rejections,
++            })
++        })
++        .collect();
++    decoded_images.sort_by(|a, b| {
++        b["maxDecodeMs"]
++            .as_f64()
++            .partial_cmp(&a["maxDecodeMs"].as_f64())
++            .unwrap_or(std::cmp::Ordering::Equal)
++    });
++    serde_json::json!({"stages":stages,"slowestResource":slowest_resource,"decodedImages":decoded_images})
+ }
+ 
+ // Drops may run inside a mutable cache/job borrow. Never invoke JS listeners there.
+--- a/src/renderer/web_canvas.rs
++++ b/src/renderer/web_canvas.rs
+@@ -290,6 +290,7 @@
+     }
+     // Same cache request/frequency accounting as before the lease change.
+     let slot = DECODED_CANVAS_CACHE.with(|cache| cache.borrow_mut().get(&key));
++    super::render_job::note_decoded_image_lookup(key, data.len(), slot.is_some());
+     if let Some(slot) = slot {
+         let lease = slot?;
+         super::render_job::attach_decoded(key, &lease);
+@@ -298,6 +299,7 @@
+     if let Some(lease) =
+         super::render_job::job_decoded(key).or_else(|| super::render_job::shared_decoded(key))
+     {
++        super::render_job::note_decoded_image_shared_lease(key, data.len());
+         // The pre-lease engine re-decoded here and offered the result to the cache. Offer the
+         // live backing instead, so admission/eviction policy is unchanged without a new decode.
+         DECODED_CANVAS_CACHE.with(|cache| {
+@@ -326,7 +328,20 @@
+         DecodeReservation::Reserved(r) => header.map(|dimensions| (dimensions, r)),
+         DecodeReservation::UnknownDimensions => None,
+     };
+-    let lease = match decode_image_to_canvas(data, reservation) {
++    let decode_started = js_sys::Date::now();
++    let decoded = decode_image_to_canvas(data, reservation);
++    let decode_elapsed_ms = js_sys::Date::now() - decode_started;
++    let decoded_bytes = match &decoded {
++        Decoded::Ready(lease) => Some(lease.bytes()),
++        _ => None,
++    };
++    super::render_job::note_decoded_image_attempt(
++        key,
++        data.len(),
++        decode_elapsed_ms,
++        decoded_bytes,
++    );
++    let lease = match decoded {
+         Decoded::Ready(lease) => lease,
+         Decoded::Failed => {
+             // Decode failure (unchanged): negative entry; the browser image path may draw it.
+@@ -348,11 +363,17 @@
+             return None;
+         }
+     };
+-    DECODED_CANVAS_CACHE.with(|cache| {
++    let cache_admitted = DECODED_CANVAS_CACHE.with(|cache| {
+         cache
+             .borrow_mut()
+             .insert(key, Some(lease.clone()), lease.bytes())
+     });
++    super::render_job::note_decoded_image_cache_admission(
++        key,
++        data.len(),
++        lease.bytes(),
++        cache_admitted,
++    );
+     super::render_job::register_decoded(key, &lease);
+     super::render_job::attach_decoded(key, &lease);
+     // Eviction may have turned other leased residents into job-only backings.

@@ -1,0 +1,3 @@
+실행: `dbus-run-session -- python3 tests/integration/rhwp/ownership-poc/native.py --scheduler --scheduler-only ... --evidence-dir tests/integration/rhwp/evidence/t010-final-20261028/canvas-native-webkit-scheduler-only`
+결과: 테스트 시작 전 exit 1. `--evidence-dir`는 결과 저장 경로가 아니라 `engine-safety-gates.json` 입력 경로였다. 스크립트가 `t010-final-20261028/canvas-native-webkit-scheduler-only/engine-safety-gates.json`을 열다 FileNotFoundError. Xvfb/driver/WebKit 작업은 시작하지 않았다.
+재실행: 승인 WASM과 일치하는 `tests/integration/rhwp/evidence/t010-d1-trust-anchor-v2/engine-gates`를 `--evidence-dir`에 사용하고 JSON 결과 경로는 별도 지정한다.

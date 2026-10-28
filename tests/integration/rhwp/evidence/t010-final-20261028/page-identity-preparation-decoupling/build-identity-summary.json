@@ -1,0 +1,43 @@
+{
+  "schema": 1,
+  "status": "PASS",
+  "evidenceType": "환경별 절대경로만 제외한 빌드 식별 요약",
+  "originalLocalEvidencePath": "tests/integration/rhwp/evidence/t010-final-20261028/page-identity-preparation-decoupling/build-identity.json",
+  "originalLocalEvidenceSha256": "e3054ee955752ecab33c294eabb7bedd8a1b759e91311af7670c29a65417ec09",
+  "candidate": "page-order-v2-resource-q1-per-key-streak-promotion-protected-cache-independent-page-identity",
+  "candidateSourceTreeSha256": "33bbc3058e8cc40e80ed18b9c8f3d9bf1119e08766bb09494647ec82014b9334",
+  "sourcePatchSha256": "0925d32522836dded4edd6087e728ed311340611802f8aa6c6b747ea90ab881b",
+  "command": [
+    "wasm-pack",
+    "build",
+    "/tmp/geul-pageidentity-prototype",
+    "--release",
+    "--no-opt",
+    "--target",
+    "web",
+    "--out-dir",
+    ".git/t010-page-identity-preparation-decoupling",
+    "--locked",
+    "--offline"
+  ],
+  "cargoTargetDir": "src-tauri/target (기존 공용 Cargo target)",
+  "compiler": "rustc 1.99.0 (b940084d7 2026-09-28)",
+  "cargo": "cargo 1.99.0 (5f94df478 2026-08-27)",
+  "wasmPack": "wasm-pack 0.15.0",
+  "target": "wasm32-unknown-unknown",
+  "profile": "release",
+  "wasmOpt": false,
+  "buildDurationSeconds": 384,
+  "sourceStableDuringBuild": true,
+  "artifacts": {
+    "rhwp.js": "6b1f299aafb673e8b7372e20b45b0d540a57d30a45ce6e605dbf71440caa0dff",
+    "rhwp_bg.wasm": "b3b3d1b7791f77bac62055ca145d8b26fa99232d31bf271cc1b69c9f17e2e7f8",
+    "rhwp.d.ts": "d113bd03022ffdb69b8fad7485cf1f6e1effed87097b298210316a6c1edf431f",
+    "rhwp_bg.wasm.d.ts": "7da402268a521544f97cc74dd429e350bfe7c004394388c890fe2cb16c5e8688"
+  },
+  "engineIdentitySha256": "501addad181e21f383e9a02b34c48a339d42f06fa41411d746d4fcc24fb26889",
+  "productionApproval": "NOT_APPROVED",
+  "requiresSeparateD1AndApproval": true,
+  "buildLogPath": "tests/integration/rhwp/evidence/t010-final-20261028/page-identity-preparation-decoupling/page-identity-preparation-decoupling-build.log",
+  "buildLogSha256": "7c7ea9ab15180bb95124438a5f3ecc64e9a6d6086fb76eba3f199ec9e145c994"
+}

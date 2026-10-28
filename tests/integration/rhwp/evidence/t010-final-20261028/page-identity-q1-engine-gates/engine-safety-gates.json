@@ -1,0 +1,16 @@
+{
+  "status": "PASS",
+  "scope": "Experimental page-order-v2-resource-q1 only: cache-concurrency/run.py independently validated actual ownership/cache/scheduler scenarios in Chrome 155 and WebKitGTK 2.54.1; not D1 production approval.",
+  "wasmSha256": "bb1cce9c9f5c76f9bbd282dd4756e0cd7b2f51785995996ab6b8f75eac7cdb2e",
+  "sourceResultsSha256": {
+    "chrome": "a926c27738a60ddf8ef21a75526e3f389dc67abdd31791a31ae86d6b8f5d9ab2",
+    "webkit": "466783f1a710e6f9f922c22dd9492b1a436ab45108ecf90cc2c970cca77f8a1e"
+  },
+  "strictClippy": "NOT RUN for this candidate; no activation approval",
+  "candidate": "page-order-v2-resource-q1",
+  "candidateSourceTreeSha256": "56f54ba27b3aa5586a3ed337a1d9226563e39b2ab3159d3120e3fbb4028c11ea",
+  "resourceQuantum": 1,
+  "stepQuantum": 256,
+  "experimental": true,
+  "productionApproval": "NOT_APPROVED"
+}

@@ -96,9 +96,12 @@ def main():
                         subprocess.run([str(args.xdotool), 'windowfocus', '--sync', windows[-1]], check=True)
                         driver.native_key_tool = str(args.xdotool)
                         driver.busy_probe = False
+                        if args.engine == 'candidate':
+                            driver.js('window.__geulOwnership.probeEngine().rendererJobDiagnosticsReset(); return true')
                         historical.scenario_perf(driver, source, work)
                         if args.engine == 'candidate':
                             historical.REPORT['perf'][-1]['adapterCounters'] = driver.js('return window.__geulOwnership.counters')
+                            historical.REPORT['perf'][-1]['rendererDiagnostics'] = driver.js('return JSON.parse(window.__geulOwnership.probeEngine().rendererJobStats()).diagnostics')
                         result['engineIdentity'] = driver.js('return window.__geulOwnership?.identity||null') if args.engine == 'candidate' else {'wasmSha256': hashlib.sha256((ROOT / 'public/rhwp/rhwp_bg.wasm').read_bytes()).hexdigest()}
                         result['sourceSha256'] = hashlib.sha256(source.read_bytes()).hexdigest()
                     finally:

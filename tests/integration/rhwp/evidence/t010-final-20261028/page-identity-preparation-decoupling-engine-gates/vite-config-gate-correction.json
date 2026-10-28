@@ -1,0 +1,16 @@
+{
+  "schema": 1,
+  "diagnosis": {
+    "observedViteHotReloadMessage": "page identity requires the matching native 73-case scheduler safety gate",
+    "observedRawField": "native-scheduler-only.json:lastObserved.status",
+    "observedRawValue": [],
+    "cause": "\uc124\uc815 \uac00\ub4dc\uac00 lastObserved.status\ub97c \ubb38\uc790\uc5f4 PASS\ub77c\uace0 \uc798\ubabb \uac00\uc815\ud588\ub2e4. \uc2e4\uc81c scheduler \ud310\uc815\uc740 73\uac1c \uac1c\ubcc4 \uc0ac\ub840\uc640 11\uac1c focused \uac80\uc0ac\ub85c \ud45c\ud604\ub41c\ub2e4.",
+    "scope": "Vite \uc124\uc815 \uc9c4\uc785 \uac80\uc0ac\uc5d0 \ud55c\uc815. native scheduler \uc99d\uac70\ub294 PASS\uc774\uba70 \uc774 \uc124\uc815 \uc7ac\uc2dc\uc791 \uc2e4\ud328\uc5d0\uc11c D4 \uce21\uc815\uc744 \uc2e4\ud589\ud558\uc9c0 \uc54a\uc558\ub2e4."
+  },
+  "correction": "\uc9c0\uc6d0\ub418\uc9c0 \uc54a\ub294 lastObserved.status \ubb38\uc790\uc5f4 \uc870\uac74\ub9cc \uc81c\uac70\ud588\ub2e4. \ud6c4\ubcf4 WASM \uc77c\uce58, native \uacb0\uacfc PASS, scheduler 73/73, focused 11/11, \uc885\ub8cc \ud6c4 session/subscriber/job/lease/accounting \uc624\ub958 0 \uc870\uac74\uc740 \uc720\uc9c0\ud55c\ub2e4.",
+  "validation": {
+    "nodeCheck": "PASS (node --check tests/integration/rhwp/ownership-poc/vite.config.mjs, exit 0)",
+    "viteStartup": "PASS (\uc218\uc815\ub41c \uc124\uc815\uc73c\ub85c Vite v8.3.2\uac00 http://127.0.0.1:1420/\uc5d0\uc11c ready)",
+    "officialD4": "NOT_RUN"
+  }
+}

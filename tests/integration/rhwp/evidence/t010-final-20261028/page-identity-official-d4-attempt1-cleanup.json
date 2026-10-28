@@ -1,0 +1,21 @@
+{
+  "producer": "tests/integration/rhwp/ownership-poc/history-perf.py --engine candidate",
+  "producerExitCode": 1,
+  "measurementComplete": true,
+  "exitReason": "OFFICIAL_GATE_FAILURE",
+  "runnerCleanupCode": "history-perf.py invokes smoke.end_session(driver) in each document finally block and terminates/waits its Xvfb in outer finally; it does not serialize teardown receipts in raw result.",
+  "observedAfterProducerExit": {
+    "residualNativeHarnessProcesses": [],
+    "portsListening": {
+      "1420": true,
+      "1421": true,
+      "1422": false
+    }
+  },
+  "expectedServers": {
+    "1420": "page-order-v2 history-perf candidate server, retained for controlled rerun",
+    "1421": "page-order-v2 diagnostic page-identity server"
+  },
+  "rawSha256": "11565b68a0b77da54fc4b72fb0fec48e8a25b54b8d81aa03e1c82a49380e94a1",
+  "timingSha256": "6c9ded4b36e7ea6440e6a088246f29949d16a2897b7aca503ed1c61625a3a7c2"
+}

@@ -1,0 +1,35 @@
+{
+  "schema": 1,
+  "status": "PASS",
+  "scope": "q11 실험 후보의 Chrome 및 native WebKitGTK 페이지별 exact RGBA·리소스 정리, native WebKitGTK scheduler 73/73과 11개 focused 검사. 공식 D4는 별도 필수 게이트이며 아직 실행하지 않음.",
+  "candidate": "page-order-v2-resource-q1-per-key-streak-promotion-protected-cache-independent-page-identity",
+  "wasmSha256": "b3b3d1b7791f77bac62055ca145d8b26fa99232d31bf271cc1b69c9f17e2e7f8",
+  "jsSha256": "6b1f299aafb673e8b7372e20b45b0d540a57d30a45ce6e605dbf71440caa0dff",
+  "engineIdentitySha256": "501addad181e21f383e9a02b34c48a339d42f06fa41411d746d4fcc24fb26889",
+  "candidateSourceTreeSha256": "33bbc3058e8cc40e80ed18b9c8f3d9bf1119e08766bb09494647ec82014b9334",
+  "sourceResultsSha256": {
+    "chrome": "db656ae240777d168b42d198312465e08c9e366f596ccf4fc6c36eb85f648314",
+    "webkit": "280395cff4b896ac247d304ed67f2063ee7d345db81038479611a0eb5b7960e5"
+  },
+  "browserGateSha256": {
+    "chrome": "ce3eed27b55f6a47c68c99bb703683900cce356a55e9347cf0c0478ec7ce545e",
+    "webkit": "22139dec9ba25cb29cbca359fbe42e9bb05def9c1a9be27fc77a01baf2f2b3fb"
+  },
+  "nativeScheduler": {
+    "status": "PASS",
+    "path": "native-scheduler-only.json",
+    "sha256": "5f64d12ffdda0924efcccafc59d273cfd18b2983dc5ab019dac9cbb7de33d46c",
+    "wasmSha256": "b3b3d1b7791f77bac62055ca145d8b26fa99232d31bf271cc1b69c9f17e2e7f8",
+    "schedulerCases": 73,
+    "schedulerPassed": 73,
+    "focusedChecks": 11,
+    "focusedPassed": 11,
+    "postCloseSessions": 0,
+    "postCloseSubscribers": 0,
+    "postCloseActiveJobs": 0,
+    "postCloseActiveLeaseCount": 0,
+    "postCloseActiveLeaseEstimatedBytes": 0,
+    "postCloseAccountingErrors": 0
+  },
+  "productionApproval": "NOT_APPROVED"
+}

@@ -1,0 +1,157 @@
+--- a/src/renderer/surface_cache.rs
++++ b/src/renderer/surface_cache.rs
+@@ -101,6 +101,7 @@
+     used: u64,
+     pending: bool,
+     transient: bool,
++    promoted_until_hit: bool,
+ }
+ 
+ #[derive(Clone, Copy, Debug, Default)]
+@@ -110,6 +111,9 @@
+     pub since_aging: usize,
+     pub entries: usize,
+     pub bytes: usize,
++    pub rejection_streak: u8,
++    pub admitted: bool,
++    pub evictions: u64,
+ }
+ 
+ pub struct BoundedCache<V: Release> {
+@@ -153,6 +157,7 @@
+         match self.entries.get_mut(key) {
+             Some(entry) => {
+                 entry.used = self.tick;
++                entry.promoted_until_hit = false;
+                 self.stats.hits += 1;
+                 Some(entry.value.clone())
+             }
+@@ -194,6 +199,9 @@
+                 self.make_room(bytes, 1);
+                 if self.fits(bytes, 1) {
+                     self.put(key, value, bytes, false);
++                    if let Some(entry) = self.entries.get_mut(&key) {
++                        entry.promoted_until_hit = true;
++                    }
+                     return true;
+                 }
+             }
+@@ -336,6 +344,12 @@
+             since_aging: self.since_aging,
+             entries: self.entries.len(),
+             bytes: self.bytes,
++            rejection_streak: self
++                .rejection_streaks
++                .get(key)
++                .map_or(0, |streak| streak.count),
++            admitted: false,
++            evictions: self.stats.evictions,
+         }
+     }
+ 
+@@ -365,6 +379,7 @@
+                 used: self.tick,
+                 pending,
+                 transient: false,
++                promoted_until_hit: false,
+             },
+         );
+     }
+@@ -447,7 +462,7 @@
+             .iter()
+             .filter(|(_, entry)| !entry.pending)
+             .collect();
+-        victims.sort_by_key(|(_, entry)| (!entry.transient, entry.used));
++        victims.sort_by_key(|(_, entry)| (!entry.transient, entry.promoted_until_hit, entry.used));
+         for (_, entry) in victims {
+             total_bytes = total_bytes.saturating_sub(entry.bytes);
+             total_entries = total_entries.saturating_sub(1);
+@@ -471,6 +486,9 @@
+         for (victim, entry) in victims {
+             if total + bytes <= self.max_bytes && count < self.max_entries {
+                 return true;
++            }
++            if entry.promoted_until_hit {
++                continue;
+             }
+             if !entry.transient && self.frequency.get(victim).copied().unwrap_or(0) >= candidate {
+                 return false;
+@@ -545,7 +563,7 @@
+             .entries
+             .iter()
+             .filter(|(k, e)| !e.pending && Some(**k) != keep)
+-            .min_by_key(|(_, e)| (!e.transient, e.used))
++            .min_by_key(|(_, e)| (!e.transient, e.promoted_until_hit, e.used))
+             .map(|(k, _)| *k)
+         else {
+             return false;
+@@ -1130,6 +1148,44 @@
+     }
+ 
+     #[test]
++    fn promoted_candidate_survives_pressure_until_its_first_hit() {
++        let log = Rc::new(RefCell::new(Vec::new()));
++        let mut cache = BoundedCache::new(1_000, 8, true);
++        for n in 1..=4 {
++            assert!(cache.insert(key(n), Some(surface(n as u32, &log)), 250));
++            cache.frequency.insert(key(n), MAX_FREQUENCY);
++        }
++
++        let promoted = key(9);
++        for _ in 0..4 {
++            cache.since_aging = 0;
++            assert!(cache.get(&promoted).is_none());
++            let decoded = surface(9, &log);
++            assert!(!cache.insert(promoted, Some(decoded.clone()), 250));
++            decoded.release();
++        }
++        cache.since_aging = 0;
++        assert!(cache.get(&promoted).is_none());
++        let decoded = surface(9, &log);
++        assert!(cache.insert(promoted, Some(decoded), 250));
++        assert!(cache.entries.contains_key(&promoted));
++
++        // Make every older resident newer than the just-promoted value, then apply pressure.
++        for n in 2..=4 {
++            cache.frequency.insert(key(n), 1);
++            assert!(cache.get(&key(n)).is_some());
++        }
++        cache.frequency.insert(key(10), MAX_FREQUENCY - 1);
++        assert!(cache.get(&key(10)).is_none());
++        let other = surface(10, &log);
++        assert!(cache.insert(key(10), Some(other), 250));
++
++        assert!(cache.entries.contains_key(&promoted));
++        assert_eq!((cache.stats().entries, cache.stats().bytes), (4, 1_000));
++        assert!(cache.get(&promoted).is_some());
++    }
++
++    #[test]
+     fn rejected_promotion_never_evicts_pending_entries_or_breaks_hard_limits() {
+         let log = Rc::new(RefCell::new(Vec::new()));
+         let mut cache = BoundedCache::new(400, 4, true);
+--- a/src/renderer/web_canvas.rs
++++ b/src/renderer/web_canvas.rs
+@@ -365,8 +365,9 @@
+     };
+     let (cache_admitted, admission_debug) = DECODED_CANVAS_CACHE.with(|cache| {
+         let mut cache = cache.borrow_mut();
+-        let debug = cache.admission_debug(&key);
++        let mut debug = cache.admission_debug(&key);
+         let admitted = cache.insert(key, Some(lease.clone()), lease.bytes());
++        debug.admitted = admitted;
+         (admitted, debug)
+     });
+     super::render_job::note_decoded_image_cache_admission(
+--- a/src/renderer/render_job.rs
++++ b/src/renderer/render_job.rs
+@@ -675,6 +675,9 @@
+                     "sinceAging": sample.since_aging,
+                     "entries": sample.entries,
+                     "bytes": sample.bytes,
++                    "rejectionStreak": sample.rejection_streak,
++                    "admitted": sample.admitted,
++                    "evictions": sample.evictions,
+                 })).collect::<Vec<_>>(),
+             })
+         })

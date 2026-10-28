@@ -1,0 +1,91 @@
+{
+  "schema": 1,
+  "browser": "webkit",
+  "status": "PASS",
+  "identities": {
+    "candidate": {
+      "rhwp.js": "6b1f299aafb673e8b7372e20b45b0d540a57d30a45ce6e605dbf71440caa0dff",
+      "rhwp_bg.wasm": "b3b3d1b7791f77bac62055ca145d8b26fa99232d31bf271cc1b69c9f17e2e7f8",
+      "ENGINE.json": {
+        "path": ".git/t010-page-identity-preparation-decoupling/ENGINE.json",
+        "sha256": "501addad181e21f383e9a02b34c48a339d42f06fa41411d746d4fcc24fb26889",
+        "candidate": "page-order-v2-resource-q1-per-key-streak-promotion-protected-cache-independent-page-identity",
+        "productionApproval": "NOT_APPROVED"
+      }
+    }
+  },
+  "sourceEvidence": {
+    "path": "tests/integration/rhwp/evidence/t010-final-20261028/page-identity-preparation-decoupling-engine-gates/webkit-normalized-source.json",
+    "sha256": "280395cff4b896ac247d304ed67f2063ee7d345db81038479611a0eb5b7960e5"
+  },
+  "sourceRunLog": {
+    "path": "tests/integration/rhwp/evidence/t010-final-20261028/page-identity-preparation-decoupling/webkit-run.log",
+    "sha256": "9386a25e3b59d7f53d8f169b8129b434bf6c4521adc0819680dcdeb259425709"
+  },
+  "fixtureSha256": "6717eca43c6fdd9b0530530cf17d33b6687da0c462a433d37eb652afb5394f91",
+  "pageCount": 24,
+  "phases": [
+    {
+      "label": "initial-full",
+      "fullJobsStarted": 24,
+      "identityJobsSkipped": 0,
+      "exactRgbaPages": 24,
+      "exactRgbaExpected": 24
+    },
+    {
+      "label": "edited-revision",
+      "fullJobsStarted": 4,
+      "identityJobsSkipped": 20,
+      "exactRgbaPages": 24,
+      "exactRgbaExpected": 24
+    },
+    {
+      "label": "undo-restored-revision",
+      "fullJobsStarted": 4,
+      "identityJobsSkipped": 20,
+      "exactRgbaPages": 24,
+      "exactRgbaExpected": 24
+    },
+    {
+      "label": "redo-restored-revision",
+      "fullJobsStarted": 4,
+      "identityJobsSkipped": 20,
+      "exactRgbaPages": 24,
+      "exactRgbaExpected": 24
+    },
+    {
+      "label": "same-session-document-reload",
+      "fullJobsStarted": 24,
+      "identityJobsSkipped": 0,
+      "exactRgbaPages": 24,
+      "exactRgbaExpected": 24
+    }
+  ],
+  "identityCost": {
+    "identityCalls": 63,
+    "identityElapsedMs": 158,
+    "identityMaxComputeMs": 10,
+    "identityPreflightMsByRevision": [
+      0,
+      50,
+      53,
+      51,
+      0
+    ]
+  },
+  "cleanup": {
+    "subscribers": 0,
+    "activeJobs": 0,
+    "activeLeaseCount": 0,
+    "activeLeaseEstimatedBytes": 0,
+    "errors": 0,
+    "accountingErrors": 0,
+    "xvfbExit": 0,
+    "tauriDriverTeardownComplete": true
+  },
+  "originalLocalRawEvidence": {
+    "path": "tests/integration/rhwp/evidence/t010-final-20261028/page-identity-preparation-decoupling/webkit.json",
+    "sha256": "d0680664d3d39892f7a15a373bce27b778ea1a78b2149730c94fb67e0a1aeaad",
+    "includedInCommit": false
+  }
+}
