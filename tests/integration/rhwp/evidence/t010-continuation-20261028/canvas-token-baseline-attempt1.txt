@@ -1,0 +1,79 @@
+✔ input scope is bounded and removed (4.554173ms)
+✔ trace-correlates-cancel-and-replacement (10.002674ms)
+✔ trace-different-targets (5.737106ms)
+✔ trace-bounded-and-detached (5.558128ms)
+✔ identical-pending (7.474805ms)
+✔ different-page (4.894501ms)
+✔ different-scale (5.019304ms)
+✔ mutation (4.730415ms)
+✔ reload (5.007181ms)
+✔ complete-after-duplicates (5.35124ms)
+✔ error-then-other-page (6.597804ms)
+✔ disconnected (4.748609ms)
+✔ queued-identical (4.982144ms)
+✔ damage-retains-valid-previous-frame (4.843455ms)
+✔ fractional-region-replays-complete-page (5.095946ms)
+✔ damage-resize-falls-back-full (4.960607ms)
+✔ cell-edit-falls-back-full (6.517658ms)
+✔ summary-lru-keeps-newly-touched-frame (6.252661ms)
+✔ background-pages-preserve-visible-damage-basis (5.847202ms)
+✔ background-pages-rerender-without-exact-revision-identity (6.317647ms)
+✔ summary-aggregate-budget-remains-bounded (19.140879ms)
+✔ snapshot-restore-invalidates-damage-basis (4.976171ms)
+✔ initial-mount-cleanup-preserves-pending (5.604767ms)
+✖ completed-foreign-job-token-rerenders (6.362616ms)
+✔ completed-external-resize-rerenders (5.227516ms)
+✔ new-revision-avoids-useless-summary-work (4.518213ms)
+✔ damage-lossy-summary-cannot-prove-new-revision (5.026038ms)
+✔ damage-identical-summary-does-not-skip-new-revision (4.892387ms)
+✔ explicit-repaint-runs-full-even-unchanged (4.934279ms)
+✔ terminal-no-restart (5.785291ms)
+✔ lifecycle validity is separate from capture integrity (1.313759ms)
+✔ queue displacement and reuse have explicit source (0.371254ms)
+✔ bounded strings and aggregate use UTF-16 code units (0.338342ms)
+✔ adapter input event connects synchronous request only (11.586589ms)
+✔ release and repaint identities match observed outcome (5.87583ms)
+✔ release failure is not reported as success (11.442413ms)
+✔ diagnostic failure preserves scheduler behavior and invalidates capture (9.90331ms)
+✔ job-start failure is recorded without invented job (5.030387ms)
+✔ active cancellation and document replacement keep release boundaries distinct (5.466886ms)
+✔ repeated release reports each actual call (3.626705ms)
+✔ contradictory request identity and completion after cancel are invalid (0.420033ms)
+✔ completion without observed poll is incomplete (0.205964ms)
+✔ preparation failure is not misreported as job-start failure (4.98407ms)
+✔ poll outcome must justify completion (0.671985ms)
+✔ pending reuse requires actual render equivalence (0.461353ms)
+✔ completed reuse requires matching target, with explicit unchanged summary exception (0.572819ms)
+✔ release completion must match originating document (0.279029ms)
+✔ old document release retains original identity after replacement (3.699085ms)
+✔ terminal successful poll cannot be canceled or reused as pending (0.338912ms)
+✔ completion state contradicting a successful poll is invalid (0.205585ms)
+✔ superseded pending job is canceled before the next revision completes (4.867322ms)
+ℹ tests 51
+ℹ suites 0
+ℹ pass 50
+ℹ fail 1
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 498.706153
+
+✖ failing tests:
+
+test at tests/integration/rhwp/ownership-poc/test-session.mjs:109:48
+✖ completed-foreign-job-token-rerenders (6.362616ms)
+  AssertionError [ERR_ASSERTION]: Expected values to be strictly equal:
+  
+  true !== false
+  
+      at completed-foreign-job-token-rerenders (file:///home/<USER>/share/ai-prj/geul/tests/integration/rhwp/ownership-poc/test-session.mjs:101:168)
+      at TestContext.<anonymous> (file:///home/<USER>/share/ai-prj/geul/tests/integration/rhwp/ownership-poc/test-session.mjs:109:100)
+      at async Test.run (node:internal/test_runner/test:1409:7)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:974:7) {
+    generatedMessage: true,
+    code: 'ERR_ASSERTION',
+    actual: true,
+    expected: false,
+    operator: 'strictEqual',
+    diff: 'simple'
+  }

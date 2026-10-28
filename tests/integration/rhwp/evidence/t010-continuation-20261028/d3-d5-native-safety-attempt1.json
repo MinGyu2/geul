@@ -1,0 +1,709 @@
+{
+  "status": "PASS",
+  "tests": [
+    {
+      "name": "bootstrap-clean-close",
+      "status": "PASS"
+    },
+    {
+      "name": "native-T009-save-matrix",
+      "status": "PASS"
+    },
+    {
+      "name": "observer-reaches-authoritative-WASM",
+      "status": "PASS"
+    },
+    {
+      "name": "hwp-undo-service-save",
+      "status": "PASS",
+      "revision": 2,
+      "saved": "saved",
+      "dirty": "false",
+      "originalPreserved": true
+    },
+    {
+      "name": "hwp-redo-service-save",
+      "status": "PASS",
+      "revision": 3,
+      "saved": "failed",
+      "dirty": "true",
+      "originalPreserved": true
+    },
+    {
+      "name": "hwp-discard-failure-reload",
+      "status": "PASS"
+    },
+    {
+      "name": "hwpx-undo-service-save",
+      "status": "PASS",
+      "revision": 2,
+      "saved": "saved",
+      "dirty": "false",
+      "originalPreserved": true
+    },
+    {
+      "name": "hwpx-redo-service-save",
+      "status": "PASS",
+      "revision": 3,
+      "saved": "saved",
+      "dirty": "false",
+      "originalPreserved": false
+    },
+    {
+      "name": "hwpx-discard-failure-reload",
+      "status": "PASS"
+    },
+    {
+      "name": "hwp-history-failure-image-resources-established",
+      "status": "PASS",
+      "resources": {
+        "decodedSharedLookups": 0,
+        "pendingCount": 0,
+        "cancellations": 0,
+        "decodedLedger": {
+          "accountingErrors": 0,
+          "residentBytes": 0,
+          "refusedReservations": 0,
+          "uniqueCount": 0,
+          "created": 0,
+          "jobLeaseReferenceBytes": 0,
+          "maxNonresidentBytes": 100663296,
+          "preallocationRejections": 0,
+          "reservedBytes": 0,
+          "residentCount": 0,
+          "decodedCacheMaxEntries": 256,
+          "jobLeaseReferences": 0,
+          "decodedCacheMaxBytes": 268435456,
+          "peakTreePayloadEstimatedBytes": 753,
+          "lastTreeSharedFontBytes": 0,
+          "dimensionMismatches": 0,
+          "unenforcedOverLimit": 0,
+          "estimate": "RGBA backing estimates; not RSS, GPU or browser allocator memory",
+          "peakUniquePlusReservedBytes": 0,
+          "unreservedDecodes": 2,
+          "uniqueBytes": 0,
+          "peakDecodeTransientEstimatedBytes": 0,
+          "lastTreePayloadEstimatedBytes": 753,
+          "rejectedCommits": 0,
+          "nonresidentCount": 0,
+          "disposed": 0,
+          "nonresidentBytes": 0,
+          "postDecodeReservations": 0
+        },
+        "peakTemporaryCanvasBytes": 3875040,
+        "listenerNotifications": 1,
+        "peakStagingBytes": 7750080,
+        "inFlightEstimatedBytes": 0,
+        "capacityNotifications": 0,
+        "maxFrameBytes": 67108864,
+        "expiryTimerTicks": 0,
+        "resourceLimits": 0,
+        "expiryTimerActive": false,
+        "decodedRegistryEntries": 0,
+        "decodedAttachRefusals": 0,
+        "expiryTimerStarts": 34,
+        "decodedRevocations": 0,
+        "activeLeaseEstimatedBytes": 0,
+        "backupImageDataBytes": 0,
+        "activeJobs": 0,
+        "activeLeaseCount": 0,
+        "decodedRegistryLive": 0,
+        "retryCount": 1,
+        "maxJobDecodedLeases": 256,
+        "preparation": {
+          "resourceQuantum": 4,
+          "enabled": false,
+          "peakBytes": 0,
+          "stepQuantum": 256,
+          "maxJobBytes": 33554432,
+          "maxOwnedBytes": 67108864,
+          "jobs": [
+            {
+              "steps": 0,
+              "memoCount": 0,
+              "phase": "Terminal",
+              "id": 34,
+              "transformAttempts": 0,
+              "retainedBytes": 0,
+              "keys": 0,
+              "yields": 0,
+              "memoHits": 0,
+              "readyReuses": 0,
+              "decodeAttempts": 0,
+              "readyTransitions": 0,
+              "attempts": 0,
+              "replays": 0
+            }
+          ],
+          "notifications": 0,
+          "ownedBytes": 0
+        },
+        "maxPending": 2,
+        "transientEstimatedBytes": 0,
+        "loadAttempts": 2,
+        "uniqueResourceCount": 2,
+        "readyLeaseCount": 0,
+        "maxJobLeaseEntries": 0,
+        "maxOwnedBytes": 268435456,
+        "maxStagingBytes": 134217728,
+        "temporaryCanvasBytes": 0,
+        "ownedEstimatedBytes": 11617460,
+        "maxResources": 256,
+        "errors": 0,
+        "peakBackupImageDataBytes": 3875040,
+        "completionNotifications": 2
+      }
+    },
+    {
+      "name": "hwp-history-failure-image-cleanup",
+      "status": "PASS",
+      "resources": {
+        "decodedSharedLookups": 0,
+        "pendingCount": 0,
+        "cancellations": 0,
+        "decodedLedger": {
+          "accountingErrors": 0,
+          "residentBytes": 0,
+          "refusedReservations": 0,
+          "uniqueCount": 0,
+          "created": 0,
+          "jobLeaseReferenceBytes": 0,
+          "maxNonresidentBytes": 100663296,
+          "preallocationRejections": 0,
+          "reservedBytes": 0,
+          "residentCount": 0,
+          "decodedCacheMaxEntries": 256,
+          "jobLeaseReferences": 0,
+          "decodedCacheMaxBytes": 268435456,
+          "peakTreePayloadEstimatedBytes": 753,
+          "lastTreeSharedFontBytes": 0,
+          "dimensionMismatches": 0,
+          "unenforcedOverLimit": 0,
+          "estimate": "RGBA backing estimates; not RSS, GPU or browser allocator memory",
+          "peakUniquePlusReservedBytes": 0,
+          "unreservedDecodes": 2,
+          "uniqueBytes": 0,
+          "peakDecodeTransientEstimatedBytes": 0,
+          "lastTreePayloadEstimatedBytes": 753,
+          "rejectedCommits": 0,
+          "nonresidentCount": 0,
+          "disposed": 0,
+          "nonresidentBytes": 0,
+          "postDecodeReservations": 0
+        },
+        "peakTemporaryCanvasBytes": 3875040,
+        "listenerNotifications": 1,
+        "peakStagingBytes": 7750080,
+        "inFlightEstimatedBytes": 0,
+        "capacityNotifications": 0,
+        "maxFrameBytes": 67108864,
+        "expiryTimerTicks": 0,
+        "resourceLimits": 0,
+        "expiryTimerActive": false,
+        "decodedRegistryEntries": 0,
+        "decodedAttachRefusals": 0,
+        "expiryTimerStarts": 37,
+        "decodedRevocations": 0,
+        "activeLeaseEstimatedBytes": 0,
+        "backupImageDataBytes": 0,
+        "activeJobs": 0,
+        "activeLeaseCount": 0,
+        "decodedRegistryLive": 0,
+        "retryCount": 1,
+        "maxJobDecodedLeases": 256,
+        "preparation": {
+          "resourceQuantum": 4,
+          "enabled": false,
+          "peakBytes": 0,
+          "stepQuantum": 256,
+          "maxJobBytes": 33554432,
+          "maxOwnedBytes": 67108864,
+          "jobs": [],
+          "notifications": 0,
+          "ownedBytes": 0
+        },
+        "maxPending": 2,
+        "transientEstimatedBytes": 0,
+        "loadAttempts": 2,
+        "uniqueResourceCount": 0,
+        "readyLeaseCount": 0,
+        "maxJobLeaseEntries": 0,
+        "maxOwnedBytes": 268435456,
+        "maxStagingBytes": 134217728,
+        "temporaryCanvasBytes": 0,
+        "ownedEstimatedBytes": 0,
+        "maxResources": 256,
+        "errors": 0,
+        "peakBackupImageDataBytes": 3875040,
+        "completionNotifications": 2
+      }
+    },
+    {
+      "name": "hwpx-history-failure-image-resources-established",
+      "status": "PASS",
+      "resources": {
+        "decodedSharedLookups": 0,
+        "pendingCount": 0,
+        "cancellations": 0,
+        "decodedLedger": {
+          "accountingErrors": 0,
+          "residentBytes": 0,
+          "refusedReservations": 0,
+          "uniqueCount": 0,
+          "created": 0,
+          "jobLeaseReferenceBytes": 0,
+          "maxNonresidentBytes": 100663296,
+          "preallocationRejections": 0,
+          "reservedBytes": 0,
+          "residentCount": 0,
+          "decodedCacheMaxEntries": 256,
+          "jobLeaseReferences": 0,
+          "decodedCacheMaxBytes": 268435456,
+          "peakTreePayloadEstimatedBytes": 753,
+          "lastTreeSharedFontBytes": 0,
+          "dimensionMismatches": 0,
+          "unenforcedOverLimit": 0,
+          "estimate": "RGBA backing estimates; not RSS, GPU or browser allocator memory",
+          "peakUniquePlusReservedBytes": 0,
+          "unreservedDecodes": 4,
+          "uniqueBytes": 0,
+          "peakDecodeTransientEstimatedBytes": 0,
+          "lastTreePayloadEstimatedBytes": 753,
+          "rejectedCommits": 0,
+          "nonresidentCount": 0,
+          "disposed": 0,
+          "nonresidentBytes": 0,
+          "postDecodeReservations": 0
+        },
+        "peakTemporaryCanvasBytes": 3875040,
+        "listenerNotifications": 1,
+        "peakStagingBytes": 7750080,
+        "inFlightEstimatedBytes": 0,
+        "capacityNotifications": 0,
+        "maxFrameBytes": 67108864,
+        "expiryTimerTicks": 0,
+        "resourceLimits": 0,
+        "expiryTimerActive": false,
+        "decodedRegistryEntries": 0,
+        "decodedAttachRefusals": 0,
+        "expiryTimerStarts": 38,
+        "decodedRevocations": 0,
+        "activeLeaseEstimatedBytes": 0,
+        "backupImageDataBytes": 0,
+        "activeJobs": 0,
+        "activeLeaseCount": 0,
+        "decodedRegistryLive": 0,
+        "retryCount": 1,
+        "maxJobDecodedLeases": 256,
+        "preparation": {
+          "resourceQuantum": 4,
+          "enabled": false,
+          "peakBytes": 0,
+          "stepQuantum": 256,
+          "maxJobBytes": 33554432,
+          "maxOwnedBytes": 67108864,
+          "jobs": [
+            {
+              "steps": 0,
+              "memoCount": 0,
+              "phase": "Terminal",
+              "id": 38,
+              "transformAttempts": 0,
+              "retainedBytes": 0,
+              "keys": 0,
+              "yields": 0,
+              "memoHits": 0,
+              "readyReuses": 0,
+              "decodeAttempts": 0,
+              "readyTransitions": 0,
+              "attempts": 0,
+              "replays": 0
+            }
+          ],
+          "notifications": 0,
+          "ownedBytes": 0
+        },
+        "maxPending": 2,
+        "transientEstimatedBytes": 0,
+        "loadAttempts": 4,
+        "uniqueResourceCount": 2,
+        "readyLeaseCount": 0,
+        "maxJobLeaseEntries": 0,
+        "maxOwnedBytes": 268435456,
+        "maxStagingBytes": 134217728,
+        "temporaryCanvasBytes": 0,
+        "ownedEstimatedBytes": 11617460,
+        "maxResources": 256,
+        "errors": 0,
+        "peakBackupImageDataBytes": 3875040,
+        "completionNotifications": 2
+      }
+    },
+    {
+      "name": "hwpx-history-failure-image-cleanup",
+      "status": "PASS",
+      "resources": {
+        "decodedSharedLookups": 0,
+        "pendingCount": 0,
+        "cancellations": 0,
+        "decodedLedger": {
+          "accountingErrors": 0,
+          "residentBytes": 0,
+          "refusedReservations": 0,
+          "uniqueCount": 0,
+          "created": 0,
+          "jobLeaseReferenceBytes": 0,
+          "maxNonresidentBytes": 100663296,
+          "preallocationRejections": 0,
+          "reservedBytes": 0,
+          "residentCount": 0,
+          "decodedCacheMaxEntries": 256,
+          "jobLeaseReferences": 0,
+          "decodedCacheMaxBytes": 268435456,
+          "peakTreePayloadEstimatedBytes": 753,
+          "lastTreeSharedFontBytes": 0,
+          "dimensionMismatches": 0,
+          "unenforcedOverLimit": 0,
+          "estimate": "RGBA backing estimates; not RSS, GPU or browser allocator memory",
+          "peakUniquePlusReservedBytes": 0,
+          "unreservedDecodes": 4,
+          "uniqueBytes": 0,
+          "peakDecodeTransientEstimatedBytes": 0,
+          "lastTreePayloadEstimatedBytes": 753,
+          "rejectedCommits": 0,
+          "nonresidentCount": 0,
+          "disposed": 0,
+          "nonresidentBytes": 0,
+          "postDecodeReservations": 0
+        },
+        "peakTemporaryCanvasBytes": 3875040,
+        "listenerNotifications": 1,
+        "peakStagingBytes": 7750080,
+        "inFlightEstimatedBytes": 0,
+        "capacityNotifications": 0,
+        "maxFrameBytes": 67108864,
+        "expiryTimerTicks": 0,
+        "resourceLimits": 0,
+        "expiryTimerActive": false,
+        "decodedRegistryEntries": 0,
+        "decodedAttachRefusals": 0,
+        "expiryTimerStarts": 41,
+        "decodedRevocations": 0,
+        "activeLeaseEstimatedBytes": 0,
+        "backupImageDataBytes": 0,
+        "activeJobs": 0,
+        "activeLeaseCount": 0,
+        "decodedRegistryLive": 0,
+        "retryCount": 1,
+        "maxJobDecodedLeases": 256,
+        "preparation": {
+          "resourceQuantum": 4,
+          "enabled": false,
+          "peakBytes": 0,
+          "stepQuantum": 256,
+          "maxJobBytes": 33554432,
+          "maxOwnedBytes": 67108864,
+          "jobs": [],
+          "notifications": 0,
+          "ownedBytes": 0
+        },
+        "maxPending": 2,
+        "transientEstimatedBytes": 0,
+        "loadAttempts": 4,
+        "uniqueResourceCount": 0,
+        "readyLeaseCount": 0,
+        "maxJobLeaseEntries": 0,
+        "maxOwnedBytes": 268435456,
+        "maxStagingBytes": 134217728,
+        "temporaryCanvasBytes": 0,
+        "ownedEstimatedBytes": 0,
+        "maxResources": 256,
+        "errors": 0,
+        "peakBackupImageDataBytes": 3875040,
+        "completionNotifications": 2
+      }
+    },
+    {
+      "name": "native-final-resource-cleanup",
+      "status": "PASS"
+    }
+  ],
+  "scope": "actual candidate native service::save and controlled history boundary exceptions",
+  "observerAliasDiagnostic": {
+    "sameConstructor": false,
+    "resources": [
+      "/__ownership_candidate__/rhwp.js?import",
+      "/__ownership_candidate__/rhwp.js"
+    ]
+  },
+  "engineIdentity": {
+    "wasmSha256": "97a575093aab7fde6400e3ce2a1c3ec243de28645f49ce27a55286ca8dff37e2",
+    "baseline": "1a76570e833917d15817415a53c09ad61ab3203f"
+  },
+  "lastObserved": {
+    "throwAfterDiscard": false,
+    "status": null,
+    "snapshotCalls": [
+      {
+        "ms": 0,
+        "name": "discardSnapshot",
+        "at": 12599
+      },
+      {
+        "ms": 0,
+        "name": "saveSnapshot",
+        "at": 14972
+      },
+      {
+        "ms": 0,
+        "name": "saveSnapshot",
+        "at": 15159
+      },
+      {
+        "ms": 1,
+        "name": "restoreSnapshot",
+        "at": 15159
+      },
+      {
+        "ms": 0,
+        "name": "saveSnapshot",
+        "at": 16746
+      },
+      {
+        "ms": 1,
+        "name": "saveSnapshot",
+        "at": 16942
+      },
+      {
+        "ms": 0,
+        "name": "restoreSnapshot",
+        "at": 16943
+      },
+      {
+        "ms": 1,
+        "name": "restoreSnapshot",
+        "at": 17069
+      },
+      {
+        "ms": 0,
+        "name": "saveSnapshot",
+        "at": 18701
+      },
+      {
+        "ms": 0,
+        "name": "saveSnapshot",
+        "at": 18897
+      },
+      {
+        "ms": 1,
+        "name": "restoreSnapshot",
+        "at": 18897
+      },
+      {
+        "ms": 0,
+        "name": "discardSnapshot",
+        "at": 19035
+      },
+      {
+        "ms": 0,
+        "name": "saveSnapshot",
+        "at": 21500
+      },
+      {
+        "ms": 0,
+        "name": "saveSnapshot",
+        "at": 21691
+      },
+      {
+        "ms": 1,
+        "name": "restoreSnapshot",
+        "at": 21691
+      },
+      {
+        "ms": 0,
+        "name": "discardSnapshot",
+        "at": 21803
+      },
+      {
+        "ms": 0,
+        "name": "saveSnapshot",
+        "at": 24366
+      },
+      {
+        "ms": 0,
+        "name": "saveSnapshot",
+        "at": 24558
+      },
+      {
+        "ms": 2,
+        "name": "restoreSnapshot",
+        "at": 24558
+      },
+      {
+        "ms": 1,
+        "name": "discardSnapshot",
+        "at": 24721
+      }
+    ],
+    "owners": [
+      {
+        "discards": 0,
+        "nativeCapacity": null,
+        "id": 1,
+        "saves": 0,
+        "live": 0
+      }
+    ],
+    "jobs": {
+      "decodedSharedLookups": 0,
+      "pendingCount": 0,
+      "cancellations": 0,
+      "decodedLedger": {
+        "accountingErrors": 0,
+        "residentBytes": 0,
+        "refusedReservations": 0,
+        "uniqueCount": 0,
+        "created": 0,
+        "jobLeaseReferenceBytes": 0,
+        "maxNonresidentBytes": 100663296,
+        "preallocationRejections": 0,
+        "reservedBytes": 0,
+        "residentCount": 0,
+        "decodedCacheMaxEntries": 256,
+        "jobLeaseReferences": 0,
+        "decodedCacheMaxBytes": 268435456,
+        "peakTreePayloadEstimatedBytes": 753,
+        "lastTreeSharedFontBytes": 0,
+        "dimensionMismatches": 0,
+        "unenforcedOverLimit": 0,
+        "estimate": "RGBA backing estimates; not RSS, GPU or browser allocator memory",
+        "peakUniquePlusReservedBytes": 0,
+        "unreservedDecodes": 4,
+        "uniqueBytes": 0,
+        "peakDecodeTransientEstimatedBytes": 0,
+        "lastTreePayloadEstimatedBytes": 753,
+        "rejectedCommits": 0,
+        "nonresidentCount": 0,
+        "disposed": 0,
+        "nonresidentBytes": 0,
+        "postDecodeReservations": 0
+      },
+      "peakTemporaryCanvasBytes": 3875040,
+      "listenerNotifications": 1,
+      "peakStagingBytes": 7750080,
+      "inFlightEstimatedBytes": 0,
+      "capacityNotifications": 0,
+      "maxFrameBytes": 67108864,
+      "expiryTimerTicks": 0,
+      "resourceLimits": 0,
+      "expiryTimerActive": false,
+      "decodedRegistryEntries": 0,
+      "decodedAttachRefusals": 0,
+      "expiryTimerStarts": 41,
+      "decodedRevocations": 0,
+      "activeLeaseEstimatedBytes": 0,
+      "backupImageDataBytes": 0,
+      "activeJobs": 0,
+      "activeLeaseCount": 0,
+      "decodedRegistryLive": 0,
+      "retryCount": 1,
+      "maxJobDecodedLeases": 256,
+      "preparation": {
+        "resourceQuantum": 4,
+        "enabled": false,
+        "peakBytes": 0,
+        "stepQuantum": 256,
+        "maxJobBytes": 33554432,
+        "maxOwnedBytes": 67108864,
+        "jobs": [],
+        "notifications": 0,
+        "ownedBytes": 0
+      },
+      "maxPending": 2,
+      "transientEstimatedBytes": 0,
+      "loadAttempts": 4,
+      "uniqueResourceCount": 0,
+      "readyLeaseCount": 0,
+      "maxJobLeaseEntries": 0,
+      "maxOwnedBytes": 268435456,
+      "maxStagingBytes": 134217728,
+      "temporaryCanvasBytes": 0,
+      "ownedEstimatedBytes": 0,
+      "maxResources": 256,
+      "errors": 0,
+      "peakBackupImageDataBytes": 3875040,
+      "completionNotifications": 2
+    },
+    "identity": {
+      "wasmSha256": "97a575093aab7fde6400e3ce2a1c3ec243de28645f49ce27a55286ca8dff37e2",
+      "baseline": "1a76570e833917d15817415a53c09ad61ab3203f"
+    }
+  },
+  "existingSaveAssertions": [
+    "hwp: 편집 전 글자가 남는 미리보기(PrvText)가 있으면 저장하지 않고(unsafe previewStale) 이유를 보이며 원본·편집 그대로",
+    "hwpx: 편집 뒤 저장 전에는 파일이 그대로이고 저장하지 않은 편집으로 보임",
+    "hwpx: 사전 검사(편집 없는 왕복 safe)를 거쳐 원본 형식으로 저장하고 dirty가 풀림(파일이 바뀌고 컨테이너가 올바름)",
+    "hwpx: 저장한 문서는 버리기 확인 없이 닫힘",
+    "hwpx: 저장한 파일을 앱에서 다시 열면 넣은 글자가 있고 편집 가능",
+    "hwpx: 연 뒤 파일이 바뀌면(외부 수정) FileConflict로 저장하지 않고 바뀐 파일을 덮어쓰지 않음",
+    "hwpx: 본문 XML이 잘림(rhwp는 거의 빈 문서로 엶) → 저장하지 않고(unknown) 이유를 보이며 원본 그대로",
+    "hwpx: rhwp가 모르는 요소가 있음 → 저장하지 않고(unsafe) 이유를 보이며 원본 그대로",
+    "저장 시도 뒤 임시 파일(.geul-save-*.tmp)이 남지 않음"
+  ],
+  "historyGates": [
+    {
+      "gate": "D5",
+      "item": "hwp: 실제 discard 뒤 예외 → uncertain, 편집/Undo/Save 차단·원본 SHA 보존",
+      "result": "PASS",
+      "detail": ""
+    },
+    {
+      "gate": "D1",
+      "item": "hwp: 불확실 실패 후 버리기/실제 reload → 새 세대·원본 텍스트·빈 기록·새 Canvas",
+      "result": "PASS",
+      "detail": ""
+    },
+    {
+      "gate": "D5",
+      "item": "hwpx: 실제 discard 뒤 예외 → uncertain, 편집/Undo/Save 차단·원본 SHA 보존",
+      "result": "PASS",
+      "detail": ""
+    },
+    {
+      "gate": "D1",
+      "item": "hwpx: 불확실 실패 후 버리기/실제 reload → 새 세대·원본 텍스트·빈 기록·새 Canvas",
+      "result": "PASS",
+      "detail": ""
+    },
+    {
+      "gate": "D5",
+      "item": "hwp-images: 실제 discard 뒤 예외 → uncertain, 편집/Undo/Save 차단·원본 SHA 보존",
+      "result": "PASS",
+      "detail": ""
+    },
+    {
+      "gate": "D1",
+      "item": "hwp-images: 불확실 실패 후 버리기/실제 reload → 새 세대·원본 텍스트·빈 기록·새 Canvas",
+      "result": "PASS",
+      "detail": ""
+    },
+    {
+      "gate": "D5",
+      "item": "hwpx-images: 실제 discard 뒤 예외 → uncertain, 편집/Undo/Save 차단·원본 SHA 보존",
+      "result": "PASS",
+      "detail": ""
+    },
+    {
+      "gate": "D1",
+      "item": "hwpx-images: 불확실 실패 후 버리기/실제 reload → 새 세대·원본 텍스트·빈 기록·새 Canvas",
+      "result": "PASS",
+      "detail": ""
+    }
+  ],
+  "historyChecks": [
+    "hwp: 불확실 실패 후 버리기/실제 reload → 새 세대·원본 텍스트·빈 기록·새 Canvas",
+    "hwpx: 불확실 실패 후 버리기/실제 reload → 새 세대·원본 텍스트·빈 기록·새 Canvas",
+    "hwp-images: 불확실 실패 후 버리기/실제 reload → 새 세대·원본 텍스트·빈 기록·새 Canvas",
+    "hwpx-images: 불확실 실패 후 버리기/실제 reload → 새 세대·원본 텍스트·빈 기록·새 Canvas"
+  ]
+}

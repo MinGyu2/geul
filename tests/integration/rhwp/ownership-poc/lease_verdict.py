@@ -80,7 +80,7 @@ def _ledger(steps, label, field):
 
 def _exact(comparison):
     return (isinstance(comparison, dict) and comparison.get('sameExtent') is True
-            and comparison.get('channelDifferences') == 0 and _int(comparison.get('nonWhitePixels'))
+            and _int(comparison.get('channelDifferences')) and comparison['channelDifferences'] == 0 and _int(comparison.get('nonWhitePixels'))
             and comparison['nonWhitePixels'] > 0)
 
 
@@ -120,10 +120,10 @@ def evaluate(steps, outcomes, comparisons):
             and eq(j('late-after-free', 'errors'), j('free:Y', 'errors')),
         'appLeaseAcquired': outcomes.get('app-acquire') == 'PENDING' and gt(j('app-acquire', 'activeLeaseCount'), 0),
         'appLeaseHeldBeforeInput': gt(j('app-before-input', 'activeLeaseCount'), 0) and gt(j('app-before-input', 'activeJobs'), 0),
-        'appStaleJobCanceledAfterNewRevision': outcomes.get('app-stale-poll') == 'CANCELED' and steps.get('app-stale-poll', {}).get('channelDifferences') == 0,
+        'appStaleJobCanceledAfterNewRevision': outcomes.get('app-stale-poll') == 'CANCELED' and _int(steps.get('app-stale-poll', {}).get('channelDifferences')) and steps['app-stale-poll']['channelDifferences'] == 0,
         'appLeasesReleasedAfterReplacement': eq(j('app-stale-poll', 'activeLeaseCount'), 0) and eq(j('app-stale-poll', 'activeJobs'), 0),
         'appVisibleFrameExact': isinstance(comparisons.get('app-visible'), dict) and comparisons['app-visible'].get('verified') is True
-            and comparisons['app-visible'].get('pixels') == 0,
+            and _int(comparisons['app-visible'].get('pixels')) and comparisons['app-visible']['pixels'] == 0,
         'appCloseWithPendingLease': gt(j('app-close-acquire', 'activeLeaseCount'), 0) and eq(j('app-closed', 'activeLeaseCount'), 0)
             and eq(j('app-closed', 'activeJobs'), 0) and eq(j('app-late', 'activeLeaseCount'), 0) and eq(j('app-late', 'errors'), j('app-closed', 'errors')),
         'decodedLeaseAcquired': outcomes.get('P-acquire') == 'PENDING' and gt(j('P-acquire', 'maxJobLeaseEntries'), 0)

@@ -1,0 +1,8 @@
+untracked evidence files: 44
+tests/integration/rhwp/evidence/t010-continuation-20261028/oracle-open-progress.patch:6: [secret-assignment] 비밀값 할당: Op*** (len=13)
+tests/integration/rhwp/evidence/t010-continuation-20261028/rust-clippy-attempt1.txt:1: [home-path-unix] 사용자 홈 절대 경로(/home): *** (len=3)
+tests/integration/rhwp/evidence/t010-continuation-20261028/rust-tests-attempt1.txt:1: [home-path-unix] 사용자 홈 절대 경로(/home): *** (len=3)
+tests/integration/rhwp/evidence/t010-continuation-20261028/session-failclosed-baseline-attempt1.txt:19: [home-path-unix] 사용자 홈 절대 경로(/home): *** (len=3)
+tests/integration/rhwp/evidence/t010-continuation-20261028/vitest-attempt1.txt:6: [home-path-unix] 사용자 홈 절대 경로(/home): *** (len=3)
+
+민감정보 의심 항목 5건 발견 (지정 파일 44개). 값을 제거하거나, 오탐이면 docs/development/security-policy.md의 예외 절차를 따르세요.

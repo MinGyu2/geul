@@ -1,0 +1,1243 @@
+{
+  "status": "PASS",
+  "tests": [
+    {
+      "name": "bootstrap-clean-close",
+      "status": "PASS"
+    },
+    {
+      "name": "basic-ko.hwp-warm-full-reference-exact",
+      "status": "PASS",
+      "reference": {
+        "strongPixels": 0,
+        "pixels": 0,
+        "edgePixels": 0,
+        "height": 585,
+        "surface": "attached page Canvas readback",
+        "width": 414,
+        "verified": true,
+        "maxDelta": 0,
+        "oracle": "authoritative model full replay; browser historical full pixels independently pinned-verified"
+      }
+    },
+    {
+      "name": "basic-ko.hwp-typed-10-full-reference-exact",
+      "status": "PASS",
+      "reference": {
+        "strongPixels": 0,
+        "pixels": 0,
+        "edgePixels": 0,
+        "height": 585,
+        "surface": "attached page Canvas readback",
+        "width": 414,
+        "verified": true,
+        "maxDelta": 0,
+        "oracle": "authoritative model full replay; browser historical full pixels independently pinned-verified"
+      }
+    },
+    {
+      "name": "basic-ko.hwp-typed-20-full-reference-exact",
+      "status": "PASS",
+      "reference": {
+        "strongPixels": 0,
+        "pixels": 0,
+        "edgePixels": 0,
+        "height": 585,
+        "surface": "attached page Canvas readback",
+        "width": 414,
+        "verified": true,
+        "maxDelta": 0,
+        "oracle": "authoritative model full replay; browser historical full pixels independently pinned-verified"
+      }
+    },
+    {
+      "name": "basic-ko.hwp-typed-30-full-reference-exact",
+      "status": "PASS",
+      "reference": {
+        "strongPixels": 0,
+        "pixels": 0,
+        "edgePixels": 0,
+        "height": 585,
+        "surface": "attached page Canvas readback",
+        "width": 414,
+        "verified": true,
+        "maxDelta": 0,
+        "oracle": "authoritative model full replay; browser historical full pixels independently pinned-verified"
+      }
+    },
+    {
+      "name": "basic-ko.hwp-undo-caret-visible",
+      "status": "PASS",
+      "caret": "0:3:34",
+      "knownOriginalEndpointFailureEvidence": null
+    },
+    {
+      "name": "basic-ko.hwp-undo-full-reference-exact",
+      "status": "PASS",
+      "reference": {
+        "strongPixels": 0,
+        "pixels": 0,
+        "edgePixels": 0,
+        "height": 585,
+        "surface": "attached page Canvas readback",
+        "width": 414,
+        "verified": true,
+        "maxDelta": 0,
+        "oracle": "authoritative model full replay; browser historical full pixels independently pinned-verified"
+      }
+    },
+    {
+      "name": "basic-ko.hwp-redo-full-reference-exact",
+      "status": "PASS",
+      "reference": {
+        "strongPixels": 0,
+        "pixels": 0,
+        "edgePixels": 0,
+        "height": 585,
+        "surface": "attached page Canvas readback",
+        "width": 414,
+        "verified": true,
+        "maxDelta": 0,
+        "oracle": "authoritative model full replay; browser historical full pixels independently pinned-verified"
+      }
+    },
+    {
+      "name": "basic-ko.hwp-history-model-caret",
+      "status": "PASS"
+    },
+    {
+      "name": "basic-ko.hwp-original-preserved",
+      "status": "PASS"
+    },
+    {
+      "name": "basic-ko.hwpx-warm-full-reference-exact",
+      "status": "PASS",
+      "reference": {
+        "strongPixels": 0,
+        "pixels": 0,
+        "edgePixels": 0,
+        "height": 585,
+        "surface": "attached page Canvas readback",
+        "width": 414,
+        "verified": true,
+        "maxDelta": 0,
+        "oracle": "authoritative model full replay; browser historical full pixels independently pinned-verified"
+      }
+    },
+    {
+      "name": "basic-ko.hwpx-typed-10-full-reference-exact",
+      "status": "PASS",
+      "reference": {
+        "strongPixels": 0,
+        "pixels": 0,
+        "edgePixels": 0,
+        "height": 585,
+        "surface": "attached page Canvas readback",
+        "width": 414,
+        "verified": true,
+        "maxDelta": 0,
+        "oracle": "authoritative model full replay; browser historical full pixels independently pinned-verified"
+      }
+    },
+    {
+      "name": "basic-ko.hwpx-typed-20-full-reference-exact",
+      "status": "PASS",
+      "reference": {
+        "strongPixels": 0,
+        "pixels": 0,
+        "edgePixels": 0,
+        "height": 585,
+        "surface": "attached page Canvas readback",
+        "width": 414,
+        "verified": true,
+        "maxDelta": 0,
+        "oracle": "authoritative model full replay; browser historical full pixels independently pinned-verified"
+      }
+    },
+    {
+      "name": "basic-ko.hwpx-typed-30-full-reference-exact",
+      "status": "PASS",
+      "reference": {
+        "strongPixels": 0,
+        "pixels": 0,
+        "edgePixels": 0,
+        "height": 585,
+        "surface": "attached page Canvas readback",
+        "width": 414,
+        "verified": true,
+        "maxDelta": 0,
+        "oracle": "authoritative model full replay; browser historical full pixels independently pinned-verified"
+      }
+    },
+    {
+      "name": "basic-ko.hwpx-undo-caret-visible",
+      "status": "PASS",
+      "caret": "0:3:34",
+      "knownOriginalEndpointFailureEvidence": null
+    },
+    {
+      "name": "basic-ko.hwpx-undo-full-reference-exact",
+      "status": "PASS",
+      "reference": {
+        "strongPixels": 0,
+        "pixels": 0,
+        "edgePixels": 0,
+        "height": 585,
+        "surface": "attached page Canvas readback",
+        "width": 414,
+        "verified": true,
+        "maxDelta": 0,
+        "oracle": "authoritative model full replay; browser historical full pixels independently pinned-verified"
+      }
+    },
+    {
+      "name": "basic-ko.hwpx-redo-full-reference-exact",
+      "status": "PASS",
+      "reference": {
+        "strongPixels": 0,
+        "pixels": 0,
+        "edgePixels": 0,
+        "height": 585,
+        "surface": "attached page Canvas readback",
+        "width": 414,
+        "verified": true,
+        "maxDelta": 0,
+        "oracle": "authoritative model full replay; browser historical full pixels independently pinned-verified"
+      }
+    },
+    {
+      "name": "basic-ko.hwpx-history-model-caret",
+      "status": "PASS"
+    },
+    {
+      "name": "basic-ko.hwpx-original-preserved",
+      "status": "PASS"
+    },
+    {
+      "name": "연구노트(화학).hwp-warm-full-reference-exact",
+      "status": "PASS",
+      "reference": {
+        "strongPixels": 0,
+        "pixels": 0,
+        "edgePixels": 0,
+        "height": 585,
+        "surface": "attached page Canvas readback",
+        "width": 414,
+        "verified": true,
+        "maxDelta": 0,
+        "oracle": "authoritative model full replay; browser historical full pixels independently pinned-verified"
+      }
+    },
+    {
+      "name": "연구노트(화학).hwp-typed-10-full-reference-exact",
+      "status": "PASS",
+      "reference": {
+        "strongPixels": 0,
+        "pixels": 0,
+        "edgePixels": 0,
+        "height": 585,
+        "surface": "attached page Canvas readback",
+        "width": 414,
+        "verified": true,
+        "maxDelta": 0,
+        "oracle": "authoritative model full replay; browser historical full pixels independently pinned-verified"
+      }
+    },
+    {
+      "name": "연구노트(화학).hwp-typed-20-full-reference-exact",
+      "status": "PASS",
+      "reference": {
+        "strongPixels": 0,
+        "pixels": 0,
+        "edgePixels": 0,
+        "height": 585,
+        "surface": "attached page Canvas readback",
+        "width": 414,
+        "verified": true,
+        "maxDelta": 0,
+        "oracle": "authoritative model full replay; browser historical full pixels independently pinned-verified"
+      }
+    },
+    {
+      "name": "연구노트(화학).hwp-typed-30-full-reference-exact",
+      "status": "PASS",
+      "reference": {
+        "strongPixels": 0,
+        "pixels": 0,
+        "edgePixels": 0,
+        "height": 585,
+        "surface": "attached page Canvas readback",
+        "width": 414,
+        "verified": true,
+        "maxDelta": 0,
+        "oracle": "authoritative model full replay; browser historical full pixels independently pinned-verified"
+      }
+    },
+    {
+      "name": "연구노트(화학).hwp-original-empty-paragraph-restored",
+      "status": "PASS",
+      "undoSteps": 1
+    },
+    {
+      "name": "연구노트(화학).hwp-undo-caret-visible",
+      "status": "PASS",
+      "caret": "0:23:0",
+      "knownOriginalEndpointFailureEvidence": null
+    },
+    {
+      "name": "연구노트(화학).hwp-undo-full-reference-exact",
+      "status": "PASS",
+      "reference": {
+        "strongPixels": 0,
+        "pixels": 0,
+        "edgePixels": 0,
+        "height": 585,
+        "surface": "attached page Canvas readback",
+        "width": 414,
+        "verified": true,
+        "maxDelta": 0,
+        "oracle": "authoritative model full replay; browser historical full pixels independently pinned-verified"
+      }
+    },
+    {
+      "name": "연구노트(화학).hwp-redo-full-reference-exact",
+      "status": "PASS",
+      "reference": {
+        "strongPixels": 0,
+        "pixels": 0,
+        "edgePixels": 0,
+        "height": 585,
+        "surface": "attached page Canvas readback",
+        "width": 414,
+        "verified": true,
+        "maxDelta": 0,
+        "oracle": "authoritative model full replay; browser historical full pixels independently pinned-verified"
+      }
+    },
+    {
+      "name": "연구노트(화학).hwp-history-model-caret",
+      "status": "PASS"
+    },
+    {
+      "name": "연구노트(화학).hwp-original-preserved",
+      "status": "PASS"
+    },
+    {
+      "name": "3249937_asset_management_rules.hwpx-warm-full-reference-exact",
+      "status": "PASS",
+      "reference": {
+        "strongPixels": 0,
+        "pixels": 0,
+        "edgePixels": 0,
+        "height": 585,
+        "surface": "attached page Canvas readback",
+        "width": 414,
+        "verified": true,
+        "maxDelta": 0,
+        "oracle": "authoritative model full replay; browser historical full pixels independently pinned-verified"
+      }
+    },
+    {
+      "name": "3249937_asset_management_rules.hwpx-typed-10-full-reference-exact",
+      "status": "PASS",
+      "reference": {
+        "strongPixels": 0,
+        "pixels": 0,
+        "edgePixels": 0,
+        "height": 585,
+        "surface": "attached page Canvas readback",
+        "width": 414,
+        "verified": true,
+        "maxDelta": 0,
+        "oracle": "authoritative model full replay; browser historical full pixels independently pinned-verified"
+      }
+    },
+    {
+      "name": "3249937_asset_management_rules.hwpx-typed-20-full-reference-exact",
+      "status": "PASS",
+      "reference": {
+        "strongPixels": 0,
+        "pixels": 0,
+        "edgePixels": 0,
+        "height": 585,
+        "surface": "attached page Canvas readback",
+        "width": 414,
+        "verified": true,
+        "maxDelta": 0,
+        "oracle": "authoritative model full replay; browser historical full pixels independently pinned-verified"
+      }
+    },
+    {
+      "name": "3249937_asset_management_rules.hwpx-typed-30-full-reference-exact",
+      "status": "PASS",
+      "reference": {
+        "strongPixels": 0,
+        "pixels": 0,
+        "edgePixels": 0,
+        "height": 585,
+        "surface": "attached page Canvas readback",
+        "width": 414,
+        "verified": true,
+        "maxDelta": 0,
+        "oracle": "authoritative model full replay; browser historical full pixels independently pinned-verified"
+      }
+    },
+    {
+      "name": "3249937_asset_management_rules.hwpx-undo-caret-visible",
+      "status": "PASS",
+      "caret": "0:4:139",
+      "knownOriginalEndpointFailureEvidence": null
+    },
+    {
+      "name": "3249937_asset_management_rules.hwpx-undo-full-reference-exact",
+      "status": "PASS",
+      "reference": {
+        "strongPixels": 0,
+        "pixels": 0,
+        "edgePixels": 0,
+        "height": 585,
+        "surface": "attached page Canvas readback",
+        "width": 414,
+        "verified": true,
+        "maxDelta": 0,
+        "oracle": "authoritative model full replay; browser historical full pixels independently pinned-verified"
+      }
+    },
+    {
+      "name": "3249937_asset_management_rules.hwpx-redo-full-reference-exact",
+      "status": "PASS",
+      "reference": {
+        "strongPixels": 0,
+        "pixels": 0,
+        "edgePixels": 0,
+        "height": 585,
+        "surface": "attached page Canvas readback",
+        "width": 414,
+        "verified": true,
+        "maxDelta": 0,
+        "oracle": "authoritative model full replay; browser historical full pixels independently pinned-verified"
+      }
+    },
+    {
+      "name": "3249937_asset_management_rules.hwpx-history-model-caret",
+      "status": "PASS"
+    },
+    {
+      "name": "3249937_asset_management_rules.hwpx-original-preserved",
+      "status": "PASS"
+    },
+    {
+      "name": "native-final-resource-cleanup",
+      "status": "PASS"
+    }
+  ],
+  "scope": "actual candidate native performance fixtures, same zoom50/warmup3/caret region; separate correctness run, no latency claim",
+  "selectedSamples": [
+    "basic-ko.hwp",
+    "basic-ko.hwpx",
+    "연구노트(화학).hwp",
+    "3249937_asset_management_rules.hwpx"
+  ],
+  "diagnosticContinuation": false,
+  "cleanup": {
+    "sessionEnded": true,
+    "driverStopped": true,
+    "displayTerminated": true
+  },
+  "observerAliasDiagnostic": {
+    "sameConstructor": false,
+    "resources": [
+      "/__ownership_candidate__/rhwp.js?import",
+      "/__ownership_candidate__/rhwp.js"
+    ]
+  },
+  "visualReferences": [
+    {
+      "strongPixels": 0,
+      "pixels": 0,
+      "edgePixels": 0,
+      "height": 585,
+      "surface": "attached page Canvas readback",
+      "width": 414,
+      "verified": true,
+      "maxDelta": 0,
+      "oracle": "authoritative model full replay; browser historical full pixels independently pinned-verified",
+      "name": "basic-ko.hwp-warm",
+      "sample": "basic-ko.hwp",
+      "frame": "warm"
+    },
+    {
+      "strongPixels": 0,
+      "pixels": 0,
+      "edgePixels": 0,
+      "height": 585,
+      "surface": "attached page Canvas readback",
+      "width": 414,
+      "verified": true,
+      "maxDelta": 0,
+      "oracle": "authoritative model full replay; browser historical full pixels independently pinned-verified",
+      "name": "basic-ko.hwp-typed-10",
+      "sample": "basic-ko.hwp",
+      "frame": "typed-10"
+    },
+    {
+      "strongPixels": 0,
+      "pixels": 0,
+      "edgePixels": 0,
+      "height": 585,
+      "surface": "attached page Canvas readback",
+      "width": 414,
+      "verified": true,
+      "maxDelta": 0,
+      "oracle": "authoritative model full replay; browser historical full pixels independently pinned-verified",
+      "name": "basic-ko.hwp-typed-20",
+      "sample": "basic-ko.hwp",
+      "frame": "typed-20"
+    },
+    {
+      "strongPixels": 0,
+      "pixels": 0,
+      "edgePixels": 0,
+      "height": 585,
+      "surface": "attached page Canvas readback",
+      "width": 414,
+      "verified": true,
+      "maxDelta": 0,
+      "oracle": "authoritative model full replay; browser historical full pixels independently pinned-verified",
+      "name": "basic-ko.hwp-typed-30",
+      "sample": "basic-ko.hwp",
+      "frame": "typed-30"
+    },
+    {
+      "strongPixels": 0,
+      "pixels": 0,
+      "edgePixels": 0,
+      "height": 585,
+      "surface": "attached page Canvas readback",
+      "width": 414,
+      "verified": true,
+      "maxDelta": 0,
+      "oracle": "authoritative model full replay; browser historical full pixels independently pinned-verified",
+      "name": "basic-ko.hwp-undo",
+      "sample": "basic-ko.hwp",
+      "frame": "undo"
+    },
+    {
+      "strongPixels": 0,
+      "pixels": 0,
+      "edgePixels": 0,
+      "height": 585,
+      "surface": "attached page Canvas readback",
+      "width": 414,
+      "verified": true,
+      "maxDelta": 0,
+      "oracle": "authoritative model full replay; browser historical full pixels independently pinned-verified",
+      "name": "basic-ko.hwp-redo",
+      "sample": "basic-ko.hwp",
+      "frame": "redo"
+    },
+    {
+      "strongPixels": 0,
+      "pixels": 0,
+      "edgePixels": 0,
+      "height": 585,
+      "surface": "attached page Canvas readback",
+      "width": 414,
+      "verified": true,
+      "maxDelta": 0,
+      "oracle": "authoritative model full replay; browser historical full pixels independently pinned-verified",
+      "name": "basic-ko.hwpx-warm",
+      "sample": "basic-ko.hwpx",
+      "frame": "warm"
+    },
+    {
+      "strongPixels": 0,
+      "pixels": 0,
+      "edgePixels": 0,
+      "height": 585,
+      "surface": "attached page Canvas readback",
+      "width": 414,
+      "verified": true,
+      "maxDelta": 0,
+      "oracle": "authoritative model full replay; browser historical full pixels independently pinned-verified",
+      "name": "basic-ko.hwpx-typed-10",
+      "sample": "basic-ko.hwpx",
+      "frame": "typed-10"
+    },
+    {
+      "strongPixels": 0,
+      "pixels": 0,
+      "edgePixels": 0,
+      "height": 585,
+      "surface": "attached page Canvas readback",
+      "width": 414,
+      "verified": true,
+      "maxDelta": 0,
+      "oracle": "authoritative model full replay; browser historical full pixels independently pinned-verified",
+      "name": "basic-ko.hwpx-typed-20",
+      "sample": "basic-ko.hwpx",
+      "frame": "typed-20"
+    },
+    {
+      "strongPixels": 0,
+      "pixels": 0,
+      "edgePixels": 0,
+      "height": 585,
+      "surface": "attached page Canvas readback",
+      "width": 414,
+      "verified": true,
+      "maxDelta": 0,
+      "oracle": "authoritative model full replay; browser historical full pixels independently pinned-verified",
+      "name": "basic-ko.hwpx-typed-30",
+      "sample": "basic-ko.hwpx",
+      "frame": "typed-30"
+    },
+    {
+      "strongPixels": 0,
+      "pixels": 0,
+      "edgePixels": 0,
+      "height": 585,
+      "surface": "attached page Canvas readback",
+      "width": 414,
+      "verified": true,
+      "maxDelta": 0,
+      "oracle": "authoritative model full replay; browser historical full pixels independently pinned-verified",
+      "name": "basic-ko.hwpx-undo",
+      "sample": "basic-ko.hwpx",
+      "frame": "undo"
+    },
+    {
+      "strongPixels": 0,
+      "pixels": 0,
+      "edgePixels": 0,
+      "height": 585,
+      "surface": "attached page Canvas readback",
+      "width": 414,
+      "verified": true,
+      "maxDelta": 0,
+      "oracle": "authoritative model full replay; browser historical full pixels independently pinned-verified",
+      "name": "basic-ko.hwpx-redo",
+      "sample": "basic-ko.hwpx",
+      "frame": "redo"
+    },
+    {
+      "strongPixels": 0,
+      "pixels": 0,
+      "edgePixels": 0,
+      "height": 585,
+      "surface": "attached page Canvas readback",
+      "width": 414,
+      "verified": true,
+      "maxDelta": 0,
+      "oracle": "authoritative model full replay; browser historical full pixels independently pinned-verified",
+      "name": "연구노트(화학).hwp-warm",
+      "sample": "연구노트(화학).hwp",
+      "frame": "warm"
+    },
+    {
+      "strongPixels": 0,
+      "pixels": 0,
+      "edgePixels": 0,
+      "height": 585,
+      "surface": "attached page Canvas readback",
+      "width": 414,
+      "verified": true,
+      "maxDelta": 0,
+      "oracle": "authoritative model full replay; browser historical full pixels independently pinned-verified",
+      "name": "연구노트(화학).hwp-typed-10",
+      "sample": "연구노트(화학).hwp",
+      "frame": "typed-10"
+    },
+    {
+      "strongPixels": 0,
+      "pixels": 0,
+      "edgePixels": 0,
+      "height": 585,
+      "surface": "attached page Canvas readback",
+      "width": 414,
+      "verified": true,
+      "maxDelta": 0,
+      "oracle": "authoritative model full replay; browser historical full pixels independently pinned-verified",
+      "name": "연구노트(화학).hwp-typed-20",
+      "sample": "연구노트(화학).hwp",
+      "frame": "typed-20"
+    },
+    {
+      "strongPixels": 0,
+      "pixels": 0,
+      "edgePixels": 0,
+      "height": 585,
+      "surface": "attached page Canvas readback",
+      "width": 414,
+      "verified": true,
+      "maxDelta": 0,
+      "oracle": "authoritative model full replay; browser historical full pixels independently pinned-verified",
+      "name": "연구노트(화학).hwp-typed-30",
+      "sample": "연구노트(화학).hwp",
+      "frame": "typed-30"
+    },
+    {
+      "strongPixels": 0,
+      "pixels": 0,
+      "edgePixels": 0,
+      "height": 585,
+      "surface": "attached page Canvas readback",
+      "width": 414,
+      "verified": true,
+      "maxDelta": 0,
+      "oracle": "authoritative model full replay; browser historical full pixels independently pinned-verified",
+      "name": "연구노트(화학).hwp-undo",
+      "sample": "연구노트(화학).hwp",
+      "frame": "undo"
+    },
+    {
+      "strongPixels": 0,
+      "pixels": 0,
+      "edgePixels": 0,
+      "height": 585,
+      "surface": "attached page Canvas readback",
+      "width": 414,
+      "verified": true,
+      "maxDelta": 0,
+      "oracle": "authoritative model full replay; browser historical full pixels independently pinned-verified",
+      "name": "연구노트(화학).hwp-redo",
+      "sample": "연구노트(화학).hwp",
+      "frame": "redo"
+    },
+    {
+      "strongPixels": 0,
+      "pixels": 0,
+      "edgePixels": 0,
+      "height": 585,
+      "surface": "attached page Canvas readback",
+      "width": 414,
+      "verified": true,
+      "maxDelta": 0,
+      "oracle": "authoritative model full replay; browser historical full pixels independently pinned-verified",
+      "name": "3249937_asset_management_rules.hwpx-warm",
+      "sample": "3249937_asset_management_rules.hwpx",
+      "frame": "warm"
+    },
+    {
+      "strongPixels": 0,
+      "pixels": 0,
+      "edgePixels": 0,
+      "height": 585,
+      "surface": "attached page Canvas readback",
+      "width": 414,
+      "verified": true,
+      "maxDelta": 0,
+      "oracle": "authoritative model full replay; browser historical full pixels independently pinned-verified",
+      "name": "3249937_asset_management_rules.hwpx-typed-10",
+      "sample": "3249937_asset_management_rules.hwpx",
+      "frame": "typed-10"
+    },
+    {
+      "strongPixels": 0,
+      "pixels": 0,
+      "edgePixels": 0,
+      "height": 585,
+      "surface": "attached page Canvas readback",
+      "width": 414,
+      "verified": true,
+      "maxDelta": 0,
+      "oracle": "authoritative model full replay; browser historical full pixels independently pinned-verified",
+      "name": "3249937_asset_management_rules.hwpx-typed-20",
+      "sample": "3249937_asset_management_rules.hwpx",
+      "frame": "typed-20"
+    },
+    {
+      "strongPixels": 0,
+      "pixels": 0,
+      "edgePixels": 0,
+      "height": 585,
+      "surface": "attached page Canvas readback",
+      "width": 414,
+      "verified": true,
+      "maxDelta": 0,
+      "oracle": "authoritative model full replay; browser historical full pixels independently pinned-verified",
+      "name": "3249937_asset_management_rules.hwpx-typed-30",
+      "sample": "3249937_asset_management_rules.hwpx",
+      "frame": "typed-30"
+    },
+    {
+      "strongPixels": 0,
+      "pixels": 0,
+      "edgePixels": 0,
+      "height": 585,
+      "surface": "attached page Canvas readback",
+      "width": 414,
+      "verified": true,
+      "maxDelta": 0,
+      "oracle": "authoritative model full replay; browser historical full pixels independently pinned-verified",
+      "name": "3249937_asset_management_rules.hwpx-undo",
+      "sample": "3249937_asset_management_rules.hwpx",
+      "frame": "undo"
+    },
+    {
+      "strongPixels": 0,
+      "pixels": 0,
+      "edgePixels": 0,
+      "height": 585,
+      "surface": "attached page Canvas readback",
+      "width": 414,
+      "verified": true,
+      "maxDelta": 0,
+      "oracle": "authoritative model full replay; browser historical full pixels independently pinned-verified",
+      "name": "3249937_asset_management_rules.hwpx-redo",
+      "sample": "3249937_asset_management_rules.hwpx",
+      "frame": "redo"
+    }
+  ],
+  "documents": [
+    {
+      "sample": "basic-ko.hwp",
+      "sourceSha256": "57c901cc394abf6f58f4838315d1ea2c5ecf8a03d9934d3fc098fd8be6e6e12f",
+      "pages": 1,
+      "editedRegion": {
+        "caret": "0:3:9",
+        "page": 0
+      },
+      "zoom": 50,
+      "dpr": 1.04205322265625
+    },
+    {
+      "sample": "basic-ko.hwpx",
+      "sourceSha256": "26d434b7b427149110751c6ef5b19e9ecb4818f3ba7eadfe201b5afd3de442a8",
+      "pages": 1,
+      "editedRegion": {
+        "caret": "0:3:9",
+        "page": 0
+      },
+      "zoom": 50,
+      "dpr": 1.04205322265625
+    },
+    {
+      "sample": "연구노트(화학).hwp",
+      "sourceSha256": "6717eca43c6fdd9b0530530cf17d33b6687da0c462a433d37eb652afb5394f91",
+      "pages": 24,
+      "editedRegion": {
+        "caret": "0:3:2",
+        "page": 3
+      },
+      "zoom": 50,
+      "dpr": 1.04205322265625
+    },
+    {
+      "sample": "3249937_asset_management_rules.hwpx",
+      "sourceSha256": "97b5d6c571a6b7626321c6a53d797e3511978447497bb73309bd23eaa8e7ea77",
+      "pages": 60,
+      "editedRegion": {
+        "caret": "0:4:51",
+        "page": 0
+      },
+      "zoom": 50,
+      "dpr": 1.04205322265625
+    }
+  ],
+  "engineIdentity": {
+    "wasmSha256": "97a575093aab7fde6400e3ce2a1c3ec243de28645f49ce27a55286ca8dff37e2",
+    "baseline": "1a76570e833917d15817415a53c09ad61ab3203f"
+  },
+  "adapterCounters": {
+    "polls": 950,
+    "staleDropped": 1,
+    "reused": 5,
+    "regionalPatchJobs": 0,
+    "completed": 950,
+    "unchangedFrames": 0,
+    "notifications": 0,
+    "patchJobs": 0,
+    "wholePagePatchJobs": 0,
+    "limits": 0,
+    "replacements": 0,
+    "fullJobs": 950,
+    "errors": 0,
+    "canceled": 0
+  },
+  "lastObserved": {
+    "caretHTML": null,
+    "throwAfterDiscard": null,
+    "rendering": {
+      "sessions": [],
+      "jobs": {
+        "decodedSharedLookups": 0,
+        "pendingCount": 0,
+        "cancellations": 0,
+        "decodedLedger": {
+          "accountingErrors": 0,
+          "residentBytes": 0,
+          "refusedReservations": 0,
+          "uniqueCount": 0,
+          "created": 60,
+          "jobLeaseReferenceBytes": 0,
+          "maxNonresidentBytes": 100663296,
+          "preallocationRejections": 0,
+          "reservedBytes": 0,
+          "residentCount": 0,
+          "decodedCacheMaxEntries": 256,
+          "jobLeaseReferences": 0,
+          "decodedCacheMaxBytes": 268435456,
+          "peakTreePayloadEstimatedBytes": 2168706,
+          "lastTreeSharedFontBytes": 0,
+          "dimensionMismatches": 0,
+          "unenforcedOverLimit": 0,
+          "estimate": "RGBA backing estimates; not RSS, GPU or browser allocator memory",
+          "peakUniquePlusReservedBytes": 300491872,
+          "unreservedDecodes": 0,
+          "uniqueBytes": 0,
+          "peakDecodeTransientEstimatedBytes": 103917484,
+          "lastTreePayloadEstimatedBytes": 0,
+          "rejectedCommits": 0,
+          "nonresidentCount": 0,
+          "disposed": 60,
+          "nonresidentBytes": 0,
+          "postDecodeReservations": 0
+        },
+        "peakTemporaryCanvasBytes": 3875040,
+        "listenerNotifications": 0,
+        "peakStagingBytes": 3875040,
+        "inFlightEstimatedBytes": 0,
+        "capacityNotifications": 0,
+        "maxFrameBytes": 67108864,
+        "expiryTimerTicks": 0,
+        "resourceLimits": 0,
+        "expiryTimerActive": false,
+        "decodedRegistryEntries": 0,
+        "decodedAttachRefusals": 0,
+        "expiryTimerStarts": 905,
+        "decodedRevocations": 0,
+        "activeLeaseEstimatedBytes": 0,
+        "backupImageDataBytes": 0,
+        "activeJobs": 0,
+        "activeLeaseCount": 0,
+        "decodedRegistryLive": 0,
+        "retryCount": 0,
+        "maxJobDecodedLeases": 256,
+        "preparation": {
+          "resourceQuantum": 4,
+          "enabled": false,
+          "peakBytes": 0,
+          "stepQuantum": 256,
+          "maxJobBytes": 33554432,
+          "maxOwnedBytes": 67108864,
+          "jobs": [],
+          "notifications": 0,
+          "ownedBytes": 0
+        },
+        "maxPending": 2,
+        "transientEstimatedBytes": 0,
+        "loadAttempts": 0,
+        "uniqueResourceCount": 0,
+        "readyLeaseCount": 0,
+        "maxJobLeaseEntries": 0,
+        "maxOwnedBytes": 268435456,
+        "maxStagingBytes": 134217728,
+        "temporaryCanvasBytes": 0,
+        "ownedEstimatedBytes": 0,
+        "maxResources": 256,
+        "errors": 0,
+        "peakBackupImageDataBytes": 968760,
+        "completionNotifications": 0
+      },
+      "cache": {
+        "decoded": {
+          "maxBytes": 268435456,
+          "bytes": 0,
+          "misses": 60,
+          "maxEntryBytes": 67108864,
+          "oversize": 0,
+          "maxEntries": 256,
+          "evictions": 31,
+          "hits": 317,
+          "entries": 0,
+          "pendingEntries": 0,
+          "negativeEntries": 0,
+          "rejected": 29,
+          "transientEntries": 0
+        },
+        "images": {
+          "maxBytes": 67108864,
+          "bytes": 0,
+          "misses": 0,
+          "maxEntryBytes": 16777216,
+          "oversize": 0,
+          "maxEntries": 256,
+          "evictions": 0,
+          "hits": 0,
+          "entries": 0,
+          "pendingEntries": 0,
+          "negativeEntries": 0,
+          "rejected": 0,
+          "transientEntries": 0
+        }
+      },
+      "subscribers": 0
+    },
+    "engineCaret": null,
+    "status": null,
+    "snapshotCalls": [
+      {
+        "ms": 1,
+        "name": "saveSnapshot",
+        "at": 66041
+      },
+      {
+        "ms": 1,
+        "name": "saveSnapshot",
+        "at": 66413
+      },
+      {
+        "ms": 1,
+        "name": "saveSnapshot",
+        "at": 66804
+      },
+      {
+        "ms": 1,
+        "name": "saveSnapshot",
+        "at": 67193
+      },
+      {
+        "ms": 1,
+        "name": "saveSnapshot",
+        "at": 67566
+      },
+      {
+        "ms": 1,
+        "name": "saveSnapshot",
+        "at": 67942
+      },
+      {
+        "ms": 1,
+        "name": "saveSnapshot",
+        "at": 68322
+      },
+      {
+        "ms": 1,
+        "name": "saveSnapshot",
+        "at": 69305
+      },
+      {
+        "ms": 1,
+        "name": "saveSnapshot",
+        "at": 69689
+      },
+      {
+        "ms": 0,
+        "name": "saveSnapshot",
+        "at": 70067
+      },
+      {
+        "ms": 0,
+        "name": "saveSnapshot",
+        "at": 70459
+      },
+      {
+        "ms": 1,
+        "name": "saveSnapshot",
+        "at": 70823
+      },
+      {
+        "ms": 1,
+        "name": "saveSnapshot",
+        "at": 71204
+      },
+      {
+        "ms": 1,
+        "name": "saveSnapshot",
+        "at": 71592
+      },
+      {
+        "ms": 1,
+        "name": "saveSnapshot",
+        "at": 71974
+      },
+      {
+        "ms": 0,
+        "name": "saveSnapshot",
+        "at": 72352
+      },
+      {
+        "ms": 1,
+        "name": "saveSnapshot",
+        "at": 72717
+      },
+      {
+        "ms": 1,
+        "name": "saveSnapshot",
+        "at": 73588
+      },
+      {
+        "ms": 67,
+        "name": "restoreSnapshot",
+        "at": 73589
+      },
+      {
+        "ms": 70,
+        "name": "restoreSnapshot",
+        "at": 74463
+      }
+    ],
+    "owners": [
+      {
+        "discards": 0,
+        "nativeCapacity": null,
+        "id": 1,
+        "saves": 0,
+        "live": 0
+      }
+    ],
+    "jobs": {
+      "decodedSharedLookups": 0,
+      "pendingCount": 0,
+      "cancellations": 0,
+      "decodedLedger": {
+        "accountingErrors": 0,
+        "residentBytes": 0,
+        "refusedReservations": 0,
+        "uniqueCount": 0,
+        "created": 60,
+        "jobLeaseReferenceBytes": 0,
+        "maxNonresidentBytes": 100663296,
+        "preallocationRejections": 0,
+        "reservedBytes": 0,
+        "residentCount": 0,
+        "decodedCacheMaxEntries": 256,
+        "jobLeaseReferences": 0,
+        "decodedCacheMaxBytes": 268435456,
+        "peakTreePayloadEstimatedBytes": 2168706,
+        "lastTreeSharedFontBytes": 0,
+        "dimensionMismatches": 0,
+        "unenforcedOverLimit": 0,
+        "estimate": "RGBA backing estimates; not RSS, GPU or browser allocator memory",
+        "peakUniquePlusReservedBytes": 300491872,
+        "unreservedDecodes": 0,
+        "uniqueBytes": 0,
+        "peakDecodeTransientEstimatedBytes": 103917484,
+        "lastTreePayloadEstimatedBytes": 0,
+        "rejectedCommits": 0,
+        "nonresidentCount": 0,
+        "disposed": 60,
+        "nonresidentBytes": 0,
+        "postDecodeReservations": 0
+      },
+      "peakTemporaryCanvasBytes": 3875040,
+      "listenerNotifications": 0,
+      "peakStagingBytes": 3875040,
+      "inFlightEstimatedBytes": 0,
+      "capacityNotifications": 0,
+      "maxFrameBytes": 67108864,
+      "expiryTimerTicks": 0,
+      "resourceLimits": 0,
+      "expiryTimerActive": false,
+      "decodedRegistryEntries": 0,
+      "decodedAttachRefusals": 0,
+      "expiryTimerStarts": 905,
+      "decodedRevocations": 0,
+      "activeLeaseEstimatedBytes": 0,
+      "backupImageDataBytes": 0,
+      "activeJobs": 0,
+      "activeLeaseCount": 0,
+      "decodedRegistryLive": 0,
+      "retryCount": 0,
+      "maxJobDecodedLeases": 256,
+      "preparation": {
+        "resourceQuantum": 4,
+        "enabled": false,
+        "peakBytes": 0,
+        "stepQuantum": 256,
+        "maxJobBytes": 33554432,
+        "maxOwnedBytes": 67108864,
+        "jobs": [],
+        "notifications": 0,
+        "ownedBytes": 0
+      },
+      "maxPending": 2,
+      "transientEstimatedBytes": 0,
+      "loadAttempts": 0,
+      "uniqueResourceCount": 0,
+      "readyLeaseCount": 0,
+      "maxJobLeaseEntries": 0,
+      "maxOwnedBytes": 268435456,
+      "maxStagingBytes": 134217728,
+      "temporaryCanvasBytes": 0,
+      "ownedEstimatedBytes": 0,
+      "maxResources": 256,
+      "errors": 0,
+      "peakBackupImageDataBytes": 968760,
+      "completionNotifications": 0
+    },
+    "identity": {
+      "wasmSha256": "97a575093aab7fde6400e3ce2a1c3ec243de28645f49ce27a55286ca8dff37e2",
+      "baseline": "1a76570e833917d15817415a53c09ad61ab3203f"
+    }
+  },
+  "existingSaveAssertions": [],
+  "historyGates": [],
+  "historyChecks": [],
+  "teardown": [
+    {
+      "sessionDeletes": [
+        {
+          "outcome": "ok",
+          "seconds": 0.007
+        }
+      ],
+      "complete": true,
+      "beforeDriverStop": [
+        {
+          "pid": 1141759,
+          "comm": "tauri-driver",
+          "state": "S",
+          "ppid": 1141742
+        },
+        {
+          "pid": 1141760,
+          "comm": "WebKitWebDriver",
+          "state": "S",
+          "ppid": 1141759
+        },
+        {
+          "pid": 1141776,
+          "comm": "WebKitNetworkPr",
+          "state": "S",
+          "ppid": 1141762
+        },
+        {
+          "pid": 1141779,
+          "comm": "WebKitWebProces",
+          "state": "S",
+          "ppid": 1141762
+        }
+      ],
+      "driverKilled": false,
+      "driverExit": 0,
+      "afterDriverStop": [
+        {
+          "pid": 1141776,
+          "comm": "WebKitNetworkPr",
+          "state": "R",
+          "ppid": 1
+        }
+      ],
+      "driverStopSeconds": 0.011,
+      "remainingAfterWait": [],
+      "sigtermSent": [],
+      "sigtermErrors": [],
+      "survivorsAfterSigterm": []
+    }
+  ],
+  "failures": [],
+  "expectedSamples": [
+    "basic-ko.hwp",
+    "basic-ko.hwpx",
+    "연구노트(화학).hwp",
+    "3249937_asset_management_rules.hwpx"
+  ],
+  "expectedAssertionCount": 39,
+  "expectedReferenceCount": 24,
+  "verifiedExactReferenceCount": 24,
+  "historyGateContract": "named mandatory assertions; undo_native historyGates/historyChecks not produced and must be empty",
+  "measurementComplete": true,
+  "pixelReferencesComplete": true
+}

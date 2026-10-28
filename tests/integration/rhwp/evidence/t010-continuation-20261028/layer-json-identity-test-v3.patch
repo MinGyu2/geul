@@ -1,0 +1,29 @@
+--- a/src/paint/json.rs
++++ b/src/paint/json.rs
+@@ -3245,6 +3245,26 @@
+     const FIXTURE_TTC: &[u8] = include_bytes!("../../tests/fixtures/fonts/RHWPExactFaceSmoke.ttc");
+ 
+     #[test]
++    fn geul_layer_json_is_not_lossless_render_identity() {
++        let before = BoundingBox::new(10.00001, 20.0, 80.0, 18.0);
++        let after = BoundingBox::new(10.00049, 20.0, 80.0, 18.0);
++        assert_ne!(before.x, after.x);
++        let mut a = String::new();
++        let mut b = String::new();
++        write_bbox(&mut a, before);
++        write_bbox(&mut b, after);
++        assert_eq!(a, b, "distinct geometry is rounded to the same JSON");
++        let make_tree = |bbox| {
++            let rect = PaintOp::rectangle(bbox, crate::renderer::render_tree::RectangleNode::new(
++                0.0, ShapeStyle { fill_color: Some(0), ..Default::default() }, None));
++            PageLayerTree::new(320.0, 200.0, LayerNode::leaf(
++                BoundingBox::new(0.0, 0.0, 320.0, 200.0), None, vec![rect]))
++        };
++        let options = LayerJsonOptions { omit_image_bytes: true, omit_font_bytes: true };
++        assert_eq!(make_tree(before).to_json_with_options(options), make_tree(after).to_json_with_options(options));
++    }
++
++    #[test]
+     fn serializes_text_and_shape_ops_for_browser_replay() {
+         let text = PaintOp::text_run(
+             BoundingBox::new(10.0, 20.0, 80.0, 18.0),

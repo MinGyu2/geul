@@ -5,6 +5,8 @@ import { drawsAtRequestedScale } from '../../../../src/components/Editor/rhwp/re
 // alternate editable model or history are retained here.
 const sameRequest = (a, b) => !!a && a.canvas === b.canvas && a.page === b.page
   && a.scale === b.scale && a.generation === b.generation && a.version === b.version && a.mode === b.mode;
+// The engine changes this token whenever any job takes the target Canvas.
+const ownsFrame = frame => !!frame && frame.canvas.__rhwpExperimentalRenderJob === frame.id;
 const MAX_SESSIONS = 8, MAX_QUEUE = 256, MAX_POLLS = 512;
 const MAX_SUMMARIES = 64, MAX_SUMMARY_UNITS = 262144, MAX_SUMMARY_TOTAL_UNITS = 8 * MAX_SUMMARY_UNITS;
 const subscribers = new Set();
@@ -127,10 +129,15 @@ export function createOwnershipSession(Session, sessionId, backend, registry) {
         const previous = painted.get(request.canvas), size = session.pages?.[request.page];
         // Existing product summaries describe actual paint input; never guess from caret bounds.
         // Cell replay still differs from Full at interior stroke/glyph edges; use the exact full path.
-        const summary = request.mode === 'damage' && !session.caret?.cell ? session.paintedSummary?.(doc, request.page) : null;
+        const summary = request.mode === 'damage' && (!previous || previous.version === request.version) && !session.caret?.cell
+          ? session.paintedSummary?.(doc, request.page) : null;
         const summaryUnits = summary ? JSON.stringify(summary).length : 0;
         const bounded = summary && summaryUnits <= MAX_SUMMARY_UNITS ? summary : null;
-        if (bounded && previous?.summary && previous.generation === request.generation
+        // The exported layer JSON rounds geometry and omits render resources. It is
+        // not a proof of equality across revisions; until the engine supplies a
+        // complete identity, a newer model must take the full render path.
+        if (bounded && previous?.summary && ownsFrame(previous) && previous.generation === request.generation
+            && previous.version === request.version
             && previous.page === request.page && previous.scale === request.scale && size
             && previous.width === request.canvas.width && previous.height === request.canvas.height
             && request.canvas.width > 0 && request.canvas.height > 0 && drawsAtRequestedScale(size, request.scale)) {
@@ -197,7 +204,7 @@ export function createOwnershipSession(Session, sessionId, backend, registry) {
       traceDocument: documentId, traceRequest: ++nextRequest, traceInput: globalThis.window?.__d4LifecycleInput ?? null };
     trace('request', request, {reason:'renderPage'});
     const complete = painted.get(canvas);
-    if (sameRequest(complete, request) && complete.width === canvas.width && complete.height === canvas.height) { trace('reuse-complete', request, {relatedRequest:complete.traceRequest}); return true; }
+    if (sameRequest(complete, request) && ownsFrame(complete) && complete.width === canvas.width && complete.height === canvas.height) { trace('reuse-complete', request, {relatedRequest:complete.traceRequest}); return true; }
     if (sameRequest(active, request) || sameRequest(queue.get(canvas), request)) { const matched = sameRequest(active, request) ? active : queue.get(canvas); trace('reuse-pending', request, {job:matched.id ?? null, relatedRequest:matched.traceRequest}); counters.reused++; return false; }
     if (active && active.version !== session.modelVersion) cancel(true);
     const previous = failed.get(canvas);
@@ -221,7 +228,7 @@ export function createOwnershipSession(Session, sessionId, backend, registry) {
         && complete.generation === generation && complete.width === canvas.width
         && complete.height === canvas.height && canvas.width > 0 && canvas.height > 0) pump();
     const result = painted.get(canvas);
-    return !queue.has(canvas) && sameRequest(result, request) && result.width === canvas.width && result.height === canvas.height; // a queued frame is never reported as completed
+    return !queue.has(canvas) && sameRequest(result, request) && ownsFrame(result) && result.width === canvas.width && result.height === canvas.height; // a queued frame is never reported as completed
   };
   const renderRequest = session.renderPage;
   session.renderPage = (...args) => {

@@ -95,6 +95,8 @@ D3/D5의 실제 검증 범위와 공식 D4 FAIL은 새 한국어 보고서에 �
 변경된 모든 쪽은 Full이다. 정수·소수 지역 replay의 실제 native RGBA 차이 때문에 지역 재생 실험을 제거했으며, 새 `beginRenderPatchJob`도 Full로 실행한다. 길이0 HWP 문단의 기존 caret 좌표 결함은 별도 FAIL로 기록한다. 제품 config와 Session/Surface 파일은 수정하지 않는다.
 요약은 최대64개·각262144·합계2097152 UTF-16 code unit로 제한한다(이전8개×개별 상한과 같은 합계). 초과 시 화면 밖 요약부터 LRU로 버려 표시 페이지의 damage 근거를 보호한다. 동일 요청의 job/decode/deadline 재시작은 하지 않는다.
 
+**후속 정정 (2026-10-28):** 레이어 JSON의 반올림과 생략된 자원 때문에 위의 동일 paint 입력 판정은 revision 간 완전한 렌더 신원이 아니다. 시험 어댑터는 이제 새 model version에서 기존 요약만으로 job을 생략하지 않고 Full로 폴백한다. 동일 revision 요청 재사용은 유지한다. 이 안전 경계는 렌더 작업을 줄이는 성능 수정이 아니며, 정확한 엔진 신원과 환경·자원 수명 검증은 미완료다. [후속 증거](../evidence/t010-continuation-20261028/REPORT.ko.md)를 참고한다.
+
 - `native.py --scheduler --extended --matrix`: 기존 전체 기능+새 engine 검사.
 - `native.py --scheduler --scheduler-only`: 별도 집중 검사(전체 검사를 대신하지 않음).
 - `visual-native.py`: 실제 키/포인터·본문/셀/여러 구역 history, 부착된 Canvas readback을 별도 Full
@@ -260,3 +262,5 @@ native D1 증거 보안 강화(2026-10-26): `native_d1_result.py`(verdict schema
 - `../evidence/t010-readiness-residual-stabilization/run-native.py`는 이전 판정 API를 쓴다. 지금 validator와 함께 쓰면 판정 단계에서
   TypeError로 끝나고 종료 코드가 0이 아니다(fail-closed).
   새 실행에는 `../evidence/t010-native-evidence-security-hardening/run-native.py`를 쓴다.
+
+완료 프레임 재사용은 Canvas에 남은 엔진 job 토큰이 완료 job과 같을 때만 허용한다. 이 확인은 다른 job이 다른 토큰 값을 남긴 인수는 감지하지만, 별도 WASM 인스턴스의 같은 숫자 ID나 임의 Canvas 그리기까지 감지하는 소유권 증명은 아니다.

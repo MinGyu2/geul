@@ -1,0 +1,35 @@
+
+ RUN  v5.0.3 /home/<USER>/share/ai-prj/geul
+
+stdout | tests/integration/rhwp/history-enabled.wasm.test.ts
+geul-test-build: rhwp-history-commands
+geul-test-build: rhwp-format-commands
+
+ ❯ tests/integration/rhwp/history-enabled.wasm.test.ts (1 test | 1 failed) 1341ms
+   ❯ 시험 활성화 구성(실제 WASM, 앱 명령 경로) (1)
+     × 레지스트리 선언이 지원이고 세션은 선택 없이 기록을 켜며, 실행 취소·다시 실행이 명령 경로로 실제 문서를 되돌린다 13ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  tests/integration/rhwp/history-enabled.wasm.test.ts > 시험 활성화 구성(실제 WASM, 앱 명령 경로) > 레지스트리 선언이 지원이고 세션은 선택 없이 기록을 켜며, 실행 취소·다시 실행이 명령 경로로 실제 문서를 되돌린다
+AssertionError: expected 'supported' to be 'unsupported' // Object.is equality
+
+Expected: "unsupported"
+Received: "supported"
+
+ ❯ tests/integration/rhwp/history-enabled.wasm.test.ts:50:67
+     48|   it("레지스트리 선언이 지원이고 세션은 선택 없이 기록을 켜며, 실행 취소·다시 실행이 명령 경로로 실제 문서를 되돌린다…
+     49|     expect(commandDefinition("edit.undo")?.engines?.rhwp.level).toBe("…
+     50|     expect(commandDefinition("format.bold")?.engines?.rhwp.level).toBe…
+       |                                                                   ^
+     51|     const { backend, take } = controlledBackend();
+     52|     const sessions = new DocumentSessions(backend);
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯
+
+
+ Test Files  1 failed | 1 passed (2)
+      Tests  1 failed | 4 passed (5)
+   Start at  13:49:03
+   Duration  3.14s (tests 51%, environment 29%, transform 13%, setup 5%, import 2%)
+

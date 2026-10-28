@@ -1,0 +1,156 @@
+--- a/src/document_core/geul_incremental_tests.rs
++++ b/src/document_core/geul_incremental_tests.rs
+@@ -170,75 +170,112 @@
+     out
+ }
+ 
++#[derive(Debug, PartialEq, Eq)]
++enum PairStatus { BothOk, BothErr, Asymmetric }
++
++fn pair_status<A, B, E, F>(a: &Result<A, E>, b: &Result<B, F>) -> PairStatus {
++    match (a.is_ok(), b.is_ok()) {
++        (true, true) => PairStatus::BothOk,
++        (false, false) => PairStatus::BothErr,
++        _ => PairStatus::Asymmetric,
++    }
++}
++
++#[derive(Debug, PartialEq, Eq)]
++enum SvgStatus { Equal, Different, BothErr, Asymmetric }
++
++fn svg_status<E, F>(a: &Result<String, E>, b: &Result<String, F>) -> SvgStatus {
++    match (a, b) {
++        (Ok(x), Ok(y)) if x == y => SvgStatus::Equal,
++        (Ok(_), Ok(_)) => SvgStatus::Different,
++        (Err(_), Err(_)) => SvgStatus::BothErr,
++        _ => SvgStatus::Asymmetric,
++    }
++}
++
++#[test]
++fn geul_oracle_failure_classification() {
++    let ok: Result<String, &str> = Ok("svg".into());
++    let other: Result<String, &str> = Ok("different".into());
++    let err: Result<String, &str> = Err("render error");
++    assert_eq!(pair_status(&ok, &ok), PairStatus::BothOk);
++    assert_eq!(pair_status(&err, &err), PairStatus::BothErr);
++    assert_eq!(pair_status(&ok, &err), PairStatus::Asymmetric);
++    assert_eq!(pair_status(&err, &ok), PairStatus::Asymmetric);
++    assert_eq!(svg_status(&ok, &ok), SvgStatus::Equal);
++    assert_eq!(svg_status(&ok, &other), SvgStatus::Different);
++    assert_eq!(svg_status(&err, &err), SvgStatus::BothErr);
++    assert_eq!(svg_status(&ok, &err), SvgStatus::Asymmetric);
++    assert_eq!(svg_status(&err, &ok), SvgStatus::Asymmetric);
++}
++
+ #[test]
+ #[ignore]
+ fn geul_format_memo_equivalence_oracle() {
+     let ops_per_doc: usize = std::env::var("GEUL_ORACLE_OPS").ok().and_then(|v| v.parse().ok()).unwrap_or(30);
+     let files = corpus();
+     assert!(!files.is_empty(), "GEUL_ORACLE_SAMPLES required");
+-    let (mut opened, mut applied, mut rejected, mut svg_pages, mut reusable) = (0usize, 0usize, 0usize, 0usize, 0usize);
++    let (mut opened, mut excluded, mut failed, mut verified) = (0usize, 0usize, 0usize, 0usize);
++    let (mut attempted, mut applied, mut rejected, mut compared, mut svg_pages, mut svg_failed, mut reusable) = (0usize, 0usize, 0usize, 0usize, 0usize, 0usize, 0usize);
+     let mut mismatches = Vec::new();
+     for file in &files {
+-        let Ok(bytes) = std::fs::read(file) else { continue };
+-        let (Ok(mut a), Ok(mut b)) = (HwpDocument::from_bytes(&bytes), HwpDocument::from_bytes(&bytes)) else { continue };
++        let name = file.display().to_string();
++        let bytes = match std::fs::read(file) {
++            Ok(bytes) => bytes,
++            Err(e) => { failed += 1; eprintln!("GEUL_ORACLE_ERROR {name}: read: {e:?}"); continue; }
++        };
++        let open_a = HwpDocument::from_bytes(&bytes);
++        let open_b = HwpDocument::from_bytes(&bytes);
++        let open_status = pair_status(&open_a, &open_b);
++        let (mut a, mut b) = match open_status {
++            PairStatus::BothOk => { let (Ok(a), Ok(b)) = (open_a, open_b) else { unreachable!() }; (a, b) }
++            PairStatus::BothErr => { excluded += 1; eprintln!("GEUL_ORACLE_EXCLUDED {name}: open A={:?} B={:?}", open_a.err(), open_b.err()); continue; }
++            PairStatus::Asymmetric => { failed += 1; mismatches.push(format!("{name}: asymmetric open A={:?} B={:?}", open_a.err(), open_b.err())); continue; }
++        };
+         b.format_memo_enabled = false;
+         opened += 1;
+-        let name = file.display().to_string();
+         if canonical(&a) != canonical(&b) {
+-            mismatches.push(format!("{name}: initial"));
+-            continue;
++            failed += 1; mismatches.push(format!("{name}: initial")); continue;
+         }
+         let mut rng = Lcg(name.bytes().fold(1469598103934665603u64, |h, c| (h ^ c as u64).wrapping_mul(1099511628211)));
+-        let mut diverged = false;
++        let mut incomplete = false;
+         for step in 0..ops_per_doc {
+-            let Some(op) = pick(&a, &mut rng) else { break };
++            let Some(op) = pick(&a, &mut rng) else { eprintln!("GEUL_ORACLE_ERROR {name}: step {step}: no edit"); incomplete = true; break };
++            attempted += 1;
+             let (ra, rb) = (apply(&mut a, &op), apply(&mut b, &op));
+-            if ra.is_ok() != rb.is_ok() {
+-                mismatches.push(format!("{name}: step {step} {op:?} outcome A={ra:?} B={rb:?}"));
+-                diverged = true;
+-                break;
+-            }
+-            if ra.is_err() {
+-                rejected += 1;
+-                continue;
++            match pair_status(&ra, &rb) {
++                PairStatus::Asymmetric => { mismatches.push(format!("{name}: step {step} {op:?} outcome A={ra:?} B={rb:?}")); incomplete = true; break; }
++                PairStatus::BothErr => { rejected += 1; incomplete = true; eprintln!("GEUL_ORACLE_REJECTED {name}: step {step} {op:?} A={ra:?} B={rb:?}"); continue; }
++                PairStatus::BothOk => {}
+             }
+             applied += 1;
+             if canonical(&a) != canonical(&b) {
+-                mismatches.push(format!("{name}: step {step} {op:?} pagination differs"));
+-                diverged = true;
+-                break;
++                mismatches.push(format!("{name}: step {step} {op:?} pagination differs")); incomplete = true; break;
+             }
+-        }
+-        if diverged {
+-            continue;
++            compared += 1;
+         }
+         reusable += a.measured_sections.iter().map(|m| m.format_memo.reusable_entries()).sum::<usize>();
+         let pages = a.page_count();
+         if pages != b.page_count() {
+-            mismatches.push(format!("{name}: page count"));
+-            continue;
+-        }
+-        for page in 0..pages {
+-            match (a.render_page_svg_native(page), b.render_page_svg_native(page)) {
+-                (Ok(x), Ok(y)) if x == y => svg_pages += 1,
+-                (Err(_), Err(_)) => {}
+-                _ => {
+-                    mismatches.push(format!("{name}: svg page {page} differs"));
+-                    break;
++            mismatches.push(format!("{name}: page count")); incomplete = true;
++        } else {
++            for page in 0..pages {
++                let ra = a.render_page_svg_native(page);
++                let rb = b.render_page_svg_native(page);
++                match svg_status(&ra, &rb) {
++                    SvgStatus::Equal => svg_pages += 1,
++                    SvgStatus::BothErr => { svg_failed += 1; incomplete = true; eprintln!("GEUL_ORACLE_ERROR {name}: svg page {page} symmetric A={:?} B={:?}", ra.err(), rb.err()); }
++                    status => { svg_failed += 1; incomplete = true; mismatches.push(format!("{name}: svg page {page} {status:?} A={:?} B={:?}", ra.err(), rb.err())); }
+                 }
+             }
+         }
++        if incomplete { failed += 1; } else { verified += 1; }
+     }
+-    eprintln!(
+-        "GEUL_ORACLE files={} opened={opened} applied={applied} rejected={rejected} svgPages={svg_pages} memoEntries={reusable} mismatches={}",
+-        files.len(),
+-        mismatches.len()
+-    );
+-    for m in &mismatches {
+-        eprintln!("GEUL_ORACLE_MISMATCH {m}");
+-    }
++    eprintln!("GEUL_ORACLE files={} opened={opened} excluded={excluded} failed={failed} verified={verified} attempted={attempted} applied={applied} rejected={rejected} compared={compared} svgPages={svg_pages} svgFailed={svg_failed} memoEntries={reusable} mismatches={}", files.len(), mismatches.len());
++    for m in &mismatches { eprintln!("GEUL_ORACLE_MISMATCH {m}"); }
+     assert!(mismatches.is_empty());
+-    assert!(opened > 0 && applied > 0);
++    assert!(failed == 0 && verified > 0 && applied > 0);
++
+ }
+ 
+ fn asset() -> Option<Vec<u8>> {

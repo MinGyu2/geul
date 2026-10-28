@@ -1,0 +1,36 @@
+hwp-italic-body {"ids":[0,8,8],"shapes":[8,9],"reopen":{"formatEqual":true,"pagesEqual":true,"textEqual":true,"controlsEqual":true}}
+hwp-bold-body {"ids":[0,8,8],"shapes":[8,9],"reopen":{"formatEqual":true,"pagesEqual":true,"textEqual":true,"controlsEqual":true}}
+hwp-underline-cell {"ids":[0,8,8],"shapes":[8,9],"reopen":{"formatEqual":true,"pagesEqual":true,"textEqual":true,"controlsEqual":true}}
+hwp-text-body {"ids":[0,0,0],"shapes":[8,8],"reopen":{"formatEqual":true,"pagesEqual":true,"textEqual":true,"controlsEqual":true}}
+hwp-italic-restored {"ids":[0,0,0],"shapes":[8,8],"reopen":{"formatEqual":true,"pagesEqual":true,"textEqual":true,"controlsEqual":true}}
+hwpx-italic-body {"ids":[0,8,8],"shapes":[8,9],"reopen":{"formatEqual":true,"pagesEqual":true,"textEqual":true,"controlsEqual":true}}
+hwpx-bold-body {"ids":[0,7,7],"shapes":[8,8],"reopen":{"formatEqual":true,"pagesEqual":true,"textEqual":true,"controlsEqual":true}}
+hwpx-underline-cell {"ids":[0,8,8],"shapes":[8,9],"reopen":{"formatEqual":true,"pagesEqual":true,"textEqual":true,"controlsEqual":true}}
+hwpx-text-body {"ids":[0,0,0],"shapes":[8,8],"reopen":{"formatEqual":true,"pagesEqual":true,"textEqual":true,"controlsEqual":true}}
+hwpx-italic-restored {"ids":[0,0,0],"shapes":[8,8],"reopen":{"formatEqual":true,"pagesEqual":true,"textEqual":true,"controlsEqual":true}}
+[ok] hwp-italic-body: preflight=safe checkSaved=unsafe [['recordsChanged', 'DocInfo'], ['previewStale', 'PrvText'], ['previewStale', 'PrvImage']] save=rejected originalUnchanged=True reopen=True
+[ok] hwp-bold-body: preflight=safe checkSaved=unsafe [['recordsChanged', 'DocInfo'], ['previewStale', 'PrvText'], ['previewStale', 'PrvImage']] save=rejected originalUnchanged=True reopen=True
+[ok] hwp-underline-cell: preflight=safe checkSaved=unsafe [['recordsChanged', 'DocInfo'], ['previewStale', 'PrvText'], ['previewStale', 'PrvImage']] save=rejected originalUnchanged=True reopen=True
+[ok] hwp-text-body: preflight=safe checkSaved=unsafe [['previewStale', 'PrvText'], ['previewStale', 'PrvImage']] save=rejected originalUnchanged=True reopen=True
+[ok] hwp-italic-restored: preflight=safe checkSaved=safe [] save=published originalUnchanged=True reopen=True
+[ok] hwpx-italic-body: preflight=safe checkSaved=safe [] save=published originalUnchanged=False reopen=True
+[ok] hwpx-bold-body: preflight=safe checkSaved=safe [] save=published originalUnchanged=False reopen=True
+[ok] hwpx-underline-cell: preflight=safe checkSaved=safe [] save=published originalUnchanged=False reopen=True
+[ok] hwpx-text-body: preflight=safe checkSaved=safe [] save=published originalUnchanged=False reopen=True
+[ok] hwpx-italic-restored: preflight=safe checkSaved=safe [] save=published originalUnchanged=True reopen=True
+[ok] hwpx-b-body-9999: preflight=safe checkSaved=unsafe [['referenceInvalid', 'Contents/section0.xml']] save=rejected originalUnchanged=True reopen=True
+[ok] hwpx-b-cell-9999: preflight=safe checkSaved=unsafe [['referenceInvalid', 'Contents/section0.xml']] save=rejected originalUnchanged=True reopen=True
+[ok] hwpx-b-body-hole-8: preflight=safe checkSaved=unsafe [['referenceInvalid', 'Contents/section0.xml']] save=rejected originalUnchanged=True reopen=True
+[ok] hwpx-b-body-overflow-70000: preflight=safe checkSaved=unsafe [['referenceInvalid', 'Contents/section0.xml']] save=rejected originalUnchanged=True reopen=True
+[ok] hwpx-b-body-nonnumeric: preflight=safe checkSaved=unsafe [['referenceInvalid', 'Contents/section0.xml']] save=rejected originalUnchanged=True reopen=True
+[ok] hwpx-b-body-negative: preflight=safe checkSaved=unsafe [['referenceInvalid', 'Contents/section0.xml']] save=rejected originalUnchanged=True reopen=True
+[ok] hwpx-b-secpr-run-9999: preflight=safe checkSaved=unsafe [['referenceInvalid', 'Contents/section0.xml']] save=rejected originalUnchanged=True reopen=True
+[ok] hwpx-b-parapr-9999: preflight=safe checkSaved=unsafe [['referenceInvalid', 'Contents/section0.xml']] save=rejected originalUnchanged=True reopen=True
+[ok] hwpx-b-body-existing-7: preflight=safe checkSaved=safe [] save=published originalUnchanged=False reopen=True
+[ok] hwpx-b-header-duplicate-id: preflight=safe checkSaved=unknown [['partChanged', 'Contents/header.xml'], ['unsupported', 'Contents/header.xml']] save=rejected originalUnchanged=True reopen=True
+[ok] hwp-b-dangling-9999: preflight=safe checkSaved=unsafe [['previewStale', 'PrvText'], ['previewStale', 'PrvImage'], ['referenceInvalid', 'BodyText/Section0']] save=rejected originalUnchanged=True reopen=True
+[ok] hwp-b-nopreview-dangling-9999: preflight=None checkSaved=unsafe [['referenceInvalid', 'BodyText/Section0']] save=not-run originalUnchanged=True reopen=True
+[ok] hwp-b-nopreview-edited: preflight=None checkSaved=safe [] save=not-run originalUnchanged=True reopen=True
+wrote tests/integration/rhwp/evidence/t010-continuation-20261028/d3-save-strict-attempt1.json
+CURRENT 불일치 0건 []
+DESIRED 미해결 회귀 0건(바라는 판정·근거와 다름) []

@@ -1,0 +1,29 @@
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.28s
+     Running unittests src/lib.rs (/tmp/geul-incr-pagination/target/debug/deps/rhwp-9e371cc2f2236821)
+
+running 4 tests
+test renderer::geul_page_identity::tests::image_identity_rejects_missing_and_unrecognized_bytes ... ok
+test renderer::geul_page_identity::tests::unknown_inputs_fail_closed ... ok
+test renderer::geul_page_identity::tests::image_identity_changes_with_transform_and_clip ... ok
+test renderer::geul_page_identity::tests::image_identity_distinguishes_geometry_bytes_and_options ... ok
+
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 3930 filtered out; finished in 0.00s
+
+     Running unittests src/lib.rs (/tmp/geul-incr-pagination/target/debug/deps/rhwp_contracts-f8c7b4ca82a3c304)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 15 filtered out; finished in 0.00s
+
+     Running unittests src/lib.rs (/tmp/geul-incr-pagination/target/debug/deps/rhwp_ooxml_chart-50fc7272acd3991a)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 165 filtered out; finished in 0.00s
+
+     Running unittests src/lib.rs (/tmp/geul-incr-pagination/target/debug/deps/rhwp_password_crypto-dc4868159f20cc8a)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 2 filtered out; finished in 0.00s
+

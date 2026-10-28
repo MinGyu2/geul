@@ -1,0 +1,4812 @@
+{
+  "status": "INCONCLUSIVE",
+  "tests": [
+    {
+      "name": "bootstrap-clean-close",
+      "status": "PASS"
+    },
+    {
+      "name": "native-hangul-engine-active",
+      "status": "PASS"
+    },
+    {
+      "name": "native-real-composition-preflight",
+      "status": "PASS"
+    },
+    {
+      "name": "native-final-resource-cleanup",
+      "status": "PASS"
+    }
+  ],
+  "scope": "actual IBus-Hangul native event/history protocol and bounded36-attempt ordering matrix; no synthetic DOM composition",
+  "inputEnvironment": {
+    "ibusVersion": "IBus 1.5.33",
+    "hangul": "1.5.5",
+    "GTK_IM_MODULE": "ibus",
+    "nativeKeys": true,
+    "isolatedDisplay": true,
+    "settingsBackend": "memory; temporary Hangul schema initial-input-mode=hangul override, no host settings writes"
+  },
+  "observerAliasDiagnostic": {
+    "sameConstructor": false,
+    "resources": [
+      "/__ownership_candidate__/rhwp.js?import",
+      "/__ownership_candidate__/rhwp.js"
+    ]
+  },
+  "activationProbe": {
+    "setExit": 0,
+    "setError": "",
+    "queryExit": 0,
+    "engine": "hangul",
+    "portalEnvironment": "unset"
+  },
+  "compositionPreflight": {
+    "events": [
+      [
+        "keydown",
+        false,
+        null,
+        0
+      ],
+      [
+        "compositionstart",
+        null,
+        null,
+        0
+      ],
+      [
+        "compositionupdate",
+        null,
+        null,
+        1
+      ],
+      [
+        "input",
+        true,
+        "insertCompositionText",
+        1
+      ],
+      [
+        "keydown",
+        true,
+        null,
+        0
+      ],
+      [
+        "compositionupdate",
+        null,
+        null,
+        1
+      ],
+      [
+        "input",
+        true,
+        "insertCompositionText",
+        1
+      ]
+    ],
+    "compositionEvents": 3
+  },
+  "compositionPreflightAttempts": [
+    {
+      "mode": "initial engine mode",
+      "events": [
+        [
+          "keydown",
+          false,
+          null,
+          0
+        ],
+        [
+          "compositionstart",
+          null,
+          null,
+          0
+        ],
+        [
+          "compositionupdate",
+          null,
+          null,
+          1
+        ],
+        [
+          "input",
+          true,
+          "insertCompositionText",
+          1
+        ],
+        [
+          "keydown",
+          true,
+          null,
+          0
+        ],
+        [
+          "compositionupdate",
+          null,
+          null,
+          1
+        ],
+        [
+          "input",
+          true,
+          "insertCompositionText",
+          1
+        ]
+      ],
+      "compositionEvents": 3
+    }
+  ],
+  "nativeOrdering": {
+    "imeEnvironment": {
+      "ibusEngine": "hangul",
+      "ibusVersion": "IBus 1.5.33"
+    },
+    "beforeCancelModel": {
+      "hwp": {
+        "equals": true,
+        "paragraph": 1,
+        "section": 0,
+        "expectedLength": 17,
+        "actualLength": 17
+      },
+      "hwpx": {
+        "equals": true,
+        "paragraph": 1,
+        "section": 0,
+        "expectedLength": 17,
+        "actualLength": 17
+      }
+    },
+    "cancelModel": {
+      "hwp": {
+        "expectedLength": 15,
+        "actualLength": 15,
+        "equals": true,
+        "paragraph": 1,
+        "section": 0,
+        "revision": 19
+      },
+      "hwpx": {
+        "expectedLength": 15,
+        "actualLength": 15,
+        "equals": true,
+        "paragraph": 1,
+        "section": 0,
+        "revision": 19
+      }
+    },
+    "cancelTrace": {
+      "hwp": {
+        "records": [
+          [
+            1,
+            23648,
+            "dom:keydown",
+            {
+              "composing": false,
+              "keyCode": 229,
+              "key": "ime"
+            }
+          ],
+          [
+            2,
+            23648,
+            "ime:keyDown",
+            {
+              "interrupted": "none",
+              "composing": false,
+              "session": 3,
+              "historyTransaction": false,
+              "discarded": false,
+              "provisional": false,
+              "terminal": "none",
+              "pendingCommit": false,
+              "historyRedo": 0,
+              "epoch": 1,
+              "awaiting": "none",
+              "historyUndo": 1,
+              "generation": 1,
+              "revision": 18
+            }
+          ],
+          [
+            3,
+            23649,
+            "dom:compositionstart",
+            null
+          ],
+          [
+            4,
+            23654,
+            "rhwp:text-mutation",
+            {
+              "ms": 5
+            }
+          ],
+          [
+            5,
+            23654,
+            "rhwp:readPages",
+            {
+              "ms": 0
+            }
+          ],
+          [
+            6,
+            23654,
+            "ime:compositionStart",
+            {
+              "interrupted": "none",
+              "composing": true,
+              "session": 3,
+              "historyTransaction": true,
+              "discarded": false,
+              "provisional": false,
+              "terminal": "none",
+              "pendingCommit": false,
+              "historyRedo": 0,
+              "epoch": 1,
+              "awaiting": "none",
+              "historyUndo": 1,
+              "generation": 1,
+              "revision": 18
+            }
+          ],
+          [
+            7,
+            23656,
+            "rhwp:surface-render",
+            null
+          ],
+          [
+            8,
+            23657,
+            "rhwp:surface-render",
+            null
+          ],
+          [
+            9,
+            23659,
+            "rhwp:surface-effect",
+            null
+          ],
+          [
+            10,
+            23670,
+            "rhwp:surface-first-draw",
+            {
+              "page": 0,
+              "ms": 11
+            }
+          ],
+          [
+            11,
+            23674,
+            "rhwp:surface-render",
+            null
+          ],
+          [
+            12,
+            23674,
+            "rhwp:surface-render",
+            null
+          ],
+          [
+            13,
+            23675,
+            "rhwp:surface-effect",
+            null
+          ],
+          [
+            14,
+            23676,
+            "dom:beforeinput",
+            {
+              "composing": true,
+              "length": 1,
+              "inputType": "insertCompositionText"
+            }
+          ],
+          [
+            15,
+            23678,
+            "dom:input",
+            {
+              "composing": true,
+              "length": 1,
+              "inputType": "insertCompositionText"
+            }
+          ],
+          [
+            16,
+            23678,
+            "rhwp:text-mutation",
+            {
+              "ms": 0
+            }
+          ],
+          [
+            17,
+            23678,
+            "rhwp:readPages",
+            {
+              "ms": 0
+            }
+          ],
+          [
+            18,
+            23678,
+            "ime:input",
+            {
+              "interrupted": "none",
+              "composing": true,
+              "session": 3,
+              "historyTransaction": true,
+              "discarded": false,
+              "provisional": false,
+              "terminal": "none",
+              "pendingCommit": false,
+              "historyRedo": 0,
+              "epoch": 1,
+              "awaiting": "none",
+              "historyUndo": 1,
+              "generation": 1,
+              "revision": 18
+            }
+          ],
+          [
+            19,
+            23680,
+            "rhwp:surface-render",
+            null
+          ],
+          [
+            20,
+            23681,
+            "rhwp:surface-render",
+            null
+          ],
+          [
+            21,
+            23682,
+            "rhwp:surface-effect",
+            null
+          ],
+          [
+            22,
+            23693,
+            "rhwp:surface-first-draw",
+            {
+              "page": 0,
+              "ms": 11
+            }
+          ],
+          [
+            23,
+            23696,
+            "rhwp:surface-render",
+            null
+          ],
+          [
+            24,
+            23696,
+            "rhwp:surface-render",
+            null
+          ],
+          [
+            25,
+            23697,
+            "rhwp:surface-effect",
+            null
+          ],
+          [
+            26,
+            23719,
+            "dom:keyup",
+            {
+              "composing": true,
+              "keyCode": 82,
+              "code": "KeyR",
+              "key": "char"
+            }
+          ],
+          [
+            27,
+            23719,
+            "ime:keyUp",
+            {
+              "interrupted": "none",
+              "composing": true,
+              "session": 3,
+              "historyTransaction": true,
+              "discarded": false,
+              "provisional": false,
+              "terminal": "none",
+              "pendingCommit": false,
+              "historyRedo": 0,
+              "epoch": 1,
+              "awaiting": "none",
+              "historyUndo": 1,
+              "generation": 1,
+              "revision": 18
+            }
+          ],
+          [
+            28,
+            23738,
+            "dom:keydown",
+            {
+              "composing": true,
+              "keyCode": 229,
+              "key": "ime"
+            }
+          ],
+          [
+            29,
+            23738,
+            "ime:keyDown",
+            {
+              "interrupted": "none",
+              "composing": true,
+              "session": 3,
+              "historyTransaction": true,
+              "discarded": false,
+              "provisional": false,
+              "terminal": "none",
+              "pendingCommit": false,
+              "historyRedo": 0,
+              "epoch": 1,
+              "awaiting": "none",
+              "historyUndo": 1,
+              "generation": 1,
+              "revision": 18
+            }
+          ],
+          [
+            30,
+            23740,
+            "dom:beforeinput",
+            {
+              "composing": true,
+              "length": 0,
+              "inputType": "deleteCompositionText"
+            }
+          ],
+          [
+            31,
+            23741,
+            "dom:input",
+            {
+              "composing": true,
+              "length": 0,
+              "inputType": "deleteCompositionText"
+            }
+          ],
+          [
+            32,
+            23741,
+            "rhwp:text-mutation",
+            {
+              "ms": 0
+            }
+          ],
+          [
+            33,
+            23741,
+            "rhwp:readPages",
+            {
+              "ms": 0
+            }
+          ],
+          [
+            34,
+            23741,
+            "ime:input",
+            {
+              "interrupted": "none",
+              "composing": true,
+              "session": 3,
+              "historyTransaction": true,
+              "discarded": false,
+              "provisional": false,
+              "terminal": "none",
+              "pendingCommit": false,
+              "historyRedo": 0,
+              "epoch": 1,
+              "awaiting": "none",
+              "historyUndo": 1,
+              "generation": 1,
+              "revision": 18
+            }
+          ],
+          [
+            35,
+            23743,
+            "rhwp:surface-render",
+            null
+          ],
+          [
+            36,
+            23744,
+            "rhwp:surface-render",
+            null
+          ],
+          [
+            37,
+            23745,
+            "rhwp:surface-effect",
+            null
+          ],
+          [
+            38,
+            23756,
+            "rhwp:surface-first-draw",
+            {
+              "page": 0,
+              "ms": 11
+            }
+          ],
+          [
+            39,
+            23758,
+            "rhwp:surface-render",
+            null
+          ],
+          [
+            40,
+            23759,
+            "rhwp:surface-render",
+            null
+          ],
+          [
+            41,
+            23760,
+            "rhwp:surface-effect",
+            null
+          ],
+          [
+            42,
+            23760,
+            "dom:compositionend",
+            {
+              "length": 0
+            }
+          ],
+          [
+            43,
+            23761,
+            "rhwp:revision-schedule",
+            {
+              "ms": 1
+            }
+          ],
+          [
+            44,
+            23761,
+            "ime:compositionEnd",
+            {
+              "interrupted": "none",
+              "composing": false,
+              "session": 3,
+              "historyTransaction": false,
+              "discarded": false,
+              "provisional": false,
+              "terminal": "empty",
+              "pendingCommit": true,
+              "historyRedo": 0,
+              "epoch": 1,
+              "awaiting": "this",
+              "historyUndo": 2,
+              "generation": 1,
+              "revision": 19
+            }
+          ],
+          [
+            45,
+            23763,
+            "rhwp:surface-render",
+            null
+          ],
+          [
+            46,
+            23763,
+            "rhwp:surface-render",
+            null
+          ],
+          [
+            47,
+            23764,
+            "rhwp:surface-effect",
+            null
+          ],
+          [
+            48,
+            23793,
+            "dom:keyup",
+            {
+              "composing": false,
+              "keyCode": 8,
+              "code": "Backspace",
+              "key": "named"
+            }
+          ],
+          [
+            49,
+            23793,
+            "ime:keyUp",
+            {
+              "interrupted": "none",
+              "composing": false,
+              "session": 3,
+              "historyTransaction": false,
+              "discarded": true,
+              "provisional": false,
+              "terminal": "empty",
+              "pendingCommit": true,
+              "historyRedo": 0,
+              "epoch": 1,
+              "awaiting": "none",
+              "historyUndo": 2,
+              "generation": 1,
+              "revision": 19
+            }
+          ],
+          [
+            50,
+            23795,
+            "rhwp:surface-render",
+            null
+          ],
+          [
+            51,
+            23795,
+            "rhwp:surface-render",
+            null
+          ],
+          [
+            52,
+            23796,
+            "rhwp:surface-effect",
+            null
+          ],
+          [
+            53,
+            23799,
+            "rhwp:commit-ack",
+            {
+              "session": 3,
+              "ms": 39,
+              "generation": 1
+            }
+          ],
+          [
+            54,
+            23801,
+            "rhwp:surface-render",
+            null
+          ],
+          [
+            55,
+            23801,
+            "rhwp:surface-render",
+            null
+          ],
+          [
+            56,
+            23802,
+            "rhwp:surface-effect",
+            null
+          ],
+          [
+            57,
+            23813,
+            "dom:keydown",
+            {
+              "composing": false,
+              "keyCode": 17,
+              "key": "mod:ControlLeft"
+            }
+          ],
+          [
+            58,
+            23823,
+            "dom:keydown",
+            {
+              "composing": false,
+              "keyCode": 90,
+              "key": "mod:KeyZ"
+            }
+          ],
+          [
+            59,
+            23824,
+            "command:request",
+            {
+              "reason": null,
+              "composing": false,
+              "session": 3,
+              "modal": false,
+              "id": "edit.undo",
+              "available": true,
+              "pending": false
+            }
+          ],
+          [
+            60,
+            23826,
+            "rhwp:revision-schedule",
+            {
+              "ms": 0
+            }
+          ],
+          [
+            61,
+            23826,
+            "rhwp:readPages",
+            {
+              "ms": 0
+            }
+          ],
+          [
+            62,
+            23826,
+            "command:dispatch",
+            {
+              "id": "edit.undo",
+              "accepted": true
+            }
+          ],
+          [
+            63,
+            23828,
+            "rhwp:surface-render",
+            null
+          ],
+          [
+            64,
+            23829,
+            "rhwp:surface-render",
+            null
+          ],
+          [
+            65,
+            23831,
+            "rhwp:surface-effect",
+            null
+          ],
+          [
+            66,
+            23831,
+            "rhwp:surface-first-draw",
+            {
+              "page": 0,
+              "ms": 0
+            }
+          ],
+          [
+            67,
+            23833,
+            "rhwp:commit-ack",
+            {
+              "session": 3,
+              "ms": 7,
+              "generation": 1
+            }
+          ],
+          [
+            68,
+            23835,
+            "rhwp:surface-render",
+            null
+          ],
+          [
+            69,
+            23836,
+            "rhwp:surface-render",
+            null
+          ],
+          [
+            70,
+            23837,
+            "rhwp:surface-effect",
+            null
+          ],
+          [
+            71,
+            23837,
+            "rhwp:surface-first-draw",
+            {
+              "page": 0,
+              "ms": 0
+            }
+          ],
+          [
+            72,
+            23840,
+            "rhwp:layer-json",
+            {
+              "page": 0,
+              "chars": 50838,
+              "ms": 2
+            }
+          ],
+          [
+            73,
+            23873,
+            "dom:keyup",
+            {
+              "composing": false,
+              "keyCode": 17,
+              "code": "ControlLeft",
+              "key": "mod:ControlLeft"
+            }
+          ],
+          [
+            74,
+            23873,
+            "ime:keyUp",
+            {
+              "interrupted": "none",
+              "composing": false,
+              "session": 3,
+              "historyTransaction": false,
+              "discarded": true,
+              "provisional": false,
+              "terminal": "empty",
+              "pendingCommit": false,
+              "historyRedo": 1,
+              "epoch": 1,
+              "awaiting": "none",
+              "historyUndo": 1,
+              "generation": 1,
+              "revision": 20
+            }
+          ],
+          [
+            75,
+            23893,
+            "dom:keyup",
+            {
+              "composing": false,
+              "keyCode": 90,
+              "code": "KeyZ",
+              "key": "char"
+            }
+          ],
+          [
+            76,
+            23893,
+            "ime:keyUp",
+            {
+              "interrupted": "none",
+              "composing": false,
+              "session": 3,
+              "historyTransaction": false,
+              "discarded": true,
+              "provisional": false,
+              "terminal": "empty",
+              "pendingCommit": false,
+              "historyRedo": 1,
+              "epoch": 1,
+              "awaiting": "none",
+              "historyUndo": 1,
+              "generation": 1,
+              "revision": 20
+            }
+          ],
+          [
+            77,
+            23896,
+            "rhwp:surface-render",
+            null
+          ],
+          [
+            78,
+            23896,
+            "rhwp:surface-render",
+            null
+          ],
+          [
+            79,
+            23897,
+            "rhwp:surface-effect",
+            null
+          ],
+          [
+            80,
+            23898,
+            "rhwp:surface-first-draw",
+            {
+              "page": 0,
+              "ms": 0
+            }
+          ],
+          [
+            81,
+            24334,
+            "rhwp:surface-render",
+            null
+          ],
+          [
+            82,
+            24334,
+            "rhwp:surface-render",
+            null
+          ],
+          [
+            83,
+            24334,
+            "rhwp:surface-effect",
+            null
+          ],
+          [
+            84,
+            24349,
+            "rhwp:surface-render",
+            null
+          ],
+          [
+            85,
+            24349,
+            "rhwp:surface-render",
+            null
+          ],
+          [
+            86,
+            24350,
+            "rhwp:surface-effect",
+            null
+          ]
+        ],
+        "seq": 86,
+        "dropped": 0
+      },
+      "hwpx": {
+        "records": [
+          [
+            1,
+            63517,
+            "dom:keydown",
+            {
+              "composing": false,
+              "keyCode": 229,
+              "key": "ime"
+            }
+          ],
+          [
+            2,
+            63517,
+            "ime:keyDown",
+            {
+              "interrupted": "none",
+              "composing": false,
+              "session": 4,
+              "historyTransaction": false,
+              "discarded": false,
+              "provisional": false,
+              "terminal": "none",
+              "pendingCommit": false,
+              "historyRedo": 0,
+              "epoch": 1,
+              "awaiting": "none",
+              "historyUndo": 1,
+              "generation": 1,
+              "revision": 18
+            }
+          ],
+          [
+            3,
+            63517,
+            "dom:compositionstart",
+            null
+          ],
+          [
+            4,
+            63518,
+            "rhwp:text-mutation",
+            {
+              "ms": 0
+            }
+          ],
+          [
+            5,
+            63519,
+            "rhwp:readPages",
+            {
+              "ms": 1
+            }
+          ],
+          [
+            6,
+            63519,
+            "ime:compositionStart",
+            {
+              "interrupted": "none",
+              "composing": true,
+              "session": 4,
+              "historyTransaction": true,
+              "discarded": false,
+              "provisional": false,
+              "terminal": "none",
+              "pendingCommit": false,
+              "historyRedo": 0,
+              "epoch": 1,
+              "awaiting": "none",
+              "historyUndo": 1,
+              "generation": 1,
+              "revision": 18
+            }
+          ],
+          [
+            7,
+            63521,
+            "rhwp:surface-render",
+            null
+          ],
+          [
+            8,
+            63521,
+            "rhwp:surface-render",
+            null
+          ],
+          [
+            9,
+            63523,
+            "rhwp:surface-effect",
+            null
+          ],
+          [
+            10,
+            63535,
+            "rhwp:surface-first-draw",
+            {
+              "page": 0,
+              "ms": 12
+            }
+          ],
+          [
+            11,
+            63538,
+            "rhwp:surface-render",
+            null
+          ],
+          [
+            12,
+            63539,
+            "rhwp:surface-render",
+            null
+          ],
+          [
+            13,
+            63540,
+            "rhwp:surface-effect",
+            null
+          ],
+          [
+            14,
+            63540,
+            "dom:beforeinput",
+            {
+              "composing": true,
+              "length": 1,
+              "inputType": "insertCompositionText"
+            }
+          ],
+          [
+            15,
+            63542,
+            "dom:input",
+            {
+              "composing": true,
+              "length": 1,
+              "inputType": "insertCompositionText"
+            }
+          ],
+          [
+            16,
+            63543,
+            "rhwp:text-mutation",
+            {
+              "ms": 1
+            }
+          ],
+          [
+            17,
+            63543,
+            "rhwp:readPages",
+            {
+              "ms": 0
+            }
+          ],
+          [
+            18,
+            63543,
+            "ime:input",
+            {
+              "interrupted": "none",
+              "composing": true,
+              "session": 4,
+              "historyTransaction": true,
+              "discarded": false,
+              "provisional": false,
+              "terminal": "none",
+              "pendingCommit": false,
+              "historyRedo": 0,
+              "epoch": 1,
+              "awaiting": "none",
+              "historyUndo": 1,
+              "generation": 1,
+              "revision": 18
+            }
+          ],
+          [
+            19,
+            63545,
+            "rhwp:surface-render",
+            null
+          ],
+          [
+            20,
+            63546,
+            "rhwp:surface-render",
+            null
+          ],
+          [
+            21,
+            63547,
+            "rhwp:surface-effect",
+            null
+          ],
+          [
+            22,
+            63558,
+            "rhwp:surface-first-draw",
+            {
+              "page": 0,
+              "ms": 11
+            }
+          ],
+          [
+            23,
+            63560,
+            "rhwp:surface-render",
+            null
+          ],
+          [
+            24,
+            63561,
+            "rhwp:surface-render",
+            null
+          ],
+          [
+            25,
+            63562,
+            "rhwp:surface-effect",
+            null
+          ],
+          [
+            26,
+            63581,
+            "dom:keyup",
+            {
+              "composing": true,
+              "keyCode": 82,
+              "code": "KeyR",
+              "key": "char"
+            }
+          ],
+          [
+            27,
+            63581,
+            "ime:keyUp",
+            {
+              "interrupted": "none",
+              "composing": true,
+              "session": 4,
+              "historyTransaction": true,
+              "discarded": false,
+              "provisional": false,
+              "terminal": "none",
+              "pendingCommit": false,
+              "historyRedo": 0,
+              "epoch": 1,
+              "awaiting": "none",
+              "historyUndo": 1,
+              "generation": 1,
+              "revision": 18
+            }
+          ],
+          [
+            28,
+            63600,
+            "dom:keydown",
+            {
+              "composing": true,
+              "keyCode": 229,
+              "key": "ime"
+            }
+          ],
+          [
+            29,
+            63600,
+            "ime:keyDown",
+            {
+              "interrupted": "none",
+              "composing": true,
+              "session": 4,
+              "historyTransaction": true,
+              "discarded": false,
+              "provisional": false,
+              "terminal": "none",
+              "pendingCommit": false,
+              "historyRedo": 0,
+              "epoch": 1,
+              "awaiting": "none",
+              "historyUndo": 1,
+              "generation": 1,
+              "revision": 18
+            }
+          ],
+          [
+            30,
+            63602,
+            "dom:beforeinput",
+            {
+              "composing": true,
+              "length": 0,
+              "inputType": "deleteCompositionText"
+            }
+          ],
+          [
+            31,
+            63603,
+            "dom:input",
+            {
+              "composing": true,
+              "length": 0,
+              "inputType": "deleteCompositionText"
+            }
+          ],
+          [
+            32,
+            63603,
+            "rhwp:text-mutation",
+            {
+              "ms": 0
+            }
+          ],
+          [
+            33,
+            63604,
+            "rhwp:readPages",
+            {
+              "ms": 1
+            }
+          ],
+          [
+            34,
+            63604,
+            "ime:input",
+            {
+              "interrupted": "none",
+              "composing": true,
+              "session": 4,
+              "historyTransaction": true,
+              "discarded": false,
+              "provisional": false,
+              "terminal": "none",
+              "pendingCommit": false,
+              "historyRedo": 0,
+              "epoch": 1,
+              "awaiting": "none",
+              "historyUndo": 1,
+              "generation": 1,
+              "revision": 18
+            }
+          ],
+          [
+            35,
+            63606,
+            "rhwp:surface-render",
+            null
+          ],
+          [
+            36,
+            63606,
+            "rhwp:surface-render",
+            null
+          ],
+          [
+            37,
+            63608,
+            "rhwp:surface-effect",
+            null
+          ],
+          [
+            38,
+            63619,
+            "rhwp:surface-first-draw",
+            {
+              "page": 0,
+              "ms": 11
+            }
+          ],
+          [
+            39,
+            63621,
+            "rhwp:surface-render",
+            null
+          ],
+          [
+            40,
+            63621,
+            "rhwp:surface-render",
+            null
+          ],
+          [
+            41,
+            63623,
+            "rhwp:surface-effect",
+            null
+          ],
+          [
+            42,
+            63623,
+            "dom:compositionend",
+            {
+              "length": 0
+            }
+          ],
+          [
+            43,
+            63624,
+            "rhwp:revision-schedule",
+            {
+              "ms": 1
+            }
+          ],
+          [
+            44,
+            63624,
+            "ime:compositionEnd",
+            {
+              "interrupted": "none",
+              "composing": false,
+              "session": 4,
+              "historyTransaction": false,
+              "discarded": false,
+              "provisional": false,
+              "terminal": "empty",
+              "pendingCommit": true,
+              "historyRedo": 0,
+              "epoch": 1,
+              "awaiting": "this",
+              "historyUndo": 2,
+              "generation": 1,
+              "revision": 19
+            }
+          ],
+          [
+            45,
+            63625,
+            "rhwp:surface-render",
+            null
+          ],
+          [
+            46,
+            63626,
+            "rhwp:surface-render",
+            null
+          ],
+          [
+            47,
+            63627,
+            "rhwp:surface-effect",
+            null
+          ],
+          [
+            48,
+            63653,
+            "dom:keyup",
+            {
+              "composing": false,
+              "keyCode": 8,
+              "code": "Backspace",
+              "key": "named"
+            }
+          ],
+          [
+            49,
+            63654,
+            "ime:keyUp",
+            {
+              "interrupted": "none",
+              "composing": false,
+              "session": 4,
+              "historyTransaction": false,
+              "discarded": true,
+              "provisional": false,
+              "terminal": "empty",
+              "pendingCommit": true,
+              "historyRedo": 0,
+              "epoch": 1,
+              "awaiting": "none",
+              "historyUndo": 2,
+              "generation": 1,
+              "revision": 19
+            }
+          ],
+          [
+            50,
+            63656,
+            "rhwp:surface-render",
+            null
+          ],
+          [
+            51,
+            63656,
+            "rhwp:surface-render",
+            null
+          ],
+          [
+            52,
+            63657,
+            "rhwp:surface-effect",
+            null
+          ],
+          [
+            53,
+            63659,
+            "rhwp:commit-ack",
+            {
+              "session": 4,
+              "ms": 36,
+              "generation": 1
+            }
+          ],
+          [
+            54,
+            63661,
+            "rhwp:surface-render",
+            null
+          ],
+          [
+            55,
+            63661,
+            "rhwp:surface-render",
+            null
+          ],
+          [
+            56,
+            63662,
+            "rhwp:surface-effect",
+            null
+          ],
+          [
+            57,
+            63673,
+            "dom:keydown",
+            {
+              "composing": false,
+              "keyCode": 17,
+              "key": "mod:ControlLeft"
+            }
+          ],
+          [
+            58,
+            63682,
+            "dom:keydown",
+            {
+              "composing": false,
+              "keyCode": 90,
+              "key": "mod:KeyZ"
+            }
+          ],
+          [
+            59,
+            63682,
+            "command:request",
+            {
+              "reason": null,
+              "composing": false,
+              "session": 4,
+              "modal": false,
+              "id": "edit.undo",
+              "available": true,
+              "pending": false
+            }
+          ],
+          [
+            60,
+            63683,
+            "rhwp:revision-schedule",
+            {
+              "ms": 0
+            }
+          ],
+          [
+            61,
+            63683,
+            "rhwp:readPages",
+            {
+              "ms": 0
+            }
+          ],
+          [
+            62,
+            63683,
+            "command:dispatch",
+            {
+              "id": "edit.undo",
+              "accepted": true
+            }
+          ],
+          [
+            63,
+            63685,
+            "rhwp:surface-render",
+            null
+          ],
+          [
+            64,
+            63686,
+            "rhwp:surface-render",
+            null
+          ],
+          [
+            65,
+            63688,
+            "rhwp:surface-effect",
+            null
+          ],
+          [
+            66,
+            63688,
+            "rhwp:surface-first-draw",
+            {
+              "page": 0,
+              "ms": 0
+            }
+          ],
+          [
+            67,
+            63692,
+            "rhwp:layer-json",
+            {
+              "page": 0,
+              "chars": 50838,
+              "ms": 2
+            }
+          ],
+          [
+            68,
+            63721,
+            "dom:keyup",
+            {
+              "composing": false,
+              "keyCode": 17,
+              "code": "ControlLeft",
+              "key": "mod:ControlLeft"
+            }
+          ],
+          [
+            69,
+            63721,
+            "ime:keyUp",
+            {
+              "interrupted": "none",
+              "composing": false,
+              "session": 4,
+              "historyTransaction": false,
+              "discarded": true,
+              "provisional": false,
+              "terminal": "empty",
+              "pendingCommit": true,
+              "historyRedo": 1,
+              "epoch": 1,
+              "awaiting": "none",
+              "historyUndo": 1,
+              "generation": 1,
+              "revision": 20
+            }
+          ],
+          [
+            70,
+            63724,
+            "rhwp:surface-render",
+            null
+          ],
+          [
+            71,
+            63724,
+            "rhwp:surface-render",
+            null
+          ],
+          [
+            72,
+            63726,
+            "rhwp:surface-effect",
+            null
+          ],
+          [
+            73,
+            63726,
+            "rhwp:surface-first-draw",
+            {
+              "page": 0,
+              "ms": 0
+            }
+          ],
+          [
+            74,
+            63726,
+            "rhwp:commit-ack",
+            {
+              "session": 4,
+              "ms": 43,
+              "generation": 1
+            }
+          ],
+          [
+            75,
+            63728,
+            "rhwp:surface-render",
+            null
+          ],
+          [
+            76,
+            63729,
+            "rhwp:surface-render",
+            null
+          ],
+          [
+            77,
+            63730,
+            "rhwp:surface-effect",
+            null
+          ],
+          [
+            78,
+            63747,
+            "dom:keyup",
+            {
+              "composing": false,
+              "keyCode": 90,
+              "code": "KeyZ",
+              "key": "char"
+            }
+          ],
+          [
+            79,
+            63747,
+            "ime:keyUp",
+            {
+              "interrupted": "none",
+              "composing": false,
+              "session": 4,
+              "historyTransaction": false,
+              "discarded": true,
+              "provisional": false,
+              "terminal": "empty",
+              "pendingCommit": false,
+              "historyRedo": 1,
+              "epoch": 1,
+              "awaiting": "none",
+              "historyUndo": 1,
+              "generation": 1,
+              "revision": 20
+            }
+          ],
+          [
+            80,
+            64191,
+            "rhwp:surface-render",
+            null
+          ],
+          [
+            81,
+            64191,
+            "rhwp:surface-render",
+            null
+          ],
+          [
+            82,
+            64192,
+            "rhwp:surface-effect",
+            null
+          ],
+          [
+            83,
+            64231,
+            "rhwp:surface-render",
+            null
+          ],
+          [
+            84,
+            64231,
+            "rhwp:surface-render",
+            null
+          ],
+          [
+            85,
+            64232,
+            "rhwp:surface-effect",
+            null
+          ]
+        ],
+        "seq": 85,
+        "dropped": 0
+      }
+    },
+    "cancelFastTrace": {
+      "hwp": {
+        "records": [
+          [
+            1,
+            27304,
+            "dom:keydown",
+            {
+              "composing": false,
+              "keyCode": 229,
+              "key": "ime"
+            }
+          ],
+          [
+            2,
+            27304,
+            "ime:keyDown",
+            {
+              "interrupted": "none",
+              "composing": false,
+              "session": 3,
+              "historyTransaction": false,
+              "discarded": true,
+              "provisional": false,
+              "terminal": "none",
+              "pendingCommit": false,
+              "historyRedo": 1,
+              "epoch": 1,
+              "awaiting": "none",
+              "historyUndo": 1,
+              "generation": 1,
+              "revision": 22
+            }
+          ],
+          [
+            3,
+            27305,
+            "dom:compositionstart",
+            null
+          ],
+          [
+            4,
+            27306,
+            "rhwp:text-mutation",
+            {
+              "ms": 1
+            }
+          ],
+          [
+            5,
+            27306,
+            "rhwp:readPages",
+            {
+              "ms": 0
+            }
+          ],
+          [
+            6,
+            27306,
+            "ime:compositionStart",
+            {
+              "interrupted": "none",
+              "composing": true,
+              "session": 3,
+              "historyTransaction": true,
+              "discarded": false,
+              "provisional": false,
+              "terminal": "none",
+              "pendingCommit": false,
+              "historyRedo": 1,
+              "epoch": 1,
+              "awaiting": "none",
+              "historyUndo": 1,
+              "generation": 1,
+              "revision": 22
+            }
+          ],
+          [
+            7,
+            27308,
+            "rhwp:surface-render",
+            null
+          ],
+          [
+            8,
+            27309,
+            "rhwp:surface-render",
+            null
+          ],
+          [
+            9,
+            27310,
+            "rhwp:surface-effect",
+            null
+          ],
+          [
+            10,
+            27322,
+            "rhwp:surface-first-draw",
+            {
+              "page": 0,
+              "ms": 12
+            }
+          ],
+          [
+            11,
+            27325,
+            "rhwp:surface-render",
+            null
+          ],
+          [
+            12,
+            27326,
+            "rhwp:surface-render",
+            null
+          ],
+          [
+            13,
+            27327,
+            "rhwp:surface-effect",
+            null
+          ],
+          [
+            14,
+            27327,
+            "dom:beforeinput",
+            {
+              "composing": true,
+              "length": 1,
+              "inputType": "insertCompositionText"
+            }
+          ],
+          [
+            15,
+            27329,
+            "dom:input",
+            {
+              "composing": true,
+              "length": 1,
+              "inputType": "insertCompositionText"
+            }
+          ],
+          [
+            16,
+            27330,
+            "rhwp:text-mutation",
+            {
+              "ms": 1
+            }
+          ],
+          [
+            17,
+            27330,
+            "rhwp:readPages",
+            {
+              "ms": 0
+            }
+          ],
+          [
+            18,
+            27330,
+            "ime:input",
+            {
+              "interrupted": "none",
+              "composing": true,
+              "session": 3,
+              "historyTransaction": true,
+              "discarded": false,
+              "provisional": false,
+              "terminal": "none",
+              "pendingCommit": false,
+              "historyRedo": 1,
+              "epoch": 1,
+              "awaiting": "none",
+              "historyUndo": 1,
+              "generation": 1,
+              "revision": 22
+            }
+          ],
+          [
+            19,
+            27332,
+            "rhwp:surface-render",
+            null
+          ],
+          [
+            20,
+            27333,
+            "rhwp:surface-render",
+            null
+          ],
+          [
+            21,
+            27334,
+            "rhwp:surface-effect",
+            null
+          ],
+          [
+            22,
+            27345,
+            "rhwp:surface-first-draw",
+            {
+              "page": 0,
+              "ms": 11
+            }
+          ],
+          [
+            23,
+            27349,
+            "rhwp:surface-render",
+            null
+          ],
+          [
+            24,
+            27349,
+            "rhwp:surface-render",
+            null
+          ],
+          [
+            25,
+            27350,
+            "rhwp:surface-effect",
+            null
+          ],
+          [
+            26,
+            27380,
+            "dom:keyup",
+            {
+              "composing": true,
+              "keyCode": 82,
+              "code": "KeyR",
+              "key": "char"
+            }
+          ],
+          [
+            27,
+            27380,
+            "ime:keyUp",
+            {
+              "interrupted": "none",
+              "composing": true,
+              "session": 3,
+              "historyTransaction": true,
+              "discarded": false,
+              "provisional": false,
+              "terminal": "none",
+              "pendingCommit": false,
+              "historyRedo": 1,
+              "epoch": 1,
+              "awaiting": "none",
+              "historyUndo": 1,
+              "generation": 1,
+              "revision": 22
+            }
+          ],
+          [
+            28,
+            27409,
+            "dom:keydown",
+            {
+              "composing": true,
+              "keyCode": 229,
+              "key": "ime"
+            }
+          ],
+          [
+            29,
+            27409,
+            "ime:keyDown",
+            {
+              "interrupted": "none",
+              "composing": true,
+              "session": 3,
+              "historyTransaction": true,
+              "discarded": false,
+              "provisional": false,
+              "terminal": "none",
+              "pendingCommit": false,
+              "historyRedo": 1,
+              "epoch": 1,
+              "awaiting": "none",
+              "historyUndo": 1,
+              "generation": 1,
+              "revision": 22
+            }
+          ],
+          [
+            30,
+            27414,
+            "dom:beforeinput",
+            {
+              "composing": true,
+              "length": 0,
+              "inputType": "deleteCompositionText"
+            }
+          ],
+          [
+            31,
+            27415,
+            "dom:input",
+            {
+              "composing": true,
+              "length": 0,
+              "inputType": "deleteCompositionText"
+            }
+          ],
+          [
+            32,
+            27415,
+            "rhwp:text-mutation",
+            {
+              "ms": 0
+            }
+          ],
+          [
+            33,
+            27415,
+            "rhwp:readPages",
+            {
+              "ms": 0
+            }
+          ],
+          [
+            34,
+            27415,
+            "ime:input",
+            {
+              "interrupted": "none",
+              "composing": true,
+              "session": 3,
+              "historyTransaction": true,
+              "discarded": false,
+              "provisional": false,
+              "terminal": "none",
+              "pendingCommit": false,
+              "historyRedo": 1,
+              "epoch": 1,
+              "awaiting": "none",
+              "historyUndo": 1,
+              "generation": 1,
+              "revision": 22
+            }
+          ],
+          [
+            35,
+            27424,
+            "rhwp:surface-render",
+            null
+          ],
+          [
+            36,
+            27425,
+            "rhwp:surface-render",
+            null
+          ],
+          [
+            37,
+            27427,
+            "rhwp:surface-effect",
+            null
+          ],
+          [
+            38,
+            27438,
+            "rhwp:surface-first-draw",
+            {
+              "page": 0,
+              "ms": 11
+            }
+          ],
+          [
+            39,
+            27441,
+            "rhwp:surface-render",
+            null
+          ],
+          [
+            40,
+            27441,
+            "rhwp:surface-render",
+            null
+          ],
+          [
+            41,
+            27442,
+            "rhwp:surface-effect",
+            null
+          ],
+          [
+            42,
+            27443,
+            "dom:compositionend",
+            {
+              "length": 0
+            }
+          ],
+          [
+            43,
+            27444,
+            "rhwp:revision-schedule",
+            {
+              "ms": 1
+            }
+          ],
+          [
+            44,
+            27444,
+            "ime:compositionEnd",
+            {
+              "interrupted": "none",
+              "composing": false,
+              "session": 3,
+              "historyTransaction": false,
+              "discarded": false,
+              "provisional": false,
+              "terminal": "empty",
+              "pendingCommit": true,
+              "historyRedo": 0,
+              "epoch": 1,
+              "awaiting": "this",
+              "historyUndo": 2,
+              "generation": 1,
+              "revision": 23
+            }
+          ],
+          [
+            45,
+            27446,
+            "rhwp:surface-render",
+            null
+          ],
+          [
+            46,
+            27446,
+            "rhwp:surface-render",
+            null
+          ],
+          [
+            47,
+            27447,
+            "rhwp:surface-effect",
+            null
+          ],
+          [
+            48,
+            27477,
+            "dom:keyup",
+            {
+              "composing": false,
+              "keyCode": 8,
+              "code": "Backspace",
+              "key": "named"
+            }
+          ],
+          [
+            49,
+            27477,
+            "ime:keyUp",
+            {
+              "interrupted": "none",
+              "composing": false,
+              "session": 3,
+              "historyTransaction": false,
+              "discarded": true,
+              "provisional": false,
+              "terminal": "empty",
+              "pendingCommit": true,
+              "historyRedo": 0,
+              "epoch": 1,
+              "awaiting": "none",
+              "historyUndo": 2,
+              "generation": 1,
+              "revision": 23
+            }
+          ],
+          [
+            50,
+            27479,
+            "rhwp:surface-render",
+            null
+          ],
+          [
+            51,
+            27480,
+            "rhwp:surface-render",
+            null
+          ],
+          [
+            52,
+            27481,
+            "rhwp:surface-effect",
+            null
+          ],
+          [
+            53,
+            27483,
+            "rhwp:commit-ack",
+            {
+              "session": 3,
+              "ms": 40,
+              "generation": 1
+            }
+          ],
+          [
+            54,
+            27485,
+            "rhwp:surface-render",
+            null
+          ],
+          [
+            55,
+            27485,
+            "rhwp:surface-render",
+            null
+          ],
+          [
+            56,
+            27487,
+            "rhwp:surface-effect",
+            null
+          ],
+          [
+            57,
+            27499,
+            "dom:keydown",
+            {
+              "composing": false,
+              "keyCode": 17,
+              "key": "mod:ControlLeft"
+            }
+          ],
+          [
+            58,
+            27510,
+            "dom:keydown",
+            {
+              "composing": false,
+              "keyCode": 90,
+              "key": "mod:KeyZ"
+            }
+          ],
+          [
+            59,
+            27511,
+            "command:request",
+            {
+              "reason": null,
+              "composing": false,
+              "session": 3,
+              "modal": false,
+              "id": "edit.undo",
+              "available": true,
+              "pending": false
+            }
+          ],
+          [
+            60,
+            27512,
+            "rhwp:revision-schedule",
+            {
+              "ms": 0
+            }
+          ],
+          [
+            61,
+            27512,
+            "rhwp:readPages",
+            {
+              "ms": 0
+            }
+          ],
+          [
+            62,
+            27512,
+            "command:dispatch",
+            {
+              "id": "edit.undo",
+              "accepted": true
+            }
+          ],
+          [
+            63,
+            27515,
+            "rhwp:surface-render",
+            null
+          ],
+          [
+            64,
+            27516,
+            "rhwp:surface-render",
+            null
+          ],
+          [
+            65,
+            27518,
+            "rhwp:surface-effect",
+            null
+          ],
+          [
+            66,
+            27518,
+            "rhwp:surface-first-draw",
+            {
+              "page": 0,
+              "ms": 0
+            }
+          ],
+          [
+            67,
+            27522,
+            "rhwp:layer-json",
+            {
+              "page": 0,
+              "chars": 50838,
+              "ms": 1
+            }
+          ],
+          [
+            68,
+            27556,
+            "dom:keyup",
+            {
+              "composing": false,
+              "keyCode": 17,
+              "code": "ControlLeft",
+              "key": "mod:ControlLeft"
+            }
+          ],
+          [
+            69,
+            27556,
+            "ime:keyUp",
+            {
+              "interrupted": "none",
+              "composing": false,
+              "session": 3,
+              "historyTransaction": false,
+              "discarded": true,
+              "provisional": false,
+              "terminal": "empty",
+              "pendingCommit": true,
+              "historyRedo": 1,
+              "epoch": 1,
+              "awaiting": "none",
+              "historyUndo": 1,
+              "generation": 1,
+              "revision": 24
+            }
+          ],
+          [
+            70,
+            27559,
+            "rhwp:surface-render",
+            null
+          ],
+          [
+            71,
+            27559,
+            "rhwp:surface-render",
+            null
+          ],
+          [
+            72,
+            27561,
+            "rhwp:surface-effect",
+            null
+          ],
+          [
+            73,
+            27561,
+            "rhwp:surface-first-draw",
+            {
+              "page": 0,
+              "ms": 0
+            }
+          ],
+          [
+            74,
+            27561,
+            "rhwp:commit-ack",
+            {
+              "session": 3,
+              "ms": 49,
+              "generation": 1
+            }
+          ],
+          [
+            75,
+            27563,
+            "rhwp:surface-render",
+            null
+          ],
+          [
+            76,
+            27564,
+            "rhwp:surface-render",
+            null
+          ],
+          [
+            77,
+            27565,
+            "rhwp:surface-effect",
+            null
+          ],
+          [
+            78,
+            27586,
+            "dom:keyup",
+            {
+              "composing": false,
+              "keyCode": 90,
+              "code": "KeyZ",
+              "key": "char"
+            }
+          ],
+          [
+            79,
+            27586,
+            "ime:keyUp",
+            {
+              "interrupted": "none",
+              "composing": false,
+              "session": 3,
+              "historyTransaction": false,
+              "discarded": true,
+              "provisional": false,
+              "terminal": "empty",
+              "pendingCommit": false,
+              "historyRedo": 1,
+              "epoch": 1,
+              "awaiting": "none",
+              "historyUndo": 1,
+              "generation": 1,
+              "revision": 24
+            }
+          ],
+          [
+            80,
+            28021,
+            "rhwp:surface-render",
+            null
+          ],
+          [
+            81,
+            28021,
+            "rhwp:surface-render",
+            null
+          ],
+          [
+            82,
+            28022,
+            "rhwp:surface-effect",
+            null
+          ],
+          [
+            83,
+            28066,
+            "rhwp:surface-render",
+            null
+          ],
+          [
+            84,
+            28066,
+            "rhwp:surface-render",
+            null
+          ],
+          [
+            85,
+            28067,
+            "rhwp:surface-effect",
+            null
+          ]
+        ],
+        "seq": 85,
+        "dropped": 0
+      },
+      "hwpx": {
+        "records": [
+          [
+            1,
+            67239,
+            "dom:keydown",
+            {
+              "composing": false,
+              "keyCode": 229,
+              "key": "ime"
+            }
+          ],
+          [
+            2,
+            67239,
+            "ime:keyDown",
+            {
+              "interrupted": "none",
+              "composing": false,
+              "session": 4,
+              "historyTransaction": false,
+              "discarded": true,
+              "provisional": false,
+              "terminal": "none",
+              "pendingCommit": false,
+              "historyRedo": 1,
+              "epoch": 1,
+              "awaiting": "none",
+              "historyUndo": 1,
+              "generation": 1,
+              "revision": 22
+            }
+          ],
+          [
+            3,
+            67240,
+            "dom:compositionstart",
+            null
+          ],
+          [
+            4,
+            67241,
+            "rhwp:text-mutation",
+            {
+              "ms": 1
+            }
+          ],
+          [
+            5,
+            67241,
+            "rhwp:readPages",
+            {
+              "ms": 0
+            }
+          ],
+          [
+            6,
+            67241,
+            "ime:compositionStart",
+            {
+              "interrupted": "none",
+              "composing": true,
+              "session": 4,
+              "historyTransaction": true,
+              "discarded": false,
+              "provisional": false,
+              "terminal": "none",
+              "pendingCommit": false,
+              "historyRedo": 1,
+              "epoch": 1,
+              "awaiting": "none",
+              "historyUndo": 1,
+              "generation": 1,
+              "revision": 22
+            }
+          ],
+          [
+            7,
+            67243,
+            "rhwp:surface-render",
+            null
+          ],
+          [
+            8,
+            67244,
+            "rhwp:surface-render",
+            null
+          ],
+          [
+            9,
+            67245,
+            "rhwp:surface-effect",
+            null
+          ],
+          [
+            10,
+            67257,
+            "rhwp:surface-first-draw",
+            {
+              "page": 0,
+              "ms": 11
+            }
+          ],
+          [
+            11,
+            67260,
+            "rhwp:surface-render",
+            null
+          ],
+          [
+            12,
+            67260,
+            "rhwp:surface-render",
+            null
+          ],
+          [
+            13,
+            67262,
+            "rhwp:surface-effect",
+            null
+          ],
+          [
+            14,
+            67262,
+            "dom:beforeinput",
+            {
+              "composing": true,
+              "length": 1,
+              "inputType": "insertCompositionText"
+            }
+          ],
+          [
+            15,
+            67265,
+            "dom:input",
+            {
+              "composing": true,
+              "length": 1,
+              "inputType": "insertCompositionText"
+            }
+          ],
+          [
+            16,
+            67266,
+            "rhwp:text-mutation",
+            {
+              "ms": 1
+            }
+          ],
+          [
+            17,
+            67266,
+            "rhwp:readPages",
+            {
+              "ms": 0
+            }
+          ],
+          [
+            18,
+            67266,
+            "ime:input",
+            {
+              "interrupted": "none",
+              "composing": true,
+              "session": 4,
+              "historyTransaction": true,
+              "discarded": false,
+              "provisional": false,
+              "terminal": "none",
+              "pendingCommit": false,
+              "historyRedo": 1,
+              "epoch": 1,
+              "awaiting": "none",
+              "historyUndo": 1,
+              "generation": 1,
+              "revision": 22
+            }
+          ],
+          [
+            19,
+            67267,
+            "rhwp:surface-render",
+            null
+          ],
+          [
+            20,
+            67268,
+            "rhwp:surface-render",
+            null
+          ],
+          [
+            21,
+            67270,
+            "rhwp:surface-effect",
+            null
+          ],
+          [
+            22,
+            67281,
+            "rhwp:surface-first-draw",
+            {
+              "page": 0,
+              "ms": 11
+            }
+          ],
+          [
+            23,
+            67284,
+            "rhwp:surface-render",
+            null
+          ],
+          [
+            24,
+            67284,
+            "rhwp:surface-render",
+            null
+          ],
+          [
+            25,
+            67285,
+            "rhwp:surface-effect",
+            null
+          ],
+          [
+            26,
+            67312,
+            "dom:keyup",
+            {
+              "composing": true,
+              "keyCode": 82,
+              "code": "KeyR",
+              "key": "char"
+            }
+          ],
+          [
+            27,
+            67312,
+            "ime:keyUp",
+            {
+              "interrupted": "none",
+              "composing": true,
+              "session": 4,
+              "historyTransaction": true,
+              "discarded": false,
+              "provisional": false,
+              "terminal": "none",
+              "pendingCommit": false,
+              "historyRedo": 1,
+              "epoch": 1,
+              "awaiting": "none",
+              "historyUndo": 1,
+              "generation": 1,
+              "revision": 22
+            }
+          ],
+          [
+            28,
+            67330,
+            "dom:keydown",
+            {
+              "composing": true,
+              "keyCode": 229,
+              "key": "ime"
+            }
+          ],
+          [
+            29,
+            67331,
+            "ime:keyDown",
+            {
+              "interrupted": "none",
+              "composing": true,
+              "session": 4,
+              "historyTransaction": true,
+              "discarded": false,
+              "provisional": false,
+              "terminal": "none",
+              "pendingCommit": false,
+              "historyRedo": 1,
+              "epoch": 1,
+              "awaiting": "none",
+              "historyUndo": 1,
+              "generation": 1,
+              "revision": 22
+            }
+          ],
+          [
+            30,
+            67333,
+            "dom:beforeinput",
+            {
+              "composing": true,
+              "length": 0,
+              "inputType": "deleteCompositionText"
+            }
+          ],
+          [
+            31,
+            67334,
+            "dom:input",
+            {
+              "composing": true,
+              "length": 0,
+              "inputType": "deleteCompositionText"
+            }
+          ],
+          [
+            32,
+            67334,
+            "rhwp:text-mutation",
+            {
+              "ms": 0
+            }
+          ],
+          [
+            33,
+            67335,
+            "rhwp:readPages",
+            {
+              "ms": 1
+            }
+          ],
+          [
+            34,
+            67335,
+            "ime:input",
+            {
+              "interrupted": "none",
+              "composing": true,
+              "session": 4,
+              "historyTransaction": true,
+              "discarded": false,
+              "provisional": false,
+              "terminal": "none",
+              "pendingCommit": false,
+              "historyRedo": 1,
+              "epoch": 1,
+              "awaiting": "none",
+              "historyUndo": 1,
+              "generation": 1,
+              "revision": 22
+            }
+          ],
+          [
+            35,
+            67337,
+            "rhwp:surface-render",
+            null
+          ],
+          [
+            36,
+            67337,
+            "rhwp:surface-render",
+            null
+          ],
+          [
+            37,
+            67339,
+            "rhwp:surface-effect",
+            null
+          ],
+          [
+            38,
+            67350,
+            "rhwp:surface-first-draw",
+            {
+              "page": 0,
+              "ms": 11
+            }
+          ],
+          [
+            39,
+            67353,
+            "rhwp:surface-render",
+            null
+          ],
+          [
+            40,
+            67353,
+            "rhwp:surface-render",
+            null
+          ],
+          [
+            41,
+            67354,
+            "rhwp:surface-effect",
+            null
+          ],
+          [
+            42,
+            67355,
+            "dom:compositionend",
+            {
+              "length": 0
+            }
+          ],
+          [
+            43,
+            67355,
+            "rhwp:revision-schedule",
+            {
+              "ms": 0
+            }
+          ],
+          [
+            44,
+            67355,
+            "ime:compositionEnd",
+            {
+              "interrupted": "none",
+              "composing": false,
+              "session": 4,
+              "historyTransaction": false,
+              "discarded": false,
+              "provisional": false,
+              "terminal": "empty",
+              "pendingCommit": true,
+              "historyRedo": 0,
+              "epoch": 1,
+              "awaiting": "this",
+              "historyUndo": 2,
+              "generation": 1,
+              "revision": 23
+            }
+          ],
+          [
+            45,
+            67357,
+            "rhwp:surface-render",
+            null
+          ],
+          [
+            46,
+            67357,
+            "rhwp:surface-render",
+            null
+          ],
+          [
+            47,
+            67358,
+            "rhwp:surface-effect",
+            null
+          ],
+          [
+            48,
+            67383,
+            "dom:keyup",
+            {
+              "composing": false,
+              "keyCode": 8,
+              "code": "Backspace",
+              "key": "named"
+            }
+          ],
+          [
+            49,
+            67384,
+            "ime:keyUp",
+            {
+              "interrupted": "none",
+              "composing": false,
+              "session": 4,
+              "historyTransaction": false,
+              "discarded": true,
+              "provisional": false,
+              "terminal": "empty",
+              "pendingCommit": true,
+              "historyRedo": 0,
+              "epoch": 1,
+              "awaiting": "none",
+              "historyUndo": 2,
+              "generation": 1,
+              "revision": 23
+            }
+          ],
+          [
+            50,
+            67386,
+            "rhwp:surface-render",
+            null
+          ],
+          [
+            51,
+            67386,
+            "rhwp:surface-render",
+            null
+          ],
+          [
+            52,
+            67388,
+            "rhwp:surface-effect",
+            null
+          ],
+          [
+            53,
+            67390,
+            "rhwp:commit-ack",
+            {
+              "session": 4,
+              "ms": 35,
+              "generation": 1
+            }
+          ],
+          [
+            54,
+            67392,
+            "rhwp:surface-render",
+            null
+          ],
+          [
+            55,
+            67392,
+            "rhwp:surface-render",
+            null
+          ],
+          [
+            56,
+            67394,
+            "rhwp:surface-effect",
+            null
+          ],
+          [
+            57,
+            67404,
+            "dom:keydown",
+            {
+              "composing": false,
+              "keyCode": 17,
+              "key": "mod:ControlLeft"
+            }
+          ],
+          [
+            58,
+            67415,
+            "dom:keydown",
+            {
+              "composing": false,
+              "keyCode": 90,
+              "key": "mod:KeyZ"
+            }
+          ],
+          [
+            59,
+            67415,
+            "command:request",
+            {
+              "reason": null,
+              "composing": false,
+              "session": 4,
+              "modal": false,
+              "id": "edit.undo",
+              "available": true,
+              "pending": false
+            }
+          ],
+          [
+            60,
+            67417,
+            "rhwp:revision-schedule",
+            {
+              "ms": 1
+            }
+          ],
+          [
+            61,
+            67417,
+            "rhwp:readPages",
+            {
+              "ms": 0
+            }
+          ],
+          [
+            62,
+            67417,
+            "command:dispatch",
+            {
+              "id": "edit.undo",
+              "accepted": true
+            }
+          ],
+          [
+            63,
+            67419,
+            "rhwp:surface-render",
+            null
+          ],
+          [
+            64,
+            67420,
+            "rhwp:surface-render",
+            null
+          ],
+          [
+            65,
+            67422,
+            "rhwp:surface-effect",
+            null
+          ],
+          [
+            66,
+            67422,
+            "rhwp:surface-first-draw",
+            {
+              "page": 0,
+              "ms": 0
+            }
+          ],
+          [
+            67,
+            67426,
+            "rhwp:layer-json",
+            {
+              "page": 0,
+              "chars": 50838,
+              "ms": 1
+            }
+          ],
+          [
+            68,
+            67457,
+            "dom:keyup",
+            {
+              "composing": false,
+              "keyCode": 17,
+              "code": "ControlLeft",
+              "key": "mod:ControlLeft"
+            }
+          ],
+          [
+            69,
+            67457,
+            "ime:keyUp",
+            {
+              "interrupted": "none",
+              "composing": false,
+              "session": 4,
+              "historyTransaction": false,
+              "discarded": true,
+              "provisional": false,
+              "terminal": "empty",
+              "pendingCommit": true,
+              "historyRedo": 1,
+              "epoch": 1,
+              "awaiting": "none",
+              "historyUndo": 1,
+              "generation": 1,
+              "revision": 24
+            }
+          ],
+          [
+            70,
+            67460,
+            "rhwp:surface-render",
+            null
+          ],
+          [
+            71,
+            67460,
+            "rhwp:surface-render",
+            null
+          ],
+          [
+            72,
+            67469,
+            "rhwp:surface-effect",
+            null
+          ],
+          [
+            73,
+            67469,
+            "rhwp:surface-first-draw",
+            {
+              "page": 0,
+              "ms": 0
+            }
+          ],
+          [
+            74,
+            67470,
+            "rhwp:commit-ack",
+            {
+              "session": 4,
+              "ms": 54,
+              "generation": 1
+            }
+          ],
+          [
+            75,
+            67472,
+            "rhwp:surface-render",
+            null
+          ],
+          [
+            76,
+            67472,
+            "rhwp:surface-render",
+            null
+          ],
+          [
+            77,
+            67474,
+            "rhwp:surface-effect",
+            null
+          ],
+          [
+            78,
+            67493,
+            "dom:keyup",
+            {
+              "composing": false,
+              "keyCode": 90,
+              "code": "KeyZ",
+              "key": "char"
+            }
+          ],
+          [
+            79,
+            67493,
+            "ime:keyUp",
+            {
+              "interrupted": "none",
+              "composing": false,
+              "session": 4,
+              "historyTransaction": false,
+              "discarded": true,
+              "provisional": false,
+              "terminal": "empty",
+              "pendingCommit": false,
+              "historyRedo": 1,
+              "epoch": 1,
+              "awaiting": "none",
+              "historyUndo": 1,
+              "generation": 1,
+              "revision": 24
+            }
+          ],
+          [
+            80,
+            67925,
+            "rhwp:surface-render",
+            null
+          ],
+          [
+            81,
+            67926,
+            "rhwp:surface-render",
+            null
+          ],
+          [
+            82,
+            67926,
+            "rhwp:surface-effect",
+            null
+          ],
+          [
+            83,
+            67975,
+            "rhwp:surface-render",
+            null
+          ],
+          [
+            84,
+            67975,
+            "rhwp:surface-render",
+            null
+          ],
+          [
+            85,
+            67976,
+            "rhwp:surface-effect",
+            null
+          ]
+        ],
+        "seq": 85,
+        "dropped": 0
+      }
+    },
+    "nativeFinalGapMatrix": {
+      "hwp": [
+        {
+          "mode": "key",
+          "amountMs": 0,
+          "windowObserved": false,
+          "acceptedAfterFinal": true,
+          "safe": true,
+          "revisionDelta": 2,
+          "emptyEnds": 1,
+          "finalInserts": 1,
+          "order": [
+            "insertCompositionText:1",
+            "insertCompositionText:1",
+            "deleteCompositionText:0",
+            "end0",
+            "awaiting:this",
+            "insertFromComposition:1",
+            "end1",
+            "awaiting:none",
+            "mod:ControlLeft",
+            "mod:KeyZ",
+            "undoReq:None",
+            "undoDispatch:True"
+          ],
+          "finalDispatch": [
+            {
+              "task": true,
+              "keyBeforeFinal": "Unidentified",
+              "finalAfterTask": false,
+              "endAt": 89515,
+              "finalAt": 15
+            }
+          ]
+        },
+        {
+          "mode": "key",
+          "amountMs": 1,
+          "windowObserved": false,
+          "acceptedAfterFinal": true,
+          "safe": true,
+          "revisionDelta": 2,
+          "emptyEnds": 1,
+          "finalInserts": 1,
+          "order": [
+            "insertCompositionText:1",
+            "insertCompositionText:1",
+            "deleteCompositionText:0",
+            "end0",
+            "awaiting:this",
+            "insertFromComposition:1",
+            "end1",
+            "awaiting:none",
+            "mod:ControlLeft",
+            "mod:KeyZ",
+            "undoReq:None",
+            "undoDispatch:True"
+          ],
+          "finalDispatch": [
+            {
+              "task": true,
+              "keyBeforeFinal": "Unidentified",
+              "finalAfterTask": false,
+              "endAt": 93152,
+              "finalAt": 22
+            }
+          ]
+        },
+        {
+          "mode": "key",
+          "amountMs": 3,
+          "windowObserved": false,
+          "acceptedAfterFinal": true,
+          "safe": true,
+          "revisionDelta": 2,
+          "emptyEnds": 1,
+          "finalInserts": 1,
+          "order": [
+            "insertCompositionText:1",
+            "insertCompositionText:1",
+            "deleteCompositionText:0",
+            "end0",
+            "awaiting:this",
+            "insertFromComposition:1",
+            "end1",
+            "awaiting:none",
+            "mod:ControlLeft",
+            "mod:KeyZ",
+            "undoReq:None",
+            "undoDispatch:True"
+          ],
+          "finalDispatch": [
+            {
+              "task": true,
+              "keyBeforeFinal": "Unidentified",
+              "finalAfterTask": false,
+              "endAt": 96870,
+              "finalAt": 21
+            }
+          ]
+        },
+        {
+          "mode": "key",
+          "amountMs": 8,
+          "windowObserved": false,
+          "acceptedAfterFinal": true,
+          "safe": true,
+          "revisionDelta": 2,
+          "emptyEnds": 1,
+          "finalInserts": 1,
+          "order": [
+            "insertCompositionText:1",
+            "insertCompositionText:1",
+            "deleteCompositionText:0",
+            "end0",
+            "awaiting:this",
+            "insertFromComposition:1",
+            "end1",
+            "awaiting:none",
+            "mod:ControlLeft",
+            "mod:KeyZ",
+            "undoReq:None",
+            "undoDispatch:True"
+          ],
+          "finalDispatch": [
+            {
+              "task": true,
+              "keyBeforeFinal": "Unidentified",
+              "finalAfterTask": false,
+              "endAt": 100551,
+              "finalAt": 22
+            }
+          ]
+        },
+        {
+          "mode": "key",
+          "amountMs": 15,
+          "windowObserved": false,
+          "acceptedAfterFinal": true,
+          "safe": true,
+          "revisionDelta": 2,
+          "emptyEnds": 1,
+          "finalInserts": 1,
+          "order": [
+            "insertCompositionText:1",
+            "insertCompositionText:1",
+            "deleteCompositionText:0",
+            "end0",
+            "awaiting:this",
+            "insertFromComposition:1",
+            "end1",
+            "awaiting:none",
+            "mod:ControlLeft",
+            "mod:KeyZ",
+            "undoReq:None",
+            "undoDispatch:True"
+          ],
+          "finalDispatch": [
+            {
+              "task": true,
+              "keyBeforeFinal": "Unidentified",
+              "finalAfterTask": false,
+              "endAt": 104141,
+              "finalAt": 21
+            }
+          ]
+        },
+        {
+          "mode": "earlyCtrl",
+          "amountMs": 0,
+          "windowObserved": false,
+          "acceptedAfterFinal": true,
+          "safe": true,
+          "revisionDelta": 2,
+          "emptyEnds": 1,
+          "finalInserts": 1,
+          "order": [
+            "insertCompositionText:1",
+            "insertCompositionText:1",
+            "deleteCompositionText:0",
+            "end0",
+            "awaiting:this",
+            "insertFromComposition:1",
+            "end1",
+            "awaiting:none",
+            "mod:ControlLeft",
+            "mod:KeyZ",
+            "undoReq:None",
+            "undoDispatch:True"
+          ],
+          "finalDispatch": [
+            {
+              "task": true,
+              "keyBeforeFinal": "Unidentified",
+              "finalAfterTask": false,
+              "endAt": 107732,
+              "finalAt": 21
+            }
+          ]
+        },
+        {
+          "mode": "earlyCtrl",
+          "amountMs": 10,
+          "windowObserved": false,
+          "acceptedAfterFinal": true,
+          "safe": true,
+          "revisionDelta": 2,
+          "emptyEnds": 1,
+          "finalInserts": 1,
+          "order": [
+            "insertCompositionText:1",
+            "insertCompositionText:1",
+            "deleteCompositionText:0",
+            "end0",
+            "awaiting:this",
+            "insertFromComposition:1",
+            "end1",
+            "awaiting:none",
+            "mod:ControlLeft",
+            "mod:KeyZ",
+            "undoReq:None",
+            "undoDispatch:True"
+          ],
+          "finalDispatch": [
+            {
+              "task": true,
+              "keyBeforeFinal": "Unidentified",
+              "finalAfterTask": false,
+              "endAt": 111399,
+              "finalAt": 13
+            }
+          ]
+        },
+        {
+          "mode": "earlyCtrl",
+          "amountMs": 30,
+          "windowObserved": false,
+          "acceptedAfterFinal": true,
+          "safe": true,
+          "revisionDelta": 2,
+          "emptyEnds": 1,
+          "finalInserts": 1,
+          "order": [
+            "insertCompositionText:1",
+            "insertCompositionText:1",
+            "deleteCompositionText:0",
+            "end0",
+            "awaiting:this",
+            "insertFromComposition:1",
+            "end1",
+            "awaiting:none",
+            "mod:ControlLeft",
+            "mod:KeyZ",
+            "undoReq:None",
+            "undoDispatch:True"
+          ],
+          "finalDispatch": [
+            {
+              "task": true,
+              "keyBeforeFinal": "Unidentified",
+              "finalAfterTask": true,
+              "endAt": 115076,
+              "finalAt": 14
+            }
+          ]
+        },
+        {
+          "mode": "pointer",
+          "amountMs": 0,
+          "windowObserved": false,
+          "acceptedAfterFinal": true,
+          "safe": true,
+          "revisionDelta": 2,
+          "emptyEnds": 0,
+          "finalInserts": 2,
+          "order": [
+            "insertCompositionText:1",
+            "insertCompositionText:1",
+            "deleteCompositionText:0",
+            "insertFromComposition:1",
+            "end1",
+            "awaiting:none",
+            "insertFromComposition:1",
+            "end1",
+            "awaiting:none",
+            "mod:ControlLeft",
+            "mod:KeyZ",
+            "undoReq:None",
+            "undoDispatch:True"
+          ],
+          "finalDispatch": []
+        },
+        {
+          "mode": "pointer",
+          "amountMs": 2,
+          "windowObserved": false,
+          "acceptedAfterFinal": true,
+          "safe": true,
+          "revisionDelta": 2,
+          "emptyEnds": 0,
+          "finalInserts": 2,
+          "order": [
+            "insertCompositionText:1",
+            "insertCompositionText:1",
+            "deleteCompositionText:0",
+            "insertFromComposition:1",
+            "end1",
+            "awaiting:none",
+            "insertFromComposition:1",
+            "end1",
+            "awaiting:none",
+            "mod:ControlLeft",
+            "mod:KeyZ",
+            "undoReq:None",
+            "undoDispatch:True"
+          ],
+          "finalDispatch": []
+        },
+        {
+          "mode": "stall",
+          "amountMs": 15,
+          "windowObserved": false,
+          "acceptedAfterFinal": true,
+          "safe": true,
+          "revisionDelta": 2,
+          "emptyEnds": 1,
+          "finalInserts": 1,
+          "order": [
+            "insertCompositionText:1",
+            "insertCompositionText:1",
+            "deleteCompositionText:0",
+            "end0",
+            "awaiting:this",
+            "insertFromComposition:1",
+            "end1",
+            "awaiting:none",
+            "mod:ControlLeft",
+            "mod:KeyZ",
+            "undoReq:None",
+            "undoDispatch:True"
+          ],
+          "finalDispatch": [
+            {
+              "task": true,
+              "keyBeforeFinal": "Unidentified",
+              "finalAfterTask": false,
+              "endAt": 126140,
+              "finalAt": 27
+            }
+          ]
+        },
+        {
+          "mode": "stall",
+          "amountMs": 40,
+          "windowObserved": false,
+          "acceptedAfterFinal": true,
+          "safe": true,
+          "revisionDelta": 2,
+          "emptyEnds": 1,
+          "finalInserts": 1,
+          "order": [
+            "insertCompositionText:1",
+            "insertCompositionText:1",
+            "deleteCompositionText:0",
+            "end0",
+            "awaiting:this",
+            "insertFromComposition:1",
+            "end1",
+            "awaiting:none",
+            "mod:ControlLeft",
+            "mod:KeyZ",
+            "undoReq:None",
+            "undoDispatch:True"
+          ],
+          "finalDispatch": [
+            {
+              "task": true,
+              "keyBeforeFinal": "Unidentified",
+              "finalAfterTask": false,
+              "endAt": 129832,
+              "finalAt": 26
+            }
+          ]
+        },
+        {
+          "mode": "stall",
+          "amountMs": 120,
+          "windowObserved": false,
+          "acceptedAfterFinal": true,
+          "safe": true,
+          "revisionDelta": 2,
+          "emptyEnds": 1,
+          "finalInserts": 1,
+          "order": [
+            "insertCompositionText:1",
+            "insertCompositionText:1",
+            "deleteCompositionText:0",
+            "end0",
+            "awaiting:this",
+            "insertFromComposition:1",
+            "end1",
+            "awaiting:none",
+            "mod:ControlLeft",
+            "mod:KeyZ",
+            "undoReq:None",
+            "undoDispatch:True"
+          ],
+          "finalDispatch": [
+            {
+              "task": true,
+              "keyBeforeFinal": "Unidentified",
+              "finalAfterTask": false,
+              "endAt": 133665,
+              "finalAt": 27
+            }
+          ]
+        },
+        {
+          "mode": "stallAfterCtrl",
+          "amountMs": 0,
+          "windowObserved": false,
+          "acceptedAfterFinal": true,
+          "safe": true,
+          "revisionDelta": 2,
+          "emptyEnds": 1,
+          "finalInserts": 1,
+          "order": [
+            "insertCompositionText:1",
+            "insertCompositionText:1",
+            "deleteCompositionText:0",
+            "end0",
+            "awaiting:this",
+            "insertFromComposition:1",
+            "end1",
+            "awaiting:none",
+            "mod:ControlLeft",
+            "mod:KeyZ",
+            "undoReq:None",
+            "undoDispatch:True"
+          ],
+          "finalDispatch": [
+            {
+              "task": true,
+              "keyBeforeFinal": "Unidentified",
+              "finalAfterTask": false,
+              "endAt": 137369,
+              "finalAt": 27
+            }
+          ]
+        },
+        {
+          "mode": "stallAfterCtrl",
+          "amountMs": 5,
+          "windowObserved": false,
+          "acceptedAfterFinal": true,
+          "safe": true,
+          "revisionDelta": 2,
+          "emptyEnds": 1,
+          "finalInserts": 1,
+          "order": [
+            "insertCompositionText:1",
+            "insertCompositionText:1",
+            "deleteCompositionText:0",
+            "end0",
+            "awaiting:this",
+            "insertFromComposition:1",
+            "end1",
+            "awaiting:none",
+            "mod:ControlLeft",
+            "mod:KeyZ",
+            "undoReq:None",
+            "undoDispatch:True"
+          ],
+          "finalDispatch": [
+            {
+              "task": true,
+              "keyBeforeFinal": "Unidentified",
+              "finalAfterTask": true,
+              "endAt": 141097,
+              "finalAt": 36
+            }
+          ]
+        },
+        {
+          "mode": "stallAfterCtrl",
+          "amountMs": 20,
+          "windowObserved": false,
+          "acceptedAfterFinal": true,
+          "safe": true,
+          "revisionDelta": 2,
+          "emptyEnds": 1,
+          "finalInserts": 1,
+          "order": [
+            "insertCompositionText:1",
+            "insertCompositionText:1",
+            "deleteCompositionText:0",
+            "end0",
+            "awaiting:this",
+            "insertFromComposition:1",
+            "end1",
+            "awaiting:none",
+            "mod:ControlLeft",
+            "mod:KeyZ",
+            "undoReq:None",
+            "undoDispatch:True"
+          ],
+          "finalDispatch": [
+            {
+              "task": true,
+              "keyBeforeFinal": "Unidentified",
+              "finalAfterTask": true,
+              "endAt": 144807,
+              "finalAt": 48
+            }
+          ]
+        },
+        {
+          "mode": "pointerStall",
+          "amountMs": 20,
+          "windowObserved": false,
+          "acceptedAfterFinal": true,
+          "safe": true,
+          "revisionDelta": 2,
+          "emptyEnds": 0,
+          "finalInserts": 2,
+          "order": [
+            "insertCompositionText:1",
+            "insertCompositionText:1",
+            "deleteCompositionText:0",
+            "insertFromComposition:1",
+            "end1",
+            "awaiting:none",
+            "insertFromComposition:1",
+            "end1",
+            "awaiting:none",
+            "mod:ControlLeft",
+            "mod:KeyZ",
+            "undoReq:None",
+            "undoDispatch:True"
+          ],
+          "finalDispatch": []
+        },
+        {
+          "mode": "pointerStall",
+          "amountMs": 80,
+          "windowObserved": false,
+          "acceptedAfterFinal": true,
+          "safe": true,
+          "revisionDelta": 2,
+          "emptyEnds": 0,
+          "finalInserts": 2,
+          "order": [
+            "insertCompositionText:1",
+            "insertCompositionText:1",
+            "deleteCompositionText:0",
+            "insertFromComposition:1",
+            "end1",
+            "awaiting:none",
+            "insertFromComposition:1",
+            "end1",
+            "awaiting:none",
+            "mod:ControlLeft",
+            "mod:KeyZ",
+            "undoReq:None",
+            "undoDispatch:True"
+          ],
+          "finalDispatch": []
+        }
+      ],
+      "hwpx": [
+        {
+          "mode": "key",
+          "amountMs": 0,
+          "windowObserved": false,
+          "acceptedAfterFinal": true,
+          "safe": true,
+          "revisionDelta": 2,
+          "emptyEnds": 1,
+          "finalInserts": 1,
+          "order": [
+            "insertCompositionText:1",
+            "insertCompositionText:1",
+            "deleteCompositionText:0",
+            "end0",
+            "awaiting:this",
+            "insertFromComposition:1",
+            "end1",
+            "awaiting:none",
+            "mod:ControlLeft",
+            "mod:KeyZ",
+            "undoReq:None",
+            "undoDispatch:True"
+          ],
+          "finalDispatch": [
+            {
+              "task": true,
+              "keyBeforeFinal": "Unidentified",
+              "finalAfterTask": false,
+              "endAt": 156827,
+              "finalAt": 20
+            }
+          ]
+        },
+        {
+          "mode": "key",
+          "amountMs": 1,
+          "windowObserved": false,
+          "acceptedAfterFinal": true,
+          "safe": true,
+          "revisionDelta": 2,
+          "emptyEnds": 1,
+          "finalInserts": 1,
+          "order": [
+            "insertCompositionText:1",
+            "insertCompositionText:1",
+            "deleteCompositionText:0",
+            "end0",
+            "awaiting:this",
+            "insertFromComposition:1",
+            "end1",
+            "awaiting:none",
+            "mod:ControlLeft",
+            "mod:KeyZ",
+            "undoReq:None",
+            "undoDispatch:True"
+          ],
+          "finalDispatch": [
+            {
+              "task": true,
+              "keyBeforeFinal": "Unidentified",
+              "finalAfterTask": false,
+              "endAt": 160535,
+              "finalAt": 19
+            }
+          ]
+        },
+        {
+          "mode": "key",
+          "amountMs": 3,
+          "windowObserved": false,
+          "acceptedAfterFinal": true,
+          "safe": true,
+          "revisionDelta": 2,
+          "emptyEnds": 1,
+          "finalInserts": 1,
+          "order": [
+            "insertCompositionText:1",
+            "insertCompositionText:1",
+            "deleteCompositionText:0",
+            "end0",
+            "awaiting:this",
+            "insertFromComposition:1",
+            "end1",
+            "awaiting:none",
+            "mod:ControlLeft",
+            "mod:KeyZ",
+            "undoReq:None",
+            "undoDispatch:True"
+          ],
+          "finalDispatch": [
+            {
+              "task": true,
+              "keyBeforeFinal": "Unidentified",
+              "finalAfterTask": false,
+              "endAt": 164241,
+              "finalAt": 20
+            }
+          ]
+        },
+        {
+          "mode": "key",
+          "amountMs": 8,
+          "windowObserved": false,
+          "acceptedAfterFinal": true,
+          "safe": true,
+          "revisionDelta": 2,
+          "emptyEnds": 1,
+          "finalInserts": 1,
+          "order": [
+            "insertCompositionText:1",
+            "insertCompositionText:1",
+            "deleteCompositionText:0",
+            "end0",
+            "awaiting:this",
+            "insertFromComposition:1",
+            "end1",
+            "awaiting:none",
+            "mod:ControlLeft",
+            "mod:KeyZ",
+            "undoReq:None",
+            "undoDispatch:True"
+          ],
+          "finalDispatch": [
+            {
+              "task": true,
+              "keyBeforeFinal": "Unidentified",
+              "finalAfterTask": false,
+              "endAt": 167909,
+              "finalAt": 19
+            }
+          ]
+        },
+        {
+          "mode": "key",
+          "amountMs": 15,
+          "windowObserved": false,
+          "acceptedAfterFinal": true,
+          "safe": true,
+          "revisionDelta": 2,
+          "emptyEnds": 1,
+          "finalInserts": 1,
+          "order": [
+            "insertCompositionText:1",
+            "insertCompositionText:1",
+            "deleteCompositionText:0",
+            "end0",
+            "awaiting:this",
+            "insertFromComposition:1",
+            "end1",
+            "awaiting:none",
+            "mod:ControlLeft",
+            "mod:KeyZ",
+            "undoReq:None",
+            "undoDispatch:True"
+          ],
+          "finalDispatch": [
+            {
+              "task": true,
+              "keyBeforeFinal": "Unidentified",
+              "finalAfterTask": false,
+              "endAt": 171609,
+              "finalAt": 21
+            }
+          ]
+        },
+        {
+          "mode": "earlyCtrl",
+          "amountMs": 0,
+          "windowObserved": false,
+          "acceptedAfterFinal": true,
+          "safe": true,
+          "revisionDelta": 2,
+          "emptyEnds": 1,
+          "finalInserts": 1,
+          "order": [
+            "insertCompositionText:1",
+            "insertCompositionText:1",
+            "deleteCompositionText:0",
+            "end0",
+            "awaiting:this",
+            "insertFromComposition:1",
+            "end1",
+            "awaiting:none",
+            "mod:ControlLeft",
+            "mod:KeyZ",
+            "undoReq:None",
+            "undoDispatch:True"
+          ],
+          "finalDispatch": [
+            {
+              "task": true,
+              "keyBeforeFinal": "Unidentified",
+              "finalAfterTask": false,
+              "endAt": 175253,
+              "finalAt": 19
+            }
+          ]
+        },
+        {
+          "mode": "earlyCtrl",
+          "amountMs": 10,
+          "windowObserved": false,
+          "acceptedAfterFinal": true,
+          "safe": true,
+          "revisionDelta": 2,
+          "emptyEnds": 1,
+          "finalInserts": 1,
+          "order": [
+            "insertCompositionText:1",
+            "insertCompositionText:1",
+            "deleteCompositionText:0",
+            "end0",
+            "awaiting:this",
+            "insertFromComposition:1",
+            "end1",
+            "awaiting:none",
+            "mod:ControlLeft",
+            "mod:KeyZ",
+            "undoReq:None",
+            "undoDispatch:True"
+          ],
+          "finalDispatch": [
+            {
+              "task": true,
+              "keyBeforeFinal": "Unidentified",
+              "finalAfterTask": false,
+              "endAt": 178917,
+              "finalAt": 19
+            }
+          ]
+        },
+        {
+          "mode": "earlyCtrl",
+          "amountMs": 30,
+          "windowObserved": false,
+          "acceptedAfterFinal": true,
+          "safe": true,
+          "revisionDelta": 2,
+          "emptyEnds": 1,
+          "finalInserts": 1,
+          "order": [
+            "insertCompositionText:1",
+            "insertCompositionText:1",
+            "deleteCompositionText:0",
+            "end0",
+            "awaiting:this",
+            "insertFromComposition:1",
+            "end1",
+            "awaiting:none",
+            "mod:ControlLeft",
+            "mod:KeyZ",
+            "undoReq:None",
+            "undoDispatch:True"
+          ],
+          "finalDispatch": [
+            {
+              "task": true,
+              "keyBeforeFinal": "Unidentified",
+              "finalAfterTask": false,
+              "endAt": 182610,
+              "finalAt": 20
+            }
+          ]
+        },
+        {
+          "mode": "pointer",
+          "amountMs": 0,
+          "windowObserved": false,
+          "acceptedAfterFinal": true,
+          "safe": true,
+          "revisionDelta": 2,
+          "emptyEnds": 0,
+          "finalInserts": 2,
+          "order": [
+            "insertCompositionText:1",
+            "insertCompositionText:1",
+            "deleteCompositionText:0",
+            "insertFromComposition:1",
+            "end1",
+            "awaiting:none",
+            "insertFromComposition:1",
+            "end1",
+            "awaiting:none",
+            "mod:ControlLeft",
+            "mod:KeyZ",
+            "undoReq:None",
+            "undoDispatch:True"
+          ],
+          "finalDispatch": []
+        },
+        {
+          "mode": "pointer",
+          "amountMs": 2,
+          "windowObserved": false,
+          "acceptedAfterFinal": true,
+          "safe": true,
+          "revisionDelta": 2,
+          "emptyEnds": 0,
+          "finalInserts": 2,
+          "order": [
+            "insertCompositionText:1",
+            "insertCompositionText:1",
+            "deleteCompositionText:0",
+            "insertFromComposition:1",
+            "end1",
+            "awaiting:none",
+            "insertFromComposition:1",
+            "end1",
+            "awaiting:none",
+            "mod:ControlLeft",
+            "mod:KeyZ",
+            "undoReq:None",
+            "undoDispatch:True"
+          ],
+          "finalDispatch": []
+        },
+        {
+          "mode": "stall",
+          "amountMs": 15,
+          "windowObserved": false,
+          "acceptedAfterFinal": true,
+          "safe": true,
+          "revisionDelta": 2,
+          "emptyEnds": 1,
+          "finalInserts": 1,
+          "order": [
+            "insertCompositionText:1",
+            "insertCompositionText:1",
+            "deleteCompositionText:0",
+            "end0",
+            "awaiting:this",
+            "insertFromComposition:1",
+            "end1",
+            "awaiting:none",
+            "mod:ControlLeft",
+            "mod:KeyZ",
+            "undoReq:None",
+            "undoDispatch:True"
+          ],
+          "finalDispatch": [
+            {
+              "task": true,
+              "keyBeforeFinal": "Unidentified",
+              "finalAfterTask": true,
+              "endAt": 193768,
+              "finalAt": 25
+            }
+          ]
+        },
+        {
+          "mode": "stall",
+          "amountMs": 40,
+          "windowObserved": false,
+          "acceptedAfterFinal": true,
+          "safe": true,
+          "revisionDelta": 2,
+          "emptyEnds": 1,
+          "finalInserts": 1,
+          "order": [
+            "insertCompositionText:1",
+            "insertCompositionText:1",
+            "deleteCompositionText:0",
+            "end0",
+            "awaiting:this",
+            "insertFromComposition:1",
+            "end1",
+            "awaiting:none",
+            "mod:ControlLeft",
+            "mod:KeyZ",
+            "undoReq:None",
+            "undoDispatch:True"
+          ],
+          "finalDispatch": [
+            {
+              "task": true,
+              "keyBeforeFinal": "Unidentified",
+              "finalAfterTask": false,
+              "endAt": 197606,
+              "finalAt": 23
+            }
+          ]
+        },
+        {
+          "mode": "stall",
+          "amountMs": 120,
+          "windowObserved": false,
+          "acceptedAfterFinal": true,
+          "safe": true,
+          "revisionDelta": 2,
+          "emptyEnds": 1,
+          "finalInserts": 1,
+          "order": [
+            "insertCompositionText:1",
+            "insertCompositionText:1",
+            "deleteCompositionText:0",
+            "end0",
+            "awaiting:this",
+            "insertFromComposition:1",
+            "end1",
+            "awaiting:none",
+            "mod:ControlLeft",
+            "mod:KeyZ",
+            "undoReq:None",
+            "undoDispatch:True"
+          ],
+          "finalDispatch": [
+            {
+              "task": true,
+              "keyBeforeFinal": "Unidentified",
+              "finalAfterTask": true,
+              "endAt": 201507,
+              "finalAt": 25
+            }
+          ]
+        },
+        {
+          "mode": "stallAfterCtrl",
+          "amountMs": 0,
+          "windowObserved": false,
+          "acceptedAfterFinal": true,
+          "safe": true,
+          "revisionDelta": 2,
+          "emptyEnds": 1,
+          "finalInserts": 1,
+          "order": [
+            "insertCompositionText:1",
+            "insertCompositionText:1",
+            "deleteCompositionText:0",
+            "end0",
+            "awaiting:this",
+            "insertFromComposition:1",
+            "end1",
+            "awaiting:none",
+            "mod:ControlLeft",
+            "mod:KeyZ",
+            "undoReq:None",
+            "undoDispatch:True"
+          ],
+          "finalDispatch": [
+            {
+              "task": true,
+              "keyBeforeFinal": "Unidentified",
+              "finalAfterTask": false,
+              "endAt": 205325,
+              "finalAt": 26
+            }
+          ]
+        },
+        {
+          "mode": "stallAfterCtrl",
+          "amountMs": 5,
+          "windowObserved": false,
+          "acceptedAfterFinal": true,
+          "safe": true,
+          "revisionDelta": 2,
+          "emptyEnds": 1,
+          "finalInserts": 1,
+          "order": [
+            "insertCompositionText:1",
+            "insertCompositionText:1",
+            "deleteCompositionText:0",
+            "end0",
+            "awaiting:this",
+            "insertFromComposition:1",
+            "end1",
+            "awaiting:none",
+            "mod:ControlLeft",
+            "mod:KeyZ",
+            "undoReq:None",
+            "undoDispatch:True"
+          ],
+          "finalDispatch": [
+            {
+              "task": true,
+              "keyBeforeFinal": "Unidentified",
+              "finalAfterTask": false,
+              "endAt": 209165,
+              "finalAt": 24
+            }
+          ]
+        },
+        {
+          "mode": "stallAfterCtrl",
+          "amountMs": 20,
+          "windowObserved": false,
+          "acceptedAfterFinal": true,
+          "safe": true,
+          "revisionDelta": 2,
+          "emptyEnds": 1,
+          "finalInserts": 1,
+          "order": [
+            "insertCompositionText:1",
+            "insertCompositionText:1",
+            "deleteCompositionText:0",
+            "end0",
+            "awaiting:this",
+            "insertFromComposition:1",
+            "end1",
+            "awaiting:none",
+            "mod:ControlLeft",
+            "mod:KeyZ",
+            "undoReq:None",
+            "undoDispatch:True"
+          ],
+          "finalDispatch": [
+            {
+              "task": true,
+              "keyBeforeFinal": "Unidentified",
+              "finalAfterTask": false,
+              "endAt": 212946,
+              "finalAt": 25
+            }
+          ]
+        },
+        {
+          "mode": "pointerStall",
+          "amountMs": 20,
+          "windowObserved": false,
+          "acceptedAfterFinal": true,
+          "safe": true,
+          "revisionDelta": 2,
+          "emptyEnds": 0,
+          "finalInserts": 2,
+          "order": [
+            "insertCompositionText:1",
+            "insertCompositionText:1",
+            "deleteCompositionText:0",
+            "insertFromComposition:1",
+            "end1",
+            "awaiting:none",
+            "insertFromComposition:1",
+            "end1",
+            "awaiting:none",
+            "mod:ControlLeft",
+            "mod:KeyZ",
+            "undoReq:None",
+            "undoDispatch:True"
+          ],
+          "finalDispatch": []
+        },
+        {
+          "mode": "pointerStall",
+          "amountMs": 80,
+          "windowObserved": false,
+          "acceptedAfterFinal": true,
+          "safe": true,
+          "revisionDelta": 2,
+          "emptyEnds": 0,
+          "finalInserts": 2,
+          "order": [
+            "insertCompositionText:1",
+            "insertCompositionText:1",
+            "deleteCompositionText:0",
+            "insertFromComposition:1",
+            "end1",
+            "awaiting:none",
+            "insertFromComposition:1",
+            "end1",
+            "awaiting:none",
+            "mod:ControlLeft",
+            "mod:KeyZ",
+            "undoReq:None",
+            "undoDispatch:True"
+          ],
+          "finalDispatch": []
+        }
+      ]
+    },
+    "nativeFinalGapEnvironment": {
+      "ibusSyncMode": "1",
+      "hangulEventForwarding": "false"
+    }
+  },
+  "classification": "INCONCLUSIVE",
+  "engineIdentity": {
+    "wasmSha256": "97a575093aab7fde6400e3ce2a1c3ec243de28645f49ce27a55286ca8dff37e2",
+    "baseline": "1a76570e833917d15817415a53c09ad61ab3203f"
+  },
+  "lastObserved": {
+    "throwAfterDiscard": null,
+    "status": null,
+    "snapshotCalls": [
+      {
+        "ms": 0,
+        "name": "restoreSnapshot",
+        "at": 213059
+      },
+      {
+        "ms": 1,
+        "name": "restoreSnapshot",
+        "at": 213827
+      },
+      {
+        "ms": 0,
+        "name": "restoreSnapshot",
+        "at": 214595
+      },
+      {
+        "ms": 1,
+        "name": "restoreSnapshot",
+        "at": 214690
+      },
+      {
+        "ms": 0,
+        "name": "discardSnapshot",
+        "at": 215671
+      },
+      {
+        "ms": 0,
+        "name": "discardSnapshot",
+        "at": 215671
+      },
+      {
+        "ms": 0,
+        "name": "saveSnapshot",
+        "at": 216563
+      },
+      {
+        "ms": 0,
+        "name": "saveSnapshot",
+        "at": 216835
+      },
+      {
+        "ms": 1,
+        "name": "restoreSnapshot",
+        "at": 216835
+      },
+      {
+        "ms": 1,
+        "name": "restoreSnapshot",
+        "at": 217575
+      },
+      {
+        "ms": 1,
+        "name": "restoreSnapshot",
+        "at": 218342
+      },
+      {
+        "ms": 1,
+        "name": "restoreSnapshot",
+        "at": 218439
+      },
+      {
+        "ms": 0,
+        "name": "discardSnapshot",
+        "at": 219418
+      },
+      {
+        "ms": 0,
+        "name": "discardSnapshot",
+        "at": 219418
+      },
+      {
+        "ms": 0,
+        "name": "saveSnapshot",
+        "at": 220240
+      },
+      {
+        "ms": 0,
+        "name": "saveSnapshot",
+        "at": 220573
+      },
+      {
+        "ms": 0,
+        "name": "restoreSnapshot",
+        "at": 220574
+      },
+      {
+        "ms": 1,
+        "name": "restoreSnapshot",
+        "at": 221336
+      },
+      {
+        "ms": 1,
+        "name": "restoreSnapshot",
+        "at": 222122
+      },
+      {
+        "ms": 1,
+        "name": "restoreSnapshot",
+        "at": 222220
+      }
+    ],
+    "owners": [
+      {
+        "discards": 0,
+        "nativeCapacity": null,
+        "id": 1,
+        "saves": 0,
+        "live": 0
+      }
+    ],
+    "jobs": {
+      "decodedSharedLookups": 0,
+      "pendingCount": 0,
+      "cancellations": 0,
+      "decodedLedger": {
+        "accountingErrors": 0,
+        "residentBytes": 0,
+        "refusedReservations": 0,
+        "uniqueCount": 0,
+        "created": 0,
+        "jobLeaseReferenceBytes": 0,
+        "maxNonresidentBytes": 100663296,
+        "preallocationRejections": 0,
+        "reservedBytes": 0,
+        "residentCount": 0,
+        "decodedCacheMaxEntries": 256,
+        "jobLeaseReferences": 0,
+        "decodedCacheMaxBytes": 268435456,
+        "peakTreePayloadEstimatedBytes": 0,
+        "lastTreeSharedFontBytes": 0,
+        "dimensionMismatches": 0,
+        "unenforcedOverLimit": 0,
+        "estimate": "RGBA backing estimates; not RSS, GPU or browser allocator memory",
+        "peakUniquePlusReservedBytes": 0,
+        "unreservedDecodes": 0,
+        "uniqueBytes": 0,
+        "peakDecodeTransientEstimatedBytes": 0,
+        "lastTreePayloadEstimatedBytes": 0,
+        "rejectedCommits": 0,
+        "nonresidentCount": 0,
+        "disposed": 0,
+        "nonresidentBytes": 0,
+        "postDecodeReservations": 0
+      },
+      "peakTemporaryCanvasBytes": 3875040,
+      "listenerNotifications": 0,
+      "peakStagingBytes": 7750080,
+      "inFlightEstimatedBytes": 0,
+      "capacityNotifications": 0,
+      "maxFrameBytes": 67108864,
+      "expiryTimerTicks": 0,
+      "resourceLimits": 0,
+      "expiryTimerActive": false,
+      "decodedRegistryEntries": 0,
+      "decodedAttachRefusals": 0,
+      "expiryTimerStarts": 642,
+      "decodedRevocations": 0,
+      "activeLeaseEstimatedBytes": 0,
+      "backupImageDataBytes": 0,
+      "activeJobs": 0,
+      "activeLeaseCount": 0,
+      "decodedRegistryLive": 0,
+      "retryCount": 0,
+      "maxJobDecodedLeases": 256,
+      "preparation": {
+        "resourceQuantum": 4,
+        "enabled": false,
+        "peakBytes": 0,
+        "stepQuantum": 256,
+        "maxJobBytes": 33554432,
+        "maxOwnedBytes": 67108864,
+        "jobs": [],
+        "notifications": 0,
+        "ownedBytes": 0
+      },
+      "maxPending": 2,
+      "transientEstimatedBytes": 0,
+      "loadAttempts": 0,
+      "uniqueResourceCount": 0,
+      "readyLeaseCount": 0,
+      "maxJobLeaseEntries": 0,
+      "maxOwnedBytes": 268435456,
+      "maxStagingBytes": 134217728,
+      "temporaryCanvasBytes": 0,
+      "ownedEstimatedBytes": 0,
+      "maxResources": 256,
+      "errors": 0,
+      "peakBackupImageDataBytes": 3875040,
+      "completionNotifications": 0
+    },
+    "identity": {
+      "wasmSha256": "97a575093aab7fde6400e3ce2a1c3ec243de28645f49ce27a55286ca8dff37e2",
+      "baseline": "1a76570e833917d15817415a53c09ad61ab3203f"
+    }
+  },
+  "driverLogTail": "",
+  "ibusLogTail": "portal is not running: GDBus.Error:org.freedesktop.DBus.Error.ServiceUnknown: The name org.freedesktop.portal.IBus was not provided by any .service files\n",
+  "nativeHelperAssertions": [],
+  "historyGates": [
+    {
+      "gate": "D2",
+      "item": "hwp: 선택 없는 취소는 문서/판/기록을 만들지 않음",
+      "result": "PASS",
+      "detail": ""
+    },
+    {
+      "gate": "D2",
+      "item": "hwp: 부분 Backspace는 하를 잃지 않고 학으로 확정·Undo",
+      "result": "PASS",
+      "detail": ""
+    },
+    {
+      "gate": "D2",
+      "item": "hwp: 여러 자모를 모두 취소해도 revision/기록 추가 없음",
+      "result": "PASS",
+      "detail": ""
+    },
+    {
+      "gate": "D2",
+      "item": "hwp: 조합 중 Ctrl+Z가 조합을 깨지 않음",
+      "result": "PASS",
+      "detail": "조합 중=true, 결과 되돌림"
+    },
+    {
+      "gate": "D2",
+      "item": "hwp: 확정한 조합(한글) Ctrl+Z → 한 단계로 되돌림, Ctrl+Y → 정확히 복원",
+      "result": "PASS",
+      "detail": "넣은 글자 수 2, revision 6→7→8"
+    },
+    {
+      "gate": "D2",
+      "item": "hwp: 이어진 한글 음절은 한 단계, 앞 그룹과 경계 유지",
+      "result": "PASS",
+      "detail": "단계별 글자 수 [8, 2, 0]"
+    },
+    {
+      "gate": "D2",
+      "item": "hwp: 선택을 조합으로 바꾸다 취소 → 바로 Ctrl+Z가 선택 글자를 되살림",
+      "result": "PASS",
+      "detail": "선택=True, 취소 뒤 글자 수 0, Ctrl+Z 뒤 2 (model cancellation={'expectedLength': 15, 'actualLength': 15, 'equals': True, 'paragraph': 1, 'section': 0, 'revision': 19}, before={'equals': True, 'paragraph': 1, 'section': 0, 'expectedLength': 17, 'actualLength': 17})"
+    },
+    {
+      "gate": "D2",
+      "item": "hwp: 취소 직후 Undo의 Ctrl+Y/Ctrl+Shift+Z와 정확한 선택 복원",
+      "result": "PASS",
+      "detail": ""
+    },
+    {
+      "gate": "D2",
+      "item": "hwp: native 1ms Backspace→Ctrl+Z, 원래 선택/글자와 revision+2",
+      "result": "PASS",
+      "detail": ""
+    },
+    {
+      "gate": "D2",
+      "item": "hwp: 조합 중 클릭(앱 확정·늦은 최종 글자) 뒤 Ctrl+Z → 그 조합만 되돌리고 Ctrl+Y → 복원",
+      "result": "PASS",
+      "detail": "클릭 뒤 글자 수 +1"
+    },
+    {
+      "gate": "D2",
+      "item": "hwp: 조합 중 초점 잃음 뒤 돌아와 친 글자는 따로 된 단계(첫 Ctrl+Z가 뒤 글자만)",
+      "result": "PASS",
+      "detail": "초점 잃음 뒤 +1, 돌아온 뒤 +2, Ctrl+Z 뒤 +1 (초점 잃음은 입력 칸 blur — 창 초점 이동이 아님)"
+    },
+    {
+      "gate": "D2",
+      "item": "hwp: 빠른 연속 한글 → 음절 누락 없음, Ctrl+Z 한 번, Ctrl+Y 정확히",
+      "result": "PASS",
+      "detail": "넣은 글자 수 5"
+    },
+    {
+      "gate": "D2",
+      "item": "hwpx: 선택 없는 취소는 문서/판/기록을 만들지 않음",
+      "result": "PASS",
+      "detail": ""
+    },
+    {
+      "gate": "D2",
+      "item": "hwpx: 부분 Backspace는 하를 잃지 않고 학으로 확정·Undo",
+      "result": "PASS",
+      "detail": ""
+    },
+    {
+      "gate": "D2",
+      "item": "hwpx: 여러 자모를 모두 취소해도 revision/기록 추가 없음",
+      "result": "PASS",
+      "detail": ""
+    },
+    {
+      "gate": "D2",
+      "item": "hwpx: 조합 중 Ctrl+Z가 조합을 깨지 않음",
+      "result": "PASS",
+      "detail": "조합 중=true, 결과 되돌림"
+    },
+    {
+      "gate": "D2",
+      "item": "hwpx: 확정한 조합(한글) Ctrl+Z → 한 단계로 되돌림, Ctrl+Y → 정확히 복원",
+      "result": "PASS",
+      "detail": "넣은 글자 수 2, revision 6→7→8"
+    },
+    {
+      "gate": "D2",
+      "item": "hwpx: 이어진 한글 음절은 한 단계, 앞 그룹과 경계 유지",
+      "result": "PASS",
+      "detail": "단계별 글자 수 [8, 2, 0]"
+    },
+    {
+      "gate": "D2",
+      "item": "hwpx: 선택을 조합으로 바꾸다 취소 → 바로 Ctrl+Z가 선택 글자를 되살림",
+      "result": "PASS",
+      "detail": "선택=True, 취소 뒤 글자 수 0, Ctrl+Z 뒤 2 (model cancellation={'expectedLength': 15, 'actualLength': 15, 'equals': True, 'paragraph': 1, 'section': 0, 'revision': 19}, before={'equals': True, 'paragraph': 1, 'section': 0, 'expectedLength': 17, 'actualLength': 17})"
+    },
+    {
+      "gate": "D2",
+      "item": "hwpx: 취소 직후 Undo의 Ctrl+Y/Ctrl+Shift+Z와 정확한 선택 복원",
+      "result": "PASS",
+      "detail": ""
+    },
+    {
+      "gate": "D2",
+      "item": "hwpx: native 1ms Backspace→Ctrl+Z, 원래 선택/글자와 revision+2",
+      "result": "PASS",
+      "detail": ""
+    },
+    {
+      "gate": "D2",
+      "item": "hwpx: 조합 중 클릭(앱 확정·늦은 최종 글자) 뒤 Ctrl+Z → 그 조합만 되돌리고 Ctrl+Y → 복원",
+      "result": "PASS",
+      "detail": "클릭 뒤 글자 수 +1"
+    },
+    {
+      "gate": "D2",
+      "item": "hwpx: 조합 중 초점 잃음 뒤 돌아와 친 글자는 따로 된 단계(첫 Ctrl+Z가 뒤 글자만)",
+      "result": "PASS",
+      "detail": "초점 잃음 뒤 +1, 돌아온 뒤 +2, Ctrl+Z 뒤 +1 (초점 잃음은 입력 칸 blur — 창 초점 이동이 아님)"
+    },
+    {
+      "gate": "D2",
+      "item": "hwpx: 빠른 연속 한글 → 음절 누락 없음, Ctrl+Z 한 번, Ctrl+Y 정확히",
+      "result": "PASS",
+      "detail": "넣은 글자 수 5"
+    },
+    {
+      "gate": "D2",
+      "item": "실행 취소·다시 실행 뒤 닫고 다시 열면 Ctrl+Z가 아무것도 바꾸지 않음",
+      "result": "PASS",
+      "detail": ""
+    },
+    {
+      "gate": "D2",
+      "item": "hwp: native 순서 행렬(18회) 빈 끝~late final 사이 Ctrl+Z",
+      "result": "INCONCLUSIVE",
+      "detail": "safe=True, window observed=False"
+    },
+    {
+      "gate": "D2",
+      "item": "hwpx: native 순서 행렬(18회) 빈 끝~late final 사이 Ctrl+Z",
+      "result": "INCONCLUSIVE",
+      "detail": "safe=True, window observed=False"
+    }
+  ],
+  "historyChecks": []
+}

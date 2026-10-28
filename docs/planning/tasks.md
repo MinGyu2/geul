@@ -252,3 +252,7 @@ no-new-input witness는 queued work를 포함할 수 있어 물리 frame floor�
 D3 현재 저장 PASS, D5 archived PASS, RSS INCONCLUSIVE. backend T009 HWM은 T010 RSS와 별개다.
 증거: `tests/integration/rhwp/evidence/t010-native-gate-remediation/`.
 Undo/Redo NO-GO·formatting unsupported·T010 미체크·T011 NOT STARTED. 설치/다운로드/push/anchor·gitlink 변경 없음.
+
+### T010 후속 현재 판정 (2026-10-28)
+
+시험 어댑터에서 손실된 레이어 요약에 의한 revision 간 재사용을 차단했다. 현재 후보의 D1은 승인 기준 v2로 39/39 단언·24/24 정확 RGBA PASS, D3 저장 검증 및 native D5 폐기 예외 검증도 통과했다. 실제 IBus 동기 모드 추가 시험에서도 필수 지연 순서는 미관측되어 D2 INCONCLUSIVE다. 최신 공식 D4의 group-start p95는 기본 HWP/HWPX 45/45 ms, 화학 114 ms, 자산 81 ms로 FAIL이다. 정확한 페이지별 신원과 전체 영향 페이지 검증이 남아 T010 및 선행 T007–T009는 체크하지 않으며 제품 RHWP Undo/Redo는 NO-GO, T011은 BLOCKED다. 근거: `tests/integration/rhwp/evidence/t010-continuation-20261028/REPORT.ko.md`.

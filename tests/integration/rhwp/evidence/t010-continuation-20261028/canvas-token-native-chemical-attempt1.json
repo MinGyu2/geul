@@ -1,0 +1,646 @@
+{
+  "status": "PASS",
+  "tests": [
+    {
+      "name": "bootstrap-clean-close",
+      "status": "PASS"
+    },
+    {
+      "name": "연구노트(화학).hwp-warm-full-reference-exact",
+      "status": "PASS",
+      "reference": {
+        "strongPixels": 0,
+        "pixels": 0,
+        "edgePixels": 0,
+        "height": 585,
+        "surface": "attached page Canvas readback",
+        "width": 414,
+        "verified": true,
+        "maxDelta": 0,
+        "oracle": "authoritative model full replay; browser historical full pixels independently pinned-verified"
+      }
+    },
+    {
+      "name": "연구노트(화학).hwp-typed-10-full-reference-exact",
+      "status": "PASS",
+      "reference": {
+        "strongPixels": 0,
+        "pixels": 0,
+        "edgePixels": 0,
+        "height": 585,
+        "surface": "attached page Canvas readback",
+        "width": 414,
+        "verified": true,
+        "maxDelta": 0,
+        "oracle": "authoritative model full replay; browser historical full pixels independently pinned-verified"
+      }
+    },
+    {
+      "name": "연구노트(화학).hwp-typed-20-full-reference-exact",
+      "status": "PASS",
+      "reference": {
+        "strongPixels": 0,
+        "pixels": 0,
+        "edgePixels": 0,
+        "height": 585,
+        "surface": "attached page Canvas readback",
+        "width": 414,
+        "verified": true,
+        "maxDelta": 0,
+        "oracle": "authoritative model full replay; browser historical full pixels independently pinned-verified"
+      }
+    },
+    {
+      "name": "연구노트(화학).hwp-typed-30-full-reference-exact",
+      "status": "PASS",
+      "reference": {
+        "strongPixels": 0,
+        "pixels": 0,
+        "edgePixels": 0,
+        "height": 585,
+        "surface": "attached page Canvas readback",
+        "width": 414,
+        "verified": true,
+        "maxDelta": 0,
+        "oracle": "authoritative model full replay; browser historical full pixels independently pinned-verified"
+      }
+    },
+    {
+      "name": "연구노트(화학).hwp-original-empty-paragraph-restored",
+      "status": "PASS",
+      "undoSteps": 1
+    },
+    {
+      "name": "연구노트(화학).hwp-undo-caret-visible",
+      "status": "PASS",
+      "caret": "0:23:0",
+      "knownOriginalEndpointFailureEvidence": null
+    },
+    {
+      "name": "연구노트(화학).hwp-undo-full-reference-exact",
+      "status": "PASS",
+      "reference": {
+        "strongPixels": 0,
+        "pixels": 0,
+        "edgePixels": 0,
+        "height": 585,
+        "surface": "attached page Canvas readback",
+        "width": 414,
+        "verified": true,
+        "maxDelta": 0,
+        "oracle": "authoritative model full replay; browser historical full pixels independently pinned-verified"
+      }
+    },
+    {
+      "name": "연구노트(화학).hwp-redo-full-reference-exact",
+      "status": "PASS",
+      "reference": {
+        "strongPixels": 0,
+        "pixels": 0,
+        "edgePixels": 0,
+        "height": 585,
+        "surface": "attached page Canvas readback",
+        "width": 414,
+        "verified": true,
+        "maxDelta": 0,
+        "oracle": "authoritative model full replay; browser historical full pixels independently pinned-verified"
+      }
+    },
+    {
+      "name": "연구노트(화학).hwp-history-model-caret",
+      "status": "PASS"
+    },
+    {
+      "name": "연구노트(화학).hwp-original-preserved",
+      "status": "PASS"
+    },
+    {
+      "name": "native-final-resource-cleanup",
+      "status": "PASS"
+    }
+  ],
+  "scope": "actual candidate native performance fixtures, same zoom50/warmup3/caret region; separate correctness run, no latency claim",
+  "selectedSamples": [
+    "연구노트(화학).hwp"
+  ],
+  "diagnosticContinuation": false,
+  "cleanup": {
+    "sessionEnded": true,
+    "driverStopped": true,
+    "displayTerminated": true
+  },
+  "observerAliasDiagnostic": {
+    "sameConstructor": false,
+    "resources": [
+      "/__ownership_candidate__/rhwp.js?import",
+      "/__ownership_candidate__/rhwp.js"
+    ]
+  },
+  "visualReferences": [
+    {
+      "strongPixels": 0,
+      "pixels": 0,
+      "edgePixels": 0,
+      "height": 585,
+      "surface": "attached page Canvas readback",
+      "width": 414,
+      "verified": true,
+      "maxDelta": 0,
+      "oracle": "authoritative model full replay; browser historical full pixels independently pinned-verified",
+      "name": "연구노트(화학).hwp-warm",
+      "sample": "연구노트(화학).hwp",
+      "frame": "warm"
+    },
+    {
+      "strongPixels": 0,
+      "pixels": 0,
+      "edgePixels": 0,
+      "height": 585,
+      "surface": "attached page Canvas readback",
+      "width": 414,
+      "verified": true,
+      "maxDelta": 0,
+      "oracle": "authoritative model full replay; browser historical full pixels independently pinned-verified",
+      "name": "연구노트(화학).hwp-typed-10",
+      "sample": "연구노트(화학).hwp",
+      "frame": "typed-10"
+    },
+    {
+      "strongPixels": 0,
+      "pixels": 0,
+      "edgePixels": 0,
+      "height": 585,
+      "surface": "attached page Canvas readback",
+      "width": 414,
+      "verified": true,
+      "maxDelta": 0,
+      "oracle": "authoritative model full replay; browser historical full pixels independently pinned-verified",
+      "name": "연구노트(화학).hwp-typed-20",
+      "sample": "연구노트(화학).hwp",
+      "frame": "typed-20"
+    },
+    {
+      "strongPixels": 0,
+      "pixels": 0,
+      "edgePixels": 0,
+      "height": 585,
+      "surface": "attached page Canvas readback",
+      "width": 414,
+      "verified": true,
+      "maxDelta": 0,
+      "oracle": "authoritative model full replay; browser historical full pixels independently pinned-verified",
+      "name": "연구노트(화학).hwp-typed-30",
+      "sample": "연구노트(화학).hwp",
+      "frame": "typed-30"
+    },
+    {
+      "strongPixels": 0,
+      "pixels": 0,
+      "edgePixels": 0,
+      "height": 585,
+      "surface": "attached page Canvas readback",
+      "width": 414,
+      "verified": true,
+      "maxDelta": 0,
+      "oracle": "authoritative model full replay; browser historical full pixels independently pinned-verified",
+      "name": "연구노트(화학).hwp-undo",
+      "sample": "연구노트(화학).hwp",
+      "frame": "undo"
+    },
+    {
+      "strongPixels": 0,
+      "pixels": 0,
+      "edgePixels": 0,
+      "height": 585,
+      "surface": "attached page Canvas readback",
+      "width": 414,
+      "verified": true,
+      "maxDelta": 0,
+      "oracle": "authoritative model full replay; browser historical full pixels independently pinned-verified",
+      "name": "연구노트(화학).hwp-redo",
+      "sample": "연구노트(화학).hwp",
+      "frame": "redo"
+    }
+  ],
+  "documents": [
+    {
+      "sample": "연구노트(화학).hwp",
+      "sourceSha256": "6717eca43c6fdd9b0530530cf17d33b6687da0c462a433d37eb652afb5394f91",
+      "pages": 24,
+      "editedRegion": {
+        "caret": "0:3:2",
+        "page": 3
+      },
+      "zoom": 50,
+      "dpr": 1.04205322265625
+    }
+  ],
+  "engineIdentity": {
+    "wasmSha256": "97a575093aab7fde6400e3ce2a1c3ec243de28645f49ce27a55286ca8dff37e2",
+    "baseline": "1a76570e833917d15817415a53c09ad61ab3203f"
+  },
+  "adapterCounters": {
+    "polls": 511,
+    "staleDropped": 0,
+    "reused": 11,
+    "regionalPatchJobs": 0,
+    "completed": 511,
+    "unchangedFrames": 0,
+    "notifications": 0,
+    "patchJobs": 0,
+    "wholePagePatchJobs": 0,
+    "limits": 0,
+    "replacements": 0,
+    "fullJobs": 511,
+    "errors": 0,
+    "canceled": 0
+  },
+  "lastObserved": {
+    "caretHTML": null,
+    "throwAfterDiscard": null,
+    "rendering": {
+      "sessions": [],
+      "jobs": {
+        "decodedSharedLookups": 0,
+        "pendingCount": 0,
+        "cancellations": 0,
+        "decodedLedger": {
+          "accountingErrors": 0,
+          "residentBytes": 0,
+          "refusedReservations": 0,
+          "uniqueCount": 0,
+          "created": 69,
+          "jobLeaseReferenceBytes": 0,
+          "maxNonresidentBytes": 100663296,
+          "preallocationRejections": 0,
+          "reservedBytes": 0,
+          "residentCount": 0,
+          "decodedCacheMaxEntries": 256,
+          "jobLeaseReferences": 0,
+          "decodedCacheMaxBytes": 268435456,
+          "peakTreePayloadEstimatedBytes": 2168706,
+          "lastTreeSharedFontBytes": 0,
+          "dimensionMismatches": 0,
+          "unenforcedOverLimit": 0,
+          "estimate": "RGBA backing estimates; not RSS, GPU or browser allocator memory",
+          "peakUniquePlusReservedBytes": 305271452,
+          "unreservedDecodes": 0,
+          "uniqueBytes": 0,
+          "peakDecodeTransientEstimatedBytes": 103917484,
+          "lastTreePayloadEstimatedBytes": 15070,
+          "rejectedCommits": 0,
+          "nonresidentCount": 0,
+          "disposed": 69,
+          "nonresidentBytes": 0,
+          "postDecodeReservations": 0
+        },
+        "peakTemporaryCanvasBytes": 3875040,
+        "listenerNotifications": 0,
+        "peakStagingBytes": 3875040,
+        "inFlightEstimatedBytes": 0,
+        "capacityNotifications": 0,
+        "maxFrameBytes": 67108864,
+        "expiryTimerTicks": 0,
+        "resourceLimits": 0,
+        "expiryTimerActive": false,
+        "decodedRegistryEntries": 0,
+        "decodedAttachRefusals": 0,
+        "expiryTimerStarts": 483,
+        "decodedRevocations": 0,
+        "activeLeaseEstimatedBytes": 0,
+        "backupImageDataBytes": 0,
+        "activeJobs": 0,
+        "activeLeaseCount": 0,
+        "decodedRegistryLive": 0,
+        "retryCount": 0,
+        "maxJobDecodedLeases": 256,
+        "preparation": {
+          "resourceQuantum": 4,
+          "enabled": false,
+          "peakBytes": 0,
+          "stepQuantum": 256,
+          "maxJobBytes": 33554432,
+          "maxOwnedBytes": 67108864,
+          "jobs": [],
+          "notifications": 0,
+          "ownedBytes": 0
+        },
+        "maxPending": 2,
+        "transientEstimatedBytes": 0,
+        "loadAttempts": 0,
+        "uniqueResourceCount": 0,
+        "readyLeaseCount": 0,
+        "maxJobLeaseEntries": 0,
+        "maxOwnedBytes": 268435456,
+        "maxStagingBytes": 134217728,
+        "temporaryCanvasBytes": 0,
+        "ownedEstimatedBytes": 0,
+        "maxResources": 256,
+        "errors": 0,
+        "peakBackupImageDataBytes": 968760,
+        "completionNotifications": 0
+      },
+      "cache": {
+        "decoded": {
+          "maxBytes": 268435456,
+          "bytes": 0,
+          "misses": 69,
+          "maxEntryBytes": 67108864,
+          "oversize": 0,
+          "maxEntries": 256,
+          "evictions": 24,
+          "hits": 372,
+          "entries": 0,
+          "pendingEntries": 0,
+          "negativeEntries": 0,
+          "rejected": 45,
+          "transientEntries": 0
+        },
+        "images": {
+          "maxBytes": 67108864,
+          "bytes": 0,
+          "misses": 0,
+          "maxEntryBytes": 16777216,
+          "oversize": 0,
+          "maxEntries": 256,
+          "evictions": 0,
+          "hits": 0,
+          "entries": 0,
+          "pendingEntries": 0,
+          "negativeEntries": 0,
+          "rejected": 0,
+          "transientEntries": 0
+        }
+      },
+      "subscribers": 0
+    },
+    "engineCaret": null,
+    "status": null,
+    "snapshotCalls": [
+      {
+        "ms": 1,
+        "name": "saveSnapshot",
+        "at": 8375
+      },
+      {
+        "ms": 0,
+        "name": "saveSnapshot",
+        "at": 8798
+      },
+      {
+        "ms": 1,
+        "name": "saveSnapshot",
+        "at": 9166
+      },
+      {
+        "ms": 1,
+        "name": "saveSnapshot",
+        "at": 10172
+      },
+      {
+        "ms": 0,
+        "name": "saveSnapshot",
+        "at": 10529
+      },
+      {
+        "ms": 0,
+        "name": "saveSnapshot",
+        "at": 11024
+      },
+      {
+        "ms": 0,
+        "name": "saveSnapshot",
+        "at": 11446
+      },
+      {
+        "ms": 0,
+        "name": "saveSnapshot",
+        "at": 11901
+      },
+      {
+        "ms": 0,
+        "name": "saveSnapshot",
+        "at": 12361
+      },
+      {
+        "ms": 1,
+        "name": "saveSnapshot",
+        "at": 12781
+      },
+      {
+        "ms": 5,
+        "name": "discardSnapshot",
+        "at": 12784
+      },
+      {
+        "ms": 0,
+        "name": "saveSnapshot",
+        "at": 13509
+      },
+      {
+        "ms": 1,
+        "name": "discardSnapshot",
+        "at": 13510
+      },
+      {
+        "ms": 1,
+        "name": "saveSnapshot",
+        "at": 13918
+      },
+      {
+        "ms": 0,
+        "name": "discardSnapshot",
+        "at": 13920
+      },
+      {
+        "ms": 0,
+        "name": "saveSnapshot",
+        "at": 14356
+      },
+      {
+        "ms": 1,
+        "name": "discardSnapshot",
+        "at": 14357
+      },
+      {
+        "ms": 0,
+        "name": "saveSnapshot",
+        "at": 19708
+      },
+      {
+        "ms": 11,
+        "name": "restoreSnapshot",
+        "at": 19708
+      },
+      {
+        "ms": 10,
+        "name": "restoreSnapshot",
+        "at": 20456
+      }
+    ],
+    "owners": [
+      {
+        "discards": 0,
+        "nativeCapacity": null,
+        "id": 1,
+        "saves": 0,
+        "live": 0
+      }
+    ],
+    "jobs": {
+      "decodedSharedLookups": 0,
+      "pendingCount": 0,
+      "cancellations": 0,
+      "decodedLedger": {
+        "accountingErrors": 0,
+        "residentBytes": 0,
+        "refusedReservations": 0,
+        "uniqueCount": 0,
+        "created": 69,
+        "jobLeaseReferenceBytes": 0,
+        "maxNonresidentBytes": 100663296,
+        "preallocationRejections": 0,
+        "reservedBytes": 0,
+        "residentCount": 0,
+        "decodedCacheMaxEntries": 256,
+        "jobLeaseReferences": 0,
+        "decodedCacheMaxBytes": 268435456,
+        "peakTreePayloadEstimatedBytes": 2168706,
+        "lastTreeSharedFontBytes": 0,
+        "dimensionMismatches": 0,
+        "unenforcedOverLimit": 0,
+        "estimate": "RGBA backing estimates; not RSS, GPU or browser allocator memory",
+        "peakUniquePlusReservedBytes": 305271452,
+        "unreservedDecodes": 0,
+        "uniqueBytes": 0,
+        "peakDecodeTransientEstimatedBytes": 103917484,
+        "lastTreePayloadEstimatedBytes": 15070,
+        "rejectedCommits": 0,
+        "nonresidentCount": 0,
+        "disposed": 69,
+        "nonresidentBytes": 0,
+        "postDecodeReservations": 0
+      },
+      "peakTemporaryCanvasBytes": 3875040,
+      "listenerNotifications": 0,
+      "peakStagingBytes": 3875040,
+      "inFlightEstimatedBytes": 0,
+      "capacityNotifications": 0,
+      "maxFrameBytes": 67108864,
+      "expiryTimerTicks": 0,
+      "resourceLimits": 0,
+      "expiryTimerActive": false,
+      "decodedRegistryEntries": 0,
+      "decodedAttachRefusals": 0,
+      "expiryTimerStarts": 483,
+      "decodedRevocations": 0,
+      "activeLeaseEstimatedBytes": 0,
+      "backupImageDataBytes": 0,
+      "activeJobs": 0,
+      "activeLeaseCount": 0,
+      "decodedRegistryLive": 0,
+      "retryCount": 0,
+      "maxJobDecodedLeases": 256,
+      "preparation": {
+        "resourceQuantum": 4,
+        "enabled": false,
+        "peakBytes": 0,
+        "stepQuantum": 256,
+        "maxJobBytes": 33554432,
+        "maxOwnedBytes": 67108864,
+        "jobs": [],
+        "notifications": 0,
+        "ownedBytes": 0
+      },
+      "maxPending": 2,
+      "transientEstimatedBytes": 0,
+      "loadAttempts": 0,
+      "uniqueResourceCount": 0,
+      "readyLeaseCount": 0,
+      "maxJobLeaseEntries": 0,
+      "maxOwnedBytes": 268435456,
+      "maxStagingBytes": 134217728,
+      "temporaryCanvasBytes": 0,
+      "ownedEstimatedBytes": 0,
+      "maxResources": 256,
+      "errors": 0,
+      "peakBackupImageDataBytes": 968760,
+      "completionNotifications": 0
+    },
+    "identity": {
+      "wasmSha256": "97a575093aab7fde6400e3ce2a1c3ec243de28645f49ce27a55286ca8dff37e2",
+      "baseline": "1a76570e833917d15817415a53c09ad61ab3203f"
+    }
+  },
+  "existingSaveAssertions": [],
+  "historyGates": [],
+  "historyChecks": [],
+  "teardown": [
+    {
+      "sessionDeletes": [
+        {
+          "outcome": "ok",
+          "seconds": 0.009
+        }
+      ],
+      "complete": true,
+      "beforeDriverStop": [
+        {
+          "pid": 1145996,
+          "comm": "tauri-driver",
+          "state": "S",
+          "ppid": 1145978
+        },
+        {
+          "pid": 1145997,
+          "comm": "WebKitWebDriver",
+          "state": "S",
+          "ppid": 1145996
+        },
+        {
+          "pid": 1146012,
+          "comm": "WebKitNetworkPr",
+          "state": "S",
+          "ppid": 1145999
+        },
+        {
+          "pid": 1146037,
+          "comm": "WebKitWebProces",
+          "state": "S",
+          "ppid": 1145999
+        }
+      ],
+      "driverKilled": false,
+      "driverExit": 0,
+      "afterDriverStop": [
+        {
+          "pid": 1146012,
+          "comm": "WebKitNetworkPr",
+          "state": "R",
+          "ppid": 1
+        },
+        {
+          "pid": 1146037,
+          "comm": "WebKitWebProces",
+          "state": "R",
+          "ppid": 1
+        }
+      ],
+      "driverStopSeconds": 0.013,
+      "remainingAfterWait": [],
+      "sigtermSent": [],
+      "sigtermErrors": [],
+      "survivorsAfterSigterm": []
+    }
+  ],
+  "failures": [],
+  "expectedSamples": [
+    "연구노트(화학).hwp"
+  ],
+  "expectedAssertionCount": 12,
+  "expectedReferenceCount": 6,
+  "verifiedExactReferenceCount": 6,
+  "historyGateContract": "named mandatory assertions; undo_native historyGates/historyChecks not produced and must be empty",
+  "measurementComplete": true,
+  "pixelReferencesComplete": true
+}

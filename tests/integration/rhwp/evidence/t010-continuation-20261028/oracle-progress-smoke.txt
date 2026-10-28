@@ -1,0 +1,50 @@
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.21s
+     Running unittests src/lib.rs (/tmp/geul-incr-pagination/target/debug/deps/rhwp-9e371cc2f2236821)
+
+running 1 test
+GEUL_PROGRESS /tmp/geul-oracle-small/field-01-memo.hwp stage=read state=start
+GEUL_PROGRESS /tmp/geul-oracle-small/field-01-memo.hwp stage=read state=done ms=0 bytes=490496
+GEUL_PROGRESS /tmp/geul-oracle-small/field-01-memo.hwp stage=openA state=start
+GEUL_PROGRESS /tmp/geul-oracle-small/field-01-memo.hwp stage=openA state=done ms=34 ok=true
+GEUL_PROGRESS /tmp/geul-oracle-small/field-01-memo.hwp stage=openB state=start
+GEUL_PROGRESS /tmp/geul-oracle-small/field-01-memo.hwp stage=openB state=done ms=29 ok=true
+GEUL_PROGRESS /tmp/geul-oracle-small/field-01-memo.hwp stage=initial_pagination state=start pagesA=3 pagesB=3
+GEUL_PROGRESS /tmp/geul-oracle-small/field-01-memo.hwp stage=initial_pagination state=done ms=0 equal=true
+GEUL_PROGRESS /tmp/geul-oracle-small/field-01-memo.hwp stage=choose step=0 state=start
+GEUL_PROGRESS /tmp/geul-oracle-small/field-01-memo.hwp stage=choose step=0 state=done ms=0 op=Bold(0, 7, 6, 7)
+GEUL_PROGRESS /tmp/geul-oracle-small/field-01-memo.hwp stage=applyA step=0 state=start
+GEUL_PROGRESS /tmp/geul-oracle-small/field-01-memo.hwp stage=applyA step=0 state=done ms=2 ok=true
+GEUL_PROGRESS /tmp/geul-oracle-small/field-01-memo.hwp stage=applyB step=0 state=start
+GEUL_PROGRESS /tmp/geul-oracle-small/field-01-memo.hwp stage=applyB step=0 state=done ms=1 ok=true
+GEUL_PROGRESS /tmp/geul-oracle-small/field-01-memo.hwp stage=edit_pagination step=0 state=start pagesA=3 pagesB=3
+GEUL_PROGRESS /tmp/geul-oracle-small/field-01-memo.hwp stage=edit_pagination step=0 state=done ms=0 equal=true
+GEUL_PROGRESS /tmp/geul-oracle-small/field-01-memo.hwp stage=svg page=0 state=start
+GEUL_PROGRESS /tmp/geul-oracle-small/field-01-memo.hwp stage=svg page=0 state=done ms=23 status=Equal
+GEUL_PROGRESS /tmp/geul-oracle-small/field-01-memo.hwp stage=svg page=1 state=start
+GEUL_PROGRESS /tmp/geul-oracle-small/field-01-memo.hwp stage=svg page=1 state=done ms=55 status=Equal
+GEUL_PROGRESS /tmp/geul-oracle-small/field-01-memo.hwp stage=svg page=2 state=start
+GEUL_PROGRESS /tmp/geul-oracle-small/field-01-memo.hwp stage=svg page=2 state=done ms=14 status=Equal
+GEUL_PROGRESS /tmp/geul-oracle-small/field-01-memo.hwp stage=document state=done ms=163 incomplete=false
+GEUL_ORACLE files=1 opened=1 excluded=0 failed=0 verified=1 attempted=1 applied=1 rejected=0 compared=1 svgPages=3 svgFailed=0 memoEntries=16 mismatches=0
+test document_core::geul_incremental_tests::geul_format_memo_equivalence_oracle ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 3930 filtered out; finished in 0.17s
+
+     Running unittests src/lib.rs (/tmp/geul-incr-pagination/target/debug/deps/rhwp_contracts-f8c7b4ca82a3c304)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 15 filtered out; finished in 0.00s
+
+     Running unittests src/lib.rs (/tmp/geul-incr-pagination/target/debug/deps/rhwp_ooxml_chart-50fc7272acd3991a)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 165 filtered out; finished in 0.00s
+
+     Running unittests src/lib.rs (/tmp/geul-incr-pagination/target/debug/deps/rhwp_password_crypto-dc4868159f20cc8a)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 2 filtered out; finished in 0.00s
+

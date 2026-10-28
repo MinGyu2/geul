@@ -1,0 +1,81 @@
+--- a/src/document_core/commands/document.rs
++++ b/src/document_core/commands/document.rs
+@@ -172,9 +172,17 @@
++        let geul_started = std::time::Instant::now();
++        let geul_progress = |stage: &str| {
++            if std::env::var_os("GEUL_ORACLE_OPEN_PROGRESS").is_some() {
++                eprintln!("GEUL_OPEN stage={stage} elapsed_ms={}", geul_started.elapsed().as_millis());
++            }
++        };
++        geul_progress("parse_start");
+         let source_format = crate::parser::detect_format(data);
+         let parsed = match password {
+             Some(pwd) => crate::parser::parse_document_with_metadata_password(data, pwd),
+             None => crate::parser::parse_document_with_metadata(data),
+         }
+         .map_err(|e| HwpError::InvalidFile(e.to_string()))?;
++        geul_progress("parse_done");
+         let mut document = parsed.document;
+         let hml_metadata = parsed.hml_metadata;
+ 
+@@ -195,7 +203,9 @@
+         }
+ 
+         // [Task #1001] HWP3 변환본의 ParaShape 단위 1/2 추가 보정
++        geul_progress("resolve_styles_start");
+         let mut styles = resolve_styles_for_document(&document, DEFAULT_DPI);
++        geul_progress("resolve_styles_done");
+         // [#7051] 계보 신호가 없는 저장본은 저장 줄 사다리로 HFT ASCII 반각 조판을 판정한다.
+         // 편집 중 판정이 흔들리지 않도록 로드 시 한 번만 내린다.
+         if !styles.hft_ascii_halfwidth {
+@@ -235,8 +245,10 @@
+         let check_textrun_reflow = matches!(source_format, crate::parser::FileFormat::Hwpx)
+             && !hwp5_origin_hwpx
+             && !document.layout_profile().hwp3_native_layout();
++        geul_progress("validation_start");
+         let validation_report = Self::validate_linesegs(&document, check_textrun_reflow);
+ 
++        geul_progress("validation_done");
+         // lineSegArray가 없는 문단에 대해 합성 LineSeg 생성.
+         // XML 파서는 linesegarray 부재 문단의 line_segs 를 빈 채 보존하므로(#1380)
+         // XML import 에서 빈 line_segs 를 합성 대상에 포함한다 — compose 전에 올바른
+@@ -255,6 +267,7 @@
+         // [#7436] 저장 줄 없는 번호 문단도 번호 폭을 뺀 상자로 줄을 나눈다 — 재조판 전에
+         // 문서 순서로 번호 문자열을 정해 둔다.
+         crate::renderer::layout::assign_numbering_markers(&mut document.sections, &styles);
++        geul_progress("reflow_start");
+         Self::reflow_zero_height_paragraphs(
+             &mut document,
+             &styles,
+@@ -262,6 +275,7 @@
+             include_empty,
+             include_cell_empty,
+         );
++        geul_progress("reflow_done");
+         Self::clear_missing_lineseg_placeholders(&mut document);
+ 
+         // XML import → HWP 라운드트립 일관성 normalize (#314):
+@@ -336,9 +350,13 @@
+             validation_report,
+         };
+ 
++        geul_progress("fonts_start");
+         doc.rebuild_embedded_exact_font_sources();
++        geul_progress("fonts_done");
+         doc.recompose_all_with_horizontal_shaping();
++        geul_progress("recompose_done");
+         doc.paginate();
++        geul_progress("paginate_done");
+ 
+         // [#4488/#4495] 로드 픽스업(손상 lineseg 제거·빈 문단 reflow·안내문 제거)과
+         // 첫 paginate 의 materialization(그림 img_dim 등)까지 끝난 뒤 본문을 다시
+@@ -346,7 +364,9 @@
+         // 로드 경로의 모델 보정 차이로 죽는다(honbo-save imgDim 실측). 이 지점
+         // 이후 본문 변경은 편집 명령(raw_stream 무효화 동반) 또는 공개 모델 직접
+         // 변경(봉인이 잡아야 할 대상)뿐이다.
++        geul_progress("seal_start");
+         doc.document.seal_body_raw_provenance();
++        geul_progress("seal_done");
+         Ok(doc)
+     }
+ 

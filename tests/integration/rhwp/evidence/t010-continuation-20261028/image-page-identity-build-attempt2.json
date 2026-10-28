@@ -1,0 +1,19 @@
+{
+  "baseline": "1a76570e833917d15817415a53c09ad61ab3203f",
+  "buildStatus": "PASS",
+  "sourceStableDuringBuild": true,
+  "sourceTreeSha256": "ab9603af48e857ac2c3f72c3c2d86a83a4a6b8c37e12ebb95d5c8936aa160ba3",
+  "sourceTreeSha256After": "ab9603af48e857ac2c3f72c3c2d86a83a4a6b8c37e12ebb95d5c8936aa160ba3",
+  "compiler": "rustc 1.99.0 (b940084d7 2026-09-28)",
+  "cargo": "cargo 1.99.0 (5f94df478 2026-08-27)",
+  "wasmPack": "wasm-pack 0.15.0",
+  "target": "wasm32-unknown-unknown",
+  "profile": "release",
+  "wasmOpt": false,
+  "artifacts": {
+    "rhwp.js": "14c3a8dcae0ba6774df97b639b989a9df201c68e78becd5061083a5486f76817",
+    "rhwp_bg.wasm": "bacf14c727b08c783da371288cf0e8ac0ee4f2042fd8bb9bc2b682185c0bcb22",
+    "rhwp.d.ts": "44df96712aac5e8711344b7a7325c44e0c9de11e8041f46ace1d89f0444efd27"
+  },
+  "scope": "isolated diagnostic only; not approved candidate"
+}

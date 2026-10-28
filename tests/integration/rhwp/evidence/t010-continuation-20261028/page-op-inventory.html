@@ -1,0 +1,13 @@
+<!doctype html><meta charset="utf-8"><pre id="out">RUNNING</pre><script type="module">
+const out=document.querySelector('#out');let doc;
+try{
+ const url='/__ownership_candidate__/rhwp.js';const mod=await import(/* @vite-ignore */ url);await mod.default({module_or_path:'/__ownership_candidate__/rhwp_bg.wasm'});
+ const bytes=new Uint8Array(await(await fetch('/complex-hwp.hwp')).arrayBuffer());doc=new mod.HwpDocument(bytes);
+ const pages=[];for(let page=0;page<doc.pageCount();page++){
+  const t=performance.now();const json=doc.getPageLayerTreeWithProfile(page,'screen',true,true);const elapsed=performance.now()-t;const tree=JSON.parse(json);
+  const kinds={},nodes={},groups={};let ops=0;const visit=node=>{nodes[node.kind]=(nodes[node.kind]||0)+1;if(node.kind==='group'){const k=JSON.stringify(node.groupKind);groups[k]=(groups[k]||0)+1;}if(node.kind==='leaf')for(const op of node.ops||[]){ops++;kinds[op.type]=(kinds[op.type]||0)+1;}for(const child of node.children||[])visit(child);if(node.child)visit(node.child);};visit(tree.root);
+  const resources=tree.resources||{};pages.push({page,ops,kinds,nodes,groups,jsonChars:json.length,ms:Math.round(elapsed*1000)/1000,resources:Object.fromEntries(Object.entries(resources).map(([k,v])=>[k,Array.isArray(v)?v.length:null]))});
+ }
+ out.textContent=JSON.stringify({status:'DIAGNOSTIC_COMPLETE',document:'연구노트(화학).hwp',pages,scope:'op/resource counts only; not exact identity or D4'});
+}catch(error){out.textContent=JSON.stringify({status:'FAIL',error:String(error)});}finally{doc?.free();}
+</script>

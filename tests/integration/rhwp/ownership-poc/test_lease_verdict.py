@@ -45,6 +45,23 @@ class LeaseVerdictTest(unittest.TestCase):
         r = native(); r['comparisons']['y1-vs-ref']['nonWhitePixels'] = 0  # blank frames never match as proof
         self.assertFalse(run(r)['checks']['completedPixelsExact'])
 
+    def test_exact_pixel_fields_reject_invalid_types(self):
+        missing = object()
+        for value in (False, True, 0.0, "0", missing, None, {}):
+            for container, label, field, check in (
+                ('comparisons', 'y1-vs-ref', 'channelDifferences', 'completedPixelsExact'),
+                ('comparisons', 'y1-vs-ref', 'nonWhitePixels', 'completedPixelsExact'),
+                ('comparisons', 'app-visible', 'pixels', 'appVisibleFrameExact'),
+                ('steps', 'app-stale-poll', 'channelDifferences', 'appStaleJobCanceledAfterNewRevision'),
+            ):
+                r = native(); row = r[container][label]
+                if value is missing: row.pop(field, None)
+                else: row[field] = value
+                self.assertFalse(run(r)['checks'][check], (label, field, value))
+        for label, check in (('y1-vs-ref', 'completedPixelsExact'), ('app-visible', 'appVisibleFrameExact')):
+            r = native(); r['comparisons'][label] = []
+            self.assertFalse(run(r)['checks'][check], label)
+
     def test_missing_step_or_outcome_fails(self):
         for label, check in (('cancel-X', 'cancelReleasesOnlyOwnLeases'), ('E-evict', 'decodedLeaseSurvivesEviction'),
                              ('app-late', 'appCloseWithPendingLease'), ('late-after-free', 'lateLoadsAfterFreeHarmless')):

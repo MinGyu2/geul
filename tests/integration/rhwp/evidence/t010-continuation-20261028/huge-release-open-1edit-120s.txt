@@ -1,0 +1,18 @@
+
+running 1 test
+GEUL_PROGRESS /tmp/geul-oracle-huge/issue2063_huge_cellbreak_table.hwp stage=read state=start
+GEUL_PROGRESS /tmp/geul-oracle-huge/issue2063_huge_cellbreak_table.hwp stage=read state=done ms=2 bytes=694272
+GEUL_PROGRESS /tmp/geul-oracle-huge/issue2063_huge_cellbreak_table.hwp stage=openA state=start
+GEUL_OPEN stage=parse_start elapsed_ms=0
+GEUL_OPEN stage=parse_done elapsed_ms=678
+GEUL_OPEN stage=resolve_styles_start elapsed_ms=678
+GEUL_OPEN stage=resolve_styles_done elapsed_ms=678
+GEUL_OPEN stage=validation_start elapsed_ms=678
+GEUL_OPEN stage=validation_done elapsed_ms=682
+GEUL_OPEN stage=reflow_start elapsed_ms=684
+GEUL_OPEN stage=reflow_done elapsed_ms=1647
+GEUL_OPEN stage=fonts_start elapsed_ms=1655
+GEUL_OPEN stage=fonts_done elapsed_ms=1655
+GEUL_OPEN stage=recompose_done elapsed_ms=1655
+test document_core::geul_incremental_tests::geul_format_memo_equivalence_oracle has been running for over 60 seconds
+EXIT=124
