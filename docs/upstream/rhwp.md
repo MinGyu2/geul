@@ -1,5 +1,48 @@
 # rhwp 코어 검토 (T002)
 
+## 외부 소스와 WASM 빌드
+
+`external/` 아래의 모든 의존성은 Git에 고정된 제3자 소스다. 빌드와 검증은
+이 파일, Cargo 매니페스트·잠금 파일, 무시된 생성물, submodule Git 메타데이터를
+바꾸지 않는다. RHWP와 WordCraft의 초기화된 고정 submodule이 필요하다.
+
+Linux의 bubblewrap(`bwrap`)이 없으면 RHWP 빌드는 보호되지 않은 상태로 진행하지
+않고 실패한다. `scripts/external-integrity.py`가 전체 `external/` 트리를
+읽기 전용으로 마운트하고 Cargo registry/Git 의존성 소스도 읽기 전용으로 둔다.
+빌드 전후 각 외부 파일의 종류, 권한, 링크 대상, 내용 해시와 submodule revision,
+상태, Git 메타데이터를 기록한다. 결과는 `target/rhwp-wasm/external-integrity.json`에
+남긴다. 불일치 시 복구해 성공으로 처리하지 않고 실패한다.
+
+기본 실행은 `scripts/build-rhwp-wasm.sh`이며 `--dev`는 개발 프로필을 선택한다.
+Rust 1.99.0과 `wasm32-unknown-unknown` 타깃, RHWP lockfile과 동일한
+wasm-bindgen CLI(현재 0.2.127)가 PATH에 있어야 한다. 설치나 네트워크 조회는
+수행하지 않는다. Cargo는 고정 잠금 파일을 `--locked --offline`으로 사용하고,
+wasm-bindgen 결과를 먼저 `target/rhwp-wasm/web/`에 만든다. 성공한 결과만
+앱이 읽는 `public/rhwp/`로 복사한다. `BUILD.json`에는 고정된 소스 revision,
+도구 버전, 빌드 입력과 최종 JS/WASM SHA256을 기록한다. 생성물은 Git에서 제외된다.
+
+다른 외부 의존성을 쓰는 빌드와 시험도 보호 래퍼를 사용할 수 있다. 예를 들어
+`CARGO_TARGET_DIR="$PWD/target/check" python3 scripts/external-integrity.py --writable target/check --report target/check/external.json -- cargo check --manifest-path external/wordcraft/crates/engine/Cargo.toml --locked --offline`
+처럼 산출물 디렉터리를 명시한다. `--writable`은 `external/`이나 Git 메타데이터와
+겹칠 수 없다. 일반 래퍼는 기존 외부 파일을 보존하고 정확한 전후 상태를 기록한다.
+RHWP 제품 빌드는 재현성 때문에 외부 submodule에 기존 변경이 있어도 시작 전에
+명확히 중단한다.
+
+## PNG 최적화의 현재 경계
+
+제품 호출 경로는 RHWP의 `src/renderer/web_canvas.rs`에서
+`image::load_from_memory`를 호출하고, `image 0.25.10`의 내장 PNG decoder가
+`png 0.18.1`의 내부 Paeth 복원 코드를 사용한다. image의 decoder hook은 확장자로
+등록하는 별도 포맷용이며, 바이트에서 PNG로 판별되는 이 내장 decoder를 대체하지
+않는다. JavaScript 쪽에서도 WASM 내부의 Rust 알고리즘을 선택하거나 바꿀 수 없다.
+
+따라서 현재 geul 소스만으로 실험된 Paeth 구현을 제품에 연결하는 지원 인터페이스가
+없다. 외부 소스 변경이나 소스 사본 없이 최적화를 통합할 수 없으므로 제품 WASM은
+마지막 재현 가능한 고정 엔진을 사용한다. 2026-10-30 실험 보고서의 픽셀 및 성능
+결과는 당시 후보에서만 측정되었으며 현재 제품 통합이나 성능 향상의 증거가 아니다.
+향후에는 필요한 PNG 인터페이스/구현이 포함된 upstream 승인 릴리스를 사용하거나,
+명시적으로 승인된 포크·geul 소유 통합 경계를 설계한 뒤 별도 검증해야 한다.
+
 - 업스트림: https://github.com/edwardkim/rhwp
 - 위치: `external/rhwp/` (Git submodule)
 - 고정 커밋: `1a76570e833917d15817415a53c09ad61ab3203f` (태그 `v0.8.7`, 2026-10-06 릴리스)
