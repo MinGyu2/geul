@@ -1,0 +1,200 @@
+{
+  "classification": "VERIFIED numeric joins of completed native diagnostics, not official D4 or pure CPU measurements",
+  "pairing": "d4_evidence.pair_edits exact ordered insertText anchors checked against unique absolute native key/input event timestamps; no nearest-fit",
+  "rows": [
+    {
+      "arm": "q13-parented",
+      "canonicalSampleKeyToFrameMs": 157,
+      "isP95Sample": true,
+      "keyEventOrdinal": 23,
+      "inputEventOrdinal": 23,
+      "keyTimestamp": 10657,
+      "inputTimestamp": 10659,
+      "inputDelayMs": 2,
+      "jobId": 121,
+      "jobPage": 12,
+      "pollStartRelativeToKeyMs": 12,
+      "pollInstrumentedMs": 102,
+      "pollWallMs": 101,
+      "lastSurfaceEffect": {
+        "all": false,
+        "lastVersion": 23,
+        "version": 24,
+        "caretPage": 12,
+        "at": 10668
+      },
+      "matchingPageRequestOrdinal": 281,
+      "matchingPageRequest": {
+        "page": 12,
+        "height": 585,
+        "at": 10668,
+        "width": 414,
+        "version": 24,
+        "paintedVersion": 1,
+        "generation": 1,
+        "queued": 0,
+        "active": null
+      },
+      "decodedCacheDelta": {
+        "hits": 0,
+        "misses": 1,
+        "evictions": 1,
+        "bytes": -15568776
+      },
+      "largeImageDiagnosticDeltas": [
+        {
+          "inputBytes": 1826485,
+          "decodeAttemptsDelta": 1,
+          "cacheMissesDelta": 1
+        }
+      ]
+    },
+    {
+      "arm": "q13-parented",
+      "canonicalSampleKeyToFrameMs": 202,
+      "isP95Sample": false,
+      "keyEventOrdinal": 39,
+      "inputEventOrdinal": 39,
+      "keyTimestamp": 15273,
+      "inputTimestamp": 15283,
+      "inputDelayMs": 10,
+      "jobId": 209,
+      "jobPage": 20,
+      "pollStartRelativeToKeyMs": 24,
+      "pollInstrumentedMs": 130,
+      "pollWallMs": 128,
+      "lastSurfaceEffect": {
+        "all": false,
+        "lastVersion": 39,
+        "version": 40,
+        "caretPage": 20,
+        "at": 15297
+      },
+      "matchingPageRequestOrdinal": 397,
+      "matchingPageRequest": {
+        "page": 20,
+        "height": 585,
+        "at": 15297,
+        "width": 414,
+        "version": 40,
+        "paintedVersion": 7,
+        "generation": 1,
+        "queued": 0,
+        "active": null
+      },
+      "decodedCacheDelta": {
+        "hits": 0,
+        "misses": 1,
+        "evictions": 3,
+        "bytes": -12621952
+      },
+      "largeImageDiagnosticDeltas": [
+        {
+          "inputBytes": 1556446,
+          "decodeAttemptsDelta": 1,
+          "cacheMissesDelta": 1
+        }
+      ]
+    },
+    {
+      "arm": "q15-parented",
+      "canonicalSampleKeyToFrameMs": 150,
+      "isP95Sample": false,
+      "keyEventOrdinal": 35,
+      "inputEventOrdinal": 35,
+      "keyTimestamp": 14205,
+      "inputTimestamp": 14322,
+      "inputDelayMs": 117,
+      "jobId": 191,
+      "jobPage": 23,
+      "pollStartRelativeToKeyMs": -3,
+      "pollInstrumentedMs": 118,
+      "pollWallMs": 117,
+      "lastSurfaceEffect": {
+        "all": false,
+        "lastVersion": 35,
+        "version": 35,
+        "caretPage": 18,
+        "at": 14001
+      },
+      "matchingPageRequestOrdinal": 376,
+      "matchingPageRequest": {
+        "page": 23,
+        "height": 0,
+        "at": 14194,
+        "width": 0,
+        "version": 35,
+        "paintedVersion": null,
+        "generation": 1,
+        "queued": 0,
+        "active": null
+      },
+      "decodedCacheDelta": {
+        "hits": 0,
+        "misses": 1,
+        "evictions": 3,
+        "bytes": -2209068
+      },
+      "largeImageDiagnosticDeltas": [
+        {
+          "inputBytes": 1090758,
+          "decodeAttemptsDelta": 1,
+          "cacheMissesDelta": 1
+        }
+      ]
+    },
+    {
+      "arm": "q15-parented",
+      "canonicalSampleKeyToFrameMs": 154,
+      "isP95Sample": true,
+      "keyEventOrdinal": 21,
+      "inputEventOrdinal": 21,
+      "keyTimestamp": 10091,
+      "inputTimestamp": 10095,
+      "inputDelayMs": 4,
+      "jobId": 109,
+      "jobPage": 11,
+      "pollStartRelativeToKeyMs": 14,
+      "pollInstrumentedMs": 108,
+      "pollWallMs": 106,
+      "lastSurfaceEffect": {
+        "all": false,
+        "lastVersion": 21,
+        "version": 22,
+        "caretPage": 11,
+        "at": 10104
+      },
+      "matchingPageRequestOrdinal": 273,
+      "matchingPageRequest": {
+        "page": 11,
+        "height": 585,
+        "at": 10104,
+        "width": 414,
+        "version": 22,
+        "paintedVersion": 1,
+        "generation": 1,
+        "queued": 0,
+        "active": null
+      },
+      "decodedCacheDelta": {
+        "hits": 0,
+        "misses": 1,
+        "evictions": 1,
+        "bytes": 0
+      },
+      "largeImageDiagnosticDeltas": [
+        {
+          "inputBytes": 2168706,
+          "decodeAttemptsDelta": 1,
+          "cacheMissesDelta": 1
+        }
+      ]
+    }
+  ],
+  "limits": [
+    "Busy probe and two stats snapshots perturb scheduling; their latency is not official D4.",
+    "Decoded per-image diagnostics omit inputs smaller than 512 KiB; cache-wide deltas are separate.",
+    "No Canvas object/epoch identity is captured by this diagnostic hook; native ownership regressions are independent evidence.",
+    "Final bounded diagnostic failed two inverted key/input timestamps and is not used for causal claims."
+  ]
+}

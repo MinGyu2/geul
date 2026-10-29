@@ -306,7 +306,12 @@ export function createOwnershipSession(Session, sessionId, backend, registry) {
     && request.backingEpoch === renderOwnership.backingEpochs.get(request.canvas)
     && session.status.kind === 'ready';
   };
-  const visible = request => { const box = request.canvas.getBoundingClientRect(); return box.bottom > 0 && box.top < innerHeight; };
+  const visible = request => {
+    const box = request.canvas.getBoundingClientRect();
+    const view = request.canvas.closest?.('.editor__scroll')?.getBoundingClientRect();
+    return box.bottom > Math.max(0, view?.top ?? 0) && box.top < Math.min(innerHeight, view?.bottom ?? innerHeight)
+      && (!view || (box.right > view.left && box.left < view.right));
+  };
   const createRequest = (page, canvas, scale, mode, input = null) => {
     let pageCount = 0, pageSize = null;
     try { pageCount = session.pages?.length ?? 0; const size = session.pages?.[page]; pageSize = size ? {width:size.width,height:size.height} : null; } catch { /* unknown geometry fails reuse closed */ }
@@ -410,6 +415,11 @@ export function createOwnershipSession(Session, sessionId, backend, registry) {
         };
         ownership.onCanvasInvalidated = () => repairInvalidatedCanvas(ownership);
         renderOwnership.owners.set(request.canvas, ownership);
+        // Advisory scalar hint for isolated engines that support visible-resource
+        // cache preference. It conveys no frame identity or publication authority.
+        // Older pinned/candidate engines ignore it and take the same Full path.
+        try { request.canvas.__geulExperimentalVisibleRender = request.page === session.caretRect?.()?.page || visible(request); }
+        catch { /* a non-extensible Canvas simply gets ordinary cache preference */ }
         const id = doc.beginRenderJob(request.page, request.canvas, request.scale);
         ownership.jobId = id;
         adoptStartupBackingStore(request);

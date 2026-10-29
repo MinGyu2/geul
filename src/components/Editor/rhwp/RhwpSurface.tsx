@@ -40,6 +40,8 @@ interface RhwpSurfaceProps {
 
 /** 입력 중 커서 쪽이 아닌 쪽을 다시 그리기까지 기다리는 시간(새 입력이 오면 다시 기다림). */
 const REST_DELAY_MS = 200;
+// 두 쪽의 스크롤 여유만 준비한다. 먼 쪽은 dirty로 남겨 다음 viewport 변화 때 갱신한다.
+const PAGE_LOOKAHEAD = 2;
 const HIDDEN_UNDERLINE: CSSProperties = { left: 0, top: 0, width: 0, visibility: "hidden" };
 /** 조합 밑줄 자리: 조합이 없어도 하나(숨김)를 둔다. */
 const padComposition = (rects: PageRect[]): (PageRect | null)[] => (rects.length > 0 ? rects : [null]);
@@ -142,6 +144,7 @@ export function RhwpSurface({ session, zoom, imeContext }: RhwpSurfaceProps) {
   /** 지금 모델로 아직 다시 그리지 않은 쪽(커서 쪽 밖, 그리기 예약됨). */
   const stalePages = useRef(new Set<number>());
   const drawStale = useRef<((page: number) => void) | null>(null);
+  const scheduleStale = useRef<(() => void) | null>(null);
   /** 스크롤 영역에 조금이라도 보이는 쪽. */
   const visiblePages = useCallback(() => {
     const result = new Set<number>();
@@ -209,21 +212,33 @@ export function RhwpSurface({ session, zoom, imeContext }: RhwpSurfaceProps) {
     // 새 변경이 오면 이 작업을 취소하고 다시 정하므로 마지막 모델로 그리며, 옛 작업은 version 검사로 새 모델을 덮지 않는다.
     const visible = visiblePages();
     // Undo/Redo·명령도 모델 변경이다. DOM input 시각이 없다는 이유로 화면 밖 모든 쪽을 즉시 그리면
-    // 복원 직후 입력을 막는다. 화면 밖 쪽은 같은 버전 검사·scroll/resize 갱신 아래 쉬는 시간에 그린다.
-    const later = !all ? rest.filter((page) => !visible.has(page)) : [];
-    const now = rest.filter((page) => !later.includes(page));
+    // 복원 직후 입력을 막는다. 주변 두 쪽은 쉬는 시간에 준비하고 먼 쪽은 dirty로 유지한다.
+    // 스크롤·resize로 보이는 즉시 같은 버전 검사 아래 갱신하며, 다음 viewport의 주변도 다시 준비한다.
     stalePages.current = new Set(rest);
-    const queue = [...now.map((page) => [page, 0] as const), ...later.map((page, index) => [page, index === 0 ? REST_DELAY_MS : 0] as const)];
-    const step = (index: number) => {
-      const next = queue[index];
-      if (!next) return;
-      renderTimer.current = window.setTimeout(() => {
-        renderTimer.current = null;
-        if (stalePages.current.delete(next[0])) draw(next[0]);
-        step(index + 1);
-      }, next[1]);
+    const schedule = (visible: Set<number>) => {
+      if (renderTimer.current !== null) window.clearTimeout(renderTimer.current);
+      renderTimer.current = null;
+      if (session.modelVersion !== version) return;
+      const near = (page: number) => Math.abs(page - first) <= PAGE_LOOKAHEAD
+        || [...visible].some((shown) => Math.abs(page - shown) <= PAGE_LOOKAHEAD);
+      const eligible = rest.filter((page) => stalePages.current.has(page) && (all || near(page)));
+      const now = eligible.filter((page) => all || visible.has(page));
+      const later = eligible.filter((page) => !now.includes(page));
+      const queue = [...now.map((page) => [page, 0] as const), ...later.map((page, index) => [page, index === 0 ? REST_DELAY_MS : 0] as const)];
+      const step = (index: number) => {
+        const next = queue[index];
+        if (!next) return;
+        renderTimer.current = window.setTimeout(() => {
+          renderTimer.current = null;
+          if (session.modelVersion !== version) return;
+          if (stalePages.current.delete(next[0])) draw(next[0]);
+          step(index + 1);
+        }, next[1]);
+      };
+      step(0);
     };
-    step(0);
+    scheduleStale.current = () => schedule(visiblePages());
+    schedule(visible);
     // 실제 새 render·unmount만 이 작업을 취소한다. firstPaint·commit 알림의 단순 React 갱신은 취소하지 않는다.
   });
 
@@ -232,6 +247,7 @@ export function RhwpSurface({ session, zoom, imeContext }: RhwpSurfaceProps) {
     renderTimer.current = null;
     stalePages.current.clear();
     drawStale.current = null;
+    scheduleStale.current = null;
     session.releaseRendering();
   }, [session]);
 
@@ -246,6 +262,7 @@ export function RhwpSurface({ session, zoom, imeContext }: RhwpSurfaceProps) {
       for (const page of visiblePages()) {
         if (stalePages.current.delete(page)) drawStale.current?.(page);
       }
+      scheduleStale.current?.();
     };
     scroller.addEventListener("scroll", onViewChange, { passive: true });
     const resize = typeof ResizeObserver === "undefined" ? null : new ResizeObserver(onViewChange);

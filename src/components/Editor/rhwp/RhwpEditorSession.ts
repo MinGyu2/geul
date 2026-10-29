@@ -242,6 +242,8 @@ export class RhwpEditorSession implements DocumentCommandTarget {
   private doc: RhwpDocument | null = null;
   private readonly renderCanvases = new Set<HTMLCanvasElement>();
   private text: RhwpText | null = null;
+  /** 쪽 좌표는 zoom/DPR와 무관하다. 모델·문서 소유자·전체 위치가 같을 때만 마지막 성공 질의를 재사용한다. */
+  private caretCache: { text: RhwpText; version: number; position: string; value: CaretRect } | null = null;
   private module: RhwpModule | null = null;
   private preferredX = -1;
   private committed = 0;
@@ -682,7 +684,17 @@ export class RhwpEditorSession implements DocumentCommandTarget {
   }
 
   caretRect(): CaretRect | null {
-    return this.text?.caret(this.caret) ?? null;
+    const text = this.text;
+    if (!text) return null;
+    // positionKey의 표시 문자열은 parentParagraph를 생략한다. 캐시에는 셀 경로 전체를 포함한다.
+    const at = this.caret, cell = at.cell;
+    const position = `${at.section}:${at.paragraph}:${at.offset}:${cell ? `${cell.parentParagraph}/${cell.control}/${cell.cell}/${cell.cellParagraph}` : "body"}`;
+    const cached = this.caretCache;
+    if (cached?.text === text && cached.version === this.modelVersion && cached.position === position) return { ...cached.value };
+    const value = text.caret(at);
+    // 실패(null)는 기억하지 않는다. 렌더 준비가 뒤에 끝나면 같은 판에서도 다시 질의한다.
+    this.caretCache = value ? { text, version: this.modelVersion, position, value: { ...value } } : null;
+    return value;
   }
 
   selectionRects(): PageRect[] {
@@ -1612,6 +1624,7 @@ export class RhwpEditorSession implements DocumentCommandTarget {
     this.history = null;
     this.historyOff = null;
     this.text = null;
+    this.caretCache = null;
     this.composition = null;
     this.provisional = null;
     this.awaiting = false;

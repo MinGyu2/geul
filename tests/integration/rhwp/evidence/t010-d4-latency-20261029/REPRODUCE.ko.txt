@@ -1,0 +1,74 @@
+T010/D4 지연 후보 재현(저장소 root에서)
+
+전제: 기존 node_modules와 test-hook 활성 debug geul, 기존 native 도구,
+q13 패키지/engine source/gates가 있어야 한다. 다른 제품 WASM을 q13으로 간주하지 않는다.
+q13 trusted WASM a59421b800722e240113c54f335cb768c62a8c2ee648e008c3438d015751305a,
+source818cb71025b93498b1d891bf2e5507f0ce08a3dfd9f0d25c803a2da48d06e5b3.
+요약의 app/runner/adapter/fixture/critical source 해시와 실제 bytes를 먼저 대조한다.
+다른 빌드·다른 환경의 결과를 같은 표본처럼 합치지 않는다.
+
+frontend.patch는 HEAD e52135097bf3ac9179824dbf231d2d18812ad98c 기준6파일이다.
+적용된 현재 workspace에 다시 적용하지 않는다. 별도 재현 환경에서 기존 변경을 보존하고
+git apply --check 후 적용한다. 이 작업은 gitlink/public WASM을 바꾸지 않는다.
+
+도구 환경(이번 실행에서 실제 사용):
+export GEUL_TAURI_DRIVER="$(pwd)/src-tauri/target/release/tauri-driver"
+export GEUL_WEBKIT_DRIVER=/nix/store/mhq9kk703lrphqxjqzphva99f1qa5s0c-webkitgtk-2.54.1+abi=4.1/bin/WebKitWebDriver
+export GEUL_XVFB=/nix/store/7yz3bnmll7fy11n0xci85mbhnf6p5669-xvfb-21.1.23/bin/Xvfb
+export GEUL_XDOTOOL=/nix/store/kyp2r08w6hs0l1zj3cya6d2ciba9v47h-xdotool-3.20211022.1/bin/xdotool
+
+아래 launcher는 기존 결과 디렉터리가 있으면 거절한다. 새 출력 이름을 쓴다.
+Vite/producer를 분리된 background shell로 띄우지 않는다.
+각 실행은 순차로 수행하고 원래 실패·exit code·source guard·cleanup을 함께 보존한다.
+
+공식 native D4(원본 history-perf.py/MEASURE, four original fixtures):
+python3 tests/integration/rhwp/evidence/t010-d4-latency-20261029/run-diagnostic.py \
+  --mode official \
+  --candidate .git/t010-q13-table-cache --gates .git/t010-q13-engine-gates \
+  --expected-wasm a59421b800722e240113c54f335cb768c62a8c2ee648e008c3438d015751305a \
+  --output .git/t010-d4-latency-repro/official
+
+launcher의 status는 producer 종료와 source/cleanup을 함께 본다. 공식 성능 판정은
+result.json의 measurementComplete/exitReason/gates와 실제 exit로 확인한다.
+이번 완주는 exit1 OFFICIAL_GATE_FAILURE이며 성공으로 바꾸지 않는다.
+mode official은 busy probe/추가 surface observer를 켜지 않는다.
+
+스크롤 정확성(chemical24쪽, 실제 edit/Undo/Redo/reopen/zoom,144Full RGBA):
+위 명령의 --mode를 viewport, --output을 새 경로로 바꾼다.
+이것은 approved-anchor D1 또는 공식 D4 성능 측정이 아니다.
+
+기존 pending/zoom/reopen/ownership native 회귀:
+위 명령의 --mode를 matrix, --output을 새 경로로 바꾼다.
+원본 native.py --scheduler --extended --matrix를 실행한다(기본53+embedded scheduler73).
+
+비공식 입력 지연 진단:
+위 명령의 --mode를 input-delay, --output을 새 경로로 바꾼다.
+기존 d4-input-delay-native.py의 busy probe/숫자 stats snapshot을 사용하므로
+이 수치를 공식 D4로 보고하지 않는다. DIAGNOSTIC_COMPLETE와 probe/trace loss0 및
+timestamp 순서 검증을 요구한다. 최종 bounded 진단의1ms 역전 실패를 허용하도록 바꾸지 않는다.
+
+기존 four-fixture Full-reference39/24 검사도 원본
+tests/integration/rhwp/ownership-poc/performance-visual-native.py로 실행했다.
+그 실행의 정확한 server/producer 명령, 도구와 before/after source hash는
+.git/t010-d4-latency-20261029/bounded-four-visual/run_visual.py 및 execution.json에 있다.
+prep-vite config는 사용하지 않는다. sample/continue-after-caret-failure 옵션도 사용하지 않는다.
+
+선택하지 않은 q15 엔진 실험 재현:
+1. 기존 q13 source를 별도 한 export에 복사한다(서브모듈/기존 frozen source 수정 금지).
+2. 그 export에서 visible-decoded-cache.patch를 적용한다.
+3. 기존 Rust1.99.0을 PATH 앞에 두고 다음을 실행한다(새 toolchain 설치 불필요).
+
+PATH=/nix/store/97hb2d9m0vpp7im24p7fir0pv6rk4lwi-rust-default-1.99.0/bin:$PATH \
+python3 tests/integration/rhwp/evidence/t010-d4-latency-20261029/build-visible-cache.py \
+  --source .git/NEW-ISOLATED-SOURCE --base-source .git/t010-q13-table-cache-src \
+  --base-candidate .git/t010-q13-table-cache --out .git/NEW-EXPERIMENTAL-PACKAGE \
+  --report .git/NEW-BUILD-IDENTITY.json
+
+script는 q13 predecessor SHA와 세 파일 patch의 재적용 결과, 빌드 source 안정성,
+제품 WASM·gitlinks 보존을 검사한다. release/no-opt/no-install/locked/offline,
+기존 src-tauri/target, build jobs2를 사용한다. Cargo.lock을 바꾸지 않는다.
+실제 q15 artifact0521401f6e80db16763b555bd78e51b53d5cba312cb229c63fa0f48f294f29e9는
+실험 결과이며 최종 frontend 성능 비교에 선택하지 않았다.
+
+선택한 correctness/static 검사는 REPORT.ko.txt와 summary.json을 따른다.
+이 재현 문서는 benchmark의 endpoint/fixture/threshold/sample을 바꿀 허가가 아니다.

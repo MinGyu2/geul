@@ -1,0 +1,178 @@
+--- a/src/renderer/surface_cache.rs
++++ b/src/renderer/surface_cache.rs
+@@ -127,6 +127,8 @@
+     admission: bool,
+     frequency: HashMap<ImageKey, u8>,
+     rebuild_costs: HashMap<ImageKey, u32>,
++    // Scalar request ticks only: no document, Canvas or resource ownership.
++    interactive_ticks: HashMap<ImageKey, u64>,
+     rejection_streaks: HashMap<ImageKey, RejectionStreak>,
+     since_aging: usize,
+ }
+@@ -146,6 +148,7 @@
+             admission,
+             frequency: HashMap::new(),
+             rebuild_costs: HashMap::new(),
++            interactive_ticks: HashMap::new(),
+             rejection_streaks: HashMap::new(),
+             since_aging: 0,
+         }
+@@ -188,18 +191,36 @@
+         self.prune_rebuild_costs();
+     }
+ 
++    /// Prefer recently displayed resources during admission and eviction. This is
++    /// a soft preference, never a pin/lease or permission to exceed a hard budget.
++    /// A full background scan cannot immediately displace the editing working set;
++    /// after 64 other cache requests the ordinary frequency/cost policy resumes.
++    pub fn note_interactive(&mut self, key: ImageKey) {
++        if self.admission && self.frequency.contains_key(&key) {
++            self.interactive_ticks.insert(key, self.tick);
++        }
++    }
++
+     fn prune_rebuild_costs(&mut self) {
+         self.rebuild_costs
+             .retain(|key, _| self.frequency.contains_key(key));
++        self.interactive_ticks.retain(|key, tick| {
++            self.frequency.contains_key(key) && self.tick.saturating_sub(*tick) <= 64
++        });
+     }
+ 
+     fn priority(&self, key: &ImageKey) -> u64 {
+-        u64::from(self.frequency.get(key).copied().unwrap_or(0))
+-            * u64::from(self.rebuild_costs.get(key).copied().unwrap_or(1))
++        let interactive = self
++            .interactive_ticks
++            .get(key)
++            .is_some_and(|tick| self.tick.saturating_sub(*tick) <= 64);
++        u64::from(interactive) * (1u64 << 32)
++            + u64::from(self.frequency.get(key).copied().unwrap_or(0))
++                * u64::from(self.rebuild_costs.get(key).copied().unwrap_or(1))
+     }
+ 
+     fn eviction_priority(&self, key: &ImageKey) -> u64 {
+-        if self.rebuild_costs.is_empty() {
++        if self.rebuild_costs.is_empty() && self.interactive_ticks.is_empty() {
+             0
+         } else {
+             self.priority(key)
+@@ -360,6 +381,7 @@
+         }
+         if target_bytes == 0 {
+             self.rejection_streaks.clear();
++            self.interactive_ticks.clear();
+         }
+     }
+ 
+@@ -977,6 +999,59 @@
+     }
+ 
+     #[test]
++    fn recent_interactive_resource_survives_background_pressure_within_budget() {
++        let log = Rc::new(RefCell::new(Vec::new()));
++        let mut cache = BoundedCache::new(400, 4, true);
++        for n in 0..4 {
++            cache.get(&key(n));
++            cache.note_rebuild_cost(key(n), 1.0);
++            assert!(cache.insert(key(n), Some(surface(n as u32, &log)), 100));
++        }
++        cache.get(&key(0));
++        cache.note_interactive(key(0));
++        // A costly offscreen decode may replace other entries, but not the
++        // recently displayed backing while ordinary victims can make room.
++        cache.get(&key(9));
++        cache.note_rebuild_cost(key(9), 60_000.0);
++        assert!(cache.insert(key(9), Some(surface(9, &log)), 100));
++        assert!(cache.peek(&key(0)).is_some());
++        assert_eq!(cache.stats().bytes, 400);
++        assert_eq!(cache.stats().entries, 4);
++        // Preference expires without a lease, and explicit trim overrides it.
++        for _ in 0..65 {
++            cache.get(&key(9));
++        }
++        assert!(cache.priority(&key(0)) < (1u64 << 32));
++        cache.trim(0);
++        assert_eq!(cache.stats().bytes, 0);
++        assert!(cache.interactive_ticks.is_empty());
++    }
++
++    #[test]
++    fn interactive_metadata_and_budget_remain_bounded() {
++        let log = Rc::new(RefCell::new(Vec::new()));
++        let mut cache = BoundedCache::new(400, 4, true);
++        for n in 0..200u8 {
++            cache.get(&key(n));
++            cache.note_interactive(key(n));
++            let value = surface(n as u32, &log);
++            if !cache.insert(key(n), Some(value.clone()), 100) {
++                value.release();
++            }
++            assert!(cache.stats().bytes <= 400);
++            assert!(cache.stats().entries <= 4);
++            assert!(cache.interactive_ticks.len() <= 16);
++        }
++        // Neither oversized resources nor reduced budgets gain an exemption.
++        cache.get(&key(240));
++        cache.note_interactive(key(240));
++        assert!(!cache.insert(key(240), Some(surface(240, &log)), 101));
++        cache.set_budget(0, 0);
++        assert_eq!(cache.stats().bytes, 0);
++        assert!(cache.interactive_ticks.is_empty());
++    }
++
++    #[test]
+     fn costly_decode_is_admitted_before_repeated_rejection() {
+         let log = Rc::new(RefCell::new(Vec::new()));
+         let mut cache = BoundedCache::new(400, 64, true);
+--- a/src/renderer/render_job.rs
++++ b/src/renderer/render_job.rs
+@@ -258,6 +258,7 @@
+     pub scale: f64,
+     pub state: Outcome,
+     pub target: Option<HtmlCanvasElement>,
++    pub interactive: bool,
+     pub resources: HashMap<ImageKey, ImageLease>,
+     /// Decoded leases used by this job; kept across PENDING polls, released by finish/drop.
+     pub decoded: HashMap<ImageKey, DecodedLease>,
+@@ -397,6 +398,10 @@
+             scale,
+             state: Outcome::Pending,
+             target: Some(target.clone()),
++            interactive: js_sys::Reflect::get(target, &"__geulExperimentalVisibleRender".into())
++                .ok()
++                .and_then(|value| value.as_bool())
++                .unwrap_or(false),
+             resources: HashMap::new(),
+             decoded: HashMap::new(),
+             waiting: false,
+@@ -936,6 +941,11 @@
+ fn active_job() -> Option<Rc<RefCell<Job>>> {
+     ACTIVE.with(|a| a.borrow().clone())
+ }
++/// Experimental host hint sampled once when a job begins. It changes cache
++/// preference only; publication, validity, deadlines and ownership are unchanged.
++pub fn interactive_job() -> bool {
++    active_job().is_some_and(|job| job.borrow().interactive)
++}
+ /// The active job's own lease for `key`, if any.
+ pub fn job_decoded(key: ImageKey) -> Option<DecodedLease> {
+     active_job().and_then(|j| j.borrow().decoded.get(&key).cloned())
+--- a/src/renderer/web_canvas.rs
++++ b/src/renderer/web_canvas.rs
+@@ -289,7 +289,14 @@
+         return super::render_job::job_decoded(key);
+     }
+     // Same cache request/frequency accounting as before the lease change.
+-    let slot = DECODED_CANVAS_CACHE.with(|cache| cache.borrow_mut().get(&key));
++    let slot = DECODED_CANVAS_CACHE.with(|cache| {
++        let mut cache = cache.borrow_mut();
++        let slot = cache.get(&key);
++        if super::render_job::interactive_job() {
++            cache.note_interactive(key);
++        }
++        slot
++    });
+     super::render_job::note_decoded_image_lookup(key, data.len(), slot.is_some());
+     if let Some(slot) = slot {
+         let lease = slot?;

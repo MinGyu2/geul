@@ -306,6 +306,36 @@ describe("엔진 배율과 띠 좌표(9차)", () => {
 });
 
 describe("여러 쪽 그리기 순서", () => {
+  it("입력 뒤 먼 쪽은 dirty로 보존하고, 스크롤·resize에서 최신 판만 그린다", async () => {
+    const ro = fakeResizeObserver();
+    const view = { top: 0, bottom: 1500 };
+    layout(view);
+    const t = await mounted({ pages: 12 });
+    await converged(t.doc);
+    vi.useFakeTimers();
+    t.doc.draws = [];
+    t.type("a");
+    advance(1000);
+    expect(new Set(pagesDrawn(t.doc.draws))).toEqual(new Set([0, 1, 2, 3]));
+    t.type("b");
+    advance(20);
+    view.top = 8080; view.bottom = 9580; // 먼 8·9쪽은 idle 순회가 아니라 보이는 즉시 갱신
+    act(() => void t.scroller.dispatchEvent(new Event("scroll")));
+    expect(t.doc.draws.filter(d => d.page === 8 || d.page === 9).map(d => d.text)).toEqual(["ab가나다", "ab가나다"]);
+    advance(1000);
+    expect(t.doc.draws.some(d => d.page === 4 || d.page === 5)).toBe(false);
+    expect(t.doc.draws.filter(d => d.page >= 6).every(d => d.text === "ab가나다")).toBe(true);
+    t.type("c");
+    advance(20);
+    view.top = 4040; view.bottom = 5540;
+    ro.resized();
+    expect(t.doc.draws.filter(d => d.page === 4 || d.page === 5).map(d => d.text)).toEqual(["abc가나다", "abc가나다"]);
+    t.view.unmount();
+    const before = t.doc.draws.length;
+    advance(1000);
+    expect(t.doc.draws).toHaveLength(before);
+  });
+
   it("처음 그리기: 커서 쪽을 바로, 나머지는 커서 쪽에서 가까운 쪽부터 한 task에 한 쪽씩 그린다", async () => {
     const t = await mounted({ pages: 5 });
     expect(pagesDrawn(t.doc.draws)).toEqual([0]);
@@ -503,7 +533,7 @@ describe("여러 쪽 그리기 순서", () => {
     expect(t.doc.draws).toEqual([]);
   });
 
-  it("긴 문서(46쪽): 처음 그리기와 입력 뒤 그리기 모두 한 task에 한 쪽씩, 모든 쪽이 마지막 모델로 수렴한다", async () => {
+  it("긴 문서(46쪽): 처음·입력·viewport 갱신은 task마다 한 쪽씩, 방문한 모든 쪽이 마지막 모델로 수렴한다", async () => {
     layout({ top: 0, bottom: 1500 });
     const t = await mounted({ pages: 46, size: { width: 400, height: 500 } }); // 800×1000 46쪽은 표면 예산을 넘는다
     await converged(t.doc);
@@ -513,6 +543,13 @@ describe("여러 쪽 그리기 순서", () => {
     await wait(20); // 키 하나가 한 task(같은 동기 실행에 두 키를 넣지 않음)
     t.type("b");
     const latest = () => Array.from({ length: 46 }, (_, page) => t.doc.draws.filter((d) => d.page === page).at(-1)?.text);
+    // 먼 쪽은 dirty로 유지한다. 모든 viewport를 방문해 각 쪽이 마지막 판으로 갱신됨을 검사한다.
+    // 원래의 모든 쪽 내용·task당 한 쪽 단언은 그대로 유지한다.
+    for (let page = 0; page < 46; page++) {
+      layout({ top: page * 1010, bottom: page * 1010 + 900 });
+      act(() => void t.scroller.dispatchEvent(new Event("scroll")));
+      await wait(5);
+    }
     for (let i = 0; i < 400 && !latest().every((text) => text === "ab가나다"); i++) await wait(5);
     expect(latest().every((text) => text === "ab가나다")).toBe(true);
     const tasks = new Map<number, number>();

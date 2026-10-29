@@ -45,6 +45,21 @@ async function setup() {
  const createOther=async id=>{const session=globalThis.__testCreateOwnershipSession(id),loader=await session.loader();session.doc=loader.openDocument(new Uint8Array());return {session,doc:session.doc,loader,handle:globalThis.__testHandle};};
  return {session,canvas,doc:docs[0],loader,flush,notify,frames,handle:globalThis.__testHandle,counters:globalThis.__testCounters,createOther};
 }
+test('cache preference follows the clipped scroller and the caret, without skipping Full', async () => {
+ const x=await setup();x.doc.state='COMPLETE';
+ x.canvas.getBoundingClientRect=()=>({top:100,bottom:200,left:0,right:100});
+ x.canvas.closest=()=>({getBoundingClientRect:()=>({top:300,bottom:900,left:0,right:800})});
+ x.session.renderPage(0,x.canvas,1);x.flush();
+ assert.equal(x.canvas.__geulExperimentalVisibleRender,false);assert.equal(x.doc.starts,1);
+ x.session.modelVersion++;x.session.caretRect=()=>({page:0,x:0,y:0,height:12});
+ x.session.renderPage(0,x.canvas,1);
+ assert.equal(x.canvas.__geulExperimentalVisibleRender,true);assert.equal(x.doc.starts,2);
+ x.session.caretRect=()=>({page:1,x:0,y:0,height:12});x.session.modelVersion++;
+ x.canvas.getBoundingClientRect=()=>({top:400,bottom:500,left:0,right:100});
+ x.session.renderPage(0,x.canvas,1);
+ assert.equal(x.canvas.__geulExperimentalVisibleRender,true);assert.equal(x.doc.starts,3);
+ x.session.dispose();
+});
 test('input scope is bounded and removed', async () => {
  let listener; const target={document:{addEventListener(_name, fn){listener=fn;},removeEventListener(_name, fn){assert.equal(listener,fn);listener=null;}}};
  const installed=installLifecycleTrace(target, 3);
