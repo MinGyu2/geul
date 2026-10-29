@@ -143,7 +143,6 @@ export function RhwpSurface({ session, zoom, imeContext }: RhwpSurfaceProps) {
   const rendered = useRef({ version: -1, scale: 0, ratio: 0, pages: 0, sizes: "" });
   /** 지금 모델로 아직 다시 그리지 않은 쪽(커서 쪽 밖, 그리기 예약됨). */
   const stalePages = useRef(new Set<number>());
-  const drawStale = useRef<((page: number) => void) | null>(null);
   const scheduleStale = useRef<(() => void) | null>(null);
   /** 스크롤 영역에 조금이라도 보이는 쪽. */
   const visiblePages = useCallback(() => {
@@ -189,14 +188,14 @@ export function RhwpSurface({ session, zoom, imeContext }: RhwpSurfaceProps) {
     const first = caret?.page ?? 0;
     const version = session.modelVersion;
     const draw = (page: number) => {
-      if (session.modelVersion !== version) return; // 대기 중 모델이 교체·변경됐으면 이 작업은 무효다
+      if (session.modelVersion !== version) return false; // 대기 중 모델이 교체·변경됐으면 이 작업은 무효다
       const canvas = canvases.current.get(page);
-      if (canvas) session.renderPage(page, canvas, scale * ratio);
+      if (canvas) return session.renderPage(page, canvas, scale * ratio);
+      return false;
     };
     const drawStarted = import.meta.env.VITE_GEUL_TEST_HOOKS === "1" ? performance.now() : 0;
-    draw(first);
+    const firstComplete = draw(first);
     trace("rhwp:surface-first-draw", () => ({ page: first, ms: performance.now() - drawStarted }));
-    drawStale.current = draw;
     const started = inputAt.current;
     inputAt.current = null;
     if (started !== null) {
@@ -214,7 +213,7 @@ export function RhwpSurface({ session, zoom, imeContext }: RhwpSurfaceProps) {
     // Undo/Redo·명령도 모델 변경이다. DOM input 시각이 없다는 이유로 화면 밖 모든 쪽을 즉시 그리면
     // 복원 직후 입력을 막는다. 주변 두 쪽은 쉬는 시간에 준비하고 먼 쪽은 dirty로 유지한다.
     // 스크롤·resize로 보이는 즉시 같은 버전 검사 아래 갱신하며, 다음 viewport의 주변도 다시 준비한다.
-    stalePages.current = new Set(rest);
+    stalePages.current = new Set(firstComplete ? rest : [first, ...rest]);
     const schedule = (visible: Set<number>) => {
       if (renderTimer.current !== null) window.clearTimeout(renderTimer.current);
       renderTimer.current = null;
@@ -231,7 +230,7 @@ export function RhwpSurface({ session, zoom, imeContext }: RhwpSurfaceProps) {
         renderTimer.current = window.setTimeout(() => {
           renderTimer.current = null;
           if (session.modelVersion !== version) return;
-          if (stalePages.current.delete(next[0])) draw(next[0]);
+          if (stalePages.current.has(next[0]) && draw(next[0])) stalePages.current.delete(next[0]);
           step(index + 1);
         }, next[1]);
       };
@@ -246,7 +245,6 @@ export function RhwpSurface({ session, zoom, imeContext }: RhwpSurfaceProps) {
     if (renderTimer.current !== null) window.clearTimeout(renderTimer.current);
     renderTimer.current = null;
     stalePages.current.clear();
-    drawStale.current = null;
     scheduleStale.current = null;
     session.releaseRendering();
   }, [session]);
@@ -259,9 +257,7 @@ export function RhwpSurface({ session, zoom, imeContext }: RhwpSurfaceProps) {
     if (!scroller) return;
     const onViewChange = () => {
       if (stalePages.current.size === 0) return;
-      for (const page of visiblePages()) {
-        if (stalePages.current.delete(page)) drawStale.current?.(page);
-      }
+      // 기존 task 큐로 합쳐 scroll/resize 한 번에 여러 Full replay가 실행되지 않게 한다.
       scheduleStale.current?.();
     };
     scroller.addEventListener("scroll", onViewChange, { passive: true });

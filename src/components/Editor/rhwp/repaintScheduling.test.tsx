@@ -102,6 +102,8 @@ async function converged(doc: LayeredDocument) {
 }
 /** 가짜 시계로 ms만큼 진행(입력 사이 간격이 실행 부하로 늘어나지 않게). */
 const advance = (ms: number) => act(() => void vi.advanceTimersByTime(ms));
+/** Run one queued viewport-render timer without advancing the idle delay. */
+const nextRenderTask = () => act(async () => { vi.advanceTimersToNextTimer(); await Promise.resolve(); });
 
 afterEach(() => {
   vi.useRealTimers();
@@ -321,6 +323,8 @@ describe("여러 쪽 그리기 순서", () => {
     advance(20);
     view.top = 8080; view.bottom = 9580; // 먼 8·9쪽은 idle 순회가 아니라 보이는 즉시 갱신
     act(() => void t.scroller.dispatchEvent(new Event("scroll")));
+    expect(t.doc.draws.filter(d => d.page === 8 || d.page === 9)).toEqual([]);
+    await nextRenderTask(); await nextRenderTask();
     expect(t.doc.draws.filter(d => d.page === 8 || d.page === 9).map(d => d.text)).toEqual(["ab가나다", "ab가나다"]);
     advance(1000);
     expect(t.doc.draws.some(d => d.page === 4 || d.page === 5)).toBe(false);
@@ -329,6 +333,8 @@ describe("여러 쪽 그리기 순서", () => {
     advance(20);
     view.top = 4040; view.bottom = 5540;
     ro.resized();
+    expect(t.doc.draws.filter(d => d.page === 4 || d.page === 5)).toEqual([]);
+    await nextRenderTask(); await nextRenderTask();
     expect(t.doc.draws.filter(d => d.page === 4 || d.page === 5).map(d => d.text)).toEqual(["abc가나다", "abc가나다"]);
     t.view.unmount();
     const before = t.doc.draws.length;
@@ -375,6 +381,7 @@ describe("여러 쪽 그리기 순서", () => {
     expect(new Set(pagesDrawn(t.doc.draws))).toEqual(new Set([0, 1]));
     view.top = 2000; view.bottom = 3500; // 2·3쪽이 보이게 됨
     act(() => void t.scroller.dispatchEvent(new Event("scroll")));
+    await wait(10);
     expect(new Set(pagesDrawn(t.doc.draws))).toEqual(new Set([0, 1, 2, 3]));
     for (let i = 0; i < 100 && !pagesDrawn(t.doc.draws).includes(4); i++) await wait(10);
     const latest = (page: number) => t.doc.draws.filter((d) => d.page === page).at(-1)?.text;
@@ -397,10 +404,12 @@ describe("여러 쪽 그리기 순서", () => {
     let early=t.doc.draws.length;
     view.top=2000;view.bottom=3500;
     act(() => void t.scroller.dispatchEvent(new Event("scroll")));
+    await nextRenderTask(); await nextRenderTask();
     expect(pagesDrawn(t.doc.draws.slice(early))).toEqual([2,3]);
     expect(t.doc.draws.slice(early).every(d => d.text === "가나다")).toBe(true);
     view.top=0;view.bottom=1500;
     act(() => void t.scroller.dispatchEvent(new Event("scroll")));
+    await nextRenderTask(); await nextRenderTask();
     t.doc.draws=[];
     act(() => { expect(t.editor.redo()).toBe(true); });
     advance(30);
@@ -408,6 +417,7 @@ describe("여러 쪽 그리기 순서", () => {
     early=t.doc.draws.length;
     view.top=2000;view.bottom=3500;
     act(() => void t.scroller.dispatchEvent(new Event("scroll")));
+    await nextRenderTask(); await nextRenderTask();
     expect(pagesDrawn(t.doc.draws.slice(early))).toEqual([2,3]);
     expect(t.doc.draws.slice(early).every(d => d.text === "a가나다")).toBe(true);
     advance(260);
@@ -426,6 +436,8 @@ describe("여러 쪽 그리기 순서", () => {
     view.top = 2000;
     view.bottom = 3500; // 2·3쪽이 보임
     act(() => void t.scroller.dispatchEvent(new Event("scroll")));
+    expect(t.doc.draws).toEqual([]);
+    await nextRenderTask(); await nextRenderTask();
     expect(pagesDrawn(t.doc.draws).sort()).toEqual([2, 3]);
     expect(t.doc.draws.every((d) => d.text === "a가나다")).toBe(true);
     advance(260);
@@ -445,6 +457,8 @@ describe("여러 쪽 그리기 순서", () => {
     t.doc.draws = [];
     view.bottom = 2600; // 2쪽이 보이게 됨(스크롤 이벤트 없음)
     ro.resized();
+    expect(t.doc.draws).toEqual([]);
+    await nextRenderTask();
     expect(pagesDrawn(t.doc.draws)).toEqual([2]);
     expect(t.doc.draws[0]!.text).toBe("a가나다");
     advance(260);
@@ -463,7 +477,10 @@ describe("여러 쪽 그리기 순서", () => {
     t.type("a");
     advance(20);
     view.bottom = 2600;
+    const beforeResize = t.doc.draws.length;
     ro.resized();
+    expect(t.doc.draws).toHaveLength(beforeResize);
+    await nextRenderTask();
     t.type("b");
     advance(20);
     t.type("c");
@@ -471,6 +488,63 @@ describe("여러 쪽 그리기 순서", () => {
     for (const page of [0, 1, 2, 3]) expect(t.doc.draws.filter((d) => d.page === page).at(-1)!.text).toBe("abc가나다");
     const afterC = t.doc.draws.findIndex((d) => d.text === "abc가나다");
     expect(t.doc.draws.slice(afterC).every((d) => d.text === "abc가나다")).toBe(true);
+  });
+
+  it("scroll queues multiple dirty pages without synchronous draws and publishes one latest-version page per timer task", async () => {
+    const view = { top: 0, bottom: 500 };
+    layout(view);
+    const t = await mounted({ pages: 12 });
+    await converged(t.doc);
+    vi.useFakeTimers();
+    t.doc.draws = [];
+
+    t.type("a");
+    t.type("b"); // 최신 모델이 되기 전에 예약된 그리기는 실행하지 않는다
+    advance(20);
+    const beforeScroll = t.doc.draws.length;
+    view.top = 8080; view.bottom = 10000; // pages 8 and 9 are both newly visible
+    act(() => void t.scroller.dispatchEvent(new Event("scroll")));
+    expect(t.doc.draws).toHaveLength(beforeScroll);
+
+    await nextRenderTask();
+    expect(t.doc.draws).toHaveLength(beforeScroll + 1);
+    await nextRenderTask();
+    expect(t.doc.draws).toHaveLength(beforeScroll + 2);
+    const visible = t.doc.draws.slice(beforeScroll);
+    expect(pagesDrawn(visible).sort()).toEqual([8, 9]);
+    expect(visible.map(d => d.text)).toEqual(["ab가나다", "ab가나다"]);
+    expect(new Set(visible.map(d => d.task)).size).toBe(visible.length);
+  });
+
+  it("keeps a failed viewport render dirty and retries it when that viewport is requested again", async () => {
+    const view = { top: 0, bottom: 500 };
+    layout(view);
+    const t = await mounted({ pages: 8 });
+    await converged(t.doc);
+    vi.useFakeTimers();
+    t.doc.draws = [];
+    t.type("a");
+    advance(20);
+    const original = t.editor.renderPage.bind(t.editor);
+    const render = vi.spyOn(t.editor, "renderPage");
+    let rejectOnce = true;
+    render.mockImplementation((page, canvas, scale) => {
+      if (page === 4 && rejectOnce) { rejectOnce = false; return false; }
+      return original(page, canvas, scale);
+    });
+
+    view.top = 4040; view.bottom = 4540;
+    act(() => void t.scroller.dispatchEvent(new Event("scroll")));
+    expect(t.doc.draws.some(d => d.page === 4)).toBe(false);
+    await nextRenderTask();
+    expect(render).toHaveBeenCalledWith(4, expect.any(HTMLCanvasElement), 1);
+    expect(t.doc.draws.some(d => d.page === 4)).toBe(false);
+
+    act(() => void t.scroller.dispatchEvent(new Event("scroll")));
+    await nextRenderTask();
+    expect(t.doc.draws.filter(d => d.page === 4).at(-1)?.text).toBe("a가나다");
+    expect(render).toHaveBeenCalledTimes(2);
+    render.mockRestore();
   });
 
   it("배율·DPR이 바뀌면 기다리지 않고 모든 쪽을 새 배율로 다시 그린다", async () => {
