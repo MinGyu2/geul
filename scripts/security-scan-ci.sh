@@ -27,7 +27,7 @@ run() {
 }
 
 run "추적 파일 민감정보 검사" bash -c 'cd "$1" && python3 "$2" --all' _ "$repo" "$scanner"
-run "Git 이력 민감정보 검사" bash -c 'cd "$1" && python3 "$2" --history' _ "$repo" "$scanner"
+run "Git 이력 민감정보 검사" bash -c 'cd "$1" && python3 "$2" --history --no-history-cache' _ "$repo" "$scanner"
 
 if command -v "$gitleaks" >/dev/null 2>&1; then
   "$gitleaks" version

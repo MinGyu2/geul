@@ -35,11 +35,14 @@ import codecs
 import fnmatch
 import hashlib
 import io
+import json
 import os
 import re
 import subprocess
 import sys
 import tempfile
+import time
+import zlib
 import zipfile
 from dataclasses import dataclass, field
 from pathlib import PurePosixPath
@@ -439,10 +442,11 @@ def name_hits(name: str, subpath: str = "") -> set[Hit]:
 
 
 class ContentScanner:
-    """바이트 스트림 하나를 검사해 Hit 목록을 만든다. 경로와 무관한 결과라 blob 단위로 재사용한다."""
+    """바이트 스트림을 경로별 문법으로 검사한다. 결과에는 원문 Hit가 있어 디스크에 저장하지 않는다."""
 
     def __init__(self, warnings: list[str]):
         self.warnings = warnings
+        self.archive_seconds = 0.0
 
     def scan_line(self, line: str, number: int, kind: str, where: str, subpath: str, hits: set[Hit]) -> None:
         for rule in RULES:
@@ -518,7 +522,11 @@ class ContentScanner:
                 break
         stream = _prepend(head, source)
         if head.startswith((b"PK\x03\x04", b"PK\x05\x06")):
-            self.scan_archive(stream, where, hits)
+            started = time.perf_counter()
+            try:
+                self.scan_archive(stream, where, hits)
+            finally:
+                self.archive_seconds += time.perf_counter() - started
             return
         encoding = _text_encoding(head)
         name = PurePosixPath(path).name
@@ -910,51 +918,223 @@ class Report:
                 return
 
 
-def scan_history(root: str, reader: BlobReader, scanner: ContentScanner, report: Report,
-                 errors: list[str]) -> int:
-    """모든 ref에서 도달 가능한 (경로, blob) 쌍을 검사한다.
+# Only successful, warning-free content verdicts are reusable. No hits or raw
+# paths are persisted; path/name checks still run on every history traversal.
+HISTORY_CACHE_MAX_ENTRIES = 100_000
+HISTORY_CACHE_MAX_BYTES = 8 << 20
 
-    각 커밋을 첫 번째 부모와 비교한 변경(루트 커밋은 빈 트리와 비교)을 모으면 도달 가능한 모든 트리의
-    모든 (경로, blob) 쌍이 빠짐없이 나온다. 병합 커밋에서 새로 생긴 내용도 포함된다.
+
+class HistoryPassCache:
+    """Local trusted-user optimization; malformed/unavailable caches mean a full scan.
+
+    Hold a nonblocking advisory lock through publication. Contending processes
+    scan normally without reading/writing the cache. Atomic replace ensures an
+    interruption leaves either the previous complete generation or none.
     """
+
+    def __init__(self, root: str, allowlist: Allowlist, enabled: bool):
+        self.entries: set[str] = set()
+        self.lock = None
+        self.directory = ""
+        self.identity = ""
+        self.state = "disabled"
+        if not enabled or os.environ.get("CI") or os.environ.get("GITHUB_ACTIONS"):
+            return
+        try:
+            import fcntl
+            import stat
+            common = os.path.realpath(git(root, "rev-parse", "--path-format=absolute",
+                                          "--git-common-dir").decode().strip())
+            replacement_base = os.environ.get("GIT_REPLACE_REF_BASE", "refs/replace/")
+            replacements = git(root, "for-each-ref", "--format=%(refname) %(objectname)", replacement_base)
+            with open(__file__, "rb") as source:
+                implementation = hashlib.sha256(source.read()).hexdigest()
+            context = ["history-pass-v1", common, implementation, sys.version, sys.platform,
+                       sys.byteorder, sys.flags.optimize, sys.getfilesystemencoding(),
+                       zlib.ZLIB_RUNTIME_VERSION, git(root, "--version").hex(),
+                       hashlib.sha256(git(root, "config", "--null", "--list")).hexdigest(),
+                       os.environ.get("GIT_NO_REPLACE_OBJECTS"), replacement_base,
+                       replacements.hex(),
+                       [(e.rule, e.glob, e.sha256) for e in allowlist.entries]]
+            self.identity = hashlib.sha256(json.dumps(context, ensure_ascii=True).encode()).hexdigest()
+            self.directory = os.path.join(common, "geul-security-history-cache")
+            os.makedirs(self.directory, mode=0o700, exist_ok=True)
+            info = os.lstat(self.directory)
+            if not stat.S_ISDIR(info.st_mode) or info.st_uid != os.getuid() or info.st_mode & 0o077:
+                raise OSError("unsafe cache directory")
+            fd = os.open(os.path.join(self.directory, "lock"),
+                         os.O_CREAT | os.O_RDWR | os.O_NOFOLLOW, 0o600)
+            self.lock = os.fdopen(fd, "a+")
+            info = os.fstat(fd)
+            if not stat.S_ISREG(info.st_mode) or info.st_uid != os.getuid() or info.st_mode & 0o077:
+                raise OSError("unsafe cache lock")
+            fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            self.state = "cold"
+            # The lock excludes live writers; remove leftovers from interrupted
+            # atomic publications to keep disk use bounded as well as entries.
+            for name in os.listdir(self.directory):
+                if name.startswith(".pending-"):
+                    pending = os.path.join(self.directory, name)
+                    info = os.lstat(pending)
+                    if stat.S_ISREG(info.st_mode) and info.st_uid == os.getuid():
+                        os.unlink(pending)
+            path = os.path.join(self.directory, "cache.json")
+            try:
+                fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
+                with os.fdopen(fd, "rb") as handle:
+                    info = os.fstat(handle.fileno())
+                    if (not stat.S_ISREG(info.st_mode) or info.st_uid != os.getuid()
+                            or info.st_mode & 0o077 or info.st_size > HISTORY_CACHE_MAX_BYTES):
+                        raise ValueError("unsafe cache file")
+                    data = json.loads(handle.read(HISTORY_CACHE_MAX_BYTES + 1))
+                if not isinstance(data, dict) or set(data) != {"identity", "entries", "checksum"}:
+                    raise ValueError("invalid cache structure")
+                entries = data["entries"]
+                if (not isinstance(entries, list) or len(entries) > HISTORY_CACHE_MAX_ENTRIES
+                        or any(not isinstance(e, str) or not re.fullmatch(r"[0-9a-f]{64}", e) for e in entries)
+                        or len(set(entries)) != len(entries)
+                        or data["checksum"] != self.checksum(data["identity"], entries)):
+                    raise ValueError("invalid cache checksum or entries")
+                if data["identity"] == self.identity:
+                    self.entries = set(entries)
+                    self.state = "valid"
+                else:
+                    self.state = "invalidated"
+            except FileNotFoundError:
+                pass
+            except (OSError, ValueError, TypeError, RecursionError):
+                self.state = "invalid"
+        except (ImportError, OSError, RuntimeError, ValueError):
+            self.close()
+            self.state = "unavailable"
+
+    @staticmethod
+    def checksum(identity: str, entries: list[str]) -> str:
+        return hashlib.sha256(json.dumps([identity, entries], ensure_ascii=True,
+                                         separators=(",", ":")).encode()).hexdigest()
+
+    @staticmethod
+    def key(oid: str, path: str) -> str:
+        return hashlib.sha256((oid + "\0" + path).encode("utf-8", errors="surrogateescape")).hexdigest()
+
+    def publish(self, entries: list[str]) -> None:
+        if self.lock is None:
+            return
+        # Keep only entries encountered in the current all-ref traversal; retain
+        # recent entries if the bound is exceeded. Eviction only costs rescans.
+        entries = entries[-HISTORY_CACHE_MAX_ENTRIES:]
+        data = {"identity": self.identity, "entries": entries,
+                "checksum": self.checksum(self.identity, entries)}
+        temporary = None
+        try:
+            with tempfile.NamedTemporaryFile(mode="w", encoding="utf-8", dir=self.directory,
+                                             prefix=".pending-", delete=False) as handle:
+                temporary = handle.name
+                json.dump(data, handle, separators=(",", ":"))
+                handle.flush()
+                os.fsync(handle.fileno())
+            os.replace(temporary, os.path.join(self.directory, "cache.json"))
+            temporary = None
+        except OSError:
+            self.state = "write-unavailable"
+        finally:
+            if temporary is not None:
+                try:
+                    os.unlink(temporary)
+                except OSError:
+                    pass
+
+    def close(self) -> None:
+        if self.lock is not None:
+            self.lock.close()
+            self.lock = None
+
+
+def scan_history(root: str, reader: BlobReader, scanner: ContentScanner, report: Report,
+                 errors: list[str], use_cache: bool = True) -> int:
+    """Enumerate every ref on every invocation; reuse only verified (blob, path) verdicts.
+
+    The original first-parent raw traversal includes root and merge changes.
+    Its coverage and path-dependent detection semantics remain unchanged.
+    """
+    started = time.perf_counter()
     log = git(root, "-c", "log.showSignature=false", "log", "--all", "--reverse", "--topo-order", "--root",
               "--raw", "-z", "--no-renames", "--no-abbrev", "--no-color", "--diff-merges=first-parent",
               "--format=%x01%H")
+    enumeration_seconds = time.perf_counter() - started
     tokens = log.decode("utf-8", errors="surrogateescape").split("\0")
-    # 같은 blob이라도 경로에 따라 해석이 달라진다: 파일 종류(file_kind: 코드의 따옴표 없는 참조 허용 여부),
-    # 바이너리 발견 항목의 파일 이름, 경고에 쓰는 위치. 그래서 (blob, 경로)로 캐시한다. 같은 경로에서 같은 내용이
-    # 다시 나오는 경우(되돌린 커밋 등)는 다시 검사하지 않는다.
-    cache: dict[tuple[str, str], ScanResult | None] = {}
+    entries: list[tuple[str, str, str]] = []
     commit = ""
-    blobs = 0
     index = 0
     while index < len(tokens):
         token = tokens[index].lstrip("\n")
         index += 1
         if token.startswith("\x01"):
             commit = token[1:].strip()
-            continue
-        if not token.startswith(":"):
-            continue
-        path = tokens[index]
-        index += 1
-        _, new_mode, _, new_oid, status = token[1:].split()
-        if status == "D" or new_mode == GITLINK_MODE:
-            continue
-        location = f"{path}@{commit[:12]}"
-        report.check_name(path, location)
-        key = (new_oid, path)
-        if key not in cache:
-            blobs += 1
-            try:
-                cache[key] = scanner.scan(reader.open(new_oid), path, location)
-            except InspectionError as error:
-                errors.append(f"{location}: {error}")
-                cache[key] = None
-        result = cache[key]
-        if result:
-            report.add(path, location, result.hits, result.digest)
-    return blobs
+        elif token.startswith(":"):
+            path = tokens[index]
+            index += 1
+            _, new_mode, _, new_oid, status = token[1:].split()
+            if status != "D" and new_mode != GITLINK_MODE:
+                entries.append((new_oid, path, f"{path}@{commit[:12]}"))
+    cache: dict[tuple[str, str], ScanResult | None] = {}
+    persistent = HistoryPassCache(root, report.allowlist, use_cache)
+    verified: list[str] = []
+    scanned = reused = 0
+    scan_seconds = 0.0
+    try:
+        # Cached content still requires a present blob. Check headers in one
+        # batch without reading large contents (missing objects must fail closed).
+        candidates = {oid for oid, path, _ in entries
+                      if persistent.key(oid, path) in persistent.entries}
+        available: set[str] = set()
+        if candidates:
+            metadata = subprocess.run(["git", "-C", root, "cat-file",
+                                       "--batch-check=%(objectname) %(objecttype)"],
+                                      input="".join(oid + "\n" for oid in sorted(candidates)).encode(),
+                                      capture_output=True)
+            if metadata.returncode == 0:
+                available = {line.split()[0] for line in metadata.stdout.decode().splitlines()
+                             if len(line.split()) == 2 and line.split()[1] == "blob"}
+        for new_oid, path, location in entries:
+            report.check_name(path, location)
+            key = (new_oid, path)
+            if key not in cache:
+                pass_key = persistent.key(new_oid, path)
+                if pass_key in persistent.entries and new_oid in available:
+                    reused += 1
+                    verified.append(pass_key)
+                    cache[key] = None
+                else:
+                    scanned += 1
+                    before_warnings = len(scanner.warnings)
+                    scan_start = time.perf_counter()
+                    try:
+                        result = scanner.scan(reader.open(new_oid), path, location)
+                        cache[key] = result
+                        if (len(scanner.warnings) == before_warnings
+                                and all(report.allowlist.allows(h.rule, path, result.digest) for h in result.hits)):
+                            verified.append(pass_key)
+                    except InspectionError as error:
+                        errors.append(f"{location}: {error}")
+                        cache[key] = None
+                    finally:
+                        scan_seconds += time.perf_counter() - scan_start
+            result = cache[key]
+            if result:
+                report.add(path, location, result.hits, result.digest)
+        # No new generation can certify failed or interrupted invocations.
+        if not errors and not report.findings:
+            persistent.publish(verified)
+        print("history-cache: " + json.dumps({
+            "state": persistent.state, "pairs": len(cache), "scanned": scanned, "reused": reused,
+            "enumeration_seconds": round(enumeration_seconds, 6),
+            "content_seconds": round(scan_seconds, 6),
+            "archive_seconds": round(scanner.archive_seconds, 6),
+        }), file=sys.stderr)
+        return len(cache)
+    finally:
+        persistent.close()
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -963,6 +1143,8 @@ def main(argv: list[str] | None = None) -> int:
     mode.add_argument("--staged", action="store_true", help="스테이징된 내용 검사(기본값)")
     mode.add_argument("--all", action="store_true", help="추적 중인 모든 파일 검사")
     mode.add_argument("--history", action="store_true", help="모든 ref의 전체 Git 이력 검사")
+    parser.add_argument("--no-history-cache", action="store_true",
+                        help="이력 검사 결과 캐시를 읽거나 쓰지 않음(CI는 항상 비활성화)")
     parser.add_argument("paths", nargs="*", help="검사할 파일(지정 시 해당 파일만 검사)")
     args = parser.parse_args(argv)
     if args.paths and (args.staged or args.all or args.history):
@@ -984,7 +1166,7 @@ def main(argv: list[str] | None = None) -> int:
     try:
         report.allowlist = load_allowlist(root, selected, reader, errors, warnings)
         if selected == "history":
-            blobs = scan_history(root, reader, scanner, report, errors)
+            blobs = scan_history(root, reader, scanner, report, errors, not args.no_history_cache)
             scope = f"전체 Git 이력, 검사한 (파일 버전, 경로) {blobs}개"
         elif selected == "staged":
             entries = staged_entries(root)

@@ -10,8 +10,8 @@
 #
 # pre-push 검사는 푸시 범위가 아니라 모든 ref의 전체 이력을 검사한다. pre-commit은 여러 ref를 한 번에
 # 푸시할 때 첫 번째 ref의 범위만 계산하므로, 범위 기반 검사는 함께 푸시되는 다른 ref의 이력을 놓칠 수
-# 있다. 저장소가 작은 동안에는 전체 이력 검사가 가장 단순하고 빠짐이 없다. 그 대신 푸시하지 않는 로컬
-# 브랜치나 stash에 남은 비밀도 푸시를 막는다.
+# 있다. 모든 ref 열거는 유지하며 Python 검사는 검증된 로컬 내용 결과를 재사용할 수 있다. Gitleaks는
+# 기존 전체 이력 검사를 유지한다. 푸시하지 않는 로컬 브랜치나 stash에 남은 비밀도 푸시를 막는다.
 
 default_install_hook_types: [pre-commit, pre-push]
 default_stages: [pre-commit]

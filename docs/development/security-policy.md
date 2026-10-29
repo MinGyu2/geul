@@ -39,7 +39,8 @@ CI는 공개 제품 저장소에 테스트 디렉터리가 없어도 동작하�
 제품 루트에서 `ln -s ../geul-tests/tests tests`로 기존 테스트 명령의 경로를 복구할 수 있습니다.
 `GEUL_TESTS_ROOT`를 지정할 때는 `security/`를 직접 포함하는 `../geul-tests/tests`를 사용합니다.
 `geul-tests`의 제품 경로 링크(예: `src`, `src-tauri`, `external`, `node_modules`, `scripts`)는
-형제 `geul`을 가리키며, 제품 복사본을 만들지 않습니다.
+형제 `geul`을 가리키며, 제품 복사본을 만들지 않습니다. Git 명령과 훅은 제품 루트 `geul`에서 실행합니다.
+외부 호환 루트의 `.git` 링크는 기존 도구의 Git 조회 호환을 위한 것이며 독립 테스트 저장소가 아닙니다.
 
 품질 workflow는 프런트엔드 타입 검사·린트·제품 빌드와 Rust fmt·check·clippy를 유지합니다. check/clippy는 로컬 fixture를 요구하는 테스트 타깃 대신
 제품 타깃 `--lib --bins`를 검사합니다. Rust example 명령은 로컬 테스트 구현을 포함하는 작은 진입 파일로 유지합니다. 테스트 전용
@@ -259,3 +260,32 @@ PRE_COMMIT=<pre-commit 경로> GITLEAKS=<gitleaks 경로> tests/security/test-pr
    - 이미 다른 작업과 합쳐진 커밋은 이력을 다시 쓰지 않습니다. 대신 편차 기록을 남기고, 관리자 승인 전까지
      승인 상태를 `PENDING_APPROVAL`로 둡니다. 2636a65의 기록:
      [policy-deviation.ko.txt](../../tests/integration/rhwp/evidence/t010-readiness-residual-stabilization/security/policy-deviation.ko.txt).
+
+## 로컬 Python 전체 이력 검사 캐시
+
+`check-sensitive-info.py --history`는 매번 기존과 같은 `git log --all` 순회로 모든 ref의
+도달 가능한 `(blob OID, 경로)`를 열거합니다. 현재 브랜치나 push 범위만 검사하지 않습니다.
+로컬에서는 같은 규칙으로 통과한 내용 검사 결과를 재사용하여 큰 텍스트·압축 파일을 반복해서 읽지 않습니다.
+파일 이름 검사는 재사용 여부와 관계없이 매번 실행합니다. 재사용할 blob의 존재와 형식도
+`cat-file --batch-check`로 확인하며, 누락된 blob은 통과로 처리하지 않습니다.
+
+캐시는 Git common directory의 `geul-security-history-cache/cache.json`에 저장하므로 제품 파일이나
+테스트 저장소에 포함되지 않습니다. 같은 저장소의 worktree들은 이를 공유하지만 HEAD allowlist의 의미가
+다르면 무효화됩니다. 저장소 경로, scanner 전체 소스, Python 런타임·최적화 모드, zlib 버전, Git 버전·설정,
+replacement ref 상태, 실제 적용한 allowlist 규칙을 식별값에 포함합니다. 각 항목은 blob OID와 경로를 함께
+해시합니다. 검출 원문·파일 내용·경로 원문은 저장하지 않습니다.
+
+오류나 검출 항목이 남은 실행, 중단된 실행은 새 캐시를 발행하지 않습니다. 경고가 발생한 내용은 다음에도
+다시 검사해 경고를 유지합니다. 캐시는 최대 100,000개 항목이며 현재 이력에서 사용한 항목만 유지합니다.
+체크섬·구조·소유자·권한 검증에 실패하거나 캐시에 접근할 수 없으면 원래 전체 내용 검사를 수행합니다.
+동시 실행 시 비차단 파일 잠금을 얻은 프로세스만 캐시를 사용하고, 다른 프로세스는 전체 내용을 검사합니다.
+임시 파일과 atomic rename으로 갱신하며 중단된 임시 파일은 다음 잠금 소유자가 정리합니다.
+
+이 캐시는 신뢰하는 로컬 사용자 환경을 위한 최적화입니다. 체크섬은 손상 검출용이며, 같은 사용자 권한으로
+scanner나 캐시를 의도적으로 조작하는 공격을 인증하는 장치는 아닙니다. Git 객체는 OID에 대응하는 불변
+내용이라는 Git의 저장 모델을 전제로 합니다. 매 실행의 `history-cache:` 요약은 전체 대상 쌍 수,
+실제 내용 검사 수, 재사용 수, 열거·내용·압축 검사 시간을 별도로 출력합니다. 캐시를 읽거나 쓰지 않고
+검사하려면 `--history --no-history-cache`를 사용합니다.
+
+공개 보안 CI는 `--no-history-cache`를 명시하며, `CI` 또는 `GITHUB_ACTIONS` 환경에서도 캐시는
+자동 비활성화됩니다. 필수 내용 검사·전체 이력 범위·Gitleaks 설정과 검출 규칙은 변경하지 않습니다.
