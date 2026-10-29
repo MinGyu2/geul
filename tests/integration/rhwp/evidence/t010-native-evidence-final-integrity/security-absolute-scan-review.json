@@ -1,9 +1,0 @@
-{
-  "분류": "VERIFIED 최초 absolute scan의 탐지 위치를 실제 줄과 기존 allowlist로 독립 대조",
-  "탐지수": 201,
-  "단일SHA256과기존정확경로및digest예외일치": 201,
-  "미분류": [],
-  "새작업경로탐지": 0,
-  "원본JSON_SHA256": "9b07525d716a91094a5b3f1a3dc0412570839b3b742ebec34f6eb17ab6fa64f1",
-  "규칙변경": false
-}

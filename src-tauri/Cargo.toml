@@ -14,12 +14,12 @@ crate-type = ["rlib"]
 # T008 DOCX 픽스처 생성기(저장소에 바이너리를 두지 않고 실행할 때 만든다, tests/fixtures/README.md).
 [[example]]
 name = "wordcraft_fixture"
-path = "../tests/fixtures/wordcraft/generate.rs"
+path = "examples/wordcraft_fixture.rs"
 
 # T009: 저장 판정 함수를 파일에 적용하는 시험 도구(rhwp WASM 왕복 시험 tests/roundtrip/roundtrip.py가 쓴다).
 [[example]]
 name = "save_check"
-path = "../tests/roundtrip/save_check.rs"
+path = "examples/save_check.rs"
 
 [build-dependencies]
 tauri-build = { version = "=2.7.1", features = [] }

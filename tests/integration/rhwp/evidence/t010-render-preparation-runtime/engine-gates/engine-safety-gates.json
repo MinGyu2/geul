@@ -1,8 +1,0 @@
-{
-  "status": "PASS",
-  "wasmSha256": "e88d85de471073f5c60035bcf4b18e5a0fa16193717dcd800968e43c19d1dc88",
-  "분류": "VERIFIED",
-  "Rust": "4093 passed / 13 ignored; native/wasm clippy -D warnings PASS",
-  "Browser": "Chrome/WebKit 각각 runtime49/RGBA42 PASS; 기존 ownership52/scheduler73 PASS",
-  "범위": "격리 실험 안전 진입 gate; 공식D4/production 승인 아님"
-}

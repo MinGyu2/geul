@@ -1,6 +1,0 @@
-저장소 root에서 node --test tests/integration/rhwp/ownership-poc/test-session.mjs.
-기존 테스트 전용 ownership Vite 서버를 검증된 후보 및 해당 Chrome/WebKit gate와 함께 tests/integration/rhwp/ownership-poc/vite.config.mjs로 실행한다. 제품 서버에 이 hook을 넣지 않는다. 실행 전 포트/다른 세션/후보와 gate identity를 확인하고 개인 display, profile, driver port 및 종료 deadline을 분리한다. 역사 후보는 /tmp/geul-d4-engine-final/candidate-final99에 존재했으나 임시 경로는 영구 보관이 아니다.
-WebKit diagnostic JS realm에서 다음을 실행한다:
-window.__traceHandle = (await import('/tests/integration/rhwp/ownership-poc/lifecycle-trace.mjs')).installLifecycleTrace(window, 4096)
-측정 후 window.__traceHandle.snapshot()을 가져오고 complete가 true인지 반드시 확인한다. window.__traceHandle.stop()으로 listener를 해제한다. dropped 또는 invalid가 0이 아니면 분석에 사용하지 않는다. 이 hook만으로 공식 input latency, publication, resource lease 또는 native cross-process clock을 얻을 수 없다. 원시 trace는 문서 내용을 담지 않더라도 비공개 위치에 보관한다.
-네이티브 실행은 engine-phases/native.py 및 evidence/t010-d4-engine-phase-optimization/REPRODUCE.ko.txt의 기존 후보/gate 절차를 참조한다. 본 task에서 신규 native smoke를 실행하지 않았으며 자동 계측 비교 runner는 아직 구현되지 않았다.

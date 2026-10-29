@@ -1,6 +1,0 @@
-{
-  "source": "IBus Hangul1.5.5 installed GSettings schema",
-  "initialInputModeDefault": "latin",
-  "switchKeysDefault": "Hangul,Shift+space",
-  "correction": "Compile temporary schema copy with initial-input-mode=hangul; GSETTINGS_BACKEND=memory and isolated schema directory. Verify actual composition before history tests. No host or production IME changes."
-}

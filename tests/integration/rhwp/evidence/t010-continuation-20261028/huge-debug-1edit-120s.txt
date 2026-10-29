@@ -1,7 +1,0 @@
-
-running 1 test
-GEUL_PROGRESS /tmp/geul-oracle-huge/issue2063_huge_cellbreak_table.hwp stage=read state=start
-GEUL_PROGRESS /tmp/geul-oracle-huge/issue2063_huge_cellbreak_table.hwp stage=read state=done ms=0 bytes=694272
-GEUL_PROGRESS /tmp/geul-oracle-huge/issue2063_huge_cellbreak_table.hwp stage=openA state=start
-test document_core::geul_incremental_tests::geul_format_memo_equivalence_oracle has been running for over 60 seconds
-EXIT=124

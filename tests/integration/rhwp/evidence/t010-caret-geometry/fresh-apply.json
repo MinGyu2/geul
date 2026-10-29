@@ -1,8 +1,0 @@
-{
-  "status": "PASS",
-  "filesCompared": 1329,
-  "mismatches": [],
-  "patchSha256": "f6d847cc3bbf3e6edd8446fd7e0e672c965d3483fc74ca568bec9276c40e16cb",
-  "independentWasmBuild": false,
-  "method": "Fresh pinned archive + complete patch; compare all src, crates Rust and root Cargo/build inputs with actual candidate source"
-}

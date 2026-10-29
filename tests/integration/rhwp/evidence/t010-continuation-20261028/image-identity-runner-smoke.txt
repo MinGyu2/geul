@@ -1,4 +1,0 @@
-{
-  "status": "FAIL",
-  "error": "TypeError: doc.geulExperimentalImagePageIdentity is not a function"
-}

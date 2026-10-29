@@ -95,5 +95,6 @@ Thumbs.db
 /local/
 /docs/private/
 /docs/internal/
+/tests
 /tests/fixtures/private/
 /tests/fixtures/local/

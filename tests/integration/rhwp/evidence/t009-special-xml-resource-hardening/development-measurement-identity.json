@@ -1,6 +1,0 @@
-{
-  "binarySha256": "f046f29b6984b59fd2e21c8432d1890867244076d680370b9b1232ea70a383c4",
-  "results": "measurements-attempt1.json",
-  "classification": "development observation before replacing redundant ordinary-equality pass with validation-only pass; final source comparison must be rerun",
-  "sourceSnapshot": "UNVERIFIED: no source snapshot taken for development iteration; do not use as final source identity"
-}

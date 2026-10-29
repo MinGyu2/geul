@@ -1,4 +1,0 @@
-$ python3 -I -m unittest discover -s tests/integration/rhwp/ownership-poc -p 'test_*.py'
-Ran 214 tests in 37.668s
-
-OK

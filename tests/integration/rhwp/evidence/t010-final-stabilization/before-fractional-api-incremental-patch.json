@@ -1,8 +1,0 @@
-{
-  "status": "PASS",
-  "patch": "incremental-from-lease-progress.patch",
-  "sha256": "0d34dfa71813f3a474fefcae9723ee7e8852d8e9dd0a22ee3046280965422cbf",
-  "baseCompletePatch": "../t010-lease-progress/upstream-rhwp-lease-progress.patch",
-  "applyCheckExit": 0,
-  "source": "Final new source; apply only after the historical lease-progress complete patch"
-}

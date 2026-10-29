@@ -1,7 +1,0 @@
-{
-  "pinnedFirstAttempt": "attempt-1-d4-pinned.json",
-  "classification": "No official timing samples; not a latency measurement",
-  "failure": "Vite refused public /rhwp/rhwp.js dynamic import from source during app bootstrap",
-  "correction": "Explicit test-only pinned-perf Vite transform uses WebDriver-installed runtime import helper, retaining pinned bytes/default document factory. Read-only actual-module observer prevents query-alias instrumentation. Normal production files unchanged.",
-  "earlierPortProbe": "TIME_WAIT prevented non-reuse socket bind; ss confirmed no listening process. Task-local wrapper port probe now uses SO_REUSEADDR; does not displace another server."
-}

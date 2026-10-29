@@ -1,4 +1,0 @@
-tests/integration/rhwp/evidence/t010-d4-handler-integrity-hardening/verified-baseline-handler.json:6: [home-path-unix] 사용자 홈 절대 경로(/home): *** (len=3)
-tests/integration/rhwp/evidence/t010-d4-handler-integrity-hardening/verified-luma8-handler.json:6: [home-path-unix] 사용자 홈 절대 경로(/home): *** (len=3)
-
-민감정보 의심 항목 2건 발견 (스테이징 파일 55개). 값을 제거하거나, 오탐이면 docs/development/security-policy.md의 예외 절차를 따르세요.

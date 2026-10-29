@@ -1,9 +1,0 @@
-{
-  "status": "PASS",
-  "sourceFiles": 1314,
-  "sourceMismatches": [],
-  "sourceExtras": [],
-  "cargoBuildMismatches": [],
-  "method": "Fresh pinned source export + complete patch, native28 reconstructed; all src/Cargo/build compared to actual build source. No independent fresh WASM build claimed.",
-  "patchSha256": "ae5c180e8508dbc79c69ae20b5743bd37c026c11eb64b89624af1aa5cfecec34"
-}

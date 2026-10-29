@@ -30,10 +30,10 @@ repos:
 
       - id: check-sensitive-info-tests
         name: 민감정보 검사기 회귀 테스트
-        entry: python3 -m unittest discover -s tests/security
+        entry: scripts/security-regression-local.sh
         language: system
         pass_filenames: false
-        files: ^(scripts/check-sensitive-info\.py|tests/security/)
+        files: ^(scripts/check-sensitive-info\.py|scripts/security-regression-local\.sh|tests/security/)
         stages: [pre-commit]
 
       - id: check-sensitive-info-all

@@ -1,8 +1,0 @@
-{
-  "status": "PASS",
-  "sourceFilesCompared": 1317,
-  "mismatch": [],
-  "patchSha256": "0cbd9ee51abccd8c6e7586574259ccc214825012a426fa4b0d689161095038b2",
-  "independentBuild": false,
-  "method": "fresh pinned git archive plus complete patch apply; compare all src and Cargo/build inputs to actual compiled source"
-}

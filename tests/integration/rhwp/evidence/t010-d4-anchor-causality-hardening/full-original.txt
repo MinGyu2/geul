@@ -1,4 +1,0 @@
-$ python3 -I -m unittest discover -s tests/integration/rhwp/ownership-poc -p 'test_*.py'  # b80892d tests/ tree (scratch mirror; evidence, fixtures/rhwp, external symlinked to unchanged repo paths)
-Ran 201 tests in 30.295s
-
-OK

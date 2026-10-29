@@ -1,9 +1,0 @@
-{
-  "status": "VERIFIED harness transport failure; root cause UNVERIFIED",
-  "attempt": "optimized-official-first.json",
-  "completedDocuments": 3,
-  "failure": "fourth document POST /session closed before app process was observed",
-  "postCleanup": "ss port4489 no listener; no owned geul/tauri-driver/WebKitWebDriver process remained",
-  "productRegression": "not established; previously fresh native D1/pending/safety passed; no fourth application measurement",
-  "retry": "exactly one bounded retry with same canonical history-perf.py/MEASURE/candidate/config; capture supported smoke.DRIVER_LOG outside measured spans, preserve incomplete first attempt; no selection among valid p95 values"
-}

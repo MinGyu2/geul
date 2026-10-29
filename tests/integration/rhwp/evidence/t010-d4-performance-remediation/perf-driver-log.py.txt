@@ -1,6 +1,0 @@
-from pathlib import Path
-import sys,runpy
-sys.path.insert(0,'<workspace>/tests/integration/rhwp/ownership-poc')
-import native
-native.smoke.DRIVER_LOG=Path('/tmp/geul-d4-remediation/official-retry-driver.log')
-runpy.run_path('<workspace>/tests/integration/rhwp/ownership-poc/history-perf.py',run_name='__main__')

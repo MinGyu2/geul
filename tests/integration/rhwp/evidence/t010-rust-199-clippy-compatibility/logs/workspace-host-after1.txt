@@ -1,9 +1,0 @@
-    Checking subsetter v0.2.6
-   Compiling rhwp v0.8.7 (<scratch>/source)
-    Checking rhwp-password-crypto v0.1.0 (<scratch>/source/crates/rhwp-password-crypto)
-    Checking svg2pdf v0.13.0 (<scratch>/source/vendor/svg2pdf)
-    Checking rhwp-ooxml-chart v0.1.0 (<scratch>/source/crates/rhwp-ooxml-chart)
-    Checking rhwp-contracts v0.1.0 (<scratch>/source/crates/rhwp-contracts)
-    Checking llm-verifier-criteria-decomp v0.1.0 (<scratch>/source/tools/llm_verifier/criteria_decomp)
-error: could not compile `rhwp-ooxml-chart` (lib) due to 1 previous error
-warning: build failed, waiting for other jobs to finish...

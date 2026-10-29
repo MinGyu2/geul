@@ -1,5 +1,0 @@
-{
-  "status": "INTERRUPTED",
-  "reason": "Source review caught integer requested scale normalizing to fractional effective scale; move fallback also into poll after normalization before final build. No completed artifact signoff.",
-  "processesTerminated": 8
-}

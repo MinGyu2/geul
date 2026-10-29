@@ -1,6 +1,0 @@
-{
-  "status": "VERIFIED",
-  "source": "current probe with later post-timed metadata fields removed; exact byte digest independently matches all three frozen primary run identities",
-  "sha256": "7e40e9f76a53811fb52330d814f26381c1cef747b13a39a46ab825151b96ef43",
-  "matchesAllThree": true
-}

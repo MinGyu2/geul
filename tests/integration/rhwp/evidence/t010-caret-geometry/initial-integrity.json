@@ -1,8 +1,0 @@
-{
-  "head": "6452bb8e0653c626fb7d8749b18f9cfb6c133fab",
-  "previousEvidenceFiles": 191,
-  "previousEvidenceTreeSha256": "4822ce78a784e3492cacd20c86622777b7d9a894d4655dd3cc34745202beceae",
-  "previousEvidence": "t010-final-stabilization",
-  "candidateParentWasmSha256": "d49e654fffee380b48266801e2bd8e52a64fbdfbc494e5b1fcafe935b182745a",
-  "scope": "D1 empty floating-host caret geometry only; prior report and gates preserved; product remains inactive"
-}

@@ -1,9 +1,0 @@
-{
-  "status": "VERIFIED_PUBLIC_SHA256",
-  "findingCount": 1,
-  "sha256": "9563a9ef26b5d0c22997e9beb8cb8c037e852df7ca95a8362800e7bd0cf24c5d",
-  "path": "src/wasm_api.rs",
-  "verification": "computed digest of unchanged public pinned+caret source matches ENGINE.json; metadata represented as path/sha256 records to avoid interpreting the filename as an API-key field; no scanner rule changed",
-  "detectorRule": "generic-api-key",
-  "evidenceFile": "source-runtime-identities.json"
-}

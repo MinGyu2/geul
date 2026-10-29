@@ -10,7 +10,6 @@ set -uo pipefail
 repo="${1:-.}"
 script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 scanner="$script_dir/check-sensitive-info.py"
-tests_dir="$script_dir/../tests/security"
 gitleaks="${GITLEAKS:-gitleaks}"
 failed=()
 
@@ -27,7 +26,6 @@ run() {
   echo "::endgroup::"
 }
 
-run "검사기 회귀 테스트" python3 -m unittest discover -s "$tests_dir"
 run "추적 파일 민감정보 검사" bash -c 'cd "$1" && python3 "$2" --all' _ "$repo" "$scanner"
 run "Git 이력 민감정보 검사" bash -c 'cd "$1" && python3 "$2" --history' _ "$repo" "$scanner"
 

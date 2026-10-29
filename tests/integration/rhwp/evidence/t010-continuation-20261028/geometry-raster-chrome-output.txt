@@ -1,8 +1,0 @@
-<!DOCTYPE html>
-<html><head></head><body><pre id="out">{"values":[10.00001,10.00049],"jsonValues":["10.000","10.000"],"canvas":[320,200],"scale":12,"pixels":240,"channels":240,"maxDelta":2}</pre><script>
-const values=[10.00001,10.00049];
-const buffers=values.map(x=>{const c=document.createElement('canvas');c.width=320;c.height=200;const ctx=c.getContext('2d');ctx.scale(12,12);ctx.fillStyle='black';ctx.fillRect(x,1,8,10);return ctx.getImageData(0,0,c.width,c.height).data;});
-let channels=0,pixels=0,maxDelta=0;for(let i=0;i<buffers[0].length;i+=4){let changed=false;for(let j=0;j<4;j++){const d=Math.abs(buffers[0][i+j]-buffers[1][i+j]);if(d){channels++;changed=true;maxDelta=Math.max(maxDelta,d);}}if(changed)pixels++;}
-document.querySelector('#out').textContent=JSON.stringify({values,jsonValues:values.map(x=>x.toFixed(3)),canvas:[320,200],scale:12,pixels,channels,maxDelta});
-</script>
-</body></html>

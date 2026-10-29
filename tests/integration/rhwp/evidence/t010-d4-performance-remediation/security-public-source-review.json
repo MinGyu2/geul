@@ -1,8 +1,0 @@
-{
-  "status": "VERIFIED_PUBLIC_SHA256",
-  "findingCount": 5,
-  "sourcePath": "src/wasm_api.rs",
-  "sha256": "9563a9ef26b5d0c22997e9beb8cb8c037e852df7ca95a8362800e7bd0cf24c5d",
-  "approvedAndOptimizedSourceIdentical": true,
-  "scope": "only four enumerated new evidence paths AND exact independently computed public source checksum; no credential rule disabled"
-}

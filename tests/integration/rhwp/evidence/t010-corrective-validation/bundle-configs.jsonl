@@ -1,3 +1,0 @@
-{"config":"normal","bundleSha256":"142c0d69a68ac59e63e856b7e92ebc8486e7a375bb7e36ffe4bd3448ea137fbb","registryExcerpt":"m={level:`supported`},h={level:`unsupported`},g=h","historyMarker":0}
-{"config":"hooks","bundleSha256":"f24e7f4071ba385a135a7fdcb430c9d42b5d71d652e693e7cacd0c86db903d9f","registryExcerpt":"m={level:`supported`},h={level:`unsupported`},g=h","historyMarker":0}
-{"config":"history","bundleSha256":"170ea69d6b4d3f2a529e0c2967b8202e9c9e6c2563c02b249f2322f2579961c5","registryExcerpt":"m={level:`supported`},h={level:`unsupported`},g=(console.info(`geul-test-build: rhwp-history-commands`),m)","historyMarker":1}

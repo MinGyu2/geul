@@ -20,12 +20,30 @@
 |------|------|------|------|-------------|
 | 1 | 커밋 전 (`pre-commit` 훅) | `check-sensitive-info.py --staged`, Gitleaks `git --pre-commit --staged` | 스테이징된 내용(인덱스) | 훅 미설치, `--no-verify`로 우회 가능 |
 | 2 | 푸시 전 (`pre-push` 훅) | `check-sensitive-info.py --all`, `--history`, Gitleaks `git`(전체 이력) | 추적 파일 + 모든 ref의 전체 이력 | 훅 미설치, `--no-verify`로 우회 가능 |
-| 3 | push / pull request (CI) | `.github/workflows/security-scan.yml` → `scripts/security-scan-ci.sh` | 검사기 테스트, 추적 파일 전체, 전체 이력(자체 검사기 + Gitleaks) | 필수 상태 검사로 지정하지 않으면 병합을 막지 못함. 이미 푸시된 내용은 되돌리지 못함 |
+| 3 | push / pull request (CI) | `.github/workflows/security-scan.yml` → `scripts/security-scan-ci.sh` | 추적 파일 전체, 전체 이력(자체 검사기 + Gitleaks) | 필수 상태 검사로 지정하지 않으면 병합을 막지 못함. 이미 푸시된 내용은 되돌리지 못함 |
 | 4 | 최초 공개 전·정기 점검 (수동) | 아래 4절 체크리스트 | 전체 파일과 모든 ref의 이력 | — |
 
 ### 푸시 전 검사 범위
 
 pre-push 단계는 푸시하는 커밋 범위만이 아니라 **모든 ref의 전체 이력**을 검사합니다.
+
+CI는 공개 제품 저장소에 테스트 디렉터리가 없어도 동작하도록 회귀 테스트를 실행하지 않습니다. 로컬에서는
+`scripts/security-regression-local.sh`가 `GEUL_TESTS_ROOT`(기본값 `tests`)에서 회귀 테스트를 실행하며,
+테스트 자료가 없으면 이를 건너뛴 사실을 출력합니다. 이는 필수 secret scan을 대체하지 않습니다.
+
+테스트 환경은 형제 디렉터리 `../geul-tests/tests`에 보관합니다. `geul/tests`는 이 경로를 가리키는 로컬
+심볼릭 링크로 유지하며 `/tests` ignore 규칙이 이를 공개 Git 추적에서 제외합니다. `geul-tests` 내부에는
+제품 루트를 가리키는 링크를 두어 기존 테스트의 저장소 루트 경로 계산이 동작하게 합니다. 별도 worktree는
+각자 독립된 테스트 경로를 사용하며 이 링크는 자동으로 공유되지 않습니다.
+현재 recovery worktree의 수정된 테스트는 그대로 보존하며 master 테스트 링크로 대체하지 않습니다.
+제품 루트에서 `ln -s ../geul-tests/tests tests`로 기존 테스트 명령의 경로를 복구할 수 있습니다.
+`GEUL_TESTS_ROOT`를 지정할 때는 `security/`를 직접 포함하는 `../geul-tests/tests`를 사용합니다.
+`geul-tests`의 제품 경로 링크(예: `src`, `src-tauri`, `external`, `node_modules`, `scripts`)는
+형제 `geul`을 가리키며, 제품 복사본을 만들지 않습니다.
+
+품질 workflow는 프런트엔드 타입 검사·린트·제품 빌드와 Rust fmt·check·clippy를 유지합니다. check/clippy는 로컬 fixture를 요구하는 테스트 타깃 대신
+제품 타깃 `--lib --bins`를 검사합니다. Rust example 명령은 로컬 테스트 구현을 포함하는 작은 진입 파일로 유지합니다. 테스트 전용
+job(`d4-analyzer`, 표시 이름 `D4 증거 분석기 무결성 검사`) 제거 후 브랜치 보호에서 해당 workflow의 기존 필수 status check를 갱신해야 할 수 있습니다.
 
 - pre-commit 프레임워크는 여러 ref를 한 번에 푸시할 때 첫 번째 ref의 범위만 계산합니다. 범위 기반 검사는
   함께 푸시되는 다른 ref의 이력을 놓칠 수 있습니다.

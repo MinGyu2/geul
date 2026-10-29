@@ -1,9 +1,0 @@
-{
-  "status": "FAIL before native launch",
-  "mode": "safety",
-  "exit": 1,
-  "error": "OSError errno98 Address already in use at exclusive port preflight",
-  "observations": "ss -ltnp port1420 showed no listener; previous Vite process terminated; ss -tan used to inspect TIME_WAIT",
-  "productCorrectness": "UNVERIFIED by this attempt; no driver or application started",
-  "retryPolicy": "Correct wrapper socket preflight reuse for serial local servers, not official timing rerun"
-}

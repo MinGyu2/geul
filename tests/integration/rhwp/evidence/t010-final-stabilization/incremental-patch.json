@@ -1,6 +1,0 @@
-{
-  "sha256": "6d2d4b91b33ab7d24955c100a3ac22f0e3a158c01b9af159448afb0d78acc51e",
-  "applyCheckExit": 0,
-  "scope": "incremental from preserved t010-lease-progress isolated source only; complete patch preferred against pinned revision",
-  "output": ""
-}

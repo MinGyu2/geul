@@ -1,8 +1,0 @@
-   Compiling rhwp v0.8.7 (<scratch>/source)
-    Checking rhwp-ooxml-chart v0.1.0 (<scratch>/source/crates/rhwp-ooxml-chart)
-    Checking rhwp-contracts v0.1.0 (<scratch>/source/crates/rhwp-contracts)
-    Checking llm-verifier-verdict-protocol v0.1.0 (<scratch>/source/tools/llm_verifier/verdict_protocol)
-    Checking llm-verifier-criteria-decomp v0.1.0 (<scratch>/source/tools/llm_verifier/criteria_decomp)
-    Checking llm-verifier-claim-bind v0.1.0 (<scratch>/source/tools/llm_verifier/claim_bind)
-    Checking rhwp-native-ffi v0.1.0 (<scratch>/source/bindings/Native)
-    Finished `release` profile [optimized] target(s) in 51.90s

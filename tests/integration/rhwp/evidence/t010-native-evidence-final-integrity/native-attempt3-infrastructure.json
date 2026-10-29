@@ -1,9 +1,0 @@
-{
-  "분류": "VERIFIED 실행 전 인프라 실패, 자동 재시도 아님",
-  "attempt": 3,
-  "wrapper종료": 1,
-  "실제D1실행": false,
-  "오류": "PermissionError: [Errno 1] Operation not permitted, socket.socket()",
-  "결과파일": "없음, 예외는 이전 wrapper와 동일한 포트 확인 단계에서 발생",
-  "후속계획": "실패 보존 후 별도 attempt4로 필요한 샌드박스 권한 요청"
-}

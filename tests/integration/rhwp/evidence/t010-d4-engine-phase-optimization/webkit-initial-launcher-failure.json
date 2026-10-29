@@ -1,7 +1,0 @@
-{
-  "exit": 1,
-  "stage": "post-run metadata",
-  "error": "WebKitWebDriver --version unsupported; parent check_output raised before writing result",
-  "measurementResult": "UNAVAILABLE; no pass asserted",
-  "fix": "launcher reports driver hash and logs actual WebDriver session capabilities; parent preserves FAIL result on metadata error"
-}

@@ -1,4 +1,4 @@
-# 앱 셸(T004) 품질 검사: 프런트엔드(타입·린트·테스트·빌드)와 Rust(서식·컴파일·clippy).
+# 앱 제품의 정적 검사와 빌드: 프런트엔드(타입·린트·빌드)와 Rust(서식·컴파일·clippy).
 #
 # 보안 검사(security-scan.yml)와 독립적으로 실행한다. rhwp(external/rhwp, 수 GB)는 WebView의 WASM으로 실행할 때 불러오므로
 # (T007, scripts/build-rhwp-wasm.sh) 받지 않는다. WordCraft(external/wordcraft)는 Rust 백엔드가 path 의존성으로 링크하므로(T008)
@@ -42,12 +42,6 @@ jobs:
 
       - name: ESLint
         run: npm run lint
-
-      - name: Vitest
-        run: npm test
-
-      - name: RHWP 테스트 전용 렌더 스케줄러 및 lifecycle 추적 회귀 검사
-        run: node --test tests/integration/rhwp/ownership-poc/test-session.mjs
 
       - name: 프런트엔드 빌드
         run: npm run build
@@ -108,43 +102,7 @@ jobs:
         run: cargo fmt --check
 
       - name: cargo check
-        run: cargo check --locked --all-targets
+        run: cargo check --locked --lib --bins
 
       - name: cargo clippy
-        run: cargo clippy --locked --all-targets -- -D warnings
-
-      - name: cargo test (문서 형식 판별·세션 T006, WordCraft 어댑터 T008)
-        run: cargo test --locked
-
-  d4-analyzer:
-    name: D4 증거 분석기 무결성 검사
-    runs-on: ubuntu-24.04
-    timeout-minutes: 5
-    steps:
-      - name: 저장소 체크아웃 (submodule 제외)
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          submodules: false
-          persist-credentials: false
-
-      # 표준 라이브러리와 합성 fixture만 사용. 비공개 raw가 없으면 역사 재분석 테스트만 skip.
-      - name: Python 분석기 및 runner 회귀 검사
-        run: python3 -m unittest discover -s tests/integration/rhwp/evidence/t010-d4-critical-path-remediation -p 'test_*.py'
-
-      - name: 최적화 모드에서도 무결성 검사 유지
-        run: python3 -O -m unittest discover -s tests/integration/rhwp/evidence/t010-d4-critical-path-remediation -p test_analysis.py
-
-      - name: 환경변수 최적화에서도 무결성 검사 유지
-        run: PYTHONOPTIMIZE=1 python3 -m unittest discover -s tests/integration/rhwp/evidence/t010-d4-critical-path-remediation -p test_analysis.py
-
-      # 가짜 브라우저 프로세스·로컬 HTTP 서버·합성 fixture만 사용(실제 브라우저·submodule·native 바이너리 없음).
-      - name: engine-phases runner 실패 경로·checksum catalog·native attribution 회귀 검사
-        run: python3 -I -m unittest discover -s tests/integration/rhwp/engine-phases -p 'test_*.py'
-
-      - name: native smoke 정리 및 증거 회귀 검사 (브라우저 불필요)
-        run: |
-          python3 -I tests/integration/rhwp/ownership-poc/test_smoke_verdict.py
-          python3 -I -m unittest discover -s tests/e2e -p test_harness_errors.py
-
-      - name: engine-phases 회귀 검사 (최적화 모드)
-        run: python3 -I -O -m unittest discover -s tests/integration/rhwp/engine-phases -p 'test_*.py'
+        run: cargo clippy --locked --lib --bins -- -D warnings

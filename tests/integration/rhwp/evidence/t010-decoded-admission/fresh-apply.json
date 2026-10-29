@@ -1,7 +1,0 @@
-{
-  "status": "PASS",
-  "filesCompared": 1057,
-  "mismatches": [],
-  "independentWasmBuild": false,
-  "method": "fresh pinned source + complete patch; compare all src/crates Rust and root Cargo/build inputs"
-}

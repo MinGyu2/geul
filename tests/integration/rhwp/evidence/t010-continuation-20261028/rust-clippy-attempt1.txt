@@ -1,2 +1,0 @@
-    Checking geul v0.1.0 (/home/<USER>/share/ai-prj/geul/src-tauri)
-    Finished `dev` profile [unoptimized + debuginfo] target(s) in 4.16s

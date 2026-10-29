@@ -1,7 +1,0 @@
-{
-  "classification": "VERIFIED native zero-size frame after synchronous initial completion; React development cleanup ordering supported by source and regression",
-  "beforeEvidence": "attempt-2-native-zero-canvas.json",
-  "beforeSource": "attempt-1-session.mjs.txt",
-  "correction": "Defer first/resize/generation frames through normal pump and pending marker; immediate first poll only for established same-size frame. Product Surface unchanged.",
-  "newUnit": "initial-mount-cleanup-preserves-pending"
-}

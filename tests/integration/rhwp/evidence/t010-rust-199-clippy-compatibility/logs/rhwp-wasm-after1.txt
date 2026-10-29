@@ -1,5 +1,0 @@
-   Compiling rhwp v0.8.7 (<scratch>/source)
-    Checking rhwp-password-crypto v0.1.0 (<scratch>/source/crates/rhwp-password-crypto)
-    Checking rhwp-contracts v0.1.0 (<scratch>/source/crates/rhwp-contracts)
-    Checking rhwp-ooxml-chart v0.1.0 (<scratch>/source/crates/rhwp-ooxml-chart)
-    Finished `release` profile [optimized] target(s) in 52.12s
