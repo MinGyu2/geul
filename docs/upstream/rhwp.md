@@ -32,16 +32,29 @@ RHWP 제품 빌드는 재현성 때문에 외부 submodule에 기존 변경이 �
 
 제품 호출 경로는 RHWP의 `src/renderer/web_canvas.rs`에서
 `image::load_from_memory`를 호출하고, `image 0.25.10`의 내장 PNG decoder가
-`png 0.18.1`의 내부 Paeth 복원 코드를 사용한다. image의 decoder hook은 확장자로
-등록하는 별도 포맷용이며, 바이트에서 PNG로 판별되는 이 내장 decoder를 대체하지
-않는다. JavaScript 쪽에서도 WASM 내부의 Rust 알고리즘을 선택하거나 바꿀 수 없다.
+`png 0.18.1`의 내부 Paeth 복원 코드를 사용한다. `image 0.25.10`은
+`register_format_detection_hook`과 `register_decoding_hook`으로 Rust 호출자가
+포맷 판별과 decoder를 등록할 수 있게 한다. `load_from_memory`도 이 포맷 판별 hook을
+확인한다. 이 API들은 decoder 선택 지점이며 Paeth predictor를 바꾸는 callback은 아니다.
+또한 png 0.18.1의 filter 모듈과 Paeth 함수는 private (`pub(super)`)이고 공개 predictor
+callback도 없다. PNG `StreamingDecoder` 공개 API가 있지만, 이 역시 내부 Paeth 함수의
+교체 지점은 아니다.
 
-따라서 현재 geul 소스만으로 실험된 Paeth 구현을 제품에 연결하는 지원 인터페이스가
-없다. 외부 소스 변경이나 소스 사본 없이 최적화를 통합할 수 없으므로 제품 WASM은
-마지막 재현 가능한 고정 엔진을 사용한다. 2026-10-30 실험 보고서의 픽셀 및 성능
-결과는 당시 후보에서만 측정되었으며 현재 제품 통합이나 성능 향상의 증거가 아니다.
-향후에는 필요한 PNG 인터페이스/구현이 포함된 upstream 승인 릴리스를 사용하거나,
-명시적으로 승인된 포크·geul 소유 통합 경계를 설계한 뒤 별도 검증해야 한다.
+현재 제품은 external RHWP가 자체 cdylib으로 만든 WASM이다. geul에는 그 WASM 인스턴스
+안에서 Rust hook을 등록하는 export 또는 초기화 경계가 없다. 별도로 로드되는 JavaScript나
+다른 WASM crate는 인스턴스 내부의 Rust hook registry를 변경할 수 없다. 따라서 현재
+고정 제품 빌드에는 실험된 Paeth 구현을 연결하는 지점이 없다.
+
+향후 가능한 geul 소유 통합 경계로, RHWP rlib과 `image`를 함께 링크하는 WASM host/bootstrap을
+구성해 공개 image format/decoding hook으로 PNG decoder adapter를 등록하는 방안이 있다.
+이는 새 빌드·export 계약을 설계해야 하는 변경이며, 아직 제품 경로가 아니다. 기존 렌더
+의미와 PNG fallback을 유지하는지, 픽셀이 정확히 같은지, 메모리·취소 동작과 성능이 안전한지
+별도로 검증해야 한다. 다른 경로로는 필요한 구현이 포함된 upstream 승인 릴리스 및 RHWP
+고정 revision 갱신, 또는 명시적으로 승인된 공개 fork와 그 재현 가능한 설정을 검토할 수 있다.
+외부 소스를 바꾸거나 소스 사본을 만드는 방식은 사용하지 않는다.
+
+2026-10-30 실험 보고서의 픽셀 및 성능 결과는 당시 후보에서만 측정되었으며 현재 제품
+통합이나 성능 향상의 증거가 아니다. 제품 WASM은 고정된 미수정 RHWP 소스를 사용한다.
 
 - 업스트림: https://github.com/edwardkim/rhwp
 - 위치: `external/rhwp/` (Git submodule)
