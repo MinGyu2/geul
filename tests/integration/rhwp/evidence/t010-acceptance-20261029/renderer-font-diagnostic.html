@@ -1,0 +1,56 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>T010 Canvas font 호출 비용 진단</title>
+<pre id="out">RUNNING</pre>
+<script type="module">
+// 진단 전용. 공식 입력·D4 endpoint 및 production 설정에는 적용하지 않는다.
+const out = document.querySelector('#out');
+const result = { status:'RUNNING', official:false, scope:'고정 페이지 Full 렌더의 Canvas font 호출 비용과 동일 픽셀 비교; D4 아님', cases:[] };
+const prototype = CanvasRenderingContext2D.prototype;
+const descriptor = Object.getOwnPropertyDescriptor(prototype, 'font');
+let doc;
+const digest = async bytes => [...new Uint8Array(await crypto.subtle.digest('SHA-256',bytes))].map(b=>b.toString(16).padStart(2,'0')).join('');
+const stats = values => { const s=[...values].sort((a,b)=>a-b);return {n:s.length,p50:s[Math.ceil(s.length*.5)-1],p95:s[Math.ceil(s.length*.95)-1],max:s.at(-1)}; };
+try {
+  if (!descriptor?.get || !descriptor.set || !descriptor.configurable) throw new Error('font descriptor unavailable');
+  const manifest = await (await fetch('/__ownership_candidate__/ENGINE.json')).json();
+  result.candidate = {wasmSha256:manifest.artifacts['rhwp_bg.wasm'], productionApproval:manifest.productionApproval};
+  const candidateURL = '/__ownership_candidate__/rhwp.js';
+  const module = await import(/* @vite-ignore */ candidateURL);
+  await module.default({module_or_path:'/__ownership_candidate__/rhwp_bg.wasm'});
+  const input = new Uint8Array(await (await fetch('/external/rhwp/samples/issue6031/3249937_asset_management_rules.hwpx')).arrayBuffer());
+  result.fixtureSha256 = await digest(input);
+  if(result.fixtureSha256 !== '97b5d6c571a6b7626321c6a53d797e3511978447497bb73309bd23eaa8e7ea77')throw new Error('fixture identity mismatch');
+  doc = new module.HwpDocument(input);
+  const canvas=document.createElement('canvas');
+  const render=()=>doc.renderPageToCanvas(0,canvas,0.5);
+  for(let n=0;n<5;n++){render();await new Promise(r=>setTimeout(r,20));}
+  await document.fonts.ready;render();
+  const reference=canvas.getContext('2d').getImageData(0,0,canvas.width,canvas.height).data.slice();
+  for (const mode of ['baseline','skip-identical-font-setter','baseline-repeat']) {
+    const knownFonts=new WeakMap();
+    const totals={sets:0,gets:0,skippedSets:0,setMs:0,getMs:0};
+    Object.defineProperty(prototype,'font',{...descriptor,
+      get(){const start=performance.now();const value=descriptor.get.call(this);totals.getMs+=performance.now()-start;totals.gets++;return value;},
+      set(value){totals.sets++;const start=performance.now();
+        const known=knownFonts.get(this);
+        if(mode==='skip-identical-font-setter' && known?.request===value && descriptor.get.call(this)===known.actual)totals.skippedSets++;
+        else {descriptor.set.call(this,value);if(mode==='skip-identical-font-setter')knownFonts.set(this,{request:value,actual:descriptor.get.call(this)});}
+        totals.setMs+=performance.now()-start;
+      },
+    });
+    const elapsed=[];let exact=0;
+    for(let n=0;n<12;n++){
+      const start=performance.now();render();elapsed.push(performance.now()-start);
+      const actual=canvas.getContext('2d').getImageData(0,0,canvas.width,canvas.height).data;
+      if(actual.length!==reference.length || actual.some((v,i)=>v!==reference[i]))throw new Error(mode+': exact RGBA mismatch');
+      exact++;await new Promise(r=>setTimeout(r,10));
+    }
+    Object.defineProperty(prototype,'font',descriptor);
+    result.cases.push({mode,renderMs:stats(elapsed),totals,exactComparisons:exact});
+  }
+  canvas.width=canvas.height=0;
+  result.status='PASS';
+} catch(error) {result.status='FAIL';result.error=String(error);}
+finally { if(descriptor)Object.defineProperty(prototype,'font',descriptor);doc?.free();out.textContent=JSON.stringify(result); }
+</script>

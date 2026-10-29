@@ -33,6 +33,7 @@ const ownershipKey = Symbol.for('geul.rhwp.render-ownership.v1');
 const renderOwnership = globalThis[ownershipKey] ??= {
   owners: new WeakMap(), epochs: new WeakMap(), backingEpochs: new WeakMap(), trackedBackings: new WeakSet(),
 };
+renderOwnership.uncertainOwners ??= new WeakMap();
 const bumpBackingEpoch = canvas => {
   const epoch = (renderOwnership.backingEpochs.get(canvas) ?? 0) + 1;
   renderOwnership.backingEpochs.set(canvas, epoch);
@@ -155,6 +156,17 @@ async function module() {
 
 export function createOwnershipSession(Session, sessionId, backend, registry) {
   let doc = null, generation = 0, documentId = 0, active = null, timer = null, disposed = false;
+  let renderFault = null, freeUncertain = false;
+  const uncertainJobs = new Set(), uncertainCanvases = new Map(), subscriptions = new Set();
+  // Attempt independent cleanup even after failure. Preserve the original exception
+  // (and every secondary exception) rather than claiming successful resource release.
+  const cleanup = steps => {
+    const errors = [];
+    for (const step of steps) { try { step(); } catch (error) { errors.push(error); } }
+    if (errors.length === 1) throw errors[0];
+    if (errors.length) throw new AggregateError(errors, 'render cleanup failed', {cause:errors[0]});
+  };
+  const failClosed = error => { renderFault ??= error; unsubscribe(); };
   const sessionToken = Symbol(`rhwp-session-${sessionId}`);
   // Optional observer never receives or retains actual canvas/document references.
   const canvasIds = new WeakMap(); let nextCanvas = 0, nextRequest = 0;
@@ -194,16 +206,36 @@ export function createOwnershipSession(Session, sessionId, backend, registry) {
     return 'canvas-backing-store-changed';
   };
   const unsubscribe = () => subscribers.delete(pump);
-  const cancel = (keepPainted = false) => {
+  const stopActive = reason => {
+    const request = active;
+    active = null;
     if (timer !== null) clearTimeout(timer);
     timer = null;
-    if (active) {
-      try { if (doc) { doc.cancelRenderJob(active.id); trace('cancel', active, {job:active.id, reason:'session-cancel'}); counters.canceled++; } }
-      finally { releaseOwnership(active.ownership); }
-    }
-    active = null; for (const request of queue.values()) trace('stale-drop', request, {reason:'session-cancel'});
+    if (!request) return;
+    try {
+      const state = request.ownerDocument.cancelRenderJob(request.id);
+      if (!['CANCELED','COMPLETE','ERROR','RESOURCE_LIMIT'].includes(state)) throw new Error('render cancellation unconfirmed');
+      trace('cancel', request, {job:request.id, reason}); counters.canceled++;
+    } catch (error) {
+      uncertainJobs.add(request.id);
+      const owners = renderOwnership.uncertainOwners.get(request.canvas) ?? new Set();
+      owners.add(request.ownership);renderOwnership.uncertainOwners.set(request.canvas,owners);
+      uncertainCanvases.set(request.canvas,request.ownership);
+      failClosed(error); counters.errors++;
+      trace('cancel-failed', request, {job:request.id, reason});
+      // The engine may still write after failed cancellation. Revoke foreign proofs too.
+      invalidateCanvas(request.canvas, request.ownership);
+      throw error;
+    } finally { releaseOwnership(request.ownership); }
+  };
+  const clearRequests = keepPainted => {
+    for (const request of queue.values()) trace('stale-drop', request, {reason:'session-cancel'});
     queue.clear(); failed.clear();
-    if (!keepPainted) { for (const frame of painted.values()) releaseOwnership(frame.ownership); painted.clear(); }
+    if (!keepPainted || renderFault) { for (const frame of painted.values()) releaseOwnership(frame.ownership); painted.clear(); }
+  };
+  const cancel = (keepPainted = false) => {
+    try { stopActive('session-cancel'); }
+    finally { clearRequests(keepPainted); }
   };
   const session = new Session(sessionId, backend, registry, async () => {
     const engine = await module();
@@ -211,6 +243,7 @@ export function createOwnershipSession(Session, sessionId, backend, registry) {
     return { ...(memory ? { memoryBytes: () => memory.buffer.byteLength } : {}), openDocument(bytes) {
       // Save validation reopens are independent read-only handles, never replace
       // this session's authoritative live document or listener registration.
+      if (renderFault) throw renderFault;
       if (doc) return new engine.HwpDocument(bytes);
       cancel(); generation++;
       if (disposed || subscribers.size >= MAX_SESSIONS) throw new Error('RESOURCE_LIMIT: PoC sessions');
@@ -221,12 +254,32 @@ export function createOwnershipSession(Session, sessionId, backend, registry) {
       const restore = doc.restoreSnapshot?.bind(doc);
       if (restore) doc.restoreSnapshot = (...args) => { cancel(true); return restore(...args); };
       const opened = doc, openedDocumentId = documentId, free = doc.free.bind(doc);
+      let freeAttempted = false, freeError = null;
       doc.free = () => {
+        if (freeAttempted) { if (freeError) throw freeError; return; }
+        freeAttempted = true;
         trace('release-requested', null, {reason:'document-free',document:openedDocumentId});
         try {
-          if (doc === opened) { cancel(); generation++; unsubscribe(); sessions.delete(handle); doc = null; }
-          free(); trace('release-completed', null, {reason:'document-free',document:openedDocumentId});
-        } catch (error) { trace('release-failed', null, {reason:'document-free',document:openedDocumentId}); throw error; }
+          cleanup([
+            () => { if (doc === opened) cancel(); },
+            () => { if (doc === opened) { generation++; unsubscribe(); sessions.delete(handle); doc = null; } },
+            () => {
+              try {
+                free(); uncertainJobs.clear();
+                for (const [canvas,owner] of uncertainCanvases) {
+                  const owners = renderOwnership.uncertainOwners.get(canvas);owners?.delete(owner);
+                  if (!owners?.size) renderOwnership.uncertainOwners.delete(canvas);
+                }
+                uncertainCanvases.clear();wake();
+              }
+              catch (error) { freeUncertain = true; failClosed(error); throw error; }
+            },
+          ]);
+          trace('release-completed', null, {reason:'document-free',document:openedDocumentId});
+        } catch (error) {
+          freeError = error; failClosed(error);
+          trace('release-failed', null, {reason:'document-free',document:openedDocumentId}); throw error;
+        }
       };
       subscribers.add(pump); sessions.add(handle);
       return doc;
@@ -247,40 +300,41 @@ export function createOwnershipSession(Session, sessionId, backend, registry) {
   };
   const valid = request => {
     adoptStartupBackingStore(request);
-    return !disposed && doc && request.generation === generation
+    return !disposed && !renderFault && !renderOwnership.uncertainOwners.has(request.canvas) && doc && request.generation === generation
     && request.version === session.modelVersion && request.canvas.isConnected
     && request.backingWidth === request.canvas.width && request.backingHeight === request.canvas.height
     && request.backingEpoch === renderOwnership.backingEpochs.get(request.canvas)
     && session.status.kind === 'ready';
   };
   const visible = request => { const box = request.canvas.getBoundingClientRect(); return box.bottom > 0 && box.top < innerHeight; };
+  const createRequest = (page, canvas, scale, mode, input = null) => {
+    let pageCount = 0, pageSize = null;
+    try { pageCount = session.pages?.length ?? 0; const size = session.pages?.[page]; pageSize = size ? {width:size.width,height:size.height} : null; } catch { /* unknown geometry fails reuse closed */ }
+    const engineSha256 = globalThis.window?.__geulOwnership?.identity?.wasmSha256 ?? null;
+    return {page,canvas,scale,mode,generation,version:session.modelVersion,
+      backingWidth:canvas.width,backingHeight:canvas.height,backingEpoch:renderOwnership.backingEpochs.get(canvas) ?? 0,
+      pageCount,pageSize,engineSha256,environmentKey:renderEnvironmentKey(canvas,engineSha256,page,pageCount,pageSize,scale,mode),
+      traceDocument:documentId,traceRequest:++nextRequest,traceInput:input};
+  };
   const repairInvalidatedCanvas = ownership => {
     const canvas = ownership.canvas;
     const currentActive = active?.ownership === ownership ? active : null;
     const currentQueued = queue.get(canvas);
     const currentFrame = painted.get(canvas)?.ownership === ownership ? painted.get(canvas) : null;
     const desired = currentActive ?? currentQueued ?? canvases.get(canvas) ?? currentFrame;
-    if (!desired || disposed || doc !== ownership.document || generation !== ownership.generation) return;
+    if (!desired || disposed || renderFault || doc !== ownership.document || generation !== ownership.generation) return;
+    // Remove both queued and completed proofs before a cancellation can throw.
+    if (currentQueued) trace('stale-drop', currentQueued, {reason:'canvas-owner-invalidated'});
+    queue.delete(canvas); painted.delete(canvas);
     if (currentActive) {
-      try {
-        doc.cancelRenderJob(currentActive.id);
-        trace('cancel', currentActive, {job:currentActive.id, reason:'canvas-owner-invalidated'});
-        counters.canceled++;
-      } catch {
+      try { stopActive('canvas-owner-invalidated'); }
+      catch {
+        clearRequests(false);
         failed.set(canvas, {...desired, summary:null, summaryUnits:0});
-        counters.errors++;
-        return;
-      } finally {
-        releaseOwnership(ownership);
-        active = null;
-        if (timer !== null) clearTimeout(timer);
-        timer = null;
+        return; // cancel-failed + renderFault exposes failure; no retry or valid frame.
       }
     }
-    if (currentQueued) trace('stale-drop', currentQueued, {reason:'canvas-owner-invalidated'});
-    painted.delete(canvas);
-    const next = {...desired, mode:'full', generation, version:session.modelVersion,
-      traceDocument:documentId, traceRequest:++nextRequest, traceInput:null};
+    const next = createRequest(desired.page, canvas, desired.scale, 'full');
     failed.delete(canvas);
     canvases.set(canvas, next); queue.set(canvas, next);
     trace('request', next, {reason:'canvas-owner-invalidated', relatedRequest:desired.traceRequest});
@@ -300,12 +354,12 @@ export function createOwnershipSession(Session, sessionId, backend, registry) {
       units -= request.summaryUnits; count--; request.summary = null; request.summaryUnits = 0;
     }
   };
-  function pump() {
-    if (disposed || !doc) return;
+  function pump(synchronousRequest = null) {
+    if (disposed || renderFault || !doc) return;
     if (active && !valid(active)) {
-      try { doc.cancelRenderJob(active.id); trace('cancel', active, {job:active.id, reason:'stale'}); }
-      finally { releaseOwnership(active.ownership); }
-      counters.staleDropped++; active = null; if(timer!==null)clearTimeout(timer);timer=null; wake();
+      try { stopActive('stale'); }
+      catch { clearRequests(false); return; }
+      counters.staleDropped++; wake();
     }
     for (const [canvas, request] of queue) if (!valid(request)) { queue.delete(canvas); trace('stale-drop', request, {reason:'invalid-queue'}); counters.staleDropped++; }
     if (!active) {
@@ -432,14 +486,18 @@ export function createOwnershipSession(Session, sessionId, backend, registry) {
       painted.set(request.canvas, {...request, width:request.canvas.width, height:request.canvas.height});
       // Serialized UTF-16 code units, not an actual JS-object or RSS byte certificate.
       trimSummaries();
-      if (request.page === 0 && session.firstPaintMs === null) session.firstPaintMs = performance.now() - session.loadStartedAt;
-      queueMicrotask(() => { if (!disposed) for(const listener of listeners)listener(); });
+      const firstPaintChanged = request.page === 0 && session.firstPaintMs === null;
+      if (firstPaintChanged) session.firstPaintMs = performance.now() - session.loadStartedAt;
+      // 같은 요청의 동기 완료는 renderPage 반환값으로 전달한다. 첫 paint와
+      // 실제 비동기 완료는 상태를 갱신할 구독 알림을 계속 보낸다.
+      if (firstPaintChanged || synchronousRequest?.traceRequest !== request.traceRequest) {
+        queueMicrotask(() => { if (!disposed) for(const listener of listeners)listener(); });
+      }
     }
     else {
-      try { doc.cancelRenderJob(request.id); trace('cancel', request, {job:request.id, reason:'terminal-'+state}); }
-      finally { releaseOwnership(request.ownership); }
-      if (state === 'CANCELED') counters.canceled++;
-      else { failed.set(request.canvas, {...request, summary:null, summaryUnits:0}); counters[state === 'RESOURCE_LIMIT' ? 'limits' : 'errors']++; }
+      try { stopActive('terminal-'+state); }
+      catch { clearRequests(false); return; }
+      if (state !== 'CANCELED') { failed.set(request.canvas, {...request, summary:null, summaryUnits:0}); counters[state === 'RESOURCE_LIMIT' ? 'limits' : 'errors']++; }
     }
     active = null;
     wake(); // released capacity may unblock a different live session
@@ -447,21 +505,16 @@ export function createOwnershipSession(Session, sessionId, backend, registry) {
   const originalRelease = session.releaseRendering.bind(session), originalDispose = session.dispose.bind(session), originalSubscribe = session.subscribe.bind(session);
   session.subscribe = listener => {
     if(listeners.size >= 16)throw new Error('RESOURCE_LIMIT: PoC subscriptions');
-    listeners.add(listener);const off=originalSubscribe(listener);
-    return () => { listeners.delete(listener);off(); };
+    if (disposed) throw new Error('render session disposed');
+    const off=originalSubscribe(listener);listeners.add(listener);
+    const unsubscribeListener = () => { if (!subscriptions.delete(unsubscribeListener)) return;listeners.delete(listener);off(); };
+    subscriptions.add(unsubscribeListener);return unsubscribeListener;
   };
   session.renderPage = (page, canvas, scale) => {
-    if (disposed || !doc || !canvas.isConnected || !session.prepareRendering(scale)) return false;
+    if (disposed || renderFault || renderOwnership.uncertainOwners.has(canvas) || !doc || !canvas.isConnected || !session.prepareRendering(scale)) return false;
     if (!trackCanvasBackingStore(canvas)) { counters.errors++; return false; }
-    let pageCount = 0, pageSize = null;
-    try { pageCount = session.pages?.length ?? 0; pageSize = session.pages?.[page] ?? null; } catch { /* unknown page order fails closed */ }
     const mode = typeof __T010_DAMAGE__ !== 'undefined' && __T010_DAMAGE__ ? 'damage' : 'full';
-    const request = { page, canvas, scale, backingWidth:canvas.width, backingHeight:canvas.height,
-      backingEpoch:renderOwnership.backingEpochs.get(canvas) ?? 0,
-      generation, version: session.modelVersion, mode,
-      pageCount,pageSize,engineSha256:globalThis.window?.__geulOwnership?.identity?.wasmSha256 ?? null,
-      environmentKey:renderEnvironmentKey(canvas,globalThis.window?.__geulOwnership?.identity?.wasmSha256,page,pageCount,pageSize,scale,mode),
-      traceDocument: documentId, traceRequest: ++nextRequest, traceInput: globalThis.window?.__d4LifecycleInput ?? null };
+    const request = createRequest(page, canvas, scale, mode, globalThis.window?.__d4LifecycleInput ?? null);
     if (globalThis.window?.__GEUL_T010_PAGE_IDENTITY_POC__ === true) {
       globalThis.window.__GEUL_T010_LAST_RENDER_ENV_KEY__ = request.environmentKey;
       const moduleWindow = globalThis.window;
@@ -478,7 +531,9 @@ export function createOwnershipSession(Session, sessionId, backend, registry) {
     }
     trace('request', request, {reason:'renderPage'});
     const complete = painted.get(canvas);
-    if (active && active.version !== session.modelVersion) cancel(true);
+    if (active && active.version !== session.modelVersion) {
+      try { cancel(true); } catch (error) { trace('request-failed', request, {reason:'cancel-failed'});throw error; }
+    }
     if (sameRequest(complete, request) && ownsFrame(complete) && complete.width === canvas.width && complete.height === canvas.height
         && complete.environmentKey !== null && complete.environmentKey === request.environmentKey) {
       canvases.set(canvas,request);trace('reuse-complete', request, {relatedRequest:complete.traceRequest});return true;
@@ -519,9 +574,8 @@ export function createOwnershipSession(Session, sessionId, backend, registry) {
     failed.delete(canvas);
     if (!canvases.has(canvas) && canvases.size >= MAX_QUEUE) { counters.limits++; return false; }
     if (active?.canvas === canvas) {
-      try { doc.cancelRenderJob(active.id); trace('cancel', active, {job:active.id, reason:'replacement'}); counters.canceled++; counters.replacements++; }
-      finally { releaseOwnership(active.ownership); active = null; }
-      if (timer !== null) clearTimeout(timer); timer = null;
+      try { stopActive('replacement'); counters.replacements++; }
+      catch (error) { clearRequests(false);trace('request-failed', request, {reason:'cancel-failed'});throw error; }
     }
     const displaced = queue.get(canvas);
     if (displaced) trace('stale-drop', displaced, {reason:'queue-replacement'});
@@ -534,9 +588,12 @@ export function createOwnershipSession(Session, sessionId, backend, registry) {
     // the post-cleanup pump. Only an established same-size frame may poll here.
     if (!active && complete && complete.page === page && complete.scale === scale
         && complete.generation === generation && complete.width === canvas.width
-        && complete.height === canvas.height && canvas.width > 0 && canvas.height > 0) pump();
+        && complete.height === canvas.height && canvas.width > 0 && canvas.height > 0) pump(request);
     const result = painted.get(canvas);
-    return !queue.has(canvas) && sameRequest(result, request) && ownsFrame(result) && result.width === canvas.width && result.height === canvas.height; // a queued frame is never reported as completed
+    // Full은 backing을 원자적으로 교체할 수 있다. 입력 시점 epoch가 아니라
+    // 이 요청이 완료한 현재 프레임의 유효성·소유권을 확인한다.
+    return !queue.has(canvas) && result?.traceRequest === request.traceRequest
+      && valid(result) && ownsFrame(result) && result.width === canvas.width && result.height === canvas.height;
   };
   const renderRequest = session.renderPage;
   session.renderPage = (...args) => {
@@ -551,12 +608,40 @@ export function createOwnershipSession(Session, sessionId, backend, registry) {
   session.releaseRendering = () => {
     trace('release-requested', null, {reason:'releaseRendering'});
     try {
-      cancel(); for (const canvas of canvases.keys()) { canvas.width = 0; canvas.height = 0; }
-      canvases.clear(); originalRelease(); trace('release-completed', null, {reason:'releaseRendering'});
-    } catch (error) { trace('release-failed', null, {reason:'releaseRendering'}); throw error; }
+      cleanup([
+        () => cancel(),
+        () => { try { cleanup([...canvases.keys()].map(canvas => () => { canvas.width = 0; canvas.height = 0; })); } finally { canvases.clear(); } },
+        () => originalRelease(),
+      ]);
+      trace('release-completed', null, {reason:'releaseRendering'});
+    } catch (error) { failClosed(error); trace('release-failed', null, {reason:'releaseRendering'}); throw error; }
   };
-  const handle = { cancel, repeat: count => { for(let n=0;n<Math.min(count,100);n++) for(const request of canvases.values()) session.renderPage(request.page,request.canvas,request.scale); }, repaint: () => { for(const [canvas, request] of canvases) { if(canvas.isConnected) { painted.delete(canvas); const next = {...request,generation,version:session.modelVersion,traceDocument:documentId,traceRequest:++nextRequest,traceInput:null}; trace('request',next,{reason:'explicit-repaint',relatedRequest:request.traceRequest}); const displaced=queue.get(canvas); if(displaced)trace('stale-drop',displaced,{reason:'explicit-repaint'}); queue.set(canvas,next); trace('queue',next,{reason:'explicit-repaint'}); } } }, stats: () => ({ sessionId, generation, queued: queue.size, active: active ? 1 : 0, activeJobId: active?.id ?? null,
+  const handle = { cancel, repeat: count => { for(let n=0;n<Math.min(count,100);n++) for(const request of canvases.values()) session.renderPage(request.page,request.canvas,request.scale); }, repaint: () => {
+    if (disposed || renderFault || !doc) return;
+    for(const [canvas, request] of canvases) if(canvas.isConnected) {
+      const next = createRequest(request.page,canvas,request.scale,'full');
+      painted.delete(canvas);canvases.set(canvas,next);
+      trace('request',next,{reason:'explicit-repaint',relatedRequest:request.traceRequest});
+      const displaced=queue.get(canvas);if(displaced)trace('stale-drop',displaced,{reason:'explicit-repaint'});
+      queue.set(canvas,next);trace('queue',next,{reason:'explicit-repaint'});
+    }
+    wake();
+  }, stats: () => ({ sessionId, generation, queued: queue.size, active: active ? 1 : 0, activeJobId: active?.id ?? null,
+    disposed, subscribed:subscribers.has(pump), listeners:listeners.size, renderFault:renderFault !== null, uncertainJobs:uncertainJobs.size, freeUncertain,
     canvases: canvases.size, summaries: [...painted.values()].filter(r=>r.summary).length, maxSummaries:MAX_SUMMARIES, summaryCodeUnits:[...painted.values()].reduce((sum,r)=>sum+(r.summary ? r.summaryUnits : 0),0), maxSummaryTotalCodeUnits:MAX_SUMMARY_TOTAL_UNITS, maxSummaryBytes:MAX_SUMMARY_UNITS /* legacy diagnostic name: serialized UTF-16 code units */, failures: failed.size, modelVersion: session.modelVersion }) };
-  session.dispose = () => { if (disposed) return; trace('release-requested', null, {reason:'dispose'}); try { cancel(); unsubscribe(); disposed = true; sessions.delete(handle); originalDispose(); trace('release-completed', null, {reason:'dispose'}); } catch (error) { trace('release-failed', null, {reason:'dispose'}); throw error; } };
+  session.dispose = () => {
+    if (disposed) return;
+    disposed = true;unsubscribe();sessions.delete(handle);
+    trace('release-requested', null, {reason:'dispose'});
+    try {
+      cleanup([
+        () => cancel(),
+        () => originalDispose(),
+        () => { if (doc) doc.free(); },
+        () => { try { cleanup([...subscriptions]); } finally { listeners.clear();canvases.clear(); } },
+      ]);
+      trace('release-completed', null, {reason:'dispose'});
+    } catch (error) { failClosed(error);trace('release-failed', null, {reason:'dispose'});throw error; }
+  };
   return session;
 }

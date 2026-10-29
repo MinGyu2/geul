@@ -256,3 +256,7 @@ Undo/Redo NO-GO·formatting unsupported·T010 미체크·T011 NOT STARTED. 설�
 ### T010 후속 현재 판정 (2026-10-28)
 
 시험 어댑터에서 손실된 레이어 요약에 의한 revision 간 재사용을 차단했다. 현재 후보의 D1은 승인 기준 v2로 39/39 단언·24/24 정확 RGBA PASS, D3 저장 검증 및 native D5 폐기 예외 검증도 통과했다. 실제 IBus 동기 모드 추가 시험에서도 필수 지연 순서는 미관측되어 D2 INCONCLUSIVE다. 최신 공식 D4의 group-start p95는 기본 HWP/HWPX 45/45 ms, 화학 114 ms, 자산 81 ms로 FAIL이다. 정확한 페이지별 신원과 전체 영향 페이지 검증이 남아 T010 및 선행 T007–T009는 체크하지 않으며 제품 RHWP Undo/Redo는 NO-GO, T011은 BLOCKED다. 근거: `tests/integration/rhwp/evidence/t010-continuation-20261028/REPORT.ko.md`.
+
+### T010 후속 검증 (2026-10-29, 미완료)
+
+최신 q13 공식 D4는 네 문서를 완주했으나 group-start p95 47/46/198/70ms 가운데 두 문서가 50ms 문턱을 넘어 FAIL이다. Undo p95는 51/49/76/124ms로 통과했고 timeout은 0이다. 실행 중 선택 source 12개의 전후 hash가 일치하고 현재 파일과도 맞는다. q13 후보는 `NOT_APPROVED`; 후보 Canvas 39개 검사·24 exact RGBA와 Chrome/WebKit 24쪽 재사용 검사는 승인 anchor의 D1 전체 승인을 대신하지 않는다. D2는 IBus Hangul 활성화 후에도 필수 지연 순서를 36회 중 0회 관측해 INCONCLUSIVE다. 종료 후 decoded resident cache 259,402,324 bytes이며 RSS는 미측정이다. T010 미완료, 제품 RHWP Undo/Redo NO-GO, T011 BLOCKED를 유지한다. q13 요약·증거 SHA-256: `tests/integration/rhwp/evidence/t010-acceptance-20261029/q13-summary.json`; 상세: `tests/integration/rhwp/evidence/t010-acceptance-20261029/REPORT.ko.md`.

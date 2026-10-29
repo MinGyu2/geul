@@ -1,0 +1,54 @@
+<!doctype html>
+<meta charset="utf-8"><title>T010 SIMD Full renderer comparison</title>
+<pre id="out">RUNNING</pre>
+<script type="module">
+// Fixed-page, paired, alternating A/B diagnostic. This is not official D4.
+const result = {status:'RUNNING', official:false, scope:'q13 versus q14 SIMD128 Full render; no input latency claim', cases:[]};
+const engines = [];
+const sha = async bytes => [...new Uint8Array(await crypto.subtle.digest('SHA-256', bytes))].map(b=>b.toString(16).padStart(2,'0')).join('');
+const sleep = ms => new Promise(r=>setTimeout(r,ms));
+const stats = values => {const a=[...values].sort((x,y)=>x-y);return {n:a.length,p50:a[Math.ceil(a.length*.5)-1],p95:a[Math.ceil(a.length*.95)-1],max:a.at(-1)};};
+try {
+  for (const prefix of ['/__t010_reference__/', '/__ownership_candidate__/']) {
+    const identity = await (await fetch(prefix+'ENGINE.json')).json();
+    const wasm = new Uint8Array(await (await fetch(prefix+'rhwp_bg.wasm')).arrayBuffer());
+    if (await sha(wasm) !== identity.artifacts['rhwp_bg.wasm']) throw new Error('WASM identity mismatch');
+    const url = prefix+'rhwp.js';
+    const module = await import(/* @vite-ignore */ url);
+    await module.default({module_or_path:wasm});
+    engines.push({module, identity, canvas:document.createElement('canvas'), docs:[]});
+  }
+  if (engines[0].identity.artifacts['rhwp_bg.wasm'] !== 'a59421b800722e240113c54f335cb768c62a8c2ee648e008c3438d015751305a'
+      || engines[1].identity.artifacts['rhwp_bg.wasm'] !== '4d26e611f3e0c4f73a27dd14ac9b4ae06de35bd1278304b9ba14d87fff519068') throw new Error('fixed A/B candidate mismatch');
+  result.identities = engines.map(e=>({wasmSha256:e.identity.artifacts['rhwp_bg.wasm'],sourceTreeSha256:e.identity.sourceTreeSha256}));
+  for (const fixture of [
+    {name:'asset-warm',url:'/external/rhwp/samples/issue6031/3249937_asset_management_rules.hwpx',sha:'97b5d6c571a6b7626321c6a53d797e3511978447497bb73309bd23eaa8e7ea77',page:0,iterations:12,cold:false},
+    {name:'chemical-cold',url:'/complex-hwp.hwp',sha:'6717eca43c6fdd9b0530530cf17d33b6687da0c462a433d37eb652afb5394f91',page:20,iterations:6,cold:true},
+  ]) {
+    const bytes = new Uint8Array(await (await fetch(fixture.url)).arrayBuffer());
+    if (await sha(bytes) !== fixture.sha) throw new Error('fixture identity mismatch');
+    const docs = engines.map(e=>{const d=new e.module.HwpDocument(bytes);e.docs.push(d);return d;});
+    const render = i=>docs[i].renderPageToCanvas(fixture.page,engines[i].canvas,.5);
+    for(let n=0;n<4;n++)for(let i=0;i<2;i++)render(i);
+    await document.fonts.ready;
+    const elapsed=[[],[]], orders=[];
+    let exact=0;
+    for(let n=0;n<fixture.iterations;n++) {
+      const order=n%2?[1,0]:[0,1];orders.push(order);
+      for(const i of order) {
+        if(fixture.cold)engines[i].module.trimRendererCaches(0);
+        const start=performance.now();render(i);elapsed[i].push(performance.now()-start);
+      }
+      const [a,b]=engines.map(e=>({width:e.canvas.width,height:e.canvas.height,pixels:e.canvas.getContext('2d').getImageData(0,0,e.canvas.width,e.canvas.height).data}));
+      if(a.width!==b.width || a.height!==b.height || a.pixels.length!==b.pixels.length || a.pixels.some((v,i)=>v!==b.pixels[i]))throw new Error(fixture.name+': exact RGBA mismatch at pair '+n);
+      exact++;await sleep(20);
+    }
+    result.cases.push({mode:fixture.name,fixtureSha256:fixture.sha,page:fixture.page,scale:.5,cacheTrimBeforeEachRender:fixture.cold,orders,referenceMs:stats(elapsed[0]),candidateMs:stats(elapsed[1]),rawReferenceMs:elapsed[0],rawCandidateMs:elapsed[1],exactRgbaPairs:exact});
+  }
+  result.status='PASS';
+} catch(error) {result.status='FAIL';result.error=String(error);}
+finally {
+  for(const e of engines){for(const d of e.docs)d.free();e.module.trimRendererCaches(0);e.canvas.width=e.canvas.height=0;}
+  document.querySelector('#out').textContent=JSON.stringify(result);
+}
+</script>

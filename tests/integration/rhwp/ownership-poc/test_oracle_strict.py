@@ -133,6 +133,25 @@ class StrictOracleTests(unittest.TestCase):
         self.assertEqual(result["counts"]["verified"], 1)
         self.assertEqual(result["counts"]["excluded"], 1)
 
+    def test_standalone_evaluation_cannot_accept_untrusted_manifest(self):
+        # Consistent producer rows can currently PASS for a self-authored inventory.
+        self.assertEqual(self.evaluate()["status"], "PASS")
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder)
+            manifest = root / "altered-manifest.json"
+            log, output = root / "producer.log", root / "result.json"
+            manifest.write_text(json.dumps(self.manifest))
+            self.assertNotEqual(hashlib.sha256(manifest.read_bytes()).hexdigest(), oracle.EXPECTED_MANIFEST_SHA256)
+            log.write_text("".join("GEUL_ORACLE_DOC " + json.dumps(row) + "\n" for row in self.rows)
+                           + "GEUL_ORACLE_SUMMARY " + json.dumps(self.summary) + "\n")
+            exit_code = oracle.main(["evaluate-log", "--manifest", str(manifest), "--log", str(log),
+                                     "--cargo-exit-code", "0", "--output", str(output)])
+            result = json.loads(output.read_text())
+            self.assertEqual(result["status"], "DIAGNOSTIC_ONLY")
+            self.assertEqual(result["diagnosticStatus"], "PASS")
+            self.assertFalse(result["authoritativeAcceptance"])
+            self.assertNotEqual(exit_code, 0)
+
     def test_inflated_aggregate_cannot_hide_a_missing_document(self):
         result = self.evaluate(rows=[self.rows[0]], summary=self.summary)
         self.assertEqual(result["status"], "FAIL")

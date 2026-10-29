@@ -23,6 +23,25 @@ import native_probe
 from native import smoke
 
 
+def source_identity(root=ROOT):
+    """Bind frontend and harness bytes; a WASM digest alone cannot identify this run."""
+    paths = (
+        'src/components/Editor/rhwp/RhwpSurface.tsx',
+        'src/components/Editor/rhwp/RhwpEditorSession.ts',
+        'src/components/Editor/rhwp/rhwpHistory.ts',
+        'src/components/Editor/rhwp/imeInput.ts',
+        'src/components/Editor/textInput.ts',
+        'tests/integration/rhwp/ownership-poc/session.mjs',
+        'tests/integration/rhwp/ownership-poc/history-perf.py',
+        'tests/integration/rhwp/ownership-poc/vite.config.mjs',
+        'tests/integration/rhwp/undo_native.py',
+        'tests/integration/rhwp/native_probe.py',
+        'vite.config.ts',
+        'package-lock.json',
+    )
+    return {path: hashlib.sha256((root / path).read_bytes()).hexdigest() for path in paths}
+
+
 def classify_result(result):
     """Measurement completion is independent from the official gate verdict."""
     rows = result.get('measurements', {}).get('perf', [])
@@ -32,6 +51,10 @@ def classify_result(result):
     gates = result.get('gates', [])
     if result.get('error'):
         reason = 'HARNESS_ERROR'
+    elif (result.get('sourceStableDuringRun') is not True
+          or not result.get('sourceIdentityBefore')
+          or result.get('sourceIdentityBefore') != result.get('sourceIdentityAfter')):
+        reason = 'SOURCE_CHANGED'
     elif not complete or len(gates) != 8:
         reason = 'INCOMPLETE_MEASUREMENT'
     elif any(g.get('result') != 'PASS' for g in gates):
@@ -48,7 +71,9 @@ def main():
     for name in ('app', 'driver', 'webkit-driver', 'xvfb', 'xdotool', 'output'):
         parser.add_argument('--' + name, required=True, type=Path)
     parser.add_argument("--engine", choices=("pinned", "candidate"), default="candidate")
+    parser.add_argument('--driver-log', type=Path, help='연결 오류 진단용 native driver 원본 로그')
     args = parser.parse_args()
+    smoke.DRIVER_LOG = args.driver_log
     result = {'status': 'RUNNING', 'protocol': 'unmodified undo_native.scenario_perf/MEASURE',
               'rendererMode': 'pinned-damage' if args.engine == 'pinned' else 'candidate-damage' if os.environ.get('GEUL_T010_DAMAGE_POC') == '1' else 'candidate-full',
               'engine': args.engine, 'historyEnabled': True, 'keyDelivery': 'native X11 xdotool',
@@ -57,6 +82,10 @@ def main():
                               'cpuAffinity': sorted(os.sched_getaffinity(0)), 'loadAverageBefore': os.getloadavg(),
                               'softwareGLRequested': True, 'webkitDmabufDisabled': True, 'GDK_BACKEND': 'x11',
                               'busyProbe': False, 'warmupGroups': 3, 'groupStartSamplesPerDocument': 30, 'probeBootstrapDocument': 'basic-ko.hwpx in both arms'}}
+
+    result['adapterSha256'] = hashlib.sha256((HERE / 'session.mjs').read_bytes()).hexdigest()
+    result['runnerSha256'] = hashlib.sha256(Path(__file__).read_bytes()).hexdigest()
+    result['sourceIdentityBefore'] = source_identity()
 
     def save():
         args.output.write_text(json.dumps(result, indent=2) + '\n')
@@ -101,7 +130,8 @@ def main():
                         historical.scenario_perf(driver, source, work)
                         if args.engine == 'candidate':
                             historical.REPORT['perf'][-1]['adapterCounters'] = driver.js('return window.__geulOwnership.counters')
-                            historical.REPORT['perf'][-1]['rendererDiagnostics'] = driver.js('return JSON.parse(window.__geulOwnership.probeEngine().rendererJobStats()).diagnostics')
+                            historical.REPORT['perf'][-1]['postCloseOwnership'] = driver.js('return window.__geulOwnership.stats()')
+                            historical.REPORT['perf'][-1]['rendererDiagnostics'] = driver.js('return JSON.parse(window.__geulOwnership.probeEngine().rendererJobStats()).preparation.diagnostics')
                         result['engineIdentity'] = driver.js('return window.__geulOwnership?.identity||null') if args.engine == 'candidate' else {'wasmSha256': hashlib.sha256((ROOT / 'public/rhwp/rhwp_bg.wasm').read_bytes()).hexdigest()}
                         result['sourceSha256'] = hashlib.sha256(source.read_bytes()).hexdigest()
                     finally:
@@ -115,7 +145,14 @@ def main():
         result['error'] = str(error).replace(str(ROOT), '<workspace>').replace(str(Path.home()), '<home>')
     finally:
         display.terminate()
-        display.wait(timeout=10)
+        result['xvfbExitCode'] = display.wait(timeout=10)
+        result['adapterStableDuringRun'] = result['adapterSha256'] == hashlib.sha256((HERE / 'session.mjs').read_bytes()).hexdigest()
+        try:
+            result['sourceIdentityAfter'] = source_identity()
+            result['sourceStableDuringRun'] = result['sourceIdentityBefore'] == result['sourceIdentityAfter']
+        except OSError as error:
+            result['sourceStableDuringRun'] = False
+            result['sourceIdentityError'] = type(error).__name__
         result['measurements'] = historical.REPORT
         result['gates'] = historical.GATES
         result['environment']['loadAverageAfter'] = os.getloadavg()

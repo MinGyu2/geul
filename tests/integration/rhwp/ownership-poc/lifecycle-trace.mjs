@@ -1,9 +1,9 @@
 // Diagnostic-only: limits measure JSON UTF-16 code units, not heap/RSS or UTF-8 bytes.
 const MAX_STRING = 128, MAX_RECORD = 2048, MAX_TOTAL = 1048576;
 const FIELDS = ['event','at','session','document','request','input','page','canvas','scale','generation','version','mode','job','state','reason','relatedRequest'];
-const EVENTS = new Set(['input','request','queue','reuse-pending','reuse-complete','job-start','job-start-failed','prepare-failed','poll','complete','completion-rejected','cancel','stale-drop','release-requested','release-completed','release-failed']);
-const REQUEST_EVENTS = new Set(['request','queue','reuse-pending','reuse-complete','job-start','job-start-failed','prepare-failed','poll','complete','completion-rejected','cancel','stale-drop']);
-const JOB_EVENTS = new Set(['job-start','poll','complete','completion-rejected','cancel']);
+const EVENTS = new Set(['input','request','queue','reuse-pending','reuse-complete','job-start','job-start-failed','prepare-failed','request-failed','poll','complete','completion-rejected','cancel','cancel-failed','stale-drop','release-requested','release-completed','release-failed']);
+const REQUEST_EVENTS = new Set(['request','queue','reuse-pending','reuse-complete','job-start','job-start-failed','prepare-failed','request-failed','poll','complete','completion-rejected','cancel','cancel-failed','stale-drop']);
+const JOB_EVENTS = new Set(['job-start','poll','complete','completion-rejected','cancel','cancel-failed']);
 
 function validateLifecycle(records, terminal) {
   if (!records.length) return 'INCOMPLETE';
@@ -34,7 +34,7 @@ function validateLifecycle(records, terminal) {
       const j = JSON.stringify([r.session,r.document,r.job]);
       if (jobs.has(j)) invalid = true; else jobs.set(j,k);
       requests.set(k,'active');
-    } else if (r.event === 'poll' || r.event === 'complete' || r.event === 'completion-rejected' || r.event === 'cancel') {
+    } else if (r.event === 'poll' || r.event === 'complete' || r.event === 'completion-rejected' || r.event === 'cancel' || r.event === 'cancel-failed') {
       const j = JSON.stringify([r.session,r.document,r.job]);
       if (previous !== 'active') invalid = true;
       else if (!jobs.has(j)) incomplete = true;
@@ -51,6 +51,8 @@ function validateLifecycle(records, terminal) {
       if (r.event === 'completion-rejected' && !['canvas-owner-changed','canvas-backing-store-changed','canvas-disconnected','render-owner-changed'].includes(r.reason)) invalid = true;
       if (r.event === 'cancel' && polled.get(k) === 'COMPLETE') invalid = true;
       if (r.event !== 'poll') { jobs.delete(j); requests.set(k,r.event); }
+    } else if (r.event === 'request-failed') {
+      if (previous !== 'request') invalid = true;requests.set(k,r.event);
     } else if (r.event === 'stale-drop' || r.event === 'job-start-failed' || r.event === 'prepare-failed') {
       if (previous !== 'queued') invalid = true; requests.set(k,r.event);
     } else if (r.event === 'reuse-pending' || r.event === 'reuse-complete') {

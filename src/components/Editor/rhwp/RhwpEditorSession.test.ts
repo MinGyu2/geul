@@ -241,3 +241,45 @@ describe("rhwp 편집 세션: 내보내기 검사", () => {
     expect(calls.map((call) => call.method).filter((method) => ["original", "preflight", "save"].includes(method))).toEqual([]);
   });
 });
+
+
+describe("문서 해제 예외 안전성", () => {
+  it.each(["render", "free", "both"])("%s 예외 뒤에도 문서 참조와 구독을 정리하고 원래 오류를 보존한다", async kind => {
+    const { editor, doc } = await readySession();
+    const renderError = new Error("render release fault"), freeError = new Error("document free fault");
+    let frees = 0, notifications = 0;
+    editor.subscribe(() => { notifications++; });
+    if (kind !== "free") editor.releaseRendering = () => { throw renderError; };
+    doc.free = () => { frees++; if (kind !== "render") throw freeError; };
+    let caught: unknown;
+    try { editor.dispose(); } catch (error) { caught = error; }
+    if (kind === "both") {
+      expect(caught).toBeInstanceOf(AggregateError);
+      expect((caught as AggregateError).errors).toEqual([renderError,freeError]);
+      expect((caught as AggregateError).cause).toBe(renderError);
+    } else expect(caught).toBe(kind === "render" ? renderError : freeError);
+    expect(frees).toBe(1);expect(editor.status.kind).toBe("closed");expect(editor.editable).toBe(false);
+    expect(editor.typeText("x")).toBe(false);expect(editor.undo()).toBe(false);
+    expect(notifications).toBe(1);expect(() => editor.dispose()).not.toThrow();expect(frees).toBe(1);
+  });
+  it("문서 교체 중 해제가 실패하면 새 문서를 열지 않고 이전 문서를 편집 불가로 만든다", async () => {
+    const { editor, doc } = await readySession();
+    const error = new Error("replacement free fault");doc.free = () => { throw error; };
+    await expect(editor.load()).rejects.toBe(error);
+    expect(editor.status.kind).toBe("failed");expect(editor.editable).toBe(false);
+    expect(editor.typeText("x")).toBe(false);editor.dispose();
+  });
+});
+
+
+it("해제와 종료 알림이 함께 실패해도 원래 해제 오류를 잃지 않는다", async () => {
+  const { editor, doc } = await readySession();
+  const freeError = new Error("free fault"), listenerError = new Error("listener fault");
+  doc.free = () => { throw freeError; };editor.subscribe(() => { throw listenerError; });
+  let caught: unknown;try { editor.dispose(); } catch (error) { caught = error; }
+  expect(caught).toBeInstanceOf(AggregateError);
+  expect((caught as AggregateError).errors).toEqual([freeError,listenerError]);
+  expect((caught as AggregateError).cause).toBe(freeError);
+  expect(editor.status.kind).toBe("closed");expect(editor.editable).toBe(false);
+  expect(() => editor.dispose()).not.toThrow();
+});

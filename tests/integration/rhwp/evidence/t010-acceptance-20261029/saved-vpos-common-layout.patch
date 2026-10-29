@@ -1,0 +1,66 @@
+--- a/src/renderer/typeset.rs
++++ b/src/renderer/typeset.rs
+@@ -1813,6 +1813,23 @@
+ /// 표 행 경계가 아니라 셀 내부 줄에서 `양수 vpos → 0 이하`로 되감긴 경우는 해당
+ /// cell tail이 다음 물리 페이지에서 이어진다는 저장 frame 신호다. HWP와 HWPX의
+ /// 원본 `lineSeg` 모두에 같은 방식으로 적용된다.
++fn cell_has_internal_saved_vpos_reset(cell: &crate::model::table::Cell) -> bool {
++    let mut previous_vpos = None;
++    for para in &cell.paragraphs {
++        for seg in para
++            .line_segs
++            .iter()
++            .filter(|seg| !is_synthetic_line_seg(seg))
++        {
++            if previous_vpos.is_some_and(|previous| previous > 0 && seg.vertical_pos <= 0) {
++                return true;
++            }
++            previous_vpos = Some(seg.vertical_pos);
++        }
++    }
++    false
++}
++
+ fn rowbreak_row_has_internal_saved_vpos_reset(
+     table: &crate::model::table::Table,
+     row: usize,
+@@ -1821,25 +1838,7 @@
+         .cells
+         .iter()
+         .filter(|cell| cell.row as usize == row)
+-        .any(|cell| {
+-            // 저장된 물리 page reset은 cell paragraph 경계에서 시작할 수도 있다. 각
+-            // paragraph 안의 `windows(2)`만 보면 `<OPTN>` 다음 `간 특수 검사`처럼
+-            // p[n]의 마지막 LINE_SEG → p[n+1]의 첫 LINE_SEG reset을 놓친다.
+-            let mut previous_vpos = None;
+-            for para in &cell.paragraphs {
+-                for seg in para
+-                    .line_segs
+-                    .iter()
+-                    .filter(|seg| !is_synthetic_line_seg(seg))
+-                {
+-                    if previous_vpos.is_some_and(|previous| previous > 0 && seg.vertical_pos <= 0) {
+-                        return true;
+-                    }
+-                    previous_vpos = Some(seg.vertical_pos);
+-                }
+-            }
+-            false
+-        })
++        .any(cell_has_internal_saved_vpos_reset)
+ }
+ 
+ /// [#7288] «쪽 경계에서» 값 0 «나누지 않음» 의 **원자 규칙**을 이 표에 걸 수 있는가.
+@@ -1894,7 +1893,11 @@
+ 
+ /// RowBreak 표 셀 안에 저장된 vpos reset이 있는지 판별한다.
+ fn rowbreak_table_has_internal_saved_vpos_reset(table: &crate::model::table::Table) -> bool {
+-    (0..table.row_count as usize).any(|row| rowbreak_row_has_internal_saved_vpos_reset(table, row))
++    table
++        .cells
++        .iter()
++        .filter(|cell| (cell.row as usize) < table.row_count as usize)
++        .any(cell_has_internal_saved_vpos_reset)
+ }
+ 
+ /// Whether every text-bearing cell proves, through its stored line segments,

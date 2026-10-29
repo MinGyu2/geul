@@ -22,13 +22,13 @@
 // 들어가기 직전에 그 자리에 확정). 배율 표시는 사용자가 고른 값 그대로이고 다른 배율로 몰래 그리지 않는다. 예산 안의
 // 배율로 돌아오면 같은 모델로 다시 그리고 편집을 이어 간다.
 // 응답 시간: 입력 이벤트 시각부터 바뀐 페이지를 다시 그린 뒤 두 번째 animation frame까지를 잰다(화면 반영의 상한).
-import { useCallback, useEffect, useLayoutEffect, useReducer, useRef, useState, type CSSProperties } from "react";
+import { memo, useCallback, useEffect, useLayoutEffect, useReducer, useRef, useState, type CSSProperties, type RefObject } from "react";
 import { ZOOM_STEPS } from "../../../hooks/layoutState";
 import { useTranslation } from "../../../language/LanguageContext";
 import { attachTextInput } from "../textInput";
 import { ImeContext, ImeInput } from "./imeInput";
 import type { RhwpEditorSession } from "./RhwpEditorSession";
-import type { PageRect } from "./rhwpText";
+import type { CaretRect, PageRect } from "./rhwpText";
 import { trace } from "../imeTrace";
 
 interface RhwpSurfaceProps {
@@ -43,6 +43,72 @@ const REST_DELAY_MS = 200;
 const HIDDEN_UNDERLINE: CSSProperties = { left: 0, top: 0, width: 0, visibility: "hidden" };
 /** 조합 밑줄 자리: 조합이 없어도 하나(숨김)를 둔다. */
 const padComposition = (rects: PageRect[]): (PageRect | null)[] => (rects.length > 0 ? rects : [null]);
+
+const EMPTY_RECTS: PageRect[] = [];
+interface PageFrameProps {
+  page: number; width: number; height: number; scale: number;
+  selection: PageRect[]; composition: PageRect[]; caret: CaretRect | null; editable: boolean;
+  caretElement: RefObject<HTMLDivElement | null>;
+  registerCanvas: (page: number, canvas: HTMLCanvasElement | null) => void;
+  registerBox: (page: number, box: HTMLDivElement | null) => void;
+  onMouseDown: (event: React.MouseEvent<HTMLDivElement>, page: number) => void;
+  onMouseMove: (event: React.MouseEvent<HTMLDivElement>, page: number) => void;
+}
+
+// 모델 판이 바뀌어도 쪽 상자·Canvas·겹침이 같으면 그 DOM 부분은 그대로 둔다.
+// 실제 Canvas의 최신 판 그리기는 부모의 기존 layout effect가 계속 담당한다.
+const PageFrame = memo(function PageFrame({ page, width, height, scale, selection, composition, caret, editable,
+  caretElement, registerCanvas, registerBox, onMouseDown, onMouseMove }: PageFrameProps) {
+  const canvasRef = useCallback((element: HTMLCanvasElement | null) => { registerCanvas(page, element); }, [page, registerCanvas]);
+  const boxRef = useCallback((element: HTMLDivElement | null) => { registerBox(page, element); }, [page, registerBox]);
+  return (
+    <div
+      className="rhwp-page"
+      data-page={page}
+      ref={boxRef}
+      style={{ width: width * scale, height: height * scale }}
+      onMouseDown={(event) => onMouseDown(event, page)}
+      onMouseMove={(event) => onMouseMove(event, page)}
+    >
+      <canvas
+        className="rhwp-page__canvas"
+        width={0}
+        height={0}
+        style={{ width: width * scale, height: height * scale }}
+        ref={canvasRef}
+        aria-hidden="true"
+      />
+      {selection.map((rect, index) => (
+        <div key={`s${index}`} className="rhwp-selection" style={{ left: rect.x * scale, top: rect.y * scale, width: rect.width * scale, height: rect.height * scale }} />
+      ))}
+      {/* 조합 밑줄은 쪽마다 하나를 늘 두고 위치·보임만 바꾼다. 조합 키마다 요소를 만들고 지우면 WebKitGTK(소프트웨어
+          렌더링 실측)가 frame마다 수십 ms를 써 입력이 밀렸다. 모양만 바꾸는 것은 커서처럼 싸다. */}
+      {padComposition(composition).map((rect, index) => (
+        <div
+          key={`c${index}`}
+          className="rhwp-composition"
+          style={rect
+            ? { left: rect.x * scale, top: (rect.y + rect.height) * scale - 2, width: rect.width * scale }
+            : HIDDEN_UNDERLINE}
+        />
+      ))}
+      {caret && editable && (
+        <div
+          ref={caretElement}
+          className="rhwp-caret"
+          data-testid="rhwp-caret"
+          style={{ left: caret.x * scale, top: caret.y * scale, height: caret.height * scale }}
+        />
+      )}
+    </div>
+  );
+});
+
+function pageRects(rects: PageRect[]): Map<number, PageRect[]> {
+  const pages = new Map<number, PageRect[]>();
+  for (const rect of rects) { const list = pages.get(rect.page) ?? [];list.push(rect);pages.set(rect.page,list); }
+  return pages;
+}
 
 /** 세션이 바뀔 때마다 다시 그린다. 그리기 layout effect보다 먼저 구독해, 처음 그릴 때의 상태 변화(표시 한도)도 받는다. */
 function useSessionUpdates(session: RhwpEditorSession) {
@@ -60,6 +126,12 @@ export function RhwpSurface({ session, zoom, imeContext }: RhwpSurfaceProps) {
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const canvases = useRef(new Map<number, HTMLCanvasElement>());
   const pageBoxes = useRef(new Map<number, HTMLDivElement>());
+  const registerCanvas = useCallback((page: number, element: HTMLCanvasElement | null) => {
+    if (element) canvases.current.set(page, element);else canvases.current.delete(page);
+  }, []);
+  const registerBox = useCallback((page: number, element: HTMLDivElement | null) => {
+    if (element) pageBoxes.current.set(page, element);else pageBoxes.current.delete(page);
+  }, []);
   const inputAt = useRef<number | null>(null);
   const renderTimer = useRef<number | null>(null);
   const ime = useRef<ImeInput | null>(null);
@@ -111,7 +183,7 @@ export function RhwpSurface({ session, zoom, imeContext }: RhwpSurfaceProps) {
     if (all) session.releaseRendering();
     rendered.current = { version: session.modelVersion, scale, ratio, pages: session.pages.length, sizes };
     // 커서 쪽을 먼저 그리고 나머지는 다음 task에 그린다. WebView가 frame clock을 멈춰도 빈 쪽으로 남기지 않는다.
-    const first = session.caretRect()?.page ?? 0;
+    const first = caret?.page ?? 0;
     const version = session.modelVersion;
     const draw = (page: number) => {
       if (session.modelVersion !== version) return; // 대기 중 모델이 교체·변경됐으면 이 작업은 무효다
@@ -190,8 +262,10 @@ export function RhwpSurface({ session, zoom, imeContext }: RhwpSurfaceProps) {
     const input = inputRef.current;
     const box = caret ? pageBoxes.current.get(caret.page) : undefined;
     if (!input) return;
-    input.style.left = `${box && caret ? box.offsetLeft + caret.x * scale : 0}px`;
-    input.style.top = `${box && caret ? box.offsetTop + caret.y * scale : 0}px`;
+    const left = box && caret ? box.offsetLeft + caret.x * scale : 0;
+    const top = box && caret ? box.offsetTop + caret.y * scale : 0;
+    input.style.left = `${left}px`;
+    input.style.top = `${top}px`;
     input.style.height = `${caret ? caret.height * scale : 16}px`;
   });
   const caretElement = useRef<HTMLDivElement>(null);
@@ -248,13 +322,13 @@ export function RhwpSurface({ session, zoom, imeContext }: RhwpSurfaceProps) {
   }, [session, context]);
 
   // ---- 마우스 ----
-  const pointer = (event: React.MouseEvent<HTMLDivElement>, page: number, extend: boolean) => {
+  const pointer = useCallback((event: React.MouseEvent<HTMLDivElement>, page: number, extend: boolean) => {
     const canvas = canvases.current.get(page);
     if (!canvas) return;
     const box = canvas.getBoundingClientRect();
     session.pointAt(page, (event.clientX - box.left) / scale, (event.clientY - box.top) / scale, extend);
-  };
-  const onMouseDown = (event: React.MouseEvent<HTMLDivElement>, page: number) => {
+  }, [session, scale]);
+  const onMouseDown = useCallback((event: React.MouseEvent<HTMLDivElement>, page: number) => {
     if (event.button !== 0 || !session.editable) return;
     event.preventDefault(); // 초점은 textarea에 둔다
     // 진행 중인 조합을 끝낸다(보이면 그 자리에 확정, 아니면 늦게 오는 확정을 클릭 전 자리에 넣도록 기억).
@@ -268,14 +342,12 @@ export function RhwpSurface({ session, zoom, imeContext }: RhwpSurfaceProps) {
     };
     window.addEventListener("mouseup", stop);
     focusInput();
-  };
-  const onMouseMove = (event: React.MouseEvent<HTMLDivElement>, page: number) => {
+  }, [session, pointer, focusInput]);
+  const onMouseMove = useCallback((event: React.MouseEvent<HTMLDivElement>, page: number) => {
     if (dragging.current && event.buttons & 1) pointer(event, page, true);
-  };
+  }, [pointer]);
 
-  const rectStyle = (rect: PageRect): CSSProperties => ({
-    left: rect.x * scale, top: rect.y * scale, width: rect.width * scale, height: rect.height * scale,
-  });
+  const selectionByPage = pageRects(selection), compositionByPage = pageRects(composition);
 
   const limited = session.renderLimit !== null;
   // 가장 작은 배율로도 그릴 수 없으면 배율을 낮추라고 안내하지 않는다.
@@ -289,52 +361,10 @@ export function RhwpSurface({ session, zoom, imeContext }: RhwpSurfaceProps) {
           </p>
         )}
         {!limited && session.pages.map((size, page) => (
-          <div
-            key={page}
-            className="rhwp-page"
-            data-page={page}
-            ref={(element) => {
-              if (element) pageBoxes.current.set(page, element);
-              else pageBoxes.current.delete(page);
-            }}
-            style={{ width: size.width * scale, height: size.height * scale }}
-            onMouseDown={(event) => onMouseDown(event, page)}
-            onMouseMove={(event) => onMouseMove(event, page)}
-          >
-            <canvas
-              className="rhwp-page__canvas"
-              width={0}
-              height={0}
-              style={{ width: size.width * scale, height: size.height * scale }}
-              ref={(element) => {
-                if (element) canvases.current.set(page, element);
-                else canvases.current.delete(page);
-              }}
-              aria-hidden="true"
-            />
-            {selection.filter((rect) => rect.page === page).map((rect, index) => (
-              <div key={`s${index}`} className="rhwp-selection" style={rectStyle(rect)} />
-            ))}
-            {/* 조합 밑줄은 쪽마다 하나를 늘 두고 위치·보임만 바꾼다. 조합 키마다 요소를 만들고 지우면 WebKitGTK(소프트웨어
-                렌더링 실측)가 frame마다 수십 ms를 써 입력이 밀렸다. 모양만 바꾸는 것은 커서처럼 싸다. */}
-            {padComposition(composition.filter((rect) => rect.page === page)).map((rect, index) => (
-              <div
-                key={`c${index}`}
-                className="rhwp-composition"
-                style={rect
-                  ? { left: rect.x * scale, top: (rect.y + rect.height) * scale - 2, width: rect.width * scale }
-                  : HIDDEN_UNDERLINE}
-              />
-            ))}
-            {caret && caret.page === page && session.editable && (
-              <div
-                ref={caretElement}
-                className="rhwp-caret"
-                data-testid="rhwp-caret"
-                style={{ left: caret.x * scale, top: caret.y * scale, height: caret.height * scale }}
-              />
-            )}
-          </div>
+          <PageFrame key={page} page={page} width={size.width} height={size.height} scale={scale}
+            selection={selectionByPage.get(page) ?? EMPTY_RECTS} composition={compositionByPage.get(page) ?? EMPTY_RECTS}
+            caret={caret?.page === page ? caret : null} editable={session.editable} caretElement={caretElement}
+            registerCanvas={registerCanvas} registerBox={registerBox} onMouseDown={onMouseDown} onMouseMove={onMouseMove} />
         ))}
         <textarea
           ref={inputRef}

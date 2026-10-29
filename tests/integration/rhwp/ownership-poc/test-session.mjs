@@ -21,7 +21,7 @@ async function setup() {
   renderJobIdentity(id){return this.jobStates.get(id)==='COMPLETE'?(this.jobIdentities.get(id)??undefined):undefined;}
   getSourceFormat(){return this.sourceFormat??'hwpx';}
   restoreSnapshot(){}
-  free(){if(this.failFree)throw new Error('free fault');}
+  free(){this.freeCalls=(this.freeCalls??0)+1;if(this.failFree)throw new Error('free fault');}
  }
  globalThis.__testLoad=async()=>({HwpDocument:Doc});
  class Session {
@@ -166,6 +166,100 @@ const cases={
 };
 for(const [name,body] of Object.entries(cases))test(name,async()=>{const x=await setup();try{await body(x);results.push({name,status:'PASS'});}catch(e){results.push({name,status:'FAIL',error:e.message});throw e;}finally{x.session.dispose();if(process.env.SESSION_RESULT)writeFileSync(process.env.SESSION_RESULT,JSON.stringify({implementation:'session.mjs factory; only module loader replaced with deterministic fake engine',sourceSha256:createHash('sha256').update(readFileSync(new URL('./session.mjs',import.meta.url))).digest('hex'),testSha256:createHash('sha256').update(readFileSync(new URL('./test-session.mjs',import.meta.url))).digest('hex'),tests:results},null,2)+'\n');}});
 
+for (const pending of [false,true]) for (const resize of [false,true]) test(`late foreign backing mutation repairs ${pending?'pending':'completed'} owner (${resize?'resize':'same size epoch'})`, async () => {
+ const x=await setup(), other=await x.createOther(2), trace=createLifecycleTrace();window.__d4LifecycleTrace=trace;
+ try {
+  x.session.renderPage(0,x.canvas,1);x.flush();
+  other.doc.state=pending?'PENDING':'COMPLETE';other.session.renderPage(0,x.canvas,1);x.flush();
+  const poll=x.doc.pollRenderJob.bind(x.doc);x.doc.pollRenderJob=id=>{x.canvas.width=resize?7:x.canvas.width;return poll(id);};
+  other.session.pageList=[{width:720,height:900},{width:600,height:800}];
+  x.doc.state='COMPLETE';x.notify();
+  assert.equal(other.doc.starts,2,'current owner must actually start Full repair with current backing metadata');
+  assert.equal(x.session.firstPaintMs,null,'foreign completion is never a displayed frame');
+  other.doc.state='COMPLETE';x.notify();await Promise.resolve();
+  assert.equal(other.session.renderPage(0,x.canvas,1),true,'repaired metadata must match current geometry and environment');
+  for(let n=0;n<5;n++)x.notify();assert.equal(other.doc.starts,2,'no retry loop');
+  assert.equal(trace.snapshot({terminal:true}).lifecycleValid,'VALID');
+  assert.equal(other.handle.stats().active,0);assert.equal(other.handle.stats().queued,0);
+ } finally { other.session.dispose();x.session.dispose(); }
+});
+
+test('synchronous Full reports its newly published backing and avoids redundant completion updates', async()=>{
+ const x=await setup(),trace=createLifecycleTrace();window.__d4LifecycleTrace=trace;
+ const poll=x.doc.pollRenderJob.bind(x.doc);x.doc.pollRenderJob=id=>{
+  if(x.doc.state==='COMPLETE'){x.canvas.width=x.canvas.width;x.canvas.height=x.canvas.height;}
+  return poll(id);
+ };
+ let notifications=0;x.session.subscribe(()=>notifications++);
+ try {
+  x.doc.state='COMPLETE';assert.equal(x.session.renderPage(0,x.canvas,1),false);x.flush();await Promise.resolve();
+  assert.equal(notifications,1,'initial deferred publication must still notify');
+  x.session.modelVersion++;
+  assert.equal(x.session.renderPage(0,x.canvas,1),true,'a completed owned Full must acknowledge its current backing epoch');
+  await Promise.resolve();assert.equal(notifications,1,'the synchronous caller has already received completion');
+  assert.equal(x.doc.starts,2);assert.equal(x.handle.stats().active,0);assert.equal(x.handle.stats().queued,0);
+  assert.equal(trace.snapshot({terminal:true}).lifecycleValid,'VALID');
+  x.session.modelVersion++;x.doc.state='PENDING';assert.equal(x.session.renderPage(0,x.canvas,1),false);
+  x.doc.state='COMPLETE';x.notify();await Promise.resolve();assert.equal(notifications,2,'pending completion must notify');
+ }finally{x.session.dispose();}
+});
+for (const operation of ['cancel','releaseRendering','dispose','document-free']) test(`cancel exception cleans adapter during ${operation}`, async () => {
+ const x=await setup(), trace=createLifecycleTrace();window.__d4LifecycleTrace=trace;
+ x.session.renderPage(0,x.canvas,1);x.flush();
+ const error=new Error('cancel fault');x.doc.cancelRenderJob=()=>{throw error;};
+ const invoke=()=>operation==='cancel'?x.handle.cancel():operation==='document-free'?x.doc.free():x.session[operation]();
+ try {
+  assert.throws(invoke,e=>e===error,'original cancellation error must survive');
+  const stats=x.handle.stats();assert.equal(stats.active,0);assert.equal(stats.queued,0);assert.equal(stats.summaries,0);
+  assert.equal(stats.renderFault,true);assert.equal(stats.uncertainJobs,operation==='document-free'||operation==='dispose'?0:1);
+  assert.equal(x.session.renderPage(0,x.canvas,1),false,'uncertain owner must fail closed');
+  assert.equal(trace.snapshot({terminal:true}).lifecycleValid,'VALID');
+ } finally { x.doc.cancelRenderJob=()=> 'CANCELED';if(operation==='document-free')assert.throws(()=>x.session.dispose(),e=>e===error);else x.session.dispose(); }
+});
+test('recovery cancellation exception invalidates all frame proofs and stops work', async () => {
+ const x=await setup(), other=await x.createOther(2), trace=createLifecycleTrace();window.__d4LifecycleTrace=trace;
+ try {
+  x.session.renderPage(0,x.canvas,1);x.flush();other.session.renderPage(0,x.canvas,1);x.flush();
+  other.doc.cancelRenderJob=()=>{throw new Error('recovery cancel fault');};
+  x.doc.state='COMPLETE';x.notify();
+  assert.equal(other.handle.stats().renderFault,true);assert.equal(other.handle.stats().active,0);assert.equal(other.handle.stats().queued,0);
+  assert.equal(other.session.renderPage(0,x.canvas,1),false);
+  for(let n=0;n<5;n++)x.notify();assert.equal(other.doc.starts,1);
+  assert.ok(trace.snapshot().records.some(r=>r.event==='cancel-failed'&&r.session===2));
+  assert.equal(trace.snapshot({terminal:true}).lifecycleValid,'VALID');
+ } finally {other.doc.cancelRenderJob=()=> 'CANCELED';other.session.dispose();x.session.dispose();}
+});
+for(const revision of [false,true]) test(`replacement request records cancellation failure (revision ${revision})`,async()=>{
+ const x=await setup(),trace=createLifecycleTrace();window.__d4LifecycleTrace=trace;
+ x.session.renderPage(0,x.canvas,1);x.flush();const error=new Error('replacement cancel fault');x.doc.cancelRenderJob=()=>{throw error;};
+ try {
+  if(revision)x.session.modelVersion++;
+  assert.throws(()=>x.session.renderPage(0,x.canvas,revision?1:2),e=>e===error);
+  assert.equal(x.handle.stats().active,0);assert.equal(x.handle.stats().queued,0);assert.equal(x.handle.stats().renderFault,true);
+  const snap=trace.snapshot({terminal:true});assert.ok(snap.records.some(r=>r.event==='request-failed'));assert.equal(snap.lifecycleValid,'VALID');
+ }finally{x.doc.cancelRenderJob=()=> 'CANCELED';x.session.dispose();}
+});
+test('failed foreign cancellation quarantines canvas until confirmed document free', async () => {
+ const x=await setup(),other=await x.createOther(2);
+ try {
+  x.session.renderPage(0,x.canvas,1);x.flush();other.doc.state='COMPLETE';other.session.renderPage(0,x.canvas,1);x.flush();
+  const error=new Error('uncertain cancel');x.doc.cancelRenderJob=()=>{throw error;};
+  assert.throws(()=>x.handle.cancel(),e=>e===error);
+  assert.equal(x.handle.stats().uncertainJobs,1);assert.equal(other.session.renderPage(0,x.canvas,1),false);
+  x.flush();assert.equal(other.doc.starts,1,'quarantined Canvas cannot be rendered or reused');
+  x.doc.free();assert.equal(x.handle.stats().uncertainJobs,0);assert.equal(x.doc.freeCalls,1);
+  other.session.renderPage(0,x.canvas,1);x.flush();assert.equal(other.doc.starts,2);assert.equal(other.session.renderPage(0,x.canvas,1),true);
+ } finally {other.session.dispose();x.session.dispose();}
+});
+test('free failure detaches old document, preserves uncertainty, and prevents replacement', async () => {
+ const x=await setup();x.session.renderPage(0,x.canvas,1);x.flush();x.doc.failFree=true;
+ try {
+  assert.throws(()=>x.doc.free(),/free fault/);assert.equal(x.handle.stats().active,0);
+  assert.equal(x.handle.stats().renderFault,true);assert.equal(x.session.renderPage(0,x.canvas,1),false);
+  assert.throws(()=>x.loader.openDocument(new Uint8Array()),/free fault/);
+ } finally {x.doc.failFree=false;assert.throws(()=>x.session.dispose(),/free fault/);assert.equal(x.doc.freeCalls,1);assert.equal(x.handle.stats().disposed,true);assert.equal(x.handle.stats().listeners,0);assert.equal(x.handle.stats().subscribed,false);}
+});
+
 const sample = (event, extras={}) => ({event, at:1, session:1, document:1, request:1, input:null, page:0, canvas:1, scale:1, generation:1, version:1, mode:'full', ...extras});
 test('lifecycle validity is separate from capture integrity', () => {
  const empty=createLifecycleTrace();assert.equal(empty.snapshot().lifecycleValid,'INCOMPLETE');assert.equal(empty.snapshot().complete,true);
@@ -223,7 +317,9 @@ test('release failure is not reported as success', async () => {
   assert.throws(run,/fault/);
   const rows=trace.snapshot().records.filter(r=>r.reason===kind);
   assert.deepEqual(rows.map(r=>r.event),['release-requested','release-failed']);
-  x.doc.failFree=false;x.session.failDispose=false;x.session.failRelease=false;x.session.dispose();
+  x.doc.failFree=false;x.session.failDispose=false;x.session.failRelease=false;
+  if(kind==='document-free')assert.throws(()=>x.session.dispose(),/free fault/);else x.session.dispose();
+  assert.equal(x.handle.stats().disposed,true);assert.equal(x.handle.stats().subscribed,false);assert.equal(x.handle.stats().listeners,0);
  }
 });
 test('diagnostic failure preserves scheduler behavior and invalidates capture', async () => {
@@ -314,7 +410,7 @@ test('release completion must match originating document', () => {
 test('old document release retains original identity after replacement', async () => {
  const x=await setup(),c=createLifecycleTrace();window.__d4LifecycleTrace=c;const old=x.doc;
  old.free();x.session.doc=x.loader.openDocument(new Uint8Array());old.free();
- const rows=c.snapshot().records.filter(r=>r.reason==='document-free');assert.deepEqual(rows.map(r=>r.document),[1,1,1,1]);x.session.dispose();
+ const rows=c.snapshot().records.filter(r=>r.reason==='document-free');assert.deepEqual(rows.map(r=>r.document),[1,1]);assert.equal(old.freeCalls,1,'idempotent free must not enter the engine twice');x.session.dispose();
 });
 
 test('terminal successful poll cannot be canceled or reused as pending', () => {

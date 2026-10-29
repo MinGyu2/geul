@@ -584,10 +584,17 @@ def _parse_log_command(args: argparse.Namespace) -> int:
     _, manifest = load_json(Path(args.manifest))
     rows, summary = parse_oracle_log(Path(args.log))
     result = evaluate_results(manifest, rows, summary, args.cargo_exit_code)
+    # A supplied manifest/log pair proves only internal accounting consistency.
+    # Only `run` binds pinned source, manifest bytes and the observed producer exit.
+    result["diagnosticStatus"] = result["status"]
+    result["status"] = "DIAGNOSTIC_ONLY"
+    result["authoritativeAcceptance"] = False
+    result["acceptanceReason"] = "독립 로그 평가는 입력·생산자 신원을 검증하지 않음; 필수 합격에는 run 사용"
     Path(args.output).write_text(json.dumps(result, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
-    print(json.dumps({"status": result["status"], "rows": result["resultRows"],
+    print(json.dumps({"status": result["status"], "diagnosticStatus": result["diagnosticStatus"],
+                      "authoritativeAcceptance": False, "rows": result["resultRows"],
                       "failures": len(result["failures"]), "output": str(args.output)}, ensure_ascii=False))
-    return 0 if result["status"] == "PASS" else 1
+    return 2  # Never return the acceptance-success exit code for diagnostic evaluation.
 
 
 def _run_command(args: argparse.Namespace) -> int:
@@ -677,7 +684,7 @@ def main(argv: list[str] | None = None) -> int:
     validate.add_argument("--manifest", required=True)
     validate.add_argument("--expected-manifest-sha256")
     validate.set_defaults(func=_validate_command)
-    parse = subparsers.add_parser("evaluate-log")
+    parse = subparsers.add_parser("evaluate-log", help="진단 전용: 필수 합격을 판정하지 않으며 exit 2 반환")
     parse.add_argument("--manifest", required=True)
     parse.add_argument("--log", required=True)
     parse.add_argument("--cargo-exit-code", required=True, type=int)

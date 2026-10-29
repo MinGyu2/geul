@@ -1,0 +1,255 @@
+{
+  "분류": "부분 검증: 입력 신원·집계·seed 차이 확인, 전체 차이의 개별 재현은 미완료",
+  "historicalSvg": 12637,
+  "strictSvg": 12630,
+  "netDifference": 7,
+  "sourceIdentities": {
+    "historicalSummarySha256": "cf129584e1b67062df41bc4671f26d8ee70234907a7e284a6cced920c47bb05c",
+    "historicalIndexSha256": "6db0dd2e19ff016810338bd1cc751992d74b15366a964c2897e8a6b63350df07",
+    "strictLogSha256": "39200045d5d94ed273c7ee91269a164564f25ad94536597ad567527335de3719"
+  },
+  "selectedInputCount": 1150,
+  "inputHashMismatches": [],
+  "accountedDocuments": 1149,
+  "historicalSeparatelyUnfinished": 1,
+  "positiveGroupDifference": 39,
+  "negativeGroupDifference": -32,
+  "runs": [
+    {
+      "run": "shard00.log",
+      "documents": 96,
+      "historicalSuccessfulSvg": 776,
+      "strictSuccessfulSvg": 765,
+      "deltaHistoricalMinusStrict": 11
+    },
+    {
+      "run": "shard02.log",
+      "documents": 96,
+      "historicalSuccessfulSvg": 1014,
+      "strictSuccessfulSvg": 1011,
+      "deltaHistoricalMinusStrict": 3
+    },
+    {
+      "run": "shard03.log",
+      "documents": 96,
+      "historicalSuccessfulSvg": 1163,
+      "strictSuccessfulSvg": 1168,
+      "deltaHistoricalMinusStrict": -5
+    },
+    {
+      "run": "shard04.log",
+      "documents": 96,
+      "historicalSuccessfulSvg": 853,
+      "strictSuccessfulSvg": 852,
+      "deltaHistoricalMinusStrict": 1
+    },
+    {
+      "run": "shard05.log",
+      "documents": 96,
+      "historicalSuccessfulSvg": 486,
+      "strictSuccessfulSvg": 481,
+      "deltaHistoricalMinusStrict": 5
+    },
+    {
+      "run": "shard06.log",
+      "documents": 96,
+      "historicalSuccessfulSvg": 731,
+      "strictSuccessfulSvg": 740,
+      "deltaHistoricalMinusStrict": -9
+    },
+    {
+      "run": "shard07.log",
+      "documents": 96,
+      "historicalSuccessfulSvg": 610,
+      "strictSuccessfulSvg": 609,
+      "deltaHistoricalMinusStrict": 1
+    },
+    {
+      "run": "shard08.log",
+      "documents": 96,
+      "historicalSuccessfulSvg": 1185,
+      "strictSuccessfulSvg": 1187,
+      "deltaHistoricalMinusStrict": -2
+    },
+    {
+      "run": "shard09.log",
+      "documents": 96,
+      "historicalSuccessfulSvg": 1520,
+      "strictSuccessfulSvg": 1526,
+      "deltaHistoricalMinusStrict": -6
+    },
+    {
+      "run": "shard10.log",
+      "documents": 95,
+      "historicalSuccessfulSvg": 1701,
+      "strictSuccessfulSvg": 1704,
+      "deltaHistoricalMinusStrict": -3
+    },
+    {
+      "run": "shard11.log",
+      "documents": 95,
+      "historicalSuccessfulSvg": 1542,
+      "strictSuccessfulSvg": 1534,
+      "deltaHistoricalMinusStrict": 8
+    },
+    {
+      "run": "sub01/s0.log",
+      "documents": 12,
+      "historicalSuccessfulSvg": 98,
+      "strictSuccessfulSvg": 98,
+      "deltaHistoricalMinusStrict": 0
+    },
+    {
+      "run": "sub01/s1.log",
+      "documents": 12,
+      "historicalSuccessfulSvg": 51,
+      "strictSuccessfulSvg": 50,
+      "deltaHistoricalMinusStrict": 1
+    },
+    {
+      "run": "sub01/s2.log",
+      "documents": 12,
+      "historicalSuccessfulSvg": 82,
+      "strictSuccessfulSvg": 81,
+      "deltaHistoricalMinusStrict": 1
+    },
+    {
+      "run": "sub01/s3.log",
+      "documents": 12,
+      "historicalSuccessfulSvg": 83,
+      "strictSuccessfulSvg": 80,
+      "deltaHistoricalMinusStrict": 3
+    },
+    {
+      "run": "sub01/s4.log",
+      "documents": 12,
+      "historicalSuccessfulSvg": 33,
+      "strictSuccessfulSvg": 38,
+      "deltaHistoricalMinusStrict": -5
+    },
+    {
+      "run": "sub01/s6.log",
+      "documents": 12,
+      "historicalSuccessfulSvg": 207,
+      "strictSuccessfulSvg": 205,
+      "deltaHistoricalMinusStrict": 2
+    },
+    {
+      "run": "sub01/s7.log",
+      "documents": 12,
+      "historicalSuccessfulSvg": 85,
+      "strictSuccessfulSvg": 85,
+      "deltaHistoricalMinusStrict": 0
+    },
+    {
+      "run": "single5/0005.log",
+      "documents": 1,
+      "historicalSuccessfulSvg": 1,
+      "strictSuccessfulSvg": 1,
+      "deltaHistoricalMinusStrict": 0
+    },
+    {
+      "run": "single5/0013.log",
+      "documents": 1,
+      "historicalSuccessfulSvg": 153,
+      "strictSuccessfulSvg": 152,
+      "deltaHistoricalMinusStrict": 1
+    },
+    {
+      "run": "single5/0021.log",
+      "documents": 1,
+      "historicalSuccessfulSvg": 10,
+      "strictSuccessfulSvg": 11,
+      "deltaHistoricalMinusStrict": -1
+    },
+    {
+      "run": "single5/0037.log",
+      "documents": 1,
+      "historicalSuccessfulSvg": 1,
+      "strictSuccessfulSvg": 1,
+      "deltaHistoricalMinusStrict": 0
+    },
+    {
+      "run": "single5/0045.log",
+      "documents": 1,
+      "historicalSuccessfulSvg": 1,
+      "strictSuccessfulSvg": 1,
+      "deltaHistoricalMinusStrict": 0
+    },
+    {
+      "run": "single5/0053.log",
+      "documents": 1,
+      "historicalSuccessfulSvg": 3,
+      "strictSuccessfulSvg": 2,
+      "deltaHistoricalMinusStrict": 1
+    },
+    {
+      "run": "single5/0061.log",
+      "documents": 1,
+      "historicalSuccessfulSvg": 2,
+      "strictSuccessfulSvg": 2,
+      "deltaHistoricalMinusStrict": 0
+    },
+    {
+      "run": "single5/0069.log",
+      "documents": 1,
+      "historicalSuccessfulSvg": 2,
+      "strictSuccessfulSvg": 2,
+      "deltaHistoricalMinusStrict": 0
+    },
+    {
+      "run": "single5/0077.log",
+      "documents": 1,
+      "historicalSuccessfulSvg": 1,
+      "strictSuccessfulSvg": 1,
+      "deltaHistoricalMinusStrict": 0
+    },
+    {
+      "run": "single5/0085.log",
+      "documents": 1,
+      "historicalSuccessfulSvg": 241,
+      "strictSuccessfulSvg": 242,
+      "deltaHistoricalMinusStrict": -1
+    },
+    {
+      "run": "single5/0093.log",
+      "documents": 1,
+      "historicalSuccessfulSvg": 2,
+      "strictSuccessfulSvg": 1,
+      "deltaHistoricalMinusStrict": 1
+    }
+  ],
+  "관측": "역사 생산자는 절대 파일명(숫자 symlink 포함), strict 생산자는 원본 상대경로로 RNG를 seed한다. 두 생산자는 서로 다른 30회 편집을 실행한다. 7은 여러 증가·감소의 순차이이지 누락한 SVG 7개라는 증거가 아니다. 역사 오류 대칭 계수는 없어 이를 0으로 추정하지 않는다.",
+  "재현대상": [
+    {
+      "path": "hwp3-sample11-hwpx.hwpx",
+      "sha256": "986884775fc5cc3d8e21d6cbaaa012163e7510a5906f83bdd6be4d478fe28a1f",
+      "historicalSvg": 153,
+      "strictSvg": 152
+    },
+    {
+      "path": "hwpx/hwpx-01.hwpx",
+      "sha256": "e17464a1514e3d83391d32a5db30f662f3d0db4b7c61bbaacf4450a729f70f20",
+      "historicalSvg": 10,
+      "strictSvg": 11
+    },
+    {
+      "path": "issue6133/156483831_poster_title_above_offset_float.hwp",
+      "sha256": "1d2ecde2a4b34bf9abc5cfab8551f9b6bfc417d9013504dcdbbb07a41a62e4e8",
+      "historicalSvg": 3,
+      "strictSvg": 2
+    },
+    {
+      "path": "task1725/text_footnote_tail_overpagination.hwp",
+      "sha256": "d335c26cbcd57b157c929ed36596d95a6676bea5624348baae3bff3b55a705d9",
+      "historicalSvg": 241,
+      "strictSvg": 242
+    },
+    {
+      "path": "대각선샘플.hwp",
+      "sha256": "0ca676c2e2fdca79cc01b01d2743197a8d6dbf078726564085d2e3f8da8a1b8a",
+      "historicalSvg": 2,
+      "strictSvg": 1
+    }
+  ]
+}

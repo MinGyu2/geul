@@ -40,7 +40,12 @@ def producer_fixture(group=40, undo=100):
                 rendererMode='candidate-full', historyEnabled=True, keyDelivery='native X11 xdotool',
                 environment={'busyProbe': False, 'warmupGroups': 3, 'groupStartSamplesPerDocument': 30},
                 engineIdentity={}, sourceSha256=hashes[-1],
-                measurements={'perf': []}, gates=[], measurementComplete=True)
+                measurements={'perf': []}, gates=[], measurementComplete=True,
+                # 합성 producer도 현재 source guard 계약을 만족해야 한다.
+                # 이 해시는 fixture용이며 실제 source 신뢰의 증거가 아니다.
+                sourceIdentityBefore={'fixture/frontend': 'a' * 64},
+                sourceIdentityAfter={'fixture/frontend': 'a' * 64},
+                sourceStableDuringRun=True)
     for name, digest, size in zip(names, hashes, [13312, 8064, 11956736, 423622]):
         row = dict(sample=name, sourceSha256=digest, fileBytes=size, warmupGroups=3, control='normal history',
                    busyProbe=False, timelineSamples=[])

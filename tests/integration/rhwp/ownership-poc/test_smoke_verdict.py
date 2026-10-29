@@ -260,5 +260,6 @@ class CorrectionTests(unittest.TestCase):
     def test_typing_is_stdlib(self):
         import typing
         self.assertNotEqual(Path(typing.__file__).resolve(),Path(__file__).with_name('typing.py').resolve())
+        self.assertNotEqual(Path(typing.__file__).resolve().parent,Path(__file__).resolve().parent)
 
 if __name__ == '__main__': unittest.main()

@@ -1606,17 +1606,25 @@ export class RhwpEditorSession implements DocumentCommandTarget {
   }
 
   private releaseDocument() {
-    this.releaseRendering();
-    // 기록의 스냅숏은 문서 객체 안에 있어 free와 함께 사라진다: 엔진을 다시 부르지 않고 참조만 버린다.
-    this.history?.release(false);
+    const doc = this.doc, history = this.history;
+    // 먼저 소유 참조를 끊는다. 해제 예외 뒤에도 이전 문서를 편집하거나 재해제하지 않는다.
+    this.doc = null;
     this.history = null;
     this.historyOff = null;
-    this.doc?.free();
-    this.doc = null;
     this.text = null;
     this.composition = null;
     this.provisional = null;
     this.awaiting = false;
+    const errors: unknown[] = [];
+    for (const release of [() => this.releaseRendering(), () => history?.release(false), () => doc?.free()]) {
+      try { release(); } catch (error) { errors.push(error); }
+    }
+    if (errors.length) {
+      this.uncertain = true;
+      this.status = { kind: "failed", error: { code: "EngineFailure", engine: "rhwp", stage: "render" } };
+      if (errors.length === 1) throw errors[0];
+      throw new AggregateError(errors, "문서 해제 실패", { cause: errors[0] });
+    }
   }
 
   /** 세션을 닫을 때. 모델을 버리고 이후의 늦은 응답은 무시한다. */
@@ -1629,10 +1637,13 @@ export class RhwpEditorSession implements DocumentCommandTarget {
     this.saveCheck = null;
     this.committingEpoch = null;
     this.failure = null;
-    this.releaseDocument();
+    const errors: unknown[] = [];
+    try { this.releaseDocument(); } catch (error) { errors.push(error); }
     this.status = { kind: "closed" };
-    this.emit();
-    this.listeners.clear();
+    try { this.emit(); } catch (error) { errors.push(error); }
+    finally { this.listeners.clear(); }
+    if (errors.length === 1) throw errors[0];
+    if (errors.length) throw new AggregateError(errors, "세션 종료 실패", { cause: errors[0] });
   }
 }
 

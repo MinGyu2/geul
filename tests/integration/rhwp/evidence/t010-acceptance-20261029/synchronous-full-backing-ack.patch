@@ -1,0 +1,72 @@
+diff --git a/tests/integration/rhwp/ownership-poc/session.mjs b/tests/integration/rhwp/ownership-poc/session.mjs
+--- a/tests/integration/rhwp/ownership-poc/session.mjs
++++ b/tests/integration/rhwp/ownership-poc/session.mjs
+@@ -354,7 +354,7 @@
+       units -= request.summaryUnits; count--; request.summary = null; request.summaryUnits = 0;
+     }
+   };
+-  function pump() {
++  function pump(synchronousRequest = null) {
+     if (disposed || renderFault || !doc) return;
+     if (active && !valid(active)) {
+       try { stopActive('stale'); }
+@@ -486,8 +486,13 @@
+       painted.set(request.canvas, {...request, width:request.canvas.width, height:request.canvas.height});
+       // Serialized UTF-16 code units, not an actual JS-object or RSS byte certificate.
+       trimSummaries();
+-      if (request.page === 0 && session.firstPaintMs === null) session.firstPaintMs = performance.now() - session.loadStartedAt;
+-      queueMicrotask(() => { if (!disposed) for(const listener of listeners)listener(); });
++      const firstPaintChanged = request.page === 0 && session.firstPaintMs === null;
++      if (firstPaintChanged) session.firstPaintMs = performance.now() - session.loadStartedAt;
++      // 같은 요청의 동기 완료는 renderPage 반환값으로 전달한다. 첫 paint와
++      // 실제 비동기 완료는 상태를 갱신할 구독 알림을 계속 보낸다.
++      if (firstPaintChanged || synchronousRequest?.traceRequest !== request.traceRequest) {
++        queueMicrotask(() => { if (!disposed) for(const listener of listeners)listener(); });
++      }
+     }
+     else {
+       try { stopActive('terminal-'+state); }
+@@ -583,9 +588,12 @@
+     // the post-cleanup pump. Only an established same-size frame may poll here.
+     if (!active && complete && complete.page === page && complete.scale === scale
+         && complete.generation === generation && complete.width === canvas.width
+-        && complete.height === canvas.height && canvas.width > 0 && canvas.height > 0) pump();
++        && complete.height === canvas.height && canvas.width > 0 && canvas.height > 0) pump(request);
+     const result = painted.get(canvas);
+-    return !queue.has(canvas) && sameRequest(result, request) && ownsFrame(result) && result.width === canvas.width && result.height === canvas.height; // a queued frame is never reported as completed
++    // Full은 backing을 원자적으로 교체할 수 있다. 입력 시점 epoch가 아니라
++    // 이 요청이 완료한 현재 프레임의 유효성·소유권을 확인한다.
++    return !queue.has(canvas) && result?.traceRequest === request.traceRequest
++      && valid(result) && ownsFrame(result) && result.width === canvas.width && result.height === canvas.height;
+   };
+   const renderRequest = session.renderPage;
+   session.renderPage = (...args) => {
+diff --git a/tests/integration/rhwp/ownership-poc/test-session.mjs b/tests/integration/rhwp/ownership-poc/test-session.mjs
+--- a/tests/integration/rhwp/ownership-poc/test-session.mjs
++++ b/tests/integration/rhwp/ownership-poc/test-session.mjs
+@@ -184,6 +184,25 @@
+  } finally { other.session.dispose();x.session.dispose(); }
+ });
+ 
++test('synchronous Full reports its newly published backing and avoids redundant completion updates', async()=>{
++ const x=await setup(),trace=createLifecycleTrace();window.__d4LifecycleTrace=trace;
++ const poll=x.doc.pollRenderJob.bind(x.doc);x.doc.pollRenderJob=id=>{
++  if(x.doc.state==='COMPLETE'){x.canvas.width=x.canvas.width;x.canvas.height=x.canvas.height;}
++  return poll(id);
++ };
++ let notifications=0;x.session.subscribe(()=>notifications++);
++ try {
++  x.doc.state='COMPLETE';assert.equal(x.session.renderPage(0,x.canvas,1),false);x.flush();await Promise.resolve();
++  assert.equal(notifications,1,'initial deferred publication must still notify');
++  x.session.modelVersion++;
++  assert.equal(x.session.renderPage(0,x.canvas,1),true,'a completed owned Full must acknowledge its current backing epoch');
++  await Promise.resolve();assert.equal(notifications,1,'the synchronous caller has already received completion');
++  assert.equal(x.doc.starts,2);assert.equal(x.handle.stats().active,0);assert.equal(x.handle.stats().queued,0);
++  assert.equal(trace.snapshot({terminal:true}).lifecycleValid,'VALID');
++  x.session.modelVersion++;x.doc.state='PENDING';assert.equal(x.session.renderPage(0,x.canvas,1),false);
++  x.doc.state='COMPLETE';x.notify();await Promise.resolve();assert.equal(notifications,2,'pending completion must notify');
++ }finally{x.session.dispose();}
++});
+ for (const operation of ['cancel','releaseRendering','dispose','document-free']) test(`cancel exception cleans adapter during ${operation}`, async () => {
+  const x=await setup(), trace=createLifecycleTrace();window.__d4LifecycleTrace=trace;
+  x.session.renderPage(0,x.canvas,1);x.flush();
