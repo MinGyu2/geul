@@ -673,6 +673,179 @@ describe("여러 쪽 그리기 순서", () => {
     });
   });
 
+  describe("latency sample ownership and terminal failure", () => {
+    /** Controlled animation frames: `frame()` runs the callbacks queued before it (one display frame). */
+    function frames() {
+      let queued: FrameRequestCallback[] = [];
+      vi.stubGlobal("requestAnimationFrame", (callback: FrameRequestCallback) => { queued.push(callback); return queued.length; });
+      return {
+        frame: () => act(() => { const run = queued; queued = []; for (const callback of run) callback(performance.now()); }),
+        pending: () => queued.length,
+      };
+    }
+    function rejectFirst(t: Awaited<ReturnType<typeof mounted>>, times: number) {
+      const original = t.editor.renderPage.bind(t.editor);
+      let remaining = times;
+      return vi.spyOn(t.editor, "renderPage").mockImplementation((page, canvas, scale) => {
+        if (page === 0 && remaining > 0) { remaining -= 1; return false; }
+        return original(page, canvas, scale);
+      });
+    }
+    /** Real fake-engine paints of the caret page (not merely a true return value). */
+    const painted = (t: Awaited<ReturnType<typeof mounted>>, text: string) => t.doc.draws.filter(d => d.page === 0 && d.text === text).length;
+    async function setup(pages = 4) {
+      layout({ top: 0, bottom: 1500 });
+      const t = await mounted({ pages });
+      await converged(t.doc);
+      vi.useFakeTimers();
+      const raf = frames();
+      const record = vi.spyOn(t.editor, "recordLatency");
+      return { t, raf, record };
+    }
+
+    it("records exactly one sample after the caret page is painted and two frames pass", async () => {
+      const { t, raf, record } = await setup();
+      t.type("a");
+      expect(painted(t, "a가나다")).toBe(1);
+      raf.frame();
+      expect(record).not.toHaveBeenCalled();
+      raf.frame();
+      expect(record).toHaveBeenCalledTimes(1);
+      expect(t.editor.latency()?.count).toBe(1);
+      // harmless React renders and the remaining page tasks do not record the same input again
+      act(() => t.view.rerender(
+        <LanguageProvider language="ko" onLanguageChange={() => {}}>
+          <div className="editor__scroll"><RhwpSurface session={t.editor} zoom={100} /></div>
+        </LanguageProvider>,
+      ));
+      advance(1000);
+      raf.frame(); raf.frame();
+      expect(record).toHaveBeenCalledTimes(1);
+    });
+
+    it("a failed caret-page draw records nothing until its same-revision retry paints, then one sample", async () => {
+      const { t, raf, record } = await setup();
+      const render = rejectFirst(t, 1);
+      t.type("a");
+      expect(painted(t, "a가나다")).toBe(0);
+      raf.frame(); raf.frame();
+      expect(record).not.toHaveBeenCalled();
+      expect(raf.pending()).toBe(0);
+      await nextRenderTask();
+      expect(painted(t, "a가나다")).toBe(1);
+      raf.frame();
+      expect(record).not.toHaveBeenCalled();
+      raf.frame();
+      expect(record).toHaveBeenCalledTimes(1);
+      advance(1000);
+      raf.frame(); raf.frame();
+      expect(record).toHaveBeenCalledTimes(1);
+      render.mockRestore();
+    });
+
+    it("a persistent recoverable failure stays bounded and never records a sample", async () => {
+      const { t, raf, record } = await setup();
+      const render = rejectFirst(t, Infinity);
+      t.type("a");
+      advance(5000);
+      raf.frame(); raf.frame();
+      act(() => void t.scroller.dispatchEvent(new Event("scroll")));
+      advance(5000);
+      raf.frame(); raf.frame();
+      expect(render.mock.calls.filter(([page]) => page === 0)).toHaveLength(3);
+      expect(painted(t, "a가나다")).toBe(0);
+      expect(record).not.toHaveBeenCalled();
+      expect(vi.getTimerCount()).toBe(0);
+      render.mockRestore();
+    });
+
+    it("a newer revision invalidates the older input's pending frames", async () => {
+      const { t, raf, record } = await setup();
+      t.type("a");
+      raf.frame(); // input a: first frame passed, second pending
+      t.type("b");
+      raf.frame(); // a's second frame (dropped) + b's first frame
+      expect(record).not.toHaveBeenCalled();
+      raf.frame();
+      expect(record).toHaveBeenCalledTimes(1);
+      expect(painted(t, "ab가나다")).toBe(1);
+    });
+
+    it("unmount drops a pending sample", async () => {
+      const { t, raf, record } = await setup();
+      t.type("a");
+      raf.frame();
+      t.view.unmount();
+      raf.frame(); raf.frame();
+      expect(record).not.toHaveBeenCalled();
+    });
+
+    it("session replacement drops the old session's pending sample", async () => {
+      const u = await mounted({ pages: 1 });
+      const other = await mounted({ pages: 1 });
+      vi.useFakeTimers();
+      const raf = frames();
+      const recordU = vi.spyOn(u.editor, "recordLatency");
+      const recordOther = vi.spyOn(other.editor, "recordLatency");
+      u.type("a");
+      expect(painted(u, "a가나다")).toBe(1);
+      raf.frame();
+      act(() => u.view.rerender(
+        <LanguageProvider language="ko" onLanguageChange={() => {}}>
+          <div className="editor__scroll"><RhwpSurface session={other.editor} zoom={100} /></div>
+        </LanguageProvider>,
+      ));
+      raf.frame(); raf.frame();
+      expect(recordU).not.toHaveBeenCalled();
+      expect(recordOther).not.toHaveBeenCalled();
+    });
+
+    it("a terminal failure in a queued page stops the remaining queue, drops the sample, and scroll/resize do not restart it", async () => {
+      const resize = fakeResizeObserver();
+      const { t, raf, record } = await setup();
+      const original = t.editor.renderPage.bind(t.editor);
+      const render = vi.spyOn(t.editor, "renderPage").mockImplementation((page, canvas, scale) => {
+        if (page === 1) {
+          const throwing = () => { throw new Error("engine"); };
+          t.doc.renderPageToCanvas = throwing;
+          t.doc.renderPagePatchToCanvasFilteredWithProfile = throwing;
+        }
+        return original(page, canvas, scale);
+      });
+      t.type("a");
+      expect(painted(t, "a가나다")).toBe(1);
+      await nextRenderTask(); // visible page 1 throws: engine failure
+      expect(t.editor.status.kind).toBe("failed");
+      expect(vi.getTimerCount()).toBe(0);
+      const calls = render.mock.calls.length;
+      raf.frame(); raf.frame();
+      expect(record).not.toHaveBeenCalled();
+      act(() => void t.scroller.dispatchEvent(new Event("scroll")));
+      resize.resized();
+      advance(5000);
+      expect(render.mock.calls.length).toBe(calls);
+      expect(render.mock.calls.some(([page]) => page === 2 || page === 3)).toBe(false);
+      render.mockRestore();
+    });
+
+    it("a queued task does not draw once the session has failed for another reason", async () => {
+      const { t, raf, record } = await setup();
+      t.type("a");
+      const render = vi.spyOn(t.editor, "renderPage");
+      // an engine failure outside drawing (e.g. a failed edit) while page tasks are queued
+      const failing = t.editor as unknown as { markFailed(error: unknown): void };
+      act(() => failing.markFailed({ code: "EngineFailure", engine: "rhwp", stage: "edit" }));
+      advance(5000);
+      act(() => void t.scroller.dispatchEvent(new Event("scroll")));
+      advance(5000);
+      raf.frame(); raf.frame();
+      expect(render).not.toHaveBeenCalled();
+      expect(record).not.toHaveBeenCalled();
+      expect(vi.getTimerCount()).toBe(0);
+      render.mockRestore();
+    });
+  });
+
   it("배율·DPR이 바뀌면 기다리지 않고 모든 쪽을 새 배율로 다시 그린다", async () => {
     layout({ top: 0, bottom: 1500 });
     const t = await mounted({ pages: 4 });

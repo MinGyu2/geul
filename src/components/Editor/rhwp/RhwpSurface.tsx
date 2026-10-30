@@ -22,6 +22,7 @@
 // 들어가기 직전에 그 자리에 확정). 배율 표시는 사용자가 고른 값 그대로이고 다른 배율로 몰래 그리지 않는다. 예산 안의
 // 배율로 돌아오면 같은 모델로 다시 그리고 편집을 이어 간다.
 // 응답 시간: 입력 이벤트 시각부터 바뀐 페이지를 다시 그린 뒤 두 번째 animation frame까지를 잰다(화면 반영의 상한).
+// 표본은 그 입력이 만든 판의 커서 쪽을 실제로 그렸을 때만 남긴다(실패·새 판·엔진 실패·해제면 버림, 입력 하나에 표본 하나).
 import { memo, useCallback, useEffect, useLayoutEffect, useReducer, useRef, useState, type CSSProperties, type RefObject } from "react";
 import { ZOOM_STEPS } from "../../../hooks/layoutState";
 import { useTranslation } from "../../../language/LanguageContext";
@@ -47,6 +48,8 @@ const HIDDEN_UNDERLINE: CSSProperties = { left: 0, top: 0, width: 0, visibility:
 const padComposition = (rects: PageRect[]): (PageRect | null)[] => (rects.length > 0 ? rects : [null]);
 
 const EMPTY_RECTS: PageRect[] = [];
+/** 응답 시간 표본 하나: 입력 시각, 그 입력이 만든 판, 커서 쪽을 그렸는지(그렸으면 frame을 기다리는 중). */
+interface LatencySample { started: number; version: number; drawn: boolean }
 interface PageFrameProps {
   page: number; width: number; height: number; scale: number;
   selection: PageRect[]; composition: PageRect[]; caret: CaretRect | null; editable: boolean;
@@ -135,6 +138,8 @@ export function RhwpSurface({ session, zoom, imeContext }: RhwpSurfaceProps) {
     if (element) pageBoxes.current.set(page, element);else pageBoxes.current.delete(page);
   }, []);
   const inputAt = useRef<number | null>(null);
+  /** 그리기를 기다리는 응답 시간 표본(그 입력이 만든 판). 이 ref가 가리키는 표본만 기록할 수 있다. */
+  const sample = useRef<LatencySample | null>(null);
   const renderTimer = useRef<number | null>(null);
   const ime = useRef<ImeInput | null>(null);
   const [ownContext] = useState(() => new ImeContext());
@@ -177,6 +182,7 @@ export function RhwpSurface({ session, zoom, imeContext }: RhwpSurfaceProps) {
     const retry = () => {
       rendered.current = { ...last, version: -1 };
       inputAt.current = null;
+      sample.current = null;
     };
     if (!session.prepareRendering(scale * ratio, () => ime.current?.detach())) return retry();
     if (canvases.current.size < session.pages.length) return retry();
@@ -193,14 +199,29 @@ export function RhwpSurface({ session, zoom, imeContext }: RhwpSurfaceProps) {
       if (canvas) return session.renderPage(page, canvas, scale * ratio);
       return false;
     };
+    // 세션이 그리기를 허용하는지(엔진 실패는 끝, 표시 한도는 배율이 돌아오면 새 render가 다시 정함).
+    const drawable = () => session.status.kind === "ready" && session.renderLimit === null;
+    // 새 입력이면 새 표본, 아니면 같은 판에서 기다리던 표본만 이어 간다(다른 판의 표본은 무효).
+    const started = inputAt.current;
+    inputAt.current = null;
+    if (started !== null) sample.current = { started, version, drawn: false };
+    else if (sample.current?.version !== version) sample.current = null;
+    // 표본은 커서 쪽을 실제로 그린 뒤 두 번째 frame에 한 번만 남긴다. 그 사이 새 판·엔진 실패·해제가 오면 버린다.
+    const settle = () => {
+      const pending = sample.current;
+      if (!pending || pending.drawn) return;
+      pending.drawn = true;
+      requestAnimationFrame(() => requestAnimationFrame(() => {
+        if (sample.current !== pending) return;
+        sample.current = null;
+        if (session.modelVersion === pending.version && session.status.kind === "ready") {
+          session.recordLatency(performance.now() - pending.started);
+        }
+      }));
+    };
     const drawStarted = import.meta.env.VITE_GEUL_TEST_HOOKS === "1" ? performance.now() : 0;
     const firstComplete = draw(first);
     trace("rhwp:surface-first-draw", () => ({ page: first, ms: performance.now() - drawStarted }));
-    const started = inputAt.current;
-    inputAt.current = null;
-    if (started !== null) {
-      requestAnimationFrame(() => requestAnimationFrame(() => session.recordLatency(performance.now() - started)));
-    }
     // 커서 쪽에서 가까운 쪽부터, 한 task에 한 쪽씩 그린다(8차: 30쪽을 한 task에 그리면 160 ms 넘게 입력을 막았다).
     const rest = session.pages.map((_, page) => page).filter((page) => page !== first)
       .sort((a, b) => Math.abs(a - first) - Math.abs(b - first));
@@ -216,14 +237,26 @@ export function RhwpSurface({ session, zoom, imeContext }: RhwpSurfaceProps) {
     // 커서 쪽을 그리지 못했으면 그 쪽도 dirty로 남겨 다른 쪽보다 먼저 같은 판으로 다시 시도한다(편집·스크롤을 기다리지 않음).
     // 다시 시도는 예약 한 번에 한 번(다른 쪽과 같은 규칙)이라 계속 실패해도 반복하지 않는다. 엔진 실패(편집 멈춤)·표시 한도면
     // 세션이 그리기를 허용하지 않으므로 다시 시도하지 않는다(그 상태가 풀리면 새 render가 다시 정함).
-    const retryFirst = !firstComplete && first < session.pages.length
-      && session.status.kind === "ready" && session.renderLimit === null;
+    // 표본은 커서 쪽을 그린 때(바로 또는 그 한 번의 다시 시도)에만 남는다.
+    const retryFirst = !firstComplete && first < session.pages.length && drawable();
+    if (firstComplete) settle();
+    else if (!retryFirst) sample.current = null;
     const pending = retryFirst ? [first, ...rest] : rest;
     stalePages.current = new Set(pending);
+    // 엔진 실패로 편집이 멈추면 남은 쪽 작업을 모두 거둔다: 스크롤·resize가 그릴 수 없는 큐를 다시 세우지 않는다.
+    const stop = () => {
+      if (renderTimer.current !== null) window.clearTimeout(renderTimer.current);
+      renderTimer.current = null;
+      stalePages.current.clear();
+      scheduleStale.current = null;
+      sample.current = null;
+    };
     const schedule = (visible: Set<number>) => {
       if (renderTimer.current !== null) window.clearTimeout(renderTimer.current);
       renderTimer.current = null;
       if (session.modelVersion !== version) return;
+      if (session.status.kind !== "ready") return stop();
+      if (!drawable()) return;
       const near = (page: number) => Math.abs(page - first) <= PAGE_LOOKAHEAD
         || [...visible].some((shown) => Math.abs(page - shown) <= PAGE_LOOKAHEAD);
       const eligible = pending.filter((page) => stalePages.current.has(page) && (all || near(page)));
@@ -236,7 +269,18 @@ export function RhwpSurface({ session, zoom, imeContext }: RhwpSurfaceProps) {
         renderTimer.current = window.setTimeout(() => {
           renderTimer.current = null;
           if (session.modelVersion !== version) return;
-          if (stalePages.current.has(next[0]) && draw(next[0])) stalePages.current.delete(next[0]);
+          if (session.status.kind !== "ready") return stop();
+          if (!drawable()) return;
+          const page = next[0];
+          if (stalePages.current.has(page)) {
+            const complete = draw(page);
+            if (complete) stalePages.current.delete(page);
+            if (page === first && sample.current?.version === version) {
+              if (complete) settle();
+              else sample.current = null; // 다시 시도도 실패: 이 입력은 표본을 남기지 않는다
+            }
+            if (!complete && session.status.kind !== "ready") return stop();
+          }
           step(index + 1);
         }, next[1]);
       };
@@ -252,6 +296,7 @@ export function RhwpSurface({ session, zoom, imeContext }: RhwpSurfaceProps) {
     renderTimer.current = null;
     stalePages.current.clear();
     scheduleStale.current = null;
+    sample.current = null;
     session.releaseRendering();
     // StrictMode replays setup with these same refs after cleanup has cleared
     // the backing stores. The next setup must repaint even at the same revision.
