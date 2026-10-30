@@ -1293,3 +1293,45 @@ p95는 45/45/114/81 ms여서 D4는 계속 FAIL이며, Undo는 모두 PASS다. �
 후속 시험 어댑터는 완료 Canvas의 엔진 job 토큰이 바뀐 경우에도 재사용하지 않도록 교정했다. fake 회귀 52/52와 화학 문서
 native 선택 프레임 정확 RGBA 6/6이 통과했다. 토큰은 별도 WASM 인스턴스의 동일 숫자 ID와 임의 외부 그리기를 감지하지 못하며 변경 후 공식 D1/D4 재검증은 미실행이다.
 이 변경의 공식 D1 anchor v2 재검증은 candidate-full 39/39 단언과 24/24 정확 RGBA로 PASS했다. 공식 D4 재검증은 남아 있다.
+
+## T010 첫 그리기 재시도·D4 엔진 경계 조사 (2026-10-30, 미완료)
+
+**첫 그리기 재시도(수정).** `RhwpSurface`는 커서 쪽 그리기가 false면 그 쪽을 `stalePages`에 넣었지만, 예약은 그 쪽을 뺀
+`rest`만 보았고 판 기록(`rendered`)은 이미 지금 모델로 바뀌어 있어 다음 편집 전까지 다시 시도하지 않았다(스크롤·resize도 마찬가지).
+이제 세션이 아직 그릴 수 있으면(`ready`, 표시 한도 없음) 실패한 커서 쪽을 다른 대기 쪽보다 먼저 같은 판으로 한 번 다시 시도하고,
+그 뒤에는 다른 쪽과 같이 새 viewport 요청 때만 다시 시도한다. 엔진 예외(`markFailed`)·표시 한도면 다시 시도하지 않는다. 판 기록은
+"이 판의 예약을 맡았다"는 뜻이고 쪽별 완료는 `stalePages`가 맡는다. 고정 엔진에서 false는 사실상 엔진 예외(종료)나 이미 걸러진
+그리기 불가 상태에서만 나오므로, 회복 가능한 실패는 `renderPage` 계약 수준(가짜)으로 재현했다. 회귀: `repaintScheduling.test.tsx`
+"caret-page (first) draw failure" 6개, `RhwpSurface.test.tsx` StrictMode 재실행 1개(수정 전 4개 실패). 실제 앱 D1 `--render`는 수정 전후
+같음(22 PASS, 셀 경계 조회 2 FAIL은 수정 전에도 같음). D4와 무관하다.
+
+**insertText 동기 경계(고정 rhwp 1a76570 소스, VERIFIED).** 본문: `text_editing.rs` `insert_text_at_caret_native`(1434–1582) →
+`Paragraph::insert_text_at_caret` → `reflow_paragraph`(1706, 그 문단 줄 나눔) → `recalculate_section_vpos` → `recompose_paragraph`
+(`rendering.rs` 4279: 모든 쪽 트리·레이어 JSON·셀 레이아웃 캐시 비움 `invalidate_page_tree_cache` 7307, 구역·문단 dirty) →
+`paginate_if_needed`(4886) → `paginate_pass`(4919): 문서 전체 번호 표지 다시 정함, dirty 구역마다 dirty 문단만 다시 재고
+(`measure_section_selective`) **구역 전체를 다시 조판**한다. 단 소속이 바뀌면 최대 2회 더 반복. `find_convergence`(5301)는 전체
+조판을 끝낸 뒤 진단 출력만 하고(문단 수가 바뀐 경우만), `copy_converged_pages`는 호출되지 않는다 — 증분 재사용은 없다.
+셀: `replace_text_in_cell_native_impl`(1842)은 `insertTextInCell`이면 같은 `paginate_if_needed`, `…DeferredPagination`이면 표 셀 전용
+지연 descriptor(임시 쪽)를 남긴다. `pageCount`(mod.rs 368)·`getPageInfo`(2892)는 저장된 쪽 나눔만 읽어 조판을 일으키지 않는다.
+`getCursorRect`는 `find_text_scan_pages_for_paragraph`(쪽 나눔)와 `build_page_tree_cached`(캐시가 비었으므로 커서 쪽 트리를 새로 만듦)에,
+hit test·선택·그리기도 쪽 나눔과 쪽 트리에 의존한다. 그래서 쪽 수·쪽 크기·커서는 편집 직후 완전한 쪽 나눔이 필요하다.
+
+**비용(VERIFIED, 조건 명시).** 제품 Release WASM 3f99a74b, Node 24.21, 자산 문서(60쪽, 구역 0이 50쪽) 0:4:0 30표본: insertText p50
+24.4 ms = 문서 수정 0.42 + 쪽 나눔(`endBatch`) 24.2; 커서 첫 질의(쪽 트리 생성) 2.3, 레이어 JSON 6.8(직렬화 370 KB), readPages 0.7.
+화학(24쪽·24문단)은 insertText 0.5 ms. 실제 앱(WebKitGTK 2.54.1, debug 앱 + Vite dev, 공식 D4 timeline) 자산 group-start handler
+p50 약 62 ms 순서: saveSnapshot 1 → insertText 27 → readPages 1–2 → React·커서 약 5 → 레이어 JSON 7 → 요약 parse/walk 4 →
+띠 다시 그리기 12(엔진, drawImage 4–5 포함); handler 뒤 3-RAF까지 p50 약 19·최대 27. 63798ea 공식 D4 두 번: group-start p95
+기본 52/45, 47/45, 화학 50/52, 자산 89/97 → FAIL. 요약을 끄고 쪽 전체를 다시 그린 실험은 자산 handler p50 −8 ms였지만 p95는
+그대로, 화학 그리기 5→16 ms라 채택하지 않았다. 2026-10-28 format 메모 patch(앱 안 18→8 ms)는 다른 후보 WASM이며 그때도 자산 77 FAIL.
+
+**판단(INFERRED).** handler 안 단계는 순서대로 실행되므로 더할 수 있다. 자산 p95 ≤50 ms에는 handler가 약 25–28 ms여야 하는데
+쪽 나눔만 24–27 ms다. geul만으로는 풀 수 없다. 쪽 나눔을 없애도(≈36 ms) 레이어 JSON 비교·엔진 그리기가 남아 부족하다.
+Worker는 같은 동기 작업에 Canvas/픽셀 전송을 더할 뿐 끝점(편집이 보이는 프레임)을 앞당기지 않으며 IME 순서·revision·스냅숏·lease
+소유권 비용이 크다 — 지금 근거로는 정당화되지 않는다. readPages 증분화는 이득 1–2 ms 이하.
+**다음 실험(하나):** 격리 rhwp export에서 본문 증분 쪽 나눔 — 편집 문단이 속한 쪽의 시작 상태에서 다시 조판하고, 쪽 시작 상태
+(문단·줄·단·각주/미주 이월·머리말/꼬리말 carry·번호·표 이어짐)가 이전 결과(문단 offset 반영)와 같아지는 첫 쪽에서 멈춰 이후를 잇는다.
+전체 쪽 나눔으로 돌아갈 조건: 단 소속 변경, 경계에 걸친 표 이어짐·떠 있는 개체 어울림, 각주·미주, 번호 표지 변화, 구역/쪽 정의·
+머리말/꼬리말 컨트롤, 숨은 빈 줄·vpos reset. 관문: "증분 = 전체" 등가 오라클(공개 예제·무작위 편집, 쪽 트리 비교), Node
+`endBatch` 분해 측정, 그 뒤 정확 RGBA·공식 D4. 그 다음 후보는 엔진의 쪽별 변경 정보(레이어 JSON 비교 대체)다.
+**결정:** D4 FAIL, T010 미완료, 제품 rhwp 실행 취소·다시 실행 NO-GO. 측정 스크립트·원시 결과는 비공개 geul-tests
+`reports/d4-latency-20261030/`(`engine_boundary.mjs`, `focused_stages.*`, `d1_render_runner.py`).
