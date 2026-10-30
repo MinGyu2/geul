@@ -1,8 +1,31 @@
 import { act, fireEvent, render } from "@testing-library/react";
+import { StrictMode } from "react";
 import { expect, it, vi } from "vitest";
 import { LanguageProvider } from "../../../language/LanguageContext";
 import { RhwpSurface } from "./RhwpSurface";
 import { readySession } from "./testing";
+
+it("StrictMode의 cleanup 뒤에도 같은 모델의 Canvas를 다시 그리고 해제한다", async () => {
+  const { editor, doc } = await readySession();
+  const paint = vi.fn((_page: number, canvas: HTMLCanvasElement, scale: number) => {
+    canvas.width = 800 * scale;
+    canvas.height = 1000 * scale;
+  });
+  Object.assign(doc, { renderPageToCanvas: paint });
+  const view = render(<StrictMode><LanguageProvider language="ko" onLanguageChange={() => {}}><RhwpSurface session={editor} zoom={100} /></LanguageProvider></StrictMode>);
+  const canvas = view.container.querySelector<HTMLCanvasElement>(".rhwp-page__canvas")!;
+  try {
+    expect(paint.mock.calls.length).toBeGreaterThanOrEqual(2);
+    expect(canvas.width).toBe(800);
+    expect(canvas.height).toBe(1000);
+  } finally {
+    view.unmount();
+    expect(canvas.width).toBe(0);
+    expect(canvas.height).toBe(0);
+    editor.dispose();
+    expect(doc.freed).toBe(true);
+  }
+});
 
 it("안 바뀐 쪽 Canvas를 보존하면서 배율·커서 쪽·포인터 좌표를 갱신한다", async () => {
   const { editor, doc } = await readySession();

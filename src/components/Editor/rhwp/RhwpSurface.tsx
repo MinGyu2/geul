@@ -247,6 +247,9 @@ export function RhwpSurface({ session, zoom, imeContext }: RhwpSurfaceProps) {
     stalePages.current.clear();
     scheduleStale.current = null;
     session.releaseRendering();
+    // StrictMode replays setup with these same refs after cleanup has cleared
+    // the backing stores. The next setup must repaint even at the same revision.
+    rendered.current = { version: -1, scale: 0, ratio: 0, pages: 0, sizes: "" };
   }, [session]);
 
   // 그리기를 기다리던 쪽이 보이게 되면 바로 그린다(입력이 이어져도 보이는 쪽이 옛 그림으로 남지 않게). 보이는 쪽은 스크롤 영역의
