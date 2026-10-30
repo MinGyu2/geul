@@ -189,5 +189,99 @@ assert not (g.ROOT/'external/not-created').exists()
         self.assertFalse((self.external / 'not-created').exists())
 
 
+
+class SandboxTemporaryDirectoryTests(unittest.TestCase):
+    """CI run 41014936234: collect2 aborted with "Cannot create temporary file in ./"."""
+
+    def test_private_tmpfs_is_sticky_world_writable(self):
+        base = g.sandbox_base(['/bin/bwrap'], network=False)
+        index = base.index('--tmpfs')
+        self.assertEqual(base[index - 2:index + 2], ['--perms', '1777', '--tmpfs', '/tmp'])
+        self.assertIn('--unshare-net', base)
+        self.assertNotIn('--unshare-net', g.sandbox_base(['/bin/bwrap'], network=True))
+
+    def test_inherited_temporary_paths_are_replaced_before_launcher(self):
+        seen = {}
+
+        def launcher(env):
+            seen.update(env)
+            raise RuntimeError('stop after launcher')
+        inherited = {'TMPDIR': '/host/missing', 'TMP': '/host/ro', 'TEMP': '/x', 'TEMPDIR': '/y', 'PATH': os.environ['PATH']}
+        with patch.object(g, 'sandbox_launcher', side_effect=launcher), self.assertRaisesRegex(RuntimeError, 'stop'):
+            g.run_readonly([['true']], [], g.ROOT / 'target/unused.json', env=inherited)
+        self.assertEqual({name: seen[name] for name in g.TEMP_VARIABLES}, dict.fromkeys(g.TEMP_VARIABLES, '/tmp'))
+        self.assertEqual(inherited['TMPDIR'], '/host/missing')
+
+    def test_stale_proof_from_earlier_run_is_not_reused(self):
+        import tempfile
+        with tempfile.TemporaryDirectory(dir=g.ROOT / 'target') as folder:
+            report = Path(folder) / 'r.json'
+            stale = report.with_name('r.sandbox-0.json')
+            stale.write_text('{"stale": true}')
+            import subprocess
+            real_run = subprocess.run
+
+            def run(command, *args, **kwargs):
+                if command[:1] == ['bwrap']:
+                    return subprocess.CompletedProcess(command, 1)
+                return real_run(command, *args, **kwargs)
+            with patch.object(g, 'sandbox_launcher', return_value=(['bwrap'], [])), \
+                    patch.object(g, 'snapshot', return_value={'dependencies': {}}), \
+                    patch.object(g, 'git_metadata_roots', return_value=[]), \
+                    patch.object(g, 'audit_aliases', return_value={}), \
+                    patch.object(g, 'reject_mount_aliases'), \
+                    patch.object(g.subprocess, 'run', side_effect=run), \
+                    patch.dict(g.os.environ, {'CARGO_HOME': str(Path(folder) / 'no-cargo-home')}), \
+                    self.assertRaisesRegex(RuntimeError, 'Protected command'):
+                g.run_readonly([['true']], [Path(folder)], report)
+            self.assertFalse(stale.exists())
+            self.assertEqual(__import__('json').loads(report.read_text())['sandboxProofs'], [])
+
+    def run_in_sandbox(self, perms, script, *args, writable=()):
+        import subprocess
+        import sys
+        base = g.sandbox_base(['bwrap', '--unshare-user'], network=False)
+        if perms != '1777':
+            base[base.index('--perms') + 1] = perms
+        for path in writable:
+            base += ['--bind', str(path), str(path)]
+        env = {**os.environ, **dict.fromkeys(g.TEMP_VARIABLES, '/tmp')}
+        return subprocess.run([*base, '--chdir', str(g.ROOT), '--', sys.executable, '-c', script, *args],
+                              cwd=g.ROOT, env=env, capture_output=True, text=True)
+
+    def test_proof_requires_build_identity_writable_tmp(self):
+        script = """import importlib.util,json,sys
+s=importlib.util.spec_from_file_location('g',sys.argv[1]);g=importlib.util.module_from_spec(s);s.loader.exec_module(g)
+gd=g.git(g.ROOT,'rev-parse','--absolute-git-dir').decode().strip()
+print(json.dumps(g.verify_sandbox({'readOnly':[str(g.ROOT),str(g.ROOT/'external'),gd],'writable':[],'probes':[]})))
+"""
+        ok = self.run_in_sandbox('1777', script, str(Path(g.__file__)))
+        self.assertEqual(ok.returncode, 0, ok.stderr)
+        self.assertEqual(__import__('json').loads(ok.stdout)['temporaryDirectory'], {'path': '/tmp', 'writable': True})
+        # 0555 reproduces the root-owned 0755 tmpfs seen by the unprivileged CI build UID.
+        denied = self.run_in_sandbox('0555', script, str(Path(g.__file__)))
+        self.assertNotEqual(denied.returncode, 0)
+        self.assertIn('not writable by the build identity', denied.stderr)
+
+    def test_rustc_link_under_read_only_cwd(self):
+        import shutil
+        import tempfile
+        if not shutil.which('rustc'):
+            self.skipTest('rustc unavailable')
+        with tempfile.TemporaryDirectory(dir=g.ROOT / 'target') as folder:
+            out = Path(folder)
+            (out / 'main.rs').write_text('fn main() {}\n')
+            script = """import subprocess,sys
+r=subprocess.run(['rustc',sys.argv[1],'-o',sys.argv[2]],capture_output=True,text=True)
+sys.stderr.write(r.stderr);sys.exit(r.returncode)
+"""
+            failed = self.run_in_sandbox('0555', script, str(out / 'main.rs'), str(out / 'old'), writable=[out])
+            self.assertNotEqual(failed.returncode, 0)
+            self.assertIn('Cannot create temporary file in ./: Read-only file system', failed.stderr)
+            linked = self.run_in_sandbox('1777', script, str(out / 'main.rs'), str(out / 'new'), writable=[out])
+            self.assertEqual(linked.returncode, 0, linked.stderr)
+            self.assertTrue((out / 'new').is_file())
+
+
 if __name__ == '__main__':
     unittest.main()

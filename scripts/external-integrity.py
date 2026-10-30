@@ -18,10 +18,25 @@ import shutil
 import stat
 import subprocess
 import sys
+import tempfile
 import time
 
 ROOT = Path(__file__).resolve().parents[1]
 GIT_ENV = {**os.environ, "GIT_OPTIONAL_LOCKS": "0"}
+# Sandbox-private tmpfs. Inherited TMPDIR/TMP/TEMP may name host paths that are
+# absent or read-only inside the sandbox; libiberty (collect2/lto-plugin) then
+# falls back to "./" and aborts on the read-only source tree.
+SANDBOX_TMP = "/tmp"
+TEMP_VARIABLES = ("TMPDIR", "TMP", "TEMP", "TEMPDIR")
+
+
+def sandbox_base(launcher, *, network):
+    # Under sudo-bwrap, root creates the tmpfs; bwrap's default 0755 mode would
+    # leave it unwritable after setpriv drops to the caller. Use normal sticky
+    # /tmp semantics. It is a fresh tmpfs, so no host path becomes writable.
+    base = [*launcher, "--die-with-parent", "--unshare-pid", "--new-session", "--ro-bind", "/", "/",
+            "--dev", "/dev", "--proc", "/proc", "--perms", "1777", "--tmpfs", SANDBOX_TMP]
+    return base if network else [*base, "--unshare-net"]
 
 
 def sandbox_launcher(env):
@@ -345,6 +360,18 @@ def verify_sandbox(policy):
         if any(int(status[name].strip(), 16) for name in ["CapEff", "CapPrm", "CapInh", "CapAmb", "CapBnd"]) or status["NoNewPrivs"].strip() != "1":
             raise RuntimeError("Sandbox retained capabilities or privilege escalation")
         result["identity"] = {"uid": os.getuid(), "gid": os.getgid(), "capabilities": 0, "noNewPrivs": True}
+    # Linkers and build scripts need a temporary directory writable by the
+    # final build identity. Prove it before Cargo starts, rather than letting
+    # collect2 abort later with "Cannot create temporary file in ./".
+    if any(os.environ.get(name) != SANDBOX_TMP for name in TEMP_VARIABLES):
+        raise RuntimeError("Sandbox temporary directory is not the private tmpfs")
+    try:
+        descriptor, probe = tempfile.mkstemp(prefix="geul-sandbox-", dir=SANDBOX_TMP)
+    except OSError as exc:
+        raise RuntimeError(f"Sandbox temporary directory is not writable by the build identity: {exc}")
+    os.close(descriptor)
+    os.unlink(probe)
+    result["temporaryDirectory"] = {"path": SANDBOX_TMP, "writable": True}
     for path in policy["readOnly"]:
         readonly = bool(os.statvfs(path).f_flag & os.ST_RDONLY)
         result["readOnly"][path] = readonly
@@ -373,6 +400,8 @@ def verify_sandbox(policy):
 def run_readonly(commands, writable, report, *, env=None, require_clean=False, required=None, deep=False, prepare_cache=False):
     started = time.perf_counter()
     env = {**(env if env is not None else os.environ), "GIT_OPTIONAL_LOCKS": "0"}
+    # Set before the launcher: sudo-bwrap restores exactly this environment.
+    env.update(dict.fromkeys(TEMP_VARIABLES, SANDBOX_TMP))
     launcher, drop_privileges = sandbox_launcher(env)
     if prepare_cache:
         cargo = shutil.which("cargo", path=env.get("PATH"))
@@ -393,10 +422,7 @@ def run_readonly(commands, writable, report, *, env=None, require_clean=False, r
     # initialized submodules. No source or Git object payloads are hashed here.
     protected = minimal_roots([ROOT / "external", *git_metadata_roots(before["dependencies"])])
     read_only = list(dict.fromkeys([ROOT, *git_directories(), *protected, *[ROOT / name for name in before["dependencies"]]]))
-    sandbox = [*launcher, "--die-with-parent", "--unshare-pid", "--new-session", "--ro-bind", "/", "/",
-               "--dev", "/dev", "--proc", "/proc", "--tmpfs", "/tmp"]
-    if not prepare_cache:
-        sandbox.append("--unshare-net")
+    sandbox = sandbox_base(launcher, network=prepare_cache)
     for path in paths:
         sandbox += ["--bind", str(path), str(path)]
     cargo_home = Path(env.get("CARGO_HOME", str(Path.home() / ".cargo"))).absolute()
@@ -443,6 +469,8 @@ def run_readonly(commands, writable, report, *, env=None, require_clean=False, r
     try:
         for number, command in enumerate(commands):
             proof_path = report.with_name(report.stem + f".sandbox-{number}.json")
+            # A proof left by an earlier run must never certify this command.
+            proof_path.unlink(missing_ok=True)
             child = [sys.executable, str(Path(__file__).resolve()), "--sandbox-child", json.dumps(policy), str(proof_path), *command]
             completed = subprocess.run(sandbox + ["--", *drop_privileges, *child], cwd=ROOT, env=env)
             results.append(completed.returncode)
