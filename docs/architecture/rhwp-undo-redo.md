@@ -1335,3 +1335,48 @@ Worker는 같은 동기 작업에 Canvas/픽셀 전송을 더할 뿐 끝점(편�
 `endBatch` 분해 측정, 그 뒤 정확 RGBA·공식 D4. 그 다음 후보는 엔진의 쪽별 변경 정보(레이어 JSON 비교 대체)다.
 **결정:** D4 FAIL, T010 미완료, 제품 rhwp 실행 취소·다시 실행 NO-GO. 측정 스크립트·원시 결과는 비공개 geul-tests
 `reports/d4-latency-20261030/`(`engine_boundary.mjs`, `focused_stages.*`, `d1_render_runner.py`).
+
+## T010 지연 표본 소유·엔진 실패 중단·격리 증분 쪽 나눔 실험 (2026-10-30, 미완료)
+
+**표면(66c5bdc).** 응답 시간 표본은 그 입력이 만든 판의 커서 쪽을 **실제로 그린 뒤** 두 번째 frame에 한 번만 남는다(`LatencySample`
+ref: 입력 시각·판·그림 여부, ref가 가리키는 표본만 기록). 커서 쪽 그리기가 실패하면 표본은 기다리고, 같은 판의 한 번의 다시 시도가
+그리면 그때 기록, 다시 시도도 실패하면 버린다. 새 판·엔진 실패·unmount·세션 교체는 기다리던 표본을 버린다(옛 RAF는 ref가 바뀌어
+기록하지 못함). 엔진 실패(`status`가 ready가 아님)는 남은 쪽 작업과 dirty 집합을 거두어 scroll·resize가 큐를 다시 세우지 않는다.
+대기 task도 그리기 전에 세션 상태를 확인한다. 표시 한도는 따로 둔다(배율이 돌아오면 새 render가 다시 정함). 내부 2-RAF 정의와
+공식 D4 3-RAF는 바꾸지 않았다. 새 시험 8개 중 7개는 수정 전 코드에서 의도한 이유로 실패(표본 기록, 실패 뒤 timer 남음/그리기
+호출)하고 성공 경로 1개는 전후 통과. Vitest 44파일 847 PASS, typecheck·lint PASS. 엔진 실제 경로의 복구 가능한 `false`는 여전히
+가짜 실패로만 재현한다(native 미검증).
+
+**쪽 나눔 계약.** [rhwp-incremental-pagination.md](rhwp-incremental-pagination.md)(a4b6e1a): checkpoint·경계 상태 전체 동등·
+소급 수정 유효성·입력 동등·이웃 노출 서명·fallback 이유 코드·A/B 오라클. 기존 `find_convergence`(offset 0이면 `Some(0)`)와
+`copy_converged_pages`는 쓰지 않는다.
+
+**격리 실험(제품 미적용).** 고정 1a76570의 `git archive`를 비공개 geul-tests `reports/t010-incremental-pagination-20261030/rhwp-src`
+(자체 git, 기준 8f2b163)에 두고 TypesetEngine 경로에만 구현했다: `renderer/typeset/incremental.rs`(판정·checkpoint 기록·수렴·캐시
+교체·계측), `typeset/state/incremental.rs`(상태 스냅숏·비교·소급 수정 기록), `run_section` 문단 루프 hook, `paginate_pass` 호출부,
+`StateView` 등 상태 타입 `Clone + PartialEq`, WASM API `setIncrementalPagination`·`getIncrementalPaginationReport`. 패치는
+`incremental-pagination-v2.patch`(측정본 faee2e9)와 rustfmt만 한 v2.1(7bb73f6). gitlink·제품 WASM·Cargo.lock 그대로.
+- v1(입력을 `Debug` 문자열 해시로 비교)은 정확했지만 WASM에서 오히려 느렸다(자산 insertText 36 vs 24.6 ms; 프로필상 SipHash·
+  문자열 escape가 60% 이상). v2는 이전 입력의 복제본을 보관해 `PartialEq`로 비교한다(바뀐 문단만 다시 복제, 공유 글꼴 문맥은 같은
+  할당일 때만 같음).
+- **정확성(VERIFIED).** 오라클(A=증분, B=증분 끈 기존 경로, 편집마다 전체 쪽 나눔 구조 비교 + SVG): 무작위 40파일·1600편집,
+  표적(D4 네 문서 × 구역별 처음·가운데·끝 문단, 줄·쪽 경계를 넘는 성장과 되돌림) 18실행·2448편집, D4 순서 네 문서 각 66편집 —
+  모두 불일치 0. fallback 이유가 모두 나타났다(`input-changed`, `neighbour-signature-changed`, `paragraph-count-changed`,
+  `not-single-paragraph-edit`, `section-prepass-changed`, `no-paragraph-change`). 정확 RGBA(Chrome 156 Canvas, 기준 WASM 대 v2,
+  같은 D4 순서): 389쪽·3억 4,686만 화소 모두 같음; 일부러 다른 글자를 넣은 음성 대조는 FAIL로 검출. 고정 소스 lib 시험
+  3870 PASS(증분 기본 켬). native D1 `--render`: 기준·v2 모두 23 PASS / 2 FAIL(같은 기존 셀 경계 실패), 그 뒤 `--native-keys`
+  요구에서 멈춤 — D1 전체 통과는 아니다. D2(실제 IME)는 실행하지 않았다.
+- **성능(VERIFIED, Node 24.21, Release WASM, 같은 빌드 방식, 공식 D4와 같은 커서 순서, 기준/후보 프로세스 교대 4×3).** insertText
+  (수정+동기 쪽 나눔) p50/p95: 자산(0:4:42부터) 21.66/23.65 → **2.75/3.14 ms**(720편집 중 708 수렴), 기본 HWP 0.58/0.92 →
+  0.65/0.83, 기본 HWPX 0.54/0.71 → 0.60/0.77, 화학 0.47/1.67 → 0.78/2.36(화학·기본은 문단 끝 덧붙이기라 이웃 서명이 바뀌어
+  수렴하지 않고 비용만 조금 늘어남).
+- **공식 native D4(VERIFIED, 3-RAF·표본·기준 그대로, 개인 Vite 설정이 비공개 generation을 제공, 실행 기록에 실제 WASM 해시).**
+  기준/후보/후보/기준 순 네 번 모두 측정 완료·cleanup 성공·OFFICIAL_GATE_FAILURE. group-start p50/p95: 자산 85/92, 60/72,
+  59/72, 82/92 → **여전히 FAIL**. 기본 HWP 44/43/43/44, HWPX 40/40/39/40 p95 PASS. 화학 p95 131/53/52/135 — 후보는 화학에서
+  증분을 쓰지 않는데 기준 쪽 꼬리가 크다. 원인은 귀속하지 못했다(INCONCLUSIVE, 개선으로 세지 않음). Undo p95는 모두 1500 ms 미만.
+- 남은 위험: 이웃 노출 서명은 표적 감사의 근사이며 364곳의 이웃 문단 읽기를 모두 증명하지 않았다(계약 4절). 자산 group-start의
+  남은 약 60 ms는 쪽 나눔 밖(레이어 JSON·요약·띠 그리기·커서 트리·frame 대기)이다.
+
+**결정.** 실험은 범위 안의 정확성·측정 기준을 충족했고 엔진 쪽 나눔 비용을 크게 줄였지만 D4는 FAIL이다. 패치는 병합하지 않고
+비공개 결과로 둔다. T010 미완료, 제품 rhwp 실행 취소·다시 실행 NO-GO. 원시 결과·스크립트: 비공개 geul-tests
+`reports/t010-incremental-pagination-20261030/`(`summary.json`, `oracle/`, `bench/`, `rgba/`, `native/`).
