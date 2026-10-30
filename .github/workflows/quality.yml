@@ -53,6 +53,9 @@ jobs:
     env:
       RUST_TOOLCHAIN: 1.99.0
       CARGO_TERM_COLOR: never
+      # Privilege is used only for namespace/mount setup. Cargo runs as the
+      # runner UID with no capabilities; no user-namespace mapping is needed.
+      GEUL_SANDBOX: sudo-bwrap
     defaults:
       run:
         working-directory: src-tauri

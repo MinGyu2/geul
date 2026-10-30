@@ -10,15 +10,29 @@
 
 WordCraft는 `src-tauri`의 path dependency이므로 Rust 백엔드 작업에는 이 고정 submodule이
 초기화되어 있어야 한다. 빌드·검사에서는 Cargo를 직접 실행하지 않고 저장소 루트에서
-`npm run rust -- fetch`로 현재 host target에 필요한 잠금 파일 기준 캐시를 준비한 뒤 `npm run rust -- check --lib --bins`,
-`npm run rust -- test`, `npm run rust -- fmt --check` 또는 `npm run rust -- clippy --lib --bins -- -D warnings`를
-사용한다. `scripts/cargo-geul.py`는 WordCraft revision과 작업 트리 상태를 검사하고 Linux
-bubblewrap으로 초기화된 모든 `external/` 소스와 해당 Git 메타데이터를 읽기 전용으로 둔다.
-WordCraft 전용 CI 체크아웃은 WordCraft만 받아도 되며, 필요하지 않은 RHWP 대형 submodule을
-초기화하도록 요구하지 않는다. bubblewrap이 없거나 mount 보호를 검증하지 못하면 보호되지
-않은 빌드로 진행하지 않고 실패한다. 일반 검사는 전체 외부 파일을 반복해서 해시하지 않으며,
-전체 내용 감사는 `--deep`과 함께 writable 출력 경로, 보고서 경로, 검증할 명령을 지정해
-별도로 실행한다([실행 예시](rhwp.md#외부-소스와-wasm-빌드)).
+`npm run rust -- fetch`로 현재 host target에 필요한 잠금 파일 기준 캐시를 준비한 뒤
+`npm run rust -- check --lib --bins`, `npm run rust -- test`,
+`npm run rust -- fmt --check` 또는
+`npm run rust -- clippy --lib --bins -- -D warnings`를 사용한다.
+`scripts/cargo-geul.py`는 WordCraft revision과 작업 트리 상태를 검사하고 Linux bubblewrap으로
+초기화된 모든 `external/` 소스와 실제 parent/common/submodule Git metadata, object store 및
+alternate object store를 읽기 전용으로 둔다. writable artifact/cache 경로는 생성 전에 mount
+구조와 device/inode 별칭을 확인해 hardlink·symlink·bind mount 경로를 검사한다. WordCraft 전용
+CI 체크아웃은 WordCraft만 받아도 되며, RHWP 대형 submodule을 초기화할 필요가 없다.
+
+NixOS의 기본 경로는 unprivileged `bwrap`이다. GitHub Actions `ubuntu-24.04`에서 관측된
+`bwrap: setting up uid map: Permission denied`는 Cargo 실행 전에 발생했다. CI는 `sudo-bwrap`로
+namespace와 mount만 설정한다. 이후 `setpriv`가 Cargo를 시작하기 전에 원래 runner UID/GID로
+돌아가고 보조 그룹과 모든 capability를 지우며 privilege 상승을 차단한다. user namespace 매핑을 쓰지
+않고, 보호 기능을 사용할 수 없으면 보호되지 않은 빌드로 fallback하지 않는다. Ubuntu의
+user namespace 제한 또는 AppArmor가 원인이라는 설명은 해당 실행의 감사 로그로 확인되지
+않은 추론이다. 수정된 workflow의 GitHub-hosted 실행 결과는 공개 후 확인해야 하므로 아직
+검증되지 않았다. 보호 래퍼는 Cargo fetch에만 network를 허용하고 일반 빌드·검사는 network를
+격리한다.
+
+일반 보호 검사는 외부 파일 내용을 전체 반복 해시하지 않는다. 전체 내용 감사가 필요하면
+`--deep`과 writable 출력 경로, 보고서 경로, 검증할 명령을 지정해 별도로 실행한다
+([예시](rhwp.md#외부-소스와-wasm-빌드)).
 
 ## 검증 수준
 
