@@ -63,12 +63,12 @@ jobs:
           submodules: false
           persist-credentials: false
 
-      - name: Tauri Linux 의존성 설치 (WebKitGTK 4.1)
+      - name: Tauri Linux 의존성 설치 (WebKitGTK 4.1, bubblewrap)
         working-directory: .
         run: |
           set -euo pipefail
           sudo apt-get update
-          sudo apt-get install -y --no-install-recommends libwebkit2gtk-4.1-dev pkg-config
+          sudo apt-get install -y --no-install-recommends bubblewrap libwebkit2gtk-4.1-dev pkg-config
 
       # T008: WordCraft 엔진을 링크한다. 부모 저장소 gitlink가 가리키는 고정 커밋만 받는다(rhwp는 받지 않음).
       - name: WordCraft submodule (고정 커밋, 얕게)
@@ -98,11 +98,15 @@ jobs:
           restore-keys: |
             cargo-${{ runner.os }}-${{ env.RUST_TOOLCHAIN }}-
 
+      # Wrapper가 Cargo cache를 준비할 때만 registry/git 캐시를 쓰기 가능하게 둡니다.
+      - name: 잠금 파일 의존성 캐시 준비
+        run: python3 ../scripts/cargo-geul.py fetch
+
       - name: cargo fmt
-        run: cargo fmt --check
+        run: python3 ../scripts/cargo-geul.py fmt --check
 
       - name: cargo check
-        run: cargo check --locked --lib --bins
+        run: python3 ../scripts/cargo-geul.py check --lib --bins
 
       - name: cargo clippy
-        run: cargo clippy --locked --lib --bins -- -D warnings
+        run: python3 ../scripts/cargo-geul.py clippy --lib --bins -- -D warnings

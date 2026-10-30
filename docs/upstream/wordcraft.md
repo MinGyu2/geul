@@ -6,6 +6,20 @@
 - 검토일: 2026-10-16. 검토 방법: 고정 커밋의 소스·매니페스트·문서 정적 검토
 - 라이선스·고지: [docs/licenses/wordcraft.md](../licenses/wordcraft.md)
 
+## 보호된 백엔드 빌드
+
+WordCraft는 `src-tauri`의 path dependency이므로 Rust 백엔드 작업에는 이 고정 submodule이
+초기화되어 있어야 한다. 빌드·검사에서는 Cargo를 직접 실행하지 않고 저장소 루트에서
+`npm run rust -- fetch`로 현재 host target에 필요한 잠금 파일 기준 캐시를 준비한 뒤 `npm run rust -- check --lib --bins`,
+`npm run rust -- test`, `npm run rust -- fmt --check` 또는 `npm run rust -- clippy --lib --bins -- -D warnings`를
+사용한다. `scripts/cargo-geul.py`는 WordCraft revision과 작업 트리 상태를 검사하고 Linux
+bubblewrap으로 초기화된 모든 `external/` 소스와 해당 Git 메타데이터를 읽기 전용으로 둔다.
+WordCraft 전용 CI 체크아웃은 WordCraft만 받아도 되며, 필요하지 않은 RHWP 대형 submodule을
+초기화하도록 요구하지 않는다. bubblewrap이 없거나 mount 보호를 검증하지 못하면 보호되지
+않은 빌드로 진행하지 않고 실패한다. 일반 검사는 전체 외부 파일을 반복해서 해시하지 않으며,
+전체 내용 감사는 `--deep`과 함께 writable 출력 경로, 보고서 경로, 검증할 명령을 지정해
+별도로 실행한다([실행 예시](rhwp.md#외부-소스와-wasm-빌드)).
+
 ## 검증 수준
 
 | 수준 | 의미 | 이 문서의 상태 |

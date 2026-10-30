@@ -1,6 +1,7 @@
 import { readFileSync } from "node:fs";
 import { defineConfig } from "vitest/config";
 import react from "@vitejs/plugin-react";
+import { rhwpGenerationPlugin } from "./scripts/rhwpAssets";
 
 const { version } = JSON.parse(readFileSync(new URL("./package.json", import.meta.url), "utf8")) as {
   version: string;
@@ -10,7 +11,7 @@ const { version } = JSON.parse(readFileSync(new URL("./package.json", import.met
 const host = process.env.TAURI_DEV_HOST;
 
 export default defineConfig({
-  plugins: [react()],
+  plugins: [react(), rhwpGenerationPlugin()],
   define: { __APP_VERSION__: JSON.stringify(version) },
   clearScreen: false,
   server: {

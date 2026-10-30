@@ -1,6 +1,8 @@
+import { canonical, identityFrom, sha256 } from "./rhwpArtifactIdentity";
+
 // rhwp WASM 모듈 불러오기와 이 앱이 쓰는 API의 형식(T007, R-A).
 //
-// - 모듈은 scripts/build-rhwp-wasm.sh가 고정 커밋(external/rhwp)에서 만든 public/rhwp/rhwp.js·rhwp_bg.wasm이다(Git에
+// - 모듈은 scripts/build-rhwp-wasm.sh가 고정 커밋(external/rhwp)에서 만든 public/rhwp/generations/<id>/의 산출물이다(Git에
 //   넣지 않는 빌드 산출물). 앱은 실행할 때 같은 출처의 URL로 불러오므로 타입 검사·테스트·프런트엔드 빌드는 이 산출물
 //   없이도 된다(CI는 submodule을 받지 않는다). 산출물이 없거나 초기화에 실패하면 EngineFailure(init)이다.
 // - WebAssembly 컴파일에는 CSP script-src의 'wasm-unsafe-eval'만 더했다('unsafe-eval'은 주지 않는다).
@@ -93,13 +95,20 @@ export interface RhwpModule {
 }
 
 type GeneratedModule = {
-  default: (options: { module_or_path: string | URL }) => Promise<unknown>;
+  default: (options: { module_or_path: ArrayBuffer }) => Promise<unknown>;
   HwpDocument: new (bytes: Uint8Array) => RhwpDocument;
 };
 
-/** 같은 출처의 빌드 산출물 위치. */
-export const RHWP_MODULE_URL = "/rhwp/rhwp.js";
-export const RHWP_WASM_URL = "/rhwp/rhwp_bg.wasm";
+/** 유일한 가변 게시 참조. 선택 후에는 같은 불변 generation만 사용한다. */
+export const RHWP_BUILD_URL = "/rhwp/BUILD.json";
+
+type FetchArtifact = (url: string, options?: RequestInit) => Promise<Response>;
+
+async function bytesFrom(fetcher: FetchArtifact, url: string, cache: RequestCache): Promise<ArrayBuffer> {
+  const response = await fetcher(url, { cache });
+  if (!response.ok) throw new Error(`rhwp artifact fetch ${response.status}`);
+  return response.arrayBuffer();
+}
 
 let loading: Promise<RhwpModule> | null = null;
 
@@ -107,13 +116,21 @@ let loading: Promise<RhwpModule> | null = null;
  * 모듈을 한 번만 불러온다. 실패하면 다음 호출에서 다시 시도한다(실패를 캐시하지 않음).
  * `importer`는 테스트 주입용이다.
  */
-export function loadRhwpModule(importer: (url: string) => Promise<unknown> = (url) => import(/* @vite-ignore */ url)): Promise<RhwpModule> {
+export function loadRhwpModule(importer: (url: string) => Promise<unknown> = (url) => import(/* @vite-ignore */ url), fetcher: FetchArtifact = (url, options) => fetch(url, options)): Promise<RhwpModule> {
   loading ??= (async () => {
-    const generated = (await importer(RHWP_MODULE_URL)) as GeneratedModule;
+    const selected = await identityFrom(JSON.parse(new TextDecoder().decode(await bytesFrom(fetcher, RHWP_BUILD_URL, "no-store"))));
+    const base = `/rhwp/generations/${selected.generation}`;
+    const immutable = await identityFrom(JSON.parse(new TextDecoder().decode(await bytesFrom(fetcher, `${base}/BUILD.json`, "force-cache"))));
+    if (canonical(immutable) !== canonical(selected)) throw new Error("rhwp immutable identity mismatch");
+    const [js, wasm] = await Promise.all([bytesFrom(fetcher, `${base}/rhwp.js`, "force-cache"), bytesFrom(fetcher, `${base}/rhwp_bg.wasm`, "force-cache")]);
+    if (await sha256(js) !== selected.artifacts["rhwp.js"] || await sha256(wasm) !== selected.artifacts["rhwp_bg.wasm"]) throw new Error("rhwp artifact hash mismatch");
+    // The publisher never overwrites this URL. Module caching is therefore
+    // generation-specific; wasm-bindgen receives the exact verified bytes.
+    const generated = (await importer(`${base}/rhwp.js`)) as GeneratedModule;
     if (typeof generated?.default !== "function" || typeof generated.HwpDocument !== "function") {
       throw new Error("rhwp module shape");
     }
-    const exports = await generated.default({ module_or_path: RHWP_WASM_URL });
+    const exports = await generated.default({ module_or_path: wasm });
     const HwpDocument = generated.HwpDocument;
     const memory = (exports as { memory?: unknown } | null)?.memory;
     return {

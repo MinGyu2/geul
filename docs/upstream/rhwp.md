@@ -3,30 +3,64 @@
 ## 외부 소스와 WASM 빌드
 
 `external/` 아래의 모든 의존성은 Git에 고정된 제3자 소스다. 빌드와 검증은
-이 파일, Cargo 매니페스트·잠금 파일, 무시된 생성물, submodule Git 메타데이터를
-바꾸지 않는다. RHWP와 WordCraft의 초기화된 고정 submodule이 필요하다.
+소스, 매니페스트·잠금 파일, 생성 파일, submodule Git 메타데이터를 바꾸지 않는다.
+RHWP WASM 빌드에는 RHWP submodule이 필요하고, Tauri/Rust 백엔드 검사에는 WordCraft가
+필요하다. 선택한 요구 의존성이 아닌 submodule은 초기화되지 않은 채 둘 수 있지만,
+초기화된 모든 외부 소스는 그 빌드 중 읽기 전용이다.
 
-Linux의 bubblewrap(`bwrap`)이 없으면 RHWP 빌드는 보호되지 않은 상태로 진행하지
-않고 실패한다. `scripts/external-integrity.py`가 전체 `external/` 트리를
-읽기 전용으로 마운트하고 Cargo registry/Git 의존성 소스도 읽기 전용으로 둔다.
-빌드 전후 각 외부 파일의 종류, 권한, 링크 대상, 내용 해시와 submodule revision,
-상태, Git 메타데이터를 기록한다. 결과는 `target/rhwp-wasm/external-integrity.json`에
-남긴다. 불일치 시 복구해 성공으로 처리하지 않고 실패한다.
+Linux bubblewrap(`bwrap`)이 없거나 읽기 전용 mount 검증을 할 수 없으면 보호 래퍼는
+실행을 거부한다. `scripts/external-integrity.py`는 고정 gitlink와 초기화된 submodule의
+revision, 상태, 주요 manifest·lockfile 및 Git 메타데이터를 검사하고, 모든 초기화된
+`external/`과 그 Git 메타데이터를 읽기 전용으로 마운트한다. 정상 경로는 외부 트리의
+모든 파일 내용을 반복 해시하지 않는다. 이는 sandbox가 방지하는 소스 쓰기와, 가벼운
+체크로 찾는 변경을 구분한다. sandbox 밖의 다른 프로세스가 만든 임의 파일 변경까지
+일반 경로가 모두 감지한다고 보장하지 않는다. 전체 파일 및 Git 메타데이터 내용 감사가
+필요할 때는 다음처럼 명시적으로 실행한다. 보고서는 대상 `target/` 아래에 둔다. 외부
+변경이 감지되면 자동 복구하지 않고 실패한다.
+
+```sh
+python3 scripts/external-integrity.py --deep \
+  --writable target/check \
+  --report target/check/deep-integrity.json \
+  -- true
+```
 
 기본 실행은 `scripts/build-rhwp-wasm.sh`이며 `--dev`는 개발 프로필을 선택한다.
 Rust 1.99.0과 `wasm32-unknown-unknown` 타깃, RHWP lockfile과 동일한
-wasm-bindgen CLI(현재 0.2.127)가 PATH에 있어야 한다. 설치나 네트워크 조회는
-수행하지 않는다. Cargo는 고정 잠금 파일을 `--locked --offline`으로 사용하고,
-wasm-bindgen 결과를 먼저 `target/rhwp-wasm/web/`에 만든다. 성공한 결과만
-앱이 읽는 `public/rhwp/`로 복사한다. `BUILD.json`에는 고정된 소스 revision,
-도구 버전, 빌드 입력과 최종 JS/WASM SHA256을 기록한다. 생성물은 Git에서 제외된다.
+wasm-bindgen CLI(현재 0.2.127), 그리고 release의 Binaryen `wasm-opt` 117이 PATH에
+있어야 한다. 설치나 네트워크 조회는 빌드 중 수행하지 않는다. Cargo는 고정 잠금 파일을
+`--locked --offline`으로 사용한다. Release는 생성된 wasm-bindgen WASM에 `wasm-opt 117 -O`를
+실행하고, 인터페이스 호환성을 확인한다. Debug는 최적화를 실행하지 않는다. release
+optimizer가 없거나 버전이 다르면 빌드는 실패한다.
 
-다른 외부 의존성을 쓰는 빌드와 시험도 보호 래퍼를 사용할 수 있다. 예를 들어
-`CARGO_TARGET_DIR="$PWD/target/check" python3 scripts/external-integrity.py --writable target/check --report target/check/external.json -- cargo check --manifest-path external/wordcraft/crates/engine/Cargo.toml --locked --offline`
-처럼 산출물 디렉터리를 명시한다. `--writable`은 `external/`이나 Git 메타데이터와
-겹칠 수 없다. 일반 래퍼는 기존 외부 파일을 보존하고 정확한 전후 상태를 기록한다.
-RHWP 제품 빌드는 재현성 때문에 외부 submodule에 기존 변경이 있어도 시작 전에
-명확히 중단한다.
+빌더는 생성 세대를 `public/rhwp/generations/<generation>/`에 완전히 만들고 JS, WASM 및
+그 세대의 `BUILD.json` 해시를 확인한 뒤 `public/rhwp/BUILD.json` 선택자를 원자적으로
+교체한다. 런타임은 선택자를 한 번 읽고 같은 불변 generation의 identity와 두 artifact를
+검증한 다음 그 버전 경로에서 JS를 불러와 동일 WASM 바이트를 초기화 함수에 넘긴다.
+Vite 개발·정적 빌드도 하나의 선택 generation을 대상으로 한다. 기존 reader가 오래된
+세대를 계속 사용할 수 있도록 builder는 세대를 자동 삭제하지 않으며 6개를 넘는 새
+세대는 거부한다. 오래된 산출물 정리는 소비 중인 페이지가 없을 때 운영자가 명시적으로
+해야 한다. 중단되어 남은 임시 selector 파일과 `target/rhwp-wasm/publication-*` staging도
+각각 최대 6개까지만 허용하며, 한도에 닿으면 삭제하지 않고 새 publication을 실패시킨다.
+임시 파일과 오래된 generation은 소비 중인 reader가 없음을 확인한 뒤 운영자가 검토해
+정리한다. `public/rhwp/BUILD.json`과 `dist/rhwp/BUILD.json`은 공개 최소 identity만 담고,
+로컬 경로·명령·환경·상세 무결성 스냅샷은 ignored `target/rhwp-wasm/build-report.json`과
+무결성 보고서에만 기록한다. 생성물은 Git에서 제외된다.
+
+공개 identity schema 1은 기존 identity 형식(optimization 필드 없음)을 읽기 위한
+호환 형식이다. 현재 빌드는 schema 2를 사용하며, RHWP commit, profile, 버전만 있는 도구
+identity, 소스 fingerprint, generation digest, `rhwp.js`/`rhwp_bg.wasm` SHA256 및 최적화
+설정을 포함한다. generation digest는 generation 필드를 제외한 canonical identity에서
+계산한다. 공개 스키마는 allowlist로 검사한다.
+
+WordCraft만 필요한 Rust 명령은 저장소 루트에서 `npm run rust -- check --lib --bins` 또는
+`python3 scripts/cargo-geul.py check --lib --bins`를 사용한다. 이 래퍼는
+`external/wordcraft`를 필수로 검사하고 초기화된 RHWP가 없으면 RHWP 다운로드를 요구하지
+않는다. 일반 빌드는 명시적으로 승인된 `target/` 계열 출력만 쓰기 가능하게 둔다.
+
+Tauri `build`는 CLI의 Cargo/Vite 자식 전체를 보호한다. `dev`는 전용 Cargo runner가
+컴파일을 보호한 뒤 개발 앱을 일반 사용자 권한으로 실행한다. 앱이 사용자 문서를 저장하는
+동작까지 빌드용 읽기 전용 root 안에 가두지 않는다.
 
 ## PNG 최적화의 현재 경계
 
