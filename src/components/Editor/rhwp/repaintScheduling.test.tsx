@@ -547,6 +547,132 @@ describe("여러 쪽 그리기 순서", () => {
     render.mockRestore();
   });
 
+  describe("caret-page (first) draw failure", () => {
+    /** Reject renderPage for page 0 (the fake caret page) `times` times; later calls draw normally. */
+    function rejectFirst(t: Awaited<ReturnType<typeof mounted>>, times: number) {
+      const original = t.editor.renderPage.bind(t.editor);
+      const render = vi.spyOn(t.editor, "renderPage");
+      let remaining = times;
+      render.mockImplementation((page, canvas, scale) => {
+        if (page === 0 && remaining > 0) { remaining -= 1; return false; }
+        return original(page, canvas, scale);
+      });
+      return { render, firstCalls: () => render.mock.calls.filter(([page]) => page === 0).length };
+    }
+    const lastText = (t: Awaited<ReturnType<typeof mounted>>, page: number) => t.doc.draws.filter(d => d.page === page).at(-1)?.text;
+
+    it("retries a recoverable failure at the same revision without another edit, then stops", async () => {
+      layout({ top: 0, bottom: 1500 });
+      const t = await mounted({ pages: 4 });
+      await converged(t.doc);
+      vi.useFakeTimers();
+      const { render, firstCalls } = rejectFirst(t, 1);
+      t.type("a");
+      expect(firstCalls()).toBe(1);
+      expect(lastText(t, 0)).toBe("가나다");
+      await nextRenderTask(); // the failed caret page is queued ahead of the other visible page
+      expect(firstCalls()).toBe(2);
+      expect(lastText(t, 0)).toBe("a가나다");
+      advance(1000);
+      expect(firstCalls()).toBe(2);
+      for (const page of [0, 1, 2, 3]) expect(lastText(t, page)).toBe("a가나다");
+      expect(vi.getTimerCount()).toBe(0);
+      render.mockRestore();
+    });
+
+    it("bounds retries of a persistent failure: one queued attempt, then only on a new viewport request", async () => {
+      layout({ top: 0, bottom: 1500 });
+      const t = await mounted({ pages: 4 });
+      await converged(t.doc);
+      vi.useFakeTimers();
+      const { render, firstCalls } = rejectFirst(t, Infinity);
+      t.type("a");
+      advance(5000);
+      expect(firstCalls()).toBe(2);
+      expect(vi.getTimerCount()).toBe(0);
+      act(() => void t.scroller.dispatchEvent(new Event("scroll")));
+      advance(5000);
+      expect(firstCalls()).toBe(3);
+      expect(vi.getTimerCount()).toBe(0);
+      expect(lastText(t, 1)).toBe("a가나다");
+      render.mockRestore();
+    });
+
+    it("does not retry after a terminal engine failure", async () => {
+      layout({ top: 0, bottom: 1500 });
+      const t = await mounted({ pages: 4 });
+      await converged(t.doc);
+      vi.useFakeTimers();
+      const render = vi.spyOn(t.editor, "renderPage");
+      const throwing = () => { throw new Error("engine"); };
+      t.doc.renderPageToCanvas = throwing;
+      t.doc.renderPagePatchToCanvasFilteredWithProfile = throwing;
+      t.type("a");
+      expect(t.editor.status.kind).toBe("failed");
+      const calls = render.mock.calls.filter(([page]) => page === 0).length;
+      advance(5000);
+      act(() => void t.scroller.dispatchEvent(new Event("scroll")));
+      advance(5000);
+      expect(render.mock.calls.filter(([page]) => page === 0).length).toBe(calls);
+      render.mockRestore();
+    });
+
+    it("a newer revision supersedes a queued retry; the old revision is never painted", async () => {
+      layout({ top: 0, bottom: 1500 });
+      const t = await mounted({ pages: 4 });
+      await converged(t.doc);
+      vi.useFakeTimers();
+      const { render } = rejectFirst(t, 1);
+      t.doc.draws = [];
+      t.type("a");
+      t.type("b");
+      advance(1000);
+      expect(t.doc.draws.filter(d => d.page === 0).map(d => d.text)).toEqual(["ab가나다"]);
+      for (const page of [0, 1, 2, 3]) expect(lastText(t, page)).toBe("ab가나다");
+      render.mockRestore();
+    });
+
+    it("unmount during a queued retry cancels it and releases the canvases", async () => {
+      layout({ top: 0, bottom: 1500 });
+      const t = await mounted({ pages: 4 });
+      await converged(t.doc);
+      vi.useFakeTimers();
+      const { render, firstCalls } = rejectFirst(t, 1);
+      t.type("a");
+      const canvases = [...t.view.container.querySelectorAll("canvas")];
+      t.view.unmount();
+      advance(5000);
+      expect(firstCalls()).toBe(1);
+      expect(canvases.every(c => c.width === 0 && c.height === 0)).toBe(true);
+      render.mockRestore();
+    });
+
+    it("a failed caret page after a geometry change is retried at the new scale (canvases re-created)", async () => {
+      layout({ top: 0, bottom: 1500 });
+      const t = await mounted({ pages: 4 });
+      await converged(t.doc);
+      vi.useFakeTimers();
+      const { render, firstCalls } = rejectFirst(t, 1);
+      t.doc.draws = [];
+      const rerender = (zoom: number) => t.view.rerender(
+        <LanguageProvider language="ko" onLanguageChange={() => {}}>
+          <div className="editor__scroll"><RhwpSurface session={t.editor} zoom={zoom} /></div>
+        </LanguageProvider>,
+      );
+      rerender(400); // 4 × 801·4 × 1001·4 px exceeds the surface budget: canvases removed
+      expect(t.editor.renderLimit).not.toBeNull();
+      expect(firstCalls()).toBe(0);
+      rerender(150);
+      expect(t.editor.renderLimit).toBeNull();
+      advance(10);
+      expect(firstCalls()).toBe(2);
+      const canvas = t.view.container.querySelector("canvas")!;
+      expect(canvas.width).toBe(Math.ceil(800 * 1.5));
+      expect(new Set(pagesDrawn(t.doc.draws))).toEqual(new Set([0, 1, 2, 3]));
+      render.mockRestore();
+    });
+  });
+
   it("배율·DPR이 바뀌면 기다리지 않고 모든 쪽을 새 배율로 다시 그린다", async () => {
     layout({ top: 0, bottom: 1500 });
     const t = await mounted({ pages: 4 });

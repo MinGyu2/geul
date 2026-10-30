@@ -213,14 +213,20 @@ export function RhwpSurface({ session, zoom, imeContext }: RhwpSurfaceProps) {
     // Undo/Redo·명령도 모델 변경이다. DOM input 시각이 없다는 이유로 화면 밖 모든 쪽을 즉시 그리면
     // 복원 직후 입력을 막는다. 주변 두 쪽은 쉬는 시간에 준비하고 먼 쪽은 dirty로 유지한다.
     // 스크롤·resize로 보이는 즉시 같은 버전 검사 아래 갱신하며, 다음 viewport의 주변도 다시 준비한다.
-    stalePages.current = new Set(firstComplete ? rest : [first, ...rest]);
+    // 커서 쪽을 그리지 못했으면 그 쪽도 dirty로 남겨 다른 쪽보다 먼저 같은 판으로 다시 시도한다(편집·스크롤을 기다리지 않음).
+    // 다시 시도는 예약 한 번에 한 번(다른 쪽과 같은 규칙)이라 계속 실패해도 반복하지 않는다. 엔진 실패(편집 멈춤)·표시 한도면
+    // 세션이 그리기를 허용하지 않으므로 다시 시도하지 않는다(그 상태가 풀리면 새 render가 다시 정함).
+    const retryFirst = !firstComplete && first < session.pages.length
+      && session.status.kind === "ready" && session.renderLimit === null;
+    const pending = retryFirst ? [first, ...rest] : rest;
+    stalePages.current = new Set(pending);
     const schedule = (visible: Set<number>) => {
       if (renderTimer.current !== null) window.clearTimeout(renderTimer.current);
       renderTimer.current = null;
       if (session.modelVersion !== version) return;
       const near = (page: number) => Math.abs(page - first) <= PAGE_LOOKAHEAD
         || [...visible].some((shown) => Math.abs(page - shown) <= PAGE_LOOKAHEAD);
-      const eligible = rest.filter((page) => stalePages.current.has(page) && (all || near(page)));
+      const eligible = pending.filter((page) => stalePages.current.has(page) && (all || near(page)));
       const now = eligible.filter((page) => all || visible.has(page));
       const later = eligible.filter((page) => !now.includes(page));
       const queue = [...now.map((page) => [page, 0] as const), ...later.map((page, index) => [page, index === 0 ? REST_DELAY_MS : 0] as const)];

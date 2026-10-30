@@ -27,6 +27,40 @@ it("StrictMode의 cleanup 뒤에도 같은 모델의 Canvas를 다시 그리고 
   }
 });
 
+it("StrictMode replay whose caret-page draw fails once still repaints that canvas at the same revision", async () => {
+  const { editor, doc } = await readySession();
+  vi.useFakeTimers();
+  const paint = vi.fn((_page: number, canvas: HTMLCanvasElement, scale: number) => {
+    canvas.width = 800 * scale;
+    canvas.height = 1000 * scale;
+  });
+  Object.assign(doc, { renderPageToCanvas: paint });
+  const original = editor.renderPage.bind(editor);
+  let calls = 0;
+  const render0 = vi.spyOn(editor, "renderPage").mockImplementation((page, canvas, scale) => {
+    calls += 1;
+    return calls === 2 ? false : original(page, canvas, scale); // fail the replayed setup's draw
+  });
+  const view = render(<StrictMode><LanguageProvider language="ko" onLanguageChange={() => {}}><RhwpSurface session={editor} zoom={100} /></LanguageProvider></StrictMode>);
+  const canvas = view.container.querySelector<HTMLCanvasElement>(".rhwp-page__canvas")!;
+  try {
+    expect(calls).toBe(2);
+    expect(canvas.width).toBe(0); // cleanup released the backing store; the replay draw failed
+    act(() => void vi.advanceTimersByTime(1000));
+    expect(calls).toBe(3);
+    expect(canvas.width).toBe(800);
+    expect(canvas.height).toBe(1000);
+    act(() => void vi.advanceTimersByTime(1000));
+    expect(calls).toBe(3);
+  } finally {
+    render0.mockRestore();
+    view.unmount();
+    vi.useRealTimers();
+    expect(canvas.width).toBe(0);
+    editor.dispose();
+  }
+});
+
 it("안 바뀐 쪽 Canvas를 보존하면서 배율·커서 쪽·포인터 좌표를 갱신한다", async () => {
   const { editor, doc } = await readySession();
   editor.pages = [{ width: 800, height: 1000 }, { width: 600, height: 900 }];
