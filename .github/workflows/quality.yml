@@ -44,7 +44,7 @@ jobs:
         run: npm run lint
 
       - name: 프런트엔드 빌드
-        run: npm run build
+        run: npm run build:frontend
 
   rust:
     name: Rust 검사

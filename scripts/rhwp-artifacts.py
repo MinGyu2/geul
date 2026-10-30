@@ -47,9 +47,10 @@ def validate_identity(identity):
         raise ValueError("Invalid build profile")
     if schema == 2:
         optimization = identity["optimization"]
-        expected = ({"tool": "none", "version": None, "flags": []} if identity["profile"] == "debug" else
-                    {"tool": "wasm-opt", "version": "117", "flags": list(OPT_FLAGS)})
-        if optimization != expected:
+        permitted = [{"tool": "none", "version": None, "flags": []}]
+        if identity["profile"] == "release":
+            permitted.append({"tool": "wasm-opt", "version": "117", "flags": list(OPT_FLAGS)})
+        if optimization not in permitted:
             raise ValueError("Unsupported optimization configuration")
     tools = identity["tools"]
     if not isinstance(tools, dict) or set(tools) != {"cargo", "rustc", "wasm-bindgen"}:
@@ -84,6 +85,26 @@ def verify_files(directory, identity):
         path = Path(directory) / name
         if path.is_symlink() or not path.is_file() or file_hash(path) != identity["artifacts"][name]:
             raise ValueError(f"Missing or invalid generated artifact: {name}")
+
+
+def verify_product(directory, profile):
+    """Validate the exact static tree that Tauri will embed, not a pointer in public/."""
+    directory = Path(directory)
+    identity = validate_identity(json.loads((directory / "BUILD.json").read_bytes()))
+    if profile == "release" and identity["profile"] != "release":
+        raise ValueError("Release product cannot embed Debug RHWP WASM")
+    generation = directory / "generations" / identity["generation"]
+    if profile == "release" and (
+        {p.name for p in directory.iterdir()} != {"BUILD.json", "generations"}
+        or {p.name for p in (directory / "generations").iterdir()} != {identity["generation"]}
+        or {p.name for p in generation.iterdir()} != {*ARTIFACTS, "BUILD.json"}
+    ):
+        raise ValueError("Release product contains unselected RHWP artifacts or generations")
+    immutable = validate_identity(json.loads((generation / "BUILD.json").read_bytes()))
+    if immutable != identity:
+        raise ValueError("Product RHWP generation identity mismatch")
+    verify_files(generation, identity)
+    return identity
 
 
 @contextmanager
@@ -164,5 +185,17 @@ def publish_generation(source, out, identity, workspace):
                 # active selector and previous generation completely intact.
                 os.replace(pending, generation)
                 sync_directory(generations)
+        # Profile selection is independent: publishing Debug must never change
+        # the Release pointer. BUILD remains a compatibility/development pointer.
+        atomic_file(encoded(identity), out / (identity["profile"].upper() + ".json"))
         atomic_file(encoded(identity), out / "BUILD.json")
     return generation
+
+
+if __name__ == "__main__":
+    import argparse
+    parser = argparse.ArgumentParser(description="Validate static RHWP product assets before embedding")
+    parser.add_argument("--verify-product", type=Path, required=True)
+    parser.add_argument("--profile", choices=["release", "debug"], required=True)
+    args = parser.parse_args()
+    verify_product(args.verify_product, args.profile)

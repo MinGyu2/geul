@@ -27,7 +27,10 @@ publish = artifacts.atomic_file
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--dev", action="store_true")
+    parser.add_argument("--wasm-opt", action="store_true", help="explicit Binaryen 117 -O size optimization; measured WebKit document-open tradeoff")
     args = parser.parse_args()
+    if args.dev and args.wasm_opt:
+        parser.error("--wasm-opt is only available for Release")
     target = ROOT / "target/rhwp-wasm"
     integrity.artifact_paths([target, ROOT / "public/rhwp"])
     target.mkdir(parents=True, exist_ok=True)
@@ -36,10 +39,10 @@ def main():
         if len(list(target.glob("web-*"))) >= artifacts.MAX_GENERATIONS:
             raise RuntimeError("Interrupted build staging limit reached; inspect retained generated artifacts explicitly")
         with tempfile.TemporaryDirectory(dir=target, prefix="web-") as folder:
-            build(args.dev, Path(folder))
+            build(args.dev, Path(folder), optimize=args.wasm_opt)
 
 
-def build(dev, staging):
+def build(dev, staging, *, optimize=False):
     engine = ROOT / "external/rhwp"
     target = ROOT / "target/rhwp-wasm"
     out = ROOT / "public/rhwp"
@@ -59,10 +62,10 @@ def build(dev, staging):
         raise RuntimeError(f"wasm-bindgen CLI must match Cargo.lock: {bindgen_version}")
     optimization = {"tool": "none", "version": None, "flags": []}
     optimizer = None
-    if not dev:
+    if optimize:
         optimizer = shutil.which("wasm-opt")
         if not optimizer:
-            raise RuntimeError("Release requires wasm-opt 117 on PATH; optimization is never silently skipped")
+            raise RuntimeError("--wasm-opt requires wasm-opt 117 on PATH; requested optimization is never silently skipped")
         optimizer_version = subprocess.check_output([optimizer, "--version"], text=True).strip()
         if not re.fullmatch(r"wasm-opt version 117(?: \([^\n]*\))?", optimizer_version):
             raise RuntimeError("Expected the recorded wasm-pack Binaryen baseline: wasm-opt 117")

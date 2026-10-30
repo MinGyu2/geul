@@ -14,6 +14,9 @@ export default defineConfig({
   plugins: [react(), rhwpGenerationPlugin()],
   define: { __APP_VERSION__: JSON.stringify(version) },
   clearScreen: false,
+  // Scan the product entry only. external/ includes independent studio HTML
+  // entries with their own aliases and must not enter geul's dependency scan.
+  optimizeDeps: { entries: ["index.html"] },
   server: {
     port: 1420,
     strictPort: true,

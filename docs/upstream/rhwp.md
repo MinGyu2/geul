@@ -3,20 +3,31 @@
 ## 외부 소스와 WASM 빌드
 
 `external/` 아래의 모든 의존성은 Git에 고정된 제3자 소스다. 빌드와 검증은
-소스, 매니페스트·잠금 파일, 생성 파일, submodule Git 메타데이터를 바꾸지 않는다.
-RHWP WASM 빌드에는 RHWP submodule이 필요하고, Tauri/Rust 백엔드 검사에는 WordCraft가
-필요하다. 선택한 요구 의존성이 아닌 submodule은 초기화되지 않은 채 둘 수 있지만,
-초기화된 모든 외부 소스는 그 빌드 중 읽기 전용이다.
+소스, 매니페스트·잠금 파일, submodule 및 Git 메타데이터를 바꾸지 않는다. RHWP WASM
+빌드에는 RHWP submodule, Rust 백엔드 빌드에는 WordCraft가 필요하다. 다른 submodule은
+초기화하지 않은 채 둘 수 있다.
 
-Linux bubblewrap(`bwrap`)이 없거나 읽기 전용 mount 검증을 할 수 없으면 보호 래퍼는
-실행을 거부한다. `scripts/external-integrity.py`는 고정 gitlink와 초기화된 submodule의
-revision, 상태, 주요 manifest·lockfile 및 Git 메타데이터를 검사하고, 모든 초기화된
-`external/`과 그 Git 메타데이터를 읽기 전용으로 마운트한다. 정상 경로는 외부 트리의
-모든 파일 내용을 반복 해시하지 않는다. 이는 sandbox가 방지하는 소스 쓰기와, 가벼운
-체크로 찾는 변경을 구분한다. sandbox 밖의 다른 프로세스가 만든 임의 파일 변경까지
-일반 경로가 모두 감지한다고 보장하지 않는다. 전체 파일 및 Git 메타데이터 내용 감사가
-필요할 때는 다음처럼 명시적으로 실행한다. 보고서는 대상 `target/` 아래에 둔다. 외부
-변경이 감지되면 자동 복구하지 않고 실패한다.
+Linux NixOS의 기본 보호 경로는 unprivileged bubblewrap(`bwrap`)이다. GitHub Actions의
+`ubuntu-24.04` runner에서는 UID map 설정이 `Permission denied`로 실패해 Cargo가 시작되지
+않았던 실행이 있었다. CI는 `sudo-bwrap` 모드를 사용한다. privileged 실행은 mount·PID·network
+namespace 설정에만 쓰며, Cargo를 시작하기 전에 `setpriv`가 runner UID/GID로 돌아가고 보조 그룹을 지우며
+모든 capability 및 privilege 상승을 제거한다. 환경 변수도 권한을 내린 다음 복원한다.
+user namespace를 요청하지 않으며 대체되는 비보호 실행 경로도 없다. Ubuntu의 user namespace
+제한 또는 AppArmor 정책이 원인이라는 설명은 가능한 해석이며, 해당 실행의 감사 로그로
+확인된 것은 아니다. 보호된 명령은 지원되지 않는 namespace 또는 mount 상태에서 실패한다.
+캐시 준비 `cargo fetch`만 network를 쓰고 일반 빌드·검사는 network namespace를 격리한다.
+이 CI 변경을 포함한 원격 workflow는 공개 후 실행하기 전까지 검증되지 않은 상태다.
+
+`scripts/external-integrity.py`는 고정 gitlink와 submodule 상태를 확인하고 실제 Git directory와
+common directory를 읽기 전용으로 둔다. parent/worktree/submodule metadata, Git object store와
+기록된 alternate object store를 보호한다. writable 출력 경로를 만들기 전에 mountinfo를
+대조하고, hardlink·symlink·디렉터리 inode 별칭을 metadata traversal로 검사한다. alias audit는
+Cargo cache 부모에서 나중에 생성될 파일로 향하는 보호 소스의 symlink도 거부한다.
+파일 내용을 읽지 않으며 정상 경로에서 전체 external tree를 반복해서 해시하지 않는다.
+sandbox는 자식 프로세스의 쓰기를 막고, 빠른 snapshot은 선택한 identity와 주요 파일을 확인한다.
+이는 sandbox 밖에서 발생한 모든 임의 파일 변경을 감지한다는 뜻은 아니다. 전체 파일 및 Git
+metadata 내용 감사가 필요할 때는 다음처럼 명시한다. 보고서는 `target/` 아래에 둔다. 변경이
+감지되면 자동 복구하지 않고 실패한다.
 
 ```sh
 python3 scripts/external-integrity.py --deep \
@@ -25,27 +36,39 @@ python3 scripts/external-integrity.py --deep \
   -- true
 ```
 
-기본 실행은 `scripts/build-rhwp-wasm.sh`이며 `--dev`는 개발 프로필을 선택한다.
-Rust 1.99.0과 `wasm32-unknown-unknown` 타깃, RHWP lockfile과 동일한
-wasm-bindgen CLI(현재 0.2.127), 그리고 release의 Binaryen `wasm-opt` 117이 PATH에
-있어야 한다. 설치나 네트워크 조회는 빌드 중 수행하지 않는다. Cargo는 고정 잠금 파일을
-`--locked --offline`으로 사용한다. Release는 생성된 wasm-bindgen WASM에 `wasm-opt 117 -O`를
-실행하고, 인터페이스 호환성을 확인한다. Debug는 최적화를 실행하지 않는다. release
-optimizer가 없거나 버전이 다르면 빌드는 실패한다.
+기본 실행은 `scripts/build-rhwp-wasm.sh`이며 `--dev`는 Debug 프로필을 선택한다. 기본
+Release 빌드는 Rust `--release`와 맞는 wasm-bindgen CLI를 사용하지만 Binaryen optimizer는
+실행하지 않는다. `--wasm-opt`를 지정하면 설치된 `wasm-opt 117 -O`를 실행하고 WASM 인터페이스
+호환성을 확인한다. 이 옵션은 Release에서만 허용된다. Rust 1.99.0, `wasm32-unknown-unknown`,
+RHWP lockfile과 동일한 wasm-bindgen(현재 0.2.127)이 PATH에 있어야 한다. 도구 설치나 Cargo
+network 조회는 빌드 중 수행하지 않고, Cargo는 `--locked --offline`으로 실행한다. 요청된
+optimizer가 없거나 버전이 다르면 실패한다.
 
-빌더는 생성 세대를 `public/rhwp/generations/<generation>/`에 완전히 만들고 JS, WASM 및
-그 세대의 `BUILD.json` 해시를 확인한 뒤 `public/rhwp/BUILD.json` 선택자를 원자적으로
-교체한다. 런타임은 선택자를 한 번 읽고 같은 불변 generation의 identity와 두 artifact를
-검증한 다음 그 버전 경로에서 JS를 불러와 동일 WASM 바이트를 초기화 함수에 넘긴다.
-Vite 개발·정적 빌드도 하나의 선택 generation을 대상으로 한다. 기존 reader가 오래된
-세대를 계속 사용할 수 있도록 builder는 세대를 자동 삭제하지 않으며 6개를 넘는 새
-세대는 거부한다. 오래된 산출물 정리는 소비 중인 페이지가 없을 때 운영자가 명시적으로
-해야 한다. 중단되어 남은 임시 selector 파일과 `target/rhwp-wasm/publication-*` staging도
-각각 최대 6개까지만 허용하며, 한도에 닿으면 삭제하지 않고 새 publication을 실패시킨다.
-임시 파일과 오래된 generation은 소비 중인 reader가 없음을 확인한 뒤 운영자가 검토해
-정리한다. `public/rhwp/BUILD.json`과 `dist/rhwp/BUILD.json`은 공개 최소 identity만 담고,
-로컬 경로·명령·환경·상세 무결성 스냅샷은 ignored `target/rhwp-wasm/build-report.json`과
-무결성 보고서에만 기록한다. 생성물은 Git에서 제외된다.
+같은 RHWP 소스와 Rust Release 캐시에서 실행한 WebKit 비교는 `wasm-opt -O`가 asset-management
+문서의 focused endpoint 평균 시간을 5.64 ms 늘렸고, paired bootstrap의 탐색적 95% 구간은 3.43–8.01 ms였다.
+단계 진단에서는 차이가 주로 문서 생성 단계에 있었고 동기 캔버스 replay 증가는 확인되지 않았다.
+화학 문서에서는 같은 설정이 평균 1.26 ms 빨랐다. 이 측정은 해당 런타임과 두 문서에 한정되며
+일반 성능 보장이나 공식 D4 통과를 뜻하지 않는다. 따라서 기본 빌드는 optimizer를 생략한다.
+Binaryen 117 `-O`는 크기 최적화가 필요할 때 `--wasm-opt`로 명시적으로 선택한다.
+
+빌더는 각 생성 세대를 `public/rhwp/generations/<generation>/`에 완전히 설치하고, JS, WASM,
+`BUILD.json`의 identity와 해시를 검증한다. `RELEASE.json`과 `DEBUG.json`은 별개로 원자적으로
+갱신되며 Debug 빌드가 Release 선택을 바꾸지 않는다. 레거시 `BUILD.json`은 최근 빌드의 호환
+포인터이고 제품 프로필 선택에는 사용하지 않는다. `npm run build`와 Tauri Release 빌드는
+Release pointer를 요구한다. `npm run tauri -- build --debug` 및 개발 서버는 `DEBUG.json`이
+있으면 Debug generation을 선택하고, 없을 때만 Release generation을 fallback으로 쓴다.
+개발 서버는 시작 시 선택한 generation을 고정하므로 새 WASM을 선택하려면 서버를 재시작한다.
+generation의 JS/WASM/identity는 Vite의 public JS 변환 전에 원본 바이트로 제공한다.
+Vite는 선택된 generation 하나만 정적 출력에 복사한다. frontend-only CI는 RHWP submodule 없이
+`npm run build:frontend`로 실행하며, 이 모드는 Tauri 제품 빌드에서 거부된다. Release의 Rust
+build.rs는 frontend hook을 건너뛴 경우에도 실제 `dist/rhwp`의 identity와 해시를 확인하고,
+Release identity가 없거나 손상됐거나 Debug이거나 선택하지 않은 세대·파일이 남으면 패키징을 거부한다.
+
+기존 reader가 오래된 세대를 계속 사용할 수 있도록 builder는 generation을 자동 삭제하지 않으며
+최대 6개를 유지한다. 한도를 넘는 신규 publication은 실패한다. 오래된 artifact는 모든 소비자가
+종료된 것을 확인한 뒤 운영자가 명시적으로 정리한다. 중단된 staging도 자동 삭제하지 않는다.
+공개 BUILD 파일은 최소 identity만 포함한다. 로컬 경로·명령·환경·상세 snapshot은 ignored
+`target/rhwp-wasm/`에 기록되며 생성물은 Git에서 제외된다.
 
 공개 identity schema 1은 기존 identity 형식(optimization 필드 없음)을 읽기 위한
 호환 형식이다. 현재 빌드는 schema 2를 사용하며, RHWP commit, profile, 버전만 있는 도구

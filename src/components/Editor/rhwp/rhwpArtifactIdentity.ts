@@ -30,8 +30,9 @@ export async function identityFrom(value: unknown): Promise<BuildIdentity> {
     throw new Error("rhwp build identity schema");
   }
   if (value.schemaVersion === 2) {
-    const expected = value.profile === "debug" ? { tool: "none", version: null, flags: [] } : { tool: "wasm-opt", version: "117", flags: ["-O"] };
-    if (canonical(value.optimization) !== canonical(expected)) throw new Error("rhwp optimizer configuration");
+    const none = { tool: "none", version: null, flags: [] };
+    const optimized = { tool: "wasm-opt", version: "117", flags: ["-O"] };
+    if (canonical(value.optimization) !== canonical(none) && !(value.profile === "release" && canonical(value.optimization) === canonical(optimized))) throw new Error("rhwp optimizer configuration");
   }
   const unsigned = Object.fromEntries(Object.entries(value).filter(([key]) => key !== "generation"));
   if (await sha256(new TextEncoder().encode(canonical(unsigned) + "\n").buffer) !== value.generation) throw new Error("rhwp generation identity hash");
