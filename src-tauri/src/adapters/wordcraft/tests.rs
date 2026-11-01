@@ -202,6 +202,7 @@ fn 클릭한_글자_경계_사이_30과_70퍼센트에서_가까운_경계에_�
     let mut m = model();
     let cases: Vec<(Vec<u32>, &str)> = vec![
         (vec![0], basic::PARAGRAPHS[0]),
+        (vec![basic::TABLE_BLOCK, 0, 0, 0], basic::CELLS[0]),
         (vec![basic::TABLE_BLOCK, 1, 0, 0], basic::CELLS[2]),
     ];
     let mut clicks = 0;
