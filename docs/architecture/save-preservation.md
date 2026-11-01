@@ -593,3 +593,15 @@ header 정의 visitor를 적용했다. canonical 값/정확한 charPr·formCharP
 | DOCX | WordCraft가 버리는 알 수 없는 요소/속성·custom XML/부분·관계/내용 형식·썸네일은 기존 사전/저장 검사가 계속 차단한다. 원본 부분을 재삽입하기 전, 편집 모델과 무관함 및 관계/식별자 일관성을 증명해야 한다. 이번 변경은 패키지 부분을 재삽입하지 않는다. |
 
 세 형식의 대표 실제 파일 코퍼스, 현재 네이티브 UI/IME와 통합한 저장·재열기 검증은 별도 남은 조건이다.
+
+
+실제 소형 upstream 표본 후속(2026-11-02, 기준 `cedc7d6`): 검증한 Release generation
+`ca284e06…`(WASM `3f99a74…`)으로 HWP5 2개·HWPX 2개를 검사했다. HWP는 둘 다 무편집 사전 검사와
+편집 후 형식/쪽/글/컨트롤 재열기 비교가 통과했으나, `DocInfo`의 `recordsChanged`와
+`PrvText`/`PrvImage`의 `previewStale`로 편집 저장을 거부했다. HWPX는 둘 다 무편집 출력의
+부분 추가/변경과 편집 재열기의 `controlsEqual=false`가 확인되어 저장을 거부했다.
+모든 입력 SHA-256은 실행 전후 동일했다. 이 4개는 전체 성공률의 추정치가 아니다.
+별도 `geul-tests/reports/seven-phases-20261102/phase2/`에 입력/엔진 신원과 원자료를 보관한다.
+실제 DOCX 표본은 이번 검색에서 찾지 못했으므로 생성 픽스처 시험을 실제 코퍼스 수락으로 대체하지 않는다.
+`public/rhwp`는 Debug/Release generation 보관소이므로 패키지 전용 `--verify-product`의
+단일-generation 조건을 적용하지 않는다. 선택된 Release는 `readRhwpGeneration`과 기존 생산 identity helper로 검증했다.
