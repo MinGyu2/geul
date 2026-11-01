@@ -93,9 +93,9 @@ describe("첫 실행과 언어 전환", () => {
     expect(message()).toHaveTextContent("Bold: no document is open.");
     await user.click(screen.getByRole("tab", { name: "Help" }));
     await user.click(screen.getByRole("button", { name: "About geul" }));
-    expect(message()).toHaveTextContent(/^geul \S+ — UI layout stage\./);
+    expect(message()).toHaveTextContent(/^geul \S+ — Basic HWP\/HWPX\/DOCX workflows are available\./);
     await user.selectOptions(screen.getByRole("combobox", { name: "Display language" }), "ko");
-    expect(message()).toHaveTextContent("화면 구성 단계입니다");
+    expect(message()).toHaveTextContent("안전 저장 가능 여부는 문서 호환성 검사에 따르며");
   });
 
   it("영어에서도 문서 명령은 비활성이며 실행되지 않는다", async () => {

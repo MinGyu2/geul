@@ -246,7 +246,11 @@ export class DocxEditorSession implements ImeSession, DocumentCommandTarget {
   }
 
   /** 구독자에게 알린다. 하나가 예외를 내도 나머지는 알림을 받고, 그 예외는 보고한다. */
+  private changeVersion = 0;
+  readonly changeSnapshot = (): number => this.changeVersion;
+
   private emit() {
+    this.changeVersion += 1;
     for (const listener of this.listeners) {
       try {
         listener();

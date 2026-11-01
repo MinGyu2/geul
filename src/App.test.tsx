@@ -35,9 +35,10 @@ describe("6영역 레이아웃", () => {
     expect(within(main).getByRole("heading", { name: "열린 문서가 없습니다" })).toBeInTheDocument();
     expect(within(main).queryByRole("textbox")).not.toBeInTheDocument();
     expect(main.querySelector("[contenteditable]")).toBeNull();
-    // T007: HWP/HWPX는 rhwp 편집 PoC, T008: DOCX는 WordCraft 편집 PoC. 세 형식 모두 저장은 없다.
+    // No active document: properties must not present fabricated selection or format values.
     const properties = within(screen.getByRole("complementary", { name: "속성" }));
-    expect(properties.getAllByText("편집 PoC(저장 없음)")).toHaveLength(3);
+    expect(properties.getByText("활성 문서가 없습니다.")).toBeInTheDocument();
+    expect(properties.queryByRole("table")).not.toBeInTheDocument();
     expect(properties.queryByText("통합 전")).not.toBeInTheDocument();
   });
 });
@@ -358,7 +359,7 @@ describe("테마와 확대/축소", () => {
     const { user } = setup();
     await user.click(screen.getByRole("tab", { name: "도움말" }));
     await user.click(screen.getByRole("button", { name: "geul 정보" }));
-    expect(statusMessage()).toHaveTextContent("문서 열기·편집·저장은 아직 지원하지 않습니다");
+    expect(statusMessage()).toHaveTextContent("안전 저장 가능 여부는 문서 호환성 검사에 따르며");
   });
 });
 

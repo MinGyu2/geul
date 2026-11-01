@@ -630,6 +630,8 @@ button {
 
 .recovery-center {
   flex: none;
+  /* Keep the document stationary when background checkpoint rows appear/disappear during IME. */
+  height: min(240px, 30vh);
   max-height: min(240px, 30vh);
   overflow: auto;
   padding: var(--space-2) var(--space-3);
@@ -903,3 +905,7 @@ button {
     transition: background-color 120ms ease, color 120ms ease;
   }
 }
+
+/* Engine locations and selection previews can contain long unbroken text. */
+.panel--properties pre { white-space: pre-wrap; overflow-wrap: anywhere; }
+.panel--properties dd { overflow-wrap: anywhere; }

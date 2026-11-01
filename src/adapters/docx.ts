@@ -49,6 +49,9 @@ export interface DocxView {
   anchorKey: string;
   /** 커서 문단의 글자(검사 훅 빌드에서만 화면 속성으로 노출). */
   paragraphText: string;
+  /** Optional bounded actual text; absence means unsupported selection shape. */
+  selectionText?: string;
+  paragraphStyle?: string;
   /** 커서의 문단 안 위치(문자 단위). */
   caretOffset: number;
   /** WordCraft 실행 취소 기록(T010): 되돌릴·다시 할 단계가 있고 그 단계가 문서 보호를 풀지 않음. */
@@ -213,7 +216,9 @@ function parseFormat(value: unknown): DocxFormat | null {
 }
 
 export function parseDocxView(value: unknown): DocxView | null {
-  if (!isRecord(value) || !hasExactly(value, VIEW_KEYS)) return null;
+  if (!isRecord(value) || !hasExactly(value, [...VIEW_KEYS, ...["selectionText", "paragraphStyle"].filter((key) => Object.prototype.hasOwnProperty.call(value, key))])) return null;
+  if (Object.prototype.hasOwnProperty.call(value, "paragraphStyle") && typeof value.paragraphStyle !== "string") return null;
+  if (Object.prototype.hasOwnProperty.call(value, "selectionText") && (typeof value.selectionText !== "string" || Array.from(value.selectionText).length > 500)) return null;
   const { pages, caret, selection, collapsed, inTable, caretKey, anchorKey, paragraphText, caretOffset } = value;
   const history = parseHistory(value.history);
   const format = parseFormat(value.format);
@@ -235,6 +240,8 @@ export function parseDocxView(value: unknown): DocxView | null {
     caret: parsedCaret,
     selection: parsedSelection as DocxRect[],
     collapsed, inTable, caretKey, anchorKey, paragraphText, caretOffset, history, format, formatAccess,
+    ...(typeof value.selectionText === "string" ? { selectionText: value.selectionText } : {}),
+    ...(typeof value.paragraphStyle === "string" ? { paragraphStyle: value.paragraphStyle } : {}),
   };
 }
 

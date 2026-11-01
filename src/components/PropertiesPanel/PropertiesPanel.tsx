@@ -1,55 +1,66 @@
+import type { DocumentPanelState } from "../Editor/documentPanels";
 import { Icon } from "../../assets/icons";
 import { useTranslation } from "../../language/LanguageContext";
 
 interface PropertiesPanelProps {
+  state: DocumentPanelState;
   onClose: () => void;
 }
 
-// 형식별 담당 엔진(FR-004). 두 엔진은 독립적으로 연결된다. rhwp는 T007, WordCraft는 T008 편집 PoC(원본 형식 저장은 T009, 보존 검사를 통과할 때만).
-const FORMATS = [
-  { format: "HWP", engine: "rhwp", status: "properties.format.editingPoc" },
-  { format: "HWPX", engine: "rhwp", status: "properties.format.editingPoc" },
-  { format: "DOCX", engine: "WordCraft", status: "properties.format.editingPoc" },
-] as const;
+const FORMAT_FLAGS = ["bold", "italic", "underline", "strikethrough"] as const;
 
-export function PropertiesPanel({ onClose }: PropertiesPanelProps) {
+export function PropertiesPanel({ state, onClose }: PropertiesPanelProps) {
   const { t } = useTranslation();
+  const info = state.info;
+  const selectionText = state.selection === "none" ? t("properties.noSelection")
+    : state.selection === "unavailable" ? t("properties.selectionUnavailable")
+      : state.selectedText === null ? t("properties.selectionTextUnavailable") : state.selectedText;
   return (
     <aside id="properties-panel" className="panel panel--properties" aria-labelledby="properties-title">
       <div className="panel__header">
         <h2 id="properties-title" className="panel__title">{t("properties.title")}</h2>
         <button type="button" className="command command--icon" aria-label={t("properties.close")}
-                title={t("properties.close")} onClick={onClose}>
+          title={t("properties.close")} onClick={onClose}>
           <Icon name="close" size={16} />
         </button>
       </div>
       <div className="panel__body">
-        <section className="panel__section" aria-labelledby="properties-selection">
-          <h3 id="properties-selection" className="panel__section-title">{t("properties.selection")}</h3>
-          <p className="panel__empty">{t("properties.selectionEmpty")}</p>
-        </section>
-        <section className="panel__section" aria-labelledby="properties-formats">
-          <h3 id="properties-formats" className="panel__section-title">{t("properties.formats")}</h3>
-          <table className="format-table">
-            <thead>
-              <tr>
-                <th scope="col"><span className="visually-hidden">{t("status.document")}</span></th>
-                <th scope="col">{t("properties.format.engine")}</th>
-                <th scope="col">{t("properties.format.status")}</th>
-              </tr>
-            </thead>
-            <tbody>
-              {FORMATS.map(({ format, engine, status }) => (
-                <tr key={format}>
-                  <th scope="row">{format}</th>
-                  <td>{engine}</td>
-                  <td><span className="badge">{t(status)}</span></td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-          <p className="panel__note">{t("properties.formatsNote")}</p>
-        </section>
+        {!info ? <p className="panel__empty">{t("properties.noDocument")}</p> : (
+          <>
+            <section className="panel__section" aria-labelledby="properties-document">
+              <h3 id="properties-document" className="panel__section-title">{t("properties.document")}</h3>
+              <dl>
+                <dt>{t("status.document")}</dt><dd>{info.displayName}</dd>
+                <dt>{t("properties.format")}</dt><dd>{info.format.toUpperCase()}</dd>
+                <dt>{t("properties.engine")}</dt><dd>{info.engine === "rhwp" ? "RHWP" : "WordCraft"}</dd>
+                <dt>{t("properties.state")}</dt><dd>{t(`document.state.${info.state}`)}</dd>
+                <dt>{t("properties.revision")}</dt><dd>{info.revision}</dd>
+                <dt>{t("properties.modified")}</dt><dd>{info.dirty ? t("properties.yes") : t("properties.no")}</dd>
+              </dl>
+            </section>
+            <section className="panel__section" aria-labelledby="properties-selection">
+              <h3 id="properties-selection" className="panel__section-title">{t("properties.selection")}</h3>
+              <p>{state.selection === "selected" ? t("properties.selectionPresent")
+                : state.selection === "none" ? t("properties.noSelection") : t("properties.selectionUnavailable")}</p>
+              {state.caret !== null && <p>{t("properties.caret", { position: state.caret })}</p>}
+              <p className="panel__note">{t("properties.selectedTextLabel")}</p>
+              <pre className="panel__note">{selectionText}</pre>
+            </section>
+            <section className="panel__section" aria-labelledby="properties-character-format">
+              <h3 id="properties-character-format" className="panel__section-title">{t("properties.characterFormat")}</h3>
+              {state.format ? <dl>{FORMAT_FLAGS.map((flag) => (
+                <div key={flag}><dt>{t(`properties.formatFlag.${flag}`)}</dt>
+                  <dd>{state.format?.[flag] === null ? t("properties.formatMixedOrUnavailable")
+                    : state.format?.[flag] ? t("properties.yes") : t("properties.no")}</dd></div>
+              ))}</dl> : <p className="panel__note">{t("properties.formatUnavailable")}</p>}
+            </section>
+            <section className="panel__section" aria-labelledby="properties-paragraph-format">
+              <h3 id="properties-paragraph-format" className="panel__section-title">{t("properties.paragraphFormat")}</h3>
+              {state.paragraphStyle !== null && <p>{t("properties.paragraphStyle", { style: state.paragraphStyle })}</p>}
+              <p className="panel__note">{t("properties.paragraphFormatUnavailable")}</p>
+            </section>
+          </>
+        )}
       </div>
     </aside>
   );

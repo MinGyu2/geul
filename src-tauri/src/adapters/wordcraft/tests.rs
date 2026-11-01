@@ -946,6 +946,7 @@ fn 응답_json은_계약의_모양이다() {
             "history",
             "inTable",
             "pages",
+            "paragraphStyle",
             "paragraphText",
             "selection"
         ]
@@ -2005,4 +2006,20 @@ fn t010_실제_앱_시험의_보호_픽스처는_파일에_보호를_담는다()
     assert_eq!(regions.view().format_access, Regions);
     assert_eq!(bold_at(&mut regions, "start"), (true, true));
     assert!(!bold_at(&mut regions, "end").0);
+}
+
+#[test]
+fn selection_panel_preview_is_actual_bounded_and_does_not_change_revision_or_document() {
+    let bytes = crate::services::files::blank_docx().unwrap();
+    let mut model = DocxModel::open(&bytes).unwrap();
+    model.apply(&[DocxOp::InsertText {
+        text: "한😀글".repeat(300),
+    }]);
+    model.apply(&[DocxOp::SelectAll]);
+    let before = model.export().unwrap();
+    let view = model.view();
+    assert_eq!(view.paragraph_style.as_deref(), Some("Normal"));
+    assert_eq!(view.selection_text.as_ref().unwrap().chars().count(), 500);
+    assert!(view.selection_text.unwrap().starts_with("한😀글"));
+    assert_eq!(model.export().unwrap(), before);
 }

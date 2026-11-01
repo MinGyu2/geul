@@ -300,7 +300,11 @@ export class RhwpEditorSession implements DocumentCommandTarget {
     return () => this.listeners.delete(listener);
   }
 
+  private changeVersion = 0;
+  readonly changeSnapshot = (): number => this.changeVersion;
+
   private emit() {
+    this.changeVersion += 1;
     for (const listener of this.listeners) listener();
   }
 
@@ -1576,6 +1580,15 @@ export class RhwpEditorSession implements DocumentCommandTarget {
     } catch {
       return "";
     }
+  }
+
+  /** Bounded, read-only selection preview; cross-paragraph selections are not exposed by this adapter. */
+  selectionPreview(): string | null {
+    if (!this.text || !this.hasSelection) return null;
+    const [from, to] = this.ordered();
+    if (!sameContext(from, to) || from.section !== to.section || paragraphOf(from) !== paragraphOf(to)) return null;
+    try { return this.text.text(from, Math.min(to.offset - from.offset, 500)); }
+    catch { return null; }
   }
 
   /** 문서 전체 텍스트(검사·진단용, 경로 없음). */

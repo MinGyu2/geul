@@ -16,6 +16,14 @@ const view = {
 const session = { sessionId: 3, format: "docx", engine: "wordcraft", revision: 2, state: "ready", displayName: "a.docx", dirty: true, sequence: 5, loadGeneration: 1 };
 
 describe("DOCX 응답 검사", () => {
+  it("accepts bounded selection previews and actual paragraph style without changing legacy views", () => {
+    const actual = { ...view, selectionText: "한😀글", paragraphStyle: "Heading 1" };
+    expect(parseDocxView(actual)).toEqual(actual);
+    expect(parseDocxView({ ...actual, selectionText: "😀".repeat(501) })).toBeNull();
+    expect(parseDocxView({ ...actual, selectionText: null })).toBeNull();
+    expect(parseDocxView({ ...actual, paragraphStyle: 42 })).toBeNull();
+    expect(parseDocxView({ ...actual, selectionText: undefined })).toBeNull();
+  });
   it("보기는 계약의 모양만 받는다", () => {
     expect(parseDocxView(view)).toEqual(view);
     expect(parseDocxView({ ...view, caret: null })?.caret).toBeNull();

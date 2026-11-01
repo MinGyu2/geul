@@ -1473,3 +1473,54 @@ Vite와 격리 D-Bus를 갖춘 실행에서 네이티브 열기/모델/100·200%
 과거 IME 증거는 당시 신원에 한해 보존한다. 두 PoC 모두 체크박스를 완료하지 않는다.
 SC-002 통합 저장은 T009 검사/파일 게시/재열기 근거가 별도로 필요하며 메모리 왕복만으로 인정하지 않는다.
 원자료: 별도 `geul-tests/reports/seven-phases-20261102/phase3/`. Windows/macOS 미실행.
+
+
+## Phase 6 활성 문서 패널 통합 검증 (2026-11-02)
+
+이번 우선순위 작업의 Phase 6이며 `tasks.md`의 출시 Phase 6(T014–T016)와는 다르다.
+시작 `master a0333091d4dddb0a00b11e12470105cbafc7aae2`는 깨끗했고 세 패널은 placeholder였다.
+사용자가 별도 구현이 없음을 확인하고 현재 소스에서 지원 범위의 구현을 승인했다.
+
+- 권한: DocumentSessions의 활성 ID/SessionInfo와 세션당 하나인 기존 RHWP/WordCraft 편집기가 그대로 권한을 가진다.
+  패널은 읽기 전용 투영이다. 편집기 이벤트의 단조 증가 버전을 `useSyncExternalStore`로 구독하며,
+  문서 교체/닫기 때 구독을 해제한다. 패널 갱신은 revision·조합·선택을 바꾸지 않는다.
+- 탐색: 실제 엔진의 물리 쪽 수와 캐럿 쪽을 표시하고 기존 `pointAt`으로 이동한다. 제목·구역 계층은 현재 어댑터에
+  공통 outline API가 없어 미지원으로 표시한다. 앞 100쪽만 나열하고 숫자 입력으로 전체 범위를 이동한다.
+  클릭 시 현재 활성 소유권/범위/loaded/pending/saving/IME를 재검사한다. 조합·늦은 확정이 미해결이면 이동하지 않는다.
+- 속성: 실제 이름·형식·엔진·revision·캐럿·선택을 표시한다. RHWP/WordCraft의 한 문단 선택은 최대 500자 미리보기다.
+  WordCraft는 원본 모델의 UTF-8 범위와 공개 `format::state`의 커서 문단 스타일을 사용한다. 개체·여러 문단 선택의
+  미리보기는 미지원이다. 스타일은 커서 문단 값이며 선택 전체의 균일 스타일이라고 주장하지 않는다.
+  DOCX 글자 서식은 엔진 상태다. 선택의 false는 꺼짐/혼합을 구별하지 못하므로 둘 중 하나로 단정하지 않는다.
+  RHWP 균일 선택 서식과 그 외 문단 서식은 노출하지 않는다. 리본의 마지막 요청 값을 실제 서식으로 사용하지 않는다.
+- 상태: 실제 활성 이름·dirty·pending·캐럿 쪽/전체 쪽·zoom을 표시한다. no-document/loading/페이지 미확인은
+  가짜 1/1 대신 정보 없음으로 표시한다. 기존 zoom 명령과 엔진 소유/저장 계약은 유지한다.
+
+실제 Tauri debug backend + 현재 Vite 프런트엔드, Linux X11/Xvfb + WebKitGTK 2.54.1(소프트웨어 렌더링 요청),
+그대로인 Release WASM `3f99a74bbddf1716dcb6cf3e2a3940f510f3ca03fcee465f7f0c2fcd829d9cf0`에서
+첫 native 16검사 및 최종 보강 25검사가 각각 PASS했다(합산한 독립 41시나리오가 아님).
+최종 검사는 HWP/HWPX/DOCX 열기·전환, 실제 60쪽 문서의 마지막 쪽 이동, 선택/서식/문단 스타일,
+읽기 전용 패널, dirty/복구 체크포인트/안전 저장/새 편집/닫기/재열기/zoom을 포함한다. 정리 성공·잔존 프로세스 0.
+새 React/세션 회귀는 StrictMode·구독 해제·폐기된 세션·pending·IME 차단·revision 보존을 다룬다.
+
+**수용: Phase 6의 지원 가능한 범위는 Linux에서 ACCEPTED.** 제목/구역 계층, RHWP 균일 선택 서식,
+여러 문단/개체 선택 미리보기와 DOCX 꺼짐/혼합 구별 등 위의 미노출 범위는 성공으로 꾸미지 않는다.
+기존 제품 기능/출시 계약(T007–T009/T014–T016)의 전체 완료를 뜻하지 않는다.
+
+실제 한국어 IME 후속은 기존 IBus 1.5.33/Hangul 1.5.5를 격리된 D-Bus/DISPLAY/XDG에서 실행했다.
+처음 daemon 시작은 상속 LD_LIBRARY_PATH의 libc 2.42/GLIBC_2.43 충돌로 실패했고,
+자식 프로세스에서 그 변수만 제거해 복구했다. 설치·전역 설정 변경은 없었다.
+초기 DOCX 필수 IME는 6/7이었다. 조합 시작 시 recovery waiting 행을 없애는 기존 UI가
+복구 영역의 높이를 줄여 문서를 약 43px 위로 밀었고, 검사/사용자가 의도한 첫 문단 대신 둘째 문단에 클릭했다.
+복구 영역의 높이를 기존 최대치 `min(240px, 30vh)`로 예약하고 내부를 스크롤하도록 좁게 교정했다.
+조합·입력·revision 계약과 원래 IME assertion/fixture는 변경하지 않았다.
+
+교정 후 **RHWP(HWP/HWPX) 필수 7/7, WordCraft 필수 7/7 PASS**다. 조합 중 클릭/탭 전환과
+선택 위 조합도 통과했다. 최종 trace의 End/조합 시작/클릭 전후 복구 높이 240px·DOCX 쪽 top 569.015625px가 같다.
+배치 교정 후 앞의 native 25검사도 다시 모두 PASS, 각 실행 정리 성공·잔존 0이다.
+원래 optional 다른 X 창 초점 이동은 NOT RUN이다. Windows/macOS·fcitx5·Wayland IME·현재 패키지 Release는 미실행이다.
+일반 한국어 IME 7/7을 T010 D2의 지연 확정 순서나 Undo/Redo 활성화 증거로 바꾸지 않는다.
+
+비공개 원자료: `geul-tests/reports/phase6-phase7-20261102/`의 native-layout-final/result.json,
+ime-final/{rhwp,wordcraft}-ime.json 및 trace, source-build-identities.json, verification 로그.
+초기 환경/IME 실패와 전후 비교는 ime/ime2/ime-docx-diagnostic에 보존한다.
+파일/엔진 fixture는 공개 저장소에 복사하지 않았다.

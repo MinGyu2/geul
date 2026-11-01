@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useReducer, useRef, useState, useSyncExternalStore, type CSSProperties } from "react";
 import type { CommandContext, FileCommandActions } from "./commands/commands";
 import { handleShortcut } from "./commands/shortcuts";
-import type { DocumentWorkspace, EngineEditor } from "./components/Editor/documentWorkspace";
+import type { DocumentWorkspace } from "./components/Editor/documentWorkspace";
+import { documentPanelState, navigateDocumentPage } from "./components/Editor/documentPanels";
 import { documentErrorMessage, Editor } from "./components/Editor/Editor";
 import { createTauriWorkspace } from "./components/Editor/tauriWorkspace";
 import { NavigationPanel } from "./components/NavigationPanel/NavigationPanel";
@@ -89,14 +90,21 @@ const NO_FILE_BUSY = () => false;
  * 활성 문서의 편집 세션(명령 대상). 활성 세션은 DocumentSessions(백엔드 투영)가 정하고, 편집 세션은 작업 공간이 세션마다 하나
  * 만든다. 그 편집 세션이 바뀔 때(기록·서식·조합·저장 상태)마다 다시 그려 명령 가용성을 새로 정한다.
  */
-function useActiveDocument(documents: DocumentWorkspace | null): EngineEditor | null {
+function useActiveDocument(documents: DocumentWorkspace | null) {
   const sessions = documents?.sessions;
-  const activeId = useSyncExternalStore(sessions?.subscribe ?? NO_SUBSCRIBE, () => sessions?.snapshot().activeId ?? null);
-  const editor = activeId === null ? null : (documents?.anyEditorFor(activeId) ?? null);
-  const [, update] = useReducer((tick: number) => tick + 1, 0);
-  useEffect(() => editor?.subscribe(update), [editor]);
-  return editor;
+  const state = useSyncExternalStore(sessions?.subscribe ?? NO_SUBSCRIBE, () => sessions?.snapshot() ?? null);
+  const info = state?.sessions.find((item) => item.sessionId === state.activeId) ?? null;
+  const editor = info ? documents?.anyEditorFor(info.sessionId) ?? null : null;
+  const subscribe = useCallback((listener: () => void) => editor?.subscribe(listener) ?? (() => {}), [editor]);
+  const version = useSyncExternalStore(subscribe, editor?.changeSnapshot ?? NO_VERSION);
+  // The version is stable between emissions; useSyncExternalStore also closes the render/subscribe gap.
+  const panel = useMemo(() => {
+    void version; // Mutable engine state is invalidated by its stable event version.
+    return documentPanelState(editor, info);
+  }, [editor, info, version]);
+  return { editor, panel };
 }
+const NO_VERSION = () => 0;
 
 interface WorkspaceProps {
   layout: LayoutState;
@@ -113,7 +121,7 @@ function Workspace({ layout, dispatch, message, notify, documents }: WorkspacePr
   const propertiesToggleRef = useRef<HTMLButtonElement>(null);
 
   // 명령 단추는 그릴 때마다 활성 편집 세션의 지금 상태로 가용성을 정한다(세션이 바뀌면 다시 그림).
-  const activeEditor = useActiveDocument(documents);
+  const { editor: activeEditor, panel } = useActiveDocument(documents);
   // 확인 창이 열린 동안은 어떤 명령도 실행하지 않는다(T010 안정화 P1-B, Editor가 창의 표시를 알림).
   const [modal, setModal] = useState(false);
   const fileBusy = useSyncExternalStore(documents?.subscribe ?? NO_SUBSCRIBE, documents?.fileBusySnapshot ?? NO_FILE_BUSY);
@@ -203,7 +211,13 @@ function Workspace({ layout, dispatch, message, notify, documents }: WorkspacePr
       <div className="workspace" style={workspaceStyle}>
         {layout.navigationVisible && (
           <>
-            <NavigationPanel onClose={() => closePanel("navigation")} />
+            <NavigationPanel key={panel.info?.sessionId ?? "none"} state={panel} onNavigate={(page) => {
+              const info = documents?.sessions.get(activeEditor?.sessionId ?? -1) ?? null;
+              if (modal || documents?.fileBusy || documents?.sessions.snapshot().activeId !== activeEditor?.sessionId) return;
+              if (navigateDocumentPage(activeEditor, info, page)) {
+                document.querySelector<HTMLTextAreaElement>(".editor__scroll textarea.rhwp-input")?.focus({ preventScroll: true });
+              }
+            }} blocked={modal || fileBusy} onClose={() => closePanel("navigation")} />
             {splitter("navigation")}
           </>
         )}
@@ -211,11 +225,11 @@ function Workspace({ layout, dispatch, message, notify, documents }: WorkspacePr
         {layout.propertiesVisible && (
           <>
             {splitter("properties")}
-            <PropertiesPanel onClose={() => closePanel("properties")} />
+            <PropertiesPanel state={panel} onClose={() => closePanel("properties")} />
           </>
         )}
       </div>
-      <StatusBar context={context} message={message} />
+      <StatusBar context={context} message={message} state={panel} />
     </div>
   );
 }

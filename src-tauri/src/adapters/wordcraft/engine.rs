@@ -241,6 +241,11 @@ pub struct DocxView {
     pub anchor_key: String,
     /// 커서 문단의 글자(개체는 그 글자로). 화면에는 검사 훅 빌드에서만 노출한다.
     pub paragraph_text: String,
+    /// Bounded single-paragraph text preview. Object/multi-paragraph selections remain unavailable.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub selection_text: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub paragraph_style: Option<String>,
     /// 커서의 문단 안 위치(문자 단위).
     pub caret_offset: usize,
     /// WordCraft 실행 취소 기록(T010): 되돌릴·다시 할 단계가 있고 그 단계가 문서 보호를 풀지 않음.
@@ -759,6 +764,27 @@ impl DocxModel {
             caret_key: position_key(&sel.focus),
             anchor_key: position_key(&sel.anchor),
             paragraph_text: paragraph.map(|para| para.plain_text()).unwrap_or_default(),
+            selection_text: if sel.anchor.story == sel.focus.story
+                && sel.anchor.path == sel.focus.path
+                && sel.anchor != sel.focus
+            {
+                paragraph.and_then(|para| {
+                    let (a, b) = (
+                        sel.anchor.off.min(sel.focus.off),
+                        sel.anchor.off.max(sel.focus.off),
+                    );
+                    para.text
+                        .get(a..b)
+                        .map(|text| text.chars().take(500).collect::<String>())
+                        .filter(|text| !text.contains('\u{fffc}'))
+                })
+            } else {
+                None
+            },
+            paragraph_style: state
+                .get("styleName")
+                .and_then(Value::as_str)
+                .map(str::to_owned),
             caret_offset,
             history,
             format,
