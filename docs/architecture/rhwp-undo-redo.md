@@ -10,6 +10,82 @@ T010 SC-003의 rhwp 몫(실행 취소·다시 실행)의 계약이다. Phase 2(2
 보았다(§9) ⑤ 다시 실행이 할당하는 구조였다(이제 할당하지 않음, §5). 고친 알고리즘은 시험 전용 모델 `tests/poc/t010-phase0/history_model.mjs`로
 실제 WASM에서 실행했다(§11).
 
+<a id="t010-current-status"></a>
+
+## 현재 수용 상태와 기술 보류 (2026-11-01)
+
+**T010: INCOMPLETE — ON HOLD / 제품 RHWP Undo/Redo: NO-GO / T011: NOT STARTED.**
+`INCOMPLETE`가 실제 수용 상태다. `ON HOLD`는 현재 근거로 정당화된 추가 조사·구현을 중단했다는 **추가 관리 표지**이며,
+완료·수용 면제·영구 포기·명령 활성화 승인이 아니다. [계획표](../planning/tasks.md)의 미완료 체크와 선행 조건을 유지한다.
+이 절이 현재 상태의 단일 요약이다. 아래 날짜별 기록의 PASS/FAIL/NOT RUN·"현재"·"최신"은 **각 당시 실행 신원**에 한정하며 지우거나 소급 변경하지 않는다.
+원래 요건은 본문 §7–12와 원본 시험(`undo_native.py`, `undo_save.py`, 실제 WASM 실패 시험)을 그대로 따른다.
+
+### 현재 D1–D5 수용 행렬
+
+기준 제품: HEAD `d1ec33515839f733f707f99b31ff2dde82ddb2af`, RHWP `1a76570e833917d15817415a53c09ad61ab3203f`,
+WordCraft `fc41918814f62645b6746ed68e71e8c2c2e85d6f`; Release generation
+`ca284e06df589b15bb7bc99163472203644621efffa024be6ad315908bdeb855`, WASM SHA-256
+`3f99a74bbddf1716dcb6cf3e2a3940f510f3ca03fcee465f7f0c2fcd829d9cf0`.
+공식 수용, 시험 실행 완료, 조사 완료, 제품 활성화는 서로 다른 판정이다.
+
+| 관문 | 원래 요구 | 현재 수용 판정 | 실행 근거 | 남은 조건·증거 공백 | 차단 영향 | 다시 다룰 전제 |
+|---|---|---|---|---|---|---|
+| D1 그리기·커서 | 실제 WebView의 Undo/Redo·셀·여러 구역·화면/커서 복원 | **PASS (31/31)** | E1의 현재 제품 native 결과 | 기록된 제품·실행 범위 밖까지 확장하지 않음 | D1 자체는 통과; T010 전체 완료 아님 | 관련 제품/산출물/시험 조건이 바뀔 때만 영향 범위 재검증 |
+| D2 native IME | 빈 compositionend(E) → 원본 predicate가 인정하는 native Undo 요청(U) → nonempty insertFromComposition(F), 원래 문서·기록 assertion | **INCONCLUSIVE** | E4–E6: 일반25 PASS/0 FAIL, 앞선 gap20 safe와 진단10 safe, required E<U<F는0 | 관측은 E<F<U; WebKit 내부 enqueue/send/receive/ACK는 UNVERIFIED | native gap 수용 미충족, 활성화 차단 | 아래 D2 재개 조건과 원본 native predicate/assertion 충족 |
+| D3 저장 보존 | Undo/Redo·Undo 뒤 새 편집의 실제 모델 출력을 service::save로 검사; 안전한 출력만 게시, 거부 시 원본 SHA 보존·참조 무결성 | **UNVERIFIED (현재 Release 전체 범위); 보관 PASS 유지** | E8의13/13 및19/19 PASS·strict 저장23행 불일치0 | 검토한 상세19행은 HEAD1614e15/WASM a91fa6a4…; 현재3f99a74b…에 연결된 전체 실행 근거 미확보 | 과거 결과만으로 현 통합 저장 수용을 승인하지 않음 | 기존 근거의 정확한 source/WASM/fixture 바인딩 회복 또는 별도 승인된 원본 D3 검증 |
+| D4 성능·메모리 | 원래3RAF group-start p95≤50ms, Undo p95≤1500ms 및 본문 §10 자원 관측 | **FAIL (지연); 자원은 INCONCLUSIVE** | E1:440표본/timeout0/6 PASS·2 FAIL. group p95 Basic HWP44/HWPX45/Chemical52/Asset95ms; Undo50/50/78/160ms | Chemical/Asset 지연 초과; 메모리·잔류 원인/수용 증거는 별도 미충족 | 성능·자원 활성화 관문 미통과 | 아래 D4 및 자원 조건. Redo 공식 gate 추가·endpoint/표본/문턱 변경 없음 |
+| D5 실패·복구 | 본문 §9의 실패별 상태·기록·revision·차단·정리와 원본 실제 폐기 예외/새 세대 reload 안전성 | **UNVERIFIED (전체); 현재 native 하위2/2 PASS** | E1의 HWP/HWPX 실제 discard 뒤 예외·복구 검사; E8의 과거 native/실제 WASM 실패 시험 PASS | 현재 Release에 연결된 전체 실패 경계·복구 시험의 종합 증거 미확보; 시험 코드 존재는 실행 증거 아님 | 하위 통과만으로 전체 실패 안전성/활성화 승인 불가 | §9와 기존 실패 시험의 범위·실행 신원 대조 및 빠진 증거 확보; 새 assertion을 공식 gate로 꾸미지 않음 |
+
+D3/D5의 UNVERIFIED는 새 결함이나 실행 불가 판정이 아니라 **현재 제품 신원에 대한 증거 공백**이다. 보관 PASS를 취소하거나,
+latest 보고서에서 다루지 않았다는 이유만으로 NOT RUN/FAIL로 분류하지 않는다. D3는 unsafe 출력의 올바른 거부도 성공이며 전부 저장하라는 요건이 아니다.
+
+### 완료된 조사와 보류 결정
+
+- **전체 페이지 안전성:** GPU의 partial-band/clip strict pixel 비동등성 때문에 제품은 **FULL_PAGE_ONLY**다. 바뀐 쪽은 `renderPageToCanvas`로 그린다. 속도만을 이유로 partial repaint를 재개하지 않는다.
+- **증분 pagination·출력 무효화:** 격리 insertText 21.66→2.75ms에도 native Asset p95 92→72ms로 FAIL이었다. 현 production과 다른 WASM/정책의 결과이며 제품 승인 최적화가 아니다. 전체 의존성·정확한 동등성·resource lifetime·mutator generation 증명이 남는다(E2–E4).
+- **G0 검토:** 문서 검토는 완료했지만 G0-A~F는 OPEN, G0-G는 resource 계약 정의 수준에서만 CLOSED다. G1 record-only shadow의 구현·실행은 **NO-GO**다. 증분 조판 계약 문서의 존재도 구현 승인이 아니다.
+- **D2 transport:** IBus CommitText, 같은 GTK thread의 commit-before-unconsumed-key-replay, 원래 X key identity, WebKit IM filter와 DOM 순서를 확인했다. 최종 queue 관측 가능성 조사는 COMPLETED이나 **RUNTIME_TRACE_BLOCKED**다. 내부 runtime FIFO나 전 구성의 E<U<F 불가능성을 입증한 것은 아니다(E5–E6).
+- **D4 critical path·구조 검토:** Asset handler30개가58–69ms다. insertText26ms, layer JSON8ms, full draw13ms p50은 nested/겹치는 경계이므로 더하지 않는다. 파생 frame 단계화·single-owner Worker·full-recompute 통합 세 안 모두 정확성과 충분한 end-to-end 이득을 함께 뒷받침하지 못해 구현 **NO-GO**, 보수 경로 유지다(E2/E7).
+
+같은 IME timing matrix·WebKit/debugger 가능성 조사, 반복 micro-optimization, G0 공백을 우회하는 재사용/이름 변경, 새 근거 없는 구조 검토는 재배정하지 않는다.
+조사 완료는 위 수용 행렬의 미충족 조건을 닫지 않는다. D4≤50ms가 불가능하거나 보류가 영구적이라고 단정하지 않는다.
+
+<a id="t010-reopen"></a>
+
+### 근거에 따른 재개 조건
+
+- **D2:** 유효한 원래 의미의 독립 native E<U<F 증거, 구체적인 순서 가설을 가진 별도 승인된 지원 runtime/input 환경, 또는 전달 공백을 해소하고 실행 가능한 새 실험을 뒷받침하는 검증된 관측 능력 중 적어도 하나가 필요하다. 단순 delay 추가나 같은 key matrix 반복은 해당하지 않는다. PASS는 실제 native predicate 인식과 모든 원래 assertion 통과 뒤에만 가능하다.
+- **D4:** 새 latency 제거/critical-path 단축 기전, 실질적인 end-to-end 이득의 소스 근거, bounded correctness·ownership·memory 계약, 독립 full oracle/strict RGBA, 신원 일치 native 비교가 함께 있어야 후보를 다시 심사한다. local API microbenchmark만으로 재개하지 않는다. FULL_PAGE_ONLY와 원래4문서·warmup·표본·3RAF·group≤50/Undo≤1500을 보존하고, 승인된 통합 제품의 원본 producer/evaluator만 공식 PASS를 정한다.
+- **G0/G1:** 관련 출력 의존성·typed exact equality·generation/mutator·공유 자원 수명·실패·UNKNOWN/fallback 의무를 실제 근거로 닫아야 한다. 새 proof outline이나 G0 문서 완료는 폐쇄가 아니다. 별도 승인 없이 G1을 구현·실행하지 않는다.
+- **D3/D5:** 수용 행렬의 원본 계약과 현재 제품/산출물/fixture·소스 신원에 묶인 빠진 실행 근거를 확보해야 한다. 과거 로그의 실제 바인딩을 복원할 수 있으면 재실행으로 대체할 필요가 없다. 문서 보류 해제를 이유로 새 검증 범위를 발명하거나 하위 결과를 전체 PASS로 올리지 않는다.
+- **자원·메모리:** snapshot I1–I3/깊이·한도·실패 시 fail-closed, release/dispose 후 owner/job/lease/listener·Canvas 수명, 반복 편집/Undo/Redo/close의 WASM high-water·RSS·재사용을 구분해 입증해야 한다. E1/E2의 Chemical engine 내부 detached Canvas21개/100,819,044pixels는 관측값이며 누수 확정도 해제 성공도 아니다. 충분히 settle한 in-app 상태·반복/대조 측정·소유권/재사용 근거가 필요하다. process 종료만으로 닫지 않는다. history256MiB 회계/증가 감시는 RSS 상한이 아니며, RSS의 규범 수용 기준은 미정이다. 측정·허용 기준은 별도 합의 없이 만들지 않고, 기존 Canvas16Mi pixels/쪽·32Mi pixels/surface 등 명시적 예산을 약화하지 않는다.
+
+### T011·제품 활성화와 독립 작업
+
+Task Contracts의 **T011 Depends on T010**과 T010의 T009/T005 선행 조건을 유지한다. T007–T009 미체크 범위와 SC-003의
+RHWP 서식·실제 명령 수용 공백도 그대로다. T011은 NOT STARTED이며 READY나 리본 통합 착수 허가가 아니다.
+제품 RHWP `edit.undo`/`edit.redo`는 `unsupported`/NO-GO를 유지하고 시험 활성화 빌드의 결과를 제품 지원으로 전환하지 않는다.
+
+보류는 전체 프로젝트 중단이 아니다. T010의 미충족 보장을 요구하지 않는 문서·번역·보안/개발도구 유지보수 등 **이미 승인된 독립 작업**은
+각 Task Contract·선행 조건·기존 승인 범위 안에서 계속할 수 있다. T011 리본·상황별 도구의 별도 선행 작업 허가는 기존 계획에서 확인되지 않았다.
+독립 가능성은 새 구현 과제의 승인이나 T010 의존성 제거를 뜻하지 않는다.
+
+### 근거 위치와 판독 범위
+
+다음은 저장소와 나란한 비공개 `geul-tests`의 근거다. 접근할 수 없어도 위 표의 판정·차단 조건은 유효하다.
+raw trace/fixture를 공개 문서에 복사하지 않는다. VERIFIED는 해당 기록/소스로 확인, INFERRED는 해석, UNVERIFIED는 증거 공백,
+REJECTED는 근거와 모순을 뜻한다. 실행 신원이 다른 과거 후보를 현 제품 matched A/B로 읽지 않는다.
+
+- E1: [canonical D1/D4](../../../geul-tests/reports/t010-canonical-d1-d4-20261101/REPORT.ko.md) — D1 31/31, D5 native 하위2/2, D4 공식440표본.
+- E2: [Asset critical path](../../../geul-tests/reports/t010-asset-critical-path-20261101/REPORT.ko.md) — 표본별 귀속·과거 후보·자원 관측.
+- E3: [pagination/cache 설계](../../../geul-tests/reports/t010-pagination-cache-design-review-20261101/REPORT.ko.md) — 보수 설계 유지·구현 NO-GO.
+- E4: [D2/G0 후속](../../../geul-tests/reports/t010-d2-g0-followup-20261101/REPORT.ko.md) — required gap 미관측과 G0/G1 의무 구분.
+- E5: [IBus/GTK 전달](../../../geul-tests/reports/t010-d2-native-forwarding-20261101/REPORT.ko.md) — 진단10 safe, 공식 native gap PASS 아님.
+- E6: [WebKit queue 최종 한정 조사](../../../geul-tests/reports/t010-d2-webkit-queue-20261101/REPORT.ko.md) — 관측 차단·runtime 내부 순서 UNVERIFIED·조사 종료.
+- E7: [D4 구조적 타당성](../../../geul-tests/reports/t010-d4-structural-feasibility-20261101/REPORT.ko.md) — 세 구조안 구현 NO-GO·최적화선 중단.
+- E8: [보관 D3/D5 실행 기록](../../tests/integration/rhwp/evidence/t010-design-review-admission/REPORT.ko.txt), [D3 19행](../../tests/integration/rhwp/evidence/t010-design-review-admission/undo-save.json), [이전 안정화](../../tests/integration/rhwp/evidence/t010-stabilization/undo-save.json) — 당시 PASS를 유지하되 현 Release 바인딩과 구분.
+
+
 ## 1. 고른 구조와 근거
 
 **엔진 스냅숏 기반 상태 시간선, 세션은 ID·커서·그룹 경계만 조정한다.** 문서 내용과 스냅숏 내용은 rhwp `HwpDocument`가 가진다. 세션에는

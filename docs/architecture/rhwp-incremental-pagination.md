@@ -7,6 +7,8 @@
 이 문서는 "증분 결과가 같은 입력의 새 전체 쪽 나눔과 같다"를 무엇으로 입증하는지, 입증하지 못하면 언제 전체 쪽 나눔으로
 돌아가는지를 정한다. 속도는 그 다음 문제다.
 
+현재 T010은 INCOMPLETE — ON HOLD이며 증분/출력 재사용 후보와 G1 구현은 NO-GO다. 이 계약 문서의 존재는 구현 승인이 아니다. [현재 수용 행렬·재개 조건](rhwp-undo-redo.md#t010-current-status)을 따른다.
+
 ## 1. 실제 기본 경로 (고정 소스 확인)
 
 - 편집: `insert_text_at_caret_native`(`text_editing.rs:1434`) → `reflow_paragraph`(편집 문단 줄 나눔) →
