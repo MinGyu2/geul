@@ -157,7 +157,7 @@ export interface DocxBackend {
   /** 저장 사전 검사(T009): 백엔드가 원본을 다시 읽어 편집 없는 WordCraft 왕복과 비교하고 결과를 기억한다. */
   preflight(sessionId: SessionId, generation: number): Promise<Result<SaveCheck>>;
   /** 원본 형식 저장(T009): 그 판의 모델을 내보내 검사한 뒤 원본을 바꾼다. */
-  save(sessionId: SessionId, generation: number, revision: number): Promise<Result<SaveOutcome>>;
+  save(sessionId: SessionId, generation: number, revision: number, destination?: string): Promise<Result<SaveOutcome>>;
 }
 
 // ---- 응답 검사 ----
@@ -313,8 +313,8 @@ export function createDocxBackend(invoke: Invoke): DocxBackend {
     roundTrip: (sessionId, loadGeneration, revision) =>
       call(invoke, "docx_roundtrip", { sessionId, loadGeneration, revision }, (value) => parseDocxRoundTrip(value, sessionId, revision)),
     preflight: (sessionId, loadGeneration) => call(invoke, "docx_preflight", { sessionId, loadGeneration }, parseSaveCheck),
-    save: (sessionId, loadGeneration, revision) =>
-      call(invoke, "docx_save", { sessionId, loadGeneration, revision }, (value) => {
+    save: (sessionId, loadGeneration, revision, destination) =>
+      call(invoke, destination === undefined ? "docx_save" : "docx_save_as", { sessionId, loadGeneration, revision, ...(destination === undefined ? {} : { destination }) }, (value) => {
         const outcome = parseSaveOutcome(value);
         return outcome?.session.sessionId === sessionId && outcome.session.revision >= revision ? outcome : null;
       }),

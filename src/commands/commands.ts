@@ -5,6 +5,7 @@
 //   상태로 정하고(capability.ts), 세션이 실행 직전에 다시 확인한다. 엔진이 지원하지 않거나 아직 연결하지 않은 명령은
 //   아무것도 바꾸지 않고 이유를 알린다(가짜 성공 없음).
 import type { Message, MessageKey } from "../language";
+import type { SessionId } from "../adapters/contract";
 import type { LayoutAction, LayoutState, Theme } from "../hooks/layoutState";
 import { documentCommandState, ENABLED, unavailable, type CommandState } from "./capability";
 import { commandDefinition, isDocumentCommandId } from "./registry";
@@ -20,11 +21,20 @@ export interface CommandContext {
   notify: (message: Message) => void;
   /** 활성 문서의 편집 세션(없으면 null). 문서 명령은 이 세션에만 간다. */
   document: DocumentCommandTarget | null;
+  /** Native file workflows shared by ribbon, shortcuts, and the editor surface. */
+  files?: FileCommandActions | undefined;
   /**
    * 확인 창(모달)이 열려 있음(T010 안정화 P1-B). 그동안은 어떤 명령(문서·배치)도 실행하지 않는다. 창을 그리는 쪽(Editor)이
    * 알린 상태이며 DOM의 aria-modal로 추측하지 않는다.
    */
   modal?: boolean;
+}
+
+export interface FileCommandActions {
+  busy: boolean;
+  open(): void;
+  newDocument(): void;
+  saveAs(sessionId: SessionId | null): void;
 }
 
 interface UiCommand {
@@ -73,12 +83,45 @@ const UI_COMMANDS: Record<string, UiCommand> = {
   },
 };
 
+const FILE_COMMANDS: Record<string, {
+  state: (context: Pick<CommandContext, "document" | "files">) => CommandState;
+  run: (context: CommandContext) => void;
+}> = {
+  "file.open": {
+    state: ({ files }) => !files ? unavailable("notImplemented") : files.busy ? unavailable("dialogOpen") : ENABLED,
+    run: ({ files }) => files?.open(),
+  },
+  "file.new": {
+    state: ({ files }) => !files ? unavailable("notImplemented") : files.busy ? unavailable("dialogOpen") : ENABLED,
+    run: ({ files }) => files?.newDocument(),
+  },
+  "file.saveAs": {
+    state: ({ document, files }) => {
+      if (!files) return unavailable("notImplemented");
+      if (files.busy) return unavailable("dialogOpen");
+      const snapshot = document?.snapshot();
+      if (!snapshot) return unavailable("noDocument");
+      if (!snapshot.loaded) return unavailable("notReady");
+      if (snapshot.saving) return unavailable("saving");
+      if (snapshot.composing) return unavailable("composing");
+      return ENABLED;
+    },
+    run: ({ document, files }) => files?.saveAs(document?.sessionId ?? null),
+  },
+};
+
 /** 화면 배치·정보 명령(객체의 상속 속성 이름은 명령이 아님). */
 const uiCommand = (id: string): UiCommand | undefined =>
   Object.prototype.hasOwnProperty.call(UI_COMMANDS, id) ? UI_COMMANDS[id] : undefined;
 
-export function commandState(id: string, context: Pick<CommandContext, "layout" | "document" | "modal">): CommandState {
+const fileCommand = (id: string) =>
+  Object.prototype.hasOwnProperty.call(FILE_COMMANDS, id) ? FILE_COMMANDS[id] : undefined;
+
+export function commandState(id: string, context: Pick<CommandContext, "layout" | "document" | "files" | "modal">): CommandState {
   if (context.modal) return unavailable("dialogOpen");
+  if (id.startsWith("file.") && context.files?.busy) return unavailable("dialogOpen");
+  const file = fileCommand(id);
+  if (file) return file.state(context);
   const ui = uiCommand(id);
   if (ui) return ui.state(context.layout);
   if (isDocumentCommandId(id)) return documentCommandState(id, context.document?.snapshot() ?? null);
@@ -86,7 +129,7 @@ export function commandState(id: string, context: Pick<CommandContext, "layout" 
 }
 
 export function isUiCommand(id: string): boolean {
-  return uiCommand(id) !== undefined;
+  return uiCommand(id) !== undefined || Object.prototype.hasOwnProperty.call(FILE_COMMANDS, id);
 }
 
 /**
@@ -114,6 +157,11 @@ export function executeCommand(id: string, labelKey: MessageKey | undefined, con
   const ui = uiCommand(id);
   if (ui) {
     ui.run(context);
+    return true;
+  }
+  const file = fileCommand(id);
+  if (file) {
+    file.run(context);
     return true;
   }
   if (!isDocumentCommandId(id) || !context.document) return reject(unavailable("notImplemented"));

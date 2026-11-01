@@ -51,7 +51,7 @@ export interface DocumentBackend {
   /** 편집 없는 엔진 출력과 그 손실 보고로 보존 사전 검사(T009). 결과는 백엔드가 그 원본에 대해 기억한다. */
   preflight(sessionId: SessionId, generation: number, unedited: Uint8Array, contentLoss: unknown): Promise<Result<SaveCheck>>;
   /** 편집한 엔진 출력을 원본 형식으로 저장(T009). revision은 그 출력이 나타내는 판, reopen은 다시 열어 비교한 결과. */
-  save(sessionId: SessionId, generation: number, revision: number, output: Uint8Array, contentLoss: unknown, reopen: ReopenEvidence): Promise<Result<SaveOutcome>>;
+  save(sessionId: SessionId, generation: number, revision: number, output: Uint8Array, contentLoss: unknown, reopen: ReopenEvidence, destination?: string): Promise<Result<SaveOutcome>>;
 }
 
 /** 엔진 출력을 다시 열어 편집 모델과 비교한 결과(넷 다 참이어야 저장한다). */
@@ -148,8 +148,8 @@ export function createTauriBackend(invoke: Invoke): DocumentBackend {
     original: (sessionId, loadGeneration) => call(invoke, "document_original", { sessionId, loadGeneration }, parseRaw),
     preflight: (sessionId, generation, unedited, contentLoss) =>
       call(invoke, "document_preflight", saveFrame(sessionId, generation, 0, { contentLoss }, unedited), parseSaveCheck),
-    save: (sessionId, generation, revision, output, contentLoss, reopen) =>
-      call(invoke, "document_save", saveFrame(sessionId, generation, revision, { contentLoss, reopen }, output), (value) => {
+    save: (sessionId, generation, revision, output, contentLoss, reopen, destination) =>
+      call(invoke, destination === undefined ? "document_save" : "document_save_as", saveFrame(sessionId, generation, revision, destination === undefined ? { contentLoss, reopen } : { contentLoss, reopen, destination }, output), (value) => {
         const outcome = parseSaveOutcome(value);
         return outcome?.session.sessionId === sessionId ? outcome : null;
       }),

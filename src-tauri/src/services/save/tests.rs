@@ -8866,3 +8866,146 @@ fn concurrent_save_resource_probe() {
         "scope":"four direct real-service saves; caller payload deliberately accounted; not IPC throughput or RSS bound"})
     );
 }
+
+#[cfg(target_os = "linux")]
+#[test]
+fn save_as_preserves_original_rebinds_session_and_refuses_existing_destination() {
+    let original = basic::basic_ko().unwrap();
+    let mut doc = open_docx(&original);
+    let original_path = doc.path.clone();
+    doc.edit(edits());
+    let mut expected = DocxModel::open(&original).unwrap();
+    expected.apply(&edits());
+    let output = expected.export().unwrap();
+    let target = doc.dir.path().join("copy.docx");
+    let registry = doc.state.registry();
+    {
+        let ticket = registry
+            .begin_save(
+                doc.info.session_id,
+                doc.info.load_generation,
+                doc.info.revision,
+            )
+            .unwrap();
+        assert!(matches!(
+            service::save_to(
+                registry,
+                &ticket,
+                &Limits::default(),
+                &output,
+                None,
+                true,
+                Some(&target)
+            ),
+            Err(DocumentError::UnsafeSave { .. })
+        ));
+    }
+    assert!(!target.exists());
+    doc.preflight().unwrap();
+    std::fs::write(&target, b"other document").unwrap();
+    {
+        let registry = doc.state.registry();
+        let ticket = registry
+            .begin_save(
+                doc.info.session_id,
+                doc.info.load_generation,
+                doc.info.revision,
+            )
+            .unwrap();
+        assert_eq!(
+            service::save_to(
+                registry,
+                &ticket,
+                &Limits::default(),
+                &output,
+                None,
+                true,
+                Some(&target)
+            )
+            .unwrap_err(),
+            DocumentError::FileConflict
+        );
+    }
+    assert_eq!(std::fs::read(&target).unwrap(), b"other document");
+    assert_eq!(doc.bytes(), original);
+    assert!(doc.state.registry().get(doc.info.session_id).unwrap().dirty);
+    std::fs::remove_file(&target).unwrap();
+    let saved = {
+        let registry = doc.state.registry();
+        let ticket = registry
+            .begin_save(
+                doc.info.session_id,
+                doc.info.load_generation,
+                doc.info.revision,
+            )
+            .unwrap();
+        service::save_to(
+            registry,
+            &ticket,
+            &Limits::default(),
+            &output,
+            None,
+            true,
+            Some(&target),
+        )
+        .unwrap()
+    };
+    assert!(saved.durable);
+    assert_eq!(saved.session.session_id, doc.info.session_id);
+    assert_eq!(saved.session.display_name, "copy.docx");
+    assert!(!saved.session.dirty);
+    assert!(expected.same_as(&std::fs::read(&target).unwrap()));
+    assert_eq!(std::fs::read(&original_path).unwrap(), original);
+    doc.path = target;
+    doc.info = saved.session;
+    doc.edit(vec![DocxOp::InsertText {
+        text: "after save as".into(),
+    }]);
+    doc.preflight().unwrap();
+    assert!(doc.save().unwrap().durable);
+    assert!(DocxModel::open(&doc.bytes())
+        .unwrap()
+        .body_text()
+        .contains("after save as"));
+    assert_eq!(std::fs::read(&original_path).unwrap(), original);
+}
+
+#[cfg(target_os = "linux")]
+#[test]
+fn new_document_is_real_docx_and_publication_never_follows_or_overwrites_links() {
+    let dir = TempDir::new();
+    let bytes = crate::services::files::blank_docx().unwrap();
+    let target = dir.path().join("new.docx");
+    let mut staged = super::publish::stage_new(&target, &bytes, None).unwrap();
+    let published = super::publish::publish_new(&mut staged, &target).unwrap();
+    assert!(published.durable);
+    assert!(DocxModel::open(&bytes)
+        .unwrap()
+        .same_as(&std::fs::read(&target).unwrap()));
+    let registry = crate::document::SessionRegistry::default();
+    let info = registry
+        .register_created(
+            identify(target.to_str().unwrap(), &Limits::default()).unwrap(),
+            true,
+        )
+        .unwrap();
+    assert_eq!(
+        (info.revision, info.dirty, info.engine),
+        (0, false, crate::document::Engine::Wordcraft)
+    );
+    let alias = dir.path().join("alias.docx");
+    std::os::unix::fs::symlink(&target, &alias).unwrap();
+    let mut staged = super::publish::stage_new(&alias, b"malicious overwrite", None).unwrap();
+    assert_eq!(
+        super::publish::publish_new(&mut staged, &alias).unwrap_err(),
+        DocumentError::FileConflict
+    );
+    assert!(std::fs::symlink_metadata(&alias)
+        .unwrap()
+        .file_type()
+        .is_symlink());
+    assert_eq!(std::fs::read(&target).unwrap(), bytes);
+    let wrong = dir.path().join("new.hwp");
+    assert!(crate::services::files::destination(&wrong, Format::Docx).is_err());
+    assert!(!wrong.exists());
+}

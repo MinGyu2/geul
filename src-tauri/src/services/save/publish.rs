@@ -675,3 +675,150 @@ pub fn publish(_staged: &mut Staged, _target: &Path) -> Result<Published, Docume
         reason: SaveUnsupportedReason::Platform,
     })
 }
+
+/// 새 목적지에만 게시한다. 원본 대체 경로와 같은 검증된 stage를 사용하며
+/// 빈 소유 anchor는 Drop이 정리한다. 기존 목적지(링크 포함)는 원자적으로 거부한다.
+#[cfg(target_os = "linux")]
+pub fn stage_new(
+    target: &Path,
+    bytes: &[u8],
+    source: Option<&Path>,
+) -> Result<Staged, DocumentError> {
+    use super::metadata;
+    use std::os::unix::fs::{MetadataExt, PermissionsExt};
+    let parent = target.parent().ok_or(DocumentError::InvalidRequest)?;
+    // SAFETY: geteuid has no arguments and cannot fail.
+    let euid = unsafe { libc::geteuid() };
+    let dir = open_directory(parent, euid)?;
+    let held = dir.metadata().map_err(|e| failure(SaveStage::Write, &e))?;
+    trusted_directory(&dir, &held, euid, euid)?;
+    let mut made = None;
+    for _ in 0..MAX_NAME_ATTEMPTS {
+        let counter = COUNTER.fetch_add(1, Ordering::Relaxed);
+        let mut random = [0; NAME_RANDOM_BYTES];
+        fill_random(counter, &mut random).map_err(|e| failure(SaveStage::Write, &e))?;
+        let name =
+            CString::new(temp_name(counter, &random)).map_err(|_| DocumentError::Internal)?;
+        match open_at(
+            &dir,
+            &name,
+            libc::O_RDWR | libc::O_CREAT | libc::O_EXCL,
+            0o600,
+        ) {
+            Ok(file) => {
+                made = Some((name, file));
+                break;
+            }
+            Err(e) if e.kind() == io::ErrorKind::AlreadyExists => continue,
+            Err(e) => return Err(failure(SaveStage::Write, &e)),
+        }
+    }
+    let (name, file) = made.ok_or_else(|| {
+        failure(
+            SaveStage::Write,
+            &io::Error::from(io::ErrorKind::AlreadyExists),
+        )
+    })?;
+    let path = parent.join(name.to_str().map_err(|_| DocumentError::Internal)?);
+    let anchor = Staged {
+        dir,
+        name,
+        file,
+        verified: None,
+        published: false,
+        #[cfg(test)]
+        path: path.clone(),
+    };
+    if let Some(source) = source {
+        use std::os::unix::fs::OpenOptionsExt;
+        let original = OpenOptions::new()
+            .read(true)
+            .custom_flags(libc::O_NOFOLLOW | libc::O_NONBLOCK)
+            .open(source)
+            .map_err(|e| failure(SaveStage::Write, &e))?;
+        let meta = original.metadata().map_err(|_| metadata_unsupported())?;
+        let created = anchor.file.metadata().map_err(|_| metadata_unsupported())?;
+        if !meta.is_file() || (meta.uid(), meta.gid()) != (created.uid(), created.gid()) {
+            return Err(metadata_unsupported());
+        }
+        let attached = metadata::attached(&original).map_err(|_| metadata_unsupported())?;
+        if attached.has_access_acl() {
+            return Err(metadata_unsupported());
+        }
+        anchor
+            .file
+            .set_permissions(fs::Permissions::from_mode(meta.mode() & 0o7777))
+            .map_err(|_| metadata_unsupported())?;
+        attached
+            .copy_user_xattrs(&anchor.file)
+            .map_err(|_| metadata_unsupported())?;
+        if metadata::attached(&anchor.file).map_err(|_| metadata_unsupported())? != attached {
+            return Err(metadata_unsupported());
+        }
+    }
+    stage(&path, bytes)
+}
+
+#[cfg(not(target_os = "linux"))]
+pub fn stage_new(
+    _target: &Path,
+    _bytes: &[u8],
+    _source: Option<&Path>,
+) -> Result<Staged, DocumentError> {
+    Err(unsupported_platform())
+}
+
+#[cfg(not(target_os = "linux"))]
+fn unsupported_platform() -> DocumentError {
+    DocumentError::SaveUnsupported {
+        reason: SaveUnsupportedReason::Platform,
+    }
+}
+
+#[cfg(target_os = "linux")]
+pub fn publish_new(staged: &mut Staged, target: &Path) -> Result<Published, DocumentError> {
+    use std::os::fd::AsRawFd;
+    use std::os::unix::ffi::OsStrExt;
+    let name = target
+        .file_name()
+        .and_then(|v| CString::new(v.as_bytes()).ok())
+        .ok_or(DocumentError::InvalidRequest)?;
+    let before = staged.file.metadata().map_err(|_| not_published())?;
+    if staged.verified != Some(snapshot(&before)) || !staged.owns_path() || !staged.at_path(target)
+    {
+        return Err(not_published());
+    }
+    let fd = staged.dir.as_raw_fd();
+    // SAFETY: same held directory and NUL-terminated names; NOREPLACE never overwrites a destination.
+    if unsafe {
+        libc::renameat2(
+            fd,
+            staged.name.as_ptr(),
+            fd,
+            name.as_ptr(),
+            libc::RENAME_NOREPLACE,
+        )
+    } != 0
+    {
+        let error = io::Error::last_os_error();
+        return Err(if error.kind() == io::ErrorKind::AlreadyExists {
+            DocumentError::FileConflict
+        } else {
+            failure(SaveStage::Publish, &error)
+        });
+    }
+    staged.published = true;
+    let after = staged.file.metadata().unwrap_or(before);
+    let (identity, fingerprint) = describe_published(target, &after);
+    let durable = same_inode(target, &after) && staged.dir.sync_all().is_ok();
+    Ok(Published {
+        identity,
+        fingerprint,
+        durable,
+    })
+}
+
+#[cfg(not(target_os = "linux"))]
+pub fn publish_new(_staged: &mut Staged, _target: &Path) -> Result<Published, DocumentError> {
+    Err(unsupported_platform())
+}

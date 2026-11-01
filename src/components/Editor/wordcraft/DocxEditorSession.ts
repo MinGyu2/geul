@@ -1070,7 +1070,7 @@ export class DocxEditorSession implements ImeSession, DocumentCommandTarget {
   }
 
   /** 원본 형식으로 저장한다(모듈 설명). */
-  async save(): Promise<Result<SaveOutcome>> {
+  async save(destination?: string): Promise<Result<SaveOutcome>> {
     const epoch = this.epoch;
     const fail = (error: DocumentError): Result<SaveOutcome> => {
       if (epoch === this.epoch) this.setSave({ kind: "failed", error });
@@ -1095,7 +1095,7 @@ export class DocxEditorSession implements ImeSession, DocumentCommandTarget {
       if (later) return fail(later);
       const revision = this.revision;
       this.setSave({ kind: "saving" });
-      const result = await this.backend.save(this.sessionId, generation, revision);
+      const result = await this.backend.save(this.sessionId, generation, revision, destination);
       if (epoch !== this.epoch) return result;
       if (!result.ok) return fail(result.error);
       this.sessions.applyUpdate(result.value.session);

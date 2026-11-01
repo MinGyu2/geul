@@ -18,6 +18,10 @@ pub fn run() {
         .on_window_event(window_close::on_window_event)
         .on_page_load(ime::on_page_load)
         .invoke_handler(tauri::generate_handler![
+            services::files::document_file_dialog,
+            services::files::document_new,
+            services::save::commands::document_save_as,
+            adapters::wordcraft::commands::docx_save_as,
             window_close::window_close_confirmed,
             document::commands::document_open,
             document::commands::document_close,

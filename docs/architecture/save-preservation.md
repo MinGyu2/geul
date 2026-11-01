@@ -605,3 +605,27 @@ header 정의 visitor를 적용했다. canonical 값/정확한 charPr·formCharP
 실제 DOCX 표본은 이번 검색에서 찾지 못했으므로 생성 픽스처 시험을 실제 코퍼스 수락으로 대체하지 않는다.
 `public/rhwp`는 Debug/Release generation 보관소이므로 패키지 전용 `--verify-product`의
 단일-generation 조건을 적용하지 않는다. 선택된 Release는 `readRhwpGeneration`과 기존 생산 identity helper로 검증했다.
+
+
+### 기본 파일 작업 UI (2026-11-02)
+
+Linux Tauri 창을 부모로 하는 GTK FileChooserNative를 연결했다. 이미 Tauri에 포함된 고정 GTK0.18.2를
+직접 참조하며 새로운 패키지나 생산 엔진 산출물을 설치/변경하지 않았다. 열기 취소는 세션/선택을 바꾸지 않는다.
+새 문서는 실제 WordCraft 빈 모델을 DOCX로 직렬화·재열기 검사한 뒤 사용자가 선택한 새 경로에 게시하고
+세션을 등록한다. 이미 디스크에 만든 빈 문서이므로 정상 내구성 확인 시 revision0/clean으로 시작한다.
+내구성 미확인은 dirty로 남긴다. HWP/HWPX 새 문서 생성은 제공하지 않는다.
+
+Save As는 원본 형식·사전 검사·손실/패키지/재열기·원본 변경·세션 판 검사를 유지한다. 임시 소유 anchor를
+이용해 기존 stage 검증을 재사용하고, `renameat2(RENAME_NOREPLACE)`로 새 목적지에만 게시한다.
+기존 파일/심볼릭 링크는 확인 대화상자 선택과 관계없이 덮어쓰지 않는다. 원본 메타데이터도 기존 동일성 조건을
+지켜야 한다. 성공하면 같은 세션의 파일 식별자·이름을 바꾸고 이후 일반 저장은 그 새 파일에 적용한다.
+실패/취소는 원본·목적지·dirty 편집을 보존한다. 새 Open/New/Save As는 리본·단축키·편집 도구에서 같은 흐름을 쓴다.
+
+검증: 저장 서비스95PASS/11ignored, 관련 프런트엔드73PASS 및 세션15PASS, 최종 busy 수명 수정 후
+workspace8PASS; 타입 검사/ESLint/프런트엔드 빌드 통과. 현재 소스의 native debug 호스트에서 실제
+Xvfb/GTK 선택기·WebDriver/xdotool로 취소, 새 DOCX, 편집, Save As, 같은 세션 유지, 후속 일반 저장,
+목적지 충돌/dirty 보존, 닫기·native 재열기/본문 보존, 원본 불변9개 항목을 확인했다.
+원자료는 별도 `geul-tests/reports/seven-phases-20261102/phase4/attempt2/`에 있다.
+첫 자동화 실행은 GTK basename 선택 상태 때문에 `.docx.docx`를 입력해 기대 파일명 검사가 실패했다.
+입력 전 전체 선택으로 시험기를 수정한 재실행은 통과했다. 생산 코드나 수락 문턱을 바꾸지 않았다.
+Windows/macOS 네이티브 대화상자와 저장은 미지원/미검증이며, 실제 IME 수락과 세 형식의 일반 호환성 확대를 뜻하지 않는다.

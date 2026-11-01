@@ -1,7 +1,7 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "default",
-  "description": "주 창의 권한. 기본 핵심 권한과 문서 세션 명령(T006 열기·닫기·조회, T007 바이트 읽기·상태 전이·revision 확정, T008 WordCraft 불러오기·보기·허용한 편집 연산·쪽 그림·메모리 안 왕복 검사, T009 원본 형식 저장: 사전 검사용 원본 읽기·보존 사전 검사·저장)과 현재 창 종료 확인만 허용한다. 저장은 세션에 기록한 원본 파일 하나를 검사 뒤 같은 형식으로 바꿀 뿐 경로를 받지 않는다. 파일 시스템·셸 플러그인 권한은 부여하지 않는다.",
+  "description": "주 창의 핵심 권한·문서 세션·엔진 편집·보존 검사 저장·창 종료 확인만 허용한다. Linux native 파일 선택, 유효한 DOCX 새 파일 생성, 동일 형식의 새 목적지 Save As를 지원한다. Save As도 모든 보존 검사를 통과해야 하며 기존 목적지를 덮어쓰지 않는다. 파일 시스템·셸 플러그인 권한은 부여하지 않는다.",
   "windows": [
     "main"
   ],
@@ -24,6 +24,10 @@
     "allow-docx-save",
     "allow-document-original",
     "allow-document-preflight",
-    "allow-document-save"
+    "allow-document-save",
+    "allow-document-file-dialog",
+    "allow-document-new",
+    "allow-document-save-as",
+    "allow-docx-save-as"
   ]
 }

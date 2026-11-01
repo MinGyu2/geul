@@ -16,6 +16,7 @@ import { EMPTY_SESSIONS, type SessionsState } from "../../adapters/sessions";
 import type { Message, MessageKey } from "../../language";
 import { useTranslation } from "../../language/LanguageContext";
 import type { DocumentWorkspace, EngineEditor } from "./documentWorkspace";
+import type { FileCommandActions } from "../../commands/commands";
 import { RhwpEditorSession } from "./rhwp/RhwpEditorSession";
 import { ImeContext } from "./rhwp/imeInput";
 import { RhwpSurface } from "./rhwp/RhwpSurface";
@@ -27,6 +28,8 @@ interface EditorProps {
   zoom: number;
   /** 문서 세션(Tauri 앱). 없으면(테스트·브라우저) 빈 편집 영역만 보인다. */
   workspace?: DocumentWorkspace | null;
+  /** Native Open/New/Save As actions shared with the command registry. */
+  fileActions?: FileCommandActions | undefined;
   notify?: ((message: Message) => void) | undefined;
   /**
    * 확인 창(모달)이 열리고 닫힐 때 알린다(T010 안정화 P1-B). 그동안 명령 레지스트리는 단추·단축키의 어떤 명령도 실행하지 않는다.
@@ -37,6 +40,7 @@ interface EditorProps {
 
 const NO_SUBSCRIBE = () => () => {};
 const NO_SESSIONS = () => EMPTY_SESSIONS;
+const NO_FILE_BUSY = () => false;
 
 /**
  * 자동 검사용 진단(커서 문단의 글자)을 DOM에 노출할지. 문서 내용이므로 일반 빌드에는 넣지 않고, 검사용 빌드
@@ -58,10 +62,11 @@ export function documentErrorMessage(error: DocumentError): Message {
  * HWP/HWPX 세션은 rhwp WASM 편집 표면(T007 R-A), DOCX 세션은 백엔드 WordCraft 엔진의 편집 표면(T008 W-A)을 붙인다.
  * 문서 열기는 경로 입력(PoC)이다. 저장(T009)은 보존 검사를 통과한 문서만 원본 형식으로 한다(SaveControls).
  */
-export function Editor({ zoom, workspace = null, notify, onModalChange }: EditorProps) {
+export function Editor({ zoom, workspace = null, fileActions, notify, onModalChange }: EditorProps) {
   const { t } = useTranslation();
   const sessions = workspace?.sessions;
   const state: SessionsState = useSyncExternalStore(sessions?.subscribe ?? NO_SUBSCRIBE, sessions?.snapshot ?? NO_SESSIONS);
+  const fileBusy = useSyncExternalStore(workspace?.subscribe ?? NO_SUBSCRIBE, workspace?.fileBusySnapshot ?? NO_FILE_BUSY);
   const active = state.sessions.find((session) => session.sessionId === state.activeId) ?? null;
   const pageStyle = { "--zoom": zoom / 100 } as CSSProperties;
   const [discard, setDiscard] = useState<DiscardRequest | null>(null);
@@ -126,7 +131,7 @@ export function Editor({ zoom, workspace = null, notify, onModalChange }: Editor
 
   return (
     <main className="editor" aria-label={t("editor.label")}>
-      {workspace && <DocumentBar workspace={workspace} state={state} notify={notify} onClose={(session) => void close(session)} />}
+      {workspace && <DocumentBar workspace={workspace} state={state} notify={notify} fileActions={fileActions} onClose={(session) => void close(session)} />}
       {active === null ? (
         <>
           <div className="editor__notice" role="note">
@@ -147,6 +152,8 @@ export function Editor({ zoom, workspace = null, notify, onModalChange }: Editor
           zoom={zoom}
           imeContext={imeContext}
           onReload={() => void reload(active)}
+          onSaveAs={fileActions ? () => fileActions.saveAs(active.sessionId) : undefined}
+          fileBusy={fileBusy}
         />
       ) : active.engine === "wordcraft" && workspace?.docxEditorFor(active.sessionId) ? (
         <DocxPanel
@@ -156,6 +163,8 @@ export function Editor({ zoom, workspace = null, notify, onModalChange }: Editor
           zoom={zoom}
           imeContext={imeContext}
           onReload={() => void reload(active)}
+          onSaveAs={fileActions ? () => fileActions.saveAs(active.sessionId) : undefined}
+          fileBusy={fileBusy}
         />
       ) : (
         <div className="editor__notice" role="note" data-testid="editor-unsupported">
@@ -237,21 +246,22 @@ function DiscardDialog({ request, focusReturnRef, onCancel, onConfirm }: {
   );
 }
 
-function DocumentBar({ workspace, state, notify, onClose }: {
+function DocumentBar({ workspace, state, notify, fileActions, onClose }: {
   workspace: DocumentWorkspace;
   state: SessionsState;
   notify: ((message: Message) => void) | undefined;
+  fileActions?: FileCommandActions | undefined;
   onClose: (session: SessionInfo) => void;
 }) {
   const { t } = useTranslation();
   const [path, setPath] = useState("");
-  const [busy, setBusy] = useState(false);
+  const [pathBusy, setPathBusy] = useState(false);
   const open = async (event: FormEvent) => {
     event.preventDefault();
-    if (!path.trim() || busy) return;
-    setBusy(true);
+    if (!path.trim() || pathBusy || workspace.fileBusy) return;
+    setPathBusy(true);
     const result = await workspace.open(path.trim());
-    setBusy(false);
+    setPathBusy(false);
     if (result.ok) {
       setPath("");
       notify?.({ key: "document.opened", vars: { name: result.value.displayName } });
@@ -270,8 +280,18 @@ function DocumentBar({ workspace, state, notify, onClose }: {
           spellCheck={false}
           autoComplete="off"
         />
-        <button type="submit" className="document-bar__button" disabled={busy || !path.trim()}>{t("document.open")}</button>
+        <button type="submit" className="document-bar__button" disabled={pathBusy || workspace.fileBusy || !path.trim()}>{t("document.open")}</button>
       </form>
+      {fileActions && (
+        <div className="document-bar__open-actions">
+          <button type="button" className="document-bar__button" data-testid="document-open-dialog" disabled={fileActions.busy} onClick={fileActions.open}>
+            {t("document.openDialog")}
+          </button>
+          <button type="button" className="document-bar__button" data-testid="document-new-docx" disabled={fileActions.busy} onClick={fileActions.newDocument}>
+            {t("document.newDocx")}
+          </button>
+        </div>
+      )}
       <div className="document-tabs" role="tablist" aria-label={t("document.tabs")}>
         {state.sessions.map((session) => (
           <DocumentTab
@@ -343,12 +363,14 @@ function useEditorUpdates(editor: { subscribe(listener: () => void): () => void 
   useEffect(() => editor?.subscribe(update), [editor]);
 }
 
-function RhwpPanel({ editor, info, zoom, imeContext, onReload }: {
+function RhwpPanel({ editor, info, zoom, imeContext, onReload, onSaveAs, fileBusy }: {
   editor: RhwpEditorSession | null;
   info: SessionInfo;
   zoom: number;
   imeContext: ImeContext;
   onReload: () => void;
+  onSaveAs?: (() => void) | undefined;
+  fileBusy: boolean;
 }) {
   const { t } = useTranslation();
   useEditorUpdates(editor);
@@ -407,7 +429,7 @@ function RhwpPanel({ editor, info, zoom, imeContext, onReload }: {
           <>
             <span>{revisionText}</span>
             {latencyText && <span>{latencyText}</span>}
-            <SaveControls editor={editor} prefix="rhwp" />
+            <SaveControls editor={editor} prefix="rhwp" onSaveAs={onSaveAs} fileBusy={fileBusy} />
             <button
               type="button"
               className="document-bar__button"
@@ -452,12 +474,14 @@ function RhwpPanel({ editor, info, zoom, imeContext, onReload }: {
  * DOCX(WordCraft) 편집 패널(T008). 상태·진단 속성(검사·측정용)과 다시 불러오기·메모리 내보내기 검사를 보이고, ready면
  * 편집 표면을 붙인다. WebView를 다시 시작한 뒤 백엔드에 모델이 남은 세션은 자동으로 다시 붙는다(백엔드 모델이 권한).
  */
-function DocxPanel({ editor, info, zoom, imeContext, onReload }: {
+function DocxPanel({ editor, info, zoom, imeContext, onReload, onSaveAs, fileBusy }: {
   editor: DocxEditorSession;
   info: SessionInfo;
   zoom: number;
   imeContext: ImeContext;
   onReload: () => void;
+  onSaveAs?: (() => void) | undefined;
+  fileBusy: boolean;
 }) {
   const { t } = useTranslation();
   useEditorUpdates(editor);
@@ -523,7 +547,7 @@ function DocxPanel({ editor, info, zoom, imeContext, onReload }: {
             <span>{revisionText}</span>
             {latencyText && <span>{latencyText}</span>}
             {editor.rejectedOps > 0 && <span>{t("editor.docx.rejected", { count: editor.rejectedOps })}</span>}
-            <SaveControls editor={editor} prefix="docx" />
+            <SaveControls editor={editor} prefix="docx" onSaveAs={onSaveAs} fileBusy={fileBusy} />
             <button type="button" className="document-bar__button" data-testid="docx-roundtrip" onClick={() => void editor.roundTrip()}>
               {t("editor.docx.roundTrip")}
             </button>

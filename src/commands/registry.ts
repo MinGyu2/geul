@@ -10,12 +10,15 @@ import type { EngineId } from "../adapters/contract";
 import type { MessageKey } from "../language";
 import { RIBBON_TABS, type RibbonTabDefinition } from "../ribbon/definitions";
 
-/** 화면 배치·정보 명령(문서와 무관, src/commands/commands.ts의 UI 명령). */
+/** 문서와 무관하게 실행하는 화면 배치·정보 명령. */
 export type LayoutCommandId =
   | "view.navigation" | "view.properties" | "view.ribbon"
   | "view.theme.system" | "view.theme.light" | "view.theme.dark"
   | "view.zoomOut" | "view.zoomIn" | "view.zoomReset"
   | "help.about";
+
+/** Native file workflows implemented by the application. */
+export type FileCommandId = "file.new" | "file.open" | "file.saveAs";
 
 /** 열린 문서에 대한 명령 중 이 앱이 엔진에 연결한 것. */
 export type DocumentCommandId =
@@ -38,7 +41,7 @@ export type CommandScope =
 export interface CommandDefinition {
   id: string;
   labelKey: MessageKey;
-  kind: "layout" | "document" | "planned";
+  kind: "layout" | "document" | "file" | "planned";
   /** 문서 명령의 엔진별 지원. */
   engines?: Record<EngineId, EngineSupport>;
   /** 단축키(예: "Mod+Z", "Mod+Shift+Z", "Mod+F1"). 첫 것이 안내에 보인다. */
@@ -100,6 +103,12 @@ const LAYOUT_COMMANDS: Record<LayoutCommandId, Omit<CommandDefinition, "id" | "l
   "help.about": {},
 };
 
+const FILE_COMMANDS: Record<FileCommandId, Omit<CommandDefinition, "id" | "labelKey" | "kind">> = {
+  "file.new": { shortcuts: ["Mod+N"], scope: "global" },
+  "file.open": { shortcuts: ["Mod+O"], scope: "global" },
+  "file.saveAs": { shortcuts: ["Mod+Shift+S"], scope: "global" },
+};
+
 const label = (id: string) => `command.${id}` as MessageKey;
 
 type Declarations = Record<string, Omit<CommandDefinition, "id" | "labelKey" | "kind">>;
@@ -112,6 +121,7 @@ export function buildRegistry(
   tabs: readonly RibbonTabDefinition[],
   layout: Declarations,
   document: Declarations,
+  files: Declarations = {},
 ): { commands: ReadonlyMap<string, CommandDefinition>; problems: string[] } {
   const registry = new Map<string, CommandDefinition>();
   const problems: string[] = [];
@@ -125,7 +135,7 @@ export function buildRegistry(
     }
   }
   const connected = new Set<string>();
-  const declare = (kind: "layout" | "document", declarations: Declarations) => {
+  const declare = (kind: "layout" | "document" | "file", declarations: Declarations) => {
     for (const [id, definition] of Object.entries(declarations)) {
       if (connected.has(id)) {
         problems.push(`${id}: declared as more than one kind of command`);
@@ -139,10 +149,11 @@ export function buildRegistry(
   };
   declare("layout", layout);
   declare("document", document);
+  declare("file", files);
   return { commands: registry, problems };
 }
 
-const BUILT = buildRegistry(RIBBON_TABS, LAYOUT_COMMANDS, DOCUMENT_COMMANDS);
+const BUILT = buildRegistry(RIBBON_TABS, LAYOUT_COMMANDS, DOCUMENT_COMMANDS, FILE_COMMANDS);
 
 export const COMMANDS: ReadonlyMap<string, CommandDefinition> = BUILT.commands;
 

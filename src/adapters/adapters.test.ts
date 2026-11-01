@@ -176,6 +176,17 @@ describe("세션 투영", () => {
     expect(sessions.snapshot()).toEqual({ sessions: [docx, hwpx, hwp], activeId: 1 });
   });
 
+  it("취소한 native picker는 이전에 진행 중인 열기의 활성 선택 소유권을 빼앗지 않는다", async () => {
+    const { backend, take } = controlledBackend();
+    const sessions = new DocumentSessions(backend);
+    const opening = sessions.open("/a.docx");
+    const picker = sessions.beginOpen();
+    sessions.cancelOpen(picker);
+    take("open", "/a.docx").reply(ok(docx));
+    await opening;
+    expect(sessions.snapshot()).toEqual({ sessions: [docx], activeId: 1 });
+  });
+
   it("세션 A의 늦은 응답은 활성 문서가 B로 바뀐 뒤에도 A에만 반영되고, 옛 판은 새 판을 덮지 않는다", async () => {
     const { backend, take } = controlledBackend();
     const sessions = new DocumentSessions(backend);

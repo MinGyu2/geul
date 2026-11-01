@@ -11,8 +11,9 @@
 //   하나를 기다린다(백엔드 닫기·정리는 한 번).
 import type { DocumentBackend } from "../../adapters/backend";
 import type { DocxBackend } from "../../adapters/docx";
-import type { CloseOutcome, Result, SessionId, SessionInfo } from "../../adapters/contract";
+import type { CloseOutcome, Result, SaveOutcome, SessionId, SessionInfo } from "../../adapters/contract";
 import type { DocumentSessions } from "../../adapters/sessions";
+import type { FileDialogRequest, FilePort } from "./filePort";
 import { RhwpEditorSession } from "./rhwp/RhwpEditorSession";
 import { loadRhwpModule, type RhwpModule } from "./rhwp/rhwpModule";
 import type { WindowClosePort } from "./windowClose";
@@ -21,9 +22,13 @@ import { DocxEditorSession, type DecodeImage } from "./wordcraft/DocxEditorSessi
 /** 엔진별 편집 세션(세션마다 하나). */
 export type EngineEditor = RhwpEditorSession | DocxEditorSession;
 
+export type FileDialogText = Pick<FileDialogRequest, "title" | "accept" | "cancel">;
+
 export class DocumentWorkspace {
   private readonly editors = new Map<SessionId, EngineEditor>();
   private readonly closing = new Map<SessionId, Promise<Result<CloseOutcome>>>();
+  private readonly listeners = new Set<() => void>();
+  private fileOperation: "open" | "new" | "saveAs" | null = null;
   private started = false;
   private windowClosing = false;
 
@@ -34,8 +39,43 @@ export class DocumentWorkspace {
     readonly windowClose?: WindowClosePort,
     private readonly docxBackend?: DocxBackend,
     private readonly decodeImage?: DecodeImage,
+    private readonly filePort?: FilePort,
   ) {
-    sessions.subscribe(() => this.sync());
+    sessions.subscribe(() => {
+      this.sync();
+      this.emit();
+    });
+  }
+
+  readonly subscribe = (listener: () => void): (() => void) => {
+    this.listeners.add(listener);
+    return () => this.listeners.delete(listener);
+  };
+
+  readonly fileBusySnapshot = (): boolean => this.fileOperation !== null;
+
+  get fileBusy(): boolean {
+    return this.fileOperation !== null;
+  }
+
+  get supportsNativeFiles(): boolean {
+    return this.filePort !== undefined;
+  }
+
+  private emit() {
+    for (const listener of this.listeners) listener();
+  }
+
+  private beginFileOperation(operation: "open" | "new" | "saveAs"): boolean {
+    if (this.fileOperation !== null || this.windowClosing) return false;
+    this.fileOperation = operation;
+    this.emit();
+    return true;
+  }
+
+  private endFileOperation() {
+    this.fileOperation = null;
+    this.emit();
   }
 
   /** 앱 시작 때 한 번: 백엔드에 남은 세션(WebView 재시작)을 맞춘다. */
@@ -46,9 +86,93 @@ export class DocumentWorkspace {
   }
 
   async open(path: string): Promise<Result<SessionInfo>> {
-    const result = await this.sessions.open(path);
+    if (!this.beginFileOperation("open")) return { ok: false, error: { code: "Protocol" } };
+    try {
+      const result = await this.sessions.open(path);
+      this.loadOpened(result);
+      return result;
+    } finally {
+      this.endFileOperation();
+    }
+  }
+
+  /** Open through the OS chooser. Cancellation releases its ordering reservation and changes no session. */
+  async openDialog(text: FileDialogText): Promise<Result<SessionInfo> | null> {
+    if (!this.beginFileOperation("open")) return { ok: false, error: { code: "Protocol" } };
+    const ticket = this.sessions.beginOpen();
+    try {
+      if (!this.filePort) {
+        this.sessions.cancelOpen(ticket);
+        return { ok: false, error: { code: "Protocol" } };
+      }
+      const chosen = await this.filePort.chooseFile({ mode: "open", ...text });
+      if (!chosen.ok) {
+        this.sessions.cancelOpen(ticket);
+        return chosen;
+      }
+      if (chosen.value === null) {
+        this.sessions.cancelOpen(ticket);
+        return null;
+      }
+      return this.acceptAndLoad(ticket, await this.backend.open(chosen.value));
+    } finally {
+      this.endFileOperation();
+    }
+  }
+
+  /** Create and open a real blank DOCX model. Other formats have no supported creation path. */
+  async newDocx(text: FileDialogText): Promise<Result<SessionInfo> | null> {
+    if (!this.beginFileOperation("new")) return { ok: false, error: { code: "Protocol" } };
+    const ticket = this.sessions.beginOpen();
+    try {
+      if (!this.filePort) {
+        this.sessions.cancelOpen(ticket);
+        return { ok: false, error: { code: "Protocol" } };
+      }
+      const chosen = await this.filePort.chooseFile({ mode: "save", format: "docx", ...text });
+      if (!chosen.ok) {
+        this.sessions.cancelOpen(ticket);
+        return chosen;
+      }
+      if (chosen.value === null) {
+        this.sessions.cancelOpen(ticket);
+        return null;
+      }
+      const created = await this.filePort.createDocx(chosen.value);
+      return this.acceptAndLoad(ticket, created);
+    } finally {
+      this.endFileOperation();
+    }
+  }
+
+  /** Save the captured editor to a new destination, keeping engine checks and session identity in the save path. */
+  async saveAs(sessionId: SessionId, text: FileDialogText): Promise<Result<SaveOutcome> | null> {
+    if (!this.beginFileOperation("saveAs")) return { ok: false, error: { code: "Protocol" } };
+    const session = this.sessions.get(sessionId);
+    const editor = session ? this.anyEditorFor(sessionId) : null;
+    try {
+      if (!this.filePort) return { ok: false, error: { code: "Protocol" } };
+      if (!session || !editor) return { ok: false, error: { code: "UnknownSession", sessionId } };
+      const destination = await this.filePort.chooseFile({ mode: "save", format: session.format, ...text });
+      if (!destination.ok) return destination;
+      if (destination.value === null) return null;
+      if (this.sessions.get(sessionId) === null || this.editors.get(sessionId) !== editor) {
+        return { ok: false, error: { code: "StaleSession", sessionId } };
+      }
+      return await editor.save(destination.value);
+    } finally {
+      this.endFileOperation();
+    }
+  }
+
+  private acceptAndLoad(ticket: ReturnType<DocumentSessions["beginOpen"]>, result: Result<SessionInfo>): Result<SessionInfo> {
+    const accepted = this.sessions.acceptOpen(ticket, result);
+    this.loadOpened(accepted);
+    return accepted;
+  }
+
+  private loadOpened(result: Result<SessionInfo>) {
     if (result.ok) void this.anyEditorFor(result.value.sessionId)?.load();
-    return result;
   }
 
   /** rhwp 세션의 편집 세션(없으면 만든다). 목록에 없거나 rhwp가 아니면 null. */

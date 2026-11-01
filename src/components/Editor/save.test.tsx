@@ -1,8 +1,8 @@
 // T009 편집 세션의 저장: 확정한 판만, 사전 검사가 safe일 때만 저장하고, 저장한 판 뒤의 편집은 저장하지 않은 편집으로 남는다.
 // 거부·실패는 원본을 바꾸지 않고 이유를 보인다. 가짜 백엔드는 Rust 저장 서비스의 계약을 흉내 낸다(실제 판정·교체는
 // src-tauri/src/services/save/의 시험과 tests/roundtrip/, 실제 앱 시험).
-import { act, render } from "@testing-library/react";
-import { describe, expect, it } from "vitest";
+import { act, fireEvent, render } from "@testing-library/react";
+import { describe, expect, it, vi } from "vitest";
 import type { DocumentError, Result, SaveCheck, SaveOutcome } from "../../adapters/contract";
 import { DocumentSessions } from "../../adapters/sessions";
 import { LanguageProvider } from "../../language/LanguageContext";
@@ -224,6 +224,31 @@ describe("저장 단추와 결과", () => {
       </LanguageProvider>,
     );
   };
+
+  it("offers Save As without bypassing the editor save path and disables it during another file operation", () => {
+    const editor: SaveEditor = {
+      saveState: { kind: "idle" },
+      saveCheck: null,
+      save: async () => ({ ok: false, error: { code: "Internal" } }),
+      checkSave: async () => ({ ok: false, error: { code: "Internal" } }),
+    };
+    const onSaveAs = vi.fn();
+    const view = render(
+      <LanguageProvider language="ko" onLanguageChange={() => {}}>
+        <SaveControls editor={editor} prefix="docx" onSaveAs={onSaveAs} />
+      </LanguageProvider>,
+    );
+    fireEvent.click(view.getByTestId("docx-save-as"));
+    expect(onSaveAs).toHaveBeenCalledOnce();
+    view.unmount();
+    const busy = render(
+      <LanguageProvider language="ko" onLanguageChange={() => {}}>
+        <SaveControls editor={editor} prefix="docx" onSaveAs={onSaveAs} fileBusy />
+      </LanguageProvider>,
+    );
+    expect(busy.getByTestId("docx-save-as")).toBeDisabled();
+    expect(busy.getByTestId("docx-save")).toBeDisabled();
+  });
 
   it("막힌 저장은 이유와 부분 이름을 보이고 원본이 그대로라고 알린다", () => {
     const preservation = { outcome: "unsafe" as const, findings: [{ code: "partMissing" as const, part: "customXml/item1.xml" }, { code: "reopenMismatch" as const }] };

@@ -172,6 +172,18 @@ pub fn save(
     report: Option<&Value>,
     reopen_equal: bool,
 ) -> Result<SaveOutcome, DocumentError> {
+    save_to(registry, ticket, limits, output, report, reopen_equal, None)
+}
+
+pub fn save_to(
+    registry: &SessionRegistry,
+    ticket: &SaveTicket<'_>,
+    limits: &Limits,
+    output: &[u8],
+    report: Option<&Value>,
+    reopen_equal: bool,
+    destination: Option<&std::path::Path>,
+) -> Result<SaveOutcome, DocumentError> {
     if output.len() as u64 > limits.max_file_bytes {
         return Err(DocumentError::ResourceLimit {
             limit: crate::document::LimitKind::FileSize,
@@ -201,9 +213,17 @@ pub fn save(
         });
     }
     crate::document::resources::active()?;
-    let target = ticket.source.load.identity.path().to_path_buf();
+    let original_target = ticket.source.load.identity.path();
+    let target = match destination {
+        Some(path) => crate::services::files::destination(path, format)?,
+        None => original_target.to_path_buf(),
+    };
     crate::document::resources::charge(crate::document::resources::Category::BeforePublication, 0)?;
-    let mut staged = publish::stage(&target, output)?;
+    let mut staged = if destination.is_some() {
+        publish::stage_new(&target, output, Some(original_target))?
+    } else {
+        publish::stage(&target, output)?
+    };
     // 쓰는 동안 원본이 바뀌었는지 내용으로 다시 확인한다(같은 크기·수정 시각으로 바뀐 경우). 교체 직전의 객체·지문
     // 확인은 기록 잠금 안에서 한다.
     read_original(&ticket.source, limits)?;
@@ -220,7 +240,11 @@ pub fn save(
         }
         crate::document::resources::active()?;
         let published = crate::document::resources::publication(|| {
-            publish::publish(&mut staged, identity.path())
+            if destination.is_some() {
+                publish::publish_new(&mut staged, &target)
+            } else {
+                publish::publish(&mut staged, identity.path())
+            }
         })?;
         durable = published.durable;
         Ok(published)

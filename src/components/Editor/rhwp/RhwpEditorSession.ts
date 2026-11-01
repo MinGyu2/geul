@@ -1512,7 +1512,7 @@ export class RhwpEditorSession implements DocumentCommandTarget {
    * 손실 보고를 함께 보내고, 백엔드가 원본을 다시 확인해 교체한다. 저장 중에도 편집은 이어 갈 수 있으며, 그 편집은 저장한
    * 판 뒤의 것이라 저장하지 않은 편집으로 남는다.
    */
-  async save(): Promise<Result<SaveOutcome>> {
+  async save(destination?: string): Promise<Result<SaveOutcome>> {
     const fail = (error: DocumentError): Result<SaveOutcome> => {
       if (this.owns(epoch)) this.setSave({ kind: "failed", error });
       return { ok: false, error };
@@ -1542,7 +1542,7 @@ export class RhwpEditorSession implements DocumentCommandTarget {
       this.setSave({ kind: "saving" });
       const exported = this.exportAndCompare(format);
       if (!exported?.bytes) return fail({ code: "SaveFailure", stage: "export" });
-      const result = await this.backend.save(this.sessionId, generation, revision, exported.bytes, exported.contentLoss, exported.reopen);
+      const result = await this.backend.save(this.sessionId, generation, revision, exported.bytes, exported.contentLoss, exported.reopen, destination);
       if (!this.owns(epoch)) return result;
       if (!result.ok) return fail(result.error);
       this.sessions.applyUpdate(result.value.session);

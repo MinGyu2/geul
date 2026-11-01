@@ -196,6 +196,14 @@ impl SessionRegistry {
 
     /// 형식을 확정한 파일로 새 세션을 만든다.
     pub fn register(&self, file: IdentifiedFile) -> Result<SessionInfo, DocumentError> {
+        self.register_created(file, true)
+    }
+
+    pub fn register_created(
+        &self,
+        file: IdentifiedFile,
+        durable: bool,
+    ) -> Result<SessionInfo, DocumentError> {
         let mut inner = self.lock()?;
         if let Some(existing) = inner
             .sessions
@@ -220,7 +228,7 @@ impl SessionRegistry {
             revision: 0,
             state: SessionState::Identified,
             display_name: file.display_name,
-            dirty: false,
+            dirty: !durable,
             sequence: 0,
             load_generation: 0,
         };
@@ -234,7 +242,7 @@ impl SessionRegistry {
                 content_hash: None,
                 preflight: None,
                 saving: None,
-                unconfirmed: false,
+                unconfirmed: !durable,
             },
         );
         Ok(info)
@@ -501,6 +509,11 @@ impl SessionRegistry {
             return Err(DocumentError::FileConflict);
         }
         let published = publish(&session.identity, &session.fingerprint)?;
+        if session.identity.path() != published.identity.path() {
+            if let Some(name) = published.identity.path().file_name() {
+                session.info.display_name = name.to_string_lossy().into_owned();
+            }
+        }
         session.identity = published.identity;
         session.fingerprint = published.fingerprint;
         session.content_hash = Some(new_hash);

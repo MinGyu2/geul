@@ -29,6 +29,13 @@ export type SessionsAction =
   | { type: "selected"; sessionId: SessionId }
   | { type: "closed"; sessionId: SessionId };
 
+/** An open intent captured before a native chooser is shown. */
+export interface OpenSessionTicket {
+  readonly request: number;
+  readonly previousRequest: number;
+  readonly selections: number;
+}
+
 export const EMPTY_SESSIONS: SessionsState = { sessions: [], activeId: null };
 
 export function reduceSessions(state: SessionsState, action: SessionsAction): SessionsState {
@@ -64,6 +71,7 @@ export class DocumentSessions {
   private state: SessionsState = EMPTY_SESSIONS;
   private readonly listeners = new Set<() => void>();
   private openRequests = 0;
+  private latestOpenRequest = 0;
   private selections = 0;
 
   constructor(private readonly backend: DocumentBackend) {}
@@ -83,10 +91,26 @@ export class DocumentSessions {
   }
 
   async open(path: string): Promise<Result<SessionInfo>> {
+    const ticket = this.beginOpen();
+    return this.acceptOpen(ticket, await this.backend.open(path));
+  }
+
+  /** Reserve ordering before an async native picker so newer opens/selections keep ownership. */
+  beginOpen(): OpenSessionTicket {
+    const previousRequest = this.latestOpenRequest;
     const request = ++this.openRequests;
-    const selections = this.selections;
-    const result = await this.backend.open(path);
-    const activate = request === this.openRequests && selections === this.selections;
+    this.latestOpenRequest = request;
+    return { request, previousRequest, selections: this.selections };
+  }
+
+  /** A cancelled picker did not open anything; release its reservation when it is still newest. */
+  cancelOpen(ticket: OpenSessionTicket): void {
+    if (this.latestOpenRequest === ticket.request) this.latestOpenRequest = ticket.previousRequest;
+  }
+
+  /** Adopt an opened or backend-created session using the same ordering and validation rules. */
+  acceptOpen(ticket: OpenSessionTicket, result: Result<SessionInfo>): Result<SessionInfo> {
+    const activate = ticket.request === this.latestOpenRequest && ticket.selections === this.selections;
     if (result.ok) {
       this.dispatch({ type: "opened", session: result.value, activate });
     } else if (result.error.code === "AlreadyOpen" && activate) {

@@ -36,6 +36,6 @@ describe("리본 정의", () => {
       });
     }
     expect(commands.filter((command) => isUiCommand(command.id)).map((command) => command.id.split(".")[0]))
-      .toSatisfy((prefixes: string[]) => prefixes.every((prefix) => prefix === "view" || prefix === "help"));
+      .toSatisfy((prefixes: string[]) => prefixes.every((prefix) => prefix === "file" || prefix === "view" || prefix === "help"));
   });
 });

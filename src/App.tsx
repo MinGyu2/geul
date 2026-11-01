@@ -1,8 +1,8 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useReducer, useRef, useState, useSyncExternalStore, type CSSProperties } from "react";
-import type { CommandContext } from "./commands/commands";
+import type { CommandContext, FileCommandActions } from "./commands/commands";
 import { handleShortcut } from "./commands/shortcuts";
 import type { DocumentWorkspace, EngineEditor } from "./components/Editor/documentWorkspace";
-import { Editor } from "./components/Editor/Editor";
+import { documentErrorMessage, Editor } from "./components/Editor/Editor";
 import { createTauriWorkspace } from "./components/Editor/tauriWorkspace";
 import { NavigationPanel } from "./components/NavigationPanel/NavigationPanel";
 import { PropertiesPanel } from "./components/PropertiesPanel/PropertiesPanel";
@@ -83,6 +83,7 @@ export default function App({ initialState, initialLanguage, settingsStore = def
 }
 
 const NO_SUBSCRIBE = () => () => {};
+const NO_FILE_BUSY = () => false;
 
 /**
  * 활성 문서의 편집 세션(명령 대상). 활성 세션은 DocumentSessions(백엔드 투영)가 정하고, 편집 세션은 작업 공간이 세션마다 하나
@@ -115,9 +116,43 @@ function Workspace({ layout, dispatch, message, notify, documents }: WorkspacePr
   const activeEditor = useActiveDocument(documents);
   // 확인 창이 열린 동안은 어떤 명령도 실행하지 않는다(T010 안정화 P1-B, Editor가 창의 표시를 알림).
   const [modal, setModal] = useState(false);
+  const fileBusy = useSyncExternalStore(documents?.subscribe ?? NO_SUBSCRIBE, documents?.fileBusySnapshot ?? NO_FILE_BUSY);
+  const fileActions = useMemo<FileCommandActions | undefined>(() => {
+    if (!documents?.supportsNativeFiles) return undefined;
+    const handleOpen = async () => {
+      const result = await documents.openDialog({ title: t("document.openTitle"), accept: t("document.open"), cancel: t("document.cancel") });
+      if (result === null) return;
+      if (result.ok) notify({ key: "document.opened", vars: { name: result.value.displayName } });
+      else notify(documentErrorMessage(result.error));
+    };
+    const handleNew = async () => {
+      const result = await documents.newDocx({ title: t("document.newDocxTitle"), accept: t("document.create"), cancel: t("document.cancel") });
+      if (result === null) return;
+      if (result.ok) notify({ key: "document.created", vars: { name: result.value.displayName } });
+      else if (result.error.code === "FileConflict") notify({ key: "document.newConflict" });
+      else notify(documentErrorMessage(result.error));
+    };
+    const handleSaveAs = async (sessionId: number | null) => {
+      if (sessionId === null) return;
+      const editor = documents.anyEditorFor(sessionId);
+      const priorSaveState = editor?.saveState;
+      const result = await documents.saveAs(sessionId, {
+        title: t("document.saveAsTitle"), accept: t("document.save"), cancel: t("document.cancel"),
+      });
+      if (result === null || result.ok) return;
+      if (result.error.code === "FileConflict") notify({ key: "document.saveAsConflict" });
+      else if (!editor || editor.saveState === priorSaveState) notify(documentErrorMessage(result.error));
+    };
+    return {
+      busy: fileBusy,
+      open: () => { void handleOpen(); },
+      newDocument: () => { void handleNew(); },
+      saveAs: (sessionId) => { void handleSaveAs(sessionId); },
+    };
+  }, [documents, fileBusy, notify, t]);
   const context = useMemo<CommandContext>(
-    () => ({ layout, dispatch, notify, document: activeEditor, modal }),
-    [layout, dispatch, notify, activeEditor, modal],
+    () => ({ layout, dispatch, notify, document: activeEditor, modal, files: fileActions }),
+    [layout, dispatch, notify, activeEditor, modal, fileActions],
   );
 
   // 단축키(T010): 레지스트리가 정한 명령만. 최신 문맥을 쓰도록 ref로 넘긴다(리스너는 한 번만 붙임).
@@ -172,7 +207,7 @@ function Workspace({ layout, dispatch, message, notify, documents }: WorkspacePr
             {splitter("navigation")}
           </>
         )}
-        <Editor zoom={layout.zoom} workspace={documents} notify={notify} onModalChange={setModal} />
+        <Editor zoom={layout.zoom} workspace={documents} fileActions={fileActions} notify={notify} onModalChange={setModal} />
         {layout.propertiesVisible && (
           <>
             {splitter("properties")}

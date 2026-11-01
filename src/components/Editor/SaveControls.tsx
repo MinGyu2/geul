@@ -38,7 +38,9 @@ function Findings({ preservation }: { preservation: Preservation }) {
   );
 }
 
-export function SaveControls({ editor, prefix }: { editor: SaveEditor; prefix: "rhwp" | "docx" }) {
+export function SaveControls({
+  editor, prefix, onSaveAs, fileBusy = false,
+}: { editor: SaveEditor; prefix: "rhwp" | "docx"; onSaveAs?: (() => void) | undefined; fileBusy?: boolean | undefined }) {
   const { t } = useTranslation();
   const state = editor.saveState;
   const check = editor.saveCheck?.check ?? null;
@@ -53,10 +55,22 @@ export function SaveControls({ editor, prefix }: { editor: SaveEditor; prefix: "
   const detail = shown ? detailKey(shown) : null;
   return (
     <>
-      <button type="button" className="document-bar__button" data-testid={`${prefix}-save`} disabled={busy} onClick={() => void editor.save()}>
+      <button type="button" className="document-bar__button" data-testid={`${prefix}-save`} disabled={busy || fileBusy} onClick={() => void editor.save()}>
         {t("editor.save.button")}
       </button>
-      <button type="button" className="document-bar__button" data-testid={`${prefix}-save-check`} disabled={busy} onClick={() => void editor.checkSave()}>
+      {onSaveAs && (
+        <button
+          type="button"
+          className="document-bar__button"
+          data-testid={`${prefix}-save-as`}
+          title={t("document.saveAsHint")}
+          disabled={busy || fileBusy}
+          onClick={onSaveAs}
+        >
+          {t("document.saveAs")}
+        </button>
+      )}
+      <button type="button" className="document-bar__button" data-testid={`${prefix}-save-check`} disabled={busy || fileBusy} onClick={() => void editor.checkSave()}>
         {t("editor.save.check")}
       </button>
       <output

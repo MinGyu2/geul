@@ -208,6 +208,40 @@ pub async fn document_save(
         .await
 }
 
+#[tauri::command]
+pub async fn document_save_as(
+    state: State<'_, DocumentState>,
+    request: Request<'_>,
+) -> Result<SaveOutcome, DocumentError> {
+    let (frame, admission) = admitted_frame(raw(request.body())?, &state)?;
+    state.frontend_model(frame.session_id)?;
+    let meta = exactly(&frame.meta, &["contentLoss", "reopen", "destination"])
+        .ok_or(DocumentError::InvalidRequest)?;
+    let destination = meta
+        .get("destination")
+        .and_then(Value::as_str)
+        .ok_or(DocumentError::InvalidRequest)?
+        .to_owned();
+    let report = meta.get("contentLoss").cloned().unwrap_or(Value::Null);
+    let equal = meta.get("reopen").is_some_and(reopen_equal);
+    let registry = state.registry().clone();
+    let limits = state.limits();
+    state
+        .run_admitted(admission, move || {
+            let ticket = registry.begin_save(frame.session_id, frame.generation, frame.revision)?;
+            service::save_to(
+                &registry,
+                &ticket,
+                &limits,
+                &frame.payload,
+                Some(&report),
+                equal,
+                Some(std::path::Path::new(&destination)),
+            )
+        })
+        .await
+}
+
 #[cfg(test)]
 mod admission_tests {
     use super::*;

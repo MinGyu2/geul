@@ -53,6 +53,7 @@ describe("명령 레지스트리", () => {
     const ribbon = RIBBON_TABS.flatMap((tab) => tab.groups.flatMap((group) => group.commands.map((command) => command.id)));
     for (const id of ribbon) expect(COMMANDS.has(id)).toBe(true);
     for (const id of DOCUMENT_IDS) expect(commandDefinition(id)?.kind).toBe("document");
+    for (const id of ["file.new", "file.open", "file.saveAs"]) expect(commandDefinition(id)?.kind).toBe("file");
     for (const definition of COMMANDS.values()) expect(isMessageKey(definition.labelKey)).toBe(true);
     // 문서 명령은 두 엔진의 지원을 모두 밝힌다.
     for (const id of DOCUMENT_IDS) expect(Object.keys(commandDefinition(id)!.engines!).sort()).toEqual(["rhwp", "wordcraft"]);
@@ -102,6 +103,9 @@ describe("명령 레지스트리", () => {
     expect(commandForShortcut("Mod+Shift+KeyZ")?.id).toBe("edit.redo");
     expect(commandForShortcut("Mod+KeyB")?.id).toBe("format.bold");
     expect(commandForShortcut("Mod+KeyS")?.id).toBe("file.save");
+    expect(commandForShortcut("Mod+KeyO")?.id).toBe("file.open");
+    expect(commandForShortcut("Mod+KeyN")?.id).toBe("file.new");
+    expect(commandForShortcut("Mod+Shift+KeyS")?.id).toBe("file.saveAs");
     expect(commandForShortcut("Mod+F1")?.id).toBe("view.ribbon");
     // 붙여넣기·복사·전체 선택은 레지스트리 몫이 아니다(편집 표면·브라우저 기본 동작).
     for (const key of ["Mod+KeyC", "Mod+KeyV", "Mod+KeyX", "Mod+KeyA"]) expect(commandForShortcut(key)).toBeUndefined();
@@ -193,6 +197,31 @@ describe("가용성 결정", () => {
 });
 
 describe("명령 실행", () => {
+  it("native 파일 명령은 같은 작업 흐름을 호출하고 작업 중 중복 실행을 막는다", () => {
+    const files = { busy: false, open: vi.fn(), newDocument: vi.fn(), saveAs: vi.fn() };
+    const { target } = fakeTarget(snapshot());
+    const value: CommandContext = { layout: initialLayout, dispatch: () => {}, notify: () => {}, document: target, files };
+    for (const id of ["file.open", "file.new", "file.saveAs"]) expect(commandState(id, value)).toEqual({ available: true });
+    expect(executeCommand("file.open", undefined, value)).toBe(true);
+    expect(executeCommand("file.new", undefined, value)).toBe(true);
+    expect(executeCommand("file.saveAs", undefined, value)).toBe(true);
+    expect(files.open).toHaveBeenCalledOnce();
+    expect(files.newDocument).toHaveBeenCalledOnce();
+    expect(files.saveAs).toHaveBeenCalledWith(target.sessionId);
+
+    const busy: CommandContext = { ...value, files: { ...files, busy: true } };
+    expect(commandState("file.open", busy)).toEqual({ available: false, reason: "dialogOpen" });
+    expect(commandState("file.save", busy)).toEqual({ available: false, reason: "dialogOpen" });
+    expect(executeCommand("file.open", "command.file.open", busy)).toBe(false);
+  });
+
+  it("native New/Open without a connected file port report unavailable rather than succeeding", () => {
+    const { value, notices } = context(null);
+    expect(commandState("file.open", value)).toEqual({ available: false, reason: "notImplemented" });
+    expect(executeCommand("file.new", "command.file.new", value)).toBe(false);
+    expect(notices).toHaveLength(1);
+  });
+
   it("쓸 수 있는 문서 명령만 활성 세션에 보낸다", () => {
     const { target, executed } = fakeTarget(snapshot({ history: { undo: true, redo: false } }));
     const { value, notices } = context(target);

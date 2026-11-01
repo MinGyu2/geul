@@ -462,6 +462,16 @@ pub(crate) async fn save(
     generation: u64,
     revision: u64,
 ) -> Result<SaveOutcome, DocumentError> {
+    save_to(state, session_id, generation, revision, None).await
+}
+
+async fn save_to(
+    state: &DocumentState,
+    session_id: SessionId,
+    generation: u64,
+    revision: u64,
+    destination: Option<std::path::PathBuf>,
+) -> Result<SaveOutcome, DocumentError> {
     let info = wordcraft_session(state.registry(), session_id)?;
     check_ready(&info, generation)?;
     let model =
@@ -503,7 +513,15 @@ pub(crate) async fn save(
                 crate::document::resources::Category::Payload,
                 output.capacity(),
             )?;
-            service::save(&registry, &ticket, &limits, &output, None, reopen_equal)
+            service::save_to(
+                &registry,
+                &ticket,
+                &limits,
+                &output,
+                None,
+                reopen_equal,
+                destination.as_deref(),
+            )
         })
         .await
 }
@@ -525,4 +543,22 @@ pub async fn docx_save(
     revision: u64,
 ) -> Result<SaveOutcome, DocumentError> {
     save(&state, session_id, load_generation, revision).await
+}
+
+#[tauri::command]
+pub async fn docx_save_as(
+    state: State<'_, DocumentState>,
+    session_id: SessionId,
+    load_generation: u64,
+    revision: u64,
+    destination: String,
+) -> Result<SaveOutcome, DocumentError> {
+    save_to(
+        &state,
+        session_id,
+        load_generation,
+        revision,
+        Some(destination.into()),
+    )
+    .await
 }

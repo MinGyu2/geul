@@ -40,6 +40,7 @@ wordcraft-engine = { path = "../external/wordcraft/crates/engine" }
 
 [target.'cfg(any(target_os = "linux", target_os = "dragonfly", target_os = "freebsd", target_os = "netbsd", target_os = "openbsd"))'.dependencies]
 # wry가 끈 WebView IME preedit을 되돌린다(src/ime.rs). tauri가 이미 쓰는 판이며 기능만 명시한다.
+gtk = "=0.18.2"
 webkit2gtk = { version = "=2.0.2", features = ["v2_28"] }
 
 [target.'cfg(unix)'.dependencies]
