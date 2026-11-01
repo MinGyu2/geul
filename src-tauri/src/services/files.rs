@@ -61,17 +61,27 @@ pub async fn document_new(
     let limits: Limits = state.limits();
     let registry = state.registry().clone();
     state
-        .run_blocking(move || {
-            let bytes = blank_docx()?;
-            let mut staged = publish::stage_new(&target, &bytes, None)?;
-            let published = publish::publish_new(&mut staged, &target)?;
-            let file = crate::document::identify(
-                target.to_str().ok_or(DocumentError::InvalidRequest)?,
-                &limits,
-            )?;
-            registry.register_created(file, published.durable)
-        })
+        .run_blocking(move || create_docx(&registry, &target, &limits))
         .await
+}
+
+/// Publication and registration have separate outcomes: once published, never report "nothing written".
+pub fn create_docx(
+    registry: &crate::document::SessionRegistry,
+    target: &Path,
+    limits: &Limits,
+) -> Result<SessionInfo, DocumentError> {
+    let bytes = blank_docx()?;
+    let mut staged = publish::stage_new(target, &bytes, None)?;
+    let published = publish::publish_new(&mut staged, target)?;
+    let register = || {
+        let file = crate::document::identify(
+            target.to_str().ok_or(DocumentError::InvalidRequest)?,
+            limits,
+        )?;
+        registry.register_created(file, published.durable)
+    };
+    register().map_err(|_| DocumentError::FilePublishedUnregistered)
 }
 
 #[cfg(target_os = "linux")]
@@ -154,4 +164,28 @@ pub async fn document_file_dialog() -> Result<Option<String>, DocumentError> {
     Err(DocumentError::SaveUnsupported {
         reason: crate::document::SaveUnsupportedReason::Platform,
     })
+}
+
+#[cfg(all(test, target_os = "linux"))]
+mod tests {
+    use super::*;
+    use crate::document::{testutil::TempDir, SessionRegistry};
+
+    #[test]
+    fn published_docx_with_full_registry_has_distinct_error_and_remains_openable() {
+        let dir = TempDir::new();
+        let target = dir.path().join("new.docx");
+        let registry = SessionRegistry::new(0);
+        assert_eq!(
+            create_docx(&registry, &target, &Limits::default()).unwrap_err(),
+            DocumentError::FilePublishedUnregistered
+        );
+        let bytes = std::fs::read(&target).unwrap();
+        assert!(crate::adapters::wordcraft::engine::DocxModel::open(&bytes).is_ok());
+        assert_eq!(
+            create_docx(&registry, &target, &Limits::default()).unwrap_err(),
+            DocumentError::FileConflict
+        );
+        assert_eq!(std::fs::read(&target).unwrap(), bytes);
+    }
 }

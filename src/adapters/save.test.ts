@@ -7,6 +7,12 @@ import { parseBackendError, parsePreservation, parseSaveCheck, parseSaveOutcome 
 const session = { sessionId: 3, format: "hwp", engine: "rhwp", revision: 2, state: "ready", displayName: "a.hwp", dirty: false, sequence: 9, loadGeneration: 1 };
 
 describe("저장 응답 검사", () => {
+  it("distinguishes published files from ordinary no-write failures", () => {
+    for (const code of ["FilePublishedUnconfirmed", "FilePublishedUnregistered"]) {
+      expect(parseBackendError({ code })).toEqual({ code });
+      expect(parseBackendError({ code, path: "/private/path" })).toBeNull();
+    }
+  });
   it("보존 판정은 계약 모양만 받는다(safe는 근거가 없을 때만)", () => {
     expect(parsePreservation({ outcome: "safe", findings: [] })).toEqual({ outcome: "safe", findings: [] });
     expect(parsePreservation({ outcome: "unsafe", findings: [{ code: "partMissing", part: "customXml/item1.xml" }, { code: "reopenMismatch" }] }))

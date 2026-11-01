@@ -12,6 +12,14 @@ const validCandidate = {
 };
 
 describe("recovery IPC candidate parsing", () => {
+  it("accepts a Linux backslash filename without rejecting the candidate list", async () => {
+    const candidate = { ...validCandidate, name: "draft\\copy.docx" };
+    expect(parseRecoveryCandidate(candidate)).toEqual(candidate);
+    const port = createTauriRecoveryPort(async () => [candidate, validCandidate].map((item, i) => ({ ...item, id: `${i.toString().padStart(32, "0")}.recovery` })));
+    const result = await port.list();
+    expect(result.ok).toBe(true);
+    if (result.ok) expect(result.value).toHaveLength(2);
+  });
   it("accepts only bounded metadata for a valid private recovery candidate", () => {
     expect(parseRecoveryCandidate(validCandidate)).toEqual(validCandidate);
     expect(parseRecoveryCandidate({ ...validCandidate, name: "/home/user/draft.docx" })).toBeNull();

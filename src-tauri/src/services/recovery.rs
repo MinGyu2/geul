@@ -95,7 +95,7 @@ impl Drop for DirectoryLock<'_> {
 #[cfg(target_os = "linux")]
 #[derive(Default)]
 struct Memory {
-    ids: std::collections::BTreeMap<(u64, u64), String>,
+    ids: std::collections::BTreeMap<(u64, u64), Vec<String>>,
     forgotten: std::collections::BTreeSet<u64>,
 }
 
@@ -300,8 +300,19 @@ impl RecoveryStore {
         }
         let dir = self.directory()?;
         let key = (ticket.session_id, ticket.generation);
-        let id = match ids.ids.get(&key) {
-            Some(id) => id.clone(),
+        let current = ids
+            .ids
+            .get(&key)
+            .and_then(|history| history.last())
+            .filter(|id| {
+                // Preserve an orphaned/partial pending record; retry under a fresh opaque ID.
+                // Keep every ID owned by this session so explicit forget can still remove them.
+                std::fs::symlink_metadata(Self::base(&dir).join(format!("{id}.pending")))
+                    .is_err_and(|e| e.kind() == std::io::ErrorKind::NotFound)
+            })
+            .cloned();
+        let id = match current {
+            Some(id) => id,
             None => {
                 let mut random = [0u8; 16];
                 let mut at = 0;
@@ -323,7 +334,7 @@ impl RecoveryStore {
                     at += n as usize;
                 }
                 let id: String = random.iter().map(|b| format!("{b:02x}")).collect();
-                ids.ids.insert(key, id.clone());
+                ids.ids.entry(key).or_default().push(id.clone());
                 id
             }
         };
@@ -441,25 +452,44 @@ impl RecoveryStore {
 
     pub fn saved(&self, ticket: &SaveTicket<'_>) {
         let Ok(ids) = self.ids.lock() else { return };
-        let Some(id) = ids.ids.get(&(ticket.session_id, ticket.generation)) else {
+        let Some(history) = ids.ids.get(&(ticket.session_id, ticket.generation)) else {
             return;
         };
         let Ok(dir) = self.directory() else { return };
-        let name = format!("{id}.recovery");
-        if Self::read(&dir, &name).is_ok_and(|(h, _)| h.revision <= ticket.revision) {
-            let _ = self.discard(&name);
+        for id in history {
+            let name = format!("{id}.recovery");
+            if Self::read(&dir, &name).is_ok_and(|(h, _)| h.revision <= ticket.revision) {
+                let _ = self.discard(&name);
+            }
         }
     }
 
-    pub fn forget_session(&self, session_id: u64) {
-        let Ok(mut ids) = self.ids.lock() else { return };
+    pub fn forget_session(&self, session_id: u64) -> Result<(), DocumentError> {
+        let mut ids = self.ids.lock().map_err(|_| failure())?;
+        let mut failed = false;
         ids.forgotten.insert(session_id);
-        for ((session, _), id) in ids.ids.iter() {
+        for ((session, _), history) in ids.ids.iter() {
             if *session == session_id {
-                for suffix in ["pending", "recovery"] {
-                    let _ = self.discard(&format!("{id}.{suffix}"));
+                for id in history {
+                    for suffix in ["pending", "recovery"] {
+                        let name = format!("{id}.{suffix}");
+                        let dir = self.directory()?;
+                        match std::fs::symlink_metadata(Self::base(&dir).join(&name)) {
+                            Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
+                            _ => {
+                                if self.discard(&name).is_err() {
+                                    failed = true;
+                                }
+                            }
+                        }
+                    }
                 }
             }
+        }
+        if failed {
+            Err(failure())
+        } else {
+            Ok(())
         }
     }
 
@@ -480,7 +510,7 @@ impl RecoveryStore {
         let mut staged = super::save::publish::stage_new(&target, &bytes, None)?;
         let published = super::save::publish::publish_new(&mut staged, &target)?;
         if !published.durable {
-            return Err(failure());
+            return Err(DocumentError::FilePublishedUnconfirmed);
         }
         // Candidate remains available until explicit discard; failed/repeated restores never consume it.
         Ok(target)
@@ -502,7 +532,9 @@ impl RecoveryStore {
         Err(failure())
     }
     pub fn saved(&self, _ticket: &SaveTicket<'_>) {}
-    pub fn forget_session(&self, _session_id: u64) {}
+    pub fn forget_session(&self, _session_id: u64) -> Result<(), DocumentError> {
+        Err(failure())
+    }
     pub fn discard(&self, _id: &str) -> Result<(), DocumentError> {
         Err(failure())
     }
@@ -536,10 +568,7 @@ pub async fn recovery_forget_session(
 ) -> Result<(), DocumentError> {
     let store = store.inner().clone();
     state
-        .run_blocking(move || {
-            store.forget_session(session_id);
-            Ok(())
-        })
+        .run_blocking(move || store.forget_session(session_id))
         .await
 }
 
@@ -596,6 +625,91 @@ mod tests {
             .unwrap();
         (registry, info, bytes)
     }
+    #[test]
+    fn published_restore_reports_unconfirmed_and_preserves_both_files_and_candidate() {
+        let dir = TempDir::new();
+        let source = dir.path().join("source.docx");
+        let (registry, info, original) = setup(&source);
+        let store = RecoveryStore::new(dir.path().join("records"));
+        let ticket = registry.begin_save(info.session_id, 1, 1).unwrap();
+        let candidate = store
+            .snapshot(&ticket, &original, &source, &original)
+            .unwrap();
+        let target = dir.path().join("copy.docx");
+        publish::FAULT.with(|fault| fault.set(Some(publish::Fault::DirSync)));
+        let restored = store.restore(&candidate.id, &target);
+        publish::FAULT.with(|fault| fault.set(None));
+        assert_eq!(
+            restored.unwrap_err(),
+            DocumentError::FilePublishedUnconfirmed
+        );
+        assert_eq!(std::fs::read(&target).unwrap(), original);
+        assert_eq!(std::fs::read(&source).unwrap(), original);
+        assert!(store.list().unwrap()[0].valid);
+        assert_eq!(
+            store.restore(&candidate.id, &target).unwrap_err(),
+            DocumentError::FileConflict
+        );
+    }
+
+    #[test]
+    fn failed_record_deletion_is_reported_and_tombstone_still_blocks_late_capture() {
+        let dir = TempDir::new();
+        let source = dir.path().join("source.docx");
+        let (registry, info, original) = setup(&source);
+        let store = RecoveryStore::new(dir.path().join("records"));
+        let ticket = registry.begin_save(info.session_id, 1, 1).unwrap();
+        let candidate = store
+            .snapshot(&ticket, &original, &source, &original)
+            .unwrap();
+        let id = candidate.id.trim_end_matches(".recovery");
+        let pending = store.root.join(format!("{id}.pending"));
+        std::fs::create_dir(&pending).unwrap(); // unlink cannot remove a directory
+        assert!(store
+            .discard(pending.file_name().unwrap().to_str().unwrap())
+            .is_err());
+        assert!(store.forget_session(info.session_id).is_err());
+        assert!(pending.is_dir());
+        assert!(store
+            .snapshot(&ticket, &original, &source, &original)
+            .is_err());
+        assert_eq!(std::fs::read(&source).unwrap(), original);
+    }
+
+    #[test]
+    fn partial_pending_retry_uses_fresh_id_and_preserves_partial_and_last_good_copy() {
+        let dir = TempDir::new();
+        let source = dir.path().join("source.docx");
+        let (registry, info, original) = setup(&source);
+        let store = RecoveryStore::new(dir.path().join("records"));
+        let ticket = registry.begin_save(info.session_id, 1, 1).unwrap();
+        let candidate = store
+            .snapshot(&ticket, &original, &source, &original)
+            .unwrap();
+        let pending = candidate.id.replace(".recovery", ".pending");
+        std::fs::write(store.root.join(&pending), b"partial").unwrap();
+        let retried = store
+            .snapshot(&ticket, &original, &source, &original)
+            .unwrap();
+        assert_ne!(retried.id, candidate.id);
+        assert!(store
+            .list()
+            .unwrap()
+            .iter()
+            .any(|entry| entry.id == pending && !entry.valid));
+        assert!(store
+            .list()
+            .unwrap()
+            .iter()
+            .any(|entry| entry.id == candidate.id && entry.valid));
+        assert_eq!(
+            std::fs::read(store.root.join(&pending)).unwrap(),
+            b"partial"
+        );
+        store.forget_session(info.session_id).unwrap();
+        assert!(store.list().unwrap().is_empty());
+    }
+
     fn edited(original: &[u8]) -> Vec<u8> {
         use crate::adapters::wordcraft::engine::{DocxModel, DocxOp};
         let mut model = DocxModel::open(original).unwrap();

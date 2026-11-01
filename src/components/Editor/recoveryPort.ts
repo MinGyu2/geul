@@ -39,7 +39,7 @@ export function parseRecoveryCandidate(value: unknown): RecoveryCandidate | null
     if (value.name !== "" || value.revision !== null || value.format !== null || value.createdAt !== null || value.stale) return null;
     return { id: value.id, valid, name: "", revision: null, format: null, createdAt: null, stale: false };
   }
-  if (value.name.length === 0 || /[\\/\0]/.test(value.name) || !isCount(value.revision) || !isCount(value.createdAt)
+  if (value.name.length === 0 || (value.name.includes("/") || value.name.includes("\0")) || !isCount(value.revision) || !isCount(value.createdAt)
     || typeof value.format !== "string" || !(DOCUMENT_FORMATS as readonly string[]).includes(value.format)) return null;
   return {
     id: value.id,

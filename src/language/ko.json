@@ -341,5 +341,7 @@
   "recovery.discardConfirmButton": "복구 기록 삭제",
   "recovery.retry": "이 판 다시 시도",
   "recovery.supportNote": "미저장 편집 자동 복구는 DOCX의 확정된 내용만 지원합니다. 미저장 HWP/HWPX 모델과 마지막 기록 뒤 입력, 미확정 조합은 복구하지 못할 수 있습니다. 복구 사본은 32MiB까지 지원합니다.",
-  "recovery.retentionNote": "복원은 새 파일로만 진행합니다. 창을 닫아도 과거 복구 기록이 남을 수 있으므로, 복구 목록에서 확인 후 직접 삭제하세요."
+  "recovery.retentionNote": "복원은 새 파일로만 진행합니다. 창을 닫아도 과거 복구 기록이 남을 수 있으므로, 복구 목록에서 확인 후 직접 삭제하세요.",
+  "document.error.FilePublishedUnconfirmed": "새 파일은 만들어졌지만 디스크에 영구 보존되었는지 확인하지 못했습니다. 대상 파일을 확인한 뒤 열어 주세요. 복구 사본은 유지됩니다.",
+  "document.error.FilePublishedUnregistered": "새 파일은 만들어졌지만 문서로 열지 못했습니다. 대상 파일을 확인하고 직접 열어 주세요. 같은 이름으로 다시 만들지 마세요."
 }

@@ -341,5 +341,7 @@
   "recovery.discardConfirmButton": "Delete recovery record",
   "recovery.retry": "Retry this revision",
   "recovery.supportNote": "Automatic recovery of unsaved edits supports committed DOCX content only. Unsaved HWP/HWPX models, input after the last checkpoint, and unfinished composition may not be recoverable. Recovery copies are limited to 32 MiB.",
-  "recovery.retentionNote": "Recovery always creates a new file. Closing a window can leave earlier recovery records; review and explicitly discard them from this list."
+  "recovery.retentionNote": "Recovery always creates a new file. Closing a window can leave earlier recovery records; review and explicitly discard them from this list.",
+  "document.error.FilePublishedUnconfirmed": "The new file exists, but its durability is unconfirmed. Inspect and open the destination; the recovery record is retained.",
+  "document.error.FilePublishedUnregistered": "The new file exists, but could not be opened as a session. Inspect and open the destination; do not create it again."
 }

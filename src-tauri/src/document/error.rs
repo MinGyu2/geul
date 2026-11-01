@@ -73,6 +73,10 @@ pub enum DocumentError {
     },
     /// 불러온 뒤 디스크의 파일이 바뀌거나 교체됨(외부 수정). 저장하지 않았다(덮어쓰지 않음).
     FileConflict,
+    /// A new destination was published, but directory durability could not be confirmed. Do not retry blindly.
+    FilePublishedUnconfirmed,
+    /// A new destination exists, but could not be registered/opened. Preserve it for explicit reopening.
+    FilePublishedUnregistered,
     /// 같은 세션의 저장이 이미 진행 중이다.
     SaveInProgress { session_id: SessionId },
     /// 계약에 맞지 않는 요청 값(허용하지 않는 상태 전이, 범위 밖 개수 등).

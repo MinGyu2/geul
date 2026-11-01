@@ -669,3 +669,26 @@ Windows/macOS 네이티브 대화상자와 저장은 미지원/미검증이며, 
 통과하지 않는 문서는 기록할 수 없다. 검증된 별도 기록 없는 `.geul-save-*.tmp`는 복원 후보로 쓰지 않으며
 원본 옆 잔여 임시 파일의 일반 정리는 여전히 미구현이다. 전원 차단/파일시스템 고장·Windows/macOS와
 RHWP 미저장 편집은 검증하지 않았다. 이 제한된 복구 구현으로 T014 전체 완료를 표시하지 않는다.
+
+
+## 파일·복구 실패 경계 독립 교정 (2026-11-02)
+
+기준 `a033309`의 우려를 코드와 실제 파일 경계 회귀로 확인했다. 원본 교체/보존 판정·NOREPLACE는 약화하지 않았다.
+
+| 우려 | 판정·교정 | 실패 경계 근거 |
+|---|---|---|
+| A pending 재시도 | CONFIRMED. 같은 ID의 create_new 충돌. partial/기존 유효 사본을 보존하고 새 ID로 재시도; 소유한 모든 ID를 기억해 명시적 세션 정리 가능 | partial pending 생성 뒤 재시도·기존 사본 보존·전체 forget; 기존 동작 FAIL → 수정 PASS |
+| B 복원 내구성 | CONFIRMED. 게시 후 durable=false를 보통 SaveFailure로 반환 | 실제 rename 뒤 DirSync 주입: FilePublishedUnconfirmed, 대상/원본/후보 보존, 같은 대상 재시도는 충돌; 기존 동작 FAIL → 수정 PASS |
+| C 신규 DOCX 등록 | CONFIRMED. 게시 뒤 세션 수 제한에 걸리면 단순 ResourceLimit | 실제 max_sessions=0 등록: FilePublishedUnregistered, 파일 존재·실제 WordCraft 재열기·중복 덮어쓰기 차단; 기존 동작 FAIL → 수정 PASS |
+| D 삭제 오류 | 직접 recovery_discard는 DISPROVED(원래 오류 반환). forget_session은 CONFIRMED(오류 무시 후 성공 응답) | unlink 불가 디렉터리 항목: 세션 정리도 오류 반환, tombstone은 유지해 늦은 체크포인트 차단; 기존 동작 FAIL → 수정 PASS |
+| E Linux 역슬래시 | CONFIRMED. frontend basename 검사가 유효한 역슬래시 이름 때문에 전체 목록을 거부 | IPC 후보 목록 회귀 기존 동작 FAIL → 수정 PASS; 슬래시/NUL은 계속 거부 |
+
+두 FilePublished 오류는 이미 대상 파일이 있다는 고정 안내이며 일반적인 미게시 오류와 다르다.
+경로/문서 내용은 오류에 추가하지 않는다. 등록 실패 시 파일을 자동 삭제하지 않고 사용자가 확인해 직접 열도록 안내한다.
+복원 내구성 미확인은 후보도 유지하며 fsync 성공을 주장하지 않는다. 세션 close 성공과 복구 정리 성공은 별개다.
+프런트엔드는 close 후 best-effort 정리 실패로 이미 닫힌 문서를 되살리거나 close를 되풀이하지 않으며,
+남은 후보는 복구 센터에서 명시적으로 확인/삭제할 수 있다.
+
+Rust 회귀 4개는 수정 전 동작으로 각각 실패(exit101)하고 교정 후 services 105 PASS(12 ignored)다.
+실제 SIGKILL/restart·저장/원본 보존을 포함한 기존 services 범위를 재사용했다. frontend 역슬래시 음성/양성 경계도 확인했다.
+비공개 전후 로그: `geul-tests/reports/phase6-phase7-20261102/`. 새 API/실패 주입은 보호 엔진·WASM을 바꾸지 않는다.

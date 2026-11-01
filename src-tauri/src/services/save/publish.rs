@@ -811,6 +811,8 @@ pub fn publish_new(staged: &mut Staged, target: &Path) -> Result<Published, Docu
     let after = staged.file.metadata().unwrap_or(before);
     let (identity, fingerprint) = describe_published(target, &after);
     let durable = same_inode(target, &after) && staged.dir.sync_all().is_ok();
+    #[cfg(test)]
+    let durable = durable && fault() != Some(Fault::DirSync);
     Ok(Published {
         identity,
         fingerprint,
