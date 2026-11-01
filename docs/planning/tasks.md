@@ -191,6 +191,27 @@ Independent Test: 해당 User Story의 acceptance scenario와 실패 조건을 �
 `scripts/security-scan-ci.sh .`(gitleaks 필요), `tests/security/simulate-leak-response.sh`,
 `tests/security/test-pre-push-hook.sh`(pre-commit 필요).
 
+### T019·T007·T008 후속 평가 (2026-11-01)
+
+- T019는 **부분 완료 — (L) 완료 유지, (R) 차단**이다. 원격 `master=ed9e793`의 security-scan
+  `41300136360`·quality `41300136222`는 성공했지만 `protected=false`, ruleset·필수 검사 없음이다.
+  실제 check 이름은 `민감정보 검사`·`프런트엔드 검사`·`Rust 검사`(앱 `github-actions`, ID `15368`)다.
+  연결 앱은 관리자 권한을 보고하나 보호 설정 변경 API를 제공하지 않고 로컬 인증 REST 경로도 없어 변경하지 못했다.
+  실패 PR과 병합 차단은 미검증이며 체크박스는 유지한다. [원격 상세](../development/security-policy.md#t019-remote-followup-20261101).
+- T007은 **부분 통과·미체크**다. 현재 소스와 Release WASM `3f99a74…`를 캐시된 개발 호스트에서
+  실행한 원래 PoC 부분집합 50개가 통과했다(Xvfb X11·소프트웨어 렌더링, 실제 IME 제외).
+  형식별 hit test 32/32 정확, 키 입력 p95 HWP/HWPX 30/25 ms(각 86표본), 메모리·Node 파일 왕복 통과다.
+  현재 실제 IME 수용과 패키지 Release 전체 수용을 뜻하지 않는다. 과거 IME 7/7은 당시 신원에서 유효하다.
+- T008은 **부분 통과·미체크**다. 과거 네이티브 33/33·X11 ibus IME 7/7 기록을 보존한다.
+  이번 현재 프런트엔드의 모의 IPC 테스트 36개는 통과했지만 현재 네이티브 엔진·IME·지연의 실행 증거는 아니다.
+  [두 PoC의 원래 범위·증거 공백](../architecture/editor-surface-decision.md#poc-acceptance-followup-20261101)을 따른다.
+- T007/T008의 Linux 우선 PoC와 SC-002 통합 저장·T009·T016을 구분한다. Windows/macOS 미실행을
+  새 필수 PoC 조건으로 추가하지 않는다. Task Contracts·의존성·문턱은 그대로이며 T009는 자동 완료하지 않는다.
+  T010 INCOMPLETE — ON HOLD, RHWP Undo/Redo NO-GO, T011 NOT STARTED를 유지한다.
+- 비공개 원자료: `geul-tests/reports/geul-t019-t007-t008-followup-20261101/`의 행렬·신원·실행 로그.
+  이번 T007 모의 입력 회귀 37개도 통과했다. 첫 비공개 래퍼의 보조 키 입력 경로 실패·정리 API 오류는
+  원자료에 남겼으며 기본 입력 경로 통과와 합산하지 않는다. 새 제품 결함으로 확정하지 않았다.
+
 ## Dependencies & Execution Order
 T017(프로젝트+submodule) → T018(로컬 사전 검사) → T019(L, 로컬 게이트: pre-push·CI 스크립트·시뮬레이션) → T020(사고 대응). T019(R, 원격 공개 게이트: Actions 실행·브랜치 보호·필수 상태 검사)는 저장소 관리자 작업이며 T016(출시) 전에 반드시 완료한다. 앱 개발(T004 이후)은 T019(L)이 통과하면 진행할 수 있고 T019(R)을 기다리지 않는다. 표의 `T019(L)`은 T019 계약 중 로컬 게이트 부분만을 뜻하며 별도 작업 ID가 아니다. T001/T002는 T017 이후에 병렬 조사 가능하며 T003에서 기술 게이트를 결정한다. T007/T008을 통과하기 전에는 T010 이후의 고급 UI 구현을 확대하지 않는다. 보안 검사 훅은 초기 커밋 전에 활성화하고 외부 소스를 복제한 후에는 라이선스/공급망 위험을 별도 검토한다.
 

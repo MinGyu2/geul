@@ -193,6 +193,28 @@ PRE_COMMIT=<pre-commit 경로> GITLEAKS=<gitleaks 경로> tests/security/test-pr
 기본 브랜치 이름은 바뀔 수 있으므로 설정 전에 다시 확인합니다:
 `git ls-remote --symref origin HEAD` 또는 `gh repo view --json defaultBranchRef`.
 
+<a id="t019-remote-followup-20261101"></a>
+### 원격 후속 조회 (2026-11-01)
+
+위 2026-10-16 표와 미실행 설명은 당시 기록이다. 현재 공개 API 조회에서 기본 브랜치는 `master`,
+HEAD는 `ed9e793bc8f3dc28094d5f0a9562b312327b7da5`, `protected=false`, 적용 ruleset과 branch rules는
+모두 빈 목록이며 필수 검사 enforcement는 `off`다. 소유자는 개인 계정이므로 조직 ruleset은 해당하지 않는다.
+`security-scan` run `41300136360`과 `quality` run `41300136222`는 이 HEAD의 push에서 성공했다.
+실제 check context는 `민감정보 검사`, `프런트엔드 검사`, `Rust 검사`이고 제공자는 모두
+`github-actions`(GitHub App ID `15368`)다. 따라서 체크리스트 4항의 품질 검사 이름은 이제 실행에서 확인되었다.
+두 workflow는 필터 없는 `pull_request`를 선언하지만 이번 원격 PR 실행·병합 차단은 검증하지 않았다.
+
+연결 GitHub 앱은 저장소 `admin=true`를 보고한다. 그러나 제공된 도구에는 보호/ruleset 변경 기능이 없고,
+로컬 `gh`·HTTPS 자격증명도 없어 인증 REST 변경 경로가 없다. 비인증 protection·Actions 권한 API의
+401은 이 인증 부재의 관측이며 계정 자체의 관리자 권한 부족 판정이 아니다. 요금제별 기능·secret scanning·
+push protection·Actions 기본 권한은 미확인이다. 원격 설정은 변경하지 않았으며 T019(R)은 차단 상태다.
+
+적용된 보호 규칙과 필수 검사는 **없다**. PR 필수·승인 0 가능·세 검사 및 최신 브랜치 필수·강제 푸시/삭제 금지·
+우회 없음은 기존 체크리스트의 미충족 조건이다. 단독 관리자도 PR과 검사를 거쳐야 하는 영향이 있다.
+보호를 적용하지 못한 상태에서 실패 CI만 만드는 PR은 생성하지 않았다. WORKFLOW FAILURE OBSERVED와
+MERGE BLOCKING VERIFIED 모두 이번 음성 대조에서는 미확인이며, CI 성공만으로 T019를 완료하지 않는다.
+비공개 전후 JSON·차단 사유: `geul-tests/reports/geul-t019-t007-t008-followup-20261101/`.
+
 ### 관리자 작업 체크리스트
 
 아래는 모두 저장소 관리자 권한이 필요한 원격 설정입니다. 이 작업 세션에서는 실행하지 않았습니다.
