@@ -554,6 +554,13 @@ pub fn stage(target: &Path, bytes: &[u8]) -> Result<Staged, DocumentError> {
         file.sync_all()
     };
     write(&mut staged.file).map_err(|error| failure(SaveStage::Write, &error))?;
+    attached
+        .copy_user_xattrs(&staged.file)
+        .map_err(|_| metadata_unsupported())?;
+    staged
+        .file
+        .sync_all()
+        .map_err(|error| failure(SaveStage::Write, &error))?;
     // 교체로 잃을 메타데이터가 없는지: 다 쓴 임시 파일(권한 비트 포함)이 원본과 같아야 한다.
     if metadata::attached(&staged.file).map_err(|_| metadata_unsupported())? != attached {
         return Err(metadata_unsupported());

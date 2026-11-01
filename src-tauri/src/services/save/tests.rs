@@ -2194,18 +2194,7 @@ fn c_교체로_잃을_메타데이터가_있거나_저장_중_바뀌면_막는�
             .collect();
         assert_eq!(left, Vec::<String>::new(), "{name}");
     }
-    // 불러오기 전부터 확장 속성이 있는 원본: 새 파일에 없으므로 막는다.
-    if xattr_supported {
-        let mut doc = open_docx_prepared(&original, |path| {
-            assert!(set_xattr(path, "user.geul-tag", b"keep"))
-        });
-        doc.edit(edits());
-        doc.preflight().unwrap();
-        assert_eq!(doc.save().err(), metadata);
-        check(&doc);
-    } else {
-        eprintln!("NOT RUN: 원본 user xattr(파일 시스템이 지원하지 않음)");
-    }
+    // user xattr roundtrip is independently runnable in its own test.
     // POSIX ACL(이름 붙은 사용자 항목): 새 파일에 없으므로 막는다.
     let uid = std::fs::metadata(probe.path())
         .map(|m| std::os::unix::fs::MetadataExt::uid(&m))
@@ -2237,6 +2226,113 @@ fn c_교체로_잃을_메타데이터가_있거나_저장_중_바뀌면_막는�
     doc.edit(edits());
     doc.preflight().unwrap();
     assert!(doc.save().is_ok());
+}
+
+#[cfg(target_os = "linux")]
+#[test]
+fn user_xattr가_있는_docx를_두_번_저장해도_메타데이터와_편집을_보존한다() {
+    let original = basic::basic_ko().unwrap();
+    let probe = TempDir::new();
+    if !set_xattr(&probe.write("probe", b""), "user.geul-probe", b"") {
+        eprintln!("NOT RUN: user xattr(파일 시스템이 지원하지 않음)");
+        return;
+    }
+    let mut doc = open_docx_prepared(&original, |path| {
+        assert!(set_xattr(path, "user.geul-tag", b"keep"));
+        assert!(set_xattr(path, "user.geul-empty", b""));
+        assert!(set_xattr(path, "user.geul-binary", b"\0\xff\x80"));
+    });
+    let attached_before = super::metadata::attached(&std::fs::File::open(&doc.path).unwrap())
+        .expect("원본 메타데이터");
+    let first_edits = edits();
+    let mut expected = DocxModel::open(&original).unwrap();
+    expected.apply(&first_edits);
+    doc.edit(first_edits);
+    let revision = doc.info.revision;
+    assert!(doc.info.dirty);
+    doc.preflight().unwrap();
+    let saved = doc.save().expect("user xattr 보존 저장");
+    assert!(saved.durable);
+    assert_eq!(
+        (saved.session.revision, saved.session.dirty),
+        (revision, false)
+    );
+    let written = doc.bytes();
+    let reopened = std::fs::File::open(&doc.path).unwrap();
+    assert_eq!(
+        super::metadata::attached(&reopened).unwrap(),
+        attached_before
+    );
+    assert_ne!(written, original);
+    assert!(expected.same_as(&written));
+    assert!(doc.leftovers().is_empty());
+
+    // 저장 후 세션의 원본 메타데이터 기준도 갱신되어야 하며 다음 저장에도 보존한다.
+    doc.info = saved.session;
+    let second_edits = vec![DocxOp::InsertText {
+        text: "다음 저장 ".into(),
+    }];
+    expected.apply(&second_edits);
+    doc.edit(second_edits);
+    let second_revision = doc.info.revision;
+    assert!(doc.info.dirty);
+    assert!(
+        matches!(doc.save(), Err(DocumentError::UnsafeSave { preservation }) if preservation.findings == vec![Finding::new(FindingCode::PreflightMissing)])
+    );
+    assert_eq!(
+        super::metadata::attached(&std::fs::File::open(&doc.path).unwrap()).unwrap(),
+        attached_before
+    );
+    doc.preflight().unwrap();
+    let saved = doc.save().expect("두 번째 user xattr 보존 저장");
+    assert!(saved.durable);
+    assert_eq!(
+        (saved.session.revision, saved.session.dirty),
+        (second_revision, false)
+    );
+    assert_eq!(
+        super::metadata::attached(&std::fs::File::open(&doc.path).unwrap()).unwrap(),
+        attached_before
+    );
+    assert!(DocxModel::open(&doc.bytes())
+        .unwrap()
+        .body_text()
+        .contains("다음 저장 "));
+    assert!(expected.same_as(&doc.bytes()));
+    assert!(doc.leftovers().is_empty());
+}
+
+#[cfg(target_os = "linux")]
+#[test]
+fn user_xattr_복사_실패는_원본과_목적지에_영향을_주지_않는다() {
+    use std::fs::OpenOptions;
+    use std::os::unix::fs::OpenOptionsExt;
+
+    let dir = TempDir::new();
+    let source = dir.write("source.docx", b"source bytes");
+    if !set_xattr(&source, "user.geul-copy-failure", b"preserve") {
+        eprintln!("NOT RUN: user xattr(파일 시스템이 지원하지 않음)");
+        return;
+    }
+    let destination = dir.write("destination.docx", b"destination bytes");
+    let source_file = std::fs::File::open(&source).unwrap();
+    let before = super::metadata::attached(&source_file).unwrap();
+    let unreadable_destination = OpenOptions::new()
+        .read(true)
+        .custom_flags(libc::O_PATH)
+        .open(&destination)
+        .unwrap();
+    let destination_before =
+        super::metadata::attached(&std::fs::File::open(&destination).unwrap()).unwrap();
+
+    assert!(before.copy_user_xattrs(&unreadable_destination).is_err());
+    assert_eq!(std::fs::read(&source).unwrap(), b"source bytes");
+    assert_eq!(super::metadata::attached(&source_file).unwrap(), before);
+    assert_eq!(std::fs::read(&destination).unwrap(), b"destination bytes");
+    assert_eq!(
+        super::metadata::attached(&std::fs::File::open(&destination).unwrap()).unwrap(),
+        destination_before
+    );
 }
 
 /// 다시 불러오기 전 단계(편집기가 세션을 failed로 돌림).

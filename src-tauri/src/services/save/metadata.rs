@@ -2,7 +2,7 @@
 //!
 //! 원본을 새 inode로 바꾸면 이름에 붙은 것이 아니라 inode에 붙은 것은 따라오지 않는다: 확장 속성(POSIX ACL
 //! `system.posix_acl_access`, SELinux `security.selinux`, `user.*` 등), inode 플래그(`chattr`), 권한 비트(setgid처럼 조용히
-//! 떨어질 수 있음). 이 모듈은 그것을 옮기지 않고, 원본과 임시 파일에서 읽어 같은지만 본다. 다르거나 읽을 수 없으면 저장을
+//! 떨어질 수 있음). 이 모듈은 user.* 확장 속성만 임시 파일에 복사하고, 원본과 임시 파일에서 전체를 읽어 같은지 본다. 다르거나 읽을 수 없으면 저장을
 //! 막는다(`SaveUnsupported{metadata}`): 보장할 수 없는 속성을 조용히 잃지 않는다.
 //!
 //! 쓰기 권한(`writable`)은 원본 소유자 쓰기 비트와 커널 판단(`faccessat(W_OK, AT_EACCESS)`: 읽기 전용 마운트, 변경 불가
@@ -100,6 +100,34 @@ fn inode_flags(file: &File) -> io::Result<Option<u32>> {
 const ACCESS_ACL: &[u8] = b"system.posix_acl_access";
 
 impl Attached {
+    /// 사용자 메타데이터만 확인한 열린 임시 파일에 복사한다. ACL·보안 속성·inode 플래그는
+    /// 옮기지 않는다. 호출자는 복사 후 전체 Attached 동일성을 확인하고 fsync해야 한다.
+    pub fn copy_user_xattrs(&self, destination: &File) -> io::Result<()> {
+        if let Some(attributes) = &self.xattrs {
+            for (name, value) in attributes {
+                if !name.starts_with(b"user.") {
+                    continue;
+                }
+                let name =
+                    CString::new(name.as_slice()).map_err(|_| io::Error::other("xattr name"))?;
+                // SAFETY: destination은 살아 있는 fd, name은 NUL 종료, value는 유효한 길이/포인터 짝.
+                let result = unsafe {
+                    libc::fsetxattr(
+                        destination.as_raw_fd(),
+                        name.as_ptr(),
+                        value.as_ptr().cast(),
+                        value.len(),
+                        0,
+                    )
+                };
+                if result < 0 {
+                    return Err(io::Error::last_os_error());
+                }
+            }
+        }
+        Ok(())
+    }
+
     /// 접근 ACL이 있는지(권한 비트 밖의 사용자·그룹에게 권한을 줄 수 있다).
     pub fn has_access_acl(&self) -> bool {
         self.xattrs
