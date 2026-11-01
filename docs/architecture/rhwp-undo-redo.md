@@ -12,7 +12,7 @@ T010 SC-003의 rhwp 몫(실행 취소·다시 실행)의 계약이다. Phase 2(2
 
 <a id="t010-current-status"></a>
 
-## 현재 수용 상태와 기술 보류 (2026-11-01)
+## 현재 수용 상태와 기술 보류 (2026-11-01 · 2026-11-02 재평가)
 
 **T010: INCOMPLETE — ON HOLD / 제품 RHWP Undo/Redo: NO-GO / T011: NOT STARTED.**
 `INCOMPLETE`가 실제 수용 상태다. `ON HOLD`는 현재 근거로 정당화된 추가 조사·구현을 중단했다는 **추가 관리 표지**이며,
@@ -84,6 +84,45 @@ REJECTED는 근거와 모순을 뜻한다. 실행 신원이 다른 과거 후보
 - E6: [WebKit queue 최종 한정 조사](../../../geul-tests/reports/t010-d2-webkit-queue-20261101/REPORT.ko.md) — 관측 차단·runtime 내부 순서 UNVERIFIED·조사 종료.
 - E7: [D4 구조적 타당성](../../../geul-tests/reports/t010-d4-structural-feasibility-20261101/REPORT.ko.md) — 세 구조안 구현 NO-GO·최적화선 중단.
 - E8: [보관 D3/D5 실행 기록](../../tests/integration/rhwp/evidence/t010-design-review-admission/REPORT.ko.txt), [D3 19행](../../tests/integration/rhwp/evidence/t010-design-review-admission/undo-save.json), [이전 안정화](../../tests/integration/rhwp/evidence/t010-stabilization/undo-save.json) — 당시 PASS를 유지하되 현 Release 바인딩과 구분.
+
+
+<a id="phase7-reevaluation-20261102"></a>
+
+### Phase 7 재평가 — 2026-11-02
+
+**재평가 COMPLETED, 재개 NO-GO. T010 INCOMPLETE — ON HOLD / 제품 RHWP Undo/Redo NO-GO / T011 NOT STARTED 유지.**
+검토 제품 HEAD `45cf3f40b56aa64d05fcb575b9f08acb92231583`(시작 `a033309`, 안전 교정 `e013142`)다.
+RHWP/WordCraft gitlink와 위 Release generation/WASM은 동일하다. 위 행렬은 마지막 공식 실행 `d1ec335`에 묶인
+수용 근거이며, 새 제품 HEAD의 전체 관문을 재실행했다고 읽지 않는다.
+
+- **소스 대조:** `d1ec335..45cf3f4`의 RHWP 세션 변경은 Save As 대상 전달, 이벤트 버전, 최대 500자 읽기 전용 선택
+  미리보기다. 엔진 mutator·pagination·전체 페이지 렌더·기록 수용/예산/실패·생산 명령 게이트는 변경하지 않았다.
+  Phase 1–5의 TypeScript import/파일/xattr/복구 작업과 Phase 6의 패널 구독은 D4 critical path를 단축한 엔진 변경이 아니다.
+- **새 검증:** 실제 현재 Tauri backend+Vite+동일 Release WASM에서 패널 native 25검사와 일반 한국어 IME
+  RHWP(HWP/HWPX) 7/7·WordCraft 7/7이 통과했다. 복구 행의 등장/소멸로 문서가 움직이던 클릭 회귀를 고쳤다
+  ([Phase 6 범위와 실패/교정 기록](./editor-surface-decision.md#phase-6-활성-문서-패널-통합-검증-2026-11-02)).
+  이 실행은 제품 RHWP history OFF이며 D1 Undo/Redo 픽셀 복원이나 D2의 지연 확정 순서 시험이 아니다.
+  IBus 환경 복구는 기존 전달 경로를 다시 사용한 것이며 새로운 E<U<F 관측 능력을 입증하지 않았다.
+- **원본 검사 신원:** E1에 기록된 official_native.py/undo_native.py/native_probe.py/rhwp_poc.py/fixture generator
+  5개 SHA-256이 현재 파일과 모두 같다. 공식 fixture·assertion·3RAF·50ms/1500ms를 변경하지 않았다.
+
+| 관문 | 이번에 유지하는 판정 | 새 근거의 범위와 남은 조건 |
+|---|---|---|
+| D1 | 마지막 공식 PASS 31/31 유지; 새 HEAD 전체 canonical 미실행 | 새 패널/일반 IME native 검사는 전체 Undo/Redo 복원 수용이 아님 |
+| D2 | INCONCLUSIVE | 일반 IME PASS는 새 근거지만 필수 native empty-end→Undo→late-final(E<U<F) 증거 없음; 기존 E<F<U/관측 차단 유지 |
+| D3 | 현재 제품 전체 바인딩 UNVERIFIED, 보관 PASS 유지 | 파일/복구 서비스 105 PASS가 현 Release의 전체 Undo/Redo 저장 행렬을 대신하지 않음 |
+| D4 | 마지막 공식 FAIL; 자원/RSS INCONCLUSIVE | E1 group p95 44/45/52/95ms, Undo 50/50/78/160ms(기본 HWP/HWPX·Chemical·Asset). 원래 group≤50/Undo≤1500·440표본·timeout0 유지. 이번 공식 재측정 없음 |
+| D5 | 전체 UNVERIFIED, 보관 native 하위2/2 PASS 유지 | 새 파일 실패 주입은 전체 WASM allocation/restore/release/dispose 경계의 현재 종합 증거가 아님 |
+
+새 근거는 Phase 6의 안전한 통합을 지지하지만 위 재개 조건을 닫지 않는다. D4의 새 지연 제거 기전이나 현재 제품의
+end-to-end 개선 증거가 없어 고비용 D4 반복을 하지 않았다. 일반 입력/조사/문서 완료를 T010 완료로 올리지 않는다.
+RSS의 규범 기준은 미정이며 새 상한을 만들지 않는다. 기존 history/Canvas 예산과 FULL_PAGE_ONLY를 유지한다.
+
+가장 작은 다음 전제는 기존 재개 조건 그대로다: 독립 native E<U<F 관측 또는 검증된 새 관측 경로;
+정확성·ownership·자원 계약과 실제 end-to-end 이득을 함께 갖춘 D4 기전; 현 제품 신원에 연결된 D3/D5 증거;
+합의된 RSS 기준과 반복/대조 측정이다. G0/G1 구현이나 엔진/WASM 교체는 이번 범위에 포함하지 않는다.
+`tasks.md` 체크박스/의존성은 바꾸지 않는다. 원자료·신원 대조는 비공개
+`geul-tests/reports/phase6-phase7-20261102/phase7-official-identities.json` 및 `source-build-identities-final.json`이다.
 
 
 ## 1. 고른 구조와 근거
