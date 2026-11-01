@@ -1070,8 +1070,29 @@ export class DocxEditorSession implements ImeSession, DocumentCommandTarget {
   }
 
   /** 원본 형식으로 저장한다(모듈 설명). */
+  private recoveryJob: Promise<Result<SaveOutcome>> | null = null;
+
+  /** Capture only a settled committed model. Native validation and publication never write the original. */
+  checkpoint(): Promise<Result<SaveOutcome>> {
+    if (this.recoveryJob) return this.recoveryJob;
+    if (this.saving) return Promise.resolve({ ok: false, error: { code: "SaveInProgress", sessionId: this.sessionId } });
+    const blocker = this.saveBlocker();
+    if (blocker) return Promise.resolve({ ok: false, error: blocker });
+    if (!this.backend.checkpoint) return Promise.resolve({ ok: false, error: { code: "Protocol" } });
+    const { epoch, generation, revision } = this;
+    this.recoveryJob = this.backend.checkpoint(this.sessionId, generation, revision).then(result => {
+      if (this.epoch !== epoch) return { ok: false as const, error: closedError(this.sessionId) };
+      return result;
+    }).finally(() => { this.recoveryJob = null; });
+    return this.recoveryJob;
+  }
+
   async save(destination?: string): Promise<Result<SaveOutcome>> {
     const epoch = this.epoch;
+    if (this.recoveryJob) {
+      await this.recoveryJob;
+      if (this.epoch !== epoch) return { ok: false, error: closedError(this.sessionId) };
+    }
     const fail = (error: DocumentError): Result<SaveOutcome> => {
       if (epoch === this.epoch) this.setSave({ kind: "failed", error });
       return { ok: false, error };
@@ -1109,6 +1130,7 @@ export class DocxEditorSession implements ImeSession, DocumentCommandTarget {
       return result;
     } finally {
       this.saving = false;
+      this.emit();
     }
   }
 

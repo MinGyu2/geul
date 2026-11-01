@@ -28,6 +28,11 @@
     "allow-document-file-dialog",
     "allow-document-new",
     "allow-document-save-as",
-    "allow-docx-save-as"
+    "allow-docx-save-as",
+    "allow-recovery-list",
+    "allow-recovery-restore",
+    "allow-recovery-discard",
+    "allow-recovery-forget-session",
+    "allow-docx-checkpoint"
   ]
 }

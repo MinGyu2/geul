@@ -13,11 +13,28 @@ pub mod services;
 mod window_close;
 
 pub fn run() {
+    use tauri::Manager;
     tauri::Builder::default()
         .manage(document::commands::DocumentState::default())
+        .setup(|app| {
+            let root = app
+                .path()
+                .app_local_data_dir()
+                .map(|p| p.join("recovery"))
+                .unwrap_or_default();
+            app.manage(std::sync::Arc::new(services::recovery::RecoveryStore::new(
+                root,
+            )));
+            Ok(())
+        })
         .on_window_event(window_close::on_window_event)
         .on_page_load(ime::on_page_load)
         .invoke_handler(tauri::generate_handler![
+            services::recovery::recovery_list,
+            services::recovery::recovery_restore,
+            services::recovery::recovery_discard,
+            services::recovery::recovery_forget_session,
+            adapters::wordcraft::commands::docx_checkpoint,
             services::files::document_file_dialog,
             services::files::document_new,
             services::save::commands::document_save_as,

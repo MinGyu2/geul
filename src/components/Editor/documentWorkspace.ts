@@ -11,9 +11,10 @@
 //   하나를 기다린다(백엔드 닫기·정리는 한 번).
 import type { DocumentBackend } from "../../adapters/backend";
 import type { DocxBackend } from "../../adapters/docx";
-import type { CloseOutcome, Result, SaveOutcome, SessionId, SessionInfo } from "../../adapters/contract";
+import type { CloseOutcome, DocumentError, Result, SaveOutcome, SessionId, SessionInfo } from "../../adapters/contract";
 import type { DocumentSessions } from "../../adapters/sessions";
 import type { FileDialogRequest, FilePort } from "./filePort";
+import type { RecoveryCandidate, RecoveryPort } from "./recoveryPort";
 import { RhwpEditorSession } from "./rhwp/RhwpEditorSession";
 import { loadRhwpModule, type RhwpModule } from "./rhwp/rhwpModule";
 import type { WindowClosePort } from "./windowClose";
@@ -24,11 +25,23 @@ export type EngineEditor = RhwpEditorSession | DocxEditorSession;
 
 export type FileDialogText = Pick<FileDialogRequest, "title" | "accept" | "cancel">;
 
+export type RecoveryCheckpointStatus =
+  | { sessionId: SessionId; revision: number; kind: "waiting" | "capturing" | "protected" }
+  | { sessionId: SessionId; revision: number; kind: "failed"; error: DocumentError };
+
+const CHECKPOINT_DEBOUNCE_MS = 2000;
+
 export class DocumentWorkspace {
   private readonly editors = new Map<SessionId, EngineEditor>();
   private readonly closing = new Map<SessionId, Promise<Result<CloseOutcome>>>();
   private readonly listeners = new Set<() => void>();
-  private fileOperation: "open" | "new" | "saveAs" | null = null;
+  private readonly recoveryListeners = new Set<() => void>();
+  private readonly editorUnsubscribers = new Map<SessionId, () => void>();
+  private readonly checkpointTimers = new Map<SessionId, ReturnType<typeof setTimeout>>();
+  private readonly checkpointJobs = new Map<SessionId, number>();
+  private checkpointLane: Promise<unknown> = Promise.resolve();
+  private readonly checkpointStates = new Map<SessionId, RecoveryCheckpointStatus>();
+  private fileOperation: "open" | "new" | "saveAs" | "restore" | "recovery" | null = null;
   private started = false;
   private windowClosing = false;
 
@@ -40,6 +53,7 @@ export class DocumentWorkspace {
     private readonly docxBackend?: DocxBackend,
     private readonly decodeImage?: DecodeImage,
     private readonly filePort?: FilePort,
+    private readonly recoveryPort?: RecoveryPort,
   ) {
     sessions.subscribe(() => {
       this.sync();
@@ -54,6 +68,11 @@ export class DocumentWorkspace {
 
   readonly fileBusySnapshot = (): boolean => this.fileOperation !== null;
 
+  readonly subscribeRecovery = (listener: () => void): (() => void) => {
+    this.recoveryListeners.add(listener);
+    return () => this.recoveryListeners.delete(listener);
+  };
+
   get fileBusy(): boolean {
     return this.fileOperation !== null;
   }
@@ -62,11 +81,23 @@ export class DocumentWorkspace {
     return this.filePort !== undefined;
   }
 
+  get supportsRecovery(): boolean {
+    return this.recoveryPort !== undefined;
+  }
+
+  get recoveryCheckpointStatuses(): readonly RecoveryCheckpointStatus[] {
+    return [...this.checkpointStates.values()].sort((a, b) => a.sessionId - b.sessionId);
+  }
+
   private emit() {
     for (const listener of this.listeners) listener();
   }
 
-  private beginFileOperation(operation: "open" | "new" | "saveAs"): boolean {
+  private emitRecovery() {
+    for (const listener of this.recoveryListeners) listener();
+  }
+
+  private beginFileOperation(operation: "open" | "new" | "saveAs" | "restore" | "recovery"): boolean {
     if (this.fileOperation !== null || this.windowClosing) return false;
     this.fileOperation = operation;
     this.emit();
@@ -165,6 +196,67 @@ export class DocumentWorkspace {
     }
   }
 
+  async listRecovery(): Promise<Result<RecoveryCandidate[]>> {
+    if (!this.recoveryPort) return { ok: false, error: { code: "Protocol" } };
+    try {
+      return await this.recoveryPort.list();
+    } catch {
+      return { ok: false, error: { code: "Protocol" } };
+    }
+  }
+
+  /** Restore always chooses a fresh destination and opens that new file as a new backend session. */
+  async restoreRecovery(candidate: RecoveryCandidate, text: FileDialogText): Promise<Result<SessionInfo> | null> {
+    if (!this.beginFileOperation("restore")) return { ok: false, error: { code: "Protocol" } };
+    const ticket = this.sessions.beginOpen();
+    try {
+      if (!candidate.valid || !candidate.format || !this.filePort || !this.recoveryPort) {
+        this.sessions.cancelOpen(ticket);
+        return { ok: false, error: { code: "InvalidRequest" } };
+      }
+      const chosen = await this.filePort.chooseFile({ mode: "save", format: candidate.format, ...text });
+      if (!chosen.ok) {
+        this.sessions.cancelOpen(ticket);
+        return chosen;
+      }
+      if (chosen.value === null) {
+        this.sessions.cancelOpen(ticket);
+        return null;
+      }
+      const restored = await this.recoveryPort.restore(candidate.id, chosen.value);
+      if (!restored.ok) {
+        this.sessions.cancelOpen(ticket);
+        return restored;
+      }
+      return this.acceptAndLoad(ticket, await this.backend.open(restored.value));
+    } finally {
+      this.endFileOperation();
+    }
+  }
+
+  async discardRecovery(id: string): Promise<Result<null>> {
+    if (!this.beginFileOperation("recovery")) return { ok: false, error: { code: "Protocol" } };
+    try {
+      if (!this.recoveryPort) return { ok: false, error: { code: "Protocol" } };
+      return await this.recoveryPort.discard(id);
+    } catch {
+      return { ok: false, error: { code: "Protocol" } };
+    } finally {
+      this.endFileOperation();
+    }
+  }
+
+  /** Explicit retry of a failed revision; automatic retry waits for a newer settled revision. */
+  retryRecoveryCheckpoint(sessionId: SessionId): Promise<Result<SaveOutcome> | null> {
+    const editor = this.editors.get(sessionId);
+    if (!editor || !(editor instanceof DocxEditorSession) || !this.recoveryPort) return Promise.resolve(null);
+    this.cancelCheckpointTimer(sessionId);
+    const info = this.sessions.get(sessionId);
+    const snapshot = editor.snapshot();
+    if (!info?.dirty || !this.checkpointReady(snapshot)) return Promise.resolve(null);
+    return this.captureCheckpoint(sessionId, editor, snapshot.revision);
+  }
+
   private acceptAndLoad(ticket: ReturnType<DocumentSessions["beginOpen"]>, result: Result<SessionInfo>): Result<SessionInfo> {
     const accepted = this.sessions.acceptOpen(ticket, result);
     this.loadOpened(accepted);
@@ -198,6 +290,11 @@ export class DocumentWorkspace {
       else return null;
       editor.setClosing(this.windowClosing);
       this.editors.set(sessionId, editor);
+      if (editor instanceof DocxEditorSession && this.recoveryPort) {
+        const docxEditor = editor;
+        this.editorUnsubscribers.set(sessionId, docxEditor.subscribe(() => this.observeCheckpoint(sessionId, docxEditor)));
+        this.observeCheckpoint(sessionId, docxEditor);
+      }
     }
     return editor;
   }
@@ -210,6 +307,103 @@ export class DocumentWorkspace {
   /** 세션 하나의 미보존 편집: 백엔드 기록의 dirty 또는 편집 세션의 보내는 중·조합 중·uncertain. */
   private unpreserved(sessionId: SessionId): boolean {
     return (this.sessions.get(sessionId)?.dirty ?? false) || (this.editors.get(sessionId)?.hasUnpreservedChanges ?? false);
+  }
+
+  private checkpointReady(snapshot: ReturnType<DocxEditorSession["snapshot"]>): boolean {
+    return snapshot.loaded && !snapshot.composing && !snapshot.pending && !snapshot.saving;
+  }
+
+  private setCheckpointStatus(status: RecoveryCheckpointStatus | null, sessionId?: SessionId) {
+    const id = status?.sessionId ?? sessionId;
+    if (id === undefined) return;
+    const before = this.checkpointStates.get(id);
+    if (status === null) {
+      if (!before) return;
+      this.checkpointStates.delete(id);
+      this.emitRecovery();
+      return;
+    }
+    if (before && before.kind === status.kind && before.revision === status.revision
+      && (before.kind !== "failed" || (status.kind === "failed" && JSON.stringify(before.error) === JSON.stringify(status.error)))) return;
+    this.checkpointStates.set(id, status);
+    this.emitRecovery();
+  }
+
+  private cancelCheckpointTimer(sessionId: SessionId) {
+    const timer = this.checkpointTimers.get(sessionId);
+    if (timer !== undefined) clearTimeout(timer);
+    this.checkpointTimers.delete(sessionId);
+  }
+
+  private observeCheckpoint(sessionId: SessionId, editor: DocxEditorSession) {
+    if (!this.recoveryPort || this.editors.get(sessionId) !== editor) return;
+    const info = this.sessions.get(sessionId);
+    const snapshot = editor.snapshot();
+    const status = this.checkpointStates.get(sessionId);
+    if (!info?.dirty) {
+      this.cancelCheckpointTimer(sessionId);
+      if (!this.checkpointJobs.has(sessionId)) this.setCheckpointStatus(null, sessionId);
+      return;
+    }
+    if (!this.checkpointReady(snapshot)) {
+      this.cancelCheckpointTimer(sessionId);
+      if (status?.kind === "waiting") this.setCheckpointStatus(null, sessionId);
+      return;
+    }
+    if (this.checkpointJobs.has(sessionId)) return;
+    if (status?.revision === snapshot.revision) return; // don't retry the same failed or protected revision automatically
+    this.cancelCheckpointTimer(sessionId);
+    this.setCheckpointStatus({ sessionId, revision: snapshot.revision, kind: "waiting" });
+    const timer = setTimeout(() => {
+      this.checkpointTimers.delete(sessionId);
+      void this.captureCheckpoint(sessionId, editor, snapshot.revision);
+    }, CHECKPOINT_DEBOUNCE_MS);
+    this.checkpointTimers.set(sessionId, timer);
+  }
+
+  /** Serialize background exports across tabs; queued work rechecks ownership and IME before capturing. */
+  private captureCheckpoint(sessionId: SessionId, editor: DocxEditorSession, revision: number): Promise<Result<SaveOutcome> | null> {
+    const run = () => this.captureCheckpointNow(sessionId, editor, revision);
+    const job = this.checkpointLane.then(run, run);
+    this.checkpointLane = job;
+    return job;
+  }
+
+  private async captureCheckpointNow(sessionId: SessionId, editor: DocxEditorSession, revision: number): Promise<Result<SaveOutcome> | null> {
+    if (!this.recoveryPort || this.editors.get(sessionId) !== editor || this.checkpointJobs.has(sessionId)) return null;
+    const info = this.sessions.get(sessionId);
+    const snapshot = editor.snapshot();
+    if (!info?.dirty || snapshot.revision !== revision || !this.checkpointReady(snapshot)) {
+      this.observeCheckpoint(sessionId, editor);
+      return null;
+    }
+    this.cancelCheckpointTimer(sessionId);
+    this.checkpointJobs.set(sessionId, revision);
+    this.setCheckpointStatus({ sessionId, revision, kind: "capturing" });
+    let result: Result<SaveOutcome>;
+    try {
+      result = await editor.checkpoint();
+    } catch {
+      result = { ok: false, error: { code: "Protocol" } };
+    }
+    if (this.checkpointJobs.get(sessionId) === revision) this.checkpointJobs.delete(sessionId);
+    if (this.editors.get(sessionId) !== editor) return result;
+    const currentInfo = this.sessions.get(sessionId);
+    const current = editor.snapshot();
+    const protectedResult = result.ok && result.value.durable
+      && result.value.session.sessionId === sessionId
+      && result.value.session.loadGeneration === snapshot.loadGeneration
+      && result.value.session.revision === revision;
+    if (protectedResult) this.setCheckpointStatus({ sessionId, revision, kind: "protected" });
+    else this.setCheckpointStatus({
+      sessionId,
+      revision,
+      kind: "failed",
+      error: result.ok ? { code: "Protocol" } : result.error,
+    });
+    if (!currentInfo?.dirty) this.setCheckpointStatus(null, sessionId);
+    else if (current.revision !== revision) this.observeCheckpoint(sessionId, editor);
+    return result;
   }
 
   setWindowClosing(closing: boolean) {
@@ -225,7 +419,13 @@ export class DocumentWorkspace {
     if (this.unpreserved(sessionId) && !options.discard) {
       return Promise.resolve({ ok: false, error: { code: "UnpreservedChanges", sessionId } });
     }
-    const closing = this.runClose(sessionId, editor ?? null).finally(() => this.closing.delete(sessionId));
+    const closing = this.runClose(sessionId, editor ?? null).then(async result => {
+      if (result.ok && options.discard && this.recoveryPort) {
+        // A confirmed per-tab discard may forget this process' snapshots, but only after close succeeded.
+        try { await this.recoveryPort.forgetSession(sessionId); } catch { /* the recovery center can still offer retained records */ }
+      }
+      return result;
+    }).finally(() => this.closing.delete(sessionId));
     this.closing.set(sessionId, closing);
     return closing;
   }
@@ -239,11 +439,18 @@ export class DocumentWorkspace {
   }
 
   private sync() {
+    let recoveryChanged = false;
     for (const [sessionId, editor] of this.editors) {
       if (!this.sessions.get(sessionId)) {
+        this.editorUnsubscribers.get(sessionId)?.();
+        this.editorUnsubscribers.delete(sessionId);
+        this.cancelCheckpointTimer(sessionId);
+        this.checkpointJobs.delete(sessionId);
+        recoveryChanged ||= this.checkpointStates.delete(sessionId);
         editor.dispose();
         this.editors.delete(sessionId);
       }
     }
+    if (recoveryChanged) this.emitRecovery();
   }
 }

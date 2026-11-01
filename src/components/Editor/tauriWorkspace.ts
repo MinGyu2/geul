@@ -7,6 +7,7 @@ import { createDocxBackend } from "../../adapters/docx";
 import { DocumentSessions } from "../../adapters/sessions";
 import { DocumentWorkspace } from "./documentWorkspace";
 import { createTauriFilePort } from "./filePort";
+import { createTauriRecoveryPort } from "./recoveryPort";
 import { tauriWindowClose } from "./windowClose";
 
 interface TauriInternals {
@@ -19,5 +20,8 @@ export function createTauriWorkspace(): DocumentWorkspace | null {
   if (typeof internals?.invoke !== "function") return null;
   const invoke: Invoke = (command, args) => internals.invoke(command, args);
   const backend = createTauriBackend(invoke);
-  return new DocumentWorkspace(new DocumentSessions(backend), backend, undefined, tauriWindowClose, createDocxBackend(invoke), undefined, createTauriFilePort(invoke));
+  return new DocumentWorkspace(
+    new DocumentSessions(backend), backend, undefined, tauriWindowClose, createDocxBackend(invoke), undefined,
+    createTauriFilePort(invoke), createTauriRecoveryPort(invoke),
+  );
 }

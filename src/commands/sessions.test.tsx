@@ -202,8 +202,10 @@ function twoDocxWorkspace() {
     close: (sessionId: number) => ok({ sessionId, alreadyClosed: false }),
   } as unknown as DocumentBackend;
   const docx = new Proxy({} as DocxBackend, {
-    get: (_, method: keyof DocxBackend) => (id: number, ...rest: unknown[]) =>
-      (fakes.get(id)![method] as (...args: unknown[]) => unknown).call(fakes.get(id), id, ...rest),
+    get: (_, method: keyof DocxBackend) => (id: number, ...rest: unknown[]) => {
+      const fake = fakes.get(id)!;
+      return (fake[method] as (...args: unknown[]) => unknown).call(fake, id, ...rest);
+    },
   });
   const sessions = new DocumentSessions(backend);
   const workspace = new DocumentWorkspace(sessions, backend, undefined, undefined, docx, decodeFake);

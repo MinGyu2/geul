@@ -184,6 +184,27 @@ pub fn save_to(
     reopen_equal: bool,
     destination: Option<&std::path::Path>,
 ) -> Result<SaveOutcome, DocumentError> {
+    save_with_options(
+        registry,
+        ticket,
+        limits,
+        output,
+        report,
+        reopen_equal,
+        SaveOptions {
+            destination,
+            recovery: None,
+        },
+    )
+}
+
+pub fn validate_snapshot(
+    ticket: &SaveTicket<'_>,
+    limits: &Limits,
+    output: &[u8],
+    report: Option<&Value>,
+    reopen_equal: bool,
+) -> Result<Vec<u8>, DocumentError> {
     if output.len() as u64 > limits.max_file_bytes {
         return Err(DocumentError::ResourceLimit {
             limit: crate::document::LimitKind::FileSize,
@@ -212,12 +233,37 @@ pub fn save_to(
             preservation: checked,
         });
     }
+    Ok(original)
+}
+
+pub struct SaveOptions<'a> {
+    pub destination: Option<&'a std::path::Path>,
+    pub recovery: Option<&'a crate::services::recovery::RecoveryStore>,
+}
+
+pub fn save_with_options(
+    registry: &SessionRegistry,
+    ticket: &SaveTicket<'_>,
+    limits: &Limits,
+    output: &[u8],
+    report: Option<&Value>,
+    reopen_equal: bool,
+    options: SaveOptions<'_>,
+) -> Result<SaveOutcome, DocumentError> {
+    let destination = options.destination;
+    let original = validate_snapshot(ticket, limits, output, report, reopen_equal)?;
+    let format = ticket.source.load.format;
     crate::document::resources::active()?;
     let original_target = ticket.source.load.identity.path();
     let target = match destination {
         Some(path) => crate::services::files::destination(path, format)?,
         None => original_target.to_path_buf(),
     };
+    // Recovery failures never relax preservation checks or prevent an otherwise safe explicit save.
+    // The recovery UI reports checkpoint failures separately; a valid older candidate is retained.
+    if let Some(store) = options.recovery {
+        let _ = store.snapshot(ticket, &original, &target, output);
+    }
     crate::document::resources::charge(crate::document::resources::Category::BeforePublication, 0)?;
     let mut staged = if destination.is_some() {
         publish::stage_new(&target, output, Some(original_target))?
@@ -249,6 +295,11 @@ pub fn save_to(
         durable = published.durable;
         Ok(published)
     })?;
+    if durable {
+        if let Some(store) = options.recovery {
+            store.saved(ticket);
+        }
+    }
     Ok(SaveOutcome {
         session,
         bytes: output.len(),

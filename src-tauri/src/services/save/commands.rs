@@ -184,6 +184,7 @@ pub async fn document_preflight(
 pub async fn document_save(
     state: State<'_, DocumentState>,
     request: Request<'_>,
+    store: State<'_, std::sync::Arc<crate::services::recovery::RecoveryStore>>,
 ) -> Result<SaveOutcome, DocumentError> {
     let (frame, admission) = admitted_frame(raw(request.body())?, &state)?;
     state.frontend_model(frame.session_id)?;
@@ -193,16 +194,21 @@ pub async fn document_save(
     let equal = meta.get("reopen").is_some_and(reopen_equal);
     let registry = state.registry().clone();
     let limits = state.limits();
+    let store = store.inner().clone();
     state
         .run_admitted(admission, move || {
             let ticket = registry.begin_save(frame.session_id, frame.generation, frame.revision)?;
-            service::save(
+            service::save_with_options(
                 &registry,
                 &ticket,
                 &limits,
                 &frame.payload,
                 Some(&report),
                 equal,
+                service::SaveOptions {
+                    destination: None,
+                    recovery: Some(&store),
+                },
             )
         })
         .await
@@ -212,6 +218,7 @@ pub async fn document_save(
 pub async fn document_save_as(
     state: State<'_, DocumentState>,
     request: Request<'_>,
+    store: State<'_, std::sync::Arc<crate::services::recovery::RecoveryStore>>,
 ) -> Result<SaveOutcome, DocumentError> {
     let (frame, admission) = admitted_frame(raw(request.body())?, &state)?;
     state.frontend_model(frame.session_id)?;
@@ -226,17 +233,21 @@ pub async fn document_save_as(
     let equal = meta.get("reopen").is_some_and(reopen_equal);
     let registry = state.registry().clone();
     let limits = state.limits();
+    let store = store.inner().clone();
     state
         .run_admitted(admission, move || {
             let ticket = registry.begin_save(frame.session_id, frame.generation, frame.revision)?;
-            service::save_to(
+            service::save_with_options(
                 &registry,
                 &ticket,
                 &limits,
                 &frame.payload,
                 Some(&report),
                 equal,
-                Some(std::path::Path::new(&destination)),
+                service::SaveOptions {
+                    destination: Some(std::path::Path::new(&destination)),
+                    recovery: Some(&store),
+                },
             )
         })
         .await

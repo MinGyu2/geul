@@ -628,6 +628,55 @@ button {
   opacity: 0.5;
 }
 
+.recovery-center {
+  flex: none;
+  max-height: min(240px, 30vh);
+  overflow: auto;
+  padding: var(--space-2) var(--space-3);
+  border-bottom: 1px solid var(--chrome-border);
+  background: var(--panel-bg);
+  color: var(--text-muted);
+  font-size: 12px;
+}
+
+.recovery-center__header,
+.recovery-center__checkpoint {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-1) var(--space-2);
+}
+
+.recovery-center__header h2,
+.recovery-center h3 {
+  margin: 0;
+  color: var(--text);
+  font-size: 12px;
+  font-weight: 650;
+}
+
+.recovery-center h3 {
+  margin-top: var(--space-2);
+}
+
+.recovery-center ul {
+  display: grid;
+  gap: var(--space-1);
+  margin: var(--space-1) 0 0;
+  padding-left: var(--space-4);
+}
+
+.recovery-center li {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-1) var(--space-2);
+}
+
+.recovery-center p {
+  margin: var(--space-1) 0;
+}
+
 .document-tabs {
   display: flex;
   flex-wrap: wrap;

@@ -79,6 +79,8 @@ export class FakeDocx implements DocxBackend {
   saveError: DocumentError | null = null;
   /** 다음 사전 검사를 이 오류로 거부한다(원본 읽기 실패 등 흉내). */
   preflightError: DocumentError | null = null;
+  /** 다음 private recovery checkpoint를 이 오류로 거부한다. 체크포인트는 문서의 dirty 상태를 지우지 않는다. */
+  checkpointError: DocumentError | null = null;
   /** false면 저장이 교체는 하지만 내구성을 확인하지 못한다(백엔드처럼 깨끗한 판을 올리지 않고 dirty로 남김). */
   durable = true;
   private unconfirmed = false;
@@ -479,6 +481,22 @@ export class FakeDocx implements DocxBackend {
       this.preflighted = false;
       this.update({});
       return { ok: true, value: { session: { ...this.info }, bytes: 100, durable: this.durable } };
+    });
+  }
+
+  /** Crash-recovery fake: durably captures the requested revision without marking it saved. */
+  checkpoint(sessionId: number, generation: number, revision: number): Promise<Result<SaveOutcome>> {
+    this.calls.push({ method: "checkpoint", args: [sessionId, generation, revision] });
+    return this.respond(() => {
+      const checked = this.check(sessionId, generation);
+      if (!checked.ok) return checked;
+      if (revision !== this.info.revision) return { ok: false, error: { code: "RevisionMismatch", sessionId, revision: this.info.revision } };
+      if (this.checkpointError) {
+        const error = this.checkpointError;
+        this.checkpointError = null;
+        return { ok: false, error };
+      }
+      return { ok: true, value: { session: { ...this.info }, bytes: 100, durable: true } };
     });
   }
 

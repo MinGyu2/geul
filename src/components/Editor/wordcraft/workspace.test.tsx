@@ -1,6 +1,6 @@
 // 작업 공간·편집 영역에서 DOCX 세션(T008): 열면 백엔드 엔진에 불러오고, 미보존 편집 보호와 패널 진단·검사를 보인다.
 import { act, fireEvent, render } from "@testing-library/react";
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import type { DocumentBackend } from "../../../adapters/backend";
 import type { Result, SessionInfo } from "../../../adapters/contract";
 import { DocumentSessions } from "../../../adapters/sessions";
@@ -8,10 +8,11 @@ import { LanguageProvider } from "../../../language/LanguageContext";
 import { DocumentWorkspace } from "../documentWorkspace";
 import { Editor } from "../Editor";
 import type { FilePort } from "../filePort";
+import type { RecoveryCandidate, RecoveryPort } from "../recoveryPort";
 import { DocxEditorSession } from "./DocxEditorSession";
 import { decodeFake, docxInfo, FakeDocx, flush } from "./testing";
 
-function workspace(filePort?: FilePort, openResult?: Result<SessionInfo>) {
+function workspace(filePort?: FilePort, openResult?: Result<SessionInfo>, recoveryPort?: RecoveryPort) {
   const fake = new FakeDocx();
   const ok = <T,>(value: T): Promise<Result<T>> => Promise.resolve({ ok: true, value });
   const backend = {
@@ -21,8 +22,19 @@ function workspace(filePort?: FilePort, openResult?: Result<SessionInfo>) {
     close: (sessionId: number) => ok({ sessionId, alreadyClosed: false }),
   } as unknown as DocumentBackend;
   const sessions = new DocumentSessions(backend);
-  const space = new DocumentWorkspace(sessions, backend, undefined, undefined, fake, decodeFake, filePort);
+  const space = new DocumentWorkspace(sessions, backend, undefined, undefined, fake, decodeFake, filePort, recoveryPort);
   return { fake, sessions, space };
+}
+
+const invalidRecoveryCandidate: RecoveryCandidate = {
+  id: "0123456789abcdef0123456789abcdef.recovery", valid: false, name: "", revision: null, format: null,
+  createdAt: null, stale: false,
+};
+
+afterEach(() => vi.useRealTimers());
+
+async function flushMicrotasks() {
+  for (let i = 0; i < 24; i++) await Promise.resolve();
 }
 
 describe("DOCX 작업 공간", () => {
@@ -149,6 +161,158 @@ describe("DOCX 작업 공간", () => {
     await flush();
     expect((await editor.save()).ok).toBe(true);
     expect(destinations).toEqual(["/docs/new-name.docx", undefined]);
+  });
+
+  it("invalid recovery candidates can only be explicitly discarded, never restored", async () => {
+    const filePort: FilePort = {
+      chooseFile: vi.fn(async () => ({ ok: true as const, value: "/docs/restore.docx" })),
+      createDocx: async () => ({ ok: false, error: { code: "Protocol" } }),
+    };
+    const recoveryPort: RecoveryPort = {
+      list: async () => ({ ok: true, value: [invalidRecoveryCandidate] }),
+      restore: vi.fn(async () => ({ ok: false as const, error: { code: "Protocol" as const } })),
+      discard: vi.fn(async () => ({ ok: true as const, value: null })),
+      forgetSession: vi.fn(async () => ({ ok: true as const, value: null })),
+    };
+    const { space } = workspace(filePort, undefined, recoveryPort);
+    const view = render(
+      <LanguageProvider language="ko" onLanguageChange={() => {}}>
+        <Editor zoom={100} workspace={space} />
+      </LanguageProvider>,
+    );
+    const candidate = await view.findByTestId("recovery-candidate");
+    expect(candidate.dataset.valid).toBe("false");
+    expect(view.queryByTestId(`recovery-restore-${invalidRecoveryCandidate.id}`)).toBeNull();
+    fireEvent.click(view.getByTestId(`recovery-discard-${invalidRecoveryCandidate.id}`));
+    expect(view.getByTestId(`recovery-discard-confirmation-${invalidRecoveryCandidate.id}`)).toBeTruthy();
+    fireEvent.click(view.getByTestId(`recovery-discard-confirm-${invalidRecoveryCandidate.id}`));
+    await act(async () => { await Promise.resolve(); });
+    expect(recoveryPort.discard).toHaveBeenCalledWith(invalidRecoveryCandidate.id);
+    expect(recoveryPort.restore).not.toHaveBeenCalled();
+    expect(filePort.chooseFile).not.toHaveBeenCalled();
+  });
+
+  it("recovery cancellation and destination conflict leave sessions unchanged and retain the candidate", async () => {
+    const candidate: RecoveryCandidate = {
+      ...invalidRecoveryCandidate, valid: true, name: "draft.docx", revision: 3, format: "docx", createdAt: 1,
+    };
+    let destination: string | null = null;
+    const filePort: FilePort = {
+      chooseFile: async () => ({ ok: true, value: destination }),
+      createDocx: async () => ({ ok: false, error: { code: "Protocol" } }),
+    };
+    const recoveryPort: RecoveryPort = {
+      list: async () => ({ ok: true, value: [candidate] }),
+      restore: vi.fn(async () => ({ ok: false as const, error: { code: "FileConflict" as const } })),
+      discard: async () => ({ ok: true, value: null }),
+      forgetSession: async () => ({ ok: true, value: null }),
+    };
+    const { space, sessions } = workspace(filePort, undefined, recoveryPort);
+    const before = sessions.snapshot();
+    expect(await space.restoreRecovery(candidate, { title: "복구", accept: "저장", cancel: "취소" })).toBeNull();
+    expect(recoveryPort.restore).not.toHaveBeenCalled();
+    expect(sessions.snapshot()).toBe(before);
+
+    destination = "/docs/existing.docx";
+    expect(await space.restoreRecovery(candidate, { title: "복구", accept: "저장", cancel: "취소" }))
+      .toEqual({ ok: false, error: { code: "FileConflict" } });
+    expect(recoveryPort.restore).toHaveBeenCalledWith(candidate.id, destination);
+    expect(await space.listRecovery()).toEqual({ ok: true, value: [candidate] });
+    expect(sessions.snapshot()).toBe(before);
+  });
+
+  it("durably checkpoints the captured DOCX revision without clearing dirty state", async () => {
+    vi.useFakeTimers();
+    const recoveryPort: RecoveryPort = {
+      list: async () => ({ ok: true, value: [] }),
+      restore: async () => ({ ok: false, error: { code: "Protocol" } }),
+      discard: async () => ({ ok: true, value: null }),
+      forgetSession: async () => ({ ok: true, value: null }),
+    };
+    const { fake, space, sessions } = workspace(undefined, undefined, recoveryPort);
+    const view = render(
+      <LanguageProvider language="ko" onLanguageChange={() => {}}>
+        <Editor zoom={100} workspace={space} />
+      </LanguageProvider>,
+    );
+    await act(async () => {
+      await space.open("/docs/draft.docx");
+      await flushMicrotasks();
+    });
+    const editor = space.docxEditorFor(1)!;
+    await act(async () => { editor.typeText("!"); await flushMicrotasks(); });
+    expect(sessions.get(1)?.dirty).toBe(true);
+    expect(view.getByTestId("recovery-checkpoint-1").dataset).toMatchObject({ state: "waiting", revision: "1" });
+    await act(async () => { await vi.advanceTimersByTimeAsync(2000); await flushMicrotasks(); });
+    expect(fake.calls.filter(call => call.method === "checkpoint").map(call => call.args)).toEqual([[1, 1, 1]]);
+    expect(view.getByTestId("recovery-checkpoint-1").dataset).toMatchObject({ state: "protected", revision: "1" });
+    expect(sessions.get(1)?.dirty).toBe(true);
+  });
+
+  it("does not checkpoint an unfinished composition and captures only its committed revision", async () => {
+    vi.useFakeTimers();
+    const recoveryPort: RecoveryPort = {
+      list: async () => ({ ok: true, value: [] }),
+      restore: async () => ({ ok: false, error: { code: "Protocol" } }),
+      discard: async () => ({ ok: true, value: null }),
+      forgetSession: async () => ({ ok: true, value: null }),
+    };
+    const { fake, space } = workspace(undefined, undefined, recoveryPort);
+    await act(async () => { await space.open("/docs/draft.docx"); await flushMicrotasks(); });
+    const editor = space.docxEditorFor(1)!;
+    await act(async () => { editor.typeText("!"); await flushMicrotasks(); });
+    editor.beginComposition();
+    editor.updateComposition("한");
+    await act(async () => { await vi.advanceTimersByTimeAsync(2500); await flushMicrotasks(); });
+    expect(fake.calls.filter(call => call.method === "checkpoint")).toHaveLength(0);
+    editor.endComposition("한");
+    await act(async () => { await flushMicrotasks(); });
+    await act(async () => { await vi.advanceTimersByTimeAsync(2000); await flushMicrotasks(); });
+    expect(fake.calls.filter(call => call.method === "checkpoint").map(call => call.args)).toEqual([[1, 1, 2]]);
+  });
+
+  it("restarts checkpointing for edits committed during manual save after the save guard settles", async () => {
+    vi.useFakeTimers();
+    const recoveryPort: RecoveryPort = {
+      list: async () => ({ ok: true, value: [] }),
+      restore: async () => ({ ok: false, error: { code: "Protocol" } }),
+      discard: async () => ({ ok: true, value: null }),
+      forgetSession: async () => ({ ok: true, value: null }),
+    };
+    const { fake, space } = workspace(undefined, undefined, recoveryPort);
+    const view = render(
+      <LanguageProvider language="ko" onLanguageChange={() => {}}>
+        <Editor zoom={100} workspace={space} />
+      </LanguageProvider>,
+    );
+    await act(async () => { await space.open("/docs/draft.docx"); await flushMicrotasks(); });
+    const editor = space.docxEditorFor(1)!;
+    editor.typeText("!");
+    await act(async () => { await flushMicrotasks(); });
+    expect((await editor.checkSave()).ok).toBe(true);
+
+    let finishSave: (() => void) | null = null;
+    fake.save = ((sessionId: number, generation: number, revision: number) => {
+      fake.calls.push({ method: "save", args: [sessionId, generation, revision] });
+      return new Promise(resolve => {
+        finishSave = () => resolve({ ok: true, value: { session: { ...fake.info }, bytes: 100, durable: true } });
+      });
+    }) as typeof fake.save;
+    const saving = editor.save();
+    await flushMicrotasks();
+    expect(editor.snapshot().saving).toBe(true);
+    editor.typeText("?");
+    await act(async () => { await flushMicrotasks(); });
+    expect(editor.revision).toBe(2);
+    await act(async () => {
+      finishSave?.();
+      await saving;
+      await flushMicrotasks();
+    });
+    expect(editor.saveState).toMatchObject({ kind: "saved", changedSince: true });
+    expect(view.getByTestId("recovery-checkpoint-1").dataset).toMatchObject({ state: "waiting", revision: "2" });
+    await act(async () => { await vi.advanceTimersByTimeAsync(2000); await flushMicrotasks(); });
+    expect(fake.calls.filter(call => call.method === "checkpoint").map(call => call.args)).toEqual([[1, 1, 2]]);
   });
 
   it("열면 WordCraft 편집 세션으로 불러오고, 미보존 편집은 버리기 확인 없이 닫지 않는다", async () => {

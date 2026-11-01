@@ -456,13 +456,14 @@ pub(crate) async fn preflight(
 }
 
 /// 원본 형식 저장(T009, 모듈 설명).
+#[cfg(test)]
 pub(crate) async fn save(
     state: &DocumentState,
     session_id: SessionId,
     generation: u64,
     revision: u64,
 ) -> Result<SaveOutcome, DocumentError> {
-    save_to(state, session_id, generation, revision, None).await
+    save_to(state, session_id, generation, revision, None, None, false).await
 }
 
 async fn save_to(
@@ -471,6 +472,8 @@ async fn save_to(
     generation: u64,
     revision: u64,
     destination: Option<std::path::PathBuf>,
+    recovery: Option<std::sync::Arc<crate::services::recovery::RecoveryStore>>,
+    checkpoint: bool,
 ) -> Result<SaveOutcome, DocumentError> {
     let info = wordcraft_session(state.registry(), session_id)?;
     check_ready(&info, generation)?;
@@ -487,7 +490,7 @@ async fn save_to(
     state
         .run_blocking(move || {
             let ticket = registry.begin_save(session_id, generation, revision)?;
-            let (output, reopen_equal) = {
+            let (output, reopen_equal, captured) = {
                 let model = model.lock().map_err(|_| DocumentError::Internal)?;
                 // 편집은 모델 잠금 안에서 확정한다: 잠금을 쥔 지금 기록이 그 판이면 모델도 그 판이다.
                 let info = registry.get(session_id)?;
@@ -500,7 +503,7 @@ async fn save_to(
                     })
                 }));
                 match exported {
-                    Ok(Some(result)) => result,
+                    Ok(Some((bytes, same))) => (bytes, same, info),
                     _ => {
                         return Err(DocumentError::SaveFailure {
                             stage: SaveStage::Export,
@@ -513,14 +516,32 @@ async fn save_to(
                 crate::document::resources::Category::Payload,
                 output.capacity(),
             )?;
-            service::save_to(
+            if checkpoint {
+                let original =
+                    service::validate_snapshot(&ticket, &limits, &output, None, reopen_equal)?;
+                recovery.as_ref().ok_or(DocumentError::Internal)?.snapshot(
+                    &ticket,
+                    &original,
+                    ticket.source.load.identity.path(),
+                    &output,
+                )?;
+                return Ok(SaveOutcome {
+                    session: captured,
+                    bytes: output.len(),
+                    durable: true,
+                });
+            }
+            service::save_with_options(
                 &registry,
                 &ticket,
                 &limits,
                 &output,
                 None,
                 reopen_equal,
-                destination.as_deref(),
+                service::SaveOptions {
+                    destination: destination.as_deref(),
+                    recovery: recovery.as_deref(),
+                },
             )
         })
         .await
@@ -541,8 +562,18 @@ pub async fn docx_save(
     session_id: SessionId,
     load_generation: u64,
     revision: u64,
+    store: State<'_, std::sync::Arc<crate::services::recovery::RecoveryStore>>,
 ) -> Result<SaveOutcome, DocumentError> {
-    save(&state, session_id, load_generation, revision).await
+    save_to(
+        &state,
+        session_id,
+        load_generation,
+        revision,
+        None,
+        Some(store.inner().clone()),
+        false,
+    )
+    .await
 }
 
 #[tauri::command]
@@ -552,6 +583,7 @@ pub async fn docx_save_as(
     load_generation: u64,
     revision: u64,
     destination: String,
+    store: State<'_, std::sync::Arc<crate::services::recovery::RecoveryStore>>,
 ) -> Result<SaveOutcome, DocumentError> {
     save_to(
         &state,
@@ -559,6 +591,34 @@ pub async fn docx_save_as(
         load_generation,
         revision,
         Some(destination.into()),
+        Some(store.inner().clone()),
+        false,
+    )
+    .await
+}
+
+#[tauri::command]
+pub async fn docx_checkpoint(
+    state: State<'_, DocumentState>,
+    store: State<'_, std::sync::Arc<crate::services::recovery::RecoveryStore>>,
+    session_id: SessionId,
+    load_generation: u64,
+    revision: u64,
+) -> Result<SaveOutcome, DocumentError> {
+    let checked = preflight(&state, session_id, load_generation).await?;
+    if !checked.preservation.is_safe() {
+        return Err(DocumentError::UnsafeSave {
+            preservation: checked.preservation,
+        });
+    }
+    save_to(
+        &state,
+        session_id,
+        load_generation,
+        revision,
+        None,
+        Some(store.inner().clone()),
+        true,
     )
     .await
 }

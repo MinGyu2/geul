@@ -17,6 +17,7 @@ import type { Message, MessageKey } from "../../language";
 import { useTranslation } from "../../language/LanguageContext";
 import type { DocumentWorkspace, EngineEditor } from "./documentWorkspace";
 import type { FileCommandActions } from "../../commands/commands";
+import { RecoveryCenter } from "./RecoveryCenter";
 import { RhwpEditorSession } from "./rhwp/RhwpEditorSession";
 import { ImeContext } from "./rhwp/imeInput";
 import { RhwpSurface } from "./rhwp/RhwpSurface";
@@ -132,6 +133,7 @@ export function Editor({ zoom, workspace = null, fileActions, notify, onModalCha
   return (
     <main className="editor" aria-label={t("editor.label")}>
       {workspace && <DocumentBar workspace={workspace} state={state} notify={notify} fileActions={fileActions} onClose={(session) => void close(session)} />}
+      {workspace?.supportsRecovery && <RecoveryCenter workspace={workspace} notify={notify} errorMessage={documentErrorMessage} />}
       {active === null ? (
         <>
           <div className="editor__notice" role="note">

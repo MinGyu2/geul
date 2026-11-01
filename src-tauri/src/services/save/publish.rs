@@ -386,7 +386,7 @@ fn trusted_directory(
 /// 없다(뿌리부터 귀납). 마지막 디렉터리 자체의 확인은 원본 소유자를 안 뒤에 한다(`stage`). 이름이 심볼릭 링크이거나
 /// 디렉터리가 아니면(불러온 정규화 경로가 바뀜) `FileConflict`.
 #[cfg(target_os = "linux")]
-fn open_directory(dir: &Path, euid: u32) -> Result<File, DocumentError> {
+pub(crate) fn open_directory(dir: &Path, euid: u32) -> Result<File, DocumentError> {
     use std::os::unix::ffi::OsStrExt;
     use std::os::unix::fs::{MetadataExt, OpenOptionsExt};
     use std::path::Component;
