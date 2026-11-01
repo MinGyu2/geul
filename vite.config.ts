@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs";
 import { defineConfig } from "vitest/config";
 import react from "@vitejs/plugin-react";
-import { rhwpGenerationPlugin } from "./scripts/rhwpAssets";
+import { rhwpGenerationPlugin } from "./scripts/rhwpAssets.ts";
 
 const { version } = JSON.parse(readFileSync(new URL("./package.json", import.meta.url), "utf8")) as {
   version: string;

@@ -2,7 +2,7 @@ import { createHash } from "node:crypto";
 import { cpSync, existsSync, mkdirSync, readFileSync, readdirSync, renameSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import type { Plugin } from "vite";
-import { canonical, identityFrom, type BuildIdentity } from "../src/components/Editor/rhwp/rhwpArtifactIdentity";
+import { canonical, identityFrom, type BuildIdentity } from "../src/components/Editor/rhwp/rhwpArtifactIdentity.ts";
 
 const names = ["rhwp.js", "rhwp_bg.wasm"] as const;
 const hash = (path: string) => createHash("sha256").update(readFileSync(path)).digest("hex");
