@@ -1,4 +1,4 @@
-// 8차: 바뀐 띠만 다시 그리기(레이어 트리 비교)와 여러 쪽 그리기 순서의 회귀(합성 이벤트·가짜 엔진). 실제 픽셀 동일성·지연·
+// 전체 쪽 다시 그리기 정책과 여러 쪽 그리기 순서의 회귀(합성 이벤트·가짜 엔진). 실제 픽셀 동일성·지연·
 // long task는 실제 앱에서 따로 잰다(editor-surface-decision.md "T007 8차").
 import { act, render } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -20,7 +20,10 @@ class LayeredDocument extends FakeDocument {
   pages = 1;
   /** 쪽 크기(CSS px). */
   size = { width: 800, height: 1000 };
-  onPatch: ((canvas: HTMLCanvasElement) => void) | null = null;
+  outputOptions: { showParagraphMarks: boolean } = { showParagraphMarks: false };
+  patchCalls = 0;
+  fullCalls = 0;
+  failFull = false;
   treeError = false;
   /** 같은 동기 실행(한 task) 안의 그리기는 같은 번호. */
   private task = 0;
@@ -45,17 +48,19 @@ class LayeredDocument extends FakeDocument {
     const leaves = page === 0
       ? this.paragraphs.map((text, i) => ({ kind: "leaf", sourceNodeId: 10 + i, ops: [{ type: "textRun", text, bbox: { x: 0, y: 20 * i + 3, width: 10 * text.length, height: 14 } }] }))
       : [{ kind: "leaf", sourceNodeId: 10, ops: [{ type: "textRun", text: `${page}:${this.paragraphs.join("/")}`, bbox: { x: 0, y: 500, width: 100, height: 14 } }] }];
-    return JSON.stringify({ root: { kind: "group", sourceNodeId: 0, children: leaves } });
+    return JSON.stringify({ outputOptions: this.outputOptions, pageWidth: this.size.width, pageHeight: this.size.height,
+      root: { kind: "group", sourceNodeId: 0, children: leaves } });
   }
   renderPageToCanvas(page = 0, canvas?: HTMLCanvasElement, scale = 1) {
+    this.fullCalls += 1;
     canvas!.width = Math.ceil(this.size.width * this.engineScale(scale));
     canvas!.height = Math.ceil(this.size.height * this.engineScale(scale));
+    if (this.failFull) throw new Error("render");
     this.draws.push({ kind: "full", page, text: this.paragraphs.join("/"), task: this.taskId() });
   }
-  renderPagePatchToCanvasFilteredWithProfile(page: number, canvas: HTMLCanvasElement, _scale: number, _layer: string, _profile: string,
-    x: number, y: number, width: number, height: number) {
-    this.onPatch?.(canvas);
-    this.draws.push({ kind: "patch", page, text: this.paragraphs.join("/"), rect: [x, y, width, height], task: this.taskId() });
+  renderPagePatchToCanvasFilteredWithProfile(page: number) {
+    this.patchCalls += 1;
+    this.draws.push({ kind: "patch", page, text: this.paragraphs.join("/"), task: this.taskId() });
   }
 }
 
@@ -142,22 +147,17 @@ function layout(view: { top: number; bottom: number }) {
   });
 }
 
-describe("바뀐 띠만 다시 그리기", () => {
-  it("한 문단 안의 편집은 그 문단 띠만(Canvas 픽셀 경계에 맞춰 바깥쪽으로) 다시 그린다", async () => {
+describe("제품은 바뀐 쪽 전체를 다시 그린다", () => {
+  it("문단 안 편집은 최신 입력으로 해당 쪽 전체를 그린다", async () => {
     const t = await mounted({ zoom: 150, text: ["가나다", "abc", "def"] });
     await wait(10);
     t.doc.draws = [];
     act(() => void t.editor.moveVertical(1, false));
     t.type("x");
-    const patch = t.doc.draws.find((d) => d.kind === "patch")!;
-    expect(patch).toBeTruthy();
-    const [x, y, width, height] = patch.rect as [number, number, number, number];
-    expect([x, width]).toEqual([0, 800]);
-    // 문단 1: 23..37, 여유 14 → 9..51. 1.5배에서 위아래가 정수 Canvas 픽셀.
-    expect(y).toBeLessThanOrEqual(9);
-    expect(y + height).toBeGreaterThanOrEqual(51);
-    expect(height).toBeLessThan(1000);
-    for (const edge of [y * 1.5, (y + height) * 1.5]) expect(Math.abs(edge - Math.round(edge))).toBeLessThan(1e-6);
+    expect(t.doc.draws.map(({ kind, page, text }) => ({ kind, page, text }))).toEqual([
+      { kind: "full", page: 0, text: "가나다/xabc/def" },
+    ]);
+    expect(t.doc.patchCalls).toBe(0);
     expect(t.editor.documentText()).toBe("가나다\r\nxabc\r\ndef");
   });
 
@@ -167,7 +167,8 @@ describe("바뀐 띠만 다시 그리기", () => {
     t.doc.draws = [];
     t.fire(new KeyboardEvent("keydown", { key: "Enter", bubbles: true, cancelable: true }));
     expect(t.doc.paragraphs).toHaveLength(3);
-    expect(t.doc.draws.at(-1)).toMatchObject({ kind: "patch", page: 0, rect: [0, 0, 800, 1000] });
+    expect(t.doc.draws.at(-1)).toMatchObject({ kind: "full", page: 0, text: t.doc.paragraphs.join("/") });
+    expect(t.doc.patchCalls).toBe(0);
   });
 
   it("그린 입력이 지금과 같은 쪽은 다시 그리지 않는다", async () => {
@@ -179,7 +180,7 @@ describe("바뀐 띠만 다시 그리기", () => {
     expect(t.doc.draws).toEqual([]);
   });
 
-  it("띠 다시 그리기 동안 Canvas의 fillRect는 띠와 겹치는 부분만 칠하고, 끝나면 원래대로 돌아간다", async () => {
+  it("전체 그리기에서는 fillRect를 바꾸지 않고 patch API를 부르지 않는다", async () => {
     const fills: number[][] = [];
     const context = {
       fillRect(x: number, y: number, width: number, height: number) { fills.push([x, y, width, height]); },
@@ -189,18 +190,54 @@ describe("바뀐 띠만 다시 그리기", () => {
     vi.spyOn(HTMLCanvasElement.prototype, "getContext").mockReturnValue(context as unknown as CanvasRenderingContext2D);
     const t = await mounted({ zoom: 200, text: ["가나다", "abc", "def"] });
     await wait(10);
-    t.doc.onPatch = (canvas) => (canvas.getContext("2d") as unknown as typeof context).fillRect(0, 0, 800, 1000); // rhwp: 쪽 배경
+    const patch = vi.spyOn(t.doc, "renderPagePatchToCanvasFilteredWithProfile");
     act(() => void t.editor.moveVertical(1, false));
     t.type("x");
-    const patch = t.doc.draws.find((d) => d.kind === "patch")!;
-    const [, y, , height] = patch.rect as [number, number, number, number];
-    expect(fills).toEqual([[0, y, 800, height]]);
+    expect(t.doc.draws.at(-1)?.kind).toBe("full");
+    expect(fills).toEqual([]);
+    expect(patch).not.toHaveBeenCalled();
+    expect(t.doc.patchCalls).toBe(0);
     expect(context.fillRect).toBe(original);
+  });
+
+  it("같은 레이어 입력이어도 출력 옵션이 바뀌면 쪽 전체를 다시 그린다", async () => {
+    const t = await mounted();
+    await wait(10);
+    t.doc.draws = [];
+    t.doc.outputOptions.showParagraphMarks = true;
+    const canvas = t.view.container.querySelector("canvas")!;
+    expect(t.editor.renderPage(0, canvas, 1)).toBe(true);
+    expect(t.doc.draws.map((d) => d.kind)).toEqual(["full"]);
+    expect(t.doc.patchCalls).toBe(0);
+  });
+
+  it("레이어 입력이 같아도 페이지 기하가 바뀌면 쪽 전체를 다시 그린다", async () => {
+    const t = await mounted();
+    await wait(10);
+    t.doc.draws = [];
+    t.editor.pages[0] = { ...t.editor.pages[0]!, width: t.editor.pages[0]!.width + 1 };
+    const canvas = t.view.container.querySelector("canvas")!;
+    expect(t.editor.renderPage(0, canvas, 1)).toBe(true);
+    expect(t.doc.draws.map((d) => d.kind)).toEqual(["full"]);
+    expect(t.doc.patchCalls).toBe(0);
+  });
+
+  it("Canvas 해제 뒤에는 같은 입력도 새 쪽 전체로 다시 그린다", async () => {
+    const t = await mounted();
+    await wait(10);
+    const canvas = t.view.container.querySelector("canvas")!;
+    t.doc.draws = [];
+    t.editor.releaseRendering();
+    expect(canvas.width).toBe(0);
+    expect(canvas.height).toBe(0);
+    expect(t.editor.renderPage(0, canvas, 1)).toBe(true);
+    expect(t.doc.draws.map((d) => d.kind)).toEqual(["full"]);
+    expect(t.doc.patchCalls).toBe(0);
   });
 });
 
-describe("엔진 배율과 띠 좌표(9차)", () => {
-  /** Canvas 2D 문맥 흉내: fillRect를 모으고, 변환은 엔진 배율(begin_page의 setTransform + scale). */
+describe("제품은 엔진 배율과 관계없이 전체 쪽을 그린다", () => {
+  /** Canvas 2D 문맥 흉내: 전체 경로가 Canvas 메서드를 가로채지 않는지 확인한다. */
   function fakeContext(scale: () => number) {
     const fills: number[][] = [];
     const context = {
@@ -226,14 +263,12 @@ describe("엔진 배율과 띠 좌표(9차)", () => {
       const t = await mounted({ zoom: options.zoom, size: options.size, text: ["가나다", "abc", "def"] });
       engine = t.doc.engineScale((options.zoom / 100) * options.ratio);
       await wait(10);
-      t.doc.onPatch = (canvas) => (canvas.getContext("2d") as unknown as typeof fake.context).fillRect(0, 0, options.size.width, options.size.height);
       t.doc.draws = [];
       act(() => void t.editor.moveVertical(1, false));
       t.type("x");
       expect(t.editor.documentText()).toBe("가나다\r\nxabc\r\ndef");
       expect(fake.context.fillRect).toBe(fake.original);
-      const patch = t.doc.draws.find((d) => d.kind === "patch");
-      return { draws: t.doc.draws, rect: patch?.rect as [number, number, number, number], fills: fake.fills, engine };
+      return { draws: t.doc.draws, fills: fake.fills, engine, doc: t.doc };
     } finally {
       restoreRatio();
     }
@@ -242,25 +277,19 @@ describe("엔진 배율과 띠 좌표(9차)", () => {
   const a4 = { width: 793.7, height: 1122.5 };
   it.each([
     [50, 1], [100, 1], [200, 1], [50, 2], [100, 2], [200, 2], [67, 1.25], [110, 1.25], [175, 1.5],
-  ])("요청 배율 그대로 그리는 쪽(A4, zoom %i, DPR %f): 띠만, 경계는 정수 Canvas 픽셀, fillRect는 띠 안", async (zoom, ratio) => {
-    const { draws, rect: [x, y, width, height], fills, engine } = await editSecondParagraph({ zoom, ratio, size: a4 });
+  ])("A4 쪽(zoom %i, DPR %f)은 전체 쪽을 그리고 patch는 부르지 않는다", async (zoom, ratio) => {
+    const { draws, fills, engine, doc } = await editSecondParagraph({ zoom, ratio, size: a4 });
     expect(engine).toBe((zoom / 100) * ratio);
-    expect(draws.map((d) => d.kind)).toEqual(["patch"]);
-    expect([x, width]).toEqual([0, a4.width]);
-    expect(y).toBeLessThanOrEqual(9);
-    expect(y + height).toBeGreaterThanOrEqual(51);
-    expect(height).toBeLessThan(a4.height);
-    for (const edge of [y * engine, (y + height) * engine]) expect(Math.abs(edge - Math.round(edge))).toBeLessThan(1e-6);
-    expect(fills).toHaveLength(1);
-    expect(fills[0]![1]).toBeCloseTo(y, 9);
-    expect(fills[0]![3]).toBeCloseTo(height, 9);
+    expect(draws.map((d) => [d.kind, d.page, d.text])).toEqual([["full", 0, "가나다/xabc/def"]]);
+    expect(doc.patchCalls).toBe(0);
+    expect(fills).toEqual([]);
   });
 
-  it("좁고 긴 쪽도 한 변이 한도 안이면 띠만 그린다(300×6000, 배율 2)", async () => {
-    const { draws, rect, fills } = await editSecondParagraph({ zoom: 200, ratio: 1, size: { width: 300, height: 6000 } });
-    expect(draws.map((d) => d.kind)).toEqual(["patch"]);
-    expect(rect[3]).toBeLessThan(6000);
-    expect(fills).toHaveLength(1);
+  it("좁고 긴 쪽도 전체를 그리고 patch는 부르지 않는다(300×6000, 배율 2)", async () => {
+    const { draws, fills, doc } = await editSecondParagraph({ zoom: 200, ratio: 1, size: { width: 300, height: 6000 } });
+    expect(draws.map((d) => d.kind)).toEqual(["full"]);
+    expect(doc.patchCalls).toBe(0);
+    expect(fills).toEqual([]);
   });
 
   it.each([
@@ -269,41 +298,67 @@ describe("엔진 배율과 띠 좌표(9차)", () => {
     ["한도 바로 위(1 CSS px 여유 안)", 200, 2, { width: 200, height: 4096 }],
     ["엔진 최대 배율 12를 넘는 요청", 200, 6.5, { width: 100, height: 100 }],
     ["엔진 최소 배율 0.25보다 작은 요청", 50, 0.4, { width: 800, height: 1000 }],
-  ])("엔진이 배율을 바꾸는 쪽(%s)은 띠·그 자리 패치 없이 처음 그리기와 같은 전체 그리기를 쓴다", async (_name, zoom, ratio, size) => {
-    const { draws, fills, engine } = await editSecondParagraph({ zoom, ratio, size });
+  ])("배율 정규화와 관계없이(%s) 전체 쪽을 그린다", async (_name, zoom, ratio, size) => {
+    const { draws, fills, engine, doc } = await editSecondParagraph({ zoom, ratio, size });
     if (size.height !== 4096) expect(engine).not.toBe((zoom / 100) * ratio);
     expect(draws.map((d) => [d.kind, d.page, d.text])).toEqual([["full", 0, "가나다/xabc/def"]]);
-    expect(fills).toEqual([]); // fillRect를 바꾸지 않았다(전체 그리기는 가짜 엔진이 칠하지 않음)
+    expect(doc.patchCalls).toBe(0);
+    expect(fills).toEqual([]);
   });
 
-  it("엔진이 그리다 던져도 fillRect를 돌려놓고, 전체 그리기로 다시 그린다", async () => {
-    const fake = fakeContext(() => 2);
+  it("전체 렌더 실패는 성공한 paint로 기록하지 않고 세션을 terminal failure로 만든다", async () => {
     const t = await mounted({ zoom: 200, text: ["가나다", "abc", "def"] });
     await wait(10);
-    t.doc.onPatch = (canvas) => {
-      (canvas.getContext("2d") as unknown as typeof fake.context).fillRect(0, 0, 800, 1000);
-      throw new Error("render");
-    };
+    const canvas = t.view.container.querySelector("canvas")!;
+    t.doc.paragraphs[0] += "!";
+    t.doc.failFull = true;
     t.doc.draws = [];
-    act(() => void t.editor.moveVertical(1, false));
-    t.type("x");
-    expect(fake.context.fillRect).toBe(fake.original);
-    expect(t.doc.draws.map((d) => d.kind)).toEqual(["full"]);
-    expect(fake.fills).toHaveLength(1);
-    expect(fake.fills[0]![3]).toBeLessThan(1000); // 던지기 전의 칠하기만 제한됐다
-    expect(t.editor.status.kind).toBe("ready");
+    expect(t.editor.renderPage(0, canvas, 2)).toBe(false);
+    expect(t.editor.status.kind).toBe("failed");
+    const attempts = t.doc.fullCalls;
+    expect(t.editor.renderPage(0, canvas, 2)).toBe(false);
+    expect(t.doc.fullCalls).toBe(attempts);
+    expect(t.doc.patchCalls).toBe(0);
   });
 
   it("레이어 트리를 읽지 못하면 비교하지 않고 쪽 전체를 다시 그린다", async () => {
-    const fake = fakeContext(() => 1);
     const t = await mounted({ text: ["가나다", "abc"] });
     await wait(10);
     t.doc.treeError = true;
-    t.doc.onPatch = (canvas) => (canvas.getContext("2d") as unknown as typeof fake.context).fillRect(0, 0, 800, 1000);
     t.doc.draws = [];
-    t.type("x");
-    expect(t.doc.draws).toMatchObject([{ kind: "patch", rect: [0, 0, 800, 1000] }]);
-    expect(fake.fills).toEqual([[0, 0, 800, 1000]]);
+    const canvas = t.view.container.querySelector("canvas")!;
+    expect(t.editor.renderPage(0, canvas, 1)).toBe(true);
+    expect(t.editor.renderPage(0, canvas, 1)).toBe(true);
+    expect(t.doc.draws.map((d) => d.kind)).toEqual(["full", "full"]);
+    expect(t.doc.patchCalls).toBe(0);
+  });
+});
+
+describe("전체 쪽 출력의 실패와 무효화", () => {
+  it("새 Canvas의 첫 전체 렌더가 할당 뒤 실패해도 teardown이 bitmap을 놓는다", async () => {
+    const t = await mounted();
+    const canvas = document.createElement("canvas");
+    t.doc.failFull = true;
+    expect(t.editor.renderPage(0, canvas, 1)).toBe(false);
+    expect(canvas.width).toBeGreaterThan(0); // 엔진이 할당한 뒤 throw
+    t.editor.dispose();
+    expect([canvas.width, canvas.height]).toEqual([0, 0]);
+  });
+
+  it("쪽 밖 bbox의 연산 변경도 생략하지 않는다", async () => {
+    const t = await mounted();
+    const canvas = t.view.container.querySelector("canvas")!;
+    const tree = (text: string) => JSON.stringify({ root: { kind: "leaf", ops: [
+      { type: "textRun", text, bbox: { x: 0, y: 2000, width: 20, height: 14 } },
+    ] } });
+    let text = "before";
+    t.doc.getPageLayerTreeWithProfile = () => tree(text);
+    expect(t.editor.renderPage(0, canvas, 1)).toBe(true);
+    t.doc.draws = [];
+    text = "after";
+    expect(t.editor.renderPage(0, canvas, 1)).toBe(true);
+    expect(t.doc.draws.map(d => d.kind)).toEqual(["full"]);
+    expect(t.doc.patchCalls).toBe(0);
   });
 });
 

@@ -1380,3 +1380,24 @@ ref: 입력 시각·판·그림 여부, ref가 가리키는 표본만 기록). �
 **결정.** 실험은 범위 안의 정확성·측정 기준을 충족했고 엔진 쪽 나눔 비용을 크게 줄였지만 D4는 FAIL이다. 패치는 병합하지 않고
 비공개 결과로 둔다. T010 미완료, 제품 rhwp 실행 취소·다시 실행 NO-GO. 원시 결과·스크립트: 비공개 geul-tests
 `reports/t010-incremental-pagination-20261030/`(`summary.json`, `oracle/`, `bench/`, `rgba/`, `native/`).
+
+
+## T010 GPU-safe 제품 repaint 정책 (2026-11-01, T010 미완료)
+
+제품 `RhwpEditorSession.renderPage`는 모든 백엔드에서 **FULL_PAGE_ONLY**다. 바뀐 쪽은 기존
+`renderPageToCanvas`로 전체를 그린다. backend 감지나 진단 옵션으로 부분 띠를 켜는 제품 경로는 없다.
+같은 Canvas의 성공한 출력과 전체 레이어 JSON·쪽 번호·쪽 크기·배율·bitmap 크기가 모두 같을 때만 생략한다.
+비교 불가·알 수 없는 트리·출력 옵션 변경·쪽 밖 bbox 변경도 전체 렌더로 간다. 성공 뒤에만 출력 입력을 기록하며,
+엔진이 bitmap 할당 뒤 실패한 첫 paint도 해제 대상으로 추적한다. `releaseRendering`은 bitmap과 비교 기록을 함께 버린다.
+기존 표시 예산, revision 취소, 첫 paint의 제한된 재시도, terminal failure 중단, StrictMode 재실행 계약은 유지한다.
+
+격리 후보 companion v4와는 구현이 다르다. 후보는 엔진 v4와 **쪽 전체 patch**를 짝지었지만 pinned 엔진
+`1a76570`의 patch API는 쪽 전체를 요청해도 `set_partial_clip`을 사용하므로 소수 배율의 가장자리 오류가 남는다.
+이번 제품 경로는 partial clip을 사용하지 않는 기존 전체 렌더 API만 호출한다. 따라서 **이번 정책에 엔진 v4는 필요 없다**.
+후에 bitmap 재할당을 피하는 전체 patch를 도입하려면 별도 승인을 받아 엔진 v4·동반 코드·새 WASM 신원을 묶어
+검증해야 한다. 과거의 후보 4백엔드 × 6배율 PASS를 현재 제품의 통과로 세지 않는다.
+
+전체 렌더는 변경마다 bitmap 크기를 다시 정하므로 추가 비용이 가능하다. 과거 띠 최적화의 지연 이점을 보장하지 않는다.
+공식 D4의 50 ms group-start·1500 ms Undo/Redo·3RAF 끝점은 그대로이며 D4 FAIL을 유지한다.
+T010 INCOMPLETE, RHWP Undo/Redo NO-GO, T011 NOT STARTED. 현재 실행의 상세 신원·회귀·픽셀 범위와 제한은
+비공개 `geul-tests/reports/t010-full-page-product-20261101/`에 기록한다.

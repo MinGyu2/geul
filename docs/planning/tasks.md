@@ -260,3 +260,13 @@ Undo/Redo NO-GO·formatting unsupported·T010 미체크·T011 NOT STARTED. 설�
 ### T010 후속 검증 (2026-10-29, 미완료)
 
 최신 q13 공식 D4는 네 문서를 완주했으나 group-start p95 47/46/198/70ms 가운데 두 문서가 50ms 문턱을 넘어 FAIL이다. Undo p95는 51/49/76/124ms로 통과했고 timeout은 0이다. 실행 중 선택 source 12개의 전후 hash가 일치하고 현재 파일과도 맞는다. q13 후보는 `NOT_APPROVED`; 후보 Canvas 39개 검사·24 exact RGBA와 Chrome/WebKit 24쪽 재사용 검사는 승인 anchor의 D1 전체 승인을 대신하지 않는다. D2는 IBus Hangul 활성화 후에도 필수 지연 순서를 36회 중 0회 관측해 INCONCLUSIVE다. 종료 후 decoded resident cache 259,402,324 bytes이며 RSS는 미측정이다. T010 미완료, 제품 RHWP Undo/Redo NO-GO, T011 BLOCKED를 유지한다. q13 요약·증거 SHA-256: `tests/integration/rhwp/evidence/t010-acceptance-20261029/q13-summary.json`; 상세: `tests/integration/rhwp/evidence/t010-acceptance-20261029/REPORT.ko.md`.
+
+
+### T010 GPU-safe repaint 정책 (2026-11-01, 미완료)
+
+제품 세션은 모든 backend에서 변경된 쪽을 기존 전체 렌더 API로 그린다(FULL_PAGE_ONLY).
+부분 patch·진단 band 활성화 경로는 없다. pinned 엔진의 전체 patch도 소수 clip 문제가 있어 사용하지 않는다.
+엔진 v4·gitlink·선택된 WASM은 교체하지 않았다. 수명·소유·예산과 성공한 동일 쪽의 생략은 유지한다.
+[구현 계약](../architecture/rhwp-undo-redo.md#t010-gpu-safe-제품-repaint-정책-2026-11-01-t010-미완료).
+이 정책 통합은 승인 관문 통과가 아니다. D1 미완료, D2 독립 검증 미완료, 공식 D4 FAIL,
+T010 INCOMPLETE, RHWP Undo/Redo NO-GO, T011 NOT STARTED 유지.

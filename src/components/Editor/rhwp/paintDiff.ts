@@ -1,3 +1,4 @@
+// 제품 세션은 검증된 전체 JSON의 동일성만 비교한다(FULL_PAGE_ONLY). 아래 changedBand는 기존 진단·단위 시험용이며 제품 렌더에 연결하지 않는다.
 // 쪽 그리기 입력(rhwp 레이어 트리, `getPageLayerTreeWithProfile`)을 비교해 다시 그릴 곳을 정한다(T007 8차).
 //
 // rhwp는 본문 편집에서 바뀐 영역을 알려 주지 않는다. 대신 그리기(`renderPage…ToCanvas`)가 그대로 재생하는 레이어 트리를

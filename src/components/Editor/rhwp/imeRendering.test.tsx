@@ -9,13 +9,13 @@ import type { RhwpDocument, RhwpModule } from "./rhwpModule";
 import { RhwpSurface } from "./RhwpSurface";
 import { base, controlledBackend, FakeDocument, flush, info, loaded, ok } from "./testing";
 
-type Draw = { kind: "full" | "patch"; page: number; text: string; rect?: number[] };
+type Draw = { kind: "full"; page: number; text: string };
 
-/** rhwp처럼 전체 그리기는 Canvas 크기를 정하고, 그 자리 다시 그리기는 크기가 같을 때만 그린다. */
+/** rhwp 전체 그리기는 Canvas 크기를 다시 정한다. patch API는 호출되면 실패시켜 검증한다. */
 class PaintingDocument extends FakeDocument {
   draws: Draw[] = [];
   pages = 1;
-  patchFails = false;
+  patchCalls = 0;
 
   pageCount() { return this.pages; }
   renderPageToCanvas(page = 0, canvas?: HTMLCanvasElement, scale = 1) {
@@ -23,10 +23,9 @@ class PaintingDocument extends FakeDocument {
     canvas!.height = Math.ceil(1000 * scale);
     this.draws.push({ kind: "full", page, text: this.paragraphs.join("/") });
   }
-  renderPagePatchToCanvasFilteredWithProfile(page: number, canvas: HTMLCanvasElement, scale: number, layer: string, profile: string,
-    x: number, y: number, width: number, height: number) {
-    if (this.patchFails || canvas.width !== Math.ceil(800 * scale) || layer !== "all" || profile !== "screen") throw Error("patch");
-    this.draws.push({ kind: "patch", page, text: this.paragraphs.join("/"), rect: [x, y, width, height] });
+  renderPagePatchToCanvasFilteredWithProfile() {
+    this.patchCalls += 1;
+    throw Error("product repaint must not call patch API");
   }
 }
 
@@ -73,27 +72,27 @@ async function converged(doc: PaintingDocument) {
 }
 
 describe("조합 갱신의 그리기", () => {
-  it("크기가 같은 쪽은 Canvas를 다시 잡지 않고 그 자리에서 다시 그린다(조합 키마다 bitmap 재할당 없음)", async () => {
+  it("조합 갱신마다 Canvas를 다시 잡아 쪽 전체를 다시 그린다", async () => {
     const t = await mounted();
     expect(t.doc.draws.map((d) => d.kind)).toEqual(["full"]);
     const canvas = t.view.container.querySelector("canvas")!;
     t.compose("ㅎ", true);
     t.compose("하");
-    // 쪽 전체를 그 자리에서(Canvas 크기를 다시 정하지 않고) 다시 그린다. 부분 띠만 그리는 것은 실제 엔진에서 표·뒤 문단이
-    // 어긋나 쓰지 않는다(editor-surface-decision.md "T007 7차").
+    // 제품은 조합 키마다 전체 쪽을 렌더링한다.
     expect(t.doc.draws.slice(1)).toEqual([
-      { kind: "patch", page: 0, text: "ㅎ가나다", rect: [0, 0, 800, 1000] },
-      { kind: "patch", page: 0, text: "하가나다", rect: [0, 0, 800, 1000] },
+      { kind: "full", page: 0, text: "ㅎ가나다" },
+      { kind: "full", page: 0, text: "하가나다" },
     ]);
     expect([canvas.width, canvas.height]).toEqual([800, 1000]);
+    expect(t.doc.patchCalls).toBe(0);
   });
 
-  it("그 자리 다시 그리기를 엔진이 거부하면 원래의 전체 그리기로 그리고 편집은 이어진다", async () => {
+  it("patch API를 쓰지 않아도 전체 렌더로 편집을 이어간다", async () => {
     const t = await mounted();
-    t.doc.patchFails = true;
     t.compose("ㅎ", true);
     expect(t.doc.draws.at(-1)).toEqual({ kind: "full", page: 0, text: "ㅎ가나다" });
     expect(t.editor.status.kind).toBe("ready");
+    expect(t.doc.patchCalls).toBe(0);
   });
 
   it("여러 쪽: 입력 중에는 커서 쪽만 바로 그리고, 다른 쪽은 입력이 멈춘 뒤 마지막 모델로 한 번 그린다", async () => {

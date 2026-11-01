@@ -48,13 +48,13 @@ import { documentCommandState, FORMAT_FLAG } from "../../../commands/capability"
 import { commandDefinition, type DocumentCommandId } from "../../../commands/registry";
 import type { CharFormatFlag, CommandDispatch, DocumentCommandSnapshot, DocumentCommandTarget } from "../../../commands/target";
 import type { DocumentSessions } from "../../../adapters/sessions";
-import { changedBand, summarizeLayerTree, type PaintBox, type PaintedPage } from "./paintDiff";
+import { summarizeLayerTree } from "./paintDiff";
 import type { RhwpDocument, RhwpModule } from "./rhwpModule";
 import {
   captureCheckpoint, historyBudget, HistoryFailure, HistoryRefused, placeCheckpoint, RhwpHistory, type HistoryKind,
 } from "./rhwpHistory";
 import { ZOOM_STEPS } from "../../../hooks/layoutState";
-import { drawsAtRequestedScale, fitsRenderBudget, MAX_PAGE_EXTENT } from "./renderBudget";
+import { fitsRenderBudget, MAX_PAGE_EXTENT } from "./renderBudget";
 export { MAX_PAGE_EXTENT } from "./renderBudget";
 import {
   charCount,
@@ -277,8 +277,11 @@ export class RhwpEditorSession implements DocumentCommandTarget {
   private history: RhwpHistory | null = null;
   /** 기록이 없는 까닭: 문서가 예산 밖(limit) 또는 기록을 쓸 수 없게 됨(unavailable). 기록이 있거나 문서가 없으면 null. */
   private historyOff: "limit" | "unavailable" | null = null;
-  /** Canvas마다 마지막으로 그린 쪽·배율·그리기 입력 요약(그 자리 다시 그리기의 조건과 바뀐 띠 비교). 놓은 Canvas(releaseRendering, 크기 0)는 쓰지 않고 전체 그리기로 다시 기록한다. */
-  private drawnAt = new WeakMap<HTMLCanvasElement, { page: number; scale: number; painted: PaintedPage | null }>();
+  /** 성공한 전체 그리기만 기억한다. 입력·쪽 크기·bitmap·배율이 모두 같을 때만 생략한다. */
+  private drawnAt = new WeakMap<HTMLCanvasElement, {
+    page: number; scale: number; width: number; height: number;
+    bitmapWidth: number; bitmapHeight: number; painted: string | null;
+  }>();
   private readonly samples: number[] = [];
   private readonly listeners = new Set<() => void>();
 
@@ -603,6 +606,7 @@ export class RhwpEditorSession implements DocumentCommandTarget {
       canvas.height = 0;
     }
     this.renderCanvases.clear();
+    this.drawnAt = new WeakMap();
   }
 
   renderPage(page: number, canvas: HTMLCanvasElement, scale: number): boolean {
@@ -613,9 +617,17 @@ export class RhwpEditorSession implements DocumentCommandTarget {
       const painted = this.paintedSummary(doc, page);
       trace("rhwp:paint-summary", () => ({ page, ms: performance.now() - started }));
       const drawStarted = import.meta.env.VITE_GEUL_TEST_HOOKS === "1" ? performance.now() : 0;
-      if (!this.repaintInPlace(doc, page, canvas, scale, painted)) doc.renderPageToCanvas(page, canvas, scale);
+      // FULL_PAGE_ONLY: 백엔드를 추측하지 않는다. pinned 엔진의 쪽 전체 patch도 소수 clip 경계가
+      // 전체 렌더와 다르므로 patch API를 호출하지 않는다(엔진 v4·새 WASM 없이 안전한 경로).
+      if (!this.isPageUnchanged(page, canvas, scale, painted)) {
+        // 엔진은 bitmap을 할당한 뒤 실패할 수도 있다. 첫 paint 실패도 해제 대상에 넣되 성공으로 기록하지 않는다.
+        this.renderCanvases.add(canvas);
+        doc.renderPageToCanvas(page, canvas, scale);
+      }
       trace("rhwp:paint-draw", () => ({ page, ms: performance.now() - drawStarted }));
-      this.drawnAt.set(canvas, { page, scale, painted });
+      const size = this.pages[page]!;
+      this.drawnAt.set(canvas, { page, scale, width: size.width, height: size.height,
+        bitmapWidth: canvas.width, bitmapHeight: canvas.height, painted });
       this.renderCanvases.add(canvas);
       if (page === 0 && this.firstPaintMs === null) {
         this.firstPaintMs = performance.now() - this.loadStartedAt;
@@ -630,57 +642,29 @@ export class RhwpEditorSession implements DocumentCommandTarget {
   }
 
   /** 지금 모델의 그 쪽 그리기 입력 요약(비교용). 엔진이 주지 않거나 읽지 못하면 null(그때는 쪽 전체를 그림). */
-  private paintedSummary(doc: RhwpDocument, page: number): PaintedPage | null {
+  private paintedSummary(doc: RhwpDocument, page: number): string | null {
     if (!doc.getPageLayerTreeWithProfile) return null;
     try {
       const started = import.meta.env.VITE_GEUL_TEST_HOOKS === "1" ? performance.now() : 0;
       const json = doc.getPageLayerTreeWithProfile(page, "screen", true, true);
       trace("rhwp:layer-json", () => ({ page, ms: performance.now() - started, chars: json.length }));
-      return summarizeLayerTree(json);
+      // 기존의 알 수 없는 트리 거부를 유지한다. bbox 밖 변경도 생략하지 않도록 damage 띠 대신
+      // 전체 JSON을 비교한다(쪽 치수·출력 옵션 등 잎 밖 입력도 포함).
+      return summarizeLayerTree(json) ? json : null;
     } catch {
       return null;
     }
   }
 
-  /**
-   * 이 배율로 이미 그린 같은 쪽 Canvas면 그 자리에서 다시 그린다(같은 페인트, Canvas 크기를 다시 정하지 않음).
-   * `renderPageToCanvas`는 그릴 때마다 Canvas 크기를 다시 정해 bitmap을 새로 잡는데, 조합 키마다 그리면 그 비용이
-   * 실제 IME 입력 지연의 큰 몫이었다(7차). 8차: 마지막으로 그 Canvas에 그린 그리기 입력과 지금 입력을 비교해(paintDiff.ts)
-   * 바뀐 띠만 다시 그리고, 바뀐 것이 없으면 그리지 않는다. 비교할 수 없으면 쪽 전체. 조건이 맞지 않거나(9차: 엔진이 배율을
-   * 바꾸는 쪽 포함) 엔진이 거부하면(그리기 전 예외) false를 돌려 원래의 전체 그리기를 쓴다. 진짜 그리기 실패는 그 전체 그리기에서
-   * 다시 드러난다.
-   */
-  private repaintInPlace(doc: RhwpDocument, page: number, canvas: HTMLCanvasElement, scale: number, painted: PaintedPage | null): boolean {
+  /** 같은 Canvas의 성공한 전체 출력과 입력이 완전히 같을 때만 다시 그리기를 생략한다. */
+  private isPageUnchanged(page: number, canvas: HTMLCanvasElement, scale: number, painted: string | null): boolean {
     const size = this.pages[page];
     const drawn = this.drawnAt.get(canvas);
-    if (!doc.renderPagePatchToCanvasFilteredWithProfile || !size || !drawn || drawn.page !== page || drawn.scale !== scale
-      || canvas.width === 0 || canvas.height === 0) {
-      return false;
-    }
-    const band = painted && drawn.painted ? changedBand(drawn.painted, painted, size.width, size.height) : "page";
-    if (band === null) return true; // 이 Canvas는 이미 지금 모델을 보여 준다
-    // 그 자리에서 다시 그리기는 엔진이 요청한 배율 그대로 그릴 때만(9차). 엔진이 배율을 줄이면(한 변이 16,384 px를 넘는 쪽) Canvas
-    // 변환이 요청 배율과 달라, 요청 배율로 맞춘 띠 경계·fillRect 제한이 실제로 잘라 낸 곳과 어긋났다(실측: 300×6000 쪽, 요청 4.16 →
-    // 엔진 2.73에서 띠 위쪽이 배경 없이 투명하게 남아 RGB 87,188 px가 다름). 쪽 전체 패치도 그 배율에서는 처음 그리기와 달랐다
-    // (300×9000, 엔진 1.82: 표 괘선 자리 9 px, 채널 차 최대 6, 원인 미확인). 그때는 처음 그리기와 같은 전체 그리기를 쓴다.
-    if (!drawsAtRequestedScale(size, scale)) return false;
-    let rect: PaintBox = { x: 0, y: 0, width: size.width, height: size.height };
-    if (band !== "page") {
-      // 띠의 위아래를 Canvas 픽셀 경계에 맞춘다(바깥쪽으로). 소수 픽셀 경계에서는 지우기·다시 그리기가 그 줄을 일부만 덮어
-      // 앞뒤 픽셀이 섞였다(실측: 띠 끝 두 줄만 RGB가 다름).
-      const top = Math.floor(band.y * scale) / scale;
-      const bottom = Math.min(size.height, Math.ceil((band.y + band.height) * scale) / scale);
-      rect = { x: band.x, y: top, width: band.width, height: bottom - top };
-    }
-    const restore = rect.height < size.height ? confineFills(canvas, rect, scale) : null;
-    try {
-      doc.renderPagePatchToCanvasFilteredWithProfile(page, canvas, scale, "all", "screen", rect.x, rect.y, rect.width, rect.height);
-      return true;
-    } catch {
-      return false;
-    } finally {
-      restore?.();
-    }
+    return !!size && !!drawn && painted !== null && drawn.painted === painted
+      && drawn.page === page && drawn.scale === scale
+      && drawn.width === size.width && drawn.height === size.height
+      && canvas.width > 0 && canvas.height > 0
+      && drawn.bitmapWidth === canvas.width && drawn.bitmapHeight === canvas.height;
   }
 
   caretRect(): CaretRect | null {
@@ -1658,36 +1642,4 @@ export class RhwpEditorSession implements DocumentCommandTarget {
     if (errors.length === 1) throw errors[0];
     if (errors.length) throw new AggregateError(errors, "세션 종료 실패", { cause: errors[0] });
   }
-}
-
-/**
- * 띠 다시 그리기 동안 그 Canvas의 fillRect를 띠와 겹치는 부분만 그리게 한다(돌려놓는 함수를 돌려줌).
- * rhwp의 패치 그리기는 띠로 잘라 내고(clip) 그리지만 쪽 배경을 쪽 전체 fillRect로 다시 칠한다. WebKit은 잘라 낸 영역이 아니라
- * 그린 사각형 전체를 바뀐 곳으로 보아(실측: 50×50으로 잘라 낸 전체 fillRect가 전체 칠하기와 같은 frame 비용) Canvas 전체를
- * 다시 합성했다. 잘라 낸 결과와 같은 픽셀이므로(띠는 Canvas 픽셀 경계에 맞춤) 겹치는 부분만 칠한다. 지금 변환이 확대·이동이
- * 아니면(회전·기울임·뒤집기) 그대로 칠한다(잘라 내기가 같은 결과를 지킴).
- * scale은 엔진이 실제로 그리는 배율이어야 한다: 띠(쪽 좌표) × scale이 엔진의 잘라 내기와 같은 Canvas 픽셀이 되는 조건이다.
- * 그래서 엔진이 요청 배율을 그대로 쓸 때만 부른다(drawsAtRequestedScale, 9차). 돌려놓기는 그리기가 던져도 부른다(finally).
- */
-function confineFills(canvas: HTMLCanvasElement, band: PaintBox, scale: number): (() => void) | null {
-  const context = canvas.getContext("2d");
-  if (!context || typeof context.getTransform !== "function") return null;
-  const original = context.fillRect;
-  const device = { left: band.x * scale, top: band.y * scale, right: (band.x + band.width) * scale, bottom: (band.y + band.height) * scale };
-  context.fillRect = function (x: number, y: number, width: number, height: number) {
-    const m = this.getTransform();
-    if (m.b !== 0 || m.c !== 0 || m.a <= 0 || m.d <= 0) return original.call(this, x, y, width, height);
-    // 띠(Canvas 픽셀)를 지금 사용자 좌표로 옮겨 겹치는 부분만.
-    const left = Math.max(Math.min(x, x + width), (device.left - m.e) / m.a);
-    const right = Math.min(Math.max(x, x + width), (device.right - m.e) / m.a);
-    const top = Math.max(Math.min(y, y + height), (device.top - m.f) / m.d);
-    const bottom = Math.min(Math.max(y, y + height), (device.bottom - m.f) / m.d);
-    if (right <= left || bottom <= top) return;
-    original.call(this, left, top, right - left, bottom - top);
-  };
-  return () => {
-    // 인스턴스에 둔 것만 지운다(원래의 prototype 메서드로 돌아감).
-    delete (context as unknown as { fillRect?: unknown }).fillRect;
-    if (context.fillRect !== original) context.fillRect = original;
-  };
 }
