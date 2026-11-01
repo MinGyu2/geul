@@ -48,5 +48,9 @@ libc = "=0.2.190"
 
 # T008: WordCraft 엔진(배치·래스터·PNG)은 최적화 없이 빌드하면 키 입력 하나에 수백 ms가 걸린다(디버그 앱 실측 p95 약 380 ms).
 # 개발 빌드에서도 의존성만 최적화한다(WordCraft 워크스페이스의 [profile.dev.package."*"]와 같은 값). 이 크레이트는 그대로 디버그다.
+# 반복 테스트가 큰 증분 캐시를 누적하지 않게 한다. 디버깅/반복 편집에서 필요하면 CARGO_INCREMENTAL=1로 켤 수 있다.
+[profile.dev]
+incremental = false
+
 [profile.dev.package."*"]
 opt-level = 2
