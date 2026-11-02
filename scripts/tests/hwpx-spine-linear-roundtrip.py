@@ -55,8 +55,9 @@ def content_hpf(path):
 
 def spine(path):
     root = oracle.parse(content_hpf(path))
-    return [(e.get("idref"), e.get("linear")) for e in root.iter()
-            if isinstance(e.tag, str) and e.tag.endswith("}itemref")]
+    ns = '{http://www.idpf.org/2007/opf/}'
+    return [(e.get("idref"), e.get("linear")) for e in root.find(ns+'spine')
+            if e.tag == ns+'itemref']
 
 
 def preflight(checker, source, output):
@@ -90,6 +91,46 @@ def positives(package, checker, out):
     return rows
 
 
+def mutated_package(source, path, content):
+    with zipfile.ZipFile(source) as a, zipfile.ZipFile(path, "w") as b:
+        for info in a.infolist():
+            b.writestr(info, content if info.filename == "Contents/content.hpf" else a.read(info.filename))
+
+
+def normalized_forms(package, checker, out):
+    source = ROOT / 'external/rhwp/samples/issue7418/list_marker_head_synthetic.hwpx'
+    original = content_hpf(source).decode('utf-8')
+    needle = '<opf:itemref idref="section0" linear="yes"/>'
+    assert original.count(needle) == 1
+    rows = []
+    for name, value, expected in [('decimal-yes', 'y&#101;s', 'yes'), ('hex-yes', '&#x79;es', 'yes'),
+                                  ('decimal-no', 'n&#111;', 'no'), ('hex-no', 'n&#x6f;', 'no')]:
+        path, output = out / f'{name}.hwpx', out / f'{name}-out.hwpx'
+        content = original.replace(needle, f'<opf:itemref idref="section&#48;" linear="{value}"/>')
+        mutated_package(source, path, content.encode())
+        result = probe.export(package, path, output)
+        assert result['returncode'] == 0, (name, result['diagnostic'])
+        assert spine(output)[1] == ('section0', expected)
+        assert oracle.equal(content_hpf(path), content_hpf(output))
+        verdict = preflight(checker, path, output)
+        assert verdict == ('safe', []), (name, verdict)
+        repeat = out / f'{name}-reopen-export.hwpx'
+        assert probe.export(package, output, repeat)['returncode'] == 0
+        assert content_hpf(repeat) == content_hpf(output)
+        rows.append({'name': name, 'spine': spine(output), 'preflight': verdict, 'reexportStable': True})
+    for name, content in [
+        ('namespace-alias', original.replace('opf:', 'alias:').replace('xmlns:opf', 'xmlns:alias')),
+        ('foreign-outside-spine', original.replace('<opf:metadata>', '<opf:metadata><x:itemref xmlns:x="urn:x" idref="header" linear="maybe"/>')),
+    ]:
+        path, output = out / f'{name}.hwpx', out / f'{name}-out.hwpx'
+        mutated_package(source, path, content.encode())
+        result = probe.export(package, path, output)
+        assert result['returncode'] == 0, (name, result['diagnostic'])
+        assert spine(output) == spine(source)
+        rows.append({'name': name, 'spinePreserved': True})
+    return rows
+
+
 def negatives(package, out):
     source = ROOT / "external/rhwp/saved/blank_hwpx.hwpx"
     original = content_hpf(source).decode("utf-8")
@@ -101,20 +142,46 @@ def negatives(package, out):
         "conflicting-duplicate": (original.replace(needle, needle + '<opf:itemref idref="section0" linear="no"/>'),
                                   "conflicting OPF spine linear values"),
     }
+    item = '<opf:itemref idref="section0" linear="no"/>'
+    invalid_items = {
+        'identical-duplicate': needle + needle,
+        'missing-idref': '<opf:itemref linear="no"/>',
+        'empty-idref': '<opf:itemref idref=""/>',
+        'invalid-idref': '<opf:itemref idref="a b"/>',
+        'predefined-entity-not-linear': item.replace('"no"', '"n&amp;o"'),
+        'unknown-reference': item.replace('"no"', '"n&bad;"'),
+        'malformed-reference': item.replace('"no"', '"n&#xZZ;"'),
+        'unquoted': item.replace('"no"', 'no'),
+        'duplicate-attribute': item.replace('linear="no"', 'linear="no" linear="no"'),
+        'malformed-attribute': item.replace('linear="no"', 'linear="no" broken'),
+        'unbound-attribute': item.replace('linear=', 'x:linear='),
+        'unsupported-attribute': item.replace('linear=', 'other="x" linear='),
+        'foreign-in-spine': '<x:itemref xmlns:x="urn:x" idref="section0" linear="no"/>',
+        'wrong-parent': '<opf:other>' + item + '</opf:other>',
+    }
+    cases.update({name: (original.replace(needle, item), None) for name, item in invalid_items.items()})
+    cases.update({
+        'wrong-root': (original.replace('opf:package', 'opf:other'), None),
+        'wrong-namespace': (original.replace('http://www.idpf.org/2007/opf/', 'urn:foreign'), None),
+        'truncated': (original.replace('</opf:package>', ''), None),
+        'duplicate-spine': (original.replace('</opf:package>', '<opf:spine/></opf:package>'), None),
+        'malformed-declaration': (original.replace('version="1.0"', 'version="bad"', 1), None),
+        'invalid-encoding': (original.replace('UTF-8', 'latin1', 1), None),
+        'invalid-utf8': (original.encode() + b'\xff', None),
+    })
     rows = []
     for name, (text, expected) in cases.items():
         path = out / f"negative-{name}.hwpx"
-        with zipfile.ZipFile(source) as a, zipfile.ZipFile(path, "w") as b:
-            for info in a.infolist():
-                data = text.encode("utf-8") if info.filename == "Contents/content.hpf" else a.read(info.filename)
-                b.writestr(info, data)
+        mutated_package(source, path, text.encode("utf-8") if isinstance(text, str) else text)
         before = sha(path)
         result = probe.export(package, path, out / f"negative-{name}-out.hwpx")
         diagnostic = result["diagnostic"] or {}
-        assert result["returncode"] != 0 and diagnostic.get("stage") == "export" and diagnostic.get("opened"), result
-        assert expected in diagnostic["error"], diagnostic
+        assert result["returncode"] != 0 and diagnostic.get("stage") in ('open', 'export'), result
+        if expected:
+            assert expected in diagnostic["error"], diagnostic
         assert sha(path) == before and not (out / f"negative-{name}-out.hwpx").exists()
-        rows.append({"name": name, "readable": True, "exportRefused": diagnostic["error"]})
+        rows.append({"name": name, "readable": diagnostic.get('opened'), "stage": diagnostic['stage'],
+                     "exportRefused": diagnostic["error"], 'sourceSha256': before, 'sourceUnchanged': True})
     return rows
 
 
@@ -134,6 +201,7 @@ def main():
     args.package = args.package.resolve()
     report = {"status": "RUNNING", "package": {n: sha(args.package / n) for n in ("rhwp.js", "rhwp_bg.wasm")}}
     report["positive"] = positives(args.package, args.checker.resolve(), args.out)
+    report["normalized"] = normalized_forms(args.package, args.checker.resolve(), args.out)
     report["negative"] = negatives(args.package, args.out)
     report["status"] = "PASS"
     (args.out / "result.json").write_text(json.dumps(report, ensure_ascii=False, indent=2) + "\n")

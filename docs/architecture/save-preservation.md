@@ -883,3 +883,12 @@ retirement fsync 실패 뒤 새 durable 체크포인트의 성공을 유지하�
 허용하는 편집은 첫 최상위 문단의 첫 직접 `run/t` 글 슬롯 앞에 `한글`을 한 번 붙이는 것뿐이다. 앞의 secPr·ctrl 전용 run은 건너뛰며 중첩 문단은 삽입점이 될 수 없다. 저장본의 글·tail을 기대값으로 복사하지 않는다. 기존 글자와 공백·tail·속성·서식 참조·다른 문단은 원래 소유 노드에서 그대로 비교한다. 재계산 예외는 편집 문단의 직접 `linesegarray` 내용뿐이고, 해당 요소 tail과 중첩 문단의 layout은 보존 비교한다. 증명할 직접 글 슬롯이 없으면 검증을 거부한다.
 
 집중 Python 회귀는 외부 주석/PI·표기 동등·잘못된 XML과 run 간 이동·빈 글·유니코드·공백·tail·서식 변경·중첩 구조·layout 범위를 검사한다. 이전 게시 파일 두 개도 새 좁은 비교를 통과했다(새 native 실행 근거로 재사용하지 않음). 운영 판정기·loss report·저장 서비스·안전 기준 변경은 없다. 후속 P3와 새 제품 WASM의 native gate는 별도로 검증한다.
+
+
+### P3 원본 spine 판독 강화 (2026-11-02)
+
+기존 `linear` 보존 뒤에 `hwpx-spine-validation.patch`를 적용한다. 실제 고정 의존성 quick-xml 0.42.0의 `normalized_value(XmlVersion::Implicit1_0)`로 속성 문자 참조와 XML 공백을 정규화한 후 `yes`/`no`를 검사한다. 기존 WASM이 `y&#101;s`를 내보내기에서 거부하는 것을 재현했고, 수정본은 십진·16진 `yes`/`no` 네 변형을 의미 동등·preflight safe·재내보내기 안정으로 확인했다.
+
+namespace-aware NsReader로 OPF package 루트 바로 아래의 단일 spine, 그 직접 itemref만 수집한다. prefix 별칭은 허용하고 다른 namespace의 metadata itemref는 값을 바꾸지 못한다. spine 내부 외부 요소, 다른 부모의 OPF itemref, 미선언 prefix, 빈/무효 idref, 동일·상충 반복 idref, 보존할 수 없는 itemref/spine 속성은 거부한다. 속성 순회를 flatten하지 않으며 전체 XML 끝까지 검사한다. 중복 속성(확장 이름 포함), 잘못된 문자·참조·이름·선언·인코딩, DTD, 잘린 XML, 다중 루트와 package/spine/manifest 구조 오류는 원본 판독 실패다. 원본 바이트가 있는데 파싱에 실패하면 생성 문서 기본값으로 돌아가지 않는다. 원본이 없는 HWP5 등 생성 경로의 기본값은 유지한다. metadata의 일반 직렬화는 재설계하지 않았다.
+
+집중 Rust content 시험 8개 PASS, 실제 제품 WASM spine 회귀(기존 6문서, 정규화·scope 6건, 음성 23건) PASS. 음성 원본 해시 모두 보존. 제품 generation `afad27ebaceeea05e9f2a6d6b7077b0f59c1192d3c729b576cbebcd4c626bbd1`, WASM `dda83ed625fb99a8f85e2ebea45263ae49cac3b2a8fd68bf1acfb236daaa6088`. 원시 근거는 무시 경로 `target/hwpx-stabilization-20261102/`다. 기존 원본을 수정한 네 문자 참조 시험은 생성한 양성 변형이며, 원래 코퍼스에서 새 safe 문서를 찾았다는 뜻은 아니다. 새 native gate는 다음 절에 별도로 기록한다.

@@ -1,0 +1,448 @@
+--- a/src/serializer/hwpx/content.rs
++++ b/src/serializer/hwpx/content.rs
+@@ -51,51 +51,264 @@
+     out
+ }
+ 
+-/// `linear` of each original spine `itemref`, keyed by `idref`: `None` when
+-/// the attribute is absent. OPF defines absent as "yes", but the presence is part
+-/// of the source package, and an explicit "no" (non-linear item) must never be
+-/// rewritten as "yes". Values other than yes/no, or one idref listed with
+-/// conflicting values, are refused instead of being normalized. A content.hpf
+-/// that cannot be read keeps the previous default (geul treats such an original
+-/// as malformed and does not save it).
++/// Existing originals must be fully readable before any preservation metadata
++/// is used. Only direct OPF package/spine/itemref nodes define linear values.
++/// Missing originals (generated documents) are handled by the caller.
+ fn extract_spine_linear(
+     original: &str,
+ ) -> Result<std::collections::BTreeMap<String, Option<String>>, SerializeError> {
+-    use quick_xml::events::Event;
+-    let mut reader = quick_xml::Reader::from_str(original);
+-    let mut out = std::collections::BTreeMap::new();
++    use quick_xml::events::{BytesStart, Event};
++    use quick_xml::name::ResolveResult;
++    use quick_xml::reader::NsReader;
++    use quick_xml::XmlVersion;
++    use std::collections::{BTreeMap, HashSet};
++
++    fn invalid(message: impl std::fmt::Display) -> SerializeError {
++        SerializeError::UnsupportedInput(format!("invalid original content.hpf: {message}"))
++    }
++    fn namespace(value: ResolveResult<'_>) -> Result<Option<String>, SerializeError> {
++        match value {
++            ResolveResult::Bound(ns) => Ok(Some(ns.as_ref().to_owned())),
++            ResolveResult::Unbound => Ok(None),
++            ResolveResult::Unknown(_) => Err(invalid("unbound namespace prefix")),
++        }
++    }
++    fn opf(ns: Option<&str>) -> bool {
++        matches!(
++            ns,
++            Some("http://www.idpf.org/2007/opf/" | "http://www.idpf.org/2007/opf")
++        )
++    }
++    fn xml_chars(value: &str) -> bool {
++        value.chars().all(|c| matches!(c, '\u{9}' | '\u{A}' | '\u{D}' | '\u{20}'..='\u{D7FF}' | '\u{E000}'..='\u{FFFD}' | '\u{10000}'..='\u{10FFFF}'))
++    }
++    // quick-xml tokenizes names; XML 1.0 Name/namespace QName validity is
++    // checked here so malformed extension markup cannot masquerade as a map.
++    fn name_start(c: char) -> bool {
++        matches!(c, 'A'..='Z' | '_' | 'a'..='z' | '\u{C0}'..='\u{D6}' | '\u{D8}'..='\u{F6}' | '\u{F8}'..='\u{2FF}' | '\u{370}'..='\u{37D}' | '\u{37F}'..='\u{1FFF}' | '\u{200C}'..='\u{200D}' | '\u{2070}'..='\u{218F}' | '\u{2C00}'..='\u{2FEF}' | '\u{3001}'..='\u{D7FF}' | '\u{F900}'..='\u{FDCF}' | '\u{FDF0}'..='\u{FFFD}' | '\u{10000}'..='\u{EFFFF}')
++    }
++    fn name_char(c: char) -> bool {
++        name_start(c)
++            || matches!(c, '-' | '.' | '0'..='9' | '\u{B7}' | '\u{300}'..='\u{36F}' | '\u{203F}'..='\u{2040}')
++    }
++    fn qname(value: &str) -> bool {
++        let mut parts = value.split(':');
++        let valid = |part: &str| {
++            let mut chars = part.chars();
++            chars.next().is_some_and(name_start) && chars.all(name_char)
++        };
++        valid(parts.next().unwrap_or(""))
++            && parts.next().is_none_or(valid)
++            && parts.next().is_none()
++    }
++    if !xml_chars(original) {
++        return Err(invalid("invalid XML character"));
++    }
++    let mut reader = NsReader::from_str(original);
++    reader.config_mut().check_comments = true;
++    let mut stack: Vec<(Option<String>, String)> = Vec::new();
++    let (mut roots, mut spines, mut manifests) = (0, 0, 0);
++    let mut declaration_allowed = true;
++    let mut out = BTreeMap::new();
+     loop {
+-        match reader.read_event() {
+-            Ok(Event::Empty(ref e)) | Ok(Event::Start(ref e))
+-                if e.name().as_ref().rsplit(':').next() == Some("itemref") =>
++        let event = reader.read_event().map_err(invalid)?;
++        match event {
++            Event::Start(ref e) | Event::Empty(ref e) => {
++                declaration_allowed = false;
++                if !qname(e.name().as_ref()) {
++                    return Err(invalid("invalid element QName"));
++                }
++                let (ns, local) = reader.resolver().resolve_element(e.name());
++                let ns = namespace(ns)?;
++                let local = local.as_ref().to_owned();
++                let depth = stack.len();
++                let is_opf = opf(ns.as_deref());
++                let in_spine = stack
++                    .last()
++                    .is_some_and(|(ns, name)| opf(ns.as_deref()) && name == "spine");
++                let in_itemref = stack
++                    .last()
++                    .is_some_and(|(ns, name)| opf(ns.as_deref()) && name == "itemref");
++                let mut attrs = BTreeMap::new();
++                let mut names = HashSet::new();
++                for attr in e.attributes() {
++                    let attr = attr.map_err(invalid)?;
++                    if !qname(attr.key.as_ref()) || attr.value.contains('<') {
++                        return Err(invalid("invalid attribute name/value"));
++                    }
++                    let (ns, key) = reader.resolver().resolve_attribute(attr.key);
++                    let ns = namespace(ns)?;
++                    let key = key.as_ref().to_owned();
++                    let value = attr
++                        .normalized_value(XmlVersion::Implicit1_0)
++                        .map_err(invalid)?
++                        .into_owned();
++                    if !xml_chars(&value) {
++                        return Err(invalid("invalid attribute character reference"));
++                    }
++                    if !names.insert((ns.clone(), key.clone())) {
++                        return Err(invalid("duplicate expanded attribute"));
++                    }
++                    if ns.as_deref() == Some("http://www.w3.org/2000/xmlns/")
++                        || (ns.is_none() && key == "xmlns")
++                    {
++                        continue;
++                    }
++                    attrs.insert((ns, key), value);
++                }
++                if depth == 0 {
++                    roots += 1;
++                    if roots != 1 || !is_opf || local != "package" {
++                        return Err(invalid("expected one OPF package root"));
++                    }
++                } else if in_itemref || (in_spine && (!is_opf || local != "itemref")) {
++                    return Err(invalid("unsupported OPF spine child"));
++                }
++                if is_opf
++                    && depth > 0
++                    && matches!(local.as_str(), "spine" | "manifest" | "itemref")
++                    && ns != stack[0].0
++                {
++                    return Err(invalid("mixed OPF namespace URIs"));
++                }
++                if is_opf && matches!(local.as_str(), "spine" | "manifest") {
++                    if depth != 1 {
++                        return Err(invalid("OPF manifest/spine must be a package child"));
++                    }
++                    if local == "spine" {
++                        spines += 1;
++                        if spines != 1 || !attrs.is_empty() {
++                            return Err(invalid("duplicate spine or unsupported spine attributes"));
++                        }
++                    } else {
++                        manifests += 1;
++                        if manifests != 1 {
++                            return Err(invalid("duplicate manifest"));
++                        }
++                    }
++                }
++                if is_opf && local == "itemref" {
++                    if depth != 2 || !in_spine {
++                        return Err(invalid("OPF itemref outside package/spine"));
++                    }
++                    if attrs.keys().any(|(ns, name)| {
++                        ns.is_some() || !matches!(name.as_str(), "idref" | "linear")
++                    }) {
++                        return Err(invalid("unsupported OPF itemref attribute"));
++                    }
++                    let idref = attrs
++                        .remove(&(None, "idref".into()))
++                        .ok_or_else(|| invalid("missing idref"))?;
++                    if !qname(&idref) {
++                        return Err(invalid("empty or malformed idref"));
++                    }
++                    let linear = attrs.remove(&(None, "linear".into()));
++                    if linear
++                        .as_ref()
++                        .is_some_and(|value| value != "yes" && value != "no")
++                    {
++                        return Err(SerializeError::UnsupportedInput(format!(
++                            "unsupported OPF spine linear value: {linear:?}"
++                        )));
++                    }
++                    if let Some(previous) = out.insert(idref, linear.clone()) {
++                        let reason = if previous == linear {
++                            "duplicate OPF spine idref"
++                        } else {
++                            "conflicting OPF spine linear values for one idref"
++                        };
++                        return Err(SerializeError::UnsupportedInput(reason.into()));
++                    }
++                }
++                if matches!(event, Event::Start(_)) {
++                    stack.push((ns, local));
++                }
++            }
++            Event::End(_) => {
++                stack
++                    .pop()
++                    .ok_or_else(|| invalid("unexpected closing tag"))?;
++            }
++            Event::Decl(decl) => {
++                if !declaration_allowed || decl.version().map_err(invalid)?.as_ref() != "1.0" {
++                    return Err(invalid("invalid XML declaration position/version"));
++                }
++                declaration_allowed = false;
++                let start = BytesStart::from_content(decl.as_ref(), 3);
++                let mut phase = 0;
++                for attr in start.attributes() {
++                    let attr = attr.map_err(invalid)?;
++                    match (phase, attr.key.as_ref(), attr.value.as_ref()) {
++                        (0, "version", "1.0") => phase = 1,
++                        (1, "encoding", value) if value.eq_ignore_ascii_case("utf-8") => phase = 2,
++                        (1 | 2, "standalone", "yes" | "no") => phase = 3,
++                        _ => return Err(invalid("invalid XML declaration attributes/encoding")),
++                    }
++                }
++            }
++            Event::PI(pi) => {
++                declaration_allowed = false;
++                let mut chars = pi.target().chars();
++                if pi.target().eq_ignore_ascii_case("xml")
++                    || !chars.next().is_some_and(|c| name_start(c) || c == ':')
++                    || !chars.all(|c| name_char(c) || c == ':')
++                {
++                    return Err(invalid("invalid processing instruction target"));
++                }
++            }
++            Event::DocType(_) => return Err(invalid("DTD is unsupported")),
++            Event::Text(text) => {
++                declaration_allowed = false;
++                if text.as_ref().contains("]]>") {
++                    return Err(invalid("CDATA terminator in text"));
++                }
++                if (stack.is_empty()
++                    || stack.last().is_some_and(|(ns, name)| {
++                        opf(ns.as_deref())
++                            && matches!(name.as_str(), "package" | "spine" | "itemref")
++                    }))
++                    && !text
++                        .as_ref()
++                        .chars()
++                        .all(|c| matches!(c, ' ' | '\t' | '\r' | '\n'))
++                {
++                    return Err(invalid("text outside root or in OPF structure"));
++                }
++            }
++            Event::GeneralRef(reference) => {
++                declaration_allowed = false;
++                if stack.is_empty()
++                    || stack.last().is_some_and(|(ns, name)| {
++                        opf(ns.as_deref())
++                            && matches!(name.as_str(), "package" | "spine" | "itemref")
++                    })
++                {
++                    return Err(invalid("reference in OPF structure"));
++                }
++                match reference.resolve_char_ref().map_err(invalid)? {
++                    Some(c) if matches!(c, '\u{9}' | '\u{A}' | '\u{D}' | '\u{20}'..='\u{D7FF}' | '\u{E000}'..='\u{FFFD}' | '\u{10000}'..='\u{10FFFF}') =>
++                        {}
++                    None if matches!(reference.as_ref(), "lt" | "gt" | "amp" | "apos" | "quot") => {
++                    }
++                    _ => return Err(invalid("invalid XML reference")),
++                }
++            }
++            Event::CData(_)
++                if stack.is_empty()
++                    || stack.last().is_some_and(|(ns, name)| {
++                        opf(ns.as_deref())
++                            && matches!(name.as_str(), "package" | "spine" | "itemref")
++                    }) =>
+             {
+-                let (mut idref, mut linear) = (None, None);
+-                for attr in e.attributes().flatten() {
+-                    match attr.key.as_ref().rsplit(':').next() {
+-                        Some("idref") => idref = Some(attr.value.as_ref().to_owned()),
+-                        Some("linear") => linear = Some(attr.value.as_ref().to_owned()),
+-                        _ => {}
+-                    }
+-                }
+-                let Some(idref) = idref else { continue };
+-                if let Some(value) = &linear {
+-                    if value != "yes" && value != "no" {
+-                        return Err(SerializeError::UnsupportedInput(format!(
+-                            "unsupported OPF spine linear value: {value:?}"
+-                        )));
+-                    }
+-                }
+-                if let Some(previous) = out.insert(idref, linear.clone()) {
+-                    if previous != linear {
+-                        return Err(SerializeError::UnsupportedInput(
+-                            "conflicting OPF spine linear values for one idref".into(),
+-                        ));
+-                    }
+-                }
++                return Err(invalid("CDATA in OPF structure"))
+             }
+-            Ok(Event::Eof) => return Ok(out),
+-            Err(_) => return Ok(std::collections::BTreeMap::new()),
+-            _ => {}
++            Event::Eof => {
++                if !stack.is_empty() || roots != 1 || spines != 1 || manifests != 1 {
++                    return Err(invalid("incomplete OPF package/manifest/spine"));
++                }
++                return Ok(out);
++            }
++            _ => declaration_allowed = false,
+         }
+     }
+ }
+@@ -115,7 +328,12 @@
+     original_content_hpf: Option<&[u8]>,
+ ) -> Result<Vec<u8>, SerializeError> {
+     // 원본 metadata 블록(있으면) — 본문과 무관한 저작자/일자/주제 보존용.
+-    let original_str = original_content_hpf.and_then(|b| std::str::from_utf8(b).ok());
++    let original_str = original_content_hpf
++        .map(std::str::from_utf8)
++        .transpose()
++        .map_err(|_| {
++            SerializeError::UnsupportedInput("invalid original content.hpf encoding".into())
++        })?;
+     let original_metadata = original_str.and_then(extract_metadata_block);
+     let original_linear = match original_str {
+         Some(original) => extract_spine_linear(original)?,
+@@ -436,11 +654,121 @@
+     }
+ 
+     #[test]
+-    fn unreadable_original_content_hpf_keeps_previous_spine_default() {
+-        let s = spine_of("<opf:package><opf:spine><opf:itemref idref=", 1).unwrap();
+-        assert!(
+-            s.contains(r#"<opf:itemref idref="section0" linear="yes"/>"#),
+-            "{s}"
+-        );
++    fn unreadable_original_is_not_a_generated_document() {
++        assert!(spine_of("<opf:package><opf:spine><opf:itemref idref=", 1).is_err());
++        assert!(write_content_hpf(&[], &[], &[], Some(&[0xff])).is_err());
++        assert!(write_content_hpf(&[], &[], &[], None).is_ok());
++    }
++    #[test]
++    fn normalized_linear_and_namespace_aliases() {
++        for (lexical, value) in [
++            ("yes", "yes"),
++            ("no", "no"),
++            ("n&#111;", "no"),
++            ("n&#x6f;", "no"),
++            ("y&#101;s", "yes"),
++            ("&#x79;es", "yes"),
++        ] {
++            let original = format!(
++                r#"{OPF}<opf:spine><opf:itemref idref="section&#48;" linear="{lexical}"/></opf:spine></opf:package>"#
++            );
++            let output = spine_of(&original, 1).unwrap();
++            assert!(
++                output.contains(&format!(r#"idref="section0" linear="{value}""#)),
++                "{output}"
++            );
++            let alias = original
++                .replace("opf:", "q:")
++                .replace("xmlns:opf", "xmlns:q");
++            assert_eq!(
++                extract_spine_linear(&original).unwrap(),
++                extract_spine_linear(&alias).unwrap()
++            );
++        }
++        let original = format!(
++            r#"{OPF}<opf:metadata><x:itemref xmlns:x="urn:foreign" idref="section0" linear="maybe"/></opf:metadata><opf:spine><opf:itemref idref="section0"/></opf:spine></opf:package>"#
++        );
++        assert_eq!(
++            extract_spine_linear(&original).unwrap().get("section0"),
++            Some(&None)
++        );
++        // Predefined entities are decoded, then rejected as non yes/no values.
++        let original = format!(
++            r#"{OPF}<opf:spine><opf:itemref idref="section0" linear="n&amp;o"/></opf:spine></opf:package>"#
++        );
++        assert!(
++            matches!(spine_of(&original, 1), Err(SerializeError::UnsupportedInput(m)) if m.contains("n&o"))
++        );
++    }
++
++    #[test]
++    fn malformed_or_ambiguous_originals_fail_closed() {
++        let valid = format!(
++            r#"{OPF}<opf:spine><opf:itemref idref="section0" linear="no"/></opf:spine></opf:package>"#
++        );
++        let mutations = [
++            valid.replace("<opf:manifest/>", "<opf:metadata a=\"<\"/><opf:manifest/>"),
++            valid.replace(
++                "<opf:manifest/>",
++                "<opf:metadata a=\"&#0;\"/><opf:manifest/>",
++            ),
++            valid.replace(
++                "<opf:manifest/>",
++                "<opf:metadata><1bad/></opf:metadata><opf:manifest/>",
++            ),
++            valid.replace(
++                "<opf:manifest/>",
++                "<opf:metadata>]]></opf:metadata><opf:manifest/>",
++            ),
++            format!("<?XML bad?>{valid}"),
++            valid.replace("linear=\"no\"", "linear=\"maybe\""),
++            valid.replace("linear=\"no\"", "linear=\"n&bad;\""),
++            valid.replace("linear=\"no\"", "linear=\"n&#xZZ;\""),
++            valid.replace("linear=\"no\"", "linear=\"&#0;\""),
++            valid.replace("linear=\"no\"", "linear=\"<\""),
++            valid.replace("linear=\"no\"", "linear=no"),
++            valid.replace("linear=\"no\"", "linear=\"no\" linear=\"no\""),
++            valid.replace("linear=\"no\"", "linear=\"no\" broken"),
++            valid.replace("idref=\"section0\"", "idref=\"\""),
++            valid.replace("idref=\"section0\"", "idref=\"a b\""),
++            valid.replace("idref=\"section0\"", ""),
++            valid.replace("linear=\"no\"", "x:linear=\"no\""),
++            valid.replace("linear=\"no\"", "xmlns:x=\"urn:x\" x:linear=\"no\""),
++            valid.replace("linear=\"no\"", "linear=\"no\" other=\"x\""),
++            valid
++                .replace("<opf:itemref", "<opf:other><opf:itemref")
++                .replace("</opf:spine>", "</opf:other></opf:spine>"),
++            valid.replace("opf:spine", "opf:other"),
++            valid
++                .replace("opf:itemref", "x:itemref")
++                .replace("<opf:spine>", "<opf:spine xmlns:x=\"urn:x\">"),
++            valid.replace("opf:package", "opf:other"),
++            valid.replace("http://www.idpf.org/2007/opf/", "urn:foreign"),
++            valid.replace("</opf:package>", ""),
++            valid.replace("</opf:package>", "</opf:spine>"),
++            valid.replace("</opf:spine>", "</opf:spine><opf:spine/>"),
++            valid.replace(
++                "</opf:spine>",
++                "<opf:itemref idref=\"section0\" linear=\"no\"/></opf:spine>",
++            ),
++            valid.replace("</opf:package>", "</opf:package><opf:package/>"),
++            format!("<!DOCTYPE package>{valid}"),
++            format!("<?xml encoding=\"UTF-8\"?>{valid}"),
++            format!("<?xml version=\"1.0\" encoding=\"latin1\"?>{valid}"),
++            format!("<?xml version=\"1.0\" version=\"1.0\"?>{valid}"),
++            format!("<?xml version=\"1.0\" standalone=\"maybe\"?>{valid}"),
++            format!("{valid}<?xml version=\"1.0\"?>"),
++            valid.replace("<opf:spine>", "<opf:spine a=\"1\">"),
++            valid.replace("<opf:spine>", "<opf:spine>text"),
++            valid.replace("<opf:spine>", "<opf:spine>&#32;"),
++            valid.replace("<opf:manifest/>", "<opf:manifest a=\"1\" a=\"2\"/>"),
++            valid.replace(
++                "<opf:manifest/>",
++                "<opf:manifest xmlns:x=\"urn:x\" xmlns:y=\"urn:x\" x:a=\"1\" y:a=\"2\"/>",
++            ),
++        ];
++        for original in mutations {
++            assert!(spine_of(&original, 1).is_err(), "must refuse: {original}");
++        }
+     }
+ }
