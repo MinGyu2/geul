@@ -307,3 +307,7 @@ T007/T008의 예전 "저장 없음"은 당시 PoC 범위이며 현재 기능 부
 ### T007/T008 네이티브 후속 수용 (2026-11-02)
 
 두 작업은 계속 **미체크 / INCOMPLETE**다. 표 live probe 실패는 Vite ES module 식별자(`rhwp.js` 대 `rhwp.js?import`)가 달라 앱 문서를 관측하지 못한 시험 문제로 확인했다. 실제 앱 로더 관측으로 HWP/HWPX DPR1·DPR2/100%·200% 셀 클릭·Tab·문서 소유권을 검증했다. rhwp 일반32개×두 DPR, DOCX 일반27개, native IME 필수7/7씩, 실제 IME 전용 p95 HWP35/HWPX38/DOCX91ms(렌더 표본39/40/141)와 native 취소/선택 교체를 확인했다. 이전 일반 키 p95와 구별한다. 미실행 환경 및 실패 실행에서 재사용한 하위 검사 경계는 [후속 수용 행렬](../architecture/native-editor-acceptance-2026-11-02.json)과 [설명](../architecture/editor-surface-decision.md#t007t008-표-프로브-및-네이티브-후속-검증-2026-11-02)에 있다. 제품/WordCraft 수정과 T010/D4 재개는 없다.
+
+### 반복 HWPX 문단 ID 보존과 재빌드 뒤 네이티브 회귀 (2026-11-02)
+
+**체크박스 변경 없음.** T009 보존 범위에서 엔진의 반복 `hp:p@id` 거부(고정 734개 HWPX 중 430개가 보존 검사 전에 엔진 오류)를 추적 패치 `patches/rhwp/hwpx-duplicate-paragraph-ids.patch`로 고쳤다. 편집 없는 코퍼스 safe 78→98, 이전 출력 294개 바이트 동일·판정 변화 0, rhwp lib 시험 새 실패 0. 외부 `samples/issue7418/list_marker_head_synthetic.hwpx` 한 문서가 이전 거부→실제 앱 IME 편집·저장·재열기·독립 구조 비교 PASS이고, 외부 수정·ID 누락·한컴 2024 저장본의 미리보기 낡음은 원본 그대로 거부했다. geul 판정기·저장 서비스는 바꾸지 않았다. 새 엔진으로 T007/T008 네이티브 회귀(IME 필수 7/7씩, IME 지연, rhwp 일반 DPR1·DPR2 각 32/32·표 4/4, DOCX 27/27)를 다시 통과했지만 누락 플랫폼 근거 때문에 **T007/T008 INCOMPLETE, T009 미체크** 그대로다. T010 INCOMPLETE·RHWP Undo/Redo NO-GO, T011 NOT STARTED도 그대로다. 상세: [저장 보존](../architecture/save-preservation.md#반복된-hwpx-문단-id-보존-2026-11-02-후속), [편집 표면](../architecture/editor-surface-decision.md#엔진-재빌드-뒤-t007t008-네이티브-회귀-2026-11-02-후속), [근거 JSON](../architecture/hwpx-duplicate-id-acceptance-2026-11-02.json).

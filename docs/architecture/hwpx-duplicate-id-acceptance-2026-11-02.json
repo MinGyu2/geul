@@ -1,0 +1,455 @@
+{
+ "date": "2026-11-02",
+ "scope": "HWPX repeated paragraph-id preservation (one engine identity rule) and T007/T008 native regression on the rebuilt engine",
+ "sourceHead": "e99363bb72c025d62bb2ba69baef78dfaa70ad68",
+ "appSha256": "2673363242817c4d7610f2c396d65dc04ba5279ce02012d3d3e8f5571c3fda7d",
+ "rhwpBuild": {
+  "artifacts": {
+   "rhwp.js": "70cde06a369fa7fd4fc8bc8f3d6acaee158596ba1a116a2c72159002b0b5654e",
+   "rhwp_bg.wasm": "d3602624cb9abcf387d081155ae201ba1fdfe38691402ce13f0a56c50a8f931d"
+  },
+  "commit": "1a76570e833917d15817415a53c09ad61ab3203f",
+  "engine": "rhwp",
+  "generation": "03d2b440f7b28d138b83ce62581cd0d8d8314d0cafacc0cfdafefb6c175f654b",
+  "integration": {
+   "kind": "patched-upstream",
+   "patches": [
+    {
+     "name": "hwpx-textdir-ltr.patch",
+     "sha256": "abab4bc23a89dfec82aa63d36d32cd7192e5b14fefd2dd56231c4bb5676c6cc0"
+    },
+    {
+     "name": "hwpx-duplicate-paragraph-ids.patch",
+     "sha256": "79fd8f41c4cabe82b6b0b66265f5a1b3feef08a4c0b07af30cf7f788e11a9787"
+    }
+   ],
+   "sourceTreeSha256": "a391fd92005218fb4d20cc62ae403676667409508ffc0f63cb1a8fb41afc989a"
+  },
+  "optimization": {
+   "flags": [],
+   "tool": "none",
+   "version": null
+  },
+  "profile": "release",
+  "schemaVersion": 3,
+  "sourceFingerprint": "3bdae7222c5645c256a2574251e6ccc8d03350dbfe5dd2e2a5e82d3697dd5fe4",
+  "tools": {
+   "cargo": "1.99.1",
+   "rustc": "1.99.1",
+   "wasm-bindgen": "0.2.127"
+  }
+ },
+ "previousRelease": "e09de18d79c53f43ebaeab6070063b0b3280f537be5d3dd774780d29c1fdc4cd",
+ "candidateWasmEqualsProduct": true,
+ "defect": {
+  "layer": "rhwp HWPX serializer identity rule (patches/rhwp/hwpx-textdir-ltr.patch, prepare_paragraph_ids)",
+  "cause": "every repeated imported hp:p@id was refused as ambiguous; Hancom writers repeat ids (commonly id=\"0\"), so export failed before any preservation check",
+  "fix": "patches/rhwp/hwpx-duplicate-paragraph-ids.patch: import multiplicity per id; a repeated value is emitted only on distinct identity cells and never on more paragraphs than the source; missing/invalid ids still refused; new paragraphs still get fresh ids above the import high-water mark",
+  "testOnlyRepair": "restores rhwp lib-test struct initializers broken by the earlier patch (src/serializer/cfb_writer/tests.rs, src/serializer/doc_info/tests.rs)",
+  "geulComparatorChanged": false,
+  "geulSourceChanged": false
+ },
+ "corpus": {
+  "set": "all 734 *.hwpx in pinned external/rhwp (samples, fuzz corpus, PR assets, tools, saved); mixed Hancom, rhwp-generated, synthetic and fuzz inputs, not a representative user-document sample",
+  "check": "unedited export with product WASM, then geul save_check preflight (same service::preflight as the app)",
+  "before": {
+   "documents": 734,
+   "exported": 294,
+   "outcomes": {
+    "unsafe": 207,
+    "export-failed": 440,
+    "safe": 78,
+    "unknown": 9
+   },
+   "exportFailures": {
+    "렌더링 오류: 지원하지 않는 입력: ambiguous duplicate HWPX paragraph id": 430,
+    "렌더링 오류: 지원하지 않는 입력: unsupported HWPX textDir: \"AUTO\"": 5,
+    "유효하지 않은 파일: 지원하지 않는 포맷입니다: 알 수 없는 파일 형식. 오류코드: UNSUPPORTED_FILE_FORMAT. 현재 rhwp는": 3,
+    "렌더링 오류: 지원하지 않는 입력: HWPX paragraph id missing or invalid": 1,
+    "유효하지 않은 파일: 비밀번호가 필요한 암호 문서입니다 (parse_document_with_password 또는 parse_hwp_with_p": 1
+   }
+  },
+  "after": {
+   "documents": 734,
+   "exported": 691,
+   "outcomes": {
+    "unsafe": 584,
+    "export-failed": 43,
+    "safe": 98,
+    "unknown": 9
+   },
+   "exportFailures": {
+    "렌더링 오류: 지원하지 않는 입력: unsupported HWPX textDir: \"AUTO\"": 38,
+    "유효하지 않은 파일: 지원하지 않는 포맷입니다: 알 수 없는 파일 형식. 오류코드: UNSUPPORTED_FILE_FORMAT. 현재 rhwp는": 3,
+    "렌더링 오류: 지원하지 않는 입력: HWPX paragraph id missing or invalid": 1,
+    "유효하지 않은 파일: 비밀번호가 필요한 암호 문서입니다 (parse_document_with_password 또는 parse_hwp_with_p": 1
+   }
+  },
+  "transitions": {
+   "unsafe->unsafe": 207,
+   "export-failed->unsafe": 377,
+   "export-failed->export-failed": 43,
+   "safe->safe": 78,
+   "unknown->unknown": 9,
+   "export-failed->safe": 20
+  },
+  "previouslyExportedOutputsByteIdentical": "294/294",
+  "previouslyExportedVerdictChanges": [],
+  "newlyPreflightSafe": [
+   "samples/issue7418/condense_break_synthetic-hancom-2024.hwpx",
+   "samples/issue7418/condense_break_synthetic.hwpx",
+   "samples/issue7418/condense_bullet_synthetic-hancom-2024.hwpx",
+   "samples/issue7418/condense_bullet_synthetic.hwpx",
+   "samples/issue7418/condense_leading_space_synthetic-hancom-2024.hwpx",
+   "samples/issue7418/condense_leading_space_synthetic.hwpx",
+   "samples/issue7418/condense_letter_spacing_m12-hancom-2024.hwpx",
+   "samples/issue7418/condense_letter_spacing_m12.hwpx",
+   "samples/issue7418/condense_letter_spacing_m20-hancom-2024.hwpx",
+   "samples/issue7418/condense_letter_spacing_m20.hwpx",
+   "samples/issue7418/condense_letter_spacing_m6-hancom-2024.hwpx",
+   "samples/issue7418/condense_letter_spacing_m6.hwpx",
+   "samples/issue7418/condense_letter_spacing_p10-hancom-2024.hwpx",
+   "samples/issue7418/condense_letter_spacing_p10.hwpx",
+   "samples/issue7418/condense_numbered_synthetic-hancom-2024.hwpx",
+   "samples/issue7418/condense_numbered_synthetic.hwpx",
+   "samples/issue7418/list_marker_head_synthetic-hancom-2024.hwpx",
+   "samples/issue7418/list_marker_head_synthetic.hwpx",
+   "samples/issue7418/trailing_space_synthetic-hancom-2024.hwpx",
+   "samples/issue7418/trailing_space_synthetic.hwpx"
+  ]
+ },
+ "engineUnitTests": {
+  "command": "cargo test --package rhwp --lib --locked --offline (pinned source + series, 11 pinned test fixtures added)",
+  "baselineSeriesWithoutFix": "test result: FAILED. 3747 passed; 123 failed; 13 ignored; 0 measured; 0 filtered out; finished in 134.08s",
+  "withFix": "test result: FAILED. 3754 passed; 121 failed; 13 ignored; 0 measured; 0 filtered out; finished in 139.58s",
+  "newFailures": [],
+  "fixedByChange": [
+   "serializer::hwpx::roundtrip::tests::task1391_aift_memo_roundtrips",
+   "serializer::hwpx::tests::issue_1345_picture_effects_shadow_roundtrip"
+  ],
+  "preExistingFailures": 121,
+  "preExistingCause": "runtime reads of upstream samples/fixtures not in the extracted build inputs (NotFound)"
+ },
+ "wasmRegressions": {
+  "duplicateIdLifecycle": {
+   "status": "PASS",
+   "lifecycle": {
+    "source": "external/rhwp/saved/hwpx-01-saved.hwpx",
+    "repeatedId": "0",
+    "sourceRepeats": {
+     "3121190098": 2,
+     "0": 119
+    },
+    "splitNewId": "3121190099",
+    "copyNewId": "2"
+   },
+   "negativeRefused": [
+    "missing",
+    "invalid",
+    "negative",
+    "overflow",
+    "empty"
+   ],
+   "survey": [
+    {
+     "sample": "external/rhwp/samples/issue7418/list_marker_head_synthetic.hwpx",
+     "preflight": "safe",
+     "findings": []
+    },
+    {
+     "sample": "external/rhwp/samples/issue7418/list_marker_head_synthetic-hancom-2024.hwpx",
+     "preflight": "safe",
+     "findings": []
+    },
+    {
+     "sample": "external/rhwp/saved/hwpx-01-saved.hwpx",
+     "preflight": "unsafe",
+     "findings": [
+      "partChanged:Contents/content.hpf",
+      "partChanged:Contents/header.xml",
+      "partChanged:Contents/section0.xml",
+      "partChanged:Contents/section1.xml",
+      "partChanged:META-INF/container.rdf"
+     ]
+    },
+    {
+     "sample": "external/rhwp/samples/셀보호.hwpx",
+     "preflight": "unsafe",
+     "findings": [
+      "partChanged:Contents/section0.xml"
+     ]
+    },
+    {
+     "sample": "external/rhwp/tools/forms/간이기안문_서식.hwpx",
+     "preflight": "unsafe",
+     "findings": [
+      "partChanged:Contents/header.xml",
+      "partChanged:Contents/section0.xml"
+     ]
+    }
+   ]
+  },
+  "identityLifecycle종이기준": {
+   "status": "PASS",
+   "negative": [
+    {
+     "name": "missing",
+     "readable": true,
+     "exportRejectedForIdentity": true
+    },
+    {
+     "name": "invalid",
+     "readable": true,
+     "exportRejectedForIdentity": true
+    },
+    {
+     "name": "overflow",
+     "readable": true,
+     "exportRejectedForIdentity": true
+    },
+    {
+     "name": "source-duplicate",
+     "readable": true,
+     "preservedExactly": true
+    }
+   ]
+  },
+  "textDirHeading종이기준": "PASS (scripts/tests/hwpx-textdir-roundtrip.py against pinned generation ca284e06 as baseline)"
+ },
+ "nativeAcceptance": {
+  "document": "external/rhwp/samples/issue7418/list_marker_head_synthetic.hwpx",
+  "sourceSha256": "d96b5f57d88e1241229c2862c077034381de6b91595b82fe2a3bec240a968a65",
+  "before": {
+   "pinnedEngineCa284e06": {
+    "noedit": [
+     "partChanged:Contents/header.xml",
+     "partChanged:Contents/section0.xml"
+    ],
+    "edit": [
+     "partChanged:Contents/header.xml"
+    ]
+   },
+   "productE09de18d": "export refused (EngineFailure: ambiguous duplicate HWPX paragraph id)"
+  },
+  "preflight": "safe",
+  "edit": {
+   "preedit": "하",
+   "committed": "한글",
+   "revision": [
+    "0",
+    "2"
+   ],
+   "imeEvents": 33
+  },
+  "save": {
+   "state": "saved",
+   "synced": "true",
+   "revision": "2"
+  },
+  "sessionDirty": false,
+  "publishedSha256": "89a1eee24ce8f6efbb21e5ab4f8ca4740d1958a477b363d10704ad74f63aeb98",
+  "reopen": {
+   "paragraphText": "한글",
+   "dirty": "false",
+   "unpreserved": "false"
+  },
+  "package": {
+   "zipValid": true,
+   "partSetEqual": true,
+   "headerAndUnrelatedXmlEqual": true,
+   "previewIsKnownBlank": true,
+   "paragraphIdsEqual": true,
+   "paragraphCount": 44,
+   "repeatedParagraphIds": 42,
+   "expectedText": "한글"
+  },
+  "model": {
+   "modelEquivalent": true,
+   "controlsEqual": true,
+   "pagesEqual": true,
+   "sections": 1,
+   "paragraphs": 44,
+   "expectedText": "한글"
+  },
+  "externalConflict": "FileConflict",
+  "missingIdNegative": {
+   "ui": "EngineFailure",
+   "engine": "렌더링 오류: 지원하지 않는 입력: HWPX paragraph id missing or invalid",
+   "inputUnchanged": true
+  },
+  "hancom2024PreviewNegative": {
+   "document": "external/rhwp/samples/issue7418/list_marker_head_synthetic-hancom-2024.hwpx",
+   "preflight": "safe",
+   "save": "UnsafeSave",
+   "findings": "previewStale:Preview/PrvImage.png,previewStale:Preview/PrvText.txt",
+   "originalUnchanged": true
+  },
+  "regression종이기준": {
+   "status": "PASS",
+   "package": {
+    "zipValid": true,
+    "partSetEqual": true,
+    "headerAndUnrelatedXmlEqual": true,
+    "previewIsKnownBlank": true,
+    "paragraphIdsEqual": true,
+    "paragraphCount": 1,
+    "repeatedParagraphIds": 0,
+    "expectedText": "한글"
+   }
+  },
+  "sc002ThreeFormats": {
+   "status": "PASS",
+   "positive": 3,
+   "rejections": 9,
+   "generation": "d374343c35cc2845ceaec79d166c521ee2d8b73a9748802e53f05bf0e6de3cb6",
+   "artifactsEqualFinalRelease": true
+  },
+  "generation": "03d2b440f7b28d138b83ce62581cd0d8d8314d0cafacc0cfdafefb6c175f654b"
+ },
+ "nativeEditorRegression": {
+  "imeRequiredGates": {
+   "status": "PASS",
+   "rhwpHwpHwpx": "7/7",
+   "wordcraftDocx": "7/7",
+   "note": "composition during tab switch kept in original document; DOCX selection replace/cancel PASS"
+  },
+  "imeLatency": {
+   "hwp": {
+    "samples": 40,
+    "p50": 27,
+    "p95": 43,
+    "max": 48,
+    "thresholdMs": 150,
+    "passed": true,
+    "trustedEvents": true,
+    "compositionCancellation": "PASS: text/revision unchanged after BackSpace and End",
+    "cancelledCanvasEqual": true,
+    "selectionReplacement": "PASS: selected two syllables replaced once; backend revision matches"
+   },
+   "hwpx": {
+    "samples": 41,
+    "p50": 27,
+    "p95": 34,
+    "max": 51,
+    "thresholdMs": 150,
+    "passed": true,
+    "trustedEvents": true,
+    "compositionCancellation": "PASS: text/revision unchanged after BackSpace and End",
+    "cancelledCanvasEqual": true,
+    "selectionReplacement": "PASS: selected two syllables replaced once; backend revision matches"
+   },
+   "docx": {
+    "samples": 141,
+    "p50": 45,
+    "p95": 88,
+    "max": 105,
+    "thresholdMs": 150,
+    "passed": true,
+    "trustedEvents": true,
+    "compositionCancellation": "PASS: text/revision unchanged after BackSpace and End",
+    "cancelledCanvasEqual": true,
+    "selectionReplacement": "PASS: selected two syllables replaced once; backend revision matches"
+   }
+  },
+  "imeLatencyLoadAverageStart": [
+   2.43310546875,
+   2.826171875,
+   2.5341796875
+  ],
+  "rhwpOrdinaryDpr1": {
+   "status": "PASS",
+   "checks": "32/32",
+   "tables": [
+    [
+     "hwp",
+     100,
+     1,
+     "PASS"
+    ],
+    [
+     "hwp",
+     200,
+     1,
+     "PASS"
+    ],
+    [
+     "hwpx",
+     100,
+     1,
+     "PASS"
+    ],
+    [
+     "hwpx",
+     200,
+     1,
+     "PASS"
+    ]
+   ]
+  },
+  "rhwpOrdinaryDpr2": {
+   "status": "PASS",
+   "checks": "32/32",
+   "tables": [
+    [
+     "hwp",
+     100,
+     2,
+     "PASS"
+    ],
+    [
+     "hwp",
+     200,
+     2,
+     "PASS"
+    ],
+    [
+     "hwpx",
+     100,
+     2,
+     "PASS"
+    ],
+    [
+     "hwpx",
+     200,
+     2,
+     "PASS"
+    ]
+   ]
+  },
+  "docxOrdinaryDpr1": {
+   "status": "PASS",
+   "checks": "27/27"
+  },
+  "build": {
+   "generation": "d374343c35cc2845ceaec79d166c521ee2d8b73a9748802e53f05bf0e6de3cb6",
+   "artifacts": {
+    "rhwp.js": "70cde06a369fa7fd4fc8bc8f3d6acaee158596ba1a116a2c72159002b0b5654e",
+    "rhwp_bg.wasm": "d3602624cb9abcf387d081155ae201ba1fdfe38691402ce13f0a56c50a8f931d"
+   },
+   "artifactsEqualFinalRelease": true,
+   "note": "intermediate generation; the final generation differs only by rustfmt of #[cfg(test)] code in the patch and serves byte-identical rhwp.js/rhwp_bg.wasm"
+  },
+  "cleanup": true,
+  "environment": "Xvfb X11 96dpi, DPR1 1280x1024 / GDK_SCALE=2 DPR2 2560x2048, IBus 1.5.33 + ibus-hangul 1.5.5 via native xdotool, WebKitGTK 2.54.1 software rendering, no added CPU load"
+ },
+ "notRun": [
+  "GPU desktop",
+  "Wayland IME",
+  "fcitx5",
+  "Windows",
+  "macOS",
+  "focus change to another X window",
+  "CPU saturation",
+  "IME latency at DPR2",
+  "geul Rust/TypeScript suites (no geul source change)",
+  "T010 gates (no T010 change)"
+ ],
+ "status": {
+  "T007": "INCOMPLETE",
+  "T008": "INCOMPLETE",
+  "T009": "unchecked",
+  "T010": "INCOMPLETE / RHWP Undo-Redo NO-GO",
+  "T011": "NOT STARTED"
+ },
+ "rawEvidence": "local ignored target/hwpx-compat-20261102/ (not published)"
+}

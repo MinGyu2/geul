@@ -1581,3 +1581,19 @@ DOCX 0.64/1.00/1.27이며 CPU 포화 실험을 하지 않았다. 각 결과는 W
 완료된 하위 검사만 재사용했다. DPR1 run4는 표·일반32개 완료 뒤 다음 IME 세션 준비 오류로 전체 FAIL이고, run5는 실제 IME 게이트 완료 뒤 별도 지연 CLI의 setxkbmap 누락으로 전체 FAIL이다. 둘을 전체 PASS로 바꾸지 않았다. 지연/취소 전후 canvas 비교는 수정된 환경의 run7 전체 PASS, DPR2는 run8 전체 PASS, DOCX 일반은 run9 전체 PASS다. 모든 해당 환경의 task 프로세스 정리는 성공했다. 과거 실패 로그도 로컬에 남겼다.
 
 재현에는 별도 `tests/` 환경, 생성 fixture, 준비된 X11/IBus와 검사 훅을 켠 Vite 호스트 및 현재 debug 앱이 필요하다. `--ordinary`는 rhwp 일반 검사를 추가하고 `--ime`, `--ime-only`, `--latency-only`, `--docx-only`로 이미 유효한 증거를 반복하지 않고 필요한 단계만 실행할 수 있다. `--require-dpr 2`는 실제 노출 DPR이2가 아니면 실패한다. 두 엔진의 `basic-ko.json`은 구별해 `--rhwp-meta`로 rhwp 생성 메타데이터를 전달한다. 새 의존성·시험 프레임워크나 OS 설치는 없다.
+
+## 엔진 재빌드 뒤 T007/T008 네이티브 회귀 (2026-11-02 후속)
+
+상태: **같은 로컬 범위 재검증 PASS; T007/T008 INCOMPLETE·미체크 유지.** 반복 HWPX 문단 ID 교정으로 rhwp 제품 WASM이 `d3602624…`로 바뀌었다(이 절의 실행은 generation `d374343c…`, 최종 `03d2b440…`은 패치의 시험 코드 rustfmt만 달라 `rhwp.js`·`rhwp_bg.wasm`이 바이트 동일). 앱은 `e99363b`에서 다시 protected build한 debug 바이너리(SHA-256 `26733632…`)다. 위 절의 결과는 이전 신원(`ca284e06…`, WASM `3f99a74b…`)의 것이므로 새 신원에 자동으로 옮기지 않고 같은 하네스·환경(Xvfb/X11, IBus 1.5.33 + ibus-hangul 1.5.5 native xdotool, WebKitGTK 2.54.1 소프트웨어 렌더, 추가 CPU 부하 없음)으로 다시 실행했다. 편집 표면 코드와 WordCraft는 바꾸지 않았다.
+
+| 항목 | 결과 |
+|---|---|
+| 실제 한글 IME 필수 게이트 | rhwp(HWP·HWPX) 7/7, WordCraft 7/7 PASS. 조합 중 탭 전환은 원래 문서에 한 번, DOCX 선택 교체·취소 PASS |
+| 실제 IME 전용 지연(DPR1·100%, 렌더 표본) | HWP n40 p50/p95/max 27/43/48ms, HWPX n41 27/34/51ms, DOCX n141 45/88/105ms, 기준 150ms PASS. 취소 뒤 본문·revision 불변과 표시 canvas 동일, 두 음절 선택 교체 한 번 |
+| rhwp 표·일반 DPR1 | 일반 32/32, 표 4/4(HWP/HWPX × 100/200%) 셀 클릭→Tab→Shift+Tab→마지막 셀 PASS. 이전 DPR1은 run4의 부분 근거뿐이었는데 이번에 전체 실행이 통과 |
+| rhwp 표·일반 DPR2 | 일반 32/32, 표 4/4 PASS(실제 scrollTop 81–285 CSS px) |
+| DOCX 일반 DPR1 | 27/27 PASS(앱 안 DOCX 내보내기/재열기 포함) |
+| 편집→저장→닫기→재열기 | Stage 4 세 형식 양성 3·거절 9, 외부 HWPX 두 문서 PASS([저장 보존 문서](save-preservation.md#반복된-hwpx-문단-id-보존-2026-11-02-후속)) |
+| GPU desktop·Wayland IME·fcitx5·Windows/macOS·다른 X 창 초점·CPU 포화·DPR2 IME 지연 | NOT RUN |
+
+일반 키 지연과 IME 지연을 합치지 않았고 표본을 제외하지 않았다. 모든 실행의 프로세스 정리는 성공했고 생존 프로세스는 0이다. 기계 판독 근거는 [hwpx-duplicate-id-acceptance-2026-11-02.json](hwpx-duplicate-id-acceptance-2026-11-02.json)의 `nativeEditorRegression`, 원시 결과는 무시되는 `target/hwpx-compat-20261102/phaseD-*`에 있다. 문서화된 T007/T008 완료 조건(누락 플랫폼·입력기·부하 근거)은 여전히 충족되지 않았다.
