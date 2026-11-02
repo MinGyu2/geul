@@ -97,6 +97,18 @@ def mutated_package(source, path, content):
             b.writestr(info, content if info.filename == "Contents/content.hpf" else a.read(info.filename))
 
 
+def generated_document(package, out):
+    source = ROOT / 'external/rhwp/saved/blank2010.hwp'
+    output = out / 'generated-from-hwp5.hwpx'
+    result = probe.export(package, source, output)
+    assert result['returncode'] == 0, result['diagnostic']
+    assert spine(output) == [('header', 'yes'), ('section0', 'yes')]
+    repeat = out / 'generated-from-hwp5-repeat.hwpx'
+    assert probe.export(package, output, repeat)['returncode'] == 0
+    assert content_hpf(repeat) == content_hpf(output)
+    return {'source': str(source.relative_to(ROOT)), 'spineDefaults': spine(output), 'repeatStable': True}
+
+
 def normalized_forms(package, checker, out):
     source = ROOT / 'external/rhwp/samples/issue7418/list_marker_head_synthetic.hwpx'
     original = content_hpf(source).decode('utf-8')
@@ -202,6 +214,7 @@ def main():
     report = {"status": "RUNNING", "package": {n: sha(args.package / n) for n in ("rhwp.js", "rhwp_bg.wasm")}}
     report["positive"] = positives(args.package, args.checker.resolve(), args.out)
     report["normalized"] = normalized_forms(args.package, args.checker.resolve(), args.out)
+    report["generated"] = generated_document(args.package, args.out)
     report["negative"] = negatives(args.package, args.out)
     report["status"] = "PASS"
     (args.out / "result.json").write_text(json.dumps(report, ensure_ascii=False, indent=2) + "\n")

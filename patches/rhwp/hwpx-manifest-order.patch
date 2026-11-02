@@ -1,0 +1,660 @@
+--- a/src/serializer/hwpx/mod.rs
++++ b/src/serializer/hwpx/mod.rs
+@@ -17,6 +17,7 @@
+ pub mod fixtures;
+ pub mod form;
+ pub mod header;
++mod manifest;
+ pub mod master_page;
+ pub mod package_check;
+ pub mod picture;
+@@ -284,6 +285,7 @@
+     assert_bin_data_3way(&bin_entries, &zip_bin_entries)?;
+ 
+     let bytes = z.finish()?;
++    manifest::validate_targets(&bytes, &content_hpf)?;
+     Ok(SerializedDocument::new(bytes, ctx.content_loss))
+ }
+ 
+--- a/src/serializer/hwpx/content.rs
++++ b/src/serializer/hwpx/content.rs
+@@ -533,7 +533,17 @@
+ 
+     end_tag(&mut w, "opf:package")?;
+ 
+-    Ok(w.into_inner().into_inner())
++    let generated = w.into_inner().into_inner();
++    match original_str {
++        Some(original) => super::manifest::preserve_order(
++            generated,
++            original,
++            &original_linear,
++            section_hrefs,
++            master_items,
++        ),
++        None => Ok(generated),
++    }
+ }
+ 
+ #[cfg(test)]
+@@ -545,7 +555,7 @@
+     /// 출력되어야 한다.
+     #[test]
+     fn metadata_block_preserved_verbatim() {
+-        let original = r#"<?xml version="1.0" encoding="UTF-8" standalone="yes" ?><opf:package xmlns:opf="http://www.idpf.org/2007/opf/"><opf:metadata><opf:title/><opf:language>ko</opf:language><opf:meta name="creator" content="text">손규현</opf:meta><opf:meta name="lastsaveby" content="text">stevek</opf:meta><opf:meta name="CreatedDate" content="text">2012-05-24T02:06:03Z</opf:meta></opf:metadata><opf:manifest/><opf:spine/></opf:package>"#;
++        let original = r#"<?xml version="1.0" encoding="UTF-8" standalone="yes" ?><opf:package xmlns:opf="http://www.idpf.org/2007/opf/"><opf:metadata><opf:title/><opf:language>ko</opf:language><opf:meta name="creator" content="text">손규현</opf:meta><opf:meta name="lastsaveby" content="text">stevek</opf:meta><opf:meta name="CreatedDate" content="text">2012-05-24T02:06:03Z</opf:meta></opf:metadata><opf:manifest><opf:item id="header" href="Contents/header.xml" media-type="application/xml"/><opf:item id="section0" href="Contents/section0.xml" media-type="application/xml"/></opf:manifest><opf:spine/></opf:package>"#;
+         let out = write_content_hpf(
+             &["Contents/section0.xml".to_string()],
+             &[],
+@@ -607,6 +617,17 @@
+         let hrefs: Vec<String> = (0..sections)
+             .map(|i| format!("Contents/section{i}.xml"))
+             .collect();
++        let linear = extract_spine_linear(original)?;
++        let mut manifest = String::from(
++            r#"<opf:manifest><opf:item id="header" href="Contents/header.xml" media-type="application/xml"/>"#,
++        );
++        for id in linear.keys().filter(|id| id.starts_with("section")) {
++            manifest.push_str(&format!(
++                r#"<opf:item id="{id}" href="Contents/{id}.xml" media-type="application/xml"/>"#
++            ));
++        }
++        manifest.push_str("</opf:manifest>");
++        let original = original.replace("<opf:manifest/>", &manifest);
+         write_content_hpf(&hrefs, &[], &[], Some(original.as_bytes()))
+             .map(|out| String::from_utf8(out).unwrap())
+     }
+--- /dev/null
++++ b/src/serializer/hwpx/manifest.rs
+@@ -0,0 +1,591 @@
++//! Preserve existing manifest order by stable identity, using actual emitted
++//! entries. Original bytes are never replayed as a substitute for resources.
++use std::collections::{BTreeMap, HashSet};
++use std::ops::Range;
++
++use quick_xml::events::Event;
++use quick_xml::name::ResolveResult;
++use quick_xml::reader::NsReader;
++use quick_xml::XmlVersion;
++
++use super::SerializeError;
++
++fn refused(message: impl std::fmt::Display) -> SerializeError {
++    SerializeError::UnsupportedInput(format!("HWPX manifest preservation: {message}"))
++}
++
++struct Item {
++    id: String,
++    href: String,
++    media_type: String,
++    embedded: bool,
++    span: Range<usize>,
++}
++impl Item {
++    // Preserve Hancom's legacy JPEG MIME spelling only when the actual emitted
++    // resource has the same identity/path and is explicitly a JPEG. The final
++    // ZIP validator additionally checks its JPEG signature before publication.
++    fn jpeg_spelling_of(&self, actual: &Self) -> bool {
++        self.id == actual.id
++            && self.href == actual.href
++            && self.embedded
++            && actual.embedded
++            && self.media_type == "image/jpg"
++            && actual.media_type == "image/jpeg"
++            && (self.href.ends_with(".jpg") || self.href.ends_with(".jpeg"))
++    }
++}
++
++struct Manifest {
++    items: Vec<Item>,
++    content: Range<usize>,
++}
++
++/// The caller validates the whole original with content's strict XML reader.
++/// This reader additionally refuses unmodeled manifest structure/attributes.
++fn read_manifest(xml: &str) -> Result<Manifest, SerializeError> {
++    let mut reader = NsReader::from_str(xml);
++    let mut depth = 0usize;
++    let mut inside = false;
++    let mut content = None;
++    let mut items = Vec::new();
++    let (mut ids, mut hrefs) = (HashSet::new(), HashSet::new());
++    let mut open_item = None;
++    loop {
++        let start = reader.buffer_position() as usize;
++        let event = reader.read_event().map_err(refused)?;
++        let end = reader.buffer_position() as usize;
++        match event {
++            Event::Start(ref e) | Event::Empty(ref e) => {
++                let (ns, name) = reader.resolver().resolve_element(e.name());
++                let opf = matches!(ns, ResolveResult::Bound(ns) if matches!(ns.as_ref(), "http://www.idpf.org/2007/opf/" | "http://www.idpf.org/2007/opf"));
++                if depth == 1 && opf && name.as_ref() == "manifest" {
++                    if content.is_some() {
++                        return Err(refused("duplicate manifest"));
++                    }
++                    for attr in e.attributes() {
++                        let attr = attr.map_err(refused)?;
++                        let (ns, _) = reader.resolver().resolve_attribute(attr.key);
++                        if !matches!(ns, ResolveResult::Bound(ns) if ns.as_ref() == "http://www.w3.org/2000/xmlns/")
++                            && attr.key.as_ref() != "xmlns"
++                        {
++                            return Err(refused("unsupported manifest attributes"));
++                        }
++                    }
++                    inside = matches!(event, Event::Start(_));
++                    content = Some(end..end);
++                } else if inside {
++                    if depth != 2 || !opf || name.as_ref() != "item" || open_item.is_some() {
++                        return Err(refused("unsupported manifest child"));
++                    }
++                    let mut attrs = BTreeMap::new();
++                    for attr in e.attributes() {
++                        let attr = attr.map_err(refused)?;
++                        let (ns, name) = reader.resolver().resolve_attribute(attr.key);
++                        if matches!(ns, ResolveResult::Bound(ns) if ns.as_ref() == "http://www.w3.org/2000/xmlns/")
++                            || attr.key.as_ref() == "xmlns"
++                        {
++                            continue;
++                        }
++                        if !matches!(ns, ResolveResult::Unbound)
++                            || !matches!(name.as_ref(), "id" | "href" | "media-type" | "isEmbeded")
++                        {
++                            return Err(refused("unsupported manifest item attribute"));
++                        }
++                        let value = attr
++                            .normalized_value(XmlVersion::Implicit1_0)
++                            .map_err(refused)?
++                            .into_owned();
++                        if attrs.insert(name.as_ref().to_owned(), value).is_some() {
++                            return Err(refused("duplicate item attribute"));
++                        }
++                    }
++                    let mut required = |key| {
++                        attrs
++                            .remove(key)
++                            .filter(|v| !v.is_empty())
++                            .ok_or_else(|| refused(format!("missing item {key}")))
++                    };
++                    let id = required("id")?;
++                    let href = required("href")?;
++                    let media_type = required("media-type")?;
++                    if id.chars().any(char::is_whitespace) || href.chars().any(char::is_control) {
++                        return Err(refused("invalid item identity/path"));
++                    }
++                    let embedded = match attrs.get("isEmbeded").map(String::as_str) {
++                        None | Some("1") => true,
++                        Some("0") => false,
++                        _ => return Err(refused("unsupported isEmbeded value")),
++                    };
++                    if !ids.insert(id.clone()) || !hrefs.insert(href.clone()) {
++                        return Err(refused("duplicate item ID or href"));
++                    }
++                    items.push(Item {
++                        id,
++                        href,
++                        media_type,
++                        embedded,
++                        span: start..end,
++                    });
++                    if matches!(event, Event::Start(_)) {
++                        open_item = Some(items.len() - 1);
++                    }
++                }
++                if matches!(event, Event::Start(_)) {
++                    depth += 1;
++                }
++            }
++            Event::End(_) => {
++                depth = depth
++                    .checked_sub(1)
++                    .ok_or_else(|| refused("unexpected closing tag"))?;
++                if inside && depth == 2 {
++                    let index = open_item
++                        .take()
++                        .ok_or_else(|| refused("unexpected manifest item end"))?;
++                    items[index].span.end = end;
++                } else if inside && depth == 1 {
++                    content
++                        .as_mut()
++                        .ok_or_else(|| refused("missing manifest"))?
++                        .end = start;
++                    inside = false;
++                }
++            }
++            Event::Text(text)
++                if inside
++                    && (open_item.is_some()
++                        || !text
++                            .as_ref()
++                            .chars()
++                            .all(|c| matches!(c, ' ' | '\t' | '\r' | '\n'))) =>
++            {
++                return Err(refused("manifest character data"))
++            }
++            Event::PI(_) | Event::Comment(_) | Event::CData(_) | Event::GeneralRef(_) if inside => {
++                return Err(refused("unsupported manifest event"))
++            }
++            Event::Eof => break,
++            _ => {}
++        }
++    }
++    Ok(Manifest {
++        items,
++        content: content.ok_or_else(|| refused("missing manifest"))?,
++    })
++}
++
++pub(super) fn preserve_order(
++    generated: Vec<u8>,
++    original: &str,
++    spine: &BTreeMap<String, Option<String>>,
++    section_hrefs: &[String],
++    masters: &[(usize, String, String)],
++) -> Result<Vec<u8>, SerializeError> {
++    let xml = std::str::from_utf8(&generated).map_err(refused)?;
++    let before = read_manifest(original)?;
++    let after = read_manifest(xml)?;
++    let old: BTreeMap<_, _> = before
++        .items
++        .iter()
++        .map(|item| (item.id.as_str(), item))
++        .collect();
++    let actual: BTreeMap<_, _> = after
++        .items
++        .iter()
++        .map(|item| (item.id.as_str(), item))
++        .collect();
++    if !old.contains_key("header") || spine.keys().any(|id| !old.contains_key(id.as_str())) {
++        return Err(refused("missing header or referenced manifest item"));
++    }
++    for item in &before.items {
++        let emitted = actual
++            .get(item.id.as_str())
++            .ok_or_else(|| refused(format!("original item omitted/unsupported: {}", item.id)))?;
++        if item.href != emitted.href
++            || (item.media_type != emitted.media_type && !item.jpeg_spelling_of(emitted))
++            || item.embedded != emitted.embedded
++        {
++            return Err(refused(format!(
++                "changed item identity/metadata: {}",
++                item.id
++            )));
++        }
++    }
++    let mut order = Vec::new();
++    let mut used = HashSet::new();
++    for item in &before.items {
++        // A newly created master page for an existing section belongs directly
++        // before its owner. Existing relative order is never changed.
++        if let Some(owner) = section_hrefs.iter().position(|href| href == &item.href) {
++            for (_, id, _) in masters
++                .iter()
++                .filter(|(index, id, _)| *index == owner && !old.contains_key(id.as_str()))
++            {
++                let new = actual
++                    .get(id.as_str())
++                    .ok_or_else(|| refused("missing new master page"))?;
++                if used.insert(new.id.as_str()) {
++                    order.push(*new);
++                }
++            }
++        }
++        let emitted = actual[item.id.as_str()];
++        if !used.insert(emitted.id.as_str()) {
++            return Err(refused("duplicate ordered entry"));
++        }
++        order.push(emitted);
++    }
++    // New sections/master groups and ordinary resources retain their generated
++    // relative order at the end; new master pages above are already accounted for.
++    for item in &after.items {
++        if used.insert(item.id.as_str()) {
++            order.push(item);
++        }
++    }
++    let mut result = Vec::with_capacity(generated.len());
++    result.extend_from_slice(&generated[..after.content.start]);
++    for item in order {
++        if old
++            .get(item.id.as_str())
++            .is_some_and(|source| source.jpeg_spelling_of(item))
++        {
++            let tag = std::str::from_utf8(&generated[item.span.clone()]).map_err(refused)?;
++            let needle = r#"media-type="image/jpeg""#;
++            if tag.matches(needle).count() != 1 {
++                return Err(refused("unexpected JPEG item serialization"));
++            }
++            result.extend_from_slice(
++                tag.replacen(needle, r#"media-type="image/jpg""#, 1)
++                    .as_bytes(),
++            );
++        } else {
++            result.extend_from_slice(&generated[item.span.clone()]);
++        }
++    }
++    result.extend_from_slice(&generated[after.content.end..]);
++    let reordered = std::str::from_utf8(&result).map_err(refused)?;
++    let parse = |s| crate::parser::hwpx::content::parse_content_hpf(s).map_err(refused);
++    let source = parse(original)?;
++    let output = parse(reordered)?;
++    // Reuse the engine's actual ownership interpretation (including its legacy
++    // fallback). Never approve an order which would bind a master to another section.
++    let owners = |groups: &[Vec<String>]| -> BTreeMap<String, usize> {
++        groups
++            .iter()
++            .enumerate()
++            .flat_map(|(i, items)| items.iter().map(move |href| (href.clone(), i)))
++            .collect()
++    };
++    let actual_owners: BTreeMap<_, _> = masters
++        .iter()
++        .map(|(owner, _, href)| (href.clone(), *owner))
++        .collect();
++    if output.section_files != section_hrefs
++        || owners(&output.section_master_page_files) != actual_owners
++        || owners(&source.section_master_page_files)
++            .iter()
++            .any(|(href, owner)| actual_owners.get(href) != Some(owner))
++    {
++        return Err(refused("section/master-page ownership would change"));
++    }
++    Ok(result)
++}
++
++/// Check the actual completed ZIP, including passthrough Scripts targets.
++/// External linked resources (isEmbeded=0) intentionally have no ZIP part.
++pub(super) fn validate_targets(bytes: &[u8], content: &[u8]) -> Result<(), SerializeError> {
++    let manifest = read_manifest(std::str::from_utf8(content).map_err(refused)?)?;
++    let mut archive = zip::ZipArchive::new(std::io::Cursor::new(bytes)).map_err(refused)?;
++    let names: HashSet<_> = archive.file_names().map(str::to_owned).collect();
++    if names.len() != archive.len() {
++        return Err(refused("duplicate ZIP part"));
++    }
++    for item in manifest.items {
++        if item.embedded && !names.contains(item.href.as_str()) {
++            return Err(refused(format!("dangling manifest href: {}", item.href)));
++        }
++        if item.media_type == "image/jpg" {
++            use std::io::Read;
++            let mut signature = [0u8; 3];
++            if !item.embedded {
++                return Err(refused("unverified linked JPEG MIME spelling"));
++            }
++            archive
++                .by_name(&item.href)
++                .map_err(refused)?
++                .read_exact(&mut signature)
++                .map_err(refused)?;
++            if signature != [0xff, 0xd8, 0xff] {
++                return Err(refused("JPEG MIME spelling without JPEG signature"));
++            }
++        }
++    }
++    Ok(())
++}
++
++#[cfg(test)]
++mod tests {
++    use super::*;
++    use crate::serializer::hwpx::content::{write_content_hpf, BinDataEntry};
++
++    fn item(id: &str, href: &str) -> String {
++        let media = if href.ends_with(".png") {
++            "image/png"
++        } else if href.ends_with(".js") {
++            "application/javascript"
++        } else {
++            "application/xml"
++        };
++        let embedded = if media == "image/png" {
++            r#" isEmbeded="1""#
++        } else {
++            ""
++        };
++        format!(r#"<opf:item id="{id}" href="{href}" media-type="{media}"{embedded}/>"#)
++    }
++    fn package(items: &[String], spine: &str) -> String {
++        format!(
++            r#"<opf:package xmlns:opf="http://www.idpf.org/2007/opf/"><opf:manifest>{}</opf:manifest><opf:spine>{spine}</opf:spine></opf:package>"#,
++            items.join("")
++        )
++    }
++    fn basic(extra: &[String]) -> Vec<String> {
++        let mut items = vec![
++            item("header", "Contents/header.xml"),
++            item("section0", "Contents/section0.xml"),
++            item("settings", "settings.xml"),
++        ];
++        items.extend_from_slice(extra);
++        items
++    }
++    fn bin(id: &str) -> BinDataEntry {
++        BinDataEntry {
++            id: id.into(),
++            href: format!("BinData/{id}.png"),
++            media_type: "image/png".into(),
++            is_embedded: true,
++        }
++    }
++    fn export(
++        original: &str,
++        sections: usize,
++        bins: &[BinDataEntry],
++        masters: &[(usize, String, String)],
++    ) -> Result<Vec<u8>, SerializeError> {
++        let sections: Vec<_> = (0..sections)
++            .map(|i| format!("Contents/section{i}.xml"))
++            .collect();
++        write_content_hpf(&sections, bins, masters, Some(original.as_bytes()))
++    }
++    fn ids(bytes: &[u8]) -> Vec<String> {
++        read_manifest(std::str::from_utf8(bytes).unwrap())
++            .unwrap()
++            .items
++            .into_iter()
++            .map(|item| item.id)
++            .collect()
++    }
++
++    #[test]
++    fn interleaved_bindata_and_script_order_repeats() {
++        let source = package(
++            &[
++                item("image2", "BinData/image2.png"),
++                item("header", "Contents/header.xml"),
++                item("image1", "BinData/image1.png"),
++                item("section0", "Contents/section0.xml"),
++                item("script", "Scripts/headerScripts.js"),
++                item("settings", "settings.xml"),
++            ],
++            r#"<opf:itemref idref="section0" linear="no"/>"#,
++        );
++        let bins = [bin("image1"), bin("image2")];
++        let out = export(&source, 1, &bins, &[]).unwrap();
++        assert_eq!(
++            ids(&out),
++            ["image2", "header", "image1", "section0", "script", "settings"]
++        );
++        assert!(std::str::from_utf8(&out)
++            .unwrap()
++            .contains(r#"idref="section0" linear="no""#));
++        assert_eq!(out, export(&source, 1, &bins, &[]).unwrap());
++        assert_eq!(
++            out,
++            export(std::str::from_utf8(&out).unwrap(), 1, &bins, &[]).unwrap()
++        );
++    }
++
++    #[test]
++    fn new_bindata_and_sections_have_stable_noncolliding_positions() {
++        let source = package(&basic(&[item("image1", "BinData/image1.png")]), "");
++        let bins = [bin("image1"), bin("image2")];
++        let out = export(&source, 2, &bins, &[]).unwrap();
++        assert_eq!(
++            ids(&out),
++            ["header", "section0", "settings", "image1", "section1", "image2"]
++        );
++        assert_eq!(
++            out,
++            export(std::str::from_utf8(&out).unwrap(), 2, &bins, &[]).unwrap()
++        );
++        assert!(export(&source, 1, &[bin("image1"), bin("header")], &[]).is_err());
++        assert!(export(&source, 1, &[bin("image1"), bin("image1")], &[]).is_err());
++    }
++
++    #[test]
++    fn omitted_or_changed_existing_resources_are_refused() {
++        let source = package(&basic(&[item("image1", "BinData/image1.png")]), "");
++        assert!(export(&source, 1, &[], &[]).is_err());
++        let mut changed = bin("image1");
++        changed.href = "BinData/other.png".into();
++        assert!(export(&source, 1, &[changed], &[]).is_err());
++        let mut changed = bin("image1");
++        changed.media_type = "image/jpeg".into();
++        assert!(export(&source, 1, &[changed], &[]).is_err());
++    }
++
++    #[test]
++    fn master_page_owners_are_preserved_and_new_masters_precede_owner() {
++        let source = package(
++            &[
++                item("header", "Contents/header.xml"),
++                item("masterpage0", "Contents/masterpage0.xml"),
++                item("image1", "BinData/image1.png"),
++                item("section0", "Contents/section0.xml"),
++                item("masterpage1", "Contents/masterpage1.xml"),
++                item("section1", "Contents/section1.xml"),
++                item("settings", "settings.xml"),
++            ],
++            r#"<opf:itemref idref="section0"/><opf:itemref idref="section1"/>"#,
++        );
++        let masters = [
++            (0, "masterpage0".into(), "Contents/masterpage0.xml".into()),
++            (1, "masterpage1".into(), "Contents/masterpage1.xml".into()),
++            (0, "masterpage2".into(), "Contents/masterpage2.xml".into()),
++        ];
++        let out = export(&source, 2, &[bin("image1")], &masters).unwrap();
++        assert_eq!(
++            ids(&out),
++            [
++                "header",
++                "masterpage0",
++                "image1",
++                "masterpage2",
++                "section0",
++                "masterpage1",
++                "section1",
++                "settings"
++            ]
++        );
++        assert_eq!(
++            out,
++            export(
++                std::str::from_utf8(&out).unwrap(),
++                2,
++                &[bin("image1")],
++                &masters
++            )
++            .unwrap()
++        );
++        let wrong = [
++            (1, "masterpage0".into(), "Contents/masterpage0.xml".into()),
++            (0, "masterpage1".into(), "Contents/masterpage1.xml".into()),
++        ];
++        assert!(export(&source, 2, &[bin("image1")], &wrong).is_err());
++    }
++
++    #[test]
++    fn ambiguous_missing_and_unknown_manifest_metadata_is_refused() {
++        let valid = package(&basic(&[]), r#"<opf:itemref idref="section0"/>"#);
++        let header = item("header", "Contents/header.xml");
++        let cases = [
++            valid.replace(&header, &(header.clone() + &header)),
++            valid.replace(
++                &header,
++                &(header.clone() + &item("alias", "Contents/header.xml")),
++            ),
++            valid.replace(&header, &item("header", "Contents/other.xml")),
++            valid.replace(&header, ""),
++            valid.replace("id=\"header\"", "id=\"\""),
++            valid.replace("href=\"Contents/header.xml\"", ""),
++            valid.replace("media-type=\"application/xml\"", ""),
++            valid.replace("id=\"header\"", "hashkey=\"opaque\" id=\"header\""),
++            valid.replace("idref=\"section0\"", "idref=\"missing\""),
++            valid.replace(
++                &header,
++                &(header.clone() + &item("unknown", "Opaque/unknown.xml")),
++            ),
++            valid.replace(&header, "<x:item xmlns:x=\"urn:x\"/>"),
++            valid.replace(
++                &header,
++                &("<opf:other>".to_string() + &header + "</opf:other>"),
++            ),
++            valid.replace(&header, &(header.clone() + "<!--keep-->")),
++            valid.replace("<opf:manifest>", "<opf:manifest>text"),
++            valid.replace("<opf:manifest>", "<opf:manifest extra=\"1\">"),
++        ];
++        for source in cases {
++            assert!(export(&source, 1, &[], &[]).is_err(), "{source}");
++        }
++    }
++
++    #[test]
++    fn final_zip_targets_include_passthrough_scripts() {
++        let source = package(&basic(&[item("script", "Scripts/headerScripts.js")]), "");
++        let content = export(&source, 1, &[], &[]).unwrap();
++        let zip = |script: bool| {
++            let mut z = super::super::writer::HwpxZipWriter::new();
++            for name in [
++                "Contents/header.xml",
++                "Contents/section0.xml",
++                "settings.xml",
++            ] {
++                z.write_stored(name, b"data").unwrap();
++            }
++            if script {
++                z.write_stored("Scripts/headerScripts.js", b"script")
++                    .unwrap();
++            }
++            z.finish().unwrap()
++        };
++        assert!(validate_targets(&zip(false), &content).is_err());
++        assert!(validate_targets(&zip(true), &content).is_ok());
++    }
++    #[test]
++    fn legacy_jpeg_media_spelling_requires_same_resource_and_actual_jpeg() {
++        let image = item("image1", "BinData/image1.jpg").replace("application/xml", "image/jpg");
++        let source = package(&basic(&[image]), "");
++        let entry = || BinDataEntry {
++            id: "image1".into(),
++            href: "BinData/image1.jpg".into(),
++            media_type: "image/jpeg".into(),
++            is_embedded: true,
++        };
++        let content = export(&source, 1, &[entry()], &[]).unwrap();
++        assert!(std::str::from_utf8(&content)
++            .unwrap()
++            .contains(r#"media-type="image/jpg""#));
++        assert_eq!(
++            content,
++            export(std::str::from_utf8(&content).unwrap(), 1, &[entry()], &[]).unwrap()
++        );
++        let zip = |data: &[u8]| {
++            let mut z = super::super::writer::HwpxZipWriter::new();
++            for name in [
++                "Contents/header.xml",
++                "Contents/section0.xml",
++                "settings.xml",
++            ] {
++                z.write_stored(name, b"data").unwrap();
++            }
++            z.write_stored("BinData/image1.jpg", data).unwrap();
++            z.finish().unwrap()
++        };
++        assert!(validate_targets(&zip(&[0xff, 0xd8, 0xff, 0xe0]), &content).is_ok());
++        assert!(validate_targets(&zip(b"not a JPEG"), &content).is_err());
++        let mut wrong = entry();
++        wrong.media_type = "image/png".into();
++        assert!(export(&source, 1, &[wrong], &[]).is_err());
++    }
++}
