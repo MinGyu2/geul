@@ -6,7 +6,7 @@ import type { DocumentBackend } from "../../adapters/backend";
 import { DocumentSessions } from "../../adapters/sessions";
 import { documentPanelState, navigateDocumentPage } from "./documentPanels";
 import { DocumentWorkspace } from "./documentWorkspace";
-import { readySession } from "./rhwp/testing";
+import { info as rhwpInfo, ok, readySession } from "./rhwp/testing";
 import { decodeFake, FakeDocx, flush, readyDocx, stubScreenContext } from "./wordcraft/testing";
 
 describe("authoritative panel projection and navigation", () => {
@@ -102,6 +102,129 @@ describe("authoritative panel projection and navigation", () => {
     expect(screen.getByRole("contentinfo").textContent).not.toContain("a.docx");
     await act(async () => { editor.pointAt(0, 0, 0, false); await flush(); });
     expect(screen.getByRole("contentinfo").textContent).not.toContain("a.docx");
+    app.unmount();
+  });
+});
+
+describe("unpreserved-change projection", () => {
+  const observe = (editor: Parameters<typeof documentPanelState>[0], sessions: DocumentSessions) => {
+    const before = { session: sessions.snapshot(), revision: editor?.snapshot().revision, version: editor?.changeSnapshot() };
+    const state = documentPanelState(editor, sessions.get(1) ?? null);
+    // Reading the projection has no side effects on the session, revision, or editor event version.
+    expect(sessions.snapshot()).toBe(before.session);
+    expect(editor?.snapshot().revision).toBe(before.revision);
+    expect(editor?.changeSnapshot()).toBe(before.version);
+    return state;
+  };
+
+  it("matches the tab/close contract for WordCraft pending, committed, durable and unconfirmed saves", async () => {
+    const { editor, sessions, fake } = await readyDocx();
+    expect(observe(editor, sessions)).toMatchObject({ unpreserved: false, pending: false, composing: false });
+    expect(observe(editor, sessions).info?.dirty).toBe(false);
+    fake.hold = true;
+    editor.typeText("x");
+    const pending = observe(editor, sessions);
+    expect(pending).toMatchObject({ unpreserved: true, pending: true });
+    expect(pending.info?.dirty).toBe(false); // not acknowledged by the backend yet
+    expect(pending.unpreserved).toBe(editor.hasUnpreservedChanges);
+    fake.hold = false;
+    fake.release(); await flush();
+    const committed = observe(editor, sessions);
+    expect(committed).toMatchObject({ unpreserved: true, pending: false });
+    expect(committed.info?.dirty).toBe(true);
+    fake.durable = false;
+    expect((await editor.save()).ok).toBe(true);
+    const unconfirmed = observe(editor, sessions);
+    expect(unconfirmed.info?.dirty).toBe(true);
+    expect(unconfirmed.unpreserved).toBe(true);
+    fake.durable = true;
+    expect((await editor.save()).ok).toBe(true);
+    expect(observe(editor, sessions)).toMatchObject({ unpreserved: false, pending: false, composing: false });
+    expect(editor.hasUnpreservedChanges).toBe(false);
+    editor.dispose();
+  });
+
+  it("protects an unsettled Korean composition without committing it, then follows the committed edit", async () => {
+    const { editor, sessions, fake } = await readyDocx();
+    editor.beginComposition();
+    editor.updateComposition("ㄱ");
+    const composing = observe(editor, sessions);
+    expect(composing).toMatchObject({ unpreserved: true, composing: true });
+    expect(composing.info?.dirty).toBe(false);
+    expect(editor.composing).toBe(true); // observing did not finish the composition
+    expect(fake.calls.filter((call) => call.method === "edit")).toHaveLength(0);
+    editor.endComposition("가"); await flush();
+    const committed = observe(editor, sessions);
+    expect(committed).toMatchObject({ unpreserved: true, composing: false, pending: false });
+    expect(committed.info?.dirty).toBe(true);
+    editor.dispose();
+  });
+
+  it("reports RHWP unacknowledged and uncertain engine edits even while the editor is unavailable", async () => {
+    const { editor, sessions, take, doc } = await readySession(["ab"], {});
+    editor.typeText("가");
+    const waiting = observe(editor, sessions);
+    expect(waiting.info?.dirty).toBe(false);
+    expect(waiting.unpreserved).toBe(true);
+    take("commit").reply(ok(rhwpInfo({ state: "ready", revision: 1, dirty: true, sequence: 3 })));
+    await flush();
+    expect(observe(editor, sessions)).toMatchObject({ unpreserved: true });
+    doc.failNext = true;
+    editor.backspace();
+    await flush();
+    const failed = observe(editor, sessions);
+    expect(failed.unpreserved).toBe(true);
+    expect(failed.unpreserved).toBe(editor.hasUnpreservedChanges);
+    editor.dispose();
+  });
+
+  it("never attributes another document's unpreserved state to the active session", async () => {
+    const { editor, sessions, fake } = await readyDocx();
+    fake.hold = true;
+    editor.typeText("x");
+    const other = { ...sessions.get(1)!, sessionId: 2, dirty: false, displayName: "b.docx" };
+    expect(documentPanelState(editor, other)).toMatchObject({ unpreserved: false, pending: false });
+    expect(documentPanelState(null, { ...other, dirty: true }).unpreserved).toBe(true);
+    expect(documentPanelState(editor, null).unpreserved).toBe(false);
+    fake.hold = false; fake.release(); await flush();
+    editor.dispose();
+  });
+
+  it("App tab marker, status bar and properties panel agree for pending edits and clear on close", async () => {
+    stubScreenContext();
+    const fake = new FakeDocx(["abc"]);
+    const backend = {
+      open: async () => ({ ok: true, value: { ...fake.info } }),
+      sessions: async () => ({ ok: true, value: [] }),
+      close: async (sessionId: number) => ({ ok: true, value: { sessionId, alreadyClosed: false } }),
+    } as unknown as DocumentBackend;
+    const sessions = new DocumentSessions(backend);
+    const workspace = new DocumentWorkspace(sessions, backend, undefined, undefined, fake, decodeFake);
+    const app = render(<App initialLanguage="en" settingsStore={{ read: () => null, write: () => true }} documentWorkspace={workspace} />);
+    await act(async () => { await workspace.open("/a.docx"); await flush(); });
+    const status = () => screen.getByTestId("status-document");
+    const row = (label: string) => screen.getByText(label, { selector: "dt" }).nextElementSibling;
+    const tab = () => screen.getByRole("tab", { name: /a\.docx/ });
+    expect(tab()).toHaveAttribute("data-modified", "false");
+    expect(status().textContent).not.toContain("*");
+    expect(row("Unsaved edits")).toHaveTextContent("No");
+    const editor = workspace.docxEditorFor(1)!;
+    fake.hold = true;
+    await act(async () => { editor.typeText("x"); await flush(); });
+    expect(tab()).toHaveAttribute("data-modified", "true");
+    expect(workspace.hasUnpreservedChanges).toBe(true);
+    expect(sessions.get(1)?.dirty).toBe(false);
+    expect(status().textContent).toContain("*");
+    expect(row("Unsaved edits")).toHaveTextContent("Yes");
+    expect(row("Committed changes without a confirmed save")).toHaveTextContent("No");
+    expect(row("Edits awaiting confirmation")).toHaveTextContent("Yes");
+    fake.hold = false;
+    await act(async () => { fake.release(); await flush(); });
+    expect(row("Committed changes without a confirmed save")).toHaveTextContent("Yes");
+    expect(row("Edits awaiting confirmation")).toHaveTextContent("No");
+    await act(async () => { await workspace.close(1, { discard: true }); });
+    expect(status().textContent).not.toContain("*");
+    expect(screen.queryByText("Unsaved edits", { selector: "dt" })).toBeNull();
     app.unmount();
   });
 });

@@ -17,14 +17,23 @@ export interface DocumentPanelState {
   canNavigate: boolean;
   pending: boolean;
   composing: boolean;
+  /**
+   * Any edit that is not yet durably preserved: backend dirty (committed or published without confirmed durability)
+   * OR the editor's own `hasUnpreservedChanges` (pending/queued input, in-flight commit, unsettled IME, uncertain model).
+   * Same rule as the document tab marker and close confirmation (DocumentWorkspace). `info.dirty` stays the backend value.
+   */
+  unpreserved: boolean;
 }
 
 export function documentPanelState(editor: EngineEditor | null, info: SessionInfo | null): DocumentPanelState {
   const empty: DocumentPanelState = {
     info, status: editor?.status.kind ?? "idle", pageCount: null, page: null, caret: null,
     selection: "unavailable", paragraphStyle: null, selectedText: null, format: null, canNavigate: false, pending: false, composing: false,
+    unpreserved: info?.dirty ?? false,
   };
   if (!editor || !info || editor.sessionId !== info.sessionId) return empty;
+  // Read before the loaded check: a failed/unavailable editor can still hold uncertain or unsent edits.
+  empty.unpreserved = info.dirty || editor.hasUnpreservedChanges;
   const snapshot = editor.snapshot();
   empty.pending = snapshot.pending;
   empty.composing = snapshot.composing;

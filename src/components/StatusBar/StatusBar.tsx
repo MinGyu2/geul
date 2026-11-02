@@ -17,7 +17,7 @@ export function StatusBar({ context, message, state }: StatusBarProps) {
   return (
     <footer className="statusbar" aria-label={t("status.label")}>
       <span className="statusbar__item" data-testid="status-document">
-        {state.info ? <>{state.info.displayName}{state.info.dirty ? " *" : ""}{state.pending ? ` ${t("status.pending")}` : ""}</> : t("app.noDocument")}
+        {state.info ? <>{state.info.displayName}{state.unpreserved ? <span title={t("document.modified")}> *</span> : ""}{state.pending ? ` ${t("status.pending")}` : ""}</> : t("app.noDocument")}
       </span>
       <span className="statusbar__item" data-testid="status-page">{page}</span>
       <span className="statusbar__message" role="status" aria-live="polite">{format(message)}</span>

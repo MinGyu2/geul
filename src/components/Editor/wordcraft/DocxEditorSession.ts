@@ -444,6 +444,7 @@ export class DocxEditorSession implements ImeSession, DocumentCommandTarget {
     if (!this.editable) return false;
     if (settles) this.provisional = null;
     this.inputNotice = null;
+    const wasBusy = this.busy;
     for (const op of ops) {
       if (op.op !== "insertText") this.pointerAfterInsert = false;
       const last = this.queue[this.queue.length - 1];
@@ -452,6 +453,8 @@ export class DocxEditorSession implements ImeSession, DocumentCommandTarget {
       else this.queue.push(op);
     }
     void this.flush();
+    // 보내기 시작(한가→바쁨)을 알린다: 탭 표시·상태 표시줄·속성 창이 백엔드 응답 전의 미보존 편집을 보인다(응답 뒤에도 알림).
+    if (!wasBusy && this.busy) this.emit();
     return true;
   }
 

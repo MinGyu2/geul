@@ -17,7 +17,7 @@ const info = (sessionId: number, overrides: Partial<SessionInfo> = {}): SessionI
 const state = (overrides: Partial<DocumentPanelState> = {}): DocumentPanelState => ({
   info: null, status: "idle", pageCount: null, page: null, caret: null,
   selection: "unavailable", selectedText: null, paragraphStyle: null, format: null,
-  canNavigate: false, pending: false, composing: false, ...overrides,
+  canNavigate: false, pending: false, composing: false, unpreserved: false, ...overrides,
 });
 const context: CommandContext = {
   layout: { ...initialLayout, zoom: 125 }, dispatch: vi.fn(), notify: vi.fn(), document: null,
@@ -49,7 +49,7 @@ describe("active document panels", () => {
     expect(screen.getByTestId("status-page")).toHaveTextContent("Page 3 of 4");
     expect(screen.getAllByText("draft-1.docx").length).toBeGreaterThan(1);
     rerender(<AppPanels panelState={state({ info: info(2, { format: "hwpx", engine: "rhwp", dirty: true }),
-      status: "ready", pageCount: 8, page: 0 })} />);
+      status: "ready", pageCount: 8, page: 0, unpreserved: true })} />);
     expect(screen.getByTestId("status-document")).toHaveTextContent("draft-2.docx *");
     expect(screen.getByTestId("status-page")).toHaveTextContent("Page 1 of 8");
     expect(screen.getByText("HWPX")).toBeInTheDocument();

@@ -35,7 +35,10 @@ export function PropertiesPanel({ state, onClose }: PropertiesPanelProps) {
                 <dt>{t("properties.engine")}</dt><dd>{info.engine === "rhwp" ? "RHWP" : "WordCraft"}</dd>
                 <dt>{t("properties.state")}</dt><dd>{t(`document.state.${info.state}`)}</dd>
                 <dt>{t("properties.revision")}</dt><dd>{info.revision}</dd>
-                <dt>{t("properties.modified")}</dt><dd>{info.dirty ? t("properties.yes") : t("properties.no")}</dd>
+                <dt>{t("properties.modified")}</dt><dd>{state.unpreserved ? t("properties.yes") : t("properties.no")}</dd>
+                <dt>{t("properties.committedDirty")}</dt><dd>{info.dirty ? t("properties.yes") : t("properties.no")}</dd>
+                <dt>{t("properties.pendingEdits")}</dt><dd>{state.pending ? t("properties.yes") : t("properties.no")}</dd>
+                <dt>{t("properties.composing")}</dt><dd>{state.composing ? t("properties.yes") : t("properties.no")}</dd>
               </dl>
             </section>
             <section className="panel__section" aria-labelledby="properties-selection">
