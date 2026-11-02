@@ -1,0 +1,244 @@
+{
+  "date": "2026-11-02",
+  "stage3": {
+    "status": "PASS",
+    "scope": "표 프로브 원인 규명·교정 및 로컬 가용 환경의 후속 수용 검증"
+  },
+  "T007": "INCOMPLETE",
+  "T008": "INCOMPLETE",
+  "sourceHead": "42f444a89b93ad3bec3ce2d11a150b5ab4023c9b",
+  "appSha256": "1508dea1c6dfdf0963b92d825b9cd0fb7a3f6e70a29e07c8834680ea3a7f353c",
+  "rhwpBuild": {
+    "artifacts": {
+      "rhwp.js": "70cde06a369fa7fd4fc8bc8f3d6acaee158596ba1a116a2c72159002b0b5654e",
+      "rhwp_bg.wasm": "3f99a74bbddf1716dcb6cf3e2a3940f510f3ca03fcee465f7f0c2fcd829d9cf0"
+    },
+    "commit": "1a76570e833917d15817415a53c09ad61ab3203f",
+    "engine": "rhwp",
+    "generation": "ca284e06df589b15bb7bc99163472203644621efffa024be6ad315908bdeb855",
+    "optimization": {
+      "flags": [],
+      "tool": "none",
+      "version": null
+    },
+    "profile": "release",
+    "schemaVersion": 2,
+    "sourceFingerprint": "e2ac6f837cf20744378379335eafbdbc4c78e095bb7912b5e40b97152d6d4328",
+    "tools": {
+      "cargo": "1.99.0",
+      "rustc": "1.99.0",
+      "wasm-bindgen": "0.2.127"
+    }
+  },
+  "wordcraftCommit": "fc41918814f62645b6746ed68e71e8c2c2e85d6f",
+  "productionChanges": "Stage 3 제품·엔진 변경 없음; 시험 관측·좌표·키 이름·준비 상태 교정",
+  "rootCause": {
+    "baseline": "일반 문단 hit24회 정확하지만 잘못 가져온 module prototype의 owners/hits는 비어 있음; live cell=null",
+    "moduleIdentity": "Vite 앱의 rhwp.js?import와 프로브의 rhwp.js는 별도 ES module/class. 실제 앱 인스턴스 prototype과 raw module prototype은 둘 다 불일치(False).",
+    "fix": "실제 loadRhwpModule() facade의 문서 팩터리 관측; 세션→살아 있는 문서 소유권을 결속. 셀/canvas CSS/스크롤/배율과 별도 포인터 보정 사용.",
+    "additionalHarnessFixes": [
+      "WebDriver Backspace→X11 BackSpace 키 이름 변환",
+      "측정된 포인터 배율을 drag에도 적용",
+      "문서 입력 UI 준비 확인",
+      "두 엔진 fixture JSON 분리",
+      "native IBus CLI용 설치된 setxkbmap PATH 제공"
+    ]
+  },
+  "matrix": [
+    {
+      "task": "rhwp table",
+      "test": "HWP/HWPX DPR1·DPR2 각100%/200%, 실제 셀 클릭→Tab→Shift+Tab→마지막 셀 경계",
+      "result": "PASS",
+      "evidence": "run4(DPR1 부분 검증), run8(DPR2 전체 PASS)",
+      "limitation": "기존 DPR1 run4 전체는 이후 IME 준비 오류로 FAIL이며 전체 PASS로 승격하지 않음"
+    },
+    {
+      "task": "rhwp ownership",
+      "test": "두 문서 구별·반복 탭 전환·일반 문단 hit·이동의 revision 불변",
+      "result": "PASS",
+      "evidence": "run4/run8",
+      "limitation": "선택한 생성 fixture 범위"
+    },
+    {
+      "task": "rhwp ordinary",
+      "test": "선택·삭제·문단 이동·표 입력·revision/StaleLoad 거절",
+      "result": "PASS",
+      "evidence": {
+        "DPR1Checks": 32,
+        "DPR2Checks": 32
+      },
+      "limitation": "DPR1은 run4의 완료된 하위 검사"
+    },
+    {
+      "task": "DOCX ordinary",
+      "test": "hit·선택·표 이동·revision 거절·앱 내 DOCX export/reopen",
+      "result": "PASS",
+      "evidence": {
+        "run": 9,
+        "checks": 27
+      },
+      "limitation": "DPR1"
+    },
+    {
+      "task": "native IME",
+      "test": "preedit·커서·정확한 확정·연속 음절·조합 중 키/클릭",
+      "result": "PASS",
+      "evidence": {
+        "run": 5,
+        "rhwpRequired": "7/7",
+        "wordcraftRequired": "7/7"
+      },
+      "limitation": "run5 전체는 이후 지연 측정 CLI 준비 오류로 FAIL. 실제 관측한 게이트만 재사용"
+    },
+    {
+      "task": "native IME switching",
+      "test": "조합 중 문서 전환, DOCX 선택 교체·선택 위 취소",
+      "result": "PASS",
+      "evidence": "run5 선택 항목",
+      "limitation": "다른 X 창 초점 이동 NOT RUN"
+    },
+    {
+      "task": "native IME latency/cancel",
+      "test": "Hangul 전용 구간150ms p95, 취소 전후 표시 canvas 동일·본문/revision 불변·선택 교체",
+      "result": "PASS",
+      "evidence": "run7; nativeImeLatency",
+      "limitation": "DPR1·100%; 표본 수는 렌더 완료 표본이며 물리 키 수가 아님"
+    },
+    {
+      "task": "render after failure",
+      "test": "stale revision/load 요청 거절 뒤 표시 canvas 유지",
+      "result": "PASS",
+      "evidence": "run8 HWP/HWPX, run9 DOCX",
+      "limitation": "시험한 거절 경계"
+    },
+    {
+      "task": "missing environment",
+      "test": "GPU desktop / Wayland IME / fcitx5 / Windows / macOS / 별도 창 초점 이동 / 추가 CPU 포화",
+      "result": "NOT RUN",
+      "evidence": null,
+      "limitation": "이번 로컬 실행 범위 밖"
+    },
+    {
+      "task": "T007/T008 completion",
+      "test": "모든 필수 수용 조건",
+      "result": "INCOMPLETE",
+      "evidence": "환경 범위 미충족",
+      "limitation": "미체크 유지"
+    }
+  ],
+  "nativeImeLatency": {
+    "hwp": {
+      "samples": 39,
+      "p50": 26,
+      "p95": 35,
+      "max": 38,
+      "thresholdMs": 150,
+      "passed": true,
+      "nativeCompositionEvents": 180,
+      "trustedEvents": true,
+      "dpr": 1,
+      "zoom": "100%",
+      "metric": "native Hangul-only interval; existing input-event to caret-page draw plus two RAF metric",
+      "keyboard": "xdotool native GTK -> IBus hangul; rk repeated20, delay140ms; no DOM composition",
+      "compositionCancellation": "PASS: text/revision unchanged after BackSpace and End",
+      "cancelledCanvasEqual": true,
+      "selectionReplacement": "PASS: selected two syllables replaced once; backend revision matches",
+      "min": 17,
+      "p99": 38
+    },
+    "hwpx": {
+      "samples": 40,
+      "p50": 27,
+      "p95": 38,
+      "max": 57,
+      "thresholdMs": 150,
+      "passed": true,
+      "nativeCompositionEvents": 180,
+      "trustedEvents": true,
+      "dpr": 1,
+      "zoom": "100%",
+      "metric": "native Hangul-only interval; existing input-event to caret-page draw plus two RAF metric",
+      "keyboard": "xdotool native GTK -> IBus hangul; rk repeated20, delay140ms; no DOM composition",
+      "compositionCancellation": "PASS: text/revision unchanged after BackSpace and End",
+      "cancelledCanvasEqual": true,
+      "selectionReplacement": "PASS: selected two syllables replaced once; backend revision matches",
+      "min": 17,
+      "p99": 57
+    },
+    "docx": {
+      "samples": 141,
+      "p50": 48,
+      "p95": 91,
+      "max": 123,
+      "thresholdMs": 150,
+      "passed": true,
+      "nativeCompositionEvents": 180,
+      "trustedEvents": true,
+      "dpr": 1,
+      "zoom": "100%",
+      "metric": "native Hangul-only interval; existing input-event to caret-page draw plus two RAF metric",
+      "keyboard": "xdotool native GTK -> IBus hangul; rk repeated20, delay140ms; no DOM composition",
+      "compositionCancellation": "PASS: text/revision unchanged after BackSpace and End",
+      "cancelledCanvasEqual": true,
+      "selectionReplacement": "PASS: selected two syllables replaced once; backend revision matches",
+      "min": 8,
+      "p99": 121
+    }
+  },
+  "historicalOrdinaryKeyboardLatency": {
+    "HWP": {
+      "samples": 79,
+      "p95": 42
+    },
+    "HWPX": {
+      "samples": 79,
+      "p95": 38
+    },
+    "DOCX": {
+      "samples": 80,
+      "p95": 57
+    },
+    "scope": "이전 Xvfb 일반 키 측정; 실제 IME 수치로 재분류하지 않음"
+  },
+  "environment": {
+    "os": "NixOS 26.05; Linux kernel7.2.11-arch1-1",
+    "display": "Xvfb X11; 96dpi; DPR1 1280x1024, GDK_SCALE=2 DPR2 2560x2048",
+    "ime": "IBus1.5.33 + ibus-hangul1.5.5; native xdotool",
+    "rendering": "WebKitGTK2.54.1 Canvas2D; LIBGL_ALWAYS_SOFTWARE=1, WEBKIT_DISABLE_DMABUF_RENDERER=1; GPU desktop 검증 아님",
+    "fixtures": [
+      "생성 basic-ko.hwp",
+      "생성 basic-ko.hwpx",
+      "생성 basic-ko.docx"
+    ],
+    "fixtureSha256": {
+      "basic-ko.hwp": "57c901cc394abf6f58f4838315d1ea2c5ecf8a03d9934d3fc098fd8be6e6e12f",
+      "basic-ko.hwpx": "26d434b7b427149110751c6ef5b19e9ecb4818f3ba7eadfe201b5afd3de442a8",
+      "basic-ko.docx": "7286a49b2801ea1d4069a2173a440c4ad06718ae779345626fed52b27b56ee6c"
+    },
+    "zoom": [
+      100,
+      200
+    ],
+    "contention": "추가 CPU 부하를 만들지 않음; native 측정 중 task Cargo 빌드 없음; 외부 시스템 부하를 격리했다고 주장하지 않음",
+    "nativeImeLoadAverageStart": [
+      2.88818359375,
+      2.36376953125,
+      1.7783203125
+    ],
+    "syntheticComposition": false
+  },
+  "localEvidence": {
+    "baseline": "target/four-stage/stage3-stabilized-baseline/result.json",
+    "DPR1": "target/four-stage/stage3-table-run4/result.json",
+    "imeGate": "target/four-stage/stage3-table-run5/result.json",
+    "nativeImeLatency": "target/four-stage/stage3-table-run7/result.json",
+    "DPR2": "target/four-stage/stage3-table-run8/result.json",
+    "DOCX": "target/four-stage/stage3-table-run9/result.json",
+    "cleanup": "해당 environment-result.json 모두 cleanupSucceeded=true; 실패 실행 기록 보존"
+  },
+  "independentLimitations": [
+    "범용 외부 HWPX 보존과 무관",
+    "fresh engine replay에 대한 취소 화면 비교는 아님; 동일 표시 canvas의 취소 전후 비교",
+    "T010 Undo/Redo·D4 개발 또는 게이트 재개 없음"
+  ]
+}

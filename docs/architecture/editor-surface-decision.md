@@ -1553,3 +1553,31 @@ dirty가 보호 근거다.
 DOM 조합 이벤트를 만들지 않았다. 일반 키 측정은 독립 simple GTK 입력 컨텍스트다. 시작 load average는 rhwp 0.64/1.01/1.23,
 DOCX 0.64/1.00/1.27이며 CPU 포화 실험을 하지 않았다. 각 결과는 WebView 전달·스케줄링·그리기를 포함한 표면 측정이고
 엔진 계산만의 지연 또는 다른 환경의 성능 보장으로 해석하지 않는다. rhwp Undo/Redo 및 D4 gate는 변경하지 않았다.
+
+
+## T007/T008 표 프로브 및 네이티브 후속 검증 (2026-11-02)
+
+상태: **로컬 후속 검증 PASS; T007/T008 전체 INCOMPLETE·미체크 유지.** Stage 3 제품/엔진 변경은 없다. 기준 앱은 `42f444a`를 protected build한 debug 바이너리이며 rhwp/WordCraft pin 및 제품 WASM은 그대로다. [구조화 수용 행렬](native-editor-acceptance-2026-11-02.json)에 앱/엔진 신원과 로컬 증거 경로를 기록했다.
+
+기존 live probe 실패를 다시 재현했다. 일반 문단 hit24회는 모두 정확했지만 probe의 owners/hits는 비었고 cell은 null이었다. Vite가 앱의 동적 import를 `rhwp.js?import`로 평가하는 반면, probe는 쿼리가 없는 `rhwp.js`의 별도 클래스 prototype을 감쌌다. 실제 앱 문서와 raw module의 prototype 불일치 두 건을 네이티브 WebView에서 확인했다. 제품 hit-test 또는 Tab 결함으로 판정하지 않는다.
+
+`scripts/tests/native-table-acceptance.py`는 실제 `loadRhwpModule()` facade의 문서 팩터리를 관측하고 세션별 살아 있는 문서를 결속한다. fixture 메타데이터와 엔진 셀 형상을 현재 canvas의 CSS 좌표로 바꾸며, 스크롤·배율·DPR·WebDriver 포인터 보정을 구분한다. backing-store 픽셀을 CSS 클릭 좌표로 쓰지 않는다. 클릭 전달 좌표와 실제 선택 셀·문서 소유권을 함께 검사하고, 해제한 문서는 관측 목록에서 제거한다. 별도 문서로 대체하거나 고정 화면 좌표로 fallback하지 않는다.
+
+시험 도우미의 WebDriver `Backspace`/X11 `BackSpace` 이름 차이, drag의 포인터 보정 누락, 새 UI 준비 대기와 fixture JSON 충돌도 시험 경계에서 고쳤다. 실제 IME 지연 측정용 IBus CLI는 설치된 `setxkbmap` 경로가 필요했다. 미설치 도구를 내려받거나 검사를 완화하지 않았다.
+
+| 항목 | 결과 | 근거·한계 |
+|---|---|---|
+| rhwp 셀 클릭·Tab·Shift+Tab·마지막 셀 경계, 문서 소유권, 일반 문단 클릭 | PASS | HWP/HWPX, DPR1·DPR2, 각각100%/200%. DPR2에서는 실제 scrollTop81–285 CSS px를 포함. 별도 prototype 불일치 확인 |
+| rhwp 선택·삭제·문단 이동·표 입력·revision 거절 | PASS | DPR1 32개, DPR2 32개. DPR2에서 거절 뒤 표시 canvas 동일 |
+| DOCX 일반 시나리오·표 이동·revision 거절·앱 내 DOCX 내보내기/재열기 | PASS | 현재 앱 DPR1 27개; 거절 뒤 표시 canvas 동일. WordCraft 수정 없음 |
+| 실제 한글 IME 필수 게이트 | PASS | rhwp7/7(HWP·HWPX), WordCraft7/7. native xdotool→GTK/IBus. 조합 중 문서 전환도 PASS, DOCX 선택 교체·취소 PASS |
+| 별도 실제 IME 지연 | PASS | HWP n39 p50/p95/max26/35/38ms, HWPX n40 27/38/57ms, DOCX n141 48/91/123ms. 150ms 기준 유지 |
+| 취소·선택 교체 및 취소 후 화면 | PASS | 세 형식에서 native 조합을 BackSpace로 취소한 뒤 본문/revision 불변, 취소 전후 표시 canvas 동일. 선택한 두 음절을 한글로 한 번 교체하고 backend revision 일치 |
+| GPU desktop·Wayland IME·fcitx5·Windows/macOS·다른 X 창 초점 이동·CPU 포화 | NOT RUN | 이 증거로 다른 환경 또는 모든 부하의 지연을 보장하지 않음 |
+| T007/T008 전체 수용 | INCOMPLETE | 누락한 필수 환경 근거 때문에 체크하지 않음. T010/D4는 재개하지 않음 |
+
+실제 IME 지연은 native Hangul 키(`rk`20회, 키 간격140ms)만 보낸 전용 구간에서 앱의 기존 입력 이벤트→커서 쪽 그리기+두 RAF 측정 함수를 관측한 값이다. 표본 수는 **렌더 지연 표본 수**이며 물리 키 수가 아니다. 구간의 trusted 조합 이벤트, 완성 본문과 세션 소유권도 검증했고 표본을 골라 제외하지 않았다. 이전 일반 키 수치 HWP42/HWPX38/DOCX57ms(n79/79/80)는 별도 역사 기록이며 IME 수치로 바꾸지 않는다. 이번 지연은 DPR1·100%·Xvfb/X11·IBus1.5.33/ibus-hangul1.5.5·WebKitGTK2.54.1·소프트웨어 렌더 요청·추가 CPU stress 없음 조건이다. native 지연 실행 시작 load average는 구조화 행렬에 있다. DPR2에서는 입력/표/렌더 검증을 했고 IME p95는 측정하지 않았다.
+
+완료된 하위 검사만 재사용했다. DPR1 run4는 표·일반32개 완료 뒤 다음 IME 세션 준비 오류로 전체 FAIL이고, run5는 실제 IME 게이트 완료 뒤 별도 지연 CLI의 setxkbmap 누락으로 전체 FAIL이다. 둘을 전체 PASS로 바꾸지 않았다. 지연/취소 전후 canvas 비교는 수정된 환경의 run7 전체 PASS, DPR2는 run8 전체 PASS, DOCX 일반은 run9 전체 PASS다. 모든 해당 환경의 task 프로세스 정리는 성공했다. 과거 실패 로그도 로컬에 남겼다.
+
+재현에는 별도 `tests/` 환경, 생성 fixture, 준비된 X11/IBus와 검사 훅을 켠 Vite 호스트 및 현재 debug 앱이 필요하다. `--ordinary`는 rhwp 일반 검사를 추가하고 `--ime`, `--ime-only`, `--latency-only`, `--docx-only`로 이미 유효한 증거를 반복하지 않고 필요한 단계만 실행할 수 있다. `--require-dpr 2`는 실제 노출 DPR이2가 아니면 실패한다. 두 엔진의 `basic-ko.json`은 구별해 `--rhwp-meta`로 rhwp 생성 메타데이터를 전달한다. 새 의존성·시험 프레임워크나 OS 설치는 없다.

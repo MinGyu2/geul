@@ -302,3 +302,8 @@ T010 INCOMPLETE, RHWP Undo/Redo NO-GO, T011 NOT STARTED 유지.
 실제 IME→원본 형식 저장→재열기·구조 비교 및 안전 거절 근거는 충족했다. **T007/T008/T009 체크박스는 유지한다.**
 T007/T008의 예전 "저장 없음"은 당시 PoC 범위이며 현재 기능 부재를 뜻하지 않는다. 네이티브 표면의 부분 통과·미검증 플랫폼,
 미해결 rhwp 표 검증, 외부 HWPX 보존 확대 미완료를 저장 성공으로 대신하지 않는다. T010/D4/Undo 활성화 상태는 변경하지 않았다.
+
+
+### T007/T008 네이티브 후속 수용 (2026-11-02)
+
+두 작업은 계속 **미체크 / INCOMPLETE**다. 표 live probe 실패는 Vite ES module 식별자(`rhwp.js` 대 `rhwp.js?import`)가 달라 앱 문서를 관측하지 못한 시험 문제로 확인했다. 실제 앱 로더 관측으로 HWP/HWPX DPR1·DPR2/100%·200% 셀 클릭·Tab·문서 소유권을 검증했다. rhwp 일반32개×두 DPR, DOCX 일반27개, native IME 필수7/7씩, 실제 IME 전용 p95 HWP35/HWPX38/DOCX91ms(렌더 표본39/40/141)와 native 취소/선택 교체를 확인했다. 이전 일반 키 p95와 구별한다. 미실행 환경 및 실패 실행에서 재사용한 하위 검사 경계는 [후속 수용 행렬](../architecture/native-editor-acceptance-2026-11-02.json)과 [설명](../architecture/editor-surface-decision.md#t007t008-표-프로브-및-네이티브-후속-검증-2026-11-02)에 있다. 제품/WordCraft 수정과 T010/D4 재개는 없다.
