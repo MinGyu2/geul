@@ -1,3 +1,4 @@
+import copy
 import importlib.util
 import json
 import shutil
@@ -23,6 +24,32 @@ class ProfilePublicationTests(unittest.TestCase):
             a.make_identity('1' * 40, 'debug', tools, '2' * 64, hashes, optimization=optimized)
         with self.assertRaisesRegex(ValueError, 'optimization'):
             a.make_identity('1' * 40, 'release', tools, '2' * 64, hashes, optimization={**optimized, 'flags': ['-O1']})
+
+    def test_patch_provenance_is_validated_and_bound_to_generation(self):
+        identity = a.make_identity('1' * 40, 'release',
+            {'cargo': '1.99.1', 'rustc': '1.99.1', 'wasm-bindgen': '0.2.127'},
+            '2' * 64, {name: '3' * 64 for name in a.ARTIFACTS}, integration={
+                'kind': 'patched-upstream', 'sourceTreeSha256': '4' * 64,
+                'patches': [{'name': 'hwpx-textdir-ltr.patch', 'sha256': '5' * 64}]})
+        self.assertEqual(identity['schemaVersion'], 3)
+        self.assertEqual(a.validate_identity(identity), identity)
+        changed = copy.deepcopy(identity)
+        changed['integration']['patches'][0]['sha256'] = '6' * 64
+        with self.assertRaisesRegex(ValueError, 'generation'):
+            a.validate_identity(changed)
+        for mutation in [
+            lambda x: x.update(kind='upstream-unmodified'),
+            lambda x: x.update(sourceTreeSha256='invalid'),
+            lambda x: x.update(patches=[]),
+            lambda x: x['patches'][0].update(name='../escape.patch'),
+            lambda x: x['patches'][0].update(sha256='invalid'),
+            lambda x: x['patches'].append(dict(x['patches'][0])),
+        ]:
+            changed = copy.deepcopy(identity)
+            mutation(changed['integration'])
+            changed['generation'] = a.fingerprint({k: v for k, v in changed.items() if k != 'generation'})
+            with self.assertRaises(ValueError):
+                a.validate_identity(changed)
 
     def test_debug_publication_cannot_change_release(self):
         with tempfile.TemporaryDirectory() as folder:

@@ -13,8 +13,8 @@
 //! 그래서 내용과 무관함이 알려진 바이트와 정확히 같을 때만 받는다:
 //! - 글: 빈 값, 또는 줄바꿈 하나 `\r\n`(고정 rhwp `serializer/hwpx/static_assets.rs` `PRV_TEXT`; HWP `PrvText`는 그 UTF-16 LE,
 //!   `parser/hwpx/blank2010_assets/prvtext.bin`과 같은 바이트).
-//! - 그림: 고정 rhwp가 HWPX에 넣는 빈 미리보기 `PRV_IMAGE_PNG`(68바이트)와 정확히 같을 때. 그 밖의 PNG는 한 색이어도 출처와
-//!   부호화를 알 수 없어 받지 않는다.
+//! - 그림: 고정 rhwp가 HWPX에 넣는 빈 미리보기 `PRV_IMAGE_PNG`(68바이트), 또는 아래에서 바이트 전체를 감사한
+//!   `종이기준.hwpx`의 빈 흰색 미리보기와 정확히 같을 때. 그 밖의 PNG는 한 색이어도 출처와 부호화를 알 수 없어 받지 않는다.
 //!
 //! 이 판정은 숨긴 정보를 찾는 검사기가 아니다: 무관함을 증명할 수 없으면 받지 않을 뿐이다(저장을 막음, `previewStale`).
 
@@ -32,6 +32,19 @@ pub const RHWP_BLANK_PREVIEW_PNG: &[u8] = &[
 /// 고정 rhwp 빈 글 미리보기(`static_assets.rs` `PRV_TEXT`): 줄바꿈 하나.
 pub const RHWP_BLANK_PREVIEW_TEXT: &[u8] = b"\r\n";
 
+/// `external/rhwp/samples/종이기준.hwpx` (SHA-256
+/// 2903b6f7a261005fa9a191cc7caa66d8307438b9cb93410f79fc61fd1fa0d9d8)의
+/// `Preview/PrvImage.png`. 샘플 본문은 빈 문단 하나이고 `PrvText.txt`는 CRLF 하나다.
+/// 이 정확한 PNG는 CRC와 zlib checksum이 유효하며 IHDR(724×1024, RGB8), sRGB,
+/// gAMA, pHYs, IDAT, IEND 순서다. 디코딩된 매 행은 filter 0 + 모든 채널 255,
+/// 총 2,225,152바이트이고 끝에 추가 바이트가 없다. 즉 이 *검토된 고정 바이트열*은
+/// 편집 전 본문을 그린 이미지가 아니다. 임의의 단색 PNG에 이 판정을 확대하지 않는다.
+const EXTERNAL_BLANK_PREVIEW_LEN: usize = 4502;
+const EXTERNAL_BLANK_PREVIEW_SHA256: [u8; 32] = [
+    0xca, 0x5d, 0x23, 0xcd, 0x1a, 0xad, 0x28, 0x53, 0x67, 0x2c, 0xdb, 0x0d, 0x11, 0x61, 0x37, 0xa0,
+    0xbd, 0xc2, 0xff, 0x62, 0x14, 0x8d, 0xa9, 0x88, 0x6c, 0x26, 0x43, 0x05, 0xd0, 0x02, 0x5f, 0x3d,
+];
+
 /// HWP `PrvText`(UTF-16 LE)가 내용과 무관한 값인지: 빈 값이거나 `\r\n` 하나.
 pub fn blank_utf16(data: &[u8]) -> bool {
     data.is_empty() || data == b"\r\0\n\0"
@@ -44,7 +57,10 @@ pub fn blank_utf8(data: &[u8]) -> bool {
 
 /// 그림 미리보기가 고정 rhwp의 빈 미리보기와 바이트가 정확히 같은지.
 pub fn known_blank_png(data: &[u8]) -> bool {
+    use sha2::{Digest, Sha256};
     data == RHWP_BLANK_PREVIEW_PNG
+        || (data.len() == EXTERNAL_BLANK_PREVIEW_LEN
+            && Sha256::digest(data)[..] == EXTERNAL_BLANK_PREVIEW_SHA256)
 }
 
 /// HWPX→HWP contract fallback: the pinned engine's document-independent blank2010

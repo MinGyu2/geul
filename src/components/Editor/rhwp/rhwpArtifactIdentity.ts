@@ -8,6 +8,7 @@ export type BuildIdentity = {
   sourceFingerprint: string;
   generation: string;
   artifacts: Record<"rhwp.js" | "rhwp_bg.wasm", string>;
+  integration?: { kind: "patched-upstream"; sourceTreeSha256: string; patches: { name: string; sha256: string }[] };
   optimization?: { tool: string; version: string | null; flags: string[] };
 };
 const digestPattern = /^[0-9a-f]{64}$/;
@@ -21,18 +22,31 @@ export const canonical = (value: unknown): string => {
 export const sha256 = async (bytes: ArrayBuffer): Promise<string> => [...new Uint8Array(await crypto.subtle.digest("SHA-256", bytes))].map((byte) => byte.toString(16).padStart(2, "0")).join("");
 
 export async function identityFrom(value: unknown): Promise<BuildIdentity> {
-  if (!isRecord(value) || !keysAre(value, ["schemaVersion", "engine", "commit", "profile", "tools", "sourceFingerprint", "generation", "artifacts", ...(value.schemaVersion === 2 ? ["optimization"] : [])]) ||
-      ![1, 2].includes(Number(value.schemaVersion)) || typeof value.schemaVersion !== "number" || value.engine !== "rhwp" || typeof value.commit !== "string" || !/^[0-9a-f]{40}$/.test(value.commit) ||
+  if (!isRecord(value) || !keysAre(value, ["schemaVersion", "engine", "commit", "profile", "tools", "sourceFingerprint", "generation", "artifacts", ...([2, 3].includes(Number(value.schemaVersion)) ? ["optimization"] : []), ...(value.schemaVersion === 3 ? ["integration"] : [])]) ||
+      ![1, 2, 3].includes(Number(value.schemaVersion)) || typeof value.schemaVersion !== "number" || value.engine !== "rhwp" || typeof value.commit !== "string" || !/^[0-9a-f]{40}$/.test(value.commit) ||
       typeof value.profile !== "string" || !["debug", "release"].includes(value.profile) || !isRecord(value.tools) || !keysAre(value.tools, ["cargo", "rustc", "wasm-bindgen"]) ||
       Object.values(value.tools).some((version) => typeof version !== "string" || !/^[0-9]+\.[0-9]+\.[0-9]+(?:[-+][A-Za-z0-9.-]+)?$/.test(version)) ||
       !isRecord(value.artifacts) || !keysAre(value.artifacts, ["rhwp.js", "rhwp_bg.wasm"]) ||
       [value.generation, value.sourceFingerprint, ...Object.values(value.artifacts)].some((hash) => typeof hash !== "string" || !digestPattern.test(hash))) {
     throw new Error("rhwp build identity schema");
   }
-  if (value.schemaVersion === 2) {
+  if ([2, 3].includes(value.schemaVersion)) {
     const none = { tool: "none", version: null, flags: [] };
     const optimized = { tool: "wasm-opt", version: "117", flags: ["-O"] };
     if (canonical(value.optimization) !== canonical(none) && !(value.profile === "release" && canonical(value.optimization) === canonical(optimized))) throw new Error("rhwp optimizer configuration");
+  }
+  if (value.schemaVersion === 3) {
+    const source = value.integration;
+    if (!isRecord(source) || !keysAre(source, ["kind", "sourceTreeSha256", "patches"]) || source.kind !== "patched-upstream" ||
+        typeof source.sourceTreeSha256 !== "string" || !digestPattern.test(source.sourceTreeSha256) ||
+        !Array.isArray(source.patches) || source.patches.length < 1 || source.patches.length > 16) throw new Error("rhwp patched source identity");
+    const names = new Set<string>();
+    for (const patch of source.patches) {
+      if (!isRecord(patch) || !keysAre(patch, ["name", "sha256"]) || typeof patch.name !== "string" ||
+          !/^[a-z0-9][a-z0-9._-]*\.patch$/.test(patch.name) || names.has(patch.name) ||
+          typeof patch.sha256 !== "string" || !digestPattern.test(patch.sha256)) throw new Error("rhwp patch identity");
+      names.add(patch.name);
+    }
   }
   const unsigned = Object.fromEntries(Object.entries(value).filter(([key]) => key !== "generation"));
   if (await sha256(new TextEncoder().encode(canonical(unsigned) + "\n").buffer) !== value.generation) throw new Error("rhwp generation identity hash");

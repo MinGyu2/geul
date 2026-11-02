@@ -2441,6 +2441,22 @@ fn f_한_색_png도_글을_숨길_자리가_있는_구조도_엔진_상수가_�
     assert!(!blank_utf16(&[0x20]));
 }
 
+#[test]
+fn f_검토된_외부_빈_미리보기만_정확한_바이트로_인정한다() {
+    let sample = include_bytes!(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/../external/rhwp/samples/종이기준.hwpx"
+    ));
+    let package = package::open(sample, package::Side::Original).unwrap();
+    let image = package.get("Preview/PrvImage.png").unwrap();
+    assert_eq!(image.len(), 4502);
+    assert!(super::preview::known_blank_png(image));
+    let mut changed = image.to_vec();
+    changed[100] ^= 1;
+    assert!(!super::preview::known_blank_png(&changed));
+    assert!(!super::preview::known_blank_png(&png(6, 3, true)));
+}
+
 // ---- T009 3차 안정화 B·E: 검증한 임시 파일이 게시되는 파일이다(위협 모델: 이 사용자·root 밖의 사용자는 믿지 않음) ----
 
 /// 저장 앞뒤의 원본 바이트·권한과 남은 파일.

@@ -1,42 +1,481 @@
+--- a/src/diagnostics/ir_field_sweep.rs
++++ b/src/diagnostics/ir_field_sweep.rs
+@@ -664,6 +664,7 @@
+         // 행 메트릭의 출처와 계산한 번호는 직렬화 원문에 없는 파생값이다.
+         layout_space_metrics: _,
+         numbering_marker: _,
++        hwpx_paragraph_identity: _,
+     } = a;
+ 
+     macro_rules! f {
+--- a/src/document_core/commands/clone_identity/remap.rs
++++ b/src/document_core/commands/clone_identity/remap.rs
+@@ -72,7 +72,10 @@
+             Node::Paragraphs(_) => {}
+             Node::Paragraph(para) => {
+                 if let Some(raw) = para.raw_header_extra.get_mut(6..10) {
+-                    raw.copy_from_slice(&allocator.id()?.to_le_bytes());
++                    let id = allocator.id()?;
++                    raw.copy_from_slice(&id.to_le_bytes());
++                    para.hwpx_paragraph_identity =
++                        std::sync::Arc::new(std::sync::atomic::AtomicU64::new(u64::from(id) + 1));
+                 }
+             }
+             Node::Control(control) => match control {
+--- a/src/model/document.rs
++++ b/src/model/document.rs
+@@ -84,6 +84,9 @@
+     /// 원본 바이트를 (경로, 데이터)로 보존한다. HWPX 직렬화 시 하드코딩 상수 대신
+     /// 같은 경로의 원본을 그대로 출력하여 플랫폼/인쇄설정/미리보기 손실을 막는다.
+     pub hwpx_aux_entries: Vec<(String, Vec<u8>)>,
++    /// Monotonic HWPX paragraph reservation, shared across detached snapshots.
++    /// Deleting a paragraph never releases its identity for reuse.
++    pub hwpx_paragraph_next: std::sync::Arc<std::sync::atomic::AtomicU64>,
+     /// [Task #1001] HWP3 → HWP5 변환본 여부 (휴리스틱 식별).
+     /// 변환본의 ParaShape spacing/margin 은 HWP3 원본의 2배 단위로 저장되어
+     /// 한컴 viewer 와 일치하려면 typeset 단계에서 1/2 보정 필요.
+--- a/src/model/identity.rs
++++ b/src/model/identity.rs
+@@ -53,11 +53,11 @@
+             pending.push(Node::Paragraphs(&master.paragraphs));
+         }
+     }
+-    collect_ids(pending, |_| {})
++    collect_ids(pending, |_| {}, |_| {}, true)
+ }
+ 
+ pub(crate) fn paragraph_ids(paragraphs: &[Paragraph]) -> BTreeSet<u32> {
+-    collect_ids(vec![Node::Paragraphs(paragraphs)], |_| {})
++    collect_ids(vec![Node::Paragraphs(paragraphs)], |_| {}, |_| {}, true)
+ }
+ 
+ pub(crate) fn has_unassigned_forms(section: &crate::model::document::Section) -> bool {
+@@ -66,15 +66,36 @@
+         pending.push(Node::Paragraphs(&master.paragraphs));
+     }
+     let mut found = false;
+-    collect_ids(pending, |form| {
+-        found |= form.common.attr == 0 && form.common.instance_id == 0;
+-    });
++    collect_ids(
++        pending,
++        |form| {
++            found |= form.common.attr == 0 && form.common.instance_id == 0;
++        },
++        |_| {},
++        true,
++    );
+     found
+ }
+ 
+-fn collect_ids(
+-    mut pending: Vec<Node<'_>>,
++/// Paragraph owners emitted by HWPX writers (including every modeled sublist).
++pub(crate) fn hwpx_paragraphs(document: &Document) -> Vec<&Paragraph> {
++    let mut pending = Vec::new();
++    for section in &document.sections {
++        pending.push(Node::Paragraphs(&section.paragraphs));
++        for master in &section.section_def.master_pages {
++            pending.push(Node::Paragraphs(&master.paragraphs));
++        }
++    }
++    let mut paragraphs = Vec::new();
++    collect_ids(pending, |_| {}, |p| paragraphs.push(p), false);
++    paragraphs
++}
++
++fn collect_ids<'a>(
++    mut pending: Vec<Node<'a>>,
+     mut on_form: impl FnMut(&crate::model::control::FormObject),
++    mut on_paragraph: impl FnMut(&'a Paragraph),
++    inline_master_pages: bool,
+ ) -> BTreeSet<u32> {
+     let mut used = BTreeSet::new();
+     // Explicit work stack avoids recursive calls on nested tables/groups.
+@@ -82,6 +103,13 @@
+         match node {
+             Node::Paragraphs(paragraphs) => {
+                 for paragraph in paragraphs {
++                    on_paragraph(paragraph);
++                    let identity = paragraph
++                        .hwpx_paragraph_identity
++                        .load(std::sync::atomic::Ordering::Relaxed);
++                    if (1..=u64::from(u32::MAX) + 1).contains(&identity) {
++                        used.insert((identity - 1) as u32);
++                    }
+                     if let Some(raw) = paragraph.raw_header_extra.get(6..10) {
+                         used.insert(u32::from_le_bytes([raw[0], raw[1], raw[2], raw[3]]));
+                     }
+@@ -140,7 +168,7 @@
+                     used.extend(field.instance_id);
+                     pending.push(Node::Paragraphs(&field.memo_paragraphs));
+                 }
+-                Control::SectionDef(section) => {
++                Control::SectionDef(section) if inline_master_pages => {
+                     for master in &section.master_pages {
+                         pending.push(Node::Paragraphs(&master.paragraphs));
+                     }
+@@ -238,6 +266,25 @@
+         ))
+     }
+ 
++    /// Reserve a never-reused paragraph ID after all imported owners have
++    /// raised the high-water mark. Atomic reservation also protects concurrent
++    /// read-only exports; object/reference maps remain in their own namespaces.
++    pub(crate) fn paragraph(counter: &std::sync::atomic::AtomicU64) -> Result<u32, HwpError> {
++        use std::sync::atomic::Ordering::Relaxed;
++        let mut next = counter.load(Relaxed);
++        loop {
++            if next > u64::from(u32::MAX) {
++                return Err(HwpError::RenderError(
++                    "paragraph identity space exhausted".into(),
++                ));
++            }
++            match counter.compare_exchange_weak(next, next + 1, Relaxed, Relaxed) {
++                Ok(id) => return Ok(id as u32),
++                Err(actual) => next = actual,
++            }
++        }
++    }
++
+     pub(crate) fn common(&mut self) -> Result<u32, HwpError> {
+         loop {
+             let candidate = self.id()?;
+--- a/src/model/paragraph.rs
++++ b/src/model/paragraph.rs
+@@ -107,6 +107,11 @@
+     /// HWP5 저장기는 실제 배열 길이로 count 필드를 재생성하고 이 구간을 쓰지 않는다.
+     /// raw_header_extra[6..]은 instanceId 및 변경추적 suffix로 보존한다.
+     pub raw_header_extra: Vec<u8>,
++    /// HWPX identity lifetime; raw_header_extra remains the HWP5 compatibility tail.
++    /// 0=new, id+1=assigned, u64::MAX=missing/invalid imported identity.
++    /// Shared by detached serialization snapshots, replaced on split/copy.
++    #[serde(skip_serializing)]
++    pub hwpx_paragraph_identity: std::sync::Arc<std::sync::atomic::AtomicU64>,
+     /// 원본에 PARA_TEXT 레코드가 존재했는지 (라운드트립 보존용)
+     pub has_para_text: bool,
+     /// TAB 확장 데이터 (라운드트립 보존용)
+@@ -239,6 +244,8 @@
+     pub numbering_restart: Option<NumberingRestart>,
+     /// PARA_HEADER tail — instanceId 및 변경추적 suffix라 문단마다 고유하다.
+     pub raw_header_extra: Vec<u8>,
++    #[serde(default)]
++    pub hwpx_paragraph_identity: u64,
+     /// TAB 확장 데이터 — 문단 전체가 통째로 이동하므로 분할 없이 그대로 옮긴다.
+     pub tab_extended: Vec<[u16; 7]>,
+ }
+@@ -1453,6 +1460,9 @@
+             raw_break_type: self.raw_break_type,
+             numbering_restart: self.numbering_restart,
+             raw_header_extra: self.raw_header_extra.clone(),
++            hwpx_paragraph_identity: self
++                .hwpx_paragraph_identity
++                .load(std::sync::atomic::Ordering::Relaxed),
+             tab_extended: self.tab_extended.clone(),
+         }
+     }
+@@ -1465,6 +1475,9 @@
+         self.raw_break_type = meta.raw_break_type;
+         self.numbering_restart = meta.numbering_restart;
+         self.raw_header_extra = meta.raw_header_extra;
++        self.hwpx_paragraph_identity = std::sync::Arc::new(std::sync::atomic::AtomicU64::new(
++            meta.hwpx_paragraph_identity,
++        ));
+         self.tab_extended = meta.tab_extended;
+     }
+ 
+@@ -1784,6 +1797,7 @@
+             ctrl_data_records: new_ctrl_data_records,
+             char_count_msb: false,
+             raw_header_extra: new_raw_header_extra,
++            hwpx_paragraph_identity: Default::default(),
+             has_para_text: new_has_para_text,
+             tab_extended: Vec::new(),
+             title_marks: new_title_marks,
 --- a/src/model/style.rs
 +++ b/src/model/style.rs
-@@ -369,6 +369,8 @@
+@@ -369,6 +369,12 @@
      /// KEEP_WORD. 값이 3가지라 attr1 비트 인코딩 대신 원문 보존으로 무손실 방출.
      /// 꼬리말·표셀 등 재계산 경로에서 줄나눔이 달라져 레이아웃이 갈리는 것을 막는다.
      pub break_latin_word: Option<String>,
-+    /// Explicit supported HWPX paragraph direction; absence remains absence.
-+    pub hwpx_explicit_ltr: bool,
++    /// Retained HWPX direction; unsupported values remain readable but cannot export.
++    pub hwpx_text_dir: Option<String>,
++    /// Supported hp2016 OUTLINE heading alternative; fallback stays in the
++    /// normal head_type/numbering_id/para_level fields.
++    pub hwpx_heading_case: Option<(u16, u8)>,
++    pub hwpx_heading_unsupported: bool,
  }
  
  /// [#6875] 문단 줄바꿈 방식("한 줄로 입력") — HWP5 ParaShape `attr2` bits 0-1 ↔
-@@ -418,6 +420,7 @@
+@@ -418,6 +424,9 @@
              && self.head_type == other.head_type
              && self.para_level == other.para_level
              && self.break_latin_word == other.break_latin_word
-+            && self.hwpx_explicit_ltr == other.hwpx_explicit_ltr
++            && self.hwpx_text_dir == other.hwpx_text_dir
++            && self.hwpx_heading_case == other.hwpx_heading_case
++            && self.hwpx_heading_unsupported == other.hwpx_heading_unsupported
      }
  }
  
+--- a/src/parser/doc_info.rs
++++ b/src/parser/doc_info.rs
+@@ -818,6 +818,9 @@
+         // HWP5 는 breakLatinWord 를 attr1 비트로 갖지만 HWPX 원문 보존 필드는 미사용
+         // (None → 직렬화 KEEP_WORD 기본, 기존 동작 유지). (#1986)
+         break_latin_word: None,
++        hwpx_text_dir: None,
++        hwpx_heading_case: None,
++        hwpx_heading_unsupported: false,
+         // HWP5 원본에는 HWPX 표기 구분이 없다 — switch 형태로 방출한다 (#4898).
+         hwpx_plain_para_margin: false,
+         hwpx_plain_para_margin_physical: false,
 --- a/src/parser/hwpx/header.rs
 +++ b/src/parser/hwpx/header.rs
-@@ -910,6 +910,14 @@
+@@ -910,6 +910,11 @@
      for attr in e.attributes().flatten() {
          match attr.key.as_ref().as_bytes() {
              b"id" => id = Some(parse_u32(&attr) as usize),
 +            b"textDir" => {
-+                // Only LTR is supported by this bounded integration. Never
-+                // silently normalize an unknown/RTL direction into LTR.
-+                if attr.value.as_ref().as_bytes() != b"LTR" {
-+                    return Err(HwpxError::XmlError("unsupported paraPr textDir".into()));
-+                }
-+                ps.hwpx_explicit_ltr = true;
++                // Preserve readable input. Unsupported semantics block export,
++                // never opening; absence is distinct from explicit LTR.
++                ps.hwpx_text_dir = Some(attr_str(&attr));
 +            }
              b"tabPrIDRef" => ps.tab_def_id = parse_u16(&attr),
              b"condense" => {
                  let condense = parse_u32(&attr).min(75);
+@@ -1273,6 +1278,7 @@
+ ) -> Result<(), HwpxError> {
+     let mut buf = Vec::new();
+     let mut in_hwpunitchar_case = false;
++    let mut in_heading_case = false;
+     let mut in_default = false;
+     let mut found_case = false;
+     // default 값을 임시 저장 (case가 없을 때 폴백)
+@@ -1306,6 +1312,10 @@
+                         if is_hwpunitchar {
+                             in_hwpunitchar_case = true;
+                         }
++                        in_heading_case = ce.attributes().flatten().any(|attr| {
++                            local_name(attr.key.as_ref().as_bytes()) == b"required-namespace"
++                                && attr_str(&attr) == "http://www.hancom.co.kr/hwpml/2016/paragraph"
++                        });
+                     }
+                     b"default" => {
+                         in_default = true;
+@@ -1316,6 +1326,33 @@
+             Ok(Event::Empty(ref ce)) => {
+                 let cname = ce.name();
+                 let local = local_name(cname.as_ref());
++                if local == b"heading" && in_heading_case {
++                    let mut kind = None;
++                    let mut id = None;
++                    let mut level = None;
++                    let mut unknown = false;
++                    for attr in ce.attributes().flatten() {
++                        let value = attr_str(&attr);
++                        match attr.key.as_ref().as_bytes() {
++                            b"type" => kind = Some(value),
++                            b"idRef" => id = value.parse::<u16>().ok(),
++                            b"level" => level = value.parse::<u8>().ok(),
++                            _ => unknown = true,
++                        }
++                    }
++                    if !unknown
++                        && kind.as_deref() == Some("OUTLINE")
++                        && id.is_some()
++                        && level.is_some_and(|v| v <= 9)
++                        && ps.hwpx_heading_case.is_none()
++                    {
++                        ps.hwpx_heading_case = Some((id.unwrap(), level.unwrap()));
++                    } else {
++                        ps.hwpx_heading_unsupported = true;
++                    }
++                } else if local == b"heading" && in_default && ps.hwpx_heading_case.is_some() {
++                    parse_para_shape_child(ce, ps);
++                }
+                 if in_hwpunitchar_case || in_default {
+                     match local {
+                         b"margin" | b"intent" | b"left" | b"right" | b"prev" | b"next" => {
+@@ -1432,6 +1469,7 @@
+                 match local {
+                     b"case" => {
+                         in_hwpunitchar_case = false;
++                        in_heading_case = false;
+                     }
+                     b"default" => {
+                         in_default = false;
+--- a/src/parser/hwpx/mod.rs
++++ b/src/parser/hwpx/mod.rs
+@@ -687,6 +687,7 @@
+         bin_data_content,
+         extra_streams: contract.streams,
+         hwpx_aux_entries,
++        hwpx_paragraph_next: Default::default(),
+         is_hwp3_variant: false,
+         is_hwpx_variant: false,
+         provenance: crate::model::provenance::SourceProvenance {
+@@ -696,6 +697,15 @@
+             hft_ascii_halfwidth_witnessed: false,
+         },
+     };
++    for paragraph in crate::model::identity::hwpx_paragraphs(&doc) {
++        let encoded = paragraph
++            .hwpx_paragraph_identity
++            .load(std::sync::atomic::Ordering::Relaxed);
++        if encoded <= u64::from(u32::MAX) + 1 {
++            doc.hwpx_paragraph_next
++                .fetch_max(encoded, std::sync::atomic::Ordering::Relaxed);
++        }
++    }
+     // HWP3-origin 마커가 있으면 계보를 복원한다 — 직파싱 HWP3 와 같은
+     // 레이아웃 계약(저장-스텝)을 밟아 왕복 등식이 성립한다.
+     if doc
+--- a/src/parser/hwpx/section.rs
++++ b/src/parser/hwpx/section.rs
+@@ -630,13 +630,17 @@
+     // HWPX 의 id 값 ("0" 또는 "2147483648"=0x80000000) 이 한컴 정답지의 instance_id 패턴과
+     // 정확 일치. 누락 시 한컴편집기가 각주 추가 시 본문 다단계 목록 부여 (Task #1058 본질).
+     let mut hp_p_id: u32 = 0;
++    let mut hwpx_identity = u64::MAX;
+     let mut has_column_break_attr = false;
+     let mut has_page_break_attr = false;
+     for attr in e.attributes().flatten() {
+         match attr.key.as_ref().as_bytes() {
+             b"id" => {
+                 if let Ok(s) = std::str::from_utf8(attr.value.as_ref().as_bytes()) {
+-                    hp_p_id = s.parse::<u32>().unwrap_or(0);
++                    if let Ok(id) = s.parse::<u32>() {
++                        hp_p_id = id;
++                        hwpx_identity = u64::from(id) + 1;
++                    }
+                 }
+             }
+             b"paraPrIDRef" => para.para_shape_id = parse_u16(&attr),
+@@ -1188,6 +1192,8 @@
+     header_extra.extend_from_slice(&[0u8; 6]); // numCharShapes/numRangeTags/numLineSegs 자리
+     header_extra.extend_from_slice(&hp_p_id.to_le_bytes()); // instanceId
+     para.raw_header_extra = header_extra;
++    para.hwpx_paragraph_identity
++        .store(hwpx_identity, std::sync::atomic::Ordering::Relaxed);
+ 
+     Ok((para, sec_def))
+ }
+--- a/src/parser/mod.rs
++++ b/src/parser/mod.rs
+@@ -525,6 +525,7 @@
+         bin_data_content,
+         extra_streams,
+         hwpx_aux_entries: Vec::new(),
++        hwpx_paragraph_next: Default::default(),
+         is_hwp3_variant: false,
+         is_hwpx_variant,
+         provenance: crate::model::provenance::SourceProvenance {
+@@ -1042,6 +1043,7 @@
+         extra_streams: Vec::new(),
+         is_hwpx_variant: false,
+         hwpx_aux_entries: Vec::new(),
++        hwpx_paragraph_next: Default::default(),
+         is_hwp3_variant: false,
+         provenance: crate::model::provenance::SourceProvenance {
+             format: crate::model::provenance::SourceFormat::Hwp5,
+--- a/src/serializer/hwpx/context.rs
++++ b/src/serializer/hwpx/context.rs
+@@ -127,6 +127,7 @@
+     pub(crate) para_page_num_pos_emitted: bool,
+     /// 문서 전역 문단 ID 카운터 — `<hp:p id="...">` 에 발급한다.
+     para_id_counter: u32,
++    preserve_paragraph_ids: bool,
+     /// HWP3 전용 Hyperlink control을 HWPX `fieldBegin`으로 승격할 때 쓰는 ID.
+     /// HWP3 원본에는 HWPX field ID가 없으므로, 기존 Field ID와 충돌 가능성이 낮은
+     /// 상위 범위를 문서 내에서 단조 감소시켜 링크마다 다른 값을 발급한다.
+@@ -184,6 +185,7 @@
+             chart_entries: Vec::new(),
+             para_page_num_pos_emitted: false,
+             para_id_counter: 0,
++            preserve_paragraph_ids: false,
+             generated_hyperlink_id: u32::MAX,
+             sub_list_depth: 0,
+             body_coldef_template_pending: false,
+@@ -206,6 +208,8 @@
+     /// 각 writer가 추가되면서 `reference()` 호출과 스캔 범위가 확장된다.
+     pub fn collect_from_document(doc: &Document) -> Self {
+         let mut ctx = Self::default();
++        ctx.preserve_paragraph_ids =
++            doc.provenance.format == crate::model::provenance::SourceFormat::Hwpx;
+         ctx.line_segs_on_paragraph_axis = doc
+             .hwpx_aux_entry(crate::model::document::HWP5_ORIGIN_HWPX_MARKER_PATH)
+             == Some(crate::model::document::HWP5_ORIGIN_HWPX_PARAGRAPH_AXIS);
+@@ -450,6 +454,67 @@
+                 "미등록 ID 참조 발견: {}",
+                 missing.join("; ")
+             )))
++        }
++    }
++
++    pub fn prepare_paragraph_ids(&mut self, doc: &Document) -> Result<(), SerializeError> {
++        if !self.preserve_paragraph_ids {
++            return Ok(());
++        }
++        use std::sync::atomic::Ordering::Relaxed;
++        let paragraphs = crate::model::identity::hwpx_paragraphs(doc);
++        let mut used = std::collections::BTreeSet::new();
++        for para in &paragraphs {
++            let encoded = para.hwpx_paragraph_identity.load(Relaxed);
++            if encoded == u64::MAX {
++                return Err(SerializeError::UnsupportedInput(
++                    "HWPX paragraph id missing or invalid".into(),
++                ));
++            }
++            if encoded != 0 {
++                if encoded > u64::from(u32::MAX) + 1 || !used.insert((encoded - 1) as u32) {
++                    return Err(SerializeError::UnsupportedInput(
++                        "ambiguous duplicate HWPX paragraph id".into(),
++                    ));
++                }
++                doc.hwpx_paragraph_next.fetch_max(encoded, Relaxed);
++            }
++        }
++        doc.hwpx_paragraph_next.fetch_max(1, Relaxed);
++        for para in paragraphs {
++            if para.hwpx_paragraph_identity.load(Relaxed) == 0 {
++                let id = crate::model::identity::Allocator::paragraph(&doc.hwpx_paragraph_next)
++                    .map_err(|e| SerializeError::UnsupportedInput(e.to_string()))?;
++                // Allocate before publication, then retain for repeated exports and later edits.
++                let _ = para.hwpx_paragraph_identity.compare_exchange(
++                    0,
++                    u64::from(id) + 1,
++                    Relaxed,
++                    Relaxed,
++                );
++            }
++        }
++        // Aliased copies of an unassigned paragraph cannot receive one identity twice.
++        let mut unique = std::collections::BTreeSet::new();
++        for para in crate::model::identity::hwpx_paragraphs(doc) {
++            if !unique.insert(para.hwpx_paragraph_identity.load(Relaxed)) {
++                return Err(SerializeError::UnsupportedInput(
++                    "aliased HWPX paragraph identity".into(),
++                ));
++            }
++        }
++        Ok(())
++    }
++
++    pub fn paragraph_id(&mut self, paragraph: &crate::model::paragraph::Paragraph) -> u32 {
++        if self.preserve_paragraph_ids {
++            let encoded = paragraph
++                .hwpx_paragraph_identity
++                .load(std::sync::atomic::Ordering::Relaxed);
++            debug_assert!((1..=u64::from(u32::MAX) + 1).contains(&encoded));
++            (encoded - 1) as u32
++        } else {
++            self.next_para_id()
+         }
+     }
+ 
 --- a/src/serializer/hwpx/header.rs
 +++ b/src/serializer/hwpx/header.rs
-@@ -1011,19 +1011,21 @@
+@@ -1011,19 +1011,31 @@
      let condense = ((ps.attr1 >> 9) & 0x7f).to_string();
      let font_line_height = ((ps.attr1 >> 22) & 1).to_string();
      let snap_to_grid = ((ps.attr1 >> 8) & 1).to_string();
@@ -64,20 +503,164 @@
 +        ("suppressLineNumbers", "0"),
 +        ("checked", "0"),
 +    ];
-+    if ps.hwpx_explicit_ltr {
-+        attrs.push(("textDir", "LTR"));
++    if let Some(direction) = ps.hwpx_text_dir.as_deref() {
++        if direction != "LTR" {
++            return Err(SerializeError::UnsupportedInput(format!(
++                "unsupported HWPX textDir: {direction:?}"
++            )));
++        }
++        attrs.push(("textDir", direction));
++    }
++    if ps.hwpx_heading_unsupported {
++        return Err(SerializeError::UnsupportedInput(
++            "unsupported HWPX heading switch".into(),
++        ));
 +    }
 +    start_tag_attrs(w, "hh:paraPr", &attrs)?;
  
      // 자식 순서 (한컴 원본 관찰):
      // align, heading, breakSetting, autoSpacing, switch(margin+lineSpacing), border
---- a/src/parser/doc_info.rs
-+++ b/src/parser/doc_info.rs
-@@ -818,6 +818,7 @@
-         // HWP5 는 breakLatinWord 를 attr1 비트로 갖지만 HWPX 원문 보존 필드는 미사용
-         // (None → 직렬화 KEEP_WORD 기본, 기존 동작 유지). (#1986)
-         break_latin_word: None,
-+        hwpx_explicit_ltr: false,
-         // HWP5 원본에는 HWPX 표기 구분이 없다 — switch 형태로 방출한다 (#4898).
-         hwpx_plain_para_margin: false,
-         hwpx_plain_para_margin_physical: false,
+@@ -1064,6 +1076,33 @@
+             ("vertical", vertical),
+         ],
+     )?;
++    if let Some((id, level)) = ps.hwpx_heading_case {
++        if id != 0 || ps.head_type != HeadType::None || ps.numbering_id != 0 || ps.para_level != 0 {
++            return Err(SerializeError::UnsupportedInput(
++                "unsupported HWPX heading switch reference/fallback".into(),
++            ));
++        }
++        start_tag(w, "hp:switch")?;
++        start_tag_attrs(
++            w,
++            "hp:case",
++            &[(
++                "hp:required-namespace",
++                "http://www.hancom.co.kr/hwpml/2016/paragraph",
++            )],
++        )?;
++        empty_tag(
++            w,
++            "hh:heading",
++            &[
++                ("type", "OUTLINE"),
++                ("idRef", &id.to_string()),
++                ("level", &level.to_string()),
++            ],
++        )?;
++        end_tag(w, "hp:case")?;
++        start_tag(w, "hp:default")?;
++    }
+     empty_tag(
+         w,
+         "hh:heading",
+@@ -1073,6 +1112,10 @@
+             ("level", &ps.para_level.to_string()),
+         ],
+     )?;
++    if ps.hwpx_heading_case.is_some() {
++        end_tag(w, "hp:default")?;
++        end_tag(w, "hp:switch")?;
++    }
+     empty_tag(
+         w,
+         "hh:breakSetting",
+--- a/src/serializer/hwpx/master_page.rs
++++ b/src/serializer/hwpx/master_page.rs
+@@ -67,7 +67,7 @@
+     for p in &mp.paragraphs {
+         let (runs, linesegs, advance) = render_paragraph_parts(p, vert_cursor, ctx);
+         vert_cursor = advance;
+-        let pid = ctx.next_para_id();
++        let pid = ctx.paragraph_id(p);
+         let sid = ctx.effective_style_id(p.style_id);
+         body.push_str(&render_hp_p_open(p, pid, sid));
+         body.push_str(&runs);
+--- a/src/serializer/hwpx/mod.rs
++++ b/src/serializer/hwpx/mod.rs
+@@ -57,6 +57,7 @@
+ 
+     // 1-pass: ID 풀 구성
+     let mut ctx = SerializeContext::collect_from_document(doc);
++    ctx.prepare_paragraph_ids(doc)?;
+ 
+     let mut z = HwpxZipWriter::new();
+ 
+--- a/src/serializer/hwpx/section.rs
++++ b/src/serializer/hwpx/section.rs
+@@ -596,7 +596,7 @@
+         // 첫 문단 `<hp:p>` 태그를 IR 기반 속성으로 교체
+         // (#1933) 본문 경로는 종전에 style_id 를 reference 하지 않았다 — emit 만
+         // 강등해 미등록 ID 방출을 막고, 참조 집합/assert 동작은 종전 유지한다.
+-        let pid = ctx.next_para_id();
++        let pid = ctx.paragraph_id(p);
+         let sid = ctx.effective_style_id(p.style_id);
+         let new_p_tag = render_hp_p_open(p, pid, sid);
+         out = out.replacen(TEMPLATE_FIRST_P_TAG, &new_p_tag, 1);
+@@ -660,7 +660,7 @@
+         for p in section.paragraphs.iter().skip(1) {
+             let (runs, linesegs, advance) = render_paragraph_parts(p, vert_cursor, ctx);
+             vert_cursor = advance;
+-            let pid = ctx.next_para_id();
++            let pid = ctx.paragraph_id(p);
+             let sid = ctx.effective_style_id(p.style_id);
+             extra.push_str(&render_hp_p_open(p, pid, sid));
+             // [#4056] 후속 문단이 구역나누기(SectionDef)면 그 구역을 secPr 로 방출한다.
+@@ -2475,7 +2475,7 @@
+                         let (runs, linesegs, advance) =
+                             render_paragraph_parts(para, vert_cursor, ctx);
+                         vert_cursor = advance;
+-                        let pid = ctx.next_para_id();
++                        let pid = ctx.paragraph_id(para);
+                         out.push_str(&render_hp_p_open(para, pid, sid));
+                         out.push_str(&runs);
+                         out.push_str(&linesegs);
+@@ -2844,7 +2844,7 @@
+     for p in h.paragraphs.iter() {
+         let (runs, linesegs, advance) = render_paragraph_parts(p, vert_cursor, ctx);
+         vert_cursor = advance;
+-        let pid = ctx.next_para_id();
++        let pid = ctx.paragraph_id(p);
+         let sid = ctx.effective_style_id(p.style_id);
+         out.push_str(&render_hp_p_open(p, pid, sid));
+         out.push_str(&runs);
+@@ -3423,7 +3423,7 @@
+     for p in paragraphs.iter() {
+         let (runs, linesegs, advance) = render_paragraph_parts(p, vert_cursor, ctx);
+         vert_cursor = advance;
+-        let pid = ctx.next_para_id();
++        let pid = ctx.paragraph_id(p);
+         let sid = ctx.effective_style_id(p.style_id);
+         out.push_str(&render_hp_p_open(p, pid, sid));
+         out.push_str(&runs);
+@@ -3449,7 +3449,7 @@
+         ctx.style_ids.reference(sid as u16);
+         let (runs, linesegs, advance) = render_paragraph_parts(p, vert_cursor, ctx);
+         vert_cursor = advance;
+-        let pid = ctx.next_para_id();
++        let pid = ctx.paragraph_id(p);
+         out.push_str(&render_hp_p_open(p, pid, sid));
+         out.push_str(&runs);
+         out.push_str(&linesegs);
+--- a/src/serializer/hwpx/shape.rs
++++ b/src/serializer/hwpx/shape.rs
+@@ -573,7 +573,7 @@
+ 
+         let (runs, linesegs, advance) = render_paragraph_parts(para, vert_cursor, ctx);
+         vert_cursor = advance;
+-        let pid = ctx.next_para_id();
++        let pid = ctx.paragraph_id(para);
+         let mut p_xml = render_hp_p_open(para, pid, sid);
+         p_xml.push_str(&runs);
+         p_xml.push_str(&linesegs);
+--- a/src/serializer/hwpx/table.rs
++++ b/src/serializer/hwpx/table.rs
+@@ -375,7 +375,7 @@
+ 
+         let (runs, linesegs, advance) = render_paragraph_parts(para, vert_cursor, ctx);
+         vert_cursor = advance;
+-        let pid = ctx.next_para_id();
++        let pid = ctx.paragraph_id(para);
+         let mut p_xml = render_hp_p_open(para, pid, sid);
+         // [#5873] 셀 안 구역 나누기 — #4056 의 본문 경로와 같은 보완.
+         if let Some(crate::model::control::Control::SectionDef(sd)) = para

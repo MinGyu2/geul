@@ -21,6 +21,11 @@ artifacts = importlib.util.module_from_spec(artifact_spec)
 artifact_spec.loader.exec_module(artifacts)
 
 
+patch_spec = importlib.util.spec_from_file_location("patches", ROOT / "scripts/rhwp-patches.py")
+patches = importlib.util.module_from_spec(patch_spec)
+patch_spec.loader.exec_module(patches)
+
+
 publish = artifacts.atomic_file
 
 
@@ -43,7 +48,7 @@ def main():
 
 
 def build(dev, staging, *, optimize=False):
-    engine = ROOT / "external/rhwp"
+    upstream = ROOT / "external/rhwp"
     target = ROOT / "target/rhwp-wasm"
     out = ROOT / "public/rhwp"
     # Fail before mkdir/copy if an output directory redirects into source files.
@@ -56,7 +61,7 @@ def build(dev, staging, *, optimize=False):
     deps = integrity.dependencies(["external/rhwp"])
     if "external/rhwp" not in deps:
         raise RuntimeError("RHWP must be a Git-tracked external submodule")
-    lock = tomllib.loads((engine / "Cargo.lock").read_text())
+    lock = tomllib.loads((upstream / "Cargo.lock").read_text())
     bindgen_version = next(p["version"] for p in lock["package"] if p["name"] == "wasm-bindgen")
     if versions["wasm-bindgen"] != f"wasm-bindgen {bindgen_version}":
         raise RuntimeError(f"wasm-bindgen CLI must match Cargo.lock: {bindgen_version}")
@@ -70,6 +75,7 @@ def build(dev, staging, *, optimize=False):
         if not re.fullmatch(r"wasm-opt version 117(?: \([^\n]*\))?", optimizer_version):
             raise RuntimeError("Expected the recorded wasm-pack Binaryen baseline: wasm-opt 117")
         optimization = {"tool": "wasm-opt", "version": "117", "flags": list(artifacts.OPT_FLAGS)}
+    engine, integration = patches.prepare(integrity)
     profile = "debug" if dev else "release"
     env = {**os.environ, "CARGO_TARGET_DIR": str(target), "RUSTC": tools["rustc"],
            "GIT_OPTIONAL_LOCKS": "0", "CARGO_NET_OFFLINE": "true", "BINARYEN_CORES": "2"}
@@ -89,11 +95,13 @@ def build(dev, staging, *, optimize=False):
         commands += [[optimizer, str(staging / "rhwp_bg.wasm"), "-o", str(staging / "rhwp_bg.optimized.wasm"), *artifacts.OPT_FLAGS],
                      [node, str(ROOT / "scripts/check-wasm-interface.mjs"), str(staging / "rhwp_bg.wasm"), str(staging / "rhwp_bg.optimized.wasm"), str(staging / "interface.json")]]
     before = integrity.run_readonly(commands, [target], target / "external-integrity.json", env=env, require_clean=True, required=["external/rhwp"])
+    patches.verify_unchanged(integrity, integration)
     interface = None
     if optimizer:
         interface = json.loads((staging / "interface.json").read_text())
         (staging / "rhwp_bg.optimized.wasm").replace(staging / "rhwp_bg.wasm")
-    inputs = [engine / "Cargo.toml", engine / "Cargo.lock", ROOT / ".gitmodules",
+    inputs = [upstream / "Cargo.toml", upstream / "Cargo.lock", ROOT / ".gitmodules",
+              ROOT / "scripts/rhwp-patches.py", *[ROOT / name for name in patches.SERIES],
               *[ROOT / "scripts" / name for name in ["build-rhwp-wasm.sh", "build-rhwp-wasm.py", "external-integrity.py", "rhwp-artifacts.py", "check-wasm-interface.mjs"]]]
     # Record Cargo configuration in the search path as well as compiler flags.
     cargo_home = Path(env.get("CARGO_HOME", str(Path.home() / ".cargo"))).resolve()
@@ -104,7 +112,7 @@ def build(dev, staging, *, optimize=False):
                 inputs.append(path)
     local_report = {
         "engine": "rhwp", "commit": deps["external/rhwp"]["revision"],
-        "integration": "upstream-unmodified", "profile": profile, "tools": versions,
+        "integration": integration, "profile": profile, "tools": versions,
         "geulHead": integrity.git(ROOT, "rev-parse", "HEAD").decode().strip(),
         "dependencies": before["dependencies"], "commands": commands,
         "inputs": {str(p.relative_to(ROOT)) if p.is_relative_to(ROOT) else str(p): integrity.sha(p) for p in inputs},
@@ -121,6 +129,7 @@ def build(dev, staging, *, optimize=False):
     # Local paths/configuration and diagnostic detail stay outside public assets.
     publish((json.dumps(local_report, indent=2) + "\n").encode(), target / "build-report.json")
     source_fingerprint = artifacts.fingerprint({
+        "integration": integration,
         "repositoryInputs": {k: v for k, v in local_report["inputs"].items() if not Path(k).is_absolute()},
         "cargoConfiguration": [v for k, v in local_report["inputs"].items() if Path(k).is_absolute()],
         "codegen": {k: env[k] for k in ["RUSTFLAGS", "CARGO_ENCODED_RUSTFLAGS", "SOURCE_DATE_EPOCH"] if k in env},
@@ -129,7 +138,7 @@ def build(dev, staging, *, optimize=False):
     identity = artifacts.make_identity(
         deps["external/rhwp"]["revision"], profile,
         {name: version.split()[1] for name, version in versions.items()},
-        source_fingerprint, local_report["artifacts"], optimization=optimization,
+        source_fingerprint, local_report["artifacts"], optimization=optimization, integration=integration,
     )
     artifacts.publish_generation(staging, out, identity, target)
     print(json.dumps({"status": "PASS", "generation": identity["generation"], "artifacts": identity["artifacts"], "externalUnchanged": True}, indent=2))

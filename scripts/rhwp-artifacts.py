@@ -37,21 +37,35 @@ def validate_identity(identity):
     if not isinstance(identity, dict):
         raise ValueError("Unexpected public identity fields")
     schema = identity.get("schemaVersion")
-    if set(identity) != PUBLIC_FIELDS | ({"optimization"} if schema == 2 else set()):
+    if set(identity) != PUBLIC_FIELDS | ({"optimization"} if schema in (2, 3) else set()) | ({"integration"} if schema == 3 else set()):
         raise ValueError("Unexpected public identity fields")
-    if type(schema) is not int or schema not in (1, 2) or identity["engine"] != "rhwp":
+    if type(schema) is not int or schema not in (1, 2, 3) or identity["engine"] != "rhwp":
         raise ValueError("Unsupported artifact schema/engine")
     if not isinstance(identity["commit"], str) or not re.fullmatch(r"[0-9a-f]{40}", identity["commit"]):
         raise ValueError("Invalid engine commit")
     if identity["profile"] not in ("debug", "release"):
         raise ValueError("Invalid build profile")
-    if schema == 2:
+    if schema in (2, 3):
         optimization = identity["optimization"]
         permitted = [{"tool": "none", "version": None, "flags": []}]
         if identity["profile"] == "release":
             permitted.append({"tool": "wasm-opt", "version": "117", "flags": list(OPT_FLAGS)})
         if optimization not in permitted:
             raise ValueError("Unsupported optimization configuration")
+    if schema == 3:
+        integration = identity["integration"]
+        if not isinstance(integration, dict) or set(integration) != {"kind", "sourceTreeSha256", "patches"} or integration["kind"] != "patched-upstream":
+            raise ValueError("Invalid patched source identity")
+        if not isinstance(integration["sourceTreeSha256"], str) or not HEX256.fullmatch(integration["sourceTreeSha256"]):
+            raise ValueError("Invalid patched source tree digest")
+        patches = integration["patches"]
+        if not isinstance(patches, list) or not 1 <= len(patches) <= 16:
+            raise ValueError("Invalid patch series")
+        names = set()
+        for patch in patches:
+            if not isinstance(patch, dict) or set(patch) != {"name", "sha256"} or not isinstance(patch["name"], str) or not re.fullmatch(r"[a-z0-9][a-z0-9._-]*\.patch", patch["name"]) or patch["name"] in names or not isinstance(patch["sha256"], str) or not HEX256.fullmatch(patch["sha256"]):
+                raise ValueError("Invalid patch identity")
+            names.add(patch["name"])
     tools = identity["tools"]
     if not isinstance(tools, dict) or set(tools) != {"cargo", "rustc", "wasm-bindgen"}:
         raise ValueError("Invalid public tool identities")
@@ -68,13 +82,17 @@ def validate_identity(identity):
     return identity
 
 
-def make_identity(commit, profile, tools, source_fingerprint, hashes, *, optimization=None):
+def make_identity(commit, profile, tools, source_fingerprint, hashes, *, optimization=None, integration=None):
     identity = {"schemaVersion": 1, "engine": "rhwp", "commit": commit,
                 "profile": profile, "tools": tools, "sourceFingerprint": source_fingerprint,
                 "artifacts": hashes}
     if optimization is not None:
         identity["schemaVersion"] = 2
         identity["optimization"] = optimization
+    if integration is not None:
+        identity["schemaVersion"] = 3
+        identity["optimization"] = optimization or {"tool": "none", "version": None, "flags": []}
+        identity["integration"] = integration
     identity["generation"] = fingerprint(identity)
     return validate_identity(identity)
 

@@ -826,3 +826,9 @@ IBus 전역 선택 명령은 `setxkbmap` 부재로 exit1이었지만 각 입력�
 추가 회귀는 부적격 요청의 재구성 호출 0회, 압축된 큰 문단의 접두부 뒤 미지원 컨트롤 거절, 빈 문단·여러 구역 순서와 CFB 메타데이터/빈 저장소 보존을 확인한다. 실제 WASM 통합은 한글·emoji 교체, 표·굵게, 최종 게시 파일 재열기와 삭제 미리보기 바이트 부재를 검증한다.
 
 검증 결과: 저장 서비스 101 PASS / 13 선택적 ignored, protected fmt·clippy(`--lib --tests -- -D warnings`) PASS. 수정된 WASM probe를 새 디렉터리 `target/four-stage/stage1-fresh-evidence`에서 실행해 PASS. 새 probe는 이번 raw export의 재열기 비교를 `reopen.json`에 직접 기록한다. 큰 문단 회귀는 한글+emoji 200,000문자(UTF-16 300,000단위) 및 미지원 suffix를 사용한다. 초기 큰 문서 시험 실패는 합성 레코드 도우미의 extended length 누락으로 확인·수정했으며 제품의 검사 기준은 바꾸지 않았다.
+
+### 외부 HWPX 좁은 지원 사례의 후속 수용 (2026-11-02)
+
+위 「외부 HWPX 보존 확대의 미완료 범위」는 이전 조사 당시의 상태다. 후속 구현은 `종이기준.hwpx` 한 사례의 명시적 LTR·문단 ID·세 heading switch를 고정 rhwp 패치로 보존한다. 편집 전 preflight는 `unsafe`(header/section 변경)에서 `safe`(findings 0)로 바뀌었고, comparator는 수정하지 않았다. 제품 Release WASM은 패치/소스 fingerprint를 포함한 schema 3 신원으로 빌드됐다.
+
+실제 앱에서는 편집 뒤 원본의 빈 `PrvImage.png` 때문에 처음에 `previewStale`가 발생했다. 이 샘플의 빈 본문·CRLF 글 미리보기·724×1024 흰색 PNG를 CRC/압축/전체 바이트로 감사한 후, `preview.rs`에서 그 **정확한 4502바이트**만 문서 독립의 빈 미리보기로 인정한다. 그 밖의 단색 PNG와 임의 미리보기는 계속 거절한다. ZIP 원본 이미지는 재생성하거나 바꾸지 않는다. 실제 IBus 편집→save IPC→게시→닫기·재열기와 XML/문단 ID/관계/다른 부분의 동등성이 통과했고, 중복 ID 음성은 앱에서 저장을 막아 원본 해시를 보존했다. 재현 근거와 남은 범위는 [후속 구현 기록](hwpx-textdir-candidate.md#stage-2-후속-구현수용-2026-11-02)에 있다. 이 사례는 다른 외부 HWPX, 내용 있는 미리보기, 미지원 XML 구조를 자동으로 허용하지 않는다.

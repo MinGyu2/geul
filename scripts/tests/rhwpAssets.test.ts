@@ -4,7 +4,7 @@ import { createHash } from "node:crypto";
 import { mkdtempSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { canonical, type BuildIdentity } from "../../src/components/Editor/rhwp/rhwpArtifactIdentity";
+import { canonical, identityFrom, type BuildIdentity } from "../../src/components/Editor/rhwp/rhwpArtifactIdentity";
 import { copyRhwpGeneration, readRhwpGeneration, rhwpGenerationPlugin } from "../rhwpAssets";
 const hash = (s: string | Buffer) => createHash("sha256").update(s).digest("hex");
 const folders: string[] = [];
@@ -29,6 +29,24 @@ describe("RHWP profile contract through Vite",()=>{
     const p=root(), item=fixture("release");item.identity.schemaVersion=2;item.identity.optimization={tool:"none",version:null,flags:[]};
     const unsigned=Object.fromEntries(Object.entries(item.identity).filter(([key])=>key!=="generation"));item.identity.generation=hash(canonical(unsigned)+"\n");
     install(p,item);await build(options(p));expect(JSON.parse(readFileSync(join(p,"dist/rhwp/BUILD.json"),"utf8"))).toEqual(item.identity);
+  });
+  test("patched source identity survives Vite and rejects forged provenance", async () => {
+    const p = root(), item = fixture("release");
+    item.identity.schemaVersion = 3;
+    item.identity.optimization = {tool:"none",version:null,flags:[]};
+    item.identity.integration = {kind:"patched-upstream",sourceTreeSha256:"4".repeat(64),patches:[{name:"hwpx-textdir-ltr.patch",sha256:"5".repeat(64)}]};
+    const sign = (v: BuildIdentity) => {v.generation=hash(canonical(Object.fromEntries(Object.entries(v).filter(([k])=>k!=="generation")))+"\n");};
+    sign(item.identity); install(p,item); await build(options(p));
+    expect(JSON.parse(readFileSync(join(p,"dist/rhwp/BUILD.json"),"utf8"))).toEqual(item.identity);
+    const changed = structuredClone(item.identity); changed.integration!.patches[0]!.sha256="6".repeat(64);
+    await expect(identityFrom(changed)).rejects.toThrow("generation");
+    for (const mutate of [
+      (v: BuildIdentity) => {v.integration!.sourceTreeSha256="invalid";},
+      (v: BuildIdentity) => {v.integration!.patches=[];},
+      (v: BuildIdentity) => {v.integration!.patches[0]!.name="../escape.patch";},
+      (v: BuildIdentity) => {v.integration!.patches[0]!.sha256="invalid";},
+      (v: BuildIdentity) => {v.integration!.patches.push({...v.integration!.patches[0]!});},
+    ]) {const v=structuredClone(item.identity);mutate(v);sign(v);await expect(identityFrom(v)).rejects.toThrow();}
   });
   test("release ignores stale Debug legacy selector and copies one generation",async()=>{
     const p=root();install(p);install(p,debug);install(p,debug,"BUILD.json");
