@@ -51,3 +51,8 @@
 ## 붙여넣기 ID·검증기·spine 후속 (2026-11-02)
 
 붙여넣은 문단이 HWP5 개체 ID 할당기로 HWPX ID를 받아 지운 ID를 다시 쓰던 문제(병합 되돌리기 뒤 내보내기 거부까지 재현)는 `patches/rhwp/hwpx-clipboard-paragraph-ids.patch`로, `content.hpf` spine `linear`의 생략·`no`가 `yes`로 바뀌던 문제는 `patches/rhwp/hwpx-spine-linear.patch`로 고쳤다. 실제 앱 하네스의 XML 비교는 공백·tail·주석을 버리던 거짓 음성을 고쳐 `scripts/tests/hwpx_xml_oracle.py`를 쓴다. 이 문서의 `종이기준.hwpx` 수용은 새 엔진·새 검증기로 다시 PASS했다. 상세는 [저장 보존 문서](save-preservation.md#hwpx-문단-id-할당독립-xml-검증spine-linear-안정화-2026-11-02-후속).
+
+
+## P2/P3/P4 최종 후속 (2026-11-02)
+
+독립 XML 오라클의 루트 밖 comment/PI 및 formatting run 소유권 거짓 음성 두 경계와 Expat의 리터럴 CR/CRLF 정규화 경계를 닫았다. 원본 OPF spine 판독은 XML 문자 참조를 의미값으로 정규화하고 namespace·구조 scope 및 malformed XML/속성을 검증하며, 해석할 수 없는 기존 원본은 fail-closed다. P4는 기존 manifest ID/href 순서와 증명 가능한 JPEG `image/jpg` 표기를 동일 embedded item에 한해 보존하고, 실제 JPEG signature를 확인한다. 최종 제품 generation `4fc10a9db30f457efe64c4784b56da5717d98c72fe72ffbf3bcd573d26b62731`, WASM SHA-256 `8ff713c2c6ff97d299cb614822405c6539358fbea7576978ab05a04b56ebd13b`다. 동일 734개 코퍼스에서 safe 98 유지, 새 safe 0, manifest 순서 차이 176 제거, JPEG 선언 223개/67문서 보존을 확인했다. 전체 수용·거부 경계와 한계는 [최종 P2/P3/C/P4 기록](save-preservation.md#최종-native-재검증과-manifest-순서-보존-2026-11-02-p2p3cp4) 및 [기계 판독 근거의 `oracleSpineManifestFollowup`](hwpx-duplicate-id-acceptance-2026-11-02.json)에 있다.

@@ -774,5 +774,721 @@
    "T011": "NOT STARTED"
   },
   "rawEvidence": "local ignored target/hwpx-identity-20261102/ (not published)"
+ },
+ "oracleSpineManifestFollowup": {
+  "updatedAt": "2026-11-02T22:38:15.805969+09:00",
+  "status": "P2_P3_NATIVE_P4_VERIFIED",
+  "baselineHead": "259344ccce42364fa7b53dbb296be5445d9404cc",
+  "branch": "master",
+  "testedWorkingTreeHead": "b4a90c5835df62f60ebd9787c6c840f47d9cf1d8",
+  "build": {
+   "artifacts": {
+    "rhwp.js": "70cde06a369fa7fd4fc8bc8f3d6acaee158596ba1a116a2c72159002b0b5654e",
+    "rhwp_bg.wasm": "8ff713c2c6ff97d299cb614822405c6539358fbea7576978ab05a04b56ebd13b"
+   },
+   "commit": "1a76570e833917d15817415a53c09ad61ab3203f",
+   "engine": "rhwp",
+   "generation": "4fc10a9db30f457efe64c4784b56da5717d98c72fe72ffbf3bcd573d26b62731",
+   "integration": {
+    "kind": "patched-upstream",
+    "patches": [
+     {
+      "name": "hwpx-textdir-ltr.patch",
+      "sha256": "abab4bc23a89dfec82aa63d36d32cd7192e5b14fefd2dd56231c4bb5676c6cc0"
+     },
+     {
+      "name": "hwpx-duplicate-paragraph-ids.patch",
+      "sha256": "79fd8f41c4cabe82b6b0b66265f5a1b3feef08a4c0b07af30cf7f788e11a9787"
+     },
+     {
+      "name": "hwpx-clipboard-paragraph-ids.patch",
+      "sha256": "30ac44ee1283f55605e49d09e446f5bbb5104b948ce2e7b74b87a9652e8a5c8e"
+     },
+     {
+      "name": "hwpx-spine-linear.patch",
+      "sha256": "080070cdfdaffe9b80b61ddeb6ddec8e49080b168649f92932caaf58f08298eb"
+     },
+     {
+      "name": "hwpx-spine-validation.patch",
+      "sha256": "0aae77fae8f7eb5ab1c1c83782c0930aa3501b1fd262b1e78706ebed35eeed5d"
+     },
+     {
+      "name": "hwpx-manifest-order.patch",
+      "sha256": "469c2db1c8070e18b87b02f8e8677dda48f746d3ab2ebf27706fe239453a6dc2"
+     }
+    ],
+    "sourceTreeSha256": "33c6d7b1f17c2469ce91ede33a3ae46aebc4955d88b4ab1951bdb5ac62ef2262"
+   },
+   "optimization": {
+    "flags": [],
+    "tool": "none",
+    "version": null
+   },
+   "profile": "release",
+   "schemaVersion": 3,
+   "sourceFingerprint": "02d4e6f01920ff0ae4d38ddf5886db50af8c93d6f0113ad9f99e455347cd395a",
+   "tools": {
+    "cargo": "1.99.1",
+    "rustc": "1.99.1",
+    "wasm-bindgen": "0.2.127"
+   }
+  },
+  "testInputSha256": {
+   "scripts/tests/hwpx_xml_oracle.py": "bba175698b14d233586a99d563bae17a75feba96a5ad58f4c5f02aceea173edc",
+   "scripts/tests/test_hwpx_xml_oracle.py": "6232d0013f1751e3fc324aaadfe78d5ff5f5643fcc007485436ea9fb597b9b97",
+   "scripts/tests/test_hwpx_intentional_edit.py": "3715962bc4bf1d0b006274f34c13992c33c5a835c827550c3b4ff8d8957545f7",
+   "scripts/tests/native-external-hwpx-save.py": "5c7fc3f640fbc77ef5d61c684538e54d9bc6d84c88af053bd69be5bd09c58bce",
+   "scripts/tests/hwpx-spine-linear-roundtrip.py": "e28244f5532596e5c67af39f75eba13a76b041623928b1cb5cca7456639ea3d0",
+   "scripts/tests/hwpx-manifest-order-roundtrip.py": "0777f1792a34c1c42686cc2bf7938a7e2042ca7fc33408e82fcba210fd23a394",
+   "scripts/rhwp-patches.py": "b521ccf143625c64d9af801363f8cf7f338c417537d61909fbd3176efff9ec44",
+   "src-tauri/src/document/xml.rs": "8f8a34a3cfa4491dde6c067bcbbd66e3065dc6923f97ef08855a0f321f5ddf24"
+  },
+  "p2": {
+   "bothRequestedFalseNegativesClosed": true,
+   "oldExternalCommentDeletionAccepted": true,
+   "oldRunRedistributionAccepted": true,
+   "additionalLiteralCrLfFalseNegativeClosed": true,
+   "pythonTests": 16,
+   "rustProductionContractTest": "PASS: document::xml::resource_tests::document_events_and_literal_newlines_are_preserved",
+   "permittedEdit": "Only prepend 한글 to first direct run/t text slot of first top-level section0 paragraph. Preserve all original text/tails/run ownership/attributes/other paragraphs. Ignore only direct edited-paragraph linesegarray payload, preserving its tail and nested paragraph layout.",
+   "documentEvents": "Ordered whole-document events including exterior comments and raw PI/text/comment contents; declarations and exterior XML whitespace ignored; DTD/malformed XML refused."
+  },
+  "p3": {
+   "quickXmlVersion": "0.42.0",
+   "attributeApi": "normalized_value(XmlVersion::Implicit1_0)",
+   "contract": "Fully validate existing originals, root/package/spine scope and OPF namespaces; normalized yes/no or absent only; repeated idrefs (even identical), malformed attributes/references/XML, unsupported itemref/spine attributes fail closed. Generated documents without original retain defaults.",
+   "finalWasm": {
+    "status": "PASS",
+    "sourceSamples": 6,
+    "normalizedAndScopeCases": 6,
+    "negativeCases": 23,
+    "generatedHwp5": {
+     "source": "external/rhwp/saved/blank2010.hwp",
+     "spineDefaults": [
+      [
+       "header",
+       "yes"
+      ],
+      [
+       "section0",
+       "yes"
+      ]
+     ],
+     "repeatStable": true
+    }
+   }
+  },
+  "native": [
+   {
+    "sample": "external/rhwp/samples/issue7418/list_marker_head_synthetic.hwpx",
+    "sourceSha256": "d96b5f57d88e1241229c2862c077034381de6b91595b82fe2a3bec240a968a65",
+    "status": "PASS",
+    "appSha256": "2673363242817c4d7610f2c396d65dc04ba5279ce02012d3d3e8f5571c3fda7d",
+    "acceptanceHead": "b4a90c5835df62f60ebd9787c6c840f47d9cf1d8",
+    "ime": "actual IBus hangul / xdotool / GTK WebKit; no synthetic events",
+    "revisionBefore": "0",
+    "revisionEdited": "2",
+    "save": {
+     "findings": "",
+     "error": "",
+     "testid": "rhwp-save-result",
+     "changedSince": "false",
+     "synced": "true",
+     "outcome": "",
+     "state": "saved",
+     "revision": "2"
+    },
+    "reopenRevision": "0",
+    "reopenDirty": "false",
+    "publishedSha256": "89a1eee24ce8f6efbb21e5ab4f8ca4740d1958a477b363d10704ad74f63aeb98",
+    "package": {
+     "zipValid": true,
+     "partSetEqual": true,
+     "headerAndUnrelatedXmlEqual": true,
+     "previewIsKnownBlank": true,
+     "paragraphIdsEqual": true,
+     "paragraphCount": 44,
+     "repeatedParagraphIds": 42,
+     "expectedText": "한글"
+    },
+    "model": {
+     "modelEquivalent": true,
+     "controlsEqual": true,
+     "pagesEqual": true,
+     "sections": 1,
+     "paragraphs": 44,
+     "expectedText": "한글"
+    },
+    "negative": {
+     "externalConflict": {
+      "error": "FileConflict",
+      "beforeSaveSha256": "ebd50dfc9749614dd1c2450ef3dde5c57eaad345f42c1a0d9fc92d8cd474ef52",
+      "afterSaveSha256": "ebd50dfc9749614dd1c2450ef3dde5c57eaad345f42c1a0d9fc92d8cd474ef52",
+      "dirtyAfterRejection": true
+     },
+     "negative": {
+      "error": "EngineFailure",
+      "beforeSaveSha256": "4419753ba88963874ec8cb9cbbb6f7081baff763603b6b0880ac05107c8eb261",
+      "afterSaveSha256": "4419753ba88963874ec8cb9cbbb6f7081baff763603b6b0880ac05107c8eb261",
+      "dirtyAfterRejection": true
+     },
+     "previewNegative": {
+      "error": "UnsafeSave",
+      "beforeSaveSha256": "0c9c240a426367f0f6b7fd71ede97276b3576fc27b3c8b912dbb3c022d1f64bd",
+      "afterSaveSha256": "0c9c240a426367f0f6b7fd71ede97276b3576fc27b3c8b912dbb3c022d1f64bd",
+      "dirtyAfterRejection": true
+     }
+    },
+    "actualGenerationResources": [
+     "http://localhost:1420/rhwp/generations/4fc10a9db30f457efe64c4784b56da5717d98c72fe72ffbf3bcd573d26b62731/BUILD.json",
+     "http://localhost:1420/rhwp/generations/4fc10a9db30f457efe64c4784b56da5717d98c72fe72ffbf3bcd573d26b62731/rhwp.js",
+     "http://localhost:1420/rhwp/generations/4fc10a9db30f457efe64c4784b56da5717d98c72fe72ffbf3bcd573d26b62731/rhwp_bg.wasm",
+     "http://localhost:1420/rhwp/generations/4fc10a9db30f457efe64c4784b56da5717d98c72fe72ffbf3bcd573d26b62731/rhwp.js?import"
+    ],
+    "cleanupSucceeded": true,
+    "survivors": 0
+   },
+   {
+    "sample": "external/rhwp/samples/종이기준.hwpx",
+    "sourceSha256": "2903b6f7a261005fa9a191cc7caa66d8307438b9cb93410f79fc61fd1fa0d9d8",
+    "status": "PASS",
+    "appSha256": "2673363242817c4d7610f2c396d65dc04ba5279ce02012d3d3e8f5571c3fda7d",
+    "acceptanceHead": "b4a90c5835df62f60ebd9787c6c840f47d9cf1d8",
+    "ime": "actual IBus hangul / xdotool / GTK WebKit; no synthetic events",
+    "revisionBefore": "0",
+    "revisionEdited": "2",
+    "save": {
+     "findings": "",
+     "error": "",
+     "testid": "rhwp-save-result",
+     "changedSince": "false",
+     "synced": "true",
+     "outcome": "",
+     "state": "saved",
+     "revision": "2"
+    },
+    "reopenRevision": "0",
+    "reopenDirty": "false",
+    "publishedSha256": "b26ae2808144a9aecb919061a494e3625f8f3991a37c28c6184a19a3d1f6fe92",
+    "package": {
+     "zipValid": true,
+     "partSetEqual": true,
+     "headerAndUnrelatedXmlEqual": true,
+     "previewIsKnownBlank": true,
+     "paragraphIdsEqual": true,
+     "paragraphCount": 1,
+     "repeatedParagraphIds": 0,
+     "expectedText": "한글"
+    },
+    "model": {
+     "modelEquivalent": true,
+     "controlsEqual": true,
+     "pagesEqual": true,
+     "sections": 1,
+     "paragraphs": 1,
+     "expectedText": "한글"
+    },
+    "negative": {
+     "externalConflict": {
+      "error": "FileConflict",
+      "beforeSaveSha256": "3490dfae14ee5b35fc44f016ff448584ceed2e3389fa121feca1e08dbbaa47b4",
+      "afterSaveSha256": "3490dfae14ee5b35fc44f016ff448584ceed2e3389fa121feca1e08dbbaa47b4",
+      "dirtyAfterRejection": true
+     },
+     "negative": {
+      "error": "EngineFailure",
+      "beforeSaveSha256": "19bafdca951533b8a8554c0ee68b9dfebb35bbf9ade2bc9c6ae4431db0639c39",
+      "afterSaveSha256": "19bafdca951533b8a8554c0ee68b9dfebb35bbf9ade2bc9c6ae4431db0639c39",
+      "dirtyAfterRejection": true
+     }
+    },
+    "actualGenerationResources": [
+     "http://localhost:1420/rhwp/generations/4fc10a9db30f457efe64c4784b56da5717d98c72fe72ffbf3bcd573d26b62731/BUILD.json",
+     "http://localhost:1420/rhwp/generations/4fc10a9db30f457efe64c4784b56da5717d98c72fe72ffbf3bcd573d26b62731/rhwp.js",
+     "http://localhost:1420/rhwp/generations/4fc10a9db30f457efe64c4784b56da5717d98c72fe72ffbf3bcd573d26b62731/rhwp_bg.wasm",
+     "http://localhost:1420/rhwp/generations/4fc10a9db30f457efe64c4784b56da5717d98c72fe72ffbf3bcd573d26b62731/rhwp.js?import"
+    ],
+    "cleanupSucceeded": true,
+    "survivors": 0
+   }
+  ],
+  "sc002": {
+   "status": "PASS",
+   "positiveFormats": [
+    "hwp",
+    "hwpx",
+    "docx"
+   ],
+   "positive": [
+    {
+     "publishedFile": "published.hwp",
+     "format": "hwp",
+     "save": {
+      "findings": "",
+      "error": "",
+      "testid": "rhwp-save-result",
+      "changedSince": "false",
+      "synced": "true",
+      "outcome": "",
+      "state": "saved",
+      "revision": "18"
+     },
+     "durable": true,
+     "preflight": "safe",
+     "memoryReopen": {
+      "pagesEqual": "true",
+      "failure": "",
+      "lossCount": "0",
+      "testid": "rhwp-roundtrip-result",
+      "formatEqual": "true",
+      "controlsEqual": "true",
+      "reopenedFormat": "hwp",
+      "textEqual": "true",
+      "format": "hwp",
+      "passed": "true",
+      "lossValid": "true"
+     },
+     "publishedSha256": "fb579e5874a8337a02cc6afdaef0eb62ae4c516a1fc62cfbb4777fe2a2c3f8f1",
+     "nativeReopenEqual": true,
+     "structure": {
+      "modelEquivalent": true,
+      "format": "hwp",
+      "pages": 1,
+      "tableCells": 4,
+      "boldKept": true
+     },
+     "repeatSave": true
+    },
+    {
+     "publishedFile": "published.hwpx",
+     "format": "hwpx",
+     "save": {
+      "findings": "",
+      "error": "",
+      "testid": "rhwp-save-result",
+      "changedSince": "false",
+      "synced": "true",
+      "outcome": "",
+      "state": "saved",
+      "revision": "9"
+     },
+     "durable": true,
+     "preflight": "safe",
+     "memoryReopen": {
+      "pagesEqual": "true",
+      "failure": "",
+      "lossCount": "0",
+      "testid": "rhwp-roundtrip-result",
+      "formatEqual": "true",
+      "controlsEqual": "true",
+      "reopenedFormat": "hwpx",
+      "textEqual": "true",
+      "format": "hwpx",
+      "passed": "true",
+      "lossValid": "true"
+     },
+     "publishedSha256": "bfb570c28b1e58353b959699a34e5111fec3c099f55710106912731358257fa8",
+     "nativeReopenEqual": true,
+     "structure": {
+      "modelEquivalent": true,
+      "format": "hwpx",
+      "pages": 1,
+      "tableCells": 4,
+      "boldKept": true
+     },
+     "repeatSave": false
+    },
+    {
+     "publishedFile": "published.docx",
+     "format": "docx",
+     "save": {
+      "findings": "",
+      "error": "",
+      "testid": "docx-save-result",
+      "changedSince": "false",
+      "synced": "true",
+      "outcome": "",
+      "state": "saved",
+      "revision": "9"
+     },
+     "durable": true,
+     "preflight": "safe",
+     "memoryReopen": {
+      "pagesEqual": "true",
+      "bytes": "6529",
+      "testid": "docx-roundtrip-result",
+      "textEqual": "true",
+      "passed": "true",
+      "modelEqual": "true",
+      "revision": "9"
+     },
+     "publishedSha256": "20282d08f90895176c9452c4ef90713c18a35fd91ea147062864dfaf7165b6cf",
+     "nativeReopenEqual": true,
+     "structure": {
+      "tableXmlEqual": true,
+      "untouchedParagraphXmlEqual": true,
+      "packagePartSetEqual": true
+     },
+     "repeatSave": false
+    }
+   ],
+   "rejections": [
+    {
+     "case": "external-conflict-hwp",
+     "error": "FileConflict",
+     "originalUnchanged": true,
+     "uiFailed": true
+    },
+    {
+     "case": "external-conflict-hwpx",
+     "error": "FileConflict",
+     "originalUnchanged": true,
+     "uiFailed": true
+    },
+    {
+     "case": "stale-preview.hwpx",
+     "error": "UnsafeSave",
+     "findings": "previewStale:Preview/PrvText.txt",
+     "sha256": "d7dbef8c39720d8512fc1ea868d212b204989cd71fbdefa0da906fee1deb630c",
+     "originalUnchanged": true,
+     "uiFailed": true
+    },
+    {
+     "case": "unknown-attribute.hwpx",
+     "error": "UnsafeSave",
+     "findings": "partChanged:Contents/header.xml",
+     "sha256": "18c8997bc7ba41e0bd82f675a52005bee9f0677a870ae1387901b7ab9e112c9a",
+     "originalUnchanged": true,
+     "uiFailed": true
+    },
+    {
+     "case": "invalid-reference.hwpx",
+     "mode": "direct IPC serialization fault",
+     "error": "UnsafeSave",
+     "findings": [
+      {
+       "code": "referenceInvalid",
+       "part": "Contents/section0.xml"
+      }
+     ],
+     "originalUnchanged": true,
+     "uiState": "idle",
+     "uiFalseSuccess": false
+    },
+    {
+     "case": "truncated-output.hwpx",
+     "mode": "direct IPC serialization fault",
+     "error": "UnsafeSave",
+     "findings": [
+      {
+       "code": "outputMalformed",
+       "part": "container"
+      }
+     ],
+     "originalUnchanged": true,
+     "uiState": "idle",
+     "uiFalseSuccess": false
+    },
+    {
+     "case": "external-conflict-docx",
+     "error": "FileConflict",
+     "originalUnchanged": true,
+     "uiFailed": true
+    },
+    {
+     "case": "unknown-part.docx",
+     "error": "UnsafeSave",
+     "findings": "partMissing:customXml/item1.xml",
+     "sha256": "76a6f849deb9202950a0986a6574978ce0a61f7b8fb706e891c9e022b2f454be",
+     "originalUnchanged": true,
+     "uiFailed": true
+    },
+    {
+     "case": "malformed-xml.docx",
+     "error": "UnsafeSave",
+     "findings": "originalMalformed:word/document.xml,partChanged:docProps/app.xml",
+     "sha256": "abba00dd474b55d5b47277c5f834f77275828048e5e0d9991f2e589371417847",
+     "originalUnchanged": true,
+     "uiFailed": true
+    }
+   ],
+   "cleanupSucceeded": true
+  },
+  "p4": {
+   "contract": "Match existing IDs/hrefs/media/embed to actual emitted entries, preserve original relative order, append new resources and place new masters before owner. Reject missing/duplicate/conflicting/unsupported metadata and dangling ZIP targets. Check source and output master ownership using actual engine parser.",
+   "jpegContract": "Only same-ID/same-href embedded JPEG, original image/jpg vs actual image/jpeg, .jpg/.jpeg path; preserve original spelling and verify FF D8 FF signature in actual final ZIP. No other MIME changes accepted.",
+   "corpusFixtures": 734,
+   "beforeCounts": {
+    "unsafe": 584,
+    "export-failed": 43,
+    "safe": 98,
+    "unknown": 9
+   },
+   "afterCounts": {
+    "unsafe": 478,
+    "export-failed": 149,
+    "safe": 98,
+    "unknown": 9
+   },
+   "beforeExports": 691,
+   "afterExports": 585,
+   "orderDifferencesRemoved": 176,
+   "changedOutputDocuments": 177,
+   "changedPartsOnly": [
+    "Contents/content.hpf"
+   ],
+   "byteIdenticalExportedOutputs": 408,
+   "jpegSpellingsRestored": 223,
+   "jpegDocumentsRestored": 67,
+   "newlySafe": [],
+   "safeRegressions": 0,
+   "newFindings": 0,
+   "newRefusals": 106,
+   "newRefusalCauses": {
+    "omittedOrUnsupportedItem": 72,
+    "identityOrOtherMediaChanged": 15,
+    "noJpegSignature": 12,
+    "unsupportedAttribute": 7
+   },
+   "unknownNonZipHwpxExtension": 9,
+   "representativeFixtures": 9,
+   "focusedReopenAndRepeat": 5,
+   "negativeCases": 12,
+   "examples": [
+    {
+     "sample": "external/rhwp/samples/issue2816/imgbrush_total_page_fill.hwpx",
+     "before": "unsafe",
+     "after": "unsafe",
+     "originalOrder": [
+      "image1",
+      "header",
+      "image2",
+      "section0",
+      "headersc",
+      "sourcesc",
+      "settings"
+     ],
+     "beforeOrder": [
+      "header",
+      "section0",
+      "settings",
+      "headersc",
+      "sourcesc",
+      "image1",
+      "image2"
+     ],
+     "afterOrder": [
+      "image1",
+      "header",
+      "image2",
+      "section0",
+      "headersc",
+      "sourcesc",
+      "settings"
+     ],
+     "restoredJpegMimeIds": [],
+     "removedFindings": [
+      "partChanged:Contents/content.hpf"
+     ]
+    },
+    {
+     "sample": "external/rhwp/samples/hwpx/exam_social.hwpx",
+     "before": "unsafe",
+     "after": "unsafe",
+     "originalOrder": [
+      "header",
+      "masterpage0",
+      "image1",
+      "image2",
+      "image3",
+      "image4",
+      "section0",
+      "masterpage1",
+      "masterpage2",
+      "image5",
+      "image6",
+      "section1",
+      "settings"
+     ],
+     "beforeOrder": [
+      "header",
+      "masterpage0",
+      "section0",
+      "masterpage1",
+      "masterpage2",
+      "section1",
+      "settings",
+      "image1",
+      "image2",
+      "image3",
+      "image4",
+      "image5",
+      "image6"
+     ],
+     "afterOrder": [
+      "header",
+      "masterpage0",
+      "image1",
+      "image2",
+      "image3",
+      "image4",
+      "section0",
+      "masterpage1",
+      "masterpage2",
+      "image5",
+      "image6",
+      "section1",
+      "settings"
+     ],
+     "restoredJpegMimeIds": [],
+     "removedFindings": [
+      "partChanged:Contents/content.hpf"
+     ]
+    },
+    {
+     "sample": "external/rhwp/samples/issue6465/press_release_footer_logos.hwpx",
+     "before": "unsafe",
+     "after": "unsafe",
+     "originalOrder": [
+      "header",
+      "image1",
+      "image2",
+      "section0",
+      "section1",
+      "image3",
+      "image4",
+      "section2",
+      "settings"
+     ],
+     "beforeOrder": [
+      "header",
+      "section0",
+      "section1",
+      "section2",
+      "settings",
+      "image1",
+      "image2",
+      "image3",
+      "image4"
+     ],
+     "afterOrder": [
+      "header",
+      "image1",
+      "image2",
+      "section0",
+      "section1",
+      "image3",
+      "image4",
+      "section2",
+      "settings"
+     ],
+     "restoredJpegMimeIds": [
+      "image3",
+      "image4"
+     ],
+     "removedFindings": [
+      "partChanged:Contents/content.hpf"
+     ]
+    }
+   ],
+   "editedSaveExpansion": "No newly safe documents. Existing accepted blank-preview documents retain actual native edited-save/reopen acceptance; unsafe/stale preview documents remain blocked."
+  },
+  "rust": {
+   "fullResult": "FAIL: 3768 passed / 121 failed / 13 ignored",
+   "newFailures": 0,
+   "sameFailedTestsAsBaseline": true,
+   "cause": "All 121 failures are missing upstream fixtures in extracted test source; compared exact test names and actual failure bodies with prior baseline. Ignored tests not counted as passes.",
+   "focusedContentAndManifestTests": 15,
+   "baselineFixtureFilesByteIdentical": 11
+  },
+  "notRun": [
+   "Wayland native IME",
+   "fcitx5",
+   "macOS",
+   "Windows",
+   "real GPU",
+   "final-generation DPR2",
+   "full T007/T008 surface/latency suites",
+   "T010 Undo/Redo acceptance"
+  ],
+  "safetyPolicyChanged": false,
+  "statusUnchanged": {
+   "T007": "INCOMPLETE",
+   "T008": "INCOMPLETE",
+   "T009": "unchecked / incomplete overall",
+   "T010": "INCOMPLETE / RHWP UndoRedo NO-GO",
+   "T011": "NOT STARTED",
+   "T014_T015": "checkboxes unchanged"
+  },
+  "retention": "Three unselected generations preserved intact, with hashes, under established target/rhwp-preserved-generations; current Release/Debug and last native-known-good afad retained; no deletion.",
+  "rawEvidence": {
+   "target/hwpx-stabilization-20261102/p2-python-final.log": "088a693a99cd9011f07c5eacdc49218345d3cd6b8b2ab5ed68c00fb606a417fb",
+   "target/hwpx-stabilization-20261102/p2-raw-line-endings.log": "34ebcf896e6397fcf201d5c9a919de56084465007209d961b378b3a58b04269b",
+   "target/hwpx-stabilization-20261102/p2-raw-rust.log": "4cf6d53951517b09bde0c8e1a28b77e2abc0e25e1f3d77be5e5f18be7b42fe7a",
+   "target/hwpx-stabilization-20261102/p4-jpeg-unit-full.log": "3f6ec47befaee65ed0cf6eb3bbd9c4fe15926c82b2bafb3e8d0761b4d3748cfd",
+   "target/hwpx-stabilization-20261102/p4-final-product-build.log": "b32f4f26829464e029e518cd94bfaeb2555a6159b06bb6bd5c0a905a81a9959f",
+   "target/hwpx-stabilization-20261102/p4-final-corpus/result.json": "07e561df1ae35c2abfa9201e65e09260bd5a624795b8ef2ced788aa16dbd359b",
+   "target/hwpx-stabilization-20261102/p4-final-corpus/run-identity.json": "eeb3b994bcfc28a4f7fc6dc1417a3b02beed5095a90ed85e075863a6b1822d75",
+   "target/hwpx-stabilization-20261102/p4-final-representatives/result.json": "ecac5684e05d26d0b1a80aec6773dbf214f7b0978146c837265e3c36cb18c51d",
+   "target/hwpx-stabilization-20261102/p4-spine-final/result.json": "5179ad7d43d1591c1665ab6977c2b6aa967f627f8e430c0d2cf2094f36ec8706",
+   "target/hwpx-stabilization-20261102/final-p0-run/result.json": "b87aa106fc7387224094aa426225c04792c23a5177e6aa5b55357bbc57834170",
+   "target/hwpx-stabilization-20261102/final-p0-env/environment-result.json": "d71ac1cadc504084944edd6d4b582ace8d1101e5ccdfed0c8626190ada37379a",
+   "target/hwpx-stabilization-20261102/final-jongi-run/result.json": "1111d67a6a022e4958d5d3ac0d29ee26a5923ef7aaf80775fa5fb4c03c8314c1",
+   "target/hwpx-stabilization-20261102/final-jongi-env/environment-result.json": "2fa631d06328dc8edbfcb4d1867c061c82033553515238a0fd8aac8d74760740",
+   "target/hwpx-stabilization-20261102/final-sc002-run/result.json": "7ee46be3999577adbe56c29430b44864336dae23af51f1b594a19e38abf1bc38",
+   "target/hwpx-stabilization-20261102/final-sc002-env/environment-result.json": "2fa2b08a5a24b058a94bcaa833b9a4533f1c11b29fd944b081e62bdd8ab7db8d",
+   "target/hwpx-stabilization-20261102/p4-final-rust-baseline-comparison.json": "d26ce2a7ad8649807353dd6301647fd43a9fa37d4bb32f3d760eb0616020468c",
+   "target/hwpx-stabilization-20261102/retained-generations.json": "9681420ae6e61bca8a164df9cb449c86cb759696a5473b1a96c7ea1e5911fd64",
+   "target/hwpx-stabilization-20261102/final-identity2/result.json": "54dad3d54d157c2b402242ff5b52611bcee38393bcb62cd2b0bf4b2d7892ea51",
+   "target/hwpx-stabilization-20261102/final-dupid/result.json": "c46f7d367b9c3e8defe49a25ad5917acfe9d8f76f565a025d8f796145389b693",
+   "target/hwpx-stabilization-20261102/final-textdir/result.json": "c6635675497208f918edbe5b4281ddb49592d6bec8c4722895ac23dbcaf3e994"
+  },
+  "failedAttemptsPreserved": [
+   "c-sc002-env: omitted --ibus argument, harness NOT RUN; corrected c-sc002-env2 PASS",
+   "c-textdir: candidate bundle prerequisite missing; corrected c-textdir2 PASS",
+   "p3-unit-initial/p3-unit2: missing compile-time fixtures in extracted source; corrected from pinned existing fixture copies",
+   "p4-corpus: completed exports/preflight but comparison failed on 9 non-ZIP originals; SHA-reconciled reanalysis PASS",
+   "interim bf911743: overstrict JPEG-spelling refusals; superseded by source-matched signature-verified final preservation; all interim evidence retained",
+   "final-identity default candidate selected old bb3bc058 WASM; explicit final4fc candidate final-identity2 PASS; expectations unchanged"
+  ],
+  "runtimeEnvironment": {
+   "os": "NixOS",
+   "display": "Xvfb 21.1.23 / X11",
+   "renderer": "software / LIBGL_ALWAYS_SOFTWARE=1 / DPR1",
+   "webview": "WebKitGTK 2.54.1",
+   "ime": "IBus 1.5.33 / ibus-hangul 1.5.5",
+   "testDriver": "tauri-driver-current-loader / WebKitWebDriver",
+   "runtimeSource": "existing target/hwpx-compat-20261102/launch.py and final native environment results",
+   "productionFrontendAndRustChanged": false,
+   "rustFileChange": "cfg(test) contract regression only",
+   "userland": "NixOS 26.05 (Yarara)",
+   "kernel": "Linux 7.2.11-arch1-1 x86_64"
+  },
+  "finalWasmPriorEdgeRegressions": [
+   {
+    "test": "final-identity2",
+    "reportedStatus": "PASS",
+    "exitCode": 0,
+    "artifactGeneration": "4fc10a9db30f457efe64c4784b56da5717d98c72fe72ffbf3bcd573d26b62731",
+    "artifactSha256": "8ff713c2c6ff97d299cb614822405c6539358fbea7576978ab05a04b56ebd13b",
+    "scope": "standalone WASM regression; final native acceptance recorded separately"
+   },
+   {
+    "test": "final-dupid",
+    "reportedStatus": "PASS",
+    "exitCode": 0,
+    "artifactGeneration": "4fc10a9db30f457efe64c4784b56da5717d98c72fe72ffbf3bcd573d26b62731",
+    "artifactSha256": "8ff713c2c6ff97d299cb614822405c6539358fbea7576978ab05a04b56ebd13b",
+    "scope": "standalone WASM regression; final native acceptance recorded separately"
+   },
+   {
+    "test": "final-textdir",
+    "reportedStatus": "ISOLATED_SAFE_APP_ACCEPTANCE_PENDING",
+    "exitCode": 0,
+    "artifactGeneration": "4fc10a9db30f457efe64c4784b56da5717d98c72fe72ffbf3bcd573d26b62731",
+    "artifactSha256": "8ff713c2c6ff97d299cb614822405c6539358fbea7576978ab05a04b56ebd13b",
+    "scope": "standalone WASM regression; final native acceptance recorded separately"
+   }
+  ]
  }
 }

@@ -315,3 +315,8 @@ T007/T008의 예전 "저장 없음"은 당시 PoC 범위이며 현재 기능 부
 ### HWPX ID 할당·독립 XML 검증·spine `linear` 후속 (2026-11-02)
 
 **체크박스 변경 없음.** 엔진 공개 API의 붙여넣기가 지운 HWPX 문단 ID를 다시 쓰고 병합 되돌리기 뒤 내보내기를 거부하던 문제를 재현·교정했다(`hwpx-clipboard-paragraph-ids.patch`). 실제 앱 수용의 독립 XML 비교가 공백·tail·주석 손실을 놓치던 거짓 음성 11가지를 고쳤다(`scripts/tests/hwpx_xml_oracle.py`). `content.hpf` spine `linear` 보존(`hwpx-spine-linear.patch`)으로 85개 문서의 `content.hpf` 근거가 사라졌지만 새로 safe가 된 문서는 없다. geul 판정·저장 안전 기준은 바꾸지 않았다. 최종 generation `50780a46…`에서 외부 HWPX 두 문서·Stage 4·IME 필수·rhwp 일반 DPR1이 PASS. T007/T008 INCOMPLETE, T009 미체크, T010 INCOMPLETE·RHWP Undo/Redo NO-GO, T011 NOT STARTED 그대로. 상세: [저장 보존](../architecture/save-preservation.md#hwpx-문단-id-할당독립-xml-검증spine-linear-안정화-2026-11-02-후속), [근거 JSON](../architecture/hwpx-duplicate-id-acceptance-2026-11-02.json) `stabilizationFollowup`.
+
+
+### HWPX 보존 오라클·spine·manifest 후속 (2026-11-02)
+
+P2/P3/C/P4의 이 범위는 최종 구현과 선택된 회귀 검증을 완료했다. 동일 734개 입력 코퍼스에서 safe 98 유지, 새 safe 0, 순서 차이 176 제거, JPEG 표기 223개/67문서 보존, 새로운 findings 0을 확인했다. 두 필수 HWPX native 편집 저장 재열기와 Stage 4 세 형식 3/3, 저장 거절 9/9도 최종 generation에서 통과했다. 상세는 [최종 저장 보존 기록](../architecture/save-preservation.md#최종-native-재검증과-manifest-순서-보존-2026-11-02-p2p3cp4) 및 [기계 판독 근거의 `oracleSpineManifestFollowup`](../architecture/hwpx-duplicate-id-acceptance-2026-11-02.json) 참조. 이 결과는 T007/T008/T009/T014/T015를 완료로 체크하지 않는다. T010은 INCOMPLETE, RHWP Undo/Redo NO-GO이며 T011은 NOT STARTED 그대로다.

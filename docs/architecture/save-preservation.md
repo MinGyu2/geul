@@ -892,3 +892,56 @@ retirement fsync 실패 뒤 새 durable 체크포인트의 성공을 유지하�
 namespace-aware NsReader로 OPF package 루트 바로 아래의 단일 spine, 그 직접 itemref만 수집한다. prefix 별칭은 허용하고 다른 namespace의 metadata itemref는 값을 바꾸지 못한다. spine 내부 외부 요소, 다른 부모의 OPF itemref, 미선언 prefix, 빈/무효 idref, 동일·상충 반복 idref, 보존할 수 없는 itemref/spine 속성은 거부한다. 속성 순회를 flatten하지 않으며 전체 XML 끝까지 검사한다. 중복 속성(확장 이름 포함), 잘못된 문자·참조·이름·선언·인코딩, DTD, 잘린 XML, 다중 루트와 package/spine/manifest 구조 오류는 원본 판독 실패다. 원본 바이트가 있는데 파싱에 실패하면 생성 문서 기본값으로 돌아가지 않는다. 원본이 없는 HWP5 등 생성 경로의 기본값은 유지한다. metadata의 일반 직렬화는 재설계하지 않았다.
 
 집중 Rust content 시험 8개 PASS, 실제 제품 WASM spine 회귀(기존 6문서, 정규화·scope 6건, 음성 23건) PASS. 음성 원본 해시 모두 보존. 제품 generation `afad27ebaceeea05e9f2a6d6b7077b0f59c1192d3c729b576cbebcd4c626bbd1`, WASM `dda83ed625fb99a8f85e2ebea45263ae49cac3b2a8fd68bf1acfb236daaa6088`. 원시 근거는 무시 경로 `target/hwpx-stabilization-20261102/`다. 기존 원본을 수정한 네 문자 참조 시험은 생성한 양성 변형이며, 원래 코퍼스에서 새 safe 문서를 찾았다는 뜻은 아니다. 새 native gate는 다음 절에 별도로 기록한다.
+
+
+P2 최종 검토 추가: Expat의 일반 text/comment 콜백은 리터럴 CR·CRLF를 LF로 바꿔 Rust의 원문 사건 의미와 달랐다. 실제 주석·본문의 CRLF→LF 변형을 같다고 판정하는 것을 재현했다. 이제 DefaultHandler의 원문 사건을 사용하고, 검증된 XML의 다섯 predefined entity와 숫자 참조만 해석한다(CDATA 안은 그대로 둔다). PI 구분 공백·주석·본문의 리터럴 줄끝을 보존하며 XML 선언·루트 밖 공백은 계속 무시한다. Python 회귀 16개와 Rust의 직접 사건/streaming 비교 회귀를 통해 이 경계도 고정했다. 운영 비교기의 동작 변경은 없으며 Rust에는 시험만 추가했다. 최종 네이티브 실행은 이 교정 뒤 새로 수행한다.
+
+
+### 최종 native 재검증과 manifest 순서 보존 (2026-11-02, P2/P3/C/P4)
+
+P2 두 거짓 음성과 추가 CR/CRLF 경계를 교정한 최종 오라클로 다시 실행했다. P3의 기존 원본 판독 실패는 이제 생성 문서 fallback이 아니며, 원본 없는 HWP5 생성 경로만 기본값을 유지한다. 먼저 P2/P3 제품 `afad27eb…`에서 두 필수 native 문서·실제 거절을 통과한 뒤 P4를 시작했다. P4 최종 제품에서도 아래 수용을 새로 통과했다. 과거 실행 verdict를 새 실행으로 옮기지 않았다.
+
+**손실 소유 지점과 계약.** HWPX 파서는 manifest 항목을 원래 순서로 읽고 `Document.hwpx_aux_entries`에 원본 `content.hpf`도 보관한다. 직렬화기는 header→소속 구역별 master/section→settings→script→BinData 순으로 묶어 출력하면서 원래 배치를 잃었다. `hwpx-manifest-order.patch`는 원본 순서의 ID를 **실제 생성된 항목**에 연결한다. 기존 항목의 ID/href·리소스 종류·embedded 의미가 일치해야 하고 기존 상대 순서를 보존한다. 새 일반 리소스와 새 구역은 생성 순서대로 뒤에 붙이며 새 master는 소속 구역 앞에 둔다. 원본 바이트를 무조건 재생하지 않는다. 중복 ID/href, 참조한 항목 누락, 미지원 항목·속성, 기존 리소스의 재명명·다른 종류 변환은 거부한다. 원본/결과를 실제 엔진 파서로 읽어 기존 master 소속과 결과 IR 소속을 대조한다. 최종 ZIP에서 모든 embedded href 대상의 실재도 확인한다(Scripts 포함, 외부 링크는 제외). 생성 문서는 기존 순서 기본값을 유지한다.
+
+선언 메타데이터의 좁은 보존도 포함한다: 원본 `image/jpg`와 생성기 `image/jpeg`는 **동일 ID/href의 embedded .jpg/.jpeg**일 때만 원래 표기를 쓴다. 최종 ZIP의 실제 데이터가 `FF D8 FF`로 시작해야 한다. 다른 MIME 변경은 허용하지 않는다. 이것은 JPEG 파일 전체 유효성 검사나 임의 메타데이터 재작성의 허용이 아니다. 초기 후보는 이 표기까지 일괄 거부해 기존 spine 시험의 JPEG 문서를 거부했다. 해당 후보/결과를 남기고, 원본 선언과 실제 리소스 증거를 확인하는 보존으로 고쳤다. 기존 spine 회귀를 삭제하거나 실패를 허용하는 예외를 추가하지 않았다.
+
+원래 순서 재현 예(전체 ID/href 매핑은 근거 JSON 및 문서별 코퍼스 기록):
+
+| 실제 fixture | 이전 export | 최종 export = 원본 기존 순서 |
+|---|---|---|
+| `issue2816/imgbrush_total_page_fill.hwpx` | header, section0, settings, headersc, sourcesc, image1, image2 | image1, header, image2, section0, headersc, sourcesc, settings |
+| `hwpx/exam_social.hwpx` | header, masterpage0, section0, masterpage1, masterpage2, section1, settings, image1…image6 | header, masterpage0, image1…image4, section0, masterpage1, masterpage2, image5, image6, section1, settings |
+
+두 번째 사례의 masterpage0은 구역0, masterpage1/2는 구역1 소속을 유지한다. BinData가 section 뒤에 있는 기존 순서와 여러 이미지, 여러 구역, script 교차 배치도 검사했다. 새 BinData·새 구역·새 master의 배치, 삭제/변경/충돌, dangling script와 JPEG 시그니처 음성은 Rust/실제 WASM으로 검사한다. 원래 IR/serializer가 ID/href를 바꾸는 리소스는 이 교정의 지원 범위가 아니다.
+
+동일 734 fixture·동일 checker SHA `f4d256e7…`로 `afad27eb…`와 최종 제품을 비교했다. 편집 없는 코퍼스 판정이며 편집 저장 자격을 뜻하지 않는다.
+
+| 결과 | 수정 전 | 최종 |
+|---|---:|---:|
+| export 성공 | 691 | 585 |
+| safe | 98 | 98 |
+| unsafe | 584 | 478 |
+| unknown | 9 | 9 |
+| export 실패 | 43 | 149 |
+
+**새 safe 0, 기존 safe 회귀 0.** 순서 차이 176건과 `partChanged:Contents/content.hpf` 근거 176건이 사라졌다. 출력 177개는 `content.hpf`만 바뀌었고(순서와 증명된 JPEG 표기 복원), 다른 408개 출력은 바이트 동일하다. 67개 문서의 JPEG 선언 223개를 보존했다. 계속 export되는 문서에 새 findings/예상 밖 다른 부분 변경은 0이다. 문서별 findings 변화 282건은 근거 제거 176건과 다음 명시적 거부 106건을 구분해야 한다. 원래 unsafe였던 106개는 기존 항목 누락/미지원 72, ID/href·다른 MIME 변경 15, JPEG 시그니처 불일치 12, 미지원 속성 7로 이제 export 단계에서 거부한다. export 성공 수가 줄어든 사실을 호환성 증가로 계산하지 않는다. `.hwpx` 이름을 가진 비-ZIP 원본 9개는 전후 unknown/originalMalformed이며 생성 출력도 전후 동일하다(원본 manifest 순서 검사는 적용 불가). 원본 SHA·전후 분류·매핑·findings는 각 문서별로 보존했다.
+
+**최종 native 수용.** NixOS/Linux Xvfb/X11·GTK/WebKitGTK 2.54.1·IBus Hangul·소프트웨어 렌더링·DPR1에서 `종이기준.hwpx`와 `issue7418/list_marker_head_synthetic.hwpx`를 각각 실제 앱으로 열고 preflight safe→실제 한글 IME→revision 0→2/dirty→Tauri IPC 저장(saved, synced)→닫기→게시 파일 재열기(revision 0, clean)를 확인했다. 최종 독립 오라클은 원래 text run 소유권·공백·tail·서식·문단 ID·다른 부분을 비교했고, 엔진 모델의 쪽·컨트롤·문단도 같았다. 종이기준 문단1개, list-marker 문단44개/반복 ID42개를 보존했다. 실제 저장 거절: 외부 수정은 **수정 직후/저장 직전 해시**와 거절 뒤 해시가 같고 FileConflict, ID 누락 문서의 실제 IME 편집 뒤 저장은 EngineFailure, 한컴2024 twin 편집 저장은 PreviewStale/UnsafeSave다. 모두 dirty/unpreserved=true·원본 불변·거짓 성공 없음. Stage4 세 형식 actual IME 저장/재열기 3/3, 실제 거절 9/9도 새로 PASS; 모든 launcher cleanup 성공/잔류0.
+
+실행 시 Geul HEAD는 `b4a90c5835df62f60ebd9787c6c840f47d9cf1d8` 및 명시된 미커밋 입력 SHA였고, executable SHA는 `2673363242817c4d7610f2c396d65dc04ba5279ce02012d3d3e8f5571c3fda7d`다(운영 Rust/프런트 변경 없음; `xml.rs`는 cfg(test)만 추가). 제품 generation **`4fc10a9db30f457efe64c4784b56da5717d98c72fe72ffbf3bcd573d26b62731`**, WASM **`8ff713c2c6ff97d299cb614822405c6539358fbea7576978ab05a04b56ebd13b`**, patched-source tree `33c6d7b1f17c2469ce91ede33a3ae46aebc4955d88b4ab1951bdb5ac62ef2262`. 앱이 실제 로드한 불변 generation URL·BUILD/RELEASE 신원·WASM 해시를 대조했다. 앱 loader도 받은 JS/WASM의 SHA를 검증한다. 마지막 native 정상 세대 `afad27eb…`와 rollback `50780a46…`, Debug를 남겼다. 보존 한도에서 선택되지 않은 세대 3개는 삭제하지 않고 기존 보존 위치로 옮겨 모든 파일 해시를 확인했다.
+
+검증 결과: Python 오라클 16 PASS, 운영 Rust 계약 직접 시험1 PASS(비교기 동작 불변), 최종 RHWP content/manifest 집중15 PASS, 최종 전체 lib **3768 PASS / 121 FAIL / 13 ignored**. 실패121개는 같은 fixture 구성의 이전 기준과 시험명·실제 오류를 대조해 모두 기존 누락 fixture임을 확인했다. 새 실패0이며 전체 PASS라고 보고하지 않는다. 최종 실제 WASM spine: 원래6문서, 참조/scope6건, 음성23건, HWP5 생성 경로 PASS. manifest: 대표9문서·모델/재내보내기5건·음성12건 PASS. 최종 세대의 ID/clipboard/duplicate/textDir 생애주기도 명시한 불변 generation 경로로 실행해 PASS했다(단독 WASM 시험과 위 native 수용을 구분한다). Wayland/fcitx5/다른 OS/실제 GPU/DPR2와 전체 T007/T008 지연·표면 묶음은 최종 세대에서 NOT RUN이다. T007/T008 INCOMPLETE, T009 미체크, T010 INCOMPLETE·RHWP Undo/Redo NO-GO, T011 NOT STARTED, T014/T015 체크박스 유지.
+
+[기계 판독 근거](hwpx-duplicate-id-acceptance-2026-11-02.json)의 `oracleSpineManifestFollowup`에 테스트 입력·patch·runtime·원본/거절 해시 및 raw evidence SHA를 기록했다. 문서별 원시 전후 분류는 무시 경로 `target/hwpx-stabilization-20261102/p4-final-corpus/result.json`에 있다. 처음의 SC002/텍스트 방향 인자 오류, 비-ZIP 비교기 오류와 수정 전 후보는 삭제하거나 PASS로 바꾸지 않았다.
+
+재현 명령(이미 존재하는 Nix 도구·잠금/offline 의존성·fixture 사용; 새 out 디렉터리 필요):
+
+```sh
+python3 -m unittest scripts/tests/test_hwpx_xml_oracle.py scripts/tests/test_hwpx_intentional_edit.py -v
+python3 scripts/cargo-geul.py test --lib document::xml::resource_tests::document_events_and_literal_newlines_are_preserved -- --exact
+SOURCE_DATE_EPOCH=315532800 CARGO_BUILD_JOBS=4 python3 scripts/build-rhwp-wasm.py
+python3 scripts/tests/hwpx-spine-linear-roundtrip.py --out target/hwpx-stabilization-20261102/reproduce-spine
+python3 scripts/tests/hwpx-manifest-order-roundtrip.py --before-package public/rhwp/generations/afad27ebaceeea05e9f2a6d6b7077b0f59c1192d3c729b576cbebcd4c626bbd1 --out target/hwpx-stabilization-20261102/reproduce-corpus
+```
+
+Geul의 `safe` 입증 의무, unsafe/unknown 저장 차단, loss report·preflight·최종 바이트 검사·재열기·원자적 게시·충돌·복구 정책은 바꾸지 않았다. 남는 원인은 header/section 기본값·빈 run/t·field 속성·다중 구역 보조 구조·textDir AUTO·미지원 리소스 ID/href 및 content-bearing preview stale 등이다. 이 결과로 한컴 HWPX 일반 호환이나 새 편집 저장 자격을 주장하지 않는다. 다음 좁은 작업은 `saved/blank_hwpx.hwpx`의 charPr 기본 자식 원본 presence 보존을 독립적으로 검증하는 것이다.

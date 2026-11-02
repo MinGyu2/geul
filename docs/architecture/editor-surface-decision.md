@@ -1601,3 +1601,8 @@ DOCX 0.64/1.00/1.27이며 CPU 포화 실험을 하지 않았다. 각 결과는 W
 ### 엔진 후속 재빌드 뒤 영향 범위 재실행 (2026-11-02 후속 2)
 
 rhwp WASM이 붙여넣기 문단 ID와 `content.hpf` spine `linear` 교정으로 다시 바뀌었다(최종 generation `50780a46…`, WASM `02279b32…`). 편집 표면 코드·WordCraft는 바꾸지 않았다. 바뀐 바이트에 영향받는 검사만 같은 하네스·환경으로 다시 실행했다: rhwp·WordCraft 실제 한글 IME 필수 7/7씩, rhwp 일반 편집 DPR1 32/32·표 4/4, Stage 4 세 형식 저장·재열기(양성 3·거절 9) PASS, 정리 성공. IME 지연, DPR2 일반 편집, DOCX 일반 편집은 이 바이트로 다시 실행하지 않았고 앞 절의 결과(WASM `d3602624…`)를 이 빌드로 옮기지 않는다. T007/T008은 계속 INCOMPLETE다.
+
+
+### 최종 HWPX 및 통합 저장 네이티브 재검증 (2026-11-02)
+
+최종 generation `4fc10a9db30f457efe64c4784b56da5717d98c72fe72ffbf3bcd573d26b62731`의 실제 WASM으로 두 HWPX 문서(`종이기준.hwpx`, `list_marker_head_synthetic.hwpx`)와 Stage 4 세 형식 roundtrip 3/3을 다시 실행했다. 실제 IBus 한글 입력, 저장, 닫기, 재열기 및 revision 0/clean을 확인했고, SC-002 거절 9/9도 통과했다. FileConflict, ID 누락, PreviewStale 등 거절 뒤 원본 해시는 저장 직전 스냅샷과 같고 세션은 dirty/unpreserved로 유지됐다. 네이티브 실행은 NixOS/Linux Xvfb/X11, software rendering, DPR1이다. 최종 세대의 Wayland, GPU desktop, 다른 OS, DPR2는 NOT RUN이며 이 근거는 T007/T008 전체 완료를 뜻하지 않는다. T007/T008/T009 체크박스 상태는 그대로다. 상세는 [최종 저장 수용](save-preservation.md#최종-native-재검증과-manifest-순서-보존-2026-11-02-p2p3cp4) 및 [기계 판독 근거의 `oracleSpineManifestFollowup`](hwpx-duplicate-id-acceptance-2026-11-02.json)에 기록했다.
