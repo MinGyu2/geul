@@ -1,0 +1,180 @@
+--- a/src/serializer/hwpx/content.rs
++++ b/src/serializer/hwpx/content.rs
+@@ -51,6 +51,55 @@
+     out
+ }
+ 
++/// `linear` of each original spine `itemref`, keyed by `idref`: `None` when
++/// the attribute is absent. OPF defines absent as "yes", but the presence is part
++/// of the source package, and an explicit "no" (non-linear item) must never be
++/// rewritten as "yes". Values other than yes/no, or one idref listed with
++/// conflicting values, are refused instead of being normalized. A content.hpf
++/// that cannot be read keeps the previous default (geul treats such an original
++/// as malformed and does not save it).
++fn extract_spine_linear(
++    original: &str,
++) -> Result<std::collections::BTreeMap<String, Option<String>>, SerializeError> {
++    use quick_xml::events::Event;
++    let mut reader = quick_xml::Reader::from_str(original);
++    let mut out = std::collections::BTreeMap::new();
++    loop {
++        match reader.read_event() {
++            Ok(Event::Empty(ref e)) | Ok(Event::Start(ref e))
++                if e.name().as_ref().rsplit(':').next() == Some("itemref") =>
++            {
++                let (mut idref, mut linear) = (None, None);
++                for attr in e.attributes().flatten() {
++                    match attr.key.as_ref().rsplit(':').next() {
++                        Some("idref") => idref = Some(attr.value.as_ref().to_owned()),
++                        Some("linear") => linear = Some(attr.value.as_ref().to_owned()),
++                        _ => {}
++                    }
++                }
++                let Some(idref) = idref else { continue };
++                if let Some(value) = &linear {
++                    if value != "yes" && value != "no" {
++                        return Err(SerializeError::UnsupportedInput(format!(
++                            "unsupported OPF spine linear value: {value:?}"
++                        )));
++                    }
++                }
++                if let Some(previous) = out.insert(idref, linear.clone()) {
++                    if previous != linear {
++                        return Err(SerializeError::UnsupportedInput(
++                            "conflicting OPF spine linear values for one idref".into(),
++                        ));
++                    }
++                }
++            }
++            Ok(Event::Eof) => return Ok(out),
++            Err(_) => return Ok(std::collections::BTreeMap::new()),
++            _ => {}
++        }
++    }
++}
++
+ fn extract_metadata_block(original: &str) -> Option<&str> {
+     let open = original.find("<opf:metadata>")?;
+     let close = original[open..].find("</opf:metadata>")? + open + "</opf:metadata>".len();
+@@ -68,6 +117,10 @@
+     // 원본 metadata 블록(있으면) — 본문과 무관한 저작자/일자/주제 보존용.
+     let original_str = original_content_hpf.and_then(|b| std::str::from_utf8(b).ok());
+     let original_metadata = original_str.and_then(extract_metadata_block);
++    let original_linear = match original_str {
++        Some(original) => extract_spine_linear(original)?,
++        None => Default::default(),
++    };
+ 
+     let buf = Cursor::new(Vec::new());
+     let mut w = Writer::new(buf);
+@@ -233,29 +286,29 @@
+ 
+     end_tag(&mut w, "opf:manifest")?;
+ 
+-    // <opf:spine> — 한컴 원본은 itemref 마다 linear="yes"(OPF 기본값)를 명시한다.
++    // <opf:spine> — 한컴 원본은 대개 itemref 마다 linear="yes"(OPF 기본값)를 명시한다.
++    // 원본에 같은 idref 의 itemref 가 있으면 그 linear 의 유무·값을 그대로 쓴다(옛 한컴은
++    // 생략, 비선형 항목은 "no"). 원본에 없는 항목(새 구역 등)만 기존 기본값 "yes".
++    let itemref = |w: &mut Writer<Cursor<Vec<u8>>>, id: &str| -> Result<(), SerializeError> {
++        match original_linear.get(id) {
++            Some(Some(value)) => empty_tag(
++                w,
++                "opf:itemref",
++                &[("idref", id), ("linear", value.as_str())],
++            ),
++            Some(None) => empty_tag(w, "opf:itemref", &[("idref", id)]),
++            None => empty_tag(w, "opf:itemref", &[("idref", id), ("linear", "yes")]),
++        }
++    };
+     start_tag_attrs(&mut w, "opf:spine", &[])?;
+-    empty_tag(
+-        &mut w,
+-        "opf:itemref",
+-        &[("idref", "header"), ("linear", "yes")],
+-    )?;
++    itemref(&mut w, "header")?;
+     for i in 0..section_hrefs.len() {
+-        let id = format!("section{}", i);
+-        empty_tag(
+-            &mut w,
+-            "opf:itemref",
+-            &[("idref", id.as_str()), ("linear", "yes")],
+-        )?;
++        itemref(&mut w, &format!("section{}", i))?;
+     }
+     // [#3557] Scripts spine 참조 — 한컴 원본은 스크립트 항목도 spine 에 나열한다.
+     for (id, _) in &script_items {
+         if !id.is_empty() {
+-            empty_tag(
+-                &mut w,
+-                "opf:itemref",
+-                &[("idref", id.as_str()), ("linear", "yes")],
+-            )?;
++            itemref(&mut w, id)?;
+         }
+     }
+     end_tag(&mut w, "opf:spine")?;
+@@ -331,4 +384,63 @@
+             Some("<opf:metadata><opf:title/></opf:metadata>")
+         );
+     }
++
++    fn spine_of(original: &str, sections: usize) -> Result<String, SerializeError> {
++        let hrefs: Vec<String> = (0..sections)
++            .map(|i| format!("Contents/section{i}.xml"))
++            .collect();
++        write_content_hpf(&hrefs, &[], &[], Some(original.as_bytes()))
++            .map(|out| String::from_utf8(out).unwrap())
++    }
++
++    const OPF: &str = r#"<opf:package xmlns:opf="http://www.idpf.org/2007/opf/"><opf:manifest/>"#;
++
++    #[test]
++    fn spine_linear_presence_and_value_follow_the_original() {
++        let original = format!(
++            r#"{OPF}<opf:spine><opf:itemref idref="header" linear="no"/><opf:itemref idref="section0"/><opf:itemref idref="section1" linear="yes"/></opf:spine></opf:package>"#
++        );
++        let s = spine_of(&original, 3).unwrap();
++        assert!(
++            s.contains(r#"<opf:itemref idref="header" linear="no"/>"#),
++            "{s}"
++        );
++        assert!(s.contains(r#"<opf:itemref idref="section0"/>"#), "{s}");
++        assert!(
++            s.contains(r#"<opf:itemref idref="section1" linear="yes"/>"#),
++            "{s}"
++        );
++        // A spine item the original did not have keeps the previous default.
++        assert!(
++            s.contains(r#"<opf:itemref idref="section2" linear="yes"/>"#),
++            "{s}"
++        );
++        // Repeated export from the same original is identical.
++        assert_eq!(spine_of(&original, 3).unwrap(), s);
++    }
++
++    #[test]
++    fn unsupported_or_conflicting_spine_linear_is_refused() {
++        let unknown = format!(
++            r#"{OPF}<opf:spine><opf:itemref idref="section0" linear="maybe"/></opf:spine></opf:package>"#
++        );
++        assert!(
++            matches!(spine_of(&unknown, 1), Err(SerializeError::UnsupportedInput(m)) if m.contains("linear"))
++        );
++        let conflict = format!(
++            r#"{OPF}<opf:spine><opf:itemref idref="section0" linear="no"/><opf:itemref idref="section0"/></opf:spine></opf:package>"#
++        );
++        assert!(
++            matches!(spine_of(&conflict, 1), Err(SerializeError::UnsupportedInput(m)) if m.contains("conflicting"))
++        );
++    }
++
++    #[test]
++    fn unreadable_original_content_hpf_keeps_previous_spine_default() {
++        let s = spine_of("<opf:package><opf:spine><opf:itemref idref=", 1).unwrap();
++        assert!(
++            s.contains(r#"<opf:itemref idref="section0" linear="yes"/>"#),
++            "{s}"
++        );
++    }
+ }
