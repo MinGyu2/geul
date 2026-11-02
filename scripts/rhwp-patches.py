@@ -11,7 +11,8 @@ PIN = "1a76570e833917d15817415a53c09ad61ab3203f"
 SERIES = ("patches/rhwp/hwpx-textdir-ltr.patch", "patches/rhwp/hwpx-duplicate-paragraph-ids.patch",
           "patches/rhwp/hwpx-clipboard-paragraph-ids.patch", "patches/rhwp/hwpx-spine-linear.patch",
           "patches/rhwp/hwpx-spine-validation.patch", "patches/rhwp/hwpx-manifest-order.patch",
-          "patches/rhwp/hwpx-charpr-child-presence.patch", "patches/rhwp/hwpx-strikeout-3d-placeholder.patch")
+          "patches/rhwp/hwpx-charpr-child-presence.patch", "patches/rhwp/hwpx-strikeout-3d-placeholder.patch",
+          "patches/rhwp/hwpx-strike3d-derived-styles.patch")
 SOURCE = ROOT / "target/rhwp-patched-source"
 MANIFEST = ROOT / "target/rhwp-patched-source.json"
 BUILD_PATHS = ("Cargo.toml", "Cargo.lock", "build.rs", "src", "assets", "crates", "vendor",

@@ -2377,5 +2377,193 @@
    "T011": "NOT STARTED"
   },
   "rawEvidence": "local ignored target/hwpx-fourstage-20261103/ (not published)"
+ },
+ "strike3dDerivedFollowup": {
+  "date": "2026-11-03",
+  "startHead": "0dd0db8fca7528cfb445cc9b751759028bd91b98",
+  "defect": "css_to_char_shape_id (HTML paste) and recolor_cell_text_black (CLI set-cell) cloned a charPr directly and kept hwpx_inactive_strike_3d on newly allocated definitions",
+  "reproduction": {
+   "htmlPasteRelease97714665": {
+    "newBoldStrikeout": {
+     "shape": "3D",
+     "color": "#FF0000"
+    },
+    "checkSaved": [
+     "unsafe",
+     [
+      "partChanged:Contents/header.xml"
+     ]
+    ]
+   },
+   "cliSetCellBaseline": {
+    "newBlackStrikeout": {
+     "shape": "3D",
+     "color": "#000000"
+    }
+   }
+  },
+  "otherPathsInspected": "find_or_create_char_shape and updateStyleShapes use CharShapeMods::apply_to (already cleared)",
+  "fix": "patches/rhwp/hwpx-strike3d-derived-styles.patch: clear the flag where raw_data is cleared; equality-based reuse unchanged",
+  "finalRelease": {
+   "generation": "fe235d2f5df9cac5c2756949f6aba182a4e6e0bca4cd59fe1084c07d80d2d2d4",
+   "artifacts": {
+    "rhwp.js": "70cde06a369fa7fd4fc8bc8f3d6acaee158596ba1a116a2c72159002b0b5654e",
+    "rhwp_bg.wasm": "c631c4e9b77c6bf745b5ab027ec802da249992cc47f66e579c9cf6a329603af5"
+   },
+   "patches": [
+    {
+     "name": "hwpx-textdir-ltr.patch",
+     "sha256": "abab4bc23a89dfec82aa63d36d32cd7192e5b14fefd2dd56231c4bb5676c6cc0"
+    },
+    {
+     "name": "hwpx-duplicate-paragraph-ids.patch",
+     "sha256": "79fd8f41c4cabe82b6b0b66265f5a1b3feef08a4c0b07af30cf7f788e11a9787"
+    },
+    {
+     "name": "hwpx-clipboard-paragraph-ids.patch",
+     "sha256": "30ac44ee1283f55605e49d09e446f5bbb5104b948ce2e7b74b87a9652e8a5c8e"
+    },
+    {
+     "name": "hwpx-spine-linear.patch",
+     "sha256": "080070cdfdaffe9b80b61ddeb6ddec8e49080b168649f92932caaf58f08298eb"
+    },
+    {
+     "name": "hwpx-spine-validation.patch",
+     "sha256": "0aae77fae8f7eb5ab1c1c83782c0930aa3501b1fd262b1e78706ebed35eeed5d"
+    },
+    {
+     "name": "hwpx-manifest-order.patch",
+     "sha256": "469c2db1c8070e18b87b02f8e8677dda48f746d3ab2ebf27706fe239453a6dc2"
+    },
+    {
+     "name": "hwpx-charpr-child-presence.patch",
+     "sha256": "cbe9574c01e72481d617c352a13da09ba5728a502713a0338ad80c6ab0347573"
+    },
+    {
+     "name": "hwpx-strikeout-3d-placeholder.patch",
+     "sha256": "5f9ca456cadaf6b895590dcf1755f80e37534e9052ca191826b1ae0f43adc281"
+    },
+    {
+     "name": "hwpx-strike3d-derived-styles.patch",
+     "sha256": "992074268325dcc9f1bcc972455a6b90e202db6d25efaa4295b36c3a940e19c2"
+    }
+   ],
+   "sourceTreeSha256": "e89f2841ea3b52476c2dc3ba34328515c4cdd98ae4274ca8f404d4c2c3383937",
+   "sourceFingerprint": "8c859d808cc1ab222708ec4fb147fac6321902f5da318a8f7fc681b5ae8ae9f4"
+  },
+  "engineUnitTests": {
+   "candidate": "test result: FAILED. 3774 passed; 121 failed; 13 ignored; 0 measured; 0 filtered out; finished in 132.57s",
+   "previousSeries": "3773 passed; 121 failed (same 121)",
+   "focused": "test result: ok. 31 passed; 0 failed; 0 ignored; 0 measured; 3877 filtered out; finished in 0.01s"
+  },
+  "regression": {
+   "htmlPaste": {
+    "newCharPr": {
+     "8": {
+      "bold": true,
+      "strikeout": {
+       "shape": "NONE",
+       "color": "#FF0000"
+      }
+     },
+     "9": {
+      "bold": false,
+      "strikeout": {
+       "shape": "SOLID",
+       "color": "#FF0000"
+      }
+     }
+    },
+    "sourceCharPr0": {
+     "shape": "3D",
+     "color": "#FF0000"
+    },
+    "checkSaved": [
+     "safe",
+     []
+    ]
+   },
+   "tableCell": {
+    "sourceCharPr7": {
+     "shape": "3D",
+     "color": "#000000"
+    },
+    "newBlackCharPr": "8",
+    "newStrikeout": {
+     "shape": "NONE",
+     "color": "#000000"
+    },
+    "reusedOnSecondTable": true
+   },
+   "cliSha256": "85ad27c5c1d0d5407352b4e6b4215d80bc3620dc0f2a1c95e3d4b82897258bb2"
+  },
+  "otherRegressions": "hwpx-strikeout, hwpx-charpr-presence, hwpx-duplicate-id, hwpx-spine-linear PASS on candidate",
+  "native": {
+   "listMarkerHead+blankHwpx": {
+    "status": "PASS",
+    "generation": "fe235d2f5df9cac5c2756949f6aba182a4e6e0bca4cd59fe1084c07d80d2d2d4",
+    "app": "2673363242817c4d7610f2c396d65dc04ba5279ce02012d3d3e8f5571c3fda7d",
+    "preflight": "safe",
+    "save": "saved",
+    "reopen": "한글",
+    "package": {
+     "zipValid": true,
+     "partSetEqual": true,
+     "headerAndUnrelatedXmlEqual": true,
+     "previewIsKnownBlank": true,
+     "paragraphIdsEqual": true,
+     "paragraphCount": 44,
+     "repeatedParagraphIds": 42,
+     "expectedText": "한글"
+    },
+    "negatives": {
+     "previewNegative": {
+      "error": "UnsafeSave",
+      "unchanged": true
+     },
+     "unsafeNegative": {
+      "error": "UnsafeSave",
+      "unchanged": true
+     }
+    },
+    "cleanup": true
+   },
+   "3dFixture": {
+    "status": "PASS",
+    "generation": "fe235d2f5df9cac5c2756949f6aba182a4e6e0bca4cd59fe1084c07d80d2d2d4",
+    "app": "2673363242817c4d7610f2c396d65dc04ba5279ce02012d3d3e8f5571c3fda7d",
+    "preflight": "safe",
+    "save": "saved",
+    "reopen": "한글",
+    "package": {
+     "zipValid": true,
+     "partSetEqual": true,
+     "headerAndUnrelatedXmlEqual": true,
+     "previewIsKnownBlank": true,
+     "paragraphIdsEqual": true,
+     "paragraphCount": 44,
+     "repeatedParagraphIds": 42,
+     "expectedText": "한글"
+    },
+    "negatives": {},
+    "cleanup": true
+   }
+  },
+  "notRun": [
+   "Stage 4 three-format native save, IME/ordinary/latency suites (editor surface unchanged)",
+   "GPU desktop",
+   "Wayland",
+   "fcitx5",
+   "Windows",
+   "macOS"
+  ],
+  "status": {
+   "T007": "INCOMPLETE",
+   "T008": "INCOMPLETE",
+   "T009": "unchecked",
+   "T010": "INCOMPLETE / RHWP Undo-Redo NO-GO",
+   "T011": "NOT STARTED"
+  },
+  "rawEvidence": "local ignored target/hwpx-strike3d-20261103/ (not published)"
  }
 }

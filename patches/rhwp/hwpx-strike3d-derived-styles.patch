@@ -1,0 +1,87 @@
+--- a/src/cli/commands/edit/cells.rs
++++ b/src/cli/commands/edit/cells.rs
+@@ -51,6 +51,9 @@
+         return false;
+     };
+     let mut black = base;
++    // A newly allocated black style uses the standard inactive-strikeout spelling;
++    // an equal existing charPr found below is reused with its own spelling.
++    black.hwpx_inactive_strike_3d = false;
+     black.raw_data = None; // 원본 바이트를 버려 변경된 필드가 직렬화되게 한다.
+     black.text_color = 0;
+     black.italic = false;
+--- a/src/document_core/commands/html_import/inline_content.rs
++++ b/src/document_core/commands/html_import/inline_content.rs
+@@ -169,6 +169,10 @@
+         // PartialEq 가 raw_data 를 비교에서 제외하므로 아래 중복 검색도 이를 걸러내지 못한다.
+         // CharShapeMods::apply_to(model/style.rs)가 같은 이유로 첫 줄에서 raw_data 를 비운다.
+         cs.raw_data = None;
++        // A new definition derived here must not inherit the source charPr's HWPX
++        // "3D" inactive-strikeout spelling (apply_to clears it for the same reason).
++        // Reusing an equal existing charPr below keeps that charPr's own spelling.
++        cs.hwpx_inactive_strike_3d = false;
+ 
+         // CSS 속성 파싱 및 적용
+         let css_lower = css.to_lowercase();
+--- a/src/document_core/commands/html_import.rs
++++ b/src/document_core/commands/html_import.rs
+@@ -920,3 +920,59 @@
+         );
+     }
+ }
++
++#[cfg(test)]
++mod strike_3d_provenance_tests {
++    use super::*;
++
++    /// Doc whose charPr 0 is parsed from HWPX with the inactive "3D" spelling.
++    fn core_with_3d_source() -> DocumentCore {
++        let xml = r##"<hh:head xmlns:hh="http://www.hancom.co.kr/hwpml/2011/head"><hh:refList><hh:charProperties itemCnt="1"><hh:charPr id="0" height="1000" textColor="#000000" shadeColor="none" useFontSpace="0" useKerning="0" symMark="NONE" borderFillIDRef="0"><hh:fontRef hangul="0" latin="0" hanja="0" japanese="0" other="0" symbol="0" user="0"/><hh:strikeout shape="3D" color="#FF0000"/></hh:charPr></hh:charProperties></hh:refList></hh:head>"##;
++        let (doc_info, _) = crate::parser::hwpx::header::parse_hwpx_header(xml).unwrap();
++        assert!(doc_info.char_shapes[0].hwpx_inactive_strike_3d);
++        let mut core = DocumentCore::new_empty();
++        core.document.doc_info = doc_info;
++        core
++    }
++
++    fn strikeout(core: &DocumentCore, id: u32) -> String {
++        let xml = crate::serializer::hwpx::char_shapes::char_pr_xml(
++            id,
++            &core.document.doc_info.char_shapes[id as usize],
++        )
++        .unwrap();
++        let start = xml.find("<hh:strikeout").unwrap();
++        xml[start..start + xml[start..].find("/>").unwrap() + 2].to_string()
++    }
++
++    #[test]
++    fn html_paste_new_charpr_does_not_inherit_3d_spelling() {
++        let mut core = core_with_3d_source();
++        let bold = core.css_to_char_shape_id("font-weight:bold");
++        assert_ne!(bold, 0, "bold must allocate a new definition");
++        let cs = &core.document.doc_info.char_shapes[bold as usize];
++        assert!(cs.bold && !cs.strikethrough && !cs.hwpx_inactive_strike_3d);
++        assert_eq!(
++            strikeout(&core, bold),
++            r##"<hh:strikeout shape="NONE" color="#FF0000"/>"##
++        );
++        // Source unchanged.
++        assert_eq!(
++            strikeout(&core, 0),
++            r##"<hh:strikeout shape="3D" color="#FF0000"/>"##
++        );
++        // Active strikeout writes a real line.
++        let strike = core.css_to_char_shape_id("text-decoration:line-through");
++        assert_eq!(
++            strikeout(&core, strike),
++            r##"<hh:strikeout shape="SOLID" color="#FF0000"/>"##
++        );
++        // A span without formatting reuses the equal source charPr (and its spelling).
++        let count = core.document.doc_info.char_shapes.len();
++        assert_eq!(core.css_to_char_shape_id(""), 0);
++        assert_eq!(core.document.doc_info.char_shapes.len(), count);
++        assert!(core.document.doc_info.char_shapes[0].hwpx_inactive_strike_3d);
++        // The same bold span reuses the new definition.
++        assert_eq!(core.css_to_char_shape_id("font-weight:bold"), bold);
++    }
++}
