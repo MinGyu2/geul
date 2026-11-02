@@ -971,3 +971,7 @@ Geul의 `safe` 입증 의무, unsafe/unknown 저장 차단, loss report·preflig
 ### 독립 검증기: ZIP 중복 이름을 압축 해제 전에 거부 (2026-11-03 Stage 2)
 
 `archive_parts`는 중복 이름을 거부했지만 그 전에 `testzip()`이 모든 항목을 열어 압축을 풀었고(문서의 "어떤 부분도 읽기 전" 보장과 어긋남), 중복 확인은 이름마다 `names.count`를 불러 이름 수의 제곱에 비례했다(같은 메모리 이름 목록 측정: 20,000개 5,070 ms 대 `Counter` 3.7 ms). 이제 중앙 디렉터리 메타데이터에서 이름을 모아 한 번의 `Counter` 집계로 중복을 거부한 **다음에** `testzip()`으로 CRC를 확인하고 부분을 읽는다. `ZipFile.open`을 기록하는 시험이 중복 거부 전에 열린 항목이 0개임을 확인한다(수정 전에는 5개). 원본·결과 중복 거부, 손상 항목·누락·추가·바이너리 변경 거부, 순서만 다른 패키지와 표기만 다른 XML 허용, 실제 게시 파일 비교는 그대로 통과한다. 운영 패키지 검사기·저장 정책·엔진은 바꾸지 않았다.
+
+### `charPr` 음성 시험의 원인 단언 (2026-11-03 Stage 3)
+
+`scripts/tests/hwpx-charpr-presence-roundtrip.py`의 음성 사례는 이미 `section0.xml` 차이로 unsafe인 `blank_hwpx.hwpx`를 변형하고 `verdict != "safe"`만 확인했다. 그래서 의도한 `charPr` 결함을 놓쳐도 통과할 수 있었다: 속성 순서만 바꾼 무변형 대조군도 같은 조건을 통과하며 그 판정은 변형 전과 같다(`partChanged:Contents/section0.xml`만). 이제 (1) 변형 전 무편집 내보내기가 `safe`이고 근거가 없는 `list_marker_head_synthetic.hwpx`를 독립 기준으로 쓰고, 알 수 없는 자식·상충 중복 `underline`·잘못된 열거값은 판정이 정확히 `unsafe`·`["partChanged:Contents/header.xml"]`이며 독립 비교에서 header 차이가 변형한 `charPr id="0"` 안에만 있어야 한다(다른 `charPr`와 나머지 header 동일). (2) 없는 `charPrIDRef`는 **내보내기** 단계 거부와 진단 `charPrIDRef: [77]`, 깨진 header는 **열기** 단계 XML 파싱 오류를 확인하고 출력 파일이 없어야 한다. 모든 경우 원본 바이트가 그대로다. (3) `blank_hwpx`에서는 같은 변형이 기존 근거 위에 정확히 header 근거 하나만 더하는지 차등 비교한다. 양성 사례와 HWP5 기준 비교는 그대로 통과한다. 시험만 바꿨고 엔진·운영 판정기·저장 정책은 바꾸지 않았다(Release `65442a92…`).

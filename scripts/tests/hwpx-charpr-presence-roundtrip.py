@@ -59,7 +59,7 @@ const emit = (d, name, hwp = false) => {
     result[name] = 'exported';
   } catch (err) { result[name] = 'refused: ' + String(err?.message ?? err); } finally { e?.free(); }
 };
-let d;
+let d, stage = 'open';
 try {
   if (mode === 'blank-hwp5') {
     d = m.HwpDocument.createEmpty(); d.createBlankDocument();
@@ -67,6 +67,7 @@ try {
     emit(d, 'hwp5-blank.hwpx');
   } else {
     d = new m.HwpDocument(readFileSync(source));
+    stage = 'export';
     emit(d, mode + '-noedit.hwpx'); emit(d, mode + '-repeat.hwpx');
     if (mode === 'edit') {
       ok(d.insertText(0, 0, 0, '한글😀'));
@@ -77,7 +78,7 @@ try {
       emit(d, 'edit-bold.hwpx');
     }
   }
-} catch (err) { result.error = String(err?.message ?? err); } finally { d?.free(); }
+} catch (err) { result.error = String(err?.message ?? err); result.errorStage = stage; } finally { d?.free(); }
 console.log(JSON.stringify(result));
 """
 
@@ -213,33 +214,122 @@ def hwp5_unchanged(package, baseline, out):
     return rows
 
 
+HEADER_FINDING = "partChanged:Contents/header.xml"
+
+
+def confined_to_char_pr(source, output, char_pr_id):
+    """The header difference lies inside one charPr: all others and the rest are equal."""
+    x, y = (oracle.parse(part(p, "Contents/header.xml")) for p in (source, output))
+    a, b = ({c.get("id"): c for c in t.iter(HH + "charPr")} for t in (x, y))
+    assert a.keys() == b.keys(), "charPr id set changed"
+    others = [cid for cid in a if cid != char_pr_id]
+    assert all(oracle.canonical_events(a[c]) == oracle.canonical_events(b[c]) for c in others), "other charPr changed"
+    assert oracle.canonical_events(a[char_pr_id]) != oracle.canonical_events(b[char_pr_id]), "mutated charPr unchanged"
+    for tree, table in ((x, a), (y, b)):
+        parent = next(p for p in tree.iter() if table[char_pr_id] in list(p))
+        parent.remove(table[char_pr_id])
+    assert oracle.canonical_events(x) == oracle.canonical_events(y), "difference outside the mutated charPr"
+    return True
+
+
+def char_pr_0(mutate):
+    """Apply a text mutation to the body of the hh:charPr with id 0."""
+    def change(header):
+        match = re.search(r'(<hh:charPr id="0"[^>]*>)(.*?)(</hh:charPr>)', header, flags=re.S)
+        assert match, "fixture has no charPr id 0"
+        return header[:match.start(2)] + mutate(match[2]) + header[match.end(2):]
+    return change
+
+
+# Mutations a parser reads but cannot represent faithfully: preflight must
+# report exactly the header change, confined to the mutated charPr.
+def _underline(body, replacement):
+    """Replace the charPr's underline, or add one when the source omitted it."""
+    if "<hh:underline " in body:
+        return re.sub(r"<hh:underline [^>]*/>", lambda _: replacement, body, count=1)
+    return body + replacement
+
+
+PRESERVATION_CASES = {
+    "unknown-child": lambda body: body + "<hh:unknownChild/>",
+    "conflicting-duplicate-child": lambda body: _underline(
+        body, '<hh:underline type="BOTTOM" shape="SOLID" color="#000000"/>'
+        '<hh:underline type="NONE" shape="SOLID" color="#000000"/>'),
+    "invalid-enum": lambda body: _underline(body, '<hh:underline type="CENTER" shape="SOLID" color="#000000"/>'),
+}
+
+
+def outcome(package, checker, fixture, folder):
+    folder.mkdir()
+    steps = node(package, fixture, folder, "neg")
+    output = folder / "neg-noedit.hwpx"
+    if steps.get("neg-noedit.hwpx") == "exported":
+        return steps, output, preflight(checker, fixture, output)
+    return steps, None, None
+
+
 def negatives(package, checker, out):
+    """Each negative proves its own cause; an unrelated finding cannot satisfy it."""
     rows = []
-    cases = {
-        "unknown-child": dict(header=lambda h: h.replace("</hh:charPr>", "<hh:unknownChild/></hh:charPr>", 1)),
-        "conflicting-duplicate-child": dict(header=lambda h: h.replace(
-            "</hh:charPr>", '<hh:underline type="BOTTOM" shape="SOLID" color="#000000"/><hh:underline type="NONE" shape="SOLID" color="#000000"/></hh:charPr>', 1)),
-        "invalid-enum": dict(header=lambda h: h.replace(
-            "</hh:charPr>", '<hh:underline type="CENTER" shape="SOLID" color="#000000"/></hh:charPr>', 1)),
-        "missing-charPr-reference": dict(section=lambda s: re.sub(r'charPrIDRef="\d+"', 'charPrIDRef="77"', s, count=1)),
-        "malformed-header": dict(header=lambda h: h[: len(h) // 2]),
-    }
-    for name, change in cases.items():
+    # Independent safe baseline: unedited export of the unmodified fixture is safe.
+    steps, _, baseline = outcome(package, checker, EXPLICIT, out / "negative-baseline")
+    assert baseline == ("safe", []), baseline
+    for name, mutate in PRESERVATION_CASES.items():
         fixture = out / f"negative-{name}.hwpx"
-        rewrite(BLANK, fixture, **change)
+        rewrite(EXPLICIT, fixture, header=char_pr_0(mutate))
+        assert part(fixture, "Contents/header.xml") != part(EXPLICIT, "Contents/header.xml"), name
         before = sha(fixture)
-        folder = out / f"negative-{name}"
-        folder.mkdir()
-        steps = node(package, fixture, folder, "neg")
-        output = folder / "neg-noedit.hwpx"
-        if steps.get("neg-noedit.hwpx") == "exported":
-            verdict = preflight(checker, fixture, output)
-            assert verdict[0] != "safe", (name, verdict)
-        else:
-            verdict = ("export refused", [steps.get("neg-noedit.hwpx") or steps.get("error")])
+        steps, output, verdict = outcome(package, checker, fixture, out / f"negative-{name}")
+        assert verdict == ("unsafe", [HEADER_FINDING]), (name, steps, verdict)
+        assert confined_to_char_pr(fixture, output, "0")
         assert sha(fixture) == before
-        rows.append({"name": name, "result": verdict})
+        rows.append({"name": name, "category": "preservation", "baseline": "safe", "result": verdict,
+                     "differenceConfinedToCharPr": "0"})
+    # Engine-level refusals: exact stage and diagnostic, no output published.
+    engine_cases = {
+        "missing-charPr-reference": (dict(section=lambda s: re.sub(r'charPrIDRef="\d+"', 'charPrIDRef="77"', s, count=1)),
+                                     "export", "charPrIDRef: [77]"),
+        "malformed-header": (dict(header=lambda h: h[: len(h) // 2]), "open", "XML"),
+    }
+    for name, (change, stage, needle) in engine_cases.items():
+        fixture = out / f"negative-{name}.hwpx"
+        rewrite(EXPLICIT, fixture, **change)
+        before = sha(fixture)
+        steps, output, verdict = outcome(package, checker, fixture, out / f"negative-{name}")
+        assert output is None and not (out / f"negative-{name}" / "neg-noedit.hwpx").exists(), (name, steps)
+        if stage == "export":
+            message = steps.get("neg-noedit.hwpx", "")
+            assert message.startswith("refused:") and needle in message, (name, steps)
+        else:
+            assert steps.get("errorStage") == "open" and needle in steps.get("error", ""), (name, steps)
+        assert sha(fixture) == before
+        rows.append({"name": name, "category": "engine", "stage": stage, "diagnostic": message if stage == "export" else steps["error"]})
     return rows
+
+
+def differential(package, checker, out):
+    """blank_hwpx is already unsafe (section0); a charPr mutation must add only its own finding."""
+    _, _, baseline = outcome(package, checker, BLANK, out / "differential-baseline")
+    assert baseline[0] == "unsafe" and HEADER_FINDING not in baseline[1], baseline
+    rows = {}
+    # Weak legacy condition: a no-op lexical change (attribute order) is "not safe"
+    # only because of the unrelated section0 finding.
+    control = out / "differential-noop.hwpx"
+    rewrite(BLANK, control, header=lambda h: re.sub(r'<hh:charPr id="0" height="(\d+)"', r'<hh:charPr height="\1" id="0"', h, count=1))
+    assert part(control, "Contents/header.xml") != part(BLANK, "Contents/header.xml")
+    _, _, noop = outcome(package, checker, control, out / "differential-noop")
+    assert noop[0] != "safe", "legacy condition would pass"
+    assert noop == baseline, (noop, baseline)
+    rows["noop-control"] = {"verdict": noop, "legacyConditionPassesWithoutDefect": True}
+    for name, mutate in PRESERVATION_CASES.items():
+        fixture = out / f"differential-{name}.hwpx"
+        rewrite(BLANK, fixture, header=char_pr_0(mutate))
+        assert part(fixture, "Contents/header.xml") != part(BLANK, "Contents/header.xml"), name
+        _, output, verdict = outcome(package, checker, fixture, out / f"differential-{name}")
+        assert verdict[0] == "unsafe" and set(verdict[1]) - set(baseline[1]) == {HEADER_FINDING}, (name, verdict)
+        assert confined_to_char_pr(fixture, output, "0")
+        rows[name] = {"verdict": verdict, "addedFinding": HEADER_FINDING}
+    return {"baseline": baseline, "cases": rows}
 
 
 def main():
@@ -261,6 +351,7 @@ def main():
     report["positive"] = positives(args.package, args.checker.resolve(), args.out)
     report["hwp5"] = hwp5_unchanged(args.package, args.baseline.resolve() if args.baseline else None, args.out)
     report["negative"] = negatives(args.package, args.checker.resolve(), args.out)
+    report["differential"] = differential(args.package, args.checker.resolve(), args.out)
     report["status"] = "PASS"
     (args.out / "result.json").write_text(json.dumps(report, ensure_ascii=False, indent=2) + "\n")
     print(json.dumps({"status": "PASS", "appended": {k: v for k, v in report["positive"].items() if k.startswith("edit-")},
