@@ -832,3 +832,15 @@ IBus 전역 선택 명령은 `setxkbmap` 부재로 exit1이었지만 각 입력�
 위 「외부 HWPX 보존 확대의 미완료 범위」는 이전 조사 당시의 상태다. 후속 구현은 `종이기준.hwpx` 한 사례의 명시적 LTR·문단 ID·세 heading switch를 고정 rhwp 패치로 보존한다. 편집 전 preflight는 `unsafe`(header/section 변경)에서 `safe`(findings 0)로 바뀌었고, comparator는 수정하지 않았다. 제품 Release WASM은 패치/소스 fingerprint를 포함한 schema 3 신원으로 빌드됐다.
 
 실제 앱에서는 편집 뒤 원본의 빈 `PrvImage.png` 때문에 처음에 `previewStale`가 발생했다. 이 샘플의 빈 본문·CRLF 글 미리보기·724×1024 흰색 PNG를 CRC/압축/전체 바이트로 감사한 후, `preview.rs`에서 그 **정확한 4502바이트**만 문서 독립의 빈 미리보기로 인정한다. 그 밖의 단색 PNG와 임의 미리보기는 계속 거절한다. ZIP 원본 이미지는 재생성하거나 바꾸지 않는다. 실제 IBus 편집→save IPC→게시→닫기·재열기와 XML/문단 ID/관계/다른 부분의 동등성이 통과했고, 중복 ID 음성은 앱에서 저장을 막아 원본 해시를 보존했다. 재현 근거와 남은 범위는 [후속 구현 기록](hwpx-textdir-candidate.md#stage-2-후속-구현수용-2026-11-02)에 있다. 이 사례는 다른 외부 HWPX, 내용 있는 미리보기, 미지원 XML 구조를 자동으로 허용하지 않는다.
+
+### 복구 정리 fsync와 세션 소유권 후속 안정화 (2026-11-02)
+
+retirement fsync 실패 뒤 새 durable 체크포인트의 성공을 유지하는 기존 교정은 그대로다. 후속 재현에서는 `discard`의 성공한 디렉터리 fsync를 소유권 정리에 반영하지 않아 `forget_session`이 불필요한 확인 실패를 보고했고, 다른 세션의 게시 성공은 미확정 집합만 비워 이전 세션의 absent ID를 남겼다. `saved`는 잠금 획득 Result를 검사하지 않았다.
+
+현재 디렉터리 fsync 성공 뒤 공통 reconciliation은 미확정 ID 중 `.pending`과 `.recovery`가 **모두 NotFound로 확인된** ID만 모든 세션/세대의 소유 이력에서 제거한다. 기존 파일·부분 파일·조회 오류가 있는 ID는 유지한다. 새 게시의 fsync는 이전 unlink를 확인하지만, 그 뒤 수행하는 retirement unlink는 별도의 확인이 필요하다. 게시 실패에서는 reconciliation과 이전 후보 retirement를 실행하지 않는다. 전체 디렉터리를 반복 스캔하지 않고 추적한 미확정 ID만 조회한다.
+
+`discard`, `saved`, `forget_session`은 메모리 Mutex → 배타적 DirectoryLock 순서로 실행하며 잠금을 다시 중첩 획득하지 않는다. `saved`의 잠금 실패는 정리와 확인을 시작하지 않고 best effort로 반환한다. 디스크의 유효 체크포인트를 그대로 두며 문서 저장을 실패시키지 않는다. `forget_session`은 먼저 tombstone을 기록하고, 삭제 자체의 실패와 unlink 뒤 fsync 실패를 구별한다. 뒤이은 성공한 discard fsync가 앞선 unlink를 확인하면 별도의 중복 확인은 하지 않는다. 실제 삭제 실패·디렉터리 접근 실패·아직 남은 소유권은 계속 실패로 반환한다. 이후 정리 재시도는 가능하고 늦은 체크포인트는 계속 거부한다.
+
+테스트 seam은 publication/retirement/discard/saved/forget의 디렉터리 fsync를 구분하고, 주입된 실패에서는 실제 fsync를 호출하기 **전에** 반환한다. 시도별 성공/실패를 테스트에서 기록한다. 디렉터리 잠금 실패 주입은 fsync 실패와 독립적이다. 회귀는 성공한 discard 확인의 재사용, 모든 관련 sync 실패와 재시도, A의 retirement 뒤 B 게시, 다른 세대/Save As 소유 이력·유효/손상/부분 파일 보존, 일부 unlink 실패, saved 잠금 실패/재시도와 동시 snapshot/forget을 확인한다. 원본 문서·create-only 복원 계약은 유지한다. 이 검증은 반환 경로와 현재 파일 상태를 확인하며 실제 전원 차단의 물리적 효과를 재현하지 않는다.
+
+검증: 보호 빌드로 컴파일 후 기존 절차에 따라 호스트에서 Rust 실행파일을 실행했다. recovery 26 PASS/1 ignored(하위 프로세스 crash helper), save 102 PASS/13 ignored, protected fmt 및 strict Clippy(`--lib --bins --tests -- -D warnings`) PASS. UI/IME·IPC 명령 형식은 변경하지 않아 네이티브 UI 재검사는 실행하지 않았다.

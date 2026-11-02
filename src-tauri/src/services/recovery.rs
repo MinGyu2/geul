@@ -18,6 +18,16 @@ const MAX_RECORDS: usize = 128;
 #[cfg(target_os = "linux")]
 const MAGIC: &[u8; 4] = b"GRR1";
 
+#[cfg(target_os = "linux")]
+#[derive(Clone, Copy)]
+enum SyncOperation {
+    Publish,
+    Retire,
+    Discard,
+    Saved,
+    Forget,
+}
+
 /// Test-only fault injection local to recovery records (independent of document publication faults).
 #[cfg(all(test, target_os = "linux"))]
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -26,9 +36,15 @@ pub(crate) enum RecoveryFault {
     PublishDirSync,
     /// Directory fsync confirming the unlink of superseded records fails.
     RetireDirSync,
+    DiscardDirSync,
+    SavedDirSync,
+    ForgetDirSync,
+    DirectoryLock,
 }
 #[cfg(all(test, target_os = "linux"))]
 thread_local! {
+    static SYNC_FAILURES: std::cell::RefCell<Vec<RecoveryFault>> = const { std::cell::RefCell::new(Vec::new()) };
+    static SYNC_EVENTS: std::cell::RefCell<Vec<(RecoveryFault, bool)>> = const { std::cell::RefCell::new(Vec::new()) };
     pub(crate) static RECOVERY_FAULT: std::cell::Cell<Option<RecoveryFault>> = const { std::cell::Cell::new(None) };
 }
 
@@ -79,6 +95,10 @@ struct DirectoryLock<'a>(&'a std::fs::File);
 impl<'a> DirectoryLock<'a> {
     fn take(dir: &'a std::fs::File, exclusive: bool) -> Result<Self, DocumentError> {
         use std::os::fd::AsRawFd;
+        #[cfg(test)]
+        if RECOVERY_FAULT.with(|f| f.get()) == Some(RecoveryFault::DirectoryLock) {
+            return Err(failure());
+        }
         loop {
             let operation = if exclusive {
                 libc::LOCK_EX
@@ -113,7 +133,7 @@ struct Memory {
     /// generation but changes that path, and `put` never replaces a record for a different original.
     ids: std::collections::BTreeMap<(u64, u64), Vec<(String, String)>>,
     forgotten: std::collections::BTreeSet<u64>,
-    /// Superseded records unlinked by `retire` whose directory fsync failed: the cleanup is not confirmed durable, so
+    /// Owned cleanup not yet confirmed by a directory fsync: the cleanup is not confirmed durable, so
     /// their IDs stay owned until a later successful directory fsync (next publication, `saved` or `forget_session`).
     unconfirmed_retirements: std::collections::BTreeSet<String>,
 }
@@ -395,19 +415,17 @@ impl RecoveryStore {
             }
         };
         let memory = &mut *ids;
-        // `put` succeeded only after a directory fsync, which also persisted earlier unlinks in this directory.
-        memory.unconfirmed_retirements.clear();
-        if let Some(history) = memory.ids.get_mut(&key) {
-            Self::retire(
-                &dir,
-                &candidate.id,
-                &original,
-                generation,
-                revision,
-                history,
-                &mut memory.unconfirmed_retirements,
-            );
-        }
+        // Publication fsync covers preceding tracked unlinks. Reconcile every
+        // session while holding the same directory lock used for retirement.
+        Self::retire(
+            &dir,
+            &candidate.id,
+            &original,
+            generation,
+            revision,
+            key,
+            memory,
+        );
         Ok(candidate)
     }
 
@@ -422,10 +440,14 @@ impl RecoveryStore {
         original: &str,
         generation: u64,
         revision: u64,
-        history: &mut Vec<(String, String)>,
-        unconfirmed: &mut std::collections::BTreeSet<String>,
+        key: (u64, u64),
+        memory: &mut Memory,
     ) {
         let Ok(_lock) = DirectoryLock::take(dir, true) else {
+            return;
+        };
+        Self::reconcile(dir, memory);
+        let Some(history) = memory.ids.get(&key) else {
             return;
         };
         let mut removed = Vec::new();
@@ -441,28 +463,59 @@ impl RecoveryStore {
                 removed.push(id.clone());
             }
         }
-        if !removed.is_empty() && !Self::confirm_retirement(dir) {
-            unconfirmed.extend(removed);
+        if !removed.is_empty() {
+            memory.unconfirmed_retirements.extend(removed);
+            if Self::sync_directory(dir, SyncOperation::Retire) {
+                Self::reconcile(dir, memory);
+            }
         }
-        let absent = |name: String| {
-            std::fs::symlink_metadata(Self::base(dir).join(name))
-                .is_err_and(|e| e.kind() == std::io::ErrorKind::NotFound)
-        };
-        history.retain(|(id, _)| {
-            format!("{id}.recovery") == keep
-                || unconfirmed.contains(id)
-                || !absent(format!("{id}.recovery"))
-                || !absent(format!("{id}.pending"))
-        });
     }
 
-    /// Directory fsync that confirms earlier unlinks of superseded records.
-    fn confirm_retirement(dir: &std::fs::File) -> bool {
-        #[cfg(test)]
-        if RECOVERY_FAULT.with(|f| f.get()) == Some(RecoveryFault::RetireDirSync) {
-            return false;
+    // Called only after a successful fsync covering tracked unlinks, under
+    // memory -> exclusive directory lock. Never infer absence from other errors.
+    fn reconcile(dir: &std::fs::File, memory: &mut Memory) {
+        let absent = |id: &str| {
+            ["pending", "recovery"].iter().all(|suffix| {
+                std::fs::symlink_metadata(Self::base(dir).join(format!("{id}.{suffix}")))
+                    .is_err_and(|e| e.kind() == std::io::ErrorKind::NotFound)
+            })
+        };
+        let confirmed: std::collections::BTreeSet<_> = memory
+            .unconfirmed_retirements
+            .iter()
+            .filter(|id| absent(id))
+            .cloned()
+            .collect();
+        for history in memory.ids.values_mut() {
+            history.retain(|(id, _)| !confirmed.contains(id));
         }
-        dir.sync_all().is_ok()
+        memory
+            .unconfirmed_retirements
+            .retain(|id| !confirmed.contains(id));
+    }
+
+    fn sync_directory(dir: &std::fs::File, operation: SyncOperation) -> bool {
+        #[cfg(test)]
+        let fault = match operation {
+            SyncOperation::Publish => RecoveryFault::PublishDirSync,
+            SyncOperation::Retire => RecoveryFault::RetireDirSync,
+            SyncOperation::Discard => RecoveryFault::DiscardDirSync,
+            SyncOperation::Saved => RecoveryFault::SavedDirSync,
+            SyncOperation::Forget => RecoveryFault::ForgetDirSync,
+        };
+        #[cfg(not(test))]
+        let _ = operation;
+        #[cfg(test)]
+        if RECOVERY_FAULT.with(|f| f.get()) == Some(fault)
+            || SYNC_FAILURES.with(|f| f.borrow().contains(&fault))
+        {
+            SYNC_EVENTS.with(|e| e.borrow_mut().push((fault, false)));
+            return false; // Do not perform a real successful fsync before injecting failure.
+        }
+        let success = dir.sync_all().is_ok();
+        #[cfg(test)]
+        SYNC_EVENTS.with(|e| e.borrow_mut().push((fault, success)));
+        success
     }
 
     fn put(
@@ -545,95 +598,129 @@ impl RecoveryStore {
             }
         }
         // A published name without a confirmed directory fsync is reported as failure; predecessors are kept.
-        #[cfg(test)]
-        if RECOVERY_FAULT.with(|f| f.get()) == Some(RecoveryFault::PublishDirSync) {
+        if !Self::sync_directory(dir, SyncOperation::Publish) {
             return Err(failure());
         }
-        dir.sync_all().map_err(|_| failure())?;
         Ok(Self::candidate(final_name, Some(header)))
+    }
+
+    // Caller holds memory and the exclusive directory lock. Successful unlink
+    // and confirmed durability are separate: a later sync may finish cleanup.
+    fn discard_locked(
+        dir: &std::fs::File,
+        memory: &mut Memory,
+        name: &str,
+    ) -> Result<(), DocumentError> {
+        std::fs::remove_file(Self::base(dir).join(name)).map_err(|_| failure())?;
+        let id = name.split_once('.').ok_or_else(failure)?.0;
+        if memory
+            .ids
+            .values()
+            .any(|h| h.iter().any(|(owned, _)| owned == id))
+        {
+            memory.unconfirmed_retirements.insert(id.to_owned());
+        }
+        if !Self::sync_directory(dir, SyncOperation::Discard) {
+            return Err(failure());
+        }
+        Self::reconcile(dir, memory);
+        Ok(())
     }
 
     pub fn discard(&self, id: &str) -> Result<(), DocumentError> {
         if !Self::record_name(id) {
             return Err(DocumentError::InvalidRequest);
         }
+        let mut memory = self.ids.lock().map_err(|_| failure())?;
         let dir = self.directory()?;
         let _lock = DirectoryLock::take(&dir, true)?;
-        std::fs::remove_file(Self::base(&dir).join(id)).map_err(|_| failure())?;
-        dir.sync_all().map_err(|_| failure())
+        Self::discard_locked(&dir, &mut memory, id)
     }
 
     pub fn saved(&self, ticket: &SaveTicket<'_>) {
-        let Ok(mut ids) = self.ids.lock() else { return };
-        let memory = &mut *ids;
-        let Some(history) = memory.ids.get(&(ticket.session_id, ticket.generation)) else {
+        let Ok(mut memory) = self.ids.lock() else {
+            return;
+        };
+        let Some(history) = memory
+            .ids
+            .get(&(ticket.session_id, ticket.generation))
+            .cloned()
+        else {
             return;
         };
         let Ok(dir) = self.directory() else { return };
-        for (id, _) in history {
+        let Ok(_lock) = DirectoryLock::take(&dir, true) else {
+            return;
+        };
+        for (id, _) in &history {
             let name = format!("{id}.recovery");
             if Self::read(&dir, &name).is_ok_and(|(h, _)| h.revision <= ticket.revision) {
-                let _ = self.discard(&name);
+                let _ = Self::discard_locked(&dir, &mut memory, &name);
             }
         }
-        // Best effort, like the discards above: confirm this load's earlier unconfirmed retirements.
-        let pending: Vec<String> = history
+        if history
             .iter()
-            .filter(|(id, _)| memory.unconfirmed_retirements.contains(id))
-            .map(|(id, _)| id.clone())
-            .collect();
-        if !pending.is_empty() {
-            let _lock = DirectoryLock::take(&dir, true);
-            if Self::confirm_retirement(&dir) {
-                for id in pending {
-                    memory.unconfirmed_retirements.remove(&id);
-                }
-            }
+            .any(|(id, _)| memory.unconfirmed_retirements.contains(id))
+            && Self::sync_directory(&dir, SyncOperation::Saved)
+        {
+            Self::reconcile(&dir, &mut memory);
         }
     }
 
     pub fn forget_session(&self, session_id: u64) -> Result<(), DocumentError> {
-        let mut ids = self.ids.lock().map_err(|_| failure())?;
+        let mut memory = self.ids.lock().map_err(|_| failure())?;
+        memory.forgotten.insert(session_id);
+        let history: Vec<_> = memory
+            .ids
+            .iter()
+            .filter(|((session, _), _)| *session == session_id)
+            .flat_map(|(_, h)| h.iter().map(|(id, _)| id.clone()))
+            .collect();
+        if history.is_empty() {
+            return Ok(());
+        }
+        let dir = self.directory()?;
+        let _lock = DirectoryLock::take(&dir, true)?;
         let mut failed = false;
-        ids.forgotten.insert(session_id);
-        for ((session, _), history) in ids.ids.iter() {
-            if *session == session_id {
-                for (id, _) in history {
-                    for suffix in ["pending", "recovery"] {
-                        let name = format!("{id}.{suffix}");
-                        let dir = self.directory()?;
-                        match std::fs::symlink_metadata(Self::base(&dir).join(&name)) {
-                            Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
-                            _ => {
-                                if self.discard(&name).is_err() {
-                                    failed = true;
-                                }
-                            }
+        for id in &history {
+            if !memory
+                .ids
+                .values()
+                .any(|h| h.iter().any(|(owned, _)| owned == id))
+            {
+                continue; // An earlier successful sync already reconciled this ID.
+            }
+            // Absence alone is insufficient; all owned cleanup needs a sync.
+            memory.unconfirmed_retirements.insert(id.clone());
+            for suffix in ["pending", "recovery"] {
+                let name = format!("{id}.{suffix}");
+                match std::fs::symlink_metadata(Self::base(&dir).join(&name)) {
+                    Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
+                    Err(_) => failed = true,
+                    Ok(_) => {
+                        // A sync failure may be confirmed by a later successful
+                        // sync. An unlink failure must remain a logical failure.
+                        if std::fs::remove_file(Self::base(&dir).join(&name)).is_err() {
+                            failed = true;
+                        } else if Self::sync_directory(&dir, SyncOperation::Discard) {
+                            Self::reconcile(&dir, &mut memory);
                         }
                     }
                 }
             }
         }
-        // Unlinks whose durability was never confirmed are not reported as completed cleanup.
-        let pending: Vec<String> = ids
+        if history
+            .iter()
+            .any(|id| memory.unconfirmed_retirements.contains(id))
+            && Self::sync_directory(&dir, SyncOperation::Forget)
+        {
+            Self::reconcile(&dir, &mut memory);
+        }
+        let remaining = memory
             .ids
             .iter()
-            .filter(|((session, _), _)| *session == session_id)
-            .flat_map(|(_, history)| history.iter().map(|(id, _)| id.clone()))
-            .filter(|id| ids.unconfirmed_retirements.contains(id))
-            .collect();
-        if !pending.is_empty() {
-            let dir = self.directory()?;
-            let _lock = DirectoryLock::take(&dir, true)?;
-            if Self::confirm_retirement(&dir) {
-                for id in pending {
-                    ids.unconfirmed_retirements.remove(&id);
-                }
-            } else {
-                failed = true;
-            }
-        }
-        if failed {
+            .any(|((session, _), h)| *session == session_id && !h.is_empty());
+        if failed || remaining {
             Err(failure())
         } else {
             Ok(())
@@ -746,12 +833,20 @@ mod tests {
         let bytes = crate::services::files::blank_docx().unwrap();
         std::fs::write(path, &bytes).unwrap();
         let registry = SessionRegistry::default();
+        let info = register_ready(&registry, path, &bytes);
+        (registry, info, bytes)
+    }
+    fn register_ready(
+        registry: &SessionRegistry,
+        path: &Path,
+        bytes: &[u8],
+    ) -> crate::document::SessionInfo {
         let info = registry
             .register(identify(path.to_str().unwrap(), &Limits::default()).unwrap())
             .unwrap();
         registry.begin_load(info.session_id).unwrap();
         registry
-            .record_content(info.session_id, 1, content_hash(&bytes))
+            .record_content(info.session_id, 1, content_hash(bytes))
             .unwrap();
         let info = registry
             .transition(
@@ -766,11 +861,11 @@ mod tests {
             .record_preflight(
                 info.session_id,
                 1,
-                content_hash(&bytes),
-                service::preflight(Format::Docx, &bytes, &bytes, None),
+                content_hash(bytes),
+                service::preflight(Format::Docx, bytes, bytes, None),
             )
             .unwrap();
-        (registry, info, bytes)
+        info
     }
     #[test]
     fn published_restore_reports_unconfirmed_and_preserves_both_files_and_candidate() {
@@ -1391,9 +1486,13 @@ mod tests {
     fn forget_reports_unconfirmed_retirement_until_a_directory_sync_succeeds() {
         let (_dir, registry, session_id, store, first, second, _original, _bytes) =
             retirement_sync_fails();
-        RECOVERY_FAULT.with(|f| f.set(Some(RecoveryFault::RetireDirSync)));
+        SYNC_FAILURES.with(|f| {
+            *f.borrow_mut() = vec![RecoveryFault::DiscardDirSync, RecoveryFault::ForgetDirSync]
+        });
+        SYNC_EVENTS.with(|e| e.borrow_mut().clear());
         let failed = store.forget_session(session_id);
-        RECOVERY_FAULT.with(|f| f.set(None));
+        SYNC_FAILURES.with(|f| f.borrow_mut().clear());
+        SYNC_EVENTS.with(|e| assert!(e.borrow().iter().all(|(_, success)| !success)));
         assert!(
             failed.is_err(),
             "cleanup is not reported complete without a confirmed sync"
@@ -1413,6 +1512,193 @@ mod tests {
         store.forget_session(session_id).unwrap();
         assert!(store.ids.lock().unwrap().unconfirmed_retirements.is_empty());
         assert!(store.list().unwrap().is_empty());
+    }
+
+    #[test]
+    fn forget_reuses_successful_discard_sync() {
+        let (_dir, _registry, session, store, _first, _second, _, _) = retirement_sync_fails();
+        // The current implementation's discard fsync succeeds; a redundant
+        // retirement confirmation must not manufacture a failure afterwards.
+        SYNC_EVENTS.with(|e| e.borrow_mut().clear());
+        RECOVERY_FAULT.with(|f| f.set(Some(RecoveryFault::RetireDirSync)));
+        let result = store.forget_session(session);
+        RECOVERY_FAULT.with(|f| f.set(None));
+        assert!(result.is_ok());
+        SYNC_EVENTS.with(|e| {
+            let events = e.borrow();
+            assert_eq!(*events, vec![(RecoveryFault::DiscardDirSync, true)]);
+        });
+        assert!(store.ids.lock().unwrap().ids.values().all(Vec::is_empty));
+    }
+
+    #[test]
+    fn explicit_discard_confirms_other_owned_retirements() {
+        let (_dir, _registry, session, store, first, second, _, _) = retirement_sync_fails();
+        store.discard(&second.id).unwrap();
+        let memory = store.ids.lock().unwrap();
+        assert!(!memory.unconfirmed_retirements.contains(&id_of(&first)));
+        assert!(memory.ids[&(session, 1)].is_empty());
+    }
+
+    #[test]
+    fn cross_session_publication_reconciles_only_absent_owners() {
+        let (dir, registry, session, store, first, second, original, _) = retirement_sync_fails();
+        // Keep an owned partial record and an unreadable record from other loads.
+        let partial = "a".repeat(32);
+        let invalid = "b".repeat(32);
+        std::fs::write(store.root.join(format!("{partial}.pending")), b"partial").unwrap();
+        std::fs::write(
+            store.root.join(format!("{invalid}.recovery")),
+            b"unreadable",
+        )
+        .unwrap();
+        {
+            let mut m = store.ids.lock().unwrap();
+            m.ids.entry((session, 2)).or_default().extend([
+                (partial.clone(), "old source".into()),
+                (invalid.clone(), "Save As source".into()),
+            ]);
+            m.unconfirmed_retirements
+                .extend([partial.clone(), invalid.clone()]);
+        }
+        let source = dir.path().join("other.docx");
+        std::fs::write(&source, &original).unwrap();
+        let other = register_ready(&registry, &source, &original);
+        assert_ne!(other.session_id, session);
+        let ticket = registry.begin_save(other.session_id, 1, 1).unwrap();
+        let published = store
+            .snapshot(&ticket, &original, &source, &original)
+            .unwrap();
+        let m = store.ids.lock().unwrap();
+        assert_eq!(
+            m.ids[&(session, 1)]
+                .iter()
+                .map(|(id, _)| id.clone())
+                .collect::<Vec<_>>(),
+            vec![id_of(&second)]
+        );
+        assert!(!m.unconfirmed_retirements.contains(&id_of(&first)));
+        assert_eq!(m.ids[&(session, 2)].len(), 2);
+        assert!(
+            m.unconfirmed_retirements.contains(&partial)
+                && m.unconfirmed_retirements.contains(&invalid)
+        );
+        drop(m);
+        assert_eq!(
+            std::fs::read(store.root.join(format!("{partial}.pending"))).unwrap(),
+            b"partial"
+        );
+        assert_eq!(
+            std::fs::read(store.root.join(format!("{invalid}.recovery"))).unwrap(),
+            b"unreadable"
+        );
+        assert!(store.root.join(&second.id).is_file() && store.root.join(published.id).is_file());
+    }
+
+    #[test]
+    fn saved_lock_failure_keeps_records_and_ownership_for_retry() {
+        let (_dir, registry, session, store, first, second, _, bytes) = retirement_sync_fails();
+        let ticket = registry.begin_save(session, 1, 2).unwrap();
+        SYNC_EVENTS.with(|e| e.borrow_mut().clear());
+        RECOVERY_FAULT.with(|f| f.set(Some(RecoveryFault::DirectoryLock)));
+        store.saved(&ticket);
+        RECOVERY_FAULT.with(|f| f.set(None));
+        SYNC_EVENTS.with(|e| assert!(e.borrow().is_empty()));
+        let m = store.ids.lock().unwrap();
+        assert_eq!(m.ids[&(session, 1)].len(), 2);
+        assert!(m.unconfirmed_retirements.contains(&id_of(&first)));
+        drop(m);
+        assert_eq!(
+            RecoveryStore::read(&store.directory().unwrap(), &second.id)
+                .unwrap()
+                .1,
+            bytes
+        );
+        store.saved(&ticket);
+        assert!(store.ids.lock().unwrap().ids[&(session, 1)].is_empty());
+    }
+
+    #[test]
+    fn failed_unlink_is_not_hidden_by_another_successful_sync() {
+        let (_dir, _registry, session, store, first, second, _, _) = retirement_sync_fails();
+        // A directory occupying an owned filename deterministically fails unlink.
+        std::fs::create_dir(store.root.join(&first.id)).unwrap();
+        std::fs::write(
+            store.root.join(&first.id).join("preserved"),
+            b"record bytes",
+        )
+        .unwrap();
+        assert!(store.forget_session(session).is_err());
+        let m = store.ids.lock().unwrap();
+        assert!(m.ids[&(session, 1)]
+            .iter()
+            .any(|(id, _)| id == &id_of(&first)));
+        assert!(!m.ids[&(session, 1)]
+            .iter()
+            .any(|(id, _)| id == &id_of(&second)));
+        drop(m);
+        assert_eq!(
+            std::fs::read(store.root.join(&first.id).join("preserved")).unwrap(),
+            b"record bytes"
+        );
+        std::fs::remove_dir_all(store.root.join(&first.id)).unwrap();
+        store.forget_session(session).unwrap();
+    }
+
+    #[test]
+    fn saved_sync_failure_remains_owned_until_retry() {
+        let (_dir, registry, session, store, _, _, _, _) = retirement_sync_fails();
+        let ticket = registry.begin_save(session, 1, 2).unwrap();
+        SYNC_FAILURES.with(|f| {
+            *f.borrow_mut() = vec![RecoveryFault::DiscardDirSync, RecoveryFault::SavedDirSync]
+        });
+        SYNC_EVENTS.with(|e| e.borrow_mut().clear());
+        store.saved(&ticket);
+        SYNC_FAILURES.with(|f| f.borrow_mut().clear());
+        SYNC_EVENTS.with(|e| assert!(e.borrow().iter().all(|(_, success)| !success)));
+        assert_eq!(store.ids.lock().unwrap().ids[&(session, 1)].len(), 2);
+        store.saved(&ticket);
+        assert!(store.ids.lock().unwrap().ids[&(session, 1)].is_empty());
+    }
+
+    #[test]
+    fn concurrent_snapshot_and_forget_preserve_other_session() {
+        let dir = TempDir::new();
+        let a = dir.path().join("a.docx");
+        let (registry, info, bytes) = setup(&a);
+        let b = dir.path().join("b.docx");
+        std::fs::write(&b, &bytes).unwrap();
+        let other = register_ready(&registry, &b, &bytes);
+        let store = RecoveryStore::new(dir.path().join("records"));
+        let barrier = std::sync::Barrier::new(3);
+        std::thread::scope(|scope| {
+            let checkpoint = scope.spawn(|| {
+                barrier.wait();
+                let ticket = registry.begin_save(info.session_id, 1, 1).unwrap();
+                store.snapshot(&ticket, &bytes, &a, &bytes)
+            });
+            let forgotten = scope.spawn(|| {
+                barrier.wait();
+                store.forget_session(info.session_id)
+            });
+            barrier.wait();
+            let _ = checkpoint.join().unwrap(); // Either serialized order is valid.
+            forgotten.join().unwrap().unwrap();
+        });
+        let ticket = registry.begin_save(other.session_id, 1, 1).unwrap();
+        let keep = store.snapshot(&ticket, &bytes, &b, &bytes).unwrap();
+        assert_eq!(store.list().unwrap().len(), 1);
+        assert!(store.root.join(keep.id).is_file());
+        let late = registry.begin_save(info.session_id, 1, 1).unwrap();
+        assert!(store.snapshot(&late, &bytes, &a, &bytes).is_err());
+        assert!(store
+            .ids
+            .lock()
+            .unwrap()
+            .ids
+            .iter()
+            .all(|((session, _), h)| *session != info.session_id || h.is_empty()));
+        assert_eq!(std::fs::read(a).unwrap(), bytes);
     }
 
     #[test]
