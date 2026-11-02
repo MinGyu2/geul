@@ -92,6 +92,12 @@ const MUTATING_OPS: ReadonlySet<DocxOp["op"]> = new Set<DocxOp["op"]>([
   "insertText", "pasteText", "deleteSelection", "backspace", "deleteForward", "newParagraph", "tab", "insertAt", "replaceInserted",
   "format",
 ]);
+/**
+ * 문서 내용을 바꾸지 않는 연산: 백엔드에서 이동(`caret.*`)·클릭(`caret.set`)·전체 선택(`select.all`)은 선택만, 표지는 어댑터 기억만
+ * 바꾸고 revision을 올리지 않는다. 이 목록에 없는 연산(새로 추가된 것 포함)은 보수적으로 문서를 바꿀 수 있다고 본다.
+ */
+const NAVIGATION_OPS: ReadonlySet<DocxOp["op"]> = new Set<DocxOp["op"]>(["move", "pointer", "selectAll", "mark"]);
+const mutates = (op: DocxOp) => !NAVIGATION_OPS.has(op.op);
 /** 명령(T010)이 보낸 연산. 엔진이 거부하면(문서 보호 등) 알린다. */
 const COMMAND_OPS: ReadonlySet<DocxOp["op"]> = new Set<DocxOp["op"]>(["undo", "redo", "format"]);
 
@@ -273,9 +279,17 @@ export class DocxEditorSession implements ImeSession, DocumentCommandTarget {
       && this.renderFailedPages.length === 0;
   }
 
-  /** 보내는 중이거나 보낼 연산이 있음. */
+  /** 보내는 중이거나 보낼 연산이 있음(이동·선택 포함: 저장·명령·쪽 이동은 이것이 끝날 때까지 기다린다). */
   get busy() {
     return this.inFlight || this.queue.length > 0;
+  }
+
+  /**
+   * 문서를 바꿀 수 있는 연산을 보내는 중이거나 보낼 예정. 이동·선택·표지(NAVIGATION_OPS)만 있으면 false다. 그 밖의 연산(서식·
+   * 실행 취소·선택 지우기 포함)은 바뀌지 않을 수도 있지만 보수적으로 바꾸는 것으로 본다.
+   */
+  private get pendingMutation() {
+    return (this.inFlight && this.sending.some(mutates)) || this.queue.some(mutates);
   }
 
   get pendingOps() {
@@ -290,9 +304,13 @@ export class DocxEditorSession implements ImeSession, DocumentCommandTarget {
     return this.composition !== null || this.provisional !== null || this.awaiting;
   }
 
-  /** 저장되지 않은 편집: 확정한 변경(백엔드 dirty), 보내는 중·보낼 입력, 끝나지 않은 IME 트랜잭션(위). */
+  /**
+   * 저장되지 않은 편집: 확정한 변경(백엔드 dirty), 문서를 바꿀 수 있는 보내는 중·보낼 연산, 끝나지 않은 IME 트랜잭션(위).
+   * 이동·선택만 기다리는 중이면 내용이 없으므로 포함하지 않는다(그 대기는 `busy`로 따로 막는다: 저장·명령·쪽 이동). 편집 요청이
+   * 실패하면 백엔드는 같은 잠금 안에서 확정한 변경만 기록하고(엔진 예외면 모델을 버림) 다시 읽은 dirty가 그 근거다.
+   */
   get hasUnpreservedChanges() {
-    return (this.info?.dirty ?? false) || this.busy || this.imeUnsettled;
+    return (this.info?.dirty ?? false) || this.pendingMutation || this.imeUnsettled;
   }
 
   /**
@@ -445,6 +463,7 @@ export class DocxEditorSession implements ImeSession, DocumentCommandTarget {
     if (settles) this.provisional = null;
     this.inputNotice = null;
     const wasBusy = this.busy;
+    const wasMutating = this.pendingMutation;
     for (const op of ops) {
       if (op.op !== "insertText") this.pointerAfterInsert = false;
       const last = this.queue[this.queue.length - 1];
@@ -453,8 +472,9 @@ export class DocxEditorSession implements ImeSession, DocumentCommandTarget {
       else this.queue.push(op);
     }
     void this.flush();
-    // 보내기 시작(한가→바쁨)을 알린다: 탭 표시·상태 표시줄·속성 창이 백엔드 응답 전의 미보존 편집을 보인다(응답 뒤에도 알림).
-    if (!wasBusy && this.busy) this.emit();
+    // 보내기 시작(한가→바쁨)이나 첫 바꾸는 연산을 알린다: 탭 표시·상태 표시줄·속성 창이 백엔드 응답 전의 대기와 미보존 편집을
+    // 보인다(응답 뒤에도 알림).
+    if ((!wasBusy && this.busy) || (!wasMutating && this.pendingMutation)) this.emit();
     return true;
   }
 
