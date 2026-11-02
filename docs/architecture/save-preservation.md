@@ -729,3 +729,31 @@ known-good 후보와 내구성을 확인하지 못한 새 후보가 모두 남�
 돌려준다(tombstone 유지). 읽을 수 없는·외부 기록과 `.pending`은 정리하지 않는다. 같은 디렉터리의 fsync는 앞선 항목 변경도
 함께 내구화한다는 Linux 의미에 기대며, 새 프로세스는 현재 파일 상태만 보므로 이미 사라진 이름이 내구적으로 지워졌는지 알 수
 없다. 실제 중단 뒤 이전 기록이 다시 보이면 일반 후보처럼 검증·표시되고 명시적으로 폐기할 수 있다(되살아난다고 약속하지 않음).
+
+## HWP 글 미리보기 재생성 (2026-11-02, Stage 1)
+
+고정 rhwp `1a76570`의 `serializer/cfb_writer.rs::supplement_preview`는 비어 있지 않은 원본 `PrvText`와 `PrvImage`를
+그대로 쓴다. 한·영 문단·굵게·2×2 표 문서를 WASM으로 만들고 첫 문단을 삭제·교체하면, 손실 보고 0건·본문 재열기 동등에도
+이전 구현은 `PreviewStale`로 거부했다. 이 절 앞의 "편집한 HWP 저장이 막힘"은 그 이전 구현의 기록이다.
+
+현재 geul은 엔진 출력의 유일한 차단 근거가 `PrvText`의 낡음/변경일 때, 검증된 출력 레코드에서 앞 1000 **유니코드 문자**의
+미리보기를 UTF-16LE로 재생성한다. 구역은 숫자 순서, 본문 문단만 사용하고 표·글상자의 중첩 문단은 제외한다. 지원하는 제어코드는
+구역/단 정의·표/그림 자리·탭·줄 끝·문단 끝·소프트 하이픈·묶음/고정폭 빈칸이다. 모르는 제어코드·잘린 슬롯·잘못된 UTF-16이면
+재생성하지 않고 원래 거부를 유지한다. 문서가 비면 비어 있는 미리보기가 본문으로부터 계산된다. 임의 미리보기를 빈 상수로 바꾸지 않는다.
+
+`PrvImage`는 변경하지 않는다. 기존 상수 외에 고정 엔진의 `parser/hwpx/blank2010_assets/prvimage.bin` 전체 바이트와 같은 경우만
+문서와 무관한 것으로 인정한다(5126바이트, SHA-256 `2103d51fb863769afce086d2aa45eda343808e1c478527a9d40b3dfbebe513c6`).
+이 자산은 문서 입력 없이 사용하는 흰색 724×1024 RGBA PNG이며 PNG CRC와 압축 해제를 확인했다. 다른 그림은 한 색이어도 계속 차단한다.
+
+미리보기 교체에는 새 CFB를 사용해 이전 미리보기의 할당 해제 영역·슬랙을 복사하지 않는다. 출력의 다른 스트림·저장소·CLSID·상태 비트·시간은
+그대로 옮긴다. 최종 비교는 변경된 `PrvText`가 출력 본문에서 계산한 값과 정확히 같은지 확인한다. 원본 사전 검사, 암호/DRM/헤더 제한,
+레코드·참조·손실·재열기 검사, 원본 충돌 감지, 임시 파일 검증·원자 교체·디렉터리 fsync는 그대로 필수다. 서브모듈/gitlink/WASM은 변경하지 않았다.
+
+회귀 검증: `hwp_save_regenerates_text_preview_without_retaining_old_stream_bytes`,
+`hwp_preview_refresh_rejects_unknown_controls_and_preserves_other_streams`,
+`hwp_preview_refresh_supports_repeat_saves_and_unchanged_current_prefix`.
+실제 엔진 검증은 `scripts/tests/hwp-preview-roundtrip.mjs <output-directory> <compiled-lib-test-executable>`로 재현한다.
+보호 빌드 `python3 scripts/cargo-geul.py test --lib --no-run`이 출력한 실행파일 경로를 사용한다. 기존 외부 테스트 디렉터리의
+`tests/fixtures/rhwp/generate.mjs`가 필요하다. 원래 문장 삭제→한글·이모지 교체→WASM export/reopen→geul 실제 저장 서비스→게시 파일
+WASM 재열기에서 본문·쪽·컨트롤·굵게·표 텍스트를 비교하고, 삭제한 미리보기의 UTF-16 바이트 부재와 거절 시 원본 보존을 검사한다.
+네이티브 IME→앱 저장의 SC-002 전체 수용은 별도 Stage 4이며 이 엔진/서비스 검증만으로 인정하지 않는다.

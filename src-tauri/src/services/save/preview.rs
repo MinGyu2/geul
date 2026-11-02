@@ -3,7 +3,8 @@
 //! rhwp는 미리보기를 문서에서 다시 만들지 않고 원본 것을 그대로 쓴다(고정 커밋 `serializer/cfb_writer.rs`
 //! `supplement_preview`: HWP `PrvText`는 비었을 때만 본문으로 채움, `serializer/hwpx/mod.rs`: HWPX `Preview/*`는 원본 항목이
 //! 있으면 그대로, 없으면 엔진 상수 `PRV_TEXT`·`PRV_IMAGE_PNG`). 그래서 본문을 바꾼 저장에서 원본 미리보기가 남으면 지운·바꾼
-//! 내용이 파일에 남을 수 있다. 미리보기를 대신 만들거나 지울 수단이 없다.
+//! 내용이 파일에 남을 수 있다. 공개 WASM API에는 미리보기 설정 수단이 없다. HWP 저장 서비스는 현재 지원하는 본문
+//! 레코드에서 PrvText를 다시 만들고 최종 검사를 수행한다(`hwp::refresh_text_preview`). 알려지지 않은 PrvImage는 계속 차단한다.
 //!
 //! 보장(4차 안정화 C): 남는 미리보기는 그 **바이트 전체가** 문서 내용과 무관함을 증명할 수 있을 때만 받는다. "보이는 픽셀이
 //! 한 색"·"글자가 공백뿐"은 이 증명이 아니다(3차 안정화의 엄격한 한 색 PNG 증명을 대신한다): 구조가 올바른 한 색 PNG도
@@ -44,4 +45,17 @@ pub fn blank_utf8(data: &[u8]) -> bool {
 /// 그림 미리보기가 고정 rhwp의 빈 미리보기와 바이트가 정확히 같은지.
 pub fn known_blank_png(data: &[u8]) -> bool {
     data == RHWP_BLANK_PREVIEW_PNG
+}
+
+/// HWPX→HWP contract fallback: the pinned engine's document-independent blank2010
+/// image (724×1024 white RGBA PNG). Match the *entire encoding*, not rendered pixels.
+/// No source include is needed, so packaged geul builds do not require RHWP sources.
+pub fn known_blank_hwp_image(data: &[u8]) -> bool {
+    use sha2::{Digest, Sha256};
+    const HASH: [u8; 32] = [
+        0x21, 0x03, 0xd5, 0x1f, 0xb8, 0x63, 0x76, 0x9a, 0xfc, 0xe0, 0x86, 0xd2, 0xaa, 0x45, 0xed,
+        0xa3, 0x43, 0x80, 0x8e, 0x1c, 0x47, 0x85, 0x27, 0xa9, 0xd4, 0x0b, 0x3d, 0xfb, 0xeb, 0xe5,
+        0x13, 0xc6,
+    ];
+    known_blank_png(data) || (data.len() == 5126 && Sha256::digest(data)[..] == HASH)
 }

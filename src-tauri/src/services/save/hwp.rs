@@ -19,7 +19,7 @@
 //! 이 비교는 HWP 레코드 수준의 동일성이며 한컴 오피스에서 같게 보인다는 증거가 아니다.
 
 use std::collections::BTreeMap;
-use std::io::{Cursor, Read};
+use std::io::{Cursor, Read, Write};
 
 use flate2::read::DeflateDecoder;
 
@@ -443,6 +443,10 @@ fn compare_with(original: &[u8], output: &[u8], mode: Mode) -> Vec<Finding> {
             continue;
         }
         if !record_stream(name) {
+            // Validate regenerated text against the actual exported body below.
+            if mode == Mode::Edited && name == "PrvText" {
+                continue;
+            }
             let key = name.to_ascii_uppercase();
             if key.starts_with(BIN_DATA_PREFIX) && !name.is_ascii() {
                 // ASCII가 아닌 BinData 이름은 CFB의 대소문자 규칙으로 어느 선언과 짝인지 확실히 정할 수 없다.
@@ -507,14 +511,24 @@ fn compare_with(original: &[u8], output: &[u8], mode: Mode) -> Vec<Finding> {
                 .get(name)
                 .is_some_and(|data| original.streams.get(name) == Some(data) && !empty(data))
         };
-        if stale("PrvText", preview::blank_utf16) {
+        if stale("PrvText", preview::blank_utf16)
+            && text_preview(&output).as_ref() != output.streams.get("PrvText")
+        {
             findings.push(Finding::at(FindingCode::PreviewStale, "PrvText"));
         }
-        if stale("PrvImage", preview::known_blank_png) {
+        if stale("PrvImage", preview::known_blank_hwp_image) {
             findings.push(Finding::at(FindingCode::PreviewStale, "PrvImage"));
         }
     }
     if mode == Mode::Edited {
+        if let (Some(before), Some(after)) = (
+            original.streams.get("PrvText"),
+            output.streams.get("PrvText"),
+        ) {
+            if before != after && (!body_changed || text_preview(&output).as_ref() != Some(after)) {
+                findings.push(Finding::at(FindingCode::PartChanged, "PrvText"));
+            }
+        }
         findings.extend(references(&output));
     }
     findings
@@ -586,4 +600,143 @@ pub fn compare(original: &[u8], output: &[u8]) -> Vec<Finding> {
 /// 저장 검사: 원본과 편집한 엔진 출력을 비교한 근거(본문 밖이 원본과 같은지, 본문이 레코드로 읽히는지).
 pub fn compare_saved(original: &[u8], output: &[u8]) -> Vec<Finding> {
     compare_with(original, output, Mode::Edited)
+}
+
+/// Reconstruct the pinned serializer's first 1000 body characters, excluding nested
+/// table/textbox paragraphs. Decode only verified HWP5 controls; unknown layouts
+/// cannot authorize a preview update. Section order is numeric, not lexical.
+fn text_preview(output: &Container) -> Option<Vec<u8>> {
+    let mut sections: Vec<_> = output
+        .streams
+        .iter()
+        .filter(|(name, _)| section_stream(name))
+        .map(|(name, data)| (name["BodyText/Section".len()..].parse::<usize>().ok(), data))
+        .collect();
+    sections.sort_by_key(|(number, _)| *number);
+    if sections.is_empty() {
+        return None;
+    }
+    let mut text = String::new();
+    for (index, (number, data)) in sections.into_iter().enumerate() {
+        if number != Some(index) {
+            return None;
+        }
+        let data = unpack(output, data).ok()?;
+        for (tag, level, body) in records(&data)? {
+            if tag != 67 || level != 1 {
+                continue;
+            }
+            if body.len() % 2 != 0 {
+                return None;
+            }
+            let units: Vec<_> = body
+                .as_chunks::<2>()
+                .0
+                .iter()
+                .map(|b| u16::from_le_bytes([b[0], b[1]]))
+                .collect();
+            let mut plain = Vec::new();
+            let mut at = 0;
+            while at < units.len() {
+                let ch = units[at];
+                match ch {
+                    0 => {}
+                    13 if at + 1 == units.len() => break,
+                    10 => plain.push(10),
+                    // section/column definitions and drawing/table placeholders
+                    2 | 9 | 11 => {
+                        if *units.get(at + 7)? != ch {
+                            return None;
+                        }
+                        if ch == 9 {
+                            plain.push(9);
+                        }
+                        at += 7;
+                    }
+                    24 => plain.push(0x00ad),
+                    30 => plain.push(0x00a0),
+                    31 => plain.push(0x2007),
+                    0x20..=0xffff => plain.push(ch),
+                    _ => return None,
+                }
+                at += 1;
+            }
+            let line = String::from_utf16(&plain).ok()?;
+            if !line.is_empty() && text.chars().count() < 1000 {
+                text.extend(
+                    line.chars()
+                        .chain("\r\n".chars())
+                        .take(1000 - text.chars().count()),
+                );
+            }
+        }
+    }
+    Some(text.encode_utf16().flat_map(u16::to_le_bytes).collect())
+}
+
+/// Refresh only an otherwise valid output whose sole finding is stale/changed PrvText.
+/// The fresh CFB avoids retaining deleted preview bytes in free/slack sectors.
+/// Every other stream, storage, CLSID, state bit and timestamp is copied; no
+/// engine sources/gitlinks change. Caller must still run all final save gates.
+pub fn refresh_text_preview(
+    original: &[u8],
+    output: &[u8],
+) -> Result<Option<Vec<u8>>, crate::document::DocumentError> {
+    let findings = compare_saved(original, output);
+    if findings != [Finding::at(FindingCode::PreviewStale, "PrvText")]
+        && findings != [Finding::at(FindingCode::PartChanged, "PrvText")]
+    {
+        return Ok(None);
+    }
+    let Ok(container) = open(output, Side::Output) else {
+        return Ok(None);
+    };
+    let Some(text) = text_preview(&container) else {
+        return Ok(None);
+    };
+    crate::document::resources::charge(
+        crate::document::resources::Category::Staging,
+        output.len(),
+    )?;
+    rebuild_preview(output, &container, &text)
+        .map(Some)
+        .map_err(|_| crate::document::DocumentError::Internal)
+}
+
+fn rebuild_preview(output: &[u8], container: &Container, text: &[u8]) -> std::io::Result<Vec<u8>> {
+    let source = cfb::CompoundFile::open(Cursor::new(output))?;
+    let entries: Vec<_> = source.walk().collect();
+    let mut fresh =
+        cfb::CompoundFile::create_with_version(source.version(), Cursor::new(Vec::new()))?;
+    for entry in &entries {
+        let path = entry.path();
+        if entry.is_storage() {
+            if !entry.is_root() {
+                fresh.create_storage_all(path)?;
+            }
+            fresh.set_storage_clsid(path, *entry.clsid())?;
+        } else {
+            let name = path
+                .to_str()
+                .ok_or(std::io::ErrorKind::InvalidData)?
+                .trim_start_matches('/');
+            let data: &[u8] = if name == "PrvText" {
+                text
+            } else {
+                container
+                    .streams
+                    .get(name)
+                    .ok_or(std::io::ErrorKind::InvalidData)?
+            };
+            fresh.create_stream(path)?.write_all(data)?;
+        }
+    }
+    // Restore metadata after writes, which can touch parent storage timestamps.
+    for entry in entries {
+        fresh.set_state_bits(entry.path(), entry.state_bits())?;
+        fresh.set_created_time(entry.path(), entry.created())?;
+        fresh.set_modified_time(entry.path(), entry.modified())?;
+    }
+    fresh.flush()?;
+    Ok(fresh.into_inner().into_inner())
 }

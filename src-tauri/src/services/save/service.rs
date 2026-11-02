@@ -210,8 +210,24 @@ pub fn validate_snapshot(
             limit: crate::document::LimitKind::FileSize,
         });
     }
-    let format = ticket.source.load.format;
     let original = read_original(&ticket.source, limits)?;
+    validate_snapshot_from(ticket, limits, output, report, reopen_equal, original)
+}
+
+fn validate_snapshot_from(
+    ticket: &SaveTicket<'_>,
+    limits: &Limits,
+    output: &[u8],
+    report: Option<&Value>,
+    reopen_equal: bool,
+    original: Vec<u8>,
+) -> Result<Vec<u8>, DocumentError> {
+    if output.len() as u64 > limits.max_file_bytes {
+        return Err(DocumentError::ResourceLimit {
+            limit: crate::document::LimitKind::FileSize,
+        });
+    }
+    let format = ticket.source.load.format;
     match &ticket.source.preflight {
         Some(preflight) if preflight.is_safe() => {}
         Some(preflight) => {
@@ -251,7 +267,22 @@ pub fn save_with_options(
     options: SaveOptions<'_>,
 ) -> Result<SaveOutcome, DocumentError> {
     let destination = options.destination;
-    let original = validate_snapshot(ticket, limits, output, report, reopen_equal)?;
+    // Normalize only the preview, never body/metadata, before the final validator.
+    // Preflight, source identity, loss/reopen/reference checks and publication are
+    // still mandatory. Unsupported previews leave the raw export rejected.
+    if output.len() as u64 > limits.max_file_bytes {
+        return Err(DocumentError::ResourceLimit {
+            limit: crate::document::LimitKind::FileSize,
+        });
+    }
+    let source = read_original(&ticket.source, limits)?;
+    let refreshed = if ticket.source.load.format == Format::Hwp {
+        hwp::refresh_text_preview(&source, output)?
+    } else {
+        None
+    };
+    let output = refreshed.as_deref().unwrap_or(output);
+    let original = validate_snapshot_from(ticket, limits, output, report, reopen_equal, source)?;
     let format = ticket.source.load.format;
     crate::document::resources::active()?;
     let original_target = ticket.source.load.identity.path();

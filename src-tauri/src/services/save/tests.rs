@@ -9009,3 +9009,266 @@ fn new_document_is_real_docx_and_publication_never_follows_or_overwrites_links()
     assert!(crate::services::files::destination(&wrong, Format::Docx).is_err());
     assert!(!wrong.exists());
 }
+
+#[test]
+fn hwp_save_regenerates_text_preview_without_retaining_old_stream_bytes() {
+    use std::io::Read;
+    let old = utf16("deleted secret");
+    let original = hwp_doc(
+        0,
+        &docinfo(0, b"font"),
+        &section("deleted secret"),
+        &[("/PrvText", &old)],
+    );
+    let exported = hwp_doc(
+        0,
+        &docinfo(0, b"font"),
+        &section("새 본문 😀"),
+        &[("/PrvText", &old)],
+    );
+    assert_eq!(
+        hwp::compare_saved(&original, &exported),
+        vec![Finding::at(FindingCode::PreviewStale, "PrvText")]
+    );
+    let dir = TempDir::new();
+    let state = DocumentState::default();
+    let info = rhwp_session(&state, &dir, "preview.hwp", &original);
+    let registry = state.registry();
+    let source = registry
+        .preflight_source(info.session_id, info.load_generation)
+        .unwrap();
+    let check = service::preflight(
+        Format::Hwp,
+        &original,
+        &original,
+        Some(&report("hwp", json!([]))),
+    );
+    assert!(check.is_safe());
+    registry
+        .record_preflight(
+            info.session_id,
+            info.load_generation,
+            source.content_hash,
+            check,
+        )
+        .unwrap();
+    registry
+        .commit(info.session_id, info.load_generation, 0, 1)
+        .unwrap();
+    let ticket = registry
+        .begin_save(info.session_id, info.load_generation, 1)
+        .unwrap();
+    let saved = service::save(
+        registry,
+        &ticket,
+        &Limits::default(),
+        &exported,
+        Some(&report("hwp", json!([]))),
+        true,
+    )
+    .unwrap();
+    assert!(saved.durable);
+    assert!(!saved.session.dirty);
+    let published = std::fs::read(dir.path().join("preview.hwp")).unwrap();
+    assert!(!published.windows(old.len()).any(|w| w == old));
+    let mut cfb = cfb::CompoundFile::open(std::io::Cursor::new(&published)).unwrap();
+    let mut text = Vec::new();
+    cfb.open_stream("/PrvText")
+        .unwrap()
+        .read_to_end(&mut text)
+        .unwrap();
+    assert_eq!(text, utf16("새 본문 😀\r\n"));
+    assert!(hwp::compare_saved(&original, &published).is_empty());
+}
+
+#[test]
+fn hwp_preview_refresh_rejects_unknown_controls_and_preserves_other_streams() {
+    let old = utf16("secret");
+    let source = hwp_doc(
+        0,
+        &docinfo(0, b"font"),
+        &section("secret"),
+        &[("/PrvText", &old)],
+    );
+    let make =
+        |body: Vec<u8>, extras: &[(&str, &[u8])]| hwp_doc(0, &docinfo(0, b"font"), &body, extras);
+    for text in ["new\u{1}unsupported", "new\rhidden", "new\u{19}unsupported"] {
+        let output = make(section(text), &[("/PrvText", &old)]);
+        assert!(hwp::refresh_text_preview(&source, &output)
+            .unwrap()
+            .is_none());
+    }
+    let output = make(
+        section("new"),
+        &[("/PrvText", &old), ("/Unexpected", b"unknown")],
+    );
+    assert!(hwp::refresh_text_preview(&source, &output)
+        .unwrap()
+        .is_none());
+    let image_source = hwp_doc(
+        0,
+        &docinfo(0, b"font"),
+        &section("secret"),
+        &[("/PrvText", &old), ("/PrvImage", b"unknown image")],
+    );
+    let output = make(
+        section("new"),
+        &[("/PrvText", &old), ("/PrvImage", b"unknown image")],
+    );
+    assert!(hwp::refresh_text_preview(&image_source, &output)
+        .unwrap()
+        .is_none());
+    for text in ["", "한글😀", &"😀".repeat(1002)] {
+        let output = make(section(text), &[("/PrvText", &old)]);
+        let fixed = hwp::refresh_text_preview(&source, &output)
+            .unwrap()
+            .unwrap();
+        assert!(hwp::compare_saved(&source, &fixed).is_empty());
+        let mut doc = cfb::CompoundFile::open(std::io::Cursor::new(&fixed)).unwrap();
+        let mut preview = Vec::new();
+        std::io::Read::read_to_end(&mut doc.open_stream("/PrvText").unwrap(), &mut preview)
+            .unwrap();
+        let expected: String = if text.is_empty() {
+            String::new()
+        } else {
+            text.chars().chain("\r\n".chars()).take(1000).collect()
+        };
+        assert_eq!(preview, utf16(&expected));
+    }
+    let forged = make(section("new"), &[("/PrvText", &utf16("different secret"))]);
+    assert!(hwp::compare_saved(&source, &forged)
+        .contains(&Finding::at(FindingCode::PartChanged, "PrvText")));
+}
+
+#[test]
+#[ignore = "Real WASM fixture: GEUL_HWP_PREVIEW_DIR holds basic-ko.hwp, unedited.hwp, edited.hwp, loss0/1.json, reopen.json; writes published.hwp"]
+fn hwp_preview_real_wasm_save_probe() {
+    let root = std::path::PathBuf::from(
+        std::env::var_os("GEUL_HWP_PREVIEW_DIR").expect("fixture directory"),
+    );
+    let read = |name| std::fs::read(root.join(name)).unwrap();
+    let original = read("basic-ko.hwp");
+    let unedited = read("unedited.hwp");
+    let output = read("edited.hwp");
+    let report0: Value = serde_json::from_slice(&read("loss0.json")).unwrap();
+    let report1: Value = serde_json::from_slice(&read("loss1.json")).unwrap();
+    let reopened: Value = serde_json::from_slice(&read("reopen.json")).unwrap();
+    for key in ["formatEqual", "textEqual", "pagesEqual", "controlsEqual"] {
+        assert_eq!(reopened[key], true);
+    }
+    let dir = TempDir::new();
+    let state = DocumentState::default();
+    let info = rhwp_session(&state, &dir, "actual.hwp", &original);
+    let registry = state.registry();
+    let source = registry
+        .preflight_source(info.session_id, info.load_generation)
+        .unwrap();
+    let check = service::preflight(Format::Hwp, &original, &unedited, Some(&report0));
+    assert!(check.is_safe(), "{check:?}");
+    registry
+        .record_preflight(
+            info.session_id,
+            info.load_generation,
+            source.content_hash,
+            check,
+        )
+        .unwrap();
+    registry
+        .commit(info.session_id, info.load_generation, 0, 1)
+        .unwrap();
+    // Rejected output must leave source bytes and dirty state intact.
+    for (report, reopen) in [
+        (
+            report(
+                "hwp",
+                json!([{ "code": "controlOmitted", "subject": "control", "path": "section0/para0/ctrl0", "reason": "unsupportedByOutputFormat" }]),
+            ),
+            true,
+        ),
+        (report1.clone(), false),
+    ] {
+        let ticket = registry
+            .begin_save(info.session_id, info.load_generation, 1)
+            .unwrap();
+        assert!(service::save(
+            registry,
+            &ticket,
+            &Limits::default(),
+            &output,
+            Some(&report),
+            reopen
+        )
+        .is_err());
+        assert_eq!(
+            std::fs::read(dir.path().join("actual.hwp")).unwrap(),
+            original
+        );
+        assert!(registry.get(info.session_id).unwrap().dirty);
+    }
+    let ticket = registry
+        .begin_save(info.session_id, info.load_generation, 1)
+        .unwrap();
+    let saved = service::save(
+        registry,
+        &ticket,
+        &Limits::default(),
+        &output,
+        Some(&report1),
+        true,
+    )
+    .unwrap();
+    assert!(saved.durable && !saved.session.dirty);
+    assert_eq!(saved.session.revision, 1);
+    let published = std::fs::read(dir.path().join("actual.hwp")).unwrap();
+    assert!(
+        service::check_saved(Format::Hwp, &original, &published, Some(&report1), true).is_safe()
+    );
+    std::fs::write(root.join("published.hwp"), published).unwrap();
+}
+
+#[test]
+fn hwp_preview_refresh_supports_repeat_saves_and_unchanged_current_prefix() {
+    let old = utf16("old");
+    let original = hwp_doc(
+        0,
+        &docinfo(0, b"font"),
+        &section("old"),
+        &[("/PrvText", &old)],
+    );
+    let first_raw = hwp_doc(
+        0,
+        &docinfo(0, b"font"),
+        &section("new"),
+        &[("/PrvText", &old)],
+    );
+    let first = hwp::refresh_text_preview(&original, &first_raw)
+        .unwrap()
+        .unwrap();
+    let second_raw = hwp_doc(
+        0,
+        &docinfo(0, b"font"),
+        &section("newer"),
+        &[("/PrvText", &old)],
+    );
+    let second = hwp::refresh_text_preview(&first, &second_raw)
+        .unwrap()
+        .unwrap();
+    assert!(hwp::compare_saved(&first, &second).is_empty());
+    let prefix = "가".repeat(1000);
+    let original = hwp_doc(
+        0,
+        &docinfo(0, b"font"),
+        &section(&format!("{prefix}old")),
+        &[("/PrvText", &utf16(&prefix))],
+    );
+    let edited = hwp_doc(
+        0,
+        &docinfo(0, b"font"),
+        &section(&format!("{prefix}new")),
+        &[("/PrvText", &utf16(&prefix))],
+    );
+    assert!(
+        hwp::compare_saved(&original, &edited).is_empty(),
+        "unchanged prefix is proven from current body"
+    );
+}
