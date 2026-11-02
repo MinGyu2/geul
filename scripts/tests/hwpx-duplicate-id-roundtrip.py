@@ -7,6 +7,12 @@ fresh ids, and still refuse missing/invalid ids. Excess or aliased duplicates
 cannot be produced through the public editing API; their refusal is covered by
 the Rust unit tests in ``patches/rhwp/hwpx-duplicate-paragraph-ids.patch``.
 
+Copied (pasted) paragraphs follow the same monotonic reservation as split
+paragraphs (``patches/rhwp/hwpx-clipboard-paragraph-ids.patch``): a deleted
+paragraph's id is never handed out again, so a merge-undo restoration cannot
+collide with a later paste, and nested owners (table cells) of a copy get
+fresh ids as well. Exhausting the u32 id space refuses export.
+
 Only upstream public samples are read; results go to a new ignored directory.
 """
 import argparse
@@ -144,9 +150,9 @@ def lifecycle(package, source, out):
     copied, copied_all = read("copy")
     assert len(copied[0]) == len(split[0]) + 1
     copy_id = copied[0][k + 2]
-    # The copy of an imported id "0" paragraph gets a currently unused id
-    # (pre-existing clone remap allocator) and never adds another repeat.
-    assert copy_id not in split_all, (copy_id, split_all.most_common(3))
+    # The copy of an imported id "0" paragraph gets a fresh monotonic id
+    # (after every earlier reservation) and never adds another repeat.
+    assert int(copy_id) > int(new_id) and copy_id not in split_all, (copy_id, new_id)
     assert copied_all - collections.Counter({copy_id: 1}) == split_all
     assert copied_all[repeated] == src_all[repeated]
     assert copied[0][:k + 2] == split[0][:k + 2] and copied[0][k + 3:] == split[0][k + 2:]
@@ -157,6 +163,129 @@ def lifecycle(package, source, out):
             "repeatedId": repeated, "sourceRepeats": {v: c for v, c in src_all.items() if c > 1},
             "freshIdFloor": fresh_floor, "splitNewId": new_id, "copyNewId": copy_id,
             "node": json.loads(result.stdout.splitlines()[-1])}
+
+
+RETIRED = r"""
+import {readFileSync, writeFileSync} from 'node:fs';
+import {resolve} from 'node:path';
+import {pathToFileURL} from 'node:url';
+const [pkg, source, out, k, mode] = process.argv.slice(2), K = Number(k);
+const m = await import(pathToFileURL(resolve(pkg, 'rhwp.js')));
+m.initSync({module: readFileSync(resolve(pkg, 'rhwp_bg.wasm'))});
+const ok = s => { const r = JSON.parse(s); if (r.ok !== true) throw new Error(s); return r; };
+const text = d => Array.from({length: d.getSectionCount()}, (_, s) =>
+  Array.from({length: d.getParagraphCount(s)}, (_, p) => d.getTextRange(s, p, 0, d.getParagraphLength(s, p))));
+const result = {steps: {}};
+const emit = (d, name) => {
+  const expected = {text: text(d), controls: d.getControls(), pages: d.pageCount()};
+  let e;
+  try {
+    e = d.exportHwpxWithReport();
+    const loss = JSON.parse(e.contentLoss());
+    if (loss.count !== 0) throw new Error('content loss ' + JSON.stringify(loss));
+    const b = e.takeBytes(); writeFileSync(resolve(out, name + '.hwpx'), b);
+    const r = new m.HwpDocument(b);
+    try { if (JSON.stringify({text: text(r), controls: r.getControls(), pages: r.pageCount()}) !== JSON.stringify(expected)) throw new Error('reopen differs'); } finally { r.free(); }
+    result.steps[name] = 'exported';
+  } catch (err) { result.steps[name] = 'refused: ' + String(err?.message ?? err); } finally { e?.free(); }
+};
+const d = new m.HwpDocument(readFileSync(source));
+try {
+  if (mode === 'retired') {
+    const paste = () => { ok(d.copySelection(0, K - 1, 0, K, d.getParagraphLength(0, K))); ok(d.pasteInternal(0, K + 1, d.getParagraphLength(0, K + 1))); };
+    paste(); emit(d, 'paste1');                 // copy of K appears at K+2
+    const merged = ok(d.mergeParagraph(0, K + 2)); result.removedIdentity = merged.removedParaMeta.hwpx_paragraph_identity;
+    emit(d, 'deleted');
+    paste(); emit(d, 'paste2');
+    // merge-undo of the first deletion through the public split API
+    ok(d.splitParagraph(0, K + 1, merged.charOffset, JSON.stringify(merged.removedParaMeta)));
+    emit(d, 'undo'); emit(d, 'undo-repeat');
+  } else if (mode === 'nested') {
+    // paragraph K holds a table whose cell paragraphs carry imported id "0"
+    ok(d.copySelection(0, K, 0, K + 1, d.getParagraphLength(0, K + 1)));
+    ok(d.pasteInternal(0, K + 2, d.getParagraphLength(0, K + 2)));
+    emit(d, 'paste'); emit(d, 'paste-repeat');
+  } else if (mode === 'exhaustion') {
+    ok(d.splitParagraph(0, K, 1)); emit(d, 'last-id');
+    ok(d.copySelection(0, K - 1, 0, K, d.getParagraphLength(0, K)));
+    ok(d.pasteInternal(0, K + 1, d.getParagraphLength(0, K + 1)));
+    emit(d, 'exhausted');
+    result.readableAfterRefusal = d.getParagraphCount(0) > 0;
+  }
+} finally { d.free(); }
+console.log(JSON.stringify(result));
+"""
+
+
+def run_mode(package, source, out, k, mode):
+    result = subprocess.run(["node", "--input-type=module", "-", str(package), str(source), str(out), str(k), mode],
+                            input=RETIRED, text=True, capture_output=True, cwd=ROOT)
+    (out / "node.log").write_text(result.stdout + result.stderr)
+    assert result.returncode == 0, result.stderr[-2000:]
+    return json.loads(result.stdout.splitlines()[-1])
+
+
+def retired(package, out):
+    """A deleted copy's id is never reused; merge-undo stays exportable."""
+    source = ROOT / LIFECYCLE
+    k, _ = pick_paragraph(source)
+    node = run_mode(package, source, out, k, "retired")
+    assert all(v == "exported" for v in node["steps"].values()), node
+    src_all = all_ids(source)
+    read = lambda name: (top_ids(out / f"{name}.hwpx"), all_ids(out / f"{name}.hwpx"))
+    first, first_all = read("paste1")
+    a = first[0][k + 2]
+    assert int(node["removedIdentity"]) == int(a) + 1, (node["removedIdentity"], a)
+    deleted, deleted_all = read("deleted")
+    assert a not in deleted_all and deleted_all == src_all, "deletion must restore imported ids only"
+    second, second_all = read("paste2")
+    b = second[0][k + 2]
+    assert b != a and int(b) > int(a), f"retired id {a} reused as {b}"
+    undo, undo_all = read("undo")
+    assert undo_all - collections.Counter({a: 1, b: 1}) == src_all and undo_all[a] == undo_all[b] == 1
+    assert read("undo-repeat") == (undo, undo_all)
+    return {"pastedId": a, "retiredIdentity": node["removedIdentity"], "nextPasteId": b,
+            "undoExported": True, "steps": node["steps"]}
+
+
+def nested_copy(package, out):
+    """Every paragraph of a copied table (cell owners included) gets a fresh id."""
+    source = ROOT / "external/rhwp/samples/issue7418/condense_cell_synthetic.hwpx"
+    paras = sections(source)[0].findall(HP + "p")
+    k = next(i for i, p in enumerate(paras) if p.find(".//" + HP + "tbl") is not None)
+    node = run_mode(package, source, out, k, "nested")
+    assert all(v == "exported" for v in node["steps"].values()), node
+    src_all = all_ids(source)
+    pasted_all = all_ids(out / "paste.hwpx")
+    added = pasted_all - src_all
+    floor = max(int(v) for v in src_all)
+    assert pasted_all - added == src_all, "imported ids changed by the paste"
+    assert sum(added.values()) >= 2 and all(c == 1 and int(v) > floor for v, c in added.items()), added
+    pasted = sections(out / "paste.hwpx")[0].findall(HP + "p")
+    copied_table = next(p for p in pasted[k + 3:] if p.find(".//" + HP + "tbl") is not None)
+    nested_ids = [p.attrib["id"] for p in copied_table.find(".//" + HP + "tbl").iter(HP + "p")]
+    assert nested_ids and all(v in added for v in nested_ids), (nested_ids, added)
+    assert all_ids(out / "paste-repeat.hwpx") == pasted_all
+    return {"source": str(source.relative_to(ROOT)), "tableParagraph": k, "newIds": sorted(added),
+            "nestedCellIds": nested_ids}
+
+
+def exhaustion(package, out):
+    """The last u32 id can be reserved once; the next reservation refuses export."""
+    source = ROOT / LIFECYCLE
+    k, _ = pick_paragraph(source)
+    entries = parts(source)
+    root = ET.fromstring(entries["Contents/section0.xml"])
+    next(root.iter(HP + "p")).set("id", str(0xFFFFFFFE))
+    entries["Contents/section0.xml"] = ET.tostring(root, encoding="utf-8")
+    path = out / "near-limit.hwpx"
+    write_parts(path, entries, source)
+    node = run_mode(package, path, out, k, "exhaustion")
+    assert node["steps"]["last-id"] == "exported", node
+    assert str(0xFFFFFFFF) in all_ids(out / "last-id.hwpx")
+    assert node["steps"]["exhausted"].startswith("refused") and "identity space exhausted" in node["steps"]["exhausted"], node
+    assert node["readableAfterRefusal"] and not (out / "exhausted.hwpx").exists()
+    return {"lastId": 0xFFFFFFFF, "nextReservation": node["steps"]["exhausted"]}
 
 
 def negatives(package, source, out):
@@ -229,6 +358,10 @@ def main():
     report = {"status": "RUNNING", "package": {n: sha(args.package / n) for n in ("rhwp.js", "rhwp_bg.wasm")}}
     report["lifecycle"] = lifecycle(args.package, ROOT / LIFECYCLE, lifecycle_out)
     report["negative"] = negatives(args.package, ROOT / LIFECYCLE, args.out)
+    for name, check in (("retired", retired), ("nestedCopy", nested_copy), ("exhaustion", exhaustion)):
+        folder = args.out / name
+        folder.mkdir()
+        report[name] = check(args.package, folder)
     report["survey"] = survey(args.package, args.checker.resolve(), args.sample or list(DEFAULT_SAMPLES), args.out)
     for row in report["survey"]:
         if row["sample"] in args.expect_safe:

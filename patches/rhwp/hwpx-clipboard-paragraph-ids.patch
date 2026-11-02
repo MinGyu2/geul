@@ -1,0 +1,145 @@
+--- a/src/document_core/commands/clone_identity/remap.rs
++++ b/src/document_core/commands/clone_identity/remap.rs
+@@ -71,12 +71,19 @@
+         match node {
+             Node::Paragraphs(_) => {}
+             Node::Paragraph(para) => {
++                // HWP5 PARA_HEADER instance id: object namespace, unchanged.
+                 if let Some(raw) = para.raw_header_extra.get_mut(6..10) {
+                     let id = allocator.id()?;
+                     raw.copy_from_slice(&id.to_le_bytes());
+-                    para.hwpx_paragraph_identity =
+-                        std::sync::Arc::new(std::sync::atomic::AtomicU64::new(u64::from(id) + 1));
+                 }
++                // HWPX `hp:p@id`: every copy is a new paragraph with its own,
++                // still unassigned identity cell. The HWPX serializer reserves
++                // it from the document's monotonic `hwpx_paragraph_next`, like
++                // a split paragraph, so a retired (deleted) id is never handed
++                // out again and the value cannot collide with a merge-undo
++                // restoration. Replacing the cell also detaches the copy from
++                // the source/clipboard paragraph it was cloned from.
++                para.hwpx_paragraph_identity = Default::default();
+             }
+             Node::Control(control) => match control {
+                 Control::Table(table) => remap_common_raw(
+@@ -209,3 +216,88 @@
+     }
+     Ok(())
+ }
++
++#[cfg(test)]
++mod tests {
++    use super::*;
++    use std::sync::atomic::{AtomicU64, Ordering::Relaxed};
++    use std::sync::Arc;
++
++    /// HWPX-imported paragraph: HWP5 tail carries `id`, identity cell = id + 1.
++    fn imported(id: u32) -> Paragraph {
++        let mut para = Paragraph::default();
++        let mut tail = vec![0u8; 6];
++        tail.extend_from_slice(&id.to_le_bytes());
++        para.raw_header_extra = tail;
++        para.hwpx_paragraph_identity = Arc::new(AtomicU64::new(u64::from(id) + 1));
++        para
++    }
++
++    fn instance(para: &Paragraph) -> u32 {
++        let raw = &para.raw_header_extra[6..10];
++        u32::from_le_bytes([raw[0], raw[1], raw[2], raw[3]])
++    }
++
++    #[test]
++    fn clipboard_copies_get_detached_unassigned_hwpx_identity() {
++        let mut doc = Document::default();
++        doc.provenance.format = crate::model::provenance::SourceFormat::Hwpx;
++        let mut section = crate::model::document::Section::default();
++        let mut table = crate::model::table::Table::default();
++        let mut cell = crate::model::table::Cell::default();
++        cell.paragraphs.push(imported(0));
++        table.cells.push(cell);
++        let mut host = imported(0);
++        host.controls.push(Control::Table(Box::new(table)));
++        section.paragraphs.extend([imported(0), host, imported(7)]);
++        doc.sections.push(section);
++
++        // The clipboard holds plain clones, which share identity cells.
++        let source = &doc.sections[0].paragraphs;
++        let mut clip = source.to_vec();
++        reidentify_clipboard(&doc, &mut clip).unwrap();
++
++        let mut owners: Vec<&Paragraph> = Vec::new();
++        for para in &clip {
++            owners.push(para);
++        }
++        let Control::Table(copied) = &clip[1].controls[0] else {
++            panic!("table copied")
++        };
++        owners.push(&copied.cells[0].paragraphs[0]);
++        let Control::Table(original) = &source[1].controls[0] else {
++            panic!("table source")
++        };
++        let originals = [
++            &source[0],
++            &source[1],
++            &source[2],
++            &original.cells[0].paragraphs[0],
++        ];
++
++        let before = crate::model::identity::used_instance_ids(&doc);
++        let mut seen = std::collections::BTreeSet::new();
++        for (copy, original) in owners.iter().zip(originals) {
++            // New, still unassigned HWPX identity (allocated monotonically at export)
++            assert_eq!(copy.hwpx_paragraph_identity.load(Relaxed), 0);
++            assert!(!Arc::ptr_eq(
++                &copy.hwpx_paragraph_identity,
++                &original.hwpx_paragraph_identity
++            ));
++            // HWP5 instance ids keep the object-namespace allocation: nonzero,
++            // unused in the document and distinct within the copy.
++            let id = instance(copy);
++            assert!(id != 0 && !before.contains(&id) && seen.insert(id), "{id}");
++        }
++        // The source keeps its imported identities.
++        assert_eq!(source[0].hwpx_paragraph_identity.load(Relaxed), 1);
++        assert_eq!(source[2].hwpx_paragraph_identity.load(Relaxed), 8);
++        // Two copies of the same clipboard never share a cell.
++        let mut again = source.to_vec();
++        reidentify_clipboard(&doc, &mut again).unwrap();
++        assert!(!Arc::ptr_eq(
++            &again[0].hwpx_paragraph_identity,
++            &clip[0].hwpx_paragraph_identity
++        ));
++    }
++}
+--- a/src/serializer/hwpx/context.rs
++++ b/src/serializer/hwpx/context.rs
+@@ -779,6 +779,29 @@
+     }
+ 
+     #[test]
++    fn detached_snapshots_share_one_monotonic_reservation() {
++        use crate::model::paragraph::Paragraph;
++        let mut doc = identity_doc(&[1, 1, 0], &[(0, 2)]);
++        // A detached snapshot (document clone) shares identity cells and the
++        // reservation counter with the live document.
++        let mut snapshot = doc.clone();
++        snapshot.sections[0].paragraphs.push(Paragraph::default());
++        let snap_ids = prepare(&snapshot).unwrap();
++        assert_eq!(&snap_ids[..2], &[0, 0]);
++        // The shared new paragraph keeps the value reserved through the snapshot.
++        let live = prepare(&doc).unwrap();
++        assert_eq!(live[2], snap_ids[2]);
++        // A paragraph that exists only in the live document never receives the
++        // value already reserved by the snapshot-only paragraph.
++        doc.sections[0].paragraphs.push(Paragraph::default());
++        let later = prepare(&doc).unwrap();
++        assert!(
++            later[3] > snap_ids[3] && snap_ids[3] > snap_ids[2],
++            "{snap_ids:?} {later:?}"
++        );
++    }
++
++    #[test]
+     fn duplicates_beyond_source_multiplicity_are_refused() {
+         let doc = identity_doc(&[1, 1, 1], &[(0, 2)]);
+         assert!(prepare(&doc)
