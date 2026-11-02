@@ -1597,3 +1597,7 @@ DOCX 0.64/1.00/1.27이며 CPU 포화 실험을 하지 않았다. 각 결과는 W
 | GPU desktop·Wayland IME·fcitx5·Windows/macOS·다른 X 창 초점·CPU 포화·DPR2 IME 지연 | NOT RUN |
 
 일반 키 지연과 IME 지연을 합치지 않았고 표본을 제외하지 않았다. 모든 실행의 프로세스 정리는 성공했고 생존 프로세스는 0이다. 기계 판독 근거는 [hwpx-duplicate-id-acceptance-2026-11-02.json](hwpx-duplicate-id-acceptance-2026-11-02.json)의 `nativeEditorRegression`, 원시 결과는 무시되는 `target/hwpx-compat-20261102/phaseD-*`에 있다. 문서화된 T007/T008 완료 조건(누락 플랫폼·입력기·부하 근거)은 여전히 충족되지 않았다.
+
+### 엔진 후속 재빌드 뒤 영향 범위 재실행 (2026-11-02 후속 2)
+
+rhwp WASM이 붙여넣기 문단 ID와 `content.hpf` spine `linear` 교정으로 다시 바뀌었다(최종 generation `50780a46…`, WASM `02279b32…`). 편집 표면 코드·WordCraft는 바꾸지 않았다. 바뀐 바이트에 영향받는 검사만 같은 하네스·환경으로 다시 실행했다: rhwp·WordCraft 실제 한글 IME 필수 7/7씩, rhwp 일반 편집 DPR1 32/32·표 4/4, Stage 4 세 형식 저장·재열기(양성 3·거절 9) PASS, 정리 성공. IME 지연, DPR2 일반 편집, DOCX 일반 편집은 이 바이트로 다시 실행하지 않았고 앞 절의 결과(WASM `d3602624…`)를 이 빌드로 옮기지 않는다. T007/T008은 계속 INCOMPLETE다.

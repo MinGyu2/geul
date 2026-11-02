@@ -451,5 +451,328 @@
   "T010": "INCOMPLETE / RHWP Undo-Redo NO-GO",
   "T011": "NOT STARTED"
  },
- "rawEvidence": "local ignored target/hwpx-compat-20261102/ (not published)"
+ "rawEvidence": "local ignored target/hwpx-compat-20261102/ (not published)",
+ "stabilizationFollowup": {
+  "date": "2026-11-02",
+  "startHead": "0da6b2f493ffbff867324783cccb28d56f9f0423",
+  "finalRelease": {
+   "generation": "50780a46ad73bdf0464041f9d8e8d9e40eb4bb4945bf49c9bafcd7b01afb9f19",
+   "artifacts": {
+    "rhwp.js": "70cde06a369fa7fd4fc8bc8f3d6acaee158596ba1a116a2c72159002b0b5654e",
+    "rhwp_bg.wasm": "02279b326bd35ef7b8a2c0d7da9f53acbd2cc880e41e5c649261baeb21faf0eb"
+   },
+   "patches": [
+    {
+     "name": "hwpx-textdir-ltr.patch",
+     "sha256": "abab4bc23a89dfec82aa63d36d32cd7192e5b14fefd2dd56231c4bb5676c6cc0"
+    },
+    {
+     "name": "hwpx-duplicate-paragraph-ids.patch",
+     "sha256": "79fd8f41c4cabe82b6b0b66265f5a1b3feef08a4c0b07af30cf7f788e11a9787"
+    },
+    {
+     "name": "hwpx-clipboard-paragraph-ids.patch",
+     "sha256": "30ac44ee1283f55605e49d09e446f5bbb5104b948ce2e7b74b87a9652e8a5c8e"
+    },
+    {
+     "name": "hwpx-spine-linear.patch",
+     "sha256": "080070cdfdaffe9b80b61ddeb6ddec8e49080b168649f92932caaf58f08298eb"
+    }
+   ]
+  },
+  "lastKnownGoodBeforeP3": "50b5ff671d559b0c8416feb2a263165df31fbe7aa34a1f5e59bc0e723467acb3",
+  "P1_clipboardParagraphIds": {
+   "finding": "clipboard paste re-identified copied paragraphs with the generic HWP5 object-instance allocator (smallest unused id) and wrote that value into the HWPX identity; split paragraphs use the monotonic hwpx_paragraph_next reservation that never reuses deleted ids",
+   "baselineReproduction(03d2b440)": {
+    "pasteDeletePaste": "id 2 reused",
+    "mergeUndoAfterReuse": "export refused: ambiguous duplicate HWPX paragraph id",
+    "nestedTableCopy": "ids 4/5/8 from the object namespace",
+    "regressionScriptOnBaseline": "FAIL as expected (lifecycle copy 2 < split 3121190099)"
+   },
+   "reachability": "rhwp public WASM API (copySelection/pasteInternal, mergeParagraph removedParaMeta -> splitParagraph); Geul UI wires mergeParagraph but not paste or merge-undo",
+   "fix": "patches/rhwp/hwpx-clipboard-paragraph-ids.patch: HWP5 PARA_HEADER instance-id allocation unchanged; every copied paragraph (nested owners included) gets a fresh unassigned HWPX identity cell reserved monotonically at export",
+   "result": {
+    "pastedId": "3121190099",
+    "retiredIdentity": 3121190100,
+    "nextPasteId": "3121190100",
+    "undoExported": true,
+    "copyNewId": "3121190100",
+    "splitNewId": "3121190099",
+    "nestedCopy": {
+     "source": "external/rhwp/samples/issue7418/condense_cell_synthetic.hwpx",
+     "tableParagraph": 1,
+     "newIds": [
+      "3121190099",
+      "3121190100",
+      "3121190101"
+     ],
+     "nestedCellIds": [
+      "3121190100"
+     ]
+    },
+    "exhaustion": {
+     "lastId": 4294967295,
+     "nextReservation": "refused: 렌더링 오류: 지원하지 않는 입력: 렌더링 오류: paragraph identity space exhausted"
+    }
+   }
+  },
+  "P2_xmlOracle": {
+   "finding": "native acceptance compared e.text.strip(), ignored Element.tail and (via ElementTree) dropped comments/PIs",
+   "legacyFalseNegatives": 11,
+   "module": "scripts/tests/hwpx_xml_oracle.py",
+   "tests": "scripts/tests/test_hwpx_xml_oracle.py (6 test groups PASS)",
+   "contract": "mirrors src-tauri/src/document/xml.rs Canonical: exact character data incl. whitespace and tails, comments and PIs; prefixes, attribute order, xmlns/XML declarations, outside-root whitespace and CDATA/reference form ignored; DTD refused",
+   "previouslyPublishedFilesRecheck": "PASS (list_marker_head run1/run2, 종이기준 run2); unrelated or edited-paragraph whitespace mutations rejected"
+  },
+  "P3_spineLinear": {
+   "finding": "content.hpf serializer wrote linear=\"yes\" on every spine itemref: absent (older Hancom) became explicit and explicit linear=\"no\" became \"yes\"",
+   "corpusForms": {
+    "itemrefLinearAbsent": 317,
+    "yes": 1376,
+    "no": 50
+   },
+   "fix": "patches/rhwp/hwpx-spine-linear.patch: per idref keep original presence/value (absent/yes/no); unknown or conflicting values refuse export; new items keep default yes; unreadable original keeps the previous default (geul treats it as malformed)",
+   "corpusP1toP3": {
+    "outcomesP1": {
+     "unsafe": 584,
+     "export-failed": 43,
+     "safe": 98,
+     "unknown": 9
+    },
+    "outcomesP3": {
+     "unsafe": 584,
+     "export-failed": 43,
+     "safe": 98,
+     "unknown": 9
+    },
+    "findingsRemoved": {
+     "partChanged:Contents/content.hpf": 85
+    },
+    "findingsAdded": {},
+    "outputsChanged": 238,
+    "changedOnlyContentHpf": 238,
+    "newlySafe": 0,
+    "note": "no document had content.hpf as its only finding; samples/hwpx/21761835_jeonjik_exemption_table.hwpx now has only section0.xml left"
+   },
+   "regression": {
+    "status": "PASS",
+    "samples": [
+     [
+      "external/rhwp/saved/blank_hwpx.hwpx",
+      true,
+      [
+       "unsafe",
+       [
+        "partChanged:Contents/header.xml",
+        "partChanged:Contents/section0.xml"
+       ]
+      ]
+     ],
+     [
+      "external/rhwp/samples/hwpx/2026_oss_rst.hwpx",
+      true,
+      [
+       "unsafe",
+       [
+        "partChanged:Contents/header.xml",
+        "partChanged:Contents/section0.xml",
+        "partChanged:Contents/section1.xml"
+       ]
+      ]
+     ],
+     [
+      "external/rhwp/samples/hwpx/21761835_jeonjik_exemption_table.hwpx",
+      true,
+      [
+       "unsafe",
+       [
+        "partChanged:Contents/section0.xml"
+       ]
+      ]
+     ],
+     [
+      "external/rhwp/samples/hwpx/156160455-social-pig-farm-income.hwpx",
+      false,
+      [
+       "unsafe",
+       [
+        "partChanged:Contents/content.hpf",
+        "partChanged:Contents/section0.xml"
+       ]
+      ]
+     ],
+     [
+      "external/rhwp/samples/task3307/issue3307_outline_number.hwpx",
+      false,
+      [
+       "unsafe",
+       [
+        "partChanged:Contents/content.hpf",
+        "partChanged:Contents/header.xml",
+        "partChanged:Contents/section0.xml",
+        "partChanged:Contents/section1.xml"
+       ]
+      ]
+     ],
+     [
+      "external/rhwp/samples/issue7418/list_marker_head_synthetic.hwpx",
+      true,
+      [
+       "safe",
+       []
+      ]
+     ]
+    ],
+    "negative": [
+     {
+      "name": "unknown-value",
+      "readable": true,
+      "exportRefused": "렌더링 오류: 지원하지 않는 입력: unsupported OPF spine linear value: \"maybe\""
+     },
+     {
+      "name": "conflicting-duplicate",
+      "readable": true,
+      "exportRefused": "렌더링 오류: 지원하지 않는 입력: conflicting OPF spine linear values for one idref"
+     }
+    ],
+    "baseline50b5ff67": "FAIL as expected (absent->yes)"
+   }
+  },
+  "engineUnitTests": {
+   "P1": "test result: FAILED. 3755 passed; 121 failed; 13 ignored; 0 measured; 0 filtered out; finished in 136.01s",
+   "P3": "test result: FAILED. 3759 passed; 121 failed; 13 ignored; 0 measured; 0 filtered out; finished in 132.14s",
+   "newFailuresVsPreviousSeries": [],
+   "preExisting": 121,
+   "focusedP1": "test result: ok. 31 passed; 0 failed; 0 ignored; 0 measured; 3859 filtered out; finished in 9.93s",
+   "focusedP3": "test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 3887 filtered out; finished in 0.00s"
+  },
+  "corpusP1VsPreviousRelease": {
+   "byteIdentical": 691,
+   "exported": 691,
+   "verdictChanges": 0
+  },
+  "nativeOnFinalGeneration": {
+   "externalListMarkerHead": {
+    "status": "PASS",
+    "generation": "50780a46ad73bdf0464041f9d8e8d9e40eb4bb4945bf49c9bafcd7b01afb9f19",
+    "preflight": "safe",
+    "save": {
+     "state": "saved",
+     "synced": "true",
+     "revision": "2"
+    },
+    "reopen": "한글",
+    "packageOracle": {
+     "zipValid": true,
+     "partSetEqual": true,
+     "headerAndUnrelatedXmlEqual": true,
+     "previewIsKnownBlank": true,
+     "paragraphIdsEqual": true,
+     "paragraphCount": 44,
+     "repeatedParagraphIds": 42,
+     "expectedText": "한글"
+    },
+    "externalConflict": "FileConflict",
+    "missingIdRefused": "렌더링 오류: 지원하지 않는 입력: HWPX paragraph id missing or invalid",
+    "previewNegative": "previewStale:Preview/PrvImage.png,previewStale:Preview/PrvText.txt"
+   },
+   "external종이기준": {
+    "status": "PASS",
+    "generation": "50780a46ad73bdf0464041f9d8e8d9e40eb4bb4945bf49c9bafcd7b01afb9f19",
+    "preflight": "safe",
+    "save": {
+     "state": "saved",
+     "synced": "true",
+     "revision": "2"
+    },
+    "reopen": "한글",
+    "packageOracle": {
+     "zipValid": true,
+     "partSetEqual": true,
+     "headerAndUnrelatedXmlEqual": true,
+     "previewIsKnownBlank": true,
+     "paragraphIdsEqual": true,
+     "paragraphCount": 1,
+     "repeatedParagraphIds": 0,
+     "expectedText": "한글"
+    },
+    "externalConflict": "FileConflict",
+    "missingIdRefused": "렌더링 오류: 지원하지 않는 입력: HWPX paragraph id missing or invalid",
+    "previewNegative": null
+   },
+   "sc002ThreeFormats": {
+    "status": "PASS",
+    "summary": {
+     "status": "PASS",
+     "positive": 3,
+     "rejections": 9
+    },
+    "generation": "50780a46ad73bdf0464041f9d8e8d9e40eb4bb4945bf49c9bafcd7b01afb9f19"
+   },
+   "imeRequiredGates": {
+    "status": "PASS",
+    "gates": [
+     "7/7",
+     "7/7"
+    ]
+   },
+   "rhwpOrdinaryDpr1": {
+    "status": "PASS",
+    "checks": "32/32",
+    "tables": [
+     [
+      "hwp",
+      100,
+      "PASS"
+     ],
+     [
+      "hwp",
+      200,
+      "PASS"
+     ],
+     [
+      "hwpx",
+      100,
+      "PASS"
+     ],
+     [
+      "hwpx",
+      200,
+      "PASS"
+     ]
+    ]
+   },
+   "appSha256": {
+    "final-p0-env": "2673363242817c4d7610f2c396d65dc04ba5279ce02012d3d3e8f5571c3fda7d",
+    "final-jongi-env": "2673363242817c4d7610f2c396d65dc04ba5279ce02012d3d3e8f5571c3fda7d",
+    "final-sc002-env": "2673363242817c4d7610f2c396d65dc04ba5279ce02012d3d3e8f5571c3fda7d",
+    "final-ime-env": "2673363242817c4d7610f2c396d65dc04ba5279ce02012d3d3e8f5571c3fda7d",
+    "final-ordinary-env": "2673363242817c4d7610f2c396d65dc04ba5279ce02012d3d3e8f5571c3fda7d"
+   },
+   "servedGeneration": {
+    "final-p0-env": "50780a46ad73bdf0464041f9d8e8d9e40eb4bb4945bf49c9bafcd7b01afb9f19",
+    "final-jongi-env": "50780a46ad73bdf0464041f9d8e8d9e40eb4bb4945bf49c9bafcd7b01afb9f19",
+    "final-sc002-env": "50780a46ad73bdf0464041f9d8e8d9e40eb4bb4945bf49c9bafcd7b01afb9f19",
+    "final-ime-env": "50780a46ad73bdf0464041f9d8e8d9e40eb4bb4945bf49c9bafcd7b01afb9f19",
+    "final-ordinary-env": "50780a46ad73bdf0464041f9d8e8d9e40eb4bb4945bf49c9bafcd7b01afb9f19"
+   },
+   "cleanup": true
+  },
+  "notRun": [
+   "IME latency, DPR2 ordinary and DOCX ordinary on the final generation (editor code and WordCraft unchanged; earlier results are for other WASM bytes and are not transferred)",
+   "GPU desktop",
+   "Wayland IME",
+   "fcitx5",
+   "Windows",
+   "macOS"
+  ],
+  "status": {
+   "T007": "INCOMPLETE",
+   "T008": "INCOMPLETE",
+   "T009": "unchecked",
+   "T010": "INCOMPLETE / RHWP Undo-Redo NO-GO",
+   "T011": "NOT STARTED"
+  },
+  "rawEvidence": "local ignored target/hwpx-identity-20261102/ (not published)"
+ }
 }
