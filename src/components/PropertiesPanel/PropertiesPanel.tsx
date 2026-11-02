@@ -37,7 +37,7 @@ export function PropertiesPanel({ state, onClose }: PropertiesPanelProps) {
                 <dt>{t("properties.revision")}</dt><dd>{info.revision}</dd>
                 <dt>{t("properties.modified")}</dt><dd>{state.unpreserved ? t("properties.yes") : t("properties.no")}</dd>
                 <dt>{t("properties.committedDirty")}</dt><dd>{info.dirty ? t("properties.yes") : t("properties.no")}</dd>
-                <dt>{t("properties.pendingEdits")}</dt><dd>{state.pending ? t("properties.yes") : t("properties.no")}</dd>
+                <dt>{t("properties.pendingOperations")}</dt><dd>{state.pending ? t("properties.yes") : t("properties.no")}</dd>
                 <dt>{t("properties.composing")}</dt><dd>{state.composing ? t("properties.yes") : t("properties.no")}</dd>
               </dl>
             </section>

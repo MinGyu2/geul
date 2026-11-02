@@ -169,7 +169,7 @@
   "properties.revision": "문서 판",
   "properties.modified": "저장하지 않은 편집",
   "properties.committedDirty": "확정했지만 저장이 확인되지 않은 변경",
-  "properties.pendingEdits": "확정을 기다리는 편집",
+  "properties.pendingOperations": "처리 중인 작업",
   "properties.composing": "끝나지 않은 입력 조합",
   "properties.yes": "예",
   "properties.no": "아니요",

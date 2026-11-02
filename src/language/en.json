@@ -169,7 +169,7 @@
   "properties.revision": "Revision",
   "properties.modified": "Unsaved edits",
   "properties.committedDirty": "Committed changes without a confirmed save",
-  "properties.pendingEdits": "Edits awaiting confirmation",
+  "properties.pendingOperations": "Operations in progress",
   "properties.composing": "Unfinished input composition",
   "properties.yes": "Yes",
   "properties.no": "No",

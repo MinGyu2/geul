@@ -217,11 +217,11 @@ describe("unpreserved-change projection", () => {
     expect(status().textContent).toContain("*");
     expect(row("Unsaved edits")).toHaveTextContent("Yes");
     expect(row("Committed changes without a confirmed save")).toHaveTextContent("No");
-    expect(row("Edits awaiting confirmation")).toHaveTextContent("Yes");
+    expect(row("Operations in progress")).toHaveTextContent("Yes");
     fake.hold = false;
     await act(async () => { fake.release(); await flush(); });
     expect(row("Committed changes without a confirmed save")).toHaveTextContent("Yes");
-    expect(row("Edits awaiting confirmation")).toHaveTextContent("No");
+    expect(row("Operations in progress")).toHaveTextContent("No");
     await act(async () => { await workspace.close(1, { discard: true }); });
     expect(status().textContent).not.toContain("*");
     expect(screen.queryByText("Unsaved edits", { selector: "dt" })).toBeNull();
@@ -340,7 +340,7 @@ describe("pending navigation versus unpreserved edits (WordCraft)", () => {
     const editor = workspace.docxEditorFor(1)!;
     fake.hold = true;
     await act(async () => { editor.move("right", false); await flush(); });
-    expect(row("Edits awaiting confirmation")).toHaveTextContent("Yes"); // the subscriber did refresh
+    expect(row("Operations in progress")).toHaveTextContent("Yes"); // the subscriber did refresh
     expect(tab()).toHaveAttribute("data-modified", "false");
     expect(status().textContent).not.toContain("*");
     expect(row("Unsaved edits")).toHaveTextContent("No");
@@ -354,6 +354,65 @@ describe("pending navigation versus unpreserved edits (WordCraft)", () => {
     await act(async () => { fake.release(); await flush(); });
     await act(async () => { await workspace.close(1, { discard: true }); });
     expect(status().textContent).not.toContain("*");
+    app.unmount();
+  });
+});
+
+describe("pending-operation terminology in the rendered panels", () => {
+  const labels = {
+    en: { unsaved: "Unsaved edits", ops: "Operations in progress", composing: "Unfinished input composition", yes: "Yes", no: "No" },
+    ko: { unsaved: "저장하지 않은 편집", ops: "처리 중인 작업", composing: "끝나지 않은 입력 조합", yes: "예", no: "아니요" },
+  } as const;
+
+  it.each(["en", "ko"] as const)("%s: operations in progress stay separate from unsaved edits", async (language) => {
+    const l = labels[language];
+    stubScreenContext();
+    const fake = new FakeDocx(["abc"]);
+    const backend = {
+      open: async () => ({ ok: true, value: { ...fake.info } }),
+      sessions: async () => ({ ok: true, value: [] }),
+      close: async (sessionId: number) => ({ ok: true, value: { sessionId, alreadyClosed: false } }),
+    } as unknown as DocumentBackend;
+    const sessions = new DocumentSessions(backend);
+    const workspace = new DocumentWorkspace(sessions, backend, undefined, undefined, fake, decodeFake);
+    const app = render(<App initialLanguage={language} settingsStore={{ read: () => null, write: () => true }} documentWorkspace={workspace} />);
+    await act(async () => { await workspace.open("/a.docx"); await flush(); });
+    const row = (label: string) => screen.getByText(label, { selector: "dt" }).nextElementSibling;
+    const shown = () => ({ unsaved: row(l.unsaved)?.textContent, ops: row(l.ops)?.textContent,
+      tab: screen.getByRole("tab", { name: /a\.docx/ }).getAttribute("data-modified"),
+      star: screen.getByTestId("status-document").textContent?.includes("*") });
+    const editor = workspace.docxEditorFor(1)!;
+    expect(screen.queryByText(language === "en" ? "Edits awaiting confirmation" : "확정을 기다리는 편집")).toBeNull();
+    // A1 clean, idle
+    expect(shown()).toEqual({ unsaved: l.no, ops: l.no, tab: "false", star: false });
+    // A2/A3 pending caret, selection and pointer movement: work in progress, nothing unsaved
+    fake.hold = true;
+    for (const navigate of [() => editor.move("right", false), () => editor.move("left", true), () => editor.pointAt(0, 90, 72, false)]) {
+      await act(async () => { navigate(); await flush(); });
+      expect(shown()).toEqual({ unsaved: l.no, ops: l.yes, tab: "false", star: false });
+      await act(async () => { fake.release(); await flush(); });
+    }
+    expect(shown()).toEqual({ unsaved: l.no, ops: l.no, tab: "false", star: false });
+    expect(sessions.get(1)).toMatchObject({ revision: 0, dirty: false });
+    // A4 pending mutation
+    await act(async () => { editor.typeText("x"); await flush(); });
+    expect(shown()).toEqual({ unsaved: l.yes, ops: l.yes, tab: "true", star: true });
+    // A5 backend dirty, idle
+    fake.hold = false;
+    await act(async () => { fake.release(); await flush(); });
+    expect(sessions.get(1)?.dirty).toBe(true);
+    expect(shown()).toEqual({ unsaved: l.yes, ops: l.no, tab: "true", star: true });
+    expect(workspace.hasUnpreservedChanges).toBe(true);
+    // A6 composition: the composing row reports it, no operation is sent, rows never appear/disappear
+    const rows = () => screen.getAllByText(/.+/, { selector: "[aria-labelledby=properties-document] dt" }).length;
+    const before = rows();
+    await act(async () => { editor.beginComposition(); editor.updateComposition("ㄱ"); await flush(); });
+    expect(row(l.composing)).toHaveTextContent(l.yes);
+    expect(row(l.ops)).toHaveTextContent(l.no);
+    expect(rows()).toBe(before);
+    await act(async () => { editor.endComposition(""); await flush(); });
+    await act(async () => { await workspace.close(1, { discard: true }); });
+    expect(screen.queryByText(l.ops, { selector: "dt" })).toBeNull();
     app.unmount();
   });
 });

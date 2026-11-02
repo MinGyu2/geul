@@ -1530,7 +1530,7 @@ ime-final/{rhwp,wordcraft}-ime.json 및 trace, source-build-identities.json, ver
 WordCraft `hasUnpreservedChanges`는 백엔드 dirty, 문서를 바꿀 수 있는 보내는 중·보낼 연산, 끝나지 않은 IME 트랜잭션이다.
 이동·클릭·전체 선택·표지(`move`·`pointer`·`selectAll`·`mark`, 백엔드에서 revision을 올리지 않음)만 기다리는 중이면
 포함하지 않는다. 이 목록 밖의 연산(서식·실행 취소·선택 지우기, 새 연산 포함)은 보수적으로 바꾸는 것으로 본다.
-탭 표시·속성 창·상태 표시줄·닫기 확인은 같은 기준이다. 대기 자체(`busy`, 속성 창 "확정을 기다리는 편집")는 따로 남아
+탭 표시·속성 창·상태 표시줄·닫기 확인은 같은 기준이다. 대기 자체(`busy`, 속성 창 "처리 중인 작업"/"Operations in progress", 이동·선택 포함)는 따로 남아
 저장·문서 명령·쪽 이동을 막는다. 대기 중 이동만 있을 때 확인 없이 닫는 것은 잃을 내용이 없기 때문이며(늦은 응답은 epoch로
 버림), 편집 요청 실패 뒤에는 백엔드가 같은 잠금 안에서 확정한 변경만 dirty로 남기므로(엔진 예외면 모델을 버림) 다시 읽은
 dirty가 보호 근거다.
