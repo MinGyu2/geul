@@ -9272,3 +9272,45 @@ fn hwp_preview_refresh_supports_repeat_saves_and_unchanged_current_prefix() {
         "unchanged prefix is proven from current body"
     );
 }
+
+#[test]
+#[ignore = "Native HWP stream inspection: GEUL_NATIVE_HWP_DIR contains published.hwp and expected-preview.bin derived independently by reopening WASM"]
+fn native_hwp_published_preview_matches_reopened_body() {
+    use std::io::Read;
+    let root = std::path::PathBuf::from(
+        std::env::var_os("GEUL_NATIVE_HWP_DIR").expect("native artifact directory"),
+    );
+    let bytes = std::fs::read(root.join("published.hwp")).unwrap();
+    let expected = std::fs::read(root.join("expected-preview.bin")).unwrap();
+    let mut container = cfb::CompoundFile::open(std::io::Cursor::new(&bytes)).unwrap();
+    let mut text = Vec::new();
+    container
+        .open_stream("/PrvText")
+        .unwrap()
+        .read_to_end(&mut text)
+        .unwrap();
+    assert_eq!(
+        text, expected,
+        "PrvText must match independently reopened current body, not the source preview"
+    );
+    let mut image = Vec::new();
+    container
+        .open_stream("/PrvImage")
+        .unwrap()
+        .read_to_end(&mut image)
+        .unwrap();
+    let engine_blank = std::fs::read(
+        std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../external/rhwp/src/parser/hwpx/blank2010_assets/prvimage.bin"),
+    )
+    .unwrap();
+    assert_eq!(
+        image, engine_blank,
+        "only the exact document-independent engine template survives this sample"
+    );
+    assert!(super::preview::known_blank_hwp_image(&image));
+    println!(
+        "{}",
+        json!({"previewMatchesReopenedBody":true,"textBytes":text.len(),"imageBytes":image.len(),"imageIsPinnedTemplate":true,"streamCount":container.walk().filter(|e|e.is_stream()).count()})
+    );
+}

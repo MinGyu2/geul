@@ -26,9 +26,9 @@ Independent Test: 해당 User Story의 acceptance scenario와 실패 조건을 �
 ## Phase 3: User Story 2 - 문서 기본 편집 (Priority: P1)
 Independent Test: 해당 User Story의 acceptance scenario와 실패 조건을 실제 실행으로 확인한다.
 - [x] T006 [US2] 문서 형식 라우팅·세션/어댑터 계약과 포맷 판별 구현 — `src/adapters/`, `src-tauri/src/document/` (엔진 연결 없음 — 아래 검증 기록 참고)
-- [ ] T007 [US2] rhwp HWP/HWPX 중앙 편집 PoC 구현 — `src/components/Editor/` (PoC 부분 통과, 저장 없음. 1·3·4·5·6차 안정화 완료. IME 원인(wry의 preedit 끄기)을 규명·수정해 실제 IME 필수 7개가 Linux X11 + ibus-hangul에서 PASS. 7차에서 한 문서의 실제 IME 지연 p95 약 70 ms(기준 약 900 ms)로 줄였고, 8차에서 숨긴 입력 버퍼 해석을 고치고 DPR 2(p95 72–76 ms)·다른 문서를 고친 채 열어 둔 상태(53–58 ms)도 이 환경(Xvfb X11, 소프트웨어 렌더링)에서 150 ms 안. 9차에서 엔진이 배율을 줄이는 쪽의 띠 다시 그리기 좌표, textarea 범위 바꾸기 입력, 스크롤 없이 보이게 된 쪽의 늦은 다시 그리기를 고쳤고, 같은 부하 비교에서 CPU 포화 때는 한 문서도 150 ms를 넘어 여러 문서 특유의 느려짐이 아님을 확인. CPU 포화 지연, 실제 GPU 데스크톱·fcitx5·Wayland·다른 플랫폼 미검증이라 체크 안 함 — 아래 검증 기록 참고)
-- [ ] T008 [US2] WordCraft DOCX 중앙 편집 PoC 구현 — `src-tauri/src/adapters/` (W-A PoC 구현, 저장 없음. 실제 앱에서 렌더·hit test(최대 1글자)·키보드·표 Tab·revision 권한·메모리 왕복 33/33, 실제 한국어 IME 필수 7개 PASS 3회(Linux X11 + ibus-hangul), 키 반영 p95 47–59 ms(키만 친 시나리오). T007과 같은 기준(실제 GPU 데스크톱·Wayland IME·fcitx5·다른 플랫폼 미검증, CPU 경합 때 지연 꼬리)으로 체크 안 함 — 아래 검증 기록 참고)
-- [ ] T009 [US2] 포맷별 저장·재열기, 안전 저장 범위와 보존 검사 — `src-tauri/src/services/` (구현·이 환경의 검증 완료, 체크 안 함: 선행 T007·T008 미체크, 원본 교체는 Linux에서만 검증. 보존 사전 검사 safe일 때만 저장 — HWP는 레코드 수준으로 문서마다 판단하지만 편집한 저장은 고정 rhwp가 편집 전 미리보기 글자를 남겨 막힘, HWPX·DOCX는 rhwp·WordCraft가 왕복을 지키고 남는 미리보기가 내용과 무관한 엔진 상수(빈 값)이거나 썸네일이 없는 문서만, 다른 사용자가 바꿀 수 있는 원본·디렉터리·상위 디렉터리 아래는 저장하지 않음, 그 밖은 차단하고 원본 그대로 — 아래 검증 기록)
+- [ ] T007 [US2] rhwp HWP/HWPX 중앙 편집 PoC 구현 — `src/components/Editor/` (원래 PoC는 저장 제외였고 현재 저장은 T009 경로에서 제공. PoC 부분 통과.  1·3·4·5·6차 안정화 완료. IME 원인(wry의 preedit 끄기)을 규명·수정해 실제 IME 필수 7개가 Linux X11 + ibus-hangul에서 PASS. 7차에서 한 문서의 실제 IME 지연 p95 약 70 ms(기준 약 900 ms)로 줄였고, 8차에서 숨긴 입력 버퍼 해석을 고치고 DPR 2(p95 72–76 ms)·다른 문서를 고친 채 열어 둔 상태(53–58 ms)도 이 환경(Xvfb X11, 소프트웨어 렌더링)에서 150 ms 안. 9차에서 엔진이 배율을 줄이는 쪽의 띠 다시 그리기 좌표, textarea 범위 바꾸기 입력, 스크롤 없이 보이게 된 쪽의 늦은 다시 그리기를 고쳤고, 같은 부하 비교에서 CPU 포화 때는 한 문서도 150 ms를 넘어 여러 문서 특유의 느려짐이 아님을 확인. CPU 포화 지연, 실제 GPU 데스크톱·fcitx5·Wayland·다른 플랫폼 미검증이라 체크 안 함 — 아래 검증 기록 참고)
+- [ ] T008 [US2] WordCraft DOCX 중앙 편집 PoC 구현 — `src-tauri/src/adapters/` (원래 W-A PoC는 저장 제외였고 현재 저장은 T009 경로에서 제공.  실제 앱에서 렌더·hit test(최대 1글자)·키보드·표 Tab·revision 권한·메모리 왕복 33/33, 실제 한국어 IME 필수 7개 PASS 3회(Linux X11 + ibus-hangul), 키 반영 p95 47–59 ms(키만 친 시나리오). T007과 같은 기준(실제 GPU 데스크톱·Wayland IME·fcitx5·다른 플랫폼 미검증, CPU 경합 때 지연 꼬리)으로 체크 안 함 — 아래 검증 기록 참고)
+- [ ] T009 [US2] 포맷별 저장·재열기, 안전 저장 범위와 보존 검사 — `src-tauri/src/services/` (구현·이 환경의 검증 완료, 체크 안 함: 선행 T007·T008 미체크, 원본 교체는 Linux에서만 검증. 보존 사전 검사 safe일 때만 저장 — HWP는 레코드 수준으로 문서마다 판단하고 지원하는 본문 제어코드·검증된 그림 미리보기 범위에서 글 미리보기를 재생성해 저장 가능(2026-11-02 Stage 1), HWPX·DOCX는 rhwp·WordCraft가 왕복을 지키고 남는 미리보기가 내용과 무관한 엔진 상수(빈 값)이거나 썸네일이 없는 문서만, 다른 사용자가 바꿀 수 있는 원본·디렉터리·상위 디렉터리 아래는 저장하지 않음, 그 밖은 차단하고 원본 그대로 — 아래 검증 기록)
 
 ## Phase 4: User Story 3 - 공통 명령 및 리본 (Priority: P1)
 Independent Test: 해당 User Story의 acceptance scenario와 실패 조건을 실제 실행으로 확인한다.
@@ -293,3 +293,12 @@ Undo/Redo NO-GO·formatting unsupported·T010 미체크·T011 NOT STARTED. 설�
 [구현 계약](../architecture/rhwp-undo-redo.md#t010-gpu-safe-제품-repaint-정책-2026-11-01-t010-미완료).
 이 정책 통합은 승인 관문 통과가 아니다. D1 미완료, D2 독립 검증 미완료, 공식 D4 FAIL,
 T010 INCOMPLETE, RHWP Undo/Redo NO-GO, T011 NOT STARTED 유지.
+
+
+## 세 형식 통합 저장 수용 재검증 (2026-11-02)
+
+현재 상태는 [저장 수용 기록](../architecture/save-preservation.md#세-형식-통합-저장-수용-2026-11-02-stage-4)과
+[기계 판독 근거](../architecture/save-roundtrip-acceptance-2026-11-02.json)를 따른다. SC-002의 세 대표 지원 문서에 대한
+실제 IME→원본 형식 저장→재열기·구조 비교 및 안전 거절 근거는 충족했다. **T007/T008/T009 체크박스는 유지한다.**
+T007/T008의 예전 "저장 없음"은 당시 PoC 범위이며 현재 기능 부재를 뜻하지 않는다. 네이티브 표면의 부분 통과·미검증 플랫폼,
+미해결 rhwp 표 검증, 외부 HWPX 보존 확대 미완료를 저장 성공으로 대신하지 않는다. T010/D4/Undo 활성화 상태는 변경하지 않았다.

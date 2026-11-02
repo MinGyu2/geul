@@ -1,0 +1,280 @@
+{
+  "date": "2026-11-02",
+  "status": "PARTIALLY COMPLETED",
+  "sourceHead": "574b3af6c54feceaee0fe79bd0a0f4fc0be18370",
+  "appSha256": "3899a3d7c8d191b3b531c74ea2266452ebf123b56a13907978e35030156a49cc",
+  "engine": {
+    "rhwp": "1a76570e833917d15817415a53c09ad61ab3203f",
+    "wordcraft": "fc41918814f62645b6746ed68e71e8c2c2e85d6f",
+    "wasmSha256": "3f99a74bbddf1716dcb6cf3e2a3940f510f3ca03fcee465f7f0c2fcd829d9cf0"
+  },
+  "stage1": {
+    "status": "COMPLETED",
+    "commit": "574b3af6c54feceaee0fe79bd0a0f4fc0be18370",
+    "baseline": "PreviewStale:PrvText + PrvImage",
+    "rustSaveTests": {
+      "pass": 100,
+      "ignored": 12
+    },
+    "frontendSessionTests": 19,
+    "typecheck": "PASS",
+    "clippy": "PASS",
+    "fmt": "PASS",
+    "actualEngineSaveReopen": "PASS"
+  },
+  "stage2": {
+    "status": "INCOMPLETE",
+    "externalSamples": 7,
+    "preflightSafe": 0,
+    "productionFix": false,
+    "corpusClaim": "이번 선택 7개만 검사. 과거 3/60 비율 재검증 아님."
+  },
+  "stage3": {
+    "status": "PARTIALLY COMPLETED",
+    "nativeImeMandatory": {
+      "rhwp": "7/7 PASS",
+      "wordcraft": "7/7 PASS"
+    },
+    "ordinaryKeyLatency": [
+      {
+        "format": "hwp",
+        "n": 79,
+        "p95Ms": 42
+      },
+      {
+        "format": "hwpx",
+        "n": 79,
+        "p95Ms": 38
+      },
+      {
+        "format": "docx",
+        "n": 80,
+        "p95Ms": 57
+      }
+    ],
+    "conditions": "Linux X11/Xvfb 1280x1024, 소프트웨어 렌더링 요청, DPR1, debug 앱+Release WASM, 일반 키는 simple GTK context, 별도 CPU 부하 없음",
+    "nativeImeLatency": "NOT RUN",
+    "rhwpTableValidation": "FAIL: 고정 좌표 및 live probe 활성 문서 추적 문제 미해결, 제품 결함 확정 아님",
+    "unavailable": [
+      "GPU desktop",
+      "Wayland IME",
+      "fcitx5",
+      "Windows",
+      "macOS",
+      "new DPR2 measurement"
+    ]
+  },
+  "stage4": {
+    "status": "COMPLETED (SC-002 대표 지원 문서 범위)",
+    "T009": "INCOMPLETE: T007/T008 선행 수용 및 플랫폼 검증 미완료",
+    "evidenceRuns": {
+      "hwp": "stage4-run6/result.json",
+      "hwpxAndDocx": "stage4-run5/result.json"
+    },
+    "positive": [
+      {
+        "publishedFile": "published.hwp",
+        "format": "hwp",
+        "save": {
+          "findings": "",
+          "error": "",
+          "testid": "rhwp-save-result",
+          "changedSince": "false",
+          "synced": "true",
+          "outcome": "",
+          "state": "saved",
+          "revision": "18"
+        },
+        "durable": true,
+        "preflight": "safe",
+        "memoryReopen": {
+          "pagesEqual": "true",
+          "failure": "",
+          "lossCount": "0",
+          "testid": "rhwp-roundtrip-result",
+          "formatEqual": "true",
+          "controlsEqual": "true",
+          "reopenedFormat": "hwp",
+          "textEqual": "true",
+          "format": "hwp",
+          "passed": "true",
+          "lossValid": "true"
+        },
+        "publishedSha256": "fb579e5874a8337a02cc6afdaef0eb62ae4c516a1fc62cfbb4777fe2a2c3f8f1",
+        "nativeReopenEqual": true,
+        "structure": {
+          "modelEquivalent": true,
+          "format": "hwp",
+          "pages": 1,
+          "tableCells": 4,
+          "boldKept": true
+        },
+        "repeatSave": true
+      },
+      {
+        "format": "hwpx",
+        "save": {
+          "findings": "",
+          "error": "",
+          "testid": "rhwp-save-result",
+          "changedSince": "false",
+          "synced": "true",
+          "outcome": "",
+          "state": "saved",
+          "revision": "9"
+        },
+        "durable": true,
+        "preflight": "safe",
+        "memoryReopen": {
+          "pagesEqual": "true",
+          "failure": "",
+          "lossCount": "0",
+          "testid": "rhwp-roundtrip-result",
+          "formatEqual": "true",
+          "controlsEqual": "true",
+          "reopenedFormat": "hwpx",
+          "textEqual": "true",
+          "format": "hwpx",
+          "passed": "true",
+          "lossValid": "true"
+        },
+        "publishedSha256": "bfb570c28b1e58353b959699a34e5111fec3c099f55710106912731358257fa8",
+        "nativeReopenEqual": true,
+        "structure": {
+          "modelEquivalent": true,
+          "format": "hwpx",
+          "pages": 1,
+          "tableCells": 4,
+          "boldKept": true
+        },
+        "repeatSave": false
+      },
+      {
+        "format": "docx",
+        "save": {
+          "findings": "",
+          "error": "",
+          "testid": "docx-save-result",
+          "changedSince": "false",
+          "synced": "true",
+          "outcome": "",
+          "state": "saved",
+          "revision": "9"
+        },
+        "durable": true,
+        "preflight": "safe",
+        "memoryReopen": {
+          "pagesEqual": "true",
+          "bytes": "6529",
+          "testid": "docx-roundtrip-result",
+          "textEqual": "true",
+          "passed": "true",
+          "modelEqual": "true",
+          "revision": "9"
+        },
+        "publishedSha256": "20282d08f90895176c9452c4ef90713c18a35fd91ea147062864dfaf7165b6cf",
+        "nativeReopenEqual": true,
+        "structure": {
+          "tableXmlEqual": true,
+          "untouchedParagraphXmlEqual": true,
+          "packagePartSetEqual": true
+        },
+        "repeatSave": false
+      }
+    ],
+    "rejections": [
+      {
+        "case": "external-conflict-hwp",
+        "error": "FileConflict",
+        "originalUnchanged": true,
+        "uiFailed": true
+      },
+      {
+        "case": "external-conflict-hwpx",
+        "error": "FileConflict",
+        "originalUnchanged": true,
+        "uiFailed": true
+      },
+      {
+        "case": "stale-preview.hwpx",
+        "error": "UnsafeSave",
+        "findings": "previewStale:Preview/PrvText.txt",
+        "sha256": "d7dbef8c39720d8512fc1ea868d212b204989cd71fbdefa0da906fee1deb630c",
+        "originalUnchanged": true,
+        "uiFailed": true
+      },
+      {
+        "case": "unknown-attribute.hwpx",
+        "error": "UnsafeSave",
+        "findings": "partChanged:Contents/header.xml",
+        "sha256": "18c8997bc7ba41e0bd82f675a52005bee9f0677a870ae1387901b7ab9e112c9a",
+        "originalUnchanged": true,
+        "uiFailed": true
+      },
+      {
+        "case": "invalid-reference.hwpx",
+        "mode": "direct IPC serialization fault",
+        "error": "UnsafeSave",
+        "findings": [
+          {
+            "code": "referenceInvalid",
+            "part": "Contents/section0.xml"
+          }
+        ],
+        "originalUnchanged": true,
+        "uiState": "idle",
+        "uiFalseSuccess": false
+      },
+      {
+        "case": "truncated-output.hwpx",
+        "mode": "direct IPC serialization fault",
+        "error": "UnsafeSave",
+        "findings": [
+          {
+            "code": "outputMalformed",
+            "part": "container"
+          }
+        ],
+        "originalUnchanged": true,
+        "uiState": "idle",
+        "uiFalseSuccess": false
+      },
+      {
+        "case": "external-conflict-docx",
+        "error": "FileConflict",
+        "originalUnchanged": true,
+        "uiFailed": true
+      },
+      {
+        "case": "unknown-part.docx",
+        "error": "UnsafeSave",
+        "findings": "partMissing:customXml/item1.xml",
+        "sha256": "76a6f849deb9202950a0986a6574978ce0a61f7b8fb706e891c9e022b2f454be",
+        "originalUnchanged": true,
+        "uiFailed": true
+      },
+      {
+        "case": "malformed-xml.docx",
+        "error": "UnsafeSave",
+        "findings": "originalMalformed:word/document.xml,partChanged:docProps/app.xml",
+        "sha256": "abba00dd474b55d5b47277c5f834f77275828048e5e0d9991f2e589371417847",
+        "originalUnchanged": true,
+        "uiFailed": true
+      }
+    ],
+    "nativeHwpStreams": {
+      "previewMatchesReopenedBody": true,
+      "textBytes": 156,
+      "imageBytes": 5126,
+      "streamCount": 9
+    },
+    "recoveryTests": {
+      "pass": 19,
+      "ignored": 1
+    },
+    "powerLossExperiments": "NOT RUN (범위 밖)",
+    "inputDiagnostic": "IBus 전역 선택 명령은 setxkbmap 부재로 exit1. 각 실제 입력의 화면 preedit와 정확한 확정은 필수 단언으로 통과."
+  },
+  "fixturePolicy": "실행 시 생성한 문단·굵게·2×2 표 문서. 바이너리/개인 문서/전체 raw 로그는 커밋하지 않음.",
+  "rawEvidence": "target/four-stage/ (ignored; 실패 실행도 그대로 보존)"
+}

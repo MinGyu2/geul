@@ -757,3 +757,59 @@ known-good 후보와 내구성을 확인하지 못한 새 후보가 모두 남�
 `tests/fixtures/rhwp/generate.mjs`가 필요하다. 원래 문장 삭제→한글·이모지 교체→WASM export/reopen→geul 실제 저장 서비스→게시 파일
 WASM 재열기에서 본문·쪽·컨트롤·굵게·표 텍스트를 비교하고, 삭제한 미리보기의 UTF-16 바이트 부재와 거절 시 원본 보존을 검사한다.
 네이티브 IME→앱 저장의 SC-002 전체 수용은 별도 Stage 4이며 이 엔진/서비스 검증만으로 인정하지 않는다.
+
+
+## 세 형식 통합 저장 수용 (2026-11-02, Stage 4)
+
+**SC-002: 아래 세 대표 지원 문서 범위 PASS. T009 전체는 선행 T007/T008 수용·플랫폼 근거가 남아 미체크.**
+`574b3af`의 실제 Tauri debug 앱과 고정 Release rhwp WASM을 Xvfb/X11 + IBus 한글 입력 환경에서 검증했다.
+원본 문서는 실행 시 생성한 한·영 문단·굵게·2×2 표다. 이 샘플에는 그림이 없으므로 그림 개체 보존 범위는 새로 입증하지 않았다.
+
+| 형식 | 실제 흐름 | 게시 파일의 비교 | 결과 |
+|---|---|---|---|
+| HWP | 화면 preedit→정확한 한글 확정→safe 사전 검사→저장→동일 세션에서 다시 입력/저장→닫기→앱 재열기 | WASM으로 원본과 본문 문단·컨트롤·쪽·표 4셀·굵게 비교. 두 번째 저장 revision18·dirty=false·synced=true. CFB 9개 스트림, PrvText156바이트가 재열기 본문에서 독립 계산한 값과 같음; PrvImage5126바이트는 고정 blank2010 자산과 완전히 같음 | PASS |
+| HWPX | 화면 preedit→정확한 한글 확정→safe 사전 검사→저장→닫기→앱 재열기 | WASM으로 원본과 본문 문단·컨트롤·쪽·표 4셀·굵게 비교, revision9·dirty=false·synced=true. 최종 저장 서비스의 패키지·XML·참조·미리보기 검사도 필수 | PASS |
+| DOCX | 화면 겹침 preedit(본문 모델 그대로)→한글 확정→safe 사전 검사→저장→닫기→앱 재열기 | 메모리 왕복의 모델/텍스트/쪽 일치, 실제 재열기 글자 일치, 원본과 표 XML·편집하지 않은 문단 XML·패키지 항목 집합 일치. revision9·dirty=false·synced=true | PASS |
+
+`scripts/tests/native-save-roundtrip.py`가 실제 UI의 사전 검사·저장 결과와 백엔드 세션 revision/dirty를 확인한다. 앱의
+저장 검증은 그대로 실행되며 테스트가 safe 판정을 주입하지 않는다. 잘못된 참조/불완전 출력의 **음성 시험 두 개만** 실제 IPC에
+결함 출력을 직접 보낸다(엔진이 그 바이트를 출력했다고 주장하지 않는다).
+
+거절 9개를 검증했다: HWP/HWPX/DOCX 각 외부 수정 충돌(`FileConflict`), HWPX 낡은 글 미리보기(`PreviewStale`), 알 수 없는
+header 속성 소실(`PartChanged`), 없는 글자 모양 참조(`ReferenceInvalid`), 잘린 직렬화 출력(`OutputMalformed`),
+DOCX customXml 소실(`PartMissing`), 잘린 본문 XML(`OriginalMalformed`, unknown). 모두 거절 뒤 파일 해시가 그대로다.
+UI 저장 경로의 7개는 실패 이유·미보존 상태를 확인했다. 직접 IPC 시험 2개는 백엔드 거절·원본 해시·dirty 유지와
+UI가 saved로 바뀌지 않음을 확인했다(UI는 idle). 이를 UI 오류 표시 시험으로 바꿔 보고하지 않는다.
+
+저장 회귀 100개(12 ignored)의 임시 파일 검증·원본 충돌·원자 교체·내구성 오류·참조·보호 형식·손실 보고 검사를 재사용했다.
+기존 recovery 저장소 회귀 19개 PASS/1 ignored helper도 실행했다. 별도 전원 차단·T014 전체 수용·다른 OS의 원자 교체는 시험하지 않았다.
+Stage 1의 삭제/교체 사례에서 예전 미리보기 UTF-16 바이트가 새 CFB 전체에 없는 것도 확인했다. 물리 매체의 포렌식 삭제는 범위 밖이다.
+
+검증 증거는 [공개 요약 JSON](save-roundtrip-acceptance-2026-11-02.json)에 있다. 최종 HWP는 `stage4-run6`, HWPX/DOCX는
+`stage4-run5 --formats hwpx docx`의 결과를 결합했다. 하나의 전체 실행이 통과했다고 주장하지 않는다. 앱 SHA-256 및 WASM은
+두 실행에서 같다. 이전 실패도 `target/four-stage/`에 보존했다: IBus 설정 오류, 불필요한 invoke 관찰 실패, 테스트 변형이 XML
+접두사를 바꿔 발생한 미선언 접두사 출력 등이다. 마지막 변형은 SAX로 원래 이름공간을 유지해 원래 의도한 속성 소실 차단을 확인했다.
+IBus 전역 선택 명령은 `setxkbmap` 부재로 exit1이었지만 각 입력의 실제 화면 preedit·정확한 확정·revision은 필수 단언으로 통과했다.
+
+재현에는 기존 외부 `tests/`와 생성 픽스처, X11/IBus 한글 입력 환경, 실행 중인 Vite 검사 호스트, 최신 debug 앱과 tauri-driver가 필요하다.
+새 도구·OS·데스크톱은 설치하지 않았다. 기본 `--formats`는 세 형식 모두이며 영향 범위 재검증만 선택할 수 있다.
+`native_hwp_published_preview_matches_reopened_body`는 게시 HWP와 독립 WASM 기대 미리보기를 실제 CFB 스트림으로 대조하는 선택적 통합 시험이다.
+
+### 외부 HWPX 보존 확대의 미완료 범위
+
+이번 Stage 2는 **INCOMPLETE, 생산용 수정/완료 커밋 없음**이다. 고정 엔진의 외부 샘플 7개를 같은 WASM으로 검사했고 모두
+보존 사전 검사에서 unsafe였다. `saved/blank_hwpx.hwpx`, `03-blank_hwpx.hwpx`, `hwpx-01-saved.hwpx`,
+`samples/종이기준.hwpx`, `셀보호.hwpx`, `누름틀-2024.hwpx`, `issue5590_per_row_column_widths.hwpx`를 선택했다.
+과거 3/60 결과를 현재 전체 호환률로 인용하지 않는다.
+
+| 분류 | 이번 관찰 | 발생 경계·현재 처리 |
+|---|---|---|
+| 무해할 수 있는 정규화 | 선언·접두사·속성 순서 | 기존 XML canonical 비교가 이미 구분한다. 이번에 comparator를 완화하지 않음 |
+| 속성 변경/소실 | 문단 ID 재번호, `textDir=LTR` 소실, 구역 tabStop 기본 속성 추가 | parser/IR 및 header/section writer; 의미·참조를 증명한 보존 수정은 미구현 |
+| 요소/모양 | 글자 모양 기본 자식 추가와 header/body 구조 차이 | IR 기반 재생성. 손실 보고 0건으로 원본 보존을 인정하지 않음 |
+| metadata/관계 | content.hpf의 `linear=yes` 추가, 다중 구역 RDF 재구성, 일부 최소 샘플의 패키지 항목 추가 | package 조립. 원본 부분을 무조건 덮어 씌우지 않음 |
+| 알 수 없는 XML | 속성 소실 차단 확인; 접두사 변경 시 원본 raw fragment가 미선언 접두사로 출력될 수 있음 | 범용 원본 XML 보존 경로 없음; 잘못된 출력은 계속 차단 |
+| 미리보기/자원 | Preview aux는 그대로 복사; 확인할 수 없는 미리보기/참조는 차단 | 새 임의 HWPX 지원을 선언하지 않음. 외부 그림/BinData 보존 확대 미검증 |
+
+다음 구현은 원본 XML 정보의 IR 보존과 문단/모양 ID·구역 관계의 편집 후 무결성을 좁은 외부 사례에서 증명해야 한다.
+로컬 미공개 서브모듈 커밋을 gitlink로 만들지 않았으며, 검사 결과를 개선하려고 unknown/unsafe를 safe로 바꾸지 않았다.

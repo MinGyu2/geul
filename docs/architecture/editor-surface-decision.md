@@ -1534,3 +1534,22 @@ WordCraft `hasUnpreservedChanges`는 백엔드 dirty, 문서를 바꿀 수 있�
 저장·문서 명령·쪽 이동을 막는다. 대기 중 이동만 있을 때 확인 없이 닫는 것은 잃을 내용이 없기 때문이며(늦은 응답은 epoch로
 버림), 편집 요청 실패 뒤에는 백엔드가 같은 잠금 안에서 확정한 변경만 dirty로 남기므로(엔진 예외면 모델을 버림) 다시 읽은
 dirty가 보호 근거다.
+
+
+## 통합 저장의 표면 선행 증거 (2026-11-02)
+
+이는 T009/SC-002 통합 저장의 선행 증거 재대조이며 T007/T008 전체 완료 선언이 아니다. 기존 PoC의 "저장 없음"은
+당시 범위이고 현재 앱은 T009 안전 저장을 제공한다. 구현 표면은 교체하지 않았다.
+
+| 항목 | 과거 기록 | 이번 검증 | 남은 범위 |
+|---|---|---|---|
+| rhwp·WordCraft 실제 한글 IME | 위 X11/IBus 게이트·지연 기록 | 각 필수 7/7 PASS: preedit·커서·정확한 확정·연속 음절·조합 중 키/클릭; 탭 전환도 관측 | DOCX 선택 교체·취소 추가 PASS; rhwp 선택 교체/취소와 다른 X 창 초점 이동은 이번 네이티브 근거 없음; 실제 IME p95 미측정 |
+| 일반 키→화면 p95 ≤150ms | 이전 수치는 역사 기록 유지 | HWP 42ms/79개, HWPX 38ms/79개, DOCX 57ms/80개 | Xvfb/X11·DPR1·소프트웨어 요청·추가 CPU 부하 없음; 실제 IME 지연과 구분 |
+| 렌더·확대·여러 문서 | 이전 DPR2/다중 문서 검증 | HWP/HWPX/DOCX 로드·렌더·100%/200% 확대 PASS, IME 문서 전환 PASS | 이번 DPR2·CPU 포화·GPU desktop·Wayland IME·fcitx5·Windows/macOS NOT RUN |
+| 본문 선택·키·revision·표 | 기존 구현·이전 표 검증 | DOCX 일반 시나리오 27개 PASS, 표 이동·revision·메모리 모델 왕복 포함 | rhwp 표 검증 FAIL: 고정 좌표가 셀을 누르지 못했고 live probe도 활성 셀 경계를 얻지 못함. 같은 fixture의 Node WASM은 경계를 반환하므로 제품 Tab 결함으로 확정하지 않음 |
+| 실제 IME→앱 저장→재열기 | 예전 PoC는 메모리/파일 내보내기만 | 세 형식 지원 문서 PASS, [통합 저장 기록](save-preservation.md#세-형식-통합-저장-수용-2026-11-02-stage-4) | 외부 HWPX 호환성 확대·T007/T008/T009 전체 수용과 별개 |
+
+앱은 `574b3af` 소스의 debug 바이너리, 고정 Release WASM이다. 실제 입력은 IBus 1.5.33 + ibus-hangul 1.5.5 + xdotool이며
+DOM 조합 이벤트를 만들지 않았다. 일반 키 측정은 독립 simple GTK 입력 컨텍스트다. 시작 load average는 rhwp 0.64/1.01/1.23,
+DOCX 0.64/1.00/1.27이며 CPU 포화 실험을 하지 않았다. 각 결과는 WebView 전달·스케줄링·그리기를 포함한 표면 측정이고
+엔진 계산만의 지연 또는 다른 환경의 성능 보장으로 해석하지 않는다. rhwp Undo/Redo 및 D4 gate는 변경하지 않았다.
