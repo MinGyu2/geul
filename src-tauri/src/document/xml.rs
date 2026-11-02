@@ -1406,6 +1406,24 @@ mod legacy_test;
 #[cfg(test)]
 mod resource_tests {
     use super::*;
+
+    #[test]
+    fn document_events_and_literal_newlines_are_preserved() {
+        for (before, after) in [
+            ("<!--before--><r/>", "<r/>"),
+            ("<r/><!--after-->", "<r/>"),
+            ("<?app before?><r/>", "<r/>"),
+            ("<r/><?app after?>", "<r/>"),
+            ("<!--a\r\nb--><r/>", "<!--a\nb--><r/>"),
+            ("<?app a\r\nb?><r/>", "<?app a\nb?><r/>"),
+            ("<r>a\r\nb</r>", "<r>a\nb</r>"),
+        ] {
+            assert_ne!(canonical(before.as_bytes()), canonical(after.as_bytes()));
+            assert!(!canonical_equal(before.as_bytes(), after.as_bytes()).unwrap());
+        }
+        assert!(canonical_equal(b"<r>a\r\nb</r>", b"<r>a&#13;&#10;b</r>").unwrap());
+    }
+
     fn differential(bytes: &[u8]) {
         let old = legacy_test::canonical_legacy(bytes);
         let new = canonical(bytes);

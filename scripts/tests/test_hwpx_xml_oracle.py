@@ -156,6 +156,20 @@ class DocumentEvents(unittest.TestCase):
             with self.subTest(data=data), self.assertRaises(ExpatError):
                 oracle.parse(data)
 
+    def test_literal_line_endings_match_raw_production_events(self):
+        # Expat's usual callbacks normalize these to LF. Rust keeps the raw
+        # text/comment/PI payload, so a CR/CRLF loss must remain visible.
+        for template in (b'<!--a%sb--><r/>', b'<r/><!--a%sb-->',
+                         b'<?app a%sb?><r/>', b'<r/><?app a%sb?>',
+                         b'<r>a%sb</r>', b'<r><![CDATA[a%sb]]></r>'):
+            for newline in (b'\r', b'\r\n'):
+                with self.subTest(template=template, newline=newline):
+                    self.assertFalse(oracle.equal(template % newline, template % b'\n'))
+        self.assertTrue(oracle.equal(b'<r>a\r\nb</r>', b'<r>a&#13;&#10;b</r>'))
+        self.assertTrue(oracle.equal(b'<r><![CDATA[a\r\nb]]></r>', b'<r>a&#xD;\nb</r>'))
+        self.assertTrue(oracle.equal(b'<r>&lt;!--literal--&gt;&amp;#13;</r>',
+                                     b'<r><![CDATA[<!--literal-->&#13;]]></r>'))
+
 
 if __name__ == '__main__':
     unittest.main()

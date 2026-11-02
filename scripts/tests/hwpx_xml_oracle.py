@@ -20,6 +20,7 @@ are merged, so text segmentation cannot hide or fabricate differences.
 """
 import xml.etree.ElementTree as ET
 from xml.parsers import expat
+import re
 
 
 class DoctypeRefused(ValueError):
@@ -42,13 +43,15 @@ class Document:
 def parse(data):
     """Use Expat's document callbacks, not a root-only ElementTree parse.
 
-    DefaultHandler supplies the complete PI spelling (including target/data
-    separator whitespace); Expat's PI callback would discard that whitespace.
+    DefaultHandler supplies raw character data/comments/PI, retaining literal
+    CR and CRLF which the ordinary text/comment callbacks normalize to LF.
+    It also keeps PI target/data separator whitespace. Expat validates XML;
+    only the five predefined entities and numeric references are decoded here.
     Expat validates namespaces, references, attributes and the single root.
     """
     parser = expat.ParserCreate(namespace_separator='}')
     builder = ET.TreeBuilder(insert_comments=True, insert_pis=True)
-    children, depth = [], 0
+    children, depth, cdata = [], 0, False
 
     def name(value):
         return '{' + value if '}' in value else value
@@ -65,23 +68,39 @@ def parse(data):
         builder.end(name(tag))
         depth -= 1
 
-    def comment(value):
-        node = builder.comment(value)
-        if depth == 0:
-            children.append(node)
+    def reference(match):
+        token = match[1]
+        if token.startswith('#x'):
+            return chr(int(token[2:], 16))
+        if token.startswith('#'):
+            return chr(int(token[1:], 10))
+        return {'lt': '<', 'gt': '>', 'amp': '&', 'apos': "'", 'quot': '"'}[token]
+
+    def cdata_state(value):
+        nonlocal cdata
+        cdata = value
 
     def default(value):
-        if value.startswith('<?'):
+        if cdata:
+            builder.data(value)
+        elif value.startswith('<!--'):
+            node = builder.comment(value[4:-3])
+            if depth == 0:
+                children.append(node)
+        elif value.startswith('<?'):
             node = builder.pi(value[2:-2])
             if depth == 0:
                 children.append(node)
+        elif depth:
+            builder.data(re.sub(r'&(#x[0-9a-fA-F]+|#[0-9]+|lt|gt|amp|apos|quot);', reference, value))
 
     def doctype(*_):
         raise DoctypeRefused('DTD')
 
     parser.StartElementHandler, parser.EndElementHandler = start, end
-    parser.CharacterDataHandler = lambda value: builder.data(value) if depth else None
-    parser.CommentHandler, parser.DefaultHandler = comment, default
+    parser.DefaultHandler = default
+    parser.StartCdataSectionHandler = lambda: cdata_state(True)
+    parser.EndCdataSectionHandler = lambda: cdata_state(False)
     parser.XmlDeclHandler = lambda *_: None
     parser.StartDoctypeDeclHandler = doctype
     parser.Parse(data, True)
