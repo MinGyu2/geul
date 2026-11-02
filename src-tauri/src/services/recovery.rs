@@ -18,6 +18,18 @@ const MAX_RECORDS: usize = 128;
 #[cfg(target_os = "linux")]
 const MAGIC: &[u8; 4] = b"GRR1";
 
+/// Test-only fault injection local to recovery records (independent of document publication faults).
+#[cfg(all(test, target_os = "linux"))]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum RecoveryFault {
+    /// Directory fsync after a record name was published fails.
+    PublishDirSync,
+}
+#[cfg(all(test, target_os = "linux"))]
+thread_local! {
+    pub(crate) static RECOVERY_FAULT: std::cell::Cell<Option<RecoveryFault>> = const { std::cell::Cell::new(None) };
+}
+
 fn failure() -> DocumentError {
     DocumentError::SaveFailure {
         stage: crate::document::SaveStage::Write,
@@ -310,49 +322,32 @@ impl RecoveryStore {
             .to_str()
             .ok_or_else(failure)?
             .to_owned();
-        let current = ids
-            .ids
-            .get(&key)
-            .and_then(|history| history.last())
-            .filter(|(id, original)| {
-                // Reuse only the latest ID for the same source; after Save As the older record keeps its own ID.
-                // Preserve an orphaned/partial pending record; retry under a fresh opaque ID.
-                // Keep every ID owned by this session so explicit forget can still remove them.
-                *original == original_path
-                    && std::fs::symlink_metadata(Self::base(&dir).join(format!("{id}.pending")))
-                        .is_err_and(|e| e.kind() == std::io::ErrorKind::NotFound)
-            })
-            .map(|(id, _)| id.clone());
-        let id = match current {
-            Some(id) => id,
-            None => {
-                let mut random = [0u8; 16];
-                let mut at = 0;
-                while at < random.len() {
-                    // SAFETY: valid remaining byte slice; no optional flags.
-                    let n = unsafe {
-                        libc::getrandom(random[at..].as_mut_ptr().cast(), random.len() - at, 0)
-                    };
-                    if n < 0 {
-                        if std::io::Error::last_os_error().kind() == std::io::ErrorKind::Interrupted
-                        {
-                            continue;
-                        }
-                        return Err(failure());
-                    }
-                    if n == 0 {
-                        return Err(failure());
-                    }
-                    at += n as usize;
+        // Every checkpoint gets a fresh opaque ID and is published create-only: a newer checkpoint never replaces the
+        // previous durable one in place. Predecessors for the same source are retired only after the new record's
+        // directory entry is confirmed durable (`retire`). The ID is owned before writing so explicit forget covers
+        // partial or unconfirmed attempts too.
+        let mut random = [0u8; 16];
+        let mut at = 0;
+        while at < random.len() {
+            // SAFETY: valid remaining byte slice; no optional flags.
+            let n =
+                unsafe { libc::getrandom(random[at..].as_mut_ptr().cast(), random.len() - at, 0) };
+            if n < 0 {
+                if std::io::Error::last_os_error().kind() == std::io::ErrorKind::Interrupted {
+                    continue;
                 }
-                let id: String = random.iter().map(|b| format!("{b:02x}")).collect();
-                ids.ids
-                    .entry(key)
-                    .or_default()
-                    .push((id.clone(), original_path.clone()));
-                id
+                return Err(failure());
             }
-        };
+            if n == 0 {
+                return Err(failure());
+            }
+            at += n as usize;
+        }
+        let id: String = random.iter().map(|b| format!("{b:02x}")).collect();
+        ids.ids
+            .entry(key)
+            .or_default()
+            .push((id.clone(), original_path.clone()));
         let header = Header {
             version: 1,
             id,
@@ -373,7 +368,79 @@ impl RecoveryStore {
                 .map_err(|_| failure())?
                 .as_secs(),
         };
-        self.put(&dir, header, bytes)
+        let (original, generation, revision) =
+            (header.original.clone(), header.generation, header.revision);
+        let attempted = header.id.clone();
+        let candidate = match self.put(&dir, header, bytes) {
+            Ok(candidate) => candidate,
+            Err(error) => {
+                // Forget only an ID that left nothing behind; a partial or unconfirmed record stays owned.
+                let absent = |suffix: &str| {
+                    std::fs::symlink_metadata(
+                        Self::base(&dir).join(format!("{attempted}.{suffix}")),
+                    )
+                    .is_err_and(|e| e.kind() == std::io::ErrorKind::NotFound)
+                };
+                if absent("pending") && absent("recovery") {
+                    if let Some(history) = ids.ids.get_mut(&key) {
+                        history.retain(|(id, _)| *id != attempted);
+                    }
+                }
+                return Err(error);
+            }
+        };
+        if let Some(history) = ids.ids.get_mut(&key) {
+            Self::retire(
+                &dir,
+                &candidate.id,
+                &original,
+                generation,
+                revision,
+                history,
+            );
+        }
+        Ok(candidate)
+    }
+
+    /// After `keep` is durably published, remove superseded records of the same source (same original path and load,
+    /// revision not newer). Unreadable/foreign records and `.pending` files are left for explicit disposition. A failed
+    /// removal only leaves an extra older candidate, which stays owned for `saved`/`forget_session`.
+    fn retire(
+        dir: &std::fs::File,
+        keep: &str,
+        original: &str,
+        generation: u64,
+        revision: u64,
+        history: &mut Vec<(String, String)>,
+    ) {
+        let Ok(_lock) = DirectoryLock::take(dir, true) else {
+            return;
+        };
+        let mut removed = false;
+        for (id, source) in history.iter() {
+            let name = format!("{id}.recovery");
+            if name == keep || source != original {
+                continue;
+            }
+            let superseded = Self::read(dir, &name).is_ok_and(|(h, _)| {
+                h.original == original && h.generation == generation && h.revision <= revision
+            });
+            if superseded && std::fs::remove_file(Self::base(dir).join(&name)).is_ok() {
+                removed = true;
+            }
+        }
+        if removed {
+            let _ = dir.sync_all();
+        }
+        let absent = |name: String| {
+            std::fs::symlink_metadata(Self::base(dir).join(name))
+                .is_err_and(|e| e.kind() == std::io::ErrorKind::NotFound)
+        };
+        history.retain(|(id, _)| {
+            format!("{id}.recovery") == keep
+                || !absent(format!("{id}.recovery"))
+                || !absent(format!("{id}.pending"))
+        });
     }
 
     fn put(
@@ -408,19 +475,12 @@ impl RecoveryStore {
             return Err(failure());
         }
         let final_name = format!("{}.recovery", header.id);
-        let final_path = Self::base(dir).join(&final_name);
-        if std::fs::symlink_metadata(&final_path).is_ok() {
-            // Never overwrite an invalid or foreign recovery record, even in our private store.
-            let (prior, _) = Self::read(dir, &final_name)?;
-            if prior.id != header.id
-                || prior.original != header.original
-                || prior.generation != header.generation
-                || prior.revision > header.revision
-            {
-                return Err(failure());
-            }
+        let pending_name = format!("{}.pending", header.id);
+        let pending = Self::base(dir).join(&pending_name);
+        if std::fs::symlink_metadata(Self::base(dir).join(&final_name)).is_ok() {
+            // Never replace an existing record; checked early so no orphan `.pending` is left (NOREPLACE below is atomic).
+            return Err(failure());
         }
-        let pending = Self::base(dir).join(format!("{}.pending", header.id));
         let mut file = std::fs::OpenOptions::new()
             .write(true)
             .create_new(true)
@@ -443,7 +503,30 @@ impl RecoveryStore {
                 .and_then(|n| n.to_str())
                 .ok_or_else(failure)?,
         )?;
-        std::fs::rename(&pending, &final_path).map_err(|_| failure())?;
+        {
+            use std::os::fd::AsRawFd;
+            let from = std::ffi::CString::new(pending_name).map_err(|_| failure())?;
+            let to = std::ffi::CString::new(final_name.as_str()).map_err(|_| failure())?;
+            // SAFETY: the held directory descriptor and NUL-terminated names; NOREPLACE never replaces an existing
+            // record (valid, foreign or corrupt). A collision leaves the validated `.pending` for explicit disposition.
+            if unsafe {
+                libc::renameat2(
+                    dir.as_raw_fd(),
+                    from.as_ptr(),
+                    dir.as_raw_fd(),
+                    to.as_ptr(),
+                    libc::RENAME_NOREPLACE,
+                )
+            } != 0
+            {
+                return Err(failure());
+            }
+        }
+        // A published name without a confirmed directory fsync is reported as failure; predecessors are kept.
+        #[cfg(test)]
+        if RECOVERY_FAULT.with(|f| f.get()) == Some(RecoveryFault::PublishDirSync) {
+            return Err(failure());
+        }
         dir.sync_all().map_err(|_| failure())?;
         Ok(Self::candidate(final_name, Some(header)))
     }
@@ -685,7 +768,7 @@ mod tests {
     }
 
     #[test]
-    fn partial_pending_retry_uses_fresh_id_and_preserves_partial_and_last_good_copy() {
+    fn partial_pending_retry_uses_fresh_id_preserves_partial_and_supersedes_after_durable_retry() {
         let dir = TempDir::new();
         let source = dir.path().join("source.docx");
         let (registry, info, original) = setup(&source);
@@ -705,11 +788,13 @@ mod tests {
             .unwrap()
             .iter()
             .any(|entry| entry.id == pending && !entry.valid));
+        // The durable retry supersedes the older record; the partial file stays for explicit disposition.
         assert!(store
             .list()
             .unwrap()
             .iter()
-            .any(|entry| entry.id == candidate.id && entry.valid));
+            .any(|entry| entry.id == retried.id && entry.valid));
+        assert!(!store.root.join(&candidate.id).exists());
         assert_eq!(
             std::fs::read(store.root.join(&pending)).unwrap(),
             b"partial"
@@ -995,9 +1080,11 @@ mod tests {
         let again = store
             .snapshot(&ticket, &checked, &destination, &next)
             .unwrap();
-        assert_eq!(again.id, candidate.id);
+        assert_ne!(again.id, candidate.id);
         let listed = store.list().unwrap();
-        assert_eq!(listed.len(), 2);
+        assert_eq!(listed.len(), 2); // the old source's record stays; the new source's predecessor is retired
+        assert!(listed.iter().all(|c| c.id != candidate.id));
+        let candidate = again;
         assert!(listed.iter().all(|c| c.valid));
         let old_copy = dir.path().join("old-copy.docx");
         let new_copy = dir.path().join("new-copy.docx");
@@ -1020,8 +1107,145 @@ mod tests {
             .is_err());
     }
 
+    fn second_checkpoint_fails_after_publication() -> (
+        TempDir,
+        SessionRegistry,
+        u64,
+        RecoveryStore,
+        Candidate,
+        Vec<u8>,
+        Vec<u8>,
+    ) {
+        let dir = TempDir::new();
+        let source = dir.path().join("original.docx");
+        let (registry, info, original) = setup(&source);
+        let store = RecoveryStore::new(dir.path().join("records"));
+        let first_bytes = edited(&original);
+        let ticket = registry.begin_save(info.session_id, 1, 1).unwrap();
+        let checked =
+            service::validate_snapshot(&ticket, &Limits::default(), &first_bytes, None, true)
+                .unwrap();
+        let first = store
+            .snapshot(&ticket, &checked, &source, &first_bytes)
+            .unwrap();
+        drop(ticket);
+        let held = store.directory().unwrap();
+        let (header, payload) = RecoveryStore::read(&held, &first.id).unwrap();
+        assert_eq!(
+            (header.revision, payload.as_slice()),
+            (1, first_bytes.as_slice())
+        );
+        registry.commit(info.session_id, 1, 1, 1).unwrap();
+        let second_bytes = edited(&first_bytes);
+        let ticket = registry.begin_save(info.session_id, 1, 2).unwrap();
+        RECOVERY_FAULT.with(|f| f.set(Some(RecoveryFault::PublishDirSync)));
+        let failed = store.snapshot(&ticket, &checked, &source, &second_bytes);
+        RECOVERY_FAULT.with(|f| f.set(None));
+        drop(ticket);
+        assert!(
+            failed.is_err(),
+            "unconfirmed directory durability is never success"
+        );
+        assert_eq!(std::fs::read(&source).unwrap(), original);
+        (
+            dir,
+            registry,
+            info.session_id,
+            store,
+            first,
+            first_bytes,
+            second_bytes,
+        )
+    }
+
     #[test]
-    fn checkpoint_retry_without_source_change_reuses_its_own_record() {
+    fn failed_directory_sync_after_publication_keeps_last_known_good_candidate() {
+        let (dir, _registry, session_id, store, first, first_bytes, second_bytes) =
+            second_checkpoint_fails_after_publication();
+        let held = store.directory().unwrap();
+        // The previously durable revision-1 record must still exist unchanged under its own name.
+        let (header, payload) = RecoveryStore::read(&held, &first.id)
+            .expect("last known-good candidate must survive a failed replacement");
+        assert_eq!(header.revision, 1);
+        assert_eq!(payload, first_bytes);
+        // A fresh process sees the old candidate and, at most, the unconfirmed newer one.
+        let reopened = RecoveryStore::new(dir.path().join("records"));
+        let listed = reopened.list().unwrap();
+        assert!(listed.iter().all(|c| c.valid));
+        assert!(listed
+            .iter()
+            .any(|c| c.id == first.id && c.revision == Some(1)));
+        let old_copy = dir.path().join("old.docx");
+        reopened.restore(&first.id, &old_copy).unwrap();
+        assert_eq!(std::fs::read(&old_copy).unwrap(), first_bytes);
+        if let Some(newer) = listed.iter().find(|c| c.id != first.id) {
+            assert_eq!(newer.revision, Some(2));
+            let new_copy = dir.path().join("new.docx");
+            reopened.restore(&newer.id, &new_copy).unwrap();
+            assert_eq!(std::fs::read(&new_copy).unwrap(), second_bytes);
+        }
+        store.forget_session(session_id).unwrap();
+        assert!(reopened.list().unwrap().is_empty());
+    }
+
+    #[test]
+    fn saved_and_forget_cover_known_good_and_unconfirmed_candidates() {
+        let (_dir, registry, session_id, store, _first, _first_bytes, _second_bytes) =
+            second_checkpoint_fails_after_publication();
+        assert_eq!(store.list().unwrap().len(), 2);
+        let ticket = registry.begin_save(session_id, 1, 2).unwrap();
+        store.saved(&ticket);
+        assert!(store.list().unwrap().is_empty());
+        drop(ticket);
+        store.forget_session(session_id).unwrap();
+    }
+
+    #[test]
+    fn invalid_new_checkpoint_and_full_quota_never_touch_the_previous_candidate() {
+        let dir = TempDir::new();
+        let source = dir.path().join("source.docx");
+        let (registry, info, original) = setup(&source);
+        let store = RecoveryStore::new(dir.path().join("records"));
+        let ticket = registry.begin_save(info.session_id, 1, 1).unwrap();
+        let good = store
+            .snapshot(&ticket, &original, &source, &original)
+            .unwrap();
+        let record = store.root.join(&good.id);
+        let before = std::fs::read(&record).unwrap();
+        // The new payload fails validation (not a DOCX) before it can become a recovery candidate.
+        assert!(store
+            .snapshot(&ticket, &original, &source, b"not a document")
+            .is_err());
+        assert_eq!(std::fs::read(&record).unwrap(), before);
+        let listed = store.list().unwrap();
+        assert!(listed.iter().any(|c| c.id == good.id && c.valid));
+        assert!(listed.iter().all(|c| c.id == good.id || !c.valid)); // partial left for disposition
+                                                                     // Fill the store: the checkpoint fails up front and the only good candidate remains.
+        let held = store.directory().unwrap();
+        let used = std::fs::read_dir(RecoveryStore::base(&held))
+            .unwrap()
+            .count();
+        for i in used..MAX_RECORDS {
+            std::fs::write(
+                RecoveryStore::base(&held).join(format!("{i:032x}.pending")),
+                b"x",
+            )
+            .unwrap();
+        }
+        assert!(store
+            .snapshot(&ticket, &original, &source, &original)
+            .is_err());
+        assert_eq!(std::fs::read(&record).unwrap(), before);
+        assert!(RecoveryStore::new(dir.path().join("records"))
+            .list()
+            .unwrap()
+            .iter()
+            .any(|c| c.id == good.id && c.valid));
+        assert_eq!(std::fs::read(&source).unwrap(), original);
+    }
+
+    #[test]
+    fn checkpoint_retry_without_source_change_supersedes_its_own_record() {
         let dir = TempDir::new();
         let source = dir.path().join("source.docx");
         let (registry, info, original) = setup(&source);
@@ -1033,8 +1257,14 @@ mod tests {
         let second = store
             .snapshot(&ticket, &original, &source, &original)
             .unwrap();
-        assert_eq!(first.id, second.id);
-        assert_eq!(store.list().unwrap().len(), 1);
+        assert_ne!(first.id, second.id);
+        let listed = store.list().unwrap();
+        assert_eq!(listed.len(), 1);
+        assert_eq!(listed[0].id, second.id);
+        assert_eq!(
+            store.ids.lock().unwrap().ids[&(info.session_id, 1)].len(),
+            1
+        );
     }
 
     #[test]
@@ -1050,11 +1280,20 @@ mod tests {
         let held = store.directory().unwrap();
         let (mut header, bytes) = RecoveryStore::read(&held, &candidate.id).unwrap();
         header.created_at = 0;
-        store.put(&held, header, &bytes).unwrap();
-        assert!(store.list().unwrap()[0].stale);
+        header.id = "0".repeat(31) + "f";
+        let stale = store.put(&held, header, &bytes).unwrap();
+        assert!(store
+            .list()
+            .unwrap()
+            .iter()
+            .any(|c| c.id == stale.id && c.stale && c.valid));
         store
-            .restore(&candidate.id, &dir.path().join("stale-copy.docx"))
+            .restore(&stale.id, &dir.path().join("stale-copy.docx"))
             .unwrap();
+        // put is create-only: an existing record (valid or not) is never replaced.
+        let (header, _) = RecoveryStore::read(&held, &stale.id).unwrap();
+        assert!(store.put(&held, header, &bytes).is_err());
+        store.discard(&stale.id).unwrap();
         assert_eq!(std::fs::read(&source).unwrap(), original);
         assert!(store
             .snapshot(&ticket, &original, &source, &vec![0; MAX_PAYLOAD + 1])
