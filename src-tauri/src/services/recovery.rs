@@ -95,7 +95,9 @@ impl Drop for DirectoryLock<'_> {
 #[cfg(target_os = "linux")]
 #[derive(Default)]
 struct Memory {
-    ids: std::collections::BTreeMap<(u64, u64), Vec<String>>,
+    /// Every opaque ID owned by a session load, with the source path its header records. Save As keeps the
+    /// generation but changes that path, and `put` never replaces a record for a different original.
+    ids: std::collections::BTreeMap<(u64, u64), Vec<(String, String)>>,
     forgotten: std::collections::BTreeSet<u64>,
 }
 
@@ -300,17 +302,27 @@ impl RecoveryStore {
         }
         let dir = self.directory()?;
         let key = (ticket.session_id, ticket.generation);
+        let original_path = ticket
+            .source
+            .load
+            .identity
+            .path()
+            .to_str()
+            .ok_or_else(failure)?
+            .to_owned();
         let current = ids
             .ids
             .get(&key)
             .and_then(|history| history.last())
-            .filter(|id| {
+            .filter(|(id, original)| {
+                // Reuse only the latest ID for the same source; after Save As the older record keeps its own ID.
                 // Preserve an orphaned/partial pending record; retry under a fresh opaque ID.
                 // Keep every ID owned by this session so explicit forget can still remove them.
-                std::fs::symlink_metadata(Self::base(&dir).join(format!("{id}.pending")))
-                    .is_err_and(|e| e.kind() == std::io::ErrorKind::NotFound)
+                *original == original_path
+                    && std::fs::symlink_metadata(Self::base(&dir).join(format!("{id}.pending")))
+                        .is_err_and(|e| e.kind() == std::io::ErrorKind::NotFound)
             })
-            .cloned();
+            .map(|(id, _)| id.clone());
         let id = match current {
             Some(id) => id,
             None => {
@@ -334,21 +346,17 @@ impl RecoveryStore {
                     at += n as usize;
                 }
                 let id: String = random.iter().map(|b| format!("{b:02x}")).collect();
-                ids.ids.entry(key).or_default().push(id.clone());
+                ids.ids
+                    .entry(key)
+                    .or_default()
+                    .push((id.clone(), original_path.clone()));
                 id
             }
         };
         let header = Header {
             version: 1,
             id,
-            original: ticket
-                .source
-                .load
-                .identity
-                .path()
-                .to_str()
-                .ok_or_else(failure)?
-                .to_owned(),
+            original: original_path,
             target: target.to_str().ok_or_else(failure)?.to_owned(),
             source_hash: digest(original),
             payload_hash: digest(bytes),
@@ -456,7 +464,7 @@ impl RecoveryStore {
             return;
         };
         let Ok(dir) = self.directory() else { return };
-        for id in history {
+        for (id, _) in history {
             let name = format!("{id}.recovery");
             if Self::read(&dir, &name).is_ok_and(|(h, _)| h.revision <= ticket.revision) {
                 let _ = self.discard(&name);
@@ -470,7 +478,7 @@ impl RecoveryStore {
         ids.forgotten.insert(session_id);
         for ((session, _), history) in ids.ids.iter() {
             if *session == session_id {
-                for id in history {
+                for (id, _) in history {
                     for suffix in ["pending", "recovery"] {
                         let name = format!("{id}.{suffix}");
                         let dir = self.directory()?;
@@ -882,6 +890,153 @@ mod tests {
             original
         );
     }
+    /// Save As with a published-but-unconfirmed result keeps the generation but changes the authoritative source path.
+    fn save_as(
+        durable: bool,
+    ) -> (
+        TempDir,
+        SessionRegistry,
+        u64,
+        RecoveryStore,
+        Vec<u8>,
+        Vec<u8>,
+    ) {
+        let dir = TempDir::new();
+        let source = dir.path().join("original.docx");
+        let (registry, info, original) = setup(&source);
+        let store = RecoveryStore::new(dir.path().join("records"));
+        let output = edited(&original);
+        let destination = dir.path().join("new.docx");
+        let ticket = registry.begin_save(info.session_id, 1, 1).unwrap();
+        if !durable {
+            publish::FAULT.with(|fault| fault.set(Some(publish::Fault::DirSync)));
+        }
+        let saved = service::save_with_options(
+            &registry,
+            &ticket,
+            &Limits::default(),
+            &output,
+            None,
+            true,
+            service::SaveOptions {
+                destination: Some(&destination),
+                recovery: Some(&store),
+            },
+        );
+        publish::FAULT.with(|fault| fault.set(None));
+        drop(ticket);
+        let saved = saved.unwrap();
+        assert_eq!(saved.durable, durable);
+        assert_eq!(saved.session.dirty, !durable);
+        assert_eq!(saved.session.load_generation, 1);
+        assert_eq!(saved.session.display_name, "new.docx");
+        assert_eq!(std::fs::read(&source).unwrap(), original);
+        assert_eq!(std::fs::read(&destination).unwrap(), output);
+        (dir, registry, info.session_id, store, original, output)
+    }
+
+    /// Commits one more edit against the Save As destination and records its fresh preflight.
+    fn edit_after_save_as(registry: &SessionRegistry, session_id: u64, current: &[u8]) -> Vec<u8> {
+        registry.commit(session_id, 1, 1, 1).unwrap();
+        registry
+            .record_preflight(
+                session_id,
+                1,
+                content_hash(current),
+                service::preflight(Format::Docx, current, current, None),
+            )
+            .unwrap();
+        edited(current)
+    }
+
+    #[test]
+    fn durable_save_as_clears_superseded_candidate_and_later_checkpoint_succeeds() {
+        let (dir, registry, session_id, store, original, output) = save_as(true);
+        assert!(store.list().unwrap().is_empty());
+        let next = edit_after_save_as(&registry, session_id, &output);
+        let destination = dir.path().join("new.docx");
+        let ticket = registry.begin_save(session_id, 1, 2).unwrap();
+        let checked =
+            service::validate_snapshot(&ticket, &Limits::default(), &next, None, true).unwrap();
+        let candidate = store
+            .snapshot(&ticket, &checked, &destination, &next)
+            .unwrap();
+        assert_eq!(candidate.name, "new.docx");
+        assert_eq!(store.list().unwrap().len(), 1);
+        assert_eq!(
+            std::fs::read(dir.path().join("original.docx")).unwrap(),
+            original
+        );
+        assert_eq!(std::fs::read(&destination).unwrap(), output);
+    }
+
+    #[test]
+    fn unconfirmed_save_as_keeps_old_candidate_and_checkpoints_new_source_under_fresh_id() {
+        let (dir, registry, session_id, store, original, output) = save_as(false);
+        let source = dir.path().join("original.docx");
+        let destination = dir.path().join("new.docx");
+        let retained = store.list().unwrap();
+        assert_eq!(retained.len(), 1);
+        assert!(retained[0].valid);
+        assert_eq!(retained[0].revision, Some(1));
+        let next = edit_after_save_as(&registry, session_id, &output);
+        let ticket = registry.begin_save(session_id, 1, 2).unwrap();
+        assert_eq!(ticket.source.load.identity.path(), destination);
+        let checked =
+            service::validate_snapshot(&ticket, &Limits::default(), &next, None, true).unwrap();
+        let candidate = store
+            .snapshot(&ticket, &checked, &destination, &next)
+            .expect("checkpoint for the Save As source must not reuse the old source's ID");
+        assert_ne!(candidate.id, retained[0].id);
+        // A later checkpoint for the same new source keeps replacing only its own record.
+        registry.commit(session_id, 1, 2, 1).unwrap();
+        drop(ticket);
+        let ticket = registry.begin_save(session_id, 1, 3).unwrap();
+        let again = store
+            .snapshot(&ticket, &checked, &destination, &next)
+            .unwrap();
+        assert_eq!(again.id, candidate.id);
+        let listed = store.list().unwrap();
+        assert_eq!(listed.len(), 2);
+        assert!(listed.iter().all(|c| c.valid));
+        let old_copy = dir.path().join("old-copy.docx");
+        let new_copy = dir.path().join("new-copy.docx");
+        store.restore(&retained[0].id, &old_copy).unwrap();
+        store.restore(&candidate.id, &new_copy).unwrap();
+        assert_eq!(std::fs::read(&old_copy).unwrap(), output);
+        assert_eq!(std::fs::read(&new_copy).unwrap(), next);
+        for target in [&source, &destination] {
+            assert_eq!(
+                store.restore(&candidate.id, target).unwrap_err(),
+                DocumentError::FileConflict
+            );
+        }
+        assert_eq!(std::fs::read(&source).unwrap(), original);
+        assert_eq!(std::fs::read(&destination).unwrap(), output);
+        store.forget_session(session_id).unwrap();
+        assert!(store.list().unwrap().is_empty());
+        assert!(store
+            .snapshot(&ticket, &checked, &destination, &next)
+            .is_err());
+    }
+
+    #[test]
+    fn checkpoint_retry_without_source_change_reuses_its_own_record() {
+        let dir = TempDir::new();
+        let source = dir.path().join("source.docx");
+        let (registry, info, original) = setup(&source);
+        let store = RecoveryStore::new(dir.path().join("records"));
+        let ticket = registry.begin_save(info.session_id, 1, 1).unwrap();
+        let first = store
+            .snapshot(&ticket, &original, &source, &original)
+            .unwrap();
+        let second = store
+            .snapshot(&ticket, &original, &source, &original)
+            .unwrap();
+        assert_eq!(first.id, second.id);
+        assert_eq!(store.list().unwrap().len(), 1);
+    }
+
     #[test]
     fn stale_records_remain_explicitly_recoverable_and_storage_is_bounded() {
         let dir = TempDir::new();
