@@ -1,0 +1,83 @@
+--- a/src/model/style.rs
++++ b/src/model/style.rs
+@@ -369,6 +369,8 @@
+     /// KEEP_WORD. 값이 3가지라 attr1 비트 인코딩 대신 원문 보존으로 무손실 방출.
+     /// 꼬리말·표셀 등 재계산 경로에서 줄나눔이 달라져 레이아웃이 갈리는 것을 막는다.
+     pub break_latin_word: Option<String>,
++    /// Explicit supported HWPX paragraph direction; absence remains absence.
++    pub hwpx_explicit_ltr: bool,
+ }
+ 
+ /// [#6875] 문단 줄바꿈 방식("한 줄로 입력") — HWP5 ParaShape `attr2` bits 0-1 ↔
+@@ -418,6 +420,7 @@
+             && self.head_type == other.head_type
+             && self.para_level == other.para_level
+             && self.break_latin_word == other.break_latin_word
++            && self.hwpx_explicit_ltr == other.hwpx_explicit_ltr
+     }
+ }
+ 
+--- a/src/parser/hwpx/header.rs
++++ b/src/parser/hwpx/header.rs
+@@ -910,6 +910,14 @@
+     for attr in e.attributes().flatten() {
+         match attr.key.as_ref().as_bytes() {
+             b"id" => id = Some(parse_u32(&attr) as usize),
++            b"textDir" => {
++                // Only LTR is supported by this bounded integration. Never
++                // silently normalize an unknown/RTL direction into LTR.
++                if attr.value.as_ref().as_bytes() != b"LTR" {
++                    return Err(HwpxError::XmlError("unsupported paraPr textDir".into()));
++                }
++                ps.hwpx_explicit_ltr = true;
++            }
+             b"tabPrIDRef" => ps.tab_def_id = parse_u16(&attr),
+             b"condense" => {
+                 let condense = parse_u32(&attr).min(75);
+--- a/src/serializer/hwpx/header.rs
++++ b/src/serializer/hwpx/header.rs
+@@ -1011,19 +1011,21 @@
+     let condense = ((ps.attr1 >> 9) & 0x7f).to_string();
+     let font_line_height = ((ps.attr1 >> 22) & 1).to_string();
+     let snap_to_grid = ((ps.attr1 >> 8) & 1).to_string();
+-    start_tag_attrs(
+-        w,
+-        "hh:paraPr",
+-        &[
+-            ("id", &id.to_string()),
+-            ("tabPrIDRef", &ps.tab_def_id.to_string()),
+-            ("condense", &condense),
+-            ("fontLineHeight", &font_line_height),
+-            ("snapToGrid", &snap_to_grid),
+-            ("suppressLineNumbers", "0"),
+-            ("checked", "0"),
+-        ],
+-    )?;
++    let id = id.to_string();
++    let tab = ps.tab_def_id.to_string();
++    let mut attrs = vec![
++        ("id", id.as_str()),
++        ("tabPrIDRef", tab.as_str()),
++        ("condense", condense.as_str()),
++        ("fontLineHeight", font_line_height.as_str()),
++        ("snapToGrid", snap_to_grid.as_str()),
++        ("suppressLineNumbers", "0"),
++        ("checked", "0"),
++    ];
++    if ps.hwpx_explicit_ltr {
++        attrs.push(("textDir", "LTR"));
++    }
++    start_tag_attrs(w, "hh:paraPr", &attrs)?;
+ 
+     // 자식 순서 (한컴 원본 관찰):
+     // align, heading, breakSetting, autoSpacing, switch(margin+lineSpacing), border
+--- a/src/parser/doc_info.rs
++++ b/src/parser/doc_info.rs
+@@ -818,6 +818,7 @@
+         // HWP5 는 breakLatinWord 를 attr1 비트로 갖지만 HWPX 원문 보존 필드는 미사용
+         // (None → 직렬화 KEEP_WORD 기본, 기존 동작 유지). (#1986)
+         break_latin_word: None,
++        hwpx_explicit_ltr: false,
+         // HWP5 원본에는 HWPX 표기 구분이 없다 — switch 형태로 방출한다 (#4898).
+         hwpx_plain_para_margin: false,
+         hwpx_plain_para_margin_physical: false,
