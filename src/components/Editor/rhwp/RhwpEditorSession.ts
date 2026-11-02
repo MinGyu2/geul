@@ -1342,6 +1342,8 @@ export class RhwpEditorSession implements DocumentCommandTarget {
       output = bytes;
       report.bytes = bytes.length;
       report.failure = "reopen";
+      // This evidence concerns the raw engine export. For HWP, the save service
+      // verifies that final CFB reconstruction changes only PrvText before publication.
       reopened = module.openDocument(bytes);
       const reopenedFormat: unknown = reopened.getSourceFormat();
       report.reopenedFormat = typeof reopenedFormat === "string" ? reopenedFormat : null;

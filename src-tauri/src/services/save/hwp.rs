@@ -617,6 +617,7 @@ fn text_preview(output: &Container) -> Option<Vec<u8>> {
         return None;
     }
     let mut text = String::new();
+    let mut characters = 0;
     for (index, (number, data)) in sections.into_iter().enumerate() {
         if number != Some(index) {
             return None;
@@ -629,49 +630,73 @@ fn text_preview(output: &Container) -> Option<Vec<u8>> {
             if body.len() % 2 != 0 {
                 return None;
             }
-            let units: Vec<_> = body
-                .as_chunks::<2>()
-                .0
-                .iter()
-                .map(|b| u16::from_le_bytes([b[0], b[1]]))
-                .collect();
-            let mut plain = Vec::new();
+            // Decode without per-paragraph UTF-16/String allocations. Continue
+            // validating all controls and surrogate pairs after the prefix fills.
+            let unit = |at: usize| {
+                body.get(at * 2..at * 2 + 2)
+                    .map(|b| u16::from_le_bytes([b[0], b[1]]))
+            };
             let mut at = 0;
-            while at < units.len() {
-                let ch = units[at];
-                match ch {
-                    0 => {}
-                    13 if at + 1 == units.len() => break,
-                    10 => plain.push(10),
-                    // section/column definitions and drawing/table placeholders
-                    2 | 9 | 11 => {
-                        if *units.get(at + 7)? != ch {
+            let mut invalid = false;
+            let units = std::iter::from_fn(|| {
+                while let Some(ch) = unit(at) {
+                    at += 1;
+                    let value = match ch {
+                        0 => continue,
+                        13 if at * 2 == body.len() => return None,
+                        10 => 10,
+                        2 | 9 | 11 => {
+                            if unit(at + 6) != Some(ch) {
+                                invalid = true;
+                                return None;
+                            }
+                            at += 7;
+                            if ch != 9 {
+                                continue;
+                            }
+                            9
+                        }
+                        24 => 0x00ad,
+                        30 => 0x00a0,
+                        31 => 0x2007,
+                        0x20..=0xffff => ch,
+                        _ => {
+                            invalid = true;
                             return None;
                         }
-                        if ch == 9 {
-                            plain.push(9);
-                        }
-                        at += 7;
-                    }
-                    24 => plain.push(0x00ad),
-                    30 => plain.push(0x00a0),
-                    31 => plain.push(0x2007),
-                    0x20..=0xffff => plain.push(ch),
-                    _ => return None,
+                    };
+                    return Some(value);
                 }
-                at += 1;
+                None
+            });
+            let mut nonempty = false;
+            for ch in char::decode_utf16(units) {
+                let ch = ch.ok()?;
+                nonempty = true;
+                if characters < 1000 {
+                    text.push(ch);
+                    characters += 1;
+                }
             }
-            let line = String::from_utf16(&plain).ok()?;
-            if !line.is_empty() && text.chars().count() < 1000 {
-                text.extend(
-                    line.chars()
-                        .chain("\r\n".chars())
-                        .take(1000 - text.chars().count()),
-                );
+            if invalid {
+                return None;
+            }
+            if nonempty {
+                for ch in ['\r', '\n'] {
+                    if characters < 1000 {
+                        text.push(ch);
+                        characters += 1;
+                    }
+                }
             }
         }
     }
     Some(text.encode_utf16().flat_map(u16::to_le_bytes).collect())
+}
+
+#[cfg(test)]
+thread_local! {
+    pub(super) static REFRESH_CALLS: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
 }
 
 /// Refresh only an otherwise valid output whose sole finding is stale/changed PrvText.
@@ -682,6 +707,8 @@ pub fn refresh_text_preview(
     original: &[u8],
     output: &[u8],
 ) -> Result<Option<Vec<u8>>, crate::document::DocumentError> {
+    #[cfg(test)]
+    REFRESH_CALLS.with(|calls| calls.set(calls.get() + 1));
     let findings = compare_saved(original, output);
     if findings != [Finding::at(FindingCode::PreviewStale, "PrvText")]
         && findings != [Finding::at(FindingCode::PartChanged, "PrvText")]
@@ -738,5 +765,62 @@ fn rebuild_preview(output: &[u8], container: &Container, text: &[u8]) -> std::io
         fresh.set_modified_time(entry.path(), entry.modified())?;
     }
     fresh.flush()?;
-    Ok(fresh.into_inner().into_inner())
+    let bytes = fresh.into_inner().into_inner();
+    verify_preview_rebuild(output, &bytes, container, text)?;
+    Ok(bytes)
+}
+
+/// Raw-export reopen evidence transfers to the final output only if the complete
+/// logical CFB differs solely in PrvText. Physical allocation is deliberately new.
+fn verify_preview_rebuild(
+    raw: &[u8],
+    bytes: &[u8],
+    container: &Container,
+    text: &[u8],
+) -> std::io::Result<()> {
+    let invalid = || std::io::Error::from(std::io::ErrorKind::InvalidData);
+    let before = cfb::CompoundFile::open(Cursor::new(raw))?;
+    let mut after = cfb::CompoundFile::open(Cursor::new(bytes))?;
+    if before.version() != after.version() {
+        return Err(invalid());
+    }
+    let entries: Vec<_> = before.walk().collect();
+    if entries.len() != after.walk().count() {
+        return Err(invalid());
+    }
+    for entry in entries {
+        let actual = after.entry(entry.path())?;
+        if entry.is_stream() != actual.is_stream()
+            || entry.clsid() != actual.clsid()
+            || entry.state_bits() != actual.state_bits()
+            || entry.created() != actual.created()
+            || entry.modified() != actual.modified()
+        {
+            return Err(invalid());
+        }
+        if entry.is_stream() {
+            let name = entry
+                .path()
+                .to_str()
+                .ok_or_else(invalid)?
+                .trim_start_matches('/');
+            let expected = if name == "PrvText" {
+                text
+            } else {
+                container.streams.get(name).ok_or_else(invalid)?.as_slice()
+            };
+            let mut stream = after.open_stream(entry.path())?;
+            if stream.len() != expected.len() as u64 {
+                return Err(invalid());
+            }
+            let mut buffer = [0; 8192];
+            for chunk in expected.chunks(buffer.len()) {
+                stream.read_exact(&mut buffer[..chunk.len()])?;
+                if &buffer[..chunk.len()] != chunk {
+                    return Err(invalid());
+                }
+            }
+        }
+    }
+    Ok(())
 }

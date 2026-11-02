@@ -227,7 +227,24 @@ fn validate_snapshot_from(
             limit: crate::document::LimitKind::FileSize,
         });
     }
+    validate_evidence(ticket, report, reopen_equal)?;
     let format = ticket.source.load.format;
+    let checked = check_saved(format, &original, output, report, reopen_equal);
+    if !checked.is_safe() {
+        return Err(DocumentError::UnsafeSave {
+            preservation: checked,
+        });
+    }
+    Ok(original)
+}
+
+// One eligibility policy for snapshots and transformed saves. Source identity is
+// checked by the caller before accepting preservation evidence.
+fn validate_evidence(
+    ticket: &SaveTicket<'_>,
+    report: Option<&Value>,
+    reopen_equal: bool,
+) -> Result<(), DocumentError> {
     match &ticket.source.preflight {
         Some(preflight) if preflight.is_safe() => {}
         Some(preflight) => {
@@ -243,13 +260,15 @@ fn validate_snapshot_from(
             })
         }
     }
-    let checked = check_saved(format, &original, output, report, reopen_equal);
-    if !checked.is_safe() {
-        return Err(DocumentError::UnsafeSave {
-            preservation: checked,
-        });
+    let mut findings = report_findings(ticket.source.load.format, report);
+    if !reopen_equal {
+        findings.push(Finding::new(FindingCode::ReopenMismatch));
     }
-    Ok(original)
+    let preservation = resource_result(findings);
+    if !preservation.is_safe() {
+        return Err(DocumentError::UnsafeSave { preservation });
+    }
+    Ok(())
 }
 
 pub struct SaveOptions<'a> {
@@ -267,6 +286,7 @@ pub fn save_with_options(
     options: SaveOptions<'_>,
 ) -> Result<SaveOutcome, DocumentError> {
     let destination = options.destination;
+    // Establish source identity and eligibility before expensive normalization.
     // Normalize only the preview, never body/metadata, before the final validator.
     // Preflight, source identity, loss/reopen/reference checks and publication are
     // still mandatory. Unsupported previews leave the raw export rejected.
@@ -276,6 +296,7 @@ pub fn save_with_options(
         });
     }
     let source = read_original(&ticket.source, limits)?;
+    validate_evidence(ticket, report, reopen_equal)?;
     let refreshed = if ticket.source.load.format == Format::Hwp {
         hwp::refresh_text_preview(&source, output)?
     } else {

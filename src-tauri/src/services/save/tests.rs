@@ -89,8 +89,12 @@ fn 손실_보고는_계약_모양의_0건만_통과하고_손실은_unsafe_모�
 // ---- HWP 레코드 비교 ----
 
 fn record(tag: u16, level: u16, payload: &[u8]) -> Vec<u8> {
-    let head = u32::from(tag) | (u32::from(level) << 10) | ((payload.len() as u32) << 20);
+    let size = payload.len() as u32;
+    let head = u32::from(tag) | (u32::from(level) << 10) | (size.min(0xfff) << 20);
     let mut out = head.to_le_bytes().to_vec();
+    if size >= 0xfff {
+        out.extend_from_slice(&size.to_le_bytes());
+    }
     out.extend_from_slice(payload);
     out
 }
@@ -9313,4 +9317,195 @@ fn native_hwp_published_preview_matches_reopened_body() {
         "{}",
         json!({"previewMatchesReopenedBody":true,"textBytes":text.len(),"imageBytes":image.len(),"imageIsPinnedTemplate":true,"streamCount":container.walk().filter(|e|e.is_stream()).count()})
     );
+}
+
+#[test]
+fn hwp_ineligible_save_does_not_attempt_preview_reconstruction() {
+    let original = hwp_doc(
+        0,
+        &docinfo(0, b"font"),
+        &section("old"),
+        &[("/PrvText", &utf16("old"))],
+    );
+    for case in 0..5 {
+        let dir = TempDir::new();
+        let state = DocumentState::default();
+        let info = rhwp_session(&state, &dir, "eligibility.hwp", &original);
+        let registry = state.registry();
+        let source = registry
+            .preflight_source(info.session_id, info.load_generation)
+            .unwrap();
+        if case != 0 {
+            let preflight = if case == 1 {
+                Preservation::from_findings(vec![Finding::new(FindingCode::Unsupported)])
+            } else {
+                service::preflight(
+                    Format::Hwp,
+                    &original,
+                    &original,
+                    Some(&report("hwp", json!([]))),
+                )
+            };
+            registry
+                .record_preflight(
+                    info.session_id,
+                    info.load_generation,
+                    source.content_hash,
+                    preflight,
+                )
+                .unwrap();
+        }
+        registry
+            .commit(info.session_id, info.load_generation, 0, 1)
+            .unwrap();
+        let ticket = registry
+            .begin_save(info.session_id, info.load_generation, 1)
+            .unwrap();
+        let loss = if case == 2 {
+            json!({})
+        } else {
+            report("hwp", json!([]))
+        };
+        if case == 4 {
+            std::fs::write(dir.path().join("eligibility.hwp"), b"conflict").unwrap();
+        }
+        let calls = hwp::REFRESH_CALLS.with(|calls| calls.get());
+        let error = service::save(
+            registry,
+            &ticket,
+            &Limits::default(),
+            b"malformed raw export",
+            Some(&loss),
+            case != 3,
+        )
+        .unwrap_err();
+        assert_eq!(hwp::REFRESH_CALLS.with(|calls| calls.get()), calls);
+        if case == 4 {
+            assert_eq!(error, DocumentError::FileConflict);
+        } else {
+            let DocumentError::UnsafeSave { preservation } = error else {
+                panic!("{error:?}")
+            };
+            let expected = [
+                FindingCode::PreflightMissing,
+                FindingCode::Unsupported,
+                FindingCode::LossReportInvalid,
+                FindingCode::ReopenMismatch,
+            ][case];
+            assert_eq!(preservation.findings, vec![Finding::new(expected)]);
+            assert_eq!(
+                std::fs::read(dir.path().join("eligibility.hwp")).unwrap(),
+                original
+            );
+        }
+    }
+}
+
+#[test]
+fn hwp_preview_validates_large_suffix_and_preserves_cfb_metadata() {
+    use std::io::Cursor;
+    let old = utf16("deleted secret");
+    let original = hwp_doc(
+        1,
+        &crate::document::testutil::deflate(&docinfo(0, b"font")),
+        &crate::document::testutil::deflate(&section("deleted secret")),
+        &[("/PrvText", &old)],
+    );
+    let make = |suffix: &str| {
+        hwp_doc(
+            1,
+            &crate::document::testutil::deflate(&docinfo(0, b"font")),
+            &crate::document::testutil::deflate(&section(&format!(
+                "{}{}",
+                "한😀".repeat(100_000),
+                suffix
+            ))),
+            &[("/PrvText", &old)],
+        )
+    };
+    for suffix in ["\u{1}", "\u{19}"] {
+        assert!(
+            hwp::refresh_text_preview(&original, &make(suffix))
+                .unwrap()
+                .is_none(),
+            "unsupported suffix must not be hidden by preview limit"
+        );
+    }
+    let raw = make("");
+    let mut cfb = cfb::CompoundFile::open(Cursor::new(raw)).unwrap();
+    cfb.create_storage("/EmptyStorage").unwrap();
+    let paths: Vec<_> = cfb.walk().map(|e| e.path().to_path_buf()).collect();
+    for path in paths {
+        cfb.set_state_bits(&path, 0x1234).unwrap();
+        cfb.set_created_time(
+            &path,
+            std::time::UNIX_EPOCH + std::time::Duration::from_secs(100),
+        )
+        .unwrap();
+        cfb.set_modified_time(
+            &path,
+            std::time::UNIX_EPOCH + std::time::Duration::from_secs(200),
+        )
+        .unwrap();
+    }
+    cfb.set_storage_clsid(
+        "/EmptyStorage",
+        "12345678-1234-5678-1234-567812345678".parse().unwrap(),
+    )
+    .unwrap();
+    let raw = cfb.into_inner().into_inner();
+    assert_eq!(
+        hwp::compare_saved(&original, &raw),
+        vec![Finding::at(FindingCode::PreviewStale, "PrvText")]
+    );
+    let fixed = hwp::refresh_text_preview(&original, &raw).unwrap().unwrap();
+    let before = cfb::CompoundFile::open(Cursor::new(&raw)).unwrap();
+    let after = cfb::CompoundFile::open(Cursor::new(&fixed)).unwrap();
+    assert_eq!(before.version(), after.version());
+    assert_eq!(before.walk().count(), after.walk().count());
+    for entry in before.walk() {
+        let other = after.entry(entry.path()).unwrap();
+        assert_eq!(entry.clsid(), other.clsid());
+        assert_eq!(entry.state_bits(), other.state_bits());
+        assert_eq!(entry.created(), other.created());
+        assert_eq!(entry.modified(), other.modified());
+    }
+    assert!(hwp::compare_saved(&original, &fixed).is_empty());
+}
+
+#[test]
+fn hwp_preview_orders_sections_and_skips_empty_paragraphs() {
+    let old = utf16("old");
+    let original = hwp_doc(
+        1,
+        &crate::document::testutil::deflate(&docinfo(0, b"font")),
+        &crate::document::testutil::deflate(&section("old")),
+        &[
+            ("/PrvText", &old),
+            (
+                "/BodyText/Section1",
+                &crate::document::testutil::deflate(&section("두번째😀")),
+            ),
+        ],
+    );
+    let output = hwp_doc(
+        1,
+        &crate::document::testutil::deflate(&docinfo(0, b"font")),
+        &crate::document::testutil::deflate(&[section(""), section("첫째")].concat()),
+        &[
+            ("/PrvText", &old),
+            (
+                "/BodyText/Section1",
+                &crate::document::testutil::deflate(&section("두번째😀")),
+            ),
+        ],
+    );
+    let fixed = hwp::refresh_text_preview(&original, &output)
+        .unwrap()
+        .unwrap();
+    let mut cfb = cfb::CompoundFile::open(std::io::Cursor::new(&fixed)).unwrap();
+    let mut text = Vec::new();
+    std::io::Read::read_to_end(&mut cfb.open_stream("/PrvText").unwrap(), &mut text).unwrap();
+    assert_eq!(text, utf16("첫째\r\n두번째😀\r\n"));
+    assert!(hwp::compare_saved(&original, &fixed).is_empty());
 }

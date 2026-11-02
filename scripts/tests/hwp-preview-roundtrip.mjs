@@ -75,6 +75,13 @@ try {
     editedReopen = snapshot(reopen);
     assert.deepEqual(editedReopen, editedSnapshot, "edited export reopens with equal model/text/controls/pages/formatting");
     assert.ok(editedReopen.text.includes(extractedReplacement));
+    // Persist evidence from this run, never rely on an earlier output directory.
+    writeFileSync(join(out, "reopen.json"), JSON.stringify({
+      formatEqual: editedReopen.format === editedSnapshot.format,
+      pagesEqual: editedReopen.pages === editedSnapshot.pages,
+      textEqual: editedReopen.text === editedSnapshot.text,
+      controlsEqual: editedReopen.controls === editedSnapshot.controls,
+    }));
   } finally { reopen.free(); }
 
   // Use the executable path reported by the protected `test --lib --no-run` build.
