@@ -35,21 +35,39 @@ _oracle_spec.loader.exec_module(oracle)
 
 
 def apply_intentional_edit(first, edited, hp):
-    """Copy only the edited paragraph's hp:t character data into the original.
+    """Expect precisely 한글 prepended to the first direct run/hp:t text slot.
 
-    The hp:t elements and everything inside them other than character data
-    (child elements, attributes, comments) must already be identical; text and
-    child tails are copied piece by piece, never stripped or merged.
+    Never import saved character data. All existing text, tails, run attributes
+    and nested controls remain owned by their original nodes and are compared
+    by the caller. A nested paragraph cannot supply the insertion point.
     """
-    texts, saved_texts = list(first.iter(hp+'t')), list(edited.iter(hp+'t'))
-    assert len(texts) == len(saved_texts), (len(texts), len(saved_texts))
-    for t, s in zip(texts, saved_texts):
-        kids, saved_kids = list(t), list(s)
-        assert [(k.tag, sorted(k.attrib.items()), len(k)) for k in kids] == \
-            [(k.tag, sorted(k.attrib.items()), len(k)) for k in saved_kids], 'edited hp:t structure changed'
-        t.text = s.text
-        for k, sk in zip(kids, saved_kids):
-            k.tail = sk.tail
+    assert first is not None and edited is not None, 'missing edited paragraph'
+    # Hancom commonly puts secPr/ctrl in a control-only run before the first
+    # text run. Select only direct run/t paths, never nested control text.
+    texts, saved_texts = first.findall(hp+'run/'+hp+'t'), edited.findall(hp+'run/'+hp+'t')
+    assert texts and saved_texts, 'cannot prove insertion point without a direct hp:t'
+    target, saved_target = texts[0], saved_texts[0]
+    intended = '한글' + (target.text or '')
+    assert saved_target.text == intended, 'intended prefix missing or original first text changed'
+    target.text = intended
+
+
+def omit_edited_line_layout(para, hp):
+    """Only direct layout children of the edited paragraph may be recalculated.
+
+    Keep their tails: those are paragraph character data, not layout payload.
+    Nested paragraphs and their layout stay subject to full comparison.
+    """
+    for child in list(para):
+        if child.tag == hp+'linesegarray':
+            index = list(para).index(child)
+            if child.tail:
+                if index:
+                    previous = para[index - 1]
+                    previous.tail = (previous.tail or '') + child.tail
+                else:
+                    para.text = (para.text or '') + child.tail
+            para.remove(child)
 
 
 # Document-independent preview bytes the save service already accepts (geul
@@ -89,9 +107,7 @@ def package_preserved(source, saved, expected, prefix):
                     apply_intentional_edit(first, edited, hp)
                     # Line layout of the edited paragraph only is recomputed.
                     for para in (first, edited):
-                        for parent in para.iter():
-                            for child in list(parent):
-                                if child.tag == hp+'linesegarray': parent.remove(child)
+                        omit_edited_line_layout(para, hp)
                 assert oracle.canonical_events(x) == oracle.canonical_events(y), (name, oracle.first_difference(x, y))
             elif name == 'Preview/PrvText.txt':
                 # Only a known empty text preview is independent of the edit.

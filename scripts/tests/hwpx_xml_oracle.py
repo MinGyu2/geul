@@ -19,25 +19,73 @@ It mirrors the documented contract of geul's production comparator
 are merged, so text segmentation cannot hide or fabricate differences.
 """
 import xml.etree.ElementTree as ET
+from xml.parsers import expat
 
 
 class DoctypeRefused(ValueError):
     """The input declares a DTD, which the preservation contract refuses."""
 
 
-class _Builder(ET.TreeBuilder):
-    def __init__(self):
-        super().__init__(insert_comments=True, insert_pis=True)
+class Document:
+    """Ordered document children, with a mutable root for narrow edit checks."""
 
-    def doctype(self, name, pubid, system):  # noqa: D401 - XMLParser callback
-        raise DoctypeRefused(name)
+    def __init__(self, root, children):
+        self.root, self.children = root, children
+
+    def find(self, path):
+        return self.root.find(path)
+
+    def iter(self, tag=None):
+        return self.root.iter(tag)
 
 
 def parse(data):
-    """Parse bytes into an element tree that keeps comments and PIs."""
-    parser = ET.XMLParser(target=_Builder())
-    parser.feed(data)
-    return parser.close()
+    """Use Expat's document callbacks, not a root-only ElementTree parse.
+
+    DefaultHandler supplies the complete PI spelling (including target/data
+    separator whitespace); Expat's PI callback would discard that whitespace.
+    Expat validates namespaces, references, attributes and the single root.
+    """
+    parser = expat.ParserCreate(namespace_separator='}')
+    builder = ET.TreeBuilder(insert_comments=True, insert_pis=True)
+    children, depth = [], 0
+
+    def name(value):
+        return '{' + value if '}' in value else value
+
+    def start(tag, attributes):
+        nonlocal depth
+        node = builder.start(name(tag), {name(k): v for k, v in attributes.items()})
+        if depth == 0:
+            children.append(node)
+        depth += 1
+
+    def end(tag):
+        nonlocal depth
+        builder.end(name(tag))
+        depth -= 1
+
+    def comment(value):
+        node = builder.comment(value)
+        if depth == 0:
+            children.append(node)
+
+    def default(value):
+        if value.startswith('<?'):
+            node = builder.pi(value[2:-2])
+            if depth == 0:
+                children.append(node)
+
+    def doctype(*_):
+        raise DoctypeRefused('DTD')
+
+    parser.StartElementHandler, parser.EndElementHandler = start, end
+    parser.CharacterDataHandler = lambda value: builder.data(value) if depth else None
+    parser.CommentHandler, parser.DefaultHandler = comment, default
+    parser.XmlDeclHandler = lambda *_: None
+    parser.StartDoctypeDeclHandler = doctype
+    parser.Parse(data, True)
+    return Document(builder.close(), children)
 
 
 def _events(element, out):
@@ -57,9 +105,10 @@ def _events(element, out):
 
 
 def canonical_events(root):
-    """Flat canonical events of an element (its own tail is outside it)."""
+    """Events of the whole document, or an explicitly selected subtree."""
     raw = []
-    _events(root, raw)
+    for node in root.children if isinstance(root, Document) else (root,):
+        _events(node, raw)
     merged = []
     for event in raw:
         if event[0] == 'text' and merged and merged[-1][0] == 'text':

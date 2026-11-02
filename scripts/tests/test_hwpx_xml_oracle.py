@@ -9,6 +9,7 @@ from pathlib import Path
 import unittest
 import xml.etree.ElementTree as ET
 import zipfile
+from xml.parsers.expat import ExpatError
 
 ROOT = Path(__file__).resolve().parents[2]
 spec = importlib.util.spec_from_file_location("hwpx_xml_oracle", ROOT / "scripts/tests/hwpx_xml_oracle.py")
@@ -119,6 +120,41 @@ class RealSection(unittest.TestCase):
         mutated = ET.tostring(root, encoding='utf-8')
         self.assertTrue(legacy_equal(data, mutated))
         self.assertFalse(oracle.equal(data, mutated))
+
+
+class DocumentEvents(unittest.TestCase):
+    def test_root_only_predecessor_misses_external_events(self):
+        def old(data):
+            return ET.fromstring(data, parser=ET.XMLParser(
+                target=ET.TreeBuilder(insert_comments=True, insert_pis=True)))
+
+        for event in (b'<!-- before -->', b'<?app data?>'):
+            for before, after in ((event + b'<r/>', b'<r/>'),
+                                  (b'<r/>' + event, b'<r/>')):
+                with self.subTest(before=before):
+                    self.assertEqual(oracle.canonical_events(old(before)), oracle.canonical_events(old(after)))
+                    self.assertFalse(oracle.equal(before, after))
+
+    def test_content_and_order(self):
+        base = b'<!--a--><?app data?><r/><?end keep?><!--z-->'
+        for other in (base.replace(b'<!--a-->', b'<!--b-->'),
+                      base.replace(b'<!--z-->', b'<!--x-->'),
+                      base.replace(b'<?end keep?>', b''),
+                      base.replace(b'<?app data?>', b'<?other data?>'),
+                      base.replace(b'<?app data?>', b'<?app  data?>'),
+                      b'<?app data?><!--a--><r/><?end keep?><!--z-->'):
+            with self.subTest(other=other):
+                self.assertFalse(oracle.equal(base, other))
+        self.assertTrue(oracle.equal(base, b'<?xml version="1.0"?>\n' +
+                                     base.replace(b'<r/>', b'\n<r></r>\n') + b'\n'))
+        self.assertFalse(oracle.equal(b'<?xml-stylesheet href="a"?><r/>', b'<r/>'))
+
+    def test_invalid_documents(self):
+        for data in (b'<r/><r/>', b'<r>', b'<r a="1" a="2"/>', b'<p:r/>',
+                     b'outside<r/>', b'<r/><?xml version="1.0"?>',
+                     b'<r>&unknown;</r>', b'<r>&#0;</r>', b'<!-- bad -- comment --><r/>'):
+            with self.subTest(data=data), self.assertRaises(ExpatError):
+                oracle.parse(data)
 
 
 if __name__ == '__main__':
