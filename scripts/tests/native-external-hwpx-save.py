@@ -151,6 +151,10 @@ def run(args):
                 assert sha(pkg/'rhwp_bg.wasm')==identity['artifacts']['rhwp_bg.wasm']
                 report['runtimeIdentity']=identity
                 rhwp.open_document(d,path);rhwp.require_test_hooks(d)
+                loaded=d.js("return performance.getEntriesByType('resource').map(e=>e.name).filter(n=>n.includes('/rhwp/generations/'))")
+                expected_wasm=f'/rhwp/generations/{identity["generation"]}/rhwp_bg.wasm'
+                assert any(url.endswith(expected_wasm) for url in loaded),loaded
+                report['loadedGenerationResources']=loaded
                 report['opened']=rhwp.status(d)
                 # Run the application's real preflight before editing.
                 rhwp.press_button(d,'[data-testid=rhwp-save-check]')
@@ -182,6 +186,7 @@ def run(args):
                 assert rhwp.close_tab(d,path.name)
                 rhwp.open_document(d,path);reopened=rhwp.status(d)
                 assert reopened['paragraphText']==expected and reopened['dirty']==reopened['unpreserved']=='false',reopened
+                assert reopened['revision']=='0',reopened
                 report['reopen']=reopened
                 report['package']=package_preserved(source,path,expected,prefix)
                 report['model']=json.loads(subprocess.check_output(['node','--input-type=module','-',str(pkg),str(source),str(path),expected,prefix],input=MODEL,text=True,cwd=ROOT))
@@ -196,8 +201,10 @@ def run(args):
                 path.write_bytes(path.read_bytes()+b'\0');changed_hash=sha(path)
                 conflict=rhwp.save_and_wait(d)
                 assert conflict['state']=='failed' and conflict['error']=='FileConflict',conflict
-                assert sha(path)==changed_hash and rhwp.status(d)['unpreserved']=='true'
-                report['externalConflict']={'result':conflict,'modifiedOriginalUnchanged':True,'sessionUnpreserved':True}
+                conflict_status=rhwp.status(d)
+                assert sha(path)==changed_hash and conflict_status['unpreserved']==conflict_status['dirty']=='true'
+                report['externalConflict']={'result':conflict,'modifiedOriginalUnchanged':True,'sessionUnpreserved':True,
+                                           'beforeSaveSha256':changed_hash,'afterSaveSha256':sha(path),'status':conflict_status}
                 # Identity boundary that must stay refused through the actual UI:
                 # a missing paragraph id is readable, export fails closed, no save
                 # success and no change to the input bytes. (Repeated imported ids
@@ -224,8 +231,17 @@ def run(args):
                 assert diagnostic['returncode']!=0 and diagnostic['diagnostic']['stage']=='export'
                 assert diagnostic['diagnostic']['opened'] and 'HWPX paragraph id missing or invalid' in diagnostic['diagnostic']['error']
                 assert sha(negative)==negative_hash and rejected['state']!='saved'
+                d.js("document.querySelector('.rhwp-input').focus()");command(args.xdotool,'windowfocus','--sync',window)
+                command(args.xdotool,'key','Home');negative_before=rhwp.settle(d,'missing id edit start')
+                command(args.xdotool,'type','--delay','90','gksrmf');command(args.xdotool,'key','End')
+                negative_edit=rhwp.settle(d,'missing id edit')
+                assert negative_edit['paragraphText']=='한글'+negative_before['paragraphText'] and negative_edit['dirty']=='true'
+                negative_save=rhwp.save_and_wait(d);negative_status=rhwp.status(d)
+                assert negative_save['state']=='failed' and negative_save['error']=='EngineFailure',negative_save
+                assert sha(negative)==negative_hash and negative_status['dirty']==negative_status['unpreserved']=='true'
                 report['negative']={'readable':True,'originalUnchanged':True,'result':rejected,
-                                    'engineDiagnostic':diagnostic['diagnostic']}
+                                    'engineDiagnostic':diagnostic['diagnostic'],'saveResult':negative_save,'status':negative_status,
+                                    'beforeSaveSha256':negative_hash,'afterSaveSha256':sha(negative)}
                 if args.preview_negative:
                     # A genuinely Hancom-saved document whose unedited round trip
                     # is preserved exactly (preflight safe) but whose content
@@ -245,9 +261,10 @@ def run(args):
                     assert refused['state']=='failed' and refused['error']=='UnsafeSave',refused
                     assert 'previewStale:Preview/PrvImage.png' in refused.get('findings','') and 'previewStale:Preview/PrvText.txt' in refused.get('findings',''),refused
                     assert d.exists('[data-testid=save-findings]')
-                    assert sha(stale)==stale_hash and rhwp.status(d)['unpreserved']=='true'
+                    assert sha(stale)==stale_hash and rhwp.status(d)['unpreserved']==rhwp.status(d)['dirty']=='true'
                     report['previewNegative']={'sourceSha256':sha(args.preview_negative.resolve()),'preflight':stale_preflight,
-                                               'result':refused,'originalUnchanged':True,'sessionUnpreserved':True}
+                                               'result':refused,'originalUnchanged':True,'sessionUnpreserved':True,
+                                               'beforeSaveSha256':stale_hash,'afterSaveSha256':sha(stale),'status':rhwp.status(d)}
                 assert not list(args.out.glob('.geul-save-*.tmp'))
             finally:smoke.end_session(d)
         report['status']='PASS'
