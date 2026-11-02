@@ -17,7 +17,8 @@ spec.loader.exec_module(native)
 HP = 'http://www.hancom.co.kr/hwpml/2011/paragraph'
 HS = 'http://www.hancom.co.kr/hwpml/2011/section'
 HH = 'http://www.hancom.co.kr/hwpml/2011/head'
-LAYOUT = '<hp:linesegarray><hp:lineseg textpos="0" vertsize="1000"/></hp:linesegarray>'
+LAYOUT = ('<hp:linesegarray><hp:lineseg textpos="0" vertpos="0" vertsize="1000" textheight="1000" '
+          'baseline="850" spacing="600" horzpos="0" horzsize="42520" flags="393216"/></hp:linesegarray>')
 
 
 def section(text):

@@ -49,7 +49,7 @@ class NarrowPrefix(unittest.TestCase):
     def setUp(self):
         self.original = paragraph('<run charPrIDRef="1"><t> AB한😀<tab width="1"/> 뒤 </t>'
                                   '<t/><t>둘</t></run><run charPrIDRef="2"><t>CD </t></run>'
-                                  '<linesegarray><lineseg textpos="0"/></linesegarray>')
+                                  f'<linesegarray>{seg()}</linesegarray>')
         self.saved = copy.deepcopy(self.original)
         next(self.saved.iter(HP+'t')).text = '한글 AB한😀'
 
@@ -105,7 +105,7 @@ class NarrowPrefix(unittest.TestCase):
 
     def test_nested_paragraph_layout_and_layout_tail_stay_meaningful(self):
         original = paragraph('<run><t>A<inline><p><linesegarray x="1"/></p></inline>B</t></run>'
-                             '<linesegarray><lineseg textpos="0"/></linesegarray> tail ')
+                             f'<linesegarray>{seg()}</linesegarray> tail ')
         saved = copy.deepcopy(original)
         next(saved.iter(HP+'t')).text = '한글A'
         accepts(original, saved)
@@ -141,8 +141,8 @@ class LineLayoutContract(unittest.TestCase):
     def test_supported_recalculation(self):
         cases = {
             'unchanged cache (actual native result)': self.ORIGINAL,
-            'recalculated values': '<linesegarray><lineseg textpos="0" vertpos="0" vertsize="1100" horzsize="40000" flags="0"/></linesegarray>',
-            'reflow to two lines': '<linesegarray><lineseg textpos="0"/><lineseg textpos="3" vertpos="1600"/></linesegarray>',
+            'recalculated values': f'<linesegarray>{seg(vertsize="1100", horzsize="40000", flags="0")}</linesegarray>',
+            'reflow to two lines': f'<linesegarray>{seg()}{seg(textpos="3", vertpos="1600")}</linesegarray>',
             'cache omitted for the consumer (1 -> 0)': '',
         }
         for name, layout in cases.items():
@@ -162,10 +162,10 @@ class LineLayoutContract(unittest.TestCase):
             'text inside container': layout_paragraph(f'<linesegarray>{SEG}leak</linesegarray>', '한글'),
             'container attribute': layout_paragraph(f'<linesegarray x="1">{SEG}</linesegarray>', '한글'),
             'empty container': layout_paragraph('<linesegarray/>', '한글'),
-            'unknown lineseg attribute': layout_paragraph('<linesegarray><lineseg textpos="0" extra="1"/></linesegarray>', '한글'),
-            'non-integer lineseg value': layout_paragraph('<linesegarray><lineseg textpos="0" vertpos="a"/></linesegarray>', '한글'),
-            'decreasing textpos': layout_paragraph('<linesegarray><lineseg textpos="4"/><lineseg textpos="1"/></linesegarray>', '한글'),
-            'nested element in lineseg': layout_paragraph('<linesegarray><lineseg textpos="0"><t/></lineseg></linesegarray>', '한글'),
+            'unknown lineseg attribute': layout_paragraph(f'<linesegarray>{seg(extra="1")}</linesegarray>', '한글'),
+            'non-integer lineseg value': layout_paragraph(f'<linesegarray>{seg(vertpos="a")}</linesegarray>', '한글'),
+            'decreasing textpos': layout_paragraph(f'<linesegarray>{seg(textpos="4")}{seg(textpos="1")}</linesegarray>', '한글'),
+            'nested element in lineseg': layout_paragraph(f'<linesegarray>{seg()[:-2]}><t/></lineseg></linesegarray>', '한글'),
         }
         for name, saved in cases.items():
             with self.subTest(name):
@@ -199,6 +199,73 @@ class LineLayoutContract(unittest.TestCase):
         native.apply_intentional_edit(first, edited, HP)
         native.normalize_edited_line_layout(first, edited, HP)
         self.assertNotEqual(native.oracle.canonical_events(original), native.oracle.canonical_events(saved))
+
+
+# rhwp render_one_lineseg writes all nine attributes; types from model LineSeg.
+U32_FIELDS = ('textpos', 'flags')
+I32_FIELDS = ('vertpos', 'vertsize', 'textheight', 'baseline', 'spacing', 'horzpos', 'horzsize')
+FULL = dict(textpos='0', vertpos='0', vertsize='1000', textheight='1000', baseline='850',
+            spacing='600', horzpos='0', horzsize='42520', flags='393216')
+
+
+def seg(drop=(), **values):
+    attrs = {**FULL, **values}
+    for name in drop:
+        attrs.pop(name)
+    return '<lineseg ' + ' '.join(f'{k}="{v}"' for k, v in attrs.items()) + '/>'
+
+
+class LinesegFieldContract(unittest.TestCase):
+    """Saved line segments must be exactly what the rhwp serializer can write."""
+
+    ORIGINAL = f'<linesegarray>{seg()}</linesegarray>'
+
+    def saved(self, *segments):
+        return layout_paragraph('<linesegarray>' + ''.join(segments) + '</linesegarray>', '한글')
+
+    def test_type_boundaries_and_reflow_accepted(self):
+        cases = {f'{f} {v}': seg(**{f: v}) for f in U32_FIELDS for v in ('0', '4294967295')}
+        cases.update({f'{f} {v}': seg(**{f: v}) for f in I32_FIELDS for v in ('-2147483648', '2147483647')})
+        for name, segment in cases.items():
+            with self.subTest(name):
+                accepts(layout_paragraph(self.ORIGINAL), self.saved(segment))
+        accepts(layout_paragraph(self.ORIGINAL), self.saved(seg(), seg(textpos='0'), seg(textpos='7', vertpos='1600')))
+
+    INVALID = {
+        'empty lineseg': '<lineseg/>',
+        'missing textpos': seg(drop=('textpos',)),
+        'missing flags': seg(drop=('flags',)),
+        'missing several': seg(drop=('vertsize', 'baseline', 'horzsize')),
+        'unknown extra attribute': seg(extra='1'),
+        'textpos above u32': seg(textpos='4294967296'),
+        'negative textpos': seg(textpos='-1'),
+        'flags above u32': seg(flags='4294967296'),
+        'negative flags': seg(flags='-1'),
+        'vertpos above i32': seg(vertpos='2147483648'),
+        'vertsize below i32': seg(vertsize='-2147483649'),
+        'horzsize far beyond i32': seg(horzsize='99999999999999999999'),
+        'leading zero': seg(vertpos='007'),
+        'plus sign': seg(spacing='+1'),
+        'negative zero': seg(horzpos='-0'),
+        'decimal': seg(baseline='850.0'),
+        'whitespace': seg(textheight=' 1000'),
+        'empty value': seg(vertsize=''),
+    }
+
+    def test_invalid_segments_refused(self):
+        for name, segment in self.INVALID.items():
+            with self.subTest(name), self.assertRaises(AssertionError):
+                accepts(layout_paragraph(self.ORIGINAL), self.saved(segment))
+
+    def test_decreasing_textpos_refused(self):
+        with self.assertRaises(AssertionError):
+            accepts(layout_paragraph(self.ORIGINAL), self.saved(seg(textpos='5'), seg(textpos='4')))
+
+    def test_invalid_original_segments_fail_explicitly(self):
+        for name in ('empty lineseg', 'missing textpos', 'textpos above u32'):
+            with self.subTest(name), self.assertRaises(AssertionError):
+                accepts(layout_paragraph(f'<linesegarray>{self.INVALID[name]}</linesegarray>'),
+                        self.saved(seg()))
 
 
 if __name__ == '__main__':

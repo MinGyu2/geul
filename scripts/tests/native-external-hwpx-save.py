@@ -53,9 +53,22 @@ def apply_intentional_edit(first, edited, hp):
     target.text = intended
 
 
-# Attributes rhwp writes on hp:lineseg (serializer render_lineseg_array_from_ir).
-LINESEG_ATTRIBUTES = {'textpos', 'vertpos', 'vertsize', 'textheight', 'baseline',
-                      'spacing', 'horzpos', 'horzsize', 'flags'}
+# rhwp render_one_lineseg writes exactly these nine attributes; ranges follow
+# model LineSeg (text_start/tag u32, every other field i32). Every hp:lineseg in
+# the pinned 734-document corpus has exactly this set in canonical decimal form.
+LINESEG_U32 = ('textpos', 'flags')
+LINESEG_I32 = ('vertpos', 'vertsize', 'textheight', 'baseline', 'spacing', 'horzpos', 'horzsize')
+LINESEG_ATTRIBUTES = frozenset(LINESEG_U32 + LINESEG_I32)
+_CANONICAL_INTEGER = re.compile(r'0|-?[1-9][0-9]*')
+
+
+def _lineseg_value(name, value, side):
+    """Canonical decimal (Rust Display form) within the field's Rust type."""
+    assert _CANONICAL_INTEGER.fullmatch(value), f'{side}: hp:lineseg {name}={value!r} is not a canonical integer'
+    number = int(value)
+    low, high = (0, 2**32 - 1) if name in LINESEG_U32 else (-2**31, 2**31 - 1)
+    assert low <= number <= high, f'{side}: hp:lineseg {name}={value} outside {low}..{high}'
+    return number
 
 
 def _direct_line_layout(para, hp, side):
@@ -81,9 +94,9 @@ def _direct_line_layout(para, hp, side):
     for segment in segments:
         assert segment.tag == hp+'lineseg' and len(segment) == 0, f'{side}: hp:linesegarray holds {segment.tag}'
         assert not segment.text and not segment.tail, f'{side}: character data in hp:linesegarray'
-        assert set(segment.attrib) <= LINESEG_ATTRIBUTES, f'{side}: hp:lineseg attributes {sorted(segment.attrib)}'
-        assert all(re.fullmatch(r'-?[0-9]+', v) for v in segment.attrib.values()), f'{side}: non-integer hp:lineseg value'
-        textpos = int(segment.get('textpos', previous))
+        assert set(segment.attrib) == LINESEG_ATTRIBUTES, f'{side}: hp:lineseg attributes {sorted(segment.attrib)}'
+        values = {name: _lineseg_value(name, value, side) for name, value in segment.attrib.items()}
+        textpos = values['textpos']
         assert textpos >= previous, f'{side}: hp:lineseg textpos decreases'
         previous = textpos
     return layout
