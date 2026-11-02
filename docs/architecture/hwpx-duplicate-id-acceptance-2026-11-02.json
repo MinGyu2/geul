@@ -1490,5 +1490,407 @@
     "scope": "standalone WASM regression; final native acceptance recorded separately"
    }
   ]
+ },
+ "charPrPresenceFollowup": {
+  "date": "2026-11-03",
+  "startHead": "f9bf9d1b8ae89a42fc68295f9757382c7c071d8b",
+  "stage1Commit": "1fb92d551a4472cc7b62edc688920fdc21a06b2c",
+  "stage1Oracle": {
+   "lineLayout": "normalize_edited_line_layout: at most one attribute-free hp:linesegarray as last child with attribute-only integer hp:lineseg (non-decreasing textpos); transitions 1->1 and 1->0 only; tail identical; legacy helper accepted 7 structural mutations",
+   "zip": "archive_parts: testzip on both archives, duplicate entry names refused before any read; legacy set check accepted duplicates on either side",
+   "tests": [
+    "scripts/tests/test_hwpx_intentional_edit.py",
+    "scripts/tests/test_hwpx_package_preserved.py"
+   ],
+   "nativeOnRelease": "4fc10a9db30f457efe64c4784b56da5717d98c72fe72ffbf3bcd573d26b62731 (list_marker_head_synthetic.hwpx, 종이기준.hwpx PASS)"
+  },
+  "charPrPresence": {
+   "defect": "older Hancom HWPX omits default-valued hh:underline/strikeout/outline/shadow; the parser kept only effective values and the serializer wrote all four for every charPr",
+   "example": {
+    "source": "external/rhwp/saved/blank_hwpx.hwpx",
+    "original": [
+     "fontRef",
+     "ratio",
+     "spacing",
+     "relSz",
+     "offset"
+    ],
+    "baseline4fc10a9d": [
+     "fontRef",
+     "ratio",
+     "spacing",
+     "relSz",
+     "offset",
+     "underline",
+     "strikeout",
+     "outline",
+     "shadow"
+    ],
+    "corrected": [
+     "fontRef",
+     "ratio",
+     "spacing",
+     "relSz",
+     "offset"
+    ]
+   },
+   "fix": "patches/rhwp/hwpx-charpr-child-presence.patch: CharShape.hwpx_omitted_children records children absent in the HWPX source; the writer omits a child only while its values equal the absence defaults (an edit is always written); excluded from CharShape equality; HWP5/HWP3/HML/new shapes write every child",
+   "finalRelease": {
+    "generation": "65442a921eece4d4a64949143c3ff8f2f76c88ac1902599b2b8d05720205f908",
+    "artifacts": {
+     "rhwp.js": "70cde06a369fa7fd4fc8bc8f3d6acaee158596ba1a116a2c72159002b0b5654e",
+     "rhwp_bg.wasm": "561161070853051cf032d78daf2284d1ad652fd0a90e8718929be94049f5d691"
+    },
+    "patches": [
+     {
+      "name": "hwpx-textdir-ltr.patch",
+      "sha256": "abab4bc23a89dfec82aa63d36d32cd7192e5b14fefd2dd56231c4bb5676c6cc0"
+     },
+     {
+      "name": "hwpx-duplicate-paragraph-ids.patch",
+      "sha256": "79fd8f41c4cabe82b6b0b66265f5a1b3feef08a4c0b07af30cf7f788e11a9787"
+     },
+     {
+      "name": "hwpx-clipboard-paragraph-ids.patch",
+      "sha256": "30ac44ee1283f55605e49d09e446f5bbb5104b948ce2e7b74b87a9652e8a5c8e"
+     },
+     {
+      "name": "hwpx-spine-linear.patch",
+      "sha256": "080070cdfdaffe9b80b61ddeb6ddec8e49080b168649f92932caaf58f08298eb"
+     },
+     {
+      "name": "hwpx-spine-validation.patch",
+      "sha256": "0aae77fae8f7eb5ab1c1c83782c0930aa3501b1fd262b1e78706ebed35eeed5d"
+     },
+     {
+      "name": "hwpx-manifest-order.patch",
+      "sha256": "469c2db1c8070e18b87b02f8e8677dda48f746d3ab2ebf27706fe239453a6dc2"
+     },
+     {
+      "name": "hwpx-charpr-child-presence.patch",
+      "sha256": "cbe9574c01e72481d617c352a13da09ba5728a502713a0338ad80c6ab0347573"
+     }
+    ],
+    "sourceTreeSha256": "e46826e8a2e6627e2ddfb4e4daa1f28c8ba331b826177b0768b5d0d9ed43a097",
+    "sourceFingerprint": "d2d0d4c0e2724cc1c8ca382996ee211ef6dd12a3d7f1ef91b1adf991238fc211"
+   },
+   "engineUnitTests": {
+    "baseline": "test result: FAILED. 3768 passed; 121 failed; 13 ignored; 0 measured; 0 filtered out; finished in 137.96s",
+    "candidate": "test result: FAILED. 3771 passed; 121 failed; 13 ignored; 0 measured; 0 filtered out; finished in 139.06s",
+    "newFailures": [],
+    "newTests": {
+     "parser::hwpx::header::tests::char_pr_default_children_keep_original_presence": "ok",
+     "parser::hwpx::header::tests::char_pr_presence_is_not_formatting_identity": "ok",
+     "parser::hwpx::header::tests::char_pr_recorded_omission_never_hides_an_edit": "ok"
+    },
+    "note": "first baseline run reused the candidate test binary (hard-linked tree with older mtimes); discarded and rebuilt from a fresh copy"
+   },
+   "wasmRegression": {
+    "status": "PASS",
+    "blankPreflightNoEdit": [
+     "unsafe",
+     [
+      "partChanged:Contents/section0.xml"
+     ]
+    ],
+    "appendedCharPr": {
+     "edit-underline.hwpx": {
+      "7": [
+       "fontRef",
+       "ratio",
+       "spacing",
+       "relSz",
+       "offset",
+       "underline"
+      ]
+     },
+     "edit-bold.hwpx": {
+      "7": [
+       "fontRef",
+       "ratio",
+       "spacing",
+       "relSz",
+       "offset",
+       "underline"
+      ],
+      "8": [
+       "fontRef",
+       "ratio",
+       "spacing",
+       "relSz",
+       "offset",
+       "bold"
+      ]
+     }
+    },
+    "mixed": {
+     "0": [
+      "fontRef",
+      "ratio",
+      "spacing",
+      "relSz",
+      "offset",
+      "underline",
+      "shadow"
+     ],
+     "1": [
+      "fontRef",
+      "ratio",
+      "spacing",
+      "relSz",
+      "offset",
+      "underline",
+      "outline"
+     ],
+     "2": [
+      "fontRef",
+      "ratio",
+      "spacing",
+      "relSz",
+      "offset"
+     ]
+    },
+    "explicit": {
+     "preflight": [
+      "safe",
+      []
+     ]
+    },
+    "hwp5HeaderIdenticalToBaseline": [
+     {
+      "sample": "external/rhwp/samples/투명도0-50.hwp",
+      "headerIdentical": true
+     },
+     {
+      "sample": "external/rhwp/samples/143E433F503322BD33.hwp",
+      "headerIdentical": true
+     },
+     {
+      "sample": "external/rhwp/samples/156636617_240617 2024년 5월 월간 수출입 현황(확정치).hwp",
+      "headerIdentical": true
+     }
+    ],
+    "negative": [
+     {
+      "name": "unknown-child",
+      "result": [
+       "unsafe",
+       [
+        "partChanged:Contents/header.xml",
+        "partChanged:Contents/section0.xml"
+       ]
+      ]
+     },
+     {
+      "name": "conflicting-duplicate-child",
+      "result": [
+       "unsafe",
+       [
+        "partChanged:Contents/header.xml",
+        "partChanged:Contents/section0.xml"
+       ]
+      ]
+     },
+     {
+      "name": "invalid-enum",
+      "result": [
+       "unsafe",
+       [
+        "partChanged:Contents/header.xml",
+        "partChanged:Contents/section0.xml"
+       ]
+      ]
+     },
+     {
+      "name": "missing-charPr-reference",
+      "result": [
+       "export refused",
+       [
+        "refused: 렌더링 오류: XML 쓰기 실패: 미등록 ID 참조 발견: charPrIDRef: [77]"
+       ]
+      ]
+     },
+     {
+      "name": "malformed-header",
+      "result": [
+       "export refused",
+       [
+        "유효하지 않은 파일: HWPX 오류: XML 파싱 오류: paraPr: syntax error: tag not closed: `>` not found before end of input"
+       ]
+      ]
+     }
+    ],
+    "baseline4fc10a9d": "FAIL as expected (unedited header changed)"
+   },
+   "otherRegressions": "hwpx-duplicate-id, hwpx-spine-linear, hwpx-identity, hwpx-textdir PASS on candidate; hwpx-manifest-order script asserts only content.hpf differs vs 50b5ff67 and is not applicable to a header change; replaced by the corpus part-level A/B below",
+   "corpus": {
+    "set": "734 pinned external/rhwp HWPX",
+    "baseline": {
+     "unsafe": 478,
+     "export-failed": 149,
+     "safe": 98,
+     "unknown": 9
+    },
+    "candidate": {
+     "unsafe": 478,
+     "export-failed": 149,
+     "safe": 98,
+     "unknown": 9
+    },
+    "findingsRemoved": {
+     "partChanged:Contents/header.xml": 26
+    },
+    "findingsAdded": {},
+    "outputsIdentical": 483,
+    "outputsChanged": 102,
+    "changedParts": {
+     "Contents/header.xml": 102
+    },
+    "headerFindingRemoved": [
+     "fuzz/corpus/parse_hwpx/distribute-alignment-sample.hwpx",
+     "fuzz/corpus/parse_hwpx/hwp5-tbl-attr-1916.hwpx",
+     "fuzz/corpus/parse_hwpx/outline_navigation_panel_demo.hwpx",
+     "fuzz/corpus/parse_hwpx/outline_navigation_table_cell_number.hwpx",
+     "mydocs/pr/assets/issue7445/outline_navigation_panel_demo.hwpx",
+     "mydocs/pr/assets/issue7445/outline_navigation_table_cell_number.hwpx",
+     "mydocs/tech/investigations/issue-4963/fixtures/oracle_typesetting_fixture.hwpx",
+     "mydocs/tech/investigations/issue-4967/fixtures/rank7_qualification.hwpx",
+     "mydocs/tech/investigations/issue-4967/fixtures/rank8_qualification.hwpx",
+     "mydocs/tech/investigations/issue-4968/fixtures/kerning_pair_fixture.hwpx",
+     "mydocs/tech/investigations/issue-4968/fixtures/kerning_runtime_fixture.hwpx",
+     "samples/hwpx/blank_hwpx.hwpx",
+     "samples/hwpx/issue_157.hwpx",
+     "samples/hwpx/ref/ref_empty.hwpx",
+     "samples/hwpx/ref/ref_mixed.hwpx",
+     "samples/hwpx/ref/ref_table.hwpx",
+     "samples/hwpx/ref/ref_text.hwpx",
+     "samples/issue4657/distribute-alignment-sample.hwpx",
+     "samples/issue5797_shape_selfclosing_child.hwpx",
+     "samples/issue6035/2804253_cosmetics_gmp_checklist.hwpx",
+     "samples/issue7193/2983289_picture_inner_margin.hwpx",
+     "samples/pr4093/outline_navigation_panel_demo.hwpx",
+     "samples/pr4093/outline_navigation_table_cell_number.hwpx",
+     "samples/task2097/3248363_upmu_bunjang.hwpx",
+     "saved/03-blank_hwpx.hwpx",
+     "saved/blank_hwpx.hwpx"
+    ],
+    "changedHeadersExplainedOnlyBySourceAbsentChildren": "102/102",
+    "newlySafe": 0
+   },
+   "nativeOnFinalRelease": {
+    "listMarkerHead": {
+     "status": "PASS",
+     "generation": "65442a921eece4d4a64949143c3ff8f2f76c88ac1902599b2b8d05720205f908",
+     "wasm": "561161070853051cf032d78daf2284d1ad652fd0a90e8718929be94049f5d691",
+     "loadedWasm": [
+      "http://localhost:1420/rhwp/generations/65442a921eece4d4a64949143c3ff8f2f76c88ac1902599b2b8d05720205f908/rhwp_bg.wasm"
+     ],
+     "preflight": "safe",
+     "save": {
+      "state": "saved",
+      "synced": "true",
+      "revision": "2"
+     },
+     "reopen": "한글",
+     "package": {
+      "zipValid": true,
+      "partSetEqual": true,
+      "headerAndUnrelatedXmlEqual": true,
+      "previewIsKnownBlank": true,
+      "paragraphIdsEqual": true,
+      "paragraphCount": 44,
+      "repeatedParagraphIds": 42,
+      "expectedText": "한글"
+     },
+     "externalConflict": "FileConflict",
+     "missingIdRefused": "렌더링 오류: 지원하지 않는 입력: HWPX paragraph id missing or invalid",
+     "previewNegative": {
+      "beforeSaveSha256": "0c9c240a426367f0f6b7fd71ede97276b3576fc27b3c8b912dbb3c022d1f64bd",
+      "afterSaveSha256": "0c9c240a426367f0f6b7fd71ede97276b3576fc27b3c8b912dbb3c022d1f64bd",
+      "findings": "previewStale:Preview/PrvImage.png,previewStale:Preview/PrvText.txt"
+     },
+     "unsafeNegative": {
+      "preflightOutcome": "unsafe",
+      "preflightFindings": "partChanged:Contents/section0.xml",
+      "absentFindings": [
+       "partChanged:Contents/header.xml"
+      ],
+      "save": "UnsafeSave",
+      "beforeSaveSha256": "42a10023dccae3041d8ca3b9ae13f38ee2dbc69097eecfa97380427584994c87",
+      "afterSaveSha256": "42a10023dccae3041d8ca3b9ae13f38ee2dbc69097eecfa97380427584994c87",
+      "unpreserved": "true",
+      "dirty": "true"
+     }
+    },
+    "종이기준": {
+     "status": "PASS",
+     "generation": "65442a921eece4d4a64949143c3ff8f2f76c88ac1902599b2b8d05720205f908",
+     "wasm": "561161070853051cf032d78daf2284d1ad652fd0a90e8718929be94049f5d691",
+     "loadedWasm": [
+      "http://localhost:1420/rhwp/generations/65442a921eece4d4a64949143c3ff8f2f76c88ac1902599b2b8d05720205f908/rhwp_bg.wasm"
+     ],
+     "preflight": "safe",
+     "save": {
+      "state": "saved",
+      "synced": "true",
+      "revision": "2"
+     },
+     "reopen": "한글",
+     "package": {
+      "zipValid": true,
+      "partSetEqual": true,
+      "headerAndUnrelatedXmlEqual": true,
+      "previewIsKnownBlank": true,
+      "paragraphIdsEqual": true,
+      "paragraphCount": 1,
+      "repeatedParagraphIds": 0,
+      "expectedText": "한글"
+     },
+     "externalConflict": "FileConflict",
+     "missingIdRefused": "렌더링 오류: 지원하지 않는 입력: HWPX paragraph id missing or invalid"
+    },
+    "sc002": {
+     "status": "PASS",
+     "summary": {
+      "status": "PASS",
+      "positive": 3,
+      "rejections": 9
+     }
+    },
+    "appSha256": {
+     "s2-p0-env": "2673363242817c4d7610f2c396d65dc04ba5279ce02012d3d3e8f5571c3fda7d",
+     "s2-jongi-env": "2673363242817c4d7610f2c396d65dc04ba5279ce02012d3d3e8f5571c3fda7d",
+     "s2-sc002-env": "2673363242817c4d7610f2c396d65dc04ba5279ce02012d3d3e8f5571c3fda7d"
+    },
+    "servedGeneration": {
+     "s2-p0-env": "65442a921eece4d4a64949143c3ff8f2f76c88ac1902599b2b8d05720205f908",
+     "s2-jongi-env": "65442a921eece4d4a64949143c3ff8f2f76c88ac1902599b2b8d05720205f908",
+     "s2-sc002-env": "65442a921eece4d4a64949143c3ff8f2f76c88ac1902599b2b8d05720205f908"
+    },
+    "cleanup": true
+   },
+   "notRun": [
+    "native IME gates / ordinary editing / latency on this generation (editor code unchanged; header writer only)",
+    "GPU desktop",
+    "Wayland",
+    "fcitx5",
+    "Windows",
+    "macOS"
+   ],
+   "remaining": [
+    "strikeout attribute normalization (first remaining header difference in 130 corpus documents)",
+    "secPr tabStopVal/tabStopUnit added (blank_hwpx section0)",
+    "container.rdf/secCnt (hwpx-01-saved)",
+    "stale previews of Hancom-saved documents (no HWPX preview regeneration)"
+   ]
+  },
+  "status": {
+   "T007": "INCOMPLETE",
+   "T008": "INCOMPLETE",
+   "T009": "unchecked",
+   "T010": "INCOMPLETE / RHWP Undo-Redo NO-GO",
+   "T011": "NOT STARTED"
+  },
+  "rawEvidence": "local ignored target/hwpx-twostage-20261102/ (not published)"
  }
 }

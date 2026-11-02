@@ -329,6 +329,28 @@ def run(args):
                     report['previewNegative']={'sourceSha256':sha(args.preview_negative.resolve()),'preflight':stale_preflight,
                                                'result':refused,'originalUnchanged':True,'sessionUnpreserved':True,
                                                'beforeSaveSha256':stale_hash,'afterSaveSha256':sha(stale),'status':rhwp.status(d)}
+                if args.unsafe_negative:
+                    # A document that preflight cannot prove preservable (other
+                    # differences remain): the app reports it before editing and
+                    # an edited save is refused with the original bytes intact.
+                    blocked=args.out/'unsafe-negative.hwpx';shutil.copyfile(args.unsafe_negative.resolve(),blocked);blocked_hash=sha(blocked)
+                    rhwp.open_document(d,blocked)
+                    rhwp.press_button(d,'[data-testid=rhwp-save-check]')
+                    smoke.wait_until(d,"return ['unsafe','unknown'].includes(document.querySelector('[data-testid=rhwp-save-result]')?.dataset.outcome)",timeout=60)
+                    blocked_preflight=d.js("return {...document.querySelector('[data-testid=rhwp-save-result]').dataset}")
+                    for finding in args.unsafe_absent_finding:
+                        assert finding not in blocked_preflight.get('findings',''),blocked_preflight
+                    d.js("document.querySelector('.rhwp-input').focus()");command(args.xdotool,'windowfocus','--sync',window)
+                    command(args.xdotool,'key','Home');blocked_before=rhwp.settle(d,'unsafe negative start')
+                    command(args.xdotool,'type','--delay','90','gksrmf');command(args.xdotool,'key','End')
+                    blocked_edit=rhwp.settle(d,'unsafe negative edit')
+                    assert blocked_edit['paragraphText']=='한글'+blocked_before['paragraphText'] and blocked_edit['dirty']=='true',blocked_edit
+                    refused=rhwp.save_and_wait(d)
+                    assert refused['state']=='failed' and refused['error']=='UnsafeSave',refused
+                    assert sha(blocked)==blocked_hash and rhwp.status(d)['unpreserved']==rhwp.status(d)['dirty']=='true'
+                    report['unsafeNegative']={'sourceSha256':sha(args.unsafe_negative.resolve()),'preflight':blocked_preflight,
+                                              'absentFindings':args.unsafe_absent_finding,'result':refused,
+                                              'beforeSaveSha256':blocked_hash,'afterSaveSha256':sha(blocked),'status':rhwp.status(d)}
                 assert not list(args.out.glob('.geul-save-*.tmp'))
             finally:smoke.end_session(d)
         report['status']='PASS'
@@ -345,6 +367,8 @@ def main():
     p.add_argument('--app',type=Path,required=True);p.add_argument('--driver',required=True);p.add_argument('--out',type=Path,required=True)
     p.add_argument('--xdotool',required=True);p.add_argument('--ibus',required=True);p.add_argument('--port',type=int,default=4444)
     p.add_argument('--preview-negative',type=Path,help='Hancom-saved HWPX with content previews: edited save must be refused')
+    p.add_argument('--unsafe-negative',type=Path,help='HWPX whose preflight is not safe: edited save must be refused')
+    p.add_argument('--unsafe-absent-finding',action='append',default=[],help='finding that must not appear in the unsafe-negative preflight')
     return run(p.parse_args())
 
 if __name__=='__main__':sys.exit(main())

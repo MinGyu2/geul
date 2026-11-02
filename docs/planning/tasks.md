@@ -320,3 +320,7 @@ T007/T008의 예전 "저장 없음"은 당시 PoC 범위이며 현재 기능 부
 ### HWPX 보존 오라클·spine·manifest 후속 (2026-11-02)
 
 P2/P3/C/P4의 이 범위는 최종 구현과 선택된 회귀 검증을 완료했다. 동일 734개 입력 코퍼스에서 safe 98 유지, 새 safe 0, 순서 차이 176 제거, JPEG 표기 223개/67문서 보존, 새로운 findings 0을 확인했다. 두 필수 HWPX native 편집 저장 재열기와 Stage 4 세 형식 3/3, 저장 거절 9/9도 최종 generation에서 통과했다. 상세는 [최종 저장 보존 기록](../architecture/save-preservation.md#최종-native-재검증과-manifest-순서-보존-2026-11-02-p2p3cp4) 및 [기계 판독 근거의 `oracleSpineManifestFollowup`](../architecture/hwpx-duplicate-id-acceptance-2026-11-02.json) 참조. 이 결과는 T007/T008/T009/T014/T015를 완료로 체크하지 않는다. T010은 INCOMPLETE, RHWP Undo/Redo NO-GO이며 T011은 NOT STARTED 그대로다.
+
+### 독립 검증기 강화와 HWPX `charPr` 자식 유무 보존 (2026-11-03)
+
+**체크박스 변경 없음.** Stage 1: 실제 앱 수용 검증기의 편집 문단 줄 배치 예외를 rhwp 직렬화기 계약으로 좁히고(옛 예외가 받던 구조 변형 7가지 거부), 원본·결과 ZIP의 중복 항목 이름을 거부했다. Stage 2: 옛 한컴 HWPX `charPr`의 생략된 기본 자식을 내보내기가 만들어 내던 문제를 `patches/rhwp/hwpx-charpr-child-presence.patch`로 고쳐 734개 코퍼스에서 26개 문서의 header 근거가 사라졌지만 새로 safe가 된 문서는 없다. 최종 generation `65442a92…`에서 외부 HWPX 두 문서·Stage 4·`blank_hwpx` 거절이 실제 앱으로 PASS. geul 판정·저장 안전 기준은 바꾸지 않았다. T007/T008 INCOMPLETE, T009 미체크, T010 INCOMPLETE·RHWP Undo/Redo NO-GO, T011 NOT STARTED 그대로. 상세: [저장 보존](../architecture/save-preservation.md#hwpx-charpr-기본-자식의-원본-유무-보존-2026-11-03-stage-2), [근거 JSON](../architecture/hwpx-duplicate-id-acceptance-2026-11-02.json) `charPrPresenceFollowup`.
