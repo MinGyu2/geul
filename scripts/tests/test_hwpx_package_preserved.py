@@ -6,6 +6,7 @@ import importlib.util
 from pathlib import Path
 import tempfile
 import unittest
+from unittest import mock
 import warnings
 import zipfile
 
@@ -108,6 +109,39 @@ class PackagePreserved(unittest.TestCase):
         self.assertEqual(str(caught.exception), 'BinData/image1.bin')
         header = HEADER.replace(b'secCnt="1"', b'secCnt="2"')
         self.refused(self.write('header.hwpx', entries('한글AB', header=header)), 'Contents/header.xml')
+
+
+class DuplicateCheckOrder(unittest.TestCase):
+    """Duplicate names must be refused from the central directory alone."""
+
+    def test_no_member_is_opened_before_duplicate_refusal(self):
+        with tempfile.TemporaryDirectory() as folder:
+            path = Path(folder) / 'dup.hwpx'
+            with warnings.catch_warnings(), zipfile.ZipFile(path, 'w') as archive:
+                warnings.simplefilter('ignore')
+                for part, data in entries('한글AB') + [('Contents/header.xml', HEADER)]:
+                    archive.writestr(part, data, compress_type=zipfile.ZIP_DEFLATED)
+            opened = []
+            original_open = zipfile.ZipFile.open
+
+            def recording_open(archive, name, *args, **kwargs):
+                opened.append(getattr(name, 'filename', name))
+                return original_open(archive, name, *args, **kwargs)
+
+            with mock.patch.object(zipfile.ZipFile, 'open', recording_open):
+                with self.assertRaises(AssertionError) as caught:
+                    native.archive_parts(path, 'saved')
+            self.assertIn('duplicate ZIP entry names', str(caught.exception))
+            self.assertEqual(opened, [], 'member data was read before the duplicate check')
+
+    def test_unique_archive_opens_each_member_for_integrity_then_read(self):
+        with tempfile.TemporaryDirectory() as folder:
+            path = Path(folder) / 'ok.hwpx'
+            with zipfile.ZipFile(path, 'w') as archive:
+                for part, data in entries('AB'):
+                    archive.writestr(part, data, compress_type=zipfile.ZIP_DEFLATED)
+            parts = native.archive_parts(path, 'original')
+            self.assertEqual(list(parts), [part for part, _ in entries('AB')])
 
 
 if __name__ == '__main__':

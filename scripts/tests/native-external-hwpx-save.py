@@ -6,6 +6,7 @@ X11/IBus hangul/xdotool and tauri-driver. No synthetic composition events.
 Always uses a private copy; output must be a new ignored directory.
 """
 import argparse
+import collections
 import hashlib
 import importlib.util
 import json
@@ -145,13 +146,16 @@ def archive_parts(path, side):
 
     testzip() checks member CRCs only, and a set of names hides multiplicity;
     ZipFile.read(name) would silently pick one of several same-named members.
-    Duplicate names are therefore refused before any part is read.
+    Duplicate names are therefore refused from the central directory before
+    testzip() or any read decompresses member data.
     """
     with zipfile.ZipFile(path) as archive:
-        assert archive.testzip() is None, f'{side}: corrupt ZIP entry'
+        # Central-directory metadata only: no member is opened or decompressed
+        # until the names are known to be unique (one linear pass).
         names = [info.filename for info in archive.infolist()]
-        duplicates = sorted({name for name in names if names.count(name) > 1})
+        duplicates = sorted(name for name, count in collections.Counter(names).items() if count > 1)
         assert not duplicates, f'{side}: duplicate ZIP entry names {duplicates}'
+        assert archive.testzip() is None, f'{side}: corrupt ZIP entry'
         return {name: archive.read(name) for name in names}
 
 
