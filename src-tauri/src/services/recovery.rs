@@ -24,6 +24,8 @@ const MAGIC: &[u8; 4] = b"GRR1";
 pub(crate) enum RecoveryFault {
     /// Directory fsync after a record name was published fails.
     PublishDirSync,
+    /// Directory fsync confirming the unlink of superseded records fails.
+    RetireDirSync,
 }
 #[cfg(all(test, target_os = "linux"))]
 thread_local! {
@@ -111,6 +113,9 @@ struct Memory {
     /// generation but changes that path, and `put` never replaces a record for a different original.
     ids: std::collections::BTreeMap<(u64, u64), Vec<(String, String)>>,
     forgotten: std::collections::BTreeSet<u64>,
+    /// Superseded records unlinked by `retire` whose directory fsync failed: the cleanup is not confirmed durable, so
+    /// their IDs stay owned until a later successful directory fsync (next publication, `saved` or `forget_session`).
+    unconfirmed_retirements: std::collections::BTreeSet<String>,
 }
 
 pub struct RecoveryStore {
@@ -389,7 +394,10 @@ impl RecoveryStore {
                 return Err(error);
             }
         };
-        if let Some(history) = ids.ids.get_mut(&key) {
+        let memory = &mut *ids;
+        // `put` succeeded only after a directory fsync, which also persisted earlier unlinks in this directory.
+        memory.unconfirmed_retirements.clear();
+        if let Some(history) = memory.ids.get_mut(&key) {
             Self::retire(
                 &dir,
                 &candidate.id,
@@ -397,6 +405,7 @@ impl RecoveryStore {
                 generation,
                 revision,
                 history,
+                &mut memory.unconfirmed_retirements,
             );
         }
         Ok(candidate)
@@ -404,7 +413,9 @@ impl RecoveryStore {
 
     /// After `keep` is durably published, remove superseded records of the same source (same original path and load,
     /// revision not newer). Unreadable/foreign records and `.pending` files are left for explicit disposition. A failed
-    /// removal only leaves an extra older candidate, which stays owned for `saved`/`forget_session`.
+    /// removal only leaves an extra older candidate, which stays owned for `saved`/`forget_session`. If the directory
+    /// fsync after unlinking fails, the removals are recorded as unconfirmed and stay owned; the published checkpoint
+    /// itself remains successful.
     fn retire(
         dir: &std::fs::File,
         keep: &str,
@@ -412,11 +423,12 @@ impl RecoveryStore {
         generation: u64,
         revision: u64,
         history: &mut Vec<(String, String)>,
+        unconfirmed: &mut std::collections::BTreeSet<String>,
     ) {
         let Ok(_lock) = DirectoryLock::take(dir, true) else {
             return;
         };
-        let mut removed = false;
+        let mut removed = Vec::new();
         for (id, source) in history.iter() {
             let name = format!("{id}.recovery");
             if name == keep || source != original {
@@ -426,11 +438,11 @@ impl RecoveryStore {
                 h.original == original && h.generation == generation && h.revision <= revision
             });
             if superseded && std::fs::remove_file(Self::base(dir).join(&name)).is_ok() {
-                removed = true;
+                removed.push(id.clone());
             }
         }
-        if removed {
-            let _ = dir.sync_all();
+        if !removed.is_empty() && !Self::confirm_retirement(dir) {
+            unconfirmed.extend(removed);
         }
         let absent = |name: String| {
             std::fs::symlink_metadata(Self::base(dir).join(name))
@@ -438,9 +450,19 @@ impl RecoveryStore {
         };
         history.retain(|(id, _)| {
             format!("{id}.recovery") == keep
+                || unconfirmed.contains(id)
                 || !absent(format!("{id}.recovery"))
                 || !absent(format!("{id}.pending"))
         });
+    }
+
+    /// Directory fsync that confirms earlier unlinks of superseded records.
+    fn confirm_retirement(dir: &std::fs::File) -> bool {
+        #[cfg(test)]
+        if RECOVERY_FAULT.with(|f| f.get()) == Some(RecoveryFault::RetireDirSync) {
+            return false;
+        }
+        dir.sync_all().is_ok()
     }
 
     fn put(
@@ -542,8 +564,9 @@ impl RecoveryStore {
     }
 
     pub fn saved(&self, ticket: &SaveTicket<'_>) {
-        let Ok(ids) = self.ids.lock() else { return };
-        let Some(history) = ids.ids.get(&(ticket.session_id, ticket.generation)) else {
+        let Ok(mut ids) = self.ids.lock() else { return };
+        let memory = &mut *ids;
+        let Some(history) = memory.ids.get(&(ticket.session_id, ticket.generation)) else {
             return;
         };
         let Ok(dir) = self.directory() else { return };
@@ -551,6 +574,20 @@ impl RecoveryStore {
             let name = format!("{id}.recovery");
             if Self::read(&dir, &name).is_ok_and(|(h, _)| h.revision <= ticket.revision) {
                 let _ = self.discard(&name);
+            }
+        }
+        // Best effort, like the discards above: confirm this load's earlier unconfirmed retirements.
+        let pending: Vec<String> = history
+            .iter()
+            .filter(|(id, _)| memory.unconfirmed_retirements.contains(id))
+            .map(|(id, _)| id.clone())
+            .collect();
+        if !pending.is_empty() {
+            let _lock = DirectoryLock::take(&dir, true);
+            if Self::confirm_retirement(&dir) {
+                for id in pending {
+                    memory.unconfirmed_retirements.remove(&id);
+                }
             }
         }
     }
@@ -575,6 +612,25 @@ impl RecoveryStore {
                         }
                     }
                 }
+            }
+        }
+        // Unlinks whose durability was never confirmed are not reported as completed cleanup.
+        let pending: Vec<String> = ids
+            .ids
+            .iter()
+            .filter(|((session, _), _)| *session == session_id)
+            .flat_map(|(_, history)| history.iter().map(|(id, _)| id.clone()))
+            .filter(|id| ids.unconfirmed_retirements.contains(id))
+            .collect();
+        if !pending.is_empty() {
+            let dir = self.directory()?;
+            let _lock = DirectoryLock::take(&dir, true)?;
+            if Self::confirm_retirement(&dir) {
+                for id in pending {
+                    ids.unconfirmed_retirements.remove(&id);
+                }
+            } else {
+                failed = true;
             }
         }
         if failed {
@@ -1186,6 +1242,209 @@ mod tests {
         }
         store.forget_session(session_id).unwrap();
         assert!(reopened.list().unwrap().is_empty());
+    }
+
+    /// Revision 1 durable, revision 2 durably published, then the retirement fsync of revision 1's unlink fails.
+    fn retirement_sync_fails() -> (
+        TempDir,
+        SessionRegistry,
+        u64,
+        RecoveryStore,
+        Candidate,
+        Candidate,
+        Vec<u8>,
+        Vec<u8>,
+    ) {
+        let dir = TempDir::new();
+        let source = dir.path().join("original.docx");
+        let (registry, info, original) = setup(&source);
+        let store = RecoveryStore::new(dir.path().join("records"));
+        let first_bytes = edited(&original);
+        let ticket = registry.begin_save(info.session_id, 1, 1).unwrap();
+        let checked =
+            service::validate_snapshot(&ticket, &Limits::default(), &first_bytes, None, true)
+                .unwrap();
+        let first = store
+            .snapshot(&ticket, &checked, &source, &first_bytes)
+            .unwrap();
+        drop(ticket);
+        let first_record = std::fs::read(store.root.join(&first.id)).unwrap();
+        let held = store.directory().unwrap();
+        assert_eq!(RecoveryStore::read(&held, &first.id).unwrap().0.revision, 1);
+        registry.commit(info.session_id, 1, 1, 1).unwrap();
+        let second_bytes = edited(&first_bytes);
+        let ticket = registry.begin_save(info.session_id, 1, 2).unwrap();
+        RECOVERY_FAULT.with(|f| f.set(Some(RecoveryFault::RetireDirSync)));
+        let second = store.snapshot(&ticket, &checked, &source, &second_bytes);
+        RECOVERY_FAULT.with(|f| f.set(None));
+        drop(ticket);
+        // Publication of revision 2 was confirmed; an optional cleanup failure does not turn it into a failure.
+        let second = second.expect("durably published checkpoint stays successful");
+        let (header, payload) = RecoveryStore::read(&held, &second.id).unwrap();
+        assert_eq!(
+            (header.revision, payload.as_slice()),
+            (2, second_bytes.as_slice())
+        );
+        assert!(
+            !store.root.join(&first.id).exists(),
+            "the unlink itself happened"
+        );
+        assert!(!first_record.is_empty());
+        assert_eq!(std::fs::read(&source).unwrap(), original);
+        (
+            dir,
+            registry,
+            info.session_id,
+            store,
+            first,
+            second,
+            original,
+            second_bytes,
+        )
+    }
+
+    fn id_of(candidate: &Candidate) -> String {
+        candidate.id.trim_end_matches(".recovery").to_owned()
+    }
+
+    #[test]
+    fn retirement_sync_failure_keeps_ownership_and_unconfirmed_state() {
+        let (_dir, _registry, session_id, store, first, second, _original, _bytes) =
+            retirement_sync_fails();
+        let memory = store.ids.lock().unwrap();
+        let owned: Vec<_> = memory.ids[&(session_id, 1)]
+            .iter()
+            .map(|(id, _)| id.clone())
+            .collect();
+        assert!(
+            owned.contains(&id_of(&first)),
+            "unconfirmed retirement must stay owned"
+        );
+        assert!(owned.contains(&id_of(&second)));
+        assert!(memory.unconfirmed_retirements.contains(&id_of(&first)));
+    }
+
+    #[test]
+    fn retirement_sync_failure_keeps_newest_candidate_recoverable_in_a_fresh_store() {
+        let (dir, _registry, _session_id, _store, first, second, original, second_bytes) =
+            retirement_sync_fails();
+        let reopened = RecoveryStore::new(dir.path().join("records"));
+        let listed = reopened.list().unwrap();
+        // The fresh process only sees the current filesystem: the unlinked name is gone here, revision 2 is valid.
+        assert_eq!(listed.len(), 1);
+        assert_eq!(
+            (listed[0].id.as_str(), listed[0].valid),
+            (second.id.as_str(), true)
+        );
+        assert!(listed.iter().all(|c| c.id != first.id));
+        let copy = dir.path().join("copy.docx");
+        reopened.restore(&second.id, &copy).unwrap();
+        assert_eq!(std::fs::read(&copy).unwrap(), second_bytes);
+        assert_eq!(
+            std::fs::read(dir.path().join("original.docx")).unwrap(),
+            original
+        );
+    }
+
+    #[test]
+    fn next_confirmed_publication_reconciles_unconfirmed_retirement() {
+        let (dir, registry, session_id, store, first, second, _original, second_bytes) =
+            retirement_sync_fails();
+        registry.commit(session_id, 1, 2, 1).unwrap();
+        let third_bytes = edited(&second_bytes);
+        let ticket = registry.begin_save(session_id, 1, 3).unwrap();
+        let checked = service::read_original(&ticket.source, &Limits::default()).unwrap();
+        let third = store
+            .snapshot(
+                &ticket,
+                &checked,
+                &dir.path().join("original.docx"),
+                &third_bytes,
+            )
+            .unwrap();
+        let memory = store.ids.lock().unwrap();
+        assert!(memory.unconfirmed_retirements.is_empty());
+        let owned: Vec<_> = memory.ids[&(session_id, 1)]
+            .iter()
+            .map(|(id, _)| id.clone())
+            .collect();
+        assert_eq!(owned, vec![id_of(&third)]);
+        drop(memory);
+        let listed = store.list().unwrap();
+        assert_eq!(listed.len(), 1);
+        assert_eq!(listed[0].id, third.id);
+        assert!(!store.root.join(&first.id).exists() && !store.root.join(&second.id).exists());
+    }
+
+    #[test]
+    fn saved_confirms_unconfirmed_retirement_and_removes_saved_revisions() {
+        let (_dir, registry, session_id, store, _first, _second, _original, _bytes) =
+            retirement_sync_fails();
+        let ticket = registry.begin_save(session_id, 1, 2).unwrap();
+        store.saved(&ticket);
+        drop(ticket);
+        assert!(store.list().unwrap().is_empty());
+        assert!(store.ids.lock().unwrap().unconfirmed_retirements.is_empty());
+    }
+
+    #[test]
+    fn forget_reports_unconfirmed_retirement_until_a_directory_sync_succeeds() {
+        let (_dir, registry, session_id, store, first, second, _original, _bytes) =
+            retirement_sync_fails();
+        RECOVERY_FAULT.with(|f| f.set(Some(RecoveryFault::RetireDirSync)));
+        let failed = store.forget_session(session_id);
+        RECOVERY_FAULT.with(|f| f.set(None));
+        assert!(
+            failed.is_err(),
+            "cleanup is not reported complete without a confirmed sync"
+        );
+        assert!(!store.root.join(&second.id).exists()); // its own record was still discarded
+        assert!(store
+            .ids
+            .lock()
+            .unwrap()
+            .unconfirmed_retirements
+            .contains(&id_of(&first)));
+        let ticket = registry.begin_save(session_id, 1, 2).unwrap();
+        assert!(store
+            .snapshot(&ticket, b"", Path::new("/unused.docx"), b"")
+            .is_err()); // tombstone still blocks late checkpoints
+        drop(ticket);
+        store.forget_session(session_id).unwrap();
+        assert!(store.ids.lock().unwrap().unconfirmed_retirements.is_empty());
+        assert!(store.list().unwrap().is_empty());
+    }
+
+    #[test]
+    fn retirement_never_removes_unreadable_or_foreign_records() {
+        let dir = TempDir::new();
+        let source = dir.path().join("source.docx");
+        let (registry, info, original) = setup(&source);
+        let store = RecoveryStore::new(dir.path().join("records"));
+        let ticket = registry.begin_save(info.session_id, 1, 1).unwrap();
+        let first = store
+            .snapshot(&ticket, &original, &source, &original)
+            .unwrap();
+        let record = store.root.join(&first.id);
+        let mut corrupt = std::fs::read(&record).unwrap();
+        let last = corrupt.len() - 1;
+        corrupt[last] ^= 1;
+        std::fs::write(&record, &corrupt).unwrap();
+        let foreign = store.root.join(format!("{}.recovery", "e".repeat(32)));
+        std::fs::write(&foreign, b"foreign").unwrap();
+        {
+            use std::os::unix::fs::PermissionsExt;
+            std::fs::set_permissions(&foreign, std::fs::Permissions::from_mode(0o600)).unwrap();
+        }
+        let second = store
+            .snapshot(&ticket, &original, &source, &original)
+            .unwrap();
+        assert_eq!(std::fs::read(&record).unwrap(), corrupt); // owned but unreadable: kept for explicit disposition
+        assert_eq!(std::fs::read(&foreign).unwrap(), b"foreign");
+        let listed = store.list().unwrap();
+        assert!(listed.iter().any(|c| c.id == second.id && c.valid));
+        assert_eq!(listed.iter().filter(|c| !c.valid).count(), 2);
+        assert_eq!(std::fs::read(&source).unwrap(), original);
     }
 
     #[test]
