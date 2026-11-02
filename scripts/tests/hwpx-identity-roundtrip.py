@@ -95,6 +95,12 @@ def check_ids(path):
     return values
 
 
+def check_ids_repeated(path):
+    values = ids(path)
+    assert values and all(0 <= int(v) <= 0xffffffff for v in values)
+    return values
+
+
 def multi_fixture(source, out):
     entries = parts(source)
     section = ET.fromstring(entries['Contents/section0.xml'])
@@ -140,7 +146,7 @@ def main():
     # identity diagnostic. Missing/invalid IDs are not silently turned into 0.
     spec=importlib.util.spec_from_file_location('probe',ROOT/'scripts/tests/hwpx-textdir-roundtrip.py');probe=importlib.util.module_from_spec(spec);spec.loader.exec_module(probe)
     negatives=[]
-    for name,value in [('missing',None),('invalid','bad'),('overflow','4294967296'),('duplicate','duplicate')]:
+    for name,value in [('missing',None),('invalid','bad'),('overflow','4294967296'),('source-duplicate','duplicate')]:
         entries=parts(source);root=ET.fromstring(entries['Contents/section0.xml']);para=next(root.iter('{'+HP+'}p'))
         if value is None:para.attrib.pop('id')
         elif value=='duplicate':
@@ -148,9 +154,16 @@ def main():
         else:para.set('id',value)
         entries['Contents/section0.xml']=ET.tostring(root,encoding='utf-8');path=args.out/(name+'.hwpx');write_parts(path,entries)
         actual=probe.export(args.candidate,path,args.out/(name+'-out.hwpx'))
+        if name=='source-duplicate':
+            # A source that itself repeats an id (Hancom output does this
+            # routinely) is preserved exactly rather than refused; excess or
+            # aliased duplicates are covered by the engine unit tests and
+            # scripts/tests/hwpx-duplicate-id-roundtrip.py.
+            assert actual['returncode']==0,actual
+            assert check_ids_repeated(args.out/(name+'-out.hwpx'))==['3121190098','3121190098']
+            negatives.append({'name':name,'readable':True,'preservedExactly':True});continue
         assert actual['returncode']!=0 and actual['diagnostic']['stage']=='export' and actual['diagnostic']['opened']
-        expected='duplicate HWPX paragraph id' if name=='duplicate' else 'HWPX paragraph id missing or invalid'
-        assert expected in actual['diagnostic']['error'],actual
+        assert 'HWPX paragraph id missing or invalid' in actual['diagnostic']['error'],actual
         negatives.append({'name':name,'readable':True,'exportRejectedForIdentity':True})
     report={'status':'PASS','sourceSha256':hashlib.sha256(source.read_bytes()).hexdigest(),'lifecycleIds':{'original':original,'split1':first,'split2':second,'afterDelete':later},'nestedParagraphs':len(nested),'multiSectionIds':read('multi-original'),'negative':negatives,'nodeEvidence':json.loads(result.stdout.splitlines()[-1])}
     (args.out/'result.json').write_text(json.dumps(report,ensure_ascii=False,indent=2)+'\n');print(json.dumps(report,ensure_ascii=False,indent=2))

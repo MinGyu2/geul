@@ -33,48 +33,68 @@ def xml_tree(e):
     return (e.tag, sorted(e.attrib.items()), e.text.strip() if e.text and e.text.strip() else '', [xml_tree(c) for c in e])
 
 
-def package_preserved(source, saved, expected):
+# Document-independent preview bytes the save service already accepts (geul
+# preview.rs): rhwp's 68-byte blank PNG constant and the audited 4502-byte
+# white 724x1024 PNG. Anything else is not a blank preview for this harness.
+KNOWN_BLANK_IMAGES = {
+    'c1bf607dd7214cb64486934b72c335a64b31d7f5203c40afdea5a1b95c826cf8': 'rhwp PRV_IMAGE_PNG',
+    'ca5d23cd1aad2853672cdb0d116137a0bdc2ff62148da9886c264305d0025f3d': 'audited 4502-byte blank',
+}
+
+
+def package_preserved(source, saved, expected, prefix):
+    """Independent check of the published package against the original.
+
+    Only the first top-level paragraph of section 0 was edited (text prefixed
+    by native IME input). Every paragraph id, including Hancom's repeated ids,
+    must be identical and in the same order; all other parts are compared as
+    canonical XML or bytes. Line-layout of the edited paragraph is recomputed
+    by the engine and is checked by the backend on the final bytes instead.
+    """
     hp = '{http://www.hancom.co.kr/hwpml/2011/paragraph}'
+    ids = {}
     with zipfile.ZipFile(source) as a, zipfile.ZipFile(saved) as b:
         assert b.testzip() is None and set(a.namelist()) == set(b.namelist())
         for name in a.namelist():
             before, after = a.read(name), b.read(name)
             if name.endswith(('.xml', '.hpf', '.rdf')):
                 x, y = ET.fromstring(before), ET.fromstring(after)
+                if name.startswith('Contents/section'):
+                    ids[name] = [p.get('id') for p in x.iter(hp+'p')]
+                    assert ids[name] == [p.get('id') for p in y.iter(hp+'p')], name
                 if name == 'Contents/section0.xml':
-                    paras = list(x.iter(hp+'p')); actual = list(y.iter(hp+'p'))
-                    assert [p.get('id') for p in paras] == [p.get('id') for p in actual] == ['3121190098']
-                    texts = list(x.iter(hp+'t')); saved_texts = list(y.iter(hp+'t'))
-                    assert len(texts) == len(saved_texts) == 1 and not texts[0].text
-                    assert saved_texts[0].text == expected
-                    # Line-layout values are recalculated after the actual edit.
-                    # Authoritative backend validation checks these final bytes;
-                    # the independent check below retains all other attributes.
-                    texts[0].text = expected
-                    for root in (x, y):
-                        for parent in root.iter():
+                    first, edited = x.find(hp+'p'), y.find(hp+'p')
+                    texts, saved_texts = list(first.iter(hp+'t')), list(edited.iter(hp+'t'))
+                    assert len(texts) == len(saved_texts), (len(texts), len(saved_texts))
+                    original = ''.join(t.text or '' for t in texts)
+                    assert original == prefix
+                    assert ''.join(t.text or '' for t in saved_texts) == expected
+                    for t, s in zip(texts, saved_texts):
+                        t.text = s.text
+                    for para in (first, edited):
+                        for parent in para.iter():
                             for child in list(parent):
                                 if child.tag == hp+'linesegarray': parent.remove(child)
                 assert xml_tree(x) == xml_tree(y), name
             elif name == 'Preview/PrvText.txt':
-                # This externally authored sample has the known empty preview.
-                # Its exact bytes are independent of the new text.
-                assert before == after == b'\r\n', name
+                # Only a known empty text preview is independent of the edit.
+                assert before == after and before in (b'', b'\r\n'), name
             elif name == 'Preview/PrvImage.png':
-                assert before == after and len(after) == 4502
-                assert hashlib.sha256(after).hexdigest() == 'ca5d23cd1aad2853672cdb0d116137a0bdc2ff62148da9886c264305d0025f3d'
+                assert before == after and hashlib.sha256(after).hexdigest() in KNOWN_BLANK_IMAGES, name
             else:
                 assert before == after, name
+    repeated = sum(len(v) - len(set(v)) for v in ids.values())
     return {'zipValid': True, 'partSetEqual': True, 'headerAndUnrelatedXmlEqual': True,
-            'previewIsAuditedBlank': True,
-            'paragraphIds': ['3121190098'], 'expectedText': expected}
+            'previewIsKnownBlank': True, 'paragraphIdsEqual': True,
+            'paragraphCount': sum(len(v) for v in ids.values()), 'repeatedParagraphIds': repeated,
+            'expectedText': expected}
 
 
 MODEL = r"""
 import assert from 'node:assert/strict';import{readFileSync}from'node:fs';import{resolve}from'node:path';import{pathToFileURL}from'node:url';
-const[pkg,source,saved,expected]=process.argv.slice(2);const m=await import(pathToFileURL(resolve(pkg,'rhwp.js')));m.initSync({module:readFileSync(resolve(pkg,'rhwp_bg.wasm'))});
+const[pkg,source,saved,expected,prefix]=process.argv.slice(2);const m=await import(pathToFileURL(resolve(pkg,'rhwp.js')));m.initSync({module:readFileSync(resolve(pkg,'rhwp_bg.wasm'))});
 const snapshot=d=>({format:d.getSourceFormat(),pages:d.pageCount(),controls:d.getControls(),paragraphs:Array.from({length:d.getSectionCount()},(_,s)=>Array.from({length:d.getParagraphCount(s)},(_,p)=>d.getTextRange(s,p,0,d.getParagraphLength(s,p))))});
-const a=new m.HwpDocument(readFileSync(source)),b=new m.HwpDocument(readFileSync(saved));try{const before=snapshot(a),after=snapshot(b);assert.equal(before.paragraphs[0][0],'');before.paragraphs[0][0]=expected;assert.deepEqual(after,before);console.log(JSON.stringify({modelEquivalent:true,controlsEqual:true,pagesEqual:true,expectedText:expected}));}finally{a.free();b.free();}
+const a=new m.HwpDocument(readFileSync(source)),b=new m.HwpDocument(readFileSync(saved));try{const before=snapshot(a),after=snapshot(b);assert.equal(before.paragraphs[0][0],prefix);before.paragraphs[0][0]=expected;assert.deepEqual(after,before);console.log(JSON.stringify({modelEquivalent:true,controlsEqual:true,pagesEqual:true,sections:after.paragraphs.length,paragraphs:after.paragraphs.flat().length,expectedText:expected}));}finally{a.free();b.free();}
 """
 
 
@@ -109,12 +129,12 @@ def run(args):
                 command(args.xdotool,'windowfocus','--sync',window)
                 setup=subprocess.run([args.ibus,'engine','hangul'],env=env,capture_output=True,text=True)
                 report['imeSetup']={'exit':setup.returncode,'stderr':setup.stderr.strip()}
-                command(args.xdotool,'key','Home');before=rhwp.settle(d,'before external edit');assert before['paragraphText']==''
+                command(args.xdotool,'key','Home');before=rhwp.settle(d,'before external edit');prefix=before['paragraphText']
                 d.js(rhwp.EVENT_LOG)
                 command(args.xdotool,'type','--delay','90','gk');mid=rhwp.settle(d,'external preedit')
-                assert mid['composing']=='true' and mid['paragraphText']=='하',mid
+                assert mid['composing']=='true' and mid['paragraphText']=='하'+prefix,mid
                 command(args.xdotool,'type','--delay','90','srmf');command(args.xdotool,'key','End')
-                edited=rhwp.settle(d,'external commit');expected='한글'
+                edited=rhwp.settle(d,'external commit');expected='한글'+prefix
                 assert edited['paragraphText']==expected and edited['composing']=='false',edited
                 assert int(edited['revision'])>int(before['revision']) and edited['dirty']==edited['unpreserved']=='true'
                 assert sha(path)==original_hash
@@ -130,18 +150,32 @@ def run(args):
                 rhwp.open_document(d,path);reopened=rhwp.status(d)
                 assert reopened['paragraphText']==expected and reopened['dirty']==reopened['unpreserved']=='false',reopened
                 report['reopen']=reopened
-                report['package']=package_preserved(source,path,expected)
-                report['model']=json.loads(subprocess.check_output(['node','--input-type=module','-',str(pkg),str(source),str(path),expected],input=MODEL,text=True,cwd=ROOT))
+                report['package']=package_preserved(source,path,expected,prefix)
+                report['model']=json.loads(subprocess.check_output(['node','--input-type=module','-',str(pkg),str(source),str(path),expected,prefix],input=MODEL,text=True,cwd=ROOT))
                 shutil.copyfile(path,args.out/'published.hwpx')
-                # Same imported-ID boundary through actual UI: readable, export
-                # fails closed, no save success and no changes to original bytes.
-                negative=args.out/'duplicate-id.hwpx'
+                # An external change after loading must survive the attempted save
+                # exactly; the session stays unpreserved (no false success).
+                d.js("document.querySelector('.rhwp-input').focus()");command(args.xdotool,'windowfocus','--sync',window)
+                command(args.xdotool,'key','Home');again=rhwp.settle(d,'conflict edit start')
+                command(args.xdotool,'type','--delay','90','gksrmf');command(args.xdotool,'key','End')
+                conflict_edit=rhwp.settle(d,'conflict edit')
+                assert conflict_edit['paragraphText']=='한글'+again['paragraphText'] and conflict_edit['dirty']=='true',conflict_edit
+                path.write_bytes(path.read_bytes()+b'\0');changed_hash=sha(path)
+                conflict=rhwp.save_and_wait(d)
+                assert conflict['state']=='failed' and conflict['error']=='FileConflict',conflict
+                assert sha(path)==changed_hash and rhwp.status(d)['unpreserved']=='true'
+                report['externalConflict']={'result':conflict,'modifiedOriginalUnchanged':True,'sessionUnpreserved':True}
+                # Identity boundary that must stay refused through the actual UI:
+                # a missing paragraph id is readable, export fails closed, no save
+                # success and no change to the input bytes. (Repeated imported ids
+                # are legitimate Hancom output and are preserved, see the package check.)
+                negative=args.out/'missing-id.hwpx'
                 hp='{http://www.hancom.co.kr/hwpml/2011/paragraph}'
                 with zipfile.ZipFile(source) as a,zipfile.ZipFile(negative,'w') as b:
                     for info in a.infolist():
                         data=a.read(info.filename)
                         if info.filename=='Contents/section0.xml':
-                            root=ET.fromstring(data);p=next(root.iter(hp+'p'));extra=ET.Element(hp+'p',dict(p.attrib));run=ET.SubElement(extra,hp+'run',{'charPrIDRef':'0'});ET.SubElement(run,hp+'t').text='중복';root.append(extra);data=ET.tostring(root,encoding='utf-8')
+                            root=ET.fromstring(data);next(root.iter(hp+'p')).attrib.pop('id');data=ET.tostring(root,encoding='utf-8')
                         b.writestr(info,data)
                 negative_hash=sha(negative);rhwp.open_document(d,negative)
                 rhwp.press_button(d,'[data-testid=rhwp-save-check]')
@@ -155,10 +189,32 @@ def run(args):
                 probe=importlib.util.module_from_spec(spec);spec.loader.exec_module(probe)
                 diagnostic=probe.export(pkg,negative,args.out/'negative-export.hwpx')
                 assert diagnostic['returncode']!=0 and diagnostic['diagnostic']['stage']=='export'
-                assert diagnostic['diagnostic']['opened'] and 'duplicate HWPX paragraph id' in diagnostic['diagnostic']['error']
+                assert diagnostic['diagnostic']['opened'] and 'HWPX paragraph id missing or invalid' in diagnostic['diagnostic']['error']
                 assert sha(negative)==negative_hash and rejected['state']!='saved'
                 report['negative']={'readable':True,'originalUnchanged':True,'result':rejected,
                                     'engineDiagnostic':diagnostic['diagnostic']}
+                if args.preview_negative:
+                    # A genuinely Hancom-saved document whose unedited round trip
+                    # is preserved exactly (preflight safe) but whose content
+                    # previews would go stale after an edit: the save must be
+                    # refused and the file must stay byte-identical.
+                    stale=args.out/'preview-negative.hwpx';shutil.copyfile(args.preview_negative.resolve(),stale);stale_hash=sha(stale)
+                    rhwp.open_document(d,stale)
+                    rhwp.press_button(d,'[data-testid=rhwp-save-check]')
+                    smoke.wait_until(d,"return document.querySelector('[data-testid=rhwp-save-result]')?.dataset.outcome==='safe'",timeout=60)
+                    stale_preflight=d.js("return {...document.querySelector('[data-testid=rhwp-save-result]').dataset}")
+                    d.js("document.querySelector('.rhwp-input').focus()");command(args.xdotool,'windowfocus','--sync',window)
+                    command(args.xdotool,'key','Home');stale_before=rhwp.settle(d,'preview negative start')
+                    command(args.xdotool,'type','--delay','90','gksrmf');command(args.xdotool,'key','End')
+                    stale_edit=rhwp.settle(d,'preview negative edit')
+                    assert stale_edit['paragraphText']=='한글'+stale_before['paragraphText'] and stale_edit['dirty']=='true',stale_edit
+                    refused=rhwp.save_and_wait(d)
+                    assert refused['state']=='failed' and refused['error']=='UnsafeSave',refused
+                    assert 'previewStale:Preview/PrvImage.png' in refused.get('findings','') and 'previewStale:Preview/PrvText.txt' in refused.get('findings',''),refused
+                    assert d.exists('[data-testid=save-findings]')
+                    assert sha(stale)==stale_hash and rhwp.status(d)['unpreserved']=='true'
+                    report['previewNegative']={'sourceSha256':sha(args.preview_negative.resolve()),'preflight':stale_preflight,
+                                               'result':refused,'originalUnchanged':True,'sessionUnpreserved':True}
                 assert not list(args.out.glob('.geul-save-*.tmp'))
             finally:smoke.end_session(d)
         report['status']='PASS'
@@ -174,6 +230,7 @@ def main():
     p.add_argument('--source',type=Path,default=ROOT/'external/rhwp/samples/종이기준.hwpx')
     p.add_argument('--app',type=Path,required=True);p.add_argument('--driver',required=True);p.add_argument('--out',type=Path,required=True)
     p.add_argument('--xdotool',required=True);p.add_argument('--ibus',required=True);p.add_argument('--port',type=int,default=4444)
+    p.add_argument('--preview-negative',type=Path,help='Hancom-saved HWPX with content previews: edited save must be refused')
     return run(p.parse_args())
 
 if __name__=='__main__':sys.exit(main())

@@ -1,0 +1,314 @@
+--- a/src/model/document.rs
++++ b/src/model/document.rs
+@@ -87,6 +87,11 @@
+     /// Monotonic HWPX paragraph reservation, shared across detached snapshots.
+     /// Deleting a paragraph never releases its identity for reuse.
+     pub hwpx_paragraph_next: std::sync::Arc<std::sync::atomic::AtomicU64>,
++    /// Multiplicity of every `hp:p@id` value found when the HWPX source was parsed.
++    /// Hancom writers repeat paragraph ids (commonly "0"); export may keep a repeated
++    /// value only on distinct imported identities and never on more paragraphs than
++    /// the source document had. Empty for documents that were not parsed from HWPX.
++    pub hwpx_imported_paragraph_ids: std::sync::Arc<std::collections::BTreeMap<u32, u32>>,
+     /// [Task #1001] HWP3 → HWP5 변환본 여부 (휴리스틱 식별).
+     /// 변환본의 ParaShape spacing/margin 은 HWP3 원본의 2배 단위로 저장되어
+     /// 한컴 viewer 와 일치하려면 typeset 단계에서 1/2 보정 필요.
+--- a/src/parser/mod.rs
++++ b/src/parser/mod.rs
+@@ -526,6 +526,7 @@
+         extra_streams,
+         hwpx_aux_entries: Vec::new(),
+         hwpx_paragraph_next: Default::default(),
++        hwpx_imported_paragraph_ids: Default::default(),
+         is_hwp3_variant: false,
+         is_hwpx_variant,
+         provenance: crate::model::provenance::SourceProvenance {
+@@ -1044,6 +1045,7 @@
+         is_hwpx_variant: false,
+         hwpx_aux_entries: Vec::new(),
+         hwpx_paragraph_next: Default::default(),
++        hwpx_imported_paragraph_ids: Default::default(),
+         is_hwp3_variant: false,
+         provenance: crate::model::provenance::SourceProvenance {
+             format: crate::model::provenance::SourceFormat::Hwp5,
+--- a/src/parser/hwpx/mod.rs
++++ b/src/parser/hwpx/mod.rs
+@@ -688,6 +688,7 @@
+         extra_streams: contract.streams,
+         hwpx_aux_entries,
+         hwpx_paragraph_next: Default::default(),
++        hwpx_imported_paragraph_ids: Default::default(),
+         is_hwp3_variant: false,
+         is_hwpx_variant: false,
+         provenance: crate::model::provenance::SourceProvenance {
+@@ -697,6 +698,7 @@
+             hft_ascii_halfwidth_witnessed: false,
+         },
+     };
++    let mut imported_ids = std::collections::BTreeMap::<u32, u32>::new();
+     for paragraph in crate::model::identity::hwpx_paragraphs(&doc) {
+         let encoded = paragraph
+             .hwpx_paragraph_identity
+@@ -705,7 +707,14 @@
+             doc.hwpx_paragraph_next
+                 .fetch_max(encoded, std::sync::atomic::Ordering::Relaxed);
+         }
++        // Only explicit, valid source ids are counted; missing/invalid stay
++        // u64::MAX and are still refused by the serializer.
++        if (1..=u64::from(u32::MAX) + 1).contains(&encoded) {
++            let count = imported_ids.entry((encoded - 1) as u32).or_insert(0);
++            *count = count.saturating_add(1);
++        }
+     }
++    doc.hwpx_imported_paragraph_ids = std::sync::Arc::new(imported_ids);
+     // HWP3-origin 마커가 있으면 계보를 복원한다 — 직파싱 HWP3 와 같은
+     // 레이아웃 계약(저장-스텝)을 밟아 왕복 등식이 성립한다.
+     if doc
+--- a/src/serializer/hwpx/context.rs
++++ b/src/serializer/hwpx/context.rs
+@@ -463,20 +463,14 @@
+         }
+         use std::sync::atomic::Ordering::Relaxed;
+         let paragraphs = crate::model::identity::hwpx_paragraphs(doc);
+-        let mut used = std::collections::BTreeSet::new();
+         for para in &paragraphs {
+             let encoded = para.hwpx_paragraph_identity.load(Relaxed);
+-            if encoded == u64::MAX {
++            if encoded == u64::MAX || encoded > u64::from(u32::MAX) + 1 {
+                 return Err(SerializeError::UnsupportedInput(
+                     "HWPX paragraph id missing or invalid".into(),
+                 ));
+             }
+             if encoded != 0 {
+-                if encoded > u64::from(u32::MAX) + 1 || !used.insert((encoded - 1) as u32) {
+-                    return Err(SerializeError::UnsupportedInput(
+-                        "ambiguous duplicate HWPX paragraph id".into(),
+-                    ));
+-                }
+                 doc.hwpx_paragraph_next.fetch_max(encoded, Relaxed);
+             }
+         }
+@@ -494,14 +488,41 @@
+                 );
+             }
+         }
+-        // Aliased copies of an unassigned paragraph cannot receive one identity twice.
+-        let mut unique = std::collections::BTreeSet::new();
++        // A value may appear on several paragraphs only when the source document
++        // itself repeated it (Hancom commonly writes id="0"): every carrier must
++        // own a distinct identity cell, and there may be no more carriers than
++        // imported occurrences. Newly allocated ids are above every imported value,
++        // so a duplicated new id (an aliased copy) is always refused.
++        let mut carriers = std::collections::BTreeMap::<u64, Vec<usize>>::new();
+         for para in crate::model::identity::hwpx_paragraphs(doc) {
+-            if !unique.insert(para.hwpx_paragraph_identity.load(Relaxed)) {
++            let cell = std::sync::Arc::as_ptr(&para.hwpx_paragraph_identity) as usize;
++            carriers
++                .entry(para.hwpx_paragraph_identity.load(Relaxed))
++                .or_default()
++                .push(cell);
++        }
++        for (encoded, mut cells) in carriers {
++            if cells.len() < 2 {
++                continue;
++            }
++            let count = cells.len();
++            cells.sort_unstable();
++            cells.dedup();
++            if cells.len() != count {
+                 return Err(SerializeError::UnsupportedInput(
+                     "aliased HWPX paragraph identity".into(),
+                 ));
+             }
++            let imported = encoded
++                .checked_sub(1)
++                .and_then(|id| doc.hwpx_imported_paragraph_ids.get(&(id as u32)))
++                .copied()
++                .unwrap_or(0);
++            if count as u64 > u64::from(imported) {
++                return Err(SerializeError::UnsupportedInput(
++                    "ambiguous duplicate HWPX paragraph id".into(),
++                ));
++            }
+         }
+         Ok(())
+     }
+@@ -707,6 +728,101 @@
+ mod tests {
+     use super::*;
+ 
++    fn identity_doc(ids: &[u64], imported: &[(u32, u32)]) -> Document {
++        use crate::model::paragraph::Paragraph;
++        let mut doc = Document::default();
++        doc.provenance.format = crate::model::provenance::SourceFormat::Hwpx;
++        let mut section = crate::model::document::Section::default();
++        for &encoded in ids {
++            let para = Paragraph::default();
++            para.hwpx_paragraph_identity
++                .store(encoded, std::sync::atomic::Ordering::Relaxed);
++            section.paragraphs.push(para);
++        }
++        doc.sections.push(section);
++        doc.hwpx_imported_paragraph_ids = std::sync::Arc::new(imported.iter().copied().collect());
++        for &encoded in ids {
++            if encoded <= u64::from(u32::MAX) + 1 {
++                doc.hwpx_paragraph_next
++                    .fetch_max(encoded, std::sync::atomic::Ordering::Relaxed);
++            }
++        }
++        doc
++    }
++
++    fn prepare(doc: &Document) -> Result<Vec<u32>, String> {
++        let mut ctx = SerializeContext::collect_from_document(doc);
++        ctx.prepare_paragraph_ids(doc).map_err(|e| e.to_string())?;
++        Ok(doc.sections[0]
++            .paragraphs
++            .iter()
++            .map(|p| ctx.paragraph_id(p))
++            .collect())
++    }
++
++    #[test]
++    fn imported_duplicate_paragraph_ids_are_preserved_exactly() {
++        // id 0 three times and 7 twice, as Hancom writes them; encoded = id + 1.
++        let doc = identity_doc(&[1, 1, 8, 1, 8], &[(0, 3), (7, 2)]);
++        assert_eq!(prepare(&doc).unwrap(), vec![0, 0, 7, 0, 7]);
++        // Repeated export keeps the same values.
++        assert_eq!(prepare(&doc).unwrap(), vec![0, 0, 7, 0, 7]);
++    }
++
++    #[test]
++    fn new_paragraphs_get_fresh_ids_above_imported_duplicates() {
++        let doc = identity_doc(&[1, 0, 1, 0], &[(0, 2)]);
++        let ids = prepare(&doc).unwrap();
++        assert_eq!((ids[0], ids[2]), (0, 0));
++        assert!(ids[1] > 0 && ids[3] > 0 && ids[1] != ids[3], "{ids:?}");
++        assert_eq!(prepare(&doc).unwrap(), ids, "allocation must be stable");
++    }
++
++    #[test]
++    fn duplicates_beyond_source_multiplicity_are_refused() {
++        let doc = identity_doc(&[1, 1, 1], &[(0, 2)]);
++        assert!(prepare(&doc)
++            .unwrap_err()
++            .contains("ambiguous duplicate HWPX paragraph id"));
++        // A value that was unique in the source may not become duplicated.
++        let doc = identity_doc(&[6, 6], &[(5, 1)]);
++        assert!(prepare(&doc)
++            .unwrap_err()
++            .contains("ambiguous duplicate HWPX paragraph id"));
++        // A value absent from the source may not be duplicated either.
++        let doc = identity_doc(&[10, 10], &[]);
++        assert!(prepare(&doc)
++            .unwrap_err()
++            .contains("ambiguous duplicate HWPX paragraph id"));
++    }
++
++    #[test]
++    fn aliased_identity_cells_are_refused_even_within_source_multiplicity() {
++        let mut doc = identity_doc(&[1, 1], &[(0, 3)]);
++        // A plain clone shares the identity cell (snapshot semantics). Inserting it
++        // into the same document without remapping is an aliasing defect.
++        let alias = doc.sections[0].paragraphs[0].clone();
++        doc.sections[0].paragraphs.push(alias);
++        assert!(prepare(&doc)
++            .unwrap_err()
++            .contains("aliased HWPX paragraph identity"));
++        // An aliased copy of a new paragraph must not receive one identity twice.
++        let mut doc = identity_doc(&[1, 0], &[(0, 1)]);
++        let alias = doc.sections[0].paragraphs[1].clone();
++        doc.sections[0].paragraphs.push(alias);
++        assert!(prepare(&doc)
++            .unwrap_err()
++            .contains("aliased HWPX paragraph identity"));
++    }
++
++    #[test]
++    fn missing_or_invalid_imported_paragraph_ids_are_still_refused() {
++        let doc = identity_doc(&[1, u64::MAX], &[(0, 1)]);
++        assert!(prepare(&doc)
++            .unwrap_err()
++            .contains("HWPX paragraph id missing or invalid"));
++    }
++
+     #[test]
+     fn empty_doc_has_no_registered_ids() {
+         let doc = Document::default();
+--- a/src/serializer/cfb_writer/tests.rs
++++ b/src/serializer/cfb_writer/tests.rs
+@@ -69,6 +69,8 @@
+         bin_data_content: Vec::new(),
+         extra_streams: Vec::new(),
+         hwpx_aux_entries: Vec::new(),
++        hwpx_paragraph_next: Default::default(),
++        hwpx_imported_paragraph_ids: Default::default(),
+         is_hwp3_variant: false,
+         is_hwpx_variant: false,
+         provenance: Default::default(),
+@@ -114,6 +116,8 @@
+         bin_data_content: Vec::new(),
+         extra_streams: Vec::new(),
+         hwpx_aux_entries: Vec::new(),
++        hwpx_paragraph_next: Default::default(),
++        hwpx_imported_paragraph_ids: Default::default(),
+         is_hwp3_variant: false,
+         is_hwpx_variant: false,
+         provenance: Default::default(),
+@@ -217,6 +221,8 @@
+         bin_data_content: Vec::new(),
+         extra_streams: Vec::new(),
+         hwpx_aux_entries: Vec::new(),
++        hwpx_paragraph_next: Default::default(),
++        hwpx_imported_paragraph_ids: Default::default(),
+         is_hwp3_variant: false,
+         is_hwpx_variant: false,
+         provenance: Default::default(),
+@@ -298,6 +304,8 @@
+         bin_data_content: Vec::new(),
+         extra_streams: Vec::new(),
+         hwpx_aux_entries: Vec::new(),
++        hwpx_paragraph_next: Default::default(),
++        hwpx_imported_paragraph_ids: Default::default(),
+         is_hwp3_variant: false,
+         is_hwpx_variant: false,
+         provenance: Default::default(),
+@@ -1692,6 +1700,8 @@
+         }],
+         extra_streams: Vec::new(),
+         hwpx_aux_entries: Vec::new(),
++        hwpx_paragraph_next: Default::default(),
++        hwpx_imported_paragraph_ids: Default::default(),
+         is_hwp3_variant: false,
+         is_hwpx_variant: false,
+         provenance: Default::default(),
+@@ -1780,6 +1790,8 @@
+         }],
+         extra_streams: Vec::new(),
+         hwpx_aux_entries: Vec::new(),
++        hwpx_paragraph_next: Default::default(),
++        hwpx_imported_paragraph_ids: Default::default(),
+         is_hwp3_variant: false,
+         is_hwpx_variant: false,
+         provenance: Default::default(),
+--- a/src/serializer/doc_info/tests.rs
++++ b/src/serializer/doc_info/tests.rs
+@@ -290,6 +290,9 @@
+         break_latin_word: None,
+         hwpx_plain_para_margin: false,
+         hwpx_plain_para_margin_physical: false,
++        hwpx_text_dir: None,
++        hwpx_heading_case: None,
++        hwpx_heading_unsupported: false,
+     };
+ 
+     let data = serialize_para_shape(&ps);
+@@ -680,6 +683,9 @@
+         break_latin_word: None,
+         hwpx_plain_para_margin: false,
+         hwpx_plain_para_margin_physical: false,
++        hwpx_text_dir: None,
++        hwpx_heading_case: None,
++        hwpx_heading_unsupported: false,
+     });
+     doc_info.styles.push(Style {
+         raw_data: None,
