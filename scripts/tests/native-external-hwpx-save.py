@@ -10,6 +10,7 @@ import hashlib
 import importlib.util
 import json
 import os
+import re
 from pathlib import Path
 import shutil
 import subprocess
@@ -52,22 +53,69 @@ def apply_intentional_edit(first, edited, hp):
     target.text = intended
 
 
-def omit_edited_line_layout(para, hp):
-    """Only direct layout children of the edited paragraph may be recalculated.
+# Attributes rhwp writes on hp:lineseg (serializer render_lineseg_array_from_ir).
+LINESEG_ATTRIBUTES = {'textpos', 'vertpos', 'vertsize', 'textheight', 'baseline',
+                      'spacing', 'horzpos', 'horzsize', 'flags'}
 
-    Keep their tails: those are paragraph character data, not layout payload.
-    Nested paragraphs and their layout stay subject to full comparison.
+
+def _direct_line_layout(para, hp, side):
+    """The edited paragraph's line-layout cache, validated against rhwp's contract.
+
+    rhwp writes at most one hp:linesegarray per paragraph, after its runs (last
+    child), with no attributes or character data inside and one or more
+    attribute-only hp:lineseg children; without a valid cache it omits the
+    element. Any other shape is a structure the oracle cannot attribute to a
+    recalculation, so it fails explicitly instead of being ignored.
     """
-    for child in list(para):
-        if child.tag == hp+'linesegarray':
-            index = list(para).index(child)
-            if child.tail:
-                if index:
-                    previous = para[index - 1]
-                    previous.tail = (previous.tail or '') + child.tail
-                else:
-                    para.text = (para.text or '') + child.tail
-            para.remove(child)
+    children = list(para)
+    found = [i for i, child in enumerate(children) if child.tag == hp+'linesegarray']
+    assert len(found) <= 1, f'{side}: more than one direct hp:linesegarray'
+    if not found:
+        return None
+    layout = children[found[0]]
+    assert found[0] == len(children) - 1, f'{side}: hp:linesegarray is not the last paragraph child'
+    assert not layout.attrib and not layout.text, f'{side}: hp:linesegarray attributes or character data'
+    segments = list(layout)
+    assert segments, f'{side}: empty hp:linesegarray'
+    previous = 0
+    for segment in segments:
+        assert segment.tag == hp+'lineseg' and len(segment) == 0, f'{side}: hp:linesegarray holds {segment.tag}'
+        assert not segment.text and not segment.tail, f'{side}: character data in hp:linesegarray'
+        assert set(segment.attrib) <= LINESEG_ATTRIBUTES, f'{side}: hp:lineseg attributes {sorted(segment.attrib)}'
+        assert all(re.fullmatch(r'-?[0-9]+', v) for v in segment.attrib.values()), f'{side}: non-integer hp:lineseg value'
+        textpos = int(segment.get('textpos', previous))
+        assert textpos >= previous, f'{side}: hp:lineseg textpos decreases'
+        previous = textpos
+    return layout
+
+
+def _remove_keeping_tail(para, child):
+    index = list(para).index(child)
+    if child.tail:
+        if index:
+            para[index - 1].tail = (para[index - 1].tail or '') + child.tail
+        else:
+            para.text = (para.text or '') + child.tail
+    para.remove(child)
+
+
+def normalize_edited_line_layout(first, edited, hp):
+    """Allow only the recalculation transitions rhwp can produce for the edited paragraph.
+
+    The cached line layout may be recomputed (values and segment count follow
+    text reflow, 1 -> 1) or omitted for the consumer to recompute (1 -> 0).
+    rhwp never creates a cache the original did not have (0 -> 1). The
+    container's tail is paragraph character data and must stay identical;
+    nested paragraphs and every other paragraph keep full comparison.
+    """
+    original = _direct_line_layout(first, hp, 'original')
+    saved = _direct_line_layout(edited, hp, 'saved')
+    assert not (original is None and saved is not None), 'saved creates line layout absent from the original'
+    if saved is not None:
+        assert (saved.tail or '') == (original.tail or ''), 'hp:linesegarray tail changed'
+    for para, layout in ((first, original), (edited, saved)):
+        if layout is not None:
+            _remove_keeping_tail(para, layout)
 
 
 # Document-independent preview bytes the save service already accepts (geul
@@ -79,43 +127,59 @@ KNOWN_BLANK_IMAGES = {
 }
 
 
+def archive_parts(path, side):
+    """Read every part of an archive whose entry names are unique.
+
+    testzip() checks member CRCs only, and a set of names hides multiplicity;
+    ZipFile.read(name) would silently pick one of several same-named members.
+    Duplicate names are therefore refused before any part is read.
+    """
+    with zipfile.ZipFile(path) as archive:
+        assert archive.testzip() is None, f'{side}: corrupt ZIP entry'
+        names = [info.filename for info in archive.infolist()]
+        duplicates = sorted({name for name in names if names.count(name) > 1})
+        assert not duplicates, f'{side}: duplicate ZIP entry names {duplicates}'
+        return {name: archive.read(name) for name in names}
+
+
 def package_preserved(source, saved, expected, prefix):
     """Independent check of the published package against the original.
 
     Only the first top-level paragraph of section 0 was edited (text prefixed
     by native IME input). Every paragraph id, including Hancom's repeated ids,
     must be identical and in the same order; all other parts are compared as
-    canonical XML or bytes. Line-layout of the edited paragraph is recomputed
-    by the engine and is checked by the backend on the final bytes instead.
+    canonical XML or bytes. Both archives must be intact with unique entry
+    names. Only the edited paragraph's direct line-layout cache may be
+    recomputed or omitted, within normalize_edited_line_layout's contract.
     """
     hp = '{http://www.hancom.co.kr/hwpml/2011/paragraph}'
     ids = {}
-    with zipfile.ZipFile(source) as a, zipfile.ZipFile(saved) as b:
-        assert b.testzip() is None and set(a.namelist()) == set(b.namelist())
-        for name in a.namelist():
-            before, after = a.read(name), b.read(name)
-            if name.endswith(('.xml', '.hpf', '.rdf')):
-                x, y = oracle.parse(before), oracle.parse(after)
-                if name.startswith('Contents/section'):
-                    ids[name] = [p.get('id') for p in x.iter(hp+'p')]
-                    assert ids[name] == [p.get('id') for p in y.iter(hp+'p')], name
-                if name == 'Contents/section0.xml':
-                    first, edited = x.find(hp+'p'), y.find(hp+'p')
-                    # Exact character data (itertext keeps tails and whitespace).
-                    assert ''.join(''.join(t.itertext()) for t in first.iter(hp+'t')) == prefix
-                    assert ''.join(''.join(t.itertext()) for t in edited.iter(hp+'t')) == expected
-                    apply_intentional_edit(first, edited, hp)
-                    # Line layout of the edited paragraph only is recomputed.
-                    for para in (first, edited):
-                        omit_edited_line_layout(para, hp)
-                assert oracle.canonical_events(x) == oracle.canonical_events(y), (name, oracle.first_difference(x, y))
-            elif name == 'Preview/PrvText.txt':
-                # Only a known empty text preview is independent of the edit.
-                assert before == after and before in (b'', b'\r\n'), name
-            elif name == 'Preview/PrvImage.png':
-                assert before == after and hashlib.sha256(after).hexdigest() in KNOWN_BLANK_IMAGES, name
-            else:
-                assert before == after, name
+    original_parts, saved_parts = archive_parts(source, 'original'), archive_parts(saved, 'saved')
+    assert set(original_parts) == set(saved_parts), ('part set differs',
+        sorted(set(original_parts) ^ set(saved_parts)))
+    for name in original_parts:
+        before, after = original_parts[name], saved_parts[name]
+        if name.endswith(('.xml', '.hpf', '.rdf')):
+            x, y = oracle.parse(before), oracle.parse(after)
+            if name.startswith('Contents/section'):
+                ids[name] = [p.get('id') for p in x.iter(hp+'p')]
+                assert ids[name] == [p.get('id') for p in y.iter(hp+'p')], name
+            if name == 'Contents/section0.xml':
+                first, edited = x.find(hp+'p'), y.find(hp+'p')
+                # Exact character data (itertext keeps tails and whitespace).
+                assert ''.join(''.join(t.itertext()) for t in first.iter(hp+'t')) == prefix
+                assert ''.join(''.join(t.itertext()) for t in edited.iter(hp+'t')) == expected
+                apply_intentional_edit(first, edited, hp)
+                # Line layout of the edited paragraph only may be recomputed.
+                normalize_edited_line_layout(first, edited, hp)
+            assert oracle.canonical_events(x) == oracle.canonical_events(y), (name, oracle.first_difference(x, y))
+        elif name == 'Preview/PrvText.txt':
+            # Only a known empty text preview is independent of the edit.
+            assert before == after and before in (b'', b'\r\n'), name
+        elif name == 'Preview/PrvImage.png':
+            assert before == after and hashlib.sha256(after).hexdigest() in KNOWN_BLANK_IMAGES, name
+        else:
+            assert before == after, name
     repeated = sum(len(v) - len(set(v)) for v in ids.values())
     return {'zipValid': True, 'partSetEqual': True, 'headerAndUnrelatedXmlEqual': True,
             'previewIsKnownBlank': True, 'paragraphIdsEqual': True,

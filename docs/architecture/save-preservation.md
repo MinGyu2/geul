@@ -945,3 +945,9 @@ python3 scripts/tests/hwpx-manifest-order-roundtrip.py --before-package public/r
 ```
 
 Geul의 `safe` 입증 의무, unsafe/unknown 저장 차단, loss report·preflight·최종 바이트 검사·재열기·원자적 게시·충돌·복구 정책은 바꾸지 않았다. 남는 원인은 header/section 기본값·빈 run/t·field 속성·다중 구역 보조 구조·textDir AUTO·미지원 리소스 ID/href 및 content-bearing preview stale 등이다. 이 결과로 한컴 HWPX 일반 호환이나 새 편집 저장 자격을 주장하지 않는다. 다음 좁은 작업은 `saved/blank_hwpx.hwpx`의 charPr 기본 자식 원본 presence 보존을 독립적으로 검증하는 것이다.
+
+### 독립 검증기: 줄 배치 예외 축소와 ZIP 중복 이름 (2026-11-02 Stage 1)
+
+`scripts/tests/native-external-hwpx-save.py`의 편집 문단 줄 배치 예외는 그 문단의 직접 자식 `hp:linesegarray`를 개수·위치·내용과 관계없이 양쪽에서 지웠다. 그래서 컨테이너 추가·중복(빈 것 포함), 실행 사이로 이동, 안의 다른 요소·글, 컨테이너 속성 추가, 원본에 없던 캐시 생성 7가지 구조 변형을 받아들였다(재현 `target/hwpx-twostage-20261102/repro_layout.py`; 중첩 문단 배치와 컨테이너 tail 변경은 이미 거부). rhwp 직렬화기(`render_paragraph_parts`)는 문단마다 캐시가 유효할 때만 속성·문자 데이터 없는 `hp:linesegarray` 하나를 실행 뒤 마지막 자식으로, 그 안에 속성만 있는 `hp:lineseg` 하나 이상을 쓰고, 아니면 생략한다(새로 만들지 않음). 새 `normalize_edited_line_layout`은 그 모양만 받아들이고(`lineseg` 속성은 직렬화기가 쓰는 9개 정수, `textpos` 비감소), 1→1 재계산(줄 수 변화 포함)과 1→0 생략만 허용하며 0→1 생성은 거부한다. 컨테이너 tail은 그대로여야 하고 원본 모양을 확인할 수 없으면 명시적으로 실패한다. 다른 문단과 중첩 문단의 배치는 계속 전부 비교한다.
+
+같은 검사기의 패키지 비교는 결과에만 `testzip()`을 적용하고 이름 집합을 비교했다. 중복 이름의 두 항목은 CRC가 유효해 `testzip()`을 통과하고 집합은 개수를 숨기며 `ZipFile.read(name)`은 그중 하나를 말없이 고른다. 새 `archive_parts`는 원본과 결과 모두 무결성을 확인하고 이름이 유일할 때만 부분을 읽는다(운영 Rust 패키지 검사기는 이미 중복을 막는다). 시험 `scripts/tests/test_hwpx_intentional_edit.py`(옛 예외의 거짓 음성 근거 포함)와 `scripts/tests/test_hwpx_package_preserved.py`가 양성·음성 사례를 검사한다. 운영 판정기·저장 정책은 바꾸지 않았다. 현재 Release `4fc10a9d…`(WASM `8ff713c2…`)와 debug 앱 `26733632…`로 `list_marker_head_synthetic.hwpx`·`종이기준.hwpx` 실제 IBus 편집→저장→재열기와 외부 수정·ID 누락·미리보기 낡음 거절이 새 검사기로 다시 PASS했다.

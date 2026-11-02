@@ -19,9 +19,30 @@ def paragraph(body):
 def accepts(before, after):
     expected, saved = copy.deepcopy(before), copy.deepcopy(after)
     native.apply_intentional_edit(expected, saved, HP)
-    for p in (expected, saved):
-        native.omit_edited_line_layout(p, HP)
+    native.normalize_edited_line_layout(expected, saved, HP)
     assert native.oracle.canonical_events(expected) == native.oracle.canonical_events(saved)
+
+
+def legacy_omit_edited_line_layout(para, hp):
+    """Former exception, kept verbatim as false-negative evidence."""
+    for child in list(para):
+        if child.tag == hp+'linesegarray':
+            index = list(para).index(child)
+            if child.tail:
+                if index:
+                    previous = para[index - 1]
+                    previous.tail = (previous.tail or '') + child.tail
+                else:
+                    para.text = (para.text or '') + child.tail
+            para.remove(child)
+
+
+def legacy_accepts(before, after):
+    expected, saved = copy.deepcopy(before), copy.deepcopy(after)
+    native.apply_intentional_edit(expected, saved, HP)
+    for p in (expected, saved):
+        legacy_omit_edited_line_layout(p, HP)
+    return native.oracle.canonical_events(expected) == native.oracle.canonical_events(saved)
 
 
 class NarrowPrefix(unittest.TestCase):
@@ -84,7 +105,7 @@ class NarrowPrefix(unittest.TestCase):
 
     def test_nested_paragraph_layout_and_layout_tail_stay_meaningful(self):
         original = paragraph('<run><t>A<inline><p><linesegarray x="1"/></p></inline>B</t></run>'
-                             '<linesegarray/> tail ')
+                             '<linesegarray><lineseg textpos="0"/></linesegarray> tail ')
         saved = copy.deepcopy(original)
         next(saved.iter(HP+'t')).text = '한글A'
         accepts(original, saved)
@@ -102,6 +123,82 @@ class NarrowPrefix(unittest.TestCase):
                      '<run/><t>A</t>'):
             with self.subTest(body=body), self.assertRaises(AssertionError):
                 accepts(paragraph(body), paragraph(body))
+
+
+SEG = '<lineseg textpos="0" vertpos="0" vertsize="1000" textheight="1000" baseline="850" spacing="600" horzpos="0" horzsize="42520" flags="393216"/>'
+RUNS = '<run charPrIDRef="1"><t>{}AB</t></run><run charPrIDRef="2"><t>CD</t></run>'
+
+
+def layout_paragraph(layout, prefix=''):
+    return paragraph(RUNS.format(prefix) + layout)
+
+
+class LineLayoutContract(unittest.TestCase):
+    """Only rhwp's own recalculation transitions of the edited paragraph pass."""
+
+    ORIGINAL = f'<linesegarray>{SEG}</linesegarray>'
+
+    def test_supported_recalculation(self):
+        cases = {
+            'unchanged cache (actual native result)': self.ORIGINAL,
+            'recalculated values': '<linesegarray><lineseg textpos="0" vertpos="0" vertsize="1100" horzsize="40000" flags="0"/></linesegarray>',
+            'reflow to two lines': '<linesegarray><lineseg textpos="0"/><lineseg textpos="3" vertpos="1600"/></linesegarray>',
+            'cache omitted for the consumer (1 -> 0)': '',
+        }
+        for name, layout in cases.items():
+            with self.subTest(name):
+                accepts(layout_paragraph(self.ORIGINAL), layout_paragraph(layout, '한글'))
+        # Paragraph without cache stays without cache (0 -> 0).
+        accepts(layout_paragraph(''), layout_paragraph('', '한글'))
+
+    def test_structural_changes_refused_and_missed_by_legacy(self):
+        moved = paragraph('<run charPrIDRef="1"><t>한글AB</t></run>' + self.ORIGINAL +
+                          '<run charPrIDRef="2"><t>CD</t></run>')
+        cases = {
+            'extra container': layout_paragraph(self.ORIGINAL * 2, '한글'),
+            'duplicate empty container': layout_paragraph(self.ORIGINAL + '<linesegarray/>', '한글'),
+            'container moved between runs': moved,
+            'non-lineseg child': layout_paragraph(f'<linesegarray>{SEG}<t>x</t></linesegarray>', '한글'),
+            'text inside container': layout_paragraph(f'<linesegarray>{SEG}leak</linesegarray>', '한글'),
+            'container attribute': layout_paragraph(f'<linesegarray x="1">{SEG}</linesegarray>', '한글'),
+            'empty container': layout_paragraph('<linesegarray/>', '한글'),
+            'unknown lineseg attribute': layout_paragraph('<linesegarray><lineseg textpos="0" extra="1"/></linesegarray>', '한글'),
+            'non-integer lineseg value': layout_paragraph('<linesegarray><lineseg textpos="0" vertpos="a"/></linesegarray>', '한글'),
+            'decreasing textpos': layout_paragraph('<linesegarray><lineseg textpos="4"/><lineseg textpos="1"/></linesegarray>', '한글'),
+            'nested element in lineseg': layout_paragraph('<linesegarray><lineseg textpos="0"><t/></lineseg></linesegarray>', '한글'),
+        }
+        for name, saved in cases.items():
+            with self.subTest(name):
+                self.assertTrue(legacy_accepts(layout_paragraph(self.ORIGINAL), saved), f'legacy should miss: {name}')
+                with self.assertRaises(AssertionError):
+                    accepts(layout_paragraph(self.ORIGINAL), saved)
+
+    def test_layout_created_where_original_had_none(self):
+        original, saved = layout_paragraph(''), layout_paragraph(self.ORIGINAL, '한글')
+        self.assertTrue(legacy_accepts(original, saved))
+        with self.assertRaises(AssertionError):
+            accepts(original, saved)
+
+    def test_unverifiable_original_layout_fails_explicitly(self):
+        for layout in (self.ORIGINAL * 2, '<linesegarray/>', f'<linesegarray x="1">{SEG}</linesegarray>'):
+            with self.subTest(layout), self.assertRaises(AssertionError):
+                accepts(layout_paragraph(layout), layout_paragraph(self.ORIGINAL, '한글'))
+
+    def test_layout_tail_kept_on_omission(self):
+        original = layout_paragraph(self.ORIGINAL + ' tail ')
+        accepts(original, layout_paragraph(' tail ', '한글'))
+        with self.assertRaises(AssertionError):
+            accepts(original, layout_paragraph(' tail', '한글'))
+
+    def test_unrelated_paragraph_layout_stays_compared(self):
+        section = f'<sec xmlns="{HP[1:-1]}"><p id="1">{RUNS.format("")}{self.ORIGINAL}</p><p id="0">{RUNS.format("")}{self.ORIGINAL}</p></sec>'
+        original, saved = ET.fromstring(section), ET.fromstring(section)
+        first, edited = original.find(HP+'p'), saved.find(HP+'p')
+        next(edited.iter(HP+'t')).text = '한글AB'
+        saved.findall(HP+'p')[1].find(HP+'linesegarray')[0].set('vertsize', '1')
+        native.apply_intentional_edit(first, edited, HP)
+        native.normalize_edited_line_layout(first, edited, HP)
+        self.assertNotEqual(native.oracle.canonical_events(original), native.oracle.canonical_events(saved))
 
 
 if __name__ == '__main__':
