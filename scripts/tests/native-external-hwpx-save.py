@@ -29,8 +29,27 @@ def sha(path):
     return hashlib.sha256(path.read_bytes()).hexdigest()
 
 
-def xml_tree(e):
-    return (e.tag, sorted(e.attrib.items()), e.text.strip() if e.text and e.text.strip() else '', [xml_tree(c) for c in e])
+_oracle_spec = importlib.util.spec_from_file_location('hwpx_xml_oracle', ROOT / 'scripts/tests/hwpx_xml_oracle.py')
+oracle = importlib.util.module_from_spec(_oracle_spec)
+_oracle_spec.loader.exec_module(oracle)
+
+
+def apply_intentional_edit(first, edited, hp):
+    """Copy only the edited paragraph's hp:t character data into the original.
+
+    The hp:t elements and everything inside them other than character data
+    (child elements, attributes, comments) must already be identical; text and
+    child tails are copied piece by piece, never stripped or merged.
+    """
+    texts, saved_texts = list(first.iter(hp+'t')), list(edited.iter(hp+'t'))
+    assert len(texts) == len(saved_texts), (len(texts), len(saved_texts))
+    for t, s in zip(texts, saved_texts):
+        kids, saved_kids = list(t), list(s)
+        assert [(k.tag, sorted(k.attrib.items()), len(k)) for k in kids] == \
+            [(k.tag, sorted(k.attrib.items()), len(k)) for k in saved_kids], 'edited hp:t structure changed'
+        t.text = s.text
+        for k, sk in zip(kids, saved_kids):
+            k.tail = sk.tail
 
 
 # Document-independent preview bytes the save service already accepts (geul
@@ -58,24 +77,22 @@ def package_preserved(source, saved, expected, prefix):
         for name in a.namelist():
             before, after = a.read(name), b.read(name)
             if name.endswith(('.xml', '.hpf', '.rdf')):
-                x, y = ET.fromstring(before), ET.fromstring(after)
+                x, y = oracle.parse(before), oracle.parse(after)
                 if name.startswith('Contents/section'):
                     ids[name] = [p.get('id') for p in x.iter(hp+'p')]
                     assert ids[name] == [p.get('id') for p in y.iter(hp+'p')], name
                 if name == 'Contents/section0.xml':
                     first, edited = x.find(hp+'p'), y.find(hp+'p')
-                    texts, saved_texts = list(first.iter(hp+'t')), list(edited.iter(hp+'t'))
-                    assert len(texts) == len(saved_texts), (len(texts), len(saved_texts))
-                    original = ''.join(t.text or '' for t in texts)
-                    assert original == prefix
-                    assert ''.join(t.text or '' for t in saved_texts) == expected
-                    for t, s in zip(texts, saved_texts):
-                        t.text = s.text
+                    # Exact character data (itertext keeps tails and whitespace).
+                    assert ''.join(''.join(t.itertext()) for t in first.iter(hp+'t')) == prefix
+                    assert ''.join(''.join(t.itertext()) for t in edited.iter(hp+'t')) == expected
+                    apply_intentional_edit(first, edited, hp)
+                    # Line layout of the edited paragraph only is recomputed.
                     for para in (first, edited):
                         for parent in para.iter():
                             for child in list(parent):
                                 if child.tag == hp+'linesegarray': parent.remove(child)
-                assert xml_tree(x) == xml_tree(y), name
+                assert oracle.canonical_events(x) == oracle.canonical_events(y), (name, oracle.first_difference(x, y))
             elif name == 'Preview/PrvText.txt':
                 # Only a known empty text preview is independent of the edit.
                 assert before == after and before in (b'', b'\r\n'), name
