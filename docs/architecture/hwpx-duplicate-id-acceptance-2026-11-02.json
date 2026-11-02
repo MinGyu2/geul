@@ -1892,5 +1892,490 @@
    "T011": "NOT STARTED"
   },
   "rawEvidence": "local ignored target/hwpx-twostage-20261102/ (not published)"
+ },
+ "strikeoutFollowup": {
+  "date": "2026-11-03",
+  "startHead": "a798fcd31f27c735430a45a7a110478fb0c608eb",
+  "stage1": {
+   "commit": "a5f111047ca837c94569a1738c31ad342773a1c2",
+   "finding": "lineseg subset/-?[0-9]+ check accepted empty, missing, out-of-range and non-canonical values (12 saved + 3 original cases)",
+   "contract": "exact nine attributes, canonical decimal, textpos/flags u32 and the rest i32 (rhwp render_one_lineseg, model LineSeg); corpus 319,909 linesegs comply",
+   "test": "scripts/tests/test_hwpx_intentional_edit.py LinesegFieldContract"
+  },
+  "stage2": {
+   "commit": "2766cdda9a32657adf0b6c91da4bdeb1d518555b",
+   "finding": "testzip() decompressed 5 members before duplicate refusal; names.count() quadratic (20,000 names 5,070 ms vs Counter 3.7 ms)",
+   "fix": "central-directory names -> Counter duplicate refusal -> testzip() -> read",
+   "test": "scripts/tests/test_hwpx_package_preserved.py DuplicateCheckOrder"
+  },
+  "stage3": {
+   "commit": "4a1e7f5363f6bc1d194ee3a46fba45675df6f999",
+   "finding": "negatives on already-unsafe blank_hwpx asserted only verdict != safe; a no-op control satisfies it",
+   "negative": [
+    {
+     "name": "unknown-child",
+     "category": "preservation",
+     "baseline": "safe",
+     "result": [
+      "unsafe",
+      [
+       "partChanged:Contents/header.xml"
+      ]
+     ],
+     "differenceConfinedToCharPr": "0"
+    },
+    {
+     "name": "conflicting-duplicate-child",
+     "category": "preservation",
+     "baseline": "safe",
+     "result": [
+      "unsafe",
+      [
+       "partChanged:Contents/header.xml"
+      ]
+     ],
+     "differenceConfinedToCharPr": "0"
+    },
+    {
+     "name": "invalid-enum",
+     "category": "preservation",
+     "baseline": "safe",
+     "result": [
+      "unsafe",
+      [
+       "partChanged:Contents/header.xml"
+      ]
+     ],
+     "differenceConfinedToCharPr": "0"
+    },
+    {
+     "name": "missing-charPr-reference",
+     "category": "engine",
+     "stage": "export",
+     "diagnostic": "refused: 렌더링 오류: XML 쓰기 실패: 미등록 ID 참조 발견: charPrIDRef: [77]"
+    },
+    {
+     "name": "malformed-header",
+     "category": "engine",
+     "stage": "open",
+     "diagnostic": "유효하지 않은 파일: HWPX 오류: XML 파싱 오류: switch: syntax error: tag not closed: `>` not found before end of input"
+    }
+   ],
+   "differential": {
+    "baseline": [
+     "unsafe",
+     [
+      "partChanged:Contents/section0.xml"
+     ]
+    ],
+    "cases": {
+     "noop-control": {
+      "verdict": [
+       "unsafe",
+       [
+        "partChanged:Contents/section0.xml"
+       ]
+      ],
+      "legacyConditionPassesWithoutDefect": true
+     },
+     "unknown-child": {
+      "verdict": [
+       "unsafe",
+       [
+        "partChanged:Contents/header.xml",
+        "partChanged:Contents/section0.xml"
+       ]
+      ],
+      "addedFinding": "partChanged:Contents/header.xml"
+     },
+     "conflicting-duplicate-child": {
+      "verdict": [
+       "unsafe",
+       [
+        "partChanged:Contents/header.xml",
+        "partChanged:Contents/section0.xml"
+       ]
+      ],
+      "addedFinding": "partChanged:Contents/header.xml"
+     },
+     "invalid-enum": {
+      "verdict": [
+       "unsafe",
+       [
+        "partChanged:Contents/header.xml",
+        "partChanged:Contents/section0.xml"
+       ]
+      ],
+      "addedFinding": "partChanged:Contents/header.xml"
+     }
+    }
+   }
+  },
+  "stage4": {
+   "defect": "hh:strikeout shape=\"3D\" (Hancom inactive placeholder, kept inactive by the rhwp whitelist) was written back as shape=\"NONE\"; colour preserved; only transition class in the corpus (7,933 charPr in 148 documents)",
+   "fix": "patches/rhwp/hwpx-strikeout-3d-placeholder.patch: CharShape.hwpx_inactive_strike_3d set by the parser for \"3D\" only; writer emits \"3D\" only while strikethrough is false; CharShapeMods::apply_to clears it (derived charPr use \"NONE\"); excluded from equality; HWP5/HWP3/HML/new shapes false",
+   "finalRelease": {
+    "generation": "977146659a542b27fea278ba7977b51bb6962bb1887f35439158dff2cb08748b",
+    "artifacts": {
+     "rhwp.js": "70cde06a369fa7fd4fc8bc8f3d6acaee158596ba1a116a2c72159002b0b5654e",
+     "rhwp_bg.wasm": "49ed4cf33bca0b1ccfc30d2829918ff9641fef89f79d8c1b764cbe40b44f82e8"
+    },
+    "patches": [
+     {
+      "name": "hwpx-textdir-ltr.patch",
+      "sha256": "abab4bc23a89dfec82aa63d36d32cd7192e5b14fefd2dd56231c4bb5676c6cc0"
+     },
+     {
+      "name": "hwpx-duplicate-paragraph-ids.patch",
+      "sha256": "79fd8f41c4cabe82b6b0b66265f5a1b3feef08a4c0b07af30cf7f788e11a9787"
+     },
+     {
+      "name": "hwpx-clipboard-paragraph-ids.patch",
+      "sha256": "30ac44ee1283f55605e49d09e446f5bbb5104b948ce2e7b74b87a9652e8a5c8e"
+     },
+     {
+      "name": "hwpx-spine-linear.patch",
+      "sha256": "080070cdfdaffe9b80b61ddeb6ddec8e49080b168649f92932caaf58f08298eb"
+     },
+     {
+      "name": "hwpx-spine-validation.patch",
+      "sha256": "0aae77fae8f7eb5ab1c1c83782c0930aa3501b1fd262b1e78706ebed35eeed5d"
+     },
+     {
+      "name": "hwpx-manifest-order.patch",
+      "sha256": "469c2db1c8070e18b87b02f8e8677dda48f746d3ab2ebf27706fe239453a6dc2"
+     },
+     {
+      "name": "hwpx-charpr-child-presence.patch",
+      "sha256": "cbe9574c01e72481d617c352a13da09ba5728a502713a0338ad80c6ab0347573"
+     },
+     {
+      "name": "hwpx-strikeout-3d-placeholder.patch",
+      "sha256": "5f9ca456cadaf6b895590dcf1755f80e37534e9052ca191826b1ae0f43adc281"
+     }
+    ],
+    "sourceTreeSha256": "3cbaa926cbc0ebd6a5296c5151f13ffe6413bfd96138a34d6898b677f7d874b6",
+    "sourceFingerprint": "eb6ba38e32fa3adc058885364a6b229ca2afea66cfb7aedf8049c2a8686ae139"
+   },
+   "engineUnitTests": {
+    "baseline": "test result: FAILED. 3771 passed; 121 failed; 13 ignored; 0 measured; 0 filtered out; finished in 135.83s",
+    "candidate": "test result: FAILED. 3773 passed; 121 failed; 13 ignored; 0 measured; 0 filtered out; finished in 139.32s",
+    "newFailures": [],
+    "newTests": {
+     "parser::hwpx::header::tests::strikeout_3d_spelling_never_hides_or_survives_an_edit": "ok",
+     "parser::hwpx::header::tests::strikeout_inactive_3d_placeholder_keeps_its_spelling": "ok"
+    },
+    "focused": "test result: ok. 20 passed; 0 failed; 0 ignored; 0 measured; 3887 filtered out; finished in 0.00s"
+   },
+   "wasmRegression": {
+    "status": "PASS",
+    "real": [
+     {
+      "sample": "external/rhwp/samples/issue5543_carried_anchor_ladder.hwpx",
+      "charPr3D": 113,
+      "colors": [
+       "#000000",
+       "#FF0000"
+      ],
+      "headerEqual": true,
+      "preflight": [
+       "unsafe",
+       [
+        "partChanged:Contents/section0.xml"
+       ]
+      ]
+     },
+     {
+      "sample": "external/rhwp/samples/issue6269/156739836_public_sector_jobs_stats.hwpx",
+      "charPr3D": 112,
+      "colors": [
+       "#000000",
+       "none"
+      ],
+      "headerEqual": false,
+      "preflight": [
+       "unsafe",
+       [
+        "partChanged:Contents/header.xml",
+        "partChanged:Contents/section0.xml",
+        "partChanged:Contents/section1.xml",
+        "partChanged:Contents/section2.xml"
+       ]
+      ]
+     },
+     {
+      "sample": "external/rhwp/samples/issue5941/3240179_efficiency_test_orgs.hwpx",
+      "charPr3D": 32,
+      "colors": [
+       "#000000",
+       "#0000FF"
+      ],
+      "headerEqual": true,
+      "preflight": [
+       "unsafe",
+       [
+        "partAdded:Preview/PrvImage.png",
+        "partChanged:Contents/section0.xml"
+       ]
+      ]
+     }
+    ],
+    "safeBaseline": {
+     "3d-red": [
+      "safe",
+      []
+     ],
+     "3d-none-color": [
+      "safe",
+      []
+     ],
+     "active-dash-blue": [
+      "safe",
+      []
+     ]
+    },
+    "edits": {
+     "appendedStrike": [
+      {
+       "shape": "SOLID",
+       "color": "#FF0000"
+      }
+     ],
+     "appendedItalic": [
+      {
+       "shape": "NONE",
+       "color": "#FF0000"
+      }
+     ],
+     "savedCheck": {
+      "insert.hwpx": [
+       "safe",
+       []
+      ],
+      "strike.hwpx": [
+       "safe",
+       []
+      ],
+      "italic.hwpx": [
+       "safe",
+       []
+      ]
+     }
+    },
+    "hwp5": [
+     {
+      "sample": "external/rhwp/samples/투명도0-50.hwp",
+      "headerIdentical": true
+     },
+     {
+      "sample": "external/rhwp/samples/143E433F503322BD33.hwp",
+      "headerIdentical": true
+     }
+    ],
+    "negative": [
+     {
+      "name": "unknown-shape",
+      "result": [
+       "unsafe",
+       [
+        "partChanged:Contents/header.xml"
+       ]
+      ],
+      "differenceConfinedToCharPr": "0"
+     },
+     {
+      "name": "absent-shape-attribute",
+      "result": [
+       "unsafe",
+       [
+        "partChanged:Contents/header.xml"
+       ]
+      ],
+      "differenceConfinedToCharPr": "0"
+     },
+     {
+      "name": "invalid-color",
+      "result": [
+       "unsafe",
+       [
+        "partChanged:Contents/header.xml"
+       ]
+      ],
+      "differenceConfinedToCharPr": "0"
+     },
+     {
+      "name": "conflicting-duplicate",
+      "result": [
+       "unsafe",
+       [
+        "partChanged:Contents/header.xml"
+       ]
+      ],
+      "differenceConfinedToCharPr": "0"
+     },
+     {
+      "name": "malformed-strikeout",
+      "stage": "open",
+      "diagnostic": "유효하지 않은 파일: HWPX 오류: XML 파싱 오류: charPr: ill-formed document: expected `</hh:strikeout>`, but `</hh:charPr>` was found"
+     }
+    ],
+    "onRelease65442a92": "FAIL as expected (strikeout attributes changed)"
+   },
+   "crossRegressions": "hwpx-charpr-presence, hwpx-duplicate-id, hwpx-spine-linear, hwpx-identity, hwpx-textdir PASS on candidate",
+   "corpusAB": [
+    "fixtures 734 identity verified",
+    "transitions {('unsafe', 'unsafe'): 478, ('export-failed', 'export-failed'): 149, ('safe', 'safe'): 98, ('unknown', 'unknown'): 9}",
+    "findings removed {'partChanged:Contents/header.xml': 114} added {}",
+    "outputs identical 437 changed 148 changed parts {'Contents/header.xml': 148}",
+    "changed headers explained exactly by 3D restoration: 148 unexplained: 0 | 3D strikeouts restored: 7933",
+    "strikeout attribute mismatches remaining vs source in changed docs: 0",
+    "header finding removed: 114",
+    "newly safe: []",
+    "['fuzz/corpus/parse_hwpx/36434078_gyeoljae.hwpx', 'fuzz/corpus/parse_hwpx/36446358_gyeoljae.hwpx', 'fuzz/corpus/parse_hwpx/36455850_gyeoljae.hwpx', 'fuzz/corpus/parse_hwpx/exclusion_probe_line_spacing.hwpx', 'fuzz/corpus/parse_hwpx/issue1858_paper_anchor_float_stack.hwpx', 'fuzz/corpus/parse_hwpx/issue3307_outline_number.hwpx', 'fuzz/corpus/parse_hwpx/saved_bounds_cumulative_page_break.hwpx', 'fuzz/corpus/parse_hwpx/saved_bounds_cumulative_vpos.hwpx', 'fuzz/corpus/parse_hwpx/split_guard_spacing_before.hwpx', 'mydocs/pr/assets/issue7445/saved_bounds_cumulative_page_break.hwpx', 'rhwp-studio/public/samples/form-002.hwpx', 'samples/hwpjson/korea-gmn-198518529-physical-ai-strategy.hwpx', 'samples/hwpx/2024년 1분기 해외직접투자 보도자료 ff.hwpx', 'samples/hwpx/2024년 2분기 해외직접투자 보도자료ff.hwpx', 'samples/hwpx/2024년 연간 해외직접투자 보도자료 _ ff.hwpx', 'samples/hwpx/2025년 1분기 해외직접투자 보도자료f.hwpx', 'samples/hwpx/2025년 2분기 해외직접투자 (최종).hwpx', 'samples/hwpx/el-school-001.hwpx', 'samples/hwpx/exam_kor.hwpx', 'samples/hwpx/form-002.hwpx', 'samples/hwpx/hy-002.hwpx', 'samples/hwpx/issue1948_cross_para_fieldend.hwpx', 'samples/hwpx/opengov/36383351_결재문서본문_관악산산악구조대급식의약품폐기.hwpx', 'samples/hwpx/opengov/36383351_결재문서본문_[관악산] 산악구조대 구급의약품 폐기 계획 보고.hwpx', 'samples/hwpx/opengov/36384285_결재문서본문_[여의도] 2026년 6월 기본업무수행 급식비 지급.hwpx', 'samples/hwpx/opengov/36385464_결재문서본문_근무변경(반포수난구조대, 2026-06).hwpx', 'samples/hwpx/opengov/36386761_백제학연구총서위탁판매의뢰목록.hwpx', 'samples/hwpx/opengov/36387103_결재문서본문_수질검사 신청 민원 처리 결과 안내.hwpx', 'samples/hwpx/opengov/36387725_footer_page_bottom.hwpx', 'samples/hwpx/opengov/36388571_결재문서본문_2026년 6월 생일 축하품 수령증 제출(119항공대).hwpx', 'samples/hwpx/opengov/36388711_사회보장제도 신설 협의요청서(청년오피스)_260624.hwpx', 'samples/hwpx/opengov/36388853_결재문서본문_일상감사 의견서 송부.hwpx', 'samples/hwpx/opengov/36389301_결재문서본문_직장훈련계획_덧말.hwpx', 'samples/hwpx/opengov/36389312_결재문서본문_특정소방대상물 화재발생 알림(화재번호 2026-177).hwpx', 'samples/hwpx/opengov/36395270_footer_overpush.hwpx', 'samples/hwpx/opengov/36398366_결재문서본문_PC 셧다운 제외 및 초과근무 인정 요청(데이터전략과).hwpx', 'samples/hwpx/pagenation-001.hwpx', 'samples/issue1858_paper_anchor_float_stack.hwpx', 'samples/issue2004_cell_image_stack.hwpx', 'samples/issue2020/(250813) (보도자료) 2025년 7월중 가계대출 동향.hwpx', 'samples/issue2373/156689818_kftc_press.hwpx', 'samples/issue3637/press_release_topbottom_float.hwpx', 'samples/issue4599/156714641_wrap_tail_min.hwpx', 'samples/issue5543_carried_anchor_ladder.hwpx', 'samples/issue5584/3232693_employment_support_criteria.hwpx', 'samples/issue5599_oracle/3191107_leave_request_form.hwpx', 'samples/issue5755/rewind_overflow_page_break.hwpx', 'samples/issue5820/156560092_ecard_meeting_press.hwpx', 'samples/issue5941/3240179_efficiency_test_orgs.hwpx', 'samples/issue6025/3232693_employment_support_criteria.hwpx', 'samples/issue6044/156513948.hwpx', 'samples/issue6101/36501883_approval_doc_body.hwpx', 'samples/issue6102/36310257_overtime_report.hwpx', 'samples/issue6102/36360328_vehicle_inspection_expense.hwpx', 'samples/issue6102/36444579_traffic_fine_exemption.hwpx', 'samples/issue6128/156653004_privacy_day_ceremony.hwpx', 'samples/issue6145/worklife_balance_index_156607916.hwpx', 'samples/issue6146/156583583_press_release_logo_band.hwpx', 'samples/issue6174/156661338_police_press_release.hwpx', 'samples/issue6180/156745974_tac_object_line_spacing.hwpx', 'samples/issue6186/156755659_defense_press_release.hwpx', 'samples/issue6186/156755659_footer_vertalign_bottom.hwpx', 'samples/issue6267/kdt_result_para_float_table.hwpx', 'samples/issue6535/36339092_low_slack_absorb_block.hwpx', 'samples/issue6535/36404612_page_anchored_footer_block.hwpx', 'samples/issue6601/36331407_side_by_side_tac_tables.hwpx', 'samples/issue6854/22037757-chuncheon-personnel-rule-annex13.hwpx', 'samples/issue6888/156730935-marine-mobility-expo.hwpx', 'samples/issue6892/156726122-recycling-press-release.hwpx', 'samples/issue6973/83818-appraisal-rules-amendment.hwpx', 'samples/issue7190/36473713_leading_control_lines.hwpx', 'samples/issue7196/156760012_page_top_spacing_trim.hwpx', 'samples/issue7482/tac-explicit-break.hwpx', 'samples/issue7482/tac-mixed-explicit-break.hwpx', 'samples/issue7482/tac-mixed-one-row.hwpx', 'samples/issue7482/tac-one-row.hwpx', 'samples/issue7482/tac-two-rows.hwpx', 'samples/issue7482/tac-word-after-pair.hwpx', 'samples/task1716/table_scattered_header_rowbreak.hwpx', 'samples/task1749/saved_bounds_cumulative_page_break.hwpx', 'samples/task1749/saved_bounds_cumulative_vpos.hwpx', 'samples/task1750/split_guard_spacing_before.hwpx', 'samples/task1789/exclusion_probe_line_spacing.hwpx', 'samples/task2137/156637323_unification_lecture.hwpx', 'samples/task2243/156631374_taxi_press.hwpx', 'samples/task2279/36353832_gyeoljae.hwpx', 'samples/task2279/36365360_gyeoljae.hwpx', 'samples/task2279/36376848_gyeoljae.hwpx', 'samples/task2279/36378128_gyeoljae.hwpx', 'samples/task2279/36378481_gyeoljae.hwpx', 'samples/task2279/36394733_gyeoljae.hwpx', 'samples/task2279/36395825_gyeoljae.hwpx', 'samples/task2279/36398724_gyeoljae.hwpx', 'samples/task2279/36404953_gyeoljae.hwpx', 'samples/task2279/36406174_gyeoljae.hwpx', 'samples/task2279/36407074_gyeoljae.hwpx', 'samples/task2279/36410902_gyeoljae.hwpx', 'samples/task2279/36417406_gyeoljae.hwpx', 'samples/task2279/36423194_gyeoljae.hwpx', 'samples/task2279/36423558_gyeoljae.hwpx', 'samples/task2279/36425476_gyeoljae.hwpx', 'samples/task2279/36433160_gyeoljae.hwpx', 'samples/task2279/36434078_gyeoljae.hwpx', 'samples/task2279/36437313_gyeoljae.hwpx', 'samples/task2279/36446358_gyeoljae.hwpx', 'samples/task2279/36455850_gyeoljae.hwpx', 'samples/task2279/36456688_gyeoljae.hwpx', 'samples/task2279/36477251_gyeoljae.hwpx', 'samples/task2279/36477373_gyeoljae.hwpx', 'samples/task2311/156744475_nano_plan_poster.hwpx', 'samples/task3236/issue3236_split_table.hwpx', 'samples/task3307/issue3307_outline_number.hwpx', 'tests/fixtures/planet_review_20260917/156676190_[교육부 02-27(목) 조간보도자료] 2026년 국립대 임대형 민자사업(BTL) 기숙사 추진.hwpx', 'tests/fixtures/planet_review_20260917/3147199_[별지 62] 소규모 주류 제조 면허증(주세사무처리규정).hwpx']"
+   ],
+   "native": {
+    "listMarkerHead+blankHwpx": {
+     "status": "PASS",
+     "source": "d96b5f57d88e1241229c2862c077034381de6b91595b82fe2a3bec240a968a65",
+     "generation": "977146659a542b27fea278ba7977b51bb6962bb1887f35439158dff2cb08748b",
+     "loadedWasm": [
+      "http://localhost:1420/rhwp/generations/977146659a542b27fea278ba7977b51bb6962bb1887f35439158dff2cb08748b/rhwp_bg.wasm"
+     ],
+     "preflight": "safe",
+     "save": {
+      "state": "saved",
+      "synced": "true",
+      "revision": "2"
+     },
+     "reopen": "한글",
+     "package": {
+      "zipValid": true,
+      "partSetEqual": true,
+      "headerAndUnrelatedXmlEqual": true,
+      "previewIsKnownBlank": true,
+      "paragraphIdsEqual": true,
+      "paragraphCount": 44,
+      "repeatedParagraphIds": 42,
+      "expectedText": "한글"
+     },
+     "externalConflict": "FileConflict",
+     "missingIdRefused": "렌더링 오류: 지원하지 않는 입력: HWPX paragraph id missing or invalid",
+     "previewNegative": {
+      "findings": "previewStale:Preview/PrvImage.png,previewStale:Preview/PrvText.txt",
+      "before": "0c9c240a426367f0f6b7fd71ede97276b3576fc27b3c8b912dbb3c022d1f64bd",
+      "after": "0c9c240a426367f0f6b7fd71ede97276b3576fc27b3c8b912dbb3c022d1f64bd"
+     },
+     "unsafeNegative": {
+      "preflight": "unsafe",
+      "findings": "partChanged:Contents/section0.xml",
+      "absent": [
+       "partChanged:Contents/header.xml"
+      ],
+      "save": "UnsafeSave",
+      "before": "42a10023dccae3041d8ca3b9ae13f38ee2dbc69097eecfa97380427584994c87",
+      "after": "42a10023dccae3041d8ca3b9ae13f38ee2dbc69097eecfa97380427584994c87",
+      "dirty": "true",
+      "unpreserved": "true"
+     }
+    },
+    "종이기준+issue5543": {
+     "status": "PASS",
+     "source": "2903b6f7a261005fa9a191cc7caa66d8307438b9cb93410f79fc61fd1fa0d9d8",
+     "generation": "977146659a542b27fea278ba7977b51bb6962bb1887f35439158dff2cb08748b",
+     "loadedWasm": [
+      "http://localhost:1420/rhwp/generations/977146659a542b27fea278ba7977b51bb6962bb1887f35439158dff2cb08748b/rhwp_bg.wasm"
+     ],
+     "preflight": "safe",
+     "save": {
+      "state": "saved",
+      "synced": "true",
+      "revision": "2"
+     },
+     "reopen": "한글",
+     "package": {
+      "zipValid": true,
+      "partSetEqual": true,
+      "headerAndUnrelatedXmlEqual": true,
+      "previewIsKnownBlank": true,
+      "paragraphIdsEqual": true,
+      "paragraphCount": 1,
+      "repeatedParagraphIds": 0,
+      "expectedText": "한글"
+     },
+     "externalConflict": "FileConflict",
+     "missingIdRefused": "렌더링 오류: 지원하지 않는 입력: HWPX paragraph id missing or invalid",
+     "unsafeNegative": {
+      "preflight": "unsafe",
+      "findings": "partChanged:Contents/section0.xml",
+      "absent": [
+       "partChanged:Contents/header.xml"
+      ],
+      "save": "UnsafeSave",
+      "before": "6adca8d39bdcf51e8791d8afa1e584b9570eb8b15df901e74ce61cfd500cdb4a",
+      "after": "6adca8d39bdcf51e8791d8afa1e584b9570eb8b15df901e74ce61cfd500cdb4a",
+      "dirty": "true",
+      "unpreserved": "true"
+     }
+    },
+    "synthetic3dSafeFixture": {
+     "status": "PASS",
+     "source": "1c1280a18130c92aafbab54b5f24a222f4ebcdf7c22e3de0ad29d7bd8323460a",
+     "generation": "977146659a542b27fea278ba7977b51bb6962bb1887f35439158dff2cb08748b",
+     "loadedWasm": [
+      "http://localhost:1420/rhwp/generations/977146659a542b27fea278ba7977b51bb6962bb1887f35439158dff2cb08748b/rhwp_bg.wasm"
+     ],
+     "preflight": "safe",
+     "save": {
+      "state": "saved",
+      "synced": "true",
+      "revision": "2"
+     },
+     "reopen": "한글",
+     "package": {
+      "zipValid": true,
+      "partSetEqual": true,
+      "headerAndUnrelatedXmlEqual": true,
+      "previewIsKnownBlank": true,
+      "paragraphIdsEqual": true,
+      "paragraphCount": 44,
+      "repeatedParagraphIds": 42,
+      "expectedText": "한글"
+     },
+     "externalConflict": "FileConflict",
+     "missingIdRefused": "렌더링 오류: 지원하지 않는 입력: HWPX paragraph id missing or invalid"
+    },
+    "sc002": {
+     "status": "PASS",
+     "summary": {
+      "status": "PASS",
+      "positive": 3,
+      "rejections": 9
+     }
+    },
+    "appSha256": [
+     "2673363242817c4d7610f2c396d65dc04ba5279ce02012d3d3e8f5571c3fda7d"
+    ],
+    "servedGeneration": [
+     "977146659a542b27fea278ba7977b51bb6962bb1887f35439158dff2cb08748b"
+    ],
+    "cleanup": true
+   },
+   "notRun": [
+    "native IME gates / ordinary editing / latency on this generation (editor code unchanged; header writer only)",
+    "GPU desktop",
+    "Wayland",
+    "fcitx5",
+    "Windows",
+    "macOS"
+   ]
+  },
+  "status": {
+   "T007": "INCOMPLETE",
+   "T008": "INCOMPLETE",
+   "T009": "unchecked",
+   "T010": "INCOMPLETE / RHWP Undo-Redo NO-GO",
+   "T011": "NOT STARTED"
+  },
+  "rawEvidence": "local ignored target/hwpx-fourstage-20261103/ (not published)"
  }
 }

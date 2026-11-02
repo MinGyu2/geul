@@ -324,3 +324,7 @@ P2/P3/C/P4의 이 범위는 최종 구현과 선택된 회귀 검증을 완료�
 ### 독립 검증기 강화와 HWPX `charPr` 자식 유무 보존 (2026-11-03)
 
 **체크박스 변경 없음.** Stage 1: 실제 앱 수용 검증기의 편집 문단 줄 배치 예외를 rhwp 직렬화기 계약으로 좁히고(옛 예외가 받던 구조 변형 7가지 거부), 원본·결과 ZIP의 중복 항목 이름을 거부했다. Stage 2: 옛 한컴 HWPX `charPr`의 생략된 기본 자식을 내보내기가 만들어 내던 문제를 `patches/rhwp/hwpx-charpr-child-presence.patch`로 고쳐 734개 코퍼스에서 26개 문서의 header 근거가 사라졌지만 새로 safe가 된 문서는 없다. 최종 generation `65442a92…`에서 외부 HWPX 두 문서·Stage 4·`blank_hwpx` 거절이 실제 앱으로 PASS. geul 판정·저장 안전 기준은 바꾸지 않았다. T007/T008 INCOMPLETE, T009 미체크, T010 INCOMPLETE·RHWP Undo/Redo NO-GO, T011 NOT STARTED 그대로. 상세: [저장 보존](../architecture/save-preservation.md#hwpx-charpr-기본-자식의-원본-유무-보존-2026-11-03-stage-2), [근거 JSON](../architecture/hwpx-duplicate-id-acceptance-2026-11-02.json) `charPrPresenceFollowup`.
+
+### 검증기 세 가지 강화와 `hh:strikeout shape="3D"` 보존 (2026-11-03)
+
+**체크박스 변경 없음.** 실제 앱 수용 검증기는 `hp:lineseg`의 정확한 9개 속성·정수 범위를 요구하고(1), ZIP 중복 이름을 압축 해제 전에 선형 시간으로 거부하며(2), `charPr` 음성 시험은 안전한 기준 문서에서 변형 고유의 근거·단계를 단언한다(3). 엔진은 `patches/rhwp/hwpx-strikeout-3d-placeholder.patch`로 한컴의 비활성 취소선 `shape="3D"`를 보존해(4) 734개 코퍼스에서 114개 문서의 header 근거가 사라졌지만 새로 safe가 된 문서는 없다. 최종 generation `97714665…`에서 외부 HWPX 두 문서·`3D` 고정 문서·Stage 4가 실제 앱으로 PASS, 남은 차이가 있는 문서는 원본 그대로 거절. geul 판정·저장 안전 기준은 바꾸지 않았다. T007/T008 INCOMPLETE, T009 미체크, T010 INCOMPLETE·RHWP Undo/Redo NO-GO, T011 NOT STARTED 그대로. 상세: [저장 보존](../architecture/save-preservation.md#hwpx-hhstrikeout-shape3d-보존-2026-11-03-stage-4), [근거 JSON](../architecture/hwpx-duplicate-id-acceptance-2026-11-02.json) `strikeoutFollowup`.
