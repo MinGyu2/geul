@@ -249,10 +249,30 @@ def retired(package, out):
 
 
 def nested_copy(package, out):
-    """Every paragraph of a copied table (cell owners included) gets a fresh id."""
-    source = ROOT / "external/rhwp/samples/issue7418/condense_cell_synthetic.hwpx"
-    paras = sections(source)[0].findall(HP + "p")
+    """Every paragraph of a copied table (cell owners included) gets a fresh id.
+
+    The sample anchors each table as ``<hp:run><hp:tbl/><hp:t/></hp:run>``.
+    That trailing empty hp:t is empty-text topology (the generic writer drops
+    it), and a clipboard copy remaps the table identity, which the topology
+    refuses to rebind (fail-closed, specific cause, no bytes). The id
+    allocation is therefore exercised on a derived copy without the trailing
+    empty hp:t, and the original's refusal is asserted separately.
+    """
+    original = ROOT / "external/rhwp/samples/issue7418/condense_cell_synthetic.hwpx"
+    refused_out = out / "topology-refusal"
+    refused_out.mkdir()
+    paras = sections(original)[0].findall(HP + "p")
     k = next(i for i, p in enumerate(paras) if p.find(".//" + HP + "tbl") is not None)
+    refused = run_mode(package, original, refused_out, k, "nested")
+    assert refused["steps"] and all(v.startswith("refused: ") and "HWPX empty-text provenance: " in v
+                                    for v in refused["steps"].values()), refused
+    assert not list(refused_out.glob("*.hwpx")), "refused export wrote bytes"
+    source = out / "condense_cell_no_trailing_text.hwpx"
+    entries = parts(original)
+    section = entries["Contents/section0.xml"].decode()
+    assert section.count("</hp:tbl><hp:t/></hp:run>") >= 1
+    entries["Contents/section0.xml"] = section.replace("</hp:tbl><hp:t/></hp:run>", "</hp:tbl></hp:run>").encode()
+    write_parts(source, entries, original)
     node = run_mode(package, source, out, k, "nested")
     assert all(v == "exported" for v in node["steps"].values()), node
     src_all = all_ids(source)
@@ -266,8 +286,9 @@ def nested_copy(package, out):
     nested_ids = [p.attrib["id"] for p in copied_table.find(".//" + HP + "tbl").iter(HP + "p")]
     assert nested_ids and all(v in added for v in nested_ids), (nested_ids, added)
     assert all_ids(out / "paste-repeat.hwpx") == pasted_all
-    return {"source": str(source.relative_to(ROOT)), "tableParagraph": k, "newIds": sorted(added),
-            "nestedCellIds": nested_ids}
+    return {"source": str(original.relative_to(ROOT)), "derivedWithoutTrailingEmptyText": str(source),
+            "tableParagraph": k, "newIds": sorted(added), "nestedCellIds": nested_ids,
+            "originalPasteRefusal": refused["steps"]}
 
 
 def exhaustion(package, out):

@@ -212,6 +212,80 @@ const a=new m.HwpDocument(readFileSync(source)),b=new m.HwpDocument(readFileSync
 """
 
 
+# Replays the native topology split on the SAME served WASM: proves the split
+# changes paragraph structure, that the unedited document exports, and that the
+# edited export fails for the specific topology cause (not another engine error).
+SPLIT_DIAGNOSTIC = r"""
+import{readFileSync}from'node:fs';import{resolve}from'node:path';import{pathToFileURL}from'node:url';
+const[pkg,source]=process.argv.slice(2);const m=await import(pathToFileURL(resolve(pkg,'rhwp.js')));m.initSync({module:readFileSync(resolve(pkg,'rhwp_bg.wasm'))});
+const emit=d=>{let e;try{e=d.exportHwpxWithReport();return{ok:true,bytes:e.takeBytes().length};}catch(x){return{ok:false,error:String(x?.message??x)};}finally{e?.free();}};
+const d=new m.HwpDocument(readFileSync(source));try{
+ const before=d.getParagraphCount(0),length=d.getParagraphLength(0,0),plain=emit(d);
+ const split=JSON.parse(d.splitParagraph(0,0,length));const after=d.getParagraphCount(0);
+ console.log(JSON.stringify({paragraphsBefore:before,paragraphsAfter:after,splitOffset:length,split,uneditedExport:plain,editedExport:emit(d)}));
+}finally{d.free();}
+"""
+
+# Independent model comparison after a formatting-only edit: identical text,
+# controls and pages; only the formatted range's character shape changed.
+FORMAT_MODEL = r"""
+import assert from 'node:assert/strict';import{readFileSync}from'node:fs';import{resolve}from'node:path';import{pathToFileURL}from'node:url';
+const[pkg,source,saved,count]=process.argv.slice(2);const m=await import(pathToFileURL(resolve(pkg,'rhwp.js')));m.initSync({module:readFileSync(resolve(pkg,'rhwp_bg.wasm'))});
+const runs=(d,s,p)=>JSON.parse(d.getCharShapeRuns(s,p,0,d.getParagraphLength(s,p)));
+const snap=d=>({pages:d.pageCount(),controls:d.getControls(),text:Array.from({length:d.getSectionCount()},(_,s)=>Array.from({length:d.getParagraphCount(s)},(_,p)=>d.getTextRange(s,p,0,d.getParagraphLength(s,p))))});
+const a=new m.HwpDocument(readFileSync(source)),b=new m.HwpDocument(readFileSync(saved));try{
+ assert.deepEqual(snap(b),snap(a));const ra=runs(a,0,0),rb=runs(b,0,0),n=Number(count);
+ assert.equal(rb.length,ra.length);assert.notEqual(rb[0].charShapeId??rb[0].char_shape_id,ra[0].charShapeId??ra[0].char_shape_id);
+ assert.deepEqual(rb.slice(1),ra.slice(1));
+ console.log(JSON.stringify({modelEquivalentExceptFormat:true,formattedRun:rb[0],originalRun:ra[0],runs:rb.length,formattedChars:n}));
+}finally{a.free();b.free();}
+"""
+
+
+def format_preserved(source, saved, hp='{http://www.hancom.co.kr/hwpml/2011/paragraph}'):
+    """Independent check of a formatting-only save of the first text run.
+
+    header.xml: identical except one appended hh:charPr (itemCnt + 1) whose
+    content equals an original definition plus an hh:italic child. section0:
+    identical except that run's charPrIDRef now names the appended definition;
+    its hp:t sequence (including empty hp:t) and every other part are equal.
+    """
+    hh = '{http://www.hancom.co.kr/hwpml/2011/head}'
+    a, b = archive_parts(source, 'original'), archive_parts(saved, 'saved')
+    assert set(a) == set(b), sorted(set(a) ^ set(b))
+    x, y = oracle.parse(a['Contents/header.xml']), oracle.parse(b['Contents/header.xml'])
+    cx, cy = x.find('.//'+hh+'charProperties'), y.find('.//'+hh+'charProperties')
+    old, new = list(cx), list(cy)
+    assert len(new) == len(old) + 1 and int(cy.get('itemCnt')) == int(cx.get('itemCnt')) + 1
+    added = new[-1]
+    assert int(added.get('id')) == len(old) and added.find(hh+'italic') is not None
+    base = [c for c in added if c.tag != hh+'italic']
+    stripped = ET.Element(added.tag, {k: v for k, v in added.attrib.items() if k != 'id'}); stripped.extend(base)
+    assert any(oracle.canonical_events(stripped) == oracle.canonical_events(
+        (lambda e: (e.attrib.pop('id'), e)[1])(ET.fromstring(ET.tostring(o)))) for o in old), 'appended charPr is not italic-of-original'
+    for c, d in zip(old, new):
+        assert oracle.canonical_events(c) == oracle.canonical_events(d)
+    cy.remove(added); cy.set('itemCnt', cx.get('itemCnt'))
+    assert oracle.canonical_events(x) == oracle.canonical_events(y), oracle.first_difference(x, y)
+    s, t = oracle.parse(a['Contents/section0.xml']), oracle.parse(b['Contents/section0.xml'])
+    first, edited = s.find(hp+'p'), t.find(hp+'p')
+    run = next(r for r in first.findall(hp+'run') if r.find(hp+'t') is not None)
+    target = next(r for r in edited.findall(hp+'run') if r.find(hp+'t') is not None)
+    assert target.get('charPrIDRef') == added.get('id') != run.get('charPrIDRef'), (run.attrib, target.attrib)
+    shape = [(e.tag, ''.join(e.itertext())) for e in run]
+    assert shape == [(e.tag, ''.join(e.itertext())) for e in target], 'run event/text-element sequence changed'
+    empties = sum(1 for e in run if e.tag == hp+'t' and not len(e) and not (e.text or ''))
+    target.set('charPrIDRef', run.get('charPrIDRef'))
+    normalize_edited_line_layout(first, edited, hp)
+    assert oracle.canonical_events(s) == oracle.canonical_events(t), oracle.first_difference(s, t)
+    for name in a:
+        if name not in ('Contents/header.xml', 'Contents/section0.xml'):
+            assert a[name] == b[name] or (name.endswith(('.xml', '.hpf', '.rdf')) and
+                oracle.canonical_events(oracle.parse(a[name])) == oracle.canonical_events(oracle.parse(b[name]))), name
+    return {'appendedCharPr': int(added.get('id')), 'originalCharPrIDRef': int(run.get('charPrIDRef')),
+            'emptyTextInFormattedRun': empties, 'runEventSequenceEqual': True, 'otherPartsEqual': True}
+
+
 def run(args):
     args.out = args.out.resolve(); args.out.mkdir(parents=True, exist_ok=False)
     source = args.source.resolve(); path = args.out/'external.hwpx'; shutil.copyfile(source, path)
@@ -401,12 +475,63 @@ def run(args):
                     command(args.xdotool,'key','End');split_before=rhwp.settle(d,'topology split start')
                     command(args.xdotool,'key','Return');split_after=rhwp.settle(d,'topology split end')
                     assert int(split_after['revision'])>int(split_before['revision']) and split_after['dirty']=='true',split_after
+                    # The real editor split moved the caret into a new following paragraph.
+                    sec,para,offset=map(int,split_before['caret'].split(':'))
+                    assert offset==len(split_before['paragraphText']),split_before
+                    assert split_after['caret']==f'{sec}:{para+1}:0' and split_after['paragraphText']=='',split_after
+                    listing=sorted(p.name for p in args.out.iterdir())
                     refused=rhwp.save_and_wait(d);blocked_status=rhwp.status(d)
-                    assert refused['state']=='failed' and refused['error']=='EngineFailure',refused
+                    # The unedited preflight stays safe, so the edited save reaches the
+                    # app's export of the current model: its failure is SaveFailure at the
+                    # export stage (EngineFailure is reserved for preflight/engine faults).
+                    alert=d.js("return document.querySelector('[data-testid=rhwp-save-result] [role=alert]')?.textContent||''")
+                    stage_texts=[json.loads((ROOT/f'src/language/{lang}.json').read_text())['editor.save.stage.export'] for lang in ('ko','en')]
+                    assert refused['state']=='failed' and refused['error']=='SaveFailure' and refused['outcome']=='safe',refused
+                    assert any(text in alert for text in stage_texts),alert
                     assert sha(blocked)==blocked_hash and blocked_status['dirty']==blocked_status['unpreserved']=='true'
+                    assert blocked_status['caret']==split_after['caret'],blocked_status
+                    assert sorted(p.name for p in args.out.iterdir())==listing,'save attempt published or left a file'
+                    # Same served WASM: unedited export succeeds; the same split changes
+                    # the paragraph count and fails for the topology cause only.
+                    replay=json.loads(subprocess.check_output(['node','--input-type=module','-',str(pkg),str(blocked)],input=SPLIT_DIAGNOSTIC,text=True,cwd=ROOT))
+                    assert replay['uneditedExport']['ok'] and replay['split'].get('ok'),replay
+                    assert replay['paragraphsAfter']==replay['paragraphsBefore']+1 and replay['splitOffset']==offset,replay
+                    assert not replay['editedExport']['ok'] and 'HWPX empty-text provenance: paragraph split has unsupported run correspondence' in replay['editedExport']['error'],replay
+                    assert sha(blocked)==blocked_hash
                     report['topologyEditNegative']={'safePreflight':safe_preflight,'beforeSplit':split_before,'afterSplit':split_after,
-                        'saveResult':refused,'status':blocked_status,'beforeSaveSha256':blocked_hash,'afterSaveSha256':sha(blocked),
-                        'input':'actual xdotool Return -> editor split command','partialPublication':False}
+                        'saveResult':refused,'saveAlert':alert,'status':blocked_status,'beforeSaveSha256':blocked_hash,'afterSaveSha256':sha(blocked),
+                        'input':'actual xdotool Return -> editor split command','sameWasmReplay':replay,
+                        'directoryListingUnchanged':True,'partialPublication':False}
+                if args.format_positive:
+                    formatted=args.out/'format-positive.hwpx'
+                    shutil.copyfile(args.format_positive.resolve(),formatted);format_hash=sha(formatted)
+                    hp='{http://www.hancom.co.kr/hwpml/2011/paragraph}'
+                    first_run=next(r for r in oracle.parse(archive_parts(formatted,'format source')['Contents/section0.xml']).find(hp+'p').findall(hp+'run') if r.find(hp+'t') is not None)
+                    run_text=''.join(''.join(t.itertext()) for t in first_run.findall(hp+'t'))
+                    assert run_text and any(t.tag==hp+'t' and not len(t) and not (t.text or '') for t in first_run),'format fixture needs text and an empty hp:t in its first text run'
+                    rhwp.open_document(d,formatted)
+                    rhwp.press_button(d,'[data-testid=rhwp-save-check]')
+                    smoke.wait_until(d,"return document.querySelector('[data-testid=rhwp-save-result]')?.dataset.outcome==='safe'",timeout=60)
+                    format_preflight=d.js("return {...document.querySelector('[data-testid=rhwp-save-result]').dataset}")
+                    d.js("document.querySelector('.rhwp-input').focus()");command(args.xdotool,'windowfocus','--sync',window)
+                    command(args.xdotool,'key','Home');format_start=rhwp.settle(d,'format start')
+                    command(args.xdotool,'key',*(['shift+Right']*len(run_text)));selected=rhwp.settle(d,'format selection')
+                    assert selected['selection'] and selected['revision']==format_start['revision'],selected
+                    command(args.xdotool,'key','ctrl+i');applied=rhwp.settle(d,'format applied')
+                    assert int(applied['revision'])>int(selected['revision']) and applied['dirty']==applied['unpreserved']=='true',applied
+                    assert applied['paragraphText']==format_start['paragraphText'] and sha(formatted)==format_hash
+                    format_saved=rhwp.save_and_wait(d);format_status=rhwp.status(d)
+                    assert format_saved['state']=='saved' and format_saved['synced']=='true',format_saved
+                    assert format_status['dirty']==format_status['unpreserved']=='false' and sha(formatted)!=format_hash
+                    assert rhwp.close_tab(d,formatted.name)
+                    rhwp.open_document(d,formatted);format_reopened=rhwp.status(d)
+                    assert format_reopened['revision']=='0' and format_reopened['dirty']=='false',format_reopened
+                    report['formatPositive']={'sourceSha256':sha(args.format_positive.resolve()),'preflight':format_preflight,
+                        'start':format_start,'selection':selected,'applied':applied,'save':format_saved,'status':format_status,
+                        'reopen':format_reopened,'publishedSha256':sha(formatted),'input':'actual xdotool Shift+Right selection and Ctrl+I',
+                        'package':format_preserved(args.format_positive.resolve(),formatted),
+                        'model':json.loads(subprocess.check_output(['node','--input-type=module','-',str(pkg),str(args.format_positive.resolve()),str(formatted),str(len(run_text))],input=FORMAT_MODEL,text=True,cwd=ROOT))}
+                    shutil.copyfile(formatted,args.out/'format-published.hwpx')
                 assert not list(args.out.glob('.geul-save-*.tmp'))
             finally:smoke.end_session(d)
         report['status']='PASS'
@@ -427,6 +552,7 @@ def main():
     p.add_argument('--export-negative',type=Path,help='Readable HWPX with unsupported section provenance: export and edited save must fail')
     p.add_argument('--topology-edit-negative',type=Path,help='Safe HWPX with multiple empty text boundaries: real keyboard paragraph split must block save')
     p.add_argument('--export-error-substring',default='inconsistent section head',help='Required engine rejection cause for --export-negative')
+    p.add_argument('--format-positive',type=Path,help='Safe HWPX whose first text run holds an empty hp:t: real Ctrl+I on that run must save and preserve it (needs VITE_GEUL_TEST_RHWP_FORMAT=1)')
     p.add_argument('--unsafe-absent-finding',action='append',default=[],help='finding that must not appear in the unsafe-negative preflight')
     return run(p.parse_args())
 

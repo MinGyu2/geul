@@ -60,7 +60,7 @@
              }
              Node::Control(control) => match control {
                  Control::Table(table) => remap_common_raw(
-@@ -300,4 +305,24 @@
+@@ -300,4 +305,58 @@
              &clip[0].hwpx_paragraph_identity
          ));
      }
@@ -83,6 +83,40 @@
 +        assert_eq!(
 +            runs,
 +            r#"<hp:run charPrIDRef="0"><hp:t>A</hp:t><hp:t></hp:t></hp:run>"#
++        );
++    }
++
++    /// Clipboard reidentification (new deferred carrier) followed by the
++    /// serializer's one-time reservation is the authorized identity path;
++    /// a later in-place change of that reserved value is not.
++    #[test]
++    fn empty_text_clipboard_reidentification_reserves_once_then_seals_value() {
++        use crate::serializer::hwpx::section::empty_text_tests::{package_with, para};
++        let r = |b: &str| format!(r#"<hp:run charPrIDRef="0">{b}</hp:run>"#);
++        let source = para(0, &r("<hp:t>A</hp:t><hp:t/>"));
++        let mut core =
++            crate::document_core::DocumentCore::from_bytes(&package_with(&source)).unwrap();
++        let first = core.export_hwpx_native().unwrap();
++        let mut copied = vec![core.document.sections[0].paragraphs[1].clone()];
++        reidentify_clipboard(&core.document, &mut copied).unwrap();
++        assert_eq!(copied[0].hwpx_paragraph_identity.load(Relaxed), 0);
++        core.document.sections[0].paragraphs.push(copied.remove(0));
++        let second = core.export_hwpx_native().unwrap();
++        assert_ne!(first, second);
++        assert_eq!(core.export_hwpx_native().unwrap(), second);
++        let reopened = crate::document_core::DocumentCore::from_bytes(&second).unwrap();
++        assert_eq!(reopened.export_hwpx_native().unwrap(), second);
++        let pasted = core.document.sections[0].paragraphs.last().unwrap();
++        let reserved = pasted.hwpx_paragraph_identity.load(Relaxed);
++        assert!(reserved > 1, "{reserved}");
++        let emitted = reopened.document.sections[0].paragraphs.last().unwrap();
++        assert_eq!(emitted.hwpx_paragraph_identity.load(Relaxed), reserved);
++        assert!(emitted.hwpx_text_topology.is_some());
++        pasted.hwpx_paragraph_identity.store(reserved + 7, Relaxed);
++        let e = core.export_hwpx_native().err().unwrap().to_string();
++        assert!(
++            e.contains("paragraph identity value changed without a supported reidentification"),
++            "{e}"
 +        );
 +    }
 +}
@@ -142,22 +176,57 @@
  }
 --- /dev/null
 +++ b/src/model/hwpx_topology.rs
-@@ -0,0 +1,880 @@
+@@ -0,0 +1,1127 @@
 +//! Paragraph-owned HWPX zero-width topology. No source XML is retained.
 +//!
 +//! A source run occurrence is mapped to the parser's boundary occurrence, not
 +//! looked up by shape or offset. Only the explicit secPr handoff may share an
 +//! IR occurrence. Actual emitted tokens must match each group before replay.
-+use std::sync::{atomic::AtomicU64, Arc};
++//!
++//! Ownership contract:
++//! - Provenance is bound to one paragraph identity carrier AND to the numeric
++//!   value that carrier held when bound. The only value transition that needs
++//!   no explicit rebinding is the serializer's one-time reservation of a
++//!   deferred (0) identity, which it records through `record_reservation`.
++//!   Clipboard reidentification and merge-undo identity restoration rebind
++//!   explicitly. Any other value change, even in the same carrier, is refused.
++//! - Control events are compared by a classified event identity: the stable
++//!   ownership attributes plus the emitted attributes that distinguish
++//!   otherwise equal controls (`event_attrs`). Representation that the
++//!   serializer normalizes and layout detail are not identity; their bytes are
++//!   always taken from the generated fragment. Equal identities whose source
++//!   representation differs cannot be told apart and are refused.
++use std::sync::{
++    atomic::{AtomicU64, Ordering::Relaxed},
++    Arc, OnceLock,
++};
 +
 +use quick_xml::{events::Event, Reader};
 +
-+use super::{control::Control, paragraph::Paragraph, raw_provenance::record_digest};
++use super::{
++    control::Control,
++    paragraph::{CharShapeRef, Paragraph},
++    raw_provenance::record_digest,
++};
++
++pub(crate) const STALE: &str = "stale text, formatting or control-slot anchors";
++pub(crate) const IDENTITY_VALUE_CHANGED: &str =
++    "paragraph identity value changed without a supported reidentification";
++pub(crate) const OWNER_CHANGED: &str = "paragraph owner changed without a supported clone mapping";
++pub(crate) const FORMAT_BOUNDARY: &str = "character formatting changed run occurrence boundaries";
++pub(crate) const FORMAT_SCOPE: &str =
++    "character formatting edit changed more than run character shapes";
++pub(crate) const FORMAT_STYLED: &str =
++    "character formatting of hp:t charStyleIDRef text is unsupported";
++pub(crate) const AMBIGUOUS_CONTROL: &str = "ambiguous control event identity";
 +
 +#[derive(Debug, Clone, PartialEq, Eq)]
 +pub(crate) enum Part {
-+    Text(Vec<String>),
-+    Control(String),
++    /// Ordered atoms (`c:` character, `i:` inline token) and the source
++    /// `hp:t@charStyleIDRef`, the only supported text-element attribute.
++    Text(Vec<String>, Option<u16>),
++    /// Classified event identity; `true` when the `hp:ctrl` holds only `hp:pageNum`.
++    Control(String, bool),
 +}
 +
 +#[derive(Debug, Clone)]
@@ -171,6 +240,11 @@
 +pub struct HwpxTextTopology {
 +    pub(crate) runs: Vec<SourceRun>,
 +    owner: Arc<AtomicU64>,
++    /// Numeric identity value of `owner` when this provenance was bound.
++    owner_value: u64,
++    /// Serializer reservation of a deferred (0) owner value. Shared by
++    /// detached snapshot clones exactly like the carrier itself.
++    reserved: Arc<OnceLock<u64>>,
 +    seal: [u8; 32],
 +    invalid: Option<String>,
 +}
@@ -180,6 +254,10 @@
 +// the parent's control slot. Stable object identities and ordered variants
 +// protect that slot from replacement/reordering.
 +fn seal(p: &Paragraph) -> [u8; 32] {
++    seal_with(p, &p.char_shapes)
++}
++
++fn seal_with(p: &Paragraph, shapes: &[CharShapeRef]) -> [u8; 32] {
 +    let controls: Vec<_> = p
 +        .controls
 +        .iter()
@@ -203,7 +281,7 @@
 +    record_digest(&(
 +        &p.text,
 +        &p.char_offsets,
-+        &p.char_shapes,
++        shapes,
 +        p.char_count,
 +        &controls,
 +        &p.field_ranges,
@@ -223,19 +301,89 @@
 +    ))
 +}
 +
++fn shape_positions(p: &Paragraph) -> Vec<(u32, u32)> {
++    p.char_shapes
++        .iter()
++        .map(|v| (v.start_pos, v.char_shape_id))
++        .collect()
++}
++
 +impl HwpxTextTopology {
-+    pub(crate) fn capture(
-+        body: &str,
-+        groups: &[usize],
-+        p: &Paragraph,
-+    ) -> Result<Option<Self>, String> {
++    fn bound(runs: Vec<SourceRun>, p: &Paragraph) -> Self {
++        Self {
++            runs,
++            owner: p.hwpx_paragraph_identity.clone(),
++            owner_value: p.hwpx_paragraph_identity.load(Relaxed),
++            reserved: Default::default(),
++            seal: seal(p),
++            invalid: None,
++        }
++    }
++
++    /// Bind to the paragraph's current identity carrier and value. Callers
++    /// must have validated the previous binding or be an explicit,
++    /// authorized reidentification.
++    fn rebind_owner(&mut self, p: &Paragraph) {
++        self.owner = p.hwpx_paragraph_identity.clone();
++        self.owner_value = p.hwpx_paragraph_identity.load(Relaxed);
++        self.reserved = Default::default();
++    }
++
++    /// Well-formed source structure outside the supported contract keeps
++    /// the document openable (viewing, other formats); HWPX export of this
++    /// paragraph fails closed with the specific cause.
++    pub(crate) fn capture(body: &str, groups: &[usize], p: &Paragraph) -> Option<Self> {
++        match Self::try_capture(body, groups, p) {
++            Ok(topology) => topology,
++            Err(why) => {
++                let mut refused = Self::bound(Vec::new(), p);
++                refused.invalid = Some(why);
++                Some(refused)
++            }
++        }
++    }
++
++    fn try_capture(body: &str, groups: &[usize], p: &Paragraph) -> Result<Option<Self>, String> {
 +        let views = read_runs(body)?;
-+        let sensitive = views.iter().any(|r| {
++        if views.len() != groups.len() {
++            return Err("source run occurrence mismatch".into());
++        }
++        // An empty paragraph (no text, at most the secPr/colPr template
++        // controls) whose single text-bearing run holds exactly one
++        // attribute-less empty hp:t is the writer's canonical empty line
++        // (Hancom's empty line and empty first paragraph). The IR holds all of
++        // it, and every edit's effect on that run is the intended one (typing
++        // fills it, deleting the line removes it), so it is not tracked:
++        // tracking would only refuse ordinary edits. A zero-width empty-text
++        // occurrence beside text is tracked, because unrelated formatting can
++        // merge it away (equal-neighbour shape deduplication).
++        let zero_width = |r: &RunView| {
 +            r.parts.is_empty()
 +                || r.parts
 +                    .iter()
-+                    .any(|v| matches!(&v.part, Part::Text(atoms) if atoms.is_empty()))
-+        });
++                    .any(|v| matches!(&v.part, Part::Text(atoms, _) if atoms.is_empty()))
++        };
++        let text_bearing = views
++            .iter()
++            .filter(|r| r.parts.iter().any(|v| matches!(v.part, Part::Text(..))))
++            .count();
++        // One IR occurrence only: when the template secPr/colPr run and the
++        // text run differ in charPrIDRef they are two occurrences, and the
++        // writer would synthesize a text run for the template occurrence.
++        let empty_line = p.text.is_empty()
++            && p.char_shapes.len() == 1
++            && p.controls
++                .iter()
++                .all(|c| matches!(c, Control::SectionDef(_) | Control::ColumnDef(_)))
++            && text_bearing == 1
++            && views.iter().filter(|r| zero_width(r)).count() == 1
++            && views.iter().any(
++                |r| matches!(r.parts.as_slice(), [v] if v.part == Part::Text(Vec::new(), None)),
++            );
++        let sensitive = !empty_line && views.iter().any(|r| zero_width(r));
++        if !sensitive {
++            return Ok(None);
++        }
 +        // An occurrence index cannot identify two owned controls after a
 +        // reorder if their only persistent object identity is duplicated.
 +        // Child text is deliberately not sealed (unrelated paragraph edits),
@@ -260,11 +408,18 @@
 +                }
 +            }
 +        }
-+        if views.len() != groups.len() {
-+            return Err("source run occurrence mismatch".into());
-+        }
-+        if !sensitive {
-+            return Ok(None);
++        // Two source controls with one event identity but a different source
++        // representation cannot be matched to emitted fragments by identity.
++        // Fully identical controls are interchangeable and remain supported.
++        let mut seen = std::collections::HashMap::new();
++        for view in views.iter().flat_map(|r| &r.parts) {
++            if let Part::Control(key, _) = &view.part {
++                if let Some(previous) = seen.insert(key.as_str(), view.fingerprint.as_str()) {
++                    if previous != view.fingerprint {
++                        return Err(AMBIGUOUS_CONTROL.into());
++                    }
++                }
++            }
 +        }
 +        let mut runs = Vec::new();
 +        for (view, &group) in views.into_iter().zip(groups) {
@@ -277,12 +432,7 @@
 +                parts: view.parts.into_iter().map(|x| x.part).collect(),
 +            });
 +        }
-+        Ok(Some(Self {
-+            runs,
-+            owner: p.hwpx_paragraph_identity.clone(),
-+            seal: seal(p),
-+            invalid: None,
-+        }))
++        Ok(Some(Self::bound(runs, p)))
 +    }
 +
 +    pub(crate) fn validate(&self, p: &Paragraph) -> Result<(), String> {
@@ -290,18 +440,45 @@
 +            return Err(why.clone());
 +        }
 +        if !Arc::ptr_eq(&self.owner, &p.hwpx_paragraph_identity) {
-+            return Err("paragraph owner changed without a supported clone mapping".into());
++            return Err(OWNER_CHANGED.into());
++        }
++        // A carrier pointer alone does not prove the numeric identity: the
++        // value lives in a shared atomic cell and could change in place.
++        let now = self.owner.load(Relaxed);
++        if now != self.owner_value && !(self.owner_value == 0 && self.reserved.get() == Some(&now))
++        {
++            return Err(IDENTITY_VALUE_CHANGED.into());
 +        }
 +        if self.seal != seal(p) {
-+            return Err("stale text, formatting or control-slot anchors".into());
++            return Err(STALE.into());
 +        }
 +        Ok(())
 +    }
 +
++    /// Serializer-only: the deferred identity of this exact carrier has just
++    /// been reserved (0 -> `encoded`). Later value changes remain refused.
++    pub(crate) fn record_reservation(&self, p: &Paragraph, encoded: u64) {
++        if self.owner_value == 0 && Arc::ptr_eq(&self.owner, &p.hwpx_paragraph_identity) {
++            let _ = self.reserved.set(encoded);
++        }
++    }
++
++    /// Clipboard reidentification: a detached copy receives a new, deferred
++    /// identity carrier. Control identities are remapped separately and are
++    /// not provable here.
 +    pub(crate) fn rebind_clone(&mut self, p: &Paragraph) {
-+        self.owner = p.hwpx_paragraph_identity.clone();
++        self.rebind_owner(p);
 +        if !p.controls.is_empty() {
 +            self.invalidate("clipboard control identity remapping unsupported");
++        }
++    }
++
++    /// Merge undo restores the vanished paragraph's own identity value in a
++    /// new carrier (`Paragraph::apply_meta`). The caller validated the
++    /// previous binding through `before_edit`.
++    pub(crate) fn rebind_restored_identity(&mut self, p: &Paragraph) {
++        if self.invalid.is_none() {
++            self.rebind_owner(p);
 +        }
 +    }
 +
@@ -331,11 +508,7 @@
 +        insert_pos: u32,
 +        old_shapes: &[(u32, u32)],
 +    ) -> Self {
-+        let shapes: Vec<_> = p
-+            .char_shapes
-+            .iter()
-+            .map(|c| (c.start_pos, c.char_shape_id))
-+            .collect();
++        let shapes = shape_positions(p);
 +        if shapes.len() != old_shapes.len()
 +            || shapes.iter().zip(old_shapes).any(|(a, b)| a.1 != b.1)
 +        {
@@ -350,7 +523,7 @@
 +            return self;
 +        }
 +        let all_plain = self.runs.iter().flat_map(|r| &r.parts).all(|v| match v {
-+            Part::Text(a) => a.iter().all(|x| x.starts_with("c:")),
++            Part::Text(a, _) => a.iter().all(|x| x.starts_with("c:")),
 +            _ => true,
 +        });
 +        if !all_plain {
@@ -363,7 +536,7 @@
 +        let owner_group = shapes.iter().rposition(|x| x.0 <= insert_pos).unwrap_or(0);
 +        for (ri, run) in self.runs.iter_mut().enumerate() {
 +            for (pi, part) in run.parts.iter_mut().enumerate() {
-+                if let Part::Text(atoms) = part {
++                if let Part::Text(atoms, _) = part {
 +                    let start = index;
 +                    index += atoms.len();
 +                    if run.group == owner_group
@@ -389,7 +562,7 @@
 +        if !inserted.is_empty() {
 +            let atoms: Vec<_> = inserted.chars().map(|c| format!("c:{c}")).collect();
 +            if let Some((ri, pi, at)) = insertion {
-+                if let Part::Text(a) = &mut self.runs[ri].parts[pi] {
++                if let Part::Text(a, _) = &mut self.runs[ri].parts[pi] {
 +                    a.splice(at..at, atoms);
 +                }
 +            } else {
@@ -400,7 +573,7 @@
 +                    .filter(|(_, r)| {
 +                        r.group == owner_group
 +                            && (r.parts.is_empty()
-+                                || r.parts.iter().any(|v| matches!(v, Part::Text(_))))
++                                || r.parts.iter().any(|v| matches!(v, Part::Text(..))))
 +                    })
 +                    .map(|(i, _)| i)
 +                    .collect();
@@ -409,14 +582,57 @@
 +                    return self;
 +                }
 +                let run = &mut self.runs[candidates[0]];
-+                if let Some(Part::Text(a)) =
-+                    run.parts.iter_mut().find(|v| matches!(v, Part::Text(_)))
++                if let Some(Part::Text(a, _)) =
++                    run.parts.iter_mut().find(|v| matches!(v, Part::Text(..)))
 +                {
 +                    a.extend(atoms);
 +                } else {
-+                    run.parts.push(Part::Text(atoms));
++                    run.parts.push(Part::Text(atoms, None));
 +                }
 +            }
++        }
++        self.seal = seal(p);
++        self
++    }
++
++    /// A real character-formatting command changed only `char_shape_id`
++    /// values. Supported iff every IR run occurrence keeps its index and start
++    /// position (no split/merge/relocation) and nothing but character shapes
++    /// changed during the operation. Source runs mapped to a changed
++    /// occurrence take its new shape; references are resolved at export.
++    pub(crate) fn format_edit(mut self, p: &Paragraph, old: &[CharShapeRef]) -> Self {
++        if self.invalid.is_some() {
++            return self;
++        }
++        let new = &p.char_shapes;
++        if new.len() != old.len() || new.iter().zip(old).any(|(a, b)| a.start_pos != b.start_pos) {
++            self.invalidate(FORMAT_BOUNDARY);
++            return self;
++        }
++        // before_edit proved the pre-edit seal; substituting the previous
++        // shape IDs must reproduce it exactly.
++        if seal_with(p, old) != self.seal {
++            self.invalidate(FORMAT_SCOPE);
++            return self;
++        }
++        let mut styled = false;
++        for (group, (a, b)) in new.iter().zip(old).enumerate() {
++            if a.char_shape_id == b.char_shape_id {
++                continue;
++            }
++            for run in self.runs.iter_mut().filter(|r| r.group == group) {
++                // A character style association has no defined lifetime
++                // under direct formatting; never keep it implicitly.
++                styled |= run
++                    .parts
++                    .iter()
++                    .any(|v| matches!(v, Part::Text(_, Some(_))));
++                run.shape = a.char_shape_id;
++            }
++        }
++        if styled {
++            self.invalidate(FORMAT_STYLED);
++            return self;
 +        }
 +        self.seal = seal(p);
 +        self
@@ -456,13 +672,19 @@
 +                let texts: Vec<_> = r
 +                    .parts
 +                    .iter()
-+                    .filter_map(|v| if let Part::Text(a) = v { Some(a) } else { None })
++                    .filter_map(|v| {
++                        if let Part::Text(a, _) = v {
++                            Some(a)
++                        } else {
++                            None
++                        }
++                    })
 +                    .collect();
 +                texts.len() <= 1
 +                    && !r.parts.is_empty()
 +                    && texts.iter().all(|a| a.iter().all(|s| s.starts_with("c:")))
 +                    && r.parts.iter().all(|v| match v {
-+                        Part::Control(k) => {
++                        Part::Control(k, _) => {
 +                            k.starts_with("o:secPr:")
 +                                || (k.starts_with("o:ctrl:") && k.contains("/colPr/"))
 +                        }
@@ -505,14 +727,8 @@
 +        if !right_old.iter().any(|(_, v)| v.0 == 0) {
 +            right_old.insert(0, (active, (0, old[active].1)));
 +        }
-+        let positions = |p: &Paragraph| {
-+            p.char_shapes
-+                .iter()
-+                .map(|v| (v.start_pos, v.char_shape_id))
-+                .collect::<Vec<_>>()
-+        };
-+        if positions(left) != left_old.iter().map(|v| v.1).collect::<Vec<_>>()
-+            || positions(right) != right_old.iter().map(|v| v.1).collect::<Vec<_>>()
++        if shape_positions(left) != left_old.iter().map(|v| v.1).collect::<Vec<_>>()
++            || shape_positions(right) != right_old.iter().map(|v| v.1).collect::<Vec<_>>()
 +        {
 +            return reject(self);
 +        }
@@ -524,16 +740,16 @@
 +            let mut rp = Vec::new();
 +            for part in &run.parts {
 +                match part {
-+                    Part::Control(_) => lp.push(part.clone()),
-+                    Part::Text(a) => {
++                    Part::Control(..) => lp.push(part.clone()),
++                    Part::Text(a, style) => {
 +                        let at = left.text.chars().count().saturating_sub(chars).min(a.len());
 +                        let left_has_group = left_old.iter().any(|v| v.0 == run.group);
 +                        let right_has_group = right_old.iter().any(|v| v.0 == run.group);
 +                        if at > 0 || (a.is_empty() && left_has_group && !right_has_group) {
-+                            lp.push(Part::Text(a[..at].to_vec()));
++                            lp.push(Part::Text(a[..at].to_vec(), *style));
 +                        }
 +                        if at < a.len() || (a.is_empty() && right_has_group) {
-+                            rp.push(Part::Text(a[at..].to_vec()));
++                            rp.push(Part::Text(a[at..].to_vec(), *style));
 +                        }
 +                        chars += a.len();
 +                    }
@@ -567,12 +783,7 @@
 +            if runs.is_empty() {
 +                None
 +            } else {
-+                Some(Self {
-+                    runs,
-+                    owner: p.hwpx_paragraph_identity.clone(),
-+                    seal: seal(p),
-+                    invalid: None,
-+                })
++                Some(Self::bound(runs, p))
 +            }
 +        };
 +        (make(lr, left), make(rr, right))
@@ -601,16 +812,11 @@
 +            .iter()
 +            .map(|(pos, id)| (pos.saturating_sub(released), *id))
 +            .collect();
-+        let actual: Vec<_> = p
-+            .char_shapes
-+            .iter()
-+            .map(|s| (s.start_pos, s.char_shape_id))
-+            .collect();
-+        if actual != expected {
++        if shape_positions(p) != expected {
 +            return reject(self);
 +        }
 +        for run in &mut self.runs {
-+            run.parts.retain(|v| !matches!(v, Part::Control(_)));
++            run.parts.retain(|v| !matches!(v, Part::Control(..)));
 +        }
 +        self.runs.retain(|r| !r.parts.is_empty());
 +        for run in &mut self.runs {
@@ -655,15 +861,11 @@
 +                shape: shape.char_shape_id,
 +                parts: vec![Part::Text(
 +                    chars[from..to].iter().map(|c| format!("c:{c}")).collect(),
++                    None,
 +                )],
 +            });
 +        }
-+        Some(Self {
-+            runs,
-+            owner: p.hwpx_paragraph_identity.clone(),
-+            seal: seal(p),
-+            invalid: None,
-+        })
++        Some(Self::bound(runs, p))
 +    }
 +
 +    pub(crate) fn before_merge(
@@ -687,13 +889,7 @@
 +        if !l.partitionable(left) || !right.controls.is_empty() || r.is_none() {
 +            l.invalidate("paragraph merge has unsupported run correspondence");
 +        }
-+        let positions = |p: &Paragraph| {
-+            p.char_shapes
-+                .iter()
-+                .map(|v| (v.start_pos, v.char_shape_id))
-+                .collect::<Vec<_>>()
-+        };
-+        Some((l, r, positions(left), positions(right)))
++        Some((l, r, shape_positions(left), shape_positions(right)))
 +    }
 +
 +    pub(crate) fn merge_edit(
@@ -711,7 +907,7 @@
 +        let Some(right) = right else {
 +            return reject(self);
 +        };
-+        if right.invalid.is_some() {
++        if right.invalid.is_some() || self.invalid.is_some() {
 +            return reject(self);
 +        }
 +        let mut expected = left_shapes.to_vec();
@@ -725,12 +921,7 @@
 +            map.push(expected.len());
 +            expected.push(v);
 +        }
-+        let actual: Vec<_> = p
-+            .char_shapes
-+            .iter()
-+            .map(|s| (s.start_pos, s.char_shape_id))
-+            .collect();
-+        if actual != expected {
++        if shape_positions(p) != expected {
 +            return reject(self);
 +        }
 +        for mut run in right.runs {
@@ -741,25 +932,53 @@
 +            self.runs.push(run);
 +        }
 +        self.seal = seal(p);
-+        self.owner = p.hwpx_paragraph_identity.clone();
++        self.rebind_owner(p);
 +        self
 +    }
 +
++    /// Validate the actually generated runs against the source occurrences
++    /// and replay the source text-element topology around generated tokens.
++    /// Returns the restored runs and every emitted `charStyleIDRef`, which the
++    /// caller must register as style references for package validation.
 +    pub(crate) fn restore(
 +        &self,
 +        p: &Paragraph,
 +        xml: &str,
 +        template: bool,
-+    ) -> Result<String, String> {
++    ) -> Result<(String, Vec<u16>), String> {
 +        self.validate(p)?;
 +        let generated = read_runs(xml)?;
 +        let group_count = p.char_shapes.len();
 +        if generated.len() != group_count + usize::from(template) {
 +            return Err("emitted run occurrence count does not match parser boundary plan".into());
 +        }
++        // [#6869] The serializer emits only the first hp:pageNum of a
++        // paragraph render scope and folds every later one to nothing,
++        // whatever its attributes. That deliberate normalization is the only
++        // mapped control removal; the folded source events are not replayed.
++        let mut seen_page_num = false;
++        let folded: Vec<Vec<bool>> = self
++            .runs
++            .iter()
++            .map(|r| {
++                r.parts
++                    .iter()
++                    .map(|v| {
++                        matches!(v, Part::Control(_, true))
++                            && std::mem::replace(&mut seen_page_num, true)
++                    })
++                    .collect()
++            })
++            .collect();
 +        let mut result = String::new();
++        let mut styles = Vec::new();
 +        for group in 0..group_count {
-+            let source: Vec<_> = self.runs.iter().filter(|r| r.group == group).collect();
++            let source: Vec<_> = self
++                .runs
++                .iter()
++                .enumerate()
++                .filter(|(_, r)| r.group == group)
++                .collect();
 +            if source.is_empty() {
 +                return Err("missing source run occurrence".into());
 +            }
@@ -776,42 +995,56 @@
 +                }
 +                for part in &view.parts {
 +                    match &part.part {
-+                        Part::Text(keys) => {
++                        Part::Text(_, Some(_)) => {
++                            return Err(
++                                "emitted hp:t attribute is not owned by the source topology".into(),
++                            )
++                        }
++                        Part::Text(keys, None) => {
 +                            for (key, xml) in keys.iter().zip(&part.atoms) {
 +                                tokens.push((key.clone(), xml.clone()));
 +                            }
 +                        }
-+                        Part::Control(key) => tokens.push((key.clone(), part.xml.clone())),
++                        Part::Control(key, _) => tokens.push((key.clone(), part.xml.clone())),
 +                    }
 +                }
 +            }
-+            let expected: Vec<_> = source
-+                .iter()
-+                .flat_map(|r| &r.parts)
-+                .flat_map(|v| match v {
-+                    Part::Text(a) => a.clone(),
-+                    Part::Control(k) => vec![k.clone()],
-+                })
-+                .collect();
++            let mut expected = Vec::new();
++            for &(ri, run) in &source {
++                for (pi, v) in run.parts.iter().enumerate() {
++                    match v {
++                        Part::Text(a, _) => expected.extend(a.iter().cloned()),
++                        Part::Control(k, _) if !folded[ri][pi] => expected.push(k.clone()),
++                        Part::Control(..) => {}
++                    }
++                }
++            }
 +            if expected.iter().ne(tokens.iter().map(|t| &t.0)) {
 +                return Err(format!(
 +                    "emitted text/control event order differs in IR run occurrence {group}"
 +                ));
 +            }
 +            let mut at = 0;
-+            for run in source {
++            for (ri, run) in source {
 +                result.push_str(&format!(r#"<hp:run charPrIDRef="{}">"#, run.shape));
-+                for part in &run.parts {
++                for (pi, part) in run.parts.iter().enumerate() {
 +                    match part {
-+                        Part::Text(a) => {
-+                            result.push_str("<hp:t>");
++                        Part::Text(a, style) => {
++                            match style {
++                                Some(s) => {
++                                    styles.push(*s);
++                                    result.push_str(&format!(r#"<hp:t charStyleIDRef="{s}">"#));
++                                }
++                                None => result.push_str("<hp:t>"),
++                            }
 +                            for _ in a {
 +                                result.push_str(&tokens[at].1);
 +                                at += 1;
 +                            }
 +                            result.push_str("</hp:t>");
 +                        }
-+                        Part::Control(_) => {
++                        Part::Control(..) if folded[ri][pi] => {}
++                        Part::Control(..) => {
 +                            result.push_str(&tokens[at].1);
 +                            at += 1;
 +                        }
@@ -820,7 +1053,7 @@
 +                result.push_str("</hp:run>");
 +            }
 +        }
-+        Ok(result)
++        Ok((result, styles))
 +    }
 +}
 +
@@ -828,6 +1061,9 @@
 +    part: Part,
 +    atoms: Vec<String>,
 +    xml: String,
++    /// Full source representation of a control (element names and all
++    /// attributes of the ctrl and its direct children) for ambiguity checks.
++    fingerprint: String,
 +}
 +struct RunView {
 +    shape: u32,
@@ -840,7 +1076,8 @@
 +fn escaped(s: &str) -> String {
 +    quick_xml::escape::escape(s).into_owned()
 +}
-+fn tag_key(e: &quick_xml::events::BytesStart<'_>) -> Result<String, String> {
++
++fn attributes(e: &quick_xml::events::BytesStart<'_>) -> Result<Vec<(String, String)>, String> {
 +    let mut attrs = Vec::new();
 +    for a in e.attributes() {
 +        let a = a.map_err(|e| e.to_string())?;
@@ -852,12 +1089,79 @@
 +        ));
 +    }
 +    attrs.sort();
-+    Ok(format!("{}:{attrs:?}", local(e.name().as_ref())))
++    Ok(attrs)
++}
++
++/// Stable ownership identity shared by every control kind.
++const OWNERSHIP: [&str; 3] = ["id", "beginIDRef", "fieldid"];
++
++/// Emitted event identity of a direct `hp:ctrl` child: attributes that
++/// distinguish otherwise equal controls and that RHWP emits from the model
++/// unchanged (verified against the 734-document corpus). Deliberately not
++/// identity: serializer-normalized representation (fieldBegin
++/// dirty/zorder/metaTag, footNote instId/suffixChar, colPr type) and
++/// descendants (formats, parameters, sub-lists), whose bytes always come from
++/// the generated fragment. Unlisted kinds use ownership identity only and
++/// rely on the ambiguity check.
++fn event_attrs(element: &str) -> &'static [&'static str] {
++    match element {
++        "pageNum" => &["pos", "formatType", "sideChar"],
++        "autoNum" | "newNum" => &["num", "numType"],
++        "bookmark" => &["name"],
++        "fieldBegin" => &["type", "name"],
++        "header" | "footer" => &["applyPageType"],
++        "footNote" | "endNote" => &["number"],
++        "pageHiding" => &[
++            "hideHeader",
++            "hideFooter",
++            "hideMasterPage",
++            "hideBorder",
++            "hideFill",
++            "hidePageNum",
++        ],
++        "colPr" => &["layout", "colCount", "sameSz", "sameGap"],
++        _ => &[],
++    }
++}
++
++fn identity_attrs(e: &quick_xml::events::BytesStart<'_>, element: &str) -> Result<String, String> {
++    let event = event_attrs(element);
++    let attrs: Vec<_> = attributes(e)?
++        .into_iter()
++        .filter(|(k, _)| OWNERSHIP.contains(&k.as_str()) || event.contains(&k.as_str()))
++        .collect();
++    Ok(format!("{attrs:?}"))
++}
++
++/// Inline text tokens are positional events; their layout attributes (tab
++/// width/leader/type, markpen color, ...) are emitted from the model and
++/// sealed there. Only ownership identifiers distinguish them.
++fn inline_key(e: &quick_xml::events::BytesStart<'_>) -> Result<String, String> {
++    let attrs: Vec<_> = attributes(e)?
++        .into_iter()
++        .filter(|(k, _)| matches!(k.as_str(), "id" | "Id" | "TcId"))
++        .collect();
++    Ok(format!("i:{}:{attrs:?}", local(e.name().as_ref())))
++}
++
++/// `hp:t@charStyleIDRef` is the only supported text-element attribute and
++/// must be a canonical style index (resolved against the header at export).
++fn text_style(e: &quick_xml::events::BytesStart<'_>) -> Result<Option<u16>, String> {
++    let attrs = attributes(e)?;
++    match attrs.as_slice() {
++        [] => Ok(None),
++        [(k, v)] if k == "charStyleIDRef" => match v.parse::<u16>() {
++            Ok(n) if n.to_string() == *v => Ok(Some(n)),
++            _ => Err("invalid hp:t charStyleIDRef".into()),
++        },
++        _ => Err("unsupported hp:t attributes".into()),
++    }
 +}
 +
 +/// Read direct run children only. Controls remain opaque generated fragments;
-+/// their owning occurrence and shallow identity/order are verified, never copied
-+/// from source. Nested paragraphs are handled by their own renderer invocation.
++/// their owning occurrence and classified identity/order are verified, never
++/// copied from source. Nested paragraphs are handled by their own renderer
++/// invocation.
 +fn read_runs(xml: &str) -> Result<Vec<RunView>, String> {
 +    let mut reader = Reader::from_str(xml);
 +    let mut runs = Vec::new();
@@ -897,9 +1201,7 @@
 +            Event::Start(ref e) | Event::Empty(ref e) if run.is_some() => {
 +                let empty = matches!(event, Event::Empty(_));
 +                if local(e.name().as_ref()) == "t" {
-+                    if e.attributes().count() != 0 {
-+                        return Err("unsupported hp:t attributes".into());
-+                    }
++                    let style = text_style(e)?;
 +                    let mut keys = Vec::new();
 +                    let mut atoms = Vec::new();
 +                    if !empty {
@@ -929,7 +1231,7 @@
 +                                    }
 +                                }
 +                                Event::Empty(ref e) => {
-+                                    keys.push(format!("i:{}", tag_key(e)?));
++                                    keys.push(inline_key(e)?);
 +                                    atoms.push(xml[a..reader.buffer_position() as usize].into());
 +                                }
 +                                Event::Eof => return Err("unterminated hp:t".into()),
@@ -938,47 +1240,41 @@
 +                        }
 +                    }
 +                    run.as_mut().unwrap().parts.push(ViewPart {
-+                        part: Part::Text(keys),
++                        part: Part::Text(keys, style),
 +                        atoms,
 +                        xml: String::new(),
++                        fingerprint: String::new(),
 +                    });
 +                } else {
 +                    let name = local(e.name().as_ref()).to_string();
-+                    // Only structural identity attributes. Lexical attribute order
-+                    // and unrelated control serialization are not run identity.
-+                    let id = e
-+                        .attributes()
-+                        .collect::<Result<Vec<_>, _>>()
-+                        .map_err(|e| e.to_string())?
-+                        .iter()
-+                        .find(|a| a.key.as_ref() == "id")
-+                        .map(|a| {
-+                            a.normalized_value(quick_xml::XmlVersion::Implicit1_0)
-+                                .map(|s| s.into_owned())
-+                        })
-+                        .transpose()
-+                        .map_err(|e| e.to_string())?;
++                    // Only classified identity attributes. Lexical attribute
++                    // order and normalized representation are not identity.
++                    let id = attributes(e)?
++                        .into_iter()
++                        .find(|(k, _)| k == "id")
++                        .map(|(_, v)| v);
 +                    let mut key = format!("o:{name}:{id:?}");
++                    let mut fingerprint = format!("{name}{:?}", attributes(e)?);
++                    let mut children = Vec::new();
 +                    if !empty {
 +                        let mut depth = 1;
 +                        while depth > 0 {
-+                            match reader.read_event().map_err(|e| e.to_string())? {
-+                                Event::Start(ref ce) => {
++                            let child = reader.read_event().map_err(|e| e.to_string())?;
++                            match child {
++                                Event::Start(ref ce) | Event::Empty(ref ce) => {
 +                                    if depth == 1 && name == "ctrl" {
++                                        let element = local(ce.name().as_ref()).to_string();
 +                                        key.push_str(&format!(
-+                                            "/{}/{}",
-+                                            local(ce.name().as_ref()),
-+                                            identity_attrs(ce)?
++                                            "/{element}/{}",
++                                            identity_attrs(ce, &element)?
 +                                        ));
++                                        fingerprint
++                                            .push_str(&format!("/{element}{:?}", attributes(ce)?));
++                                        children.push(element);
 +                                    }
-+                                    depth += 1;
-+                                }
-+                                Event::Empty(ref ce) if depth == 1 && name == "ctrl" => {
-+                                    key.push_str(&format!(
-+                                        "/{}/{}",
-+                                        local(ce.name().as_ref()),
-+                                        identity_attrs(ce)?
-+                                    ));
++                                    if matches!(child, Event::Start(_)) {
++                                        depth += 1;
++                                    }
 +                                }
 +                                Event::End(_) => depth -= 1,
 +                                Event::Eof => return Err("unterminated control".into()),
@@ -986,10 +1282,12 @@
 +                            }
 +                        }
 +                    }
++                    let page_num = name == "ctrl" && children == ["pageNum"];
 +                    run.as_mut().unwrap().parts.push(ViewPart {
-+                        part: Part::Control(key),
++                        part: Part::Control(key, page_num),
 +                        atoms: Vec::new(),
 +                        xml: xml[before..reader.buffer_position() as usize].into(),
++                        fingerprint,
 +                    });
 +                }
 +            }
@@ -1005,23 +1303,6 @@
 +        return Err("unterminated run".into());
 +    }
 +    Ok(runs)
-+}
-+
-+fn identity_attrs(e: &quick_xml::events::BytesStart<'_>) -> Result<String, String> {
-+    let mut attrs = Vec::new();
-+    for a in e.attributes() {
-+        let a = a.map_err(|e| e.to_string())?;
-+        if matches!(a.key.as_ref(), "id" | "beginIDRef" | "fieldid") {
-+            attrs.push((
-+                a.key.as_ref().to_string(),
-+                a.normalized_value(quick_xml::XmlVersion::Implicit1_0)
-+                    .map_err(|e| e.to_string())?
-+                    .into_owned(),
-+            ));
-+        }
-+    }
-+    attrs.sort();
-+    Ok(format!("{attrs:?}"))
 +}
 --- a/src/model/mod.rs
 +++ b/src/model/mod.rs
@@ -1112,7 +1393,24 @@
          actual_count
      }
  
-@@ -1490,6 +1532,16 @@
+@@ -1475,9 +1517,16 @@
+         self.raw_break_type = meta.raw_break_type;
+         self.numbering_restart = meta.numbering_restart;
+         self.raw_header_extra = meta.raw_header_extra;
++        // Merge undo restores the vanished paragraph's own identity value in a
++        // new carrier: an authorized reidentification of its provenance.
++        let topology = super::hwpx_topology::HwpxTextTopology::before_edit(self);
+         self.hwpx_paragraph_identity = std::sync::Arc::new(std::sync::atomic::AtomicU64::new(
+             meta.hwpx_paragraph_identity,
+         ));
++        self.hwpx_text_topology = topology.map(|mut t| {
++            t.rebind_restored_identity(self);
++            t
++        });
+         self.tab_extended = meta.tab_extended;
+     }
+ 
+@@ -1490,6 +1539,16 @@
      /// 분할의 시맨틱이다. 병합의 역연산으로 쓰는 호출부는 `apply_meta` 로 사라진
      /// 문단의 원래 값을 되돌려야 한다 (Task #2342).
      pub fn split_at(&mut self, char_offset: usize) -> Paragraph {
@@ -1129,7 +1427,7 @@
          let control_positions = self.split_logical_control_positions();
          let split_pos = self.split_text_pos_for_logical_offset(char_offset, &control_positions);
          let text_chars: Vec<char> = self.text.chars().collect();
-@@ -1771,10 +1823,11 @@
+@@ -1771,10 +1830,11 @@
              new_raw_header_extra[6..10].fill(0);
          }
  
@@ -1142,7 +1440,7 @@
              line_segs: new_line_segs,
              layout_space_metrics: Vec::new(),
              // 분리된 문단의 줄은 새로 계산된 것이라 조판 전용 보강 줄이 없다 (#4677).
-@@ -1809,7 +1862,19 @@
+@@ -1809,7 +1869,19 @@
              cell_vpos_reset: Some(false),
              // 번호는 문서 순서로 다시 계산해야 하는 파생값이다 (#7436).
              numbering_marker: NumberingMarker::Unresolved,
@@ -1163,7 +1461,7 @@
      }
  
      /// 다른 문단의 텍스트와 메타데이터를 현재 문단 끝에 결합한다.
-@@ -1817,8 +1882,15 @@
+@@ -1817,8 +1889,15 @@
      /// 병합 후 other 문단의 내용은 현재 문단에 포함된다.
      /// 반환값: 병합 지점의 char offset (원래 텍스트의 길이).
      pub fn merge_from(&mut self, other: &Paragraph) -> usize {
@@ -1179,7 +1477,7 @@
              return self.text.chars().count();
          }
          let self_text_len = self.text.chars().count();
-@@ -1962,6 +2034,9 @@
+@@ -1962,6 +2041,9 @@
              self.has_para_text = true;
          }
  
@@ -1189,6 +1487,45 @@
          self_text_len
      }
  
+@@ -2526,6 +2608,22 @@
+         &mut self,
+         start: usize,
+         end: usize,
++        map_id: impl FnMut(u32) -> Result<u32, E>,
++    ) -> Result<(), E> {
++        // Authorized character-formatting path: imported HWPX topology may
++        // follow new shape IDs only while every run occurrence is unchanged.
++        let topology = super::hwpx_topology::HwpxTextTopology::before_edit(self);
++        let old = topology.as_ref().map(|_| self.char_shapes.clone());
++        let result = self.map_char_shape_range_ids(start, end, map_id);
++        self.hwpx_text_topology =
++            topology.map(|t| t.format_edit(self, old.as_deref().unwrap_or_default()));
++        result
++    }
++
++    fn map_char_shape_range_ids<E>(
++        &mut self,
++        start: usize,
++        end: usize,
+         mut map_id: impl FnMut(u32) -> Result<u32, E>,
+     ) -> Result<(), E> {
+         let Some((utf16_start, utf16_end, text_utf16_end)) =
+@@ -2648,6 +2746,15 @@
+         end: usize,
+         runs: &[CharShapeRun],
+     ) {
++        // Formatting undo/redo restores IDs through the same occurrence check.
++        let topology = super::hwpx_topology::HwpxTextTopology::before_edit(self);
++        let old = topology.as_ref().map(|_| self.char_shapes.clone());
++        self.restore_char_shape_run_ids(start, end, runs);
++        self.hwpx_text_topology =
++            topology.map(|t| t.format_edit(self, old.as_deref().unwrap_or_default()));
++    }
++
++    fn restore_char_shape_run_ids(&mut self, start: usize, end: usize, runs: &[CharShapeRun]) {
+         let Some((from, to, text_end)) = self.char_shape_range_bounds(start, end) else {
+             return;
+         };
 --- a/src/parser/hwpx/mod.rs
 +++ b/src/parser/hwpx/mod.rs
 @@ -162,6 +162,7 @@
@@ -1418,7 +1755,7 @@
              Err(e) => return Err(HwpxError::XmlError(format!("paragraph: {}", e))),
              _ => {}
          }
-@@ -1235,6 +1320,20 @@
+@@ -1235,6 +1320,19 @@
      para.hwpx_paragraph_identity
          .store(hwpx_identity, std::sync::atomic::Ordering::Relaxed);
  
@@ -1433,35 +1770,71 @@
 +            &source_runs,
 +            &source_groups,
 +            &para,
-+        )
-+        .map_err(HwpxError::TextTopology)?;
++        );
 +    }
      Ok((para, sec_def))
  }
  
 --- a/src/serializer/hwpx/context.rs
 +++ b/src/serializer/hwpx/context.rs
-@@ -167,6 +167,8 @@
+@@ -167,6 +167,10 @@
      /// ID 풀과 마찬가지로 한 번의 직렬화 생명주기에만 속하며, 완료 시 바이트와 함께
      /// `SerializedDocument`로 이동한다.
      pub content_loss: ContentLossReport,
 +    pub text_topology_error: Option<String>,
 +    pub text_topology_checked: HashSet<usize>,
++    /// Character-type styles: the only valid `hp:t@charStyleIDRef` targets.
++    pub text_char_style_ids: HashSet<u16>,
  }
  
  impl Default for SerializeContext {
-@@ -190,6 +192,8 @@
+@@ -190,6 +194,9 @@
              sub_list_depth: 0,
              body_coldef_template_pending: false,
              content_loss: ContentLossReport::new(SerializedFormat::Hwpx),
 +            text_topology_error: None,
 +            text_topology_checked: HashSet::new(),
++            text_char_style_ids: HashSet::new(),
          }
      }
  }
+@@ -253,8 +260,11 @@
+         for (idx, _) in doc.doc_info.numberings.iter().enumerate() {
+             ctx.numbering_ids.register((idx + 1) as u16);
+         }
+-        for (idx, _) in doc.doc_info.styles.iter().enumerate() {
++        for (idx, style) in doc.doc_info.styles.iter().enumerate() {
+             ctx.style_ids.register(idx as u16);
++            if style.style_type == 1 {
++                ctx.text_char_style_ids.insert(idx as u16);
++            }
+         }
+         // [#1933 보강] style 0 은 `effective_style_id`/`write_styles` 계약상 "항상
+         // 등록됨" 취급이다 — `<hh:styles>` 블록 자체가 없는(styles 비어있는) 정상
+@@ -480,12 +490,14 @@
+                 let id = crate::model::identity::Allocator::paragraph(&doc.hwpx_paragraph_next)
+                     .map_err(|e| SerializeError::UnsupportedInput(e.to_string()))?;
+                 // Allocate before publication, then retain for repeated exports and later edits.
+-                let _ = para.hwpx_paragraph_identity.compare_exchange(
+-                    0,
+-                    u64::from(id) + 1,
+-                    Relaxed,
+-                    Relaxed,
+-                );
++                let reserved = para
++                    .hwpx_paragraph_identity
++                    .compare_exchange(0, u64::from(id) + 1, Relaxed, Relaxed)
++                    .is_ok();
++                // The only authorized in-place value change of a bound carrier.
++                if let (true, Some(t)) = (reserved, &para.hwpx_text_topology) {
++                    t.record_reservation(para, u64::from(id) + 1);
++                }
+             }
+         }
+         // A value may appear on several paragraphs only when the source document
 --- /dev/null
 +++ b/src/serializer/hwpx/empty_text_tests.rs
-@@ -0,0 +1,424 @@
+@@ -0,0 +1,1005 @@
 +use super::*;
 +use crate::parser::hwpx::section::parse_hwpx_section;
 +
@@ -1650,7 +2023,7 @@
 +    p.apply_char_shape_range(0, 1, 1);
 +    assert_eq!(
 +        render(&p).unwrap_err(),
-+        "stale text, formatting or control-slot anchors"
++        "character formatting changed run occurrence boundaries"
 +    );
 +    let mut p = imported(&source);
 +    p.controls.push(Control::PageNumberPos(Default::default()));
@@ -1852,10 +2225,11 @@
 +        r(&format!("<hp:t/>{tbl}"))
 +    );
 +    let xml = format!(r#"<hs:sec><hp:p id="7">{body}</hp:p></hs:sec>"#);
-+    let error = parse_hwpx_section(&xml).unwrap_err().to_string();
-+    assert!(
-+        error.contains("HWPX empty-text provenance: ambiguous repeated owned-control identity"),
-+        "{error}"
++    // Unsupported but well-formed: the document opens, HWPX export refuses.
++    let p = parse_hwpx_section(&xml).unwrap().paragraphs.remove(0);
++    assert_eq!(
++        render(&p).unwrap_err(),
++        "ambiguous repeated owned-control identity"
 +    );
 +}
 +
@@ -1886,6 +2260,586 @@
 +            .contains("HWPX empty-text provenance:"));
 +    }
 +}
++
++// ---- Phase 1: paragraph identity value and control event ownership ----
++
++/// Inject source paragraphs into a real generated HWPX package and load it
++/// through the actual document loader (no hand-built IR shortcuts).
++pub(crate) fn package_with(paragraphs: &str) -> Vec<u8> {
++    use std::io::{Read, Write};
++    let mut generated = crate::document_core::DocumentCore::new_empty();
++    generated.create_blank_document_native().unwrap();
++    let bytes = generated.export_hwpx_native().unwrap();
++    let mut archive = zip::ZipArchive::new(std::io::Cursor::new(bytes)).unwrap();
++    let mut writer = zip::ZipWriter::new(std::io::Cursor::new(Vec::new()));
++    for i in 0..archive.len() {
++        let mut entry = archive.by_index(i).unwrap();
++        let name = entry.name().to_string();
++        let mut data = Vec::new();
++        entry.read_to_end(&mut data).unwrap();
++        if name == "Contents/section0.xml" {
++            let xml = String::from_utf8(data).unwrap();
++            assert_eq!(xml.matches("</hs:sec>").count(), 1);
++            data = xml
++                .replace("</hs:sec>", &format!("{paragraphs}</hs:sec>"))
++                .into_bytes();
++        }
++        let options = if name == "mimetype" {
++            zip::write::SimpleFileOptions::default()
++                .compression_method(zip::CompressionMethod::Stored)
++        } else {
++            zip::write::SimpleFileOptions::default()
++        };
++        writer.start_file(name, options).unwrap();
++        writer.write_all(&data).unwrap();
++    }
++    writer.finish().unwrap().into_inner()
++}
++
++pub(crate) fn para(id: u32, runs: &str) -> String {
++    format!(
++        r#"<hp:p id="{id}" paraPrIDRef="0" styleIDRef="0" pageBreak="0" columnBreak="0" merged="0">{runs}</hp:p>"#
++    )
++}
++
++fn export_error(core: &crate::document_core::DocumentCore) -> String {
++    core.export_hwpx_native()
++        .err()
++        .expect("refused export has no bytes")
++        .to_string()
++}
++
++const IDENTITY_VALUE_CHANGED: &str =
++    "paragraph identity value changed without a supported reidentification";
++
++#[test]
++fn empty_text_same_carrier_identity_value_mutation_is_refused() {
++    use std::sync::atomic::Ordering::Relaxed;
++    let p = imported(&r("<hp:t>A</hp:t><hp:t/>"));
++    assert_eq!(p.hwpx_paragraph_identity.load(Relaxed), 8);
++    assert!(render(&p).is_ok());
++    let carrier = std::sync::Arc::as_ptr(&p.hwpx_paragraph_identity);
++    // Another valid numeric id inside the SAME identity carrier; nothing else changes.
++    p.hwpx_paragraph_identity.store(43, Relaxed);
++    assert_eq!(carrier, std::sync::Arc::as_ptr(&p.hwpx_paragraph_identity));
++    assert_eq!(render(&p).unwrap_err(), IDENTITY_VALUE_CHANGED);
++
++    // Full package path through the real loader and exporter.
++    let bytes = package_with(&para(7, &r("<hp:t>A</hp:t><hp:t/>")));
++    let core = crate::document_core::DocumentCore::from_bytes(&bytes).unwrap();
++    let first = core.export_hwpx_native().unwrap();
++    assert_eq!(core.export_hwpx_native().unwrap(), first);
++    let target = &core.document.sections[0].paragraphs[1];
++    assert_eq!(target.hwpx_paragraph_identity.load(Relaxed), 8);
++    target.hwpx_paragraph_identity.store(43, Relaxed);
++    let e = export_error(&core);
++    assert!(e.contains(IDENTITY_VALUE_CHANGED), "{e}");
++}
++
++#[test]
++fn empty_text_nested_cell_identity_value_mutation_is_refused_parent_unchanged() {
++    use std::sync::atomic::Ordering::Relaxed;
++    let nested = para(8, &r("<hp:t>A</hp:t><hp:t/>"));
++    let table = format!(
++        r#"<hp:tbl id="10" rowCnt="1" colCnt="1"><hp:tr><hp:tc><hp:subList>{nested}</hp:subList><hp:cellAddr colAddr="0" rowAddr="0"/><hp:cellSpan colSpan="1" rowSpan="1"/><hp:cellSz width="1000" height="1000"/></hp:tc></hp:tr></hp:tbl>"#
++    );
++    let bytes = package_with(&para(7, &r(&format!("{table}<hp:t/>"))));
++    let core = crate::document_core::DocumentCore::from_bytes(&bytes).unwrap();
++    let parent = &core.document.sections[0].paragraphs[1];
++    assert!(parent.hwpx_text_topology.is_some());
++    let Control::Table(t) = &parent.controls[0] else {
++        panic!("table")
++    };
++    let child = &t.cells[0].paragraphs[0];
++    assert!(child.hwpx_text_topology.is_some());
++    assert!(core.export_hwpx_native().is_ok());
++    let parent_value = parent.hwpx_paragraph_identity.load(Relaxed);
++    child.hwpx_paragraph_identity.store(44, Relaxed);
++    let e = export_error(&core);
++    assert!(e.contains(IDENTITY_VALUE_CHANGED), "{e}");
++    assert_eq!(parent.hwpx_paragraph_identity.load(Relaxed), parent_value);
++}
++
++#[test]
++fn empty_text_repeated_source_ids_keep_distinct_carriers() {
++    use std::sync::atomic::Ordering::Relaxed;
++    // Hancom repeats id="0"; each paragraph keeps its own carrier and value.
++    let source = format!(
++        "{}{}",
++        para(0, &r("<hp:t>A</hp:t><hp:t/>")),
++        para(0, &r("<hp:t/><hp:t>B</hp:t>"))
++    );
++    let core = crate::document_core::DocumentCore::from_bytes(&package_with(&source)).unwrap();
++    let ps = &core.document.sections[0].paragraphs;
++    assert_eq!(ps[1].hwpx_paragraph_identity.load(Relaxed), 1);
++    assert_eq!(ps[2].hwpx_paragraph_identity.load(Relaxed), 1);
++    assert!(!std::sync::Arc::ptr_eq(
++        &ps[1].hwpx_paragraph_identity,
++        &ps[2].hwpx_paragraph_identity
++    ));
++    let first = core.export_hwpx_native().unwrap();
++    assert_eq!(core.export_hwpx_native().unwrap(), first);
++    let reopened = crate::document_core::DocumentCore::from_bytes(&first).unwrap();
++    assert_eq!(reopened.export_hwpx_native().unwrap(), first);
++}
++
++fn page(pos: &str) -> String {
++    format!(r#"<hp:ctrl><hp:pageNum pos="{pos}" formatType="DIGIT" sideChar="-"/></hp:ctrl>"#)
++}
++
++#[test]
++fn empty_text_distinguishable_controls_cannot_swap_under_shallow_keys() {
++    // Both collide under the WIP shallow key `o:ctrl:None/bookmark/[]`.
++    let mark = |n: &str| format!(r#"<hp:ctrl><hp:bookmark name="{n}"/></hp:ctrl>"#);
++    let (a, b) = (mark("first"), mark("second"));
++    let source = r(&format!("{a}<hp:t/>{b}"));
++    let p = imported(&source);
++    let t = p.hwpx_text_topology.as_ref().unwrap();
++    // Original order: supported.
++    assert_eq!(render(&p).unwrap(), explicit(&source));
++    // Swapped emitted controls: equal run count, charPrIDRef and shallow keys.
++    assert_eq!(
++        t.restore(&p, &r(&format!("{b}<hp:t></hp:t>{a}")), false)
++            .unwrap_err(),
++        "emitted text/control event order differs in IR run occurrence 0"
++    );
++    // Relevant identity attribute changed in the emitted control.
++    assert_eq!(
++        t.restore(&p, &r(&format!("{a}<hp:t></hp:t>{}", mark("third"))), false)
++            .unwrap_err(),
++        "emitted text/control event order differs in IR run occurrence 0"
++    );
++    // Replacement with another control kind.
++    let other = r#"<hp:ctrl><hp:autoNum num="1" numType="PAGE"/></hp:ctrl>"#;
++    assert_eq!(
++        t.restore(&p, &r(&format!("{a}<hp:t></hp:t>{other}")), false)
++            .unwrap_err(),
++        "emitted text/control event order differs in IR run occurrence 0"
++    );
++    // Model-level swap is refused by the state seal as well.
++    let mut swapped = p.clone();
++    swapped.controls.swap(0, 1);
++    assert!(render(&swapped).is_err());
++}
++
++#[test]
++fn empty_text_ambiguous_equal_control_keys_fail_closed() {
++    // Same event identity, different non-identity representation: no proof
++    // which source occurrence an emitted control corresponds to.
++    let x = r#"<hp:ctrl><hp:colPr id="" type="NEWSPAPER" layout="LEFT" colCount="1" sameSz="1" sameGap="0"/></hp:ctrl>"#;
++    let y = r#"<hp:ctrl><hp:colPr id="" type="NORMAL" layout="LEFT" colCount="1" sameSz="1" sameGap="0"/></hp:ctrl>"#;
++    let p = imported(&r(&format!("{x}<hp:t/>{y}")));
++    assert_eq!(render(&p).unwrap_err(), "ambiguous control event identity");
++    // Fully identical controls are interchangeable and remain supported.
++    let same = r#"<hp:ctrl><hp:bookmark name="x"/></hp:ctrl>"#;
++    let source = r(&format!("{same}<hp:t/>{same}"));
++    let p = imported(&source);
++    let t = p.hwpx_text_topology.as_ref().unwrap();
++    assert!(t.restore(&p, &explicit(&source), false).is_ok());
++}
++
++#[test]
++fn empty_text_supported_serializer_normalization_is_not_rejected() {
++    // Lexical attribute order and non-identity field/tab attributes are
++    // normalized by the serializer; the event identity is unchanged.
++    let src_field = r#"<hp:ctrl><hp:fieldBegin id="42" type="CLICK_HERE" name="" editable="1" zorder="-1" metaTag="" fieldid="627272811"><hp:parameters cnt="0" name=""/></hp:fieldBegin></hp:ctrl>"#;
++    let out_field = r#"<hp:ctrl><hp:fieldBegin type="CLICK_HERE" id="42" name="" editable="1" dirty="0" fieldid="627272811"><hp:parameters cnt="0" name=""/></hp:fieldBegin></hp:ctrl>"#;
++    let end = r#"<hp:ctrl><hp:fieldEnd beginIDRef="42" fieldid="627272811"/></hp:ctrl>"#;
++    let p = imported(&r(&format!("{src_field}<hp:t>X</hp:t>{end}<hp:t/>")));
++    let t = p.hwpx_text_topology.as_ref().unwrap();
++    assert!(t
++        .restore(&p, &r(&format!("{out_field}<hp:t>X</hp:t>{end}")), false)
++        .is_ok());
++    let reordered =
++        r#"<hp:ctrl><hp:pageNum sideChar="-" pos="TOP_LEFT" formatType="DIGIT"/></hp:ctrl>"#;
++    let p = imported(&r(&format!("{}<hp:t/>", page("TOP_LEFT"))));
++    let t = p.hwpx_text_topology.as_ref().unwrap();
++    assert!(t
++        .restore(&p, &r(&format!("{reordered}<hp:t></hp:t>")), false)
++        .is_ok());
++    // Inline tab layout attributes are emitted from the model, not identity.
++    let source = r(r#"<hp:t>A<hp:tab width="0" leader="0" type="0"/>B</hp:t><hp:t/>"#);
++    let p = imported(&source);
++    let xml = render(&p).unwrap();
++    assert!(xml.ends_with("B</hp:t><hp:t></hp:t></hp:run>"), "{xml}");
++    assert_eq!(xml.matches("<hp:tab ").count(), 1, "{xml}");
++}
++
++#[test]
++fn empty_text_serializer_page_number_fold_is_an_explicit_mapping() {
++    // [#6869] Only the first hp:pageNum of a paragraph is emitted. The folded
++    // source events are mapped away; empty hp:t ownership is preserved.
++    let (a, b) = (page("TOP_LEFT"), page("BOTTOM_CENTER"));
++    let p = imported(&format!("{}{}", r(&format!("{a}<hp:t/>{b}<hp:t/>")), r(&b)));
++    let out = render(&p).unwrap();
++    assert_eq!(
++        out,
++        format!("{}{}", r(&format!("{a}<hp:t></hp:t><hp:t></hp:t>")), r(""))
++    );
++    let q = imported(&out);
++    assert_eq!(render(&q).unwrap(), out);
++    // Folding never licenses other control changes in the emitted output.
++    let t = p.hwpx_text_topology.as_ref().unwrap();
++    assert!(t
++        .restore(
++            &p,
++            &format!("{}{}", r(&format!("{b}<hp:t></hp:t><hp:t></hp:t>")), r("")),
++            false
++        )
++        .is_err());
++}
++
++#[test]
++fn empty_text_merge_undo_identity_restoration_rebinds_explicitly() {
++    use std::sync::atomic::Ordering::Relaxed;
++    // Merge undo = split_at + apply_meta(vanished paragraph's captured meta).
++    let vanished = imported(&r("<hp:t>X</hp:t>"));
++    let meta = vanished.capture_meta();
++    let mut p = imported(&format!("{}{}", r("<hp:t>AB</hp:t>"), r("<hp:t/>")));
++    let mut right = p.split_at(1);
++    assert!(render(&p).is_ok());
++    assert_eq!(right.hwpx_paragraph_identity.load(Relaxed), 0);
++    right.apply_meta(meta);
++    assert_eq!(right.hwpx_paragraph_identity.load(Relaxed), 8);
++    assert_eq!(
++        render(&right).unwrap(),
++        format!("{}{}", r("<hp:t>B</hp:t>"), r("<hp:t></hp:t>"))
++    );
++    right.hwpx_paragraph_identity.store(12, Relaxed);
++    assert_eq!(render(&right).unwrap_err(), IDENTITY_VALUE_CHANGED);
++}
++
++// ---- Phase 2: character formatting that keeps run correspondence ----
++
++pub(crate) fn section_xml(bytes: &[u8]) -> String {
++    use std::io::Read;
++    let mut archive = zip::ZipArchive::new(std::io::Cursor::new(bytes)).unwrap();
++    let mut xml = String::new();
++    archive
++        .by_name("Contents/section0.xml")
++        .unwrap()
++        .read_to_string(&mut xml)
++        .unwrap();
++    xml
++}
++
++fn core_of(paragraphs: &str) -> crate::document_core::DocumentCore {
++    crate::document_core::DocumentCore::from_bytes(&package_with(paragraphs)).unwrap()
++}
++
++const BOLD: &str = r#"{"bold":true}"#;
++
++#[test]
++fn empty_text_whole_run_formatting_keeps_occurrences_and_new_reference() {
++    // Two occurrences with the same source charPrIDRef; empty hp:t adjacent.
++    let runs = format!("{}{}", r("<hp:t>AB</hp:t><hp:t/>"), r("<hp:t>CD</hp:t>"));
++    let mut core = core_of(&para(7, &runs));
++    let shapes_before = core.document.doc_info.char_shapes.len();
++    let original = section_xml(&core.export_hwpx_native().unwrap());
++    assert!(
++        original.contains(&runs.replace("<hp:t/>", "<hp:t></hp:t>")),
++        "{original}"
++    );
++    core.apply_char_format_native(0, 1, 0, 2, BOLD).unwrap();
++    let p = &core.document.sections[0].paragraphs[1];
++    let bold = p.char_shapes[0].char_shape_id;
++    assert_ne!(bold, 0);
++    assert!((bold as usize) < core.document.doc_info.char_shapes.len());
++    assert!(core.document.doc_info.char_shapes.len() >= shapes_before);
++    assert_eq!(p.char_shapes.len(), 2);
++    assert_eq!(p.char_shapes[1].char_shape_id, 0);
++    let first = core.export_hwpx_native().unwrap();
++    assert_eq!(core.export_hwpx_native().unwrap(), first);
++    let xml = section_xml(&first);
++    let expected = format!(
++        r#"<hp:run charPrIDRef="{bold}"><hp:t>AB</hp:t><hp:t></hp:t></hp:run>{}"#,
++        r("<hp:t>CD</hp:t>")
++    );
++    assert!(xml.contains(&expected), "{xml}");
++    // Reopen and repeat: model, occurrences and bytes stay stable.
++    let reopened = crate::document_core::DocumentCore::from_bytes(&first).unwrap();
++    let q = &reopened.document.sections[0].paragraphs[1];
++    assert_eq!(q.text, "ABCD");
++    assert_eq!(
++        q.char_shapes
++            .iter()
++            .map(|s| (s.start_pos, s.char_shape_id))
++            .collect::<Vec<_>>(),
++        vec![(0, bold), (2, 0)]
++    );
++    assert_eq!(reopened.export_hwpx_native().unwrap(), first);
++    // Giving the second occurrence the same new shape makes the engine merge
++    // the two source occurrences: refused, never silently re-anchored.
++    core.apply_char_format_native(0, 1, 2, 4, BOLD).unwrap();
++    let p = &core.document.sections[0].paragraphs[1];
++    assert_eq!(p.char_shapes.len(), 1, "engine merged equal neighbours");
++    assert!(export_error(&core).ends_with(
++        "HWPX empty-text provenance: character formatting changed run occurrence boundaries"
++    ));
++}
++
++#[test]
++fn empty_text_formatting_undo_restores_mapped_shape() {
++    let second = r("<hp:t>CD</hp:t>").replace(r#"charPrIDRef="0""#, r#"charPrIDRef="1""#);
++    let runs = format!("{}{second}", r("<hp:t>AB</hp:t><hp:t/>"));
++    let mut core = core_of(&para(7, &runs));
++    let original = core.export_hwpx_native().unwrap();
++    core.apply_char_format_native(0, 1, 2, 4, r#"{"italic":true}"#)
++        .unwrap();
++    let italic = core.document.sections[0].paragraphs[1].char_shapes[1].char_shape_id;
++    let xml = section_xml(&core.export_hwpx_native().unwrap());
++    assert!(
++        xml.contains(&format!(
++            r#"{}<hp:run charPrIDRef="{italic}"><hp:t>CD</hp:t></hp:run>"#,
++            r("<hp:t>AB</hp:t><hp:t></hp:t>")
++        )),
++        "{xml}"
++    );
++    // Real undo command (direct ID restoration) maps back to the source shape.
++    core.set_char_shape_id_native(0, 1, 2, 4, 1).unwrap();
++    let restored = section_xml(&core.export_hwpx_native().unwrap());
++    assert!(
++        restored.contains(&runs.replace("<hp:t/>", "<hp:t></hp:t>")),
++        "{restored}"
++    );
++    assert_eq!(
++        section_xml(&original).matches("<hp:t></hp:t>").count(),
++        restored.matches("<hp:t></hp:t>").count()
++    );
++    // Restoring an ID equal to the neighbour makes the engine merge the two
++    // source occurrences: refused rather than re-anchored.
++    core.set_char_shape_id_native(0, 1, 2, 4, 0).unwrap();
++    assert!(export_error(&core).ends_with("character formatting changed run occurrence boundaries"));
++}
++
++#[test]
++fn empty_text_unsupported_formatting_fails_closed() {
++    let runs = format!(
++        "{}{}{}",
++        r("<hp:t>AB</hp:t>"),
++        r("<hp:t/>"),
++        r("<hp:t>CD</hp:t>")
++    );
++    // Partial range splits an occurrence.
++    let mut core = core_of(&para(7, &runs));
++    core.apply_char_format_native(0, 1, 0, 1, BOLD).unwrap();
++    assert!(export_error(&core).ends_with("character formatting changed run occurrence boundaries"));
++    // The engine folds the zero-width empty-text occurrence into the edited
++    // one, and its equal-neighbour merge collapses same-position occurrences
++    // even when another range is formatted.
++    for (from, to) in [(2, 4), (0, 2)] {
++        let mut core = core_of(&para(7, &runs));
++        core.apply_char_format_native(0, 1, from, to, BOLD).unwrap();
++        assert!(
++            export_error(&core).ends_with("character formatting changed run occurrence boundaries")
++        );
++    }
++    // Direct char_shapes mutation is not an authorized formatting operation.
++    let mut core = core_of(&para(7, &runs));
++    core.document.sections[0].paragraphs[1].char_shapes[0].char_shape_id = 1;
++    assert!(export_error(&core).ends_with("stale text, formatting or control-slot anchors"));
++    // A formatting command cannot launder an earlier text mutation.
++    let mut core = core_of(&para(7, &runs));
++    core.document.sections[0].paragraphs[1].text.push('Z');
++    core.apply_char_format_native(0, 1, 0, 2, BOLD).unwrap();
++    assert!(export_error(&core).ends_with("stale text, formatting or control-slot anchors"));
++    // Unresolvable new reference fails package validation, no bytes.
++    let runs = format!("{}{}", r("<hp:t>AB</hp:t><hp:t/>"), r("<hp:t>CD</hp:t>"));
++    let mut core = core_of(&para(7, &runs));
++    core.document.sections[0].paragraphs[1].apply_char_shape_range(0, 2, 60000);
++    let e = export_error(&core);
++    assert!(e.contains("charPrIDRef"), "{e}");
++}
++
++#[test]
++fn empty_text_unrelated_paragraph_formatting_keeps_topology() {
++    let topo = r("<hp:t>A</hp:t><hp:t/>");
++    let source = format!("{}{}", para(7, &topo), para(8, &r("<hp:t>XY</hp:t>")));
++    let mut core = core_of(&source);
++    assert!(core.document.sections[0].paragraphs[2]
++        .hwpx_text_topology
++        .is_none());
++    core.apply_char_format_native(0, 2, 0, 1, BOLD).unwrap();
++    let xml = section_xml(&core.export_hwpx_native().unwrap());
++    assert!(
++        xml.contains(&topo.replace("<hp:t/>", "<hp:t></hp:t>")),
++        "{xml}"
++    );
++    assert!(core.document.sections[0].paragraphs[1]
++        .hwpx_text_topology
++        .as_ref()
++        .unwrap()
++        .validate(&core.document.sections[0].paragraphs[1])
++        .is_ok());
++}
++
++#[test]
++fn empty_text_nested_cell_whole_run_formatting() {
++    let nested = para(8, &r("<hp:t>AB</hp:t><hp:t/>"));
++    let table = format!(
++        r#"<hp:tbl id="10" rowCnt="1" colCnt="1"><hp:tr><hp:tc><hp:subList>{nested}</hp:subList><hp:cellAddr colAddr="0" rowAddr="0"/><hp:cellSpan colSpan="1" rowSpan="1"/><hp:cellSz width="1000" height="1000"/></hp:tc></hp:tr></hp:tbl>"#
++    );
++    let mut core = core_of(&para(7, &r(&format!("{table}<hp:t/>"))));
++    core.apply_char_format_in_cell_native(0, 1, 0, 0, 0, 0, 2, BOLD)
++        .unwrap();
++    let bytes = core.export_hwpx_native().unwrap();
++    let xml = section_xml(&bytes);
++    assert!(
++        xml.contains("<hp:t>AB</hp:t><hp:t></hp:t></hp:run></hp:p></hp:subList>"),
++        "{xml}"
++    );
++    assert!(
++        !xml.contains(r#"<hp:run charPrIDRef="0"><hp:t>AB</hp:t>"#),
++        "{xml}"
++    );
++    let reopened = crate::document_core::DocumentCore::from_bytes(&bytes).unwrap();
++    assert_eq!(reopened.export_hwpx_native().unwrap(), bytes);
++}
++
++// ---- Phase 3: hp:t@charStyleIDRef (OWPML character-style reference) ----
++
++#[test]
++fn empty_text_char_style_reference_is_preserved_and_validated() {
++    let runs = r(r#"<hp:t charStyleIDRef="12">AB</hp:t><hp:t/>"#);
++    let mut core = core_of(&para(7, &runs));
++    assert_eq!(
++        core.document.doc_info.styles[12].style_type, 1,
++        "CHAR style"
++    );
++    let first = core.export_hwpx_native().unwrap();
++    let xml = section_xml(&first);
++    assert!(
++        xml.contains(&runs.replace("<hp:t/>", "<hp:t></hp:t>")),
++        "{xml}"
++    );
++    let reopened = crate::document_core::DocumentCore::from_bytes(&first).unwrap();
++    assert_eq!(reopened.export_hwpx_native().unwrap(), first);
++    // Typing inside the styled text element keeps the association.
++    core.insert_text_native(0, 1, 1, "가").unwrap();
++    let xml = section_xml(&core.export_hwpx_native().unwrap());
++    assert!(
++        xml.contains(r#"<hp:t charStyleIDRef="12">A가B</hp:t><hp:t></hp:t>"#),
++        "{xml}"
++    );
++    // Direct formatting has no defined lifetime for the style association.
++    core.apply_char_format_native(0, 1, 0, 3, BOLD).unwrap();
++    assert!(export_error(&core)
++        .ends_with("character formatting of hp:t charStyleIDRef text is unsupported"));
++}
++
++#[test]
++fn empty_text_invalid_text_attributes_open_but_refuse_export() {
++    for (attrs, cause) in [
++        (
++            r#"charStyleIDRef="60000""#,
++            "does not reference a character style",
++        ),
++        (
++            r#"charStyleIDRef="1""#,
++            "does not reference a character style",
++        ),
++        (r#"charStyleIDRef="01""#, "invalid hp:t charStyleIDRef"),
++        (
++            r#"charStyleIDRef="1" xml:space="preserve""#,
++            "unsupported hp:t attributes",
++        ),
++        (r#"foo="1""#, "unsupported hp:t attributes"),
++    ] {
++        let core = core_of(&para(7, &r(&format!("<hp:t {attrs}>AB</hp:t><hp:t/>"))));
++        assert_eq!(core.document.sections[0].paragraphs[1].text, "AB");
++        let e = export_error(&core);
++        assert!(e.contains(cause), "{attrs}: {e}");
++    }
++}
++
++#[test]
++fn empty_text_canonical_empty_occurrence_is_not_tracked() {
++    // An empty paragraph whose only text-bearing run holds one empty hp:t is
++    // the writer's canonical empty line: the IR holds it completely, so
++    // ordinary edits (deleting the line, formatting) keep the pre-topology path.
++    let source = format!(
++        "{}{}{}",
++        para(7, &r("<hp:t>AB</hp:t>")),
++        para(8, &r("<hp:t/>")),
++        para(9, &r("<hp:t>C</hp:t><hp:t/>"))
++    );
++    let mut core = core_of(&source);
++    let ps = &core.document.sections[0].paragraphs;
++    assert!(ps[2].hwpx_text_topology.is_none());
++    assert!(ps[3].hwpx_text_topology.is_some());
++    assert!(
++        ps[0].hwpx_text_topology.is_none(),
++        "generated empty first paragraph (secPr/colPr run + empty text run)"
++    );
++    let p = imported(&format!("{}{}", r("<hp:t>X</hp:t>"), r("<hp:t/>")));
++    assert!(
++        p.hwpx_text_topology.is_some(),
++        "zero-width empty-text occurrence beside text is tracked"
++    );
++    let p = imported(&r("<hp:t/><hp:t/>"));
++    assert!(
++        p.hwpx_text_topology.is_some(),
++        "two empty text elements are not canonical"
++    );
++    let p = imported(&r(r#"<hp:t charStyleIDRef="12"/>"#));
++    assert!(
++        p.hwpx_text_topology.is_some(),
++        "attributed text element is not canonical"
++    );
++    let original = section_xml(&core.export_hwpx_native().unwrap());
++    assert!(original.contains(&para(8, &r("<hp:t></hp:t>"))[..60]));
++    // Backspace on the empty line (merge) and partial formatting succeed.
++    core.merge_paragraph_native(0, 2).unwrap();
++    core.apply_char_format_native(0, 1, 0, 1, BOLD).unwrap();
++    let xml = section_xml(&core.export_hwpx_native().unwrap());
++    assert!(xml.contains(&r("<hp:t>C</hp:t><hp:t></hp:t>")), "{xml}");
++    let reopened =
++        crate::document_core::DocumentCore::from_bytes(&core.export_hwpx_native().unwrap())
++            .unwrap();
++    assert_eq!(
++        reopened.document.sections[0]
++            .paragraphs
++            .iter()
++            .map(|p| p.text.as_str())
++            .collect::<Vec<_>>(),
++        core.document.sections[0]
++            .paragraphs
++            .iter()
++            .map(|p| p.text.as_str())
++            .collect::<Vec<_>>()
++    );
++}
++
++#[test]
++fn empty_text_template_empty_line_with_distinct_shape_is_tracked() {
++    // secPr/colPr run (charPr 0) + empty text run (charPr 1): two occurrences.
++    // Untracked, the writer would add a charPr-0 text run for the template.
++    let runs = r("<hp:t/>").replace(r#"charPrIDRef="0""#, r#"charPrIDRef="1""#);
++    let source = EMPTY_SECTION_XML.replacen(TEMPLATE_TEXT_RUN, &runs, 1);
++    let section = parse_hwpx_section(&source).unwrap();
++    assert_eq!(section.paragraphs[0].char_shapes.len(), 2);
++    assert!(section.paragraphs[0].hwpx_text_topology.is_some());
++    let doc = Document {
++        sections: vec![section.clone()],
++        ..Default::default()
++    };
++    let mut ctx = SerializeContext::collect_from_document(&doc);
++    let out = String::from_utf8(write_section(&section, &doc, 0, &mut ctx).unwrap()).unwrap();
++    assert_eq!(ctx.text_topology_error, None);
++    assert!(
++        out.contains(&format!("</hp:run>{}<hp:linesegarray>", explicit(&runs))),
++        "{out}"
++    );
++    assert!(
++        !out.contains(&r("<hp:t></hp:t>")),
++        "synthesized template text run: {out}"
++    );
++    // The shared-occurrence empty first paragraph is the canonical form.
++    let shared = EMPTY_SECTION_XML.replacen(TEMPLATE_TEXT_RUN, &r("<hp:t/>"), 1);
++    let section = parse_hwpx_section(&shared).unwrap();
++    assert_eq!(section.paragraphs[0].char_shapes.len(), 1);
++    assert!(section.paragraphs[0].hwpx_text_topology.is_none());
++}
 --- a/src/serializer/hwpx/mod.rs
 +++ b/src/serializer/hwpx/mod.rs
 @@ -276,6 +276,24 @@
@@ -1915,7 +2869,7 @@
  
 --- a/src/serializer/hwpx/section.rs
 +++ b/src/serializer/hwpx/section.rs
-@@ -745,6 +745,36 @@
+@@ -745,6 +745,41 @@
          }
      }
  
@@ -1937,11 +2891,16 @@
 +                    )
 +                })?;
 +            match t.restore(p, &out[begin..end], true) {
-+                Ok(restored) => {
-+                    ctx.text_topology_checked
-+                        .insert(p as *const Paragraph as usize);
-+                    out.replace_range(begin..end, &restored);
-+                }
++                Ok((restored, styles)) => match accept_text_styles(ctx, styles) {
++                    Ok(()) => {
++                        ctx.text_topology_checked
++                            .insert(p as *const Paragraph as usize);
++                        out.replace_range(begin..end, &restored);
++                    }
++                    Err(why) => {
++                        ctx.text_topology_error.get_or_insert(why);
++                    }
++                },
 +                Err(why) => {
 +                    ctx.text_topology_error.get_or_insert(why);
 +                }
@@ -1952,7 +2911,7 @@
      // 추가 문단: `</hp:p></hs:sec>` 직전에 `<hp:p>` 요소를 삽입.
      if section.paragraphs.len() > 1 {
          let mut extra = String::new();
-@@ -879,13 +909,28 @@
+@@ -879,13 +914,33 @@
      } else {
          0
      };
@@ -1968,11 +2927,16 @@
 +    if !defer_topology {
 +        if let Some(t) = &para.hwpx_text_topology {
 +            match t.restore(para, &runs_xml, false) {
-+                Ok(restored) => {
-+                    ctx.text_topology_checked
-+                        .insert(para as *const Paragraph as usize);
-+                    runs_xml = restored;
-+                }
++                Ok((restored, styles)) => match accept_text_styles(ctx, styles) {
++                    Ok(()) => {
++                        ctx.text_topology_checked
++                            .insert(para as *const Paragraph as usize);
++                        runs_xml = restored;
++                    }
++                    Err(why) => {
++                        ctx.text_topology_error.get_or_insert(why);
++                    }
++                },
 +                Err(why) => {
 +                    ctx.text_topology_error.get_or_insert(why);
 +                }
@@ -1982,11 +2946,23 @@
  
      // [#4778] 위치 축이 무너진 문단(파서가 담지 못한 8유닛 슬롯 — 예: 차례표지
      // 0x0008 — 이 있거나 mismatch 폴백으로 컨트롤을 말미에 몰아쓴 문단)에는 저장
-@@ -6881,3 +6926,7 @@
+@@ -6881,3 +6936,19 @@
          }
      }
  }
 +
++/// Source `hp:t@charStyleIDRef` values replayed by the empty-text topology
++/// must reference character styles of this document's header.
++fn accept_text_styles(ctx: &mut SerializeContext, styles: Vec<u16>) -> Result<(), String> {
++    for style in styles {
++        if !ctx.text_char_style_ids.contains(&style) {
++            return Err("hp:t charStyleIDRef does not reference a character style".into());
++        }
++        ctx.style_ids.reference(style);
++    }
++    Ok(())
++}
++
 +#[cfg(test)]
 +#[path = "empty_text_tests.rs"]
-+mod empty_text_tests;
++pub(crate) mod empty_text_tests;

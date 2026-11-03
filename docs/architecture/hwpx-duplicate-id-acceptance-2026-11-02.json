@@ -3110,5 +3110,235 @@
     },
     "nextNarrowTask": "independently reproduce the empty hp:t structure loss in corpus parse_hwpx/156492236___min.hwpx without weakening canonical comparison",
     "rawEvidence": "target/hwpx-secpr-tabstop-20261103/"
-  }
+  },
+ "emptyTextTopologyFinalFollowup": {
+  "date": "2026-11-03",
+  "status": "PASS",
+  "scope": "Finalize WIP 025c321 HWPX empty hp:t / bare-run topology: identity value seal, control event identity, formatting edits, 18 refusals, corpus and native acceptance",
+  "sourceHead": "025c321d4ad9595fec7d3f0b14d7533392f702a4",
+  "branch": "master",
+  "gitlinks": {
+   "external/rhwp": "1a76570e833917d15817415a53c09ad61ab3203f",
+   "external/wordcraft": "fc41918814f62645b6746ed68e71e8c2c2e85d6f"
+  },
+  "wip": {
+   "patchSha256": "5af2aec7e0041ad6a54d50d313e5c6363611c67cfa162945c8cc09d5fdb747f4",
+   "generation": "0bc2c0f2feb7dec1548eedd5efceafa4bdbe744832098c173330cdbdfc7d802c",
+   "wasmSha256": "0d0f2b30148dc70349d2e08d7f22173c02ce5b60901e9b3e178e62aafa0d6b56",
+   "limitationsReproduced": [
+    "same-carrier numeric paragraph id change passed (Arc pointer only)",
+    "shallow ctrl keys: distinguishable controls (bookmark name) swappable",
+    "every formatting edit refused as stale",
+    "6 hp:t@charStyleIDRef documents failed to OPEN",
+    "cross-feature suites duplicate-id/strikeout/strike3d-derived fail on the WIP generation (canonical empty lines tracked)"
+   ]
+  },
+  "final": {
+   "patch": {
+    "name": "hwpx-empty-text-boundaries.patch",
+    "sha256": "1fc2efea7d66a1a1c96eef5b3103e06b9bac69ce62108c3784a38c1e220b29f5",
+    "files": 13,
+    "previousTenUnchanged": true,
+    "seriesReproducesDevSource": true
+   },
+   "generation": "89fbb642fa17f12104ddbebb5d20e90ab9a1007f358e3bde9aa77418698b1baf",
+   "wasmSha256": "c3fd55c45fdb8670e18be75db8e67de13eef9f719bb9c8bb102771b9ed92e5dd",
+   "rhwpJsSha256": "70cde06a369fa7fd4fc8bc8f3d6acaee158596ba1a116a2c72159002b0b5654e",
+   "sourceFingerprint": "9da3a08ff01efc083687b64f30a6329ab897ecc6c36960616fca995919dfb1e6",
+   "sourceTreeSha256": "d0f47625331e71547d5654cd2ab1505b36d17ee1b492e842daedac73dcab6bfc",
+   "build": "--locked --offline release, cargo/rustc 1.99.1, wasm-bindgen 0.2.127",
+   "retiredToIgnoredStore": [
+    "65442a921eece4d4a64949143c3ff8f2f76c88ac1902599b2b8d05720205f908",
+    "7b1bef5fa114ac99925b60dba3f0ade63661d014a1651517fbdbf99b5b7bb27b",
+    "63edd86596c36582ba1b993e44e005e0afba7d4dd35829ffd718b1025a7cf698"
+   ]
+  },
+  "identity": {
+   "rule": "topology binds carrier and numeric value; only serializer one-time reservation of a deferred (0) id, clipboard reidentification and merge-undo restoration rebind",
+   "diagnostic": "paragraph identity value changed without a supported reidentification",
+   "failedOnWip": true
+  },
+  "controlIdentity": {
+   "ownership": [
+    "id",
+    "beginIDRef",
+    "fieldid"
+   ],
+   "eventAttributes": {
+    "pageNum": [
+     "pos",
+     "formatType",
+     "sideChar"
+    ],
+    "autoNum/newNum": [
+     "num",
+     "numType"
+    ],
+    "bookmark": [
+     "name"
+    ],
+    "fieldBegin": [
+     "type",
+     "name"
+    ],
+    "header/footer": [
+     "applyPageType"
+    ],
+    "footNote/endNote": [
+     "number"
+    ],
+    "pageHiding": [
+     "hide*"
+    ],
+    "colPr": [
+     "layout",
+     "colCount",
+     "sameSz",
+     "sameGap"
+    ]
+   },
+   "normalizedNotIdentity": [
+    "fieldBegin@dirty/zorder/metaTag",
+    "footNote@instId/suffixChar",
+    "colPr@type",
+    "inline token layout attributes"
+   ],
+   "ambiguity": "ambiguous control event identity",
+   "mappedNormalization": "[#6869] only the first hp:pageNum of a paragraph is emitted",
+   "shallowKeyMutationFailsSwapTest": true
+  },
+  "formatting": {
+   "supported": "real formatting commands keeping every IR occurrence count/order/start; seal with previous ids must equal pre-edit seal",
+   "refused": [
+    "character formatting changed run occurrence boundaries",
+    "character formatting edit changed more than run character shapes",
+    "character formatting of hp:t charStyleIDRef text is unsupported",
+    "direct char_shapes mutation: stale"
+   ],
+   "nativeAcceptance": "PASS (Shift+Right + Ctrl+I, appended charPr 7, empty hp:t kept, saved/synced, reopen clean)"
+  },
+  "canonicalEmptyLine": "empty paragraph, only secPr/colPr controls, one IR occurrence, single text run holding one attribute-less empty hp:t: not tracked (IR complete, writer emits it)",
+  "wipRefusals": {
+   "classified": 18,
+   "resolved": {
+    "char-style-attribute": 6,
+    "page-number-fold": 3,
+    "inline-token-normalization": 2
+   },
+   "retained": {
+    "field-end-table-order": 4,
+    "object-identity-renumbering": 1,
+    "unknown-object-loss": 1,
+    "inline-token-loss": 1
+   }
+  },
+  "engineUnitTests": {
+   "emptyText": "44/44",
+   "fullLibrary": {
+    "passed": 3820,
+    "failed": 121,
+    "ignored": 13,
+    "failedSetEqualsHistorical": true
+   }
+  },
+  "wasmRegressions": {
+   "positive": 19,
+   "editing": 11,
+   "crossFeature": {
+    "duplicate-id": "PASS (nested copy on derived fixture + original refusal asserted)",
+    "identity": "PASS",
+    "spine-linear": "PASS",
+    "charpr-presence": "PASS",
+    "strikeout": "PASS",
+    "strike3d-derived": "PASS",
+    "secpr-tabstop": "PASS"
+   },
+   "conversionAB": "HWP5/HWP3/HML/new-document HWPX+HWP outputs and topology documents' HWP5 outputs byte-identical to f817bec0"
+  },
+  "corpus": {
+   "total": 734,
+   "baseline": {
+    "exported": 585,
+    "failed": 149,
+    "safe": 112,
+    "unsafe": 464,
+    "unknown": 9
+   },
+   "wip": {
+    "exported": 567,
+    "failed": 167,
+    "safe": 157,
+    "unsafe": 401,
+    "unknown": 9
+   },
+   "final": {
+    "exported": 578,
+    "failed": 156,
+    "safe": 157,
+    "unsafe": 412,
+    "unknown": 9
+   },
+   "safeRegressions": 0,
+   "newFindings": 0,
+   "newlySafeVsBaseline": 45,
+   "wipBothExportedByteIdentical": "567/567",
+   "wipToFinalTransitions": {
+    "export-failed->unsafe": 11
+   },
+   "stability": {
+    "candidates": 578,
+    "fullyStable": 563,
+    "preexistingUnstable": 15,
+    "newStabilityFindings": 0
+   }
+  },
+  "originalTarget": {
+   "source": "external/rhwp/fuzz/corpus/parse_hwpx/156492236___min.hwpx",
+   "sourceSha256": "d6f4d431b9a4d934b3b4e4330546ef61768c953c2e1328010d2f75440fefa070",
+   "outputSha256": "78be294319e398595ad3f65ffd5e96890d5a844fc10f55c43aa4a2e82633f655",
+   "emptyText": 57,
+   "bareRuns": 111,
+   "runs": 1428,
+   "whitespaceText": 127,
+   "perLocation": true,
+   "preflight": [
+    "unsafe",
+    [
+     "partChanged:Contents/header.xml",
+     "partChanged:Contents/section0.xml"
+    ]
+   ],
+   "outOfScope": [
+    "header typeInfo@familyType",
+    "41 cellMargin"
+   ]
+  },
+  "nativeAcceptance": {
+   "appSha256": "2673363242817c4d7610f2c396d65dc04ba5279ce02012d3d3e8f5571c3fda7d",
+   "loadedGeneration": "89fbb642fa17f12104ddbebb5d20e90ab9a1007f358e3bde9aa77418698b1baf",
+   "positive": [
+    "종이기준.hwpx",
+    "list_marker_head_synthetic.hwpx",
+    "blank_hwpx.hwpx",
+    "synthetic native-empty-text.hwpx",
+    "formatting native-format.hwpx"
+   ],
+   "negative": {
+    "FileConflict": "x5 runs",
+    "missingParagraphId": "EngineFailure x5",
+    "PreviewStale": "UnsafeSave",
+    "remainingUnsafe": "UnsafeSave (original target)",
+    "ambiguousControl": "EngineFailure, same-WASM cause ambiguous control event identity",
+    "topologySplit": "real Return, caret 0:0:1->0:1:0, SaveFailure export stage, same-WASM replay paragraphs 1->2 and paragraph split has unsupported run correspondence, unedited export ok, directory listing unchanged"
+   },
+   "allRejectedSourceShaUnchanged": true,
+   "cleanupSurvivors": 0
+  },
+  "notRun": [
+   "native same-carrier id mutation and ambiguous-mapping UI paths (no real UI path; covered by Rust/package export tests)",
+   "RHWP clippy/workspace suites",
+   "performance/visual suites"
+  ],
+  "rawEvidence": "target/hwpx-empty-text-final-20261103/ (ignored)"
+ }
 }

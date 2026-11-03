@@ -38,7 +38,13 @@ CODE = r"""
 import assert from 'node:assert/strict';
 import {readFileSync,writeFileSync} from 'node:fs';
 import {resolve} from 'node:path';import {pathToFileURL} from 'node:url';
-const [pkg,source,out,planFile]=process.argv.slice(2);
+const [pkg,source,out,planFile,mode]=process.argv.slice(2);
+// [#6869] 'fold' only: the serializer emits one hp:pageNum per paragraph, so the
+// reopened model lacks later pgnp controls (their slots shift positions).
+const fold=mode==='fold';
+const project=s=>{if(!fold)return s;const seen=new Set();
+ const controls=s.controls.filter(c=>{if(c.ctrlId!=='pgnp')return true;const k=c.list+':'+c.para;if(seen.has(k))return false;seen.add(k);return true;})
+  .map(({controlIndex,pos,...c})=>c);return {...s,controls};};
 const m=await import(pathToFileURL(resolve(pkg,'rhwp.js')));
 m.initSync({module:readFileSync(resolve(pkg,'rhwp_bg.wasm'))});
 const snapshot=d=>({
@@ -53,7 +59,7 @@ const emit=(doc,name)=>{let e;try{e=doc.exportHwpxWithReport();const loss=JSON.p
 try{
  d=new m.HwpDocument(readFileSync(source));const before=snapshot(d);writeFileSync(resolve(out,'A-model.json'),JSON.stringify(before,null,2));
  stage='export';const b=emit(d,'B-first');emit(d,'C-repeat');assert.deepEqual(snapshot(d),before);
- stage='reopen';r=new m.HwpDocument(b);assert.deepEqual(snapshot(r),before);emit(r,'D-reopened');
+ stage='reopen';r=new m.HwpDocument(b);assert.deepEqual(project(snapshot(r)),project(before));emit(r,'D-reopened');
  writeFileSync(resolve(out,'D-model.json'),JSON.stringify(snapshot(r),null,2));result.reopenModelEqual=true;
  for(const [i,op] of JSON.parse(readFileSync(planFile)).entries()){
   stage='edit-'+i;const value=JSON.parse(d[op.method](...op.args));assert.equal(value.ok,true,JSON.stringify(value));
@@ -119,6 +125,57 @@ def canonical(node):
             [(canonical(c), c.tail or '') for c in node])
 
 
+# Classified control event identity, mirroring hwpx_topology::event_attrs:
+# stable ownership ids plus emitted attributes that distinguish otherwise
+# equal controls. Serializer-normalized representation (fieldBegin
+# dirty/zorder/metaTag, footNote instId/suffixChar, colPr type) is not identity;
+# the whole-part oracle and the baseline comparison still assess it.
+OWNERSHIP = ('id', 'beginIDRef', 'fieldid')
+EVENT_ATTRS = {
+    'pageNum': ('pos', 'formatType', 'sideChar'), 'autoNum': ('num', 'numType'), 'newNum': ('num', 'numType'),
+    'bookmark': ('name',), 'fieldBegin': ('type', 'name'), 'header': ('applyPageType',), 'footer': ('applyPageType',),
+    'footNote': ('number',), 'endNote': ('number',), 'colPr': ('layout', 'colCount', 'sameSz', 'sameGap'),
+    'pageHiding': ('hideHeader', 'hideFooter', 'hideMasterPage', 'hideBorder', 'hideFill', 'hidePageNum'),
+}
+
+
+def local(tag):
+    return tag.rsplit('}', 1)[-1]
+
+
+def text_event(t):
+    """hp:t occurrence: its attributes, text and inline tokens. Inline layout
+    attributes (tab width/leader/type ...) are model-emitted, not identity."""
+    inline = [(c.tag, sorted((k, v) for k, v in c.attrib.items() if k in ('id', 'Id', 'TcId')), c.tail or '') for c in t]
+    return (sorted(t.attrib.items()), t.text or '', inline)
+
+
+def is_page_num(event):
+    return event[0] == 'control' and event[1] == HP+'ctrl' and [c[0] for c in event[3]] == [HP+'pageNum']
+
+
+def fold_page_numbers(inv):
+    """[#6869] Expected output projection of a source inventory: the serializer
+    emits only the first hp:pageNum of each paragraph render scope. Later
+    events of the same run shift left by the folded controls."""
+    seen, runs, removed = set(), {}, {}
+    for path, (attrs, events) in inv['runs'].items():  # document (walk) order
+        owner, kept = path.rsplit('/run[', 1)[0], []
+        for index, event in enumerate(events):
+            if is_page_num(event):
+                if owner in seen:
+                    removed.setdefault(path, []).append(index)
+                    continue
+                seen.add(owner)
+            kept.append(event)
+        runs[path] = (attrs, kept)
+    shift = lambda item: {**item, 'event': item['event'] - sum(i < item['event'] for i in removed.get(item['run'], []))}
+    emptied = {p for p, (_, e) in runs.items() if not e and inv['runs'][p][1]}
+    bare = set(inv['bare']) | emptied
+    return {**inv, 'runs': runs, 'bare': [p for p in runs if p in bare],
+            'empty': [shift(e) for e in inv['empty']], 'whitespace': [shift(e) for e in inv['whitespace']]}
+
+
 def inventory(xml):
     root = ET.fromstring(xml)
     runs, paragraphs, empties, bare, whitespace = {}, {}, [], [], []
@@ -136,10 +193,10 @@ def inventory(xml):
                     # Element-only XML indentation outside hp:t is not its text.
                     # The whole-part oracle still reports that existing difference.
                     tail = child.tail if child.tail and not child.tail.isspace() else ''
-                    events.append(('text', canonical(child), tail))
+                    events.append(('text', text_event(child), tail))
                 else:
                     identity = {k: v for k, v in child.attrib.items() if k == 'id'}
-                    inner = [(c.tag, {k: v for k, v in c.attrib.items() if k in ('id', 'beginIDRef', 'fieldid')}) for c in child] if child.tag == HP+'ctrl' else []
+                    inner = [(c.tag, {k: v for k, v in c.attrib.items() if k in OWNERSHIP or k in EVENT_ATTRS.get(local(c.tag), ())}) for c in child] if child.tag == HP+'ctrl' else []
                     events.append(('control', child.tag, identity, inner))
             runs[path] = (dict(node.attrib), events)
             if not len(node) and not (node.text or ''):
@@ -159,7 +216,7 @@ def inventory(xml):
     return {'runs': runs, 'paragraphs': paragraphs, 'empty': empties, 'bare': bare, 'whitespace': whitespace}
 
 
-def run(package, source, out, plan=(), reuse=False):
+def run(package, source, out, plan=(), reuse=False, fold=False):
     if out.exists():
         assert reuse, ('existing output requires explicit verified reuse', out)
         assert json.loads((out/'command.json').read_text())['sourceSha256'] == sha(source)
@@ -169,7 +226,7 @@ def run(package, source, out, plan=(), reuse=False):
     out.mkdir()
     (out/'plan.json').write_text(json.dumps(plan, ensure_ascii=False))
     (out/'driver.mjs').write_text(CODE)
-    command = ['node', str(out/'driver.mjs'), str(package), str(source), str(out), str(out/'plan.json')]
+    command = ['node', str(out/'driver.mjs'), str(package), str(source), str(out), str(out/'plan.json')] + (['fold'] if fold else [])
     p = subprocess.run(command, text=True, capture_output=True, cwd=ROOT)
     (out/'node.log').write_text(p.stdout+p.stderr)
     (out/'command.json').write_text(json.dumps({'argv': command, 'exitCode': p.returncode, 'sourceSha256': sha(source)}, indent=2))
@@ -221,7 +278,7 @@ def stable(source, folder, require_safe, checker, require_section_equal=True):
         assert src.keys() == dst.keys()
         for name in src:
             if re.fullmatch(r'Contents/section[0-9]+\.xml', name):
-                a, b = inventory(src[name]), inventory(dst[name])
+                a, b = fold_page_numbers(inventory(src[name])), inventory(dst[name])
                 assert a == b, (source, output, name, 'run/event occurrence topology changed')
                 if require_section_equal:
                     assert oracle.equal(src[name], dst[name]), (source, name, oracle.first_difference(oracle.parse(src[name]), oracle.parse(dst[name])))
@@ -245,6 +302,10 @@ def positive(args):
         'control-both': r('<hp:t/>'+ctrl+'<hp:t/><hp:t/>'),
         'whitespace': r('<hp:t/><hp:t> \t </hp:t><hp:t/>'),
         'entities-cdata': r('<hp:t/><hp:t>&amp;<![CDATA[한글]]></hp:t><hp:t/>'),
+        # OWPML character-style reference (style 12 is the blank template's CHAR style).
+        'char-style': r('<hp:t charStyleIDRef="12">AB</hp:t><hp:t/>'),
+        # Inline tab layout attributes are model-emitted (type 0 -> 1 normalization).
+        'inline-tab': r('<hp:t>A<hp:tab width="0" leader="0" type="0"/>B</hp:t><hp:t/>'),
     }
     rows = []
     # Literal tab has its own existing canonical normalization; use ordinary
@@ -255,8 +316,9 @@ def positive(args):
         folder = args.out/(name+'-run')
         state = run(args.package, source, folder, reuse=args.reuse_focused)
         assert state['ok'], (name, state)
-        result = stable(source, folder, name not in ('empty-cdata', 'entities-cdata'), args.checker)
-        if name in ('empty-cdata', 'entities-cdata'):
+        normalized = ('empty-cdata', 'entities-cdata', 'inline-tab')
+        result = stable(source, folder, name not in normalized, args.checker, require_section_equal=name != 'inline-tab')
+        if name in normalized:
             assert result['preflight']['outcome'] in ('safe', 'unsafe'), result
             assert all(f['code'] == 'partChanged' and f.get('part') == 'Contents/section0.xml' for f in result['preflight'].get('findings', [])), result
         rows.append({'name': name, 'sourceSha256': sha(source), **result})
@@ -300,7 +362,7 @@ def edits(args):
     rows.append({'name': 'unrelated', 'node': state['operations']})
     for name, method, values, cause in [
         ('split', 'splitParagraph', [0, 1, 1], 'paragraph split has unsupported run correspondence'),
-        ('format', 'applyCharFormat', [0, 1, 0, 1, '{"bold":true}'], 'stale text, formatting or control-slot anchors'),
+        ('format', 'applyCharFormat', [0, 1, 0, 1, '{"bold":true}'], 'character formatting changed run occurrence boundaries'),
     ]:
         source = make_fixture(args.out, 'unsupported-'+name, body)
         folder = args.out/('unsupported-'+name+'-run')
@@ -311,22 +373,60 @@ def edits(args):
         noedit = verdict(args.checker, source, folder/'B-first.hwpx')
         assert noedit['outcome'] == 'safe' and not noedit.get('findings'), noedit
         rows.append({'name': 'unsupported-'+name, 'node': state['operations'], 'sourceUnchanged': True, 'noOutputBytes': True})
-    # A known output normalization cannot be matched to two source control
-    # occurrences. Do not infer identity from equal shape/offset/count.
+    # Whole-run character formatting through the real WASM command keeps the
+    # occurrence mapping; the new charPrIDRef is emitted with the empty hp:t.
+    body2 = r('<hp:t>AB</hp:t><hp:t/>')+r('<hp:t>CD</hp:t>', '1')
+    source = make_fixture(args.out, 'format-whole-run', body2)
+    folder = args.out/'format-whole-run-run'
+    state = run(args.package, source, folder, [{'method': 'applyCharFormat', 'args': [0, 1, 0, 2, '{"bold":true}']}], reuse=args.reuse_focused)
+    assert state['ok'], state
+    xml = parts(folder/'edit-0.hwpx')['Contents/section0.xml'].decode()
+    found = re.findall(r'<hp:run charPrIDRef="([0-9]+)"><hp:t>AB</hp:t><hp:t></hp:t></hp:run><hp:run charPrIDRef="1"><hp:t>CD</hp:t></hp:run>', xml)
+    assert len(found) == 1 and found[0] != '0', xml
+    a, b = inventory(parts(source)['Contents/section0.xml']), inventory(xml)
+    location = lambda inv: [(e['run'], e['event']) for e in inv['empty']]
+    assert location(a) == location(b), (a['empty'], b['empty'])
+    assert [e['shape'] for e in b['empty'] if '/p[2]/' in e['run']] == [found[0]], b['empty']
+    assert list(a['runs']) == list(b['runs']) and a['bare'] == b['bare']
+    rows.append({'name': 'format-whole-run', 'node': state['operations'], 'newCharPrIDRef': int(found[0])})
+    # [#6869] Mapped serializer normalization: only the first hp:pageNum of a
+    # paragraph is emitted; empty hp:t ownership around it is preserved.
     ctrl = '<hp:ctrl><hp:pageNum pos="BOTTOM_CENTER" formatType="DIGIT" sideChar="-"/></hp:ctrl>'
-    source = make_fixture(args.out, 'unsupported-control-merge', r('<hp:t>A</hp:t>'+ctrl+ctrl+'<hp:t/>'))
-    folder = args.out/'unsupported-control-merge-run'
+    source = make_fixture(args.out, 'page-number-fold', r('<hp:t>A</hp:t>'+ctrl+ctrl+'<hp:t/>'))
+    folder = args.out/'page-number-fold-run'
+    state = run(args.package, source, folder, reuse=args.reuse_focused, fold=True)
+    assert state['ok'], state
+    result = stable(source, folder, False, args.checker, require_section_equal=False)
+    assert r('<hp:t>A</hp:t>'+ctrl+'<hp:t></hp:t>') in parts(folder/'B-first.hwpx')['Contents/section0.xml'].decode()
+    assert result['preflight']['outcome'] == 'unsafe' and [f.get('part') for f in result['preflight']['findings']] == ['Contents/section0.xml'], result
+    rows.append({'name': 'page-number-fold', **result})
+    # Same event identity, different source representation: no proof of
+    # correspondence. Do not infer identity from equal shape/offset/count.
+    x = '<hp:ctrl><hp:colPr id="" type="NEWSPAPER" layout="LEFT" colCount="1" sameSz="1" sameGap="0"/></hp:ctrl>'
+    source = make_fixture(args.out, 'unsupported-ambiguous-control', r(x+'<hp:t/>'+x.replace('NEWSPAPER', 'NORMAL')))
+    folder = args.out/'unsupported-ambiguous-control-run'
     digest = sha(source)
     state = run(args.package, source, folder, reuse=args.reuse_focused)
-    assert not state['ok'] and state['stage'] == 'export' and 'emitted text/control event order differs' in state['error'], state
+    assert not state['ok'] and state['stage'] == 'export' and 'ambiguous control event identity' in state['error'], state
     assert sha(source) == digest and not (folder/'B-first.hwpx').exists()
-    rows.append({'name': 'unsupported-control-merge', 'diagnostic': state, 'sourceUnchanged': True, 'noOutputBytes': True})
-    # Fixture remains safe for actual native IME save/reopen acceptance.
+    rows.append({'name': 'unsupported-ambiguous-control', 'diagnostic': state, 'sourceUnchanged': True, 'noOutputBytes': True})
+    # Fixtures remain safe for actual native IME / formatting save acceptance.
     safe = make_fixture(args.out, 'native-empty-text', r('<hp:t>A</hp:t><hp:t/><hp:t/>')+r(''), later=False)
     folder = args.out/'native-empty-text-run'
     state = run(args.package, safe, folder, reuse=args.reuse_focused)
     assert state['ok'], state
     stable(safe, folder, True, args.checker)
+    # Own run occurrence (charPr 1 differs from the secPr handoff run's 0):
+    # formatting the template's group 0 would split it and is refused.
+    safe = make_fixture(args.out, 'native-format', r('<hp:t>AB</hp:t><hp:t/>', '1')+r('<hp:t>CD</hp:t>', '2'), later=False)
+    folder = args.out/'native-format-run'
+    state = run(args.package, safe, folder, [{'method': 'applyCharFormat', 'args': [0, 0, 0, 2, '{"italic":true}']}], reuse=args.reuse_focused)
+    assert state['ok'], state
+    stable(safe, folder, True, args.checker)
+    xml = parts(folder/'edit-0.hwpx')['Contents/section0.xml'].decode()
+    found = re.findall(r'<hp:run charPrIDRef="([0-9]+)"><hp:t>AB</hp:t><hp:t></hp:t></hp:run><hp:run charPrIDRef="2"><hp:t>CD</hp:t></hp:run>', xml)
+    assert len(found) == 1 and found[0] not in ('0', '1', '2'), xml
+    rows.append({'name': 'native-format-fixture', 'node': state['operations']})
     return rows
 
 
@@ -355,6 +455,10 @@ def real(args):
 def neutralize(xml):
     """Explanation-only projection; the production checker remains unchanged."""
     root = ET.fromstring(xml)
+    # The baseline drops every hp:t@charStyleIDRef; the candidate replays it
+    # only for topology-owned source text elements. Explanation-only.
+    for t in root.iter(HP+'t'):
+        t.attrib.pop('charStyleIDRef', None)
     for run in root.iter(HP+'run'):
         for t in list(run):
             if t.tag == HP+'t' and not t.attrib and not len(t) and not (t.text or ''):
@@ -409,13 +513,18 @@ def verify_source_anchors(source_xml, baseline_xml, candidate_xml):
     the owning paragraph occurrence, ID, every local run and event must match.
     """
     source, baseline, candidate = map(inventory, (source_xml, baseline_xml, candidate_xml))
+    # Topology-owned paragraphs are those with a SOURCE empty hp:t or bare run.
+    # A run emptied only by the #6869 fold in another paragraph is generic
+    # serializer output (unchanged vs baseline, checked by neutralize below).
+    owned = source
+    source = fold_page_numbers(source)
     source_paras, baseline_paras, candidate_paras = (list(x['paragraphs']) for x in (source, baseline, candidate))
     assert len(source_paras) == len(baseline_paras) == len(candidate_paras), 'paragraph ownership occurrence count changed'
     relocations = []
     sensitive = set()
-    for item in source['empty']:
+    for item in owned['empty']:
         sensitive.add(item['run'].rsplit('/run[', 1)[0])
-    for path in source['bare']:
+    for path in owned['bare']:
         sensitive.add(path.rsplit('/run[', 1)[0])
     def local_runs(inv, owner):
         return [v for path, v in inv['runs'].items() if path.rsplit('/run[', 1)[0] == owner]
@@ -485,6 +594,58 @@ def corpus_stability(args, before, after):
     return summary
 
 
+# The 18 documents first refused by the WIP candidate (0bc2c0f2), classified
+# individually (docs/architecture/save-preservation.md). Resolved classes must
+# export; retained classes must keep their exact fail-closed cause.
+EVENT_ORDER = 'HWPX empty-text provenance: emitted text/control event order differs'
+WIP_REFUSALS = {
+    # resolved: hp:t@charStyleIDRef (OWPML character-style reference) preserved
+    'samples/hwpx/[2027] 온새미로 1 본교재.hwpx': ('3d973ca03799d4ee48840b3a6f670aeb6d5b544212424be60c9fcd2d22ca8e5d', 'char-style-attribute', None),
+    'samples/hwpx/exam_social.hwpx': ('c11b117dfc55606bb3ea703f9ea5b0a14481f7e70e918bc09ce4e202a04c9fd0', 'char-style-attribute', None),
+    'samples/hwpx/exam_social-p1.hwpx': ('741ae19346e1aa7b5c82d2a07f10ab3bcfcb73ea54d9af60fe040d165875aebe', 'char-style-attribute', None),
+    'samples/hwpx/opengov/36388711_사회보장제도 신설 협의요청서(청년오피스)_260624.hwpx': ('8d1e7da9d5e4eda6179565509df7c707a887e175d21542347847f066936a65af', 'char-style-attribute', None),
+    'samples/hwpx/pr-1674.hwpx': ('d50cb93dfd1d4cf26391b524897fd11981f6338ef8a243f440435b4f77f32e71', 'char-style-attribute', None),
+    'samples/rowbreak-problem-pages.hwpx': ('4ccc321e7eb146f28b768654502a128ba1ae408238fd1ed37d51e963732eb5b0', 'char-style-attribute', None),
+    # resolved: [#6869] serializer folds every hp:pageNum after the first in a paragraph (mapped)
+    'mydocs/pr/assets/issue7445/75544_pii_bunseok.hwpx': ('f429768ec02e5a849d08c06678cbee029fdc8618ca9e2bdcdbba485087fe71f1', 'page-number-fold', None),
+    'samples/task2097/75544_pii_bunseok.hwpx': ('f429768ec02e5a849d08c06678cbee029fdc8618ca9e2bdcdbba485087fe71f1', 'page-number-fold', None),
+    'samples/issue6465/press_release_footer_logos.hwpx': ('89ec9065432547ae141328dfb957981a26f9dd1b17b9bba9d721e5ae4fbbf5fa', 'page-number-fold', None),
+    # resolved: inline hp:tab layout attributes (type 0 -> 1) are model-emitted, not event identity
+    'tests/fixtures/issue_6874/seizure-list-candidate-hancom-2020.hwpx': ('be66f55370f4a9db1248f59a7ad26b36c223b1bdab6bfbf4ad02182e4bad5452', 'inline-token-normalization', None),
+    'tests/fixtures/issue_7091/pr7091-sample11-candidate-hancom.hwpx': ('56f36098d70369514ba759b69da3af5fa30672f7e0b4f3f0b8fd73a73a79dd97', 'inline-token-normalization', None),
+    # retained: serializer reorders fieldEnd and a table at one position (pre-existing, outside topology)
+    'samples/hwpx/opengov/36389312_결재문서본문_특정소방대상물 화재발생 알림(화재번호 2026-177).hwpx': ('a8b5e2604e2bd35e3caf35c94d46999182240fa7d5747c79c15f00ee53fdb504', 'field-end-table-order', EVENT_ORDER+' in IR run occurrence 1'),
+    'samples/task2279/36406174_gyeoljae.hwpx': ('4380392eda8225b7fb85d188d11d6b477b5d7c7657d433ba49b0418f9d347f20', 'field-end-table-order', EVENT_ORDER+' in IR run occurrence 0'),
+    'samples/task2279/36410902_gyeoljae.hwpx': ('f12612d125e8bc03180cdb217969470210b8f16ed54204db448933c75572b83b', 'field-end-table-order', EVENT_ORDER+' in IR run occurrence 0'),
+    'samples/task2279/36477373_gyeoljae.hwpx': ('34adf70eed79902380ba9a1b777cd5fb3c03b90923c92d11e733f91e7a9f5af7', 'field-end-table-order', EVENT_ORDER+' in IR run occurrence 0'),
+    # retained: loader renumbers container id 0 -> 1000 (no recorded identity mapping)
+    'samples/issue5797_shape_selfclosing_child.hwpx': ('e6b9fe6aacfa5460457131fe1914f29c54030ef892772a32ce1c9822973a90fb', 'object-identity-renumbering', EVENT_ORDER+' in IR run occurrence 0'),
+    # retained: hp:unknownObj events are not emitted (replaced by a table)
+    'samples/issue6035/cgmp_evaluation_table.hwpx': ('0f03119d6ac3e19f74fc9fcec5315ac6ed436bab5abffd0804e9cf3350dd747a', 'unknown-object-loss', EVENT_ORDER+' in IR run occurrence 0'),
+    # retained: inline hp:hypen tokens are dropped by the parser
+    'samples/task1725/text_footnote_tail_overpagination.hwpx': ('fccd4f8525feb2e9f2668532444c7e539649c0ec90a5d78273a1ac05dbca5b47', 'inline-token-loss', EVENT_ORDER+' in IR run occurrence 0'),
+}
+
+
+def classify_wip_refusals(rows):
+    seen = {}
+    for row in rows:
+        key = row['source'].split('/external/rhwp/', 1)[-1]
+        if key in WIP_REFUSALS:
+            digest, cls, cause = WIP_REFUSALS[key]
+            assert row['sourceSha256'] == digest, (key, 'source identity')
+            if cause is None:
+                assert row['after'] != 'export-failed' and 'newRefusal' not in row, (key, cls, row)
+            else:
+                assert row['after'] == 'export-failed' and row.get('newRefusal', '').endswith(cause), (key, cls, row)
+            seen[key] = cls
+    assert set(seen) == set(WIP_REFUSALS), sorted(set(WIP_REFUSALS) - set(seen))
+    unexpected = [r['source'] for r in rows if 'newRefusal' in r and r['source'].split('/external/rhwp/', 1)[-1] not in WIP_REFUSALS]
+    assert not unexpected, unexpected
+    return {'classified': len(seen), 'byClass': dict(Counter(seen.values())),
+            'resolved': sum(WIP_REFUSALS[k][2] is None for k in seen), 'retained': sum(WIP_REFUSALS[k][2] is not None for k in seen)}
+
+
 def corpus(args):
     fixtures = [Path(p) for p in args.corpus_list.read_text().splitlines() if p]
     before = batch.reuse_corpus(fixtures, args.reuse_baseline)
@@ -517,7 +678,9 @@ def corpus(args):
 
             assert not set(row['afterFindings'])-set(row['beforeFindings']), row
         rows.append(row)
+    classification = classify_wip_refusals(rows)
     summary = {'total': len(rows), 'before': dict(Counter(r['before'] for r in rows)), 'after': dict(Counter(r['after'] for r in rows)),
+               'wipRefusalClassification': classification,
                'newlySafe': sum(r['before'] != 'safe' and r['after'] == 'safe' for r in rows),
                'changedDocuments': sum(bool(r['changedParts']) for r in rows), 'newRefusals': sum('newRefusal' in r for r in rows),
                'safeRegressions': 0, 'unexpectedFindings': 0}
