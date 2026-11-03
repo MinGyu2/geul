@@ -1628,3 +1628,31 @@ native(XIM): 같은 이벤트 순서에서 문단 끝 `…가` 하나·revision 
 
 **한계:** XIM은 여전히 별도 수용 플랫폼이 아니다(이번에는 이 결함 경로와 일반 확정만 확인). 다른 XIM 서버(fcitx 등)의 운반 keydown 모양은 UNVERIFIED다.
 
+## 공유 IME 문맥의 문서 소유 경계 (2026-11-04)
+
+**검토한 가설:** XIM 중복 수정의 `terminal.confirmedByView` 기록은 `compositionEnd`에서 만들어질 때 `owner`가 비워져 소유 세션·세대가 없다.
+`detach`·`blur`·`pointerDown`은 이 기록을 지우지 않고, `syncOwner`는 owner가 있을 때만 세대 변경을 본다. 그래서 문서 A의 기록이 표면 전환(A unmount →
+같은 `ImeContext`로 B mount)이나 A의 다시 불러오기 뒤에도 남아, B의 운반 keydown + 같은 글자 `insertText`를 소비할 수 있다.
+
+**판정: 상태 전이는 VERIFIED(소스·합성 재현), 해로운 결과는 관측되지 않음, 사건 수준에서 미해결 모호성.**
+- 합성: A가 WebView 확정 뒤 재확정을 받기 전에 전환되면, B의 첫 사건이 조합 사건 없는 운반 keydown + `insertText("가")`일 때 B는 넣지 않는다
+  ("B가 유지해야 한다"는 기대로 쓴 임시 시험은 수정 전 코드에서 실패).
+- native(WebKitGTK 2.54.1, IBus 1.5.33·ibus-hangul 1.5.5, Release `853a0689…`): 실제 포인터로 탭을 누르면 XIM 재확정이 blur·detach 전에 **A 안에서** 소비되어
+  기록이 일반 완료 기록이 됐다(RHWP·WordCraft 진단 실행 모두 7/7, 조합 중 탭 전환은 원래 문서에 한 번). 코드로 탭을 바꾸면(DOM click, native mousedown 없음)
+  XIM·ibus 모두 B에 `beforeinput`/`input`/composition 사건이 하나도 오지 않았고(XIM 운반 keydown은 `isComposing=true`) 조합 글자는 A에만 남았다.
+  B의 정상 XIM 입력은 언제나 229 keydown + `compositionstart`로 시작해 기록을 지웠다.
+- 구별 불가: A의 늦은 XIM 재확정과 B의 "조합 사건 없이 오는 같은 글자 확정"은 DOM에서 같고 네이티브 거래 ID가 없다. 넣으면 옛 글자가 다른 문서에 들어갈 수
+  있고(속성 B), 버리면 그런 형태의 정상 입력을 잃는다(속성 A). 기록에 세션·세대를 붙여도 이 판정은 바뀌지 않는다.
+
+**유지한 계약(제품 코드 변경 없음):** 위 모호한 형태는 기존 계약("세대·표면이 바뀐 뒤 시작/preedit 없이 오는 단독 최종 입력은 버린 꼬리와 구별할 수 없어 보수적으로
+소비")대로 소비한다. 다른 문서·새 세대를 **바꾸는** 근거로는 쓰이지 않는다(소비만 함, revision 없음). 일반 키·새 조합 시작·조합 입력은 기록을 지운다. 표면 전환 때
+기록을 모두 지우는 안은 A의 늦은 재확정을 B에 넣을 수 있어, 기록을 무조건 유지하는 안은 지금과 같아 채택하지 않았다.
+
+**회귀 시험:** `src/components/Editor/imeOwnership.test.tsx` 23개 — 같은 문서 중복 억제(RHWP·WordCraft, 실제 `mousedown`·blur 포함), RHWP/WordCraft 4방향 전환에서
+A의 재확정이 B를 바꾸지 않음·실측 형태의 B 정상 입력은 같은 글자여도 들어감·A가 이미 소비했으면 B 입력 정상, 모호한 형태의 현재 계약, B의 일반 키·새 조합 시작이 기록을
+지움, 다시 불러온 뒤 옛 재확정은 새 모델을 바꾸지 않고 새 입력은 들어감, 연속한 같은 음절.
+
+**남은 한계:** 조합 사건 없이 같은 글자를 확정하는 입력기(관측되지 않음)가 있다면 전환 직후 첫 입력을 잃을 수 있다. 코드 탭 전환 직후 첫 키(공백)는 XIM·ibus 모두 페이지에
+사건이 오지 않아 다른 문서에 들어가지 않는다(앱이 받지 못하는 플랫폼 동작). 끊긴 조합 꼬리가 XIM 형태(운반 keydown + `insertText`, `isComposing=false`)로 B에 오는
+경로는 관측되지 않았고 따로 처리하지 않았다. 근거: 비공개 `geul-tests/reports/ime-ownership-20261104/REPORT.ko.md`.
+
