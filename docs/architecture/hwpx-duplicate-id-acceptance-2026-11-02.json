@@ -3396,5 +3396,75 @@
    "native app acceptance (no reachable save behavior change observed)"
   ],
   "rawEvidence": "target/hwpx-topology-boundary-hardening-20261103/ (ignored)"
+ },
+ "topologyFinalClosure": {
+  "date": "2026-11-03",
+  "status": "PASS",
+  "sourceHead": "755d6d3b003b699b0f143f578f3e395ce13ea0d9",
+  "gitlinks": {
+   "external/rhwp": "1a76570e833917d15817415a53c09ad61ab3203f",
+   "external/wordcraft": "fc41918814f62645b6746ed68e71e8c2c2e85d6f"
+  },
+  "issueA": {
+   "counterexample": "two CLICK_HERE fieldBegin controls, nested stringParam xml:space=preserve value ' ' vs '  ' and '' vs ' '",
+   "beforeFix": "whitespace-only text dropped from fingerprint: swap accepted; char reference / empty-element spellings falsely ambiguous",
+   "fix": "fingerprint uses semantic element values (text+CDATA+unescaped refs), keeps leaf values incl. whitespace/empty, drops inter-element whitespace, <a/> == <a></a>; emitted-event key unchanged",
+   "realWasmExport": "refused 'ambiguous control event identity', no bytes, source unchanged",
+   "tests": [
+    "empty_text_meaningful_nested_whitespace_is_control_identity",
+    "empty_text_equivalent_nested_spelling_is_not_ambiguous"
+   ]
+  },
+  "issueB": {
+   "counterexample": "reserved deferred carrier 101 reset to 0, then full export",
+   "beforeFix": "carriers [1,1,3,4]: offending carrier re-reserved and an unrelated deferred copy reserved before the provenance refusal",
+   "fix": "prepare_paragraph_ids validates every bound topology identity (latched cause first) before any allocation or reservation",
+   "afterFix": "refused, no bytes, offending/unrelated values and hwpx_paragraph_next unchanged, deterministic on repeat; restored reservation exports",
+   "intermediateRegressionFound": "right half of refused split reported 'owner changed' instead of its latched cause; fixed and covered",
+   "tests": [
+    "empty_text_rejected_export_does_not_rereserve_identity",
+    "empty_text_reserved_clipboard_identity_reset_is_refused",
+    "empty_text_latched_split_refusal_keeps_cause_before_reservation"
+   ]
+  },
+  "patchSha256": "fced0270450adc639d9d432b8857befbf399fa65b2da4e73e1e9e0d8cd6084e2",
+  "generation": "853a0689147be17336110a227b22bef2054629430d53126076b84879308329b4",
+  "wasmSha256": "77d01d6c004d74948681b208370740cefd576e26f10712abe6a7bc5ba3a32285",
+  "retiredToIgnoredStore": [
+   "89fbb642fa17f12104ddbebb5d20e90ab9a1007f358e3bde9aa77418698b1baf",
+   "c20da3d8ba3bf85aef0fbcbb4d14799ff05c59b360eb910f8cbcb931cccd4ed1"
+  ],
+  "tests": {
+   "emptyText": "51/51",
+   "fullLibrary": {
+    "passed": 3827,
+    "failed": 121,
+    "ignored": 13,
+    "failedSetEqualsHistorical": true
+   },
+   "crossFeature": "7/7 PASS"
+  },
+  "corpus": {
+   "exported": 578,
+   "failed": 156,
+   "safe": 157,
+   "unsafe": 412,
+   "unknown": 9,
+   "safeRegressions": 0,
+   "newRejections": 0,
+   "byteIdenticalToPrevious629d15fd": "578/578"
+  },
+  "originalTarget": {
+   "outputSha256": "78be294319e398595ad3f65ffd5e96890d5a844fc10f55c43aa4a2e82633f655",
+   "emptyText": 57,
+   "bareRuns": 111,
+   "runs": 1428,
+   "whitespaceText": 127
+  },
+  "notRun": [
+   "native app acceptance (no reachable save behavior change observed)",
+   "Issue B at WASM level (no JS API mutates a paragraph id carrier; verified through the Rust package exporter)"
+  ],
+  "rawEvidence": "target/hwpx-topology-final-closure-20261103/ (ignored)"
  }
 }

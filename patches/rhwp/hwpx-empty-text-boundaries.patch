@@ -60,7 +60,7 @@
              }
              Node::Control(control) => match control {
                  Control::Table(table) => remap_common_raw(
-@@ -300,4 +305,99 @@
+@@ -300,4 +305,159 @@
              &clip[0].hwpx_paragraph_identity
          ));
      }
@@ -117,14 +117,74 @@
 +            .expect("no bytes")
 +            .to_string();
 +        assert!(e.contains(cause), "{e}");
-+        let reassigned = pasted.hwpx_paragraph_identity.load(Relaxed);
-+        assert!(
-+            reassigned != 0 && reassigned != reserved,
-+            "export re-reserved {reassigned}"
-+        );
++        // The rejected export must not re-reserve the stale carrier.
++        assert_eq!(pasted.hwpx_paragraph_identity.load(Relaxed), 0);
 +        // Restoring the recorded reservation is the original state again.
 +        pasted.hwpx_paragraph_identity.store(reserved, Relaxed);
 +        assert_eq!(core.export_hwpx_native().unwrap(), saved);
++    }
++
++    /// A rejected export validates reserved identities before any
++    /// reservation: no carrier (offending or unrelated) changes, no id is
++    /// consumed, no bytes are returned, and repeated attempts are identical.
++    #[test]
++    fn empty_text_rejected_export_does_not_rereserve_identity() {
++        use crate::serializer::hwpx::section::empty_text_tests::{package_with, para};
++        let r = |b: &str| format!(r#"<hp:run charPrIDRef="0">{b}</hp:run>"#);
++        let cause = "paragraph identity value changed without a supported reidentification";
++        let mut core = crate::document_core::DocumentCore::from_bytes(&package_with(&para(
++            0,
++            &r("<hp:t>A</hp:t><hp:t/>"),
++        )))
++        .unwrap();
++        let copy = |core: &crate::document_core::DocumentCore| {
++            let mut copied = vec![core.document.sections[0].paragraphs[1].clone()];
++            reidentify_clipboard(&core.document, &mut copied).unwrap();
++            copied.remove(0)
++        };
++        // A: fresh deferred 0 -> first authorized reservation; B: repeat.
++        let first = copy(&core);
++        core.document.sections[0].paragraphs.push(first);
++        let saved = core.export_hwpx_native().unwrap();
++        assert_eq!(core.export_hwpx_native().unwrap(), saved);
++        let ps = &core.document.sections[0].paragraphs;
++        let reserved = ps[2].hwpx_paragraph_identity.load(Relaxed);
++        assert!(reserved > 1);
++        // K: an unrelated, still-deferred copy.
++        let second = copy(&core);
++        core.document.sections[0].paragraphs.push(second);
++        let ps = &core.document.sections[0].paragraphs;
++        let values = |ps: &[Paragraph]| {
++            ps.iter()
++                .map(|p| p.hwpx_paragraph_identity.load(Relaxed))
++                .collect::<Vec<_>>()
++        };
++        for invalid in [0, reserved + 1] {
++            // C/D: unauthorized reset to 0 / change to another value.
++            ps[2].hwpx_paragraph_identity.store(invalid, Relaxed);
++            let before = values(ps);
++            let next = core.document.hwpx_paragraph_next.load(Relaxed);
++            for _ in 0..2 {
++                let e = core
++                    .export_hwpx_native()
++                    .err()
++                    .expect("no bytes")
++                    .to_string();
++                assert!(e.contains(cause), "{e}");
++                // E: neither the offending nor the unrelated carrier changed,
++                // and no id was consumed; repeated attempts are identical.
++                assert_eq!(values(ps), before);
++                assert_eq!(core.document.hwpx_paragraph_next.load(Relaxed), next);
++            }
++            assert_eq!(ps[3].hwpx_paragraph_identity.load(Relaxed), 0);
++        }
++        // F: restoring the recorded reservation exports again; the unrelated
++        // copy then receives its own legitimate reservation.
++        ps[2].hwpx_paragraph_identity.store(reserved, Relaxed);
++        core.export_hwpx_native().unwrap();
++        assert_eq!(ps[2].hwpx_paragraph_identity.load(Relaxed), reserved);
++        let fresh = ps[3].hwpx_paragraph_identity.load(Relaxed);
++        assert!(fresh > reserved, "{fresh}");
 +    }
 +
 +    /// Clipboard reidentification (new deferred carrier) followed by the
@@ -217,7 +277,7 @@
  }
 --- /dev/null
 +++ b/src/model/hwpx_topology.rs
-@@ -0,0 +1,1159 @@
+@@ -0,0 +1,1185 @@
 +//! Paragraph-owned HWPX zero-width topology. No source XML is retained.
 +//!
 +//! A source run occurrence is mapped to the parser's boundary occurrence, not
@@ -476,7 +536,12 @@
 +        Ok(Some(Self::bound(runs, p)))
 +    }
 +
-+    pub(crate) fn validate(&self, p: &Paragraph) -> Result<(), String> {
++    /// Identity half of `validate`: carrier pointer and numeric value. The
++    /// serializer runs it for every bound paragraph before reserving any
++    /// deferred id, so a stale carrier is refused instead of re-reserved.
++    /// A latched refusal is reported first (its specific cause), exactly as
++    /// `validate` always did.
++    pub(crate) fn validate_identity(&self, p: &Paragraph) -> Result<(), String> {
 +        if let Some(why) = &self.invalid {
 +            return Err(why.clone());
 +        }
@@ -493,6 +558,11 @@
 +        if now != expected {
 +            return Err(IDENTITY_VALUE_CHANGED.into());
 +        }
++        Ok(())
++    }
++
++    pub(crate) fn validate(&self, p: &Paragraph) -> Result<(), String> {
++        self.validate_identity(p)?;
 +        if self.seal != seal(p) {
 +            return Err(STALE.into());
 +        }
@@ -1302,53 +1372,69 @@
 +                    let mut children = Vec::new();
 +                    if !empty {
 +                        let mut depth = 1;
++                        // Ambiguity fingerprint of the whole ctrl subtree, compared
++                        // among source controls only (never against normalized
++                        // emitted output). Character data is fingerprinted as its
++                        // semantic value: text, CDATA and references are joined
++                        // after unescaping. A leaf element's value is kept even when
++                        // empty or whitespace-only (e.g. stringParam " " vs "  ");
++                        // whitespace between structural children is formatting.
++                        // `<a/>` and `<a></a>` are the same element.
++                        let mut value = String::new();
++                        let mut leaf = false;
++                        let mut flush =
++                            |fingerprint: &mut String, value: &mut String, leaf: bool| {
++                                if !value.is_empty() && (leaf || !value.trim().is_empty()) {
++                                    fingerprint.push_str(&format!("/text{value:?}"));
++                                }
++                                value.clear();
++                            };
 +                        while depth > 0 {
 +                            let child = reader.read_event().map_err(|e| e.to_string())?;
 +                            match child {
 +                                Event::Start(ref ce) | Event::Empty(ref ce) => {
-+                                    // The ambiguity fingerprint covers the whole
-+                                    // ctrl subtree (names, attributes, text) so that
-+                                    // controls differing only in nested content are
-+                                    // never treated as interchangeable. It is
-+                                    // compared among source controls only, never
-+                                    // against (normalized) emitted output.
-+                                    if depth > 1 && name == "ctrl" {
++                                    let element = local(ce.name().as_ref()).to_string();
++                                    if name == "ctrl" {
++                                        flush(&mut fingerprint, &mut value, false);
 +                                        fingerprint.push_str(&format!(
-+                                            "/{depth}:{}{:?}",
-+                                            local(ce.name().as_ref()),
++                                            "/{depth}:{element}{:?}",
 +                                            attributes(ce)?
 +                                        ));
 +                                    }
 +                                    if depth == 1 && name == "ctrl" {
-+                                        let element = local(ce.name().as_ref()).to_string();
 +                                        key.push_str(&format!(
 +                                            "/{element}/{}",
 +                                            identity_attrs(ce, &element)?
 +                                        ));
-+                                        fingerprint
-+                                            .push_str(&format!("/{element}{:?}", attributes(ce)?));
 +                                        children.push(element);
 +                                    }
 +                                    if matches!(child, Event::Start(_)) {
 +                                        depth += 1;
++                                        leaf = true;
++                                    } else {
++                                        if name == "ctrl" {
++                                            fingerprint.push_str(&format!("/{depth}:end"));
++                                        }
++                                        leaf = false;
 +                                    }
 +                                }
 +                                Event::End(_) => {
++                                    if name == "ctrl" {
++                                        flush(&mut fingerprint, &mut value, leaf);
++                                    }
 +                                    depth -= 1;
++                                    leaf = false;
 +                                    if name == "ctrl" {
 +                                        fingerprint.push_str(&format!("/{depth}:end"));
 +                                    }
 +                                }
-+                                Event::Text(ref t)
-+                                    if name == "ctrl" && !t.as_ref().trim().is_empty() =>
-+                                {
-+                                    fingerprint.push_str(&format!("/text{:?}", t.as_ref()));
-+                                }
-+                                Event::CData(ref t) if name == "ctrl" => {
-+                                    fingerprint.push_str(&format!("/text{:?}", t.as_ref()));
-+                                }
-+                                Event::GeneralRef(ref t) if name == "ctrl" => {
-+                                    fingerprint.push_str(&format!("/ref{:?}", t.as_ref()));
++                                Event::Text(ref t) if name == "ctrl" => value.push_str(t.as_ref()),
++                                Event::CData(ref t) if name == "ctrl" => value.push_str(t.as_ref()),
++                                Event::GeneralRef(ref r) if name == "ctrl" => {
++                                    let reference = format!("&{};", r.as_ref());
++                                    let text = quick_xml::escape::unescape(&reference)
++                                        .map_err(|e| e.to_string())?;
++                                    value.push_str(&text);
 +                                }
 +                                Event::Eof => return Err("unterminated control".into()),
 +                                _ => {}
@@ -1884,7 +1970,25 @@
          }
          // [#1933 보강] style 0 은 `effective_style_id`/`write_styles` 계약상 "항상
          // 등록됨" 취급이다 — `<hh:styles>` 블록 자체가 없는(styles 비어있는) 정상
-@@ -480,12 +490,14 @@
+@@ -463,6 +473,17 @@
+         }
+         use std::sync::atomic::Ordering::Relaxed;
+         let paragraphs = crate::model::identity::hwpx_paragraphs(doc);
++        // Empty-text provenance bound to an identity (including a recorded
++        // reservation) is checked before any allocation or reservation below,
++        // so a rejected export neither re-reserves a stale carrier nor
++        // consumes ids or mutates other deferred paragraphs.
++        for para in &paragraphs {
++            if let Some(t) = &para.hwpx_text_topology {
++                t.validate_identity(para).map_err(|why| {
++                    SerializeError::UnsupportedInput(format!("HWPX empty-text provenance: {why}"))
++                })?;
++            }
++        }
+         for para in &paragraphs {
+             let encoded = para.hwpx_paragraph_identity.load(Relaxed);
+             if encoded == u64::MAX || encoded > u64::from(u32::MAX) + 1 {
+@@ -480,12 +501,14 @@
                  let id = crate::model::identity::Allocator::paragraph(&doc.hwpx_paragraph_next)
                      .map_err(|e| SerializeError::UnsupportedInput(e.to_string()))?;
                  // Allocate before publication, then retain for repeated exports and later edits.
@@ -1907,7 +2011,7 @@
          // A value may appear on several paragraphs only when the source document
 --- /dev/null
 +++ b/src/serializer/hwpx/empty_text_tests.rs
-@@ -0,0 +1,1121 @@
+@@ -0,0 +1,1218 @@
 +use super::*;
 +use crate::parser::hwpx::section::parse_hwpx_section;
 +
@@ -3028,6 +3132,103 @@
 +    assert!(t
 +        .restore(&p, &r(&format!("{respelled}<hp:t></hp:t>")), false)
 +        .is_ok());
++}
++
++// ---- Final closure: semantic whitespace in nested control content ----
++
++fn click_here(value: &str) -> String {
++    format!(
++        r#"<hp:ctrl><hp:fieldBegin type="CLICK_HERE" name="" editable="1" dirty="0"><hp:parameters cnt="1" name=""><hp:stringParam name="Command" xml:space="preserve">{value}</hp:stringParam></hp:parameters></hp:fieldBegin></hp:ctrl>"#
++    )
++}
++
++fn ambiguity(a: &str, b: &str) -> Result<String, String> {
++    render(&imported(&r(&format!("{a}<hp:t/>{b}"))))
++}
++
++#[test]
++fn empty_text_meaningful_nested_whitespace_is_control_identity() {
++    use crate::model::hwpx_topology::AMBIGUOUS_CONTROL;
++    // One vs two spaces, empty vs one space: different effective values.
++    for (x, y) in [(" ", "  "), ("", " ")] {
++        let (a, b) = (click_here(x), click_here(y));
++        let p = imported(&r(&format!("{a}<hp:t/>{b}")));
++        if let Some(t) = p.hwpx_text_topology.as_ref() {
++            assert!(
++                t.restore(&p, &r(&format!("{b}<hp:t></hp:t>{a}")), false)
++                    .is_err(),
++                "swap accepted for {x:?}/{y:?}"
++            );
++        }
++        assert_eq!(
++            ambiguity(&a, &b).unwrap_err(),
++            AMBIGUOUS_CONTROL,
++            "{x:?}/{y:?}"
++        );
++    }
++    // Real package path: refused without bytes.
++    let source = r(&format!("{}<hp:t/>{}", click_here(" "), click_here("  ")));
++    let core = core_of(&para(7, &source));
++    assert!(export_error(&core).ends_with("ambiguous control event identity"));
++}
++
++/// Capture-level proof: equivalent spellings of the same nested values are
++/// interchangeable sources (no ambiguity refusal). Package-level export of
++/// identical nested controls is covered by the hp:autoNum regression; an
++/// id-less unterminated CLICK_HERE begin is not a round-trip structure.
++fn not_ambiguous(a: &str, b: &str) -> bool {
++    let p = imported(&r(&format!("{a}<hp:t/>{b}")));
++    p.hwpx_text_topology.as_ref().unwrap().validate(&p).is_ok()
++}
++
++#[test]
++fn empty_text_equivalent_nested_spelling_is_not_ambiguous() {
++    let base = click_here(" ");
++    // Character reference and CDATA spell the same one-space value.
++    for same in [
++        click_here("&#x20;"),
++        click_here("<![CDATA[ ]]>"),
++        base.clone(),
++    ] {
++        assert!(not_ambiguous(&base, &same), "{same}");
++    }
++    // Empty element vs explicit empty pair.
++    let empty = click_here("");
++    let self_closing = empty.replace(
++        r#"xml:space="preserve"></hp:stringParam>"#,
++        r#"xml:space="preserve"/>"#,
++    );
++    assert!(not_ambiguous(&empty, &self_closing));
++    // Indentation between structural children is not a value.
++    let indented = base
++        .replace("<hp:parameters", "\n  <hp:parameters")
++        .replace("<hp:stringParam", "\n    <hp:stringParam")
++        .replace("</hp:parameters>", "\n  </hp:parameters>\n");
++    assert!(not_ambiguous(&base, &indented));
++    // Different values stay ambiguous at the same level.
++    assert!(!not_ambiguous(&base, &click_here("  ")));
++    assert!(!not_ambiguous(&click_here(""), &base));
++}
++
++#[test]
++fn empty_text_latched_split_refusal_keeps_cause_before_reservation() {
++    use std::sync::atomic::Ordering::Relaxed;
++    // The right half of a refused split carries a clone of the left latch;
++    // the pre-reservation check must report that latched cause (not an
++    // owner mismatch) and must not reserve the new half's deferred id.
++    let mut core = core_of(&para(7, &r("<hp:t>A</hp:t><hp:t/><hp:t>B</hp:t>")));
++    core.split_paragraph_native(0, 1, 1, None).unwrap();
++    let next = core.document.hwpx_paragraph_next.load(Relaxed);
++    for _ in 0..2 {
++        assert!(export_error(&core).ends_with("paragraph split has unsupported run correspondence"));
++        assert_eq!(
++            core.document.sections[0].paragraphs[2]
++                .hwpx_paragraph_identity
++                .load(Relaxed),
++            0
++        );
++        assert_eq!(core.document.hwpx_paragraph_next.load(Relaxed), next);
++    }
 +}
 --- a/src/serializer/hwpx/mod.rs
 +++ b/src/serializer/hwpx/mod.rs
