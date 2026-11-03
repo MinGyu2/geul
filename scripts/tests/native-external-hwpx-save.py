@@ -390,6 +390,23 @@ def run(args):
                     assert not (args.out/'unsupported-section-export.hwpx').exists()
                     report['unsupportedSectionNegative']={'preflight':refused_preflight,'engineDiagnostic':diagnostic['diagnostic'],
                         'saveResult':refused,'status':blocked_status,'beforeSaveSha256':blocked_hash,'afterSaveSha256':sha(blocked)}
+                if args.topology_edit_negative:
+                    blocked=args.out/'topology-edit-negative.hwpx'
+                    shutil.copyfile(args.topology_edit_negative.resolve(),blocked);blocked_hash=sha(blocked)
+                    rhwp.open_document(d,blocked)
+                    rhwp.press_button(d,'[data-testid=rhwp-save-check]')
+                    smoke.wait_until(d,"return document.querySelector('[data-testid=rhwp-save-result]')?.dataset.outcome==='safe'",timeout=60)
+                    safe_preflight=d.js("return {...document.querySelector('[data-testid=rhwp-save-result]').dataset}")
+                    d.js("document.querySelector('.rhwp-input').focus()");command(args.xdotool,'windowfocus','--sync',window)
+                    command(args.xdotool,'key','End');split_before=rhwp.settle(d,'topology split start')
+                    command(args.xdotool,'key','Return');split_after=rhwp.settle(d,'topology split end')
+                    assert int(split_after['revision'])>int(split_before['revision']) and split_after['dirty']=='true',split_after
+                    refused=rhwp.save_and_wait(d);blocked_status=rhwp.status(d)
+                    assert refused['state']=='failed' and refused['error']=='EngineFailure',refused
+                    assert sha(blocked)==blocked_hash and blocked_status['dirty']==blocked_status['unpreserved']=='true'
+                    report['topologyEditNegative']={'safePreflight':safe_preflight,'beforeSplit':split_before,'afterSplit':split_after,
+                        'saveResult':refused,'status':blocked_status,'beforeSaveSha256':blocked_hash,'afterSaveSha256':sha(blocked),
+                        'input':'actual xdotool Return -> editor split command','partialPublication':False}
                 assert not list(args.out.glob('.geul-save-*.tmp'))
             finally:smoke.end_session(d)
         report['status']='PASS'
@@ -408,6 +425,7 @@ def main():
     p.add_argument('--preview-negative',type=Path,help='Hancom-saved HWPX with content previews: edited save must be refused')
     p.add_argument('--unsafe-negative',type=Path,help='HWPX whose preflight is not safe: edited save must be refused')
     p.add_argument('--export-negative',type=Path,help='Readable HWPX with unsupported section provenance: export and edited save must fail')
+    p.add_argument('--topology-edit-negative',type=Path,help='Safe HWPX with multiple empty text boundaries: real keyboard paragraph split must block save')
     p.add_argument('--export-error-substring',default='inconsistent section head',help='Required engine rejection cause for --export-negative')
     p.add_argument('--unsafe-absent-finding',action='append',default=[],help='finding that must not appear in the unsafe-negative preflight')
     return run(p.parse_args())

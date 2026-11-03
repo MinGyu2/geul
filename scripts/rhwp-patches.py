@@ -13,7 +13,8 @@ SERIES = ("patches/rhwp/hwpx-textdir-ltr.patch", "patches/rhwp/hwpx-duplicate-pa
           "patches/rhwp/hwpx-spine-validation.patch", "patches/rhwp/hwpx-manifest-order.patch",
           "patches/rhwp/hwpx-charpr-child-presence.patch", "patches/rhwp/hwpx-strikeout-3d-placeholder.patch",
           "patches/rhwp/hwpx-strike3d-derived-styles.patch",
-          "patches/rhwp/hwpx-secpr-tabstop-presence.patch")
+          "patches/rhwp/hwpx-secpr-tabstop-presence.patch",
+          "patches/rhwp/hwpx-empty-text-boundaries.patch")
 SOURCE = ROOT / "target/rhwp-patched-source"
 MANIFEST = ROOT / "target/rhwp-patched-source.json"
 BUILD_PATHS = ("Cargo.toml", "Cargo.lock", "build.rs", "src", "assets", "crates", "vendor",
