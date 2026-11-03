@@ -368,6 +368,28 @@ def run(args):
                     report['unsafeNegative']={'sourceSha256':sha(args.unsafe_negative.resolve()),'preflight':blocked_preflight,
                                               'absentFindings':args.unsafe_absent_finding,'result':refused,
                                               'beforeSaveSha256':blocked_hash,'afterSaveSha256':sha(blocked),'status':rhwp.status(d)}
+                if args.export_negative:
+                    blocked=args.out/'unsupported-section.hwpx'
+                    shutil.copyfile(args.export_negative.resolve(),blocked);blocked_hash=sha(blocked)
+                    rhwp.open_document(d,blocked)
+                    rhwp.press_button(d,'[data-testid=rhwp-save-check]')
+                    smoke.wait_until(d,"return document.querySelector('[data-testid=rhwp-save-result]')?.dataset.state==='failed'",timeout=60)
+                    refused_preflight=d.js("return {...document.querySelector('[data-testid=rhwp-save-result]').dataset}")
+                    assert refused_preflight['error']=='EngineFailure' and refused_preflight['outcome']!='safe',refused_preflight
+                    diagnostic=probe.export(pkg,blocked,args.out/'unsupported-section-export.hwpx')
+                    assert diagnostic['returncode']!=0 and diagnostic['diagnostic']['stage']=='export'
+                    assert diagnostic['diagnostic']['opened'] and args.export_error_substring in diagnostic['diagnostic']['error'],diagnostic
+                    d.js("document.querySelector('.rhwp-input').focus()");command(args.xdotool,'windowfocus','--sync',window)
+                    command(args.xdotool,'key','Home');blocked_before=rhwp.settle(d,'unsupported section start')
+                    command(args.xdotool,'type','--delay','90','gksrmf');command(args.xdotool,'key','End')
+                    blocked_edit=rhwp.settle(d,'unsupported section edit')
+                    assert blocked_edit['paragraphText']=='한글'+blocked_before['paragraphText'] and blocked_edit['dirty']=='true',blocked_edit
+                    refused=rhwp.save_and_wait(d);blocked_status=rhwp.status(d)
+                    assert refused['state']=='failed' and refused['error']=='EngineFailure',refused
+                    assert sha(blocked)==blocked_hash and blocked_status['dirty']==blocked_status['unpreserved']=='true'
+                    assert not (args.out/'unsupported-section-export.hwpx').exists()
+                    report['unsupportedSectionNegative']={'preflight':refused_preflight,'engineDiagnostic':diagnostic['diagnostic'],
+                        'saveResult':refused,'status':blocked_status,'beforeSaveSha256':blocked_hash,'afterSaveSha256':sha(blocked)}
                 assert not list(args.out.glob('.geul-save-*.tmp'))
             finally:smoke.end_session(d)
         report['status']='PASS'
@@ -385,6 +407,8 @@ def main():
     p.add_argument('--xdotool',required=True);p.add_argument('--ibus',required=True);p.add_argument('--port',type=int,default=4444)
     p.add_argument('--preview-negative',type=Path,help='Hancom-saved HWPX with content previews: edited save must be refused')
     p.add_argument('--unsafe-negative',type=Path,help='HWPX whose preflight is not safe: edited save must be refused')
+    p.add_argument('--export-negative',type=Path,help='Readable HWPX with unsupported section provenance: export and edited save must fail')
+    p.add_argument('--export-error-substring',default='inconsistent section head',help='Required engine rejection cause for --export-negative')
     p.add_argument('--unsafe-absent-finding',action='append',default=[],help='finding that must not appear in the unsafe-negative preflight')
     return run(p.parse_args())
 

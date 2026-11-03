@@ -1,0 +1,600 @@
+diff --git a/src/model/document.rs b/src/model/document.rs
+--- a/src/model/document.rs
++++ b/src/model/document.rs
+@@ -298,6 +298,57 @@
+     pub raw_provenance: Option<crate::model::raw_provenance::SectionSeal>,
+ }
+ 
++/// Source spelling of the independent HWPX secPr tab attributes.
++/// OWPML ParaList schema: xs:integer (default 0), CHAR|HWPUNIT (default HWPUNIT).
++/// Keep the decoded integer spelling, including sign/leading zeros/whitespace:
++/// numeric equivalence does not imply canonical XML equality. No bounded integer
++/// conversion is needed: this metadata is not an effective layout value.
++#[derive(Debug, Clone, PartialEq, Eq)]
++pub struct HwpxTabStop {
++    value: Option<String>,
++    unit: Option<String>,
++    source_tab_spacing: HwpUnit,
++}
++
++impl HwpxTabStop {
++    pub(crate) fn new(
++        value: Option<String>,
++        unit: Option<String>,
++        source_tab_spacing: HwpUnit,
++    ) -> Result<Self, &'static str> {
++        if let Some(value) = &value {
++            let token = value.trim_matches([' ', '\t', '\r', '\n']);
++            let digits = token.strip_prefix(['+', '-']).unwrap_or(token);
++            if digits.is_empty() || !digits.bytes().all(|c| c.is_ascii_digit()) {
++                return Err("HWPX secPr tabStopVal: expected xs:integer");
++            }
++        }
++        if !matches!(unit.as_deref(), None | Some("CHAR" | "HWPUNIT")) {
++            return Err("HWPX secPr tabStopUnit: unsupported unit");
++        }
++        Ok(Self {
++            value,
++            unit,
++            source_tab_spacing,
++        })
++    }
++
++    pub(crate) fn attributes(
++        &self,
++        current_tab_spacing: HwpUnit,
++    ) -> Result<(Option<&str>, Option<&str>), &'static str> {
++        // The existing editing API changes legacy tabStop, with no contract for
++        // deriving the newer pair. Refuse instead of guessing or reusing stale
++        // source spelling. Unrelated edits and unchanged clones keep provenance.
++        if self.source_tab_spacing != current_tab_spacing {
++            return Err(
++                "HWPX secPr tab-stop provenance: tab spacing changed; conversion unsupported",
++            );
++        }
++        Ok((self.value.as_deref(), self.unit.as_deref()))
++    }
++}
++
+ /// 구역 정의 (HWPTAG_CTRL_HEADER - 'secd')
+ #[derive(Debug, Clone, Default, serde::Serialize)]
+ pub struct SectionDef {
+@@ -311,6 +362,10 @@
+     pub char_grid: HwpUnit16,
+     /// 기본 탭 간격
+     pub default_tab_spacing: HwpUnit,
++    /// Imported HWPX spelling only; never consumed by layout or HWP5 serialization.
++    /// None means generated/conversion defaults; Some retains each attribute's absence.
++    #[serde(skip_serializing)]
++    pub hwpx_tab_stop: Option<HwpxTabStop>,
+     /// 쪽 번호 (0이면 앞 구역에 이어서)
+     pub page_num: u16,
+     /// 쪽 번호 종류 (flags bit 20-21): 0=이어서, 1=홀수, 2=짝수
+diff --git a/src/parser/hwpx/section.rs b/src/parser/hwpx/section.rs
+--- a/src/parser/hwpx/section.rs
++++ b/src/parser/hwpx/section.rs
+@@ -408,8 +408,34 @@
+ 
+ // ─── SectionDef / PageDef ───
+ 
+-fn parse_section_def_start(e: &quick_xml::events::BytesStart, sec_def: &mut SectionDef) {
+-    for attr in e.attributes().flatten() {
++fn parse_section_def_start(
++    e: &quick_xml::events::BytesStart,
++    sec_def: &mut SectionDef,
++) -> Result<(), HwpxError> {
++    let mut value = None;
++    let mut unit = None;
++    for attr in e.attributes() {
++        let attr = attr
++            .map_err(|e| HwpxError::SecPrTabStop(format!("HWPX secPr tab-stop attributes: {e}")))?;
++        match attr.key.as_ref().as_bytes() {
++            b"tabStopVal" | b"tabStopUnit" => {
++                // quick-xml 0.42 attributes already contain valid UTF-8. This API
++                // resolves entities and performs XML 1.0 attribute normalization.
++                let decoded = attr
++                    .normalized_value(quick_xml::XmlVersion::Implicit1_0)
++                    .map_err(|e| {
++                        HwpxError::SecPrTabStop(format!("HWPX secPr tab-stop attribute value: {e}"))
++                    })?
++                    .into_owned();
++                if attr.key.as_ref().as_bytes() == b"tabStopVal" {
++                    value = Some(decoded);
++                } else {
++                    unit = Some(decoded);
++                }
++                continue;
++            }
++            _ => {}
++        }
+         match attr.key.as_ref().as_bytes() {
+             b"textDirection" => {
+                 let val = attr_str(&attr);
+@@ -440,6 +466,11 @@
+             _ => {}
+         }
+     }
++    sec_def.hwpx_tab_stop = Some(
++        crate::model::document::HwpxTabStop::new(value, unit, sec_def.default_tab_spacing)
++            .map_err(|e| HwpxError::SecPrTabStop(e.into()))?,
++    );
++    Ok(())
+ }
+ 
+ fn parse_page_pr(e: &quick_xml::events::BytesStart, page: &mut PageDef) {
+@@ -789,7 +820,10 @@
+                         sec_pr_run_has_col_pr |= run_has_col_pr_ctrl;
+                         // 문단 내 섹션 정의 파싱
+                         let mut sd = SectionDef::default();
+-                        parse_section_def_start(ce, &mut sd);
++                        if sec_def.is_some() {
++                            return Err(HwpxError::SecPrTabStop("HWPX secPr tab-stop provenance: multiple definitions in one paragraph unsupported".into()));
++                        }
++                        parse_section_def_start(ce, &mut sd)?;
+                         let col_def_opt = parse_sec_pr_children(reader, &mut sd)?;
+                         sec_def = Some(sd.clone());
+                         // [Task #901] SectionDef 도 HWP 바이너리에서 8 utf16 inline marker —
+@@ -892,6 +926,12 @@
+                 let cname = ce.name();
+                 let local = local_name(cname.as_ref());
+                 match local {
++                    b"secPr" => {
++                        return Err(HwpxError::SecPrTabStop(
++                            "HWPX secPr tab-stop provenance: empty section definition unsupported"
++                                .into(),
++                        ))
++                    }
+                     b"markpenBegin" | b"markpenEnd" => {
+                         if local == b"markpenEnd" {
+                             text_parts.push(MARKPEN_END_PART.to_string());
+diff --git a/src/serializer/hwpx/section.rs b/src/serializer/hwpx/section.rs
+--- a/src/serializer/hwpx/section.rs
++++ b/src/serializer/hwpx/section.rs
+@@ -111,6 +111,96 @@
+ /// 템플릿의 visibility 고정 문자열을 IR 기반 값으로 1회 치환.
+ fn replace_visibility(xml: &str, sd: &SectionDef) -> String {
+     xml.replacen(TEMPLATE_VISIBILITY, &render_visibility(sd), 1)
++}
++
++/// Transform only the first template secPr OPENING TAG, never its children,
++/// following definitions or similarly named attributes elsewhere. The fixed
++/// template must contain both exact anchors once; fail closed if it changes.
++fn replace_secpr_tab_stop(xml: &str, sd: &SectionDef) -> Result<String, SerializeError> {
++    let fail = |message: &str| SerializeError::UnsupportedInput(message.into());
++    let start = xml
++        .find("<hp:secPr ")
++        .ok_or_else(|| fail("HWPX secPr tab-stop template: missing opening tag"))?;
++    let end = start
++        + xml[start..]
++            .find('>')
++            .ok_or_else(|| fail("HWPX secPr tab-stop template: unterminated tag"))?;
++    let mut tag = xml[start..end].to_string();
++    let attributes = match &sd.hwpx_tab_stop {
++        Some(source) => source.attributes(sd.default_tab_spacing).map_err(fail)?,
++        None => (Some("4000"), Some("HWPUNIT")),
++    };
++    for (name, default, value) in [
++        ("tabStopVal", "4000", attributes.0),
++        ("tabStopUnit", "HWPUNIT", attributes.1),
++    ] {
++        let anchor = format!(r#" {name}="{default}""#);
++        if tag.matches(&anchor).count() != 1 {
++            return Err(fail(
++                "HWPX secPr tab-stop template: missing or duplicate attribute anchor",
++            ));
++        }
++        // References to whitespace must remain references on re-emission: raw
++        // tabs/newlines would normalize to spaces on the next XML parse.
++        let replacement = value
++            .map(|v| {
++                format!(
++                    r#" {name}="{}""#,
++                    xml_escape(v)
++                        .replace('\t', "&#9;")
++                        .replace('\n', "&#10;")
++                        .replace('\r', "&#13;")
++                )
++            })
++            .unwrap_or_default();
++        tag = tag.replacen(&anchor, &replacement, 1);
++    }
++    Ok(format!("{}{}{}", &xml[..start], tag, &xml[end..]))
++}
++
++/// Validate all owners before emitting ZIP bytes, including nested sublists
++/// whose existing renderer can otherwise swallow a control writer error.
++/// A stream whose head SectionDef disagrees with its first control cannot be
++/// represented by this serializer without a general section ownership rewrite.
++/// Leave that unsupported structure explicit instead of borrowing provenance.
++pub(super) fn validate_tab_stop_provenance(doc: &Document) -> Result<(), SerializeError> {
++    let validate = |sd: &SectionDef| -> Result<(), SerializeError> {
++        if let Some(source) = &sd.hwpx_tab_stop {
++            source
++                .attributes(sd.default_tab_spacing)
++                .map_err(|e| SerializeError::UnsupportedInput(e.into()))?;
++        }
++        Ok(())
++    };
++    for section in &doc.sections {
++        validate(&section.section_def)?;
++        let first = section
++            .paragraphs
++            .iter()
++            .flat_map(|p| &p.controls)
++            .find_map(|c| {
++                if let Control::SectionDef(sd) = c {
++                    Some(sd)
++                } else {
++                    None
++                }
++            });
++        if let Some(first) = first {
++            if first.hwpx_tab_stop != section.section_def.hwpx_tab_stop {
++                return Err(SerializeError::UnsupportedInput(
++                    "HWPX secPr tab-stop provenance: inconsistent section head and first definition".into(),
++                ));
++            }
++        }
++    }
++    for paragraph in crate::model::identity::hwpx_paragraphs(doc) {
++        for control in &paragraph.controls {
++            if let Control::SectionDef(sd) = control {
++                validate(sd)?;
++            }
++        }
++    }
++    Ok(())
+ }
+ 
+ /// [#1987] 템플릿 secPr 의 하드코딩 스칼라(spaceColumns, outlineShapeIDRef, memoShapeIDRef 등)를
+@@ -551,6 +641,7 @@
+     // IR 값으로 치환한다. 미치환 시 원본이 spaceColumns=1130·outlineShapeIDRef=0 등이어도
+     // 1134/1 로 방출돼 단 간격·개요번호 문단모양 참조가 어긋난다. ir-diff 는 secPr 스칼라를
+     // 비교하지 않아 못 잡던 저장 충실도 결함.
++    out = replace_secpr_tab_stop(&out, &section.section_def)?;
+     out = replace_secpr_scalars(&out, &section.section_def);
+ 
+     // [#1984] 각주/미주 모양(구분선 여백·주석간격)을 IR 값으로 치환 — 미치환 시 각주 zone
+@@ -671,7 +762,7 @@
+                 .iter()
+                 .find(|c| matches!(c, Control::SectionDef(_)))
+             {
+-                extra.push_str(&build_secpr_run(sd, first_run_char_shape_id(p)));
++                extra.push_str(&build_secpr_run(sd, first_run_char_shape_id(p))?);
+             }
+             extra.push_str(&runs);
+             extra.push_str(&linesegs);
+@@ -736,7 +827,7 @@
+ ///
+ /// [#5873] 표 셀(subList) 안 문단도 같은 보완이 필요하다 —
+ /// `table.rs::write_sub_list_paragraphs` 가 이 함수를 재사용한다.
+-pub(super) fn build_secpr_run(sd: &SectionDef, first_cs: u32) -> String {
++pub(super) fn build_secpr_run(sd: &SectionDef, first_cs: u32) -> Result<String, SerializeError> {
+     let start = EMPTY_SECTION_XML
+         .find("<hp:secPr ")
+         .expect("템플릿에 secPr 열기 태그가 있어야 함");
+@@ -748,9 +839,13 @@
+     secpr = replace_page_pr(&secpr, &sd.page_def);
+     secpr = replace_page_border_fill(&secpr, sd);
+     secpr = replace_visibility(&secpr, sd);
++    secpr = replace_secpr_tab_stop(&secpr, sd)?;
+     secpr = replace_secpr_scalars(&secpr, sd);
+     secpr = replace_footnote_shape(&secpr, sd);
+-    format!(r#"<hp:run charPrIDRef="{}">{}</hp:run>"#, first_cs, secpr)
++    Ok(format!(
++        r#"<hp:run charPrIDRef="{}">{}</hp:run>"#,
++        first_cs, secpr
++    ))
+ }
+ 
+ /// Paragraph 하나를 (완전한 `<hp:run>` 시퀀스 XML, `<hp:linesegarray>` 요소 XML,
+@@ -6586,3 +6681,203 @@
+         assert!(xml.contains("<hp:shadow"), "shadow 방출: {xml}");
+     }
+ }
++
++#[cfg(test)]
++mod secpr_tab_stop_preservation {
++    use super::*;
++    use crate::parser::hwpx::section::parse_hwpx_section;
++
++    const PAIR: &str = r#" tabStopVal="4000" tabStopUnit="HWPUNIT""#;
++
++    fn imported(attributes: &str) -> Section {
++        parse_hwpx_section(&EMPTY_SECTION_XML.replacen(PAIR, attributes, 1)).unwrap()
++    }
++
++    fn emit(section: &Section, index: usize) -> Result<String, SerializeError> {
++        let mut doc = Document::default();
++        doc.sections = vec![section.clone()];
++        validate_tab_stop_provenance(&doc)?;
++        let mut ctx = SerializeContext::collect_from_document(&doc);
++        String::from_utf8(write_section(section, &doc, index, &mut ctx)?)
++            .map_err(|e| SerializeError::XmlError(e.to_string()))
++    }
++
++    fn attributes(xml: &str) -> Vec<(String, String)> {
++        let mut reader = quick_xml::Reader::from_str(xml);
++        loop {
++            match reader.read_event().unwrap() {
++                quick_xml::events::Event::Start(e) if e.name().as_ref() == "hp:secPr" => {
++                    return e
++                        .attributes()
++                        .map(|a| {
++                            let a = a.unwrap();
++                            (
++                                a.key.as_ref().to_string(),
++                                a.normalized_value(quick_xml::XmlVersion::Implicit1_0)
++                                    .unwrap()
++                                    .into_owned(),
++                            )
++                        })
++                        .filter(|(k, _)| {
++                            matches!(k.as_str(), "tabStop" | "tabStopVal" | "tabStopUnit")
++                        })
++                        .collect();
++                }
++                quick_xml::events::Event::Eof => panic!("secPr missing"),
++                _ => {}
++            }
++        }
++    }
++
++    #[test]
++    fn absent_explicit_single_nondefault_and_integer_spellings_roundtrip() {
++        for pair in [
++            "",
++            PAIR,
++            r#" tabStopVal="0""#,
++            r#" tabStopUnit="CHAR""#,
++            r#" tabStopVal="2000" tabStopUnit="CHAR""#,
++            r#" tabStopVal="3500" tabStopUnit="HWPUNIT""#,
++            r#" tabStopVal=" +004000 " tabStopUnit="HWPUNIT""#,
++            r#" tabStopVal="-1""#,
++            r#" tabStopVal="99999999999999999999999999999999999999999999999999""#,
++            r#" tabStopVal="&#9;+004000&#10;" tabStopUnit="HWP&#85;NIT""#,
++        ] {
++            let original = EMPTY_SECTION_XML.replacen(PAIR, pair, 1).replacen(
++                r#"tabStop="8000""#,
++                r#"tabStop="12345""#,
++                1,
++            );
++            let section = parse_hwpx_section(&original).unwrap();
++            assert_eq!(section.section_def.default_tab_spacing, 12345);
++            let output = emit(&section, 0).unwrap();
++            assert_eq!(attributes(&output), attributes(&original), "{pair}");
++            assert_eq!(output, emit(&section, 0).unwrap(), "repeat export");
++            assert_eq!(
++                attributes(&emit(&parse_hwpx_section(&output).unwrap(), 0).unwrap()),
++                attributes(&original),
++                "reopen"
++            );
++        }
++    }
++
++    #[test]
++    fn malformed_values_duplicates_entities_and_empty_definitions_are_rejected() {
++        for (pair, reason) in [
++            (r#" tabStopVal="4.0""#, "tabStopVal"),
++            (r#" tabStopVal="NaN""#, "tabStopVal"),
++            (r#" tabStopVal="1 2""#, "tabStopVal"),
++            (r#" tabStopVal="""#, "tabStopVal"),
++            (r#" tabStopUnit="PX""#, "tabStopUnit"),
++            (r#" tabStopUnit=" HWPUNIT ""#, "tabStopUnit"),
++            (r#" tabStopVal="1" tabStopVal="2""#, "tab-stop attributes"),
++            (
++                r#" tabStopUnit="CHAR" tabStopUnit="HWPUNIT""#,
++                "tab-stop attributes",
++            ),
++            (r#" tabStopVal=4000"#, "tab-stop attributes"),
++            (r#" tabStopVal="&undefined;""#, "tab-stop attribute value"),
++        ] {
++            let error = parse_hwpx_section(&EMPTY_SECTION_XML.replacen(PAIR, pair, 1))
++                .unwrap_err()
++                .to_string();
++            assert!(error.contains(reason), "{pair}: {error}");
++        }
++        let error = parse_hwpx_section(
++            r#"<hs:sec><hp:p><hp:run><hp:secPr tabStopVal="1"/></hp:run></hp:p></hs:sec>"#,
++        )
++        .unwrap_err()
++        .to_string();
++        assert!(
++            error.contains("empty section definition unsupported"),
++            "{error}"
++        );
++    }
++
++    #[test]
++    fn separate_sections_and_clones_keep_their_own_attributes() {
++        let mut doc = Document::default();
++        doc.sections = vec![
++            imported(""),
++            imported(r#" tabStopVal="3500""#),
++            imported(r#" tabStopUnit="CHAR""#),
++        ];
++        validate_tab_stop_provenance(&doc).unwrap();
++        let expected = [None, Some("3500"), None];
++        for (index, section) in doc.sections.iter().enumerate() {
++            let mut clone = section.clone();
++            clone.paragraphs[0].text.push_str("changed text");
++            clone.section_def.column_spacing += 1;
++            let attrs = attributes(&emit(&clone, index).unwrap());
++            assert_eq!(
++                attrs
++                    .iter()
++                    .find(|(k, _)| k == "tabStopVal")
++                    .map(|(_, v)| v.as_str()),
++                expected[index]
++            );
++            assert_eq!(
++                attrs
++                    .iter()
++                    .find(|(k, _)| k == "tabStopUnit")
++                    .map(|(_, v)| v.as_str()),
++                if index == 2 { Some("CHAR") } else { None }
++            );
++        }
++    }
++
++    #[test]
++    fn changed_tab_spacing_and_inconsistent_heads_fail_closed() {
++        let mut section = imported("");
++        section.section_def.default_tab_spacing += 1;
++        assert!(emit(&section, 0)
++            .unwrap_err()
++            .to_string()
++            .contains("tab spacing changed"));
++        let mut section = imported("");
++        section.section_def = imported(PAIR).section_def;
++        assert!(emit(&section, 0)
++            .unwrap_err()
++            .to_string()
++            .contains("inconsistent section head"));
++    }
++
++    #[test]
++    fn generated_and_hwp5_sections_keep_established_defaults() {
++        let section = Section {
++            paragraphs: vec![Paragraph::default()],
++            ..Section::default()
++        };
++        assert!(emit(&section, 0).unwrap().contains(PAIR));
++        let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("saved/blank2010.hwp");
++        let doc = crate::parser::parse_hwp(&std::fs::read(path).unwrap()).unwrap();
++        for (index, section) in doc.sections.iter().enumerate() {
++            assert!(section.section_def.hwpx_tab_stop.is_none());
++            assert!(emit(section, index).unwrap().contains(PAIR));
++        }
++    }
++
++    #[test]
++    fn template_transform_is_bounded_and_missing_anchors_fail() {
++        let section = imported("");
++        let input = format!(
++            r#"<x tabStopVal="4000"/>{}<hp:secPr{}/>"#,
++            EMPTY_SECTION_XML, PAIR
++        );
++        let output = replace_secpr_tab_stop(&input, &section.section_def).unwrap();
++        assert!(output.starts_with(r#"<x tabStopVal="4000"/>"#));
++        assert!(output.ends_with(&format!("<hp:secPr{PAIR}/>")));
++        assert_eq!(output.matches(PAIR).count(), 1);
++        for template in [
++            "<other/>",
++            "<hp:secPr ",
++            "<hp:secPr tabStopVal=\"4000\">",
++            "<hp:secPr tabStopUnit=\"HWPUNIT\">",
++        ] {
++            assert!(replace_secpr_tab_stop(template, &section.section_def)
++                .unwrap_err()
++                .to_string()
++                .contains("template"));
++        }
++    }
++}
+diff --git a/src/serializer/hwpx/table.rs b/src/serializer/hwpx/table.rs
+--- a/src/serializer/hwpx/table.rs
++++ b/src/serializer/hwpx/table.rs
+@@ -383,7 +383,7 @@
+             .iter()
+             .find(|c| matches!(c, crate::model::control::Control::SectionDef(_)))
+         {
+-            p_xml.push_str(&build_secpr_run(sd, first_run_char_shape_id(para)));
++            p_xml.push_str(&build_secpr_run(sd, first_run_char_shape_id(para))?);
+         }
+         p_xml.push_str(&runs);
+         p_xml.push_str(&linesegs);
+diff --git a/src/serializer/hwpx/mod.rs b/src/serializer/hwpx/mod.rs
+--- a/src/serializer/hwpx/mod.rs
++++ b/src/serializer/hwpx/mod.rs
+@@ -55,6 +55,8 @@
+ /// HWPX 직렬화 바이트와 바로 그 산출물의 내용 손실을 함께 반환한다 (#4430).
+ pub fn serialize_hwpx_with_report(doc: &Document) -> Result<SerializedDocument, SerializeError> {
+     use static_assets::*;
++
++    section::validate_tab_stop_provenance(doc)?;
+ 
+     // 1-pass: ID 풀 구성
+     let mut ctx = SerializeContext::collect_from_document(doc);
+diff --git a/src/parser/hwpx/mod.rs b/src/parser/hwpx/mod.rs
+--- a/src/parser/hwpx/mod.rs
++++ b/src/parser/hwpx/mod.rs
+@@ -160,6 +160,8 @@
+     XmlError(String),
+     /// Incomplete owned drawing text structure must reach the document caller.
+     DrawingTextStructure(String),
++    /// Invalid/ambiguous secPr tab provenance must not become a default section.
++    SecPrTabStop(String),
+     /// 필수 파일 누락
+     MissingFile(String),
+     /// 데이터 변환 오류
+@@ -190,6 +192,7 @@
+             HwpxError::ZipError(e) => write!(f, "ZIP 오류: {}", e),
+             HwpxError::XmlError(e) => write!(f, "XML 파싱 오류: {}", e),
+             HwpxError::DrawingTextStructure(e) => write!(f, "그리기 내부 영역 구조 오류: {}", e),
++            HwpxError::SecPrTabStop(e) => write!(f, "{e}"),
+             HwpxError::MissingFile(e) => write!(f, "필수 파일 누락: {}", e),
+             HwpxError::ConversionError(e) => write!(f, "변환 오류: {}", e),
+             HwpxError::Encrypted(e) => write!(f, "암호화된 문서: {}", e),
+@@ -345,7 +348,7 @@
+                 section.section_def.master_pages.push(master_page);
+                 Ok(true)
+             }
+-            Err(e @ HwpxError::DrawingTextStructure(_)) => Err(e),
++            Err(e @ (HwpxError::DrawingTextStructure(_) | HwpxError::SecPrTabStop(_))) => Err(e),
+             Err(e) => {
+                 eprintln!("경고: {} 파싱 실패: {}", master_page_href, e);
+                 Ok(false)
+@@ -580,7 +583,9 @@
+                 }
+                 sections.push(section);
+             }
+-            Err(e @ HwpxError::DrawingTextStructure(_)) => return Err(e),
++            Err(e @ (HwpxError::DrawingTextStructure(_) | HwpxError::SecPrTabStop(_))) => {
++                return Err(e)
++            }
+             Err(e) => {
+                 eprintln!("경고: {} 파싱 실패: {}", section_href, e);
+                 sections.push(Section::default());
+@@ -894,3 +899,41 @@
+         assert_eq!(font.bin_item_id_ref, "font-resource-alpha");
+     }
+ }
++
++#[cfg(test)]
++mod secpr_tab_stop_container_errors {
++    use super::*;
++
++    #[test]
++    fn invalid_tab_attributes_reach_the_document_caller() {
++        use crate::serializer::hwpx::{fixtures, writer::HwpxZipWriter};
++        for pair in [
++            r#"tabStopVal="bad" tabStopUnit="HWPUNIT""#,
++            r#"tabStopVal="4000" tabStopUnit="PX""#,
++            r#"tabStopVal="1" tabStopVal="2""#,
++        ] {
++            let mut zip = HwpxZipWriter::new();
++            zip.write_stored("mimetype", b"application/hwp+zip")
++                .unwrap();
++            zip.write_deflated(
++                "Contents/content.hpf",
++                fixtures::EMPTY_CONTENT_HPF.as_bytes(),
++            )
++            .unwrap();
++            zip.write_deflated("Contents/header.xml", fixtures::EMPTY_HEADER_XML.as_bytes())
++                .unwrap();
++            let section = fixtures::EMPTY_SECTION0_XML.replacen(
++                r#"tabStopVal="4000" tabStopUnit="HWPUNIT""#,
++                pair,
++                1,
++            );
++            zip.write_deflated("Contents/section0.xml", section.as_bytes())
++                .unwrap();
++            let error = parse_hwpx(&zip.finish().unwrap()).unwrap_err();
++            assert!(
++                matches!(error, HwpxError::SecPrTabStop(_)),
++                "{pair}: {error}"
++            );
++        }
++    }
++}

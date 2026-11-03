@@ -2565,5 +2565,550 @@
    "T011": "NOT STARTED"
   },
   "rawEvidence": "local ignored target/hwpx-strike3d-20261103/ (not published)"
- }
+ },
+  "secPrTabStopPresenceFollowup": {
+    "date": "2026-11-03",
+    "status": "PASS",
+    "scope": "HWPX hp:secPr tabStopVal/tabStopUnit original representation preservation",
+    "sourceHead": "ad201978eb73e57d8df6b89e3c8e0ed9b172be54",
+    "branch": "master",
+    "gitlinks": {
+      "external/rhwp": "1a76570e833917d15817415a53c09ad61ab3203f",
+      "external/wordcraft": "fc41918814f62645b6746ed68e71e8c2c2e85d6f"
+    },
+    "defect": {
+      "sample": "external/rhwp/saved/blank_hwpx.hwpx",
+      "sourceSha256": "42a10023dccae3041d8ca3b9ae13f38ee2dbc69097eecfa97380427584994c87",
+      "originalSecPr": [
+        {
+          "id": "",
+          "textDirection": "HORIZONTAL",
+          "spaceColumns": "1134",
+          "tabStop": "8000",
+          "outlineShapeIDRef": "1",
+          "memoShapeIDRef": "0",
+          "textVerticalWidthHead": "0",
+          "masterPageCnt": "0"
+        }
+      ],
+      "baselineSecPr": [
+        {
+          "id": "",
+          "textDirection": "HORIZONTAL",
+          "spaceColumns": "1134",
+          "tabStop": "8000",
+          "tabStopVal": "4000",
+          "tabStopUnit": "HWPUNIT",
+          "outlineShapeIDRef": "1",
+          "memoShapeIDRef": "0",
+          "textVerticalWidthHead": "0",
+          "masterPageCnt": "0"
+        }
+      ],
+      "baselinePreflight": [
+        "unsafe",
+        [
+          "partChanged:Contents/section0.xml"
+        ]
+      ],
+      "onlyTargetAttributesDiffered": true,
+      "candidatePreflight": {
+        "outcome": "safe",
+        "findings": []
+      },
+      "section0CanonicalEqual": true,
+      "additionalSectionDifferences": [],
+      "editedNativeSaveReopen": "PASS"
+    },
+    "schema": {
+      "path": "external/rhwp/mydocs/manual/OWPML SCHEMA/ParaList XML schema.xml",
+      "sha256": "1927dfb30d4b8df1e608a706a27c99979f158df81d9f57127fc36a3c572b726b",
+      "tabStopVal": {
+        "type": "xs:integer",
+        "default": "0",
+        "optional": true
+      },
+      "tabStopUnit": {
+        "tokens": [
+          "CHAR",
+          "HWPUNIT"
+        ],
+        "default": "HWPUNIT",
+        "optional": true
+      },
+      "presenceIsPreservedIndependentlyOfEffectiveDefaults": true,
+      "lexicalIntegerSpellingPreservedAfterXmlAttributeNormalization": true
+    },
+    "rootCause": {
+      "parser": "parse_section_def_start only populated legacy tabStop/default_tab_spacing; new attributes discarded",
+      "model": "SectionDef had no independent presence/value slots for the new pair",
+      "serializer": "template emitted 4000/HWPUNIT and replace_secpr_scalars did not replace/remove them",
+      "containerBoundary": "generic section XML errors were caught and replaced with Section::default(); dedicated SecPrTabStop errors now propagate through section/master-page catches"
+    },
+    "implementation": {
+      "patch": {
+        "name": "hwpx-secpr-tabstop-presence.patch",
+        "sha256": "4a973d709e129fd4e2c22d538c6f426adfaf562cf5b70f82a5f704106b319ed1"
+      },
+      "rhwpBuild": {
+        "artifacts": {
+          "rhwp.js": "70cde06a369fa7fd4fc8bc8f3d6acaee158596ba1a116a2c72159002b0b5654e",
+          "rhwp_bg.wasm": "0340e34c0887dc3153525123fd56a7333e60acb10a85758f790020783554d2c5"
+        },
+        "commit": "1a76570e833917d15817415a53c09ad61ab3203f",
+        "engine": "rhwp",
+        "generation": "f817bec0ffa17773e8f7e5412f3cbcf7458bf7140d329fc5e0986d0d98c157eb",
+        "integration": {
+          "kind": "patched-upstream",
+          "patches": [
+            {
+              "name": "hwpx-textdir-ltr.patch",
+              "sha256": "abab4bc23a89dfec82aa63d36d32cd7192e5b14fefd2dd56231c4bb5676c6cc0"
+            },
+            {
+              "name": "hwpx-duplicate-paragraph-ids.patch",
+              "sha256": "79fd8f41c4cabe82b6b0b66265f5a1b3feef08a4c0b07af30cf7f788e11a9787"
+            },
+            {
+              "name": "hwpx-clipboard-paragraph-ids.patch",
+              "sha256": "30ac44ee1283f55605e49d09e446f5bbb5104b948ce2e7b74b87a9652e8a5c8e"
+            },
+            {
+              "name": "hwpx-spine-linear.patch",
+              "sha256": "080070cdfdaffe9b80b61ddeb6ddec8e49080b168649f92932caaf58f08298eb"
+            },
+            {
+              "name": "hwpx-spine-validation.patch",
+              "sha256": "0aae77fae8f7eb5ab1c1c83782c0930aa3501b1fd262b1e78706ebed35eeed5d"
+            },
+            {
+              "name": "hwpx-manifest-order.patch",
+              "sha256": "469c2db1c8070e18b87b02f8e8677dda48f746d3ab2ebf27706fe239453a6dc2"
+            },
+            {
+              "name": "hwpx-charpr-child-presence.patch",
+              "sha256": "cbe9574c01e72481d617c352a13da09ba5728a502713a0338ad80c6ab0347573"
+            },
+            {
+              "name": "hwpx-strikeout-3d-placeholder.patch",
+              "sha256": "5f9ca456cadaf6b895590dcf1755f80e37534e9052ca191826b1ae0f43adc281"
+            },
+            {
+              "name": "hwpx-strike3d-derived-styles.patch",
+              "sha256": "992074268325dcc9f1bcc972455a6b90e202db6d25efaa4295b36c3a940e19c2"
+            },
+            {
+              "name": "hwpx-secpr-tabstop-presence.patch",
+              "sha256": "4a973d709e129fd4e2c22d538c6f426adfaf562cf5b70f82a5f704106b319ed1"
+            }
+          ],
+          "sourceTreeSha256": "e30ee2d24fa948bf9d023da83090afc78d1e9b7638f6e898db57c016f86ccbe7"
+        },
+        "optimization": {
+          "flags": [],
+          "tool": "none",
+          "version": null
+        },
+        "profile": "release",
+        "schemaVersion": 3,
+        "sourceFingerprint": "a3ba464c0d71d4349b92efe084bfcb4afaf56ed5ce631930f4c2c902bcc06425",
+        "tools": {
+          "cargo": "1.99.1",
+          "rustc": "1.99.1",
+          "wasm-bindgen": "0.2.127"
+        }
+      },
+      "filesInPatch": [
+        "src/model/document.rs",
+        "src/parser/hwpx/section.rs",
+        "src/parser/hwpx/mod.rs",
+        "src/serializer/hwpx/section.rs",
+        "src/serializer/hwpx/table.rs",
+        "src/serializer/hwpx/mod.rs"
+      ],
+      "provenanceOwner": "Option<HwpxTabStop> on each SectionDef, cloned with its owner, excluded from serde effective-state output",
+      "imported": "Some retains independent absence/presence and XML-normalized validated values; integer sign/zeros/whitespace retained",
+      "generated": "None retains established template defaults 4000/HWPUNIT; HWP5/HWP3/HML remain without HWPX provenance",
+      "editPolicy": {
+        "unchangedOrTextEdit": "retain",
+        "unrelatedSectionProperties": "retain",
+        "tabSpacingChanged": "refuse export with specific unsupported-conversion diagnostic",
+        "cloneCopyMove": "owner and snapshot travel together",
+        "newSection": "generated defaults",
+        "heterogeneousDefinitionsInOneStream": "inconsistent head/first-definition provenance refuses export; no general section ownership rewrite"
+      },
+      "layoutConsumersUnchanged": true,
+      "legacyTabStopEmissionUnchanged": true,
+      "templateUnchanged": true,
+      "firstNinePatchesUnchanged": true,
+      "templateReplacement": "bounded to first template secPr opening tag; both exact anchors must occur once; missing/duplicate anchors fail"
+    },
+    "census": {
+      "originalFixtureCount": 734,
+      "originalIdentity": "all 734 path/SHA pairs match historical run identity",
+      "secPrCount": 806,
+      "bothAbsent": 74,
+      "bothPresent": 732,
+      "standard4000Hwpunit": 730,
+      "nondefaultPairs": {
+        "2000/CHAR": 1,
+        "3500/HWPUNIT": 1
+      },
+      "valOnlyObserved": 0,
+      "unitOnlyObserved": 0,
+      "documentsWithMultipleSectionFiles": 40,
+      "heterogeneousTargetStatesObserved": 0,
+      "multipleSecPrInOneFileObserved": 2,
+      "targetInvalidTokensObserved": 0,
+      "syntheticCases": [
+        "value only",
+        "unit only",
+        "different state per section",
+        "invalid/ambiguous attributes",
+        "inconsistent head/control provenance"
+      ],
+      "rawEvidence": "target/hwpx-secpr-tabstop-20261103/census.json"
+    },
+    "corpus": {
+      "total": 734,
+      "before": {
+        "unsafe": 478,
+        "export-failed": 149,
+        "safe": 98,
+        "unknown": 9
+      },
+      "after": {
+        "unsafe": 464,
+        "export-failed": 149,
+        "safe": 112,
+        "unknown": 9
+      },
+      "changedDocuments": 50,
+      "removedSectionFindings": 16,
+      "newlySafe": 14,
+      "safeRegressions": 0,
+      "addedFindings": 0,
+      "unexpectedOutputParts": 0,
+      "exportSuccessBefore": 585,
+      "exportSuccessAfter": 585,
+      "perInputExportOutcomeUnchanged": true,
+      "changedParts": "only Contents/sectionN.xml; canonical removal of the two target attrs explains all 50 changed documents",
+      "newlySafeIndependentPackageModelRepeatReopen": 14,
+      "newlySafeEditedSaving": "only blank_hwpx received new native edited-save acceptance; other 13 need their own preview/native acceptance",
+      "baselineGeneration": "fe235d2f5df9cac5c2756949f6aba182a4e6e0bca4cd59fe1084c07d80d2d2d4",
+      "baselineWasmSha256": "c631c4e9b77c6bf745b5ab027ec802da249992cc47f66e579c9cf6a329603af5",
+      "candidateGeneration": "f817bec0ffa17773e8f7e5412f3cbcf7458bf7140d329fc5e0986d0d98c157eb",
+      "candidateWasmSha256": "0340e34c0887dc3153525123fd56a7333e60acb10a85758f790020783554d2c5",
+      "checkerSha256": "f4d256e722965fe02ed9eca0a1e558a96f96c082cbfe55560d19a5824994b7e0",
+      "rawEvidence": [
+        "target/hwpx-secpr-tabstop-20261103/baseline-corpus/preflight.json",
+        "target/hwpx-secpr-tabstop-20261103/wasm-fixed/corpus-comparison.json",
+        "target/hwpx-secpr-tabstop-20261103/wasm-fixed/newly-safe-reopen.json"
+      ]
+    },
+    "checks": {
+      "rustSecPr": {
+        "pass": 18,
+        "fail": 0,
+        "ignored": 0
+      },
+      "rustSectionParser": {
+        "pass": 94,
+        "fail": 0
+      },
+      "realWasmPositiveCases": 11,
+      "realWasmNegativeCases": 9,
+      "generatedAndHwp5Defaults": "PASS, baseline all-part identity",
+      "syntheticMultisection": "both section indices full canonical XML equal for no-edit, repeat and reopen",
+      "invalidValueRejection": "open-stage specific tabStopVal/unit/attribute diagnostic, not an unrelated preflight difference",
+      "inconsistentProvenance": "export-stage specific head/first-definition error",
+      "changedTabSpacing": "specific export refusal",
+      "existingIdentityDuplicateClipboardSpineCharPrStrikeoutDerivedPaste": "PASS",
+      "hwp3HmlSelectedConversionAB": "PASS, 25/11 parts respectively, package SHA equal, zero content loss, generated defaults retained",
+      "rustfmtSixTouchedFiles": "PASS",
+      "pythonSyntax": "PASS",
+      "retainedFailures": [
+        "initial new Rust test QName str/bytes compile error (corrected)",
+        "first WASM candidate invalid-numeric failure had wrong cause because container swallowed error (corrected)",
+        "charPr differential assumed blank was unsafe; replaced with explicit synthetic unsafe substrate retaining mutation-specific assertions"
+      ]
+    },
+    "native": {
+      "status": "PASS",
+      "headAtBuildAndRun": "ad201978eb73e57d8df6b89e3c8e0ed9b172be54",
+      "buildCommand": "python3 scripts/cargo-geul.py build --bin geul",
+      "appSha256": "2673363242817c4d7610f2c396d65dc04ba5279ce02012d3d3e8f5571c3fda7d",
+      "profile": "debug native Tauri host with final Release WASM served by Vite",
+      "generation": "f817bec0ffa17773e8f7e5412f3cbcf7458bf7140d329fc5e0986d0d98c157eb",
+      "wasmSha256": "0340e34c0887dc3153525123fd56a7333e60acb10a85758f790020783554d2c5",
+      "dpr": 1,
+      "input": "real X11/IBus hangul, no synthetic composition events",
+      "documents": [
+        {
+          "sample": "external/rhwp/samples/issue7418/list_marker_head_synthetic.hwpx",
+          "sourceSha256": "d96b5f57d88e1241229c2862c077034381de6b91595b82fe2a3bec240a968a65",
+          "preflight": "safe",
+          "openedRevision": "0",
+          "compositionObserved": true,
+          "syntheticComposition": false,
+          "editedRevision": "2",
+          "editedDirty": "true",
+          "savedRevision": "2",
+          "saveState": "saved",
+          "synced": "true",
+          "publishedSha256": "89a1eee24ce8f6efbb21e5ab4f8ca4740d1958a477b363d10704ad74f63aeb98",
+          "reopenedRevision": "0",
+          "reopenedText": "한글",
+          "reopenedDirty": "false",
+          "package": {
+            "zipValid": true,
+            "partSetEqual": true,
+            "headerAndUnrelatedXmlEqual": true,
+            "previewIsKnownBlank": true,
+            "paragraphIdsEqual": true,
+            "paragraphCount": 44,
+            "repeatedParagraphIds": 42,
+            "expectedText": "한글"
+          },
+          "model": {
+            "modelEquivalent": true,
+            "controlsEqual": true,
+            "pagesEqual": true,
+            "sections": 1,
+            "paragraphs": 44,
+            "expectedText": "한글"
+          },
+          "negative": [
+            {
+              "case": "externalConflict",
+              "publicError": "FileConflict",
+              "findings": "",
+              "engineCause": null,
+              "beforeSaveSha256": "ebd50dfc9749614dd1c2450ef3dde5c57eaad345f42c1a0d9fc92d8cd474ef52",
+              "afterSaveSha256": "ebd50dfc9749614dd1c2450ef3dde5c57eaad345f42c1a0d9fc92d8cd474ef52",
+              "dirty": "true",
+              "unpreserved": "true"
+            },
+            {
+              "case": "negative",
+              "publicError": "EngineFailure",
+              "findings": "",
+              "engineCause": "렌더링 오류: 지원하지 않는 입력: HWPX paragraph id missing or invalid",
+              "beforeSaveSha256": "4419753ba88963874ec8cb9cbbb6f7081baff763603b6b0880ac05107c8eb261",
+              "afterSaveSha256": "4419753ba88963874ec8cb9cbbb6f7081baff763603b6b0880ac05107c8eb261",
+              "dirty": "true",
+              "unpreserved": "true"
+            },
+            {
+              "case": "previewNegative",
+              "publicError": "UnsafeSave",
+              "findings": "previewStale:Preview/PrvImage.png,previewStale:Preview/PrvText.txt",
+              "engineCause": null,
+              "beforeSaveSha256": "0c9c240a426367f0f6b7fd71ede97276b3576fc27b3c8b912dbb3c022d1f64bd",
+              "afterSaveSha256": "0c9c240a426367f0f6b7fd71ede97276b3576fc27b3c8b912dbb3c022d1f64bd",
+              "dirty": "true",
+              "unpreserved": "true"
+            },
+            {
+              "case": "unsafeNegative",
+              "publicError": "UnsafeSave",
+              "findings": "partChanged:Contents/section0.xml",
+              "engineCause": null,
+              "beforeSaveSha256": "3d9aef4f00d3351b76f6c135dc34f3cfc38bc2e3619e1e1086fff8105f6e75a2",
+              "afterSaveSha256": "3d9aef4f00d3351b76f6c135dc34f3cfc38bc2e3619e1e1086fff8105f6e75a2",
+              "dirty": "true",
+              "unpreserved": "true"
+            },
+            {
+              "case": "unsupportedSectionNegative",
+              "publicError": "EngineFailure",
+              "findings": "",
+              "engineCause": "렌더링 오류: 지원하지 않는 입력: HWPX secPr tab-stop provenance: inconsistent section head and first definition",
+              "beforeSaveSha256": "ba70e4b278b58aeccac2050bcf40f2d04c16a5d6ca4ec55d3c9fe2b03e13460d",
+              "afterSaveSha256": "ba70e4b278b58aeccac2050bcf40f2d04c16a5d6ca4ec55d3c9fe2b03e13460d",
+              "dirty": "true",
+              "unpreserved": "true"
+            }
+          ],
+          "loadedWasmResourceUrls": [
+            "http://localhost:1420/rhwp/generations/f817bec0ffa17773e8f7e5412f3cbcf7458bf7140d329fc5e0986d0d98c157eb/rhwp_bg.wasm"
+          ],
+          "allSecPrCanonicalEqual": true,
+          "cleanupSucceeded": true,
+          "cleanupSurvivors": [],
+          "rawEvidence": "target/hwpx-secpr-tabstop-20261103/native-list-run/result.json"
+        },
+        {
+          "sample": "external/rhwp/samples/종이기준.hwpx",
+          "sourceSha256": "2903b6f7a261005fa9a191cc7caa66d8307438b9cb93410f79fc61fd1fa0d9d8",
+          "preflight": "safe",
+          "openedRevision": "0",
+          "compositionObserved": true,
+          "syntheticComposition": false,
+          "editedRevision": "2",
+          "editedDirty": "true",
+          "savedRevision": "2",
+          "saveState": "saved",
+          "synced": "true",
+          "publishedSha256": "b26ae2808144a9aecb919061a494e3625f8f3991a37c28c6184a19a3d1f6fe92",
+          "reopenedRevision": "0",
+          "reopenedText": "한글",
+          "reopenedDirty": "false",
+          "package": {
+            "zipValid": true,
+            "partSetEqual": true,
+            "headerAndUnrelatedXmlEqual": true,
+            "previewIsKnownBlank": true,
+            "paragraphIdsEqual": true,
+            "paragraphCount": 1,
+            "repeatedParagraphIds": 0,
+            "expectedText": "한글"
+          },
+          "model": {
+            "modelEquivalent": true,
+            "controlsEqual": true,
+            "pagesEqual": true,
+            "sections": 1,
+            "paragraphs": 1,
+            "expectedText": "한글"
+          },
+          "negative": [
+            {
+              "case": "externalConflict",
+              "publicError": "FileConflict",
+              "findings": "",
+              "engineCause": null,
+              "beforeSaveSha256": "3490dfae14ee5b35fc44f016ff448584ceed2e3389fa121feca1e08dbbaa47b4",
+              "afterSaveSha256": "3490dfae14ee5b35fc44f016ff448584ceed2e3389fa121feca1e08dbbaa47b4",
+              "dirty": "true",
+              "unpreserved": "true"
+            },
+            {
+              "case": "negative",
+              "publicError": "EngineFailure",
+              "findings": "",
+              "engineCause": "렌더링 오류: 지원하지 않는 입력: HWPX paragraph id missing or invalid",
+              "beforeSaveSha256": "19bafdca951533b8a8554c0ee68b9dfebb35bbf9ade2bc9c6ae4431db0639c39",
+              "afterSaveSha256": "19bafdca951533b8a8554c0ee68b9dfebb35bbf9ade2bc9c6ae4431db0639c39",
+              "dirty": "true",
+              "unpreserved": "true"
+            }
+          ],
+          "loadedWasmResourceUrls": [
+            "http://localhost:1420/rhwp/generations/f817bec0ffa17773e8f7e5412f3cbcf7458bf7140d329fc5e0986d0d98c157eb/rhwp_bg.wasm"
+          ],
+          "allSecPrCanonicalEqual": true,
+          "cleanupSucceeded": true,
+          "cleanupSurvivors": [],
+          "rawEvidence": "target/hwpx-secpr-tabstop-20261103/native-jongi-run/result.json"
+        },
+        {
+          "sample": "external/rhwp/saved/blank_hwpx.hwpx",
+          "sourceSha256": "42a10023dccae3041d8ca3b9ae13f38ee2dbc69097eecfa97380427584994c87",
+          "preflight": "safe",
+          "openedRevision": "0",
+          "compositionObserved": true,
+          "syntheticComposition": false,
+          "editedRevision": "2",
+          "editedDirty": "true",
+          "savedRevision": "2",
+          "saveState": "saved",
+          "synced": "true",
+          "publishedSha256": "4b46b7d88cfd862aef119de317fb060fee96704e1b78c0692112b78efa1a6752",
+          "reopenedRevision": "0",
+          "reopenedText": "한글가나다라마바",
+          "reopenedDirty": "false",
+          "package": {
+            "zipValid": true,
+            "partSetEqual": true,
+            "headerAndUnrelatedXmlEqual": true,
+            "previewIsKnownBlank": true,
+            "paragraphIdsEqual": true,
+            "paragraphCount": 1,
+            "repeatedParagraphIds": 0,
+            "expectedText": "한글가나다라마바"
+          },
+          "model": {
+            "modelEquivalent": true,
+            "controlsEqual": true,
+            "pagesEqual": true,
+            "sections": 1,
+            "paragraphs": 1,
+            "expectedText": "한글가나다라마바"
+          },
+          "negative": [
+            {
+              "case": "externalConflict",
+              "publicError": "FileConflict",
+              "findings": "",
+              "engineCause": null,
+              "beforeSaveSha256": "5f18bb5146f9b1c1fc3c3074cdb7ef4cbace78654b79e5819087daa59c93c4f3",
+              "afterSaveSha256": "5f18bb5146f9b1c1fc3c3074cdb7ef4cbace78654b79e5819087daa59c93c4f3",
+              "dirty": "true",
+              "unpreserved": "true"
+            },
+            {
+              "case": "negative",
+              "publicError": "EngineFailure",
+              "findings": "",
+              "engineCause": "렌더링 오류: 지원하지 않는 입력: HWPX paragraph id missing or invalid",
+              "beforeSaveSha256": "eb6e9b47fac3855851b1eecd892fdd4199b01ef7cf87e368b891299d570b8c2b",
+              "afterSaveSha256": "eb6e9b47fac3855851b1eecd892fdd4199b01ef7cf87e368b891299d570b8c2b",
+              "dirty": "true",
+              "unpreserved": "true"
+            }
+          ],
+          "loadedWasmResourceUrls": [
+            "http://localhost:1420/rhwp/generations/f817bec0ffa17773e8f7e5412f3cbcf7458bf7140d329fc5e0986d0d98c157eb/rhwp_bg.wasm"
+          ],
+          "allSecPrCanonicalEqual": true,
+          "cleanupSucceeded": true,
+          "cleanupSurvivors": [],
+          "rawEvidence": "target/hwpx-secpr-tabstop-20261103/native-blank-run/result.json"
+        }
+      ],
+      "rejectedSaveCount": 9,
+      "allRejectedSaveBytesUnchanged": true,
+      "allSecPrCanonicalEqual": true
+    },
+    "retention": {
+      "generations": 6,
+      "limit": 6,
+      "baselineFe235AndPrevious977AndDebug0c2Preserved": true,
+      "retiredIntactToIgnoredArchive": [
+        "afad27ebaceeea05e9f2a6d6b7077b0f59c1192d3c729b576cbebcd4c626bbd1",
+        "4fc10a9db30f457efe64c4784b56da5717d98c72fe72ffbf3bcd573d26b62731"
+      ],
+      "failedIntermediate6e909Retained": true,
+      "protectedGenerationsDeleted": false
+    },
+    "saveGuarantees": {
+      "productionComparatorLossPreflightAndPolicyUnchanged": true,
+      "packageIntegrityAtomicPublicationDurabilityRecoveryUnchanged": true,
+      "FileConflictParagraphIdsAndPreviewStaleStillFailClosed": true,
+      "remainingUnsafeSourcesStillRejected": true
+    },
+    "notRun": [
+      "entire RHWP library suite (historical 121 missing-upstream-fixture failures preserved as historical; no full-suite PASS claimed)",
+      "full workspace Clippy/build/performance/visual suites (no layout/renderer change)",
+      "new final10-patch CLI table-cell build (previous9 patch sources unchanged; final WASM derived HTML-paste path verified)",
+      "edited native saves of the other 13 newly-safe documents"
+    ],
+    "remainingUnsupported": [
+      "464 unsafe, 9 unknown and 149 export-failed corpus inputs remain",
+      "unsupported lineNumberShape setting still rejected by preservation comparison",
+      "ambiguous/invalid target attrs reject import",
+      "heterogeneous head/first-definition provenance in one stream and edited legacy tab spacing refuse export",
+      "whitespace and empty hp:t/run structure differences in other corpus documents remain"
+    ],
+    "taskStates": {
+      "T007": "INCOMPLETE",
+      "T008": "INCOMPLETE",
+      "T009": "unchecked",
+      "T010": "NO-GO / unchecked",
+      "T011": "NOT STARTED"
+    },
+    "nextNarrowTask": "independently reproduce the empty hp:t structure loss in corpus parse_hwpx/156492236___min.hwpx without weakening canonical comparison",
+    "rawEvidence": "target/hwpx-secpr-tabstop-20261103/"
+  }
 }

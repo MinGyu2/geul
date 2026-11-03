@@ -308,28 +308,39 @@ def negatives(package, checker, out):
 
 
 def differential(package, checker, out):
-    """blank_hwpx is already unsafe (section0); a charPr mutation must add only its own finding."""
-    _, _, baseline = outcome(package, checker, BLANK, out / "differential-baseline")
+    """A synthetic unrelated section difference cannot satisfy a charPr negative.
+
+    blank_hwpx itself became safe after secPr tab attribute preservation. Keep
+    this differential control explicitly unsafe using an unsupported line-number
+    setting, while still requiring each charPr mutation's own added finding.
+    """
+    substrate = out / "differential-unsafe-source.hwpx"
+    def unrelated_section(xml):
+        changed, count = re.subn(r'(<hp:lineNumberShape[^>]* distance=")0(")', r'\g<1>12345\2', xml, count=1)
+        assert count == 1, "fixture line-number setting changed"
+        return changed
+    rewrite(BLANK, substrate, section=unrelated_section)
+    _, _, baseline = outcome(package, checker, substrate, out / "differential-baseline")
     assert baseline[0] == "unsafe" and HEADER_FINDING not in baseline[1], baseline
     rows = {}
     # Weak legacy condition: a no-op lexical change (attribute order) is "not safe"
     # only because of the unrelated section0 finding.
     control = out / "differential-noop.hwpx"
-    rewrite(BLANK, control, header=lambda h: re.sub(r'<hh:charPr id="0" height="(\d+)"', r'<hh:charPr height="\1" id="0"', h, count=1))
-    assert part(control, "Contents/header.xml") != part(BLANK, "Contents/header.xml")
+    rewrite(substrate, control, header=lambda h: re.sub(r'<hh:charPr id="0" height="(\d+)"', r'<hh:charPr height="\1" id="0"', h, count=1))
+    assert part(control, "Contents/header.xml") != part(substrate, "Contents/header.xml")
     _, _, noop = outcome(package, checker, control, out / "differential-noop")
     assert noop[0] != "safe", "legacy condition would pass"
     assert noop == baseline, (noop, baseline)
     rows["noop-control"] = {"verdict": noop, "legacyConditionPassesWithoutDefect": True}
     for name, mutate in PRESERVATION_CASES.items():
         fixture = out / f"differential-{name}.hwpx"
-        rewrite(BLANK, fixture, header=char_pr_0(mutate))
-        assert part(fixture, "Contents/header.xml") != part(BLANK, "Contents/header.xml"), name
+        rewrite(substrate, fixture, header=char_pr_0(mutate))
+        assert part(fixture, "Contents/header.xml") != part(substrate, "Contents/header.xml"), name
         _, output, verdict = outcome(package, checker, fixture, out / f"differential-{name}")
         assert verdict[0] == "unsafe" and set(verdict[1]) - set(baseline[1]) == {HEADER_FINDING}, (name, verdict)
         assert confined_to_char_pr(fixture, output, "0")
         rows[name] = {"verdict": verdict, "addedFinding": HEADER_FINDING}
-    return {"baseline": baseline, "cases": rows}
+    return {"baselineOrigin": "synthetic unsupported lineNumberShape@distance=12345", "baseline": baseline, "cases": rows}
 
 
 def main():
