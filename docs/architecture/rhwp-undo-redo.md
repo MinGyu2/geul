@@ -20,6 +20,40 @@ T010 SC-003의 rhwp 몫(실행 취소·다시 실행)의 계약이다. Phase 2(2
 이 절이 현재 상태의 단일 요약이다. 아래 날짜별 기록의 PASS/FAIL/NOT RUN·"현재"·"최신"은 **각 당시 실행 신원**에 한정하며 지우거나 소급 변경하지 않는다.
 원래 요건은 본문 §7–12와 원본 시험(`undo_native.py`, `undo_save.py`, 실제 WASM 실패 시험)을 그대로 따른다.
 
+<a id="t010-d3-d5-d2-20261104"></a>
+
+### D3·D5·D2 재검증 — 2026-11-04
+
+**D3 PASS, D5 PASS, D2 INCONCLUSIVE 유지. D1 마지막 공식 PASS 유지, D4 FAIL(지연)·자원 INCONCLUSIVE 그대로(이번에 실행·변경하지 않음).
+T010 INCOMPLETE / 제품 RHWP Undo/Redo NO-GO / T011 NOT STARTED 유지.** 아래 "현재 D1–D5 수용 행렬"의 D3·D5·D2 행은 `d1ec335` 기준 기록으로 남기고,
+이 세 관문의 현재 판정은 이 절이 대체한다.
+
+실행 신원: geul HEAD `9cd7484` 소스(제품 소스 변경 없음), RHWP `1a76570` + 패치 11개(파일 해시가 RELEASE.json과 일치),
+Release generation `853a0689…`, WASM `77d01d6c…`, JS `70cde06a…`, native 앱 `e72f2676…`(같은 소스로 빌드), WebKitGTK 2.54.1, IBus 1.5.33·ibus-hangul 1.5.5.
+모든 acceptance 실행은 시험 전용 선택자 `GEUL_RHWP_TEST_GENERATION=release`로 제품 Release generation을 신원·해시 검증 뒤 읽었다.
+
+| 관문 | 이전 | 이번 판정 | 근거(모두 위 신원) | 남은 조건 |
+|---|---|---|---|---|
+| D3 저장 보존 | UNVERIFIED(현재 Release) | **PASS** | `undo_save.py --release` 19/19 불일치 0(게시 13·거부 6, 거부 시 원본 SHA·디렉터리 그대로·dirty 유지, 참조 무결성 음성 거부); `save_service.py --release --strict-desired` 23행 CURRENT 0/DESIRED 0; Rust 저장·복구·세션 189/0; src 905/905 | 실제 앱의 Undo→저장 IPC는 이 계약의 범위가 아니다(원래 D3와 같은 하네스 형태) |
+| D5 실패·복구 | UNVERIFIED(전체) | **PASS** | §9 각 행과 폐기 예외를 단위·실제 WASM 시험에 대응(실제 WASM 폐기 뒤 예외 8/8, allocate/restore/close-cleanup 경계 10/10, `history_boundary.mjs` 18/18, PoC 50/50); native 실제 discard 뒤 예외 2/2 + 새 세대 reload 2/2 | RSS·전역 renderer 잔류 수용 기준은 D4 자원 행에 남는다 |
+| D2 native IME | INCONCLUSIVE | **INCONCLUSIVE** | 새 XIM 가설 진단 1회(10시도): 필수 E<U<F 0회, 관측 순서 E→`insertText`→U | 아래 D2 항목 |
+
+- **D3 기대표 갱신의 근거:** 처음 실행에서 Undo 행렬 7건·strict 5건이 불일치했다. 원인은 하네스 기대표가 2026-11-02 T009 정책
+  ([HWP 글 미리보기 재생성](save-preservation.md#hwp-글-미리보기-재생성-2026-11-02-stage-1))보다 오래된 것이었다: 이제 HWP `PrvText`만 낡았으면 저장 서비스가
+  본문에서 다시 만들어 게시하고 `PrvImage`는 blank2010 자산만 인정한다. 기대표만 바꾸지 않고, 새로 게시되는 HWP마다 독립 검사(스트림 집합 동일·`/PrvText`만 다름·
+  `PrvImage` 자산 해시·`PrvText` 줄이 재열기 본문에 있음·게시 파일 재열기 네 값 동일)를 추가했다. 여러 구역 HWPX의 `content.hpf` 차이는 XML 선언 공백뿐이라
+  C14N 비교로 기대를 유도한다(여전히 다른 근거로 거부). unsafe 출력 게시 0건.
+- **시험 인프라 교정(제품 변경 아님):** 시험 기본 WASM(`public/rhwp/rhwp_bg.wasm` legacy 사본, 패치 10개)이 제품 Release와 달랐다. vitest 5가 심볼릭 링크된 비공개 시험을
+  0건 실행으로 실패시켰다. 낡은 로더 시험 3개가 fetcher 없이 실패했다. `cargo-geul.py` bwrap 안의 복구 시험은 공유 임시 디렉터리 거부(환경)로 실패하고 0700 TMPDIR의
+  일반 실행은 통과했다. native probe가 제품과 다른 모듈 인스턴스를 패치하면 discard 예외가 주입되지 않았다(E1과 같은 모듈 동일성 수리 뒤 `sameModule=true`).
+- **D2:** 원래 predicate·assertion·환경 게이트(`GTK_IM_MODULE=ibus`)를 바꾸지 않았고 같은 ibus 행렬을 반복하지 않았다. 설치된 IBus는 GTK 모듈·ibus-x11 모두
+  `post_process_key_event`로 commit→forward 순서를 보존한다. 새 가설은 GTK XIM 모듈에서 Xlib가 commit과 forward key를 큐 앞에 되돌려(`XPutBackEvent`) 순서가
+  뒤집힌다는 것이었다. 진단 전용(게이트만 xim 허용) 1회 실행에서 E<U<F는 0/10이었고 commit은 forward보다 먼저 일반 `insertText`로 왔다. 가설을 기각하고 종료한다.
+  같은 진단에서 **XIM 조합 중 클릭 시 같은 음절이 두 번 들어가는 결함**(`…가`→`…가가`)을 관측했다: WebKit이 조합을 확정한 뒤 XIM reset commit이 같은 글자를
+  `insertText`로 다시 보내고, 공유 IME 계약은 조합 계열이 아닌 같은 글자를 새 입력으로 받는다. 검증 플랫폼(ibus GTK 모듈) 밖이고 Undo와 무관하며 공유 IME 계약 변경이
+  필요해 이번에 고치지 않았다(WordCraft UNVERIFIED). 별도 작업으로 다룬다.
+- 근거: 비공개 `geul-tests/reports/t010-d3-d5-d2-20261103/REPORT.ko.md`(E9).
+
 ### 현재 D1–D5 수용 행렬
 
 기준 제품: HEAD `d1ec33515839f733f707f99b31ff2dde82ddb2af`, RHWP `1a76570e833917d15817415a53c09ad61ab3203f`,
@@ -54,10 +88,11 @@ latest 보고서에서 다루지 않았다는 이유만으로 NOT RUN/FAIL로 �
 
 ### 근거에 따른 재개 조건
 
-- **D2:** 유효한 원래 의미의 독립 native E<U<F 증거, 구체적인 순서 가설을 가진 별도 승인된 지원 runtime/input 환경, 또는 전달 공백을 해소하고 실행 가능한 새 실험을 뒷받침하는 검증된 관측 능력 중 적어도 하나가 필요하다. 단순 delay 추가나 같은 key matrix 반복은 해당하지 않는다. PASS는 실제 native predicate 인식과 모든 원래 assertion 통과 뒤에만 가능하다.
+- **D2:** 유효한 원래 의미의 독립 native E<U<F 증거, 구체적인 순서 가설을 가진 별도 승인된 지원 runtime/input 환경, 또는 전달 공백을 해소하고 실행 가능한 새 실험을 뒷받침하는 검증된 관측 능력 중 적어도 하나가 필요하다. 단순 delay 추가나 같은 key matrix 반복은 해당하지 않는다. 2026-11-04 GTK XIM 경로 가설은 진단 1회(0/10)로 기각했다. PASS는 실제 native predicate 인식과 모든 원래 assertion 통과 뒤에만 가능하다.
 - **D4:** 새 latency 제거/critical-path 단축 기전, 실질적인 end-to-end 이득의 소스 근거, bounded correctness·ownership·memory 계약, 독립 full oracle/strict RGBA, 신원 일치 native 비교가 함께 있어야 후보를 다시 심사한다. local API microbenchmark만으로 재개하지 않는다. FULL_PAGE_ONLY와 원래4문서·warmup·표본·3RAF·group≤50/Undo≤1500을 보존하고, 승인된 통합 제품의 원본 producer/evaluator만 공식 PASS를 정한다.
 - **G0/G1:** 관련 출력 의존성·typed exact equality·generation/mutator·공유 자원 수명·실패·UNKNOWN/fallback 의무를 실제 근거로 닫아야 한다. 새 proof outline이나 G0 문서 완료는 폐쇄가 아니다. 별도 승인 없이 G1을 구현·실행하지 않는다.
 - **D3/D5:** 수용 행렬의 원본 계약과 현재 제품/산출물/fixture·소스 신원에 묶인 빠진 실행 근거를 확보해야 한다. 과거 로그의 실제 바인딩을 복원할 수 있으면 재실행으로 대체할 필요가 없다. 문서 보류 해제를 이유로 새 검증 범위를 발명하거나 하위 결과를 전체 PASS로 올리지 않는다.
+  2026-11-04: 현재 Release·소스 신원으로 원래 D3/D5 범위의 실행 근거를 확보해 두 관문 모두 PASS다([재검증](#t010-d3-d5-d2-20261104)). T010 완료나 제품 활성화를 뜻하지 않는다.
 - **자원·메모리:** snapshot I1–I3/깊이·한도·실패 시 fail-closed, release/dispose 후 owner/job/lease/listener·Canvas 수명, 반복 편집/Undo/Redo/close의 WASM high-water·RSS·재사용을 구분해 입증해야 한다. E1/E2의 Chemical engine 내부 detached Canvas21개/100,819,044pixels는 관측값이며 누수 확정도 해제 성공도 아니다. 충분히 settle한 in-app 상태·반복/대조 측정·소유권/재사용 근거가 필요하다. process 종료만으로 닫지 않는다. history256MiB 회계/증가 감시는 RSS 상한이 아니며, RSS의 규범 수용 기준은 미정이다. 측정·허용 기준은 별도 합의 없이 만들지 않고, 기존 Canvas16Mi pixels/쪽·32Mi pixels/surface 등 명시적 예산을 약화하지 않는다.
 
 ### T011·제품 활성화와 독립 작업
@@ -84,6 +119,7 @@ REJECTED는 근거와 모순을 뜻한다. 실행 신원이 다른 과거 후보
 - E6: [WebKit queue 최종 한정 조사](../../../geul-tests/reports/t010-d2-webkit-queue-20261101/REPORT.ko.md) — 관측 차단·runtime 내부 순서 UNVERIFIED·조사 종료.
 - E7: [D4 구조적 타당성](../../../geul-tests/reports/t010-d4-structural-feasibility-20261101/REPORT.ko.md) — 세 구조안 구현 NO-GO·최적화선 중단.
 - E8: [보관 D3/D5 실행 기록](../../tests/integration/rhwp/evidence/t010-design-review-admission/REPORT.ko.txt), [D3 19행](../../tests/integration/rhwp/evidence/t010-design-review-admission/undo-save.json), [이전 안정화](../../tests/integration/rhwp/evidence/t010-stabilization/undo-save.json) — 당시 PASS를 유지하되 현 Release 바인딩과 구분.
+- E9: [D3·D5·D2 재검증](../../../geul-tests/reports/t010-d3-d5-d2-20261103/REPORT.ko.md) — Release `853a0689…`/WASM `77d01d6c…`의 D3 19/19·strict 23행, D5 행렬 대응·native 2+2, D2 XIM 진단 0/10과 XIM 클릭 중복 관측.
 
 
 <a id="phase7-reevaluation-20261102"></a>

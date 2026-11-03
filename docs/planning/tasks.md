@@ -100,7 +100,7 @@ T007을 끝내야 T008을 시작할 수 있는 것은 아니다. 둘 다 T006에
 
 판정의 단일 기준은 [현재 T010 수용 행렬](../architecture/rhwp-undo-redo.md#t010-current-status)이다. 공통 레지스트리와 WordCraft 서식/Undo 일부는 구현되어 있지만 RHWP 제품 Undo/Redo는 비활성이다. T011 전체는 미착수이며 기존 기본 리본 UI·일부 파일 명령 존재와 혼동하지 않는다.
 
-현재 제품 정책은 `renderPageToCanvas` 기반 FULL_PAGE_ONLY다. 과거 소프트웨어 partial-band PASS를 GPU나 현재 전체 정책의 수용으로 바꾸지 않는다. D1 과거 PASS, D2 INCONCLUSIVE, D3/전체 D5 신원 공백, D4 실패·자원 미결론은 원문의 신원과 한계를 유지한다. 새 [시간 단축 조사](../architecture/t010-performance-followup-2026-11-03.md)는 구체적인 개선 후보·안전성 조건·반증 시험을 기술한 DESIGN ONLY 문서이며 구현·50ms 달성·재개 승인 근거가 아니다.
+현재 제품 정책은 `renderPageToCanvas` 기반 FULL_PAGE_ONLY다. 과거 소프트웨어 partial-band PASS를 GPU나 현재 전체 정책의 수용으로 바꾸지 않는다. D1 과거 PASS, D2 INCONCLUSIVE, D3/전체 D5 신원 공백, D4 실패·자원 미결론은 원문의 신원과 한계를 유지한다. 2026-11-04 재검증에서 현재 Release(`853a0689…`)·소스 신원으로 D3·D5 원래 범위가 PASS가 됐고 D2는 INCONCLUSIVE를 유지한다([근거](../architecture/rhwp-undo-redo.md#t010-d3-d5-d2-20261104)). D4가 남아 T010 체크와 의존성은 바꾸지 않는다. 새 [시간 단축 조사](../architecture/t010-performance-followup-2026-11-03.md)는 구체적인 개선 후보·안전성 조건·반증 시험을 기술한 DESIGN ONLY 문서이며 구현·50ms 달성·재개 승인 근거가 아니다.
 
 ### T012/T013/T015/T016: 범위와 선행 조건 유지
 
