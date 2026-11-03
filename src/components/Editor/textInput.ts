@@ -68,7 +68,9 @@ export function attachTextInput(input: HTMLTextAreaElement, controller: ImeInput
     // 들어갔다(재생: Ctrl+B → "하한", Ctrl+Z → "하하"). 끝나지 않은 트랜잭션 동안 명령은 composing으로 거절되고, 트랜잭션은
     // 입력기의 끝·새 조합·글자 입력·수식 키 없는 키로 끝난다.
     if (event.ctrlKey || event.metaKey || event.altKey) return;
-    controller.keyDown(event.isComposing || event.keyCode === 229);
+    // GTK XIM의 확정 운반 keydown(실측: key·code "Unidentified", keyCode 0, 조합 아님). 해석은 ImeInput 머리 설명.
+    const ximCommit = !event.isComposing && event.keyCode === 0 && event.key === "Unidentified" && event.code === "Unidentified";
+    controller.keyDown(event.isComposing || event.keyCode === 229, ximCommit);
     trace("ime:keyDown", () => controller.phase());
     if (event.isComposing || event.keyCode === 229) {
       if (NAVIGATION_KEYS.has(event.code) || NAVIGATION_KEYS.has(event.key)) pendingNavigation = event;

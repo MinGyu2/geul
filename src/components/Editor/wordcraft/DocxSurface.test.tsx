@@ -7,7 +7,8 @@ import { DocxSurface } from "./DocxSurface";
 import { CSS_PX_PER_PT } from "./DocxEditorSession";
 import { CHAR, flush, LINE, MARGIN, readyDocx, stubScreenContext } from "./testing";
 
-type Step = ["key", boolean, string?] | ["start"] | ["input", string, string, boolean] | ["end", string];
+type Step = ["key", boolean, string?] | ["start"] | ["input", string, string, boolean] | ["end", string]
+  | ["xim"]; // GTK XIM 확정 운반 keydown(key·code "Unidentified", keyCode 0)
 
 async function mounted(text?: string[]) {
   stubScreenContext(); // jsdom canvas에는 2D 문맥이 없다
@@ -29,6 +30,9 @@ async function mounted(text?: string[]) {
           fire(new KeyboardEvent("keydown", { key, keyCode, isComposing: step[1], shiftKey: false, bubbles: true, cancelable: true }));
           break;
         }
+        case "xim":
+          fire(new KeyboardEvent("keydown", { key: "Unidentified", code: "Unidentified", keyCode: 0, isComposing: false, bubbles: true, cancelable: true }));
+          break;
         case "start": fire(new CompositionEvent("compositionstart", { data: "" })); break;
         case "input": {
           const [, value, inputType, isComposing] = step;
@@ -100,6 +104,22 @@ describe("DocxSurface", () => {
     await t.play([...startWith("ㄱ"), ...update("가"), ...update("각"), ...nativeCommit("가"), ...startWith("가"), ...nativeCommit("가")]);
     expect(t.fake.paragraphs[0]).toBe("가가가나다");
     expect(t.sessions.get(1)?.revision).toBe(2);
+  });
+
+  it("GTK XIM: 조합 중 클릭으로 WebView가 확정한 뒤 XIM이 같은 글자를 insertText로 다시 보내도 한 번(실측 순서 재생)", async () => {
+    const t = await mounted();
+    await t.play([...startWith("ㄱ"), ...update("가"), ["input", "", "deleteCompositionText", true],
+      ["input", "가", "insertFromComposition", true], ["end", "가"], ["xim"], ["input", "가", "insertText", false]]);
+    expect(t.fake.paragraphs[0]).toBe("가가나다");
+    expect(t.sessions.get(1)?.revision).toBe(1);
+  });
+
+  it("GTK XIM 일반 확정(빈 끝 → 운반 keydown → insertText)은 그대로 한 번 넣는다", async () => {
+    const t = await mounted();
+    await t.play([...startWith("ㄱ"), ...update("가"), ["key", true], ["input", "", "deleteCompositionText", true], ["end", ""],
+      ["xim"], ["input", "가", "insertText", false]]);
+    expect(t.fake.paragraphs[0]).toBe("가가나다");
+    expect(t.sessions.get(1)?.revision).toBe(1);
   });
 
   it("조합 중 ←: 입력기가 확정한 뒤 오는 ArrowLeft로 확정 글자 앞으로 이동한다", async () => {

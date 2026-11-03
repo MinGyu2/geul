@@ -13,7 +13,8 @@ type Step =
   | ["start"]
   | ["update", string]
   | ["input", string, string, boolean] // textarea 값, inputType, isComposing
-  | ["end", string];
+  | ["end", string]
+  | ["xim"]; // GTK XIM 확정 운반 keydown(실측: key·code "Unidentified", keyCode 0, isComposing=false)
 
 async function mounted(text = ["가나다", "abc"], imeContext?: ImeContext) {
   const t = await readySession(text);
@@ -33,6 +34,9 @@ async function mounted(text = ["가나다", "abc"], imeContext?: ImeContext) {
           fire(new KeyboardEvent("keydown", { key, keyCode, isComposing: step[1], bubbles: true, cancelable: true }));
           break;
         }
+        case "xim":
+          fire(new KeyboardEvent("keydown", { key: "Unidentified", code: "Unidentified", keyCode: 0, isComposing: false, bubbles: true, cancelable: true }));
+          break;
         case "start": fire(new CompositionEvent("compositionstart", { data: "" })); break;
         case "update": fire(new CompositionEvent("compositionupdate", { data: step[1] })); break;
         case "input": {
@@ -213,6 +217,54 @@ describe("창 초점 잃음: WebView 확정 뒤 입력기의 두 번째 확정(�
       ["input", "가", "insertFromComposition", true], ["end", "가"]]);
     expect(t.doc.paragraphs[0]).toBe("하가가나다");
     expect(t.editor.localRevision).toBe(2);
+  });
+});
+
+describe("GTK XIM 입력기(ibus-x11) 순서: 확정이 조합 밖 insertText로 옴(실측 WebKitGTK 2.54 + XIM, 2026-11-04)", () => {
+  /** 실측: 조합 중 클릭하면 WebView가 조합을 확정한 뒤 XIM reset의 확정이 운반 keydown + 같은 글자 insertText로 한 번 더 온다. */
+  const viewConfirmedThenXim = (text: string, xim = text): Step[] => [
+    ["input", "", "deleteCompositionText", true],
+    ["input", text, "insertFromComposition", true],
+    ["end", text],
+    ["xim"],
+    ["input", xim, "insertText", false],
+  ];
+
+  it("조합 중 클릭: WebView 확정 뒤 XIM이 같은 글자를 다시 확정해도 '가'는 한 번, revision 1", async () => {
+    const t = await mounted();
+    t.play([...startWith("ㄱ"), ...update("가"), ...viewConfirmedThenXim("가")]);
+    expect(t.doc.paragraphs[0]).toBe("가가나다");
+    expect(t.editor.localRevision).toBe(1);
+    t.play([["key", false, " "], ["input", " ", "insertText", false]]);
+    expect(t.doc.paragraphs[0]).toBe("가 가나다");
+    expect(t.editor.localRevision).toBe(2);
+  });
+
+  it("일반 XIM 확정(빈 끝 → 운반 keydown → insertText)은 그대로 한 번 넣는다", async () => {
+    const t = await mounted();
+    t.play([...startWith("ㄱ"), ...update("가"), ["key", true], ["input", "", "deleteCompositionText", true], ["end", ""],
+      ["xim"], ["input", "가", "insertText", false]]);
+    expect(t.doc.paragraphs[0]).toBe("가가나다");
+    expect(t.editor.localRevision).toBe(1);
+  });
+
+  it("WebView 확정 뒤 XIM이 다른 글자를 확정하면 새 입력으로 넣는다(같은 글자만 소비)", async () => {
+    const t = await mounted();
+    t.play([...startWith("ㄱ"), ...update("가"), ...viewConfirmedThenXim("가", "나")]);
+    expect(t.doc.paragraphs[0]).toBe("가나가나다");
+    expect(t.editor.localRevision).toBe(2);
+  });
+
+  it("운반 keydown 없이 온 같은 글자 insertText, 사이에 일반 키가 낀 경우는 새 입력이다", async () => {
+    const bare = await mounted();
+    bare.play([...startWith("ㄱ"), ...update("가"), ["input", "", "deleteCompositionText", true],
+      ["input", "가", "insertFromComposition", true], ["end", "가"], ["input", "가", "insertText", false]]);
+    expect(bare.doc.paragraphs[0]).toBe("가가가나다");
+    const keyed = await mounted();
+    keyed.play([...startWith("ㄱ"), ...update("가"), ["input", "", "deleteCompositionText", true],
+      ["input", "가", "insertFromComposition", true], ["end", "가"], ["key", false, " "], ["input", " ", "insertText", false],
+      ["xim"], ["input", "가", "insertText", false]]);
+    expect(keyed.doc.paragraphs[0]).toBe("가 가가나다");
   });
 });
 

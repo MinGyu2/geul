@@ -27,6 +27,10 @@
 //   확정한다(WebKitGTK 2.54 + ibus: tao/wry 없는 탐침의 일반 textarea에도 '하하'가 남음). 그 끝 뒤 229 keydown만 지나 조합
 //   시작 없이 오는 같은 글자의 insertFromComposition과 그 끝은 소비한다. 새 조합 시작·입력기가 처리하지 않은 키·다른 입력은
 //   이 기록을 지운다(사용자가 다시 친 같은 음절은 조합 시작과 함께 오므로 남는다).
+//   GTK XIM 입력기(ibus-x11, 실측 2026-11-04)에서는 그 두 번째 확정이 XIM 운반 keydown(key·code "Unidentified", keyCode 0,
+//   isComposing=false) 바로 뒤의 같은 글자 insertText(isComposing=false)로 온다(XIM의 확정은 언제나 조합 밖 insertText다).
+//   이 운반 keydown은 기록을 지우지 않고, 바로 다음 input이 같은 글자의 insertText일 때만 소비한다. 다른 글자·다른 입력·운반
+//   keydown 없이 온 insertText는 새 입력이다. 빈 끝 뒤의 일반 XIM 확정은 이 기록이 없으므로 그대로 넣는다.
 // - 조합이 끝 이벤트 없이 편집 세션 쪽에서 끝나면(엔진 예외·편집 중지) 그 조합의 늦은 이벤트도 끊긴 트랜잭션의 것이다
 //   (이미 끝남): 다시 불러온 모델이나 이어진 편집에 넣지 않는다. 끝의 완료 기록은 IME가 보낸 최종 글자로 남긴다(실패해
 //   문서에 남지 않았어도 같은 조합의 뒤따르는 알림을 소비).
@@ -126,6 +130,7 @@ export class ImeInput {
     this.shown = false;
     this.viewConfirming = false;
     this.cancellationEnd = false;
+    this.ximRepeat = false;
   }
 
   private claim(): void {
@@ -156,12 +161,18 @@ export class ImeInput {
     private readonly context: ImeContext = new ImeContext(),
   ) {}
 
-  /** keydown. ime는 입력기가 처리 중인 키(keyCode 229 또는 isComposing)다. */
-  keyDown(ime = false): void {
+  /**
+   * keydown. ime는 입력기가 처리 중인 키(keyCode 229 또는 isComposing)다. ximCommit은 GTK XIM이 확정 글자 앞에 보내는 운반
+   * keydown(key·code "Unidentified", keyCode 0, 조합 아님)이다(파일 머리 설명).
+   */
+  keyDown(ime = false, ximCommit = false): void {
     this.syncOwner();
     this.cancellationEnd = false;
-    // WebView가 스스로 확정한 조합 뒤 입력기가 같은 조합을 다시 확정할 때도 그 앞에 229 keydown이 온다.
-    if (!(ime && this.context.terminal?.confirmedByView)) this.context.terminal = null;
+    // WebView가 스스로 확정한 조합 뒤 입력기가 같은 조합을 다시 확정할 때도 그 앞에 229 keydown(ibus) 또는 XIM 운반 keydown이 온다.
+    const viewConfirmed = !!this.context.terminal?.confirmedByView;
+    this.ximRepeat = ximCommit && viewConfirmed;
+    if (this.ximRepeat) return;
+    if (!(ime && viewConfirmed)) this.context.terminal = null;
     // 보이는 조합을 앱이 확정한 뒤 입력기가 그 조합을 끝내는 꼬리, 빈 끝과 확정 절반 사이의 클릭 뒤에도 229 keydown이
     // 섞여 온다(새 입력이 아님).
     const interrupted = this.context.interrupted;
@@ -193,6 +204,7 @@ export class ImeInput {
   compositionStart(): void {
     this.syncOwner();
     this.cancellationEnd = false;
+    this.ximRepeat = false;
     this.releaseAwaiting();
     this.settleInterrupted();
     this.shown = false;
@@ -208,11 +220,21 @@ export class ImeInput {
   private shown = false;
   private deletedPreedit = false;
   private cancellationEnd = false;
+  /** 바로 앞 이벤트가 WebView 확정 뒤의 XIM 운반 keydown이었다(다음 input 하나에만 쓴다). */
+  private ximRepeat = false;
 
   /** input 이벤트. text는 textarea 값(조합 중) 또는 입력된 글자. */
   input(text: string, inputType: string, isComposing: boolean): void {
     this.syncOwner();
     this.cancellationEnd = false;
+    const ximRepeat = this.ximRepeat;
+    this.ximRepeat = false;
+    if (ximRepeat && !this.session.composing && !isComposing && inputType === "insertText"
+      && this.context.terminal?.confirmedByView && this.context.terminal.text === text) {
+      // WebView가 확정한 조합을 GTK XIM이 같은 글자로 한 번 더 확정했다: 새 입력이 아니다(파일 머리 설명).
+      this.context.terminal = { text };
+      return;
+    }
     this.deletedPreedit = this.session.composing && inputType === "deleteCompositionText" && !text;
     const session = this.session;
     const compositionType = COMPOSITION_INPUT_TYPES.has(inputType);
@@ -297,6 +319,7 @@ export class ImeInput {
   compositionEnd(finalText: string): void {
     this.syncOwner();
     this.cancellationEnd = false;
+    this.ximRepeat = false;
     const session = this.session;
     if (this.context.discarded && !session.composing) return;
 
@@ -361,6 +384,7 @@ export class ImeInput {
   pointerDown(): void {
     this.syncOwner();
     this.cancellationEnd = false;
+    this.ximRepeat = false;
     if (this.finalizeVisible()) return;
     if (this.context.discarded) return;
     const terminal = this.context.terminal;
@@ -383,6 +407,7 @@ export class ImeInput {
   blur(): void {
     this.syncOwner();
     this.cancellationEnd = false;
+    this.ximRepeat = false;
     if (!this.finalizeVisible()) this.anchorAwaiting();
     this.session.endHistoryGroup?.();
   }
@@ -391,6 +416,7 @@ export class ImeInput {
   detach(): void {
     this.syncOwner();
     this.cancellationEnd = false;
+    this.ximRepeat = false;
     if (!this.finalizeVisible()) this.anchorAwaiting();
     this.session.endHistoryGroup?.();
   }
