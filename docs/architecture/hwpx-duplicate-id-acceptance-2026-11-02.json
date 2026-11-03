@@ -3340,5 +3340,61 @@
    "performance/visual suites"
   ],
   "rawEvidence": "target/hwpx-empty-text-final-20261103/ (ignored)"
+ },
+ "topologyBoundaryHardening": {
+  "date": "2026-11-03",
+  "status": "PASS",
+  "sourceHead": "e685c6cf6cc42dc7ff7b6f3657a81151c508c121",
+  "gitlinks": {
+   "external/rhwp": "1a76570e833917d15817415a53c09ad61ab3203f",
+   "external/wordcraft": "fc41918814f62645b6746ed68e71e8c2c2e85d6f"
+  },
+  "issueA": {
+   "counterexample": "deferred 0 carrier reserved to 101, same carrier reset to 0",
+   "beforeFix": "validate accepted (now == owner_value); full export independently refused after re-reservation failed",
+   "fix": "recorded reservation is the only valid value",
+   "failedBeforeFix": "empty_text_reserved_deferred_identity_cannot_reset_or_move"
+  },
+  "issueB": {
+   "counterexample": "two hp:autoNum with equal num/numType and direct-child fingerprint, nested hp:autoNumFormat type differs",
+   "beforeFix": "swapped emitted controls accepted by restore",
+   "fix": "source ambiguity fingerprint covers the whole hp:ctrl subtree; emitted-event key unchanged",
+   "diagnostic": "ambiguous control event identity",
+   "failedBeforeFix": "empty_text_nested_control_content_is_part_of_ambiguity_proof"
+  },
+  "patchSha256": "3724832d27606dd7c27fcf72400a26aa1ce570084d6485e941be4bde72cf6a73",
+  "generation": "629d15fd37b09f771b6228e45335ea88218dc466aecb6af720ddc477a8eec93d",
+  "wasmSha256": "423a84ffff6f44ff42cece97775062d86cc3b217f7fcef22b6b19955da2df8a4",
+  "tests": {
+   "emptyText": "47/47",
+   "fullLibrary": {
+    "passed": 3823,
+    "failed": 121,
+    "ignored": 13,
+    "failedSetEqualsHistorical": true
+   },
+   "crossFeature": "7/7 PASS"
+  },
+  "corpus": {
+   "exported": 578,
+   "failed": 156,
+   "safe": 157,
+   "unsafe": 412,
+   "unknown": 9,
+   "safeRegressions": 0,
+   "newRejections": 0,
+   "byteIdenticalToPrevious89fbb642": "578/578"
+  },
+  "originalTarget": {
+   "outputSha256": "78be294319e398595ad3f65ffd5e96890d5a844fc10f55c43aa4a2e82633f655",
+   "emptyText": 57,
+   "bareRuns": 111,
+   "runs": 1428,
+   "whitespaceText": 127
+  },
+  "notRun": [
+   "native app acceptance (no reachable save behavior change observed)"
+  ],
+  "rawEvidence": "target/hwpx-topology-boundary-hardening-20261103/ (ignored)"
  }
 }

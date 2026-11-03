@@ -60,7 +60,7 @@
              }
              Node::Control(control) => match control {
                  Control::Table(table) => remap_common_raw(
-@@ -300,4 +305,58 @@
+@@ -300,4 +305,99 @@
              &clip[0].hwpx_paragraph_identity
          ));
      }
@@ -84,6 +84,47 @@
 +            runs,
 +            r#"<hp:run charPrIDRef="0"><hp:t>A</hp:t><hp:t></hp:t></hp:run>"#
 +        );
++    }
++
++    /// After the export reserved the pasted copy's id, resetting the same
++    /// carrier to 0 is not a new deferred state: direct validation refuses
++    /// it, and a full export (which re-reserves a different id) refuses
++    /// without bytes instead of publishing the reassigned id.
++    #[test]
++    fn empty_text_reserved_clipboard_identity_reset_is_refused() {
++        use crate::serializer::hwpx::section::empty_text_tests::{package_with, para};
++        let r = |b: &str| format!(r#"<hp:run charPrIDRef="0">{b}</hp:run>"#);
++        let mut core = crate::document_core::DocumentCore::from_bytes(&package_with(&para(
++            0,
++            &r("<hp:t>A</hp:t><hp:t/>"),
++        )))
++        .unwrap();
++        let mut copied = vec![core.document.sections[0].paragraphs[1].clone()];
++        reidentify_clipboard(&core.document, &mut copied).unwrap();
++        core.document.sections[0].paragraphs.push(copied.remove(0));
++        let saved = core.export_hwpx_native().unwrap();
++        let pasted = core.document.sections[0].paragraphs.last().unwrap();
++        let reserved = pasted.hwpx_paragraph_identity.load(Relaxed);
++        assert!(reserved > 1);
++        let topology = pasted.hwpx_text_topology.as_ref().unwrap();
++        assert!(topology.validate(pasted).is_ok());
++        pasted.hwpx_paragraph_identity.store(0, Relaxed);
++        let cause = "paragraph identity value changed without a supported reidentification";
++        assert_eq!(topology.validate(pasted).unwrap_err(), cause);
++        let e = core
++            .export_hwpx_native()
++            .err()
++            .expect("no bytes")
++            .to_string();
++        assert!(e.contains(cause), "{e}");
++        let reassigned = pasted.hwpx_paragraph_identity.load(Relaxed);
++        assert!(
++            reassigned != 0 && reassigned != reserved,
++            "export re-reserved {reassigned}"
++        );
++        // Restoring the recorded reservation is the original state again.
++        pasted.hwpx_paragraph_identity.store(reserved, Relaxed);
++        assert_eq!(core.export_hwpx_native().unwrap(), saved);
 +    }
 +
 +    /// Clipboard reidentification (new deferred carrier) followed by the
@@ -176,7 +217,7 @@
  }
 --- /dev/null
 +++ b/src/model/hwpx_topology.rs
-@@ -0,0 +1,1127 @@
+@@ -0,0 +1,1159 @@
 +//! Paragraph-owned HWPX zero-width topology. No source XML is retained.
 +//!
 +//! A source run occurrence is mapped to the parser's boundary occurrence, not
@@ -444,9 +485,12 @@
 +        }
 +        // A carrier pointer alone does not prove the numeric identity: the
 +        // value lives in a shared atomic cell and could change in place.
++        // Once the serializer recorded the one-time reservation of a deferred
++        // (0) identity, only that value is valid: returning to 0 must not
++        // reopen the reservation lifecycle.
 +        let now = self.owner.load(Relaxed);
-+        if now != self.owner_value && !(self.owner_value == 0 && self.reserved.get() == Some(&now))
-+        {
++        let expected = self.reserved.get().copied().unwrap_or(self.owner_value);
++        if now != expected {
 +            return Err(IDENTITY_VALUE_CHANGED.into());
 +        }
 +        if self.seal != seal(p) {
@@ -1262,6 +1306,19 @@
 +                            let child = reader.read_event().map_err(|e| e.to_string())?;
 +                            match child {
 +                                Event::Start(ref ce) | Event::Empty(ref ce) => {
++                                    // The ambiguity fingerprint covers the whole
++                                    // ctrl subtree (names, attributes, text) so that
++                                    // controls differing only in nested content are
++                                    // never treated as interchangeable. It is
++                                    // compared among source controls only, never
++                                    // against (normalized) emitted output.
++                                    if depth > 1 && name == "ctrl" {
++                                        fingerprint.push_str(&format!(
++                                            "/{depth}:{}{:?}",
++                                            local(ce.name().as_ref()),
++                                            attributes(ce)?
++                                        ));
++                                    }
 +                                    if depth == 1 && name == "ctrl" {
 +                                        let element = local(ce.name().as_ref()).to_string();
 +                                        key.push_str(&format!(
@@ -1276,7 +1333,23 @@
 +                                        depth += 1;
 +                                    }
 +                                }
-+                                Event::End(_) => depth -= 1,
++                                Event::End(_) => {
++                                    depth -= 1;
++                                    if name == "ctrl" {
++                                        fingerprint.push_str(&format!("/{depth}:end"));
++                                    }
++                                }
++                                Event::Text(ref t)
++                                    if name == "ctrl" && !t.as_ref().trim().is_empty() =>
++                                {
++                                    fingerprint.push_str(&format!("/text{:?}", t.as_ref()));
++                                }
++                                Event::CData(ref t) if name == "ctrl" => {
++                                    fingerprint.push_str(&format!("/text{:?}", t.as_ref()));
++                                }
++                                Event::GeneralRef(ref t) if name == "ctrl" => {
++                                    fingerprint.push_str(&format!("/ref{:?}", t.as_ref()));
++                                }
 +                                Event::Eof => return Err("unterminated control".into()),
 +                                _ => {}
 +                            }
@@ -1834,7 +1907,7 @@
          // A value may appear on several paragraphs only when the source document
 --- /dev/null
 +++ b/src/serializer/hwpx/empty_text_tests.rs
-@@ -0,0 +1,1005 @@
+@@ -0,0 +1,1121 @@
 +use super::*;
 +use crate::parser::hwpx::section::parse_hwpx_section;
 +
@@ -2839,6 +2912,122 @@
 +    let section = parse_hwpx_section(&shared).unwrap();
 +    assert_eq!(section.paragraphs[0].char_shapes.len(), 1);
 +    assert!(section.paragraphs[0].hwpx_text_topology.is_none());
++}
++
++// ---- Boundary hardening: reserved deferred identity, nested control identity ----
++
++/// Deferred (0) carrier bound through the real clipboard rebinding API.
++fn deferred() -> Paragraph {
++    let mut p = imported(&r("<hp:t>A</hp:t><hp:t/>"));
++    let mut t = p.hwpx_text_topology.take().unwrap();
++    p.hwpx_paragraph_identity = Default::default();
++    t.rebind_clone(&p);
++    p.hwpx_text_topology = Some(t);
++    p
++}
++
++/// Exactly what `SerializeContext::prepare_paragraph_ids` does for 0.
++fn reserve(p: &Paragraph, encoded: u64) -> bool {
++    use std::sync::atomic::Ordering::Relaxed;
++    let ok = p
++        .hwpx_paragraph_identity
++        .compare_exchange(0, encoded, Relaxed, Relaxed)
++        .is_ok();
++    if ok {
++        p.hwpx_text_topology
++            .as_ref()
++            .unwrap()
++            .record_reservation(p, encoded);
++    }
++    ok
++}
++
++#[test]
++fn empty_text_reserved_deferred_identity_cannot_reset_or_move() {
++    use std::sync::atomic::Ordering::Relaxed;
++    let p = deferred();
++    let t = p.hwpx_text_topology.as_ref().unwrap();
++    assert!(t.validate(&p).is_ok(), "deferred 0 before reservation");
++    assert!(reserve(&p, 101));
++    assert!(t.validate(&p).is_ok(), "authorized reservation");
++    assert!(t.validate(&p).is_ok(), "repeated validation");
++    // Back to zero after a recorded reservation: not a fresh deferred state.
++    p.hwpx_paragraph_identity.store(0, Relaxed);
++    assert_eq!(t.validate(&p).unwrap_err(), IDENTITY_VALUE_CHANGED);
++    // A second reservation cannot replace the first one (OnceLock).
++    assert!(reserve(&p, 205));
++    assert_eq!(t.validate(&p).unwrap_err(), IDENTITY_VALUE_CHANGED);
++    p.hwpx_paragraph_identity.store(102, Relaxed);
++    assert_eq!(t.validate(&p).unwrap_err(), IDENTITY_VALUE_CHANGED);
++    p.hwpx_paragraph_identity.store(101, Relaxed);
++    assert!(
++        t.validate(&p).is_ok(),
++        "the reserved value itself stays valid"
++    );
++    // A never-reserved deferred carrier stays valid at 0 and refuses a
++    // value written without the serializer's reservation.
++    let q = deferred();
++    q.hwpx_paragraph_identity.store(77, Relaxed);
++    assert_eq!(
++        q.hwpx_text_topology
++            .as_ref()
++            .unwrap()
++            .validate(&q)
++            .unwrap_err(),
++        IDENTITY_VALUE_CHANGED
++    );
++}
++
++fn auto_num(format: &str) -> String {
++    format!(
++        r#"<hp:ctrl><hp:autoNum num="1" numType="PAGE"><hp:autoNumFormat type="{format}" userChar="" prefixChar="" suffixChar="" supscript="0"/></hp:autoNum></hp:ctrl>"#
++    )
++}
++
++#[test]
++fn empty_text_nested_control_content_is_part_of_ambiguity_proof() {
++    // Same shallow key (num/numType) and same direct-child fingerprint; only
++    // the nested hp:autoNumFormat differs.
++    let (a, b) = (auto_num("DIGIT"), auto_num("ROMAN_CAPITAL"));
++    let p = imported(&r(&format!("{a}<hp:t/>{b}")));
++    // Swapped or replaced emitted controls must not be accepted as proven.
++    if let Some(t) = p.hwpx_text_topology.as_ref() {
++        assert!(t
++            .restore(&p, &r(&format!("{b}<hp:t></hp:t>{a}")), false)
++            .is_err());
++        assert!(t
++            .restore(&p, &r(&format!("{a}<hp:t></hp:t>{a}")), false)
++            .is_err());
++    }
++    assert_eq!(
++        render(&p).unwrap_err(),
++        crate::model::hwpx_topology::AMBIGUOUS_CONTROL
++    );
++    // Real package path: refused, no bytes.
++    let bytes = package_with(&para(7, &r(&format!("{a}<hp:t/>{b}"))));
++    let core = crate::document_core::DocumentCore::from_bytes(&bytes).unwrap();
++    assert!(export_error(&core).ends_with("ambiguous control event identity"));
++    // Fully identical nested content stays interchangeable and supported.
++    let source = r(&format!("{a}<hp:t/>{a}"));
++    let p = imported(&source);
++    let out = render(&p).unwrap();
++    assert_eq!(render(&imported(&out)).unwrap(), out);
++    let bytes = package_with(&para(7, &source));
++    let core = crate::document_core::DocumentCore::from_bytes(&bytes).unwrap();
++    let first = core.export_hwpx_native().unwrap();
++    let reopened = crate::document_core::DocumentCore::from_bytes(&first).unwrap();
++    assert_eq!(reopened.export_hwpx_native().unwrap(), first);
++    // Nested representation is not identity: a single control whose emitted
++    // nested attributes are spelled differently still corresponds.
++    let p = imported(&r(&format!("{a}<hp:t/>")));
++    let t = p.hwpx_text_topology.as_ref().unwrap();
++    let respelled = a.replace(
++        r#"type="DIGIT" userChar="" prefixChar="" suffixChar="" supscript="0""#,
++        r#"supscript="0" suffixChar="" prefixChar="" userChar="" type="DIGIT""#,
++    );
++    assert!(t
++        .restore(&p, &r(&format!("{respelled}<hp:t></hp:t>")), false)
++        .is_ok());
 +}
 --- a/src/serializer/hwpx/mod.rs
 +++ b/src/serializer/hwpx/mod.rs
