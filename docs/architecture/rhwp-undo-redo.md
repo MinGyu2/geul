@@ -52,6 +52,7 @@ Release generation `853a0689…`, WASM `77d01d6c…`, JS `70cde06a…`, native �
   같은 진단에서 **XIM 조합 중 클릭 시 같은 음절이 두 번 들어가는 결함**(`…가`→`…가가`)을 관측했다: WebKit이 조합을 확정한 뒤 XIM reset commit이 같은 글자를
   `insertText`로 다시 보내고, 공유 IME 계약은 조합 계열이 아닌 같은 글자를 새 입력으로 받는다. 검증 플랫폼(ibus GTK 모듈) 밖이고 Undo와 무관하며 공유 IME 계약 변경이
   필요해 이번에 고치지 않았다(WordCraft UNVERIFIED). 별도 작업으로 다룬다.
+  → 같은 날 후속 작업에서 고쳤다([XIM 중복 수정](editor-surface-decision.md#gtk-xim-조합-중-클릭-중복-수정-2026-11-04)). D2 판정은 바뀌지 않는다.
 - 근거: 비공개 `geul-tests/reports/t010-d3-d5-d2-20261103/REPORT.ko.md`(E9).
 
 ### 현재 D1–D5 수용 행렬

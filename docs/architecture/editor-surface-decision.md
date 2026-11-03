@@ -1606,3 +1606,25 @@ rhwp WASM이 붙여넣기 문단 ID와 `content.hpf` spine `linear` 교정으로
 ### 최종 HWPX 및 통합 저장 네이티브 재검증 (2026-11-02)
 
 최종 generation `4fc10a9db30f457efe64c4784b56da5717d98c72fe72ffbf3bcd573d26b62731`의 실제 WASM으로 두 HWPX 문서(`종이기준.hwpx`, `list_marker_head_synthetic.hwpx`)와 Stage 4 세 형식 roundtrip 3/3을 다시 실행했다. 실제 IBus 한글 입력, 저장, 닫기, 재열기 및 revision 0/clean을 확인했고, SC-002 거절 9/9도 통과했다. FileConflict, ID 누락, PreviewStale 등 거절 뒤 원본 해시는 저장 직전 스냅샷과 같고 세션은 dirty/unpreserved로 유지됐다. 네이티브 실행은 NixOS/Linux Xvfb/X11, software rendering, DPR1이다. 최종 세대의 Wayland, GPU desktop, 다른 OS, DPR2는 NOT RUN이며 이 근거는 T007/T008 전체 완료를 뜻하지 않는다. T007/T008/T009 체크박스 상태는 그대로다. 상세는 [최종 저장 수용](save-preservation.md#최종-native-재검증과-manifest-순서-보존-2026-11-02-p2p3cp4) 및 [기계 판독 근거의 `oracleSpineManifestFollowup`](hwpx-duplicate-id-acceptance-2026-11-02.json)에 기록했다.
+
+## GTK XIM 조합 중 클릭 중복 수정 (2026-11-04)
+
+**결함(native 재현):** GTK IM 모듈을 XIM(`GTK_IM_MODULE=xim`, `XMODIFIERS=@im=ibus`, ibus-x11 + ibus-hangul 1.5.5, WebKitGTK 2.54.1)으로 쓰면
+조합 중 클릭 뒤 같은 음절이 두 번 들어갔다(`…가` → `…가가`, 세 번 재현). 실측 순서: WebView가 조합을 스스로 확정
+(`deleteCompositionText` → `insertFromComposition("가")` → `compositionend("가")`)한 뒤, XIM reset의 확정이 운반 keydown
+(`key`·`code` = `"Unidentified"`, `keyCode` 0, 조합 아님) + 같은 글자 `insertText`(조합 아님)로 한 번 더 왔다. ibus GTK 모듈에서는 이
+두 번째 확정이 229 keydown + `insertFromComposition`으로 와서 기존 규칙(WebView 확정 뒤 같은 글자 재확정 소비)이 처리했지만, XIM 형태는
+"조합 계열이 아닌 같은 글자는 새 입력" 규칙에 걸려 새 입력이 됐다. 공유 `ImeInput`이라 WordCraft도 같다(합성 재생으로 확인).
+
+**수정:** 같은 공유 상태 기계 안에서 기존 규칙을 넓혔다(새 상태 기계 없음). `textInput.ts`가 위 서명의 keydown을 XIM 운반 keydown으로
+알리고, `ImeInput`은 WebView가 확정한 기록(`terminal.confirmedByView`)이 있을 때만 그 keydown이 기록을 지우지 않게 한 뒤 **바로 다음
+input이 같은 글자의 `insertText`일 때만** 소비한다. 다른 글자·다른 입력·운반 keydown 없는 `insertText`·사이에 일반 키가 낀 경우는 그대로
+새 입력이다. 빈 끝 뒤의 일반 XIM 확정은 그 기록이 없으므로 그대로 한 번 넣는다.
+
+**검증:** 수정 전 실패 2건(RHWP·WordCraft 표면 합성 재생, `가가가나다`) → 수정 뒤 통과, 경계 시험 4건 추가, `src` 911/911, tsc·eslint.
+native(XIM): 같은 이벤트 순서에서 문단 끝 `…가` 하나·revision 2. 원래 D2 gap 시나리오의 XIM 진단 안전 판정 6/10 → 10/10(필수 E<U<F 관측은
+여전히 0이라 D2 INCONCLUSIVE 그대로). 검증 플랫폼(ibus GTK 모듈) 회귀: RHWP HWP·HWPX 7/7, WordCraft 7/7, 시험 활성화 빌드 RHWP IME·실행 취소
+25/25. 근거: 비공개 `geul-tests/reports/xim-duplicate-fix-20261104/REPORT.ko.md`.
+
+**한계:** XIM은 여전히 별도 수용 플랫폼이 아니다(이번에는 이 결함 경로와 일반 확정만 확인). 다른 XIM 서버(fcitx 등)의 운반 keydown 모양은 UNVERIFIED다.
+
