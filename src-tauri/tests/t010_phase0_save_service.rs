@@ -97,7 +97,17 @@ fn save_case(case: &Value) -> Value {
     let after = listing(dir);
     let on_disk = std::fs::read(target).unwrap();
     let session = registry.get(id).unwrap();
+    // 독립 검사용(HWP): 게시 파일과 raw 엔진 출력의 스트림별 SHA-256. 판정은 하네스가 한다.
+    let streams = |bytes: &[u8]| -> Value {
+        if format != Format::Hwp {
+            return Value::Null;
+        }
+        cfb_streams(bytes)
+    };
     json!({
+        "streamsOnDisk": streams(&on_disk),
+        "streamsOutput": streams(&output),
+        "prvTextOnDiskUtf16Hex": if format == Format::Hwp { prv_text_hex(&on_disk) } else { Value::Null },
         "name": case["name"],
         "mode": "save",
         "preflight": preflight,
@@ -115,6 +125,41 @@ fn save_case(case: &Value) -> Value {
         "dirBefore": before,
         "dirAfter": after,
     })
+}
+
+/// CFB의 모든 스트림 경로 → 내용 SHA-256(16진).
+fn cfb_streams(bytes: &[u8]) -> Value {
+    use sha2::{Digest, Sha256};
+    let mut file = match cfb::CompoundFile::open(Cursor::new(bytes.to_vec())) {
+        Ok(file) => file,
+        Err(error) => return json!({"error": error.to_string()}),
+    };
+    let paths: Vec<String> = file
+        .walk()
+        .filter(|entry| entry.is_stream())
+        .map(|entry| entry.path().to_string_lossy().into_owned())
+        .collect();
+    let mut out = serde_json::Map::new();
+    for path in paths {
+        let data = read_stream(&mut file, &path);
+        let digest: String = Sha256::digest(&data)
+            .iter()
+            .map(|b| format!("{b:02x}"))
+            .collect();
+        out.insert(path, Value::String(digest));
+    }
+    Value::Object(out)
+}
+
+fn prv_text_hex(bytes: &[u8]) -> Value {
+    let Ok(mut file) = cfb::CompoundFile::open(Cursor::new(bytes.to_vec())) else {
+        return Value::Null;
+    };
+    if !file.exists("/PrvText") {
+        return Value::Null;
+    }
+    let data = read_stream(&mut file, "/PrvText");
+    Value::String(data.iter().map(|b| format!("{b:02x}")).collect())
 }
 
 #[test]
