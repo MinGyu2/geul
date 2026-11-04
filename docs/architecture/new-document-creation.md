@@ -408,3 +408,11 @@ HWP와 HWPX 생성은 같은 `HwpDocument.createEmpty()` 빈 모델에서 시작
 - 프런트엔드 deferred 시험(`recoveryRestoreClose.test.tsx`): 확인 없이/확인 뒤 닫기(A), 닫기 취소 후 계속(B), 선택 취소(C), 반복 닫기(F), 기존 게시 후 사례(D·E). 수정 전 A 2개와 F가 실패했다(`restore` 호출 후 대기).
 - native, 선택기 응답만 주입(`restore-chooser-injected`): 실제 WM_DELETE_WINDOW, 실제 확인, 실제 Tauri destroy, 실제 restore/open 포트를 쓴다. 수정 전 앱(`10fe2dc1…`)에서는 확정된 닫기 뒤 `restored.docx`가 게시됐다(재현). 수정 후 앱(`414daf69…`)은 게시 없이 종료했고 복구 store·원본도 그대로였다.
 - native, 실제 GTK 선택기(`restore-chooser`): Xvfb/X11에서 modal `FileChooserNative::run()`이 열린 동안 메인 창으로 보낸 WM_DELETE_WINDOW는 선택기 동안에도 닫은 뒤에도 앱에 0건 전달됐다. 이 환경에서는 실제 선택기로 이 순서에 도달할 수 없다(NOT REACHABLE). portal 선택기·다른 WM/Wayland에서의 도달 가능성은 확인하지 않았다. 가드는 그 경우를 위한 방어다.
+
+### 복원 뒤 `AlreadyOpen`의 소유권
+
+Rust `register_created()`는 lock 안에서 정규화 경로나 장치·inode가 같은 기존 세션을 찾으면, 그 시점에 유효한 `session_id`와 함께 `AlreadyOpen`을 돌려준다(그 뒤 동시 닫기는 가능). 복원은 새 경로에 새 inode를 create-only로 게시한다. 프런트엔드의 다른 등록 경로(open/new/restore)는 파일 작업 직렬화로 그사이에 실행되지 않는다. 따라서 복원 뒤 `AlreadyOpen`은 외부 프로세스가 대상을 이미 열린 문서로 바꿔치기(symlink/hard link)했을 때만 나온다. 이때 참조되는 세션은 그 **이전 문서**이고, 복원 내용이 아니다. Rust 시험 `already_open_after_restore_requires_an_external_replacement_and_names_the_prior_session`으로 확인했다.
+
+이전 프런트엔드는 이 오류를 일반 열기처럼 다뤘다. 그래서 기존 탭이 있으면 그 탭을 선택하고(관계없는 문서 채택), 투영에 없으면 아무것도 하지 않았다. 두 경우 모두 게시 안내가 없어 대기 중인 닫기가 게시를 가릴 수 있었다(프런트엔드 시험 3개와 native `restore-already-open`이 수정 전 실패). 이제 복원 뒤 모든 열기 실패를 `AlreadyOpen` 포함 `RestoredUnopened { cause }`로 보고한다. 기존 세션은 채택하거나 선택하지 않고, 다른 탭과 활성 탭은 그대로이며, 게시 안내를 1회 센다. 세션 ID를 신뢰할 근거(파일 신원)가 프런트엔드에 없으므로 재조정(reconcile)이나 두 번째 등록은 하지 않는다. 프로덕션 IPC `call()`은 거부와 응답 오류를 모두 `Result`로 바꾸므로 게시 뒤 처리를 우회하는 예외 경로는 없다(추가 정규화 없음).
+
+검증(최종 앱 Debug test-hooks `2f2fa3051c1d3a720208ffcc2a87661f25d6bf3fa34c84eb80bc579251f83e0c`, RHWP `0c2faef3…`): vitest 59파일/1,060, tsc·ESLint, Rust 258 PASS/22 ignored, fmt·clippy(`--tests`) PASS. native close 8모드: `restore-already-open`(실제 restore·실제 외부 symlink 교체·실제 `document_open`)·`restore-chooser-injected`·`restore-unopened`·`unconfirmed-publication`·`dirty-selection`·`publication`·`selection` PASS, `restore-chooser` 실제 GTK 순서 NOT REACHABLE 기록. 정리 성공·잔여 0. 하네스 경로 오류와 WebDriver 응답 경합으로 실패한 초기 시도는 ignored `target/stabilization/s3-attempts/`에 보존했다.

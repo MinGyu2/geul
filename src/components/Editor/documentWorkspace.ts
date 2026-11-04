@@ -335,8 +335,11 @@ export class DocumentWorkspace {
       }
       // The destination is already published (Rust restore returned its path). An open failure from here
       // leaves a file without an owned session: report both facts and invalidate any pending close decision.
+      // AlreadyOpen included: restore publishes a fresh file, so AlreadyOpen can only name an earlier
+      // document that an external replacement made identical to the destination — never the restored
+      // content. It is not adopted or selected.
       const opened = await this.backend.open(restored.value);
-      if (!opened.ok && opened.error.code !== "AlreadyOpen") {
+      if (!opened.ok) {
         const unopened: Result<SessionInfo> = { ok: false, error: { code: "RestoredUnopened", cause: opened.error } };
         this.notePublication(unopened);
         this.sessions.cancelOpen(ticket);

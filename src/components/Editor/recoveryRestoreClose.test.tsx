@@ -226,3 +226,48 @@ describe("window close while the recovery destination chooser is pending", () =>
     expect(t.windowClose.close).toHaveBeenCalledTimes(1);
   });
 });
+
+// AlreadyOpen after a restore publication names an earlier document whose identity now matches the
+// destination (only reachable through an external replacement, see the Rust recovery test). It is
+// never the restored content, so the restore must not adopt or select it.
+describe("AlreadyOpen after restore publication", () => {
+  const other: SessionInfo = { ...info, sessionId: 3, state: "ready", revision: 1, sequence: 2, loadGeneration: 1, displayName: "other.docx" };
+  const unrelated: SessionInfo = { ...info, sessionId: 4, state: "ready", revision: 1, sequence: 2, loadGeneration: 1, displayName: "unrelated.docx" };
+
+  async function restoredThenAlreadyOpen(sessionId: number, closing: boolean) {
+    const t = setup({ existing: [other, unrelated] });
+    await act(flush);
+    const before = t.sessions.snapshot();
+    const restoring = t.workspace.restoreRecovery(candidate, text);
+    await act(flush);
+    if (closing) { act(() => t.request()); await act(flush); }
+    t.restored.resolve({ ok: true, value: "/docs/restored.docx" });
+    await act(flush);
+    t.opened.resolve({ ok: false, error: { code: "AlreadyOpen", sessionId } });
+    await act(flush);
+    return { t, before, result: await restoring };
+  }
+
+  it.each([
+    ["A: a session the frontend already owns", 3],
+    ["B/C: a backend session missing from the projection (or already gone)", 99],
+  ])("%s is not adopted; the published file is reported and noticed", async (_label, sessionId) => {
+    const { t, before, result } = await restoredThenAlreadyOpen(sessionId, false);
+    expect(result).toEqual({ ok: false, error: { code: "RestoredUnopened", cause: { code: "AlreadyOpen", sessionId } } });
+    // No duplicate, no fabricated session, no selection change, unrelated tabs untouched.
+    expect(t.sessions.snapshot()).toEqual(before);
+    expect(t.workspace.publicationNoticeCount).toBe(1);
+    expect(t.recovery.discard).not.toHaveBeenCalled();
+  });
+
+  it("D: during a pending close, AlreadyOpen keeps the window instead of hiding the publication", async () => {
+    const { t, result } = await restoredThenAlreadyOpen(3, true);
+    expect(result).toMatchObject({ ok: false, error: { code: "RestoredUnopened" } });
+    expect(t.windowClose.close).not.toHaveBeenCalled();
+    expect(t.workspace.fileBusy).toBe(false);
+    act(() => t.request());
+    await act(flush);
+    expect(t.windowClose.close).toHaveBeenCalledTimes(1);
+  });
+});
+

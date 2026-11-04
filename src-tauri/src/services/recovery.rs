@@ -994,6 +994,51 @@ mod tests {
         assert!(store.list().unwrap().is_empty());
     }
     #[test]
+    fn already_open_after_restore_requires_an_external_replacement_and_names_the_prior_session() {
+        // restore publishes a fresh inode at a new path, so opening it registers a new session. The
+        // only way the following open sees AlreadyOpen is an external replacement of the destination
+        // with (a link to) an already-registered document: the referenced session is then that earlier
+        // document, never the restored content.
+        let dir = TempDir::new();
+        let source = dir.path().join("original.docx");
+        let (registry, info, original) = setup(&source);
+        let store = RecoveryStore::new(dir.path().join("records"));
+        let output = edited(&original);
+        let ticket = registry.begin_save(info.session_id, 1, 1).unwrap();
+        let checked =
+            service::validate_snapshot(&ticket, &Limits::default(), &output, None, true).unwrap();
+        let candidate = store.snapshot(&ticket, &checked, &source, &output).unwrap();
+
+        let fresh = store
+            .restore(&candidate.id, &dir.path().join("fresh.docx"))
+            .unwrap();
+        let opened = registry
+            .register(identify(fresh.to_str().unwrap(), &Limits::default()).unwrap())
+            .unwrap();
+        assert_ne!(opened.session_id, info.session_id);
+
+        let target = store
+            .restore(&candidate.id, &dir.path().join("replaced.docx"))
+            .unwrap();
+        assert_eq!(std::fs::read(&target).unwrap(), output);
+        for link in [true, false] {
+            std::fs::remove_file(&target).unwrap();
+            if link {
+                std::os::unix::fs::symlink(&source, &target).unwrap();
+            } else {
+                std::fs::hard_link(&source, &target).unwrap();
+            }
+            assert_eq!(
+                registry.register(identify(target.to_str().unwrap(), &Limits::default()).unwrap()),
+                Err(DocumentError::AlreadyOpen {
+                    session_id: info.session_id
+                })
+            );
+        }
+        assert_eq!(registry.list().unwrap().len(), 2);
+        assert_eq!(store.list().unwrap().len(), 1, "candidate survives");
+    }
+    #[test]
     fn recovery_rejects_header_payload_corruption_symlinks_and_path_traversal() {
         use std::io::{Seek, SeekFrom, Write};
         let dir = TempDir::new();

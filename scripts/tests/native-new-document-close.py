@@ -161,6 +161,40 @@ def restore_chooser_injected(args,d,test,report,window):
         'chooser':'test-injected response','closeRequest':'real WM_DELETE_WINDOW','published':False,'recoveryStoreUnchanged':True,'appExited':True})
 
 
+def restore_already_open(args,d,test,report,window):
+    # Real restore publication and real document_open; between them the harness acts as an external
+    # process replacing the destination with a symlink to the already-open edited document.
+    candidate,store_before,original=checkpoint_candidate(args,d,test)
+    restored=args.out/'restored.docx';source=args.out/'edited.docx'
+    before=d.js("const w=window.__ndWorkspace;return {sessions:w.sessions.snapshot().sessions.map(s=>s.sessionId),active:w.sessions.snapshot().activeId}")
+    d.js("""const w=window.__ndWorkspace;window.__ndOpen=w.backend.open;window.__ndOpenHeld=false;
+    w.filePort.chooseFile=async()=>({ok:true,value:arguments[0]});
+    w.backend.open=(...a)=>{window.__ndOpenHeld=true;return new Promise((resolve,reject)=>{
+      window.__ndOpenResume=()=>{w.backend.open=window.__ndOpen;window.__ndOpen.apply(w.backend,a).then(resolve,reject)}})};
+    window.__ndRestoreResult='pending';w.restoreRecovery(arguments[1],{title:'r',accept:'r',cancel:'c'}).then(r=>window.__ndRestoreResult=r)""",str(restored),candidate)
+    test.wait('return window.__ndOpenHeld===true')
+    assert restored.is_file(),'restore did not publish'
+    published=module.native.sha(restored)
+    restored.unlink();restored.symlink_to(source)
+    d.js('window.__ndOpenResume()')
+    test.wait('return window.__ndRestoreResult!=="pending"')
+    result=d.js('return window.__ndRestoreResult')
+    assert result['ok'] is False and result['error']['code']=='RestoredUnopened' and result['error']['cause']['code']=='AlreadyOpen',result
+    assert result['error']['cause']['sessionId'] in before['sessions'],result
+    after=d.js("const w=window.__ndWorkspace;return {sessions:w.sessions.snapshot().sessions.map(s=>s.sessionId),active:w.sessions.snapshot().activeId,notices:w.publicationNoticeCount}")
+    assert after=={**before,'notices':1},after
+    assert recovery_files(args)==store_before and module.native.sha(args.documents/'created.docx')==original
+    report['negative'].append({'case':'AlreadyOpen after restore (external symlink replacement before document_open)','status':'PASS',
+        'publishedSha256':published,'alreadyOpen':'real Rust registry','adopted':False,'activeTabUnchanged':True,'noticeCount':1})
+    pids=set(smoke.app_processes())
+    request_native_close(args.xdotool,window)
+    test.wait("return document.querySelector('[data-testid=discard-dialog]')!==null")
+    test.key('Tab','Return')
+    deadline=time.monotonic()+20
+    while pids.intersection(smoke.app_processes()) and time.monotonic()<deadline:time.sleep(.1)
+    assert not pids.intersection(smoke.app_processes())
+
+
 def restore_chooser(args,d,test,report,window):
     # Real GTK destination chooser; the window-close request is a real WM_DELETE_WINDOW.
     candidate,store_before,original=checkpoint_candidate(args,d,test)
@@ -216,7 +250,7 @@ def main():
     parser=argparse.ArgumentParser(description=__doc__)
     for name in ['app','out']: parser.add_argument('--'+name,type=Path,required=True)
     for name in ['driver','xdotool','ibus']: parser.add_argument('--'+name,required=True)
-    parser.add_argument('--mode',choices=['selection','publication','dirty-selection','unconfirmed-publication','restore-unopened','restore-chooser','restore-chooser-injected'],required=True)
+    parser.add_argument('--mode',choices=['selection','publication','dirty-selection','unconfirmed-publication','restore-unopened','restore-chooser','restore-chooser-injected','restore-already-open'],required=True)
     parser.add_argument('--port',type=int,default=4444)
     parser.add_argument('--documents',type=Path)
     args=parser.parse_args();args.out.mkdir(parents=True,exist_ok=False)
@@ -237,9 +271,9 @@ def main():
             test.async_js("window.__ndCloseObserved=0;window.__ndStopClose=await window.__ndWorkspace.windowClose.listen(()=>window.__ndCloseObserved++);return true")
             path=args.out/'closing.docx'
             original_hash=None
-            if args.mode in ('restore-unopened','restore-chooser','restore-chooser-injected'):
+            if args.mode in ('restore-unopened','restore-chooser','restore-chooser-injected','restore-already-open'):
                 {'restore-unopened':restore_unopened,'restore-chooser':restore_chooser,
-                 'restore-chooser-injected':restore_chooser_injected}[args.mode](args,d,test,report,window)
+                 'restore-chooser-injected':restore_chooser_injected,'restore-already-open':restore_already_open}[args.mode](args,d,test,report,window)
                 try:d.quit();report['driverDeleteAfterNativeClose']='ok'
                 except Exception as error:report['driverDeleteAfterNativeClose']=str(error)
                 d=None
