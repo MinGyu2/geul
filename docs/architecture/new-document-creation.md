@@ -416,3 +416,21 @@ Rust `register_created()`는 lock 안에서 정규화 경로나 장치·inode가
 이전 프런트엔드는 이 오류를 일반 열기처럼 다뤘다. 그래서 기존 탭이 있으면 그 탭을 선택하고(관계없는 문서 채택), 투영에 없으면 아무것도 하지 않았다. 두 경우 모두 게시 안내가 없어 대기 중인 닫기가 게시를 가릴 수 있었다(프런트엔드 시험 3개와 native `restore-already-open`이 수정 전 실패). 이제 복원 뒤 모든 열기 실패를 `AlreadyOpen` 포함 `RestoredUnopened { cause }`로 보고한다. 기존 세션은 채택하거나 선택하지 않고, 다른 탭과 활성 탭은 그대로이며, 게시 안내를 1회 센다. 세션 ID를 신뢰할 근거(파일 신원)가 프런트엔드에 없으므로 재조정(reconcile)이나 두 번째 등록은 하지 않는다. 프로덕션 IPC `call()`은 거부와 응답 오류를 모두 `Result`로 바꾸므로 게시 뒤 처리를 우회하는 예외 경로는 없다(추가 정규화 없음).
 
 검증(최종 앱 Debug test-hooks `2f2fa3051c1d3a720208ffcc2a87661f25d6bf3fa34c84eb80bc579251f83e0c`, RHWP `0c2faef3…`): vitest 59파일/1,060, tsc·ESLint, Rust 258 PASS/22 ignored, fmt·clippy(`--tests`) PASS. native close 8모드: `restore-already-open`(실제 restore·실제 외부 symlink 교체·실제 `document_open`)·`restore-chooser-injected`·`restore-unopened`·`unconfirmed-publication`·`dirty-selection`·`publication`·`selection` PASS, `restore-chooser` 실제 GTK 순서 NOT REACHABLE 기록. 정리 성공·잔여 0. 하네스 경로 오류와 WebDriver 응답 경합으로 실패한 초기 시도는 ignored `target/stabilization/s3-attempts/`에 보존했다.
+
+## 4차 안정화 — 2026-11-04
+
+### 실제 GTK 선택기 닫기 판정 강화
+
+이전 `restore_chooser`의 NOT REACHABLE 분기는 취소 결과와 게시 없음만 확인했다. 닫기 이벤트 delta, 취소 뒤 지연 이벤트, 관측기 설치 여부는 확인하지 않았고, 기록 문구는 "0건"으로 고정돼 있었다. 이제 판정은 `scripts/tests/chooser_close_verdict.py`의 `classify()`가 정한다. 관측값은 다음과 같다.
+- 관측기 설치·요청 전송 여부
+- 요청 전 기준값
+- 선택기가 열린 5초 동안의 카운트·확인 창
+- 취소 뒤 5초 동안의 카운트·확인 창
+- 복원 결과·게시 여부·앱 생존
+
+NOT REACHABLE은 다음을 모두 만족할 때만 내린다. 관측기 정상, 전송 성공, 두 구간의 delta 0, 확인 창 없음, 결과 `null`, 게시 없음, 앱 생존. 선택기 중 전달되면 `DELIVERED DURING CHOOSER`로 판정하고 실제 도달 경로를 검증한다. 취소 뒤 전달되면 `DELIVERED AFTER CHOOSER`, 관측 누락·감소·상태 모순이면 `INCONCLUSIVE`이며, 둘 다 실패로 끝난다. 기준값과 delta를 함께 기록한다. NOT REACHABLE 뒤에는 같은 관측기로 다음 명시적 닫기 요청이 정확히 delta 1인지 양성 대조한다. 판정 범위는 이 X11/Xvfb, `gtk::FileChooserNative` modal `run()`, 관측한 구간에 한정한다. 유한한 관측이므로 이벤트가 절대 오지 않는다는 증명은 아니다. portal·Wayland·다른 WM은 확인하지 않았다.
+
+검증:
+- 통제 관측 단위 시험 `python3 -m unittest scripts/tests/test_chooser_close_verdict.py`: 5 PASS(미전달, 선택기 중 전달, 취소 뒤 지연 전달, 관측 누락·불량, 상태 모순).
+- 실제 native(앱 `2f2fa305…` = HEAD `d99f1d0` 제품 소스, 하네스 `07ab8d79…`): 판정 NOT REACHABLE — 기준 0, 선택기 중 0, 취소 뒤 0, 확인 창 없음, 결과 `null`, 게시 없음, 복구 store 불변, 양성 대조 0→1, 정상 종료·잔여 0. 같은 하네스의 `restore-chooser-injected`도 PASS다.
+- NOT REACHABLE은 도달할 수 없는 동작을 실행해 통과했다는 뜻이 아니다. 이전 실행 기록은 그대로 둔다.

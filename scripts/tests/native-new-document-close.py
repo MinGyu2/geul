@@ -196,9 +196,17 @@ def restore_already_open(args,d,test,report,window):
 
 
 def restore_chooser(args,d,test,report,window):
-    # Real GTK destination chooser; the window-close request is a real WM_DELETE_WINDOW.
+    # Real GTK destination chooser; the window-close request is a real WM_DELETE_WINDOW. The verdict
+    # (chooser_close_verdict.classify) is scoped to this X11/Xvfb run, this chooser and these intervals.
+    spec=importlib.util.spec_from_file_location('chooser_close_verdict',ROOT/'scripts/tests/chooser_close_verdict.py')
+    verdicts=importlib.util.module_from_spec(spec);spec.loader.exec_module(verdicts)
+    interval=5.0
     candidate,store_before,original=checkpoint_candidate(args,d,test)
     restored=args.out/'restored.docx'
+    count="return Number.isInteger(window.__ndCloseObserved)?window.__ndCloseObserved:null"
+    dialog="return document.querySelector('[data-testid=discard-dialog]')!==null"
+    obs={'observerInstalled':d.js("return typeof window.__ndStopClose==='function' && Number.isInteger(window.__ndCloseObserved)"),
+         'requestSent':False,'intervalSeconds':interval}
     d.js("window.__ndRestoreResult='pending';window.__ndWorkspace.restoreRecovery(arguments[0],{title:'복구 사본을 새 파일로 복원',accept:'복원',cancel:'취소'}).then(r=>window.__ndRestoreResult=r,e=>window.__ndRestoreResult={thrown:String(e)})",candidate)
     deadline=time.monotonic()+15;chooser=''
     while time.monotonic()<deadline and not chooser:
@@ -206,44 +214,66 @@ def restore_chooser(args,d,test,report,window):
         chooser=found.stdout.split()[-1] if found.returncode==0 and found.stdout.strip() else '';time.sleep(.1)
     assert chooser,'native GTK chooser not visible'
     pids=set(smoke.app_processes())
-    before=d.js('return window.__ndCloseObserved')
-    request_native_close(args.xdotool,window)
-    deadline=time.monotonic()+10
-    while time.monotonic()<deadline and not d.js("return document.querySelector('[data-testid=discard-dialog]')!==null"):time.sleep(.2)
-    report['chooserCloseDelivery']={'closeEventsBefore':before,'closeEventsAfter':d.js('return window.__ndCloseObserved'),
-        'dialog':d.js("return document.querySelector('[data-testid=discard-dialog]')!==null"),'busy':d.js('return window.__ndWorkspace.fileBusy')}
-    if not report['chooserCloseDelivery']['dialog']:
-        # Record whether the real GTK chooser lets the WM close request reach the app at all.
+    obs['before']=d.js(count)
+    request_native_close(args.xdotool,window)  # asserts XSendEvent accepted the client message
+    obs['requestSent']=True
+
+    def observe(baseline):
+        # Bounded: stop early only on a delivery signal; otherwise watch the whole interval.
+        end=time.monotonic()+interval;seen=False
+        while time.monotonic()<end:
+            value=d.js(count);seen=d.js(dialog)
+            if seen or value is None or (isinstance(baseline,int) and value!=baseline):break
+            time.sleep(.2)
+        return d.js(count),bool(seen or d.js(dialog))
+
+    obs['during'],obs['dialogDuring']=observe(obs['before'])
+    obs['busyDuring']=d.js('return window.__ndWorkspace.fileBusy')
+    if not (obs['during']!=obs['before'] or obs['dialogDuring']):
         test.command(args.xdotool,'windowfocus','--sync',chooser);test.key('Escape')
         test.wait('return window.__ndRestoreResult!=="pending"')
-        report['chooserCloseDelivery']['afterChooserCancel']={'closeEvents':d.js('return window.__ndCloseObserved'),
-            'dialog':d.js("return document.querySelector('[data-testid=discard-dialog]')!==null"),'result':d.js('return window.__ndRestoreResult')}
-        # Observed under Xvfb/X11: the modal FileChooserNative run() grab drops the parent's delete request.
-        # The ordering is unreachable here; record it and verify nothing was published.
-        assert report['chooserCloseDelivery']['afterChooserCancel']['result'] is None
-        assert not restored.exists() and recovery_files(args)==store_before
-        report['negative'].append({'case':'WM close while the real GTK restore chooser is open','status':'NOT REACHABLE',
-            'observation':'0 CloseRequested events reached the app during or after the modal chooser','published':False})
+        obs['afterCancel'],obs['dialogAfterCancel']=observe(obs['during'])
+        obs['restoreResult']=d.js('return window.__ndRestoreResult')
+    obs['published']=restored.exists()
+    obs['appAlive']=pids.issubset(set(smoke.app_processes()))
+    obs['recoveryStoreUnchanged']=recovery_files(args)==store_before
+    result,reason=verdicts.classify(obs)
+    report['chooserCloseDelivery']={**obs,'verdict':result,'reason':reason,
+        'scope':'X11/Xvfb, gtk::FileChooserNative modal run(), bounded observation of the frontend close listener'}
+
+    if result==verdicts.NOT_REACHABLE:
+        assert obs['recoveryStoreUnchanged'] and module.native.sha(args.documents/'created.docx')==original
+        # Positive control: the same observer sees exactly one event for the next explicit close request,
+        # so the zero delta above was not a dead observation channel.
+        baseline=d.js(count)
         request_native_close(args.xdotool,window)
-        test.wait("return document.querySelector('[data-testid=discard-dialog]')!==null")
+        test.wait(dialog)
+        control=d.js(count)
+        report['chooserCloseDelivery']['positiveControl']={'before':baseline,'after':control}
+        assert control==baseline+1,report['chooserCloseDelivery']['positiveControl']
+        report['negative'].append({'case':'WM close while the real GTK restore chooser is open','status':verdicts.NOT_REACHABLE,
+            'observation':reason,'published':False,'positiveControlDelta':1})
+        assert d.js("return document.querySelectorAll('[aria-modal=true]').length")==1
         test.key('Tab','Return')
         deadline=time.monotonic()+20
         while pids.intersection(smoke.app_processes()) and time.monotonic()<deadline:time.sleep(.1)
         assert not pids.intersection(smoke.app_processes())
         return
-    report['closeDuringChooser']=d.js("return {dialogs:document.querySelectorAll('[aria-modal=true]').length,busy:window.__ndWorkspace.fileBusy,kind:document.querySelector('[data-testid=discard-dialog]')?.dataset.windowKind}")
-    assert report['closeDuringChooser']['busy'] and report['closeDuringChooser']['dialogs']==1,report['closeDuringChooser']
-    # The GTK chooser keeps keyboard focus; confirm the web prompt with a DOM click.
-    d.js("document.querySelector('[data-testid=discard-confirm]').click()")
-    test.wait("return window.__ndWorkspace.windowClosing===true && window.__ndWorkspace.fileBusy===true")
-    assert pids.issubset(set(smoke.app_processes())),'window destroyed while the chooser was pending'
-    # Now complete the real chooser with a new destination.
-    test.command(args.xdotool,'windowfocus','--sync',chooser)
-    test.key('ctrl+l','ctrl+a');test.type(str(restored));test.key('Return')
-    finish_confirmed_close(args,d,test,report,window,pids,restored,store_before,original)
-    report['negative'].append({'case':'window close confirmed while the real GTK restore chooser was pending','status':'PASS',
-        'chooser':'real GTK; destination typed with XTest','closeRequest':'real WM_DELETE_WINDOW','confirm':'DOM click (GTK chooser holds keyboard focus)',
-        'published':False,'recoveryStoreUnchanged':True,'appExited':True})
+    if result==verdicts.DELIVERED_DURING and obs['dialogDuring'] and obs['busyDuring']:
+        # The reachable transition: confirm the prompt, then complete the real chooser.
+        report['closeDuringChooser']=d.js("return {dialogs:document.querySelectorAll('[aria-modal=true]').length,busy:window.__ndWorkspace.fileBusy,kind:document.querySelector('[data-testid=discard-dialog]')?.dataset.windowKind}")
+        assert report['closeDuringChooser']['dialogs']==1,report['closeDuringChooser']
+        d.js("document.querySelector('[data-testid=discard-confirm]').click()")  # GTK chooser holds keyboard focus
+        test.wait("return window.__ndWorkspace.windowClosing===true && window.__ndWorkspace.fileBusy===true")
+        assert pids.issubset(set(smoke.app_processes())),'window destroyed while the chooser was pending'
+        test.command(args.xdotool,'windowfocus','--sync',chooser)
+        test.key('ctrl+l','ctrl+a');test.type(str(restored));test.key('Return')
+        finish_confirmed_close(args,d,test,report,window,pids,restored,store_before,original)
+        report['negative'].append({'case':'window close confirmed while the real GTK restore chooser was pending','status':'PASS',
+            'chooser':'real GTK; destination typed with XTest','closeRequest':'real WM_DELETE_WINDOW','published':False,'appExited':True})
+        return
+    # A late delivery, an unexpected state or a missing observation is never native coverage.
+    raise AssertionError(f'{result}: {reason}')
 
 
 def main():
