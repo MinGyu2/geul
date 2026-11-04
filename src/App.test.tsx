@@ -288,10 +288,13 @@ describe("리본", () => {
     expect(buttons.at(-1)).toHaveFocus();
   });
 
-  it("형식 전용 탭은 대상 형식을 안내한다", async () => {
-    const { user } = setup();
-    await user.click(screen.getByRole("tab", { name: "한글 도구" }));
-    expect(screen.getByText("HWP/HWPX 문서 전용 도구입니다.")).toBeInTheDocument();
+  // T011: 형식 전용 탭은 활성 문서 형식에서만 보인다(형식별 표시·안내는 src/components/Ribbon/Ribbon.test.tsx).
+  it("열린 문서가 없으면 공통 탭만 보이고 형식 전용 탭(한글 도구·참조·편지)은 없다", () => {
+    setup();
+    expect(screen.getAllByRole("tab").map((tab) => tab.textContent)).toEqual([
+      "파일", "홈", "삽입", "그리기", "디자인", "레이아웃", "검토", "보기", "도움말",
+    ]);
+    expect(screen.queryByText("HWP/HWPX 문서 전용 도구입니다.")).not.toBeInTheDocument();
   });
 });
 

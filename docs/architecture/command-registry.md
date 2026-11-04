@@ -3,7 +3,7 @@
 FR-007(명령 레지스트리)과 SC-003(서식·실행 취소·미지원 명령을 실제 엔진에서 확인)의 T010 몫. 상황별 리본은 T011, 형식별 고급
 명령은 T012·T013이 맡는다. 이 문서는 T010에서 정한 경계와 근거, 남은 한계를 적는다.
 
-현재 T010은 INCOMPLETE — ON HOLD, 제품 RHWP Undo/Redo는 NO-GO, T011은 NOT STARTED다. [수용 행렬·재개 조건](rhwp-undo-redo.md#t010-current-status)이 현재 상태의 기준이며 아래 날짜별 검증은 당시 신원에 한정한다.
+현재 T010은 INCOMPLETE — ON HOLD, 제품 RHWP Undo/Redo는 NO-GO다. T011은 2026-11-04 착수 조건 변경 뒤 구현했으며 native IME 검증이 남아 미완료다(아래 "T011 리본"). [수용 행렬·재개 조건](rhwp-undo-redo.md#t010-current-status)이 현재 상태의 기준이며 아래 날짜별 검증은 당시 신원에 한정한다.
 
 ## 구조
 
@@ -217,3 +217,85 @@ macOS는 Ctrl 대신 Cmd(이 빌드는 Linux만 확인). 단축키는 물리 키
 ## T010 최종 검증: 클릭 뒤 굵게 판정과 명령 가용성 (2026-10-21, `f27b80a` 위)
 
 명령 레지스트리·가용성·모달 정책·WordCraft 기록은 바꾸지 않았다. 바뀐 것은 실제 앱 시험기의 판정 하나다. `--ime-commands`의 "조합 중 페이지 클릭 뒤 바로 리본 굵게"는 `37b39ae`에서 "굵게를 받았으면 revision +2"를 요구했지만, 클릭이 커서를 접어 두면 굵게는 다음 입력 서식만 정하고 문서를 바꾸지 않는다(엔진 `changed = 0`, 위 "서식" 규칙과 Rust 시험 `t010_선택이_없으면_서식은_다음_입력에만_적용되고_문서는_바뀌지_않는다`). 이 실행에서 두 빌드(`37b39ae`·`f27b80a`) 모두 음절은 원래 자리에 한 번, 굵게는 확정 뒤 받아짐, revision +1로 같게 실패했다 → PRE-EXISTING 시험기 계약 결함. 이제 서식 연산 자신의 revision 변화(추적의 보낸 기준·응답)로 전체 revision을 맞추고, 접힌 커서면 같은 자리의 문서 서식과 굵게 뒤 단추 눌림이 반대인지(켜고 끄기)까지 본다. 거절(`composing`)은 서식 연산이 가지 않았을 때만 인정한다. 결과 18/18. 자세한 것: [editor-surface-decision.md](editor-surface-decision.md#t010-최종-검증-p1-판별-회귀표-셀-좌표webdriver-끊김-분류-2026-10-21-f27b80a-위).
+
+## T011 리본: 형식별 탭·상황별 도구·명령 연결 (2026-11-04, `6524650` 위)
+
+2026-11-04 계획 결정(tasks.md "T011 착수 조건 변경")에 따라 검증된 공통 명령 기반 위에서 구현했다. T010의 D2 INCONCLUSIVE·D4 지연 FAIL·
+자원 INCONCLUSIVE, 제품 RHWP Undo/Redo·서식 NO-GO는 그대로다(레지스트리의 `RHWP_HISTORY`·`RHWP_FORMAT`·시험 빌드 상수는 바꾸지 않음).
+
+### 구조
+
+| 파일 | 역할 |
+|------|------|
+| `src/ribbon/visibility.ts` | `ribbonFormatFor(format)`: `hwp`·`hwpx` → `"hwp"`(한글 도구), `docx` → `"docx"`(참조·편지), 문서 없음·계약 밖 값 → `null`(공통 탭만). `visibleRibbonTabs(format)`(정의 순서 유지), `resolveActiveRibbonTab(id, visible)`(사라지면 홈, 없으면 첫 탭). 순수 함수. |
+| `src/components/Ribbon/Ribbon.tsx` | `format` prop으로 보이는 탭만 그린다. 고른 탭이 사라지면 홈으로 바꾸고(형식이 돌아와도 되살리지 않음) 사라진 탭·도구 모음에 있던 초점은 고른 탭으로 옮긴다. 리본 밖 초점은 건드리지 않는다. `aria-controls`는 고른 탭만 갖는다(패널이 하나). 접기 단추 안내의 단축키는 레지스트리에서 읽는다(macOS Cmd). |
+| `src/App.tsx` | `format`은 활성 세션의 `SessionInfo.format`(백엔드 SessionRegistry의 투영, `useActiveDocument`)이다. 엔진 ID·파일 이름·확장자에서 추측하지 않는다. |
+| `src/components/CommandButton/editorFocus.ts` | 경계 C(편집 입력 초점 유지)를 함수 하나로 뽑아 `CommandButton`과 리본 탭·접기 단추가 같이 쓴다. `CommandButton`의 동작은 같다. |
+
+표시는 실행 가능을 뜻하지 않는다: 보이는 탭의 모든 명령은 그대로 `commandState`(레지스트리·capability)와 실행 직전 재확인
+(`executeCommand` → 세션 `execute`)을 거친다. 리본은 엔진 모델·저장 함수를 직접 부르지 않으며 두 번째 가용성 판단·기록·키보드
+처리기를 두지 않는다.
+
+| 활성 문서 | 공통 탭(파일·홈·삽입·그리기·디자인·레이아웃·검토·보기·도움말) | 한글 도구 | 참조·편지 |
+|---|---|---|---|
+| 없음 | 보임 | 숨김 | 숨김 |
+| HWP / HWPX | 보임 | 보임(같은 탭 정의) | 숨김 |
+| DOCX | 보임 | 숨김 | 보임 |
+
+형식은 세션이 `identified`·`loading`·`failed`여도 백엔드가 정한 값이므로 탭은 보인다. 그 상태의 명령은 `notReady` 등으로 막힌다.
+
+### 상황별 도구(선택 문맥)
+
+선택 문맥으로 여는 상황 탭(표 도구·그림 도구)은 **만들지 않았다**. 관측 가능한 신호와 빠진 능력:
+
+| 신호 | WordCraft(DOCX) | rhwp(HWP·HWPX) | 판단 |
+|---|---|---|---|
+| 글자 선택 유무 | 보기 `collapsed`·`selectionText` | `hasSelection`(같은 문맥) | 있음. 서식 명령의 눌림·가용성에 이미 쓰임(T010). |
+| 커서가 표 셀 안 | 보기 `inTable` | `caret.cell`(중첩 표 제외) | 커서 위치 신호만 있음. 대기 편집 중에는 마지막 백엔드 보기라 늦을 수 있다. |
+| 표·그림·도형 **개체 선택** | 없음(보기에 개체 선택 필드 없음) | 없음(위치 hit-test는 글자 위치만, 셀 안 개체·글상자·중첩 표 결과는 `null`로 버림 — `rhwpText.ts` `parsePosition`) | **빠진 능력.** |
+| 표·그림 편집 명령 | 없음(`planned`) | 없음(`planned`) | 검증된 명령이 하나도 없음(T012·T013). |
+
+표 탭을 `inTable`만으로 열면 쓸 수 있는 명령이 없는 탭이 커서 이동마다 나타났다 사라지고, 대기 편집 중에는 오래된 보기로 정하게
+된다. 그래서 T011은 형식 문맥만 쓰고, 상황 탭은 다음이 갖춰질 때 붙인다: (1) 엔진 보기의 개체 선택(종류·ID·세대) 신호, (2) 대기
+편집 중 문맥의 유효성 규칙, (3) 그 탭에 둘 검증된 명령(T012 표 계산 등). 한글 도구의 `hangul.tableFormula`는 지금처럼 `planned`다.
+
+### 명령 연결과 차단
+
+연결 대상은 T010 레지스트리 그대로다(새로 실행 가능하게 바꾼 명령 없음).
+
+- 실행: 파일(`file.new`·`file.open`·`file.saveAs`, `file.save`는 두 엔진 T009 절차), 보기(창·리본·테마·확대/축소), 도움말,
+  WordCraft 실행 취소·다시 실행·글자 서식 4종.
+- 막힘: rhwp 실행 취소·다시 실행·서식(`engineUnsupported`, 제품 빌드), 그 밖의 리본 명령(`planned` → `notImplemented`, PDF·인쇄·
+  표/그림 삽입·문단 정렬·쪽 설정·한글 도구·참조·편지·검토 포함). 형식 전용 탭의 명령은 모두 `planned`이고 단축키가 없다(시험이 지킴).
+- 이유: 단추의 `aria-disabled`·제목(`command.reason.*`), 누르면 상태 표시줄(`command.unavailable.*`). 새 번역 키는 없다.
+- 리본과 단축키는 같은 ID·`executeCommand`·`commandState`를 쓴다. 단축키가 있는 명령은 모두 공통 탭에 있으므로 숨은 탭의 명령을
+  단축키로만 부르는 경우가 없다.
+
+### IME·초점
+
+- `CommandButton`의 경계 C는 그대로 두고 같은 함수를 리본 탭·접기 단추에도 붙였다. 전에는 편집 입력에 초점이 있을 때 리본 **탭**을
+  누르면 초점이 탭으로 옮겨 갔다(명령 단추가 아니어서 경계 C 밖, 위 "남은 위험"의 문서 탭과 같은 노출). 이제 편집 입력 초점이 남고
+  탭만 바뀐다. 편집 입력 밖에 초점이 있으면 아무것도 막지 않는다(키보드 Tab·화살표·Enter는 그대로).
+- 문서 탭·탭 닫기 단추(Editor)는 리본 밖이라 바꾸지 않았다(기존 한계 유지).
+- 문서를 바꾸면 그 편집 표면이 스스로 입력에 초점을 준다(기존 표면 동작). 리본의 초점 복구는 사라진 탭에 초점이 있었고 받을 곳이
+  없을 때(예: 마지막 문서 닫기)만 작동한다.
+
+### 확인 방법과 결과 (2026-11-04)
+
+| 확인 | 결과 | 범위 |
+|---|---|---|
+| `npm run typecheck`, `npm run lint` | PASS | 전체 |
+| `npx vitest run` | PASS 51파일 955개(변경 전 49파일 934개) | jsdom·가짜 엔진(FakeDocument·FakeDocx). 엔진 동작 증거 아님 |
+| `src/ribbon/visibility.test.ts` | PASS 9개 | 형식 → 탭, 대신 고르기, 형식 전용 탭 명령 `planned`·단축키 없음 |
+| `src/components/Ribbon/Ribbon.test.tsx` | PASS 12개 | 앱 전체(HWP·HWPX·DOCX 함께 열기): 탭 표시·전환·닫기·ARIA·화살표, 명령 대상·빠른 전환·차단 이유, 모달, 영어, 합성 IME 조합 중 리본 누름 |
+| 변이 확인 | 4/4 검출 | 초점 복구 제거·탭 초점 빼앗김·대신 고르기 미유지·HWPX 오분류를 각각 넣으면 위 시험이 실패 |
+| `tests/e2e/tauri_smoke.py --skip-restart` | PASS 34, SKIP 2 | 실제 Tauri debug 제품 빌드, Wayland 세션, WebKitGTK 2.54. SKIP: 최소 창 크기(창 관리자), 재시작(옵션) |
+| `tests/e2e/t011_ribbon_native.py` | PASS 14/14 | 같은 빌드, 실제 rhwp WASM(HWP·HWPX)·WordCraft(DOCX) 문서. 형식별 탭, 실제 포인터 클릭 뒤 초점 유지, 대신 고르기·ARIA, HWPX 실행 취소·서식 차단과 revision 불변, 리본 굵게 = Ctrl+B(DOCX만), DOCX 닫기, Ctrl+F1 |
+| 제품 번들 시험 표지 | 없음 | `dist/assets/*.js`에 `geul-test-build` 없음(RHWP 기록·서식 시험 상수 빠짐) |
+| native 한국어 IME 중 리본 탭·접기 | **NOT RUN** | 이 환경에 IBus·Xvfb 없음. 합성 사건 시험만 있음(실제 입력기 근거 아님) |
+
+로컬 시험(`tests/`)은 공개 저장소 밖(geul-tests)이다. `tauri-driver` 릴리스 바이너리의 ELF 해석기가 사라져(Nix GC) 현재 glibc 로더로 감싸
+실행했다(도구 실행 방식만 다름). 표본 `target/hwpx-compat-20261102/native-sc002-run1/native.docx`는 앱이 구조 손상으로 거절해 쓰지 않았고
+WordCraft 픽스처 생성기의 `basic-ko.docx`를 썼다(이 거절은 T011과 무관하며 조사하지 않음).
+
+남은 것: native IME 회귀 확인(위). 기존 한계 유지: 문서 탭·탭 닫기 단추의 초점 이동, D2/D4, RHWP 제품 기록·서식 NO-GO, 선택 문맥 상황 탭 없음.

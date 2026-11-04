@@ -33,7 +33,7 @@ GitHub 체크박스에 비표준 `[△]`를 쓰지 않고 task 설명에 `△`�
 
 허용: 공통 리본·문서 형식/실제 선택에 따른 표시·기존 지원 명령 연결·비활성 사유·리본/단축키 일치. 금지: RHWP 시험 플래그 제품 활성화, 미검증 변형 명령 연결, 저장 검사 완화, D2/D4 실패를 PASS로 변경. 구현 전 현재 registry/capability/세션 경계를 확인하고 변경 영향 회귀를 실행한다.
 
-이 결정은 architecture 문서의 과거 T011 착수 불허 관리 문구만 대체한다. [T010 수용 행렬](../architecture/rhwp-undo-redo.md#t010-current-status)의 기술 판정과 제품 NO-GO는 유지한다. T011의 상태는 **착수 승인·구현 미착수**다. T011 전체 완료는 원래 Done 기준으로 별도 판단한다.
+이 결정은 architecture 문서의 과거 T011 착수 불허 관리 문구만 대체한다. [T010 수용 행렬](../architecture/rhwp-undo-redo.md#t010-current-status)의 기술 판정과 제품 NO-GO는 유지한다. T011의 상태는 **착수 승인·구현 미착수**다(이 결정 시점). T011 전체 완료는 원래 Done 기준으로 별도 판단한다. 이후 구현·검증 상태는 Phase 4 목록과 Verification Log를 따른다.
 
 T021–T023도 검증된 T006·T007/T008·T009 연결을 재사용해 개발할 수 있다. 해당 행의 의존성은 실제 사용하는 기본 표면·저장 계약에 적용하며 추가 환경 전체나 T010 D2/D4 완료를 요구하지 않는다. 발견된 입력 손실·원본 훼손·출력 손상은 해당 기능을 막고 먼저 고친다.
 
@@ -61,7 +61,7 @@ Independent Test: 두 표면의 PoC와 대표 문서 IME→저장→재열기 �
 ## Phase 4: User Story 3 - 공통 명령 및 리본 (Priority: P1)
 Independent Test: 형식·선택·상태별 명령과 미지원 차단. 시험 전용 명령 활성화 금지.
 - [ ] T010 [US3] △ 조건부 완료 — 공통 명령·Undo/Redo·서식 — `src/commands/` (D2/D4 조사 보류, RHWP 제품 활성화 NO-GO)
-- [ ] T011 [US3] 공통 리본·상황별 도구 연결 — `src/ribbon/`, `src/components/Ribbon/` (착수 승인·구현 미착수)
+- [ ] T011 [US3] 공통 리본·상황별 도구 연결 — `src/ribbon/`, `src/components/Ribbon/` (구현·자동/native 비IME 검증 완료, native 한국어 IME 회귀 검증 미실행 — 미완료, 아래 Verification Log)
 
 ## Phase 5: User Story 4 - 고급 기능 (Priority: P2)
 Independent Test: 실제 API·기록·문서 왕복을 검증한 명령만 활성화.
@@ -147,7 +147,16 @@ T019(L) 완료 이력과 R 전체 미완료를 유지한다. 과거 CI 성공과
 
 ## Verification Log
 
-2026-11-04 문서/소스/기존 기록 대조. 새 생성 runtime·T011 구현·native D1–D5 실행은 NOT RUN이다. 계획 구조 검사는 요구 ID·작업 ID·의존성·커버리지·상대 링크를 대상으로 하며 제품 무결함 증명이 아니다. 범용 검사기가 `T019(L)`을 이해하지 못하면 표기를 삭제하지 않고 그 제한과 별도 로컬 게이트 대조 결과를 기록한다. 커밋/푸시 방식과 실제 실행한 보안 검사 범위는 최종 작업 보고에서 구분한다.
+2026-11-04 문서/소스/기존 기록 대조. 새 생성 runtime·T011 구현·native D1–D5 실행은 NOT RUN이다(이 문서 작업 시점, 아래 T011 기록이 뒤따름). 계획 구조 검사는 요구 ID·작업 ID·의존성·커버리지·상대 링크를 대상으로 하며 제품 무결함 증명이 아니다. 범용 검사기가 `T019(L)`을 이해하지 못하면 표기를 삭제하지 않고 그 제한과 별도 로컬 게이트 대조 결과를 기록한다. 커밋/푸시 방식과 실제 실행한 보안 검사 범위는 최종 작업 보고에서 구분한다.
+
+2026-11-04 T011 구현(`6524650` 위, 상세 [command-registry.md "T011 리본"](../architecture/command-registry.md#t011-리본-형식별-탭상황별-도구명령-연결-2026-11-04-6524650-위)):
+형식별 탭(문서 없음=공통, HWP·HWPX=+한글 도구, DOCX=+참조·편지)·사라진 탭 대신 고르기·초점 복구·리본 탭/접기 단추의 편집 입력 초점 유지를
+구현했다. 새로 실행 가능하게 바꾼 명령은 없고 RHWP 실행 취소·서식은 제품 빌드에서 계속 `engineUnsupported`다. 선택 문맥 상황 탭은 개체 선택
+신호·검증된 표/그림 명령이 없어 만들지 않았다(빠진 능력 기록). 실행 결과: Vitest 51파일 955개 PASS(합성·가짜 엔진), `tsc --noEmit`·ESLint PASS,
+실제 Tauri debug 제품 빌드(Wayland 세션, WebKitGTK 2.54, 실제 rhwp WASM·WordCraft) `tests/e2e/tauri_smoke.py --skip-restart` 34 PASS·2 SKIP,
+`tests/e2e/t011_ribbon_native.py` 14/14 PASS(IME 없음). **native 한국어 IME(IBus) 중 리본 탭·접기 조작 회귀 검증은 이 환경에 IBus·Xvfb가 없어
+NOT RUN**이므로 T011은 미체크로 둔다. 재개: 기록된 X11/Xvfb + ibus-hangul 환경에서 조합 중 리본 탭·접기 단추 누름의 음절 보존·중복 없음·문서
+소유를 확인(T010 `--ime-commands` 시험기와 같은 판정).
 
 ## Handoff
 

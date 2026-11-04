@@ -1,6 +1,6 @@
 // 공통 리본 구성(FR-008). UI 구조만 정의하며 엔진 API를 직접 참조하지 않는다.
-// 명령 실행·가용성 판단은 src/commands/를 거친다. 형식 전용 탭(`format`)은 T011에서 열린 문서 형식에 따라
-// 표시 여부를 정하는 상황별 탭이 된다. 지금은 모든 탭을 보여 주되 전용 탭임을 안내한다.
+// 명령 실행·가용성 판단은 src/commands/를 거친다. 형식 전용 탭(`format`)은 활성 문서 형식에서만 보인다(T011,
+// src/ribbon/visibility.ts: "hwp"는 HWP·HWPX, "docx"는 DOCX). 보여도 명령 가용성은 레지스트리가 정한다.
 import type { IconName } from "../assets/icons";
 import type { MessageKey } from "../language";
 

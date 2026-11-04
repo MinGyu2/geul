@@ -207,7 +207,7 @@ function Workspace({ layout, dispatch, message, notify, documents }: WorkspacePr
         navigationToggleRef={navigationToggleRef}
         propertiesToggleRef={propertiesToggleRef}
       />
-      <Ribbon context={context} />
+      <Ribbon context={context} format={panel.info?.format ?? null} />
       <div className="workspace" style={workspaceStyle}>
         {layout.navigationVisible && (
           <>
