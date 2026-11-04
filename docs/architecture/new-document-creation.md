@@ -317,3 +317,13 @@ native Release 앱·Wayland/fcitx5/GPU desktop·Windows/macOS·CPU 포화·실�
 T022 요약의 "게시 뒤 닫기는 늦은 세션을 닫고"는 더 이상 현재 동작이 아니다. 이전 구현은 창이 닫히는 중 `createDocument`가 성공하면 백엔드 세션을 닫고(그 결과는 무시) `FilePublishedUnregistered`를 돌려줬다. 성공 응답은 게시와 등록이 모두 끝났다는 뜻이므로 등록 실패로 보고하는 것은 사실과 다르다.
 
 이제 성공 응답은 창 닫기 중에도 `acceptOpen`으로 일반 탭과 같은 소유권에 들어간다. 닫는 중에는 engine load와 focus lease만 하지 않는다. 별도의 세션 정리 단계가 없으므로 정리 실패를 성공으로 숨길 경로도 없다. 백엔드 세션은 다른 열린 탭과 같이 창 파괴(프로세스 종료)와 함께 끝난다. Rust가 실제로 등록에 실패한 경우만 `FilePublishedUnregistered`를 유지하며, 게시 파일은 어느 경우에도 삭제하지 않는다.
+
+### 창 닫기 결정과 진행 중 파일 작업
+
+재현: native `CloseRequested` 때 `Editor`는 `hasUnpreservedChanges`로 결정한 뒤 `closeWindow()`에서 진행 중 파일 작업만 기다리고 바로 `window_close_confirmed`(destroy)를 불렀다. 게시가 이미 시작된 New가 그 사이 `durable=false`(dirty 세션)로 끝나면, 그 게시를 모르는 이전 결정으로 창이 파괴됐다. 프런트엔드 시뮬레이션(`windowCloseCreation.test.tsx`)에서 수정 전 4/5/7/8번 사례가 실패했다. native에서도 T023 승인 앱(SHA-256 `eb9915cc…`)으로 응답만 dirty로 바꾼 진단 실행에서 세션 없이 destroy가 호출됨을 관측했다.
+
+선형화 지점: 게시 전(형식 선택·위치 선택·export 뒤)의 `windowClosing` 확인은 게시 없이 취소한다. `createDocument`가 시작되면 취소할 수 없고, 결과는 `acceptOpen`에서 세션 목록에 들어간다. 창 닫기의 마지막 결정 지점은 `waitForFiles()` 뒤다.
+
+현재 동작: 창 닫기 요청은 그때 확인을 받은 미보존 세션 집합(`covered`)을 기억한다. `waitForFiles()` 뒤 그 집합에 없는 미보존 세션이 생겼으면 destroy하지 않고 `windowClosing`을 풀고 같은 창 닫기 확인을 다시 연다(초점은 취소 단추, `aria-modal` 하나). 세션 없이 파일만 남긴 게시 결과(`FilePublishedUnregistered`/`FilePublishedUnconfirmed`, 복구 restore 포함)가 생겨도 destroy하지 않고 닫기를 되돌린다. 안내는 기존 알림으로 보이고, 다음 닫기 요청은 평소대로 처리한다. 반복 요청은 기존 `closingWindow`/확인창 단일성으로 한 번만 처리하며, 시간 제한은 추가하지 않았다. 게시 파일은 삭제하지 않고, 내구성 미확인 세션은 자동 load하지 않는다.
+
+증거 구분: 프런트엔드 시험과 native `unconfirmed-publication` 모드는 실제 게시 뒤 **응답만 dirty로 바꾼 시뮬레이션**이다(Rust 세션은 실제로 durable). 실제 디렉터리 fsync 실패 주입은 Rust `services::files` 시험(`Fault::DirSync`)뿐이다. native 결과는 Debug test-hooks 빌드·Xvfb/X11·IBus 환경이며 Release·Wayland·실제 정전은 NOT RUN이다.

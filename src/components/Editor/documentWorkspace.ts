@@ -46,6 +46,7 @@ export class DocumentWorkspace {
   private fileOperation: "open" | "new" | "saveAs" | "restore" | "recovery" | null = null;
   private started = false;
   private windowClosing = false;
+  private publicationNotices = 0;
   private cancelFormatSelection: (() => void) | undefined;
 
   constructor(
@@ -78,6 +79,18 @@ export class DocumentWorkspace {
 
   get fileBusy(): boolean {
     return this.fileOperation !== null;
+  }
+
+  /**
+   * Count of file operations that published a file without leaving an owned session (e.g.
+   * FilePublishedUnregistered). A window-close decision made before such an outcome has not seen its notice.
+   */
+  get publicationNoticeCount(): number {
+    return this.publicationNotices;
+  }
+
+  private notePublication(result: Result<unknown>) {
+    if (!result.ok && (result.error.code === "FilePublishedUnregistered" || result.error.code === "FilePublishedUnconfirmed")) this.publicationNotices += 1;
   }
 
   get supportsNativeFiles(): boolean {
@@ -195,6 +208,7 @@ export class DocumentWorkspace {
       // closing: the close decision then sees it like every other tab (no fabricated registration
       // failure, no unconditional backend close that would hide an unconfirmed publication).
       const accepted = this.sessions.acceptOpen(ticket, created);
+      this.notePublication(accepted);
       if (accepted.ok) {
         // dirty at revision/generation zero means publication durability is
         // unconfirmed, not an editable in-memory mutation. Keep that protected
@@ -285,6 +299,7 @@ export class DocumentWorkspace {
       }
       const restored = await this.recoveryPort.restore(candidate.id, chosen.value);
       if (!restored.ok) {
+        this.notePublication(restored);
         this.sessions.cancelOpen(ticket);
         return restored;
       }
@@ -362,6 +377,11 @@ export class DocumentWorkspace {
   /** 모든 탭을 함께 보호한다. backend dirty보다 앞선 pending·조합·uncertain도 포함한다. */
   get hasUnpreservedChanges() {
     return this.sessions.snapshot().sessions.some(info => this.unpreserved(info.sessionId));
+  }
+
+  /** Sessions a window-close decision must cover (same rule as hasUnpreservedChanges). */
+  unpreservedSessionIds(): SessionId[] {
+    return this.sessions.snapshot().sessions.filter(info => this.unpreserved(info.sessionId)).map(info => info.sessionId);
   }
 
   /** 세션 하나의 미보존 편집: 백엔드 기록의 dirty 또는 편집 세션의 보내는 중·조합 중·uncertain. */

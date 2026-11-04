@@ -53,7 +53,8 @@ const NO_FILE_BUSY = () => false;
 const TEST_HOOKS = import.meta.env.VITE_GEUL_TEST_HOOKS === "1";
 
 /** 저장하지 않은 편집을 버릴지 묻는 중인 작업. */
-type DiscardRequest = { action: "close" | "reload"; sessionId: SessionId; name: string } | { action: "window" };
+// A window request records the unpreserved sessions the user was asked about; closing may only rely on that set.
+type DiscardRequest = { action: "close" | "reload"; sessionId: SessionId; name: string } | { action: "window"; covered: readonly SessionId[] };
 
 /** 오류 code를 화면 문구 키로. 세부 값(경로·내용)은 보여 주지 않는다. */
 export function documentErrorMessage(error: DocumentError): Message {
@@ -84,26 +85,37 @@ export function Editor({ zoom, workspace = null, fileActions, notify, onModalCha
   // 확인 창이 닫힌 뒤 돌려줄 초점. 창이 다른 창으로 바뀌어도(탭 → 창 닫기) 처음 창을 연 요소를 이어받는다.
   const discardFocusReturnRef = useRef<HTMLElement | null>(null);
   const closingWindow = useRef(false);
-  const closeWindow = useCallback(async () => {
+  const closeWindow = useCallback(async (covered: readonly SessionId[] = []) => {
     if (!workspace?.windowClose || closingWindow.current) return;
     closingWindow.current = true;
     workspace.setWindowClosing(true); // 승인 뒤 native destroy가 끝날 때까지 새 편집을 막는다
+    const notices = workspace.publicationNoticeCount;
     try {
       if (workspace.fileBusy) await workspace.waitForFiles();
+      // 결정은 진행 중 파일 작업이 끝나기 전에 내려졌다. 그 작업이 결정에 없던 미보존 세션(예: 내구성 미확인 게시)이나
+      // 게시 파일 안내를 남겼으면 낡은 결정으로 창을 파괴하지 않고 닫기를 되돌린다. 미보존 세션은 다시 묻는다.
+      const uncovered = workspace.unpreservedSessionIds().filter(id => !covered.includes(id));
+      if (uncovered.length > 0 || workspace.publicationNoticeCount !== notices) {
+        closingWindow.current = false;
+        workspace.setWindowClosing(false);
+        if (uncovered.length > 0) setDiscard({ action: "window", covered: workspace.unpreservedSessionIds() });
+        return;
+      }
       await workspace.windowClose.close();
     } catch {
       closingWindow.current = false;
       workspace.setWindowClosing(false);
       notify?.({ key: "document.error.Protocol" });
     }
-  }, [workspace, notify]);
+  }, [workspace, notify, setDiscard]);
   useEffect(() => {
     if (!workspace?.windowClose) return;
     let stopped = false;
     let unlisten: (() => void) | undefined;
     void workspace.windowClose.listen(() => {
       if (stopped || closingWindow.current) return;
-      if (workspace.hasUnpreservedChanges) setDiscard(current => current?.action === "window" ? current : { action: "window" });
+      const unpreserved = workspace.unpreservedSessionIds();
+      if (unpreserved.length > 0) setDiscard(current => current?.action === "window" ? current : { action: "window", covered: unpreserved });
       else void closeWindow();
     }).then(stop => { if (stopped) stop(); else unlisten = stop; }).catch(() => notify?.({ key: "document.error.Protocol" }));
     return () => { stopped = true; unlisten?.(); };
@@ -128,7 +140,7 @@ export function Editor({ zoom, workspace = null, fileActions, notify, onModalCha
   const confirmDiscard = () => {
     if (!discard) return;
     setDiscard(null);
-    if (discard.action === "window") { void closeWindow(); return; }
+    if (discard.action === "window") { void closeWindow(discard.covered); return; }
     if (!discardTarget) return;
     void (discard.action === "close" ? close(discardTarget, true) : reload(discardTarget, true));
   };

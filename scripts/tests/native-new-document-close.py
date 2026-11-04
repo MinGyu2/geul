@@ -2,6 +2,9 @@
 """Native WM close requests during New, with real backend publication.
 
 A WM_DELETE_WINDOW ClientMessage goes directly to the actual GTK toplevel.
+Mode unconfirmed-publication publishes for real but marks the frontend response
+dirty (simulated unconfirmed durability; the Rust session is actually durable).
+Real directory-fsync failure is only injected by Rust unit tests (Fault::DirSync).
 This works under bare Xvfb without an EWMH window manager; windowclose/windowkill
 would bypass confirmation and are deliberately not used here.
 """
@@ -55,7 +58,7 @@ def main():
     parser=argparse.ArgumentParser(description=__doc__)
     for name in ['app','out']: parser.add_argument('--'+name,type=Path,required=True)
     for name in ['driver','xdotool','ibus']: parser.add_argument('--'+name,required=True)
-    parser.add_argument('--mode',choices=['selection','publication','dirty-selection'],required=True)
+    parser.add_argument('--mode',choices=['selection','publication','dirty-selection','unconfirmed-publication'],required=True)
     parser.add_argument('--port',type=int,default=4444)
     parser.add_argument('--documents',type=Path)
     args=parser.parse_args();args.out.mkdir(parents=True,exist_ok=False)
@@ -88,6 +91,9 @@ def main():
                 if args.mode=='dirty-selection':test.key('Up')
             else:
                 test.delay('document_new')
+                if args.mode=='unconfirmed-publication':
+                    # Wrap the real publication response; the delay hook calls __ndOriginal at resume time.
+                    d.js("const o=window.__ndOriginal;window.__ndOriginal=async function(...a){const r=await o.apply(this,a);if(r.ok)r.value={...r.value,dirty:true};return r}")
                 test.new('docx',path)
                 test.wait('return window.__ndPending===true')
             assert not path.exists()
@@ -107,16 +113,33 @@ def main():
                 # Confirm with native keys: a WebDriver click response can race
                 # the successful destruction of its own browsing context.
                 test.key('Tab','Return')
-            if args.mode=='publication':
+            if args.mode in ('publication','unconfirmed-publication'):
                 test.wait("return window.__ndCloseObserved>0 && window.__ndWorkspace.windowClosing===true")
                 test.resume()
+            if args.mode=='unconfirmed-publication':
+                # The close decision predates this publication: the window must stay and ask again.
+                test.wait("return document.querySelector('[data-testid=discard-dialog]')!==null")
+                time.sleep(1)
+                assert pids.issubset(set(smoke.app_processes())),'window destroyed on a stale close decision'
+                report['staleDecisionDiagnostic']=d.js("return {dialogs:document.querySelectorAll('[aria-modal=true]').length,action:document.querySelector('[data-testid=discard-dialog]')?.dataset.action,focus:document.activeElement?.dataset.testid??null,closing:window.__ndWorkspace.windowClosing,busy:window.__ndWorkspace.fileBusy,unpreserved:window.__ndWorkspace.hasUnpreservedChanges,tabs:[...document.querySelectorAll('.document-tab__select')].map(e=>e.textContent)}")
+                diag=report['staleDecisionDiagnostic']
+                assert diag['dialogs']==1 and diag['action']=='window' and diag['focus']=='discard-cancel' and not diag['closing'] and diag['unpreserved'],diag
+                assert path.exists() and any('closing.docx' in tab for tab in diag['tabs']),diag
+                d.click('[data-testid=discard-cancel]')
+                test.wait("return document.querySelector('[data-testid=discard-dialog]')===null")
+                assert pids.issubset(set(smoke.app_processes())),'cancel must keep the window'
+                assert d.js("return window.__ndWorkspace.hasUnpreservedChanges")
+                request_native_close(args.xdotool,window)
+                test.wait("return document.querySelector('[data-testid=discard-dialog]')!==null")
+                assert d.js("return document.querySelectorAll('[aria-modal=true]').length")==1
+                test.key('Tab','Return')
             deadline=time.monotonic()+20
             while pids.intersection(smoke.app_processes()) and time.monotonic()<deadline:
                 time.sleep(.1)
             if pids.intersection(smoke.app_processes()):
                 report['closeDiagnostic']=d.js("return {events:window.__ndCloseObserved,closing:window.__ndWorkspace.windowClosing,busy:window.__ndWorkspace.fileBusy,dialog:!!document.querySelector('[aria-modal=true]')}")
                 raise AssertionError('native close did not complete')
-            assert path.exists()==(args.mode=='publication')
+            assert path.exists()==(args.mode in ('publication','unconfirmed-publication'))
             if original_hash is not None:
                 assert module.native.sha(args.documents/'created.docx')==original_hash
                 report['originalFileUnchanged']=True
