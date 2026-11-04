@@ -167,7 +167,8 @@ def main():
             request_native_close(args.xdotool,window)
             if args.mode=='dirty-selection':
                 test.wait("return document.querySelector('[data-testid=discard-dialog]')!==null")
-                report['modalDiagnostic']=d.js("return {count:document.querySelectorAll('[aria-modal=true]').length,focus:document.activeElement?.textContent}")
+                report['modalDiagnostic']=d.js("return {count:document.querySelectorAll('[aria-modal=true]').length,focus:document.activeElement?.textContent,kind:document.querySelector('[data-testid=discard-dialog]')?.dataset.windowKind}")
+                assert report['modalDiagnostic']['kind']=='edits',report['modalDiagnostic']
                 assert report['modalDiagnostic']['count']==1,'new-format dialog must yield to window-close confirmation'
                 d.click('[data-testid=discard-cancel]')
                 test.wait("return document.querySelector('[data-testid=new-document-dialog]')!==null")
@@ -185,9 +186,9 @@ def main():
                 test.wait("return document.querySelector('[data-testid=discard-dialog]')!==null")
                 time.sleep(1)
                 assert pids.issubset(set(smoke.app_processes())),'window destroyed on a stale close decision'
-                report['staleDecisionDiagnostic']=d.js("return {dialogs:document.querySelectorAll('[aria-modal=true]').length,action:document.querySelector('[data-testid=discard-dialog]')?.dataset.action,focus:document.activeElement?.dataset.testid??null,closing:window.__ndWorkspace.windowClosing,busy:window.__ndWorkspace.fileBusy,unpreserved:window.__ndWorkspace.hasUnpreservedChanges,tabs:[...document.querySelectorAll('.document-tab__select')].map(e=>e.textContent)}")
+                report['staleDecisionDiagnostic']=d.js("return {dialogs:document.querySelectorAll('[aria-modal=true]').length,action:document.querySelector('[data-testid=discard-dialog]')?.dataset.action,kind:document.querySelector('[data-testid=discard-dialog]')?.dataset.windowKind,focus:document.activeElement?.dataset.testid??null,closing:window.__ndWorkspace.windowClosing,busy:window.__ndWorkspace.fileBusy,unpreserved:window.__ndWorkspace.hasUnpreservedChanges,tabs:[...document.querySelectorAll('.document-tab__select')].map(e=>e.textContent)}")
                 diag=report['staleDecisionDiagnostic']
-                assert diag['dialogs']==1 and diag['action']=='window' and diag['focus']=='discard-cancel' and not diag['closing'] and diag['unpreserved'],diag
+                assert diag['dialogs']==1 and diag['action']=='window' and diag['kind']=='durability' and diag['focus']=='discard-cancel' and not diag['closing'] and diag['unpreserved'],diag
                 assert path.exists() and any('closing.docx' in tab for tab in diag['tabs']),diag
                 d.click('[data-testid=discard-cancel]')
                 test.wait("return document.querySelector('[data-testid=discard-dialog]')===null")

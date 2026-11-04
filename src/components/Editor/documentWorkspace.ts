@@ -419,6 +419,24 @@ export class DocumentWorkspace {
     return this.sessions.snapshot().sessions.filter(info => this.unpreserved(info.sessionId)).map(info => info.sessionId);
   }
 
+  /**
+   * What a window close would leave behind for these sessions. A created session that is dirty at
+   * revision 0 / loadGeneration 0 has never been loaded into an engine, so its dirty flag means only
+   * that publication durability is unconfirmed (register_created durable=false), not in-memory edits.
+   * Everything else unpreserved is treated as edits (conservative).
+   */
+  windowCloseKind(ids: readonly SessionId[]): "edits" | "durability" | "mixed" | null {
+    let edits = false;
+    let durability = false;
+    for (const id of ids) {
+      if (!this.unpreserved(id)) continue;
+      const info = this.sessions.get(id);
+      if (info?.dirty && info.revision === 0 && info.loadGeneration === 0) durability = true;
+      else edits = true;
+    }
+    return edits && durability ? "mixed" : edits ? "edits" : durability ? "durability" : null;
+  }
+
   /** 세션 하나의 미보존 편집: 백엔드 기록의 dirty 또는 편집 세션의 보내는 중·조합 중·uncertain. */
   private unpreserved(sessionId: SessionId): boolean {
     return (this.sessions.get(sessionId)?.dirty ?? false) || (this.editors.get(sessionId)?.hasUnpreservedChanges ?? false);

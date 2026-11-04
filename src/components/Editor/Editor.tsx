@@ -54,7 +54,13 @@ const TEST_HOOKS = import.meta.env.VITE_GEUL_TEST_HOOKS === "1";
 
 /** 저장하지 않은 편집을 버릴지 묻는 중인 작업. */
 // A window request records the unpreserved sessions the user was asked about; closing may only rely on that set.
-type DiscardRequest = { action: "close" | "reload"; sessionId: SessionId; name: string } | { action: "window"; covered: readonly SessionId[] };
+type WindowCloseKind = "edits" | "durability" | "mixed";
+type DiscardRequest = { action: "close" | "reload"; sessionId: SessionId; name: string } | { action: "window"; covered: readonly SessionId[]; kind: WindowCloseKind };
+const WINDOW_TEXT = {
+  edits: { title: "document.discard.windowTitle", body: "document.discard.windowBody", confirm: "document.discard.windowConfirm" },
+  durability: { title: "document.discard.windowDurabilityTitle", body: "document.discard.windowDurabilityBody", confirm: "document.discard.windowDurabilityConfirm" },
+  mixed: { title: "document.discard.windowTitle", body: "document.discard.windowMixedBody", confirm: "document.discard.windowConfirm" },
+} as const satisfies Record<WindowCloseKind, Record<"title" | "body" | "confirm", MessageKey>>;
 
 /** 오류 code를 화면 문구 키로. 세부 값(경로·내용)은 보여 주지 않는다. */
 export function documentErrorMessage(error: DocumentError): Message {
@@ -101,7 +107,10 @@ export function Editor({ zoom, workspace = null, fileActions, notify, onModalCha
       if (uncovered.length > 0 || workspace.publicationNoticeCount !== notices) {
         closingWindow.current = false;
         workspace.setWindowClosing(false);
-        if (uncovered.length > 0) setDiscard({ action: "window", covered: workspace.unpreservedSessionIds() });
+        if (uncovered.length > 0) {
+          const unpreserved = workspace.unpreservedSessionIds();
+          setDiscard({ action: "window", covered: unpreserved, kind: workspace.windowCloseKind(unpreserved) ?? "edits" });
+        }
         return;
       }
       await workspace.windowClose.close();
@@ -118,7 +127,10 @@ export function Editor({ zoom, workspace = null, fileActions, notify, onModalCha
     void workspace.windowClose.listen(() => {
       if (stopped || closingWindow.current) return;
       const unpreserved = workspace.unpreservedSessionIds();
-      if (unpreserved.length > 0) setDiscard(current => current?.action === "window" ? current : { action: "window", covered: unpreserved });
+      if (unpreserved.length > 0) {
+        const kind = workspace.windowCloseKind(unpreserved) ?? "edits";
+        setDiscard(current => current?.action === "window" ? current : { action: "window", covered: unpreserved, kind });
+      }
       else void closeWindow();
     }).then(stop => { if (stopped) stop(); else unlisten = stop; }).catch(() => notify?.({ key: "document.error.Protocol" }));
     return () => { stopped = true; unlisten?.(); };
@@ -257,18 +269,19 @@ function DiscardDialog({ request, focusReturnRef, onCancel, onConfirm }: {
         aria-describedby="discard-dialog-body"
         data-testid="discard-dialog"
         data-action={request.action}
+        data-window-kind={request.action === "window" ? request.kind : undefined}
         onKeyDown={onKeyDown}
       >
         <h2 id="discard-dialog-title" className="discard-dialog__title">
-          {request.action === "window" ? t("document.discard.windowTitle") : t(request.action === "close" ? "document.discard.closeTitle" : "document.discard.reloadTitle", { name: request.name })}
+          {request.action === "window" ? t(WINDOW_TEXT[request.kind].title) : t(request.action === "close" ? "document.discard.closeTitle" : "document.discard.reloadTitle", { name: request.name })}
         </h2>
-        <p id="discard-dialog-body">{t(request.action === "window" ? "document.discard.windowBody" : "document.discard.body")}</p>
+        <p id="discard-dialog-body">{t(request.action === "window" ? WINDOW_TEXT[request.kind].body : "document.discard.body")}</p>
         <div className="discard-dialog__actions">
           <button ref={cancelRef} type="button" className="document-bar__button" data-testid="discard-cancel" onClick={onCancel}>
             {t("document.discard.cancel")}
           </button>
           <button ref={confirmRef} type="button" className="document-bar__button" data-testid="discard-confirm" onClick={onConfirm}>
-            {t(request.action === "window" ? "document.discard.windowConfirm" : request.action === "close" ? "document.discard.closeConfirm" : "document.discard.reloadConfirm")}
+            {t(request.action === "window" ? WINDOW_TEXT[request.kind].confirm : request.action === "close" ? "document.discard.closeConfirm" : "document.discard.reloadConfirm")}
           </button>
         </div>
       </div>

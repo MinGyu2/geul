@@ -98,6 +98,7 @@ describe("window close with an in-flight New", () => {
     expect(t.workspace.hasUnpreservedChanges).toBe(true);
     const dialog = t.view.getByRole("alertdialog");
     expect(dialog.dataset.action).toBe("window");
+    expect(dialog.dataset.windowKind).toBe("durability"); // not described as in-memory edits
     expect(document.activeElement).toBe(t.view.getByTestId("discard-cancel"));
     expect(t.view.getAllByRole("alertdialog")).toHaveLength(1);
     // Unconfirmed durability is never auto-loaded (which would clear the dirty guard).

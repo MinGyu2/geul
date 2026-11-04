@@ -373,3 +373,12 @@ T022 요약의 "게시 뒤 닫기는 늦은 세션을 닫고"는 더 이상 현�
 같은 감사 raw blank(`d1a43b6c…`, Release·Debug 동일)에서 만든 `prepared.hwp` 4개(새 실행 3개 + 기존 1개)를 비교했다. 차이는 CFB 디렉터리의 `BodyText` storage 항목 생성/수정 FILETIME(offset 100–115)뿐이었다. 두 필드를 0으로 정규화하면 모든 쌍이 바이트 동일하다. 기록된 시각은 각 실행 시각(UTC)이다. 원인은 cfb 0.14 `create_storage`의 `Timestamp::now()`이며, 스트림 순서·할당·내용은 같다. 구조 보고(해시 제외)도 기존 `structure.json`과 같다.
 
 영향: 생성 권한은 결정적인 raw blank digest에 묶여 있고, 준비 출력은 생성 전용 `check_saved`와 구조 검사로 검증한다. 준비 출력의 바이트 동일성은 계약이 아니다. 따라서 해시 차이는 손상이 아니며, 내용 보존과 안전 저장 2회 결과도 같다. CFB 직렬화는 바꾸지 않았다. 생성 문서에는 생성 시각 하나가 남는다(개인 메타데이터 제거 범위 밖의 일반 시각 정보). 분석 스크립트와 결과는 ignored `target/stabilization/s2-p2/`에 있다.
+
+### 창 닫기 확인 문구의 구분
+
+Rust 세션의 `dirty`는 `revision != clean_revision || unconfirmed`다. 생성 등록이 `durable=false`이면 revision 0·loadGeneration 0에서 dirty가 된다. 이런 세션은 엔진에 한 번도 불러오지 않았으므로 메모리 편집이 있을 수 없다. 창 닫기 확인은 요청 때 덮는 미보존 세션을 다음처럼 나눈다(`windowCloseKind`).
+- `edits`: 기존 문구("편집을 버리고 종료").
+- `durability`: 생성 직후 내구성 미확인만 있음. "디스크 기록을 확인하지 못한 새 문서" — 파일은 만들어졌고 지우지 않지만, 종료한다고 기록이 확인되지는 않는다. 버튼은 "확인하지 않고 종료".
+- `mixed`: 둘 다. 편집 문구에 미확인 파일 안내를 더한다.
+
+세션 없이 파일만 남은 게시(`FilePublishedUnregistered`·`RestoredUnopened` 등)는 확인 창이 아니라 해당 오류 안내와 닫기 되돌림으로 알린다. 취소·확인·Tab/Escape·초점 복원·단일 확인 창·낡은 결정 재확인은 그대로다. 한계: 저장 뒤 `durable=false`로 남은 세션(revision > 0)은 프런트엔드 정보만으로 편집과 확실히 구분할 수 없어 보수적으로 `edits`로 표시한다. 내구성을 확인했다고 말하는 문구는 없다. 검증: `windowCloseWording.test.tsx`(ko/en 상태별 문구·동작, clean 무확인). native close 하네스는 `unconfirmed-publication`의 `durability`, `dirty-selection`의 `edits`를 확인한다.
