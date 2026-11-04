@@ -321,3 +321,46 @@ revision·dirty 그대로였다. 중복·유실·다른 문서 삽입 없음.
 관찰(기존 동작, T011 회귀 아님): 좌표가 빗나간 첫 DPR 1.041 실행에서 조합 중 리본의 **단추가 아닌 빈 곳**(그룹 배경·패널)을 누르면 음절은
 한 번 확정됐지만 편집 입력 초점이 빠져 이어 친 키가 들어가지 않았다(경계 C는 단추·탭·접기 단추에만 있음). 같은 실행에서 조합 중 실수로
 눌린 '다시 실행' 단추는 음절 한 번(revision +1)으로 처리됐다.
+
+### T011 안정화: 리본 빈 곳 초점·모달 중 리본 배치 (2026-11-04, `ef14f4b` 위)
+
+T011 수용 기록(위)은 당시 결과로 그대로 둔다. 아래 두 문제는 그 뒤 검토에서 확인해 고쳤다.
+
+**A. 리본 빈 곳 누름이 편집 입력 초점을 빼앗음 — CONFIRMED DEFECT, FIXED.** 원인: 경계 C의 mousedown 기본 동작 막기가 명령 단추·탭·접기
+단추에만 붙어 있어, 그룹 배경·그룹 라벨·도구 모음·패널·탭 줄 배경 같은 단추가 아닌 면을 누르면 mousedown 기본 동작(초점 이동)이 그대로
+일어나 초점이 body로 빠졌다. 조합은 blur로 한 번 확정되지만 이어 친 키가 어디에도 가지 않았다(위 실제 IME 검증의 "관찰"). 고침:
+`Ribbon`의 `<section>`에 `keepEditorFocusOnPointerDown`을 위임하고(탭·접기 단추의 개별 처리는 같은 함수라 뺐다, `CommandButton`은 제목
+표시줄에서도 쓰여 그대로), 그 함수가 누른 곳이 글자 입력 요소(`input`·`textarea`·`select`·contenteditable)이거나 스크롤되는 요소 자신의
+스크롤바이면 막지 않게 했다(탭 줄·패널은 `overflow-x: auto`, WebKit은 막힌 mousedown에서 스크롤바 끌기를 하지 않을 수 있음). 편집 입력에
+초점이 없으면 전과 같이 아무것도 막지 않는다. 전파는 멈추지 않고 타이머·다시 초점 주기는 없다.
+
+**B. 접기 단추·접힌 리본의 탭 고르기가 공통 모달 경계를 우회 — CONFIRMED DEFECT, FIXED.** 원인: 접기 단추가 `dispatch({type:"toggleRibbon"})`,
+접힌 리본의 탭 고르기가 `setRibbonCollapsed`를 직접 불러, 확인 창이 열린 동안(`context.modal`) 단축키 Ctrl+F1은 막히지만 단추·탭의 클릭
+처리기를 직접 부르면(합성 클릭 등) 창 뒤의 리본이 접히거나 펼쳐지고 선택이 바뀌었다. 실제 포인터는 창 배경(`discard-dialog__backdrop`)이
+받아 닿지 않으므로 배경의 hit test에만 기대던 상태였다. 고침: 접기 단추는 Ctrl+F1과 같은 `view.ribbon` 명령을 `executeCommand`로 실행하고,
+탭 고르기(접혀 있으면 펼치기)는 `commandState("view.ribbon")`가 쓸 수 있을 때만 한다. 쓸 수 없으면(dialogOpen) 아무것도 바꾸지 않고 알리지
+않는다(모달 중 단축키와 같은 계약). 펼치기는 토글이 아닌 `setRibbonCollapsed(false)`로 둔다(그리기와 누름 사이에 상태가 바뀌어도 접지 않음 —
+가용성은 같은 명령의 것). 형식 변경으로 사라진 탭의 대신 고르기는 내부 맞춤이라 모달과 무관하게 한다. 리본 탭 줄의 화살표 이동은 막지
+않았다(창이 Tab을 창 안에 가두므로 모달 중 초점이 탭 줄에 있을 수 없음). 리본의 문서 명령 단추는 전과 같이 `executeCommand`가
+dialogOpen으로 거절하고 이유를 알린다(기존 `CommandButton` 계약).
+
+| 확인 | 결과 | 범위 |
+|---|---|---|
+| 고치기 전 `Ribbon.test.tsx`(새 사례 포함) | 6 FAIL / 15 PASS | A: 패널 mousedown 안 막힘·조합 중 패널 클릭 뒤 초점 body, B: 모달 중 합성 클릭으로 리본이 접히고 탭이 펼치며 선택이 '삽입'으로 바뀜, 구성 요소 dispatch 2회 |
+| 고친 뒤 `npx vitest run src/components/Ribbon src/ribbon src/commands/commands.test.ts` | 56/56 PASS | `Ribbon.test.tsx` 21개(새 9개, 기존 A12는 모달 중 탭 고르기 금지에 맞춰 탭을 창 없이 고른 뒤 같은 단언으로 확인) |
+| `src/components/CommandButton/editorFocus.test.tsx` | 5/5 PASS | 빈 곳·단추 막음, 초점 없음·다른 입력 칸, 글자 입력 요소, 스크롤바, 전파 |
+| 변이 | 4/4 검출 | 위임 제거, 접기 직접 dispatch, 탭 고르기 무검사, 늘 preventDefault |
+| `npx vitest run` | 52파일 969개 PASS | jsdom·가짜 엔진, 합성 IME |
+| `npm run typecheck`, `npm run lint` | PASS | |
+| `tests/e2e/t011_ribbon_ime_native.py`(검사 훅 debug, Xvfb + ibus 1.5.33 + ibus-hangul 1.5.5, WebKitGTK 2.54) | DPR 1.0: 22/22 PASS. DPR 1.041: IME 21/21 PASS(모달 사례는 아래 시험기 보정 전 중단) + `--modal-only` 1/1 PASS | 새 빈 곳 사례 9개: 세 형식 × {그룹 라벨, 그룹 배경, 패널}, `elementFromPoint`로 그 면 자신인 지점을 고르고 mousedown 대상까지 확인한 실제 포인터 → 조합 '하' 한 번 확정, 초점 유지, 이어 친 '아'도 같은 문서(+2), 다른 문서 불변. 모달 사례: DOCX 버리기 확인 창 중 Ctrl+F1·합성 접기/탭 클릭은 배치·선택·알림·revision 그대로, 초점은 창의 취소에 남음, 실제 포인터는 창 배경이 받음. 창을 닫으면 Ctrl+F1·접기 단추·탭 정상 |
+| `wordcraft_poc.py --ime-commands`(DPR 1.0) | 18/18 PASS | `CommandButton` 경로 회귀 |
+| `tests/e2e/t011_ribbon_native.py`(Xvfb, 입력기 없음) | 14/14 PASS | |
+
+시험기·환경 기록: (1) 이 Xvfb 키맵에서 xdotool `ctrl+F1`은 F1이 아니라 `Alt` keydown으로 온다(진단 실측). 그래서 모달 사례의 Ctrl+F1은
+WebDriver 키 동작으로 보냈고, 실제 키보드 Ctrl+F1의 모달 차단은 이 환경에서 근거가 없다(경로는 기존 `handleShortcut`, jsdom 시험 PASS).
+(2) 첫 DPR 1.041 실행의 모달 구간은 시험기가 실제 포인터로 배경을 누른 뒤 Escape로 닫으려다 중단했다(아래 한계) — 닫기를 창의 취소 단추로
+바꾼 `--modal-only`가 통과했다.
+
+남은 한계(기존, 이번 변경과 무관): 확인 창의 **배경을 실제 포인터로 누르면 초점이 창 밖(body)으로 빠진다**(실측). 그 뒤 Escape·Tab이 창에
+닿지 않는다(창의 키 처리기가 창 요소에 있음). 리본·문서 명령은 그동안에도 모달로 막힌다. 확인 창(Editor `DiscardDialog`)의 초점 관리는
+이번 범위 밖이라 바꾸지 않았다. 문서 탭·탭 닫기 단추의 초점 이동도 그대로다.

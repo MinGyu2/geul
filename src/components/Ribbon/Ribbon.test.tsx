@@ -4,7 +4,7 @@
 // 아무것도 바꾸지 않고 이유를 알리는지, 리본 누름이 편집 입력의 초점·조합을 건드리지 않는지다. 실제 입력기(native IME) 근거가 아니다.
 import { act, fireEvent, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import App from "../../App";
 import type { DocumentBackend } from "../../adapters/backend";
 import type { DocumentFormat, Result, SessionInfo, SessionState } from "../../adapters/contract";
@@ -355,19 +355,35 @@ describe("T011 리본 구성 요소", () => {
     return { view, notices, full };
   }
 
-  it("A12 확인 창이 열린 동안 보이는 모든 탭의 명령은 dialogOpen으로 막히고 실행하지 않는다", async () => {
+  it("A12 확인 창이 열린 동안 보이는 모든 탭의 명령은 dialogOpen으로 막히고 실행하지 않는다(탭 고르기도 막힘 — 안정화 B)", async () => {
     const user = userEvent.setup();
-    const { notices } = renderRibbon({ modal: true }, "docx");
-    const tabs = within(screen.getByRole("tablist", { name: "Ribbon tabs" })).getAllByRole("tab");
-    expect(tabs.map((tab) => tab.textContent)).toContain("References");
-    for (const tab of tabs) {
-      await user.click(tab);
+    const notices: Message[] = [];
+    const context = (modal: boolean): CommandContext => ({ layout: initialLayout, dispatch: () => {}, notify: (m) => notices.push(m), document: null, modal });
+    const tree = (modal: boolean) => (
+      <LanguageProvider language="en" onLanguageChange={() => {}}>
+        <Ribbon context={context(modal)} format="docx" />
+      </LanguageProvider>
+    );
+    const view = render(tree(false));
+    const tabs = () => within(screen.getByRole("tablist", { name: "Ribbon tabs" })).getAllByRole("tab");
+    const labels = tabs().map((tab) => tab.textContent!);
+    expect(labels).toContain("References");
+    for (const label of labels) {
+      // 탭은 창이 없을 때 고르고(창이 열린 동안의 탭 고르기는 막힌다), 그 탭의 명령을 창이 열린 상태로 본다.
+      view.rerender(tree(false));
+      await user.click(screen.getByRole("tab", { name: label }));
+      view.rerender(tree(true));
       for (const button of within(screen.getByRole("tabpanel")).getAllByRole("button")) {
         expect(button, button.dataset.command).toHaveAttribute("aria-disabled", "true");
         expect(button.title).toContain("A dialog is open");
       }
+      const other = labels.find((candidate) => candidate !== label)!;
+      await user.click(screen.getByRole("tab", { name: other }));
+      expect(screen.getByRole("tab", { name: label })).toHaveAttribute("aria-selected", "true");
     }
+    view.rerender(tree(false));
     await user.click(screen.getByRole("tab", { name: "View" }));
+    view.rerender(tree(true));
     await user.click(screen.getByRole("button", { name: "Dark Theme" }));
     expect(notices.map((notice) => notice.key)).toEqual(["command.unavailable.dialogOpen"]);
   });
@@ -418,5 +434,233 @@ describe("T011 리본 구성 요소", () => {
     expect(screen.getByText("These tools apply to HWP/HWPX documents only.")).toBeInTheDocument();
     expect(document.body.textContent).not.toMatch(/ribbon\.|command\./);
     expect(screen.getByRole("button", { name: "Collapse ribbon" }).title).toBe("Collapse ribbon (Ctrl+F1)");
+  });
+});
+
+// ---- T011 안정화(2026-11-04): 리본 빈 곳 누름의 편집 초점(문제 A)·모달 중 리본 배치 명령(문제 B) ----
+
+const editorInput = () => document.querySelector<HTMLTextAreaElement>(".editor__scroll .rhwp-input")!;
+/** 리본에서 단추·탭이 아닌 면(그룹 배경·라벨·도구 모음·패널·탭 줄 배경·안내·리본 자체). */
+const EMPTY_SURFACES = [".ribbon__panel", ".ribbon__toolbar", ".ribbon__group", ".ribbon__group-label", ".ribbon__group-commands",
+  ".ribbon__note", ".ribbon__tabs", ".ribbon__bar", "section.ribbon"];
+
+describe("T011 안정화 A: 리본 빈 곳 누름과 편집 입력 초점", () => {
+  it("A1/A2 편집 입력에 초점이 있을 때 리본의 단추가 아닌 면을 실제 클릭해도 초점이 편집 입력에 남고 기본 동작을 막는다", async () => {
+    const { user } = await renderMixed(["/a.hwp"]);
+    await user.click(ribbonTabs().getByRole("tab", { name: "한글 도구" })); // 안내(ribbon__note)가 있는 탭
+    for (const css of EMPTY_SURFACES) {
+      editorInput().focus();
+      const surface = document.querySelector<HTMLElement>(css)!;
+      expect(surface, css).not.toBeNull();
+      expect(fireEvent.mouseDown(surface), `${css} mousedown 기본 동작`).toBe(false);
+      editorInput().focus();
+      await user.click(surface);
+      expect(document.activeElement, css).toBe(editorInput());
+    }
+  });
+
+  it("A3–A5 빈 곳 처리 뒤에도 단추는 실행하고 탭은 바뀌고 접기·펼치기는 동작한다(초점은 편집 입력)", async () => {
+    const { user, fake } = await renderMixed(["/c.docx"]);
+    editorInput().focus();
+    await user.click(document.querySelector<HTMLElement>(".ribbon__group")!);
+    await act(async () => { await user.click(screen.getByRole("button", { name: "굵게" })); await flush(); });
+    expect(docxEdits(fake)).toEqual([[{ op: "format", format: "bold" }]]);
+    await user.click(ribbonTabs().getByRole("tab", { name: "참조" }));
+    expectConsistentTabs("참조");
+    await user.click(screen.getByRole("button", { name: "리본 접기" }));
+    expect(screen.queryByRole("tabpanel")).not.toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "리본 펼치기" }));
+    expectConsistentTabs("참조");
+    expect(document.activeElement).toBe(editorInput());
+  });
+
+  it("A6 다른 입력 칸(경로)에 초점이 있으면 빈 곳 누름은 막지 않고 편집 입력으로 초점을 끌어오지 않는다", async () => {
+    const { user } = await renderMixed(["/c.docx"]);
+    pathInput().focus();
+    const panel = document.querySelector<HTMLElement>(".ribbon__panel")!;
+    expect(fireEvent.mouseDown(panel)).toBe(true);
+    pathInput().focus();
+    await user.click(panel);
+    expect(document.activeElement).not.toBe(editorInput());
+    expect(document.activeElement).not.toBe(pathInput()); // 브라우저 기본: 초점 받을 수 없는 곳을 누르면 body
+  });
+
+  it("A7 키보드: 리본 탭에서 화살표·도구 모음 이동은 그대로", async () => {
+    const { user } = await renderMixed(["/c.docx"]);
+    ribbonTabs().getByRole("tab", { name: "홈" }).focus();
+    await user.keyboard("{ArrowRight}");
+    expectConsistentTabs("삽입");
+    expect(ribbonTabs().getByRole("tab", { name: "삽입" })).toHaveFocus();
+    await user.keyboard("{Home}");
+    expectConsistentTabs("파일");
+    const toolbar = screen.getByRole("toolbar", { name: "파일" });
+    const buttons = within(toolbar).getAllByRole("button");
+    buttons[0]!.focus();
+    await user.keyboard("{ArrowRight}");
+    expect(buttons[1]).toHaveFocus();
+  });
+
+  it("A8–A10 HWP 조합 중 리본 빈 곳을 누르면 조합·초점이 그대로이고 확정은 한 번, 이어 친 글자도 같은 문서에 들어가며 다른 문서는 그대로", async () => {
+    const { user, sessions, workspace, docs, fake } = await renderMixed(["/a.hwp", "/b.hwpx", "/c.docx"]);
+    await act(async () => { sessions.select(1); await flush(); });
+    const input = editorInput();
+    input.focus();
+    const editor = workspace.editorFor(1)!;
+    const compose = (text: string) => act(() => {
+      input.dispatchEvent(new CompositionEvent("compositionstart", { data: "" }));
+      input.value = text;
+      input.dispatchEvent(new InputEvent("input", { data: text, inputType: "insertCompositionText", isComposing: true, bubbles: true }));
+    });
+    const commit = async (text: string) => {
+      act(() => {
+        input.value = text;
+        input.dispatchEvent(new CompositionEvent("compositionend", { data: text }));
+      });
+      await act(flush);
+    };
+    compose("하");
+    for (const css of [".ribbon__panel", ".ribbon__group", ".ribbon__group-label", ".ribbon__toolbar"]) {
+      await user.click(document.querySelector<HTMLElement>(css)!);
+      expect(document.activeElement, css).toBe(input);
+      expect(editor.composing, css).toBe(true);
+      expect(editor.compositionText).toBe("하");
+    }
+    await commit("하");
+    expect(docs.get("hwp")!.paragraphs[0]).toBe("하hwp 본문");
+    expect(sessions.get(1)?.revision).toBe(1);
+    // 이어 친 글자(A9): 같은 문서·같은 자리.
+    await user.click(document.querySelector<HTMLElement>(".ribbon__group")!);
+    compose("글");
+    await commit("글");
+    expect(docs.get("hwp")!.paragraphs[0]).toBe("하글hwp 본문");
+    expect(sessions.get(1)?.revision).toBe(2);
+    expect(document.activeElement).toBe(input);
+    // A10: 다른 문서는 그대로.
+    expect(docs.get("hwpx")!.paragraphs[0]).toBe("hwpx 본문");
+    expect(sessions.get(2)).toMatchObject({ revision: 0, dirty: false });
+    expect(sessions.get(3)).toMatchObject({ revision: 0, dirty: false });
+    expect(docxEdits(fake)).toEqual([]);
+  });
+});
+
+describe("T011 안정화 B: 모달 중 리본 배치 명령", () => {
+  const collapseButton = () => document.querySelector<HTMLButtonElement>(".ribbon__collapse")!;
+  const expanded = () => collapseButton().getAttribute("aria-expanded") === "true" && screen.queryByRole("tabpanel") !== null;
+
+  /** DOCX를 고쳐 둔 뒤 탭 닫기 단추를 눌러 버리기 확인 창(모달)을 연다. */
+  async function openDiscardDialog(harness: Awaited<ReturnType<typeof renderMixed>>) {
+    await act(async () => { harness.workspace.docxEditorFor(3)!.typeText("x"); await flush(); });
+    const opener = document.activeElement;
+    await act(async () => {
+      document.querySelector<HTMLButtonElement>(".document-tab[data-active=true] .document-tab__close")!.click();
+      await flush();
+    });
+    const dialog = screen.getByRole("alertdialog");
+    expect(screen.getByTestId("discard-cancel")).toHaveFocus();
+    return { dialog, opener };
+  }
+
+  it("B1/B2 모달이 없으면 접기 단추와 Ctrl+F1이 같은 결과(접기·펼치기)를 낸다", async () => {
+    const { user } = await renderMixed(["/c.docx"]);
+    await user.click(collapseButton());
+    expect(expanded()).toBe(false);
+    await user.keyboard("{Control>}{F1}{/Control}");
+    expect(expanded()).toBe(true);
+    await user.keyboard("{Control>}{F1}{/Control}");
+    expect(expanded()).toBe(false);
+    await user.click(collapseButton());
+    expect(expanded()).toBe(true);
+  });
+
+  it("B3–B6/B8–B10 모달 중: 접기 단추·탭(직접 클릭 포함)·Ctrl+F1은 배치·선택을 바꾸지 않고 문서 명령·알림·초점 이동도 없다", async () => {
+    const harness = await renderMixed(["/a.hwp", "/c.docx"]);
+    const { user, fake, sessions } = harness;
+    // 펼친 리본에서(홈 선택) 모달.
+    const { opener } = await openDiscardDialog(harness);
+    const cancel = screen.getByTestId("discard-cancel");
+    const message = statusMessage().textContent;
+    const editsBefore = docxEdits(fake).length;
+    const revision = sessions.get(3)!.revision;
+    // 합성 직접 클릭(실제 포인터는 배경이 막지만 그것에 기대지 않는다)과 Ctrl+F1: 배치·선택·알림·초점 모두 그대로.
+    act(() => collapseButton().click());
+    act(() => ribbonTabs().getByRole("tab", { name: "삽입" }).click());
+    await user.keyboard("{Control>}{F1}{/Control}");
+    await act(flush);
+    expect(expanded()).toBe(true);
+    expectConsistentTabs("홈");
+    expect(statusMessage().textContent).toBe(message);
+    expect(cancel).toHaveFocus();
+    // B9: 문서 명령(굵게)은 공통 실행 경계가 dialogOpen으로 거절한다(기존 CommandButton 계약: 이유만 알림, 문서 그대로).
+    act(() => screen.getByRole("button", { name: "굵게" }).click());
+    await act(flush);
+    expect(statusMessage()).toHaveTextContent("굵게: 확인 창을 닫은 뒤 다시 시도하세요.");
+    expect(docxEdits(fake)).toHaveLength(editsBefore);
+    expect(sessions.get(3)!.revision).toBe(revision);
+    expect(cancel).toHaveFocus();
+    expect(screen.getByRole("alertdialog")).toBeInTheDocument();
+    // B8: 모달 안 Tab은 창 안에서 돌고 Escape는 취소(창 닫힘)·초점 복원.
+    await user.keyboard("{Tab}");
+    expect(screen.getByTestId("discard-confirm")).toHaveFocus();
+    await user.keyboard("{Tab}");
+    expect(cancel).toHaveFocus();
+    await user.keyboard("{Escape}");
+    await act(flush);
+    expect(screen.queryByRole("alertdialog")).not.toBeInTheDocument();
+    expect(document.activeElement).toBe(opener); // 기존 계약: 창을 열기 전 초점 요소로 복원(여기서는 편집 입력)
+    expect(opener).toBe(editorInput());
+    // B7: 닫힌 뒤에는 보통처럼 동작.
+    await user.click(ribbonTabs().getByRole("tab", { name: "삽입" }));
+    expectConsistentTabs("삽입");
+    await user.click(collapseButton());
+    expect(expanded()).toBe(false);
+  });
+
+  it("B5 모달 중 접힌 리본: 탭 클릭은 펼치지도 선택을 바꾸지도 않고, 모달이 닫히면 탭 클릭이 펼친다", async () => {
+    const harness = await renderMixed(["/c.docx"]);
+    const { user } = harness;
+    await user.click(collapseButton());
+    expect(expanded()).toBe(false);
+    await openDiscardDialog(harness);
+    act(() => ribbonTabs().getByRole("tab", { name: "참조" }).click());
+    act(() => collapseButton().click());
+    await user.keyboard("{Control>}{F1}{/Control}");
+    expect(expanded()).toBe(false);
+    expect(ribbonTabs().getByRole("tab", { name: "홈" })).toHaveAttribute("aria-selected", "true");
+    expect(screen.getByTestId("discard-cancel")).toHaveFocus();
+    await user.keyboard("{Escape}");
+    await act(flush);
+    await user.click(ribbonTabs().getByRole("tab", { name: "참조" }));
+    expect(expanded()).toBe(true);
+    expectConsistentTabs("참조");
+  });
+
+  it("B6 구성 요소 직접: modal 문맥이면 접기 단추·탭 클릭이 dispatch를 부르지 않고, 아니면 view.ribbon 명령(toggleRibbon)으로 간다", async () => {
+    const user = userEvent.setup();
+    const dispatch = vi.fn();
+    const notices: Message[] = [];
+    const tree = (modal: boolean, collapsed: boolean) => (
+      <LanguageProvider language="en" onLanguageChange={() => {}}>
+        <Ribbon context={{ layout: { ...initialLayout, ribbonCollapsed: collapsed }, dispatch, notify: (m) => notices.push(m), document: null, modal }} format="docx" />
+      </LanguageProvider>
+    );
+    const view = render(tree(true, true));
+    await user.click(screen.getByRole("button", { name: "Expand ribbon" }));
+    await user.click(screen.getByRole("tab", { name: "References" }));
+    expect(dispatch).not.toHaveBeenCalled();
+    expect(screen.getByRole("tab", { name: "Home" })).toHaveAttribute("aria-selected", "true");
+    view.rerender(tree(true, false));
+    await user.click(screen.getByRole("button", { name: "Collapse ribbon" }));
+    await user.click(screen.getByRole("tab", { name: "References" }));
+    expect(dispatch).not.toHaveBeenCalled();
+    expect(screen.getByRole("tab", { name: "Home" })).toHaveAttribute("aria-selected", "true");
+    expect(notices).toEqual([]);
+    view.rerender(tree(false, false));
+    await user.click(screen.getByRole("button", { name: "Collapse ribbon" }));
+    expect(dispatch.mock.calls).toEqual([[{ type: "toggleRibbon" }]]);
+    view.rerender(tree(false, true));
+    await user.click(screen.getByRole("tab", { name: "References" }));
+    expect(dispatch.mock.calls.at(-1)).toEqual([{ type: "setRibbonCollapsed", collapsed: false }]);
+    expect(screen.getByRole("tab", { name: "References" })).toHaveAttribute("aria-selected", "true");
+    expect(notices).toEqual([]);
   });
 });

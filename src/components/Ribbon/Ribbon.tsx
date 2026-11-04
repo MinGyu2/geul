@@ -1,7 +1,7 @@
 import { useLayoutEffect, useMemo, useRef, useState } from "react";
 import type { DocumentFormat } from "../../adapters/contract";
 import { Icon } from "../../assets/icons";
-import type { CommandContext } from "../../commands/commands";
+import { commandState, executeCommand, type CommandContext } from "../../commands/commands";
 import { commandDefinition, shortcutLabel } from "../../commands/registry";
 import { isMac } from "../../commands/shortcuts";
 import { useRovingFocus } from "../../hooks/useRovingFocus";
@@ -29,7 +29,13 @@ const tabElementId = (id: string) => `ribbon-tab-${id}`;
  * - 보이는 탭은 활성 문서 형식으로 정한다(src/ribbon/visibility.ts). 고른 탭이 사라지면(문서 전환·닫기) 기본 탭으로 바꾼다.
  * - 사라진 탭이나 그 도구 모음에 초점이 있었으면 초점을 고른 탭으로 옮긴다(초점이 사라지지 않게). 초점이 리본 밖(편집 입력 등)에
  *   있었으면 건드리지 않는다.
- * - 탭·접기 단추도 명령 단추처럼 편집 입력의 초점을 포인터 누름으로 가져가지 않는다(경계 C, editorFocus.ts).
+ * - 리본 어디를 눌러도(탭·접기 단추·그룹 배경·라벨·패널 같은 빈 곳) 편집 입력의 초점을 가져가지 않는다: `<section>`의 mousedown
+ *   하나로 위임한다(경계 C, editorFocus.ts — 편집 입력에 초점이 있을 때만, 글자 입력 요소·스크롤바 누름은 제외).
+ * - 리본 접기·펼치기와 탭 고르기는 사용자 조작이므로 공통 명령 경계를 따른다(T011 안정화 B): 접기 단추는 단축키 Ctrl+F1과 같은
+ *   `view.ribbon` 명령을 `executeCommand`로 실행하고, 탭 고르기(접혀 있으면 펼치기 포함)는 `view.ribbon`의 가용성(`commandState`,
+ *   확인 창이 열려 있으면 dialogOpen)을 먼저 본다. 쓸 수 없으면 아무것도 바꾸지 않고 알리지도 않는다(모달 중 단축키와 같은 계약 —
+ *   창 뒤의 알림이 창 안내를 가리지 않게). 형식이 바뀌어 고른 탭이 사라질 때의 대신 고르기는 사용자 조작이 아닌 내부 맞춤이라
+ *   모달과 무관하게 한다(사라진 탭을 패널이 가리키지 않게).
  */
 export function Ribbon({ context, format }: RibbonProps) {
   const { t } = useTranslation();
@@ -45,6 +51,9 @@ export function Ribbon({ context, format }: RibbonProps) {
   const collapseRef = useRef<HTMLButtonElement>(null);
   /** 리본 안에 초점이 있음(사라진 요소의 초점은 blur 없이 사라지므로 마지막 상태를 기억한다). */
   const focusInside = useRef(false);
+
+  /** 리본 배치를 바꾸는 사용자 조작을 지금 할 수 있는지(공통 가용성: 확인 창이 열려 있으면 아님). */
+  const ribbonCommandAvailable = () => commandState("view.ribbon", context).available;
 
   const onTabKeyDown = useRovingFocus('[role="tab"]', "horizontal", (element) => {
     if (element.dataset.tabId) setSelectedId(element.dataset.tabId);
@@ -68,7 +77,9 @@ export function Ribbon({ context, format }: RibbonProps) {
   }, [active.id, visibleKey]);
 
   const selectTab = (id: string) => {
+    if (!ribbonCommandAvailable()) return;
     setSelectedId(id);
+    // 접힌 리본은 펼치기만 한다(토글이 아님: 그리기와 누름 사이에 상태가 바뀌어도 접지 않음).
     if (collapsed) dispatch({ type: "setRibbonCollapsed", collapsed: false });
   };
 
@@ -81,6 +92,7 @@ export function Ribbon({ context, format }: RibbonProps) {
       className={`ribbon${collapsed ? " ribbon--collapsed" : ""}`}
       aria-label={t("ribbon.label")}
       data-ribbon-format={format ?? "none"}
+      onMouseDown={keepEditorFocusOnPointerDown}
       onFocus={() => {
         focusInside.current = true;
       }}
@@ -103,7 +115,6 @@ export function Ribbon({ context, format }: RibbonProps) {
                 aria-selected={selected}
                 aria-controls={collapsed || !selected ? undefined : PANEL_ID}
                 tabIndex={selected ? 0 : -1}
-                onMouseDown={keepEditorFocusOnPointerDown}
                 onClick={() => selectTab(tab.id)}
               >
                 {t(tab.labelKey)}
@@ -119,8 +130,9 @@ export function Ribbon({ context, format }: RibbonProps) {
           aria-controls={collapsed ? undefined : PANEL_ID}
           aria-label={collapseLabel}
           title={ribbonShortcut ? `${collapseLabel} (${shortcutLabel(ribbonShortcut, isMac())})` : collapseLabel}
-          onMouseDown={keepEditorFocusOnPointerDown}
-          onClick={() => dispatch({ type: "toggleRibbon" })}
+          onClick={() => {
+            if (ribbonCommandAvailable()) executeCommand("view.ribbon", undefined, context);
+          }}
         >
           <Icon name={collapsed ? "chevronDown" : "chevronUp"} />
         </button>
