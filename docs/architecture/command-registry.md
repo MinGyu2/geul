@@ -3,7 +3,7 @@
 FR-007(명령 레지스트리)과 SC-003(서식·실행 취소·미지원 명령을 실제 엔진에서 확인)의 T010 몫. 상황별 리본은 T011, 형식별 고급
 명령은 T012·T013이 맡는다. 이 문서는 T010에서 정한 경계와 근거, 남은 한계를 적는다.
 
-현재 T010은 INCOMPLETE — ON HOLD, 제품 RHWP Undo/Redo는 NO-GO다. T011은 2026-11-04 착수 조건 변경 뒤 구현했으며 native IME 검증이 남아 미완료다(아래 "T011 리본"). [수용 행렬·재개 조건](rhwp-undo-redo.md#t010-current-status)이 현재 상태의 기준이며 아래 날짜별 검증은 당시 신원에 한정한다.
+현재 T010은 INCOMPLETE — ON HOLD, 제품 RHWP Undo/Redo는 NO-GO다. T011은 2026-11-04 착수 조건 변경 뒤 구현·검증해 완료했다(아래 "T011 리본", 선택 문맥 상황 탭은 빠진 능력으로 숨김). [수용 행렬·재개 조건](rhwp-undo-redo.md#t010-current-status)이 현재 상태의 기준이며 아래 날짜별 검증은 당시 신원에 한정한다.
 
 ## 구조
 
@@ -292,10 +292,32 @@ macOS는 Ctrl 대신 Cmd(이 빌드는 Linux만 확인). 단축키는 물리 키
 | `tests/e2e/tauri_smoke.py --skip-restart` | PASS 34, SKIP 2 | 실제 Tauri debug 제품 빌드, Wayland 세션, WebKitGTK 2.54. SKIP: 최소 창 크기(창 관리자), 재시작(옵션) |
 | `tests/e2e/t011_ribbon_native.py` | PASS 14/14 | 같은 빌드, 실제 rhwp WASM(HWP·HWPX)·WordCraft(DOCX) 문서. 형식별 탭, 실제 포인터 클릭 뒤 초점 유지, 대신 고르기·ARIA, HWPX 실행 취소·서식 차단과 revision 불변, 리본 굵게 = Ctrl+B(DOCX만), DOCX 닫기, Ctrl+F1 |
 | 제품 번들 시험 표지 | 없음 | `dist/assets/*.js`에 `geul-test-build` 없음(RHWP 기록·서식 시험 상수 빠짐) |
-| native 한국어 IME 중 리본 탭·접기 | **NOT RUN** | 이 환경에 IBus·Xvfb 없음. 합성 사건 시험만 있음(실제 입력기 근거 아님) |
+| native 한국어 IME 중 리본 탭·접기 | 처음 NOT RUN → 아래 "실제 IME 검증"에서 PASS | 처음 실행 환경에 IBus·Xvfb 없음 |
 
 로컬 시험(`tests/`)은 공개 저장소 밖(geul-tests)이다. `tauri-driver` 릴리스 바이너리의 ELF 해석기가 사라져(Nix GC) 현재 glibc 로더로 감싸
 실행했다(도구 실행 방식만 다름). 표본 `target/hwpx-compat-20261102/native-sc002-run1/native.docx`는 앱이 구조 손상으로 거절해 쓰지 않았고
 WordCraft 픽스처 생성기의 `basic-ko.docx`를 썼다(이 거절은 T011과 무관하며 조사하지 않음).
 
-남은 것: native IME 회귀 확인(위). 기존 한계 유지: 문서 탭·탭 닫기 단추의 초점 이동, D2/D4, RHWP 제품 기록·서식 NO-GO, 선택 문맥 상황 탭 없음.
+기존 한계 유지: 문서 탭·탭 닫기 단추의 초점 이동, D2/D4, RHWP 제품 기록·서식 NO-GO, 선택 문맥 상황 탭 없음.
+
+### 실제 IME 검증 (2026-11-04, `e285e60` 검사 훅 debug 빌드)
+
+환경: Xvfb X11 1600×1200×24(창 1280×800), 세션 D-Bus, ibus 1.5.33 + ibus-hangul 1.5.5 두벌식(GTK ibus 입력 모듈), WebKitGTK 2.54,
+xdotool 실제 키·실제 포인터. 로컬 Nix store의 기존 패키지를 격리 실행했다(설치·저장소 변경 없음). 두 가지 환경 보정이 필요했다:
+ibus-hangul `initial-input-mode` 기본값이 `latin`이라 GSettings keyfile 백엔드로 `hangul`을 줬고(안 주면 로마자 그대로 들어가 게이트 7/7 FAIL —
+입력기 설정 문제, 앱 결함 아님), 개발 셸의 `LD_LIBRARY_PATH`를 ibus·Xvfb에서 뺐다. DPR은 기록된 환경과 같은 1.041(기본)과 `-dpi 96`의 1.0 둘 다 썼다.
+
+| 확인 | 결과 | 비고 |
+|---|---|---|
+| `tests/integration/rhwp/rhwp_poc.py --ime`(DPR 1.0) | 필수 7/7 PASS, 조합 중 문서 탭 전환 PASS | 창 초점 이동 항목은 `--focus-window` 없어 NOT RUN(선택 항목). DPR 1.041에서는 시험기의 덧셈 좌표 보정이 문서 탭을 빗나가 중단(시험기 한계) |
+| `tests/integration/wordcraft/wordcraft_poc.py --ime`(DPR 1.0) | 필수 7/7 PASS + 선택·탭 전환 항목 PASS | 창 초점 이동 NOT RUN(선택 항목) |
+| `wordcraft_poc.py --ime-commands`(DPR 1.0) | 18/18 PASS | 리본 굵게·빠른 실행 실행 취소(`CommandButton` → `editorFocus.ts` 경로)·단축키·문서 탭·닫기 |
+| `tests/e2e/t011_ribbon_ime_native.py`(DPR 1.0, 1.041 각 1회) | 12/12 PASS ×2 | HWP·HWPX·DOCX × {공통 탭 삽입, 형식 전용 탭(한글 도구/참조), 접기 단추, 보기 탭 뒤 이어 입력} |
+
+T011 탐침 판정: 'ㅎㅏ' 조합 중 실제 포인터로 리본 탭·접기 단추를 누른 뒤 End. 모든 사례에서 누름이 조합을 확정했고(누른 직후 composing=false)
+음절은 원래 문서에 한 번(revision +1, 이어 입력 사례는 '하아' +2), 편집 입력 초점 유지, 탭 선택·접힘이 실제로 일어남, 다른 열린 문서 두 개의
+revision·dirty 그대로였다. 중복·유실·다른 문서 삽입 없음.
+
+관찰(기존 동작, T011 회귀 아님): 좌표가 빗나간 첫 DPR 1.041 실행에서 조합 중 리본의 **단추가 아닌 빈 곳**(그룹 배경·패널)을 누르면 음절은
+한 번 확정됐지만 편집 입력 초점이 빠져 이어 친 키가 들어가지 않았다(경계 C는 단추·탭·접기 단추에만 있음). 같은 실행에서 조합 중 실수로
+눌린 '다시 실행' 단추는 음절 한 번(revision +1)으로 처리됐다.

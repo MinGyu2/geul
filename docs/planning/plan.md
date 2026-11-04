@@ -3,7 +3,7 @@
 Date: 2026-11-04
 Spec: [spec.md](./spec.md)
 Source baseline: `4bc1ac986026ccadb2d673a66ad69e6296e3a39e` (`MinGyu2/geul`, master).
-Status: T007–T010 △ 조건부 완료, T011 구현·자동/native 비IME 검증 완료·native IME 검증 미실행(미완료, [tasks.md](./tasks.md) Verification Log). 신규 생성은 설계 단계이며 실제 실행 수용은 NOT RUN.
+Status: T007–T010 △ 조건부 완료, T011 완료(2026-11-04, native IME 포함 검증 — [tasks.md](./tasks.md) Verification Log). 신규 생성은 설계 단계이며 실제 실행 수용은 NOT RUN.
 
 ## Summary
 

@@ -61,7 +61,7 @@ Independent Test: 두 표면의 PoC와 대표 문서 IME→저장→재열기 �
 ## Phase 4: User Story 3 - 공통 명령 및 리본 (Priority: P1)
 Independent Test: 형식·선택·상태별 명령과 미지원 차단. 시험 전용 명령 활성화 금지.
 - [ ] T010 [US3] △ 조건부 완료 — 공통 명령·Undo/Redo·서식 — `src/commands/` (D2/D4 조사 보류, RHWP 제품 활성화 NO-GO)
-- [ ] T011 [US3] 공통 리본·상황별 도구 연결 — `src/ribbon/`, `src/components/Ribbon/` (구현·자동/native 비IME 검증 완료, native 한국어 IME 회귀 검증 미실행 — 미완료, 아래 Verification Log)
+- [x] T011 [US3] 공통 리본·상황별 도구 연결 — `src/ribbon/`, `src/components/Ribbon/` (2026-11-04 완료, 선택 문맥 상황 탭은 빠진 능력으로 숨김 — 아래 Verification Log)
 
 ## Phase 5: User Story 4 - 고급 기능 (Priority: P2)
 Independent Test: 실제 API·기록·문서 왕복을 검증한 명령만 활성화.
@@ -157,6 +157,13 @@ T019(L) 완료 이력과 R 전체 미완료를 유지한다. 과거 CI 성공과
 `tests/e2e/t011_ribbon_native.py` 14/14 PASS(IME 없음). **native 한국어 IME(IBus) 중 리본 탭·접기 조작 회귀 검증은 이 환경에 IBus·Xvfb가 없어
 NOT RUN**이므로 T011은 미체크로 둔다. 재개: 기록된 X11/Xvfb + ibus-hangul 환경에서 조합 중 리본 탭·접기 단추 누름의 음절 보존·중복 없음·문서
 소유를 확인(T010 `--ime-commands` 시험기와 같은 판정).
+
+2026-11-04 T011 native IME 검증(`e285e60` 검사 훅 debug 빌드, Xvfb X11 + ibus 1.5.33 + ibus-hangul 1.5.5, WebKitGTK 2.54, xdotool 실제 키·포인터):
+`rhwp_poc.py --ime` 필수 7/7, `wordcraft_poc.py --ime` 필수 7/7, `--ime-commands` 18/18, 신규 `tests/e2e/t011_ribbon_ime_native.py` 12/12(DPR 1.0과 기록
+환경과 같은 1.041 각 1회) PASS. 조합 중 리본 탭·형식 전용 탭·접기 단추 누름에서 음절은 원래 문서에 한 번, 초점 유지, 다른 문서 불변. 입력기 설정 보정
+(ibus-hangul 초기 모드 hangul)·창 초점 이동 선택 항목 NOT RUN·리본 빈 곳 누름의 초점 이탈(기존 동작)은
+[command-registry.md](../architecture/command-registry.md#실제-ime-검증-2026-11-04-e285e60-검사-훅-debug-빌드)에 기록. 이로써 T011 Done 기준(형식·선택·모달·IME·탭 전환·
+단축키/버튼 일치의 근거)을 충족해 체크한다. 선택 문맥 상황 탭은 계획 계약대로 만들지 않았다. T007–T010의 △ 상태와 D2/D4 판정은 바꾸지 않는다.
 
 ## Handoff
 
