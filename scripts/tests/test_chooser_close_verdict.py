@@ -43,6 +43,44 @@ class ChooserCloseVerdict(unittest.TestCase):
             with self.subTest(changes=changes):
                 self.assertEqual(classify(**changes)[0], verdict.INCONCLUSIVE)
 
+    def test_missing_required_negative_observations_are_inconclusive(self):
+        for key in BASE:
+            with self.subTest(missing=key):
+                obs = dict(BASE)
+                del obs[key]
+                self.assertEqual(verdict.classify(obs)[0], verdict.INCONCLUSIVE)
+
+    def test_boolean_fields_reject_truthy_and_falsy_non_booleans(self):
+        for key in ('observerInstalled', 'requestSent', 'dialogDuring', 'dialogAfterCancel', 'published', 'appAlive'):
+            for value in (None, 0, 1, 'false', 'true', [], {}):
+                with self.subTest(key=key, value=value):
+                    self.assertEqual(classify(**{key: value})[0], verdict.INCONCLUSIVE)
+
+    def test_during_delivery_does_not_require_future_observations(self):
+        for count, dialog in [(3, False), (2, True)]:
+            with self.subTest(count=count, dialog=dialog):
+                obs = {key: BASE[key] for key in ('observerInstalled', 'requestSent', 'before')}
+                obs.update(during=count, dialogDuring=dialog)
+                self.assertEqual(verdict.classify(obs)[0], verdict.DELIVERED_DURING)
+
+    def test_late_delivery_does_not_require_restore_completion(self):
+        obs = dict(BASE, afterCancel=3)
+        del obs['restoreResult']
+        self.assertEqual(verdict.classify(obs)[0], verdict.DELIVERED_LATE)
+
+    def test_all_count_fields_reject_invalid_types_and_negative_values(self):
+        for key in ('before', 'during', 'afterCancel'):
+            for value in (None, True, False, -1, 0.0, '0', [], {}):
+                with self.subTest(key=key, value=value):
+                    self.assertEqual(classify(**{key: value})[0], verdict.INCONCLUSIVE)
+
+    def test_supplied_post_delivery_counts_cannot_contradict_the_observer(self):
+        self.assertEqual(classify(during=3, afterCancel=2)[0], verdict.INCONCLUSIVE)
+        self.assertEqual(classify(during=3, afterCancel='unknown')[0], verdict.INCONCLUSIVE)
+
+    def test_explicit_zero_baseline_is_not_reachable(self):
+        self.assertEqual(classify(before=0, during=0, afterCancel=0)[0], verdict.NOT_REACHABLE)
+
 
 if __name__ == '__main__':
     unittest.main()

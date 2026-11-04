@@ -458,3 +458,12 @@ App이 표시 메시지를 소유한다. 기존 단일 `notify`는 다음 상태
 - `VITE_GEUL_TEST_HOOKS=1 npm run tauri -- build --debug --no-bundle`: exit 0. 기존 WASM/Rust target 재사용. 최종 앱 SHA-256 `19e5d7434121b0b2d8cce79af4f0a6d3b2740b95fb685af80352d52661e6f9bb`. 빌드 소스는 HEAD `badec967eefafeeefbb50ec926af1e1f4a447ad3` + 제품 diff SHA-256 `c43615a157186f1e6a39c8acd9cce96b9de3129c4fdbad8c413a6d50ab17feb0` + 당시 untracked `publicationWarning.ts` SHA-256 `8af418c650b2c85bf9d19ae7592670cd35a3b38cbf2881f8b79f85b9c00c044e`. 빌드 manifest는 `target/stabilization/s5-p1-verification4/build-identity.json`.
 - `python3 target/stabilization/s5-p1-native3/launch.py`: exit 0, UI PASS 4조건(ko/en × 1280/960). 실제 RecoveryCenter→게시→외부 symlink 교체→Rust AlreadyOpen→알림 경로. 전문/키보드 Enter·Escape/초점/ARIA/가로 경계, 뒤따른 zoom에도 경고 유지, 세션·활성 탭 불변, 후보/store 보존, 게시 안내 1회, 닫기 확인을 검증했다. 하네스 SHA-256 `c9128a41753e815fbdbb74dc91e0caeda89eb5fa1017af9894d56d6a8cd19fe5`. Xvfb/X11, GTK 3.24.52, WebKitGTK 2.54.1, IBus 1.5.33/ibus-hangul 1.5.5. RHWP Debug generation `0c2faef3a2966c4d717d50b83f51f839f5b4a14a7c26935723edc38bd36a90c4`. 정리 완료·잔여 프로세스 0. 실제 스크린샷과 측정은 `target/stabilization/s5-p1-native3/run/`에 있다. 첫 native 가로 넘침 실패와 뒤이은 대비 보완 전 실행도 별도 경로에 보존했다.
 - NOT RUN: 실제 보조공학 제품의 음성 출력, native 조합 도중 전문 열기(공유 포인터 guard는 렌더링 회귀로 검증), Wayland/portal·다른 WM·Release·Windows/macOS. T021–T023/T007–T010 완료 상태와 T024 비활성은 변경하지 않는다.
+
+
+### P2: GTK 관측 입력의 엄격한 계약
+
+이전 분류기는 `dialogDuring/dialogAfterCancel`의 누락을 false처럼 취급했다. 이제 제공된 boolean 필드에 `None`, 숫자 0/1, 문자열, 목록/사전을 허용하지 않는다. `observerInstalled/requestSent`는 정확히 True여야 한다. 카운트는 bool을 제외한 비음수 정수이며 제공된 시간 순서에서 감소할 수 없다. 선택기 중 관측(`before/during/dialogDuring`)만으로 전달을 확인할 수 있으면 미래의 취소 후 관측은 요구하지 않는다. 취소 후 전달에는 정상적인 `afterCancel/dialogAfterCancel`을 요구한다. 제공된 미래 관측이 잘못되거나 모순되면 부분 전달도 INCONCLUSIVE로 처리한다.
+
+NOT REACHABLE에는 두 dialog 관측이 명시적 False, `restoreResult` 키가 있고 None, `published` 명시적 False, `appAlive` 명시적 True까지 모두 필요하다. 누락이나 잘못된 값은 INCONCLUSIVE다. 기존 5초+5초 구간은 변경하지 않았다.
+
+`python3 -m unittest scripts/tests/test_chooser_close_verdict.py`: 새 회귀를 기존 분류기에 적용했을 때 exit 1, 12개 시험/하위 사례 31건 실패. 수정 후 exit 0, 12/12 PASS. 필수 키별 누락, boolean 전 필드의 잘못된 타입, 결과/게시/생존 누락, 부분 전달, 지연 전달, 감소/잘못된 카운트, 모순, 0 및 비영 기준값 불변을 포함한다. 미처리 오류 없음. 로그 `target/stabilization/s5-p2/{before,after}.log`. native는 P3 보고 경로와 함께 새 실행에서 확인한다. 프런트엔드와 서브모듈은 변경하지 않았다.
