@@ -182,7 +182,11 @@ describe("RHWP creation availability", () => {
     expect(createRhwpBlank).not.toHaveBeenCalled();
     expect(files.createDocument).not.toHaveBeenCalled();
     expect(files.chooseFile).toHaveBeenCalledTimes(1);
+    // The blank-model factory is shared: HWP is unavailable too, without its own attempt or chooser.
+    expect(workspace.creationUnavailable("hwp")).toEqual({ code: "CreationUnavailable", format: "hwp" });
+    expect(workspace.creationUnavailable("docx")).toBeNull();
     expect(await workspace.newDocument(text, async () => "hwpx")).toEqual(unavailable);
+    expect(await workspace.newDocument(text, async () => "hwp")).toEqual({ ok: false, error: { code: "CreationUnavailable", format: "hwp" } });
     expect(files.chooseFile).toHaveBeenCalledTimes(1); // no destination chooser for a known-unavailable format
     expect(await workspace.newDocument(text, async () => "docx")).toEqual({ ok: true, value: created });
     releaseSurfaceFocus(workspace.anyEditorFor(1)!);
@@ -202,6 +206,28 @@ describe("RHWP creation availability", () => {
     // A frontend export that succeeds can still never authorize publication: Rust decided above.
     expect((await workspace.newDocument(text, async () => "hwpx"))?.ok).toBe(true);
     releaseSurfaceFocus(workspace.anyEditorFor(1)!);
+  });
+});
+
+describe("independent per-format output verification", () => {
+  it("an HWPX-only digest rejection blocks HWPX only; HWP and DOCX still create", async () => {
+    const { workspace, files } = setup("hwp");
+    const unverified = { ok: false as const, error: { code: "CreationUnverified" as const, format: "hwpx" as const } };
+    vi.mocked(files.createDocument).mockResolvedValueOnce(unverified);
+    expect(await workspace.newDocument(text, async () => "hwpx")).toEqual(unverified);
+    expect(workspace.creationUnavailable("hwpx")).toEqual(unverified.error);
+    expect(workspace.creationUnavailable("hwp")).toBeNull();
+    expect((await workspace.newDocument(text, async () => "hwp"))?.ok).toBe(true);
+    expect(files.createDocument).toHaveBeenLastCalledWith("hwp", "/docs/new.hwp", expect.objectContaining({ bytes: expect.any(Uint8Array) }));
+    releaseSurfaceFocus(workspace.anyEditorFor(1)!);
+  });
+
+  it("a rejection for another format than requested does not block the requested format", async () => {
+    const { workspace, files } = setup("hwp");
+    vi.mocked(files.createDocument).mockResolvedValueOnce({ ok: false, error: { code: "CreationUnverified", format: "hwpx" } });
+    await workspace.newDocument(text, async () => "hwp");
+    expect(workspace.creationUnavailable("hwp")).toBeNull();
+    expect(workspace.creationUnavailable("hwpx")).toBeNull();
   });
 });
 

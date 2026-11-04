@@ -85,7 +85,11 @@ export interface RhwpDocument {
 }
 
 export interface RhwpModule {
-  /** Fresh isolated model from this verified generation; never an active editor model. */
+  /**
+   * Fresh isolated model from this verified generation; never an active editor model. Present only when
+   * the generation's shared `HwpDocument.createEmpty` factory is callable; HWP and HWPX creation both
+   * depend on it (the output format is chosen later by export).
+   */
   createEmptyDocument?(): RhwpCreationDocument;
   /** 문서 바이트로 문서를 만든다. 형식이 맞지 않으면 예외. */
   openDocument(bytes: Uint8Array): RhwpDocument;
@@ -105,7 +109,7 @@ export interface RhwpCreationDocument extends RhwpDocument {
 
 type GeneratedModule = {
   default: (options: { module_or_path: ArrayBuffer }) => Promise<unknown>;
-  HwpDocument: { new (bytes: Uint8Array): RhwpDocument; createEmpty(): RhwpCreationDocument };
+  HwpDocument: { new (bytes: Uint8Array): RhwpDocument; createEmpty?: unknown };
 };
 
 /** 유일한 가변 게시 참조. 선택 후에는 같은 불변 generation만 사용한다. */
@@ -142,9 +146,14 @@ export function loadRhwpModule(importer: (url: string) => Promise<unknown> = (ur
     const exports = await generated.default({ module_or_path: wasm });
     const HwpDocument = generated.HwpDocument;
     const memory = (exports as { memory?: unknown } | null)?.memory;
+    const createEmpty = HwpDocument.createEmpty;
     return {
       openDocument: (bytes: Uint8Array) => new HwpDocument(bytes),
-      createEmptyDocument: () => HwpDocument.createEmpty(),
+      // Opening documents never depends on the creation factory; a missing or non-callable factory only
+      // makes creation unavailable (it is never called).
+      ...(typeof createEmpty === "function"
+        ? { createEmptyDocument: () => (createEmpty as () => RhwpCreationDocument).call(HwpDocument) }
+        : {}),
       ...(memory instanceof WebAssembly.Memory ? { memoryBytes: () => memory.buffer.byteLength } : {}),
     };
   })().catch((reason: unknown) => {

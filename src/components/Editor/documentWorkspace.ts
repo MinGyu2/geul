@@ -217,10 +217,11 @@ export class DocumentWorkspace {
         try { module = await this.loadModule(); }
         catch { this.sessions.cancelOpen(ticket); return { ok: false, error: { code: "EngineFailure", engine: "rhwp", stage: "init" } }; }
         if (!module.createEmptyDocument) {
-          const error: DocumentError = { code: "CreationUnavailable", format };
-          this.blockCreation(format, error);
+          // HWP and HWPX share one blank-model factory: both are unavailable together.
+          for (const shared of ["hwp", "hwpx"] as const) this.creationBlocked.set(shared, { code: "CreationUnavailable", format: shared });
+          this.emit();
           this.sessions.cancelOpen(ticket);
-          return { ok: false, error };
+          return { ok: false, error: { code: "CreationUnavailable", format } };
         }
         try { blank = createRhwpBlank(module, format); }
         catch { this.sessions.cancelOpen(ticket); return { ok: false, error: { code: "EngineFailure", engine: "rhwp", stage: "export" } }; }

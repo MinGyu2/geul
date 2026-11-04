@@ -382,3 +382,18 @@ Rust 세션의 `dirty`는 `revision != clean_revision || unconfirmed`다. 생성
 - `mixed`: 둘 다. 편집 문구에 미확인 파일 안내를 더한다.
 
 세션 없이 파일만 남은 게시(`FilePublishedUnregistered`·`RestoredUnopened` 등)는 확인 창이 아니라 해당 오류 안내와 닫기 되돌림으로 알린다. 취소·확인·Tab/Escape·초점 복원·단일 확인 창·낡은 결정 재확인은 그대로다. 한계: 저장 뒤 `durable=false`로 남은 세션(revision > 0)은 프런트엔드 정보만으로 편집과 확실히 구분할 수 없어 보수적으로 `edits`로 표시한다. 내구성을 확인했다고 말하는 문구는 없다. 검증: `windowCloseWording.test.tsx`(ko/en 상태별 문구·동작, clean 무확인). native close 하네스는 `unconfirmed-publication`의 `durability`, `dirty-selection`의 `edits`를 확인한다.
+
+### 공유 RHWP 생성 팩토리 확인
+
+HWP와 HWPX 생성은 같은 `HwpDocument.createEmpty()` 빈 모델에서 시작하고, 형식은 나중에 `exportHwpWithReport`/`exportHwpxWithReport`로 정한다. 이전 로더는 `createEmptyDocument` wrapper를 항상 만들었다. 그래서 정적 메서드가 없는 runtime에서는 workspace의 API 확인을 통과한 뒤 `createRhwpBlank` 안에서 TypeError가 났고, 요청 형식 하나의 `EngineFailure/export`로 분류됐다(수정 전 시험 4개 실패). 고정 runtime(Debug `0c2faef3…`, Release `853a0689…`)의 `rhwp.js`에는 `static createEmpty()`가 있다.
+
+이제 로더는 `typeof HwpDocument.createEmpty === "function"`일 때만 `createEmptyDocument`를 노출한다. 없거나 호출할 수 없는 값이면 호출하지 않고, 문서 열기(`openDocument`)는 그대로다. workspace는 팩토리가 없으면 HWP·HWPX를 함께 `CreationUnavailable`로 막는다. 형식 dialog는 두 형식을 비활성화하고 기존 ko/en 문구로 이유를 보인다. DOCX는 영향이 없다. 출력 검증은 형식별로 독립이다. Rust가 HWP digest를 거절하면 HWP만, HWPX를 거절하면 HWPX만 막는다. 요청과 다른 형식의 거절은 아무것도 막지 않는다. Rust의 감사 SHA-256·길이·형식·손실 보고·보존 검사는 바꾸지 않았다. 프런트엔드 확인은 막기만 하며 허용 근거가 되지 않는다.
+
+### 2차 안정화 검증 요약 — 2026-11-04
+
+최종 앱은 Debug test-hooks 빌드 SHA-256 `10fe2dc1d9e7feddd0b9077e72e62688dcf8fd5d57a2325c9258b343f5424bbb`, RHWP Debug generation `0c2faef3…`이다. pin·패치·WASM은 변경하지 않았다. 로컬 evidence는 ignored `target/stabilization/`(`s2-*`)에 있다.
+- frontend `npm test` 59파일/1,052 PASS, `tsc --noEmit`·ESLint PASS. `node --test scripts/tests/evidenceOutput.test.mjs` 2 PASS.
+- Rust 기본 suite 257 PASS/22 ignored(보호 빌드 test binary, private TMPDIR). fmt check·clippy(`--lib --bins --tests`, `-D warnings`) PASS.
+- T021 생성 워크플로 6단계: 새 실행 디렉터리에서 Release 3회·Debug 2회 PASS. 같은 디렉터리 재실행은 6단계 모두 거절됐고 파일은 그대로였다.
+- native X11/IBus(최종 앱): 양성 3형식, safety 22개, 창 닫기 5모드(`restore-unopened` 포함) PASS. 정리 성공·잔여 프로세스 0이다.
+- NOT RUN: native Release 앱, Wayland/fcitx5, GPU, Windows/macOS, 실제 정전·실제 fsync 실패의 native 관측, 외부 한컴/Word 상호운용, 실제 runtime에서 생성 팩토리가 없는 경우(고정 runtime에는 팩토리가 있어 프런트엔드 시험으로만 확인).
