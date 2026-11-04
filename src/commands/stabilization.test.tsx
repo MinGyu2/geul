@@ -2,6 +2,7 @@
 // (P2-A). 편집 세션·ImeInput·App은 실제 코드이고 백엔드는 FakeDocx 흉내다(엔진 동작의 증거가 아님). 실제 ibus-hangul 입력의
 // 순서는 tests/integration/wordcraft/wordcraft_poc.py가 따로 본다.
 import { act, fireEvent, render, screen } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { describe, expect, it } from "vitest";
 import App from "../App";
 import type { DocumentBackend } from "../adapters/backend";
@@ -366,5 +367,67 @@ describe("P1-B 확인 창이 열린 동안의 명령", () => {
     expect(event.defaultPrevented).toBe(true);
     expect(executed).toEqual([]);
     expect(dispatched).toBe(0);
+  });
+});
+
+// ---- 확인 창 배경·본문 누름의 초점(2026-11-04, T011 안정화 후속) ----
+// 실측(Xvfb + WebKitGTK 2.54): 버리기 확인 창의 배경을 실제 포인터로 누르면 초점이 창 밖(body)으로 빠져 Escape·Tab이 창에 닿지 않았다.
+
+describe("확인 창 배경·본문 누름과 초점", () => {
+  async function openDialog() {
+    Object.defineProperty(window, "innerWidth", { configurable: true, value: 1400 });
+    const { fake, workspace, sessions } = workspaceWithDocx();
+    const user = userEvent.setup();
+    render(<App documentWorkspace={workspace} />);
+    await act(async () => { await workspace.open("/a.docx"); await flush(); });
+    await act(async () => { workspace.docxEditorFor(1)!.typeText("가"); await flush(); });
+    const closeButton = screen.getByRole("button", { name: "a.docx 닫기" });
+    await act(async () => { await user.click(closeButton); await flush(); });
+    const cancel = screen.getByTestId("discard-cancel");
+    expect(cancel).toHaveFocus();
+    const backdrop = document.querySelector<HTMLElement>(".discard-dialog__backdrop")!;
+    return { fake, workspace, sessions, user, closeButton, cancel, backdrop, dialog: screen.getByRole("alertdialog") };
+  }
+
+  it("배경·창 제목·본문·단추 줄을 눌러도 초점이 창 안(취소)에 남고 창은 닫히지 않으며, 이어서 Tab 가두기·Escape가 동작한다", async () => {
+    const t = await openDialog();
+    const surfaces = [t.backdrop, t.dialog, document.getElementById("discard-dialog-title")!, document.getElementById("discard-dialog-body")!,
+      document.querySelector<HTMLElement>(".discard-dialog__actions")!];
+    for (const surface of surfaces) {
+      expect(fireEvent.mouseDown(surface), surface.className || surface.id).toBe(false);
+      await act(async () => { await t.user.click(surface); await flush(); });
+      expect(t.cancel, surface.className || surface.id).toHaveFocus();
+      expect(screen.getByRole("alertdialog")).toBeInTheDocument();
+    }
+    await t.user.keyboard("{Tab}");
+    expect(screen.getByTestId("discard-confirm")).toHaveFocus();
+    await t.user.click(t.backdrop);
+    expect(screen.getByTestId("discard-confirm")).toHaveFocus(); // 창 안의 초점은 옮기지 않는다
+    await t.user.keyboard("{Escape}");
+    await act(flush);
+    expect(screen.queryByRole("alertdialog")).toBeNull();
+    expect(t.closeButton).toHaveFocus(); // 기존 계약: 창을 연 요소로 복원
+    expect(t.sessions.get(1)).not.toBeNull(); // 취소: 문서는 열린 채
+  });
+
+  it("창의 단추는 그대로 누를 수 있다(기본 동작을 막지 않음): 확인을 누르면 버리고 닫는다", async () => {
+    const t = await openDialog();
+    const confirm = screen.getByTestId("discard-confirm");
+    expect(fireEvent.mouseDown(confirm)).toBe(true);
+    expect(fireEvent.mouseDown(t.cancel)).toBe(true);
+    await act(async () => { await t.user.click(confirm); await flush(); });
+    expect(screen.queryByRole("alertdialog")).toBeNull();
+    expect(t.sessions.get(1)).toBeNull();
+  });
+
+  it("초점이 이미 창 밖에 있으면 배경을 누를 때 창 안(취소)으로 돌려놓는다", async () => {
+    const t = await openDialog();
+    act(() => t.cancel.blur());
+    expect(document.activeElement).toBe(document.body);
+    await act(async () => { await t.user.click(t.backdrop); await flush(); });
+    expect(t.cancel).toHaveFocus();
+    await t.user.keyboard("{Escape}");
+    await act(flush);
+    expect(screen.queryByRole("alertdialog")).toBeNull();
   });
 });

@@ -9,6 +9,7 @@ import {
   type CSSProperties,
   type FormEvent,
   type KeyboardEvent,
+  type MouseEvent,
   type MutableRefObject,
 } from "react";
 import type { DocumentError, SessionId, SessionInfo } from "../../adapters/contract";
@@ -185,7 +186,10 @@ export function Editor({ zoom, workspace = null, fileActions, notify, onModalCha
  * 돈다. 닫히면 초점을 열기 전 요소로 돌려준다.
  * 초점 순서(6차): 처음 초점은 창이 DOM에 들어오는 commit 안(layout effect)에서 옮긴다. passive effect로 옮기면 창이 보인 뒤
  * 그 effect가 돌 때까지 초점이 뒤의 편집 입력에 남아 그 사이의 키가 문서로 간다(재현: 창이 보이는 순간 초점이 textarea).
- * 닫힌 뒤의 복원은 전과 같이 passive cleanup에서 한다. 창이 다른 확인 창으로 바뀌면(탭 → 창 닫기) 옛 창은 복원하지 않고
+ * 닫힌 뒤의 복원은 전과 같이 passive cleanup에서 한다.
+ * 배경·본문 누름(2026-11-04): 창의 단추가 아닌 곳(배경·제목·본문·단추 줄)을 누르면 mousedown 기본 동작이 초점을 body로 옮겨 Escape·Tab이
+ * 창에 닿지 않았다(실측 WebKitGTK 2.54). 그 누름의 기본 동작을 막아 창 안의 초점을 그대로 두고, 초점이 이미 창 밖이면 취소로 돌려놓는다.
+ * 창의 단추 누름은 막지 않는다. 배경 누름은 창을 닫지 않는다(전과 같음). 창이 다른 확인 창으로 바뀌면(탭 → 창 닫기) 옛 창은 복원하지 않고
  * (새 창이 이미 가진 초점을 빼앗지 않음) 처음 연 요소를 `focusReturnRef`로 새 창에 넘긴다.
  * (5차 실험의 native 창 닫기 실패는 앱 동작이 아니라 시험기가 WebDriver 명령 안에서 승인을 눌러 그 응답이 창 파괴와 경합한
  * 것이었다: 6차에 Rust 창 이벤트를 기록해 CloseRequested·확정 1회·Destroyed 1회로 기준 코드와 같음을 확인.)
@@ -197,8 +201,14 @@ function DiscardDialog({ request, focusReturnRef, onCancel, onConfirm }: {
   onConfirm: () => void;
 }) {
   const { t } = useTranslation();
+  const dialogRef = useRef<HTMLDivElement>(null);
   const cancelRef = useRef<HTMLButtonElement>(null);
   const confirmRef = useRef<HTMLButtonElement>(null);
+  const onMouseDown = (event: MouseEvent<HTMLDivElement>) => {
+    if (event.target instanceof Element && event.target.closest("button")) return;
+    event.preventDefault();
+    if (!dialogRef.current?.contains(document.activeElement)) cancelRef.current?.focus();
+  };
   useLayoutEffect(() => {
     if (!focusReturnRef.current && document.activeElement instanceof HTMLElement) focusReturnRef.current = document.activeElement;
     cancelRef.current?.focus();
@@ -220,8 +230,9 @@ function DiscardDialog({ request, focusReturnRef, onCancel, onConfirm }: {
     }
   };
   return (
-    <div className="discard-dialog__backdrop">
+    <div className="discard-dialog__backdrop" onMouseDown={onMouseDown}>
       <div
+        ref={dialogRef}
         className="discard-dialog"
         role="alertdialog"
         aria-modal="true"

@@ -364,3 +364,21 @@ WebDriver 키 동작으로 보냈고, 실제 키보드 Ctrl+F1의 모달 차단�
 남은 한계(기존, 이번 변경과 무관): 확인 창의 **배경을 실제 포인터로 누르면 초점이 창 밖(body)으로 빠진다**(실측). 그 뒤 Escape·Tab이 창에
 닿지 않는다(창의 키 처리기가 창 요소에 있음). 리본·문서 명령은 그동안에도 모달로 막힌다. 확인 창(Editor `DiscardDialog`)의 초점 관리는
 이번 범위 밖이라 바꾸지 않았다. 문서 탭·탭 닫기 단추의 초점 이동도 그대로다.
+
+#### 후속: 확인 창 배경·본문 누름의 초점 이탈 — CONFIRMED DEFECT, FIXED (2026-11-04, `2ee337c` 위)
+
+위 "남은 한계"를 고쳤다. 원인: Editor `DiscardDialog`의 배경(`discard-dialog__backdrop`)과 창 안의 단추가 아닌 곳(제목·본문·단추 줄)은 초점을
+받을 수 없는 요소라, 누르면 mousedown 기본 동작이 초점을 body로 옮겼다. 창의 Escape·Tab 처리기는 창 요소에 있어 그 뒤 키가 닿지 않았고, 편집
+표면의 "모달 창 안에 초점이 있으면 초점을 가져가지 않음" 검사(`RhwpSurface`·`DocxSurface`)도 그 상태를 모달로 보지 못했다. 고침: 배경 요소의
+mousedown에서 누른 곳이 창의 단추가 아니면 기본 동작을 막고(창 안의 초점 그대로), 초점이 이미 창 밖이면 그 누름에서 취소 단추로 돌려놓는다
+(동기 처리, 타이머 없음). 창 단추 누름은 막지 않는다. 배경 누름은 전과 같이 창을 닫지 않는다. 창 글자를 끌어 선택하는 것은 이제 시작되지 않는다.
+
+| 확인 | 결과 | 범위 |
+|---|---|---|
+| 고치기 전 `src/commands/stabilization.test.tsx`(새 3개 포함) | 2 FAIL / 16 PASS | 배경 mousedown 안 막힘, 창 밖 초점 복구 없음(단추 사례는 원래 PASS) |
+| 고친 뒤 같은 파일 | 18/18 PASS | 배경·창·제목·본문·단추 줄 누름 뒤 초점 유지·창 유지, Tab 가두기, 창 안 다른 단추 초점 유지, Escape로 닫고 연 요소로 복원, 확인 단추 동작, 창 밖 초점 복구 |
+| 변이 | 2/2 검출 | 창 밖 복구 제거, 단추까지 막기 |
+| `npx vitest run` | 52파일 972개 PASS | |
+| `npm run typecheck`, `npm run lint` | PASS | |
+| `tests/e2e/t011_ribbon_ime_native.py --modal-only`(Xvfb + ibus-hangul, 검사 훅 debug) | DPR 1.041·1.0 각 1/1 PASS | 실제 포인터로 배경(리본 접기 단추 자리 — mousedown 대상 `discard-dialog__backdrop`)·창 본문을 누른 뒤 초점은 취소, **실제 키 Escape로 닫힘**, 그동안 리본 배치·선택·알림·revision 그대로 |
+| `wordcraft_poc.py --ime-commands`(DPR 1.0) | 18/18 PASS | 조합 중 닫기 단추·기다림 중 탭 닫기의 버리기 확인 사례 포함 |
