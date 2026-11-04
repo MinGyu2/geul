@@ -89,6 +89,7 @@ export function Editor({ zoom, workspace = null, fileActions, notify, onModalCha
     closingWindow.current = true;
     workspace.setWindowClosing(true); // 승인 뒤 native destroy가 끝날 때까지 새 편집을 막는다
     try {
+      if (workspace.fileBusy) await workspace.waitForFiles();
       await workspace.windowClose.close();
     } catch {
       closingWindow.current = false;

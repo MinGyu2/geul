@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import type { Invoke } from "../../adapters/backend";
 import type { SessionInfo } from "../../adapters/contract";
-import { createTauriFilePort } from "./filePort";
+import { createTauriFilePort, newDocumentFrame } from "./filePort";
 
 const created: SessionInfo = {
   sessionId: 4, format: "docx", engine: "wordcraft", revision: 0, state: "identified",
@@ -26,17 +26,31 @@ describe("Tauri file port", () => {
     const files = createTauriFilePort(invoke);
     expect(await files.chooseFile({ mode: "open", title: "Open", accept: "Open", cancel: "Cancel" }))
       .toEqual({ ok: false, error: { code: "Protocol" } });
-    expect(await files.createDocx("/docs/new.docx")).toEqual({ ok: false, error: { code: "Protocol" } });
+    expect(await files.createDocument("docx", "/docs/new.docx")).toEqual({ ok: false, error: { code: "Protocol" } });
   });
 
-  it("requires a new DOCX destination and keeps the backend conflict error", async () => {
-    const invoke = vi.fn<Invoke>().mockResolvedValueOnce(created).mockRejectedValueOnce({ code: "FileConflict" });
+  it("creates DOCX through the format-aware frame and keeps the backend conflict error", async () => {
+    const invoke = vi.fn<Invoke>().mockResolvedValueOnce({ ...created, dirty: true }).mockRejectedValueOnce({ code: "FileConflict" });
     const files = createTauriFilePort(invoke);
-    expect(await files.createDocx("/docs/new.docx")).toEqual({ ok: true, value: created });
-    expect(await files.createDocx("/docs/existing.docx")).toEqual({ ok: false, error: { code: "FileConflict" } });
+    expect(await files.createDocument("docx", "/docs/new.docx")).toEqual({ ok: true, value: { ...created, dirty: true } });
+    expect(await files.createDocument("docx", "/docs/existing.docx")).toEqual({ ok: false, error: { code: "FileConflict" } });
     expect(invoke.mock.calls).toEqual([
-      ["document_new", { path: "/docs/new.docx" }],
-      ["document_new", { path: "/docs/existing.docx" }],
+      ["document_new", newDocumentFrame("docx", "/docs/new.docx")],
+      ["document_new", newDocumentFrame("docx", "/docs/existing.docx")],
     ]);
+  });
+
+  it.each([
+    ["wrong format", { ...created, format: "hwp" }],
+    ["wrong engine", { ...created, engine: "rhwp" }],
+    ["wrong initial state", { ...created, state: "loading" }],
+    ["nonzero revision", { ...created, revision: 1 }],
+    ["nonzero sequence", { ...created, sequence: 1 }],
+    ["nonzero load generation", { ...created, loadGeneration: 1 }],
+    ["wrong extension", { ...created, displayName: "Untitled.hwp" }],
+  ])("rejects created-session response with %s", async (_case, response) => {
+    const invoke = vi.fn<Invoke>().mockResolvedValue(response);
+    const files = createTauriFilePort(invoke);
+    expect(await files.createDocument("docx", "/docs/new.docx")).toEqual({ ok: false, error: { code: "Protocol" } });
   });
 });

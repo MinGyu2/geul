@@ -11,7 +11,7 @@
 //   하나를 기다린다(백엔드 닫기·정리는 한 번).
 import type { DocumentBackend } from "../../adapters/backend";
 import type { DocxBackend } from "../../adapters/docx";
-import type { CloseOutcome, DocumentError, Result, SaveOutcome, SessionId, SessionInfo } from "../../adapters/contract";
+import type { CloseOutcome, DocumentError, DocumentFormat, Result, SaveOutcome, SessionId, SessionInfo } from "../../adapters/contract";
 import type { DocumentSessions } from "../../adapters/sessions";
 import type { FileDialogRequest, FilePort } from "./filePort";
 import type { RecoveryCandidate, RecoveryPort } from "./recoveryPort";
@@ -19,6 +19,8 @@ import { RhwpEditorSession } from "./rhwp/RhwpEditorSession";
 import { loadRhwpModule, type RhwpModule } from "./rhwp/rhwpModule";
 import type { WindowClosePort } from "./windowClose";
 import { DocxEditorSession, type DecodeImage } from "./wordcraft/DocxEditorSession";
+import { createRhwpBlank } from "./rhwp/createBlank";
+import { captureSurfaceFocus, releaseSurfaceFocus, setSurfaceFocusLease, type SurfaceFocusLease } from "./surfaceFocus";
 
 /** 엔진별 편집 세션(세션마다 하나). */
 export type EngineEditor = RhwpEditorSession | DocxEditorSession;
@@ -44,6 +46,7 @@ export class DocumentWorkspace {
   private fileOperation: "open" | "new" | "saveAs" | "restore" | "recovery" | null = null;
   private started = false;
   private windowClosing = false;
+  private cancelFormatSelection: (() => void) | undefined;
 
   constructor(
     readonly sessions: DocumentSessions,
@@ -151,16 +154,25 @@ export class DocumentWorkspace {
     }
   }
 
-  /** Create and open a real blank DOCX model. Other formats have no supported creation path. */
-  async newDocx(text: FileDialogText): Promise<Result<SessionInfo> | null> {
+  /** Select format, then destination, then create-only publication and engine load. */
+  async newDocument(text: FileDialogText, chooseFormat: () => Promise<DocumentFormat | null>): Promise<Result<SessionInfo> | null> {
+    const activeId = this.sessions.snapshot().activeId;
+    if (activeId !== null && this.editors.get(activeId)?.snapshot().composing) {
+      return { ok: false, error: { code: "SaveNotReady", reason: "composing" } };
+    }
     if (!this.beginFileOperation("new")) return { ok: false, error: { code: "Protocol" } };
     const ticket = this.sessions.beginOpen();
+    let focus: SurfaceFocusLease | undefined;
     try {
       if (!this.filePort) {
         this.sessions.cancelOpen(ticket);
         return { ok: false, error: { code: "Protocol" } };
       }
-      const chosen = await this.filePort.chooseFile({ mode: "save", format: "docx", ...text });
+      const cancelled = new Promise<null>(resolve => { this.cancelFormatSelection = () => resolve(null); });
+      const format = await Promise.race([chooseFormat(), cancelled]);
+      this.cancelFormatSelection = undefined;
+      if (format === null || this.windowClosing) { this.sessions.cancelOpen(ticket); return null; }
+      const chosen = await this.filePort.chooseFile({ mode: "save", format, ...text });
       if (!chosen.ok) {
         this.sessions.cancelOpen(ticket);
         return chosen;
@@ -169,11 +181,53 @@ export class DocumentWorkspace {
         this.sessions.cancelOpen(ticket);
         return null;
       }
-      const created = await this.filePort.createDocx(chosen.value);
-      return this.acceptAndLoad(ticket, created);
+      if (this.windowClosing) { this.sessions.cancelOpen(ticket); return null; }
+      focus = captureSurfaceFocus();
+      let blank;
+      if (format !== "docx") {
+        try { blank = createRhwpBlank(await this.loadModule(), format); }
+        catch { this.sessions.cancelOpen(ticket); return { ok: false, error: { code: "EngineFailure", engine: "rhwp", stage: "export" } }; }
+      }
+      if (this.windowClosing) { this.sessions.cancelOpen(ticket); return null; }
+      const created = await this.filePort.createDocument(format, chosen.value, blank);
+      if (created.ok && this.windowClosing) {
+        await this.backend.close(created.value.sessionId);
+        this.sessions.cancelOpen(ticket);
+        return { ok: false, error: { code: "FilePublishedUnregistered" } };
+      }
+      const accepted = this.sessions.acceptOpen(ticket, created);
+      if (accepted.ok) {
+        const editor = this.anyEditorFor(accepted.value.sessionId);
+        if (!editor) return { ok: false, error: { code: "FileCreatedEditorFailed", sessionId: accepted.value.sessionId } };
+        setSurfaceFocusLease(editor, focus);
+        focus = undefined;
+        const loaded = await editor.load();
+        if (!loaded.ok) {
+          releaseSurfaceFocus(editor);
+          return { ok: false, error: { code: "FileCreatedEditorFailed", sessionId: accepted.value.sessionId } };
+        }
+      }
+      return accepted;
+    } catch {
+      this.sessions.cancelOpen(ticket);
+      return { ok: false, error: { code: "Protocol" } };
     } finally {
+      this.cancelFormatSelection = undefined;
+      focus?.dispose();
       this.endFileOperation();
     }
+  }
+
+  /** Compatibility for callers that already selected DOCX; uses the same pipeline. */
+  newDocx(text: FileDialogText): Promise<Result<SessionInfo> | null> {
+    return this.newDocument(text, async () => "docx");
+  }
+
+  async waitForFiles(): Promise<void> {
+    if (!this.fileBusy) return;
+    await new Promise<void>(resolve => {
+      const stop = this.subscribe(() => { if (!this.fileBusy) { stop(); resolve(); } });
+    });
   }
 
   /** Save the captured editor to a new destination, keeping engine checks and session identity in the save path. */
@@ -408,6 +462,7 @@ export class DocumentWorkspace {
 
   setWindowClosing(closing: boolean) {
     this.windowClosing = closing;
+    if (closing) this.cancelFormatSelection?.();
     for (const [id, editor] of this.editors) editor.setClosing(closing || this.closing.has(id));
   }
 
@@ -447,6 +502,7 @@ export class DocumentWorkspace {
         this.cancelCheckpointTimer(sessionId);
         this.checkpointJobs.delete(sessionId);
         recoveryChanged ||= this.checkpointStates.delete(sessionId);
+        releaseSurfaceFocus(editor);
         editor.dispose();
         this.editors.delete(sessionId);
       }

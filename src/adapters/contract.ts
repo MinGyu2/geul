@@ -148,6 +148,7 @@ export type BackendEngineStage = (typeof BACKEND_ENGINE_STAGES)[number];
  * 명령 가용성으로 알린다(T010, src/commands/capability.ts).
  */
 export type ClientError =
+  | { code: "FileCreatedEditorFailed"; sessionId: SessionId }
   | { code: "EngineFailure"; engine: EngineId; stage: EngineStage }
   | { code: "Protocol" }
   | { code: "UnpreservedChanges"; sessionId: SessionId }

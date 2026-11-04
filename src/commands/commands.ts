@@ -92,7 +92,8 @@ const FILE_COMMANDS: Record<string, {
     run: ({ files }) => files?.open(),
   },
   "file.new": {
-    state: ({ files }) => !files ? unavailable("notImplemented") : files.busy ? unavailable("dialogOpen") : ENABLED,
+    state: ({ files, document }) => !files ? unavailable("notImplemented") : files.busy ? unavailable("dialogOpen")
+      : document?.snapshot().composing ? unavailable("composing") : ENABLED,
     run: ({ files }) => files?.newDocument(),
   },
   "file.saveAs": {

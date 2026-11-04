@@ -61,7 +61,7 @@ describe("DOCX 작업 공간", () => {
   it("native Open cancellation leaves the session list and selection unchanged", async () => {
     const filePort: FilePort = {
       chooseFile: async () => ({ ok: true, value: null }),
-      createDocx: async () => ({ ok: false, error: { code: "Protocol" } }),
+      createDocument: async () => ({ ok: false, error: { code: "Protocol" } }),
     };
     const { space, sessions } = workspace(filePort);
     expect(await space.openDialog({ title: "Open", accept: "Open", cancel: "Cancel" })).toBeNull();
@@ -72,7 +72,7 @@ describe("DOCX 작업 공간", () => {
   it("native Open routes unsupported extensions through backend validation without adopting a session", async () => {
     const filePort: FilePort = {
       chooseFile: async () => ({ ok: true, value: "/docs/unsupported.rtf" }),
-      createDocx: async () => ({ ok: false, error: { code: "Protocol" } }),
+      createDocument: async () => ({ ok: false, error: { code: "Protocol" } }),
     };
     const { space, sessions } = workspace(filePort, { ok: false, error: { code: "UnsupportedFormat", kind: "extension" } });
     expect(await space.openDialog({ title: "Open", accept: "Open", cancel: "Cancel" }))
@@ -89,7 +89,7 @@ describe("DOCX 작업 공간", () => {
         expect(request).toMatchObject({ mode: "save", format: "docx" });
         return { ok: true, value: "/docs/new.docx" };
       },
-      createDocx: async (path) => {
+      createDocument: async (_format, path) => {
         expect(path).toBe("/docs/new.docx");
         return { ok: true, value: created };
       },
@@ -115,7 +115,7 @@ describe("DOCX 작업 공간", () => {
         expect(request).toMatchObject({ mode: "save", format: "docx" });
         return { ok: true, value: "/docs/already-exists.docx" };
       },
-      createDocx: async () => ({ ok: false, error: { code: "Protocol" } }),
+      createDocument: async () => ({ ok: false, error: { code: "Protocol" } }),
     };
     const { fake, space, sessions } = workspace(filePort);
     await space.open("/docs/source.docx");
@@ -135,7 +135,7 @@ describe("DOCX 작업 공간", () => {
     const selectedDestination: { value: string | null } = { value: null };
     const filePort: FilePort = {
       chooseFile: async () => ({ ok: true, value: selectedDestination.value }),
-      createDocx: async () => ({ ok: false, error: { code: "Protocol" } }),
+      createDocument: async () => ({ ok: false, error: { code: "Protocol" } }),
     };
     const { fake, space, sessions } = workspace(filePort);
     await space.open("/docs/source.docx");
@@ -166,7 +166,7 @@ describe("DOCX 작업 공간", () => {
   it("invalid recovery candidates can only be explicitly discarded, never restored", async () => {
     const filePort: FilePort = {
       chooseFile: vi.fn(async () => ({ ok: true as const, value: "/docs/restore.docx" })),
-      createDocx: async () => ({ ok: false, error: { code: "Protocol" } }),
+      createDocument: async () => ({ ok: false, error: { code: "Protocol" } }),
     };
     const recoveryPort: RecoveryPort = {
       list: async () => ({ ok: true, value: [invalidRecoveryCandidate] }),
@@ -199,7 +199,7 @@ describe("DOCX 작업 공간", () => {
     let destination: string | null = null;
     const filePort: FilePort = {
       chooseFile: async () => ({ ok: true, value: destination }),
-      createDocx: async () => ({ ok: false, error: { code: "Protocol" } }),
+      createDocument: async () => ({ ok: false, error: { code: "Protocol" } }),
     };
     const recoveryPort: RecoveryPort = {
       list: async () => ({ ok: true, value: [candidate] }),

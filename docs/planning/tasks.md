@@ -75,7 +75,7 @@ Independent Test: 기존 저장·충돌·복구의 남은 실패 경계.
 ## Phase 7: User Story 7 - 형식별 새 문서 (Priority: P1)
 Independent Test: 세 형식의 실제 생성·입력·저장·재저장·재열기, 취소·실패·경합.
 - [x] T021 [US7] RHWP 빈 문서 API·템플릿·형식별 출력 및 검증 경계 검증 — `src/components/Editor/rhwp/rhwpModule.ts`, `tests/integration/new-document/`, `docs/architecture/new-document-creation.md`
-- [ ] T022 [US7] 형식 선택·안전 생성·세션 등록·포커스 통합 — `src/App.tsx`, `src/components/Editor/`, `src-tauri/src/services/files.rs`, `src/language/`
+- [x] T022 [US7] 형식 선택·안전 생성·세션 등록·포커스 통합 — `src/App.tsx`, `src/components/Editor/`, `src-tauri/src/services/files.rs`, `src/language/`
 - [ ] T023 [US7] 신규 세 형식의 native 왕복·실패 안전성 수용 — `tests/integration/new-document/`, `docs/architecture/new-document-creation.md`
 - [ ] T024 [US7] 선택적 제목 없음·첫 저장·복구 UX — `src/components/Editor/`, `src-tauri/src/document/`, `src-tauri/src/services/` (DEFERRED, 별도 승인 전 구현 금지)
 
@@ -193,3 +193,8 @@ HWP·HWPX·DOCX 매트릭스 9/9(DPR 1.041·1.0 각각), rhwp·WordCraft 게이�
 ### T021 실행 수용 — 2026-11-04
 
 T021 COMPLETED: 현재 Release/Debug 각각 HWP/HWPX 생성, 독립 구조/참조·음성 대조군, 기본 편집 및 실제 Rust 안전 저장 2회·최종 파일 reopen PASS. 공개 API로 기본 정의를 초기화하고 생성 전용 CFB 재구성으로 주입된 개인 메타데이터를 제거한다. 출력 신원을 Rust에서 제한하며 기존 저장 보존 정책을 바꾸지 않는다. [상세와 재현](../architecture/new-document-creation.md#t021-실행-수용--2026-11-04), [실행 신원](../architecture/new-document-t021-2026-11-04.json). T022/T023 미완료, native/외부 한컴·Word NOT RUN, T024 DEFERRED 유지.
+
+
+### T022 제품 통합 수용 — 2026-11-04
+
+T022 COMPLETED: T021 `6c0356e` 이후 형식 선택·bounded IPC·생성 전용 검증·create-only/동일 게시 파일 등록·engine load/first paint/focus lease 연결. ko/en 선택/취소·중복·늦은 탭/창 완료·게시/내구성/등록/편집기 실패 구분. DOCX WordCraft 경로 유지. 최종 frontend 55파일/1,012개, Rust 생성 집중 6개, typecheck/lint/fmt/clippy 및 debug native build PASS. [상세](../architecture/new-document-creation.md#t022-제품-통합-수용--2026-11-04). T023 native 생성/IME 행렬은 NOT RUN이며 다음 게이트다. T024 및 T007–T010 상태 유지.

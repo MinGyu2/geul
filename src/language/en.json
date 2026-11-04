@@ -190,7 +190,7 @@
   "properties.paragraphFormatUnavailable": "Other paragraph properties are not exposed by the current adapter APIs.",
   "editor.label": "Document editing area",
   "editor.emptyTitle": "No document is open",
-  "editor.emptyBody": "HWP/HWPX (rhwp, T007 PoC) and DOCX (WordCraft, T008 PoC) documents can be opened for editing with the path field above. Saving in any format is not connected yet.",
+  "editor.emptyBody": "Choose DOCX, HWP or HWPX in New document, or open an existing document to start editing.",
   "editor.emptyHint": "Non-editable blank page placeholder",
   "status.label": "Status bar",
   "status.document": "Document",
@@ -302,7 +302,7 @@
   "document.open": "Open",
   "document.openTitle": "Open a document",
   "document.openDialog": "Browse…",
-  "document.newDocx": "New DOCX",
+  "document.newDocx": "New document",
   "document.newDocxTitle": "Create a DOCX document",
   "document.create": "Create",
   "document.saveAs": "Save As",
@@ -387,5 +387,13 @@
   "recovery.retentionNote": "Recovery always creates a new file. Closing a window can leave earlier recovery records; review and explicitly discard them from this list.",
   "document.error.FilePublishedUnconfirmed": "The new file exists, but its durability is unconfirmed. Inspect and open the destination; the recovery record is retained.",
   "document.error.FilePublishedUnregistered": "The new file exists, but could not be opened as a session. Inspect and open the destination; do not create it again.",
-  "properties.paragraphStyle": "Caret paragraph style: {style}"
+  "properties.paragraphStyle": "Caret paragraph style: {style}",
+  "document.newTitle": "Create a document",
+  "document.formatLabel": "Document format",
+  "document.format.docx": "Word document (.docx)",
+  "document.format.hwp": "HWP document (.hwp)",
+  "document.format.hwpx": "HWPX document (.hwpx)",
+  "document.chooseDestination": "Choose destination",
+  "document.createdUnconfirmed": "Created {name}, but durability is unconfirmed. Inspect the file and save again.",
+  "document.error.FileCreatedEditorFailed": "The file was created, but the editor could not load it. Reopen the file."
 }

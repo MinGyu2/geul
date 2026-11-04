@@ -3,7 +3,7 @@
 정리 기준: 2026-11-04
 검토 소스: `MinGyu2/geul` master `4bc1ac986026ccadb2d673a66ad69e6296e3a39e`.
 기술 구성: Tauri 2 + React + TypeScript + Rust. 엔진: WordCraft(DOCX), RHWP(HWP/HWPX).
-문서 성격: 제공된 정리의 코드 대조·정정 및 신규 생성 구현 계약. 기존 절은 **설계/정적 검토 당시 기록**이다. 현재 T021 실행 결과는 아래 「T021 실행 수용」을 따른다. T022 제품 연결·T023 native 수용은 아직 미완료다.
+문서 성격: 제공된 정리의 코드 대조·정정 및 신규 생성 구현 계약. 기존 절은 **설계/정적 검토 당시 기록**이다. 현재 T021 실행 결과는 아래 「T021 실행 수용」을 따른다. T022 제품 연결은 완료했으며 T023 native 수용은 아직 미완료다.
 기준본: [spec.md](../planning/spec.md), [plan.md](../planning/plan.md), [tasks.md](../planning/tasks.md). 이 문서는 상세 보조 계약이다.
 
 근거 표기: **코드 확인**은 해당 pin의 소스, **기록 확인**은 저장된 과거 실행 결과, **설계**는 앞으로 구현·검증할 계약, **미확인**은 이번에 실행/조사하지 않은 범위다. 기존 자료를 최신 runtime 결과로 바꿔 쓰지 않는다.
@@ -246,3 +246,25 @@ Rust의 생성 권한은 프런트엔드 safe/blank/reopen 플래그가 아니�
 두 generation 각각 HWP/HWPX의 첫 입력·문단 편집·첫 안전 저장·재저장·최종 파일 재열기 **PASS**. 원본 보존을 우회한 저장은 없다. 최초 진단의 보호 래퍼 내 시험은 강제된 `/tmp` 때문에 SharedDirectory로 거절됐다. 검사를 완화하지 않고 보호 빌드한 시험 binary를 private TMPDIR에서 실행했다. 중간 probe의 `mergeParagraph(0,0)` 및 record_content 누락도 시험 사용 오류로 바로잡았으며 제품 결함으로 세지 않는다.
 
 이 결과는 Node에서 실제 제품 WASM과 Rust 게시/저장 경계를 결합한 T021 수용이다. native Tauri UI·실제 IME·초점/동시성 및 외부 한컴/Word 상호운용 PASS를 뜻하지 않는다. T007–T010의 기존 미검증/실패와 T024 보류는 그대로다.
+
+
+## T022 제품 통합 수용 — 2026-11-04
+
+**COMPLETED.** 선행 커밋 `6c0356e`의 T021 경계만 재사용한다. 이 절이 현재 제품 상태이며, 위 기존 DOCX 전용 구현 설명은 최초 검토 기준의 이력이다. T023 실제 native 생성/IME 수용은 아직 NOT RUN이다.
+
+- 기존 `file.new`/Ctrl+N → ko/en 형식 선택 dialog(라디오/방향키/Tab 가두기/Escape/취소) → 선택 형식의 native destination → 생성/등록 → engine load 순서다. 세 형식 모두 T021 검증 경로를 사용한다. DOCX는 Rust WordCraft blank 생성·직렬화/검증을 그대로 사용하며 RHWP를 호출하지 않는다. `newDocx`는 이미 DOCX를 선택한 호출자를 위한 같은 pipeline의 호환 wrapper다. 경로 없는 T024는 활성화하지 않았다.
+- `FilePort.createDocument(format,path,blank?)` → 기존 `document_new`에 bounded raw frame `GNC1` + u32 LE metadata length + strict JSON `{path,format,contentLoss}` + RHWP bytes를 보낸다. metadata 8KiB/blank 64KiB, admission/operation 자원을 payload 복사 전에 확보한다. DOCX는 payload와 손실 보고를 받지 않는다. RHWP는 T021 digest·구조/형식/손실 검사와 HWP 메타데이터 정규화를 거친다. 임의 바이트를 파일로 쓰는 명령이 아니다.
+- `destination` → `stage_new`의 쓰기/되읽기/fsync → `publish_new`의 create-only 원자적 게시/디렉터리 fsync → `identify` → `register_created`를 재사용한다. 등록 전에 **게시한 inode·지문·형식·전체 바이트**와 다시 판별한 파일을 비교한다. 같은 경로에 같은 바이트의 다른 inode가 들어와도 등록하지 않는다. 기존 파일/심볼릭 링크와의 충돌은 덮어쓰지 않는다.
+- 내구성 미확인 등록은 dirty로 남기고 전용 안내를 표시한다. 게시 후 등록 실패는 FilePublishedUnregistered, 등록 후 engine load 실패는 FileCreatedEditorFailed로 구분해 파일이 존재함을 알린다. 후속 실패 때문에 게시 파일을 삭제하지 않는다.
+- FilePort는 요청 형식/담당 엔진/확장자/identified/revision·sequence·loadGeneration 0을 검사한다. 생성은 file-operation 및 open ticket으로 직렬화하며 선택/경로 취소 시 등록하지 않는다. 늦은 완료는 사용자의 탭 선택을 바꾸지 않는다. 창 닫기는 진행 중 파일 작업만 기다리고, 선택 중 닫기는 게시 전에 취소하며, 게시 뒤 닫기는 늦은 세션을 닫고 실제 게시 결과를 유지한다.
+- 새 생성에만 focus lease를 부여한다. ready와 first usable paint를 구분하고 첫 paint 후 editable일 때 한 번 focus한다. 대기 중 pointer/key 입력 또는 modal focus가 생기면 의도를 취소한다. inactive 탭은 표면을 갖지 않으며 기존 open ticket 소유권을 유지한다. 일반 문서 열기/탭 전환의 기존 포커스 동작은 유지한다. New는 IME composition 중 시작하지 않는다. 공유 IME 거래 상태 기계·T011 명령을 바꾸지 않았다.
+
+### 실제 검사
+
+- `npm run typecheck`, `npm run lint`, `npm run rust -- fmt --check`, `npm run rust -- clippy --lib --bins -- -D warnings`: PASS.
+- 최종 `npm test`: **55개 파일/1,012개 PASS**. format dialog, FilePort 응답, 생성/취소/중복/탭·닫기/engine failure, 두 표면의 first paint와 focus lease 및 기존 IME·리본·모달 회귀 포함.
+- protected `npm run rust -- test --lib --no-run`으로 만든 binary를 private TMPDIR + T021 현재 WASM fixture로 실행한 `services::files::tests --include-ignored`: **6/6 PASS**. 세 형식 실제 create-only/등록/중복 요청, 파일/심볼릭 링크 보존, 게시 후 inode 교체, 프레임·경로 검사, 등록 capacity 실패 뒤 파일 존속을 확인했다.
+- `VITE_GEUL_TEST_HOOKS=1 npm run tauri -- build --debug --no-bundle`: PASS. WASM 재빌드·gitlink 변경 없음. native 실행 수용은 T023에서 별도 수행한다.
+- 중간 전체 회귀의 7개 실패는 첫 paint 조건이 일반 open까지 적용된 것과 idle close에도 await가 들어간 회귀였다. 일반 open의 기존 동작을 복원하고 진행 중 파일 작업이 있을 때만 닫기를 기다리도록 수정했다. 영향받은 80개 및 새 creation first-paint 4개 PASS 뒤 위 최종 전체 suite를 통과했다. 시험을 약화하거나 과거 실패를 PASS로 바꾸지 않았다.
+
+최초 생성물의 외부 한컴/Word 호환성은 여전히 NOT RUN이다. 엔진 상수 미리보기의 기존 제한([저장 계약](save-preservation.md), 68-byte PNG의 checksum 문제 포함)을 외부 호환성 PASS로 확대하지 않는다. 독립 구조 판정은 문서 구조·참조·본문과 명시된 고정 미리보기 신원 범위다. T007–T010의 전체 수용/실패 상태는 변경하지 않았다.

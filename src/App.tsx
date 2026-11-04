@@ -11,6 +11,8 @@ import { Ribbon } from "./components/Ribbon/Ribbon";
 import { Splitter } from "./components/Splitter/Splitter";
 import { StatusBar } from "./components/StatusBar/StatusBar";
 import { TitleBar } from "./components/TitleBar/TitleBar";
+import { NewDocumentDialog } from "./components/Editor/NewDocumentDialog";
+import type { DocumentFormat } from "./adapters/contract";
 import {
   computePanelLayout,
   layoutReducer,
@@ -124,7 +126,11 @@ function Workspace({ layout, dispatch, message, notify, documents }: WorkspacePr
   const { editor: activeEditor, panel } = useActiveDocument(documents);
   // 확인 창이 열린 동안은 어떤 명령도 실행하지 않는다(T010 안정화 P1-B, Editor가 창의 표시를 알림).
   const [modal, setModal] = useState(false);
+  const [formatChoice, setFormatChoice] = useState<((format: DocumentFormat | null) => void) | null>(null);
+  const formatResolver = useRef<((format: DocumentFormat | null) => void) | null>(null);
+  useEffect(() => () => formatResolver.current?.(null), []);
   const fileBusy = useSyncExternalStore(documents?.subscribe ?? NO_SUBSCRIBE, documents?.fileBusySnapshot ?? NO_FILE_BUSY);
+  useEffect(() => { if (!fileBusy) formatChoice?.(null); }, [fileBusy, formatChoice]);
   const fileActions = useMemo<FileCommandActions | undefined>(() => {
     if (!documents?.supportsNativeFiles) return undefined;
     const handleOpen = async () => {
@@ -134,9 +140,14 @@ function Workspace({ layout, dispatch, message, notify, documents }: WorkspacePr
       else notify(documentErrorMessage(result.error));
     };
     const handleNew = async () => {
-      const result = await documents.newDocx({ title: t("document.newDocxTitle"), accept: t("document.create"), cancel: t("document.cancel") });
+      const result = await documents.newDocument({ title: t("document.newTitle"), accept: t("document.create"), cancel: t("document.cancel") },
+        () => new Promise(resolve => {
+          const finish = (format: DocumentFormat | null) => { formatResolver.current = null; setFormatChoice(null); resolve(format); };
+          formatResolver.current = finish;
+          setFormatChoice(() => finish);
+        }));
       if (result === null) return;
-      if (result.ok) notify({ key: "document.created", vars: { name: result.value.displayName } });
+      if (result.ok) notify({ key: result.value.dirty ? "document.createdUnconfirmed" : "document.created", vars: { name: result.value.displayName } });
       else if (result.error.code === "FileConflict") notify({ key: "document.newConflict" });
       else notify(documentErrorMessage(result.error));
     };
@@ -159,8 +170,8 @@ function Workspace({ layout, dispatch, message, notify, documents }: WorkspacePr
     };
   }, [documents, fileBusy, notify, t]);
   const context = useMemo<CommandContext>(
-    () => ({ layout, dispatch, notify, document: activeEditor, modal, files: fileActions }),
-    [layout, dispatch, notify, activeEditor, modal, fileActions],
+    () => ({ layout, dispatch, notify, document: activeEditor, modal: modal || formatChoice !== null, files: fileActions }),
+    [layout, dispatch, notify, activeEditor, modal, formatChoice, fileActions],
   );
 
   // 단축키(T010): 레지스트리가 정한 명령만. 최신 문맥을 쓰도록 ref로 넘긴다(리스너는 한 번만 붙임).
@@ -230,6 +241,7 @@ function Workspace({ layout, dispatch, message, notify, documents }: WorkspacePr
         )}
       </div>
       <StatusBar context={context} message={message} state={panel} />
+      {formatChoice && <NewDocumentDialog onChoose={formatChoice} />}
     </div>
   );
 }

@@ -1,3 +1,4 @@
+import { claimSurfaceFocus, hasSurfaceFocusLease } from "../surfaceFocus";
 // WordCraft(DOCX) 편집 표면(T008, W-A). 쪽은 백엔드가 그린 PNG를 canvas에 옮겨 그리고, 커서·선택·IME 조합 글자는 그 위의
 // DOM 겹침으로 그린다.
 //
@@ -148,9 +149,15 @@ export function DocxSurface({ session, zoom, imeContext }: DocxSurfaceProps) {
   }, [caret?.page, caret?.x, caret?.y]);
 
   const focusInput = useCallback(() => inputRef.current?.focus({ preventScroll: true }), []);
+  const initialFocusHandled = useRef(false);
   useEffect(() => {
-    if (session.editable && !document.activeElement?.closest("[aria-modal='true']")) focusInput();
-  }, [session, session.editable, focusInput]);
+    if (!session.editable || initialFocusHandled.current) return;
+    const creating = hasSurfaceFocusLease(session);
+    if (creating && session.firstPaintMs === null) return;
+    if (creating) initialFocusHandled.current = true;
+    const owned = !creating || claimSurfaceFocus(session);
+    if (owned && !document.activeElement?.closest("[aria-modal='true']")) focusInput();
+  }, [session, session.editable, session.firstPaintMs, focusInput]);
 
   // ---- 키보드·IME ----
   useEffect(() => {
