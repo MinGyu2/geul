@@ -190,11 +190,10 @@ export class DocumentWorkspace {
       }
       if (this.windowClosing) { this.sessions.cancelOpen(ticket); return null; }
       const created = await this.filePort.createDocument(format, chosen.value, blank);
-      if (created.ok && this.windowClosing) {
-        await this.backend.close(created.value.sessionId);
-        this.sessions.cancelOpen(ticket);
-        return { ok: false, error: { code: "FilePublishedUnregistered" } };
-      }
+      // Publication cannot be cancelled once started. A successful response means the file is
+      // published and registered, so it becomes an ordinary open session even while the window is
+      // closing: the close decision then sees it like every other tab (no fabricated registration
+      // failure, no unconditional backend close that would hide an unconfirmed publication).
       const accepted = this.sessions.acceptOpen(ticket, created);
       if (accepted.ok) {
         // dirty at revision/generation zero means publication durability is
@@ -202,6 +201,8 @@ export class DocumentWorkspace {
         // session and report the file outcome without misclassifying the normal
         // reload guard as an engine failure or clearing it through an auto-load.
         if (accepted.value.dirty) return accepted;
+        // No engine load or focus claim for a window that is being destroyed.
+        if (this.windowClosing) return accepted;
         const editor = this.anyEditorFor(accepted.value.sessionId);
         if (!editor) return { ok: false, error: { code: "FileCreatedEditorFailed", sessionId: accepted.value.sessionId } };
         setSurfaceFocusLease(editor, focus);

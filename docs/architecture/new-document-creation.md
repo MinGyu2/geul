@@ -307,3 +307,13 @@ Rust의 controlled failure는 staging 생성/생성 직후/StorageFull 쓰기/re
 회귀: 최종 `npm test` **55파일/1,016 PASS**, ESLint PASS, test-hooks native debug build의 `tsc --noEmit`과 빌드 PASS. Rust 기본 suite **255 PASS/22 ignored**, 현재 WASM 생성 probe를 명시적으로 포함한 files 집중 **9 PASS**, fmt/clippy(lib·bins, warnings denied) PASS. 기본 ignored 22개 전체를 실행했다고 주장하지 않는다. 기존 저장/복구·충돌/내구·세션·IME·리본/모달/T011·형식별 표면 회귀를 포함한다.
 
 native Release 앱·Wayland/fcitx5/GPU desktop·Windows/macOS·CPU 포화·실제 정전·외부 한컴/Word 상호운용은 **NOT RUN**이다. 고정 RHWP optional blank preview PNG checksum의 기존 한계는 유지한다. 이번 결과를 모든 문서·외부 프로그램의 호환성으로 확대하지 않는다. T007–T010의 전체 수용 상태와 T024 보류는 바꾸지 않았다. submodule pin·패치·생성 WASM 변경 및 push는 없다.
+
+## T023 이후 안정화 — 2026-11-04
+
+위 T022/T023 절은 당시 실행 기록이며 바꾸지 않는다. 아래가 그 뒤의 현재 동작이다.
+
+### 창 닫기 중 완료된 생성의 결과 의미
+
+T022 요약의 "게시 뒤 닫기는 늦은 세션을 닫고"는 더 이상 현재 동작이 아니다. 이전 구현은 창이 닫히는 중 `createDocument`가 성공하면 백엔드 세션을 닫고(그 결과는 무시) `FilePublishedUnregistered`를 돌려줬다. 성공 응답은 게시와 등록이 모두 끝났다는 뜻이므로 등록 실패로 보고하는 것은 사실과 다르다.
+
+이제 성공 응답은 창 닫기 중에도 `acceptOpen`으로 일반 탭과 같은 소유권에 들어간다. 닫는 중에는 engine load와 focus lease만 하지 않는다. 별도의 세션 정리 단계가 없으므로 정리 실패를 성공으로 숨길 경로도 없다. 백엔드 세션은 다른 열린 탭과 같이 창 파괴(프로세스 종료)와 함께 끝난다. Rust가 실제로 등록에 실패한 경우만 `FilePublishedUnregistered`를 유지하며, 게시 파일은 어느 경우에도 삭제하지 않는다.

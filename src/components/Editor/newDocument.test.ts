@@ -112,17 +112,39 @@ describe("format-aware creation ownership", () => {
     expect(files.createDocument).not.toHaveBeenCalled();
   });
 
-  it("closing during publication retains the file outcome and closes the late backend session", async () => {
-    const { workspace, files, sessions, backend, created } = setup();
+  it.each(["hwp", "docx"] as const)("a %s publication registered while the window closes stays an owned session, not a registration failure", async format => {
+    const { workspace, files, sessions, backend, created } = setup(format);
+    const pending = deferred<Result<SessionInfo>>();
+    vi.mocked(files.createDocument).mockReturnValue(pending.promise);
+    const creating = workspace.newDocument(text, async () => format);
+    await flush();
+    workspace.setWindowClosing(true);
+    const waiting = workspace.waitForFiles();
+    pending.resolve({ ok: true, value: created });
+    // The truthful file outcome: published and registered, owned by the tab list like any open document.
+    expect(await creating).toEqual({ ok: true, value: created });
+    await waiting;
+    expect(files.createDocument).toHaveBeenCalledTimes(1);
+    expect(backend.close).not.toHaveBeenCalled();
+    expect(sessions.get(created.sessionId)).toMatchObject({ format, dirty: false });
+    expect(workspace.hasUnpreservedChanges).toBe(false);
+    // No engine load or focus lease for a window that is being destroyed.
+    expect(format === "docx" ? DocxEditorSession.prototype.load : RhwpEditorSession.prototype.load).not.toHaveBeenCalled();
+    expect(workspace.fileBusy).toBe(false);
+  });
+
+  it("a genuine registration failure during window close keeps its published-unregistered meaning and no session", async () => {
+    const { workspace, files, sessions, backend } = setup();
     const pending = deferred<Result<SessionInfo>>();
     vi.mocked(files.createDocument).mockReturnValue(pending.promise);
     const creating = workspace.newDocument(text, async () => "hwp");
     await flush();
     workspace.setWindowClosing(true);
-    pending.resolve({ ok: true, value: created });
+    pending.resolve({ ok: false, error: { code: "FilePublishedUnregistered" } });
     expect(await creating).toEqual({ ok: false, error: { code: "FilePublishedUnregistered" } });
-    expect(backend.close).toHaveBeenCalledWith(created.sessionId);
+    expect(backend.close).not.toHaveBeenCalled();
     expect(sessions.snapshot().sessions).toEqual([]);
+    expect(workspace.fileBusy).toBe(false);
   });
 
   it("editor load failure keeps the registered file/session and reports the distinct failure", async () => {
