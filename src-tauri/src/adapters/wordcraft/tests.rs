@@ -2023,3 +2023,186 @@ fn selection_panel_preview_is_actual_bounded_and_does_not_change_revision_or_doc
     assert!(view.selection_text.unwrap().starts_with("한😀글"));
     assert_eq!(model.export().unwrap(), before);
 }
+
+// ---- T013 메모(review.comment → WordCraft review.newComment) ----
+
+fn comment(text: &str) -> DocxOp {
+    DocxOp::Comment { text: text.into() }
+}
+
+fn select_first_two() -> Vec<DocxOp> {
+    vec![
+        mv(MoveTarget::DocStart, false),
+        mv(MoveTarget::Right, true),
+        mv(MoveTarget::Right, true),
+    ]
+}
+
+#[test]
+fn 메모_연산의_글자는_계약_안이어야_한다() {
+    assert!(validate(&[comment("검토 필요")]));
+    assert!(validate(&[comment(
+        &"가".repeat(super::engine::MAX_COMMENT_CHARS)
+    )]));
+    for bad in [
+        String::new(),
+        "   ".to_owned(),
+        "줄\n바꿈".to_owned(),
+        "탭\t".to_owned(),
+        "\u{FFFC}".to_owned(),
+        "가".repeat(super::engine::MAX_COMMENT_CHARS + 1),
+    ] {
+        assert!(!validate(&[comment(&bad)]), "{bad:?}");
+    }
+    // IPC 모양: 모르는 필드·다른 이름은 받지 않는다(임의 WordCraft 명령 ID를 열지 않음).
+    let parsed: Result<DocxOp, _> = serde_json::from_value(json!({"op": "comment", "text": "a"}));
+    assert_eq!(parsed.unwrap(), comment("a"));
+    for raw in [
+        json!({"op": "comment", "text": "a", "author": "x"}),
+        json!({"op": "comment"}),
+        json!({"op": "newComment", "text": "a"}),
+        json!({"op": "run", "id": "review.newComment", "params": {}}),
+    ] {
+        assert!(
+            serde_json::from_value::<DocxOp>(raw.clone()).is_err(),
+            "{raw}"
+        );
+    }
+}
+
+#[test]
+fn 메모는_본문_선택에만_달리고_한_단계로_되돌린다() {
+    let mut m = model();
+    let before = m.body_text();
+    // 커서만 있으면 거부(엔진은 단어를 고르지만 앱은 쓰지 않음): 바뀐 것 없음.
+    let outcome = m.apply(&[mv(MoveTarget::DocStart, false), comment("x")]);
+    assert_eq!(outcome.rejected, vec![1]);
+    assert_eq!(outcome.changed, 0);
+    assert!(m.comments().is_empty());
+
+    let mut ops = select_first_two();
+    ops.push(comment("검토 필요"));
+    let outcome = m.apply(&ops);
+    assert_eq!((outcome.rejected.clone(), outcome.changed), (vec![], 1));
+    assert_eq!(
+        m.comments(),
+        vec![("geul".to_owned(), "검토 필요".to_owned(), false)]
+    );
+    // 본문 글자(개체 표지 빼고)는 그대로다.
+    assert_eq!(
+        m.body_text().replace('\u{FFFC}', ""),
+        before.replace('\u{FFFC}', "")
+    );
+    assert!(m.view().history.undo);
+    let undone = m.apply(&[DocxOp::Undo {}]);
+    assert_eq!(undone.changed, 1);
+    assert!(m.comments().is_empty());
+    assert_eq!(m.body_text(), before);
+    let redone = m.apply(&[DocxOp::Redo {}]);
+    assert_eq!(redone.changed, 1);
+    assert_eq!(m.comments().len(), 1);
+}
+
+#[test]
+fn 메모_뒤에는_어댑터_기억을_버린다() {
+    let mut m = model();
+    m.apply(&[
+        mv(MoveTarget::DocEnd, false),
+        DocxOp::Mark { id: 7 },
+        insert("가"),
+    ]);
+    let mut ops = select_first_two();
+    ops.push(comment("c"));
+    m.apply(&ops);
+    let (marks, recent, ..) = m.adapter_state();
+    assert!(marks.is_empty());
+    assert_eq!(recent, None);
+    // 지운 자리 표시에 넣기는 거부(엉뚱한 자리에 넣지 않음).
+    assert_eq!(
+        m.apply(&[DocxOp::InsertAt {
+            mark: 7,
+            text: "x".into()
+        }])
+        .rejected,
+        vec![0]
+    );
+}
+
+#[test]
+fn 읽기_전용_보호에서는_메모를_엔진이_거부하고_메모만_보호에서는_받는다() {
+    let mut read_only = protected("readOnly", false, false);
+    let mut ops = select_first_two();
+    ops.push(comment("x"));
+    let outcome = read_only.apply(&ops);
+    assert_eq!(outcome.rejected, vec![3]);
+    assert!(read_only.comments().is_empty());
+    let mut comments_only = protected("comments", false, false);
+    let outcome = comments_only.apply(&ops);
+    assert_eq!(outcome.rejected, Vec::<usize>::new());
+    assert_eq!(comments_only.comments().len(), 1);
+}
+
+#[test]
+fn 메모를_더한_저장은_안전하고_다시_열면_같다_두_번째_회차의_새_메모도_덧붙임이면_저장된다() {
+    use crate::document::Format;
+    use crate::services::save::preserve::{FindingCode, Outcome};
+    use crate::services::save::service::{check_saved, preflight};
+    let original = fixture();
+    let unedited = DocxModel::open(&original).unwrap().export().unwrap();
+    assert!(preflight(Format::Docx, &original, &unedited, None).is_safe());
+    let mut m = DocxModel::open(&original).unwrap();
+    let mut ops = select_first_two();
+    ops.push(comment("첫 메모"));
+    m.apply(&ops);
+    let first = m.export().unwrap();
+    assert!(m.same_as(&first), "다시 연 모델이 같다");
+    let checked = check_saved(Format::Docx, &original, &first, None, true);
+    assert_eq!(checked.outcome, Outcome::Safe, "{:?}", checked.findings);
+    let reopened = DocxModel::open(&first).unwrap();
+    assert_eq!(
+        reopened.comments(),
+        vec![("geul".to_owned(), "첫 메모".to_owned(), false)]
+    );
+
+    // 두 번째 회차: 저장한 파일을 다시 열면 사전 검사는 safe, 메모 없는 편집(글자)은 저장된다.
+    let again = DocxModel::open(&first).unwrap().export().unwrap();
+    assert!(preflight(Format::Docx, &first, &again, None).is_safe());
+    let mut typed = DocxModel::open(&first).unwrap();
+    typed.apply(&[mv(MoveTarget::DocEnd, false), insert("끝")]);
+    let typed_out = typed.export().unwrap();
+    assert!(typed.same_as(&typed_out));
+    assert!(check_saved(Format::Docx, &first, &typed_out, None, true).is_safe());
+    assert_eq!(DocxModel::open(&typed_out).unwrap().comments().len(), 1);
+
+    // 이미 메모가 있는 문서에 새 메모: 원본 메모는 그대로이고 새 메모가 끝에 덧붙으면 저장된다(다시 열어 둘 다 있음).
+    let mut more = DocxModel::open(&first).unwrap();
+    let second = vec![
+        mv(MoveTarget::DocEnd, false),
+        mv(MoveTarget::Left, true),
+        mv(MoveTarget::Left, true),
+        comment("둘째 메모"),
+    ];
+    assert_eq!(more.apply(&second).rejected, Vec::<usize>::new());
+    let more_out = more.export().unwrap();
+    assert!(more.same_as(&more_out));
+    let checked = check_saved(Format::Docx, &first, &more_out, None, true);
+    assert_eq!(checked.outcome, Outcome::Safe, "{:?}", checked.findings);
+    let texts: Vec<String> = DocxModel::open(&more_out)
+        .unwrap()
+        .comments()
+        .into_iter()
+        .map(|c| c.1)
+        .collect();
+    assert_eq!(texts, vec!["첫 메모".to_owned(), "둘째 메모".to_owned()]);
+
+    // 원본 메모를 지운 출력은 덧붙임이 아니다: 막는다(원본 메모 부분이 바뀜/사라짐).
+    let mut removed = DocxModel::open(&first).unwrap();
+    assert!(removed.run_engine("review.deleteComment", json!({"all": true})));
+    let removed_out = removed.export().unwrap();
+    let blocked = check_saved(Format::Docx, &first, &removed_out, None, true);
+    assert_ne!(blocked.outcome, Outcome::Safe, "{:?}", blocked.findings);
+    assert!(blocked
+        .findings
+        .iter()
+        .any(|f| matches!(f.code, FindingCode::PartChanged | FindingCode::PartMissing)));
+}

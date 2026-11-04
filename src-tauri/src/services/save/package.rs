@@ -356,7 +356,25 @@ pub fn hwpx_body(name: &str) -> bool {
 pub fn compare_saved_docx(original: &Package, output: &Package) -> Vec<Finding> {
     const BODY: &str = "word/document.xml";
     const APP: &str = "docProps/app.xml";
-    let mut findings = compare(original, output, &|name| name == BODY || name == APP);
+    // T013 메모: 원본에 없던 메모 부분을 엔진이 새로 만들었고 패키지 목록·관계는 그 덧붙임뿐일 때만, 그 부분과 두 목록을 엔진 다시
+    // 읽기(모델 비교)가 확인하는 편집 부분으로 본다(`comment_parts_added`). 아니면 지금처럼 부분마다 비교한다.
+    let comments = comment_parts_added(original, output);
+    let appended = !comments && comment_parts_appended(original, output);
+    let mut findings = compare(original, output, &|name| {
+        name == BODY
+            || name == APP
+            || (comments && (name == CONTENT_TYPES || name == DOCUMENT_RELS))
+            || (appended && COMMENT_PARTS.iter().any(|(part, ..)| *part == name))
+    });
+    if comments {
+        findings.retain(|finding| {
+            !(finding.code == FindingCode::PartAdded
+                && finding
+                    .part
+                    .as_deref()
+                    .is_some_and(|part| COMMENT_PARTS.iter().any(|(name, ..)| *name == part)))
+        });
+    }
     if let (Some(before), Some(after)) = (original.get(APP), output.get(APP)) {
         if before != after {
             let epoch = crate::document::resources::failure_epoch();
@@ -383,7 +401,305 @@ pub fn compare_saved_docx(original: &Package, output: &Package) -> Vec<Finding> 
     findings
 }
 
-/// DOCX 썸네일 부분: 패키지 관계(`_rels/.rels`)의 thumbnail 대상과 관례 이름 `docProps/thumbnail.*`.
+/// 본문 관계 항목.
+const DOCUMENT_RELS: &str = "word/_rels/document.xml.rels";
+const OPC_CONTENT_TYPES: &str = "http://schemas.openxmlformats.org/package/2006/content-types";
+const OPC_RELATIONSHIPS: &str = "http://schemas.openxmlformats.org/package/2006/relationships";
+/// WordCraft가 새 메모에 만드는 부분(실측 2026-11-05, 고정 WordCraft `fc41918…`): (부분, 본문 관계 대상, 관계 형식, 내용 형식).
+const COMMENT_PARTS: [(&str, &str, &str, &str); 2] = [
+    (
+        "word/comments.xml",
+        "comments.xml",
+        "http://schemas.openxmlformats.org/officeDocument/2006/relationships/comments",
+        "application/vnd.openxmlformats-officedocument.wordprocessingml.comments+xml",
+    ),
+    (
+        "word/commentsExtended.xml",
+        "commentsExtended.xml",
+        "http://schemas.microsoft.com/office/2011/relationships/commentsExtended",
+        "application/vnd.openxmlformats-officedocument.wordprocessingml.commentsExtended+xml",
+    ),
+];
+
+/// 속성 목록 하나(이름순 (이름, 값)).
+type Attrs = Vec<(String, String)>;
+/// 평평한 목록 부분: 뿌리 사건과 자식들의 속성 목록.
+type FlatList = (xml::Canonical, Vec<Attrs>);
+
+/// 정규화한 사건 열이 `뿌리(ns, 이름) → 내용 없는 자식(ns, 이름)들 → 끝`이면 뿌리 사건과 자식 속성 목록(`skip` 속성을 뺀 것, 정렬)을
+/// 돌려준다. 글·주석·다른 깊이의 요소가 있으면 None(이 규칙을 쓰지 않음).
+fn flat_children(
+    bytes: &[u8],
+    namespace: &str,
+    root: &str,
+    child: &str,
+    skip: &str,
+) -> Option<FlatList> {
+    let events = xml::canonical(bytes).ok()?;
+    let mut iter = events.into_iter();
+    let first = iter.next()?;
+    if !matches!(&first, xml::Canonical::Start { namespace: Some(ns), name, .. } if *ns == namespace && *name == root)
+    {
+        return None;
+    }
+    let mut children = Vec::new();
+    loop {
+        match iter.next()? {
+            xml::Canonical::End => break,
+            xml::Canonical::Start {
+                namespace: Some(ns),
+                name,
+                attributes,
+            } if ns == namespace && name == child => {
+                if iter.next()? != xml::Canonical::End {
+                    return None;
+                }
+                let mut attrs = Vec::with_capacity(attributes.len());
+                for (ns, key, value) in attributes {
+                    if ns.is_some() {
+                        return None;
+                    }
+                    if key != skip {
+                        attrs.push((key.to_string(), value.to_string()));
+                    }
+                }
+                attrs.sort();
+                children.push(attrs);
+            }
+            _ => return None,
+        }
+    }
+    iter.next().is_none().then_some((first, children))
+}
+
+/// `after`가 `before`(순서 무관 목록)에 `added`를 더한 것과 정확히 같은지(여러 벌도 개수까지).
+fn multiset_plus(
+    before: &[Vec<(String, String)>],
+    after: &[Vec<(String, String)>],
+    added: &[Vec<(String, String)>],
+) -> bool {
+    let mut want: Vec<&Vec<(String, String)>> = before.iter().chain(added).collect();
+    let mut have: Vec<&Vec<(String, String)>> = after.iter().collect();
+    want.sort();
+    have.sort();
+    want == have
+}
+
+/// T013: 편집 저장 출력이 원본에 **메모 부분을 새로 더한 것뿐**인지. 모두 성립해야 한다.
+/// - 원본에는 `COMMENT_PARTS`가 하나도 없고(대소문자 무시), 출력에 새로 생긴 부분은 `COMMENT_PARTS`의 부분뿐(하나 이상),
+/// - `[Content_Types].xml`: 뿌리가 같고, 출력 자식 = 원본 자식(순서 무관) + 새 메모 부분마다 그 내용 형식의 `Override` 하나,
+/// - `word/_rels/document.xml.rels`: 뿌리가 같고, `Id`를 뺀 출력 관계 = 원본 관계(순서 무관) + 새 메모 부분마다 `Type`·`Target`이 그
+///   부분인 내부 관계 하나(`TargetMode` 없음). WordCraft는 관계 `Id`를 다시 매기므로(실측: 메모 관계가 rId1, styles가 rId1→rId3)
+///   `Id` 값은 비교하지 않는다 — 그 Id를 가리키는 곳은 본문(`word/document.xml`)뿐이고 본문은 엔진 다시 읽기가 모델로 확인한다.
+///
+/// 메모 부분 내용(메모 글·작성자·날짜·완료 표시)은 엔진 모델의 일부라 다시 읽기 비교가 확인한다. 원본에 메모가 이미 있으면 이
+/// 규칙을 쓰지 않는다(기존 메모 부분이 바뀌면 지금처럼 partChanged).
+pub fn comment_parts_added(original: &Package, output: &Package) -> bool {
+    let present = |package: &Package, name: &str| has_part(package, name);
+    if COMMENT_PARTS
+        .iter()
+        .any(|(name, ..)| present(original, name))
+    {
+        return false;
+    }
+    let added: Vec<&String> = output
+        .parts
+        .keys()
+        .filter(|name| !original.parts.contains_key(*name))
+        .collect();
+    let comment_added: Vec<&(&str, &str, &str, &str)> = COMMENT_PARTS
+        .iter()
+        .filter(|(name, ..)| output.parts.contains_key(*name))
+        .collect();
+    if comment_added.is_empty()
+        || added.len() != comment_added.len()
+        || !added.iter().all(|name| {
+            comment_added
+                .iter()
+                .any(|(part, ..)| *part == name.as_str())
+        })
+    {
+        return false;
+    }
+    let pair = |name: &str| Some((original.get(name)?, output.get(name)?));
+    let Some((types_before, types_after)) = pair(CONTENT_TYPES) else {
+        return false;
+    };
+    let Some((rels_before, rels_after)) = pair(DOCUMENT_RELS) else {
+        return false;
+    };
+    // 내용 형식 목록은 `Default`와 `Override`가 섞이므로 자식 이름까지 속성처럼 담아 비교한다.
+    let typed = |bytes: &[u8]| -> Option<FlatList> {
+        let events = xml::canonical(bytes).ok()?;
+        let mut iter = events.into_iter();
+        let first = iter.next()?;
+        if !matches!(&first, xml::Canonical::Start { namespace: Some(ns), name, .. } if *ns == OPC_CONTENT_TYPES && *name == "Types")
+        {
+            return None;
+        }
+        let mut children = Vec::new();
+        loop {
+            match iter.next()? {
+                xml::Canonical::End => break,
+                xml::Canonical::Start {
+                    namespace: Some(ns),
+                    name,
+                    attributes,
+                } if ns == OPC_CONTENT_TYPES && (name == "Default" || name == "Override") => {
+                    if iter.next()? != xml::Canonical::End {
+                        return None;
+                    }
+                    let mut attrs = vec![("".to_owned(), name.to_string())];
+                    for (ns, key, value) in attributes {
+                        if ns.is_some() {
+                            return None;
+                        }
+                        attrs.push((key.to_string(), value.to_string()));
+                    }
+                    attrs.sort();
+                    children.push(attrs);
+                }
+                _ => return None,
+            }
+        }
+        iter.next().is_none().then_some((first, children))
+    };
+    let (Some((root_a, kids_a)), Some((root_b, kids_b))) =
+        (typed(types_before), typed(types_after))
+    else {
+        return false;
+    };
+    let overrides: Vec<Vec<(String, String)>> = comment_added
+        .iter()
+        .map(|(part, _, _, content)| {
+            let mut attrs = vec![
+                ("".to_owned(), "Override".to_owned()),
+                ("ContentType".to_owned(), (*content).to_owned()),
+                ("PartName".to_owned(), format!("/{part}")),
+            ];
+            attrs.sort();
+            attrs
+        })
+        .collect();
+    if root_a != root_b || !multiset_plus(&kids_a, &kids_b, &overrides) {
+        return false;
+    }
+    let (Some((root_a, rels_a)), Some((root_b, rels_b))) = (
+        flat_children(
+            rels_before,
+            OPC_RELATIONSHIPS,
+            "Relationships",
+            "Relationship",
+            "Id",
+        ),
+        flat_children(
+            rels_after,
+            OPC_RELATIONSHIPS,
+            "Relationships",
+            "Relationship",
+            "Id",
+        ),
+    ) else {
+        return false;
+    };
+    let relations: Vec<Vec<(String, String)>> = comment_added
+        .iter()
+        .map(|(_, target, kind, _)| {
+            let mut attrs = vec![
+                ("Target".to_owned(), (*target).to_owned()),
+                ("Type".to_owned(), (*kind).to_owned()),
+            ];
+            attrs.sort();
+            attrs
+        })
+        .collect();
+    root_a == root_b && multiset_plus(&rels_a, &rels_b, &relations)
+}
+
+/// 메모 부분마다 덧붙일 수 있는 자식(이름공간, 지역 이름). `COMMENT_PARTS`와 같은 순서.
+const COMMENT_CHILDREN: [(&str, &str); 2] = [
+    (
+        "http://schemas.openxmlformats.org/wordprocessingml/2006/main",
+        "comment",
+    ),
+    (
+        "http://schemas.microsoft.com/office/word/2012/wordml",
+        "commentEx",
+    ),
+];
+
+/// T013: 원본에 이미 있던 메모 부분에 **새 메모만 끝에 덧붙인** 출력인지. 모두 성립해야 한다: 출력에 새로 생긴 부분이 없고(그
+/// 경우는 `comment_parts_added`), 원본에 있는 메모 부분은 출력에도 있고, 바뀐 메모 부분이 하나 이상이며, 바뀐 부분마다 정규화한
+/// 사건 열이 `원본 사건(마지막 뿌리 끝 전까지) + 완결된 자식 요소 하나 이상(그 부분의 메모 요소, COMMENT_CHILDREN) + 뿌리 끝`이다.
+/// 원본 메모의 내용·순서·속성은 그대로여야 한다(편집하지 않은 원본 왕복이 같다는 사전 검사가 먼저다). 덧붙인 메모의 내용은 엔진
+/// 다시 읽기가 모델로 확인한다. 목록·관계 부분은 바뀌면 안 된다(부분마다 비교에 남음).
+pub fn comment_parts_appended(original: &Package, output: &Package) -> bool {
+    if output
+        .parts
+        .keys()
+        .any(|name| !original.parts.contains_key(name))
+    {
+        return false;
+    }
+    let mut changed = 0usize;
+    for ((name, ..), (namespace, local)) in COMMENT_PARTS.iter().zip(COMMENT_CHILDREN) {
+        let (before, after) = match (original.get(name), output.get(name)) {
+            (None, None) => continue,
+            (Some(before), Some(after)) => (before, after),
+            _ => return false,
+        };
+        if before == after {
+            continue;
+        }
+        let (Ok(a), Ok(b)) = (xml::canonical(before), xml::canonical(after)) else {
+            return false;
+        };
+        if a.len() < 2
+            || b.len() <= a.len()
+            || a.last() != Some(&xml::Canonical::End)
+            || b.last() != Some(&xml::Canonical::End)
+        {
+            return false;
+        }
+        let keep = a.len() - 1;
+        if a.get(..keep) != b.get(..keep) {
+            return false;
+        }
+        let Some(extra) = b.get(keep..b.len() - 1) else {
+            return false;
+        };
+        let mut depth = 0usize;
+        for event in extra {
+            match event {
+                xml::Canonical::Start {
+                    namespace: ns,
+                    name,
+                    ..
+                } => {
+                    if depth == 0 && !(ns.as_deref() == Some(namespace) && *name == local) {
+                        return false;
+                    }
+                    depth += 1;
+                }
+                xml::Canonical::End => {
+                    let Some(next) = depth.checked_sub(1) else {
+                        return false;
+                    };
+                    depth = next;
+                }
+                _ if depth == 0 => return false,
+                _ => {}
+            }
+        }
+        if depth != 0 || extra.is_empty() {
+            return false;
+        }
+        changed += 1;
+    }
+    changed > 0
+}
+
+/// DOCX 썸네일 부분:/// DOCX 썸네일 부분: 패키지 관계(`_rels/.rels`)의 thumbnail 대상과 관례 이름 `docProps/thumbnail.*`.
 fn thumbnails(package: &Package) -> Vec<String> {
     const THUMBNAIL: &str = "/metadata/thumbnail";
     let mut names: Vec<String> = package

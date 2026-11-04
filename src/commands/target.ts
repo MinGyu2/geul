@@ -55,7 +55,7 @@ export interface DocumentCommandSnapshot {
    */
   parameters?: Partial<Record<ParameterCommandId, CommandParameterContext>>;
   /** 값 입력 명령을 지금 할 수 없는 이유(세션이 아는 것, 예: 선택 없음·표 밖). */
-  parameterReasons?: Partial<Record<ParameterCommandId, "selectionRequired" | "notInTable" | "engineUnsupported">>;
+  parameterReasons?: Partial<Record<ParameterCommandId, "selectionRequired" | "notInTable" | "engineUnsupported" | "pendingEdits">>;
 }
 
 /**
@@ -68,7 +68,9 @@ export type DocumentCommandArgs =
   /** 자간(%) — rhwp 글자 모양 `spacings`(7개 언어 모두 같은 값). */
   | { command: "hangul.charSpacing"; percent: number }
   /** 표 계산식(읽기 전용 계산, 셀에 쓰지 않음). */
-  | { command: "hangul.tableFormula"; formula: string };
+  | { command: "hangul.tableFormula"; formula: string }
+  /** 새 메모 글(T013, WordCraft `review.newComment`). 한 줄, 비어 있지 않음. */
+  | { command: "review.comment"; text: string };
 
 /** 값이 필요한 문서 명령. */
 export type ParameterCommandId = DocumentCommandArgs["command"];

@@ -116,7 +116,19 @@ pub enum DocxOp {
     Format {
         format: CharFormat,
     },
+    /// 새 메모(T013, 앱 명령 `review.comment` → WordCraft `review.newComment`): 본문 안의 비어 있지 않은 선택에 한 줄 메모를 단다.
+    /// 글자는 `MAX_COMMENT_CHARS` 이하, 제어 문자 없음. 커서만 있거나(엔진은 커서의 단어를 고르지만 앱은 쓰지 않음) 선택이
+    /// 본문 밖(각주·머리말 등)이면 거부한다.
+    Comment {
+        text: String,
+    },
 }
+
+/// 메모 글자 수 상한(문자 단위).
+pub const MAX_COMMENT_CHARS: usize = 1000;
+/// 이 앱이 쓰는 메모의 작성자. geul에는 사용자 이름 설정이 아직 없어 엔진 기본값("WordCraft User" — 다른 제품 이름)
+/// 대신 앱 이름을 쓴다(사람 이름으로 꾸미지 않음, docs/architecture/command-registry.md "T013").
+pub const COMMENT_AUTHOR: &str = "geul";
 
 /// 앱이 여는 글자 서식(WordCraft `format.*` 중 고정된 것만).
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Deserialize)]
@@ -190,6 +202,11 @@ pub fn validate(ops: &[DocxOp]) -> bool {
             // 줄바꿈은 프런트엔드가 `\n` 하나로 맞춘다(`\r`은 거부).
             DocxOp::PasteText { text, .. } => valid_chars(text, &['\n', '\t']),
             DocxOp::ReplaceInserted { expected, text } => valid_text(expected) && valid_text(text),
+            DocxOp::Comment { text } => {
+                valid_text(text)
+                    && text.chars().count() <= MAX_COMMENT_CHARS
+                    && !text.trim().is_empty()
+            }
             DocxOp::Pointer { x, y, .. } => {
                 x.is_finite()
                     && y.is_finite()
@@ -403,8 +420,10 @@ impl DocxModel {
     /// DOCX 바이트를 읽고 첫 배치를 검사한다. 읽지 못하면 `Parse`, 쪽이 없거나 크기가 이상하면 `Render`.
     pub fn open(bytes: &[u8]) -> Result<DocxModel, EngineStage> {
         let doc = io::open_bytes(DOCX_NAME, bytes).map_err(|_| EngineStage::Parse)?;
+        let mut session = Session::new(doc);
+        session.author = COMMENT_AUTHOR.to_owned();
         let mut model = DocxModel {
-            session: Session::new(doc),
+            session,
             marks: Vec::new(),
             last_insert: None,
             rasters: Vec::new(),
@@ -530,7 +549,25 @@ impl DocxModel {
             DocxOp::Undo {} => self.undo_redo_step(false),
             DocxOp::Redo {} => self.undo_redo_step(true),
             DocxOp::Format { format } => self.run(format.command(), json!({})),
+            DocxOp::Comment { text } => self.new_comment(text),
         }
+    }
+
+    /// 새 메모(T013). 본문 안의 비어 있지 않은 선택일 때만 WordCraft `review.newComment`를 한 명령으로 실행한다(실패하면 엔진이
+    /// 되돌림, 문서 보호도 엔진이 판정). 메모 표지(개체 글자)가 들어가 위치가 바뀌므로 어댑터 기억(자리 표시·고칠 수 있는 바로 앞
+    /// 넣기)은 버린다.
+    fn new_comment(&mut self, text: &str) -> Result<bool, Rejected> {
+        let sel = &self.session.sel;
+        if sel.is_collapsed()
+            || sel.anchor.story != StoryRef::Body
+            || sel.focus.story != StoryRef::Body
+        {
+            return Err(Rejected);
+        }
+        let changed = self.run("review.newComment", json!({ "text": text }))?;
+        self.marks.clear();
+        self.last_insert = None;
+        Ok(changed)
     }
 
     /// WordCraft 실행 취소·다시 실행 한 단계(T010). 엔진은 `edit.undo`·`edit.redo`를 문서를 바꾸지 않는 명령(`pure`)으로
@@ -944,6 +981,23 @@ impl DocxModel {
     pub fn raster(&mut self, page: usize, scale: f32) -> (u32, u32, Vec<u8>) {
         let image = self.rasterize(page, scale).unwrap_or_default();
         (image.width, image.height, image.pixels)
+    }
+
+    /// 시험용: 메모(작성자, 메모 글, 완료 표시) 목록.
+    #[cfg(test)]
+    pub fn comments(&self) -> Vec<(String, String, bool)> {
+        self.session
+            .doc
+            .comments
+            .values()
+            .map(|c| {
+                (
+                    c.author.clone(),
+                    self.session.doc.plain_text(StoryRef::Part(c.part)),
+                    c.resolved,
+                )
+            })
+            .collect()
     }
 
     /// 시험용: 본문 전체 글자.

@@ -489,3 +489,44 @@ geul 창 검색 `^geul`에 걸리지 않게 정함). 초점 이동은 `xdotool w
 - 실제 저장: `tests/integration/rhwp/hangul_tools_save.py`(→ Rust `t010_phase0_save_service` ignored 시험, 실제 `service::save`) 9/9 기대 일치 — HWPX 6사례 safe·게시
   (두 번째 편집·저장 회차 포함), 연속 변경 1사례 안전 거부, 실행 취소 1사례, HWP 음성 대조 거부(원본 SHA 그대로).
 - native X11/IBus 앱 수용: **NOT RUN**(이 환경에 X11 표시·IBus·입력 주입 도구 없음). 한컴 오피스 호환: **NOT RUN**.
+
+## T013 DOCX 참조·검토: 새 메모만 연결 (2026-11-05, `7daeaeb` 위, 부분 완료)
+
+### 연결한 것
+
+| 명령 | 엔진 연산 | 제품 노출 | 근거 |
+|---|---|---|---|
+| `review.comment` | 고정 `DocxOp::Comment { text }` → WordCraft `review.newComment` | 제품 DOCX | Rust 엔진·저장 시험, 실제 저장 절차 두 회차, 앱 수준 리본 시험 |
+
+- IPC: `DocxOp`에 변형 하나(`{"op":"comment","text":…}`, `deny_unknown_fields`)만 더했다. 임의 WordCraft 명령 ID·JSON·작성자 필드는 받지 않는다.
+  `validate`가 글자(비어 있지 않음·공백만 아님·1000자 이하·제어 문자/U+FFFC 없음)를 실행 전에 검사하고, 세션·불러오기 번호·base revision 검사는 기존
+  `docx_edit` 경계 그대로다.
+- 실행 조건(엔진·어댑터): 선택이 비어 있지 않고 기준점·커서가 모두 본문 이야기(`StoryRef::Body`)여야 한다(커서만이면 엔진은 커서의 단어를 고르지만 앱은
+  쓰지 않음). 한 WordCraft 명령이라 실패하면 엔진이 되돌리고, 문서 보호는 엔진이 판정한다(읽기 전용 거부, 메모만 허용 보호는 받음 — 시험). 메모 표지(개체
+  글자)가 위치를 바꾸므로 어댑터 기억(IME 늦은 확정 자리 표시·고칠 수 있는 바로 앞 넣기)을 버린다. 실행 취소·다시 실행은 WordCraft 기록 한 단계다.
+- 작성자: geul에 사용자 이름 설정이 없어 엔진 기본값 "WordCraft User"(다른 제품 이름) 대신 `geul`을 쓴다(`COMMENT_AUTHOR`, 입력 창에 밝힘). 날짜는
+  WordCraft가 UTC로 적는다. 사용자 이름 설정은 후속 과제다.
+- 화면: 세션 스냅숏 `parameters["review.comment"]`는 엔진 보기(마지막 응답)의 선택이 비어 있지 않고 두 자리 키가 `body:`일 때만 있다. 보낼 편집이
+  있으면 `pendingEdits`, 선택 없음은 `selectionRequired`, 조합 중은 `composing`, 모달은 `dialogOpen`. 입력 창·낡은 요청 거절은 T012와 같은 경로다.
+
+### 연결하지 않은 것(planned 유지, 근거)
+
+실측(고정 WordCraft `fc41918…`, 생성 픽스처 `basic_ko`, 엔진 명령을 그대로 실행한 뒤 내보내기 → T009 `check_saved`):
+
+| 명령 | 관측 | 판단 |
+|---|---|---|
+| `references.footnote`·`references.endnote` | 엔진 자신의 내보내기 → 다시 읽기가 모델과 다름(`ReopenMismatch`: 메모리 모델에는 각주 구분선이 없고 내보내기가 기본 구분선을 써 다시 읽으면 생김) + 각주 부분 추가·목록·관계·settings 변경 | 엔진 왕복이 모델을 보존하지 않아 저장을 증명할 수 없다. 앱에서 모델을 고치는 것은 엔진 의미를 다시 만드는 일이라 하지 않았다 |
+| `references.toc` | `ReopenMismatch`(필드 `Field{result}`가 다시 읽으면 `FieldStart`/`FieldEnd`로 바뀜) | 같음. 갱신(`references.updateToc`)도 연결하지 않음 |
+| `review.trackChanges` | 저장은 `settings.xml`의 `<w:trackRevisions/>`만 다름. 그러나 추적 중에는 지운 글자가 문단 글자에 남아(삭제 표시) 어댑터의 IME 교정(`ReplaceInserted`)·늦은 확정(`InsertAt`) 위치 계산 전제(T008)가 깨진다 | IME 경계를 지킬 수 없어 연결하지 않음. 수락·거절도 연결하지 않음 |
+
+잔여 위험(기존): 이미 `trackRevisions`가 켜진 DOCX를 열면 WordCraft가 편집을 추적한다(이번 작업 전부터 그렇다). 이 경로의 IME 교정 정확성은 검증하지 않았다.
+
+### 확인 방법과 결과 (2026-11-05)
+
+- Rust(`CARGO_TARGET_DIR=src-tauri/target cargo test --locked --manifest-path src-tauri/Cargo.toml`): 269 통과 / 22 무시(opt-in 증거 시험). 새 시험: 메모 연산 계약·IPC
+  모양 거부, 본문 선택만·실행 취소/다시 실행, 어댑터 기억 버림, 보호(읽기 전용 거부·메모만 허용), 내보내기 → `check_saved` safe·다시 열기 같음·두 번째 회차
+  (글자 편집, 둘째 메모 덧붙임) safe·메모 삭제 출력 거부, 실제 저장 절차(`preflight`→`save`→게시) 두 회차와 다시 연 메모, 저장 규칙 음성 변이(아래 save-preservation).
+- `scripts/cargo-geul.py test`(보호 sandbox)는 이 환경에서 bwrap tmpfs 소유자 문제로 게시 시험 약 25개가 `SaveUnsupported{SharedDirectory}`로 실패한다(변경과 무관한
+  files·recovery·publish 시험 포함, sandbox 밖 같은 시험은 통과). clippy `--all-targets -D warnings`·fmt는 보호 경로로 통과.
+- 프런트엔드: `npx vitest run` 64 파일 1116 통과(새 `src/commands/reviewTools.test.tsx`, `Ribbon.test.tsx` 앱 수준 메모 흐름), tsc·eslint 통과.
+- native X11/IBus 앱 수용·Word 호환: **NOT RUN**.

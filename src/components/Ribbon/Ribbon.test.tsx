@@ -216,6 +216,33 @@ describe("T011 형식별 리본 탭(앱)", () => {
     expect(formulas).toHaveLength(1);
   });
 
+  it("T013 새 메모: DOCX 선택 → 검토 탭 → 입력 창 → comment 연산 하나. 선택 없음·HWP는 막히고 각주·목차·추적은 계획 명령이다", async () => {
+    const { user, fake, workspace } = await renderMixed();
+    const editor = workspace.docxEditorFor(3)!;
+    await user.click(ribbonTabs().getByRole("tab", { name: "검토" }));
+    const toolbar = () => screen.getByRole("toolbar", { name: "검토" });
+    const commentButton = () => within(toolbar()).getByRole("button", { name: /새 메모/ });
+    expect(commentButton()).toHaveAttribute("aria-disabled", "true");
+    expect(commentButton().title).toContain("한 문단 안의 글자 선택 필요");
+    expect(within(toolbar()).getByRole("button", { name: /변경 내용 추적/ }).title).toContain("아직 연결되지 않은 명령");
+
+    await act(async () => { editor.move("right", true); editor.move("right", true); await flush(); });
+    expect(commentButton()).not.toHaveAttribute("aria-disabled");
+    await user.click(commentButton());
+    expect(screen.getByTestId("command-input-dialog")).toHaveAttribute("data-command", "review.comment");
+    await user.type(screen.getByTestId("command-input-value"), "검토 필요");
+    await user.click(screen.getByTestId("command-input-confirm"));
+    await act(async () => { await flush(); });
+    expect(screen.queryByTestId("command-input-dialog")).not.toBeInTheDocument();
+    expect(docxEdits(fake).at(-1)).toEqual([{ op: "comment", text: "검토 필요" }]);
+    expect(fake.comments.map((comment) => comment.text)).toEqual(["검토 필요"]);
+
+    await user.click(ribbonTabs().getByRole("tab", { name: "참조" }));
+    for (const name of [/목차/, /각주/, /미주/]) {
+      expect(within(screen.getByRole("toolbar", { name: "참조" })).getByRole("button", { name }).title).toContain("아직 연결되지 않은 명령");
+    }
+  });
+
   it("A06/A07 DOCX의 참조 탭을 고른 채 HWP로 바꾸거나 DOCX를 닫으면 홈으로 바뀌고 ARIA 관계가 맞는다(돌아와도 되살리지 않음)", async () => {
     const { user, sessions, workspace } = await renderMixed();
     await user.click(ribbonTabs().getByRole("tab", { name: "참조" }));

@@ -4,7 +4,8 @@
 import { useLayoutEffect, useRef, useState } from "react";
 import type { CommandInputRequest } from "../../commands/commands";
 import {
-  CHAR_SPACING_RANGE, CHAR_WIDTH_RANGE, MAX_FORMULA_LENGTH, formulaProblem, parsePercent, validateCommandArgs,
+  CHAR_SPACING_RANGE, CHAR_WIDTH_RANGE, MAX_COMMENT_CHARS, MAX_FORMULA_LENGTH, commentProblem, formulaProblem, parsePercent,
+  validateCommandArgs,
 } from "../../commands/parameters";
 import type { DocumentCommandArgs } from "../../commands/target";
 import type { MessageKey } from "../../language";
@@ -26,6 +27,7 @@ function initialText(request: CommandInputRequest): string {
   const shape = request.context.charShape;
   if (request.command === "hangul.charWidth") return shape ? String(shape.width) : "100";
   if (request.command === "hangul.charSpacing") return shape ? String(shape.spacing) : "0";
+  // 메모·계산식은 빈 칸에서 시작한다(자리 표시 글을 넣지 않음).
   return "";
 }
 
@@ -57,11 +59,17 @@ export function CommandInputDialog({ request, onCancel, onConfirm, suspended = f
   if (suspended) return null;
 
   const formula = request.command === "hangul.tableFormula";
+  const comment = request.command === "review.comment";
+  const textual = formula || comment;
   const range = request.command === "hangul.charWidth" ? CHAR_WIDTH_RANGE : CHAR_SPACING_RANGE;
   const cell = request.context.tableCell;
   const submit = () => {
     let args: DocumentCommandArgs;
-    if (formula) {
+    if (comment) {
+      const problem = commentProblem(text);
+      if (problem) return setError(`commandInput.comment.${problem}` as MessageKey);
+      args = { command: "review.comment", text: text.trim() };
+    } else if (formula) {
       const problem = cell ? formulaProblem(text, cell) : "reference";
       if (problem) return setError(`commandInput.formula.${problem}` as MessageKey);
       args = { command: "hangul.tableFormula", formula: text.trim() };
@@ -98,32 +106,32 @@ export function CommandInputDialog({ request, onCancel, onConfirm, suspended = f
         }}>
         <h2 id={titleId} className="discard-dialog__title">{t(request.labelKey)}</h2>
         <label style={{ display: "block" }}>
-          {t(formula ? "commandInput.formula.label" : "commandInput.percent.label")}{" "}
+          {t(comment ? "commandInput.comment.label" : formula ? "commandInput.formula.label" : "commandInput.percent.label")}{" "}
           <input
             type="text"
-            inputMode={formula ? "text" : "numeric"}
+            inputMode={textual ? "text" : "numeric"}
             data-testid="command-input-value"
             value={text}
-            maxLength={formula ? MAX_FORMULA_LENGTH : 5}
+            maxLength={comment ? MAX_COMMENT_CHARS * 2 : formula ? MAX_FORMULA_LENGTH : 5}
             spellCheck={false}
             autoComplete="off"
             aria-invalid={error !== null || undefined}
             aria-describedby={error ? `${hintId} ${errorId}` : hintId}
             onChange={event => { setText(event.target.value); setError(null); }}
           />
-          {!formula && <span aria-hidden="true"> %</span>}
+          {!textual && <span aria-hidden="true"> %</span>}
         </label>
         <p id={hintId} className="discard-dialog__hint">
-          {formula && cell
+          {comment ? t("commandInput.comment.hint") : formula && cell
             ? t("commandInput.formula.hint", { cell: `${columnLetters(cell.col)}${cell.row + 1}`, rows: cell.rows, cols: cell.cols })
             : t(request.command === "hangul.charWidth" ? "commandInput.charWidth.hint" : "commandInput.charSpacing.hint",
               { min: range.min, max: range.max })}
         </p>
-        {error && <p id={errorId} role="alert" data-testid="command-input-error">{t(error, { min: range.min, max: range.max, length: MAX_FORMULA_LENGTH })}</p>}
+        {error && <p id={errorId} role="alert" data-testid="command-input-error">{t(error, { min: range.min, max: range.max, length: comment ? MAX_COMMENT_CHARS : MAX_FORMULA_LENGTH })}</p>}
         <div className="discard-dialog__actions">
           <button type="button" className="document-bar__button" onClick={onCancel}>{t("document.cancel")}</button>
           <button type="button" className="document-bar__button" data-testid="command-input-confirm" onClick={submit}>
-            {t(formula ? "commandInput.formula.confirm" : "commandInput.apply")}
+            {t(comment ? "commandInput.comment.confirm" : formula ? "commandInput.formula.confirm" : "commandInput.apply")}
           </button>
         </div>
       </div>

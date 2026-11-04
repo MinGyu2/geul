@@ -72,7 +72,10 @@ import { trace } from "../imeTrace";
 import { blockedBy, type SaveCheckRecord, type SaveState } from "../saveState";
 import { documentCommandState, FORMAT_FLAG } from "../../../commands/capability";
 import type { DocumentCommandId } from "../../../commands/registry";
-import type { CommandDispatch, DocumentCommandSnapshot, DocumentCommandTarget, QueuedStep } from "../../../commands/target";
+import type {
+  CommandDispatch, DocumentCommandArgs, DocumentCommandSnapshot, DocumentCommandTarget, QueuedStep,
+} from "../../../commands/target";
+import { validateCommandArgs } from "../../../commands/parameters";
 
 export type DocxStatus =
   | { kind: "idle" }
@@ -90,7 +93,7 @@ export type DocxInputNotice = "pasteUnsupported" | "pasteTooLarge" | "pasteIncom
  */
 const MUTATING_OPS: ReadonlySet<DocxOp["op"]> = new Set<DocxOp["op"]>([
   "insertText", "pasteText", "deleteSelection", "backspace", "deleteForward", "newParagraph", "tab", "insertAt", "replaceInserted",
-  "format",
+  "format", "comment",
 ]);
 /**
  * 문서 내용을 바꾸지 않는 연산: 백엔드에서 이동(`caret.*`)·클릭(`caret.set`)·전체 선택(`select.all`)은 선택만, 표지는 어댑터 기억만
@@ -1001,7 +1004,22 @@ export class DocxEditorSession implements ImeSession, DocumentCommandTarget {
       composing: this.imeUnsettled, pending: this.busy,
       queuedHistory: this.queuedHistory(), saving: this.saving,
       history: this.view?.history ?? null, format: this.view?.format ?? null, formatAccess: this.view?.formatAccess ?? null,
+      ...this.parameterState(),
     };
+  }
+
+  /**
+   * 값 입력 명령(T013 새 메모)의 문맥. 엔진 보기(마지막 응답)의 선택이 비어 있지 않고 기준점·커서가 모두 본문(`body:` 자리 키)일 때만
+   * 낸다. 보낼 편집이 있으면 그 보기가 지금 선택이 아닐 수 있어 기다린다(pendingEdits). 문서 보호는 엔진이 실행할 때 판정한다(메모만
+   * 허용하는 보호에서는 받고, 읽기 전용에서는 거부 — 거부는 알림).
+   */
+  private parameterState(): Pick<DocumentCommandSnapshot, "parameters" | "parameterReasons"> {
+    const view = this.view;
+    if (!this.editable || !view || this.imeUnsettled) return {};
+    if (this.busy) return { parameterReasons: { "review.comment": "pendingEdits" } };
+    const body = (key: string) => key.startsWith("body:");
+    if (view.collapsed || !body(view.caretKey) || !body(view.anchorKey)) return { parameterReasons: { "review.comment": "selectionRequired" } };
+    return { parameters: { "review.comment": {} } };
   }
 
   /**
@@ -1041,8 +1059,14 @@ export class DocxEditorSession implements ImeSession, DocumentCommandTarget {
   }
 
   /** 명령을 이 세션의 편집 경로에 넣는다. 지금 상태로 다시 확인해 할 수 없으면 아무것도 바꾸지 않는다. */
-  execute(command: DocumentCommandId): CommandDispatch {
+  execute(command: DocumentCommandId, args?: DocumentCommandArgs): CommandDispatch {
     if (!documentCommandState(command, this.snapshot()).available) return { accepted: false };
+    if (command === "review.comment") {
+      // 값은 실행 직전에 다시 검증한다(창을 거치지 않은 호출 포함). 연산 하나로 같은 세션 대기열에 넣는다.
+      if (args?.command !== command || !validateCommandArgs(command, args, this.snapshot().parameters?.[command])) return { accepted: false };
+      return { accepted: this.push({ op: "comment", text: args.text }) };
+    }
+    if (args !== undefined) return { accepted: false };
     if (command === "file.save") {
       void this.save();
       return { accepted: true };

@@ -9725,3 +9725,410 @@ fn hwpx_header의_장평_자간_덧붙임_밖_변경은_계속_partchanged다() 
     let after = pkg(&hwpx_package(&fmt_body(&[1]), &header, true, true));
     assert_eq!(package::compare_saved_hwpx(&before, &after), vec![]);
 }
+
+// ---- T013 메모 부분: 새로 더함(comment_parts_added) · 끝에 덧붙임(comment_parts_appended) ----
+
+const CT_COMMENTS: &str =
+    "application/vnd.openxmlformats-officedocument.wordprocessingml.comments+xml";
+const CT_COMMENTS_EX: &str =
+    "application/vnd.openxmlformats-officedocument.wordprocessingml.commentsExtended+xml";
+const REL_COMMENTS: &str =
+    "http://schemas.openxmlformats.org/officeDocument/2006/relationships/comments";
+const REL_COMMENTS_EX: &str =
+    "http://schemas.microsoft.com/office/2011/relationships/commentsExtended";
+const REL_STYLES: &str =
+    "http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles";
+
+fn memo_types(overrides: &[(&str, &str)]) -> String {
+    let extra: String = overrides
+        .iter()
+        .map(|(part, kind)| format!(r#"<Override PartName="/{part}" ContentType="{kind}"/>"#))
+        .collect();
+    format!(
+        r#"<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/>{extra}<Override PartName="/word/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.styles+xml"/></Types>"#
+    )
+}
+
+fn memo_rels(rels: &[(&str, &str, &str)]) -> String {
+    let items: String = rels
+        .iter()
+        .map(|(id, kind, target)| {
+            format!(r#"<Relationship Id="{id}" Type="{kind}" Target="{target}"/>"#)
+        })
+        .collect();
+    format!(
+        r#"<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">{items}</Relationships>"#
+    )
+}
+
+fn memo_comments(texts: &[&str]) -> String {
+    let items: String = texts
+        .iter()
+        .enumerate()
+        .map(|(i, t)| format!(r#"<w:comment w:id="{i}" w:author="geul"><w:p><w:r><w:t>{t}</w:t></w:r></w:p></w:comment>"#))
+        .collect();
+    format!(r#"<w:comments xmlns:w="{W}">{items}</w:comments>"#)
+}
+
+fn memo_extended(count: usize) -> String {
+    let items: String = (0..count)
+        .map(|i| format!(r#"<w15:commentEx w15:paraId="1000000{i}" w15:done="0"/>"#))
+        .collect();
+    format!(
+        r#"<w15:commentsEx xmlns:w15="http://schemas.microsoft.com/office/word/2012/wordml">{items}</w15:commentsEx>"#
+    )
+}
+
+/// 메모 없는 원본(본문, styles, 본문 관계 rId1 = styles).
+fn memo_original() -> Vec<ZipEntry> {
+    vec![
+        entry("[Content_Types].xml", memo_types(&[]).as_bytes()),
+        entry("_rels/.rels", testutil_package_rels().as_bytes()),
+        entry(
+            "word/_rels/document.xml.rels",
+            memo_rels(&[("rId1", REL_STYLES, "styles.xml")]).as_bytes(),
+        ),
+        entry(
+            "word/document.xml",
+            format!(r#"<w:document xmlns:w="{W}"><w:body><w:p/></w:body></w:document>"#).as_bytes(),
+        ),
+        entry(
+            "word/styles.xml",
+            format!(r#"<w:styles xmlns:w="{W}"/>"#).as_bytes(),
+        ),
+    ]
+}
+
+fn testutil_package_rels() -> String {
+    memo_rels(&[(
+        "rId1",
+        "http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument",
+        "word/document.xml",
+    )])
+}
+
+/// WordCraft 실측 모양의 출력: 메모 관계가 앞에 오고 기존 관계 Id가 다시 매겨진다.
+fn memo_output(texts: &[&str]) -> Vec<ZipEntry> {
+    let mut out = memo_original();
+    out.retain(|e| {
+        e.name != "[Content_Types].xml"
+            && e.name != "word/_rels/document.xml.rels"
+            && e.name != "word/document.xml"
+    });
+    out.push(entry(
+        "[Content_Types].xml",
+        memo_types(&[
+            ("word/comments.xml", CT_COMMENTS),
+            ("word/commentsExtended.xml", CT_COMMENTS_EX),
+        ])
+        .as_bytes(),
+    ));
+    out.push(entry(
+        "word/_rels/document.xml.rels",
+        memo_rels(&[
+            ("rId1", REL_COMMENTS, "comments.xml"),
+            ("rId2", REL_COMMENTS_EX, "commentsExtended.xml"),
+            ("rId3", REL_STYLES, "styles.xml"),
+        ])
+        .as_bytes(),
+    ));
+    out.push(entry(
+        "word/document.xml",
+        format!(r#"<w:document xmlns:w="{W}"><w:body><w:p><w:commentRangeStart w:id="0"/></w:p></w:body></w:document>"#).as_bytes(),
+    ));
+    out.push(entry("word/comments.xml", memo_comments(texts).as_bytes()));
+    out.push(entry(
+        "word/commentsExtended.xml",
+        memo_extended(texts.len()).as_bytes(),
+    ));
+    out
+}
+
+fn replace(entries: &[ZipEntry], name: &str, data: &str) -> Vec<ZipEntry> {
+    let mut out: Vec<ZipEntry> = entries.iter().filter(|e| e.name != name).cloned().collect();
+    out.push(entry(name, data.as_bytes()));
+    out
+}
+
+#[test]
+fn docx_메모_부분을_새로_더한_저장만_받는다() {
+    let original = pkg(&memo_original());
+    let output = memo_output(&["첫 메모"]);
+    assert!(package::comment_parts_added(&original, &pkg(&output)));
+    assert_eq!(
+        package::compare_saved_docx(&original, &pkg(&output)),
+        vec![]
+    );
+    assert_eq!(package::validate_docx(&pkg(&output)), vec![]);
+    // 메모 본문 부분만 있고 확장 부분이 없어도(엔진이 만들지 않으면) 그 짝의 목록·관계만 있으면 받는다.
+    let only = replace(
+        &replace(
+            &output
+                .iter()
+                .filter(|e| e.name != "word/commentsExtended.xml")
+                .cloned()
+                .collect::<Vec<_>>(),
+            "[Content_Types].xml",
+            &memo_types(&[("word/comments.xml", CT_COMMENTS)]),
+        ),
+        "word/_rels/document.xml.rels",
+        &memo_rels(&[
+            ("rId2", REL_STYLES, "styles.xml"),
+            ("rId1", REL_COMMENTS, "comments.xml"),
+        ]),
+    );
+    assert_eq!(package::compare_saved_docx(&original, &pkg(&only)), vec![]);
+}
+
+#[test]
+fn docx_메모_더함_밖의_목록_관계_변경은_계속_막는다() {
+    let original = pkg(&memo_original());
+    let output = memo_output(&["첫 메모"]);
+    let rels = "word/_rels/document.xml.rels";
+    let types = "[Content_Types].xml";
+    let both = [
+        ("word/comments.xml", CT_COMMENTS),
+        ("word/commentsExtended.xml", CT_COMMENTS_EX),
+    ];
+    let memo = |extra: &[(&str, &str, &str)]| {
+        let mut list = vec![
+            ("rId1", REL_COMMENTS, "comments.xml"),
+            ("rId2", REL_COMMENTS_EX, "commentsExtended.xml"),
+        ];
+        list.extend_from_slice(extra);
+        memo_rels(&list)
+    };
+    let cases: Vec<(&str, Vec<ZipEntry>)> = vec![
+        ("다른 새 부분", {
+            let mut e = output.clone();
+            e.push(entry("word/people.xml", b"<x/>"));
+            replace(
+                &e,
+                types,
+                &memo_types(&[both[0], both[1], ("word/people.xml", "application/xml")]),
+            )
+        }),
+        (
+            "기존 관계 대상 바뀜",
+            replace(&output, rels, &memo(&[("rId3", REL_STYLES, "other.xml")])),
+        ),
+        ("기존 관계 사라짐", replace(&output, rels, &memo(&[]))),
+        (
+            "관계 더 생김",
+            replace(
+                &output,
+                rels,
+                &memo(&[
+                    ("rId3", REL_STYLES, "styles.xml"),
+                    ("rId4", REL_STYLES, "styles.xml"),
+                ]),
+            ),
+        ),
+        (
+            "메모 관계 대상 다름",
+            replace(
+                &output,
+                rels,
+                &memo_rels(&[
+                    ("rId1", REL_COMMENTS, "notes.xml"),
+                    ("rId2", REL_COMMENTS_EX, "commentsExtended.xml"),
+                    ("rId3", REL_STYLES, "styles.xml"),
+                ]),
+            ),
+        ),
+        (
+            "메모 관계 외부",
+            replace(
+                &output,
+                rels,
+                &memo(&[("rId3", REL_STYLES, "styles.xml")]).replace(
+                    r#"Target="comments.xml""#,
+                    r#"Target="comments.xml" TargetMode="External""#,
+                ),
+            ),
+        ),
+        (
+            "내용 형식 다름",
+            replace(
+                &output,
+                types,
+                &memo_types(&[("word/comments.xml", "application/xml"), both[1]]),
+            ),
+        ),
+        (
+            "내용 형식 Override 빠짐",
+            replace(&output, types, &memo_types(&[both[0]])),
+        ),
+        (
+            "내용 형식 Default 바뀜",
+            replace(
+                &output,
+                types,
+                &memo_types(&both).replace(
+                    r#"Extension="xml" ContentType="application/xml""#,
+                    r#"Extension="xml" ContentType="text/xml""#,
+                ),
+            ),
+        ),
+        (
+            "styles 바뀜",
+            replace(
+                &output,
+                "word/styles.xml",
+                &format!(r#"<w:styles xmlns:w="{W}"><w:style/></w:styles>"#),
+            ),
+        ),
+    ];
+    for (name, entries) in cases {
+        let findings = package::compare_saved_docx(&original, &pkg(&entries));
+        assert!(!findings.is_empty(), "{name}: 받아들임");
+    }
+    // 원본에 이미 메모 부분이 있으면 "새로 더함"이 아니다.
+    let with_comments = memo_output(&["원래"]);
+    assert!(!package::comment_parts_added(
+        &pkg(&with_comments),
+        &pkg(&memo_output(&["원래", "새"]))
+    ));
+}
+
+#[test]
+fn docx_기존_메모_끝에_덧붙인_메모만_받는다() {
+    let original = pkg(&memo_output(&["원래"]));
+    assert!(package::comment_parts_appended(
+        &original,
+        &pkg(&memo_output(&["원래", "새"]))
+    ));
+    assert_eq!(
+        package::compare_saved_docx(&original, &pkg(&memo_output(&["원래", "새"]))),
+        vec![]
+    );
+    let comments = "word/comments.xml";
+    let cases: Vec<(&str, Vec<ZipEntry>)> = vec![
+        ("기존 메모 글 바뀜", memo_output(&["바뀜", "새"])),
+        ("기존 메모 지움", memo_output(&["새"])),
+        (
+            "앞에 끼워 넣음",
+            replace(
+                &memo_output(&["원래"]),
+                comments,
+                &memo_comments(&["새", "원래"]).replacen(r#"w:id="0""#, r#"w:id="1""#, 1),
+            ),
+        ),
+        (
+            "메모 아닌 요소 덧붙임",
+            replace(
+                &memo_output(&["원래"]),
+                comments,
+                &memo_comments(&["원래"]).replace("</w:comments>", "<w:p/></w:comments>"),
+            ),
+        ),
+        (
+            "뿌리 속성 바뀜",
+            replace(
+                &memo_output(&["원래", "새"]),
+                comments,
+                &memo_comments(&["원래", "새"]).replace("<w:comments ", r#"<w:comments w:x="1" "#),
+            ),
+        ),
+        (
+            "관계 바뀜",
+            replace(
+                &memo_output(&["원래", "새"]),
+                "word/_rels/document.xml.rels",
+                &memo_rels(&[("rId1", REL_STYLES, "styles.xml")]),
+            ),
+        ),
+    ];
+    for (name, entries) in cases {
+        let findings = package::compare_saved_docx(&original, &pkg(&entries));
+        assert!(!findings.is_empty(), "{name}: 받아들임");
+    }
+    // 메모 부분이 그대로면(다른 편집만) 덧붙임 규칙 없이도 같다.
+    assert!(!package::comment_parts_appended(
+        &original,
+        &pkg(&memo_output(&["원래"]))
+    ));
+    assert_eq!(
+        package::compare_saved_docx(&original, &pkg(&memo_output(&["원래"]))),
+        vec![]
+    );
+}
+
+#[test]
+fn docx_메모를_단_문서를_실제_저장_절차로_두_번_저장하고_다시_열면_메모가_같다() {
+    let original = basic::basic_ko().unwrap();
+    let select = |ops: Vec<DocxOp>| -> Vec<DocxOp> {
+        let mut all = vec![
+            DocxOp::Move {
+                to: MoveTarget::DocStart,
+                extend: false,
+            },
+            DocxOp::Move {
+                to: MoveTarget::Right,
+                extend: true,
+            },
+            DocxOp::Move {
+                to: MoveTarget::Right,
+                extend: true,
+            },
+        ];
+        all.extend(ops);
+        all
+    };
+    let mut doc = open_docx(&original);
+    doc.edit(select(vec![DocxOp::Comment {
+        text: "첫 메모".into(),
+    }]));
+    assert!(doc.info.dirty);
+    assert!(doc.preflight().unwrap().preservation.is_safe());
+    let saved = doc.save().unwrap();
+    assert!(!saved.session.dirty);
+    let first = doc.bytes();
+    assert_ne!(first, original);
+    assert!(doc.leftovers().is_empty());
+    let comments = |bytes: &[u8]| -> Vec<String> {
+        DocxModel::open(bytes)
+            .unwrap()
+            .comments()
+            .into_iter()
+            .map(|c| format!("{}:{}", c.0, c.1))
+            .collect()
+    };
+    assert_eq!(comments(&first), vec!["geul:첫 메모".to_owned()]);
+    let after = package::open(&first, package::Side::Output).unwrap();
+    for part in ["word/comments.xml", "word/commentsExtended.xml"] {
+        assert!(after.get(part).is_some(), "{part}");
+    }
+    // 원본의 모든 부분이 남아 있다(사라진 부분 없음).
+    let before = package::open(&original, package::Side::Original).unwrap();
+    assert!(before
+        .parts
+        .keys()
+        .all(|name| after.parts.contains_key(name)));
+
+    // 두 번째 회차: 저장한 파일에 새 사전 검사 → 둘째 메모(기존 메모 끝에 덧붙음) → 저장.
+    let mut doc = doc;
+    doc.info = saved.session;
+    assert!(doc.preflight().unwrap().preservation.is_safe());
+    doc.edit(vec![
+        DocxOp::Move {
+            to: MoveTarget::DocEnd,
+            extend: false,
+        },
+        DocxOp::Move {
+            to: MoveTarget::Left,
+            extend: true,
+        },
+        DocxOp::Comment {
+            text: "둘째 메모".into(),
+        },
+    ]);
+    let saved = doc.save().unwrap();
+    assert!(!saved.session.dirty);
+    let second = doc.bytes();
+    assert_eq!(
+        comments(&second),
+        vec!["geul:첫 메모".to_owned(), "geul:둘째 메모".to_owned()]
+    );
+    assert!(doc.leftovers().is_empty());
+}
