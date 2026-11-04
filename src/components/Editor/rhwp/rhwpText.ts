@@ -256,6 +256,75 @@ export class RhwpText {
     }
   }
 
+  /**
+   * 위치 글자의 장평·자간(T012, 한글 언어 값 %). 엔진이 7개 언어 정수 배열을 주지 않으면 null. 값이 언어마다 달라도 한글 값을
+   * 보인다(적용은 7개 모두 같은 값으로 한다).
+   */
+  charShape(at: DocPosition): { width: number; spacing: number } | null {
+    const c = at.cell;
+    try {
+      const value = json(c
+        ? this.doc.getCellCharPropertiesAt!(at.section, c.parentParagraph, c.control, c.cell, c.cellParagraph, at.offset)
+        : this.doc.getCharPropertiesAt!(at.section, at.paragraph, at.offset));
+      if (!isRecord(value)) return null;
+      const seven = (array: unknown) => Array.isArray(array) && array.length === 7 && array.every((n) => Number.isSafeInteger(n));
+      if (!seven(value.ratios) || !seven(value.spacings)) return null;
+      return { width: (value.ratios as number[])[0]!, spacing: (value.spacings as number[])[0]! };
+    } catch {
+      return null;
+    }
+  }
+
+  /**
+   * 같은 문맥의 [from, to)에 장평(`ratios`) 또는 자간(`spacings`)을 7개 언어 모두 `percent`로 적용한다(T012). 엔진 호출 직전에 범위를
+   * 다시 검사한다: rhwp는 범위 밖·정수가 아닌 원소를 말없이 버리고 그 변경을 무시하므로(`json_u8_array`) 여기서 던진다(아무것도
+   * 바꾸지 않음). 나머지 글자 모양 속성은 엔진이 원래 모양을 복제해 그대로 둔다.
+   */
+  charShapeFormat(from: DocPosition, to: DocPosition, key: "ratios" | "spacings", percent: number): void {
+    const [min, max] = key === "ratios" ? [50, 200] : [-50, 50];
+    if (!Number.isSafeInteger(percent) || percent < min || percent > max) throw new Error("char shape value out of range");
+    this.format(from, to, JSON.stringify({ [key]: Array.from({ length: 7 }, () => percent) }));
+  }
+
+  /** 커서가 있는 셀의 논리 좌표와 표 크기(T012). 셀 밖이거나 엔진이 알려 주지 않으면 null. */
+  tableCell(at: DocPosition): { row: number; col: number; rows: number; cols: number; rowSpan: number; colSpan: number } | null {
+    const c = at.cell;
+    if (!c || !this.doc.getCellInfo) return null;
+    try {
+      const info = json(this.doc.getCellInfo(at.section, c.parentParagraph, c.control, c.cell));
+      const size = json(this.doc.getTableDimensions(at.section, c.parentParagraph, c.control));
+      if (!isRecord(info) || !isRecord(size)) return null;
+      const { row, col, rowSpan, colSpan } = info;
+      const { rowCount, colCount } = size;
+      if (![row, col, rowCount, colCount].every(isIndex) || !isIndex(rowSpan) || !isIndex(colSpan)) return null;
+      if ((row as number) >= (rowCount as number) || (col as number) >= (colCount as number)) return null;
+      return {
+        row: row as number, col: col as number, rows: rowCount as number, cols: colCount as number,
+        rowSpan: rowSpan as number, colSpan: colSpan as number,
+      };
+    } catch {
+      return null;
+    }
+  }
+
+  /**
+   * 커서 셀 기준의 표 계산식을 읽기 전용으로 계산한다(T012, `writeResult=false` — 문서를 바꾸지 않음). 결과가 유한한 수가 아니거나
+   * 엔진이 계산 오류를 내면 null(WASM trap은 던짐). 결과 문자열은 계산 값일 뿐 표가 바뀌었다는 근거가 아니다.
+   */
+  evaluateFormula(at: DocPosition, row: number, col: number, formula: string): number | null {
+    const c = at.cell;
+    if (!c || !this.doc.evaluateTableFormula) return null;
+    try {
+      const value = json(this.doc.evaluateTableFormula(at.section, c.parentParagraph, c.control, row, col, formula, false));
+      if (!isRecord(value) || value.ok !== true || !isNumber(value.result)) return null;
+      return value.result;
+    } catch (error) {
+      // 계산 오류(Result Err)는 문서를 바꾸지 않은 실패다. WASM trap은 모듈 상태를 알 수 없으므로 부르는 쪽이 편집을 멈추게 던진다.
+      if (typeof WebAssembly !== "undefined" && error instanceof WebAssembly.RuntimeError) throw error;
+      return null;
+    }
+  }
+
   /** 위치에서 문단을 나눈다(Enter). */
   split(at: DocPosition): void {
     const c = at.cell;

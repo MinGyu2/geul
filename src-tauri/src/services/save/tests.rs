@@ -9525,3 +9525,203 @@ fn hwp_preview_orders_sections_and_skips_empty_paragraphs() {
     assert_eq!(text, utf16("첫째\r\n두번째😀\r\n"));
     assert!(hwp::compare_saved(&original, &fixed).is_empty());
 }
+
+// ---- T012 장평·자간: 덧붙인 글자 모양이 원본 정의와 `hh:ratio`·`hh:spacing` 값만 다를 수 있다 ----
+
+/// 고정 rhwp 직렬화기 순서의 정의(fontRef → ratio → spacing → 서식 자식 자리 → 밑줄·취소선·그림자).
+fn metric_def(id: u32, height: u32, ratio: &str, spacing: &str, format: &str) -> String {
+    format!(
+        r##"<hh:charPr id="{id}" height="{height}" textColor="#000000"><hh:fontRef hangul="1" latin="1" hanja="1" japanese="1" other="1" symbol="1" user="1"/><hh:ratio {ratio}/><hh:spacing {spacing}/>{format}<hh:underline type="NONE" shape="SOLID" color="#000000"/><hh:strikeout shape="NONE" color="#000000"/><hh:shadow type="NONE" color="#B2B2B2"/></hh:charPr>"##
+    )
+}
+
+fn langs(value: i32) -> String {
+    [
+        "hangul", "latin", "hanja", "japanese", "other", "symbol", "user",
+    ]
+    .iter()
+    .map(|key| format!(r#"{key}="{value}""#))
+    .collect::<Vec<_>>()
+    .join(" ")
+}
+
+fn metric_original() -> Vec<String> {
+    vec![
+        metric_def(0, 1000, &langs(100), &langs(0), ""),
+        metric_def(1, 1600, &langs(100), &langs(0), ""),
+        metric_def(2, 1000, &langs(100), &langs(0), "<hh:bold/>"),
+    ]
+}
+
+fn metric_check(extra: &[&str], refs: &[u32]) -> Vec<Finding> {
+    let defs = metric_original();
+    let d: Vec<&str> = defs.iter().map(String::as_str).collect();
+    let original = fmt_header(3, &d, &[], "JUSTIFY");
+    let header = fmt_header(3 + extra.len(), &d, extra, "JUSTIFY");
+    let before = pkg(&hwpx_package(&fmt_body(&[0, 1]), &original, true, true));
+    let after = pkg(&hwpx_package(&fmt_body(refs), &header, true, true));
+    let mut findings = package::compare_saved_hwpx(&before, &after);
+    findings.extend(package::validate_hwpx_references(&after));
+    findings
+}
+
+#[test]
+fn hwpx_header는_장평_자간만_다른_참조되는_덧붙임을_받는다() {
+    // 엔진 출력 모양: 원본 정의를 복제해 장평(또는 자간) 7개 언어 값만 바꾼 정의를 끝에 붙인다.
+    let width = metric_def(3, 1000, &langs(150), &langs(0), "");
+    assert_eq!(metric_check(&[&width], &[3, 1]), vec![]);
+    let spacing = metric_def(3, 1600, &langs(100), &langs(-50), "");
+    assert_eq!(metric_check(&[&spacing], &[0, 3]), vec![]);
+    // 경계 값과 굵은 원본에서 복제한 정의, 둘 다 덧붙임.
+    let low = metric_def(3, 1000, &langs(50), &langs(50), "<hh:bold/>");
+    let high = metric_def(4, 1000, &langs(200), &langs(-1), "");
+    assert_eq!(metric_check(&[&low, &high], &[3, 4]), vec![]);
+    // 장평과 기울임이 함께 바뀐 덧붙임(서식 자식 규칙과 같이 판정).
+    let both = metric_def(3, 1000, &langs(120), &langs(0), "<hh:italic/>");
+    assert_eq!(metric_check(&[&both], &[3]), vec![]);
+}
+
+#[test]
+fn hwpx_header의_장평_자간_덧붙임_밖_변경은_계속_partchanged다() {
+    let changed = vec![Finding::at(FindingCode::PartChanged, "Contents/header.xml")];
+    let ok_spacing = langs(0);
+    let missing: String = langs(150).replace(r#" user="150""#, "");
+    let extra = format!(r#"{} extra="1""#, langs(150));
+    let duplicate_child = metric_def(3, 1000, &langs(150), &ok_spacing, "")
+        .replace("<hh:spacing", r#"<hh:ratio hangul="150" latin="150" hanja="150" japanese="150" other="150" symbol="150" user="150"/><hh:spacing"#);
+    let content = metric_def(3, 1000, &langs(150), &ok_spacing, "").replacen(
+        "/><hh:spacing",
+        ">x</hh:ratio><hh:spacing",
+        1,
+    );
+    let cases: Vec<(&str, String, Vec<u32>)> = vec![
+        (
+            "범위 밖 장평 201",
+            metric_def(3, 1000, &langs(201), &ok_spacing, ""),
+            vec![3],
+        ),
+        (
+            "범위 밖 장평 49",
+            metric_def(3, 1000, &langs(49), &ok_spacing, ""),
+            vec![3],
+        ),
+        (
+            "범위 밖 자간 51",
+            metric_def(3, 1000, &langs(100), &langs(51), ""),
+            vec![3],
+        ),
+        (
+            "앞 0",
+            metric_def(
+                3,
+                1000,
+                &langs(100).replace(r#"hangul="100""#, r#"hangul="0100""#),
+                &ok_spacing,
+                "",
+            ),
+            vec![3],
+        ),
+        (
+            "-0",
+            metric_def(
+                3,
+                1000,
+                &langs(100),
+                &langs(0).replace(r#"latin="0""#, r#"latin="-0""#),
+                "",
+            ),
+            vec![3],
+        ),
+        (
+            "+ 부호",
+            metric_def(
+                3,
+                1000,
+                &langs(100),
+                &langs(0).replace(r#"latin="0""#, r#"latin="+1""#),
+                "",
+            ),
+            vec![3],
+        ),
+        (
+            "숫자 아님",
+            metric_def(
+                3,
+                1000,
+                &langs(100).replace(r#"hanja="100""#, r#"hanja="1e2""#),
+                &ok_spacing,
+                "",
+            ),
+            vec![3],
+        ),
+        (
+            "언어 속성 빠짐",
+            metric_def(3, 1000, &missing, &ok_spacing, ""),
+            vec![3],
+        ),
+        (
+            "속성 더함",
+            metric_def(3, 1000, &extra, &ok_spacing, ""),
+            vec![3],
+        ),
+        (
+            "이름공간 붙은 속성",
+            metric_def(
+                3,
+                1000,
+                &langs(150).replace("hangul=", "hh:hangul="),
+                &ok_spacing,
+                "",
+            ),
+            vec![3],
+        ),
+        ("ratio 둘", duplicate_child, vec![3]),
+        ("ratio에 내용", content, vec![3]),
+        (
+            "장평과 height 함께 다름",
+            metric_def(3, 1200, &langs(150), &ok_spacing, ""),
+            vec![3],
+        ),
+        (
+            "쓰이지 않는 장평 덧붙임",
+            metric_def(3, 1000, &langs(150), &ok_spacing, ""),
+            vec![0, 1],
+        ),
+        (
+            "ratio 자리 바뀜",
+            metric_def(3, 1000, &langs(150), &ok_spacing, "").replace(
+                &format!("<hh:ratio {}/><hh:spacing {}/>", langs(150), ok_spacing),
+                &format!("<hh:spacing {}/><hh:ratio {}/>", ok_spacing, langs(150)),
+            ),
+            vec![3],
+        ),
+        (
+            "ratio 빠짐",
+            metric_def(3, 1000, &langs(150), &ok_spacing, "")
+                .replace(&format!("<hh:ratio {}/>", langs(150)), ""),
+            vec![3],
+        ),
+    ];
+    for (name, def, refs) in cases {
+        let findings = metric_check(&[&def], &refs);
+        assert!(
+            findings == changed
+                || findings.iter().any(|f| f.code == FindingCode::PartChanged
+                    || f.code == FindingCode::ReferenceInvalid),
+            "{name}: {findings:?}"
+        );
+        assert!(!findings.is_empty(), "{name}: 받아들임");
+    }
+    // 원본 정의의 값은 소급해 거르지 않는다: 원본이 앱 범위 밖 값(장평 30)이어도 그 정의를 그대로 둔 저장은 safe.
+    let defs = [metric_def(0, 1000, &langs(30), &langs(0), "")];
+    let d: Vec<&str> = defs.iter().map(String::as_str).collect();
+    let original = fmt_header(1, &d, &[], "JUSTIFY");
+    let before = pkg(&hwpx_package(&fmt_body(&[0]), &original, true, true));
+    let after = pkg(&hwpx_package(&fmt_body(&[0]), &original, true, true));
+    assert_eq!(package::compare_saved_hwpx(&before, &after), vec![]);
+    // 그 원본에서 장평만 120으로 바꾼 덧붙임은 받는다(원본 쪽 값은 비교에서 빠짐).
+    let appended = metric_def(1, 1000, &langs(120), &langs(0), "");
+    let header = fmt_header(2, &d, &[&appended], "JUSTIFY");
+    let after = pkg(&hwpx_package(&fmt_body(&[1]), &header, true, true));
+    assert_eq!(package::compare_saved_hwpx(&before, &after), vec![]);
+}

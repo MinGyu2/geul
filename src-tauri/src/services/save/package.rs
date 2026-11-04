@@ -520,6 +520,50 @@ const HWPX_LINE_SHAPES: [&str; 13] = [
 /// 글자 서식이 바꿀 수 있는 글자 모양 정의의 자식(T010 Phase 3B): 모두 내용 없는 `hh` 요소다.
 pub(super) const HWPX_FORMAT_CHILDREN: [&str; 4] = ["bold", "italic", "underline", "strikeout"];
 
+/// 장평·자간(T012)이 바꾸는 글자 모양 정의의 자식: 내용 없는 `hh` 요소, 7개 언어 속성.
+pub(super) const HWPX_METRIC_CHILDREN: [&str; 2] = ["ratio", "spacing"];
+/// 고정 rhwp `serializer/hwpx/char_shapes.rs` `LANG_ATTRS`(그리고 `parser/hwpx/header.rs`가 읽는 이름).
+const HWPX_LANG_ATTRS: [&str; 7] = [
+    "hangul", "latin", "hanja", "japanese", "other", "symbol", "user",
+];
+
+/// 덧붙인 정의의 `hh:ratio`·`hh:spacing`이 고정 rhwp 직렬화기(`write_lang_attrs`)가 쓰는 모양이고 값이 앱이 쓰는 범위인지(T012):
+/// 이름공간 없는 7개 언어 속성 정확히 하나씩, 값은 부호(음수만)와 0으로 시작하지 않는 10진 정수, 장평 50–200·자간 −50–50
+/// (CharShape 계약 `model/style.rs`). 고정 rhwp 판독기(`parse_u8`·`parse_i8`)가 말없이 다른 값으로 읽을 수 있는 모양은 받지 않는다.
+pub(super) fn serializer_metric_child(
+    local: &str,
+    attributes: &[(Option<xml::Atom>, xml::Atom, xml::Atom)],
+) -> bool {
+    let range = match local {
+        "ratio" => 50..=200,
+        "spacing" => -50..=50,
+        _ => return false,
+    };
+    let canonical = |value: &str| {
+        let digits = value.strip_prefix('-').unwrap_or(value);
+        !digits.is_empty()
+            && digits.len() <= 3
+            && digits.bytes().all(|b| b.is_ascii_digit())
+            && (digits == "0" || !digits.starts_with('0'))
+            && value != "-0"
+    };
+    attributes.len() == HWPX_LANG_ATTRS.len()
+        && HWPX_LANG_ATTRS.iter().all(|key| {
+            let mut found = attributes
+                .iter()
+                .filter(|(ns, name, _)| ns.is_none() && name == key);
+            match (found.next(), found.next()) {
+                (Some((_, _, value)), None) => {
+                    canonical(value)
+                        && value
+                            .parse::<i32>()
+                            .is_ok_and(|number| range.contains(&number))
+                }
+                _ => false,
+            }
+        })
+}
+
 /// 고정 rhwp 직렬화기 `color_hex`가 쓰는 색: `none`, `#RRGGBB`, `#AARRGGBB`(대문자 16진).
 fn serializer_color(value: &str) -> bool {
     value == "none"

@@ -46,7 +46,11 @@ import type { DocumentError, Result, SaveCheck, SaveOutcome, SessionInfo } from 
 import { blockedBy, type SaveCheckRecord, type SaveState } from "../saveState";
 import { documentCommandState, FORMAT_FLAG } from "../../../commands/capability";
 import { commandDefinition, type DocumentCommandId } from "../../../commands/registry";
-import type { CharFormatFlag, CommandDispatch, DocumentCommandSnapshot, DocumentCommandTarget } from "../../../commands/target";
+import type {
+  CharFormatFlag, CommandDispatch, CommandParameterContext, DocumentCommandArgs, DocumentCommandSnapshot, DocumentCommandTarget,
+  ParameterCommandId,
+} from "../../../commands/target";
+import { validateCommandArgs } from "../../../commands/parameters";
 import type { DocumentSessions } from "../../../adapters/sessions";
 import { summarizeLayerTree } from "./paintDiff";
 import type { RhwpDocument, RhwpModule } from "./rhwpModule";
@@ -1384,7 +1388,88 @@ export class RhwpEditorSession implements DocumentCommandTarget {
       history: this.history ? { undo: this.history.canUndo, redo: this.history.canRedo } : null,
       historyLimited: this.history === null && this.historyOff === "limit",
       format: this.formatState(), formatAccess: null,
+      ...this.parameterState(),
     };
+  }
+
+  private parameterCache: { key: string; value: Pick<DocumentCommandSnapshot, "parameters" | "parameterReasons"> } | null = null;
+
+  /**
+   * 값 입력 명령(T012)의 문맥. 모델 판·선택·IME·편집 가능이 같으면 다시 읽지 않는다.
+   * - 장평·자간: 글자 서식과 같은 관문(서식 명령을 받는 빌드, HWPX, 기록 켜짐, IME 안정) + **한 문단 안**의 같은 문맥 선택(여러 문단·
+   *   문맥을 넘는 선택은 아직 검증하지 않아 막음). 선택이 없으면 이유 selectionRequired.
+   * - 표 계산: 편집 가능·IME 안정·불확실 아님 + 커서가 표 셀 안이고 엔진이 그 셀의 논리 좌표·표 크기를 알려 줄 때(HWP·HWPX 모두 —
+   *   문서를 바꾸지 않는 계산). 셀 밖이면 이유 notInTable.
+   */
+  private parameterState(): Pick<DocumentCommandSnapshot, "parameters" | "parameterReasons"> {
+    const format = this.sessions.get(this.sessionId)?.format;
+    const key = [
+      this.modelVersion, RhwpEditorSession.positionKey(this.anchor), RhwpEditorSession.positionKey(this.caret), format,
+      this.editable, this.imeUnsettled, this.uncertain, !!this.history, !!this.doc,
+    ].join("|");
+    if (this.parameterCache?.key === key) return this.parameterCache.value;
+    const parameters: Partial<Record<ParameterCommandId, CommandParameterContext>> = {};
+    const parameterReasons: NonNullable<DocumentCommandSnapshot["parameterReasons"]> = {};
+    const usable = this.editable && !!this.doc && !!this.text && !this.imeUnsettled && !this.uncertain;
+    if (usable && (this.options.format ?? RHWP_FORMAT_DECLARED) && format === "hwpx" && this.history) {
+      const [from, to] = this.ordered();
+      if (this.hasSelection && sameContext(from, to) && paragraphOf(from) === paragraphOf(to)) {
+        const charShape = this.text!.charShape(from);
+        if (charShape) parameters["hangul.charWidth"] = parameters["hangul.charSpacing"] = { charShape };
+      } else {
+        parameterReasons["hangul.charWidth"] = parameterReasons["hangul.charSpacing"] = "selectionRequired";
+      }
+    }
+    if (usable) {
+      const cell = this.caret.cell ? this.text!.tableCell(this.caret) : null;
+      if (cell) parameters["hangul.tableFormula"] = { tableCell: { row: cell.row, col: cell.col, rows: cell.rows, cols: cell.cols } };
+      else parameterReasons["hangul.tableFormula"] = "notInTable";
+    }
+    const value = { parameters, parameterReasons };
+    this.parameterCache = { key, value };
+    return value;
+  }
+
+  /**
+   * 선택(한 문단 안)의 장평 또는 자간을 7개 언어 모두 같은 값으로 바꾼다(T012). 값은 실행 직전에 다시 검증하고, 글자 서식과 같이 한
+   * 변경·한 실행 취소 단계로 `mutate`(기록 스냅숏 → 엔진 → 확정 대기열 → 다시 그리기)에 넣는다. 선택은 그대로 둔다.
+   */
+  private applyCharShape(args: Extract<DocumentCommandArgs, { command: "hangul.charWidth" | "hangul.charSpacing" }>): boolean {
+    const context = this.parameterState().parameters?.[args.command];
+    if (!context || !validateCommandArgs(args.command, args, context)) return false;
+    const [from, to] = this.ordered();
+    const caret = this.caret, anchor = this.anchor;
+    this.history?.boundary();
+    const applied = this.mutate(() => {
+      this.text!.charShapeFormat(from, to, args.command === "hangul.charWidth" ? "ratios" : "spacings", args.percent);
+      return { caret, anchor };
+    }, true, "other", null);
+    this.history?.boundary();
+    return applied;
+  }
+
+  /**
+   * 커서 셀 기준의 표 계산식을 읽기 전용으로 계산해 결과를 알린다(T012, 문서·revision·기록을 바꾸지 않음). 엔진의 셀 좌표·표 크기를
+   * 다시 읽어 검증한 뒤 부른다. WASM trap이면 모듈 상태를 알 수 없어 편집을 멈춘다.
+   */
+  private evaluateFormula(args: Extract<DocumentCommandArgs, { command: "hangul.tableFormula" }>): CommandDispatch {
+    const context = this.parameterState().parameters?.["hangul.tableFormula"];
+    const cell = context?.tableCell;
+    if (!cell || !validateCommandArgs(args.command, args, context)) return { accepted: false };
+    const label = { key: "command.hangul.tableFormula" as const };
+    let result: number | null;
+    try {
+      result = this.text!.evaluateFormula(this.caret, cell.row, cell.col, args.formula);
+    } catch {
+      this.uncertain = true;
+      this.lastRoundTrip = null;
+      this.modelVersion += 1;
+      this.failEditing();
+      return { accepted: false };
+    }
+    if (result === null) return { accepted: false, message: { key: "command.result.tableFormulaFailed", vars: { command: label } } };
+    const shown = Number.isInteger(result) ? String(result) : String(Number(result.toPrecision(12)));
+    return { accepted: true, message: { key: "command.result.tableFormula", vars: { command: label, formula: args.formula, result: shown } } };
   }
 
   private formatCache: { key: string; value: Readonly<Record<CharFormatFlag, boolean>> | null } | null = null;
@@ -1425,9 +1510,16 @@ export class RhwpEditorSession implements DocumentCommandTarget {
   }
 
   /** 명령을 이 세션에서 실행한다. 지금 상태로 다시 확인해 할 수 없으면(rhwp가 지원하지 않는 명령 포함) 아무것도 바꾸지 않는다. */
-  execute(command: DocumentCommandId): CommandDispatch {
+  execute(command: DocumentCommandId, args?: DocumentCommandArgs): CommandDispatch {
     // 레지스트리 가용성(엔진 지원 표 포함)을 실행 직전에 다시 확인한다. rhwp 실행 취소는 그 표가 지원으로 바뀌기 전에는 오지 않는다.
     if (!documentCommandState(command, this.snapshot()).available) return { accepted: false };
+    if (command === "hangul.charWidth" || command === "hangul.charSpacing" || command === "hangul.tableFormula") {
+      if (args?.command !== command) return { accepted: false };
+      if (args.command === "hangul.tableFormula") return this.evaluateFormula(args);
+      const applied = this.applyCharShape(args);
+      return applied ? { accepted: true } : { accepted: false };
+    }
+    if (args !== undefined) return { accepted: false };
     if (command === "edit.undo" || command === "edit.redo") return { accepted: command === "edit.undo" ? this.undo() : this.redo() };
     const flag = FORMAT_FLAG[command];
     if (flag) return { accepted: this.applyFormat(flag) };

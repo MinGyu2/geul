@@ -12,14 +12,17 @@
 //   (queuedHistory, 이동·선택·표지는 기록을 바꾸지 않고, 실행 취소·다시 실행은 아는 단계를 쓴다)으로 정한다. 남은 단계를 엔진
 //   응답 전에 알 수 없으면(unknown) 응답까지 기다린다(pendingEdits). 엔진이 다시 확인하므로 예상이 어긋나도(엔진이 거부한 넣기 등)
 //   바뀌는 것이 없으면 아무것도 바꾸지 않는다.
+// - 값 입력 명령(장평·자간·표 계산 등)은 세션이 스냅숏의 `parameters`에 그 명령의 문맥(엔진에서 읽은 지금 값·표 크기)을 낼 때만
+//   한다. 없으면 세션이 준 이유(선택 필요·표 밖) 또는 engineUnsupported.
 // - 서식은 문서 보호가 언제나 거부하는 상태(formatAccess "protected")면 protected. 편집 가능 영역만 허용하는 보호("regions")는
 //   선택이 영역 안인지 엔진만 판정하므로 보내고, 엔진이 거부하면 세션이 알린다.
+import { isParameterCommandId } from "./parameters";
 import { commandDefinition, type DocumentCommandId } from "./registry";
 import type { CharFormatFlag, DocumentCommandSnapshot } from "./target";
 
 export type UnavailableReason =
   | "noDocument" | "notImplemented" | "engineUnsupported" | "notReady" | "composing" | "pendingEdits" | "saving"
-  | "nothingToUndo" | "nothingToRedo" | "limit" | "protected" | "dialogOpen";
+  | "nothingToUndo" | "nothingToRedo" | "limit" | "protected" | "dialogOpen" | "selectionRequired" | "notInTable";
 
 export type CommandState =
   | { available: true; pressed?: boolean }
@@ -57,6 +60,11 @@ export function documentCommandState(id: DocumentCommandId, snapshot: DocumentCo
     // 앞선 실행 취소·다시 실행이 남은 단계를 썼는지 엔진 응답 전에는 모른다: 응답까지 기다린다(넘치는 요청을 보내지 않음).
     if (step === "unknown") return unavailable("pendingEdits");
     return unavailable(id === "edit.undo" ? "nothingToUndo" : "nothingToRedo");
+  }
+  if (isParameterCommandId(id)) {
+    // 값 입력 명령(T012·T013): 세션이 지금 엔진·선택으로 판정한 문맥이 있을 때만 한다(문맥을 화면에서 만들지 않음).
+    if (snapshot.parameters?.[id]) return ENABLED;
+    return unavailable(snapshot.parameterReasons?.[id] ?? "engineUnsupported");
   }
   const flag = FORMAT_FLAG[id];
   if (!flag || !snapshot.format) return unavailable("engineUnsupported");

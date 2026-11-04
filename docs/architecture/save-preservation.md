@@ -120,6 +120,13 @@ safe·플랫폼 지원일 때만:
   - 사전 검사(편집 없는 왕복)에는 더하지 않았다(그 출력은 원본과 같아야 한다). 업스트림 예제 1076개의 편집 없는 rhwp 출력에서 이 검사로 새로
     막힌 문서는 없다(실측, `referenceInvalid` 0건). 범위 밖: 다른 참조 이름공간(`borderFillIDRef`·`styleIDRef`·`tabPrIDRef` 등), header 안의
     참조(header는 원본과 같아야 하므로 원본의 것), 모양 정의 내용 자체의 올바름.
+- 장평·자간 덧붙임(2026-11-05, T012 — HWPX 편집 저장만, 위 "글자 서식 덧붙임" 규칙의 확장): 덧붙인 `hh:charPr`가 원본 정의 하나와 비교할 때
+  내용 없는 `hh:ratio`·`hh:spacing`의 **값(속성)만** 다를 수 있다. 요소의 자리·개수는 그대로 비교한다(빠지거나 둘이거나 자리가 바뀌면 다름). 덧붙인 정의의 값은
+  고정 rhwp 직렬화기 모양(`write_lang_attrs`)이어야 한다: 이름공간 없는 7개 언어 속성(`hangul latin hanja japanese other symbol user`) 정확히 하나씩, 앞 0·`+`·
+  `-0` 없는 10진 정수, 장평 50–200·자간 −50–50(`package::serializer_metric_child`). 원본 정의의 값은 소급해 거르지 않는다. 그 밖의 규칙(id·itemCnt·쓰임·
+  나머지 내용 같음)은 그대로다. 근거: 실제 엔진 출력 → 실제 `service::save`(T012 `hangul_tools_save.py`) — 본문·굵은 글자·표 셀의 장평·자간, 두 번째 회차
+  게시, 같은 범위 연속 변경은 쓰이지 않는 중간 정의 때문에 계속 거부, HWP는 `recordsChanged{DocInfo}`로 거부. 음성 변이 16가지(Rust 시험
+  `hwpx_header의_장평_자간_덧붙임_밖_변경은_계속_partchanged다`).
 - 글자 서식 덧붙임(2026-10-26, T010 Phase 3B — HWPX 편집 저장만): `Contents/header.xml`은 원본과 같거나, 차이가 **글자 서식이 덧붙인
   글자 모양 정의뿐**일 때만 받는다(`package::hwpx_char_shapes_appended`). 모두 성립해야 한다: 두 header가 끝까지 읽히고 `hh:charProperties`가
   정확히 하나, 그 앞뒤 사건이 같음 · 목록 시작은 `itemCnt`만 다르고 원본 `itemCnt` = 원본 정의 수 n이며 원본 id가 정확히 0..n · 출력 목록 =

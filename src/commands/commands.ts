@@ -9,7 +9,8 @@ import type { SessionId } from "../adapters/contract";
 import type { LayoutAction, LayoutState, Theme } from "../hooks/layoutState";
 import { documentCommandState, ENABLED, unavailable, type CommandState } from "./capability";
 import { commandDefinition, isDocumentCommandId } from "./registry";
-import type { DocumentCommandTarget } from "./target";
+import { isParameterCommandId } from "./parameters";
+import type { CommandParameterContext, DocumentCommandArgs, DocumentCommandTarget, ParameterCommandId } from "./target";
 import { trace } from "../components/Editor/imeTrace";
 
 export type { CommandState, UnavailableReason } from "./capability";
@@ -28,6 +29,21 @@ export interface CommandContext {
    * 알린 상태이며 DOM의 aria-modal로 추측하지 않는다.
    */
   modal?: boolean;
+  /**
+   * 값 입력 명령(T012·T013)의 입력 창을 연다. 창은 이 요청의 세션·불러오기 번호·revision을 기억해, 확인할 때 활성 문서가 바뀌었거나
+   * 문서가 그 사이 바뀌었으면 실행하지 않는다. 없으면 값 입력 명령은 notImplemented.
+   */
+  requestInput?: ((request: CommandInputRequest) => void) | undefined;
+}
+
+/** 값 입력 창 요청. 실행은 확인한 값으로 `executeCommand(command, labelKey, context, args)`를 다시 부른다. */
+export interface CommandInputRequest {
+  command: ParameterCommandId;
+  labelKey: MessageKey;
+  sessionId: SessionId;
+  loadGeneration: number;
+  revision: number;
+  context: CommandParameterContext;
 }
 
 export interface FileCommandActions {
@@ -138,7 +154,9 @@ export function isUiCommand(id: string): boolean {
  * 편집 경로에 넣었으면 true다(결과는 세션이 화면에 보인다). `labelKey`는 명령 이름의 번역 키다(알림에 참조로 넣어 그릴 때
  * 번역한다). 없으면 레지스트리의 라벨을 쓴다.
  */
-export function executeCommand(id: string, labelKey: MessageKey | undefined, context: CommandContext): boolean {
+export function executeCommand(
+  id: string, labelKey: MessageKey | undefined, context: CommandContext, args?: DocumentCommandArgs,
+): boolean {
   const label = labelKey ?? commandDefinition(id)?.labelKey;
   const reject = (state: CommandState) => {
     if (!state.available && label) {
@@ -166,9 +184,25 @@ export function executeCommand(id: string, labelKey: MessageKey | undefined, con
     return true;
   }
   if (!isDocumentCommandId(id) || !context.document) return reject(unavailable("notImplemented"));
-  const accepted = context.document.execute(id).accepted;
+  if (isParameterCommandId(id) && args === undefined) {
+    // 값이 필요한 명령: 입력 창을 연다(문서는 아직 바꾸지 않음). 창이 없는 문맥이면 실행할 수 없다.
+    if (!context.requestInput || !label) return reject(unavailable("notImplemented"));
+    const snapshot = context.document.snapshot();
+    const parameters = snapshot.parameters?.[id];
+    if (!parameters) return reject(unavailable("notReady"));
+    context.requestInput({
+      command: id, labelKey: label, sessionId: snapshot.sessionId, loadGeneration: snapshot.loadGeneration,
+      revision: snapshot.revision, context: parameters,
+    });
+    trace("command:input", () => ({ id }));
+    return true;
+  }
+  const dispatch = args === undefined ? context.document.execute(id) : context.document.execute(id, args);
+  const { accepted } = dispatch;
   trace("command:dispatch", () => ({ id, accepted }));
+  if (dispatch.message) context.notify(dispatch.message);
   if (accepted) return true;
+  if (dispatch.message) return false;
   // 세션이 다시 확인해 거절했다(그 사이 상태가 바뀜): 지금 이유를 알린다.
   const now = commandState(id, context);
   return reject(now.available ? unavailable("notReady") : now);

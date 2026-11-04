@@ -444,3 +444,48 @@ geul 창 검색 `^geul`에 걸리지 않게 정함). 초점 이동은 `xdotool w
 시험기 기록: 첫 `--window-focus` 실행은 9/9 PASS였지만 사례마다 사건 기록 스크립트를 다시 넣어 리스너가 쌓여 같은 사건이 여러 번 찍혔다(시험기
 결함, 판정 무관). 한 번만 설치하게 고친 뒤 두 DPR 모두 다시 실행한 결과가 위 표다. 남은 범위: 창 관리자가 있는 환경(_NET_ACTIVE_WINDOW·
 포커스 정책)·Wayland·다른 입력기에서의 창 초점 이동은 T016 확장 환경이며 이번에 실행하지 않았다.
+
+## T012 한글 도구: 장평·자간·표 계산 (2026-11-05, `92f8688` 위, 부분 완료)
+
+### 연결한 것
+
+| 명령 | 엔진 연산 | 제품 노출 | 근거 |
+|---|---|---|---|
+| `hangul.charWidth` | rhwp `applyCharFormat`/`applyCharFormatInCell` `{"ratios":[v×7]}` | **시험 활성화 빌드만**(`RHWP_FORMAT`, HWPX) | 실제 WASM·실제 `service::save` 통과. 제품 rhwp 실행 취소 NO-GO라 글자 서식과 같은 관문 |
+| `hangul.charSpacing` | 같은 함수 `{"spacings":[v×7]}` | 시험 활성화 빌드만(HWPX) | 같음 |
+| `hangul.tableFormula` | rhwp `evaluateTableFormula(..., writeResult=false)` | 제품 HWP·HWPX | 문서를 바꾸지 않는 계산(실제 WASM: 계산 전후 내보내기 바이트 같음, revision 0) |
+
+- 값 입력: 리본 단추 → `executeCommand`가 세션 스냅숏의 `parameters` 문맥으로 입력 창 요청(`CommandContext.requestInput`) → 창(`CommandInputDialog`,
+  모달)에서 확인한 값만 `executeCommand(id, label, context, args)`로 다시 보낸다. 전역 대기 인자는 없다. 요청은 세션·불러오기 번호·revision을 담고,
+  확인할 때 활성 문서·불러오기·revision이 다르면 실행하지 않는다(`commandInput.stale`). 활성 문서가 바뀌면 창을 버린다.
+- 값 검증(`src/commands/parameters.ts`)은 창과 세션 실행 직전 두 곳에서 같은 함수다. 장평 50–200·자간 −50–50 정수(고정 rhwp `CharShape` 계약,
+  범위 밖은 자르지 않고 거부 — rhwp `json_u8_array`는 형식이 틀린 원소를 버리고 변경 전체를 말없이 무시한다). 7개 언어에 같은 값을 쓴다.
+- 장평·자간 문맥: 글자 서식 관문 + **한 문단 안**의 같은 문맥 선택(본문 또는 한 셀). 선택 없음·여러 문단은 `selectionRequired`(검증하지 않은 범위라 막음).
+  한 변경 = 한 실행 취소 단계(`mutate`, 앞뒤 `history.boundary()`). 실행 취소는 실제 WASM에서 원래 장평으로 되돌림을 확인했다.
+- 표 계산 문맥: 편집 가능·IME 안정·불확실 아님 + 커서가 셀 안이고 엔진이 셀 논리 좌표(`getCellInfo`)·표 크기(`getTableDimensions`)를 줄 때. 셀 밖은
+  `notInTable`. 고정 rhwp `table_calc`에는 길이·괄호 깊이·범위 크기 한도가 없어(`A1:ZZZ999999`는 좌표 목록을 다 만든다) 길이 256·괄호 깊이 16·
+  허용 글자·알려진 함수 이름·**모든 참조가 지금 표 안**을 먼저 검사한다. 결과는 상태 표시줄 알림(`CommandDispatch.message`)이고 "표는 바꾸지 않음"을
+  밝힌다. 계산 오류(0으로 나누기 등)는 실패 알림, WASM trap은 모듈 상태를 알 수 없어 편집을 멈춘다(`failEditing`).
+
+### 연결하지 않은 것(명시적 미지원)
+
+- 제품 빌드 장평·자간: rhwp 실행 취소 기록이 제품 NO-GO(T010)라 글자 서식과 같이 `unsupported`. 시험 플래그를 제품에 켜지 않는다.
+- HWP 장평·자간: 글자 모양이 DocInfo를 바꿔 T009가 거부한다(실제 저장 음성 대조: `recordsChanged{DocInfo}`, 원본 그대로). 세션도 문맥을 내지 않는다.
+- 표 계산 결과 쓰기(`writeResult=true`): 고정 rhwp는 셀에 계산 **값 글자**만 넣고 계산식 필드를 남기지 않아 계산식 의미를 보존한다고 볼 수 없다.
+- 여러 문단·문맥을 넘는 장평·자간, 같은 범위 연속 변경의 저장(아래 한계).
+
+### 한계
+
+같은 범위에 장평 뒤 자간(또는 서식 뒤 장평)을 이어 바꾸면 중간 글자 모양 정의가 본문에서 쓰이지 않는 덧붙임으로 남아 T010 덧붙임 규칙(덧붙인 정의는
+모두 본문이 가리켜야 함)이 저장을 막는다. 모델·다시 열기 값은 맞고 저장은 원본을 그대로 둔 채 거부된다(실제 저장 사례 `chained-same-range`).
+규칙은 넓히지 않았다.
+
+### 확인 방법과 결과 (2026-11-05)
+
+- 단위: `npx vitest run` 63 파일 1109+ 통과(새 `src/commands/hangulTools.test.tsx` 9 — 값 검증·레지스트리·제품 관문·문맥·조합·모달·trap·창, `Ribbon.test.tsx`
+  앱 수준 리본→창→결과·낡은 요청·문서 전환). `npx tsc --noEmit`, `npx eslint .` 통과.
+- 실제 WASM(비공개 tests): `GEUL_RHWP_TEST_GENERATION=release` 제품 Release `853a0689…`로 `hangul-tools.wasm.test.ts`(시험 활성화 플래그) 통과 — 모델·다시 연
+  문서의 7개 언어 값, 나머지 글자 모양 그대로, 실행 취소, 표 계산 결과·오류·표 밖 거부·내보내기 바이트 같음. 플래그 없이 실행하면 제품 관문 확인만.
+- 실제 저장: `tests/integration/rhwp/hangul_tools_save.py`(→ Rust `t010_phase0_save_service` ignored 시험, 실제 `service::save`) 9/9 기대 일치 — HWPX 6사례 safe·게시
+  (두 번째 편집·저장 회차 포함), 연속 변경 1사례 안전 거부, 실행 취소 1사례, HWP 음성 대조 거부(원본 SHA 그대로).
+- native X11/IBus 앱 수용: **NOT RUN**(이 환경에 X11 표시·IBus·입력 주입 도구 없음). 한컴 오피스 호환: **NOT RUN**.

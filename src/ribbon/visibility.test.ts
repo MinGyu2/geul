@@ -65,7 +65,10 @@ describe("A07 사라진 탭 대신 고르기", () => {
 describe("형식 전용 탭의 명령", () => {
   const formatOnly = RIBBON_TABS.filter((tab) => tab.format).flatMap((tab) => tab.groups.flatMap((group) => group.commands));
 
-  it("A10/A13 아직 엔진에 연결하지 않은 계획 명령이며 어떤 문서 상태에서도 실행할 수 없다(notImplemented)", () => {
+  // T012에서 rhwp에 연결한 값 입력 명령. 세션이 문맥(parameters)을 내지 않으면 여전히 쓸 수 없다.
+  const CONNECTED = new Set(["hangul.charWidth", "hangul.charSpacing", "hangul.tableFormula"]);
+
+  it("A10/A13 연결하지 않은 명령은 계획 명령이라 어떤 문서 상태에서도 실행할 수 없고(notImplemented), 연결한 값 입력 명령도 세션 문맥 없이는 막힌다", () => {
     expect(formatOnly.length).toBeGreaterThan(0);
     // 편집 가능·조합 없음·기록·서식 상태까지 모두 있는 가장 너그러운 스냅숏이어도 막힌다.
     for (const engine of ["rhwp", "wordcraft"] as const) {
@@ -76,6 +79,11 @@ describe("형식 전용 탭의 명령", () => {
       };
       const target: DocumentCommandTarget = { sessionId: 1, engine, snapshot: () => snapshot, execute: () => ({ accepted: true }) };
       for (const command of formatOnly) {
+        if (CONNECTED.has(command.id)) {
+          expect(commandDefinition(command.id)?.kind, command.id).toBe("document");
+          expect(commandState(command.id, { layout: initialLayout, document: target }).available, command.id).toBe(false);
+          continue;
+        }
         expect(commandDefinition(command.id)?.kind, command.id).toBe("planned");
         expect(commandState(command.id, { layout: initialLayout, document: target })).toEqual({ available: false, reason: "notImplemented" });
       }

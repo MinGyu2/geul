@@ -9,6 +9,8 @@ struct Definition<'a> {
     depth: usize,
     started: bool,
     seen: [bool; 4],
+    /// `hh:ratio`·`hh:spacing`를 이미 봤는지(T012, 하나씩만).
+    metrics: [bool; 2],
     policy: FormatPolicy,
 }
 impl<'a> Definition<'a> {
@@ -18,6 +20,7 @@ impl<'a> Definition<'a> {
             depth: 0,
             started: false,
             seen: [false; 4],
+            metrics: [false; 2],
             policy,
         }
     }
@@ -58,6 +61,31 @@ impl<'a> Definition<'a> {
                             self.seen[slot] = true;
                             self.cursor.next()?;
                             continue;
+                        }
+                    }
+                    // T012 장평·자간: 내용 없는 `hh:ratio`·`hh:spacing`은 자리(요소)는 그대로 비교하고 값(속성)만 뺀다. 덧붙인
+                    // 정의의 값은 직렬화기 모양(7개 언어 속성 정확히, 정수, 앱이 쓰는 범위)이어야 한다.
+                    if let Some(slot) = HWPX_METRIC_CHILDREN
+                        .iter()
+                        .position(|name| is_head(event, name))
+                    {
+                        if matches!(self.cursor.peek()?, Some(Piece::Event(Canonical::End))) {
+                            if self.metrics[slot] {
+                                return Err(Invalid);
+                            }
+                            self.metrics[slot] = true;
+                            let Piece::Event(Canonical::Start { attributes, .. }) = &mut piece
+                            else {
+                                return Err(Invalid);
+                            };
+                            if self.policy == FormatPolicy::Appended
+                                && !serializer_metric_child(HWPX_METRIC_CHILDREN[slot], attributes)
+                            {
+                                return Err(Invalid);
+                            }
+                            attributes.clear();
+                            self.depth += 1;
+                            return Ok(Some(piece));
                         }
                     }
                 }

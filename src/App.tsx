@@ -1,5 +1,7 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useReducer, useRef, useState, useSyncExternalStore, type CSSProperties } from "react";
-import type { CommandContext, FileCommandActions } from "./commands/commands";
+import { executeCommand, type CommandContext, type CommandInputRequest, type FileCommandActions } from "./commands/commands";
+import type { DocumentCommandArgs } from "./commands/target";
+import { CommandInputDialog } from "./components/Editor/CommandInputDialog";
 import { handleShortcut } from "./commands/shortcuts";
 import type { DocumentWorkspace } from "./components/Editor/documentWorkspace";
 import { documentPanelState, navigateDocumentPage } from "./components/Editor/documentPanels";
@@ -184,10 +186,30 @@ function Workspace({ layout, dispatch, message, notice, pendingCount, notify, on
       saveAs: (sessionId) => { void handleSaveAs(sessionId); },
     };
   }, [documents, fileBusy, notify, t]);
+  // 값 입력 명령(T012·T013)의 입력 창. 요청은 연 순간의 세션·불러오기 번호·revision을 담는다.
+  const [inputRequest, setInputRequest] = useState<CommandInputRequest | null>(null);
+  const requestInput = useCallback((request: CommandInputRequest) => setInputRequest(request), []);
   const context = useMemo<CommandContext>(
-    () => ({ layout, dispatch, notify, document: activeEditor, modal: modal || formatChoice !== null, files: fileActions }),
-    [layout, dispatch, notify, activeEditor, modal, formatChoice, fileActions],
+    () => ({
+      layout, dispatch, notify, document: activeEditor, modal: modal || formatChoice !== null || inputRequest !== null,
+      files: fileActions, requestInput,
+    }),
+    [layout, dispatch, notify, activeEditor, modal, formatChoice, inputRequest, fileActions, requestInput],
   );
+  // 입력 창이 열린 동안 활성 문서가 바뀌거나 닫히면 창을 버린다(다른 문서에 값을 적용하지 않음 — 그리는 중 상태 조정).
+  if (inputRequest && activeEditor?.sessionId !== inputRequest.sessionId) setInputRequest(null);
+  const confirmInput = (args: DocumentCommandArgs) => {
+    const request = inputRequest;
+    setInputRequest(null);
+    if (!request) return;
+    // 창을 연 뒤 문서·세션이 바뀌었으면(다른 문서, 다시 불러오기, 그 사이 편집) 실행하지 않는다: 값은 연 순간의 문맥에서 고른 것이다.
+    const snapshot = activeEditor?.sessionId === request.sessionId ? activeEditor.snapshot() : null;
+    if (!snapshot || snapshot.loadGeneration !== request.loadGeneration || snapshot.revision !== request.revision) {
+      notify({ key: "commandInput.stale", vars: { command: { key: request.labelKey } } });
+      return;
+    }
+    executeCommand(request.command, request.labelKey, { ...context, modal: modal || formatChoice !== null }, args);
+  };
 
   // 단축키(T010): 레지스트리가 정한 명령만. 최신 문맥을 쓰도록 ref로 넘긴다(리스너는 한 번만 붙임).
   const contextRef = useRef(context);
@@ -257,6 +279,8 @@ function Workspace({ layout, dispatch, message, notice, pendingCount, notify, on
       </div>
       <StatusBar context={context} message={message} state={panel} noticeId={notice?.id} pendingCount={pendingCount} noticeResolved={notice?.resolved}
         onDismissMessage={notice ? () => onDismissMessage(notice.id) : undefined} />
+      {inputRequest && <CommandInputDialog key={`${inputRequest.sessionId}:${inputRequest.command}`} request={inputRequest}
+        suspended={modal} onCancel={() => setInputRequest(null)} onConfirm={confirmInput} />}
       {formatChoice && <NewDocumentDialog onChoose={formatChoice} suspended={modal} unavailable={documents ? creationUnavailable(documents) : {}} />}
     </div>
   );

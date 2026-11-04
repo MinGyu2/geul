@@ -65,7 +65,7 @@ Independent Test: 형식·선택·상태별 명령과 미지원 차단. 시험 �
 
 ## Phase 5: User Story 4 - 고급 기능 (Priority: P2)
 Independent Test: 실제 API·기록·문서 왕복을 검증한 명령만 활성화.
-- [ ] T012 [US4] 한글 전용 검증 명령 연결 — `src/ribbon/HangulTools/`
+- [ ] T012 [US4] 한글 전용 검증 명령 연결 — `src/ribbon/HangulTools/` (2026-11-05 부분: 표 계산 읽기 전용은 제품 HWP·HWPX, 장평·자간은 시험 활성화 빌드 HWPX만, 결과 쓰기·HWP 장평/자간 미지원, native NOT RUN — [command-registry.md "T012 한글 도구"](../architecture/command-registry.md))
 - [ ] T013 [US4] DOCX 고급 검증 명령 연결 — `src/ribbon/References/`
 
 ## Phase 6: User Story 5 - 저장 실패·복구 수용 (Priority: P1)

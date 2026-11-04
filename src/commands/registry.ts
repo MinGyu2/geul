@@ -24,6 +24,7 @@ export type FileCommandId = "file.new" | "file.open" | "file.saveAs";
 export type DocumentCommandId =
   | "edit.undo" | "edit.redo"
   | "format.bold" | "format.italic" | "format.underline" | "format.strikethrough"
+  | "hangul.charWidth" | "hangul.charSpacing" | "hangul.tableFormula"
   | "file.save";
 
 /** 엔진 하나에서 명령의 지원. */
@@ -79,6 +80,11 @@ const RHWP_FORMAT: EngineSupport =
  *   통과하지 못해 제품 빌드에서는 `unsupported`다(시험 활성화 빌드만 `RHWP_HISTORY`). 글자 서식은 HWP DocInfo 글자 모양·HWPX
  *   header.xml을 바꿔 T009 보존 검사가 저장을 막으므로 하지 않는다.
  * - 저장은 두 엔진 모두 기존 T009 저장 절차(사전 검사·출력 검사·게시)를 그대로 부른다.
+ * - 장평·자간(T012): rhwp 글자 모양 `ratios`·`spacings`를 바꾸는 글자 서식이라 위 글자 서식과 같은 관문(`RHWP_FORMAT`, 시험 활성화
+ *   빌드의 HWPX만 — 실행 취소 기록이 제품에서 NO-GO)이다. WordCraft에는 같은 의미의 명령을 연결하지 않았다.
+ * - 표 계산(T012): rhwp `evaluateTableFormula(writeResult=false)` — 문서를 바꾸지 않는 읽기 전용 계산이라 HWP·HWPX 모두 제품에서
+ *   지원한다. 결과를 셀에 쓰기(`writeResult=true`)는 계산식이 아니라 값 글자만 남겨(표 계산식 필드가 저장되지 않음) 계산식 의미를
+ *   보존한다고 볼 수 없어 연결하지 않았다(docs/architecture/command-registry.md "T012").
  */
 const DOCUMENT_COMMANDS: Record<DocumentCommandId, Omit<CommandDefinition, "id" | "labelKey" | "kind">> = {
   "edit.undo": { engines: { wordcraft: SUPPORTED, rhwp: RHWP_HISTORY }, shortcuts: ["Mod+Z"], scope: "document" },
@@ -87,6 +93,9 @@ const DOCUMENT_COMMANDS: Record<DocumentCommandId, Omit<CommandDefinition, "id" 
   "format.italic": { engines: { wordcraft: SUPPORTED, rhwp: RHWP_FORMAT }, shortcuts: ["Mod+I"], scope: "document" },
   "format.underline": { engines: { wordcraft: SUPPORTED, rhwp: RHWP_FORMAT }, shortcuts: ["Mod+U"], scope: "document" },
   "format.strikethrough": { engines: { wordcraft: SUPPORTED, rhwp: RHWP_FORMAT } },
+  "hangul.charWidth": { engines: { wordcraft: UNSUPPORTED, rhwp: RHWP_FORMAT } },
+  "hangul.charSpacing": { engines: { wordcraft: UNSUPPORTED, rhwp: RHWP_FORMAT } },
+  "hangul.tableFormula": { engines: { wordcraft: UNSUPPORTED, rhwp: SUPPORTED } },
   "file.save": { engines: { wordcraft: SUPPORTED, rhwp: SUPPORTED }, shortcuts: ["Mod+S"], scope: "document" },
 };
 

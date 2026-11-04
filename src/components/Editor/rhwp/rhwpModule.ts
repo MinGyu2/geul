@@ -65,6 +65,15 @@ export interface RhwpDocument {
   getCharPropertiesAt?(section: number, paragraph: number, offset: number): string;
   getCellCharPropertiesAt?(section: number, parentParagraph: number, control: number, cell: number, cellParagraph: number, offset: number): string;
   deleteTextInCell(section: number, parentParagraph: number, control: number, cell: number, cellParagraph: number, offset: number, count: number): string;
+  /** 표 셀의 논리 좌표 JSON `{row, col, rowSpan, colSpan}`(T012 표 계산). 셀이 없으면 예외. */
+  getCellInfo?(section: number, parentParagraph: number, control: number, cell: number): string;
+  /**
+   * 표 계산식(T012). `writeResult`가 false이면 문서를 바꾸지 않고 `{ok, result, formula}` JSON을 돌려준다(고정 rhwp
+   * `evaluate_table_formula` — 셀 값을 읽기만 함). 계산 오류는 예외. 이 앱은 false로만 부른다.
+   */
+  evaluateTableFormula?(
+    section: number, parentParagraph: number, control: number, row: number, col: number, formula: string, writeResult: boolean,
+  ): string;
   deleteRange(section: number, startParagraph: number, startOffset: number, endParagraph: number, endOffset: number): string;
   deleteRangeInCell(
     section: number, parentParagraph: number, control: number, cell: number,

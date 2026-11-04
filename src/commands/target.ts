@@ -5,6 +5,7 @@
 // 각 엔진이 가진다. 여기의 스냅숏은 그 값을 읽어 가용성을 정할 뿐 따로 기억하지 않는다.
 import type { EngineId, SessionId } from "../adapters/contract";
 import type { DocxFormatAccess } from "../adapters/docx";
+import type { Message } from "../language";
 import type { DocumentCommandId } from "./registry";
 
 export type CharFormatFlag = "bold" | "italic" | "underline" | "strikethrough";
@@ -48,10 +49,45 @@ export interface DocumentCommandSnapshot {
   format: Readonly<Record<CharFormatFlag, boolean>> | null;
   /** 문서 보호가 직접 글자 서식을 허용하는지(엔진이 알려 주면). null이면 서식 상태가 없는 엔진. */
   formatAccess: DocxFormatAccess | null;
+  /**
+   * 값 입력 명령(T012·T013)의 문맥. 명령 ID마다 그 명령을 지금 실행할 수 있을 때만 값이 있다(세션이 엔진·선택으로 판정 — 없으면
+   * 그 명령은 막힘). 판정 이유가 있으면 `parameterReasons`에 둔다.
+   */
+  parameters?: Partial<Record<ParameterCommandId, CommandParameterContext>>;
+  /** 값 입력 명령을 지금 할 수 없는 이유(세션이 아는 것, 예: 선택 없음·표 밖). */
+  parameterReasons?: Partial<Record<ParameterCommandId, "selectionRequired" | "notInTable" | "engineUnsupported">>;
 }
 
-/** 명령을 받은 결과. accepted면 세션의 편집 경로에 넣었다(완료·실패는 세션이 처리하고 보인다). */
-export type CommandDispatch = { accepted: true } | { accepted: false };
+/**
+ * 사용자 값이 필요한 문서 명령(T012·T013)의 값. 명령마다 정해진 모양 하나이며 화면(입력 창)과 세션이 같은 검증
+ * (`validateCommandArgs`, src/commands/parameters.ts)을 거친다. 전역 대기 인자 없이 실행 요청에 함께 넘긴다.
+ */
+export type DocumentCommandArgs =
+  /** 장평(%) — rhwp 글자 모양 `ratios`(7개 언어 모두 같은 값). */
+  | { command: "hangul.charWidth"; percent: number }
+  /** 자간(%) — rhwp 글자 모양 `spacings`(7개 언어 모두 같은 값). */
+  | { command: "hangul.charSpacing"; percent: number }
+  /** 표 계산식(읽기 전용 계산, 셀에 쓰지 않음). */
+  | { command: "hangul.tableFormula"; formula: string };
+
+/** 값이 필요한 문서 명령. */
+export type ParameterCommandId = DocumentCommandArgs["command"];
+
+/**
+ * 값 입력 명령의 지금 문맥(세션이 엔진에서 읽은 값). 입력 창의 처음 값·검증 범위에 쓴다. 엔진이 알려 주지 않으면 없다.
+ */
+export interface CommandParameterContext {
+  /** 선택 첫 글자의 장평·자간(한글 언어 값, %). */
+  charShape?: { width: number; spacing: number };
+  /** 커서가 있는 표 셀(0부터)과 표 크기. */
+  tableCell?: { row: number; col: number; rows: number; cols: number };
+}
+
+/**
+ * 명령을 받은 결과. accepted면 세션의 편집 경로에 넣었다(완료·실패는 세션이 처리하고 보인다). `message`가 있으면 실행 경계가
+ * 상태 표시줄에 알린다(예: 읽기 전용 계산 결과).
+ */
+export type CommandDispatch = { accepted: true; message?: Message } | { accepted: false; message?: Message };
 
 export interface DocumentCommandTarget {
   readonly sessionId: SessionId;
@@ -61,5 +97,5 @@ export interface DocumentCommandTarget {
    * 명령을 이 세션에 실행한다. 레지스트리가 가용성을 확인한 뒤 부르지만, 세션은 자기 상태로 다시 확인하고 맞지 않으면
    * 아무것도 바꾸지 않고 거절한다(accepted: false).
    */
-  execute(command: DocumentCommandId): CommandDispatch;
+  execute(command: DocumentCommandId, args?: DocumentCommandArgs): CommandDispatch;
 }

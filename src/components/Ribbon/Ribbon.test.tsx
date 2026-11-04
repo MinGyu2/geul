@@ -143,20 +143,77 @@ describe("T011 형식별 리본 탭(앱)", () => {
     expectConsistentTabs("홈");
   });
 
-  it("A03/A04 한글 도구 탭은 HWP/HWPX 전용 안내와 함께 계획 명령을 쓸 수 없음으로 보이고, 눌러도 문서를 바꾸지 않는다", async () => {
+  it("A03/A04 한글 도구 탭은 HWP/HWPX 전용 안내와 함께 보이고, 제품 빌드의 장평·자간(시험 빌드 전용)과 표 밖의 표 계산은 쓸 수 없으며 눌러도 문서를 바꾸지 않는다", async () => {
     const { user, docs } = await renderMixed(["/a.hwp", "/b.hwpx"]);
     await user.click(ribbonTabs().getByRole("tab", { name: "한글 도구" }));
     expectConsistentTabs("한글 도구");
     expect(screen.getByText("HWP/HWPX 문서 전용 도구입니다.")).toBeInTheDocument();
     const toolbar = screen.getByRole("toolbar", { name: "한글 도구" });
-    for (const button of within(toolbar).getAllByRole("button")) {
-      expect(button).toHaveAttribute("aria-disabled", "true");
-      expect(button.title).toContain("아직 연결되지 않은 명령");
-    }
+    for (const button of within(toolbar).getAllByRole("button")) expect(button).toHaveAttribute("aria-disabled", "true");
+    expect(within(toolbar).getByRole("button", { name: /장평/ }).title).toContain("이 문서 형식에서 지원하지 않음");
+    expect(within(toolbar).getByRole("button", { name: /자간/ }).title).toContain("이 문서 형식에서 지원하지 않음");
+    expect(within(toolbar).getByRole("button", { name: /표 계산/ }).title).toContain("커서가 표 셀 안에 있지 않음");
     const before = docs.get("hwpx")!.paragraphs.join("\n");
     await user.click(within(toolbar).getByRole("button", { name: /장평/ }));
-    expect(statusMessage()).toHaveTextContent("장평: 아직 연결되지 않은 명령입니다.");
+    expect(statusMessage()).toHaveTextContent("장평: 이 문서 형식에서는 지원하지 않습니다.");
+    await user.click(within(toolbar).getByRole("button", { name: /표 계산/ }));
+    expect(statusMessage()).toHaveTextContent("표 계산: 먼저 커서를 표 셀 안에 두세요.");
+    expect(screen.queryByTestId("command-input-dialog")).not.toBeInTheDocument();
     expect(docs.get("hwpx")!.paragraphs.join("\n")).toBe(before);
+  });
+
+  it("T012 표 계산: 리본 → 입력 창(모달) → 읽기 전용 결과를 알리고 문서는 그대로. 창이 열린 동안 문서가 바뀌거나 다른 문서로 바뀌면 적용하지 않는다", async () => {
+    const { user, docs, sessions, workspace } = await renderMixed(["/a.hwp", "/b.hwpx"]);
+    const doc = docs.get("hwpx")! as FakeDocument & Record<string, unknown>;
+    const formulas: unknown[][] = [];
+    Object.assign(doc, {
+      getTableDimensions: () => JSON.stringify({ rowCount: 2, colCount: 2, cellCount: 4 }),
+      getCellInfo: (_s: number, _p: number, _c: number, cell: number) => JSON.stringify({ row: cell >> 1, col: cell & 1, rowSpan: 1, colSpan: 1 }),
+      evaluateTableFormula: (...args: unknown[]) => { formulas.push(args); return JSON.stringify({ ok: true, result: 7, formula: args[5] }); },
+    });
+    const editor = workspace.editorFor(2)!;
+    const inCell = { section: 0, paragraph: 0, offset: 0, cell: { parentParagraph: 0, control: 0, cell: 1, cellParagraph: 0 } };
+    editor.caret = editor.anchor = inCell;
+    await user.click(ribbonTabs().getByRole("tab", { name: "한글 도구" }));
+    const toolbar = () => screen.getByRole("toolbar", { name: "한글 도구" });
+    const formulaButton = () => within(toolbar()).getByRole("button", { name: /표 계산/ });
+    expect(formulaButton()).not.toHaveAttribute("aria-disabled");
+    const before = [...doc.paragraphs];
+
+    await user.click(formulaButton());
+    const dialog = screen.getByTestId("command-input-dialog");
+    expect(dialog).toHaveTextContent("B1 셀 기준");
+    // 창이 열린 동안은 다른 명령도 모달로 막힌다.
+    expect(formulaButton()).toHaveAttribute("aria-disabled", "true");
+    await user.type(screen.getByTestId("command-input-value"), "=SUM(A1:B2)");
+    await user.click(screen.getByTestId("command-input-confirm"));
+    expect(screen.queryByTestId("command-input-dialog")).not.toBeInTheDocument();
+    expect(formulas).toEqual([[0, 0, 0, 0, 1, "=SUM(A1:B2)", false]]);
+    expect(statusMessage()).toHaveTextContent("표 계산: =SUM(A1:B2) = 7 (결과만 표시, 표는 바꾸지 않음)");
+    expect(doc.paragraphs).toEqual(before);
+    expect(sessions.get(2)).toMatchObject({ revision: 0, dirty: false });
+
+    // 창을 연 뒤 문서가 바뀌면(revision) 확인해도 계산하지 않는다.
+    await user.click(formulaButton());
+    await act(async () => {
+      editor.caret = editor.anchor = { section: 0, paragraph: 0, offset: 0 };
+      editor.typeText("가");
+      await flush();
+      editor.caret = editor.anchor = inCell;
+    });
+    await user.type(screen.getByTestId("command-input-value"), "=A1");
+    await user.click(screen.getByTestId("command-input-confirm"));
+    expect(formulas).toHaveLength(1);
+    expect(statusMessage()).toHaveTextContent("표 계산: 창이 열린 동안 문서가 바뀌어 적용하지 않았습니다.");
+
+    // 다른 문서로 바꾸면 창을 버린다(그 문서에 적용하지 않음).
+    await user.click(formulaButton());
+    expect(screen.getByTestId("command-input-dialog")).toBeInTheDocument();
+    await act(async () => { sessions.select(1); await flush(); });
+    expect(screen.queryByTestId("command-input-dialog")).not.toBeInTheDocument();
+    await act(async () => { sessions.select(2); await flush(); });
+    expect(screen.queryByTestId("command-input-dialog")).not.toBeInTheDocument();
+    expect(formulas).toHaveLength(1);
   });
 
   it("A06/A07 DOCX의 참조 탭을 고른 채 HWP로 바꾸거나 DOCX를 닫으면 홈으로 바뀌고 ARIA 관계가 맞는다(돌아와도 되살리지 않음)", async () => {
