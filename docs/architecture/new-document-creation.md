@@ -347,3 +347,9 @@ T022 요약의 "게시 뒤 닫기는 늦은 세션을 닫고"는 더 이상 현�
 - Rust 기본 suite 256 PASS/22 ignored(보호 빌드한 test binary를 private TMPDIR에서 실행). `services::creation` ignored 포함 4 PASS. fmt check·clippy(lib·bins, `-D warnings`) PASS.
 - native X11/IBus: 양성 3형식, safety 22개(신규 `unverified` 포함), 창 닫기 4모드(`unconfirmed-publication` 신규·`publication`·`dirty-selection`·`selection`) PASS. 모두 정리 성공·잔여 프로세스 0이다.
 - NOT RUN: native Release 앱, Wayland/fcitx5, GPU desktop, Windows/macOS, 실제 정전, 외부 한컴/Word 상호운용, native 실제 디렉터리 fsync 실패.
+
+## 2차 안정화 — 2026-11-04
+
+### 복구 복원 게시 뒤 열기 실패와 창 닫기
+
+`restoreRecovery()`에서 Rust `restore()`는 durable 게시 뒤 경로를 반환하고, 프런트엔드가 별도 IPC로 `backend.open()`을 호출한다. 이전에는 이 열기가 실패하면 원래 오류(예: `ResourceLimit session-count`)만 반환했다. 그래서 파일 생성 사실이 빠졌고, `notePublication()`도 호출되지 않아 대기 중인 창 닫기 결정이 그대로 창을 파괴했다. 수정 전 프런트엔드 시험에서 실패를 확인했다. 이제 이 경우를 `RestoredUnopened { cause }`(ko/en 문구에 원인 포함)로 보고하고, 기존 게시 안내 카운트로 창 닫기를 되돌린다. 게시 전 거절(`FileConflict` 등)과 정상 복원·열기는 닫기를 막지 않는다. native `restore-unopened` 모드는 실제 DOCX 체크포인트·실제 restore 게시·실제 64세션 용량 열기 실패를 쓴다. 위치 선택 결과만 하네스가 넣었다. 창 유지, 파일·후보 유지, 다음 확인된 닫기 1회 종료가 PASS다.

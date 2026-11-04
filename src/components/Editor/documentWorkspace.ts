@@ -102,7 +102,8 @@ export class DocumentWorkspace {
   }
 
   private notePublication(result: Result<unknown>) {
-    if (!result.ok && (result.error.code === "FilePublishedUnregistered" || result.error.code === "FilePublishedUnconfirmed")) this.publicationNotices += 1;
+    if (!result.ok && (result.error.code === "FilePublishedUnregistered" || result.error.code === "FilePublishedUnconfirmed"
+      || result.error.code === "RestoredUnopened")) this.publicationNotices += 1;
   }
 
   get supportsNativeFiles(): boolean {
@@ -328,7 +329,16 @@ export class DocumentWorkspace {
         this.sessions.cancelOpen(ticket);
         return restored;
       }
-      return this.acceptAndLoad(ticket, await this.backend.open(restored.value));
+      // The destination is already published (Rust restore returned its path). An open failure from here
+      // leaves a file without an owned session: report both facts and invalidate any pending close decision.
+      const opened = await this.backend.open(restored.value);
+      if (!opened.ok && opened.error.code !== "AlreadyOpen") {
+        const unopened: Result<SessionInfo> = { ok: false, error: { code: "RestoredUnopened", cause: opened.error } };
+        this.notePublication(unopened);
+        this.sessions.cancelOpen(ticket);
+        return unopened;
+      }
+      return this.acceptAndLoad(ticket, opened);
     } finally {
       this.endFileOperation();
     }

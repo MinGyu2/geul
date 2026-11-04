@@ -153,6 +153,11 @@ export type ClientError =
   | { code: "FileCreatedEditorFailed"; sessionId: SessionId }
   /** The loaded RHWP runtime has no blank-creation API. Nothing was written. */
   | { code: "CreationUnavailable"; format: DocumentFormat }
+  /**
+   * Recovery restore published a new destination file, but opening it as a session failed (`cause`).
+   * The file exists and the recovery candidate remains; nothing was deleted.
+   */
+  | { code: "RestoredUnopened"; cause: DocumentError }
   | { code: "EngineFailure"; engine: EngineId; stage: EngineStage }
   | { code: "Protocol" }
   | { code: "UnpreservedChanges"; sessionId: SessionId }

@@ -5,6 +5,9 @@ A WM_DELETE_WINDOW ClientMessage goes directly to the actual GTK toplevel.
 Mode unconfirmed-publication publishes for real but marks the frontend response
 dirty (simulated unconfirmed durability; the Rust session is actually durable).
 Real directory-fsync failure is only injected by Rust unit tests (Fault::DirSync).
+Mode restore-unopened uses a real DOCX recovery checkpoint, real Rust restore
+publication and a real session-capacity open failure; only the destination
+chooser result is supplied by the harness.
 This works under bare Xvfb without an EWMH window manager; windowclose/windowkill
 would bypass confirmation and are deliberately not used here.
 """
@@ -54,11 +57,65 @@ def request_native_close(xdotool, window):
     finally:x11.XCloseDisplay(display)
 
 
+def restore_unopened(args,d,test,report,window):
+    import shutil
+    source=args.out/'edited.docx';shutil.copyfile(args.documents/'created.docx',source)
+    test.open('docx',source)
+    test.engine('xkb:us::eng');test.key('End');test.type(' recover')
+    test.wait("return window.__ndWorkspace.recoveryCheckpointStatuses.some(s=>s.kind==='protected')",timeout=60)
+    listed=test.async_js("return await window.__TAURI_INTERNALS__.invoke('recovery_list')")
+    assert listed['ok'] and len(listed['value'])==1,listed
+    candidate={k:listed['value'][0].get(k) for k in ['id','valid','name','revision','format','createdAt','stale']}
+    # Fill the real registry to its 64-session capacity so the restored file cannot be opened.
+    count=len(test.sessions());fill=[]
+    while count<64:
+        target=args.out/f'capacity-{count}.docx'
+        response=test.async_js("return await window.__TAURI_INTERNALS__.invoke('document_new',Uint8Array.from(atob(arguments[0]),c=>c.charCodeAt(0)))",
+            __import__('base64').b64encode(b'GNC1'+__import__('struct').pack('<I',len(m:=json.dumps({'path':str(target),'format':'docx','contentLoss':None}).encode()))+m).decode())
+        assert response['ok'],response;fill.append(response['value']['sessionId']);count+=1
+    restored=args.out/'restored.docx'
+    d.js("""const w=window.__ndWorkspace;window.__ndRestore=w.recoveryPort.restore;window.__ndRestorePending=false;
+    w.filePort.chooseFile=async()=>({ok:true,value:arguments[0]});
+    w.recoveryPort.restore=(...a)=>{window.__ndRestorePending=true;return new Promise((resolve,reject)=>{
+      window.__ndRestoreResume=()=>{window.__ndRestorePending=false;window.__ndRestore.apply(w.recoveryPort,a).then(resolve,reject)}})};
+    window.__ndRestoreResult=null;w.restoreRecovery(arguments[1],{title:'r',accept:'r',cancel:'c'}).then(r=>window.__ndRestoreResult=r);""",str(restored),candidate)
+    test.wait('return window.__ndRestorePending===true')
+    assert not restored.exists()
+    pids=set(smoke.app_processes())
+    # The edited tab is unpreserved: confirm the window close, which then waits for the restore.
+    request_native_close(args.xdotool,window)
+    test.wait("return document.querySelector('[data-testid=discard-dialog]')!==null")
+    test.key('Tab','Return')
+    test.wait("return window.__ndWorkspace.windowClosing===true && window.__ndWorkspace.fileBusy===true")
+    d.js('window.__ndRestoreResume()')
+    test.wait('return window.__ndRestoreResult!==null')
+    result=d.js('return window.__ndRestoreResult')
+    assert result=={'ok':False,'error':{'code':'RestoredUnopened','cause':{'code':'ResourceLimit','limit':'session-count'}}},result
+    time.sleep(1)
+    assert pids.issubset(set(smoke.app_processes())),'window destroyed on a stale close decision after restore publication'
+    assert restored.is_file() and len(test.sessions())==64
+    state=d.js("const w=window.__ndWorkspace;return {closing:w.windowClosing,busy:w.fileBusy,notices:w.publicationNoticeCount,dialogs:document.querySelectorAll('[aria-modal=true]').length}")
+    assert state=={'closing':False,'busy':False,'notices':1,'dialogs':0},state
+    listed=test.async_js("return await window.__TAURI_INTERNALS__.invoke('recovery_list')")
+    assert listed['ok'] and [c['id'] for c in listed['value']]==[candidate['id']],'recovery candidate must remain'
+    report['negative'].append({'case':'recovery restore published, open failed during confirmed close','status':'PASS','published':True,
+        'openFailure':'real ResourceLimit session-count','windowRetained':True,'candidateRetained':True,'chooser':'harness-supplied path'})
+    request_native_close(args.xdotool,window)
+    test.wait("return document.querySelector('[data-testid=discard-dialog]')!==null")
+    assert d.js("return document.querySelectorAll('[aria-modal=true]').length")==1
+    test.key('Tab','Return')
+    deadline=time.monotonic()+20
+    while pids.intersection(smoke.app_processes()) and time.monotonic()<deadline:time.sleep(.1)
+    assert not pids.intersection(smoke.app_processes()),'second confirmed close did not complete'
+    assert restored.is_file()
+    report['negative'].append({'case':'next confirmed close after the notice','status':'PASS','appExited':True,'fileRetained':True})
+
+
 def main():
     parser=argparse.ArgumentParser(description=__doc__)
     for name in ['app','out']: parser.add_argument('--'+name,type=Path,required=True)
     for name in ['driver','xdotool','ibus']: parser.add_argument('--'+name,required=True)
-    parser.add_argument('--mode',choices=['selection','publication','dirty-selection','unconfirmed-publication'],required=True)
+    parser.add_argument('--mode',choices=['selection','publication','dirty-selection','unconfirmed-publication','restore-unopened'],required=True)
     parser.add_argument('--port',type=int,default=4444)
     parser.add_argument('--documents',type=Path)
     args=parser.parse_args();args.out.mkdir(parents=True,exist_ok=False)
@@ -79,6 +136,13 @@ def main():
             test.async_js("window.__ndCloseObserved=0;window.__ndStopClose=await window.__ndWorkspace.windowClose.listen(()=>window.__ndCloseObserved++);return true")
             path=args.out/'closing.docx'
             original_hash=None
+            if args.mode=='restore-unopened':
+                restore_unopened(args,d,test,report,window)
+                try:d.quit();report['driverDeleteAfterNativeClose']='ok'
+                except Exception as error:report['driverDeleteAfterNativeClose']=str(error)
+                d=None
+                report['status']='PASS'
+                return 0
             if args.mode=='dirty-selection':
                 assert args.documents
                 original_hash=module.native.sha(args.documents/'created.docx')

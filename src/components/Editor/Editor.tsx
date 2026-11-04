@@ -58,6 +58,9 @@ type DiscardRequest = { action: "close" | "reload"; sessionId: SessionId; name: 
 
 /** 오류 code를 화면 문구 키로. 세부 값(경로·내용)은 보여 주지 않는다. */
 export function documentErrorMessage(error: DocumentError): Message {
+  if (error.code === "RestoredUnopened") {
+    return { key: "document.error.RestoredUnopened", vars: { reason: { key: `document.error.${error.cause.code}` as MessageKey } } };
+  }
   return { key: `document.error.${error.code}` as MessageKey };
 }
 

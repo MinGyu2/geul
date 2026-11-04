@@ -389,6 +389,7 @@
   "document.error.FilePublishedUnregistered": "The new file exists, but could not be opened as a session. Inspect and open the destination; do not create it again.",
   "properties.paragraphStyle": "Caret paragraph style: {style}",
   "document.newTitle": "Create a document",
+  "document.error.RestoredUnopened": "The recovered content was written to a new file, but it could not be opened ({reason}). Inspect that file and open it yourself. The recovery copy remains.",
   "document.error.CreationUnverified": "The current RHWP engine produced a blank document that differs from the verified creation output, so no document was created. No file was written.",
   "document.error.CreationUnavailable": "The current RHWP engine does not provide blank document creation, so no document was created. No file was written.",
   "document.formatUnavailable.CreationUnverified": "Unavailable: the current engine output is not verified",
