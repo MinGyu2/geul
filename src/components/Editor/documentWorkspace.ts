@@ -324,6 +324,9 @@ export class DocumentWorkspace {
         this.sessions.cancelOpen(ticket);
         return null;
       }
+      // Last reversible point: the window close was decided while the destination chooser was open.
+      // Publication has not started, so nothing is written and the recovery candidate stays untouched.
+      if (this.windowClosing) { this.sessions.cancelOpen(ticket); return null; }
       const restored = await this.recoveryPort.restore(candidate.id, chosen.value);
       if (!restored.ok) {
         this.notePublication(restored);

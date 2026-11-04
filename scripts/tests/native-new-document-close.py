@@ -111,11 +111,112 @@ def restore_unopened(args,d,test,report,window):
     report['negative'].append({'case':'next confirmed close after the notice','status':'PASS','appExited':True,'fileRetained':True})
 
 
+def recovery_files(args):
+    root=args.out/'data'  # tauri-driver app data directory owned by this run
+    return {str(p.relative_to(root)):module.native.sha(p) for p in sorted(root.rglob('*')) if p.is_file() and 'recovery' in p.parts}
+
+
+def checkpoint_candidate(args,d,test):
+    import shutil
+    source=args.out/'edited.docx';shutil.copyfile(args.documents/'created.docx',source)
+    original=module.native.sha(args.documents/'created.docx')
+    test.open('docx',source)
+    test.engine('xkb:us::eng');test.key('End');test.type(' recover')
+    test.wait("return window.__ndWorkspace.recoveryCheckpointStatuses.some(s=>s.kind==='protected')",timeout=60)
+    listed=test.async_js("return await window.__TAURI_INTERNALS__.invoke('recovery_list')")
+    assert listed['ok'] and len(listed['value'])==1,listed
+    candidate={k:listed['value'][0].get(k) for k in ['id','valid','name','revision','format','createdAt','stale']}
+    store_before=recovery_files(args);assert store_before,'recovery store not found'
+    return candidate,store_before,original
+
+
+def finish_confirmed_close(args,d,test,report,window,pids,restored,store_before,original):
+    deadline=time.monotonic()+20
+    while pids.intersection(smoke.app_processes()) and time.monotonic()<deadline:time.sleep(.1)
+    assert not pids.intersection(smoke.app_processes()),'confirmed close did not complete after the chooser'
+    assert not restored.exists(),'restore published after a confirmed window close'
+    assert recovery_files(args)==store_before,'recovery store changed'
+    assert module.native.sha(args.documents/'created.docx')==original
+
+
+def restore_chooser_injected(args,d,test,report,window):
+    # Real Tauri close request/destroy, real restore/open ports; only the chooser response is injected.
+    candidate,store_before,original=checkpoint_candidate(args,d,test)
+    restored=args.out/'restored.docx'
+    d.js("""const w=window.__ndWorkspace;window.__ndChooserCalls=0;
+    w.filePort.chooseFile=()=>{window.__ndChooserCalls++;return new Promise(resolve=>{window.__ndChoose=resolve})};
+    window.__ndRestoreResult='pending';w.restoreRecovery(arguments[0],{title:'r',accept:'r',cancel:'c'}).then(r=>window.__ndRestoreResult=r)""",candidate)
+    test.wait('return window.__ndChooserCalls===1')
+    pids=set(smoke.app_processes())
+    request_native_close(args.xdotool,window)
+    test.wait("return document.querySelector('[data-testid=discard-dialog]')!==null")
+    assert d.js("return document.querySelectorAll('[aria-modal=true]').length")==1
+    test.key('Tab','Return')
+    test.wait("return window.__ndWorkspace.windowClosing===true && window.__ndWorkspace.fileBusy===true")
+    assert pids.issubset(set(smoke.app_processes())),'window destroyed while the chooser was pending'
+    # Resolve after this WebDriver call returns: the corrected close then destroys the browsing context.
+    d.js('const v=arguments[0];setTimeout(()=>window.__ndChoose({ok:true,value:v}),100)',str(restored))
+    finish_confirmed_close(args,d,test,report,window,pids,restored,store_before,original)
+    report['negative'].append({'case':'confirmed close while restore chooser pending (injected chooser response)','status':'PASS',
+        'chooser':'test-injected response','closeRequest':'real WM_DELETE_WINDOW','published':False,'recoveryStoreUnchanged':True,'appExited':True})
+
+
+def restore_chooser(args,d,test,report,window):
+    # Real GTK destination chooser; the window-close request is a real WM_DELETE_WINDOW.
+    candidate,store_before,original=checkpoint_candidate(args,d,test)
+    restored=args.out/'restored.docx'
+    d.js("window.__ndRestoreResult='pending';window.__ndWorkspace.restoreRecovery(arguments[0],{title:'복구 사본을 새 파일로 복원',accept:'복원',cancel:'취소'}).then(r=>window.__ndRestoreResult=r,e=>window.__ndRestoreResult={thrown:String(e)})",candidate)
+    deadline=time.monotonic()+15;chooser=''
+    while time.monotonic()<deadline and not chooser:
+        found=subprocess.run([args.xdotool,'search','--onlyvisible','--name','^복구 사본을 새 파일로 복원$'],capture_output=True,text=True)
+        chooser=found.stdout.split()[-1] if found.returncode==0 and found.stdout.strip() else '';time.sleep(.1)
+    assert chooser,'native GTK chooser not visible'
+    pids=set(smoke.app_processes())
+    before=d.js('return window.__ndCloseObserved')
+    request_native_close(args.xdotool,window)
+    deadline=time.monotonic()+10
+    while time.monotonic()<deadline and not d.js("return document.querySelector('[data-testid=discard-dialog]')!==null"):time.sleep(.2)
+    report['chooserCloseDelivery']={'closeEventsBefore':before,'closeEventsAfter':d.js('return window.__ndCloseObserved'),
+        'dialog':d.js("return document.querySelector('[data-testid=discard-dialog]')!==null"),'busy':d.js('return window.__ndWorkspace.fileBusy')}
+    if not report['chooserCloseDelivery']['dialog']:
+        # Record whether the real GTK chooser lets the WM close request reach the app at all.
+        test.command(args.xdotool,'windowfocus','--sync',chooser);test.key('Escape')
+        test.wait('return window.__ndRestoreResult!=="pending"')
+        report['chooserCloseDelivery']['afterChooserCancel']={'closeEvents':d.js('return window.__ndCloseObserved'),
+            'dialog':d.js("return document.querySelector('[data-testid=discard-dialog]')!==null"),'result':d.js('return window.__ndRestoreResult')}
+        # Observed under Xvfb/X11: the modal FileChooserNative run() grab drops the parent's delete request.
+        # The ordering is unreachable here; record it and verify nothing was published.
+        assert report['chooserCloseDelivery']['afterChooserCancel']['result'] is None
+        assert not restored.exists() and recovery_files(args)==store_before
+        report['negative'].append({'case':'WM close while the real GTK restore chooser is open','status':'NOT REACHABLE',
+            'observation':'0 CloseRequested events reached the app during or after the modal chooser','published':False})
+        request_native_close(args.xdotool,window)
+        test.wait("return document.querySelector('[data-testid=discard-dialog]')!==null")
+        test.key('Tab','Return')
+        deadline=time.monotonic()+20
+        while pids.intersection(smoke.app_processes()) and time.monotonic()<deadline:time.sleep(.1)
+        assert not pids.intersection(smoke.app_processes())
+        return
+    report['closeDuringChooser']=d.js("return {dialogs:document.querySelectorAll('[aria-modal=true]').length,busy:window.__ndWorkspace.fileBusy,kind:document.querySelector('[data-testid=discard-dialog]')?.dataset.windowKind}")
+    assert report['closeDuringChooser']['busy'] and report['closeDuringChooser']['dialogs']==1,report['closeDuringChooser']
+    # The GTK chooser keeps keyboard focus; confirm the web prompt with a DOM click.
+    d.js("document.querySelector('[data-testid=discard-confirm]').click()")
+    test.wait("return window.__ndWorkspace.windowClosing===true && window.__ndWorkspace.fileBusy===true")
+    assert pids.issubset(set(smoke.app_processes())),'window destroyed while the chooser was pending'
+    # Now complete the real chooser with a new destination.
+    test.command(args.xdotool,'windowfocus','--sync',chooser)
+    test.key('ctrl+l','ctrl+a');test.type(str(restored));test.key('Return')
+    finish_confirmed_close(args,d,test,report,window,pids,restored,store_before,original)
+    report['negative'].append({'case':'window close confirmed while the real GTK restore chooser was pending','status':'PASS',
+        'chooser':'real GTK; destination typed with XTest','closeRequest':'real WM_DELETE_WINDOW','confirm':'DOM click (GTK chooser holds keyboard focus)',
+        'published':False,'recoveryStoreUnchanged':True,'appExited':True})
+
+
 def main():
     parser=argparse.ArgumentParser(description=__doc__)
     for name in ['app','out']: parser.add_argument('--'+name,type=Path,required=True)
     for name in ['driver','xdotool','ibus']: parser.add_argument('--'+name,required=True)
-    parser.add_argument('--mode',choices=['selection','publication','dirty-selection','unconfirmed-publication','restore-unopened'],required=True)
+    parser.add_argument('--mode',choices=['selection','publication','dirty-selection','unconfirmed-publication','restore-unopened','restore-chooser','restore-chooser-injected'],required=True)
     parser.add_argument('--port',type=int,default=4444)
     parser.add_argument('--documents',type=Path)
     args=parser.parse_args();args.out.mkdir(parents=True,exist_ok=False)
@@ -136,8 +237,9 @@ def main():
             test.async_js("window.__ndCloseObserved=0;window.__ndStopClose=await window.__ndWorkspace.windowClose.listen(()=>window.__ndCloseObserved++);return true")
             path=args.out/'closing.docx'
             original_hash=None
-            if args.mode=='restore-unopened':
-                restore_unopened(args,d,test,report,window)
+            if args.mode in ('restore-unopened','restore-chooser','restore-chooser-injected'):
+                {'restore-unopened':restore_unopened,'restore-chooser':restore_chooser,
+                 'restore-chooser-injected':restore_chooser_injected}[args.mode](args,d,test,report,window)
                 try:d.quit();report['driverDeleteAfterNativeClose']='ok'
                 except Exception as error:report['driverDeleteAfterNativeClose']=str(error)
                 d=None

@@ -397,3 +397,14 @@ HWP와 HWPX 생성은 같은 `HwpDocument.createEmpty()` 빈 모델에서 시작
 - T021 생성 워크플로 6단계: 새 실행 디렉터리에서 Release 3회·Debug 2회 PASS. 같은 디렉터리 재실행은 6단계 모두 거절됐고 파일은 그대로였다.
 - native X11/IBus(최종 앱): 양성 3형식, safety 22개, 창 닫기 5모드(`restore-unopened` 포함) PASS. 정리 성공·잔여 프로세스 0이다.
 - NOT RUN: native Release 앱, Wayland/fcitx5, GPU, Windows/macOS, 실제 정전·실제 fsync 실패의 native 관측, 외부 한컴/Word 상호운용, 실제 runtime에서 생성 팩토리가 없는 경우(고정 runtime에는 팩토리가 있어 프런트엔드 시험으로만 확인).
+
+## 3차 안정화 — 2026-11-04
+
+### 복구 위치 선택 중 창 닫기
+
+`restoreRecovery()`는 `newDocument()`와 달리 위치 선택이 끝난 뒤 `windowClosing`을 다시 확인하지 않고 바로 `recoveryPort.restore()`(되돌릴 수 없는 게시)를 호출했다. 경계는 다음과 같다. (A) 선택 대기 → (B) 경로 선택, 게시 전 → (C) `restore` 요청 시작 → (D) 게시 완료, 열기 대기 → (E) 백엔드 등록 → (F) 프런트엔드 수용. 이제 B에서 닫기가 확정돼 있으면 open ticket을 풀고 `null`(취소)로 끝낸다. 이때 `restore`·`open`은 호출하지 않고 복구 후보도 건드리지 않는다. C 이후는 기존대로 실제 결과를 기다리고, 게시 안내와 닫기 재판단이 처리한다.
+
+증거 구분:
+- 프런트엔드 deferred 시험(`recoveryRestoreClose.test.tsx`): 확인 없이/확인 뒤 닫기(A), 닫기 취소 후 계속(B), 선택 취소(C), 반복 닫기(F), 기존 게시 후 사례(D·E). 수정 전 A 2개와 F가 실패했다(`restore` 호출 후 대기).
+- native, 선택기 응답만 주입(`restore-chooser-injected`): 실제 WM_DELETE_WINDOW, 실제 확인, 실제 Tauri destroy, 실제 restore/open 포트를 쓴다. 수정 전 앱(`10fe2dc1…`)에서는 확정된 닫기 뒤 `restored.docx`가 게시됐다(재현). 수정 후 앱(`414daf69…`)은 게시 없이 종료했고 복구 store·원본도 그대로였다.
+- native, 실제 GTK 선택기(`restore-chooser`): Xvfb/X11에서 modal `FileChooserNative::run()`이 열린 동안 메인 창으로 보낸 WM_DELETE_WINDOW는 선택기 동안에도 닫은 뒤에도 앱에 0건 전달됐다. 이 환경에서는 실제 선택기로 이 순서에 도달할 수 없다(NOT REACHABLE). portal 선택기·다른 WM/Wayland에서의 도달 가능성은 확인하지 않았다. 가드는 그 경우를 위한 방어다.
