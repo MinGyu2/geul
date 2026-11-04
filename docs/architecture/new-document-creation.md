@@ -434,3 +434,9 @@ NOT REACHABLE은 다음을 모두 만족할 때만 내린다. 관측기 정상, 
 - 통제 관측 단위 시험 `python3 -m unittest scripts/tests/test_chooser_close_verdict.py`: 5 PASS(미전달, 선택기 중 전달, 취소 뒤 지연 전달, 관측 누락·불량, 상태 모순).
 - 실제 native(앱 `2f2fa305…` = HEAD `d99f1d0` 제품 소스, 하네스 `07ab8d79…`): 판정 NOT REACHABLE — 기준 0, 선택기 중 0, 취소 뒤 0, 확인 창 없음, 결과 `null`, 게시 없음, 복구 store 불변, 양성 대조 0→1, 정상 종료·잔여 0. 같은 하네스의 `restore-chooser-injected`도 PASS다.
 - NOT REACHABLE은 도달할 수 없는 동작을 실행해 통과했다는 뜻이 아니다. 이전 실행 기록은 그대로 둔다.
+
+### 복원 뒤 `AlreadyOpen` 안내 문구
+
+`RestoredUnopened`의 일반 문구("새 위치에 파일로 만들어졌지만 열지 못했습니다(원인). 그 파일을 확인한 뒤 직접 열어 주세요")는 원인이 `AlreadyOpen`일 때 대상에 복원 내용이 아직 있다고 암시했다. 이 경우는 게시 뒤 대상이 이미 열린 문서와 같게 바뀌었을 때만 생기므로(3차 안정화) 그 보장이 없다. 이제 `documentErrorMessage()`는 원인이 `AlreadyOpen`일 때만 `document.error.RestoredUnopenedAlreadyOpen`을 쓴다. 문구는 다음을 말한다. 복구 파일은 만들었지만 그 위치가 이미 열린 문서로 확인되어 열지 않았다. 게시 뒤 대상이 바뀌었을 수 있어 지금 그곳에 복구 내용이 남아 있는지 확인할 수 없다. 원래 복구 사본이 남아 있으므로 다른 위치에 다시 복원할 수 있다. 교체가 반드시 일어났다거나 내용이 삭제됐다고 말하지 않고, 경로·세션 ID도 보이지 않는다. 다른 원인(`ResourceLimit`·`Unreadable`·`ParseFailure`·`Protocol` 등)은 기존 일반 문구와 원인 설명을 유지한다. 결과·오류 코드, 세션 비채택, 게시 안내 1회, 후보 보존, 창 닫기 재판단은 바뀌지 않았다.
+
+검증: `recoveryRestoreClose.test.tsx`에 ko/en 전용 문구, 다른 원인 4종 유지, 복원 밖 `AlreadyOpen` 문구 유지, RecoveryCenter 경로(전용 알림, 탭·활성 불변, 안내 1회, 후보 유지, 확인 창 없음, 이후 닫기 1회)를 추가했다. 이 파일의 기존 시험은 선행 탭 편집기가 부르는 `backend.session()`이 모의 backend에 없었다. 그래서 3차 안정화 이후 시험은 모두 통과했지만 vitest가 미처리 오류 5개로 exit 1이 됐다(HEAD `d99f1d0`에서 확인). 3차 기록의 "vitest PASS"는 통과 개수만 확인한 것이었다. 모의 backend에 `session()`을 추가해 고쳤다. 최종 `npx vitest run`은 exit 0, 59파일/1,068 PASS이고 tsc·ESLint도 exit 0이다. 문구만 바뀌고 native 하네스는 알림 문구를 읽지 않으므로 이 변경의 native 실행은 NOT RUN이다.

@@ -65,6 +65,9 @@ const WINDOW_TEXT = {
 /** 오류 code를 화면 문구 키로. 세부 값(경로·내용)은 보여 주지 않는다. */
 export function documentErrorMessage(error: DocumentError): Message {
   if (error.code === "RestoredUnopened") {
+    // AlreadyOpen after a restore means the destination now matches an already-open document (only
+    // possible if it changed after publication): do not suggest the restored content is still there.
+    if (error.cause.code === "AlreadyOpen") return { key: "document.error.RestoredUnopenedAlreadyOpen" };
     return { key: "document.error.RestoredUnopened", vars: { reason: { key: `document.error.${error.cause.code}` as MessageKey } } };
   }
   return { key: `document.error.${error.code}` as MessageKey };

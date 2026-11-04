@@ -394,6 +394,7 @@
   "properties.paragraphStyle": "커서 문단 스타일: {style}",
   "document.newTitle": "새 문서 만들기",
   "document.error.RestoredUnopened": "복구 내용은 새 위치에 파일로 만들어졌지만 문서로 열지 못했습니다({reason}). 그 파일을 확인한 뒤 직접 열어 주세요. 복구 사본은 그대로 남아 있습니다.",
+  "document.error.RestoredUnopenedAlreadyOpen": "복구 내용을 새 위치에 파일로 만들었지만, 그 위치를 열 때 이미 열려 있는 문서로 확인되어 열지 않았습니다. 파일을 만든 뒤 대상이 바뀌었을 수 있어 지금 그 위치에 복구 내용이 남아 있는지는 확인할 수 없습니다. 원래 복구 사본은 그대로 남아 있으니 다른 위치를 골라 다시 복원할 수 있습니다.",
   "document.error.CreationUnverified": "현재 RHWP 엔진이 만든 빈 문서가 검증된 생성 출력과 달라 새 문서를 만들지 않았습니다. 파일은 쓰지 않았습니다.",
   "document.error.CreationUnavailable": "현재 RHWP 엔진은 빈 문서 만들기를 제공하지 않아 새 문서를 만들지 않았습니다. 파일은 쓰지 않았습니다.",
   "document.formatUnavailable.CreationUnverified": "현재 엔진 출력이 검증되지 않아 만들 수 없음",

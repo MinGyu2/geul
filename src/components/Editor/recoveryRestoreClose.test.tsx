@@ -29,22 +29,27 @@ const flush = async () => { for (let i = 0; i < 16; i++) await Promise.resolve()
 let unmount: (() => void) | undefined;
 afterEach(() => { unmount?.(); unmount = undefined; vi.restoreAllMocks(); });
 
-function setup(options: { chooser?: Promise<Result<string | null>>; existing?: SessionInfo[] } = {}) {
+function setup(options: { chooser?: Promise<Result<string | null>>; existing?: SessionInfo[]; candidates?: RecoveryCandidate[] } = {}) {
   vi.spyOn(DocxEditorSession.prototype, "load").mockResolvedValue({ ok: true, value: null });
   const opened = deferred<Result<SessionInfo>>();
-  const backend = { close: vi.fn(), open: vi.fn(() => opened.promise) } as unknown as DocumentBackend;
+  // session(): editor panels of pre-existing tabs refresh their backend record.
+  const known = new Map((options.existing ?? []).map(value => [value.sessionId, value]));
+  const backend = { close: vi.fn(), open: vi.fn(() => opened.promise),
+    session: vi.fn(async (sessionId: number) => known.has(sessionId)
+      ? { ok: true as const, value: known.get(sessionId)! } : { ok: false as const, error: { code: "UnknownSession" as const, sessionId } }) } as unknown as DocumentBackend;
   const restored = deferred<Result<string>>();
   const files: FilePort = { chooseFile: vi.fn(options.chooser ? () => options.chooser! : async () => ({ ok: true as const, value: "/docs/restored.docx" })), createDocument: vi.fn() };
-  const recovery = { list: vi.fn(async () => ({ ok: true as const, value: [] })), restore: vi.fn(() => restored.promise),
+  const recovery = { list: vi.fn(async () => ({ ok: true as const, value: options.candidates ?? [] })), restore: vi.fn(() => restored.promise),
     discard: vi.fn(), forgetSession: vi.fn() };
   let request = () => {};
   const windowClose = { listen: vi.fn(async (handler: () => void) => { request = handler; return () => {}; }), close: vi.fn(async () => {}) };
   const sessions = new DocumentSessions(backend);
   for (const value of options.existing ?? []) sessions.acceptOpen(sessions.beginOpen(), { ok: true, value });
   const workspace = new DocumentWorkspace(sessions, backend, async () => ({ openDocument: vi.fn() }), windowClose, new FakeDocx(), undefined, files, recovery);
-  const view = render(<LanguageProvider language="ko" onLanguageChange={() => {}}><Editor workspace={workspace} zoom={100} /></LanguageProvider>);
+  const notify = vi.fn();
+  const view = render(<LanguageProvider language="ko" onLanguageChange={() => {}}><Editor workspace={workspace} zoom={100} notify={notify} /></LanguageProvider>);
   unmount = () => view.unmount();
-  return { backend, files, recovery, windowClose, sessions, workspace, view, opened, restored, request: () => request() };
+  return { notify, backend, files, recovery, windowClose, sessions, workspace, view, opened, restored, request: () => request() };
 }
 
 /** Restore is pending in Rust when the native close request arrives. */
@@ -265,6 +270,67 @@ describe("AlreadyOpen after restore publication", () => {
     expect(result).toMatchObject({ ok: false, error: { code: "RestoredUnopened" } });
     expect(t.windowClose.close).not.toHaveBeenCalled();
     expect(t.workspace.fileBusy).toBe(false);
+    act(() => t.request());
+    await act(flush);
+    expect(t.windowClose.close).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("RestoredUnopened wording", () => {
+  const render = (language: "ko" | "en", error: DocumentError) => {
+    const message = documentErrorMessage(error);
+    return createTranslator(language)(message.key, message.vars);
+  };
+  const alreadyOpen: DocumentError = { code: "RestoredUnopened", cause: { code: "AlreadyOpen", sessionId: 3 } };
+
+  it.each([
+    ["ko", /확인할 수 없습니다/, /원래 복구 사본은 그대로 남아/, /다른 위치를 골라 다시 복원/, /직접 열어|삭제/],
+    ["en", /cannot be confirmed/, /original recovery copy remains/, /choose another location and restore again/, /open it yourself|deleted/i],
+  ] as const)("AlreadyOpen (%s): no promise that the restored content is still at the destination", (language, uncertain, retained, retry, forbidden) => {
+    const text = render(language, alreadyOpen);
+    expect(documentErrorMessage(alreadyOpen)).toEqual({ key: "document.error.RestoredUnopenedAlreadyOpen" });
+    expect(text).toMatch(uncertain);
+    expect(text).toMatch(retained);
+    expect(text).toMatch(retry);
+    expect(text).not.toMatch(forbidden); // neither "open the file yourself" nor a deletion claim
+    expect(text).not.toMatch(/\/|\{|session/i); // no path, placeholder or session id
+  });
+
+  it.each([
+    { code: "ResourceLimit", limit: "session-count" },
+    { code: "Unreadable", reason: "permission-denied" },
+    { code: "ParseFailure", reason: "corrupt-container" },
+    { code: "Protocol" },
+  ] as DocumentError[])("other open failures keep the generic message with their cause: $code", cause => {
+    for (const language of ["ko", "en"] as const) {
+      const text = render(language, { code: "RestoredUnopened", cause });
+      expect(documentErrorMessage({ code: "RestoredUnopened", cause }).key).toBe("document.error.RestoredUnopened");
+      expect(text).toContain(createTranslator(language)(`document.error.${cause.code}` as never));
+      expect(text).not.toMatch(/바뀌었을 수|may have changed/);
+    }
+  });
+
+  it("a plain AlreadyOpen outside restore keeps its existing message", () => {
+    expect(documentErrorMessage({ code: "AlreadyOpen", sessionId: 3 })).toEqual({ key: "document.error.AlreadyOpen" });
+  });
+
+  it("the Recovery Center shows the specific warning without adopting a session or changing close behavior", async () => {
+    const other: SessionInfo = { ...info, sessionId: 3, state: "ready", revision: 1, sequence: 2, loadGeneration: 1, displayName: "other.docx" };
+    const t = setup({ existing: [other], candidates: [candidate] });
+    await act(flush);
+    const before = t.sessions.snapshot();
+    fireEvent.click(t.view.getByTestId("recovery-restore-r1"));
+    await act(flush);
+    t.restored.resolve({ ok: true, value: "/docs/restored.docx" });
+    await act(flush);
+    t.opened.resolve({ ok: false, error: { code: "AlreadyOpen", sessionId: 3 } });
+    await act(flush);
+    expect(t.notify).toHaveBeenCalledWith({ key: "document.error.RestoredUnopenedAlreadyOpen" });
+    expect(t.sessions.snapshot()).toEqual(before); // no selection change, no duplicate
+    expect(t.workspace.publicationNoticeCount).toBe(1);
+    expect(t.recovery.discard).not.toHaveBeenCalled();
+    expect(t.view.queryByRole("alertdialog")).toBeNull();
+    // The notice preceded this close decision: a clean window closes normally, once.
     act(() => t.request());
     await act(flush);
     expect(t.windowClose.close).toHaveBeenCalledTimes(1);
