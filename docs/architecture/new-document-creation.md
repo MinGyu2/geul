@@ -440,3 +440,21 @@ NOT REACHABLE은 다음을 모두 만족할 때만 내린다. 관측기 정상, 
 `RestoredUnopened`의 일반 문구("새 위치에 파일로 만들어졌지만 열지 못했습니다(원인). 그 파일을 확인한 뒤 직접 열어 주세요")는 원인이 `AlreadyOpen`일 때 대상에 복원 내용이 아직 있다고 암시했다. 이 경우는 게시 뒤 대상이 이미 열린 문서와 같게 바뀌었을 때만 생기므로(3차 안정화) 그 보장이 없다. 이제 `documentErrorMessage()`는 원인이 `AlreadyOpen`일 때만 `document.error.RestoredUnopenedAlreadyOpen`을 쓴다. 문구는 다음을 말한다. 복구 파일은 만들었지만 그 위치가 이미 열린 문서로 확인되어 열지 않았다. 게시 뒤 대상이 바뀌었을 수 있어 지금 그곳에 복구 내용이 남아 있는지 확인할 수 없다. 원래 복구 사본이 남아 있으므로 다른 위치에 다시 복원할 수 있다. 교체가 반드시 일어났다거나 내용이 삭제됐다고 말하지 않고, 경로·세션 ID도 보이지 않는다. 다른 원인(`ResourceLimit`·`Unreadable`·`ParseFailure`·`Protocol` 등)은 기존 일반 문구와 원인 설명을 유지한다. 결과·오류 코드, 세션 비채택, 게시 안내 1회, 후보 보존, 창 닫기 재판단은 바뀌지 않았다.
 
 검증: `recoveryRestoreClose.test.tsx`에 ko/en 전용 문구, 다른 원인 4종 유지, 복원 밖 `AlreadyOpen` 문구 유지, RecoveryCenter 경로(전용 알림, 탭·활성 불변, 안내 1회, 후보 유지, 확인 창 없음, 이후 닫기 1회)를 추가했다. 이 파일의 기존 시험은 선행 탭 편집기가 부르는 `backend.session()`이 모의 backend에 없었다. 그래서 3차 안정화 이후 시험은 모두 통과했지만 vitest가 미처리 오류 5개로 exit 1이 됐다(HEAD `d99f1d0`에서 확인). 3차 기록의 "vitest PASS"는 통과 개수만 확인한 것이었다. 모의 backend에 `session()`을 추가해 고쳤다. 최종 `npx vitest run`은 exit 0, 59파일/1,068 PASS이고 tsc·ESLint도 exit 0이다. 문구만 바뀌고 native 하네스는 알림 문구를 읽지 않으므로 이 변경의 native 실행은 NOT RUN이다.
+
+
+## 최종 집중 안정화 — 2026-11-04
+
+### P1: 게시 경고 전문 접근
+
+App이 표시 메시지를 소유한다. 기존 단일 `notify`는 다음 상태로 덮였고, 28px 상태 표시줄은 nowrap/ellipsis로 복구 지시를 잘랐다. 기존 전문 보기 UI는 없었다. 이제 `RestoredUnopened`(AlreadyOpen 전용 포함), `FilePublishedUnregistered`, `FilePublishedUnconfirmed`, 생성 내구성 미확인 안내는 사용자가 “경고 확인”할 때까지 일반 상태 알림으로 덮지 않는다. 새 게시 경고는 이전 게시 경고를 교체한다(기록/대기열 없음). 일반 알림은 계속 한 줄이다. “전문 보기” 버튼은 Enter/Space로 비모달·줄바꿈·스크롤 가능한 전문 영역을 열고 닫는다. 영역 안 Escape는 조합 중이 아닐 때만 닫고 버튼으로 초점을 돌린다. `aria-expanded/controls/describedby`, 이름 있는 region, 원문 전체의 polite/atomic status를 제공한다. 자동 초점 이동이나 전역 키 처리기는 없다. 포인터는 기존 편집기 초점/IME 보호를 쓴다. 모달 또는 파일 작업 중에는 버튼을 비활성화하고 전문 영역을 숨긴다. 백엔드·후보·게시 카운트·세션 선택에는 접근하지 않는다. 경로/내용/세션 ID를 추가 노출하지 않는다.
+
+실제 GTK 화면에서 긴 메시지가 그리드 열의 최소 너비를 키우는 문제를 재현했다. `.statusbar`의 `min-width: 0`과 전문 영역의 양쪽 경계/줄바꿈으로 해결했다. 확인 버튼은 같은 상태 표시줄 색과 테두리를 사용한다. native 앱 최소 너비는 960px이며 1280/960px에서 ko/en 스크린샷을 확인했다. 320px DOM 시험은 버튼 존재/키보드 계약만 검증하며 실제 레이아웃 증거로 사용하지 않는다.
+
+검증 기록(기존 이력 보존):
+- 구현 전 `npx vitest run src/components/StatusBar/StatusBar.test.tsx`: exit 1, 6/6 실패(전문 버튼 없음), 미처리 오류 요약 없음. 초기 통합 시험은 모의 `backend.sessions()` 누락으로 미처리 오류 2개/exit 1이었다. 모의를 보완했다.
+- 구현 중 집중 시험 `npx vitest run src/components/StatusBar/StatusBar.test.tsx src/components/Editor/recoveryRestoreClose.test.tsx`: 최종 당시 30/30 통과, 미처리 오류 0. 이후 동등 게시 경고 4종 시험 추가.
+- `npx vitest run`: exit 1, 60파일 중 59 PASS/1 FAIL, 1,080 PASS/1 FAIL, 미처리 오류 0. 기존 App HTML 비교가 `class` 첫 속성을 가정해 실패했다. 마크업 속성 순서를 보존해 수정. `npx vitest run src/App.test.tsx`: exit 0, 26/26 PASS, 미처리 오류 0. 나머지 59파일/1,055 PASS는 관련 소스가 같아 재사용한다. 전체 명령을 exit 0으로 재실행한 것으로 보고하지 않는다.
+- `npx tsc --noEmit`, `npx eslint .`: 각각 exit 0. 이후 변경은 CSS뿐이다. jsdom canvas 미구현 경고는 있었으나 미처리 오류는 없다.
+- `VITE_GEUL_TEST_HOOKS=1 npm run tauri -- build --debug --no-bundle`: exit 0. 기존 WASM/Rust target 재사용. 최종 앱 SHA-256 `19e5d7434121b0b2d8cce79af4f0a6d3b2740b95fb685af80352d52661e6f9bb`. 빌드 소스는 HEAD `badec967eefafeeefbb50ec926af1e1f4a447ad3` + 제품 diff SHA-256 `c43615a157186f1e6a39c8acd9cce96b9de3129c4fdbad8c413a6d50ab17feb0` + 당시 untracked `publicationWarning.ts` SHA-256 `8af418c650b2c85bf9d19ae7592670cd35a3b38cbf2881f8b79f85b9c00c044e`. 빌드 manifest는 `target/stabilization/s5-p1-verification4/build-identity.json`.
+- `python3 target/stabilization/s5-p1-native3/launch.py`: exit 0, UI PASS 4조건(ko/en × 1280/960). 실제 RecoveryCenter→게시→외부 symlink 교체→Rust AlreadyOpen→알림 경로. 전문/키보드 Enter·Escape/초점/ARIA/가로 경계, 뒤따른 zoom에도 경고 유지, 세션·활성 탭 불변, 후보/store 보존, 게시 안내 1회, 닫기 확인을 검증했다. 하네스 SHA-256 `c9128a41753e815fbdbb74dc91e0caeda89eb5fa1017af9894d56d6a8cd19fe5`. Xvfb/X11, GTK 3.24.52, WebKitGTK 2.54.1, IBus 1.5.33/ibus-hangul 1.5.5. RHWP Debug generation `0c2faef3a2966c4d717d50b83f51f839f5b4a14a7c26935723edc38bd36a90c4`. 정리 완료·잔여 프로세스 0. 실제 스크린샷과 측정은 `target/stabilization/s5-p1-native3/run/`에 있다. 첫 native 가로 넘침 실패와 뒤이은 대비 보완 전 실행도 별도 경로에 보존했다.
+- NOT RUN: 실제 보조공학 제품의 음성 출력, native 조합 도중 전문 열기(공유 포인터 guard는 렌더링 회귀로 검증), Wayland/portal·다른 WM·Release·Windows/macOS. T021–T023/T007–T010 완료 상태와 T024 비활성은 변경하지 않는다.

@@ -839,6 +839,8 @@ button {
 /* ---- StatusBar ---- */
 
 .statusbar {
+  min-width: 0;
+  position: relative;
   display: flex;
   align-items: center;
   gap: var(--space-4);
@@ -909,3 +911,29 @@ button {
 /* Engine locations and selection previews can contain long unbroken text. */
 .panel--properties pre { white-space: pre-wrap; overflow-wrap: anywhere; }
 .panel--properties dd { overflow-wrap: anywhere; }
+
+/* Publication details stay non-modal and wrap independently of the compact status line. */
+.statusbar__details-toggle { flex: none; }
+.statusbar__details-toggle,
+.statusbar__details button { color: inherit; background: transparent; border: 1px solid currentColor; border-radius: 3px; }
+.statusbar__details {
+  position: absolute;
+  z-index: 5;
+  inset-inline: 8px;
+  bottom: 100%;
+  max-height: 40vh;
+  overflow: auto;
+  padding: 12px;
+  color: var(--statusbar-text);
+  background: var(--statusbar-bg);
+  border: 1px solid currentColor;
+  white-space: normal;
+  overflow-wrap: anywhere;
+  line-height: 1.6;
+}
+.statusbar__details p { margin: 0 0 8px; }
+@media (max-width: 600px) {
+  .statusbar { gap: 4px; }
+  .statusbar__item { min-width: 0; overflow: hidden; text-overflow: ellipsis; flex-shrink: 1; }
+  .statusbar__zoom { flex: none; }
+}

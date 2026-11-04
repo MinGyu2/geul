@@ -1,8 +1,10 @@
 // Recovery restore while a native window-close decision is pending (frontend simulation with controlled
 // IPC ordering). Rust publishes the restore destination before the separate document_open; here both
 // ports are deferred so each linearization point can be ordered explicitly.
-import { act, fireEvent, render } from "@testing-library/react";
+import { act, fireEvent, render, within } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import App from "../../App";
+import type { Language } from "../../language";
 import type { DocumentBackend } from "../../adapters/backend";
 import type { DocumentError, Result, SessionInfo } from "../../adapters/contract";
 import { DocumentSessions } from "../../adapters/sessions";
@@ -29,12 +31,12 @@ const flush = async () => { for (let i = 0; i < 16; i++) await Promise.resolve()
 let unmount: (() => void) | undefined;
 afterEach(() => { unmount?.(); unmount = undefined; vi.restoreAllMocks(); });
 
-function setup(options: { chooser?: Promise<Result<string | null>>; existing?: SessionInfo[]; candidates?: RecoveryCandidate[] } = {}) {
+function setup(options: { chooser?: Promise<Result<string | null>>; existing?: SessionInfo[]; candidates?: RecoveryCandidate[]; appLanguage?: Language } = {}) {
   vi.spyOn(DocxEditorSession.prototype, "load").mockResolvedValue({ ok: true, value: null });
   const opened = deferred<Result<SessionInfo>>();
   // session(): editor panels of pre-existing tabs refresh their backend record.
   const known = new Map((options.existing ?? []).map(value => [value.sessionId, value]));
-  const backend = { close: vi.fn(), open: vi.fn(() => opened.promise),
+  const backend = { sessions: vi.fn(async () => ({ ok: true, value: [...known.values()] })), close: vi.fn(), open: vi.fn(() => opened.promise),
     session: vi.fn(async (sessionId: number) => known.has(sessionId)
       ? { ok: true as const, value: known.get(sessionId)! } : { ok: false as const, error: { code: "UnknownSession" as const, sessionId } }) } as unknown as DocumentBackend;
   const restored = deferred<Result<string>>();
@@ -47,7 +49,7 @@ function setup(options: { chooser?: Promise<Result<string | null>>; existing?: S
   for (const value of options.existing ?? []) sessions.acceptOpen(sessions.beginOpen(), { ok: true, value });
   const workspace = new DocumentWorkspace(sessions, backend, async () => ({ openDocument: vi.fn() }), windowClose, new FakeDocx(), undefined, files, recovery);
   const notify = vi.fn();
-  const view = render(<LanguageProvider language="ko" onLanguageChange={() => {}}><Editor workspace={workspace} zoom={100} notify={notify} /></LanguageProvider>);
+  const view = render(options.appLanguage ? <App documentWorkspace={workspace} initialLanguage={options.appLanguage} /> : <LanguageProvider language="ko" onLanguageChange={() => {}}><Editor workspace={workspace} zoom={100} notify={notify} /></LanguageProvider>);
   unmount = () => view.unmount();
   return { notify, backend, files, recovery, windowClose, sessions, workspace, view, opened, restored, request: () => request() };
 }
@@ -337,3 +339,36 @@ describe("RestoredUnopened wording", () => {
   });
 });
 
+
+// Exercise the entire RecoveryCenter -> App notification -> StatusBar path.
+it.each(["ko", "en"] as const)("publication warning survives ordinary status and preserves the selected editor (%s)", async language => {
+  const existing = { ...info, sessionId: 3, state: "ready" as const, revision: 1, sequence: 2, loadGeneration: 1 };
+  const t = setup({ existing: [existing], candidates: [candidate], appLanguage: language });
+  await act(flush);
+  const before = t.sessions.snapshot();
+  fireEvent.click(t.view.getByTestId("recovery-restore-r1"));
+  await act(flush);
+  t.restored.resolve({ ok: true, value: "/private/restored.docx" });
+  await act(flush);
+  t.opened.resolve({ ok: false, error: { code: "AlreadyOpen", sessionId: 3 } });
+  await act(flush);
+  const translate = createTranslator(language);
+  const warning = translate("document.error.RestoredUnopenedAlreadyOpen");
+  const toggle = t.view.getByRole("button", { name: translate("status.messageDetails") });
+  fireEvent.click(t.view.getByRole("button", { name: translate("command.view.zoomIn") }));
+  expect(within(t.view.getByRole("contentinfo")).getByRole("status", { name: "" })).toHaveTextContent(warning);
+  fireEvent.click(toggle);
+  const details = t.view.getByRole("region", { name: translate("status.warningDetails") });
+  expect(details).toHaveTextContent(warning);
+  expect(details).not.toHaveTextContent("/private/");
+  expect(t.sessions.snapshot()).toEqual(before);
+  expect(t.workspace.publicationNoticeCount).toBe(1);
+  expect(t.recovery.discard).not.toHaveBeenCalled();
+  expect(t.view.queryByRole("alertdialog")).toBeNull();
+  fireEvent.click(within(details).getByRole("button", { name: translate("status.dismissWarning") }));
+  expect(t.view.queryByRole("button", { name: translate("status.messageDetails") })).toBeNull();
+  expect(t.workspace.publicationNoticeCount).toBe(1);
+  act(() => t.request());
+  await act(flush);
+  expect(t.windowClose.close).toHaveBeenCalledTimes(1);
+});

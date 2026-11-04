@@ -9,6 +9,7 @@ import { NavigationPanel } from "./components/NavigationPanel/NavigationPanel";
 import { PropertiesPanel } from "./components/PropertiesPanel/PropertiesPanel";
 import { Ribbon } from "./components/Ribbon/Ribbon";
 import { Splitter } from "./components/Splitter/Splitter";
+import { retainPublicationWarning } from "./components/StatusBar/publicationWarning";
 import { StatusBar } from "./components/StatusBar/StatusBar";
 import { TitleBar } from "./components/TitleBar/TitleBar";
 import { NewDocumentDialog } from "./components/Editor/NewDocumentDialog";
@@ -50,13 +51,18 @@ export default function App({ initialState, initialLanguage, settingsStore = def
   // 덮어쓰지 않는다). 첫 실행과 정상 복원은 "준비됨".
   const [message, setMessage] = useState<Message>(() => ({ key: RESTORE_NOTICE[boot.status] ?? "status.ready" }));
 
+  const notify = useCallback((incoming: Message) => {
+    setMessage(current => retainPublicationWarning(current, incoming));
+  }, []);
+  const dismissMessage = useCallback(() => setMessage({ key: "status.ready" }), []);
+
   // 저장하지 못하면 이유를 알린다: 쓰기 실패, 실행 중 외부 변경(충돌), 시작할 때부터 쓰지 않는 상태(미지원 버전·읽기 실패).
   const blockedNotice = RESTORE_NOTICE[boot.status] ?? "settings.saveFailed";
   const onNotSaved = useCallback(
-    (reason: NotSavedReason) => setMessage({
+    (reason: NotSavedReason) => notify({
       key: reason === "conflict" ? "settings.conflict" : reason === "blocked" ? blockedNotice : "settings.saveFailed",
     }),
-    [blockedNotice],
+    [blockedNotice, notify],
   );
   // 다시 저장되면 남아 있는 저장 실패 알림만 지운다. 그 사이에 나온 다른 알림은 그대로 둔다.
   const onRecovered = useCallback(
@@ -80,7 +86,7 @@ export default function App({ initialState, initialLanguage, settingsStore = def
 
   return (
     <LanguageProvider language={language} onLanguageChange={setLanguage}>
-      <Workspace layout={layout} dispatch={dispatch} message={message} notify={setMessage} documents={documents} />
+      <Workspace layout={layout} dispatch={dispatch} message={message} notify={notify} onDismissMessage={dismissMessage} documents={documents} />
     </LanguageProvider>
   );
 }
@@ -123,10 +129,11 @@ interface WorkspaceProps {
   dispatch: CommandContext["dispatch"];
   message: Message;
   notify: (message: Message) => void;
+  onDismissMessage: () => void;
   documents: DocumentWorkspace | null;
 }
 
-function Workspace({ layout, dispatch, message, notify, documents }: WorkspaceProps) {
+function Workspace({ layout, dispatch, message, notify, onDismissMessage, documents }: WorkspaceProps) {
   const { t } = useTranslation();
   const viewportWidth = useViewportWidth();
   const navigationToggleRef = useRef<HTMLButtonElement>(null);
@@ -250,7 +257,7 @@ function Workspace({ layout, dispatch, message, notify, documents }: WorkspacePr
           </>
         )}
       </div>
-      <StatusBar context={context} message={message} state={panel} />
+      <StatusBar context={context} message={message} state={panel} onDismissMessage={onDismissMessage} />
       {formatChoice && <NewDocumentDialog onChoose={formatChoice} suspended={modal} unavailable={documents ? creationUnavailable(documents) : {}} />}
     </div>
   );
