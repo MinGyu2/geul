@@ -1,0 +1,216 @@
+{
+  "task": "T021",
+  "date": "2026-11-04",
+  "sourceBase": "b0eed029f64236e42582807f6a32ca0c2aaa580a",
+  "status": "COMPLETED",
+  "nativeAcceptance": "NOT RUN (T023)",
+  "wordcraftCommit": "fc41918814f62645b6746ed68e71e8c2c2e85d6f",
+  "runtimes": [
+    {
+      "identity": {
+        "artifacts": {
+          "rhwp.js": "70cde06a369fa7fd4fc8bc8f3d6acaee158596ba1a116a2c72159002b0b5654e",
+          "rhwp_bg.wasm": "77d01d6c004d74948681b208370740cefd576e26f10712abe6a7bc5ba3a32285"
+        },
+        "commit": "1a76570e833917d15817415a53c09ad61ab3203f",
+        "engine": "rhwp",
+        "generation": "853a0689147be17336110a227b22bef2054629430d53126076b84879308329b4",
+        "integration": {
+          "kind": "patched-upstream",
+          "patches": [
+            {
+              "name": "hwpx-textdir-ltr.patch",
+              "sha256": "abab4bc23a89dfec82aa63d36d32cd7192e5b14fefd2dd56231c4bb5676c6cc0"
+            },
+            {
+              "name": "hwpx-duplicate-paragraph-ids.patch",
+              "sha256": "79fd8f41c4cabe82b6b0b66265f5a1b3feef08a4c0b07af30cf7f788e11a9787"
+            },
+            {
+              "name": "hwpx-clipboard-paragraph-ids.patch",
+              "sha256": "30ac44ee1283f55605e49d09e446f5bbb5104b948ce2e7b74b87a9652e8a5c8e"
+            },
+            {
+              "name": "hwpx-spine-linear.patch",
+              "sha256": "080070cdfdaffe9b80b61ddeb6ddec8e49080b168649f92932caaf58f08298eb"
+            },
+            {
+              "name": "hwpx-spine-validation.patch",
+              "sha256": "0aae77fae8f7eb5ab1c1c83782c0930aa3501b1fd262b1e78706ebed35eeed5d"
+            },
+            {
+              "name": "hwpx-manifest-order.patch",
+              "sha256": "469c2db1c8070e18b87b02f8e8677dda48f746d3ab2ebf27706fe239453a6dc2"
+            },
+            {
+              "name": "hwpx-charpr-child-presence.patch",
+              "sha256": "cbe9574c01e72481d617c352a13da09ba5728a502713a0338ad80c6ab0347573"
+            },
+            {
+              "name": "hwpx-strikeout-3d-placeholder.patch",
+              "sha256": "5f9ca456cadaf6b895590dcf1755f80e37534e9052ca191826b1ae0f43adc281"
+            },
+            {
+              "name": "hwpx-strike3d-derived-styles.patch",
+              "sha256": "992074268325dcc9f1bcc972455a6b90e202db6d25efaa4295b36c3a940e19c2"
+            },
+            {
+              "name": "hwpx-secpr-tabstop-presence.patch",
+              "sha256": "4a973d709e129fd4e2c22d538c6f426adfaf562cf5b70f82a5f704106b319ed1"
+            },
+            {
+              "name": "hwpx-empty-text-boundaries.patch",
+              "sha256": "fced0270450adc639d9d432b8857befbf399fa65b2da4e73e1e9e0d8cd6084e2"
+            }
+          ],
+          "sourceTreeSha256": "1287a07580d613b44d901f45a0acc096b6daaa32f64f3bd26b7b04656ddc0d19"
+        },
+        "optimization": {
+          "flags": [],
+          "tool": "none",
+          "version": null
+        },
+        "profile": "release",
+        "schemaVersion": 3,
+        "sourceFingerprint": "6dca5b34eb1c5afe301713fc5281388ac5450bd39c3c5a26def006315b221872",
+        "tools": {
+          "cargo": "1.99.1",
+          "rustc": "1.99.1",
+          "wasm-bindgen": "0.2.127"
+        }
+      },
+      "formats": [
+        {
+          "format": "hwp",
+          "blankBytes": 6144,
+          "blankSha256": "d1a43b6c8b4e91bc6c76aec7f88adbfda36b267e25d8c933216286b677a6dae2",
+          "finalSha256": "bc2c8c1007468ad62a52e1ead11e2f0379e985bd4de6fee9aac44a28b0abd162",
+          "firstInsert": "PASS",
+          "split": "PASS",
+          "merge": "PASS",
+          "deleteInsert": "PASS",
+          "twoSavesReopen": "PASS"
+        },
+        {
+          "format": "hwpx",
+          "blankBytes": 5472,
+          "blankSha256": "fca322f71a6ac3cb181fa7143efece5f2060ed3405f5f3c6ee774880f5f85816",
+          "finalSha256": "fca322f71a6ac3cb181fa7143efece5f2060ed3405f5f3c6ee774880f5f85816",
+          "firstInsert": "PASS",
+          "split": "PASS",
+          "merge": "PASS",
+          "deleteInsert": "PASS",
+          "twoSavesReopen": "PASS"
+        }
+      ],
+      "resources": "PASS: success and invalid loss report release documents and export results"
+    },
+    {
+      "identity": {
+        "artifacts": {
+          "rhwp.js": "a2010ac0e7d0942838b2b9d854ae01eeee06f61ae62d35334c966a465962cab6",
+          "rhwp_bg.wasm": "9a9db4935e14a12179e09e0589763da058c2fd0af506bcbc6b9a2d13fdf29965"
+        },
+        "commit": "1a76570e833917d15817415a53c09ad61ab3203f",
+        "engine": "rhwp",
+        "generation": "0c2faef3a2966c4d717d50b83f51f839f5b4a14a7c26935723edc38bd36a90c4",
+        "optimization": {
+          "flags": [],
+          "tool": "none",
+          "version": null
+        },
+        "profile": "debug",
+        "schemaVersion": 2,
+        "sourceFingerprint": "d5abd45bedabd2be60100d79131e6cf9c4ec6a213e18a170e7abcb17695be259",
+        "tools": {
+          "cargo": "1.99.0",
+          "rustc": "1.99.0",
+          "wasm-bindgen": "0.2.127"
+        }
+      },
+      "formats": [
+        {
+          "format": "hwp",
+          "blankBytes": 6144,
+          "blankSha256": "d1a43b6c8b4e91bc6c76aec7f88adbfda36b267e25d8c933216286b677a6dae2",
+          "finalSha256": "364ccb61fe92275a1eb5307fd857f1eaea032afb9550dfce115d152f369e0f44",
+          "firstInsert": "PASS",
+          "split": "PASS",
+          "merge": "PASS",
+          "deleteInsert": "PASS",
+          "twoSavesReopen": "PASS"
+        },
+        {
+          "format": "hwpx",
+          "blankBytes": 5472,
+          "blankSha256": "fca322f71a6ac3cb181fa7143efece5f2060ed3405f5f3c6ee774880f5f85816",
+          "finalSha256": "fca322f71a6ac3cb181fa7143efece5f2060ed3405f5f3c6ee774880f5f85816",
+          "firstInsert": "PASS",
+          "split": "PASS",
+          "merge": "PASS",
+          "deleteInsert": "PASS",
+          "twoSavesReopen": "PASS"
+        }
+      ],
+      "resources": "PASS: success and invalid loss report release documents and export results"
+    }
+  ],
+  "independentStructure": {
+    "hwp": {
+      "streams": [
+        "BodyText/Section0",
+        "DocInfo",
+        "FileHeader",
+        "PrvImage",
+        "PrvText",
+        "RhwpHwpxOrigin"
+      ],
+      "docInfoTags": {
+        "16": 1,
+        "17": 1,
+        "19": 7,
+        "21": 1,
+        "22": 1,
+        "25": 1,
+        "26": 1,
+        "27": 1,
+        "94": 1,
+        "30": 1,
+        "31": 1,
+        "32": 1
+      },
+      "paragraphs": 1,
+      "sha256": "bc2c8c1007468ad62a52e1ead11e2f0379e985bd4de6fee9aac44a28b0abd162"
+    },
+    "hwpx": {
+      "parts": [
+        "mimetype",
+        "version.xml",
+        "Contents/header.xml",
+        "Contents/section0.xml",
+        "Preview/PrvText.txt",
+        "Preview/PrvImage.png",
+        "settings.xml",
+        "META-INF/container.rdf",
+        "Contents/content.hpf",
+        "META-INF/container.xml",
+        "META-INF/manifest.xml",
+        "META-INF/rhwp-hwp5-origin"
+      ],
+      "fonts": 7,
+      "paragraphs": 1,
+      "creator": "rhwp",
+      "sha256": "fca322f71a6ac3cb181fa7143efece5f2060ed3405f5f3c6ee774880f5f85816"
+    },
+    "negativeControls": [
+      "truncated CFB",
+      "invalid HWP version",
+      "missing header",
+      "unregistered character reference",
+      "nonblank text",
+      "invalid font default"
+    ]
+  },
+  "rustSafeSave": "PASS: create-only publication, 2 safe saves per format per generation, final published bytes independently reopened",
+  "externalHancomWord": "NOT RUN"
+}

@@ -3,7 +3,7 @@
 Date: 2026-11-04
 Spec: [spec.md](./spec.md)
 Source baseline: `4bc1ac986026ccadb2d673a66ad69e6296e3a39e` (`MinGyu2/geul`, master).
-Status: T007–T010 △ 조건부 완료, T011 완료(2026-11-04, native IME 포함 검증 — [tasks.md](./tasks.md) Verification Log). 신규 생성은 설계 단계이며 실제 실행 수용은 NOT RUN.
+Status: T007–T010 △ 조건부 완료, T011 완료(2026-11-04, native IME 포함 검증 — [tasks.md](./tasks.md) Verification Log). T021 생성 경계는 실제 WASM/Rust 실행 수용 완료. T022 제품 연결 및 T023 native 신규 생성 수용은 미완료.
 
 ## Summary
 

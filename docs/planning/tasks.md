@@ -74,7 +74,7 @@ Independent Test: 기존 저장·충돌·복구의 남은 실패 경계.
 
 ## Phase 7: User Story 7 - 형식별 새 문서 (Priority: P1)
 Independent Test: 세 형식의 실제 생성·입력·저장·재저장·재열기, 취소·실패·경합.
-- [ ] T021 [US7] RHWP 빈 문서 API·템플릿·형식별 출력 및 검증 경계 검증 — `src/components/Editor/rhwp/rhwpModule.ts`, `tests/integration/new-document/`, `docs/architecture/new-document-creation.md`
+- [x] T021 [US7] RHWP 빈 문서 API·템플릿·형식별 출력 및 검증 경계 검증 — `src/components/Editor/rhwp/rhwpModule.ts`, `tests/integration/new-document/`, `docs/architecture/new-document-creation.md`
 - [ ] T022 [US7] 형식 선택·안전 생성·세션 등록·포커스 통합 — `src/App.tsx`, `src/components/Editor/`, `src-tauri/src/services/files.rs`, `src/language/`
 - [ ] T023 [US7] 신규 세 형식의 native 왕복·실패 안전성 수용 — `tests/integration/new-document/`, `docs/architecture/new-document-creation.md`
 - [ ] T024 [US7] 선택적 제목 없음·첫 저장·복구 UX — `src/components/Editor/`, `src-tauri/src/document/`, `src-tauri/src/services/` (DEFERRED, 별도 승인 전 구현 금지)
@@ -188,3 +188,8 @@ HWP·HWPX·DOCX 매트릭스 9/9(DPR 1.041·1.0 각각), rhwp·WordCraft 게이�
 ## Handoff
 
 세 기준본과 신규 생성 상세 계약을 함께 읽는다. 현재 로컬 지침·작업 트리·엔진/패치/WASM·테스트 루트·훅을 먼저 확인한다. 기존 코드를 재사용하고 T011 또는 신규 생성의 한 일관된 작업 단위를 구현·검증한다. 원래 체크·ID·과거 근거를 보존하고 제품 활성화는 별도 판단한다. 문서 검토 완료를 실제 기능 완료로 보고하지 않는다.
+
+
+### T021 실행 수용 — 2026-11-04
+
+T021 COMPLETED: 현재 Release/Debug 각각 HWP/HWPX 생성, 독립 구조/참조·음성 대조군, 기본 편집 및 실제 Rust 안전 저장 2회·최종 파일 reopen PASS. 공개 API로 기본 정의를 초기화하고 생성 전용 CFB 재구성으로 주입된 개인 메타데이터를 제거한다. 출력 신원을 Rust에서 제한하며 기존 저장 보존 정책을 바꾸지 않는다. [상세와 재현](../architecture/new-document-creation.md#t021-실행-수용--2026-11-04), [실행 신원](../architecture/new-document-t021-2026-11-04.json). T022/T023 미완료, native/외부 한컴·Word NOT RUN, T024 DEFERRED 유지.

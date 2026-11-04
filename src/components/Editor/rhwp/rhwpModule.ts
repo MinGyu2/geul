@@ -85,6 +85,8 @@ export interface RhwpDocument {
 }
 
 export interface RhwpModule {
+  /** Fresh isolated model from this verified generation; never an active editor model. */
+  createEmptyDocument?(): RhwpCreationDocument;
   /** 문서 바이트로 문서를 만든다. 형식이 맞지 않으면 예외. */
   openDocument(bytes: Uint8Array): RhwpDocument;
   /**
@@ -94,9 +96,16 @@ export interface RhwpModule {
   memoryBytes?(): number;
 }
 
+export interface RhwpCreationDocument extends RhwpDocument {
+  findOrCreateFontId(name: string): number;
+  applyCharFormat(section: number, paragraph: number, start: number, end: number, props: string): string;
+  applyParaFormat(section: number, paragraph: number, props: string): string;
+  createStyle(props: string): number;
+}
+
 type GeneratedModule = {
   default: (options: { module_or_path: ArrayBuffer }) => Promise<unknown>;
-  HwpDocument: new (bytes: Uint8Array) => RhwpDocument;
+  HwpDocument: { new (bytes: Uint8Array): RhwpDocument; createEmpty(): RhwpCreationDocument };
 };
 
 /** 유일한 가변 게시 참조. 선택 후에는 같은 불변 generation만 사용한다. */
@@ -135,6 +144,7 @@ export function loadRhwpModule(importer: (url: string) => Promise<unknown> = (ur
     const memory = (exports as { memory?: unknown } | null)?.memory;
     return {
       openDocument: (bytes: Uint8Array) => new HwpDocument(bytes),
+      createEmptyDocument: () => HwpDocument.createEmpty(),
       ...(memory instanceof WebAssembly.Memory ? { memoryBytes: () => memory.buffer.byteLength } : {}),
     };
   })().catch((reason: unknown) => {

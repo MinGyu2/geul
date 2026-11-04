@@ -3,7 +3,7 @@
 정리 기준: 2026-11-04
 검토 소스: `MinGyu2/geul` master `4bc1ac986026ccadb2d673a66ad69e6296e3a39e`.
 기술 구성: Tauri 2 + React + TypeScript + Rust. 엔진: WordCraft(DOCX), RHWP(HWP/HWPX).
-문서 성격: 제공된 정리의 코드 대조·정정 및 신규 생성 구현 계약. **설계/정적 검토이며 HWP/HWPX 신규 생성 runtime은 NOT RUN**이다.
+문서 성격: 제공된 정리의 코드 대조·정정 및 신규 생성 구현 계약. 기존 절은 **설계/정적 검토 당시 기록**이다. 현재 T021 실행 결과는 아래 「T021 실행 수용」을 따른다. T022 제품 연결·T023 native 수용은 아직 미완료다.
 기준본: [spec.md](../planning/spec.md), [plan.md](../planning/plan.md), [tasks.md](../planning/tasks.md). 이 문서는 상세 보조 계약이다.
 
 근거 표기: **코드 확인**은 해당 pin의 소스, **기록 확인**은 저장된 과거 실행 결과, **설계**는 앞으로 구현·검증할 계약, **미확인**은 이번에 실행/조사하지 않은 범위다. 기존 자료를 최신 runtime 결과로 바꿔 쓰지 않는다.
@@ -206,3 +206,43 @@ geul 경로는 상단 고정 커밋에서 읽은 코드·기록이다.
 - [고정 RHWP 문서 명령](https://github.com/edwardkim/rhwp/blob/1a76570e833917d15817415a53c09ad61ab3203f/src/document_core/commands/document.rs): 템플릿 기반 초기화.
 
 이번에는 현재 사용자 로컬 WASM, 새 HWP/HWPX 생성·native IME/저장, 외부 프로그램 상호운용, 실제 전원 차단을 실행하지 않았다. 해당 항목은 미실행이며 문서 검사 PASS와 합산하지 않는다. 절대 무오류를 보증하지 않고, 확인된 코드 사실·과거 근거·설계·미확인을 구분해 다음 구현자가 검증할 수 있게 한다.
+
+
+## T021 실행 수용 — 2026-11-04
+
+**COMPLETED.** 기준 HEAD `b0eed029` 위 구현. [실행 신원·형식별 결과](new-document-t021-2026-11-04.json). 제품 생성 활성화는 T022이며 native 생성 UX/IME는 T023이다. 기존 절의 API 후보/NOT RUN은 당시 정적 조사 기록이다.
+
+### 후보 비교와 선택
+
+현재 Release `853a0689…` 및 Debug `0c2faef3…`의 검증된 facade로 실행했다. JS/WASM SHA-256과 순서 있는 11개 패치는 연결된 JSON에 기록했다. 별도 raw module로 문서 팩터리를 대체하지 않았다.
+
+- A `createEmpty()`만 사용: HWP export/reopen 자체는 되지만 FileHeader version 0 및 기본 정의 부재로 독립 검사 부적합. HWPX는 첫 삽입·문단 분리 후 `charPrIDRef: [0]` 미등록 참조로 export 실패. 제품 경로로 거절.
+- B fresh `createEmpty()` → 인스턴스 `createBlankDocument()`: 반환은 새 객체가 아닌 JSON 문자열. HWP/HWPX 모두 기본 편집·export/reopen 성공. 다만 HWP에 작성자·마지막 저장자 및 과거 시각이 남는다. 활성 사용자 문서에는 호출하지 않았다.
+- 선택 C: fresh 모델에 공개 API로 Noto Sans CJK KR(7개 언어 글꼴 이름, 폰트 바이트 미포함), 10pt 글자 모양, 160% 문단/기본 TabDef, Normal 스타일을 명시적으로 초기화한다. 내부 HWPX seed를 재열어 올바른 header/구역·단 정의를 확정하고 요청 형식으로 export/reopen한다. 내부 생성 seed는 사용자 문서 변환 기능이 아니다. 최종 HWP는 source `hwp`, 최종 HWPX는 source `hwpx`로 다시 열린다.
+
+### 템플릿과 메타데이터
+
+번들 템플릿은 pin의 `saved/blank2010.hwp`(Git blob `e8b886f370f6801188696aede9115fea31433774`)이며 `create_blank_document_native`가 include한다. 본체 MIT 고지 의무는 [rhwp 라이선스](../licenses/rhwp.md)를 유지한다. 얕은 체크아웃에는 템플릿의 최초 제작·취득 경위나 자산별 별도 허가가 없어 이를 별도로 승인된 사용자 템플릿으로 재배포하지 않는다. 새 경로는 템플릿 초기화를 호출하거나 템플릿 파일을 추가 배포하지 않는다.
+
+HWPX 파서도 내장 기본 HWP extra streams를 보충한다는 사실을 실제 출력에서 확인했다. 따라서 C의 HWP export에도 summary/script/options가 생긴다. Rust `prepare_rhwp_blank`는 감사한 **정확한 출력 신원**을 먼저 확인하고 fresh CFB에 FileHeader·DocInfo·BodyText/Section0·PrvText·PrvImage·RhwpHwpxOrigin만 복사한다. 제거된 메타데이터가 slack/free sector에도 남지 않는다. 최종 HWP는 이 바이트를 재열어 사용한다. HWPX 최종 패키지는 generic creator `rhwp` 및 비어 있는 날짜만 포함한다. 글꼴은 이름만 참조한다. 엔진 WASM에 이미 들어 있는 upstream 자산의 배포 고지 검토는 기존 T016 범위다.
+
+### 검증과 신뢰 경계
+
+`createRhwpBlank`는 임시 모델·독립 reopen·export result를 finally에서 free한다. source format, 서명, 1쪽/1구역/빈 문단, secd/cold, 올바른 손실 0건 보고, 추가 roundtrip 구조를 검사한다. 정상 및 손실 보고 실패 주입에서 살아 있는 모델/export 객체가 0임을 관측했다. 바이트/보고 상한은 64KiB/1KiB다.
+
+Rust의 생성 권한은 프런트엔드 safe/blank/reopen 플래그가 아니다. 크기와 SHA-256으로 **감사한 결정적 빈 출력 두 종류만** 받고 loss schema/요청 형식/실제 판별/참조 검사도 적용한다. HWP는 위 생성 전용 정규화를 거친다. 엔진이 다른 출력으로 바뀌면 새 감사 없이 생성하지 않는다. 동일 바이트 자기 비교는 방어적 검사일 뿐 blankness의 근거가 아니다. 기존 사용자 파일의 원본 대 출력 보존 검사는 변경하지 않았다.
+
+독립 Python CFB/FAT/miniFAT/record 검사와 ZIP CRC/Expat XML 검사로 header/필수 항목/구역·문단/기본 글꼴·모양·스타일·TabDef/참조/manifest/spine/빈 본문/부가 스트림을 검사했다. 잘린 CFB, 잘못된 HWP version, 누락 header, 미등록 charPr 참조, 비어 있지 않은 본문, 잘못된 글꼴을 거절했다. Rust는 임의/과대 출력, 변조 바이트, 편집된 문서, 불일치·가짜 손실 보고를 거절한다.
+
+### 재현과 관측 결과
+
+1. `node scripts/tests/new-document-runtime.mjs target/new-document/runtime RELEASE.json`
+2. `npm run rust -- test --lib --no-run` (보호 빌드). 출력된 test binary의 `services::creation::tests::prepare_current_wasm_blanks --ignored --exact` 실행. `GEUL_NEW_DOCUMENT_DIR`는 생성 출력 디렉터리.
+3. 위 Node 명령에 `--prepared`를 추가해 최종 정규화 바이트의 삽입/분리/병합/삭제/추가 삽입 및 2회 export/reopen 실행.
+4. `python3 scripts/tests/new-document-structure.py target/new-document/runtime`.
+5. 같은 test binary의 `services::creation::tests::current_wasm_creation_and_two_real_safe_saves --ignored --exact` 실행. TMPDIR는 신뢰 가능한 task-owned 디렉터리. 실제 stage_new/publish_new/register/load/commit/preflight/save를 거친다.
+6. Node 명령의 `--published`로 Rust가 실제 저장한 두 출력의 요청 형식과 기대 본문 재검사. Debug도 별도 디렉터리 및 `DEBUG.json`으로 같은 단계 실행.
+
+두 generation 각각 HWP/HWPX의 첫 입력·문단 편집·첫 안전 저장·재저장·최종 파일 재열기 **PASS**. 원본 보존을 우회한 저장은 없다. 최초 진단의 보호 래퍼 내 시험은 강제된 `/tmp` 때문에 SharedDirectory로 거절됐다. 검사를 완화하지 않고 보호 빌드한 시험 binary를 private TMPDIR에서 실행했다. 중간 probe의 `mergeParagraph(0,0)` 및 record_content 누락도 시험 사용 오류로 바로잡았으며 제품 결함으로 세지 않는다.
+
+이 결과는 Node에서 실제 제품 WASM과 Rust 게시/저장 경계를 결합한 T021 수용이다. native Tauri UI·실제 IME·초점/동시성 및 외부 한컴/Word 상호운용 PASS를 뜻하지 않는다. T007–T010의 기존 미검증/실패와 T024 보류는 그대로다.
