@@ -503,3 +503,53 @@ NOT REACHABLE에는 두 dialog 관측이 명시적 False, `restoreResult` 키가
 남은 범위: 실제 GTK 선택기 중 도달 전이는 이 환경에서 NOT REACHABLE이므로 해당 native 행동 PASS는 없다(완료된 전이 보고 계약은 fixture로 검증). 다른 WM/portal/Wayland·Release·Windows/macOS는 NOT RUN. Rust/backend와 감사 digest/저장 권한은 변경하지 않아 Rust/WASM 전체 재검사는 실행하지 않았다. T021–T023 및 기존 작업 완료 상태 변경 없음.
 
 중간 실행 기록 보충: P1 집중 Vitest 첫 구현은 27개 중 26 PASS/1 FAIL, exit 1/미처리 오류 0; App 통합 추가 직후는 29개 중 27 PASS/2 FAIL, exit 1/미처리 오류 2였다. 다음 30/30 출력의 실행은 shell이 뒤의 cat 종료 코드 0을 반환해 Vitest 자체 exit를 별도 보존하지 못했다. 이 중간 명령은 명령 PASS 증거로 쓰지 않는다. 이후 전체 실행(59파일/1,055 PASS 부분)과 App 재검증(exit 0/26 PASS)의 유효한 결과를 사용한다. P1 native 첫 가로 넘침 시도는 exit 1, 수정 뒤 두 번은 각각 exit 0/UI 4조건 PASS였다. 각 버전 빌드는 exit 0이며 최종 identity만 제품 UI 증거로 사용한다.
+
+
+## 알림 보존·확인 후 초점 최종 안정화 — 2026-11-04
+
+이 절은 앞선 최종 집중 안정화 P1의 “새 게시 경고는 이전 경고를 교체” 정책을 대체한다. 이전 실행/실패 기록은 그대로 보존한다. 출발점은 master `d1c0aaa4afa6cdd15cc48ede24cf53a41100f111`, clean이며 두 엔진 pin은 지정값과 일치했다.
+
+### 소유권과 확인 계약
+
+기존 `retainPublicationWarning`은 게시 경고 뒤의 Save As 충돌 같은 오류를 버렸고, 다음 게시 경고는 이전 경고를 덮었다. 이제 App의 작은 reducer가 `(최신 transient, FIFO pending notices, nextId)`를 소유한다. 표시·전문은 pending의 선두를 사용한다. 일반 상태는 최신 한 건만 보관하고 마지막 알림을 확인하면 표시한다. 오류는 발생별로 보관하며 같은 키/동일 문구도 합치지 않는다. 대기 개수를 ko/en으로 알린다. 타이머·DB·이벤트 버스·새 모달은 없다.
+
+실제 notify 호출부를 조사해 다음을 명시적으로 분류했다.
+- `documentErrorMessage()`를 통해 오는 문서 작업 실패(`document.error.*`의 현재 키들을 명시한 Set), `document.saveAsConflict`, `document.newConflict`, `recovery.restoreConflict`, `document.createdUnconfirmed`: 확인 대상. 별도 SaveControls/RecoveryCenter에 이미 남는 오류는 기존 표시 경로를 유지하며, notify로 도착한 오류를 유실시키지 않는다.
+- `settings.saveFailed`, `settings.conflict`, 복원 시 unsupported/unreadable: 쓰기 실패 또는 쓰지 않는 상태이므로 확인 대상. `onRecovered`가 와도 삭제하지 않고 현재 설정이 저장소에 있음을 확인했다는 설명을 덧붙인다. 이미 저장된 값으로 돌아와 쓰기 없이 확인하는 경우도 있으므로 향후 쓰기 가능성을 주장하지 않는다.
+- 성공/준비 상태, 비활성 명령 설명(버튼 title/aria-disabled에도 이유가 있음), 보정/default 적용 안내인 settings recovered/malformed: transient. 무제한 보관하지 않는다.
+
+확인은 표시한 notice의 단조 증가 ID를 캡처한다. reducer는 현재 선두 ID가 일치할 때만 한 건 제거한다. 오래된/중복 확인은 다음 알림이나 새 알림을 지우지 않는다. 내부 ID는 UI에 표시하지 않는다. Message 키·변수와 중첩 번역 참조는 발생별 snapshot으로 보관하고 현재 선택 언어로 렌더링한다. 이 상태 처리는 backend/session/recovery/publicationNoticeCount에 접근하지 않는다.
+
+### 초점 계약과 실제 재현
+
+기존 DOM 동작을 재현한 Enter/Space 시험은 마지막 확인 버튼 제거 후 activeElement가 body가 되는 문제로 둘 다 실패했다. 이제 확인 시 그 버튼이 실제 초점을 소유했는지 기록하고, ID 전환 후 layout effect에서 다음 전문 버튼 또는 마지막 알림 뒤의 안정적인 이름 있는 footer(tabIndex=-1)로 옮긴다. footer 뒤 Tab은 배율 컨트롤에 도달한다. 다른 초점 소유자·모달·file-busy 상태를 존중하고 컴포넌트 unmount에서 전역 초점을 복원하지 않는다. 프로그램 확인이나 편집기 초점을 유지한 포인터 확인은 초점을 강제로 옮기지 않는다. 포인터는 기존 `keepEditorFocusOnPointerDown`을 그대로 사용한다.
+
+전문과 토글의 keydown은 편집기 명령으로 전파하지 않는다. Escape는 isComposing/keyCode 229에서 닫지 않고, 평상시에는 전문을 접고 토글로 돌아간다. Enter/Space, 모달/file-busy 제한, non-modal 전문, live status/ARIA 관계를 유지한다. 큐 ID와 렌더 전환이 초점 수명의 기준이므로 P1/P2는 하나의 일관된 변경으로 검증·커밋한다.
+
+### 회귀 및 최종 전체 검증
+
+새 증거는 ignored `target/stabilization/notice-final-20261104/`에만 생성했다. Python subprocess.returncode를 별도 파일/JSON으로 기록해 cat/tee가 종료 코드를 가리지 않게 했다.
+- 기존 구현의 `npx vitest run src/App.notifications.test.tsx`: exit 1, 6개 중 4 FAIL/2 PASS. Save As 오류 유실, 연속 게시/같은 키 발생 대체, 언어·변수 큐 실패를 재현했다. 이 실행에는 이후 보정한 region selector 문제도 포함된다. `reproduction/`에 원본 보존.
+- 기존 구현의 `npx vitest run src/components/StatusBar/StatusBar.test.tsx -t 'acknowledgement keeps'`: exit 1, Enter/Space 2 FAIL, 나머지 11 skipped(의도한 재현 필터). 미처리 오류 0, `reproduction-focus/`.
+- 첫 연결 후 집중 실행은 4파일/65 PASS·3 FAIL, exit 1: 마지막 확인 뒤 존재하지 않아야 할 버튼을 getByRole로 조회하던 새 시험의 질의를 queryByRole로 고쳤다. 이후 `npx vitest run src/App.notifications.test.tsx src/components/StatusBar/StatusBar.test.tsx src/components/StatusBar/publicationWarning.test.ts src/App.test.tsx src/components/Editor/recoveryRestoreClose.test.tsx`: exit 0, 5파일/78 PASS, 미처리 오류 0 (`focused2/`). ID 기반 stale/중복 확인, FIFO/동일 발생, 변수 snapshot/언어, 일반 상태, 실제 렌더링/초점/단축키를 포함한다.
+- 설정 시험은 새 “명시적 확인” 계약에 맞춰 안내를 실제로 읽고 확인한 뒤 기존 상태/저장소 assertion을 이어가게 했다. 저장 바이트·쓰기 횟수·기준값·외부 충돌 보호 assertion은 유지했다. `npx vitest run src/App.settings.test.tsx`: 초기 exit 1, 40 PASS/18 FAIL; 중간 exit 1, 54 PASS/4 FAIL 및 56 PASS/2 FAIL; 보정 후 exit 0, 58 PASS. 로그는 settings-before/after/retry-*에 보존했다. 회복 문구 리뷰에서 향후 쓰기 가능성 표현을 정확한 “현재 저장값 확인”으로 보완했다.
+- 최종 `npx tsc --noEmit`: exit 0. 최종 `npx eslint .`: exit 0.
+- 최종 `npx vitest run src/App.settings.test.tsx src/components/Editor/recoveryRestoreClose.test.tsx`: exit 0, 2파일/81 PASS, 실패/미처리 오류 0. 실제 복구 통합은 확인 뒤에도 세션·활성 탭·후보·게시 안내 카운트가 유지됨을 추가 확인했다.
+- **필수 최종 전체 `npx vitest run`: exit 0, 62파일 PASS, 1,099시험 PASS, failed 0, skipped 0, unhandled errors 0.** runner 정상 완료, 2026-11-04 23:14:48–23:15:15 KST. jsdom canvas getContext 미구현 경고는 있으나 미처리 오류나 runner 실패는 없다. 원본 `final-verification2/full-vitest.log`, 실제 종료 코드/argv `full-vitest.json`. 부분 결과를 전체 실행 대신 사용하지 않았다.
+
+전체 실행 당시 HEAD는 출발 HEAD + 이번 구현/시험 변경이었다. 전후 source-before.json/source-after.json의 src 전체 및 test/config manifest가 같고, 정규화한 manifest SHA-256은 `bb158f1857614180db974ac26331ffb32d20c23eef7f961f8670d9293d1c7bb3`이다. 최종 커밋 후에도 이 파일별 hash와 일치하는지 확인한다. 이후 제품/시험을 바꾸면 전체 게이트를 다시 실행해야 한다.
+
+### 실제 WebKit/X11 UI와 검증 한계
+
+Rust/WASM은 다시 빌드하지 않았다. 기존 Tauri host SHA-256 `19e5d7434121b0b2d8cce79af4f0a6d3b2740b95fb685af80352d52661e6f9bb`를 사용하되, 기존 embedded UI(`tauri://localhost/assets/...`)를 이번 UI 증거로 쓰지 않았다. `http://localhost:1420/src/main.tsx`에서 현재 source를 로드한 것을 기록했다. 기존 capability는 이 Vite origin의 문서 IPC를 허용하지 않으므로 권한을 넓히지 않았다.
+
+첫 `python3 target/stabilization/notice-final-20261104/native-ui/launch.py`는 exit 1: DOCX ready 진입 timeout. 뒤의 진단에서 `document_sessions not allowed ... URL: http://localhost:1420/ ... allowed ... URL: local`을 확인했다. 이 시도의 editor/focus/IME/modal 행동은 NOT RUN이며 PASS로 바꾸지 않는다. 실패 원본·정리 결과를 보존했다.
+
+범위를 구분한 `python3 target/stabilization/notice-final-20261104/native-ui2/launch.py`는 exit 0/UI PASS. 하네스 SHA-256 `8338b371d56034c8b6d21d049af7352cf1d4052242170f2005b2dcb957efd87b`. 실제 App notify callback에 통제된 Message를 넣고, 실제 WebKit/X11 키·포인터로 다음을 검증했다.
+- ko/en 두 알림 FIFO와 대기 개수, Enter 확인→다음 토글 초점, Space 마지막 확인→footer 초점, 이후 Tab→zoom. 960px 화면 스크린샷을 검토했다. 진입 중 IPC 오류 두 건도 버리지 않고 명시적으로 확인했다.
+- 실제 IBus Hangul preedit 뒤 포인터로 전문을 열고 확인해도 shared `rhwp-input` guard를 쓰는 **브라우저 textarea**가 초점을 유지했다. 합성 composition 이벤트 없이 `하아` 입력을 보존하고 blur가 없음을 측정했다. DOCX 엔진 내부 조합을 검증한 것은 아니다.
+- 실제 frontend NewDocumentDialog가 모달 초점을 소유하는 동안 전문 조작 차단, 실제 file workflow의 chooser promise를 보류한 file-busy 동안 조작 차단. 프로그램 확인은 textarea 초점을 빼앗지 않음. 실제 native window-close 확인과 real GTK chooser의 재검증을 뜻하지 않는다.
+
+Xvfb/X11·WebKitGTK 2.54.1·IBus 1.5.33/ibus-hangul 1.5.5, RHWP generation `0c2faef3a2966c4d717d50b83f51f839f5b4a14a7c26935723edc38bd36a90c4` 재사용. native-ui2는 원래 local origin으로 돌아와 host를 정상 종료했고 teardown complete, 격리 process scope cleanupSucceeded, survivors 0이다. native-ui 실패 정리도 잔류 0. 보고서/실제 argv/스크린샷은 각 run/result.json 및 env/environment-result.json에 있다.
+
+NOT RUN: 이번 최종 프런트엔드와 DOCX 엔진을 합친 native IME/복구/실제 창 닫기 확인(기존 host의 origin 권한 경계), Wayland·portal·Release·Windows/macOS·실제 보조공학 음성 출력. 해당 소유권/복구/창 닫기는 React 통합과 전체 시험으로 검증했으며 native PASS로 확대하지 않는다. 확인된 in-scope 제품 회귀는 없다. 두 submodule pin·WASM·Rust 저장/게시·GTK 분류/결과 계약·T007–T010/T021–T023 상태 및 T024 비활성은 변경하지 않았다.

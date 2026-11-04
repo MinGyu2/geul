@@ -913,7 +913,8 @@ button {
 .panel--properties dd { overflow-wrap: anywhere; }
 
 /* Publication details stay non-modal and wrap independently of the compact status line. */
-.statusbar__details-toggle { flex: none; }
+.statusbar__details-toggle,
+.statusbar__pending { flex: none; }
 .statusbar__details-toggle,
 .statusbar__details button { color: inherit; background: transparent; border: 1px solid currentColor; border-radius: 3px; }
 .statusbar__details {

@@ -9,7 +9,7 @@ import { NavigationPanel } from "./components/NavigationPanel/NavigationPanel";
 import { PropertiesPanel } from "./components/PropertiesPanel/PropertiesPanel";
 import { Ribbon } from "./components/Ribbon/Ribbon";
 import { Splitter } from "./components/Splitter/Splitter";
-import { retainPublicationWarning } from "./components/StatusBar/publicationWarning";
+import { createNotificationState, notificationReducer, type Notice } from "./components/StatusBar/publicationWarning";
 import { StatusBar } from "./components/StatusBar/StatusBar";
 import { TitleBar } from "./components/TitleBar/TitleBar";
 import { NewDocumentDialog } from "./components/Editor/NewDocumentDialog";
@@ -47,14 +47,13 @@ export default function App({ initialState, initialLanguage, settingsStore = def
   const [boot] = useState(() => loadSettings(settingsStore));
   const [language, setLanguage] = useState<Language>(initialLanguage ?? boot.settings.language);
   const [layout, dispatch] = useReducer(layoutReducer, initialState ?? boot.settings.layout);
-  // 복원 문제는 첫 메시지로만 보여 준다(효과에서 늦게 넣지 않으므로 StrictMode에서도 한 번이고, 그 뒤의 알림을
-  // 덮어쓰지 않는다). 첫 실행과 정상 복원은 "준비됨".
-  const [message, setMessage] = useState<Message>(() => ({ key: RESTORE_NOTICE[boot.status] ?? "status.ready" }));
-
-  const notify = useCallback((incoming: Message) => {
-    setMessage(current => retainPublicationWarning(current, incoming));
-  }, []);
-  const dismissMessage = useCallback(() => setMessage({ key: "status.ready" }), []);
+  // App owns retained outcomes separately from the latest lightweight status.
+  const [notifications, dispatchNotification] = useReducer(notificationReducer,
+    { key: RESTORE_NOTICE[boot.status] ?? "status.ready" } as Message, createNotificationState);
+  const notice = notifications.pending[0];
+  const message = notice?.message ?? notifications.transient;
+  const notify = useCallback((incoming: Message) => dispatchNotification({ type: "notify", message: incoming }), []);
+  const dismissMessage = useCallback((id: number) => dispatchNotification({ type: "acknowledge", id }), []);
 
   // 저장하지 못하면 이유를 알린다: 쓰기 실패, 실행 중 외부 변경(충돌), 시작할 때부터 쓰지 않는 상태(미지원 버전·읽기 실패).
   const blockedNotice = RESTORE_NOTICE[boot.status] ?? "settings.saveFailed";
@@ -64,11 +63,8 @@ export default function App({ initialState, initialLanguage, settingsStore = def
     }),
     [blockedNotice, notify],
   );
-  // 다시 저장되면 남아 있는 저장 실패 알림만 지운다. 그 사이에 나온 다른 알림은 그대로 둔다.
-  const onRecovered = useCallback(
-    () => setMessage((current) => (current.key === "settings.saveFailed" ? { key: "status.ready" } : current)),
-    [],
-  );
+  // Resolving persistence does not acknowledge an error the user has not reviewed.
+  const onRecovered = useCallback(() => dispatchNotification({ type: "settingsRecovered" }), []);
   usePersistedSettings(settingsStore, { language, layout }, {
     baseline: boot.raw,
     enabled: canPersist(boot.status),
@@ -86,7 +82,7 @@ export default function App({ initialState, initialLanguage, settingsStore = def
 
   return (
     <LanguageProvider language={language} onLanguageChange={setLanguage}>
-      <Workspace layout={layout} dispatch={dispatch} message={message} notify={notify} onDismissMessage={dismissMessage} documents={documents} />
+      <Workspace layout={layout} dispatch={dispatch} message={message} notice={notice} pendingCount={notifications.pending.length} notify={notify} onDismissMessage={dismissMessage} documents={documents} />
     </LanguageProvider>
   );
 }
@@ -129,11 +125,13 @@ interface WorkspaceProps {
   dispatch: CommandContext["dispatch"];
   message: Message;
   notify: (message: Message) => void;
-  onDismissMessage: () => void;
+  onDismissMessage: (id: number) => void;
+  notice: Notice | undefined;
+  pendingCount: number;
   documents: DocumentWorkspace | null;
 }
 
-function Workspace({ layout, dispatch, message, notify, onDismissMessage, documents }: WorkspaceProps) {
+function Workspace({ layout, dispatch, message, notice, pendingCount, notify, onDismissMessage, documents }: WorkspaceProps) {
   const { t } = useTranslation();
   const viewportWidth = useViewportWidth();
   const navigationToggleRef = useRef<HTMLButtonElement>(null);
@@ -257,7 +255,8 @@ function Workspace({ layout, dispatch, message, notify, onDismissMessage, docume
           </>
         )}
       </div>
-      <StatusBar context={context} message={message} state={panel} onDismissMessage={onDismissMessage} />
+      <StatusBar context={context} message={message} state={panel} noticeId={notice?.id} pendingCount={pendingCount} noticeResolved={notice?.resolved}
+        onDismissMessage={notice ? () => onDismissMessage(notice.id) : undefined} />
       {formatChoice && <NewDocumentDialog onChoose={formatChoice} suspended={modal} unavailable={documents ? creationUnavailable(documents) : {}} />}
     </div>
   );

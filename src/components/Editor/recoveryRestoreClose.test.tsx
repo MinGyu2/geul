@@ -368,6 +368,8 @@ it.each(["ko", "en"] as const)("publication warning survives ordinary status and
   fireEvent.click(within(details).getByRole("button", { name: translate("status.dismissWarning") }));
   expect(t.view.queryByRole("button", { name: translate("status.messageDetails") })).toBeNull();
   expect(t.workspace.publicationNoticeCount).toBe(1);
+  expect(t.sessions.snapshot()).toEqual(before); // acknowledgement changes only the notification
+  expect(t.recovery.discard).not.toHaveBeenCalled();
   act(() => t.request());
   await act(flush);
   expect(t.windowClose.close).toHaveBeenCalledTimes(1);

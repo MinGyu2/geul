@@ -1,12 +1,13 @@
 import { fireEvent, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import { useState } from "react";
 import { describe, expect, it, vi } from "vitest";
 import type { CommandContext } from "../../commands/commands";
 import { initialLayout } from "../../hooks/layoutState";
 import { LanguageProvider } from "../../language/LanguageContext";
 import en from "../../language/en.json";
 import ko from "../../language/ko.json";
-import { retainPublicationWarning } from "./publicationWarning";
+import { createNotificationState, notificationReducer } from "./publicationWarning";
 import type { MessageKey } from "../../language";
 import type { DocumentPanelState } from "../Editor/documentPanels";
 import { StatusBar } from "./StatusBar";
@@ -125,6 +126,28 @@ it.each([
   const message = { key };
   setup("en", { message: key });
   expect(screen.getByRole("button", { name: /details/i })).toBeEnabled();
-  expect(retainPublicationWarning(message, { key: "status.ready" })).toBe(message);
-  expect(retainPublicationWarning({ key: "status.ready" }, message)).toBe(message);
+  const notifications = notificationReducer(createNotificationState(message), { type: "notify", message: { key: "status.ready" } });
+  expect(notifications.pending[0]?.message).toEqual(message);
+});
+
+it.each(["{Enter}", " "])("acknowledgement keeps keyboard focus connected (%s)", async key => {
+  const user = userEvent.setup();
+  function Harness() {
+    const [message, setMessage] = useState<{ key: MessageKey }>({ key: "document.error.RestoredUnopenedAlreadyOpen" });
+    const context: CommandContext = { layout: initialLayout, dispatch: vi.fn(), notify: vi.fn(), document: null };
+    return <LanguageProvider language="en" onLanguageChange={() => {}}>
+      <StatusBar context={context} message={message} state={state} onDismissMessage={() => setMessage({ key: "status.ready" })} />
+    </LanguageProvider>;
+  }
+  render(<Harness />);
+  const toggle = screen.getByRole("button", { name: "View details" });
+  toggle.focus();
+  await user.keyboard("{Enter}");
+  await user.tab(); // scrollable region
+  await user.tab(); // acknowledge
+  expect(screen.getByRole("button", { name: "Dismiss warning" })).toHaveFocus();
+  await user.keyboard(key);
+  expect(screen.queryByRole("button", { name: "View details" })).toBeNull();
+  expect(screen.getByRole("contentinfo")).toHaveFocus();
+  expect(document.activeElement?.isConnected).toBe(true);
 });

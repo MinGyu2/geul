@@ -28,6 +28,24 @@ function memoryStore(initial: string | null = null, writable = true) {
 const statusMessage = () => screen.getAllByRole("status").find((element) => !element.hasAttribute("aria-label"))!;
 const storedJson = () => JSON.parse(window.localStorage.getItem(SETTINGS_KEY) ?? "null");
 
+async function acknowledgeCurrentNotice(user: ReturnType<typeof userEvent.setup>, expectedDetails?: string | RegExp) {
+  const details = screen.queryByRole("button", { name: /^(View details|전문 보기)$/ });
+  if (!details) return false;
+  await user.click(details);
+  const region = screen.getByRole("region", { name: /^(Notification details|알림 전문)$/ });
+  expect(region).toBeVisible();
+  if (expectedDetails) expect(region).toHaveTextContent(expectedDetails);
+  await user.click(screen.getByRole("button", { name: /^(Acknowledge notification|알림 확인)$/ }));
+  return true;
+}
+
+async function acknowledgePendingNotices(user: ReturnType<typeof userEvent.setup>) {
+  for (let count = 0; count < 10; count += 1) {
+    if (!await acknowledgeCurrentNotice(user)) return;
+  }
+  throw new Error("Settings test left more than 10 actionable notices pending");
+}
+
 function expectKorean({ ready = true } = {}) {
   expect(document.documentElement.lang).toBe("ko");
   expect(screen.getByRole("banner", { name: "제목 표시줄" })).toBeInTheDocument();
@@ -297,6 +315,9 @@ describe("미지원 버전 설정 보호", () => {
     await user.click(screen.getByRole("button", { name: "테마: 밝게" }));
     expect(attempts).toEqual([]);
     expect(current()).toBe(futureSettings);
+    expect(statusMessage()).toHaveTextContent("저장된 설정이 더 새로운 버전의 형식이라 그대로 두었습니다");
+    expect(await acknowledgeCurrentNotice(user, "저장된 설정이 더 새로운 버전의 형식이라 그대로 두었습니다")).toBe(true);
+    await acknowledgePendingNotices(user);
     expect(statusMessage()).toHaveTextContent("굵게: 열린 문서가 없어 사용할 수 없습니다.");
     expect(statusMessage()).not.toHaveTextContent("설정을 저장하지 못했습니다");
   });
@@ -409,7 +430,7 @@ describe("설정 복원 문제 알림", () => {
 });
 
 describe("저장 실패 알림", () => {
-  it("실패하면 알리고, 다시 저장에 성공하면 지난 실패 알림을 지운다", async () => {
+  it("실패하면 알리고, 다시 저장에 성공해도 확인할 때까지 실패 안내와 회복 문구를 남긴다", async () => {
     setViewport(1400);
     const { store, state, current } = switchableStore();
     state.writable = false;
@@ -420,6 +441,9 @@ describe("저장 실패 알림", () => {
     state.writable = true;
     await user.click(screen.getByRole("button", { name: "테마: 밝게" }));
     expect(JSON.parse(current()!).layout.theme).toBe("dark");
+    expect(statusMessage()).toHaveTextContent("설정을 저장하지 못했습니다");
+    expect(statusMessage()).toHaveTextContent("현재 설정이 저장소에 있음을 확인했습니다. 이전 실패 안내는 확인할 때까지 남습니다.");
+    expect(await acknowledgeCurrentNotice(user, /설정을 저장하지 못했습니다.*현재 설정이 저장소에 있음을 확인했습니다/)).toBe(true);
     expect(statusMessage()).toHaveTextContent("준비됨");
     expect(statusMessage()).not.toHaveTextContent("설정을 저장하지 못했습니다");
   });
@@ -434,6 +458,8 @@ describe("저장 실패 알림", () => {
     await user.click(screen.getByRole("button", { name: "굵게" }));
     state.writable = true;
     await user.click(screen.getByRole("button", { name: "테마: 밝게" }));
+    expect(statusMessage()).toHaveTextContent("현재 설정이 저장소에 있음을 확인했습니다.");
+    expect(await acknowledgeCurrentNotice(user, /설정을 저장하지 못했습니다.*현재 설정이 저장소에 있음을 확인했습니다/)).toBe(true);
     expect(statusMessage()).toHaveTextContent("굵게: 열린 문서가 없어 사용할 수 없습니다.");
   });
 
@@ -449,6 +475,8 @@ describe("저장 실패 알림", () => {
     const zoomIn = within(screen.getByRole("contentinfo")).getByRole("button", { name: "확대" });
     await user.click(zoomIn); // 같은 실패 구간: 다시 알리지 않음
     await user.click(zoomIn);
+    expect(statusMessage()).toHaveTextContent("설정을 저장하지 못했습니다");
+    expect(await acknowledgeCurrentNotice(user, "설정을 저장하지 못했습니다")).toBe(true);
     expect(statusMessage()).toHaveTextContent("굵게:");
     expect(attempts).toHaveLength(3); // 바뀔 때마다 다시 시도한다
 
@@ -462,7 +490,7 @@ describe("저장 실패 알림", () => {
     expect(statusMessage()).toHaveTextContent("Settings could not be saved. Changes apply to this session only.");
   });
 
-  it("실패 중에 마지막 저장값으로 되돌리면 저장 실패 알림을 지운다", async () => {
+  it("실패 중 마지막 저장값으로 돌아와도 실패 안내를 확인할 때까지 남긴다", async () => {
     setViewport(1400);
     const { store, state, attempts } = switchableStore(JSON.stringify({ version: 1, language: "ko", layout: initialLayout }));
     state.writable = false;
@@ -471,8 +499,11 @@ describe("저장 실패 알림", () => {
     await user.selectOptions(screen.getByRole("combobox", { name: "화면 언어" }), "en");
     expect(statusMessage()).toHaveTextContent("Settings could not be saved.");
     await user.selectOptions(screen.getByRole("combobox", { name: "Display language" }), "ko");
+    expect(statusMessage()).toHaveTextContent("현재 설정이 저장소에 있음을 확인했습니다.");
+    expect(await acknowledgeCurrentNotice(user, /설정을 저장하지 못했습니다.*현재 설정이 저장소에 있음을 확인했습니다/)).toBe(true);
     expect(statusMessage()).toHaveTextContent("준비됨");
     expect(attempts).toHaveLength(1);
+    expect(state.writable).toBe(false); // 확인된 것은 현재 저장값이며, 새 쓰기의 성공이 아니다.
   });
 
   it("다시 그려도 같은 설정을 다시 쓰지 않는다(효과 반복 없음)", async () => {
@@ -517,6 +548,7 @@ describe("저장 근거 없는 회복 알림 금지(A)", () => {
     backing.writable = false;
     const user = userEvent.setup();
     render(<App settingsStore={client()} />);
+    expect(statusMessage()).toHaveTextContent("저장된 설정을 읽을 수 없어 기본값으로 시작했습니다.");
     await user.click(screen.getByRole("button", { name: "테마: 시스템" }));
     expect(statusMessage()).toHaveTextContent("설정을 저장하지 못했습니다");
     await user.click(screen.getByRole("button", { name: "테마: 밝게" }));
@@ -529,7 +561,9 @@ describe("저장 근거 없는 회복 알림 금지(A)", () => {
 
     backing.writable = true;
     await user.click(screen.getByRole("button", { name: "테마: 시스템" }));
-    expect(statusMessage()).toHaveTextContent("준비됨"); // 실제 저장 성공 뒤에만 지운다
+    expect(statusMessage()).toHaveTextContent("현재 설정이 저장소에 있음을 확인했습니다.");
+    expect(await acknowledgeCurrentNotice(user, /설정을 저장하지 못했습니다.*현재 설정이 저장소에 있음을 확인했습니다/)).toBe(true);
+    expect(statusMessage()).toHaveTextContent("저장된 설정을 읽을 수 없어 기본값으로 시작했습니다.");
     expect(JSON.parse(backing.value!).layout.theme).toBe("light");
   });
 
@@ -548,7 +582,7 @@ describe("저장 근거 없는 회복 알림 금지(A)", () => {
     expect(backing.value).toBe(raw);
   });
 
-  it("올바른 버전 1: 쓰기 실패 뒤 실제로 저장돼 있는 값으로 돌아오면 실패 알림을 지운다", async () => {
+  it("올바른 버전 1: 쓰기 실패 뒤 실제 저장값으로 돌아와도 실패 안내를 확인할 때까지 남긴다", async () => {
     setViewport(1400);
     const raw = v1();
     const { backing, attempts, client } = sharedBacking(raw);
@@ -558,6 +592,8 @@ describe("저장 근거 없는 회복 알림 금지(A)", () => {
     await user.selectOptions(screen.getByRole("combobox", { name: "화면 언어" }), "en");
     expect(statusMessage()).toHaveTextContent("Settings could not be saved.");
     await user.selectOptions(screen.getByRole("combobox", { name: "Display language" }), "ko");
+    expect(statusMessage()).toHaveTextContent("현재 설정이 저장소에 있음을 확인했습니다.");
+    expect(await acknowledgeCurrentNotice(user, /설정을 저장하지 못했습니다.*현재 설정이 저장소에 있음을 확인했습니다/)).toBe(true);
     expect(statusMessage()).toHaveTextContent("준비됨");
     expect(attempts).toHaveLength(1); // 저장소에 이미 있는 값은 다시 쓰지 않는다
     expect(backing.value).toBe(raw);
@@ -580,6 +616,7 @@ describe("저장 근거 없는 회복 알림 금지(A)", () => {
     const { backing, client } = sharedBacking("{corrupt");
     const user = userEvent.setup();
     render(<StrictMode><App settingsStore={client()} /></StrictMode>);
+    expect(statusMessage()).toHaveTextContent("저장된 설정을 읽을 수 없어 기본값으로 시작했습니다.");
     const zoomIn = within(screen.getByRole("contentinfo")).getByRole("button", { name: "확대" });
     const zoomOut = within(screen.getByRole("contentinfo")).getByRole("button", { name: "축소" });
     for (let round = 0; round < 2; round += 1) {
@@ -588,13 +625,17 @@ describe("저장 근거 없는 회복 알림 금지(A)", () => {
       expect(statusMessage()).toHaveTextContent("설정을 저장하지 못했습니다");
       backing.writable = true;
       await user.click(zoomOut);
-      expect(statusMessage()).toHaveTextContent("준비됨");
+      expect(statusMessage()).toHaveTextContent("현재 설정이 저장소에 있음을 확인했습니다.");
+      expect(await acknowledgeCurrentNotice(user, /설정을 저장하지 못했습니다.*현재 설정이 저장소에 있음을 확인했습니다/)).toBe(true);
+      expect(statusMessage()).toHaveTextContent("저장된 설정을 읽을 수 없어 기본값으로 시작했습니다.");
     }
     backing.writable = false;
     await user.click(zoomIn);
     await user.click(screen.getByRole("button", { name: "굵게" }));
     backing.writable = true;
     await user.click(zoomOut);
+    expect(statusMessage()).toHaveTextContent("현재 설정이 저장소에 있음을 확인했습니다.");
+    expect(await acknowledgeCurrentNotice(user, /설정을 저장하지 못했습니다.*현재 설정이 저장소에 있음을 확인했습니다/)).toBe(true);
     expect(statusMessage()).toHaveTextContent("굵게:");
     expect(JSON.parse(backing.value!).layout.zoom).toBe(100);
   });
@@ -647,6 +688,8 @@ describe("실행 중 외부 변경 보호(B)", () => {
     await user.click(screen.getByRole("button", { name: "테마: 어둡게" }));
     expect(attempts).toHaveLength(1);
     expect(backing.value).toBe(external);
+    expect(statusMessage()).toHaveTextContent("저장된 설정이 다른 곳에서 바뀌어 그대로 두었습니다");
+    expect(await acknowledgeCurrentNotice(user, "저장된 설정이 다른 곳에서 바뀌어 그대로 두었습니다")).toBe(true);
     expect(statusMessage()).toHaveTextContent("굵게:"); // 충돌 상태에서 또 바꿔도 알림을 반복하지 않음
   });
 
@@ -692,6 +735,8 @@ describe("실행 중 외부 변경 보호(B)", () => {
     backing.readable = true;
     await user.click(screen.getByRole("button", { name: "테마: 밝게" }));
     expect(JSON.parse(backing.value!).layout.theme).toBe("dark");
+    expect(statusMessage()).toHaveTextContent("현재 설정이 저장소에 있음을 확인했습니다.");
+    expect(await acknowledgeCurrentNotice(user, /설정을 저장하지 못했습니다.*현재 설정이 저장소에 있음을 확인했습니다/)).toBe(true);
     expect(statusMessage()).toHaveTextContent("준비됨");
   });
 
@@ -706,6 +751,8 @@ describe("실행 중 외부 변경 보호(B)", () => {
     backing.value = futureSettings;
     backing.writable = true;
     await user.click(screen.getByRole("button", { name: "테마: 밝게" }));
+    expect(statusMessage()).toHaveTextContent("설정을 저장하지 못했습니다");
+    expect(await acknowledgeCurrentNotice(user, "설정을 저장하지 못했습니다")).toBe(true);
     expect(statusMessage()).toHaveTextContent(conflictKo);
     expect(backing.value).toBe(futureSettings);
     expect(attempts).toHaveLength(1);
@@ -762,6 +809,12 @@ const reorderedV1 = () => {
 };
 
 describe("저장된 설정의 의미 동등성(최종 정리 A)", () => {
+  async function acknowledgeRecoveredSaveFailure(user: ReturnType<typeof userEvent.setup>) {
+    expect(statusMessage()).toHaveTextContent("설정을 저장하지 못했습니다");
+    expect(statusMessage()).toHaveTextContent("현재 설정이 저장소에 있음을 확인했습니다.");
+    expect(await acknowledgeCurrentNotice(user, /설정을 저장하지 못했습니다.*현재 설정이 저장소에 있음을 확인했습니다/)).toBe(true);
+  }
+
   /** 쓰기가 실패하는 동안 테마를 한 바퀴 돌려(시스템→밝게→어둡게→시스템) 시작 값으로 돌아온다. */
   async function failThenReturn(user: ReturnType<typeof userEvent.setup>) {
     await user.click(screen.getByRole("button", { name: "테마: 시스템" }));
@@ -771,7 +824,7 @@ describe("저장된 설정의 의미 동등성(최종 정리 A)", () => {
     expect(document.documentElement.dataset.theme).toBe("system");
   }
 
-  it("A1·A10 들여쓴 버전 1: 쓰기 실패 뒤 저장된 값으로 돌아오면 다시 쓰지 않고 실패 알림을 지우며, 원문을 기준으로 외부 변경을 계속 감지한다", async () => {
+  it("A1·A10 들여쓴 버전 1: 실패 뒤 저장된 값으로 돌아오면 안내를 확인할 때까지 남기고 원문 기준 감지를 계속한다", async () => {
     setViewport(1400);
     const raw = prettyV1();
     const { backing, attempts, client } = sharedBacking(raw);
@@ -780,6 +833,7 @@ describe("저장된 설정의 의미 동등성(최종 정리 A)", () => {
     render(<App settingsStore={client()} />);
     expect(statusMessage()).toHaveTextContent("준비됨");
     await failThenReturn(user);
+    await acknowledgeRecoveredSaveFailure(user);
     expect(statusMessage()).toHaveTextContent("준비됨");
     expect(attempts).toHaveLength(2); // 돌아온 값은 쓰지 않는다
     expect(backing.value).toBe(raw); // 원문 그대로(압축 형식으로 다시 쓰지 않음)
@@ -801,6 +855,7 @@ describe("저장된 설정의 의미 동등성(최종 정리 A)", () => {
     const user = userEvent.setup();
     render(<App settingsStore={client()} />);
     await failThenReturn(user);
+    await acknowledgeRecoveredSaveFailure(user);
     expect(statusMessage()).toHaveTextContent("준비됨");
     expect(attempts).toHaveLength(2);
     expect(backing.value).toBe(raw);
@@ -817,6 +872,7 @@ describe("저장된 설정의 의미 동등성(최종 정리 A)", () => {
     expect(statusMessage()).toHaveTextContent("Settings could not be saved.");
     backing.readable = true;
     await user.selectOptions(screen.getByRole("combobox", { name: "Display language" }), "ko");
+    await acknowledgeRecoveredSaveFailure(user);
     expect(statusMessage()).toHaveTextContent("준비됨");
     expect(attempts).toEqual([]);
     expect(backing.value).toBe(raw);
@@ -830,6 +886,7 @@ describe("저장된 설정의 의미 동등성(최종 정리 A)", () => {
     const user = userEvent.setup();
     render(<App settingsStore={client()} />);
     await failThenReturn(user);
+    await acknowledgeRecoveredSaveFailure(user);
     expect(statusMessage()).toHaveTextContent("준비됨");
     expect(attempts).toHaveLength(2);
     expect(backing.value).toBe(raw);
@@ -919,7 +976,7 @@ describe("저장된 설정의 의미 동등성(최종 정리 A)", () => {
     expect(backing.value).toBe(external);
   });
 
-  it("A10 들여쓴 버전 1: 실패 뒤 다른 설정을 실제로 저장하면 알림을 지우고, 그 뒤로는 쓴 값을 기준으로 삼는다", async () => {
+  it("A10 들여쓴 버전 1: 실패 뒤 다른 설정을 저장하면 안내를 확인할 때까지 남기고, 쓴 값을 기준으로 삼는다", async () => {
     setViewport(1400);
     const { backing, attempts, client } = sharedBacking(prettyV1());
     backing.writable = false;
@@ -928,6 +985,7 @@ describe("저장된 설정의 의미 동등성(최종 정리 A)", () => {
     await user.click(screen.getByRole("button", { name: "테마: 시스템" }));
     backing.writable = true;
     await user.click(screen.getByRole("button", { name: "테마: 밝게" }));
+    await acknowledgeRecoveredSaveFailure(user);
     expect(statusMessage()).toHaveTextContent("준비됨");
     expect(backing.value).toBe(v1({ theme: "dark" }));
     await user.click(screen.getByRole("button", { name: "테마: 어둡게" })); // 이어서 쓴다(충돌 아님)
@@ -946,6 +1004,8 @@ describe("저장된 설정의 의미 동등성(최종 정리 A)", () => {
     await user.click(screen.getByRole("button", { name: "굵게" }));
     await user.click(screen.getByRole("button", { name: "테마: 밝게" }));
     await user.click(screen.getByRole("button", { name: "테마: 어둡게" }));
+    expect(statusMessage()).toHaveTextContent("현재 설정이 저장소에 있음을 확인했습니다.");
+    expect(await acknowledgeCurrentNotice(user, /설정을 저장하지 못했습니다.*현재 설정이 저장소에 있음을 확인했습니다/)).toBe(true);
     expect(statusMessage()).toHaveTextContent("굵게: 열린 문서가 없어 사용할 수 없습니다.");
     expect(backing.value).toBe(raw);
   });
@@ -962,6 +1022,7 @@ describe("저장된 설정의 의미 동등성(최종 정리 A)", () => {
     for (let i = 0; i < 3; i += 1) view.rerender(<StrictMode><App settingsStore={store} /></StrictMode>);
     await act(async () => { await new Promise((resolve) => setTimeout(resolve, 20)); });
     expect(attempts).toHaveLength(2);
+    await acknowledgeRecoveredSaveFailure(user);
     expect(screen.getAllByText("준비됨")).toHaveLength(1);
     expect(screen.queryByText(/설정을 저장하지 못했습니다/)).toBeNull();
     expect(backing.value).toBe(raw);
