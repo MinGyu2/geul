@@ -241,7 +241,7 @@ function Workspace({ layout, dispatch, message, notify, documents }: WorkspacePr
         )}
       </div>
       <StatusBar context={context} message={message} state={panel} />
-      {formatChoice && <NewDocumentDialog onChoose={formatChoice} />}
+      {formatChoice && <NewDocumentDialog onChoose={formatChoice} suspended={modal} />}
     </div>
   );
 }

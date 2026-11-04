@@ -3,7 +3,7 @@
 정리 기준: 2026-11-04
 검토 소스: `MinGyu2/geul` master `4bc1ac986026ccadb2d673a66ad69e6296e3a39e`.
 기술 구성: Tauri 2 + React + TypeScript + Rust. 엔진: WordCraft(DOCX), RHWP(HWP/HWPX).
-문서 성격: 제공된 정리의 코드 대조·정정 및 신규 생성 구현 계약. 기존 절은 **설계/정적 검토 당시 기록**이다. 현재 T021 실행 결과는 아래 「T021 실행 수용」을 따른다. T022 제품 연결은 완료했으며 T023 native 수용은 아직 미완료다.
+문서 성격: 제공된 정리의 코드 대조·정정 및 신규 생성 구현 계약. 기존 절은 **설계/정적 검토 당시 기록**이다. 현재 T021 실행 결과는 아래 「T021 실행 수용」을 따른다. T021·T022·T023은 아래 실행 수용 범위에서 완료했다. 다른 플랫폼·외부 상호운용은 별도 NOT RUN이다.
 기준본: [spec.md](../planning/spec.md), [plan.md](../planning/plan.md), [tasks.md](../planning/tasks.md). 이 문서는 상세 보조 계약이다.
 
 근거 표기: **코드 확인**은 해당 pin의 소스, **기록 확인**은 저장된 과거 실행 결과, **설계**는 앞으로 구현·검증할 계약, **미확인**은 이번에 실행/조사하지 않은 범위다. 기존 자료를 최신 runtime 결과로 바꿔 쓰지 않는다.
@@ -22,7 +22,7 @@
 
 최초 구현은 **형식 선택 → 저장 위치 선택 → 안전 생성 → 세션/표면 준비 → 입력**이다. **형식 선택 → 제목 없음 → 첫 저장에서 위치 선택**은 선택적 후속 UX로 분리한다. 경로 선택 시점을 바꿔도 모델 변환 기능을 추가하지 않는다.
 
-## 2. 현재 구현 상태
+## 2. 최초 정적 검토 당시 구현 상태
 
 | 기능 | DOCX | HWP | HWPX |
 |---|---|---|---|
@@ -43,7 +43,7 @@
 
 **설계:** 무문서 화면에서 새 문서/열기 행동을 분명히 보여 준다. 모델 생성, 세션 등록, 엔진 준비, 실제 첫 표시를 구분하고, 같은 작업의 활성 문서가 준비된 경우에만 포커스를 이동한다. arbitrary timeout으로 준비를 추정하지 않는다.
 
-## 4. DOCX 신규 생성의 현재 구조
+## 4. 최초 정적 검토 당시 DOCX 신규 생성 구조
 
 **코드 확인:** `src-tauri/src/services/files.rs`:
 
@@ -250,7 +250,7 @@ Rust의 생성 권한은 프런트엔드 safe/blank/reopen 플래그가 아니�
 
 ## T022 제품 통합 수용 — 2026-11-04
 
-**COMPLETED.** 선행 커밋 `6c0356e`의 T021 경계만 재사용한다. 이 절이 현재 제품 상태이며, 위 기존 DOCX 전용 구현 설명은 최초 검토 기준의 이력이다. T023 실제 native 생성/IME 수용은 아직 NOT RUN이다.
+**COMPLETED.** 선행 커밋 `6c0356e`의 T021 경계만 재사용한다. 이 절이 현재 제품 상태이며, 위 기존 DOCX 전용 구현 설명은 최초 검토 기준의 이력이다. T023 당시 미실행이었던 native 생성/IME는 아래 후속 수용 기록을 따른다.
 
 - 기존 `file.new`/Ctrl+N → ko/en 형식 선택 dialog(라디오/방향키/Tab 가두기/Escape/취소) → 선택 형식의 native destination → 생성/등록 → engine load 순서다. 세 형식 모두 T021 검증 경로를 사용한다. DOCX는 Rust WordCraft blank 생성·직렬화/검증을 그대로 사용하며 RHWP를 호출하지 않는다. `newDocx`는 이미 DOCX를 선택한 호출자를 위한 같은 pipeline의 호환 wrapper다. 경로 없는 T024는 활성화하지 않았다.
 - `FilePort.createDocument(format,path,blank?)` → 기존 `document_new`에 bounded raw frame `GNC1` + u32 LE metadata length + strict JSON `{path,format,contentLoss}` + RHWP bytes를 보낸다. metadata 8KiB/blank 64KiB, admission/operation 자원을 payload 복사 전에 확보한다. DOCX는 payload와 손실 보고를 받지 않는다. RHWP는 T021 digest·구조/형식/손실 검사와 HWP 메타데이터 정규화를 거친다. 임의 바이트를 파일로 쓰는 명령이 아니다.
@@ -268,3 +268,42 @@ Rust의 생성 권한은 프런트엔드 safe/blank/reopen 플래그가 아니�
 - 중간 전체 회귀의 7개 실패는 첫 paint 조건이 일반 open까지 적용된 것과 idle close에도 await가 들어간 회귀였다. 일반 open의 기존 동작을 복원하고 진행 중 파일 작업이 있을 때만 닫기를 기다리도록 수정했다. 영향받은 80개 및 새 creation first-paint 4개 PASS 뒤 위 최종 전체 suite를 통과했다. 시험을 약화하거나 과거 실패를 PASS로 바꾸지 않았다.
 
 최초 생성물의 외부 한컴/Word 호환성은 여전히 NOT RUN이다. 엔진 상수 미리보기의 기존 제한([저장 계약](save-preservation.md), 68-byte PNG의 checksum 문제 포함)을 외부 호환성 PASS로 확대하지 않는다. 독립 구조 판정은 문서 구조·참조·본문과 명시된 고정 미리보기 신원 범위다. T007–T010의 전체 수용/실패 상태는 변경하지 않았다.
+
+
+## T023 결함 수정과 검증 경계 — 2026-11-04
+
+T022 커밋 `3cd35663b98caa736b81c1792b6c2f5d68f16aeb` 위에서 발견한 다음 세 경계를 수정했다. 각 실패 기록은 task-owned 로컬 evidence에 남기며 이전 결과를 다시 수행한 것으로 바꾸지 않는다.
+
+1. **게시 전 취소:** 취소된 resource operation도 신규 생성이 게시되는 회귀를 먼저 재현했다. `create_validated`에 active 검사·BeforePublication 자원 예약·publication permit을 적용했다. 취소/자원 거절 시 목적지와 세션이 없고 task-owned staging과 예약은 해제된다. 기존 파일은 건드리지 않는다.
+2. **모달 중첩:** 수정 중인 기존 문서에서 New 형식 선택 중 native 창 닫기를 요청하면 두 `aria-modal`이 겹쳤다. 창 닫기 확인이 소유하는 동안 New dialog DOM을 suspend하고, 취소하면 선택한 형식과 초점을 복원한다. 늦은 engine ready가 확인창 초점을 빼앗지 않는다.
+3. **내구성 미확정 안내:** 최초 등록의 dirty/revision·generation 0은 게시 내구성 미확정이다. RHWP의 reload 보호가 이를 `UnpreservedChanges`로 거절하는 것을 `FileCreatedEditorFailed`로 오인했다. 세 형식 모두 identified/dirty 등록을 보존하고 자동 load를 보류하며 별도 안내를 표시한다. 사용자가 상태를 확인해 명시적으로 다시 열도록 한다. 보호 상태를 자동으로 지우거나 저장 성공으로 표시하지 않는다.
+
+Rust의 controlled failure는 staging 생성/생성 직후/StorageFull 쓰기/readback/file fsync/publication/directory fsync, resource 거절과 취소를 구분한다. 게시 전에는 파일·세션·잔여 staging이 없고, 디렉터리 fsync 실패 뒤에는 게시 파일과 dirty 세션이 남는다. 이는 실제 정전·디스크 고갈 시험이 아니다. native uncertainty 탐침은 실제 게시 후 반환 응답의 dirty만 바꿔 UI 처리 경계를 검사하며 실제 fsync 오류 주입과 구분한다.
+
+공개 저장소에는 재현 가능한 작은 하네스 `scripts/tests/native-new-document*.py`와 요약 JSON만 둔다. 앱·WASM·문서·스크린샷·원시 로그는 ignored `target/new-document/`에 두고 기존 별도 geul-tests의 driver/POC/process ownership helper를 재사용한다. 사용자 문서·전역 설정·submodule·WASM generation은 변경하지 않는다.
+
+
+## T023 최종 native 수용 — 2026-11-04
+
+**COMPLETED.** [실행 신원·항목별 결과·명령·로컬 evidence digest](new-document-native-acceptance-2026-11-04.json). 소스는 T022 HEAD `3cd35663b98caa736b81c1792b6c2f5d68f16aeb` + T023 product diff SHA-256 `1683eed9bc79673cdbb58fb6bd071617463a480ef43bd7a96ddad12914e904d9`다. 앱 SHA-256은 `eb9915cc05966f6271eb30027b71bff7cca798e2aadf4a4b33976a9884162e12`다. 아직 생성하지 않은 최종 커밋에서 실행했다고 주장하지 않는다.
+
+환경은 NixOS 26.05 userspace/Linux x86_64, Xvfb X11 1280×1024·96dpi, WebKitGTK 2.54.1, IBus 1.5.33/ibus-hangul 1.5.5다. 격리 D-Bus·test HOME의 Nanum 글꼴·GTK schemas를 사용했고 실제 XTest 입력이 GTK/IBus를 거쳐 WebView compositionstart/end로 전달됐다. 합성 DOM 조합 이벤트는 사용하지 않았다. Debug generation `0c2faef3a2966c4d717d50b83f51f839f5b4a14a7c26935723edc38bd36a90c4`와 JS/WASM hash, RHWP pin·11개 패치, WordCraft pin은 JSON에 기록했다. 같은 identity인 최종 native21/23/24/25/26만 수용 행렬에 포함했다.
+
+| 실제 제품 경로 | DOCX | HWP | HWPX |
+|---|---|---|---|
+| native Ctrl+N·형식 선택·GTK 위치 선택·create-only·등록 | PASS | PASS | PASS |
+| 담당 엔진·요청 형식·빈 1쪽·first paint·입력 focus | PASS | PASS | PASS |
+| 실제 한글 IME·영문·삽입/삭제·문단 분리/병합·커서/선택 편집 | PASS | PASS | PASS |
+| 첫 안전 저장·추가 편집·두 번째 안전 저장 | PASS | PASS | PASS |
+| 닫기·native Open·새 세션 재열기·원래 형식/본문 | PASS | PASS | PASS |
+| 독립 ZIP/XML 또는 CFB/현재 preview 검사 | PASS | PASS | PASS |
+
+최종 본문은 세 형식 모두 **`한글 Changed Second`**이며 한글이 저장 파일과 재열기 모델에 남았다. 생성 직후 및 저장 후 스크린샷 6개를 확인했다. HWP/HWPX 저장은 loss report·원본 보존·구조/참조·reopen 검사를 그대로 통과했고 안전 거절을 양성 저장 성공으로 세지 않았다.
+
+실패·동시성 **24개 PASS**: 기존 파일/심볼릭 링크, 잘못된 확장자·실제 형식·구조·참조·손실 보고(불일치·잘못된 형식·가짜 safe), 실제 디렉터리 권한 거절, 64세션 용량/게시 뒤 등록 실패, 형식 취소·중복 Ctrl+N·위치 취소, 지연 생성 중 탭 전환·지연 ready 중 확인창 초점, 실제 IME와 Ctrl+N 소유권, 게시/등록 뒤 engine parse 실패, 실제 WASM export 예외와 임시 객체 해제, 세 형식의 보고된 내구성 미확정, 선택/수정 중 선택/게시 대기 중 native 창 닫기다. IME 조합은 GTK가 Ctrl+N 전달 전에 commit하는 경우도 관측해 이벤트 순서와 원래 문서에 한 번만 입력됨·다른 문서 불변을 확인했다.
+
+최종 native 실행은 모두 PASS이고 scope cleanup 성공·잔여 프로세스 0이다. 실패한 과거 실행을 부분 추출해 행렬에 합치지 않았다. native22는 21개 검증 후 정리 단계의 WebDriver 클릭 연결이 끊겼으며 앱·WebProcess 생존과 진단 조회를 기록했다. 정리만 실제 X11 포인터 입력으로 바꾼 native23 전체 PASS로 대체했다. modal 결함 native14 및 미확정 응답/게시 취소의 고치기 전 실패 기록도 보존한다.
+
+회귀: 최종 `npm test` **55파일/1,016 PASS**, ESLint PASS, test-hooks native debug build의 `tsc --noEmit`과 빌드 PASS. Rust 기본 suite **255 PASS/22 ignored**, 현재 WASM 생성 probe를 명시적으로 포함한 files 집중 **9 PASS**, fmt/clippy(lib·bins, warnings denied) PASS. 기본 ignored 22개 전체를 실행했다고 주장하지 않는다. 기존 저장/복구·충돌/내구·세션·IME·리본/모달/T011·형식별 표면 회귀를 포함한다.
+
+native Release 앱·Wayland/fcitx5/GPU desktop·Windows/macOS·CPU 포화·실제 정전·외부 한컴/Word 상호운용은 **NOT RUN**이다. 고정 RHWP optional blank preview PNG checksum의 기존 한계는 유지한다. 이번 결과를 모든 문서·외부 프로그램의 호환성으로 확대하지 않는다. T007–T010의 전체 수용 상태와 T024 보류는 바꾸지 않았다. submodule pin·패치·생성 WASM 변경 및 push는 없다.

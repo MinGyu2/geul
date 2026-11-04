@@ -13,6 +13,28 @@ function renderDialog(language: "ko" | "en", onChoose = vi.fn()) {
 }
 
 describe("새 문서 형식 선택 dialog", () => {
+  it("yields its modal layer to window confirmation, preserving format and original focus ownership", () => {
+    const opener = document.createElement("input");
+    document.body.append(opener); opener.focus();
+    const choose = vi.fn();
+    const dialog = (suspended: boolean) => <LanguageProvider language="ko" onLanguageChange={() => {}}>
+      <NewDocumentDialog onChoose={choose} suspended={suspended} />
+    </LanguageProvider>;
+    const view = render(dialog(false));
+    fireEvent.click(screen.getByRole("radio", { name: "한글 XML 문서 (.hwpx)" }));
+    view.rerender(dialog(true));
+    expect(screen.queryByTestId("new-document-dialog")).toBeNull();
+    const confirmation = document.createElement("div");
+    confirmation.setAttribute("role", "alertdialog"); confirmation.setAttribute("aria-modal", "true");
+    const cancel = document.createElement("button"); confirmation.append(cancel); document.body.append(confirmation); cancel.focus();
+    expect(document.querySelectorAll("[aria-modal=true]")).toHaveLength(1);
+    confirmation.remove();
+    view.rerender(dialog(false));
+    const selected = screen.getByRole("radio", { name: "한글 XML 문서 (.hwpx)" });
+    expect(selected).toBeChecked(); expect(selected).toHaveFocus();
+    expect(choose).not.toHaveBeenCalled();
+    view.unmount(); expect(opener).toHaveFocus(); opener.remove();
+  });
   it.each([
     ["ko", "Word 문서 (.docx)", "한글 문서 (.hwp)", "한글 XML 문서 (.hwpx)"],
     ["en", "Word document (.docx)", "HWP document (.hwp)", "HWPX document (.hwpx)"],

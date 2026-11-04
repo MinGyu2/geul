@@ -3,7 +3,7 @@
 Date: 2026-11-04
 Spec: [spec.md](./spec.md)
 Source baseline: `4bc1ac986026ccadb2d673a66ad69e6296e3a39e` (`MinGyu2/geul`, master).
-Status: T007–T010 △ 조건부 완료, T011 완료(2026-11-04, native IME 포함 검증 — [tasks.md](./tasks.md) Verification Log). T021 생성 경계는 실제 WASM/Rust 실행 수용 완료. T022 제품 연결 완료. T023 native 신규 생성 수용은 미완료.
+Status: T007–T010 △ 조건부 완료, T011 완료(2026-11-04, native IME 포함 검증 — [tasks.md](./tasks.md) Verification Log). T021 생성 경계는 실제 WASM/Rust 실행 수용 완료. T022 제품 연결 완료. T023 native 신규 생성 수용 완료(X11/IBus, 2026-11-04; 추가 환경은 NOT RUN).
 
 ## Summary
 
@@ -56,11 +56,11 @@ new request + operation ticket
 
 ## Interfaces
 
-현재 `document_new(path)`·`FilePort.createDocx(path)`·`DocumentWorkspace.newDocx()`는 DOCX 전용이다. `RhwpModule`은 openDocument와 선택적 memoryBytes만 노출하고 생성 API를 연결하지 않았다. 구현 때 요청 형식·경로·작업 소유권·응답의 실제 형식/엔진·등록/내구 상태를 명시적으로 검증하는 계약으로 확장한다. 이 문서의 단계 이름은 설명용이며 현재 존재하는 새 IPC API가 아니다.
+T022에서 `FilePort.createDocument(format,path,blank?)`와 `DocumentWorkspace.newDocument(text,chooseFormat)`를 연결했다. 기존 `document_new` IPC는 크기가 제한된 `GNC1` raw frame(metadata 길이·strict JSON·선택적 RHWP bytes)을 받는다. DOCX는 기존 Rust WordCraft 생성 경로를 사용한다. `newDocx`는 같은 pipeline의 호환 wrapper다. 요청 형식·경로·실제 형식/엔진·identified/revision·sequence·loadGeneration 0과 ticket 소유권을 검사한다.
 
-RHWP는 WASM에 있으므로 files.rs에 직접 Rust RHWP 생성을 추가하는 것으로 가정하지 않는다. 우선 동일 검증 generation의 좁은 WASM 생성 어댑터와 Rust 검증·게시 경계를 검토한다. 프런트엔드가 보낸 safe=true, 손실 보고, ‘빈 문서’ 표지만 믿어 쓰는 범용 파일 저장 IPC를 만들지 않는다. 백엔드가 입증할 수 있는 검증 범위와 입증하지 못하는 의미적 속성을 T021에서 구분한다.
+RHWP 생성은 검증된 generation의 `createEmptyDocument` facade와 공개 기본 정의 초기화를 사용한다. fresh 임시 모델의 HWPX seed를 재열고 요청 형식으로 export한다. `createBlankDocument()`는 기존 객체를 수정하고 JSON을 반환하는 템플릿 API로 확인했지만 새 제품 경로는 호출하지 않는다. 최종 HWPX는 source `hwpx`로 다시 연다. 사용자 문서 변환이 아니다.
 
-RHWP `createEmpty()`는 정적 팩터리지만 시험/미리보기용 최소 구조다. `createBlankDocument()`는 기존 객체를 수정하는 인스턴스 메서드이며 새 문서 객체 대신 상태 JSON을 반환한다. fresh 임시 객체에만 사용하고 현재 편집 문서의 내용을 초기화하지 않는다. 내장 HWP 템플릿에서 HWPX 바이트를 만들더라도 최종 출력 형식으로 다시 열어 원본 형식과 후속 저장 경로를 맞춘다.
+Rust는 감사한 결정적 출력의 digest·크기·서명·손실 schema·구조/참조를 확인한다. HWP는 fresh CFB에 승인 스트림만 복사해 내장 메타데이터를 제거한다. 프런트엔드 safe/blank 플래그나 자기 roundtrip만으로 게시하지 않는다. 검증/템플릿 출처/자원 정리/독립 oracle의 실제 근거는 [생성 계약](../architecture/new-document-creation.md)의 T021 절을 따른다.
 
 ## Algorithms and Invariants
 
@@ -150,6 +150,11 @@ Verification은 필요한 검사이며 이번 제품 실행 결과가 아니다.
 
 ## Handoff
 
-T011을 다음 개발 대상으로 삼는다. 착수 시 현재 코드/환경과 기존 명령 가용성부터 확인하고 사용자 기능을 구현한다. T021–T023은 신규 생성의 별도 작업 계열이며 T010 성능 해결을 기다리지 않는다. 공유 Workspace·registry·locale 파일을 동시에 수정하는 경우 담당 범위를 조정한다.
+T011은 기록된 범위에서 완료했다. T021–T023은 신규 생성의 별도 작업 계열이며 T010 성능 해결을 기다리지 않는다. 각 task는 구현·수용·독립 커밋 후 다음 단계로 진행한다. 공유 Workspace·registry·locale의 소유권과 기존 검증 근거를 유지한다.
 
 기존 task ID와 9개 완료 체크를 보존하고 새 ID는 T021부터 사용한다. T015에 T023을 연결해 새로 제공할 생성 기능도 품질 행렬에 포함한다. 선택적 T024는 출시 선행으로 추가하지 않는다. 실행 환경의 별도 지침·훅·테스트 루트를 먼저 확인하며, 제품 실행과 문서 구조 검사를 구분해 보고한다.
+
+
+## T021–T023 실행 반영 — 2026-11-04
+
+T021 `6c0356e6ed51f52e60414717ce4439876762f63b` → T022 `3cd35663b98caa736b81c1792b6c2f5d68f16aeb` 순서로 수용/커밋했다. T023은 같은 최종 Debug 앱·WASM으로 DOCX/HWP/HWPX 실제 한글 입력·기본 편집·두 번 안전 저장·native 재열기를 통과했다. 실패/동시성 24개, frontend 1,016개, Rust 기본255개/생성 집중9개 PASS. 게시 전 취소·확인창 중첩·내구성 미확정 안내 결함을 재현 후 수정했다. [생성 계약](../architecture/new-document-creation.md)의 최종 행렬과 [신원 JSON](../architecture/new-document-native-acceptance-2026-11-04.json)을 따른다. 다른 OS/입력기·실제 정전·외부 상호운용은 NOT RUN이며 T007–T010 전체 완료 및 T024 활성화로 확대하지 않는다.

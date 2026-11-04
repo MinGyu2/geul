@@ -4,21 +4,29 @@ import { useTranslation } from "../../language/LanguageContext";
 
 const FORMATS = ["docx", "hwp", "hwpx"] as const;
 
-export function NewDocumentDialog({ onChoose }: { onChoose(format: DocumentFormat | null): void }) {
+export function NewDocumentDialog({ onChoose, suspended = false }: {
+  onChoose(format: DocumentFormat | null): void;
+  /** Window-close confirmation owns the modal layer without losing this choice. */
+  suspended?: boolean;
+}) {
   const { t } = useTranslation();
   const [format, setFormat] = useState<DocumentFormat>("docx");
   const ref = useRef<HTMLDivElement>(null);
+  const openerRef = useRef<HTMLElement | null>(null);
   useLayoutEffect(() => {
-    const opener = document.activeElement;
+    if (suspended) return;
+    if (!openerRef.current && document.activeElement instanceof HTMLElement) openerRef.current = document.activeElement;
     const dialog = ref.current;
     ref.current?.querySelector<HTMLInputElement>("input:checked")?.focus();
     return () => {
+      const opener = openerRef.current;
       if (opener instanceof HTMLElement && opener.isConnected
         && (!document.activeElement || document.activeElement === document.body || dialog?.contains(document.activeElement))) {
         opener.focus({ preventScroll: true });
       }
     };
-  }, []);
+  }, [suspended]);
+  if (suspended) return null;
   return (
     <div className="discard-dialog__backdrop" onMouseDown={event => {
       if (event.target instanceof Element && event.target.closest("button, input, label")) return;

@@ -4,11 +4,11 @@ Input: [spec.md](./spec.md), [plan.md](./plan.md).
 Updated: 2026-11-04; source baseline `4bc1ac986026ccadb2d673a66ad69e6296e3a39e` (`MinGyu2/geul`, master).
 
 ## Execution Context
-Implementation model: Not specified
-Reasoning effort: Not specified
+Implementation model: GPT-6.1 Sol (사용자 요청; 실행 모델 메타데이터는 별도 확인되지 않음)
+Reasoning effort: High (사용자 요청)
 Profile: balanced
 Selection basis: 기존 제품 구조·검증 자산을 유지하고 사용자가 승인한 조건부 진행 및 신규 생성 계획만 반영한다.
-Repository context: 기본 UI·두 표면·제한된 저장·파일 작업·복구는 구현돼 있다. 이번 변경은 문서이며 T011·신규 생성 구현을 수행하지 않는다. 로컬 작업 트리·geul-tests 원시 기록·제품 runtime은 이번에 재검증하지 않았다.
+Repository context: 기존 독립 엔진·저장·복구를 재사용해 T021·T022를 구현/수용/순차 커밋했다. T023은 실제 Tauri/X11/IBus 및 실패 주입 결과로 판정한다. 원래 문서 작업 시점의 NOT RUN 기록은 아래 이력에 보존한다.
 
 이전 장기 실행 기록은 [tasks.snapshot-8d3f21a.md](./tasks.snapshot-8d3f21a.md)에 보존돼 있다. 이번 수정 직전 원문은 위 기준 커밋의 Git 이력에 남는다. 원래 ID·9개 완료 체크·기술적 실패 기록을 보존한다. 새 작업은 T021–T024이며 T024는 선택적 보류다.
 
@@ -74,9 +74,9 @@ Independent Test: 기존 저장·충돌·복구의 남은 실패 경계.
 
 ## Phase 7: User Story 7 - 형식별 새 문서 (Priority: P1)
 Independent Test: 세 형식의 실제 생성·입력·저장·재저장·재열기, 취소·실패·경합.
-- [x] T021 [US7] RHWP 빈 문서 API·템플릿·형식별 출력 및 검증 경계 검증 — `src/components/Editor/rhwp/rhwpModule.ts`, `tests/integration/new-document/`, `docs/architecture/new-document-creation.md`
+- [x] T021 [US7] RHWP 빈 문서 API·템플릿·형식별 출력 및 검증 경계 검증 — `src/components/Editor/rhwp/createBlank.ts`, `src-tauri/src/services/creation.rs`, `scripts/tests/new-document-*`, `docs/architecture/new-document-creation.md`
 - [x] T022 [US7] 형식 선택·안전 생성·세션 등록·포커스 통합 — `src/App.tsx`, `src/components/Editor/`, `src-tauri/src/services/files.rs`, `src/language/`
-- [ ] T023 [US7] 신규 세 형식의 native 왕복·실패 안전성 수용 — `tests/integration/new-document/`, `docs/architecture/new-document-creation.md`
+- [x] T023 [US7] 신규 세 형식의 native 왕복·실패 안전성 수용 — `scripts/tests/native-new-document*.py`, `docs/architecture/new-document-creation.md`
 - [ ] T024 [US7] 선택적 제목 없음·첫 저장·복구 UX — `src/components/Editor/`, `src-tauri/src/document/`, `src-tauri/src/services/` (DEFERRED, 별도 승인 전 구현 금지)
 
 ## Phase 8: User Story 5 - 품질 행렬 및 출시 (Priority: P1)
@@ -108,9 +108,9 @@ Depends on은 ID 연결이다. 위 승인된 착수 조건과 전체 Done을 구
 | T012 | T011 | FR-009 | src/ribbon/HangulTools/, tests/integration/hangul/ | 장평·자간·표 등 실제 API·왕복 | 검증된 한글 전용 기능의 결과 기록 |
 | T013 | T011 | FR-009 | src/ribbon/References/, tests/integration/docx-advanced/ | 참조·검토 실제 지원·왕복 | 검증된 DOCX 고급 기능의 결과 기록 |
 | T014 | T009 | FR-006, FR-010, SC-004 | src-tauri/src/services/, tests/integration/save-failure/ | 강제 실패·외부 변경·게시/내구/복구 | 원래 실패 안전성 조건과 실제 파일 결과 일치 |
-| T021 | T002, T006 | FR-017, SC-009 | src/components/Editor/rhwp/rhwpModule.ts, tests/integration/new-document/, docs/architecture/new-document-creation.md | 현재 Release의 createEmpty/createBlankDocument·형식별 export/reopen·독립 구조·손실·템플릿 신원 | HWP/HWPX 각각 유효 생성 경로와 검증 경계를 실측 확정; 실패를 지원 성공으로 올리지 않음 |
-| T022 | T021, T005, T009 | FR-015, FR-016, FR-017, FR-018, SC-009, SC-010 | src/App.tsx, src/components/Editor/, src-tauri/src/services/files.rs, src-tauri/src/services/save/, src-tauri/src/document/, src/language/, tests/integration/new-document/ | 선택/취소·형식/응답 검증·create-only·세션·초점·오류·DOCX 회귀 | 세 형식 생성 연결과 집중 시험 성공, 기존 파일/입력 보호; 전체 native 수용은 T023 |
-| T023 | T022, T007, T008 | FR-016, FR-017, FR-018, SC-009, SC-010 | tests/integration/new-document/, docs/architecture/new-document-creation.md | 실제 Tauri에서 세 형식 생성→IME→편집→저장→재저장→재열기 및 실패/경합 | 형식별 현재 실행 신원의 양성·음성 수용 완료; 생성된 빈 문서의 기본 편집 저장 실패를 안전 거절 PASS로 대체하지 않음 |
+| T021 | T002, T006 | FR-017, SC-009 | src/components/Editor/rhwp/createBlank.ts, src-tauri/src/services/creation.rs, scripts/tests/new-document-*, docs/architecture/new-document-creation.md | 현재 Release의 createEmpty/createBlankDocument·형식별 export/reopen·독립 구조·손실·템플릿 신원 | HWP/HWPX 각각 유효 생성 경로와 검증 경계를 실측 확정; 실패를 지원 성공으로 올리지 않음 |
+| T022 | T021, T005, T009 | FR-015, FR-016, FR-017, FR-018, SC-009, SC-010 | src/App.tsx, src/components/Editor/, src-tauri/src/services/files.rs, src-tauri/src/services/save/, src-tauri/src/document/, src/language/, src/components/Editor/newDocument.test.ts | 선택/취소·형식/응답 검증·create-only·세션·초점·오류·DOCX 회귀 | 세 형식 생성 연결과 집중 시험 성공, 기존 파일/입력 보호; 전체 native 수용은 T023 |
+| T023 | T022, T007, T008 | FR-016, FR-017, FR-018, SC-009, SC-010 | scripts/tests/native-new-document*.py, docs/architecture/new-document-creation.md | 실제 Tauri에서 세 형식 생성→IME→편집→저장→재저장→재열기 및 실패/경합 | 형식별 현재 실행 신원의 양성·음성 수용 완료; 생성된 빈 문서의 기본 편집 저장 실패를 안전 거절 PASS로 대체하지 않음 |
 | T024 | T023, T014 | FR-019, SC-011 | src/components/Editor/, src-tauri/src/document/, src-tauri/src/services/, tests/integration/new-document/ | 별도 승인 후 pathless 세션·첫 저장/취소/충돌·닫기·복구 | 승인된 미저장 UX의 원래 데이터·소유권 계약 충족; 미도입이면 DEFERRED 유지 |
 | T015 | T012, T013, T014, T023 | FR-011, SC-002, SC-004, SC-009, SC-010 | tests/roundtrip/, docs/quality-matrix.md | 기존/신규 문서·서식·표·그림·수식·글꼴·실패 행렬 | 기능별 실행 신원·판정·미검증 범위가 연결된 품질 수용 |
 | T016 | T015, T019, T020 | FR-011, SC-005 | src-tauri/tauri.conf.json, docs/release-checklist.md | 세 OS 실제 패키지·추가 IME/그래픽/부하·PDF·고지·보안 | 지원 선언 범위의 출시 수용과 근거 기록 |
@@ -133,13 +133,13 @@ D2는 E(empty compositionend)→U(native Undo)→F(late final insert) 미관측�
 
 ### 신규 생성과 기타 작업
 
-현재 제품 신규 생성은 DOCX 전용이다. RHWP createEmpty는 제품용 빈 문서 보장이 아니며 템플릿 기반 createBlankDocument와 구분한다. [신규 생성 계약](../architecture/new-document-creation.md)에 코드 사실·제안·미실행을 분리했다. T021–T024는 신규 계획이지 구현 완료가 아니다.
+현재 제품 신규 생성은 DOCX/HWP/HWPX를 지원한다. T021 생성 경계·T022 제품 통합·T023 X11/IBus native 수용을 완료했다. RHWP createEmpty만으로 생성하지 않으며 공개 API 초기화/독립 reopen과 생성 전용 Rust 검증을 사용한다. [신규 생성 계약](../architecture/new-document-creation.md)의 현재 실행 결과와 과거 정적 검토를 구분한다. T024는 별도 승인 전 DEFERRED다.
 
 T019(L) 완료 이력과 R 전체 미완료를 유지한다. 과거 CI 성공과 원격 강제 정책은 다르며 이번에 설정을 바꾸지 않는다. T012/T013·T015/T016도 별도 전체 수용이 남는다. [HWPX 위상 보완 기록](../architecture/hwpx-duplicate-id-acceptance-2026-11-02.json)은 그대로 두고, 빈 hp:t를 다시 미착수 후보로 지정하지 않는다. 코퍼스 safe 수를 모든 실제 문서 편집 저장 지원율로 사용하지 않는다.
 
 ## Execution Policy
 
-1. 다음 개발은 승인된 T011 범위다. T021–T023도 독립적으로 계획하되 공통 파일·전역 입력 상태를 동시에 바꾸는 작업은 조정한다. 단계/번호와 실제 의존성을 혼동하지 않는다.
+1. T011 및 T021–T023의 기록된 완료 범위를 유지한다. 후속 작업은 공통 파일·전역 입력 상태의 소유권과 실제 의존성을 확인한다. task 번호와 실제 선행 수용을 혼동하지 않는다.
 2. 요구·상태·판정·제품 노출을 분리한다. △로의 변경은 원래 FAIL을 삭제하거나 모든 후속 기능을 자동 승인하지 않는다.
 3. 변경된 경계만 필요한 단위·엔진·native 검증으로 확인한다. 전체 코퍼스 확장·새 환경 반복·D4 최적화를 무조건적인 선행으로 붙이지 않는다.
 4. FULL_PAGE_ONLY·원래 성능 측정 계약·원본 보존·세션 소유권·민감정보 정책을 유지한다. 테스트 자료 부재/0건/SKIP을 PASS로 세지 않는다.
@@ -198,3 +198,8 @@ T021 COMPLETED: 현재 Release/Debug 각각 HWP/HWPX 생성, 독립 구조/참�
 ### T022 제품 통합 수용 — 2026-11-04
 
 T022 COMPLETED: T021 `6c0356e` 이후 형식 선택·bounded IPC·생성 전용 검증·create-only/동일 게시 파일 등록·engine load/first paint/focus lease 연결. ko/en 선택/취소·중복·늦은 탭/창 완료·게시/내구성/등록/편집기 실패 구분. DOCX WordCraft 경로 유지. 최종 frontend 55파일/1,012개, Rust 생성 집중 6개, typecheck/lint/fmt/clippy 및 debug native build PASS. [상세](../architecture/new-document-creation.md#t022-제품-통합-수용--2026-11-04). T023 native 생성/IME 행렬은 NOT RUN이며 다음 게이트다. T024 및 T007–T010 상태 유지.
+
+
+### T023 native 수용 — 2026-11-04
+
+2026-11-04 T023 **COMPLETED** (T022 `3cd35663b98caa736b81c1792b6c2f5d68f16aeb` 위): 최종 같은 Debug 앱/WASM에서 DOCX/HWP/HWPX native New·GTK 목적지·첫 paint/focus·실제 IBus 한글/영문·삽입/삭제·문단/선택 편집·2회 안전 저장·닫기/native Open·재열기 PASS. 저장/재열기 본문 `한글 Changed Second`, 실패/경합 24개 PASS. 게시 전 취소·dirty 문서와 New 중 창 닫기 모달 중첩·미확정 등록의 잘못된 load 실패 안내를 고치기 전 재현 후 수정했다. frontend55파일/1,016개, Rust255개(기본22 ignored 별도 표기) 및 현재 WASM 생성 집중9개, 타입·린트·fmt·clippy·native build PASS. 최종 native21/23/24/25/26 scope cleanup 성공/잔여0. 실패한 이전 실행과 다른 runtime 결과는 최종 행렬에서 제외했다. [상세 수용](../architecture/new-document-creation.md#t023-최종-native-수용--2026-11-04), [신원·명령·evidence](../architecture/new-document-native-acceptance-2026-11-04.json). 실제 정전·다른 OS/입력기·외부 한컴/Word 호환은 NOT RUN. T007–T010 △/D2·D4 판정과 T024 DEFERRED는 유지. push 없음.

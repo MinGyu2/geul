@@ -126,6 +126,8 @@ pub fn next_name_number() -> u64 {
 pub enum Fault {
     Create(io::ErrorKind),
     Write(io::ErrorKind),
+    /// Controlled file fsync failure; never an actual power-loss experiment.
+    FileSync(io::ErrorKind),
     /// 되읽은 내용이 다름(디스크 오류 흉내).
     Verify,
     Rename(io::ErrorKind),
@@ -548,6 +550,10 @@ pub fn stage(target: &Path, bytes: &[u8]) -> Result<Staged, DocumentError> {
             return Err(io::Error::from(kind));
         }
         file.write_all(bytes)?;
+        #[cfg(test)]
+        if let Some(Fault::FileSync(kind)) = fault() {
+            return Err(io::Error::from(kind));
+        }
         file.sync_all()?;
         // 원본 권한(그룹·그 밖 쓰기 없음은 위에서 확인): 임시 파일은 끝까지 이 사용자만 쓸 수 있다.
         file.set_permissions(fs::Permissions::from_mode(mode))?;
@@ -789,6 +795,10 @@ pub fn publish_new(staged: &mut Staged, target: &Path) -> Result<Published, Docu
         return Err(not_published());
     }
     let fd = staged.dir.as_raw_fd();
+    #[cfg(test)]
+    if let Some(Fault::Rename(kind)) = fault() {
+        return Err(failure(SaveStage::Publish, &io::Error::from(kind)));
+    }
     // SAFETY: same held directory and NUL-terminated names; NOREPLACE never overwrites a destination.
     if unsafe {
         libc::renameat2(

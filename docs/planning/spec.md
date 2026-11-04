@@ -2,7 +2,7 @@
 
 Created: 2026-10-13
 Updated: 2026-11-04
-Status: 구현 진행 중. T007–T010은 △ 조건부 완료(전체 수용 미완료), T011은 아래 범위에서 착수 승인·구현 미착수. 신규 문서는 T021 생성 경계 실행 수용 완료, T022 제품 연결 완료, T023 native 수용 미완료.
+Status: 구현 진행 중. T007–T010은 △ 조건부 완료(전체 수용 미완료), T011은 기록된 범위에서 완료. 신규 문서는 T021 생성 경계·T022 제품 연결·T023 X11/IBus native 수용 완료(2026-11-04). 추가 플랫폼·외부 상호운용은 NOT RUN.
 Source baseline: `4bc1ac986026ccadb2d673a66ad69e6296e3a39e` (`MinGyu2/geul`, master).
 Input: WordCraft + RHWP 독립 코어, Tauri/React 신규 UI, 6개 영역, 언어별 JSON, 공개 저장소 민감정보 사전 차단. 2026-11-04 사용자가 T007–T010의 잔여 사유 기록 및 T011 진행, DOCX/HWP/HWPX 신규 생성 계획 반영을 승인했다.
 
@@ -123,7 +123,7 @@ Acceptance Scenarios:
 - 엔진 README나 API 존재는 geul 제품의 입력·렌더·저장 수용을 대신하지 않는다.
 - 고정 WordCraft 본체는 MIT OR Apache-2.0, RHWP 본체는 MIT라는 기존 검토를 유지한다. 실제 링크 의존성·글꼴·템플릿·배포물 고지는 별도다. 라이선스 문서 검토를 모든 번들 자산의 재배포 승인으로 읽지 않는다.
 - submodule은 소스 고정 수단이며 자동 연결 수단이 아니다. RHWP는 고정 pin과 승인된 패치 계열을 함께 식별한다.
-- 현재 제품 신규 생성은 T021 검증 경계와 T022 연결을 거쳐 DOCX/HWP/HWPX를 지원한다. `createEmpty()`와 템플릿 기반 `createBlankDocument()`의 차이를 검토해야 하며, HWP/HWPX 생성 경계는 2026-11-04 T021에서 실행 검증했다. 제품 연결은 T022에서 완료했으며 native 수용은 T023에서 검증한다.
+- 현재 제품 신규 생성은 T021 검증 경계와 T022 연결을 거쳐 DOCX/HWP/HWPX를 지원한다. `createEmpty()`와 템플릿 기반 `createBlankDocument()`의 차이를 검토해야 하며, HWP/HWPX 생성 경계는 2026-11-04 T021에서 실행 검증했다. 제품 연결은 T022에서 완료했으며 T023은 실제 X11/IBus에서 세 형식 생성·한글/영문 편집·2회 안전 저장·native 재열기 및 실패/경합 24개를 수용했다. [상세 신원/결과](../architecture/new-document-native-acceptance-2026-11-04.json)를 따른다.
 - 기존 문서의 안전한 저장 거절은 유지한다. 이 정책이 새로 지원한다고 표시한 빈 문서의 기본 입력·저장 실패까지 정상 수용으로 인정하는 것은 아니다.
 
 ## Out of Scope

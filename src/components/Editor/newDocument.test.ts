@@ -41,6 +41,18 @@ beforeEach(() => {
 });
 
 describe("format-aware creation ownership", () => {
+  it.each(["hwp", "hwpx", "docx"] as const)("reports an unconfirmed %s publication without treating it as an engine failure or loading it", async format => {
+    const { workspace, files, sessions, created } = setup(format);
+    const unconfirmed = { ...created, dirty: true };
+    vi.mocked(files.createDocument).mockResolvedValue({ ok: true, value: unconfirmed });
+    if (format !== "docx") {
+      vi.mocked(RhwpEditorSession.prototype.load).mockRestore();
+      vi.spyOn(RhwpEditorSession.prototype, "load");
+    }
+    expect(await workspace.newDocument(text, async () => format)).toEqual({ ok: true, value: unconfirmed });
+    expect(sessions.get(1)).toMatchObject({ state: "identified", dirty: true, loadGeneration: 0 });
+    expect(format === "docx" ? DocxEditorSession.prototype.load : RhwpEditorSession.prototype.load).not.toHaveBeenCalled();
+  });
   it.each(["docx", "hwp", "hwpx"] as const)("routes %s through one serialized destination/create/load pipeline", async format => {
     const { workspace, files, sessions, created } = setup(format);
     expect(await workspace.newDocument(text, async () => format)).toEqual({ ok: true, value: created });

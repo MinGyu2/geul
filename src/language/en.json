@@ -394,6 +394,6 @@
   "document.format.hwp": "HWP document (.hwp)",
   "document.format.hwpx": "HWPX document (.hwpx)",
   "document.chooseDestination": "Choose destination",
-  "document.createdUnconfirmed": "Created {name}, but durability is unconfirmed. Inspect the file and save again.",
+  "document.createdUnconfirmed": "Registered {name}, but durability is unconfirmed, so automatic loading was deferred. Inspect the file before reopening it.",
   "document.error.FileCreatedEditorFailed": "The file was created, but the editor could not load it. Reopen the file."
 }

@@ -197,6 +197,11 @@ export class DocumentWorkspace {
       }
       const accepted = this.sessions.acceptOpen(ticket, created);
       if (accepted.ok) {
+        // dirty at revision/generation zero means publication durability is
+        // unconfirmed, not an editable in-memory mutation. Keep that protected
+        // session and report the file outcome without misclassifying the normal
+        // reload guard as an engine failure or clearing it through an auto-load.
+        if (accepted.value.dirty) return accepted;
         const editor = this.anyEditorFor(accepted.value.sessionId);
         if (!editor) return { ok: false, error: { code: "FileCreatedEditorFailed", sessionId: accepted.value.sessionId } };
         setSurfaceFocusLease(editor, focus);

@@ -155,8 +155,11 @@ fn create_validated(
     bytes: &[u8],
     limits: &Limits,
 ) -> Result<SessionInfo, DocumentError> {
+    crate::document::resources::active()?;
     let mut staged = publish::stage_new(target, bytes, None)?;
-    let published = publish::publish_new(&mut staged, target)?;
+    crate::document::resources::charge(crate::document::resources::Category::BeforePublication, 0)?;
+    let published =
+        crate::document::resources::publication(|| publish::publish_new(&mut staged, target))?;
     register_published(registry, target, format, bytes, limits, published)
 }
 
@@ -365,6 +368,88 @@ mod tests {
         );
         assert!(registry.list().unwrap().is_empty());
         assert_eq!(std::fs::read(target).unwrap(), bytes);
+    }
+
+    #[test]
+    fn cancellation_before_creation_publication_publishes_nothing_and_releases_staging() {
+        use crate::document::resources::{Cancellation, Pool};
+        let operation = std::sync::Arc::new(Pool::default()).operation();
+        let cancellation = Cancellation::new(operation.clone());
+        drop(cancellation);
+        let dir = TempDir::new();
+        let target = dir.path().join("cancelled.docx");
+        let registry = SessionRegistry::default();
+        let bytes = blank_docx().unwrap();
+        let result = crate::document::resources::scope(operation, || {
+            create_validated(&registry, &target, Format::Docx, &bytes, &Limits::default())
+        });
+        assert_eq!(result, Err(DocumentError::InvalidRequest));
+        assert!(!target.exists());
+        assert!(registry.list().unwrap().is_empty());
+        assert!(std::fs::read_dir(dir.path()).unwrap().next().is_none());
+    }
+
+    #[test]
+    fn creation_fault_matrix_protects_targets_and_reports_publication_truthfully() {
+        use publish::{Fault, FAULT};
+        use std::io::ErrorKind;
+        struct Reset;
+        impl Drop for Reset {
+            fn drop(&mut self) {
+                FAULT.with(|f| f.set(None));
+            }
+        }
+        let _reset = Reset;
+        let dir = TempDir::new();
+        let target = dir.path().join("new.docx");
+        let registry = SessionRegistry::default();
+        let bytes = blank_docx().unwrap();
+        for failure in [
+            Fault::Create(ErrorKind::PermissionDenied),
+            Fault::AfterCreate,
+            Fault::Write(ErrorKind::StorageFull),
+            Fault::Verify,
+            Fault::FileSync(ErrorKind::Other),
+            Fault::Rename(ErrorKind::PermissionDenied),
+        ] {
+            FAULT.with(|f| f.set(Some(failure)));
+            assert!(
+                create_validated(&registry, &target, Format::Docx, &bytes, &Limits::default())
+                    .is_err(),
+                "{failure:?}"
+            );
+            assert!(!target.exists(), "{failure:?}");
+            assert!(registry.list().unwrap().is_empty());
+            assert!(
+                std::fs::read_dir(dir.path()).unwrap().next().is_none(),
+                "staging leaked: {failure:?}"
+            );
+        }
+        FAULT.with(|f| f.set(Some(Fault::DirSync)));
+        let session =
+            create_validated(&registry, &target, Format::Docx, &bytes, &Limits::default()).unwrap();
+        assert!(session.dirty, "published but durability unconfirmed");
+        assert_eq!(std::fs::read(&target).unwrap(), bytes);
+        assert_eq!(registry.list().unwrap().len(), 1);
+    }
+
+    #[test]
+    fn creation_reservation_failure_at_publication_cleans_only_owned_staging() {
+        use crate::document::resources::{Category, Pool};
+        let pool = Pool::limited(1024 * 1024);
+        pool.deny(Some(Category::BeforePublication));
+        let dir = TempDir::new();
+        let target = dir.path().join("limited.docx");
+        let bytes = blank_docx().unwrap();
+        let registry = SessionRegistry::default();
+        let result = crate::document::resources::scope(pool.operation(), || {
+            create_validated(&registry, &target, Format::Docx, &bytes, &Limits::default())
+        });
+        assert!(matches!(result, Err(DocumentError::ResourceLimit { .. })));
+        assert!(!target.exists());
+        assert!(std::fs::read_dir(dir.path()).unwrap().next().is_none());
+        assert_eq!(pool.usage().0, 0);
+        assert!(registry.list().unwrap().is_empty());
     }
 
     #[test]

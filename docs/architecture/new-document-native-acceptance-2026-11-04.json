@@ -1,0 +1,669 @@
+{
+  "task": "T023",
+  "date": "2026-11-04",
+  "wordcraftCommit": "fc41918814f62645b6746ed68e71e8c2c2e85d6f",
+  "environment": {
+    "userspace": "NixOS 26.05 (Yarara)",
+    "kernel": "Linux 7.2.11-arch1-1 x86_64",
+    "display": "Xvfb/X11 1280x1024x24, 96dpi",
+    "xvfbPackageVersion": "21.1.23",
+    "webKitGtkLinkedVersion": "2.54.1",
+    "ibusObservedVersion": "1.5.33",
+    "ibusHangulPackageVersion": "1.5.5",
+    "gtkImModule": "ibus",
+    "input": "native xdotool/XTest to GTK/IBus; no synthetic DOM composition",
+    "softwareRenderingRequested": true,
+    "fontHome": "isolated task home with installed Nanum 20200506 font symlinks",
+    "gtkChooserSchemas": "installed GTK schemas copied/compiled only inside task environment",
+    "setxkbmap": "installed 1.3.4 on task PATH",
+    "bus": "task-owned private D-Bus and IBus",
+    "globalConfigurationChanged": false,
+    "wasmRebuilt": false
+  },
+  "rustControlledFailures": [
+    "staging create permission failure",
+    "failure immediately after staging creation",
+    "storage full write",
+    "readback mismatch",
+    "file fsync",
+    "publication rename",
+    "directory fsync unconfirmed (file retained/registered dirty)",
+    "resource rejection before publication",
+    "cancel before publication"
+  ],
+  "notRun": [
+    "native Release application",
+    "Wayland",
+    "fcitx5",
+    "GPU desktop",
+    "Windows",
+    "macOS",
+    "CPU saturation",
+    "actual power loss",
+    "external Hancom/Word interoperability"
+  ],
+  "knownExistingLimitation": "Pinned RHWP optional 68-byte blank preview PNG has known checksum defects; existing exact-known-content policy retained, document XML/CFB structure and native canvas/edit/save acceptance passed.",
+  "scopeUnchanged": [
+    "T007/T008/T009/T010 full acceptance not marked complete",
+    "T024 pathless sessions remain deferred",
+    "no submodule/patch/pin/generated WASM changes",
+    "no push"
+  ],
+  "status": "COMPLETED",
+  "sourceBase": "3cd35663b98caa736b81c1792b6c2f5d68f16aeb",
+  "productSourceDiffSha256": "1683eed9bc79673cdbb58fb6bd071617463a480ef43bd7a96ddad12914e904d9",
+  "productSourceDiffCommand": [
+    "git",
+    "diff",
+    "3cd35663b98caa736b81c1792b6c2f5d68f16aeb",
+    "--",
+    "src",
+    "src-tauri"
+  ],
+  "appSha256": "eb9915cc05966f6271eb30027b71bff7cca798e2aadf4a4b33976a9884162e12",
+  "runtime": {
+    "tools": {
+      "rustc": "1.99.0",
+      "cargo": "1.99.0",
+      "wasm-bindgen": "0.2.127"
+    },
+    "engine": "rhwp",
+    "commit": "1a76570e833917d15817415a53c09ad61ab3203f",
+    "schemaVersion": 2,
+    "optimization": {
+      "version": null,
+      "tool": "none",
+      "flags": []
+    },
+    "profile": "debug",
+    "artifacts": {
+      "rhwp_bg.wasm": "9a9db4935e14a12179e09e0589763da058c2fd0af506bcbc6b9a2d13fdf29965",
+      "rhwp.js": "a2010ac0e7d0942838b2b9d854ae01eeee06f61ae62d35334c966a465962cab6"
+    },
+    "generation": "0c2faef3a2966c4d717d50b83f51f839f5b4a14a7c26935723edc38bd36a90c4",
+    "sourceFingerprint": "d5abd45bedabd2be60100d79131e6cf9c4ec6a213e18a170e7abcb17695be259"
+  },
+  "sameRuntimeAcrossAcceptedCases": true,
+  "currentRhwpPatchSeries": {
+    "kind": "patched-upstream",
+    "patches": [
+      {
+        "name": "hwpx-textdir-ltr.patch",
+        "sha256": "abab4bc23a89dfec82aa63d36d32cd7192e5b14fefd2dd56231c4bb5676c6cc0"
+      },
+      {
+        "name": "hwpx-duplicate-paragraph-ids.patch",
+        "sha256": "79fd8f41c4cabe82b6b0b66265f5a1b3feef08a4c0b07af30cf7f788e11a9787"
+      },
+      {
+        "name": "hwpx-clipboard-paragraph-ids.patch",
+        "sha256": "30ac44ee1283f55605e49d09e446f5bbb5104b948ce2e7b74b87a9652e8a5c8e"
+      },
+      {
+        "name": "hwpx-spine-linear.patch",
+        "sha256": "080070cdfdaffe9b80b61ddeb6ddec8e49080b168649f92932caaf58f08298eb"
+      },
+      {
+        "name": "hwpx-spine-validation.patch",
+        "sha256": "0aae77fae8f7eb5ab1c1c83782c0930aa3501b1fd262b1e78706ebed35eeed5d"
+      },
+      {
+        "name": "hwpx-manifest-order.patch",
+        "sha256": "469c2db1c8070e18b87b02f8e8677dda48f746d3ab2ebf27706fe239453a6dc2"
+      },
+      {
+        "name": "hwpx-charpr-child-presence.patch",
+        "sha256": "cbe9574c01e72481d617c352a13da09ba5728a502713a0338ad80c6ab0347573"
+      },
+      {
+        "name": "hwpx-strikeout-3d-placeholder.patch",
+        "sha256": "5f9ca456cadaf6b895590dcf1755f80e37534e9052ca191826b1ae0f43adc281"
+      },
+      {
+        "name": "hwpx-strike3d-derived-styles.patch",
+        "sha256": "992074268325dcc9f1bcc972455a6b90e202db6d25efaa4295b36c3a940e19c2"
+      },
+      {
+        "name": "hwpx-secpr-tabstop-presence.patch",
+        "sha256": "4a973d709e129fd4e2c22d538c6f426adfaf562cf5b70f82a5f704106b319ed1"
+      },
+      {
+        "name": "hwpx-empty-text-boundaries.patch",
+        "sha256": "fced0270450adc639d9d432b8857befbf399fa65b2da4e73e1e9e0d8cd6084e2"
+      }
+    ],
+    "sourceTreeSha256": "1287a07580d613b44d901f45a0acc096b6daaa32f64f3bd26b7b04656ddc0d19"
+  },
+  "patchIdentityProvenance": "Unchanged pinned source and approved patch series; native Debug generation/sourceFingerprint/JS/WASM identity recorded separately above. No WASM rebuild or dependency change.",
+  "positive": [
+    {
+      "format": "docx",
+      "status": "PASS",
+      "stages": [
+        "native New/format/destination/publication/session/first paint/focus PASS"
+      ],
+      "nativeIme": "PASS: xdotool → IBus hangul → GTK/WebView composition",
+      "editing": "PASS: Korean/English, insert/delete, split/merge, caret, selection replacement",
+      "save1": {
+        "findings": "",
+        "error": "",
+        "testid": "docx-save-result",
+        "changedSince": "false",
+        "synced": "true",
+        "outcome": "",
+        "state": "saved",
+        "revision": "25"
+      },
+      "save2": {
+        "findings": "",
+        "error": "",
+        "testid": "docx-save-result",
+        "changedSince": "false",
+        "synced": "true",
+        "outcome": "",
+        "state": "saved",
+        "revision": "32"
+      },
+      "savedSha256": "e9ed40fc2879cc99ae6d4650fc766b20cbaf5aef7faf8e14a1a3e9d2ba1776e1",
+      "nativeOpenSecondActivation": true,
+      "reopen": "PASS: fresh session, requested format, text, revision 0/clean",
+      "independentStructure": "PASS: ZIP CRC + complete XML + expected text",
+      "nativeCompositionStartEndObserved": true,
+      "savedAndReopenedText": "한글 Changed Second",
+      "blankAndEditedScreenshotsReviewed": true
+    },
+    {
+      "format": "hwp",
+      "status": "PASS",
+      "stages": [
+        "native New/format/destination/publication/session/first paint/focus PASS"
+      ],
+      "nativeIme": "PASS: xdotool → IBus hangul → GTK/WebView composition",
+      "editing": "PASS: Korean/English, insert/delete, split/merge, caret, selection replacement",
+      "save1": {
+        "findings": "",
+        "error": "",
+        "testid": "rhwp-save-result",
+        "changedSince": "false",
+        "synced": "true",
+        "outcome": "",
+        "state": "saved",
+        "revision": "25"
+      },
+      "save2": {
+        "findings": "",
+        "error": "",
+        "testid": "rhwp-save-result",
+        "changedSince": "false",
+        "synced": "true",
+        "outcome": "",
+        "state": "saved",
+        "revision": "32"
+      },
+      "savedSha256": "531d7b4ea8b7813c3553d080818c934c936d151884c6bbeaff8d1cb736302350",
+      "nativeOpenSecondActivation": true,
+      "reopen": "PASS: fresh session, requested format, text, revision 0/clean",
+      "independentStructure": "PASS: CFB + HWP5 header + metadata absent + regenerated current preview",
+      "nativeCompositionStartEndObserved": true,
+      "savedAndReopenedText": "한글 Changed Second",
+      "blankAndEditedScreenshotsReviewed": true
+    },
+    {
+      "format": "hwpx",
+      "status": "PASS",
+      "stages": [
+        "native New/format/destination/publication/session/first paint/focus PASS"
+      ],
+      "nativeIme": "PASS: xdotool → IBus hangul → GTK/WebView composition",
+      "editing": "PASS: Korean/English, insert/delete, split/merge, caret, selection replacement",
+      "save1": {
+        "findings": "",
+        "error": "",
+        "testid": "rhwp-save-result",
+        "changedSince": "false",
+        "synced": "true",
+        "outcome": "",
+        "state": "saved",
+        "revision": "25"
+      },
+      "save2": {
+        "findings": "",
+        "error": "",
+        "testid": "rhwp-save-result",
+        "changedSince": "false",
+        "synced": "true",
+        "outcome": "",
+        "state": "saved",
+        "revision": "32"
+      },
+      "savedSha256": "e568b1768d2ed72d0ab58d1d3a03846ac52a3c86205a4f74c5ab2454e2f1b673",
+      "nativeOpenSecondActivation": true,
+      "reopen": "PASS: fresh session, requested format, text, revision 0/clean",
+      "independentStructure": "PASS: ZIP CRC + complete XML + expected text",
+      "nativeCompositionStartEndObserved": true,
+      "savedAndReopenedText": "한글 Changed Second",
+      "blankAndEditedScreenshotsReviewed": true
+    }
+  ],
+  "nativeNegativeAndConcurrency": [
+    {
+      "case": "existing destination",
+      "status": "PASS",
+      "error": "FileConflict",
+      "published": false,
+      "targetUnchanged": true,
+      "registered": false
+    },
+    {
+      "case": "existing symbolic link",
+      "status": "PASS",
+      "error": "FileConflict",
+      "published": false,
+      "targetUnchanged": true,
+      "registered": false
+    },
+    {
+      "case": "wrong extension",
+      "status": "PASS",
+      "error": "ExtensionMismatch",
+      "published": false,
+      "targetUnchanged": true,
+      "registered": false
+    },
+    {
+      "case": "wrong actual format",
+      "status": "PASS",
+      "error": "InvalidRequest",
+      "published": false,
+      "targetUnchanged": true,
+      "registered": false
+    },
+    {
+      "case": "invalid structure",
+      "status": "PASS",
+      "error": "InvalidRequest",
+      "published": false,
+      "targetUnchanged": true,
+      "registered": false
+    },
+    {
+      "case": "invalid internal reference",
+      "status": "PASS",
+      "error": "InvalidRequest",
+      "published": false,
+      "targetUnchanged": true,
+      "registered": false
+    },
+    {
+      "case": "inconsistent loss report",
+      "status": "PASS",
+      "error": "InvalidRequest",
+      "published": false,
+      "targetUnchanged": true,
+      "registered": false
+    },
+    {
+      "case": "wrong loss format",
+      "status": "PASS",
+      "error": "InvalidRequest",
+      "published": false,
+      "targetUnchanged": true,
+      "registered": false
+    },
+    {
+      "case": "untrusted safe assertion",
+      "status": "PASS",
+      "error": "InvalidRequest",
+      "published": false,
+      "targetUnchanged": true,
+      "registered": false
+    },
+    {
+      "case": "insufficient directory permissions",
+      "status": "PASS",
+      "error": "SaveFailure",
+      "published": false,
+      "targetUnchanged": true,
+      "registered": false
+    },
+    {
+      "case": "capacity/registration failure after publication",
+      "status": "PASS",
+      "published": true,
+      "durability": "not exposed by registration-failure response",
+      "registered": false,
+      "retainedFile": true
+    },
+    {
+      "case": "format cancellation and duplicate Ctrl+N",
+      "status": "PASS",
+      "published": false,
+      "registered": false,
+      "activeTabPreserved": true
+    },
+    {
+      "case": "destination cancellation",
+      "status": "PASS",
+      "published": false,
+      "registered": false,
+      "activeTabPreserved": true
+    },
+    {
+      "case": "tab switch and late creation completion",
+      "status": "PASS",
+      "published": true,
+      "registered": true,
+      "activeTabPreserved": true,
+      "focusPreserved": true
+    },
+    {
+      "case": "modal owns focus during late engine readiness",
+      "status": "PASS",
+      "published": true,
+      "registered": true,
+      "focusPreserved": true
+    },
+    {
+      "case": "IME ownership across native Ctrl+N",
+      "status": "PASS",
+      "published": false,
+      "registered": false,
+      "text": "하",
+      "owningSessionPreserved": true,
+      "selectionOpenedAfterNativeCommit": true
+    },
+    {
+      "case": "editor load failure after publication/registration",
+      "status": "PASS",
+      "published": true,
+      "registered": true,
+      "fileRetained": true,
+      "distinctUserMessage": true
+    },
+    {
+      "case": "native WASM export failure",
+      "status": "PASS",
+      "published": false,
+      "registered": false,
+      "activeTabPreserved": true,
+      "allocated": 1,
+      "freed": 1,
+      "publisherCalls": 0
+    },
+    {
+      "case": "reported durability uncertainty docx",
+      "status": "PASS",
+      "published": true,
+      "registered": true,
+      "fileRetained": true,
+      "automaticLoadDeferred": true,
+      "loadCalls": 0,
+      "simulation": "response dirty=true; actual DirSync injection is Rust-only"
+    },
+    {
+      "case": "reported durability uncertainty hwp",
+      "status": "PASS",
+      "published": true,
+      "registered": true,
+      "fileRetained": true,
+      "automaticLoadDeferred": true,
+      "loadCalls": 0,
+      "simulation": "response dirty=true; actual DirSync injection is Rust-only"
+    },
+    {
+      "case": "reported durability uncertainty hwpx",
+      "status": "PASS",
+      "published": true,
+      "registered": true,
+      "fileRetained": true,
+      "automaticLoadDeferred": true,
+      "loadCalls": 0,
+      "simulation": "response dirty=true; actual DirSync injection is Rust-only"
+    },
+    {
+      "case": "window close during dirty-selection",
+      "status": "PASS",
+      "nativeClose": "WM_DELETE_WINDOW to actual GTK toplevel",
+      "published": false,
+      "appExited": true,
+      "fileRetained": false
+    },
+    {
+      "case": "window close during selection",
+      "status": "PASS",
+      "nativeClose": "WM_DELETE_WINDOW to actual GTK toplevel",
+      "published": false,
+      "appExited": true,
+      "fileRetained": false
+    },
+    {
+      "case": "window close during publication",
+      "status": "PASS",
+      "nativeClose": "WM_DELETE_WINDOW to actual GTK toplevel",
+      "published": true,
+      "appExited": true,
+      "fileRetained": true
+    }
+  ],
+  "nativeNegativeCount": 24,
+  "checks": {
+    "frontend": {
+      "status": "PASS",
+      "files": 55,
+      "tests": 1016,
+      "typecheck": "PASS (native build tsc --noEmit)",
+      "lint": "PASS"
+    },
+    "rustRegression": {
+      "status": "PASS",
+      "tests": 255,
+      "ignoredInDefaultRun": 22,
+      "seconds": 4.9
+    },
+    "rustCreationFocused": {
+      "status": "PASS",
+      "tests": 9,
+      "includesCurrentWasmIgnoredProbe": true
+    },
+    "fmt": "PASS",
+    "clippyLibBinsWarningsDenied": "PASS",
+    "nativeBuild": "PASS (test-hooks Debug; unchanged approved Debug WASM cache)"
+  },
+  "defectsFixed": [
+    {
+      "defect": "Cancelled resource operation published a new file",
+      "before": "t023-cancellation-before.log FAILED",
+      "correction": "active/BeforePublication reservation/publication permit; no destination/session/staging on cancellation"
+    },
+    {
+      "defect": "Dirty existing document + New format choice + WM close displayed two aria-modal layers",
+      "before": "native-run14 modal count 2 FAILED",
+      "correction": "Suspend New dialog while confirmation owns modal; preserve chosen format/opener; native-run24 PASS"
+    },
+    {
+      "defect": "Initial dirty/unconfirmed RHWP registration was misreported as editor-load failure",
+      "before": "t023-unconfirmed-before.log three format regressions FAILED",
+      "correction": "Keep protected identified/dirty session, defer auto load, show accurate notice; focused34/native all3 PASS"
+    }
+  ],
+  "failedRunsPreserved": {
+    "1": "missing isolated GTK FileChooser schema",
+    "2": "missing setxkbmap in isolated PATH",
+    "3": "harness left extension selected, produced duplicated suffix",
+    "4": "harness native Open location-entry activation did not reopen; replaced with existing product Open path form",
+    "6": "Tauri IPC functions are frozen: original delay hook was not installed",
+    "7": "GTK commits preedit before Ctrl+N; corrected assertion checks event order and owning text, not unconditional modal rejection",
+    "9": "bare Xvfb has no EWMH WM; xdotool windowquit did not deliver close. Direct native WM_DELETE_WINDOW used subsequently",
+    "14": "Product modal overlap (two aria-modal); fixed and native-run24 passed",
+    "17": "Modal count passed; WebDriver confirmation-click response raced native app destruction; native keys now used",
+    "22": "All 21 assertions passed, but cleanup WebDriver element-click transport reset while app/process alive; native pointer cleanup, full rerun23 PASS"
+  },
+  "historicalRunsExcludedFromFinalMatrix": "All runs before 21, and failed run22, remain local history. No selected subcase from a failed or different-runtime run is counted in final matrix.",
+  "localEvidence": [
+    {
+      "run": 21,
+      "path": "target/new-document/native-run21/result.json",
+      "sha256": "d1c66e68241cca5bf0618cf8329356fb00748fda2740367ac21a6ee8c85b9544",
+      "overallStatus": "PASS",
+      "harnessSha256": "db0a9c56a7a1f1b106bd66cb9b451017ae01e4c50050e0c883d0913a7d80ea72",
+      "command": [
+        "/nix/store/xahxrjs30p3mw0a42bqg9ikgkikskw8m-python3-3.14.8/bin/python3",
+        "<repo>/scripts/tests/native-new-document.py",
+        "--app",
+        "<repo>/src-tauri/target/debug/geul",
+        "--driver",
+        "<geul-tests>/reports/t010-canonical-d1-d4-20261101/tauri-driver-current-loader",
+        "--out",
+        "<repo>/target/new-document/native-run21",
+        "--xdotool",
+        "/nix/store/kyp2r08w6hs0l1zj3cya6d2ciba9v47h-xdotool-3.20211022.1/bin/xdotool",
+        "--ibus",
+        "/nix/store/0mvrqxsy82n54jvps5v7i3xsd7c28f9m-ibus-1.5.33/bin/ibus"
+      ],
+      "environmentResultSha256": "2bbfb87ceef5d6bf0230d4a4af71efc30e3a302117f12c83f82dbf595133b978",
+      "cleanupSucceeded": true,
+      "survivors": 0
+    },
+    {
+      "run": 23,
+      "path": "target/new-document/native-run23/result.json",
+      "sha256": "d169f16f5b0a84a9ff0e7304db823dcc10eb2220944c8e950bfd1ba1864d18ef",
+      "overallStatus": "PASS",
+      "harnessSha256": "79068dee5e6aa22ba872dc22180e0817ec2ecfd6ed5ab0e213d047758f61d06a",
+      "command": [
+        "/nix/store/xahxrjs30p3mw0a42bqg9ikgkikskw8m-python3-3.14.8/bin/python3",
+        "<repo>/scripts/tests/native-new-document-safety.py",
+        "--app",
+        "<repo>/src-tauri/target/debug/geul",
+        "--driver",
+        "<geul-tests>/reports/t010-canonical-d1-d4-20261101/tauri-driver-current-loader",
+        "--out",
+        "<repo>/target/new-document/native-run23",
+        "--xdotool",
+        "/nix/store/kyp2r08w6hs0l1zj3cya6d2ciba9v47h-xdotool-3.20211022.1/bin/xdotool",
+        "--ibus",
+        "/nix/store/0mvrqxsy82n54jvps5v7i3xsd7c28f9m-ibus-1.5.33/bin/ibus",
+        "--fixtures",
+        "<repo>/target/new-document/runtime",
+        "--documents",
+        "<repo>/target/new-document/native-run21"
+      ],
+      "environmentResultSha256": "f05e915536849cf5c68834ff6b92795e5797ee91b93671031d528194fa238d08",
+      "cleanupSucceeded": true,
+      "survivors": 0
+    },
+    {
+      "run": 24,
+      "path": "target/new-document/native-run24/result.json",
+      "sha256": "3064b701d31b12ea5ea2657562daccf3b05fc6506d376986f34cbbbe2aaccdb6",
+      "overallStatus": "PASS",
+      "harnessSha256": "795ebe4ded1932d52f0a24f6036ac00e5527c085a9522062ba20672882679d48",
+      "command": [
+        "/nix/store/xahxrjs30p3mw0a42bqg9ikgkikskw8m-python3-3.14.8/bin/python3",
+        "<repo>/scripts/tests/native-new-document-close.py",
+        "--app",
+        "<repo>/src-tauri/target/debug/geul",
+        "--driver",
+        "<geul-tests>/reports/t010-canonical-d1-d4-20261101/tauri-driver-current-loader",
+        "--out",
+        "<repo>/target/new-document/native-run24",
+        "--xdotool",
+        "/nix/store/kyp2r08w6hs0l1zj3cya6d2ciba9v47h-xdotool-3.20211022.1/bin/xdotool",
+        "--ibus",
+        "/nix/store/0mvrqxsy82n54jvps5v7i3xsd7c28f9m-ibus-1.5.33/bin/ibus",
+        "--mode",
+        "dirty-selection",
+        "--documents",
+        "<repo>/target/new-document/native-run21"
+      ],
+      "environmentResultSha256": "d39cf33a23ce9c6576b869a57073adf9ee07aa1a55c5ee530356401605fe4d2c",
+      "cleanupSucceeded": true,
+      "survivors": 0
+    },
+    {
+      "run": 25,
+      "path": "target/new-document/native-run25/result.json",
+      "sha256": "c06a8376cc6887912ee33aebb756e271403b57d699d3dc9d99a21c3dcf8a7bb1",
+      "overallStatus": "PASS",
+      "harnessSha256": "795ebe4ded1932d52f0a24f6036ac00e5527c085a9522062ba20672882679d48",
+      "command": [
+        "/nix/store/xahxrjs30p3mw0a42bqg9ikgkikskw8m-python3-3.14.8/bin/python3",
+        "<repo>/scripts/tests/native-new-document-close.py",
+        "--app",
+        "<repo>/src-tauri/target/debug/geul",
+        "--driver",
+        "<geul-tests>/reports/t010-canonical-d1-d4-20261101/tauri-driver-current-loader",
+        "--out",
+        "<repo>/target/new-document/native-run25",
+        "--xdotool",
+        "/nix/store/kyp2r08w6hs0l1zj3cya6d2ciba9v47h-xdotool-3.20211022.1/bin/xdotool",
+        "--ibus",
+        "/nix/store/0mvrqxsy82n54jvps5v7i3xsd7c28f9m-ibus-1.5.33/bin/ibus",
+        "--mode",
+        "selection",
+        "--documents",
+        "<repo>/target/new-document/native-run21"
+      ],
+      "environmentResultSha256": "70bef5764ec2ac08f2e93bd5ddb421b7d92bb8fc625b8c266d4fd55ac8b04237",
+      "cleanupSucceeded": true,
+      "survivors": 0
+    },
+    {
+      "run": 26,
+      "path": "target/new-document/native-run26/result.json",
+      "sha256": "b12481e6660ad27f6fc13c36ef848ff518388d66eea02988094ccba264986922",
+      "overallStatus": "PASS",
+      "harnessSha256": "795ebe4ded1932d52f0a24f6036ac00e5527c085a9522062ba20672882679d48",
+      "command": [
+        "/nix/store/xahxrjs30p3mw0a42bqg9ikgkikskw8m-python3-3.14.8/bin/python3",
+        "<repo>/scripts/tests/native-new-document-close.py",
+        "--app",
+        "<repo>/src-tauri/target/debug/geul",
+        "--driver",
+        "<geul-tests>/reports/t010-canonical-d1-d4-20261101/tauri-driver-current-loader",
+        "--out",
+        "<repo>/target/new-document/native-run26",
+        "--xdotool",
+        "/nix/store/kyp2r08w6hs0l1zj3cya6d2ciba9v47h-xdotool-3.20211022.1/bin/xdotool",
+        "--ibus",
+        "/nix/store/0mvrqxsy82n54jvps5v7i3xsd7c28f9m-ibus-1.5.33/bin/ibus",
+        "--mode",
+        "publication",
+        "--documents",
+        "<repo>/target/new-document/native-run21"
+      ],
+      "environmentResultSha256": "00cfcdd2174bd31dbec6c2d03ad87d99d9e6a9fafd9246103490522ae607b964",
+      "cleanupSucceeded": true,
+      "survivors": 0
+    }
+  ],
+  "verificationLogs": [
+    {
+      "path": "target/new-document/t023-final-frontend.log",
+      "sha256": "aaf173d8e4c8336a8ed2e90c4c512b87f407d437ad0019ea6692f6e536f6b1a5"
+    },
+    {
+      "path": "target/new-document/t023-final-lint.log",
+      "sha256": "97117f34558193dfac87899d0c44d60c89f74c9e6d8dc917f73e419c46dab3ee"
+    },
+    {
+      "path": "target/new-document/t023-final-native-build.log",
+      "sha256": "a4a0ea2e65e9ff4b4cfe83592d6a457eeb3fad10c98be97dbbf846510236d6a6"
+    },
+    {
+      "path": "target/new-document/t023-rust-regression.log",
+      "sha256": "db15362acff3524693cb713e217bbe671debf4324592f260e2a7dd0ad704f844"
+    },
+    {
+      "path": "target/new-document/t023-creation-tests.log",
+      "sha256": "ed44e87b24eddcc44979e7c32a0253696a8ec33d3f9b746fd386270aa95c125e"
+    }
+  ],
+  "rustReproduction": {
+    "build": "npm run rust -- test --lib --no-run",
+    "run": "Protected-built src-tauri/target/debug/deps/geul_lib-* with private TMPDIR; default suite and services::files::tests --include-ignored; GEUL_NEW_DOCUMENT_DIR=target/new-document/runtime",
+    "note": "22 default ignored probes are not claimed passed; current-WASM creation probe explicitly passed in focused9. Rust code unchanged since fmt/clippy/full255 checks."
+  },
+  "faultInjectionLimits": "StorageFull and fsync are controlled Rust errors; native uncertainty changes only successful response dirty=true. No real power-loss or disk-exhaustion claim.",
+  "commandPathNotation": "Public commands replace the verified repository and separate test-repository roots with <repo>/<geul-tests>. Exact local commands are retained in hashed ignored environment-result.json; no personal home path is published."
+}

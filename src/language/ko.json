@@ -394,6 +394,6 @@
   "document.format.hwp": "한글 문서 (.hwp)",
   "document.format.hwpx": "한글 XML 문서 (.hwpx)",
   "document.chooseDestination": "저장 위치 선택",
-  "document.createdUnconfirmed": "{name} 파일을 만들었지만 디스크 내구성은 확인하지 못했습니다. 파일을 확인하고 다시 저장해 주세요.",
+  "document.createdUnconfirmed": "{name} 파일을 등록했지만 디스크 내구성은 확인하지 못해 자동 열기를 보류했습니다. 파일 상태를 확인한 뒤 다시 열어 주세요.",
   "document.error.FileCreatedEditorFailed": "파일은 만들어졌지만 편집기를 준비하지 못했습니다. 파일을 직접 다시 열어 주세요."
 }
