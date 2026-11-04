@@ -17,11 +17,14 @@ import hashlib
 import re
 import importlib.util
 import json
+import os
 from pathlib import Path
 import subprocess
 import sys
 import time
 import traceback
+
+from native_close_results import finalize
 
 ROOT = Path(__file__).resolve().parents[2]
 spec = importlib.util.spec_from_file_location('new_safety', ROOT/'scripts/tests/native-new-document-safety.py')
@@ -223,9 +226,9 @@ def restore_chooser(args,d,test,report,window):
         end=time.monotonic()+interval;seen=False
         while time.monotonic()<end:
             value=d.js(count);seen=d.js(dialog)
-            if seen or value is None or (isinstance(baseline,int) and value!=baseline):break
+            if type(seen) is not bool or seen or value is None or (isinstance(baseline,int) and value!=baseline):break
             time.sleep(.2)
-        return d.js(count),bool(seen or d.js(dialog))
+        return d.js(count),seen if type(seen) is not bool else (seen or d.js(dialog))
 
     obs['during'],obs['dialogDuring']=observe(obs['before'])
     obs['busyDuring']=d.js('return window.__ndWorkspace.fileBusy')
@@ -261,6 +264,7 @@ def restore_chooser(args,d,test,report,window):
         return
     if result==verdicts.DELIVERED_DURING and obs['dialogDuring'] and obs['busyDuring']:
         # The reachable transition: confirm the prompt, then complete the real chooser.
+        report['chooserCloseDelivery']['transitionAttempted']=True
         report['closeDuringChooser']=d.js("return {dialogs:document.querySelectorAll('[aria-modal=true]').length,busy:window.__ndWorkspace.fileBusy,kind:document.querySelector('[data-testid=discard-dialog]')?.dataset.windowKind}")
         assert report['closeDuringChooser']['dialogs']==1,report['closeDuringChooser']
         d.js("document.querySelector('[data-testid=discard-confirm]').click()")  # GTK chooser holds keyboard focus
@@ -269,6 +273,7 @@ def restore_chooser(args,d,test,report,window):
         test.command(args.xdotool,'windowfocus','--sync',chooser)
         test.key('ctrl+l','ctrl+a');test.type(str(restored));test.key('Return')
         finish_confirmed_close(args,d,test,report,window,pids,restored,store_before,original)
+        report['chooserCloseDelivery']['transitionVerified']=True
         report['negative'].append({'case':'window close confirmed while the real GTK restore chooser was pending','status':'PASS',
             'chooser':'real GTK; destination typed with XTest','closeRequest':'real WM_DELETE_WINDOW','published':False,'appExited':True})
         return
@@ -283,13 +288,27 @@ def main():
     parser.add_argument('--mode',choices=['selection','publication','dirty-selection','unconfirmed-publication','restore-unopened','restore-chooser','restore-chooser-injected','restore-already-open'],required=True)
     parser.add_argument('--port',type=int,default=4444)
     parser.add_argument('--documents',type=Path)
+    parser.add_argument('--build-identity',type=Path,help='recorded build identity; appSha256 must match this binary')
     args=parser.parse_args();args.out.mkdir(parents=True,exist_ok=False)
     report={'status':'RUNNING','negative':[], 'mode':args.mode,'appSha256':module.native.sha(args.app),'harnessSha256':module.native.sha(__file__),
+            'verdictClassifierSha256':module.native.sha(ROOT/'scripts/tests/chooser_close_verdict.py'),
+            'reportContractSha256':module.native.sha(ROOT/'scripts/tests/native_close_results.py'),
             'sourceHead':subprocess.check_output(['git','rev-parse','HEAD'],cwd=ROOT,text=True).strip(),
             'sourceDiffSha256':hashlib.sha256(subprocess.check_output(['git','diff','HEAD','--','src','src-tauri'],cwd=ROOT)).hexdigest()}
     smoke.APP=str(args.app.resolve());smoke.DRIVER_LOG=args.out/'driver.log'
+    report['environment']={'displayServer':'X11', 'gdkBackend':os.environ.get('GDK_BACKEND', 'unspecified'),
+        'x11DisplayAvailable':bool(os.environ.get('DISPLAY')), 'gtkChooser':'gtk::FileChooserNative modal run()' if args.mode=='restore-chooser' else 'see scenario chooser evidence',
+        'observationIntervalSeconds':5.0 if args.mode=='restore-chooser' else None,
+        'intervals':['chooser open','after chooser cancellation'] if args.mode=='restore-chooser' else [],
+        'scope':'this GTK implementation and X11 environment only; no Wayland/portal claim'}
+    report['buildIdentity']={'status':'UNVERIFIED','reason':'no build identity supplied; sourceHead describes the probe checkout'}
     d=None
+    phase='setup'
     try:
+        if args.build_identity:
+            identity=json.loads(args.build_identity.read_text())
+            assert identity['appSha256']==report['appSha256'], 'build identity does not match app binary'
+            report['buildIdentity']={'status':'MATCHED BINARY','record':identity}
         with smoke.tauri_driver(args.driver,args.port,str(args.out/'data')) as start:
             d=start(); test=module.Safety(args,d,report)
             test.wait("return document.querySelector('.document-bar')!==null",timeout=60)
@@ -297,8 +316,12 @@ def main():
             test.command(args.xdotool,'windowfocus','--sync',window)
             identity=test.async_js("return await(await fetch('/rhwp/BUILD.json')).json()")
             assert identity['ok']; report['rhwpIdentity']=identity['value']
+            report['environment']['gtkRuntimeLibraries']=sorted({Path(line.split()[-1]).name
+                for pid in smoke.app_processes() for line in Path(f'/proc/{pid}/maps').read_text().splitlines()
+                if '/libgtk-' in line})
             test.workspace()
             test.async_js("window.__ndCloseObserved=0;window.__ndStopClose=await window.__ndWorkspace.windowClose.listen(()=>window.__ndCloseObserved++);return true")
+            phase='native scenario'
             path=args.out/'closing.docx'
             original_hash=None
             if args.mode in ('restore-unopened','restore-chooser','restore-chooser-injected','restore-already-open'):
@@ -307,94 +330,95 @@ def main():
                 try:d.quit();report['driverDeleteAfterNativeClose']='ok'
                 except Exception as error:report['driverDeleteAfterNativeClose']=str(error)
                 d=None
-                report['status']='PASS'
-                return 0
-            if args.mode=='dirty-selection':
-                assert args.documents
-                original_hash=module.native.sha(args.documents/'created.docx')
-                test.open('docx',args.documents/'created.docx')
-                test.engine('xkb:us::eng');test.key('End');test.type(' unsaved')
-                test.wait("return document.querySelector('[data-testid=docx-status]')?.dataset.dirty==='true'")
-            if args.mode in ('selection','dirty-selection'):
-                test.key('ctrl+n')
-                test.wait("return document.querySelector('[data-testid=new-document-dialog]')!==null")
-                if args.mode=='dirty-selection':test.key('Up')
             else:
-                test.delay('document_new')
+                if args.mode=='dirty-selection':
+                    assert args.documents
+                    original_hash=module.native.sha(args.documents/'created.docx')
+                    test.open('docx',args.documents/'created.docx')
+                    test.engine('xkb:us::eng');test.key('End');test.type(' unsaved')
+                    test.wait("return document.querySelector('[data-testid=docx-status]')?.dataset.dirty==='true'")
+                if args.mode in ('selection','dirty-selection'):
+                    test.key('ctrl+n')
+                    test.wait("return document.querySelector('[data-testid=new-document-dialog]')!==null")
+                    if args.mode=='dirty-selection':test.key('Up')
+                else:
+                    test.delay('document_new')
+                    if args.mode=='unconfirmed-publication':
+                        # Wrap the real publication response; the delay hook calls __ndOriginal at resume time.
+                        d.js("const o=window.__ndOriginal;window.__ndOriginal=async function(...a){const r=await o.apply(this,a);if(r.ok)r.value={...r.value,dirty:true};return r}")
+                    test.new('docx',path)
+                    test.wait('return window.__ndPending===true')
+                assert not path.exists()
+                # Observe the same app PIDs until they exit; never kill a user app.
+                pids=set(smoke.app_processes())
+                assert pids
+                request_native_close(args.xdotool,window)
+                if args.mode=='dirty-selection':
+                    test.wait("return document.querySelector('[data-testid=discard-dialog]')!==null")
+                    report['modalDiagnostic']=d.js("return {count:document.querySelectorAll('[aria-modal=true]').length,focus:document.activeElement?.textContent,kind:document.querySelector('[data-testid=discard-dialog]')?.dataset.windowKind}")
+                    assert report['modalDiagnostic']['kind']=='edits',report['modalDiagnostic']
+                    assert report['modalDiagnostic']['count']==1,'new-format dialog must yield to window-close confirmation'
+                    d.click('[data-testid=discard-cancel]')
+                    test.wait("return document.querySelector('[data-testid=new-document-dialog]')!==null")
+                    assert d.js("return document.querySelector('input[name=new-document-format]:checked')?.value")=='hwpx'
+                    request_native_close(args.xdotool,window)
+                    test.wait("return document.querySelector('[data-testid=discard-dialog]')!==null")
+                    # Confirm with native keys: a WebDriver click response can race
+                    # the successful destruction of its own browsing context.
+                    test.key('Tab','Return')
+                if args.mode in ('publication','unconfirmed-publication'):
+                    test.wait("return window.__ndCloseObserved>0 && window.__ndWorkspace.windowClosing===true")
+                    test.resume()
                 if args.mode=='unconfirmed-publication':
-                    # Wrap the real publication response; the delay hook calls __ndOriginal at resume time.
-                    d.js("const o=window.__ndOriginal;window.__ndOriginal=async function(...a){const r=await o.apply(this,a);if(r.ok)r.value={...r.value,dirty:true};return r}")
-                test.new('docx',path)
-                test.wait('return window.__ndPending===true')
-            assert not path.exists()
-            # Observe the same app PIDs until they exit; never kill a user app.
-            pids=set(smoke.app_processes())
-            assert pids
-            request_native_close(args.xdotool,window)
-            if args.mode=='dirty-selection':
-                test.wait("return document.querySelector('[data-testid=discard-dialog]')!==null")
-                report['modalDiagnostic']=d.js("return {count:document.querySelectorAll('[aria-modal=true]').length,focus:document.activeElement?.textContent,kind:document.querySelector('[data-testid=discard-dialog]')?.dataset.windowKind}")
-                assert report['modalDiagnostic']['kind']=='edits',report['modalDiagnostic']
-                assert report['modalDiagnostic']['count']==1,'new-format dialog must yield to window-close confirmation'
-                d.click('[data-testid=discard-cancel]')
-                test.wait("return document.querySelector('[data-testid=new-document-dialog]')!==null")
-                assert d.js("return document.querySelector('input[name=new-document-format]:checked')?.value")=='hwpx'
-                request_native_close(args.xdotool,window)
-                test.wait("return document.querySelector('[data-testid=discard-dialog]')!==null")
-                # Confirm with native keys: a WebDriver click response can race
-                # the successful destruction of its own browsing context.
-                test.key('Tab','Return')
-            if args.mode in ('publication','unconfirmed-publication'):
-                test.wait("return window.__ndCloseObserved>0 && window.__ndWorkspace.windowClosing===true")
-                test.resume()
-            if args.mode=='unconfirmed-publication':
-                # The close decision predates this publication: the window must stay and ask again.
-                test.wait("return document.querySelector('[data-testid=discard-dialog]')!==null")
-                time.sleep(1)
-                assert pids.issubset(set(smoke.app_processes())),'window destroyed on a stale close decision'
-                report['staleDecisionDiagnostic']=d.js("return {dialogs:document.querySelectorAll('[aria-modal=true]').length,action:document.querySelector('[data-testid=discard-dialog]')?.dataset.action,kind:document.querySelector('[data-testid=discard-dialog]')?.dataset.windowKind,focus:document.activeElement?.dataset.testid??null,closing:window.__ndWorkspace.windowClosing,busy:window.__ndWorkspace.fileBusy,unpreserved:window.__ndWorkspace.hasUnpreservedChanges,tabs:[...document.querySelectorAll('.document-tab__select')].map(e=>e.textContent)}")
-                diag=report['staleDecisionDiagnostic']
-                assert diag['dialogs']==1 and diag['action']=='window' and diag['kind']=='durability' and diag['focus']=='discard-cancel' and not diag['closing'] and diag['unpreserved'],diag
-                assert path.exists() and any('closing.docx' in tab for tab in diag['tabs']),diag
-                d.click('[data-testid=discard-cancel]')
-                test.wait("return document.querySelector('[data-testid=discard-dialog]')===null")
-                assert pids.issubset(set(smoke.app_processes())),'cancel must keep the window'
-                assert d.js("return window.__ndWorkspace.hasUnpreservedChanges")
-                request_native_close(args.xdotool,window)
-                test.wait("return document.querySelector('[data-testid=discard-dialog]')!==null")
-                assert d.js("return document.querySelectorAll('[aria-modal=true]').length")==1
-                test.key('Tab','Return')
-            deadline=time.monotonic()+20
-            while pids.intersection(smoke.app_processes()) and time.monotonic()<deadline:
-                time.sleep(.1)
-            if pids.intersection(smoke.app_processes()):
-                report['closeDiagnostic']=d.js("return {events:window.__ndCloseObserved,closing:window.__ndWorkspace.windowClosing,busy:window.__ndWorkspace.fileBusy,dialog:!!document.querySelector('[aria-modal=true]')}")
-                raise AssertionError('native close did not complete')
-            assert path.exists()==(args.mode in ('publication','unconfirmed-publication'))
-            if original_hash is not None:
-                assert module.native.sha(args.documents/'created.docx')==original_hash
-                report['originalFileUnchanged']=True
-            if path.exists():
-                import zipfile
-                with zipfile.ZipFile(path) as package:
-                    assert package.testzip() is None
-                    assert 'word/document.xml' in package.namelist()
-            report['negative'].append({'case':'window close during '+args.mode,'status':'PASS','nativeClose':'WM_DELETE_WINDOW to actual GTK toplevel',
-                                      'published':path.exists(),'appExited':True,'fileRetained':path.exists()})
-            # Native destruction can end the WebDriver browsing context first.
-            # Record that transport result separately from the observed app exit.
-            try:
-                d.quit();report['driverDeleteAfterNativeClose']='ok'
-            except Exception as error:
-                report['driverDeleteAfterNativeClose']=str(error)
-            d=None
+                    # The close decision predates this publication: the window must stay and ask again.
+                    test.wait("return document.querySelector('[data-testid=discard-dialog]')!==null")
+                    time.sleep(1)
+                    assert pids.issubset(set(smoke.app_processes())),'window destroyed on a stale close decision'
+                    report['staleDecisionDiagnostic']=d.js("return {dialogs:document.querySelectorAll('[aria-modal=true]').length,action:document.querySelector('[data-testid=discard-dialog]')?.dataset.action,kind:document.querySelector('[data-testid=discard-dialog]')?.dataset.windowKind,focus:document.activeElement?.dataset.testid??null,closing:window.__ndWorkspace.windowClosing,busy:window.__ndWorkspace.fileBusy,unpreserved:window.__ndWorkspace.hasUnpreservedChanges,tabs:[...document.querySelectorAll('.document-tab__select')].map(e=>e.textContent)}")
+                    diag=report['staleDecisionDiagnostic']
+                    assert diag['dialogs']==1 and diag['action']=='window' and diag['kind']=='durability' and diag['focus']=='discard-cancel' and not diag['closing'] and diag['unpreserved'],diag
+                    assert path.exists() and any('closing.docx' in tab for tab in diag['tabs']),diag
+                    d.click('[data-testid=discard-cancel]')
+                    test.wait("return document.querySelector('[data-testid=discard-dialog]')===null")
+                    assert pids.issubset(set(smoke.app_processes())),'cancel must keep the window'
+                    assert d.js("return window.__ndWorkspace.hasUnpreservedChanges")
+                    request_native_close(args.xdotool,window)
+                    test.wait("return document.querySelector('[data-testid=discard-dialog]')!==null")
+                    assert d.js("return document.querySelectorAll('[aria-modal=true]').length")==1
+                    test.key('Tab','Return')
+                deadline=time.monotonic()+20
+                while pids.intersection(smoke.app_processes()) and time.monotonic()<deadline:
+                    time.sleep(.1)
+                if pids.intersection(smoke.app_processes()):
+                    report['closeDiagnostic']=d.js("return {events:window.__ndCloseObserved,closing:window.__ndWorkspace.windowClosing,busy:window.__ndWorkspace.fileBusy,dialog:!!document.querySelector('[aria-modal=true]')}")
+                    raise AssertionError('native close did not complete')
+                assert path.exists()==(args.mode in ('publication','unconfirmed-publication'))
+                if original_hash is not None:
+                    assert module.native.sha(args.documents/'created.docx')==original_hash
+                    report['originalFileUnchanged']=True
+                if path.exists():
+                    import zipfile
+                    with zipfile.ZipFile(path) as package:
+                        assert package.testzip() is None
+                        assert 'word/document.xml' in package.namelist()
+                report['negative'].append({'case':'window close during '+args.mode,'status':'PASS','nativeClose':'WM_DELETE_WINDOW to actual GTK toplevel',
+                                          'published':path.exists(),'appExited':True,'fileRetained':path.exists()})
+                # Native destruction can end the WebDriver browsing context first.
+                # Record that transport result separately from the observed app exit.
+                try:
+                    d.quit();report['driverDeleteAfterNativeClose']='ok'
+                except Exception as error:
+                    report['driverDeleteAfterNativeClose']=str(error)
+                d=None
         report['status']='PASS'
     except Exception as error:
-        report.update(status='FAIL',error=str(error),trace=traceback.format_exc())
+        report.update(status='FAIL',error=str(error),trace=traceback.format_exc(),
+                      failureKind='assertion' if phase=='native scenario' and isinstance(error,AssertionError) else 'infrastructure', failurePhase=phase)
     finally:
         report['teardown']=smoke.TEARDOWN
+        finalize(report)
         (args.out/'result.json').write_text(json.dumps(report,ensure_ascii=False,indent=2)+'\n')
-    print(json.dumps({'status':report['status'],'mode':args.mode,'error':report.get('error')}))
+    print(json.dumps({key:report.get(key) for key in ('status','executionStatus','behaviorVerdict','observationValidity','observerControl','coverageCounts','mode','error')}))
     return 0 if report['status']=='PASS' else 1
 
 

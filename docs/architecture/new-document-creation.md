@@ -467,3 +467,39 @@ App이 표시 메시지를 소유한다. 기존 단일 `notify`는 다음 상태
 NOT REACHABLE에는 두 dialog 관측이 명시적 False, `restoreResult` 키가 있고 None, `published` 명시적 False, `appAlive` 명시적 True까지 모두 필요하다. 누락이나 잘못된 값은 INCONCLUSIVE다. 기존 5초+5초 구간은 변경하지 않았다.
 
 `python3 -m unittest scripts/tests/test_chooser_close_verdict.py`: 새 회귀를 기존 분류기에 적용했을 때 exit 1, 12개 시험/하위 사례 31건 실패. 수정 후 exit 0, 12/12 PASS. 필수 키별 누락, boolean 전 필드의 잘못된 타입, 결과/게시/생존 누락, 부분 전달, 지연 전달, 감소/잘못된 카운트, 모순, 0 및 비영 기준값 불변을 포함한다. 미처리 오류 없음. 로그 `target/stabilization/s5-p2/{before,after}.log`. native는 P3 보고 경로와 함께 새 실행에서 확인한다. 프런트엔드와 서브모듈은 변경하지 않았다.
+
+
+### P3: 실행 성공과 행동 커버리지 분리
+
+기존 `status=PASS`/exit 0은 유효한 유한 관측을 완료했다는 실행 의미로 유지한다. `negative`와 기존 관측 필드도 유지하며 과거 JSON은 수정하지 않는다. 이제 모든 정상 종료 경로(복구 모드 포함)가 context 정리 이후 같은 최종 보고/표준 출력/exit 경로를 사용한다. 추가 필드:
+
+| 필드 | 의미 |
+| --- | --- |
+| `executionStatus` | 기존 `status`와 같은 하네스 실행 결과. 관측 누락/모순을 성공으로 완료하려 하면 FAIL로 낮춘다. |
+| `behaviorVerdict` | PASS / NOT REACHABLE / NOT RUN / INCONCLUSIVE / FAIL. 실제 GTK 선택기의 PASS는 전달 카운트 증가·닫기 확인·선택 대기와 `transitionVerified=true`(실제 전이 검증 완료)가 있어야 한다. |
+| `observationValidity` | GTK 전달 관측의 유효성. PASS / FAIL / NOT RUN(해당 전달 관측을 사용하지 않는 모드). |
+| `observerControl` | 실제 선택기 미전달 뒤 양성 대조. PASS / FAIL / NOT RUN. 기준 카운트가 취소 후 관측과 같고 정확히 +1이어야 PASS. |
+| `coverageCounts` | 행동의 다섯 상태를 별도 집계. 실행 PASS 수와 구분한다. |
+| `environment` | X11/GDK, 실제 로드된 GTK ABI 라이브러리, 선택기 구현, 모드별 관측 구간·범위. 실제 선택기는 5초+5초, 주입 등 다른 모드는 이 구간을 실행했다고 기록하지 않는다. |
+| `buildIdentity` | 선택 인수 `--build-identity`의 앱 SHA 일치 확인과 원래 빌드 소스 기록. 미제공은 UNVERIFIED. 현재 checkout HEAD가 앱 빌드 HEAD라는 의미가 아니다. |
+| `failureKind/failurePhase` | 관측 실패/시나리오 assertion/인프라 오류와 실패 단계. assertion은 제품 결함 외 관측 조건 실패일 수도 있으므로 trace와 함께 해석한다. |
+
+저장된 전달 판정을 엄격한 분류기로 다시 검산한다. 전달되었지만 전이 검증이 끝나지 않았거나 지연 전달이면 INCONCLUSIVE(시도한 assertion 실패는 FAIL)이며 행동 PASS로 세지 않는다. NOT REACHABLE은 명시적인 관측과 양성 대조 PASS를 요구한다. 원시 dialog 관측도 bool()로 결측을 false로 바꾸지 않는다. 게시/세션/복구 논리는 바꾸지 않았다.
+
+검색한 저장소 소비 지점은 이 하네스의 JSON/표준 출력/종료 코드였으며 별도 기존 집계기는 없었다. 표준 출력에도 실행·행동·관측·대조·집계를 함께 노출한다. `scripts/tests/native_close_results.py result1.json ...`은 기존/새 보고서를 읽기만 하며 행동 상태와 실행 상태를 각각 집계한다. 과거 chooser의 최상위 PASS를 행동 PASS로 사용하지 않는다. 관측이 부족한 과거 자료도 보수적으로 INCONCLUSIVE다. exit 0이나 execution PASS만으로 실제 GTK 경합을 실행했다고 판단하면 안 된다.
+
+검증:
+- `python3 -m unittest scripts/tests/test_native_close_results.py`: fixture 작성 중 9시험/3실패 exit 1, 9시험/3실패 exit 1, 9시험/2실패 exit 1. 관측 시점/양성 대조/실행 집계의 fixture 기대를 계약에 맞춰 고쳤다. 최종 9/9 PASS exit 0, unittest error 0. 로그는 `target/stabilization/s5-p3-fixtures/`에 실행별 보존. 실제 미도달과 실행 PASS 분리, 검증 완료 전달, 미완료·지연 전달, 결측·타입·모순, 양성 대조, 인프라 구분, JSON 호환/읽기 전용 및 다섯 상태 혼합 집계를 포함한다.
+- 메인 리뷰에서 양성 대조의 기준값 연속성·boolean 카운트 거부 사례 보완 후 `python3 -m unittest scripts/tests/test_chooser_close_verdict.py scripts/tests/test_native_close_results.py`: exit 0, 21/21 PASS, error 0. `python3 -m py_compile scripts/tests/native-new-document-close.py scripts/tests/native_close_results.py`: exit 0(시험 개수 해당 없음). 로그 `target/stabilization/s5-p3-after-review/`.
+- `python3 target/stabilization/s5-p3-native/restore-chooser/launch.py`: exit 0, 실행 PASS / 행동 NOT REACHABLE / 관측 PASS / 양성 대조 PASS. 관측기·전송 True, before/during/afterCancel=0/0/0, 두 확인 창 False, 결과 null, 게시 False, 앱 생존 True, 양성 대조 0→1. 실제 GTK 선택기 중 닫기 경합을 실행해서 통과한 것이 아니다.
+- `python3 target/stabilization/s5-p3-native/restore-chooser-injected/launch.py`: exit 0, 실행 PASS / 행동 PASS. 선택 응답만 주입하고 실제 WM_DELETE_WINDOW·확인·Tauri 종료, 게시 없음, store 보존을 검증했다. 실제 GTK 미도달 전이의 PASS와 구분한다.
+- `python3 target/stabilization/s5-p3-native/selection/launch.py`: exit 0, 실행 PASS / 행동 PASS. 복구 외 일반 모드가 공통 최종 보고 경로에서 정상 종료되는 회귀 확인이다. 위 두 모드는 GTK 전달 관측/양성 대조 NOT RUN이다.
+- `python3 scripts/tests/native_close_results.py target/stabilization/s5-p3-native/restore-chooser/run/result.json target/stabilization/s5-p3-native/restore-chooser-injected/run/result.json`: exit 0, 실행 PASS 2 / 행동 PASS 1·NOT REACHABLE 1. 같은 명령에 `target/stabilization/s5-p3-native/selection/run/result.json` 추가: exit 0, 실행 PASS 3 / 행동 PASS 2·NOT REACHABLE 1·NOT RUN 0·INCONCLUSIVE 0·FAIL 0. 통제 fixture의 혼합 집계에서는 다섯 상태가 각 1건이며 성공 실행과 분리됨을 검증했다.
+
+실행 identity: 세 native 실행의 앱 SHA-256 `19e5d7434121b0b2d8cce79af4f0a6d3b2740b95fb685af80352d52661e6f9bb`, 하네스 `1a9663043574e9d9540e5e6a139072af8d2cfd8903919f11cbc334240fc15441`, classifier `3599a79046d82088f39cc86c165c82fa8202482c9362c8029d889ae9212fc164`, report contract `855d98ba912ea0ac38090cdb47dc65809a22694ec4ba22eb3c5ee5f52ec2f798`. 실행 checkout HEAD `89acda9336ede7308812a7ea1798ffabeb41ffb8`. 제품 소스는 P1 `a46e90b128710c4cbb5f72379158044a923c6027`와 동일(`git diff a46e90b -- src src-tauri` 빈 출력), P1의 기록된 빌드 manifest와 바이너리 SHA도 일치한다. P2/P3는 제품 소스를 바꾸지 않아 앱/WASM 재빌드를 반복하지 않았다. RHWP generation은 P1과 같은 `0c2faef3…`, 두 서브모듈 pin 불변이다.
+
+환경은 동일한 Xvfb/X11·IBus·WebKitGTK다. 실제 GTK ABI 파일은 `libgtk-3.so.0.2420.32`이며 이 이름을 GTK 버전으로 해석하지 않는다. 앱의 ldd 해석 경로에 대해 `gtk_get_major/minor/micro_version()`을 호출해 **3.24.52**를 확인했다(`target/stabilization/s5-p3-native-verification/gtk-version.json`). 각 native JSON의 teardown complete/잔여 없음, 격리 process scope 정리 성공/잔여 0. 상세 명령 argv·stdout·원시 관측·정리는 `target/stabilization/s5-p3-native/{mode}/`와 `s5-p3-native-verification/`에 있다. 과거 증거는 덮어쓰지 않았다.
+
+남은 범위: 실제 GTK 선택기 중 도달 전이는 이 환경에서 NOT REACHABLE이므로 해당 native 행동 PASS는 없다(완료된 전이 보고 계약은 fixture로 검증). 다른 WM/portal/Wayland·Release·Windows/macOS는 NOT RUN. Rust/backend와 감사 digest/저장 권한은 변경하지 않아 Rust/WASM 전체 재검사는 실행하지 않았다. T021–T023 및 기존 작업 완료 상태 변경 없음.
+
+중간 실행 기록 보충: P1 집중 Vitest 첫 구현은 27개 중 26 PASS/1 FAIL, exit 1/미처리 오류 0; App 통합 추가 직후는 29개 중 27 PASS/2 FAIL, exit 1/미처리 오류 2였다. 다음 30/30 출력의 실행은 shell이 뒤의 cat 종료 코드 0을 반환해 Vitest 자체 exit를 별도 보존하지 못했다. 이 중간 명령은 명령 PASS 증거로 쓰지 않는다. 이후 전체 실행(59파일/1,055 PASS 부분)과 App 재검증(exit 0/26 PASS)의 유효한 결과를 사용한다. P1 native 첫 가로 넘침 시도는 exit 1, 수정 뒤 두 번은 각각 exit 0/UI 4조건 PASS였다. 각 버전 빌드는 exit 0이며 최종 identity만 제품 UI 증거로 사용한다.
