@@ -179,6 +179,12 @@ T011 체크와 T007–T010 상태는 바꾸지 않는다.
 타입·린트 PASS, 실제 Xvfb + ibus-hangul에서 조합 중 문서 탭 실제 포인터 4/4(DPR 1.041)·탐침 전체 26/26(DPR 1.0), rhwp·WordCraft `--ime` 각 7/7,
 `--ime-commands` 18/18 PASS. 상세: [command-registry.md](../architecture/command-registry.md#후속-문서-탭탭-닫기-단추-누름의-초점-이동--fixed-2026-11-04-f9df6b8-위).
 
+2026-11-04 T011 마무리(`789d99a` 위): 모달 중 리본 키보드 이동(탭 줄·도구 모음 roving이 모달 경계를 우회)을 재현(고치기 전 시험 3 FAIL)하고 고쳤다.
+Vitest 52파일 982개, 타입·린트 PASS. 전에 NOT RUN이던 실제 X11 창 초점 IME를 실행했다: 외부 zenity X 창으로 실제 초점 이동(Xvfb + ibus-hangul),
+HWP·HWPX·DOCX 매트릭스 9/9(DPR 1.041·1.0 각각), rhwp·WordCraft 게이트의 창 초점 항목 PASS(필수 7/7 각각), T011 탐침 26/26, `--ime-commands` 18/18.
+창 관리자·Wayland·다른 입력기의 창 초점은 T016 범위로 남긴다. 상세:
+[command-registry.md](../architecture/command-registry.md#후속-모달-중-리본-키보드-이동--confirmed-defect-fixed--실제-x11-창-초점-ime-검증-2026-11-04-789d99a-위).
+
 ## Handoff
 
 세 기준본과 신규 생성 상세 계약을 함께 읽는다. 현재 로컬 지침·작업 트리·엔진/패치/WASM·테스트 루트·훅을 먼저 확인한다. 기존 코드를 재사용하고 T011 또는 신규 생성의 한 일관된 작업 단위를 구현·검증한다. 원래 체크·ID·과거 근거를 보존하고 제품 활성화는 별도 판단한다. 문서 검토 완료를 실제 기능 완료로 보고하지 않는다.

@@ -749,3 +749,133 @@ describe("문서 탭 줄 누름과 편집 입력 초점", () => {
     expect(document.activeElement).toBe(editorInput());
   });
 });
+
+// ---- 모달 중 리본 키보드 이동(2026-11-04, T011 마무리): 클릭과 같이 키보드 roving도 모달 경계를 따른다 ----
+
+describe("모달 중 리본 키보드 이동", () => {
+  function renderModalRibbon(modal: boolean) {
+    const dispatch = vi.fn();
+    const notices: Message[] = [];
+    const tree = (isModal: boolean, format: DocumentFormat | null = "docx") => (
+      <LanguageProvider language="en" onLanguageChange={() => {}}>
+        <Ribbon context={{ layout: initialLayout, dispatch, notify: (m) => notices.push(m), document: null, modal: isModal }} format={format} />
+      </LanguageProvider>
+    );
+    const view = render(tree(modal));
+    return { view, tree, dispatch, notices };
+  }
+  const tabState = () => {
+    const tabs = within(screen.getByRole("tablist", { name: "Ribbon tabs" })).getAllByRole("tab");
+    return {
+      selected: tabs.filter((tab) => tab.getAttribute("aria-selected") === "true").map((tab) => tab.textContent),
+      stops: tabs.filter((tab) => tab.tabIndex === 0).map((tab) => tab.textContent),
+      panel: screen.queryByRole("tabpanel")?.getAttribute("aria-labelledby") ?? null,
+    };
+  };
+
+  it("A01–A05 모달 중 탭 줄에 화살표·Home·End가 와도 선택·roving tabIndex·DOM 초점·배치가 바뀌지 않는다", () => {
+    const { dispatch, notices } = renderModalRibbon(true);
+    const home = screen.getByRole("tab", { name: "Home" });
+    home.focus(); // 시험이 일부러 둔 초점(모달이 초점을 가두는 실제 앱에서는 닿기 어려운 경로)
+    const before = tabState();
+    expect(before).toEqual({ selected: ["Home"], stops: ["Home"], panel: "ribbon-tab-home" });
+    for (const key of ["ArrowRight", "ArrowLeft", "Home", "End"]) {
+      const notPrevented = fireEvent.keyDown(home, { key });
+      expect(tabState(), key).toEqual(before);
+      expect(document.activeElement, key).toBe(home); // 처리기가 초점을 옮기지 않음
+      expect(notPrevented, key).toBe(true); // 막힌 이동은 기본 동작도 건드리지 않는다
+    }
+    expect(dispatch).not.toHaveBeenCalled();
+    expect(notices).toEqual([]);
+  });
+
+  it("A05 모달 중 도구 모음의 화살표도 단추 사이 초점·tabIndex를 바꾸지 않는다", () => {
+    renderModalRibbon(true);
+    const toolbar = screen.getByRole("toolbar", { name: "Home" });
+    const buttons = within(toolbar).getAllByRole("button");
+    const stops = () => buttons.map((button) => button.tabIndex);
+    buttons[0]!.focus();
+    const before = stops();
+    for (const key of ["ArrowRight", "End", "Home", "ArrowLeft"]) {
+      fireEvent.keyDown(buttons[0]!, { key });
+      expect(document.activeElement, key).toBe(buttons[0]);
+      expect(stops(), key).toEqual(before);
+    }
+  });
+
+  it("A06 모달이 닫히면 화살표·Home·End·도구 모음 이동이 다시 동작한다", async () => {
+    const user = userEvent.setup();
+    const { view, tree } = renderModalRibbon(true);
+    view.rerender(tree(false));
+    screen.getByRole("tab", { name: "Home" }).focus();
+    await user.keyboard("{ArrowRight}");
+    expect(tabState()).toEqual({ selected: ["Insert"], stops: ["Insert"], panel: "ribbon-tab-insert" });
+    expect(screen.getByRole("tab", { name: "Insert" })).toHaveFocus();
+    await user.keyboard("{End}");
+    expect(tabState().selected).toEqual(["Help"]);
+    await user.keyboard("{Home}");
+    expect(tabState().selected).toEqual(["File"]);
+    await user.keyboard("{ArrowLeft}");
+    expect(tabState().selected).toEqual(["Help"]);
+    const buttons = within(screen.getByRole("toolbar", { name: "Help" })).getAllByRole("button");
+    buttons[0]!.focus();
+    await user.keyboard("{End}");
+    expect(buttons.at(-1)).toHaveFocus();
+  });
+
+  it("A09 모달 중에도 형식 변경으로 사라진 탭의 대신 고르기(내부 맞춤)는 한다", async () => {
+    const user = userEvent.setup();
+    const { view, tree } = renderModalRibbon(false);
+    await user.click(screen.getByRole("tab", { name: "References" }));
+    view.rerender(tree(true, "hwpx"));
+    expect(screen.queryByRole("tab", { name: "References" })).toBeNull();
+    expect(tabState()).toEqual({ selected: ["Home"], stops: ["Home"], panel: "ribbon-tab-home" });
+  });
+});
+
+describe("모달 중 리본 키보드 이동(앱, 버리기 확인 창)", () => {
+  it("A07/A08/A10 창이 열린 동안 탭 줄로 옮겨진 초점에서 화살표를 눌러도 리본·문서가 그대로이고, 창의 Tab·Escape·복원은 그대로", async () => {
+    const harness = await renderMixed(["/a.hwp", "/c.docx"]);
+    const { user, fake, sessions, workspace } = harness;
+    await act(async () => { workspace.docxEditorFor(3)!.typeText("x"); await flush(); });
+    const opener = document.activeElement;
+    await act(async () => {
+      document.querySelector<HTMLButtonElement>(".document-tab[data-active=true] .document-tab__close")!.click();
+      await flush();
+    });
+    const cancel = screen.getByTestId("discard-cancel");
+    expect(cancel).toHaveFocus();
+    const message = statusMessage().textContent;
+    const edits = docxEdits(fake).length;
+    const revision = sessions.get(3)!.revision;
+    const home = ribbonTabs().getByRole("tab", { name: "홈" });
+    act(() => home.focus()); // 창 밖으로 초점을 옮기는 프로그램 조작(시험)
+    for (const key of ["{ArrowRight}", "{ArrowLeft}", "{Home}", "{End}"]) {
+      await user.keyboard(key);
+      expectConsistentTabs("홈");
+      expect(home).toHaveFocus();
+    }
+    // A07: 클릭·Ctrl+F1 제한은 그대로.
+    act(() => ribbonTabs().getByRole("tab", { name: "삽입" }).click());
+    act(() => document.querySelector<HTMLButtonElement>(".ribbon__collapse")!.click());
+    await user.keyboard("{Control>}{F1}{/Control}");
+    expectConsistentTabs("홈");
+    expect(screen.getByRole("tabpanel")).toBeInTheDocument();
+    // A10: 문서·알림 그대로.
+    expect(docxEdits(fake)).toHaveLength(edits);
+    expect(sessions.get(3)!.revision).toBe(revision);
+    expect(statusMessage().textContent).toBe(message);
+    // A08: 창으로 돌아가면 Tab 가두기·Escape·복원이 그대로.
+    act(() => cancel.focus());
+    await user.keyboard("{Tab}");
+    expect(screen.getByTestId("discard-confirm")).toHaveFocus();
+    await user.keyboard("{Escape}");
+    await act(flush);
+    expect(screen.queryByRole("alertdialog")).toBeNull();
+    expect(document.activeElement).toBe(opener);
+    // 닫힌 뒤 키보드 이동은 다시 동작한다.
+    ribbonTabs().getByRole("tab", { name: "홈" }).focus();
+    await user.keyboard("{ArrowRight}");
+    expectConsistentTabs("삽입");
+  });
+});

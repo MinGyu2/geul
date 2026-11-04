@@ -402,3 +402,45 @@ T010 마무리 안정화("남은 위험")부터 남아 있던 노출을 닫았�
 | 같은 탐침 전체(DPR 1.0) | 26/26 PASS | 리본 IME 21 + 문서 탭 4 + 모달 1 |
 | `rhwp_poc.py --ime`, `wordcraft_poc.py --ime`(DPR 1.0) | 각각 필수 7/7 PASS, 조합 중 탭 전환 PASS | 창 초점 이동 항목 NOT RUN(`--focus-window` 없음, 선택 항목) |
 | `wordcraft_poc.py --ime-commands`(DPR 1.0) | 18/18 PASS | 조합 중 다른 문서 탭·닫기 단추 사례 포함 |
+
+#### 후속: 모달 중 리본 키보드 이동 — CONFIRMED DEFECT, FIXED / 실제 X11 창 초점 IME 검증 (2026-11-04, `789d99a` 위)
+
+**모달 중 리본 키보드 이동.** 원인: 리본 탭 줄·도구 모음의 `onKeyDown`이 `useRovingFocus`를 바로 불렀다. 그 훅은 화살표·Home·End에서 기본 동작을
+막고 `tabIndex`·DOM 초점을 먼저 바꾼 뒤 `onMove`(탭 선택)를 부르므로, 클릭 경로의 `commandState("view.ribbon")` 검사가 키보드에는 없었다.
+확인 창이 초점을 가두므로 실제 앱에서 닿기는 어렵지만, 초점이 프로그램으로 탭 줄에 옮겨진 상태에서는 모달 중 화살표 한 번으로 선택이
+바뀌었다(고치기 전 시험: 선택 Home → Insert, 도구 모음 초점 이동, 앱에서 '홈' → '삽입'). 고침: `Ribbon`의 탭 줄·도구 모음 키 처리기가
+`useRovingFocus`를 부르기 전에 같은 가용성을 본다(쓸 수 없으면 키를 건드리지 않음 — 기본 동작·전파 그대로, 알림 없음). 훅(`useRovingFocus`)과
+다른 사용처(없음)는 바꾸지 않았다. 형식 변경으로 사라진 탭의 대신 고르기는 그대로 모달과 무관하다.
+
+| 확인 | 결과 | 범위 |
+|---|---|---|
+| 고치기 전 `Ribbon.test.tsx`의 새 5개 | 3 FAIL / 2 PASS | A01–A05(구성 요소), 도구 모음, 앱 A07/A08/A10 실패. A06(닫힌 뒤 이동)·A09(대신 고르기)는 원래 PASS |
+| 고친 뒤 `Ribbon.test.tsx`·`stabilization.test.tsx`·`src/ribbon` | 62/62 PASS | |
+| `npx vitest run` | 52파일 982개 PASS | |
+| `npm run typecheck`, `npm run lint` | PASS | |
+| `tests/e2e/t011_ribbon_ime_native.py`(DPR 1.0, 전체) | 26/26 PASS | 이 수정이 들어간 빌드로 리본·문서 탭·모달 회귀 |
+| `wordcraft_poc.py --ime-commands`(DPR 1.0) | 18/18 PASS | |
+
+**실제 X11 창 초점 IME 검증(전에는 NOT RUN).** 빌드: `789d99a` + 위 수정의 작업 트리, `VITE_GEUL_TEST_HOOKS=1 npm run tauri -- build --debug
+--no-bundle`(2026-11-04 13:22, 실행 파일 sha256 `423ebbb4…`), rhwp `1a76570`·WordCraft `fc41918` submodule, debug RHWP WASM 세대 `0c2faef3…`
+(`rhwp_bg.wasm` sha256 `9a9db493…`), WebKitGTK 2.54.1. 환경: Xvfb 21.1.23 `:91` 1600×1200(창 관리자 없음), 세션 D-Bus, ibus 1.5.33 +
+ibus-hangul 1.5.5(GTK ibus 입력 모듈, `initial-input-mode='hangul'`), xdotool. 외부 창: 로컬 store의 zenity 4.2.2를 같은 DISPLAY에
+`--entry --title=x11-focus-peer`로 띄워 geul 창(1280×800, 0,0) 밖 1300,900으로 옮긴 별도 최상위 X 창(geul과 다른 X 창 ID; 제목은 시험기들의
+geul 창 검색 `^geul`에 걸리지 않게 정함). 초점 이동은 `xdotool windowfocus --sync`(XSetInputFocus)이며, 매 단계 `xdotool getwindowfocus`가
+외부 창/geul 창인지, 앱의 `document.hasFocus()`와 `window` blur/focus 사건이 맞는지 함께 확인했다. 키는 xdotool 실제 X 키(조합은 ibus-hangul).
+
+| 확인 | 결과 | 관찰 |
+|---|---|---|
+| `t011_ribbon_ime_native.py --window-focus`(DPR 1.041, 1.0 각각) | 9/9 PASS ×2 | HWP·HWPX·DOCX(세 문서 함께 열림) × {idle 1회, 조합 중 2회}. 매번 X 초점이 외부 창으로 갔다가(앱 `window:blur`, `hasFocus` false) geul로 돌아옴(`window:focus`, 편집 입력이 스스로 다시 초점). idle: 돌아와 친 '하아'가 그 문서에 +2. 조합 중: 다른 창으로 가는 순간 조합 '하'가 한 번 확정(+1)되고 돌아와 친 '아'까지 '하아' +2, 세션 ID·load generation 그대로, 활성 문서 그대로, 다른 두 문서 revision·dirty 불변 |
+| `rhwp_poc.py --ime --focus-window '^x11-focus-peer$'`(DPR 1.0) | 필수 7/7 + "조합 중 창 초점 이동 뒤 돌아옴" PASS | HWPX: 다른 창에 있는 동안 '하', 돌아와 공백 뒤 '하 ', revision +2 |
+| `wordcraft_poc.py --ime --focus-window '^x11-focus-peer$'`(DPR 1.0) | 필수 7/7 + 같은 항목 PASS | DOCX: '하 ', revision +2 |
+
+실제 초점 이탈 때의 사건 순서(세 형식 같음, 매 실행 같음): `deleteCompositionText` → `insertFromComposition`(조합 중, WebView가 스스로 확정) →
+`compositionend("하")` → `insertFromComposition` → `compositionend("하")`(입력기의 같은 확정 반복) → `window:blur`. 앱은 앞의 확정을 한 번 넣고
+뒤의 반복을 소비했다(위 "WebView가 스스로 확정한 조합" 규칙 — 그동안 재생 시험·문서 탭 경로로만 보던 것을 실제 창 초점 이탈에서 확인). 다른 창에
+있는 동안 편집 입력은 문서의 `activeElement`로 남았고, 돌아오면 새 조합이 정상 순서(빈 끝 뒤 최종 글자)로 진행됐다. RHWP와 WordCraft의 차이는
+관찰되지 않았다.
+
+시험기 기록: 첫 `--window-focus` 실행은 9/9 PASS였지만 사례마다 사건 기록 스크립트를 다시 넣어 리스너가 쌓여 같은 사건이 여러 번 찍혔다(시험기
+결함, 판정 무관). 한 번만 설치하게 고친 뒤 두 DPR 모두 다시 실행한 결과가 위 표다. 남은 범위: 창 관리자가 있는 환경(_NET_ACTIVE_WINDOW·
+포커스 정책)·Wayland·다른 입력기에서의 창 초점 이동은 T016 확장 환경이며 이번에 실행하지 않았다.
