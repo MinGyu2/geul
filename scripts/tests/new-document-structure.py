@@ -192,7 +192,12 @@ def hwpx(path):
 
 
 if __name__ == '__main__':
-    root = Path(sys.argv[1] if len(sys.argv) > 1 else 'target/new-document/runtime')
+    if len(sys.argv) != 2:
+        raise SystemExit('usage: new-document-structure.py <run-dir>  (writes a new structure.json; never replaces one)')
+    root = Path(sys.argv[1])
+    output = root / 'structure.json'
+    if output.exists():
+        raise SystemExit(f'refusing to replace existing {output}; use a new run directory')
     result = {'hwp': hwp((root / 'prepared.hwp').read_bytes()), 'hwpx': hwpx(root / 'prepared.hwpx')}
     for fmt in ('hwp', 'hwpx'):
         data = (root / ('prepared.' + fmt)).read_bytes()
@@ -212,7 +217,7 @@ if __name__ == '__main__':
     bad = bytearray(raw)
     bad[bad.index(b'HWP Document File') + 35] = 0
     rejects('invalid HWP version', lambda: hwp(bad))
-    with tempfile.TemporaryDirectory(dir=root) as folder:
+    with tempfile.TemporaryDirectory() as folder:  # negative controls stay outside the run directory
         for label, transform in [
             ('missing header', lambda n, b: None if n == 'Contents/header.xml' else b),
             ('unregistered character reference', lambda n, b: b.replace(b'charPrIDRef="0"', b'charPrIDRef="9"') if n == 'Contents/section0.xml' else b),
@@ -227,5 +232,6 @@ if __name__ == '__main__':
                         after.writestr(item, data)
             rejects(label, lambda: hwpx(path))
     result['negativeControls'] = negative
-    (root / 'structure.json').write_text(json.dumps(result, indent=2) + '\n')
+    with output.open('x') as handle:
+        handle.write(json.dumps(result, indent=2) + '\n')
     print(json.dumps(result, indent=2))

@@ -141,6 +141,30 @@ mod tests {
         );
     }
 
+    /// Evidence outputs are created exclusively: an existing file (for example earlier
+    /// prepared.hwp evidence) is never replaced. Rerun in a new run directory instead.
+    fn write_new_evidence(path: &std::path::Path, bytes: &[u8]) -> std::io::Result<()> {
+        use std::io::Write;
+        std::fs::OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(path)?
+            .write_all(bytes)
+    }
+
+    #[test]
+    fn evidence_writer_never_replaces_existing_output() {
+        let dir = TempDir::new();
+        let path = dir.path().join("prepared.hwp");
+        std::fs::write(&path, b"earlier evidence").unwrap();
+        let error = write_new_evidence(&path, b"regenerated").unwrap_err();
+        assert_eq!(error.kind(), std::io::ErrorKind::AlreadyExists);
+        assert_eq!(std::fs::read(&path).unwrap(), b"earlier evidence");
+        let fresh = dir.path().join("prepared.hwpx");
+        write_new_evidence(&fresh, b"new").unwrap();
+        assert_eq!(std::fs::read(&fresh).unwrap(), b"new");
+    }
+
     #[test]
     #[ignore = "Generate fixtures with scripts/tests/new-document-runtime.mjs; set GEUL_NEW_DOCUMENT_DIR"]
     fn prepare_current_wasm_blanks() {
@@ -152,7 +176,8 @@ mod tests {
             )
             .unwrap();
             let cleaned = prepare_rhwp_blank(format, &bytes, &report).unwrap();
-            std::fs::write(root.join(format!("prepared.{ext}")), cleaned).unwrap();
+            write_new_evidence(&root.join(format!("prepared.{ext}")), &cleaned)
+                .expect("prepared output already exists; use a new run directory");
         }
     }
 
@@ -244,11 +269,11 @@ mod tests {
                 .unwrap();
                 assert!(saved.durable && !saved.session.dirty);
                 original = std::fs::read(&target).unwrap();
-                std::fs::write(
-                    root.join(format!("published-{}.{ext}", index + 1)),
+                write_new_evidence(
+                    &root.join(format!("published-{}.{ext}", index + 1)),
                     &original,
                 )
-                .unwrap();
+                .expect("published output already exists; use a new run directory");
             }
         }
     }

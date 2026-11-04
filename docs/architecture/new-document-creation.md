@@ -353,3 +353,23 @@ T022 요약의 "게시 뒤 닫기는 늦은 세션을 닫고"는 더 이상 현�
 ### 복구 복원 게시 뒤 열기 실패와 창 닫기
 
 `restoreRecovery()`에서 Rust `restore()`는 durable 게시 뒤 경로를 반환하고, 프런트엔드가 별도 IPC로 `backend.open()`을 호출한다. 이전에는 이 열기가 실패하면 원래 오류(예: `ResourceLimit session-count`)만 반환했다. 그래서 파일 생성 사실이 빠졌고, `notePublication()`도 호출되지 않아 대기 중인 창 닫기 결정이 그대로 창을 파괴했다. 수정 전 프런트엔드 시험에서 실패를 확인했다. 이제 이 경우를 `RestoredUnopened { cause }`(ko/en 문구에 원인 포함)로 보고하고, 기존 게시 안내 카운트로 창 닫기를 되돌린다. 게시 전 거절(`FileConflict` 등)과 정상 복원·열기는 닫기를 막지 않는다. native `restore-unopened` 모드는 실제 DOCX 체크포인트·실제 restore 게시·실제 64세션 용량 열기 실패를 쓴다. 위치 선택 결과만 하네스가 넣었다. 창 유지, 파일·후보 유지, 다음 확인된 닫기 1회 종료가 PASS다.
+
+### 생성 증거 출력 소유권
+
+사고: ignored Rust 시험 `prepare_current_wasm_blanks`는 `std::fs::write`로 `prepared.*`를 썼다. 그래서 기존 `target/new-document/runtime/prepared.hwp`(이전 SHA-256 `bc2c8c10…`, `structure.json`에 기록)를 `39156ddb…`로 덮어썼다. 원본 바이트는 복원할 수 없으며 해시로 재구성하지 않는다. Node probe(기본 출력이 기존 evidence 디렉터리)·`published-N`·`structure.json`도 무조건 덮어썼다. `--prepared` 단계는 같은 디렉터리의 1단계 `unedited/first-save/second-save`를 일부러 덮어썼다.
+
+현재 규칙(`scripts/tests/evidenceOutput.mjs`):
+- 실행 디렉터리는 명시해야 한다(기본 경로 없음). 1단계는 새 디렉터리나 빈 디렉터리만 받는다. `--prepared`/`--published`·Rust ignored 시험·`structure.py`는 같은 실행에 **새 파일만** 더한다.
+- 모든 출력은 배타 생성(Node `wx`, Rust `create_new`, Python `x`)이다. 이미 있으면 실패하고 기존 파일은 그대로다. 변환한 `.mjs`와 결정적 raw `blank.*`만 같은 바이트일 때 재사용한다.
+- 1단계의 raw blank 편집 출력은 `raw-unedited/raw-first-save/raw-second-save`로, `--prepared` 출력은 Rust 안전 저장 시험이 읽는 `unedited/first-save/second-save`로 분리했다. 1단계 후보 비교(`empty/template-edited`)는 `--prepared`에서 다시 하지 않는다.
+- `structure.py`의 음성 대조군 임시 파일은 실행 디렉터리 밖의 시스템 임시 디렉터리에 둔다. 덮어쓰기 옵션은 두지 않았다. 다시 만들려면 새 실행 디렉터리를 쓴다.
+
+재현(실행마다 새 `<run>`): `node scripts/tests/new-document-runtime.mjs <run> RELEASE.json` → test binary `services::creation::tests::prepare_current_wasm_blanks --ignored --exact`(`GEUL_NEW_DOCUMENT_DIR=<run>`) → `... <run> RELEASE.json --prepared` → `python3 scripts/tests/new-document-structure.py <run>` → `current_wasm_creation_and_two_real_safe_saves` → `... --published`.
+
+관측: Release 2회·Debug 1회를 각각 새 디렉터리에서 실행해 6단계 모두 PASS했다. 같은 디렉터리에서 각 단계를 다시 실행하면 6단계 모두 기존 파일 때문에 실패했고 디렉터리의 47개 파일 해시는 그대로였다. 기존 `target/new-document/runtime`은 1단계가 비어 있지 않은 디렉터리로 거절했다. `target/new-document`의 기존 583개 파일 해시도 그대로였다. 회귀: Rust `evidence_writer_never_replaces_existing_output`, `node --test scripts/tests/evidenceOutput.test.mjs`(2개).
+
+### HWP 준비 출력의 비결정성
+
+같은 감사 raw blank(`d1a43b6c…`, Release·Debug 동일)에서 만든 `prepared.hwp` 4개(새 실행 3개 + 기존 1개)를 비교했다. 차이는 CFB 디렉터리의 `BodyText` storage 항목 생성/수정 FILETIME(offset 100–115)뿐이었다. 두 필드를 0으로 정규화하면 모든 쌍이 바이트 동일하다. 기록된 시각은 각 실행 시각(UTC)이다. 원인은 cfb 0.14 `create_storage`의 `Timestamp::now()`이며, 스트림 순서·할당·내용은 같다. 구조 보고(해시 제외)도 기존 `structure.json`과 같다.
+
+영향: 생성 권한은 결정적인 raw blank digest에 묶여 있고, 준비 출력은 생성 전용 `check_saved`와 구조 검사로 검증한다. 준비 출력의 바이트 동일성은 계약이 아니다. 따라서 해시 차이는 손상이 아니며, 내용 보존과 안전 저장 2회 결과도 같다. CFB 직렬화는 바꾸지 않았다. 생성 문서에는 생성 시각 하나가 남는다(개인 메타데이터 제거 범위 밖의 일반 시각 정보). 분석 스크립트와 결과는 ignored `target/stabilization/s2-p2/`에 있다.
