@@ -26,7 +26,8 @@ function onOwnScrollbar(event: MouseEvent<HTMLElement>): boolean {
  * 확정도 편집 입력의 IME 규칙(imeInput.ts)이 받는다.
  *
  * 초점 이동은 mousedown의 기본 동작이므로 mousedown에서 막는다(pointerdown을 막아도 초점은 옮겨 간다). 명령 단추(CommandButton)와
- * 리본 전체(T011: 리본 `<section>`에 위임 — 탭·접기 단추와 그룹 배경·라벨·패널 같은 빈 곳)가 같은 함수를 쓴다. 빈 곳을 누르면 초점이
+ * 리본 전체(T011: 리본 `<section>`에 위임 — 탭·접기 단추와 그룹 배경·라벨·패널 같은 빈 곳), 문서 탭 줄(Editor `.document-tabs`에 위임 —
+ * 문서 탭·탭 닫기 단추·빈 곳)이 같은 함수를 쓴다. 빈 곳을 누르면 초점이
  * body로 빠져 이어 친 키가 어디에도 가지 않았다(T011 안정화 A, 실측).
  *
  * 막지 않는 것: 편집 입력에 초점이 없을 때(다른 입력 칸·리본 안 등 — 브라우저 기본 그대로), 누른 곳이 글자 입력 요소일 때(그 요소가

@@ -18,6 +18,7 @@ import type { Message, MessageKey } from "../../language";
 import { useTranslation } from "../../language/LanguageContext";
 import type { DocumentWorkspace, EngineEditor } from "./documentWorkspace";
 import type { FileCommandActions } from "../../commands/commands";
+import { keepEditorFocusOnPointerDown } from "../CommandButton/editorFocus";
 import { RecoveryCenter } from "./RecoveryCenter";
 import { RhwpEditorSession } from "./rhwp/RhwpEditorSession";
 import { ImeContext } from "./rhwp/imeInput";
@@ -305,7 +306,10 @@ function DocumentBar({ workspace, state, notify, fileActions, onClose }: {
           </button>
         </div>
       )}
-      <div className="document-tabs" role="tablist" aria-label={t("document.tabs")}>
+      {/* 문서 탭·탭 닫기 단추·탭 줄 빈 곳을 포인터로 눌러도 편집 입력의 초점을 가져가지 않는다(경계 C, editorFocus.ts — 편집 입력에
+          초점이 있을 때만). 전에는 누름에서 초점이 탭 단추로 옮겨 가, 입력기가 누름에서 나눠 보내는 조합 확정의 뒤 반쪽이 단추로 갈 수
+          있었다. 탭을 고르면 새 문서의 표면이 스스로 입력에 초점을 주고(기존), 닫기 확인 창은 편집 입력을 연 요소로 기억해 취소 때 돌려준다. */}
+      <div className="document-tabs" role="tablist" aria-label={t("document.tabs")} onMouseDown={keepEditorFocusOnPointerDown}>
         {state.sessions.map((session) => (
           <DocumentTab
             key={session.sessionId}

@@ -664,3 +664,88 @@ describe("T011 안정화 B: 모달 중 리본 배치 명령", () => {
     expect(notices).toEqual([]);
   });
 });
+
+// ---- 문서 탭·탭 닫기 단추 누름과 편집 입력 초점(2026-11-04, 경계 C를 문서 탭 줄에 확장). 같은 세 형식 작업 공간을 쓴다. ----
+
+describe("문서 탭 줄 누름과 편집 입력 초점", () => {
+  const docTab = (name: string) => [...document.querySelectorAll<HTMLElement>(".document-tab__select")]
+    .find((tab) => tab.textContent!.includes(name) && !tab.textContent!.includes(`${name}x`))!;
+  const closeOf = (name: string) => docTab(name).parentElement!.querySelector<HTMLElement>(".document-tab__close")!;
+
+  it("D1 편집 입력에 초점이 있으면 문서 탭·닫기 단추·탭 줄 빈 곳 누름의 기본 동작을 막고, 탭을 누르면 문서만 바뀌고 초점은 새 문서의 편집 입력", async () => {
+    const { user, sessions } = await renderMixed(["/a.hwp", "/b.hwpx", "/c.docx"]);
+    for (const target of [docTab("a.hwp"), closeOf("b.hwpx"), document.querySelector<HTMLElement>(".document-tabs")!]) {
+      editorInput().focus();
+      expect(fireEvent.mouseDown(target), target.className).toBe(false);
+    }
+    editorInput().focus();
+    await act(async () => { await user.click(docTab("a.hwp")); await flush(); });
+    expect(sessions.snapshot().activeId).toBe(1);
+    expect(document.activeElement).toBe(editorInput());
+    expect(document.activeElement).not.toBe(docTab("a.hwp"));
+    // 이미 활성인 탭을 다시 눌러도 초점은 편집 입력에 남는다.
+    await act(async () => { await user.click(docTab("a.hwp")); await flush(); });
+    expect(document.activeElement).toBe(editorInput());
+  });
+
+  it("D2 HWP 조합 중 HWPX 탭을 누르면 조합은 HWP에 한 번 확정되고 HWPX·DOCX는 그대로, 이어 친 글자는 HWPX에 들어간다", async () => {
+    const { user, sessions, workspace, docs, fake } = await renderMixed(["/a.hwp", "/b.hwpx", "/c.docx"]);
+    await act(async () => { sessions.select(1); await flush(); });
+    let input = editorInput();
+    input.focus();
+    act(() => {
+      input.dispatchEvent(new CompositionEvent("compositionstart", { data: "" }));
+      input.value = "하";
+      input.dispatchEvent(new InputEvent("input", { data: "하", inputType: "insertCompositionText", isComposing: true, bubbles: true }));
+    });
+    expect(workspace.editorFor(1)!.composing).toBe(true);
+    await act(async () => { await user.click(docTab("b.hwpx")); await flush(); });
+    expect(sessions.snapshot().activeId).toBe(2);
+    expect(docs.get("hwp")!.paragraphs[0]).toBe("하hwp 본문");
+    expect(docs.get("hwpx")!.paragraphs[0]).toBe("hwpx 본문");
+    input = editorInput();
+    expect(document.activeElement).toBe(input);
+    // 새 문서에서 이어 친 글자(새 조합)는 HWPX에만.
+    act(() => {
+      input.dispatchEvent(new KeyboardEvent("keydown", { key: "Process", keyCode: 229, isComposing: false, bubbles: true }));
+      input.dispatchEvent(new CompositionEvent("compositionstart", { data: "" }));
+      input.value = "글";
+      input.dispatchEvent(new InputEvent("input", { data: "글", inputType: "insertCompositionText", isComposing: true, bubbles: true }));
+      input.dispatchEvent(new CompositionEvent("compositionend", { data: "글" }));
+    });
+    await act(flush);
+    expect(docs.get("hwpx")!.paragraphs[0]).toBe("글hwpx 본문");
+    expect(docs.get("hwp")!.paragraphs[0]).toBe("하hwp 본문");
+    expect(docxEdits(fake)).toEqual([]);
+  });
+
+  it("D3 다른 입력 칸(경로)에 초점이 있으면 문서 탭 누름을 막지 않는다(전과 같이 탭이 초점을 받음)", async () => {
+    const { user } = await renderMixed(["/a.hwp", "/c.docx"]);
+    pathInput().focus();
+    expect(fireEvent.mouseDown(docTab("a.hwp"))).toBe(true);
+    pathInput().focus();
+    await act(async () => { await user.click(closeOf("c.docx")); await flush(); });
+    // 깨끗한 DOCX는 바로 닫히고(확인 없음) 남은 HWP 표면이 초점을 받는다(기존 표면 동작).
+    expect(document.querySelector(".document-tab__select")!.textContent).toContain("a.hwp");
+  });
+
+  it("D4 키보드: 문서 탭에 초점을 두고 Enter로 고르면 그대로 동작한다", async () => {
+    const { user, sessions } = await renderMixed(["/a.hwp", "/c.docx"]);
+    docTab("a.hwp").focus();
+    await act(async () => { await user.keyboard("{Enter}"); await flush(); });
+    expect(sessions.snapshot().activeId).toBe(1);
+  });
+
+  it("D5 편집 중 고친 문서의 닫기 단추를 누르면 확인 창이 초점을 받고, 취소하면 초점이 편집 입력으로 돌아온다", async () => {
+    const { user, workspace } = await renderMixed(["/a.hwp", "/c.docx"]);
+    await act(async () => { workspace.docxEditorFor(3)!.typeText("x"); await flush(); });
+    const input = editorInput();
+    input.focus();
+    await act(async () => { await user.click(closeOf("c.docx")); await flush(); });
+    expect(screen.getByTestId("discard-cancel")).toHaveFocus();
+    await user.keyboard("{Escape}");
+    await act(flush);
+    expect(screen.queryByRole("alertdialog")).toBeNull();
+    expect(document.activeElement).toBe(editorInput());
+  });
+});

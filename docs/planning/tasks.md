@@ -175,6 +175,10 @@ T011 체크와 T007–T010 상태는 바꾸지 않는다.
 실제 Xvfb + ibus-hangul에서 배경·본문 실제 포인터 뒤 실제 Escape로 닫힘(DPR 1.041·1.0), `--ime-commands` 18/18 PASS. 상세:
 [command-registry.md](../architecture/command-registry.md#후속-확인-창-배경본문-누름의-초점-이탈--confirmed-defect-fixed-2026-11-04-2ee337c-위).
 
+2026-11-04 문서 탭·탭 닫기 단추 누름의 초점 이동(T010 마무리 안정화부터 남은 노출)을 고쳤다(`f9df6b8` 위, 고치기 전 시험 2 FAIL). Vitest 52파일 977개,
+타입·린트 PASS, 실제 Xvfb + ibus-hangul에서 조합 중 문서 탭 실제 포인터 4/4(DPR 1.041)·탐침 전체 26/26(DPR 1.0), rhwp·WordCraft `--ime` 각 7/7,
+`--ime-commands` 18/18 PASS. 상세: [command-registry.md](../architecture/command-registry.md#후속-문서-탭탭-닫기-단추-누름의-초점-이동--fixed-2026-11-04-f9df6b8-위).
+
 ## Handoff
 
 세 기준본과 신규 생성 상세 계약을 함께 읽는다. 현재 로컬 지침·작업 트리·엔진/패치/WASM·테스트 루트·훅을 먼저 확인한다. 기존 코드를 재사용하고 T011 또는 신규 생성의 한 일관된 작업 단위를 구현·검증한다. 원래 체크·ID·과거 근거를 보존하고 제품 활성화는 별도 판단한다. 문서 검토 완료를 실제 기능 완료로 보고하지 않는다.

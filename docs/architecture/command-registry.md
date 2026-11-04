@@ -382,3 +382,23 @@ mousedown에서 누른 곳이 창의 단추가 아니면 기본 동작을 막고
 | `npm run typecheck`, `npm run lint` | PASS | |
 | `tests/e2e/t011_ribbon_ime_native.py --modal-only`(Xvfb + ibus-hangul, 검사 훅 debug) | DPR 1.041·1.0 각 1/1 PASS | 실제 포인터로 배경(리본 접기 단추 자리 — mousedown 대상 `discard-dialog__backdrop`)·창 본문을 누른 뒤 초점은 취소, **실제 키 Escape로 닫힘**, 그동안 리본 배치·선택·알림·revision 그대로 |
 | `wordcraft_poc.py --ime-commands`(DPR 1.0) | 18/18 PASS | 조합 중 닫기 단추·기다림 중 탭 닫기의 버리기 확인 사례 포함 |
+
+#### 후속: 문서 탭·탭 닫기 단추 누름의 초점 이동 — FIXED (2026-11-04, `f9df6b8` 위)
+
+T010 마무리 안정화("남은 위험")부터 남아 있던 노출을 닫았다. 원인: 경계 C가 명령 단추·리본에만 있어, 편집 입력에 초점이 있을 때 문서 탭·탭 닫기
+단추를 누르면 mousedown 기본 동작이 초점을 그 단추로 옮겼다. 입력기는 누름에서 조합 확정을 두 반쪽으로 나눠 보내므로 뒤 반쪽이 편집할 수 없는
+단추로 갈 수 있었다(가설 H1과 같은 경로, 실제 시험에서는 음절이 남아 있었음). 고침: Editor 문서 탭 줄(`.document-tabs`)에
+`keepEditorFocusOnPointerDown`을 위임했다(문서 탭·닫기 단추·빈 곳, 편집 입력에 초점이 있을 때만). 탭을 고르면 새 문서 표면이 스스로 입력에
+초점을 주는 기존 동작은 그대로이고, 고친 문서를 닫으면 확인 창이 창을 연 요소로 편집 입력을 기억해 취소 때 돌려준다(전에는 닫기 단추로 돌아갔다).
+다른 입력 칸(경로)에 초점이 있으면 전과 같이 막지 않고, 키보드로 탭에 초점을 두고 Enter로 고르는 것도 그대로다. 경로 입력·열기 단추가 있는 문서
+막대의 나머지는 바꾸지 않았다.
+
+| 확인 | 결과 | 범위 |
+|---|---|---|
+| 고치기 전 `Ribbon.test.tsx`의 새 D1–D5 | 2 FAIL(D1 탭·닫기·빈 곳 mousedown 안 막힘·탭 클릭 뒤 초점 탭 단추, D5 확인 창 취소 뒤 초점 닫기 단추) / 3 PASS | D2 조합 중 탭 전환(합성)은 jsdom에서 원래 통과 — 뒤 반쪽 위험은 실제 입력기에서만 드러남 |
+| 고친 뒤 `npx vitest run` | 52파일 977개 PASS | 확인 창 시험의 복원 기대를 "창을 열 때 초점 요소(편집 입력)"로 맞춤 |
+| `npm run typecheck`, `npm run lint` | PASS | |
+| `tests/e2e/t011_ribbon_ime_native.py --doc-tabs-only`(DPR 1.041) | 4/4 PASS | 실제 포인터로 조합 중 다른 문서 탭(HWPX→HWP, HWP→DOCX, DOCX→HWPX): '하'는 원래 문서에 한 번, 이어 친 '아'는 새 문서, 세 번째 문서 불변, 누르는 동안 `focusin`은 새 편집 입력뿐(탭 단추 없음). 고친 HWPX 닫기 단추 → 확인 창 초점, 실제 Escape 뒤 편집 입력 |
+| 같은 탐침 전체(DPR 1.0) | 26/26 PASS | 리본 IME 21 + 문서 탭 4 + 모달 1 |
+| `rhwp_poc.py --ime`, `wordcraft_poc.py --ime`(DPR 1.0) | 각각 필수 7/7 PASS, 조합 중 탭 전환 PASS | 창 초점 이동 항목 NOT RUN(`--focus-window` 없음, 선택 항목) |
+| `wordcraft_poc.py --ime-commands`(DPR 1.0) | 18/18 PASS | 조합 중 다른 문서 탭·닫기 단추 사례 포함 |

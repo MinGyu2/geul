@@ -382,11 +382,12 @@ describe("확인 창 배경·본문 누름과 초점", () => {
     await act(async () => { await workspace.open("/a.docx"); await flush(); });
     await act(async () => { workspace.docxEditorFor(1)!.typeText("가"); await flush(); });
     const closeButton = screen.getByRole("button", { name: "a.docx 닫기" });
+    const opener = document.activeElement; // 편집 입력(문서 탭 줄 누름은 그 초점을 가져가지 않음)
     await act(async () => { await user.click(closeButton); await flush(); });
     const cancel = screen.getByTestId("discard-cancel");
     expect(cancel).toHaveFocus();
     const backdrop = document.querySelector<HTMLElement>(".discard-dialog__backdrop")!;
-    return { fake, workspace, sessions, user, closeButton, cancel, backdrop, dialog: screen.getByRole("alertdialog") };
+    return { fake, workspace, sessions, user, closeButton, opener, cancel, backdrop, dialog: screen.getByRole("alertdialog") };
   }
 
   it("배경·창 제목·본문·단추 줄을 눌러도 초점이 창 안(취소)에 남고 창은 닫히지 않으며, 이어서 Tab 가두기·Escape가 동작한다", async () => {
@@ -406,7 +407,8 @@ describe("확인 창 배경·본문 누름과 초점", () => {
     await t.user.keyboard("{Escape}");
     await act(flush);
     expect(screen.queryByRole("alertdialog")).toBeNull();
-    expect(t.closeButton).toHaveFocus(); // 기존 계약: 창을 연 요소로 복원
+    expect(document.activeElement).toBe(t.opener); // 기존 계약: 창을 열 때 초점이 있던 요소로 복원
+    expect(t.opener).toHaveClass("rhwp-input");
     expect(t.sessions.get(1)).not.toBeNull(); // 취소: 문서는 열린 채
   });
 
