@@ -83,6 +83,8 @@ export type BackendError =
   /** 저장(T009): 불러온 뒤 디스크의 파일이 바뀜(외부 수정). 덮어쓰지 않았다. */
   | { code: "FileConflict" }
   | { code: "FilePublishedUnconfirmed" | "FilePublishedUnregistered" }
+  /** The RHWP blank output is not the audited creation output (unverified engine generation). Nothing was written. */
+  | { code: "CreationUnverified"; format: DocumentFormat }
   | { code: "SaveInProgress"; sessionId: SessionId }
   | { code: "InvalidRequest" }
   | { code: "Internal" };
@@ -149,6 +151,8 @@ export type BackendEngineStage = (typeof BACKEND_ENGINE_STAGES)[number];
  */
 export type ClientError =
   | { code: "FileCreatedEditorFailed"; sessionId: SessionId }
+  /** The loaded RHWP runtime has no blank-creation API. Nothing was written. */
+  | { code: "CreationUnavailable"; format: DocumentFormat }
   | { code: "EngineFailure"; engine: EngineId; stage: EngineStage }
   | { code: "Protocol" }
   | { code: "UnpreservedChanges"; sessionId: SessionId }
@@ -254,6 +258,7 @@ const ERROR_FIELDS: Record<
   FileConflict: {},
   FilePublishedUnconfirmed: {},
   FilePublishedUnregistered: {},
+  CreationUnverified: { format: "format" },
   SaveInProgress: { sessionId: "session" },
   InvalidRequest: {},
   Internal: {},

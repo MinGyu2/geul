@@ -77,6 +77,9 @@ pub enum DocumentError {
     FilePublishedUnconfirmed,
     /// A new destination exists, but could not be registered/opened. Preserve it for explicit reopening.
     FilePublishedUnregistered,
+    /// The RHWP blank output is not the audited creation output for this format (a different engine
+    /// generation or output). Creation fails closed before any file is written.
+    CreationUnverified { format: Format },
     /// 같은 세션의 저장이 이미 진행 중이다.
     SaveInProgress { session_id: SessionId },
     /// 계약에 맞지 않는 요청 값(허용하지 않는 상태 전이, 범위 밖 개수 등).

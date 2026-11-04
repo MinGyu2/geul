@@ -203,3 +203,7 @@ T022 COMPLETED: T021 `6c0356e` 이후 형식 선택·bounded IPC·생성 전용 
 ### T023 native 수용 — 2026-11-04
 
 2026-11-04 T023 **COMPLETED** (T022 `3cd35663b98caa736b81c1792b6c2f5d68f16aeb` 위): 최종 같은 Debug 앱/WASM에서 DOCX/HWP/HWPX native New·GTK 목적지·첫 paint/focus·실제 IBus 한글/영문·삽입/삭제·문단/선택 편집·2회 안전 저장·닫기/native Open·재열기 PASS. 저장/재열기 본문 `한글 Changed Second`, 실패/경합 24개 PASS. 게시 전 취소·dirty 문서와 New 중 창 닫기 모달 중첩·미확정 등록의 잘못된 load 실패 안내를 고치기 전 재현 후 수정했다. frontend55파일/1,016개, Rust255개(기본22 ignored 별도 표기) 및 현재 WASM 생성 집중9개, 타입·린트·fmt·clippy·native build PASS. 최종 native21/23/24/25/26 scope cleanup 성공/잔여0. 실패한 이전 실행과 다른 runtime 결과는 최종 행렬에서 제외했다. [상세 수용](../architecture/new-document-creation.md#t023-최종-native-수용--2026-11-04), [신원·명령·evidence](../architecture/new-document-native-acceptance-2026-11-04.json). 실제 정전·다른 OS/입력기·외부 한컴/Word 호환은 NOT RUN. T007–T010 △/D2·D4 판정과 T024 DEFERRED는 유지. push 없음.
+
+### T021–T023 안정화 — 2026-11-04
+
+T023 이후 후속 수정이며 T021–T023 완료 기록과 T007–T010·T024 상태는 바꾸지 않는다. (1) 창 닫기 중 성공한 생성을 `FilePublishedUnregistered`로 잘못 보고하던 결함을 고쳤다. (2) 진행 중 New가 내구성 미확인으로 끝날 때 낡은 창 닫기 결정으로 창이 파괴되던 경합을 재현하고, 다시 확인을 받도록 고쳤다. (3) RHWP 미검증 출력과 생성 API 부재를 구분해 보고하고, 형식 선택에서 제공하지 않는다. Rust digest 경계는 유지한다. [상세·검증](../architecture/new-document-creation.md#t023-이후-안정화--2026-11-04).

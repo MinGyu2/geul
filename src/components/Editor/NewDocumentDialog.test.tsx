@@ -91,4 +91,31 @@ describe("새 문서 형식 선택 dialog", () => {
     fireEvent.click(screen.getByRole("button", { name: "Choose destination" }));
     expect(onChoose).toHaveBeenLastCalledWith("hwpx");
   });
+
+  it("does not offer a known-unavailable RHWP format and explains why", () => {
+    const choose = vi.fn();
+    render(<LanguageProvider language="ko" onLanguageChange={() => {}}>
+      <NewDocumentDialog onChoose={choose} unavailable={{ hwp: "CreationUnverified" }} />
+    </LanguageProvider>);
+    const hwp = screen.getByRole("radio", { name: "한글 문서 (.hwp)" });
+    expect(hwp).toBeDisabled();
+    expect(hwp).toHaveAccessibleDescription(/현재 엔진 출력이 검증되지 않아 만들 수 없음/);
+    const docx = screen.getByRole("radio", { name: "Word 문서 (.docx)" });
+    fireEvent.keyDown(docx, { key: "ArrowDown" });
+    const hwpx = screen.getByRole("radio", { name: "한글 XML 문서 (.hwpx)" });
+    expect(hwpx).toBeChecked(); expect(hwpx).toHaveFocus();
+    fireEvent.keyDown(hwpx, { key: "ArrowUp" });
+    expect(docx).toBeChecked();
+    fireEvent.click(screen.getByTestId("new-document-next"));
+    expect(choose).toHaveBeenCalledWith("docx");
+  });
+
+  it("explains an unavailable creation API in English", () => {
+    render(<LanguageProvider language="en" onLanguageChange={() => {}}>
+      <NewDocumentDialog onChoose={vi.fn()} unavailable={{ hwp: "CreationUnavailable", hwpx: "CreationUnavailable" }} />
+    </LanguageProvider>);
+    expect(screen.getByRole("radio", { name: "HWPX document (.hwpx)" })).toHaveAccessibleDescription(/does not support creation/);
+    fireEvent.keyDown(screen.getByRole("radio", { name: "Word document (.docx)" }), { key: "ArrowDown" });
+    expect(screen.getByRole("radio", { name: "Word document (.docx)" })).toBeChecked();
+  });
 });

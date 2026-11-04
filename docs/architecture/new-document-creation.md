@@ -327,3 +327,23 @@ T022 요약의 "게시 뒤 닫기는 늦은 세션을 닫고"는 더 이상 현�
 현재 동작: 창 닫기 요청은 그때 확인을 받은 미보존 세션 집합(`covered`)을 기억한다. `waitForFiles()` 뒤 그 집합에 없는 미보존 세션이 생겼으면 destroy하지 않고 `windowClosing`을 풀고 같은 창 닫기 확인을 다시 연다(초점은 취소 단추, `aria-modal` 하나). 세션 없이 파일만 남긴 게시 결과(`FilePublishedUnregistered`/`FilePublishedUnconfirmed`, 복구 restore 포함)가 생겨도 destroy하지 않고 닫기를 되돌린다. 안내는 기존 알림으로 보이고, 다음 닫기 요청은 평소대로 처리한다. 반복 요청은 기존 `closingWindow`/확인창 단일성으로 한 번만 처리하며, 시간 제한은 추가하지 않았다. 게시 파일은 삭제하지 않고, 내구성 미확인 세션은 자동 load하지 않는다.
 
 증거 구분: 프런트엔드 시험과 native `unconfirmed-publication` 모드는 실제 게시 뒤 **응답만 dirty로 바꾼 시뮬레이션**이다(Rust 세션은 실제로 durable). 실제 디렉터리 fsync 실패 주입은 Rust `services::files` 시험(`Fault::DirSync`)뿐이다. native 결과는 Debug test-hooks 빌드·Xvfb/X11·IBus 환경이며 Release·Wayland·실제 정전은 NOT RUN이다.
+
+### RHWP 생성 가용성 보고
+
+생성 권한은 그대로 Rust `validate_rhwp_blank()`의 형식·크기·**감사된 SHA-256**·손실 보고·실제 형식·보존 검사다. 기준을 완화하지 않았다. 바뀐 점은 보고 방식이다.
+
+- 감사된 크기/digest와 다른 출력(예: 미래 RHWP generation)은 `InvalidRequest` 대신 `CreationUnverified { format }`로 거절한다. 거절은 `prepare_rhwp_blank()` 단계이므로 staging·게시 전이다. 손실 보고·형식 불일치 등 요청 모양 오류는 그대로 `InvalidRequest`다.
+- 프런트엔드는 엔진 초기화 실패(`EngineFailure` stage `init`), 생성 API 부재(`CreationUnavailable`), WASM export 실패(`EngineFailure` stage `export`), 미검증 출력(`CreationUnverified`), 게시 실패(기존 저장/게시 오류)를 구분해 ko/en 문구로 알린다.
+- 생성 API 부재와 Rust의 미검증 판정은 로드된 runtime에서 결정적이므로 workspace가 실행 동안 기억한다. 형식 선택 dialog는 그 형식을 비활성화하고 이유를 설명하며(방향키도 건너뜀), 같은 형식은 위치 선택 없이 같은 오류로 끝난다. 엔진 초기화 실패는 일시적일 수 있어 기억하지 않는다. 프런트엔드 기억은 형식을 **막을** 뿐이며 허용 근거가 되지 않는다. 모든 생성은 계속 Rust가 다시 검증한다.
+- 사전 탐지(위치 선택 전 Rust 검증)는 추가하지 않았다. 처음 미검증 출력을 만나면 위치 선택 뒤 쓰기 전에 거절되고, 그 뒤로는 제공하지 않는다.
+
+검증: Rust `changed_engine_output_is_reported_unverified_and_never_authorized`. T021 Release runtime fixture(generation `853a0689…`)로 ignored 생성·2회 안전 저장 시험 PASS(1바이트 변경은 `CreationUnverified`). native safety에 실제 Rust 검증기로 바뀐 바이트를 보내는 `unverified` 단계를 추가했다. 쓰기 없음·HWP 비활성화·HWPX/DOCX 유지를 확인했다. Debug test-hooks 앱(RHWP Debug generation `0c2faef3…`)의 세 형식 양성 native 왕복 PASS.
+
+### 안정화 검증 요약 — 2026-11-04
+
+로컬 evidence는 ignored `target/stabilization/`에 있다. 최종 앱은 Debug test-hooks 빌드 SHA-256 `2c7b49c5faad1439c03613e6be983b1fa2d747297ccc8a769cb67ba2f153aa35`이고, RHWP Debug generation `0c2faef3a2966c4d717d50b83f51f839f5b4a14a7c26935723edc38bd36a90c4`다. RHWP/WordCraft pin·패치·WASM은 바꾸지 않았다.
+
+- frontend `npm test` 56파일/1,032 PASS, `tsc --noEmit`·ESLint PASS.
+- Rust 기본 suite 256 PASS/22 ignored(보호 빌드한 test binary를 private TMPDIR에서 실행). `services::creation` ignored 포함 4 PASS. fmt check·clippy(lib·bins, `-D warnings`) PASS.
+- native X11/IBus: 양성 3형식, safety 22개(신규 `unverified` 포함), 창 닫기 4모드(`unconfirmed-publication` 신규·`publication`·`dirty-selection`·`selection`) PASS. 모두 정리 성공·잔여 프로세스 0이다.
+- NOT RUN: native Release 앱, Wayland/fcitx5, GPU desktop, Windows/macOS, 실제 정전, 외부 한컴/Word 상호운용, native 실제 디렉터리 fsync 실패.

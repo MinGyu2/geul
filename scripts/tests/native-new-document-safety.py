@@ -60,8 +60,8 @@ class Safety(native.Acceptance):
         self.rejects('wrong extension', 'hwp', self.args.out / 'wrong.docx', b'x', {}, 'ExtensionMismatch')
         raw = (self.args.fixtures / 'blank.hwpx').read_bytes()
         loss = {'schemaVersion': 1, 'outputFormat': 'hwpx', 'count': 0, 'losses': []}
-        self.rejects('wrong actual format', 'hwp', self.args.out / 'wrong.hwp', raw, {**loss, 'outputFormat': 'hwp'})
-        self.rejects('invalid structure', 'hwpx', self.args.out / 'broken.hwpx', raw[:100], loss)
+        self.rejects('wrong actual format', 'hwp', self.args.out / 'wrong.hwp', raw, {**loss, 'outputFormat': 'hwp'}, 'CreationUnverified')
+        self.rejects('invalid structure', 'hwpx', self.args.out / 'broken.hwpx', raw[:100], loss, 'CreationUnverified')
         modified = io.BytesIO()
         with zipfile.ZipFile(io.BytesIO(raw)) as source, zipfile.ZipFile(modified, 'w') as output:
             for item in source.infolist():
@@ -69,7 +69,7 @@ class Safety(native.Acceptance):
                 if item.filename == 'Contents/section0.xml':
                     value = value.replace(b'charPrIDRef="0"', b'charPrIDRef="99"')
                 output.writestr(item, value)
-        self.rejects('invalid internal reference', 'hwpx', self.args.out / 'reference.hwpx', modified.getvalue(), loss)
+        self.rejects('invalid internal reference', 'hwpx', self.args.out / 'reference.hwpx', modified.getvalue(), loss, 'CreationUnverified')
         for label, report in [('inconsistent loss report', {**loss, 'count': 1}),
                               ('wrong loss format', {**loss, 'outputFormat': 'hwp'}),
                               ('untrusted safe assertion', {'safe': True, 'blank': True})]:
@@ -285,6 +285,39 @@ class Safety(native.Acceptance):
         finally:
             self.d.js("window.__ndWorkspace.filePort.createDocument=window.__ndCreate;for(const {owner,load} of window.__ndLoads)owner.load=load")
 
+    def unverified_output(self):
+        # A changed RHWP output stands in for a future engine generation. Only the
+        # blank bytes sent to the real Rust validator are altered; Rust must refuse
+        # them before writing, and the UI must stop offering HWP for this runtime.
+        self.workspace()
+        before=self.sessions();path=self.args.out/'unverified.hwp'
+        self.d.js("""const w=window.__ndWorkspace;window.__ndPublisher=w.filePort.createDocument;
+        w.filePort.createDocument=(format,target,blank)=>{const bytes=Uint8Array.from(blank.bytes);bytes[100]^=1;
+          return window.__ndPublisher.call(w.filePort,format,target,{...blank,bytes})};""")
+        try:
+            self.new('hwp',path)
+            self.wait('return window.__ndWorkspace.fileBusy===false')
+            message=json.loads((ROOT/'src/language/ko.json').read_text())['document.error.CreationUnverified']
+            self.wait("return document.querySelector('footer.statusbar')?.textContent.includes(arguments[0])",message)
+            assert not path.exists() and self.sessions()==before
+            assert self.d.js("return window.__ndWorkspace.creationUnavailable('hwp')")=={'code':'CreationUnverified','format':'hwp'}
+            assert self.d.js("return window.__ndWorkspace.creationUnavailable('hwpx')") is None
+        finally:
+            self.d.js("window.__ndWorkspace.filePort.createDocument=window.__ndPublisher")
+        self.key('ctrl+n')
+        self.wait("return document.querySelector('[data-testid=new-document-dialog]')!==null")
+        state=self.d.js("""const r=v=>document.querySelector(`input[name=new-document-format][value=${v}]`);
+        return {hwp:r('hwp').disabled,hwpx:r('hwpx').disabled,docx:r('docx').disabled,
+          note:document.querySelector('[data-testid=new-document-unavailable-hwp]')?.textContent??null}""")
+        assert state['hwp'] and not state['hwpx'] and not state['docx'] and state['note'],state
+        self.key('Down')
+        assert self.d.js("return document.querySelector('input[name=new-document-format]:checked')?.value")=='hwpx'
+        self.key('Escape')
+        self.wait("return document.querySelector('[data-testid=new-document-dialog]')===null")
+        assert not path.exists() and self.sessions()==before
+        self.record('unverified RHWP output (changed bytes to real Rust validator)',published=False,registered=False,
+                    error='CreationUnverified',formatOfferedAfterwards=False,otherFormatsOffered=True)
+
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
@@ -293,7 +326,7 @@ def main():
     for name in ['driver', 'xdotool', 'ibus']:
         parser.add_argument('--' + name, required=True)
     parser.add_argument('--port', type=int, default=4444)
-    parser.add_argument('--phase',choices=['all','backend','concurrency','ime','export','uncertainty'],default='all')
+    parser.add_argument('--phase',choices=['all','backend','concurrency','ime','export','uncertainty','unverified'],default='all')
     args = parser.parse_args(); args.out.mkdir(parents=True, exist_ok=False)
     report = {'status': 'RUNNING', 'negative': [], 'sourceHead': subprocess.check_output(['git','rev-parse','HEAD'],cwd=ROOT,text=True).strip(),
               'appSha256': native.sha(args.app), 'harnessSha256': native.sha(__file__),
@@ -317,6 +350,7 @@ def main():
                 if args.phase in ('all','ime'):test.ime_and_failure()
                 if args.phase in ('all','export'):test.export_failure()
                 if args.phase in ('all','uncertainty'):test.unconfirmed_publication()
+                if args.phase in ('all','unverified'):test.unverified_output()
                 while d.exists('.document-tab__close'):
                     count=d.js("return document.querySelectorAll('.document-tab__close').length")
                     # Native pointer input also avoids WebKitWebDriver's

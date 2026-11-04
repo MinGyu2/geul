@@ -76,8 +76,10 @@ pub fn validate_rhwp_blank(
             limit: crate::document::LimitKind::FileSize,
         });
     }
+    // The audited identity is the authority. Any other output (e.g. a future RHWP generation) is
+    // reported as unverified rather than as a malformed request, and is never written.
     if bytes.len() != size || format!("{:x}", Sha256::digest(bytes)) != digest {
-        return Err(DocumentError::InvalidRequest);
+        return Err(DocumentError::CreationUnverified { format });
     }
     if !loss::check(report, format).is_empty()
         || detect(&mut Cursor::new(bytes), bytes.len() as u64)? != format
@@ -110,6 +112,33 @@ mod tests {
             validate_rhwp_blank(Format::Hwpx, &vec![0; MAX_BLANK_BYTES + 1], &report),
             Err(DocumentError::ResourceLimit { .. })
         ));
+    }
+
+    #[test]
+    fn changed_engine_output_is_reported_unverified_and_never_authorized() {
+        for (format, size, name) in [(Format::Hwp, 6144, "hwp"), (Format::Hwpx, 5472, "hwpx")] {
+            let report =
+                serde_json::json!({"schemaVersion":1,"outputFormat":name,"count":0,"losses":[]});
+            // Same audited length but different bytes, and a different length: both are an
+            // unaudited generation, not a request-shape error, and neither passes preparation.
+            for bytes in [vec![0u8; size], vec![0u8; size + 1], Vec::new()] {
+                assert_eq!(
+                    validate_rhwp_blank(format, &bytes, &report),
+                    Err(DocumentError::CreationUnverified { format })
+                );
+                assert_eq!(
+                    prepare_rhwp_blank(format, &bytes, &report),
+                    Err(DocumentError::CreationUnverified { format })
+                );
+            }
+        }
+        assert_eq!(
+            serde_json::to_value(DocumentError::CreationUnverified {
+                format: Format::Hwpx
+            })
+            .unwrap(),
+            serde_json::json!({"code":"CreationUnverified","format":"hwpx"})
+        );
     }
 
     #[test]
@@ -146,7 +175,10 @@ mod tests {
             assert!(validate_rhwp_blank(format, &raw, &serde_json::json!({"safe":true})).is_err());
             let mut broken = raw.clone();
             broken[100] ^= 1;
-            assert!(validate_rhwp_blank(format, &broken, &report).is_err());
+            assert_eq!(
+                validate_rhwp_blank(format, &broken, &report),
+                Err(DocumentError::CreationUnverified { format })
+            );
 
             let blank = read("prepared");
             let dir = TempDir::new();

@@ -47,6 +47,8 @@ export class DocumentWorkspace {
   private started = false;
   private windowClosing = false;
   private publicationNotices = 0;
+  // Deterministic for the loaded RHWP runtime: once known, the format is not offered or attempted again.
+  private readonly creationBlocked = new Map<DocumentFormat, DocumentError>();
   private cancelFormatSelection: (() => void) | undefined;
 
   constructor(
@@ -87,6 +89,16 @@ export class DocumentWorkspace {
    */
   get publicationNoticeCount(): number {
     return this.publicationNotices;
+  }
+
+  /** Why a format cannot be created with the current engine runtime, or null when not known to be unavailable. */
+  creationUnavailable(format: DocumentFormat): DocumentError | null {
+    return this.creationBlocked.get(format) ?? null;
+  }
+
+  private blockCreation(format: DocumentFormat, error: DocumentError) {
+    this.creationBlocked.set(format, error);
+    this.emit();
   }
 
   private notePublication(result: Result<unknown>) {
@@ -185,6 +197,8 @@ export class DocumentWorkspace {
       const format = await Promise.race([chooseFormat(), cancelled]);
       this.cancelFormatSelection = undefined;
       if (format === null || this.windowClosing) { this.sessions.cancelOpen(ticket); return null; }
+      const blocked = this.creationBlocked.get(format);
+      if (blocked) { this.sessions.cancelOpen(ticket); return { ok: false, error: blocked }; }
       const chosen = await this.filePort.chooseFile({ mode: "save", format, ...text });
       if (!chosen.ok) {
         this.sessions.cancelOpen(ticket);
@@ -198,11 +212,22 @@ export class DocumentWorkspace {
       focus = captureSurfaceFocus();
       let blank;
       if (format !== "docx") {
-        try { blank = createRhwpBlank(await this.loadModule(), format); }
+        let module: RhwpModule;
+        try { module = await this.loadModule(); }
+        catch { this.sessions.cancelOpen(ticket); return { ok: false, error: { code: "EngineFailure", engine: "rhwp", stage: "init" } }; }
+        if (!module.createEmptyDocument) {
+          const error: DocumentError = { code: "CreationUnavailable", format };
+          this.blockCreation(format, error);
+          this.sessions.cancelOpen(ticket);
+          return { ok: false, error };
+        }
+        try { blank = createRhwpBlank(module, format); }
         catch { this.sessions.cancelOpen(ticket); return { ok: false, error: { code: "EngineFailure", engine: "rhwp", stage: "export" } }; }
       }
       if (this.windowClosing) { this.sessions.cancelOpen(ticket); return null; }
       const created = await this.filePort.createDocument(format, chosen.value, blank);
+      // Rust's audited-output check is the authority; an unverified generation stays unavailable.
+      if (!created.ok && created.error.code === "CreationUnverified" && created.error.format === format) this.blockCreation(format, created.error);
       // Publication cannot be cancelled once started. A successful response means the file is
       // published and registered, so it becomes an ordinary open session even while the window is
       // closing: the close decision then sees it like every other tab (no fabricated registration

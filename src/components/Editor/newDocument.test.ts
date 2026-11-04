@@ -30,7 +30,7 @@ function setup(format: DocumentFormat = "hwp") {
     createDocument: vi.fn(async () => ({ ok: true as const, value: created })),
   };
   const sessions = new DocumentSessions(backend);
-  const module = { openDocument: vi.fn() };
+  const module = { openDocument: vi.fn(), createEmptyDocument: vi.fn() };
   const workspace = new DocumentWorkspace(sessions, backend, async () => module, undefined, new FakeDocx(), undefined, files);
   return { created, backend, files, sessions, workspace };
 }
@@ -160,6 +160,48 @@ describe("format-aware creation ownership", () => {
     expect(await workspace.newDocument(text, async () => "hwp")).toMatchObject({ ok: false, error: { code: "EngineFailure", stage: "export" } });
     expect(files.createDocument).not.toHaveBeenCalled();
     expect(sessions.snapshot().sessions).toEqual([]);
+  });
+});
+
+describe("RHWP creation availability", () => {
+  it("engine initialization failure is reported as init, not export, and publishes nothing", async () => {
+    const { files, sessions } = setup();
+    const workspace = new DocumentWorkspace(sessions, {} as DocumentBackend, async () => { throw new Error("wasm"); }, undefined, new FakeDocx(), undefined, files);
+    expect(await workspace.newDocument(text, async () => "hwp")).toEqual({ ok: false, error: { code: "EngineFailure", engine: "rhwp", stage: "init" } });
+    expect(createRhwpBlank).not.toHaveBeenCalled();
+    expect(files.createDocument).not.toHaveBeenCalled();
+    // Possibly transient: the format stays offered.
+    expect(workspace.creationUnavailable("hwp")).toBeNull();
+  });
+
+  it("a runtime without the creation API is reported and not attempted again; DOCX is unaffected", async () => {
+    const { files, sessions, created } = setup("docx");
+    const workspace = new DocumentWorkspace(sessions, {} as DocumentBackend, async () => ({ openDocument: vi.fn() }), undefined, new FakeDocx(), undefined, files);
+    const unavailable = { ok: false, error: { code: "CreationUnavailable", format: "hwpx" } };
+    expect(await workspace.newDocument(text, async () => "hwpx")).toEqual(unavailable);
+    expect(createRhwpBlank).not.toHaveBeenCalled();
+    expect(files.createDocument).not.toHaveBeenCalled();
+    expect(files.chooseFile).toHaveBeenCalledTimes(1);
+    expect(await workspace.newDocument(text, async () => "hwpx")).toEqual(unavailable);
+    expect(files.chooseFile).toHaveBeenCalledTimes(1); // no destination chooser for a known-unavailable format
+    expect(await workspace.newDocument(text, async () => "docx")).toEqual({ ok: true, value: created });
+    releaseSurfaceFocus(workspace.anyEditorFor(1)!);
+  });
+
+  it("an unverified RHWP output rejected by Rust blocks that format only and never retries publication", async () => {
+    const { workspace, files, sessions } = setup();
+    const unverified = { ok: false as const, error: { code: "CreationUnverified" as const, format: "hwp" as const } };
+    vi.mocked(files.createDocument).mockResolvedValueOnce(unverified);
+    expect(await workspace.newDocument(text, async () => "hwp")).toEqual(unverified);
+    expect(sessions.snapshot().sessions).toEqual([]);
+    expect(workspace.creationUnavailable("hwp")).toEqual(unverified.error);
+    expect(workspace.creationUnavailable("hwpx")).toBeNull();
+    expect(await workspace.newDocument(text, async () => "hwp")).toEqual(unverified);
+    expect(files.createDocument).toHaveBeenCalledTimes(1);
+    expect(createRhwpBlank).toHaveBeenCalledTimes(1);
+    // A frontend export that succeeds can still never authorize publication: Rust decided above.
+    expect((await workspace.newDocument(text, async () => "hwpx"))?.ok).toBe(true);
+    releaseSurfaceFocus(workspace.anyEditorFor(1)!);
   });
 });
 

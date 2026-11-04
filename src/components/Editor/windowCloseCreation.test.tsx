@@ -35,7 +35,7 @@ function setup() {
   let request = () => {};
   const windowClose = { listen: vi.fn(async (handler: () => void) => { request = handler; return () => {}; }), close: vi.fn(async () => {}) };
   const sessions = new DocumentSessions(backend);
-  const workspace = new DocumentWorkspace(sessions, backend, async () => ({ openDocument: vi.fn() }), windowClose, undefined, undefined, files);
+  const workspace = new DocumentWorkspace(sessions, backend, async () => ({ openDocument: vi.fn(), createEmptyDocument: vi.fn() }), windowClose, undefined, undefined, files);
   const notify = vi.fn();
   const view = render(<LanguageProvider language="ko" onLanguageChange={() => {}}><Editor workspace={workspace} zoom={100} notify={notify} /></LanguageProvider>);
   const creating = (format: DocumentFormat = "hwp") => workspace.newDocument(text, async () => format);
@@ -184,7 +184,7 @@ describe("window close with an in-flight New", () => {
     const recovery = { list: vi.fn(async () => ({ ok: true as const, value: [] })), restore: vi.fn(() => restore.promise), discard: vi.fn(), forgetSession: vi.fn() };
     let request = () => {};
     const windowClose = { listen: vi.fn(async (handler: () => void) => { request = handler; return () => {}; }), close: vi.fn(async () => {}) };
-    const workspace = new DocumentWorkspace(new DocumentSessions(backend), backend, async () => ({ openDocument: vi.fn() }), windowClose, undefined, undefined, files, recovery);
+    const workspace = new DocumentWorkspace(new DocumentSessions(backend), backend, async () => ({ openDocument: vi.fn(), createEmptyDocument: vi.fn() }), windowClose, undefined, undefined, files, recovery);
     const view = render(<LanguageProvider language="ko" onLanguageChange={() => {}}><Editor workspace={workspace} zoom={100} /></LanguageProvider>);
     try {
       await act(flush);

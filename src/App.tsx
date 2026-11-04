@@ -88,6 +88,16 @@ export default function App({ initialState, initialLanguage, settingsStore = def
 const NO_SUBSCRIBE = () => () => {};
 const NO_FILE_BUSY = () => false;
 
+/** Formats the workspace already knows it cannot create with the current RHWP runtime (Rust stays authoritative). */
+function creationUnavailable(documents: DocumentWorkspace) {
+  const result: Partial<Record<DocumentFormat, "CreationUnverified" | "CreationUnavailable">> = {};
+  for (const format of ["hwp", "hwpx"] as const) {
+    const error = documents.creationUnavailable(format);
+    if (error?.code === "CreationUnverified" || error?.code === "CreationUnavailable") result[format] = error.code;
+  }
+  return result;
+}
+
 /**
  * 활성 문서의 편집 세션(명령 대상). 활성 세션은 DocumentSessions(백엔드 투영)가 정하고, 편집 세션은 작업 공간이 세션마다 하나
  * 만든다. 그 편집 세션이 바뀔 때(기록·서식·조합·저장 상태)마다 다시 그려 명령 가용성을 새로 정한다.
@@ -241,7 +251,7 @@ function Workspace({ layout, dispatch, message, notify, documents }: WorkspacePr
         )}
       </div>
       <StatusBar context={context} message={message} state={panel} />
-      {formatChoice && <NewDocumentDialog onChoose={formatChoice} suspended={modal} />}
+      {formatChoice && <NewDocumentDialog onChoose={formatChoice} suspended={modal} unavailable={documents ? creationUnavailable(documents) : {}} />}
     </div>
   );
 }
