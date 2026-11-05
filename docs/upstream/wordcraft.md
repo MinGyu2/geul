@@ -1,6 +1,7 @@
 # WordCraft 코어 검토 (T001)
 
 - 업스트림: https://github.com/storytold/wordcraft
+- 현재 의존성(2026-11-05~): 공개 포크 https://github.com/MinGyu2/wordcraft 의 `42e8a67`(태그 `geul-roundtrip-42e8a67`, 기반 `v0.7.0` `fc41918` + 의미 왕복 동등성 커밋). 아래 T001 검토는 기반 `fc41918`에 대한 것이다.
 - 위치: `external/wordcraft/` (Git submodule)
 - 고정 커밋: `fc41918814f62645b6746ed68e71e8c2c2e85d6f` (태그 `v0.7.0`, 2026-10-14 릴리스)
 - 검토일: 2026-10-16. 검토 방법: 고정 커밋의 소스·매니페스트·문서 정적 검토

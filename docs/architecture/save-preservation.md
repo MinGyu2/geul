@@ -1202,3 +1202,12 @@ WIP와 최종이 함께 내보낸 567개 출력은 **모두 바이트 동일**�
 - 공개 geul의 새 clone에서 `git submodule update --init external/wordcraft`는 `Direct fetching of that commit failed`(exit 128)로 실패하고 서브모듈을 업스트림 `main`(`5a4c45e`)에 체크아웃한 채 남긴다. 즉 오류를 무시하면 **다른 WordCraft 리비전**으로 빌드하게 된다.
 - `MinGyu2/wordcraft` 포크는 없다(404).
 - 권장 계획(승인 필요, 실행하지 않음): 공개 포크 `MinGyu2/wordcraft`에 브랜치 `geul/semantic-roundtrip-equivalence`와 주석 태그(`geul-roundtrip-42e8a67`)로 `fc41918 → d38fec0 → 90b1877 → e723192 → 42e8a67`을 올리고, 원격 SHA·얕은 SHA 받기를 확인한 뒤 geul `.gitmodules` URL을 `https://github.com/MinGyu2/wordcraft.git`로 바꾸는 커밋을 만들고 geul `master`를 올린다. 이미 공개된 `fefe420`·`1caf267`·`ed68414`·`020c25e`의 `.gitmodules`는 그대로 storytold를 가리키므로, 그 과거 커밋을 새 clone에서 꺼낼 때는 `git submodule set-url`/`sync`가 필요하다. 라이선스는 업스트림 LICENSE·NOTICE 유지로 재배포 가능하다.
+
+### WordCraft 의존성 재현성 복구 (2026-11-05)
+
+사용자의 명시 승인(대상·연산 지정)에 따라 실행했다.
+- 사용자가 공개 포크 `MinGyu2/wordcraft`(부모 `storytold/wordcraft`, 공개)를 만들었다. `git push`(강제 아님) 한 번으로 새 ref 두 개만 만들었다: 브랜치 `geul/semantic-roundtrip-equivalence` → `42e8a67`, 주석 태그 `geul-roundtrip-42e8a67`(태그 객체 `419306e`) → `42e8a67`. 포크 `main`(`5a4c45e`)과 업스트림은 바뀌지 않았다. 브랜치 보호는 꺼져 있다(`protected: false`). 태그 보호는 인증 없이 확인할 수 없어 보호되었다고 주장하지 않는다.
+- 원격 확인: API에서 `fc41918`·`d38fec0`·`90b1877`·`e723192`·`42e8a67` 모두 200. LICENSE-APACHE·LICENSE-MIT·NOTICE·`roundtrip.rs`가 태그에 있다. 빈 저장소에서 익명 HTTPS `fetch --depth 1 <42e8a67>` 성공(얕은 저장소, `FETCH_HEAD` = `42e8a67`), 태그 받기도 같은 커밋.
+- geul `bf77e7e`(`.gitmodules` 한 줄: WordCraft URL → `https://github.com/MinGyu2/wordcraft.git`, `shallow = true`·gitlink `42e8a67`·rhwp 그대로)를 빨리 감기로 `master`에 올렸다(`0a67aa0..bf77e7e`, pre-push 민감정보·Gitleaks 전체 이력 검사 통과). 원격 `master`의 `.gitmodules`와 gitlink를 API로 확인했다.
+- 새 clone 확인: `git clone --no-recurse-submodules https://github.com/MinGyu2/geul.git` → `git submodule update --init external/wordcraft`가 exit 0으로 포크에서 `42e8a67`을 깊이 1로 직접 받았다(분리 HEAD, 깨끗, alternates 없음, rhwp는 초기화하지 않음). 그 clone의 소스로 WordCraft `roundtrip` 시험 23개 통과, geul 백엔드 `cargo check --lib` 통과. geul lib 시험은 공개 clone에서 컴파일되지 않는다: `tests/`는 `45b63b4`부터 비공개 저장소이고 lib 시험이 rhwp 샘플을 `include_bytes!`하므로 rhwp 서브모듈(약 6.7 GB)이 필요하다(NOT RUN).
+- 과거 커밋: 이용할 수 없는 의존성을 처음 넣은 커밋은 `fefe420`(gitlink `90b1877`)이고, `1caf267`·`ed68414`(`90b1877`), `020c25e`·`7e7fb0f`(`e723192`), `0a67aa0`(`42e8a67`)도 `.gitmodules`가 업스트림을 가리킨다. 이력은 다시 쓰지 않았다. 해당 SHA는 모두 포크 브랜치에서 도달 가능하므로 `git config submodule.external/wordcraft.url https://github.com/MinGyu2/wordcraft.git` 뒤 `git submodule update --init external/wordcraft`로 재현된다(`020c25e` → `e723192`을 새 clone에서 확인).

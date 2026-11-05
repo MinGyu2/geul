@@ -7,10 +7,18 @@
 
 | 경로 | 업스트림 | 고정 커밋 | 태그 | 라이선스 | 검토일 |
 |------|----------|-----------|------|----------|--------|
-| `external/wordcraft/` | https://github.com/storytold/wordcraft.git | `fc41918814f62645b6746ed68e71e8c2c2e85d6f` | `v0.7.0` (2026-10-14 릴리스) | MIT OR Apache-2.0 | 2026-10-16 |
+| `external/wordcraft/` | https://github.com/MinGyu2/wordcraft.git (`storytold/wordcraft` 공개 포크) | `42e8a67061d0721df3e2665a958865e61363def6` | `geul-roundtrip-42e8a67` (기반 `v0.7.0` `fc41918`) | MIT OR Apache-2.0 | 2026-11-05 |
 | `external/rhwp/` | https://github.com/edwardkim/rhwp.git | `1a76570e833917d15817415a53c09ad61ab3203f` | `v0.8.7` (2026-10-06 릴리스) | MIT | 2026-10-16 |
 
-- 두 커밋 모두 이동 브랜치(`main`)가 아니라 업스트림 정식 릴리스 태그가 가리키는 커밋입니다.
+- rhwp 커밋은 이동 브랜치(`main`)가 아니라 업스트림 정식 릴리스 태그가 가리키는 커밋입니다.
+- WordCraft는 2026-11-05부터 업스트림 `v0.7.0`(`fc41918`) 위에 DOCX 의미 왕복 동등성 커밋 4개(`d38fec0`,
+  `90b1877`, `e723192`, `42e8a67`)를 얹은 공개 포크를 씁니다. 포크의 브랜치
+  `geul/semantic-roundtrip-equivalence`와 주석 태그 `geul-roundtrip-42e8a67`이 고정 커밋을 가리킵니다. 이 커밋들은
+  업스트림 `storytold/wordcraft`에 없습니다. 위의 "직접 수정하지 않는다"는 원칙의 예외이며, 변경과 감사 기록은
+  [`docs/architecture/save-preservation.md`](../docs/architecture/save-preservation.md)에 있습니다.
+- geul `fefe420`부터 `0a67aa0`까지의 과거 커밋은 `.gitmodules`가 업스트림을 가리켜 그대로는 서브모듈을 받을 수
+  없습니다. 그 커밋을 꺼낼 때는 `git config submodule.external/wordcraft.url https://github.com/MinGyu2/wordcraft.git`
+  뒤 `git submodule update --init external/wordcraft`를 실행합니다.
 - `.gitmodules`의 `shallow = true`는 얕은 복제를 권장한다는 뜻입니다. 고정 커밋은 부모 저장소의
   gitlink(모드 `160000`)가 결정합니다.
 - 용량(2026-10-16 측정, 얕은 복제 기준): WordCraft 작업 트리 약 32 MB, rhwp 작업 트리 약 8.7 GB
