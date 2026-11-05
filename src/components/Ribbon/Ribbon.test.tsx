@@ -152,11 +152,11 @@ describe("T011 형식별 리본 탭(앱)", () => {
     for (const button of within(toolbar).getAllByRole("button")) expect(button).toHaveAttribute("aria-disabled", "true");
     expect(within(toolbar).getByRole("button", { name: /장평/ }).title).toContain("이 문서 형식에서 지원하지 않음");
     expect(within(toolbar).getByRole("button", { name: /자간/ }).title).toContain("이 문서 형식에서 지원하지 않음");
-    expect(within(toolbar).getByRole("button", { name: /표 계산/ }).title).toContain("커서가 표 셀 안에 있지 않음");
+    expect(within(toolbar).getByRole("button", { name: "표 계산" }).title).toContain("커서가 표 셀 안에 있지 않음");
     const before = docs.get("hwpx")!.paragraphs.join("\n");
     await user.click(within(toolbar).getByRole("button", { name: /장평/ }));
     expect(statusMessage()).toHaveTextContent("장평: 이 문서 형식에서는 지원하지 않습니다.");
-    await user.click(within(toolbar).getByRole("button", { name: /표 계산/ }));
+    await user.click(within(toolbar).getByRole("button", { name: "표 계산" }));
     expect(statusMessage()).toHaveTextContent("표 계산: 먼저 커서를 표 셀 안에 두세요.");
     expect(screen.queryByTestId("command-input-dialog")).not.toBeInTheDocument();
     expect(docs.get("hwpx")!.paragraphs.join("\n")).toBe(before);
@@ -176,7 +176,7 @@ describe("T011 형식별 리본 탭(앱)", () => {
     editor.caret = editor.anchor = inCell;
     await user.click(ribbonTabs().getByRole("tab", { name: "한글 도구" }));
     const toolbar = () => screen.getByRole("toolbar", { name: "한글 도구" });
-    const formulaButton = () => within(toolbar()).getByRole("button", { name: /표 계산/ });
+    const formulaButton = () => within(toolbar()).getByRole("button", { name: "표 계산" });
     expect(formulaButton()).not.toHaveAttribute("aria-disabled");
     const before = [...doc.paragraphs];
 

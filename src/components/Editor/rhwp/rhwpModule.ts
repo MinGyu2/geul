@@ -70,6 +70,8 @@ export interface RhwpDocument {
    */
   charShapeCount?(): number;
   compactAppendedCharShapes?(baseline: number): string;
+  validateTableFormulaField?(section: number, paragraph: number, control: number, row: number, col: number, formula: string): string;
+  insertTableFormulaField?(section: number, paragraph: number, control: number, row: number, col: number, formula: string): string;
   getCellCharPropertiesAt?(section: number, parentParagraph: number, control: number, cell: number, cellParagraph: number, offset: number): string;
   deleteTextInCell(section: number, parentParagraph: number, control: number, cell: number, cellParagraph: number, offset: number, count: number): string;
   /** 표 셀의 논리 좌표 JSON `{row, col, rowSpan, colSpan}`(T012 표 계산). 셀이 없으면 예외. */

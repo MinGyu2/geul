@@ -91,6 +91,8 @@
   "command.layout.columns": "Columns",
   "command.hangul.charWidth": "Character Width",
   "command.hangul.charSpacing": "Character Spacing",
+  "command.hangul.insertTableFormula": "Insert Table Formula",
+  "commandInput.persistentFormula.hint": "Replaces the current cell text with a persistent formula field. Start with =. Test configuration only.",
   "command.hangul.tableFormula": "Table Formula",
   "command.references.toc": "Table of Contents",
   "command.references.updateToc": "Update Table",

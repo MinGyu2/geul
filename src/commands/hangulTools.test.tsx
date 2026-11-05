@@ -111,7 +111,7 @@ describe("값 검증(src/commands/parameters.ts)", () => {
 
   it("표 계산식: 길이·글자·괄호 깊이·함수 이름·표 밖 참조를 엔진에 넘기기 전에 거부한다", () => {
     const table = { rows: 2, cols: 2 };
-    for (const formula of ["=SUM(A1:B2)", "A1+B2*2", "=avg(left)", "@SUM(?1:?2)", "=(A1+B1)/2", "=ROUND(A1, 1)"]) {
+    for (const formula of ["=SUM(A1:B2)", "A1+B2*2", "=avg(left)", "@SUM(?1:?2)", "=(A1+B1)/2", "=ROUND(A1)"]) {
       expect(formulaProblem(formula, table), formula).toBeNull();
     }
     expect(formulaProblem("", table)).toBe("empty");
@@ -121,6 +121,9 @@ describe("값 검증(src/commands/parameters.ts)", () => {
     expect(formulaProblem("=가1", table)).toBe("characters");
     expect(formulaProblem(`=${"(".repeat(17)}1${")".repeat(17)}`, table)).toBe("depth");
     expect(formulaProblem("=SUM(A1:B2", table)).toBe("syntax");
+    for (const formula of ["=ROUND(A1,2)", "=LOG(A1,2)", "=SUM", "=SUM()", "=SUM(A1,,B1)", "=1+", "=A1:", "=SUM(1.2.3)", "=SUM(A1:B1)2"]) {
+      expect(formulaProblem(formula, table), formula).toBe("syntax");
+    }
     expect(formulaProblem("=NOPE(A1)", table)).toBe("syntax");
     expect(formulaProblem("=FOO", table)).toBe("syntax");
     expect(formulaProblem("=C1", table)).toBe("reference");
@@ -137,6 +140,7 @@ describe("레지스트리", () => {
   it("장평·자간은 글자 서식과 같은 시험 빌드 관문(제품 빌드 unsupported), 표 계산은 rhwp 지원, WordCraft는 모두 unsupported", () => {
     expect(commandDefinition("hangul.charWidth")).toMatchObject({ kind: "document", engines: { rhwp: { level: "unsupported" }, wordcraft: { level: "unsupported" } } });
     expect(commandDefinition("hangul.charSpacing")).toMatchObject({ kind: "document", engines: { rhwp: { level: "unsupported" }, wordcraft: { level: "unsupported" } } });
+    expect(commandDefinition("hangul.insertTableFormula")).toMatchObject({ kind: "document", engines: { rhwp: { level: "unsupported" }, wordcraft: { level: "unsupported" } } });
     expect(commandDefinition("hangul.tableFormula")).toMatchObject({ kind: "document", engines: { rhwp: { level: "supported" }, wordcraft: { level: "unsupported" } } });
     expect(commandDefinition("hangul.charWidth")?.shortcuts).toBeUndefined();
   });
@@ -335,7 +339,10 @@ describe("덧붙인 글자 모양 정리(T012 Stage 5)", () => {
     text.charShapeFormat(at(0), at(2), "ratios", 150);
     text.charShapeFormat(at(0), at(2), "spacings", -10);
     expect(doc.compactCalls).toEqual([4, 4]);
-    for (const bad of ['{"ok":false}', '{"ok":true,"before":5,"after":6,"skipped":null}', "not json"]) {
+    for (const bad of ['{"ok":false}', '{"ok":true,"before":5,"after":6,"skipped":null}',
+      '{"ok":true,"before":5,"after":4}', '{"ok":true,"before":5,"after":4,"skipped":"unknown"}',
+      '{"ok":true,"before":5,"after":3,"skipped":null}', '{"ok":true,"before":5,"after":4,"skipped":"dangling"}',
+      '{"ok":true,"before":5,"after":4,"skipped":null,"extra":1}', "not json"]) {
       doc.compactAppendedCharShapes = () => bad;
       expect(() => text.charShapeFormat(at(0), at(2), "ratios", 120), bad).toThrow();
     }
@@ -345,4 +352,21 @@ describe("덧붙인 글자 모양 정리(T012 Stage 5)", () => {
     new RhwpText(legacy as unknown as RhwpDocument).charShapeFormat(at(0), at(2), "ratios", 150);
     expect(legacy.compactCalls).toEqual([]);
   });
+});
+
+it("rejects malformed persistent formula results before a mutation transaction", async () => {
+  const { RhwpText } = await import("../components/Editor/rhwp/rhwpText");
+  let value = "3";
+  const doc = {
+    charShapeCount: () => 4,
+    validateTableFormulaField: () => JSON.stringify({ ok: true, changed: true, fieldId: 1, text: value, command: `=1+2??%g,;;${value}` }),
+    insertTableFormulaField: () => { throw new Error("validation must not insert"); },
+  } as unknown as RhwpDocument;
+  const text = new RhwpText(doc);
+  const at = { section: 0, paragraph: 0, offset: 0, cell: CELL };
+  expect(text.prepareFormula(at, 0, 0, "=1+2")?.text).toBe("3");
+  for (const bad of [" ", "\t", "0x10", "Infinity", "NaN", "3 trailing"]) {
+    value = bad;
+    expect(() => text.prepareFormula(at, 0, 0, "=1+2"), bad).toThrow("formula field response invalid");
+  }
 });

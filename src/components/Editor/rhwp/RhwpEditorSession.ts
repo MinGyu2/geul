@@ -714,13 +714,13 @@ export class RhwpEditorSession implements DocumentCommandTarget {
    * 이미 모델에 있으므로 센 채로 편집을 멈춘다. apply가 예외를 던지면 여러 엔진 호출 중 일부가 이미 모델을 바꿨을 수
    * 있으므로 세지 않고(확정하지 않음) 모델을 uncertain으로 표시한 뒤 편집을 멈춘다.
    */
-  private mutate(apply: Mutation, count = true, kind: HistoryKind = "other", start: string | null = null): boolean {
+  private mutate(apply: Mutation, count = true, kind: HistoryKind = "other", start: string | null = null, requireHistory = false): boolean {
     if (!this.editable || !this.doc) return false;
     this.settleProvisional(); // 기다리던 조합은 이 변경보다 먼저 끝난 변경이다
     if (!this.editable) return false;
     const doc = this.doc;
     // 실행 취소 기록: 바꾸는 첫 엔진 호출 직전에 트랜잭션을 연다(지금 상태 스냅숏 = 그룹의 before). 이미 열려 있으면 그대로(조합).
-    if (!this.beginHistory(kind, start)) return false;
+    if (!this.beginHistory(kind, start) || (requireHistory && !this.history)) return false;
     let next: ReturnType<Mutation>;
     const started = import.meta.env.VITE_GEUL_TEST_HOOKS === "1" ? performance.now() : 0;
     try {
@@ -1316,12 +1316,14 @@ export class RhwpEditorSession implements DocumentCommandTarget {
     bytes: Uint8Array | null;
     contentLoss: unknown;
     reopen: ReopenEvidence;
+    charShapeCount: number | null;
   } | null {
     const doc = this.doc;
     const module = this.module;
     if (!doc || !module) return null;
     let output: Uint8Array | null = null;
     let contentLoss: unknown = null;
+    let charShapeCount: number | null = null;
     const report: RoundTripReport = {
       format, failure: "export", bytes: 0, reopenedFormat: null, formatEqual: false, lossValid: false, lossCount: -1, losses: [],
       pagesEqual: false, textEqual: false, controlsEqual: false, passed: false,
@@ -1349,6 +1351,8 @@ export class RhwpEditorSession implements DocumentCommandTarget {
       // This evidence concerns the raw engine export. For HWP, the save service
       // verifies that final CFB reconstruction changes only PrvText before publication.
       reopened = module.openDocument(bytes);
+      const shapeCount = reopened.charShapeCount?.();
+      if (Number.isSafeInteger(shapeCount) && (shapeCount as number) >= 0) charShapeCount = shapeCount!;
       const reopenedFormat: unknown = reopened.getSourceFormat();
       report.reopenedFormat = typeof reopenedFormat === "string" ? reopenedFormat : null;
       report.formatEqual = report.reopenedFormat === format && hasSignature(bytes, format);
@@ -1371,7 +1375,7 @@ export class RhwpEditorSession implements DocumentCommandTarget {
       textEqual: report.failure === null && report.textEqual,
       controlsEqual: report.failure === null && report.controlsEqual,
     };
-    return { report, bytes: output, contentLoss, reopen };
+    return { report, bytes: output, contentLoss, reopen, charShapeCount };
   }
 
   // ---- 명령(T010) ----
@@ -1405,7 +1409,7 @@ export class RhwpEditorSession implements DocumentCommandTarget {
     const format = this.sessions.get(this.sessionId)?.format;
     const key = [
       this.modelVersion, RhwpEditorSession.positionKey(this.anchor), RhwpEditorSession.positionKey(this.caret), format,
-      this.editable, this.imeUnsettled, this.uncertain, !!this.history, !!this.doc,
+      this.editable, this.imeUnsettled, this.uncertain, !!this.history, !!this.doc, this.pending,
     ].join("|");
     if (this.parameterCache?.key === key) return this.parameterCache.value;
     const parameters: Partial<Record<ParameterCommandId, CommandParameterContext>> = {};
@@ -1424,7 +1428,12 @@ export class RhwpEditorSession implements DocumentCommandTarget {
     }
     if (usable) {
       const cell = this.caret.cell ? this.text!.tableCell(this.caret) : null;
-      if (cell) parameters["hangul.tableFormula"] = { tableCell: { row: cell.row, col: cell.col, rows: cell.rows, cols: cell.cols } };
+      if (cell) {
+        const context = { tableCell: { row: cell.row, col: cell.col, rows: cell.rows, cols: cell.cols } };
+        parameters["hangul.tableFormula"] = context;
+        if (this.history && this.doc?.validateTableFormulaField && this.doc.insertTableFormulaField && !this.hasSelection && !this.pending)
+          parameters["hangul.insertTableFormula"] = context;
+      }
       else parameterReasons["hangul.tableFormula"] = "notInTable";
     }
     const value = { parameters, parameterReasons };
@@ -1445,7 +1454,7 @@ export class RhwpEditorSession implements DocumentCommandTarget {
     const applied = this.mutate(() => {
       this.text!.charShapeFormat(from, to, args.command === "hangul.charWidth" ? "ratios" : "spacings", args.percent);
       return { caret, anchor };
-    }, true, "other", null);
+    }, true, "other", null, true);
     this.history?.boundary();
     return applied;
   }
@@ -1472,6 +1481,28 @@ export class RhwpEditorSession implements DocumentCommandTarget {
     if (result === null) return { accepted: false, message: { key: "command.result.tableFormulaFailed", vars: { command: label } } };
     const shown = Number.isInteger(result) ? String(result) : String(Number(result.toPrecision(12)));
     return { accepted: true, message: { key: "command.result.tableFormula", vars: { command: label, formula: args.formula, result: shown } } };
+  }
+
+  private insertFormula(args: Extract<DocumentCommandArgs, { command: "hangul.insertTableFormula" }>): CommandDispatch {
+    const context = this.parameterState().parameters?.[args.command];
+    const cell = context?.tableCell;
+    if (!cell || !validateCommandArgs(args.command, args, context)) return { accepted: false };
+    let prepared;
+    try { prepared = this.text!.prepareFormula(this.caret, cell.row, cell.col, args.formula); }
+    catch {
+      this.uncertain = true; this.lastRoundTrip = null; this.modelVersion += 1; this.failEditing();
+      return { accepted: false };
+    }
+    if (!prepared) return { accepted: false, message: { key: "command.result.tableFormulaFailed", vars: { command: { key: "command.hangul.insertTableFormula" } } } };
+    if (!prepared.changed) return { accepted: true };
+    const caret = this.caret;
+    this.history!.boundary();
+    const applied = this.mutate(() => {
+      this.text!.insertFormula(caret, cell.row, cell.col, args.formula, prepared);
+      return { caret: { ...caret, offset: 0 }, anchor: { ...caret, offset: 0 } };
+    }, true, "other", null, true);
+    this.history?.boundary();
+    return { accepted: applied };
   }
 
   private formatCache: { key: string; value: Readonly<Record<CharFormatFlag, boolean>> | null } | null = null;
@@ -1506,7 +1537,7 @@ export class RhwpEditorSession implements DocumentCommandTarget {
     const applied = this.mutate(() => {
       this.text!.format(from, to, JSON.stringify({ [flag]: !state[flag] }));
       return { caret, anchor };
-    }, true, "other", null);
+    }, true, "other", null, true);
     this.history?.boundary();
     return applied;
   }
@@ -1515,6 +1546,7 @@ export class RhwpEditorSession implements DocumentCommandTarget {
   execute(command: DocumentCommandId, args?: DocumentCommandArgs): CommandDispatch {
     // 레지스트리 가용성(엔진 지원 표 포함)을 실행 직전에 다시 확인한다. rhwp 실행 취소는 그 표가 지원으로 바뀌기 전에는 오지 않는다.
     if (!documentCommandState(command, this.snapshot()).available) return { accepted: false };
+    if (command === "hangul.insertTableFormula") return args?.command === command ? this.insertFormula(args) : { accepted: false };
     if (command === "hangul.charWidth" || command === "hangul.charSpacing" || command === "hangul.tableFormula") {
       if (args?.command !== command) return { accepted: false };
       if (args.command === "hangul.tableFormula") return this.evaluateFormula(args);
@@ -1650,6 +1682,7 @@ export class RhwpEditorSession implements DocumentCommandTarget {
       const changedSince = this.localRevision !== revision || this.imeUnsettled;
       // 저장한 판 뒤에 편집이 없고 교체의 내구성까지 확인했으면 이 모델은 디스크의 파일과 같다(닫기·다시 불러오기에 버리기
       // 확인이 필요 없음). 내구성을 확인하지 못했으면(교체는 됨) 저장하지 않은 편집으로 남긴다(백엔드도 dirty로 둔다).
+      if (!changedSince) this.text?.markPublishedCharShapes(exported.charShapeCount);
       if (!changedSince && result.value.durable) this.modified = false;
       // 원본이 바뀌었다: 다음 저장은 새 원본으로 다시 검사한다. 그 전에 시작한 검사의 늦은 결과도 버린다.
       this.checkSerial += 1;

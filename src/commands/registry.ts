@@ -24,7 +24,7 @@ export type FileCommandId = "file.new" | "file.open" | "file.saveAs";
 export type DocumentCommandId =
   | "edit.undo" | "edit.redo"
   | "format.bold" | "format.italic" | "format.underline" | "format.strikethrough"
-  | "hangul.charWidth" | "hangul.charSpacing" | "hangul.tableFormula"
+  | "hangul.charWidth" | "hangul.charSpacing" | "hangul.tableFormula" | "hangul.insertTableFormula"
   | "review.comment"
   | "references.footnote" | "references.endnote"
   | "references.toc" | "references.updateToc"
@@ -101,6 +101,10 @@ const RHWP_FORMAT: EngineSupport =
  *   `review.rejectAll`(고정 DocxOp). 수정 기록 색인 일대일 비교(WordCraft `b74830b`) 뒤 추적 편집·IME 교정·수락·거절 출력이 저장 검증을
  *   통과해 이미 추적 중인 문서의 읽기 전용 정책도 풀었다. 저장은 settings의 맨 `w:trackRevisions` 하나의 있고 없음만 더 받는다.
  */
+const RHWP_FORMULA: EngineSupport =
+  import.meta.env.VITE_GEUL_TEST_HOOKS === "1" && import.meta.env.VITE_GEUL_TEST_RHWP_HISTORY === "1"
+    && import.meta.env.VITE_GEUL_TEST_RHWP_FORMULA === "1" ? SUPPORTED : UNSUPPORTED;
+
 const DOCUMENT_COMMANDS: Record<DocumentCommandId, Omit<CommandDefinition, "id" | "labelKey" | "kind">> = {
   "edit.undo": { engines: { wordcraft: SUPPORTED, rhwp: RHWP_HISTORY }, shortcuts: ["Mod+Z"], scope: "document" },
   "edit.redo": { engines: { wordcraft: SUPPORTED, rhwp: RHWP_HISTORY }, shortcuts: ["Mod+Y", "Mod+Shift+Z"], scope: "document" },
@@ -111,6 +115,7 @@ const DOCUMENT_COMMANDS: Record<DocumentCommandId, Omit<CommandDefinition, "id" 
   "hangul.charWidth": { engines: { wordcraft: UNSUPPORTED, rhwp: RHWP_FORMAT } },
   "hangul.charSpacing": { engines: { wordcraft: UNSUPPORTED, rhwp: RHWP_FORMAT } },
   "hangul.tableFormula": { engines: { wordcraft: UNSUPPORTED, rhwp: SUPPORTED } },
+  "hangul.insertTableFormula": { engines: { wordcraft: UNSUPPORTED, rhwp: RHWP_FORMULA } },
   "review.comment": { engines: { wordcraft: SUPPORTED, rhwp: UNSUPPORTED } },
   "references.footnote": { engines: { wordcraft: SUPPORTED, rhwp: UNSUPPORTED } },
   "references.endnote": { engines: { wordcraft: SUPPORTED, rhwp: UNSUPPORTED } },

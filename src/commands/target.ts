@@ -79,6 +79,8 @@ export type DocumentCommandArgs =
   | { command: "hangul.charSpacing"; percent: number }
   /** 표 계산식(읽기 전용 계산, 셀에 쓰지 않음). */
   | { command: "hangul.tableFormula"; formula: string }
+  /** Persistent field, controlled test build only until T010 acceptance. */
+  | { command: "hangul.insertTableFormula"; formula: string }
   /** 새 메모 글(T013, WordCraft `review.newComment`). 한 줄, 비어 있지 않음. */
   | { command: "review.comment"; text: string }
   /** 새 각주·미주 글(T013, WordCraft `references.footnote`·`references.endnote`). 한 줄, 비어 있지 않음. */

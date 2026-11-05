@@ -93,7 +93,7 @@ export const RIBBON_TABS: RibbonTabDefinition[] = [
     format: "hwp",
     groups: [
       group("characterSpacing", [cmd("hangul.charWidth", "charWidth", "large"), cmd("hangul.charSpacing", "charSpacing", "large")]),
-      group("tableTools", [cmd("hangul.tableFormula", "formula", "large")]),
+      group("tableTools", [cmd("hangul.tableFormula", "formula", "large"), cmd("hangul.insertTableFormula", "formula")]),
     ],
   },
   {

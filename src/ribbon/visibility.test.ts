@@ -66,7 +66,7 @@ describe("형식 전용 탭의 명령", () => {
   const formatOnly = RIBBON_TABS.filter((tab) => tab.format).flatMap((tab) => tab.groups.flatMap((group) => group.commands));
 
   // T012에서 rhwp에 연결한 값 입력 명령. 세션이 문맥(parameters)을 내지 않으면 여전히 쓸 수 없다.
-  const CONNECTED = new Set(["hangul.charWidth", "hangul.charSpacing", "hangul.tableFormula", "references.footnote", "references.endnote",
+  const CONNECTED = new Set(["hangul.charWidth", "hangul.charSpacing", "hangul.tableFormula", "hangul.insertTableFormula", "references.footnote", "references.endnote",
     "references.toc", "references.updateToc",
     "review.trackChanges", "review.acceptChange", "review.rejectChange", "review.acceptAll", "review.rejectAll"]);
 
@@ -81,6 +81,12 @@ describe("형식 전용 탭의 명령", () => {
       };
       const target: DocumentCommandTarget = { sessionId: 1, engine, snapshot: () => snapshot, execute: () => ({ accepted: true }) };
       for (const command of formatOnly) {
+        if (command.id === "hangul.insertTableFormula") {
+          expect(commandDefinition(command.id)?.kind, command.id).toBe("document");
+          expect(commandState(command.id, { layout: initialLayout, document: target }), command.id)
+            .toEqual({ available: false, reason: "engineUnsupported" });
+          continue;
+        }
         if (CONNECTED.has(command.id)) {
           expect(commandDefinition(command.id)?.kind, command.id).toBe("document");
           expect(commandState(command.id, { layout: initialLayout, document: target }).available, command.id).toBe(false);

@@ -37,6 +37,15 @@ export interface PageRect {
   height: number;
 }
 
+export interface FormulaFieldResult { changed: boolean; fieldId: number; text: string; command: string }
+function formulaFieldResult(value: unknown, formula: string): FormulaFieldResult {
+  if (!isRecord(value) || Object.keys(value).sort().join(",") !== "changed,command,fieldId,ok,text"
+    || value.ok !== true || typeof value.changed !== "boolean" || !isIndex(value.fieldId)
+    || value.fieldId === 0 || value.fieldId > 0xffffffff || typeof value.text !== "string" || !Number.isFinite(Number(value.text))
+    || !/^[+-]?(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][+-]?\d+)?$/.test(value.text) || value.command !== `${formula.trim()}??%g,;;${value.text}`) throw new Error("formula field response invalid");
+  return { changed: value.changed, fieldId: value.fieldId, text: value.text, command: value.command as string };
+}
+
 type Fields = Record<string, unknown>;
 const isRecord = (value: unknown): value is Fields => typeof value === "object" && value !== null && !Array.isArray(value);
 const isIndex = (value: unknown): value is number => Number.isSafeInteger(value) && (value as number) >= 0;
@@ -125,12 +134,17 @@ const NO_CELL = 0xffffffff; // u32::MAX: rhwp가 본문을 뜻하는 값
 
 /** 위치에 맞는 본문/셀 API를 부른다. 편집 함수는 실패하면 예외를 던진다(엔진 오류). */
 export class RhwpText {
-  /** 불러온 직후의 글자 모양 수(T012 Stage 5 정리 기준). 엔진이 알려 주지 않으면 null(정리하지 않음 — 저장 검사가 판정). */
-  private readonly charShapeBaseline: number | null;
+  /** Loaded definitions and definitions already published must keep their IDs. */
+  private charShapeBaseline: number | null;
 
   constructor(private readonly doc: RhwpDocument) {
     const count = doc.charShapeCount?.();
     this.charShapeBaseline = Number.isSafeInteger(count) && (count as number) >= 0 ? (count as number) : null;
+  }
+
+  /** Pin the definitions of a successfully published, unchanged model. No engine mutation. */
+  markPublishedCharShapes(count: number | null): void {
+    if (this.charShapeBaseline !== null && isIndex(count) && count >= this.charShapeBaseline) this.charShapeBaseline = count;
   }
 
   paragraphCount(at: DocPosition): number {
@@ -254,8 +268,17 @@ export class RhwpText {
    */
   private compactCharShapes(): void {
     if (this.charShapeBaseline === null || !this.doc.compactAppendedCharShapes) return;
+    // An older history snapshot can have a shorter table. Its IDs still belong
+    // to that snapshot; do not compact or turn a normal Undo into an engine error.
+    // The save service remains authoritative if that snapshot predates publication.
+    const count = this.doc.charShapeCount?.();
+    if (isIndex(count) && count < this.charShapeBaseline) return;
     const value = json(this.doc.compactAppendedCharShapes(this.charShapeBaseline));
-    if (!isRecord(value) || value.ok !== true || !isIndex(value.before) || !isIndex(value.after) || (value.after as number) > (value.before as number)) {
+    if (!isRecord(value) || Object.keys(value).sort().join(",") !== "after,before,ok,skipped"
+      || value.ok !== true || !isIndex(value.before) || !isIndex(value.after)
+      || (value.after as number) > (value.before as number) || (value.after as number) < this.charShapeBaseline
+      || !(value.skipped === null || value.skipped === "dangling" || value.skipped === "docinfo-reference")
+      || (value.skipped !== null && value.before !== value.after)) {
       throw new Error("char shape compaction response invalid");
     }
   }
@@ -325,6 +348,22 @@ export class RhwpText {
     } catch {
       return null;
     }
+  }
+
+  /** Read-only engine preparation. A normal refusal opens no history transaction. */
+  prepareFormula(at: DocPosition, row: number, col: number, formula: string): FormulaFieldResult | null {
+    const c = at.cell;
+    if (!c || !this.doc.validateTableFormulaField || !this.doc.insertTableFormulaField) return null;
+    const value = json(this.doc.validateTableFormulaField(at.section, c.parentParagraph, c.control, row, col, formula));
+    if (isRecord(value) && Object.keys(value).join(",") === "ok" && value.ok === false) return null;
+    return formulaFieldResult(value, formula);
+  }
+
+  insertFormula(at: DocPosition, row: number, col: number, formula: string, expected: FormulaFieldResult): void {
+    const c = at.cell;
+    if (!c || !this.doc.insertTableFormulaField) throw new Error("formula field unavailable");
+    const value = formulaFieldResult(json(this.doc.insertTableFormulaField(at.section, c.parentParagraph, c.control, row, col, formula)), formula);
+    if (JSON.stringify(value) !== JSON.stringify(expected)) throw new Error("formula preparation changed");
   }
 
   /**

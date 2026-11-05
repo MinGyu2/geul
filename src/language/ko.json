@@ -91,6 +91,8 @@
   "command.layout.columns": "단",
   "command.hangul.charWidth": "장평",
   "command.hangul.charSpacing": "자간",
+  "command.hangul.insertTableFormula": "표 계산식 넣기",
+  "commandInput.persistentFormula.hint": "현재 셀의 글을 계산식 필드로 바꿉니다. =로 시작하세요. 시험 구성 전용 기능입니다.",
   "command.hangul.tableFormula": "표 계산",
   "command.references.toc": "목차",
   "command.references.updateToc": "목차 업데이트",

@@ -58,7 +58,7 @@ export function CommandInputDialog({ request, onCancel, onConfirm, suspended = f
   }, [suspended]);
   if (suspended) return null;
 
-  const formula = request.command === "hangul.tableFormula";
+  const formula = request.command === "hangul.tableFormula" || request.command === "hangul.insertTableFormula";
   const comment = request.command === "review.comment";
   const note = request.command === "references.footnote" || request.command === "references.endnote";
   const textual = formula || comment || note;
@@ -79,7 +79,7 @@ export function CommandInputDialog({ request, onCancel, onConfirm, suspended = f
     } else if (formula) {
       const problem = cell ? formulaProblem(text, cell) : "reference";
       if (problem) return setError(`commandInput.formula.${problem}` as MessageKey);
-      args = { command: "hangul.tableFormula", formula: text.trim() };
+      args = { command: request.command as "hangul.tableFormula" | "hangul.insertTableFormula", formula: text.trim() };
     } else {
       const percent = parsePercent(text);
       if (percent === null) return setError("commandInput.percent.notInteger");
@@ -130,7 +130,7 @@ export function CommandInputDialog({ request, onCancel, onConfirm, suspended = f
         </label>
         <p id={hintId} className="discard-dialog__hint">
           {comment ? t("commandInput.comment.hint") : note ? t("commandInput.note.hint") : formula && cell
-            ? t("commandInput.formula.hint", { cell: `${columnLetters(cell.col)}${cell.row + 1}`, rows: cell.rows, cols: cell.cols })
+            ? t((request.command === "hangul.insertTableFormula" ? "commandInput.persistentFormula.hint" : "commandInput.formula.hint"), { cell: `${columnLetters(cell.col)}${cell.row + 1}`, rows: cell.rows, cols: cell.cols })
             : t(request.command === "hangul.charWidth" ? "commandInput.charWidth.hint" : "commandInput.charSpacing.hint",
               { min: range.min, max: range.max })}
         </p>

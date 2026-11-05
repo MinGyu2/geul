@@ -17,7 +17,7 @@ export const MAX_FORMULA_LENGTH = 256;
 export const MAX_FORMULA_DEPTH = 16;
 
 const PARAMETER_COMMANDS: ReadonlySet<string> = new Set<ParameterCommandId>([
-  "hangul.charWidth", "hangul.charSpacing", "hangul.tableFormula", "review.comment",
+  "hangul.charWidth", "hangul.charSpacing", "hangul.tableFormula", "hangul.insertTableFormula", "review.comment",
   "references.footnote", "references.endnote",
 ]);
 /** 메모 글자 수 상한(문자 단위, 백엔드 MAX_COMMENT_CHARS와 같음). */
@@ -72,6 +72,48 @@ const FUNCTIONS = new Set([
   "SIGN", "EXP", "LOG", "LOG10", "SIN", "COS", "TAN", "ASIN", "ACOS", "ATAN", "RADIAN", "IF", "TRUNC",
 ]);
 
+/** Exact grammar check; the engine independently repeats this before mutation. */
+function formulaSyntax(body: string): boolean {
+  const tokens: string[] = [];
+  let at = 0;
+  while (at < body.length) {
+    if (body[at] === " ") { at += 1; continue; }
+    const match = /^(?:[0-9]+(?:\.[0-9]*)?|\.[0-9]+|[A-Za-z?][A-Za-z0-9?_]*|[()+*/,:-])/.exec(body.slice(at));
+    if (!match) return false;
+    tokens.push(match[0]); at += match[0].length;
+  }
+  let pos = 0;
+  const cell = (token: string | undefined) => !!token && /^(?:[A-Za-z]+|\?)(?:[0-9]+|\?)$/.test(token);
+  const take = (token: string) => tokens[pos] === token ? (pos += 1, true) : false;
+  function factor(): boolean {
+    const token = tokens[pos++];
+    if (!token) return false;
+    if (token === "-") return factor();
+    if (token === "(") return expr() && take(")");
+    if (/^(?:[0-9]+(?:\.[0-9]*)?|\.[0-9]+)$/.test(token)) return true;
+    if (cell(token)) return !take(":") || cell(tokens[pos++]);
+    if (DIRECTIONS.has(token.toUpperCase())) return true;
+    if (!FUNCTIONS.has(token.toUpperCase()) || !take("(") || !expr()) return false;
+    let count = 1;
+    while (take(",")) { if (!expr()) return false; count += 1; }
+    const name = token.toUpperCase();
+    const arity = ["SUM", "AVG", "AVERAGE", "PRODUCT", "MIN", "MAX", "COUNT"].includes(name)
+      || count === (name === "MOD" ? 2 : name === "IF" ? 3 : 1);
+    return arity && take(")");
+  }
+  function term(): boolean {
+    if (!factor()) return false;
+    while (tokens[pos] === "*" || tokens[pos] === "/") { pos += 1; if (!factor()) return false; }
+    return true;
+  }
+  function expr(): boolean {
+    if (!term()) return false;
+    while (tokens[pos] === "+" || tokens[pos] === "-") { pos += 1; if (!term()) return false; }
+    return true;
+  }
+  return expr() && pos === tokens.length;
+}
+
 /**
  * 표 계산식이 계약 안인지. `table`은 커서가 있는 표의 크기(행·열 수)다. 문제가 없으면 null.
  * 받는 모양: 앞의 `=`·`@` 하나(선택), 숫자, 셀 참조(`A1`, `?1`, `A?`), 범위(`A1:B2`), 방향(`LEFT` 등), 함수 호출, `+ - * /`, 괄호, 쉼표, 공백.
@@ -121,7 +163,8 @@ export function formulaProblem(formula: string, table: { rows: number; cols: num
     if (table.rows > MAX_FORMULA_CELL_VISITS / table.cols) return "cost";
     visits += ranges * table.rows * table.cols;
   }
-  return visits > MAX_FORMULA_CELL_VISITS ? "cost" : null;
+  if (visits > MAX_FORMULA_CELL_VISITS) return "cost";
+  return formulaSyntax(body) ? null : "syntax";
 }
 
 const integerIn = (value: unknown, range: { min: number; max: number }): value is number =>
@@ -145,6 +188,10 @@ export function validateCommandArgs(command: string, args: unknown, context: Com
     case "references.footnote":
     case "references.endnote":
       return keys === "command,text" && typeof value.text === "string" && commentProblem(value.text) === null;
+    case "hangul.insertTableFormula":
+      if (typeof value.formula !== "string" || !value.formula.trim().startsWith("=")) return false;
+      // Same limits as read-only calculation; engine additionally validates full syntax and ownership.
+      return keys === "command,formula" && !!context?.tableCell && formulaProblem(value.formula, context.tableCell) === null;
     case "hangul.tableFormula":
       return keys === "command,formula" && typeof value.formula === "string" && !!context?.tableCell
         && formulaProblem(value.formula, context.tableCell) === null;
