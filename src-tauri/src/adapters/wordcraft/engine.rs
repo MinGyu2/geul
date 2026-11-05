@@ -138,7 +138,23 @@ pub enum DocxOp {
     Toc {},
     /// 목차 갱신(T013, `references.updateToc`): 본문의 목차 항목을 지금 제목·쪽으로 다시 만든다. 목차가 없으면 거부한다.
     UpdateToc {},
+    /// 변경 내용 추적 켜기·끄기(T013 Stage 3, `review.trackChanges` → WordCraft `review.trackChanges {"value"}`). 값을 명시해 늦게 온
+    /// 요청이 토글을 뒤집지 않게 한다. 이미 그 값이면 바뀌지 않는다.
+    TrackChanges {
+        value: bool,
+    },
+    /// 선택(또는 커서 자리)의 변경 수락·거절(WordCraft `review.accept`·`review.reject`). 그 자리에 변경이 없으면 거부한다.
+    AcceptChange {},
+    RejectChange {},
+    /// 문서 전체 변경 수락·거절(WordCraft `review.acceptAll`·`review.rejectAll`). 변경이 없으면 거부한다.
+    AcceptAll {},
+    RejectAll {},
 }
+
+/// 이미 추적 중인 문서를 읽기 전용으로 둘지(T013 정책). WordCraft `b74830b`의 수정 기록 색인 일대일 비교 뒤 앱의 실제 연산 열
+/// (넣기·IME 교정·늦은 확정·지우기·선택 바꾸기·붙여넣기·서식·메모·각주·목차·수락·거절·실행 취소)이 모두 저장 검증을 통과해
+/// 해제했다(시험 `추적_문서의_실제_연산_열은_모두_저장_동등하다`). 다시 막아야 하면 이 상수 하나로 IPC·IME·명령 경계가 함께 막힌다.
+pub const TRACKED_READ_ONLY: bool = false;
 
 /// 메모 글자 수 상한(문자 단위).
 pub const MAX_COMMENT_CHARS: usize = 1000;
@@ -272,6 +288,10 @@ pub struct DocxView {
     pub tracked_read_only: bool,
     /// 본문에 갱신할 수 있는 목차가 있음(T013 `references.updateToc` 가용성, `DocxModel::has_toc`).
     pub has_toc: bool,
+    /// 변경 내용 추적이 켜져 있음(`settings.track_changes`, 리본 단추 눌림 상태).
+    pub tracking: bool,
+    /// 추적된 변경이 하나라도 있음(수락·거절 가용성, `DocxModel::has_revisions`).
+    pub has_revisions: bool,
     pub pages: Vec<PageSize>,
     /// 커서 자리를 배치에서 찾지 못하면(숨은 글자 등) 없다.
     pub caret: Option<CaretView>,
@@ -317,7 +337,7 @@ impl FormatAccess {
     /// 같은 순서다: 서식 제한이면 거부, 읽기 전용·메모만은 편집 가능 영역이 있으면 영역 안만, 없으면 거부, 양식은 거부, 그 밖은 허용.
     /// 이 대응은 시험(`보호_상태의_서식_가용성은_엔진_판정과_같다`)이 실제 엔진 결과와 맞춘다.
     fn of(session: &Session) -> FormatAccess {
-        if session.doc.settings.track_changes {
+        if TRACKED_READ_ONLY && session.doc.settings.track_changes {
             return FormatAccess::Protected;
         }
         let state = wordcraft_engine::cmd::protect::state(session);
@@ -528,7 +548,8 @@ impl DocxModel {
     }
 
     fn apply_one(&mut self, op: &DocxOp) -> Result<bool, Rejected> {
-        if self.session.doc.settings.track_changes
+        if TRACKED_READ_ONLY
+            && self.session.doc.settings.track_changes
             && !matches!(
                 op,
                 DocxOp::Move { .. }
@@ -595,7 +616,69 @@ impl DocxModel {
             DocxOp::Endnote { text } => self.new_note("references.endnote", text),
             DocxOp::Toc {} => self.toc(false),
             DocxOp::UpdateToc {} => self.toc(true),
+            DocxOp::TrackChanges { value } => {
+                if self.session.doc.settings.track_changes == *value {
+                    return Ok(false);
+                }
+                self.run("review.trackChanges", json!({ "value": value }))
+            }
+            DocxOp::AcceptChange {} => self.resolve("review.accept"),
+            DocxOp::RejectChange {} => self.resolve("review.reject"),
+            DocxOp::AcceptAll {} => self.resolve("review.acceptAll"),
+            DocxOp::RejectAll {} => self.resolve("review.rejectAll"),
         }
+    }
+
+    /// 수락·거절(T013 Stage 3). 변경 기록이 하나도 없으면 거부한다. WordCraft 명령 하나라 실패하면 엔진이 되돌리고, 문서가 그대로면
+    /// (그 자리에 변경 없음) 거부로 알린다(성공으로 세지 않음). 글자가 빠지거나 남으므로 어댑터 기억을 버린다.
+    fn resolve(&mut self, command: &str) -> Result<bool, Rejected> {
+        if !self.has_revisions() {
+            return Err(Rejected);
+        }
+        let changed = self.run(command, json!({}))?;
+        self.session.clamp_selection();
+        self.marks.clear();
+        self.last_insert = None;
+        if changed {
+            Ok(true)
+        } else {
+            Err(Rejected)
+        }
+    }
+
+    /// 본문·부분 이야기에 추적된 변경(넣기·지우기·서식·문단·번호·표·행·셀·구역 변경)이 하나라도 있는지. 쓰이지 않는 기록은 세지 않는다.
+    pub fn has_revisions(&self) -> bool {
+        use wordcraft_engine::doc::{Block, Blocks};
+        fn blocks(list: &Blocks, depth: usize) -> bool {
+            depth < 64
+                && list.iter().any(|block| match &**block {
+                    Block::Para(p) => {
+                        p.props.fmt_change.is_some()
+                            || p.props.num_change.is_some()
+                            || [&p.mark]
+                                .into_iter()
+                                .chain(p.runs.iter().map(|r| &r.props))
+                                .any(|c| {
+                                    c.ins.is_some() || c.del.is_some() || c.fmt_change.is_some()
+                                })
+                            || p.section.as_ref().is_some_and(|s| s.fmt_change.is_some())
+                    }
+                    Block::Table(t) => {
+                        t.props.fmt_change.is_some()
+                            || t.rows.iter().any(|r| {
+                                r.props.fmt_change.is_some()
+                                    || r.cells.iter().any(|c| {
+                                        c.props.fmt_change.is_some() || blocks(&c.blocks, depth + 1)
+                                    })
+                            })
+                    }
+                })
+        }
+        let doc = &self.session.doc;
+        !doc.revisions.is_empty()
+            && (blocks(&doc.body, 0)
+                || doc.parts.values().any(|part| blocks(&part.blocks, 0))
+                || doc.last_section.fmt_change.is_some())
     }
 
     /// 본문 최상위에 엔진이 갱신할 수 있는 목차(`TOC` 필드 표지, 또는 잠기지 않은 가져온 범위 필드)가 있는지. 그림 목차(`\c`)는
@@ -899,7 +982,9 @@ impl DocxModel {
             .and_then(|para| para.text.get(..sel.focus.off))
             .map_or(0, |head| head.chars().count());
         DocxView {
-            tracked_read_only: self.session.doc.settings.track_changes,
+            tracked_read_only: TRACKED_READ_ONLY && self.session.doc.settings.track_changes,
+            tracking: self.session.doc.settings.track_changes,
+            has_revisions: self.has_revisions(),
             has_toc: self.has_toc(),
             pages: layout
                 .pages

@@ -28,6 +28,7 @@ export type DocumentCommandId =
   | "review.comment"
   | "references.footnote" | "references.endnote"
   | "references.toc" | "references.updateToc"
+  | "review.trackChanges" | "review.acceptChange" | "review.rejectChange" | "review.acceptAll" | "review.rejectAll"
   | "file.save";
 
 /** 엔진 하나에서 명령의 지원. */
@@ -95,7 +96,10 @@ const RHWP_FORMAT: EngineSupport =
  *   settings 구분선 참조 두 개만 함께) 기존 각주를 그대로 둔 채 새 각주만 더한 출력만 T009가 받는다.
  * - 목차(T013 Stage 2): WordCraft `references.toc`·`references.updateToc`(고정 DocxOp `toc`·`updateToc`, 인자 없음). 넣기는 본문 최상위
  *   문단의 커서(선택 없음)에서, 갱신은 본문에 목차가 있을 때(엔진 보기 `hasToc`)만. 엔진 왕복 수정(WordCraft `af80638`) 뒤 출력은
- *   본문 부분만 바뀌어 T009 기존 규칙을 그대로 통과한다. 변경 내용 추적은 연결하지 않았다(docs/architecture/command-registry.md "T013").
+ *   본문 부분만 바뀌어 T009 기존 규칙을 그대로 통과한다.
+ * - 변경 내용 추적(T013 Stage 3): WordCraft `review.trackChanges`(값 명시)·`review.accept`·`review.reject`·`review.acceptAll`·
+ *   `review.rejectAll`(고정 DocxOp). 수정 기록 색인 일대일 비교(WordCraft `b74830b`) 뒤 추적 편집·IME 교정·수락·거절 출력이 저장 검증을
+ *   통과해 이미 추적 중인 문서의 읽기 전용 정책도 풀었다. 저장은 settings의 맨 `w:trackRevisions` 하나의 있고 없음만 더 받는다.
  */
 const DOCUMENT_COMMANDS: Record<DocumentCommandId, Omit<CommandDefinition, "id" | "labelKey" | "kind">> = {
   "edit.undo": { engines: { wordcraft: SUPPORTED, rhwp: RHWP_HISTORY }, shortcuts: ["Mod+Z"], scope: "document" },
@@ -112,6 +116,11 @@ const DOCUMENT_COMMANDS: Record<DocumentCommandId, Omit<CommandDefinition, "id" 
   "references.endnote": { engines: { wordcraft: SUPPORTED, rhwp: UNSUPPORTED } },
   "references.toc": { engines: { wordcraft: SUPPORTED, rhwp: UNSUPPORTED } },
   "references.updateToc": { engines: { wordcraft: SUPPORTED, rhwp: UNSUPPORTED } },
+  "review.trackChanges": { engines: { wordcraft: SUPPORTED, rhwp: UNSUPPORTED } },
+  "review.acceptChange": { engines: { wordcraft: SUPPORTED, rhwp: UNSUPPORTED } },
+  "review.rejectChange": { engines: { wordcraft: SUPPORTED, rhwp: UNSUPPORTED } },
+  "review.acceptAll": { engines: { wordcraft: SUPPORTED, rhwp: UNSUPPORTED } },
+  "review.rejectAll": { engines: { wordcraft: SUPPORTED, rhwp: UNSUPPORTED } },
   "file.save": { engines: { wordcraft: SUPPORTED, rhwp: SUPPORTED }, shortcuts: ["Mod+S"], scope: "document" },
 };
 

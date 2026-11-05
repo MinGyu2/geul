@@ -373,6 +373,8 @@ pub fn compare_saved_docx(original: &Package, output: &Package) -> Vec<Finding> 
             .any(|(part, ..)| NOTE_PARTS.iter().any(|(note, ..)| note == part))
     });
     let appended = added.is_none() && comment_parts_appended(original, output);
+    // T013 Stage 3 변경 내용 추적 켜기·끄기: settings의 차이가 뿌리 바로 아래의 맨 `<w:trackRevisions/>` 하나의 있고 없음뿐일 때만.
+    let tracking_toggled = track_revisions_toggled(original, output);
     // 원본에 이미 있던 각주·미주 부분: 구분선 그대로, 원본 각주는 번호(`w:id`)만 다시 매겨질 수 있고 순서·내용 그대로, 새 각주만 더함.
     let extended: Vec<&str> = NOTE_PARTS
         .iter()
@@ -386,7 +388,7 @@ pub fn compare_saved_docx(original: &Package, output: &Package) -> Vec<Finding> 
         name == BODY
             || name == APP
             || (added.is_some() && (name == CONTENT_TYPES || name == DOCUMENT_RELS))
-            || (notes_added && name == SETTINGS)
+            || ((notes_added || tracking_toggled) && name == SETTINGS)
             || (appended && COMMENT_PARTS.iter().any(|(part, ..)| *part == name))
             || extended.contains(&name)
     });
@@ -903,7 +905,64 @@ fn note_settings_added(original: &Package, output: &Package, notes: &[&str]) -> 
         }
         b.drain(start..end);
     }
-    a == b
+    a == b || track_revisions_only(&a, &b)
+}
+
+/// 뿌리 바로 아래의 맨 `w:trackRevisions`(속성·자식·글 없음)를 뺀 settings 사건 열과 그것이 있었는지. 둘 이상이거나 맨 요소가 아니면
+/// (`w:val` 등) 판정하지 않는다(None).
+fn without_track_revisions(events: &[xml::Canonical]) -> Option<(Vec<xml::Canonical>, bool)> {
+    let mut out = Vec::with_capacity(events.len());
+    let mut depth = 0usize;
+    let mut found = false;
+    let mut i = 0;
+    while let Some(event) = events.get(i) {
+        match event {
+            xml::Canonical::Start {
+                namespace,
+                name,
+                attributes,
+            } => {
+                if depth == 1
+                    && namespace.as_ref().is_some_and(|ns| *ns == WML)
+                    && *name == "trackRevisions"
+                {
+                    if found
+                        || !attributes.is_empty()
+                        || events.get(i + 1) != Some(&xml::Canonical::End)
+                    {
+                        return None;
+                    }
+                    found = true;
+                    i += 2;
+                    continue;
+                }
+                depth += 1;
+            }
+            xml::Canonical::End => depth = depth.checked_sub(1)?,
+            _ => {}
+        }
+        out.push(event.clone());
+        i += 1;
+    }
+    Some((out, found))
+}
+
+/// 두 settings 사건 열이 맨 `w:trackRevisions` 하나의 있고 없음만 다른지.
+fn track_revisions_only(a: &[xml::Canonical], b: &[xml::Canonical]) -> bool {
+    match (without_track_revisions(a), without_track_revisions(b)) {
+        (Some((a, x)), Some((b, y))) => x != y && a == b,
+        _ => false,
+    }
+}
+
+fn track_revisions_toggled(original: &Package, output: &Package) -> bool {
+    let (Some(before), Some(after)) = (original.get(SETTINGS), output.get(SETTINGS)) else {
+        return false;
+    };
+    let (Ok(a), Ok(b)) = (xml::canonical(before), xml::canonical(after)) else {
+        return false;
+    };
+    track_revisions_only(&a, &b)
 }
 
 /// T013 각주·미주: 원본에 이미 있던 각주·미주 부분(`child`: `footnote`·`endnote`)에 **새 각주만 더한** 출력인지. 뿌리 시작이 같고,

@@ -23,7 +23,7 @@ import type { CharFormatFlag, DocumentCommandSnapshot } from "./target";
 export type UnavailableReason =
   | "noDocument" | "notImplemented" | "engineUnsupported" | "notReady" | "composing" | "pendingEdits" | "saving"
   | "nothingToUndo" | "nothingToRedo" | "limit" | "protected" | "dialogOpen" | "selectionRequired" | "notInTable" | "caretRequired"
-  | "tocRequired";
+  | "tocRequired" | "revisionsRequired";
 
 export type CommandState =
   | { available: true; pressed?: boolean }
@@ -69,7 +69,8 @@ export function documentCommandState(id: DocumentCommandId, snapshot: DocumentCo
   }
   if (isActionCommandId(id)) {
     // 값 없는 문맥 명령(T013 목차): 세션이 엔진 보기로 판정한 문맥이 있을 때만(문맥을 화면에서 만들지 않음).
-    if (snapshot.actions?.[id]) return ENABLED;
+    const action = snapshot.actions?.[id];
+    if (action) return action.pressed === undefined ? ENABLED : { available: true, pressed: action.pressed };
     return unavailable(snapshot.actionReasons?.[id] ?? "engineUnsupported");
   }
   const flag = FORMAT_FLAG[id];

@@ -118,6 +118,8 @@ export const RIBBON_TABS: RibbonTabDefinition[] = [
       group("proofing", [cmd("review.spelling", "spelling", "large")]),
       group("comments", [cmd("review.comment", "comment", "large")]),
       group("tracking", [cmd("review.trackChanges", "trackChanges", "large")]),
+      group("changes", [cmd("review.acceptChange", "acceptChange", "large"), cmd("review.rejectChange", "rejectChange", "large"),
+        cmd("review.acceptAll", "acceptChange"), cmd("review.rejectAll", "rejectChange")]),
     ],
   },
   {

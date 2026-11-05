@@ -1269,3 +1269,11 @@ false라 저장은 `ReopenMismatch`로 거부되고 원본은 그대로다. 패�
 
 목차 넣기·갱신 출력은 WordCraft 생성 픽스처(제목 없음·제목 1/2)에서 `word/document.xml`과 `docProps/app.xml`만 바뀌고 기존 규칙으로 안전하다. 실제 저장
 두 회차(게시 파일 다시 열기 → 본문 편집 + 갱신 → 둘째 게시)를 통과했다. 저장 규칙은 바꾸지 않았다([command-registry.md](command-registry.md) "T013 목차").
+
+### T013 Stage 3: 변경 내용 추적 settings 규칙 (2026-11-05)
+
+추적 켜기·끄기 출력의 패키지 차이는 `word/settings.xml`의 `<w:trackRevisions/>` 하나다(실측). `track_revisions_toggled`: 양쪽 settings 정규화 사건 열에서 뿌리
+바로 아래의 맨 `w:trackRevisions`(속성·자식 없음, 하나만)를 빼면 같고 그 있고 없음이 다를 때만 settings를 편집 부분으로 본다. 각주 settings 규칙과 함께여도
+같은 판정을 쓴다. 모델의 `settings.track_changes`는 엔진 다시 읽기 비교가 확인한다. 거부를 확인한 변이(합성 출력 주입, 원본·dirty·복구 후보·티켓 확인):
+`w:val` 속성, 두 번, 다른 설정 요소 함께, 무관한 설정 변경 함께, 다른 이름공간. 추적 편집의 본문 변경은 기존 규칙과 의미 왕복 비교(수정 기록 색인 일대일,
+WordCraft `b74830b`)가 판정한다. 실제 게시 두 회차(켜기 + 추적 편집 → 게시 → 다시 열어 수락·전체 거절·끄기 → 게시)를 통과했다.

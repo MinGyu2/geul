@@ -94,6 +94,7 @@ export type DocxInputNotice = "pasteUnsupported" | "pasteTooLarge" | "pasteIncom
 const MUTATING_OPS: ReadonlySet<DocxOp["op"]> = new Set<DocxOp["op"]>([
   "insertText", "pasteText", "deleteSelection", "backspace", "deleteForward", "newParagraph", "tab", "insertAt", "replaceInserted",
   "format", "comment", "footnote", "endnote", "toc", "updateToc",
+  "trackChanges", "acceptChange", "rejectChange", "acceptAll", "rejectAll",
 ]);
 /**
  * 문서 내용을 바꾸지 않는 연산: 백엔드에서 이동(`caret.*`)·클릭(`caret.set`)·전체 선택(`select.all`)은 선택만, 표지는 어댑터 기억만
@@ -102,7 +103,12 @@ const MUTATING_OPS: ReadonlySet<DocxOp["op"]> = new Set<DocxOp["op"]>([
 const NAVIGATION_OPS: ReadonlySet<DocxOp["op"]> = new Set<DocxOp["op"]>(["move", "pointer", "selectAll", "mark"]);
 const mutates = (op: DocxOp) => !NAVIGATION_OPS.has(op.op);
 /** 명령(T010)이 보낸 연산. 엔진이 거부하면(문서 보호 등) 알린다. */
-const COMMAND_OPS: ReadonlySet<DocxOp["op"]> = new Set<DocxOp["op"]>(["undo", "redo", "format", "comment", "footnote", "endnote", "toc", "updateToc"]);
+const ACTION_IDS = [
+  "references.toc", "references.updateToc",
+  "review.trackChanges", "review.acceptChange", "review.rejectChange", "review.acceptAll", "review.rejectAll",
+] as const;
+const COMMAND_OPS: ReadonlySet<DocxOp["op"]> = new Set<DocxOp["op"]>(["undo", "redo", "format", "comment", "footnote", "endnote", "toc", "updateToc",
+  "trackChanges", "acceptChange", "rejectChange", "acceptAll", "rejectAll"]);
 
 /** 쪽 그림 실패의 원인: 백엔드 거부, PNG 디코드 실패, canvas 문맥 없음, 크기 불일치, 기대하지 않은 예외. */
 export type RenderFailureReason = "backend" | "decode" | "canvas" | "size" | "unexpected";
@@ -1020,16 +1026,22 @@ export class DocxEditorSession implements ImeSession, DocumentCommandTarget {
     if (this.busy) {
       return {
         parameterReasons: { "review.comment": "pendingEdits", "references.footnote": "pendingEdits", "references.endnote": "pendingEdits" },
-        actionReasons: { "references.toc": "pendingEdits", "references.updateToc": "pendingEdits" },
+        actionReasons: Object.fromEntries(ACTION_IDS.map((id) => [id, "pendingEdits"])),
       };
     }
     const actions: NonNullable<DocumentCommandSnapshot["actions"]> = {};
     const actionReasons: NonNullable<DocumentCommandSnapshot["actionReasons"]> = {};
     // 목차 넣기(T013): 각주와 같은 본문 최상위 문단 커서 조건(백엔드 `toc`가 다시 검사). 갱신: 엔진 보기에 목차가 있을 때만.
-    if (view.collapsed && /^body:\d+:\d+$/.test(view.caretKey)) actions["references.toc"] = true;
+    if (view.collapsed && /^body:\d+:\d+$/.test(view.caretKey)) actions["references.toc"] = {};
     else actionReasons["references.toc"] = "caretRequired";
-    if (view.hasToc) actions["references.updateToc"] = true;
+    if (view.hasToc) actions["references.updateToc"] = {};
     else actionReasons["references.updateToc"] = "tocRequired";
+    // 변경 내용 추적(T013 Stage 3): 켜기·끄기는 눌림 상태로, 수락·거절은 추적된 변경이 있을 때만(그 자리에 변경이 없으면 엔진 거부 → 알림).
+    actions["review.trackChanges"] = { pressed: view.tracking };
+    for (const id of ["review.acceptChange", "review.rejectChange", "review.acceptAll", "review.rejectAll"] as const) {
+      if (view.hasRevisions) actions[id] = {};
+      else actionReasons[id] = "revisionsRequired";
+    }
     const body = (key: string) => key.startsWith("body:");
     const parameters: NonNullable<DocumentCommandSnapshot["parameters"]> = {};
     const parameterReasons: NonNullable<DocumentCommandSnapshot["parameterReasons"]> = {};
@@ -1097,6 +1109,9 @@ export class DocxEditorSession implements ImeSession, DocumentCommandTarget {
     const flag = FORMAT_FLAG[command];
     const op: DocxOp | null = command === "edit.undo" ? { op: "undo" } : command === "edit.redo" ? { op: "redo" }
       : command === "references.toc" ? { op: "toc" } : command === "references.updateToc" ? { op: "updateToc" }
+      : command === "review.trackChanges" && this.view ? { op: "trackChanges", value: !this.view.tracking }
+      : command === "review.acceptChange" ? { op: "acceptChange" } : command === "review.rejectChange" ? { op: "rejectChange" }
+      : command === "review.acceptAll" ? { op: "acceptAll" } : command === "review.rejectAll" ? { op: "rejectAll" }
       : flag ? { op: "format", format: flag } : null;
     return { accepted: op !== null && this.push(op) };
   }

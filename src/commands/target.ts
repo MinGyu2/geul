@@ -60,12 +60,13 @@ export interface DocumentCommandSnapshot {
    * 값 없이 실행하는 문맥 명령(T013 목차 넣기·갱신 등)을 지금 할 수 있는지. 세션이 엔진 보기로 판정한다. 없으면 `actionReasons`의
    * 이유 또는 engineUnsupported.
    */
-  actions?: Partial<Record<ActionCommandId, true>>;
-  actionReasons?: Partial<Record<ActionCommandId, "caretRequired" | "tocRequired" | "pendingEdits">>;
+  actions?: Partial<Record<ActionCommandId, { pressed?: boolean }>>;
+  actionReasons?: Partial<Record<ActionCommandId, "caretRequired" | "tocRequired" | "revisionsRequired" | "pendingEdits">>;
 }
 
 /** 값 입력 없이 세션 문맥으로만 가용성이 정해지는 문서 명령. */
-export type ActionCommandId = "references.toc" | "references.updateToc";
+export type ActionCommandId = "references.toc" | "references.updateToc"
+  | "review.trackChanges" | "review.acceptChange" | "review.rejectChange" | "review.acceptAll" | "review.rejectAll";
 
 /**
  * 사용자 값이 필요한 문서 명령(T012·T013)의 값. 명령마다 정해진 모양 하나이며 화면(입력 창)과 세션이 같은 검증

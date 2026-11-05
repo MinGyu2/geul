@@ -224,7 +224,9 @@ describe("T011 형식별 리본 탭(앱)", () => {
     const commentButton = () => within(toolbar()).getByRole("button", { name: /새 메모/ });
     expect(commentButton()).toHaveAttribute("aria-disabled", "true");
     expect(commentButton().title).toContain("한 문단 안의 글자 선택 필요");
-    expect(within(toolbar()).getByRole("button", { name: /변경 내용 추적/ }).title).toContain("아직 연결되지 않은 명령");
+    // 변경 내용 추적(T013 Stage 3): 켜기 단추는 쓸 수 있고(눌리지 않음), 추적된 변경이 없으면 수락·거절은 막힌다.
+    expect(within(toolbar()).getByRole("button", { name: /변경 내용 추적/ })).not.toHaveAttribute("aria-disabled", "true");
+    expect(within(toolbar()).getByRole("button", { name: "모두 수락" }).title).toContain("추적된 변경 없음");
 
     await act(async () => { editor.move("right", true); editor.move("right", true); await flush(); });
     expect(commentButton()).not.toHaveAttribute("aria-disabled");

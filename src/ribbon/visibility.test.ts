@@ -67,7 +67,8 @@ describe("형식 전용 탭의 명령", () => {
 
   // T012에서 rhwp에 연결한 값 입력 명령. 세션이 문맥(parameters)을 내지 않으면 여전히 쓸 수 없다.
   const CONNECTED = new Set(["hangul.charWidth", "hangul.charSpacing", "hangul.tableFormula", "references.footnote", "references.endnote",
-    "references.toc", "references.updateToc"]);
+    "references.toc", "references.updateToc",
+    "review.trackChanges", "review.acceptChange", "review.rejectChange", "review.acceptAll", "review.rejectAll"]);
 
   it("A10/A13 연결하지 않은 명령은 계획 명령이라 어떤 문서 상태에서도 실행할 수 없고(notImplemented), 연결한 값 입력 명령도 세션 문맥 없이는 막힌다", () => {
     expect(formatOnly.length).toBeGreaterThan(0);

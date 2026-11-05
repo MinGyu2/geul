@@ -50,6 +50,8 @@ const ICONS = {
   spelling: <>{P("M4 15 7 6l3 9M5 12h4")}{P("m13 15 3 3 5-7")}</>,
   comment: P("M4 5h16v11H9l-5 4z"),
   trackChanges: <>{P("M4 20h4L19 9l-4-4L4 16z")}{P("M14 20h6")}</>,
+  acceptChange: <>{P("M4 6h10M4 10h7")}{P("m12 16 3 3 6-7")}</>,
+  rejectChange: <>{P("M4 6h10M4 10h7")}{P("m14 13 6 6M20 13l-6 6")}</>,
   sidebarLeft: <>{P("M3 4h18v16H3z")}{P("M9 4v16")}</>,
   sidebarRight: <>{P("M3 4h18v16H3z")}{P("M15 4v16")}</>,
   chevronUp: P("m6 15 6-6 6 6"),

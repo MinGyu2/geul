@@ -14,6 +14,8 @@ const view = {
   formatAccess: "allowed",
   trackedReadOnly: false,
   hasToc: false,
+  tracking: false,
+  hasRevisions: false,
 };
 const session = { sessionId: 3, format: "docx", engine: "wordcraft", revision: 2, state: "ready", displayName: "a.docx", dirty: true, sequence: 5, loadGeneration: 1 };
 

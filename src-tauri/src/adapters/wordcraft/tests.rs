@@ -943,6 +943,7 @@ fn 응답_json은_계약의_모양이다() {
             "collapsed",
             "format",
             "formatAccess",
+            "hasRevisions",
             "hasToc",
             "history",
             "inTable",
@@ -950,7 +951,8 @@ fn 응답_json은_계약의_모양이다() {
             "paragraphStyle",
             "paragraphText",
             "selection",
-            "trackedReadOnly"
+            "trackedReadOnly",
+            "tracking"
         ]
     );
     // T010: 엔진 기록·서식(프런트엔드 parseDocxView가 정확히 이 키만 받는다).
@@ -966,6 +968,8 @@ fn 응답_json은_계약의_모양이다() {
     // 추적 정책은 언제나 불리언으로 직렬화한다(프런트엔드 parseDocxView의 필수 키).
     assert_eq!(value["view"]["trackedReadOnly"], json!(false));
     assert_eq!(value["view"]["hasToc"], json!(false));
+    assert_eq!(value["view"]["tracking"], json!(false));
+    assert_eq!(value["view"]["hasRevisions"], json!(false));
     assert!(value["view"]["caret"]
         .as_object()
         .unwrap()
@@ -1898,13 +1902,8 @@ fn t010_보호_상태의_서식_가용성은_엔진_판정과_같다() {
         ("comments", false, false, Protected, [false, false, false]),
         ("comments", false, true, Regions, [true, false, true]),
         ("forms", false, false, Protected, [false, false, false]),
-        (
-            "trackedChanges",
-            false,
-            false,
-            Protected,
-            [false, false, false],
-        ),
+        // 추적 문서 편집 허용(T013 Stage 3) 뒤: 변경 내용 추적만 허용하는 보호는 서식도 추적으로 받는다.
+        ("trackedChanges", false, false, Allowed, [true, true, true]),
         (
             "trackedChanges",
             true,
@@ -2382,64 +2381,22 @@ fn 각주_저장_출력은_두_회차_모두_다시_열어_같고_보존_검사�
 
 // ---- T013 이미 변경 내용 추적이 켜진 DOCX(review.trackChanges는 연결하지 않음) ----
 
-/// Already tracked files reject edits while preserving navigation and the document state.
+/// 이미 추적 중인 문서: 2026-11-05 Stage 1까지는 모든 변경 연산을 거부했다. Stage 3(WordCraft `b74830b`)에서 앱의 실제 연산 열이 저장
+/// 검증을 통과해 정책을 풀었다(`TRACKED_READ_ONLY`). 보기는 읽기 전용이 아니고 편집은 추적된다.
 #[test]
-fn tracked_documents_reject_mutations_but_allow_navigation() {
-    let mut seed = wordcraft_engine::io::open_bytes("x.docx", &fixture()).unwrap();
-    seed.settings.track_changes = true;
-    let tracked = wordcraft_engine::io::save_bytes("x.docx", &seed).unwrap();
-    let operations = vec![
-        insert("x"),
-        DocxOp::PasteText {
-            text: "x".into(),
-            chain: false,
-        },
-        DocxOp::DeleteSelection,
-        DocxOp::Backspace,
-        DocxOp::DeleteForward,
-        DocxOp::NewParagraph,
-        DocxOp::Tab { back: false },
-        DocxOp::InsertAt {
-            mark: 1,
-            text: "x".into(),
-        },
-        DocxOp::ReplaceInserted {
-            expected: "x".into(),
-            text: "y".into(),
-        },
-        DocxOp::Undo {},
-        DocxOp::Redo {},
-        DocxOp::Format {
-            format: super::engine::CharFormat::Bold,
-        },
-        DocxOp::Comment {
-            text: "comment".into(),
-        },
-        DocxOp::Footnote {
-            text: "note".into(),
-        },
-        DocxOp::Endnote {
-            text: "note".into(),
-        },
-        DocxOp::Toc {},
-        DocxOp::UpdateToc {},
-    ];
-    for op in operations {
-        let mut m = DocxModel::open(&tracked).unwrap();
-        let before = m.diagnostic_document().clone();
-        let outcome = m.apply(&[op]);
-        assert_eq!(outcome.rejected, [0]);
-        assert_eq!(outcome.changed, 0);
-        assert_eq!(*m.diagnostic_document(), before);
-        assert!(m.view().tracked_read_only);
-    }
-    let mut m = DocxModel::open(&tracked).unwrap();
-    let before = m.diagnostic_document().clone();
-    let nav = m.apply(&[mv(MoveTarget::DocEnd, false)]);
-    assert!(nav.rejected.is_empty());
-    assert_eq!(nav.changed, 0);
-    assert_eq!(*m.diagnostic_document(), before);
-    assert!(m.view().tracked_read_only);
+fn tracked_documents_are_editable_and_edits_are_tracked() {
+    const { assert!(!super::engine::TRACKED_READ_ONLY) };
+    let mut m = DocxModel::open(&tracked_fixture()).unwrap();
+    let view = m.view();
+    assert!(!view.tracked_read_only && view.tracking && !view.has_revisions);
+    assert_eq!(view.format_access, super::engine::FormatAccess::Allowed);
+    let outcome = m.apply(&[mv(MoveTarget::DocStart, false), insert("가")]);
+    assert!(outcome.rejected.is_empty());
+    assert_eq!(outcome.changed, 1);
+    assert!(m.view().has_revisions);
+    let doc = m.diagnostic_document();
+    let first = doc.body[0].as_para().unwrap();
+    assert!(first.props_of_char(0).ins.is_some(), "insertion is tracked");
 }
 
 /// Preserve the underlying WordCraft failure reproduction independently of the geul policy.
@@ -2472,9 +2429,9 @@ fn raw_wordcraft_tracked_insertion_roundtrips() {
 }
 
 #[test]
-fn raw_tracked_ime_replacement_reproduces_revision_mismatch() {
+fn raw_tracked_ime_replacement_round_trips() {
     use wordcraft_engine::doc::{
-        roundtrip::{compare_roundtrip, Difference, Equivalence},
+        roundtrip::{compare_roundtrip, Equivalence},
         Pos,
     };
     use wordcraft_engine::{io, Session};
@@ -2499,10 +2456,11 @@ fn raw_tracked_ime_replacement_reproduces_revision_mismatch() {
         .unwrap();
     let bytes = io::save_bytes("x.docx", &session.doc).unwrap();
     let reopened = io::open_bytes("x.docx", &bytes).unwrap();
-    assert_eq!(
+    // 2026-11-05 이전(WordCraft `b39a8fb`)에는 `Different(Field("revisions"))`였다. 수정 기록 색인 일대일 대응(`b74830b`) 뒤 같다.
+    assert!(matches!(
         compare_roundtrip(&session.doc, &reopened, &Default::default()),
-        Ok(Equivalence::Different(Difference::Field("revisions")))
-    );
+        Ok(Equivalence::Equivalent(_))
+    ));
 }
 
 // ---- T013 목차(references.toc / references.updateToc → WordCraft 같은 이름) ----
@@ -2680,4 +2638,283 @@ fn 목차_저장_출력은_새_문서와_기존_문서_두_회차_모두_다시_
         let verdict = check_saved(Format::Docx, &first, &second, None, true);
         assert!(verdict.is_safe(), "{name}: {verdict:?}");
     }
+}
+
+// ---- T013 Stage 3: 변경 내용 추적(review.trackChanges, 수락·거절) ----
+
+fn tracked_fixture() -> Vec<u8> {
+    let mut seed = wordcraft_engine::io::open_bytes("x.docx", &fixture()).unwrap();
+    seed.settings.track_changes = true;
+    wordcraft_engine::io::save_bytes("x.docx", &seed).unwrap()
+}
+
+/// 첫 문단의 (전체 글, 지운 표시가 없는 글).
+fn first_texts(m: &DocxModel) -> (String, String) {
+    let doc = m.diagnostic_document();
+    let p = doc.body[0].as_para().unwrap();
+    let mut live = String::new();
+    for (range, props) in p.run_ranges() {
+        if props.del.is_none() {
+            live.push_str(&p.text[range]);
+        }
+    }
+    (p.plain_text(), live.replace('\u{FFFC}', ""))
+}
+
+/// 추적 문서에서 실행한 출력: 모델 왕복 같음 + 원본 대비 T009 안전.
+#[track_caller]
+fn tracked_save_ok(name: &str, original: &[u8], m: &DocxModel) -> Vec<u8> {
+    use crate::document::Format;
+    use crate::services::save::service::check_saved;
+    let out = m.export().unwrap();
+    assert!(m.same_as(&out), "{name}: same_as");
+    let verdict = check_saved(Format::Docx, original, &out, None, true);
+    assert!(verdict.is_safe(), "{name}: {verdict:?}");
+    out
+}
+
+#[test]
+fn 추적_문서의_실제_연산_열은_모두_저장_동등하다() {
+    let original = tracked_fixture();
+    let p0 = basic::PARAGRAPHS[0];
+    let cases: Vec<(&str, Vec<DocxOp>)> = vec![
+        (
+            "insert",
+            vec![mv(MoveTarget::DocStart, false), insert("가")],
+        ),
+        (
+            "ime correction",
+            vec![
+                mv(MoveTarget::DocStart, false),
+                insert("가"),
+                DocxOp::ReplaceInserted {
+                    expected: "가".into(),
+                    text: "각".into(),
+                },
+                insert("나"),
+            ],
+        ),
+        (
+            "late commit",
+            vec![
+                mv(MoveTarget::DocStart, false),
+                DocxOp::Mark { id: 7 },
+                insert("나"),
+                DocxOp::InsertAt {
+                    mark: 7,
+                    text: "한".into(),
+                },
+            ],
+        ),
+        (
+            "backspace original",
+            vec![
+                mv(MoveTarget::DocStart, false),
+                mv(MoveTarget::Right, false),
+                DocxOp::Backspace,
+                insert("x"),
+            ],
+        ),
+        (
+            "delete forward original",
+            vec![
+                mv(MoveTarget::DocStart, false),
+                DocxOp::DeleteForward,
+                DocxOp::DeleteForward,
+            ],
+        ),
+        (
+            "backspace own insertion",
+            vec![
+                mv(MoveTarget::DocStart, false),
+                insert("가나"),
+                DocxOp::Backspace,
+            ],
+        ),
+        ("selection replace + ime correction", {
+            let mut ops = select_first_two();
+            ops.push(insert("가"));
+            ops.push(DocxOp::ReplaceInserted {
+                expected: "가".into(),
+                text: "각".into(),
+            });
+            ops
+        }),
+        (
+            "paste",
+            vec![
+                mv(MoveTarget::DocEnd, false),
+                DocxOp::PasteText {
+                    text: "줄1\n줄2\t끝".into(),
+                    chain: false,
+                },
+            ],
+        ),
+        (
+            "new paragraph",
+            vec![
+                mv(MoveTarget::DocStart, false),
+                mv(MoveTarget::Right, false),
+                DocxOp::NewParagraph,
+            ],
+        ),
+        ("bold", {
+            let mut ops = select_first_two();
+            ops.push(DocxOp::Format {
+                format: super::engine::CharFormat::Bold,
+            });
+            ops
+        }),
+        ("comment", {
+            let mut ops = select_first_two();
+            ops.push(DocxOp::Comment {
+                text: "메모".into(),
+            });
+            ops
+        }),
+        (
+            "footnote",
+            vec![mv(MoveTarget::DocEnd, false), footnote("각주")],
+        ),
+        ("toc", vec![mv(MoveTarget::DocStart, false), DocxOp::Toc {}]),
+        (
+            "undo redo",
+            vec![
+                mv(MoveTarget::DocStart, false),
+                insert("가"),
+                DocxOp::Backspace,
+                DocxOp::Undo {},
+                DocxOp::Undo {},
+                DocxOp::Redo {},
+            ],
+        ),
+    ];
+    for (name, ops) in cases {
+        let mut m = DocxModel::open(&original).unwrap();
+        assert!(!m.view().tracked_read_only && m.view().tracking, "{name}");
+        let outcome = m.apply(&ops);
+        assert!(
+            outcome.rejected.is_empty(),
+            "{name}: {:?}",
+            outcome.rejected
+        );
+        let first = tracked_save_ok(name, &original, &m);
+        // 둘째 회차: 저장한 출력을 다시 열어 한 번 더 추적 편집.
+        let mut again = DocxModel::open(&first).unwrap();
+        assert!(again.view().tracking, "{name}");
+        again.apply(&[mv(MoveTarget::DocEnd, false), insert("끝")]);
+        tracked_save_ok(name, &first, &again);
+    }
+    // 위치 계약: 지운 원 글자는 문단에 남고(취소선), IME 교정·늦은 확정은 앱이 기억한 원 글자 좌표에 맞는다.
+    let mut m = DocxModel::open(&original).unwrap();
+    m.apply(&[
+        mv(MoveTarget::DocStart, false),
+        insert("가"),
+        DocxOp::ReplaceInserted {
+            expected: "가".into(),
+            text: "각".into(),
+        },
+    ]);
+    assert_eq!(first_texts(&m), (format!("각{p0}"), format!("각{p0}")));
+    assert_eq!(m.view().caret_key, "body:0:3");
+    let mut m = DocxModel::open(&original).unwrap();
+    m.apply(&[
+        mv(MoveTarget::DocStart, false),
+        DocxOp::Mark { id: 1 },
+        insert("나"),
+        DocxOp::InsertAt {
+            mark: 1,
+            text: "한".into(),
+        },
+    ]);
+    assert_eq!(first_texts(&m).1, format!("한나{p0}"));
+    assert_eq!(
+        m.view().caret_key,
+        "body:0:6",
+        "caret stays after the late-committed and typed text"
+    );
+    let mut m = DocxModel::open(&original).unwrap();
+    let mut ops = select_first_two();
+    ops.push(insert("가"));
+    ops.push(DocxOp::ReplaceInserted {
+        expected: "가".into(),
+        text: "각".into(),
+    });
+    m.apply(&ops);
+    let (all, live) = first_texts(&m);
+    assert!(
+        all.contains("한글") && !live.starts_with("한글"),
+        "deleted text stays as tracked text: {all:?} / {live:?}"
+    );
+    assert!(live.starts_with('각'), "{live:?}");
+    assert!(
+        !all.contains('가'),
+        "the provisional syllable is gone, not tracked: {all:?}"
+    );
+}
+
+#[test]
+fn 추적_켜기_끄기와_수락_거절은_한_단계이고_저장_동등하다() {
+    use crate::document::Format;
+    use crate::services::save::service::check_saved;
+    let original = fixture();
+    let mut m = DocxModel::open(&original).unwrap();
+    assert!(!m.view().tracking && !m.view().has_revisions);
+    // 변경이 없으면 수락·거절은 거부(문서 그대로).
+    for op in [
+        DocxOp::AcceptChange {},
+        DocxOp::RejectChange {},
+        DocxOp::AcceptAll {},
+        DocxOp::RejectAll {},
+    ] {
+        assert_eq!(m.apply(&[op]).rejected, vec![0]);
+    }
+    assert_eq!(m.apply(&[DocxOp::TrackChanges { value: true }]).changed, 1);
+    assert!(m.view().tracking);
+    assert_eq!(
+        m.apply(&[DocxOp::TrackChanges { value: true }]).changed,
+        0,
+        "same value: no change"
+    );
+    let on = m.export().unwrap();
+    assert!(m.same_as(&on));
+    let verdict = check_saved(Format::Docx, &original, &on, None, true);
+    assert!(verdict.is_safe(), "{verdict:?}");
+    m.apply(&[
+        mv(MoveTarget::DocStart, false),
+        insert("새 "),
+        mv(MoveTarget::DocEnd, false),
+        DocxOp::Backspace,
+    ]);
+    assert!(m.view().has_revisions);
+    let tracked = m.export().unwrap();
+    assert!(m.same_as(&tracked));
+    // 커서 자리 수락 → 다른 변경 거절 → 전체.
+    m.apply(&[
+        mv(MoveTarget::DocStart, false),
+        mv(MoveTarget::Right, false),
+    ]);
+    assert_eq!(m.apply(&[DocxOp::AcceptChange {}]).changed, 1);
+    assert!(m.body_text().starts_with("새 "));
+    assert!(m.view().has_revisions);
+    assert_eq!(m.apply(&[DocxOp::RejectAll {}]).changed, 1);
+    assert!(!m.view().has_revisions);
+    let resolved = m.export().unwrap();
+    assert!(m.same_as(&resolved));
+    // 실행 취소: 전체 거절 한 단계, 수락 한 단계.
+    assert_eq!(m.apply(&[DocxOp::Undo {}]).changed, 1);
+    assert!(m.view().has_revisions);
+    assert_eq!(m.apply(&[DocxOp::Undo {}]).changed, 1);
+    assert!(m.same_as(&m.export().unwrap()));
+    assert_eq!(m.apply(&[DocxOp::Redo {}]).changed, 1);
+    // 끄기: 그 뒤 편집은 추적하지 않는다.
+    let mut m = DocxModel::open(&tracked).unwrap();
+    assert_eq!(m.apply(&[DocxOp::TrackChanges { value: false }]).changed, 1);
+    m.apply(&[DocxOp::AcceptAll {}]);
+    m.apply(&[mv(MoveTarget::DocEnd, false), insert("평문")]);
+    assert!(!m.view().has_revisions);
+    let off = m.export().unwrap();
+    assert!(m.same_as(&off));
+    let verdict = check_saved(Format::Docx, &tracked, &off, None, true);
+    assert!(verdict.is_safe(), "{verdict:?}");
 }

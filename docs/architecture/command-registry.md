@@ -652,3 +652,29 @@ Strict 회귀 시험: `strict_reference_rebinding_*`, `strict_reference_valid_re
   `toc_ranges` 1·`toc_roundtrip` 7. geul `cargo test --locked --offline --lib` 314 통과/24 무시(새 어댑터 4, 실제 게시 두 회차
   `toc_first_and_second_published_saves`), clippy `--all-targets -D warnings`, `npx vitest run` 64 파일 1132 통과, typecheck·lint.
   native X11/IBus·Word: NOT RUN(Word에서 목차 표시·갱신 호환은 미검증).
+
+## T013 변경 내용 추적·수락·거절 (Stage 3, 2026-11-05, `e342447` 위)
+
+| 명령 | 엔진 연산 | 제품 노출 |
+|---|---|---|
+| `review.trackChanges` | `DocxOp::TrackChanges { value }` → WordCraft `review.trackChanges {"value"}`(값 명시, 늦은 요청이 토글을 뒤집지 않음) | 제품 DOCX, 눌림 = 보기 `tracking` |
+| `review.acceptChange`·`review.rejectChange` | `AcceptChange {}`·`RejectChange {}` → `review.accept`·`review.reject`(선택 또는 커서 자리의 변경) | 보기 `hasRevisions`일 때 |
+| `review.acceptAll`·`review.rejectAll` | `AcceptAll {}`·`RejectAll {}` → `review.acceptAll`·`review.rejectAll` | 보기 `hasRevisions`일 때 |
+
+- 원인(재현): 추적 중 지운 글이 남는 편집(지우기, 선택 바꾸기, IME 교정 `ReplaceInserted`, 수락·거절) 뒤 `Field("revisions")`. 모델은 수정 기록을 만든 순서,
+  reader는 문서 순서로 번호 매기고, 자기 추적 넣기를 지우면 쓰이지 않는 기록이 남는다. 책임 계층은 WordCraft 의미 비교다.
+- 엔진 수정(`b74830b`, 로컬 전용): 모든 수정 기록 색인 자리(글자 `ins`/`del`/`rPrChange`, 문단 표지, `pPrChange`, 번호 변경, 표·행·셀·구역 변경)를 부분 ID처럼
+  일대일로 짝짓고, 짝의 기록은 값(종류·작성자·날짜·이동 이름)이 같아야 한다. 갈라짐·합침(`RevisionMapping`), 쓰이지 않는 다시 읽은 기록(`ExtraRevision`),
+  없는 기록(`DanglingRevision`, 동등 아님)은 거부한다. 쓰이지 않는 원본 기록은 내용이 없고 쓰이지 않아 차이가 아니다. 변경 전 값(`old`)은 그대로 값 비교다.
+  수정 전 비교로 엔진 시험 2개가 `Field("revisions")`로 실패함을 확인했다.
+- 정책 변경: 이미 추적 중인 문서의 읽기 전용(`trackedReadOnly`, Stage 1까지)을 풀었다(`TRACKED_READ_ONLY = false`, 한 상수로 IPC·IME·명령 경계를 다시 막을 수
+  있음). 근거: 앱의 실제 연산 열 14종(넣기, IME 교정, 늦은 확정 `InsertAt`, 원 글자 Backspace/Delete, 자기 넣기 지우기, 선택 바꾸기 + IME 교정, 붙여넣기,
+  새 문단, 굵게(추적 서식), 메모, 각주, 목차, 실행 취소·다시 실행)이 추적 문서에서 모두 `same_as` + T009 안전이고, 저장한 출력을 다시 열어 둘째 추적 편집도
+  같다. 위치 계약: 지운 원 글자는 문단 글자에 남고(취소선), 자기 추적 넣기를 고치면 그 글자는 사라지며(추적 기록 아님), IME 교정·늦은 확정·커서는 앱이 기억한
+  원 글자 좌표에 맞는다(시험이 글자·커서 키를 고정). 변경 내용 추적만 허용하는 문서 보호에서는 글자 서식도 엔진이 추적으로 받는다(`FormatAccess::Allowed`).
+- 저장: settings의 차이가 뿌리 바로 아래의 맨 `<w:trackRevisions/>` 하나의 있고 없음뿐일 때만 받는다(save-preservation "T013 Stage 3").
+- 확인: WordCraft doc/docx/engine 875 통과 + 기존 실패 1. geul `cargo test --lib` 317 통과/24 무시(새: 추적 문서 연산 열·켜기/끄기·수락/거절 어댑터 시험,
+  실제 게시 두 회차 `tracking_toggle_tracked_edits_and_review_publish_twice`·`tracked_document_ipc_edits_are_tracked_and_saved`, settings 음성 변이 5),
+  clippy·fmt, `npx vitest run` 64 파일 1134 통과, typecheck·lint. **native X11/IBus 추적 입력·Word의 수락/거절 호환: NOT RUN**(Stage 7).
+- 이전 기록(Stage 1의 추적 문서 편집 차단, `raw_tracked_ime_replacement_reproduces_revision_mismatch`)은 당시 엔진 `b39a8fb` 기준 사실이며, 그 시험은
+  `raw_tracked_ime_replacement_round_trips`로 바뀌었다.

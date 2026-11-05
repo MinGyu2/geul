@@ -7,10 +7,11 @@
 
 | 경로 | 업스트림 | 고정 커밋 | 태그 | 라이선스 | 검토일 |
 |------|----------|-----------|------|----------|--------|
-| `external/wordcraft/` | https://github.com/MinGyu2/wordcraft.git (`storytold/wordcraft` 공개 포크) | `af80638f65f93e9bea5091f7cf69c6075942d809` | `geul-roundtrip-42e8a67` (역사 태그, `42e8a67`; 기반 `v0.7.0` `fc41918`) | MIT OR Apache-2.0 | 2026-11-05 |
+| `external/wordcraft/` | https://github.com/MinGyu2/wordcraft.git (`storytold/wordcraft` 공개 포크) | `b74830b293a49801b385b81efae865d65c905070` | `geul-roundtrip-42e8a67` (역사 태그, `42e8a67`; 기반 `v0.7.0` `fc41918`) | MIT OR Apache-2.0 | 2026-11-05 |
 | `external/rhwp/` | https://github.com/edwardkim/rhwp.git | `1a76570e833917d15817415a53c09ad61ab3203f` | `v0.8.7` (2026-10-06 릴리스) | MIT | 2026-10-16 |
 
 - rhwp 커밋은 이동 브랜치(`main`)가 아니라 업스트림 정식 릴리스 태그가 가리키는 커밋입니다.
+- **2026-11-05 Stage 3(로컬 전용, 미발행)**: gitlink를 `b74830b293a49801b385b81efae865d65c905070`(`b74830b`, 부모 `af80638`)로 올렸다. 의미 왕복 비교의 수정 기록 색인 일대일 대응이다. 원격 재현 불가(발행 전 geul push 금지).
 - **2026-11-05 Stage 2(로컬 전용, 미발행)**: gitlink를 `af80638f65f93e9bea5091f7cf69c6075942d809`(`af80638`, 브랜치 `geul/semantic-roundtrip-equivalence`의 로컬 커밋, 부모 `b39a8fb`)로 올렸다. 목차 빈 범위 reader 수정이다. 이 SHA는 아직 원격에 없으므로 **원격 재현 불가**이며, 공개 포크에 이 커밋을 발행하기 전에는 geul master를 push하지 않는다(발행·push는 별도 승인 필요).
 - 이전 geul gitlink `b39a8fb49c6fefbdd960792f2a4effd0d7660e3c`는 공개 포크 브랜치 `geul/semantic-roundtrip-equivalence`에서 도달 가능하다. 빈 임시 저장소의 익명 HTTPS depth-one SHA fetch와 새 geul master clone의 `external/wordcraft` 초기화가 모두 이 SHA로 확인됐다. 새 발행은 필요하지 않았다.
 - 안정 태그 `geul-roundtrip-42e8a67`는 기존 SHA `42e8a67061d0721df3e2665a958865e61363def6`를 가리키며 이동하지 않았다. separator 수정은 `b39a8fb` 브랜치 커밋에 있고 이 태그에는 없다.

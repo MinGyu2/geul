@@ -26,11 +26,14 @@ type FakeState = {
   comments: { range: string; text: string }[];
   notes: { kind: "footnote" | "endnote"; at: At; text: string }[];
   toc: { updates: number } | null;
+  tracking: boolean;
+  revisions: number;
 };
 /** WordCraft에서 바꾸는 명령(`mutates`)으로 실행되는 연산. deleteSelection은 선택이 있을 때만 명령을 실행한다. */
 const ENGINE_MUTATING: ReadonlySet<DocxOp["op"]> = new Set<DocxOp["op"]>([
   "insertText", "pasteText", "backspace", "deleteForward", "newParagraph", "tab", "insertAt", "replaceInserted", "format", "comment",
   "footnote", "endnote", "toc", "updateToc",
+  "trackChanges", "acceptChange", "rejectChange", "acceptAll", "rejectAll",
 ]);
 const FORMATS: readonly DocxCharFormat[] = ["bold", "italic", "underline", "strikethrough"];
 const chars = (text: string) => [...text];
@@ -81,6 +84,9 @@ export class FakeDocx implements DocxBackend {
   notes: { kind: "footnote" | "endnote"; at: At; text: string }[] = [];
   /** 넣은 목차(흉내): 갱신 횟수. 없으면 null. */
   toc: { updates: number } | null = null;
+  /** 변경 내용 추적(흉내): 켜짐, 추적된 변경 수(바꾸는 글자 연산마다 하나). */
+  tracking = false;
+  revisions = 0;
   /** 쪽 수(쪽마다 612×792pt, 커서·선택은 0쪽). */
   pageCount = 1;
   /** 그림 요청이 이 오류로 실패한다(그대로 둠, null이면 정상). */
@@ -149,6 +155,7 @@ export class FakeDocx implements DocxBackend {
     return {
       trackedReadOnly: this.trackedReadOnly,
       hasToc: this.toc !== null,
+      tracking: this.tracking, hasRevisions: this.revisions > 0,
       pages: Array.from({ length: this.pageCount }, () => ({ width: 612, height: 792 })),
       caret: { page: 0, x: MARGIN + this.caret.o * CHAR, y: MARGIN + this.caret.p * LINE, height: 16 },
       selection, collapsed, inTable: false,
@@ -171,14 +178,14 @@ export class FakeDocx implements DocxBackend {
 
   /** 문서 내용(문단·서식). 바뀌었는지 비교용. */
   private content(): string {
-    return JSON.stringify([this.paragraphs, [...this.styled].map(([key, set]) => [key, [...set].sort()]).sort(), this.comments, this.notes, this.toc]);
+    return JSON.stringify([this.paragraphs, [...this.styled].map(([key, set]) => [key, [...set].sort()]).sort(), this.comments, this.notes, this.toc, this.tracking, this.revisions]);
   }
 
   private capture(): FakeState {
     return {
       paragraphs: [...this.paragraphs], styled: [...this.styled].map(([key, set]) => [key, [...set]]),
       caret: { ...this.caret }, anchor: { ...this.anchor }, pending: [...this.pendingFormat], comments: [...this.comments],
-      notes: [...this.notes], toc: this.toc && { ...this.toc },
+      notes: [...this.notes], toc: this.toc && { ...this.toc }, tracking: this.tracking, revisions: this.revisions,
     };
   }
 
@@ -191,6 +198,8 @@ export class FakeDocx implements DocxBackend {
     this.comments = [...state.comments];
     this.notes = [...state.notes];
     this.toc = state.toc && { ...state.toc };
+    this.tracking = state.tracking;
+    this.revisions = state.revisions;
     // 엔진처럼 되돌리면 표지·마지막 넣기 기억을 버린다(그 자리를 다시 쓰지 않음).
     this.marks.clear();
     this.last = null;
@@ -267,6 +276,9 @@ export class FakeDocx implements DocxBackend {
           rejected.push(index); // 엔진이 거부하면 기록도 그대로(Session::run이 되돌림)
           return;
         }
+        // 추적 중에는 글자를 바꾸는 연산이 변경 기록 하나를 남긴다(흉내).
+        if (this.tracking && ["insertText", "pasteText", "backspace", "deleteForward", "newParagraph", "insertAt", "replaceInserted"].includes(op.op)
+          && this.content() !== before) this.revisions += 1;
         const contentChanged = this.content() !== before;
         if (contentChanged) {
           changed += 1;
@@ -380,6 +392,23 @@ export class FakeDocx implements DocxBackend {
       case "comment": {
         if (cmp(this.caret, this.anchor) === 0) return false;
         this.comments.push({ range: this.rangeKey(), text: op.text });
+        return true;
+      }
+      case "trackChanges": {
+        if (this.tracking === op.value) return true;
+        this.tracking = op.value;
+        return true;
+      }
+      case "acceptChange":
+      case "rejectChange": {
+        if (this.revisions === 0) return false;
+        this.revisions -= 1;
+        return true;
+      }
+      case "acceptAll":
+      case "rejectAll": {
+        if (this.revisions === 0) return false;
+        this.revisions = 0;
         return true;
       }
       case "toc": {

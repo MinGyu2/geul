@@ -32,7 +32,10 @@ export function commentProblem(text: string): "empty" | "tooLong" | "characters"
   return null;
 }
 
-const ACTION_COMMANDS: ReadonlySet<string> = new Set<ActionCommandId>(["references.toc", "references.updateToc"]);
+const ACTION_COMMANDS: ReadonlySet<string> = new Set<ActionCommandId>([
+  "references.toc", "references.updateToc",
+  "review.trackChanges", "review.acceptChange", "review.rejectChange", "review.acceptAll", "review.rejectAll",
+]);
 
 /** 값 입력 없이 세션 문맥으로만 실행하는 명령(입력 창을 열지 않음). */
 export function isActionCommandId(id: string): id is ActionCommandId {

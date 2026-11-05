@@ -1497,12 +1497,15 @@ fn pinned_reader_separator_mutations_remain_explicit() {
     }
 }
 
+/// 이미 추적 중인 문서(Stage 3 정책 해제 뒤): 앱의 IME 연산 열이 받아들여지고 추적되며, 저장 전에는 원본 파일이 그대로다. 낡은
+/// revision의 요청은 여전히 거부된다.
 #[test]
-fn tracked_policy_ipc_preserves_session_and_original() {
+fn tracked_document_ipc_edits_are_tracked_and_saved() {
     let mut seed = reopen(&basic::basic_ko().unwrap());
     seed.settings.track_changes = true;
     let original = written(&seed);
-    let doc = open_docx(&original);
+    let mut doc = open_docx(&original);
+    assert!(doc.preflight().unwrap().preservation.is_safe());
     let before = doc.state.registry().get(doc.info.session_id).unwrap();
     let result = block_on(docx::edit(
         &doc.state,
@@ -1510,10 +1513,8 @@ fn tracked_policy_ipc_preserves_session_and_original() {
         before.load_generation,
         before.revision,
         vec![
+            DocxOp::Mark { id: 1 },
             DocxOp::InsertText { text: "가".into() },
-            DocxOp::Backspace,
-            DocxOp::Undo {},
-            DocxOp::Redo {},
             DocxOp::ReplaceInserted {
                 expected: "가".into(),
                 text: "각".into(),
@@ -1522,24 +1523,32 @@ fn tracked_policy_ipc_preserves_session_and_original() {
                 mark: 1,
                 text: "한".into(),
             },
+            DocxOp::Backspace,
+            DocxOp::Undo {},
+            DocxOp::Redo {},
         ],
     ))
     .unwrap();
-    assert_eq!(result.rejected, [0, 1, 2, 3, 4, 5]);
-    assert_eq!(result.session, before);
-    assert!(result.view.tracked_read_only);
-    assert_eq!(doc.bytes(), original);
-    assert!(doc.leftovers().is_empty());
-    ticket_released(&doc);
+    assert!(result.rejected.is_empty(), "{:?}", result.rejected);
+    assert!(result.view.has_revisions && !result.view.tracked_read_only);
+    assert!(result.session.revision > before.revision && result.session.dirty);
+    doc.info = result.session.clone();
+    assert_eq!(doc.bytes(), original, "nothing written before save");
     let stale = block_on(docx::edit(
         &doc.state,
         before.session_id,
         before.load_generation,
-        before.revision + 1,
+        before.revision,
         vec![DocxOp::Backspace],
     ));
     assert!(stale.is_err());
-    assert_eq!(doc.state.registry().get(before.session_id).unwrap(), before);
+    assert_eq!(
+        doc.state.registry().get(before.session_id).unwrap(),
+        result.session
+    );
+    let saved = publish_notes(&mut doc);
+    assert!(reopen(&saved).settings.track_changes);
+    ticket_released(&doc);
 }
 
 /// Stage 1B: wrapper metadata (`w:type`, `w:id`, other attributes), duplicate/missing separator
@@ -1841,4 +1850,145 @@ fn toc_first_and_second_published_saves() {
         ticket_released(&doc);
         eprintln!("TOC {name}: two published saves, reloaded from disk");
     }
+}
+
+/// T013 Stage 3: 변경 내용 추적 켜기 → 추적 편집 → 실제 게시 → 디스크의 게시 파일을 다시 열어 수락·거절 + 끄기 → 둘째 게시. settings의
+/// `w:trackRevisions` 규칙은 그 요소 하나의 있고 없음만 받는다(합성 출력 주입 음성 대조).
+#[test]
+fn tracking_toggle_tracked_edits_and_review_publish_twice() {
+    let edit = |doc: &mut Docx, ops: Vec<DocxOp>| {
+        let edited = block_on(docx::edit(
+            &doc.state,
+            doc.info.session_id,
+            doc.info.load_generation,
+            doc.info.revision,
+            ops,
+        ))
+        .unwrap();
+        assert!(edited.rejected.is_empty(), "{:?}", edited.rejected);
+        doc.info = edited.session;
+        edited.view
+    };
+    let original = basic::basic_ko().unwrap();
+    let mut doc = open_docx(&original);
+    assert!(doc.preflight().unwrap().preservation.is_safe());
+    let view = edit(
+        &mut doc,
+        vec![
+            DocxOp::TrackChanges { value: true },
+            DocxOp::Move {
+                to: MoveTarget::DocStart,
+                extend: false,
+            },
+            DocxOp::InsertText { text: "가".into() },
+            DocxOp::ReplaceInserted {
+                expected: "가".into(),
+                text: "각".into(),
+            },
+            DocxOp::Move {
+                to: MoveTarget::DocEnd,
+                extend: false,
+            },
+            DocxOp::Backspace,
+        ],
+    );
+    assert!(view.tracking && view.has_revisions && !view.tracked_read_only);
+    // 음성 대조: 첫 출력의 settings 변이.
+    let output = model_of(&doc).lock().unwrap().export().unwrap();
+    let ok = |out: &[u8]| service::check_saved(Format::Docx, &original, out, None, true);
+    assert!(ok(&output).is_safe());
+    let settings = |f: &dyn Fn(&str) -> String| byte_patch(&output, "word/settings.xml", f);
+    for (name, corrupt) in [
+        (
+            "val attribute",
+            settings(&|x| {
+                x.replacen(
+                    "<w:trackRevisions/>",
+                    r#"<w:trackRevisions w:val="true"/>"#,
+                    1,
+                )
+            }),
+        ),
+        (
+            "twice",
+            settings(&|x| {
+                x.replacen(
+                    "<w:trackRevisions/>",
+                    "<w:trackRevisions/><w:trackRevisions/>",
+                    1,
+                )
+            }),
+        ),
+        (
+            "other setting too",
+            settings(&|x| {
+                x.replacen(
+                    "<w:trackRevisions/>",
+                    "<w:trackRevisions/><w:doNotTrackMoves/>",
+                    1,
+                )
+            }),
+        ),
+        (
+            "unrelated change too",
+            settings(&|x| x.replacen(r#"w:val="720""#, r#"w:val="360""#, 1)),
+        ),
+        (
+            "other namespace",
+            settings(&|x| {
+                x.replacen(
+                    "<w:trackRevisions/>",
+                    r#"<x:trackRevisions xmlns:x="urn:x"/>"#,
+                    1,
+                )
+            }),
+        ),
+    ] {
+        assert_ne!(corrupt, output, "{name}: mutation applied");
+        let verdict = ok(&corrupt);
+        assert!(
+            verdict
+                .findings
+                .contains(&Finding::at(FindingCode::PartChanged, "word/settings.xml")),
+            "{name}: {verdict:?}"
+        );
+        refuse_note_output(
+            &doc,
+            &corrupt,
+            Finding::at(FindingCode::PartChanged, "word/settings.xml"),
+        );
+    }
+    let first = publish_notes(&mut doc);
+    let mut doc = reload(doc);
+    let reopened = reopen(&first);
+    assert!(reopened.settings.track_changes);
+    // 둘째 회차: 커서 자리 수락, 나머지 거절, 추적 끄기, 추적 없는 편집.
+    let view = edit(
+        &mut doc,
+        vec![
+            DocxOp::Move {
+                to: MoveTarget::DocStart,
+                extend: false,
+            },
+            DocxOp::AcceptChange {},
+            DocxOp::RejectAll {},
+            DocxOp::TrackChanges { value: false },
+            DocxOp::Move {
+                to: MoveTarget::DocEnd,
+                extend: false,
+            },
+            DocxOp::InsertText { text: "!".into() },
+        ],
+    );
+    assert!(!view.tracking && !view.has_revisions);
+    let second = publish_notes(&mut doc);
+    let doc = reload(doc);
+    let fin = reopen(&second);
+    assert!(!fin.settings.track_changes && fin.revisions.is_empty());
+    assert!(fin.plain_text(StoryRef::Body).starts_with("각"));
+    assert!(
+        fin.plain_text(StoryRef::Body).ends_with("End.!"),
+        "rejected deletion restored the last character"
+    );
+    ticket_released(&doc);
 }

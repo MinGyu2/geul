@@ -601,3 +601,46 @@ describe("T013 목차 넣기·갱신(세션 문맥 명령)", () => {
     expect(edits(fake).flatMap((call) => call.args[3] as DocxOp[]).some((op) => op.op === "toc")).toBe(false);
   });
 });
+
+describe("T013 변경 내용 추적(세션 문맥 명령)", () => {
+  it("켜기·끄기는 눌림 상태와 명시 값으로 보내고, 수락·거절은 추적된 변경이 있을 때만 한다", async () => {
+    const { editor, fake } = await readyDocx();
+    expect(documentCommandState("review.trackChanges", editor.snapshot())).toEqual({ available: true, pressed: false });
+    expect(documentCommandState("review.acceptAll", editor.snapshot())).toEqual({ available: false, reason: "revisionsRequired" });
+    expect(editor.execute("review.acceptAll").accepted).toBe(false);
+    expect(editor.execute("review.trackChanges").accepted).toBe(true);
+    await flush();
+    expect(sentOps(fake)).toEqual([{ op: "trackChanges", value: true }]);
+    expect(documentCommandState("review.trackChanges", editor.snapshot())).toEqual({ available: true, pressed: true });
+    // 추적 중 입력(IME 경로 포함)은 그대로 편집 가능하고 변경 기록을 남긴다.
+    expect(editor.snapshot().editable).toBe(true);
+    expect(editor.typeText("가")).toBe(true);
+    await flush();
+    expect(fake.revisions).toBe(1);
+    for (const id of ["review.acceptChange", "review.rejectChange", "review.acceptAll", "review.rejectAll"] as const) {
+      expect(documentCommandState(id, editor.snapshot()), id).toEqual({ available: true });
+    }
+    const revision = editor.revision;
+    expect(editor.execute("review.acceptAll").accepted).toBe(true);
+    await flush();
+    expect(sentOps(fake).at(-1)).toEqual({ op: "acceptAll" });
+    expect(fake.revisions).toBe(0);
+    expect(editor.revision).toBe(revision + 1);
+    expect(documentCommandState("review.rejectChange", editor.snapshot())).toEqual({ available: false, reason: "revisionsRequired" });
+    // 되돌리면 변경이 돌아온다(엔진 기록 한 단계).
+    expect(editor.execute("edit.undo").accepted).toBe(true);
+    await flush();
+    expect(fake.revisions).toBe(1);
+    // 끄기는 지금 상태의 반대 값을 보낸다.
+    expect(editor.execute("review.trackChanges").accepted).toBe(true);
+    await flush();
+    expect(sentOps(fake).at(-1)).toEqual({ op: "trackChanges", value: false });
+    expect(documentCommandState("review.trackChanges", editor.snapshot())).toEqual({ available: true, pressed: false });
+  });
+
+  it("조합 중·모달·대기 중에는 추적 명령을 막는다", async () => {
+    const { editor } = await readyDocx();
+    editor.beginComposition();
+    expect(documentCommandState("review.trackChanges", editor.snapshot())).toEqual({ available: false, reason: "composing" });
+  });
+});
