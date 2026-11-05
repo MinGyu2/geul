@@ -10132,3 +10132,46 @@ fn docx_메모를_단_문서를_실제_저장_절차로_두_번_저장하고_다
     );
     assert!(doc.leftovers().is_empty());
 }
+
+#[test]
+fn comment_relationship_rebinding_is_refused() {
+    let ns = "http://schemas.openxmlformats.org/officeDocument/2006/relationships";
+    let document = format!(
+        r#"<w:document xmlns:w="{W}" xmlns:r="{ns}"><w:body><w:p><w:hyperlink r:id="rId1"/></w:p></w:body></w:document>"#
+    );
+    let original = replace(&memo_original(), "word/document.xml", &document);
+    let output = replace(&memo_output(&["memo"]), "word/document.xml", &document);
+    // rId1 resolved to styles before, comments after. Model comparison is a
+    // separate gate; the package comparator must not assume it covers every r:*.
+    assert!(!package::comment_parts_added(
+        &pkg(&original),
+        &pkg(&output)
+    ));
+    let repaired = replace(
+        &output,
+        "word/document.xml",
+        &document.replace("rId1", "rId3"),
+    );
+    assert!(package::comment_parts_added(
+        &pkg(&original),
+        &pkg(&repaired)
+    ));
+    let rels = String::from_utf8(
+        pkg(&repaired)
+            .get("word/_rels/document.xml.rels")
+            .unwrap()
+            .to_vec(),
+    )
+    .unwrap();
+    for bad in [
+        rels.replace("rId3", "rId1"),
+        rels.replace("Id=\"rId3\"", ""),
+        rels.replace("styles.xml", "absent.xml"),
+    ] {
+        let invalid = replace(&repaired, "word/_rels/document.xml.rels", &bad);
+        assert!(
+            !package::comment_parts_added(&pkg(&original), &pkg(&invalid))
+                || !package::validate_docx(&pkg(&invalid)).is_empty()
+        );
+    }
+}

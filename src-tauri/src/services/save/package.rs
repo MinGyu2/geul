@@ -485,12 +485,58 @@ fn multiset_plus(
     want == have
 }
 
+// Compare the resolved relationship attributes at every r:* occurrence, in XML
+// order, in all original XML parts. Unreferenced relationships may be renumbered;
+// referenced ones may only be renumbered together with their references.
+fn comment_reference_bindings_equal(original: &Package, output: &Package) -> Option<bool> {
+    let bindings = |package: &Package, name: &str| -> Option<Vec<Vec<(String, String)>>> {
+        let (_, relations) = flat_children(
+            package.get(DOCUMENT_RELS)?,
+            OPC_RELATIONSHIPS,
+            "Relationships",
+            "Relationship",
+            "",
+        )?;
+        let mut ids = std::collections::BTreeMap::new();
+        for mut attrs in relations {
+            let index = attrs.iter().position(|(key, _)| key == "Id")?;
+            let (_, id) = attrs.remove(index);
+            if id.is_empty() || ids.insert(id, attrs).is_some() {
+                return None;
+            }
+        }
+        let mut found = Vec::new();
+        for event in xml::canonical(package.get(name)?).ok()? {
+            if let xml::Canonical::Start { attributes, .. } = event {
+                for (ns, key, value) in attributes {
+                    if ns.as_deref()
+                        == Some(
+                            "http://schemas.openxmlformats.org/officeDocument/2006/relationships",
+                        )
+                    {
+                        let mut binding = ids.get(value.as_str())?.clone();
+                        binding.push(("referenceAttribute".into(), key.to_string()));
+                        found.push(binding);
+                    }
+                }
+            }
+        }
+        Some(found)
+    };
+    for name in original.parts.keys().filter(|name| name.ends_with(".xml")) {
+        if bindings(original, name)? != bindings(output, name)? {
+            return Some(false);
+        }
+    }
+    Some(true)
+}
+
 /// T013: 편집 저장 출력이 원본에 **메모 부분을 새로 더한 것뿐**인지. 모두 성립해야 한다.
 /// - 원본에는 `COMMENT_PARTS`가 하나도 없고(대소문자 무시), 출력에 새로 생긴 부분은 `COMMENT_PARTS`의 부분뿐(하나 이상),
 /// - `[Content_Types].xml`: 뿌리가 같고, 출력 자식 = 원본 자식(순서 무관) + 새 메모 부분마다 그 내용 형식의 `Override` 하나,
 /// - `word/_rels/document.xml.rels`: 뿌리가 같고, `Id`를 뺀 출력 관계 = 원본 관계(순서 무관) + 새 메모 부분마다 `Type`·`Target`이 그
 ///   부분인 내부 관계 하나(`TargetMode` 없음). WordCraft는 관계 `Id`를 다시 매기므로(실측: 메모 관계가 rId1, styles가 rId1→rId3)
-///   `Id` 값은 비교하지 않는다 — 그 Id를 가리키는 곳은 본문(`word/document.xml`)뿐이고 본문은 엔진 다시 읽기가 모델로 확인한다.
+///   번호 변경은 원본 XML 부분의 모든 r:* 참조가 같은 관계 속성으로 연결되는 경우만 허용한다.
 ///
 /// 메모 부분 내용(메모 글·작성자·날짜·완료 표시)은 엔진 모델의 일부라 다시 읽기 비교가 확인한다. 원본에 메모가 이미 있으면 이
 /// 규칙을 쓰지 않는다(기존 메모 부분이 바뀌면 지금처럼 partChanged).
@@ -613,7 +659,9 @@ pub fn comment_parts_added(original: &Package, output: &Package) -> bool {
             attrs
         })
         .collect();
-    root_a == root_b && multiset_plus(&rels_a, &rels_b, &relations)
+    root_a == root_b
+        && multiset_plus(&rels_a, &rels_b, &relations)
+        && comment_reference_bindings_equal(original, output) == Some(true)
 }
 
 /// 메모 부분마다 덧붙일 수 있는 자식(이름공간, 지역 이름). `COMMENT_PARTS`와 같은 순서.

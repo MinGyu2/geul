@@ -279,3 +279,32 @@ describe("입력 창(CommandInputDialog)", () => {
     expect(confirmed).toEqual([{ command: "hangul.tableFormula", formula: "=SUM(A1:B2)" }]);
   });
 });
+
+describe("formula aggregate resource bound", () => {
+  it("refuses million-cell expansion before WASM", () => {
+    expect(formulaProblem("=SUM(A1:ALL1000)", { rows: 1000, cols: 1000 })).toBe("cost");
+  });
+});
+
+it("counts repeated, reversed, wildcard, nested ranges and directions conservatively", () => {
+  const table = { rows: 32, cols: 32 };
+  for (const f of ["=SUM(A1:B2,B2:A1,A?:?2, SUM(A1:B2))", "=SUM(LEFT,RIGHT,ABOVE,BELOW)"]) {
+    expect(formulaProblem(f, table)).toBe(f.includes(":") ? "cost" : null);
+  }
+  expect(formulaProblem("=SUM(A1:B2,A1:B2,A1:B2)", table)).toBeNull();
+  expect(formulaProblem("=SUM(LEFT,RIGHT)", { rows: 1, cols: 2048 })).toBeNull();
+  expect(formulaProblem("=SUM(LEFT,RIGHT,A1)", { rows: 1, cols: 2048 })).toBe("cost");
+  for (const n of [0, -1, NaN, Infinity, 1.5, Number.MAX_SAFE_INTEGER]) {
+    expect(formulaProblem("=1", { rows: n, cols: 1 })).toBe("reference");
+  }
+});
+
+it("over-budget formulas never enter the WASM API or change session state", async () => {
+  const { editor, doc, sessions } = await ready("hwpx");
+  doc.getTableDimensions = () => JSON.stringify({ rowCount: 1000, colCount: 1000, cellCount: 1000000 });
+  editor.caret = editor.anchor = { section: 0, paragraph: 0, offset: 0, cell: CELL };
+  const before = sessions.get(1);
+  expect(editor.execute("hangul.tableFormula", { command: "hangul.tableFormula", formula: "=SUM(A1:ALL1000)" })).toEqual({ accepted: false });
+  expect(doc.formulaCalls).toEqual([]);
+  expect(sessions.get(1)).toEqual(before);
+});

@@ -35,7 +35,7 @@ export function isParameterCommandId(id: string): id is ParameterCommandId {
   return PARAMETER_COMMANDS.has(id);
 }
 
-export type FormulaProblem = "empty" | "tooLong" | "characters" | "depth" | "reference" | "syntax";
+export type FormulaProblem = "empty" | "tooLong" | "characters" | "depth" | "reference" | "syntax" | "cost";
 
 /** 열 글자(A, B, …, Z, AA)를 0부터의 번호로. 고정 rhwp `resolve_cell_ref`와 같은 셈. */
 function columnIndex(letters: string): number {
@@ -46,6 +46,13 @@ function columnIndex(letters: string): number {
   }
   return value - 1;
 }
+
+/** At most 4096 cell visits: bounds coordinate + value vectors to roughly 128 KiB
+ * (including geometric Vec growth on wasm32), with <=256 syntax characters.
+ * Conservative token accounting: each colon is charged a whole table, each
+ * direction a whole row/column. No competing parser or coordinate allocation.
+ */
+export const MAX_FORMULA_CELL_VISITS = 4096;
 
 const DIRECTIONS = new Set(["LEFT", "RIGHT", "ABOVE", "BELOW"]);
 /** 고정 rhwp `table_calc/evaluator.rs`가 아는 함수 이름(모르는 이름은 엔진 오류이므로 먼저 거부). */
@@ -59,6 +66,7 @@ const FUNCTIONS = new Set([
  * 받는 모양: 앞의 `=`·`@` 하나(선택), 숫자, 셀 참조(`A1`, `?1`, `A?`), 범위(`A1:B2`), 방향(`LEFT` 등), 함수 호출, `+ - * /`, 괄호, 쉼표, 공백.
  */
 export function formulaProblem(formula: string, table: { rows: number; cols: number }): FormulaProblem | null {
+  if (![table.rows, table.cols].every(n => Number.isSafeInteger(n) && n > 0 && n < 0xffffffff)) return "reference";
   const text = formula.trim();
   if (text === "" || text === "=" || text === "@") return "empty";
   if (formula.length > MAX_FORMULA_LENGTH) return "tooLong";
@@ -72,6 +80,7 @@ export function formulaProblem(formula: string, table: { rows: number; cols: num
     if (depth > MAX_FORMULA_DEPTH) return "depth";
   }
   if (depth !== 0) return "syntax";
+  let visits = 0;
   const words = /[A-Za-z?][A-Za-z0-9?_]*/g;
   for (let match = words.exec(body); match; match = words.exec(body)) {
     const word = match[0].toUpperCase();
@@ -80,9 +89,13 @@ export function formulaProblem(formula: string, table: { rows: number; cols: num
       if (!FUNCTIONS.has(word)) return "syntax";
       continue;
     }
-    if (DIRECTIONS.has(word)) continue;
+    if (DIRECTIONS.has(word)) {
+      visits += word === "LEFT" || word === "RIGHT" ? table.cols : table.rows;
+      continue;
+    }
     const ref = /^([A-Z]+|\?)([0-9]+|\?)$/.exec(word);
     if (!ref) return "syntax";
+    visits += 1;
     const [, col, row] = ref;
     if (col !== "?" && !(columnIndex(col!) < table.cols)) return "reference";
     if (row !== "?") {
@@ -90,7 +103,14 @@ export function formulaProblem(formula: string, table: { rows: number; cols: num
       if (!Number.isSafeInteger(index) || index < 1 || index > table.rows) return "reference";
     }
   }
-  return null;
+  // A valid engine range has two cell tokens separated by a colon. Charging
+  // every colon also overestimates malformed/trailing syntax the parser ignores.
+  const ranges = (body.match(/:/g) ?? []).length;
+  if (ranges > 0) {
+    if (table.rows > MAX_FORMULA_CELL_VISITS / table.cols) return "cost";
+    visits += ranges * table.rows * table.cols;
+  }
+  return visits > MAX_FORMULA_CELL_VISITS ? "cost" : null;
 }
 
 const integerIn = (value: unknown, range: { min: number; max: number }): value is number =>

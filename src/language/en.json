@@ -150,6 +150,7 @@
   "commandInput.formula.characters": "The formula contains characters that are not allowed.",
   "commandInput.formula.depth": "The formula has too many nested parentheses.",
   "commandInput.formula.reference": "The formula refers to a cell outside this table.",
+  "commandInput.formula.cost": "Formula work exceeds the 4096 cell-visit budget. Split the calculation or use a smaller table.",
   "commandInput.formula.syntax": "The formula is not valid (unknown function or name, or unbalanced parentheses).",
   "commandInput.comment.label": "Comment",
   "commandInput.comment.confirm": "Add comment",

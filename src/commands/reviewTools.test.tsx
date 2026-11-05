@@ -118,6 +118,31 @@ describe("WordCraft 세션의 새 메모(가짜 백엔드)", () => {
     expect(editor.execute("review.comment", { command: "review.comment", text: "a" })).toEqual({ accepted: false });
     expect(doc.paragraphs).toEqual(before);
   });
+
+  it("엔진이 선택된 메모를 거부하면 알리고 revision·dirty·메모·기록을 바꾸지 않으며 다음 편집은 동작한다", async () => {
+    const { editor, fake, sessions } = await readyDocx();
+    const { context } = contextFor(editor);
+    editor.move("right", true);
+    await flush();
+
+    // FakeDocx.apply를 해당 op만 거부하도록 바꿔 실제 세션 대기열과 응답 처리를 통과시킨다.
+    const internal = fake as unknown as { apply: (op: { op: string }) => boolean };
+    const apply = internal.apply.bind(fake);
+    internal.apply = (op) => op.op === "comment" ? false : apply(op);
+    const before = sessions.get(1);
+    expect(executeCommand("review.comment", undefined, context, { command: "review.comment", text: "검토 필요" })).toBe(true);
+    await flush();
+
+    expect(editor.inputNotice).toBe("commandRejected");
+    expect(fake.comments).toHaveLength(0);
+    expect(sessions.get(1)).toMatchObject({ revision: before?.revision, dirty: before?.dirty });
+    expect(commandState("edit.undo", context)).toEqual({ available: false, reason: "nothingToUndo" });
+
+    editor.typeText("x");
+    await flush();
+    expect(fake.paragraphs.join(" ")).toContain("x");
+    expect(sessions.get(1)?.revision).toBe((before?.revision ?? 0) + 1);
+  });
 });
 
 describe("메모 입력 창", () => {
