@@ -326,7 +326,8 @@ pub enum CanonicalFailure {
     PayloadLimit,
 }
 
-/// Optional finite policy is prepared for review only; production uses None to preserve compatibility.
+/// Optional retained-payload admission policy. `canonical()` keeps None; the
+/// DOCX comment relationship exception opts into a finite metadata budget.
 pub fn canonical_with_payload_limit(
     bytes: &[u8],
     limit: Option<usize>,
@@ -845,6 +846,68 @@ pub enum ComparisonFailure {
     OriginalInvalid,
     OutputInvalid,
     Resource,
+}
+
+#[cfg(test)]
+thread_local! {
+    /// Scoped proxy: largest streamed start attribute vector + string lengths.
+    /// Excludes parser, allocator metadata, input decoding and namespace state.
+    pub(crate) static RELATIONSHIP_START_PEAK: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+}
+
+/// Compare only officeDocument relationship attributes, in document order.
+/// Uses the validating streaming cursor (not visit_element_starts, which does not
+/// validate text/entities/root count). Retains at most one element per side;
+/// drains both inputs even after a mismatch so malformed suffixes cannot pass.
+pub fn relationship_references_equal(
+    before: &[u8],
+    after: &[u8],
+    mut equivalent: impl FnMut(&str, &str) -> bool,
+) -> Result<bool, Invalid> {
+    const R: &str = "http://schemas.openxmlformats.org/officeDocument/2006/relationships";
+    let before = decode(before)?;
+    let after = decode(after)?;
+    let mut a = CanonicalCursor::<true, true>::new(&before);
+    let mut b = CanonicalCursor::<true, true>::new(&after);
+    type ReferenceAttributes = Vec<(Option<Atom>, Atom, Atom)>;
+    fn next(
+        cursor: &mut CanonicalCursor<'_, true, true>,
+    ) -> Result<Option<ReferenceAttributes>, Invalid> {
+        while let Some(event) = cursor.next()? {
+            if let Canonical::Start { mut attributes, .. } = event {
+                #[cfg(test)]
+                RELATIONSHIP_START_PEAK.with(|peak| {
+                    let bytes = attributes.capacity()
+                        * std::mem::size_of::<(Option<Atom>, Atom, Atom)>()
+                        + attributes
+                            .iter()
+                            .map(|(ns, key, value)| {
+                                ns.as_ref().map_or(0, |s| s.len()) + key.len() + value.len()
+                            })
+                            .sum::<usize>();
+                    peak.set(peak.get().max(bytes));
+                });
+                attributes.retain(|(ns, _, _)| ns.as_deref() == Some(R));
+                if !attributes.is_empty() {
+                    return Ok(Some(attributes));
+                }
+            }
+        }
+        Ok(None)
+    }
+    let mut equal = true;
+    loop {
+        match (next(&mut a)?, next(&mut b)?) {
+            (None, None) => return Ok(equal),
+            (Some(left), Some(right)) => {
+                equal &= left.len() == right.len();
+                for ((_, key_a, id_a), (_, key_b, id_b)) in left.iter().zip(&right) {
+                    equal &= key_a == key_b && equivalent(id_a, id_b);
+                }
+            }
+            _ => equal = false,
+        }
+    }
 }
 
 /// Lockstep semantic equality. Text chunks may have different segmentation.

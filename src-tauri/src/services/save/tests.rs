@@ -10055,7 +10055,7 @@ fn docx_기존_메모_끝에_덧붙인_메모만_받는다() {
 }
 
 #[test]
-fn docx_메모를_단_문서를_실제_저장_절차로_두_번_저장하고_다시_열면_메모가_같다() {
+fn docx_comment_published_reopen_rounds() {
     let original = basic::basic_ko().unwrap();
     let select = |ops: Vec<DocxOp>| -> Vec<DocxOp> {
         let mut all = vec![
@@ -10081,9 +10081,17 @@ fn docx_메모를_단_문서를_실제_저장_절차로_두_번_저장하고_다
     }]));
     assert!(doc.info.dirty);
     assert!(doc.preflight().unwrap().preservation.is_safe());
+    let model = doc
+        .state
+        .wordcraft()
+        .get(doc.info.session_id, doc.info.load_generation)
+        .unwrap();
+    let expected = model.lock().unwrap().export().unwrap();
+    assert!(model.lock().unwrap().same_as(&expected));
     let saved = doc.save().unwrap();
     assert!(!saved.session.dirty);
     let first = doc.bytes();
+    assert_eq!(first, expected);
     assert_ne!(first, original);
     assert!(doc.leftovers().is_empty());
     let comments = |bytes: &[u8]| -> Vec<String> {
@@ -10107,8 +10115,15 @@ fn docx_메모를_단_문서를_실제_저장_절차로_두_번_저장하고_다
         .all(|name| after.parts.contains_key(name)));
 
     // 두 번째 회차: 저장한 파일에 새 사전 검사 → 둘째 메모(기존 메모 끝에 덧붙음) → 저장.
-    let mut doc = doc;
     doc.info = saved.session;
+    doc.info = block_on(docx::load(
+        &doc.state,
+        doc.info.session_id,
+        Some(doc.info.load_generation),
+    ))
+    .unwrap()
+    .session;
+    assert_eq!(doc.bytes(), first);
     assert!(doc.preflight().unwrap().preservation.is_safe());
     doc.edit(vec![
         DocxOp::Move {
@@ -10123,9 +10138,17 @@ fn docx_메모를_단_문서를_실제_저장_절차로_두_번_저장하고_다
             text: "둘째 메모".into(),
         },
     ]);
+    let model = doc
+        .state
+        .wordcraft()
+        .get(doc.info.session_id, doc.info.load_generation)
+        .unwrap();
+    let expected = model.lock().unwrap().export().unwrap();
+    assert!(model.lock().unwrap().same_as(&expected));
     let saved = doc.save().unwrap();
     assert!(!saved.session.dirty);
     let second = doc.bytes();
+    assert_eq!(second, expected);
     assert_eq!(
         comments(&second),
         vec!["geul:첫 메모".to_owned(), "geul:둘째 메모".to_owned()]
@@ -10174,4 +10197,359 @@ fn comment_relationship_rebinding_is_refused() {
                 || !package::validate_docx(&pkg(&invalid)).is_empty()
         );
     }
+}
+
+/// Synthetic OPC fixture: independent body/header/footer IDs; these are package
+/// comparator evidence, not an assertion of WordCraft or Office compatibility.
+fn comment_owned_relationships() -> (Vec<ZipEntry>, Vec<ZipEntry>) {
+    let ns = "http://schemas.openxmlformats.org/officeDocument/2006/relationships";
+    let mut before = memo_original();
+    let mut after = memo_output(&["new"]);
+    for (entries, id) in [(&mut before, "rId4"), (&mut after, "rId6")] {
+        let types =
+            String::from_utf8(pkg(entries).get("[Content_Types].xml").unwrap().to_vec()).unwrap();
+        *entries = replace(entries, "[Content_Types].xml", &types.replace("</Types>", r#"<Override PartName="/word/header1.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.header+xml"/><Override PartName="/word/footer1.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.footer+xml"/></Types>"#));
+
+        let doc = format!(
+            r#"<w:document xmlns:w="{W}" xmlns:r="{ns}"><w:body><w:p><w:hyperlink r:id="{id}"><w:r><w:t>body</w:t></w:r></w:hyperlink></w:p><w:sectPr><w:headerReference w:type="default" r:id="header"/><w:footerReference w:type="default" r:id="footer"/></w:sectPr></w:body></w:document>"#
+        );
+        *entries = replace(entries, "word/document.xml", &doc);
+        let existing = String::from_utf8(
+            pkg(entries)
+                .get("word/_rels/document.xml.rels")
+                .unwrap()
+                .to_vec(),
+        )
+        .unwrap();
+        let extra = format!(
+            r#"<Relationship Id="{id}" Type="{ns}/hyperlink" Target="https://example.org/body" TargetMode="External"/><Relationship Id="header" Type="{ns}/header" Target="header1.xml"/><Relationship Id="footer" Type="{ns}/footer" Target="footer1.xml"/>"#
+        );
+        *entries = replace(
+            entries,
+            "word/_rels/document.xml.rels",
+            &existing.replace("</Relationships>", &(extra + "</Relationships>")),
+        );
+        for (part, root) in [("header1", "hdr"), ("footer1", "ftr")] {
+            entries.push(entry(&format!("word/{part}.xml"), format!(r#"<w:{root} xmlns:w="{W}" xmlns:r="{ns}"><w:p><w:hyperlink r:id="rId4"><w:r><w:t>{part}</w:t></w:r></w:hyperlink><w:hyperlink r:id="headerOnly"/></w:p></w:{root}>"#).as_bytes()));
+            entries.push(entry(&format!("word/_rels/{part}.xml.rels"), format!(r#"<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId4" Type="{ns}/hyperlink" Target="https://example.org/{part}" TargetMode="External"/><Relationship Id="headerOnly" Type="{ns}/hyperlink" Target="https://example.org/other" TargetMode="External"/></Relationships>"#).as_bytes()));
+        }
+    }
+    (before, after)
+}
+
+#[test]
+fn comment_header_relationship_ownership() {
+    let (before, after) = comment_owned_relationships();
+    let original = pkg(&before);
+    let output = pkg(&after);
+    assert!(package::validate_docx(&original).is_empty());
+    assert!(package::validate_docx(&output).is_empty());
+    assert!(package::comment_parts_added(&original, &output));
+    assert!(package::compare_saved_docx(&original, &output).is_empty());
+    let changed_header = replace(
+        &after,
+        "word/header1.xml",
+        &format!(r#"<w:hdr xmlns:w="{W}"><w:p/></w:hdr>"#),
+    );
+    assert!(!package::compare_saved_docx(&original, &pkg(&changed_header)).is_empty());
+    let header_rels =
+        String::from_utf8(output.get("word/_rels/header1.xml.rels").unwrap().to_vec()).unwrap();
+    let changed = replace(
+        &after,
+        "word/_rels/header1.xml.rels",
+        &header_rels.replace("https://example.org/header1", "https://example.org/changed"),
+    );
+    assert!(!package::compare_saved_docx(&original, &pkg(&changed)).is_empty());
+    let rels =
+        String::from_utf8(output.get("word/_rels/document.xml.rels").unwrap().to_vec()).unwrap();
+    let body = String::from_utf8(output.get("word/document.xml").unwrap().to_vec()).unwrap();
+    // Stable IDs are also legitimate.
+    let stable = replace(
+        &replace(
+            &after,
+            "word/_rels/document.xml.rels",
+            &rels.replace("rId6", "rId4"),
+        ),
+        "word/document.xml",
+        &body.replace("rId6", "rId4"),
+    );
+    assert!(package::compare_saved_docx(&original, &pkg(&stable)).is_empty());
+    for bad in [
+        rels.replace("rId6", "missing"),
+        rels.replace("rId6", "rId3"),
+        rels.replace("Id=\"rId6\"", ""),
+        rels.replace("styles.xml", "absent.xml"),
+        rels.replace("/hyperlink", "/image"),
+        rels.replace("TargetMode=\"External\"", "TargetMode=\"Internal\""),
+        rels.replace("</Relationships>", "<unexpected/></Relationships>"),
+        rels.replace("</Relationships>", ""),
+        rels.replace("rId6", "swap")
+            .replace("rId3", "rId6")
+            .replace("swap", "rId3"),
+    ] {
+        let corrupt = zip(
+            &replace(&after, "word/_rels/document.xml.rels", &bad),
+            false,
+        );
+        assert!(
+            !service::check_saved(Format::Docx, &zip(&before, false), &corrupt, None, true)
+                .is_safe(),
+            "{bad}"
+        );
+    }
+    for bad in [
+        body.replace("rId6", "absent"),
+        body.replace("</w:document>", "&unknown;</w:document>"),
+        format!("{body}<extra/>"),
+    ] {
+        assert!(!package::comment_parts_added(
+            &original,
+            &pkg(&replace(&after, "word/document.xml", &bad))
+        ));
+    }
+}
+
+#[test]
+fn comment_relationship_resource_refusal() {
+    use crate::document::resources::{self, Category, Pool};
+    let (before, after) = comment_owned_relationships();
+    let original = pkg(&before);
+    let output = pkg(&after);
+    let pool = Pool::limited(usize::MAX);
+    pool.deny(Some(Category::Comparison));
+    resources::scope(pool.operation(), || {
+        assert!(!package::comment_parts_added(&original, &output));
+        assert!(resources::failed());
+    });
+}
+
+/// Injected evidence boundary: genuine preflight/registry/ticket/publication
+/// service, synthetic adversarial export and deliberately forced reopen=true.
+/// This does NOT assert that WordCraft produces or reopens the corrupt output.
+#[test]
+fn comment_relationship_publication_refusal_injected() {
+    use sha2::{Digest, Sha256};
+    let (before, after) = comment_owned_relationships();
+    let original = zip(&before, false);
+    let state = DocumentState::default();
+    let dir = TempDir::new();
+    let info = rhwp_session(&state, &dir, "a.docx", &original);
+    let registry = state.registry();
+    let source = registry
+        .preflight_source(info.session_id, info.load_generation)
+        .unwrap();
+    let check = service::preflight(Format::Docx, &original, &original, None);
+    assert!(check.is_safe());
+    registry
+        .record_preflight(
+            info.session_id,
+            info.load_generation,
+            source.content_hash,
+            check,
+        )
+        .unwrap();
+    registry
+        .commit(info.session_id, info.load_generation, 0, 1)
+        .unwrap();
+    let body = String::from_utf8(pkg(&after).get("word/document.xml").unwrap().to_vec()).unwrap();
+    let corrupt = zip(
+        &replace(&after, "word/document.xml", &body.replace("rId6", "rId1")),
+        false,
+    );
+    let check = service::check_saved(Format::Docx, &original, &corrupt, None, true);
+    assert!(!check.is_safe());
+    let digest = Sha256::digest(&original);
+    {
+        let ticket = registry
+            .begin_save(info.session_id, info.load_generation, 1)
+            .unwrap();
+        assert!(matches!(
+            service::save(registry, &ticket, &Limits::default(), &corrupt, None, true),
+            Err(DocumentError::UnsafeSave { .. })
+        ));
+    }
+    assert_eq!(
+        Sha256::digest(std::fs::read(dir.path().join("a.docx")).unwrap()),
+        digest
+    );
+    assert!(registry.get(info.session_id).unwrap().dirty);
+    assert_eq!(std::fs::read_dir(dir.path()).unwrap().count(), 1);
+    // Ticket ownership was released on failure; no publication or orphan staging.
+    assert!(registry
+        .begin_save(info.session_id, info.load_generation, 1)
+        .is_ok());
+}
+
+#[test]
+#[ignore = "manual bounded performance comparison; run with --ignored --nocapture"]
+fn comment_relationship_cost_measurement() {
+    use crate::document::xml::{self, Canonical};
+    use std::time::Instant;
+    // Historical dba13a5 algorithm, retained here only for reproducible measurements.
+    fn old(original: &package::Package, output: &package::Package) -> bool {
+        let bindings = |package: &package::Package, name: &str| {
+            let mut ids = std::collections::BTreeMap::new();
+            for event in
+                xml::canonical(package.get("word/_rels/document.xml.rels").unwrap()).unwrap()
+            {
+                if let Canonical::Start {
+                    name, attributes, ..
+                } = event
+                {
+                    if name.as_str() != "Relationship" {
+                        continue;
+                    }
+                    let id = attributes
+                        .iter()
+                        .find(|(_, k, _)| k.as_str() == "Id")
+                        .unwrap()
+                        .2
+                        .to_string();
+                    ids.insert(
+                        id,
+                        attributes
+                            .into_iter()
+                            .filter(|(_, k, _)| k.as_str() != "Id")
+                            .collect::<Vec<_>>(),
+                    );
+                }
+            }
+            let mut refs = Vec::new();
+            for event in xml::canonical(package.get(name).unwrap()).unwrap() {
+                if let Canonical::Start { attributes, .. } = event {
+                    for (ns, key, value) in attributes {
+                        if ns.as_deref() == Some("http://schemas.openxmlformats.org/officeDocument/2006/relationships") {
+                            refs.push((key, ids.get(value.as_str()).unwrap().clone()));
+                        }
+                    }
+                }
+            }
+            refs
+        };
+        original
+            .parts
+            .keys()
+            .filter(|n| n.ends_with(".xml"))
+            .all(|name| bindings(original, name) == bindings(output, name))
+    }
+    for n in [100, 10000] {
+        let mut before = memo_original();
+        let mut after = memo_output(&["new"]);
+        let body = format!(
+            r#"<w:document xmlns:w="{W}" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><w:body>{}</w:body></w:document>"#,
+            r#"<w:p><w:hyperlink r:id="link"><w:r><w:t>irrelevant text</w:t></w:r></w:hyperlink></w:p>"#.repeat(n)
+        );
+        before = replace(&before, "word/document.xml", &body);
+        after = replace(&after, "word/document.xml", &body);
+        for i in 0..8 {
+            before.push(entry(&format!("word/other{i}.xml"), body.as_bytes()));
+            after.push(entry(&format!("word/other{i}.xml"), body.as_bytes()));
+        }
+        let relation_count = if n == 100 { 128 } else { 1024 };
+        for entries in [&mut before, &mut after] {
+            let rels = String::from_utf8(
+                pkg(entries)
+                    .get("word/_rels/document.xml.rels")
+                    .unwrap()
+                    .to_vec(),
+            )
+            .unwrap();
+            let mut extra = String::from(
+                r#"<Relationship Id="link" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/hyperlink" Target="https://example.org" TargetMode="External"/>"#,
+            );
+            for i in 0..relation_count {
+                extra.push_str(&format!(
+                    r#"<Relationship Id="extra{i}" Type="{REL_STYLES}" Target="styles.xml"/>"#
+                ));
+            }
+            *entries = replace(
+                entries,
+                "word/_rels/document.xml.rels",
+                &rels.replace("</Relationships>", &(extra + "</Relationships>")),
+            );
+        }
+        let a = pkg(&before);
+        let b = pkg(&after);
+        let memory = xml::canonical_with_payload_limit(body.as_bytes(), None)
+            .unwrap()
+            .1;
+        let start = Instant::now();
+        assert!(old(&a, &b));
+        let old_time = start.elapsed();
+        xml::RELATIONSHIP_START_PEAK.with(|p| p.set(0));
+        let start = Instant::now();
+        assert!(package::comment_parts_added(&a, &b));
+        let new_time = start.elapsed();
+        let peak = xml::RELATIONSHIP_START_PEAK.with(|p| p.get()) * 2;
+        eprintln!("COST n={n} body_bytes={} xml_parts={} refs={n} extra_relations={relation_count} old_ms={:.3} new_ms={:.3} old_canonical_payload={} new_two_start_proxy={peak}", body.len(), a.parts.keys().filter(|n| n.ends_with(".xml")).count(), old_time.as_secs_f64()*1000.0, new_time.as_secs_f64()*1000.0, memory.retained_payload_bytes);
+    }
+}
+
+/// Real pinned WordCraft output: package preservation accepts independent header
+/// and image relations, but its model reopen still fails. Keep that separate gate.
+#[test]
+fn comment_real_rich_export_preservation_and_reopen_guard() {
+    use wordcraft_engine::{io, Session};
+    let mut fixture =
+        Session::new(io::open_bytes("fixture.docx", &basic::basic_ko().unwrap()).unwrap());
+    fixture
+        .run("insert.header", &json!({"text": "preserved header"}))
+        .unwrap();
+    fixture.run("insert.picture", &json!({"data": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aWQAAAABJRU5ErkJggg=="})).unwrap();
+    fixture
+        .run("insert.footer", &json!({"text": "preserved footer"}))
+        .unwrap();
+    fixture.run("caret.set", &json!({"pos": wordcraft_engine::doc::Pos::new(wordcraft_engine::doc::StoryRef::Body, wordcraft_engine::doc::Path(vec![3]), basic::AFTER.len())})).unwrap();
+    fixture.run("insert.picture", &json!({"data": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aWQAAAABJRU5ErkJggg=="})).unwrap();
+    let original = io::save_bytes("fixture.docx", &fixture.doc).unwrap();
+
+    use sha2::{Digest, Sha256};
+    let mut doc = open_docx(&original);
+    assert!(doc.preflight().unwrap().preservation.is_safe());
+    doc.edit(vec![
+        DocxOp::Move {
+            to: MoveTarget::DocStart,
+            extend: false,
+        },
+        DocxOp::Move {
+            to: MoveTarget::Right,
+            extend: true,
+        },
+        DocxOp::Comment {
+            text: "rich comment".into(),
+        },
+    ]);
+    let model = doc
+        .state
+        .wordcraft()
+        .get(doc.info.session_id, doc.info.load_generation)
+        .unwrap();
+    let output = model.lock().unwrap().export().unwrap();
+    let reopened_equal = model.lock().unwrap().same_as(&output);
+    // Isolate the comparator from the independent engine model gate.
+    assert!(service::check_saved(Format::Docx, &original, &output, None, true).is_safe());
+    assert!(
+        !reopened_equal,
+        "pinned-engine limitation changed: review this compatibility evidence"
+    );
+    assert!(
+        matches!(doc.save(), Err(DocumentError::UnsafeSave { preservation }) if preservation.findings.iter().any(|f| f.code == FindingCode::ReopenMismatch))
+    );
+    assert_eq!(Sha256::digest(doc.bytes()), Sha256::digest(&original));
+    assert!(doc.info.dirty);
+    assert!(doc.leftovers().is_empty());
+}
+
+#[test]
+fn comment_relationship_payload_limit_refuses_exception() {
+    use crate::document::resources::{self, Pool};
+    let before = pkg(&memo_original());
+    let after = memo_output(&["new"]);
+    // One oversized relationship value, no huge coordinate/vector allocation.
+    let huge = memo_rels(&[("id", REL_STYLES, &"x".repeat(4 * 1024 * 1024))]);
+    let after = pkg(&replace(&after, "word/_rels/document.xml.rels", &huge));
+    resources::scope(Pool::limited(usize::MAX).operation(), || {
+        assert!(!package::comment_parts_added(&before, &after));
+        assert!(resources::failed());
+    });
 }

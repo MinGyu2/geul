@@ -435,7 +435,21 @@ fn flat_children(
     child: &str,
     skip: &str,
 ) -> Option<FlatList> {
-    let events = xml::canonical(bytes).ok()?;
+    // This exception retains relationship metadata only. Bound its canonical
+    // payload to 4 MiB (thousands of ordinary OPC relationships); refuse larger
+    // exceptions rather than permitting an unbounded retained representation.
+    let events = if namespace == OPC_RELATIONSHIPS {
+        xml::canonical_with_payload_limit(bytes, Some(4 * 1024 * 1024))
+            .map(|(events, _)| events)
+            .map_err(|error| {
+                if error != xml::CanonicalFailure::Invalid {
+                    crate::document::resources::allocation_refused();
+                }
+            })
+            .ok()?
+    } else {
+        xml::canonical(bytes).ok()?
+    };
     let mut iter = events.into_iter();
     let first = iter.next()?;
     if !matches!(&first, xml::Canonical::Start { namespace: Some(ns), name, .. } if *ns == namespace && *name == root)
@@ -485,50 +499,57 @@ fn multiset_plus(
     want == have
 }
 
-// Compare the resolved relationship attributes at every r:* occurrence, in XML
-// order, in all original XML parts. Unreferenced relationships may be renumbered;
-// referenced ones may only be renumbered together with their references.
-fn comment_reference_bindings_equal(original: &Package, output: &Package) -> Option<bool> {
-    let bindings = |package: &Package, name: &str| -> Option<Vec<Vec<(String, String)>>> {
-        let (_, relations) = flat_children(
-            package.get(DOCUMENT_RELS)?,
-            OPC_RELATIONSHIPS,
-            "Relationships",
-            "Relationship",
-            "",
-        )?;
-        let mut ids = std::collections::BTreeMap::new();
-        for mut attrs in relations {
-            let index = attrs.iter().position(|(key, _)| key == "Id")?;
-            let (_, id) = attrs.remove(index);
-            if id.is_empty() || ids.insert(id, attrs).is_some() {
+// Only document.xml is exempt from ordinary part comparison. Header/footer XML
+// and their source-owned .rels remain protected by compare_saved_docx.
+fn comment_reference_bindings_equal(
+    original: &Package,
+    output: &Package,
+    before: &[Attrs],
+    after: &[Attrs],
+) -> Option<bool> {
+    fn index(relations: &[Attrs]) -> Option<Vec<(&str, &Attrs)>> {
+        crate::document::resources::charge(
+            crate::document::resources::Category::Comparison,
+            relations
+                .len()
+                .checked_mul(std::mem::size_of::<(&str, &Attrs)>())?,
+        )
+        .ok()?;
+        let mut ids = Vec::new();
+        ids.try_reserve_exact(relations.len())
+            .map_err(|_| crate::document::resources::allocation_refused())
+            .ok()?;
+        for attrs in relations {
+            let id = attrs.iter().find(|(key, _)| key == "Id")?.1.as_str();
+            if id.is_empty() {
                 return None;
             }
+            ids.push((id, attrs));
         }
-        let mut found = Vec::new();
-        for event in xml::canonical(package.get(name)?).ok()? {
-            if let xml::Canonical::Start { attributes, .. } = event {
-                for (ns, key, value) in attributes {
-                    if ns.as_deref()
-                        == Some(
-                            "http://schemas.openxmlformats.org/officeDocument/2006/relationships",
-                        )
-                    {
-                        let mut binding = ids.get(value.as_str())?.clone();
-                        binding.push(("referenceAttribute".into(), key.to_string()));
-                        found.push(binding);
-                    }
-                }
-            }
+        ids.sort_unstable_by_key(|(id, _)| *id);
+        if ids.windows(2).any(|pair| pair[0].0 == pair[1].0) {
+            return None;
         }
-        Some(found)
-    };
-    for name in original.parts.keys().filter(|name| name.ends_with(".xml")) {
-        if bindings(original, name)? != bindings(output, name)? {
-            return Some(false);
-        }
+        Some(ids)
     }
-    Some(true)
+    let a = index(before)?;
+    let b = index(after)?;
+    let lookup =
+        |ids: &[(&str, &Attrs)], id: &str| ids.binary_search_by_key(&id, |(key, _)| *key).ok();
+    xml::relationship_references_equal(
+        original.get("word/document.xml")?,
+        output.get("word/document.xml")?,
+        |left, right| {
+            let (Some(i), Some(j)) = (lookup(&a, left), lookup(&b, right)) else {
+                return false;
+            };
+            a[i].1
+                .iter()
+                .filter(|(key, _)| key != "Id")
+                .eq(b[j].1.iter().filter(|(key, _)| key != "Id"))
+        },
+    )
+    .ok()
 }
 
 /// T013: 편집 저장 출력이 원본에 **메모 부분을 새로 더한 것뿐**인지. 모두 성립해야 한다.
@@ -536,7 +557,7 @@ fn comment_reference_bindings_equal(original: &Package, output: &Package) -> Opt
 /// - `[Content_Types].xml`: 뿌리가 같고, 출력 자식 = 원본 자식(순서 무관) + 새 메모 부분마다 그 내용 형식의 `Override` 하나,
 /// - `word/_rels/document.xml.rels`: 뿌리가 같고, `Id`를 뺀 출력 관계 = 원본 관계(순서 무관) + 새 메모 부분마다 `Type`·`Target`이 그
 ///   부분인 내부 관계 하나(`TargetMode` 없음). WordCraft는 관계 `Id`를 다시 매기므로(실측: 메모 관계가 rId1, styles가 rId1→rId3)
-///   번호 변경은 원본 XML 부분의 모든 r:* 참조가 같은 관계 속성으로 연결되는 경우만 허용한다.
+///   번호 변경은 본문 XML의 모든 r:* 참조가 같은 관계 속성으로 연결되는 경우만 허용한다.
 ///
 /// 메모 부분 내용(메모 글·작성자·날짜·완료 표시)은 엔진 모델의 일부라 다시 읽기 비교가 확인한다. 원본에 메모가 이미 있으면 이
 /// 규칙을 쓰지 않는다(기존 메모 부분이 바뀌면 지금처럼 partChanged).
@@ -630,24 +651,28 @@ pub fn comment_parts_added(original: &Package, output: &Package) -> bool {
     if root_a != root_b || !multiset_plus(&kids_a, &kids_b, &overrides) {
         return false;
     }
-    let (Some((root_a, rels_a)), Some((root_b, rels_b))) = (
+    let (Some((root_a, mut rels_a)), Some((root_b, mut rels_b))) = (
         flat_children(
             rels_before,
             OPC_RELATIONSHIPS,
             "Relationships",
             "Relationship",
-            "Id",
+            "",
         ),
         flat_children(
             rels_after,
             OPC_RELATIONSHIPS,
             "Relationships",
             "Relationship",
-            "Id",
+            "",
         ),
     ) else {
         return false;
     };
+    let bindings_equal = comment_reference_bindings_equal(original, output, &rels_a, &rels_b);
+    for attrs in rels_a.iter_mut().chain(rels_b.iter_mut()) {
+        attrs.retain(|(key, _)| key != "Id");
+    }
     let relations: Vec<Vec<(String, String)>> = comment_added
         .iter()
         .map(|(_, target, kind, _)| {
@@ -659,9 +684,7 @@ pub fn comment_parts_added(original: &Package, output: &Package) -> bool {
             attrs
         })
         .collect();
-    root_a == root_b
-        && multiset_plus(&rels_a, &rels_b, &relations)
-        && comment_reference_bindings_equal(original, output) == Some(true)
+    root_a == root_b && multiset_plus(&rels_a, &rels_b, &relations) && bindings_equal == Some(true)
 }
 
 /// 메모 부분마다 덧붙일 수 있는 자식(이름공간, 지역 이름). `COMMENT_PARTS`와 같은 순서.
