@@ -16,10 +16,11 @@ use super::*;
 use crate::adapters::wordcraft::engine::DocxModel;
 use sha2::{Digest, Sha256};
 use wordcraft_engine::doc::roundtrip::{
-    compare_roundtrip, Equivalence, RoundTripError, RoundTripLimits,
+    compare_roundtrip, Difference, Equivalence, RoundTripError, RoundTripLimits, Side,
 };
 use wordcraft_engine::doc::{
     para_block, Block, CharProps, Document, InlineObject, Paragraph, PartKind, Pos, StoryRef,
+    TextBody,
 };
 use wordcraft_engine::{io, Session};
 
@@ -287,7 +288,149 @@ fn linked_boxes_fixture() -> Vec<u8> {
     io::save_bytes("fixture.docx", &s.doc).unwrap()
 }
 
-/// Shared and distinct first-page headers and linked text boxes publish twice as well.
+/// ID-independent graph of every non-comment story: header/footer roles, text box shapes at
+/// stable anchors, and `TextBody::next` edges. Parts get canonical indices in discovery order
+/// (roles, then shapes in document order, then link targets), so raw part ids never compare.
+#[derive(Debug, PartialEq)]
+struct StoryGraph {
+    /// (role, node): `header.default`, `footer.first`, …
+    roles: Vec<(String, usize)>,
+    /// (anchor `story:block@byte`, the shape without its story id, node).
+    shapes: Vec<(String, InlineObject, usize)>,
+    /// Per node: kind, plain text, blocks, text body without `next`, `next` node.
+    nodes: Vec<(
+        PartKind,
+        String,
+        wordcraft_engine::doc::Blocks,
+        TextBody,
+        Option<usize>,
+    )>,
+    /// `Document::text_box_chains` in node indices: entry points, order, termination.
+    chains: Vec<Vec<usize>>,
+}
+
+fn story_graph(d: &Document) -> StoryGraph {
+    let mut ids: Vec<u32> = Vec::new();
+    let node = |id: u32, ids: &mut Vec<u32>| match ids.iter().position(|x| *x == id) {
+        Some(i) => i,
+        None => {
+            ids.push(id);
+            ids.len() - 1
+        }
+    };
+    let mut roles = Vec::new();
+    for (role, set) in [
+        ("header", d.last_section.headers),
+        ("footer", d.last_section.footers),
+    ] {
+        for (slot, id) in [
+            ("default", set.default),
+            ("first", set.first),
+            ("even", set.even),
+        ] {
+            if let Some(id) = id {
+                roles.push((format!("{role}.{slot}"), node(id, &mut ids)));
+            }
+        }
+    }
+    let mut shapes = Vec::new();
+    let mut stories = vec![("body".to_owned(), d.body.clone())];
+    for (role, n) in &roles {
+        stories.push((role.clone(), d.parts[&ids[*n]].blocks.clone()));
+    }
+    for (name, blocks) in stories {
+        for (bi, b) in blocks.iter().enumerate() {
+            let Block::Para(p) = &**b else { continue };
+            let offsets: Vec<usize> = p
+                .text
+                .char_indices()
+                .filter(|(_, c)| *c == '\u{FFFC}')
+                .map(|(i, _)| i)
+                .collect();
+            // Anchor = byte offset with comment markers removed: the edits under test add only
+            // comments, and their U+FFFC markers must not move an otherwise unchanged shape.
+            let mut markers = 0;
+            for (oi, o) in p.objects.iter().enumerate() {
+                assert!(
+                    !matches!(o, InlineObject::Group { .. }),
+                    "fixture has no groups"
+                );
+                if matches!(
+                    o,
+                    InlineObject::CommentStart { .. } | InlineObject::CommentEnd { .. }
+                ) {
+                    markers += 1;
+                    continue;
+                }
+                if let InlineObject::Shape {
+                    story: Some(id), ..
+                } = o
+                {
+                    let mut bare = o.clone();
+                    if let InlineObject::Shape { story, .. } = &mut bare {
+                        *story = None;
+                    }
+                    let at = offsets[oi] - markers * '\u{FFFC}'.len_utf8();
+                    shapes.push((format!("{name}:{bi}@{at}"), bare, node(*id, &mut ids)));
+                }
+            }
+        }
+    }
+    let mut nodes = Vec::new();
+    let mut i = 0;
+    while i < ids.len() {
+        let part = &d.parts[&ids[i]];
+        let next = part.body.next.map(|n| node(n, &mut ids));
+        let body = TextBody {
+            next: None,
+            ..part.body
+        };
+        nodes.push((
+            part.kind,
+            d.plain_text(StoryRef::Part(ids[i])),
+            part.blocks.clone(),
+            body,
+            next,
+        ));
+        i += 1;
+    }
+    // Coverage: every non-comment part is in the graph.
+    assert_eq!(
+        d.parts
+            .values()
+            .filter(|p| p.kind != PartKind::Comment)
+            .count(),
+        ids.len(),
+        "unreached story"
+    );
+    let chains = d
+        .text_box_chains()
+        .iter()
+        .map(|c| {
+            c.iter()
+                .map(|id| {
+                    ids.iter()
+                        .position(|x| x == id)
+                        .expect("chained box in graph")
+                })
+                .collect()
+        })
+        .collect();
+    StoryGraph {
+        roles,
+        shapes,
+        nodes,
+        chains,
+    }
+}
+
+fn graph_of(doc: &Docx) -> StoryGraph {
+    story_graph(model_of(doc).lock().unwrap().diagnostic_document())
+}
+
+/// Shared and distinct first-page headers and linked text boxes publish twice; their full story
+/// graph (roles, shape anchors, story identity/sharing, link edges, chains, contents) is the same
+/// in the original, both published files and every reopened model.
 #[test]
 fn aliases_and_linked_text_boxes_publish_twice() {
     for (name, original) in [
@@ -295,32 +438,63 @@ fn aliases_and_linked_text_boxes_publish_twice() {
         ("distinct title-page header", title_page_fixture(false)),
         ("linked text boxes", linked_boxes_fixture()),
     ] {
-        let opened = reopen(&original);
-        let shape = (
-            opened.last_section.headers.first == opened.last_section.headers.default,
-            opened.parts.len(),
-            opened.text_box_chains(),
-        );
+        let expected = story_graph(&reopen(&original));
         let mut doc = open_docx(&original);
         assert!(doc.preflight().unwrap().preservation.is_safe(), "{name}");
+        assert_eq!(graph_of(&doc), expected, "{name}: loaded");
         comment(&mut doc, false, "first comment");
-        publish(&mut doc, true);
+        let first = publish(&mut doc, true);
+        assert_eq!(story_graph(&reopen(&first)), expected, "{name}: first file");
         let mut doc = reload(doc);
+        assert_eq!(graph_of(&doc), expected, "{name}: first reopened");
         comment(&mut doc, true, "second comment");
-        publish(&mut doc, true);
-        let doc = reload(doc);
-        let model = model_of(&doc);
-        let fin = model.lock().unwrap();
-        let fin = fin.diagnostic_document();
-        assert_eq!(fin.comments.len(), 2, "{name}");
+        let second = publish(&mut doc, true);
         assert_eq!(
-            (
-                fin.last_section.headers.first == fin.last_section.headers.default,
-                fin.parts.len() - 2,
-                fin.text_box_chains().len()
-            ),
-            (shape.0, shape.1, shape.2.len()),
-            "{name}: alias/link topology after two saves"
+            story_graph(&reopen(&second)),
+            expected,
+            "{name}: second file"
+        );
+        let doc = reload(doc);
+        assert_eq!(graph_of(&doc), expected, "{name}: final reopened");
+        assert_eq!(
+            model_of(&doc)
+                .lock()
+                .unwrap()
+                .diagnostic_document()
+                .comments
+                .len(),
+            2,
+            "{name}"
+        );
+        // The fixtures are what they claim to be (independent of the round trip).
+        match name {
+            "shared title-page header" => {
+                assert_eq!(expected.roles.len(), 2);
+                assert_eq!(expected.roles[0].1, expected.roles[1].1, "one shared story");
+            }
+            "distinct title-page header" => {
+                assert_ne!(expected.roles[0].1, expected.roles[1].1, "two stories");
+                assert_eq!(
+                    expected.nodes[0].2, expected.nodes[1].2,
+                    "identical content"
+                );
+            }
+            _ => {
+                assert_eq!(expected.shapes.len(), 2);
+                let (a, b) = (expected.shapes[0].2, expected.shapes[1].2);
+                assert_ne!(a, b, "two distinct box stories");
+                assert_eq!(expected.nodes[a].4, Some(b), "first links to second");
+                assert_eq!(expected.nodes[b].4, None, "chain terminates");
+                assert_eq!(expected.chains, vec![vec![a, b]]);
+                assert_eq!(expected.nodes[a].1.trim(), "Some text that flows on");
+            }
+        }
+        eprintln!(
+            "GRAPH {name}: {} roles, {} shapes, {} nodes, chains {:?}",
+            expected.roles.len(),
+            expected.shapes.len(),
+            expected.nodes.len(),
+            expected.chains
         );
     }
 }
@@ -346,22 +520,10 @@ fn rich_original() -> Vec<u8> {
     .unwrap()
 }
 
-/// The production equivalence result for `corrupt`, and the save service's refusal.
-fn refuse(name: &str, doc: &Docx, corrupt: &[u8]) -> Option<Result<Equivalence, RoundTripError>> {
-    let model = model_of(doc);
-    let (same, verdict) = {
-        let model = model.lock().unwrap();
-        let verdict = io::open_bytes("x.docx", corrupt).ok().map(|r| {
-            compare_roundtrip(model.diagnostic_document(), &r, &RoundTripLimits::default())
-        });
-        if let Some(v) = &verdict {
-            assert!(
-                !matches!(v, Ok(Equivalence::Equivalent(_))),
-                "{name}: {v:?}"
-            );
-        }
-        (model.same_as(corrupt), verdict)
-    };
+/// The real save service refuses `corrupt` given the production `same_as` result: exactly
+/// `[ReopenMismatch]` from the evidence gate, original bytes unchanged, still dirty, no staging
+/// files, ticket released.
+fn assert_save_refused(name: &str, doc: &Docx, corrupt: &[u8], same: bool) {
     assert!(!same, "{name}: same_as must not be true");
     let original = doc.bytes();
     let registry = doc.state.registry();
@@ -375,7 +537,6 @@ fn refuse(name: &str, doc: &Docx, corrupt: &[u8]) -> Option<Result<Equivalence, 
             .unwrap();
         service::save(registry, &ticket, &Limits::default(), corrupt, None, same)
     };
-    // `same == false` is refused by the evidence gate before anything else.
     let error = result.expect_err(name);
     assert_reopen_mismatch_only(name, &error);
     assert_eq!(
@@ -386,8 +547,56 @@ fn refuse(name: &str, doc: &Docx, corrupt: &[u8]) -> Option<Result<Equivalence, 
     assert!(registry.get(doc.info.session_id).unwrap().dirty, "{name}");
     assert!(doc.leftovers().is_empty(), "{name}");
     ticket_released(doc);
-    eprintln!("REFUSE {name}: verdict={verdict:?}");
-    verdict
+}
+
+/// Category 2 — semantic comparator rejection. The output MUST reopen; `compare_roundtrip` is
+/// called explicitly and must give exactly `expected`; then `same_as` and the save service.
+fn refuse_semantic(
+    name: &str,
+    doc: &Docx,
+    corrupt: &[u8],
+    expected: Result<Equivalence, RoundTripError>,
+) {
+    assert!(
+        !matches!(expected, Ok(Equivalence::Equivalent(_))),
+        "{name}: bad expectation"
+    );
+    let model = model_of(doc);
+    let same = {
+        let model = model.lock().unwrap();
+        let reopened = io::open_bytes("x.docx", corrupt)
+            .unwrap_or_else(|e| panic!("{name}: must be parseable, reopen failed: {e}"));
+        let verdict = compare_roundtrip(
+            model.diagnostic_document(),
+            &reopened,
+            &RoundTripLimits::default(),
+        );
+        assert_eq!(verdict, expected, "{name}");
+        model.same_as(corrupt)
+    };
+    assert_save_refused(name, doc, corrupt, same);
+    eprintln!("REFUSE(semantic) {name}: {expected:?}");
+}
+
+/// Category 1 — parser rejection. The output MUST fail to reopen, so the comparator never ran;
+/// `same_as` is false and publication is refused. The package layer is classified separately
+/// (with the engine bit forced true) to show which non-engine finding would also refuse it.
+fn refuse_parser(name: &str, doc: &Docx, corrupt: &[u8]) -> Vec<FindingCode> {
+    assert!(
+        io::open_bytes("x.docx", corrupt).is_err(),
+        "{name}: must be refused by the parser"
+    );
+    let same = model_of(doc).lock().unwrap().same_as(corrupt);
+    let package = service::check_saved(Format::Docx, &doc.bytes(), corrupt, None, true);
+    assert!(!package.is_safe(), "{name}: package layer {package:?}");
+    assert_save_refused(name, doc, corrupt, same);
+    let codes: Vec<_> = package.findings.iter().map(|f| f.code).collect();
+    eprintln!("REFUSE(parser) {name}: package findings {codes:?}");
+    codes
+}
+
+fn field(what: &'static str) -> Result<Equivalence, RoundTripError> {
+    Ok(Equivalence::Different(Difference::Field(what)))
 }
 
 fn para(text: &str) -> Arc<Block> {
@@ -430,18 +639,25 @@ fn without(output: &[u8], name: &str) -> Vec<u8> {
     zip(&entries, false)
 }
 
-/// A–H, K, L, M, O, P on the B10 rich fixture.
+/// Category 2 (semantic) A–H, L, O, K, M, P on the B10 rich fixture; category 1 (parser) R1, R3;
+/// and R2, refused only by the package layer. Every category-2 output reopens: none of A–P is a
+/// parser rejection (the reader turns a missing header part or relationship into a model that the
+/// comparator then rejects), and a malformed main part is tolerated by the reader (R2).
 #[test]
 fn adversarial_rich_outputs_are_refused() {
     let original = rich_original();
     type Mutation = Box<dyn Fn(&mut Document)>;
-    let cases: Vec<(&str, Mutation)> = vec![
+    type Expected = Result<Equivalence, RoundTripError>;
+    // Each mutated model is written by the real WordCraft writer, so every output is parseable;
+    // the expected verdict is the first difference in the comparator's documented walk order.
+    let cases: Vec<(&str, Mutation, Expected)> = vec![
         (
             "A header text",
             Box::new(|d| {
                 let h = d.last_section.headers.default.unwrap();
                 set_text(d, h, "preserved headeR")
             }),
+            field("paragraph"),
         ),
         (
             "B footer text",
@@ -449,6 +665,7 @@ fn adversarial_rich_outputs_are_refused() {
                 let f = d.last_section.footers.default.unwrap();
                 set_text(d, f, "preserved footeR")
             }),
+            field("paragraph"),
         ),
         (
             "C image bytes",
@@ -459,6 +676,7 @@ fn adversarial_rich_outputs_are_refused() {
                     *v = Arc::new(bytes);
                 }
             }),
+            field("media"),
         ),
         (
             "D image dimensions",
@@ -473,6 +691,7 @@ fn adversarial_rich_outputs_are_refused() {
                     }
                 }
             }),
+            field("inline object"),
         ),
         (
             "E comment text",
@@ -480,10 +699,12 @@ fn adversarial_rich_outputs_are_refused() {
                 let c = d.comments.values().next().unwrap().part;
                 set_text(d, c, "other comment")
             }),
+            field("paragraph"),
         ),
         (
             "F comment author",
             Box::new(|d| d.comments.values_mut().next().unwrap().author = "mallory".into()),
+            field("comment"),
         ),
         (
             "G comment anchor moved",
@@ -515,6 +736,7 @@ fn adversarial_rich_outputs_are_refused() {
                 }
                 panic!("no comment end");
             }),
+            field("paragraph"),
         ),
         (
             "H header/footer references exchanged",
@@ -522,6 +744,7 @@ fn adversarial_rich_outputs_are_refused() {
                 let s = &mut d.last_section;
                 std::mem::swap(&mut s.headers.default, &mut s.footers.default);
             }),
+            field("paragraph"),
         ),
         (
             "L unexpected part introduced (even header)",
@@ -529,6 +752,7 @@ fn adversarial_rich_outputs_are_refused() {
                 let id = d.add_part(PartKind::Header, vec![para("stray")]);
                 d.last_section.headers.even = Some(id);
             }),
+            field("parts.len"),
         ),
         (
             "O permutation plus unrelated body change",
@@ -539,14 +763,15 @@ fn adversarial_rich_outputs_are_refused() {
                         .unwrap();
                 }
             }),
+            field("paragraph"),
         ),
     ];
-    for (name, mutate) in cases {
+    for (name, mutate, expected) in cases {
         let (doc, mut reopened) = edited(&original);
         mutate(&mut reopened);
-        refuse(name, &doc, &written(&reopened));
+        refuse_semantic(name, &doc, &written(&reopened), expected);
     }
-    // Byte-level cases on the real export.
+    // Byte-level cases on the real export: still parseable, so still category 2.
     let (doc, _) = edited(&original);
     let output = model_of(&doc).lock().unwrap().export().unwrap();
     let pkg = package::open(&output, package::Side::Original).unwrap();
@@ -556,19 +781,23 @@ fn adversarial_rich_outputs_are_refused() {
         .find(|n| n.starts_with("word/header"))
         .unwrap()
         .clone();
-    refuse(
-        "K referenced part removed",
+    refuse_semantic(
+        "K referenced part removed (header part file deleted)",
         &doc,
         &without(&output, &header),
+        field("paragraph"),
     );
-    refuse(
+    refuse_semantic(
         "M part kind changed (header reference read as footer)",
         &doc,
         &byte_patch(&output, "word/document.xml", |x| {
             x.replace("<w:headerReference ", "<w:footerReference ")
         }),
+        Ok(Equivalence::Different(Difference::ReferencePresence(
+            "header/footer default",
+        ))),
     );
-    refuse(
+    refuse_semantic(
         "P malformed reference (missing relationship id)",
         &doc,
         &byte_patch(&output, "word/document.xml", |x| {
@@ -577,44 +806,189 @@ fn adversarial_rich_outputs_are_refused() {
             let end = id + x[id..].find('"').unwrap();
             format!("{}rIdMissing{}", &x[..id], &x[end..])
         }),
+        field("parts.len"),
     );
+    // Category 1: packages WordCraft cannot reopen at all.
+    let truncated = &output[..output.len() / 2];
+    refuse_parser("R1 truncated package", &doc, truncated);
+    refuse_parser(
+        "R3 main part missing",
+        &doc,
+        &without(&output, "word/document.xml"),
+    );
+    // R2 — neither category: the WordCraft reader *tolerates* a malformed main part and reopens
+    // it to an equivalent model, so the engine gate passes (as the old derived equality did). The
+    // package layer is what refuses it. Asserted as such, not counted as engine evidence.
+    for (name, corrupt) in [
+        (
+            "R2 mismatched end tag",
+            byte_patch(&output, "word/document.xml", |x| {
+                x.replacen("</w:body>", "</w:bodyX>", 1)
+            }),
+        ),
+        (
+            "R2 broken start tag",
+            byte_patch(&output, "word/document.xml", |x| {
+                x.replacen("<w:body>", "<w:body><w:p <<", 1)
+            }),
+        ),
+    ] {
+        let model = model_of(&doc);
+        let same = {
+            let model = model.lock().unwrap();
+            let reopened = io::open_bytes("x.docx", &corrupt).expect("reader is lenient");
+            assert!(matches!(
+                compare_roundtrip(
+                    model.diagnostic_document(),
+                    &reopened,
+                    &RoundTripLimits::default()
+                ),
+                Ok(Equivalence::Equivalent(_))
+            ));
+            model.same_as(&corrupt)
+        };
+        assert!(same, "{name}: the engine gate alone does not catch it");
+        let before = doc.bytes();
+        let registry = doc.state.registry();
+        let result = {
+            let ticket = registry
+                .begin_save(
+                    doc.info.session_id,
+                    doc.info.load_generation,
+                    doc.info.revision,
+                )
+                .unwrap();
+            service::save(registry, &ticket, &Limits::default(), &corrupt, None, same)
+        };
+        match result {
+            Err(DocumentError::UnsafeSave { preservation }) => {
+                let codes: Vec<_> = preservation.findings.iter().map(|f| f.code).collect();
+                assert!(
+                    codes.contains(&FindingCode::OutputMalformed),
+                    "{name}: {codes:?}"
+                );
+                assert!(
+                    !codes.contains(&FindingCode::ReopenMismatch),
+                    "{name}: {codes:?}"
+                );
+            }
+            other => panic!("{name}: {other:?}"),
+        }
+        assert_eq!(Sha256::digest(doc.bytes()), Sha256::digest(&before));
+        assert!(registry.get(doc.info.session_id).unwrap().dirty);
+        assert!(doc.leftovers().is_empty());
+        ticket_released(&doc);
+        eprintln!("REFUSE(package) {name}: engine equivalent, package OutputMalformed");
+    }
 }
 
-/// I split / J merge (identical content throughout) and N linked text box.
+/// Title-page fixture with a footer, so a part can be removed elsewhere to keep the part count
+/// equal and reach the alias check itself.
+fn title_page_with_footer(shared: bool) -> Vec<u8> {
+    let mut s = reopen(&title_page_fixture(shared));
+    let footer = s.add_part(PartKind::Footer, vec![para("preserved footer")]);
+    s.last_section.footers.default = Some(footer);
+    io::save_bytes("fixture.docx", &s).unwrap()
+}
+
+/// I split / J merge (identical content throughout) and N linked text box. I and J are run both
+/// plainly (caught by the part count) and count-balanced (caught by the bijection itself).
 #[test]
 fn adversarial_alias_and_link_outputs_are_refused() {
+    let split = |r: &mut Document| {
+        let default = r.last_section.headers.default.unwrap();
+        assert_eq!(r.last_section.headers.first, Some(default), "shared");
+        let copy = r.parts[&default].blocks.clone();
+        r.last_section.headers.first = Some(r.add_part(PartKind::Header, copy));
+    };
     let (doc, mut r) = edited(&title_page_fixture(true));
-    assert_eq!(r.last_section.headers.first, r.last_section.headers.default);
-    let default = r.last_section.headers.default.unwrap();
-    let copy = r.parts[&default].blocks.clone();
-    r.last_section.headers.first = Some(r.add_part(PartKind::Header, copy));
-    let verdict = refuse("I shared part split", &doc, &written(&r));
-    assert!(matches!(verdict, Some(Ok(Equivalence::Different(_)))));
-
-    let (doc, mut r) = edited(&title_page_fixture(false));
-    let (d, f) = (
-        r.last_section.headers.default.unwrap(),
-        r.last_section.headers.first.unwrap(),
+    split(&mut r);
+    refuse_semantic(
+        "I shared part split",
+        &doc,
+        &written(&r),
+        field("parts.len"),
     );
-    assert_ne!(d, f);
-    assert_eq!(r.parts[&d].blocks, r.parts[&f].blocks, "identical content");
-    r.last_section.headers.first = Some(d);
+    let (doc, mut r) = edited(&title_page_with_footer(true));
+    let authoritative_default = model_of(&doc)
+        .lock()
+        .unwrap()
+        .diagnostic_document()
+        .last_section
+        .headers
+        .default
+        .unwrap();
+    split(&mut r);
+    let f = r.last_section.footers.default.take().unwrap();
     r.parts.remove(&f);
-    refuse("J distinct parts merged", &doc, &written(&r));
+    refuse_semantic(
+        "I shared part split (count-balanced)",
+        &doc,
+        &written(&r),
+        Ok(Equivalence::Different(Difference::Split {
+            authoritative: authoritative_default,
+        })),
+    );
+
+    let merge = |r: &mut Document| {
+        let (d, f) = (
+            r.last_section.headers.default.unwrap(),
+            r.last_section.headers.first.unwrap(),
+        );
+        assert_ne!(d, f);
+        assert_eq!(r.parts[&d].blocks, r.parts[&f].blocks, "identical content");
+        r.last_section.headers.first = Some(d);
+        r.parts.remove(&f);
+    };
+    let (doc, mut r) = edited(&title_page_fixture(false));
+    merge(&mut r);
+    refuse_semantic(
+        "J distinct parts merged",
+        &doc,
+        &written(&r),
+        field("parts.len"),
+    );
+    let (doc, mut r) = edited(&title_page_with_footer(false));
+    merge(&mut r);
+    // Balance the count with an even-page header; `first` is compared before `even`.
+    let even = r.add_part(PartKind::Header, vec![para("even")]);
+    r.last_section.headers.even = Some(even);
+    let written_j = written(&r);
+    let reopened_default = reopen(&written_j).last_section.headers.default.unwrap();
+    refuse_semantic(
+        "J distinct parts merged (count-balanced)",
+        &doc,
+        &written_j,
+        Ok(Equivalence::Different(Difference::Merge {
+            reopened: reopened_default,
+        })),
+    );
 
     let (doc, mut r) = edited(&linked_boxes_fixture());
     assert_eq!(r.text_box_chains().len(), 1);
+    let before = story_graph(&r);
     for part in r.parts.values_mut() {
         part.body.next = None;
     }
-    refuse("N linked text box reference changed", &doc, &written(&r));
+    // The ID-independent graph used by the positive test also sees this change.
+    assert_ne!(story_graph(&r), before);
+    refuse_semantic(
+        "N linked text box reference changed",
+        &doc,
+        &written(&r),
+        Ok(Equivalence::Different(Difference::ReferencePresence(
+            "text box link",
+        ))),
+    );
 }
 
-/// Q: an equivalence *error* is a refusal, never a pass. The authoritative header story is
-/// mislabelled as a footer part (unprovable structure → `UnexpectedPartKind`). An orphan part
-/// would not do: the writer drops it, so that output is already a plain difference.
+/// Q — **authoritative-model corruption boundary**, not an output mutation and not a user edit:
+/// the test-only `diagnostic_document_mut` relabels the authoritative header story as a footer
+/// part, then the real export is used. The comparator can't prove that structure (`Err`), and an
+/// error is a refusal, never equivalence. No output-only `Err` fixture exists: the reader never
+/// produces dangling or mis-kinded references (K, M, P above reopen to plain differences).
 #[test]
-fn equivalence_error_is_refused() {
+fn authoritative_model_corruption_is_refused() {
     let (doc, _) = edited(&rich_original());
     let model = model_of(&doc);
     let output = {
@@ -624,13 +998,24 @@ fn equivalence_error_is_refused() {
         d.parts.get_mut(&h).unwrap().kind = PartKind::Footer;
         m.export().unwrap()
     };
-    let verdict = refuse("Q unprovable structure (mislabelled part)", &doc, &output);
-    assert!(
-        matches!(
-            verdict,
-            Some(Err(RoundTripError::UnexpectedPartKind { .. }))
-        ),
-        "{verdict:?}"
+    let h = model
+        .lock()
+        .unwrap()
+        .diagnostic_document()
+        .last_section
+        .headers
+        .default
+        .unwrap();
+    refuse_semantic(
+        "Q authoritative model corruption (mislabelled part kind)",
+        &doc,
+        &output,
+        Err(RoundTripError::UnexpectedPartKind {
+            side: Side::Authoritative,
+            id: h,
+            expected: PartKind::Header,
+            found: PartKind::Footer,
+        }),
     );
     // Resource refusal is the same `Err` path (LimitExceeded) and is never equivalence.
     let m = model.lock().unwrap();
