@@ -22,7 +22,7 @@ import type { CharFormatFlag, DocumentCommandSnapshot } from "./target";
 
 export type UnavailableReason =
   | "noDocument" | "notImplemented" | "engineUnsupported" | "notReady" | "composing" | "pendingEdits" | "saving"
-  | "nothingToUndo" | "nothingToRedo" | "limit" | "protected" | "dialogOpen" | "selectionRequired" | "notInTable";
+  | "nothingToUndo" | "nothingToRedo" | "limit" | "protected" | "dialogOpen" | "selectionRequired" | "notInTable" | "caretRequired";
 
 export type CommandState =
   | { available: true; pressed?: boolean }

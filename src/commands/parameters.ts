@@ -18,6 +18,7 @@ export const MAX_FORMULA_DEPTH = 16;
 
 const PARAMETER_COMMANDS: ReadonlySet<string> = new Set<ParameterCommandId>([
   "hangul.charWidth", "hangul.charSpacing", "hangul.tableFormula", "review.comment",
+  "references.footnote", "references.endnote",
 ]);
 /** 메모 글자 수 상한(문자 단위, 백엔드 MAX_COMMENT_CHARS와 같음). */
 export const MAX_COMMENT_CHARS = 1000;
@@ -129,7 +130,10 @@ export function validateCommandArgs(command: string, args: unknown, context: Com
       return keys === "command,percent" && integerIn(value.percent, CHAR_WIDTH_RANGE);
     case "hangul.charSpacing":
       return keys === "command,percent" && integerIn(value.percent, CHAR_SPACING_RANGE);
+    // 각주·미주 글은 메모와 같은 한 줄 계약이다(백엔드 MAX_NOTE_CHARS = MAX_COMMENT_CHARS, 같은 글자 검사).
     case "review.comment":
+    case "references.footnote":
+    case "references.endnote":
       return keys === "command,text" && typeof value.text === "string" && commentProblem(value.text) === null;
     case "hangul.tableFormula":
       return keys === "command,formula" && typeof value.formula === "string" && !!context?.tableCell

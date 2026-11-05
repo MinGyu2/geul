@@ -137,7 +137,9 @@ export type DocxOp =
   /** 선택의 글자 서식 켜고 끄기(선택이 없으면 다음 입력의 서식, T010). */
   | { op: "format"; format: DocxCharFormat }
   /** 새 메모(T013, WordCraft `review.newComment`): 본문 안의 비어 있지 않은 선택에 한 줄 메모. 글자 수는 MAX_DOCX_COMMENT_CHARS 이하. */
-  | { op: "comment"; text: string };
+  | { op: "comment"; text: string }
+  | { op: "footnote"; text: string }
+  | { op: "endnote"; text: string };
 
 /** 메모 글자 수 상한(문자 단위, 백엔드 MAX_COMMENT_CHARS와 같음). */
 export const MAX_DOCX_COMMENT_CHARS = 1000;

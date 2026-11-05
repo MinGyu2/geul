@@ -93,7 +93,7 @@ export type DocxInputNotice = "pasteUnsupported" | "pasteTooLarge" | "pasteIncom
  */
 const MUTATING_OPS: ReadonlySet<DocxOp["op"]> = new Set<DocxOp["op"]>([
   "insertText", "pasteText", "deleteSelection", "backspace", "deleteForward", "newParagraph", "tab", "insertAt", "replaceInserted",
-  "format", "comment",
+  "format", "comment", "footnote", "endnote",
 ]);
 /**
  * 문서 내용을 바꾸지 않는 연산: 백엔드에서 이동(`caret.*`)·클릭(`caret.set`)·전체 선택(`select.all`)은 선택만, 표지는 어댑터 기억만
@@ -102,7 +102,7 @@ const MUTATING_OPS: ReadonlySet<DocxOp["op"]> = new Set<DocxOp["op"]>([
 const NAVIGATION_OPS: ReadonlySet<DocxOp["op"]> = new Set<DocxOp["op"]>(["move", "pointer", "selectAll", "mark"]);
 const mutates = (op: DocxOp) => !NAVIGATION_OPS.has(op.op);
 /** 명령(T010)이 보낸 연산. 엔진이 거부하면(문서 보호 등) 알린다. */
-const COMMAND_OPS: ReadonlySet<DocxOp["op"]> = new Set<DocxOp["op"]>(["undo", "redo", "format", "comment"]);
+const COMMAND_OPS: ReadonlySet<DocxOp["op"]> = new Set<DocxOp["op"]>(["undo", "redo", "format", "comment", "footnote", "endnote"]);
 
 /** 쪽 그림 실패의 원인: 백엔드 거부, PNG 디코드 실패, canvas 문맥 없음, 크기 불일치, 기대하지 않은 예외. */
 export type RenderFailureReason = "backend" | "decode" | "canvas" | "size" | "unexpected";
@@ -1016,10 +1016,19 @@ export class DocxEditorSession implements ImeSession, DocumentCommandTarget {
   private parameterState(): Pick<DocumentCommandSnapshot, "parameters" | "parameterReasons"> {
     const view = this.view;
     if (!this.editable || !view || this.imeUnsettled) return {};
-    if (this.busy) return { parameterReasons: { "review.comment": "pendingEdits" } };
+    if (this.busy) {
+      return { parameterReasons: { "review.comment": "pendingEdits", "references.footnote": "pendingEdits", "references.endnote": "pendingEdits" } };
+    }
     const body = (key: string) => key.startsWith("body:");
-    if (view.collapsed || !body(view.caretKey) || !body(view.anchorKey)) return { parameterReasons: { "review.comment": "selectionRequired" } };
-    return { parameters: { "review.comment": {} } };
+    const parameters: NonNullable<DocumentCommandSnapshot["parameters"]> = {};
+    const parameterReasons: NonNullable<DocumentCommandSnapshot["parameterReasons"]> = {};
+    if (view.collapsed || !body(view.caretKey) || !body(view.anchorKey)) parameterReasons["review.comment"] = "selectionRequired";
+    else parameters["review.comment"] = {};
+    // 각주·미주(T013): 선택 없는 커서가 본문 최상위 문단(자리 키 `body:<문단>:<위치>`, 표 셀이면 경로에 `.`)에 있을 때만. 백엔드
+    // `new_note`가 같은 조건을 다시 검사한다.
+    if (view.collapsed && /^body:\d+:\d+$/.test(view.caretKey)) parameters["references.footnote"] = parameters["references.endnote"] = {};
+    else parameterReasons["references.footnote"] = parameterReasons["references.endnote"] = "caretRequired";
+    return { parameters, parameterReasons };
   }
 
   /**
@@ -1061,9 +1070,12 @@ export class DocxEditorSession implements ImeSession, DocumentCommandTarget {
   /** 명령을 이 세션의 편집 경로에 넣는다. 지금 상태로 다시 확인해 할 수 없으면 아무것도 바꾸지 않는다. */
   execute(command: DocumentCommandId, args?: DocumentCommandArgs): CommandDispatch {
     if (!documentCommandState(command, this.snapshot()).available) return { accepted: false };
-    if (command === "review.comment") {
+    if (command === "review.comment" || command === "references.footnote" || command === "references.endnote") {
       // 값은 실행 직전에 다시 검증한다(창을 거치지 않은 호출 포함). 연산 하나로 같은 세션 대기열에 넣는다.
       if (args?.command !== command || !validateCommandArgs(command, args, this.snapshot().parameters?.[command])) return { accepted: false };
+      if (args.command === "references.footnote") return { accepted: this.push({ op: "footnote", text: args.text }) };
+      if (args.command === "references.endnote") return { accepted: this.push({ op: "endnote", text: args.text }) };
+      if (args.command !== "review.comment") return { accepted: false };
       return { accepted: this.push({ op: "comment", text: args.text }) };
     }
     if (args !== undefined) return { accepted: false };

@@ -28,9 +28,11 @@ function contextFor(document: DocumentCommandTarget | null) {
 }
 
 describe("레지스트리(T013)", () => {
-  it("새 메모만 WordCraft에 연결하고, 각주·미주·목차·변경 내용 추적은 계획 명령으로 남긴다", () => {
-    expect(commandDefinition("review.comment")).toMatchObject({ kind: "document", engines: { wordcraft: { level: "supported" }, rhwp: { level: "unsupported" } } });
-    for (const id of ["references.toc", "references.footnote", "references.endnote", "review.trackChanges"]) {
+  it("새 메모·각주·미주는 WordCraft에만 연결하고, 목차·변경 내용 추적은 계획 명령으로 남긴다", () => {
+    for (const id of ["review.comment", "references.footnote", "references.endnote"]) {
+      expect(commandDefinition(id), id).toMatchObject({ kind: "document", engines: { wordcraft: { level: "supported" }, rhwp: { level: "unsupported" } } });
+    }
+    for (const id of ["references.toc", "review.trackChanges"]) {
       expect(commandDefinition(id)?.kind, id).toBe("planned");
       expect(commandState(id, { layout: initialLayout, document: null })).toEqual({ available: false, reason: "notImplemented" });
     }
@@ -160,3 +162,107 @@ describe("메모 입력 창", () => {
     expect(confirmed).toEqual([{ command: "review.comment", text: "검토 필요" }]);
   });
 });
+
+describe("WordCraft 세션의 각주·미주(가짜 백엔드)", () => {
+  for (const [command, op] of [["references.footnote", "footnote"], ["references.endnote", "endnote"]] as const) {
+    it(`${command}: 선택이 있으면 caretRequired. 커서만이면 창 요청 → 확인한 글로 ${op} 연산 하나, 커서는 표지 뒤 본문`, async () => {
+      const { editor, fake, sessions } = await readyDocx();
+      const { context, notices, requests } = contextFor(editor);
+      editor.move("right", true);
+      await flush();
+      expect(commandState(command, context)).toEqual({ available: false, reason: "caretRequired" });
+      expect(executeCommand(command, undefined, context)).toBe(false);
+      expect(notices.at(-1)?.key).toBe("command.unavailable.caretRequired");
+
+      editor.move("right", false);
+      await flush();
+      expect(commandState(command, context)).toEqual({ available: true });
+      const before = edits(fake).length;
+      expect(executeCommand(command, undefined, context)).toBe(true);
+      expect(requests.at(-1)).toMatchObject({ command, sessionId: 1, context: {} });
+      expect(edits(fake)).toHaveLength(before);
+
+      const caret = { ...fake.caret };
+      expect(executeCommand(command, undefined, context, { command, text: "근거 자료" })).toBe(true);
+      await flush();
+      expect(edits(fake).at(-1)).toEqual([{ op, text: "근거 자료" }]);
+      expect(fake.notes).toEqual([{ kind: op, at: caret, text: "근거 자료" }]);
+      expect(fake.caret).toEqual({ p: caret.p, o: caret.o + 1 });
+      expect(sessions.get(1)).toMatchObject({ revision: 1, dirty: true });
+      expect(commandState("edit.undo", context)).toEqual({ available: true });
+      // 넣은 뒤에도 커서는 본문: 같은 명령을 바로 다시 쓸 수 있다.
+      expect(commandState(command, context)).toEqual({ available: true });
+    });
+  }
+
+  it("값·다른 명령의 값·조합 중·대기 편집·모달·rhwp에서는 보내지 않는다", async () => {
+    const { editor, fake } = await readyDocx();
+    const { context, requests } = contextFor(editor);
+    const before = edits(fake).length;
+    for (const args of [
+      { command: "references.footnote", text: "" }, { command: "references.footnote", text: "a\tb" },
+      { command: "references.endnote", text: "a" }, { command: "review.comment", text: "a" },
+    ] as const) {
+      expect(editor.execute("references.footnote", args)).toEqual({ accepted: false });
+    }
+    expect(editor.execute("references.footnote")).toEqual({ accepted: false });
+    expect(validateCommandArgs("references.endnote", { command: "references.endnote", text: "a", mark: "*" }, {})).toBe(false);
+    expect(edits(fake)).toHaveLength(before);
+
+    fake.hold = true;
+    editor.typeText("x");
+    expect(commandState("references.footnote", context)).toEqual({ available: false, reason: "pendingEdits" });
+    fake.hold = false;
+    fake.release();
+    await flush();
+
+    editor.beginComposition();
+    editor.updateComposition("한");
+    expect(commandState("references.endnote", context)).toEqual({ available: false, reason: "composing" });
+    expect(editor.execute("references.endnote", { command: "references.endnote", text: "a" })).toEqual({ accepted: false });
+    editor.endComposition("한");
+    await flush();
+    expect(commandState("references.endnote", { ...context, modal: true })).toEqual({ available: false, reason: "dialogOpen" });
+    expect(requests).toEqual([]);
+    expect(fake.notes).toEqual([]);
+
+    const rhwp = await readySession();
+    expect(commandState("references.footnote", contextFor(rhwp.editor).context)).toEqual({ available: false, reason: "engineUnsupported" });
+    expect(rhwp.editor.execute("references.footnote", { command: "references.footnote", text: "a" })).toEqual({ accepted: false });
+  });
+
+  it("엔진이 각주를 거부하면 알리고 revision·dirty·각주·기록을 바꾸지 않는다", async () => {
+    const { editor, fake, sessions } = await readyDocx();
+    const { context } = contextFor(editor);
+    const internal = fake as unknown as { apply: (op: { op: string }) => boolean };
+    const apply = internal.apply.bind(fake);
+    internal.apply = (op) => op.op === "footnote" ? false : apply(op);
+    const before = sessions.get(1);
+    expect(executeCommand("references.footnote", undefined, context, { command: "references.footnote", text: "n" })).toBe(true);
+    await flush();
+    expect(editor.inputNotice).toBe("commandRejected");
+    expect(fake.notes).toEqual([]);
+    expect(sessions.get(1)).toMatchObject({ revision: before?.revision, dirty: before?.dirty });
+    expect(commandState("edit.undo", context)).toEqual({ available: false, reason: "nothingToUndo" });
+  });
+});
+
+describe("각주·미주 입력 창", () => {
+  it("빈 칸에서 시작하고 빈 글·줄바꿈은 확인하지 않으며 앞뒤 공백을 뺀 글을 넘긴다", () => {
+    const confirmed: unknown[] = [];
+    const request: CommandInputRequest = { command: "references.endnote", labelKey: "command.references.endnote", sessionId: 1, loadGeneration: 1, revision: 0, context: {} };
+    render(<LanguageProvider language="ko" onLanguageChange={() => {}}><CommandInputDialog request={request} onCancel={() => {}} onConfirm={(args) => confirmed.push(args)} /></LanguageProvider>);
+    const input = screen.getByTestId("command-input-value") as HTMLInputElement;
+    expect(input.value).toBe("");
+    expect(screen.getByTestId("command-input-dialog")).toHaveTextContent("커서는 본문의 표지 뒤에 남습니다");
+    fireEvent.keyDown(input, { key: "Enter" });
+    expect(screen.getByTestId("command-input-error")).toHaveTextContent("각주(미주) 내용을 입력하세요.");
+    fireEvent.change(input, { target: { value: "a\tb" } });
+    fireEvent.click(screen.getByTestId("command-input-confirm"));
+    expect(screen.getByTestId("command-input-error")).toHaveTextContent("쓸 수 없는 글자");
+    fireEvent.change(input, { target: { value: "  출처  " } });
+    fireEvent.click(screen.getByTestId("command-input-confirm"));
+    expect(confirmed).toEqual([{ command: "references.endnote", text: "출처" }]);
+  });
+});
+

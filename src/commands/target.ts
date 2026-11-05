@@ -55,7 +55,7 @@ export interface DocumentCommandSnapshot {
    */
   parameters?: Partial<Record<ParameterCommandId, CommandParameterContext>>;
   /** 값 입력 명령을 지금 할 수 없는 이유(세션이 아는 것, 예: 선택 없음·표 밖). */
-  parameterReasons?: Partial<Record<ParameterCommandId, "selectionRequired" | "notInTable" | "engineUnsupported" | "pendingEdits">>;
+  parameterReasons?: Partial<Record<ParameterCommandId, "selectionRequired" | "notInTable" | "caretRequired" | "engineUnsupported" | "pendingEdits">>;
 }
 
 /**
@@ -70,7 +70,10 @@ export type DocumentCommandArgs =
   /** 표 계산식(읽기 전용 계산, 셀에 쓰지 않음). */
   | { command: "hangul.tableFormula"; formula: string }
   /** 새 메모 글(T013, WordCraft `review.newComment`). 한 줄, 비어 있지 않음. */
-  | { command: "review.comment"; text: string };
+  | { command: "review.comment"; text: string }
+  /** 새 각주·미주 글(T013, WordCraft `references.footnote`·`references.endnote`). 한 줄, 비어 있지 않음. */
+  | { command: "references.footnote"; text: string }
+  | { command: "references.endnote"; text: string };
 
 /** 값이 필요한 문서 명령. */
 export type ParameterCommandId = DocumentCommandArgs["command"];

@@ -60,7 +60,8 @@ export function CommandInputDialog({ request, onCancel, onConfirm, suspended = f
 
   const formula = request.command === "hangul.tableFormula";
   const comment = request.command === "review.comment";
-  const textual = formula || comment;
+  const note = request.command === "references.footnote" || request.command === "references.endnote";
+  const textual = formula || comment || note;
   const range = request.command === "hangul.charWidth" ? CHAR_WIDTH_RANGE : CHAR_SPACING_RANGE;
   const cell = request.context.tableCell;
   const submit = () => {
@@ -69,6 +70,12 @@ export function CommandInputDialog({ request, onCancel, onConfirm, suspended = f
       const problem = commentProblem(text);
       if (problem) return setError(`commandInput.comment.${problem}` as MessageKey);
       args = { command: "review.comment", text: text.trim() };
+    } else if (note) {
+      const problem = commentProblem(text);
+      if (problem) return setError(`commandInput.note.${problem}` as MessageKey);
+      args = request.command === "references.endnote"
+        ? { command: "references.endnote", text: text.trim() }
+        : { command: "references.footnote", text: text.trim() };
     } else if (formula) {
       const problem = cell ? formulaProblem(text, cell) : "reference";
       if (problem) return setError(`commandInput.formula.${problem}` as MessageKey);
@@ -106,13 +113,13 @@ export function CommandInputDialog({ request, onCancel, onConfirm, suspended = f
         }}>
         <h2 id={titleId} className="discard-dialog__title">{t(request.labelKey)}</h2>
         <label style={{ display: "block" }}>
-          {t(comment ? "commandInput.comment.label" : formula ? "commandInput.formula.label" : "commandInput.percent.label")}{" "}
+          {t(comment ? "commandInput.comment.label" : note ? "commandInput.note.label" : formula ? "commandInput.formula.label" : "commandInput.percent.label")}{" "}
           <input
             type="text"
             inputMode={textual ? "text" : "numeric"}
             data-testid="command-input-value"
             value={text}
-            maxLength={comment ? MAX_COMMENT_CHARS * 2 : formula ? MAX_FORMULA_LENGTH : 5}
+            maxLength={comment || note ? MAX_COMMENT_CHARS * 2 : formula ? MAX_FORMULA_LENGTH : 5}
             spellCheck={false}
             autoComplete="off"
             aria-invalid={error !== null || undefined}
@@ -122,16 +129,16 @@ export function CommandInputDialog({ request, onCancel, onConfirm, suspended = f
           {!textual && <span aria-hidden="true"> %</span>}
         </label>
         <p id={hintId} className="discard-dialog__hint">
-          {comment ? t("commandInput.comment.hint") : formula && cell
+          {comment ? t("commandInput.comment.hint") : note ? t("commandInput.note.hint") : formula && cell
             ? t("commandInput.formula.hint", { cell: `${columnLetters(cell.col)}${cell.row + 1}`, rows: cell.rows, cols: cell.cols })
             : t(request.command === "hangul.charWidth" ? "commandInput.charWidth.hint" : "commandInput.charSpacing.hint",
               { min: range.min, max: range.max })}
         </p>
-        {error && <p id={errorId} role="alert" data-testid="command-input-error">{t(error, { min: range.min, max: range.max, length: comment ? MAX_COMMENT_CHARS : MAX_FORMULA_LENGTH })}</p>}
+        {error && <p id={errorId} role="alert" data-testid="command-input-error">{t(error, { min: range.min, max: range.max, length: comment || note ? MAX_COMMENT_CHARS : MAX_FORMULA_LENGTH })}</p>}
         <div className="discard-dialog__actions">
           <button type="button" className="document-bar__button" onClick={onCancel}>{t("document.cancel")}</button>
           <button type="button" className="document-bar__button" data-testid="command-input-confirm" onClick={submit}>
-            {t(comment ? "commandInput.comment.confirm" : formula ? "commandInput.formula.confirm" : "commandInput.apply")}
+            {t(comment ? "commandInput.comment.confirm" : note ? "commandInput.note.confirm" : formula ? "commandInput.formula.confirm" : "commandInput.apply")}
           </button>
         </div>
       </div>

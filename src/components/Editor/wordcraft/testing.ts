@@ -24,10 +24,12 @@ type At = { p: number; o: number };
 type FakeState = {
   paragraphs: string[]; styled: [string, DocxCharFormat[]][]; caret: At; anchor: At; pending: DocxCharFormat[];
   comments: { range: string; text: string }[];
+  notes: { kind: "footnote" | "endnote"; at: At; text: string }[];
 };
 /** WordCraft에서 바꾸는 명령(`mutates`)으로 실행되는 연산. deleteSelection은 선택이 있을 때만 명령을 실행한다. */
 const ENGINE_MUTATING: ReadonlySet<DocxOp["op"]> = new Set<DocxOp["op"]>([
   "insertText", "pasteText", "backspace", "deleteForward", "newParagraph", "tab", "insertAt", "replaceInserted", "format", "comment",
+  "footnote", "endnote",
 ]);
 const FORMATS: readonly DocxCharFormat[] = ["bold", "italic", "underline", "strikethrough"];
 const chars = (text: string) => [...text];
@@ -43,7 +45,9 @@ export function validOps(ops: DocxOp[]): boolean {
       case "insertText": case "insertAt": return validText(op.text);
       case "pasteText": return validText(op.text, "\n\t");
       case "replaceInserted": return validText(op.expected) && validText(op.text);
-      case "comment": return validText(op.text) && chars(op.text).length <= 1000 && op.text.trim() !== "";
+      case "comment":
+      case "footnote":
+      case "endnote": return validText(op.text) && chars(op.text).length <= 1000 && op.text.trim() !== "";
       default: return true;
     }
   });
@@ -72,6 +76,8 @@ export class FakeDocx implements DocxBackend {
   refuseFormat = false;
   /** 새 메모(T013) 흉내: (선택 범위 키, 글). 커서만이면 엔진처럼 거부한다. */
   comments: { range: string; text: string }[] = [];
+  /** 넣은 각주·미주(흉내): 종류·넣은 자리·글. */
+  notes: { kind: "footnote" | "endnote"; at: At; text: string }[] = [];
   /** 쪽 수(쪽마다 612×792pt, 커서·선택은 0쪽). */
   pageCount = 1;
   /** 그림 요청이 이 오류로 실패한다(그대로 둠, null이면 정상). */
@@ -159,13 +165,14 @@ export class FakeDocx implements DocxBackend {
 
   /** 문서 내용(문단·서식). 바뀌었는지 비교용. */
   private content(): string {
-    return JSON.stringify([this.paragraphs, [...this.styled].map(([key, set]) => [key, [...set].sort()]).sort(), this.comments]);
+    return JSON.stringify([this.paragraphs, [...this.styled].map(([key, set]) => [key, [...set].sort()]).sort(), this.comments, this.notes]);
   }
 
   private capture(): FakeState {
     return {
       paragraphs: [...this.paragraphs], styled: [...this.styled].map(([key, set]) => [key, [...set]]),
       caret: { ...this.caret }, anchor: { ...this.anchor }, pending: [...this.pendingFormat], comments: [...this.comments],
+      notes: [...this.notes],
     };
   }
 
@@ -176,6 +183,7 @@ export class FakeDocx implements DocxBackend {
     this.anchor = { ...state.anchor };
     this.pendingFormat = new Set(state.pending);
     this.comments = [...state.comments];
+    this.notes = [...state.notes];
     // 엔진처럼 되돌리면 표지·마지막 넣기 기억을 버린다(그 자리를 다시 쓰지 않음).
     this.marks.clear();
     this.last = null;
@@ -365,6 +373,15 @@ export class FakeDocx implements DocxBackend {
       case "comment": {
         if (cmp(this.caret, this.anchor) === 0) return false;
         this.comments.push({ range: this.rangeKey(), text: op.text });
+        return true;
+      }
+      case "footnote":
+      case "endnote": {
+        // 백엔드 new_note 흉내: 선택이 있으면 거부, 커서 자리에 표지(U+FFFC) 하나를 넣고 커서를 그 뒤(본문)로.
+        if (cmp(this.caret, this.anchor) !== 0) return false;
+        this.notes.push({ kind: op.op, at: { ...this.caret }, text: op.text });
+        this.insert(this.caret, "\ufffc");
+        this.moveTo({ p: this.caret.p, o: this.caret.o + 1 }, false);
         return true;
       }
       case "format": {

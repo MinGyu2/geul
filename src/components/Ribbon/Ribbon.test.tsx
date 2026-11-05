@@ -216,7 +216,7 @@ describe("T011 형식별 리본 탭(앱)", () => {
     expect(formulas).toHaveLength(1);
   });
 
-  it("T013 새 메모: DOCX 선택 → 검토 탭 → 입력 창 → comment 연산 하나. 선택 없음·HWP는 막히고 각주·목차·추적은 계획 명령이다", async () => {
+  it("T013 새 메모·각주: DOCX 선택 → 검토 탭 → 입력 창 → comment 연산 하나, 커서 → 참조 탭 → footnote 연산 하나. 선택 없음·HWP는 막히고 목차·추적은 계획 명령이다", async () => {
     const { user, fake, workspace } = await renderMixed();
     const editor = workspace.docxEditorFor(3)!;
     await user.click(ribbonTabs().getByRole("tab", { name: "검토" }));
@@ -238,9 +238,22 @@ describe("T011 형식별 리본 탭(앱)", () => {
     expect(fake.comments.map((comment) => comment.text)).toEqual(["검토 필요"]);
 
     await user.click(ribbonTabs().getByRole("tab", { name: "참조" }));
-    for (const name of [/목차/, /각주/, /미주/]) {
-      expect(within(screen.getByRole("toolbar", { name: "참조" })).getByRole("button", { name }).title).toContain("아직 연결되지 않은 명령");
-    }
+    const references = () => screen.getByRole("toolbar", { name: "참조" });
+    expect(within(references()).getByRole("button", { name: /목차/ }).title).toContain("아직 연결되지 않은 명령");
+    // 각주(T013): 선택이 남아 있으면 막히고, 커서만 두면 입력 창 → footnote 연산 하나.
+    const footnoteButton = () => within(references()).getByRole("button", { name: /각주/ });
+    expect(footnoteButton()).toHaveAttribute("aria-disabled", "true");
+    expect(footnoteButton().title).toContain("본문 문단의 커서 필요");
+    await act(async () => { editor.move("right", false); await flush(); });
+    expect(footnoteButton()).not.toHaveAttribute("aria-disabled");
+    await user.click(footnoteButton());
+    expect(screen.getByTestId("command-input-dialog")).toHaveAttribute("data-command", "references.footnote");
+    await user.type(screen.getByTestId("command-input-value"), "출처");
+    await user.click(screen.getByTestId("command-input-confirm"));
+    await act(async () => { await flush(); });
+    expect(docxEdits(fake).at(-1)).toEqual([{ op: "footnote", text: "출처" }]);
+    expect(fake.notes.map((note) => [note.kind, note.text])).toEqual([["footnote", "출처"]]);
+    expect(within(references()).getByRole("button", { name: /미주/ })).not.toHaveAttribute("aria-disabled");
   });
 
   it("A06/A07 DOCX의 참조 탭을 고른 채 HWP로 바꾸거나 DOCX를 닫으면 홈으로 바뀌고 ARIA 관계가 맞는다(돌아와도 되살리지 않음)", async () => {

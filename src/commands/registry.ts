@@ -26,6 +26,7 @@ export type DocumentCommandId =
   | "format.bold" | "format.italic" | "format.underline" | "format.strikethrough"
   | "hangul.charWidth" | "hangul.charSpacing" | "hangul.tableFormula"
   | "review.comment"
+  | "references.footnote" | "references.endnote"
   | "file.save";
 
 /** 엔진 하나에서 명령의 지원. */
@@ -87,8 +88,11 @@ const RHWP_FORMAT: EngineSupport =
  *   지원한다. 결과를 셀에 쓰기(`writeResult=true`)는 계산식이 아니라 값 글자만 남겨(표 계산식 필드가 저장되지 않음) 계산식 의미를
  *   보존한다고 볼 수 없어 연결하지 않았다(docs/architecture/command-registry.md "T012").
  * - 새 메모(T013): WordCraft `review.newComment`(앱 ID `review.comment`, 고정 DocxOp `comment`). 저장은 메모 부분을 새로 더하거나 기존
- *   메모 끝에 덧붙인 출력만 T009가 받는다. rhwp에는 연결하지 않았다. 각주·미주·목차·변경 내용 추적은 연결하지 않았다(planned —
- *   엔진 왕복·IME 경계 근거, docs/architecture/command-registry.md "T013").
+ *   메모 끝에 덧붙인 출력만 T009가 받는다. rhwp에는 연결하지 않았다.
+ * - 각주·미주(T013): WordCraft `references.footnote`·`references.endnote`(고정 DocxOp `footnote`·`endnote`, 글 한 줄). 본문 최상위
+ *   문단의 커서(선택 없음)에서만 하고, 실행 뒤 커서는 본문의 표지 뒤로 돌아온다. 저장은 각주·미주 부분을 새로 더하거나(목록·관계·
+ *   settings 구분선 참조 두 개만 함께) 기존 각주를 그대로 둔 채 새 각주만 더한 출력만 T009가 받는다. 목차·변경 내용 추적은 연결하지
+ *   않았다(planned — 엔진 표현·IME 경계 근거, docs/architecture/command-registry.md "T013").
  */
 const DOCUMENT_COMMANDS: Record<DocumentCommandId, Omit<CommandDefinition, "id" | "labelKey" | "kind">> = {
   "edit.undo": { engines: { wordcraft: SUPPORTED, rhwp: RHWP_HISTORY }, shortcuts: ["Mod+Z"], scope: "document" },
@@ -101,6 +105,8 @@ const DOCUMENT_COMMANDS: Record<DocumentCommandId, Omit<CommandDefinition, "id" 
   "hangul.charSpacing": { engines: { wordcraft: UNSUPPORTED, rhwp: RHWP_FORMAT } },
   "hangul.tableFormula": { engines: { wordcraft: UNSUPPORTED, rhwp: SUPPORTED } },
   "review.comment": { engines: { wordcraft: SUPPORTED, rhwp: UNSUPPORTED } },
+  "references.footnote": { engines: { wordcraft: SUPPORTED, rhwp: UNSUPPORTED } },
+  "references.endnote": { engines: { wordcraft: SUPPORTED, rhwp: UNSUPPORTED } },
   "file.save": { engines: { wordcraft: SUPPORTED, rhwp: SUPPORTED }, shortcuts: ["Mod+S"], scope: "document" },
 };
 
