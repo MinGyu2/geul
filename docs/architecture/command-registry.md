@@ -695,3 +695,18 @@ Strict 회귀 시험: `strict_reference_rebinding_*`, `strict_reference_valid_re
   `ReopenMismatch` 거부(모델이 다름).
 - Strict 원본은 WordCraft가 Transitional로 내보내 기존 규칙대로 거부한다(변경 없음). 확인: geul `cargo test --lib` 320 통과/24 무시, clippy·fmt.
   Word에서 나뉜 하이퍼링크·메모 표시: NOT RUN.
+
+## T012 Stage 5 재평가: 제품 장평·자간 — BLOCKED (2026-11-05, `1341be2` 위)
+
+판정: **BLOCKED**. 제품 `hangul.charWidth`·`hangul.charSpacing`은 `RHWP_FORMAT` 시험 활성화 빌드 관문 그대로 `unsupported`다. 엔진·저장 규칙·관문을 바꾸지
+않았다(이 단계의 코드 변경 없음).
+
+| 필수 조건 | 상태 | 근거·정확한 차단 |
+|---|---|---|
+| T010 D2(native IME, 빈 compositionend → Undo → 늦은 최종 글자) | INCONCLUSIVE 그대로 | native X11/IBus 필요. 이 환경은 Wayland 표시만 있고 DISPLAY·ibus 없음 → 실행 불가(NOT RUN). [rhwp-undo-redo.md](rhwp-undo-redo.md) D2 재개 조건 미충족 |
+| T010 D4(WebView group p95≤50ms·Undo p95≤1500ms·자원) | 마지막 공식 FAIL 그대로 | 실제 WebKit 창 측정 필요(NOT RUN). 새 지연 제거 기전 없음 — 문턱·표본을 바꾸지 않음 |
+| 같은 범위 연속 변경(쓰이지 않는 중간 글자 모양) | BLOCKED(rhwp) | `find_or_create_char_shape`가 덧붙임 전용. RHWP에는 글자 모양 참조 목록이 없어(문단·셀·글상자·머리말/꼬리말·각주·스타일·번호·컨트롤 `char_shape_ids` 등 흩어짐) 증명된 압축·재번호는 전체 참조 목록 구현과 RHWP Visual Sweep 관문(한컴 PDF 필요)이 선행돼야 한다. T010 덧붙임 규칙은 넓히지 않음 |
+| HWP DocInfo 글자 모양 덧붙임 저장 | BLOCKED(T009 규칙) | `recordsChanged{DocInfo}` 거부 유지. HWP 레코드 단위 "덧붙인 글자 모양만 + 모두 본문 참조 + 미리보기" 규칙은 위 압축 없이는 같은 연속 변경 문제를 그대로 가짐 |
+
+다음 재개 조건: D2/D4가 native 환경에서 원래 문턱으로 통과하거나 승인된 새 기전이 생길 것, 그리고 RHWP 글자 모양 참조 목록·압축(후보 패치) + 한컴 Hancom
+호환 검증. 시험 활성화 빌드의 HWPX 장평·자간(이전 기록)은 그대로 유효하다.
