@@ -167,7 +167,7 @@ fn diagnostic_a_position_matrix() {
     }
 }
 
-fn injected_publication(original: &[u8], output: &[u8], reopen: bool, accepted: bool) {
+fn injected_publication(original: &[u8], output: &[u8], reopen: bool, accepted: bool) -> TempDir {
     let state = DocumentState::default();
     let dir = TempDir::new();
     let info = rhwp_session(&state, &dir, "a.docx", original);
@@ -212,6 +212,7 @@ fn injected_publication(original: &[u8], output: &[u8], reopen: bool, accepted: 
     assert!(registry
         .begin_save(info.session_id, info.load_generation, 1)
         .is_ok());
+    dir
 }
 
 fn generated_drawing() -> (String, Vec<u8>) {
@@ -398,6 +399,24 @@ fn diagnostic_a_real_model_gate_and_authorized_move() {
     assert!(!doc.save().unwrap().session.dirty); // ordinary output remains publishable.
 }
 
+/// Number of relationship references (`r:*`) in `word/document.xml`.
+fn body_reference_count(bytes: &[u8]) -> usize {
+    let package = package::open(bytes, package::Side::Original).unwrap();
+    let body = package.get("word/document.xml").unwrap();
+    let mut n = 0;
+    assert!(xml::relationship_references_equal(body, body, |_, _| {
+        n += 1;
+        true
+    })
+    .unwrap());
+    n
+}
+
+/// Three separate layers: (1) WordCraft validly splits the hyperlink around a
+/// partial comment and the authoritative model round-trips; (2) the
+/// relationship-reference comparator refuses the changed reference count; (3)
+/// the real geul save path refuses with exactly that comparator's findings.
+/// The comparator is deliberately NOT relaxed here (diagnostic regression).
 #[test]
 fn diagnostic_a_comment_splits_hyperlink_conservative_refusal() {
     let body = paragraph(&link("First", r#"r:id="linkA""#));
@@ -407,37 +426,112 @@ fn diagnostic_a_comment_splits_hyperlink_conservative_refusal() {
     )
     .unwrap();
     let original = io::save_bytes("fixture.docx", &seed).unwrap();
-    let mut model = DocxModel::open(&original).unwrap();
-    let outcome = model.apply(&[
-        DocxOp::Move {
-            to: MoveTarget::DocStart,
-            extend: false,
-        },
-        DocxOp::Move {
-            to: MoveTarget::Right,
-            extend: true,
-        },
-        DocxOp::Comment {
-            text: "split".into(),
-        },
-    ]);
-    assert!(outcome.rejected.is_empty());
-    let output = model.export().unwrap();
-    assert!(model.same_as(&output));
-    let count = |bytes: &[u8]| {
-        let package = package::open(bytes, package::Side::Original).unwrap();
-        let body = package.get("word/document.xml").unwrap();
-        let mut n = 0;
-        assert!(xml::relationship_references_equal(body, body, |_, _| {
-            n += 1;
-            true
-        })
-        .unwrap());
-        n
+    let mut doc = open_docx(&original);
+    assert!(doc.preflight().unwrap().preservation.is_safe());
+    let edited = block_on(docx::edit(
+        &doc.state,
+        doc.info.session_id,
+        doc.info.load_generation,
+        doc.info.revision,
+        vec![
+            DocxOp::Move {
+                to: MoveTarget::DocStart,
+                extend: false,
+            },
+            DocxOp::Move {
+                to: MoveTarget::Right,
+                extend: true,
+            },
+            DocxOp::Comment {
+                text: "split".into(),
+            },
+        ],
+    ))
+    .unwrap();
+    // (1) engine accepted every operation and actually created the comment.
+    assert_eq!((edited.applied, edited.rejected.len()), (3, 0));
+    doc.info = edited.session;
+    assert!(doc.info.dirty);
+    let model = doc
+        .state
+        .wordcraft()
+        .get(doc.info.session_id, doc.info.load_generation)
+        .unwrap();
+    let output = {
+        let model = model.lock().unwrap();
+        let document = model.diagnostic_document();
+        assert_eq!(document.comments.len(), 1);
+        let output = model.export().unwrap();
+        let reopened = io::open_bytes("fixture.docx", &output).unwrap();
+        assert_eq!(reopened.comments.len(), 1);
+        assert!(
+            model.same_as(&output),
+            "authoritative model must round-trip"
+        );
+        output
     };
-    assert_eq!((count(&original), count(&output)), (1, 2));
-    assert!(!service::check_saved(Format::Docx, &original, &output, None, true).is_safe());
-    eprintln!("POSITION partial-link-comment: model_equal=true preservation=false (one reference splits into two)");
+    assert_eq!(
+        (
+            body_reference_count(&original),
+            body_reference_count(&output)
+        ),
+        (1, 2),
+        "one hyperlink reference splits into two"
+    );
+    // (2) comparator refusal, independent of the engine-equality bit.
+    let expected = service::check_saved(Format::Docx, &original, &output, None, true);
+    // comment_parts_added() is false (reference count changed), so the comment
+    // additions fall back to part-by-part comparison. No ReopenMismatch.
+    assert_eq!(expected.outcome, Outcome::Unsafe, "{expected:?}");
+    assert_eq!(
+        expected.findings,
+        vec![
+            Finding::at(FindingCode::PartAdded, "word/comments.xml"),
+            Finding::at(FindingCode::PartAdded, "word/commentsExtended.xml"),
+            Finding::at(FindingCode::PartChanged, "[Content_Types].xml"),
+            Finding::at(FindingCode::PartChanged, "word/_rels/document.xml.rels"),
+        ]
+    );
+    // (3) real save service refusal with exactly that preservation verdict.
+    let result = doc.save();
+    match &result {
+        Err(DocumentError::UnsafeSave { preservation }) => {
+            assert_eq!(preservation, &expected)
+        }
+        other => panic!("expected comparator UnsafeSave, got {other:?}"),
+    }
+    assert_eq!(Sha256::digest(doc.bytes()), Sha256::digest(&original));
+    assert!(doc.state.registry().get(doc.info.session_id).unwrap().dirty);
+    assert!(doc.leftovers().is_empty(), "{:?}", doc.leftovers());
+    assert!(doc
+        .state
+        .registry()
+        .begin_save(
+            doc.info.session_id,
+            doc.info.load_generation,
+            doc.info.revision
+        )
+        .is_ok());
+    eprintln!(
+        "POSITION partial-link-comment: engine_split=1->2 model_equal=true findings={:?}",
+        expected.findings
+    );
+}
+
+/// The refusal must be `UnsafeSave` whose only finding is `ReopenMismatch`
+/// (DOCX takes no loss report, so the evidence gate emits exactly that code).
+fn assert_reopen_mismatch_only(name: &str, error: &DocumentError) {
+    match error {
+        DocumentError::UnsafeSave { preservation } => {
+            assert_eq!(preservation.outcome, Outcome::Unsafe, "{name}");
+            assert_eq!(
+                preservation.findings,
+                vec![Finding::new(FindingCode::ReopenMismatch)],
+                "{name}: unrelated failure classification"
+            );
+        }
+        other => panic!("{name}: expected UnsafeSave(ReopenMismatch), got {other:?}"),
+    }
 }
 
 fn body_end(session: &mut Session) {
@@ -610,28 +704,44 @@ fn diagnostic_b_feature_matrix() {
         assert!(preflight.is_safe());
         assert!(preserve.is_safe());
         drop(model);
+        assert!(
+            doc.info.dirty,
+            "{name}: edited session must be dirty before save"
+        );
         let saved = doc.save();
         let save_ok = saved.is_ok();
-        assert_eq!(save_ok, b3, "{name} save_result={saved:?}");
-        if let Ok(saved) = &saved {
-            assert!(!saved.session.dirty);
-            assert_eq!(doc.bytes(), output);
-            assert!(doc.leftovers().is_empty());
-        } else {
-            assert_eq!(Sha256::digest(doc.bytes()), Sha256::digest(&original));
-            assert!(doc.info.dirty);
-            assert!(doc.leftovers().is_empty());
+        // B0/B3 publish; every header/footer case must be refused *because of*
+        // ReopenMismatch alone (not SharedDirectory, FileConflict, PartChanged…).
+        let expect_ok = matches!(name, "B0" | "B3");
+        assert_eq!(b3, expect_ok, "{name}: diagnosis boundary");
+        match &saved {
+            Ok(saved) => {
+                assert!(expect_ok, "{name}: unexpected publication {saved:?}");
+                assert!(!saved.session.dirty);
+                assert!(!doc.state.registry().get(doc.info.session_id).unwrap().dirty);
+                assert_eq!(saved.bytes, output.len());
+                assert_eq!(Sha256::digest(doc.bytes()), Sha256::digest(&output));
+            }
+            Err(error) => {
+                assert!(!expect_ok, "{name}: unexpected failure {error:?}");
+                assert_reopen_mismatch_only(name, error);
+                assert_eq!(Sha256::digest(doc.bytes()), Sha256::digest(&original));
+                assert!(doc.state.registry().get(doc.info.session_id).unwrap().dirty);
+            }
         }
+        assert!(doc.leftovers().is_empty(), "{name}: {:?}", doc.leftovers());
         let current = doc.state.registry().get(doc.info.session_id).unwrap();
-        assert!(doc
-            .state
-            .registry()
-            .begin_save(
-                current.session_id,
-                current.load_generation,
-                current.revision
-            )
-            .is_ok());
+        assert!(
+            doc.state
+                .registry()
+                .begin_save(
+                    current.session_id,
+                    current.load_generation,
+                    current.revision
+                )
+                .is_ok(),
+            "{name}: save ticket must be released"
+        );
         eprintln!("MATRIX {name} B1={b1} preflight={} edited_reopen={b3} package={} save={save_ok} error={:?}\n INITIAL_DIFF={d1:?}\n EDIT_DIFF={d3:?}",preflight.is_safe(),preserve.is_safe(),saved.err());
     }
 }
@@ -707,6 +817,40 @@ fn relabel_fixture_parts(
     out
 }
 
+/// Hyperlink assignment of body paragraph `index` from WordCraft's actual
+/// representation: `Run { len (UTF-8 bytes), props.link }` over `Paragraph.text`.
+/// Adjacent runs with the same target are merged; returns (byte range, text, target).
+fn body_links(
+    doc: &wordcraft_engine::doc::Document,
+    index: usize,
+) -> Vec<(std::ops::Range<usize>, String, Option<String>)> {
+    use wordcraft_engine::doc::Block;
+    let Block::Para(para) = &*doc.body[index] else {
+        panic!("body block {index} is not a paragraph")
+    };
+    assert_eq!(
+        para.runs.iter().map(|r| r.len).sum::<usize>(),
+        para.text.len(),
+        "runs cover the paragraph text exactly"
+    );
+    let mut out: Vec<(std::ops::Range<usize>, String, Option<String>)> = Vec::new();
+    let mut at = 0;
+    for run in &para.runs {
+        let range = at..at + run.len;
+        at = range.end;
+        match out.last_mut() {
+            Some(last) if last.2 == run.props.link && last.0.end == range.start => {
+                last.0.end = range.end
+            }
+            _ => out.push((range, String::new(), run.props.link.clone())),
+        }
+    }
+    for (range, text, _) in &mut out {
+        *text = para.text[range.clone()].to_string();
+    }
+    out
+}
+
 #[test]
 fn diagnostic_a_engine_authorized_link_edit() {
     use wordcraft_engine::doc::{Path, Pos, StoryRef};
@@ -718,16 +862,40 @@ fn diagnostic_a_engine_authorized_link_edit() {
     )
     .unwrap();
     let original = io::save_bytes("fixture.docx", &seed).unwrap();
-    let mut session = Session::new(io::open_bytes("fixture.docx", &original).unwrap());
+    let opened = io::open_bytes("fixture.docx", &original).unwrap();
+    let external = Some("https://example.org/A".to_string());
+    let internal = Some("#bookmark".to_string());
+    // 11..17: two U+FFFC object markers (bookmarkStart/End), never linked.
+    let markers = (11..17, "\u{FFFC}\u{FFFC}".to_string(), None);
+    let before = vec![
+        (0..5, "First".to_string(), external.clone()),
+        (5..11, "Second".to_string(), internal.clone()),
+        markers.clone(),
+    ];
+    let after = vec![
+        (0..5, "First".to_string(), internal.clone()),
+        (5..11, "Second".to_string(), external.clone()),
+        markers,
+    ];
+    assert_eq!(body_links(&opened, 0), before, "source assignment");
+    let mut session = Session::new(opened);
     for (start, end, url) in [(0, 5, "#bookmark"), (5, 11, "https://example.org/A")] {
         session.run("select.range",&json!({"anchor":Pos::new(StoryRef::Body,Path(vec![0]),start),"focus":Pos::new(StoryRef::Body,Path(vec![0]),end)})).unwrap();
         session.run("insert.link", &json!({"url":url})).unwrap();
     }
+    // The authorized edit exchanged the two targets over the same byte ranges.
+    assert_eq!(body_links(&session.doc, 0), after, "edited model");
+    assert_ne!(before, after);
     let output = io::save_bytes("fixture.docx", &session.doc).unwrap();
-    let same = session.doc == io::open_bytes("fixture.docx", &output).unwrap();
+    let reopened = io::open_bytes("fixture.docx", &output).unwrap();
+    assert_eq!(body_links(&reopened, 0), after, "export/reopen");
+    let same = session.doc == reopened;
     assert!(same);
     assert!(service::check_saved(Format::Docx, &original, &output, None, same).is_safe());
     // Actual engine command changes are represented; source/export is canonical.
     // Unlike forced-reopen adversarial calls, this bool comes from model equality.
-    injected_publication(&original, &output, same, true);
+    let dir = injected_publication(&original, &output, same, true);
+    let published = std::fs::read(dir.path().join("a.docx")).unwrap();
+    let saved = io::open_bytes("fixture.docx", &published).unwrap();
+    assert_eq!(body_links(&saved, 0), after, "published document");
 }
