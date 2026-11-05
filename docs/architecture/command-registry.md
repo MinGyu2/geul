@@ -733,3 +733,16 @@ Strict 회귀 시험: `strict_reference_rebinding_*`, `strict_reference_valid_re
 - 연결하지 않은 이유(정확한 차단): (1) series에 넣으면 봉인된 RHWP 입력 신원이 바뀌어 새 WASM 세대 빌드와 실제 WASM 시험(비공개 시험 모음)·T009 HWP/HWPX 저장
   규칙 검토가 함께 필요하다 — 이번에 하지 않았다. (2) 셀 쓰기는 문서 변경이므로 실행 취소가 필요한데 제품 RHWP 실행 취소는 T010 NO-GO(Stage 5와 같은 차단).
   (3) HWPX 계산식 필드의 한컴 호환은 기준 표본이 없어 미검증, 한컴 오피스 열기·다시 계산: NOT RUN. (4) RHWP 렌더링 변경 관문(한컴 PDF Visual Sweep)도 NOT RUN.
+
+## T012/T013 Stage 7: native·외부 호환 수용 — NOT RUN (2026-11-05, `57dde8e` 위)
+
+- 환경: `DISPLAY` 없음(X11 없음), `WAYLAND_DISPLAY`는 사용자의 실제 데스크톱 세션뿐이고 headless 합성기(weston) 없음, IBus·입력 주입 도구 없음,
+  Microsoft Word·한컴 오피스 없음(Linux). 실제 Tauri 창 시험을 사용자 세션에 띄우지 않았다. 따라서 Tauri native 흐름(목차·추적·수락/거절·하이퍼링크 메모·
+  장평/자간·계산식), X11/IBus 한글 조합(추적 중 입력 포함), Word 열기·목차 갱신·수락/거절·저장 뒤 geul 다시 열기, 한컴 HWP/HWPX 열기·계산식 확인은 모두
+  **NOT RUN**. 합성 IME·엔진 왕복 시험을 native·외부 호환 증거로 바꾸지 않는다. 수용 커밋을 만들지 않았다.
+- 최종 회귀(이 시점 HEAD): 직접 `cargo test --locked --offline --lib` 320 PASS/24 무시, fmt·clippy `--all-targets -D warnings` PASS, `npx vitest run` 64 파일
+  1134 PASS, typecheck·lint PASS, `npm run build:frontend` PASS. WordCraft(`b74830b`) doc/docx/engine 875 PASS + 기존 실패 1(`file_access`). 보호 sandbox
+  `scripts/cargo-geul.py test --lib`: 242 PASS/78 FAIL — 73개는 `SaveUnsupported{SharedDirectory}`(bwrap tmpfs 소유자, 기존 환경 한계), 5개는 sandbox 안에서만
+  실패하는 디렉터리 권한·임시 파일·예약 시험(`files`·`recovery`·`save` a4/e/reservation, 이번 변경 밖 코드)이며 직접 실행은 모두 통과한다. 같은 보호 실행의
+  `4c19443` 기준 대조는 이번에 하지 않았다(직접 PASS를 보호 PASS로 표기하지 않음).
+- 판정: T012 미완료(Stage 5 BLOCKED, Stage 6 엔진 후보만), T013 미완료(Stage 2–4 구현·저장 검증 완료, native IME·Word 호환 NOT RUN). 두 항목 모두 체크하지 않는다.
