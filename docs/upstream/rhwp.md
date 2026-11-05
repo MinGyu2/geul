@@ -208,3 +208,12 @@ callback도 없다. PNG `StreamingDecoder` 공개 API가 있지만, 이 역시 �
 
 `patches/rhwp/candidates/`의 패치는 빌드 series 밖이며 출하 WASM에 들어가지 않는다. `table-formula-field.patch`(T012 Stage 6 부분 진행)는 고정
 `1a76570` + 현재 series 위에 적용되고 네이티브 시험만 통과했다. 업스트림에 제출하지 않았다(게시·PR은 별도 승인 필요).
+
+## 빌드 series 패치 추가: `char-shape-compaction.patch` (2026-11-05, T012 Stage 5)
+
+고정 `1a76570` + 기존 11개 패치 뒤 12번째(`scripts/rhwp-patches.py` `SERIES`). SHA-256 `98b3666faf7836976df3698946e6a150e80b17c18cf4f91977a4c9a34ef0d206`. RHWP 저장소 자체는 바꾸지 않았고(gitlink 그대로)
+geul이 적용하는 패치다. 새 파일 `src/document_core/commands/char_shape_compact.rs`(+시험), `commands/mod.rs` 한 줄, `wasm_api.rs`의
+`charShapeCount`·`compactAppendedCharShapes` 내보내기. RHWP 기본 편집 경로는 바뀌지 않는다(opt-in). 이 series로 만든 Release WASM 세대는
+`39a3755c8e7a09e23b2f88fb43b3c3c62f385a8e1cec4218bf5b41127b1f00b3`(`rhwp_bg.wasm` `642f14c1…`, `rhwp.js` `96eafb02…`, 생성물이라 Git에 없음)다.
+업스트림에 제출하지 않았다.
+

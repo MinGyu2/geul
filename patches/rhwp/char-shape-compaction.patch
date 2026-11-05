@@ -1,0 +1,623 @@
+diff --git a/src/document_core/commands/char_shape_compact.rs b/src/document_core/commands/char_shape_compact.rs
+new file mode 100644
+index 0000000..017b123
+--- /dev/null
++++ b/src/document_core/commands/char_shape_compact.rs
+@@ -0,0 +1,344 @@
++//! [geul] 세션 중 덧붙인 글자 모양 중 어디서도 쓰지 않는 것을 정리한다(T012 장평·자간 연속 변경).
++//!
++//! `find_or_create_char_shape` 는 같은 모양을 다시 쓰지만 글자 모양 표는 덧붙임 전용이다. 같은 범위에
++//! 장평 뒤 자간을 바꾸면 중간 모양(장평만 바뀐 것)이 아무도 가리키지 않는 정의로 남는다.
++//!
++//! ## 계약
++//!
++//! - `baseline` 은 불러온 직후(또는 새 문서 직후)의 글자 모양 수다. **그보다 앞의 정의는 지우지도 번호를
++//!   바꾸지도 않는다** — 원본의 스타일·번호·글머리표·원본 바이트 보존 레코드(`raw_data`)·원본 XML 조각이
++//!   가리키는 번호는 그대로 유효하다.
++//! - 덧붙인 정의(`baseline..len`) 중 참조가 없는 것만 지우고, 남는 덧붙인 정의는 순서를 지켜 앞으로 당긴다.
++//! - 모으기와 옮기기는 **같은 방문**(`visit`)을 쓴다(`bin_data_prune` 과 같은 방식).
++//! - 덧붙인 정의를 DocInfo 쪽 참조(스타일·번호 머리·글머리표)가 가리키거나, 어떤 참조든 표 밖 번호를
++//!   가리키면 아무것도 바꾸지 않는다(fail closed). 단 `0xFFFFFFFF` 는 한컴 저장본이 번호 머리·글머리표·목록
++//!   표지에 쓰는 "참조 없음" 값이라 참조로 세지 않는다(표본 실측).
++//! - 스냅숏 저장소의 문서는 각자 자기 표를 가지므로 건드리지 않는다. RHWP 자체의 ID 기반 실행 취소
++//!   (`set_char_shape_id_native`)와 섞어 쓰면 안 되므로 기본 편집 경로에서 자동으로 부르지 않는다
++//!   (호출자 opt-in, geul 은 문서 스냅숏 기록을 쓴다).
++
++use std::collections::BTreeSet;
++
++use crate::document_core::DocumentCore;
++use crate::error::HwpError;
++use crate::model::control::Control;
++use crate::model::paragraph::{NumberingMarker, Paragraph};
++use crate::model::shape::{DrawingObjAttr, ShapeObject};
++
++/// 참조 자리의 종류.
++#[derive(Clone, Copy, PartialEq, Eq)]
++enum Site {
++    /// 문단·셀·글상자 등의 글자 모양 참조: 번호를 옮길 수 있다.
++    Remappable,
++    /// DocInfo 의 스타일·번호 머리·글머리표: 덧붙인 번호를 가리키면 정리하지 않는다.
++    Fixed,
++}
++
++/// 정리 결과.
++#[derive(Debug, Clone, PartialEq, Eq, Default)]
++pub struct CharShapeCompactReport {
++    pub before: usize,
++    pub after: usize,
++    /// 정리하지 않은 이유(없으면 정리했거나 정리할 것이 없음).
++    pub skipped: Option<&'static str>,
++}
++
++fn visit_paragraphs(paragraphs: &mut [Paragraph], f: &mut dyn FnMut(&mut u32, Site)) {
++    for p in paragraphs {
++        visit_paragraph(p, f);
++    }
++}
++
++fn visit_paragraph(p: &mut Paragraph, f: &mut dyn FnMut(&mut u32, Site)) {
++    // CharShapeRef 는 HWPX 원문 위상(`hwpx_text_topology`)과 함께 옮겨야 한다. 값을 바꾸는 방문에서만
++    // 위상을 다시 묶으므로 여기서는 사본으로 먼저 본다.
++    let mut ids: Vec<u32> = p.char_shapes.iter().map(|r| r.char_shape_id).collect();
++    for id in &mut ids {
++        f(id, Site::Remappable);
++    }
++    if ids
++        .iter()
++        .zip(&p.char_shapes)
++        .any(|(a, r)| *a != r.char_shape_id)
++    {
++        let topology = crate::model::hwpx_topology::HwpxTextTopology::before_edit(p);
++        let old = topology.as_ref().map(|_| p.char_shapes.clone());
++        for (r, id) in p.char_shapes.iter_mut().zip(ids) {
++            r.char_shape_id = id;
++        }
++        p.hwpx_text_topology =
++            topology.map(|t| t.format_edit(p, old.as_deref().unwrap_or_default()));
++    }
++    if let NumberingMarker::Text(_, head) = &mut p.numbering_marker {
++        if head.char_shape_id != u32::MAX {
++            f(&mut head.char_shape_id, Site::Remappable);
++        }
++    }
++    visit_controls(&mut p.controls, f);
++}
++
++fn visit_drawing(drawing: &mut DrawingObjAttr, f: &mut dyn FnMut(&mut u32, Site)) {
++    if let Some(text_box) = drawing.text_box.as_mut() {
++        visit_paragraphs(&mut text_box.paragraphs, f);
++    }
++    if let Some(caption) = drawing.caption.as_mut() {
++        visit_paragraphs(&mut caption.paragraphs, f);
++    }
++}
++
++fn visit_shape(shape: &mut ShapeObject, f: &mut dyn FnMut(&mut u32, Site)) {
++    match shape {
++        ShapeObject::Picture(pic) => {
++            if let Some(caption) = pic.caption.as_mut() {
++                visit_paragraphs(&mut caption.paragraphs, f);
++            }
++        }
++        ShapeObject::Group(group) => {
++            for child in &mut group.children {
++                visit_shape(child, f);
++            }
++            if let Some(caption) = group.caption.as_mut() {
++                visit_paragraphs(&mut caption.paragraphs, f);
++            }
++        }
++        ShapeObject::Chart(chart) => {
++            visit_drawing(&mut chart.drawing, f);
++            if let Some(caption) = chart.caption.as_mut() {
++                visit_paragraphs(&mut caption.paragraphs, f);
++            }
++        }
++        ShapeObject::Ole(ole) => {
++            visit_drawing(&mut ole.drawing, f);
++            if let Some(caption) = ole.caption.as_mut() {
++                visit_paragraphs(&mut caption.paragraphs, f);
++            }
++        }
++        _ => {
++            if let Some(drawing) = shape.drawing_mut() {
++                visit_drawing(drawing, f);
++            }
++        }
++    }
++}
++
++fn visit_controls(controls: &mut [Control], f: &mut dyn FnMut(&mut u32, Site)) {
++    for control in controls {
++        match control {
++            Control::Picture(pic) => {
++                if let Some(caption) = pic.caption.as_mut() {
++                    visit_paragraphs(&mut caption.paragraphs, f);
++                }
++            }
++            Control::Shape(shape) => visit_shape(shape, f),
++            Control::Table(table) => {
++                for cell in &mut table.cells {
++                    visit_paragraphs(&mut cell.paragraphs, f);
++                }
++                if let Some(caption) = table.caption.as_mut() {
++                    visit_paragraphs(&mut caption.paragraphs, f);
++                }
++            }
++            Control::Header(h) => visit_paragraphs(&mut h.paragraphs, f),
++            Control::Footer(h) => visit_paragraphs(&mut h.paragraphs, f),
++            Control::Footnote(n) => visit_paragraphs(&mut n.paragraphs, f),
++            Control::Endnote(n) => visit_paragraphs(&mut n.paragraphs, f),
++            Control::HiddenComment(c) => visit_paragraphs(&mut c.paragraphs, f),
++            Control::Field(field) => {
++                if let Some(residue) = field.guide_residue.as_mut() {
++                    f(&mut residue.char_shape_id, Site::Remappable);
++                }
++                visit_paragraphs(&mut field.memo_paragraphs, f);
++            }
++            Control::CharOverlap(overlap) => {
++                for id in &mut overlap.char_shape_ids {
++                    f(id, Site::Remappable);
++                }
++            }
++            Control::SectionDef(section_def) => {
++                for master_page in &mut section_def.master_pages {
++                    visit_paragraphs(&mut master_page.paragraphs, f);
++                }
++            }
++            _ => {}
++        }
++    }
++}
++
++impl DocumentCore {
++    /// 모든 글자 모양 참조를 방문한다(문서 본문 전체, DocInfo 참조, 내부 클립보드).
++    fn visit_char_shape_refs(&mut self, f: &mut dyn FnMut(&mut u32, Site)) {
++        for section in &mut self.document.sections {
++            visit_paragraphs(&mut section.paragraphs, f);
++            for master_page in &mut section.section_def.master_pages {
++                visit_paragraphs(&mut master_page.paragraphs, f);
++            }
++        }
++        let info = &mut self.document.doc_info;
++        for style in &mut info.styles {
++            let mut id = u32::from(style.char_shape_id);
++            f(&mut id, Site::Fixed);
++        }
++        for numbering in &mut info.numberings {
++            for head in &mut numbering.heads {
++                f(&mut head.char_shape_id, Site::Fixed);
++            }
++        }
++        for bullet in &mut info.bullets {
++            f(&mut bullet.char_shape_id, Site::Fixed);
++        }
++        if let Some(clipboard) = self.clipboard.as_mut() {
++            visit_paragraphs(&mut clipboard.paragraphs, f);
++        }
++        if let Some(transpose) = self.table_transpose_clipboard.as_mut() {
++            for row in &mut transpose.data.cells {
++                for cell in row {
++                    visit_paragraphs(cell, f);
++                }
++            }
++        }
++    }
++
++    /// 덧붙인 글자 모양(`baseline..`) 중 참조 없는 것을 지우고 참조를 옮긴다. 결과 JSON:
++    /// `{"ok":true,"before":n,"after":m,"skipped":null|"이유"}`.
++    pub fn compact_appended_char_shapes_native(
++        &mut self,
++        baseline: usize,
++    ) -> Result<String, HwpError> {
++        let report = self.compact_appended_char_shapes(baseline)?;
++        Ok(format!(
++            "{{\"ok\":true,\"before\":{},\"after\":{},\"skipped\":{}}}",
++            report.before,
++            report.after,
++            report
++                .skipped
++                .map(|s| format!("\"{s}\""))
++                .unwrap_or_else(|| "null".into())
++        ))
++    }
++
++    pub(crate) fn compact_appended_char_shapes(
++        &mut self,
++        baseline: usize,
++    ) -> Result<CharShapeCompactReport, HwpError> {
++        let before = self.document.doc_info.char_shapes.len();
++        if baseline > before {
++            return Err(HwpError::RenderError(format!(
++                "글자 모양 기준 수 {baseline}이 지금 수 {before}보다 큼"
++            )));
++        }
++        let skip = |reason| CharShapeCompactReport {
++            before,
++            after: before,
++            skipped: Some(reason),
++        };
++        if baseline == before {
++            return Ok(CharShapeCompactReport {
++                before,
++                after: before,
++                skipped: None,
++            });
++        }
++        // 1. 모으기.
++        let mut referenced = BTreeSet::new();
++        let mut fixed_appended = false;
++        let mut dangling = false;
++        self.visit_char_shape_refs(&mut |id, site| {
++            // 한컴 저장본의 번호 머리·글머리표·목록 표지는 0xFFFFFFFF 를 "참조 없음"으로 쓴다(실측).
++            if *id == u32::MAX {
++                return;
++            }
++            let index = *id as usize;
++            if index >= before {
++                dangling = true;
++            } else if index >= baseline {
++                referenced.insert(index);
++                fixed_appended |= site == Site::Fixed;
++            }
++        });
++        if dangling {
++            return Ok(skip("dangling"));
++        }
++        if fixed_appended {
++            return Ok(skip("docinfo-reference"));
++        }
++        if referenced.len() == before - baseline {
++            return Ok(CharShapeCompactReport {
++                before,
++                after: before,
++                skipped: None,
++            });
++        }
++        // 2. 옛 번호 → 새 번호(원본 정의는 그대로, 남는 덧붙인 정의는 순서를 지켜 앞으로).
++        let mut map: Vec<u32> = (0..baseline as u32).collect();
++        map.resize(before, u32::MAX);
++        for (next, old) in referenced.iter().enumerate() {
++            map[*old] = (baseline + next) as u32;
++        }
++        // 3. 옮기기(같은 방문). Fixed 자리는 덧붙인 번호를 가리키지 않음을 위에서 확인했다.
++        let mut changed_sections = vec![false; self.document.sections.len()];
++        {
++            let map = &map;
++            for (index, section) in self.document.sections.iter_mut().enumerate() {
++                let mut changed = false;
++                let mut remap = |id: &mut u32, site: Site| {
++                    if *id == u32::MAX {
++                        return;
++                    }
++                    let next = map[*id as usize];
++                    if site == Site::Remappable && next != *id {
++                        *id = next;
++                        changed = true;
++                    }
++                };
++                visit_paragraphs(&mut section.paragraphs, &mut remap);
++                for master_page in &mut section.section_def.master_pages {
++                    visit_paragraphs(&mut master_page.paragraphs, &mut remap);
++                }
++                changed_sections[index] = changed;
++            }
++            let mut remap_rest = |id: &mut u32, site: Site| {
++                if site == Site::Remappable && *id != u32::MAX {
++                    *id = map[*id as usize];
++                }
++            };
++            if let Some(clipboard) = self.clipboard.as_mut() {
++                visit_paragraphs(&mut clipboard.paragraphs, &mut remap_rest);
++            }
++            if let Some(transpose) = self.table_transpose_clipboard.as_mut() {
++                for row in &mut transpose.data.cells {
++                    for cell in row {
++                        visit_paragraphs(cell, &mut remap_rest);
++                    }
++                }
++            }
++        }
++        // 4. 표 정리. 남는 것만, 순서 그대로.
++        let mut index = 0usize;
++        self.document.doc_info.char_shapes.retain(|_| {
++            let keep = index < baseline || map[index] != u32::MAX;
++            index += 1;
++            keep
++        });
++        self.document.doc_info.raw_stream_dirty = true;
++        for (section, changed) in self.document.sections.iter_mut().zip(&changed_sections) {
++            if *changed {
++                section.raw_stream = None;
++            }
++        }
++        self.rebuild_derived_state();
++        Ok(CharShapeCompactReport {
++            before,
++            after: self.document.doc_info.char_shapes.len(),
++            skipped: None,
++        })
++    }
++
++    /// 지금 글자 모양 수(호출자가 불러온 직후의 기준 수를 기록할 때 쓴다).
++    pub fn char_shape_count_native(&self) -> usize {
++        self.document.doc_info.char_shapes.len()
++    }
++}
++
++#[cfg(test)]
++#[path = "char_shape_compact_tests.rs"]
++mod tests;
+diff --git a/src/document_core/commands/char_shape_compact_tests.rs b/src/document_core/commands/char_shape_compact_tests.rs
+new file mode 100644
+index 0000000..d68ee91
+--- /dev/null
++++ b/src/document_core/commands/char_shape_compact_tests.rs
+@@ -0,0 +1,231 @@
++//! [geul] 덧붙인 글자 모양 정리 시험. 실제 한컴 저장 표본을 실제 RHWP 내보내기·다시 열기로 확인한다.
++use super::*;
++use crate::parser::cfb_reader::CfbReader;
++use crate::parser::record::Record;
++
++const W150: &str = r#"{"ratios":[150,150,150,150,150,150,150]}"#;
++const W80: &str = r#"{"ratios":[80,80,80,80,80,80,80]}"#;
++const S10: &str = r#"{"spacings":[10,10,10,10,10,10,10]}"#;
++const SM20: &str = r#"{"spacings":[-20,-20,-20,-20,-20,-20,-20]}"#;
++const BOLD: &str = r#"{"bold":true}"#;
++
++fn sample(name: &str) -> Vec<u8> {
++    std::fs::read(format!("{}/samples/{name}", env!("CARGO_MANIFEST_DIR"))).expect("표본")
++}
++
++fn open(bytes: &[u8]) -> DocumentCore {
++    DocumentCore::from_bytes(bytes).expect("열기")
++}
++
++/// 글이 4자 이상인 첫 본문 문단.
++fn text_para(core: &DocumentCore) -> usize {
++    core.document.sections[0]
++        .paragraphs
++        .iter()
++        .position(|p| p.text.chars().filter(|c| !c.is_control()).count() >= 4)
++        .expect("글 있는 문단")
++}
++
++/// 문단 글자 위치의 (장평, 자간) 7개 값과 모양 번호.
++fn metrics_at(core: &DocumentCore, para: usize, offset: usize) -> (Vec<u8>, Vec<i8>, u32) {
++    let p = &core.document.sections[0].paragraphs[para];
++    let id = p.char_shape_id_at(offset).expect("모양");
++    let cs = &core.document.doc_info.char_shapes[id as usize];
++    (cs.ratios.to_vec(), cs.spacings.to_vec(), id)
++}
++
++fn hwp_docinfo(bytes: &[u8]) -> Vec<Record> {
++    let mut cfb = CfbReader::open(bytes).expect("CFB");
++    let header = cfb.read_stream_raw("FileHeader").expect("FileHeader");
++    let compressed = header.get(36).is_some_and(|flags| flags & 1 != 0);
++    Record::read_all(&cfb.read_doc_info(compressed).expect("DocInfo")).expect("레코드")
++}
++
++fn apply(core: &mut DocumentCore, para: usize, props: &str) {
++    core.apply_char_format_native(0, para, 0, 3, props)
++        .expect("서식");
++}
++
++#[test]
++fn chained_metric_edits_leave_no_unreferenced_appended_shape() {
++    for name in ["KTX.hwp", "hwpx/ref/ref_text.hwpx"] {
++        for (label, chain) in [
++            ("width-width", vec![W150, W80]),
++            ("spacing-spacing", vec![S10, SM20]),
++            ("width-spacing", vec![W150, S10]),
++            ("spacing-width", vec![S10, W150]),
++            ("width-bold-spacing", vec![W150, BOLD, S10]),
++        ] {
++            let mut core = open(&sample(name));
++            let para = text_para(&core);
++            let baseline = core.char_shape_count_native();
++            let untouched = metrics_at(&core, para, 3);
++            let original_shapes = core.document.doc_info.char_shapes.clone();
++            for props in &chain {
++                apply(&mut core, para, props);
++            }
++            let edited = metrics_at(&core, para, 0);
++            let report = core.compact_appended_char_shapes(baseline).unwrap();
++            assert_eq!(report.skipped, None, "{name} {label}");
++            // 체인의 마지막 결과 모양 하나만 남는다(같은 모양이 이미 있으면 0).
++            assert!(report.after <= baseline + 1, "{name} {label}: {report:?}");
++            assert_eq!(
++                &core.document.doc_info.char_shapes[..baseline],
++                &original_shapes[..],
++                "{name} {label}: 원본 정의 그대로"
++            );
++            let after = metrics_at(&core, para, 0);
++            assert_eq!(
++                (&after.0, &after.1),
++                (&edited.0, &edited.1),
++                "{name} {label}: 결과 값 그대로"
++            );
++            assert_eq!(
++                metrics_at(&core, para, 3),
++                untouched,
++                "{name} {label}: 범위 밖 그대로"
++            );
++            // 실제 저장·다시 열기(원래 형식).
++            let bytes = if name.ends_with(".hwp") {
++                core.export_hwp_native()
++            } else {
++                core.export_hwpx_native()
++            }
++            .expect("저장");
++            let reopened = open(&bytes);
++            assert_eq!(
++                reopened.char_shape_count_native(),
++                report.after,
++                "{name} {label}: 다시 연 표 크기"
++            );
++            let back = metrics_at(&reopened, para, 0);
++            assert_eq!(
++                (&back.0, &back.1),
++                (&edited.0, &edited.1),
++                "{name} {label}: 다시 연 값"
++            );
++            // 둘째 회차: 다시 연 문서에서 또 바꾸고 정리.
++            let mut again = reopened;
++            let base2 = again.char_shape_count_native();
++            apply(&mut again, para, W80);
++            apply(&mut again, para, SM20);
++            let r2 = again.compact_appended_char_shapes(base2).unwrap();
++            assert!(r2.after <= base2 + 1, "{name} {label}: 둘째 {r2:?}");
++            let _ = if name.ends_with(".hwp") {
++                again.export_hwp_native()
++            } else {
++                again.export_hwpx_native()
++            }
++            .expect("둘째 저장");
++        }
++    }
++}
++
++#[test]
++fn compaction_in_table_cells_and_snapshot_restore() {
++    let mut core = open(&sample("calc-cell.hwp"));
++    let baseline = core.char_shape_count_native();
++    let snap = core.save_snapshot_native();
++    core.apply_char_format_in_cell_native(0, 0, 2, 0, 0, 0, 1, W150)
++        .unwrap();
++    core.apply_char_format_in_cell_native(0, 0, 2, 0, 0, 0, 1, S10)
++        .unwrap();
++    core.apply_char_format_in_cell_native(0, 0, 2, 1, 0, 0, 1, W80)
++        .unwrap();
++    assert_eq!(core.char_shape_count_native(), baseline + 3);
++    let report = core.compact_appended_char_shapes(baseline).unwrap();
++    assert_eq!((report.after, report.skipped), (baseline + 2, None));
++    let bytes = core.export_hwp_native().unwrap();
++    let back = open(&bytes);
++    assert_eq!(back.char_shape_count_native(), baseline + 2);
++    // 스냅숏 복원은 그때의 표로 돌아간다(스냅숏 문서는 정리와 무관).
++    core.restore_snapshot_native(snap).unwrap();
++    assert_eq!(core.char_shape_count_native(), baseline);
++}
++
++#[test]
++fn compaction_fails_closed_and_is_a_noop_when_nothing_to_do() {
++    let mut core = open(&sample("KTX.hwp"));
++    let baseline = core.char_shape_count_native();
++    assert!(core.compact_appended_char_shapes(baseline + 1).is_err());
++    assert_eq!(
++        core.compact_appended_char_shapes(baseline).unwrap().after,
++        baseline
++    );
++    let para = text_para(&core);
++    apply(&mut core, para, W150);
++    apply(&mut core, para, S10);
++    // 덧붙인 모양을 스타일이 가리키면 정리하지 않는다.
++    let last = (core.char_shape_count_native() - 1) as u16;
++    let old = core.document.doc_info.styles[0].char_shape_id;
++    core.document.doc_info.styles[0].char_shape_id = last;
++    let r = core.compact_appended_char_shapes(baseline).unwrap();
++    assert_eq!(r.skipped, Some("docinfo-reference"));
++    assert_eq!(core.char_shape_count_native(), baseline + 2);
++    core.document.doc_info.styles[0].char_shape_id = old;
++    // 표 밖 번호를 가리키는 참조가 있으면 정리하지 않는다.
++    core.document.sections[0].paragraphs[para].char_shapes[0].char_shape_id = 9999;
++    assert_eq!(
++        core.compact_appended_char_shapes(baseline).unwrap().skipped,
++        Some("dangling")
++    );
++}
++
++/// 증거 기록: 한컴 HWP에 장평 한 번(+정리)을 저장했을 때 DocInfo 레코드 차이.
++#[test]
++fn hwp_docinfo_delta_of_one_metric_edit() {
++    let original = sample("KTX.hwp");
++    let mut core = open(&original);
++    let para = text_para(&core);
++    let baseline = core.char_shape_count_native();
++    apply(&mut core, para, W150);
++    apply(&mut core, para, S10);
++    core.compact_appended_char_shapes(baseline).unwrap();
++    let out = core.export_hwp_native().unwrap();
++    let (a, b) = (hwp_docinfo(&original), hwp_docinfo(&out));
++    let summary = |r: &[Record]| {
++        r.iter()
++            .map(|x| (x.tag_id, x.level, x.data.len()))
++            .collect::<Vec<_>>()
++    };
++    let mut changed = Vec::new();
++    let (mut i, mut j) = (0, 0);
++    while i < a.len() || j < b.len() {
++        match (a.get(i), b.get(j)) {
++            (Some(x), Some(y))
++                if x.tag_id == y.tag_id && x.level == y.level && x.data == y.data =>
++            {
++                i += 1;
++                j += 1;
++            }
++            (Some(x), Some(y)) if x.tag_id == y.tag_id && x.level == y.level => {
++                changed.push(format!("changed {} #{i}", x.tag_name()));
++                i += 1;
++                j += 1;
++            }
++            (_, Some(y)) => {
++                changed.push(format!(
++                    "inserted {} at {j} len {}",
++                    y.tag_name(),
++                    y.data.len()
++                ));
++                j += 1;
++            }
++            (Some(x), None) => {
++                changed.push(format!("removed {} #{i}", x.tag_name()));
++                i += 1;
++            }
++            (None, None) => break,
++        }
++    }
++    eprintln!(
++        "DOCINFO-DELTA records {}->{}: {changed:?}",
++        a.len(),
++        b.len()
++    );
++    eprintln!(
++        "DOCINFO-SUMMARY-LEN {} {}",
++        summary(&a).len(),
++        summary(&b).len()
++    );
++}
+diff --git a/src/document_core/commands/mod.rs b/src/document_core/commands/mod.rs
+index 20a8020..d547d24 100644
+--- a/src/document_core/commands/mod.rs
++++ b/src/document_core/commands/mod.rs
+@@ -1,5 +1,6 @@
+ // [#6840] 발췌 산출물에서 참조 없는 BinData 를 버린다 — 쪽을 잘라도 파일이 줄지 않던 문제.
+ pub(crate) mod bin_data_prune;
++pub mod char_shape_compact;
+ mod clipboard;
+ mod clone_identity;
+ // [#5769] 삭제의 참 역연산 — 조각 저장소. DeleteFragment 타입이 DocumentCore
+diff --git a/src/wasm_api.rs b/src/wasm_api.rs
+index 2031085..0121c1b 100644
+--- a/src/wasm_api.rs
++++ b/src/wasm_api.rs
+@@ -7069,6 +7069,20 @@ impl HwpDocument {
+ 
+     // ─── Undo/Redo 스냅샷 API ──────────────────────────
+ 
++    /// [geul] 지금 글자 모양 수. 불러온 직후의 기준 수를 기록해 `compactAppendedCharShapes` 에 넘긴다.
++    #[wasm_bindgen(js_name = charShapeCount)]
++    pub fn char_shape_count(&self) -> u32 {
++        self.char_shape_count_native() as u32
++    }
++
++    /// [geul] 기준 수 뒤에 덧붙인 글자 모양 중 참조 없는 것을 지우고 참조를 옮긴다(호출자 opt-in, 문서 스냅숏
++    /// 기록과 함께 쓴다 — RHWP ID 기반 실행 취소와 섞지 않는다).
++    #[wasm_bindgen(js_name = compactAppendedCharShapes)]
++    pub fn compact_appended_char_shapes(&mut self, baseline: u32) -> Result<String, JsValue> {
++        self.compact_appended_char_shapes_native(baseline as usize)
++            .map_err(|e| e.into())
++    }
++
+     /// Document 스냅샷을 저장하고 ID를 반환한다.
+     #[wasm_bindgen(js_name = saveSnapshot)]
+     pub fn save_snapshot(&mut self) -> u32 {
