@@ -356,23 +356,47 @@ pub fn hwpx_body(name: &str) -> bool {
 pub fn compare_saved_docx(original: &Package, output: &Package) -> Vec<Finding> {
     const BODY: &str = "word/document.xml";
     const APP: &str = "docProps/app.xml";
-    // T013 메모: 원본에 없던 메모 부분을 엔진이 새로 만들었고 패키지 목록·관계는 그 덧붙임뿐일 때만, 그 부분과 두 목록을 엔진 다시
-    // 읽기(모델 비교)가 확인하는 편집 부분으로 본다(`comment_parts_added`). 아니면 지금처럼 부분마다 비교한다.
-    let comments = comment_parts_added(original, output);
-    let appended = !comments && comment_parts_appended(original, output);
+    // T013 메모·각주·미주: 원본에 없던 덧붙일 수 있는 부분(메모 부분, 각주·미주 부분)을 엔진이 새로 만들었고 패키지 목록·관계(각주·
+    // 미주면 settings의 구분선 참조 두 개도)는 정확히 그 덧붙임뿐일 때만, 그 부분과 목록들을 엔진 다시 읽기(모델 비교)가 확인하는 편집
+    // 부분으로 본다(`parts_added`, `note_settings_added`). 아니면 지금처럼 부분마다 비교한다.
+    let added = parts_added(original, output).filter(|added| {
+        let notes: Vec<&str> = added
+            .iter()
+            .map(|(part, ..)| *part)
+            .filter(|part| NOTE_PARTS.iter().any(|(note, ..)| note == part))
+            .collect();
+        notes.is_empty() || note_settings_added(original, output, &notes)
+    });
+    let notes_added = added.as_ref().is_some_and(|added| {
+        added
+            .iter()
+            .any(|(part, ..)| NOTE_PARTS.iter().any(|(note, ..)| note == part))
+    });
+    let appended = added.is_none() && comment_parts_appended(original, output);
+    // 원본에 이미 있던 각주·미주 부분: 구분선 그대로, 원본 각주는 번호(`w:id`)만 다시 매겨질 수 있고 순서·내용 그대로, 새 각주만 더함.
+    let extended: Vec<&str> = NOTE_PARTS
+        .iter()
+        .zip(NOTE_CHILDREN)
+        .filter_map(|((part, ..), child)| {
+            let (before, after) = (original.get(part)?, output.get(part)?);
+            (before != after && note_part_extended(before, after, child)).then_some(*part)
+        })
+        .collect();
     let mut findings = compare(original, output, &|name| {
         name == BODY
             || name == APP
-            || (comments && (name == CONTENT_TYPES || name == DOCUMENT_RELS))
+            || (added.is_some() && (name == CONTENT_TYPES || name == DOCUMENT_RELS))
+            || (notes_added && name == SETTINGS)
             || (appended && COMMENT_PARTS.iter().any(|(part, ..)| *part == name))
+            || extended.contains(&name)
     });
-    if comments {
+    if let Some(added) = &added {
         findings.retain(|finding| {
             !(finding.code == FindingCode::PartAdded
                 && finding
                     .part
                     .as_deref()
-                    .is_some_and(|part| COMMENT_PARTS.iter().any(|(name, ..)| *name == part)))
+                    .is_some_and(|part| added.iter().any(|(name, ..)| *name == part)))
         });
     }
     if let (Some(before), Some(after)) = (original.get(APP), output.get(APP)) {
@@ -420,6 +444,31 @@ const COMMENT_PARTS: [(&str, &str, &str, &str); 2] = [
         "application/vnd.openxmlformats-officedocument.wordprocessingml.commentsExtended+xml",
     ),
 ];
+
+/// 문서 설정 부분.
+const SETTINGS: &str = "word/settings.xml";
+/// WordprocessingML 이름공간.
+const WML: &str = "http://schemas.openxmlformats.org/wordprocessingml/2006/main";
+/// WordCraft가 첫 각주·미주에 만드는 부분(실측 2026-11-05, WordCraft `42e8a67` + 구분선 읽기 수정): (부분, 본문 관계 대상, 관계 형식,
+/// 내용 형식). `COMMENT_PARTS`와 같은 모양.
+const NOTE_PARTS: [(&str, &str, &str, &str); 2] = [
+    (
+        "word/footnotes.xml",
+        "footnotes.xml",
+        "http://schemas.openxmlformats.org/officeDocument/2006/relationships/footnotes",
+        "application/vnd.openxmlformats-officedocument.wordprocessingml.footnotes+xml",
+    ),
+    (
+        "word/endnotes.xml",
+        "endnotes.xml",
+        "http://schemas.openxmlformats.org/officeDocument/2006/relationships/endnotes",
+        "application/vnd.openxmlformats-officedocument.wordprocessingml.endnotes+xml",
+    ),
+];
+/// 각주·미주 부분의 자식 지역 이름이자 settings의 구분선 참조 이름. `NOTE_PARTS`와 같은 순서.
+const NOTE_CHILDREN: [&str; 2] = ["footnote", "endnote"];
+/// settings에서 구분선 참조를 담는 요소. `NOTE_PARTS`와 같은 순서.
+const NOTE_SETTINGS: [&str; 2] = ["footnotePr", "endnotePr"];
 
 /// 속성 목록 하나(이름순 (이름, 값)).
 type Attrs = Vec<(String, String)>;
@@ -562,20 +611,37 @@ fn comment_reference_bindings_equal(
 /// 메모 부분 내용(메모 글·작성자·날짜·완료 표시)은 엔진 모델의 일부라 다시 읽기 비교가 확인한다. 원본에 메모가 이미 있으면 이
 /// 규칙을 쓰지 않는다(기존 메모 부분이 바뀌면 지금처럼 partChanged).
 pub fn comment_parts_added(original: &Package, output: &Package) -> bool {
+    parts_added(original, output).is_some_and(|added| {
+        added
+            .iter()
+            .all(|part| COMMENT_PARTS.iter().any(|comment| comment == *part))
+    })
+}
+
+/// 덧붙일 수 있는 부분 하나: (부분, 본문 관계 대상, 관계 형식, 내용 형식).
+type Addable = (&'static str, &'static str, &'static str, &'static str);
+
+/// `comment_parts_added`의 일반형: 메모 부분(원본에 메모 부분이 하나도 없을 때)과 각주·미주 부분(원본에 그 부분이 없을 때) 가운데
+/// 출력에 새로 생긴 것들(하나 이상)만 더했고, 내용 형식 목록·본문 관계가 정확히 그 덧붙임뿐이면 그 부분들. 규칙은 위와 같다.
+/// 각주·미주를 더했으면 호출하는 쪽이 `note_settings_added`도 확인한다.
+fn parts_added(original: &Package, output: &Package) -> Option<Vec<&'static Addable>> {
     let present = |package: &Package, name: &str| has_part(package, name);
-    if COMMENT_PARTS
+    let comments_absent = !COMMENT_PARTS
         .iter()
-        .any(|(name, ..)| present(original, name))
-    {
-        return false;
-    }
+        .any(|(name, ..)| present(original, name));
     let added: Vec<&String> = output
         .parts
         .keys()
         .filter(|name| !original.parts.contains_key(*name))
         .collect();
-    let comment_added: Vec<&(&str, &str, &str, &str)> = COMMENT_PARTS
+    let comment_added: Vec<&'static Addable> = COMMENT_PARTS
         .iter()
+        .filter(|_| comments_absent)
+        .chain(
+            NOTE_PARTS
+                .iter()
+                .filter(|(name, ..)| !present(original, name)),
+        )
         .filter(|(name, ..)| output.parts.contains_key(*name))
         .collect();
     if comment_added.is_empty()
@@ -586,15 +652,11 @@ pub fn comment_parts_added(original: &Package, output: &Package) -> bool {
                 .any(|(part, ..)| *part == name.as_str())
         })
     {
-        return false;
+        return None;
     }
     let pair = |name: &str| Some((original.get(name)?, output.get(name)?));
-    let Some((types_before, types_after)) = pair(CONTENT_TYPES) else {
-        return false;
-    };
-    let Some((rels_before, rels_after)) = pair(DOCUMENT_RELS) else {
-        return false;
-    };
+    let (types_before, types_after) = pair(CONTENT_TYPES)?;
+    let (rels_before, rels_after) = pair(DOCUMENT_RELS)?;
     // 내용 형식 목록은 `Default`와 `Override`가 섞이므로 자식 이름까지 속성처럼 담아 비교한다.
     let typed = |bytes: &[u8]| -> Option<FlatList> {
         let events = xml::canonical(bytes).ok()?;
@@ -634,7 +696,7 @@ pub fn comment_parts_added(original: &Package, output: &Package) -> bool {
     let (Some((root_a, kids_a)), Some((root_b, kids_b))) =
         (typed(types_before), typed(types_after))
     else {
-        return false;
+        return None;
     };
     let overrides: Vec<Vec<(String, String)>> = comment_added
         .iter()
@@ -649,7 +711,7 @@ pub fn comment_parts_added(original: &Package, output: &Package) -> bool {
         })
         .collect();
     if root_a != root_b || !multiset_plus(&kids_a, &kids_b, &overrides) {
-        return false;
+        return None;
     }
     let (Some((root_a, mut rels_a)), Some((root_b, mut rels_b))) = (
         flat_children(
@@ -667,7 +729,7 @@ pub fn comment_parts_added(original: &Package, output: &Package) -> bool {
             "",
         ),
     ) else {
-        return false;
+        return None;
     };
     let bindings_equal = comment_reference_bindings_equal(original, output, &rels_a, &rels_b);
     for attrs in rels_a.iter_mut().chain(rels_b.iter_mut()) {
@@ -684,7 +746,10 @@ pub fn comment_parts_added(original: &Package, output: &Package) -> bool {
             attrs
         })
         .collect();
-    root_a == root_b && multiset_plus(&rels_a, &rels_b, &relations) && bindings_equal == Some(true)
+    (root_a == root_b
+        && multiset_plus(&rels_a, &rels_b, &relations)
+        && bindings_equal == Some(true))
+    .then_some(comment_added)
 }
 
 /// 메모 부분마다 덧붙일 수 있는 자식(이름공간, 지역 이름). `COMMENT_PARTS`와 같은 순서.
@@ -768,6 +833,159 @@ pub fn comment_parts_appended(original: &Package, output: &Package) -> bool {
         changed += 1;
     }
     changed > 0
+}
+
+/// T013 각주·미주: 출력 settings가 원본 settings에, 새로 더한 각주·미주 부분(`notes`)마다 그 설정 요소(`w:footnotePr`·
+/// `w:endnotePr`, 뿌리 바로 아래)의 끝에 구분선 참조 `<w:footnote w:id="-1"/><w:footnote w:id="0"/>`(미주는 `w:endnote`)만 더한 것인지.
+/// WordCraft가 구분선 부분(`-1`·`0`)을 쓸 때 함께 쓰는 참조다(실측). 설정 요소가 원본에 없거나 다른 무엇이라도 다르면 아니다.
+fn note_settings_added(original: &Package, output: &Package, notes: &[&str]) -> bool {
+    let (Some(before), Some(after)) = (original.get(SETTINGS), output.get(SETTINGS)) else {
+        return false;
+    };
+    let (Ok(a), Ok(mut b)) = (xml::canonical(before), xml::canonical(after)) else {
+        return false;
+    };
+    for (((part, ..), child), pr) in NOTE_PARTS.iter().zip(NOTE_CHILDREN).zip(NOTE_SETTINGS) {
+        if !notes.contains(part) {
+            continue;
+        }
+        // 뿌리 바로 아래 `pr` 요소의 끝 사건 위치.
+        let mut depth = 0usize;
+        let mut inside = false;
+        let mut end = None;
+        for (i, event) in b.iter().enumerate() {
+            match event {
+                xml::Canonical::Start {
+                    namespace, name, ..
+                } => {
+                    if depth == 1 && namespace.as_ref().is_some_and(|ns| *ns == WML) && *name == pr
+                    {
+                        if inside || end.is_some() {
+                            return false;
+                        }
+                        inside = true;
+                    }
+                    depth += 1;
+                }
+                xml::Canonical::End => {
+                    let Some(next) = depth.checked_sub(1) else {
+                        return false;
+                    };
+                    depth = next;
+                    if inside && depth == 1 {
+                        end = Some(i);
+                        inside = false;
+                    }
+                }
+                _ => {}
+            }
+        }
+        let Some(end) = end else { return false };
+        let Some(start) = end.checked_sub(4) else {
+            return false;
+        };
+        let reference = |event: &xml::Canonical, id: &str| {
+            matches!(event, xml::Canonical::Start { namespace, name, attributes }
+                if namespace.as_ref().is_some_and(|ns| *ns == WML)
+                    && *name == child
+                    && attributes.len() == 1
+                    && attributes[0].0.as_ref().is_some_and(|ns| *ns == WML)
+                    && attributes[0].1 == "id"
+                    && attributes[0].2 == id)
+        };
+        let tail = &b[start..end];
+        if !(reference(&tail[0], "-1")
+            && tail[1] == xml::Canonical::End
+            && reference(&tail[2], "0")
+            && tail[3] == xml::Canonical::End)
+        {
+            return false;
+        }
+        b.drain(start..end);
+    }
+    a == b
+}
+
+/// T013 각주·미주: 원본에 이미 있던 각주·미주 부분(`child`: `footnote`·`endnote`)에 **새 각주만 더한** 출력인지. 뿌리 시작이 같고,
+/// 뿌리 바로 아래는 그 요소들뿐이며, 구분선류(`w:type` separator·continuationSeparator·continuationNotice)는 순서·번호까지 그대로,
+/// 보통 각주(형식 없음 또는 `normal`)는 원본 것이 순서·내용 그대로 출력에 남고(본문 순서로 다시 매기므로 뿌리의 `w:id`만 다를 수
+/// 있음) 하나 이상이 더해졌을 때만이다. 더한 각주의 내용과 본문 참조 대상은 엔진 다시 읽기(모델 비교)가 확인한다. 각주 부분 관계
+/// (`word/_rels/footnotes.xml.rels`)·목록은 바뀌면 안 된다(부분마다 비교에 남음).
+fn note_part_extended(before: &[u8], after: &[u8], child: &str) -> bool {
+    /// (구분선류, 보통 각주(뿌리 `w:id`를 뺀 사건 열)).
+    type Split = (Vec<Vec<xml::Canonical>>, Vec<Vec<xml::Canonical>>);
+    fn split(events: Vec<xml::Canonical>, child: &str) -> Option<(xml::Canonical, Split)> {
+        let mut iter = events.into_iter();
+        let root = iter.next()?;
+        let mut specials = Vec::new();
+        let mut normal = Vec::new();
+        let mut current: Vec<xml::Canonical> = Vec::new();
+        let mut depth = 0usize;
+        let mut closed = false;
+        for event in iter {
+            if closed {
+                return None;
+            }
+            match &event {
+                xml::Canonical::Start { .. } => depth += 1,
+                xml::Canonical::End if depth == 0 => {
+                    closed = true;
+                    continue;
+                }
+                xml::Canonical::End => depth -= 1,
+                _ if depth == 0 => return None,
+                _ => {}
+            }
+            current.push(event);
+            if depth == 0 {
+                let mut item = std::mem::take(&mut current);
+                let Some(xml::Canonical::Start {
+                    namespace,
+                    name,
+                    attributes,
+                }) = item.first_mut()
+                else {
+                    return None;
+                };
+                if !(namespace.as_ref().is_some_and(|ns| *ns == WML) && *name == child) {
+                    return None;
+                }
+                let kind = attributes
+                    .iter()
+                    .find(|(ns, key, _)| ns.as_ref().is_some_and(|ns| *ns == WML) && *key == "type")
+                    .map(|(.., value)| value.to_string());
+                match kind.as_deref() {
+                    Some("separator" | "continuationSeparator" | "continuationNotice") => {
+                        specials.push(item)
+                    }
+                    None | Some("normal") => {
+                        attributes.retain(|(ns, key, _)| {
+                            !(ns.as_ref().is_some_and(|ns| *ns == WML) && *key == "id")
+                        });
+                        normal.push(item);
+                    }
+                    Some(_) => return None,
+                }
+            }
+        }
+        (closed && depth == 0 && current.is_empty()).then_some((root, (specials, normal)))
+    }
+    let (Ok(a), Ok(b)) = (xml::canonical(before), xml::canonical(after)) else {
+        return false;
+    };
+    let (Some((root_a, (special_a, normal_a))), Some((root_b, (special_b, normal_b)))) =
+        (split(a, child), split(b, child))
+    else {
+        return false;
+    };
+    if root_a != root_b || special_a != special_b || normal_b.len() <= normal_a.len() {
+        return false;
+    }
+    // 원본 각주가 순서대로 출력의 부분 열이어야 한다.
+    let mut rest = normal_b.iter();
+    normal_a
+        .iter()
+        .all(|note| rest.by_ref().any(|candidate| candidate == note))
 }
 
 /// DOCX 썸네일 부분:/// DOCX 썸네일 부분: 패키지 관계(`_rels/.rels`)의 thumbnail 대상과 관례 이름 `docProps/thumbnail.*`.

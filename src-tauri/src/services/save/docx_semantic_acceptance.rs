@@ -1127,3 +1127,239 @@ fn measure_semantic_vs_structural_comparison() {
         );
     }
 }
+
+// ---- T013 각주·미주: 실제 저장 절차 두 회차와 저장 규칙의 적대적 변이 ----
+
+fn note_op(endnote: bool, text: &str) -> DocxOp {
+    if endnote {
+        DocxOp::Endnote { text: text.into() }
+    } else {
+        DocxOp::Footnote { text: text.into() }
+    }
+}
+
+/// 타입 연산으로 각주·미주를 넣는다(문서 처음 또는 끝의 커서). 모든 연산이 받아들여져야 한다.
+fn insert_note(doc: &mut Docx, endnote: bool, at_end: bool, text: &str) {
+    let to = if at_end {
+        MoveTarget::DocEnd
+    } else {
+        MoveTarget::DocStart
+    };
+    let edited = block_on(docx::edit(
+        &doc.state,
+        doc.info.session_id,
+        doc.info.load_generation,
+        doc.info.revision,
+        vec![DocxOp::Move { to, extend: false }, note_op(endnote, text)],
+    ))
+    .unwrap();
+    assert!(edited.rejected.is_empty(), "{:?}", edited.rejected);
+    doc.info = edited.session;
+    assert!(doc.info.dirty);
+}
+
+fn notes(d: &Document, kind: PartKind) -> Vec<String> {
+    // 본문 참조 순서(문서 순서)대로 각주 글.
+    let mut out = Vec::new();
+    for b in &d.body {
+        if let Block::Para(p) = &**b {
+            for o in &p.objects {
+                if let InlineObject::NoteRef { id, .. } = o {
+                    if d.parts.get(id).is_some_and(|part| part.kind == kind) {
+                        out.push(d.plain_text(StoryRef::Part(*id)).trim().to_owned());
+                    }
+                }
+            }
+        }
+    }
+    out
+}
+
+/// 실제 저장(production `same_as`, 강제 없음) 뒤 디스크의 게시 파일.
+fn publish_notes(doc: &mut Docx) -> Vec<u8> {
+    let before = doc.bytes();
+    let output = model_of(doc).lock().unwrap().export().unwrap();
+    assert!(model_of(doc).lock().unwrap().same_as(&output));
+    let verdict = service::check_saved(Format::Docx, &before, &output, None, true);
+    assert!(verdict.is_safe(), "{verdict:?}");
+    let saved = doc.save().expect("publication");
+    assert!(!saved.session.dirty);
+    doc.info = saved.session;
+    assert_eq!(Sha256::digest(doc.bytes()), Sha256::digest(&output));
+    assert!(doc.leftovers().is_empty());
+    ticket_released(doc);
+    doc.bytes()
+}
+
+#[test]
+fn notes_first_and_second_published_saves() {
+    for (endnote, kind) in [(false, PartKind::Footnote), (true, PartKind::Endnote)] {
+        for (fixture, original) in [
+            ("basic", basic::basic_ko().unwrap()),
+            ("rich B10", rich_original()),
+        ] {
+            let name = format!("{fixture} {kind:?}");
+            let mut doc = open_docx(&original);
+            assert!(doc.preflight().unwrap().preservation.is_safe(), "{name}");
+            insert_note(&mut doc, endnote, true, "끝 각주");
+            let first = publish_notes(&mut doc);
+            assert!(package::open(&first, package::Side::Original)
+                .unwrap()
+                .parts
+                .contains_key(if endnote {
+                    "word/endnotes.xml"
+                } else {
+                    "word/footnotes.xml"
+                }));
+            let mut doc = reload(doc);
+            assert_eq!(notes(&reopen(&doc.bytes()), kind), ["끝 각주"], "{name}");
+            // 둘째 회차: 기존 각주 **앞**에 새 각주(번호가 다시 매겨짐) + 메모.
+            insert_note(&mut doc, endnote, false, "앞 각주");
+            comment(&mut doc, true, "각주 뒤 메모");
+            let second = publish_notes(&mut doc);
+            let doc = reload(doc);
+            let fin = reopen(&second);
+            assert_eq!(notes(&fin, kind), ["앞 각주", "끝 각주"], "{name}");
+            assert_eq!(fin.comments.len(), 1, "{name}");
+            // 원본의 머리글·바닥글·미디어는 그대로.
+            assert_eq!(rich_parts(&second), rich_parts(&original), "{name}");
+            ticket_released(&doc);
+            eprintln!("NOTES {name}: two published saves, reloaded from disk");
+        }
+    }
+}
+
+/// 첫 각주 출력의 package 변이는 모두 거부된다(합성 출력 주입 — 저장 규칙 증거, 엔진 성공 증거 아님).
+#[test]
+fn note_preservation_rule_rejects_unrelated_changes() {
+    let original = basic::basic_ko().unwrap();
+    let mut m = DocxModel::open(&original).unwrap();
+    m.apply(&[
+        DocxOp::Move {
+            to: MoveTarget::DocStart,
+            extend: false,
+        },
+        note_op(false, "각주"),
+    ]);
+    let output = m.export().unwrap();
+    let ok = |out: &[u8]| service::check_saved(Format::Docx, &original, out, None, true);
+    assert!(ok(&output).is_safe());
+    let settings = |f: &dyn Fn(&str) -> String| byte_patch(&output, "word/settings.xml", f);
+    let types = |f: &dyn Fn(&str) -> String| byte_patch(&output, "[Content_Types].xml", f);
+    let rels = |f: &dyn Fn(&str) -> String| byte_patch(&output, "word/_rels/document.xml.rels", f);
+    let cases: Vec<(&str, Vec<u8>, FindingCode, &str)> = vec![
+        (
+            "settings: other id",
+            settings(&|x| x.replacen(r#"<w:footnote w:id="0"/>"#, r#"<w:footnote w:id="1"/>"#, 1)),
+            FindingCode::PartChanged,
+            "word/settings.xml",
+        ),
+        (
+            "settings: unrelated change too",
+            settings(&|x| x.replacen(r#"w:val="720""#, r#"w:val="360""#, 1)),
+            FindingCode::PartChanged,
+            "word/settings.xml",
+        ),
+        (
+            "settings: references missing",
+            settings(&|x| x.replacen(r#"<w:footnote w:id="-1"/><w:footnote w:id="0"/>"#, "", 1)),
+            // settings then equals the original, so the note rule fails as a whole and the
+            // new part itself is the finding.
+            FindingCode::PartAdded,
+            "word/footnotes.xml",
+        ),
+        (
+            "content type: wrong type",
+            types(&|x| x.replacen("footnotes+xml", "endnotes+xml", 1)),
+            FindingCode::PartChanged,
+            "[Content_Types].xml",
+        ),
+        (
+            "relationship: external target",
+            rels(&|x| {
+                x.replacen(
+                    r#"Target="footnotes.xml"/>"#,
+                    r#"Target="footnotes.xml" TargetMode="External"/>"#,
+                    1,
+                )
+            }),
+            FindingCode::PartChanged,
+            "word/_rels/document.xml.rels",
+        ),
+        (
+            "relationship: other target",
+            rels(&|x| x.replacen(r#"Target="footnotes.xml""#, r#"Target="other.xml""#, 1)),
+            FindingCode::PartChanged,
+            "word/_rels/document.xml.rels",
+        ),
+    ];
+    for (name, corrupt, code, part) in cases {
+        let verdict = ok(&corrupt);
+        assert!(
+            verdict.findings.contains(&Finding::at(code, part)),
+            "{name}: {verdict:?}"
+        );
+    }
+    // 덧붙인 부분이 각주 말고도 있으면 거부.
+    let package = package::open(&output, package::Side::Original).unwrap();
+    let mut entries: Vec<_> = package
+        .order
+        .iter()
+        .map(|n| entry(n, &package.parts[n].1))
+        .collect();
+    entries.push(entry("word/extra.xml", b"<x/>"));
+    let verdict = ok(&zip(&entries, false));
+    assert!(
+        verdict
+            .findings
+            .contains(&Finding::at(FindingCode::PartAdded, "word/extra.xml")),
+        "{verdict:?}"
+    );
+    assert!(
+        verdict
+            .findings
+            .contains(&Finding::at(FindingCode::PartAdded, "word/footnotes.xml")),
+        "{verdict:?}"
+    );
+
+    // 둘째 회차(기존 각주 부분): 원본 각주 글·구분선 변경과 각주 삭제는 거부.
+    let mut m = DocxModel::open(&output).unwrap();
+    m.apply(&[
+        DocxOp::Move {
+            to: MoveTarget::DocEnd,
+            extend: false,
+        },
+        note_op(false, "둘째"),
+    ]);
+    let second = m.export().unwrap();
+    let ok2 = |out: &[u8]| service::check_saved(Format::Docx, &output, out, None, true);
+    assert!(ok2(&second).is_safe());
+    let notes_xml = |f: &dyn Fn(&str) -> String| byte_patch(&second, "word/footnotes.xml", f);
+    for (name, corrupt) in [
+        (
+            "existing note text",
+            notes_xml(&|x| x.replacen(" 각주<", " 각주!<", 1)),
+        ),
+        (
+            "separator changed",
+            notes_xml(&|x| x.replacen(r#"w:after="0""#, r#"w:after="120""#, 1)),
+        ),
+        (
+            "existing note removed",
+            notes_xml(&|x| {
+                let at = x.find(r#"<w:footnote w:id="1">"#).unwrap();
+                let end = at + x[at..].find("</w:footnote>").unwrap() + "</w:footnote>".len();
+                format!("{}{}", &x[..at], &x[end..])
+            }),
+        ),
+    ] {
+        assert_ne!(corrupt, second, "{name}: mutation applied");
+        let verdict = ok2(&corrupt);
+        assert!(
+            verdict
+                .findings
+                .contains(&Finding::at(FindingCode::PartChanged, "word/footnotes.xml")),
+            "{name}: {verdict:?}"
+        );
+    }
+}

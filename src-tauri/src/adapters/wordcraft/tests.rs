@@ -2206,3 +2206,165 @@ fn 메모를_더한_저장은_안전하고_다시_열면_같다_두_번째_회�
         .iter()
         .any(|f| matches!(f.code, FindingCode::PartChanged | FindingCode::PartMissing)));
 }
+
+// ---- T013 각주·미주(references.footnote/endnote → WordCraft 같은 이름) ----
+
+fn footnote(text: &str) -> DocxOp {
+    DocxOp::Footnote { text: text.into() }
+}
+
+fn endnote(text: &str) -> DocxOp {
+    DocxOp::Endnote { text: text.into() }
+}
+
+fn note_parts(m: &DocxModel, kind: wordcraft_engine::doc::PartKind) -> Vec<String> {
+    let doc = m.diagnostic_document();
+    doc.parts
+        .iter()
+        .filter(|(_, p)| p.kind == kind)
+        .map(|(id, _)| {
+            doc.plain_text(wordcraft_engine::doc::StoryRef::Part(*id))
+                .trim()
+                .to_owned()
+        })
+        .collect()
+}
+
+#[test]
+fn 각주_연산의_글자와_ipc_모양은_계약_안이어야_한다() {
+    for op in [footnote, endnote] {
+        assert!(validate(&[op("근거")]));
+        assert!(validate(&[op(&"가".repeat(super::engine::MAX_NOTE_CHARS))]));
+        for bad in [
+            String::new(),
+            "  ".to_owned(),
+            "줄\n바꿈".to_owned(),
+            "\u{FFFC}".to_owned(),
+            "가".repeat(super::engine::MAX_NOTE_CHARS + 1),
+        ] {
+            assert!(!validate(&[op(&bad)]), "{bad:?}");
+        }
+    }
+    let parsed: DocxOp = serde_json::from_value(json!({"op": "footnote", "text": "a"})).unwrap();
+    assert_eq!(parsed, footnote("a"));
+    let parsed: DocxOp = serde_json::from_value(json!({"op": "endnote", "text": "a"})).unwrap();
+    assert_eq!(parsed, endnote("a"));
+    for raw in [
+        json!({"op": "footnote", "text": "a", "mark": "*"}),
+        json!({"op": "footnote"}),
+        json!({"op": "references.footnote", "text": "a"}),
+        json!({"op": "note", "kind": "footnote", "text": "a"}),
+    ] {
+        assert!(
+            serde_json::from_value::<DocxOp>(raw.clone()).is_err(),
+            "{raw}"
+        );
+    }
+}
+
+#[test]
+fn 각주는_본문_커서에만_넣고_커서를_본문으로_돌리며_한_단계로_되돌린다() {
+    use wordcraft_engine::doc::{InlineObject, PartKind};
+    for (op, kind) in [
+        (footnote as fn(&str) -> DocxOp, PartKind::Footnote),
+        (endnote, PartKind::Endnote),
+    ] {
+        let mut m = model();
+        let before = m.body_text();
+        // 선택이 있으면 거부: 엔진은 선택을 지우고 넣지만 앱은 글자를 지우지 않는다.
+        let mut ops = select_first_two();
+        ops.push(op("x"));
+        let outcome = m.apply(&ops);
+        assert_eq!((outcome.rejected.clone(), outcome.changed), (vec![3], 0));
+        assert!(note_parts(&m, kind).is_empty());
+        assert_eq!(m.body_text(), before);
+
+        let outcome = m.apply(&[mv(MoveTarget::DocStart, false), op("각주 글")]);
+        assert_eq!((outcome.rejected.clone(), outcome.changed), (vec![], 1));
+        assert_eq!(note_parts(&m, kind), vec!["각주 글".to_owned()]);
+        let doc = m.diagnostic_document();
+        let first = doc.body[0].as_para().unwrap();
+        assert!(matches!(
+            first.objects.first(),
+            Some(InlineObject::NoteRef { .. })
+        ));
+        assert!(first.text.starts_with('\u{FFFC}'));
+        // 커서는 본문의 표지 바로 뒤: 이어 친 글자는 본문에 들어간다(각주 안이 아님).
+        assert!(
+            m.view().caret_key.starts_with("body:"),
+            "{}",
+            m.view().caret_key
+        );
+        m.apply(&[insert("가")]);
+        let first_text = |m: &DocxModel| {
+            m.diagnostic_document().body[0]
+                .as_para()
+                .unwrap()
+                .text
+                .clone()
+        };
+        assert!(
+            first_text(&m).starts_with("\u{FFFC}가"),
+            "{:?}",
+            first_text(&m)
+        );
+        assert_eq!(m.view().caret_key, "body:0:6");
+        assert_eq!(note_parts(&m, kind), vec!["각주 글".to_owned()]);
+        // 되돌리기: 글자 한 단계, 각주 한 단계.
+        assert_eq!(m.apply(&[DocxOp::Undo {}]).changed, 1);
+        assert_eq!(m.apply(&[DocxOp::Undo {}]).changed, 1);
+        assert_eq!(m.body_text(), before);
+        assert!(!first_text(&m).starts_with('\u{FFFC}'));
+        // 되돌리면 각주 부분도 사라진다(고아 부분이 남으면 저장 동등성이 Err로 거부함).
+        assert!(note_parts(&m, kind).is_empty());
+        let undone = m.export().unwrap();
+        assert!(m.same_as(&undone), "undone document still saves");
+        assert_eq!(m.apply(&[DocxOp::Redo {}]).changed, 1);
+        assert!(first_text(&m).starts_with('\u{FFFC}'));
+    }
+}
+
+#[test]
+fn 각주_뒤에는_어댑터_기억을_버린다() {
+    let mut m = model();
+    m.apply(&[
+        mv(MoveTarget::DocEnd, false),
+        DocxOp::Mark { id: 3 },
+        insert("가"),
+    ]);
+    m.apply(&[footnote("n")]);
+    let (marks, recent, ..) = m.adapter_state();
+    assert!(marks.is_empty());
+    assert_eq!(recent, None);
+}
+
+#[test]
+fn 읽기_전용_보호에서는_각주를_엔진이_거부한다() {
+    let mut read_only = protected("readOnly", false, false);
+    let outcome = read_only.apply(&[mv(MoveTarget::DocStart, false), footnote("x")]);
+    assert_eq!(outcome.rejected, vec![1]);
+    assert!(note_parts(&read_only, wordcraft_engine::doc::PartKind::Footnote).is_empty());
+}
+
+#[test]
+fn 각주_저장_출력은_두_회차_모두_다시_열어_같고_보존_검사를_통과한다() {
+    use crate::document::Format;
+    use crate::services::save::service::check_saved;
+    for op in [footnote as fn(&str) -> DocxOp, endnote] {
+        let original = fixture();
+        let mut m = DocxModel::open(&original).unwrap();
+        m.apply(&[mv(MoveTarget::DocStart, false), op("첫 각주")]);
+        let first = m.export().unwrap();
+        assert!(m.same_as(&first));
+        let verdict = check_saved(Format::Docx, &original, &first, None, true);
+        assert!(verdict.is_safe(), "{verdict:?}");
+        // 둘째 회차: 저장한 파일을 다시 열어 (기존 각주 앞에) 새 각주 — 번호가 다시 매겨진다.
+        let mut m = DocxModel::open(&first).unwrap();
+        m.apply(&[mv(MoveTarget::DocEnd, false), op("끝 각주")]);
+        m.apply(&[mv(MoveTarget::DocStart, false), op("앞 각주")]);
+        let second = m.export().unwrap();
+        assert!(m.same_as(&second));
+        let verdict = check_saved(Format::Docx, &first, &second, None, true);
+        assert!(verdict.is_safe(), "{verdict:?}");
+    }
+}

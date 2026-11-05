@@ -122,10 +122,22 @@ pub enum DocxOp {
     Comment {
         text: String,
     },
+    /// 새 각주(T013, 앱 명령 `references.footnote` → WordCraft `references.footnote`): 본문 최상위 문단의 커서(선택 없음) 자리에
+    /// 각주 표지를 넣고 각주 글자를 `text`로 채운다. 엔진은 선택을 지우고 커서를 새 각주 안으로 옮기지만, 앱은 선택이 있으면
+    /// 거부하고(글자를 지우지 않음) 실행 뒤 커서를 본문의 표지 바로 뒤로 돌린다(검증한 편집 문맥은 본문뿐).
+    Footnote {
+        text: String,
+    },
+    /// 새 미주(T013, `references.endnote`). 조건·동작은 `Footnote`와 같다.
+    Endnote {
+        text: String,
+    },
 }
 
 /// 메모 글자 수 상한(문자 단위).
 pub const MAX_COMMENT_CHARS: usize = 1000;
+/// 각주·미주 글자 수 상한(문자 단위). 메모와 같은 한 줄 입력 창을 쓴다.
+pub const MAX_NOTE_CHARS: usize = 1000;
 /// 이 앱이 쓰는 메모의 작성자. geul에는 사용자 이름 설정이 아직 없어 엔진 기본값("WordCraft User" — 다른 제품 이름)
 /// 대신 앱 이름을 쓴다(사람 이름으로 꾸미지 않음, docs/architecture/command-registry.md "T013").
 pub const COMMENT_AUTHOR: &str = "geul";
@@ -205,6 +217,11 @@ pub fn validate(ops: &[DocxOp]) -> bool {
             DocxOp::Comment { text } => {
                 valid_text(text)
                     && text.chars().count() <= MAX_COMMENT_CHARS
+                    && !text.trim().is_empty()
+            }
+            DocxOp::Footnote { text } | DocxOp::Endnote { text } => {
+                valid_text(text)
+                    && text.chars().count() <= MAX_NOTE_CHARS
                     && !text.trim().is_empty()
             }
             DocxOp::Pointer { x, y, .. } => {
@@ -550,7 +567,29 @@ impl DocxModel {
             DocxOp::Redo {} => self.undo_redo_step(true),
             DocxOp::Format { format } => self.run(format.command(), json!({})),
             DocxOp::Comment { text } => self.new_comment(text),
+            DocxOp::Footnote { text } => self.new_note("references.footnote", text),
+            DocxOp::Endnote { text } => self.new_note("references.endnote", text),
         }
+    }
+
+    /// 새 각주·미주(T013). 커서가 본문 최상위 문단에 있고 선택이 없을 때만 WordCraft 명령 하나를 실행한다(실패하면 엔진이 되돌림,
+    /// 문서 보호도 엔진이 판정). 엔진은 커서를 새 각주 이야기 안으로 옮기므로, 앱이 검증한 본문 편집 문맥을 지키려고 커서를 본문의
+    /// 각주 표지 바로 뒤로 돌린다(표지는 커서 자리에 개체 글자 하나로 들어감, 실측). 위치가 바뀌므로 어댑터 기억은 버린다.
+    fn new_note(&mut self, command: &str, text: &str) -> Result<bool, Rejected> {
+        let at = self.session.sel.focus.clone();
+        if !self.session.sel.is_collapsed() || at.story != StoryRef::Body || at.path.depth() > 0 {
+            return Err(Rejected);
+        }
+        let changed = self.run(command, json!({ "text": text }))?;
+        let after = Pos {
+            off: at.off + wordcraft_engine::doc::para::OBJ.len_utf8(),
+            ..at
+        };
+        self.session.sel = wordcraft_engine::Selection::caret(after);
+        self.session.clamp_selection();
+        self.marks.clear();
+        self.last_insert = None;
+        Ok(changed)
     }
 
     /// 새 메모(T013). 본문 안의 비어 있지 않은 선택일 때만 WordCraft `review.newComment`를 한 명령으로 실행한다(실패하면 엔진이
