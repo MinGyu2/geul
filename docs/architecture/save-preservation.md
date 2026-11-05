@@ -1283,3 +1283,11 @@ WordCraft `b74830b`)가 판정한다. 실제 게시 두 회차(켜기 + 추적 �
 메모·각주 덧붙임 규칙의 본문 r:* 대조는 이제 출력에서 **바로 앞 하이퍼링크와 같은 r:* 속성을 가진 인접 `w:hyperlink`**(메모 경계에서 나뉜 같은 링크)를
 건너뛴다(`relationship_references_equal_with`, split_hyperlinks). 관계 목록·관계 속성 대조와 모델 왕복 비교는 그대로이고, 합침·다른 관계·다른 요소·사이에
 다른 참조가 있는 반복은 거부한다. 대상·형식 변이와 외부 관계 추가는 계속 거부된다([command-registry.md](command-registry.md) "T013 하이퍼링크").
+
+### T012 Stage 5: HWP DocInfo 글자 모양 덧붙임 규칙 (2026-11-05)
+
+편집한 HWP의 DocInfo는 이제 캐럿 외에 **장평·자간만 다른 글자 모양 덧붙임**을 받는다(`docinfo_char_shapes_appended` +
+`appended_char_shapes_referenced`). 근거는 한컴 저장 `KTX.hwp`에서 잰 실제 RHWP 출력 차이(`ID_MAPPINGS`와 끼운 `CHAR_SHAPE`뿐)다. 원본 글자
+모양·다른 모든 DocInfo 레코드는 바이트까지 같아야 하고, 새 정의는 원본 하나와 장평·자간 바이트 밖이 같으며 모두 본문이 가리켜야 한다. 그 밖의
+변경(굵게 등 속성, 쓰이지 않는 덧붙임, 다른 레코드)은 `recordsChanged{DocInfo}`로 거부하고 원본을 보존한다([command-registry.md](command-registry.md)
+"T012 Stage 5 구현").

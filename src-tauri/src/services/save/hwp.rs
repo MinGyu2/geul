@@ -379,16 +379,131 @@ const DOCUMENT_PROPERTIES_CARET: usize = 14;
 /// (rhwp가 편집 뒤 커서 위치를 쓴다, 실측). 길이가 26이 아닌(뒤에 모르는 바이트가 있거나 짧은) 레코드는 배치를 해석할 수
 /// 없으므로 캐럿도 면제하지 않는다(바이트가 같아야 함). 구역 수·시작 번호·그 밖의 레코드는 같아야 한다.
 fn same_docinfo(before: &[Record<'_>], after: &[Record<'_>]) -> bool {
-    before.len() == after.len()
-        && before.iter().zip(after).all(|(a, b)| {
-            a == b
-                || (a.0 == TAG_DOCUMENT_PROPERTIES
-                    && a.0 == b.0
-                    && a.1 == b.1
-                    && a.2.len() == DOCUMENT_PROPERTIES_LEN
-                    && b.2.len() == DOCUMENT_PROPERTIES_LEN
-                    && a.2[..DOCUMENT_PROPERTIES_CARET] == b.2[..DOCUMENT_PROPERTIES_CARET])
-        })
+    before.len() == after.len() && before.iter().zip(after).all(|(a, b)| same_record(a, b))
+}
+
+/// 레코드가 같거나, 문서 속성 레코드의 캐럿 12바이트만 다르다.
+fn same_record(a: &Record<'_>, b: &Record<'_>) -> bool {
+    a == b
+        || (a.0 == TAG_DOCUMENT_PROPERTIES
+            && a.0 == b.0
+            && a.1 == b.1
+            && a.2.len() == DOCUMENT_PROPERTIES_LEN
+            && b.2.len() == DOCUMENT_PROPERTIES_LEN
+            && a.2[..DOCUMENT_PROPERTIES_CARET] == b.2[..DOCUMENT_PROPERTIES_CARET])
+}
+
+const TAG_ID_MAPPINGS: u16 = 17;
+/// `ID_MAPPINGS` 안 글자 모양 수(u32) 자리: BIN_DATA 1개·글꼴 7개·BORDER_FILL 1개 뒤(고정 rhwp `serialize_id_mappings`,
+/// `surgical_insert_record`의 표 오프셋 36과 같음).
+const ID_MAPPINGS_CHAR_SHAPES_AT: usize = 36;
+/// `CHAR_SHAPE`의 장평(u8 ×7)·자간(i8 ×7) 자리: 글꼴 ID u16 ×7(14바이트) 뒤(고정 rhwp `serializer/char_shape.rs`).
+const CHAR_SHAPE_RATIOS: std::ops::Range<usize> = 14..21;
+const CHAR_SHAPE_SPACINGS: std::ops::Range<usize> = 21..28;
+
+/// T012 장평·자간(Stage 5): 편집한 HWP DocInfo가 원본에 **글자 모양 덧붙임만** 더한 것인지. 성립하면 (원본 글자 모양 수, 덧붙인 수).
+///
+/// 실측(한컴 저장 `KTX.hwp`, DocInfo 1195 레코드, 장평·자간 + 정리 `compactAppendedCharShapes`): 차이는 `ID_MAPPINGS`와 마지막 원본
+/// `CHAR_SHAPE` 바로 뒤에 끼운 `CHAR_SHAPE` 하나뿐이고 나머지 레코드는 바이트까지 같다. 그래서 다음을 모두 요구한다.
+/// - 원본 `CHAR_SHAPE` 레코드는 이어져 있고, 출력 = 원본 앞부분 + 같은 수준의 새 `CHAR_SHAPE` k개(k ≥ 1) + 원본 뒷부분.
+/// - `ID_MAPPINGS`는 길이·나머지 바이트가 같고 글자 모양 수만 정확히 k만큼 늘었다. 그 밖의 레코드는 같다(문서 속성 캐럿만 예외).
+/// - 새 레코드마다 같은 길이의 **원본** 글자 모양 하나와 장평·자간 14바이트 밖이 모두 같고, 장평 7개는 같은 값 50–200, 자간 7개는
+///   같은 값 −50–50이다(앱이 쓰는 값 — 굵게 등 다른 속성 변경은 받지 않음).
+///
+/// 새 모양이 모두 본문에서 쓰이는지는 `appended_char_shapes_referenced`가 따로 본다.
+fn docinfo_char_shapes_appended(
+    before: &[Record<'_>],
+    after: &[Record<'_>],
+) -> Option<(usize, usize)> {
+    let positions: Vec<usize> = before
+        .iter()
+        .enumerate()
+        .filter(|(_, r)| r.0 == TAG_CHAR_SHAPE)
+        .map(|(i, _)| i)
+        .collect();
+    let (&first, &last) = (positions.first()?, positions.last()?);
+    if last - first + 1 != positions.len() {
+        return None;
+    }
+    let k = after.len().checked_sub(before.len()).filter(|k| *k > 0)?;
+    let level = before[first].1;
+    let originals = &before[first..=last];
+    let inserted = &after[last + 1..last + 1 + k];
+    let metric = |data: &[u8], range: std::ops::Range<usize>, ok: &dyn Fn(u8) -> bool| {
+        data.get(range)
+            .is_some_and(|v| v.iter().all(|b| *b == v[0]) && ok(v[0]))
+    };
+    let valid = |r: &Record<'_>| {
+        r.0 == TAG_CHAR_SHAPE
+            && r.1 == level
+            && metric(r.2, CHAR_SHAPE_RATIOS, &|v| (50..=200).contains(&v))
+            && metric(r.2, CHAR_SHAPE_SPACINGS, &|v| {
+                (-50..=50).contains(&(v as i8))
+            })
+            && originals.iter().any(|o| {
+                o.2.len() == r.2.len()
+                    && o.2[..CHAR_SHAPE_RATIOS.start] == r.2[..CHAR_SHAPE_RATIOS.start]
+                    && o.2[CHAR_SHAPE_SPACINGS.end..] == r.2[CHAR_SHAPE_SPACINGS.end..]
+            })
+    };
+    if !inserted.iter().all(valid) {
+        return None;
+    }
+    let rest_same = before[..=last]
+        .iter()
+        .zip(&after[..=last])
+        .chain(before[last + 1..].iter().zip(&after[last + 1 + k..]))
+        .all(|(a, b)| {
+            if a.0 == TAG_ID_MAPPINGS {
+                // 수가 정확히 k만큼 늘어야 한다(그대로인 레코드는 받지 않음).
+                b.0 == TAG_ID_MAPPINGS && a.1 == b.1 && id_mappings_grew(a.2, b.2, k)
+            } else {
+                same_record(a, b)
+            }
+        });
+    let id_mappings = before.iter().filter(|r| r.0 == TAG_ID_MAPPINGS).count();
+    (rest_same && id_mappings == 1).then_some((positions.len(), k))
+}
+
+/// `ID_MAPPINGS`가 글자 모양 수만 `k`만큼 늘고 나머지 바이트는 같은지.
+fn id_mappings_grew(a: &[u8], b: &[u8], k: usize) -> bool {
+    let at = ID_MAPPINGS_CHAR_SHAPES_AT;
+    let count = |d: &[u8]| {
+        d.get(at..at + 4)
+            .map(|v| u32::from_le_bytes([v[0], v[1], v[2], v[3]]) as usize)
+    };
+    a.len() == b.len()
+        && a[..at] == b[..at]
+        && a.get(at + 4..) == b.get(at + 4..)
+        && matches!((count(a), count(b)), (Some(x), Some(y)) if x.checked_add(k) == Some(y))
+}
+
+/// 덧붙인 글자 모양(`base..base+k`)이 모두 출력 본문의 `PARA_CHAR_SHAPE`에서 쓰이는지(쓰이지 않는 정의를 남기지 않음, T010 덧붙임 규칙의
+/// HWP판). 본문을 읽을 수 없으면 아니다.
+fn appended_char_shapes_referenced(output: &Container, base: usize, k: usize) -> bool {
+    let mut used = vec![false; k];
+    for (name, data) in &output.streams {
+        if !section_stream(name) {
+            continue;
+        }
+        let Ok(data) = unpack(output, data) else {
+            return false;
+        };
+        let Some(section) = records(&data) else {
+            return false;
+        };
+        for (tag, _, body) in section {
+            if tag == TAG_PARA_CHAR_SHAPE && body.len() % 8 == 0 {
+                for pair in body.as_chunks::<8>().0 {
+                    let id = u32::from_le_bytes([pair[4], pair[5], pair[6], pair[7]]) as usize;
+                    if let Some(slot) = id.checked_sub(base).and_then(|i| used.get_mut(i)) {
+                        *slot = true;
+                    }
+                }
+            }
+        }
+    }
+    used.iter().all(|u| *u)
 }
 
 /// 비교 방식.
@@ -496,6 +611,8 @@ fn compare_with(original: &[u8], output: &[u8], mode: Mode) -> Vec<Finding> {
         }
         let same = if mode == Mode::Edited && name == "DocInfo" {
             same_docinfo(&before_records, &after_records)
+                || docinfo_char_shapes_appended(&before_records, &after_records)
+                    .is_some_and(|(base, k)| appended_char_shapes_referenced(&output, base, k))
         } else {
             before_records == after_records
         };

@@ -125,7 +125,13 @@ const NO_CELL = 0xffffffff; // u32::MAX: rhwp가 본문을 뜻하는 값
 
 /** 위치에 맞는 본문/셀 API를 부른다. 편집 함수는 실패하면 예외를 던진다(엔진 오류). */
 export class RhwpText {
-  constructor(private readonly doc: RhwpDocument) {}
+  /** 불러온 직후의 글자 모양 수(T012 Stage 5 정리 기준). 엔진이 알려 주지 않으면 null(정리하지 않음 — 저장 검사가 판정). */
+  private readonly charShapeBaseline: number | null;
+
+  constructor(private readonly doc: RhwpDocument) {
+    const count = doc.charShapeCount?.();
+    this.charShapeBaseline = Number.isSafeInteger(count) && (count as number) >= 0 ? (count as number) : null;
+  }
 
   paragraphCount(at: DocPosition): number {
     const c = at.cell;
@@ -237,6 +243,20 @@ export class RhwpText {
       if (end <= start) continue;
       if (c) this.doc.applyCharFormatInCell!(from.section, c.parentParagraph, c.control, c.cell, paragraph, start, end, props);
       else this.doc.applyCharFormat!(from.section, paragraph, start, end, props);
+    }
+    this.compactCharShapes();
+  }
+
+  /**
+   * 같은 범위를 이어 바꾸면 남는 중간 글자 모양(이번 세션에 덧붙였고 아무도 가리키지 않는 것)을 엔진이 지우게 한다(T012 Stage 5).
+   * 서식 변경과 같은 실행 취소 단계 안에서 부른다(기록은 문서 스냅숏이라 되돌리면 정리 전 표로 돌아감). 엔진이 정리를 거절
+   * (`skipped`)하면 아무것도 바뀌지 않고 저장 검사가 판정한다. 응답이 계약과 다르면 엔진 상태를 알 수 없으므로 던진다.
+   */
+  private compactCharShapes(): void {
+    if (this.charShapeBaseline === null || !this.doc.compactAppendedCharShapes) return;
+    const value = json(this.doc.compactAppendedCharShapes(this.charShapeBaseline));
+    if (!isRecord(value) || value.ok !== true || !isIndex(value.before) || !isIndex(value.after) || (value.after as number) > (value.before as number)) {
+      throw new Error("char shape compaction response invalid");
     }
   }
 

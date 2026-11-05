@@ -1511,7 +1511,7 @@ fn a_문서_속성은_26바이트의_캐럿_12바이트만_다를_수_있다() {
         vec![],
         "캐럿만 다름"
     );
-    let changed = vec![Finding::at(FindingCode::RecordsChanged, "DocInfo")];
+    let changed = [Finding::at(FindingCode::RecordsChanged, "DocInfo")];
     assert_eq!(
         saved(&properties(2, [1; 6], [3, 7, 42], b"")),
         changed,
@@ -10830,3 +10830,192 @@ fn strict_reference_real_wordcraft_export_probe() {
 mod docx_diagnostics;
 #[path = "docx_semantic_acceptance.rs"]
 mod docx_semantic_acceptance;
+
+// ---- T012 Stage 5: HWP 글자 모양 덧붙임(장평·자간) ----
+
+/// 글자 모양 레코드(74바이트): 글꼴 ID 14바이트 + 장평 7 + 자간 7 + 나머지 46바이트(`tail`).
+fn char_shape_record(ratio: u8, spacing: i8, tail: u8) -> Vec<u8> {
+    let mut data = vec![1u8; 14];
+    data.extend(std::iter::repeat_n(ratio, 7));
+    data.extend(std::iter::repeat_n(spacing as u8, 7));
+    data.extend(std::iter::repeat_n(tail, 46));
+    data
+}
+
+/// ID_MAPPINGS(72바이트, 글자 모양 수는 36번째 바이트부터 u32).
+fn id_mappings(char_shapes: u32) -> Vec<u8> {
+    let mut data = vec![0u8; 72];
+    data[36..40].copy_from_slice(&char_shapes.to_le_bytes());
+    data[0] = 3; // 다른 수는 그대로여야 한다.
+    data
+}
+
+/// 원본 DocInfo: 문서 속성·ID_MAPPINGS·글자 모양 2개(100%·0, 꼬리 7·9)·문단 모양·뒤 레코드.
+fn metric_docinfo(appended: &[Vec<u8>], mapped: u32) -> Vec<u8> {
+    let mut properties = vec![1, 0];
+    properties.extend_from_slice(&[1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0]);
+    properties.extend_from_slice(&[0; 12]);
+    let mut out = [
+        record(16, 0, &properties),
+        record(17, 0, &id_mappings(mapped)),
+        record(21, 1, &char_shape_record(100, 0, 7)),
+        record(21, 1, &char_shape_record(100, 0, 9)),
+    ]
+    .concat();
+    for shape in appended {
+        out.extend(record(21, 1, shape));
+    }
+    out.extend([record(25, 1, b"para shape"), record(26, 1, b"style")].concat());
+    out
+}
+
+#[test]
+fn hwp_docinfo_덧붙인_장평_자간_글자_모양만_받고_모두_본문이_가리켜야_한다() {
+    let original = hwp_doc(
+        0,
+        &metric_docinfo(&[], 2),
+        &ref_paragraph(0, 0, Some(&shape_pairs(&[0, 1]))),
+        &[],
+    );
+    let w150s10 = char_shape_record(150, 10, 7);
+    let saved = |info: Vec<u8>, refs: &[u32]| {
+        hwp::compare_saved(
+            &original,
+            &hwp_doc(
+                0,
+                &info,
+                &ref_paragraph(0, 0, Some(&shape_pairs(refs))),
+                &[],
+            ),
+        )
+    };
+    // 하나 덧붙임(꼬리 7 원본 기반), 본문이 가리킴.
+    assert_eq!(
+        saved(metric_docinfo(std::slice::from_ref(&w150s10), 3), &[0, 2]),
+        vec![]
+    );
+    // 둘 덧붙임(서로 다른 원본 기반·자간 음수·장평 경계), 모두 가리킴.
+    let two = vec![char_shape_record(50, -50, 9), char_shape_record(200, 50, 7)];
+    assert_eq!(saved(metric_docinfo(&two, 4), &[2, 3]), vec![]);
+    let changed = [Finding::at(FindingCode::RecordsChanged, "DocInfo")];
+    let cases: Vec<(&str, Vec<u8>, Vec<u32>)> = vec![
+        (
+            "쓰이지 않는 덧붙임",
+            metric_docinfo(std::slice::from_ref(&w150s10), 3),
+            vec![0, 1],
+        ),
+        ("둘 중 하나만 쓰임", metric_docinfo(&two, 4), vec![0, 3]),
+        (
+            "ID_MAPPINGS 수 그대로",
+            metric_docinfo(std::slice::from_ref(&w150s10), 2),
+            vec![2],
+        ),
+        (
+            "ID_MAPPINGS 수 둘 늘어남",
+            metric_docinfo(std::slice::from_ref(&w150s10), 4),
+            vec![2],
+        ),
+        (
+            "장평 범위 밖",
+            metric_docinfo(&[char_shape_record(201, 0, 7)], 3),
+            vec![2],
+        ),
+        (
+            "자간 범위 밖",
+            metric_docinfo(&[char_shape_record(100, 51, 7)], 3),
+            vec![2],
+        ),
+        (
+            "7개 언어 값이 다름",
+            {
+                let mut r = char_shape_record(150, 0, 7);
+                r[15] = 151;
+                metric_docinfo(&[r], 3)
+            },
+            vec![2],
+        ),
+        (
+            "장평·자간 밖 속성도 바뀜(굵게 등)",
+            metric_docinfo(&[char_shape_record(150, 0, 8)], 3),
+            vec![2],
+        ),
+        (
+            "글꼴 ID 바뀜",
+            {
+                let mut r = char_shape_record(150, 0, 7);
+                r[0] = 2;
+                metric_docinfo(&[r], 3)
+            },
+            vec![2],
+        ),
+        (
+            "길이 다름",
+            {
+                let mut r = char_shape_record(150, 0, 7);
+                r.push(0);
+                metric_docinfo(&[r], 3)
+            },
+            vec![2],
+        ),
+        (
+            "다른 레코드도 바뀜(스타일)",
+            {
+                let mut info = metric_docinfo(std::slice::from_ref(&w150s10), 3);
+                let at = info.windows(5).rposition(|w| w == b"style").unwrap();
+                info[at] = b'X';
+                info
+            },
+            vec![2],
+        ),
+        (
+            "ID_MAPPINGS 다른 수도 바뀜",
+            {
+                let mut info = metric_docinfo(std::slice::from_ref(&w150s10), 3);
+                let mut m = id_mappings(3);
+                m[0] = 4;
+                let at = info
+                    .windows(72)
+                    .position(|w| w == id_mappings(3).as_slice())
+                    .unwrap();
+                info[at..at + 72].copy_from_slice(&m);
+                info
+            },
+            vec![2],
+        ),
+        (
+            "원본 글자 모양 하나가 바뀜",
+            {
+                let mut info = metric_docinfo(std::slice::from_ref(&w150s10), 3);
+                let at = info
+                    .windows(74)
+                    .position(|w| w == char_shape_record(100, 0, 9).as_slice())
+                    .unwrap();
+                info[at + 14] = 120;
+                info
+            },
+            vec![2],
+        ),
+        (
+            "글자 모양 사이가 아닌 뒤에 덧붙임",
+            {
+                let mut info = metric_docinfo(&[], 3);
+                info.extend(record(21, 1, &w150s10));
+                info
+            },
+            vec![2],
+        ),
+    ];
+    for (label, info, refs) in cases {
+        let findings = saved(info, &refs);
+        assert!(
+            findings.contains(&changed[0])
+                || findings
+                    .iter()
+                    .any(|f| f.code == FindingCode::ReferenceInvalid),
+            "{label}: {findings:?}"
+        );
+        assert!(!findings.is_empty(), "{label}");
+    }
+    // 덧붙임이 없으면 이전과 같이 같아야 한다.
+    assert_eq!(saved(metric_docinfo(&[], 2), &[0, 1]), vec![]);
+}

@@ -1411,7 +1411,9 @@ export class RhwpEditorSession implements DocumentCommandTarget {
     const parameters: Partial<Record<ParameterCommandId, CommandParameterContext>> = {};
     const parameterReasons: NonNullable<DocumentCommandSnapshot["parameterReasons"]> = {};
     const usable = this.editable && !!this.doc && !!this.text && !this.imeUnsettled && !this.uncertain;
-    if (usable && (this.options.format ?? RHWP_FORMAT_DECLARED) && format === "hwpx" && this.history) {
+    // 장평·자간: HWPX, 그리고 엔진이 덧붙인 글자 모양 정리를 지원할 때 HWP(T012 Stage 5 — HWP 저장 규칙은 정리된 덧붙임만 받는다).
+    const metricFormat = format === "hwpx" || (format === "hwp" && !!this.doc?.compactAppendedCharShapes);
+    if (usable && (this.options.format ?? RHWP_FORMAT_DECLARED) && metricFormat && this.history) {
       const [from, to] = this.ordered();
       if (this.hasSelection && sameContext(from, to) && paragraphOf(from) === paragraphOf(to)) {
         const charShape = this.text!.charShape(from);

@@ -36,6 +36,13 @@ class TableDocument extends FakeDocument {
     return JSON.stringify({ bold: false, italic: false, underline: false, strikethrough: false,
       ratios: Array(7).fill(this.ratios), spacings: Array(7).fill(this.spacings) });
   }
+  compactCalls: number[] = [];
+  /** 정리 흉내(T012 Stage 5): 기준 수를 기록하고 바뀐 것 없음을 돌려준다. */
+  charShapeCount() { return 4; }
+  compactAppendedCharShapes(baseline: number) {
+    this.compactCalls.push(baseline);
+    return JSON.stringify({ ok: true, before: 5, after: 5, skipped: null });
+  }
   applyCharFormat(...args: unknown[]) {
     this.shapeCalls.push(args);
     const props = JSON.parse(args[4] as string) as { ratios?: number[]; spacings?: number[] };
@@ -164,7 +171,17 @@ describe("rhwp 세션의 장평·자간", () => {
     hwpx.editor.updateComposition("한");
     expect(hwpx.editor.snapshot().parameters?.["hangul.charSpacing"]).toBeUndefined();
 
-    for (const [format, options] of [["hwp", { history: true, format: true }], ["hwpx", { history: false, format: true }], ["hwpx", { history: true }]] as const) {
+    // HWP: 엔진이 덧붙인 글자 모양 정리를 지원하면 문맥이 있다(T012 Stage 5).
+    const hwp = await ready("hwp", { history: true, format: true });
+    hwp.editor.anchor = { section: 0, paragraph: 0, offset: 0 };
+    hwp.editor.caret = { section: 0, paragraph: 0, offset: 2 };
+    expect(hwp.editor.snapshot().parameters?.["hangul.charWidth"]).toEqual({ charShape: { width: 100, spacing: 0 } });
+    const legacy = await ready("hwp", { history: true, format: true });
+    (legacy.doc as unknown as { compactAppendedCharShapes?: unknown }).compactAppendedCharShapes = undefined;
+    legacy.editor.anchor = { section: 0, paragraph: 0, offset: 0 };
+    legacy.editor.caret = { section: 0, paragraph: 0, offset: 2 };
+    expect(legacy.editor.snapshot().parameters?.["hangul.charWidth"], "정리를 모르는 세대의 HWP").toBeUndefined();
+    for (const [format, options] of [["hwpx", { history: false, format: true }], ["hwpx", { history: true }]] as const) {
       const { editor } = await ready(format, options);
       editor.anchor = { section: 0, paragraph: 0, offset: 0 };
       editor.caret = { section: 0, paragraph: 0, offset: 2 };
@@ -307,4 +324,25 @@ it("over-budget formulas never enter the WASM API or change session state", asyn
   expect(editor.execute("hangul.tableFormula", { command: "hangul.tableFormula", formula: "=SUM(A1:ALL1000)" })).toEqual({ accepted: false });
   expect(doc.formulaCalls).toEqual([]);
   expect(sessions.get(1)).toEqual(before);
+});
+
+describe("덧붙인 글자 모양 정리(T012 Stage 5)", () => {
+  it("서식 적용 뒤 불러온 직후의 글자 모양 수로 정리를 부르고, 계약과 다른 응답은 엔진 오류로 던진다", async () => {
+    const { RhwpText } = await import("../components/Editor/rhwp/rhwpText");
+    const doc = new TableDocument(["가나다라"]);
+    const text = new RhwpText(doc as unknown as RhwpDocument);
+    const at = (offset: number) => ({ section: 0, paragraph: 0, offset });
+    text.charShapeFormat(at(0), at(2), "ratios", 150);
+    text.charShapeFormat(at(0), at(2), "spacings", -10);
+    expect(doc.compactCalls).toEqual([4, 4]);
+    for (const bad of ['{"ok":false}', '{"ok":true,"before":5,"after":6,"skipped":null}', "not json"]) {
+      doc.compactAppendedCharShapes = () => bad;
+      expect(() => text.charShapeFormat(at(0), at(2), "ratios", 120), bad).toThrow();
+    }
+    // 기준 수를 알 수 없는 엔진(이전 세대)은 정리를 부르지 않는다.
+    const legacy = new TableDocument(["가나다라"]);
+    (legacy as unknown as { charShapeCount?: unknown }).charShapeCount = undefined;
+    new RhwpText(legacy as unknown as RhwpDocument).charShapeFormat(at(0), at(2), "ratios", 150);
+    expect(legacy.compactCalls).toEqual([]);
+  });
 });

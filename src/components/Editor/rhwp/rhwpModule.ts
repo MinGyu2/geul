@@ -63,6 +63,13 @@ export interface RhwpDocument {
   ): string;
   /** 위치의 글자 서식 JSON(`bold`·`italic`·`underline`·`strikethrough` 등). */
   getCharPropertiesAt?(section: number, paragraph: number, offset: number): string;
+  /**
+   * T012 Stage 5(geul RHWP patch `char-shape-compaction`): 지금 글자 모양 수, 그리고 불러온 직후 수(`baseline`) 뒤에 덧붙인 모양 중
+   * 참조 없는 것을 지우고 참조를 옮기는 정리. 결과 `{ok, before, after, skipped}`. 원본 정의는 바꾸지 않는다. 문서 스냅숏 기록과 함께
+   * 서식 변경 안에서 부른다. 이 패치 이전 세대에는 없다.
+   */
+  charShapeCount?(): number;
+  compactAppendedCharShapes?(baseline: number): string;
   getCellCharPropertiesAt?(section: number, parentParagraph: number, control: number, cell: number, cellParagraph: number, offset: number): string;
   deleteTextInCell(section: number, parentParagraph: number, control: number, cell: number, cellParagraph: number, offset: number, count: number): string;
   /** 표 셀의 논리 좌표 JSON `{row, col, rowSpan, colSpan}`(T012 표 계산). 셀이 없으면 예외. */

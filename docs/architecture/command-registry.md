@@ -746,3 +746,30 @@ Strict 회귀 시험: `strict_reference_rebinding_*`, `strict_reference_valid_re
   실패하는 디렉터리 권한·임시 파일·예약 시험(`files`·`recovery`·`save` a4/e/reservation, 이번 변경 밖 코드)이며 직접 실행은 모두 통과한다. 같은 보호 실행의
   `4c19443` 기준 대조는 이번에 하지 않았다(직접 PASS를 보호 PASS로 표기하지 않음).
 - 판정: T012 미완료(Stage 5 BLOCKED, Stage 6 엔진 후보만), T013 미완료(Stage 2–4 구현·저장 검증 완료, native IME·Word 호환 NOT RUN). 두 항목 모두 체크하지 않는다.
+
+## T012 Stage 5 구현: 글자 모양 정리·HWP DocInfo 규칙 (2026-11-05, `fd3ecd7` 위)
+
+앞 절("Stage 5 재평가 — BLOCKED")의 엔진·저장 차단 두 가지를 구현했다. 제품 활성화 관문(T010 D2/D4)은 그대로다.
+
+- RHWP(series 12번째 패치 `char-shape-compaction.patch`, Release WASM `39a3755c…`): `compactAppendedCharShapes(baseline)`이 불러온 뒤 덧붙인
+  글자 모양(ID ≥ 기준 수) 중 참조 없는 것만 지우고 남는 덧붙인 모양을 앞으로 당긴다. 원본 정의·스타일·번호·글머리표·원본 바이트 보존 레코드의
+  번호는 그대로다. 한 방문기가 모든 참조 자리(어느 깊이든 문단 글자 모양 — 셀·글상자·캡션·머리말/꼬리말·각주/미주·숨은 설명·필드 메모·
+  바탕쪽 — HWPX 원문 위상, 누름틀 안내문 잔재, 글자 겹침, 번호 표지, 내부 클립보드 두 개, DocInfo 스타일·번호 머리·글머리표)를 모으고 옮긴다.
+  덧붙인 모양을 DocInfo가 가리키거나 표 밖 번호가 있으면(한컴의 `0xFFFFFFFF` "참조 없음"은 제외) 아무것도 바꾸지 않는다. RHWP의 ID 기반
+  실행 취소와 섞이지 않게 opt-in이다.
+- geul 세션: `RhwpText`가 불러온 직후 `charShapeCount()`를 기준으로 기록하고 모든 글자 서식 적용(`format`, 장평·자간·굵게 등) 뒤 같은 기록
+  단계 안에서 정리를 부른다. 응답이 계약과 다르면 엔진 오류로 던진다(편집 중단). 정리를 모르는 이전 세대는 부르지 않는다(저장 검사가 판정).
+  장평·자간 문맥은 엔진이 정리를 지원할 때 HWP에도 낸다(시험 활성화 빌드 `RHWP_FORMAT`만 — 제품은 그대로 `unsupported`).
+- HWP 저장 규칙(`save/hwp.rs` `docinfo_char_shapes_appended`): 한컴 저장 `KTX.hwp`(DocInfo 1195 레코드)의 실측 차이(`ID_MAPPINGS` +
+  마지막 원본 `CHAR_SHAPE` 뒤에 끼운 `CHAR_SHAPE`, 나머지 바이트 동일)만 받는다: 원본 글자 모양 레코드가 이어져 있고, 같은 수준의 새 레코드
+  k개가 그 바로 뒤, `ID_MAPPINGS`는 글자 모양 수(36바이트 위치)만 정확히 k 증가, 새 레코드마다 같은 길이의 원본 하나와 장평·자간 14바이트
+  밖이 같고 장평 7개 같은 값 50–200·자간 7개 같은 값 −50–50, 새 모양 모두 본문 `PARA_CHAR_SHAPE`가 가리킴. 굵게 등 다른 속성 변경, 쓰이지
+  않는 덧붙임, 수 불일치, 다른 레코드 변경은 계속 `recordsChanged{DocInfo}`(단위 시험 14 변이).
+- 실제 WASM(새 세대) + 실제 `service::save`(`hangul_tools_save.py`, 비공개 시험): **15/15 기대 일치** — HWPX 본문·셀 장평/자간, 같은 범위 연속
+  변경(이전 안전 거부 → 이제 게시), 장평→굵게→자간, 두 번째 회차, 실행 취소, 장평→자간→실행 취소→다시 실행→새 장평(HWPX·HWP), HWP 본문·셀
+  연속·두 번째 회차 게시와 다시 연 값, 음성 대조(정리 없이 엔진 직접 두 번 → 쓰이지 않는 덧붙임) 거부·원본 그대로. `format_save.py` 7/7(음성 대조를
+  굵게+기울임 새 모양으로 갱신 — 이전 굵게만 사례는 픽스처의 기존 굵은 모양을 다시 써서 DocInfo가 같았고 빈 미리보기 픽스처 뒤로 전제를 잃음,
+  비공개 시험기 경로 결함 `resolve()`→`absolute()` 수정), `undo_save.py` 불일치 0. 실제 WASM vitest: 제품 구성 43 통과, 기록·서식 구성에서
+  각 구성의 시험 통과(다른 구성 전제를 단언하는 `history-config`·`history-enabled`의 전제 시험만 해당 구성 밖에서 실패 — 설계).
+- RHWP 네이티브: `char_shape_compact` 4 + 관련 회귀(format 72·snapshot 6·topology 3·char_format 5) 통과.
+- 남은 제품 관문: T010 D2(native IME)·D4(WebView 지연) — Stage 7에서 다시 다룬다. 통과 전 제품 장평·자간은 `unsupported`.
