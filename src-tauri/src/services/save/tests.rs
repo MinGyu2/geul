@@ -10825,3 +10825,6 @@ fn strict_reference_real_wordcraft_export_probe() {
     assert_eq!(Sha256::digest(doc.bytes()), Sha256::digest(&original));
     assert!(doc.leftovers().is_empty());
 }
+
+#[path = "docx_diagnostics.rs"]
+mod docx_diagnostics;

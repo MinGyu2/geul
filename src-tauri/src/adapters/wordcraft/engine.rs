@@ -931,6 +931,12 @@ impl DocxModel {
         Some(out)
     }
 
+    /// Test-only semantic model inspection for round-trip diagnosis; never IPC.
+    #[cfg(test)]
+    pub(crate) fn diagnostic_document(&self) -> &wordcraft_engine::doc::Document {
+        &self.session.doc
+    }
+
     /// 지금 모델을 DOCX 바이트로 내보낸다(메모리 안, T009 저장의 출력). 실패하면 `None`(엔진 메시지는 버린다).
     pub fn export(&self) -> Option<Vec<u8>> {
         io::save_bytes(DOCX_NAME, &self.session.doc).ok()
