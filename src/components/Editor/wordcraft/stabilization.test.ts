@@ -6,6 +6,7 @@ import type { DocumentBackend } from "../../../adapters/backend";
 import type { Result } from "../../../adapters/contract";
 import { MAX_DOCX_PASTE_CHARS, MAX_DOCX_TEXT_CHARS, type DocxOp } from "../../../adapters/docx";
 import { DocumentSessions } from "../../../adapters/sessions";
+import { documentCommandState } from "../../../commands/capability";
 import { DocumentWorkspace } from "../documentWorkspace";
 import { ImeContext, ImeInput } from "../rhwp/imeInput";
 import { DocxEditorSession, MAX_RENDER_ATTEMPTS, MAX_RETAINED_PIXELS, RENDER_RETRY_MS } from "./DocxEditorSession";
@@ -525,6 +526,29 @@ describe("이미 추적 중인 DOCX는 검증된 읽기·선택만 허용", () =
     await flush();
     expect(sentOps(fake)).toEqual([{ op: "move", to: "right", extend: false }]);
     expect(editor.revision).toBe(0);
+
+    // 리본·단축키 가용성: 저장 외 변경 명령은 모두 막힌다(저장은 기존 저장 절차가 판정).
+    const snapshot = editor.snapshot();
+    for (const id of ["edit.undo", "edit.redo", "format.bold", "format.italic", "format.underline", "format.strikethrough",
+      "review.comment", "references.footnote", "references.endnote"] as const) {
+      expect(documentCommandState(id, snapshot).available).toBe(false);
+    }
+    expect(snapshot.revision).toBe(0);
+    expect(snapshot.sessionId).toBe(1);
+  });
+
+  it("추적 정책은 응답마다 백엔드 보기를 따른다: 해제된 보기가 오면 다시 편집 가능, 다시 켜지면 막힌다", async () => {
+    const { editor, fake } = await readyDocx();
+    fake.trackedReadOnly = true;
+    editor.view = fake.snapshot();
+    expect(editor.snapshot().editable).toBe(false);
+    fake.trackedReadOnly = false;
+    editor.view = fake.snapshot();
+    expect(editor.snapshot().editable).toBe(true);
+    fake.trackedReadOnly = true;
+    editor.view = fake.snapshot();
+    expect(editor.typeText("가")).toBe(false);
+    expect(edits(fake)).toHaveLength(0);
   });
 
   it("일반 DOCX 세션은 편집 가능 상태를 유지한다", async () => {

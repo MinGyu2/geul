@@ -606,3 +606,22 @@ Strict 회귀 시험: `strict_reference_rebinding_*`, `strict_reference_valid_re
 이미 추적 중인 DOCX는 이제 엔진 보기 `trackedReadOnly`를 기준으로 읽기·선택·탐색만 허용한다. 단순 추적 삽입은 저장 가능하지만 이어지는 IME 재치환은 `Field("revisions")`로 실패해, 연속 입력까지 보장하는 편집 부분집합은 입증되지 않았다. 프런트엔드는 변경 연산 대기열과 IME 시작을 차단하고 한·영 지속 안내를 표시한다. 백엔드는 모든 문서 변경 연산을 실행 전에 다시 거부한다. 거부는 dirty·revision·undo를 만들지 않는다. 추적 토글은 계속 planned다. 편집하려면 호환 편집기에서 추적을 끈 사본을 열도록 안내한다.
 
 기존의 이미 추적된 문서 편집 동작을 제한하는 제품 정책 변경이다. native X11/IBus는 DISPLAY와 ibus 부재로 NOT RUN이며 합성 IME 시험으로 대체했다고 주장하지 않는다. T012/T013 전체 상태는 미완료다.
+
+### Stage 1 안정화: trackedReadOnly IPC 계약·구분선 래퍼/설정 검증 (2026-11-05, `4c19443` 위)
+
+- IPC 계약: Rust `DocxView::tracked_read_only`는 언제나 직렬화된다. 프런트엔드 `DocxView.trackedReadOnly`를 **필수** `boolean`으로 바꾸고 필수 키 목록
+  (`VIEW_KEYS`)에 넣었다. 빠짐·`undefined`·`null`·문자열·숫자·객체·배열은 보기 전체를 거부하고(`docx_load`·`docx_view`·`docx_edit` 응답은 `Protocol`
+  실패), 정확한 키 검사도 그대로다(`tracked_read_only` 같은 다른 이름·추가 키 거부). 잘못된 응답이 추적 문서를 편집 가능하게 보이게 하지 못한다.
+  Rust 계약 시험은 값이 `false` 불리언임까지 확인한다. 세션 시험: 추적 보기에서 실행 취소·서식·메모·각주·미주 명령 가용성 거부, revision·세션 유지,
+  응답마다 백엔드 정책을 따름(해제 → 편집 가능, 다시 켜짐 → 변경 거부).
+- 구분선(WordCraft `b39a8fb` 그대로, 엔진 변경 없음): 기본 구분선 판정은 구분선 문단 subtree만 보지만, writer는 래퍼에 `w:type`·`w:id` 말고 아무것도
+  쓰지 않고 구분선을 언제나 -1/0(/1)로 번호 매기며, 저장 검사는 기존 구분선(래퍼 포함)을 정확히, settings를 정규화 비교한다. 실제 reader/writer·
+  preflight·`docx::save` 시험(`separator_wrapper_and_settings_variants_are_classified`, 각주·미주 각 12사례): 래퍼 외부/WML 속성, 구분선 번호 바꿈
+  (settings 참조 함께), `w:id` 없음, 같은 종류 중복(settings가 둘째 사용자 구분선을 가리킴), 사용자 구분선 앞/단독, 알 수 없는 `w:type`, 순서 바꿈,
+  settings 참조 없음은 모두 preflight 불안전 + 저장 `UnsafeSave{PartChanged}` 거부, 원본 SHA·dirty·임시 파일 없음·티켓 해제. 접두어 별칭만 안전·게시.
+  사용자 구분선은 모델에서 `Some`으로 구분된다(기본으로 정규화되지 않음).
+- 알려진 한계(안전 거부): reader는 같은 종류의 첫 구분선을 쓰고 settings 참조를 따르지 않는다. 그 경우 모델 표시는 기본 구분선이지만 저장은 거부되어
+  파일에서 잃는 것은 없다. 구분선 ID 재번호(LibreOffice식 0/1) 문서와 사용자 구분선 문서에 각주를 더한 저장은 거부된다(합법 재번호 허용 규칙은 settings
+  재작성 전체를 검증해야 하므로 넣지 않음). Word의 중복 구분선 처리는 관찰하지 못해 reader 의미를 바꾸지 않았다.
+- 확인: `cargo test --locked --offline --lib` 309 통과/24 무시, clippy `--all-targets -D warnings`, `npx vitest run` 64 파일 1130 통과, typecheck·lint 통과.
+  native X11/IBus·Word: NOT RUN.

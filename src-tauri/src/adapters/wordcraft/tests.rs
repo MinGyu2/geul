@@ -962,6 +962,8 @@ fn 응답_json은_계약의_모양이다() {
         json!({"bold": false, "italic": false, "underline": false, "strikethrough": false})
     );
     assert_eq!(value["view"]["formatAccess"], "allowed");
+    // 추적 정책은 언제나 불리언으로 직렬화한다(프런트엔드 parseDocxView의 필수 키).
+    assert_eq!(value["view"]["trackedReadOnly"], json!(false));
     assert!(value["view"]["caret"]
         .as_object()
         .unwrap()

@@ -1258,3 +1258,9 @@ false라 저장은 `ReopenMismatch`로 거부되고 원본은 그대로다. 패�
 - WordCraft 시험은 `python3 scripts/external-integrity.py --require external/wordcraft --writable src-tauri/target --writable target/rhwp-wasm --report target/rhwp-wasm/<report>.json -- env CARGO_TARGET_DIR="$PWD/src-tauri/target" cargo test --manifest-path external/wordcraft/Cargo.toml --locked --offline` 뒤에 각각 `-p wordcraft-docx --test note_separators`(4 PASS), `-p wordcraft-engine roundtrip_equiv`(9 PASS), `-p wordcraft-doc roundtrip`(23 PASS)를 사용했다. 각각 exit 0. 불필요한 새 target 디렉터리 없이 기존 캐시를 재사용했다.
 - 음성 첫 저장 원본 SHA-256: `7286a49b2801ea1d4069a2173a440c4ad06718ae779345626fed52b27b56ee6c`; 둘째 저장 원본: `3977811171bcd008654bec546c9de916071706da7050e334c03a15752098dcde`. 각 변이 거부 후 byte equality와 SHA equality를 별도 단언했다.
 - native Tauri/X11/IBus, 외부 Office: NOT RUN. 기존 `file_access` 전체 엔진 소스 시험은 이 집중 범위에서 재실행하지 않았다.
+
+### Stage 1: 기존 각주 부분의 구분선 래퍼·settings 변이 (2026-11-05)
+
+실제 WordCraft reader/writer와 저장 경로로 기존 각주·미주 부분의 래퍼 속성·번호·중복·순서·settings 참조 변이 11가지를 확인했다(각주·미주 각각). 엔진 모델
+왕복은 모두 같지만(`same_as`), writer가 래퍼 속성을 쓰지 않고 구분선을 -1/0으로 다시 쓰므로 `note_part_extended`(구분선 정확 비교)와 settings 비교가
+`PartChanged`로 거부하고 원본을 보존한다. 접두어 별칭만 안전하다. 저장 규칙은 바꾸지 않았다([command-registry.md](command-registry.md) "Stage 1 안정화").

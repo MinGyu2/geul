@@ -25,9 +25,22 @@ describe("DOCX 응답 검사", () => {
     expect(parseDocxView({ ...actual, paragraphStyle: 42 })).toBeNull();
     expect(parseDocxView({ ...actual, selectionText: undefined })).toBeNull();
   });
-  it("trackedReadOnly는 생략 가능하고 불리언만 받는다", () => {
+  it("trackedReadOnly는 필수 불리언이다(백엔드가 언제나 직렬화)", () => {
     expect(parseDocxView({ ...view, trackedReadOnly: true })?.trackedReadOnly).toBe(true);
-    expect(parseDocxView({ ...view, trackedReadOnly: "yes" })).toBeNull();
+    expect(parseDocxView({ ...view, trackedReadOnly: false })?.trackedReadOnly).toBe(false);
+    const { trackedReadOnly: _omitted, ...missing } = view;
+    void _omitted;
+    expect(parseDocxView(missing)).toBeNull();
+    expect(parseDocxView({ ...view, trackedReadOnly: undefined })).toBeNull();
+    for (const bad of [null, "yes", "true", "false", "", 0, 1, NaN, {}, [], [true]]) {
+      expect(parseDocxView({ ...view, trackedReadOnly: bad })).toBeNull();
+    }
+    expect(parseDocxView({ ...view, trackedReadOnly: true, tracked_read_only: true })).toBeNull();
+    expect(parseDocxView({ ...view, trackedReadOnly: true, readOnly: false })).toBeNull();
+    // 상태 응답 전체도 거부한다(보기 없이 세션만 받지 않음).
+    expect(parseDocxState({ session, view: missing }, 3)).toBeNull();
+    expect(parseDocxState({ session, view: { ...view, trackedReadOnly: "false" } }, 3)).toBeNull();
+    expect(parseDocxState({ session, view: { ...view, trackedReadOnly: true } }, 3)?.view.trackedReadOnly).toBe(true);
   });
   it("보기는 계약의 모양만 받는다", () => {
     expect(parseDocxView(view)).toEqual(view);
@@ -102,6 +115,21 @@ describe("DOCX 응답 검사", () => {
     expect(parseBackendError({ code: "EngineFailure", engine: "wordcraft", stage: "parse" })).toEqual({ code: "EngineFailure", engine: "wordcraft", stage: "parse" });
     expect(parseBackendError({ code: "EngineFailure", engine: "wordcraft", stage: "init" })).toBeNull();
     expect(parseBackendError({ code: "EngineFailure", engine: "wordcraft", stage: "edit", message: "x" })).toBeNull();
+  });
+
+  it("trackedReadOnly가 빠지거나 불리언이 아닌 백엔드 응답은 성공으로 보지 않는다(편집 가능으로 보이지 않음)", async () => {
+    const { trackedReadOnly: _omitted, ...missing } = view;
+    void _omitted;
+    for (const bad of [missing, { ...view, trackedReadOnly: null }, { ...view, trackedReadOnly: "false" }, { ...view, trackedReadOnly: 0 }]) {
+      const invoke = () => Promise.resolve({ session, view: bad, applied: 1, rejected: [] });
+      const backend = createDocxBackend(invoke);
+      for (const result of [await backend.load(3), await backend.view(3, 1), await backend.edit(3, 1, 2, [{ op: "insertText", text: "가" }])]) {
+        expect(result.ok).toBe(false);
+      }
+    }
+    const tracked = createDocxBackend(() => Promise.resolve({ session, view: { ...view, trackedReadOnly: true } }));
+    const loaded = await tracked.load(3);
+    expect(loaded.ok && loaded.value.view.trackedReadOnly).toBe(true);
   });
 
   it("명령 이름·인자", async () => {

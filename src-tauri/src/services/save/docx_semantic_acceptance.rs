@@ -1541,3 +1541,212 @@ fn tracked_policy_ipc_preserves_session_and_original() {
     assert!(stale.is_err());
     assert_eq!(doc.state.registry().get(before.session_id).unwrap(), before);
 }
+
+/// Stage 1B: wrapper metadata (`w:type`, `w:id`, other attributes), duplicate/missing separator
+/// ids, ordering and settings references of an **existing** notes part, through the actual
+/// WordCraft reader/writer (pinned `b39a8fb`) and the actual save path.
+///
+/// Observed contract: the default-separator normalizer only looks at the separator's own
+/// paragraph subtree, but wrapper metadata cannot be lost silently because (1) the writer never
+/// emits wrapper attributes other than `w:type`/`w:id` and always numbers separators -1/0(/1),
+/// and (2) the save check compares existing separators (wrapper included) exactly and settings
+/// canonically. Every such original is refused by preflight and by save, original unchanged.
+/// Namespace-prefix aliasing is not a change (canonical XML), so it stays safe.
+#[test]
+fn separator_wrapper_and_settings_variants_are_classified() {
+    for endnote in [false, true] {
+        let tag = if endnote { "w:endnote" } else { "w:footnote" };
+        let part = if endnote {
+            "word/endnotes.xml"
+        } else {
+            "word/footnotes.xml"
+        };
+        let mut doc = open_docx(&basic::basic_ko().unwrap());
+        assert!(doc.preflight().unwrap().preservation.is_safe());
+        insert_note(&mut doc, endnote, true, "기존 각주");
+        let base = publish_notes(&mut doc);
+        let refs = format!(r#"<{tag} w:id="-1"/><{tag} w:id="0"/>"#);
+        let sep = format!(r#"<{tag} w:type="separator" w:id="-1">"#);
+        let cont = format!(r#"<{tag} w:type="continuationSeparator" w:id="0">"#);
+        let close = format!("</{tag}>");
+        let default_body = r#"<w:p><w:pPr><w:spacing w:after="0" w:line="240" w:lineRule="auto"/></w:pPr><w:r><w:separator/></w:r></w:p>"#;
+        let custom_body = r#"<w:p><w:r><w:t>custom</w:t></w:r></w:p>"#;
+        {
+            let package = package::open(&base, package::Side::Original).unwrap();
+            let settings = std::str::from_utf8(&package.parts["word/settings.xml"].1).unwrap();
+            assert!(settings.contains(&refs), "writer settings references");
+            let notes = std::str::from_utf8(&package.parts[part].1).unwrap();
+            assert!(
+                notes.contains(&format!("{sep}{default_body}{close}")) && notes.contains(&cont)
+            );
+        }
+        let notes_patch = |f: &dyn Fn(&str) -> String| byte_patch(&base, part, f);
+        let both = |notes: &dyn Fn(&str) -> String, set: &dyn Fn(&str) -> String| {
+            byte_patch(&notes_patch(notes), "word/settings.xml", set)
+        };
+        let custom_sep = format!(r#"<{tag} w:type="separator" w:id="7">{custom_body}{close}"#);
+        let unknown = format!(r#"<{tag} w:type="foo" w:id="9">{custom_body}{close}"#);
+        let swap = |x: &str| {
+            let a = x.find(&sep).unwrap();
+            let b = x.find(&cont).unwrap();
+            let c = b + x[b..].find(&close).unwrap() + close.len();
+            format!("{}{}{}{}", &x[..a], &x[b..c], &x[a..b], &x[c..])
+        };
+        // (name, original, model has an own separator, safe)
+        let variants: Vec<(&str, Vec<u8>, bool, bool)> = vec![
+            ("control", base.clone(), false, true),
+            (
+                "namespace alias",
+                notes_patch(&|x| x.replace("xmlns:w=", "xmlns:n=").replace("w:", "n:")),
+                false,
+                true,
+            ),
+            (
+                "wrapper foreign attr",
+                notes_patch(&|x| {
+                    x.replacen(&sep, &format!(r#"<{tag} xmlns:x="urn:geul-test" x:keep="1" w:type="separator" w:id="-1">"#), 1)
+                }),
+                false,
+                false,
+            ),
+            (
+                "wrapper wml attr",
+                notes_patch(&|x| {
+                    x.replacen(
+                        &sep,
+                        &format!(r#"<{tag} w:type="separator" w:id="-1" w:extra="1">"#),
+                        1,
+                    )
+                }),
+                false,
+                false,
+            ),
+            (
+                "separator renumbered with settings",
+                both(
+                    &|x| x.replacen(&sep, &format!(r#"<{tag} w:type="separator" w:id="5">"#), 1),
+                    &|x| {
+                        x.replacen(
+                            &format!(r#"<{tag} w:id="-1"/>"#),
+                            &format!(r#"<{tag} w:id="5"/>"#),
+                            1,
+                        )
+                    },
+                ),
+                false,
+                false,
+            ),
+            (
+                "separator id missing",
+                notes_patch(&|x| x.replacen(&sep, &format!(r#"<{tag} w:type="separator">"#), 1)),
+                false,
+                false,
+            ),
+            // The reader keeps the first separator of a kind and does not follow settings
+            // references (limitation): the referenced custom one is not in the model, but the
+            // save path refuses, so nothing is dropped from the file.
+            (
+                "duplicate separator, custom referenced second",
+                both(
+                    &|x| x.replacen(&cont, &format!("{custom_sep}{cont}"), 1),
+                    &|x| {
+                        x.replacen(
+                            &format!(r#"<{tag} w:id="-1"/>"#),
+                            &format!(r#"<{tag} w:id="7"/>"#),
+                            1,
+                        )
+                    },
+                ),
+                false,
+                false,
+            ),
+            (
+                "custom separator first",
+                notes_patch(&|x| x.replacen(&sep, &format!("{custom_sep}{sep}"), 1)),
+                true,
+                false,
+            ),
+            (
+                "custom separator only",
+                notes_patch(&|x| x.replacen(default_body, custom_body, 1)),
+                true,
+                false,
+            ),
+            (
+                "unknown wrapper type",
+                notes_patch(&|x| x.replacen(&cont, &format!("{unknown}{cont}"), 1)),
+                false,
+                false,
+            ),
+            ("separator order swapped", notes_patch(&swap), false, false),
+            (
+                "settings references missing",
+                byte_patch(&base, "word/settings.xml", |x| x.replacen(&refs, "", 1)),
+                false,
+                false,
+            ),
+        ];
+        for (name, original, own, safe) in variants {
+            let name = format!("{tag} {name}");
+            assert!(
+                name.ends_with("control") || original != base,
+                "{name}: mutation applied"
+            );
+            let model = reopen(&original);
+            let seps = if endnote {
+                &model.endnote_separators
+            } else {
+                &model.footnote_separators
+            };
+            assert_eq!(seps.separator.is_some(), own, "{name}");
+            assert!(
+                seps.continuation_separator.is_none() && seps.continuation_notice.is_none(),
+                "{name}"
+            );
+            let mut edited = open_docx(&original);
+            assert_eq!(
+                edited.preflight().unwrap().preservation.is_safe(),
+                safe,
+                "{name}: preflight"
+            );
+            insert_note(&mut edited, endnote, false, "새 각주");
+            let output = model_of(&edited).lock().unwrap().export().unwrap();
+            let same = model_of(&edited).lock().unwrap().same_as(&output);
+            assert!(same, "{name}: engine model round trip");
+            let verdict = service::check_saved(Format::Docx, &original, &output, None, same);
+            assert_eq!(verdict.is_safe(), safe, "{name}: {verdict:?}");
+            if safe {
+                publish_notes(&mut edited);
+            } else {
+                assert!(
+                    verdict
+                        .findings
+                        .iter()
+                        .all(|f| f.code == FindingCode::PartChanged),
+                    "{name}: {verdict:?}"
+                );
+                let error = edited.save().expect_err(&name);
+                assert!(
+                    matches!(error, DocumentError::UnsafeSave { .. }),
+                    "{name}: {error:?}"
+                );
+                assert_eq!(
+                    Sha256::digest(edited.bytes()),
+                    Sha256::digest(&original),
+                    "{name}"
+                );
+                assert!(
+                    edited
+                        .state
+                        .registry()
+                        .get(edited.info.session_id)
+                        .unwrap()
+                        .dirty,
+                    "{name}"
+                );
+                assert!(edited.leftovers().is_empty(), "{name}");
+                ticket_released(&edited);
+            }
+        }
+    }
+}
