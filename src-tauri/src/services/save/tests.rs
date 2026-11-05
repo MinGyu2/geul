@@ -10553,3 +10553,275 @@ fn comment_relationship_payload_limit_refuses_exception() {
         assert!(resources::failed());
     });
 }
+
+const STRICT_R: &str = "http://purl.oclc.org/ooxml/officeDocument/relationships";
+const TRANSITIONAL_R: &str = "http://schemas.openxmlformats.org/officeDocument/2006/relationships";
+const STRICT_W: &str = "http://purl.oclc.org/ooxml/wordprocessingml/main";
+
+/// Namespace-correct synthetic preservation fixture. New comment parts follow
+/// the existing T013 Transitional comment-addition contract, not a claim that
+/// the mixed exported package is ISO Strict-conformant or produced by WordCraft.
+fn strict_comment_pair(rebind: bool) -> (Vec<ZipEntry>, Vec<ZipEntry>) {
+    let mut before = memo_original();
+    let mut after = memo_output(&["new"]);
+    for (entries, output) in [(&mut before, false), (&mut after, true)] {
+        let document = format!(
+            r#"<w:document xmlns:w="{STRICT_W}" xmlns:r="{STRICT_R}"><w:body><w:p><w:hyperlink r:id="linkA"><w:r><w:t>preserved text</w:t></w:r></w:hyperlink></w:p></w:body></w:document>"#
+        );
+        *entries = replace(entries, "word/document.xml", &document);
+        let a = if output && rebind {
+            "https://example.org/B"
+        } else {
+            "https://example.org/A"
+        };
+        let b = if output && rebind {
+            "https://example.org/A"
+        } else {
+            "https://example.org/B"
+        };
+        let rels = String::from_utf8(
+            pkg(entries)
+                .get("word/_rels/document.xml.rels")
+                .unwrap()
+                .to_vec(),
+        )
+        .unwrap()
+        .replace(TRANSITIONAL_R, STRICT_R);
+        let extra = format!(
+            r#"<Relationship Id="linkA" Type="{STRICT_R}/hyperlink" Target="{a}" TargetMode="External"/><Relationship Id="linkB" Type="{STRICT_R}/hyperlink" Target="{b}" TargetMode="External"/>"#
+        );
+        // Only existing relation types are Strict; new comment relations retain
+        // the exact Types required by the narrowly scoped comment exception.
+        let rels = rels.replace(
+            &format!("{STRICT_R}/comments"),
+            &format!("{TRANSITIONAL_R}/comments"),
+        );
+        *entries = replace(
+            entries,
+            "word/_rels/document.xml.rels",
+            &rels.replace("</Relationships>", &(extra + "</Relationships>")),
+        );
+        let package_rels = testutil_package_rels().replace(TRANSITIONAL_R, STRICT_R);
+        *entries = replace(entries, "_rels/.rels", &package_rels);
+        *entries = replace(
+            entries,
+            "word/styles.xml",
+            &format!(r#"<w:styles xmlns:w="{STRICT_W}"/>"#),
+        );
+    }
+    (before, after)
+}
+
+#[test]
+fn strict_reference_rebinding_xml_regression() {
+    let xml = format!(r#"<x xmlns:r="{STRICT_R}" r:id="linkA"/>"#);
+    let mut checked = 0;
+    let equal = crate::document::xml::relationship_references_equal(
+        xml.as_bytes(),
+        xml.as_bytes(),
+        |_, _| {
+            checked += 1;
+            false
+        },
+    )
+    .unwrap();
+    assert_eq!(
+        (equal, checked),
+        (false, 1),
+        "Strict attribute must reach the binding resolver"
+    );
+}
+
+#[test]
+fn strict_reference_rebinding_package_regression() {
+    let (before, after) = strict_comment_pair(true);
+    let original = pkg(&before);
+    let output = pkg(&after);
+    assert!(package::validate_docx(&original).is_empty());
+    assert!(package::validate_docx(&output).is_empty());
+    assert!(
+        !package::comment_parts_added(&original, &output),
+        "Strict reference must not bypass comment_reference_bindings_equal"
+    );
+}
+
+#[test]
+fn strict_reference_rebinding_preservation_boundary_regression() {
+    let (before, after) = strict_comment_pair(true);
+    // Injected reopen=true isolates the preservation boundary; no engine claim.
+    let check = service::check_saved(
+        Format::Docx,
+        &zip(&before, false),
+        &zip(&after, false),
+        None,
+        true,
+    );
+    assert!(
+        !check.is_safe(),
+        "unsafe binding must be detected independently of reopen evidence"
+    );
+}
+
+/// Actual service publication boundary with synthetic original/export and forced
+/// reopen=true. It is deliberately NOT evidence about WordCraft reopening.
+#[test]
+fn strict_reference_publication_refusal_injected() {
+    use sha2::{Digest, Sha256};
+    let (before, after) = strict_comment_pair(true);
+    let original = zip(&before, false);
+    let corrupt = zip(&after, false);
+    let state = DocumentState::default();
+    let dir = TempDir::new();
+    let info = rhwp_session(&state, &dir, "a.docx", &original);
+    let registry = state.registry();
+    let source = registry
+        .preflight_source(info.session_id, info.load_generation)
+        .unwrap();
+    let check = service::preflight(Format::Docx, &original, &original, None);
+    assert!(check.is_safe());
+    registry
+        .record_preflight(
+            info.session_id,
+            info.load_generation,
+            source.content_hash,
+            check,
+        )
+        .unwrap();
+    registry
+        .commit(info.session_id, info.load_generation, 0, 1)
+        .unwrap();
+    let digest = Sha256::digest(&original);
+    let result = {
+        let ticket = registry
+            .begin_save(info.session_id, info.load_generation, 1)
+            .unwrap();
+        service::save(registry, &ticket, &Limits::default(), &corrupt, None, true)
+    };
+    let published = std::fs::read(dir.path().join("a.docx")).unwrap();
+    assert!(
+        matches!(result, Err(DocumentError::UnsafeSave { .. })),
+        "injected save result={result:?}, original SHA preserved={}",
+        Sha256::digest(&published) == digest
+    );
+    assert_eq!(Sha256::digest(&published), digest);
+    assert!(registry.get(info.session_id).unwrap().dirty);
+    assert_eq!(std::fs::read_dir(dir.path()).unwrap().count(), 1);
+    assert!(registry
+        .begin_save(info.session_id, info.load_generation, 1)
+        .is_ok());
+}
+
+#[test]
+fn strict_reference_valid_renumbering_and_namespace_refusal() {
+    let (before, after) = strict_comment_pair(false);
+    let original = pkg(&before);
+    assert!(package::comment_parts_added(&original, &pkg(&after)));
+    assert!(service::check_saved(
+        Format::Docx,
+        &zip(&before, false),
+        &zip(&after, false),
+        None,
+        true
+    )
+    .is_safe());
+    let body = String::from_utf8(pkg(&after).get("word/document.xml").unwrap().to_vec()).unwrap();
+    let rels = String::from_utf8(
+        pkg(&after)
+            .get("word/_rels/document.xml.rels")
+            .unwrap()
+            .to_vec(),
+    )
+    .unwrap();
+    let renumbered = replace(
+        &replace(&after, "word/document.xml", &body.replace("linkA", "linkC")),
+        "word/_rels/document.xml.rels",
+        &rels.replace("linkA", "linkC"),
+    );
+    assert!(package::comment_parts_added(&original, &pkg(&renumbered)));
+    let alias = replace(
+        &after,
+        "word/document.xml",
+        &body
+            .replace("xmlns:r", "xmlns:alias")
+            .replace("r:id", "alias:id"),
+    );
+    assert!(package::comment_parts_added(&original, &pkg(&alias)));
+    for bad in [
+        rels.replace("linkA", "missing"),
+        rels.replace("linkB", "linkA"),
+        rels.replace("</Relationships>", ""),
+        rels.replace("/hyperlink", "/image"),
+        rels.replace("External", "Internal"),
+    ] {
+        assert!(!package::comment_parts_added(
+            &original,
+            &pkg(&replace(&after, "word/_rels/document.xml.rels", &bad))
+        ));
+    }
+    for bad in [
+        body.replace(STRICT_R, TRANSITIONAL_R),
+        body.replace(STRICT_R, "urn:unrelated"),
+        body.replace("r:id", "id"),
+    ] {
+        assert!(!package::comment_parts_added(
+            &original,
+            &pkg(&replace(&after, "word/document.xml", &bad))
+        ));
+    }
+    use crate::document::resources::{self, Category, Pool};
+    let pool = Pool::limited(usize::MAX);
+    pool.deny(Some(Category::Comparison));
+    resources::scope(pool.operation(), || {
+        assert!(!package::comment_parts_added(&original, &pkg(&after)));
+        assert!(resources::failed());
+    });
+}
+
+#[test]
+fn strict_reference_real_wordcraft_export_probe() {
+    let (before, _) = strict_comment_pair(false);
+    let original = zip(&before, false);
+    let model = DocxModel::open(&original).unwrap();
+    assert!(model.body_text().contains("preserved text"));
+    let output = model.export().unwrap();
+    let package = package::open(&output, package::Side::Output).unwrap();
+    let xml = String::from_utf8(package.get("word/document.xml").unwrap().to_vec()).unwrap();
+    assert!(xml.contains(TRANSITIONAL_R));
+    assert!(!xml.contains(STRICT_R));
+    let rels = String::from_utf8(
+        package
+            .get("word/_rels/document.xml.rels")
+            .unwrap()
+            .to_vec(),
+    )
+    .unwrap();
+    assert!(xml.contains("r:id="));
+    assert!(
+        rels.contains("https://example.org/A"),
+        "Strict hyperlink reference was parsed, not merely its text"
+    );
+    assert!(model.same_as(&output));
+    assert!(!service::preflight(Format::Docx, &original, &output, None).is_safe());
+    // Genuine engine load/export/preflight; Strict->Transitional conversion is
+    // still refused by existing package preservation. No injected reopen flag.
+    use sha2::{Digest, Sha256};
+    let mut doc = open_docx(&original);
+    assert!(!doc.preflight().unwrap().preservation.is_safe());
+    doc.edit(vec![
+        DocxOp::Move {
+            to: MoveTarget::DocStart,
+            extend: false,
+        },
+        DocxOp::Move {
+            to: MoveTarget::Right,
+            extend: true,
+        },
+        DocxOp::Comment {
+            text: "strict source comment".into(),
+        },
+    ]);
+    assert!(doc.info.dirty);
+    assert!(matches!(doc.save(), Err(DocumentError::UnsafeSave { .. })));
+    assert_eq!(Sha256::digest(doc.bytes()), Sha256::digest(&original));
+    assert!(doc.leftovers().is_empty());
+}

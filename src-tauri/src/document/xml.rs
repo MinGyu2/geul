@@ -855,7 +855,9 @@ thread_local! {
     pub(crate) static RELATIONSHIP_START_PEAK: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
 }
 
-/// Compare only officeDocument relationship attributes, in document order.
+/// Compare Transitional and Strict officeDocument relationship attributes in order.
+/// Preserve resolved namespace URI and local name: cross-namespace conversion is
+/// not established as equivalent here, even if the engine canonicalizes prefixes.
 /// Uses the validating streaming cursor (not visit_element_starts, which does not
 /// validate text/entities/root count). Retains at most one element per side;
 /// drains both inputs even after a mismatch so malformed suffixes cannot pass.
@@ -864,7 +866,10 @@ pub fn relationship_references_equal(
     after: &[u8],
     mut equivalent: impl FnMut(&str, &str) -> bool,
 ) -> Result<bool, Invalid> {
-    const R: &str = "http://schemas.openxmlformats.org/officeDocument/2006/relationships";
+    const R: [&str; 2] = [
+        "http://schemas.openxmlformats.org/officeDocument/2006/relationships",
+        "http://purl.oclc.org/ooxml/officeDocument/relationships",
+    ];
     let before = decode(before)?;
     let after = decode(after)?;
     let mut a = CanonicalCursor::<true, true>::new(&before);
@@ -887,7 +892,7 @@ pub fn relationship_references_equal(
                             .sum::<usize>();
                     peak.set(peak.get().max(bytes));
                 });
-                attributes.retain(|(ns, _, _)| ns.as_deref() == Some(R));
+                attributes.retain(|(ns, _, _)| ns.as_deref().is_some_and(|uri| R.contains(&uri)));
                 if !attributes.is_empty() {
                     return Ok(Some(attributes));
                 }
@@ -901,8 +906,8 @@ pub fn relationship_references_equal(
             (None, None) => return Ok(equal),
             (Some(left), Some(right)) => {
                 equal &= left.len() == right.len();
-                for ((_, key_a, id_a), (_, key_b, id_b)) in left.iter().zip(&right) {
-                    equal &= key_a == key_b && equivalent(id_a, id_b);
+                for ((ns_a, key_a, id_a), (ns_b, key_b, id_b)) in left.iter().zip(&right) {
+                    equal &= ns_a == ns_b && key_a == key_b && equivalent(id_a, id_b);
                 }
             }
             _ => equal = false,
@@ -1829,5 +1834,131 @@ mod resource_tests {
             "{}",
             serde_json::json!({"inputBytes":bytes.len(),"events":m.events,"retainedPayloadBytes":m.retained_payload_bytes,"ms":started.elapsed().as_secs_f64()*1000.0,"scope":"requested retained event/attribute/string payload, excludes allocator/Arc/hash metadata, parser/decoded temporaries and packages"})
         );
+    }
+}
+
+#[cfg(test)]
+mod relationship_reference_tests {
+    use super::relationship_references_equal as equal;
+    const T: &str = "http://schemas.openxmlformats.org/officeDocument/2006/relationships";
+    const S: &str = "http://purl.oclc.org/ooxml/officeDocument/relationships";
+    fn reference(ns: &str, prefix: &str, key: &str, id: &str) -> String {
+        format!(r#"<root xmlns:{prefix}="{ns}"><ref {prefix}:{key}="{id}"/></root>"#)
+    }
+    #[test]
+    fn namespace_identity_and_renumbering() {
+        for ns in [T, S] {
+            for key in ["id", "embed", "link"] {
+                let mut calls = 0;
+                assert!(equal(
+                    reference(ns, "r", key, "old").as_bytes(),
+                    reference(ns, "alias", key, "new").as_bytes(),
+                    |a, b| {
+                        calls += 1;
+                        a == "old" && b == "new"
+                    }
+                )
+                .unwrap());
+                assert_eq!(calls, 1);
+            }
+            for other in ["urn:unrelated", if ns == T { S } else { T }] {
+                assert!(!equal(
+                    reference(ns, "r", "id", "same").as_bytes(),
+                    reference(other, "r", "id", "same").as_bytes(),
+                    |_, _| true
+                )
+                .unwrap());
+                assert!(!equal(
+                    reference(other, "r", "id", "same").as_bytes(),
+                    reference(ns, "r", "id", "same").as_bytes(),
+                    |_, _| true
+                )
+                .unwrap());
+            }
+            assert!(!equal(
+                reference(ns, "r", "embed", "same").as_bytes(),
+                reference(ns, "r", "link", "same").as_bytes(),
+                |_, _| true
+            )
+            .unwrap());
+            assert!(!equal(
+                reference(ns, "r", "id", "same").as_bytes(),
+                br#"<root><ref id="same"/></root>"#,
+                |_, _| true
+            )
+            .unwrap());
+        }
+        // Prefix spelling and unqualified IDs confer no relationship semantics.
+        for xml in [
+            r#"<root xmlns:r="urn:unrelated" r:id="x"/>"#,
+            r#"<root id="x"/>"#,
+        ] {
+            let mut calls = 0;
+            assert!(equal(
+                xml.as_bytes(),
+                xml.replace(r#"="x""#, r#"="y""#).as_bytes(),
+                |_, _| {
+                    calls += 1;
+                    false
+                }
+            )
+            .unwrap());
+            assert_eq!(calls, 0);
+        }
+    }
+    #[test]
+    fn mixed_namespaces_nested_rebinding_and_order() {
+        let before = format!(
+            r#"<root xmlns:r="{S}" xmlns:t="{T}"><ref r:id="first" t:id="second"/><nested xmlns:r="{T}" r:embed="third"/><ref r:link="fourth"/></root>"#
+        );
+        let after = before
+            .replace("xmlns:r", "xmlns:alias")
+            .replace("r:id", "alias:id")
+            .replace("r:embed", "alias:embed")
+            .replace("r:link", "alias:link");
+        let mut seen = Vec::new();
+        assert!(equal(before.as_bytes(), after.as_bytes(), |a, b| {
+            seen.push(a.to_string());
+            a == b
+        })
+        .unwrap());
+        assert_eq!(seen, ["first", "second", "third", "fourth"]);
+        let rebound = after.replace(
+            &format!(r#"xmlns:alias="{T}""#),
+            r#"xmlns:alias="urn:unrelated""#,
+        );
+        assert!(!equal(before.as_bytes(), rebound.as_bytes(), |_, _| true).unwrap());
+        let reordered = after
+            .replace("first", "swap")
+            .replace("fourth", "first")
+            .replace("swap", "fourth");
+        assert!(!equal(before.as_bytes(), reordered.as_bytes(), |a, b| a == b).unwrap());
+    }
+    #[test]
+    fn malformed_suffixes_and_bounded_large_input() {
+        let valid = reference(S, "r", "id", "one");
+        let mismatch = reference(S, "r", "id", "two");
+        for invalid in [
+            format!("{valid}<second/>"),
+            valid.replace("</root>", "&unknown;</root>"),
+            valid.replace("</root>", ""),
+            r#"<root><ref r:id="x"/></root>"#.to_string(),
+            "<!DOCTYPE root><root/>".to_string(),
+        ] {
+            assert!(equal(invalid.as_bytes(), mismatch.as_bytes(), |_, _| false).is_err());
+            assert!(equal(mismatch.as_bytes(), invalid.as_bytes(), |_, _| false).is_err());
+        }
+        let large = format!(
+            r#"<root xmlns:r="{S}">{}{}</root>"#,
+            "<irrelevant/>".repeat(4096),
+            r#"<ref r:id="one"/>"#.repeat(4096)
+        );
+        let mut count = 0;
+        assert!(equal(large.as_bytes(), large.as_bytes(), |a, b| {
+            count += 1;
+            a == b
+        })
+        .unwrap());
+        assert_eq!(count, 4096);
     }
 }

@@ -123,13 +123,20 @@ safe·플랫폼 지원일 때만:
 - DOCX 메모 부분(2026-11-05, T013 — DOCX 편집 저장만): 본문(`word/document.xml`)·통계 외에 다음 두 경우만 더 받는다. ① **새로 더함**
   (`package::comment_parts_added`): 원본에 메모 부분(`word/comments.xml`·`word/commentsExtended.xml`, 대소문자 무시)이 하나도 없고 출력에 새로 생긴 부분이 그
   메모 부분뿐이며, `[Content_Types].xml`의 자식(순서 무관) = 원본 + 새 부분마다 정해진 내용 형식의 `Override` 하나, `word/_rels/document.xml.rels`의 관계(`Id`
-  제외, 순서 무관) = 원본 + 새 부분마다 정해진 `Type`·`Target`의 내부 관계 하나, 두 목록의 뿌리는 같음. 본문 `r:*` 참조만
-  `word/_rels/document.xml.rels`에 대조한다. ID가 바뀌어도 `Type`·`Target`·`TargetMode` 등 ID 외 모든 속성이 같으면 받는다. 이 두 관계 목록은
+  제외, 순서 무관) = 원본 + 새 부분마다 정해진 `Type`·`Target`의 내부 관계 하나, 두 목록의 뿌리는 같음. 본문에서 다음 두 URI로 해석되는
+  속성만 `word/_rels/document.xml.rels`에 대조한다: Transitional `http://schemas.openxmlformats.org/officeDocument/2006/relationships`와 Strict
+  `http://purl.oclc.org/ooxml/officeDocument/relationships`. 속성 식별에는 해석된 URI와 지역 이름을 모두 쓴다(`id`·`embed`·`link` 등).
+  접두어 표기는 무관하나, `r` 접두어의 임의 URI나 이름공간 없는 `id`는 관계 참조가 아니다. ID가 바뀌어도 참조의 URI·지역 이름이 같고,
+  `Type`·`Target`·`TargetMode` 등 ID 외 모든 관계 속성이 같으면 받는다. Strict↔Transitional 변환은 거부한다. pinned WordCraft가 두 namespace를
+  읽고 다시 쓸 수 있다는 사실만으로 임의 패키지 변환의 의미 동등성을 증명할 수 없기 때문이다. 이 두 관계 목록은
   각각 한 번 읽어 ID별 의미 속성 비교와 목록 비교에 재사용한다. 헤더·푸터 XML과 각자의 관계 파일은 예외가 아니며 일반 부분 비교가 지킨다.
   ② **끝에 덧붙임**(`package::comment_parts_appended`):
   새 부분이 없고, 바뀐 메모 부분마다 정규화한 사건 열이 원본 사건(뿌리 끝 전까지) + 완결된 메모 요소(`w:comment` / `w15:commentEx`) 하나 이상 + 뿌리 끝.
   원본 메모의 내용·순서는 그대로여야 하고 목록·관계는 바뀌면 안 된다. 메모 글·작성자·날짜·완료 표시는 엔진 모델의 일부라 다시 읽기 비교가 확인한다. 그
-  밖(메모를 지우거나 고친 출력, 다른 새 부분, 기존 관계 대상 변경 등)은 지금처럼 `partAdded`/`partChanged`/`partMissing`. 신규 관계 예외는
+  밖(메모를 지우거나 고친 출력, 다른 새 부분, 기존 관계 대상 변경 등)은 지금처럼 `partAdded`/`partChanged`/`partMissing`. Strict 관계 회귀
+  `strict_reference_rebinding_*`은 수정 전 XML 비교가 resolver를 호출하지 않고, 패키지 비교와 `check_saved(..., reopen_equal=true)`도 잘못 허용함을
+  재현했다. 수정 후 본문 관계 재연결과 Strict→foreign/unqualified 치환은 거부되고, Strict의 유효한 동일 namespace 참조 및 일관된 ID 변경은 통과한다.
+  합성 Strict/comment 출력은 기존 T013 comment-part Transitional 계약을 따르며 완전한 ISO Strict 출력 적합성 주장은 아니다. 신규 관계 예외는
   본문 관계 부분에만 적용한다. 비교기는 본문 관계만 두 번 파싱하지 않고 한 번 파싱한 목록을 재사용하며, 본문 XML은 엄격한 정규화 커서로
   `r:*` 참조만 흘려보낸다(전체 canonical 사건·참조 목록을 만들지 않음). `.rels` 한 부분의 정규화 보유 payload는 4 MiB로 제한하고 초과 시
   자원 실패로 저장을 거부한다. 이는 프로세스 heap/RSS 한도가 아니다. 실제 benchmark proxy는 [명령 문서의 후속 기록](command-registry.md#t012t013-후속-안전-검증-2026-11-05)을 참조한다. 음성 변이: Rust 시험
@@ -137,7 +144,9 @@ safe·플랫폼 지원일 때만:
   `docx_comment_published_reopen_rounds`는 처음 게시한 같은 파일을 다시 불러와 둘째 메모를 저장한다. 풍부한 실제 WordCraft 출력(머리말·꼬리말·그림)은
   관계 부분 비교를 통과했으나 pinned 엔진의 모델 재열기가 불일치해 실제 게시가 `ReopenMismatch`로 거부된다(원본 SHA 유지). 이 엔진 한계는 관계
   비교의 성공과 별개다. 합성 관계 공격은 실제 저장 서비스 경계에 출력을 주입하고 `reopen_equal=true`를 강제한 검사로 거부·원본 SHA·dirty·임시 파일을
-  확인했다. 이는 WordCraft가 공격 출력물을 만들거나 받아들인다는 증거가 아니다.
+  확인했다. Strict 주입 시험에서도 수정 전 실제 서비스가 게시하고 원본 SHA를 바꿨으나 수정 후 게시 전에 거부한다. 두 시험 모두 강제 재열기를 쓴
+  합성 증거 경계이며 WordCraft가 공격 출력물을 만들거나 받아들인다는 증거가 아니다. 별도 실제 WordCraft Strict source 시험은 hyperlink를 읽고
+  Transitional XML로 내보내며 그 모델 재열기는 일치했지만, 실제 preflight와 저장은 namespace/부분 변경 때문에 거부하고 원본을 보존했다.
 - 장평·자간 덧붙임(2026-11-05, T012 — HWPX 편집 저장만, 위 "글자 서식 덧붙임" 규칙의 확장): 덧붙인 `hh:charPr`가 원본 정의 하나와 비교할 때
   내용 없는 `hh:ratio`·`hh:spacing`의 **값(속성)만** 다를 수 있다. 요소의 자리·개수는 그대로 비교한다(빠지거나 둘이거나 자리가 바뀌면 다름). 덧붙인 정의의 값은
   고정 rhwp 직렬화기 모양(`write_lang_attrs`)이어야 한다: 이름공간 없는 7개 언어 속성(`hangul latin hanja japanese other symbol user`) 정확히 하나씩, 앞 0·`+`·
