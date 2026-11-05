@@ -1,6 +1,6 @@
 [submodule "external/wordcraft"]
 	path = external/wordcraft
-	url = https://github.com/storytold/wordcraft.git
+	url = https://github.com/MinGyu2/wordcraft.git
 	shallow = true
 [submodule "external/rhwp"]
 	path = external/rhwp
