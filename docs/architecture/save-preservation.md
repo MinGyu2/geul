@@ -1167,3 +1167,25 @@ WIP와 최종이 함께 내보낸 567개 출력은 **모두 바이트 동일**�
 **성능(디버그 빌드, `measure_semantic_vs_structural_comparison`, `--ignored`).** 비교 1회 평균: 기본 0.011 ms(구조 0.023), 머리글+바닥글·그림·메모 2개 0.011 ms(구조 비교는 첫 ID 차이에서 0.002 ms에 false로 끝남), 2000문단·Part 42·메모 40 0.379 ms(구조 0.346). 같은 문서 DOCX 다시 읽기 14.4 ms. `same_as`는 여전히 한 번만 파싱한다. 방문 계수기는 API 작업량 한도일 뿐 프로세스 메모리 한도가 아니다.
 
 **남은 한계.** 하이퍼링크 일부 메모의 관계 참조 분할은 여전히 관계 비교기가 거부한다(바꾸지 않음). 각주·미주·목차·변경 내용 추적은 계속 planned(T013 미완료). 외부 Microsoft Word 호환성과 native 앱 시험은 NOT RUN.
+
+### 의미 왕복 동등성 후속 검증·안정화 (2026-11-05)
+
+**WordCraft 2차 독립 감사 — PASS(구현 결함 없음).** `fc41918..d38fec0`, `d38fec0..90b1877`의 실제 로컬 소스를 다시 읽었다(`roundtrip.rs`는 `d38fec0` 이후 바뀌지 않음, `90b1877`은 시험만). 모든 Part ID 자리가 `pair()`를 거치고 그 밖의 `u32`(그리기 ID, 수정 색인, 권한 ID, 메모 부모)는 값 비교임을 확인했다. `Block`은 `_` 갈래로 비교하므로 새 변형은 컴파일 오류가 아니라 `Different`(거부)가 된다(fail-closed, 단 컴파일 가시성은 없음). 시험 공백(표 중첩·섹션 변경 연쇄 20단계의 가장 깊은 참조 비교와 `max_depth` 거부, Part가 아닌 ID가 순열 아래서도 값 비교됨)을 시험 전용 커밋 `e723192f0c1c1a2229a11ad87abccdc8b4ae517c`로 보강했다. geul gitlink는 `e723192`을 기록한다.
+
+**적대적 시험의 근거 범주 분리(`docx_semantic_acceptance.rs`).** 이전 `refuse`는 다시 읽기 실패를 `None`으로 허용해 비교기가 실행됐는지 증명하지 못했다. 이제 셋으로 나눈다.
+- 범주 2(의미 비교기 거부, `refuse_semantic`): 출력이 반드시 다시 열리고 `compare_roundtrip`의 정확한 결과를 단언한다. A·B·E·G·H·K·O `Field("paragraph")`, C `Field("media")`, D `Field("inline object")`, F `Field("comment")`, L·P·I·J `Field("parts.len")`, M `ReferencePresence("header/footer default")`, N `ReferencePresence("text box link")`, Part 수를 맞춘 I `Split{..}`, J `Merge{..}`. A–P 가운데 파서 거부는 하나도 없었다(헤더 부분 파일 삭제·없는 관계 ID도 리더가 모델로 만들고 비교기가 거부).
+- 범주 1(파서 거부, `refuse_parser`): R1 잘린 패키지, R3 `word/document.xml` 없음. 다시 열기 실패를 단언하고(비교기 미실행), `same_as` false, 저장은 `[ReopenMismatch]`로 거부, 패키지 계층 판정은 따로 `OutputMalformed`.
+- **확인된 경계(R2):** WordCraft 리더는 `word/document.xml`의 잘못된 XML(끝 태그 불일치, 깨진 시작 태그)을 너그럽게 읽어 **동등한 모델**을 만든다. 따라서 `same_as`는 true이고(통합 전 구조 동등성도 같았음) 저장을 막는 것은 패키지 계층의 `OutputMalformed`다. 엔진 게이트는 XML 정형성 검사가 아니다. 이 시험은 그렇게 단언한다.
+- 모든 범주에서 원본 SHA-256 불변, dirty 유지, 임시 파일 없음, 저장 표 해제.
+
+**Q의 경계 재분류.** `authoritative_model_corruption_is_refused`(구 `equivalence_error_is_refused`)는 출력 변조가 아니라 시험 전용 `diagnostic_document_mut`로 **권위 모델을 손상**시키는 시험이며 사용자 편집이 아니다. `Err(UnexpectedPartKind { side: Authoritative, expected: Header, found: Footer })`를 정확히 단언한다. 출력만으로 `Err`를 만드는 사례는 없었다(리더는 끊긴·종류가 틀린 참조를 만들지 않음: K·M·P가 단순 차이로 다시 열림).
+
+**연결 텍스트 상자 위상.** `aliases_and_linked_text_boxes_publish_twice`는 사슬 개수 대신 ID에 의존하지 않는 `StoryGraph`(머리글/바닥글 역할, 메모 표지를 뺀 안정 앵커의 도형과 도형 속성, 발견 순서로 매긴 노드의 공유/별개 정체성, `next` 간선과 종료, `text_box_chains` 진입점과 순서, 이야기 내용·`TextBody` 속성)를 원본 → 첫 게시 파일 → 첫 다시 열기 → 둘째 게시 파일 → 최종 다시 열기에서 같다고 단언한다. 고정 사실(두 별개 상자, 첫째 → 둘째, 끝남)도 따로 단언하고, N에서 연결을 끊으면 그래프가 달라짐도 확인한다.
+
+**`blank_docx()` 오류 분류 수정.** 이전에는 preflight가 safe이고 `same_as`가 false이면 `UnsafeSave { preservation: Safe, findings: [] }`라는 모순된 근거를 돌려주었다(재현 시험으로 확인). 이제 `blank_verdict`가 preflight unsafe면 그 판정 그대로(재열기 검사는 하지 않음, 기존 순서), safe인데 동등성이 증명되지 않으면(`Ok(false)`, `Err`, 다시 읽기 실패) `check_saved`와 같이 `ReopenMismatch`를 더한 unsafe 판정, 둘 다 통과면 성공을 돌려준다. 내보내기·열기 실패는 그대로 `Internal`이다.
+
+**WordCraft 의존성 재현성 — 미해결(원격 차단).** 읽기 전용 확인(2026-11-05):
+- 로컬: `d38fec0`, `90b1877`, `e723192`은 `external/wordcraft`의 로컬 브랜치 `geul/semantic-roundtrip-equivalence`에만 있다.
+- 원격: `.gitmodules` URL `https://github.com/storytold/wordcraft.git`(`shallow = true`)의 `ls-remote`에 세 커밋을 가리키는 ref가 없고, GitHub API는 세 SHA 모두 422(커밋 없음), `fc41918`은 200(`v0.7.0` 태그). `git fetch --depth 1 <url> 90b1877…`은 `upload-pack: not our ref`. `MinGyu2/wordcraft` 포크는 없다(404).
+- geul `origin/master`는 이미 `fefe420`(gitlink `90b1877`)으로 공개되어 있다. **현재 공개 master의 새 clone은 WordCraft 서브모듈을 받을 수 없다.**
+- 권장(B): 사용자 소유 WordCraft 포크(또는 전용 의존성 저장소)에 `geul/semantic-roundtrip-equivalence`(`fc41918` → `d38fec0` → `90b1877` → `e723192`)를 올리고 보호 태그를 단 뒤, geul `.gitmodules` URL을 그 저장소로 바꾸는 커밋을 만들고 geul을 올린다. 포크·push·URL 변경은 이 작업에서 허용되지 않아 실행하지 않았다. `shallow = true` 서브모듈은 gitlink SHA를 깊이 1로 직접 가져오므로 그 SHA가 원격 ref에서 도달 가능해야 한다(브랜치 삭제·강제 push 시 다시 깨짐 → 태그 권장). 되돌리기(D)는 코드와 gitlink를 함께 되돌려야 하며(gitlink만 되돌리면 빌드 불가) 리치 DOCX가 다시 `ReopenMismatch`가 되므로 선택하지 않았다.
