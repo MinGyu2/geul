@@ -541,3 +541,59 @@ geul 창 검색 `^geul`에 걸리지 않게 정함). 초점 이동은 `xdotool w
 관계 비교 비용 관측(개발 프로필, 수동 1회, 테스트 `comment_relationship_cost_measurement`): 합성 패키지 11개 XML 중 9개에 본문 크기의 XML, 128/1,024개 추가 관계를 둔 경우다. 본문 8,891 bytes/100 참조에서 기존 전체 canonical 방식 67.147 ms, 새 스트림 비교 10.316 ms였다. 870,191 bytes/10,000 참조에서는 3,200.001 ms와 507.472 ms였다. 참고용 retained-payload proxy는 기존 본문 canonical 45,017/5,633,037 bytes, 새 방식은 양쪽 한 시작 요소 속성의 proxy 194 bytes였다. 이 proxy는 ID 인덱스·파서·디코더·allocator·RSS를 포함하지 않아 총 메모리 감소량을 나타내지 않는다. 외부 Office 호환 근거도 아니다.
 
 Strict 회귀 시험: `strict_reference_rebinding_*`, `strict_reference_valid_renumbering_and_namespace_refusal`, `strict_reference_real_wordcraft_export_probe`; XML streaming·namespace 시험은 `document::xml::relationship_reference_tests`. Strict→Transitional 저장 지원과 외부 Office 호환은 검증·허용하지 않았다. T013은 미완료다.
+
+## T013 각주·미주 연결과 T012/T013 재검토 (2026-11-05, `af879d1` 위)
+
+### 연결한 것
+
+| 명령 | 엔진 연산 | 제품 노출 | 근거 |
+|---|---|---|---|
+| `references.footnote` | 고정 `DocxOp::Footnote { text }` → WordCraft `references.footnote` | 제품 DOCX | 엔진 왕복·어댑터·실제 저장 두 회차·적대적 저장 시험, 앱 수준 리본 시험 |
+| `references.endnote` | 고정 `DocxOp::Endnote { text }` → WordCraft `references.endnote` | 제품 DOCX | 같음 |
+
+- 원인과 수정: 각주·미주를 넣은 모델은 내보내기 → 다시 읽기에서 `ReferencePresence("note separator")`로 달랐다. 모델 계약은 `NoteSeparators`의 `None` =
+  기본 구분선이고 writer는 그때 고정 기본 XML을 쓰는데, reader가 그 XML을 다시 `Some(blocks)`로 읽었다. WordCraft reader가 writer의 **정확한** 기본 형식
+  (문단 하나, 속성은 `w:spacing after=0 line=240 lineRule=auto`뿐, 실행 하나에 구분선 표지뿐, 다른 요소·속성·글 없음)만 `None`으로 읽게 고쳤다
+  (`b39a8fb`, 로컬 전용). 문서 자신의 구분선·거의 기본인 변형(속성·간격·글·서식)은 그대로 `Some`이고 비교된다(시험).
+- 실행 조건: 선택 없는 커서가 본문 최상위 문단(자리 키 `body:<문단>:<위치>`)일 때만(`caretRequired`). 엔진은 선택을 지우고 넣으며 커서를 새 각주 안으로
+  옮기지만, 어댑터는 선택이 있으면 거부하고(글자를 지우지 않음) 실행 뒤 커서를 본문의 표지 바로 뒤로 돌린다(검증한 편집 문맥은 본문뿐). 한 WordCraft
+  명령 = 한 실행 취소 단계이고, 되돌리면 각주 부분도 사라진다(고아 부분 없음, 시험). 글 계약은 메모와 같다(한 줄, 1000자, 제어 문자·U+FFFC 없음).
+  입력 창·낡은 요청 거절·조합·대기·모달·엔진 거부 알림은 메모와 같은 경로다. rhwp에는 연결하지 않았다.
+- 저장: [save-preservation.md](save-preservation.md) "T013 각주·미주 저장 규칙".
+
+### 연결하지 않은 것(근거 갱신)
+
+| 명령 | 2026-11-05 실측(WordCraft `b39a8fb`) | 판단 · 책임 계층 · 다음 방법 |
+|---|---|---|
+| `references.toc`, `references.updateToc` | 엔진이 넣는 목차는 제목 문단의 표지 필드 `Field{TOC, result:""}` + 생성한 항목 문단이고, reader는 모든 목차를 범위 필드(`FieldStart … FieldEnd`)로 읽는다(Word가 만든 목차 내용을 그대로 지키기 위한 표현). 왕복이 `Field("paragraph")`로 다르다 | BLOCKED(WordCraft 엔진). reader에서 범위를 표지로 바꾸면 가져온 목차 내용을 잃는다. 엔진의 `insert_toc`·`update_toc`·`regenerate_toc`가 범위 표현을 만들고 유지하도록 바꿔야 하고, 갱신의 쪽 번호(PAGEREF)는 배치 결과에 기대므로 따로 검증해야 한다 |
+| `review.trackChanges`(수락·거절 포함) | 추적 넣기만 한 출력은 의미 동등. 지운 글이 남는 편집(지우고 치기, 선택 바꾸기, 자기 추적 넣기 고침) 뒤에는 `Field("revisions")`: 수정 기록 색인이 메모리에서는 만든 순서, 다시 읽으면 문서 순서로 매겨지고(부분 ID 순열과 같은 문제), 자기 추적 넣기를 지우면 쓰이지 않는 기록이 남는다 | BLOCKED(WordCraft 의미 비교). 다음: `roundtrip`에 수정 기록 색인의 일대일 대응(`CharProps.ins/del/fmt_change`, `ParaProps.fmt_change/num_change`, 표·행·셀·구역 `fmt_change`)과 쓰이지 않는 기록의 계약을 더한 뒤, settings `trackRevisions` 저장 규칙, 수락·거절, native IME 검증 |
+| 하이퍼링크 일부에 단 메모 | 엔진 모델은 같고(링크가 메모 경계에서 둘로 나뉨), 관계 비교기가 본문 r:* 참조 수 1→2를 거부 | 안전 거부 유지(성공으로 세지 않음). 다음: 늘어난 참조가 모두 같은 관계 속성으로 묶이고 엔진 모델이 같을 때만 허용하는 좁은 규칙과 그 적대적 시험 |
+
+### 이미 추적이 켜진 DOCX
+
+`trackRevisions`가 켜진 DOCX를 열면 WordCraft가 편집을 추적한다. 앱의 실제 연산 열(넣기, 늦은 확정, 넣기 고침, 지우고 치기, 선택 바꾸기)을 어댑터에서
+실행해 보니 편집은 추적되고(지운 글은 문단에 남아 취소선, 이어 친 글은 그 앞), 어댑터 위치는 보기의 원 글자 좌표와 같아 어긋나지 않았다. 지운 글이 남는
+출력은 위 한계로 `same_as`가 false라 저장이 `ReopenMismatch`로 거부되고 원본이 그대로다(조용한 손상 없음, 패키지 보존은 통과 — 시험이 정확한 차이를
+고정). 사용자는 편집했는데 저장할 수 없는 상태를 만날 수 있다(알림은 기존 저장 거부 알림). 편집 차단 정책은 넣지 않았다.
+
+### T012 재검토(실측·원인)
+
+- 제품 HWPX 장평·자간: rhwp 실행 취소 기록의 제품 NO-GO(T010 D2/D4)가 그대로라 `RHWP_FORMAT` 관문을 넘지 않는다(정책 BLOCKED). 단일 명령 기록 시험 통과를
+  전체 rhwp 실행 취소 승인으로 보지 않는다.
+- 같은 범위 연속 변경: rhwp `find_or_create_char_shape`는 같은 글자 모양을 다시 쓰지만 글자 모양 표가 덧붙임 전용이라, 중간 모양이 본문에서 쓰이지 않는
+  덧붙임으로 남아 T010 HWPX 덧붙임 규칙이 저장을 막는다(BLOCKED, rhwp). 다음: 내보내기 때 이번 세션에 덧붙였고 어디서도 쓰이지 않는 모양을 빼고 본문
+  참조를 다시 매기는 rhwp 압축 + 기존 규칙 그대로 검증. 저장 규칙을 넓히지 않았다.
+- HWP 장평·자간: DocInfo 글자 모양 레코드 변경을 T009가 `recordsChanged{DocInfo}`로 거부(BLOCKED, 보존 규칙). HWPX와 같은 "덧붙인 모양만, 모두 본문이
+  참조" 규칙을 HWP 레코드 단위로 새로 만들고 미리보기(PrvText/PrvImage)를 안전하게 다뤄야 한다.
+- 표 계산 결과 쓰기: rhwp 모델에는 계산식 필드(`FieldType::Formula`)가 있으나 `evaluate_table_formula(write_result=true)`는 셀 문단 글자를 값으로 덮어쓸
+  뿐이다. 계산식 보존 쓰기는 계산식 필드를 만들거나 고치는 rhwp 기능이 필요하다(BLOCKED, rhwp). 읽기 전용 계산은 그대로다.
+
+### 확인 방법과 결과 (2026-11-05)
+
+- WordCraft(`b39a8fb`): `cargo test -p wordcraft-doc -p wordcraft-docx -p wordcraft-engine` 840 통과 + 기존 실패 1(`file_access` 소스 검사, `fc41918`과 같은
+  입력), 새 `docx/tests/note_separators.rs` 4, 엔진 각주·미주 두 회차 왕복. fmt·clippy `-D warnings` 통과.
+- geul Rust(직접 `cargo test --locked --offline --lib`): 304 통과 / 24 무시. 새 시험: 어댑터 각주 5, 추적 문서 1, 저장 수용 각주 두 회차(basic·rich B10 ×
+  각주·미주, 앞에 넣어 번호 다시 매김 + 메모 함께), 각주 저장 규칙 적대적 변이. fmt·clippy `--all-targets -D warnings` 통과.
+- 프런트엔드: `npx vitest run` 64 파일 1125 통과, `npx tsc --noEmit`, `npx eslint .` 통과.
+- native X11/IBus 앱 수용·Word/한컴 호환: **NOT RUN**(이 환경에 X11·IBus·입력 주입 도구 없음, Wayland 표시만 있음).
+

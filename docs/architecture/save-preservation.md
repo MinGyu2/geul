@@ -1211,3 +1211,27 @@ WIP와 최종이 함께 내보낸 567개 출력은 **모두 바이트 동일**�
 - geul `bf77e7e`(`.gitmodules` 한 줄: WordCraft URL → `https://github.com/MinGyu2/wordcraft.git`, `shallow = true`·gitlink `42e8a67`·rhwp 그대로)를 빨리 감기로 `master`에 올렸다(`0a67aa0..bf77e7e`, pre-push 민감정보·Gitleaks 전체 이력 검사 통과). 원격 `master`의 `.gitmodules`와 gitlink를 API로 확인했다.
 - 새 clone 확인: `git clone --no-recurse-submodules https://github.com/MinGyu2/geul.git` → `git submodule update --init external/wordcraft`가 exit 0으로 포크에서 `42e8a67`을 깊이 1로 직접 받았다(분리 HEAD, 깨끗, alternates 없음, rhwp는 초기화하지 않음). 그 clone의 소스로 WordCraft `roundtrip` 시험 23개 통과, geul 백엔드 `cargo check --lib` 통과. geul lib 시험은 공개 clone에서 컴파일되지 않는다: `tests/`는 `45b63b4`부터 비공개 저장소이고 lib 시험이 rhwp 샘플을 `include_bytes!`하므로 rhwp 서브모듈(약 6.7 GB)이 필요하다(NOT RUN).
 - 과거 커밋: 이용할 수 없는 의존성을 처음 넣은 커밋은 `fefe420`(gitlink `90b1877`)이고, `1caf267`·`ed68414`(`90b1877`), `020c25e`·`7e7fb0f`(`e723192`), `0a67aa0`(`42e8a67`)도 `.gitmodules`가 업스트림을 가리킨다. 이력은 다시 쓰지 않았다. 해당 SHA는 모두 포크 브랜치에서 도달 가능하므로 `git config submodule.external/wordcraft.url https://github.com/MinGyu2/wordcraft.git` 뒤 `git submodule update --init external/wordcraft`로 재현된다(`020c25e` → `e723192`을 새 clone에서 확인).
+
+### T013 각주·미주 저장 규칙 (2026-11-05)
+
+엔진이 각주·미주를 더한 DOCX 출력의 패키지 차이(실측): 새 `word/footnotes.xml`(`endnotes.xml`), `[Content_Types].xml`에 그 `Override` 하나, 본문 관계에 그
+부분의 내부 관계 하나(다른 관계 `Id`는 다시 매김), `word/settings.xml`의 `w:footnotePr`(`w:endnotePr`) 끝에 구분선 참조
+`<w:footnote w:id="-1"/><w:footnote w:id="0"/>` 둘. 규칙(`package::compare_saved_docx`):
+- 처음 더함: 기존 메모 덧붙임 규칙을 덧붙일 수 있는 부분 표로 일반화했다(`parts_added`): 메모 부분(원본에 메모 부분이 하나도 없을 때)과 각주·미주 부분
+  (원본에 그 부분이 없을 때) 가운데 새로 생긴 것만 있고, 내용 형식 목록 = 원본 + 그 부분들의 `Override`, 본문 관계(`Id` 제외) = 원본 + 그 부분들의 내부
+  관계, 본문 r:* 참조 연결이 일관될 때만. 각주·미주가 있으면 `note_settings_added`가 settings 정규화 사건 열에서 그 설정 요소(뿌리 바로 아래) 끝의
+  참조 둘을 정확히 확인·제거한 결과가 원본과 같아야 한다. 메모만 더한 출력의 판정은 그대로다(`comment_parts_added`는 일반형의 감싸개).
+- 이미 있던 부분: `note_part_extended` — 뿌리 같음, 뿌리 아래는 그 요소들뿐, 구분선류(`w:type` separator·continuationSeparator·continuationNotice)는
+  번호까지 그대로, 보통 각주는 원본 것이 순서·내용 그대로 출력의 부분 열이고(본문 순서로 다시 매기므로 뿌리 `w:id`만 다를 수 있음) 하나 이상 더해졌을
+  때만. 더한 각주의 내용과 본문 참조 대상은 엔진 다시 읽기(의미 동등)가 확인한다. 각주 부분 관계·목록 변경은 부분 비교가 그대로 막는다.
+- 거부를 확인한 변이(합성 출력 주입, 저장 규칙 증거): settings 참조 ID 다름, settings의 무관한 변경, 참조 없음(→ 규칙 전체 불성립, `PartAdded`), 내용
+  형식 틀림, 외부 관계·다른 대상, 각주 말고 다른 부분 덧붙임, 기존 각주 글 변경, 구분선 변경, 기존 각주 삭제.
+- 실제 저장(엔진 성공 증거): basic·rich B10 × 각주·미주, 첫 저장 → 디스크의 게시 파일로 다시 열기 → 기존 각주 **앞**에 새 각주(번호 다시 매김) + 메모 →
+  둘째 저장 → 다시 열기, 각주 글·순서·메모·원본 머리글/바닥글/미디어 부분 바이트·dirty·임시 파일·저장 표 확인. 원본 settings에 `w:footnotePr`가
+  없는 문서·각주 안 그림/링크(각주 관계 부분)·메모 부분이 이미 있는 문서의 각주 첫 추가 + 메모 덧붙임 조합은 검증하지 않았다(규칙상 거부될 수 있음).
+
+### 이미 추적이 켜진 DOCX의 저장 (2026-11-05)
+
+추적 문서에서 지운 글이 남는 편집 뒤 출력은 WordCraft 의미 비교가 `Field("revisions")`로 다르다고 한다(수정 기록 색인 순서·쓰이지 않는 기록). `same_as`가
+false라 저장은 `ReopenMismatch`로 거부되고 원본은 그대로다. 패키지 보존은 통과한다. 고치는 곳은 WordCraft 의미 비교(수정 기록 색인 대응)이며 저장 규칙을
+넓히지 않았다([command-registry.md](command-registry.md) "T013 각주·미주 연결과 T012/T013 재검토").
