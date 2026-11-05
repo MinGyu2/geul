@@ -203,3 +203,8 @@ callback도 없다. PNG `StreamingDecoder` 공개 API가 있지만, 이 역시 �
   적는다. 업스트림 예제 HWP·HWPX 각 60개의 편집 없는 왕복에서 보고는 모두 0건이었지만, HWPX 57개는 본문 XML의 실제 요소가 바뀌거나
   사라졌고 HWP 6개는 레코드·스트림이 달랐다. 그래서 앱은 보고서를 보존의 근거로 쓰지 않는다([save-preservation.md](../architecture/save-preservation.md)).
 - 잘린 HWPX 본문 XML을 rhwp는 오류 없이 거의 빈 문서로 연다.
+
+## 후보 패치 (2026-11-05)
+
+`patches/rhwp/candidates/`의 패치는 빌드 series 밖이며 출하 WASM에 들어가지 않는다. `table-formula-field.patch`(T012 Stage 6 부분 진행)는 고정
+`1a76570` + 현재 series 위에 적용되고 네이티브 시험만 통과했다. 업스트림에 제출하지 않았다(게시·PR은 별도 승인 필요).

@@ -710,3 +710,26 @@ Strict 회귀 시험: `strict_reference_rebinding_*`, `strict_reference_valid_re
 
 다음 재개 조건: D2/D4가 native 환경에서 원래 문턱으로 통과하거나 승인된 새 기전이 생길 것, 그리고 RHWP 글자 모양 참조 목록·압축(후보 패치) + 한컴 Hancom
 호환 검증. 시험 활성화 빌드의 HWPX 장평·자간(이전 기록)은 그대로 유효하다.
+
+## T012 Stage 6: 표 계산식 필드 — 부분 진행(엔진 후보만, 미연결) (2026-11-05, `eb9a54b` 위)
+
+판정: **PARTIALLY COMPLETED**(엔진 후보와 네이티브 시험까지). 제품 `hangul.tableFormula`는 읽기 전용 계산 그대로이고 결과·계산식 쓰기는 연결하지 않았다.
+
+- 한컴 실물 근거(창작 아님): 고정 RHWP의 `fields --json`과 `dump-records`로 한컴 저장 HWP 표본(`samples/calc-cell.hwp` 등 7개 문서)의 계산식 필드를
+  확인했다. 컨트롤 `%fmu`(`FIELD_FORMULA`), CTRL_HEADER 속성 0·추가 속성 0x08, 명령 `={식}??{서식},;;{결과}`(예 `=SUM(A2,C1,D2)??%g,;;13`,
+  `=AVG(ABOVE)??%.2f,;;2.00`), 필드 범위 안 글자 = 결과. 734개 HWPX 표본(5MB 미만)에는 한컴이 쓴 `type="FORMULA"`가 없어 HWPX 기준 형식은 없다.
+- 후보 패치 `patches/rhwp/candidates/table-formula-field.patch`(빌드 series 밖): `insert_table_formula_field_native(구역, 문단, 표, 행, 열, 식)` — 기존
+  `evaluate_table_formula`(쓰지 않음)로 계산하고 위 한컴 모양의 계산식 필드를 결과 셀에 만든다. 셀은 문단 하나이고 컨트롤이 없거나(글은 결과로 바뀜)
+  문단 전체를 덮는 계산식 필드 하나여야 한다(바꾸기·같은 식 다시 부르기 = 수동 다시 계산). 다른 필드·컨트롤이 있는 칸, 표 밖 칸, `=` 없음, 명령
+  구분자(`?`·`;`)·제어 문자, 계산 오류(0으로 나누기)는 아무것도 바꾸지 않고 거부한다(내보낸 바이트 같음). 변경은 문단 사본에서 한다. 결과 서식은 `%g`만
+  (C printf 규칙: 유효 숫자 6, 뒤 0 제거, 지수 표기 경계). ClickHere 삽입의 빈 필드 넣기를 공통 함수로 나누었다(기존 동작 그대로).
+- 네이티브 시험(후보 패치 안 `wasm_api::tests::geul_*`, 고정 RHWP + series 위, `cargo test -p rhwp --lib`): 5/5 PASS — `%g` 서식, 새 문서 HWP 저장 →
+  다시 열기 → 원본 셀 고침 + 다시 계산 → 둘째 HWP 저장(식·결과·속성 0·추가 0x08), 한컴 `calc-cell.hwp`의 한컴 계산식 바꾸기 + HWP/HWPX 두 회차 저장(다른 한컴
+  계산식 그대로), 거부 시 문서 그대로, 한컴 표본 모양 일치. 관련 회귀 `click_here` 6·`field` 144·`formula` 11·`table_calc` 29 PASS, rustfmt 깨끗, 바꾼 파일의
+  clippy 발견 없음(RHWP 전체 clippy는 새 도구 모음의 기존 lint로 실패 — 변경과 무관).
+- 발견한 기존 한계(후보와 무관): `create_empty()` 문서의 표는 HWPX로 내보낼 수 없다(미등록 ID). RHWP HWPX 경로는 한컴 원래 계산식 필드의 추가 속성 0x08도
+  0으로 읽는다(시험이 손대지 않은 한컴 필드의 HWPX 왕복을 기준으로 고정). RHWP 계산기는 `=SUM(A1:` 같은 깨진 식도 받으므로 연결할 때 geul의
+  `formulaProblem` 검사(길이 256·깊이 16·셀 접근 4096·표 안 참조)를 먼저 해야 한다.
+- 연결하지 않은 이유(정확한 차단): (1) series에 넣으면 봉인된 RHWP 입력 신원이 바뀌어 새 WASM 세대 빌드와 실제 WASM 시험(비공개 시험 모음)·T009 HWP/HWPX 저장
+  규칙 검토가 함께 필요하다 — 이번에 하지 않았다. (2) 셀 쓰기는 문서 변경이므로 실행 취소가 필요한데 제품 RHWP 실행 취소는 T010 NO-GO(Stage 5와 같은 차단).
+  (3) HWPX 계산식 필드의 한컴 호환은 기준 표본이 없어 미검증, 한컴 오피스 열기·다시 계산: NOT RUN. (4) RHWP 렌더링 변경 관문(한컴 PDF Visual Sweep)도 NOT RUN.
