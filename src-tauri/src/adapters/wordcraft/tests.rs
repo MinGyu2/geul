@@ -2918,3 +2918,45 @@ fn 추적_켜기_끄기와_수락_거절은_한_단계이고_저장_동등하다
     let verdict = check_saved(Format::Docx, &tracked, &off, None, true);
     assert!(verdict.is_safe(), "{verdict:?}");
 }
+
+#[test]
+fn tracked_toc_bookmark_deletion_preserves_revision_on_two_roundtrips() {
+    use crate::document::Format;
+    use crate::services::save::service::check_saved;
+    use wordcraft_engine::doc::{InlineObject, Pos};
+    let original = headed_fixture();
+    let mut model = DocxModel::open(&original).unwrap();
+    model.apply(&[mv(MoveTarget::DocStart, false), DocxOp::Toc {}]);
+    let (index, off) = model
+        .diagnostic_document()
+        .body
+        .iter()
+        .enumerate()
+        .find_map(|(i, block)| {
+            let p = block.as_para()?;
+            p.object_offsets()
+                .into_iter()
+                .find(|off| matches!(p.object_at(*off), Some(InlineObject::BookmarkEnd { .. })))
+                .map(|off| (i, off + wordcraft_engine::doc::para::OBJ.len_utf8()))
+        })
+        .unwrap();
+    model.apply(&[DocxOp::TrackChanges { value: true }]);
+    assert!(model.run_engine("caret.set", json!({"pos": Pos::body(index, off)})));
+    assert_eq!(model.apply(&[DocxOp::Backspace]).changed, 1);
+    assert!(model.diagnostic_document().body[index]
+        .as_para()
+        .unwrap()
+        .props_of_char(off - wordcraft_engine::doc::para::OBJ.len_utf8())
+        .del
+        .is_some());
+    let first = model.export().unwrap();
+    assert!(model.same_as(&first));
+    assert!(check_saved(Format::Docx, &original, &first, None, true).is_safe());
+    assert_eq!(model.apply(&[DocxOp::Undo {}]).changed, 1);
+    assert_eq!(model.apply(&[DocxOp::Redo {}]).changed, 1);
+    assert!(model.same_as(&model.export().unwrap()));
+    let reopened = DocxModel::open(&first).unwrap();
+    let second = reopened.export().unwrap();
+    assert!(reopened.same_as(&second));
+    assert!(check_saved(Format::Docx, &first, &second, None, true).is_safe());
+}
