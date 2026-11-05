@@ -520,7 +520,7 @@ fn diagnostic_a_comment_splits_hyperlink_conservative_refusal() {
 
 /// The refusal must be `UnsafeSave` whose only finding is `ReopenMismatch`
 /// (DOCX takes no loss report, so the evidence gate emits exactly that code).
-fn assert_reopen_mismatch_only(name: &str, error: &DocumentError) {
+pub(super) fn assert_reopen_mismatch_only(name: &str, error: &DocumentError) {
     match error {
         DocumentError::UnsafeSave { preservation } => {
             assert_eq!(preservation.outcome, Outcome::Unsafe, "{name}");
@@ -540,7 +540,7 @@ fn body_end(session: &mut Session) {
 fn picture(session: &mut Session) {
     session.run("insert.picture", &json!({"data":PNG})).unwrap();
 }
-fn rich_fixture(
+pub(super) fn rich_fixture(
     header: bool,
     footer: bool,
     body_image: bool,
@@ -678,7 +678,13 @@ fn diagnostic_b_feature_matrix() {
         let reopened = io::open_bytes("fixture.docx", &output).unwrap();
         let b3 = model.same_as(&output);
         let d3 = model_diff(model.diagnostic_document(), &reopened);
-        assert_eq!(b3, !(h || f), "{name}: comment round-trip boundary");
+        // Historical evidence (before semantic integration): the derived structural
+        // equality still sees the Part ID permutation for every header/footer case.
+        let structural = *model.diagnostic_document() == reopened;
+        assert_eq!(structural, !(h || f), "{name}: structural ID boundary");
+        // Production contract since the semantic round-trip integration: same_as()
+        // tolerates only that permutation.
+        assert!(b3, "{name}: semantic round-trip equivalence");
         let relabeled = relabel_fixture_parts(model.diagnostic_document(), &reopened);
         assert_eq!(
             relabeled, reopened,
@@ -710,24 +716,16 @@ fn diagnostic_b_feature_matrix() {
         );
         let saved = doc.save();
         let save_ok = saved.is_ok();
-        // B0/B3 publish; every header/footer case must be refused *because of*
-        // ReopenMismatch alone (not SharedDirectory, FileConflict, PartChanged…).
-        let expect_ok = matches!(name, "B0" | "B3");
-        assert_eq!(b3, expect_ok, "{name}: diagnosis boundary");
+        // Before integration B1/B2/B4-B10 were refused with exactly [ReopenMismatch]
+        // (commit ad89e53); now every case publishes through the real save path.
         match &saved {
             Ok(saved) => {
-                assert!(expect_ok, "{name}: unexpected publication {saved:?}");
                 assert!(!saved.session.dirty);
                 assert!(!doc.state.registry().get(doc.info.session_id).unwrap().dirty);
                 assert_eq!(saved.bytes, output.len());
                 assert_eq!(Sha256::digest(doc.bytes()), Sha256::digest(&output));
             }
-            Err(error) => {
-                assert!(!expect_ok, "{name}: unexpected failure {error:?}");
-                assert_reopen_mismatch_only(name, error);
-                assert_eq!(Sha256::digest(doc.bytes()), Sha256::digest(&original));
-                assert!(doc.state.registry().get(doc.info.session_id).unwrap().dirty);
-            }
+            Err(error) => panic!("{name}: unexpected failure {error:?}"),
         }
         assert!(doc.leftovers().is_empty(), "{name}: {:?}", doc.leftovers());
         let current = doc.state.registry().get(doc.info.session_id).unwrap();
@@ -742,7 +740,7 @@ fn diagnostic_b_feature_matrix() {
                 .is_ok(),
             "{name}: save ticket must be released"
         );
-        eprintln!("MATRIX {name} B1={b1} preflight={} edited_reopen={b3} package={} save={save_ok} error={:?}\n INITIAL_DIFF={d1:?}\n EDIT_DIFF={d3:?}",preflight.is_safe(),preserve.is_safe(),saved.err());
+        eprintln!("MATRIX {name} B1={b1} preflight={} structural_equal={structural} semantic_equal={b3} package={} save={save_ok} error={:?}\n INITIAL_DIFF={d1:?}\n EDIT_DIFF={d3:?}",preflight.is_safe(),preserve.is_safe(),saved.err());
     }
 }
 

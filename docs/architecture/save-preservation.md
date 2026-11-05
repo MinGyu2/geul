@@ -1147,3 +1147,23 @@ WIP와 최종이 함께 내보낸 567개 출력은 **모두 바이트 동일**�
 구현 제안의 적용 지점은 WordCraft의 명시적 `roundtrip_equivalent(authoritative, reopened) -> Result<bool, UnsupportedReference>` 같은 별도 API와 geul `DocxModel::same_as` 호출부다(이름은 제안이며 미구현). `Document::PartialEq` 자체나 저장 서비스의 필수 재열기 결과를 제거하지 않는다. reader를 헤더 먼저 읽도록 재배치하는 것만으로는 임의 편집 순서와 두 번째 새 메모의 ID 할당을 안정화할 수 없다. 역할별 전단사 비교는 모든 섹션과 중첩 섹션, `Comment.part`, note part, shape/textbox story 등 실제 ID 간선을 열거하고 공유 참조·순환을 보존해야 한다. 미지원 구조는 기존처럼 거부하고, 중복 내용의 서로 다른 story를 합치거나 정렬·해시만으로 같다고 간주하지 않는다. 단위 회귀는 ID 순열 허용과 별칭 변경·part 누락·헤더 텍스트·이미지 bytes/차원·주석 앵커 변조 거부를 함께 요구한다. 엔진 왕복 후에는 B0–B10에서 첫 게시 파일을 실제 다시 열어 둘째 메모까지 저장하는 geul 수용 시험을 실행해야 한다. 관계 위치의 일반 동일성 검사는 제안하지 않는다.
 
 진단 범위는 한 섹션의 기본 헤더/푸터와 같은 67-byte PNG를 사용하는 인라인 그림이다. first/even 헤더, 여러 섹션, 별도 이미지 파일 간 basename 충돌, 부동 그림, 도형/textbox/각주/미주 그래프의 왕복 동등성은 이 행렬로 입증하지 않았다. 진단용 전단사 함수는 생성 fixture만 다루며 생산 API로 재사용하지 않는다.
+
+### DOCX 의미 왕복 동등성 통합 (2026-11-05)
+
+위 "리치 DOCX 재열기 경계"와 B 행렬의 `ReopenMismatch`는 **통합 전** 동작이다(기록 보존: 진단 커밋 `ad89e53`). 이 절은 그 뒤의 생산 계약이다.
+
+**WordCraft 의존성(로컬 전용).** 원래 고정 `fc41918814f62645b6746ed68e71e8c2c2e85d6f` → API 커밋 `d38fec08da2aea0d8ffc00d00f4629b71d390608` → 감사 뒤 시험 보강 `90b1877180ffb78959f55c642cba8d13172ec796`(로컬 브랜치 `geul/semantic-roundtrip-equivalence`). geul gitlink는 `90b1877`을 기록한다. **두 커밋은 원격에 없다**: 새 clone은 이 gitlink를 받을 수 없으므로 WordCraft 커밋을 게시하기 전에는 재현 가능한 의존성이 아니다.
+
+**API 계약.** `wordcraft_doc::roundtrip::roundtrip_equivalent(authoritative, reopened) -> Result<bool, RoundTripError>`(세부: `compare_roundtrip(.., &RoundTripLimits) -> Result<Equivalence, RoundTripError>`). 두 문서를 안정 루트(메모 ID 순, 마지막 섹션 머리글/바닥글 역할, 각주 구분선, 본문)부터 같은 구조 순서로 함께 걷고, Part ID를 담는 모든 자리(모든 `SectionProps`의 `HeaderSet` — `last_section`·문단 `section`(본문·Part·표 셀)·`fmt_change.old` 연쇄, `Comment.part`, `NoteRef.id`, 중첩 그룹 포함 `Shape.story`, `TextBody.next`)를 짝지어 양방향 일대일 대응을 만든다. 종류 보존, 분할(공유 Part가 둘로)·병합(서로 다른 Part가 하나로) 거부, 전체 Part 포함을 요구하고 나머지 모든 필드는 값으로 비교한다(내용이 같아도 별개 Part는 별개). 탐색·백트래킹 없음, 반복적 순회, 기본 한도 5천만 방문·중첩 512(리더 XML 깊이 256보다 큼). 끊긴 참조·위치와 맞지 않는 Part 종류·루트에서 닿지 않는 authoritative Part·한도 초과·할당 실패는 `Err`이며 동등이 아니다. `Document::PartialEq`(실행 취소·편집 기록)는 바뀌지 않았다.
+
+**감사 결과.** `fc41918..d38fec0` 전체(5개 파일)를 직접 읽었다. 알고리즘 결함은 찾지 못했다. 다른 `u32` 필드(`ShapeExtra.id`·`ConnEnd` 그리기 ID, `ins`/`del`/`rev` 수정 색인, `PermStart.id`, `CoreProps.revision`, `Comment.parent`)는 Part ID가 아니어서 값 비교가 맞다. 메모 삭제는 그 Part도 지워 고아를 남기지 않는다. 시험 공백 두 가지(중첩 그룹 안 텍스트 상자 재지정, 각주↔미주 Part 종류 치환)를 `90b1877`에 시험으로 보강했다.
+
+**geul 통합.** `DocxModel::same_as`만 바꿨다: 출력 바이트를 엔진으로 한 번 다시 읽고 `roundtrip_equivalent`가 `Ok(true)`일 때만 true. `Ok(false)`·`Err`·읽기 실패는 false → 저장 증거 단계가 `ReopenMismatch`로 거부(원본 불변). 호출부는 실제 저장·복구 checkpoint(`adapters/wordcraft/commands.rs`)와 빈 문서 생성 검증(`services/files.rs::blank_docx`)이며 둘 다 DOCX 재열기 검증 경계다. 진단용 `DocxModel::round_trip()`의 `model_equal`은 구조 동등성 그대로다(저장 경로 아님). 패키지 보존·관계 비교기·T009 단계는 바꾸지 않았다.
+
+**실제 저장 수용(`services/save/docx_semantic_acceptance.rs`).** B0–B10 각각: preflight → 타입 `DocxOp::Comment` → 실제 `docx::save`(강제 `reopen_equal` 없음) → 디스크의 게시 파일로 새 세션 → preflight → 둘째 메모 → 둘째 게시 → 다시 불러오기. 머리글/바닥글 경우는 구조 동등성이 false(ID 순열이 실제로 일어남), 의미 동등성 true를 매번 단언한다. 최종 파일에서 메모 2개(본문·작성자 `geul`), 머리글/바닥글 글, 미디어 바이트·그림 크기, 원본 머리글/바닥글/미디어·그 `.rels` 부분 바이트 동일, 임시 파일 없음, 저장 표 해제를 확인했다. 11/11 통과. 공유·별개(같은 내용) 첫 페이지 머리글과 연결된 텍스트 상자도 두 번 게시 뒤 별칭·연결 위상이 같다. `diagnostic_b_feature_matrix`와 `comment_real_rich_export_preservation_and_reopen_guard`는 새 계약으로 바꾸되 구조 동등성 false(과거 원인)를 계속 단언한다.
+
+**적대적 거부(주입 출력 경계 시험).** 권위 모델은 실제 편집 세션이고, 출력만 WordCraft writer로 쓴 변조 모델이나 바이트 패치다. `same_as`는 실제로 계산해 `service::save`에 넘긴다. A 머리글 글·B 바닥글 글·C 그림 바이트·D 그림 크기·E 메모 글·F 메모 작성자·G 메모 앵커 이동·H 머리글/바닥글 참조 교환·I 공유 Part 분할·J 같은 내용 별개 Part 병합·K 참조된 부분 삭제·L 예상하지 않은 Part(짝수 머리글)·M Part 종류 변경(`headerReference`→`footerReference`)·N 텍스트 상자 연결 끊기·O 순열 + 본문 변경·P 없는 관계 ID·Q 증명할 수 없는 구조(`Err(UnexpectedPartKind)`) 모두 API가 동등이 아니고 `same_as` false, 저장은 정확히 `[ReopenMismatch]`로 거부, 원본 SHA-256 불변, dirty 유지, 임시 파일 없음, 저장 표 해제. 고아 Part는 writer가 버려 출력이 이미 단순 차이(`parts.len`)가 되므로 `Err` 경로 시험에는 쓸 수 없었다. 한도 초과(`LimitExceeded`)는 API 수준에서만 시험했다(같은 `Err` 경로).
+
+**성능(디버그 빌드, `measure_semantic_vs_structural_comparison`, `--ignored`).** 비교 1회 평균: 기본 0.011 ms(구조 0.023), 머리글+바닥글·그림·메모 2개 0.011 ms(구조 비교는 첫 ID 차이에서 0.002 ms에 false로 끝남), 2000문단·Part 42·메모 40 0.379 ms(구조 0.346). 같은 문서 DOCX 다시 읽기 14.4 ms. `same_as`는 여전히 한 번만 파싱한다. 방문 계수기는 API 작업량 한도일 뿐 프로세스 메모리 한도가 아니다.
+
+**남은 한계.** 하이퍼링크 일부 메모의 관계 참조 분할은 여전히 관계 비교기가 거부한다(바꾸지 않음). 각주·미주·목차·변경 내용 추적은 계속 planned(T013 미완료). 외부 Microsoft Word 호환성과 native 앱 시험은 NOT RUN.

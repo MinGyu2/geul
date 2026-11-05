@@ -937,14 +937,31 @@ impl DocxModel {
         &self.session.doc
     }
 
+    /// Test-only: corrupt the authoritative model (fail-closed acceptance). Never IPC.
+    #[cfg(test)]
+    pub(crate) fn diagnostic_document_mut(&mut self) -> &mut wordcraft_engine::doc::Document {
+        &mut self.session.doc
+    }
+
     /// 지금 모델을 DOCX 바이트로 내보낸다(메모리 안, T009 저장의 출력). 실패하면 `None`(엔진 메시지는 버린다).
     pub fn export(&self) -> Option<Vec<u8>> {
         io::save_bytes(DOCX_NAME, &self.session.doc).ok()
     }
 
-    /// 다른 바이트(저장 출력)를 다시 읽은 문서 모델이 지금 모델과 같은지(T009 저장 검증). 읽지 못하면 false.
+    /// 다른 바이트(저장 출력)를 다시 읽은 문서 모델이 지금 모델과 의미상 같은지(T009 저장 검증). WordCraft
+    /// `roundtrip_equivalent`(감사한 `90b1877`)로 비교한다: 내부 Part ID 순열만 허용하고, 내용·종류·별칭·순환 참조가
+    /// 다르면(`Ok(false)`) 또는 증명할 수 없으면(`Err`: 끊긴·종류가 맞지 않는·닿지 않는 참조, 한도 초과) false다.
+    /// 읽지 못해도 false. `Document::PartialEq`(실행 취소 등)는 바꾸지 않는다.
     pub fn same_as(&self, bytes: &[u8]) -> bool {
-        io::open_bytes(DOCX_NAME, bytes).is_ok_and(|doc| doc == self.session.doc)
+        io::open_bytes(DOCX_NAME, bytes).is_ok_and(|reopened| {
+            matches!(
+                wordcraft_engine::doc::roundtrip::roundtrip_equivalent(
+                    &self.session.doc,
+                    &reopened
+                ),
+                Ok(true)
+            )
+        })
     }
 
     /// 지금 모델을 DOCX로 내보내 다시 읽고 비교한다(메모리 안, 디스크에 쓰지 않음). 내보내기·다시 읽기가 실패하면 `None`.

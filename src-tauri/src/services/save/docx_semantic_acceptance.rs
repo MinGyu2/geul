@@ -1,0 +1,728 @@
+//! Rich DOCX acceptance after the semantic round-trip integration (`DocxModel::same_as` →
+//! `wordcraft_doc::roundtrip::roundtrip_equivalent`).
+//!
+//! Positive cases use the real production path only: geul session → typed `DocxOp::Comment` →
+//! `docx::save` (export + `same_as` + preservation + atomic publication) → a new session on the
+//! *published file on disk* → second comment → second publication → reload again.
+//!
+//! Adversarial cases are **injected-output boundary tests**: the authoritative model is a real
+//! edited session, but the output bytes are a deliberately corrupted DOCX (written by the real
+//! WordCraft writer from a mutated reopened model, or byte-patched). `same_as` is computed for real
+//! on those bytes and its result is what `service::save` receives; nothing forces it.
+use std::sync::{Arc, Mutex};
+
+use super::docx_diagnostics::{assert_reopen_mismatch_only, rich_fixture};
+use super::*;
+use crate::adapters::wordcraft::engine::DocxModel;
+use sha2::{Digest, Sha256};
+use wordcraft_engine::doc::roundtrip::{
+    compare_roundtrip, Equivalence, RoundTripError, RoundTripLimits,
+};
+use wordcraft_engine::doc::{
+    para_block, Block, CharProps, Document, InlineObject, Paragraph, PartKind, Pos, StoryRef,
+};
+use wordcraft_engine::{io, Session};
+
+fn reopen(bytes: &[u8]) -> Document {
+    io::open_bytes("x.docx", bytes).unwrap()
+}
+
+fn model_of(doc: &Docx) -> Arc<Mutex<DocxModel>> {
+    doc.state
+        .wordcraft()
+        .get(doc.info.session_id, doc.info.load_generation)
+        .unwrap()
+}
+
+/// A comment through the typed IPC operation; every operation must be accepted.
+fn comment(doc: &mut Docx, at_end: bool, text: &str) {
+    let (to, dir) = if at_end {
+        (MoveTarget::DocEnd, MoveTarget::Left)
+    } else {
+        (MoveTarget::DocStart, MoveTarget::Right)
+    };
+    let mut ops = vec![DocxOp::Move { to, extend: false }];
+    ops.extend((0..3).map(|_| DocxOp::Move {
+        to: dir,
+        extend: true,
+    }));
+    ops.push(DocxOp::Comment { text: text.into() });
+    let edited = block_on(docx::edit(
+        &doc.state,
+        doc.info.session_id,
+        doc.info.load_generation,
+        doc.info.revision,
+        ops,
+    ))
+    .unwrap();
+    assert!(edited.rejected.is_empty(), "{:?}", edited.rejected);
+    doc.info = edited.session;
+    assert!(doc.info.dirty);
+}
+
+/// A new session on the file at the same path, read from disk (the published file).
+fn reload(doc: Docx) -> Docx {
+    let Docx { dir, path, .. } = doc;
+    let state = DocumentState::default();
+    let file = identify(path.to_str().unwrap(), &Limits::default()).unwrap();
+    let info = state.registry().register(file).unwrap();
+    let loaded = block_on(docx::load(&state, info.session_id, None)).expect("reload published");
+    let doc = Docx {
+        state,
+        dir,
+        path,
+        info: loaded.session,
+    };
+    assert!(doc.preflight().unwrap().preservation.is_safe());
+    doc
+}
+
+fn ticket_released(doc: &Docx) {
+    let current = doc.state.registry().get(doc.info.session_id).unwrap();
+    assert!(doc
+        .state
+        .registry()
+        .begin_save(
+            current.session_id,
+            current.load_generation,
+            current.revision
+        )
+        .is_ok());
+}
+
+/// Real production save; returns the published bytes read back from disk.
+fn publish(doc: &mut Docx, permuted: bool) -> Vec<u8> {
+    let before = doc.bytes();
+    let output = {
+        let model = model_of(doc);
+        let model = model.lock().unwrap();
+        let output = model.export().unwrap();
+        let reopened = reopen(&output);
+        let authoritative = model.diagnostic_document();
+        // The ID permutation is actually exercised where expected.
+        assert_eq!(*authoritative != reopened, permuted, "structural equality");
+        let v = compare_roundtrip(authoritative, &reopened, &RoundTripLimits::default());
+        assert!(matches!(v, Ok(Equivalence::Equivalent(_))), "{v:?}");
+        assert!(model.same_as(&output));
+        assert!(service::check_saved(Format::Docx, &before, &output, None, true).is_safe());
+        output
+    };
+    let saved = doc.save().expect("publication");
+    assert!(!saved.session.dirty);
+    doc.info = saved.session;
+    let published = doc.bytes();
+    // Export is deterministic: the published file is the verified output.
+    assert_eq!(Sha256::digest(&published), Sha256::digest(&output));
+    assert!(doc.leftovers().is_empty(), "{:?}", doc.leftovers());
+    ticket_released(doc);
+    published
+}
+
+fn images(doc: &Document) -> Vec<(String, u32, u32)> {
+    let mut out = Vec::new();
+    let mut scan = |blocks: &wordcraft_engine::doc::Blocks| {
+        for b in blocks {
+            if let Block::Para(p) = &**b {
+                for o in &p.objects {
+                    if let InlineObject::Image { media, w, h, .. } = o {
+                        out.push((media.clone(), w.to_bits(), h.to_bits()));
+                    }
+                }
+            }
+        }
+    };
+    scan(&doc.body);
+    for part in doc.parts.values() {
+        scan(&part.blocks);
+    }
+    out.sort();
+    out
+}
+
+fn rich_parts(bytes: &[u8]) -> Vec<(String, Vec<u8>)> {
+    package::open(bytes, package::Side::Original)
+        .unwrap()
+        .parts
+        .into_iter()
+        .filter(|(p, _)| {
+            [
+                "word/header",
+                "word/footer",
+                "word/media/",
+                "word/_rels/header",
+                "word/_rels/footer",
+            ]
+            .iter()
+            .any(|prefix| p.starts_with(prefix))
+        })
+        .map(|(p, (_, bytes))| (p, bytes))
+        .collect()
+}
+
+const MATRIX: [(&str, bool, bool, bool, bool, bool); 11] = [
+    ("B0", false, false, false, false, false),
+    ("B1", true, false, false, false, false),
+    ("B2", false, true, false, false, false),
+    ("B3", false, false, true, false, false),
+    ("B4", true, false, false, true, false),
+    ("B5", false, true, false, false, true),
+    ("B6", true, true, false, false, false),
+    ("B7", true, false, true, false, false),
+    ("B8", false, true, true, false, false),
+    ("B9", true, true, true, false, false),
+    ("B10", true, true, true, true, false),
+];
+
+#[test]
+fn rich_docx_first_and_second_published_saves() {
+    for (name, h, f, bi, hi, fi) in MATRIX {
+        let generated = rich_fixture(h, f, bi, hi, fi).doc;
+        let original = io::save_bytes("fixture.docx", &generated).unwrap();
+        let mut doc = open_docx(&original);
+        assert!(
+            doc.preflight().unwrap().preservation.is_safe(),
+            "{name} preflight"
+        );
+
+        comment(&mut doc, false, "first comment");
+        let first = publish(&mut doc, h || f);
+        let mut doc = reload(doc);
+        assert_eq!(doc.bytes(), first);
+        assert_eq!(
+            model_of(&doc)
+                .lock()
+                .unwrap()
+                .diagnostic_document()
+                .comments
+                .len(),
+            1,
+            "{name}"
+        );
+
+        comment(&mut doc, true, "second comment");
+        let second = publish(&mut doc, h || f);
+        let doc = reload(doc);
+        let model = model_of(&doc);
+        let model = model.lock().unwrap();
+        let fin = model.diagnostic_document();
+
+        // Both comments, their text and author.
+        let mut texts: Vec<String> = fin
+            .comments
+            .values()
+            .map(|c| {
+                assert_eq!(c.author, crate::adapters::wordcraft::engine::COMMENT_AUTHOR);
+                fin.plain_text(StoryRef::Part(c.part)).trim().to_owned()
+            })
+            .collect();
+        texts.sort();
+        assert_eq!(texts, ["first comment", "second comment"], "{name}");
+        // Header/footer stories, and every original image's bytes and size.
+        for (present, set, text) in [
+            (h, fin.last_section.headers.default, "preserved header"),
+            (f, fin.last_section.footers.default, "preserved footer"),
+        ] {
+            assert_eq!(set.is_some(), present, "{name}");
+            if let Some(id) = set {
+                assert!(fin.plain_text(StoryRef::Part(id)).contains(text), "{name}");
+            }
+        }
+        assert_eq!(fin.media, generated.media, "{name} media bytes");
+        assert_eq!(images(fin), images(&generated), "{name} image size");
+        // Unrelated rich package parts are byte-identical to the original.
+        assert_eq!(rich_parts(&second), rich_parts(&original), "{name}");
+        assert!(doc.leftovers().is_empty());
+        drop(model);
+        ticket_released(&doc);
+        eprintln!("ACCEPT {name}: first+second publication, reload from disk, 2 comments");
+    }
+}
+
+// ---- alias / link fixtures ----
+
+fn basic_session() -> Session {
+    Session::new(io::open_bytes("fixture.docx", &basic::basic_ko().unwrap()).unwrap())
+}
+
+fn header_story(s: &Session) -> u32 {
+    s.doc.last_section.headers.default.unwrap()
+}
+
+/// First-page header either shared with the default header or a distinct identical copy.
+fn title_page_fixture(shared: bool) -> Vec<u8> {
+    let mut s = basic_session();
+    s.run("insert.header", &json!({"text": "preserved header"}))
+        .unwrap();
+    s.run("insert.closeHeader", &json!({})).unwrap();
+    let default = header_story(&s);
+    s.doc.last_section.title_page = true;
+    let first = if shared {
+        default
+    } else {
+        let blocks = s.doc.parts[&default].blocks.clone();
+        s.doc.add_part(PartKind::Header, blocks)
+    };
+    s.doc.last_section.headers.first = Some(first);
+    io::save_bytes("fixture.docx", &s.doc).unwrap()
+}
+
+fn linked_boxes_fixture() -> Vec<u8> {
+    let mut s = basic_session();
+    s.run("insert.header", &json!({"text": "preserved header"}))
+        .unwrap();
+    s.run("insert.closeHeader", &json!({})).unwrap();
+    s.run("caret.set", &json!({"pos": Pos::body(0, 0)}))
+        .unwrap();
+    s.run(
+        "insert.textBox",
+        &json!({"text": "Some text that flows on"}),
+    )
+    .unwrap();
+    s.run("caret.set", &json!({"pos": Pos::body(1, 0)}))
+        .unwrap();
+    s.run("insert.textBox", &json!({})).unwrap();
+    s.run("select.objects", &json!({"index": 0})).unwrap();
+    s.run("shape.link", &json!({"target": 1})).unwrap();
+    assert_eq!(s.doc.text_box_chains().len(), 1);
+    io::save_bytes("fixture.docx", &s.doc).unwrap()
+}
+
+/// Shared and distinct first-page headers and linked text boxes publish twice as well.
+#[test]
+fn aliases_and_linked_text_boxes_publish_twice() {
+    for (name, original) in [
+        ("shared title-page header", title_page_fixture(true)),
+        ("distinct title-page header", title_page_fixture(false)),
+        ("linked text boxes", linked_boxes_fixture()),
+    ] {
+        let opened = reopen(&original);
+        let shape = (
+            opened.last_section.headers.first == opened.last_section.headers.default,
+            opened.parts.len(),
+            opened.text_box_chains(),
+        );
+        let mut doc = open_docx(&original);
+        assert!(doc.preflight().unwrap().preservation.is_safe(), "{name}");
+        comment(&mut doc, false, "first comment");
+        publish(&mut doc, true);
+        let mut doc = reload(doc);
+        comment(&mut doc, true, "second comment");
+        publish(&mut doc, true);
+        let doc = reload(doc);
+        let model = model_of(&doc);
+        let fin = model.lock().unwrap();
+        let fin = fin.diagnostic_document();
+        assert_eq!(fin.comments.len(), 2, "{name}");
+        assert_eq!(
+            (
+                fin.last_section.headers.first == fin.last_section.headers.default,
+                fin.parts.len() - 2,
+                fin.text_box_chains().len()
+            ),
+            (shape.0, shape.1, shape.2.len()),
+            "{name}: alias/link topology after two saves"
+        );
+    }
+}
+
+// ---- adversarial (injected-output boundary) ----
+
+/// A real edited session (one comment, so header/footer ids are permuted) and the model the
+/// production export reopens to.
+fn edited(original: &[u8]) -> (Docx, Document) {
+    let mut doc = open_docx(original);
+    assert!(doc.preflight().unwrap().preservation.is_safe());
+    comment(&mut doc, false, "first comment");
+    let output = model_of(&doc).lock().unwrap().export().unwrap();
+    let reopened = reopen(&output);
+    (doc, reopened)
+}
+
+fn rich_original() -> Vec<u8> {
+    io::save_bytes(
+        "fixture.docx",
+        &rich_fixture(true, true, true, true, false).doc,
+    )
+    .unwrap()
+}
+
+/// The production equivalence result for `corrupt`, and the save service's refusal.
+fn refuse(name: &str, doc: &Docx, corrupt: &[u8]) -> Option<Result<Equivalence, RoundTripError>> {
+    let model = model_of(doc);
+    let (same, verdict) = {
+        let model = model.lock().unwrap();
+        let verdict = io::open_bytes("x.docx", corrupt).ok().map(|r| {
+            compare_roundtrip(model.diagnostic_document(), &r, &RoundTripLimits::default())
+        });
+        if let Some(v) = &verdict {
+            assert!(
+                !matches!(v, Ok(Equivalence::Equivalent(_))),
+                "{name}: {v:?}"
+            );
+        }
+        (model.same_as(corrupt), verdict)
+    };
+    assert!(!same, "{name}: same_as must not be true");
+    let original = doc.bytes();
+    let registry = doc.state.registry();
+    let result = {
+        let ticket = registry
+            .begin_save(
+                doc.info.session_id,
+                doc.info.load_generation,
+                doc.info.revision,
+            )
+            .unwrap();
+        service::save(registry, &ticket, &Limits::default(), corrupt, None, same)
+    };
+    // `same == false` is refused by the evidence gate before anything else.
+    let error = result.expect_err(name);
+    assert_reopen_mismatch_only(name, &error);
+    assert_eq!(
+        Sha256::digest(doc.bytes()),
+        Sha256::digest(&original),
+        "{name}"
+    );
+    assert!(registry.get(doc.info.session_id).unwrap().dirty, "{name}");
+    assert!(doc.leftovers().is_empty(), "{name}");
+    ticket_released(doc);
+    eprintln!("REFUSE {name}: verdict={verdict:?}");
+    verdict
+}
+
+fn para(text: &str) -> Arc<Block> {
+    para_block(Paragraph::with_text(text, CharProps::default()))
+}
+
+fn set_text(d: &mut Document, id: u32, text: &str) {
+    d.parts.get_mut(&id).unwrap().blocks = vec![para(text)];
+}
+
+fn written(d: &Document) -> Vec<u8> {
+    io::save_bytes("x.docx", d).unwrap()
+}
+
+fn byte_patch(output: &[u8], name: &str, f: impl Fn(&str) -> String) -> Vec<u8> {
+    let package = package::open(output, package::Side::Original).unwrap();
+    let entries: Vec<_> = package
+        .order
+        .iter()
+        .filter_map(|n| {
+            let data = &package.parts.get(n)?.1;
+            if n == name {
+                Some(entry(n, f(std::str::from_utf8(data).unwrap()).as_bytes()))
+            } else {
+                Some(entry(n, data))
+            }
+        })
+        .collect();
+    zip(&entries, false)
+}
+
+fn without(output: &[u8], name: &str) -> Vec<u8> {
+    let package = package::open(output, package::Side::Original).unwrap();
+    let entries: Vec<_> = package
+        .order
+        .iter()
+        .filter(|n| *n != name)
+        .filter_map(|n| Some(entry(n, &package.parts.get(n)?.1)))
+        .collect();
+    zip(&entries, false)
+}
+
+/// A–H, K, L, M, O, P on the B10 rich fixture.
+#[test]
+fn adversarial_rich_outputs_are_refused() {
+    let original = rich_original();
+    type Mutation = Box<dyn Fn(&mut Document)>;
+    let cases: Vec<(&str, Mutation)> = vec![
+        (
+            "A header text",
+            Box::new(|d| {
+                let h = d.last_section.headers.default.unwrap();
+                set_text(d, h, "preserved headeR")
+            }),
+        ),
+        (
+            "B footer text",
+            Box::new(|d| {
+                let f = d.last_section.footers.default.unwrap();
+                set_text(d, f, "preserved footeR")
+            }),
+        ),
+        (
+            "C image bytes",
+            Box::new(|d| {
+                for v in d.media.values_mut() {
+                    let mut bytes = (**v).clone();
+                    bytes.push(0);
+                    *v = Arc::new(bytes);
+                }
+            }),
+        ),
+        (
+            "D image dimensions",
+            Box::new(|d| {
+                for b in d.body.iter_mut() {
+                    if let Block::Para(p) = Arc::make_mut(b) {
+                        for o in &mut p.objects {
+                            if let InlineObject::Image { w, .. } = o {
+                                *w += 10.0;
+                            }
+                        }
+                    }
+                }
+            }),
+        ),
+        (
+            "E comment text",
+            Box::new(|d| {
+                let c = d.comments.values().next().unwrap().part;
+                set_text(d, c, "other comment")
+            }),
+        ),
+        (
+            "F comment author",
+            Box::new(|d| d.comments.values_mut().next().unwrap().author = "mallory".into()),
+        ),
+        (
+            "G comment anchor moved",
+            Box::new(|d| {
+                let id = *d.comments.keys().next().unwrap();
+                for b in d.body.iter_mut() {
+                    let Block::Para(p) = Arc::make_mut(b) else {
+                        continue;
+                    };
+                    let Some(k) = p
+                        .objects
+                        .iter()
+                        .position(|o| matches!(o, InlineObject::CommentEnd { .. }))
+                    else {
+                        continue;
+                    };
+                    let off = p
+                        .text
+                        .char_indices()
+                        .filter(|(_, c)| *c == '\u{FFFC}')
+                        .nth(k)
+                        .unwrap()
+                        .0;
+                    p.delete(off, off + 3).unwrap();
+                    let end = p.text.len();
+                    p.insert_object(end, InlineObject::CommentEnd { id }, &CharProps::default())
+                        .unwrap();
+                    return;
+                }
+                panic!("no comment end");
+            }),
+        ),
+        (
+            "H header/footer references exchanged",
+            Box::new(|d| {
+                let s = &mut d.last_section;
+                std::mem::swap(&mut s.headers.default, &mut s.footers.default);
+            }),
+        ),
+        (
+            "L unexpected part introduced (even header)",
+            Box::new(|d| {
+                let id = d.add_part(PartKind::Header, vec![para("stray")]);
+                d.last_section.headers.even = Some(id);
+            }),
+        ),
+        (
+            "O permutation plus unrelated body change",
+            Box::new(|d| {
+                if let Block::Para(p) = Arc::make_mut(d.body.last_mut().unwrap()) {
+                    let end = p.text.len();
+                    p.insert_text(end, " tampered", &CharProps::default())
+                        .unwrap();
+                }
+            }),
+        ),
+    ];
+    for (name, mutate) in cases {
+        let (doc, mut reopened) = edited(&original);
+        mutate(&mut reopened);
+        refuse(name, &doc, &written(&reopened));
+    }
+    // Byte-level cases on the real export.
+    let (doc, _) = edited(&original);
+    let output = model_of(&doc).lock().unwrap().export().unwrap();
+    let pkg = package::open(&output, package::Side::Original).unwrap();
+    let header = pkg
+        .order
+        .iter()
+        .find(|n| n.starts_with("word/header"))
+        .unwrap()
+        .clone();
+    refuse(
+        "K referenced part removed",
+        &doc,
+        &without(&output, &header),
+    );
+    refuse(
+        "M part kind changed (header reference read as footer)",
+        &doc,
+        &byte_patch(&output, "word/document.xml", |x| {
+            x.replace("<w:headerReference ", "<w:footerReference ")
+        }),
+    );
+    refuse(
+        "P malformed reference (missing relationship id)",
+        &doc,
+        &byte_patch(&output, "word/document.xml", |x| {
+            let at = x.find("<w:headerReference ").unwrap();
+            let id = at + x[at..].find("r:id=\"").unwrap() + "r:id=\"".len();
+            let end = id + x[id..].find('"').unwrap();
+            format!("{}rIdMissing{}", &x[..id], &x[end..])
+        }),
+    );
+}
+
+/// I split / J merge (identical content throughout) and N linked text box.
+#[test]
+fn adversarial_alias_and_link_outputs_are_refused() {
+    let (doc, mut r) = edited(&title_page_fixture(true));
+    assert_eq!(r.last_section.headers.first, r.last_section.headers.default);
+    let default = r.last_section.headers.default.unwrap();
+    let copy = r.parts[&default].blocks.clone();
+    r.last_section.headers.first = Some(r.add_part(PartKind::Header, copy));
+    let verdict = refuse("I shared part split", &doc, &written(&r));
+    assert!(matches!(verdict, Some(Ok(Equivalence::Different(_)))));
+
+    let (doc, mut r) = edited(&title_page_fixture(false));
+    let (d, f) = (
+        r.last_section.headers.default.unwrap(),
+        r.last_section.headers.first.unwrap(),
+    );
+    assert_ne!(d, f);
+    assert_eq!(r.parts[&d].blocks, r.parts[&f].blocks, "identical content");
+    r.last_section.headers.first = Some(d);
+    r.parts.remove(&f);
+    refuse("J distinct parts merged", &doc, &written(&r));
+
+    let (doc, mut r) = edited(&linked_boxes_fixture());
+    assert_eq!(r.text_box_chains().len(), 1);
+    for part in r.parts.values_mut() {
+        part.body.next = None;
+    }
+    refuse("N linked text box reference changed", &doc, &written(&r));
+}
+
+/// Q: an equivalence *error* is a refusal, never a pass. The authoritative header story is
+/// mislabelled as a footer part (unprovable structure → `UnexpectedPartKind`). An orphan part
+/// would not do: the writer drops it, so that output is already a plain difference.
+#[test]
+fn equivalence_error_is_refused() {
+    let (doc, _) = edited(&rich_original());
+    let model = model_of(&doc);
+    let output = {
+        let mut m = model.lock().unwrap();
+        let d = m.diagnostic_document_mut();
+        let h = d.last_section.headers.default.unwrap();
+        d.parts.get_mut(&h).unwrap().kind = PartKind::Footer;
+        m.export().unwrap()
+    };
+    let verdict = refuse("Q unprovable structure (mislabelled part)", &doc, &output);
+    assert!(
+        matches!(
+            verdict,
+            Some(Err(RoundTripError::UnexpectedPartKind { .. }))
+        ),
+        "{verdict:?}"
+    );
+    // Resource refusal is the same `Err` path (LimitExceeded) and is never equivalence.
+    let m = model.lock().unwrap();
+    let tight = RoundTripLimits {
+        max_steps: 2,
+        ..Default::default()
+    };
+    assert_eq!(
+        compare_roundtrip(m.diagnostic_document(), &reopen(&output), &tight),
+        Err(RoundTripError::LimitExceeded)
+    );
+}
+
+/// Measurement only (`--ignored --nocapture`): structural `==` vs semantic comparison, with the
+/// DOCX reopen cost for scale. Debug build; numbers are indicative, not limits.
+#[test]
+#[ignore]
+fn measure_semantic_vs_structural_comparison() {
+    use std::time::Instant;
+    let large = || {
+        let mut s = basic_session();
+        let text: Vec<String> = (0..2000)
+            .map(|i| format!("Paragraph {i} with some ordinary words in it"))
+            .collect();
+        s.run("document.setText", &json!({"text": text.join("\n")}))
+            .unwrap();
+        s.run("insert.header", &json!({"text": "preserved header"}))
+            .unwrap();
+        s.run("insert.footer", &json!({"text": "preserved footer"}))
+            .unwrap();
+        s.run("insert.closeHeader", &json!({})).unwrap();
+        s
+    };
+    let cases: Vec<(&str, Session, usize)> = vec![
+        ("basic", basic_session(), 1),
+        (
+            "header+footer",
+            rich_fixture(true, true, false, false, false),
+            1,
+        ),
+        (
+            "header+footer+images",
+            rich_fixture(true, true, true, true, true),
+            1,
+        ),
+        (
+            "rich, two comments",
+            rich_fixture(true, true, true, true, false),
+            2,
+        ),
+        ("2000 paragraphs, 40 comments", large(), 40),
+    ];
+    for (name, mut s, comments) in cases {
+        for i in 0..comments {
+            let pos = |off| {
+                Pos::new(
+                    StoryRef::Body,
+                    wordcraft_engine::doc::Path(vec![i as u32]),
+                    off,
+                )
+            };
+            s.run("select.range", &json!({"anchor": pos(0), "focus": pos(3)}))
+                .unwrap();
+            s.run("review.newComment", &json!({"text": format!("c{i}")}))
+                .unwrap();
+        }
+        let bytes = io::save_bytes("m.docx", &s.doc).unwrap();
+        let t = Instant::now();
+        let reopened = reopen(&bytes);
+        let parse = t.elapsed();
+        let (mut structural, mut semantic) = (std::time::Duration::ZERO, std::time::Duration::ZERO);
+        let mut equal = (false, false);
+        for _ in 0..20 {
+            let t = Instant::now();
+            equal.0 = s.doc == reopened;
+            structural += t.elapsed();
+            let t = Instant::now();
+            equal.1 =
+                wordcraft_engine::doc::roundtrip::roundtrip_equivalent(&s.doc, &reopened).unwrap();
+            semantic += t.elapsed();
+        }
+        assert!(equal.1);
+        eprintln!(
+            "MEASURE {name}: bytes={} blocks={} parts={} comments={} reopen_ms={:.2} structural_eq={} structural_ms={:.3} semantic_ms={:.3}",
+            bytes.len(),
+            s.doc.body.len(),
+            s.doc.parts.len(),
+            s.doc.comments.len(),
+            parse.as_secs_f64() * 1e3,
+            equal.0,
+            structural.as_secs_f64() * 1e3 / 20.0,
+            semantic.as_secs_f64() * 1e3 / 20.0
+        );
+    }
+}

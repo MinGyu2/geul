@@ -10485,8 +10485,10 @@ fn comment_relationship_cost_measurement() {
     }
 }
 
-/// Real pinned WordCraft output: package preservation accepts independent header
-/// and image relations, but its model reopen still fails. Keep that separate gate.
+/// Real WordCraft output: package preservation accepts independent header and image
+/// relations. Before the semantic round-trip integration the model reopen failed here
+/// (derived equality saw the header/footer/comment Part ID permutation, ReopenMismatch);
+/// that structural difference is still asserted, and the production gate now publishes.
 #[test]
 fn comment_real_rich_export_preservation_and_reopen_guard() {
     use wordcraft_engine::{io, Session};
@@ -10526,17 +10528,15 @@ fn comment_real_rich_export_preservation_and_reopen_guard() {
         .unwrap();
     let output = model.lock().unwrap().export().unwrap();
     let reopened_equal = model.lock().unwrap().same_as(&output);
+    let structural = *model.lock().unwrap().diagnostic_document()
+        == io::open_bytes("fixture.docx", &output).unwrap();
     // Isolate the comparator from the independent engine model gate.
     assert!(service::check_saved(Format::Docx, &original, &output, None, true).is_safe());
-    assert!(
-        !reopened_equal,
-        "pinned-engine limitation changed: review this compatibility evidence"
-    );
-    assert!(
-        matches!(doc.save(), Err(DocumentError::UnsafeSave { preservation }) if preservation.findings.iter().any(|f| f.code == FindingCode::ReopenMismatch))
-    );
-    assert_eq!(Sha256::digest(doc.bytes()), Sha256::digest(&original));
-    assert!(doc.info.dirty);
+    assert!(!structural, "the Part ID permutation is still present");
+    assert!(reopened_equal, "semantic round-trip equivalence accepts it");
+    let saved = doc.save().unwrap();
+    assert!(!saved.session.dirty);
+    assert_eq!(Sha256::digest(doc.bytes()), Sha256::digest(&output));
     assert!(doc.leftovers().is_empty());
 }
 
@@ -10828,3 +10828,5 @@ fn strict_reference_real_wordcraft_export_probe() {
 
 #[path = "docx_diagnostics.rs"]
 mod docx_diagnostics;
+#[path = "docx_semantic_acceptance.rs"]
+mod docx_semantic_acceptance;
