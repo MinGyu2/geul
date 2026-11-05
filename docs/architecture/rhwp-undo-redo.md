@@ -1555,3 +1555,7 @@ ref: 입력 시각·판·그림 여부, ref가 가리키는 표본만 기록). �
 공식 D4의 50 ms group-start·1500 ms Undo/Redo·3RAF 끝점은 그대로이며 D4 FAIL을 유지한다.
 T010 INCOMPLETE, RHWP Undo/Redo NO-GO, T011 NOT STARTED. 현재 실행의 상세 신원·회귀·픽셀 범위와 제한은
 비공개 `geul-tests/reports/t010-full-page-product-20261101/`에 기록한다.
+
+### 2026-11-06 게시 정의와 과거 snapshot (B2)
+
+게시 이전 snapshot의 글자 모양 표가 짧거나 추가 ID가 충돌하더라도, 최초 정의의 전체 메타데이터가 같고 모든 참조 이동을 증명할 수 있으면 복원된 live 모델을 실제 게시 prefix에 조정한다. history snapshot과 논리적인 Undo 상태는 그대로다. 새 `char-shape-publication.patch`의 불변 prefix는 문서 clone이 아니며 세션/저장 수명에 따라 해제된다. 고정 참조 이동·원본 metadata 불일치·잘못된 참조·snapshot 밖 버퍼의 추가 ID는 보수적으로 거부한다. 상세 저장 계약·실제 HWP/HWPX A–H 및 서비스 근거는 [저장 보존 B2](save-preservation.md#2026-11-06-게시-이전-undo-snapshot의-안전한-저장-b2)를 따른다. 제품 history·서식·영속 수식 관문과 T010 전체 판정은 바꾸지 않는다.

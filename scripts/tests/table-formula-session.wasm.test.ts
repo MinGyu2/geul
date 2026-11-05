@@ -251,7 +251,7 @@ describe.runIf(enabled)("pending publication transitions", () => {
       }
       if (operation === "stale-load" || operation === "stale-session") {
         pending.request.reply({ ok: false, error: operation === "stale-load"
-          ? { code: "StaleLoad", sessionId: 1, generation: 1 } : { code: "StaleSession", sessionId: 1 } });
+          ? { code: "StaleLoad", sessionId: 1, loadGeneration: 1 } : { code: "StaleSession", sessionId: 1 } });
         expect((await pending.saving).ok).toBe(false);
         await metric("hangul.charSpacing", 10);
         expect(doc.charShapeCount!()).toBe(count); // failed publication did not become a permanent prefix
@@ -275,6 +275,102 @@ describe.runIf(enabled)("pending publication transitions", () => {
       if (operation !== "undo" && operation !== "redo") {
         await save(); expect(editor.hasUnpreservedChanges).toBe(false);
       }
+    } finally { editor.dispose(); }
+  });
+});
+
+function recordHistorySaves(format: "hwp" | "hwpx", scenario: string, results: Awaited<ReturnType<Awaited<ReturnType<typeof open>>["save"]>>[]) {
+  const folder = process.env.GEUL_HISTORY_SAVE_OUT;
+  if (!folder) return;
+  mkdirSync(folder, { recursive: true });
+  const cases = results.map((result, i) => {
+    const stem = join(folder, `${format}-${scenario}-${i}`);
+    for (const [suffix, value] of [["original", result.original], ["unedited", result.unedited], ["output", result.output]] as const)
+      writeFileSync(stem + "." + suffix, value);
+    writeFileSync(stem + ".unedited.loss.json", JSON.stringify(result.uneditedLoss));
+    writeFileSync(stem + ".output.loss.json", JSON.stringify(result.outputLoss));
+    return { name: `${format}-${scenario}-${i}`, fmt: format, mode: "save", original: stem + ".original",
+      unedited: stem + ".unedited", uneditedLoss: stem + ".unedited.loss.json", output: stem + ".output", outputLoss: stem + ".output.loss.json", reopen: result.reopen };
+  });
+  writeFileSync(join(folder, `${format}-${scenario}-cases.json`), JSON.stringify(cases));
+}
+
+describe.runIf(enabled)("pre-publication history", () => {
+  it.each(["hwp", "hwpx"] as const)("%s restores the published definitions while preserving Undo's formatting", async format => {
+    const { editor, doc, settle, save } = await open(format);
+    const cell = { ...editor.caret.cell!, cell: 0 };
+    const select = () => { editor.anchor = { ...at, cell, offset: 0 }; editor.caret = { ...at, cell, offset: 1 }; };
+    try {
+      select(); expect(editor.execute("hangul.charWidth", { command: "hangul.charWidth", percent: 150 }).accepted).toBe(true); await settle();
+      const count = doc.charShapeCount!();
+      const first = await save();
+      expect(editor.undo()).toBe(true); await settle();
+      const second = await save();
+      recordHistorySaves(format, "A", [first, second]);
+      expect(doc.charShapeCount!()).toBeGreaterThanOrEqual(count);
+      expect(JSON.parse(doc.getCellCharPropertiesAt!(0, 0, cell.control, 0, 0, 0)).ratios).toEqual(Array(7).fill(100));
+      expect(editor.snapshot().history).toEqual({ undo: false, redo: true });
+    } finally { editor.dispose(); }
+  });
+});
+
+describe.runIf(enabled)("publication-aware history branches", () => {
+  for (const format of ["hwp", "hwpx"] as const) it.each(["B", "C", "D", "E", "F", "G", "H", "in-flight-branch"] as const)(`${format}: %s`, async scenario => {
+    const { editor, doc, settle, save, beginSave } = await open(format);
+    const cell = { ...editor.caret.cell!, cell: 0 };
+    const select = () => { editor.anchor = { ...at, cell, offset: 0 }; editor.caret = { ...at, cell, offset: 1 }; };
+    const metric = async (command: "hangul.charWidth" | "hangul.charSpacing", percent: number) => {
+      select(); expect(editor.execute(command, { command, percent }).accepted).toBe(true); await settle();
+    };
+    const travel = async (direction: "undo" | "redo") => { expect(editor[direction]()).toBe(true); await settle(); };
+    const results: Awaited<ReturnType<typeof save>>[] = [];
+    const publish = async (width: number, spacing: number) => {
+      const result = await save(); results.push(result);
+      const reopened = new engine.HwpDocument(result.output);
+      try {
+        const properties = JSON.parse(reopened.getCellCharPropertiesAt(0, 0, cell.control, 0, 0, 0));
+        expect(properties.ratios).toEqual(Array(7).fill(width));
+        expect(properties.spacings).toEqual(Array(7).fill(spacing));
+        expect(reopened.getTextFileText()).toBe((doc as RhwpDocument & { getTextFileText(): string }).getTextFileText());
+      } finally { reopened.free(); }
+      expect(editor.hasUnpreservedChanges).toBe(false);
+      expect(editor.hasUncertainChanges).toBe(false);
+    };
+    try {
+      await metric("hangul.charWidth", 150);
+      if (scenario === "B" || scenario === "H") await metric("hangul.charSpacing", 10);
+      if (scenario === "in-flight-branch") {
+        const pending = await beginSave();
+        await travel("undo"); await metric("hangul.charWidth", 180);
+        results.push(await pending.finish());
+        expect(editor.hasUnpreservedChanges).toBe(true);
+        await publish(180, 0);
+      } else {
+        await publish(150, scenario === "B" || scenario === "H" ? 10 : 0);
+        if (scenario === "G") { await metric("hangul.charWidth", 160); await publish(160, 0); }
+        await travel("undo");
+        if (scenario === "C") await travel("redo");
+        if (scenario === "D") await metric("hangul.charWidth", 180);
+        if (scenario === "E") {
+          editor.caret = editor.anchor = { ...at, cell, offset: 0 };
+          expect(editor.typeText("가")).toBe(true); await settle();
+        }
+        if (scenario === "F") {
+          const pending = await beginSave(); await pending.finish(true, true);
+          expect(editor.hasUnpreservedChanges).toBe(true);
+          await travel("redo");
+        }
+        const width = scenario === "D" ? 180 : ["B", "C", "F", "G", "H"].includes(scenario) ? 150 : 100;
+        await publish(width, 0);
+        if (scenario === "G" || scenario === "H") {
+          await travel("undo"); await publish(100, 0);
+          await travel("redo"); await publish(150, 0);
+        }
+      }
+      // A new branch after any publication still preserves its intended state and serializes safely.
+      await metric("hangul.charWidth", 190); await publish(190, 0);
+      expect(editor.snapshot().history?.redo).toBe(false);
+      recordHistorySaves(format, scenario, results);
     } finally { editor.dispose(); }
   });
 });

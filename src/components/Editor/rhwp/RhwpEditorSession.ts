@@ -884,6 +884,8 @@ export class RhwpEditorSession implements DocumentCommandTarget {
     let checkpoint;
     try {
       checkpoint = direction === "undo" ? history.undo(() => captureCheckpoint(text, this.caret, this.anchor)) : history.redo();
+      try { text.reconcilePublishedCharShapes(); }
+      catch { throw new HistoryFailure("restore-failed", true); }
     } catch (error) {
       if (error instanceof HistoryFailure && error.uncertain) {
         // 엔진이 문서를 바꿨는지 알 수 없다(찍기·복원 trap): 되돌림을 보장하지 않고 편집을 멈춘다.
@@ -1331,6 +1333,7 @@ export class RhwpEditorSession implements DocumentCommandTarget {
     let reopened: RhwpDocument | null = null;
     try {
       let bytes: Uint8Array;
+      this.text?.prepareExport();
       const exported = format === "hwp" ? doc.exportHwpWithReport() : doc.exportHwpxWithReport();
       try {
         const raw = exported.contentLoss();
@@ -1675,7 +1678,8 @@ export class RhwpEditorSession implements DocumentCommandTarget {
       this.setSave({ kind: "saving" });
       const exported = this.exportAndCompare(format);
       if (!exported?.bytes) return fail({ code: "SaveFailure", stage: "export" });
-      releaseShapes = this.text?.protectPublishingCharShapes(exported.charShapeCount);
+      try { releaseShapes = this.text?.protectPublishingCharShapes(exported.charShapeCount); }
+      catch { return fail({ code: "SaveFailure", stage: "export" }); }
       const result = await this.backend.save(this.sessionId, generation, revision, exported.bytes, exported.contentLoss, exported.reopen, destination);
       if (!this.owns(epoch)) return result;
       if (!result.ok) return fail(result.error);
@@ -1747,7 +1751,7 @@ export class RhwpEditorSession implements DocumentCommandTarget {
   }
 
   private releaseDocument() {
-    const doc = this.doc, history = this.history;
+    const doc = this.doc, history = this.history, text = this.text;
     // 먼저 소유 참조를 끊는다. 해제 예외 뒤에도 이전 문서를 편집하거나 재해제하지 않는다.
     this.doc = null;
     this.history = null;
@@ -1758,7 +1762,7 @@ export class RhwpEditorSession implements DocumentCommandTarget {
     this.provisional = null;
     this.awaiting = false;
     const errors: unknown[] = [];
-    for (const release of [() => this.releaseRendering(), () => history?.release(false), () => doc?.free()]) {
+    for (const release of [() => this.releaseRendering(), () => history?.release(false), () => text?.release(), () => doc?.free()]) {
       try { release(); } catch (error) { errors.push(error); }
     }
     if (errors.length) {

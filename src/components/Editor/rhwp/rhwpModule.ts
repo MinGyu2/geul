@@ -16,6 +16,9 @@ export interface RhwpExport {
   free(): void;
 }
 
+/** Immutable engine-owned shape definitions captured from one session, not a document snapshot. */
+export interface CharShapePrefix { free(): void }
+
 export interface RhwpDocument {
   free(): void;
   pageCount(): number;
@@ -70,6 +73,8 @@ export interface RhwpDocument {
    */
   charShapeCount?(): number;
   compactAppendedCharShapes?(baseline: number): string;
+  captureCharShapePrefix?(): CharShapePrefix;
+  reconcileCharShapePrefix?(prefix: CharShapePrefix, originalCount: number): string;
   validateTableFormulaField?(section: number, paragraph: number, control: number, row: number, col: number, formula: string): string;
   insertTableFormulaField?(section: number, paragraph: number, control: number, row: number, col: number, formula: string): string;
   getCellCharPropertiesAt?(section: number, parentParagraph: number, control: number, cell: number, cellParagraph: number, offset: number): string;

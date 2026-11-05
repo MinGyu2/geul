@@ -1,0 +1,332 @@
+diff --git a/src/document_core/commands/char_shape_compact.rs b/src/document_core/commands/char_shape_compact.rs
+--- a/src/document_core/commands/char_shape_compact.rs
++++ b/src/document_core/commands/char_shape_compact.rs
+@@ -333,6 +333,126 @@
+         })
+     }
+-
++
++    /// Clone only the shape table, never the document or history snapshots.
++    pub fn capture_char_shapes_native(&self) -> Vec<crate::model::style::CharShape> {
++        self.document.doc_info.char_shapes.clone()
++    }
++
++    /// Rebase a restored live model onto definitions actually exported by this session.
++    /// Original definitions keep their exact identity, including opaque source data.
++    /// Only known mutable appended references may move; snapshots are never modified.
++    pub fn reconcile_char_shapes_native(
++        &mut self,
++        prefix: &[crate::model::style::CharShape],
++        original: usize,
++    ) -> Result<String, HwpError> {
++        let fail = || HwpError::RenderError("incompatible published character shapes".into());
++        let current = &self.document.doc_info.char_shapes;
++        if original > current.len() || original > prefix.len() {
++            return Err(fail());
++        }
++        // PartialEq deliberately ignores raw/source fields, so it is insufficient here.
++        let keys = |shapes: &[crate::model::style::CharShape]| {
++            shapes
++                .iter()
++                .map(serde_json::to_vec)
++                .collect::<Result<Vec<_>, _>>()
++                .map_err(|_| fail())
++        };
++        let old_keys = keys(current)?;
++        let mut new_keys = keys(prefix)?;
++        if old_keys[..original] != new_keys[..original] {
++            return Err(fail());
++        }
++        // These buffers survive Document snapshot restore. Their appended IDs belong
++        // to a different table generation, so a mapping derived from the restored
++        // document cannot prove their meaning. Original IDs are stable in both.
++        let mut unowned_buffer_ref = false;
++        let mut check_buffer = |id: &mut u32, _: Site| {
++            unowned_buffer_ref |= (*id as usize) >= original;
++        };
++        if let Some(clipboard) = self.clipboard.as_mut() {
++            visit_paragraphs(&mut clipboard.paragraphs, &mut check_buffer);
++        }
++        if let Some(transpose) = self.table_transpose_clipboard.as_mut() {
++            for row in &mut transpose.data.cells {
++                for cell in row {
++                    visit_paragraphs(cell, &mut check_buffer);
++                }
++            }
++        }
++        if unowned_buffer_ref {
++            return Err(fail());
++        }
++        let mut shapes = prefix.to_vec();
++        let mut map: Vec<u32> = (0..original as u32).collect();
++        for (old, key) in old_keys.iter().enumerate().skip(original) {
++            let next = if new_keys.get(old) == Some(key) {
++                old
++            } else if let Some(found) = new_keys.iter().position(|candidate| candidate == key) {
++                found
++            } else {
++                let next = shapes.len();
++                shapes.push(current[old].clone());
++                new_keys.push(key.clone());
++                next
++            };
++            map.push(u32::try_from(next).map_err(|_| fail())?);
++        }
++        // Prove the complete mapping before changing the live table or any reference.
++        let mut invalid = false;
++        self.visit_char_shape_refs(&mut |id, site| {
++            if *id == u32::MAX && site == Site::Fixed {
++                return;
++            }
++            match map.get(*id as usize) {
++                Some(next) => invalid |= site == Site::Fixed && next != id,
++                None => invalid = true,
++            }
++        });
++        if invalid {
++            return Err(fail());
++        }
++        if old_keys == new_keys {
++            return Ok("{\"ok\":true}".into());
++        }
++        for section in &mut self.document.sections {
++            let mut changed = false;
++            let mut remap = |id: &mut u32, site: Site| {
++                if site == Site::Remappable && map[*id as usize] != *id {
++                    *id = map[*id as usize];
++                    changed = true;
++                }
++            };
++            visit_paragraphs(&mut section.paragraphs, &mut remap);
++            for master in &mut section.section_def.master_pages {
++                visit_paragraphs(&mut master.paragraphs, &mut remap);
++            }
++            if changed {
++                section.raw_stream = None;
++            }
++        }
++        let mut remap = |id: &mut u32, site: Site| {
++            if site == Site::Remappable {
++                *id = map[*id as usize];
++            }
++        };
++        if let Some(clipboard) = self.clipboard.as_mut() {
++            visit_paragraphs(&mut clipboard.paragraphs, &mut remap);
++        }
++        if let Some(transpose) = self.table_transpose_clipboard.as_mut() {
++            for row in &mut transpose.data.cells {
++                for cell in row {
++                    visit_paragraphs(cell, &mut remap);
++                }
++            }
++        }
++        self.document.doc_info.char_shapes = shapes;
++        self.document.doc_info.raw_stream_dirty = true;
++        self.rebuild_derived_state();
++        Ok("{\"ok\":true}".into())
++    }
++
+     /// 지금 글자 모양 수(호출자가 불러온 직후의 기준 수를 기록할 때 쓴다).
+     pub fn char_shape_count_native(&self) -> usize {
+         self.document.doc_info.char_shapes.len()
+@@ -342,3 +462,155 @@
+ #[cfg(test)]
+ #[path = "char_shape_compact_tests.rs"]
+ mod tests;
++
++#[cfg(test)]
++mod publication_tests {
++    use super::*;
++    use crate::model::{paragraph::CharShapeRef, style::CharShape};
++
++    fn core() -> DocumentCore {
++        let mut core = DocumentCore::new_empty();
++        core.create_blank_document_native().unwrap();
++        core.document.doc_info.char_shapes = vec![CharShape::default()];
++        for style in &mut core.document.doc_info.styles {
++            style.char_shape_id = 0;
++        }
++        for numbering in &mut core.document.doc_info.numberings {
++            for head in &mut numbering.heads {
++                head.char_shape_id = 0;
++            }
++        }
++        for bullet in &mut core.document.doc_info.bullets {
++            bullet.char_shape_id = 0;
++        }
++        core.visit_char_shape_refs(&mut |id, site| {
++            if site == Site::Remappable {
++                *id = 0;
++            }
++        });
++        core.document.sections[0].paragraphs[0].char_shapes = vec![CharShapeRef {
++            start_pos: 0,
++            char_shape_id: 0,
++        }];
++        core
++    }
++    fn exact(core: &DocumentCore) -> String {
++        format!("{:?}", core.document)
++    }
++
++    #[test]
++    fn geul_publication_restores_real_prefix_without_mutating_snapshot() {
++        let mut core = core();
++        let snapshot = core.save_snapshot_native();
++        let mut shape = CharShape::default();
++        shape.ratios = [150; 7];
++        core.document.doc_info.char_shapes.push(shape);
++        let prefix = core.capture_char_shapes_native();
++        core.restore_snapshot_native(snapshot).unwrap();
++        core.reconcile_char_shapes_native(&prefix, 1).unwrap();
++        assert_eq!(core.char_shape_count_native(), 2);
++        assert_eq!(
++            core.document.sections[0].paragraphs[0].char_shapes[0].char_shape_id,
++            0
++        );
++        assert_eq!(core.snapshot_store[0].1.doc_info.char_shapes.len(), 1);
++        let before = exact(&core);
++        core.reconcile_char_shapes_native(&prefix, 1).unwrap();
++        assert_eq!(exact(&core), before);
++    }
++
++    #[test]
++    fn geul_publication_remaps_colliding_appended_definition_exactly() {
++        let mut core = core();
++        let mut published = core.capture_char_shapes_native();
++        let mut shape = CharShape::default();
++        shape.ratios = [150; 7];
++        published.push(shape.clone());
++        shape.spacings = [10; 7];
++        core.document.doc_info.char_shapes.push(shape.clone());
++        core.document.sections[0].paragraphs[0].char_shapes[0].char_shape_id = 1;
++        core.reconcile_char_shapes_native(&published, 1).unwrap();
++        assert_eq!(
++            core.document.sections[0].paragraphs[0].char_shapes[0].char_shape_id,
++            2
++        );
++        assert_eq!(
++            serde_json::to_value(&core.document.doc_info.char_shapes[2]).unwrap(),
++            serde_json::to_value(shape).unwrap()
++        );
++        assert_eq!(
++            serde_json::to_value(&core.document.doc_info.char_shapes[..2]).unwrap(),
++            serde_json::to_value(published).unwrap()
++        );
++    }
++
++    #[test]
++    fn geul_publication_rejects_original_source_metadata_change_before_mutation() {
++        let mut core = core();
++        let prefix = core.capture_char_shapes_native();
++        core.document.doc_info.char_shapes[0].raw_data = Some(vec![1]);
++        let before = exact(&core);
++        assert!(core.reconcile_char_shapes_native(&prefix, 1).is_err());
++        assert_eq!(exact(&core), before);
++        assert!(core.reconcile_char_shapes_native(&[], 1).is_err());
++        assert_eq!(exact(&core), before);
++    }
++
++    #[test]
++    fn geul_publication_rejects_dangling_and_fixed_remaps_before_mutation() {
++        let mut core = core();
++        let prefix = core.capture_char_shapes_native();
++        core.document.sections[0].paragraphs[0].char_shapes[0].char_shape_id = u32::MAX;
++        let before = exact(&core);
++        assert!(core.reconcile_char_shapes_native(&prefix, 1).is_err());
++        assert_eq!(exact(&core), before);
++        core.document.sections[0].paragraphs[0].char_shapes[0].char_shape_id = 0;
++        let mut published = prefix;
++        let mut shape = CharShape::default();
++        shape.ratios = [150; 7];
++        published.push(shape.clone());
++        shape.spacings = [10; 7];
++        core.document.doc_info.char_shapes.push(shape);
++        core.document.doc_info.styles[0].char_shape_id = 1;
++        let before = exact(&core);
++        assert!(core.reconcile_char_shapes_native(&published, 1).is_err());
++        assert_eq!(exact(&core), before);
++    }
++}
++
++#[cfg(test)]
++mod publication_buffer_tests {
++    use super::*;
++    #[test]
++    fn geul_publication_refuses_unsnapshotted_appended_clipboard_ids() {
++        let mut core = DocumentCore::new_empty();
++        core.create_blank_document_native().unwrap();
++        let original = core.char_shape_count_native();
++        let mut prefix = core.capture_char_shapes_native();
++        let mut shape = prefix[0].clone();
++        shape.raw_data = None;
++        shape.ratios = [150; 7];
++        prefix.push(shape.clone());
++        core.clipboard = Some(crate::document_core::ClipboardData {
++            paragraphs: core.document.sections[0].paragraphs.clone(),
++            plain_text: String::new(),
++            copied_table_text_reflowed: false,
++        });
++        // Original-only clipboard references remain valid across prefix restoration.
++        core.reconcile_char_shapes_native(&prefix, original)
++            .unwrap();
++        shape.ratios = [180; 7];
++        core.document.doc_info.char_shapes[original] = shape;
++        core.clipboard.as_mut().unwrap().paragraphs[0].char_shapes[0].char_shape_id =
++            original as u32;
++        let before = format!("{:?}", core.document);
++        assert!(core
++            .reconcile_char_shapes_native(&prefix, original)
++            .is_err());
++        assert_eq!(format!("{:?}", core.document), before);
++        assert_eq!(
++            core.clipboard.as_ref().unwrap().paragraphs[0].char_shapes[0].char_shape_id,
++            original as u32
++        );
++    }
++}
+diff --git a/src/wasm_api.rs b/src/wasm_api.rs
+--- a/src/wasm_api.rs
++++ b/src/wasm_api.rs
+@@ -374,6 +374,12 @@
+ #[wasm_bindgen]
+ pub struct HwpDocument {
+     core: DocumentCore,
++}
++
++/// [geul] Immutable, bounded publication definitions; not a document snapshot.
++#[wasm_bindgen]
++pub struct CharShapePrefix {
++    shapes: Vec<crate::model::style::CharShape>,
+ }
+-
++
+ /// 한 번의 문서 내보내기 결과.
+@@ -7068,6 +7074,25 @@
+     }
+-
++
+     // ─── Undo/Redo 스냅샷 API ──────────────────────────
++
++    /// [geul] Capture definitions before yielding to a publisher.
++    #[wasm_bindgen(js_name = captureCharShapePrefix)]
++    pub fn capture_char_shape_prefix(&self) -> CharShapePrefix {
++        CharShapePrefix {
++            shapes: self.capture_char_shapes_native(),
++        }
++    }
++
++    /// [geul] Restore publication identity after history travel (caller opt-in).
++    #[wasm_bindgen(js_name = reconcileCharShapePrefix)]
++    pub fn reconcile_char_shape_prefix(
++        &mut self,
++        prefix: &CharShapePrefix,
++        original: u32,
++    ) -> Result<String, JsValue> {
++        self.reconcile_char_shapes_native(&prefix.shapes, original as usize)
++            .map_err(|e| e.into())
++    }
+-
++
+     /// [geul] 지금 글자 모양 수. 불러온 직후의 기준 수를 기록해 `compactAppendedCharShapes` 에 넘긴다.
+     #[wasm_bindgen(js_name = charShapeCount)]

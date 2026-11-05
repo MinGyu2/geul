@@ -1305,3 +1305,15 @@ WordCraft `b74830b`)가 판정한다. 실제 게시 두 회차(켜기 + 추적 �
 실제 WASM33 PASS(두 형식: 대기 중 width/spacing/연속 서식/Undo/Redo/수식, 실패, 내구성 미확정, stale 오류, 닫기, 탭 전환), focused 저장·내구성·기록·세션82 PASS, typecheck/lint PASS. 실제 보호 저장 서비스는 HWP/HWPX 각각 같은 파일에 두 회차 총4회 durable 게시와 다음 원본 비교를 통과했다. 실제 게시 파일 재개방에서 본문·7언어 장평160/자간20을 확인했다. 명령·원본/출력·서비스 결과: `target/remaining-work/b1-*`.
 
 B1은 과거 snapshot의 표를 현재 게시 표로 복구하지 않는다. 게시 이전 Undo 뒤 저장은 별도 B2이며 엄격한 거부를 유지한다. 제품 명령 관문은 변경하지 않는다.
+
+## 2026-11-06: 게시 이전 Undo snapshot의 안전한 저장 (B2)
+
+B1 이후에도 `load → 장평150 → save → Undo → save`는 실제 HWP/HWPX 모델의 표가 게시8개에서 과거7개로 돌아가 보존 검사에 걸렸다. 수정 전 출력은 실제 저장 서비스에서 두 형식 모두 `unsafe`로 거부됐으며 원본 바이트가 유지됐다. 단순한 비교 완화로 해결하지 않는다.
+
+14번째 패치 `char-shape-publication.patch`는 문서 전체 대신 엔진 소유의 불변 글자 모양 prefix만 복사한다. 성공한 게시의 실제 정의를 세션이 보관하고, 저장 대기 중에는 그 출력의 정의를 임시로 보관한다. Undo/Redo는 저장된 snapshot을 바꾸지 않고 **복원된 live 모델**만 조정한다. 최초 정의의 ID와 전체 직렬화 메타데이터(raw/presence 포함)는 같아야 한다. 충돌하는 세션 추가 정의는 정확히 같은 정의를 재사용하거나 prefix 뒤에 유지하고, 기존 compaction과 같은 검증된 참조 방문으로 추가 ID만 옮긴다. 저장 직전에는 게시되지 않은 미사용 추가 정의를 정리한다. 이는 과거에 실제 게시한 레코드의 복구이며 임의의 미사용 정의를 만들어 비교를 통과시키는 규칙이 아니다. T009 DocInfo 비교는 그대로다.
+
+원본 정의 불일치·범위 밖 참조·고정 DocInfo 참조의 번호 이동은 모델 변경 전에 거부한다. 문서 snapshot에 포함되지 않는 내부 clipboard/transpose 버퍼의 추가 ID는 소유 표를 증명할 수 없어 거부한다(원본 ID만 가진 버퍼는 허용). 현 geul UI는 이 엔진 내부 버퍼를 사용하지 않는다. 복원 후 조정 실패는 uncertain으로 편집·저장을 중단한다. 이전 API가 없는 세대는 기존 엄격 저장 거부를 유지한다. HWP stale-preview 정책도 유지한다.
+
+최종 Release generation `8087a8415e32e254846a745808083bb2c9c6c0fc85504345f88d825defcf71b7`, patched source `f221f3f36a529d868f47a0feb54c4d552070d835070e989322035ad255427ed4`. native5 PASS(원본 metadata·dangling/fixed·버퍼 안전 거부/무변경, snapshot 불변), 실제 WASM51 PASS(B1 포함, B2 A–H와 저장 대기 중 Undo→새 서식), 기존 WASM37 PASS/1 skip. focused frontend82·typecheck·lint PASS. 실제 저장 서비스는20 chains/66시도에서64 durable 게시와 수정 전2 안전 거부를 확인했다. 각 서비스 호출은 새 registry에서1 revision을 확정하지만 파일은 체인 안에서 같은 경로로 이어 써 다음 원본과 비교한다. 세션 시간선·dirty/Undo/Redo는 deferred backend 실제 WASM 시험에서 따로 검증했다. 최종 게시 파일18개를 실제 WASM으로 재개방해 전체 본문·컨트롤·쪽 수·셀 속성을 의도한 Undo/재편집 상태와 비교했다. 이후 편집·저장도 A 이외 B–H 분기에서 통과했다.
+
+근거: `target/remaining-work/b2-{native-reviewed,build-reviewed,wasm-reviewed,regressions-reviewed}.log`, `b2-service/matrix-summary.json`, `b2-service-reviewed/`, `b2-reopen-reviewed.json`. canonical build 입력에 없는 기존 시험 fixture의 최초 컴파일 실패는 native 시험 결과와 구별했다. pin의 읽기 전용 fixture 링크를 시험 중에만 사용하고 제거했다. generation cap은 유지하고 실행 소비자가 없는 비활성629d…/853a… 세대는 기존 `target/rhwp-preserved-generations/`로 해시를 보존해 옮겼다. 실패/중간 소스·generation·로그도 보존했다. Word/Hancom 외부 수용과 제품 명령 활성화는 별도 관문이다.

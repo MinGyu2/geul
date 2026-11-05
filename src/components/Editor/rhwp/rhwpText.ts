@@ -4,7 +4,7 @@
 // 다루는 호출(커서 사각형·삽입·삭제·문단 나누기·줄 정보)은 모두 여기서 본문용/셀용 API를 고르므로, 렌더·hit test·
 // 편집이 서로 다른 좌표를 쓰지 않는다. 글자 오프셋은 rhwp의 글자(char, 유니코드 스칼라) 단위다.
 // 엔진이 돌려주는 JSON은 신뢰 경계 안이지만 모양을 확인하고, 맞지 않으면 null로 다룬다.
-import type { RhwpDocument } from "./rhwpModule";
+import type { CharShapePrefix, RhwpDocument } from "./rhwpModule";
 
 export interface CellRef {
   parentParagraph: number;
@@ -137,21 +137,62 @@ export class RhwpText {
   /** Loaded definitions and definitions already published must keep their IDs. */
   private charShapeBaseline: number | null;
   private publishingCharShapes: number | null = null;
+  private readonly originalCharShapeCount: number | null;
+  private publishedPrefix: CharShapePrefix | null = null;
+  private publishingPrefix: CharShapePrefix | null = null;
 
   constructor(private readonly doc: RhwpDocument) {
     const count = doc.charShapeCount?.();
     this.charShapeBaseline = Number.isSafeInteger(count) && (count as number) >= 0 ? (count as number) : null;
+    this.originalCharShapeCount = this.charShapeBaseline;
+    if (this.charShapeBaseline !== null && doc.reconcileCharShapePrefix && doc.captureCharShapePrefix)
+      this.publishedPrefix = doc.captureCharShapePrefix();
   }
 
   /** Protect the exported revision before yielding to the backend. A failed save releases only this lease. */
   protectPublishingCharShapes(count: number | null): () => void {
+    // Export and capture are synchronous. A mismatched table is never promoted.
+    const prefix = this.publishedPrefix && this.doc.charShapeCount?.() === count
+      ? this.doc.captureCharShapePrefix!() : null;
+    this.publishingPrefix = prefix;
     this.publishingCharShapes = isIndex(count) ? count : null;
-    return () => { this.publishingCharShapes = null; };
+    return () => {
+      this.publishingCharShapes = null;
+      if (this.publishingPrefix === prefix) { this.publishingPrefix = null; prefix?.free(); }
+    };
   }
 
   /** Pin a published revision even if later local edits are still dirty (including non-durable replacement). */
   markPublishedCharShapes(count: number | null): void {
-    if (this.charShapeBaseline !== null && isIndex(count) && count >= this.charShapeBaseline) this.charShapeBaseline = count;
+    if (this.charShapeBaseline !== null && isIndex(count) && count >= this.charShapeBaseline) {
+      this.charShapeBaseline = count;
+      if (this.publishingPrefix) {
+        const previous = this.publishedPrefix;
+        this.publishedPrefix = this.publishingPrefix;
+        this.publishingPrefix = null;
+        previous?.free();
+      }
+    }
+  }
+
+  /** Reconcile only the restored live model. History keeps the original immutable snapshots. */
+  reconcilePublishedCharShapes(): void {
+    const prefix = this.publishingPrefix ?? this.publishedPrefix;
+    if (!prefix || this.originalCharShapeCount === null) return; // older engines retain strict safe refusal
+    const result = json(this.doc.reconcileCharShapePrefix!(prefix, this.originalCharShapeCount));
+    if (!isRecord(result) || Object.keys(result).join(",") !== "ok" || result.ok !== true)
+      throw new Error("char shape reconciliation response invalid");
+  }
+
+  /** Remove unused, unpublished definitions left by a failed in-flight save or historical branch. */
+  prepareExport(): void { this.compactCharShapes(); }
+
+  release(): void {
+    const prefixes = [this.publishingPrefix, this.publishedPrefix];
+    this.publishingPrefix = this.publishedPrefix = null;
+    const errors: unknown[] = [];
+    for (const prefix of prefixes) { try { prefix?.free(); } catch (error) { errors.push(error); } }
+    if (errors.length) throw new AggregateError(errors, "char shape prefix release failed");
   }
 
   paragraphCount(at: DocPosition): number {
