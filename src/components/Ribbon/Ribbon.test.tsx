@@ -239,7 +239,9 @@ describe("T011 형식별 리본 탭(앱)", () => {
 
     await user.click(ribbonTabs().getByRole("tab", { name: "참조" }));
     const references = () => screen.getByRole("toolbar", { name: "참조" });
-    expect(within(references()).getByRole("button", { name: /목차/ }).title).toContain("아직 연결되지 않은 명령");
+    // 목차(T013 Stage 2): 선택이 남아 있으면 넣기는 커서 필요, 목차가 없으면 갱신은 목차 필요.
+    expect(within(references()).getByRole("button", { name: "목차" }).title).toContain("본문 문단의 커서 필요");
+    expect(within(references()).getByRole("button", { name: /목차 업데이트/ }).title).toContain("본문에 목차 없음");
     // 각주(T013): 선택이 남아 있으면 막히고, 커서만 두면 입력 창 → footnote 연산 하나.
     const footnoteButton = () => within(references()).getByRole("button", { name: /각주/ });
     expect(footnoteButton()).toHaveAttribute("aria-disabled", "true");

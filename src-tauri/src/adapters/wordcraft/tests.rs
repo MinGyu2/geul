@@ -943,6 +943,7 @@ fn 응답_json은_계약의_모양이다() {
             "collapsed",
             "format",
             "formatAccess",
+            "hasToc",
             "history",
             "inTable",
             "pages",
@@ -964,6 +965,7 @@ fn 응답_json은_계약의_모양이다() {
     assert_eq!(value["view"]["formatAccess"], "allowed");
     // 추적 정책은 언제나 불리언으로 직렬화한다(프런트엔드 parseDocxView의 필수 키).
     assert_eq!(value["view"]["trackedReadOnly"], json!(false));
+    assert_eq!(value["view"]["hasToc"], json!(false));
     assert!(value["view"]["caret"]
         .as_object()
         .unwrap()
@@ -2419,6 +2421,8 @@ fn tracked_documents_reject_mutations_but_allow_navigation() {
         DocxOp::Endnote {
             text: "note".into(),
         },
+        DocxOp::Toc {},
+        DocxOp::UpdateToc {},
     ];
     for op in operations {
         let mut m = DocxModel::open(&tracked).unwrap();
@@ -2499,4 +2503,181 @@ fn raw_tracked_ime_replacement_reproduces_revision_mismatch() {
         compare_roundtrip(&session.doc, &reopened, &Default::default()),
         Ok(Equivalence::Different(Difference::Field("revisions")))
     );
+}
+
+// ---- T013 목차(references.toc / references.updateToc → WordCraft 같은 이름) ----
+
+/// 첫 두 문단을 제목 1·제목 2로 한 픽스처(제목 스타일은 geul 연산에 없으므로 엔진 명령으로 만든다).
+fn headed_fixture() -> Vec<u8> {
+    use wordcraft_engine::doc::{Path, Pos, StoryRef};
+    let mut s = wordcraft_engine::Session::new(
+        wordcraft_engine::io::open_bytes("x.docx", &fixture()).unwrap(),
+    );
+    for (i, style) in [(0u32, "Heading 1"), (1, "Heading 2")] {
+        s.run(
+            "caret.set",
+            &json!({"pos": Pos::new(StoryRef::Body, Path(vec![i]), 0)}),
+        )
+        .unwrap();
+        s.run("styles.apply", &json!({"style": style})).unwrap();
+    }
+    wordcraft_engine::io::save_bytes("x.docx", &s.doc).unwrap()
+}
+
+/// 그 문단 처음을 누른다(실제 클릭 연산).
+fn click(m: &mut DocxModel, path: &[u32]) {
+    let c = m.caret_of(&DocxModel::body_pos(path, 0)).unwrap();
+    m.apply(&[pointer(c.page as u32, c.x + 0.5, c.y + c.height / 2.0)]);
+}
+
+/// 목차 제목과 항목 문단의 (스타일, 첫 탭 앞 글자).
+fn toc_entries(m: &DocxModel) -> Vec<(String, String)> {
+    m.diagnostic_document()
+        .body
+        .iter()
+        .filter_map(|b| b.as_para())
+        .filter_map(|p| {
+            let style = p.props.style.clone()?;
+            style.starts_with("TOC").then(|| {
+                let text = p.plain_text();
+                (style, text.split('\t').next().unwrap_or("").to_owned())
+            })
+        })
+        .collect()
+}
+
+#[test]
+fn 목차_연산의_ipc_모양은_계약_안이어야_한다() {
+    assert!(validate(&[DocxOp::Toc {}]));
+    assert!(validate(&[DocxOp::UpdateToc {}]));
+    let parsed: DocxOp = serde_json::from_value(json!({"op": "toc"})).unwrap();
+    assert_eq!(parsed, DocxOp::Toc {});
+    let parsed: DocxOp = serde_json::from_value(json!({"op": "updateToc"})).unwrap();
+    assert_eq!(parsed, DocxOp::UpdateToc {});
+    for bad in [
+        json!({"op": "toc", "title": "x"}),
+        json!({"op": "toc", "levels": 2}),
+        json!({"op": "updateToc", "pages": false}),
+        json!({"op": "references.toc"}),
+        json!({"op": "insertToc"}),
+    ] {
+        assert!(
+            serde_json::from_value::<DocxOp>(bad.clone()).is_err(),
+            "{bad}"
+        );
+    }
+}
+
+#[test]
+fn 목차는_본문_커서에만_넣고_갱신은_목차가_있을_때만_하며_한_단계로_되돌린다() {
+    let mut m = DocxModel::open(&headed_fixture()).unwrap();
+    let before = m.diagnostic_document().clone();
+    assert!(!m.view().has_toc);
+    // 목차가 없으면 갱신은 거부(문서 그대로).
+    let outcome = m.apply(&[DocxOp::UpdateToc {}]);
+    assert_eq!((outcome.rejected.clone(), outcome.changed), (vec![0], 0));
+    // 선택이 있으면 넣기 거부(엔진은 선택을 지움).
+    let mut ops = select_first_two();
+    ops.push(DocxOp::Toc {});
+    let outcome = m.apply(&ops);
+    assert_eq!((outcome.rejected.clone(), outcome.changed), (vec![3], 0));
+    assert_eq!(*m.diagnostic_document(), before);
+    // 표 셀 안의 커서도 거부.
+    let mut cell = DocxModel::open(&headed_fixture()).unwrap();
+    click(&mut cell, &[basic::TABLE_BLOCK, 0, 0, 0]);
+    assert!(cell.view().in_table);
+    assert_eq!(cell.apply(&[DocxOp::Toc {}]).rejected, vec![0]);
+
+    let outcome = m.apply(&[mv(MoveTarget::DocStart, false), DocxOp::Toc {}]);
+    assert_eq!((outcome.rejected.clone(), outcome.changed), (vec![], 1));
+    assert!(m.view().has_toc);
+    assert!(m.view().caret_key.starts_with("body:"));
+    let entries = toc_entries(&m);
+    assert_eq!(entries[0].0, "TOCHeading");
+    assert_eq!(
+        entries[1..],
+        [
+            ("TOC1".to_owned(), basic::PARAGRAPHS[0].to_owned()),
+            ("TOC2".to_owned(), basic::PARAGRAPHS[1].to_owned())
+        ]
+    );
+    // 갱신: 제목 글자를 바꾸면 항목이 따라온다.
+    let last_heading = m
+        .diagnostic_document()
+        .body
+        .iter()
+        .position(|b| {
+            b.as_para()
+                .is_some_and(|p| p.props.style.as_deref() == Some("Heading2"))
+        })
+        .unwrap();
+    click(&mut m, &[last_heading as u32]);
+    m.apply(&[
+        DocxOp::Move {
+            to: MoveTarget::LineStart,
+            extend: false,
+        },
+        insert("새 "),
+    ]);
+    let outcome = m.apply(&[DocxOp::UpdateToc {}]);
+    assert_eq!((outcome.rejected.clone(), outcome.changed), (vec![], 1));
+    assert_eq!(toc_entries(&m)[2].1, format!("새 {}", basic::PARAGRAPHS[1]));
+    let output = m.export().unwrap();
+    assert!(m.same_as(&output));
+    // 되돌리기: 갱신 한 단계, 글자 한 단계, 목차 한 단계.
+    assert_eq!(m.apply(&[DocxOp::Undo {}]).changed, 1);
+    assert_eq!(toc_entries(&m)[2].1, basic::PARAGRAPHS[1]);
+    assert_eq!(m.apply(&[DocxOp::Undo {}]).changed, 1);
+    assert_eq!(m.apply(&[DocxOp::Undo {}]).changed, 1);
+    assert!(!m.view().has_toc);
+    assert_eq!(
+        m.body_text(),
+        before.plain_text(wordcraft_engine::doc::StoryRef::Body)
+    );
+    assert_eq!(m.apply(&[DocxOp::Redo {}]).changed, 1);
+    assert!(m.view().has_toc);
+    let redone = m.export().unwrap();
+    assert!(m.same_as(&redone));
+    // 어댑터 기억은 버린다.
+    let (marks, recent, ..) = m.adapter_state();
+    assert!(marks.is_empty());
+    assert_eq!(recent, None);
+}
+
+#[test]
+fn 읽기_전용_보호에서는_목차를_엔진이_거부한다() {
+    let mut read_only = protected("readOnly", false, false);
+    let outcome = read_only.apply(&[mv(MoveTarget::DocStart, false), DocxOp::Toc {}]);
+    assert_eq!(outcome.rejected, vec![1]);
+    assert!(!read_only.view().has_toc);
+}
+
+#[test]
+fn 목차_저장_출력은_새_문서와_기존_문서_두_회차_모두_다시_열어_같고_보존_검사를_통과한다() {
+    use crate::document::Format;
+    use crate::services::save::service::check_saved;
+    // 새 문서(제목 없음: 빈 목차)와 제목이 있는 기존 문서.
+    for (name, original) in [("plain", fixture()), ("headed", headed_fixture())] {
+        let mut m = DocxModel::open(&original).unwrap();
+        m.apply(&[mv(MoveTarget::DocStart, false), DocxOp::Toc {}]);
+        assert!(m.view().has_toc, "{name}");
+        let first = m.export().unwrap();
+        assert!(m.same_as(&first), "{name}");
+        let verdict = check_saved(Format::Docx, &original, &first, None, true);
+        assert!(verdict.is_safe(), "{name}: {verdict:?}");
+        // 둘째 회차: 저장한 파일을 다시 열어 본문 끝 편집 + 갱신.
+        let mut m = DocxModel::open(&first).unwrap();
+        assert!(m.view().has_toc, "{name}");
+        let entries = toc_entries(&m);
+        m.apply(&[mv(MoveTarget::DocEnd, false), insert(" 끝")]);
+        assert_eq!(
+            m.apply(&[DocxOp::UpdateToc {}]).rejected,
+            Vec::<usize>::new()
+        );
+        assert_eq!(toc_entries(&m), entries, "{name}");
+        let second = m.export().unwrap();
+        assert!(m.same_as(&second), "{name}");
+        let verdict = check_saved(Format::Docx, &first, &second, None, true);
+        assert!(verdict.is_safe(), "{name}: {verdict:?}");
+    }
 }

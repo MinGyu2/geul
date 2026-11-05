@@ -101,7 +101,7 @@ export const RIBBON_TABS: RibbonTabDefinition[] = [
     labelKey: "ribbon.tab.references",
     format: "docx",
     groups: [
-      group("tableOfContents", [cmd("references.toc", "toc", "large")]),
+      group("tableOfContents", [cmd("references.toc", "toc", "large"), cmd("references.updateToc", "tocUpdate")]),
       group("footnotes", [cmd("references.footnote", "footnote", "large"), cmd("references.endnote", "endnote", "large")]),
     ],
   },

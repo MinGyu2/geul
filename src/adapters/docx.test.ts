@@ -13,6 +13,7 @@ const view = {
   format: { bold: false, italic: false, underline: false, strikethrough: false },
   formatAccess: "allowed",
   trackedReadOnly: false,
+  hasToc: false,
 };
 const session = { sessionId: 3, format: "docx", engine: "wordcraft", revision: 2, state: "ready", displayName: "a.docx", dirty: true, sequence: 5, loadGeneration: 1 };
 

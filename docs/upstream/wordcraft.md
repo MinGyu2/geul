@@ -1,7 +1,8 @@
 # WordCraft 코어 검토 (T001)
 
 - 업스트림: https://github.com/storytold/wordcraft
-- 현재 geul 의존성(2026-11-05): 공개 포크 https://github.com/MinGyu2/wordcraft 의 `b39a8fb49c6fefbdd960792f2a4effd0d7660e3c`(브랜치 `geul/semantic-roundtrip-equivalence`; 기반 `v0.7.0` `fc41918` + 의미 왕복 동등성 및 note separator 수정). 익명 HTTPS depth-one SHA fetch 및 새 geul clone의 서브모듈 초기화를 확인했다. 안정 태그 `geul-roundtrip-42e8a67`은 이전 커밋 `42e8a67061d0721df3e2665a958865e61363def6`에 그대로 있다. 아래 T001 검토는 기반 `fc41918`에 대한 것이다.
+- 현재 geul 의존성(2026-11-05 Stage 2): 로컬 커밋 `af80638f65f93e9bea5091f7cf69c6075942d809`(`af80638` "read the writer's entry-less TOC back as the engine field", 부모 `b39a8fb`). **미발행 — 원격 재현 불가.** 바뀐 파일: `crates/docx/src/read/mod.rs`(`empty_toc_range_to_field`), 시험 `crates/docx/tests/toc_ranges.rs`, `crates/engine/tests/toc_roundtrip.rs`. 검증: `cargo test -p wordcraft-doc -p wordcraft-docx -p wordcraft-engine --no-fail-fast` 869 통과 + 기존 실패 1(`file_access`), fmt·clippy `-D warnings` 통과.
+- 이전 geul 의존성(2026-11-05): 공개 포크 https://github.com/MinGyu2/wordcraft 의 `b39a8fb49c6fefbdd960792f2a4effd0d7660e3c`(브랜치 `geul/semantic-roundtrip-equivalence`; 기반 `v0.7.0` `fc41918` + 의미 왕복 동등성 및 note separator 수정). 익명 HTTPS depth-one SHA fetch 및 새 geul clone의 서브모듈 초기화를 확인했다. 안정 태그 `geul-roundtrip-42e8a67`은 이전 커밋 `42e8a67061d0721df3e2665a958865e61363def6`에 그대로 있다. 아래 T001 검토는 기반 `fc41918`에 대한 것이다.
 - 위치: `external/wordcraft/` (Git submodule)
 - 고정 커밋: `fc41918814f62645b6746ed68e71e8c2c2e85d6f` (태그 `v0.7.0`, 2026-10-14 릴리스)
 - 검토일: 2026-10-16. 검토 방법: 고정 커밋의 소스·매니페스트·문서 정적 검토

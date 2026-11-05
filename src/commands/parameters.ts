@@ -7,7 +7,7 @@
 // - 표 계산식: 고정 rhwp `table_calc`(tokenizer·parser·evaluator)는 길이·괄호 깊이·범위 크기에 한도가 없다(재귀 하강 파서,
 //   `A1:ZZZ999999` 범위는 좌표 목록을 다 만든다). 그래서 글자 종류·길이·괄호 깊이를 묶고, 모든 셀 참조가 지금 표 안인지 확인한다.
 //   엔진의 결과 문자열은 계산 값일 뿐 표가 바뀌었다는 근거가 아니다(셀에 쓰기는 하지 않음).
-import type { CommandParameterContext, DocumentCommandArgs, ParameterCommandId } from "./target";
+import type { ActionCommandId, CommandParameterContext, DocumentCommandArgs, ParameterCommandId } from "./target";
 
 export const CHAR_WIDTH_RANGE = { min: 50, max: 200 } as const;
 export const CHAR_SPACING_RANGE = { min: -50, max: 50 } as const;
@@ -30,6 +30,13 @@ export function commentProblem(text: string): "empty" | "tooLong" | "characters"
   // eslint-disable-next-line no-control-regex
   if (/[\u0000-\u001f\u007f-\u009f\ufffc]/.test(text)) return "characters";
   return null;
+}
+
+const ACTION_COMMANDS: ReadonlySet<string> = new Set<ActionCommandId>(["references.toc", "references.updateToc"]);
+
+/** 값 입력 없이 세션 문맥으로만 실행하는 명령(입력 창을 열지 않음). */
+export function isActionCommandId(id: string): id is ActionCommandId {
+  return ACTION_COMMANDS.has(id);
 }
 
 export function isParameterCommandId(id: string): id is ParameterCommandId {

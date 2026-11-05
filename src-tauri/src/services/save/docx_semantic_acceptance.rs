@@ -1750,3 +1750,95 @@ fn separator_wrapper_and_settings_variants_are_classified() {
         }
     }
 }
+
+/// T013 목차: 실제 저장 절차(production `same_as`, 강제 없음) 두 회차. 타입 연산 `toc`로 넣고 게시 → 디스크의 게시 파일로 다시
+/// 열어 본문 편집 + `updateToc` → 둘째 게시 → 다시 열기. 제목 없는 문서(빈 목차)와 제목이 있는 문서.
+#[test]
+fn toc_first_and_second_published_saves() {
+    use wordcraft_engine::doc::{Path, Pos};
+    let headed = {
+        let mut s = basic_session();
+        for (i, style) in [(0u32, "Heading 1"), (1, "Heading 2")] {
+            s.run(
+                "caret.set",
+                &serde_json::json!({"pos": Pos::new(StoryRef::Body, Path(vec![i]), 0)}),
+            )
+            .unwrap();
+            s.run("styles.apply", &serde_json::json!({"style": style}))
+                .unwrap();
+        }
+        io::save_bytes("h.docx", &s.doc).unwrap()
+    };
+    let entries = |d: &Document| -> Vec<String> {
+        d.body
+            .iter()
+            .filter_map(|b| b.as_para())
+            .filter(|p| {
+                p.props
+                    .style
+                    .as_deref()
+                    .is_some_and(|s| s.starts_with("TOC"))
+            })
+            .map(|p| p.plain_text())
+            .collect()
+    };
+    let edit = |doc: &mut Docx, ops: Vec<DocxOp>| {
+        let edited = block_on(docx::edit(
+            &doc.state,
+            doc.info.session_id,
+            doc.info.load_generation,
+            doc.info.revision,
+            ops,
+        ))
+        .unwrap();
+        assert!(edited.rejected.is_empty(), "{:?}", edited.rejected);
+        doc.info = edited.session;
+        edited.view
+    };
+    for (name, original) in [("basic", basic::basic_ko().unwrap()), ("headed", headed)] {
+        let mut doc = open_docx(&original);
+        assert!(doc.preflight().unwrap().preservation.is_safe(), "{name}");
+        let view = edit(
+            &mut doc,
+            vec![
+                DocxOp::Move {
+                    to: MoveTarget::DocStart,
+                    extend: false,
+                },
+                DocxOp::Toc {},
+            ],
+        );
+        assert!(view.has_toc && doc.info.dirty, "{name}");
+        let first = publish_notes(&mut doc);
+        let mut doc = reload(doc);
+        let reopened = reopen(&first);
+        let before = entries(&reopened);
+        assert_eq!(before[0], "Contents", "{name}");
+        if name == "headed" {
+            assert_eq!(before.len(), 3, "{name}: {before:?}");
+            assert!(before[1].starts_with(basic::PARAGRAPHS[0]), "{name}");
+        } else {
+            assert_eq!(before.len(), 1, "{name}: empty TOC keeps only the heading");
+        }
+        // 둘째 회차: 다시 연 게시 파일에서 끝에 글자 + 목차 갱신.
+        let view = edit(
+            &mut doc,
+            vec![
+                DocxOp::Move {
+                    to: MoveTarget::DocEnd,
+                    extend: false,
+                },
+                DocxOp::InsertText {
+                    text: " 끝".into()
+                },
+                DocxOp::UpdateToc {},
+            ],
+        );
+        assert!(view.has_toc);
+        let second = publish_notes(&mut doc);
+        let doc = reload(doc);
+        assert_eq!(entries(&reopen(&second)), before, "{name}");
+        ticket_released(&doc);
+        eprintln!("TOC {name}: two published saves, reloaded from disk");
+    }
+}

@@ -27,6 +27,7 @@ export type DocumentCommandId =
   | "hangul.charWidth" | "hangul.charSpacing" | "hangul.tableFormula"
   | "review.comment"
   | "references.footnote" | "references.endnote"
+  | "references.toc" | "references.updateToc"
   | "file.save";
 
 /** 엔진 하나에서 명령의 지원. */
@@ -91,8 +92,10 @@ const RHWP_FORMAT: EngineSupport =
  *   메모 끝에 덧붙인 출력만 T009가 받는다. rhwp에는 연결하지 않았다.
  * - 각주·미주(T013): WordCraft `references.footnote`·`references.endnote`(고정 DocxOp `footnote`·`endnote`, 글 한 줄). 본문 최상위
  *   문단의 커서(선택 없음)에서만 하고, 실행 뒤 커서는 본문의 표지 뒤로 돌아온다. 저장은 각주·미주 부분을 새로 더하거나(목록·관계·
- *   settings 구분선 참조 두 개만 함께) 기존 각주를 그대로 둔 채 새 각주만 더한 출력만 T009가 받는다. 목차·변경 내용 추적은 연결하지
- *   않았다(planned — 엔진 표현·IME 경계 근거, docs/architecture/command-registry.md "T013").
+ *   settings 구분선 참조 두 개만 함께) 기존 각주를 그대로 둔 채 새 각주만 더한 출력만 T009가 받는다.
+ * - 목차(T013 Stage 2): WordCraft `references.toc`·`references.updateToc`(고정 DocxOp `toc`·`updateToc`, 인자 없음). 넣기는 본문 최상위
+ *   문단의 커서(선택 없음)에서, 갱신은 본문에 목차가 있을 때(엔진 보기 `hasToc`)만. 엔진 왕복 수정(WordCraft `af80638`) 뒤 출력은
+ *   본문 부분만 바뀌어 T009 기존 규칙을 그대로 통과한다. 변경 내용 추적은 연결하지 않았다(docs/architecture/command-registry.md "T013").
  */
 const DOCUMENT_COMMANDS: Record<DocumentCommandId, Omit<CommandDefinition, "id" | "labelKey" | "kind">> = {
   "edit.undo": { engines: { wordcraft: SUPPORTED, rhwp: RHWP_HISTORY }, shortcuts: ["Mod+Z"], scope: "document" },
@@ -107,6 +110,8 @@ const DOCUMENT_COMMANDS: Record<DocumentCommandId, Omit<CommandDefinition, "id" 
   "review.comment": { engines: { wordcraft: SUPPORTED, rhwp: UNSUPPORTED } },
   "references.footnote": { engines: { wordcraft: SUPPORTED, rhwp: UNSUPPORTED } },
   "references.endnote": { engines: { wordcraft: SUPPORTED, rhwp: UNSUPPORTED } },
+  "references.toc": { engines: { wordcraft: SUPPORTED, rhwp: UNSUPPORTED } },
+  "references.updateToc": { engines: { wordcraft: SUPPORTED, rhwp: UNSUPPORTED } },
   "file.save": { engines: { wordcraft: SUPPORTED, rhwp: SUPPORTED }, shortcuts: ["Mod+S"], scope: "document" },
 };
 

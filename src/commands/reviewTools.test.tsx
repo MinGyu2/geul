@@ -29,10 +29,10 @@ function contextFor(document: DocumentCommandTarget | null) {
 
 describe("레지스트리(T013)", () => {
   it("새 메모·각주·미주는 WordCraft에만 연결하고, 목차·변경 내용 추적은 계획 명령으로 남긴다", () => {
-    for (const id of ["review.comment", "references.footnote", "references.endnote"]) {
+    for (const id of ["review.comment", "references.footnote", "references.endnote", "references.toc", "references.updateToc"]) {
       expect(commandDefinition(id), id).toMatchObject({ kind: "document", engines: { wordcraft: { level: "supported" }, rhwp: { level: "unsupported" } } });
     }
-    for (const id of ["references.toc", "review.trackChanges"]) {
+    for (const id of ["review.trackChanges"]) {
       expect(commandDefinition(id)?.kind, id).toBe("planned");
       expect(commandState(id, { layout: initialLayout, document: null })).toEqual({ available: false, reason: "notImplemented" });
     }

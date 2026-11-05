@@ -43,6 +43,7 @@ const ICONS = {
   charSpacing: P("M3 16 6 6l3 10M4 13h4M13 16l3-10 3 10M14 13h4M3 20h18M3 20l2-1.5M3 20l2 1.5M21 20l-2-1.5M21 20l-2 1.5"),
   formula: <>{P("M3 5h18v14H3z")}{P("M7 12h4M9 10v4M14 11h4M14 13h4")}</>,
   toc: P("M4 6h3M10 6h10M4 11h3M10 11h10M4 16h3M10 16h6"),
+  tocUpdate: <>{P("M4 6h3M10 6h6M4 11h3M10 11h4")}{P("M20 15a4 4 0 1 1-1.2-2.8M20 11v3h-3")}</>,
   footnote: <>{P("M4 6h12M4 10h12M4 14h8")}{P("M18 4v4M4 19h6")}</>,
   endnote: <>{P("M5 3h14v18H5z")}{P("M8 7h8M8 11h8M8 18h5")}</>,
   mailMerge: <>{P("M3 6h18v12H3z")}{P("m3 7 9 6 9-6")}</>,

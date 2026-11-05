@@ -68,6 +68,8 @@ export interface DocxView {
    * 필수 키다: 빠지거나 불리언이 아니면 보기 전체를 거부해 추적 문서가 편집 가능해 보이지 않게 한다.
    */
   trackedReadOnly: boolean;
+  /** 본문에 엔진이 갱신할 수 있는 목차가 있음(T013 `references.updateToc` 가용성, 백엔드 `DocxModel::has_toc`). */
+  hasToc: boolean;
 }
 
 export type DocxFormatAccess = "allowed" | "protected" | "regions";
@@ -144,7 +146,9 @@ export type DocxOp =
   /** 새 메모(T013, WordCraft `review.newComment`): 본문 안의 비어 있지 않은 선택에 한 줄 메모. 글자 수는 MAX_DOCX_COMMENT_CHARS 이하. */
   | { op: "comment"; text: string }
   | { op: "footnote"; text: string }
-  | { op: "endnote"; text: string };
+  | { op: "endnote"; text: string }
+  | { op: "toc" }
+  | { op: "updateToc" };
 
 /** 메모 글자 수 상한(문자 단위, 백엔드 MAX_COMMENT_CHARS와 같음). */
 export const MAX_DOCX_COMMENT_CHARS = 1000;
@@ -208,7 +212,7 @@ function parseRect(value: unknown): DocxRect | null {
 
 const VIEW_KEYS = [
   "pages", "caret", "selection", "collapsed", "inTable", "caretKey", "anchorKey", "paragraphText", "caretOffset", "history", "format",
-  "formatAccess", "trackedReadOnly",
+  "formatAccess", "trackedReadOnly", "hasToc",
 ];
 const FORMAT_ACCESS: readonly DocxFormatAccess[] = ["allowed", "protected", "regions"];
 const FORMAT_KEYS: readonly DocxCharFormat[] = ["bold", "italic", "underline", "strikethrough"];
@@ -231,8 +235,8 @@ export function parseDocxView(value: unknown): DocxView | null {
   if (!isRecord(value) || !hasExactly(value, [...VIEW_KEYS, ...["selectionText", "paragraphStyle"].filter((key) => Object.prototype.hasOwnProperty.call(value, key))])) return null;
   if (Object.prototype.hasOwnProperty.call(value, "paragraphStyle") && typeof value.paragraphStyle !== "string") return null;
   if (Object.prototype.hasOwnProperty.call(value, "selectionText") && (typeof value.selectionText !== "string" || Array.from(value.selectionText).length > 500)) return null;
-  const { pages, caret, selection, collapsed, inTable, caretKey, anchorKey, paragraphText, caretOffset, trackedReadOnly } = value;
-  if (typeof trackedReadOnly !== "boolean") return null;
+  const { pages, caret, selection, collapsed, inTable, caretKey, anchorKey, paragraphText, caretOffset, trackedReadOnly, hasToc } = value;
+  if (typeof trackedReadOnly !== "boolean" || typeof hasToc !== "boolean") return null;
   const history = parseHistory(value.history);
   const format = parseFormat(value.format);
   const formatAccess = FORMAT_ACCESS.find((access) => access === value.formatAccess);
@@ -252,7 +256,7 @@ export function parseDocxView(value: unknown): DocxView | null {
     pages: parsedPages as DocxPage[],
     caret: parsedCaret,
     selection: parsedSelection as DocxRect[],
-    collapsed, inTable, caretKey, anchorKey, paragraphText, caretOffset, history, format, formatAccess, trackedReadOnly,
+    collapsed, inTable, caretKey, anchorKey, paragraphText, caretOffset, history, format, formatAccess, trackedReadOnly, hasToc,
     ...(typeof value.selectionText === "string" ? { selectionText: value.selectionText } : {}),
     ...(typeof value.paragraphStyle === "string" ? { paragraphStyle: value.paragraphStyle } : {}),
   };

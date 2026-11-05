@@ -16,13 +16,14 @@
 //   한다. 없으면 세션이 준 이유(선택 필요·표 밖) 또는 engineUnsupported.
 // - 서식은 문서 보호가 언제나 거부하는 상태(formatAccess "protected")면 protected. 편집 가능 영역만 허용하는 보호("regions")는
 //   선택이 영역 안인지 엔진만 판정하므로 보내고, 엔진이 거부하면 세션이 알린다.
-import { isParameterCommandId } from "./parameters";
+import { isActionCommandId, isParameterCommandId } from "./parameters";
 import { commandDefinition, type DocumentCommandId } from "./registry";
 import type { CharFormatFlag, DocumentCommandSnapshot } from "./target";
 
 export type UnavailableReason =
   | "noDocument" | "notImplemented" | "engineUnsupported" | "notReady" | "composing" | "pendingEdits" | "saving"
-  | "nothingToUndo" | "nothingToRedo" | "limit" | "protected" | "dialogOpen" | "selectionRequired" | "notInTable" | "caretRequired";
+  | "nothingToUndo" | "nothingToRedo" | "limit" | "protected" | "dialogOpen" | "selectionRequired" | "notInTable" | "caretRequired"
+  | "tocRequired";
 
 export type CommandState =
   | { available: true; pressed?: boolean }
@@ -65,6 +66,11 @@ export function documentCommandState(id: DocumentCommandId, snapshot: DocumentCo
     // 값 입력 명령(T012·T013): 세션이 지금 엔진·선택으로 판정한 문맥이 있을 때만 한다(문맥을 화면에서 만들지 않음).
     if (snapshot.parameters?.[id]) return ENABLED;
     return unavailable(snapshot.parameterReasons?.[id] ?? "engineUnsupported");
+  }
+  if (isActionCommandId(id)) {
+    // 값 없는 문맥 명령(T013 목차): 세션이 엔진 보기로 판정한 문맥이 있을 때만(문맥을 화면에서 만들지 않음).
+    if (snapshot.actions?.[id]) return ENABLED;
+    return unavailable(snapshot.actionReasons?.[id] ?? "engineUnsupported");
   }
   const flag = FORMAT_FLAG[id];
   if (!flag || !snapshot.format) return unavailable("engineUnsupported");

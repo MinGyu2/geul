@@ -93,7 +93,7 @@ export type DocxInputNotice = "pasteUnsupported" | "pasteTooLarge" | "pasteIncom
  */
 const MUTATING_OPS: ReadonlySet<DocxOp["op"]> = new Set<DocxOp["op"]>([
   "insertText", "pasteText", "deleteSelection", "backspace", "deleteForward", "newParagraph", "tab", "insertAt", "replaceInserted",
-  "format", "comment", "footnote", "endnote",
+  "format", "comment", "footnote", "endnote", "toc", "updateToc",
 ]);
 /**
  * 문서 내용을 바꾸지 않는 연산: 백엔드에서 이동(`caret.*`)·클릭(`caret.set`)·전체 선택(`select.all`)은 선택만, 표지는 어댑터 기억만
@@ -102,7 +102,7 @@ const MUTATING_OPS: ReadonlySet<DocxOp["op"]> = new Set<DocxOp["op"]>([
 const NAVIGATION_OPS: ReadonlySet<DocxOp["op"]> = new Set<DocxOp["op"]>(["move", "pointer", "selectAll", "mark"]);
 const mutates = (op: DocxOp) => !NAVIGATION_OPS.has(op.op);
 /** 명령(T010)이 보낸 연산. 엔진이 거부하면(문서 보호 등) 알린다. */
-const COMMAND_OPS: ReadonlySet<DocxOp["op"]> = new Set<DocxOp["op"]>(["undo", "redo", "format", "comment", "footnote", "endnote"]);
+const COMMAND_OPS: ReadonlySet<DocxOp["op"]> = new Set<DocxOp["op"]>(["undo", "redo", "format", "comment", "footnote", "endnote", "toc", "updateToc"]);
 
 /** 쪽 그림 실패의 원인: 백엔드 거부, PNG 디코드 실패, canvas 문맥 없음, 크기 불일치, 기대하지 않은 예외. */
 export type RenderFailureReason = "backend" | "decode" | "canvas" | "size" | "unexpected";
@@ -1014,12 +1014,22 @@ export class DocxEditorSession implements ImeSession, DocumentCommandTarget {
    * 낸다. 보낼 편집이 있으면 그 보기가 지금 선택이 아닐 수 있어 기다린다(pendingEdits). 문서 보호는 엔진이 실행할 때 판정한다(메모만
    * 허용하는 보호에서는 받고, 읽기 전용에서는 거부 — 거부는 알림).
    */
-  private parameterState(): Pick<DocumentCommandSnapshot, "parameters" | "parameterReasons"> {
+  private parameterState(): Pick<DocumentCommandSnapshot, "parameters" | "parameterReasons" | "actions" | "actionReasons"> {
     const view = this.view;
-    if (!this.editable || !view || this.imeUnsettled) return {};
+    if (!this.editable || !view || this.imeUnsettled || view.trackedReadOnly) return {};
     if (this.busy) {
-      return { parameterReasons: { "review.comment": "pendingEdits", "references.footnote": "pendingEdits", "references.endnote": "pendingEdits" } };
+      return {
+        parameterReasons: { "review.comment": "pendingEdits", "references.footnote": "pendingEdits", "references.endnote": "pendingEdits" },
+        actionReasons: { "references.toc": "pendingEdits", "references.updateToc": "pendingEdits" },
+      };
     }
+    const actions: NonNullable<DocumentCommandSnapshot["actions"]> = {};
+    const actionReasons: NonNullable<DocumentCommandSnapshot["actionReasons"]> = {};
+    // 목차 넣기(T013): 각주와 같은 본문 최상위 문단 커서 조건(백엔드 `toc`가 다시 검사). 갱신: 엔진 보기에 목차가 있을 때만.
+    if (view.collapsed && /^body:\d+:\d+$/.test(view.caretKey)) actions["references.toc"] = true;
+    else actionReasons["references.toc"] = "caretRequired";
+    if (view.hasToc) actions["references.updateToc"] = true;
+    else actionReasons["references.updateToc"] = "tocRequired";
     const body = (key: string) => key.startsWith("body:");
     const parameters: NonNullable<DocumentCommandSnapshot["parameters"]> = {};
     const parameterReasons: NonNullable<DocumentCommandSnapshot["parameterReasons"]> = {};
@@ -1029,7 +1039,7 @@ export class DocxEditorSession implements ImeSession, DocumentCommandTarget {
     // `new_note`가 같은 조건을 다시 검사한다.
     if (view.collapsed && /^body:\d+:\d+$/.test(view.caretKey)) parameters["references.footnote"] = parameters["references.endnote"] = {};
     else parameterReasons["references.footnote"] = parameterReasons["references.endnote"] = "caretRequired";
-    return { parameters, parameterReasons };
+    return { parameters, parameterReasons, actions, actionReasons };
   }
 
   /**
@@ -1086,6 +1096,7 @@ export class DocxEditorSession implements ImeSession, DocumentCommandTarget {
     }
     const flag = FORMAT_FLAG[command];
     const op: DocxOp | null = command === "edit.undo" ? { op: "undo" } : command === "edit.redo" ? { op: "redo" }
+      : command === "references.toc" ? { op: "toc" } : command === "references.updateToc" ? { op: "updateToc" }
       : flag ? { op: "format", format: flag } : null;
     return { accepted: op !== null && this.push(op) };
   }

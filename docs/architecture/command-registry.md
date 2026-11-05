@@ -625,3 +625,30 @@ Strict 회귀 시험: `strict_reference_rebinding_*`, `strict_reference_valid_re
   재작성 전체를 검증해야 하므로 넣지 않음). Word의 중복 구분선 처리는 관찰하지 못해 reader 의미를 바꾸지 않았다.
 - 확인: `cargo test --locked --offline --lib` 309 통과/24 무시, clippy `--all-targets -D warnings`, `npx vitest run` 64 파일 1130 통과, typecheck·lint 통과.
   native X11/IBus·Word: NOT RUN.
+
+## T013 목차 넣기·갱신 (Stage 2, 2026-11-05, `9b28d7c` 위)
+
+| 명령 | 엔진 연산 | 제품 노출 | 근거 |
+|---|---|---|---|
+| `references.toc` | 고정 `DocxOp::Toc {}` → WordCraft `references.toc {}` | 제품 DOCX | 엔진 왕복 시험, 어댑터 시험, 실제 저장 두 회차, 세션·리본 시험 |
+| `references.updateToc` | 고정 `DocxOp::UpdateToc {}` → WordCraft `references.updateToc` | 제품 DOCX(본문에 목차가 있을 때) | 같음 |
+
+- 원인 재현: 이전 기록의 `ReopenMismatch`(`Field("paragraph")`)는 **항목이 없는 목차**(제목 문단이 없는 문서)에서 생겼다. writer가 빈 `TOC` 필드를
+  `TOCHeading` 문단 끝에서 열고 바로 닫고, reader는 그 빈 범위를 엔진 표현으로 되돌리지 않았다. 항목이 있는 목차는 이미 reader의
+  `toc_field_to_heading`이 엔진 표현으로 읽어 동등했다(실측). 책임 계층은 WordCraft reader다.
+- 엔진 수정(`af80638`, 로컬 전용·미발행): writer의 정확한 빈 목차 모양(제목 스타일 `TOCHeading`, 그 문단의 목차 필드 하나, 빈 범위가 문단의 마지막
+  내용, 다음 블록이 목차 항목이 아님)만 빈 필드로 읽는다. 결과가 있거나 뒤에 글이 있거나 정적 항목 문단이 뒤따르거나 다른 스타일·두 번째 목차는
+  명시 범위를 그대로 둔다(시험). 수정 전 엔진에서 빈 목차 시험이 실패함을 확인했다.
+- 갱신 의미: 엔진 `regenerate_toc`가 필드 스위치(`\o` 수준, `\h` 링크·`_Toc` 책갈피, `\n`, `\p`)대로 항목을 다시 만들고, 쪽 번호는 엔진 배치를 두 번
+  돌려 정한다(엔진 배치 기준이며 Word 배치와 같다는 근거는 없음 — Word NOT RUN). 제목 추가·삭제·순서 바꿈·중첩 수준·빈 목록을 엔진 시험이 확인한다.
+  가져온 잠기지 않은 범위 목차는 갱신 때 엔진 표현으로 바뀐다(엔진 계약, 기존 결과는 새 항목으로 대체). 잠긴 범위 목차는 `hasToc`가 거짓이라 갱신을
+  막는다. 이미 목차가 있는 문서의 넣기는 엔진이 그 목차를 갱신한다(두 번째 목차를 만들지 않음).
+- 연결: 넣기는 선택 없는 본문 최상위 문단 커서(`caretRequired`, 백엔드도 재검사 — 엔진은 선택을 지우므로 앱이 거부), 갱신은 엔진 보기 `hasToc`
+  (필수 IPC 불리언, 없으면 `tocRequired`). 값 입력 창 없는 문맥 명령(`ActionCommandId`, 스냅숏 `actions`/`actionReasons`)으로 가용성을 정한다.
+  조합 중·대기 편집·모달·추적 문서는 기존 경로대로 막는다. 한 WordCraft 명령 = 한 실행 취소 단계, 어댑터 기억(IME 자리 표시·바로 앞 넣기)을 버린다.
+- 저장: 출력은 `word/document.xml`·`docProps/app.xml`만 바뀌어 기존 T009 규칙을 그대로 통과한다(규칙 변경 없음). 문서에 TOC 스타일 정의가 없어
+  writer가 `styles.xml`을 바꾸는 경우는 기존 부분 비교가 거부한다(검증한 픽스처는 WordCraft 생성 문서).
+- 확인: WordCraft `cargo test -p wordcraft-doc -p wordcraft-docx -p wordcraft-engine --no-fail-fast` 869 통과 + 기존 실패 1(`file_access`), 새
+  `toc_ranges` 1·`toc_roundtrip` 7. geul `cargo test --locked --offline --lib` 314 통과/24 무시(새 어댑터 4, 실제 게시 두 회차
+  `toc_first_and_second_published_saves`), clippy `--all-targets -D warnings`, `npx vitest run` 64 파일 1132 통과, typecheck·lint.
+  native X11/IBus·Word: NOT RUN(Word에서 목차 표시·갱신 호환은 미검증).

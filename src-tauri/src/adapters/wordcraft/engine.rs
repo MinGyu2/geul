@@ -20,7 +20,7 @@ use std::sync::Arc;
 
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
-use wordcraft_engine::doc::{Pos, StoryRef};
+use wordcraft_engine::doc::{InlineObject, Pos, StoryRef};
 use wordcraft_engine::layout::DocLayout;
 use wordcraft_engine::render::{render_page, RenderOptions, Rendered};
 use wordcraft_engine::{io, Session};
@@ -132,6 +132,12 @@ pub enum DocxOp {
     Endnote {
         text: String,
     },
+    /// 목차 넣기(T013, `references.toc` → WordCraft `references.toc {}`): 본문 최상위 문단의 커서(선택 없음) 자리에 엔진의 목차
+    /// (`TOCHeading` 문단의 빈 `TOC` 필드 + 제목 문단에서 만든 `TOCn` 항목, 쪽 번호는 엔진 배치)를 넣는다. 문서에 이미 목차가 있으면
+    /// 엔진은 두 번째 목차를 만들지 않고 그 목차를 갱신한다(엔진 계약). 선택이 있으면 거부한다(엔진은 선택을 지움).
+    Toc {},
+    /// 목차 갱신(T013, `references.updateToc`): 본문의 목차 항목을 지금 제목·쪽으로 다시 만든다. 목차가 없으면 거부한다.
+    UpdateToc {},
 }
 
 /// 메모 글자 수 상한(문자 단위).
@@ -264,6 +270,8 @@ pub struct RectView {
 pub struct DocxView {
     /// Authoritative tracked-document policy; navigation remains available.
     pub tracked_read_only: bool,
+    /// 본문에 갱신할 수 있는 목차가 있음(T013 `references.updateToc` 가용성, `DocxModel::has_toc`).
+    pub has_toc: bool,
     pub pages: Vec<PageSize>,
     /// 커서 자리를 배치에서 찾지 못하면(숨은 글자 등) 없다.
     pub caret: Option<CaretView>,
@@ -585,7 +593,57 @@ impl DocxModel {
             DocxOp::Comment { text } => self.new_comment(text),
             DocxOp::Footnote { text } => self.new_note("references.footnote", text),
             DocxOp::Endnote { text } => self.new_note("references.endnote", text),
+            DocxOp::Toc {} => self.toc(false),
+            DocxOp::UpdateToc {} => self.toc(true),
         }
+    }
+
+    /// 본문 최상위에 엔진이 갱신할 수 있는 목차(`TOC` 필드 표지, 또는 잠기지 않은 가져온 범위 필드)가 있는지. 그림 목차(`\c`)는
+    /// 아니다.
+    pub fn has_toc(&self) -> bool {
+        let is_toc = |instr: &str| {
+            let mut words = instr.split_whitespace();
+            words.next().is_some_and(|k| k.eq_ignore_ascii_case("TOC"))
+                && !words.any(|w| w.eq_ignore_ascii_case("\\c"))
+        };
+        self.session.doc.body.iter().any(|block| {
+            block.as_para().is_some_and(|para| {
+                para.objects.iter().any(|object| match object {
+                    InlineObject::Field { instr, .. } => is_toc(instr),
+                    // 잠긴 범위 목차는 엔진이 갱신하지 않는다(`range_toc_to_field`).
+                    InlineObject::FieldStart { instr, locked } => !locked && is_toc(instr),
+                    _ => false,
+                })
+            })
+        })
+    }
+
+    /// 목차 넣기·갱신(T013). WordCraft 명령 하나라 실패하면 엔진이 되돌린다(문서 보호도 엔진이 판정). 넣기는 본문 최상위 문단의 커서
+    /// (선택 없음)에서만, 갱신은 목차가 있을 때만 한다. 위치가 바뀌므로 어댑터 기억을 버린다.
+    fn toc(&mut self, update: bool) -> Result<bool, Rejected> {
+        if update {
+            if !self.has_toc() {
+                return Err(Rejected);
+            }
+        } else {
+            let at = &self.session.sel.focus;
+            if !self.session.sel.is_collapsed() || at.story != StoryRef::Body || at.path.depth() > 0
+            {
+                return Err(Rejected);
+            }
+        }
+        let changed = self.run(
+            if update {
+                "references.updateToc"
+            } else {
+                "references.toc"
+            },
+            json!({}),
+        )?;
+        self.session.clamp_selection();
+        self.marks.clear();
+        self.last_insert = None;
+        Ok(changed)
     }
 
     /// 새 각주·미주(T013). 커서가 본문 최상위 문단에 있고 선택이 없을 때만 WordCraft 명령 하나를 실행한다(실패하면 엔진이 되돌림,
@@ -842,6 +900,7 @@ impl DocxModel {
             .map_or(0, |head| head.chars().count());
         DocxView {
             tracked_read_only: self.session.doc.settings.track_changes,
+            has_toc: self.has_toc(),
             pages: layout
                 .pages
                 .iter()

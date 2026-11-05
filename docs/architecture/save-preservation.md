@@ -1264,3 +1264,8 @@ false라 저장은 `ReopenMismatch`로 거부되고 원본은 그대로다. 패�
 실제 WordCraft reader/writer와 저장 경로로 기존 각주·미주 부분의 래퍼 속성·번호·중복·순서·settings 참조 변이 11가지를 확인했다(각주·미주 각각). 엔진 모델
 왕복은 모두 같지만(`same_as`), writer가 래퍼 속성을 쓰지 않고 구분선을 -1/0으로 다시 쓰므로 `note_part_extended`(구분선 정확 비교)와 settings 비교가
 `PartChanged`로 거부하고 원본을 보존한다. 접두어 별칭만 안전하다. 저장 규칙은 바꾸지 않았다([command-registry.md](command-registry.md) "Stage 1 안정화").
+
+### T013 목차 출력 (Stage 2, 2026-11-05)
+
+목차 넣기·갱신 출력은 WordCraft 생성 픽스처(제목 없음·제목 1/2)에서 `word/document.xml`과 `docProps/app.xml`만 바뀌고 기존 규칙으로 안전하다. 실제 저장
+두 회차(게시 파일 다시 열기 → 본문 편집 + 갱신 → 둘째 게시)를 통과했다. 저장 규칙은 바꾸지 않았다([command-registry.md](command-registry.md) "T013 목차").

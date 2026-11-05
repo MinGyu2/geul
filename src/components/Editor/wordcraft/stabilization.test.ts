@@ -559,3 +559,45 @@ describe("이미 추적 중인 DOCX는 검증된 읽기·선택만 허용", () =
     expect(fake.paragraphs[0]).toBe("가가나다");
   });
 });
+
+describe("T013 목차 넣기·갱신(세션 문맥 명령)", () => {
+  it("넣기는 선택 없는 본문 커서에서, 갱신은 엔진 보기에 목차가 있을 때만 연산 하나로 보낸다", async () => {
+    const { editor, fake } = await readyDocx();
+    let snapshot = editor.snapshot();
+    expect(documentCommandState("references.toc", snapshot)).toEqual({ available: true });
+    expect(documentCommandState("references.updateToc", snapshot)).toEqual({ available: false, reason: "tocRequired" });
+    expect(editor.execute("references.updateToc").accepted).toBe(false);
+    // 인자를 붙인 호출은 거부(값 없는 명령).
+    expect(editor.execute("references.toc", { command: "review.comment", text: "x" }).accepted).toBe(false);
+    expect(editor.execute("references.toc").accepted).toBe(true);
+    await flush();
+    expect(sentOps(fake)).toEqual([{ op: "toc" }]);
+    expect(editor.revision).toBe(1);
+    snapshot = editor.snapshot();
+    expect(documentCommandState("references.updateToc", snapshot)).toEqual({ available: true });
+    expect(editor.execute("references.updateToc").accepted).toBe(true);
+    await flush();
+    expect(sentOps(fake).at(-1)).toEqual({ op: "updateToc" });
+    expect(editor.revision).toBe(2);
+    // 되돌리면 목차가 사라지고 갱신은 다시 막힌다.
+    expect(editor.execute("edit.undo").accepted).toBe(true);
+    await flush();
+    expect(fake.toc).toEqual({ updates: 0 });
+    expect(editor.execute("edit.undo").accepted).toBe(true);
+    await flush();
+    expect(fake.toc).toBeNull();
+    expect(documentCommandState("references.updateToc", editor.snapshot())).toEqual({ available: false, reason: "tocRequired" });
+  });
+
+  it("선택·조합·추적 문서에서는 넣기를 막는다", async () => {
+    const { editor, fake } = await readyDocx();
+    expect(editor.move("right", true)).toBe(true);
+    await flush();
+    expect(documentCommandState("references.toc", editor.snapshot())).toEqual({ available: false, reason: "caretRequired" });
+    expect(editor.execute("references.toc").accepted).toBe(false);
+    fake.trackedReadOnly = true;
+    editor.view = fake.snapshot();
+    expect(documentCommandState("references.toc", editor.snapshot()).available).toBe(false);
+    expect(edits(fake).flatMap((call) => call.args[3] as DocxOp[]).some((op) => op.op === "toc")).toBe(false);
+  });
+});
