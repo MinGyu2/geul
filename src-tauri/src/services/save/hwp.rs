@@ -472,7 +472,8 @@ fn id_mappings_grew(a: &[u8], b: &[u8], k: usize) -> bool {
         d.get(at..at + 4)
             .map(|v| u32::from_le_bytes([v[0], v[1], v[2], v[3]]) as usize)
     };
-    a.len() == b.len()
+    a.len() >= at + 4
+        && a.len() == b.len()
         && a[..at] == b[..at]
         && a.get(at + 4..) == b.get(at + 4..)
         && matches!((count(a), count(b)), (Some(x), Some(y)) if x.checked_add(k) == Some(y))
@@ -940,4 +941,37 @@ fn verify_preview_rebuild(
         }
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod id_mapping_tests {
+    use super::id_mappings_grew;
+
+    #[test]
+    fn id_mappings_count_boundary_and_exact_growth() {
+        let payload = |count: u32| {
+            let mut data = vec![0; 40];
+            data[36..40].copy_from_slice(&count.to_le_bytes());
+            data
+        };
+        for length in 0..40 {
+            assert!(!id_mappings_grew(&vec![0; length], &vec![0; length], 1));
+        }
+        assert!(id_mappings_grew(&payload(2), &payload(3), 1));
+        assert!(!id_mappings_grew(&payload(2), &payload(4), 1));
+        assert!(!id_mappings_grew(&payload(2), &payload(2), 1));
+        assert!(!id_mappings_grew(&payload(u32::MAX), &payload(0), 1));
+        assert!(!id_mappings_grew(&payload(2), &payload(3), usize::MAX));
+        let mut changed = payload(3);
+        changed[0] = 1;
+        assert!(!id_mappings_grew(&payload(2), &changed, 1));
+        let mut longer = payload(3);
+        longer.push(0);
+        assert!(!id_mappings_grew(&payload(2), &longer, 1));
+        assert!(!id_mappings_grew(&longer, &payload(3), 1));
+        let mut original = payload(2);
+        original.push(0);
+        longer[40] = 1;
+        assert!(!id_mappings_grew(&original, &longer, 1));
+    }
 }

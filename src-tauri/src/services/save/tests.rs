@@ -11019,3 +11019,36 @@ fn hwp_docinfo_덧붙인_장평_자간_글자_모양만_받고_모두_본문이_
     // 덧붙임이 없으면 이전과 같이 같아야 한다.
     assert_eq!(saved(metric_docinfo(&[], 2), &[0, 1]), vec![]);
 }
+
+/// Exercise the edited-save DocInfo append exception, not just its private count helper.
+#[test]
+fn hwp_docinfo_short_id_mappings_refuses_metric_append_without_panicking() {
+    for length in 0..40 {
+        let info = |appended: bool| {
+            let mut data = record(17, 0, &vec![0; length]);
+            data.extend(record(21, 1, &char_shape_record(100, 0, 7)));
+            if appended {
+                data.extend(record(21, 1, &char_shape_record(150, 0, 7)));
+            }
+            data.extend(record(25, 1, b"para shape"));
+            data
+        };
+        let original = hwp_doc(
+            0,
+            &info(false),
+            &ref_paragraph(0, 0, Some(&shape_pairs(&[0]))),
+            &[],
+        );
+        let output = hwp_doc(
+            0,
+            &info(true),
+            &ref_paragraph(0, 0, Some(&shape_pairs(&[1]))),
+            &[],
+        );
+        assert!(
+            hwp::compare_saved(&original, &output)
+                .contains(&Finding::at(FindingCode::RecordsChanged, "DocInfo")),
+            "ID_MAPPINGS payload length {length}"
+        );
+    }
+}
