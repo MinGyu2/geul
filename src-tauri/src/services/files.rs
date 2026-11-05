@@ -1,6 +1,7 @@
 //! Native file selection and create-only publication. Format conversion is never implicit.
 use crate::document::commands::DocumentState;
 use crate::document::{DocumentError, Format, Limits, PathProblem, SessionInfo};
+use crate::services::save::preserve::{Finding, FindingCode, Preservation};
 use crate::services::save::{publish, service};
 use serde::Deserialize;
 use std::path::{Path, PathBuf};
@@ -92,12 +93,28 @@ pub fn blank_docx() -> Result<Vec<u8>, DocumentError> {
         .map_err(|_| DocumentError::Internal)?;
     let again = model.export().ok_or(DocumentError::Internal)?;
     let checked = service::preflight(Format::Docx, &bytes, &again, None);
-    if !checked.is_safe() || !model.same_as(&again) {
+    blank_verdict(checked, || model.same_as(&again))?;
+    Ok(bytes)
+}
+
+/// The blank-document publication decision: package preservation first (an unsafe verdict is
+/// returned as is), then — only if that is safe — the engine reopen equivalence. A failed
+/// equivalence (`Ok(false)`, `Err` or a failed reopen, all `same_as == false`) is classified like
+/// `service::check_saved` does: an unsafe verdict with `ReopenMismatch`, never the safe one.
+fn blank_verdict(checked: Preservation, same: impl FnOnce() -> bool) -> Result<(), DocumentError> {
+    if !checked.is_safe() {
         return Err(DocumentError::UnsafeSave {
             preservation: checked,
         });
     }
-    Ok(bytes)
+    if !same() {
+        let mut findings = checked.findings;
+        findings.push(Finding::new(FindingCode::ReopenMismatch));
+        return Err(DocumentError::UnsafeSave {
+            preservation: Preservation::from_findings(findings),
+        });
+    }
+    Ok(())
 }
 
 #[tauri::command]
@@ -284,6 +301,42 @@ pub async fn document_file_dialog() -> Result<Option<String>, DocumentError> {
 mod tests {
     use super::*;
     use crate::document::{testutil::TempDir, SessionRegistry};
+
+    /// A blank DOCX refusal must never carry a `safe` preservation verdict as its evidence. The
+    /// real blank model reopens equal, so the decision is tested with controlled evidence; the
+    /// production order (preflight, then reopen only when preflight is safe) is asserted too.
+    #[test]
+    fn blank_docx_refusals_are_classified() {
+        let safe = Preservation::from_findings(Vec::new());
+        assert!(safe.is_safe());
+        // A: unsafe preflight keeps its own findings; the reopen check is not consulted.
+        let changed = Preservation::from_findings(vec![Finding::at(
+            FindingCode::PartChanged,
+            "word/styles.xml",
+        )]);
+        let refused = blank_verdict(changed.clone(), || panic!("reopen must not run"));
+        assert!(
+            matches!(&refused, Err(DocumentError::UnsafeSave { preservation }) if *preservation == changed),
+            "{refused:?}"
+        );
+        // B/C: safe preflight but no proven equivalence (`Ok(false)`, `Err`, or a failed reopen
+        // all make `same_as` false) is an unsafe ReopenMismatch, not a safe verdict.
+        match blank_verdict(safe.clone(), || false) {
+            Err(DocumentError::UnsafeSave { preservation }) => {
+                assert!(!preservation.is_safe(), "{preservation:?}");
+                assert_eq!(
+                    preservation.findings,
+                    vec![Finding::new(FindingCode::ReopenMismatch)]
+                );
+            }
+            other => panic!("{other:?}"),
+        }
+        // E: both checks pass.
+        assert!(blank_verdict(safe, || true).is_ok());
+        // The real blank model still passes end to end.
+        let bytes = blank_docx().unwrap();
+        assert!(crate::adapters::wordcraft::engine::DocxModel::open(&bytes).is_ok());
+    }
 
     fn frame(format: &str, payload: &[u8], loss: serde_json::Value) -> Vec<u8> {
         let meta = serde_json::to_vec(
