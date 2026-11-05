@@ -22,13 +22,13 @@ fn document(inner: &str, strict: bool) -> String {
         r#"<w:document xmlns:w="{w}" xmlns:r="{r}" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" xmlns:wp="http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing" xmlns:pic="http://schemas.openxmlformats.org/drawingml/2006/picture"><w:body>{inner}</w:body></w:document>"#
     )
 }
-fn link(text: &str, attrs: &str) -> String {
+pub(super) fn link(text: &str, attrs: &str) -> String {
     format!(r#"<w:hyperlink {attrs}><w:r><w:t>{text}</w:t></w:r></w:hyperlink>"#)
 }
-fn paragraph(inner: &str) -> String {
+pub(super) fn paragraph(inner: &str) -> String {
     format!("<w:p>{inner}</w:p>")
 }
-fn position_package(body: &str, output: bool, strict: bool) -> Vec<ZipEntry> {
+pub(super) fn position_package(body: &str, output: bool, strict: bool) -> Vec<ZipEntry> {
     let mut entries = if output {
         memo_output(&["new"])
     } else {
@@ -412,109 +412,52 @@ fn body_reference_count(bytes: &[u8]) -> usize {
     n
 }
 
-/// Three separate layers: (1) WordCraft validly splits the hyperlink around a
-/// partial comment and the authoritative model round-trips; (2) the
-/// relationship-reference comparator refuses the changed reference count; (3)
-/// the real geul save path refuses with exactly that comparator's findings.
-/// The comparator is deliberately NOT relaxed here (diagnostic regression).
+/// Comments on part of a hyperlink: see `docx_semantic_acceptance::hyperlink_comments_*` (T013 Stage 4). Until
+/// 2026-11-05 Stage 4 this diagnostic pinned a conservative refusal (body r:* reference count 1 → 2).
 #[test]
-fn diagnostic_a_comment_splits_hyperlink_conservative_refusal() {
+fn diagnostic_a_comment_split_reuses_one_relationship() {
     let body = paragraph(&link("First", r#"r:id="linkA""#));
-    let seed = io::open_bytes(
+    let original = io::save_bytes(
         "fixture.docx",
-        &zip(&position_package(&body, false, false), false),
+        &io::open_bytes(
+            "fixture.docx",
+            &zip(&position_package(&body, false, false), false),
+        )
+        .unwrap(),
     )
     .unwrap();
-    let original = io::save_bytes("fixture.docx", &seed).unwrap();
-    let mut doc = open_docx(&original);
-    assert!(doc.preflight().unwrap().preservation.is_safe());
-    let edited = block_on(docx::edit(
-        &doc.state,
-        doc.info.session_id,
-        doc.info.load_generation,
-        doc.info.revision,
-        vec![
-            DocxOp::Move {
-                to: MoveTarget::DocStart,
-                extend: false,
-            },
-            DocxOp::Move {
-                to: MoveTarget::Right,
-                extend: true,
-            },
-            DocxOp::Comment {
-                text: "split".into(),
-            },
-        ],
-    ))
-    .unwrap();
-    // (1) engine accepted every operation and actually created the comment.
-    assert_eq!((edited.applied, edited.rejected.len()), (3, 0));
-    doc.info = edited.session;
-    assert!(doc.info.dirty);
-    let model = doc
-        .state
-        .wordcraft()
-        .get(doc.info.session_id, doc.info.load_generation)
+    let mut session = Session::new(io::open_bytes("x.docx", &original).unwrap());
+    session
+        .run(
+            "select.range",
+            &serde_json::json!({
+                "anchor": wordcraft_engine::doc::Pos::body(0, 0),
+                "focus": wordcraft_engine::doc::Pos::body(0, 1),
+            }),
+        )
         .unwrap();
-    let output = {
-        let model = model.lock().unwrap();
-        let document = model.diagnostic_document();
-        assert_eq!(document.comments.len(), 1);
-        let output = model.export().unwrap();
-        let reopened = io::open_bytes("fixture.docx", &output).unwrap();
-        assert_eq!(reopened.comments.len(), 1);
-        assert!(
-            model.same_as(&output),
-            "authoritative model must round-trip"
-        );
-        output
-    };
+    session
+        .run("review.newComment", &serde_json::json!({"text": "split"}))
+        .unwrap();
+    let output = io::save_bytes("x.docx", &session.doc).unwrap();
     assert_eq!(
         (
             body_reference_count(&original),
             body_reference_count(&output)
         ),
-        (1, 2),
-        "one hyperlink reference splits into two"
+        (1, 2)
     );
-    // (2) comparator refusal, independent of the engine-equality bit.
-    let expected = service::check_saved(Format::Docx, &original, &output, None, true);
-    // comment_parts_added() is false (reference count changed), so the comment
-    // additions fall back to part-by-part comparison. No ReopenMismatch.
-    assert_eq!(expected.outcome, Outcome::Unsafe, "{expected:?}");
+    let rels = |bytes: &[u8]| {
+        let p = package::open(bytes, package::Side::Original).unwrap();
+        String::from_utf8(p.parts["word/_rels/document.xml.rels"].1.clone())
+            .unwrap()
+            .matches("/hyperlink\"")
+            .count()
+    };
     assert_eq!(
-        expected.findings,
-        vec![
-            Finding::at(FindingCode::PartAdded, "word/comments.xml"),
-            Finding::at(FindingCode::PartAdded, "word/commentsExtended.xml"),
-            Finding::at(FindingCode::PartChanged, "[Content_Types].xml"),
-            Finding::at(FindingCode::PartChanged, "word/_rels/document.xml.rels"),
-        ]
-    );
-    // (3) real save service refusal with exactly that preservation verdict.
-    let result = doc.save();
-    match &result {
-        Err(DocumentError::UnsafeSave { preservation }) => {
-            assert_eq!(preservation, &expected)
-        }
-        other => panic!("expected comparator UnsafeSave, got {other:?}"),
-    }
-    assert_eq!(Sha256::digest(doc.bytes()), Sha256::digest(&original));
-    assert!(doc.state.registry().get(doc.info.session_id).unwrap().dirty);
-    assert!(doc.leftovers().is_empty(), "{:?}", doc.leftovers());
-    assert!(doc
-        .state
-        .registry()
-        .begin_save(
-            doc.info.session_id,
-            doc.info.load_generation,
-            doc.info.revision
-        )
-        .is_ok());
-    eprintln!(
-        "POSITION partial-link-comment: engine_split=1->2 model_equal=true findings={:?}",
-        expected.findings
+        (rels(&original), rels(&output)),
+        (1, 1),
+        "both halves reuse one relationship"
     );
 }
 

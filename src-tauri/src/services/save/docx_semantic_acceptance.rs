@@ -11,7 +11,9 @@
 //! on those bytes and its result is what `service::save` receives; nothing forces it.
 use std::sync::{Arc, Mutex};
 
-use super::docx_diagnostics::{assert_reopen_mismatch_only, rich_fixture};
+use super::docx_diagnostics::{
+    assert_reopen_mismatch_only, link, paragraph, position_package, rich_fixture,
+};
 use super::*;
 use crate::adapters::wordcraft::engine::DocxModel;
 use sha2::{Digest, Sha256};
@@ -1991,4 +1993,259 @@ fn tracking_toggle_tracked_edits_and_review_publish_twice() {
         "rejected deletion restored the last character"
     );
     ticket_released(&doc);
+}
+
+// ---- T013 Stage 4: comments on part of a hyperlink ----
+
+/// "Before " + hyperlink "Link text" (external relationship linkA) + " after.", re-saved by WordCraft.
+fn hyperlink_original() -> Vec<u8> {
+    let body = paragraph(&format!(
+        r#"<w:r><w:t xml:space="preserve">Before </w:t></w:r>{}<w:r><w:t xml:space="preserve"> after.</w:t></w:r>"#,
+        link("Link text", r#"r:id="linkA""#)
+    ));
+    io::save_bytes(
+        "fixture.docx",
+        &io::open_bytes(
+            "fixture.docx",
+            &zip(&position_package(&body, false, false), false),
+        )
+        .unwrap(),
+    )
+    .unwrap()
+}
+
+/// A comment on characters [from, from + len) of the first paragraph, through typed operations.
+fn comment_chars(doc: &mut Docx, from: usize, len: usize, text: &str) {
+    let mut ops = vec![DocxOp::Move {
+        to: MoveTarget::DocStart,
+        extend: false,
+    }];
+    ops.extend((0..from).map(|_| DocxOp::Move {
+        to: MoveTarget::Right,
+        extend: false,
+    }));
+    ops.extend((0..len).map(|_| DocxOp::Move {
+        to: MoveTarget::Right,
+        extend: true,
+    }));
+    ops.push(DocxOp::Comment { text: text.into() });
+    let edited = block_on(docx::edit(
+        &doc.state,
+        doc.info.session_id,
+        doc.info.load_generation,
+        doc.info.revision,
+        ops,
+    ))
+    .unwrap();
+    assert!(edited.rejected.is_empty(), "{:?}", edited.rejected);
+    doc.info = edited.session;
+}
+
+/// The hyperlink's target and every run carrying it, read back from a file.
+fn link_runs(bytes: &[u8]) -> (String, Vec<String>) {
+    let d = reopen(bytes);
+    let p = d.body[0].as_para().unwrap();
+    let mut runs = Vec::new();
+    let mut target = String::new();
+    for (range, props) in p.run_ranges() {
+        if let Some(l) = &props.link {
+            target = l.clone();
+            runs.push(p.text[range].replace('\u{FFFC}', ""));
+        }
+    }
+    (target, runs.into_iter().filter(|t| !t.is_empty()).collect())
+}
+
+#[test]
+fn hyperlink_comments_on_any_part_publish_twice() {
+    const START: usize = "Before ".len();
+    const LINK: usize = "Link text".len();
+    let original = hyperlink_original();
+    let (target, runs) = link_runs(&original);
+    assert_eq!(
+        (target.as_str(), runs.concat().as_str()),
+        ("https://example.org/A", "Link text")
+    );
+    for (name, from, len) in [
+        ("full", START, LINK),
+        ("middle", START + 2, 3),
+        ("start", START, 4),
+        ("end", START + 5, LINK - 5),
+        ("into plain text", START + 5, LINK - 5 + 3),
+        ("from plain text", START - 3, 5),
+    ] {
+        let mut doc = open_docx(&original);
+        assert!(doc.preflight().unwrap().preservation.is_safe(), "{name}");
+        comment_chars(&mut doc, from, len, name);
+        let first = publish_notes(&mut doc);
+        let (t, r) = link_runs(&first);
+        assert_eq!(
+            (t.as_str(), r.concat().as_str()),
+            ("https://example.org/A", "Link text"),
+            "{name}: link text and target"
+        );
+        let d = reopen(&first);
+        assert_eq!(d.comments.len(), 1, "{name}");
+        // Comment boundaries: the commented text is exactly the selection.
+        let p = d.body[0].as_para().unwrap();
+        let (mut a, mut b) = (None, None);
+        for (off, o) in p.object_offsets().into_iter().zip(&p.objects) {
+            match o {
+                InlineObject::CommentStart { .. } => a = Some(off),
+                InlineObject::CommentEnd { .. } => b = Some(off),
+                _ => {}
+            }
+        }
+        let quoted: String = p.text[a.unwrap()..b.unwrap()]
+            .chars()
+            .filter(|c| *c != '\u{FFFC}')
+            .collect();
+        let plain: String = "Before Link text after."
+            .chars()
+            .skip(from)
+            .take(len)
+            .collect();
+        assert_eq!(quoted, plain, "{name}: comment boundaries");
+        // Second round on the published file: a second comment elsewhere in the link.
+        let mut doc = reload(doc);
+        assert!(doc.preflight().unwrap().preservation.is_safe(), "{name}");
+        comment_chars(&mut doc, START + 1, 1, "second");
+        let second = publish_notes(&mut doc);
+        assert_eq!(reopen(&second).comments.len(), 2, "{name}");
+        assert_eq!(link_runs(&second).1.concat(), "Link text", "{name}");
+        ticket_released(&reload(doc));
+    }
+    // Two comments in one save, then undo/redo of the second.
+    let mut doc = open_docx(&original);
+    assert!(doc.preflight().unwrap().preservation.is_safe());
+    comment_chars(&mut doc, START, 2, "one");
+    comment_chars(&mut doc, START + 4, 2, "two");
+    let edited = block_on(docx::edit(
+        &doc.state,
+        doc.info.session_id,
+        doc.info.load_generation,
+        doc.info.revision,
+        vec![DocxOp::Undo {}],
+    ))
+    .unwrap();
+    doc.info = edited.session;
+    assert_eq!(
+        model_of(&doc)
+            .lock()
+            .unwrap()
+            .diagnostic_document()
+            .comments
+            .len(),
+        1
+    );
+    let edited = block_on(docx::edit(
+        &doc.state,
+        doc.info.session_id,
+        doc.info.load_generation,
+        doc.info.revision,
+        vec![DocxOp::Redo {}],
+    ))
+    .unwrap();
+    doc.info = edited.session;
+    let out = publish_notes(&mut doc);
+    assert_eq!(reopen(&out).comments.len(), 2);
+}
+
+/// Narrow contract: only the split itself is accepted (injected outputs, real `same_as`).
+#[test]
+fn hyperlink_comment_relationship_mutations_are_refused() {
+    let original = hyperlink_original();
+    let mut doc = open_docx(&original);
+    assert!(doc.preflight().unwrap().preservation.is_safe());
+    comment_chars(&mut doc, "Before ".len() + 2, 3, "middle");
+    let output = model_of(&doc).lock().unwrap().export().unwrap();
+    let ok = |out: &[u8]| service::check_saved(Format::Docx, &original, out, None, true);
+    assert!(ok(&output).is_safe());
+    let package = package::open(&output, package::Side::Original).unwrap();
+    let body = String::from_utf8(package.parts["word/document.xml"].1.clone()).unwrap();
+    let id = {
+        let at = body.find("<w:hyperlink r:id=\"").unwrap() + "<w:hyperlink r:id=\"".len();
+        body[at..at + body[at..].find('"').unwrap()].to_owned()
+    };
+    assert_eq!(
+        body.matches(&format!("r:id=\"{id}\"")).count(),
+        3,
+        "split into three halves around the comment"
+    );
+    let doc_patch = |f: &dyn Fn(&str) -> String| byte_patch(&output, "word/document.xml", f);
+    let rels_patch =
+        |f: &dyn Fn(&str) -> String| byte_patch(&output, "word/_rels/document.xml.rels", f);
+    let second = |x: &str, with: &str| {
+        let first = x.find(&format!("r:id=\"{id}\"")).unwrap() + 1;
+        let at = first + x[first..].find(&format!("r:id=\"{id}\"")).unwrap();
+        format!(
+            "{}{}{}",
+            &x[..at],
+            with,
+            &x[at + format!("r:id=\"{id}\"").len()..]
+        )
+    };
+    let strict = "http://purl.oclc.org/ooxml/officeDocument/relationships";
+    let cases: Vec<(&str, Vec<u8>)> = vec![
+        ("second half: unrelated new external target", {
+            let d = doc_patch(&|x| second(x, r#"r:id="evil""#));
+            byte_patch(&d, "word/_rels/document.xml.rels", |x| {
+                x.replace("</Relationships>", r#"<Relationship Id="evil" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/hyperlink" Target="https://attacker.example/" TargetMode="External"/></Relationships>"#)
+            })
+        }),
+        (
+            "second half: missing relationship",
+            doc_patch(&|x| second(x, r#"r:id="missing""#)),
+        ),
+        (
+            "second half: strict namespace",
+            doc_patch(&|x| second(x, &format!(r#"xmlns:s="{strict}" s:id="{id}""#))),
+        ),
+        (
+            "target changed",
+            rels_patch(&|x| x.replace("https://example.org/A", "https://example.org/B")),
+        ),
+        (
+            "type changed",
+            rels_patch(&|x| x.replacen("relationships/hyperlink\"", "relationships/image\"", 1)),
+        ),
+        (
+            "duplicated hyperlink content",
+            doc_patch(&|x| {
+                let at = x.find("<w:hyperlink").unwrap();
+                let end = at + x[at..].find("</w:hyperlink>").unwrap() + "</w:hyperlink>".len();
+                format!("{}{}{}", &x[..end], &x[at..end], &x[end..])
+            }),
+        ),
+        (
+            "hyperlink removed",
+            doc_patch(&|x| {
+                let at = x.rfind("<w:hyperlink").unwrap();
+                let end = at + x[at..].find("</w:hyperlink>").unwrap() + "</w:hyperlink>".len();
+                format!("{}{}", &x[..at], &x[end..])
+            }),
+        ),
+    ];
+    for (name, corrupt) in cases {
+        assert_ne!(corrupt, output, "{name}: mutation applied");
+        let verdict = ok(&corrupt);
+        let same = model_of(&doc).lock().unwrap().same_as(&corrupt);
+        assert!(
+            !(verdict.is_safe() && same),
+            "{name}: accepted: {verdict:?}"
+        );
+        eprintln!(
+            "HYPERLINK REFUSAL {name}: same_as={same} findings={:?}",
+            verdict.findings
+        );
+        refuse_note_output(
+            &doc,
+            &corrupt,
+            verdict
+                .findings
+                .first()
+                .cloned()
+                .unwrap_or(Finding::new(FindingCode::ReopenMismatch)),
+        );
+    }
 }

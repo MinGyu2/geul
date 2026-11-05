@@ -861,11 +861,30 @@ thread_local! {
 /// Uses the validating streaming cursor (not visit_element_starts, which does not
 /// validate text/entities/root count). Retains at most one element per side;
 /// drains both inputs even after a mismatch so malformed suffixes cannot pass.
+#[cfg(test)]
 pub fn relationship_references_equal(
     before: &[u8],
     after: &[u8],
+    equivalent: impl FnMut(&str, &str) -> bool,
+) -> Result<bool, Invalid> {
+    relationship_references_equal_with(before, after, false, equivalent)
+}
+
+/// [`relationship_references_equal`], optionally accepting a **split hyperlink** in `after` (T013 Stage 4): a reference site
+/// that is a WordprocessingML `w:hyperlink` whose relationship attributes repeat, exactly (same namespace, name and Id), the
+/// immediately preceding reference site of `after`, which is itself such a hyperlink. That is the writer serializing one
+/// hyperlink as several elements around a comment boundary: the same relationship, nothing else in between. Every other
+/// difference in count or binding stays unequal; a merge (fewer sites in `after`) is never accepted.
+pub fn relationship_references_equal_with(
+    before: &[u8],
+    after: &[u8],
+    split_hyperlinks: bool,
     mut equivalent: impl FnMut(&str, &str) -> bool,
 ) -> Result<bool, Invalid> {
+    const WML: [&str; 2] = [
+        "http://schemas.openxmlformats.org/wordprocessingml/2006/main",
+        "http://purl.oclc.org/ooxml/wordprocessingml/main",
+    ];
     const R: [&str; 2] = [
         "http://schemas.openxmlformats.org/officeDocument/2006/relationships",
         "http://purl.oclc.org/ooxml/officeDocument/relationships",
@@ -875,11 +894,16 @@ pub fn relationship_references_equal(
     let mut a = CanonicalCursor::<true, true>::new(&before);
     let mut b = CanonicalCursor::<true, true>::new(&after);
     type ReferenceAttributes = Vec<(Option<Atom>, Atom, Atom)>;
-    fn next(
-        cursor: &mut CanonicalCursor<'_, true, true>,
-    ) -> Result<Option<ReferenceAttributes>, Invalid> {
+    /// (is a WordprocessingML hyperlink, relationship attributes).
+    type Site = (bool, ReferenceAttributes);
+    fn next(cursor: &mut CanonicalCursor<'_, true, true>) -> Result<Option<Site>, Invalid> {
         while let Some(event) = cursor.next()? {
-            if let Canonical::Start { mut attributes, .. } = event {
+            if let Canonical::Start {
+                mut attributes,
+                namespace,
+                name,
+            } = event
+            {
                 #[cfg(test)]
                 RELATIONSHIP_START_PEAK.with(|peak| {
                     let bytes = attributes.capacity()
@@ -894,23 +918,56 @@ pub fn relationship_references_equal(
                 });
                 attributes.retain(|(ns, _, _)| ns.as_deref().is_some_and(|uri| R.contains(&uri)));
                 if !attributes.is_empty() {
-                    return Ok(Some(attributes));
+                    let hyperlink = &*name == "hyperlink"
+                        && namespace.as_deref().is_some_and(|uri| WML.contains(&uri));
+                    return Ok(Some((hyperlink, attributes)));
                 }
             }
         }
         Ok(None)
     }
     let mut equal = true;
+    // The pending `before` site (kept while a split continuation of `after` is skipped) and the previous `after` hyperlink.
+    let mut pending: Option<Option<Site>> = None;
+    let mut previous: Option<ReferenceAttributes> = None;
     loop {
-        match (next(&mut a)?, next(&mut b)?) {
+        let left = match pending.take() {
+            Some(site) => site,
+            None => next(&mut a)?,
+        };
+        let right = next(&mut b)?;
+        let continuation = |right: &Site, previous: &Option<ReferenceAttributes>| {
+            split_hyperlinks && right.0 && previous.as_ref() == Some(&right.1)
+        };
+        match (left, right) {
             (None, None) => return Ok(equal),
             (Some(left), Some(right)) => {
-                equal &= left.len() == right.len();
-                for ((ns_a, key_a, id_a), (ns_b, key_b, id_b)) in left.iter().zip(&right) {
-                    equal &= ns_a == ns_b && key_a == key_b && equivalent(id_a, id_b);
+                let matched = left.1.len() == right.1.len()
+                    && left.1.iter().zip(&right.1).all(
+                        |((ns_a, key_a, id_a), (ns_b, key_b, id_b))| {
+                            ns_a == ns_b && key_a == key_b && equivalent(id_a, id_b)
+                        },
+                    );
+                if matched {
+                    previous = right.0.then_some(right.1);
+                } else if continuation(&right, &previous) {
+                    pending = Some(Some(left));
+                } else {
+                    equal = false;
+                    previous = None;
                 }
             }
-            _ => equal = false,
+            (None, Some(right)) if continuation(&right, &previous) => pending = Some(None),
+            (None, Some(_)) => {
+                equal = false;
+                previous = None;
+                pending = Some(None);
+            }
+            (Some(_), None) => {
+                // Drain `before` to validate it to its end.
+                while next(&mut a)?.is_some() {}
+                return Ok(false);
+            }
         }
     }
 }
@@ -1840,6 +1897,61 @@ mod resource_tests {
 #[cfg(test)]
 mod relationship_reference_tests {
     use super::relationship_references_equal as equal;
+
+    /// T013 Stage 4: a split hyperlink (same relationship, adjacent) is accepted only when asked; merges, other elements,
+    /// non-adjacent repeats and different ids are not.
+    #[test]
+    fn split_hyperlink_contract() {
+        use super::relationship_references_equal_with as with;
+        const W: &str = "http://schemas.openxmlformats.org/wordprocessingml/2006/main";
+        let doc = |inner: &str| {
+            format!(
+                r#"<w:document xmlns:w="{W}" xmlns:r="{T}"><w:body><w:p>{inner}</w:p></w:body></w:document>"#
+            )
+        };
+        let h =
+            |id: &str| format!(r#"<w:hyperlink r:id="{id}"><w:r><w:t>x</w:t></w:r></w:hyperlink>"#);
+        let other = |id: &str| format!(r#"<w:other r:id="{id}"/>"#);
+        let same = |a: &str, b: &str| a.trim_start_matches("old") == b.trim_start_matches("new");
+        let check = |before: String, after: String, split: bool| {
+            with(doc(&before).as_bytes(), doc(&after).as_bytes(), split, same).unwrap()
+        };
+        let one = h("old1");
+        let split = format!("{}<w:commentRangeEnd w:id=\"0\"/>{}", h("new1"), h("new1"));
+        assert!(check(one.clone(), split.clone(), true));
+        assert!(
+            !check(one.clone(), split.clone(), false),
+            "plain comparison keeps counting"
+        );
+        assert!(check(
+            format!("{one}{}", h("old2")),
+            format!("{split}{}{}", h("new2"), h("new2")),
+            true
+        ));
+        // Merge (fewer sites) is never accepted.
+        assert!(!check(format!("{one}{}", h("old1")), h("new1"), true));
+        // A repeat with a different relationship, a non-hyperlink repeat, a repeat after another reference.
+        assert!(!check(
+            one.clone(),
+            format!("{}{}", h("new1"), h("new2")),
+            true
+        ));
+        assert!(!check(
+            other("old1"),
+            format!("{}{}", other("new1"), other("new1")),
+            true
+        ));
+        assert!(!check(
+            format!("{one}{}", other("old2")),
+            format!("{}{}{}", h("new1"), other("new2"), h("new1")),
+            true
+        ));
+        // An extra leading site with nothing before it.
+        assert!(!check(String::new(), h("new1"), true));
+        // Strict namespace on the repeat is a different attribute.
+        let strict = format!(r#"<w:hyperlink xmlns:s="{S}" s:id="new1"/>"#);
+        assert!(!check(one, format!("{}{strict}", h("new1")), true));
+    }
     const T: &str = "http://schemas.openxmlformats.org/officeDocument/2006/relationships";
     const S: &str = "http://purl.oclc.org/ooxml/officeDocument/relationships";
     fn reference(ns: &str, prefix: &str, key: &str, id: &str) -> String {

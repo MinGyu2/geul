@@ -587,9 +587,12 @@ fn comment_reference_bindings_equal(
     let b = index(after)?;
     let lookup =
         |ids: &[(&str, &Attrs)], id: &str| ids.binary_search_by_key(&id, |(key, _)| *key).ok();
-    xml::relationship_references_equal(
+    // T013 Stage 4: 메모 경계에서 하이퍼링크 하나가 같은 관계를 가리키는 여러 요소로 나뉜 출력은 받는다(바로 앞 하이퍼링크와 같은
+    // r:* 속성만, 관계 목록은 그대로 — 다른 대상·형식·이름공간은 위 `index`·대조가 막음). 내용·메모 경계는 엔진 다시 읽기가 확인한다.
+    xml::relationship_references_equal_with(
         original.get("word/document.xml")?,
         output.get("word/document.xml")?,
+        true,
         |left, right| {
             let (Some(i), Some(j)) = (lookup(&a, left), lookup(&b, right)) else {
                 return false;

@@ -678,3 +678,20 @@ Strict 회귀 시험: `strict_reference_rebinding_*`, `strict_reference_valid_re
   clippy·fmt, `npx vitest run` 64 파일 1134 통과, typecheck·lint. **native X11/IBus 추적 입력·Word의 수락/거절 호환: NOT RUN**(Stage 7).
 - 이전 기록(Stage 1의 추적 문서 편집 차단, `raw_tracked_ime_replacement_reproduces_revision_mismatch`)은 당시 엔진 `b39a8fb` 기준 사실이며, 그 시험은
   `raw_tracked_ime_replacement_round_trips`로 바뀌었다.
+
+## T013 하이퍼링크 일부에 단 메모 (Stage 4, 2026-11-05, `d6c2719` 위)
+
+- 재현: 하이퍼링크 일부에 메모를 달면 WordCraft는 모델에서는 링크를 글자 속성(`CharProps::link`)으로 그대로 두고, 내보낼 때 메모 경계 앞뒤로
+  `w:hyperlink` 요소를 나누어 **같은 관계**(`rId1`)를 두세 번 가리킨다. 관계 목록은 그대로(하이퍼링크 관계 1개)이고 모델 왕복은 같다. 저장 거부 원인은
+  geul 관계 참조 비교기(`relationship_references_equal`)가 본문 r:* 참조 수 1→2를 거부한 것이다. 책임 계층은 geul 저장 규칙이며 엔진 변경은 없다.
+- 수정(좁은 계약, `xml::relationship_references_equal_with(.., split_hyperlinks=true, ..)`, 메모·각주 덧붙임 규칙의 본문 참조 대조에서만): 출력의 참조 자리가
+  WordprocessingML `w:hyperlink`이고 그 r:* 속성(이름공간·이름·Id)이 **바로 앞** 출력 참조 자리(역시 하이퍼링크)와 정확히 같을 때만 나뉜 이어짐으로 건너뛴다.
+  합침(출력이 더 적음), 다른 관계 Id, 하이퍼링크가 아닌 요소, 다른 참조를 사이에 둔 반복, 앞이 없는 반복, Strict/Transitional 이름공간 바뀜은 거부한다(단위
+  시험). 관계 목록 다중집합·관계 속성(Type·Target·TargetMode) 대조와 엔진 다시 읽기(`same_as`)는 그대로다.
+- 실제 저장(엔진 성공 증거, 두 회차): 전체 링크, 가운데, 링크 시작, 링크 끝, 링크→평문 경계, 평문→링크 경계 × (첫 저장 → 게시 파일 다시 열기 → 링크 안 둘째
+  메모 → 둘째 저장). 다시 연 링크 대상·글(`Link text`)과 메모 경계 글이 정확하다. 한 저장의 메모 둘 + 실행 취소·다시 실행도 통과.
+- 거부 확인(합성 출력 주입, 원본·dirty·복구 후보·티켓): 둘째 조각을 새 외부 대상으로(관계 추가), 없는 관계, Strict 이름공간 속성, 관계 대상 바꿈, 관계 형식
+  바꿈은 패키지 규칙이 거부(`PartAdded comments`·`PartChanged rels` 등). 링크 내용 복제·링크 조각 삭제는 패키지 규칙은 받지만 `same_as` false로
+  `ReopenMismatch` 거부(모델이 다름).
+- Strict 원본은 WordCraft가 Transitional로 내보내 기존 규칙대로 거부한다(변경 없음). 확인: geul `cargo test --lib` 320 통과/24 무시, clippy·fmt.
+  Word에서 나뉜 하이퍼링크·메모 표시: NOT RUN.
