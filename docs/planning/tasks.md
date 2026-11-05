@@ -3,6 +3,8 @@
 Input: [spec.md](./spec.md), [plan.md](./plan.md).
 Updated: 2026-11-04; source baseline `4bc1ac986026ccadb2d673a66ad69e6296e3a39e` (`MinGyu2/geul`, master).
 
+> **2026-11-05 Stage 5–7 재검증:** Stage 5/6/7은 부분 완료이며 T012/T013 체크는 미완료로 유지한다. 실제 Release WASM과 controlled 수식 연결, 수식 HWP/HWPX 2회 저장(6게시·2안전 거부), 현 native 실행 범위는 [통합 수용 보고서](../architecture/stage567-acceptance-2026-11-05.md)에 기록했다. D2는 25 PASS/2 INCONCLUSIVE이며 필수 E→U→F는 미관측, D4는 기존 문턱 그대로 6 PASS/2 FAIL이다. 제품 RHWP history·장평/자간·영속 수식은 NO-GO이고 Word/Hancom은 NOT RUN이다. 아래 T012/T013의 긴 상태 행과 native NOT RUN 문구는 그 행에 적힌 당시의 이력이며, 현재 범위는 이 최신 기록이 대체한다. DOCX 추적 표식 교정 뒤 실제 native10개/단계별 저장10개·재개방은 통과했으나 Word 외부 수용을 완료로 세지 않는다.
+
 ## Execution Context
 Implementation model: GPT-6.1 Sol (사용자 요청; 실행 모델 메타데이터는 별도 확인되지 않음)
 Reasoning effort: High (사용자 요청)

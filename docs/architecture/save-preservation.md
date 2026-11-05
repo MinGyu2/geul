@@ -2,11 +2,14 @@
 
 상태: **이 환경(Linux)에서 구현·검증. T009 체크 안 함** — 선행 T007·T008이 플랫폼 기준으로 미체크이고, 원본 교체는 Linux에서만
 검증했다(아래 "판정"). 기준 `ee402c3`(master, 작업 트리 깨끗, submodule rhwp `1a76570` v0.8.7·wordcraft `fc41918` v0.7.0, 바꾸지 않음).
+
 구현 안정화(A~I)는 `93e6acf` 위에서, 3차 안정화(A~F: 내구성 미확인 뒤 다시 불러오기 보호, 게시 무결성, 미리보기 PNG 엄격 검증,
 본문 구역 이름, 임시 파일 정리 소유, FileHeader 전체)는 `708a5e8` 위에서, 4차 안정화(A: 원본까지의 모든 상위 디렉터리 신뢰·확인한
 디렉터리 핸들 기준 게시, B: 같은 바이트의 압축 BinData도 끝까지 풀기·정할 수 없는 BIN_DATA 선언 unknown, C: 남는 미리보기는 내용과
 무관함이 증명된 엔진 상수만)는 `0a00938` 위에서 했다. 그 결과 **편집한 HWP 저장은 고정 rhwp에서 사실상 막힌다**(미리보기 낡음), 다른
 사용자가 쓸 수 있는 원본·디렉터리·상위 디렉터리도 저장하지 않는다(아래 "게시 무결성").
+
+> **2026-11-05 Stage 5–7 재검증:** T009의 fail-closed 비교와 원본 보호를 유지했다. HWP ID_MAPPINGS 짧은 입력 panic을 재현·수정했고, 실제 서비스에서 malformed DocInfo/참조 거부 및 원본·dirty/revision·ticket cleanup을 확인했다. 실제 WASM metric 연속 편집·저장 4회차 게시, 수식 실제 저장·재개방은 6게시·2안전 거부다. 제품 RHWP mutation은 D2 25 PASS/2 INCONCLUSIVE(E→U→F 미관측), D4 6 PASS/2 FAIL로 NO-GO이며, DOCX 추적 책갈피 표식 불일치는 수정 뒤 native10개·단계별 저장10개·재개방을 통과했다. 자세한 실행 identity와 외부 Word/Hancom NOT RUN은 [통합 수용 보고서](stage567-acceptance-2026-11-05.md)에 있다.
 
 ## 목표와 범위
 

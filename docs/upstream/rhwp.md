@@ -1,5 +1,7 @@
 # rhwp 코어 검토 (T002)
 
+> **2026-11-05 Stage 5–7 재검증:** 고정 RHWP gitlink를 유지한 채 13개 패치 series(Compaction 뒤 formula)를 활성화하고 새로운 Release WASM generation을 만들었다. 실제 WASM 수식 모델·교체·저장/재개방을 내부 HWP/HWPX에서 확인했고, controlled typed geul command만 노출했다. 공식 D2 25 PASS/2 INCONCLUSIVE(E→U→F 미관측), D4 6 PASS/2 FAIL로 RHWP history·장평/자간·영속 수식은 제품 NO-GO다. 현재 T012/T013과 native/외부 Office 판정은 [Stage 5–7 통합 수용 보고서](../architecture/stage567-acceptance-2026-11-05.md)를 따른다. Hancom HWPX formula fixture와 Word/Hancom 호환성은 NOT RUN이며 DOCX 표식 교정의 native10개도 통과했으며 Word 외부 수용과 구분한다.
+
 ## 외부 소스와 WASM 빌드
 
 `external/` 아래의 모든 의존성은 Git에 고정된 제3자 소스다. 빌드와 검증은
@@ -206,10 +208,14 @@ callback도 없다. PNG `StreamingDecoder` 공개 API가 있지만, 이 역시 �
 
 ## 후보 패치 (2026-11-05)
 
+> 아래는 승격 전 기록이다. 현재 수식은 `patches/rhwp/table-formula-field.patch`로 이동해 active series 13번째에 들어갔고 실제 새 WASM·typed adapter·저장 서비스까지 연결됐다. 최신 신원/제약은 문서 첫 통합 수용 보고서에 있다.
+
 `patches/rhwp/candidates/`의 패치는 빌드 series 밖이며 출하 WASM에 들어가지 않는다. `table-formula-field.patch`(T012 Stage 6 부분 진행)는 고정
 `1a76570` + 현재 series 위에 적용되고 네이티브 시험만 통과했다. 업스트림에 제출하지 않았다(게시·PR은 별도 승인 필요).
 
 ## 빌드 series 패치 추가: `char-shape-compaction.patch` (2026-11-05, T012 Stage 5)
+
+> 다음 SHA/12개 series/generation은 최초 구현 신원의 기록이다. 후속 sentinel 교정 뒤의 13개 series와 최종 Release 신원은 [최신 기록](../architecture/stage567-acceptance-2026-11-05.md#실행-신원과-재현)에 따로 고정했다.
 
 고정 `1a76570` + 기존 11개 패치 뒤 12번째(`scripts/rhwp-patches.py` `SERIES`). SHA-256 `98b3666faf7836976df3698946e6a150e80b17c18cf4f91977a4c9a34ef0d206`. RHWP 저장소 자체는 바꾸지 않았고(gitlink 그대로)
 geul이 적용하는 패치다. 새 파일 `src/document_core/commands/char_shape_compact.rs`(+시험), `commands/mod.rs` 한 줄, `wasm_api.rs`의

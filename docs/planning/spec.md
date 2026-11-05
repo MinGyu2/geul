@@ -6,6 +6,8 @@ Status: 구현 진행 중. T007–T010은 △ 조건부 완료(전체 수용 미
 Source baseline: `4bc1ac986026ccadb2d673a66ad69e6296e3a39e` (`MinGyu2/geul`, master).
 Input: WordCraft + RHWP 독립 코어, Tauri/React 신규 UI, 6개 영역, 언어별 JSON, 공개 저장소 민감정보 사전 차단. 2026-11-04 사용자가 T007–T010의 잔여 사유 기록 및 T011 진행, DOCX/HWP/HWPX 신규 생성 계획 반영을 승인했다.
 
+> **2026-11-05 Stage 5–7 재검증:** Stage 5–7과 T012/T013은 부분 완료 상태다. 실제 Release WASM·13개 패치·controlled typed formula 연결과 수식 저장 검증을 마쳤지만, D2 25 PASS/2 INCONCLUSIVE(E→U→F 미관측), D4 원래 기준 6 PASS/2 FAIL 때문에 제품 RHWP history·장평/자간·영속 수식은 NO-GO다. 현재 native 완료 범위, 두 차례 저장의 6게시·2안전 거부, DOCX 표식 교정 뒤 native10개 통과 상태, Word/Hancom NOT RUN은 [통합 수용 보고서](../architecture/stage567-acceptance-2026-11-05.md)를 따른다. 이 기록은 기존 요구사항이나 acceptance threshold를 바꾸지 않는다.
+
 ## Delivery Decision — 2026-11-04
 
 `△ 조건부 완료`는 검증된 개발 범위를 인정하고 명시한 후속 개발을 허용하는 관리 상태다. 전체 수용 PASS, 미검증 환경의 지원 선언, 제품 명령 활성화, 출시 승인이 아니다. 기존 FR-001–FR-015와 SC-001–SC-008은 유지하고, 신규 생성 요구를 FR-016–FR-019와 SC-009–SC-011로 추가한다.

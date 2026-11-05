@@ -5,6 +5,8 @@ T010 SC-003의 rhwp 몫(실행 취소·다시 실행)의 계약이다. Phase 2(2
 ([tasks.md](../planning/tasks.md)). 근거는 Phase 0 PoC(`tests/poc/t010-phase0/`, [README](../../tests/poc/t010-phase0/README.md))와
 고정 rhwp `1a76570`(v0.8.7) 소스다. 근거의 강도: **VERIFIED**(실행한 시험·읽은 코드), **INFERRED**(근거에서 추론), **UNVERIFIED**.
 
+> **2026-11-05 Stage 5–7 재검증:** D2의 원래 수용 규칙에서 25 PASS/2 INCONCLUSIVE, 필수 empty compositionend→native Undo→late final insertion(E→U→F)은 미관측이다. D4는 제품 WebView에서 기존 표본·문턱(group p95≤50ms, Undo p95≤1500ms)을 적용해 6 PASS/2 FAIL; 큰 문서 두 건의 group 입력이 실패했다. 그러므로 RHWP Undo/Redo 및 metrics·formula 제품 변경은 계속 NO-GO이며, 실제 WASM/controlled command 결과를 제품 수용으로 보지 않는다. 현재 실행과 T012/T013의 상태는 [통합 수용 보고서](stage567-acceptance-2026-11-05.md)에 기록했다. 아래 날짜별 행렬의 수치는 당시 신원에 한정하며 이번 측정 수치는 링크한 최신 기록을 따른다.
+
 2026-10-22 고침(검토 지적 다섯 가지): ① 할당이 대기 중인 실행 취소의 대상을 지울 수 있었다(§5, 반례 재현) ② `recordMutation()`마다 단계를
 닫는 규칙과 타자 묶기가 모순이었다(§3·§6) ③ 깊이 식의 clamp가 "4 미만이면 끔"을 막았다(§10) ④ `saveSnapshot` 예외를 무해하다고
 보았다(§9) ⑤ 다시 실행이 할당하는 구조였다(이제 할당하지 않음, §5). 고친 알고리즘은 시험 전용 모델 `tests/poc/t010-phase0/history_model.mjs`로

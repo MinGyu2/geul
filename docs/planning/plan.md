@@ -5,6 +5,8 @@ Spec: [spec.md](./spec.md)
 Source baseline: `4bc1ac986026ccadb2d673a66ad69e6296e3a39e` (`MinGyu2/geul`, master).
 Status: T007–T010 △ 조건부 완료, T011 완료(2026-11-04, native IME 포함 검증 — [tasks.md](./tasks.md) Verification Log). T021 생성 경계는 실제 WASM/Rust 실행 수용 완료. T022 제품 연결 완료. T023 native 신규 생성 수용 완료(X11/IBus, 2026-11-04; 추가 환경은 NOT RUN).
 
+> **2026-11-05 Stage 5–7 재검증:** Stage 5–7 전체와 T012/T013은 부분 완료다. 13개 RHWP 패치의 실제 Release WASM 및 controlled typed formula 연결을 검증했고, 공식 D2/D4 문턱을 유지한 결과 D2 25 PASS/2 INCONCLUSIVE(E→U→F 미관측), D4 6 PASS/2 FAIL이다. 제품 RHWP history·장평/자간·영속 수식은 NO-GO, 실제 native 검증 범위와 외부 Office NOT RUN은 [통합 수용 보고서](../architecture/stage567-acceptance-2026-11-05.md)를 따른다. DOCX 추적 표식 교정 뒤 native10개와 단계별 저장검사10개·재개방은 통과했으며 Word 외부 수용과 구분한다.
+
 ## Summary
 
 RHWP와 WordCraft의 독립 모델·렌더·기록을 Tauri/React UI로 연결한다. 검증된 Linux 기본 기능을 재구현하지 않고 T011 리본 작업으로 진행한다. 새 문서는 형식 선택 후 해당 엔진에서 생성하며, 최초 단계는 기존 DOCX처럼 경로를 먼저 선택한다. 제목 없음 문서는 선택적 후속 단계다.

@@ -3,6 +3,8 @@
 FR-007(명령 레지스트리)과 SC-003(서식·실행 취소·미지원 명령을 실제 엔진에서 확인)의 T010 몫. 상황별 리본은 T011, 형식별 고급
 명령은 T012·T013이 맡는다. 이 문서는 T010에서 정한 경계와 근거, 남은 한계를 적는다.
 
+> **2026-11-05 Stage 5–7 재검증:** 명령 경계상 RHWP 실행 취소·장평/자간·영속 수식은 제품에서 계속 비활성이다. 수식은 기존 읽기 전용 계산과 분리한 typed command로 controlled 설정에서만 연결했으며, 13개 패치의 실제 Release WASM에서 검증했다. D2 25 PASS/2 INCONCLUSIVE(E→U→F 미관측), D4 원래 문턱 6 PASS/2 FAIL이라 제품 history·metrics·formula는 NO-GO다. T012/T013 완료 여부·현재 native 범위와 외부 Word/Hancom NOT RUN은 [통합 수용 보고서](stage567-acceptance-2026-11-05.md)를 참조한다. DOCX 추적 표식 교정 뒤 실제 native10개와 단계별 저장검사10개·재개방이 통과했다.
+
 현재 T010은 INCOMPLETE — ON HOLD, 제품 RHWP Undo/Redo는 NO-GO다. T011은 2026-11-04 착수 조건 변경 뒤 구현·검증해 완료했다(아래 "T011 리본", 선택 문맥 상황 탭은 빠진 능력으로 숨김). [수용 행렬·재개 조건](rhwp-undo-redo.md#t010-current-status)이 현재 상태의 기준이며 아래 날짜별 검증은 당시 신원에 한정한다.
 
 ## 구조
@@ -713,6 +715,8 @@ Strict 회귀 시험: `strict_reference_rebinding_*`, `strict_reference_valid_re
 
 ## T012 Stage 6: 표 계산식 필드 — 부분 진행(엔진 후보만, 미연결) (2026-11-05, `eb9a54b` 위)
 
+> 이 절은 후보 시점 기록이다. 현재 `hangul.insertTableFormula`는 별도 typed parameter command이며 test-hooks/history/formula 세 flag와 실제 history/API/셀 문맥을 모두 요구한다. active series 13번째 패치·새 Release WASM·실제 저장 검증까지 완료했고 제품은 D2/D4/보존 관문 때문에 unsupported다. 기존 `hangul.tableFormula`의 읽기 전용 계약은 유지한다. 아래 malformed parser/HWPX 속성/빈 표 한계 중 입증된 엔진 결함은 [후속 통합 기록](stage567-acceptance-2026-11-05.md#stage-6-영속-수식)에서 교정했다.
+
 판정: **PARTIALLY COMPLETED**(엔진 후보와 네이티브 시험까지). 제품 `hangul.tableFormula`는 읽기 전용 계산 그대로이고 결과·계산식 쓰기는 연결하지 않았다.
 
 - 한컴 실물 근거(창작 아님): 고정 RHWP의 `fields --json`과 `dump-records`로 한컴 저장 HWP 표본(`samples/calc-cell.hwp` 등 7개 문서)의 계산식 필드를
@@ -735,6 +739,8 @@ Strict 회귀 시험: `strict_reference_rebinding_*`, `strict_reference_valid_re
   (3) HWPX 계산식 필드의 한컴 호환은 기준 표본이 없어 미검증, 한컴 오피스 열기·다시 계산: NOT RUN. (4) RHWP 렌더링 변경 관문(한컴 PDF Visual Sweep)도 NOT RUN.
 
 ## T012/T013 Stage 7: native·외부 호환 수용 — NOT RUN (2026-11-05, `57dde8e` 위)
+
+> 다음 환경 부재/NOT RUN은 `57dde8e` 당시 기록이다. 현 X11/IBus/Tauri 환경은 재사용해 실행했으며 [최신 실제 native 범위와 미완료 외부 수용](stage567-acceptance-2026-11-05.md#stage-7-실제-native와-제품-관문)을 구분한다.
 
 - 환경: `DISPLAY` 없음(X11 없음), `WAYLAND_DISPLAY`는 사용자의 실제 데스크톱 세션뿐이고 headless 합성기(weston) 없음, IBus·입력 주입 도구 없음,
   Microsoft Word·한컴 오피스 없음(Linux). 실제 Tauri 창 시험을 사용자 세션에 띄우지 않았다. 따라서 Tauri native 흐름(목차·추적·수락/거절·하이퍼링크 메모·
