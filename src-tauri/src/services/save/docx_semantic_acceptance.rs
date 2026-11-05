@@ -1229,19 +1229,52 @@ fn notes_first_and_second_published_saves() {
     }
 }
 
+/// Injected output at the existing service boundary, with real model equivalence.
+/// This deliberately bypasses export, not verification or atomic publication.
+fn refuse_note_output(doc: &Docx, corrupt: &[u8], expected: Finding) {
+    let original = doc.bytes();
+    let registry = doc.state.registry();
+    let before = registry.get(doc.info.session_id).unwrap();
+    let same = model_of(doc).lock().unwrap().same_as(corrupt);
+    let result = {
+        let ticket = registry
+            .begin_save(before.session_id, before.load_generation, before.revision)
+            .unwrap();
+        service::save(registry, &ticket, &Limits::default(), corrupt, None, same)
+    };
+    let Err(DocumentError::UnsafeSave { preservation }) = result else {
+        panic!("expected unsafe save: {result:?}")
+    };
+    let expected_service = if same {
+        expected
+    } else {
+        Finding::new(FindingCode::ReopenMismatch)
+    };
+    assert!(
+        preservation.findings.contains(&expected_service),
+        "{preservation:?}"
+    );
+    eprintln!(
+        "NOTE REFUSAL same_as={same} sha256={:x} findings={:?}",
+        Sha256::digest(&original),
+        preservation.findings
+    );
+    assert_eq!(doc.bytes(), original);
+    assert_eq!(Sha256::digest(doc.bytes()), Sha256::digest(&original));
+    assert_eq!(registry.get(before.session_id).unwrap(), before);
+    assert!(before.dirty);
+    assert!(doc.leftovers().is_empty());
+    ticket_released(doc);
+}
+
 /// 첫 각주 출력의 package 변이는 모두 거부된다(합성 출력 주입 — 저장 규칙 증거, 엔진 성공 증거 아님).
 #[test]
 fn note_preservation_rule_rejects_unrelated_changes() {
     let original = basic::basic_ko().unwrap();
-    let mut m = DocxModel::open(&original).unwrap();
-    m.apply(&[
-        DocxOp::Move {
-            to: MoveTarget::DocStart,
-            extend: false,
-        },
-        note_op(false, "각주"),
-    ]);
-    let output = m.export().unwrap();
+    let mut doc = open_docx(&original);
+    assert!(doc.preflight().unwrap().preservation.is_safe());
+    insert_note(&mut doc, false, false, "각주");
+    let output = model_of(&doc).lock().unwrap().export().unwrap();
     let ok = |out: &[u8]| service::check_saved(Format::Docx, &original, out, None, true);
     assert!(ok(&output).is_safe());
     let settings = |f: &dyn Fn(&str) -> String| byte_patch(&output, "word/settings.xml", f);
@@ -1294,6 +1327,8 @@ fn note_preservation_rule_rejects_unrelated_changes() {
         ),
     ];
     for (name, corrupt, code, part) in cases {
+        assert_ne!(corrupt, output, "{name}: mutation applied");
+        refuse_note_output(&doc, &corrupt, Finding::at(code, part));
         let verdict = ok(&corrupt);
         assert!(
             verdict.findings.contains(&Finding::at(code, part)),
@@ -1308,7 +1343,13 @@ fn note_preservation_rule_rejects_unrelated_changes() {
         .map(|n| entry(n, &package.parts[n].1))
         .collect();
     entries.push(entry("word/extra.xml", b"<x/>"));
-    let verdict = ok(&zip(&entries, false));
+    let extra = zip(&entries, false);
+    refuse_note_output(
+        &doc,
+        &extra,
+        Finding::at(FindingCode::PartAdded, "word/extra.xml"),
+    );
+    let verdict = ok(&extra);
     assert!(
         verdict
             .findings
@@ -1323,15 +1364,10 @@ fn note_preservation_rule_rejects_unrelated_changes() {
     );
 
     // 둘째 회차(기존 각주 부분): 원본 각주 글·구분선 변경과 각주 삭제는 거부.
-    let mut m = DocxModel::open(&output).unwrap();
-    m.apply(&[
-        DocxOp::Move {
-            to: MoveTarget::DocEnd,
-            extend: false,
-        },
-        note_op(false, "둘째"),
-    ]);
-    let second = m.export().unwrap();
+    publish_notes(&mut doc);
+    let mut doc = reload(doc);
+    insert_note(&mut doc, false, true, "둘째");
+    let second = model_of(&doc).lock().unwrap().export().unwrap();
     let ok2 = |out: &[u8]| service::check_saved(Format::Docx, &output, out, None, true);
     assert!(ok2(&second).is_safe());
     let notes_xml = |f: &dyn Fn(&str) -> String| byte_patch(&second, "word/footnotes.xml", f);
@@ -1354,6 +1390,11 @@ fn note_preservation_rule_rejects_unrelated_changes() {
         ),
     ] {
         assert_ne!(corrupt, second, "{name}: mutation applied");
+        refuse_note_output(
+            &doc,
+            &corrupt,
+            Finding::at(FindingCode::PartChanged, "word/footnotes.xml"),
+        );
         let verdict = ok2(&corrupt);
         assert!(
             verdict
@@ -1362,4 +1403,112 @@ fn note_preservation_rule_rejects_unrelated_changes() {
             "{name}: {verdict:?}"
         );
     }
+    publish_notes(&mut doc);
+}
+
+/// Independent adversarial audit of the pinned reader, for both note families and marks.
+#[test]
+fn pinned_reader_separator_mutations_remain_explicit() {
+    let mut doc = open_docx(&basic::basic_ko().unwrap());
+    insert_note(&mut doc, false, false, "foot");
+    insert_note(&mut doc, true, true, "end");
+    let bytes = model_of(&doc).lock().unwrap().export().unwrap();
+    let defaults = reopen(&bytes);
+    assert!(defaults.footnote_separators.is_empty());
+    assert!(defaults.endnote_separators.is_empty());
+    for (part, foot) in [("word/footnotes.xml", true), ("word/endnotes.xml", false)] {
+        let aliased = byte_patch(&bytes, part, |xml| {
+            xml.replace("xmlns:w=", "xmlns:n=").replace("w:", "n:")
+        });
+        let parsed = reopen(&aliased);
+        assert!(if foot {
+            parsed.footnote_separators.is_empty()
+        } else {
+            parsed.endnote_separators.is_empty()
+        });
+        let notice = byte_patch(&bytes, part, |xml| {
+            xml.replacen("w:type=\"separator\"", "w:type=\"continuationNotice\"", 1)
+        });
+        let parsed = reopen(&notice);
+        assert!(if foot {
+            parsed.footnote_separators.continuation_notice.is_some()
+        } else {
+            parsed.endnote_separators.continuation_notice.is_some()
+        });
+        for mark in ["separator", "continuationSeparator"] {
+            let bare = format!("<w:r><w:{mark}/></w:r>");
+            for (name, replacement) in [
+                ("spacing", "<w:pPr><w:spacing w:after=\"120\" w:line=\"240\" w:lineRule=\"auto\"/></w:pPr>".to_owned()),
+                ("line", "<w:pPr><w:spacing w:after=\"0\" w:line=\"241\" w:lineRule=\"auto\"/></w:pPr>".to_owned()),
+                ("format", format!("<w:r><w:rPr><w:b/></w:rPr><w:{mark}/></w:r>")),
+                ("paragraph", format!("{bare}</w:p><w:p>")),
+                ("run", format!("{bare}<w:r><w:t>custom</w:t></w:r>")),
+                ("object", format!("<w:r><w:{}/></w:r>", if mark == "separator" { "continuationSeparator" } else { "separator" })),
+                ("mark attr", format!("<w:r><w:{mark} w:val=\"custom\"/></w:r>")),
+                ("order", format!("{bare}<w:pPr><w:spacing w:after=\"0\" w:line=\"240\" w:lineRule=\"auto\"/></w:pPr>")),
+            ] {
+                let changed = byte_patch(&bytes, part, |xml| {
+                    let tag = if foot { "footnote" } else { "endnote" };
+                    let start = xml.find(&format!("<w:{tag} w:type=\"{mark}\" ")).unwrap();
+                    let end = start + xml[start..].find(&format!("</w:{tag}>")).unwrap();
+                    let sep = &xml[start..end];
+                    let altered = if name == "spacing" || name == "line" {
+                        sep.replace("<w:pPr><w:spacing w:after=\"0\" w:line=\"240\" w:lineRule=\"auto\"/></w:pPr>", &replacement)
+                    } else if name == "order" {
+                        sep.replace("<w:pPr><w:spacing w:after=\"0\" w:line=\"240\" w:lineRule=\"auto\"/></w:pPr>", "").replace(&bare, &replacement)
+                    } else { sep.replace(&bare, &replacement) };
+                    assert_ne!(sep, altered, "{name}");
+                    format!("{}{}{}", &xml[..start], altered, &xml[end..])
+                });
+                let parsed = reopen(&changed);
+                let seps = if foot { &parsed.footnote_separators } else { &parsed.endnote_separators };
+                assert!(if mark == "separator" { seps.separator.is_some() } else { seps.continuation_separator.is_some() }, "{part} {mark} {name}");
+            }
+        }
+    }
+}
+
+#[test]
+fn tracked_policy_ipc_preserves_session_and_original() {
+    let mut seed = reopen(&basic::basic_ko().unwrap());
+    seed.settings.track_changes = true;
+    let original = written(&seed);
+    let doc = open_docx(&original);
+    let before = doc.state.registry().get(doc.info.session_id).unwrap();
+    let result = block_on(docx::edit(
+        &doc.state,
+        before.session_id,
+        before.load_generation,
+        before.revision,
+        vec![
+            DocxOp::InsertText { text: "가".into() },
+            DocxOp::Backspace,
+            DocxOp::Undo {},
+            DocxOp::Redo {},
+            DocxOp::ReplaceInserted {
+                expected: "가".into(),
+                text: "각".into(),
+            },
+            DocxOp::InsertAt {
+                mark: 1,
+                text: "한".into(),
+            },
+        ],
+    ))
+    .unwrap();
+    assert_eq!(result.rejected, [0, 1, 2, 3, 4, 5]);
+    assert_eq!(result.session, before);
+    assert!(result.view.tracked_read_only);
+    assert_eq!(doc.bytes(), original);
+    assert!(doc.leftovers().is_empty());
+    ticket_released(&doc);
+    let stale = block_on(docx::edit(
+        &doc.state,
+        before.session_id,
+        before.load_generation,
+        before.revision + 1,
+        vec![DocxOp::Backspace],
+    ));
+    assert!(stale.is_err());
+    assert_eq!(doc.state.registry().get(before.session_id).unwrap(), before);
 }

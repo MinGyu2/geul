@@ -463,6 +463,7 @@ export class DocxEditorSession implements ImeSession, DocumentCommandTarget {
     trace("docx:push", () => ({ session: this.sessionId, ops: ops.map((op) => op.op).join(","), editable: this.editable,
       settles, provisional: this.provisional !== null }));
     if (!this.editable) return false;
+    if (this.view?.trackedReadOnly && ops.some(mutates)) return false;
     if (settles) this.provisional = null;
     this.inputNotice = null;
     const wasBusy = this.busy;
@@ -595,7 +596,7 @@ export class DocxEditorSession implements ImeSession, DocumentCommandTarget {
 
   beginComposition(): void {
     trace("docx:beginComposition", () => ({ session: this.sessionId, editable: this.editable, composing: this.composition !== null }));
-    if (!this.editable || this.composition) return;
+    if (!this.editable || this.view?.trackedReadOnly || this.composition) return;
     this.provisional = null;
     this.composition = { text: "", shown: false };
     this.emit();
@@ -1000,7 +1001,7 @@ export class DocxEditorSession implements ImeSession, DocumentCommandTarget {
   snapshot(): DocumentCommandSnapshot {
     return {
       sessionId: this.sessionId, engine: this.engine, loadGeneration: this.generation, revision: this.revision,
-      loaded: this.status.kind === "ready" && !this.closing, editable: this.editable,
+      loaded: this.status.kind === "ready" && !this.closing, editable: this.editable && !this.view?.trackedReadOnly,
       composing: this.imeUnsettled, pending: this.busy,
       queuedHistory: this.queuedHistory(), saving: this.saving,
       history: this.view?.history ?? null, format: this.view?.format ?? null, formatAccess: this.view?.formatAccess ?? null,

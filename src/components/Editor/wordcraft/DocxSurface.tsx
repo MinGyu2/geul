@@ -257,6 +257,11 @@ export function DocxSurface({ session, zoom, imeContext }: DocxSurfaceProps) {
             </button>
           </div>
         )}
+        {session.view?.trackedReadOnly && (
+          <p className="editor__notice" role="status" data-testid="docx-tracked-read-only">
+            {t("editor.docx.trackedReadOnly")}
+          </p>
+        )}
         {notice && (
           <p className="editor__notice" role="status" data-testid="docx-input-notice" data-notice={notice}>
             {t(`editor.docx.${notice}`)}
@@ -326,6 +331,7 @@ export function DocxSurface({ session, zoom, imeContext }: DocxSurfaceProps) {
           autoCorrect="off"
           spellCheck={false}
           disabled={!editable}
+          readOnly={session.view?.trackedReadOnly === true}
         />
       </div>
     </div>

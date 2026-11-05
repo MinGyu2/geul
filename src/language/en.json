@@ -1,4 +1,5 @@
 {
+  "editor.docx.trackedReadOnly": "Documents with Track Changes enabled currently support reading and selection only. Typing, formatting, comments, notes and undo are blocked because saving after IME replacement or deletion cannot be verified. To edit, open a copy with tracking turned off in a compatible editor.",
   "app.name": "geul",
   "app.noDocument": "No document open",
   "titleBar.label": "Title bar",

@@ -12,6 +12,7 @@ const view = {
   history: { undo: false, redo: false },
   format: { bold: false, italic: false, underline: false, strikethrough: false },
   formatAccess: "allowed",
+  trackedReadOnly: false,
 };
 const session = { sessionId: 3, format: "docx", engine: "wordcraft", revision: 2, state: "ready", displayName: "a.docx", dirty: true, sequence: 5, loadGeneration: 1 };
 
@@ -23,6 +24,10 @@ describe("DOCX 응답 검사", () => {
     expect(parseDocxView({ ...actual, selectionText: null })).toBeNull();
     expect(parseDocxView({ ...actual, paragraphStyle: 42 })).toBeNull();
     expect(parseDocxView({ ...actual, selectionText: undefined })).toBeNull();
+  });
+  it("trackedReadOnly는 생략 가능하고 불리언만 받는다", () => {
+    expect(parseDocxView({ ...view, trackedReadOnly: true })?.trackedReadOnly).toBe(true);
+    expect(parseDocxView({ ...view, trackedReadOnly: "yes" })).toBeNull();
   });
   it("보기는 계약의 모양만 받는다", () => {
     expect(parseDocxView(view)).toEqual(view);

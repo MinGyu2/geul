@@ -948,7 +948,8 @@ fn 응답_json은_계약의_모양이다() {
             "pages",
             "paragraphStyle",
             "paragraphText",
-            "selection"
+            "selection",
+            "trackedReadOnly"
         ]
     );
     // T010: 엔진 기록·서식(프런트엔드 parseDocxView가 정확히 이 키만 받는다).
@@ -1893,7 +1894,13 @@ fn t010_보호_상태의_서식_가용성은_엔진_판정과_같다() {
         ("comments", false, false, Protected, [false, false, false]),
         ("comments", false, true, Regions, [true, false, true]),
         ("forms", false, false, Protected, [false, false, false]),
-        ("trackedChanges", false, false, Allowed, [true, true, true]),
+        (
+            "trackedChanges",
+            false,
+            false,
+            Protected,
+            [false, false, false],
+        ),
         (
             "trackedChanges",
             true,
@@ -2371,99 +2378,123 @@ fn 각주_저장_출력은_두_회차_모두_다시_열어_같고_보존_검사�
 
 // ---- T013 이미 변경 내용 추적이 켜진 DOCX(review.trackChanges는 연결하지 않음) ----
 
-/// 추적이 켜진 문서를 열어 앱의 실제 IME·편집 연산 열을 보낸다. 엔진은 편집을 추적한다(지운 글은 문단에 남아 취소선으로 보이고,
-/// 이어 친 글은 그 앞에 들어감 — Word와 같은 모델). 어댑터의 위치(보기의 paragraphText·caretOffset, 늦은 확정 자리, 바로 앞 넣기
-/// 고침)는 같은 원 글자 좌표라 어긋나지 않는다. 지운 글이 남는 연산 뒤의 출력은 지금 WordCraft 의미 비교가 같다고 증명하지
-/// 못한다(수정 기록 색인이 만든 순서와 문서 순서로 다르게 매겨지고, 자기 추적 넣기를 지우면 쓰이지 않는 기록이 남음) — `same_as`가
-/// false라 저장 절차가 `ReopenMismatch`로 거부하고 원본을 지킨다(조용한 손상 없음). 이 한계가 고쳐지면 기대를 바꿔야 한다.
+/// Already tracked files reject edits while preserving navigation and the document state.
 #[test]
-fn 추적_문서의_편집은_추적되고_증명하지_못한_출력은_저장이_거부된다() {
-    use crate::document::Format;
-    use crate::services::save::service::check_saved;
-    use wordcraft_engine::doc::roundtrip::{compare_roundtrip, Difference, Equivalence};
-    use wordcraft_engine::doc::StoryRef;
+fn tracked_documents_reject_mutations_but_allow_navigation() {
     let mut seed = wordcraft_engine::io::open_bytes("x.docx", &fixture()).unwrap();
     seed.settings.track_changes = true;
     let tracked = wordcraft_engine::io::save_bytes("x.docx", &seed).unwrap();
-    let start = mv(MoveTarget::DocStart, false);
-    let right = |extend| mv(MoveTarget::Right, extend);
-    let correct = || DocxOp::ReplaceInserted {
-        expected: "가".into(),
-        text: "각".into(),
-    };
-    // (이름, 연산, 첫 문단 앞부분(지운 글 포함), 저장 가능한지)
-    let cases: Vec<(&str, Vec<DocxOp>, &str, bool)> = vec![
-        ("넣기", vec![start.clone(), insert("가")], "가한글", true),
-        (
-            "늦은 확정",
-            vec![
-                start.clone(),
-                DocxOp::Mark { id: 1 },
-                mv(MoveTarget::DocEnd, false),
-                DocxOp::InsertAt {
-                    mark: 1,
-                    text: "M".into(),
-                },
-            ],
-            "M한글",
-            true,
-        ),
-        (
-            "넣기 고침",
-            vec![start.clone(), insert("가"), correct()],
-            "각한글",
-            false,
-        ),
-        (
-            "지우고 치기",
-            vec![
-                start.clone(),
-                right(false),
-                right(false),
-                DocxOp::Backspace,
-                insert("X"),
-            ],
-            "한X글",
-            false,
-        ),
-        (
-            "선택 바꾸기",
-            vec![start.clone(), right(true), right(true), insert("Y")],
-            "Y한글",
-            false,
-        ),
+    let operations = vec![
+        insert("x"),
+        DocxOp::PasteText {
+            text: "x".into(),
+            chain: false,
+        },
+        DocxOp::DeleteSelection,
+        DocxOp::Backspace,
+        DocxOp::DeleteForward,
+        DocxOp::NewParagraph,
+        DocxOp::Tab { back: false },
+        DocxOp::InsertAt {
+            mark: 1,
+            text: "x".into(),
+        },
+        DocxOp::ReplaceInserted {
+            expected: "x".into(),
+            text: "y".into(),
+        },
+        DocxOp::Undo {},
+        DocxOp::Redo {},
+        DocxOp::Format {
+            format: super::engine::CharFormat::Bold,
+        },
+        DocxOp::Comment {
+            text: "comment".into(),
+        },
+        DocxOp::Footnote {
+            text: "note".into(),
+        },
+        DocxOp::Endnote {
+            text: "note".into(),
+        },
     ];
-    for (name, ops, head, saveable) in cases {
+    for op in operations {
         let mut m = DocxModel::open(&tracked).unwrap();
-        let outcome = m.apply(&ops);
-        assert!(
-            outcome.rejected.is_empty(),
-            "{name}: {:?}",
-            outcome.rejected
-        );
-        let doc = m.diagnostic_document();
-        assert!(doc.settings.track_changes, "{name}");
-        assert!(!doc.revisions.is_empty(), "{name}: the edit is tracked");
-        assert!(
-            doc.body[0].as_para().unwrap().text.starts_with(head),
-            "{name}"
-        );
-        let output = m.export().unwrap();
-        assert_eq!(m.same_as(&output), saveable, "{name}");
-        // 패키지 보존은 통과한다: 막는 것은 엔진 다시 읽기 근거뿐이다.
-        assert!(
-            check_saved(Format::Docx, &tracked, &output, None, true).is_safe(),
-            "{name}"
-        );
-        if !saveable {
-            let reopened = wordcraft_engine::io::open_bytes("x.docx", &output).unwrap();
-            assert_eq!(
-                compare_roundtrip(doc, &reopened, &Default::default()),
-                Ok(Equivalence::Different(Difference::Field("revisions"))),
-                "{name}: the known revision-index limitation, not another difference"
-            );
-            assert!(!check_saved(Format::Docx, &tracked, &output, None, false).is_safe());
-        }
-        let _ = doc.shown_text(StoryRef::Body);
+        let before = m.diagnostic_document().clone();
+        let outcome = m.apply(&[op]);
+        assert_eq!(outcome.rejected, [0]);
+        assert_eq!(outcome.changed, 0);
+        assert_eq!(*m.diagnostic_document(), before);
+        assert!(m.view().tracked_read_only);
     }
+    let mut m = DocxModel::open(&tracked).unwrap();
+    let before = m.diagnostic_document().clone();
+    let nav = m.apply(&[mv(MoveTarget::DocEnd, false)]);
+    assert!(nav.rejected.is_empty());
+    assert_eq!(nav.changed, 0);
+    assert_eq!(*m.diagnostic_document(), before);
+    assert!(m.view().tracked_read_only);
+}
+
+/// Preserve the underlying WordCraft failure reproduction independently of the geul policy.
+#[test]
+fn raw_wordcraft_tracked_insertion_roundtrips() {
+    use wordcraft_engine::doc::{
+        roundtrip::{compare_roundtrip, Equivalence},
+        Path, Pos, StoryRef,
+    };
+    use wordcraft_engine::{io, Session};
+
+    let mut seed = io::open_bytes("x.docx", &fixture()).unwrap();
+    seed.settings.track_changes = true;
+    let mut session = Session::new(seed);
+    session
+        .run(
+            "caret.set",
+            &json!({"pos": Pos::new(StoryRef::Body, Path(vec![0]), 0)}),
+        )
+        .unwrap();
+    session
+        .run("text.insert", &json!({"text": "가", "raw": true}))
+        .unwrap();
+    let clean_insert = io::save_bytes("x.docx", &session.doc).unwrap();
+    let reopened = io::open_bytes("x.docx", &clean_insert).unwrap();
+    assert!(matches!(
+        compare_roundtrip(&session.doc, &reopened, &Default::default()),
+        Ok(Equivalence::Equivalent(_))
+    ));
+}
+
+#[test]
+fn raw_tracked_ime_replacement_reproduces_revision_mismatch() {
+    use wordcraft_engine::doc::{
+        roundtrip::{compare_roundtrip, Difference, Equivalence},
+        Pos,
+    };
+    use wordcraft_engine::{io, Session};
+    let mut seed = io::open_bytes("x.docx", &fixture()).unwrap();
+    seed.settings.track_changes = true;
+    let bytes = io::save_bytes("x.docx", &seed).unwrap();
+    let mut session = Session::new(io::open_bytes("x.docx", &bytes).unwrap());
+    session
+        .run("caret.set", &json!({"pos": Pos::body(0, 0)}))
+        .unwrap();
+    session
+        .run("text.insert", &json!({"text": "가", "raw": true}))
+        .unwrap();
+    session
+        .run(
+            "select.range",
+            &json!({"anchor": Pos::body(0, 0), "focus": Pos::body(0, 3)}),
+        )
+        .unwrap();
+    session
+        .run("text.insert", &json!({"text": "각", "raw": true}))
+        .unwrap();
+    let bytes = io::save_bytes("x.docx", &session.doc).unwrap();
+    let reopened = io::open_bytes("x.docx", &bytes).unwrap();
+    assert_eq!(
+        compare_roundtrip(&session.doc, &reopened, &Default::default()),
+        Ok(Equivalence::Different(Difference::Field("revisions")))
+    );
 }

@@ -262,6 +262,8 @@ pub struct RectView {
 #[derive(Clone, Debug, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct DocxView {
+    /// Authoritative tracked-document policy; navigation remains available.
+    pub tracked_read_only: bool,
     pub pages: Vec<PageSize>,
     /// 커서 자리를 배치에서 찾지 못하면(숨은 글자 등) 없다.
     pub caret: Option<CaretView>,
@@ -307,6 +309,9 @@ impl FormatAccess {
     /// 같은 순서다: 서식 제한이면 거부, 읽기 전용·메모만은 편집 가능 영역이 있으면 영역 안만, 없으면 거부, 양식은 거부, 그 밖은 허용.
     /// 이 대응은 시험(`보호_상태의_서식_가용성은_엔진_판정과_같다`)이 실제 엔진 결과와 맞춘다.
     fn of(session: &Session) -> FormatAccess {
+        if session.doc.settings.track_changes {
+            return FormatAccess::Protected;
+        }
         let state = wordcraft_engine::cmd::protect::state(session);
         let Some(mode) = state.get("protection").and_then(Value::as_str) else {
             return FormatAccess::Allowed;
@@ -515,6 +520,17 @@ impl DocxModel {
     }
 
     fn apply_one(&mut self, op: &DocxOp) -> Result<bool, Rejected> {
+        if self.session.doc.settings.track_changes
+            && !matches!(
+                op,
+                DocxOp::Move { .. }
+                    | DocxOp::Pointer { .. }
+                    | DocxOp::SelectAll
+                    | DocxOp::Mark { .. }
+            )
+        {
+            return Err(Rejected);
+        }
         match op {
             DocxOp::InsertText { text } => self.insert_text(text),
             DocxOp::PasteText { text, .. } => {
@@ -825,6 +841,7 @@ impl DocxModel {
             .and_then(|para| para.text.get(..sel.focus.off))
             .map_or(0, |head| head.chars().count());
         DocxView {
+            tracked_read_only: self.session.doc.settings.track_changes,
             pages: layout
                 .pages
                 .iter()

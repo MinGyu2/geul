@@ -1,4 +1,5 @@
 {
+  "editor.docx.trackedReadOnly": "변경 내용 추적이 켜진 문서는 현재 읽기와 선택만 지원합니다. IME 치환·삭제 후 저장을 보장할 수 없어 입력·서식·메모·각주·실행 취소를 차단합니다. 편집하려면 호환되는 편집기에서 추적을 끈 사본을 여세요.",
   "app.name": "geul",
   "app.noDocument": "열린 문서 없음",
   "titleBar.label": "제목 표시줄",

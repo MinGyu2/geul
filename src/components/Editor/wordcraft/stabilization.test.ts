@@ -500,3 +500,38 @@ describe("P2-C 닫기 보호", () => {
     expect(closes).toEqual([1]);
   });
 });
+
+
+describe("이미 추적 중인 DOCX는 검증된 읽기·선택만 허용", () => {
+  it("IME, 수정, 서식과 주석을 보내지 않고 탐색은 허용한다", async () => {
+    const { editor, fake } = await readyDocx();
+    fake.trackedReadOnly = true;
+    editor.view = fake.snapshot();
+    expect(editor.snapshot().editable).toBe(false);
+
+    editor.beginComposition();
+    expect(editor.composing).toBe(false);
+    expect(editor.typeText("가")).toBe(false);
+    editor.resolveProvisional("각");
+    expect(editor.insertCommittedAt(1, "한")).toBe(false);
+    expect(editor.backspace()).toBe(false);
+    expect(editor.deleteForward()).toBe(false);
+    expect(editor.execute("edit.undo").accepted).toBe(false);
+    expect(editor.execute("edit.redo").accepted).toBe(false);
+    expect(editor.execute("review.comment", { command: "review.comment", text: "memo" }).accepted).toBe(false);
+    expect(edits(fake)).toHaveLength(0);
+
+    expect(editor.move("right", false)).toBe(true);
+    await flush();
+    expect(sentOps(fake)).toEqual([{ op: "move", to: "right", extend: false }]);
+    expect(editor.revision).toBe(0);
+  });
+
+  it("일반 DOCX 세션은 편집 가능 상태를 유지한다", async () => {
+    const { editor, fake } = await readyDocx();
+    expect(editor.snapshot().editable).toBe(true);
+    expect(editor.typeText("가")).toBe(true);
+    await flush();
+    expect(fake.paragraphs[0]).toBe("가가나다");
+  });
+});

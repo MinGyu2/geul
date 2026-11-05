@@ -63,6 +63,7 @@ export interface DocxView {
    * 거부, regions는 편집 가능 영역 안의 변경만 엔진이 받는다(실행할 때 판정).
    */
   formatAccess: DocxFormatAccess;
+  trackedReadOnly?: boolean;
 }
 
 export type DocxFormatAccess = "allowed" | "protected" | "regions";
@@ -223,10 +224,11 @@ function parseFormat(value: unknown): DocxFormat | null {
 }
 
 export function parseDocxView(value: unknown): DocxView | null {
-  if (!isRecord(value) || !hasExactly(value, [...VIEW_KEYS, ...["selectionText", "paragraphStyle"].filter((key) => Object.prototype.hasOwnProperty.call(value, key))])) return null;
+  if (!isRecord(value) || !hasExactly(value, [...VIEW_KEYS, ...["selectionText", "paragraphStyle", "trackedReadOnly"].filter((key) => Object.prototype.hasOwnProperty.call(value, key))])) return null;
   if (Object.prototype.hasOwnProperty.call(value, "paragraphStyle") && typeof value.paragraphStyle !== "string") return null;
   if (Object.prototype.hasOwnProperty.call(value, "selectionText") && (typeof value.selectionText !== "string" || Array.from(value.selectionText).length > 500)) return null;
   const { pages, caret, selection, collapsed, inTable, caretKey, anchorKey, paragraphText, caretOffset } = value;
+  if (value.trackedReadOnly !== undefined && typeof value.trackedReadOnly !== "boolean") return null;
   const history = parseHistory(value.history);
   const format = parseFormat(value.format);
   const formatAccess = FORMAT_ACCESS.find((access) => access === value.formatAccess);
@@ -247,6 +249,7 @@ export function parseDocxView(value: unknown): DocxView | null {
     caret: parsedCaret,
     selection: parsedSelection as DocxRect[],
     collapsed, inTable, caretKey, anchorKey, paragraphText, caretOffset, history, format, formatAccess,
+    ...(typeof value.trackedReadOnly === "boolean" ? { trackedReadOnly: value.trackedReadOnly } : {}),
     ...(typeof value.selectionText === "string" ? { selectionText: value.selectionText } : {}),
     ...(typeof value.paragraphStyle === "string" ? { paragraphStyle: value.paragraphStyle } : {}),
   };

@@ -114,6 +114,7 @@ export class FakeDocx implements DocxBackend {
   private pendingFormat = new Set<DocxCharFormat>();
   /** 이어 친 글자를 한 기록 단계로 묶는 중(WordCraft typing_open). */
   private typingOpen = false;
+  trackedReadOnly = false;
 
   constructor(text: string[] = ["가나다", "abc"]) {
     this.paragraphs = [...text];
@@ -143,6 +144,7 @@ export class FakeDocx implements DocxBackend {
       return [{ page: 0, x: MARGIN + start * CHAR, y: MARGIN + p * LINE, width: (end - start) * CHAR, height: 16 }];
     });
     return {
+      trackedReadOnly: this.trackedReadOnly,
       pages: Array.from({ length: this.pageCount }, () => ({ width: 612, height: 792 })),
       caret: { page: 0, x: MARGIN + this.caret.o * CHAR, y: MARGIN + this.caret.p * LINE, height: 16 },
       selection, collapsed, inTable: false,
