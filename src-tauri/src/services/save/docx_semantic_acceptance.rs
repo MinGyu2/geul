@@ -1236,11 +1236,30 @@ fn refuse_note_output(doc: &Docx, corrupt: &[u8], expected: Finding) {
     let registry = doc.state.registry();
     let before = registry.get(doc.info.session_id).unwrap();
     let same = model_of(doc).lock().unwrap().same_as(corrupt);
+    let recovery_dir = TempDir::new();
+    let recovery =
+        crate::services::recovery::RecoveryStore::new(recovery_dir.path().join("records"));
+    let valid_output = model_of(doc).lock().unwrap().export().unwrap();
+    let candidate;
     let result = {
         let ticket = registry
             .begin_save(before.session_id, before.load_generation, before.revision)
             .unwrap();
-        service::save(registry, &ticket, &Limits::default(), corrupt, None, same)
+        candidate = recovery
+            .snapshot(&ticket, &original, &doc.path, &valid_output)
+            .unwrap();
+        service::save_with_options(
+            registry,
+            &ticket,
+            &Limits::default(),
+            corrupt,
+            None,
+            same,
+            service::SaveOptions {
+                destination: None,
+                recovery: Some(&recovery),
+            },
+        )
     };
     let Err(DocumentError::UnsafeSave { preservation }) = result else {
         panic!("expected unsafe save: {result:?}")
@@ -1264,6 +1283,16 @@ fn refuse_note_output(doc: &Docx, corrupt: &[u8], expected: Finding) {
     assert_eq!(registry.get(before.session_id).unwrap(), before);
     assert!(before.dirty);
     assert!(doc.leftovers().is_empty());
+    let candidates = recovery.list().unwrap();
+    assert_eq!(candidates.len(), 1);
+    assert_eq!(candidates[0].id, candidate.id);
+    assert!(candidates[0].valid);
+    assert_eq!(candidates[0].revision, Some(before.revision));
+    recovery.forget_session(before.session_id).unwrap();
+    assert!(
+        recovery.list().unwrap().is_empty(),
+        "recovery ownership must survive refusal"
+    );
     ticket_released(doc);
 }
 
