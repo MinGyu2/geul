@@ -580,8 +580,9 @@ fn refuse_semantic(
 
 /// Category 1 — parser rejection. The output MUST fail to reopen, so the comparator never ran;
 /// `same_as` is false and publication is refused. The package layer is classified separately
-/// (with the engine bit forced true) to show which non-engine finding would also refuse it.
-fn refuse_parser(name: &str, doc: &Docx, corrupt: &[u8]) -> Vec<FindingCode> {
+/// (with the engine bit forced true) to show which non-engine finding would also refuse it; the
+/// caller asserts the expected package findings.
+fn refuse_parser(name: &str, doc: &Docx, corrupt: &[u8]) -> Vec<Finding> {
     assert!(
         io::open_bytes("x.docx", corrupt).is_err(),
         "{name}: must be refused by the parser"
@@ -589,10 +590,19 @@ fn refuse_parser(name: &str, doc: &Docx, corrupt: &[u8]) -> Vec<FindingCode> {
     let same = model_of(doc).lock().unwrap().same_as(corrupt);
     let package = service::check_saved(Format::Docx, &doc.bytes(), corrupt, None, true);
     assert!(!package.is_safe(), "{name}: package layer {package:?}");
+    assert!(
+        !package
+            .findings
+            .iter()
+            .any(|f| f.code == FindingCode::ReopenMismatch),
+        "{name}: the package-layer evaluation must not carry the engine finding"
+    );
     assert_save_refused(name, doc, corrupt, same);
-    let codes: Vec<_> = package.findings.iter().map(|f| f.code).collect();
-    eprintln!("REFUSE(parser) {name}: package findings {codes:?}");
-    codes
+    eprintln!(
+        "REFUSE(parser) {name}: package findings {:?}",
+        package.findings
+    );
+    package.findings
 }
 
 fn field(what: &'static str) -> Result<Equivalence, RoundTripError> {
@@ -808,14 +818,20 @@ fn adversarial_rich_outputs_are_refused() {
         }),
         field("parts.len"),
     );
-    // Category 1: packages WordCraft cannot reopen at all.
+    // Category 1: packages WordCraft cannot reopen at all. Both fail format detection in
+    // `check_saved` (R1: ZIP directory unreadable; R3: no main part), whose contract is
+    // `OutputMalformed` at "container" (a resource failure could add `LimitExceeded`, so the
+    // finding is required to be present, not to be the only one).
+    let malformed = Finding::at(FindingCode::OutputMalformed, "container");
     let truncated = &output[..output.len() / 2];
-    refuse_parser("R1 truncated package", &doc, truncated);
-    refuse_parser(
+    let r1 = refuse_parser("R1 truncated package", &doc, truncated);
+    assert!(r1.contains(&malformed), "R1: {r1:?}");
+    let r3 = refuse_parser(
         "R3 main part missing",
         &doc,
         &without(&output, "word/document.xml"),
     );
+    assert!(r3.contains(&malformed), "R3: {r3:?}");
     // R2 — neither category: the WordCraft reader *tolerates* a malformed main part and reopens
     // it to an equivalent model, so the engine gate passes (as the old derived equality did). The
     // package layer is what refuses it. Asserted as such, not counted as engine evidence.
