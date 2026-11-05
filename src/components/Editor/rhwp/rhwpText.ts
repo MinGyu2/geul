@@ -136,13 +136,20 @@ const NO_CELL = 0xffffffff; // u32::MAX: rhwp가 본문을 뜻하는 값
 export class RhwpText {
   /** Loaded definitions and definitions already published must keep their IDs. */
   private charShapeBaseline: number | null;
+  private publishingCharShapes: number | null = null;
 
   constructor(private readonly doc: RhwpDocument) {
     const count = doc.charShapeCount?.();
     this.charShapeBaseline = Number.isSafeInteger(count) && (count as number) >= 0 ? (count as number) : null;
   }
 
-  /** Pin the definitions of a successfully published, unchanged model. No engine mutation. */
+  /** Protect the exported revision before yielding to the backend. A failed save releases only this lease. */
+  protectPublishingCharShapes(count: number | null): () => void {
+    this.publishingCharShapes = isIndex(count) ? count : null;
+    return () => { this.publishingCharShapes = null; };
+  }
+
+  /** Pin a published revision even if later local edits are still dirty (including non-durable replacement). */
   markPublishedCharShapes(count: number | null): void {
     if (this.charShapeBaseline !== null && isIndex(count) && count >= this.charShapeBaseline) this.charShapeBaseline = count;
   }
@@ -271,12 +278,13 @@ export class RhwpText {
     // An older history snapshot can have a shorter table. Its IDs still belong
     // to that snapshot; do not compact or turn a normal Undo into an engine error.
     // The save service remains authoritative if that snapshot predates publication.
+    const baseline = Math.max(this.charShapeBaseline, this.publishingCharShapes ?? 0);
     const count = this.doc.charShapeCount?.();
-    if (isIndex(count) && count < this.charShapeBaseline) return;
-    const value = json(this.doc.compactAppendedCharShapes(this.charShapeBaseline));
+    if (isIndex(count) && count < baseline) return;
+    const value = json(this.doc.compactAppendedCharShapes(baseline));
     if (!isRecord(value) || Object.keys(value).sort().join(",") !== "after,before,ok,skipped"
       || value.ok !== true || !isIndex(value.before) || !isIndex(value.after)
-      || (value.after as number) > (value.before as number) || (value.after as number) < this.charShapeBaseline
+      || (value.after as number) > (value.before as number) || (value.after as number) < baseline
       || !(value.skipped === null || value.skipped === "dangling" || value.skipped === "docinfo-reference")
       || (value.skipped !== null && value.before !== value.after)) {
       throw new Error("char shape compaction response invalid");

@@ -1656,6 +1656,7 @@ export class RhwpEditorSession implements DocumentCommandTarget {
     const format = this.sessions.get(this.sessionId)?.format;
     if (format !== "hwp" && format !== "hwpx") return fail({ code: "SaveNotReady", reason: "state" });
     this.saving = true;
+    let releaseShapes: (() => void) | undefined;
     try {
       const generation = this.generation;
       let check = this.saveCheck?.generation === generation ? this.saveCheck.check : null;
@@ -1674,6 +1675,7 @@ export class RhwpEditorSession implements DocumentCommandTarget {
       this.setSave({ kind: "saving" });
       const exported = this.exportAndCompare(format);
       if (!exported?.bytes) return fail({ code: "SaveFailure", stage: "export" });
+      releaseShapes = this.text?.protectPublishingCharShapes(exported.charShapeCount);
       const result = await this.backend.save(this.sessionId, generation, revision, exported.bytes, exported.contentLoss, exported.reopen, destination);
       if (!this.owns(epoch)) return result;
       if (!result.ok) return fail(result.error);
@@ -1682,7 +1684,7 @@ export class RhwpEditorSession implements DocumentCommandTarget {
       const changedSince = this.localRevision !== revision || this.imeUnsettled;
       // 저장한 판 뒤에 편집이 없고 교체의 내구성까지 확인했으면 이 모델은 디스크의 파일과 같다(닫기·다시 불러오기에 버리기
       // 확인이 필요 없음). 내구성을 확인하지 못했으면(교체는 됨) 저장하지 않은 편집으로 남긴다(백엔드도 dirty로 둔다).
-      if (!changedSince) this.text?.markPublishedCharShapes(exported.charShapeCount);
+      this.text?.markPublishedCharShapes(exported.charShapeCount);
       if (!changedSince && result.value.durable) this.modified = false;
       // 원본이 바뀌었다: 다음 저장은 새 원본으로 다시 검사한다. 그 전에 시작한 검사의 늦은 결과도 버린다.
       this.checkSerial += 1;
@@ -1690,6 +1692,7 @@ export class RhwpEditorSession implements DocumentCommandTarget {
       this.setSave({ kind: "saved", revision, durable: result.value.durable, changedSince });
       return result;
     } finally {
+      releaseShapes?.();
       this.saving = false;
     }
   }
