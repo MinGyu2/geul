@@ -1235,3 +1235,26 @@ WIP와 최종이 함께 내보낸 567개 출력은 **모두 바이트 동일**�
 추적 문서에서 지운 글이 남는 편집 뒤 출력은 WordCraft 의미 비교가 `Field("revisions")`로 다르다고 한다(수정 기록 색인 순서·쓰이지 않는 기록). `same_as`가
 false라 저장은 `ReopenMismatch`로 거부되고 원본은 그대로다. 패키지 보존은 통과한다. 고치는 곳은 WordCraft 의미 비교(수정 기록 색인 대응)이며 저장 규칙을
 넓히지 않았다([command-registry.md](command-registry.md) "T013 각주·미주 연결과 T012/T013 재검토").
+
+
+### T012/T013 후속 안전성 감사 — 2026-11-05
+
+기존 감사 기록은 위에 보존한다. 현재 geul gitlink는 `b39a8fb49c6fefbdd960792f2a4effd0d7660e3c`다. 공개 포크 `https://github.com/MinGyu2/wordcraft.git`의 `geul/semantic-roundtrip-equivalence` 브랜치가 이미 같은 SHA여서 push하지 않았다. `42e8a67..b39a8fb`는 reader와 집중 시험 세 파일뿐이며 `42e8a67`의 자손이다. 태그 `geul-roundtrip-42e8a67`는 이전 SHA에 남는다. 빈 저장소의 depth-one 직접 SHA fetch와 새 geul master clone의 WordCraft 단독 초기화가 모두 exit 0, HEAD `b39a8fb`로 성공했다(RHWP 초기화 없음).
+
+실제 `read/mod.rs`의 구분선 판정과 `write/mod.rs` 생성 XML을 대조했다. 일반·연속 구분선은 문단 하나, pPr/spacing 하나(after=0, line=240, lineRule=auto), bare mark run 하나의 순서와 속성·자식을 검사한다. continuation notice는 기본값으로 정규화하지 않는다. 첫 종류의 구분선을 별도로 기억하므로 첫 기본값 뒤의 사용자 구분선으로 덮어쓰지 않는다. XML 파서는 URI를 canonical prefix로 바꾼 뒤 비교한다. note wrapper의 type/id는 종류·참조 식별자로 처리하며 이 판정의 문단 subtree와 별개다. 새 32개 변이와 각주/미주 별칭·continuation notice 검사는 geul의 고정 의존성 시험에 두었다. WordCraft 소스·HEAD는 바꾸지 않았다.
+
+각주 출력 변이 10개는 기존 저장 서비스 경계에 합성 바이트를 전달하며 실제 모델 `same_as` 결과를 사용한다. 패키지 분류와 서비스의 첫 거부 원인을 분리한다: 모델 불일치는 `ReopenMismatch`가 먼저 반환되며, 모델이 같은 설정 ID/참조/유형/추가 부분 변이는 패키지 finding으로 거부된다. 원본 bytes/SHA-256, 전체 SessionInfo, dirty/revision, 티켓 재획득, 임시 파일 없음 및 뒤이은 정상 저장을 단언한다. production export가 악성 출력을 생성했다고 주장하지 않는다. 복구 파일의 별도 수명주기 주입 시험은 추가하지 않았으며 기존 복구 경로를 변경하지 않았다.
+
+추적 문서는 원시 엔진의 한글 삽입 성공과 선택 재치환 `Field("revisions")` 실패를 구분해 재현했다. 이제 엔진의 tracking 상태로 문서 변경을 실행 전에 거부하고 프런트엔드 입력/IME/명령 경계도 같은 상태를 사용한다. 탐색·선택은 유지한다. 문서 PartialEq·왕복 비교·T009 검증은 완화하지 않았다. native X11/IBus와 외부 Office 호환은 DISPLAY/ibus 부재로 NOT RUN. T012/T013은 미완료다.
+
+검증 명령과 결과(이번 후속 감사):
+
+- `git ls-remote https://github.com/MinGyu2/wordcraft.git refs/heads/geul/semantic-roundtrip-equivalence`: exit 0, `b39a8fb`. 빈 임시 저장소에서 `git fetch --depth=1 https://github.com/MinGyu2/wordcraft.git b39a8fb49c6fefbdd960792f2a4effd0d7660e3c` 및 `git rev-parse FETCH_HEAD`: 각각 exit 0.
+- `git clone --depth=1 --branch master https://github.com/MinGyu2/geul.git <tmp>/geul`, `git -C <tmp>/geul submodule update --init --depth=1 external/wordcraft`, 서브모듈 `rev-parse HEAD`: 각각 exit 0, gitlink와 HEAD `b39a8fb`.
+- `npm run typecheck`, `npm run lint`: exit 0. `npm run test -- src/commands src/components/Editor/wordcraft src/adapters/docx.test.ts src/language/language.test.ts`: exit 0, 18 파일/304 시험 PASS. jsdom canvas 미구현 메시지는 발생하지만 native 증거로 쓰지 않는다.
+- `python3 scripts/cargo-geul.py test --lib adapters::wordcraft::tests`: exit 0, 70 PASS/1 ignored. `python3 scripts/cargo-geul.py test --lib --no-run`: exit 0. 생성된 `src-tauri/target/debug/deps/geul_lib-180e9fedd477bbac docx_semantic_acceptance --nocapture`: exit 0, 9 PASS/1 ignored.
+- 보호 래퍼의 `test --lib docx_semantic_acceptance`는 기존 `SharedDirectory` 게시 제한으로 exit 101이었다. 같은 보호 빌드의 바이너리를 일반 파일시스템에서 실행해 실제 atomic publication과 두 회차 저장을 검증했다. 초기 새 시험의 PreflightMissing 및 서비스 선행 ReopenMismatch 기대 오류는 시험 준비/단언을 수정했고 최종 집중 시험은 통과했다. 검증 규칙은 변경하지 않았다.
+- `python3 scripts/cargo-geul.py fmt --check`, `clippy --lib -- -D warnings`, `check --lib`: exit 0(locked/offline).
+- WordCraft 시험은 `python3 scripts/external-integrity.py --require external/wordcraft --writable src-tauri/target --writable target/rhwp-wasm --report target/rhwp-wasm/<report>.json -- env CARGO_TARGET_DIR="$PWD/src-tauri/target" cargo test --manifest-path external/wordcraft/Cargo.toml --locked --offline` 뒤에 각각 `-p wordcraft-docx --test note_separators`(4 PASS), `-p wordcraft-engine roundtrip_equiv`(9 PASS), `-p wordcraft-doc roundtrip`(23 PASS)를 사용했다. 각각 exit 0. 불필요한 새 target 디렉터리 없이 기존 캐시를 재사용했다.
+- 음성 첫 저장 원본 SHA-256: `7286a49b2801ea1d4069a2173a440c4ad06718ae779345626fed52b27b56ee6c`; 둘째 저장 원본: `3977811171bcd008654bec546c9de916071706da7050e334c03a15752098dcde`. 각 변이 거부 후 byte equality와 SHA equality를 별도 단언했다.
+- native Tauri/X11/IBus, 외부 Office, 복구 별도 수명주기 추가 회귀: NOT RUN. 기존 `file_access` 전체 엔진 소스 시험은 이 집중 범위에서 재실행하지 않았다.

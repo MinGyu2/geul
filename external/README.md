@@ -7,13 +7,15 @@
 
 | 경로 | 업스트림 | 고정 커밋 | 태그 | 라이선스 | 검토일 |
 |------|----------|-----------|------|----------|--------|
-| `external/wordcraft/` | https://github.com/MinGyu2/wordcraft.git (`storytold/wordcraft` 공개 포크) | `42e8a67061d0721df3e2665a958865e61363def6` | `geul-roundtrip-42e8a67` (기반 `v0.7.0` `fc41918`) | MIT OR Apache-2.0 | 2026-11-05 |
+| `external/wordcraft/` | https://github.com/MinGyu2/wordcraft.git (`storytold/wordcraft` 공개 포크) | `b39a8fb49c6fefbdd960792f2a4effd0d7660e3c` | `geul-roundtrip-42e8a67` (역사 태그, `42e8a67`; 기반 `v0.7.0` `fc41918`) | MIT OR Apache-2.0 | 2026-11-05 |
 | `external/rhwp/` | https://github.com/edwardkim/rhwp.git | `1a76570e833917d15817415a53c09ad61ab3203f` | `v0.8.7` (2026-10-06 릴리스) | MIT | 2026-10-16 |
 
 - rhwp 커밋은 이동 브랜치(`main`)가 아니라 업스트림 정식 릴리스 태그가 가리키는 커밋입니다.
+- 현재 geul gitlink `b39a8fb49c6fefbdd960792f2a4effd0d7660e3c`는 공개 포크 브랜치 `geul/semantic-roundtrip-equivalence`에서 도달 가능하다. 빈 임시 저장소의 익명 HTTPS depth-one SHA fetch와 새 geul master clone의 `external/wordcraft` 초기화가 모두 이 SHA로 확인됐다. 새 발행은 필요하지 않았다.
+- 안정 태그 `geul-roundtrip-42e8a67`는 기존 SHA `42e8a67061d0721df3e2665a958865e61363def6`를 가리키며 이동하지 않았다. separator 수정은 `b39a8fb` 브랜치 커밋에 있고 이 태그에는 없다.
 - WordCraft는 2026-11-05부터 업스트림 `v0.7.0`(`fc41918`) 위에 DOCX 의미 왕복 동등성 커밋 4개(`d38fec0`,
   `90b1877`, `e723192`, `42e8a67`)를 얹은 공개 포크를 씁니다. 포크의 브랜치
-  `geul/semantic-roundtrip-equivalence`와 주석 태그 `geul-roundtrip-42e8a67`이 고정 커밋을 가리킵니다. 이 커밋들은
+  `geul/semantic-roundtrip-equivalence`은 현재 구분선 수정 `b39a8fb`를 가리킨다. 주석 태그 `geul-roundtrip-42e8a67`은 이전 안정 커밋 `42e8a67`에 남아 있다. 이 커밋들은
   업스트림 `storytold/wordcraft`에 없습니다. 위의 "직접 수정하지 않는다"는 원칙의 예외이며, 변경과 감사 기록은
   [`docs/architecture/save-preservation.md`](../docs/architecture/save-preservation.md)에 있습니다.
 - geul `fefe420`부터 `0a67aa0`까지의 과거 커밋은 `.gitmodules`가 업스트림을 가리켜 그대로는 서브모듈을 받을 수

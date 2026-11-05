@@ -597,3 +597,12 @@ Strict 회귀 시험: `strict_reference_rebinding_*`, `strict_reference_valid_re
 - 프런트엔드: `npx vitest run` 64 파일 1125 통과, `npx tsc --noEmit`, `npx eslint .` 통과.
 - native X11/IBus 앱 수용·Word/한컴 호환: **NOT RUN**(이 환경에 X11·IBus·입력 주입 도구 없음, Wayland 표시만 있음).
 
+
+
+### T012/T013 후속 검토 — 2026-11-05 현재 상태
+
+위의 실측·로컬 전용·편집 차단 없음은 이전 검토 시점의 기록이다. 현재 WordCraft gitlink와 공개 포크 `MinGyu2/wordcraft`의 `geul/semantic-roundtrip-equivalence` 브랜치는 모두 `b39a8fb49c6fefbdd960792f2a4effd0d7660e3c`다. 빈 저장소의 익명 HTTPS 직접 SHA fetch 및 새 geul master clone의 WordCraft 단독 초기화가 성공했다. 이번 작업에서 push는 하지 않았다. 안정 태그 `geul-roundtrip-42e8a67`는 이전 `42e8a67`에 남는다.
+
+이미 추적 중인 DOCX는 이제 엔진 보기 `trackedReadOnly`를 기준으로 읽기·선택·탐색만 허용한다. 단순 추적 삽입은 저장 가능하지만 이어지는 IME 재치환은 `Field("revisions")`로 실패해, 연속 입력까지 보장하는 편집 부분집합은 입증되지 않았다. 프런트엔드는 변경 연산 대기열과 IME 시작을 차단하고 한·영 지속 안내를 표시한다. 백엔드는 모든 문서 변경 연산을 실행 전에 다시 거부한다. 거부는 dirty·revision·undo를 만들지 않는다. 추적 토글은 계속 planned다. 편집하려면 호환 편집기에서 추적을 끈 사본을 열도록 안내한다.
+
+기존의 이미 추적된 문서 편집 동작을 제한하는 제품 정책 변경이다. native X11/IBus는 DISPLAY와 ibus 부재로 NOT RUN이며 합성 IME 시험으로 대체했다고 주장하지 않는다. T012/T013 전체 상태는 미완료다.
