@@ -250,7 +250,7 @@ index 0000000..017b123
 +        let mut dangling = false;
 +        self.visit_char_shape_refs(&mut |id, site| {
 +            // 한컴 저장본의 번호 머리·글머리표·목록 표지는 0xFFFFFFFF 를 "참조 없음"으로 쓴다(실측).
-+            if *id == u32::MAX {
++            if *id == u32::MAX && site == Site::Fixed {
 +                return;
 +            }
 +            let index = *id as usize;
@@ -353,7 +353,7 @@ new file mode 100644
 index 0000000..d68ee91
 --- /dev/null
 +++ b/src/document_core/commands/char_shape_compact_tests.rs
-@@ -0,0 +1,231 @@
+@@ -0,0 +1,236 @@
 +//! [geul] 덧붙인 글자 모양 정리 시험. 실제 한컴 저장 표본을 실제 RHWP 내보내기·다시 열기로 확인한다.
 +use super::*;
 +use crate::parser::cfb_reader::CfbReader;
@@ -519,6 +519,11 @@ index 0000000..d68ee91
 +    assert_eq!(r.skipped, Some("docinfo-reference"));
 +    assert_eq!(core.char_shape_count_native(), baseline + 2);
 +    core.document.doc_info.styles[0].char_shape_id = old;
++    // Sentinel is only valid for list/DocInfo references, never paragraph runs.
++    core.document.sections[0].paragraphs[para].char_shapes[0].char_shape_id = u32::MAX;
++    let before = format!("{:?}", core.document);
++    assert_eq!(core.compact_appended_char_shapes(baseline).unwrap().skipped, Some("dangling"));
++    assert_eq!(format!("{:?}", core.document), before);
 +    // 표 밖 번호를 가리키는 참조가 있으면 정리하지 않는다.
 +    core.document.sections[0].paragraphs[para].char_shapes[0].char_shape_id = 9999;
 +    assert_eq!(

@@ -11052,3 +11052,79 @@ fn hwp_docinfo_short_id_mappings_refuses_metric_append_without_panicking() {
         );
     }
 }
+
+#[test]
+fn hwp_docinfo_malformed_counts_shapes_and_references_refuse_publication() {
+    let info = |count, size: usize, appended| {
+        let mut data = record(17, 0, &id_mappings(count));
+        data.extend(record(21, 1, &char_shape_record(100, 0, 7)[..size]));
+        if appended {
+            data.extend(record(21, 1, &char_shape_record(150, 0, 7)[..size]));
+        }
+        data.extend(record(25, 1, b"para shape"));
+        data
+    };
+    for (count, size, refs) in [
+        (99u32, 74usize, shape_pairs(&[1])),
+        (1, 28, shape_pairs(&[1])),
+        (1, 69, shape_pairs(&[1])),
+        (1, 74, vec![]),
+        (1, 74, vec![0; 7]),
+        (1, 74, shape_pairs(&[1, 2])),
+    ] {
+        let state = DocumentState::default();
+        let dir = TempDir::new();
+        let original = hwp_doc(
+            0,
+            &info(count, size, false),
+            &ref_paragraph(0, 0, Some(&shape_pairs(&[0]))),
+            &[],
+        );
+        let output = hwp_doc(
+            0,
+            &info(count + 1, size, true),
+            &ref_paragraph(0, 0, Some(&refs)),
+            &[],
+        );
+        let session = rhwp_session(&state, &dir, "refused.hwp", &original);
+        let registry = state.registry();
+        let (id, generation) = (session.session_id, session.load_generation);
+        let source = registry.preflight_source(id, generation).unwrap();
+        let check = service::preflight(
+            Format::Hwp,
+            &original,
+            &original,
+            Some(&report("hwp", json!([]))),
+        );
+        assert!(check.is_safe(), "{check:?}");
+        registry
+            .record_preflight(id, generation, source.content_hash, check)
+            .unwrap();
+        registry.commit(id, generation, 0, 1).unwrap();
+        let ticket = registry.begin_save(id, generation, 1).unwrap();
+        assert!(matches!(
+            service::save(
+                registry,
+                &ticket,
+                &Limits::default(),
+                &output,
+                Some(&report("hwp", json!([]))),
+                true
+            ),
+            Err(DocumentError::UnsafeSave { .. })
+        ));
+        drop(ticket);
+        assert_eq!(
+            std::fs::read(dir.path().join("refused.hwp")).unwrap(),
+            original
+        );
+        assert_eq!(std::fs::read_dir(dir.path()).unwrap().count(), 1);
+        let session = registry.get(id).unwrap();
+        assert!(session.dirty);
+        assert_eq!(session.revision, 1);
+        assert!(
+            registry.begin_save(id, generation, 1).is_ok(),
+            "save ticket released"
+        );
+    }
+}

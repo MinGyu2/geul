@@ -436,6 +436,7 @@ fn docinfo_char_shapes_appended(
     let valid = |r: &Record<'_>| {
         r.0 == TAG_CHAR_SHAPE
             && r.1 == level
+            && matches!(r.2.len(), 68 | 70 | 74)
             && metric(r.2, CHAR_SHAPE_RATIOS, &|v| (50..=200).contains(&v))
             && metric(r.2, CHAR_SHAPE_SPACINGS, &|v| {
                 (-50..=50).contains(&(v as i8))
@@ -456,7 +457,14 @@ fn docinfo_char_shapes_appended(
         .all(|(a, b)| {
             if a.0 == TAG_ID_MAPPINGS {
                 // 수가 정확히 k만큼 늘어야 한다(그대로인 레코드는 받지 않음).
-                b.0 == TAG_ID_MAPPINGS && a.1 == b.1 && id_mappings_grew(a.2, b.2, k)
+                b.0 == TAG_ID_MAPPINGS
+                    && a.1 == b.1
+                    && a.2
+                        .get(ID_MAPPINGS_CHAR_SHAPES_AT..ID_MAPPINGS_CHAR_SHAPES_AT + 4)
+                        .is_some_and(|v| {
+                            u32::from_le_bytes([v[0], v[1], v[2], v[3]]) as usize == positions.len()
+                        })
+                    && id_mappings_grew(a.2, b.2, k)
             } else {
                 same_record(a, b)
             }
