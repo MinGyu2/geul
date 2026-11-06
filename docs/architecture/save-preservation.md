@@ -1361,3 +1361,13 @@ Rust save 시험 환경 분류 보완: sandbox 바깥 UID는1000이며 UID map�
 저장 lease는 `exportAndCompare()` 안에서 다시 연 문서의 해제보다 먼저 획득될 수 있다. 이제 내보내기 결과가 바이트 없이 반환되어도 lease 소유권을 호출자가 받으며, 재개방 문서 해제 예외를 기록하고 게시 입력을 거부한다. 이전 published prefix 해제 예외는 백엔드의 durable 성공 결과를 바꾸지 않고, 저장 baseline 및 결과 상태 반영을 계속한다. lease 정리는 별도로 시도하고 `saving`은 항상 해제한다. 정리 예외는 `saveCleanupErrors`에 보존하고 현재 세션의 엔진 상태를 uncertain/failed로 닫아 재사용을 막는다. stale epoch의 정리 실패는 새 상태를 변경하지 않는다.
 
 수정 후 focused frontend 71 PASS, 실제 Release WASM 66 PASS, 기존 WASM 37 PASS·선택 테스트 1 SKIP, typecheck/lint PASS. `GEUL_FORMAT_SAVE_OUT`가 없어 format-save 선택 테스트는 SKIP이며 PASS로 세지 않는다. 기존 Release generation `53b6ad7a4c6de7a8f4ada4c61b0ad1934461e656527f6e6b440f08898bebf6d6`을 사용했고 엔진은 다시 빌드하지 않았다. 실제 save-service binary로 별도 target에 수행한 18 HWP/HWPX 체인 62 durable 게시도 PASS다. 이는 테스트 double 기반 cleanup 주입 결과를 대체하지 않으며, 보호 Rust save suite 결과로도 해석하지 않는다. 로그와 새 service 산출물은 `target/save-cleanup-20261106/`에 있다.
+
+## 2026-11-06: backend transport rejection 및 보호 Rust 경로 진단
+
+backend `save()` Promise rejection 뒤 UI가 `saving` 상태에 남는 것을 재현했다. structured refusal와 달리 예외가 밖으로 전파되면 기존 `saveState`가 `saving`에 머물렀다(`target/save-cleanup-20261106/backend-state-before.log`, 1 FAIL/9 PASS). transport 오류는 게시 결과를 알 수 없으므로 원래 rejection을 다시 던지되 화면 상태는 `SaveFailure(write)`로 끝내고, `finally`에서 lease와 저장 잠금을 정리하도록 했다. lease free가 함께 실패해도 원래 rejection을 보존한다. 사후 focused frontend 35 PASS, typecheck/lint PASS다(`backend-state-after.log`, `backend-typecheck.log`, `backend-lint.log`).
+
+두 Rust 미분류 실패는 제품/fixture 결함으로 확인되지 않았다. 보호 runner의 첫 trust operation은 `/`에서 UID 65534, owner/child UID 1000, mode 40755를 보고 `SharedDirectory`를 반환했다. B1은 실제 `Err(SaveUnsupported { reason: SharedDirectory })`, 임시 이름 목록 `[]`이며 뒤이은 `names[0]` 접근이 panic했다. B2 exact-budget 저장도 같은 오류를 반환해 `is_ok()` assert에 이르기 전에 거부됐다. 개별 진단은 `b1-first-operation.log`, `b2-first-operation.log`에 있다. 임시 Rust 진단 편집은 원본과 byte-identical하게 복구했다. Rust 저장 구현이나 보안 검사는 바꾸지 않았다.
+
+지원된 `bwrap`의 실제 mapping은 inside UID 1000→parent UID 0, inside GID 100→parent GID 0을 각각 1개만 매핑하며, `/`와 `/home`은 소유자 65534 mode 0755, private `/tmp`는 1000:100 mode 1777, fixture는 1000:100 mode 0700이었다. 필요한 UID 0 신뢰 조상을 제공하지 않는다. `sudo-bwrap`는 암호가 필요해 사용할 수 없었다. `GEUL_SANDBOX=sudo-bwrap python3 scripts/cargo-geul.py test --locked --offline --lib services::save`는 test 전에 exit 1로 막혔다. 따라서 이 실행에서 Rust suite 결과는 없으며 PASS가 아니다. 과거 유효하지 않은 환경에서 기록한 100 PASS/46 FAIL/15 ignored는 역사 결과일 뿐이다. 현재 두 미분류 사례는 `SharedDirectory`로 직접 분류됐다. 증거: `target/save-cleanup-20261106/{sandbox.json,rust-valid-mode.log,b1-first-operation.log,b2-first-operation.log}`.
+
+현재 로컬/연결 세션 검사에서는 Word/Hancom 실행 파일, 앱 파일, 연결된 문서 세션을 찾지 못했다. Office 상호운용성은 NOT RUN이며 버전·출력 파일은 없다. 상세는 `target/save-cleanup-20261106/office-access.json`이다.

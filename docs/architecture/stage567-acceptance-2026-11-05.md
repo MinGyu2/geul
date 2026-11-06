@@ -261,3 +261,31 @@ P5 최종 점검: 독립 집계는84 durable / 3 strict refusal /18 same-path se
 Protected Rust 환경 로그(`p5-rust-environment.json`)에서 외부 UID1000, sandbox UID mapping에서 root→65534, `/`, `/home`, `/tmp` 소유 UID65534를 관측했다. 46 Rust 테스트 실패 중 44개는 root-owned ancestor 또는 결과 `SharedDirectory`와 직접 연관된다. 나머지 2건은 같은 전제로 인한 후속 결과와 일치하지만 개별 진단은 미확정이다. 지원되는 `sudo-bwrap`는 `sudo -n true`가 암호를 요구해 쓸 수 없었고 무보호 fallback은 실행하지 않았다. Rust save suite 100 PASS/46 FAIL/15 ignored는 비통과이며, 이 gate 때문에 작업의 전체 상태는 PARTIALLY COMPLETED다.
 
 P5 readPages/free 예외 처리 수정은 이 수용 기록과 함께 독립 커밋한다. 관련 frontend/typecheck/lint/WASM 검증은 통과했으며 protected Rust gate는 별도로 미해결이다. WordCraft BLOCKED, D2 INCONCLUSIVE, Word/Hancom NOT RUN, production RHWP mutation gates unchanged, D4 excluded/unchanged.
+
+### 2026-11-06 save cleanup / Rust UID / external acceptance follow-up
+
+저장 정리 예외를 주입한 controlled frontend 10개 중 수정 전 7개 실패, 최종 frontend 35 PASS; 실제 Release WASM 66 PASS, legacy WASM 37 PASS/1 선택 SKIP, real save-service 18 chain/62 durable publication PASS다. 결과와 cleanup 제약은 [`save-preservation`](save-preservation.md#2026-11-06-저장-후-prefixlease-정리-예외)에 있다. 이후 backend transport rejection 시 UI가 `saving`에 머무르는 별도 회귀(수정 전 1 FAIL/9 PASS)를 고쳐 원래 transport rejection은 전파하면서 `SaveFailure(write)` 상태와 lease cleanup을 남겼다. 사후 frontend 35 PASS.
+
+B1/B2의 실제 first operation은 둘 다 `Err(SaveUnsupported { reason: SharedDirectory })`였다. B1의 임시 후보는 생성되지 않아 `names=[]`; `names[0]`은 후속 panic이다. B2도 같은 이유로 exact-budget 성공 assert 전에 거부됐다. sandbox `bwrap` 내부 `/`·`/home` 소유 UID는 65534이고 test process uid 1000이며 trusted root ancestor가 없다. 기존 보호 정책을 유지했다. `sudo-bwrap`는 비대화식 sudo 암호 요구로 시작되지 않아 지정된 protected suite를 실행하지 못했다. 이 시도는 suite 통계가 없다. 과거 100/46/15 보고는 유효 gate가 아니다. B1/B2 product/test 수정 또는 fix commit은 없다.
+
+D2 runner는 실패 시점 native trace 저장과 초기 관측 구간 이후 fresh history phase 관측을 보완했다. 두 HWP 완료 trial에서 E74→F87→U121, 취소 E96→U111(no F), 세 번째 취소 assertion 중단이었다. E→U→F는 0회이며 native execution FAIL, D2 INCONCLUSIVE다. 기존 predicate/input은 유지했다. Word/Hancom 실행물·앱 파일·연결 문서 세션이 없어 둘 다 NOT RUN이며 버전/편집 output은 없다. 근거와 상태는 `target/save-cleanup-20261106/` 및 [`rhwp-undo-redo`](rhwp-undo-redo.md#2026-11-06-d2-native-capturephase-follow-up--inconclusive)에 기록했다.
+
+Active WASM generation은 `53b6ad7a4c6de7a8f4ada4c61b0ad1934461e656527f6e6b440f08898bebf6d6`이며 identity manifest에서 JS `3e9c1687af9aabe8ca78c68ab01e569622bcb880341ae4c100faf543782e0027`, WASM `e08e5ce86fad632fde6b7e1051f09597e771ae3924b01685567296a31a453757`, active patches 14개를 확인했다. [`wasm-identity.json`](../../target/save-cleanup-20261106/wasm-identity.json). T012/T013와 production RHWP command gate는 미완료/비활성이다. D4는 제외됐고 기존 실패 gate를 변경하지 않았다.
+
+
+실행 명령과 검증 범위(작업 디렉터리: 저장소 루트):
+
+| 명령 | 이번 결과 / 증거 (`target/save-cleanup-20261106/`) |
+| --- | --- |
+| `npm test -- src/components/Editor/rhwp/saveCleanup.test.ts src/components/Editor/rhwp/publicationIdentity.test.ts src/components/Editor/rhwp/prefixCleanup.test.ts src/components/Editor/rhwp/RhwpEditorSession.test.ts src/components/Editor/save.test.tsx src/components/Editor/saveDurability.test.tsx` | A 수정 71 PASS, `frontend.log` |
+| `npm test -- src/components/Editor/rhwp/saveCleanup.test.ts src/components/Editor/save.test.tsx src/components/Editor/saveDurability.test.tsx` | backend rejection 수정 후 35 PASS, `backend-state-after.log` |
+| `npm run typecheck`; `npm run lint` | 최종 backend 수정 PASS, `backend-typecheck.log`, `backend-lint.log` |
+| `npx vitest run --config scripts/tests/vitest.config.ts publication-identity table-formula-session` | A 수정에서 66 PASS, `wasm-session.log` |
+| `npx vitest run --config tests/integration/rhwp/vitest.config.ts undo.wasm format-save.wasm multisection.wasm` | A 수정에서 37 PASS/1 선택 SKIP, `wasm-regression.log` |
+| `python3` inline 실행으로 저장한 `service.py`를 `exec(compile(...))` | 동일 기존 서비스 binary/Release 입력, 18 chains/62 durable publications, `service-summary.json`; 보호 Rust 전체 gate와 별도 |
+| `python3 scripts/cargo-geul.py test --locked --offline --lib services::save::tests::e_임시_파일을_만든_직후의_실패도_이_저장의_임시_파일만_지운다 -- --exact --nocapture` | 임시 진단 소스에서 0 PASS/1 FAIL, `b1-first-operation.log`; Rust 진단 편집 제거 |
+| `python3 scripts/cargo-geul.py test --locked --offline --lib services::save::tests::reservation_real_save_exact_budget_and_one_byte_refusal -- --exact --nocapture` | 임시 진단 소스에서 0 PASS/1 FAIL, `b2-first-operation.log`; Rust 진단 편집 제거 |
+| `GEUL_SANDBOX=sudo-bwrap python3 scripts/cargo-geul.py test --locked --offline --lib services::save` | BLOCKED, tests 미시작, `rust-valid-mode.log` |
+| `python3 target/stage7-continuation/launch.py` | private native launcher, mode2/명령 JSON은 environment-result.json에 기록. 마지막 실행 FAIL, D2 INCONCLUSIVE, `d2-hybrid-fresh/environment/environment-result.json` |
+
+WASM 명령에는 `VITE_GEUL_TEST_HOOKS=1 VITE_GEUL_TEST_RHWP_HISTORY=1 VITE_GEUL_TEST_RHWP_FORMAT=1 VITE_GEUL_TEST_RHWP_FORMULA=1`을 지정했다. final backend rejection 수정은 35개 focused frontend 및 typecheck/lint로 별도 검증했다. 66/37개 WASM 및 62개 서비스 결과는 첫 A 수정 상태의 검증이며 마지막 수정 이후 새로 실행했다고 주장하지 않는다. native runner 세 번의 private process cleanup survivors는 모두 0이다. trace 보존·fresh phase 관측 보완은 실제 실패 자료와 두 완료 trial을 대조해 검증했으며 전체 native suite PASS를 의미하지 않는다.
