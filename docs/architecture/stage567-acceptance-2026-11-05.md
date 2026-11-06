@@ -289,3 +289,19 @@ Active WASM generation은 `53b6ad7a4c6de7a8f4ada4c61b0ad1934461e656527f6e6b440f0
 | `python3 target/stage7-continuation/launch.py` | private native launcher, mode2/명령 JSON은 environment-result.json에 기록. 마지막 실행 FAIL, D2 INCONCLUSIVE, `d2-hybrid-fresh/environment/environment-result.json` |
 
 WASM 명령에는 `VITE_GEUL_TEST_HOOKS=1 VITE_GEUL_TEST_RHWP_HISTORY=1 VITE_GEUL_TEST_RHWP_FORMAT=1 VITE_GEUL_TEST_RHWP_FORMULA=1`을 지정했다. final backend rejection 수정은 35개 focused frontend 및 typecheck/lint로 별도 검증했다. 66/37개 WASM 및 62개 서비스 결과는 첫 A 수정 상태의 검증이며 마지막 수정 이후 새로 실행했다고 주장하지 않는다. native runner 세 번의 private process cleanup survivors는 모두 0이다. trace 보존·fresh phase 관측 보완은 실제 실패 자료와 두 완료 trial을 대조해 검증했으며 전체 native suite PASS를 의미하지 않는다.
+
+### 2026-11-06 신뢰성 후속 실행 기록
+
+코드 기준 HEAD는 `de65a43e0ff583e6fdccd96708900a0eb6c731ae`이고 증거는 `target/reliability-20261106/`다. 이전 표의 FAIL·BLOCKED 기록은 그 시점의 결과로 유지한다.
+
+| 명령 | 결과 |
+|---|---|
+| `npx vitest run` | 1201 PASS, `final/frontend.log` |
+| `npm run typecheck`; `npm run lint` | PASS, `final/typecheck.log`, `final/lint.log` |
+| `python3 -B -m unittest scripts/tests/test_external_integrity.py` | 26 PASS, `final/integrity-unit.log` |
+| `npx vitest run --config scripts/tests/vitest.config.ts publication-identity table-formula-session` (WASM 시험 플래그 4개) | 66 PASS, `final/wasm-session.log` |
+| `npx vitest run --config tests/integration/rhwp/vitest.config.ts undo.wasm format-save.wasm multisection.wasm` (같은 플래그) | 37 PASS / 1 선택 SKIP, `final/wasm-legacy.log` |
+| `GEUL_SANDBOX=userns-root-bwrap python3 scripts/cargo-geul.py test --locked --offline --lib services::save` | 146 PASS / 0 FAIL / 15 ignored, `final/rust-save.log`. `sudo-bwrap`은 여전히 NOT RUN |
+| `python3 target/stage7-continuation/launch.py` + `native-d2-order.py` | 비동기·동기·hybrid 실행 모두 PASS, D2 **INCONCLUSIVE**, E→U→F 0회, `c/{async,sync,mode2}/` |
+
+실제 서비스 체인(`service.py`)은 다시 실행하지 않았다. 이번 수정은 Rust 저장 코드를 바꾸지 않았고 프런트 세션과 시험 도구만 바꿨다. Word/Hancom 수용은 계속 NOT RUN이고 D4는 다루지 않았다.

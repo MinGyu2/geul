@@ -1593,3 +1593,21 @@ Initial shape-prefix capture used to happen after the backend had accepted `load
 기존 private X11/IBus Hangul/WebKitGTK 입력 재현은 안전성 assertion 실패 시 `end_session()` 정리 뒤 trace를 읽어 원시 입력 증거를 잃을 수 있었다. runner가 예외를 다시 던지기 전에 연결된 native session에서 trace/status를 보존하고, trial을 assertion 전에 기록하도록 고쳤다. 완료된 두 HWP trial에서는 Undo/Redo 직후 저장된 phase가 local revision보다 한 단계 이전 상태를 가리킨 것이 원인이었다. Hybrid IBus의 마지막 keyUp/Redo keyDown 전달 순서를 고려해 **초기 E/U/F 관측 구간 뒤에만** 실제 native Shift를 보내 새 history phase를 읽고, 문서 본문/revision은 그대로인지 확인한다. 최초 E/U/F 입력과 acceptance predicate는 바꾸지 않았다. 원시 runner 결과는 `target/save-cleanup-20261106/d2-hybrid-fresh/run/diagnosis/result.json`, 계측 검증은 `native-capture-verification.log`다.
 
 두 완료 HWP trial의 확정 경로는 E74→F87→U121이며, 취소 경로는 E96→U111(`reason=composing`)이고 F는 관측되지 않았다. 세 번째 trial은 기존 취소 안전성 assertion에서 중단됐다. 실패 trace는 보존됐다. E→U→F는 관측되지 않았고, 새 입력은 HWPX/plain textarea 결과를 얻지 못했다. 따라서 native run은 execution FAIL, D2는 **INCONCLUSIVE**다. 공식 [IBus 1.5.33 GTK2 입력 컨텍스트 구현](https://raw.githubusercontent.com/ibus/ibus/1.5.33/client/gtk2/ibusimcontext.c)의 `IBUS_ENABLE_SYNC_MODE` 경로에 있는 hybrid GSource 처리를 새로운 timing 가설로 삼았지만 acceptance 조건을 충족하지 못했다. D2 조건을 바꾸거나 해당 순서가 불가능하다고 추론하지 않는다. 개인 데스크톱 세션은 사용하지 않았다.
+
+### 2026-11-06 D2 세 번째 취소 trial 진단 — INCONCLUSIVE 유지
+
+첫 실패 assertion은 `scripts/tests/native-d2-order.py:87`의 `first['paragraphText'] == row['base'] and delta == 1`이다. 수정 전 harness로 mode 2에서 같은 지점에 다시 멈춰 결정적임을 확인했다(`target/reliability-20261106/c/repro-mode2/`).
+
+원인은 잘못된 harness 기대값이다. 지연 0의 `BackSpace BackSpace ctrl+z`를 hybrid IBus로 보내면 keyup 순서가 고정되지 않는다. 빈 끝 E96 다음에 `z` keyup(103)과 `Ctrl+Z` keydown(109)이 Backspace keyup(117, 120)보다 먼저 왔다. `z` keyup이 취소 증거를 지워 기다림이 유지되고, Undo 요청 U111은 `reason=composing`으로 거부된다. 적용되지 않았으므로 본문은 접두 글자를 유지하고 revision 변화는 0이며 F도 없다. 제품은 설계대로 안전하게 거부했고, harness만 Ctrl+Z 전달을 Undo 수락과 같게 보았다. 제품 IME 구현은 바꾸지 않았다.
+
+`de65a43e0ff583e6fdccd96708900a0eb6c731ae`는 수락과 거부 각각에 정확한 조건을 둔다. 수락이면 접두 글자가 지워지고 revision +1, 기록 0이며, 거부면 reason이 `composing`이고 본문·revision·기록이 그대로다. 두 경우 모두 F가 없어야 한다. 거부 뒤 새 입력 전의 Ctrl+Z도 거부되는지, 뒤따른 실제 타자가 음절 하나만 넣는지, Undo/Redo 대상이 정확한지, 최종 모델 전체 텍스트의 첫 문단이 같은지도 본다. 안정된 취소 뒤 Undo를 보는 `cancel-settled-undo` 모드를 더했다. hybrid 전달로 마지막 phase가 낡았으면 E/U/F 스냅숏 뒤에 native Shift로 새 phase를 읽는다. E/U/F 관측과 D2 predicate는 그대로다.
+
+| IBus 모드 | 실행 | HWP·HWPX 8 trial 결과 | 완료 / 취소 / 안정된 취소 순서 | textarea 4건 |
+|---|---|---|---|---|
+| 기본(비동기) | PASS | 전부 safe | E74→F87→U117·U126 / E96→U116 수락 / E96→U119 수락 | 예상값 |
+| `IBUS_ENABLE_SYNC_MODE=1` | PASS | 전부 safe | E74→F87→U117·U126 / E99→U116 수락 / E99→U119 수락 | 예상값 |
+| `IBUS_ENABLE_SYNC_MODE=2` | PASS | 전부 safe | E74→F87→U121 / E96→U111 **거부** / E96→U123 수락 | 예상값 |
+
+IBus 1.5.33, ibus-hangul 1.5.5, Release `53b6ad7a…`, 실제 Tauri/WebKitGTK, XTest 입력이며 합성 조합 이벤트는 없다. 세 실행 모두 cleanup survivors 0이고 증거는 `target/reliability-20261106/c/{async,sync,mode2}/`다. 중간 실행 `mode2-assertion-parse-bug`, `mode2-stale-phase`는 harness 자체의 오류로 멈춘 기록이며 보존한다.
+
+**E→U→F 관측은 여전히 0회이고 D2는 INCONCLUSIVE다.** 안전성 trial 통과는 필수 순서 관측을 대신하지 않으며, 이 결과로 그 순서가 불가능하다고 결론 내리지 않는다. 다시 불러오기 경계는 이 native 실행에서 따로 시험하지 않았다(trial 사이 탭 닫기·폐기와 모델 ID 검사만 수행). 제품 RHWP Undo/Redo는 계속 비활성이고 D4 FAIL은 바뀌지 않았다.

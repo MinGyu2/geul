@@ -1371,3 +1371,24 @@ backend `save()` Promise rejection 뒤 UI가 `saving` 상태에 남는 것을 �
 지원된 `bwrap`의 실제 mapping은 inside UID 1000→parent UID 0, inside GID 100→parent GID 0을 각각 1개만 매핑하며, `/`와 `/home`은 소유자 65534 mode 0755, private `/tmp`는 1000:100 mode 1777, fixture는 1000:100 mode 0700이었다. 필요한 UID 0 신뢰 조상을 제공하지 않는다. `sudo-bwrap`는 암호가 필요해 사용할 수 없었다. `GEUL_SANDBOX=sudo-bwrap python3 scripts/cargo-geul.py test --locked --offline --lib services::save`는 test 전에 exit 1로 막혔다. 따라서 이 실행에서 Rust suite 결과는 없으며 PASS가 아니다. 과거 유효하지 않은 환경에서 기록한 100 PASS/46 FAIL/15 ignored는 역사 결과일 뿐이다. 현재 두 미분류 사례는 `SharedDirectory`로 직접 분류됐다. 증거: `target/save-cleanup-20261106/{sandbox.json,rust-valid-mode.log,b1-first-operation.log,b2-first-operation.log}`.
 
 현재 로컬/연결 세션 검사에서는 Word/Hancom 실행 파일, 앱 파일, 연결된 문서 세션을 찾지 못했다. Office 상호운용성은 NOT RUN이며 버전·출력 파일은 없다. 상세는 `target/save-cleanup-20261106/office-access.json`이다.
+
+### 2026-11-06 사전 검사·명령 저장 거부·보호 Rust 저장 관문 후속
+
+위 기록은 그대로 두고 이후 결과만 더한다. 증거는 `target/reliability-20261106/`이다.
+
+**사전 검사 정리(`eee3d4e47c50a4ac5df9e2bdda4f24a186f9a756`, 제어된 결함 주입).** 수정 전 19건이 실패했다(`a1-before.log`). `fresh.free()`가 던지면 구조화된 Result 대신 원시 거부가 나가고 `saveState`가 `checking`에 남았으며 모델이 uncertain이 되지 않았다. 이제 내보내기 객체와 독립 문서를 서로 막지 않고 해제한다. 내보내기 실패가 주 오류(`EngineFailure(export)`)이고 정리 실패는 `saveCleanupErrors`에 따로 남는다. 내보내기는 됐는데 해제만 실패하면 그 출력을 쓰지 않고 `SaveNotReady(uncertain)`로 끝나며 기존 정리 실패 정책으로 편집을 멈춘다. 사전 검사 중의 백엔드 거부는 아무것도 게시하지 않은 단계이므로 `Protocol` 결과로 바꾸고 원본 거부는 `saveTransportErrors`에 남긴다. 안전을 다시 확인하지 못한 검사 뒤에는 이전 safe 판정을 재사용하지 않고, 앞선 검사의 정리 실패로 멈춘 모듈에 문서를 새로 열지 않는다. 게시 경로의 편집 모델 내보내기 객체 해제 실패도 같은 정책을 따른다. T009 보존 판정·임계값은 바꾸지 않았다.
+
+**명령 저장 거부(`a0a008e52ff76bb076564edc96409f71b6ed0dfc`, 제어된 결함 주입).** `file.save`와 저장 단추는 끝을 기다리지 않고 `save()`를 불러, 백엔드 Promise 거부가 처리되지 않은 거부로 빠져나갔다(`a2-before.log`, `a2-button-before.log`). 다른 이름으로 저장도 같았다. 직접 `await save()`는 기존처럼 원본 거부를 받고, 끝을 기다리지 않는 경계에서만 잡아 기록한다. 결과는 저장 표시 한 곳에만 보인다. 전송 거부의 저장 상태를 `SaveFailure(write)`에서 `Protocol`로 바꿨다. `SaveFailure`는 화면에 "원본 파일은 바뀌지 않았습니다"로 표시되는데 전송 거부는 게시 여부를 알 수 없기 때문이다. 재시도는 사전 검사부터 다시 한다. 정상 Tauri 어댑터는 전송 실패를 이미 `Result`로 바꾸므로 이 경로는 예외 상황이다. DOCX 세션의 같은 형태 거부 처리는 범위 밖이라 바꾸지 않았다(소스 관찰, 재현하지 않음).
+
+**보호 Rust 저장 관문(`18dd5dbca4d68929baeae48381032ec1d5409bbd`).** 위 기록의 65534는 커널 동작이다. 사용자 네임스페이스에 매핑되지 않은 소유자는 overflow UID로 보인다. 기록된 `1000 → parent 0`은 호스트 root가 아니다. bwrap이 `--dev` 때문에 중간 네임스페이스를 하나 더 만들어 그 안의 0을 가리킨다(`--dev` 없이는 `1000 1000 1`). 호스트 UID 0 매핑에는 상위 네임스페이스의 CAP_SETUID가 필요하고 `/etc/subuid`에도 없어 이 사용자로는 불가능하다.
+
+`GEUL_SANDBOX=userns-root-bwrap`을 명시 모드로 추가했다. `sudo-bwrap`과 같은 설정·권한 강하를 sudo 없이 수행한다. `newuidmap`으로 시스템이 이미 허용한 subordinate ID를 새 사용자 네임스페이스의 UID 0에 매핑하고, 그 root가 샌드박스의 새 `/`(0:0, 0755, 읽기 전용)와 `/tmp`(0:0, 1777)만 소유한다. 시험 프로세스는 UID 1000, 모든 capability 0, no-new-privs로 실행된다. 샌드박스 증명은 이 소유권이 아니면 실패한다. 추가 subordinate ID는 실제 보조 그룹과 다른 사용자(65534)를 제공해 그룹 소유·ACL 거부 분기를 실제로 실행한다. 신뢰 규칙, 시험, 기본 모드, `sudo-bwrap`은 바꾸지 않았다. 호스트 소유 경로 전체를 쓰는 대신 euid 소유 root를 쓰는 안은 실제 UID 0 상위를 요구하는 `a4_…` 시험이 정당하게 실패해 버렸다.
+
+| 실행 | 결과 |
+|---|---|
+| `GEUL_SANDBOX=userns-root-bwrap python3 scripts/cargo-geul.py test --locked --offline --lib services::save` | 146 PASS / 0 FAIL / 15 ignored, `NOT RUN` 분기 0, 외부 신원 불변 |
+| 위 모드의 `services::save::tests::e_임시_파일을_만든_직후의_실패도_이_저장의_임시_파일만_지운다` | PASS, 임시 이름 2개·`SaveFailure(Write)`·원본 보존까지 도달 |
+| 위 모드의 `services::save::tests::reservation_real_save_exact_budget_and_one_byte_refusal` | PASS, 정확한 예산 성공·1바이트 부족 거부·원본 보존까지 도달 |
+| 기본 `bwrap` 모드 같은 명령(대조군) | 100 PASS / 46 FAIL / 15 ignored, 신뢰 검사가 여전히 거부함을 확인 |
+
+한계: 네임스페이스 UID 0은 호스트 root가 아니다. 저장 코드는 호출자 네임스페이스의 `geteuid`와 `stat` 값만 보므로 경로는 같지만, 호스트 root 소유 조상과 `sudo-bwrap` 자체는 이 환경에서 실행하지 않았다(sudo 암호 필요). ignored 15건은 측정·수동 탐침이며 실행하지 않았다. 이 Rust 결함 없음 판정은 이 저장 스위트에 한정한다.
