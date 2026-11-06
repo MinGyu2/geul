@@ -269,6 +269,17 @@ export class RhwpEditorSession implements DocumentCommandTarget {
   private closing = false;
   private disposed = false;
   private saving = false;
+  /** Secondary engine cleanup failures; never replace the backend publication result. */
+  readonly saveCleanupErrors: unknown[] = [];
+
+  private saveCleanupFailed(error: unknown, epoch: number) {
+    this.saveCleanupErrors.push(error);
+    if (!this.owns(epoch)) return;
+    this.uncertain = true;
+    this.checkSerial += 1;
+    this.saveCheck = null;
+    this.failEditing();
+  }
   private composition: Composition | null = null;
   /** 앱이 먼저 끝낸 보이는 조합(클릭·초점 잃음·표면 사라짐). 글자는 모델에 있고, 입력기의 끝을 기다리며 아직 세지 않았다. */
   private provisional: Composition | null = null;
@@ -1401,7 +1412,11 @@ export class RhwpEditorSession implements DocumentCommandTarget {
       // report.failure가 실패한 단계를 가리킨다.
       if (publishing) output = null;
     } finally {
-      reopened?.free();
+      try { reopened?.free(); } catch (error) {
+        report.failure = "reopen";
+        this.saveCleanupFailed(error, this.epoch);
+        if (publishing) output = null;
+      }
     }
     report.passed = report.failure === null && report.lossValid && report.lossCount === 0 && report.formatEqual
       && report.pagesEqual && report.textEqual && report.controlsEqual;
@@ -1710,8 +1725,8 @@ export class RhwpEditorSession implements DocumentCommandTarget {
       const revision = this.committed;
       this.setSave({ kind: "saving" });
       const exported = this.exportAndCompare(format, true);
+      releaseShapes = exported?.releaseShapes;
       if (!exported?.bytes) return fail({ code: "SaveFailure", stage: "export" });
-      releaseShapes = exported.releaseShapes;
       const result = await this.backend.save(this.sessionId, generation, revision, exported.bytes, exported.contentLoss, exported.reopen, destination);
       if (!this.owns(epoch)) return result;
       if (!result.ok) return fail(result.error);
@@ -1720,7 +1735,8 @@ export class RhwpEditorSession implements DocumentCommandTarget {
       const changedSince = this.localRevision !== revision || this.imeUnsettled;
       // 저장한 판 뒤에 편집이 없고 교체의 내구성까지 확인했으면 이 모델은 디스크의 파일과 같다(닫기·다시 불러오기에 버리기
       // 확인이 필요 없음). 내구성을 확인하지 못했으면(교체는 됨) 저장하지 않은 편집으로 남긴다(백엔드도 dirty로 둔다).
-      this.text?.markPublishedCharShapes(exported.charShapeCount);
+      try { this.text?.markPublishedCharShapes(exported.charShapeCount); }
+      catch (error) { this.saveCleanupFailed(error, epoch); }
       if (!changedSince && result.value.durable) this.modified = false;
       // 원본이 바뀌었다: 다음 저장은 새 원본으로 다시 검사한다. 그 전에 시작한 검사의 늦은 결과도 버린다.
       this.checkSerial += 1;
@@ -1728,8 +1744,9 @@ export class RhwpEditorSession implements DocumentCommandTarget {
       this.setSave({ kind: "saved", revision, durable: result.value.durable, changedSince });
       return result;
     } finally {
-      releaseShapes?.();
-      this.saving = false;
+      try { releaseShapes?.(); }
+      catch (error) { this.saveCleanupFailed(error, epoch); }
+      finally { this.saving = false; }
     }
   }
 

@@ -1353,3 +1353,11 @@ P5 초기화 경계에서도 `readPages` 예외 뒤 `doc.free` trap이 loading�
 P5 결과 집계 보완: `p5-independent-review.json`은 84 durable 저장, 3 strict refusal, 18 same-path chain, 18 full run reopen PASS를 요약한다. 84는 service chain 62건과 normalization의 성공 시나리오 22건을 합한 값이며, HWP bold 세 refusal은 별도다. `p5-reopen-refs.json`은 최종 파일의 18개 모두 네 셀의 run/ID/속성 및 canonical prefix 검증을 PASS로 기록한다. 초기에 tuple 형태를 잘못 넘긴 reopen harness는 실패 기록 `p5-reopen-refs-harness-error.*`로 남기고, 실제 WASM API에 맞춰 수정한 후 검증했다(`p5-reopen-refs.log`). 이는 실파일 결과다. `p5-pointer-validation.json`은 유효 캡처 prefix와 위조 callable-free 객체를 분리해, 후자를 `expected instance of CharShapePrefix`로 거부하고 문서 count가 그대로임을 보인다. 실제 allocator destructor 예외를 유도한 것은 아니다.
 
 Rust save 시험 환경 분류 보완: sandbox 바깥 UID는1000이며 UID map의 sandbox root도65534로 매핑됐다. 시험 경로 `/`, `/home`, `/tmp` 어느 것도 UID0으로 보이지 않았다(`p5-rust-environment.json`). 실패 46건 중 44건은 root ancestor assertion 또는 `SharedDirectory` 결과가 이 전제와 직접 관련된다. 나머지 2건도 같은 공유 경로 전제에 의한 후속 assertion 실패로 설명과 일치하지만, 개별적으로 독립 원인까지 입증하지는 않았다. privileged `sudo-bwrap` 경로는 구현되어 있지만 `sudo -n true`가 암호를 요구해 실행할 수 없었다. 무보호 실행으로 재시도하거나 UID 검사를 완화하지 않았다. 따라서 Rust gate는 환경 차단/실패로 남고 PASS가 아니다.
+
+## 2026-11-06: 저장 후 prefix/lease 정리 예외
+
+저장 후 엔진 소유 리소스의 `free()`가 예외를 내면 이미 완료된 백엔드 게시 결과까지 호출자에게 실패로 보이거나 다음 저장이 `saving`에 막힐 수 있음을 controlled backend로 재현했다. 새 회귀 테스트 10개 중 7개가 수정 전 실패했다(6개는 정리 예외 동작, stale 사례 1개는 신규 진단 필드 부재)(`target/save-cleanup-20261106/before.log`). 여기서 prefix/lease·문서는 테스트 double이며 디스크 쓰기를 수행하지 않는다.
+
+저장 lease는 `exportAndCompare()` 안에서 다시 연 문서의 해제보다 먼저 획득될 수 있다. 이제 내보내기 결과가 바이트 없이 반환되어도 lease 소유권을 호출자가 받으며, 재개방 문서 해제 예외를 기록하고 게시 입력을 거부한다. 이전 published prefix 해제 예외는 백엔드의 durable 성공 결과를 바꾸지 않고, 저장 baseline 및 결과 상태 반영을 계속한다. lease 정리는 별도로 시도하고 `saving`은 항상 해제한다. 정리 예외는 `saveCleanupErrors`에 보존하고 현재 세션의 엔진 상태를 uncertain/failed로 닫아 재사용을 막는다. stale epoch의 정리 실패는 새 상태를 변경하지 않는다.
+
+수정 후 focused frontend 71 PASS, 실제 Release WASM 66 PASS, 기존 WASM 37 PASS·선택 테스트 1 SKIP, typecheck/lint PASS. `GEUL_FORMAT_SAVE_OUT`가 없어 format-save 선택 테스트는 SKIP이며 PASS로 세지 않는다. 기존 Release generation `53b6ad7a4c6de7a8f4ada4c61b0ad1934461e656527f6e6b440f08898bebf6d6`을 사용했고 엔진은 다시 빌드하지 않았다. 실제 save-service binary로 별도 target에 수행한 18 HWP/HWPX 체인 62 durable 게시도 PASS다. 이는 테스트 double 기반 cleanup 주입 결과를 대체하지 않으며, 보호 Rust save suite 결과로도 해석하지 않는다. 로그와 새 service 산출물은 `target/save-cleanup-20261106/`에 있다.
