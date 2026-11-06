@@ -1,6 +1,6 @@
 // 보존 사전 검사의 자원 정리·백엔드 거부 안전성(T009). 엔진이 던지는 정리 실패와 백엔드 전송 거부가 구조화된 Result를 덮거나,
 // 진행 상태를 얼리거나, 안전을 확인하지 못한 검사로 저장을 허용하지 않는지 본다.
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { DocumentSessions } from "../../../adapters/sessions";
 import type { SaveOutcome } from "../../../adapters/contract";
 import { RhwpEditorSession } from "./RhwpEditorSession";
@@ -86,13 +86,63 @@ async function replyOriginal(t: Session) {
   await flush();
 }
 
-const unhandled: unknown[] = [];
-const onUnhandled = (reason: unknown) => { unhandled.push(reason); };
-process.on("unhandledRejection", onUnhandled);
+const REJECTION = "unhandledRejection";
+/** 이 파일이 소유하지 않는 리스너(Vitest 등). 등록·해제 모두 건드리지 않는다. */
+const foreignListeners = process.listeners(REJECTION);
+const ownListeners = () => process.listeners(REJECTION).filter(listener => !foreignListeners.includes(listener));
+
+/** 시험 하나 동안만 미처리 거부를 모은다. 돌려준 함수는 남은 작업을 기다린 뒤 판정하고, 판정이 실패해도 리스너를 해제한다. */
+function trackRejections(): () => Promise<void> {
+  const collected: unknown[] = [];
+  const listener = (reason: unknown) => { collected.push(reason); };
+  process.on(REJECTION, listener);
+  return async () => {
+    try {
+      await flush();
+      expect(collected).toEqual([]);
+    } finally {
+      process.off(REJECTION, listener);
+    }
+  };
+}
+
+let finishTracking: () => Promise<void>;
+beforeEach(() => { finishTracking = trackRejections(); });
 afterEach(async () => {
-  await flush();
-  expect(unhandled.splice(0)).toEqual([]);
-  vi.restoreAllMocks();
+  try {
+    await finishTracking();
+  } finally {
+    vi.restoreAllMocks();
+  }
+});
+afterAll(() => {
+  expect(process.listeners(REJECTION)).toEqual(foreignListeners);
+});
+
+describe("rejection listener lifecycle", () => {
+  it.each([1, 2, 3])("each test owns exactly one listener (repeat %i)", () => {
+    expect(ownListeners()).toHaveLength(1);
+    expect(foreignListeners.every(listener => process.listeners(REJECTION).includes(listener))).toBe(true);
+  });
+
+  it("removes only its own listener after a clean finish", async () => {
+    const before = process.listeners(REJECTION);
+    const finish = trackRejections();
+    expect(process.listeners(REJECTION)).toHaveLength(before.length + 1);
+    await finish();
+    expect(process.listeners(REJECTION)).toEqual(before);
+  });
+
+  it("fails on a collected rejection and still removes the listener", async () => {
+    const before = process.listeners(REJECTION);
+    const finish = trackRejections();
+    const added = process.listeners(REJECTION).find(listener => !before.includes(listener))!;
+    // 실제 거부는 Vitest의 전역 리스너도 받아 실행 전체를 실패시키므로, 등록된 리스너를 직접 부른다.
+    const rejection = new Error("unexpected rejection");
+    added(rejection, Promise.resolve());
+    await expect(finish()).rejects.toThrow("unexpected rejection");
+    expect(process.listeners(REJECTION)).toEqual(before);
+  });
 });
 
 describe("RHWP preflight resource cleanup", () => {
