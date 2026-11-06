@@ -1392,3 +1392,10 @@ backend `save()` Promise rejection 뒤 UI가 `saving` 상태에 남는 것을 �
 | 기본 `bwrap` 모드 같은 명령(대조군) | 100 PASS / 46 FAIL / 15 ignored, 신뢰 검사가 여전히 거부함을 확인 |
 
 한계: 네임스페이스 UID 0은 호스트 root가 아니다. 저장 코드는 호출자 네임스페이스의 `geteuid`와 `stat` 값만 보므로 경로는 같지만, 호스트 root 소유 조상과 `sudo-bwrap` 자체는 이 환경에서 실행하지 않았다(sudo 암호 필요). ignored 15건은 측정·수동 탐침이며 실행하지 않았다. 이 Rust 결함 없음 판정은 이 저장 스위트에 한정한다.
+
+
+### 2026-11-06 T013 혼합 문서의 TOC 표식 수락 경계
+
+고정 WordCraft `6c994e42dee106ca03c6f11628d2fe577fe27636`에서 TOC 제목의 BookmarkStart를 추적 삭제한 뒤 전체 수락하면 짝 없는 BookmarkEnd가 남아 export/reopen 의미 비교가 실패한다. 기존 T009는 게시를 거부하지만 명령 직후 모델은 저장할 수 없는 상태가 되었다. 회귀 시험은 수정 전 명령 수락(1 change), 수정 후 원자적 거부(0 change)를 확인한다.
+
+geul 어댑터는 TOC가 있는 문서의 수락·거절과 추적 기록이 있는 문서의 TOC 생성·갱신을 편집 snapshot으로 감싸며, 실제 export/reopen 의미 비교가 실패하면 문서·선택·Undo/Redo 기록을 복구한다. 낯선 표식을 재작성하거나 의미 비교를 완화하지 않는다. 이 경우의 명령은 지원하지 않으며 추적 표식 삭제를 Undo한 뒤 진행해야 한다. 저장 검사·원본 안전·핀은 그대로다. 보호 명령 `GEUL_SANDBOX=userns-root-bwrap python3 scripts/cargo-geul.py test --locked --offline --lib adapters::wordcraft -- --nocapture`: 78 PASS / 1 ignored. 증거: `target/advanced-20261106/b-marker-before.log`, `b-adapter-after.log`. 혼합 행렬 전체 완료와 Word 외부 호환성은 별도 판정이다.

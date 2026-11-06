@@ -2960,3 +2960,40 @@ fn tracked_toc_bookmark_deletion_preserves_revision_on_two_roundtrips() {
     assert!(reopened.same_as(&second));
     assert!(check_saved(Format::Docx, &first, &second, None, true).is_safe());
 }
+
+#[test]
+fn resolving_tracked_toc_bookmark_deletion_refuses_unroundtrippable_model_atomically() {
+    use wordcraft_engine::doc::Pos;
+    let mut m = DocxModel::open(&headed_fixture()).unwrap();
+    assert_eq!(
+        m.apply(&[mv(MoveTarget::DocStart, false), DocxOp::Toc {}])
+            .changed,
+        1
+    );
+    let index = m
+        .diagnostic_document()
+        .body
+        .iter()
+        .position(|b| {
+            b.as_para()
+                .is_some_and(|p| p.props.style.as_deref() == Some("Heading2"))
+        })
+        .unwrap();
+    assert!(m.run_engine("caret.set", json!({"pos": Pos::body(index, 0)})));
+    assert_eq!(
+        m.apply(&[DocxOp::TrackChanges { value: true }, DocxOp::DeleteForward])
+            .changed,
+        2
+    );
+    assert!(m.same_as(&m.export().unwrap()));
+    let before = m.diagnostic_document().clone();
+    let history = m.view().history;
+    let outcome = m.apply(&[DocxOp::AcceptAll {}]);
+    assert_eq!((outcome.changed, outcome.rejected), (0, vec![0]));
+    assert_eq!(*m.diagnostic_document(), before);
+    assert_eq!(m.view().history, history);
+    assert!(m.same_as(&m.export().unwrap()));
+    // The rejected command must not insert a history step ahead of the real deletion.
+    assert_eq!(m.apply(&[DocxOp::Undo {}]).changed, 1);
+    assert!(m.same_as(&m.export().unwrap()));
+}

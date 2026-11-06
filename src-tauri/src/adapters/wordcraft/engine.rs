@@ -635,7 +635,16 @@ impl DocxModel {
         if !self.has_revisions() {
             return Err(Rejected);
         }
-        let changed = self.run(command, json!({}))?;
+        // Resolving tracked TOC range markers can leave an orphan bookmark in the
+        // pinned engine. Refuse that result before accepting the edit/history step.
+        let check_toc = self.has_toc();
+        let changed = self.atomic(|model| {
+            let changed = model.run(command, json!({}))?;
+            if check_toc && !model.export().is_some_and(|bytes| model.same_as(&bytes)) {
+                return Err(Rejected);
+            }
+            Ok(changed)
+        })?;
         self.session.clamp_selection();
         self.marks.clear();
         self.last_insert = None;
@@ -715,14 +724,21 @@ impl DocxModel {
                 return Err(Rejected);
             }
         }
-        let changed = self.run(
-            if update {
-                "references.updateToc"
-            } else {
-                "references.toc"
-            },
-            json!({}),
-        )?;
+        let tracked = self.has_revisions();
+        let changed = self.atomic(|model| {
+            let changed = model.run(
+                if update {
+                    "references.updateToc"
+                } else {
+                    "references.toc"
+                },
+                json!({}),
+            )?;
+            if tracked && !model.export().is_some_and(|bytes| model.same_as(&bytes)) {
+                return Err(Rejected);
+            }
+            Ok(changed)
+        })?;
         self.session.clamp_selection();
         self.marks.clear();
         self.last_insert = None;
