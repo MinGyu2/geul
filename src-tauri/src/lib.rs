@@ -17,6 +17,20 @@ pub fn run() {
     tauri::Builder::default()
         .manage(document::commands::DocumentState::default())
         .setup(|app| {
+            // WebKitGTK's overlay scrollbar hit region extends into visible page
+            // content. Use its native non-overlay gutters so painted page pixels
+            // and pointer targets share the same boundary. Process-local only;
+            // no input interception or system settings/configuration changes.
+            #[cfg(target_os = "linux")]
+            if let Some(settings) = gtk::Settings::default() {
+                use gtk::prelude::ObjectExt;
+                // Access the verified GTK property without raising the locked
+                // gtk crate's minimum-version feature requirement.
+                if settings.find_property("gtk-overlay-scrolling").is_some() {
+                    settings.set_property("gtk-overlay-scrolling", false);
+                }
+            }
+
             let root = app
                 .path()
                 .app_local_data_dir()

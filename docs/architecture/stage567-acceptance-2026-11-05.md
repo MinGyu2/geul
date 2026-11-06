@@ -464,3 +464,30 @@ There is no demonstrated safe regeneration of the genuine calc-cell PrvImage. T0
 실제 HWP/HWPX Release WASM 행렬은 두 셀·세 셀·범위·교체·상대·방향 순환, 직접 자기 참조, malformed/missing/encoding/nested/duplicate/location 메타데이터, 실제 병합 표와 주입 불일치를 검사한다. 매 거부는 문서 바이트/로컬 revision/backend session(판·dirty)/history/ownership 불변, snapshot 0회, commit/save 0회다. 정상 사슬은 의존성 순 재계산 4/3/2, 같은 식 반복 시 revision 무변경, 비순환 교체 6/5/2, Undo/Redo, export/reopen/edit/second export의 field ID·command·value 보존을 확인한다. backend는 controlled이므로 실제 durable publication으로 세지 않는다.
 
 A 검증(이번 실행): `npx vitest run src/commands/hangulTools.test.tsx src/components/Editor/advancedFormulaDialog.test.tsx src/components/Editor/rhwp/historyAdmission.test.ts src/components/Editor/rhwp/RhwpEditorSession.test.ts` 47 PASS(`a-frontend.log`), `npx vitest run --config scripts/tests/vitest.config.ts table-formula-session` 89 PASS(`a-merged-final.log`). `advanced-production` 8개와 `formula-dialog-reload` 6개는 이번 교정 후 `a-final-wasm.log`의 통과를 재사용했다(그 뒤 추가한 병합 fixture 시험은 table suite에서 별도 통과). `npm run typecheck`, `npm run lint`, `npx tsc --noEmit -p target/reliability-small-20261106/tsconfig-tests.json`, `git diff --check` PASS. 이전 단계의 상속 결과를 이번 실행으로 세지 않았다. T009·엔진·14패치·Release 신원 변경 없음. 별도 실제 저장 서비스 근거는 B의 최종 native 행렬에서 기록한다.
+
+
+### B — WebKitGTK의 보이는 페이지와 스크롤바 경계 분리
+
+제품 수정은 `src-tauri/src/lib.rs`의 Linux 시작 경계에서 process-local GTK `gtk-overlay-scrolling=false`를 설정하는 것이다. [실제 WebKitGTK 2.54.1 소스](https://raw.githubusercontent.com/WebKit/WebKit/webkitgtk-2.54.1/Source/WebKit/UIProcess/gtk/SystemSettingsManagerProxyGtk.cpp)는 이 GTK 속성을 읽고 notify 변경을 전달한다. 단순 `GTK_OVERLAY_SCROLLING=0` 환경변수는 이 실행에서 효과가 없었다. 기존 GTK 의존성의 `ObjectExt`로 속성 존재를 확인하고 설정하며, 크레이트 feature/최소 버전을 올리거나 OS 설정 파일을 쓰지 않는다. 다른 플랫폼은 변경하지 않았다. CSS scrollbar 숨김, pointer redirect, RHWP hitTest/IME 변경은 없다.
+
+**교정한 플랫폼 경계.** 기존 앱 `987cee7e...`의 높이220.984375px scrollport는 clientHeight221/clientWidth760으로 overlay 공간을 예약하지 않았다. native y=751에서 `elementFromPoint`는 canvas였지만 실제 target은 `.editor__scroll`이며 A2 캐럿이 남았다. `b-before750`이라는 디렉터리 이름과 달리 해당 보고서의 실제 trusted 좌표는 **751**이다. 새 앱은 같은 outer rect(top551.015625/bottom772)에서 clientHeight200/clientWidth739로 21px native gutter를 확보한다. 같은 native **751은 이제 보이는 실제 스크롤바**이고 caret을 움직이지 않는 것이 정상이다. 이 위치를 페이지로 강제 전달하지 않았다. 마지막 전체 편집 픽셀 **750**은 canvas로 전달되어 정확히 `0:1:0@0/3/0`으로 이동한다. y751에서 caret이 이동했다고 주장하지 않는다. overlay의 눈에 보이지 않던 입력 영역에 페이지가 그려지던 문제를, 실제로 보이고 공간을 차지하는 scrollbar 경계로 교정한 것이다. GTK 테마에 따른 실제 gutter 크기는 DOM client 크기로 측정한다.
+
+`native-bottom-pointer.py`의 기본 모드는 교정 수용이며 `--expect-bottom-loss`는 원래 overlay 재현 진단을 보존한다. 기본 시험은 raw fractional center를 무조건 round해서 실제 scrollbar 픽셀751을 누르던 가정을 버리고 마지막 전체 page 픽셀750을 명시한다. 원래751 클릭도 별도로 실행해 실제 scrollbar target/캐럿 무변경을 확인한다. 가운데로 옮기는 기존 우회로를 이 하단 수용에 쓰지 않는다. 새 경계가 필요한 플랫폼이라는 점을 숨기거나 원래 같은 좌표의 target이 canvas로 바뀐 것처럼 기록하지 않는다.
+
+**이번 actual native 수용:** 정상 production Release 앱 SHA256 `e1ef33ab66922583ae5d0fbb892d1514ee89daa2c65d36a3cdd73de2eb8d8f6a`, 모든 시험 훅0, NixOS X11/Xvfb·GTK3.24.52·WebKitGTK2.54.1·IBus1.5.33/hangul1.5.5. `b-native2`는 HWP/HWPX 합계 **66 PASS**, cleanup survivors=[]다. page top/middle/bottom/스크롤한 page, 마지막 편집 가능 하단 픽셀750의 canvas target·정확한 셀0/1/2/3, 기존751의 실제 scrollbar 분류, 수평 thumb 0→70, 수직 thumb scrollTop0→339, native XTest wheel, 선택 `0:1:0@0/0/0|0:1:2@0/0/0`, zoom 뒤 정확한 셀, 새로 누른 B2의 X/한글 입력과 trusted composition을 검증했다. 포인터/선택/스크롤만으로 revision/dirty가 바뀌지 않는다.
+
+**실제 저장 및 A의 서비스 교차 검증:** 형식당 pointer-first(`10,20,"",X한글`), formula-first(`21,20,"",X한글`, A1=`=B1+1`), formula-second(`22,20,"",X한글`, A1=`=B1+2`)를 실제 Tauri 저장 서비스로 각 게시해 총6건이다. B1=`=A1+1`로 순환을 닫는 실제 입력창 요청은 revision/dirty 변화 없이 거부되고 B1 필드는 게시본에 없다. 첫 수식 저장 뒤 앱에서 닫기/재열기, 기존 식 prefill/교체/두 번째 저장도 통과했다. `scripts/tests/verify-bottom-pointer.mjs`는 hash-verified Release WASM으로 6개 파일을 다시 열고 재export/reopen하여 셀 전체·수식 ID·표현식·캐시·top-level A1 위치가 일치함을 검증한다. 이전 셀/나머지 셀은 그대로다. `b-verifier-reviewed`의 입력은 `b-native2` 게시본의 byte-identical 복사이며 파일별 SHA256이 기록됐다. controlled backend 성공을 이 6건에 포함하지 않았다.
+
+| 이번 실행 명령 | 결과 | 근거(`target/cycle-pointer-20261106/`) |
+|---|---|---|
+| `GEUL_SANDBOX=userns-root-bwrap VITE_GEUL_TEST_HOOKS=0 VITE_GEUL_TEST_RHWP_HISTORY=0 VITE_GEUL_TEST_RHWP_FORMAT=0 VITE_GEUL_TEST_RHWP_FORMULA=0 python3 scripts/tauri-geul.py build --no-bundle` | PASS. 최초 GTK feature 메서드 오류는 ObjectExt 속성 접근으로 교정 | `b-build.log`, 실패 로그 `b-build-failed-api.log` 보존 |
+| `GEUL_SANDBOX=userns-root-bwrap python3 scripts/cargo-geul.py fmt --check` | PASS | `b-fmt.log` |
+| `npx vitest run src/App.test.tsx src/components/Editor/rhwp/RhwpSurface.test.tsx src/components/Editor/rhwp/inputBuffer.test.tsx src/components/Editor/rhwp/imeRendering.test.tsx` | 64 PASS | `b-frontend.log` |
+| `python3 scripts/rhwp-artifacts.py --verify-product dist/rhwp --profile release` | PASS. 기존 Release 세대/14패치 유지 | `b-rhwp-identity.log` |
+| `python3 -m py_compile scripts/tests/native-bottom-pointer.py` | PASS | `b-pycompile.log`(추가 harness 갱신 뒤 main에서도 PASS) |
+| `GEUL_NATIVE_OUT=... GEUL_NATIVE_COMMANDS=... python3 target/cycle-pointer-20261106/native-launch.py` | 수정 전30 진단PASS/수정 후66 수용PASS 구분 | `b-before750/environment/environment-result.json`, `b-native2/environment/environment-result.json`에 펼친 정확 command/환경/cleanup |
+| `node scripts/tests/verify-bottom-pointer.mjs target/cycle-pointer-20261106/b-verifier-reviewed` | 저장본6개 재export/reopen PASS | `b-verifier-reviewed/reopen.json` |
+
+위 native launcher는 기존 격리 X11/IBus 절차를 재사용했고, 수정 후에는 GTK 설정 파일 주입이나 overlay 환경변수 변경을 하지 않았다. 제품의 프로세스 내 설정이 유일한 변경이다. 첫 `b-native1`은 fractional 좌표를 round해 실제 bar를 페이지로 잘못 분류한 harness assertion으로 실패했다. 측정한 bar/page 경계를 명시하고 원래751 scrollbar 확인을 남겨 교정했다(실패 로그 보존). 제품 수정을 약화하거나 시험을 center-scroll만으로 바꾸지 않았다.
+
+B는 이 Linux GTK/WebKitGTK 구성의 명시적인 non-overlay 경계에서 수용했다. Wayland/macOS/Windows 및 GTK 속성이 없는 구형 runtime은 NOT RUN으로 추가 환경의 합격을 주장하지 않는다. Rust 저장 서비스/보존 규칙 변경이 없어 storage suite는 재실행하지 않았다. D2 E/U/F, D4, WordCraft remote, Word/Hancom, HWP preview 재생성은 범위 밖이다.
