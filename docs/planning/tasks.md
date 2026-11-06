@@ -1,6 +1,8 @@
 > **2026-11-06 조건부 고급 기능 개발:** [새 사용자 결정](spec.md#conditional-advanced-20261106)은 D2/D4를 △ 조건부 보류하고 독립 검증한 T012 부분집합의 제품 활성화 작업을 허용한다. D2 INCONCLUSIVE, D4 FAIL/자원 INCONCLUSIVE 및 T010/T012/T013 전체 미완료는 유지한다. 지원 부분집합은 일반 Release 빌드·실제 X11/IBus로 검증해 제품 명령을 켰다([수용 기록](../architecture/stage567-acceptance-2026-11-05.md#2026-11-06-advanced-d--conditional-production-implementation)). 아래 이전 비활성 기록은 당시 상태다.
 
-> **최신 소규모 신뢰성 후속 (2026-11-06): PARTIALLY COMPLETED.** Safari lookbehind 제거·LOG10 순서 교정과 reload 입력창 회귀 검증 완료. 간접 순환은 실제 재계산 값 변동이 확인됐고, WebKitGTK 하단 클릭 누락도 남아 있다. C의 native 30개 PASS는 재현/정상 페이지/스크롤바/저장 진단 통과이며 결함 수정 PASS가 아니다. T010 INCOMPLETE, T012/T013 △ conditionally incomplete, D2 INCONCLUSIVE, D4 FAIL/자원 INCONCLUSIVE, WordCraft 원격 재현성 BLOCKED, Microsoft Word/Hancom NOT RUN. [커밋·검증·남은 제한](../architecture/stage567-acceptance-2026-11-05.md#reliability-small-20261106). 아래 날짜별 기술 기록과 조건부 제품 활성화 결정은 보존한다.
+> **최신 상태 (2026-11-06):** 간접 순환 안전 거부(`f18233ddd321e52cc2b4f99c32e1ce5f7e63a2fe`)와 native Linux GTK 하단 페이지/스크롤바 경계 교정(`9dbd68c5433578c2ddf9989a6c273ced0ca02e1b`)을 구현·검증했다. native 검증은 명시적 non-overlay 스크롤바 경계를 확인하며, 기존 y=751 클릭을 페이지로 전달하지 않는다. T010 INCOMPLETE, T012/T013 △ 조건부 미완료, D2 INCONCLUSIVE, D4 FAIL/자원 INCONCLUSIVE, WordCraft 원격 재현성 BLOCKED, Microsoft Word/Hancom NOT RUN. [최신 결과와 상세 제한](../architecture/stage567-acceptance-2026-11-05.md#cycle-pointer-repair-20261106). 아래 기존 조사·기술 기록과 조건부 제품 활성화 결정은 보존한다.
+
+> **이전 소규모 신뢰성 조사 (2026-11-06): PARTIALLY COMPLETED.** Safari lookbehind 제거·LOG10 순서 교정과 reload 입력창 회귀 검증 완료. 간접 순환은 실제 재계산 값 변동이 확인됐고, WebKitGTK 하단 클릭 누락도 남아 있다. C의 native 30개 PASS는 재현/정상 페이지/스크롤바/저장 진단 통과이며 결함 수정 PASS가 아니다. T010 INCOMPLETE, T012/T013 △ conditionally incomplete, D2 INCONCLUSIVE, D4 FAIL/자원 INCONCLUSIVE, WordCraft 원격 재현성 BLOCKED, Microsoft Word/Hancom NOT RUN. [커밋·검증·남은 제한](../architecture/stage567-acceptance-2026-11-05.md#reliability-small-20261106). 아래 날짜별 기술 기록과 조건부 제품 활성화 결정은 보존한다.
 
 > **2026-11-06 고급 기능 A–B 후속:** T013의 선택한 혼합 DOCX 내부 행렬은 실제 저장·재개방·재편집과 native IBus로 검증했다. TOC 추적 표식의 안전하지 않은 수락/갱신은 원자적으로 거부한다. WordCraft 원격 핀 취득은 새 체크아웃에서도 BLOCKED, Microsoft Word 외부 호환성은 NOT RUN이므로 T013은 미완료다. 자세한 계층별 결과는 [advanced A–B acceptance](../architecture/stage567-acceptance-2026-11-05.md#2026-11-06-advanced-ab-acceptance)를 따른다. 아래 과거 상태는 그 시점의 기록으로 유지한다.
 
@@ -75,8 +77,8 @@ Independent Test: 형식·선택·상태별 명령과 미지원 차단. 시험 �
 
 ## Phase 5: User Story 4 - 고급 기능 (Priority: P2)
 Independent Test: 실제 API·기록·문서 왕복을 검증한 명령만 활성화.
-- [ ] T012 [US4] △ 조건부 제품 부분집합 — 장평·자간·영속 수식과 고급 전용 Undo/Redo를 128 KiB·8쪽 이하 HWP/HWPX에서 제품 활성화·실제 UI 검증 완료. 일반 입력 history는 비활성. 한컴 외부 GUI NOT RUN, 진짜 계산식 HWPX fixture 미확보, calc-cell HWP는 stale-preview 안전 거부이므로 전체 미완료.
-- [ ] T013 [US4] 부분 완료 — 선택 혼합 DOCX 내부 수용·실제 native 입력·두 회차 저장/재개방 완료 (`4585c2ae14f6cc025d1681888383948c9addb75d`); TOC 표식 위험 명령 원자적 거부 (`ced0c02d84b40dd525efb24526c6c9dc2852a8c7`). 원격 WordCraft 재현성 BLOCKED, Microsoft Word NOT RUN으로 전체 미완료.
+- [ ] T012 [US4] △ 조건부 미완료 — 장평·자간·영속 수식과 고급 전용 Undo/Redo를 128 KiB·8쪽 이하 HWP/HWPX에서 제품 활성화·실제 UI 검증 완료. 일반 입력 history는 비활성. 한컴 외부 GUI NOT RUN, 진짜 계산식 HWPX fixture 미확보, calc-cell HWP는 stale-preview 안전 거부이므로 전체 미완료.
+- [ ] T013 [US4] △ 조건부 미완료 — DOCX TOC·메모·각주/미주·Track Changes·수락/거절 구현과 선택 혼합 문서 내부 수용·실제 native 입력·두 회차 저장/재개방 완료 (`4585c2ae14f6cc025d1681888383948c9addb75d`); TOC 표식 위험 명령 원자적 거부 (`ced0c02d84b40dd525efb24526c6c9dc2852a8c7`). 원격 WordCraft 재현성 BLOCKED, Microsoft Word NOT RUN으로 전체 미완료.
 
 ## Phase 6: User Story 5 - 저장 실패·복구 수용 (Priority: P1)
 Independent Test: 기존 저장·충돌·복구의 남은 실패 경계.

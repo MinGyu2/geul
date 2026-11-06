@@ -19,14 +19,16 @@ Input: WordCraft + RHWP 독립 코어, Tauri/React 신규 UI, 6개 영역, 언�
 | D4 큰 문서 지연 | **FAIL** | △ 조건부 보류. 기존 50 ms 문턱·측정 끝점 유지 |
 | D4 자원/메모리 | **INCONCLUSIVE** | 회계·자원 검사를 유지, 전체 성능 READY 아님 |
 | T010 | **INCOMPLETE** | 일반 RHWP 입력 history/Undo 활성화는 계속 NO-GO |
-| T012 | △ conditionally incomplete — 지원 부분집합 제품 활성화 | 고급 명령 전용 history와 보존·실제 제품 UI를 별도로 검증한 부분집합만 조건부 활성화. 한컴 외부 수용 미실행, 미리보기 있는 한컴 HWP 저장 거부로 전체 미완료 |
-| T013 | △ conditionally incomplete — 선택 내부 혼합 수용 완료 | WordCraft 원격 재현성 BLOCKED, Word 외부 호환성 NOT RUN으로 전체 미완료 |
+| T012 | △ 조건부 미완료 — 지원 부분집합 제품 활성화 | 고급 명령 전용 history와 보존·실제 제품 UI를 별도로 검증한 부분집합만 조건부 활성화. 한컴 외부 수용 미실행, 미리보기 있는 한컴 HWP 저장 거부로 전체 미완료 |
+| T013 | △ 조건부 미완료 — 선택 내부 혼합 수용 완료 | WordCraft 원격 재현성 BLOCKED, Word 외부 호환성 NOT RUN으로 전체 미완료 |
 
 구현 완료, 지원 부분집합 검증, 제품 명령 노출, 조건부 수용, 전체 T010/T012 수용은 서로 다른 상태다. 제품을 시험 훅으로 빌드해서 활성화하지 않는다. 일반 입력과 분리된 고급 명령 history는 불러온 원본 128 KiB 이하·현재 8쪽 이하, 최대 4단계에 한정한다. 다른 편집은 고급 기록을 폐기하고, 조합/최종 입력 대기·revision 확정 대기·낡은 세션 요청·필수 API/기록 실패는 거부한다. 장평 50–200, 자간 -50–50의 정수/7언어 표현과 수식 길이 256·깊이 16·셀 방문 4096 제한 및 T009 검사는 유지한다. 이 숫자 제한은 D4 합격을 보증하는 새 기준이 아니다.
 
 지원 부분집합의 실제 제품 UI·일반 빌드 검증을 마치고 제품 명령을 조건부로 켰다. 결과와 신원은 [통합 수용 기록](../architecture/stage567-acceptance-2026-11-05.md)에 갱신한다. 아래 날짜별 이전 NO-GO/PASS/FAIL 기록은 당시 결과로 보존한다.
 
-2026-11-06 소규모 신뢰성 후속은 **PARTIALLY COMPLETED**다. Safari 수식 lookbehind 제거와 LOG10 검증 순서 수정은 완료했고, 같은 세션 reload 중 열린 수식 입력창의 stale 거부를 App·Release WASM으로 직접 검증했다. 간접 순환의 캐시 값 변동과 WebKitGTK 하단 overlay 스크롤바 입력 영역의 클릭 누락은 재현됐으나 미수정이다. Safari 13 실제 실행은 NOT RUN이다. [상세 결과](../architecture/stage567-acceptance-2026-11-05.md#reliability-small-20261106)를 따른다. T010 INCOMPLETE, T012/T013 △ conditionally incomplete 및 기존 D2/D4·외부 수용 상태는 유지한다.
+최신 2026-11-06 후속에서는 간접 순환 안전 거부(`f18233ddd321e52cc2b4f99c32e1ce5f7e63a2fe`)와 native Linux GTK 하단 페이지/스크롤바 경계 교정(`9dbd68c5433578c2ddf9989a6c273ced0ca02e1b`)을 구현·검증했다. native 검증은 명시적 non-overlay 스크롤바 경계를 확인하며, 기존 y=751 클릭을 페이지로 전달하지 않는다. T010 INCOMPLETE, T012/T013 △ 조건부 미완료, D2 INCONCLUSIVE, D4 FAIL/자원 INCONCLUSIVE, WordCraft 원격 재현성 BLOCKED, Word/Hancom NOT RUN은 유지한다. [상세 결과](../architecture/stage567-acceptance-2026-11-05.md#cycle-pointer-repair-20261106).
+
+이전 조사 기록: 2026-11-06 소규모 신뢰성 후속은 **PARTIALLY COMPLETED**다. Safari 수식 lookbehind 제거와 LOG10 검증 순서 수정은 완료했고, 같은 세션 reload 중 열린 수식 입력창의 stale 거부를 App·Release WASM으로 직접 검증했다. 간접 순환의 캐시 값 변동과 WebKitGTK 하단 overlay 스크롤바 입력 영역의 클릭 누락은 재현됐으나 미수정이다. Safari 13 실제 실행은 NOT RUN이다. [상세 결과](../architecture/stage567-acceptance-2026-11-05.md#reliability-small-20261106)를 따른다. T010 INCOMPLETE, T012/T013 △ conditionally incomplete 및 기존 D2/D4·외부 수용 상태는 유지한다.
 
 > **2026-11-05 Stage 5–7 재검증:** Stage 5–7과 T012/T013은 부분 완료 상태다. 실제 Release WASM·13개 패치·controlled typed formula 연결과 수식 저장 검증을 마쳤지만, D2 25 PASS/2 INCONCLUSIVE(E→U→F 미관측), D4 원래 기준 6 PASS/2 FAIL 때문에 제품 RHWP history·장평/자간·영속 수식은 NO-GO다. 현재 native 완료 범위, 두 차례 저장의 6게시·2안전 거부, DOCX 표식 교정 뒤 native10개 통과 상태, Word/Hancom NOT RUN은 [통합 수용 보고서](../architecture/stage567-acceptance-2026-11-05.md)를 따른다. 이 기록은 기존 요구사항이나 acceptance threshold를 바꾸지 않는다.
 
