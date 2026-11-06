@@ -3,7 +3,7 @@
 import { createRequire } from "node:module";
 import { readFileSync, mkdirSync, writeFileSync } from "node:fs";
 import { resolve, join } from "node:path";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { readRhwpGeneration } from "../rhwpAssets";
 import { DocumentSessions } from "../../src/adapters/sessions";
 import { RhwpEditorSession } from "../../src/components/Editor/rhwp/RhwpEditorSession";
@@ -23,12 +23,13 @@ const bytes = (doc: RhwpDocument, format: "hwp" | "hwpx") => {
   const report = format === "hwp" ? doc.exportHwpWithReport() : doc.exportHwpxWithReport();
   try { return report.takeBytes(); } finally { report.free(); }
 };
-async function open(format: "hwp" | "hwpx") {
+async function open(format: "hwp" | "hwpx", rows = 2, cols = 2, merged = false) {
   const seed = engine.HwpDocument.createEmpty();
   seed.createBlankDocument();
-  const placed = JSON.parse(seed.createTable(0, 0, 0, 2, 2));
+  const placed = JSON.parse(seed.createTable(0, 0, 0, rows, cols));
   seed.insertTextInCell(0, placed.paraIdx, placed.controlIdx, 0, 0, 0, "10");
   seed.insertTextInCell(0, placed.paraIdx, placed.controlIdx, 1, 0, 0, "20");
+  if (merged) seed.mergeTableCells(0, placed.paraIdx, placed.controlIdx, 0, 0, 0, 1);
   const original = bytes(seed, format); seed.free();
   const { backend, take, calls } = controlledBackend();
   const sessions = new DocumentSessions(backend);
@@ -401,4 +402,106 @@ describe("formula reliability with the selected Release WASM", () => {
     } finally { editor.dispose(); }
   });
 
+});
+
+
+describe.each(["hwp", "hwpx"] as const)("bounded persistent dependencies (%s)", format => {
+  async function fixture(merged = false) {
+    const ctx = await open(format, 2, 3, merged);
+    const select = (cell: number) => { ctx.editor.caret = ctx.editor.anchor = { ...at, cell: { ...ctx.editor.caret.cell!, cell } }; };
+    const apply = async (cell: number, formula: string) => {
+      select(cell); expect(insert(ctx.editor, formula).accepted, formula).toBe(true); await ctx.settle();
+    };
+    const refuse = (cell: number, formula: string) => {
+      select(cell);
+      const before = bytes(ctx.doc, format), revision = ctx.editor.localRevision, session = ctx.sessions.get(1);
+      const history = ctx.editor.snapshot().history, dirty = ctx.editor.hasUnpreservedChanges;
+      const snapshot = vi.spyOn(ctx.doc, "saveSnapshot"), free = vi.spyOn(ctx.doc, "free");
+      try {
+        expect(insert(ctx.editor, formula).accepted, formula).toBe(false);
+        expect(bytes(ctx.doc, format)).toEqual(before);
+        expect(ctx.editor.localRevision).toBe(revision); expect(ctx.sessions.get(1)).toEqual(session);
+        expect(ctx.editor.snapshot().history).toEqual(history); expect(snapshot).not.toHaveBeenCalled();
+        expect(ctx.editor.hasUnpreservedChanges).toBe(dirty); expect(ctx.editor.hasUncertainChanges).toBe(false);
+        expect(ctx.editor.status.kind).toBe("ready"); expect(free).not.toHaveBeenCalled();
+        expect(ctx.calls.some(c => c.method === "commit" || c.method === "save")).toBe(false);
+      } finally { snapshot.mockRestore(); free.mockRestore(); }
+    };
+    return { ...ctx, select, apply, refuse };
+  }
+  it.each([
+    [[[0, "=B1+1"]], 1, "=A1+1"],
+    [[[0, "=B1+1"], [1, "=C1+1"]], 2, "=A1+1"],
+    [[[0, "=SUM(B1:C1)"]], 2, "=A1+1"],
+    [[[0, "=B1+1"], [1, "=2"]], 1, "=A1+1"],
+    [[[0, "=SUM(RIGHT)"]], 1, "=SUM(LEFT)"],
+    [[[0, "=SUM(B?:C?)"]], 2, "=A?+1"],
+    [[[0, "=?2+1"]], 3, "=?1+1"],
+    [[[0, "=SUM(A2:C2)"]], 3, "=SUM(ABOVE)"],
+  ] as const)("refuses closing edges %j -> %s", async (setup, destination, formula) => {
+    const ctx = await fixture();
+    try { for (const [cell, expression] of setup) await ctx.apply(cell, expression); ctx.refuse(destination, formula); }
+    finally { ctx.editor.dispose(); }
+  });
+  it("keeps direct self-reference refused with no history or document change", async () => {
+    const ctx = await fixture();
+    try { for (const formula of ["=A1", "=?1", "=A?", "=SUM(C2:A1)"]) ctx.refuse(0, formula); }
+    finally { ctx.editor.dispose(); }
+  });
+  it("supports acyclic replacement, stable recalculation, undo/redo and two exports/reopens", async () => {
+    const ctx = await fixture();
+    try {
+      await ctx.apply(0, "=B1+1"); await ctx.apply(1, "=C1+1"); await ctx.apply(2, "=2");
+      // Recalculate in dependency order: C1=2, B1=3, A1=4.
+      await ctx.apply(1, "=C1+1"); await ctx.apply(0, "=B1+1");
+      expect(fields(ctx.doc).map((f: { value: string }) => f.value)).toEqual(["4", "3", "2"]);
+      const revision = ctx.editor.localRevision;
+      for (let i = 0; i < 3; i++) { await ctx.apply(1, "=C1+1"); await ctx.apply(0, "=B1+1"); }
+      expect(ctx.editor.localRevision).toBe(revision);
+      await ctx.apply(1, "=5"); await ctx.apply(0, "=B1+1");
+      expect(fields(ctx.doc).map((f: { value: string }) => f.value)).toEqual(["6", "5", "2"]);
+      expect(ctx.editor.execute("edit.undo").accepted).toBe(true); await ctx.settle();
+      expect(fields(ctx.doc)[0].value).toBe("4");
+      expect(ctx.editor.execute("edit.redo").accepted).toBe(true); await ctx.settle();
+      expect(fields(ctx.doc)[0].value).toBe("6");
+      const reopened = new engine.HwpDocument(bytes(ctx.doc, format));
+      try {
+        expect(fields(reopened)).toEqual(fields(ctx.doc));
+        const { RhwpText } = await import("../../src/components/Editor/rhwp/rhwpText");
+        const text = new RhwpText(reopened), position = { ...at, cell: { ...ctx.editor.caret.cell!, cell: 0 } };
+        const prepared = text.prepareFormula(position, 0, 0, "=B1+2"); expect(prepared).not.toBeNull();
+        text.insertFormula(position, 0, 0, "=B1+2", prepared!);
+        const second = new engine.HwpDocument(bytes(reopened, format));
+        try { expect(fields(second)).toEqual(fields(reopened)); expect(fields(second)[0]).toMatchObject({ fieldId: fields(ctx.doc)[0].fieldId, command: "=B1+2??%g,;;7", value: "7" }); }
+        finally { second.free(); }
+      } finally { reopened.free(); }
+    } finally { ctx.editor.dispose(); }
+  });
+  it.each(["missing", "malformed", "encoding", "nested", "duplicate", "location"])("fails closed for %s field metadata", async mode => {
+    const ctx = await fixture();
+    try {
+      await ctx.apply(0, "=B1+1");
+      const original = ctx.doc.getFieldList!();
+      const data = JSON.parse(original);
+      if (mode === "encoding") data[0].command = "=B1+1??%.2f,;;21";
+      if (mode === "nested") data[0].location.path.push({ type: "cell", controlIndex: 0, cellIndex: 0, paraIndex: 0 });
+      if (mode === "duplicate") data.push(data[0]);
+      if (mode === "location") delete data[0].location;
+      const spy = vi.spyOn(ctx.doc, "getFieldList").mockReturnValue(mode === "missing" ? "[]" : mode === "malformed" ? "{" : JSON.stringify(data));
+      try { ctx.refuse(1, "=A1+1"); } finally { spy.mockRestore(); }
+      expect(ctx.doc.getFieldList!()).toBe(original);
+    } finally { ctx.editor.dispose(); }
+  });
+  it("fails closed for an actual engine-merged table", async () => {
+    const ctx = await fixture(true);
+    try { ctx.refuse(3, "=2"); } finally { ctx.editor.dispose(); }
+  });
+  it("refuses merged or incomplete geometry rather than assuming row-major ownership", async () => {
+    const ctx = await fixture();
+    try {
+      const original = ctx.doc.getCellInfo!.bind(ctx.doc);
+      const spy = vi.spyOn(ctx.doc, "getCellInfo").mockImplementation((...args) => JSON.stringify({ ...JSON.parse(original(...args)), colSpan: 2 }));
+      try { ctx.refuse(0, "=B1+1"); } finally { spy.mockRestore(); }
+    } finally { ctx.editor.dispose(); }
+  });
 });

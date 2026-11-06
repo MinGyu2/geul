@@ -7,14 +7,17 @@
 | 명령 | 제품 capability와 제한 |
 |---|---|
 | `hangul.charWidth`, `hangul.charSpacing` | HWP/HWPX, 본문 또는 같은 표 셀 안의 단일 문단 선택, 실제 getter/setter·compaction·publication ownership API, 고급 전용 history, 정수 50–200 / -50–50, 7언어 값 유지 |
-| `hangul.insertTableFormula` | 유효한 단일 표 셀 커서에서 typed 식 입력/기존 식 교체/명시적 재계산. 소유 셀의 지원되는 기존 식만 입력창에 채우며 같은 식을 확인하면 캐시 값을 재계산. parser/engine 독립 검증(256/16/4096), 필드 소유권/구조 제한 유지. 결과를 넣을 셀을 직접·범위로 읽는 식(`=SUM(A1:B1)`을 B1에)은 재계산마다 값이 커지므로 입력창과 세션이 거부한다. 다른 수식 필드를 거치는 간접 순환은 추적하지 않는다. `??%g,;;` 형식이 아닌 기존 식(예: 한컴 `%.2f`)은 입력창에 채우지 않는다. 비어 있지 않은 셀의 글은 수식으로 바뀐다 |
+| `hangul.insertTableFormula` | 유효한 단일 표 셀 커서에서 typed 식 입력/기존 식 교체/명시적 재계산. 소유 셀의 지원되는 기존 식만 입력창에 채우며 같은 식을 확인하면 캐시 값을 재계산. parser/engine 독립 검증(256/16/4096), 필드 소유권/구조 제한 유지. 결과를 넣을 셀을 직접·범위로 읽는 식(`=SUM(A1:B1)`을 B1에)은 재계산마다 값이 커지므로 입력창과 세션이 거부한다. 간접 순환도 `getCursorModel`·전체 `getControls`·필드 범위·읽기 전용 소유권 검증을 교차 확인한 표 의존성 그래프로 거부한다. 표는 비병합 직사각형·셀당 단일 문단이고, 기존 필드는 문단 전체의 지원 `%g` 수식 하나 또는 컨트롤 없는 일반 값이어야 한다. 불명확한 구조/메타데이터·4096을 넘는 노드+간선은 변경 전에 안전 거부한다. `??%g,;;` 형식이 아닌 기존 식(예: 한컴 `%.2f`)은 입력창에 채우지 않는다. 비어 있지 않은 셀의 글은 수식으로 바뀐다 |
 | `edit.undo`, `edit.redo` (RHWP) | 제품 선언은 `historyScope: advanced` 요구. 실제 고급 기록만 사용하며 일반 입력 시작 시 폐기. IME/최종 입력/commit 대기 거부. 일반 RHWP 입력 history 활성화가 아님 |
 | RHWP 일반 글자 서식 | 기존 시험 구성 전용, 제품 미지원 |
 
 원본 128 KiB 이하·현재 8쪽 이하, 최대 4고급 단계만 허용한다. 문서 한도는 `limit`, 선택 없음/여러 문단은 `selectionRequired`, 표 밖은 `notInTable`, commit 대기는 `pendingEdits`, IME는 `composing`으로 거부한다. 시험 훅 활성화는 제품 기능의 전제가 아니다. 실질 getter/setter/ownership나 history가 없으면 capability를 내지 않는다. 저장은 변함없이 T009의 사전검사·실제 출력 검사·원자 게시·내구성 결과를 따른다. 한컴 원본처럼 비어 있지 않은 PrvText/PrvImage가 있는 HWP를 이 명령으로 고치면 안전한 미리보기 재생성 근거가 없어 T009가 저장을 거부한다. 명령은 메모리 모델만 바꾸고 원본은 그대로이며 dirty가 유지된다. 아래 이전 비활성/NO-GO 기록은 당시 결과다.
 
 
-2026-11-06 신뢰성 후속: `formulaReadsOwnCell`은 문법 검사와 같은 토큰화를 써서 Safari 13 미지원 lookbehind를 제거했다(실제 Safari 13 실행 NOT RUN). `LOG10(...)`처럼 셀 모양인 함수는 뒤의 호출 괄호로 구분한다. 함수 목록·인수 개수·길이/깊이/비용/표 경계 및 읽기 전용 계산 계약은 유지한다. `A1=B1+1`, `B1=A1+1`은 실제 Release WASM에서 명시적 재계산마다 캐시 값이 바뀌므로 **간접 순환 안전성은 미완료**다. `existingFormula`의 null은 익숙하지 않은 필드와 부재를 구분하지 않아 의존성 없음으로 해석할 수 없다. App의 기존 sessionId/loadGeneration/revision 가드는 같은 세션 reload, 전환, 닫기 및 이후 reload에서 직접 검증했다(제품 변경 없음). [상세 수용 기록](stage567-acceptance-2026-11-05.md#reliability-small-20261106).
+이전 2026-11-06 신뢰성 조사 기록: `formulaReadsOwnCell`은 문법 검사와 같은 토큰화를 써서 Safari 13 미지원 lookbehind를 제거했다(실제 Safari 13 실행 NOT RUN). `LOG10(...)`처럼 셀 모양인 함수는 뒤의 호출 괄호로 구분한다. 함수 목록·인수 개수·길이/깊이/비용/표 경계 및 읽기 전용 계산 계약은 유지한다. `A1=B1+1`, `B1=A1+1`은 실제 Release WASM에서 명시적 재계산마다 캐시 값이 바뀌므로 **간접 순환 안전성은 미완료**다. `existingFormula`의 null은 익숙하지 않은 필드와 부재를 구분하지 않아 의존성 없음으로 해석할 수 없다. App의 기존 sessionId/loadGeneration/revision 가드는 같은 세션 reload, 전환, 닫기 및 이후 reload에서 직접 검증했다(제품 변경 없음). [상세 수용 기록](stage567-acceptance-2026-11-05.md#reliability-small-20261106).
+
+
+2026-11-06 간접 순환 교정: 이전 조사에서 미완료로 남긴 의존성 분석을 구현했다. `formulaDependencies`는 검증된 공통 토큰에서 직접/역방향 범위/상대/방향 참조를 해석한다(모든 IF 분기는 보수적으로 포함). `tableFormulaSafety`는 목적 셀의 기존 간선을 새 간선으로 교체하고, 목적지에서 도달 가능한 순환을 반복형 DFS로 검사한다. 필드 목록 부재만으로 일반 셀로 판단하지 않으며 전체 컨트롤 목록과 셀 리스트를 대조한다. 병합/중첩/다중 문단·익숙하지 않은 필드 인코딩·불일치/누락 메타데이터는 변경 전에 거부한다. 엔진/14패치/Release 세대 변경 없음. [수용 기록](stage567-acceptance-2026-11-05.md#cycle-pointer-repair-20261106).
 
 
 FR-007(명령 레지스트리)과 SC-003(서식·실행 취소·미지원 명령을 실제 엔진에서 확인)의 T010 몫. 상황별 리본은 T011, 형식별 고급

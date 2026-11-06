@@ -445,3 +445,22 @@ There is no demonstrated safe regeneration of the genuine calc-cell PrvImage. T0
 | 실제 Safari 13; Microsoft Word; Hancom Office | NOT RUN | 이번 작업에서 실행하지 않음 |
 
 일반 production JS `dist/assets/index-1DZ9L776.js` SHA256 `092fc856e8eeaab30a89598415c9f5186356f49b7463253258d935a6de3b5cd7`, Release JS `3e9c1687af9aabe8ca78c68ab01e569622bcb880341ae4c100faf543782e0027`, WASM `e08e5ce86fad632fde6b7e1051f09597e771ae3924b01685567296a31a453757`. `final-build-assets.txt`와 `final-repository.json`에 소스/산출물 신원을 기록한다. 엔진/패치/기존 Rust 보존 규칙 변경이나 WASM rebuild는 없다. 전체 D2·D4·Rust suite 재실행은 범위 밖으로 SKIP했다. **T010 Incomplete; T012/T013 △ conditionally incomplete; D2 INCONCLUSIVE; D4 FAIL; D4 resource INCONCLUSIVE; WordCraft remote reproducibility BLOCKED; Word/Hancom NOT RUN.** 기존 조건부 개발 결정과 과거 수용 증거를 유지한다.
+
+
+<a id="cycle-pointer-repair-20261106"></a>
+
+## 2026-11-06 간접 순환·하단 포인터 제품 교정 후속
+
+시작 HEAD `86a63489dd5ef20ac14732c281a50dc398636479` master, clean index/worktree, RHWP `1a76570e833917d15817415a53c09ad61ab3203f`·WordCraft `6c994e42dee106ca03c6f11628d2fe577fe27636` 일치. 이전 절의 미수정 기록은 당시 결과로 보존한다. 새 근거는 `target/cycle-pointer-20261106/`다. 로컬 커밋만 허용하며 push하지 않는다.
+
+### A — 영속 수식 간접 순환 거부
+
+엔진 원문 `field_query.rs`의 `collect_fields_and_lists`와 `hwpctrl_sets.rs`의 `collect_controls`는 같은 리스트 ID를 쓴다. 전자는 field_ranges의 논리 필드, 후자는 필드 범위에 없는 컨트롤까지 열거한다. 기존 read-only `getCursorModel`, `getControls`, `getFieldList`, `getCellInfo`와 `validateTableFormulaField(=0)`를 교차 확인해 일반 셀·지원 필드·불명 구조를 구분한다. 필드 목록이 비어 있어도 컨트롤이 있으면 일반 값으로 간주하지 않는다. 필드 ID·셀 위치·전체 문단 범위·캐시 텍스트를 확인하고 엔진 validator가 sole formula ownership을 입증해야 기존 필드의 의존성을 읽는다. 읽기 전용 검증은 문단 사본에서만 수행되며 실제 바이트 무변경을 시험한다. 새 엔진 API나 WASM rebuild는 필요하지 않았다.
+
+공통 토큰화/grammar/bounds/cost 검증 뒤 A1·상대 행/열·범위(역방향 포함)·함수 안 참조·LEFT/RIGHT/ABOVE/BELOW를 좌표 간선으로 만든다. 방향은 `table_calc/evaluator.rs`의 현재 셀 제외 행/열 좌표와 같다. IF의 모든 분기는 보수적으로 포함한다. 목적 셀의 기존 간선을 제안 간선으로 교체한 뒤 반복형 DFS로 목적지에서 도달 가능한 순환(이미 가져온 순환 포함)을 거부한다. 표 노드+간선 총합 ≤4096, 각 식 256자/깊이16/셀 방문4096, 메타데이터 JSON 각2MiB/항목4096으로 제한한다. 순회 재귀나 범위 밖 좌표 할당은 없다.
+
+지원 경계: top-level 비병합 직사각형 표, 셀당 한 문단, 일반 셀은 컨트롤/필드 모두 없음, 기존 수식은 전체 문단을 소유한 `%g` formula 하나. 병합/중첩/다중 문단, 낯선 필드 인코딩, 모호한 위치/범위/ID, 누락/불일치 메타데이터 또는 총 그래프 예산 초과는 안전 거부한다. 관련 없는 필드를 해석하거나 수정하지 않는다. 기존 직접 자기 참조 거부와 읽기 전용 계산은 유지한다.
+
+실제 HWP/HWPX Release WASM 행렬은 두 셀·세 셀·범위·교체·상대·방향 순환, 직접 자기 참조, malformed/missing/encoding/nested/duplicate/location 메타데이터, 실제 병합 표와 주입 불일치를 검사한다. 매 거부는 문서 바이트/로컬 revision/backend session(판·dirty)/history/ownership 불변, snapshot 0회, commit/save 0회다. 정상 사슬은 의존성 순 재계산 4/3/2, 같은 식 반복 시 revision 무변경, 비순환 교체 6/5/2, Undo/Redo, export/reopen/edit/second export의 field ID·command·value 보존을 확인한다. backend는 controlled이므로 실제 durable publication으로 세지 않는다.
+
+A 검증(이번 실행): `npx vitest run src/commands/hangulTools.test.tsx src/components/Editor/advancedFormulaDialog.test.tsx src/components/Editor/rhwp/historyAdmission.test.ts src/components/Editor/rhwp/RhwpEditorSession.test.ts` 47 PASS(`a-frontend.log`), `npx vitest run --config scripts/tests/vitest.config.ts table-formula-session` 89 PASS(`a-merged-final.log`). `advanced-production` 8개와 `formula-dialog-reload` 6개는 이번 교정 후 `a-final-wasm.log`의 통과를 재사용했다(그 뒤 추가한 병합 fixture 시험은 table suite에서 별도 통과). `npm run typecheck`, `npm run lint`, `npx tsc --noEmit -p target/reliability-small-20261106/tsconfig-tests.json`, `git diff --check` PASS. 이전 단계의 상속 결과를 이번 실행으로 세지 않았다. T009·엔진·14패치·Release 신원 변경 없음. 별도 실제 저장 서비스 근거는 B의 최종 native 행렬에서 기록한다.

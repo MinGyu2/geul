@@ -4,6 +4,7 @@
 // 다루는 호출(커서 사각형·삽입·삭제·문단 나누기·줄 정보)은 모두 여기서 본문용/셀용 API를 고르므로, 렌더·hit test·
 // 편집이 서로 다른 좌표를 쓰지 않는다. 글자 오프셋은 rhwp의 글자(char, 유니코드 스칼라) 단위다.
 // 엔진이 돌려주는 JSON은 신뢰 경계 안이지만 모양을 확인하고, 맞지 않으면 null로 다룬다.
+import { tableFormulaSafety } from "./formulaDependencies";
 import type { CharShapePrefix, RhwpDocument } from "./rhwpModule";
 
 export interface CellRef {
@@ -445,6 +446,7 @@ export class RhwpText {
   prepareFormula(at: DocPosition, row: number, col: number, formula: string): FormulaFieldResult | null {
     const c = at.cell;
     if (!c || !this.doc.validateTableFormulaField || !this.doc.insertTableFormulaField) return null;
+    if (tableFormulaSafety(this.doc, at, formula) !== "safe") return null;
     const value = json(this.doc.validateTableFormulaField(at.section, c.parentParagraph, c.control, row, col, formula));
     if (isRecord(value) && Object.keys(value).join(",") === "ok" && value.ok === false) return null;
     return formulaFieldResult(value, formula);

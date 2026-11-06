@@ -15,7 +15,7 @@ import {
 } from "../components/Editor/rhwp/testing";
 import { LanguageProvider } from "../language/LanguageContext";
 import { commandState, executeCommand, type CommandContext, type CommandInputRequest } from "./commands";
-import { formulaProblem, formulaReadsOwnCell, parsePercent, validateCommandArgs } from "./parameters";
+import { formulaDependencies, formulaProblem, formulaReadsOwnCell, parsePercent, validateCommandArgs } from "./parameters";
 import { commandDefinition } from "./registry";
 import type { DocumentCommandTarget } from "./target";
 
@@ -155,6 +155,15 @@ describe("값 검증(src/commands/parameters.ts)", () => {
     expect(columnLetters(26)).toBe("AA");
   });
 
+  it("projects bounded absolute, reversed, relative and direction read sets", () => {
+    const at = { row: 1, col: 1, rows: 3, cols: 3 };
+    expect(formulaDependencies("=SUM(C3:A1)", at)?.sort()).toEqual([0,1,2,3,4,5,6,7,8]);
+    expect(formulaDependencies("=SUM(?1,A?,C?)", at)).toEqual([1,3,5]);
+    expect(formulaDependencies("=SUM(LEFT,RIGHT,ABOVE,BELOW)", at)).toEqual([3,5,1,7]);
+    expect(formulaDependencies("=LOG10(A1)+ABS(C3)", at)).toEqual([0,8]);
+    expect(formulaDependencies("=C4", at)).toBeNull();
+    expect(formulaDependencies("=SUM(A1:B3)", { ...at, rows: 4097 })).toBeNull();
+  });
   it("recognizes LOG10 calls before cell-shaped identifiers without loosening grammar", () => {
     const table = { rows: 2, cols: 2 };
     for (const formula of ["=LOG10(100)", "=LOG10(A1)", "=log10(100)", "=LOG(100)", "=SUM(A1:B1)", "=A1"]) {
@@ -404,12 +413,16 @@ it("rejects malformed persistent formula results before a mutation transaction",
   const { RhwpText } = await import("../components/Editor/rhwp/rhwpText");
   let value = "3";
   const doc = {
+    getCursorModel: () => JSON.stringify({ lists: [{ listId: 2, isCell: true, hostListId: 0, sectionIndex: 0, hostPara: 0, controlIndex: 0, cellIndex: 0, paraCount: 1, row: 0, col: 0, rowSpan: 1, colSpan: 1, cellCount: 1 }] }),
+    getControls: () => "[]", getFieldList: () => "[]",
+    getTableDimensions: () => '{"rowCount":1,"colCount":1,"cellCount":1}',
+    getCellInfo: () => '{"row":0,"col":0,"rowSpan":1,"colSpan":1}', getCellParagraphCount: () => 1,
     charShapeCount: () => 4,
     validateTableFormulaField: () => JSON.stringify({ ok: true, changed: true, fieldId: 1, text: value, command: `=1+2??%g,;;${value}` }),
     insertTableFormulaField: () => { throw new Error("validation must not insert"); },
   } as unknown as RhwpDocument;
   const text = new RhwpText(doc);
-  const at = { section: 0, paragraph: 0, offset: 0, cell: CELL };
+  const at = { section: 0, paragraph: 0, offset: 0, cell: { ...CELL, cell: 0 } };
   expect(text.prepareFormula(at, 0, 0, "=1+2")?.text).toBe("3");
   for (const bad of [" ", "\t", "0x10", "Infinity", "NaN", "3 trailing"]) {
     value = bad;

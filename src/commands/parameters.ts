@@ -179,7 +179,7 @@ export function formulaProblem(formula: string, table: { rows: number; cols: num
  * Whether a formula reads the cell that will store its own result, directly or via a range.
  * A persistent field would then compute from its previous cached value, so each explicit
  * recalculation changes the result (=SUM(A1:B1) in B1: 30, 40, 50). LEFT/RIGHT/ABOVE/BELOW
- * exclude the current cell. Only checks this cell; cycles through other fields are not traced.
+ * exclude the current cell. This local check precedes the session's bounded table dependency projection.
  */
 export function formulaReadsOwnCell(formula: string, at: { row: number; col: number }): boolean {
   const coordinate = (text: string) => {
@@ -200,6 +200,39 @@ export function formulaReadsOwnCell(formula: string, at: { row: number; col: num
       && at.row >= Math.min(start.row, end.row) && at.row <= Math.max(start.row, end.row)) return true;
   }
   return false;
+}
+
+/** Conservative read set after the shared grammar/bounds/cost validation. Cell keys
+ * are row * cols + col. Matches table_calc/evaluator.rs collect_cells, including
+ * reversed ranges and directions excluding the current coordinate. All branches
+ * of IF count: dependency safety must not depend on today's cached condition. */
+export function formulaDependencies(formula: string, at: { row: number; col: number; rows: number; cols: number }): number[] | null {
+  if (formulaProblem(formula, at) !== null || at.rows > MAX_FORMULA_CELL_VISITS / at.cols
+    || !Number.isSafeInteger(at.row) || !Number.isSafeInteger(at.col)
+    || at.row < 0 || at.row >= at.rows || at.col < 0 || at.col >= at.cols) return null;
+  const tokens = formulaTokens(formula.trim().replace(/^[=@]/, "").toUpperCase())!;
+  const refs = new Set<number>();
+  const cell = (token: string) => {
+    const match = /^([A-Z]+|\?)([0-9]+|\?)$/.exec(token);
+    return match ? { col: match[1] === "?" ? at.col : columnIndex(match[1]!), row: match[2] === "?" ? at.row : Number(match[2]) - 1 } : null;
+  };
+  const add = (row: number, col: number) => refs.add(row * at.cols + col);
+  for (let i = 0; i < tokens.length; i += 1) {
+    const token = tokens[i]!;
+    if (tokens[i + 1] === "(") continue;
+    const start = cell(token);
+    if (start) {
+      const end = tokens[i + 1] === ":" ? cell(tokens[i + 2]!)! : start;
+      for (let row = Math.min(start.row, end.row); row <= Math.max(start.row, end.row); row += 1)
+        for (let col = Math.min(start.col, end.col); col <= Math.max(start.col, end.col); col += 1) add(row, col);
+      if (tokens[i + 1] === ":") i += 2;
+    } else if (token === "LEFT" || token === "RIGHT") {
+      for (let col = token === "LEFT" ? 0 : at.col + 1; col < (token === "LEFT" ? at.col : at.cols); col += 1) add(at.row, col);
+    } else if (token === "ABOVE" || token === "BELOW") {
+      for (let row = token === "ABOVE" ? 0 : at.row + 1; row < (token === "ABOVE" ? at.row : at.rows); row += 1) add(row, at.col);
+    }
+  }
+  return [...refs];
 }
 
 const integerIn = (value: unknown, range: { min: number; max: number }): value is number =>
