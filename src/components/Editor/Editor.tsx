@@ -456,6 +456,7 @@ function RhwpPanel({ editor, info, zoom, imeContext, onReload, onSaveAs, fileBus
       >
         <h1 className="editor__notice-title">{info.displayName}</h1>
         <p>{t(`editor.rhwp.${status.kind}` as MessageKey)}</p>
+        {editor.hasAdvancedHistory && <p>{t("editor.rhwp.advancedHistory")}</p>}
         {status.kind === "failed" && (
           <>
             <p data-testid="rhwp-error">{t(documentErrorMessage(status.error).key)}</p>

@@ -46,7 +46,7 @@ export function isParameterCommandId(id: string): id is ParameterCommandId {
   return PARAMETER_COMMANDS.has(id);
 }
 
-export type FormulaProblem = "empty" | "tooLong" | "characters" | "depth" | "reference" | "syntax" | "cost";
+export type FormulaProblem = "empty" | "tooLong" | "characters" | "depth" | "reference" | "syntax" | "cost" | "selfReference";
 
 /** 열 글자(A, B, …, Z, AA)를 0부터의 번호로. 고정 rhwp `resolve_cell_ref`와 같은 셈. */
 function columnIndex(letters: string): number {
@@ -167,6 +167,28 @@ export function formulaProblem(formula: string, table: { rows: number; cols: num
   return formulaSyntax(body) ? null : "syntax";
 }
 
+/**
+ * Whether a formula reads the cell that will store its own result, directly or via a range.
+ * A persistent field would then compute from its previous cached value, so each explicit
+ * recalculation changes the result (=SUM(A1:B1) in B1: 30, 40, 50). LEFT/RIGHT/ABOVE/BELOW
+ * exclude the current cell. Only checks this cell; cycles through other fields are not traced.
+ */
+export function formulaReadsOwnCell(formula: string, at: { row: number; col: number }): boolean {
+  const coordinate = (text: string) => {
+    const ref = /^([A-Z]+|\?)([0-9]+|\?)$/.exec(text);
+    return ref && { col: ref[1] === "?" ? at.col : columnIndex(ref[1]!), row: ref[2] === "?" ? at.row : Number(ref[2]) - 1 };
+  };
+  const refs = /(?<![A-Z0-9?_])([A-Z?][A-Z0-9?_]*)(?:\s*:\s*([A-Z?][A-Z0-9?_]*))?(?!\s*[A-Z0-9?_(])/g;
+  for (const match of formula.toUpperCase().matchAll(refs)) {
+    const start = coordinate(match[1]!);
+    if (!start) continue;
+    const end = match[2] ? coordinate(match[2]) : start;
+    if (end && at.col >= Math.min(start.col, end.col) && at.col <= Math.max(start.col, end.col)
+      && at.row >= Math.min(start.row, end.row) && at.row <= Math.max(start.row, end.row)) return true;
+  }
+  return false;
+}
+
 const integerIn = (value: unknown, range: { min: number; max: number }): value is number =>
   typeof value === "number" && Number.isSafeInteger(value) && value >= range.min && value <= range.max;
 
@@ -191,7 +213,8 @@ export function validateCommandArgs(command: string, args: unknown, context: Com
     case "hangul.insertTableFormula":
       if (typeof value.formula !== "string" || !value.formula.trim().startsWith("=")) return false;
       // Same limits as read-only calculation; engine additionally validates full syntax and ownership.
-      return keys === "command,formula" && !!context?.tableCell && formulaProblem(value.formula, context.tableCell) === null;
+      return keys === "command,formula" && !!context?.tableCell && formulaProblem(value.formula, context.tableCell) === null
+        && !formulaReadsOwnCell(value.formula, context.tableCell);
     case "hangul.tableFormula":
       return keys === "command,formula" && typeof value.formula === "string" && !!context?.tableCell
         && formulaProblem(value.formula, context.tableCell) === null;

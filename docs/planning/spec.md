@@ -1,10 +1,30 @@
 # Feature Specification: HWP/HWPX + DOCX 통합 오픈소스 워드프로세서
 
 Created: 2026-10-13
-Updated: 2026-11-04
-Status: 구현 진행 중. T007–T010은 △ 조건부 완료(전체 수용 미완료), T011은 기록된 범위에서 완료. 신규 문서는 T021 생성 경계·T022 제품 연결·T023 X11/IBus native 수용 완료(2026-11-04). 추가 플랫폼·외부 상호운용은 NOT RUN.
+Updated: 2026-11-06
+Status: 구현 진행 중. T007–T009은 △ 조건부 범위 인정, T010은 INCOMPLETE(D2/D4 △ 조건부 보류), T011은 기록된 범위에서 완료. 신규 문서는 T021 생성 경계·T022 제품 연결·T023 X11/IBus native 수용 완료(2026-11-04). 추가 플랫폼·외부 상호운용은 NOT RUN.
 Source baseline: `4bc1ac986026ccadb2d673a66ad69e6296e3a39e` (`MinGyu2/geul`, master).
 Input: WordCraft + RHWP 독립 코어, Tauri/React 신규 UI, 6개 영역, 언어별 JSON, 공개 저장소 민감정보 사전 차단. 2026-11-04 사용자가 T007–T010의 잔여 사유 기록 및 T011 진행, DOCX/HWP/HWPX 신규 생성 계획 반영을 승인했다.
+
+
+<a id="conditional-advanced-20261106"></a>
+
+## 2026-11-06 T012/T013 조건부 개발 결정
+
+사용자는 T010 D2/D4가 미완료인 동안 T012/T013 개발을 계속하고, 독립적으로 검증한 좁은 T012 제품 명령 경로를 활성화하는 작업을 명시적으로 승인했다. 이에 영향을 받는 선행 조건은 **△ 조건부 보류/미완료**다. 기존의 “D2/D4 완료 전 제품 고급 기능 작업 불허” 계획 정책은 이 범위에서 대체한다. 이는 시험 통과나 전체 출시 승인이 아니다.
+
+| 항목 | 기술 결과 | 관리/개발 결정 |
+|---|---|---|
+| D2 native IME 순서 | **INCONCLUSIVE** | △ 조건부 보류. 원래 E→U→F predicate 유지 |
+| D4 큰 문서 지연 | **FAIL** | △ 조건부 보류. 기존 50 ms 문턱·측정 끝점 유지 |
+| D4 자원/메모리 | **INCONCLUSIVE** | 회계·자원 검사를 유지, 전체 성능 READY 아님 |
+| T010 | **INCOMPLETE** | 일반 RHWP 입력 history/Undo 활성화는 계속 NO-GO |
+| T012 | 지원 부분집합 제품 활성화 | 고급 명령 전용 history와 보존·실제 제품 UI를 별도로 검증한 부분집합만 조건부 활성화. 한컴 외부 수용 미실행, 미리보기 있는 한컴 HWP 저장 거부로 전체 미완료 |
+| T013 | 선택 내부 혼합 수용 완료 | WordCraft 원격 재현성 BLOCKED, Word 외부 호환성 NOT RUN으로 전체 미완료 |
+
+구현 완료, 지원 부분집합 검증, 제품 명령 노출, 조건부 수용, 전체 T010/T012 수용은 서로 다른 상태다. 제품을 시험 훅으로 빌드해서 활성화하지 않는다. 일반 입력과 분리된 고급 명령 history는 불러온 원본 128 KiB 이하·현재 8쪽 이하, 최대 4단계에 한정한다. 다른 편집은 고급 기록을 폐기하고, 조합/최종 입력 대기·revision 확정 대기·낡은 세션 요청·필수 API/기록 실패는 거부한다. 장평 50–200, 자간 -50–50의 정수/7언어 표현과 수식 길이 256·깊이 16·셀 방문 4096 제한 및 T009 검사는 유지한다. 이 숫자 제한은 D4 합격을 보증하는 새 기준이 아니다.
+
+지원 부분집합의 실제 제품 UI·일반 빌드 검증을 마치고 제품 명령을 조건부로 켰다. 결과와 신원은 [통합 수용 기록](../architecture/stage567-acceptance-2026-11-05.md)에 갱신한다. 아래 날짜별 이전 NO-GO/PASS/FAIL 기록은 당시 결과로 보존한다.
 
 > **2026-11-05 Stage 5–7 재검증:** Stage 5–7과 T012/T013은 부분 완료 상태다. 실제 Release WASM·13개 패치·controlled typed formula 연결과 수식 저장 검증을 마쳤지만, D2 25 PASS/2 INCONCLUSIVE(E→U→F 미관측), D4 원래 기준 6 PASS/2 FAIL 때문에 제품 RHWP history·장평/자간·영속 수식은 NO-GO다. 현재 native 완료 범위, 두 차례 저장의 6게시·2안전 거부, DOCX 표식 교정 뒤 native10개 통과 상태, Word/Hancom NOT RUN은 [통합 수용 보고서](../architecture/stage567-acceptance-2026-11-05.md)를 따른다. 이 기록은 기존 요구사항이나 acceptance threshold를 바꾸지 않는다.
 

@@ -15,7 +15,7 @@ import {
 } from "../components/Editor/rhwp/testing";
 import { LanguageProvider } from "../language/LanguageContext";
 import { commandState, executeCommand, type CommandContext, type CommandInputRequest } from "./commands";
-import { formulaProblem, parsePercent, validateCommandArgs } from "./parameters";
+import { formulaProblem, formulaReadsOwnCell, parsePercent, validateCommandArgs } from "./parameters";
 import { commandDefinition } from "./registry";
 import type { DocumentCommandTarget } from "./target";
 
@@ -131,35 +131,60 @@ describe("값 검증(src/commands/parameters.ts)", () => {
     expect(formulaProblem("=A0", table)).toBe("reference");
     expect(formulaProblem("=SUM(A1:ZZZ999999)", table)).toBe("reference");
     expect(validateCommandArgs("hangul.tableFormula", { command: "hangul.tableFormula", formula: "=A1" }, {})).toBe(false);
+    // Persistent fields must not read their own result cell; the read-only calculation may.
+    const b1 = { row: 0, col: 1, rows: 2, cols: 2 };
+    for (const formula of ["=B1", "=b1+1", "=SUM(A1:B1)", "=SUM(B2:B1)", "=SUM(A1 : B2)", "=?1", "=B?", "=??", "=SUM(A?:B?)"]) {
+      expect(formulaReadsOwnCell(formula, b1), formula).toBe(true);
+      expect(validateCommandArgs("hangul.insertTableFormula", { command: "hangul.insertTableFormula", formula }, { tableCell: b1 }), formula).toBe(false);
+    }
+    expect(validateCommandArgs("hangul.tableFormula", { command: "hangul.tableFormula", formula: "=SUM(A1:B1)" }, { tableCell: b1 })).toBe(true);
+    for (const formula of ["=A1", "=SUM(A1:A2)", "=SUM(A2:B2)", "=SUM(LEFT)", "=SUM(RIGHT)+SUM(BELOW)", "=A?", "=?2", "=ABS(A1)", "=2"]) {
+      expect(formulaReadsOwnCell(formula, b1), formula).toBe(false);
+      expect(validateCommandArgs("hangul.insertTableFormula", { command: "hangul.insertTableFormula", formula }, { tableCell: b1 }), formula).toBe(true);
+    }
+    expect(formulaReadsOwnCell("=LOG10(A1)", b1)).toBe(false);
     expect(columnLetters(0)).toBe("A");
     expect(columnLetters(26)).toBe("AA");
   });
 });
 
 describe("레지스트리", () => {
-  it("장평·자간은 글자 서식과 같은 시험 빌드 관문(제품 빌드 unsupported), 표 계산은 rhwp 지원, WordCraft는 모두 unsupported", () => {
-    expect(commandDefinition("hangul.charWidth")).toMatchObject({ kind: "document", engines: { rhwp: { level: "unsupported" }, wordcraft: { level: "unsupported" } } });
-    expect(commandDefinition("hangul.charSpacing")).toMatchObject({ kind: "document", engines: { rhwp: { level: "unsupported" }, wordcraft: { level: "unsupported" } } });
-    expect(commandDefinition("hangul.insertTableFormula")).toMatchObject({ kind: "document", engines: { rhwp: { level: "unsupported" }, wordcraft: { level: "unsupported" } } });
+  it("rhwp 고급 명령은 지원하고 WordCraft에는 연결하지 않는다", () => {
+    for (const id of ["hangul.charWidth", "hangul.charSpacing", "hangul.insertTableFormula"]) {
+      expect(commandDefinition(id)).toMatchObject({ kind: "document", engines: { rhwp: { level: "supported" }, wordcraft: { level: "unsupported" } } });
+    }
     expect(commandDefinition("hangul.tableFormula")).toMatchObject({ kind: "document", engines: { rhwp: { level: "supported" }, wordcraft: { level: "unsupported" } } });
     expect(commandDefinition("hangul.charWidth")?.shortcuts).toBeUndefined();
   });
 });
 
 describe("rhwp 세션의 장평·자간", () => {
-  it("제품 빌드: 세션이 서식 명령을 받는 구성이어도 레지스트리가 막아 엔진을 부르지 않는다", async () => {
-    const { editor, doc } = await ready("hwpx", { history: true, format: true });
+  it("controlled 세션 경계: 명령이 입력을 받고, 확인한 장평을 한 번 적용해 revision을 확정한다", async () => {
+    const { editor, doc, take } = await ready("hwpx", { history: true, format: true });
     editor.anchor = { section: 0, paragraph: 0, offset: 0 };
     editor.caret = { section: 0, paragraph: 0, offset: 2 };
-    // 세션 문맥은 엔진에서 읽은 지금 값이다(가용성은 레지스트리가 함께 정함).
+    // 가짜 문서·선형 메모리로 제어하는 세션 경계 시험이며, 실제 WASM 동작의 증거는 아니다.
     expect(editor.snapshot().parameters?.["hangul.charWidth"]).toEqual({ charShape: { width: 100, spacing: 0 } });
     const { context, notices, requests } = contextFor(editor);
-    expect(commandState("hangul.charWidth", context)).toEqual({ available: false, reason: "engineUnsupported" });
-    expect(executeCommand("hangul.charWidth", undefined, context)).toBe(false);
-    expect(editor.execute("hangul.charWidth", { command: "hangul.charWidth", percent: 120 })).toEqual({ accepted: false });
-    expect(requests).toEqual([]);
+    expect(commandState("hangul.charWidth", context)).toEqual({ available: true });
+    expect(executeCommand("hangul.charWidth", undefined, context)).toBe(true);
+    expect(requests).toHaveLength(1);
+    expect(requests[0]).toMatchObject({ command: "hangul.charWidth", sessionId: 1, loadGeneration: 1, revision: 0,
+      context: { charShape: { width: 100, spacing: 0 } } });
     expect(doc.shapeCalls).toEqual([]);
-    expect(notices.map((notice) => notice.key)).toEqual(["command.unavailable.engineUnsupported"]);
+    expect(editor.snapshot()).toMatchObject({ revision: 0, pending: false, history: { undo: false, redo: false } });
+
+    expect(executeCommand("hangul.charWidth", undefined, context, { command: "hangul.charWidth", percent: 120 })).toBe(true);
+    expect(doc.shapeCalls).toHaveLength(1);
+    expect(JSON.parse(doc.shapeCalls[0]![4] as string)).toEqual({ ratios: Array(7).fill(120) });
+    expect(doc.ratios).toBe(120);
+    expect(editor.snapshot()).toMatchObject({ revision: 0, pending: true, history: { undo: true, redo: false } });
+    const commit = take("commit");
+    expect(commit.args).toEqual([1, 1, 0, 1]);
+    commit.reply(ok(info({ state: "ready", sequence: 3, revision: 1, dirty: true })));
+    await flush();
+    expect(editor.snapshot()).toMatchObject({ revision: 1, pending: false, history: { undo: true, redo: false } });
+    expect(notices).toEqual([]);
   });
 
   it("문맥: HWPX·기록·한 문단 선택일 때만 값이 있고, 선택 없음·여러 문단은 selectionRequired, HWP·기록 없음은 문맥 없음", async () => {

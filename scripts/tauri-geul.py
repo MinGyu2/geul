@@ -11,6 +11,14 @@ integrity = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(integrity)
 
 
+def project_command(command):
+    # bwrap's private-root mode may start the payload in `/`. Tauri and its
+    # frontend hook need the verified project root, inside the same protection.
+    return [sys.executable, "-c",
+            "import os, sys; os.chdir(sys.argv[1]); os.execv(sys.argv[2], sys.argv[2:])",
+            str(ROOT), *command]
+
+
 def main():
     args = sys.argv[1:]
     if args and args[0] == "--":
@@ -41,7 +49,7 @@ def main():
         integrity.dependencies(["external/wordcraft"])
         env["GEUL_TAURI_RUNNER"] = "1"
         os.execvpe(str(executable), [str(executable), *args], env)
-    integrity.run_readonly([[str(executable), *args]], writable, ROOT / "target/rhwp-wasm/tauri-integrity.json",
+    integrity.run_readonly([project_command([str(executable), *args])], writable, ROOT / "target/rhwp-wasm/tauri-integrity.json",
                            env=env, required=["external/wordcraft"], require_clean=True)
 
 

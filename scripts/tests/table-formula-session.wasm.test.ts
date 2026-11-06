@@ -36,7 +36,7 @@ async function open(format: "hwp" | "hwpx") {
   let doc!: RhwpDocument;
   let memoryFault = false;
   const module: RhwpModule = { openDocument: b => (doc = new engine.HwpDocument(b)), memoryBytes: () => memoryFault ? NaN : exports.memory.buffer.byteLength };
-  const editor = new RhwpEditorSession(1, backend, sessions, async () => module, { history: true });
+  const editor = new RhwpEditorSession(1, backend, sessions, async () => module);
   const loading = editor.load(); take("load").reply(loaded(original)); await flush();
   take("session").reply(ok(info({ format, state: "loading", sequence: 1, loadGeneration: 1 })));
   take("setState").reply(ok(info({ format, state: "ready", sequence: 2, loadGeneration: 1 }))); await loading;

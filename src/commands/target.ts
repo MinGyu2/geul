@@ -43,6 +43,8 @@ export interface DocumentCommandSnapshot {
   saving: boolean;
   /** 엔진의 실행 취소 기록. 엔진에 기록이 없으면 null. */
   history: { undo: boolean; redo: boolean } | null;
+  /** Production RHWP history contains advanced operations only; ordinary edits invalidate it. */
+  historyScope?: "advanced";
   /** 기록을 쓸 수 있는 엔진인데 이 문서에서는 한도(기록 메모리 예산 등)로 껐다(history는 null, 이유 limit — T010 Phase 2 rhwp). */
   historyLimited?: boolean;
   /** 선택(없으면 다음 입력)의 글자 서식. 엔진이 알려 주지 않으면 null. */
@@ -55,7 +57,7 @@ export interface DocumentCommandSnapshot {
    */
   parameters?: Partial<Record<ParameterCommandId, CommandParameterContext>>;
   /** 값 입력 명령을 지금 할 수 없는 이유(세션이 아는 것, 예: 선택 없음·표 밖). */
-  parameterReasons?: Partial<Record<ParameterCommandId, "selectionRequired" | "notInTable" | "caretRequired" | "engineUnsupported" | "pendingEdits">>;
+  parameterReasons?: Partial<Record<ParameterCommandId, "selectionRequired" | "notInTable" | "caretRequired" | "engineUnsupported" | "pendingEdits" | "limit">>;
   /**
    * 값 없이 실행하는 문맥 명령(T013 목차 넣기·갱신 등)을 지금 할 수 있는지. 세션이 엔진 보기로 판정한다. 없으면 `actionReasons`의
    * 이유 또는 engineUnsupported.
@@ -79,7 +81,7 @@ export type DocumentCommandArgs =
   | { command: "hangul.charSpacing"; percent: number }
   /** 표 계산식(읽기 전용 계산, 셀에 쓰지 않음). */
   | { command: "hangul.tableFormula"; formula: string }
-  /** Persistent field, controlled test build only until T010 acceptance. */
+  /** Persistent field: insertion, replacement or explicit recalculation using the same expression. */
   | { command: "hangul.insertTableFormula"; formula: string }
   /** 새 메모 글(T013, WordCraft `review.newComment`). 한 줄, 비어 있지 않음. */
   | { command: "review.comment"; text: string }
@@ -96,6 +98,8 @@ export type ParameterCommandId = DocumentCommandArgs["command"];
 export interface CommandParameterContext {
   /** 선택 첫 글자의 장평·자간(한글 언어 값, %). */
   charShape?: { width: number; spacing: number };
+  /** Supported existing formula in the owned cell; applying it explicitly recalculates. */
+  formula?: string;
   /** 커서가 있는 표 셀(0부터)과 표 크기. */
   tableCell?: { row: number; col: number; rows: number; cols: number };
 }

@@ -5,7 +5,7 @@ import { describe, expect, it } from "vitest";
 import { documentCommandState } from "../../../commands/capability";
 import type { DocumentCommandSnapshot } from "../../../commands/target";
 import {
-  HISTORY_IDLE_MS, HistoryFailure, HistoryRefused, RhwpHistory, historyBudget, type SnapshotEngine,
+  HISTORY_BUDGET_BYTES, HISTORY_IDLE_MS, HistoryFailure, HistoryRefused, RhwpHistory, historyBudget, type SnapshotEngine,
 } from "./rhwpHistory";
 import { FakeDocument, flush, info, ok, readySession } from "./testing";
 
@@ -52,6 +52,86 @@ function group(history: RhwpHistory, e: ReturnType<typeof engine>, k: number) {
   e.edit(k);
   history.commit(`g${k}-end`);
 }
+
+describe("RhwpHistory advanced timeline retirement", () => {
+  it("forget discards every referenced snapshot and clears Undo/Redo without changing the engine state", () => {
+    const e = engine();
+    const h = new RhwpHistory(e, 5, NOW, FIXED_MEMORY);
+    group(h, e, 1);
+    group(h, e, 2);
+    h.undo(() => null);
+    expect(h.steps).toEqual({ undo: 1, redo: 1 });
+    const state = e.state;
+    expect(h.live).toBeGreaterThan(0);
+
+    h.forget();
+
+    expect(e.state).toBe(state);
+    expect(e.size).toBe(0);
+    expect(h.steps).toEqual({ undo: 0, redo: 0 });
+    expect(h.live).toBe(0);
+    expect(h.referenced()).toEqual([]);
+    expect(h.state).toBe("ok");
+  });
+
+  it("a new advanced group after forget cannot undo across the ordinary edit", () => {
+    const e = engine();
+    const h = new RhwpHistory(e, 5, NOW, FIXED_MEMORY);
+    group(h, e, 1);
+    h.forget();
+
+    e.edit(99); // ordinary edit: it is deliberately outside the advanced timeline
+    const ordinaryState = e.state;
+    group(h, e, 2);
+    h.undo(() => null);
+
+    expect(e.state).toBe(ordinaryState);
+    expect(h.steps).toEqual({ undo: 0, redo: 1 });
+    expect(h.violations()).toEqual([]);
+  });
+
+  it("forget retains the original memory baseline; over-budget growth refuses before another snapshot", () => {
+    let memory = 100;
+    const e = engine();
+    const h = new RhwpHistory(e, 5, NOW, () => memory);
+    group(h, e, 1);
+    memory += 64; // retiring after growth must not make this a new baseline
+    h.forget();
+    const saves = e.saves;
+
+    memory += HISTORY_BUDGET_BYTES - 64;
+    h.begin("other", "within", () => null);
+    expect(e.saves).toBe(saves + 1); // exactly the original budget remains admissible
+    e.edit(2);
+    h.commit("within-end");
+    memory += 1;
+    const state = e.state;
+    const allocated = e.saves;
+    expect(() => h.begin("other", "over", () => null)).toThrow(HistoryRefused);
+    expect(e.saves).toBe(allocated);
+    expect(e.state).toBe(state);
+    expect(h.transactionOpen).toBe(false);
+  });
+
+  it("discard failure during forget leaves history broken and does not retry released IDs", () => {
+    const e = engine();
+    const attempts: number[] = [];
+    e.discardSnapshot = (id: number) => {
+      attempts.push(id);
+      throw new Error("RuntimeError: unreachable");
+    };
+    const h = new RhwpHistory(e, 5, NOW, FIXED_MEMORY);
+    group(h, e, 1);
+    const released = h.referenced();
+    expect(() => h.forget()).toThrow(HistoryFailure);
+    expect(h.state).toBe("broken");
+    expect(h.referenced()).toEqual([]);
+    expect(e.size).toBe(released.length);
+    expect(attempts).toEqual(released);
+    expect(() => h.forget()).toThrow(HistoryRefused);
+    expect(attempts).toEqual(released);
+  });
+});
 
 describe("RhwpHistory 알고리즘(엔진 흉내)", () => {
   it.each([4, 5])("깊이 %i: 10그룹 → 정확히 깊이만큼 실행 취소 → 모두 다시 실행, 상태가 그 시점과 같음", (depth) => {

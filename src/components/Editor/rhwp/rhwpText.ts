@@ -152,6 +152,11 @@ export class RhwpText {
     }
   }
 
+  /** A validated loaded prefix, not merely the presence of WASM method names. */
+  get hasCharShapeOwnership(): boolean {
+    return this.charShapeBaseline !== null && this.publishedPrefix !== null;
+  }
+
   /** Protect the exported revision before yielding to the backend. A failed save releases only this lease. */
   protectPublishingCharShapes(count: number | null, exported: RhwpDocument): () => void {
     if (this.publishingPrefix) throw new Error("publication already pending");
@@ -411,6 +416,29 @@ export class RhwpText {
     } catch {
       return null;
     }
+  }
+
+  /** Exact top-level cell ownership; unfamiliar fields are never interpreted or rewritten. */
+  existingFormula(at: DocPosition): string | null {
+    const cell = at.cell;
+    if (!cell || !this.doc.getFieldList) return null;
+    try {
+      const fields: unknown = json(this.doc.getFieldList());
+      if (!Array.isArray(fields)) return null;
+      const matches = fields.filter((field: unknown) => {
+        if (!isRecord(field) || !isRecord(field.location) || !Array.isArray(field.location.path)) return false;
+        const location = field.location, path = location.path as unknown[];
+        const part = path[0];
+        return location.sectionIndex === at.section && location.paraIndex === cell.parentParagraph && path.length === 1
+          && isRecord(part) && part.type === "cell" && part.controlIndex === cell.control && part.cellIndex === cell.cell
+          && part.paraIndex === cell.cellParagraph;
+      });
+      if (matches.length !== 1) return null;
+      const field: unknown = matches[0];
+      if (!isRecord(field) || field.fieldType !== "formula" || typeof field.command !== "string") return null;
+      const match = /^(=[^?;]{1,255})\?\?%g,;;([-+0-9.eE]+)$/.exec(field.command);
+      return match && Number.isFinite(Number(match[2])) ? match[1]! : null;
+    } catch { return null; }
   }
 
   /** Read-only engine preparation. A normal refusal opens no history transaction. */

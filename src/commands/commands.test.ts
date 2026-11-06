@@ -82,11 +82,13 @@ describe("명령 레지스트리", () => {
     expect(new Set(ribbon).size).toBe(ribbon.length);
   });
 
-  it("엔진별 지원: WordCraft는 실행 취소·서식·저장, rhwp는 저장만", () => {
+  it("엔진별 지원: rhwp 실행 취소·다시 실행은 advanced 기록 범위로만 지원", () => {
     const supported = (engine: "rhwp" | "wordcraft") =>
       DOCUMENT_IDS.filter((id) => commandDefinition(id)!.engines![engine].level === "supported");
     expect(supported("wordcraft")).toEqual(DOCUMENT_IDS);
-    expect(supported("rhwp")).toEqual(["file.save"]);
+    expect(supported("rhwp")).toEqual(["edit.undo", "edit.redo", "file.save"]);
+    expect(commandDefinition("edit.undo")?.engines?.rhwp).toEqual({ level: "supported", historyScope: "advanced" });
+    expect(commandDefinition("edit.redo")?.engines?.rhwp).toEqual({ level: "supported", historyScope: "advanced" });
   });
 
   it("단축키는 형식이 맞고 겹치지 않으며 모두 Mod 또는 기능 키를 쓴다(글자 입력과 겹치지 않음)", () => {
@@ -145,14 +147,19 @@ describe("가용성 결정", () => {
     }
   });
 
-  it("rhwp 문서: 실행 취소·서식은 engineUnsupported, 저장만 된다", () => {
+  it("rhwp 문서: advanced 범위 없는 기록은 실행 취소에 쓸 수 없고, 선언된 범위는 기록 상태를 따른다", () => {
     const rhwp = snapshot({ engine: "rhwp", history: null, format: null });
     for (const id of DOCUMENT_IDS.filter((id) => id !== "file.save")) {
       expect(documentCommandState(id, rhwp)).toEqual({ available: false, reason: "engineUnsupported" });
     }
     expect(documentCommandState("file.save", rhwp)).toEqual({ available: true });
-    // 기록이 있다고 해도(지원하지 않는 엔진) 쓰지 않는다.
+    // 범위가 표시되지 않은 합성 상태는 advanced 전용 명령으로 쓰지 않는다.
     expect(documentCommandState("edit.undo", snapshot({ engine: "rhwp", history: { undo: true, redo: true } }))).toMatchObject({ available: false, reason: "engineUnsupported" });
+    const advanced = snapshot({ engine: "rhwp", historyScope: "advanced", history: { undo: true, redo: true } });
+    expect(documentCommandState("edit.undo", advanced)).toEqual({ available: true });
+    expect(documentCommandState("edit.redo", advanced)).toEqual({ available: true });
+    expect(documentCommandState("edit.undo", snapshot({ engine: "rhwp", historyScope: "advanced", history: { undo: false, redo: false } })))
+      .toEqual({ available: false, reason: "nothingToUndo" });
   });
 
   it("WordCraft 문서: 엔진 기록·서식으로 정한다", () => {

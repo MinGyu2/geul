@@ -33,7 +33,7 @@ export type DocumentCommandId =
 
 /** 엔진 하나에서 명령의 지원. */
 export type EngineSupport =
-  | { level: "supported" }
+  | { level: "supported"; historyScope?: "advanced" }
   /** 이 빌드에서 그 엔진으로는 하지 않는다(엔진에 기능이 없거나, 쓰면 보존 규칙상 저장할 수 없는 문서가 됨). */
   | { level: "unsupported" };
 
@@ -57,16 +57,13 @@ export interface CommandDefinition {
 const SUPPORTED: EngineSupport = { level: "supported" };
 const UNSUPPORTED: EngineSupport = { level: "unsupported" };
 
-/**
- * 시험 빌드 전용 활성화(T010 Phase 2 활성화 관문, tests/integration/rhwp/undo_native.py): 검사 훅 빌드(`VITE_GEUL_TEST_HOOKS=1`)이면서
- * `VITE_GEUL_TEST_RHWP_HISTORY=1`일 때만 rhwp 실행 취소·다시 실행을 지원으로 본다. 두 값은 빌드 때 상수로 바뀌어 일반 빌드에서는 이
- * 분기와 표지 문자열이 빠진다(시험이 일반 빌드 산출물에 표지가 없음을 확인). 실행 시 바꿀 수 없고, 가용성·실행 직전 재확인은 그대로다.
- * 제품 지원 상태는 활성화 관문을 모두 통과하기 전까지 `unsupported`다(docs/architecture/command-registry.md).
- */
+/** General RHWP typing history retains its original test-only gate. Normal builds
+ * expose Undo/Redo only when the session declares an actual advanced-only timeline.
+ * This conditional T012 support does not pass D2/D4 or activate general history. */
 const RHWP_HISTORY: EngineSupport =
   import.meta.env.VITE_GEUL_TEST_HOOKS === "1" && import.meta.env.VITE_GEUL_TEST_RHWP_HISTORY === "1"
     ? (console.info("geul-test-build: rhwp-history-commands"), SUPPORTED)
-    : UNSUPPORTED;
+    : { level: "supported", historyScope: "advanced" };
 
 /**
  * 시험 빌드 전용 rhwp 글자 서식(T010 서식): 검사 훅 빌드이면서 `VITE_GEUL_TEST_RHWP_FORMAT=1`일 때만 지원으로 본다(위와 같은 빌드 상수).
@@ -80,15 +77,14 @@ const RHWP_FORMAT: EngineSupport =
 /**
  * 엔진별 지원(근거: docs/architecture/command-registry.md).
  * - WordCraft: 실행 취소·다시 실행은 엔진(`Session`)의 기록, 글자 서식은 WordCraft `format.*` 명령(Rust 시험·보존 검사 통과).
- * - rhwp: 고정 rhwp에는 실행 취소 기록이 없다(스냅숏 함수만). 세션의 기록(RhwpHistory, T010 Phase 2)은 구현했지만 활성화 관문을
- *   통과하지 못해 제품 빌드에서는 `unsupported`다(시험 활성화 빌드만 `RHWP_HISTORY`). 글자 서식은 HWP DocInfo 글자 모양·HWPX
- *   header.xml을 바꿔 T009 보존 검사가 저장을 막으므로 하지 않는다.
+ * - rhwp: 일반 입력 history는 원래 시험 관문 뒤에 남는다. 제품 Undo/Redo는 세션의 advanced 전용 기록만 사용한다.
+ *   일반 굵게·기울임 등의 서식은 여전히 시험 구성 전용이다.
  * - 저장은 두 엔진 모두 기존 T009 저장 절차(사전 검사·출력 검사·게시)를 그대로 부른다.
- * - 장평·자간(T012): rhwp 글자 모양 `ratios`·`spacings`를 바꾸는 글자 서식이라 위 글자 서식과 같은 관문(`RHWP_FORMAT`, 시험 활성화
- *   빌드의 HWPX만 — 실행 취소 기록이 제품에서 NO-GO)이다. WordCraft에는 같은 의미의 명령을 연결하지 않았다.
+ * - 장평·자간(T012): 독립 제품 capability. HWP/HWPX 단일 문단 선택·실제 문자 모양 ownership API·고급 기록이 필요하다.
+ *   WordCraft에는 같은 의미의 명령을 연결하지 않았다.
  * - 표 계산(T012): rhwp `evaluateTableFormula(writeResult=false)` — 문서를 바꾸지 않는 읽기 전용 계산이라 HWP·HWPX 모두 제품에서
- *   지원한다. 결과를 셀에 쓰기(`writeResult=true`)는 계산식이 아니라 값 글자만 남겨(표 계산식 필드가 저장되지 않음) 계산식 의미를
- *   보존한다고 볼 수 없어 연결하지 않았다(docs/architecture/command-registry.md "T012").
+ *   지원한다. 영속 계산식은 별도 `hangul.insertTableFormula`의 검증된 field API로만 생성/교체/명시적 재계산한다.
+ *   값만 쓰는 `writeResult=true`는 연결하지 않는다.
  * - 새 메모(T013): WordCraft `review.newComment`(앱 ID `review.comment`, 고정 DocxOp `comment`). 저장은 메모 부분을 새로 더하거나 기존
  *   메모 끝에 덧붙인 출력만 T009가 받는다. rhwp에는 연결하지 않았다.
  * - 각주·미주(T013): WordCraft `references.footnote`·`references.endnote`(고정 DocxOp `footnote`·`endnote`, 글 한 줄). 본문 최상위
@@ -101,9 +97,9 @@ const RHWP_FORMAT: EngineSupport =
  *   `review.rejectAll`(고정 DocxOp). 수정 기록 색인 일대일 비교(WordCraft `b74830b`) 뒤 추적 편집·IME 교정·수락·거절 출력이 저장 검증을
  *   통과해 이미 추적 중인 문서의 읽기 전용 정책도 풀었다. 저장은 settings의 맨 `w:trackRevisions` 하나의 있고 없음만 더 받는다.
  */
-const RHWP_FORMULA: EngineSupport =
-  import.meta.env.VITE_GEUL_TEST_HOOKS === "1" && import.meta.env.VITE_GEUL_TEST_RHWP_HISTORY === "1"
-    && import.meta.env.VITE_GEUL_TEST_RHWP_FORMULA === "1" ? SUPPORTED : UNSUPPORTED;
+// Production advanced mutations require actual session capabilities and an isolated
+// history transaction. General formatting and general typing history remain test-only.
+const RHWP_ADVANCED: EngineSupport = SUPPORTED;
 
 const DOCUMENT_COMMANDS: Record<DocumentCommandId, Omit<CommandDefinition, "id" | "labelKey" | "kind">> = {
   "edit.undo": { engines: { wordcraft: SUPPORTED, rhwp: RHWP_HISTORY }, shortcuts: ["Mod+Z"], scope: "document" },
@@ -112,10 +108,10 @@ const DOCUMENT_COMMANDS: Record<DocumentCommandId, Omit<CommandDefinition, "id" 
   "format.italic": { engines: { wordcraft: SUPPORTED, rhwp: RHWP_FORMAT }, shortcuts: ["Mod+I"], scope: "document" },
   "format.underline": { engines: { wordcraft: SUPPORTED, rhwp: RHWP_FORMAT }, shortcuts: ["Mod+U"], scope: "document" },
   "format.strikethrough": { engines: { wordcraft: SUPPORTED, rhwp: RHWP_FORMAT } },
-  "hangul.charWidth": { engines: { wordcraft: UNSUPPORTED, rhwp: RHWP_FORMAT } },
-  "hangul.charSpacing": { engines: { wordcraft: UNSUPPORTED, rhwp: RHWP_FORMAT } },
+  "hangul.charWidth": { engines: { wordcraft: UNSUPPORTED, rhwp: RHWP_ADVANCED } },
+  "hangul.charSpacing": { engines: { wordcraft: UNSUPPORTED, rhwp: RHWP_ADVANCED } },
   "hangul.tableFormula": { engines: { wordcraft: UNSUPPORTED, rhwp: SUPPORTED } },
-  "hangul.insertTableFormula": { engines: { wordcraft: UNSUPPORTED, rhwp: RHWP_FORMULA } },
+  "hangul.insertTableFormula": { engines: { wordcraft: UNSUPPORTED, rhwp: RHWP_ADVANCED } },
   "review.comment": { engines: { wordcraft: SUPPORTED, rhwp: UNSUPPORTED } },
   "references.footnote": { engines: { wordcraft: SUPPORTED, rhwp: UNSUPPORTED } },
   "references.endnote": { engines: { wordcraft: SUPPORTED, rhwp: UNSUPPORTED } },

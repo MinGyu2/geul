@@ -1,9 +1,16 @@
 # Implementation Plan: HWP/HWPX + DOCX 통합 편집기
 
-Date: 2026-11-04
+Date: 2026-11-06
 Spec: [spec.md](./spec.md)
 Source baseline: `4bc1ac986026ccadb2d673a66ad69e6296e3a39e` (`MinGyu2/geul`, master).
-Status: T007–T010 △ 조건부 완료, T011 완료(2026-11-04, native IME 포함 검증 — [tasks.md](./tasks.md) Verification Log). T021 생성 경계는 실제 WASM/Rust 실행 수용 완료. T022 제품 연결 완료. T023 native 신규 생성 수용 완료(X11/IBus, 2026-11-04; 추가 환경은 NOT RUN).
+Status: T007–T009 △ 조건부 범위 인정, T010 INCOMPLETE(D2/D4 △ 조건부 보류), T011 완료(2026-11-04, native IME 포함 검증 — [tasks.md](./tasks.md) Verification Log). T021 생성 경계는 실제 WASM/Rust 실행 수용 완료. T022 제품 연결 완료. T023 native 신규 생성 수용 완료(X11/IBus, 2026-11-04; 추가 환경은 NOT RUN).
+
+
+## 2026-11-06 조건부 실행 정책
+
+[명시적 승인과 기술 결과](spec.md#conditional-advanced-20261106)에 따라 T012/T013 개발과 좁은 T012 제품 활성화 검증을 계속한다. D2 INCONCLUSIVE, D4 FAIL/자원 INCONCLUSIVE는 △ 조건부 보류하며 원래 시험을 고치지 않는다. T010 전체와 일반 RHWP history는 미완료/NO-GO다. 과거 2026-11-04 결정의 제품 활성화 불허만 이번에 승인된 고급 부분집합에 한해 대체한다. 아래 과거 단계별 기술 결과는 보존한다.
+
+A 원격 핀 취득 BLOCKED → B 선택 혼합 DOCX 내부 수용 완료 → C 한컴 GUI NOT RUN/독립 내부 저장 검증 완료 → D 일반 입력을 기록하지 않는 고급 전용 history·명령·정상 빌드/실제 UI 검증 완료 순서로 진행했다. D는 지원 부분집합의 제품 활성화까지 검증했으나(소문서·미리보기 저장 거부 제한 포함) 전체 T012 수용이 아니다. 새로운 의존성·엔진 API 임의 노출·저장 비교 완화 없이 진행하고, 독립 검증된 패키지마다 로컬 커밋한다. 푸시는 하지 않는다.
 
 > **2026-11-05 Stage 5–7 재검증:** Stage 5–7 전체와 T012/T013은 부분 완료다. 13개 RHWP 패치의 실제 Release WASM 및 controlled typed formula 연결을 검증했고, 공식 D2/D4 문턱을 유지한 결과 D2 25 PASS/2 INCONCLUSIVE(E→U→F 미관측), D4 6 PASS/2 FAIL이다. 제품 RHWP history·장평/자간·영속 수식은 NO-GO, 실제 native 검증 범위와 외부 Office NOT RUN은 [통합 수용 보고서](../architecture/stage567-acceptance-2026-11-05.md)를 따른다. DOCX 추적 표식 교정 뒤 native10개와 단계별 저장검사10개·재개방은 통과했으며 Word 외부 수용과 구분한다.
 
@@ -18,8 +25,8 @@ RHWP와 WordCraft의 독립 모델·렌더·기록을 Tauri/React UI로 연결�
 ## Technical Context
 
 - UI: React/TypeScript. host: Tauri 2/Rust. locale: `src/language/en.json`, `ko.json`.
-- RHWP pin: `1a76570e833917d15817415a53c09ad61ab3203f`. WordCraft pin: `fc41918814f62645b6746ed68e71e8c2c2e85d6f`.
-- RHWP 실행 신원은 pin뿐 아니라 `patches/rhwp/`, `scripts/rhwp-patches.py`의 순서 있는 패치, source tree, JS/WASM generation/hash를 포함한다. 기준 코드의 계열은 11개 패치다.
+- RHWP pin: `1a76570e833917d15817415a53c09ad61ab3203f`. WordCraft current pin: `6c994e42dee106ca03c6f11628d2fe577fe27636` (2026-11-04 계획 당시 `fc41918814f62645b6746ed68e71e8c2c2e85d6f`).
+- RHWP 실행 신원은 pin뿐 아니라 `patches/rhwp/`, `scripts/rhwp-patches.py`의 순서 있는 패치, source tree, JS/WASM generation/hash를 포함한다. 2026-11-04 계획 기준은 11개 패치였으며 현재 활성 계열은 14개, Release generation `53b6ad7a4c6de7a8f4ada4c61b0ad1934461e656527f6e6b440f08898bebf6d6`다.
 - RHWP 모델·Canvas는 WebView WASM, WordCraft 모델·raster·hit-test는 Rust native W-A다. WordCraft egui UI 임베딩이 아니다.
 - `tests/`는 로컬 논리 경로다. 비공개 자료와 공개 스크립트를 구분하고 [보안 정책](../development/security-policy.md)을 유지한다. 이번 작업에서 로컬 geul-tests·설치 도구·훅을 실행한 것으로 간주하지 않는다.
 

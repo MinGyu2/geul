@@ -1,5 +1,18 @@
 # rhwp 실행 취소·다시 실행 계약 (T010 Phase 1 설계 2026-10-21 · 고침 2026-10-22 · Phase 2 구현 2026-10-22)
 
+<a id="advanced-only-history-20261106"></a>
+
+## 2026-11-06 조건부 고급 명령 기록
+
+T010 전체는 INCOMPLETE, D2 INCONCLUSIVE, D4 FAIL/자원 INCONCLUSIVE다. [사용자 결정](../planning/spec.md#conditional-advanced-20261106)은 D2/D4 선행 완료만 △ 조건부 보류하고 독립 검증한 T012 부분집합의 제품 활성화 작업을 허용한다. 과거 일반 RHWP Undo/Redo NO-GO는 유지하며 아래 날짜별 결과를 소급 변경하지 않는다.
+
+제품은 일반 타이핑/삭제/IME를 기록하지 않는다. 원본 128 KiB 이하·현재 8쪽 이하에서 장평/자간/영속 수식 한 명령을 하나의 coherent history transaction으로 만들고 최대 4단계를 보관한다. 다른 편집 전에 고급 snapshot을 폐기하므로 뒤에 입력한 진짜 한글을 과거 고급 snapshot으로 덮어쓰지 않는다. 빈 기록은 새 snapshot을 찍지 않는다. `forget()`은 초기 선형 메모리 기준과 증가 회계를 재설정하지 않는다. 측정/할당 거부는 명령을 거부한다. 고급 호출이 실제 변경 뒤 예외를 내면 before snapshot 복구·문자 모양 prefix 재조정을 시도한 뒤 uncertain/failed로 격리한다. 복구 성공도 모듈이 건강하다는 보증이 아니며 저장을 막는다. allocation/discard/restore trap은 같은 격리·저장 차단을 따른다. 일반 history 시험 플래그와 원래 D2/D4 하네스는 그대로다.
+
+제품 Undo/Redo는 snapshot `historyScope: advanced`와 실제 고급 기록이 있을 때만 가용하다. 조합·provisional·최종 확정 대기와 backend commit 대기는 거부하고, reload/dispose는 세대/소유권을 무효화한다. 원본보다 이전 Undo snapshot의 문자 모양은 기존 publication prefix/lease 복구 계약으로 보존한다. 일반 RHWP 굵게/기울임 등은 계속 시험 구성 전용이다.
+
+이 부분집합의 Undo/Redo·IME 경계는 일반 Release 빌드와 실제 X11/IBus에서 HWP/HWPX로 검증했다([수용 기록](stage567-acceptance-2026-11-05.md#2026-11-06-advanced-d--conditional-production-implementation)): 고급 명령 Undo/Redo, 조합 중 명령 거부, 한글 입력 뒤 Undo 거부. 이것은 D2의 E→U→F를 관측한 것이 아니므로 D2는 INCONCLUSIVE다. 소문서 명령 응답(입력창 Return→판 갱신 12–29 ms)은 별도 측정 끝점이며 공식 D4 큰 문서 endpoint/50 ms 문턱·자원 수용을 대체하지 않는다.
+
+
 T010 SC-003의 rhwp 몫(실행 취소·다시 실행)의 계약이다. Phase 2(2026-10-22)에 이 계약대로 세션 기록을 구현했다(맨 아래 "Phase 2 구현").
 레지스트리의 `edit.undo`·`edit.redo`는 rhwp에서 아직 `unsupported`이고(활성화 관문 미통과), T010 완료 상태와 T011 선행 조건은 그대로다
 ([tasks.md](../planning/tasks.md)). 근거는 Phase 0 PoC(`tests/poc/t010-phase0/`, [README](../../tests/poc/t010-phase0/README.md))와

@@ -77,6 +77,8 @@ export interface RhwpDocument {
   /** Prove per-ID format serialization identity against a reopened export, then capture the live prefix. */
   capturePublishingCharShapePrefix?(exported: RhwpDocument): CharShapePrefix;
   reconcileCharShapePrefix?(prefix: CharShapePrefix, originalCount: number): string;
+  /** Read-only field metadata, used only to prefill a supported existing cell formula. */
+  getFieldList?(): string;
   validateTableFormulaField?(section: number, paragraph: number, control: number, row: number, col: number, formula: string): string;
   insertTableFormulaField?(section: number, paragraph: number, control: number, row: number, col: number, formula: string): string;
   getCellCharPropertiesAt?(section: number, parentParagraph: number, control: number, cell: number, cellParagraph: number, offset: number): string;

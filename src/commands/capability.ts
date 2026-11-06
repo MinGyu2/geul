@@ -42,7 +42,8 @@ export const FORMAT_FLAG: Partial<Record<DocumentCommandId, CharFormatFlag>> = {
 
 export function documentCommandState(id: DocumentCommandId, snapshot: DocumentCommandSnapshot | null): CommandState {
   if (!snapshot) return unavailable("noDocument");
-  if (commandDefinition(id)?.engines?.[snapshot.engine]?.level !== "supported") return unavailable("engineUnsupported");
+  const support = commandDefinition(id)?.engines?.[snapshot.engine];
+  if (support?.level !== "supported" || (support.historyScope && support.historyScope !== snapshot.historyScope)) return unavailable("engineUnsupported");
   if (id === "file.save") {
     if (!snapshot.loaded) return unavailable("notReady");
     if (snapshot.saving) return unavailable("saving");
@@ -52,6 +53,9 @@ export function documentCommandState(id: DocumentCommandId, snapshot: DocumentCo
   }
   if (!snapshot.editable) return unavailable("notReady");
   if (snapshot.composing) return unavailable("composing");
+  if (snapshot.historyScope === "advanced" && snapshot.pending
+    && ["edit.undo", "edit.redo", "hangul.charWidth", "hangul.charSpacing", "hangul.insertTableFormula"].includes(id))
+    return unavailable("pendingEdits");
   if (id === "edit.undo" || id === "edit.redo") {
     // 지원한다고 선언했는데 엔진이 기록을 알려 주지 않으면 하지 않는다(기록을 화면에서 만들지 않음).
     if (!snapshot.history) return unavailable(snapshot.historyLimited ? "limit" : "engineUnsupported");

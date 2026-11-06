@@ -208,13 +208,21 @@ const hasSignature = (bytes: Uint8Array, format: "hwp" | "hwpx") =>
 const START: DocPosition = { section: 0, paragraph: 0, offset: 0 };
 const MAX_SAMPLES = 1000;
 
-/** 레지스트리가 rhwp 실행 취소·다시 실행을 지원으로 선언했는지(빌드 때 정해짐 — 제품 빌드는 아니다). */
+/** General typing history declaration, excluding the production advanced-only scope. */
 const RHWP_HISTORY_DECLARED = (["edit.undo", "edit.redo"] as const)
-  .every((id) => commandDefinition(id)?.engines?.rhwp.level === "supported");
+  .every((id) => {
+    const support = commandDefinition(id)?.engines?.rhwp;
+    return support?.level === "supported" && support.historyScope !== "advanced";
+  });
 
 /** 레지스트리가 rhwp 글자 서식을 지원으로 선언했는지(시험 활성화 빌드만 — registry.ts `RHWP_FORMAT`). */
 const RHWP_FORMAT_DECLARED = (["format.bold", "format.italic", "format.underline", "format.strikethrough"] as const)
   .every((id) => commandDefinition(id)?.engines?.rhwp.level === "supported");
+
+/** Conditional production subset; these bounds do not replace the original D4 gate. */
+export const ADVANCED_MAX_SOURCE_BYTES = 128 * 1024;
+export const ADVANCED_MAX_PAGES = 8;
+export const ADVANCED_HISTORY_DEPTH = 4;
 
 export class RhwpEditorSession implements DocumentCommandTarget {
   readonly engine = "rhwp" as const;
@@ -337,6 +345,15 @@ export class RhwpEditorSession implements DocumentCommandTarget {
   /** 백엔드가 확인한 revision + 아직 확정하지 않은 변경 수. */
   get localRevision() {
     return this.committed + this.pending;
+  }
+
+  /** General typing/IME history remains behind the original test-only activation gate. */
+  get advancedHistoryOnly(): boolean {
+    return !(this.options.history ?? RHWP_HISTORY_DECLARED);
+  }
+
+  get hasAdvancedHistory(): boolean {
+    return this.advancedHistoryOnly && this.history !== null;
   }
 
   get editable() {
@@ -771,13 +788,25 @@ export class RhwpEditorSession implements DocumentCommandTarget {
     if (!this.editable) return false;
     const doc = this.doc;
     // 실행 취소 기록: 바꾸는 첫 엔진 호출 직전에 트랜잭션을 연다(지금 상태 스냅숏 = 그룹의 before). 이미 열려 있으면 그대로(조합).
-    if (!this.beginHistory(kind, start) || (requireHistory && !this.history)) return false;
+    if (this.advancedHistoryOnly && !requireHistory) {
+      // Genuine input is never recorded in the advanced timeline. Retire its
+      // snapshots before touching the model, so Undo cannot overwrite later input.
+      try { this.history?.forget(); }
+      catch (error) { this.historyFailure(error); return false; }
+    } else if (!this.beginHistory(kind, start) || (requireHistory && !this.history)) return false;
     let next: ReturnType<Mutation>;
     const started = import.meta.env.VITE_GEUL_TEST_HOOKS === "1" ? performance.now() : 0;
     try {
       next = apply();
       trace("rhwp:text-mutation", () => ({ ms: performance.now() - started }));
     } catch {
+      if (requireHistory) {
+        // Restore a coherent before state even if a validated engine operation
+        // threw after changing the model. A secondary trap still fails closed;
+        // successful rollback does not claim the trapped module is healthy.
+        try { this.history?.rollback(); this.text?.reconcilePublishedCharShapes(); }
+        catch (error) { this.historyFailure(error); }
+      }
       // 진행 중인 조합도 이 실패로 끝난다. 그 조합은 성공한 변경으로 세지 않는다(markFailed가 세지 않게 먼저 비움).
       this.composition = null;
       this.uncertain = true;
@@ -824,17 +853,21 @@ export class RhwpEditorSession implements DocumentCommandTarget {
   // ---- 실행 취소 기록(T010 Phase 2) ----
 
   /**
-   * 문서를 열 때: 이 빌드가 rhwp 실행 취소를 쓰고(`options.history`, 없으면 레지스트리 선언) 예산(원본 크기 대용 — 보수적이지 않음,
-   * rhwpHistory.ts historyBudget)이 최소 깊이를 담고, 모듈이 선형 메모리를 잴 수 있을 때만 기록을 켠다. 측정이 없거나 시작 측정이
+   * 문서를 열 때: 일반 history는 시험 선언/명시적 시험 선택만, 제품은 소문서 고급 전용 timeline만 만든다.
+   * 예산(원본 크기 대용 — 보수적이지 않음, rhwpHistory.ts historyBudget)이 최소 깊이를 담고 모듈이 선형 메모리를 잴 때만 켠다. 측정이 없거나 시작 측정이
    * 계약에 어긋나면 감시 없는 기록을 만들지 않고 unavailable로 둔다(RhwpHistory가 읽은 값을 검사한다 — 여기서 대신 채우지 않는다).
    * 기록을 만들지 못해도 문서 세션은 그대로다.
    */
   private startHistory(doc: RhwpDocument, bytes: number) {
     this.history = null;
     this.historyOff = null;
-    if (!(this.options.history ?? RHWP_HISTORY_DECLARED)) return;
+    if (this.options.history === false) return;
     const module = this.module;
     try {
+      if (this.advancedHistoryOnly && (bytes > ADVANCED_MAX_SOURCE_BYTES || doc.pageCount() > ADVANCED_MAX_PAGES)) {
+        this.historyOff = "limit";
+        return;
+      }
       const budget = historyBudget(bytes, doc.snapshotCapacity());
       if (!budget.enabled) {
         this.historyOff = "limit";
@@ -845,7 +878,7 @@ export class RhwpEditorSession implements DocumentCommandTarget {
         this.historyOff = "unavailable";
         return;
       }
-      this.history = new RhwpHistory(doc, budget.depth, () => performance.now(), () => read.call(module));
+      this.history = new RhwpHistory(doc, this.advancedHistoryOnly ? Math.min(budget.depth, ADVANCED_HISTORY_DEPTH) : budget.depth, () => performance.now(), () => read.call(module));
     } catch {
       this.historyOff = "unavailable";
     }
@@ -932,6 +965,7 @@ export class RhwpEditorSession implements DocumentCommandTarget {
     const text = this.text;
     // IME 트랜잭션(조합·provisional·최종 글자 기다림) 중에는 하지 않는다: 조합 좌표·ReplaceInserted가 복원으로 무효가 된다.
     if (!history || !doc || !text || !this.editable || this.imeUnsettled) return false;
+    if (this.advancedHistoryOnly && (this.pending > 0 || this.committingEpoch === this.epoch)) return false;
     let checkpoint;
     try {
       checkpoint = direction === "undo" ? history.undo(() => captureCheckpoint(text, this.caret, this.anchor)) : history.redo();
@@ -1455,8 +1489,9 @@ export class RhwpEditorSession implements DocumentCommandTarget {
       composing: this.imeUnsettled,
       pending: this.pending > 0 || this.committingEpoch === this.epoch, queuedHistory: null,
       saving: this.saving,
-      // 기록은 지역·동기라 대기 확정에 영향받지 않는다(queuedHistory 없음). 열린 트랜잭션(조합)은 composing이 막는다.
+      // 기록은 지역·동기(queuedHistory 없음). 제품 고급 기록은 pending 확정도 명령 capability에서 거부한다.
       history: this.history ? { undo: this.history.canUndo, redo: this.history.canRedo } : null,
+      ...(this.advancedHistoryOnly ? { historyScope: "advanced" as const } : {}),
       historyLimited: this.history === null && this.historyOff === "limit",
       format: this.formatState(), formatAccess: null,
       ...this.parameterState(),
@@ -1467,8 +1502,8 @@ export class RhwpEditorSession implements DocumentCommandTarget {
 
   /**
    * 값 입력 명령(T012)의 문맥. 모델 판·선택·IME·편집 가능이 같으면 다시 읽지 않는다.
-   * - 장평·자간: 글자 서식과 같은 관문(서식 명령을 받는 빌드, HWPX, 기록 켜짐, IME 안정) + **한 문단 안**의 같은 문맥 선택(여러 문단·
-   *   문맥을 넘는 선택은 아직 검증하지 않아 막음). 선택이 없으면 이유 selectionRequired.
+   * - 장평·자간: HWP/HWPX, 필수 API/문자 모양 ownership·기록·IME 안정 + 한 문단 안의 같은 문맥 선택.
+   *   제품 고급 부분집합은 크기/쪽 수·commit 대기도 검사한다. 여러 문단/문맥 선택은 selectionRequired.
    * - 표 계산: 편집 가능·IME 안정·불확실 아님 + 커서가 표 셀 안이고 엔진이 그 셀의 논리 좌표·표 크기를 알려 줄 때(HWP·HWPX 모두 —
    *   문서를 바꾸지 않는 계산). 셀 밖이면 이유 notInTable.
    */
@@ -1476,7 +1511,7 @@ export class RhwpEditorSession implements DocumentCommandTarget {
     const format = this.sessions.get(this.sessionId)?.format;
     const key = [
       this.modelVersion, RhwpEditorSession.positionKey(this.anchor), RhwpEditorSession.positionKey(this.caret), format,
-      this.editable, this.imeUnsettled, this.uncertain, !!this.history, !!this.doc, this.pending,
+      this.editable, this.imeUnsettled, this.uncertain, !!this.history, !!this.doc, this.pending, this.committingEpoch === this.epoch, this.pages.length,
     ].join("|");
     if (this.parameterCache?.key === key) return this.parameterCache.value;
     const parameters: Partial<Record<ParameterCommandId, CommandParameterContext>> = {};
@@ -1484,10 +1519,21 @@ export class RhwpEditorSession implements DocumentCommandTarget {
     const usable = this.editable && !!this.doc && !!this.text && !this.imeUnsettled && !this.uncertain;
     // 장평·자간: HWPX, 그리고 엔진이 덧붙인 글자 모양 정리를 지원할 때 HWP(T012 Stage 5 — HWP 저장 규칙은 정리된 덧붙임만 받는다).
     const metricFormat = format === "hwpx" || (format === "hwp" && !!this.doc?.compactAppendedCharShapes);
-    if (usable && (this.options.format ?? RHWP_FORMAT_DECLARED) && metricFormat && this.history) {
+    const limited = this.advancedHistoryOnly && (this.historyOff === "limit" || this.pages.length > ADVANCED_MAX_PAGES);
+    const pending = this.advancedHistoryOnly && (this.pending > 0 || this.committingEpoch === this.epoch);
+    const ownership = this.options.format === true || !!(this.text?.hasCharShapeOwnership && this.doc?.charShapeCount
+      && this.doc.compactAppendedCharShapes && this.doc.captureCharShapePrefix
+      && this.doc.capturePublishingCharShapePrefix && this.doc.reconcileCharShapePrefix);
+    const advanced = usable && !limited && !pending && !!this.history;
+    if (limited || pending) {
+      for (const command of ["hangul.charWidth", "hangul.charSpacing", "hangul.insertTableFormula"] as const)
+        parameterReasons[command] = limited ? "limit" : "pendingEdits";
+    }
+    if (advanced && this.options.format !== false && metricFormat) {
       const [from, to] = this.ordered();
       if (this.hasSelection && sameContext(from, to) && paragraphOf(from) === paragraphOf(to)) {
-        const charShape = this.text!.charShape(from);
+        const api = from.cell ? this.doc?.applyCharFormatInCell : this.doc?.applyCharFormat;
+        const charShape = api && ownership ? this.text!.charShape(from) : null;
         if (charShape) parameters["hangul.charWidth"] = parameters["hangul.charSpacing"] = { charShape };
       } else {
         parameterReasons["hangul.charWidth"] = parameterReasons["hangul.charSpacing"] = "selectionRequired";
@@ -1498,10 +1544,12 @@ export class RhwpEditorSession implements DocumentCommandTarget {
       if (cell) {
         const context = { tableCell: { row: cell.row, col: cell.col, rows: cell.rows, cols: cell.cols } };
         parameters["hangul.tableFormula"] = context;
-        if (this.history && this.doc?.validateTableFormulaField && this.doc.insertTableFormulaField && !this.hasSelection && !this.pending)
-          parameters["hangul.insertTableFormula"] = context;
+        if (advanced && ownership && this.doc?.validateTableFormulaField && this.doc.insertTableFormulaField && !this.hasSelection && !this.pending) {
+          const formula = this.text!.existingFormula(this.caret);
+          parameters["hangul.insertTableFormula"] = formula === null ? context : { ...context, formula };
+        }
       }
-      else parameterReasons["hangul.tableFormula"] = "notInTable";
+      else parameterReasons["hangul.tableFormula"] = parameterReasons["hangul.insertTableFormula"] = "notInTable";
     }
     const value = { parameters, parameterReasons };
     this.parameterCache = { key, value };

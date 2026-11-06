@@ -337,6 +337,16 @@ export class RhwpHistory {
     }
   }
 
+  /** Restore the before state of a failed advanced mutation before cancelling its transaction.
+   * A restore/discard exception remains uncertain and must stop the editor. */
+  rollback(): void {
+    if (!this.pending || this.state !== "ok") throw new HistoryRefused("transaction");
+    const id = this.states[this.cursor];
+    if (id === null || id === undefined) throw new HistoryFailure("snapshot-missing", true);
+    this.restore(id);
+    this.cancel();
+  }
+
   /** 트랜잭션이 세지 않고 끝났다(선택 없이 취소한 조합). 이 트랜잭션이 찍은 것만 버린다. */
   cancel() {
     const pending = this.pending;
@@ -403,6 +413,14 @@ export class RhwpHistory {
       const missing = /스냅샷 \d+ 없음/.test(String(error));
       throw new HistoryFailure(missing ? "snapshot-missing" : "restore-failed", !missing);
     }
+  }
+
+  /** End an advanced-only timeline before ordinary input, without resetting memory accounting.
+   * A discard trap leaves the history broken; the caller must stop before editing. */
+  forget(): void {
+    if (this.state !== "ok" || this.pending) throw new HistoryRefused("transaction");
+    this.release(true);
+    this.state = "ok";
   }
 
   /** 기록을 비운다. discard면 참조 ID를 엔진에서도 버린다(엔진을 믿을 수 있을 때만; 문서를 곧 놓으면 함께 사라진다). */

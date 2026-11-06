@@ -1,5 +1,19 @@
 # 명령 레지스트리·가용성·실행 취소 (T010)
 
+## 2026-11-06 T012 조건부 제품 capability
+
+[명시적 승인](../planning/spec.md#conditional-advanced-20261106)에 따라 D2/D4 완료를 절대 선행 조건으로 삼던 과거 제품 고급 기능 작업 불허를 이 부분집합에서 대체한다. 기술 판정은 D2 INCONCLUSIVE, D4 FAIL/자원 INCONCLUSIVE이며 T010 전체 미완료다. 아래 지원 부분집합은 일반 Release 빌드(모든 시험 훅 0)의 실제 리본/입력창/세션/엔진/저장 서비스 경로로 검증해 제품 명령을 켰다([수용 기록](stage567-acceptance-2026-11-05.md#2026-11-06-advanced-d--conditional-production-implementation)). 이는 조건부 지원이며 전체 T010/T012 수용이 아니다.
+
+| 명령 | 제품 capability와 제한 |
+|---|---|
+| `hangul.charWidth`, `hangul.charSpacing` | HWP/HWPX, 본문 또는 같은 표 셀 안의 단일 문단 선택, 실제 getter/setter·compaction·publication ownership API, 고급 전용 history, 정수 50–200 / -50–50, 7언어 값 유지 |
+| `hangul.insertTableFormula` | 유효한 단일 표 셀 커서에서 typed 식 입력/기존 식 교체/명시적 재계산. 소유 셀의 지원되는 기존 식만 입력창에 채우며 같은 식을 확인하면 캐시 값을 재계산. parser/engine 독립 검증(256/16/4096), 필드 소유권/구조 제한 유지. 결과를 넣을 셀을 직접·범위로 읽는 식(`=SUM(A1:B1)`을 B1에)은 재계산마다 값이 커지므로 입력창과 세션이 거부한다. 다른 수식 필드를 거치는 간접 순환은 추적하지 않는다. `??%g,;;` 형식이 아닌 기존 식(예: 한컴 `%.2f`)은 입력창에 채우지 않는다. 비어 있지 않은 셀의 글은 수식으로 바뀐다 |
+| `edit.undo`, `edit.redo` (RHWP) | 제품 선언은 `historyScope: advanced` 요구. 실제 고급 기록만 사용하며 일반 입력 시작 시 폐기. IME/최종 입력/commit 대기 거부. 일반 RHWP 입력 history 활성화가 아님 |
+| RHWP 일반 글자 서식 | 기존 시험 구성 전용, 제품 미지원 |
+
+원본 128 KiB 이하·현재 8쪽 이하, 최대 4고급 단계만 허용한다. 문서 한도는 `limit`, 선택 없음/여러 문단은 `selectionRequired`, 표 밖은 `notInTable`, commit 대기는 `pendingEdits`, IME는 `composing`으로 거부한다. 시험 훅 활성화는 제품 기능의 전제가 아니다. 실질 getter/setter/ownership나 history가 없으면 capability를 내지 않는다. 저장은 변함없이 T009의 사전검사·실제 출력 검사·원자 게시·내구성 결과를 따른다. 한컴 원본처럼 비어 있지 않은 PrvText/PrvImage가 있는 HWP를 이 명령으로 고치면 안전한 미리보기 재생성 근거가 없어 T009가 저장을 거부한다. 명령은 메모리 모델만 바꾸고 원본은 그대로이며 dirty가 유지된다. 아래 이전 비활성/NO-GO 기록은 당시 결과다.
+
+
 FR-007(명령 레지스트리)과 SC-003(서식·실행 취소·미지원 명령을 실제 엔진에서 확인)의 T010 몫. 상황별 리본은 T011, 형식별 고급
 명령은 T012·T013이 맡는다. 이 문서는 T010에서 정한 경계와 근거, 남은 한계를 적는다.
 

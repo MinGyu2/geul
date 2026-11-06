@@ -1,3 +1,5 @@
+> **2026-11-06 조건부 고급 기능 개발:** [새 사용자 결정](spec.md#conditional-advanced-20261106)은 D2/D4를 △ 조건부 보류하고 독립 검증한 T012 부분집합의 제품 활성화 작업을 허용한다. D2 INCONCLUSIVE, D4 FAIL/자원 INCONCLUSIVE 및 T010/T012/T013 전체 미완료는 유지한다. 지원 부분집합은 일반 Release 빌드·실제 X11/IBus로 검증해 제품 명령을 켰다([수용 기록](../architecture/stage567-acceptance-2026-11-05.md#2026-11-06-advanced-d--conditional-production-implementation)). 아래 이전 비활성 기록은 당시 상태다.
+
 > **2026-11-06 고급 기능 A–B 후속:** T013의 선택한 혼합 DOCX 내부 행렬은 실제 저장·재개방·재편집과 native IBus로 검증했다. TOC 추적 표식의 안전하지 않은 수락/갱신은 원자적으로 거부한다. WordCraft 원격 핀 취득은 새 체크아웃에서도 BLOCKED, Microsoft Word 외부 호환성은 NOT RUN이므로 T013은 미완료다. 자세한 계층별 결과는 [advanced A–B acceptance](../architecture/stage567-acceptance-2026-11-05.md#2026-11-06-advanced-ab-acceptance)를 따른다. 아래 과거 상태는 그 시점의 기록으로 유지한다.
 
 # Tasks: HWP/HWPX + DOCX 통합 편집기
@@ -66,13 +68,13 @@ Independent Test: 두 표면의 PoC와 대표 문서 IME→저장→재열기 �
 
 ## Phase 4: User Story 3 - 공통 명령 및 리본 (Priority: P1)
 Independent Test: 형식·선택·상태별 명령과 미지원 차단. 시험 전용 명령 활성화 금지.
-- [ ] T010 [US3] △ 조건부 완료 — 공통 명령·Undo/Redo·서식 — `src/commands/` (D2/D4 조사 보류, RHWP 제품 활성화 NO-GO)
+- [ ] T010 [US3] △ 조건부 개발 / 기술 수용 미완료 — D2 INCONCLUSIVE, D4 지연 FAIL·자원 INCONCLUSIVE. 일반 RHWP history는 NO-GO이며 별도 검증된 T012 고급 명령 부분집합의 제품 활성화 작업만 승인한다.
 - [x] T011 [US3] 공통 리본·상황별 도구 연결 — `src/ribbon/`, `src/components/Ribbon/` (2026-11-04 완료, 선택 문맥 상황 탭은 빠진 능력으로 숨김 — 아래 Verification Log)
 
 ## Phase 5: User Story 4 - 고급 기능 (Priority: P2)
 Independent Test: 실제 API·기록·문서 왕복을 검증한 명령만 활성화.
-- [ ] T012 [US4] 한글 전용 검증 명령 연결 — `src/ribbon/HangulTools/` (2026-11-05 부분: 표 계산 읽기 전용은 제품 HWP·HWPX, 장평·자간은 시험 활성화 빌드 HWPX만, 결과 쓰기·HWP 장평/자간 미지원, 2026-11-05 재검토: 제품 장평·자간은 T010 rhwp 실행 취소 NO-GO(Stage 5: RHWP 덧붙인 글자 모양 정리 series 패치·HWP DocInfo 덧붙임 규칙 구현, 시험 활성화 빌드에서 HWP·HWPX 연속 변경 실제 WASM 저장 15/15 — 제품은 D2/D4 관문 전까지 unsupported), 연속 변경은 rhwp 글자 모양 표 덧붙임 전용, 결과 쓰기는 계산식 필드 생성 엔진 기능 부재로 BLOCKED(Stage 6: 한컴 실물 모양의 계산식 필드 생성 RHWP 후보 패치·네이티브 HWP/HWPX 왕복 시험까지, 미연결), native NOT RUN — [command-registry.md "T012 한글 도구"](../architecture/command-registry.md))
-- [ ] T013 [US4] DOCX 고급 검증 명령 연결 — `src/ribbon/References/` (2026-11-05 부분: 새 메모·각주·미주 제품 DOCX 연결·실제 저장 두 회차 검증(각주·미주는 WordCraft 구분선 읽기 수정 `b39a8fb` — 공개 포크의 개발 브랜치에서 fetch 가능, geul master gitlink와 일치), 목차는 엔진 표현(표지 필드 ↔ 읽은 범위 필드)으로, 기존 변경 내용 추적 문서는 편집 차단·읽기/선택 허용, 안내를 제공하며 새 추적·수락/거절 명령은 미지원; IME native 미검증으로 planned 유지, 하이퍼링크 일부 메모는 Stage 4에서 나뉜 같은 관계만 받는 좁은 규칙으로 저장 지원, native NOT RUN; Stage 1 trackedReadOnly 필수 IPC·구분선 변이 거부 확인 `9b28d7c`; Stage 2 목차 넣기·갱신 제품 연결(WordCraft `af80638` 로컬 미발행), Word 호환 NOT RUN; Stage 3 변경 내용 추적·수락·거절 연결과 추적 문서 편집 허용(WordCraft `b74830b` 로컬 미발행, 수정 기록 색인 일대일), native IME·Word NOT RUN; Stage 7 native·Word 수용 NOT RUN(X11/IBus·Word 없음) — [command-registry.md "T013"](../architecture/command-registry.md))
+- [ ] T012 [US4] △ 조건부 제품 부분집합 — 장평·자간·영속 수식과 고급 전용 Undo/Redo를 128 KiB·8쪽 이하 HWP/HWPX에서 제품 활성화·실제 UI 검증 완료. 일반 입력 history는 비활성. 한컴 외부 GUI NOT RUN, 진짜 계산식 HWPX fixture 미확보, calc-cell HWP는 stale-preview 안전 거부이므로 전체 미완료.
+- [ ] T013 [US4] 부분 완료 — 선택 혼합 DOCX 내부 수용·실제 native 입력·두 회차 저장/재개방 완료 (`4585c2ae14f6cc025d1681888383948c9addb75d`); TOC 표식 위험 명령 원자적 거부 (`ced0c02d84b40dd525efb24526c6c9dc2852a8c7`). 원격 WordCraft 재현성 BLOCKED, Microsoft Word NOT RUN으로 전체 미완료.
 
 ## Phase 6: User Story 5 - 저장 실패·복구 수용 (Priority: P1)
 Independent Test: 기존 저장·충돌·복구의 남은 실패 경계.
@@ -245,3 +247,12 @@ P5 집계/환경 추가 결과: 84 durable publication, 3 strict HWP refusal, 18
 Save cleanup exception safety is implemented in local commits `4e3e9b794e9098a32f35a624ed8910add3341ce2` and backend-rejection state cleanup in `d3ccf7f02864a88dbd9655fd062c65992f2b48d4`; focused frontend/WASM/service results are recorded in `target/save-cleanup-20261106/`. The Rust B1/B2 unexplained cases are now directly classified as sandbox `SharedDirectory` refusals before the intended later operations, not as demonstrated product defects. The UID-preserving protected save suite remains blocked because `sudo-bwrap` requires a password; no substitute run counts as acceptance. D2 remains inconclusive (E→U→F not observed), and actual Microsoft Word/Hancom compatibility remains NOT RUN because no applications or sessions are available. T012/T013 and production RHWP capability gates remain incomplete. The native D2 trace/phase instrumentation correction is committed as `e0fd149a694973ab55addd54e0f01ed4ecbdc448`; its runner still fails a later cancellation assertion and does not satisfy D2. D4 remains unchanged and excluded.
 
 2026-11-06 신뢰성 후속: 사전 검사 정리 `eee3d4e47c50a4ac5df9e2bdda4f24a186f9a756`, 명령 저장 거부 `a0a008e52ff76bb076564edc96409f71b6ed0dfc`, 보호 Rust 환경 `18dd5dbca4d68929baeae48381032ec1d5409bbd`(`GEUL_SANDBOX=userns-root-bwrap`, `services::save` 146 PASS/0 FAIL/15 ignored), D2 harness `de65a43e0ff583e6fdccd96708900a0eb6c731ae`(세 IBus 모드 native 행렬 PASS). D2는 E→U→F 미관측으로 INCONCLUSIVE이고 D4 FAIL은 바뀌지 않았다. 체크 상태는 바꾸지 않는다. 상세는 [저장 보존](../architecture/save-preservation.md), [실행 취소](../architecture/rhwp-undo-redo.md), [수용 기록](../architecture/stage567-acceptance-2026-11-05.md).
+
+
+### 2026-11-06 조건부 결정 직전 작업 행(이력 보존)
+
+> - [ ] T010 [US3] △ 조건부 완료 — 공통 명령·Undo/Redo·서식 — `src/commands/` (D2/D4 조사 보류, RHWP 제품 활성화 NO-GO)
+
+> - [ ] T012 [US4] 한글 전용 검증 명령 연결 — `src/ribbon/HangulTools/` (2026-11-05 부분: 표 계산 읽기 전용은 제품 HWP·HWPX, 장평·자간은 시험 활성화 빌드 HWPX만, 결과 쓰기·HWP 장평/자간 미지원, 2026-11-05 재검토: 제품 장평·자간은 T010 rhwp 실행 취소 NO-GO(Stage 5: RHWP 덧붙인 글자 모양 정리 series 패치·HWP DocInfo 덧붙임 규칙 구현, 시험 활성화 빌드에서 HWP·HWPX 연속 변경 실제 WASM 저장 15/15 — 제품은 D2/D4 관문 전까지 unsupported), 연속 변경은 rhwp 글자 모양 표 덧붙임 전용, 결과 쓰기는 계산식 필드 생성 엔진 기능 부재로 BLOCKED(Stage 6: 한컴 실물 모양의 계산식 필드 생성 RHWP 후보 패치·네이티브 HWP/HWPX 왕복 시험까지, 미연결), native NOT RUN — [command-registry.md "T012 한글 도구"](../architecture/command-registry.md))
+
+> - [ ] T013 [US4] DOCX 고급 검증 명령 연결 — `src/ribbon/References/` (2026-11-05 부분: 새 메모·각주·미주 제품 DOCX 연결·실제 저장 두 회차 검증(각주·미주는 WordCraft 구분선 읽기 수정 `b39a8fb` — 공개 포크의 개발 브랜치에서 fetch 가능, geul master gitlink와 일치), 목차는 엔진 표현(표지 필드 ↔ 읽은 범위 필드)으로, 기존 변경 내용 추적 문서는 편집 차단·읽기/선택 허용, 안내를 제공하며 새 추적·수락/거절 명령은 미지원; IME native 미검증으로 planned 유지, 하이퍼링크 일부 메모는 Stage 4에서 나뉜 같은 관계만 받는 좁은 규칙으로 저장 지원, native NOT RUN; Stage 1 trackedReadOnly 필수 IPC·구분선 변이 거부 확인 `9b28d7c`; Stage 2 목차 넣기·갱신 제품 연결(WordCraft `af80638` 로컬 미발행), Word 호환 NOT RUN; Stage 3 변경 내용 추적·수락·거절 연결과 추적 문서 편집 허용(WordCraft `b74830b` 로컬 미발행, 수정 기록 색인 일대일), native IME·Word NOT RUN; Stage 7 native·Word 수용 NOT RUN(X11/IBus·Word 없음) — [command-registry.md "T013"](../architecture/command-registry.md))

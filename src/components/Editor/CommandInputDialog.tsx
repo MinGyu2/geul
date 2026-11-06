@@ -4,7 +4,7 @@
 import { useLayoutEffect, useRef, useState } from "react";
 import type { CommandInputRequest } from "../../commands/commands";
 import {
-  CHAR_SPACING_RANGE, CHAR_WIDTH_RANGE, MAX_COMMENT_CHARS, MAX_FORMULA_LENGTH, commentProblem, formulaProblem, parsePercent,
+  CHAR_SPACING_RANGE, CHAR_WIDTH_RANGE, MAX_COMMENT_CHARS, MAX_FORMULA_LENGTH, commentProblem, formulaProblem, formulaReadsOwnCell, parsePercent,
   validateCommandArgs,
 } from "../../commands/parameters";
 import type { DocumentCommandArgs } from "../../commands/target";
@@ -27,7 +27,8 @@ function initialText(request: CommandInputRequest): string {
   const shape = request.context.charShape;
   if (request.command === "hangul.charWidth") return shape ? String(shape.width) : "100";
   if (request.command === "hangul.charSpacing") return shape ? String(shape.spacing) : "0";
-  // 메모·계산식은 빈 칸에서 시작한다(자리 표시 글을 넣지 않음).
+  if (request.command === "hangul.insertTableFormula") return request.context.formula ?? "";
+  // New comments and formulas start empty.
   return "";
 }
 
@@ -77,7 +78,8 @@ export function CommandInputDialog({ request, onCancel, onConfirm, suspended = f
         ? { command: "references.endnote", text: text.trim() }
         : { command: "references.footnote", text: text.trim() };
     } else if (formula) {
-      const problem = cell ? formulaProblem(text, cell) : "reference";
+      const problem = !cell ? "reference" : formulaProblem(text, cell)
+        ?? (request.command === "hangul.insertTableFormula" && formulaReadsOwnCell(text, cell) ? "selfReference" : null);
       if (problem) return setError(`commandInput.formula.${problem}` as MessageKey);
       args = { command: request.command as "hangul.tableFormula" | "hangul.insertTableFormula", formula: text.trim() };
     } else {

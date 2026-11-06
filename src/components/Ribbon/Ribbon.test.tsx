@@ -143,19 +143,19 @@ describe("T011 형식별 리본 탭(앱)", () => {
     expectConsistentTabs("홈");
   });
 
-  it("A03/A04 한글 도구 탭은 HWP/HWPX 전용 안내와 함께 보이고, 제품 빌드의 장평·자간(시험 빌드 전용)과 표 밖의 표 계산은 쓸 수 없으며 눌러도 문서를 바꾸지 않는다", async () => {
+  it("A03/A04 한글 도구 탭은 HWP/HWPX 전용 안내와 함께 보이고, 선택 없는 장평·자간과 표 밖의 표 계산은 쓸 수 없으며 눌러도 문서를 바꾸지 않는다", async () => {
     const { user, docs } = await renderMixed(["/a.hwp", "/b.hwpx"]);
     await user.click(ribbonTabs().getByRole("tab", { name: "한글 도구" }));
     expectConsistentTabs("한글 도구");
     expect(screen.getByText("HWP/HWPX 문서 전용 도구입니다.")).toBeInTheDocument();
     const toolbar = screen.getByRole("toolbar", { name: "한글 도구" });
     for (const button of within(toolbar).getAllByRole("button")) expect(button).toHaveAttribute("aria-disabled", "true");
-    expect(within(toolbar).getByRole("button", { name: /장평/ }).title).toContain("이 문서 형식에서 지원하지 않음");
-    expect(within(toolbar).getByRole("button", { name: /자간/ }).title).toContain("이 문서 형식에서 지원하지 않음");
+    expect(within(toolbar).getByRole("button", { name: /장평/ }).title).toContain("한 문단 안의 글자 선택 필요");
+    expect(within(toolbar).getByRole("button", { name: /자간/ }).title).toContain("한 문단 안의 글자 선택 필요");
     expect(within(toolbar).getByRole("button", { name: "표 계산" }).title).toContain("커서가 표 셀 안에 있지 않음");
     const before = docs.get("hwpx")!.paragraphs.join("\n");
     await user.click(within(toolbar).getByRole("button", { name: /장평/ }));
-    expect(statusMessage()).toHaveTextContent("장평: 이 문서 형식에서는 지원하지 않습니다.");
+    expect(statusMessage()).toHaveTextContent("장평: 먼저 한 문단 안의 글자를 선택하세요.");
     await user.click(within(toolbar).getByRole("button", { name: "표 계산" }));
     expect(statusMessage()).toHaveTextContent("표 계산: 먼저 커서를 표 셀 안에 두세요.");
     expect(screen.queryByTestId("command-input-dialog")).not.toBeInTheDocument();
@@ -367,7 +367,7 @@ describe("T011 리본 명령의 대상과 차단(앱)", () => {
     expect(bold()).toHaveAttribute("aria-pressed", "false");
   });
 
-  it("A10/A13 HWP·HWPX에서 실행 취소·다시 실행·글자 서식은 제품 빌드에서 엔진 미지원으로 막히고 모델·revision을 바꾸지 않는다", async () => {
+  it("A10/A13 빈 고급 기록의 실행 취소·다시 실행과 미지원 일반 서식은 모델·revision을 바꾸지 않는다", async () => {
     const { user, sessions, docs } = await renderMixed(["/a.hwp", "/b.hwpx"]);
     for (const id of [1, 2]) {
       await act(async () => { sessions.select(id); await flush(); });
@@ -376,7 +376,7 @@ describe("T011 리본 명령의 대상과 차단(앱)", () => {
       for (const name of ["실행 취소", "다시 실행", "굵게", "기울임꼴", "밑줄", "취소선"]) {
         const button = within(screen.getByRole("toolbar", { name: "홈" })).getByRole("button", { name });
         expect(button, `${format} ${name}`).toHaveAttribute("aria-disabled", "true");
-        expect(button.title).toContain("이 문서 형식에서 지원하지 않음");
+        expect(button.title).toContain(name === "실행 취소" ? "되돌릴 편집 없음" : name === "다시 실행" ? "다시 실행할 편집 없음" : "이 문서 형식에서 지원하지 않음");
         await act(async () => { await user.click(button); await flush(); });
       }
       expect(docs.get(format)!.paragraphs.join("\n")).toBe(before);

@@ -347,3 +347,56 @@ C baseline `4585c2ae14f6cc025d1681888383948c9addb75d`; no product, patch, submod
 Protected service setup failures are retained: first output subtree was read-only; after allowing that evidence subtree, project-path fixture publication was refused `shared-directory` because userns maps host root-owned `/home` to UID 65534. Final runner creates owned private fixture copies under sandbox `/tmp`, keeping source/submodules/Git read-only and preserving all trust predicates. It uses `GEUL_SANDBOX=userns-root-bwrap python3 scripts/external-integrity.py --require external/wordcraft --writable src-tauri/target --writable target/advanced-20261106/c/formula --report target/advanced-20261106/c/formula/sandbox-integrity-report.json -- python3 "$PWD/target/advanced-20261106/c/formula/sandbox-run.py"`; direct-preview invocation adds `C_EVIDENCE_KIND=preview` and its separate writable evidence subtree. Exact child Cargo command and temporary-path mapping are retained in reports. Passing test-executable exit alone was not treated as successful publication; every result row and final disk bytes were checked.
 
 There is no demonstrated safe regeneration of the genuine calc-cell PrvImage. T009 refusal is retained; it is **not** successful formula-save compatibility. Two internal saves/reopens or XML well-formedness cannot establish Hancom behavior, seven-language rendering or genuine Hancom formula HWPX support. C2/C4 external acceptance and full T012 remain incomplete; continue separately authorized D work.
+
+
+### 2026-11-06 advanced D — conditional production implementation
+
+[사용자 승인](../planning/spec.md#conditional-advanced-20261106)과 [고급 전용 기록 계약](rhwp-undo-redo.md#advanced-only-history-20261106)에 따라 지원 부분집합의 제품 명령을 구현·활성화했다. 일반 RHWP 입력 history는 켜지 않고, `EngineSupport.historyScope: advanced`와 실제 세션 기록을 함께 검사한다. 원본 128 KiB 이하·현재 8쪽 이하, 최대 4고급 단계다. 일반 입력/IME는 snapshot을 만들지 않으며 다른 편집 전에 고급 기록을 폐기한다. `forget()` 뒤에도 초기 메모리 기준/증가 감시는 유지한다. 고급 엔진 호출이 변경 뒤 예외를 내면 트랜잭션의 before snapshot 복구를 시도하고, 복구 성공도 엔진 건강 PASS로 보지 않고 uncertain/failed로 격리해 저장을 막는다. 복구/폐기 자체의 trap도 fail closed다.
+
+| 검증 계층 | 현재 관측 |
+|---|---|
+| 모든 시험 훅 0, 실제 Release WASM `npx vitest run --config scripts/tests/vitest.config.ts advanced-production table-formula-session` | 59 PASS (`d-final/production-wasm.log`): 기존 publication/history matrix 51 + 제품 기본값/본문/IME/한도/수식 재계산/실제 변경 뒤 예외·rollback/폐기·할당 실패 8. backend 응답은 controlled이며 실제 게시 증거와 구분 |
+| 일반 history 시험 훅 1, `publication-identity table-formula-session` | 66 PASS; 기존 general-history 경로 회귀. 공식 D2/D4 native predicate나 수용 PASS가 아님 |
+| 훅 1, `undo.wasm format-save.wasm multisection.wasm` | 37 PASS / 1 선택 SKIP. 기존 history와 multi-section 계약 회귀 |
+| `npx tsc --noEmit -p target/advanced-20261106/d-final/tsconfig-advanced-tests.json` | PASS; 실제 WASM 시험 스크립트 타입 검사 |
+| 모든 훅 0, 전체 `npx vitest run` (중간 기록) | 최초 1248 PASS / 2 FAIL: 과거 리본 tooltip이 무조건 engineUnsupported를 기대했음. 새 부분집합에서는 선택 필요/빈 기록 사유로 정확히 거부함. disabled·무변경·revision 검사 유지하며 기대 사유만 새 계약에 맞춘 뒤 해당 `src/components/Ribbon/Ribbon.test.tsx` 33 PASS (`ribbon-final.log`). 나머지 코드/시험의 유효한 통과 결과는 재사용 |
+| ko/en 실제 입력창 | 4 PASS: 소유된 기존 수식 prefill, 같은 식 Enter 적용으로 재계산 요청, 새 식 빈 칸, 문법 오류 거부. 엔진 의미는 별도 actual-WASM 시험이 확인 |
+
+정상 Tauri 빌드 최초 시도는 sandbox 안 CWD가 `/`여서 프로젝트 발견 전에 실패했다(오래된 Release binary는 시험하지 않음). 보호 탐침은 상대 프로젝트 False·절대 프로젝트 True를 확인했다(`d-final/cwd-probe.log`, `cwd-integrity.json`). `scripts/tauri-geul.py`는 동일한 읽기 전용 sandbox 안에서 검증한 저장소 root로 이동한 뒤 CLI를 exec하도록 좁게 고쳤다. `/`에서 시작한 경로·리터럴 인자 회귀 1 PASS (`build-cwd-unit.log`). 권한·네트워크·source/Git 보호·locked/offline 의무는 그대로다. 최종 결과는 아래에 있다.
+
+**최종 빌드 신원.** `GEUL_SANDBOX=userns-root-bwrap VITE_GEUL_TEST_HOOKS=0 VITE_GEUL_TEST_RHWP_HISTORY=0 VITE_GEUL_TEST_RHWP_FORMAT=0 VITE_GEUL_TEST_RHWP_FORMULA=0 python3 scripts/tauri-geul.py build --no-bundle`, 앱 SHA-256 `987cee7ec7c777856a4170d148199307d77c433a9c3f945e05ea6b596ecdd25e`, `scripts/rhwp-artifacts.py --verify-product dist/rhwp --profile release` PASS, `dist/assets`에 시험 표지 0개. Release generation `53b6ad7a4c6de7a8f4ada4c61b0ad1934461e656527f6e6b440f08898bebf6d6`, 14패치, RHWP/WordCraft gitlink 변경 없음. 증거 `target/advanced-20261106/d-final/attempt6/`.
+
+**네이티브 실패 원인과 교정.** attempt3·attempt4 실패는 제품 결함이 아니라 하네스 결함이었다. (1) 221 px 높이 편집 뷰포트 하단 띠의 클릭은 `.editor__scroll`로 가고(`elementFromPoint`는 Canvas를 보고) `hitTest`가 호출되지 않았는데(`d-final/diag1-3`), 약한 `includes("@")` 조건이 이전 셀 캐럿으로 통과해 한글과 수식이 B1을 덮어썼다. 하네스는 대상을 뷰포트 가운데로 옮겨 쪽 사각형이 안정된 뒤 누르고 정확한 셀 번호를 기다린다. (2) `xdotool type -7`이 값을 옵션으로 읽었다(`--` 추가). 같은 하단 띠의 실제 마우스 클릭도 스크롤러로 가서 캐럿이 움직이지 않으며, 이번 변경 범위로 고치지 않았다.
+
+**이 과정에서 찾은 제품 결함.** 덮어쓴 저장본을 조사해 B1의 `=SUM(A1:B1)`처럼 자기 셀을 읽는 영속 수식이 수락되고 재계산마다 30→40→50으로 커짐을 실제 Release WASM에서 재현했다. 엔진은 고치지 않고 입력창·세션 공통 검증 `formulaReadsOwnCell`로 거부한다(읽기 전용 `hangul.tableFormula`는 문서를 바꾸지 않아 유지). 다른 수식을 거치는 간접 순환은 추적하지 않는다. 또 `=LOG10(...)`은 기존 `formulaSyntax`가 셀 참조로 읽어 거부한다(fail closed, 미수정).
+
+| D8 | 항목 | 근거 계층 | 결과 |
+|---|---|---|---|
+| A–E | HWP/HWPX 장평·자간·연속 변경 | 실제 앱 + X11/IBus + 실제 저장 서비스 + 저장본 독립 재개방 | PASS |
+| F | 안전 문맥 고급 Undo/Redo(셀 서식, 수식 교체, 본문 자간) | 실제 앱 네이티브 | PASS |
+| G–I | 수식 삽입·교체·소스 변경 뒤 명시적 재계산(30/31/32) | 실제 앱 네이티브, field id 유지 | PASS |
+| J | 잘못된 식 `=1+`, 자기 참조 `=SUM(A1:B2)` 무변경 거부 | 실제 앱 네이티브 | PASS |
+| K | 본문 캐럿에서 수식 비활성 | 실제 앱 네이티브 | PASS |
+| L | 실제 조합 중 장평·수식 비활성, 한글 입력 뒤 Undo 불가 | 실제 앱 네이티브(trusted composition) | PASS |
+| M | commit 대기 거부 | 실제 WASM, backend 응답은 controlled | PASS(네이티브 아님) |
+| N | 입력 창 열린 채 다른 문서로 전환하면 요청 폐기, 양쪽 판 0 | 실제 앱 네이티브 | PASS. 창이 열린 채 같은 세션을 reload하는 경우의 `App.tsx` 판 비교는 코드 확인만, 직접 시험 없음 |
+| O | 저장·재개방·재편집·2차 이상 저장 | 실제 앱 네이티브, HWP/HWPX 각 7회 저장 | PASS |
+| P | 진짜 한컴 `calc-cell.hwp` stale preview 거부, 원본·dirty 유지 | 실제 앱 네이티브 + 실제 저장 서비스 | PASS(안전 거부이며 저장 호환 성공이 아님) |
+| Q | 엔진 실패 rollback·격리, 할당·폐기 trap | 실제 WASM + 주입 실패 | PASS(네이티브 아님) |
+| R | 비내구 게시와 dirty 보존 | 프런트엔드 `saveCleanup`/`saveDurability` controlled 시험 | PASS(고급 명령 전용·실서비스 주입 아님) |
+| S | 모든 시험 훅 0 일반 빌드 | 빌드 신원, `test-only text hook absent` 확인 | PASS |
+
+| 명령 (모든 훅 0, 별도 표시 제외) | 결과 |
+|---|---|
+| `python3 scripts/tests/native-advanced-production.py` (기존 X11/IBus 격리 launcher) | PASS 56검사, 잔존 프로세스 0. `attempt6/native/run/advanced/result.json` |
+| `... --stale-preview attempt6/calc-cell-geometry.json` | PASS. `attempt6/preview2/run/advanced/result.json` |
+| `node scripts/tests/advanced-production-runtime.mjs verify ...` | PASS: HWP/HWPX 8단계 저장본, 최종 셀 `11,20,한글,32`, 식 `=SUM(A1:B1)+1`, 셀 180/10, 본문 125/-7. `attempt6/saved-verify.json` |
+| `npx vitest run` | 1252 PASS |
+| `npm run typecheck`, `npm run lint` | PASS |
+| `npx vitest run --config scripts/tests/vitest.config.ts advanced-production table-formula-session` | 59 PASS |
+| 훅 1, `--config scripts/tests/vitest.config.ts identity table-formula-session` | 66 PASS |
+| 훅 1, `--config tests/integration/rhwp/vitest.config.ts undo.wasm format-save.wasm multisection.wasm` | 37 PASS / 1 선택 SKIP |
+
+`src-tauri` 변경이 없어 보호 Rust `services::save`는 다시 돌리지 않았다(B 기록 유지). 입력창 Return→판 DOM 갱신은 HWP 13–29 ms, HWPX 12–16 ms이며 작은 fixture의 새 측정이다. **D4 끝점이 아니고 D4는 FAIL 그대로다.**
+
+**남은 제한.** 시험한 내용은 생성/내부 변환 fixture의 2×2 표와 calc-cell 거부다. 한컴 원본 HWP처럼 미리보기가 있으면 수식 변경 저장은 거부되므로 실제 한컴 문서 활용은 제한된다. 128 KiB 초과·8쪽 초과는 `limit`으로 막아 큰 문서는 범위 밖이다. Hancom 외부 호환성 NOT RUN, 진짜 수식 HWPX 미확보, D2 INCONCLUSIVE, D4 FAIL/자원 INCONCLUSIVE, T010/T012 전체 미완료는 그대로다. 제품 명령 활성화는 사용자의 조건부 결정이지 시험 통과가 아니다.
