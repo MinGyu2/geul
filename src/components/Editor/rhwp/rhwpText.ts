@@ -145,8 +145,11 @@ export class RhwpText {
     const count = doc.charShapeCount?.();
     this.charShapeBaseline = Number.isSafeInteger(count) && (count as number) >= 0 ? (count as number) : null;
     this.originalCharShapeCount = this.charShapeBaseline;
-    if (this.charShapeBaseline !== null && doc.reconcileCharShapePrefix && doc.captureCharShapePrefix)
-      this.publishedPrefix = doc.captureCharShapePrefix();
+    if (this.charShapeBaseline !== null && doc.reconcileCharShapePrefix && doc.captureCharShapePrefix) {
+      const prefix = doc.captureCharShapePrefix();
+      if (!prefix || typeof prefix.free !== "function") throw new Error("char shape prefix response invalid");
+      this.publishedPrefix = prefix;
+    }
   }
 
   /** Protect the exported revision before yielding to the backend. A failed save releases only this lease. */

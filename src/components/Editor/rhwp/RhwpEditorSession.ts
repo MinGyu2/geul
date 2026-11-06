@@ -485,19 +485,34 @@ export class RhwpEditorSession implements DocumentCommandTarget {
       doc.free();
       return closed;
     }
-    const ready = await this.backend.setState(this.sessionId, generation, "loading", "ready");
+    // Acquire fallible engine resources while the backend still owns a loading state.
+    let text: RhwpText;
+    try {
+      text = new RhwpText(doc);
+    } catch {
+      try { doc.free(); } catch { /* retain the initialization error */ }
+      return this.failLoading(epoch, generation, { code: "EngineFailure", engine: "rhwp", stage: "init" });
+    }
+    const release = () => { try { text.release(); } finally { doc.free(); } };
+    let ready: Awaited<ReturnType<DocumentBackend["setState"]>>;
+    try {
+      ready = await this.backend.setState(this.sessionId, generation, "loading", "ready");
+    } catch (error) {
+      release();
+      throw error;
+    }
     if (!this.owns(epoch)) {
-      doc.free();
+      release();
       return closed;
     }
     if (!ready.ok) {
-      doc.free();
+      release();
       this.generation = generation;
       this.handleBackendRejection(ready.error);
       return { ok: false, error: ready.error };
     }
     this.doc = doc;
-    this.text = new RhwpText(doc);
+    this.text = text;
     this.startHistory(doc, loaded.value.bytes.length);
     this.generation = generation;
     this.committed = ready.value.revision;

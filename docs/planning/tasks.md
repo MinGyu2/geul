@@ -219,3 +219,7 @@ T023 이후 후속 수정이며 T021–T023 완료 기록과 T007–T010·T024 �
 ### T021–T023 3차 안정화 — 2026-11-04
 
 복구 복원의 두 소유권 경계를 고쳤다. T021–T023·T007–T010·T024 상태는 바꾸지 않는다. (1) 위치 선택 중 창 닫기가 확정되면 게시 전에 복원을 취소한다. 선택기 응답만 주입한 native 재현은 수정 전 실패·수정 후 PASS다. 실제 GTK modal 선택기에서는 Xvfb/X11에서 닫기 요청이 전달되지 않아 도달할 수 없었다. (2) 복원 뒤 `AlreadyOpen`은 외부 교체로만 생기는 이전 문서이므로 채택하지 않고 `RestoredUnopened`로 알린다. [상세](../architecture/new-document-creation.md#3차-안정화--2026-11-04).
+
+### 2026-11-06 P2 reliability follow-up
+
+P2-1 publication prefix identity remains unresolved: Release WASM reproduced same-count/different-definition HWP serialization, and an exact reopened check regressed existing HWP B1/B2 scenarios. No fix/commit is claimed; T009 remains strict and all requested P2-1 scenario coverage is not complete. P2-2 initialization failure handling is implemented locally and has six controlled lifecycle tests; actual engine throw is not claimed. Focused frontend 88 PASS, WASM publication 51 PASS, WASM undo/reopen 37 PASS/1 skip, lint PASS; final typecheck PASS after correcting TS2339 in the test-double API injection. See [P2 follow-up evidence](../architecture/stage567-acceptance-2026-11-05.md#2026-11-06-p2-reliability-follow-up-partial). WordCraft remains BLOCKED, D2 INCONCLUSIVE, Word/Hancom NOT RUN. Production RHWP capability, T012/T013 status, and D4 gate are unchanged.
