@@ -271,6 +271,8 @@ export class RhwpEditorSession implements DocumentCommandTarget {
   private saving = false;
   /** Secondary engine cleanup failures; never replace the backend publication result. */
   readonly saveCleanupErrors: unknown[] = [];
+  /** Raw backend Promise rejections during a save; the adapter normally turns transport failures into Protocol results. */
+  readonly saveTransportErrors: unknown[] = [];
 
   private saveCleanupFailed(error: unknown, epoch: number) {
     this.saveCleanupErrors.push(error);
@@ -1388,7 +1390,12 @@ export class RhwpEditorSession implements DocumentCommandTarget {
         }
         bytes = exported.takeBytes();
       } finally {
-        exported.free();
+        // 해제 실패는 이 내보내기를 쓰지 않게 하고(바깥 catch), 모듈 상태를 믿을 수 없으므로 정리 실패 정책을 따른다.
+        try { exported.free(); } catch (error) {
+          this.saveCleanupFailed(error, this.epoch);
+          // eslint-disable-next-line no-unsafe-finally -- the primary error shares this stage and the outer catch owns the result
+          throw error;
+        }
       }
       output = bytes;
       report.bytes = bytes.length;
@@ -1640,6 +1647,8 @@ export class RhwpEditorSession implements DocumentCommandTarget {
     this.setSave({ kind: "checking" });
     const checked = await this.preflight(serial);
     if (this.owns(epoch) && serial === this.checkSerial) {
+      // 안전을 다시 확인하지 못한 검사 뒤에는 이전의 safe 판정으로 저장을 시작하지 않는다.
+      if (!checked.ok) this.saveCheck = null;
       this.setSave(checked.ok ? { kind: "idle" } : { kind: "failed", error: checked.error });
     }
     return checked;
@@ -1648,6 +1657,11 @@ export class RhwpEditorSession implements DocumentCommandTarget {
   /**
    * 보존 사전 검사: 백엔드가 확인한 원본 바이트를 새 WASM 문서로 열어(편집 모델과 무관) 편집 없이 같은 형식으로 내보내고,
    * 그 출력과 손실 보고를 백엔드가 원본과 비교한다. 결과는 `serial`이 아직 지금 요청일 때만 이 시도에 대해 기억한다.
+   *
+   * 오류 우선순위: 내보내기 실패가 주 오류이고(EngineFailure export), 정리 실패는 `saveCleanupErrors`에 따로 남긴다. 내보내기는
+   * 됐는데 해제만 실패하면 그 출력을 쓰지 않고 SaveNotReady(uncertain)로 끝낸다. 두 해제는 서로 막지 않으며, 해제 실패는 WASM 모듈을
+   * 믿을 수 없게 하므로 편집 모델도 멈춘다(saveCleanupFailed). 아직 아무것도 쓰지 않은 단계이므로 백엔드 전송 거부는 Protocol 결과로
+   * 바꾼다(reportFailure와 같은 규칙, 원본 거부는 `saveTransportErrors`).
    */
   private async preflight(serial: number): Promise<Result<SaveCheck>> {
     const blocker = this.saveBlocker();
@@ -1656,31 +1670,61 @@ export class RhwpEditorSession implements DocumentCommandTarget {
     const format = this.sessions.get(this.sessionId)?.format;
     if (format !== "hwp" && format !== "hwpx") return { ok: false, error: { code: "SaveNotReady", reason: "state" } };
     const { epoch, generation } = this;
-    const original = await this.backend.original(this.sessionId, generation);
+    const stale = { ok: false, error: { code: "StaleSession", sessionId: this.sessionId } } as const;
+    const rejected = (error: unknown): Result<SaveCheck> => {
+      this.saveTransportErrors.push(error);
+      return this.owns(epoch) ? { ok: false, error: { code: "Protocol" } } : stale;
+    };
+    let original: Awaited<ReturnType<DocumentBackend["original"]>>;
+    try {
+      original = await this.backend.original(this.sessionId, generation);
+    } catch (error) {
+      return rejected(error);
+    }
+    if (!this.owns(epoch)) return stale;
     if (!original.ok) return original;
-    if (!this.owns(epoch)) return { ok: false, error: { code: "StaleSession", sessionId: this.sessionId } };
-    let unedited: Uint8Array;
+    // 기다리는 동안 더 앞선 검사의 정리 실패 등으로 멈춘 모듈에 문서를 새로 열지 않는다.
+    if (this.status.kind !== "ready") return { ok: false, error: { code: "SaveNotReady", reason: "state" } };
+    let unedited: Uint8Array | null = null;
     let contentLoss: unknown;
     let fresh: RhwpDocument | null = null;
+    let exported: ReturnType<RhwpDocument["exportHwpWithReport"]> | null = null;
     try {
       fresh = module.openDocument(original.value);
-      const exported = format === "hwp" ? fresh.exportHwpWithReport() : fresh.exportHwpxWithReport();
+      exported = format === "hwp" ? fresh.exportHwpWithReport() : fresh.exportHwpxWithReport();
       try {
-        try {
-          contentLoss = JSON.parse(exported.contentLoss());
-        } catch {
-          contentLoss = null;
-        }
-        unedited = exported.takeBytes();
-      } finally {
-        exported.free();
+        contentLoss = JSON.parse(exported.contentLoss());
+      } catch {
+        contentLoss = null;
       }
+      unedited = exported.takeBytes();
     } catch {
-      return { ok: false, error: { code: "EngineFailure", engine: "rhwp", stage: "export" } };
-    } finally {
-      fresh?.free();
+      // unedited가 null로 남는다: 아래에서 내보내기 실패로 끝난다(해제를 먼저 시도한다).
     }
-    const checked = await this.backend.preflight(this.sessionId, generation, unedited, contentLoss);
+    let released = true;
+    for (const owner of [exported, fresh]) {
+      try { owner?.free(); } catch (error) {
+        released = false;
+        this.saveCleanupFailed(error, epoch);
+      }
+    }
+    if (!unedited) {
+      const error: DocumentError = { code: "EngineFailure", engine: "rhwp", stage: "export" };
+      // saveCleanupFailed가 검사 번호를 바꿨으므로 checkSave는 이 결과를 보이지 않는다: 여기서 진행 표시를 끝낸다.
+      if (!released) this.setSave({ kind: "failed", error });
+      return { ok: false, error };
+    }
+    if (!released) {
+      const error: DocumentError = { code: "SaveNotReady", reason: "uncertain" };
+      this.setSave({ kind: "failed", error });
+      return { ok: false, error };
+    }
+    let checked: Result<SaveCheck>;
+    try {
+      checked = await this.backend.preflight(this.sessionId, generation, unedited, contentLoss);
+    } catch (error) {
+      return rejected(error);
+    }
     if (!this.owns(epoch)) return { ok: false, error: { code: "StaleSession", sessionId: this.sessionId } };
     if (checked.ok && serial === this.checkSerial) {
       this.saveCheck = { generation, check: checked.value };
