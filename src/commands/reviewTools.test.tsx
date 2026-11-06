@@ -264,3 +264,35 @@ describe("각주·미주 입력 창", () => {
   });
 });
 
+
+// Controlled late backend responses; native input and real publication are separate evidence.
+describe("고급 명령 응답의 문서 수명", () => {
+  for (const command of ["references.toc", "references.footnote", "references.endnote", "review.trackChanges"] as const) {
+    for (const lifecycle of ["close", "reload"] as const) {
+      it(`${command}: ${lifecycle} 뒤 옛 응답은 새 문서 상태를 덮지 않는다`, async () => {
+        const { editor, fake } = await readyDocx();
+        fake.hold = true;
+        const args = command === "references.footnote" || command === "references.endnote" ? { command, text: "late note" } : undefined;
+        expect(editor.execute(command, args).accepted).toBe(true);
+        expect(editor.busy).toBe(true);
+        if (lifecycle === "close") {
+          editor.dispose();
+          fake.release();
+          await flush();
+          expect(editor.status.kind).toBe("closed");
+          expect(editor.view).toBeNull();
+        } else {
+          const loading = editor.load({ discard: true });
+          fake.hold = false;
+          fake.release();
+          expect((await loading).ok).toBe(true);
+          await flush();
+          expect(editor.snapshot().loadGeneration).toBe(2);
+          expect(editor.status.kind).toBe("ready");
+          expect(editor.view?.paragraphText).toBe("가나다");
+          expect(editor.view?.history.undo).toBe(false);
+        }
+      });
+    }
+  }
+});

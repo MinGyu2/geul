@@ -111,6 +111,7 @@ fn publish(doc: &mut Docx, permuted: bool) -> Vec<u8> {
         output
     };
     let saved = doc.save().expect("publication");
+    assert!(saved.durable);
     assert!(!saved.session.dirty);
     doc.info = saved.session;
     let published = doc.bytes();
@@ -1185,6 +1186,7 @@ fn publish_notes(doc: &mut Docx) -> Vec<u8> {
     let verdict = service::check_saved(Format::Docx, &before, &output, None, true);
     assert!(verdict.is_safe(), "{verdict:?}");
     let saved = doc.save().expect("publication");
+    assert!(saved.durable);
     assert!(!saved.session.dirty);
     doc.info = saved.session;
     assert_eq!(Sha256::digest(doc.bytes()), Sha256::digest(&output));
@@ -2247,5 +2249,313 @@ fn hyperlink_comment_relationship_mutations_are_refused() {
                 .cloned()
                 .unwrap_or(Finding::new(FindingCode::ReopenMismatch)),
         );
+    }
+}
+
+// ---- T013 mixed-feature acceptance, actual publication rather than a ZIP-only oracle ----
+fn mixed_original() -> Vec<u8> {
+    let mut d = reopen(&hyperlink_original());
+    d.body.push(para_block(
+        Paragraph::with_text("First heading", Default::default()).styled("Heading1"),
+    ));
+    d.body.push(para_block(
+        Paragraph::with_text("Second heading", Default::default()).styled("Heading2"),
+    ));
+    d.body.push(para_block(Paragraph::with_text(
+        "Untouched sentinel 한글.",
+        CharProps {
+            bold: Some(true),
+            ..Default::default()
+        },
+    )));
+    d.body.push(para_block(Paragraph::with_text(
+        "Editable tail.",
+        Default::default(),
+    )));
+    io::save_bytes("mixed.docx", &d).unwrap()
+}
+
+#[track_caller]
+fn mixed_edit(doc: &mut Docx, ops: Vec<DocxOp>) {
+    let edited = block_on(docx::edit(
+        &doc.state,
+        doc.info.session_id,
+        doc.info.load_generation,
+        doc.info.revision,
+        ops,
+    ))
+    .unwrap();
+    assert!(edited.rejected.is_empty(), "{:?}", edited.rejected);
+    doc.info = edited.session;
+}
+
+fn mixed_move(to: MoveTarget, extend: bool) -> DocxOp {
+    DocxOp::Move { to, extend }
+}
+fn mixed_insert(text: &str) -> DocxOp {
+    DocxOp::InsertText { text: text.into() }
+}
+
+fn mixed_assert_parts(bytes: &[u8], sentinel: &Block) {
+    let d = reopen(bytes);
+    assert!(
+        d.body.iter().any(|b| &**b == sentinel),
+        "unrelated styled paragraph"
+    );
+    assert_eq!(d.comments.len(), 2);
+    assert_eq!(notes(&d, PartKind::Footnote), ["mixed footnote"]);
+    assert_eq!(notes(&d, PartKind::Endnote), ["mixed endnote"]);
+    let mut links = Vec::new();
+    let mut toc = false;
+    for p in d.body.iter().filter_map(|b| b.as_para()) {
+        for (_, props) in p.run_ranges() {
+            if let Some(link) = &props.link {
+                if !link.starts_with('#') {
+                    links.push(link.as_str());
+                }
+            }
+        }
+        toc |= p.objects.iter().any(|o| matches!(o, InlineObject::Field { instr, .. } | InlineObject::FieldStart { instr, .. } if instr.starts_with("TOC ")));
+    }
+    assert!(!links.is_empty());
+    assert!(links.iter().all(|l| *l == "https://example.org/A"));
+    assert!(toc, "TOC instruction retained");
+    assert!(d
+        .body
+        .iter()
+        .filter_map(|b| b.as_para())
+        .any(|p| p.props.style.as_deref() == Some("Heading1")));
+    assert!(d
+        .body
+        .iter()
+        .filter_map(|b| b.as_para())
+        .any(|p| p.props.style.as_deref() == Some("Heading2")));
+}
+
+#[test]
+fn mixed_toc_hyperlink_comments_notes_tracking_publish_reopen_edit_publish() {
+    let original = mixed_original();
+    let sentinel = reopen(&original).body[3].clone();
+    for resolution in ["keep", "accept", "reject"] {
+        let mut doc = open_docx(&original);
+        assert!(doc.preflight().unwrap().preservation.is_safe());
+        // Ordinary-text comment, then comment on the middle of a hyperlink (writer splits it).
+        comment_chars(&mut doc, 0, 3, "ordinary comment");
+        comment_chars(&mut doc, 10, 2, "split hyperlink comment");
+        mixed_edit(
+            &mut doc,
+            vec![
+                mixed_move(MoveTarget::DocEnd, false),
+                DocxOp::Footnote {
+                    text: "mixed footnote".into(),
+                },
+                DocxOp::Endnote {
+                    text: "mixed endnote".into(),
+                },
+                DocxOp::Undo {},
+                DocxOp::Redo {},
+                mixed_move(MoveTarget::DocStart, false),
+                DocxOp::Toc {},
+                DocxOp::Undo {},
+                DocxOp::Redo {},
+                DocxOp::UpdateToc {},
+                DocxOp::TrackChanges { value: true },
+            ],
+        );
+        // Tracked edit of the split hyperlink, followed by IME-style Korean correction.
+        // Resolve the current paragraph position from the real model; editing still uses typed ops.
+        let (link_index, link_offset) = model_of(&doc)
+            .lock()
+            .unwrap()
+            .diagnostic_document()
+            .body
+            .iter()
+            .enumerate()
+            .find_map(|(i, b)| {
+                let p = b.as_para()?;
+                p.run_ranges().find_map(|(range, props)| {
+                    (props.link.as_deref() == Some("https://example.org/A"))
+                        .then(|| {
+                            p.text[range.clone()]
+                                .char_indices()
+                                .find(|(_, c)| *c != '\u{FFFC}')
+                                .map(|(off, _)| (i, range.start + off + 1))
+                        })
+                        .flatten()
+                })
+            })
+            .unwrap();
+        let caret = model_of(&doc)
+            .lock()
+            .unwrap()
+            .caret_of(&Pos::body(link_index, link_offset))
+            .unwrap();
+        mixed_edit(
+            &mut doc,
+            vec![
+                DocxOp::Pointer {
+                    page: caret.page as u32,
+                    x: caret.x + 0.5,
+                    y: caret.y + caret.height / 2.0,
+                    extend: false,
+                    before_insert: false,
+                },
+                DocxOp::DeleteForward,
+                mixed_insert("가"),
+                DocxOp::ReplaceInserted {
+                    expected: "가".into(),
+                    text: "한".into(),
+                },
+                mixed_insert("글"),
+                DocxOp::Undo {},
+                DocxOp::Redo {},
+            ],
+        );
+        // A tracked heading deletion coexists with TOC, and an updated TOC reflects heading edits.
+        let heading_index = model_of(&doc)
+            .lock()
+            .unwrap()
+            .diagnostic_document()
+            .body
+            .iter()
+            .position(|b| {
+                b.as_para()
+                    .is_some_and(|p| p.props.style.as_deref() == Some("Heading2"))
+            })
+            .unwrap();
+        let caret = model_of(&doc)
+            .lock()
+            .unwrap()
+            .caret_of(&Pos::body(
+                heading_index,
+                wordcraft_engine::doc::para::OBJ.len_utf8() + 2,
+            ))
+            .unwrap();
+        mixed_edit(
+            &mut doc,
+            vec![
+                DocxOp::Pointer {
+                    page: caret.page as u32,
+                    x: caret.x + 0.5,
+                    y: caret.y + caret.height / 2.0,
+                    extend: false,
+                    before_insert: false,
+                },
+                DocxOp::DeleteForward,
+                mixed_insert("변경 "),
+                DocxOp::UpdateToc {},
+            ],
+        );
+        assert!(
+            model_of(&doc)
+                .lock()
+                .unwrap()
+                .diagnostic_document()
+                .body
+                .iter()
+                .filter_map(|b| b.as_para())
+                .any(|p| p.props.style.as_deref() == Some("TOC2")
+                    && p.plain_text().contains("변경 ")),
+            "TOC update includes changed heading text"
+        );
+        let first = publish_notes(&mut doc);
+        mixed_assert_parts(&first, &sentinel);
+        assert!(!reopen(&first).revisions.is_empty());
+        println!(
+            "mixed {resolution} first sha256={:x}",
+            Sha256::digest(&first)
+        );
+        // Actual disk reopen, then another edit and second durable atomic publication.
+        let mut doc = reload(doc);
+        if resolution != "keep" {
+            let (index, offset) = model_of(&doc)
+                .lock()
+                .unwrap()
+                .diagnostic_document()
+                .body
+                .iter()
+                .enumerate()
+                .find_map(|(i, b)| {
+                    let p = b.as_para()?;
+                    p.run_ranges()
+                        .find_map(|(r, props)| props.ins.map(|_| (i, r.start)))
+                })
+                .unwrap();
+            let c = model_of(&doc)
+                .lock()
+                .unwrap()
+                .caret_of(&Pos::body(index, offset))
+                .unwrap();
+            mixed_edit(
+                &mut doc,
+                vec![
+                    DocxOp::Pointer {
+                        page: c.page as u32,
+                        x: c.x + 0.5,
+                        y: c.y + c.height / 2.0,
+                        extend: false,
+                        before_insert: false,
+                    },
+                    if resolution == "accept" {
+                        DocxOp::AcceptChange {}
+                    } else {
+                        DocxOp::RejectChange {}
+                    },
+                    DocxOp::Undo {},
+                    DocxOp::Redo {},
+                ],
+            );
+        }
+        match resolution {
+            "accept" => mixed_edit(
+                &mut doc,
+                vec![DocxOp::AcceptAll {}, DocxOp::Undo {}, DocxOp::Redo {}],
+            ),
+            "reject" => mixed_edit(
+                &mut doc,
+                vec![DocxOp::RejectAll {}, DocxOp::Undo {}, DocxOp::Redo {}],
+            ),
+            _ => {}
+        }
+        if resolution != "keep" {
+            assert!(!model_of(&doc).lock().unwrap().view().has_revisions);
+            mixed_edit(&mut doc, vec![DocxOp::TrackChanges { value: false }]);
+        }
+        mixed_edit(
+            &mut doc,
+            vec![
+                mixed_move(MoveTarget::DocStart, false),
+                mixed_insert("재개 "),
+                DocxOp::UpdateToc {},
+            ],
+        );
+        let second = publish_notes(&mut doc);
+        mixed_assert_parts(&second, &sentinel);
+        println!(
+            "mixed {resolution} second sha256={:x}",
+            Sha256::digest(&second)
+        );
+        let mut doc = reload(doc);
+        assert!(!doc.info.dirty);
+        mixed_edit(
+            &mut doc,
+            vec![
+                mixed_move(MoveTarget::DocEnd, false),
+                mixed_insert("pending"),
+            ],
+        );
+        // T009 must still reject unrelated authoritative-output corruption and preserve original.
+        let authoritative_output = model_of(&doc).lock().unwrap().export().unwrap();
+        assert!(model_of(&doc)
+            .lock()
+            .unwrap()
+            .same_as(&authoritative_output));
+        let corrupt = byte_patch(&authoritative_output, "word/_rels/document.xml.rels", |x| {
+            x.replace("https://example.org/A", "https://example.org/evil")
+        });
+        assert_ne!(corrupt, authoritative_output);
+        let same = model_of(&doc).lock().unwrap().same_as(&corrupt);
+        assert!(!same);
+        assert_save_refused("mixed relationship target", &doc, &corrupt, same);
     }
 }

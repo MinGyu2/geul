@@ -1,3 +1,5 @@
+> **2026-11-06 고급 기능 A–B 후속:** T013의 선택한 혼합 DOCX 내부 행렬은 실제 저장·재개방·재편집과 native IBus로 검증했다. TOC 추적 표식의 안전하지 않은 수락/갱신은 원자적으로 거부한다. WordCraft 원격 핀 취득은 새 체크아웃에서도 BLOCKED, Microsoft Word 외부 호환성은 NOT RUN이므로 T013은 미완료다. 자세한 계층별 결과는 [advanced A–B acceptance](../architecture/stage567-acceptance-2026-11-05.md#2026-11-06-advanced-ab-acceptance)를 따른다. 아래 과거 상태는 그 시점의 기록으로 유지한다.
+
 # Tasks: HWP/HWPX + DOCX 통합 편집기
 
 > **최신 상태 (2026-11-06):** Stage 5–7은 **PARTIALLY COMPLETED**. B1 저장 중 서식 race와 B2 publication 이전 Undo snapshot 복구는 수정·검증됐으며 각각 로컬 커밋이 있다. WordCraft gitlink clean checkout은 현 원격 ref에서 fetch되지 않아 BLOCKED이고, D2의 native E→U→F는 이번 격리 조사에서도 0회 관측되어 INCONCLUSIVE다. Microsoft Word/Hancom GUI 접근이 없어 외부 수용은 NOT RUN; 내부 DOCX/HWP/HWPX 검증은 외부 호환성 PASS가 아니다. 최신 판정·evidence·수동 외부 절차는 [2026-11-06 후속 수용 기록](../architecture/stage567-acceptance-2026-11-05.md#2026-11-06-후속-wordcraft-재현성-게시-undo-native-d2-외부-office)에 따른다. T012/T013 미완료, 제품 RHWP Undo/Redo·장평/자간·영속 수식 비활성 상태, D4 기존 gate는 유지한다.

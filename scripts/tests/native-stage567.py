@@ -161,6 +161,20 @@ def run(args, d, report):
     assert docx.close_without_prompt(d,path.name)
     a.open_native('docx',path)
     check('DOCX native reopen',a.status('docx')['status']=='ready')
+    # Re-edit a published/reopened mixed document, publish again and reopen its disk bytes.
+    d.js('document.querySelector(".docx-surface .rhwp-input").focus()')
+    a.engine('xkb:us::eng');a.key('ctrl+End');a.type(' Reopened edit');docx.idle(d)
+    command('references.updateToc');docx.idle(d)
+    a.save('docx')
+    check('DOCX reopened edit durably saved',a.status('docx')['dirty']=='false')
+    with zipfile.ZipFile(path) as archive:
+        check('DOCX reopened edit on disk',b'Reopened edit' in archive.read('word/document.xml'))
+        check('DOCX reopened footnote retained',b'native footnote' in archive.read('word/footnotes.xml'))
+        check('DOCX reopened endnote retained',b'native endnote' in archive.read('word/endnotes.xml'))
+        check('DOCX reopened comment retained',b'native hyperlink comment' in archive.read('word/comments.xml'))
+    assert docx.close_without_prompt(d,path.name)
+    a.open_native('docx',path)
+    check('DOCX second published reopen',a.status('docx')['status']=='ready')
     assert docx.close_without_prompt(d,path.name)
 
 
