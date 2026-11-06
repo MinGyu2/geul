@@ -79,13 +79,42 @@ def phase(trace):
     return next((r[3] for r in reversed(trace['records']) if r[3] and 'historyUndo' in r[3]), None)
 
 
+CANCEL_MODES = ('cancel-then-undo', 'cancel-settled-undo')
+
+
+def cancel_text(row):
+    """Paragraph after a cancelled composition: Undo either removed the prefix or left it alone."""
+    return row['base'] if row['observation']['accepted'] else row['prefix']['paragraphText']
+
+
+def validate_cancel(row):
+    """A cancelled composition leaves no text, whether or not Undo got through.
+
+    A chord sent with no delay has no fixed order under hybrid IBus: the Backspace keyup that
+    proves the cancellation can arrive after the Undo, which the editor then refuses as composing.
+    Ctrl+Z delivered is not Undo accepted, so the two outcomes have separate exact requirements.
+    """
+    first, prefix, observed = row['initial'], row['prefix'], row['observation']
+    delta = int(first['localRevision']) - int(prefix['localRevision'])
+    assert observed['undoRequests'], 'Undo chord did not reach the command layer'
+    assert not observed['finalInserts'], 'cancelled composition produced a final insert'
+    assert first['composing'] == 'false' and first['uncertain'] == 'false'
+    if observed['accepted']:
+        assert first['paragraphText'] == row['base'] and delta == 1
+        assert row['initialPhase']['historyUndo'] == 0
+    else:
+        assert row['mode'] == 'cancel-then-undo', 'Undo refused after the cancellation had settled'
+        assert all(r[3]['reason'] == 'composing' for r in observed['undoRequests'])
+        assert first['paragraphText'] == prefix['paragraphText'] and delta == 0
+        assert row['initialPhase']['historyUndo'] == 1 and row['initialPhase']['historyRedo'] == 0
+
+
 def validate_initial(row):
     first, prefix, observed = row['initial'], row['prefix'], row['observation']
     delta = int(first['localRevision']) - int(prefix['localRevision'])
     assert row['initialPhase'] is not None
-    if row['mode'] == 'cancel-then-undo':
-        assert first['paragraphText'] == row['base'] and delta == 1
-        assert row['initialPhase']['historyUndo'] == 0
+    if row['mode'] in CANCEL_MODES:
+        validate_cancel(row)
     elif observed['accepted']:
         assert first['paragraphText'] == prefix['paragraphText'] and delta == 2
         assert first['composing'] == 'false'
@@ -100,12 +129,15 @@ def validate_final(row):
     final, state = row['final'], row['finalPhase']
     assert final['status'] == 'ready' and final['uncertain'] == 'false'
     assert final['localRevision'] == final['revision']
-    expected_undo = 1 if row['mode'] == 'cancel-then-undo' else 2
+    # The prefix is still undoable unless the cancel trial's own Undo already removed it.
+    expected_undo = 1 if row['mode'] in CANCEL_MODES and row['observation']['accepted'] else 2
     assert state['historyUndo'] == expected_undo and state['historyRedo'] == 0
     for key in ('session', 'generation', 'epoch'):
         assert state[key] == row['initialPhase'][key]
     ids = {r[3]['id'] for r in row['initialTrace']['records'] if r[2].startswith('native:model:')}
     assert ids == {row['finalModel']['id']}
+    # getTextFileText returns the text as a JSON string.
+    assert json.loads(row['finalModel']['text']).splitlines()[0] == final['paragraphText']
 
 
 def main():
@@ -153,13 +185,15 @@ def main():
                 report['servedGeneration'] = d.js('return window.__d2Build')
                 for fmt in ('hwp', 'hwpx'):
                     path = fixtures / f'basic-ko.{fmt}'
-                    for mode in ('ctrl-during-preedit', 'end-then-undo', 'cancel-then-undo'):
+                    for mode in ('ctrl-during-preedit', 'end-then-undo', *CANCEL_MODES):
                         poc.open_document(d, path); poc.click_paragraph_start(d)
                         base = poc.status(d)['paragraphText']
                         typing('gk'); key('End'); prefix = poc.settle(d, 'prefix')
                         assert prefix['paragraphText'].startswith('하')
                         reset(d); typing('rk')
                         if mode == 'cancel-then-undo': key('BackSpace', 'BackSpace', 'ctrl+z')
+                        elif mode == 'cancel-settled-undo':
+                            key('BackSpace', 'BackSpace'); poc.settle(d, 'settled cancellation'); key('ctrl+z')
                         elif mode == 'end-then-undo': key('End', 'ctrl+z')
                         else: key('ctrl+z')
                         first = poc.settle(d, mode); initial = trace(d); observed = order(initial)
@@ -168,14 +202,32 @@ def main():
                         row = {'format': fmt, 'mode': mode, 'base': base, 'prefix': prefix,
                                'initial': first, 'observation': observed, 'initialTrace': initial, 'initialPhase': phase(initial)}
                         report['trials'].append(row)
+                        if row['initialPhase'] and row['initialPhase']['revision'] != int(first['localRevision']):
+                            # Hybrid IBus can deliver every keyUp before the Undo keyDown, so the last phase
+                            # predates the Undo. As below, read a fresh one after the E/U/F snapshot above.
+                            key('Shift_L'); poc.settle(d, 'fresh initial phase')
+                            row['initialPhase'] = phase(trace(d)); row['initialPhaseRefreshed'] = True
+                            assert row['initialPhase']['revision'] == int(first['localRevision'])
                         validate_initial(row)
                         # Initial E/U/F classification ends here; subsequent typing has a new trace.
                         reset(d)
-                        if mode == 'cancel-then-undo':
-                            assert first['paragraphText'] == base
+                        if mode in CANCEL_MODES:
+                            cancelled = cancel_text(row)
+                            assert first['paragraphText'] == cancelled
+                            if not observed['accepted']:
+                                # The guard ends at the next input, not at the next Undo or with time.
+                                key('ctrl+z'); again = poc.settle(d, 'Undo before new input')
+                                row['repeatUndo'] = {'status': again, 'trace': trace(d)}
+                                assert [r[3]['reason'] for r in row['repeatUndo']['trace']['records']
+                                        if r[2] == 'command:request' and r[3]['id'] == 'edit.undo'] == ['composing']
+                                assert again['paragraphText'] == cancelled and again['localRevision'] == first['localRevision']
+                                reset(d)
                             typing('rk'); key('End'); genuine = poc.settle(d, 'genuine subsequent typing')
-                            assert genuine['paragraphText'] == '가' + base
-                            expected = '가' + base
+                            # Exactly one syllable at the caret: no lost input and no resurrected composition.
+                            # Undo restores the caret to the start of the paragraph; otherwise it stays at End.
+                            expected = '가' + cancelled if observed['accepted'] else cancelled + '가'
+                            assert genuine['paragraphText'] == expected
+                            undo_target = cancelled
                         else:
                             if first['composing'] == 'true': key('End'); poc.settle(d, 'native finalization')
                             if not observed['accepted']: key('ctrl+z'); poc.settle(d, 'later explicit Undo')
@@ -183,7 +235,9 @@ def main():
                             key('ctrl+y'); redone = poc.settle(d, 'Redo')
                             expected = prefix['paragraphText'] + '가'
                             assert redone['paragraphText'] == expected
+                            undo_target = prefix['paragraphText']
                         key('ctrl+z'); undone = poc.settle(d, 'recovery Undo')
+                        assert undone['paragraphText'] == undo_target
                         key('ctrl+y'); final = poc.settle(d, 'recovery Redo')
                         assert final['paragraphText'] == expected
                         assert final['status'] == 'ready' and final['uncertain'] == 'false'
@@ -210,10 +264,12 @@ def main():
                             smoke.wait_until(d, "return !document.querySelector('[data-testid=rhwp-status]')")
                 # Browser control: the same real input without the editor's IME handlers.
                 report['plainControls'] = []
-                for mode in ('ctrl-during-preedit', 'end-then-undo', 'cancel-then-undo'):
+                for mode in ('ctrl-during-preedit', 'end-then-undo', *CANCEL_MODES):
                     d.js("document.querySelector('#d2-plain')?.remove();const t=document.createElement('textarea');t.id='d2-plain';t.style.cssText='position:fixed;left:200px;top:200px;width:400px;height:100px;z-index:99999';document.body.append(t)")
                     poc.click(d, 250, 230); reset(d); typing('rk')
                     if mode == 'cancel-then-undo': key('BackSpace', 'BackSpace', 'ctrl+z')
+                    elif mode == 'cancel-settled-undo':
+                        key('BackSpace', 'BackSpace'); poc.settle(d, 'plain settled cancellation'); key('ctrl+z')
                     elif mode == 'end-then-undo': key('End', 'ctrl+z')
                     else: key('ctrl+z')
                     # A real key is a flush boundary; never synthesize an input/composition event.
@@ -235,7 +291,7 @@ def main():
             finally:
                 smoke.end_session(d)
     except Exception as error:
-        report.update(execution='FAIL', error=type(error).__name__ + ': ' + str(error))
+        report.update(execution='FAIL', error=type(error).__name__ + ': ' + str(error), traceback=traceback.format_exc())
         try:
             if 'failureTrace' not in report:
                 report['failureTrace'] = trace(d)
