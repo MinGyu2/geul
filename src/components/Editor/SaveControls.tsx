@@ -4,7 +4,7 @@
 import type { DocumentError, Preservation, Result, SaveCheck, SaveOutcome } from "../../adapters/contract";
 import type { MessageKey } from "../../language";
 import { useTranslation } from "../../language/LanguageContext";
-import { blockedBy, type SaveCheckRecord, type SaveState } from "./saveState";
+import { blockedBy, reportDetachedSaveRejection, type SaveCheckRecord, type SaveState } from "./saveState";
 
 export interface SaveEditor {
   saveState: SaveState;
@@ -55,7 +55,7 @@ export function SaveControls({
   const detail = shown ? detailKey(shown) : null;
   return (
     <>
-      <button type="button" className="document-bar__button" data-testid={`${prefix}-save`} disabled={busy || fileBusy} onClick={() => void editor.save()}>
+      <button type="button" className="document-bar__button" data-testid={`${prefix}-save`} disabled={busy || fileBusy} onClick={() => void editor.save().catch(reportDetachedSaveRejection)}>
         {t("editor.save.button")}
       </button>
       {onSaveAs && (

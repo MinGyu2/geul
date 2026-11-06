@@ -18,6 +18,14 @@ export interface SaveCheckRecord {
   check: SaveCheck;
 }
 
+/**
+ * 끝을 기다리지 않는 저장 호출(명령·단추)의 거부를 받는 곳. 사용자에게 보일 결과는 세션의 저장 상태가 이미 가지므로 여기서 다시
+ * 알리지 않고, 원인을 숨기지 않게 기록만 남긴다. `save()`를 직접 기다리는 호출은 거부를 그대로 받는다.
+ */
+export function reportDetachedSaveRejection(reason: unknown): void {
+  console.error("detached document save rejected", reason);
+}
+
 /** 사전 검사가 저장을 허용하지 않으면 그 오류(아니면 null). */
 export function blockedBy(check: SaveCheck): DocumentError | null {
   if (check.preservation.outcome !== "safe") return { code: "UnsafeSave", preservation: check.preservation };

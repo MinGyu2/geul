@@ -14,6 +14,7 @@ import type { DocxBackend } from "../../adapters/docx";
 import type { CloseOutcome, DocumentError, DocumentFormat, Result, SaveOutcome, SessionId, SessionInfo } from "../../adapters/contract";
 import type { DocumentSessions } from "../../adapters/sessions";
 import type { FileDialogRequest, FilePort } from "./filePort";
+import { reportDetachedSaveRejection } from "./saveState";
 import type { RecoveryCandidate, RecoveryPort } from "./recoveryPort";
 import { RhwpEditorSession } from "./rhwp/RhwpEditorSession";
 import { loadRhwpModule, type RhwpModule } from "./rhwp/rhwpModule";
@@ -291,7 +292,13 @@ export class DocumentWorkspace {
       if (this.sessions.get(sessionId) === null || this.editors.get(sessionId) !== editor) {
         return { ok: false, error: { code: "StaleSession", sessionId } };
       }
-      return await editor.save(destination.value);
+      try {
+        return await editor.save(destination.value);
+      } catch (error) {
+        // saveAs는 Result 계약이다. 저장 상태는 편집 세션이 이미 정했으므로 전송 거부만 Protocol로 바꾼다.
+        reportDetachedSaveRejection(error);
+        return { ok: false, error: { code: "Protocol" } };
+      }
     } finally {
       this.endFileOperation();
     }

@@ -183,5 +183,5 @@ export async function readySession(text = ["가나다", "abc"], options: { histo
   take("session").reply(ok(info({ state: "loading", sequence: 1, loadGeneration: 1 })));
   take("setState").reply(ok(info({ state: "ready", sequence: 2, loadGeneration: 1 })));
   await loading;
-  return { editor, doc, sessions, calls, take };
+  return { editor, doc, sessions, backend, calls, take };
 }

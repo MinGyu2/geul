@@ -43,7 +43,7 @@
 import { trace } from "../imeTrace";
 import type { DocumentBackend, ReopenEvidence } from "../../../adapters/backend";
 import type { DocumentError, Result, SaveCheck, SaveOutcome, SessionInfo } from "../../../adapters/contract";
-import { blockedBy, type SaveCheckRecord, type SaveState } from "../saveState";
+import { blockedBy, reportDetachedSaveRejection, type SaveCheckRecord, type SaveState } from "../saveState";
 import { documentCommandState, FORMAT_FLAG } from "../../../commands/capability";
 import { commandDefinition, type DocumentCommandId } from "../../../commands/registry";
 import type {
@@ -1616,7 +1616,7 @@ export class RhwpEditorSession implements DocumentCommandTarget {
     const flag = FORMAT_FLAG[command];
     if (flag) return { accepted: this.applyFormat(flag) };
     if (command !== "file.save") return { accepted: false };
-    void this.save();
+    void this.save().catch(reportDetachedSaveRejection);
     return { accepted: true };
   }
 
@@ -1775,9 +1775,15 @@ export class RhwpEditorSession implements DocumentCommandTarget {
       try {
         result = await this.backend.save(this.sessionId, generation, revision, exported.bytes, exported.contentLoss, exported.reopen, destination);
       } catch (error) {
-        // Transport rejection has no publication outcome. Retain the original
-        // rejection while releasing the UI's in-progress state and owned lease.
-        fail({ code: "SaveFailure", stage: "write" });
+        // Transport rejection has no known publication outcome: report it as Protocol
+        // (not a failed write or a kept original), re-check before any retry, and leave
+        // the rejection to this call's owner while releasing the state and owned lease.
+        this.saveTransportErrors.push(error);
+        if (this.owns(epoch)) {
+          this.checkSerial += 1;
+          this.saveCheck = null;
+        }
+        fail({ code: "Protocol" });
         throw error;
       }
       if (!this.owns(epoch)) return result;

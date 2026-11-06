@@ -182,7 +182,9 @@ describe("RHWP save cleanup exception safety", () => {
     await flush();
     t.take("preflight").reply(ok(safeCheck));
     expect(await pending).toBe(rejection);
-    expect(t.editor.saveState).toMatchObject({ kind: "failed", error: { code: "SaveFailure", stage: "write" } });
+    // Publication outcome is unknown: not a structured write failure, which the UI reports as "original kept".
+    expect(t.editor.saveState).toEqual({ kind: "failed", error: { code: "Protocol" } });
+    expect(t.editor.saveTransportErrors).toEqual([rejection]);
     expect(t.editor.saveCleanupErrors).toContain(cleanupTrap);
     expect(t.editor.snapshot().saving).toBe(false);
   });
