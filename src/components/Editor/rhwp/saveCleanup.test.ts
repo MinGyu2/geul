@@ -174,7 +174,7 @@ describe("RHWP save cleanup exception safety", () => {
   });
 
   it("returns backend rejection as primary and releases the lock", async () => {
-    const t = await savingSession();
+    const t = await savingSession({ leaseFree: () => { throw cleanupTrap; } });
     const rejection = new Error("backend transport");
     t.backend.save = (() => Promise.reject(rejection)) as typeof t.backend.save;
     const pending = t.editor.save().then(value => value, error => error);
@@ -182,6 +182,8 @@ describe("RHWP save cleanup exception safety", () => {
     await flush();
     t.take("preflight").reply(ok(safeCheck));
     expect(await pending).toBe(rejection);
+    expect(t.editor.saveState).toMatchObject({ kind: "failed", error: { code: "SaveFailure", stage: "write" } });
+    expect(t.editor.saveCleanupErrors).toContain(cleanupTrap);
     expect(t.editor.snapshot().saving).toBe(false);
   });
 

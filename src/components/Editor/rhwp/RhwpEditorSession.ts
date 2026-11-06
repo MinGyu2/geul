@@ -1727,7 +1727,15 @@ export class RhwpEditorSession implements DocumentCommandTarget {
       const exported = this.exportAndCompare(format, true);
       releaseShapes = exported?.releaseShapes;
       if (!exported?.bytes) return fail({ code: "SaveFailure", stage: "export" });
-      const result = await this.backend.save(this.sessionId, generation, revision, exported.bytes, exported.contentLoss, exported.reopen, destination);
+      let result: Result<SaveOutcome>;
+      try {
+        result = await this.backend.save(this.sessionId, generation, revision, exported.bytes, exported.contentLoss, exported.reopen, destination);
+      } catch (error) {
+        // Transport rejection has no publication outcome. Retain the original
+        // rejection while releasing the UI's in-progress state and owned lease.
+        fail({ code: "SaveFailure", stage: "write" });
+        throw error;
+      }
       if (!this.owns(epoch)) return result;
       if (!result.ok) return fail(result.error);
       this.sessions.applyUpdate(result.value.session);
