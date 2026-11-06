@@ -466,39 +466,42 @@ export class RhwpEditorSession implements DocumentCommandTarget {
     } catch {
       return this.failLoading(epoch, generation, { code: "EngineFailure", engine: "rhwp", stage: "parse" });
     }
+    let cleanupFailed = false;
+    const releaseInitialDocument = () => {
+      try { doc.free(); } catch { cleanupFailed = true; }
+    };
     // ready를 요청하기 전에 화면에 필요한 정보(페이지 크기)를 모두 얻고 검사한다. 엔진이 문서를 읽었더라도 페이지
     // 정보가 없거나 잘못되면 그릴 준비가 안 된 것이므로(render 단계) ready가 되지 않는다.
     let pages: PageSize[];
     try {
       pages = readPages(doc);
     } catch {
-      doc.free();
-      return this.failLoading(epoch, generation, { code: "EngineFailure", engine: "rhwp", stage: "render" });
+      releaseInitialDocument();
+      return this.failLoading(epoch, generation, { code: "EngineFailure", engine: "rhwp", stage: "render" }, cleanupFailed);
     }
     // 큰 배율에서만 예산을 넘는 문서는 받아들이고 표면이 표시 한도로 다룬다. 가장 작은 배율로도 그릴 수 없으면 편집할
     // 표면을 내놓을 수 없으므로 ready 전에 거부한다(올바른 문서이므로 엔진 실패와 구분).
     if (!fitsRenderBudget(pages, MIN_DISPLAY_SCALE)) {
-      doc.free();
-      return this.failLoading(epoch, generation, { code: "RenderLimit" });
+      releaseInitialDocument();
+      return this.failLoading(epoch, generation, { code: "RenderLimit" }, cleanupFailed);
     }
     if (!this.owns(epoch)) {
-      doc.free();
+      releaseInitialDocument();
       return closed;
     }
     // Acquire fallible engine resources while the backend still owns a loading state.
     let text: RhwpText;
-    let cleanupFailed = false;
     try {
       text = new RhwpText(doc);
     } catch {
-      try { doc.free(); } catch { cleanupFailed = true; }
+      releaseInitialDocument();
       return this.failLoading(epoch, generation, { code: "EngineFailure", engine: "rhwp", stage: "init" }, cleanupFailed);
     }
     const release = () => {
       // Detach both resources even if one destructor traps. Cleanup failure must
       // not replace the ready/initialization error or revive a stale session.
       let failed = false;
-      for (const cleanup of [() => text.release(), () => doc.free()]) {
+      for (const cleanup of [() => text.release(), releaseInitialDocument]) {
         try { cleanup(); } catch { failed = true; }
       }
       cleanupFailed ||= failed;

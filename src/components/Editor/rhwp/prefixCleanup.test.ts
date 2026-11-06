@@ -45,11 +45,11 @@ async function begin(owned: ReturnType<typeof ownedDocument>) {
   } };
   const editor = new RhwpEditorSession(1, backend, sessions, async () => module, { history: false });
   const loading = editor.load();
+  void loading.catch(() => {});
   take("load").reply(loaded(new Uint8Array([1]), 1));
   await flush();
   take("session").reply(ok(info({ state: "loading", sequence: 1, loadGeneration: 1 })));
   await flush();
-  expect(calls.some(c => c.method === "setState") || readyRequests === 1).toBe(true);
   return { editor, backend, take, calls, loading, resolveReady, rejectReady };
 }
 
@@ -148,4 +148,18 @@ describe("RHWP prefix cleanup when ready transition fails", () => {
     editor.dispose();
     expect(owned.freeCounts()).toEqual({ document: 1, prefix: 0 });
   });
+  it("retains a page initialization error when document cleanup also throws", async () => {
+    const owned = ownedDocument({ documentThrows: true });
+    owned.model.getPageInfo = () => { throw new Error("page info trap"); };
+    const { editor, take, calls, loading } = await begin(owned);
+    const outcome = loading.then(value => value, error => ({ thrown: error }));
+    if (calls.some(call => call.method === "setState")) await failTransition(take);
+    expect(await outcome).toMatchObject({ ok: false, error: { code: "EngineFailure", stage: "render" } });
+    expect(editor.status).toMatchObject({ kind: "failed", cleanupFailed: true });
+    expect(owned.freeCounts()).toEqual({ document: 1, prefix: 0 });
+    expect(editor.typeText("unsafe")).toBe(false);
+    editor.dispose();
+    expect(owned.freeCounts()).toEqual({ document: 1, prefix: 0 });
+  });
+
 });

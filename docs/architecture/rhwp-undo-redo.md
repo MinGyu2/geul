@@ -1581,3 +1581,9 @@ Initial shape-prefix capture used to happen after the backend had accepted `load
 ### 2026-11-06 initialization cleanup failure reporting
 
 `RhwpEditorSession`은 prefix 초기화 실패 뒤 document destructor도 실패할 수 있음을 별도 failed status flag로 나타낸다. 문서가 세션에 편입되거나 저장·편집될 수는 없다. ready 전이 거절·stale 응답에서 prefix와 document release를 각각 시도해도 최초의 backend/세션 결과를 유지한다. 이 hardening은 주입 시험 결과이며 실제 wasm destructor trap을 관측했다는 뜻은 아니다. [cleanup 결과](save-preservation.md#2026-11-06-p2-2-cleanup-failure-boundary-follow-up)를 참조한다.
+
+### 2026-11-06 P2 Phase 5 publication/history acceptance
+
+실제 Release WASM으로 18개 HWP/HWPX save-service chain의 출력 18개를 전부 다시 열어 내용·컨트롤·쪽·byte 일치를 확인했다. 추가 14개 정규화 시나리오에서 성공한 첫 게시 뒤 Undo snapshot을 복원하고 published prefix를 조정해 실제 파일을 두 번째 저장했다. HWP 굵게 3개 사례는 T009가 거부해 원본을 보존했다. in-session save race/history는 frontend suite의 actual WASM 51 PASS가 별도 증거다. service harness는 각 호출마다 registry를 새로 만들었으므로 단일 session revision chain 증거로 확대하지 않는다. 자세한 case identity와 한계는 [`save-preservation`](save-preservation.md#2026-11-06-p2-phase-5-final-service-acceptance)에 기록했다.
+
+추가 P5 실파일 점검에서 18개 저장 chain 최종 파일 모두 네 셀의 char-shape run/ID를 대조했고 canonical prefix 검사 18/18 PASS를 얻었다 (`target/p2-continuation/p5-reopen-refs.json`). 최초 harness 인자 모양 오류를 고친 뒤 실행한 결과이며 fixture path는 [`save-preservation`](save-preservation.md#2026-11-06-p2-phase-5-final-service-acceptance)의 private generated fixtures다. Rust save 테스트의 UID/`SharedDirectory` 전제 때문에 overall P2를 complete 처리하지 않는다.
