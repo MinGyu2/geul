@@ -1,10 +1,49 @@
 diff --git a/src/document_core/commands/char_shape_compact.rs b/src/document_core/commands/char_shape_compact.rs
 --- a/src/document_core/commands/char_shape_compact.rs
 +++ b/src/document_core/commands/char_shape_compact.rs
-@@ -333,6 +333,126 @@
+@@ -333,6 +333,165 @@
          })
      }
 -
++
++    /// Prove per-ID correspondence with the actual reopened export. Keep the live
++    /// definitions for history reconciliation: HWP reparsing adds raw_data and
++    /// normalizes attr, which are not an identity change in the emitted format.
++    pub fn capture_publishing_char_shapes_native(
++        &self,
++        exported: &Self,
++    ) -> Result<Vec<crate::model::style::CharShape>, HwpError> {
++        use crate::parser::FileFormat;
++        use crate::serializer::{char_shape::serialize_char_shape, hwpx::char_shapes::char_pr_xml};
++        let fail = || HwpError::RenderError("publication character shape identity mismatch".into());
++        let live = &self.document.doc_info.char_shapes;
++        let output = &exported.document.doc_info.char_shapes;
++        if self.source_format != exported.source_format || live.len() != output.len() {
++            return Err(fail());
++        }
++        for (id, (before, after)) in live.iter().zip(output).enumerate() {
++            let equal = match self.source_format {
++                FileFormat::Hwp => {
++                    // Raw bytes remain authoritative for source records. Also
++                    // compare effective properties to catch inconsistent raw/IR
++                    // values that would silently lose a live formatting change.
++                    let effective = serialize_char_shape(before);
++                    let parsed = serialize_char_shape(after);
++                    before.raw_data.as_deref().unwrap_or(&effective)
++                        == after.raw_data.as_deref().unwrap_or(&parsed)
++                        && effective == parsed
++                }
++                FileFormat::Hwpx => {
++                    let id = u32::try_from(id).map_err(|_| fail())?;
++                    char_pr_xml(id, before).map_err(|_| fail())?
++                        == char_pr_xml(id, after).map_err(|_| fail())?
++                }
++                _ => false,
++            };
++            if !equal { return Err(fail()); }
++        }
++        Ok(live.clone())
++    }
 +
 +    /// Clone only the shape table, never the document or history snapshots.
 +    pub fn capture_char_shapes_native(&self) -> Vec<crate::model::style::CharShape> {
@@ -129,7 +168,7 @@ diff --git a/src/document_core/commands/char_shape_compact.rs b/src/document_cor
      /// 지금 글자 모양 수(호출자가 불러온 직후의 기준 수를 기록할 때 쓴다).
      pub fn char_shape_count_native(&self) -> usize {
          self.document.doc_info.char_shapes.len()
-@@ -342,3 +462,155 @@
+@@ -342,3 +501,192 @@
  #[cfg(test)]
  #[path = "char_shape_compact_tests.rs"]
  mod tests;
@@ -165,6 +204,43 @@ diff --git a/src/document_core/commands/char_shape_compact.rs b/src/document_cor
 +        }];
 +        core
 +    }
++    #[test]
++    fn geul_publication_identity_normalization_and_corruption() {
++        let mut live = core();
++        live.document.doc_info.char_shapes[0].bold = true;
++        let mut output = core();
++        output.document.doc_info.char_shapes[0] = live.document.doc_info.char_shapes[0].clone();
++        output.document.doc_info.char_shapes[0].attr |= 2;
++        output.document.doc_info.char_shapes[0].raw_data = Some(
++            crate::serializer::char_shape::serialize_char_shape(&output.document.doc_info.char_shapes[0]));
++        assert!(live.capture_publishing_char_shapes_native(&output).is_ok());
++        // A raw record concealing a live property change is not normalization.
++        live.document.doc_info.char_shapes[0].raw_data = Some(vec![0; 74]);
++        assert!(live.capture_publishing_char_shapes_native(&output).is_err());
++        live.document.doc_info.char_shapes[0].raw_data = None;
++        output.document.doc_info.char_shapes[0].bold = false;
++        assert!(live.capture_publishing_char_shapes_native(&output).is_err());
++    }
++
++    #[test]
++    fn geul_publication_identity_counts_and_hwpx_provenance() {
++        let mut live = core();
++        let mut output = core();
++        output.document.doc_info.char_shapes.push(CharShape::default());
++        assert!(live.capture_publishing_char_shapes_native(&output).is_err());
++        assert!(output.capture_publishing_char_shapes_native(&live).is_err());
++        output.document.doc_info.char_shapes.pop();
++        live.source_format = crate::parser::FileFormat::Hwpx;
++        assert!(live.capture_publishing_char_shapes_native(&output).is_err());
++        output.source_format = crate::parser::FileFormat::Hwpx;
++        assert!(live.capture_publishing_char_shapes_native(&output).is_ok());
++        output.document.doc_info.char_shapes[0].ratios = [150; 7];
++        assert!(live.capture_publishing_char_shapes_native(&output).is_err());
++        output.document.doc_info.char_shapes[0] = live.document.doc_info.char_shapes[0].clone();
++        output.document.doc_info.char_shapes[0].hwpx_omitted_children = 15;
++        assert!(live.capture_publishing_char_shapes_native(&output).is_err());
++    }
++
 +    fn exact(core: &DocumentCore) -> String {
 +        format!("{:?}", core.document)
 +    }
@@ -302,7 +378,7 @@ diff --git a/src/wasm_api.rs b/src/wasm_api.rs
 -
 +
  /// 한 번의 문서 내보내기 결과.
-@@ -7068,6 +7074,25 @@
+@@ -7068,6 +7074,36 @@
      }
 -
 +
@@ -314,6 +390,17 @@ diff --git a/src/wasm_api.rs b/src/wasm_api.rs
 +        CharShapePrefix {
 +            shapes: self.capture_char_shapes_native(),
 +        }
++    }
++
++    /// [geul] Capture only after proving correspondence to an actual export.
++    #[wasm_bindgen(js_name = capturePublishingCharShapePrefix)]
++    pub fn capture_publishing_char_shape_prefix(
++        &self,
++        exported: &HwpDocument,
++    ) -> Result<CharShapePrefix, JsValue> {
++        self.core.capture_publishing_char_shapes_native(&exported.core)
++            .map(|shapes| CharShapePrefix { shapes })
++            .map_err(|e| e.into())
 +    }
 +
 +    /// [geul] Restore publication identity after history travel (caller opt-in).

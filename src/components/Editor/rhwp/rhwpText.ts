@@ -153,26 +153,37 @@ export class RhwpText {
   }
 
   /** Protect the exported revision before yielding to the backend. A failed save releases only this lease. */
-  protectPublishingCharShapes(count: number | null): () => void {
-    // Export and capture are synchronous. A mismatched table is never promoted.
-    const prefix = this.publishedPrefix && this.doc.charShapeCount?.() === count
-      ? this.doc.captureCharShapePrefix!() : null;
+  protectPublishingCharShapes(count: number | null, exported: RhwpDocument): () => void {
+    if (this.publishingPrefix) throw new Error("publication already pending");
+    // Older engines without shape tracking retain strict backend preservation.
+    if (this.charShapeBaseline === null) return () => {};
+    if (!this.publishedPrefix || !this.doc.capturePublishingCharShapePrefix || !isIndex(count)
+      || count < this.charShapeBaseline || this.doc.charShapeCount?.() !== count
+      || exported.charShapeCount?.() !== count)
+      throw new Error("publication character shape identity unavailable");
+    const prefix = this.doc.capturePublishingCharShapePrefix(exported);
+    if (!prefix || typeof prefix.free !== "function") throw new Error("publication prefix response invalid");
     this.publishingPrefix = prefix;
-    this.publishingCharShapes = isIndex(count) ? count : null;
+    this.publishingCharShapes = count;
     return () => {
-      this.publishingCharShapes = null;
-      if (this.publishingPrefix === prefix) { this.publishingPrefix = null; prefix?.free(); }
+      if (this.publishingPrefix === prefix) {
+        this.publishingPrefix = null;
+        this.publishingCharShapes = null;
+        prefix.free();
+      }
     };
   }
 
   /** Pin a published revision even if later local edits are still dirty (including non-durable replacement). */
   markPublishedCharShapes(count: number | null): void {
-    if (this.charShapeBaseline !== null && isIndex(count) && count >= this.charShapeBaseline) {
+    if (this.publishingPrefix && this.charShapeBaseline !== null && isIndex(count)
+      && count === this.publishingCharShapes && count >= this.charShapeBaseline) {
       this.charShapeBaseline = count;
       if (this.publishingPrefix) {
         const previous = this.publishedPrefix;
         this.publishedPrefix = this.publishingPrefix;
         this.publishingPrefix = null;
+        this.publishingCharShapes = null;
         previous?.free();
       }
     }

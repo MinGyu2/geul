@@ -74,6 +74,8 @@ export interface RhwpDocument {
   charShapeCount?(): number;
   compactAppendedCharShapes?(baseline: number): string;
   captureCharShapePrefix?(): CharShapePrefix;
+  /** Prove per-ID format serialization identity against a reopened export, then capture the live prefix. */
+  capturePublishingCharShapePrefix?(exported: RhwpDocument): CharShapePrefix;
   reconcileCharShapePrefix?(prefix: CharShapePrefix, originalCount: number): string;
   validateTableFormulaField?(section: number, paragraph: number, control: number, row: number, col: number, formula: string): string;
   insertTableFormulaField?(section: number, paragraph: number, control: number, row: number, col: number, formula: string): string;

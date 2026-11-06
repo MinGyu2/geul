@@ -1328,12 +1328,13 @@ export class RhwpEditorSession implements DocumentCommandTarget {
    * 원본 형식으로 내보내고 다시 열어 비교한다(roundTrip·저장이 함께 씀). bytes·contentLoss(손실 보고 JSON 값, 읽지 못하면
    * null)는 내보내기에 성공했을 때만. reopen은 다시 열어 비교한 네 값이다.
    */
-  private exportAndCompare(format: "hwp" | "hwpx"): {
+  private exportAndCompare(format: "hwp" | "hwpx", publishing = false): {
     report: RoundTripReport;
     bytes: Uint8Array | null;
     contentLoss: unknown;
     reopen: ReopenEvidence;
     charShapeCount: number | null;
+    releaseShapes: (() => void) | undefined;
   } | null {
     const doc = this.doc;
     const module = this.module;
@@ -1341,6 +1342,7 @@ export class RhwpEditorSession implements DocumentCommandTarget {
     let output: Uint8Array | null = null;
     let contentLoss: unknown = null;
     let charShapeCount: number | null = null;
+    let releaseShapes: (() => void) | undefined;
     const report: RoundTripReport = {
       format, failure: "export", bytes: 0, reopenedFormat: null, formatEqual: false, lossValid: false, lossCount: -1, losses: [],
       pagesEqual: false, textEqual: false, controlsEqual: false, passed: false,
@@ -1379,9 +1381,11 @@ export class RhwpEditorSession implements DocumentCommandTarget {
       report.pagesEqual = reopened.pageCount() === doc.pageCount();
       report.textEqual = textOf(reopened) === textOf(doc);
       report.controlsEqual = controls(reopened) === controls(doc);
+      if (publishing) releaseShapes = this.text?.protectPublishingCharShapes(charShapeCount, reopened);
       report.failure = null;
     } catch {
       // report.failure가 실패한 단계를 가리킨다.
+      if (publishing) output = null;
     } finally {
       reopened?.free();
     }
@@ -1393,7 +1397,7 @@ export class RhwpEditorSession implements DocumentCommandTarget {
       textEqual: report.failure === null && report.textEqual,
       controlsEqual: report.failure === null && report.controlsEqual,
     };
-    return { report, bytes: output, contentLoss, reopen, charShapeCount };
+    return { report, bytes: output, contentLoss, reopen, charShapeCount, releaseShapes };
   }
 
   // ---- 명령(T010) ----
@@ -1691,10 +1695,9 @@ export class RhwpEditorSession implements DocumentCommandTarget {
       if (later) return fail(later);
       const revision = this.committed;
       this.setSave({ kind: "saving" });
-      const exported = this.exportAndCompare(format);
+      const exported = this.exportAndCompare(format, true);
       if (!exported?.bytes) return fail({ code: "SaveFailure", stage: "export" });
-      try { releaseShapes = this.text?.protectPublishingCharShapes(exported.charShapeCount); }
-      catch { return fail({ code: "SaveFailure", stage: "export" }); }
+      releaseShapes = exported.releaseShapes;
       const result = await this.backend.save(this.sessionId, generation, revision, exported.bytes, exported.contentLoss, exported.reopen, destination);
       if (!this.owns(epoch)) return result;
       if (!result.ok) return fail(result.error);
