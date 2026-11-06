@@ -13,6 +13,7 @@ import hashlib
 import json
 import os
 from pathlib import Path
+import pwd
 import re
 import shutil
 import stat
@@ -28,15 +29,41 @@ GIT_ENV = {**os.environ, "GIT_OPTIONAL_LOCKS": "0"}
 # falls back to "./" and aborts on the read-only source tree.
 SANDBOX_TMP = "/tmp"
 TEMP_VARIABLES = ("TMPDIR", "TMP", "TEMP", "TEMPDIR")
+USERNS_ROOT_MODE = "userns-root-bwrap"
 
 
-def sandbox_base(launcher, *, network):
+def private_root_binds():
+    """Read-only copies of the host's top-level entries over bwrap's own root tmpfs."""
+    skipped = {"proc", "dev", SANDBOX_TMP.lstrip("/")}
+    binds = []
+    for entry in sorted(Path("/").iterdir()):
+        if entry.name in skipped:
+            continue
+        binds += ["--symlink", os.readlink(entry), str(entry)] if entry.is_symlink() else ["--ro-bind", str(entry), str(entry)]
+    return binds
+
+
+def sandbox_base(launcher, *, network, private_root=False):
     # Under sudo-bwrap, root creates the tmpfs; bwrap's default 0755 mode would
     # leave it unwritable after setpriv drops to the caller. Use normal sticky
     # /tmp semantics. It is a fresh tmpfs, so no host path becomes writable.
-    base = [*launcher, "--die-with-parent", "--unshare-pid", "--new-session", "--ro-bind", "/", "/",
+    root = private_root_binds() if private_root else ["--ro-bind", "/", "/"]
+    base = [*launcher, "--die-with-parent", "--unshare-pid", "--new-session", *root,
             "--dev", "/dev", "--proc", "/proc", "--perms", "1777", "--tmpfs", SANDBOX_TMP]
     return base if network else [*base, "--unshare-net"]
+
+
+def subordinate_start(path, name, count):
+    """First range of `count` subordinate IDs granted to `name` by the system's configuration."""
+    try:
+        lines = Path(path).read_text().splitlines()
+    except OSError:
+        lines = []
+    for line in lines:
+        fields = line.split(":")
+        if len(fields) == 3 and fields[0] == name and fields[1].isdigit() and fields[2].isdigit() and int(fields[2]) >= count:
+            return int(fields[1])
+    raise RuntimeError(f"{USERNS_ROOT_MODE} requires {count} subordinate IDs for {name} in {path}")
 
 
 def sandbox_launcher(env):
@@ -46,6 +73,17 @@ def sandbox_launcher(env):
     sudo can create the mount/PID/network namespaces without a user namespace.
     setpriv then drops back to the caller, clears groups and all capabilities.
     No automatic retry or unprotected fallback is permitted.
+
+    The default mode cannot run the save service's trusted-ancestor tests: bwrap's
+    user namespace maps only the caller, so the kernel shows the host's root-owned
+    `/` as the overflow UID 65534, which the unchanged trust rule (this user or
+    root) refuses. Mapping host UID 0 needs CAP_SETUID in the parent namespace.
+    userns-root-bwrap is the same setup and drop as sudo-bwrap without host
+    privilege: newuidmap maps a subordinate ID granted in /etc/subuid to UID 0 of a
+    new user namespace, whose root owns only the sandbox's fresh `/` and `/tmp`, so
+    fixtures see the normal root-owned ancestors. Further subordinate IDs give a
+    real supplementary group and a real other user (nobody, 65534) to the group
+    ownership and ACL refusal tests, which otherwise skip those branches.
     """
     mode = env.get("GEUL_SANDBOX", "bwrap")
     bwrap = shutil.which("bwrap", path=env.get("PATH"))
@@ -53,20 +91,38 @@ def sandbox_launcher(env):
         raise RuntimeError("bubblewrap (bwrap) required; refusing an unprotected build")
     if mode == "bwrap":
         return [bwrap], []
-    if mode != "sudo-bwrap":
+    if mode not in ("sudo-bwrap", USERNS_ROOT_MODE):
         raise RuntimeError(f"Unsupported GEUL_SANDBOX: {mode}")
-    sudo = shutil.which("sudo", path=env.get("PATH"))
     setpriv = shutil.which("setpriv", path=env.get("PATH"))
     environ = shutil.which("env", path=env.get("PATH"))
-    if not sudo or not setpriv or not environ or os.getuid() == 0 or os.getgid() == 0:
-        raise RuntimeError("sudo-bwrap requires sudo, setpriv, env and a non-root caller")
-    setup = [sudo, "-n", "--", bwrap, "--cap-drop", "ALL"]
+    uid, gid = os.getuid(), os.getgid()
+    groups = ["--clear-groups"]
+    if mode == "sudo-bwrap":
+        sudo = shutil.which("sudo", path=env.get("PATH"))
+        if not sudo or not setpriv or not environ or uid == 0 or gid == 0:
+            raise RuntimeError("sudo-bwrap requires sudo, setpriv, env and a non-root caller")
+        enter = [sudo, "-n", "--"]
+    else:
+        unshare = shutil.which("unshare", path=env.get("PATH"))
+        helpers = [shutil.which(name, path=env.get("PATH")) for name in ("newuidmap", "newgidmap")]
+        if not unshare or not all(helpers) or not setpriv or not environ or uid == 0 or gid == 0:
+            raise RuntimeError(f"{USERNS_ROOT_MODE} requires unshare, newuidmap, newgidmap, setpriv, env and a non-root caller")
+        name = pwd.getpwuid(uid).pw_name
+        subuid = subordinate_start("/etc/subuid", name, 2)
+        subgid = subordinate_start("/etc/subgid", name, 3)
+        supplementary = gid + 1
+        enter = [unshare, "--user", f"--map-users=0:{subuid}:1", f"--map-users={uid}:{uid}:1", f"--map-users=65534:{subuid + 1}:1",
+                 f"--map-groups=0:{subgid}:1", f"--map-groups={gid}:{gid}:1", f"--map-groups={supplementary}:{subgid + 1}:1",
+                 f"--map-groups=65534:{subgid + 2}:1",
+                 "--setuid", "0", "--setgid", "0", "--"]
+        groups = ["--groups", str(supplementary)]
+    setup = [*enter, bwrap, "--cap-drop", "ALL"]
     for capability in ("CAP_SETUID", "CAP_SETGID", "CAP_SETPCAP"):
         setup += ["--cap-add", capability]
     # Restore the caller environment only AFTER dropping privileges. Loader
     # variables such as LD_PRELOAD must never apply to the root setpriv stage.
-    drop = [setpriv, "--reuid", str(os.getuid()), "--regid", str(os.getgid()),
-            "--clear-groups", "--bounding-set=-all", "--inh-caps=-all",
+    drop = [setpriv, "--reuid", str(uid), "--regid", str(gid),
+            *groups, "--bounding-set=-all", "--inh-caps=-all",
             "--ambient-caps=-all", "--no-new-privs", "--", environ, "-i",
             *[f"{key}={value}" for key, value in env.items()]]
     return setup, drop
@@ -352,6 +408,16 @@ def verify_sandbox(policy):
     if not required.issubset(policy["readOnly"]):
         raise RuntimeError("Incomplete read-only sandbox policy")
     result = {"readOnly": {}, "writable": {}, "denied": []}
+    if policy.get("privateRoot"):
+        # This mode exists to give fixtures genuine root-owned ancestors. Refuse to
+        # certify a run that does not have them, rather than let tests see otherwise.
+        root, tmp = os.stat("/"), os.stat(SANDBOX_TMP)
+        if (root.st_uid, root.st_gid) != (0, 0) or root.st_mode & 0o022 or not os.statvfs("/").f_flag & os.ST_RDONLY:
+            raise RuntimeError("Sandbox root is not a read-only directory owned by the namespace root")
+        if (tmp.st_uid, tmp.st_gid) != (0, 0) or stat.S_IMODE(tmp.st_mode) != 0o1777:
+            raise RuntimeError("Sandbox temporary directory is not root-owned and sticky")
+        result["privateRoot"] = {"root": [root.st_uid, root.st_gid, oct(stat.S_IMODE(root.st_mode))], "tmp": [tmp.st_uid, tmp.st_gid, oct(stat.S_IMODE(tmp.st_mode))],
+                                 "uidMap": Path("/proc/self/uid_map").read_text().split(), "gidMap": Path("/proc/self/gid_map").read_text().split(), "groups": os.getgroups()}
     if policy.get("identity"):
         identity = policy["identity"]
         status = dict(line.split(":", 1) for line in Path("/proc/self/status").read_text().splitlines() if ":" in line)
@@ -422,7 +488,8 @@ def run_readonly(commands, writable, report, *, env=None, require_clean=False, r
     # initialized submodules. No source or Git object payloads are hashed here.
     protected = minimal_roots([ROOT / "external", *git_metadata_roots(before["dependencies"])])
     read_only = list(dict.fromkeys([ROOT, *git_directories(), *protected, *[ROOT / name for name in before["dependencies"]]]))
-    sandbox = sandbox_base(launcher, network=prepare_cache)
+    private_root = env.get("GEUL_SANDBOX") == USERNS_ROOT_MODE
+    sandbox = sandbox_base(launcher, network=prepare_cache, private_root=private_root)
     for path in paths:
         sandbox += ["--bind", str(path), str(path)]
     cargo_home = Path(env.get("CARGO_HOME", str(Path.home() / ".cargo"))).absolute()
@@ -461,6 +528,10 @@ def run_readonly(commands, writable, report, *, env=None, require_clean=False, r
     policy = {"readOnly": [str(p) for p in read_only if p.exists()], "writable": [str(p) for p in paths], "probes": [str(p) for p in probes if p.is_file()]}
     if drop_privileges:
         policy["identity"] = {"uid": os.getuid(), "gid": os.getgid()}
+    if private_root:
+        # Last: bwrap may still need to create mount points under its root above.
+        sandbox += ["--remount-ro", "/"]
+        policy["privateRoot"] = True
     report.write_text(json.dumps({"status": "RUNNING", "before": before}, indent=2) + "\n")
     results, proofs = [], []
     error = None

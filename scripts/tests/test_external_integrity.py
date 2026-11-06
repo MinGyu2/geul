@@ -2,6 +2,8 @@
 import importlib.util
 import os
 from pathlib import Path
+import tempfile
+from types import SimpleNamespace
 import unittest
 from unittest.mock import patch
 
@@ -45,6 +47,51 @@ class LauncherTests(unittest.TestCase):
     def test_missing_privilege_tools_fails_closed(self):
         with patch.object(g.shutil, 'which', side_effect=lambda name, **kw: '/bin/bwrap' if name == 'bwrap' else None), self.assertRaisesRegex(RuntimeError, 'requires'):
             g.sandbox_launcher({'GEUL_SANDBOX': 'sudo-bwrap'})
+
+    def test_userns_root_mode_keeps_the_sudo_drop_without_host_privilege(self):
+        with patch.object(g.shutil, 'which', side_effect=lambda name, **kw: '/usr/bin/' + name), patch.object(g.os, 'getuid', return_value=1001), patch.object(g.os, 'getgid', return_value=1002), \
+                patch.object(g.pwd, 'getpwuid', return_value=SimpleNamespace(pw_name='dev')), patch.object(g, 'subordinate_start', side_effect=[200000, 300000]):
+            setup, drop = g.sandbox_launcher({'PATH': '/tools', 'GEUL_SANDBOX': g.USERNS_ROOT_MODE})
+        self.assertNotIn('/usr/bin/sudo', setup)
+        self.assertEqual(setup[:2], ['/usr/bin/unshare', '--user'])
+        for mapping in ['--map-users=0:200000:1', '--map-users=1001:1001:1', '--map-groups=0:300000:1', '--map-groups=1002:1002:1', '--map-groups=1003:300001:1', '--map-users=65534:200001:1', '--map-groups=65534:300002:1']:
+            self.assertIn(mapping, setup)
+        self.assertIn('--cap-drop', setup)
+        self.assertEqual(drop[drop.index('--reuid') + 1], '1001')
+        self.assertEqual(drop[drop.index('--regid') + 1], '1002')
+        self.assertEqual(drop[drop.index('--groups') + 1], '1003')
+        self.assertNotIn('--clear-groups', drop)
+        for flag in ['--bounding-set=-all', '--inh-caps=-all', '--ambient-caps=-all', '--no-new-privs']:
+            self.assertIn(flag, drop)
+
+    def test_userns_root_mode_requires_mapping_helpers(self):
+        with patch.object(g.shutil, 'which', side_effect=lambda name, **kw: None if name == 'newuidmap' else '/bin/' + name), self.assertRaisesRegex(RuntimeError, 'requires'):
+            g.sandbox_launcher({'GEUL_SANDBOX': g.USERNS_ROOT_MODE})
+
+    def test_subordinate_range_is_read_for_this_user_only(self):
+        with tempfile.NamedTemporaryFile('w') as file:
+            file.write('other:1:100\ndev:100000:1\ndev:200000:65536\n')
+            file.flush()
+            self.assertEqual(g.subordinate_start(file.name, 'dev', 1), 100000)
+            self.assertEqual(g.subordinate_start(file.name, 'dev', 2), 200000)
+            with self.assertRaisesRegex(RuntimeError, 'subordinate'):
+                g.subordinate_start(file.name, 'absent', 1)
+        with self.assertRaisesRegex(RuntimeError, 'subordinate'):
+            g.subordinate_start('/nonexistent/subuid', 'dev', 1)
+
+    def test_private_root_replaces_the_host_root_bind(self):
+        base = g.sandbox_base(['/bin/bwrap'], network=False, private_root=True)
+        self.assertNotIn(['/', '/'], [base[i:i + 2] for i in range(len(base) - 1) if base[i - 1] == '--ro-bind'])
+        for skipped in ['/proc', '/dev', '/tmp']:
+            self.assertNotIn(skipped, [base[i + 1] for i, arg in enumerate(base) if arg == '--ro-bind'])
+        self.assertIn('/nix' if Path('/nix').exists() else '/usr', base)
+
+    def test_sandbox_proof_refuses_a_root_it_cannot_certify(self):
+        policy = {'readOnly': [str(g.ROOT), str(g.ROOT / 'external'), g.git(g.ROOT, 'rev-parse', '--absolute-git-dir').decode().strip()],
+                  'writable': [], 'probes': [], 'privateRoot': True}
+        fake = SimpleNamespace(st_uid=1000, st_gid=100, st_mode=0o40755)
+        with patch.object(g.os, 'stat', return_value=fake), self.assertRaisesRegex(RuntimeError, 'namespace root'):
+            g.verify_sandbox(policy)
 
 
 class AliasBoundaryTests(unittest.TestCase):
