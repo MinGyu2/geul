@@ -72,16 +72,24 @@ const FUNCTIONS = new Set([
   "SIGN", "EXP", "LOG", "LOG10", "SIN", "COS", "TAN", "ASIN", "ACOS", "ATAN", "RADIAN", "IF", "TRUNC",
 ]);
 
-/** Exact grammar check; the engine independently repeats this before mutation. */
-function formulaSyntax(body: string): boolean {
+/** Shared lexical boundaries for syntax and cell-reference inspection. */
+function formulaTokens(body: string): string[] | null {
   const tokens: string[] = [];
   let at = 0;
   while (at < body.length) {
     if (body[at] === " ") { at += 1; continue; }
     const match = /^(?:[0-9]+(?:\.[0-9]*)?|\.[0-9]+|[A-Za-z?][A-Za-z0-9?_]*|[()+*/,:-])/.exec(body.slice(at));
-    if (!match) return false;
+    if (!match) return null;
     tokens.push(match[0]); at += match[0].length;
   }
+  return tokens;
+}
+
+/** Exact grammar check; the engine independently repeats this before mutation. */
+function formulaSyntax(body: string): boolean {
+  const parsed = formulaTokens(body);
+  if (!parsed) return false;
+  const tokens = parsed;
   let pos = 0;
   const cell = (token: string | undefined) => !!token && /^(?:[A-Za-z]+|\?)(?:[0-9]+|\?)$/.test(token);
   const take = (token: string) => tokens[pos] === token ? (pos += 1, true) : false;
@@ -178,11 +186,16 @@ export function formulaReadsOwnCell(formula: string, at: { row: number; col: num
     const ref = /^([A-Z]+|\?)([0-9]+|\?)$/.exec(text);
     return ref && { col: ref[1] === "?" ? at.col : columnIndex(ref[1]!), row: ref[2] === "?" ? at.row : Number(ref[2]) - 1 };
   };
-  const refs = /(?<![A-Z0-9?_])([A-Z?][A-Z0-9?_]*)(?:\s*:\s*([A-Z?][A-Z0-9?_]*))?(?!\s*[A-Z0-9?_(])/g;
-  for (const match of formula.toUpperCase().matchAll(refs)) {
-    const start = coordinate(match[1]!);
+  const body = formula.trim().replace(/^[=@]/, "").toUpperCase();
+  const tokens = formulaTokens(body);
+  if (!tokens) return false; // Callers validate grammar before this inspection.
+  for (let i = 0; i < tokens.length; i += 1) {
+    // A function identifier such as LOG10 can have the same shape as a cell.
+    if (tokens[i + 1] === "(") continue;
+    const start = coordinate(tokens[i]!);
     if (!start) continue;
-    const end = match[2] ? coordinate(match[2]) : start;
+    const end = tokens[i + 1] === ":" ? coordinate(tokens[i + 2] ?? "") : start;
+    if (tokens[i + 1] === ":") i += 2;
     if (end && at.col >= Math.min(start.col, end.col) && at.col <= Math.max(start.col, end.col)
       && at.row >= Math.min(start.row, end.row) && at.row <= Math.max(start.row, end.row)) return true;
   }

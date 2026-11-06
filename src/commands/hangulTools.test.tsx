@@ -143,6 +143,14 @@ describe("값 검증(src/commands/parameters.ts)", () => {
       expect(validateCommandArgs("hangul.insertTableFormula", { command: "hangul.insertTableFormula", formula }, { tableCell: b1 }), formula).toBe(true);
     }
     expect(formulaReadsOwnCell("=LOG10(A1)", b1)).toBe(false);
+    // Function names and longer identifiers must never be split into cell references.
+    expect(formulaReadsOwnCell("=LOG10(A1)", { row: 9, col: 8508 })).toBe(false);
+    for (const formula of ["=XB1", "=B1_OTHER", "=UNKNOWN_B1(A1)"]) {
+      expect(formulaReadsOwnCell(formula, b1), formula).toBe(false);
+    }
+    for (const formula of ["=B1_OTHER", "=B1:", "=B0", "=C1", "=A3"]) {
+      expect(validateCommandArgs("hangul.insertTableFormula", { command: "hangul.insertTableFormula", formula }, { tableCell: b1 }), formula).toBe(false);
+    }
     expect(columnLetters(0)).toBe("A");
     expect(columnLetters(26)).toBe("AA");
   });
