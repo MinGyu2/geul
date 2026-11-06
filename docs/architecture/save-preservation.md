@@ -1399,3 +1399,8 @@ backend `save()` Promise rejection 뒤 UI가 `saving` 상태에 남는 것을 �
 고정 WordCraft `6c994e42dee106ca03c6f11628d2fe577fe27636`에서 TOC 제목의 BookmarkStart를 추적 삭제한 뒤 전체 수락하면 짝 없는 BookmarkEnd가 남아 export/reopen 의미 비교가 실패한다. 기존 T009는 게시를 거부하지만 명령 직후 모델은 저장할 수 없는 상태가 되었다. 회귀 시험은 수정 전 명령 수락(1 change), 수정 후 원자적 거부(0 change)를 확인한다.
 
 geul 어댑터는 TOC가 있는 문서의 수락·거절과 추적 기록이 있는 문서의 TOC 생성·갱신을 편집 snapshot으로 감싸며, 실제 export/reopen 의미 비교가 실패하면 문서·선택·Undo/Redo 기록을 복구한다. 낯선 표식을 재작성하거나 의미 비교를 완화하지 않는다. 이 경우의 명령은 지원하지 않으며 추적 표식 삭제를 Undo한 뒤 진행해야 한다. 저장 검사·원본 안전·핀은 그대로다. 보호 명령 `GEUL_SANDBOX=userns-root-bwrap python3 scripts/cargo-geul.py test --locked --offline --lib adapters::wordcraft -- --nocapture`: 78 PASS / 1 ignored. 증거: `target/advanced-20261106/b-marker-before.log`, `b-adapter-after.log`. 혼합 행렬 전체 완료와 Word 외부 호환성은 별도 판정이다.
+
+
+### 2026-11-06 calc-cell preview policy recheck
+
+Current Release `53b6ad7a4c6de7a8f4ada4c61b0ad1934461e656527f6e6b440f08898bebf6d6` and the unchanged strict save service reject the real-source calc-cell formula modification because both PrvText and PrvImage are stale. Two protected direct-original attempts retained SHA-256 `e22c45dc65998ec3da6000b897f17a88f41dc6fceefeefabacea1fd0785716b3`, dirty state and directory contents. The existing preview policy is unchanged; no compatible Hancom formula save is claimed. Separate generated/internal-conversion cases produced six durable publications and current-WASM saved-file reopens. Application absence and exact protected private-temp setup are in [advanced C acceptance](stage567-acceptance-2026-11-05.md#2026-11-06-advanced-c--hancom-external-not-run) and `target/advanced-20261106/c/summary.json`.
