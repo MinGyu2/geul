@@ -282,6 +282,15 @@ export class RhwpEditorSession implements DocumentCommandTarget {
     this.saveCheck = null;
     this.failEditing();
   }
+
+  /**
+   * 저장의 결과가 이미 정해진 뒤의 동기 알림. 구독자는 그 안에서 세션을 닫거나 다시 불러올 수 있고(`dispose`는 정리 오류를 던진다),
+   * 그 예외가 게시 결과를 가리지 않게 부차 오류로 남긴다. 부른 쪽은 이 뒤에 소유권을 다시 확인한다.
+   */
+  private notifyAfterSaveResult(notify: () => void) {
+    try { notify(); } catch (error) { this.saveCleanupErrors.push(error); }
+  }
+
   private composition: Composition | null = null;
   /** 앱이 먼저 끝낸 보이는 조합(클릭·초점 잃음·표면 사라짐). 글자는 모델에 있고, 입력기의 끝을 기다리며 아직 세지 않았다. */
   private provisional: Composition | null = null;
@@ -1787,22 +1796,26 @@ export class RhwpEditorSession implements DocumentCommandTarget {
       }
       if (!this.owns(epoch)) return result;
       if (!result.ok) return fail(result.error);
-      this.sessions.applyUpdate(result.value.session);
+      const published = result.value;
+      // 여기부터 게시는 끝난 사실이다. 이 모델을 아직 소유할 때만 표시를 바꾸고, 잃었으면 결과만 돌려준다(남은 prefix는 놓은 쪽이 해제했다).
+      this.notifyAfterSaveResult(() => this.sessions.applyUpdate(published.session));
+      if (!this.owns(epoch)) return result;
       // 저장하는 동안 시작해 아직 끝나지 않은 IME 트랜잭션(기다림 포함)의 글자는 이 저장에 없다.
       const changedSince = this.localRevision !== revision || this.imeUnsettled;
       // 저장한 판 뒤에 편집이 없고 교체의 내구성까지 확인했으면 이 모델은 디스크의 파일과 같다(닫기·다시 불러오기에 버리기
       // 확인이 필요 없음). 내구성을 확인하지 못했으면(교체는 됨) 저장하지 않은 편집으로 남긴다(백엔드도 dirty로 둔다).
       try { this.text?.markPublishedCharShapes(exported.charShapeCount); }
-      catch (error) { this.saveCleanupFailed(error, epoch); }
-      if (!changedSince && result.value.durable) this.modified = false;
+      catch (error) { this.notifyAfterSaveResult(() => this.saveCleanupFailed(error, epoch)); }
+      if (!this.owns(epoch)) return result;
+      if (!changedSince && published.durable) this.modified = false;
       // 원본이 바뀌었다: 다음 저장은 새 원본으로 다시 검사한다. 그 전에 시작한 검사의 늦은 결과도 버린다.
       this.checkSerial += 1;
       this.saveCheck = null;
-      this.setSave({ kind: "saved", revision, durable: result.value.durable, changedSince });
+      this.notifyAfterSaveResult(() => this.setSave({ kind: "saved", revision, durable: published.durable, changedSince }));
       return result;
     } finally {
       try { releaseShapes?.(); }
-      catch (error) { this.saveCleanupFailed(error, epoch); }
+      catch (error) { this.notifyAfterSaveResult(() => this.saveCleanupFailed(error, epoch)); }
       finally { this.saving = false; }
     }
   }
