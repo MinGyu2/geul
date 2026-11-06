@@ -167,6 +167,7 @@ def main():
                         assert all(r[3]['trusted'] for r in initial['records'] if r[2] == 'native:event')
                         row = {'format': fmt, 'mode': mode, 'base': base, 'prefix': prefix,
                                'initial': first, 'observation': observed, 'initialTrace': initial, 'initialPhase': phase(initial)}
+                        report['trials'].append(row)
                         validate_initial(row)
                         # Initial E/U/F classification ends here; subsequent typing has a new trace.
                         reset(d)
@@ -187,13 +188,21 @@ def main():
                         assert final['paragraphText'] == expected
                         assert final['status'] == 'ready' and final['uncertain'] == 'false'
                         assert final['localRevision'] == final['revision']
+                        # Hybrid IBus may deliver the last keyUp before the Redo
+                        # keyDown. Its last phase then describes the prior revision.
+                        # Observe a fresh phase with a native modifier after settling;
+                        # this is outside the initial E/U/F observation window.
+                        key('Shift_L')
+                        observed_final = poc.settle(d, 'fresh history observation')
+                        assert observed_final['localRevision'] == final['localRevision']
+                        assert observed_final['paragraphText'] == final['paragraphText']
                         recovery = trace(d); final_phase = phase(recovery)
-                        assert final_phase is not None and final_phase['historyRedo'] == 0
                         row.update({'recoveryTrace': recovery, 'undone': undone, 'final': final,
-                                    'finalModel': d.js('return window.__d2Read()'), 'finalPhase': final_phase, 'safe': True})
+                                    'finalModel': d.js('return window.__d2Read()'), 'finalPhase': final_phase, 'safe': False})
+                        assert final_phase is not None and final_phase['historyRedo'] == 0
                         assert row['finalModel'] is not None
                         validate_final(row)
-                        report['trials'].append(row)
+                        row['safe'] = True
                         if not poc.close_tab(d, path.name):
                             d.js("[...document.querySelectorAll('.document-tab__close')].find(b=>b.getAttribute('aria-label').includes(arguments[0])).click()", path.name)
                             smoke.wait_until(d, "return !!document.querySelector('[data-testid=discard-dialog]')")
@@ -217,13 +226,20 @@ def main():
                 # Observation remains separate from safety. Existing native predicate is not changed.
                 report['observedTrialCount'] = sum(r['observation']['observed'] for r in report['trials'])
                 report['d2Outcome'] = 'PASS' if report['observedTrialCount'] else 'INCONCLUSIVE'
+            except Exception:
+                # Capture while the native session is still connected; teardown
+                # must not erase the event/history evidence of a failed assertion.
+                report['failureTrace'] = trace(d)
+                report['failureStatus'] = poc.status(d)
+                raise
             finally:
                 smoke.end_session(d)
     except Exception as error:
         report.update(execution='FAIL', error=type(error).__name__ + ': ' + str(error))
         try:
-            report['failureTrace'] = trace(d)
-            report['failureStatus'] = poc.status(d)
+            if 'failureTrace' not in report:
+                report['failureTrace'] = trace(d)
+                report['failureStatus'] = poc.status(d)
         except Exception:
             pass  # A disconnected driver is not replaced with fabricated state.
         traceback.print_exc()
