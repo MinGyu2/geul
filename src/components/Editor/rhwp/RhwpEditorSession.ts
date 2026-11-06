@@ -1701,24 +1701,23 @@ export class RhwpEditorSession implements DocumentCommandTarget {
     } catch {
       // unedited가 null로 남는다: 아래에서 내보내기 실패로 끝난다(해제를 먼저 시도한다).
     }
-    let released = true;
+    const cleanupErrors: unknown[] = [];
     for (const owner of [exported, fresh]) {
-      try { owner?.free(); } catch (error) {
-        released = false;
-        this.saveCleanupFailed(error, epoch);
-      }
+      try { owner?.free(); } catch (error) { cleanupErrors.push(error); }
     }
-    if (!unedited) {
-      const error: DocumentError = { code: "EngineFailure", engine: "rhwp", stage: "export" };
-      // saveCleanupFailed가 검사 번호를 바꿨으므로 checkSave는 이 결과를 보이지 않는다: 여기서 진행 표시를 끝낸다.
-      if (!released) this.setSave({ kind: "failed", error });
+    if (cleanupErrors.length) {
+      const error: DocumentError = unedited ? { code: "SaveNotReady", reason: "uncertain" } : { code: "EngineFailure", engine: "rhwp", stage: "export" };
+      // 구독자는 편집 멈춤 알림 안에서 동기로 세션을 닫거나 새 검사를 시작할 수 있다. 두 자원을 모두 놓은 뒤 한 번만 알린다.
+      this.saveCleanupErrors.push(...cleanupErrors.slice(0, -1));
+      const invalidated = this.checkSerial + 1;
+      this.saveCleanupFailed(cleanupErrors.at(-1), epoch);
+      if (!this.owns(epoch)) return stale;
+      // 이 실패가 스스로 올린 번호라면 checkSave는 이 결과를 보이지 않으므로 여기서 진행 표시를 끝낸다. 번호가 더 올랐으면 알림 안에서
+      // 시작한 새 검사의 자리다. 이 시도가 이미 최신이 아니었어도 실패는 지금 모델의 것이므로 번호로 시도를 비교하지 않는다.
+      if (this.checkSerial === invalidated) this.setSave({ kind: "failed", error });
       return { ok: false, error };
     }
-    if (!released) {
-      const error: DocumentError = { code: "SaveNotReady", reason: "uncertain" };
-      this.setSave({ kind: "failed", error });
-      return { ok: false, error };
-    }
+    if (!unedited) return { ok: false, error: { code: "EngineFailure", engine: "rhwp", stage: "export" } };
     let checked: Result<SaveCheck>;
     try {
       checked = await this.backend.preflight(this.sessionId, generation, unedited, contentLoss);

@@ -19,6 +19,8 @@ interface FreshFaults {
   exportedFreeThrows?: boolean;
   freshFreeThrows?: boolean;
   openThrows?: boolean;
+  /** 결함을 넣을 openDocument 순번(기본 2: 첫 사전 검사). */
+  atOpen?: number;
 }
 
 /** 두 번째 openDocument가 사전 검사의 독립 문서다(첫 번째는 편집 모델). 해제 시도를 순서대로 남긴다. */
@@ -36,7 +38,7 @@ async function session(faults: FreshFaults = {}) {
       opened += 1;
       if (opened === 1) return live as unknown as RhwpDocument;
       const doc = new FakeDocument(["before"]);
-      if (opened > 2 || !Object.keys(faults).length) return doc as unknown as RhwpDocument;
+      if (opened !== (faults.atOpen ?? 2) || !Object.keys(faults).length) return doc as unknown as RhwpDocument;
       if (faults.openThrows) throw new Error("open trap");
       const exportReport = doc.exportHwpWithReport.bind(doc);
       Object.assign(doc, {
@@ -318,6 +320,206 @@ describe("RHWP preflight resource cleanup", () => {
       expect(t.editor.saveState).toEqual({ kind: "idle" });
       expect(t.editor.snapshot().saving).toBe(false);
     });
+  });
+});
+
+/** 구독자가 동기로 일으키는 전이: 정리 실패 알림 안에서 세션을 닫거나 다시 불러오거나 새 검사를 시작한다. */
+describe("RHWP preflight cleanup reentrancy", () => {
+  type Internals = { epoch: number; checkSerial: number; generation: number };
+  const internals = (t: Session) => t.editor as unknown as Internals;
+  const observe = (t: Session, label: string, result?: unknown) => {
+    const state = {
+      label, result, saveState: t.editor.saveState, status: t.editor.status, epoch: internals(t).epoch,
+      checkSerial: internals(t).checkSerial, generation: internals(t).generation, saveCheck: t.editor.saveCheck,
+      saving: t.editor.snapshot().saving, uncertain: t.editor.hasUncertainChanges, unpreserved: t.editor.hasUnpreservedChanges,
+      released: t.released, cleanupErrors: messages(t), backendSave: called(t, "save"),
+    };
+    console.info("preflight-reentrancy-state", JSON.stringify(state));
+    return state;
+  };
+  /** 편집 멈춤을 처음 알릴 때 한 번만 동기로 action을 부른다. */
+  const onFirstFailure = (t: Session, action: () => void) => {
+    let done = false;
+    t.editor.subscribe(() => {
+      if (done || t.editor.status.kind !== "failed") return;
+      done = true;
+      action();
+    });
+  };
+  const STALE = { code: "StaleSession", sessionId: 1 } as const;
+  const entries = [
+    ["checkSave", (t: Session) => t.editor.checkSave() as Promise<unknown>],
+    ["save", (t: Session) => t.editor.save() as Promise<unknown>],
+  ] as const;
+
+  describe.each(entries)("%s", (name, start) => {
+    it("a synchronous dispose in the failure notification keeps the closed session's state", async () => {
+      const t = await session({ freshFreeThrows: true });
+      let atDispose: unknown;
+      onFirstFailure(t, () => { atDispose = t.editor.saveState; t.editor.dispose(); });
+      const pending = start(t);
+      await replyOriginal(t);
+      const result = await pending;
+      const state = observe(t, `${name}/dispose`, result);
+      expect(result).toEqual({ ok: false, error: STALE });
+      expect(atDispose).toEqual({ kind: "checking" });
+      expect(state.saveState).toEqual({ kind: "checking" }); // 닫힌 세션은 표시를 더 바꾸지 않는다
+      expect(state.status).toEqual({ kind: "closed" });
+      expect(state.saving).toBe(false);
+      expect(state.saveCheck).toBeNull();
+      expect(state.released).toEqual(["exported", "fresh"]);
+      expect(state.cleanupErrors).toEqual(["fresh cleanup"]);
+      expect(state.backendSave).toBe(false);
+      expect(called(t, "preflight")).toBe(false);
+    });
+
+    it("releases both owners before any subscriber runs, once each, and keeps both errors", async () => {
+      const t = await session({ exportedFreeThrows: true, freshFreeThrows: true });
+      let releasedAtNotification: string[] = [];
+      onFirstFailure(t, () => { releasedAtNotification = [...t.released]; t.editor.dispose(); });
+      const pending = start(t);
+      await replyOriginal(t);
+      await expect(pending).resolves.toEqual({ ok: false, error: STALE });
+      expect(releasedAtNotification).toEqual(["exported", "fresh"]);
+      expect(t.released).toEqual(["exported", "fresh"]);
+      expect(messages(t)).toEqual(["exported cleanup", "fresh cleanup"]);
+      observe(t, `${name}/dispose-both`);
+    });
+
+    it("an export failure whose cleanup disposes the session reports stale and keeps the closed state", async () => {
+      const t = await session({ exportThrows: true, freshFreeThrows: true });
+      onFirstFailure(t, () => t.editor.dispose());
+      const pending = start(t);
+      await replyOriginal(t);
+      await expect(pending).resolves.toEqual({ ok: false, error: STALE });
+      expect(t.editor.saveState).toEqual({ kind: "checking" });
+      expect(t.editor.status).toEqual({ kind: "closed" });
+      observe(t, `${name}/dispose-export-failed`);
+    });
+
+    it("a synchronous reload waits for the failure transition; the old attempt cannot reach the new model", async () => {
+      const t = await session({ freshFreeThrows: true });
+      let reloading: Promise<unknown> | null = null;
+      onFirstFailure(t, () => { reloading = t.editor.load({ discard: true }); });
+      const pending = start(t);
+      await replyOriginal(t);
+      const result = await pending;
+      const old = observe(t, `${name}/reload-before-transition`, result);
+      // load는 failed 전이를 확인할 때까지 옛 모델을 놓지 않는다: 이 시점의 옛 모델 실패는 아직 맞는 표시다.
+      expect(result).toEqual({ ok: false, error: UNCERTAIN });
+      expect(old.saveState).toEqual({ kind: "failed", error: UNCERTAIN });
+      expect(old.generation).toBe(1);
+
+      t.take("setState").reply(ok(info({ state: "failed", sequence: 3, loadGeneration: 1 })));
+      await flush();
+      t.take("load").reply(loaded(new Uint8Array([1]), 2));
+      await flush();
+      t.take("session").reply(ok(info({ state: "loading", sequence: 4, loadGeneration: 2 })));
+      t.take("setState").reply(ok(info({ state: "ready", sequence: 5, loadGeneration: 2 })));
+      await expect(reloading).resolves.toEqual({ ok: true, value: null });
+      await flush();
+      const fresh = observe(t, `${name}/reload-ready`);
+      expect(fresh.status).toEqual({ kind: "ready" });
+      expect(fresh.saveState).toEqual({ kind: "idle" });
+      expect(fresh.generation).toBe(2);
+      expect(fresh.uncertain).toBe(false);
+      expect(fresh.unpreserved).toBe(false);
+      expect(fresh.saveCheck).toBeNull();
+      expect(fresh.saving).toBe(false);
+      expect(fresh.backendSave).toBe(false);
+    });
+
+    it("keeps the cleanup failure visible when nothing superseded the attempt", async () => {
+      const t = await session({ freshFreeThrows: true });
+      const pending = start(t);
+      await replyOriginal(t);
+      const result = await pending;
+      const state = observe(t, `${name}/plain`, result);
+      expect(result).toEqual({ ok: false, error: UNCERTAIN });
+      expect(state.saveState).toEqual({ kind: "failed", error: UNCERTAIN });
+      expect(state.uncertain).toBe(true);
+      expect(state.saving).toBe(false);
+    });
+  });
+
+  it("a newer checkSave started in the notification is not overwritten by the older attempt", async () => {
+    const t = await session({ freshFreeThrows: true });
+    let newer: Promise<unknown> | null = null;
+    onFirstFailure(t, () => { newer = t.editor.checkSave(); });
+    const states: unknown[] = [];
+    let newerStarted = false;
+    t.editor.subscribe(() => { if (newer) newerStarted = true; if (newerStarted) states.push(t.editor.saveState); });
+    const older = t.editor.checkSave();
+    await replyOriginal(t);
+    const oldResult = await older;
+    await expect(newer).resolves.toEqual({ ok: false, error: { code: "SaveNotReady", reason: "state" } });
+    const state = observe(t, "checkSave/newer-check", oldResult);
+    expect(oldResult).toEqual({ ok: false, error: UNCERTAIN });
+    expect(states).not.toContainEqual({ kind: "failed", error: UNCERTAIN }); // 옛 시도는 새 검사 자리에 쓰지 않는다
+    expect(state.saveState).toEqual({ kind: "failed", error: { code: "SaveNotReady", reason: "state" } });
+    expect(state.saveCheck).toBeNull();
+    expect(state.uncertain).toBe(true);
+    expect(state.backendSave).toBe(false);
+  });
+
+  it("a checkSave refused during save does not hide the save's own cleanup failure", async () => {
+    const t = await session({ freshFreeThrows: true });
+    let refused: Promise<unknown> | null = null;
+    onFirstFailure(t, () => { refused = t.editor.checkSave(); });
+    const saving = t.editor.save();
+    await replyOriginal(t);
+    const result = await saving;
+    await expect(refused).resolves.toEqual({ ok: false, error: { code: "SaveInProgress", sessionId: 1 } });
+    const state = observe(t, "save/refused-check", result);
+    expect(result).toEqual({ ok: false, error: UNCERTAIN });
+    expect(state.saveState).toEqual({ kind: "failed", error: UNCERTAIN });
+    expect(state.saving).toBe(false);
+    expect(state.backendSave).toBe(false);
+  });
+
+  it("an older check's cleanup failure still clears a newer safe result: the shared module is unsafe", async () => {
+    // 번호만 비교하면 이 실패를 잃는다: 옛 시도는 더 이상 최신이 아니지만 편집 모델은 지금 모델이다.
+    const t = await session({ freshFreeThrows: true, atOpen: 3 });
+    const older = t.editor.checkSave();
+    const olderOriginal = t.take("original");
+    const newer = t.editor.checkSave();
+    await replyOriginal(t);
+    t.take("preflight").reply(ok(safeCheck));
+    await expect(newer).resolves.toMatchObject({ ok: true });
+    expect(t.editor.saveCheck).not.toBeNull();
+    expect(t.editor.saveState).toEqual({ kind: "idle" });
+
+    olderOriginal.reply(ok(new Uint8Array([1])));
+    const result = await older;
+    const state = observe(t, "checkSave/older-after-newer-safe", result);
+    expect(result).toEqual({ ok: false, error: UNCERTAIN });
+    expect(state.saveCheck).toBeNull();
+    expect(state.saveState).toEqual({ kind: "failed", error: UNCERTAIN });
+    expect(state.status.kind).toBe("failed");
+    expect(state.uncertain).toBe(true);
+    await expect(t.editor.save()).resolves.toMatchObject({ ok: false, error: { code: "SaveNotReady", reason: "state" } });
+    expect(called(t, "save")).toBe(false);
+  });
+
+  it("an older safe answer cannot replace a newer check's result", async () => {
+    const unsafe = { preservation: { outcome: "unsafe" as const, findings: [] }, platformSupported: true };
+    const t = await session();
+    const older = t.editor.checkSave();
+    const olderOriginal = t.take("original");
+    const newer = t.editor.checkSave();
+    await replyOriginal(t);
+    const newerPreflight = t.take("preflight");
+    olderOriginal.reply(ok(new Uint8Array([1])));
+    await flush();
+    const olderPreflight = t.take("preflight");
+    newerPreflight.reply(ok(unsafe));
+    await newer;
+    olderPreflight.reply(ok(safeCheck));
+    await older;
+    expect(t.editor.saveCheck?.check).toEqual(unsafe);
+    expect(t.editor.saveState).toEqual({ kind: "idle" });
+    await expect(t.editor.save()).resolves.toMatchObject({ ok: false, error: { code: "UnsafeSave" } });
+    expect(called(t, "save")).toBe(false);
   });
 });
 
