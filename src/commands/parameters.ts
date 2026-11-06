@@ -99,7 +99,7 @@ function formulaSyntax(body: string): boolean {
     if (token === "-") return factor();
     if (token === "(") return expr() && take(")");
     if (/^(?:[0-9]+(?:\.[0-9]*)?|\.[0-9]+)$/.test(token)) return true;
-    if (cell(token)) return !take(":") || cell(tokens[pos++]);
+    if (cell(token) && tokens[pos] !== "(") return !take(":") || cell(tokens[pos++]);
     if (DIRECTIONS.has(token.toUpperCase())) return true;
     if (!FUNCTIONS.has(token.toUpperCase()) || !take("(") || !expr()) return false;
     let count = 1;

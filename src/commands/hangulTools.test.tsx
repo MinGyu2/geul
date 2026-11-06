@@ -154,6 +154,19 @@ describe("값 검증(src/commands/parameters.ts)", () => {
     expect(columnLetters(0)).toBe("A");
     expect(columnLetters(26)).toBe("AA");
   });
+
+  it("recognizes LOG10 calls before cell-shaped identifiers without loosening grammar", () => {
+    const table = { rows: 2, cols: 2 };
+    for (const formula of ["=LOG10(100)", "=LOG10(A1)", "=log10(100)", "=LOG(100)", "=SUM(A1:B1)", "=A1"]) {
+      expect(formulaProblem(formula, table), formula).toBeNull();
+    }
+    for (const formula of ["=LOG10(", "=LOG10()", "=LOG10(A1", "=LOG10(A1,B1)", "=NOPE(100)"]) {
+      expect(formulaProblem(formula, table), formula).toBe("syntax");
+    }
+    expect(formulaProblem("=LOG10", table)).toBe("reference");
+    expect(formulaProblem(`=LOG10(${"(".repeat(16)}100${")".repeat(16)})`, table)).toBe("depth");
+    expect(formulaProblem("=LOG10(SUM(LEFT,RIGHT,A1))", { rows: 1, cols: 2048 })).toBe("cost");
+  });
 });
 
 describe("레지스트리", () => {

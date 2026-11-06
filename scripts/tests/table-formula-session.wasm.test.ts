@@ -374,3 +374,31 @@ describe.runIf(enabled)("publication-aware history branches", () => {
     } finally { editor.dispose(); }
   });
 });
+
+
+describe("formula reliability with the selected Release WASM", () => {
+  it.each(["hwp", "hwpx"] as const)("%s: LOG10 calculates, refuses invalid inputs atomically, and survives reopen", async format => {
+    const { editor, doc, settle, sessions } = await open(format);
+    try {
+      for (const [formula, expected] of [["=LOG10(100)", "2"], ["=LOG10(A1)", "1"], ["=LOG(1)", "0"], ["=SUM(A1:B1)", "30"]]) {
+        expect(insert(editor, formula!).accepted, formula).toBe(true); await settle();
+        expect(fields(doc)[0]).toMatchObject({ value: expected });
+        const revision = editor.localRevision;
+        expect(insert(editor, formula!).accepted).toBe(true); await settle();
+        expect(editor.localRevision).toBe(revision); // stable explicit recalculation
+        const reopened = new engine.HwpDocument(bytes(doc, format));
+        try { expect(fields(reopened)).toEqual(fields(doc)); } finally { reopened.free(); }
+      }
+      const before = bytes(doc, format), revision = editor.localRevision;
+      const session = sessions.get(1), history = editor.snapshot().history;
+      for (const formula of ["=LOG10(", "=LOG10()", "=LOG10(A1", "=LOG10(A1,B1)", "=NOPE(1)", "=C1", "=B2", "=SUM(A1:B2)"]) {
+        expect(insert(editor, formula).accepted, formula).toBe(false);
+        expect(bytes(doc, format)).toEqual(before);
+        expect(editor.localRevision).toBe(revision);
+        expect(sessions.get(1)).toEqual(session);
+        expect(editor.snapshot().history).toEqual(history);
+      }
+    } finally { editor.dispose(); }
+  });
+
+});
