@@ -400,3 +400,48 @@ There is no demonstrated safe regeneration of the genuine calc-cell PrvImage. T0
 `src-tauri` 변경이 없어 보호 Rust `services::save`는 다시 돌리지 않았다(B 기록 유지). 입력창 Return→판 DOM 갱신은 HWP 13–29 ms, HWPX 12–16 ms이며 작은 fixture의 새 측정이다. **D4 끝점이 아니고 D4는 FAIL 그대로다.**
 
 **남은 제한.** 시험한 내용은 생성/내부 변환 fixture의 2×2 표와 calc-cell 거부다. 한컴 원본 HWP처럼 미리보기가 있으면 수식 변경 저장은 거부되므로 실제 한컴 문서 활용은 제한된다. 128 KiB 초과·8쪽 초과는 `limit`으로 막아 큰 문서는 범위 밖이다. Hancom 외부 호환성 NOT RUN, 진짜 수식 HWPX 미확보, D2 INCONCLUSIVE, D4 FAIL/자원 INCONCLUSIVE, T010/T012 전체 미완료는 그대로다. 제품 명령 활성화는 사용자의 조건부 결정이지 시험 통과가 아니다.
+
+
+<a id="reliability-small-20261106"></a>
+
+## 2026-11-06 소규모 신뢰성 후속 — PARTIALLY COMPLETED
+
+시작 `340f54d8f451313591253466b0743ca34f560649`, master, index/worktree clean. WordCraft gitlink `6c994e42dee106ca03c6f11628d2fe577fe27636`, RHWP `1a76570e833917d15817415a53c09ad61ab3203f`, 활성 14패치와 Release 세대 `53b6ad7a4c6de7a8f4ada4c61b0ad1934461e656527f6e6b440f08898bebf6d6` 유지. 근거 루트는 `target/reliability-small-20261106/`다. 앞 절의 LOG10 미수정 및 reload 직접 시험 없음은 당시 기록이며 아래가 후속 결과다. 로컬 커밋만 만들었고 push하지 않았다.
+
+| 항목 | 결과·최소 변경 | 검증·남은 제한 | 로컬 커밋 |
+|---|---|---|---|
+| A Safari 정규식 | `(?<![A-Z0-9?_])` 제거. 문법 검사와 공통 토큰 경계로 직접/범위/상대 참조를 검사하고 함수 식별자를 제외 | 자기 참조·역방향/공백 범위·상대 참조·함수·표 경계/잘못된 문법 PASS. Safari 13 실제 런타임 NOT RUN | `9fad4d779fae6868ade696f67e0a5c47c9de475a` |
+| B1 LOG10 | 호출 괄호가 뒤따르는 셀 모양 식별자를 함수로 파싱. 함수 목록/arity/비용 제한 유지 | 수정 전 unit 1 FAIL, HWP/HWPX WASM 2 FAIL. 수정 후 계산·동일 식 재계산·표현식/캐시 export/reopen·잘못된 식 무변경 거부 PASS | `543006e5b9ad8075a2b7e52ebd4d84eea25e3c6b` |
+| B2 간접 순환 | **재현, 미수정**. A1=`=B1+1`, B1=`=A1+1` 수락 후 21/22 → 재계산 23/24 | 실제 세션·Release WASM. 직접 자기 참조 거부는 유지. 간접 순환 안전성을 주장하지 않음 | 수정 커밋 없음 |
+| C 하단 포인터 | **재현, 미수정**. 독립 native 진단기 추가. 가운데 이동 helper는 유지 | HWP/HWPX native 진단 30 PASS는 결함 수정 PASS가 아님. 보이는 하단의 일부가 여전히 `.editor__scroll`에 잡힘 | 진단만 `315c416fbed8a93ea79e335e93403948036bd187` |
+| D 입력창 reload | 기존 App 가드가 작동해 제품 수정 없이 회귀 6개 추가 | 실제 App/입력창/workspace/Release WASM, backend load 응답과 canvas paint는 controlled. 같은 세션 reload·전환·닫기 PASS; native reload 입력창은 NOT RUN | `971f8d4cfb1780d040138eb25ca814de32be2547` |
+
+**A의 계층별 의미.** Vite의 비 Windows target은 `safari13`이다. 수정 전 `npm run build:frontend`는 성공했으나 산출물 `index-DUxu1U1j.js`에 `RegExp("(?<!...")`가 남았다(`a-before-build.log`, `a-before-syntax.txt`). 생성자 전환은 lookbehind 기능을 에뮬레이션하지 않으므로 성공한 빌드를 구형 런타임 검증으로 셀 수 없다. 수정 후 frontend-only 및 일반 Release production 빌드는 모두 성공했고 emitted JS에서 `(?<!`/`(?<=`가 0개다. 소스 호환성 교정 완료, **Runtime on Safari 13 NOT RUN**. 최초 수정 빌드의 TS nullable closure 오류는 상수 narrowing으로 고쳤으며 실패 로그도 보존했다.
+
+**B의 범위.** `b-engine-examples.json`의 실제 엔진 결과는 LOG10(100)=2, LOG10(A1)=1(A1=10), LOG(100)=4.605170185988092(필드의 `%g` 캐시는 4.60517), SUM(A1:B1)=30이다. `table-formula-session`은 HWP/HWPX에서 invalid syntax/arity/unknown function/out-of-bounds/direct self-reference 거부 뒤 문서 바이트·revision·backend dirty·history가 그대로임을 단언한다. 지원 식은 명시적 재계산이 안정적이고 export/reopen 후 command와 value가 같다. backend 응답은 controlled이며 이 시험을 실제 저장 서비스 게시로 세지 않는다.
+
+간접 순환 재현 소스는 `b-cycle-reproduction.test.ts.txt`, 실행은 `b-before-wasm.log`의 52 PASS 중 해당 캐시 변동 단언이다(다른 LOG10 두 시험은 수정 전 실패). unsafe 수락을 회귀 계약으로 고정하지 않도록 해당 재현은 제품 테스트에 남기지 않았다. 현재 `RhwpText.existingFormula`는 정확한 단일 소유 셀의 알려진 `??%g,;;` 형식만 읽고, unfamiliar/multiple/nested 필드·상대 참조가 든 command 등은 null로 돌려 부재와 구분하지 않는다. `getFieldList`는 unknown JSON이며 의존성 그래프 계약이 아니다. 셀 인덱스→표 좌표, 병합/다중 문단의 실제 숫자 읽기, 상대·범위·방향 참조, 원본 필드 형식의 검증 및 fail-closed 정책까지 정해야 누락 없는 그래프가 된다. 이 경계를 정의하지 않은 부분 그래프는 넣지 않았다. 후속 작업은 검증된 표 단위 dependency projection과 destination 관련 cycle 거부이며, 현재 간접 순환은 안전하게 거부되지 않는다. T009 원본 보존 검사를 완화하지 않았다.
+
+**C의 원인과 미해결 경계.** baseline 일반 제품 앱 SHA256 `987cee7ec7c777856a4170d148199307d77c433a9c3f945e05ea6b596ecdd25e`로 실제 X11/GTK/WebKitGTK 2.54.1에서 실행했다(이번 A/B를 담은 새 native 앱 빌드가 아님; 포인터/CSS 제품 소스는 baseline과 동일). 높이 220.984375px, top 551.015625/bottom 772의 scrollport에서 y≈751의 `elementFromPoint`는 canvas지만 trusted mousedown target은 `.editor__scroll`, caret은 이전 셀이다. 실제 visible scrollbar thumb y=762 드래그는 scrollLeft 0→68이며 caret을 바꾸지 않는다. `scrollbar-width:none` **진단 조건에서만** 같은 셀 클릭이 통과해 native overlay 입력 영역과의 관련성을 확인했다(`c-probe3`). stable gutter/thin/custom scrollbar/relative/layer/overflow 실험으로 안전한 교정을 입증하지 못했다. 문제는 합성 좌표 오차나 엔진의 page→caret 변환으로 확인되지 않았으며, 하네스의 가운데 이동은 결함 수정이 아니다. 실제 scrollbar와 페이지 이벤트를 구분할 확실한 경계 없이 scroll 이벤트를 canvas로 강제 전달하거나 스크롤바를 숨기는 제품 수정은 넣지 않았다. 하단 겹침 영역의 사용성 문제는 남아 있다.
+
+`c-native3`은 page top/middle/bottom-visible(80%)/scrolled-top의 **정확한 셀 ID**, trusted canvas target, 스크롤바 전용 드래그, 포인터 조작 중 revision0/dirtyfalse, 목표 셀에 X 입력을 확인했다. 실제 Tauri 저장 서비스로 HWP/HWPX 각 1회 게시한 뒤 `c-verify.mjs`가 현재 hash-verified Release WASM으로 열어 셀 `["10","20","","X"]`, formula fields 없음까지 확인했다(`c-reopen.json`). 이전 셀이 덮어써지지 않았다. native 프로세스 cleanup survivors=[]다. C의 native 진단 PASS와 하단 결함 해결은 별개다. 배율/선택/드래그의 controlled 회귀는 `RhwpSurface.test.tsx`를 재사용했다. 제품 CSS/이벤트 라우팅/IME ownership 변경 없음.
+
+**D의 직접 검증.** `scripts/tests/formula-dialog-reload.wasm.test.ts`는 HWP/HWPX 각각 실제 App에서 표 셀→영속 수식 입력창 열기→창을 둔 채 같은 `RhwpEditorSession.load()`→새 generation2 준비 완료→옛 입력 Enter를 실행한다. session 객체는 재사용되고 이전 WASM 문서는 정확히 free된다. revision이 양쪽 모두 0이어도 generation이 달라 execute가 0회이고, formula field/문서 바이트/backend 상태/dirty/history가 바뀌지 않으며 기존 stale 안내가 표시된다. generation3으로 다시 불러와도 폐기된 요청은 되살아나지 않는다. 활성 문서 전환 뒤 돌아오기 및 닫기는 창 폐기·실행 없음·이전 문서 free/소유 해제를 단언한다. 키보드/IME 제품 코드나 전역 command queue는 바꾸지 않았다.
+
+| 실제 실행 명령 | 최종 결과 | 근거(root 기준) |
+|---|---|---|
+| `npx vitest run src/commands/hangulTools.test.tsx src/components/Editor/advancedFormulaDialog.test.tsx` | 21 PASS | `b-after-tests.log` |
+| `npx vitest run --config scripts/tests/vitest.config.ts table-formula-session advanced-production` | 실제 Release WASM 61 PASS | `b-after-wasm.log` |
+| `npx vitest run src/App.test.tsx src/App.notifications.test.tsx src/components/Editor/advancedFormulaDialog.test.tsx src/commands/hangulTools.test.tsx src/components/Editor/rhwp/RhwpSurface.test.tsx src/components/Editor/rhwp/RhwpEditorSession.test.ts` | 79 PASS | `final-focused.log` |
+| `npx vitest run --config scripts/tests/vitest.config.ts formula-dialog-reload` | 실제 App/Release WASM 6 PASS | `d-tests-final.log` |
+| `npm run typecheck`; `npm run lint` | PASS | `b-types.log`, `final-lint.log` |
+| `npx tsc --noEmit -p target/reliability-small-20261106/tsconfig-tests.json` | PASS(새 script 시험 포함) | `final-test-types.log` |
+| `npm run build:frontend`; `npm run build` | Safari13 target PASS(일반 빌드는 Release 자산 포함), 기존 >500kB chunk 경고 유지 | `a-after-build.log`, `final-build.log` |
+| `python3 scripts/rhwp-artifacts.py --verify-product dist/rhwp --profile release` | PASS | `final-rhwp-identity.log` |
+| `python3 -m py_compile scripts/tests/native-bottom-pointer.py` | PASS | `c-pycompile.log` |
+| `GEUL_NATIVE_OUT=... GEUL_NATIVE_COMMANDS=... python3 target/reliability-small-20261106/native-launch.py` | C native 진단 30 PASS, 하단 클릭 누락 REPRODUCED_UNFIXED | `c-native3/environment/environment-result.json`에 펼친 정확한 command/환경/cleanup, `c-native3/run/pointer/result.json` |
+| `node target/reliability-small-20261106/c-verify.mjs`; `node target/reliability-small-20261106/b-engine-examples.mjs` | PASS | `c-reopen.json`, `b-engine-examples.json` |
+| `git diff --check`, 각 로컬 commit의 configured hooks | PASS | `a/b/c/d-commit.log` |
+| 실제 Safari 13; Microsoft Word; Hancom Office | NOT RUN | 이번 작업에서 실행하지 않음 |
+
+일반 production JS `dist/assets/index-1DZ9L776.js` SHA256 `092fc856e8eeaab30a89598415c9f5186356f49b7463253258d935a6de3b5cd7`, Release JS `3e9c1687af9aabe8ca78c68ab01e569622bcb880341ae4c100faf543782e0027`, WASM `e08e5ce86fad632fde6b7e1051f09597e771ae3924b01685567296a31a453757`. `final-build-assets.txt`와 `final-repository.json`에 소스/산출물 신원을 기록한다. 엔진/패치/기존 Rust 보존 규칙 변경이나 WASM rebuild는 없다. 전체 D2·D4·Rust suite 재실행은 범위 밖으로 SKIP했다. **T010 Incomplete; T012/T013 △ conditionally incomplete; D2 INCONCLUSIVE; D4 FAIL; D4 resource INCONCLUSIVE; WordCraft remote reproducibility BLOCKED; Word/Hancom NOT RUN.** 기존 조건부 개발 결정과 과거 수용 증거를 유지한다.

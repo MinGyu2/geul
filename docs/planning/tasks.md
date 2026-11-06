@@ -1,10 +1,12 @@
 > **2026-11-06 조건부 고급 기능 개발:** [새 사용자 결정](spec.md#conditional-advanced-20261106)은 D2/D4를 △ 조건부 보류하고 독립 검증한 T012 부분집합의 제품 활성화 작업을 허용한다. D2 INCONCLUSIVE, D4 FAIL/자원 INCONCLUSIVE 및 T010/T012/T013 전체 미완료는 유지한다. 지원 부분집합은 일반 Release 빌드·실제 X11/IBus로 검증해 제품 명령을 켰다([수용 기록](../architecture/stage567-acceptance-2026-11-05.md#2026-11-06-advanced-d--conditional-production-implementation)). 아래 이전 비활성 기록은 당시 상태다.
 
+> **최신 소규모 신뢰성 후속 (2026-11-06): PARTIALLY COMPLETED.** Safari lookbehind 제거·LOG10 순서 교정과 reload 입력창 회귀 검증 완료. 간접 순환은 실제 재계산 값 변동이 확인됐고, WebKitGTK 하단 클릭 누락도 남아 있다. C의 native 30개 PASS는 재현/정상 페이지/스크롤바/저장 진단 통과이며 결함 수정 PASS가 아니다. T010 INCOMPLETE, T012/T013 △ conditionally incomplete, D2 INCONCLUSIVE, D4 FAIL/자원 INCONCLUSIVE, WordCraft 원격 재현성 BLOCKED, Microsoft Word/Hancom NOT RUN. [커밋·검증·남은 제한](../architecture/stage567-acceptance-2026-11-05.md#reliability-small-20261106). 아래 날짜별 기술 기록과 조건부 제품 활성화 결정은 보존한다.
+
 > **2026-11-06 고급 기능 A–B 후속:** T013의 선택한 혼합 DOCX 내부 행렬은 실제 저장·재개방·재편집과 native IBus로 검증했다. TOC 추적 표식의 안전하지 않은 수락/갱신은 원자적으로 거부한다. WordCraft 원격 핀 취득은 새 체크아웃에서도 BLOCKED, Microsoft Word 외부 호환성은 NOT RUN이므로 T013은 미완료다. 자세한 계층별 결과는 [advanced A–B acceptance](../architecture/stage567-acceptance-2026-11-05.md#2026-11-06-advanced-ab-acceptance)를 따른다. 아래 과거 상태는 그 시점의 기록으로 유지한다.
 
 # Tasks: HWP/HWPX + DOCX 통합 편집기
 
-> **최신 상태 (2026-11-06):** Stage 5–7은 **PARTIALLY COMPLETED**. B1 저장 중 서식 race와 B2 publication 이전 Undo snapshot 복구는 수정·검증됐으며 각각 로컬 커밋이 있다. WordCraft gitlink clean checkout은 현 원격 ref에서 fetch되지 않아 BLOCKED이고, D2의 native E→U→F는 이번 격리 조사에서도 0회 관측되어 INCONCLUSIVE다. Microsoft Word/Hancom GUI 접근이 없어 외부 수용은 NOT RUN; 내부 DOCX/HWP/HWPX 검증은 외부 호환성 PASS가 아니다. 최신 판정·evidence·수동 외부 절차는 [2026-11-06 후속 수용 기록](../architecture/stage567-acceptance-2026-11-05.md#2026-11-06-후속-wordcraft-재현성-게시-undo-native-d2-외부-office)에 따른다. T012/T013 미완료, 제품 RHWP Undo/Redo·장평/자간·영속 수식 비활성 상태, D4 기존 gate는 유지한다.
+> **이전 상태 기록 (2026-11-06):** Stage 5–7은 **PARTIALLY COMPLETED**. B1 저장 중 서식 race와 B2 publication 이전 Undo snapshot 복구는 수정·검증됐으며 각각 로컬 커밋이 있다. WordCraft gitlink clean checkout은 현 원격 ref에서 fetch되지 않아 BLOCKED이고, D2의 native E→U→F는 이번 격리 조사에서도 0회 관측되어 INCONCLUSIVE다. Microsoft Word/Hancom GUI 접근이 없어 외부 수용은 NOT RUN; 내부 DOCX/HWP/HWPX 검증은 외부 호환성 PASS가 아니다. 최신 판정·evidence·수동 외부 절차는 [2026-11-06 후속 수용 기록](../architecture/stage567-acceptance-2026-11-05.md#2026-11-06-후속-wordcraft-재현성-게시-undo-native-d2-외부-office)에 따른다. T012/T013 미완료, 제품 RHWP Undo/Redo·장평/자간·영속 수식 비활성 상태, D4 기존 gate는 유지한다.
 
 Input: [spec.md](./spec.md), [plan.md](./plan.md).
 Updated: 2026-11-04; source baseline `4bc1ac986026ccadb2d673a66ad69e6296e3a39e` (`MinGyu2/geul`, master).

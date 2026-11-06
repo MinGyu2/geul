@@ -14,6 +14,9 @@
 원본 128 KiB 이하·현재 8쪽 이하, 최대 4고급 단계만 허용한다. 문서 한도는 `limit`, 선택 없음/여러 문단은 `selectionRequired`, 표 밖은 `notInTable`, commit 대기는 `pendingEdits`, IME는 `composing`으로 거부한다. 시험 훅 활성화는 제품 기능의 전제가 아니다. 실질 getter/setter/ownership나 history가 없으면 capability를 내지 않는다. 저장은 변함없이 T009의 사전검사·실제 출력 검사·원자 게시·내구성 결과를 따른다. 한컴 원본처럼 비어 있지 않은 PrvText/PrvImage가 있는 HWP를 이 명령으로 고치면 안전한 미리보기 재생성 근거가 없어 T009가 저장을 거부한다. 명령은 메모리 모델만 바꾸고 원본은 그대로이며 dirty가 유지된다. 아래 이전 비활성/NO-GO 기록은 당시 결과다.
 
 
+2026-11-06 신뢰성 후속: `formulaReadsOwnCell`은 문법 검사와 같은 토큰화를 써서 Safari 13 미지원 lookbehind를 제거했다(실제 Safari 13 실행 NOT RUN). `LOG10(...)`처럼 셀 모양인 함수는 뒤의 호출 괄호로 구분한다. 함수 목록·인수 개수·길이/깊이/비용/표 경계 및 읽기 전용 계산 계약은 유지한다. `A1=B1+1`, `B1=A1+1`은 실제 Release WASM에서 명시적 재계산마다 캐시 값이 바뀌므로 **간접 순환 안전성은 미완료**다. `existingFormula`의 null은 익숙하지 않은 필드와 부재를 구분하지 않아 의존성 없음으로 해석할 수 없다. App의 기존 sessionId/loadGeneration/revision 가드는 같은 세션 reload, 전환, 닫기 및 이후 reload에서 직접 검증했다(제품 변경 없음). [상세 수용 기록](stage567-acceptance-2026-11-05.md#reliability-small-20261106).
+
+
 FR-007(명령 레지스트리)과 SC-003(서식·실행 취소·미지원 명령을 실제 엔진에서 확인)의 T010 몫. 상황별 리본은 T011, 형식별 고급
 명령은 T012·T013이 맡는다. 이 문서는 T010에서 정한 경계와 근거, 남은 한계를 적는다.
 

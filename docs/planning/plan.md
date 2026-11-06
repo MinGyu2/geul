@@ -12,6 +12,8 @@ Status: T007–T009 △ 조건부 범위 인정, T010 INCOMPLETE(D2/D4 △ 조�
 
 A 원격 핀 취득 BLOCKED → B 선택 혼합 DOCX 내부 수용 완료 → C 한컴 GUI NOT RUN/독립 내부 저장 검증 완료 → D 일반 입력을 기록하지 않는 고급 전용 history·명령·정상 빌드/실제 UI 검증 완료 순서로 진행했다. D는 지원 부분집합의 제품 활성화까지 검증했으나(소문서·미리보기 저장 거부 제한 포함) 전체 T012 수용이 아니다. 새로운 의존성·엔진 API 임의 노출·저장 비교 완화 없이 진행하고, 독립 검증된 패키지마다 로컬 커밋한다. 푸시는 하지 않는다.
 
+2026-11-06 소규모 신뢰성 후속: Safari 수식 토큰 재사용과 LOG10 함수 인식 순서 교정, reload/전환/닫기 입력창 회귀 검증을 완료했다. 간접 순환 및 WebKitGTK 하단 클릭 누락은 미해결이므로 후속 작업에 남긴다. T010 INCOMPLETE, T012/T013 △ conditionally incomplete, D2 INCONCLUSIVE, D4 FAIL/자원 INCONCLUSIVE, WordCraft 원격 재현성 BLOCKED, Word/Hancom NOT RUN을 유지한다. [근거와 정확한 제한](../architecture/stage567-acceptance-2026-11-05.md#reliability-small-20261106).
+
 > **2026-11-05 Stage 5–7 재검증:** Stage 5–7 전체와 T012/T013은 부분 완료다. 13개 RHWP 패치의 실제 Release WASM 및 controlled typed formula 연결을 검증했고, 공식 D2/D4 문턱을 유지한 결과 D2 25 PASS/2 INCONCLUSIVE(E→U→F 미관측), D4 6 PASS/2 FAIL이다. 제품 RHWP history·장평/자간·영속 수식은 NO-GO, 실제 native 검증 범위와 외부 Office NOT RUN은 [통합 수용 보고서](../architecture/stage567-acceptance-2026-11-05.md)를 따른다. DOCX 추적 표식 교정 뒤 native10개와 단계별 저장검사10개·재개방은 통과했으며 Word 외부 수용과 구분한다.
 
 ## Summary
