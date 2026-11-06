@@ -77,7 +77,7 @@ export type EditorStatus =
   | { kind: "idle" }
   | { kind: "loading" }
   | { kind: "ready" }
-  | { kind: "failed"; error: DocumentError }
+  | { kind: "failed"; error: DocumentError; cleanupFailed?: true }
   | { kind: "closed" };
 
 export interface PageSize {
@@ -487,19 +487,29 @@ export class RhwpEditorSession implements DocumentCommandTarget {
     }
     // Acquire fallible engine resources while the backend still owns a loading state.
     let text: RhwpText;
+    let cleanupFailed = false;
     try {
       text = new RhwpText(doc);
     } catch {
-      try { doc.free(); } catch { /* retain the initialization error */ }
-      return this.failLoading(epoch, generation, { code: "EngineFailure", engine: "rhwp", stage: "init" });
+      try { doc.free(); } catch { cleanupFailed = true; }
+      return this.failLoading(epoch, generation, { code: "EngineFailure", engine: "rhwp", stage: "init" }, cleanupFailed);
     }
-    const release = () => { try { text.release(); } finally { doc.free(); } };
+    const release = () => {
+      // Detach both resources even if one destructor traps. Cleanup failure must
+      // not replace the ready/initialization error or revive a stale session.
+      let failed = false;
+      for (const cleanup of [() => text.release(), () => doc.free()]) {
+        try { cleanup(); } catch { failed = true; }
+      }
+      cleanupFailed ||= failed;
+    };
     let ready: Awaited<ReturnType<DocumentBackend["setState"]>>;
     try {
       ready = await this.backend.setState(this.sessionId, generation, "loading", "ready");
-    } catch (error) {
+    } catch {
       release();
-      throw error;
+      if (!this.owns(epoch)) return closed;
+      return this.failLoading(epoch, generation, { code: "EngineFailure", engine: "rhwp", stage: "init" }, cleanupFailed);
     }
     if (!this.owns(epoch)) {
       release();
@@ -509,6 +519,7 @@ export class RhwpEditorSession implements DocumentCommandTarget {
       release();
       this.generation = generation;
       this.handleBackendRejection(ready.error);
+      if (cleanupFailed && !this.disposed) this.setStatus({ kind: "failed", error: ready.error, cleanupFailed: true });
       return { ok: false, error: ready.error };
     }
     this.doc = doc;
@@ -532,14 +543,14 @@ export class RhwpEditorSession implements DocumentCommandTarget {
    * 편집 중 실패와 같은 기록으로 남겨, 거부됐으면(백엔드가 아직 loading일 수 있음) 다음 reload가 settleFailure로 먼저
    * 확인한다. 쓰지 못한 임시 문서는 부르는 쪽이 이미 놓았다.
    */
-  private async failLoading(epoch: number, generation: number, error: DocumentError): Promise<Result<null>> {
+  private async failLoading(epoch: number, generation: number, error: DocumentError, cleanupFailed = false): Promise<Result<null>> {
     if (!this.owns(epoch)) return { ok: false, error };
     const failure = this.reportFailure(generation, "loading");
     this.failure = failure;
     const result = await failure.result;
     if (!this.owns(epoch)) return { ok: false, error };
     if (this.failure === failure && (result.ok || failureAcknowledged(result.error))) this.failure = null; // 확인됨
-    this.setStatus({ kind: "failed", error });
+    this.setStatus(cleanupFailed ? { kind: "failed", error, cleanupFailed: true } : { kind: "failed", error });
     return { ok: false, error };
   }
 

@@ -1333,3 +1333,9 @@ P2-2 initialization transaction: `RhwpText` (including initial count and prefix 
 추가로 실제 표 생성 WASM의 same-count semantic mismatch, 양방향 count mismatch, 교차 형식을 15개 시험에서 거부하고 두 문서가 변하지 않는 것을 확인했다. adapter 결함 주입 시험은 활성 검증 lease 없이 `markPublished(5)`가 baseline 3을 5로 바꾸던 방어 경로를 재현했다. 이제 actual reopened export를 엔진에서 형식별 투영으로 검증하고 live prefix를 캡처한다. 게시 성공 시 같은 lease/count만 baseline과 함께 이동한다. 후속 편집은 이미 검증한 export identity를 잃게 하지 않는다. 실패/거부는 lease를 해제하고 baseline을 올리지 않는다. T009, original IDs, fixed references 및 저장 서비스 코드는 바꾸지 않았다.
 
 실제 Release generation `53b6ad7a4c6de7a8f4ada4c61b0ad1934461e656527f6e6b440f08898bebf6d6`; JS `3e9c1687af9aabe8ca78c68ab01e569622bcb880341ae4c100faf543782e0027`; WASM `e08e5ce86fad632fde6b7e1051f09597e771ae3924b01685567296a31a453757`; patched source tree `5d08748867c6218b2152ec3abc32f9fb9037abd92edffc2581ce237c192f402c`. 보호 빌드와 15개 identity/51개 B1-B2 WASM 시험은 PASS다. 시험 산출물은 `target/p2-continuation/p3-wasm-identity.log`, `p3-wasm-regressions.log`; 실제 저장 서비스로 전수 두 번째 저장하는 Phase 5는 아직 실행되지 않았다.
+
+### 2026-11-06 P2-2 cleanup failure boundary follow-up
+
+초기화 중 임시 `RhwpText`와 문서를 각각 한 번씩 해제하도록 시도하며, 첫 해제 예외가 나도 두 번째 해제를 건너뛰지 않는다. 주 오류(`EngineFailure(init)`, backend rejection, stale close 결과)는 유지하고, 부가 해제 실패는 `EditorStatus.failed.cleanupFailed`에 표시한다. 이 표시는 이미 분리한 문서의 `uncertain` 상태나 dirty/save 가능 상태인 것처럼 꾸미지 않는다. 테스트 double이 destructor 예외를 던진 경우 자원이 실제로 해제됐다고 주장할 수는 없으며, 각 자원의 해제는 정확히 한 번 시도되고 재호출하지 않는다. 새 차원의 UI 복구 표시나 allocator 오류 보고는 범위 밖이다. 실제 wasm-bindgen 문서 API는 엔진이 만든 prefix wrapper를 반환하지만, TypeScript의 callable `free`만으로 임의 객체가 유효한 wasm 포인터인지 증명하지 않는다.
+
+7개 cleanup fault-injection 시험, 앞서 있던 초기화 6개 및 session 회귀 19개가 통과했다. Tauri adapter invoke rejection을 `Result`로 감싸는 기존 시험도 15개 통과했다. 실행 기록 `target/p2-continuation/p4-after-final.log`, `p4-adapter-regressions.log`; 새 backend 시험 경로 `src/adapters/backend.test.ts`는 저장소에 없으며 실제 대응 파일 `src/adapters/adapters.test.ts`를 별도로 실행했다.

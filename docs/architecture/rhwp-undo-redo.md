@@ -1577,3 +1577,7 @@ Initial shape-prefix capture used to happen after the backend had accepted `load
 ### 2026-11-06 P2-1 publication prefix identity
 
 정규화된 HWP 재개방 정의 전체를 기존 raw/presence 보존 prefix와 그대로 비교하면 실제 장평 저장 같은 안전한 경로도 거부할 수 있었다. 새 엔진 캡처 API는 export로 다시 연 문서와 같은 형식·개수인지 먼저 확인하고, 각 동일 ID의 format writer projection을 비교한 후 live 정의 prefix를 캡처한다. HWP는 selected source raw bytes와 effective HWP record bytes를 둘 다 확인한다. HWPX는 `char_pr_xml` 결과를 비교한다. 출력 ID 재배치나 다른 의미 속성은 허용하지 않는다. Undo snapshot은 계속 불변이며 성공한 게시에서 획득한 live prefix를 사용해 복원 모델만 기존 strict exact reconciliation으로 조정한다. 실제 Release WASM identity 15 PASS 및 B1/B2 51 PASS다. 세부 분석/한정된 생성 fixture와 남은 real-service Phase 5는 [`save-preservation`](save-preservation.md#2026-11-06-p2-1-serializer-identity-correction-verified-wasm-real-service-follow-up-pending)을 본다.
+
+### 2026-11-06 initialization cleanup failure reporting
+
+`RhwpEditorSession`은 prefix 초기화 실패 뒤 document destructor도 실패할 수 있음을 별도 failed status flag로 나타낸다. 문서가 세션에 편입되거나 저장·편집될 수는 없다. ready 전이 거절·stale 응답에서 prefix와 document release를 각각 시도해도 최초의 backend/세션 결과를 유지한다. 이 hardening은 주입 시험 결과이며 실제 wasm destructor trap을 관측했다는 뜻은 아니다. [cleanup 결과](save-preservation.md#2026-11-06-p2-2-cleanup-failure-boundary-follow-up)를 참조한다.

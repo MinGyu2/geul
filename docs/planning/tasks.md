@@ -227,3 +227,7 @@ P2-1 publication prefix identity remains unresolved: Release WASM reproduced sam
 ### 2026-11-06 P2-1 implementation milestone
 
 Count-only baseline promotion without an active identity lease was reproduced and fixed; format-specific per-ID HWP/HWPX serialization projection validation is implemented in the active publication patch. T009 remains unchanged. Actual Release tests: publication identity 15 PASS, B1/B2 WASM 51 PASS, focused frontend 88 PASS, adapter identity 9 PASS, typecheck/lint PASS. A generated-fixture real save-service matrix exists for Phase1/2 diagnosis; mandatory final Phase5 race/history service acceptance is pending. Do not close P2 or change product RHWP gates until Phase4 and Phase5 reports are complete. [Evidence and limits](../architecture/stage567-acceptance-2026-11-05.md#2026-11-06-p2-1-implementation-milestone-phase-5-pending).
+
+### 2026-11-06 P2-2 cleanup boundary audit
+
+Initialization cleanup now records secondary release errors without replacing the primary structured initialization/backend result; document and prefix releases are independently attempted exactly once. Seven controlled cleanup tests, six earlier prefix-initialization tests, nineteen session tests and fifteen Tauri adapter tests passed. No real wasm destructor exception was observed. Cleanup-failed allocator state cannot be proven recovered by a fault-injection double. See [P4 evidence](../architecture/stage567-acceptance-2026-11-05.md#2026-11-06-p2-2-cleanup-audit). Main follow-up has not yet reported P5 service acceptance; keep P2 in progress.
