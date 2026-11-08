@@ -23,7 +23,11 @@ const bytes = (doc: RhwpDocument, format: "hwp" | "hwpx") => {
   const report = format === "hwp" ? doc.exportHwpWithReport() : doc.exportHwpxWithReport();
   try { return report.takeBytes(); } finally { report.free(); }
 };
-async function open(format: "hwp" | "hwpx", rows = 2, cols = 2, merged: boolean | readonly (readonly [number, number, number, number])[] = false, multi: boolean | "field" = false) {
+async function open(format: "hwp" | "hwpx", rows = 2, cols = 2, merged: boolean | readonly (readonly [number, number, number, number])[] = false, multi: boolean | "field" = false, source?: Uint8Array) {
+  const original = source ?? seeded(format, rows, cols, merged, multi);
+  return openBytes(format, original);
+}
+function seeded(format: "hwp" | "hwpx", rows: number, cols: number, merged: boolean | readonly (readonly [number, number, number, number])[], multi: boolean | "field") {
   const seed = engine.HwpDocument.createEmpty();
   seed.createBlankDocument();
   const placed = JSON.parse(seed.createTable(0, 0, 0, rows, cols));
@@ -40,6 +44,9 @@ async function open(format: "hwp" | "hwpx", rows = 2, cols = 2, merged: boolean 
     if (multi === "field") seed.insertClickHereFieldInCell(0, placed.paraIdx, placed.controlIdx, 3, 1, 0, false, "protected field", "", "tail", true);
   }
   const original = bytes(seed, format); seed.free();
+  return original;
+}
+async function openBytes(format: "hwp" | "hwpx", original: Uint8Array) {
   const { backend, take, calls } = controlledBackend();
   const sessions = new DocumentSessions(backend);
   const opening = sessions.open(`/a.${format}`); take("open").reply(ok({ ...base, format })); await opening;
@@ -625,6 +632,88 @@ describe.each(["hwp", "hwpx"] as const)("complex table publication inputs (%s)",
       const snapshot = vi.spyOn(doc, "saveSnapshot");
       expect(insert(editor, "=9").accepted).toBe(false); expect(bytes(doc, format)).toEqual(before);
       expect(editor.localRevision).toBe(revision); expect(snapshot).not.toHaveBeenCalled(); snapshot.mockRestore();
+    } finally { ctx.editor.dispose(); }
+  });
+});
+
+// Genuine Hancom calc-cell.hwp (2026-11-08): four formula fields in row 3 whose commands use Hancom's
+// fixed-point result format (`=AVG(ABOVE)??%.2f,;;2.00`). The projection previously treated every non-`%g`
+// field as unknown, refusing every formula edit in the table. HWPX input is the engine's own conversion.
+const calcCell = readFileSync(join(root, "external/rhwp/samples/calc-cell.hwp"));
+describe.runIf(enabled).each(["hwp", "hwpx"] as const)("genuine Hancom multi-field table (%s)", format => {
+  const source = () => {
+    if (format === "hwp") return new Uint8Array(calcCell);
+    const doc = new engine.HwpDocument(calcCell);
+    try { return bytes(doc, "hwpx"); } finally { doc.free(); }
+  };
+  it("replaces one field, keeps the other Hancom fields, refuses cycles, undo/redo, two saves and reopen edits", async () => {
+    const ctx = await open(format, 2, 2, false, false, source());
+    const { editor, doc, settle } = ctx;
+    const select = (cell: number) => { editor.caret = editor.anchor = { ...at, cell: { ...editor.caret.cell!, cell } }; };
+    const refuse = (cell: number, formula: string) => {
+      select(cell);
+      const before = bytes(doc, format), revision = editor.localRevision, history = editor.snapshot().history;
+      const snapshot = vi.spyOn(doc, "saveSnapshot");
+      try {
+        expect(insert(editor, formula).accepted, formula).toBe(false);
+        expect(bytes(doc, format)).toEqual(before); expect(editor.localRevision).toBe(revision);
+        expect(editor.snapshot().history).toEqual(history); expect(snapshot).not.toHaveBeenCalled();
+        expect(ctx.calls.some(c => c.method === "commit" || c.method === "save")).toBe(false);
+      } finally { snapshot.mockRestore(); }
+    };
+    try {
+      const initial = fields(doc);
+      expect(initial.map((f: { command: string }) => f.command)).toHaveLength(4);
+      expect(initial[0]).toMatchObject({ command: "=AVG(ABOVE)??%.2f,;;2.00", value: "2.00" });
+      const others = initial.slice(1);
+      // Direct and indirect cycles through the genuine fields stay refused before mutation.
+      refuse(8, "=A3");
+      refuse(0, "=A3+1"); // A3 = AVG(ABOVE) reads A1
+      refuse(4, "=SUM(A3:B3)");
+      select(8);
+      expect(insert(editor, "=SUM(ABOVE)").accepted).toBe(true); await settle();
+      expect(fields(doc)[0]).toMatchObject({ fieldId: initial[0].fieldId, command: "=SUM(ABOVE)??%g,;;4", value: "4" });
+      expect(fields(doc).slice(1)).toEqual(others);
+      expect(insert(editor, "=AVG(ABOVE)").accepted).toBe(true); await settle();
+      expect(fields(doc)[0]).toMatchObject({ fieldId: initial[0].fieldId, value: "2" });
+      expect(editor.execute("edit.undo").accepted).toBe(true); await settle();
+      expect(fields(doc)[0].value).toBe("4");
+      expect(editor.execute("edit.redo").accepted).toBe(true); await settle();
+      expect(fields(doc)[0].value).toBe("2");
+      const first = await ctx.save();
+      const reopened = new engine.HwpDocument(first.output);
+      try {
+        expect(fields(reopened)).toEqual(fields(doc));
+        const { RhwpText } = await import("../../src/components/Editor/rhwp/rhwpText");
+        const text = new RhwpText(reopened), position = { ...at, cell: { ...editor.caret.cell!, cell: 8 } };
+        const prepared = text.prepareFormula(position, 2, 0, "=MAX(ABOVE)"); expect(prepared).not.toBeNull();
+        text.insertFormula(position, 2, 0, "=MAX(ABOVE)", prepared!);
+        const second = new engine.HwpDocument(bytes(reopened, format));
+        try {
+          expect(fields(second)[0]).toMatchObject({ fieldId: initial[0].fieldId, value: "3" });
+          expect(fields(second).slice(1)).toEqual(others);
+        } finally { second.free(); }
+      } finally { reopened.free(); }
+      expect(insert(editor, "=MAX(ABOVE)").accepted).toBe(true); await settle();
+      const second = await ctx.save();
+      expect(fields(new engine.HwpDocument(second.output)).slice(1)).toEqual(others);
+      emitComplexPublication(format, "genuine-calc-cell", [first, second]);
+    } finally { editor.dispose(); }
+  });
+  it("still fails closed when a Hancom fixed-point cache disagrees with its format", async () => {
+    const ctx = await open(format, 2, 2, false, false, source());
+    try {
+      const original = ctx.doc.getFieldList!();
+      for (const command of ["=AVG(ABOVE)??%.2f,;;2", "=AVG(ABOVE)??%.2f,;;2.000", "=AVG(ABOVE)??%.12f,;;2.00", "=AVG(ABOVE)??%.2e,;;2.00", "=AVG(ABOVE)??%d,;;2"]) {
+        const data = JSON.parse(original); data[0].command = command; data[0].value = command.split(";;")[1];
+        const spy = vi.spyOn(ctx.doc, "getFieldList").mockReturnValue(JSON.stringify(data));
+        try {
+          ctx.editor.caret = ctx.editor.anchor = { ...at, cell: { ...ctx.editor.caret.cell!, cell: 9 } };
+          const revision = ctx.editor.localRevision;
+          expect(insert(ctx.editor, "=1").accepted, command).toBe(false);
+          expect(ctx.editor.localRevision).toBe(revision);
+        } finally { spy.mockRestore(); }
+      }
     } finally { ctx.editor.dispose(); }
   });
 });

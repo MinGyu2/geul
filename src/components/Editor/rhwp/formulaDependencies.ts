@@ -21,6 +21,23 @@ function entries(v: unknown): v is RecordValue[] {
 }
 export type FormulaSafety = "safe" | "cycle" | "unknown";
 
+/**
+ * An existing formula field command `={expression}??{format},;;{cached value}`. Only result formats whose cached value
+ * is fully determined are recognized: `%g` (geul/RHWP writes) and Hancom's fixed-point `%.Nf`, N = 0..9 (genuine
+ * calc-cell.hwp stores `=AVG(ABOVE)??%.2f,;;2.00`), with the cached value having exactly N decimals. The format only
+ * affects display; dependency analysis uses the expression. Any other format stays unknown (fail closed).
+ */
+export function cachedFormula(command: unknown): { expression: string; value: string } | null {
+  if (typeof command !== "string") return null;
+  const general = /^(=.{1,256})\?\?%g,;;([+-]?(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][+-]?\d+)?)$/.exec(command);
+  if (general) return { expression: general[1]!, value: general[2]! };
+  const fixed = /^(=.{1,256})\?\?%\.([0-9])f,;;(-?\d+(?:\.(\d+))?)$/.exec(command);
+  if (!fixed) return null;
+  const decimals = Number(fixed[2]);
+  if ((fixed[4]?.length ?? 0) !== decimals) return null;
+  return { expression: fixed[1]!, value: fixed[3]! };
+}
+
 export function tableFormulaSafety(doc: RhwpDocument, at: DocPosition, proposed: string): FormulaSafety {
   try { return project(doc, at, proposed); }
   catch (error) {
@@ -113,8 +130,8 @@ function project(doc: RhwpDocument, at: DocPosition, proposed: string): FormulaS
     if (owned.length !== 1 || owned[0]!.para !== 0 || owned[0]!.controlIndex !== 0 || owned[0]!.ctrlId !== ""
       || typeof field.command !== "string" || typeof field.value !== "string" || field.startCharIdx !== 0
       || field.endCharIdx !== field.value.length) return "unknown";
-    const match = /^(=.{1,256})\?\?%g,;;([+-]?(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][+-]?\d+)?)$/.exec(field.command);
-    if (!match || match[2] !== field.value || !Number.isFinite(Number(field.value))) return "unknown";
+    const match = cachedFormula(field.command);
+    if (!match || match.value !== field.value || !Number.isFinite(Number(field.value))) return "unknown";
     const length = doc.getCellParagraphLength(at.section, cell.parentParagraph, cell.control, physical, 0);
     if (length !== field.value.length || doc.getTextInCell(at.section, cell.parentParagraph, cell.control, physical, 0, 0, length) !== field.value) return "unknown";
     const row = Math.floor(coordinate / cols), col = coordinate % cols;
@@ -123,7 +140,7 @@ function project(doc: RhwpDocument, at: DocPosition, proposed: string): FormulaS
     const probe = read(doc.validateTableFormulaField(at.section, cell.parentParagraph, cell.control, row, col, "=0"));
     if (!record(probe) || Object.keys(probe).sort().join(",") !== "changed,command,fieldId,ok,text"
       || typeof probe.changed !== "boolean" || probe.ok !== true || probe.fieldId !== field.fieldId || probe.text !== "0" || probe.command !== "=0??%g,;;0") return "unknown";
-    const rawEdges = formulaDependencies(match[1]!, { row, col, rows, cols });
+    const rawEdges = formulaDependencies(match.expression, { row, col, rows, cols });
     const edges = rawEdges?.filter(edge => coordinateKeys.has(edge));
     if (!edges) return "unknown";
     if (coordinate !== destination) { budget += rawEdges!.length; graph.set(coordinate, edges); }
