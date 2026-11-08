@@ -1,10 +1,14 @@
 # Implementation Plan: HWP/HWPX + DOCX 통합 편집기
 
-Date: 2026-11-06
+Date: 2026-11-08
 Spec: [spec.md](./spec.md)
 Source baseline: `4bc1ac986026ccadb2d673a66ad69e6296e3a39e` (`MinGyu2/geul`, master).
 Status: T007–T009 △ 조건부 범위 인정, T010 INCOMPLETE(D2/D4 △ 조건부 보류), T011 완료(2026-11-04, native IME 포함 검증 — [tasks.md](./tasks.md) Verification Log). T021 생성 경계는 실제 WASM/Rust 실행 수용 완료. T022 제품 연결 완료. T023 native 신규 생성 수용 완료(X11/IBus, 2026-11-04; 추가 환경은 NOT RUN).
 
+
+## 2026-11-08 상호운용 후속 결과
+
+T012의 검증된 병합 셀·첫 문단 수식 소유 부분집합과 T013의 추적 TOC heading bookmark 수명주기 일부를 구현하고, 실제 저장본 재열기까지 확인했다. `calc-cell.hwp` preview 재생성은 구현되지 않아 기존 `previewStale` 안전 거부를 유지한다. 전체 T012/T013은 여전히 △ 조건부 미완료다. 정확한 지원 경계와 검증/실패 내역은 [통합 수용 기록](../architecture/stage567-acceptance-2026-11-05.md#interoperability-repair-20261108)에 기록한다.
 
 ## 2026-11-06 조건부 실행 정책
 
@@ -29,8 +33,8 @@ RHWP와 WordCraft의 독립 모델·렌더·기록을 Tauri/React UI로 연결�
 ## Technical Context
 
 - UI: React/TypeScript. host: Tauri 2/Rust. locale: `src/language/en.json`, `ko.json`.
-- RHWP pin: `1a76570e833917d15817415a53c09ad61ab3203f`. WordCraft current pin: `6c994e42dee106ca03c6f11628d2fe577fe27636` (2026-11-04 계획 당시 `fc41918814f62645b6746ed68e71e8c2c2e85d6f`).
-- RHWP 실행 신원은 pin뿐 아니라 `patches/rhwp/`, `scripts/rhwp-patches.py`의 순서 있는 패치, source tree, JS/WASM generation/hash를 포함한다. 2026-11-04 계획 기준은 11개 패치였으며 현재 활성 계열은 14개, Release generation `53b6ad7a4c6de7a8f4ada4c61b0ad1934461e656527f6e6b440f08898bebf6d6`다.
+- RHWP pin: `1a76570e833917d15817415a53c09ad61ab3203f`. WordCraft current pin: `615697c6d9b0af3a2cd05026576ddff28c7deecf` (이 작업 시작 pin `6c994e42dee106ca03c6f11628d2fe577fe27636`, 2026-11-04 계획 당시 `fc41918814f62645b6746ed68e71e8c2c2e85d6f`). 새 pin은 로컬에만 있으며 원격 재현성 BLOCKED를 유지한다.
+- RHWP 실행 신원은 pin뿐 아니라 `patches/rhwp/`, `scripts/rhwp-patches.py`의 순서 있는 패치, source tree, JS/WASM generation/hash를 포함한다. 2026-11-04 계획 당시 11개, 2026-11-06 이전 기록의 14개/Release generation `53b6ad7a4c6de7a8f4ada4c61b0ad1934461e656527f6e6b440f08898bebf6d6`은 역사적 신원이다. 2026-11-08 현재 활성 패치 계열은 15개이며 검증된 Release generation은 `342ebaad964f911b8dc83fe9cb7eaca5ee2625486336c3690c01ea16f0396bdc`다.
 - RHWP 모델·Canvas는 WebView WASM, WordCraft 모델·raster·hit-test는 Rust native W-A다. WordCraft egui UI 임베딩이 아니다.
 - `tests/`는 로컬 논리 경로다. 비공개 자료와 공개 스크립트를 구분하고 [보안 정책](../development/security-policy.md)을 유지한다. 이번 작업에서 로컬 geul-tests·설치 도구·훅을 실행한 것으로 간주하지 않는다.
 

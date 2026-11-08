@@ -1624,3 +1624,8 @@ Initial shape-prefix capture used to happen after the backend had accepted `load
 IBus 1.5.33, ibus-hangul 1.5.5, Release `53b6ad7a…`, 실제 Tauri/WebKitGTK, XTest 입력이며 합성 조합 이벤트는 없다. 세 실행 모두 cleanup survivors 0이고 증거는 `target/reliability-20261106/c/{async,sync,mode2}/`다. 중간 실행 `mode2-assertion-parse-bug`, `mode2-stale-phase`는 harness 자체의 오류로 멈춘 기록이며 보존한다.
 
 **E→U→F 관측은 여전히 0회이고 D2는 INCONCLUSIVE다.** 안전성 trial 통과는 필수 순서 관측을 대신하지 않으며, 이 결과로 그 순서가 불가능하다고 결론 내리지 않는다. 다시 불러오기 경계는 이 native 실행에서 따로 시험하지 않았다(trial 사이 탭 닫기·폐기와 모델 ID 검사만 수행). 제품 RHWP Undo/Redo는 계속 비활성이고 D4 FAIL은 바뀌지 않았다.
+
+
+## 2026-11-08 표 수식 기록 경계
+
+실제 Release WASM 세션에서 병합 표 및 지원되는 다중 문단 셀의 수식 변경·Undo/Redo·두 차례 HWP/HWPX 저장/재열기를 검증했다. 논리 좌표는 RHWP 물리 셀·span 메타데이터로 구성하며 덮임 좌표를 앵커 값에 합치지 않는다. 수식은 첫 문단 소유이고 뒤쪽 일반 문단은 보존한다. 알 수 없는 구조는 기록 생성 전에 거부한다. T010 일반 입력 history는 계속 INCOMPLETE다. [지원 범위와 증거](stage567-acceptance-2026-11-05.md#interoperability-repair-20261108).

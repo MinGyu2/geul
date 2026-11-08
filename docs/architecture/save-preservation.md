@@ -1404,3 +1404,8 @@ geul 어댑터는 TOC가 있는 문서의 수락·거절과 추적 기록이 있
 ### 2026-11-06 calc-cell preview policy recheck
 
 Current Release `53b6ad7a4c6de7a8f4ada4c61b0ad1934461e656527f6e6b440f08898bebf6d6` and the unchanged strict save service reject the real-source calc-cell formula modification because both PrvText and PrvImage are stale. Two protected direct-original attempts retained SHA-256 `e22c45dc65998ec3da6000b897f17a88f41dc6fceefeefabacea1fd0785716b3`, dirty state and directory contents. The existing preview policy is unchanged; no compatible Hancom formula save is claimed. Separate generated/internal-conversion cases produced six durable publications and current-WASM saved-file reopens. D 제품 경로의 일반 Release 앱에서도 calc-cell 수식 변경 저장이 같은 `previewStale:PrvText,previewStale:PrvImage`로 거부되고, 복사본·원본 해시와 dirty가 유지됨을 실제 X11 UI로 확인했다(`target/advanced-20261106/d-final/attempt6/preview2/`). Application absence and exact protected private-temp setup are in [advanced C acceptance](stage567-acceptance-2026-11-05.md#2026-11-06-advanced-c--hancom-external-not-run) and `target/advanced-20261106/c/summary.json`.
+
+
+## 2026-11-08 HWP 미리보기 교차 확인
+
+`calc-cell.hwp`의 실제 수식 편집 출력에서 `PrvText`와 `PrvImage`가 이전 미리보기 그대로 남았다. 입력 preflight는 safe였고, 저장 서비스의 후보 출력 보존 검사가 두 스트림을 `previewStale`로 검출해 publication을 거부했다. 실제 저장 서비스는 이를 거부했고 원본 해시·dirty/revision 상태를 보존했다. 미리보기 생성/검증 경로는 아직 없다. 따라서 기존 T009 거부를 제거하거나 오래된 스트림을 허용하지 않는다. HWP preview 지원은 미완료이며 상세 스트림 해시·실행 근거는 [2026-11-08 기록](stage567-acceptance-2026-11-05.md#interoperability-repair-20261108)을 참조한다.

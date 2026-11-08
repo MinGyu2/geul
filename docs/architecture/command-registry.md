@@ -2,6 +2,9 @@
 
 ## 2026-11-06 T012 조건부 제품 capability
 
+2026-11-08 갱신: `hangul.insertTableFormula`는 완전하고 검증된 top-level 표 격자에서, 값/기존 수식의 셀 소유권이 첫 문단으로 확인되는 경우 지원한다. 새 수식 삽입도 이 구조 검증을 거친다. 기존 수식은 지원되는 단일 필드여야 하며 꼬리 일반 문단은 보존한다. 병합 span으로 좌표를 매핑하고 덮임 좌표는 셀 별칭이 아니라 값 없는 좌표로 취급한다. 중첩·불완전/모순 메타데이터·모호한 필드/다중 수식 소유권은 snapshot 전에 거부한다. 256/16/4096 제한은 그대로다. 상세 [검증 기록](stage567-acceptance-2026-11-05.md#interoperability-repair-20261108).
+
+
 [명시적 승인](../planning/spec.md#conditional-advanced-20261106)에 따라 D2/D4 완료를 절대 선행 조건으로 삼던 과거 제품 고급 기능 작업 불허를 이 부분집합에서 대체한다. 기술 판정은 D2 INCONCLUSIVE, D4 FAIL/자원 INCONCLUSIVE이며 T010 전체 미완료다. 아래 지원 부분집합은 일반 Release 빌드(모든 시험 훅 0)의 실제 리본/입력창/세션/엔진/저장 서비스 경로로 검증해 제품 명령을 켰다([수용 기록](stage567-acceptance-2026-11-05.md#2026-11-06-advanced-d--conditional-production-implementation)). 이는 조건부 지원이며 전체 T010/T012 수용이 아니다.
 
 | 명령 | 제품 capability와 제한 |

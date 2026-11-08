@@ -1,11 +1,15 @@
 # Feature Specification: HWP/HWPX + DOCX 통합 오픈소스 워드프로세서
 
 Created: 2026-10-13
-Updated: 2026-11-06
+Updated: 2026-11-08
 Status: 구현 진행 중. T007–T009은 △ 조건부 범위 인정, T010은 INCOMPLETE(D2/D4 △ 조건부 보류), T011은 기록된 범위에서 완료. 신규 문서는 T021 생성 경계·T022 제품 연결·T023 X11/IBus native 수용 완료(2026-11-04). 추가 플랫폼·외부 상호운용은 NOT RUN.
 Source baseline: `4bc1ac986026ccadb2d673a66ad69e6296e3a39e` (`MinGyu2/geul`, master).
 Input: WordCraft + RHWP 독립 코어, Tauri/React 신규 UI, 6개 영역, 언어별 JSON, 공개 저장소 민감정보 사전 차단. 2026-11-04 사용자가 T007–T010의 잔여 사유 기록 및 T011 진행, DOCX/HWP/HWPX 신규 생성 계획 반영을 승인했다.
 
+
+## 2026-11-08 T012/T013 상호운용 후속
+
+결과는 **PARTIALLY COMPLETED**다. T012의 병합 셀·일부 다중 문단 표 수식 편집은 실제 Release WASM과 HWP/HWPX 두 차례 저장·재열기로 확인했지만, `calc-cell.hwp`의 `PrvText`/`PrvImage`는 편집 후 오래된 상태로 검출되어 실제 저장이 계속 안전 거부된다. T013은 선택된 추적 TOC 책갈피 수락·거절·갱신 경계를 보정하고 실제 DOCX 두 차례 저장·재열기를 확인했지만, WordCraft 원격 재현성은 BLOCKED, Microsoft Word 호환성은 NOT RUN이다. T010 INCOMPLETE, T012/T013 △ 조건부 미완료, D2 INCONCLUSIVE, D4 지연 FAIL/자원 INCONCLUSIVE 상태를 유지한다. 상세 검증·해시·남은 범위는 [2026-11-08 기록](../architecture/stage567-acceptance-2026-11-05.md#interoperability-repair-20261108)을 따른다.
 
 <a id="conditional-advanced-20261106"></a>
 

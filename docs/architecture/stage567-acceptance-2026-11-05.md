@@ -491,3 +491,70 @@ A 검증(이번 실행): `npx vitest run src/commands/hangulTools.test.tsx src/c
 위 native launcher는 기존 격리 X11/IBus 절차를 재사용했고, 수정 후에는 GTK 설정 파일 주입이나 overlay 환경변수 변경을 하지 않았다. 제품의 프로세스 내 설정이 유일한 변경이다. 첫 `b-native1`은 fractional 좌표를 round해 실제 bar를 페이지로 잘못 분류한 harness assertion으로 실패했다. 측정한 bar/page 경계를 명시하고 원래751 scrollbar 확인을 남겨 교정했다(실패 로그 보존). 제품 수정을 약화하거나 시험을 center-scroll만으로 바꾸지 않았다.
 
 B는 이 Linux GTK/WebKitGTK 구성의 명시적인 non-overlay 경계에서 수용했다. Wayland/macOS/Windows 및 GTK 속성이 없는 구형 runtime은 NOT RUN으로 추가 환경의 합격을 주장하지 않는다. Rust 저장 서비스/보존 규칙 변경이 없어 storage suite는 재실행하지 않았다. D2 E/U/F, D4, WordCraft remote, Word/Hancom, HWP preview 재생성은 범위 밖이다.
+
+<a id="interoperability-repair-20261108"></a>
+
+## 2026-11-08 상호운용성 보수 — PARTIALLY COMPLETED
+
+이 기록은 구현, 내부 검증, 실제 저장, 외부 호환성 판정을 분리한다. 공식 상태는 바꾸지 않는다: T010 **INCOMPLETE**, T012/T013 **△ 조건부 미완료**, D2 **INCONCLUSIVE**, D4 지연 **FAIL**·자원 **INCONCLUSIVE**, 이 geul 작업 트리에서 수정한 WordCraft 소스의 원격 재현성 **BLOCKED**, Hancom Office와 Microsoft Word **NOT RUN**.
+
+| 패키지 | 구현 | 내부 검증 | 실제 영속 저장 | 외부 호환성 | 남은 작업 |
+|---|---|---|---|---|---|
+| A — HWP 미리보기 | 미완료. RHWP 내보내기는 현재 첫 페이지를 반영한 PrvText/PrvImage를 재생성·검증하지 않는다. T009 predicate는 완화하지 않았다. | calc-cell 수식 편집의 입력 preflight는 safe였다. 후보 출력 검사가 두 미리보기 stream의 stale 상태를 찾아 거부했다. | **안전 거부**. durable save 아님. 원본 해시와 dirty/revision 유지. | Hancom **NOT RUN**. | preview 재생성 및 텍스트·화상 일치의 독립 검사. 반복 저장 행렬 미실행. |
+| B — 복잡 표 수식 | 검증된 top-level 병합 표와 첫 문단 수식 소유권, 꼬리 일반 문단 보존까지 지원. 덮임 좌표는 값 없는 좌표이며 앵커의 별칭이 아니다. 모호·불완전·중첩 구조는 거부. 길이 256, 중첩 16, 셀 방문 4096 제한 유지. | 최종 소스의 Release WASM 회귀 99건 PASS(`test-final-99.log`, 한 번의 전체 실행). RHWP native 수식 4건 PASS. 제품 신원과 포맷 검증 PASS. | 초기 16건과 현재 소스에서 새로 빌드한 서비스로 재실행한 동일 16건을 구분한다. 각 실행은 HWP/HWPX × 가로/세로/복수 병합/두 문단 × 두 차례 저장이다. 두 번째 실행의 16개 파일은 최종 Release WASM으로 다시 열어 식·캐시를 확인했다. 이를 서로 다른 32개 사례로 세지 않는다. | Hancom **NOT RUN**. | 제한된 부분집합이며 요청된 전체 행렬은 아님. 중첩, 다중/모호 수식 소유권, 지원되지 않는 메타데이터는 계속 거부. |
+| C — DOCX 추적 TOC | 지원되는 추적 변경 처리에서 heading bookmark 쌍을 유지하고 TOC 갱신 전후 구조를 검사한다. geul의 원자적 의미 검사는 유지했다. | 기존 refusal 재현. WordCraft 집중 검사 및 TOC/추적 왕복 통과. geul adapter 79 PASS/1 ignored와 별도 추가 부정 검사 1 PASS. WordCraft 전체 엔진 446 PASS/1 FAIL(변경되지 않은 file-access scanner), DOCX 단위 시험 75 PASS, 별도 TOC 7·추적 왕복 4 PASS. 전체 `cargo xtask ci`는 **FAIL**. 개별 assets 54, layers 20, WASM 16 gate 통과. | 실제 DOCX 8개: 선택 수락/거절, 전체 수락/거절 × 두 저장 회차. 모두 실제 디스크 재열기·후속 편집 포함. 독립 패키지 구조 검사는 8개 모두 통과. | Microsoft Word **NOT RUN**. | 문단을 가로지르는 일부 책갈피 경계와 살아 있는 TOC 대상이 사라질 작업은 계속 fail-closed. 원격 재현성 BLOCKED. |
+
+### A — calc-cell 미리보기 증거
+
+불변 입력 `external/rhwp/samples/calc-cell.hwp` SHA-256은 `e22c45dc65998ec3da6000b897f17a88f41dc6fceefeefabacea1fd0785716b3`이다. CFB 추출 결과 `PrvText`는 98바이트 UTF-16LE, SHA-256 `9563b7e38cceef7ab28d74e7279324279b34e4a9bf7101789d7d004b5485466d`; `PrvImage`는 1289바이트 GIF89a, 177×250, SHA-256 `4cf0f3d8157c682f600a9769eb437378777610c61022797cc8ecbdb3207ab1b4`였다. 텍스트는 첫 페이지 표(`<1><2><3><4>`, `<3><7><2><7>`, `<2.00><14><5><13>`, 빈 행)를 나타내며, 독립 디코딩 및 육안 검사한 그림도 첫 페이지 표다. 원본·편집본 미리보기 복사본은 각 원래 CFB stream과 바이트 단위로 동일하며 갱신 미리보기가 아니다.
+
+작업 시작 당시 Release WASM(`53b6ad7a…`)으로 field `2117925221`의 `=AVG(ABOVE)??%.2f,;;2.00`을 `=1+2??%g,;;3`으로 편집한 뒤 모델 export/reopen에서 식은 유지됐지만 두 미리보기 stream은 그대로였다. 실제 save service에서 **입력 preflight는 safe**였고 저장 후보 출력 검사는 두 stream을 `previewStale`로 판정해 `UnsafeSave`로 거부했다. 원본 및 private target SHA-256은 전후 모두 `e22c45dc65998ec3da6000b897f17a88f41dc6fceefeefabacea1fd0785716b3`; 세션 dirty=true, revision=1을 유지했다. 실행 증거는 `target/interoperability-20261108/a/service2.log`, `service-results.json`, 그리고 현재 소스로 새 빌드한 producer를 사용한 `fresh-service/results-summary.json`이다. 미리보기 형식 참고: [Hancom HWP 형식 구조 소개](https://tech.hancom.com/한-글-문서-파일-형식-hwp-포맷-구조-살펴보기/)는 PrvText/첫 페이지 범위와 이미지 정보를 다루고, [한글 문서 파일 형식 5.0 개정 1.3 PDF](https://cdn.hancom.com/link/docs/한글문서파일형식_5.0_revision1.3.pdf)는 BMP/GIF 인코딩을 기술한다. 빈 preview stream이 안전한 정책이라는 근거는 확인하지 못했다. Hancom 실행 미수행만이 blocker인 것은 아니다. 현재 export에는 검증된 preview 생성 경로가 없다.
+
+### B — 검증된 셀·문단 소유권
+
+논리 격자는 물리 셀 레코드와 row/column span으로 만든다. 소유권 누락·모순, 빈 구멍, 겹침, 중첩, 필드/control identity 모호성은 snapshot 전에 거부한다. 엔진의 정확한 앵커 조회 의미에 따라 병합 덮임 좌표에는 물리 소유 셀/값이 없으며 병합 앵커와 동일한 그래프 노드로 합치지 않는다. 수식은 첫 문단을 소유하고 꼬리 일반 문단은 유지한다. 다중 수식 필드, 혼합/모호한 소유권, 중첩 control 및 불일치 메타데이터는 계속 fail-closed다. 그래프와 식의 기존 한계는 증가시키지 않았다.
+
+최종 Release 신원: generation `342ebaad964f911b8dc83fe9cb7eaca5ee2625486336c3690c01ea16f0396bdc`, JS SHA-256 `3e9c1687af9aabe8ca78c68ab01e569622bcb880341ae4c100faf543782e0027`, WASM SHA-256 `03c6ecfd87ae783661f1cc25cb51b0bc1c4bb21bed191608b0128d1cea7f7325`, canonical source SHA-256 `480e23c1dcd11c0a1b9ec5fec95023523eded93c134129cc35535abee3f79292`. RHWP 활성 patch는 15개. B 구현 commit `c91eca9a300a7e5b6fbed326872c263361107e4d`.
+
+초기 16개 실제 publication 근거는 `target/interoperability-20261108/b/service-results.json` 및 `reopen-results.json`이다. source-producer를 확정하기 위해 저장 서비스 테스트를 현재 소스에서 보호된 offline/no-run 빌드하고 같은 16개 입력을 한 차례 더 실행했다. 산출물은 별도 `b/fresh-service/`에 있으며 `producer.json`은 Cargo compiler-artifact가 지정한 실행 파일 경로, SHA-256, 입력 Rust 파일 해시를 기록한다. 생산자 보고서는 `build-integrity.json`; 재실행 결과는 `fresh-service-results.json`; Release WASM 재열기는 `fresh-reopen-results.json`이다. 새 producer SHA-256은 `0373c39b031185a386bd358ab851d510b1bd2466147a6f6cda6e6b8b9b76c288`. 새 실행은 이전과 같은 16개 입력 사례를 재검증한 것이며 32개 독립 사례로 합산하지 않는다. 출력 16개 모두 safe preflight/save, durable publication, dirty=false 및 재열기 식/캐시 일치를 확인했다.
+
+최종 소스는 `npx vitest run --config scripts/tests/vitest.config.ts scripts/tests/table-formula-session.wasm.test.ts`로 99 PASS를 확인했다(`target/interoperability-20261108/b/test-final-99.log`). 이전 97건 실행과 추가 부정 검사 증거도 보존하되 합산하지 않는다. Typecheck·lint·test-script TypeScript 검사, frontend 28건, 보조 실제 WASM 29건과 product identity 검사는 동일한 관련 코드의 증거를 재사용했다. RHWP native `geul_formula` 4건은 `b/native3.log` PASS; 최종 포맷 변경은 공백/정렬만이었다. 실제 WASM publication은 지원 가능한 생성 fixture로 수행했으며 Hancom 상호운용은 증명하지 않는다. 기존 수식 소유권은 문단 전체를 덮는 단일 `%g` 필드로 제한한다. 원본 셀을 바꾼 뒤 같은 식을 재적용하여 결과 캐시를 재계산한다.
+
+### C — 추적 TOC 표식 수명주기와 저장
+
+WordCraft 수정은 bookmark 경계 helper와 tracked review/TOC 코드에 있다. 지원되는 부분 범위 revision 처리는 살아남는 heading bookmark의 start/end identity를 보존한다. 잘못되었거나 지원되지 않는 표식 구조는 거부한다. geul pre/post 의미 수용 및 원자 rollback은 유지했다. TOC 대상을 잃게 되는 후검증 사례는 문서/history 변경 없이 거부되며 거부 후 Undo도 정상이다. 실행 로그: `target/interoperability-20261108/c/core-0.log`, `core-1.log`, `postvalidation.log`.
+
+실제 저장 시험 `docx_semantic_acceptance::tracked_toc_boundary_resolution_durable_two_rounds`는 8개 DOCX를 저장·디스크 재열기하고 각 operation에 후속 편집/두 번째 저장을 수행했다. 독립 ZIP/XML 검사는 `c/docx-structure.json`에서 8개 전부 통과: 짝이 맞는 bookmark 24쌍, TOC field 8개, resolve되는 내부 anchor 16개, comment 16개, footnote/endnote reference와 package relationship 정상, revision metadata가 있는 생존 insertion 4개. note record 수에는 separator가 들어가므로 사용자 note가 24개라는 뜻은 아니다. WordCraft 의미 왕복 검사와 함께한 내부 검증이며 Microsoft Word 검사가 아니다. 북마크 범위 관련 외부 참고: [Microsoft 북마크 문제 해결 문서](https://support.microsoft.com/en-us/word/troubleshoot-bookmarks).
+
+보호된 geul 검사: adapter 79 PASS/1 ignored, 추가 부정 검사 별도 1 PASS; save 148 PASS/15 ignored; `cargo fmt --all -- --check`, `cargo clippy --lib -- -D warnings`, locked/offline debug build PASS. debug binary SHA-256 `8173c861bebd31e3781de2e342670dda5d6a662f8f2507aa382db6e36952f66f`. 추가 포맷 검사는 `target/interoperability-20261108/c/geul-final-fmt-integrity.json`에 기록했다.
+
+WordCraft `cargo xtask ci`는 **FAIL**이다. fmt/clippy는 통과했지만 test 단계는 변하지 않은 file-access scanner assertion에서 446 PASS/1 FAIL로 중단했다. 유일한 offender는 baseline부터 그대로인 `crates/engine/src/cmd/file.rs:264`; `file_access.rs`와 해당 파일은 pinned baseline과 바이트 동일하다. 67개 파일 Git archive에 scanner를 정적으로 replay했을 때도 같은 offender가 나왔으며 이는 native test가 아니다. 별도 `cargo xtask assets`, `layers`, `wasm`은 각각 54, 20, 16 gate 단위로 통과했다. 무결성 보고서와 baseline 비교는 `target/interoperability-20261108/c/` 아래에 있다. 원격 재현성 BLOCKED는 이 geul 작업 트리의 새 WordCraft 수정 commit을 원격에서 재현/취득하지 못했다는 상태다. WordCraft 일반 upstream 전체가 막혔다는 뜻이 아니다. 원격 게시를 하지 않았다.
+
+### 실행 명령과 증거 범위
+
+Rust 빌드/통합 검사는 `scripts/external-integrity.py` 보호 경로에서 `GEUL_SANDBOX=userns-root-bwrap` 및 명시적 writable 출력 경로로 실행했다. 프론트엔드의 npm 명령은 일반 프로젝트 환경에서 실행했으며 protected build라고 부르지 않는다. 저장 서비스는 기존 바이너리만 사용한 것이 아님을 별도로 확인했다:
+
+- 현재 소스 producer: `cargo test --manifest-path src-tauri/Cargo.toml --locked --offline --test t010_phase0_save_service --no-run --message-format=json` — exit 0. `build.jsonl`의 compiler-artifact가 `src-tauri/target/debug/deps/t010_phase0_save_service-4f13e83260bc0eb8`를 지정. 실행 파일 SHA와 source hashes는 `b/fresh-service/producer.json`; 보호 보고서는 `b/fresh-service/build-integrity.json`.
+- 실제 서비스 선택기: `t010_phase0_save_service --ignored --exact 진짜_엔진_출력을_저장_서비스에_넣는다 --nocapture` — 새로 빌드한 바이너리로 16/16 durable PASS. 입력 manifest·각 로그·요약은 `b/fresh-service/runs/`, `b/fresh-service/logs/`, and `b/fresh-service/fresh-service-results.json`.
+- Release WASM 재열기: `node target/interoperability-20261108/b/fresh-service/reopen-fresh.mjs` — 16 PASS; `fresh-reopen-results.json` 및 `reopen-integrity2.json`.
+- 동일한 신규 producer로 A의 calc-cell 재현 — 입력 preflight safe, output preservation `previewStale` 2건, `UnsafeSave`, 원본 유지/dirty 유지. `a/fresh-service/results-summary.json` 및 `integrity.json`.
+- `npx vitest run --config scripts/tests/vitest.config.ts scripts/tests/table-formula-session.wasm.test.ts` — 99 PASS, 한 번의 전체 실행(`b/test-final-99.log`).
+- `cargo test --locked --offline -p wordcraft-engine -p wordcraft-docx` — DOCX 집중 suite 통과; engine 446 PASS/1 baseline failure.
+- `cargo test --locked --offline --lib adapters::wordcraft` — 79 PASS/1 ignored; 추가 부정 검사 별도 1 PASS. `cargo test --locked --offline --lib services::save` — 148 PASS/15 ignored.
+- 보호된 `cargo fmt --all -- --check`, `cargo clippy --lib -- -D warnings`, `cargo build --locked --offline` — PASS. `cargo xtask ci` — **FAIL**; 별도 assets/layers/wasm gate는 PASS.
+
+정확한 환경·전체 명령 배열과 종료 코드가 들어 있는 무결성 보고서는 각 증거 경로의 `*-integrity.json` 파일이다. 이 내부 검사와 패키지 구조 확인은 Microsoft Word 또는 Hancom Office 호환성을 입증하지 않는다. 두 프로그램 모두 실행하지 않았다.
+
+
+### 로컬 커밋과 최종 소스 신원
+
+작업 시작 geul HEAD는 `33adeedc85e9f03c92316625a91530a73cbfb66b`, branch는 `master`였다. RHWP gitlink는 `1a76570e833917d15817415a53c09ad61ab3203f` 그대로다. WordCraft gitlink는 로컬 수정 commit `615697c6d9b0af3a2cd05026576ddff28c7deecf`로 연결했다(parent `6c994e42dee106ca03c6f11628d2fe577fe27636`, branch `geul/semantic-roundtrip-equivalence`). 새 WordCraft 소스와 부모 geul gitlink가 일치한 뒤 정규 보호 빌드 `GEUL_SANDBOX=userns-root-bwrap python3 scripts/cargo-geul.py build`도 PASS했다(`c/final-pinned-build.log`, `final-pinned-build-integrity.json`). debug binary SHA는 위 `8173c861…`와 동일했다. `python3 scripts/rhwp-artifacts.py --verify-product dist/rhwp --profile release`도 PASS했다. 문서만 바뀐 뒤 코드 시험을 반복하지 않았다.
+
+| 저장소·로컬 commit | 변경 파일/책임 | 검증 및 제한 |
+|---|---|---|
+| geul `c91eca9a300a7e5b6fbed326872c263361107e4d` | `src/components/Editor/rhwp/formulaDependencies.ts`, `scripts/rhwp-patches.py`, `patches/rhwp/table-formula-paragraphs.patch`, `scripts/tests/table-formula-session.wasm.test.ts` | 검증된 병합/다문단 첫 문단 소유권, Release 재빌드·실제 저장 16사례 |
+| geul `a4fb314d42801cbb9dbdd306e3bf49264dcde986` | `scripts/tests/table-formula-session.wasm.test.ts` | 실제 재열린 꼬리 문단 필드의 수식 편집 거부 회귀, 최종 전체 WASM 99 PASS |
+| WordCraft `615697c6d9b0af3a2cd05026576ddff28c7deecf` | `crates/engine/src/cmd/{bookmarks,mod,references,review}.rs`, `ROADMAP.md`, `docs/{gaps,file-format-parity}.md` | heading bookmark 수명주기, 집중 회귀/실제 DOCX 저장 PASS. 전체 CI의 기존 scanner 1 FAIL과 원격 BLOCKED는 유지 |
+| geul `8ffc95820e0b90010ef68f72bdfecf7acdc457b4` | `external/wordcraft` gitlink, `src-tauri/src/adapters/wordcraft/{engine,tests}.rs`, `src-tauri/src/services/save/docx_semantic_acceptance.rs` | 새 소스 연결, 원자 거부·TOC 표식·실제 두 회차 저장/재열기 회귀 |
+
+geul 커밋의 일반 훅에서 민감정보/하드코딩 비밀 검사가 PASS했다. 적용 대상이 없는 검사기 회귀 훅은 SKIP이었다. WordCraft 커밋은 hook 출력 없이 완료됐으며 전체 CI가 PASS했다는 의미가 아니다. A의 완료 commit은 만들지 않았다. 최종 문서 정리는 별도 로컬 commit이며 두 저장소 모두 push하지 않았다. 외부 Word/Hancom 검사는 NOT RUN이고, A 및 아직 실행하지 않은 전체 행렬/공식 수용은 남은 작업이다. `target/interoperability-20261108/`의 중간 실패와 최초 검사도 보존한다.
