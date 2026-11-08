@@ -23,7 +23,7 @@ const bytes = (doc: RhwpDocument, format: "hwp" | "hwpx") => {
   const report = format === "hwp" ? doc.exportHwpWithReport() : doc.exportHwpxWithReport();
   try { return report.takeBytes(); } finally { report.free(); }
 };
-async function open(format: "hwp" | "hwpx", rows = 2, cols = 2, merged: boolean | readonly (readonly [number, number, number, number])[] = false, multi = false) {
+async function open(format: "hwp" | "hwpx", rows = 2, cols = 2, merged: boolean | readonly (readonly [number, number, number, number])[] = false, multi: boolean | "field" = false) {
   const seed = engine.HwpDocument.createEmpty();
   seed.createBlankDocument();
   const placed = JSON.parse(seed.createTable(0, 0, 0, rows, cols));
@@ -37,6 +37,7 @@ async function open(format: "hwp" | "hwpx", rows = 2, cols = 2, merged: boolean 
   if (multi) {
     seed.splitParagraphInCell(0, placed.paraIdx, placed.controlIdx, 3, 0, 0);
     seed.insertTextInCell(0, placed.paraIdx, placed.controlIdx, 3, 1, 0, "independent tail 한글");
+    if (multi === "field") seed.insertClickHereFieldInCell(0, placed.paraIdx, placed.controlIdx, 3, 1, 0, false, "protected field", "", "tail", true);
   }
   const original = bytes(seed, format); seed.free();
   const { backend, take, calls } = controlledBackend();
@@ -578,6 +579,21 @@ describe.each(["hwp", "hwpx"] as const)("complex table publication inputs (%s)",
       const second = await ctx.save();
       emitComplexPublication(format, name, [first, second]);
     } finally { editor.dispose(); }
+  });
+  it("refuses a real imported trailing-paragraph field before history or mutation", async () => {
+    const ctx = await open(format, 2, 3, false, "field");
+    try {
+      const before = bytes(ctx.doc, format), inventory = fields(ctx.doc), revision = ctx.editor.localRevision;
+      const session = ctx.sessions.get(1), history = ctx.editor.snapshot().history, dirty = ctx.editor.hasUnpreservedChanges;
+      expect(inventory).toHaveLength(1); expect(inventory[0].location.path[0].paraIndex).toBe(1);
+      const snapshot = vi.spyOn(ctx.doc, "saveSnapshot");
+      expect(insert(ctx.editor, "=2").accepted).toBe(false);
+      expect(snapshot).not.toHaveBeenCalled(); snapshot.mockRestore();
+      expect(bytes(ctx.doc, format)).toEqual(before); expect(fields(ctx.doc)).toEqual(inventory);
+      expect(ctx.editor.localRevision).toBe(revision); expect(ctx.sessions.get(1)).toEqual(session);
+      expect(ctx.editor.snapshot().history).toEqual(history); expect(ctx.editor.hasUnpreservedChanges).toBe(dirty);
+      expect(ctx.calls.some(c => c.method === "commit" || c.method === "save")).toBe(false);
+    } finally { ctx.editor.dispose(); }
   });
   it("preserves an independent second paragraph during insert/replace/undo/reopen", async () => {
     const ctx = await open(format, 2, 3, false, true);
