@@ -635,8 +635,8 @@ impl DocxModel {
         if !self.has_revisions() {
             return Err(Rejected);
         }
-        // Resolving tracked TOC range markers can leave an orphan bookmark in the
-        // pinned engine. Refuse that result before accepting the edit/history step.
+        // The engine maintains bookmark lifecycles. Keep the independent semantic
+        // round-trip guard before accepting the edit/history step.
         let check_toc = self.has_toc();
         let changed = self.atomic(|model| {
             let changed = model.run(command, json!({}))?;

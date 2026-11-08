@@ -2962,14 +2962,156 @@ fn tracked_toc_bookmark_deletion_preserves_revision_on_two_roundtrips() {
 }
 
 #[test]
-fn resolving_tracked_toc_bookmark_deletion_refuses_unroundtrippable_model_atomically() {
+fn resolving_tracked_toc_bookmark_boundaries_preserves_the_surviving_range() {
+    use wordcraft_engine::doc::{InlineObject, Pos};
+    for operation in [
+        DocxOp::AcceptChange {},
+        DocxOp::RejectChange {},
+        DocxOp::AcceptAll {},
+        DocxOp::RejectAll {},
+    ] {
+        for kind in ["start", "end", "prefix"] {
+            let end = kind == "end";
+            let mut m = DocxModel::open(&headed_fixture()).unwrap();
+            assert_eq!(
+                m.apply(&[mv(MoveTarget::DocStart, false), DocxOp::Toc {}])
+                    .changed,
+                1
+            );
+            let index = m
+                .diagnostic_document()
+                .body
+                .iter()
+                .position(|b| {
+                    b.as_para()
+                        .is_some_and(|p| p.props.style.as_deref() == Some("Heading2"))
+                })
+                .unwrap();
+            let paragraph = m.diagnostic_document().body[index].as_para().unwrap();
+            let visible = paragraph.plain_text();
+            let first_char_bytes = paragraph
+                .text
+                .get(wordcraft_engine::doc::para::OBJ.len_utf8()..)
+                .unwrap()
+                .chars()
+                .next()
+                .unwrap()
+                .len_utf8();
+            let off = if end {
+                paragraph
+                    .object_offsets()
+                    .into_iter()
+                    .find(|off| {
+                        matches!(
+                            paragraph.object_at(*off),
+                            Some(InlineObject::BookmarkEnd { .. })
+                        )
+                    })
+                    .unwrap()
+            } else {
+                0
+            };
+            assert!(m
+                .apply(&[
+                    DocxOp::TrackChanges { value: true },
+                    mv(MoveTarget::DocEnd, false),
+                    insert("unrelated revision")
+                ])
+                .rejected
+                .is_empty());
+            assert!(m.run_engine("caret.set", json!({"pos": Pos::body(index, off)})));
+            if kind == "prefix" {
+                assert!(m.run_engine("select.range", json!({"anchor": Pos::body(index, 0), "focus": Pos::body(index, wordcraft_engine::doc::para::OBJ.len_utf8() + first_char_bytes)})));
+            }
+            assert_eq!(m.apply(&[DocxOp::DeleteForward]).changed, 1);
+            let tracked = m.diagnostic_document().clone();
+            assert!(m.same_as(&m.export().unwrap()));
+            let outcome = m.apply(&[operation.clone()]);
+            assert_eq!(
+                (outcome.changed, outcome.rejected),
+                (1, vec![]),
+                "{operation:?} end={end}"
+            );
+            let expected: String = if kind == "prefix"
+                && matches!(operation, DocxOp::AcceptChange {} | DocxOp::AcceptAll {})
+            {
+                visible.chars().skip(1).collect()
+            } else {
+                visible.clone()
+            };
+            assert_eq!(
+                m.diagnostic_document().body[index]
+                    .as_para()
+                    .unwrap()
+                    .plain_text(),
+                expected
+            );
+            if matches!(operation, DocxOp::AcceptChange {} | DocxOp::RejectChange {}) {
+                assert!(m.view().has_revisions);
+            }
+            let resolved = m.diagnostic_document().clone();
+            assert!(m.same_as(&m.export().unwrap()));
+            assert_eq!(m.apply(&[DocxOp::Undo {}]).changed, 1);
+            assert_eq!(*m.diagnostic_document(), tracked);
+            assert_eq!(m.apply(&[DocxOp::Redo {}]).changed, 1);
+            assert_eq!(*m.diagnostic_document(), resolved);
+            assert!(m
+                .apply(&[DocxOp::UpdateToc {}, DocxOp::UpdateToc {}])
+                .rejected
+                .is_empty());
+            assert!(m.same_as(&m.export().unwrap()));
+        }
+    }
+}
+
+#[test]
+fn invalid_tracked_toc_marker_structure_still_refuses_atomically() {
+    use wordcraft_engine::doc::{InlineObject, Path, StoryRef};
+    let mut m = DocxModel::open(&headed_fixture()).unwrap();
+    m.apply(&[
+        mv(MoveTarget::DocStart, false),
+        DocxOp::Toc {},
+        DocxOp::TrackChanges { value: true },
+        mv(MoveTarget::DocEnd, false),
+        insert("tracked tail"),
+    ]);
+    let (index, off) = m
+        .diagnostic_document()
+        .body
+        .iter()
+        .enumerate()
+        .find_map(|(i, b)| {
+            let p = b.as_para()?;
+            p.object_offsets()
+                .into_iter()
+                .find(|off| matches!(p.object_at(*off), Some(InlineObject::BookmarkStart { .. })))
+                .map(|off| (i, off))
+        })
+        .unwrap();
+    m.diagnostic_document_mut()
+        .para_mut(StoryRef::Body, &Path::top(index))
+        .unwrap()
+        .delete(off, off + wordcraft_engine::doc::para::OBJ.len_utf8())
+        .unwrap();
+    let before = m.diagnostic_document().clone();
+    let history = m.view().history;
+    for operation in [
+        DocxOp::AcceptAll {},
+        DocxOp::RejectAll {},
+        DocxOp::UpdateToc {},
+    ] {
+        let outcome = m.apply(&[operation]);
+        assert_eq!((outcome.changed, outcome.rejected), (0, vec![0]));
+        assert_eq!(*m.diagnostic_document(), before);
+        assert_eq!(m.view().history, history);
+    }
+}
+
+#[test]
+fn accepting_a_whole_bookmarked_heading_keeps_toc_targets_and_history_atomic() {
     use wordcraft_engine::doc::Pos;
     let mut m = DocxModel::open(&headed_fixture()).unwrap();
-    assert_eq!(
-        m.apply(&[mv(MoveTarget::DocStart, false), DocxOp::Toc {}])
-            .changed,
-        1
-    );
+    m.apply(&[mv(MoveTarget::DocStart, false), DocxOp::Toc {}]);
     let index = m
         .diagnostic_document()
         .body
@@ -2979,12 +3121,13 @@ fn resolving_tracked_toc_bookmark_deletion_refuses_unroundtrippable_model_atomic
                 .is_some_and(|p| p.props.style.as_deref() == Some("Heading2"))
         })
         .unwrap();
-    assert!(m.run_engine("caret.set", json!({"pos": Pos::body(index, 0)})));
-    assert_eq!(
-        m.apply(&[DocxOp::TrackChanges { value: true }, DocxOp::DeleteForward])
-            .changed,
-        2
-    );
+    let len = m.diagnostic_document().body[index].as_para().unwrap().len();
+    assert_eq!(m.apply(&[DocxOp::TrackChanges { value: true }]).changed, 1);
+    assert!(m.run_engine(
+        "select.range",
+        json!({"anchor": Pos::body(index, 0), "focus": Pos::body(index, len)})
+    ));
+    assert_eq!(m.apply(&[DocxOp::DeleteForward]).changed, 1);
     assert!(m.same_as(&m.export().unwrap()));
     let before = m.diagnostic_document().clone();
     let history = m.view().history;
@@ -2993,7 +3136,6 @@ fn resolving_tracked_toc_bookmark_deletion_refuses_unroundtrippable_model_atomic
     assert_eq!(*m.diagnostic_document(), before);
     assert_eq!(m.view().history, history);
     assert!(m.same_as(&m.export().unwrap()));
-    // The rejected command must not insert a history step ahead of the real deletion.
     assert_eq!(m.apply(&[DocxOp::Undo {}]).changed, 1);
     assert!(m.same_as(&m.export().unwrap()));
 }

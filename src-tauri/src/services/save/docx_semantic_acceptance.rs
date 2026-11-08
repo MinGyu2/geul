@@ -2559,3 +2559,123 @@ fn mixed_toc_hyperlink_comments_notes_tracking_publish_reopen_edit_publish() {
         assert_save_refused("mixed relationship target", &doc, &corrupt, same);
     }
 }
+
+#[test]
+fn tracked_toc_boundary_resolution_durable_two_rounds() {
+    for (mode, resolution) in [
+        DocxOp::AcceptChange {},
+        DocxOp::RejectChange {},
+        DocxOp::AcceptAll {},
+        DocxOp::RejectAll {},
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        let original = mixed_original();
+        let sentinel = reopen(&original).body[3].clone();
+        let mut doc = open_docx(&original);
+        assert!(doc.preflight().unwrap().preservation.is_safe());
+        comment_chars(&mut doc, 0, 3, "ordinary comment");
+        comment_chars(&mut doc, 10, 2, "split hyperlink comment");
+        mixed_edit(
+            &mut doc,
+            vec![
+                mixed_move(MoveTarget::DocEnd, false),
+                DocxOp::Footnote {
+                    text: "mixed footnote".into(),
+                },
+                DocxOp::Endnote {
+                    text: "mixed endnote".into(),
+                },
+                mixed_move(MoveTarget::DocStart, false),
+                DocxOp::Toc {},
+                DocxOp::TrackChanges { value: true },
+            ],
+        );
+        let index = model_of(&doc)
+            .lock()
+            .unwrap()
+            .diagnostic_document()
+            .body
+            .iter()
+            .position(|b| {
+                b.as_para()
+                    .is_some_and(|p| p.props.style.as_deref() == Some("Heading2"))
+            })
+            .unwrap();
+        assert!(model_of(&doc)
+            .lock()
+            .unwrap()
+            .run_engine("caret.set", json!({"pos": Pos::body(index, 0)})));
+        mixed_edit(&mut doc, vec![DocxOp::DeleteForward]);
+        mixed_edit(
+            &mut doc,
+            vec![
+                resolution.clone(),
+                DocxOp::Undo {},
+                DocxOp::Redo {},
+                DocxOp::UpdateToc {},
+                DocxOp::UpdateToc {},
+            ],
+        );
+        let first = publish_notes(&mut doc);
+        mixed_assert_parts(&first, &sentinel);
+        let mut doc = reload(doc);
+        mixed_edit(
+            &mut doc,
+            vec![
+                mixed_move(MoveTarget::DocEnd, false),
+                mixed_insert(" follow-up"),
+                DocxOp::UpdateToc {},
+            ],
+        );
+        let second = publish_notes(&mut doc);
+        mixed_assert_parts(&second, &sentinel);
+        let doc = reload(doc);
+        assert!(doc.preflight().unwrap().preservation.is_safe());
+        assert!(reopen(&second)
+            .plain_text(StoryRef::Body)
+            .contains("follow-up"));
+        for bytes in [&first, &second] {
+            let model = reopen(bytes);
+            let mut markers = std::collections::BTreeMap::<String, (usize, usize)>::new();
+            for p in model.body.iter().filter_map(|b| b.as_para()) {
+                for obj in &p.objects {
+                    match obj {
+                        InlineObject::BookmarkStart { name } => {
+                            markers.entry(name.clone()).or_default().0 += 1
+                        }
+                        InlineObject::BookmarkEnd { name } => {
+                            markers.entry(name.clone()).or_default().1 += 1
+                        }
+                        _ => {}
+                    }
+                }
+            }
+            assert!(!markers.is_empty());
+            assert!(markers.values().all(|pair| *pair == (1, 1)));
+            for p in model.body.iter().filter_map(|b| b.as_para()) {
+                for target in p
+                    .runs
+                    .iter()
+                    .filter_map(|r| r.props.link.as_deref())
+                    .filter_map(|l| l.strip_prefix('#'))
+                {
+                    assert!(markers.contains_key(target));
+                }
+            }
+        }
+        if let Some(folder) = std::env::var_os("GEUL_TRACKED_TOC_OUT") {
+            let folder = std::path::PathBuf::from(folder);
+            assert!(folder.is_absolute());
+            std::fs::create_dir_all(&folder).unwrap();
+            std::fs::write(folder.join(format!("mode-{mode}-first.docx")), &first).unwrap();
+            std::fs::write(folder.join(format!("mode-{mode}-second.docx")), &second).unwrap();
+        }
+        println!(
+            "tracked TOC {resolution:?} first={:x} second={:x}",
+            Sha256::digest(&first),
+            Sha256::digest(&second)
+        );
+    }
+}
