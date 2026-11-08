@@ -2736,6 +2736,7 @@ fn toc_targets(d: &Document) -> Vec<(String, String)> {
 ///   bookmark) regenerates the TOC in the same command instead of refusing;
 /// - `cross`: an imported bookmark from the first heading to the second; accepting a tracked
 ///   deletion of the first heading's start (both bookmark starts) keeps both ranges.
+///
 /// First save, disk reopen, follow-up edit and TOC update, second save, final reopen.
 #[test]
 fn tracked_toc_target_removal_and_cross_paragraph_boundary_durable_two_rounds() {
