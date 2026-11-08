@@ -1,8 +1,9 @@
-// Read-only projection of the supported top-level rectangular table subset.
+// Read-only projection of validated top-level table geometry and paragraph ownership.
 // Authoritative contracts: field_query.rs collect_fields_and_lists, hwpctrl_sets.rs
 // collect_controls, table_ops.rs get_cell (first paragraph, exact anchor coordinate).
 // No field-list omission is interpreted as "plain": the complete control inventory
-// must independently be empty. Unknown/nested/merged structures fail closed.
+// must independently be empty. Unknown/nested structures fail closed. Covered merged
+// coordinates have no value in RHWP (table_ops.rs exact-anchor lookup), not an alias.
 import { formulaDependencies, MAX_FORMULA_CELL_VISITS } from "../../../commands/parameters";
 import type { RhwpDocument } from "./rhwpModule";
 import type { DocPosition } from "./rhwpText";
@@ -35,7 +36,7 @@ function project(doc: RhwpDocument, at: DocPosition, proposed: string): FormulaS
   if (!record(dimensions)) return "unknown";
   const { rowCount: rows, colCount: cols, cellCount: count } = dimensions;
   if (!index(rows) || !index(cols) || !index(count) || !rows || !cols || rows > MAX_FORMULA_CELL_VISITS / cols
-    || count !== rows * cols) return "unknown";
+    || !count || count > rows * cols) return "unknown";
   const model = read(doc.getCursorModel()), controls = read(doc.getControls()), fields = read(doc.getFieldList());
   if (!record(model) || !entries(model.lists) || !entries(controls) || !entries(fields)) return "unknown";
   // Reject malformed identities even when their ownership cannot be located.
@@ -47,20 +48,34 @@ function project(doc: RhwpDocument, at: DocPosition, proposed: string): FormulaS
   if (lists.length !== count) return "unknown";
   const cellLists = new Map<number, number>(), coordinates = new Map<number, number>();
   const listIds = new Set<number>(), coordinateKeys = new Set<number>();
+  const coverage = new Set<number>();
+  let paragraphs = 0;
   for (const l of lists) {
     const physical = l.cellIndex as number;
-    if (l.isCell !== true || l.paraCount !== 1 || physical >= count || cellLists.has(physical)
+    if (l.isCell !== true || (!index(l.paraCount) || l.paraCount === 0) || physical >= count || cellLists.has(physical)
       || !index(l.listId) || l.listId < 2 || listIds.has(l.listId)) return "unknown";
     const geometry = read(doc.getCellInfo(at.section, cell.parentParagraph, cell.control, physical));
     if (!record(geometry) || !index(geometry.row) || !index(geometry.col) || geometry.row >= rows || geometry.col >= cols
-      || geometry.rowSpan !== 1 || geometry.colSpan !== 1 || l.row !== geometry.row || l.col !== geometry.col
-      || l.rowSpan !== 1 || l.colSpan !== 1 || l.cellCount !== count
-      || doc.getCellParagraphCount(at.section, cell.parentParagraph, cell.control, physical) !== 1) return "unknown";
+      || !index(geometry.rowSpan) || !index(geometry.colSpan) || !geometry.rowSpan || !geometry.colSpan
+      || geometry.row + geometry.rowSpan > rows || geometry.col + geometry.colSpan > cols
+      || l.row !== geometry.row || l.col !== geometry.col
+      || l.rowSpan !== geometry.rowSpan || l.colSpan !== geometry.colSpan || l.cellCount !== count
+      || doc.getCellParagraphCount(at.section, cell.parentParagraph, cell.control, physical) !== l.paraCount) return "unknown";
+    paragraphs += l.paraCount as number;
+    if (paragraphs > MAX_FORMULA_CELL_VISITS) return "unknown";
+    for (let row = geometry.row; row < geometry.row + geometry.rowSpan; row++) {
+      for (let col = geometry.col; col < geometry.col + geometry.colSpan; col++) {
+        const covered = row * cols + col;
+        if (coverage.has(covered)) return "unknown";
+        coverage.add(covered);
+      }
+    }
     const coordinate = geometry.row * cols + geometry.col;
     if (coordinateKeys.has(coordinate)) return "unknown";
     listIds.add(l.listId); coordinateKeys.add(coordinate);
     cellLists.set(physical, l.listId); coordinates.set(physical, coordinate);
   }
+  if (coverage.size !== rows * cols) return "unknown";
   const destination = coordinates.get(cell.cell);
   if (destination === undefined) return "unknown";
   const tableFields = new Map<number, RecordValue>();
@@ -108,13 +123,15 @@ function project(doc: RhwpDocument, at: DocPosition, proposed: string): FormulaS
     const probe = read(doc.validateTableFormulaField(at.section, cell.parentParagraph, cell.control, row, col, "=0"));
     if (!record(probe) || Object.keys(probe).sort().join(",") !== "changed,command,fieldId,ok,text"
       || typeof probe.changed !== "boolean" || probe.ok !== true || probe.fieldId !== field.fieldId || probe.text !== "0" || probe.command !== "=0??%g,;;0") return "unknown";
-    const edges = formulaDependencies(match[1]!, { row, col, rows, cols });
+    const rawEdges = formulaDependencies(match[1]!, { row, col, rows, cols });
+    const edges = rawEdges?.filter(edge => coordinateKeys.has(edge));
     if (!edges) return "unknown";
-    if (coordinate !== destination) { budget += edges.length; graph.set(coordinate, edges); }
+    if (coordinate !== destination) { budget += rawEdges!.length; graph.set(coordinate, edges); }
     if (budget > MAX_FORMULA_CELL_VISITS) return "unknown";
   }
-  const edges = formulaDependencies(proposed, { row: Math.floor(destination / cols), col: destination % cols, rows, cols });
-  if (!edges || budget + edges.length > MAX_FORMULA_CELL_VISITS) return "unknown";
+  const rawEdges = formulaDependencies(proposed, { row: Math.floor(destination / cols), col: destination % cols, rows, cols });
+  const edges = rawEdges?.filter(edge => coordinateKeys.has(edge));
+  if (!edges || budget + rawEdges!.length > MAX_FORMULA_CELL_VISITS) return "unknown";
   graph.set(destination, edges); // replace, never append the old destination edges
   // Iterative DFS over dependencies reachable from the destination. An already
   // imported cycle reached by the new expression is unsafe too. Bounded V+E.

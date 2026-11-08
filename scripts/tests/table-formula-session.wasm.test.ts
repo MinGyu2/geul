@@ -23,13 +23,21 @@ const bytes = (doc: RhwpDocument, format: "hwp" | "hwpx") => {
   const report = format === "hwp" ? doc.exportHwpWithReport() : doc.exportHwpxWithReport();
   try { return report.takeBytes(); } finally { report.free(); }
 };
-async function open(format: "hwp" | "hwpx", rows = 2, cols = 2, merged = false) {
+async function open(format: "hwp" | "hwpx", rows = 2, cols = 2, merged: boolean | readonly (readonly [number, number, number, number])[] = false, multi = false) {
   const seed = engine.HwpDocument.createEmpty();
   seed.createBlankDocument();
   const placed = JSON.parse(seed.createTable(0, 0, 0, rows, cols));
   seed.insertTextInCell(0, placed.paraIdx, placed.controlIdx, 0, 0, 0, "10");
   seed.insertTextInCell(0, placed.paraIdx, placed.controlIdx, 1, 0, 0, "20");
-  if (merged) seed.mergeTableCells(0, placed.paraIdx, placed.controlIdx, 0, 0, 0, 1);
+  if (merged) {
+    for (const [r1, c1, r2, c2] of merged === true ? [[0, 0, 0, 1]] : merged) {
+      seed.mergeTableCells(0, placed.paraIdx, placed.controlIdx, r1, c1, r2, c2);
+    }
+  }
+  if (multi) {
+    seed.splitParagraphInCell(0, placed.paraIdx, placed.controlIdx, 3, 0, 0);
+    seed.insertTextInCell(0, placed.paraIdx, placed.controlIdx, 3, 1, 0, "independent tail 한글");
+  }
   const original = bytes(seed, format); seed.free();
   const { backend, take, calls } = controlledBackend();
   const sessions = new DocumentSessions(backend);
@@ -492,9 +500,16 @@ describe.each(["hwp", "hwpx"] as const)("bounded persistent dependencies (%s)", 
       expect(ctx.doc.getFieldList!()).toBe(original);
     } finally { ctx.editor.dispose(); }
   });
-  it("fails closed for an actual engine-merged table", async () => {
+  it("supports actual engine-merged geometry and refuses direct and indirect anchor cycles", async () => {
     const ctx = await fixture(true);
-    try { ctx.refuse(3, "=2"); } finally { ctx.editor.dispose(); }
+    try {
+      await ctx.apply(0, "=C1+1");
+      ctx.refuse(1, "=A1+1"); // physical 1 is C1 after the A1:B1 merge
+      ctx.refuse(0, "=A1");
+      // Covered B1 has no physical value in the engine; it is not an alias for A1.
+      await ctx.apply(1, "=B1+2");
+      expect(fields(ctx.doc)[1].value).toBe("2");
+    } finally { ctx.editor.dispose(); }
   });
   it("refuses merged or incomplete geometry rather than assuming row-major ownership", async () => {
     const ctx = await fixture();
@@ -502,6 +517,98 @@ describe.each(["hwp", "hwpx"] as const)("bounded persistent dependencies (%s)", 
       const original = ctx.doc.getCellInfo!.bind(ctx.doc);
       const spy = vi.spyOn(ctx.doc, "getCellInfo").mockImplementation((...args) => JSON.stringify({ ...JSON.parse(original(...args)), colSpan: 2 }));
       try { ctx.refuse(0, "=B1+1"); } finally { spy.mockRestore(); }
+    } finally { ctx.editor.dispose(); }
+  });
+});
+
+
+
+function emitComplexPublication(format: "hwp" | "hwpx", name: string, rounds: Awaited<ReturnType<Awaited<ReturnType<typeof open>>["save"]>>[]) {
+  const out = process.env.GEUL_COMPLEX_OUT;
+  if (out) {
+    mkdirSync(out, { recursive: true });
+    const cases = rounds.map((result, i) => {
+      const stem = join(out, `${format}-${name}-${i}`);
+      for (const [suffix, value] of [["original", result.original], ["unedited", result.unedited], ["output", result.output]] as const) writeFileSync(stem + "." + suffix, value);
+      writeFileSync(stem + ".unedited.loss.json", JSON.stringify(result.uneditedLoss));
+      writeFileSync(stem + ".output.loss.json", JSON.stringify(result.outputLoss));
+      return { name: `${format}-${name}-${i}`, fmt: format, mode: "save", target: stem + ".target", unedited: stem + ".unedited", uneditedLoss: stem + ".unedited.loss.json", output: stem + ".output", outputLoss: stem + ".output.loss.json", reopen: result.reopen };
+    });
+    writeFileSync(join(out, `${format}-${name}.json`), JSON.stringify({ cases }));
+  }
+}
+
+describe.each(["hwp", "hwpx"] as const)("complex table publication inputs (%s)", format => {
+  const layouts = [
+    ["horizontal", [[0, 0, 0, 1]]],
+    ["vertical", [[0, 0, 1, 0]]],
+    ["multiple", [[0, 0, 0, 1], [1, 1, 1, 2]]],
+  ] as const;
+  it.each(layouts)("%s: logical ownership, replacement, history and repeat reopen", async (name, regions) => {
+    const ctx = await open(format, 2, 3, regions);
+    const { editor, doc, settle } = ctx;
+    const select = (cell: number) => { editor.caret = editor.anchor = { ...at, cell: { ...editor.caret.cell!, cell } }; };
+    try {
+      select(0);
+      // Covered coordinate is zero, anchor A1 is ten. Reversed range counts the anchor once.
+      const formula = name === "vertical" ? "=SUM(C1:B1)" : "=B1+2";
+      expect(insert(editor, formula).accepted).toBe(true); await settle();
+      const firstField = fields(doc)[0];
+      expect(firstField.value).toBe(name === "vertical" ? "20" : "2");
+      const before = bytes(doc, format), revision = editor.localRevision;
+      const snapshot = vi.spyOn(doc, "saveSnapshot");
+      expect(insert(editor, "=A1").accepted).toBe(false);
+      expect(bytes(doc, format)).toEqual(before); expect(editor.localRevision).toBe(revision);
+      expect(snapshot).not.toHaveBeenCalled(); snapshot.mockRestore();
+      expect(insert(editor, "=3").accepted).toBe(true); await settle();
+      expect(fields(doc)[0].fieldId).toBe(firstField.fieldId);
+      expect(editor.execute("edit.undo").accepted).toBe(true); await settle();
+      expect(fields(doc)[0].command).toBe(firstField.command);
+      expect(editor.execute("edit.redo").accepted).toBe(true); await settle();
+      const first = await ctx.save();
+      const reopened = new engine.HwpDocument(first.output);
+      try {
+        expect(fields(reopened)).toEqual(fields(doc));
+        expect(JSON.parse(reopened.insertTableFormulaField(0, 0, editor.caret.cell!.control, 0, 0, "=4")).ok).toBe(true);
+        const second = new engine.HwpDocument(bytes(reopened, format));
+        try { expect(fields(second)[0]).toMatchObject({ fieldId: firstField.fieldId, value: "4" }); }
+        finally { second.free(); }
+      } finally { reopened.free(); }
+      expect(insert(editor, "=4").accepted).toBe(true); await settle();
+      const second = await ctx.save();
+      emitComplexPublication(format, name, [first, second]);
+    } finally { editor.dispose(); }
+  });
+  it("preserves an independent second paragraph during insert/replace/undo/reopen", async () => {
+    const ctx = await open(format, 2, 3, false, true);
+    try {
+      const { editor, doc, settle } = ctx, ctrl = editor.caret.cell!.control;
+      const tail = () => doc.getTextInCell(0, 0, ctrl, 3, 1, 0, doc.getCellParagraphLength(0, 0, ctrl, 3, 1));
+      const originalTail = tail(); expect(originalTail).toBe("independent tail 한글");
+      expect(insert(editor, "=A1+B1").accepted).toBe(true); await settle();
+      const id = fields(doc)[0].fieldId;
+      expect(tail()).toBe(originalTail); expect(doc.getCellParagraphCount(0, 0, ctrl, 3)).toBe(2);
+      expect(insert(editor, "=A1*3").accepted).toBe(true); await settle();
+      expect(fields(doc)[0]).toMatchObject({ fieldId: id, value: "30" }); expect(tail()).toBe(originalTail);
+      expect(editor.execute("edit.undo").accepted).toBe(true); await settle(); expect(tail()).toBe(originalTail);
+      const firstSave = await ctx.save();
+      const first = new engine.HwpDocument(firstSave.output);
+      try {
+        expect(first.getCellParagraphCount(0, 0, ctrl, 3)).toBe(2);
+        expect(JSON.parse(first.insertTableFormulaField(0, 0, ctrl, 1, 0, "=7")).ok).toBe(true);
+        const second = new engine.HwpDocument(bytes(first, format));
+        try { expect(fields(second)[0]).toMatchObject({ fieldId: id, value: "7" }); expect(second.getTextInCell(0, 0, ctrl, 3, 1, 0, originalTail.length)).toBe(originalTail); }
+        finally { second.free(); }
+      } finally { first.free(); }
+      expect(insert(editor, "=7").accepted).toBe(true); await settle();
+      const secondSave = await ctx.save();
+      emitComplexPublication(format, "paragraphs", [firstSave, secondSave]);
+      // Paragraph one is independent text, not a writable formula owner.
+      editor.caret = editor.anchor = { ...editor.caret, cell: { ...editor.caret.cell!, cellParagraph: 1 } };
+      const before = bytes(doc, format), revision = editor.localRevision;
+      const snapshot = vi.spyOn(doc, "saveSnapshot");
+      expect(insert(editor, "=9").accepted).toBe(false); expect(bytes(doc, format)).toEqual(before);
+      expect(editor.localRevision).toBe(revision); expect(snapshot).not.toHaveBeenCalled(); snapshot.mockRestore();
     } finally { ctx.editor.dispose(); }
   });
 });
