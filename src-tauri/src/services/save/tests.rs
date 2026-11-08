@@ -11487,3 +11487,429 @@ fn calc_cell_two_durable_saves_with_regenerated_previews() {
         assert_eq!(revision, 1);
     }
 }
+
+// ---- HWP blank first page vs failed render (2026-11-08 follow-up) ----
+
+const ALIGN_LEFT: &[u8] = include_bytes!(concat!(
+    env!("CARGO_MANIFEST_DIR"),
+    "/../external/rhwp/samples/re-align-left-hancom.hwp"
+));
+
+fn hwp_record(tag: u16, level: u16, body: &[u8]) -> Vec<u8> {
+    let size = body.len();
+    let mut out = Vec::new();
+    let head = u32::from(tag) | (u32::from(level) << 10);
+    if size >= 0xfff {
+        out.extend_from_slice(&(head | (0xfff << 20)).to_le_bytes());
+        out.extend_from_slice(&(size as u32).to_le_bytes());
+    } else {
+        out.extend_from_slice(&(head | ((size as u32) << 20)).to_le_bytes());
+    }
+    out.extend_from_slice(body);
+    out
+}
+
+fn hwp_records(data: &[u8]) -> Vec<(u16, u16, Vec<u8>)> {
+    let mut out = Vec::new();
+    let mut at = 0;
+    while at < data.len() {
+        let head = u32::from_le_bytes(data[at..at + 4].try_into().unwrap());
+        at += 4;
+        let mut size = (head >> 20) as usize;
+        if size == 0xfff {
+            size = u32::from_le_bytes(data[at..at + 4].try_into().unwrap()) as usize;
+            at += 4;
+        }
+        out.push((
+            (head & 0x3ff) as u16,
+            ((head >> 10) & 0x3ff) as u16,
+            data[at..at + size].to_vec(),
+        ));
+        at += size;
+    }
+    out
+}
+
+/// The genuine one-paragraph Hancom fixture with Section0 rewritten by `edit` (records in, out),
+/// exactly like the engine's export of the same edit (validated against the session export in
+/// target/blank-preview-wc-ci-20261108/a: header char count, two control units + CR, one LINE_SEG).
+fn align_left_with(
+    from: &[u8],
+    edit: impl FnOnce(Vec<(u16, u16, Vec<u8>)>) -> Vec<(u16, u16, Vec<u8>)>,
+) -> Vec<u8> {
+    use std::io::{Read, Write};
+    let section = cfb_stream(from, "/BodyText/Section0").unwrap();
+    let mut raw = Vec::new();
+    flate2::read::DeflateDecoder::new(&section[..])
+        .read_to_end(&mut raw)
+        .unwrap();
+    let records = edit(hwp_records(&raw));
+    let raw: Vec<u8> = records
+        .iter()
+        .flat_map(|(t, l, b)| hwp_record(*t, *l, b))
+        .collect();
+    let mut encoder = flate2::write::DeflateEncoder::new(Vec::new(), flate2::Compression::new(6));
+    encoder.write_all(&raw).unwrap();
+    cfb_replace(from, &[("/BodyText/Section0", &encoder.finish().unwrap())])
+}
+
+/// Paragraph 0 keeps its two section/column control units and `text` (UTF-16) before the CR.
+fn set_first_paragraph(records: Vec<(u16, u16, Vec<u8>)>, text: &str) -> Vec<(u16, u16, Vec<u8>)> {
+    let units: Vec<u8> = text.encode_utf16().flat_map(u16::to_le_bytes).collect();
+    let mut out = Vec::new();
+    let mut first = true;
+    for (tag, level, mut body) in records {
+        if first && tag == 66 && level == 0 {
+            let flags = u32::from_le_bytes(body[..4].try_into().unwrap()) & 0x8000_0000;
+            let count = 16 + text.encode_utf16().count() as u32 + 1;
+            body[..4].copy_from_slice(&(flags | count).to_le_bytes());
+        } else if first && tag == 67 && level == 1 {
+            body = [&body[..32], &units[..], &[0x0d, 0][..]].concat();
+        } else if first && tag == 69 && level == 1 {
+            body.truncate(36);
+            first = false;
+        }
+        out.push((tag, level, body));
+    }
+    out
+}
+
+/// A second top-level paragraph with visible text after paragraph 0 (later page content).
+fn append_text_paragraph(
+    mut records: Vec<(u16, u16, Vec<u8>)>,
+    text: &str,
+) -> Vec<(u16, u16, Vec<u8>)> {
+    let header = records
+        .iter()
+        .find(|(t, l, _)| *t == 66 && *l == 0)
+        .unwrap()
+        .2
+        .clone();
+    let shape = records
+        .iter()
+        .find(|(t, l, _)| *t == 68 && *l == 1)
+        .unwrap()
+        .2
+        .clone();
+    let line = records
+        .iter()
+        .find(|(t, l, _)| *t == 69 && *l == 1)
+        .unwrap()
+        .2[..36]
+        .to_vec();
+    let mut header = header;
+    let count = text.encode_utf16().count() as u32 + 1;
+    header[..4].copy_from_slice(&(0x8000_0000 | count).to_le_bytes());
+    header[4..8].copy_from_slice(&0u32.to_le_bytes()); // no controls
+    let units: Vec<u8> = text
+        .encode_utf16()
+        .chain([13])
+        .flat_map(u16::to_le_bytes)
+        .collect();
+    // Clear the "last paragraph" bit on the previous last paragraph header.
+    if let Some(last) = records
+        .iter_mut()
+        .rev()
+        .find(|(t, l, _)| *t == 66 && *l == 0)
+    {
+        let value = u32::from_le_bytes(last.2[..4].try_into().unwrap()) & 0x7fff_ffff;
+        last.2[..4].copy_from_slice(&value.to_le_bytes());
+    }
+    records.extend([
+        (66, 0, header),
+        (67, 1, units),
+        (68, 1, shape),
+        (69, 1, line),
+    ]);
+    records
+}
+
+fn uniform(width: u32, height: u32, value: u8) -> super::preview::PreviewRaster {
+    super::preview::PreviewRaster::new(width, height, vec![value; (width * height * 3) as usize])
+        .unwrap()
+}
+
+#[test]
+fn blank_first_page_accepts_a_proven_uniform_render_and_refuses_unproven_ones() {
+    let blank = align_left_with(ALIGN_LEFT, |r| set_first_paragraph(r, ""));
+    // The serialized preview text is the content-free CRLF even though the page is blank: it is
+    // not the evidence (this was the defect: every uniform render was refused).
+    assert_eq!(
+        hwp::compare_saved(ALIGN_LEFT, &blank),
+        vec![
+            Finding::at(FindingCode::PreviewStale, "PrvText"),
+            Finding::at(FindingCode::PreviewStale, "PrvImage"),
+        ]
+    );
+    let gif = cfb_stream(ALIGN_LEFT, "/PrvImage").unwrap();
+    // Without the frontend's page-1 blank evidence a uniform render stays a failed render.
+    let refused =
+        hwp::refresh_previews(ALIGN_LEFT, &blank, Some(&uniform(724, 1024, 255))).unwrap();
+    assert!(refused.output.is_none() && refused.image.is_none());
+    // With it, the genuinely blank page gets a canonical white preview at the PAGE_DEF size.
+    let white = uniform(725, 1025, 255).with_blank_page(true);
+    let fixed = hwp::refresh_previews(ALIGN_LEFT, &blank, Some(&white)).unwrap();
+    let (output, png) = (fixed.output.unwrap(), fixed.image.unwrap());
+    assert!(hwp::compare_saved_with_preview(ALIGN_LEFT, &output, Some(&png)).is_empty());
+    let (w, h, rgb) = super::preview::decode_canonical_png(&png).unwrap();
+    assert_eq!((w, h), (724, 1024));
+    assert!(rgb.iter().all(|v| *v == 255));
+    assert_eq!(cfb_stream(&output, "/PrvText").unwrap(), utf16("\r\n"));
+    assert!(!output.windows(gif.len()).any(|window| window == gif));
+    for name in [
+        "/FileHeader",
+        "/DocInfo",
+        "/BodyText/Section0",
+        "/\u{5}HwpSummaryInformation",
+    ] {
+        assert_eq!(
+            cfb_stream(&output, name),
+            cfb_stream(&blank, name),
+            "{name}"
+        );
+    }
+    // A uniform page-background colour is a blank page too.
+    let grey = uniform(724, 1024, 200).with_blank_page(true);
+    assert!(hwp::refresh_previews(ALIGN_LEFT, &blank, Some(&grey))
+        .unwrap()
+        .output
+        .is_some());
+}
+
+#[test]
+fn nonblank_first_pages_refuse_a_uniform_render_even_when_marked_blank() {
+    let white = uniform(724, 1024, 255).with_blank_page(true);
+    // Visible text in the first paragraph (whitespace is not visible; one real character is).
+    let text = align_left_with(ALIGN_LEFT, |r| set_first_paragraph(r, "   가"));
+    assert!(hwp::refresh_previews(ALIGN_LEFT, &text, Some(&white))
+        .unwrap()
+        .output
+        .is_none());
+    // A table in the first paragraph (genuine calc-cell, cell edit).
+    let table = calc_cell_edited(CALC_CELL, b'1', b'9');
+    assert!(hwp::refresh_previews(CALC_CELL, &table, Some(&white))
+        .unwrap()
+        .output
+        .is_none());
+    // Whitespace-only first paragraph: the backend sees nothing visible there; acceptance still
+    // depends on the frontend evidence (which classifies whitespace runs as content).
+    let spaces = align_left_with(ALIGN_LEFT, |r| set_first_paragraph(r, "  \u{3000} "));
+    assert!(
+        hwp::refresh_previews(ALIGN_LEFT, &spaces, Some(&uniform(724, 1024, 255)))
+            .unwrap()
+            .output
+            .is_none()
+    );
+    assert!(hwp::refresh_previews(ALIGN_LEFT, &spaces, Some(&white))
+        .unwrap()
+        .output
+        .is_some());
+    // Undecodable first-paragraph text (a lone control unit) fails closed.
+    let broken = align_left_with(ALIGN_LEFT, |r| set_first_paragraph(r, "\u{1}"));
+    assert!(hwp::refresh_previews(ALIGN_LEFT, &broken, Some(&white))
+        .unwrap()
+        .output
+        .is_none());
+}
+
+#[test]
+fn blank_first_page_followed_by_later_text_needs_the_page_one_evidence() {
+    let later = align_left_with(ALIGN_LEFT, |r| {
+        append_text_paragraph(set_first_paragraph(r, ""), "둘째 쪽 본문")
+    });
+    // PrvText now summarizes the later text; it says nothing about page 1.
+    let findings = hwp::compare_saved(ALIGN_LEFT, &later);
+    assert!(
+        findings.contains(&Finding::at(FindingCode::PreviewStale, "PrvImage")),
+        "{findings:?}"
+    );
+    assert!(
+        hwp::refresh_previews(ALIGN_LEFT, &later, Some(&uniform(724, 1024, 255)))
+            .unwrap()
+            .output
+            .is_none()
+    );
+    let fixed = hwp::refresh_previews(
+        ALIGN_LEFT,
+        &later,
+        Some(&uniform(724, 1024, 255).with_blank_page(true)),
+    )
+    .unwrap();
+    let output = fixed.output.unwrap();
+    assert_eq!(
+        cfb_stream(&output, "/PrvText").unwrap(),
+        utf16("둘째 쪽 본문\r\n")
+    );
+    assert!(
+        hwp::compare_saved_with_preview(ALIGN_LEFT, &output, fixed.image.as_deref()).is_empty()
+    );
+}
+
+/// Structural checks that remain whatever page 1 shows: dimensions, canonical encoding, this
+/// save's exact bytes. Correct-size, canonical but wrong pixels are accepted by the backend
+/// when they are this save's encoding: pixel content is frontend evidence (like `reopen`), and
+/// its correspondence to the page is verified at test time by an independent renderer
+/// (scripts/tests/verify-hwp-preview.py, verify-hwp-blank-preview.py), never by the backend.
+#[test]
+fn preview_structure_is_checked_but_pixel_semantics_are_frontend_evidence() {
+    let blank = align_left_with(ALIGN_LEFT, |r| set_first_paragraph(r, ""));
+    let white = uniform(724, 1024, 255).with_blank_page(true);
+    for wrong in [
+        uniform(1024, 724, 255).with_blank_page(true),
+        uniform(700, 1024, 255).with_blank_page(true),
+    ] {
+        assert!(hwp::refresh_previews(ALIGN_LEFT, &blank, Some(&wrong))
+            .unwrap()
+            .output
+            .is_none());
+    }
+    let fixed = hwp::refresh_previews(ALIGN_LEFT, &blank, Some(&white)).unwrap();
+    let (output, png) = (fixed.output.unwrap(), fixed.image.unwrap());
+    // Same pixels, non-canonical container: refused as a changed part.
+    let mut tampered = png.clone();
+    let last = tampered.len() - 13;
+    tampered[last] ^= 1;
+    let swapped = cfb_replace(&output, &[("/PrvImage", &tampered)]);
+    assert!(
+        hwp::compare_saved_with_preview(ALIGN_LEFT, &swapped, Some(&tampered))
+            .contains(&Finding::at(FindingCode::PartChanged, "PrvImage"))
+    );
+    // A canonical image that is not this save's encoding: refused.
+    let other = super::preview::encode_png(724, 1024, &raster(724, 1024, 3).rgb).unwrap();
+    let foreign = cfb_replace(&output, &[("/PrvImage", &other)]);
+    assert!(
+        hwp::compare_saved_with_preview(ALIGN_LEFT, &foreign, Some(&png))
+            .contains(&Finding::at(FindingCode::PartChanged, "PrvImage"))
+    );
+    // Trust boundary, stated as a test: wrong-but-canonical pixels that ARE this save's encoding pass.
+    let stale_looking = raster(724, 1024, 9);
+    let accepted = hwp::refresh_previews(ALIGN_LEFT, &blank, Some(&stale_looking)).unwrap();
+    assert!(hwp::compare_saved_with_preview(
+        ALIGN_LEFT,
+        &accepted.output.unwrap(),
+        accepted.image.as_deref()
+    )
+    .is_empty());
+}
+
+/// Real save service: blank first save (frontend blank evidence), disk reopen, follow-up edit
+/// restoring text with a non-uniform render, second save; and the refused path (no evidence)
+/// leaves file, dirty state and revision unchanged.
+#[test]
+fn blank_page_two_durable_saves_and_refusal_rollback() {
+    use super::preview::PreviewRaster;
+    let dir = TempDir::new();
+    let path = dir.path().join("align.hwp");
+    let save = |bytes: Option<&[u8]>, output: &[u8], render: Option<&PreviewRaster>| {
+        let state = DocumentState::default();
+        let info = match bytes {
+            Some(bytes) => rhwp_session(&state, &dir, "align.hwp", bytes),
+            None => {
+                let file = identify(path.to_str().unwrap(), &Limits::default()).unwrap();
+                let info = state.registry().register(file).unwrap();
+                let (generation, _) = block_on(state.load_bytes(info.session_id)).unwrap();
+                state
+                    .registry()
+                    .transition(
+                        info.session_id,
+                        generation,
+                        SessionState::Loading,
+                        SessionState::Ready,
+                    )
+                    .unwrap()
+            }
+        };
+        let registry = state.registry();
+        let (id, generation) = (info.session_id, info.load_generation);
+        let source = registry.preflight_source(id, generation).unwrap();
+        let original = std::fs::read(&path).unwrap();
+        let check = service::preflight(
+            Format::Hwp,
+            &original,
+            &original,
+            Some(&report("hwp", json!([]))),
+        );
+        assert!(check.is_safe());
+        registry
+            .record_preflight(id, generation, source.content_hash, check)
+            .unwrap();
+        registry.commit(id, generation, 0, 1).unwrap();
+        let ticket = registry.begin_save(id, generation, 1).unwrap();
+        let result = service::save_with_options(
+            registry,
+            &ticket,
+            &Limits::default(),
+            output,
+            Some(&report("hwp", json!([]))),
+            true,
+            service::SaveOptions {
+                destination: None,
+                recovery: None,
+                preview: render,
+            },
+        );
+        drop(ticket);
+        let session = registry.get(id).unwrap();
+        (result, session.dirty, session.revision)
+    };
+    // Refused first: no blank evidence. Nothing is published.
+    let blank_out = align_left_with(ALIGN_LEFT, |r| set_first_paragraph(r, ""));
+    let (result, dirty, revision) =
+        save(Some(ALIGN_LEFT), &blank_out, Some(&uniform(724, 1024, 255)));
+    let DocumentError::UnsafeSave { preservation } = result.unwrap_err() else {
+        panic!()
+    };
+    assert!(preservation
+        .findings
+        .contains(&Finding::at(FindingCode::PreviewStale, "PrvImage")));
+    assert_eq!(std::fs::read(&path).unwrap(), ALIGN_LEFT);
+    assert!(dirty);
+    assert_eq!(revision, 1);
+    // Accepted: blank evidence.
+    let (result, _, _) = save(
+        None,
+        &blank_out,
+        Some(&uniform(724, 1024, 255).with_blank_page(true)),
+    );
+    let saved = result.unwrap();
+    assert!(saved.durable && !saved.session.dirty);
+    let first = std::fs::read(&path).unwrap();
+    let png = cfb_stream(&first, "/PrvImage").unwrap();
+    assert!(super::preview::decode_canonical_png(&png)
+        .unwrap()
+        .2
+        .iter()
+        .all(|v| *v == 255));
+    assert_eq!(cfb_stream(&first, "/PrvText").unwrap(), utf16("\r\n"));
+    // Disk reopen; follow-up edit puts text back; the render now paints text.
+    let second_out = align_left_with(&first, |r| set_first_paragraph(r, "다시 쓴 글"));
+    let render = raster(724, 1024, 4);
+    let (result, _, _) = save(None, &second_out, Some(&render));
+    let saved = result.unwrap();
+    assert!(saved.durable && !saved.session.dirty);
+    let second = std::fs::read(&path).unwrap();
+    assert_eq!(
+        super::preview::decode_canonical_png(&cfb_stream(&second, "/PrvImage").unwrap())
+            .unwrap()
+            .2,
+        render.rgb
+    );
+    assert_eq!(
+        cfb_stream(&second, "/PrvText").unwrap(),
+        utf16("다시 쓴 글\r\n")
+    );
+    // Text page with a (failed) uniform render marked blank: refused, file kept.
+    let third_out = align_left_with(&second, |r| set_first_paragraph(r, "또 다른 글"));
+    let (result, dirty, revision) = save(
+        None,
+        &third_out,
+        Some(&uniform(724, 1024, 255).with_blank_page(true)),
+    );
+    assert!(matches!(
+        result.unwrap_err(),
+        DocumentError::UnsafeSave { .. }
+    ));
+    assert_eq!(std::fs::read(&path).unwrap(), second);
+    assert!(dirty);
+    assert_eq!(revision, 1);
+}

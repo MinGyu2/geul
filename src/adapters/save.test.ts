@@ -106,5 +106,7 @@ describe("저장 요청 프레임", () => {
     expect(decode(frames[1]!).meta).toEqual({ contentLoss: null, reopen, destination: "/x.hwp", preview: { width: 1, height: 2 } });
     expect((await backend.save(3, 1, 2, new Uint8Array([1, 2]), null, reopen, undefined, null)).ok).toBe(true);
     expect(decode(frames[2]!)).toEqual({ meta: { contentLoss: null, reopen }, payload: [1, 2] });
+    expect((await backend.save(3, 1, 2, new Uint8Array([1]), null, reopen, undefined, { ...preview, blankPage: true })).ok).toBe(true);
+    expect(decode(frames[3]!).meta.preview).toEqual({ width: 1, height: 2, blankPage: true });
   });
 });

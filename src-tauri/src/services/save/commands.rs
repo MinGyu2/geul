@@ -129,7 +129,7 @@ fn save_meta<'a>(meta: &'a Value, base: &[&str]) -> Option<&'a serde_json::Map<S
     })
 }
 
-/// Optional HWP preview raster (`preview` meta `{"width","height"}`): RGB8 rows, top-down,
+/// Optional HWP preview raster (`preview` meta `{"width","height"[,"blankPage"]}`): RGB8 rows, top-down,
 /// alpha composited onto white, appended after the engine output. Its geometry is checked
 /// against the output document by the save service; here only its shape.
 fn split_preview(
@@ -138,9 +138,14 @@ fn split_preview(
 ) -> Result<(Vec<u8>, Option<PreviewRaster>), DocumentError> {
     let preview = match meta.get("preview") {
         None | Some(Value::Null) => return Ok((payload, None)),
-        Some(preview) => {
-            exactly(preview, &["width", "height"]).ok_or(DocumentError::InvalidRequest)?
-        }
+        Some(preview) => exactly(preview, &["width", "height"])
+            .or_else(|| exactly(preview, &["width", "height", "blankPage"]))
+            .ok_or(DocumentError::InvalidRequest)?,
+    };
+    let blank_page = match preview.get("blankPage") {
+        None => false,
+        Some(Value::Bool(value)) => *value,
+        Some(_) => return Err(DocumentError::InvalidRequest),
     };
     let side = |key: &str| {
         preview
@@ -157,7 +162,9 @@ fn split_preview(
         return Err(DocumentError::InvalidRequest);
     }
     let rgb = payload.split_off(payload.len() - length);
-    let raster = PreviewRaster::new(width, height, rgb).ok_or(DocumentError::InvalidRequest)?;
+    let raster = PreviewRaster::new(width, height, rgb)
+        .ok_or(DocumentError::InvalidRequest)?
+        .with_blank_page(blank_page);
     Ok((payload, Some(raster)))
 }
 
@@ -343,6 +350,21 @@ mod preview_frame_tests {
         let meta = save_meta(&with, &base).unwrap();
         assert_eq!(
             split_preview(meta, vec![1, 2, 3, 4, 5, 6]).unwrap_err(),
+            DocumentError::InvalidRequest
+        );
+        let blank = json!({"contentLoss": null, "reopen": {}, "preview": {"width": 1, "height": 1, "blankPage": true}});
+        let meta = save_meta(&blank, &base).unwrap();
+        assert!(
+            split_preview(meta, vec![7, 1, 2, 3])
+                .unwrap()
+                .1
+                .unwrap()
+                .blank_page
+        );
+        let flag = json!({"contentLoss": null, "reopen": {}, "preview": {"width": 1, "height": 1, "blankPage": "yes"}});
+        let meta = save_meta(&flag, &base).unwrap();
+        assert_eq!(
+            split_preview(meta, vec![7, 1, 2, 3]).unwrap_err(),
             DocumentError::InvalidRequest
         );
         let null = json!({"contentLoss": null, "reopen": {}, "preview": null});

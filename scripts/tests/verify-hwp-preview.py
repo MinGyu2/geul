@@ -207,6 +207,30 @@ def compare(a, b, w, h):
     return {'meanAbsDiff': round(mad, 3), 'pixelsOver64': len(set(changed)), 'changedBox': box, 'inkA': ink(a), 'inkB': ink(b)}
 
 
+def block_means(img, w, h, size=8):
+    out = []
+    for by in range(0, h - size + 1, size):
+        for bx in range(0, w - size + 1, size):
+            total = 0
+            for y in range(by, by + size):
+                o = (y * w + bx) * 3
+                total += sum(img[o:o + size * 3])
+            out.append(total / (size * size * 3))
+    return out
+
+
+# Correspondence threshold (8x8 block mean, 0-255). Calibrated on target/preview-tables-toc-20261108/a/native-final:
+# preview vs its own reopened page <= 5.2 (resampling/anti-aliasing), preview vs the other save's page >= 19.5
+# (one changed formula digit). Both a correct pairing and a stale pairing are checked on every run.
+BLOCK_LIMIT = 10.0
+
+
+def correspond(preview, display, w, h):
+    a, b = block_means(preview, w, h), block_means(display, w, h)
+    diffs = [abs(x - y) for x, y in zip(a, b)]
+    return {'maxBlockDiff': round(max(diffs), 2), 'blocksOverLimit': sum(1 for d in diffs if d > BLOCK_LIMIT), 'matches': max(diffs) <= BLOCK_LIMIT}
+
+
 def cell_texts(recs):
     out = []
     for t, lvl, b in recs:
@@ -254,8 +278,8 @@ def main():
         dw, dh, drgb = png_decode((args.run / display).read_bytes(), strict=False)
         row['display'] = [dw, dh]
         b = resample(dw, dh, drgb, w, h) if (dw, dh) != (w, h) else drgb
-        row['vsDisplay'] = compare(rgb, b, w, h)
-        previews[name] = (w, h, rgb, rgb)
+        row['vsDisplay'] = compare(rgb, b, w, h) | {'blocks': correspond(rgb, b, w, h)}
+        previews[name] = (w, h, rgb, rgb, b)
         result['saves'][name] = row
     first, second = result['saves']['first-save'], result['saves']['second-save']
     check('first save cell texts: A1 "15", SUM(ABOVE) "18"', first['cellTexts'][0] == '15' and first['cellTexts'][8] == '18', first['cellTexts'])
@@ -266,7 +290,13 @@ def main():
         # Justification: same renderer at different scales; anti-aliasing and the reference's
         # own scale differ, so require low mean difference and comparable ink, not equality.
         check(name + ' preview agrees with separately rendered reopened page 1', v['inkA'] > 500 and v['meanAbsDiff'] < 4.0
-              and abs(v['inkA'] - v['inkB']) <= v['inkB'] // 4, v)
+              and abs(v['inkA'] - v['inkB']) <= v['inkB'] // 4 and v['blocks']['matches'], v)
+    # Negative control on the same run: each preview against the OTHER save's reopened page must not match,
+    # so a structurally valid but stale preview would be detected by this verifier.
+    (w1, h1, p1, _, d1), (w2, h2, p2, _, d2) = previews['first-save'], previews['second-save']
+    stale = {'firstPreviewVsSecondPage': correspond(p1, d2, w1, h1), 'secondPreviewVsFirstPage': correspond(p2, d1, w2, h2)}
+    result['staleControls'] = stale
+    check('stale previews (swapped between saves) are detected', not any(x['matches'] for x in stale.values()), stale)
     # Change reflection: first vs second differ only around the formula cell (row 2, col 0).
     d12 = compare(previews['first-save'][3], previews['second-save'][3], *small); result['firstVsSecond'] = d12
     check('first→second preview change is localized and non-empty', d12['pixelsOver64'] > 0 and d12['changedBox'] is not None

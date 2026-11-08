@@ -62,6 +62,8 @@ export interface PreviewRaster {
   width: number;
   height: number;
   rgb: Uint8Array;
+  /** 엔진의 1쪽 그리기 목록이 빈 쪽(배경·빈 글줄만)임을 보였을 때만 true(한 색 렌더를 받는 조건의 하나). */
+  blankPage?: true;
 }
 
 /** 저장 요청의 본문: 엔진 출력 뒤에 미리보기 픽셀(있으면). */
@@ -169,7 +171,7 @@ export function createTauriBackend(invoke: Invoke): DocumentBackend {
       call(invoke, "document_preflight", saveFrame(sessionId, generation, 0, { contentLoss }, unedited), parseSaveCheck),
     save: (sessionId, generation, revision, output, contentLoss, reopen, destination, preview) => {
       const meta: Record<string, unknown> = destination === undefined ? { contentLoss, reopen } : { contentLoss, reopen, destination };
-      if (preview) meta.preview = { width: preview.width, height: preview.height };
+      if (preview) meta.preview = preview.blankPage ? { width: preview.width, height: preview.height, blankPage: true } : { width: preview.width, height: preview.height };
       return call(invoke, destination === undefined ? "document_save" : "document_save_as", saveFrame(sessionId, generation, revision, meta, withPreview(output, preview)), (value) => {
         const outcome = parseSaveOutcome(value);
         return outcome?.session.sessionId === sessionId ? outcome : null;

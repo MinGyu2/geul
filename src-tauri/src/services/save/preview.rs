@@ -100,12 +100,15 @@ pub const MAX_RASTER_SIDE: u32 = PREVIEW_LONG_SIDE + 8;
 const RASTER_SLACK: u32 = 2;
 
 /// Rendered first page delivered by the frontend: RGB8, row-major, top-down, alpha already
-/// composited onto white.
+/// composited onto white. `blank_page`: the engine's own page-1 paint list (layer tree) held
+/// nothing but a plain page background and empty text runs, so a uniform render is expected;
+/// it is evidence about page 1, not about the pixels (see `hwp::refresh_previews`).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PreviewRaster {
     pub width: u32,
     pub height: u32,
     pub rgb: Vec<u8>,
+    pub blank_page: bool,
 }
 
 impl PreviewRaster {
@@ -114,7 +117,18 @@ impl PreviewRaster {
         let valid = (1..=MAX_RASTER_SIDE).contains(&width)
             && (1..=MAX_RASTER_SIDE).contains(&height)
             && rgb.len() as u64 == u64::from(width) * u64::from(height) * 3;
-        valid.then_some(Self { width, height, rgb })
+        valid.then_some(Self {
+            width,
+            height,
+            rgb,
+            blank_page: false,
+        })
+    }
+
+    /// The same raster with the frontend's page-1 blank evidence.
+    pub fn with_blank_page(mut self, blank_page: bool) -> Self {
+        self.blank_page = blank_page;
+        self
     }
 }
 

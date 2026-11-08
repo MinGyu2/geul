@@ -931,23 +931,74 @@ pub struct RefreshedPreviews {
     pub image: Option<Vec<u8>>,
 }
 
-const CTRL_TABLE: [u8; 4] = *b" lbt";
-const CTRL_DRAWING: [u8; 4] = *b" osg";
+/// HWP5 control ids are stored little-endian: `secd`/`cold` (section and column definitions).
+const CTRL_SECTION: [u8; 4] = *b"dces";
+const CTRL_COLUMN: [u8; 4] = *b"dloc";
 
-/// Whether Section0 has a table or drawing object (visible without body text).
-fn has_visible_object(container: &Container) -> bool {
+/// Whether Section0's first top-level paragraph — which always starts page 1 — can show
+/// anything: a visible character, or any control other than the section/column definitions
+/// (tables, drawings, pictures, headers/footers, page numbers, fields…). Undecodable or
+/// missing structure counts as visible (fail closed). This is a necessary condition for a
+/// blank page 1, not a proof: later paragraphs may still reach page 1, which only layout knows.
+fn first_paragraph_visible(container: &Container) -> bool {
     let Some(data) = container.streams.get("BodyText/Section0") else {
-        return false;
+        return true;
     };
     let Ok(data) = unpack(container, data) else {
-        return false;
+        return true;
     };
-    records(&data).is_some_and(|records| {
-        records.iter().any(|(tag, _, body)| {
-            *tag == 71
-                && matches!(body.get(..4), Some(id) if id == CTRL_TABLE || id == CTRL_DRAWING)
-        })
-    })
+    let Some(records) = records(&data) else {
+        return true;
+    };
+    let Some(start) = records
+        .iter()
+        .position(|(tag, level, _)| *tag == TAG_PARA_HEADER && *level == 0)
+    else {
+        return true;
+    };
+    let owned = records[start + 1..]
+        .iter()
+        .take_while(|(tag, level, _)| !(*tag == TAG_PARA_HEADER && *level == 0));
+    for (tag, level, body) in owned {
+        match (*tag, *level) {
+            (71, 1) => {
+                if !matches!(body.get(..4), Some(id) if id == CTRL_SECTION || id == CTRL_COLUMN) {
+                    return true;
+                }
+            }
+            (67, 1) => {
+                if body.len() % 2 != 0 {
+                    return true;
+                }
+                let units: Vec<u16> = body
+                    .as_chunks::<2>()
+                    .0
+                    .iter()
+                    .map(|b| u16::from_le_bytes(*b))
+                    .collect();
+                let mut at = 0;
+                while at < units.len() {
+                    match units[at] {
+                        // Extended (with CTRL_HEADER, judged above) and inline controls: 8 units.
+                        1..=9 | 11 | 12 | 14..=23 => {
+                            if units.get(at + 7) != Some(&units[at]) {
+                                return true;
+                            }
+                            at += 8;
+                        }
+                        // Paragraph end, line break, soft hyphen, non-breaking/figure space.
+                        10 | 13 | 24 | 30 | 31 => at += 1,
+                        unit => match char::from_u32(u32::from(unit)) {
+                            Some(c) if c.is_whitespace() => at += 1,
+                            _ => return true,
+                        },
+                    }
+                }
+            }
+            _ => {}
+        }
+    }
+    false
 }
 
 /// Regenerate PrvText *and* PrvImage when the only obstacles to an otherwise valid edited
@@ -956,8 +1007,11 @@ fn has_visible_object(container: &Container) -> bool {
 /// [`refresh_text_preview`]. Refusals return no output; the caller's final gates then reject.
 /// - The size comes from the output's own Section0 PAGE_DEF (`preview::preview_dimensions`);
 ///   a raster outside canvas rounding slack of it is refused (wrong page geometry).
-/// - A uniform raster is refused when page 1 has body text, a table or a drawing: that is a
-///   failed render, not a preview (blank pages legitimately produce a blank preview).
+/// - A uniform raster is a failed render unless page 1 is proven blank by two independent
+///   pieces of evidence: the frontend's page-1 paint list held only a plain background and
+///   empty text runs (`raster.blank_page`), and Section0's first paragraph — always on page 1 —
+///   shows nothing (`first_paragraph_visible`). The serialized PrvText is not that evidence:
+///   it is the content-free CRLF for an empty body and may summarize later pages.
 /// - The new CFB must differ from the raw export only in PrvText/PrvImage (`verify_preview_rebuild`).
 pub fn refresh_previews(
     original: &[u8],
@@ -999,7 +1053,7 @@ pub fn refresh_previews(
         .0
         .iter()
         .all(|pixel| pixel[..] == rgb[..3]);
-    if uniform && (!text.is_empty() || has_visible_object(&container)) {
+    if uniform && !(raster.blank_page && !first_paragraph_visible(&container)) {
         return refused;
     }
     let Some(png) = preview::encode_png(width, height, &rgb) else {
