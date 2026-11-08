@@ -525,7 +525,14 @@ enum Mode {
     Edited,
 }
 
-fn compare_with(original: &[u8], output: &[u8], mode: Mode) -> Vec<Finding> {
+fn compare_with(
+    original: &[u8],
+    output: &[u8],
+    mode: Mode,
+    expected_image: Option<&[u8]>,
+) -> Vec<Finding> {
+    // A regenerated PrvImage is judged after the loop, against this save's own encoding.
+    let expected_image = expected_image.filter(|_| mode == Mode::Edited);
     let original = match open(original, Side::Original) {
         Ok(container) => container,
         Err(finding) => return vec![finding],
@@ -569,6 +576,9 @@ fn compare_with(original: &[u8], output: &[u8], mode: Mode) -> Vec<Finding> {
         if !record_stream(name) {
             // Validate regenerated text against the actual exported body below.
             if mode == Mode::Edited && name == "PrvText" {
+                continue;
+            }
+            if expected_image.is_some() && name == "PrvImage" {
                 continue;
             }
             let key = name.to_ascii_uppercase();
@@ -642,8 +652,20 @@ fn compare_with(original: &[u8], output: &[u8], mode: Mode) -> Vec<Finding> {
         {
             findings.push(Finding::at(FindingCode::PreviewStale, "PrvText"));
         }
-        if stale("PrvImage", preview::known_blank_hwp_image) {
+        if expected_image.is_none() && stale("PrvImage", preview::known_blank_hwp_image) {
             findings.push(Finding::at(FindingCode::PreviewStale, "PrvImage"));
+        }
+    }
+    // Regenerated PrvImage: only with a changed body, only the exact bytes encoded for this
+    // save, and only if they independently decode as the canonical preview at the size the
+    // output's own first PAGE_DEF requires. Anything else stays a changed part (unsafe).
+    if let Some(expected) = expected_image {
+        let accepted = body_changed
+            && original.streams.contains_key("PrvImage")
+            && output.streams.get("PrvImage").map(Vec::as_slice) == Some(expected)
+            && regenerated_image_valid(&output, expected);
+        if !accepted {
+            findings.push(Finding::at(FindingCode::PartChanged, "PrvImage"));
         }
     }
     if mode == Mode::Edited {
@@ -720,12 +742,49 @@ fn references(output: &Container) -> Vec<Finding> {
 
 /// 사전 검사: 원본과 편집 없는 엔진 출력을 비교한 근거. 비어 있으면 레코드 수준에서 같다.
 pub fn compare(original: &[u8], output: &[u8]) -> Vec<Finding> {
-    compare_with(original, output, Mode::Unedited)
+    compare_with(original, output, Mode::Unedited, None)
 }
 
 /// 저장 검사: 원본과 편집한 엔진 출력을 비교한 근거(본문 밖이 원본과 같은지, 본문이 레코드로 읽히는지).
 pub fn compare_saved(original: &[u8], output: &[u8]) -> Vec<Finding> {
-    compare_with(original, output, Mode::Edited)
+    compare_with(original, output, Mode::Edited, None)
+}
+
+/// 저장 검사(미리보기 그림을 이번 저장에서 다시 만든 경우): `expected_image`는 이 저장이 부호화한 PrvImage 바이트다.
+pub fn compare_saved_with_preview(
+    original: &[u8],
+    output: &[u8],
+    expected_image: Option<&[u8]>,
+) -> Vec<Finding> {
+    compare_with(original, output, Mode::Edited, expected_image)
+}
+
+const TAG_PAGE_DEF: u16 = 73;
+
+/// Section0's first PAGE_DEF: (width, height, landscape). HWP 5 layout: width u32, height
+/// u32, seven margin u32, attribute u32 (bit 0 = landscape) — 40 bytes.
+fn first_page_def(container: &Container) -> Option<(u32, u32, bool)> {
+    let data = unpack(container, container.streams.get("BodyText/Section0")?).ok()?;
+    let (_, _, body) = records(&data)?
+        .into_iter()
+        .find(|(tag, _, _)| *tag == TAG_PAGE_DEF)?;
+    let word = |at: usize| {
+        body.get(at..at + 4)
+            .map(|b| u32::from_le_bytes([b[0], b[1], b[2], b[3]]))
+    };
+    Some((word(0)?, word(4)?, word(36)? & 1 == 1))
+}
+
+fn preview_size(container: &Container) -> Option<(u32, u32)> {
+    let (width, height, landscape) = first_page_def(container)?;
+    preview::preview_dimensions(width, height, landscape)
+}
+
+fn regenerated_image_valid(output: &Container, image: &[u8]) -> bool {
+    match (preview::decode_canonical_png(image), preview_size(output)) {
+        (Some((w, h, _)), Some(size)) => (w, h) == size,
+        _ => false,
+    }
 }
 
 /// Reconstruct the pinned serializer's first 1000 body characters, excluding nested
@@ -817,6 +876,14 @@ fn text_preview(output: &Container) -> Option<Vec<u8>> {
             }
         }
     }
+    // An empty PrvText stream is not round-trippable: pinned RHWP reads it as no preview text
+    // (`cfb_reader::read_preview_text`) and then omits the stream on export, so the next
+    // session's preflight reports `partMissing:PrvText` (observed in native run
+    // target/preview-tables-toc-20261108/a/native1). Use Hancom's/RHWP's content-free blank
+    // `\r\n` instead (`preview::blank_utf16`), which RHWP re-exports byte-identically.
+    if text.is_empty() {
+        text.push_str("\r\n");
+    }
     Some(text.encode_utf16().flat_map(u16::to_le_bytes).collect())
 }
 
@@ -851,12 +918,114 @@ pub fn refresh_text_preview(
         crate::document::resources::Category::Staging,
         output.len(),
     )?;
-    rebuild_preview(output, &container, &text)
+    rebuild_preview(output, &container, &[("PrvText", &text)])
         .map(Some)
         .map_err(|_| crate::document::DocumentError::Internal)
 }
 
-fn rebuild_preview(output: &[u8], container: &Container, text: &[u8]) -> std::io::Result<Vec<u8>> {
+/// Result of [`refresh_previews`]: the rebuilt output (if any) and the PrvImage bytes it
+/// encoded, which final validation must find unchanged in the published output.
+#[derive(Debug, Default)]
+pub struct RefreshedPreviews {
+    pub output: Option<Vec<u8>>,
+    pub image: Option<Vec<u8>>,
+}
+
+const CTRL_TABLE: [u8; 4] = *b" lbt";
+const CTRL_DRAWING: [u8; 4] = *b" osg";
+
+/// Whether Section0 has a table or drawing object (visible without body text).
+fn has_visible_object(container: &Container) -> bool {
+    let Some(data) = container.streams.get("BodyText/Section0") else {
+        return false;
+    };
+    let Ok(data) = unpack(container, data) else {
+        return false;
+    };
+    records(&data).is_some_and(|records| {
+        records.iter().any(|(tag, _, body)| {
+            *tag == 71
+                && matches!(body.get(..4), Some(id) if id == CTRL_TABLE || id == CTRL_DRAWING)
+        })
+    })
+}
+
+/// Regenerate PrvText *and* PrvImage when the only obstacles to an otherwise valid edited
+/// output are its stale previews and the frontend supplied a render of page 1 of the reopened
+/// raw export. Without a raster, or when PrvImage is not stale, this is exactly
+/// [`refresh_text_preview`]. Refusals return no output; the caller's final gates then reject.
+/// - The size comes from the output's own Section0 PAGE_DEF (`preview::preview_dimensions`);
+///   a raster outside canvas rounding slack of it is refused (wrong page geometry).
+/// - A uniform raster is refused when page 1 has body text, a table or a drawing: that is a
+///   failed render, not a preview (blank pages legitimately produce a blank preview).
+/// - The new CFB must differ from the raw export only in PrvText/PrvImage (`verify_preview_rebuild`).
+pub fn refresh_previews(
+    original: &[u8],
+    output: &[u8],
+    raster: Option<&preview::PreviewRaster>,
+) -> Result<RefreshedPreviews, crate::document::DocumentError> {
+    let text_only = || {
+        refresh_text_preview(original, output).map(|output| RefreshedPreviews {
+            output,
+            image: None,
+        })
+    };
+    let Some(raster) = raster else {
+        return text_only();
+    };
+    let findings = compare_saved(original, output);
+    let image = Finding::at(FindingCode::PreviewStale, "PrvImage");
+    let allowed = [
+        Finding::at(FindingCode::PreviewStale, "PrvText"),
+        Finding::at(FindingCode::PartChanged, "PrvText"),
+        image.clone(),
+    ];
+    if !findings.contains(&image) || !findings.iter().all(|f| allowed.contains(f)) {
+        return text_only();
+    }
+    let refused = Ok(RefreshedPreviews::default());
+    let Ok(container) = open(output, Side::Output) else {
+        return refused;
+    };
+    let (Some(text), Some((width, height))) = (text_preview(&container), preview_size(&container))
+    else {
+        return refused;
+    };
+    let Some(rgb) = preview::fit_raster(raster, width, height) else {
+        return refused;
+    };
+    let uniform = rgb
+        .as_chunks::<3>()
+        .0
+        .iter()
+        .all(|pixel| pixel[..] == rgb[..3]);
+    if uniform && (!text.is_empty() || has_visible_object(&container)) {
+        return refused;
+    }
+    let Some(png) = preview::encode_png(width, height, &rgb) else {
+        return refused;
+    };
+    crate::document::resources::charge(
+        crate::document::resources::Category::Staging,
+        output.len() + png.len(),
+    )?;
+    let bytes = rebuild_preview(
+        output,
+        &container,
+        &[("PrvText", &text), ("PrvImage", &png)],
+    )
+    .map_err(|_| crate::document::DocumentError::Internal)?;
+    Ok(RefreshedPreviews {
+        output: Some(bytes),
+        image: Some(png),
+    })
+}
+
+fn rebuild_preview(
+    output: &[u8],
+    container: &Container,
+    replaced: &[(&str, &[u8])],
+) -> std::io::Result<Vec<u8>> {
     let source = cfb::CompoundFile::open(Cursor::new(output))?;
     let entries: Vec<_> = source.walk().collect();
     let mut fresh =
@@ -873,8 +1042,8 @@ fn rebuild_preview(output: &[u8], container: &Container, text: &[u8]) -> std::io
                 .to_str()
                 .ok_or(std::io::ErrorKind::InvalidData)?
                 .trim_start_matches('/');
-            let data: &[u8] = if name == "PrvText" {
-                text
+            let data: &[u8] = if let Some((_, data)) = replaced.iter().find(|(n, _)| *n == name) {
+                data
             } else {
                 container
                     .streams
@@ -892,17 +1061,18 @@ fn rebuild_preview(output: &[u8], container: &Container, text: &[u8]) -> std::io
     }
     fresh.flush()?;
     let bytes = fresh.into_inner().into_inner();
-    verify_preview_rebuild(output, &bytes, container, text)?;
+    verify_preview_rebuild(output, &bytes, container, replaced)?;
     Ok(bytes)
 }
 
 /// Raw-export reopen evidence transfers to the final output only if the complete
-/// logical CFB differs solely in PrvText. Physical allocation is deliberately new.
+/// logical CFB differs solely in the replaced preview streams (each of which must already
+/// exist). Physical allocation is deliberately new.
 fn verify_preview_rebuild(
     raw: &[u8],
     bytes: &[u8],
     container: &Container,
-    text: &[u8],
+    replaced: &[(&str, &[u8])],
 ) -> std::io::Result<()> {
     let invalid = || std::io::Error::from(std::io::ErrorKind::InvalidData);
     let before = cfb::CompoundFile::open(Cursor::new(raw))?;
@@ -930,8 +1100,8 @@ fn verify_preview_rebuild(
                 .to_str()
                 .ok_or_else(invalid)?
                 .trim_start_matches('/');
-            let expected = if name == "PrvText" {
-                text
+            let expected = if let Some((_, data)) = replaced.iter().find(|(n, _)| *n == name) {
+                data
             } else {
                 container.streams.get(name).ok_or_else(invalid)?.as_slice()
             };

@@ -41,7 +41,8 @@
 //   빌드는 쓸 수 없는 실행 취소를 위해 그룹 시작마다 스냅숏을 찍거나 붙들지 않는다(세션 선택 `history`로 시험이 명시할 수 있음).
 //   글자 서식은 보존 검사가 저장을 막으므로 받지 않는다.
 import { trace } from "../imeTrace";
-import type { DocumentBackend, ReopenEvidence } from "../../../adapters/backend";
+import type { DocumentBackend, PreviewRaster, ReopenEvidence } from "../../../adapters/backend";
+import { capturePreviewRaster } from "./previewRaster";
 import type { DocumentError, Result, SaveCheck, SaveOutcome, SessionInfo } from "../../../adapters/contract";
 import { blockedBy, reportDetachedSaveRejection, type SaveCheckRecord, type SaveState } from "../saveState";
 import { documentCommandState, FORMAT_FLAG } from "../../../commands/capability";
@@ -1405,6 +1406,7 @@ export class RhwpEditorSession implements DocumentCommandTarget {
     reopen: ReopenEvidence;
     charShapeCount: number | null;
     releaseShapes: (() => void) | undefined;
+    preview: PreviewRaster | null;
   } | null {
     const doc = this.doc;
     const module = this.module;
@@ -1413,6 +1415,7 @@ export class RhwpEditorSession implements DocumentCommandTarget {
     let contentLoss: unknown = null;
     let charShapeCount: number | null = null;
     let releaseShapes: (() => void) | undefined;
+    let preview: PreviewRaster | null = null;
     const report: RoundTripReport = {
       format, failure: "export", bytes: 0, reopenedFormat: null, formatEqual: false, lossValid: false, lossCount: -1, losses: [],
       pagesEqual: false, textEqual: false, controlsEqual: false, passed: false,
@@ -1457,6 +1460,9 @@ export class RhwpEditorSession implements DocumentCommandTarget {
       report.textEqual = textOf(reopened) === textOf(doc);
       report.controlsEqual = controls(reopened) === controls(doc);
       if (publishing) releaseShapes = this.text?.protectPublishingCharShapes(charShapeCount, reopened);
+      // HWP: page 1 of the reopened raw export — the same bytes the service validates — for
+      // PrvImage regeneration. Failure only omits the raster (stale previews stay refused).
+      if (publishing && format === "hwp") preview = capturePreviewRaster(reopened);
       report.failure = null;
     } catch {
       // report.failure가 실패한 단계를 가리킨다.
@@ -1476,7 +1482,7 @@ export class RhwpEditorSession implements DocumentCommandTarget {
       textEqual: report.failure === null && report.textEqual,
       controlsEqual: report.failure === null && report.controlsEqual,
     };
-    return { report, bytes: output, contentLoss, reopen, charShapeCount, releaseShapes };
+    return { report, bytes: output, contentLoss, reopen, charShapeCount, releaseShapes, preview: output ? preview : null };
   }
 
   // ---- 명령(T010) ----
@@ -1829,7 +1835,7 @@ export class RhwpEditorSession implements DocumentCommandTarget {
       if (!exported?.bytes) return fail({ code: "SaveFailure", stage: "export" });
       let result: Result<SaveOutcome>;
       try {
-        result = await this.backend.save(this.sessionId, generation, revision, exported.bytes, exported.contentLoss, exported.reopen, destination);
+        result = await this.backend.save(this.sessionId, generation, revision, exported.bytes, exported.contentLoss, exported.reopen, destination, exported.preview);
       } catch (error) {
         // Transport rejection has no known publication outcome: report it as Protocol
         // (not a failed write or a kept original), re-check before any retry, and leave

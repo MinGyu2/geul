@@ -1108,6 +1108,7 @@ mod tests {
             service::SaveOptions {
                 destination: None,
                 recovery: Some(&store),
+                preview: None,
             },
         );
         panic!("child must be killed while publication is interrupted");
@@ -1202,6 +1203,7 @@ mod tests {
             service::SaveOptions {
                 destination: Some(&destination),
                 recovery: Some(&store),
+                preview: None,
             },
         );
         publish::FAULT.with(|fault| fault.set(None));

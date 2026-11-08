@@ -117,6 +117,19 @@ pub fn check_saved(
     report: Option<&Value>,
     reopen_equal: bool,
 ) -> Preservation {
+    check_saved_with_preview(format, original, output, report, reopen_equal, None)
+}
+
+/// `check_saved`, plus (HWP) the PrvImage bytes this save regenerated (`hwp::refresh_previews`).
+/// Without them a changed PrvImage is never accepted.
+pub fn check_saved_with_preview(
+    format: Format,
+    original: &[u8],
+    output: &[u8],
+    report: Option<&Value>,
+    reopen_equal: bool,
+    regenerated_image: Option<&[u8]>,
+) -> Preservation {
     let mut findings = report_findings(format, report);
     if !reopen_equal {
         findings.push(Finding::new(FindingCode::ReopenMismatch));
@@ -143,7 +156,11 @@ pub fn check_saved(
         return Preservation::from_findings(findings);
     }
     match format {
-        Format::Hwp => findings.extend(hwp::compare_saved(original, output)),
+        Format::Hwp => findings.extend(hwp::compare_saved_with_preview(
+            original,
+            output,
+            regenerated_image,
+        )),
         Format::Hwpx | Format::Docx => match (
             package::open(original, package::Side::Original),
             package::open(output, package::Side::Output),
@@ -194,6 +211,7 @@ pub fn save_to(
         SaveOptions {
             destination,
             recovery: None,
+            preview: None,
         },
     )
 }
@@ -211,7 +229,7 @@ pub fn validate_snapshot(
         });
     }
     let original = read_original(&ticket.source, limits)?;
-    validate_snapshot_from(ticket, limits, output, report, reopen_equal, original)
+    validate_snapshot_from(ticket, limits, output, report, reopen_equal, original, None)
 }
 
 fn validate_snapshot_from(
@@ -221,6 +239,7 @@ fn validate_snapshot_from(
     report: Option<&Value>,
     reopen_equal: bool,
     original: Vec<u8>,
+    regenerated_image: Option<&[u8]>,
 ) -> Result<Vec<u8>, DocumentError> {
     if output.len() as u64 > limits.max_file_bytes {
         return Err(DocumentError::ResourceLimit {
@@ -229,7 +248,14 @@ fn validate_snapshot_from(
     }
     validate_evidence(ticket, report, reopen_equal)?;
     let format = ticket.source.load.format;
-    let checked = check_saved(format, &original, output, report, reopen_equal);
+    let checked = check_saved_with_preview(
+        format,
+        &original,
+        output,
+        report,
+        reopen_equal,
+        regenerated_image,
+    );
     if !checked.is_safe() {
         return Err(DocumentError::UnsafeSave {
             preservation: checked,
@@ -274,6 +300,9 @@ fn validate_evidence(
 pub struct SaveOptions<'a> {
     pub destination: Option<&'a std::path::Path>,
     pub recovery: Option<&'a crate::services::recovery::RecoveryStore>,
+    /// HWP: the frontend's render of page 1 of the reopened raw export, used only to replace a
+    /// stale PrvImage (`hwp::refresh_previews`). Ignored for other formats.
+    pub preview: Option<&'a super::preview::PreviewRaster>,
 }
 
 pub fn save_with_options(
@@ -298,12 +327,20 @@ pub fn save_with_options(
     let source = read_original(&ticket.source, limits)?;
     validate_evidence(ticket, report, reopen_equal)?;
     let refreshed = if ticket.source.load.format == Format::Hwp {
-        hwp::refresh_text_preview(&source, output)?
+        hwp::refresh_previews(&source, output, options.preview)?
     } else {
-        None
+        hwp::RefreshedPreviews::default()
     };
-    let output = refreshed.as_deref().unwrap_or(output);
-    let original = validate_snapshot_from(ticket, limits, output, report, reopen_equal, source)?;
+    let output = refreshed.output.as_deref().unwrap_or(output);
+    let original = validate_snapshot_from(
+        ticket,
+        limits,
+        output,
+        report,
+        reopen_equal,
+        source,
+        refreshed.image.as_deref(),
+    )?;
     let format = ticket.source.load.format;
     crate::document::resources::active()?;
     let original_target = ticket.source.load.identity.path();

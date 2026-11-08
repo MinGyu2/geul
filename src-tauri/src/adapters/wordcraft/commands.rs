@@ -541,6 +541,7 @@ async fn save_to(
                 service::SaveOptions {
                     destination: destination.as_deref(),
                     recovery: recovery.as_deref(),
+                    preview: None,
                 },
             )
         })

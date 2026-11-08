@@ -86,4 +86,25 @@ describe("저장 요청 프레임", () => {
     const wrong = createTauriBackend(async () => ({ session: { ...session, sessionId: 4 }, bytes: 2, durable: true }));
     expect(await wrong.save(3, 1, 2, new Uint8Array([1]), null, reopen)).toEqual({ ok: false, error: { code: "Protocol" } });
   });
+
+  it("HWP 미리보기 픽셀은 preview 메타와 출력 뒤 RGB 바이트로만 보낸다(없으면 기존 프레임 그대로)", async () => {
+    const frames: Uint8Array[] = [];
+    const backend = createTauriBackend(async (command, args) => {
+      frames.push(args as Uint8Array);
+      expect(["document_save", "document_save_as"]).toContain(command);
+      return { session, bytes: 2, durable: true };
+    });
+    const reopen = { formatEqual: true, pagesEqual: true, textEqual: true, controlsEqual: true };
+    const decode = (frame: Uint8Array) => {
+      const length = new DataView(frame.buffer).getUint32(28, true);
+      return { meta: JSON.parse(new TextDecoder().decode(frame.subarray(32, 32 + length))), payload: [...frame.subarray(32 + length)] };
+    };
+    const preview = { width: 1, height: 2, rgb: new Uint8Array([10, 11, 12, 13, 14, 15]) };
+    expect((await backend.save(3, 1, 2, new Uint8Array([1, 2]), null, reopen, undefined, preview)).ok).toBe(true);
+    expect(decode(frames[0]!)).toEqual({ meta: { contentLoss: null, reopen, preview: { width: 1, height: 2 } }, payload: [1, 2, 10, 11, 12, 13, 14, 15] });
+    expect((await backend.save(3, 1, 2, new Uint8Array([1, 2]), null, reopen, "/x.hwp", preview)).ok).toBe(true);
+    expect(decode(frames[1]!).meta).toEqual({ contentLoss: null, reopen, destination: "/x.hwp", preview: { width: 1, height: 2 } });
+    expect((await backend.save(3, 1, 2, new Uint8Array([1, 2]), null, reopen, undefined, null)).ok).toBe(true);
+    expect(decode(frames[2]!)).toEqual({ meta: { contentLoss: null, reopen }, payload: [1, 2] });
+  });
 });

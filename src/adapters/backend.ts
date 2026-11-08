@@ -51,7 +51,26 @@ export interface DocumentBackend {
   /** 편집 없는 엔진 출력과 그 손실 보고로 보존 사전 검사(T009). 결과는 백엔드가 그 원본에 대해 기억한다. */
   preflight(sessionId: SessionId, generation: number, unedited: Uint8Array, contentLoss: unknown): Promise<Result<SaveCheck>>;
   /** 편집한 엔진 출력을 원본 형식으로 저장(T009). revision은 그 출력이 나타내는 판, reopen은 다시 열어 비교한 결과. */
-  save(sessionId: SessionId, generation: number, revision: number, output: Uint8Array, contentLoss: unknown, reopen: ReopenEvidence, destination?: string): Promise<Result<SaveOutcome>>;
+  save(sessionId: SessionId, generation: number, revision: number, output: Uint8Array, contentLoss: unknown, reopen: ReopenEvidence, destination?: string, preview?: PreviewRaster | null): Promise<Result<SaveOutcome>>;
+}
+
+/**
+ * HWP 미리보기 그림 재생성(2026-11-08): 다시 연 원시 내보내기의 1쪽을 그린 픽셀(RGB8, 위→아래, 흰 바탕에 합성).
+ * 백엔드가 출력의 PAGE_DEF 크기로 맞추고 정규 PNG로 부호화·검사한다. 메타 `preview: {width, height}`, 바이트는 출력 뒤에 붙는다.
+ */
+export interface PreviewRaster {
+  width: number;
+  height: number;
+  rgb: Uint8Array;
+}
+
+/** 저장 요청의 본문: 엔진 출력 뒤에 미리보기 픽셀(있으면). */
+function withPreview(output: Uint8Array, preview: PreviewRaster | null | undefined): Uint8Array {
+  if (!preview) return output;
+  const payload = new Uint8Array(output.length + preview.rgb.length);
+  payload.set(output, 0);
+  payload.set(preview.rgb, output.length);
+  return payload;
 }
 
 /** 엔진 출력을 다시 열어 편집 모델과 비교한 결과(넷 다 참이어야 저장한다). */
@@ -148,10 +167,13 @@ export function createTauriBackend(invoke: Invoke): DocumentBackend {
     original: (sessionId, loadGeneration) => call(invoke, "document_original", { sessionId, loadGeneration }, parseRaw),
     preflight: (sessionId, generation, unedited, contentLoss) =>
       call(invoke, "document_preflight", saveFrame(sessionId, generation, 0, { contentLoss }, unedited), parseSaveCheck),
-    save: (sessionId, generation, revision, output, contentLoss, reopen, destination) =>
-      call(invoke, destination === undefined ? "document_save" : "document_save_as", saveFrame(sessionId, generation, revision, destination === undefined ? { contentLoss, reopen } : { contentLoss, reopen, destination }, output), (value) => {
+    save: (sessionId, generation, revision, output, contentLoss, reopen, destination, preview) => {
+      const meta: Record<string, unknown> = destination === undefined ? { contentLoss, reopen } : { contentLoss, reopen, destination };
+      if (preview) meta.preview = { width: preview.width, height: preview.height };
+      return call(invoke, destination === undefined ? "document_save" : "document_save_as", saveFrame(sessionId, generation, revision, meta, withPreview(output, preview)), (value) => {
         const outcome = parseSaveOutcome(value);
         return outcome?.session.sessionId === sessionId ? outcome : null;
-      }),
+      });
+    },
   };
 }

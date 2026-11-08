@@ -1262,6 +1262,7 @@ fn refuse_note_output(doc: &Docx, corrupt: &[u8], expected: Finding) {
             service::SaveOptions {
                 destination: None,
                 recovery: Some(&recovery),
+                preview: None,
             },
         )
     };

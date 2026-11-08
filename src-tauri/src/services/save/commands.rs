@@ -12,6 +12,7 @@ use serde_json::Value;
 use tauri::ipc::{InvokeBody, Request, Response};
 use tauri::State;
 
+use super::preview::{PreviewRaster, MAX_RASTER_SIDE};
 use super::service::{self, read_original, SaveCheck, SaveOutcome, PLATFORM_SUPPORTED};
 use crate::document::commands::DocumentState;
 use crate::document::{DocumentError, SessionId};
@@ -119,6 +120,47 @@ pub fn reopen_equal(reopen: &Value) -> bool {
     })
 }
 
+/// Meta keys of a save request: `base`, optionally plus `preview`.
+fn save_meta<'a>(meta: &'a Value, base: &[&str]) -> Option<&'a serde_json::Map<String, Value>> {
+    exactly(meta, base).or_else(|| {
+        let mut keys = base.to_vec();
+        keys.push("preview");
+        exactly(meta, &keys)
+    })
+}
+
+/// Optional HWP preview raster (`preview` meta `{"width","height"}`): RGB8 rows, top-down,
+/// alpha composited onto white, appended after the engine output. Its geometry is checked
+/// against the output document by the save service; here only its shape.
+fn split_preview(
+    meta: &serde_json::Map<String, Value>,
+    mut payload: Vec<u8>,
+) -> Result<(Vec<u8>, Option<PreviewRaster>), DocumentError> {
+    let preview = match meta.get("preview") {
+        None | Some(Value::Null) => return Ok((payload, None)),
+        Some(preview) => {
+            exactly(preview, &["width", "height"]).ok_or(DocumentError::InvalidRequest)?
+        }
+    };
+    let side = |key: &str| {
+        preview
+            .get(key)
+            .and_then(Value::as_u64)
+            .filter(|value| (1..=u64::from(MAX_RASTER_SIDE)).contains(value))
+            .map(|value| value as u32)
+    };
+    let (Some(width), Some(height)) = (side("width"), side("height")) else {
+        return Err(DocumentError::InvalidRequest);
+    };
+    let length = width as usize * height as usize * 3;
+    if payload.len() <= length {
+        return Err(DocumentError::InvalidRequest);
+    }
+    let rgb = payload.split_off(payload.len() - length);
+    let raster = PreviewRaster::new(width, height, rgb).ok_or(DocumentError::InvalidRequest)?;
+    Ok((payload, Some(raster)))
+}
+
 fn raw(body: &InvokeBody) -> Result<&[u8], DocumentError> {
     match body {
         InvokeBody::Raw(bytes) => Ok(bytes.as_slice()),
@@ -189,9 +231,10 @@ pub async fn document_save(
     let (frame, admission) = admitted_frame(raw(request.body())?, &state)?;
     state.frontend_model(frame.session_id)?;
     let meta =
-        exactly(&frame.meta, &["contentLoss", "reopen"]).ok_or(DocumentError::InvalidRequest)?;
+        save_meta(&frame.meta, &["contentLoss", "reopen"]).ok_or(DocumentError::InvalidRequest)?;
     let report = meta.get("contentLoss").cloned().unwrap_or(Value::Null);
     let equal = meta.get("reopen").is_some_and(reopen_equal);
+    let (output, preview) = split_preview(meta, frame.payload)?;
     let registry = state.registry().clone();
     let limits = state.limits();
     let store = store.inner().clone();
@@ -202,12 +245,13 @@ pub async fn document_save(
                 &registry,
                 &ticket,
                 &limits,
-                &frame.payload,
+                &output,
                 Some(&report),
                 equal,
                 service::SaveOptions {
                     destination: None,
                     recovery: Some(&store),
+                    preview: preview.as_ref(),
                 },
             )
         })
@@ -222,7 +266,7 @@ pub async fn document_save_as(
 ) -> Result<SaveOutcome, DocumentError> {
     let (frame, admission) = admitted_frame(raw(request.body())?, &state)?;
     state.frontend_model(frame.session_id)?;
-    let meta = exactly(&frame.meta, &["contentLoss", "reopen", "destination"])
+    let meta = save_meta(&frame.meta, &["contentLoss", "reopen", "destination"])
         .ok_or(DocumentError::InvalidRequest)?;
     let destination = meta
         .get("destination")
@@ -231,6 +275,7 @@ pub async fn document_save_as(
         .to_owned();
     let report = meta.get("contentLoss").cloned().unwrap_or(Value::Null);
     let equal = meta.get("reopen").is_some_and(reopen_equal);
+    let (output, preview) = split_preview(meta, frame.payload)?;
     let registry = state.registry().clone();
     let limits = state.limits();
     let store = store.inner().clone();
@@ -241,16 +286,69 @@ pub async fn document_save_as(
                 &registry,
                 &ticket,
                 &limits,
-                &frame.payload,
+                &output,
                 Some(&report),
                 equal,
                 service::SaveOptions {
                     destination: Some(std::path::Path::new(&destination)),
                     recovery: Some(&store),
+                    preview: preview.as_ref(),
                 },
             )
         })
         .await
+}
+
+#[cfg(test)]
+mod preview_frame_tests {
+    use super::*;
+    use serde_json::json;
+
+    #[test]
+    fn preview_meta_is_optional_exact_and_splits_the_rgb_tail() {
+        let base = ["contentLoss", "reopen"];
+        let plain = json!({"contentLoss": null, "reopen": {}});
+        let meta = save_meta(&plain, &base).unwrap();
+        let (output, raster) = split_preview(meta, vec![1, 2, 3]).unwrap();
+        assert_eq!((output, raster), (vec![1, 2, 3], None));
+        let with = json!({"contentLoss": null, "reopen": {}, "preview": {"width": 1, "height": 2}});
+        let meta = save_meta(&with, &base).unwrap();
+        let (output, raster) = split_preview(meta, vec![9, 9, 1, 2, 3, 4, 5, 6]).unwrap();
+        assert_eq!(output, vec![9, 9]);
+        assert_eq!(
+            raster.unwrap(),
+            PreviewRaster::new(1, 2, vec![1, 2, 3, 4, 5, 6]).unwrap()
+        );
+        // Unknown keys, bad shapes, oversize sides, and a raster without document bytes refuse.
+        assert!(save_meta(
+            &json!({"contentLoss": null, "reopen": {}, "other": 1}),
+            &base
+        )
+        .is_none());
+        for preview in [
+            json!({"width": 1}),
+            json!({"width": 1, "height": 2, "x": 0}),
+            json!({"width": 0, "height": 2}),
+            json!({"width": 1, "height": MAX_RASTER_SIDE + 1}),
+            json!({"width": "1", "height": 2}),
+            json!([1, 2]),
+        ] {
+            let meta = json!({"contentLoss": null, "reopen": {}, "preview": preview});
+            let meta = save_meta(&meta, &base).unwrap();
+            assert_eq!(
+                split_preview(meta, vec![0; 64]).unwrap_err(),
+                DocumentError::InvalidRequest
+            );
+        }
+        let meta = save_meta(&with, &base).unwrap();
+        assert_eq!(
+            split_preview(meta, vec![1, 2, 3, 4, 5, 6]).unwrap_err(),
+            DocumentError::InvalidRequest
+        );
+        let null = json!({"contentLoss": null, "reopen": {}, "preview": null});
+        let meta = save_meta(&null, &base).unwrap();
+        assert!(split_preview(meta, vec![1]).unwrap().1.is_none());
+    }
 }
 
 #[cfg(test)]

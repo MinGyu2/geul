@@ -9148,8 +9148,9 @@ fn hwp_preview_refresh_rejects_unknown_controls_and_preserves_other_streams() {
         let mut preview = Vec::new();
         std::io::Read::read_to_end(&mut doc.open_stream("/PrvText").unwrap(), &mut preview)
             .unwrap();
+        // Empty body → content-free blank `\r\n`, never an empty (non-round-trippable) stream.
         let expected: String = if text.is_empty() {
-            String::new()
+            "\r\n".to_owned()
         } else {
             text.chars().chain("\r\n".chars()).take(1000).collect()
         };
@@ -11126,5 +11127,363 @@ fn hwp_docinfo_malformed_counts_shapes_and_references_refuse_publication() {
             registry.begin_save(id, generation, 1).is_ok(),
             "save ticket released"
         );
+    }
+}
+
+// ---- HWP PrvImage regeneration (2026-11-08) ----
+
+const CALC_CELL: &[u8] = include_bytes!(concat!(
+    env!("CARGO_MANIFEST_DIR"),
+    "/../external/rhwp/samples/calc-cell.hwp"
+));
+
+/// Copy a CFB, replacing named streams (full paths). Storage tree/CLSIDs are copied.
+fn cfb_replace(bytes: &[u8], replaced: &[(&str, &[u8])]) -> Vec<u8> {
+    use std::io::{Read, Write};
+    let mut source = cfb::CompoundFile::open(std::io::Cursor::new(bytes)).unwrap();
+    let entries: Vec<_> = source.walk().collect();
+    let mut fresh =
+        cfb::CompoundFile::create_with_version(source.version(), std::io::Cursor::new(Vec::new()))
+            .unwrap();
+    for entry in &entries {
+        let path = entry.path();
+        if entry.is_storage() {
+            if !entry.is_root() {
+                fresh.create_storage_all(path).unwrap();
+            }
+            fresh.set_storage_clsid(path, *entry.clsid()).unwrap();
+            continue;
+        }
+        let name = path.to_str().unwrap();
+        let data = match replaced.iter().find(|(n, _)| *n == name) {
+            Some((_, data)) => data.to_vec(),
+            None => {
+                let mut data = Vec::new();
+                source
+                    .open_stream(path)
+                    .unwrap()
+                    .read_to_end(&mut data)
+                    .unwrap();
+                data
+            }
+        };
+        fresh.create_stream(path).unwrap().write_all(&data).unwrap();
+    }
+    fresh.flush().unwrap();
+    fresh.into_inner().into_inner()
+}
+
+fn cfb_stream(bytes: &[u8], name: &str) -> Option<Vec<u8>> {
+    use std::io::Read;
+    let mut file = cfb::CompoundFile::open(std::io::Cursor::new(bytes)).unwrap();
+    let mut data = Vec::new();
+    file.open_stream(name).ok()?.read_to_end(&mut data).unwrap();
+    Some(data)
+}
+
+/// The genuine calc-cell.hwp with one real body edit: the first table cell's text `old` → `new`.
+/// DocInfo and every non-body stream stay byte-identical, so its Hancom GIF preview is stale.
+fn calc_cell_edited(from: &[u8], old: u8, new: u8) -> Vec<u8> {
+    use std::io::{Read, Write};
+    let section = cfb_stream(from, "/BodyText/Section0").unwrap();
+    let mut raw = Vec::new();
+    flate2::read::DeflateDecoder::new(&section[..])
+        .read_to_end(&mut raw)
+        .unwrap();
+    let needle = [old, 0, b'\r', 0];
+    let at = raw.windows(4).position(|w| w == needle).expect("cell text");
+    raw[at] = new;
+    let mut encoder = flate2::write::DeflateEncoder::new(Vec::new(), flate2::Compression::new(6));
+    encoder.write_all(&raw).unwrap();
+    cfb_replace(from, &[("/BodyText/Section0", &encoder.finish().unwrap())])
+}
+
+/// A deterministic non-uniform "render": white page, dark band whose position depends on `seed`.
+fn raster(width: u32, height: u32, seed: u32) -> super::preview::PreviewRaster {
+    let mut rgb = vec![255u8; (width * height * 3) as usize];
+    let top = seed % (height / 2).max(1);
+    for y in top..(top + (height / 4).max(1)).min(height) {
+        for x in width / 10..width - width / 10 {
+            let at = ((y * width + x) * 3) as usize;
+            rgb[at..at + 3].copy_from_slice(&[0, 0, (seed % 251) as u8]);
+        }
+    }
+    super::preview::PreviewRaster::new(width, height, rgb).unwrap()
+}
+
+#[test]
+fn preview_dimensions_follow_hancom_page_rule() {
+    use super::preview::preview_dimensions;
+    assert_eq!(preview_dimensions(59528, 84188, false), Some((724, 1024)));
+    assert_eq!(preview_dimensions(59528, 84188, true), Some((1024, 724)));
+    assert_eq!(preview_dimensions(36000, 60000, false), Some((614, 1024)));
+    assert_eq!(preview_dimensions(59528, 42236, true), Some((727, 1024)));
+    assert_eq!(preview_dimensions(84188, 84188, false), Some((1024, 1024)));
+    assert_eq!(preview_dimensions(1, 1_000_000, false), Some((1, 1024)));
+    assert_eq!(preview_dimensions(0, 84188, false), None);
+}
+
+#[test]
+fn canonical_png_round_trips_and_refuses_every_other_encoding() {
+    use super::preview::{decode_canonical_png, encode_png};
+    use std::io::Write;
+    let image = raster(20, 30, 3);
+    let png = encode_png(20, 30, &image.rgb).unwrap();
+    assert_eq!(
+        decode_canonical_png(&png),
+        Some((20, 30, image.rgb.clone()))
+    );
+    // Any single-byte change (header, CRC, zlib, pixels) is refused.
+    for at in 0..png.len() {
+        let mut changed = png.clone();
+        changed[at] ^= 0x01;
+        assert!(decode_canonical_png(&changed).is_none(), "byte {at}");
+    }
+    let mut trailing = png.clone();
+    trailing.push(0);
+    assert!(decode_canonical_png(&trailing).is_none());
+    // Same pixels, different but valid zlib parameters → not canonical.
+    let chunk = |kind: &[u8; 4], data: &[u8]| {
+        let mut out = (data.len() as u32).to_be_bytes().to_vec();
+        out.extend_from_slice(kind);
+        out.extend_from_slice(data);
+        let mut crc = flate2::Crc::new();
+        crc.update(kind);
+        crc.update(data);
+        out.extend_from_slice(&crc.sum().to_be_bytes());
+        out
+    };
+    let mut ihdr = 20u32.to_be_bytes().to_vec();
+    ihdr.extend_from_slice(&30u32.to_be_bytes());
+    ihdr.extend_from_slice(&[8, 2, 0, 0, 0]);
+    let scan: Vec<u8> = image
+        .rgb
+        .chunks(60)
+        .flat_map(|r| [&[0u8][..], r].concat())
+        .collect();
+    let mut level9 = flate2::write::ZlibEncoder::new(Vec::new(), flate2::Compression::new(9));
+    level9.write_all(&scan).unwrap();
+    let level9 = level9.finish().unwrap();
+    let mut other = b"\x89PNG\r\n\x1a\n".to_vec();
+    other.extend(chunk(b"IHDR", &ihdr));
+    other.extend(chunk(b"IDAT", &level9));
+    other.extend(chunk(b"IEND", &[]));
+    if level9 != png[33 + 8..png.len() - 16] {
+        assert!(decode_canonical_png(&other).is_none());
+    }
+    // An ancillary chunk (valid CRC) is refused.
+    let mut text = png[..33].to_vec();
+    text.extend(chunk(b"tEXt", b"Comment\0old body"));
+    text.extend_from_slice(&png[33..]);
+    assert!(decode_canonical_png(&text).is_none());
+    assert!(encode_png(0, 1, &[]).is_none());
+    assert!(encode_png(2, 2, &[0; 11]).is_none());
+}
+
+#[test]
+fn fit_raster_resamples_only_canvas_rounding_slack() {
+    use super::preview::{fit_raster, PreviewRaster, MAX_RASTER_SIDE};
+    let exact = raster(724, 1024, 1);
+    assert_eq!(fit_raster(&exact, 724, 1024).unwrap(), exact.rgb);
+    let white = PreviewRaster::new(726, 1026, vec![255; 726 * 1026 * 3]).unwrap();
+    assert!(fit_raster(&white, 724, 1024)
+        .unwrap()
+        .iter()
+        .all(|v| *v == 255));
+    assert!(fit_raster(&white, 723, 1024).is_none());
+    assert!(fit_raster(&exact, 1024, 724).is_none());
+    // Area average of a 2-column checker onto 1 column is the mean.
+    let checker = PreviewRaster::new(2, 1, vec![0, 0, 0, 255, 255, 255]).unwrap();
+    assert_eq!(fit_raster(&checker, 1, 1).unwrap(), vec![128, 128, 128]);
+    assert!(PreviewRaster::new(
+        MAX_RASTER_SIDE + 1,
+        1,
+        vec![0; (MAX_RASTER_SIDE as usize + 1) * 3]
+    )
+    .is_none());
+    assert!(PreviewRaster::new(2, 2, vec![0; 11]).is_none());
+}
+
+#[test]
+fn calc_cell_stale_previews_are_regenerated_only_from_a_valid_render() {
+    let edited = calc_cell_edited(CALC_CELL, b'1', b'9');
+    let gif = cfb_stream(CALC_CELL, "/PrvImage").unwrap();
+    assert_eq!(&gif[..6], b"GIF89a");
+    assert_eq!(
+        hwp::compare_saved(CALC_CELL, &edited),
+        vec![
+            Finding::at(FindingCode::PreviewStale, "PrvText"),
+            Finding::at(FindingCode::PreviewStale, "PrvImage"),
+        ]
+    );
+    // Previous behavior is unchanged without a render.
+    assert!(hwp::refresh_text_preview(CALC_CELL, &edited)
+        .unwrap()
+        .is_none());
+    assert!(hwp::refresh_previews(CALC_CELL, &edited, None)
+        .unwrap()
+        .output
+        .is_none());
+    // Invalid renders are refused: wrong orientation, outside slack, uniform with a table.
+    for bad in [
+        raster(1024, 724, 1),
+        raster(720, 1024, 1),
+        super::preview::PreviewRaster::new(724, 1024, vec![255; 724 * 1024 * 3]).unwrap(),
+    ] {
+        let refused = hwp::refresh_previews(CALC_CELL, &edited, Some(&bad)).unwrap();
+        assert!(refused.output.is_none() && refused.image.is_none());
+    }
+    let render = raster(725, 1025, 7);
+    let fixed = hwp::refresh_previews(CALC_CELL, &edited, Some(&render)).unwrap();
+    let (output, png) = (fixed.output.unwrap(), fixed.image.unwrap());
+    assert!(hwp::compare_saved_with_preview(CALC_CELL, &output, Some(&png)).is_empty());
+    // Without this save's evidence, or with any other image, the change is refused.
+    assert!(hwp::compare_saved(CALC_CELL, &output)
+        .contains(&Finding::at(FindingCode::PartChanged, "PrvImage")));
+    let other = super::preview::encode_png(724, 1024, &raster(724, 1024, 9).rgb).unwrap();
+    assert!(
+        hwp::compare_saved_with_preview(CALC_CELL, &output, Some(&other))
+            .contains(&Finding::at(FindingCode::PartChanged, "PrvImage"))
+    );
+    // Output: canonical PNG at the PAGE_DEF size, empty RHWP-convention PrvText (no top-level
+    // body text), no stale GIF/text bytes anywhere, every other stream byte-identical.
+    let image = cfb_stream(&output, "/PrvImage").unwrap();
+    assert_eq!(image, png);
+    let (w, h, _) = super::preview::decode_canonical_png(&image).unwrap();
+    assert_eq!((w, h), (724, 1024));
+    assert_eq!(cfb_stream(&output, "/PrvText").unwrap(), utf16("\r\n"));
+    assert!(!output.windows(gif.len()).any(|window| window == gif));
+    let old_text = cfb_stream(CALC_CELL, "/PrvText").unwrap();
+    assert!(!output
+        .windows(old_text.len())
+        .any(|window| window == old_text));
+    let raw = cfb::CompoundFile::open(std::io::Cursor::new(&edited)).unwrap();
+    let names: Vec<_> = raw
+        .walk()
+        .filter(|e| e.is_stream())
+        .map(|e| e.path().to_str().unwrap().to_owned())
+        .collect();
+    assert!(names.len() >= 8);
+    for name in names {
+        if name != "/PrvImage" && name != "/PrvText" {
+            assert_eq!(
+                cfb_stream(&output, &name),
+                cfb_stream(&edited, &name),
+                "{name}"
+            );
+        }
+    }
+    // An unedited body never accepts a regenerated image.
+    let swapped = cfb_replace(CALC_CELL, &[("/PrvImage", &png)]);
+    assert!(
+        hwp::compare_saved_with_preview(CALC_CELL, &swapped, Some(&png))
+            .contains(&Finding::at(FindingCode::PartChanged, "PrvImage"))
+    );
+    assert!(hwp::refresh_previews(CALC_CELL, CALC_CELL, Some(&render))
+        .unwrap()
+        .output
+        .is_none());
+}
+
+/// Real save service: first durable save from the genuine fixture, disk reopen, follow-up edit
+/// with an identical render (regenerated bytes equal the now-original preview), second save,
+/// then a refused save whose render does not match the page (state and file untouched).
+#[test]
+fn calc_cell_two_durable_saves_with_regenerated_previews() {
+    use super::preview::PreviewRaster;
+    let dir = TempDir::new();
+    let path = dir.path().join("calc-cell.hwp");
+    // One session per disk open (a new DocumentState models a fresh app open of the file).
+    let save = |bytes: Option<&[u8]>, output: &[u8], render: Option<&PreviewRaster>| {
+        let state = DocumentState::default();
+        let info = match bytes {
+            Some(bytes) => rhwp_session(&state, &dir, "calc-cell.hwp", bytes),
+            None => {
+                let file = identify(path.to_str().unwrap(), &Limits::default()).unwrap();
+                let info = state.registry().register(file).unwrap();
+                let (generation, _) = block_on(state.load_bytes(info.session_id)).unwrap();
+                state
+                    .registry()
+                    .transition(
+                        info.session_id,
+                        generation,
+                        SessionState::Loading,
+                        SessionState::Ready,
+                    )
+                    .unwrap()
+            }
+        };
+        let registry = state.registry();
+        let (id, generation) = (info.session_id, info.load_generation);
+        let source = registry.preflight_source(id, generation).unwrap();
+        let original = std::fs::read(&path).unwrap();
+        let check = service::preflight(
+            Format::Hwp,
+            &original,
+            &original,
+            Some(&report("hwp", json!([]))),
+        );
+        assert!(check.is_safe());
+        registry
+            .record_preflight(id, generation, source.content_hash, check)
+            .unwrap();
+        registry.commit(id, generation, 0, 1).unwrap();
+        let ticket = registry.begin_save(id, generation, 1).unwrap();
+        let result = service::save_with_options(
+            registry,
+            &ticket,
+            &Limits::default(),
+            output,
+            Some(&report("hwp", json!([]))),
+            true,
+            service::SaveOptions {
+                destination: None,
+                recovery: None,
+                preview: render,
+            },
+        );
+        drop(ticket);
+        let session = registry.get(id).unwrap();
+        (result, session.dirty, session.revision)
+    };
+    let first_out = calc_cell_edited(CALC_CELL, b'1', b'9');
+    let render = raster(724, 1024, 5);
+    let (saved, _, _) = save(Some(CALC_CELL), &first_out, Some(&render));
+    let saved = saved.unwrap();
+    assert!(saved.durable && !saved.session.dirty);
+    let first = std::fs::read(&path).unwrap();
+    let png = cfb_stream(&first, "/PrvImage").unwrap();
+    assert_eq!(
+        super::preview::decode_canonical_png(&png).unwrap().2,
+        render.rgb
+    );
+    assert!(hwp::compare_saved_with_preview(CALC_CELL, &first, Some(&png)).is_empty());
+    // Disk reopen; follow-up edit 9 → 8 with the identical render: the regenerated bytes equal
+    // the (now original) preview and are still accepted as this save's evidence.
+    let second_out = calc_cell_edited(&first, b'9', b'8');
+    assert_ne!(
+        cfb_stream(&second_out, "/BodyText/Section0"),
+        cfb_stream(&first, "/BodyText/Section0")
+    );
+    let (saved, _, _) = save(None, &second_out, Some(&render));
+    let saved = saved.unwrap();
+    assert!(saved.durable && !saved.session.dirty);
+    let second = std::fs::read(&path).unwrap();
+    assert_eq!(cfb_stream(&second, "/PrvImage").unwrap(), png);
+    assert!(hwp::compare_saved_with_preview(&first, &second, Some(&png)).is_empty());
+    // Refused: render for the wrong orientation, and no render at all. File, dirty, revision stay.
+    let third_out = calc_cell_edited(&second, b'8', b'6');
+    for render in [Some(raster(1024, 724, 5)), None] {
+        let (result, dirty, revision) = save(None, &third_out, render.as_ref());
+        let error = result.unwrap_err();
+        let DocumentError::UnsafeSave { preservation } = error else {
+            panic!("expected UnsafeSave, got {error:?}");
+        };
+        assert!(preservation
+            .findings
+            .contains(&Finding::at(FindingCode::PreviewStale, "PrvImage")));
+        assert_eq!(std::fs::read(&path).unwrap(), second);
+        assert!(dirty);
+        assert_eq!(revision, 1);
     }
 }
