@@ -3026,7 +3026,7 @@ fn resolving_tracked_toc_bookmark_boundaries_preserves_the_surviving_range() {
             assert_eq!(m.apply(&[DocxOp::DeleteForward]).changed, 1);
             let tracked = m.diagnostic_document().clone();
             assert!(m.same_as(&m.export().unwrap()));
-            let outcome = m.apply(&[operation.clone()]);
+            let outcome = m.apply(std::slice::from_ref(&operation));
             assert_eq!(
                 (outcome.changed, outcome.rejected),
                 (1, vec![]),
@@ -3108,34 +3108,74 @@ fn invalid_tracked_toc_marker_structure_still_refuses_atomically() {
 }
 
 #[test]
-fn accepting_a_whole_bookmarked_heading_keeps_toc_targets_and_history_atomic() {
+fn accepting_a_whole_bookmarked_heading_refreshes_the_toc_in_one_undo_step() {
+    // WordCraft 2026-11-08: removing a live TOC target regenerates the TOC from the surviving
+    // headings inside the same accept command (previously refused atomically).
     use wordcraft_engine::doc::Pos;
-    let mut m = DocxModel::open(&headed_fixture()).unwrap();
-    m.apply(&[mv(MoveTarget::DocStart, false), DocxOp::Toc {}]);
-    let index = m
-        .diagnostic_document()
-        .body
-        .iter()
-        .position(|b| {
-            b.as_para()
-                .is_some_and(|p| p.props.style.as_deref() == Some("Heading2"))
-        })
-        .unwrap();
-    let len = m.diagnostic_document().body[index].as_para().unwrap().len();
-    assert_eq!(m.apply(&[DocxOp::TrackChanges { value: true }]).changed, 1);
-    assert!(m.run_engine(
-        "select.range",
-        json!({"anchor": Pos::body(index, 0), "focus": Pos::body(index, len)})
-    ));
-    assert_eq!(m.apply(&[DocxOp::DeleteForward]).changed, 1);
-    assert!(m.same_as(&m.export().unwrap()));
-    let before = m.diagnostic_document().clone();
-    let history = m.view().history;
-    let outcome = m.apply(&[DocxOp::AcceptAll {}]);
-    assert_eq!((outcome.changed, outcome.rejected), (0, vec![0]));
-    assert_eq!(*m.diagnostic_document(), before);
-    assert_eq!(m.view().history, history);
-    assert!(m.same_as(&m.export().unwrap()));
-    assert_eq!(m.apply(&[DocxOp::Undo {}]).changed, 1);
-    assert!(m.same_as(&m.export().unwrap()));
+    for selected in [false, true] {
+        let mut m = DocxModel::open(&headed_fixture()).unwrap();
+        m.apply(&[mv(MoveTarget::DocStart, false), DocxOp::Toc {}]);
+        let entries = toc_entries(&m);
+        let index = m
+            .diagnostic_document()
+            .body
+            .iter()
+            .position(|b| {
+                b.as_para()
+                    .is_some_and(|p| p.props.style.as_deref() == Some("Heading2"))
+            })
+            .unwrap();
+        let removed = m.diagnostic_document().body[index]
+            .as_para()
+            .unwrap()
+            .plain_text();
+        let len = m.diagnostic_document().body[index].as_para().unwrap().len();
+        assert_eq!(m.apply(&[DocxOp::TrackChanges { value: true }]).changed, 1);
+        let range = json!({"anchor": Pos::body(index, 0), "focus": Pos::body(index, len)});
+        assert!(m.run_engine("select.range", range.clone()));
+        assert_eq!(m.apply(&[DocxOp::DeleteForward]).changed, 1);
+        assert!(m.same_as(&m.export().unwrap()));
+        let tracked = m.diagnostic_document().clone();
+        let operation = if selected {
+            assert!(m.run_engine("select.range", range));
+            DocxOp::AcceptChange {}
+        } else {
+            DocxOp::AcceptAll {}
+        };
+        let outcome = m.apply(std::slice::from_ref(&operation));
+        assert_eq!(
+            (outcome.changed, outcome.rejected),
+            (1, vec![]),
+            "{operation:?}"
+        );
+        let after = toc_entries(&m);
+        assert!(after.len() < entries.len(), "{entries:?} -> {after:?}");
+        assert!(!after.iter().any(|(_, text)| text == &removed), "{after:?}");
+        let names: Vec<String> = m
+            .diagnostic_document()
+            .bookmarks()
+            .into_iter()
+            .map(|(n, _)| n)
+            .collect();
+        for p in m
+            .diagnostic_document()
+            .body
+            .iter()
+            .filter_map(|b| b.as_para())
+        {
+            for link in p.runs.iter().filter_map(|r| r.props.link.as_deref()) {
+                if let Some(target) = link.strip_prefix('#') {
+                    assert!(names.iter().any(|n| n == target), "dangling {link}");
+                }
+            }
+        }
+        let resolved = m.diagnostic_document().clone();
+        assert!(m.same_as(&m.export().unwrap()));
+        assert_eq!(m.apply(&[DocxOp::Undo {}]).changed, 1);
+        assert_eq!(*m.diagnostic_document(), tracked);
+        assert_eq!(m.apply(&[DocxOp::Redo {}]).changed, 1);
+        assert_eq!(*m.diagnostic_document(), resolved);
+        assert!(m.apply(&[DocxOp::UpdateToc {}]).rejected.is_empty());
+        assert!(m.same_as(&m.export().unwrap()));
+    }
 }

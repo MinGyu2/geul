@@ -2680,3 +2680,241 @@ fn tracked_toc_boundary_resolution_durable_two_rounds() {
         );
     }
 }
+
+/// Bookmark pair counts and positions (paragraph index) of a reopened document's body.
+fn body_bookmarks(d: &Document) -> std::collections::BTreeMap<String, (Vec<usize>, Vec<usize>)> {
+    let mut markers = std::collections::BTreeMap::<String, (Vec<usize>, Vec<usize>)>::new();
+    for (i, p) in d.body.iter().enumerate() {
+        let Some(p) = p.as_para() else { continue };
+        for obj in &p.objects {
+            match obj {
+                InlineObject::BookmarkStart { name } => {
+                    markers.entry(name.clone()).or_default().0.push(i)
+                }
+                InlineObject::BookmarkEnd { name } => {
+                    markers.entry(name.clone()).or_default().1.push(i)
+                }
+                _ => {}
+            }
+        }
+    }
+    markers
+}
+
+/// TOC entry (first text before the tab, link) of a reopened document.
+fn toc_targets(d: &Document) -> Vec<(String, String)> {
+    d.body
+        .iter()
+        .filter_map(|b| b.as_para())
+        .filter(|p| {
+            p.props
+                .style
+                .as_deref()
+                .is_some_and(|s| s.starts_with("TOC") && s != "TOCHeading")
+        })
+        .map(|p| {
+            let text = p.plain_text();
+            let link = p
+                .runs
+                .iter()
+                .find_map(|r| r.props.link.clone())
+                .unwrap_or_default();
+            (
+                text.split('\t')
+                    .next()
+                    .unwrap_or_default()
+                    .trim()
+                    .to_owned(),
+                link,
+            )
+        })
+        .collect()
+}
+
+/// WordCraft 2026-11-08 boundary semantics through real durable publication:
+/// - `heading`: accepting a tracked deletion of the whole second heading (with its TOC
+///   bookmark) regenerates the TOC in the same command instead of refusing;
+/// - `cross`: an imported bookmark from the first heading to the second; accepting a tracked
+///   deletion of the first heading's start (both bookmark starts) keeps both ranges.
+/// First save, disk reopen, follow-up edit and TOC update, second save, final reopen.
+#[test]
+fn tracked_toc_target_removal_and_cross_paragraph_boundary_durable_two_rounds() {
+    let heading_of = |d: &Document, style: &str| {
+        d.body
+            .iter()
+            .position(|b| {
+                b.as_para()
+                    .is_some_and(|p| p.props.style.as_deref() == Some(style))
+            })
+            .unwrap()
+    };
+    let cross_original = || {
+        let mut d = reopen(&mixed_original());
+        let (h1, h2) = (heading_of(&d, "Heading1"), heading_of(&d, "Heading2"));
+        let end = d.body[h2].as_para().unwrap().len();
+        d.insert_object(
+            &Pos::body(h2, end),
+            InlineObject::BookmarkEnd {
+                name: "geul_cross".into(),
+            },
+            &CharProps::default(),
+        )
+        .unwrap();
+        d.insert_object(
+            &Pos::body(h1, 0),
+            InlineObject::BookmarkStart {
+                name: "geul_cross".into(),
+            },
+            &CharProps::default(),
+        )
+        .unwrap();
+        io::save_bytes("cross.docx", &d).unwrap()
+    };
+    let mut outputs = Vec::new();
+    for scenario in ["heading", "cross"] {
+        for resolution in [DocxOp::AcceptChange {}, DocxOp::AcceptAll {}] {
+            let original = if scenario == "heading" {
+                mixed_original()
+            } else {
+                cross_original()
+            };
+            let sentinel = reopen(&original).body[3].clone();
+            let mut doc = open_docx(&original);
+            assert!(doc.preflight().unwrap().preservation.is_safe());
+            comment_chars(&mut doc, 0, 3, "ordinary comment");
+            comment_chars(&mut doc, 10, 2, "split hyperlink comment");
+            mixed_edit(
+                &mut doc,
+                vec![
+                    mixed_move(MoveTarget::DocEnd, false),
+                    DocxOp::Footnote {
+                        text: "mixed footnote".into(),
+                    },
+                    DocxOp::Endnote {
+                        text: "mixed endnote".into(),
+                    },
+                    mixed_move(MoveTarget::DocStart, false),
+                    DocxOp::Toc {},
+                    DocxOp::TrackChanges { value: true },
+                ],
+            );
+            let (index, from, to) = {
+                let model = model_of(&doc);
+                let model = model.lock().unwrap();
+                let d = model.diagnostic_document();
+                let toc = toc_targets(d).into_iter().map(|e| e.0).collect::<Vec<_>>();
+                assert_eq!(toc, ["First heading", "Second heading"]);
+                if scenario == "heading" {
+                    let i = heading_of(d, "Heading2");
+                    (i, 0, d.body[i].as_para().unwrap().len())
+                } else {
+                    let i = heading_of(d, "Heading1");
+                    (
+                        i,
+                        0,
+                        d.body[i].as_para().unwrap().text.find("First").unwrap() + "First".len(),
+                    )
+                }
+            };
+            let select = |doc: &Docx| {
+                assert!(model_of(doc).lock().unwrap().run_engine(
+                    "select.range",
+                    json!({"anchor": Pos::body(index, from), "focus": Pos::body(index, to)})
+                ));
+            };
+            select(&doc);
+            mixed_edit(&mut doc, vec![DocxOp::DeleteForward]);
+            if matches!(resolution, DocxOp::AcceptChange {}) {
+                select(&doc);
+            }
+            mixed_edit(
+                &mut doc,
+                vec![resolution.clone(), DocxOp::Undo {}, DocxOp::Redo {}],
+            );
+            {
+                let model = model_of(&doc);
+                let model = model.lock().unwrap();
+                let d = model.diagnostic_document();
+                let toc = toc_targets(d).into_iter().map(|e| e.0).collect::<Vec<_>>();
+                if scenario == "heading" {
+                    assert_eq!(toc, ["First heading"], "{resolution:?}");
+                } else {
+                    assert_eq!(
+                        d.body[index].as_para().unwrap().plain_text(),
+                        " heading",
+                        "{resolution:?}"
+                    );
+                    let cross = &body_bookmarks(d)["geul_cross"];
+                    assert_eq!(
+                        (cross.0.as_slice(), cross.1.as_slice()),
+                        ([index].as_slice(), [heading_of(d, "Heading2")].as_slice())
+                    );
+                }
+            }
+            mixed_edit(&mut doc, vec![DocxOp::UpdateToc {}, DocxOp::UpdateToc {}]);
+            let first = publish_notes(&mut doc);
+            mixed_assert_parts(&first, &sentinel);
+            let mut doc = reload(doc);
+            mixed_edit(
+                &mut doc,
+                vec![
+                    mixed_move(MoveTarget::DocEnd, false),
+                    mixed_insert(" follow-up"),
+                    DocxOp::UpdateToc {},
+                ],
+            );
+            let second = publish_notes(&mut doc);
+            mixed_assert_parts(&second, &sentinel);
+            let doc = reload(doc);
+            assert!(doc.preflight().unwrap().preservation.is_safe());
+            for bytes in [&first, &second] {
+                let d = reopen(bytes);
+                let markers = body_bookmarks(&d);
+                assert!(
+                    markers
+                        .values()
+                        .all(|(s, e)| s.len() == 1 && e.len() == 1 && s[0] <= e[0]),
+                    "{markers:?}"
+                );
+                for (_, link) in toc_targets(&d) {
+                    assert!(
+                        markers.contains_key(link.trim_start_matches('#')),
+                        "dangling {link}"
+                    );
+                }
+                let toc = toc_targets(&d).into_iter().map(|e| e.0).collect::<Vec<_>>();
+                if scenario == "heading" {
+                    assert_eq!(toc, ["First heading"]);
+                    assert!(!d.plain_text(StoryRef::Body).contains("Second heading"));
+                } else {
+                    assert_eq!(toc, ["heading", "Second heading"]);
+                    assert!(markers.contains_key("geul_cross"));
+                }
+            }
+            assert!(reopen(&second)
+                .plain_text(StoryRef::Body)
+                .contains("follow-up"));
+            if let Some(folder) = std::env::var_os("GEUL_TRACKED_TOC_OUT") {
+                let folder = std::path::PathBuf::from(folder);
+                assert!(folder.is_absolute());
+                std::fs::create_dir_all(&folder).unwrap();
+                let stem = format!(
+                    "boundary-{scenario}-{}",
+                    if matches!(resolution, DocxOp::AcceptAll {}) {
+                        "all"
+                    } else {
+                        "selected"
+                    }
+                );
+                std::fs::write(folder.join(format!("{stem}-first.docx")), &first).unwrap();
+                std::fs::write(folder.join(format!("{stem}-second.docx")), &second).unwrap();
+            }
+            outputs.push((
+                scenario,
+                format!("{:x}", Sha256::digest(&first)),
+                format!("{:x}", Sha256::digest(&second)),
+            ));
+        }
+    }
+    println!("tracked boundary durable outputs {outputs:?}");
+}
