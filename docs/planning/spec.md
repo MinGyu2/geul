@@ -7,6 +7,10 @@ Source baseline: `4bc1ac986026ccadb2d673a66ad69e6296e3a39e` (`MinGyu2/geul`, mas
 Input: WordCraft + RHWP 독립 코어, Tauri/React 신규 UI, 6개 영역, 언어별 JSON, 공개 저장소 민감정보 사전 차단. 2026-11-04 사용자가 T007–T010의 잔여 사유 기록 및 T011 진행, DOCX/HWP/HWPX 신규 생성 계획 반영을 승인했다.
 
 
+## 2026-11-08 후속 2: 빈 첫 쪽 미리보기·WordCraft CI
+
+**PARTIALLY COMPLETED**. 빈 첫 쪽 미리보기는 1쪽 그리기 목록과 첫 문단 구조의 두 근거로만 허용하고 실제 앱 두 회차 저장으로 확인했다. WordCraft 직접 파일 접근을 승인된 관문으로 옮겨 정책 시험은 통과하지만, 전체 CI는 기존 UI 시험 1건으로 FAIL이다. T010/T012/T013/D2/D4, WordCraft 원격 BLOCKED, Word/Hancom NOT RUN은 그대로. [기록](../architecture/stage567-acceptance-2026-11-05.md#blank-preview-wc-ci-20261108).
+
 ## 2026-11-08 후속: HWP 미리보기·한컴 수식 서식·추적 TOC 경계
 
 결과는 **PARTIALLY COMPLETED**다. 한컴 HWP의 `PrvText`/`PrvImage`는 다시 연 내보내기의 1쪽 렌더로 재생성·검증되어, 이전에 `previewStale`로 막히던 `calc-cell.hwp` 편집이 실제 앱에서 두 차례 durable 저장·재열기되었다(비동기 그림이 1쪽에 있으면 기존 거부 유지). 한컴 고정소수 수식 결과 서식(`%.Nf`)을 인정해 다중 수식 표를 제품 명령으로 편집할 수 있다. WordCraft는 문단을 넘는 책갈피 경계를 보존하고 TOC 대상 제거 시 같은 명령 안에서 TOC를 다시 만든다. T012/T013은 계속 △ 조건부 미완료, WordCraft 원격 재현성 BLOCKED, Word/Hancom NOT RUN, T010/D2/D4 변경 없음. [기록](../architecture/stage567-acceptance-2026-11-05.md#preview-tables-toc-20261108).

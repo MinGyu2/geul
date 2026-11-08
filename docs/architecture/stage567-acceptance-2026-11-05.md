@@ -612,3 +612,46 @@ WordCraft `cargo xtask ci`(077be5db, 보호 wrapper): fmt ok, clippy ok, **test 
 | geul `bbedf0a34f6a685f604ef512613d476a5d463411` | C 시험 문서 주석 lint |
 
 push는 하지 않았다. Microsoft Word·Hancom Office는 **NOT RUN**.
+
+
+<a id="blank-preview-wc-ci-20261108"></a>
+## 2026-11-08 후속 2: HWP 빈 첫 쪽 미리보기 · WordCraft 감사와 CI
+
+결과: **PARTIALLY COMPLETED**. A는 지원 범위에서 완료, B는 file-access 정책 위반을 고쳤지만 그 뒤에 드러난 기존 UI 시험 실패로 WordCraft 전체 CI는 여전히 **FAIL**. T010 INCOMPLETE, T012/T013 △ 조건부 미완료, D2 INCONCLUSIVE, D4 지연 FAIL/자원 INCONCLUSIVE, WordCraft 원격 BLOCKED, Word/Hancom NOT RUN 그대로. 시작 HEAD `157d3a87ce7fbbed9a967e601b53ec331ba966ae`, RHWP `1a76570e…`(15패치, Release `342ebaad…` 재빌드 없음). 증거 `target/blank-preview-wc-ci-20261108/`.
+
+### A — 빈 첫 쪽
+
+- 결함: `refresh_previews`가 한 색 렌더를 `text_preview` 결과가 비었는지로 판정했다. 빈 본문의 PrvText는 왕복 가능한 CRLF이므로 모든 한 색 렌더가 거부되었다.
+- 재현(수정 전 실제 앱 `c5783fd0`): 한컴 `re-align-left-hancom.hwp`(5.0.3, GIF 177×250, 100자 한 문단)의 글자를 제품 키로 모두 지우고 Ctrl+S → `previewStale:PrvText,PrvImage` 거부, dirty·파일 유지(`a/native-before`). 실패한 하네스 시도와 `re-01-hangul-only-hancom.hwp`(글자 지우기만으로도 RHWP가 DocInfo ID_MAPPINGS를 64→72바이트로 다시 써 `recordsChanged:DocInfo`)는 `a/native-before-attempt*`에 보존.
+- 수정: 한 색 렌더는 (1) 프런트엔드가 다시 연 내보내기의 엔진 1쪽 그리기 목록이 평범한 쪽 배경과 빈 글줄만임(`classifyFirstPage`→`blankPage`), (2) 백엔드가 Section0 첫 문단(항상 1쪽)에 보이는 글자·구역/단 외 컨트롤이 없음을 확인할 때만 받는다. 공백 글줄·선·도형·그림·테두리/그라데이션/그림 배경·알 수 없는 구조는 빈 쪽이 아니다.
+- 대응 검증 강화: 실제 WASM에서 캡처 원본이 백엔드로 보낸 정확한 바이트를 다시 연 문서임을 증명(살아 있는 세션 아님), 실제 layer tree 분류(빈 쪽·글·표·동기/비동기 그림·1쪽 빈 뒤 2쪽 글). 독립 검증기는 8×8 블록 지표(같은 쪽 ≤5.2, 다른 저장의 쪽 ≥19.5, 한계 10)와 저장 간 교차 음성 대조를 매번 확인한다. 백엔드는 픽셀이 쪽을 나타냄을 증명하지 않으며(프런트엔드 근거), 그 경계를 시험으로 명시했다.
+- 엔진 한계(이번 변경 밖): 이 HWP 5.0.3 파일에 글자를 넣으면 RHWP가 DocInfo를 다시 써 T009가 거부한다. 그래서 빈 쪽 시나리오의 후속 편집은 문단 나누기 두 번이다.
+
+| 명령/시험 | 결과 | 증거 |
+| --- | --- | --- |
+| 보호 `cargo-geul.py test --lib -- services::save` | 160 PASS/15 ignored(새 6) | `a/rust-a1.log` |
+| 보호 `test --lib`, `clippy --all-targets -D warnings`, `fmt --check` | 342 PASS/24 ignored, PASS, PASS | `a/rust-lib.log`, `clippy.log`, `fmt.log` |
+| `npm test`, typecheck, lint | 1262 PASS, PASS, PASS | `a/frontend-all.log` |
+| 실제 WASM `table-formula-session` + `hwp-preview-capture`(플래그 1) | 105 PASS | `a/wasm-session.log` |
+| 제품 앱 `c17cd681…`(HEAD `e4b0b351`, 플래그 0), `--verify-product` | PASS | `a/app-final.sha256` |
+| native 빈 쪽(`native-hwp-blank-preview.py --expect saved`): 100자 삭제→저장→디스크 재열기→문단 나누기 2회→두 번째 저장→최종 재열기 | 8/8, 잔존 프로세스 0 | `a/nbf/` |
+| `verify-hwp-blank-preview.py` | 18/18: 정규 724×1024 흰 PNG, PrvText CRLF, 원본 GIF 부재, 관련 없는 스트림 동일, 재열기 화면도 빈 쪽, 원본 GIF는 빈 쪽과 불일치(블록 253) | `a/nbf-verify.json` |
+| native calc-cell 회귀 | 10/10 | `a/nfc/` |
+| `verify-hwp-preview.py`(강화) | 21/21, 교차 음성 대조 19.88/19.5 불일치 | `a/nfc-verify.json` |
+
+### B — WordCraft 감사와 CI
+
+- 감사: 로컬 `077be5db`의 `bookmarks.rs`/`review.rs`/`references.rs` 변경을 다시 읽고, Track Changes가 켜진 채 같은 명령 안에서 TOC를 다시 만들 때 추적 표시가 남지 않고 관련 없는 하이퍼링크가 남는지 시험했다(통과, 엔진 수정 불필요). 시험만 `71b912ed`로 남김.
+- 정책 위반: `file_access::tests::commands_do_not_touch_the_file_system_themselves`가 `cmd/file.rs:264`의 직접 `std::fs::File::open`(Release 0.7.0 `fc41918`부터 동일)을 잡았다. 보호 실행으로 수정 전 exit 1 재현. 승인된 관문 `crate::io`에 `read_file_head(path, limit)`(read root 검사·열기·경계 읽기, 기존과 같은 의미)를 더하고 호출을 옮겼다. 정책·스캐너는 그대로. 새 시험과 #1081 Word 2003 저장 시험 통과(`4b90d31c`).
+- CI: `cargo xtask ci`(보호 wrapper, 수정 후) exit 1 — fmt ok, clippy ok, **test FAIL**: 엔진 453 PASS/0 FAIL이 되었지만 `wordcraft-ui-egui`의 `clicks_on_ribbon_and_status_bar_chrome_keep_typing_in_the_document`(386 PASS/1 FAIL)가 실패해 assets/layers/wasm은 skip. 이 UI 시험은 `077be5db`(패치 없음), `6c994e4`, 업스트림 `fc41918`에서도 같은 위치(lib.rs:3426)로 실패한다 — 이전에는 엔진 실패에서 cargo가 멈춰 가려져 있던 **기존 실패**이며 geul과 무관하다. `--no-fail-fast` 전체 작업공간 2078 PASS/1 FAIL(그 UI 시험뿐), 따로 실행한 assets 54·layers 20·wasm 16 PASS(첫 layers 실행은 병렬 이력 빌드와의 무결성 검사 경합으로 실패, 재실행 PASS). **전체 CI는 FAIL**.
+- geul: gitlink `71b912ed`(`efd42065`), 보호 lib 342 PASS(어댑터·두 회차 durable DOCX 포함), clippy·fmt PASS, DOCX 16개 독립 검사 PASS(`b/docx-structure.json`).
+- 원격: `ls-remote` 가지 `b39a8fb`, 정확 fetch `not our ref`. 로컬은 fast-forward 7커밋(`af80638`…`71b912ed`). 승인 시 `git -C external/wordcraft push origin 71b912edf6ff9398940bb1026b7b1cfa2a2505d9:refs/heads/geul/semantic-roundtrip-equivalence`, 이후 새 체크아웃 `git clone https://github.com/MinGyu2/geul && git submodule update --init external/wordcraft`. 실행하지 않음 — **BLOCKED**.
+
+| 커밋 | 내용 |
+| --- | --- |
+| geul `e4b0b3516a7c6fc524f2c32c890cb0ef0c9fe07c` | A |
+| WordCraft `4b90d31c67643f42aac8dedc38e2de0da92c238a` | file-access 관문 수정 |
+| WordCraft `71b912edf6ff9398940bb1026b7b1cfa2a2505d9` | TOC 재생성 감사 시험 |
+| geul `efd4206575551a5abab914c5c0359b1b2dd5dd64` | gitlink |
+
+push 없음.

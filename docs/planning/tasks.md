@@ -1,6 +1,8 @@
 > **2026-11-06 조건부 고급 기능 개발:** [새 사용자 결정](spec.md#conditional-advanced-20261106)은 D2/D4를 △ 조건부 보류하고 독립 검증한 T012 부분집합의 제품 활성화 작업을 허용한다. D2 INCONCLUSIVE, D4 FAIL/자원 INCONCLUSIVE 및 T010/T012/T013 전체 미완료는 유지한다. 지원 부분집합은 일반 Release 빌드·실제 X11/IBus로 검증해 제품 명령을 켰다([수용 기록](../architecture/stage567-acceptance-2026-11-05.md#2026-11-06-advanced-d--conditional-production-implementation)). 아래 이전 비활성 기록은 당시 상태다.
 
-> **최신 상태 (2026-11-08 후속):** `calc-cell.hwp` 미리보기는 검증된 재생성으로 실제 두 회차 저장·재열기 PASS(비동기 그림 1쪽은 계속 거부), 한컴 `%.Nf` 수식 캐시 편집 지원, WordCraft `077be5db`(로컬)로 문단을 넘는 책갈피 경계·TOC 대상 제거 시 재생성 지원. T010 INCOMPLETE, T012/T013 △ 조건부 미완료, D2 INCONCLUSIVE, D4 지연 FAIL/자원 INCONCLUSIVE, WordCraft 원격 재현성 BLOCKED, Word/Hancom NOT RUN. [상세](../architecture/stage567-acceptance-2026-11-05.md#preview-tables-toc-20261108).
+> **최신 상태 (2026-11-08 후속 2):** 진짜 빈 첫 쪽 HWP 미리보기 저장 허용(실패한 한 색 렌더는 계속 거부, 실제 앱 두 회차 저장·재열기), 미리보기 대응 독립 검증 강화. WordCraft file-access 정책 위반 수정(`4b90d31c`)으로 엔진 453 PASS/0 FAIL, 그러나 전체 CI는 가려져 있던 기존 UI 시험 1건으로 FAIL. 상태 값은 아래와 같다. [상세](../architecture/stage567-acceptance-2026-11-05.md#blank-preview-wc-ci-20261108).
+>
+> **이전 (2026-11-08 후속):** `calc-cell.hwp` 미리보기는 검증된 재생성으로 실제 두 회차 저장·재열기 PASS(비동기 그림 1쪽은 계속 거부), 한컴 `%.Nf` 수식 캐시 편집 지원, WordCraft `077be5db`(로컬)로 문단을 넘는 책갈피 경계·TOC 대상 제거 시 재생성 지원. T010 INCOMPLETE, T012/T013 △ 조건부 미완료, D2 INCONCLUSIVE, D4 지연 FAIL/자원 INCONCLUSIVE, WordCraft 원격 재현성 BLOCKED, Word/Hancom NOT RUN. [상세](../architecture/stage567-acceptance-2026-11-05.md#preview-tables-toc-20261108).
 >
 > **이전 상태 (2026-11-08):** 병합 셀·지원 다중 문단 표의 영속 수식 편집과 일부 추적 TOC 표식 작업을 실제 저장·재열기까지 확인했다. `calc-cell.hwp` 미리보기는 `previewStale`로 안전 거부되어 미해결이다. T010 INCOMPLETE, T012/T013 △ 조건부 미완료, D2 INCONCLUSIVE, D4 지연 FAIL/자원 INCONCLUSIVE, WordCraft 원격 재현성 BLOCKED, Word/Hancom NOT RUN. [상세 수용·제한](../architecture/stage567-acceptance-2026-11-05.md#interoperability-repair-20261108). 아래 기존 조사·기술 기록과 조건부 제품 활성화 결정은 보존한다.
 

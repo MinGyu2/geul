@@ -6,6 +6,10 @@ Source baseline: `4bc1ac986026ccadb2d673a66ad69e6296e3a39e` (`MinGyu2/geul`, mas
 Status: T007–T009 △ 조건부 범위 인정, T010 INCOMPLETE(D2/D4 △ 조건부 보류), T011 완료(2026-11-04, native IME 포함 검증 — [tasks.md](./tasks.md) Verification Log). T021 생성 경계는 실제 WASM/Rust 실행 수용 완료. T022 제품 연결 완료. T023 native 신규 생성 수용 완료(X11/IBus, 2026-11-04; 추가 환경은 NOT RUN).
 
 
+## 2026-11-08 후속 2: 빈 첫 쪽 미리보기·WordCraft CI
+
+**PARTIALLY COMPLETED**. 빈 첫 쪽 미리보기는 1쪽 그리기 목록과 첫 문단 구조의 두 근거로만 허용하고 실제 앱 두 회차 저장으로 확인했다. WordCraft 직접 파일 접근을 승인된 관문으로 옮겨 정책 시험은 통과하지만, 전체 CI는 기존 UI 시험 1건으로 FAIL이다. T010/T012/T013/D2/D4, WordCraft 원격 BLOCKED, Word/Hancom NOT RUN은 그대로. [기록](../architecture/stage567-acceptance-2026-11-05.md#blank-preview-wc-ci-20261108).
+
 ## 2026-11-08 후속 결과(미리보기·수식 서식·TOC 경계)
 
 A: HWP 미리보기 재생성 경로(프런트엔드 렌더 → 백엔드 PAGE_DEF 크기·정규 PNG → 이번 저장 결속 검증)를 구현해 `calc-cell.hwp` 편집 저장을 실제 앱에서 두 회차 확인했다. B: 한컴 `%.Nf` 수식 캐시를 투영에서 인정했다. C: WordCraft `077be5db`(로컬)로 문단을 넘는 책갈피 경계 보존과 TOC 대상 제거 시 재생성을 넣었다. 남은 것: 외부 Word/Hancom 수용, WordCraft 원격 공개 승인, 천 단위 구분 수식 캐시·중첩 표, 비동기 그림 미리보기. [기록](../architecture/stage567-acceptance-2026-11-05.md#preview-tables-toc-20261108).
