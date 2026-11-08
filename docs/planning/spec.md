@@ -7,6 +7,12 @@ Source baseline: `4bc1ac986026ccadb2d673a66ad69e6296e3a39e` (`MinGyu2/geul`, mas
 Input: WordCraft + RHWP 독립 코어, Tauri/React 신규 UI, 6개 영역, 언어별 JSON, 공개 저장소 민감정보 사전 차단. 2026-11-04 사용자가 T007–T010의 잔여 사유 기록 및 T011 진행, DOCX/HWP/HWPX 신규 생성 계획 반영을 승인했다.
 
 
+## 2026-11-08 후속: HWP 미리보기·한컴 수식 서식·추적 TOC 경계
+
+결과는 **PARTIALLY COMPLETED**다. 한컴 HWP의 `PrvText`/`PrvImage`는 다시 연 내보내기의 1쪽 렌더로 재생성·검증되어, 이전에 `previewStale`로 막히던 `calc-cell.hwp` 편집이 실제 앱에서 두 차례 durable 저장·재열기되었다(비동기 그림이 1쪽에 있으면 기존 거부 유지). 한컴 고정소수 수식 결과 서식(`%.Nf`)을 인정해 다중 수식 표를 제품 명령으로 편집할 수 있다. WordCraft는 문단을 넘는 책갈피 경계를 보존하고 TOC 대상 제거 시 같은 명령 안에서 TOC를 다시 만든다. T012/T013은 계속 △ 조건부 미완료, WordCraft 원격 재현성 BLOCKED, Word/Hancom NOT RUN, T010/D2/D4 변경 없음. [기록](../architecture/stage567-acceptance-2026-11-05.md#preview-tables-toc-20261108).
+
+이전 기록: 아래 2026-11-08 절은 이 후속 전의 상태다.
+
 ## 2026-11-08 T012/T013 상호운용 후속
 
 결과는 **PARTIALLY COMPLETED**다. T012의 병합 셀·일부 다중 문단 표 수식 편집은 실제 Release WASM과 HWP/HWPX 두 차례 저장·재열기로 확인했지만, `calc-cell.hwp`의 `PrvText`/`PrvImage`는 편집 후 오래된 상태로 검출되어 실제 저장이 계속 안전 거부된다. T013은 선택된 추적 TOC 책갈피 수락·거절·갱신 경계를 보정하고 실제 DOCX 두 차례 저장·재열기를 확인했지만, WordCraft 원격 재현성은 BLOCKED, Microsoft Word 호환성은 NOT RUN이다. T010 INCOMPLETE, T012/T013 △ 조건부 미완료, D2 INCONCLUSIVE, D4 지연 FAIL/자원 INCONCLUSIVE 상태를 유지한다. 상세 검증·해시·남은 범위는 [2026-11-08 기록](../architecture/stage567-acceptance-2026-11-05.md#interoperability-repair-20261108)을 따른다.

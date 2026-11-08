@@ -558,3 +558,57 @@ Rust 빌드/통합 검사는 `scripts/external-integrity.py` 보호 경로에서
 | geul `8ffc95820e0b90010ef68f72bdfecf7acdc457b4` | `external/wordcraft` gitlink, `src-tauri/src/adapters/wordcraft/{engine,tests}.rs`, `src-tauri/src/services/save/docx_semantic_acceptance.rs` | 새 소스 연결, 원자 거부·TOC 표식·실제 두 회차 저장/재열기 회귀 |
 
 geul 커밋의 일반 훅에서 민감정보/하드코딩 비밀 검사가 PASS했다. 적용 대상이 없는 검사기 회귀 훅은 SKIP이었다. WordCraft 커밋은 hook 출력 없이 완료됐으며 전체 CI가 PASS했다는 의미가 아니다. A의 완료 commit은 만들지 않았다. 최종 문서 정리는 별도 로컬 commit이며 두 저장소 모두 push하지 않았다. 외부 Word/Hancom 검사는 NOT RUN이고, A 및 아직 실행하지 않은 전체 행렬/공식 수용은 남은 작업이다. `target/interoperability-20261108/`의 중간 실패와 최초 검사도 보존한다.
+
+<a id="preview-tables-toc-20261108"></a>
+## 2026-11-08 후속: HWP 미리보기 재생성 · 한컴 수식 결과 서식 · 추적 TOC 경계
+
+결과: **PARTIALLY COMPLETED**. 아래 세 묶음은 각자의 지원 범위에서 실제 저장·재열기까지 확인했다. T012/T013은 남은 독립 수용 조건(외부 Word/Hancom, WordCraft 원격 재현성, 전체 행렬) 때문에 계속 **△ 조건부 미완료**다. T010 INCOMPLETE, D2 INCONCLUSIVE, D4 지연 FAIL/자원 INCONCLUSIVE는 바꾸지 않았다. 시작 HEAD `3a83de1170f7c9489747044f30c61cfd657886ab`, RHWP `1a76570e…`(15패치, Release `342ebaad…` 변경 없음). 증거 루트 `target/preview-tables-toc-20261108/`.
+
+| 묶음 | 이전 한계 | 원인 | 수정 | 검증 | 남은 한계 |
+| --- | --- | --- | --- | --- | --- |
+| A HWP 미리보기 | 한컴 HWP(`PrvImage` GIF 등)는 본문 편집 뒤 `previewStale`로 저장 불가 | 엔진이 원본 미리보기를 그대로 쓰고, 검증된 재생성 경로가 없었다 | 프런트엔드가 **다시 연 원시 내보내기**의 1쪽을 그려 RGB를 저장 프레임에 붙이고, 백엔드가 출력 자신의 Section0 PAGE_DEF로 크기(긴 변 1024, 한컴 규칙)를 정해 정규 PNG를 만들고 PrvText/PrvImage만 다른 CFB로 다시 만든다. 최종 T009는 바뀐 PrvImage를 *이번 저장이 부호화한 바이트*이고 정규 PNG·PAGE_DEF 크기일 때만 받는다. 빈 PrvText는 RHWP가 다시 열 때 스트림을 버리므로(native1에서 발견) CRLF 빈값으로 쓴다 | Rust 단위 13 + `services::save` 154 PASS, native 실제 앱 2회 durable 저장·재열기, 독립 검증기 20/20 | 비동기 그림(GIF/WMF/EMF/SVG, rawSvg)이 1쪽에 있으면 렌더를 보내지 않아 기존 거부 유지. PrvText는 RHWP 관례(본문 최상위 문단)이며 한컴의 표·개체 `<…>` 형식은 재현하지 않음(가설 일치 18/341). Hancom NOT RUN |
+| B 복잡 표 수식 | 한컴이 만든 다중 수식 표(calc-cell)는 제품 명령으로 어떤 수식도 편집 불가 | 투영이 `??%g`가 아닌 결과 서식을 모두 unknown으로 봄(`=AVG(ABOVE)??%.2f,;;2.00`) | `%.Nf`(N 0–9)를 소수 자릿수가 정확히 맞을 때만 인정, 식은 그대로 순환 분석 | 실제 WASM 103 PASS(새 4), 단위 17 PASS, 실제 서비스 HWPX 2 durable + 재열기, HWP는 native A로 durable | 천 단위 구분 기호 캐시(`4,319`), 중첩 표(경로 3), 그 밖의 서식은 계속 거부 |
+| C 추적 TOC | 문단을 넘는 책갈피 경계와 살아 있는 TOC 대상 제거는 거부 | 경계 보존이 문단 안에서만 동작, TOC 대상 손실은 후검증 거부 | WordCraft가 문서 수준에서 한쪽 경계만 사라지는 쌍을 보존하고, TOC 대상이 사라지면 같은 명령(한 Undo 단계) 안에서 TOC를 다시 만든다. 본문 내부 하이퍼링크가 가리키는 책갈피 제거는 원자 거부 | WordCraft 새 4(이전 소스에서 3 FAIL), 31/450(+기존 scanner 1 FAIL), 왕복 7+4, geul lib 337 PASS, 실제 DOCX 16 + 독립 검사 PASS | 재생성할 TOC 필드가 없는 TOC 링크 손실, 모호·깨진 표식은 거부. WordCraft 원격 BLOCKED. Word NOT RUN |
+
+### A — 근거와 경로
+
+- 형식 근거: 공식 HWP 5.0 문서는 PrvImage를 BMP/GIF로 기술하지만, `external/rhwp/samples`의 626개 HWP 조사에서 실제 한컴 저장본은 GIF 긴 변 250(5.0.0–5.0.4) 또는 PNG 긴 변 1024(5.0.5+)였다. 크기는 Section0 첫 PAGE_DEF(가로 플래그면 가로·세로 교환, 반올림)이며 이 규칙이 250/1024 미리보기 563개 모두를 재현한다(`a/survey.json`, `a/survey.py`). RHWP 파서는 PNG/BMP/GIF를 모두 읽는다.
+- 신뢰 경계: 렌더는 기존 `reopen` 증거와 같은 신뢰(프런트엔드 엔진)다. 실제 편집 세션이 아니라 저장 대상 바이트를 다시 연 문서에서 그린다. 백엔드는 픽셀이 내용을 나타낸다고 독자적으로 증명하지 않는다; 그 대신 크기·부호화 정규성·이번 저장 결속을 강제하고, 내용 일치는 아래 독립 검증으로 확인했다. 본문·표·개체가 있는데 한 색인 렌더는 실패로 보고 거부한다.
+- `check_saved`(증거 없음)의 판정은 그대로다. 미리보기 증거 없이 바뀐 PrvImage는 여전히 `partChanged`, 남은 원본은 `previewStale`.
+
+| 명령/시험 | 결과 | 증거 |
+| --- | --- | --- |
+| `GEUL_SANDBOX=userns-root-bwrap python3 scripts/cargo-geul.py test --locked --offline --lib -- services::save` | 154 PASS/15 ignored(새 시험 포함 후, lint 정리 뒤 재실행) | `a/test3.log`, `test4.log` |
+| 제품 앱 `tauri-geul.py build --no-bundle`(시험 플래그 0) → `c5783fd0…`, HEAD `1573bece`; `rhwp-artifacts.py --verify-product` | PASS | `a/app-final.sha256`, `verify-product-final.log` |
+| `scripts/tests/native-hwp-preview.py`(격리 X11/IBus, 실제 Tauri 저장 서비스): calc-cell 셀 A1 `1→15`, `=SUM(ABOVE)`=18, 저장, 디스크 재열기, `=MAX(ABOVE)`=15, 두 번째 저장, 최종 재열기 | 10/10 PASS, 정리 후 잔존 프로세스 0 | `a/native-final/` |
+| `python3 -I scripts/tests/verify-hwp-preview.py`(표준 라이브러리만, 별도 CFB/PNG/GIF 해석) | 20/20 PASS: 스트림 집합 동일, 관련 없는 스트림 바이트 동일, 724×1024 정규 PNG, 원본 GIF·PrvText 바이트 부재, 셀 값 15/18→15, 재열기 화면 1쪽과 평균 차 0.108, 1·2회 미리보기 차이는 수식 셀 영역뿐 | `a/native-final-verify.json` |
+| 실패 기록 | native1: 두 번째 저장이 `partMissing:PrvText`(빈 PrvText 결함, 수정). native2: 저장은 됐으나 수식 미적용을 독립 검증기가 검출. native3: 수식 거부(B 원인) | `a/native1`–`native3`, `native2-verify.json` |
+| 원본 고정본 | `e22c45dc…` 변경 없음 | `sha256sum` |
+
+### B — 지원 범위
+
+top-level 완전 격자, 첫 문단 소유 단일 필드 셀에서 기존 필드 결과 서식이 `%g` 또는 `%.Nf`(소수 N자리 정확)일 때 투영이 식을 읽는다. 바뀌는 것은 대상 필드뿐이며 엔진은 대상 명령을 `%g`로 다시 쓴다. 다른 한컴 필드는 명령·값·fieldId가 그대로다. 직접·간접 순환, 깨진 고정소수 캐시(`2`, `2.000`, `%.12f`, `%.2e`, `%d`)는 기록 전에 거부한다. 제한 256/16/4096 유지. 실제 서비스 producer `cee91412…`(HEAD 소스로 새 빌드): `b/service-results.json`, 재열기 `b/reopen-published.json`. 조사(`b/formula-command-survey.txt`): 다른 한컴 표본의 `%g` 캐시 중 천 단위 구분 기호 값과 중첩 표 필드는 계속 거부한다.
+
+### C — WordCraft 원격 재현성과 CI
+
+`git ls-remote`: `refs/heads/geul/semantic-roundtrip-equivalence`=`b39a8fb…`. 새 빈 저장소의 정확 SHA fetch는 `not our ref`(exit 128). `6c994e4`, `615697c`, 새 `077be5db` 모두 로컬 전용이다. 원격 가지 끝은 로컬 HEAD의 조상이므로 공개는 fast-forward 하나면 된다(실행하지 않음):
+
+```sh
+# 승인된 경우에만, 저장소 소유자가 실행
+git -C external/wordcraft push origin 077be5db9be28f26ea23940a2ef71786037aa393:refs/heads/geul/semantic-roundtrip-equivalence
+# 이후 새 위치에서: git clone https://github.com/MinGyu2/geul && git submodule update --init external/wordcraft
+```
+
+WordCraft `cargo xtask ci`(077be5db, 보호 wrapper): fmt ok, clippy ok, **test FAIL** — 엔진 450 PASS/1 FAIL, 실패는 변경 전과 같은 file-access scanner(`crates/engine/src/cmd/file.rs:264`의 직접 `std::fs::File::open`)이다. 그래서 assets/layers/wasm은 ci 안에서 skip되었고 따로 실행해 assets 54, layers 20 crates, wasm 16 crates PASS였다. **전체 CI는 FAIL**로 기록한다; scanner 정책은 바꾸지 않았다(`c/wc-xtask-ci.log`, `wc-xtask-{assets,layers,wasm}.log`). geul: 보호 `cargo-geul.py test --lib` 337 PASS/24 ignored, `clippy --all-targets -D warnings` PASS(기존 adapter 시험 lint 포함 수정), `fmt --check` PASS. 프런트엔드: `npm test` 1260 PASS, typecheck·lint PASS, `table-formula-session` 103 PASS(시험 플래그 1), `advanced-production`+`table-formula-session` 111 PASS(플래그 0, 이 묶음의 기록 구성), legacy WASM 37 PASS/1 선택 SKIP. `advanced-production`을 플래그 1로 돌리면 4건이 실패하는데, 그 묶음은 제품(플래그 0) 전용 단정이며 이번 변경과 무관한 구성 차이로 판단했다(기준 HEAD에서 재실행하지는 않음).
+
+### 커밋
+
+| 저장소/커밋 | 내용 |
+| --- | --- |
+| geul `3ff5bee68bed258293274b0a964f7a29474fa59b` | A: 미리보기 재생성·검증, 프레임, 시험, native 하네스·독립 검증기 |
+| geul `1573bececf7fa8ae2c9ddfea6ad0612b4e4c67f0` | B: 한컴 고정소수 수식 캐시 인정, 실제 WASM 시험 |
+| WordCraft `077be5db9be28f26ea23940a2ef71786037aa393` (parent `615697c6`) | C 엔진: 문단을 넘는 경계 보존, TOC 대상 제거 시 재생성, 본문 링크 대상 보호 |
+| geul `eb50a9dffe572543545367bc0153927c006b46fd` | C 통합: gitlink, adapter·두 회차 durable 시험, 기존 clippy 지적 수정 |
+| geul `bbedf0a34f6a685f604ef512613d476a5d463411` | C 시험 문서 주석 lint |
+
+push는 하지 않았다. Microsoft Word·Hancom Office는 **NOT RUN**.

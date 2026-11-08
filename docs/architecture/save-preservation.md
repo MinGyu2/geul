@@ -1409,3 +1409,7 @@ Current Release `53b6ad7a4c6de7a8f4ada4c61b0ad1934461e656527f6e6b440f08898bebf6d
 ## 2026-11-08 HWP 미리보기 교차 확인
 
 `calc-cell.hwp`의 실제 수식 편집 출력에서 `PrvText`와 `PrvImage`가 이전 미리보기 그대로 남았다. 입력 preflight는 safe였고, 저장 서비스의 후보 출력 보존 검사가 두 스트림을 `previewStale`로 검출해 publication을 거부했다. 실제 저장 서비스는 이를 거부했고 원본 해시·dirty/revision 상태를 보존했다. 미리보기 생성/검증 경로는 아직 없다. 따라서 기존 T009 거부를 제거하거나 오래된 스트림을 허용하지 않는다. HWP preview 지원은 미완료이며 상세 스트림 해시·실행 근거는 [2026-11-08 기록](stage567-acceptance-2026-11-05.md#interoperability-repair-20261108)을 참조한다.
+
+### 2026-11-08 후속: HWP 미리보기 재생성(위 단락의 미해결 상태를 대체)
+
+HWP 저장 요청은 선택적으로 `preview` 메타(`width`, `height`)와 출력 뒤 RGB 픽셀을 가진다. 픽셀은 프런트엔드가 **다시 연 원시 내보내기**의 1쪽을 그린 것이다(살아 있는 세션 아님; 1쪽에 rawSvg나 GIF/WMF/EMF/SVG 그림이 있으면 보내지 않음). 저장 서비스는 원시 출력의 유일한 문제가 낡은 미리보기일 때만 `hwp::refresh_previews`로 PrvText(기존 규칙, 빈 본문은 CRLF)와 PrvImage(출력 Section0 PAGE_DEF 기준 긴 변 1024, 정규 PNG)를 다시 만들고, CFB가 두 스트림 외에는 원시 출력과 같음을 확인한다. 최종 검사 `check_saved_with_preview`는 본문이 바뀌었고 PrvImage가 이번 저장이 부호화한 바이트와 같으며 엄격 복호화·재부호화가 같고 PAGE_DEF 크기와 맞을 때만 바뀐 PrvImage를 받는다. 증거 없는 `check_saved`, 원본 미리보기 남김(`previewStale`), 다른 변경(`partChanged`) 판정은 그대로다. 렌더가 없거나 크기·내용이 맞지 않으면(본문·표·개체가 있는데 한 색) 거부를 유지한다. [근거·검증](stage567-acceptance-2026-11-05.md#preview-tables-toc-20261108).
