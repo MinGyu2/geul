@@ -1,0 +1,308 @@
+#!/usr/bin/env python3
+"""T014 B native acceptance: real RHWP WASM checkpoint -> SIGKILL -> fresh launch -> restore -> reopen.
+
+Per format (HWP, HWPX), with an isolated XDG_DATA_HOME (Tauri app_local_data_dir) per format:
+  launch 1: open a generated approved fixture copy (tests/fixtures/rhwp/generate.mjs), type a marker through
+            native XTest keys, wait for the product's automatic checkpoint (2 s debounce) to report
+            `protected`, independently validate the private record on disk (GRR1 header checksum, payload
+            hash, format, revision) and reopen its payload with the approved Release WASM, then type one more
+            character (newer revision, still `waiting`) and SIGKILL exactly the test-owned app PID.
+  launch 2: a fresh app process on the same data directory; RecoveryCenter lists the surviving candidate;
+            restoring onto an existing file is refused (real backend, bytes unchanged); restoring through the
+            native GTK chooser publishes a new file that opens with the RHWP engine; the published bytes are
+            independently reopened with the Release WASM; the source copy is unchanged; the candidate remains.
+Run inside the private X11/IBus launcher. No test hooks, no mocked backend/engine, no DOM composition events.
+"""
+import argparse
+import hashlib
+import importlib.util
+import json
+import os
+from pathlib import Path
+import shutil
+import signal
+import subprocess
+import sys
+import time
+import traceback
+
+ROOT = Path(__file__).resolve().parents[2]
+for folder in ('tests/e2e', 'tests/integration/rhwp'):
+    sys.path.insert(0, str(ROOT / folder))
+import tauri_smoke as smoke
+import rhwp_poc as rhwp
+
+spec = importlib.util.spec_from_file_location('production_native_base', ROOT / 'scripts/tests/native-new-document.py')
+base = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(base)
+
+IDENTIFIER = 'io.github.mingyu2.geul'
+STATUS = '[data-testid=rhwp-status]'
+MARK = 'T014MARK'
+SIGNATURE = {'hwp': bytes.fromhex('d0cf11e0a1b11ae1'), 'hwpx': b'PK\x03\x04'}
+RESTORE_TITLE = '복구 사본을 새 파일로 복원'
+
+VERIFY = r"""
+import {readFileSync} from 'node:fs';import {pathToFileURL} from 'node:url';
+const [js,wasm,file,expectFormat]=process.argv.slice(1);
+const r=await import(pathToFileURL(js));r.initSync({module:readFileSync(wasm)});
+const d=new r.HwpDocument(readFileSync(file));
+try{const n=d.getParagraphCount(0);
+ const paragraphs=Array.from({length:n},(_,p)=>d.getTextRange(0,p,0,d.getParagraphLength(0,p)));
+ console.log(JSON.stringify({format:d.getSourceFormat(),pages:d.pageCount(),paragraphs,controls:d.getControls().length,expectFormat}));}
+finally{d.free();}
+"""
+
+
+def sha(path):
+    return hashlib.sha256(Path(path).read_bytes()).hexdigest()
+
+
+def release_engine():
+    build = json.loads((ROOT / 'dist/rhwp/BUILD.json').read_text())
+    folder = ROOT / 'dist/rhwp/generations' / build['generation']
+    js, wasm = folder / 'rhwp.js', folder / 'rhwp_bg.wasm'
+    assert sha(js) == build['artifacts']['rhwp.js'] and sha(wasm) == build['artifacts']['rhwp_bg.wasm'], 'release artifact mismatch'
+    return {'generation': build['generation'], 'js': str(js), 'wasm': str(wasm),
+            'jsSha256': sha(js), 'wasmSha256': sha(wasm), 'profile': build['profile']}
+
+
+def wasm_open(engine, path, fmt):
+    out = subprocess.run(['node', '--input-type=module', '-e', VERIFY, engine['js'], engine['wasm'], str(path), fmt],
+                         capture_output=True, text=True, check=True)
+    return json.loads(out.stdout)
+
+
+def parse_record(path):
+    """Independent reader of the RecoveryStore GRR1 format (recovery.rs): magic, u32 LE header length,
+    64 hex SHA-256 of the header JSON, header JSON, payload."""
+    data = Path(path).read_bytes()
+    assert data[:4] == b'GRR1', 'magic'
+    n = int.from_bytes(data[4:8], 'little')
+    checksum, header = data[8:72].decode(), data[72:72 + n]
+    assert hashlib.sha256(header).hexdigest() == checksum, 'header checksum'
+    meta = json.loads(header)
+    payload = data[72 + n:]
+    assert hashlib.sha256(payload).hexdigest() == meta['payloadHash'], 'payload hash'
+    return meta, payload
+
+
+def app_pids(data_home, app):
+    """Exactly the test-owned app process: inherits this scenario's XDG_DATA_HOME and executes the app binary."""
+    found = []
+    for pid in smoke.pids_with(data_home):
+        try:
+            if os.path.realpath(f'/proc/{pid}/exe') == os.path.realpath(app):
+                found.append(pid)
+        except OSError:
+            continue
+    return found
+
+
+def gone(pid):
+    try:
+        state = Path(f'/proc/{pid}/stat').read_text().rsplit(')', 1)[1].split()[0]
+        return state == 'Z'
+    except OSError:
+        return True
+
+
+def run_format(args, fmt, engine, report):
+    out = args.out / fmt
+    out.mkdir()
+    data_home = out / 'appdata'
+    source = out / f'source.{fmt}'
+    shutil.copyfile(args.fixtures / f'basic-ko.{fmt}', source)
+    original_sha = sha(source)
+    original = wasm_open(engine, source, fmt)
+    entry = {'format': fmt, 'sourceSha256': original_sha, 'sourceParagraph0': original['paragraphs'][0], 'steps': []}
+    report['formats'].append(entry)
+
+    def step(name, value, detail=None):
+        entry['steps'].append({'step': name, 'status': 'PASS' if value else 'FAIL', **({'detail': detail} if detail is not None else {})})
+        assert value, (fmt, name, detail)
+
+    record_dir = data_home / IDENTIFIER / 'recovery'
+    # ---------------- launch 1 ----------------
+    smoke.DRIVER_LOG = str(out / 'driver-1.log')
+    killed = None
+    with smoke.tauri_driver(str(args.driver), args.port, str(data_home)) as start:
+        d = start()
+        try:
+            a = base.Acceptance(args, d, report)
+            smoke.wait_until(d, 'return !!document.querySelector(".document-bar") && !!document.querySelector("[data-testid=recovery-center]")', timeout=30)
+            pids = app_pids(str(data_home), args.app)
+            step('B1 test-owned app process identified', len(pids) == 1, pids)
+            first_pid = pids[0]
+            a.open(fmt, source)
+            session = next(s for s in a.sessions() if s['displayName'] == source.name)
+            step('B1 opened with RHWP, ready, clean', session['engine'] == 'rhwp' and session['format'] == fmt
+                 and session['state'] == 'ready' and session['dirty'] is False, session)
+            entry['session'] = {k: session[k] for k in ('sessionId', 'loadGeneration', 'revision')}
+            sid = session['sessionId']
+            a.engine('xkb:us::eng')
+            rhwp.click_paragraph_start(d)
+            a.type(MARK)
+            a.wait('const s=document.querySelector(arguments[0]);return s?.dataset.composing==="false" && s.dataset.localRevision===s.dataset.revision && s.dataset.dirty==="true"', STATUS)
+            status = a.status(fmt)
+            revision = int(status['revision'])
+            step('B2 marker committed, dirty, no IME transaction', revision == len(MARK) and status['dirty'] == 'true'
+                 and status['composing'] == 'false', status)
+            committed_at = time.monotonic()
+            selector = f'[data-testid=recovery-checkpoint-{sid}]'
+            states = []
+            deadline = time.monotonic() + 40
+            while time.monotonic() < deadline:
+                row = d.js('const e=document.querySelector(arguments[0]);return e?{...e.dataset}:null', selector)
+                observed = (row or {}).get('state'), (row or {}).get('revision')
+                if not states or states[-1][:2] != observed:
+                    states.append((*observed, round(time.monotonic() - committed_at, 2)))
+                if row and row.get('state') in ('protected', 'failed', 'unsupported') and row.get('revision') == str(revision):
+                    break
+                time.sleep(0.05)
+            entry['checkpointStates'] = states
+            capturing = next((t for s, r, t in states if s == 'capturing'), None)
+            step('B3 automatic checkpoint protected for the committed revision',
+                 states[-1][0] == 'protected' and states[-1][1] == str(revision), states)
+            step('B3 debounce: capture began no earlier than ~2 s after the commit', capturing is not None and capturing >= 1.8, capturing)
+            listed = a.async_js("return await window.__TAURI_INTERNALS__.invoke('recovery_list')")
+            step('B5 real backend recovery_list', listed['ok'], listed)
+            candidates = [c for c in listed['value'] if c['valid'] and c['format'] == fmt and c['revision'] == revision]
+            step('B5 one valid candidate of this format and revision', len(candidates) == 1, listed['value'])
+            candidate = candidates[0]
+            files = sorted(p.name for p in record_dir.iterdir())
+            record = record_dir / candidate['id']
+            meta, payload = parse_record(record)
+            step('B5 persistent GRR1 record: checksums, format, revision, generation, original path',
+                 meta['format'] == fmt and meta['revision'] == revision and meta['generation'] == session['loadGeneration']
+                 and meta['original'] == str(source) and meta['target'] == str(source), {'files': files, 'header': {k: meta[k] for k in ('format', 'revision', 'generation')}})
+            step('B5 record is private (0600, single link)', (record.stat().st_mode & 0o777) == 0o600 and record.stat().st_nlink == 1)
+            (out / f'record-payload.{fmt}').write_bytes(payload)
+            step('B4 payload keeps the original container format', payload.startswith(SIGNATURE[fmt]))
+            reopened = wasm_open(engine, out / f'record-payload.{fmt}', fmt)
+            step('B4 Release WASM reopens the record payload with the edit', reopened['format'] == fmt
+                 and reopened['paragraphs'][0] == MARK + original['paragraphs'][0]
+                 and reopened['paragraphs'][1:] == original['paragraphs'][1:] and reopened['controls'] == original['controls'], reopened)
+            if fmt == 'hwp':
+                # BodyText is compressed; the uncompressed UTF-16 PrvText stream is where the marker can appear
+                # verbatim. It is present only if the save validator's preview regeneration ran.
+                marker = MARK.encode('utf-16-le')
+                step('B4 HWP PrvText regenerated by the save validator (marker in preview, not in source)',
+                     'PrvText'.encode('utf-16-le') in payload and marker in payload and marker not in source.read_bytes())
+            entry['candidate'] = {'id': candidate['id'], 'revision': revision, 'recordSha256': sha(record), 'payloadSha256': hashlib.sha256(payload).hexdigest()}
+            sessions = a.sessions()
+            now = next(s for s in sessions if s['sessionId'] == sid)
+            step('B6 original bytes unchanged, still dirty, saved revision not advanced, same path',
+                 sha(source) == original_sha and now['dirty'] is True and now['revision'] == revision and now['displayName'] == source.name, now)
+            step('B6 no document file published next to the source', sorted(p.name for p in out.iterdir() if p.name.startswith('.geul-save-')) == [])
+            # A newer committed revision is not represented as protected by the older record.
+            a.type('Z')
+            a.wait('const s=document.querySelector(arguments[0]);return s?.dataset.localRevision===s.dataset.revision && Number(s.dataset.revision)===arguments[1]', STATUS, revision + 1)
+            row = d.js('const e=document.querySelector(arguments[0]);return e?{...e.dataset}:null', selector)
+            step('B7 newer revision shown as waiting, not protected', row and row['state'] == 'waiting' and row['revision'] == str(revision + 1), row)
+            # SIGKILL exactly the test-owned app process before the newer revision's debounce elapses.
+            os.kill(first_pid, signal.SIGKILL)
+            killed = {'pid': first_pid, 'atRevision': revision + 1, 'protectedRevision': revision}
+            deadline = time.monotonic() + 10
+            while time.monotonic() < deadline and not gone(first_pid):
+                time.sleep(0.05)
+            step('C6/C7 exact app PID terminated by SIGKILL', gone(first_pid), killed)
+        except Exception:
+            try:
+                d.screenshot(out / 'launch1-failure.png')
+            except Exception:
+                pass
+            raise
+        finally:
+            try:
+                smoke.end_session(d)
+            except Exception as error:
+                entry['launch1SessionEnd'] = type(error).__name__ + ' (expected after SIGKILL)' if killed else str(error)
+    listing = sorted(p.name for p in record_dir.iterdir())
+    step('C8 record survived the process boundary', candidate['id'] in listing, listing)
+    step('C14 source unchanged after the crash', sha(source) == original_sha)
+    # ---------------- launch 2 ----------------
+    smoke.DRIVER_LOG = str(out / 'driver-2.log')
+    existing = out / f'existing.{fmt}'
+    existing.write_bytes(b'existing destination must not be overwritten')
+    existing_sha = sha(existing)
+    destination = out / f'restored.{fmt}'
+    with smoke.tauri_driver(str(args.driver), args.port, str(data_home)) as start:
+        d = start()
+        try:
+            a = base.Acceptance(args, d, report)
+            smoke.wait_until(d, 'return !!document.querySelector("[data-testid=recovery-center]")', timeout=30)
+            pids = app_pids(str(data_home), args.app)
+            step('C8 fresh app process (different PID) on the same isolated data directory', len(pids) == 1 and pids[0] != killed['pid'], pids)
+            step('C8 no live session was reused', a.sessions() == [])
+            d.js('document.querySelector("[data-testid=recovery-refresh]").click()')
+            item = f'[data-testid=recovery-candidate][data-recovery-id="{candidate["id"]}"]'
+            a.wait('const e=document.querySelector(arguments[0]);return e?.dataset.valid==="true"', item)
+            step('C9/C10 RecoveryCenter lists the valid candidate from the killed process', True,
+                 d.js('return document.querySelector(arguments[0]).textContent', item))
+            refused = a.async_js("return await window.__TAURI_INTERNALS__.invoke('recovery_restore',{id:arguments[0],path:arguments[1]})", candidate['id'], str(existing))
+            step('C11 restore onto an existing file refused by create-only publication', not refused['ok']
+                 and 'FileConflict' in json.dumps(refused['error']) and sha(existing) == existing_sha, refused)
+            d.js('document.querySelector(arguments[0]).click()', f'[data-testid="recovery-restore-{candidate["id"]}"]')
+            a.chooser(destination, RESTORE_TITLE)
+            a.ready(fmt, destination.name)
+            restored_session = next(s for s in a.sessions() if s['displayName'] == destination.name)
+            step('C12 restored file opened as a new RHWP session, ready and clean',
+                 restored_session['engine'] == 'rhwp' and restored_session['format'] == fmt
+                 and restored_session['state'] == 'ready' and restored_session['dirty'] is False, restored_session)
+            step('C11 restored file is a new create-only publication', destination.exists() and destination.read_bytes().startswith(SIGNATURE[fmt]))
+            restored = wasm_open(engine, destination, fmt)
+            step('C13 Release WASM reopens the restored file: protected revision content, not the killed newer one',
+                 restored['format'] == fmt and restored['paragraphs'][0] == MARK + original['paragraphs'][0]
+                 and restored['paragraphs'][1:] == original['paragraphs'][1:] and restored['controls'] == original['controls'], restored)
+            step('C13 restored bytes equal the validated record payload', sha(destination) == entry['candidate']['payloadSha256'])
+            d.screenshot(out / 'restored.png')
+            listed = a.async_js("return await window.__TAURI_INTERNALS__.invoke('recovery_list')")
+            step('C15 candidate retained until explicit discard', listed['ok'] and any(c['id'] == candidate['id'] for c in listed['value']), listed)
+            step('C14 source and existing destination unchanged', sha(source) == original_sha and sha(existing) == existing_sha)
+            assert rhwp.close_tab(d, destination.name)
+            entry['restored'] = {'sha256': sha(destination), 'paragraph0': restored['paragraphs'][0], 'session': restored_session['sessionId']}
+        except Exception:
+            try:
+                d.screenshot(out / 'launch2-failure.png')
+                entry['failureDom'] = d.js('return document.body.innerText.slice(-3000)')
+            except Exception:
+                pass
+            raise
+        finally:
+            smoke.end_session(d)
+    entry['status'] = 'PASS'
+
+
+def main():
+    parser = argparse.ArgumentParser(description=__doc__)
+    for name in ('app', 'driver', 'out', 'fixtures'):
+        parser.add_argument('--' + name, required=True, type=Path)
+    parser.add_argument('--xdotool', required=True)
+    parser.add_argument('--ibus', required=True)
+    parser.add_argument('--port', type=int, default=4444)
+    parser.add_argument('--formats', nargs='+', default=['hwp', 'hwpx'])
+    args = parser.parse_args()
+    args.out, args.fixtures, args.app = args.out.resolve(), args.fixtures.resolve(), args.app.resolve()
+    args.out.mkdir(parents=True, exist_ok=False)
+    smoke.APP = str(args.app)
+    engine = release_engine()
+    report = {'status': 'RUNNING', 'appSha256': sha(args.app), 'engine': engine, 'fixtures': {
+        p.name: sha(p) for p in sorted(args.fixtures.iterdir())}, 'formats': [],
+        'scope': 'embedded production app; real RHWP Release WASM; actual Rust checkpoint/RecoveryStore; native XTest; SIGKILL of the exact test-owned app PID'}
+    code = 1
+    try:
+        for fmt in args.formats:
+            run_format(args, fmt, engine, report)
+        report['status'] = 'PASS'
+        code = 0
+    except Exception as error:
+        traceback.print_exc()
+        report.update(status='FAIL', error=type(error).__name__ + ': ' + str(error))
+    report['teardown'] = smoke.TEARDOWN
+    (args.out / 'result.json').write_text(json.dumps(report, ensure_ascii=False, indent=2, default=str) + '\n')
+    return code
+
+
+if __name__ == '__main__':
+    sys.exit(main())

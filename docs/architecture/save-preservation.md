@@ -1467,3 +1467,29 @@ HWP 저장 요청은 선택적으로 `preview` 메타(`width`, `height`)와 출�
 5. **`.new` 등록 경합**: 이전 프로토콜은 `<id>.new`를 이름 있는 파일로 만든 뒤 잠갔으므로 그 사이 다른 인스턴스의 정리가 잠그고 지울 수 있었다(시험 훅으로 재현: 등록이 사라져 기록 없는 저장이 됨, 교정 전 FAIL). 이제 기록은 저널 디렉터리의 `O_TMPFILE` 익명 inode로 만들고, 잠금과 의도 줄 쓰기를 마친 뒤 `/proc/self/fd` 경유 `linkat(AT_SYMLINK_FOLLOW)`로 `<id>.save`에 create-only로 연결한다. 정리는 잠기지 않은 반쯤 등록된 기록을 볼 수 없고, 연결 전 중단은 아무것도 남기지 않는다. `O_TMPFILE`을 지원하지 않는 파일 시스템에서는 기록을 만들지 않는다(저장은 그대로, 정리 대상 아님). 정리는 `.new` 이름을 더 이상 지우지 않는다(이전 빌드 인스턴스가 등록 중일 수 있고, `.new`는 임시 파일을 가리킨 적이 없음). 기존 `crash_during_registration` 시험의 `.new` 삭제 기대는 이 정책에 맞게 "보존"으로 바꿨다.
 
 검증(이 작업 트리): `GEUL_SANDBOX=userns-root-bwrap npm run -s rust -- test` lib 367 passed / 0 failed / 24 ignored(journal 18: 신규 7), `clippy --all-targets -- -D warnings` 0, `fmt --check` 0. `npx vitest run` 74 files / 1284 PASS(신규 P1 5건), 그 뒤 시험 인자 정리 후 집중 3 files / 56 PASS, `tsc`·`eslint` 통과. 교정 전 실패 로그: `target/t014-stab/journal-before.log`와 P1 실행 기록. NOT RUN: 실제 Tauri 앱 SIGKILL/재시작, 실제 RHWP WASM 체크포인트, 다중 프로세스 실제 경합(경합은 결정적 훅으로 시험), 정전·파일 시스템 고장, `O_TMPFILE` 미지원 파일 시스템.
+
+### 2026-11-09 T014 A/B 커서 강화와 실제 native 수용 (`0548dd7` 위)
+
+**저널 커서 강화.** `cursor`는 공정한 순회에만 쓰는 32바이트 메타데이터이며 소유 근거가 아니다. 이전 쓰기 경로는 일반 파일·소유자만 확인했으므로, 다른 같은 사용자 파일로 연결된 하드 링크라면 그 파일을 덮어쓰거나 자를 수 있었다. 이제 읽기·쓰기 모두 저널 디렉터리 핸들 기준 `O_NOFOLLOW|O_NONBLOCK`으로 열고(심볼릭 링크를 따라가지 않음, FIFO·장치에서 멈추지 않음), 다음을 모두 만족하는 파일만 받는다: 일반 파일, 이 사용자 소유, 링크 수 1, 그룹·그 밖 권한 없음, 디렉터리 항목이 연 inode와 같음. 쓰기는 길이 0(방금 만듦)이나 정확히 32일 때만 하고, 그 밖의 파일은 쓰지도·자르지도·고치지도·지우지도 않는다. 커서를 쓸 수 없으면 다음 패스가 처음부터 시작할 뿐이며(공정성만 잃음) 삭제 자격·기록·저장에는 영향이 없다. 시험(`journal` 22): 정상 생성·갱신, 하드 링크(다른 파일 바이트·길이·권한·mtime·링크 수 보존, 정리는 계속 동작), 심볼릭 링크(대상·dangling), 디렉터리, FIFO, `0644`, 형식 오류 32바이트(무시 뒤 덮어씀), 다른 길이(보존), 512개 초과 순회. 남는 한계: 확인과 쓰기 사이에 완전히 신뢰된 같은 UID 프로세스가 그 inode를 다른 이름에 연결하면 그 이름에서 커서 바이트가 보일 수 있다(저널 자체와 같은 신뢰 모델). 소유자가 다른 커서는 sandbox(userns root)에서 만들 수 없어 시험하지 않았다.
+
+**실제 RHWP WASM 체크포인트와 native 강제 종료 수용.** `scripts/tests/native-recovery-crash.py`를 기존 격리 X11/IBus launcher(Xvfb 1440×1000 96dpi, private IBus, `tauri-driver` + WebKitWebDriver)에서 실행했다. 앱은 `npm run build`로 다시 만든 frontend와 검증된 Release 자산(`scripts/rhwp-artifacts.py --verify-product dist/rhwp --profile release` 통과; generation `342ebaad964f911b8dc83fe9cb7eaca5ee2625486336c3690c01ea16f0396bdc`, `rhwp_bg.wasm` `03c6ecfd87ae783661f1cc25cb51b0bc1c4bb21bed191608b0128d1cea7f7325`)을 넣은 protected `cargo build --bin geul --features tauri/custom-protocol`(SHA-256 `46979a30706c6358c59ad13f20059b84f3bcddd1564982e7297849c6cebd5959`)이다. 시험 훅·mock 엔진·mock backend·합성 composition 이벤트는 없다. 입력 문서는 `node tests/fixtures/rhwp/generate.mjs`로 만든 승인 생성 fixture의 복사본(HWP `57c901cc…`, HWPX `26d434b7…`)이며 형식마다 별도 `XDG_DATA_HOME`(= Tauri app_local_data_dir 부모, 경로가 기록 헤더로 확인됨)을 썼다.
+
+| 단계 | HWP | HWPX |
+|---|---|---|
+| 열기(RHWP, ready, clean), XTest로 `T014MARK` 입력, 확정·dirty·IME 없음 | PASS | PASS |
+| 자동 체크포인트: waiting→capturing(커밋 뒤 2.14 s / 2.02 s)→protected, 같은 판(8) | PASS | PASS |
+| 실제 `recovery_list`, 디스크 GRR1 기록 독립 검사(헤더·본문 SHA-256, 형식, 판, 세대, 원본 경로, 0600·링크 1) | PASS | PASS |
+| 기록 본문을 Release WASM으로 다시 열기: 형식 유지, 첫 문단 `T014MARK…`, 나머지 문단·컨트롤 수 원본과 같음 | PASS | PASS |
+| HWP: 기록의 비압축 PrvText에 표식 있음(원본에는 없음) — 저장 검사기의 미리보기 재생성 | PASS | 해당 없음 |
+| 원본 바이트 그대로, dirty 유지, 판 미진행, 같은 경로, 원본 옆 임시 파일 없음 | PASS | PASS |
+| 새 판(9) 입력 → `waiting`(보호 아님) 상태에서 시험 소유 앱 PID에만 SIGKILL, 종료 확인 | PASS | PASS |
+| 기록이 프로세스 경계를 넘어 남음, 원본 그대로 | PASS | PASS |
+| 새 앱 프로세스(다른 PID, 같은 격리 데이터, 살아 있는 세션 없음), 복구 센터에 같은 후보 | PASS | PASS |
+| 기존 파일 대상 `recovery_restore` → `FileConflict`, 그 파일 바이트 그대로 | PASS | PASS |
+| GTK 선택기로 새 경로 복원 → 새 RHWP 세션 ready·clean | PASS | PASS |
+| 복원 파일 Release WASM 재열기: 보호된 판 8 내용(죽인 판 9의 `Z` 없음), 바이트 = 검증된 기록 본문 | PASS | PASS |
+| 후보는 명시적 폐기 전까지 유지, 원본·기존 대상 그대로 | PASS | PASS |
+
+최종 실행 `target/t014-native/final/result.json`: HWP 28/28, HWPX 27/27, 정리 뒤 잔존 프로세스 0. 같은 빌드의 첫 실행 `run1`도 전 단계 PASS였다(그 실행의 HWP 미리보기 단계는 자명한 단정이었으므로 최종 실행에서 위의 PrvText 근거로 바꿨다). 복원 바이트는 두 실행에서 같았다(HWP `6d04a1c8…`, HWPX `5e8689aa…`). 이 시험으로 발견해 고친 제품 결함은 없다.
+
+**미검증(NOT RUN)·범위.** 저장 중(staging 뒤·게시 전) native 강제 종료와 다음 시작 정리: 기존 native harness에 그 지점에서 멈추는 안전한 방법이 없어 실행하지 않았다(정리 동작은 Rust 시험만). 확인 전 강제 종료의 선택적 음성 시험, IME 조합 중 native 체크포인트 억제, unsafe 실제 문서 거부는 native로 반복하지 않고 기존 집중 시험에 맡겼다. 실제 업무 문서·한컴 작성 문서, 다른 해상도/입력기, 정전·파일시스템 고장, Windows/macOS는 검증하지 않았다. T014 전체 수용은 계속 미완료다.

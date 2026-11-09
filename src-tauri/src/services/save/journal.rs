@@ -456,7 +456,8 @@ pub fn cleanup() -> Report {
         }
     }
     if let Some(last) = batch.last() {
-        write_cursor(&journal, last);
+        // Failure only loses fairness progress (the next pass restarts from the beginning).
+        let _ = write_cursor(&journal, last);
     }
     report
 }
@@ -498,11 +499,23 @@ fn record_id(id: &str) -> bool {
     id.len() == 32 && id.bytes().all(|b| matches!(b, b'0'..=b'9' | b'a'..=b'f'))
 }
 
-/// The last visited record ID, or `None` (start from the beginning) when absent or not exactly an ID.
+/// Whether an opened cursor descriptor is our private, single-link regular file that the directory
+/// entry `cursor` still names (no symlink was followed: `open_at` uses `O_NOFOLLOW`).
+fn cursor_eligible(journal: &File, file: &File) -> Option<std::fs::Metadata> {
+    let meta = file.metadata().ok()?;
+    (meta.is_file()
+        && meta.uid() == euid()
+        && meta.nlink() == 1
+        && meta.mode() & 0o077 == 0
+        && same_object(journal, CURSOR, &meta))
+    .then_some(meta)
+}
+
+/// The last visited record ID, or `None` (start from the beginning) when absent, not exactly an ID, or
+/// not an eligible cursor file (symlink, non-regular, linked elsewhere, foreign owner, shared mode).
 fn read_cursor(journal: &File) -> Option<String> {
     let file = open_at(journal, CURSOR, libc::O_RDONLY | libc::O_NONBLOCK, 0).ok()?;
-    let meta = file.metadata().ok()?;
-    if !meta.is_file() || meta.uid() != euid() || meta.len() != 32 {
+    if cursor_eligible(journal, &file)?.len() != 32 {
         return None;
     }
     let mut id = String::new();
@@ -513,18 +526,37 @@ fn read_cursor(journal: &File) -> Option<String> {
 /// Best effort: the cursor only affects fairness, never deletion eligibility. A fixed-size in-place write
 /// (no temporary names); a torn or concurrent write just yields an invalid cursor (restart from the
 /// beginning) or another instance's position.
-fn write_cursor(journal: &File, id: &str) {
+///
+/// Fail closed: the name is opened relative to the journal directory without following symlinks and
+/// without blocking (FIFO, device); anything but our private (`0600`-style), single-link regular file
+/// whose directory entry is the opened inode, with length 0 (just created) or exactly 32, is left
+/// untouched — never written, truncated, repaired or deleted. A hard link to another file therefore
+/// cannot be modified through `cursor`. Returns whether the cursor was written. Residual: a fully trusted
+/// same-UID process that links the inode elsewhere between the check and the write can still observe
+/// the cursor bytes in its own name (the threat model trusts this user, as for the journal itself).
+fn write_cursor(journal: &File, id: &str) -> bool {
     use std::os::unix::fs::FileExt;
-    let Ok(file) = open_at(journal, CURSOR, libc::O_WRONLY | libc::O_CREAT, 0o600) else {
-        return;
+    if !record_id(id) {
+        return false;
+    }
+    let Ok(file) = open_at(
+        journal,
+        CURSOR,
+        libc::O_WRONLY | libc::O_CREAT | libc::O_NONBLOCK,
+        0o600,
+    ) else {
+        return false;
     };
-    if file
-        .metadata()
-        .is_ok_and(|m| m.is_file() && m.uid() == euid())
-    {
-        let _ = file
+    let Some(meta) = cursor_eligible(journal, &file) else {
+        return false;
+    };
+    match meta.len() {
+        0 => file
             .write_all_at(id.as_bytes(), 0)
-            .and_then(|_| file.set_len(32));
+            .and_then(|_| file.set_len(32))
+            .is_ok(),
+        32 => file.write_all_at(id.as_bytes(), 0).is_ok(),
+        _ => false,
     }
 }
 
@@ -1264,5 +1296,142 @@ mod tests {
             let old = select_batch(first_listed.clone().into_iter(), None, MAX_SCAN);
             assert!(!old.contains(&ids[1299]));
         }
+    }
+
+    // ---- cursor file hardening (2026-11-09) ----
+
+    fn journal_dir(s: &Setup) -> File {
+        std::fs::create_dir_all(&s.journal).unwrap();
+        std::fs::set_permissions(&s.journal, std::fs::Permissions::from_mode(0o700)).unwrap();
+        directory(false).unwrap()
+    }
+
+    fn snapshot(path: &Path) -> (Vec<u8>, u64, u32, i64, i64) {
+        let meta = std::fs::symlink_metadata(path).unwrap();
+        (
+            std::fs::read(path).unwrap_or_default(),
+            meta.len(),
+            meta.mode(),
+            meta.mtime(),
+            meta.mtime_nsec(),
+        )
+    }
+
+    #[test]
+    fn cursor_is_created_and_updated_only_as_a_private_single_link_file() {
+        let s = setup();
+        let journal = journal_dir(&s);
+        let a = "a".repeat(32);
+        let b = "b".repeat(32);
+        assert!(write_cursor(&journal, &a));
+        let cursor = s.journal.join("cursor");
+        let meta = std::fs::symlink_metadata(&cursor).unwrap();
+        assert!(meta.is_file());
+        assert_eq!((meta.len(), meta.nlink(), meta.mode() & 0o077), (32, 1, 0));
+        assert_eq!(read_cursor(&journal).as_deref(), Some(a.as_str()));
+        assert!(write_cursor(&journal, &b));
+        assert_eq!(read_cursor(&journal).as_deref(), Some(b.as_str()));
+        assert!(!write_cursor(&journal, "not-an-id"));
+        assert_eq!(read_cursor(&journal).as_deref(), Some(b.as_str()));
+    }
+
+    #[test]
+    fn hard_linked_cursor_never_modifies_the_other_file_and_cleanup_still_works() {
+        let s = setup();
+        let journal = journal_dir(&s);
+        let victim = s.docs.join("victim.txt");
+        std::fs::write(&victim, "0".repeat(32)).unwrap();
+        std::fs::set_permissions(&victim, std::fs::Permissions::from_mode(0o600)).unwrap();
+        std::fs::hard_link(&victim, s.journal.join("cursor")).unwrap();
+        let before = snapshot(&victim);
+        assert!(!write_cursor(&journal, &"c".repeat(32)));
+        assert_eq!(read_cursor(&journal), None);
+        let orphan = abandoned(&s);
+        assert_eq!(cleanup().removed, 1);
+        assert!(!orphan.exists());
+        assert_eq!(snapshot(&victim), before);
+        assert_eq!(
+            std::fs::metadata(&victim).unwrap().nlink(),
+            2,
+            "the link is not deleted either"
+        );
+        // A different-length linked file is not truncated either.
+        std::fs::remove_file(s.journal.join("cursor")).unwrap();
+        std::fs::write(&victim, b"user data that is longer than thirty-two bytes!").unwrap();
+        std::fs::hard_link(&victim, s.journal.join("cursor")).unwrap();
+        let before = snapshot(&victim);
+        assert!(!write_cursor(&journal, &"d".repeat(32)));
+        assert_eq!(snapshot(&victim), before);
+    }
+
+    #[test]
+    fn symlink_directory_fifo_and_shared_mode_cursors_are_rejected_untouched() {
+        let s = setup();
+        let journal = journal_dir(&s);
+        let cursor = s.journal.join("cursor");
+        let id = "e".repeat(32);
+        // Symlink to a regular file (and a dangling one): never followed, target unchanged.
+        let target = s.docs.join("target.txt");
+        std::fs::write(&target, "1".repeat(32)).unwrap();
+        let before = snapshot(&target);
+        symlink(&target, &cursor).unwrap();
+        assert!(!write_cursor(&journal, &id));
+        assert_eq!(read_cursor(&journal), None);
+        assert_eq!(snapshot(&target), before);
+        std::fs::remove_file(&cursor).unwrap();
+        let missing = s.docs.join("missing.txt");
+        symlink(&missing, &cursor).unwrap();
+        assert!(!write_cursor(&journal, &id));
+        assert!(!missing.exists());
+        std::fs::remove_file(&cursor).unwrap();
+        // Directory.
+        std::fs::create_dir(&cursor).unwrap();
+        assert!(!write_cursor(&journal, &id));
+        assert!(cursor.is_dir());
+        std::fs::remove_dir(&cursor).unwrap();
+        // FIFO: neither blocks nor is written.
+        let path = std::ffi::CString::new(cursor.to_str().unwrap()).unwrap();
+        // SAFETY: valid NUL-terminated path.
+        assert_eq!(unsafe { libc::mkfifo(path.as_ptr(), 0o600) }, 0);
+        assert!(!write_cursor(&journal, &id));
+        assert_eq!(read_cursor(&journal), None);
+        std::fs::remove_file(&cursor).unwrap();
+        // Group/other permissions.
+        std::fs::write(&cursor, "2".repeat(32)).unwrap();
+        std::fs::set_permissions(&cursor, std::fs::Permissions::from_mode(0o644)).unwrap();
+        let before = snapshot(&cursor);
+        assert!(!write_cursor(&journal, &id));
+        assert_eq!(read_cursor(&journal), None);
+        assert_eq!(snapshot(&cursor), before);
+    }
+
+    #[test]
+    fn malformed_cursor_content_is_ignored_and_only_a_valid_size_file_is_rewritten() {
+        let s = setup();
+        let journal = journal_dir(&s);
+        let cursor = s.journal.join("cursor");
+        // 32 bytes but not an ID: ignored on read, overwritten by the next valid position.
+        std::fs::write(&cursor, "Z".repeat(32)).unwrap();
+        std::fs::set_permissions(&cursor, std::fs::Permissions::from_mode(0o600)).unwrap();
+        assert_eq!(read_cursor(&journal), None);
+        assert!(write_cursor(&journal, &"f".repeat(32)));
+        assert_eq!(
+            read_cursor(&journal).as_deref(),
+            Some("f".repeat(32).as_str())
+        );
+        // Unexpected size: never truncated or repaired; cleanup still makes safe progress without it.
+        std::fs::write(&cursor, b"unexpected").unwrap();
+        let before = snapshot(&cursor);
+        assert!(!write_cursor(&journal, &"1".repeat(32)));
+        assert_eq!(snapshot(&cursor), before);
+        let orphan = abandoned(&s);
+        let foreign = s
+            .docs
+            .join(format!(".geul-save-1-0-{}.tmp", "9".repeat(32)));
+        std::fs::write(&foreign, b"foreign").unwrap();
+        assert_eq!(cleanup().removed, 1);
+        assert!(!orphan.exists());
+        assert!(foreign.exists());
+        assert_eq!(snapshot(&cursor), before);
     }
 }
