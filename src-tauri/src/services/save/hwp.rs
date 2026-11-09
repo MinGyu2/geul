@@ -935,10 +935,11 @@ pub struct RefreshedPreviews {
 const CTRL_SECTION: [u8; 4] = *b"dces";
 const CTRL_COLUMN: [u8; 4] = *b"dloc";
 
-/// Decode only whitespace and understood non-painting controls. Extended
+/// Decode understood text and non-painting controls; the blank output permits
+/// only whitespace, while the original may have visible text being deleted. Extended
 /// control 2 must name a matching section/column header; other extended/inline
 /// controls are not blank evidence, even when their header is absent.
-fn blank_paragraph_text(body: &[u8]) -> Option<Vec<[u8; 4]>> {
+fn blank_paragraph_text(body: &[u8], require_blank: bool) -> Option<Vec<[u8; 4]>> {
     if !body.len().is_multiple_of(2) {
         return None;
     }
@@ -977,9 +978,21 @@ fn blank_paragraph_text(body: &[u8]) -> Option<Vec<[u8; 4]>> {
             10 | 13 | 30 | 31 => at += 1,
             0..=31 => return None,
             unit => {
-                // Surrogates, including malformed UTF-16, and all visible
-                // characters refuse. No lossy decoding/replacement characters.
-                if !char::from_u32(u32::from(unit)).is_some_and(char::is_whitespace) {
+                // The original may contain text the user deletes. Its structure
+                // must still be understood, with well-formed UTF-16. The output
+                // must additionally be blank. Never use lossy decoding.
+                if !require_blank && (0xd800..=0xdbff).contains(&unit) {
+                    if !units
+                        .get(at + 1)
+                        .is_some_and(|u| (0xdc00..=0xdfff).contains(u))
+                    {
+                        return None;
+                    }
+                    at += 2;
+                    continue;
+                }
+                let character = char::from_u32(u32::from(unit))?;
+                if require_blank && !character.is_whitespace() {
                     return None;
                 }
                 at += 1;
@@ -995,6 +1008,13 @@ fn blank_paragraph_text(body: &[u8]) -> Option<Vec<[u8; 4]>> {
 /// missing structure counts as visible (fail closed). This is a necessary condition for a
 /// blank page 1, not a proof: later paragraphs may still reach page 1, which only layout knows.
 fn first_paragraph_visible(container: &Container) -> bool {
+    first_paragraph_unproven(container, true)
+}
+
+/// The original must have understood structure even if its visible text is
+/// deleted. Otherwise an exporter could drop an unknown record before the
+/// output-only blank check and incorrectly turn it into blank-page evidence.
+fn first_paragraph_unproven(container: &Container, require_blank: bool) -> bool {
     let Some(data) = container.streams.get("BodyText/Section0") else {
         return true;
     };
@@ -1024,7 +1044,7 @@ fn first_paragraph_visible(container: &Container) -> bool {
         match (tag, level) {
             (67, 1) if !text_seen => {
                 text_seen = true;
-                let Some(controls) = blank_paragraph_text(body) else {
+                let Some(controls) = blank_paragraph_text(body, require_blank) else {
                     return true;
                 };
                 text_controls = controls;
@@ -1112,7 +1132,9 @@ fn first_paragraph_visible(container: &Container) -> bool {
 /// - A uniform raster is a failed render unless page 1 is proven blank by two independent
 ///   pieces of evidence: the frontend's page-1 paint list held only a plain background and
 ///   empty text runs (`raster.blank_page`), and Section0's first paragraph — always on page 1 —
-///   shows nothing (`first_paragraph_visible`). The serialized PrvText is not that evidence:
+///   shows nothing (`first_paragraph_visible`), and the original first paragraph
+///   has understood structure before any exporter can drop unknown records.
+///   The serialized PrvText is not that evidence:
 ///   it is the content-free CRLF for an empty body and may summarize later pages.
 /// - The new CFB must differ from the raw export only in PrvText/PrvImage (`verify_preview_rebuild`).
 pub fn refresh_previews(
@@ -1155,8 +1177,12 @@ pub fn refresh_previews(
         .0
         .iter()
         .all(|pixel| pixel[..] == rgb[..3]);
-    if uniform && !(raster.blank_page && !first_paragraph_visible(&container)) {
-        return refused;
+    if uniform {
+        let original_understood = open(original, Side::Original)
+            .is_ok_and(|source| !first_paragraph_unproven(&source, false));
+        if !(raster.blank_page && !first_paragraph_visible(&container) && original_understood) {
+            return refused;
+        }
     }
     let Some(png) = preview::encode_png(width, height, &rgb) else {
         return refused;

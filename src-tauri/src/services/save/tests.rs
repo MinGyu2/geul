@@ -11897,8 +11897,32 @@ fn blank_page_two_durable_saves_and_refusal_rollback() {
             "no partial publication: {name}"
         );
     }
-    // Refused first: no blank evidence. Nothing is published.
+    // The engine may omit an unknown original record before classifying its
+    // blank export. Refuse this laundering path and retain recovery ownership.
     let blank_out = align_left_with(ALIGN_LEFT, |r| set_first_paragraph(r, ""));
+    for level in [1, 2] {
+        let original = align_left_with(ALIGN_LEFT, |mut records| {
+            records.push((1023, level, vec![1, 2, 3, 4]));
+            records
+        });
+        let (result, dirty, revision) = save(
+            Some(&original),
+            &blank_out,
+            Some(&uniform(724, 1024, 255).with_blank_page(true)),
+        );
+        let DocumentError::UnsafeSave { preservation } = result.unwrap_err() else {
+            panic!("unknown original record at level {level}")
+        };
+        assert!(preservation
+            .findings
+            .iter()
+            .any(|f| f.code == FindingCode::PreviewStale));
+        assert_eq!(std::fs::read(&path).unwrap(), original);
+        assert!(dirty);
+        assert_eq!(revision, 1);
+        assert_eq!(std::fs::read_dir(dir.path()).unwrap().count(), 1);
+    }
+    // Refused first: no blank evidence. Nothing is published.
     let (result, dirty, revision) =
         save(Some(ALIGN_LEFT), &blank_out, Some(&uniform(724, 1024, 255)));
     let DocumentError::UnsafeSave { preservation } = result.unwrap_err() else {
@@ -12071,5 +12095,38 @@ fn blank_first_paragraph_record_contract() {
     ] {
         let result = hwp::refresh_previews(ALIGN_LEFT, &output, Some(&white)).unwrap();
         assert!(result.output.is_some() && result.image.is_some(), "{name}");
+    }
+}
+
+#[test]
+fn blank_preview_refuses_unknown_original_structure_lost_by_export() {
+    let blank = align_left_with(ALIGN_LEFT, |r| set_first_paragraph(r, ""));
+    let white = uniform(724, 1024, 255).with_blank_page(true);
+    for level in [1, 2] {
+        let original = align_left_with(ALIGN_LEFT, |mut records| {
+            records.push((1023, level, vec![1, 2, 3, 4]));
+            records
+        });
+        let result = hwp::refresh_previews(&original, &blank, Some(&white)).unwrap();
+        assert!(
+            result.output.is_none() && result.image.is_none(),
+            "unknown original record at level {level} disappeared before blank classification"
+        );
+    }
+    // Understood visible original text, including a valid surrogate pair, can
+    // still be deleted to create a genuine blank page.
+    for text in ["가나", "😀"] {
+        let original = align_left_with(ALIGN_LEFT, |r| set_first_paragraph(r, text));
+        let result = hwp::refresh_previews(&original, &blank, Some(&white)).unwrap();
+        assert!(result.output.is_some() && result.image.is_some(), "{text}");
+    }
+    for text in [vec![0, 0xd8, 13, 0], vec![0, 0xdc, 13, 0]] {
+        let original = align_left_with(ALIGN_LEFT, |r| {
+            let mut records = set_first_paragraph(r, "");
+            records.iter_mut().find(|(tag, _, _)| *tag == 67).unwrap().2 = text;
+            records
+        });
+        let result = hwp::refresh_previews(&original, &blank, Some(&white)).unwrap();
+        assert!(result.output.is_none() && result.image.is_none());
     }
 }
