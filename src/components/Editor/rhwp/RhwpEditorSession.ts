@@ -1879,7 +1879,14 @@ export class RhwpEditorSession implements DocumentCommandTarget {
     } finally {
       try { releaseShapes?.(); }
       catch (error) { this.notifyAfterSaveResult(() => this.saveCleanupFailed(error, epoch)); }
-      finally { this.saving = false; }
+      finally {
+        this.saving = false;
+        // Every earlier notification of this save ran while `saving` was still true. Announce the settled
+        // state (success, failure, transport rejection, cleanup failure) so observers such as recovery
+        // checkpoint scheduling re-evaluate it — only while this save still owns the model: a reload or
+        // close already notified and invalidated it. Subscriber exceptions never replace the save result.
+        if (this.owns(epoch)) this.notifyAfterSaveResult(() => this.emit());
+      }
     }
   }
 

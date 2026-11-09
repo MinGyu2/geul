@@ -36,6 +36,7 @@ function autoBackend(format: "hwp" | "hwpx" = "hwp") {
     calls,
     preflight: SAFE as unknown,
     checkpointReply: null as null | ((args: unknown[]) => Promise<Result<SaveOutcome>>),
+    saveReply: null as null | ((args: unknown[]) => Promise<Result<SaveOutcome>>),
     current: () => info,
   };
   const record = (method: string, args: unknown[]) => calls.push({ method, args });
@@ -49,7 +50,11 @@ function autoBackend(format: "hwp" | "hwpx" = "hwp") {
     commit: async (_id, _generation, base, count) => { record("commit", [base, count]); return ok(bump({ revision: base + count, dirty: true })); },
     original: async () => { record("original", []); return ok(new Uint8Array([1])); },
     preflight: async () => { record("preflight", []); return ok(control.preflight as typeof SAFE); },
-    save: async (...args) => { record("save", args.slice(0, 3)); return ok({ session: bump({ dirty: false }), bytes: 1, durable: true }); },
+    save: async (...args) => {
+      record("save", args.slice(0, 3));
+      if (control.saveReply) return control.saveReply(args);
+      return ok({ session: bump({ dirty: false }), bytes: 1, durable: true });
+    },
     checkpoint: async (...args) => {
       record("checkpoint", args);
       if (control.checkpointReply) return control.checkpointReply(args);
@@ -298,6 +303,85 @@ describe("RHWP recovery checkpoint (workspace scheduling)", () => {
     w.control.checkpointReply = null;
     await w.space.retryRecoveryCheckpoint(1);
     expect(status(w.space)).toMatchObject({ kind: "protected", revision: 2 });
+  });
+
+  /** Hold the explicit save until `finish` resolves it with the outcome built from the then-current info. */
+  function heldSave(w: Awaited<ReturnType<typeof workspace>>) {
+    let finish!: (outcome: (info: SessionInfo) => Result<SaveOutcome>) => void;
+    // The outcome carries a newer sequence, as the backend's would (older sequences are ignored by sessions).
+    w.control.saveReply = () => new Promise((resolve) => {
+      finish = (make) => { const info = w.control.current(); resolve(make({ ...info, sequence: info.sequence + 1 })); };
+    });
+    return (make: (info: SessionInfo) => Result<SaveOutcome>) => finish(make);
+  }
+
+  it("resumes scheduling for edits committed during a save once the save ends (no further edit needed)", async () => {
+    const w = await workspace();
+    w.editor.typeText("x");
+    await vi.advanceTimersByTimeAsync(0);
+    const finish = heldSave(w);
+    const saving = w.editor.save();
+    await vi.advanceTimersByTimeAsync(0);
+    await flush();
+    expect(of(w.control.calls, "save")).toHaveLength(1);
+    w.editor.typeText("y"); // revision 2 committed while saving
+    await vi.advanceTimersByTimeAsync(0);
+    await flush();
+    expect(w.editor.checkpointState()).toMatchObject({ saving: true, revision: 2 });
+    // Save of revision 1 publishes durably; revision 2 stays dirty.
+    finish((info) => ok({ session: { ...info, revision: 2, dirty: true }, bytes: 1, durable: true }));
+    expect((await saving).ok).toBe(true);
+    await flush();
+    expect(w.sessions.get(1)?.dirty).toBe(true);
+    expect(status(w.space)).toMatchObject({ kind: "waiting", revision: 2 });
+    await vi.advanceTimersByTimeAsync(2000);
+    await flush();
+    expect(of(w.control.calls, "checkpoint").map((call) => call.args[2])).toEqual([2]);
+    expect(status(w.space)).toMatchObject({ kind: "protected", revision: 2 });
+  });
+
+  it.each([
+    ["failed", (): Result<SaveOutcome> => ({ ok: false, error: { code: "FileConflict" } }), true],
+    ["unconfirmed", (info: SessionInfo): Result<SaveOutcome> => ok({ session: { ...info, dirty: true }, bytes: 1, durable: false }), true],
+    ["durable clean", (info: SessionInfo): Result<SaveOutcome> => ok({ session: { ...info, dirty: false }, bytes: 1, durable: true }), false],
+  ] as const)("after a %s save the remaining state is re-evaluated without another edit", async (_, make, dirty) => {
+    const w = await workspace();
+    w.editor.typeText("x");
+    await vi.advanceTimersByTimeAsync(0);
+    const finish = heldSave(w);
+    const saving = w.editor.save();
+    await vi.advanceTimersByTimeAsync(0);
+    await flush();
+    finish(make);
+    await saving;
+    await flush();
+    expect(w.sessions.get(1)?.dirty).toBe(dirty);
+    await vi.advanceTimersByTimeAsync(5000);
+    await flush();
+    if (dirty) {
+      expect(of(w.control.calls, "checkpoint").map((call) => call.args[2])).toEqual([1]);
+      expect(status(w.space)).toMatchObject({ kind: "protected", revision: 1 });
+    } else {
+      expect(of(w.control.calls, "checkpoint")).toHaveLength(0);
+      expect(w.space.recoveryCheckpointStatuses).toEqual([]);
+    }
+  });
+
+  it("a save interrupted by close never schedules a checkpoint for the disposed editor", async () => {
+    const w = await workspace();
+    w.editor.typeText("x");
+    await vi.advanceTimersByTimeAsync(0);
+    const finish = heldSave(w);
+    const saving = w.editor.save();
+    await vi.advanceTimersByTimeAsync(0);
+    await flush();
+    await w.space.close(1, { discard: true });
+    finish((info) => ok({ session: { ...info, dirty: true }, bytes: 1, durable: false }));
+    await saving;
+    await vi.advanceTimersByTimeAsync(5000);
+    await flush();
+    expect(of(w.control.calls, "checkpoint")).toHaveLength(0);
+    expect(w.space.recoveryCheckpointStatuses).toEqual([]);
   });
 
   it("closing the session during a capture drops its status and ignores the late result", async () => {

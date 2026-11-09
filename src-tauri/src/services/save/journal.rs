@@ -17,13 +17,16 @@
 //!   regular file with the recorded device/inode, owned by this user, with a single link.
 //!
 //! Crash consistency (the record is written before the staging file can exist):
-//! - before/while registering: only a `<id>.new` record (never associated with a created file) or an
-//!   intent-only `<id>.save` exists; intent-only records never authorize deletion. A file present under an
-//!   intent-only name is left untouched and the record is kept (unverified).
-//! - after create, before/while the inode line is written: same as intent-only (a torn line fails its checksum).
+//! - before/while registering: the record is an anonymous locked inode (`O_TMPFILE`) linked as `<id>.save`
+//!   only once its intent line is complete; a crash before the link leaves nothing. An intent-only
+//!   `<id>.save` never authorizes deletion: a file present under that name is left untouched and the
+//!   record is kept (unverified).
+//! - after create, before/while the inode line is written: same as intent-only (a torn, unterminated
+//!   tail is intent-only; any other extra content makes the record corrupt — `parse_record`).
 //! - during writing, after fsync, before rename: full record, staging file present → removable when unlocked.
 //! - after the successful rename: the staging name is gone → the record is retired after a directory fsync.
-//! - during retirement: the record (or its unlink) may survive → the next pass sees the name absent and retires.
+//! - during retirement: the record (or its unlink) may survive → the next pass sees the name absent and
+//!   retires it again. Only a retirement confirmed by a journal directory fsync counts as `retired`.
 //!
 //! Durability: an unlink is reported as completed only after the document directory fsync succeeds; the
 //! record is retired only then. A failed unlink or fsync keeps the record for a later pass. The residual
@@ -48,8 +51,10 @@ use super::publish::{open_at, open_directory, trusted_directory};
 
 /// Upper bound of one record (two short JSON lines).
 const MAX_RECORD: u64 = 8 * 1024;
-/// Upper bound of journal entries examined in one cleanup pass.
+/// Upper bound of journal records examined in one cleanup pass.
 const MAX_SCAN: usize = 512;
+/// Upper bound of directory names listed in one pass (bounded memory/time for selecting the batch).
+const MAX_LIST: usize = 1 << 16;
 const STAGING_PREFIX: &str = ".geul-save-";
 const STAGING_SUFFIX: &str = ".tmp";
 
@@ -70,12 +75,18 @@ pub(crate) enum Fault {
     Unlink,
     /// The document directory fsync after a cleanup unlink fails.
     DirSync,
+    /// `unlinkat` of a journal record (retirement) fails.
+    JournalUnlink,
+    /// The journal directory fsync after a record retirement fails.
+    JournalSync,
 }
 
 #[cfg(test)]
 thread_local! {
     /// Called between the first identity check and the revalidation before `unlinkat` (path replacement race).
     pub(crate) static BEFORE_UNLINK: std::cell::RefCell<Option<Box<dyn Fn()>>> = const { std::cell::RefCell::new(None) };
+    /// Called during registration after the record inode exists and before it is locked/visible.
+    pub(crate) static DURING_REGISTER: std::cell::RefCell<Option<Box<dyn Fn()>>> = const { std::cell::RefCell::new(None) };
 }
 
 #[cfg(test)]
@@ -195,20 +206,25 @@ fn staging_name(name: &str) -> bool {
         && !name.contains('\0')
 }
 
-/// Parse a record. `None` = unreadable intent (corrupt). The inode line is optional: a missing, torn or
-/// corrupt second line means intent-only (never authorizes deletion).
+/// Parse a record, which must be exactly one of:
+/// - `intent\n` — intent only;
+/// - `intent\n` + an unterminated tail — a torn append of the inode line (crash while writing): intent only;
+/// - `intent\n` + `created\n` — complete, and nothing after it.
+///
+/// `None` = corrupt: malformed/unsupported intent, a terminated second line that is not a valid created
+/// line, or any content after the created line. Intent-only and corrupt records never authorize deletion.
 fn parse_record(bytes: &[u8]) -> Option<(Intent, Option<Created>)> {
-    let mut lines = bytes.split_inclusive(|b| *b == b'\n');
-    let first = lines.next()?.strip_suffix(b"\n")?;
-    let intent: Intent = parse_line(first)?;
+    let end = bytes.iter().position(|b| *b == b'\n')?;
+    let intent: Intent = parse_line(&bytes[..end])?;
     if intent.v != 1 || !Path::new(&intent.dir).is_absolute() || !staging_name(&intent.name) {
         return None;
     }
-    let created = lines
-        .next()
-        .and_then(|l| l.strip_suffix(b"\n"))
-        .and_then(parse_line::<Created>);
-    Some((intent, created))
+    let rest = &bytes[end + 1..];
+    match rest.iter().position(|b| *b == b'\n') {
+        None => Some((intent, None)),
+        Some(n) if n + 1 == rest.len() => Some((intent, Some(parse_line(&rest[..n])?))),
+        Some(_) => None,
+    }
 }
 
 fn lock(file: &File, blocking: bool) -> io::Result<bool> {
@@ -236,6 +252,44 @@ fn unlink_at(dir: &File, name: &CStr) -> io::Result<()> {
         Ok(())
     } else {
         Err(io::Error::last_os_error())
+    }
+}
+
+/// Outcome of removing a journal record name.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum Retirement {
+    /// Name removed (or already absent) and the journal directory fsync succeeded.
+    Confirmed,
+    /// Name removed in the running system, but the directory fsync failed: after a crash the record may
+    /// reappear, and the next cleanup pass then re-evaluates it from scratch (idempotent).
+    Unconfirmed,
+    /// The name could not be removed; the record stays for a later pass.
+    Failed,
+}
+
+fn retire_record(journal: &File, name: &CStr) -> Retirement {
+    #[cfg(test)]
+    let unlinked = if fault() == Some(Fault::JournalUnlink) {
+        Err(io::Error::from(io::ErrorKind::PermissionDenied))
+    } else {
+        unlink_at(journal, name)
+    };
+    #[cfg(not(test))]
+    let unlinked = unlink_at(journal, name);
+    match unlinked {
+        Ok(()) => {}
+        // Already absent (another pass retired it): confirm the directory state like a fresh removal.
+        Err(error) if error.kind() == io::ErrorKind::NotFound => {}
+        Err(_) => return Retirement::Failed,
+    }
+    #[cfg(test)]
+    let synced = fault() != Some(Fault::JournalSync) && journal.sync_all().is_ok();
+    #[cfg(not(test))]
+    let synced = journal.sync_all().is_ok();
+    if synced {
+        Retirement::Confirmed
+    } else {
+        Retirement::Unconfirmed
     }
 }
 
@@ -284,31 +338,42 @@ pub(crate) fn register(dir: &File, dir_path: &Path, temp: &CStr) -> Option<Entry
         return None;
     }
     let id = random_id()?;
-    let new = CString::new(format!("{id}.new")).ok()?;
     let name = CString::new(format!("{id}.save")).ok()?;
-    let mut record = open_at(
-        &journal,
-        &new,
-        libc::O_RDWR | libc::O_CREAT | libc::O_EXCL,
-        0o600,
-    )
-    .ok()?;
-    // Lock before the record can carry the name cleanup looks at (`.save`).
-    let ready = lock(&record, false).ok() == Some(true)
-        && line(&intent).is_some_and(|bytes| record.write_all(&bytes).is_ok());
-    // SAFETY: held journal directory and NUL-terminated names; NOREPLACE never replaces a record.
-    let renamed = ready
-        && unsafe {
-            libc::renameat2(
-                journal.as_raw_fd(),
-                new.as_ptr(),
-                journal.as_raw_fd(),
-                name.as_ptr(),
-                libc::RENAME_NOREPLACE,
-            )
-        } == 0;
-    if !renamed {
-        let _ = unlink_at(&journal, &new);
+    // The record is an anonymous inode (`O_TMPFILE`) until it is locked and its intent line is complete;
+    // only then is it linked under its final name (create-only: `linkat` never replaces). Cleanup can
+    // therefore never observe an unlocked, half-registered record, and a crash before the link leaves
+    // nothing behind. Without `O_TMPFILE` support journaling is simply unavailable (fail closed).
+    let mut record = open_at(&journal, c".", libc::O_TMPFILE | libc::O_RDWR, 0o600).ok()?;
+    #[cfg(test)]
+    DURING_REGISTER.with(|hook| {
+        if let Some(hook) = hook.borrow().as_ref() {
+            hook();
+        }
+    });
+    if lock(&record, false).ok() != Some(true)
+        || !line(&intent).is_some_and(|bytes| record.write_all(&bytes).is_ok())
+    {
+        return None;
+    }
+    #[cfg(test)]
+    DURING_REGISTER.with(|hook| {
+        if let Some(hook) = hook.borrow().as_ref() {
+            hook();
+        }
+    });
+    let anonymous = CString::new(format!("/proc/self/fd/{}", record.as_raw_fd())).ok()?;
+    // SAFETY: NUL-terminated /proc path of our own descriptor, held journal directory, single-component
+    // name. AT_SYMLINK_FOLLOW resolves the magic link to the anonymous inode; EEXIST never replaces.
+    let linked = unsafe {
+        libc::linkat(
+            libc::AT_FDCWD,
+            anonymous.as_ptr(),
+            journal.as_raw_fd(),
+            name.as_ptr(),
+            libc::AT_SYMLINK_FOLLOW,
+        )
+    } == 0;
+    if !linked {
         return None;
     }
     Some(Entry {
@@ -334,12 +399,11 @@ impl Entry {
     }
 
     /// The staging name no longer holds a file of this save (published, removed and confirmed, or
-    /// replaced by something else): drop the record. A failure leaves it for the next cleanup pass,
-    /// which only retires it again (the name no longer holds the recorded inode).
-    pub(crate) fn retire(self) {
-        if unlink_at(&self.journal, &self.name).is_ok() {
-            let _ = self.journal.sync_all();
-        }
+    /// replaced by something else): drop the record. A failed or unconfirmed retirement leaves (or may
+    /// resurrect after a crash) a record that the next cleanup pass only retires again, because the name
+    /// no longer holds the recorded inode. Never a document-save failure.
+    pub(crate) fn retire(self) -> Retirement {
+        retire_record(&self.journal, &self.name)
     }
 
     /// Keep the record (unlocked by closing) for a later cleanup pass: removal not confirmed.
@@ -351,63 +415,116 @@ impl Entry {
 pub struct Report {
     /// Abandoned staging files removed and confirmed by a directory fsync.
     pub removed: usize,
-    /// Records retired without deleting anything (name absent or holding another file).
+    /// Records whose retirement was durably confirmed without deleting anything (name absent or holding
+    /// another file).
     pub retired: usize,
     /// Records of active saves (locked by a live owner).
     pub active: usize,
     /// Records kept because ownership could not be proven (intent-only with a file present, corrupt
     /// record, directory missing/moved/untrusted, unexpected metadata).
     pub unverified: usize,
-    /// Records kept because removal or its durability confirmation failed.
+    /// Removal or confirmation failures: staging unlink/document-directory fsync failed (record kept), or
+    /// the record retirement failed/was unconfirmed (counted in addition to `removed` when the file
+    /// removal itself was confirmed).
     pub failed: usize,
 }
 
 /// Run one bounded cleanup pass over the configured journal. Never scans document directories beyond
 /// the single recorded name of each record.
+///
+/// Fair bounded traversal: record IDs are visited in ID order starting after a persisted cursor, at most
+/// `MAX_SCAN` records per pass, wrapping around; the cursor then names the last record visited. Records
+/// that stay unprocessable (corrupt, unverified, active) therefore cannot starve later ones across
+/// passes. Directory listing itself stops after `MAX_LIST` names (beyond that, listing order decides).
+/// Only `<32 hex>.save` names are records; other names (including legacy `.new` files of the 8071d3f
+/// protocol, which an older instance may be registering) are never touched.
 pub fn cleanup() -> Report {
     let mut report = Report::default();
     let Some(journal) = directory(false) else {
         return report;
     };
-    let names: Vec<String> =
-        match std::fs::read_dir(format!("/proc/self/fd/{}", journal.as_raw_fd())) {
-            Ok(entries) => entries
-                .take(MAX_SCAN)
-                .filter_map(|entry| entry.ok()?.file_name().into_string().ok())
-                .collect(),
-            Err(_) => return report,
-        };
-    for name in names {
-        let Some((id, suffix)) = name.split_once('.') else {
-            continue;
-        };
-        if id.len() != 32 || !id.bytes().all(|b| matches!(b, b'0'..=b'9' | b'a'..=b'f')) {
-            continue;
+    let Ok(entries) = std::fs::read_dir(format!("/proc/self/fd/{}", journal.as_raw_fd())) else {
+        return report;
+    };
+    let names = entries
+        .take(MAX_LIST)
+        .filter_map(|entry| entry.ok()?.file_name().into_string().ok());
+    let batch = select_batch(names, read_cursor(&journal).as_deref(), MAX_SCAN);
+    for id in &batch {
+        if let Ok(name) = CString::new(format!("{id}.save")) {
+            cleanup_record(&journal, &name, &mut report);
         }
-        let Ok(c_name) = CString::new(name.as_str()) else {
-            continue;
-        };
-        match suffix {
-            "new" => cleanup_unregistered(&journal, &c_name),
-            "save" => cleanup_record(&journal, &c_name, &mut report),
-            _ => {}
-        }
+    }
+    if let Some(last) = batch.last() {
+        write_cursor(&journal, last);
     }
     report
 }
 
-/// A `.new` record never became visible as `.save`, so no staging file was created for it. Remove it
-/// only when unlocked (its creator is gone) and it is our ordinary single-link file.
-fn cleanup_unregistered(journal: &File, name: &CStr) {
-    let Ok(record) = open_at(journal, name, libc::O_RDWR | libc::O_NONBLOCK, 0) else {
+/// The next batch of at most `limit` record IDs from a listing (any order): the smallest IDs after
+/// `cursor` in ID order, then — wrapping around — the smallest up to and including it. Non-record names
+/// are ignored. Independent of listing order, so repeated passes visit every listed record.
+fn select_batch(
+    names: impl Iterator<Item = String>,
+    cursor: Option<&str>,
+    limit: usize,
+) -> Vec<String> {
+    let mut after = std::collections::BinaryHeap::new();
+    let mut before = std::collections::BinaryHeap::new();
+    for name in names {
+        let Some(id) = name.strip_suffix(".save").filter(|id| record_id(id)) else {
+            continue;
+        };
+        let heap = if cursor.is_some_and(|c| id <= c) {
+            &mut before
+        } else {
+            &mut after
+        };
+        heap.push(id.to_owned());
+        if heap.len() > limit {
+            heap.pop();
+        }
+    }
+    let mut batch = after.into_sorted_vec();
+    let mut wrapped = before.into_sorted_vec();
+    wrapped.truncate(limit - batch.len());
+    batch.extend(wrapped);
+    batch
+}
+
+const CURSOR: &CStr = c"cursor";
+
+fn record_id(id: &str) -> bool {
+    id.len() == 32 && id.bytes().all(|b| matches!(b, b'0'..=b'9' | b'a'..=b'f'))
+}
+
+/// The last visited record ID, or `None` (start from the beginning) when absent or not exactly an ID.
+fn read_cursor(journal: &File) -> Option<String> {
+    let file = open_at(journal, CURSOR, libc::O_RDONLY | libc::O_NONBLOCK, 0).ok()?;
+    let meta = file.metadata().ok()?;
+    if !meta.is_file() || meta.uid() != euid() || meta.len() != 32 {
+        return None;
+    }
+    let mut id = String::new();
+    file.take(33).read_to_string(&mut id).ok()?;
+    record_id(&id).then_some(id)
+}
+
+/// Best effort: the cursor only affects fairness, never deletion eligibility. A fixed-size in-place write
+/// (no temporary names); a torn or concurrent write just yields an invalid cursor (restart from the
+/// beginning) or another instance's position.
+fn write_cursor(journal: &File, id: &str) {
+    use std::os::unix::fs::FileExt;
+    let Ok(file) = open_at(journal, CURSOR, libc::O_WRONLY | libc::O_CREAT, 0o600) else {
         return;
     };
-    let Ok(meta) = record.metadata() else { return };
-    if !meta.is_file() || meta.uid() != euid() || meta.nlink() != 1 {
-        return;
-    }
-    if lock(&record, false).ok() == Some(true) && same_object(journal, name, &meta) {
-        let _ = unlink_at(journal, name);
+    if file
+        .metadata()
+        .is_ok_and(|m| m.is_file() && m.uid() == euid())
+    {
+        let _ = file
+            .write_all_at(id.as_bytes(), 0)
+            .and_then(|_| file.set_len(32));
     }
 }
 
@@ -463,11 +580,9 @@ fn cleanup_record(journal: &File, name: &CStr, report: &mut Report) {
         report.unverified += 1;
         return;
     };
-    let retire = |report: &mut Report| {
-        if unlink_at(journal, name).is_ok() {
-            let _ = journal.sync_all();
-        }
-        report.retired += 1;
+    let retire = |report: &mut Report| match retire_record(journal, name) {
+        Retirement::Confirmed => report.retired += 1,
+        Retirement::Unconfirmed | Retirement::Failed => report.failed += 1,
     };
     // The recorded directory, reopened from the root without following links and still trusted.
     let Ok(dir) = open_directory(Path::new(&intent.dir), euid()) else {
@@ -561,8 +676,8 @@ fn cleanup_record(journal: &File, name: &CStr, report: &mut Report) {
         return;
     }
     report.removed += 1;
-    if unlink_at(journal, name).is_ok() {
-        let _ = journal.sync_all();
+    if retire_record(journal, name) != Retirement::Confirmed {
+        report.failed += 1;
     }
 }
 
@@ -585,6 +700,7 @@ mod tests {
             TEST_ROOT.with(|root| *root.borrow_mut() = None);
             FAULT.with(|f| f.set(None));
             BEFORE_UNLINK.with(|hook| *hook.borrow_mut() = None);
+            DURING_REGISTER.with(|hook| *hook.borrow_mut() = None);
         }
     }
 
@@ -620,9 +736,13 @@ mod tests {
         found
     }
 
+    /// Journal record files (`.save`/`.new`); the traversal cursor is not a record.
     fn records(journal: &Path) -> Vec<PathBuf> {
         match std::fs::read_dir(journal) {
-            Ok(entries) => entries.map(|e| e.unwrap().path()).collect(),
+            Ok(entries) => entries
+                .map(|e| e.unwrap().path())
+                .filter(|p| p.extension().is_some_and(|e| e == "save" || e == "new"))
+                .collect(),
             Err(_) => Vec::new(),
         }
     }
@@ -844,12 +964,13 @@ mod tests {
         .unwrap();
         assert_eq!(cleanup().unverified, 1);
         assert!(file.exists());
-        // An unregistered `.new` (crash before the record became visible) is just removed.
+        // A `.new` name (only the 8071d3f protocol created one) is never deleted: an older instance may be
+        // registering it right now, and it never names a staging file (T014 stabilization, item 5).
         std::fs::remove_file(s.journal.join(format!("{}.save", "cd".repeat(16)))).unwrap();
         let new = s.journal.join(format!("{}.new", "ef".repeat(16)));
         std::fs::write(&new, b"partial").unwrap();
         assert_eq!(cleanup(), Report::default());
-        assert!(!new.exists());
+        assert!(new.exists());
         assert!(file.exists());
     }
 
@@ -901,5 +1022,247 @@ mod tests {
         TEST_ROOT.with(|root| *root.borrow_mut() = Some(s.journal.clone()));
         assert_eq!(cleanup(), Report::default());
         assert_eq!(staging(&s.docs).len(), 1);
+    }
+
+    // ---- T014 A/B stabilization (2026-11-09) ----
+
+    fn intent_line(s: &Setup, name: &str) -> Vec<u8> {
+        let meta = std::fs::metadata(&s.docs).unwrap();
+        line(&Intent {
+            v: 1,
+            dir: s.docs.to_str().unwrap().into(),
+            dir_dev: meta.dev(),
+            dir_ino: meta.ino(),
+            name: name.into(),
+            created_at: 1,
+        })
+        .unwrap()
+    }
+
+    #[test]
+    fn record_parsing_accepts_only_the_exact_one_or_two_line_format() {
+        let s = setup();
+        let name = format!(".geul-save-1-0-{}.tmp", "3".repeat(32));
+        let intent = intent_line(&s, &name);
+        let created = line(&Created { dev: 1, ino: 2 }).unwrap();
+        let full = [intent.clone(), created.clone()].concat();
+        assert!(matches!(parse_record(&intent), Some((_, None))));
+        assert!(matches!(
+            parse_record(&full),
+            Some((_, Some(Created { dev: 1, ino: 2 })))
+        ));
+        // Torn created line (crash while appending): intent only, never ownership.
+        for cut in [1, created.len() / 2, created.len() - 1] {
+            let torn = [intent.clone(), created[..cut].to_vec()].concat();
+            assert!(matches!(parse_record(&torn), Some((_, None))), "cut {cut}");
+        }
+        // Anything beyond the documented lines, or a malformed intent, is corrupt.
+        let mut bad_sum = full.clone();
+        let at = intent.len() + created.len() - 2;
+        bad_sum[at] = if bad_sum[at] == b'0' { b'1' } else { b'0' };
+        for corrupt in [
+            [full.clone(), created.clone()].concat(),
+            [full.clone(), b"x".to_vec()].concat(),
+            [full.clone(), b"\n".to_vec()].concat(),
+            [intent.clone(), b"\n".to_vec(), created.clone()].concat(),
+            [intent.clone(), b"garbage\n".to_vec()].concat(),
+            bad_sum,
+            intent[..intent.len() - 1].to_vec(),
+            b"{}\tbad\n".to_vec(),
+            Vec::new(),
+        ] {
+            let parsed = parse_record(&corrupt);
+            assert!(
+                !matches!(parsed, Some((_, Some(_)))),
+                "corrupt record must never carry ownership: {:?}",
+                String::from_utf8_lossy(&corrupt)
+            );
+        }
+        assert!(parse_record(&[full.clone(), b"x".to_vec()].concat()).is_none());
+        assert!(parse_record(&[full, created].concat()).is_none());
+    }
+
+    #[test]
+    fn a_valid_record_with_trailing_content_never_deletes_the_staging_file() {
+        let s = setup();
+        for tail in [b"extra\n".to_vec(), b"x".to_vec(), b"\n".to_vec()] {
+            let orphan = abandoned(&s);
+            let record = records(&s.journal).pop().unwrap();
+            let mut file = std::fs::OpenOptions::new()
+                .append(true)
+                .open(&record)
+                .unwrap();
+            file.write_all(&tail).unwrap();
+            drop(file);
+            assert_eq!(cleanup().unverified, 1);
+            assert!(orphan.exists(), "tail {tail:?}");
+            assert!(record.exists());
+            std::fs::remove_file(&record).unwrap();
+            std::fs::remove_file(&orphan).unwrap();
+        }
+    }
+
+    #[test]
+    fn retirement_is_counted_only_when_durably_confirmed_and_reconciles_on_the_next_pass() {
+        let s = setup();
+        let name = format!(".geul-save-1-0-{}.tmp", "4".repeat(32));
+        let meta = std::fs::metadata(&s.target).unwrap();
+        // Record unlink fails: nothing retired, record kept for the next pass.
+        let record = write_record(&s, &name, Some((meta.dev(), meta.ino())), false);
+        FAULT.with(|f| f.set(Some(Fault::JournalUnlink)));
+        let report = cleanup();
+        assert_eq!((report.retired, report.failed), (0, 1));
+        assert!(record.exists());
+        // Unlink succeeds but the journal directory fsync fails: the name is gone in the running system,
+        // yet the retirement is not reported as confirmed.
+        FAULT.with(|f| f.set(Some(Fault::JournalSync)));
+        let report = cleanup();
+        assert_eq!((report.retired, report.failed), (0, 1));
+        assert!(!record.exists());
+        // If the unconfirmed unlink is lost by a crash, the reappearing record is simply re-evaluated.
+        FAULT.with(|f| f.set(None));
+        let record = write_record(&s, &name, Some((meta.dev(), meta.ino())), false);
+        assert_eq!(cleanup().retired, 1);
+        assert!(!record.exists());
+        assert_eq!(cleanup(), Report::default());
+        // The removal path keeps `removed` about the file and reports the record retirement separately.
+        let orphan = abandoned(&s);
+        FAULT.with(|f| f.set(Some(Fault::JournalSync)));
+        let report = cleanup();
+        assert_eq!((report.removed, report.retired, report.failed), (1, 0, 1));
+        assert!(!orphan.exists());
+        FAULT.with(|f| f.set(None));
+        assert_eq!(std::fs::read(&s.target).unwrap(), b"original");
+    }
+
+    #[test]
+    fn a_failed_record_retirement_never_fails_the_document_save() {
+        let s = setup();
+        FAULT.with(|f| f.set(Some(Fault::JournalUnlink)));
+        let mut staged = publish::stage(&s.target, b"saved").unwrap();
+        let published = publish::publish(&mut staged, &s.target).unwrap();
+        drop(staged);
+        FAULT.with(|f| f.set(None));
+        assert!(published.durable);
+        assert_eq!(std::fs::read(&s.target).unwrap(), b"saved");
+        // The surviving record no longer names a file of that save and is retired by cleanup.
+        assert_eq!(records(&s.journal).len(), 1);
+        assert_eq!(cleanup().retired, 1);
+        assert!(records(&s.journal).is_empty());
+        assert!(staging(&s.docs).is_empty());
+    }
+
+    #[test]
+    fn bounded_cleanup_passes_eventually_reach_a_record_behind_unprocessable_entries() {
+        let s = setup();
+        std::fs::create_dir_all(&s.journal).unwrap();
+        std::fs::set_permissions(&s.journal, std::fs::Permissions::from_mode(0o700)).unwrap();
+        // More than one pass worth of corrupt records, created first so they enumerate first.
+        let corrupt: Vec<PathBuf> = (0..MAX_SCAN + 40)
+            .map(|i| {
+                let path = s.journal.join(format!("{i:032x}.save"));
+                std::fs::write(&path, b"corrupt").unwrap();
+                path
+            })
+            .collect();
+        // Unrelated non-record files are ignored and never counted against the batch.
+        std::fs::write(s.journal.join("notes.txt"), b"x").unwrap();
+        publish::stage(&s.target, b"interrupted").unwrap().abandon();
+        let orphan = staging(&s.docs).pop().unwrap();
+        // Give the abandoned record the ID that sorts last, so it is behind every corrupt record.
+        let record = records(&s.journal)
+            .into_iter()
+            .find(|p| !corrupt.contains(p))
+            .unwrap();
+        std::fs::rename(&record, s.journal.join(format!("{}.save", "f".repeat(32)))).unwrap();
+        let first = cleanup();
+        assert_eq!((first.unverified, first.removed), (MAX_SCAN, 0));
+        assert!(orphan.exists());
+        let second = cleanup();
+        let removed = second.removed;
+        // The 40 remaining corrupt records, the orphan, then wrap-around fills the batch.
+        assert_eq!(second.unverified, MAX_SCAN - 1);
+        assert_eq!(
+            removed, 1,
+            "the abandoned record behind the corrupt batch was reached"
+        );
+        assert!(!orphan.exists());
+        assert!(
+            corrupt.iter().all(|p| p.exists()),
+            "unverified records are never deleted"
+        );
+        assert!(s.journal.join("notes.txt").exists());
+        assert_eq!(std::fs::read(&s.target).unwrap(), b"original");
+    }
+
+    #[test]
+    fn concurrent_cleanup_during_registration_cannot_invalidate_the_record() {
+        let s = setup();
+        let journal = s.journal.clone();
+        DURING_REGISTER.with(|hook| {
+            *hook.borrow_mut() = Some(Box::new(move || {
+                // Another instance's cleanup runs at the most sensitive point of registration.
+                let report = cleanup();
+                assert_eq!(report.removed + report.retired, 0);
+                assert!(records(&journal).iter().all(|p| p.exists()));
+            }))
+        });
+        let staged = publish::stage(&s.target, b"active").unwrap();
+        DURING_REGISTER.with(|hook| *hook.borrow_mut() = None);
+        // The registration survived: one locked record proves the staging file and protects it.
+        let found = records(&s.journal);
+        assert_eq!(found.len(), 1);
+        assert_eq!(found[0].extension().unwrap(), "save");
+        assert_eq!(cleanup().active, 1);
+        assert_eq!(staging(&s.docs).len(), 1);
+        // Once abandoned, the same proven record is still cleaned normally.
+        staged.abandon();
+        assert_eq!(cleanup().removed, 1);
+        assert!(staging(&s.docs).is_empty());
+        assert!(records(&s.journal).is_empty());
+    }
+
+    #[test]
+    fn batch_selection_progresses_through_every_record_regardless_of_listing_order() {
+        let ids: Vec<String> = (0..1300u32).map(|i| format!("{i:032x}")).collect();
+        // Adversarial listing: the same 512 records always listed first, plus noise names.
+        let listing = || {
+            ids.iter()
+                .map(|id| format!("{id}.save"))
+                .chain([
+                    "cursor".to_owned(),
+                    format!("{}.new", "e".repeat(32)),
+                    "x.save".to_owned(),
+                ])
+                .collect::<Vec<_>>()
+        };
+        let mut cursor: Option<String> = None;
+        let mut seen = std::collections::BTreeSet::new();
+        for pass in 0..3 {
+            let batch = select_batch(listing().into_iter(), cursor.as_deref(), MAX_SCAN);
+            assert!(batch.len() <= MAX_SCAN, "pass {pass}");
+            assert!(batch.windows(2).all(|w| w[0] != w[1]));
+            seen.extend(batch.iter().cloned());
+            cursor = batch.last().cloned();
+        }
+        assert_eq!(
+            seen.len(),
+            ids.len(),
+            "three bounded passes cover all 1300 records"
+        );
+        // Wrap-around: after the last ID the next pass restarts from the smallest.
+        let batch = select_batch(listing().into_iter(), Some(&ids[1299]), MAX_SCAN);
+        assert_eq!(batch.first(), Some(&ids[0]));
+        // A listing order where the target is last still reaches it once the cursor passes the others.
+        let mut reversed = listing();
+        reversed.reverse();
+        let batch = select_batch(reversed.into_iter(), Some(&ids[1000]), MAX_SCAN);
+        assert_eq!(batch[0], ids[1001]);
+        // The old behaviour (first MAX_SCAN listed names, no cursor) never reaches ids[1299].
+        let first_listed: Vec<String> = listing().into_iter().take(MAX_SCAN).collect();
+        for _ in 0..3 {
+            let old = select_batch(first_listed.clone().into_iter(), None, MAX_SCAN);
+            assert!(!old.contains(&ids[1299]));
+        }
     }
 }
