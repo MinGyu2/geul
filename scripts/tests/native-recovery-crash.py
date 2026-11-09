@@ -14,13 +14,13 @@ Per format (HWP, HWPX), with an isolated XDG_DATA_HOME (Tauri app_local_data_dir
 Run inside the private X11/IBus launcher. No test hooks, no mocked backend/engine, no DOM composition events.
 """
 import argparse
+import contextlib
 import hashlib
 import importlib.util
 import json
 import os
 from pathlib import Path
 import shutil
-import signal
 import subprocess
 import sys
 import time
@@ -31,6 +31,8 @@ for folder in ('tests/e2e', 'tests/integration/rhwp'):
     sys.path.insert(0, str(ROOT / folder))
 import tauri_smoke as smoke
 import rhwp_poc as rhwp
+sys.path.insert(0, str(ROOT / 'scripts/tests'))
+import native_recovery_checks as checks
 
 spec = importlib.util.spec_from_file_location('production_native_base', ROOT / 'scripts/tests/native-new-document.py')
 base = importlib.util.module_from_spec(spec)
@@ -49,7 +51,7 @@ const r=await import(pathToFileURL(js));r.initSync({module:readFileSync(wasm)});
 const d=new r.HwpDocument(readFileSync(file));
 try{const n=d.getParagraphCount(0);
  const paragraphs=Array.from({length:n},(_,p)=>d.getTextRange(0,p,0,d.getParagraphLength(0,p)));
- console.log(JSON.stringify({format:d.getSourceFormat(),pages:d.pageCount(),paragraphs,controls:d.getControls().length,expectFormat}));}
+ console.log(JSON.stringify({format:d.getSourceFormat(),pages:d.pageCount(),paragraphs,controls:d.getControls(),expectFormat}));}
 finally{d.free();}
 """
 
@@ -63,8 +65,33 @@ def release_engine():
     folder = ROOT / 'dist/rhwp/generations' / build['generation']
     js, wasm = folder / 'rhwp.js', folder / 'rhwp_bg.wasm'
     assert sha(js) == build['artifacts']['rhwp.js'] and sha(wasm) == build['artifacts']['rhwp_bg.wasm'], 'release artifact mismatch'
-    return {'generation': build['generation'], 'js': str(js), 'wasm': str(wasm),
+    immutable = json.loads((folder / 'BUILD.json').read_text())
+    assert checks.canonical(immutable) == checks.canonical(build), 'immutable generation metadata differs'
+    return {'generation': build['generation'], 'js': str(js), 'wasm': str(wasm), 'manifest': build,
             'jsSha256': sha(js), 'wasmSha256': sha(wasm), 'profile': build['profile']}
+
+
+# Captured inside the running WebView after the product loaded an RHWP document (see
+# native_recovery_checks.compare_runtime_identity). `HwpDocument.createEmpty()` needs an initialized WASM
+# instance; the probe never initializes one, and frees the empty model it gets from the running engine.
+RUNTIME_IDENTITY = r'''
+const hex=async u=>{const r=await fetch(u,{cache:'force-cache'});if(!r.ok)throw Error(u+' '+r.status);
+ return [...new Uint8Array(await crypto.subtle.digest('SHA-256',await r.arrayBuffer()))].map(x=>x.toString(16).padStart(2,'0')).join('')};
+const selected=await (await fetch('/rhwp/BUILD.json',{cache:'no-store'})).json();
+const base='/rhwp/generations/'+selected.generation;
+const usable=async url=>{const m=await import(url);try{const d=m.HwpDocument.createEmpty();d.free();return {ok:true}}catch(e){return {ok:false,error:String(e).slice(0,120)}}};
+const running=await usable(base+'/rhwp.js');
+const control=await usable(base+'/rhwp.js?t014-fresh-instance='+Date.now());
+return {generation:selected.generation,selected,initialized:running.ok,controlInitialized:control.ok,controlError:control.error??null,
+ immutable:await (await fetch(base+'/BUILD.json',{cache:'force-cache'})).json(),
+ jsSha256:await hex(base+'/rhwp.js'),wasmSha256:await hex(base+'/rhwp_bg.wasm')};
+'''
+
+
+def runtime_identity(a, engine):
+    captured = a.async_js(RUNTIME_IDENTITY)
+    assert captured['ok'], captured
+    return checks.compare_runtime_identity(captured['value'], engine)
 
 
 def wasm_open(engine, path, fmt):
@@ -126,15 +153,23 @@ def run_format(args, fmt, engine, report):
     # ---------------- launch 1 ----------------
     smoke.DRIVER_LOG = str(out / 'driver-1.log')
     killed = None
-    with smoke.tauri_driver(str(args.driver), args.port, str(data_home)) as start:
+    with contextlib.ExitStack() as owned_stack, smoke.tauri_driver(str(args.driver), args.port, str(data_home)) as start:
         d = start()
         try:
             a = base.Acceptance(args, d, report)
+            smoke.wait_until(d, 'return document.readyState==="complete"', timeout=30)
+            step('B1 WebView serves the embedded app (tauri: protocol, not a dev URL)', d.js('return location.protocol') == 'tauri:',
+                 d.js('return location.origin'))
             smoke.wait_until(d, 'return !!document.querySelector(".document-bar") && !!document.querySelector("[data-testid=recovery-center]")', timeout=30)
-            pids = app_pids(str(data_home), args.app)
-            step('B1 test-owned app process identified', len(pids) == 1, pids)
-            first_pid = pids[0]
+            # A pidfd-held reference to exactly this scenario's app process, kept until the intended SIGKILL.
+            process = owned_stack.enter_context(checks.OwnedProcess(args.app, str(data_home)))
+            step('B1 test-owned app process held by pidfd (exe + isolated XDG_DATA_HOME + start time)', process.alive(),
+                 {'pid': process.pid, 'startTime': process.start})
+            first_pid = process.pid
             a.open(fmt, source)
+            identity = runtime_identity(a, engine)
+            step('B1 running WebView engine is the independent Release generation (initialized module + embedded bytes)', True, identity)
+            entry['runtimeIdentity'] = {'launch1': identity}
             session = next(s for s in a.sessions() if s['displayName'] == source.name)
             step('B1 opened with RHWP, ready, clean', session['engine'] == 'rhwp' and session['format'] == fmt
                  and session['state'] == 'ready' and session['dirty'] is False, session)
@@ -182,13 +217,13 @@ def run_format(args, fmt, engine, report):
             reopened = wasm_open(engine, out / f'record-payload.{fmt}', fmt)
             step('B4 Release WASM reopens the record payload with the edit', reopened['format'] == fmt
                  and reopened['paragraphs'][0] == MARK + original['paragraphs'][0]
-                 and reopened['paragraphs'][1:] == original['paragraphs'][1:] and reopened['controls'] == original['controls'], reopened)
+                 and reopened['paragraphs'][1:] == original['paragraphs'][1:], {k: reopened[k] for k in ('format', 'pages', 'paragraphs')})
+            controls = checks.compare_controls(original['controls'], reopened['controls'])
+            step('B4 payload controls structurally equal to the source (parsed getControls JSON, in order)', True,
+                 [c['ctrlId'] for c in controls])
             if fmt == 'hwp':
-                # BodyText is compressed; the uncompressed UTF-16 PrvText stream is where the marker can appear
-                # verbatim. It is present only if the save validator's preview regeneration ran.
-                marker = MARK.encode('utf-16-le')
-                step('B4 HWP PrvText regenerated by the save validator (marker in preview, not in source)',
-                     'PrvText'.encode('utf-16-le') in payload and marker in payload and marker not in source.read_bytes())
+                preview = checks.check_regenerated_prv_text(source.read_bytes(), payload, MARK)
+                step('B4 HWP PrvText stream (CFB) is the regenerated protected revision', True, preview)
             entry['candidate'] = {'id': candidate['id'], 'revision': revision, 'recordSha256': sha(record), 'payloadSha256': hashlib.sha256(payload).hexdigest()}
             sessions = a.sessions()
             now = next(s for s in sessions if s['sessionId'] == sid)
@@ -200,13 +235,9 @@ def run_format(args, fmt, engine, report):
             a.wait('const s=document.querySelector(arguments[0]);return s?.dataset.localRevision===s.dataset.revision && Number(s.dataset.revision)===arguments[1]', STATUS, revision + 1)
             row = d.js('const e=document.querySelector(arguments[0]);return e?{...e.dataset}:null', selector)
             step('B7 newer revision shown as waiting, not protected', row and row['state'] == 'waiting' and row['revision'] == str(revision + 1), row)
-            # SIGKILL exactly the test-owned app process before the newer revision's debounce elapses.
-            os.kill(first_pid, signal.SIGKILL)
-            killed = {'pid': first_pid, 'atRevision': revision + 1, 'protectedRevision': revision}
-            deadline = time.monotonic() + 10
-            while time.monotonic() < deadline and not gone(first_pid):
-                time.sleep(0.05)
-            step('C6/C7 exact app PID terminated by SIGKILL', gone(first_pid), killed)
+            # SIGKILL exactly the pidfd-held app process before the newer revision's debounce elapses.
+            killed = {**process.kill(), 'atRevision': revision + 1, 'protectedRevision': revision}
+            step('C6/C7 exact app process terminated by SIGKILL through its pidfd', not process.alive() and gone(first_pid), killed)
         except Exception:
             try:
                 d.screenshot(out / 'launch1-failure.png')
@@ -254,7 +285,15 @@ def run_format(args, fmt, engine, report):
             restored = wasm_open(engine, destination, fmt)
             step('C13 Release WASM reopens the restored file: protected revision content, not the killed newer one',
                  restored['format'] == fmt and restored['paragraphs'][0] == MARK + original['paragraphs'][0]
-                 and restored['paragraphs'][1:] == original['paragraphs'][1:] and restored['controls'] == original['controls'], restored)
+                 and restored['paragraphs'][1:] == original['paragraphs'][1:], {k: restored[k] for k in ('format', 'pages', 'paragraphs')})
+            checks.compare_controls(original['controls'], restored['controls'])
+            step('C13 restored controls structurally equal to the source', True)
+            if fmt == 'hwp':
+                step('C13 restored HWP PrvText stream is the regenerated protected revision', True,
+                     checks.check_regenerated_prv_text(source.read_bytes(), destination.read_bytes(), MARK))
+            identity = runtime_identity(a, engine)
+            step('C12 fresh launch WebView loaded the same independent Release generation', True, identity)
+            entry['runtimeIdentity']['launch2'] = identity
             step('C13 restored bytes equal the validated record payload', sha(destination) == entry['candidate']['payloadSha256'])
             d.screenshot(out / 'restored.png')
             listed = a.async_js("return await window.__TAURI_INTERNALS__.invoke('recovery_list')")
@@ -281,13 +320,22 @@ def main():
     parser.add_argument('--xdotool', required=True)
     parser.add_argument('--ibus', required=True)
     parser.add_argument('--port', type=int, default=4444)
+    parser.add_argument('--app-sha256', required=True, help='expected SHA-256 of the embedded production app')
     parser.add_argument('--formats', nargs='+', default=['hwp', 'hwpx'])
     args = parser.parse_args()
     args.out, args.fixtures, args.app = args.out.resolve(), args.fixtures.resolve(), args.app.resolve()
+    # A plain `cargo test`/`build` without tauri/custom-protocol replaces the same debug path with a dev-URL
+    # binary; never run the destructive scenario against an unexpected executable.
+    if sha(args.app) != args.app_sha256:
+        raise SystemExit(f'app SHA-256 {sha(args.app)} != expected {args.app_sha256}; rebuild the embedded app')
     args.out.mkdir(parents=True, exist_ok=False)
     smoke.APP = str(args.app)
     engine = release_engine()
-    report = {'status': 'RUNNING', 'appSha256': sha(args.app), 'engine': engine, 'fixtures': {
+    head = subprocess.run(['git', '-C', str(ROOT), 'rev-parse', 'HEAD'], capture_output=True, text=True).stdout.strip()
+    dirty = subprocess.run(['git', '-C', str(ROOT), 'status', '--porcelain'], capture_output=True, text=True).stdout.splitlines()
+    report = {'status': 'RUNNING', 'sourceHead': head, 'sourceDirty': dirty, 'appSha256': sha(args.app),
+              'harnessSha256': sha(__file__), 'checksSha256': sha(ROOT / 'scripts/tests/native_recovery_checks.py'),
+              'engine': {k: v for k, v in engine.items() if k != 'manifest'}, 'fixtures': {
         p.name: sha(p) for p in sorted(args.fixtures.iterdir())}, 'formats': [],
         'scope': 'embedded production app; real RHWP Release WASM; actual Rust checkpoint/RecoveryStore; native XTest; SIGKILL of the exact test-owned app PID'}
     code = 1
