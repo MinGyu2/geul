@@ -48,6 +48,11 @@ payload = sys.argv[1].encode()
 print(json.dumps({'pid': os.getpid(), 'owner': w, 'text': sys.argv[1]}), flush=True)
 while True:
     event = Event(); x.XNextEvent(d, C.byref(event))
+    if event.type == 29:
+        # SelectionClear: another client (the app) took CLIPBOARD. Observation only;
+        # callers that never read stdout beyond the first line are unaffected.
+        print('SELECTION_CLEAR', flush=True)
+        continue
     if event.type != 30:
         continue
     r = event.request

@@ -901,9 +901,12 @@ actual engine model, actual delayed native reads during document switching, prot
 Paste saves, and independent final saved-byte reopens. Intermediate Cut saved
 bytes also independently reopened empty in all three formats. Evidence is under
 ignored `target/clipboard/`; fault injection is not an OS permission-denial test.
-Real Korean IME interaction with clipboard during active preedit remains BLOCKED:
-the isolated installed IBus Hangul engine failed SetGlobalEngine with a timeout
-before preedit could begin. No native IME PASS is claimed. Actual OS settings denial
+Real Korean IME interaction with clipboard during active preedit was first BLOCKED
+(SetGlobalEngine timeout: the launcher disabled the IBus config component and
+ibus-engine-hangul exits without it). It now passes natively for DOCX/HWP/HWPX with
+genuine ibus-hangul preedit via `scripts/tests/native-ibus-session.py` and
+`scripts/tests/native-clipboard-preedit.py`; see `clipboard-preedit-acceptance.md`
+for observed orderings, classification and limits. Actual OS settings denial
 and Windows/macOS acceptance are NOT RUN. An independent X11
 clipboard-owner probe additionally passed keyboard and ribbon Paste for all three
 formats (20 checks). Native external/dialog textarea shortcuts and modal blocking
@@ -915,5 +918,6 @@ back during a delayed clipboard read (trusted window blur recorded, no insertion
 A previous proxy disconnect and Xvfb PointerRoot focus-query error were harness/
 environment failures, retained separately from accepted results. Final relevant
 native evidence: `target/clipboard/native-external-full` (70 checks),
-`native-x11-final` (20), `native-lifecycle-pass` (16); preedit attempt: `native-ime`.
+`native-x11-final` (20), `native-lifecycle-pass` (16); blocked preedit attempt: `native-ime`;
+native preedit acceptance: `target/clipboard-preedit/run4` (174 checks).
 No T010 D2/D4 or unrelated existing acceptance is promoted by clipboard results.
