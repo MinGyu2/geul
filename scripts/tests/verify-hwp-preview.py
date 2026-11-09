@@ -22,8 +22,18 @@ u16 = lambda b, o=0: struct.unpack_from('<H', b, o)[0]
 u32 = lambda b, o=0: struct.unpack_from('<I', b, o)[0]
 
 
+class VerificationError(AssertionError):
+    """A container/image integrity check failed. Raised explicitly (never an `assert` statement), so the check
+    stays effective under `python -O`/PYTHONOPTIMIZE; subclasses AssertionError for existing callers."""
+
+
+def require(condition, message='integrity check failed'):
+    if not condition:
+        raise VerificationError(message)
+
+
 def cfb_streams(data):
-    assert data[:8] == bytes.fromhex('d0cf11e0a1b11ae1'), 'not CFB'
+    require(data[:8] == bytes.fromhex('d0cf11e0a1b11ae1'), 'not CFB')
     sector, mini = 1 << u16(data, 30), 1 << u16(data, 32)
     sec = lambda i: data[(i + 1) * sector:(i + 2) * sector]
     difat = list(struct.unpack_from('<109I', data, 76)); nxt = u32(data, 68)
@@ -37,7 +47,7 @@ def cfb_streams(data):
     def chain(first, table, reader):
         out, seen, i = [], set(), first
         while i < 0xfffffffa:
-            assert i not in seen, 'sector loop'; seen.add(i); out.append(reader(i)); i = table[i]
+            require(i not in seen, 'sector loop'); seen.add(i); out.append(reader(i)); i = table[i]
         return b''.join(out)
     directory = chain(u32(data, 48), fat, sec); entries = []
     for off in range(0, len(directory), 128):
@@ -60,7 +70,7 @@ def records(d):
         if size == 0xfff:
             size = u32(d, o); o += 4
         out.append((h & 0x3ff, (h >> 10) & 0x3ff, d[o:o + size])); o += size
-    assert o == len(d), 'record overrun'
+    require(o == len(d), 'record overrun')
     return out
 
 
@@ -82,26 +92,26 @@ def expected_size(recs):
 
 def png_decode(data, strict):
     """Decode 8-bit RGB/RGBA PNG (all filters). strict: only IHDR/IDAT/IEND, RGB, filter 0 rows."""
-    assert data[:8] == b'\x89PNG\r\n\x1a\n', 'PNG signature'
+    require(data[:8] == b'\x89PNG\r\n\x1a\n', 'PNG signature')
     o, chunks = 8, []
     while o < len(data):
         n = struct.unpack_from('>I', data, o)[0]; kind = data[o + 4:o + 8]; body = data[o + 8:o + 8 + n]
-        assert struct.unpack_from('>I', data, o + 8 + n)[0] == zlib.crc32(kind + body), 'chunk CRC'
+        require(struct.unpack_from('>I', data, o + 8 + n)[0] == zlib.crc32(kind + body), 'chunk CRC')
         chunks.append((kind, body)); o += 12 + n
-    assert o == len(data), 'trailing bytes'
+    require(o == len(data), 'trailing bytes')
     kinds = [k for k, _ in chunks]
     w, h, depth, color, comp, filt, inter = struct.unpack('>IIBBBBB', chunks[0][1])
-    assert kinds[0] == b'IHDR' and kinds[-1] == b'IEND' and depth == 8 and inter == 0 and color in (2, 6)
+    require(kinds[0] == b'IHDR' and kinds[-1] == b'IEND' and depth == 8 and inter == 0 and color in (2, 6), 'PNG header/chunk layout')
     if strict:
-        assert kinds == [b'IHDR', b'IDAT', b'IEND'] and color == 2, kinds
+        require(kinds == [b'IHDR', b'IDAT', b'IEND'] and color == 2, f'non-canonical PNG chunks {kinds}')
     z = zlib.decompressobj(); raw = z.decompress(b''.join(b for k, b in chunks if k == b'IDAT'))
-    assert z.eof and not z.unused_data, 'zlib stream'
+    require(z.eof and not z.unused_data, 'zlib stream')
     bpp = 3 if color == 2 else 4; stride = w * bpp
-    assert len(raw) == (stride + 1) * h, 'scanline length'
+    require(len(raw) == (stride + 1) * h, 'scanline length')
     rows, prev = [], bytearray(stride)
     for y in range(h):
         f = raw[y * (stride + 1)]; line = bytearray(raw[y * (stride + 1) + 1:(y + 1) * (stride + 1)])
-        assert not strict or f == 0, 'non-canonical filter'
+        require(not strict or f == 0, 'non-canonical filter')
         for i in range(stride):
             a = line[i - bpp] if i >= bpp else 0; b = prev[i]; c = prev[i - bpp] if i >= bpp else 0
             if f == 1: line[i] = (line[i] + a) & 255
@@ -111,7 +121,7 @@ def png_decode(data, strict):
                 p = a + b - c; pa, pb, pc = abs(p - a), abs(p - b), abs(p - c)
                 line[i] = (line[i] + (a if pa <= pb and pa <= pc else b if pb <= pc else c)) & 255
             else:
-                assert f == 0, 'filter'
+                require(f == 0, 'filter')
         rows.append(bytes(line)); prev = line
     rgb = bytearray()
     for line in rows:
@@ -126,7 +136,7 @@ def png_decode(data, strict):
 
 def gif_decode(data):
     """First frame of a GIF as RGB (global/local palette, LZW, interlace)."""
-    assert data[:6] in (b'GIF87a', b'GIF89a')
+    require(data[:6] in (b'GIF87a', b'GIF89a'), 'GIF signature')
     W, H, flags = u16(data, 6), u16(data, 8), data[10]; o = 13; gpal = None
     if flags & 0x80:
         n = 3 * (2 << (flags & 7)); gpal = data[o:o + n]; o += n
@@ -135,7 +145,7 @@ def gif_decode(data):
         while data[o]:
             o += data[o] + 1
         o += 1
-    assert data[o] == 0x2c; x0, y0, w, h, f = u16(data, o + 1), u16(data, o + 3), u16(data, o + 5), u16(data, o + 7), data[o + 9]; o += 10
+    require(data[o] == 0x2c, 'GIF image descriptor'); x0, y0, w, h, f = u16(data, o + 1), u16(data, o + 3), u16(data, o + 5), u16(data, o + 7), data[o + 9]; o += 10
     pal = gpal
     if f & 0x80:
         n = 3 * (2 << (f & 7)); pal = data[o:o + n]; o += n

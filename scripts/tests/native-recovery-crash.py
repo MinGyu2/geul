@@ -64,9 +64,11 @@ def release_engine():
     build = json.loads((ROOT / 'dist/rhwp/BUILD.json').read_text())
     folder = ROOT / 'dist/rhwp/generations' / build['generation']
     js, wasm = folder / 'rhwp.js', folder / 'rhwp_bg.wasm'
-    assert sha(js) == build['artifacts']['rhwp.js'] and sha(wasm) == build['artifacts']['rhwp_bg.wasm'], 'release artifact mismatch'
+    checks.require(sha(js) == build['artifacts']['rhwp.js'] and sha(wasm) == build['artifacts']['rhwp_bg.wasm'], 'setup',
+                   'Release artifacts match dist/rhwp/BUILD.json', {'js': sha(js), 'wasm': sha(wasm)}, build['artifacts'])
     immutable = json.loads((folder / 'BUILD.json').read_text())
-    assert checks.canonical(immutable) == checks.canonical(build), 'immutable generation metadata differs'
+    checks.require(checks.canonical(immutable) == checks.canonical(build), 'setup', 'immutable generation metadata equals the selection',
+                   immutable, build)
     return {'generation': build['generation'], 'js': str(js), 'wasm': str(wasm), 'manifest': build,
             'jsSha256': sha(js), 'wasmSha256': sha(wasm), 'profile': build['profile']}
 
@@ -90,7 +92,8 @@ return {generation:selected.generation,selected,initialized:running.ok,controlIn
 
 def runtime_identity(a, engine):
     captured = a.async_js(RUNTIME_IDENTITY)
-    assert captured['ok'], captured
+    if not captured.get('ok'):
+        raise checks.CheckError(f'runtime identity probe failed: {captured!r}')
     return checks.compare_runtime_identity(captured['value'], engine)
 
 
@@ -104,13 +107,16 @@ def parse_record(path):
     """Independent reader of the RecoveryStore GRR1 format (recovery.rs): magic, u32 LE header length,
     64 hex SHA-256 of the header JSON, header JSON, payload."""
     data = Path(path).read_bytes()
-    assert data[:4] == b'GRR1', 'magic'
+    if data[:4] != b'GRR1':
+        raise checks.CheckError('recovery record magic')
     n = int.from_bytes(data[4:8], 'little')
     checksum, header = data[8:72].decode(), data[72:72 + n]
-    assert hashlib.sha256(header).hexdigest() == checksum, 'header checksum'
+    if hashlib.sha256(header).hexdigest() != checksum:
+        raise checks.CheckError('recovery record header checksum')
     meta = json.loads(header)
     payload = data[72 + n:]
-    assert hashlib.sha256(payload).hexdigest() == meta['payloadHash'], 'payload hash'
+    if hashlib.sha256(payload).hexdigest() != meta['payloadHash']:
+        raise checks.CheckError('recovery record payload hash')
     return meta, payload
 
 
@@ -134,6 +140,51 @@ def gone(pid):
         return True
 
 
+HWP_ONLY_STEPS = ('B4 HWP PrvText stream (CFB) is the regenerated protected revision',
+                  'C13 restored HWP PrvText stream is the regenerated protected revision')
+REQUIRED_STEPS = (
+    'B1 WebView serves the embedded app (tauri: protocol, not a dev URL)',
+    'B1 test-owned app process held by pidfd (exe + isolated XDG_DATA_HOME + start time)',
+    'B1 running WebView engine is the independent Release generation (initialized module + embedded bytes)',
+    'B1 opened with RHWP, ready, clean',
+    'B2 marker committed, dirty, no IME transaction',
+    'B3 automatic checkpoint protected for the committed revision',
+    'B3 debounce: capture began no earlier than ~2 s after the commit',
+    'B5 real backend recovery_list',
+    'B5 one valid candidate of this format and revision',
+    'B5 persistent GRR1 record: checksums, format, revision, generation, original path',
+    'B5 record is private (0600, single link)',
+    'B4 payload keeps the original container format',
+    'B4 Release WASM reopens the record payload with the edit',
+    'B4 payload controls structurally equal to the source (parsed getControls JSON, in order)',
+    HWP_ONLY_STEPS[0],
+    'B6 original bytes unchanged, still dirty, saved revision not advanced, same path',
+    'B6 no document file published next to the source',
+    'B7 newer revision shown as waiting, not protected',
+    'C6/C7 exact app process terminated by SIGKILL through its pidfd',
+    'C8 record survived the process boundary',
+    'C14 source unchanged after the crash',
+    'C8 fresh app process (different PID) on the same isolated data directory',
+    'C8 no live session was reused',
+    'C9/C10 RecoveryCenter lists the valid candidate from the killed process',
+    'C11 restore onto an existing file refused by create-only publication',
+    'C12 restored file opened as a new RHWP session, ready and clean',
+    'C11 restored file is a new create-only publication',
+    'C13 Release WASM reopens the restored file: protected revision content, not the killed newer one',
+    'C13 restored controls structurally equal to the source',
+    HWP_ONLY_STEPS[1],
+    'C12 fresh launch WebView loaded the same independent Release generation',
+    'C13 restored bytes equal the validated record payload',
+    'C15 candidate retained until explicit discard',
+    'C14 source and existing destination unchanged',
+    'C16 restored tab closed without a discard prompt',
+)
+
+
+def required_steps(fmt):
+    return [name for name in REQUIRED_STEPS if fmt == 'hwp' or name not in HWP_ONLY_STEPS]
+
+
 def run_format(args, fmt, engine, report):
     out = args.out / fmt
     out.mkdir()
@@ -145,9 +196,8 @@ def run_format(args, fmt, engine, report):
     entry = {'format': fmt, 'sourceSha256': original_sha, 'sourceParagraph0': original['paragraphs'][0], 'steps': []}
     report['formats'].append(entry)
 
-    def step(name, value, detail=None):
-        entry['steps'].append({'step': name, 'status': 'PASS' if value else 'FAIL', **({'detail': detail} if detail is not None else {})})
-        assert value, (fmt, name, detail)
+    # Explicit exceptions (never `assert`): a FAIL stops the scenario under `python -O` as well.
+    step = checks.Steps(entry, fmt)
 
     record_dir = data_home / IDENTIFIER / 'recovery'
     # ---------------- launch 1 ----------------
@@ -299,7 +349,7 @@ def run_format(args, fmt, engine, report):
             listed = a.async_js("return await window.__TAURI_INTERNALS__.invoke('recovery_list')")
             step('C15 candidate retained until explicit discard', listed['ok'] and any(c['id'] == candidate['id'] for c in listed['value']), listed)
             step('C14 source and existing destination unchanged', sha(source) == original_sha and sha(existing) == existing_sha)
-            assert rhwp.close_tab(d, destination.name)
+            step('C16 restored tab closed without a discard prompt', rhwp.close_tab(d, destination.name))
             entry['restored'] = {'sha256': sha(destination), 'paragraph0': restored['paragraphs'][0], 'session': restored_session['sessionId']}
         except Exception:
             try:
@@ -338,18 +388,18 @@ def main():
               'engine': {k: v for k, v in engine.items() if k != 'manifest'}, 'fixtures': {
         p.name: sha(p) for p in sorted(args.fixtures.iterdir())}, 'formats': [],
         'scope': 'embedded production app; real RHWP Release WASM; actual Rust checkpoint/RecoveryStore; native XTest; SIGKILL of the exact test-owned app PID'}
-    code = 1
     try:
         for fmt in args.formats:
             run_format(args, fmt, engine, report)
-        report['status'] = 'PASS'
-        code = 0
     except Exception as error:
         traceback.print_exc()
-        report.update(status='FAIL', error=type(error).__name__ + ': ' + str(error))
+        report['error'] = type(error).__name__ + ': ' + str(error)
     report['teardown'] = smoke.TEARDOWN
+    # The overall result is derived from the recorded evidence, never set optimistically.
+    report['status'], report['problems'] = checks.overall(report, {fmt: required_steps(fmt) for fmt in args.formats})
     (args.out / 'result.json').write_text(json.dumps(report, ensure_ascii=False, indent=2, default=str) + '\n')
-    return code
+    print(f"overall {report['status']}" + ''.join('\n  ' + p for p in report['problems']))
+    return 0 if report['status'] == 'PASS' else 1
 
 
 if __name__ == '__main__':

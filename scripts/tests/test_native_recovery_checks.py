@@ -241,5 +241,94 @@ class RuntimeIdentity(unittest.TestCase):
                 checks.compare_runtime_identity(bad, INDEPENDENT)
 
 
+class Accounting(unittest.TestCase):
+    def test_failed_step_raises_and_is_recorded(self):
+        entry = {}
+        step = checks.Steps(entry, 'hwp')
+        step('ok', True)
+        with self.assertRaises(checks.AcceptanceError) as caught:
+            step('bad', False, {'seen': 1}, expected='seen == 2')
+        self.assertEqual((caught.exception.format, caught.exception.step, caught.exception.expected), ('hwp', 'bad', 'seen == 2'))
+        self.assertEqual([r['status'] for r in entry['steps']], ['PASS', 'FAIL'])
+        with self.assertRaises(checks.AcceptanceError):
+            checks.require(False, 'hwpx', 'setup', 1, 'x')
+
+    def test_overall_requires_every_format_step_and_clean_teardown(self):
+        good = {'formats': [{'format': 'hwp', 'status': 'PASS', 'steps': [{'step': 'a', 'status': 'PASS'}]}],
+                'teardown': [{'complete': True, 'remainingAfterWait': [], 'survivorsAfterSigterm': []}]}
+        self.assertEqual(checks.overall(good, {'hwp': ['a']})[0], 'PASS')
+        cases = [
+            {**good, 'formats': [{**good['formats'][0], 'steps': [{'step': 'a', 'status': 'PASS'}, {'step': 'b', 'status': 'FAIL'}]}]},
+            {**good, 'formats': [{**good['formats'][0], 'status': None}]},
+            {**good, 'error': 'boom'},
+            {**good, 'teardown': [{'complete': True, 'remainingAfterWait': [1], 'survivorsAfterSigterm': []}]},
+            {**good, 'teardown': [{'complete': False}]},
+        ]
+        for report in cases:
+            self.assertEqual(checks.overall(report, {'hwp': ['a']})[0], 'FAIL', report)
+        self.assertEqual(checks.overall(good, {'hwp': ['a', 'missing']})[0], 'FAIL')
+        self.assertEqual(checks.overall(good, {'hwp': ['a'], 'hwpx': ['a']})[0], 'FAIL')
+        self.assertEqual(checks.overall(good, {'hwp': []})[0], 'FAIL')
+
+
+# Runs the real native-recovery-crash.py main() with run_format replaced by one deliberately failing step.
+NEGATIVE = r'''
+import importlib.util, sys
+from pathlib import Path
+spec = importlib.util.spec_from_file_location('crash', sys.argv[1]); crash = importlib.util.module_from_spec(spec); spec.loader.exec_module(crash)
+def run_format(args, fmt, engine, report):
+    entry = {'format': fmt, 'steps': []}; report['formats'].append(entry)
+    step = crash.checks.Steps(entry, fmt)
+    step('controlled false acceptance condition', False, {'observed': 0}, expected='1')
+    entry['status'] = 'PASS'
+crash.run_format = run_format
+crash.smoke.TEARDOWN = []
+sys.argv = ['crash', '--app', sys.argv[2], '--app-sha256', sys.argv[3], '--driver', sys.argv[2], '--out', sys.argv[4],
+            '--fixtures', sys.argv[5], '--xdotool', 'x', '--ibus', 'x', '--formats', 'hwp']
+sys.exit(crash.main())
+'''
+
+
+@unittest.skipUnless((TEST_DIR.parents[1] / 'dist/rhwp/BUILD.json').exists(), 'needs the built dist/rhwp Release engine')
+class OptimizedInterpreter(unittest.TestCase):
+    def run_main(self, flags, env):
+        with tempfile.TemporaryDirectory(prefix='geul-negative-') as tmp:
+            tmp = Path(tmp)
+            app, fixtures = tmp / 'app', tmp / 'fixtures'
+            app.write_bytes(b'not an app')
+            fixtures.mkdir()
+            import hashlib
+            digest = hashlib.sha256(app.read_bytes()).hexdigest()
+            done = subprocess.run([sys.executable, *flags, '-c', NEGATIVE, str(TEST_DIR / 'native-recovery-crash.py'), str(app), digest,
+                                   str(tmp / 'out'), str(fixtures)], capture_output=True, text=True, env={**os.environ, **env}, timeout=120)
+            result = json.loads((tmp / 'out' / 'result.json').read_text())
+            return done, result
+
+    def test_failed_condition_is_fail_under_normal_and_optimized_python(self):
+        for flags, env in (([], {'PYTHONOPTIMIZE': ''}), (['-O'], {}), (['-OO'], {}), ([], {'PYTHONOPTIMIZE': '1'})):
+            done, result = self.run_main(flags, env)
+            with self.subTest(flags=flags, env=env):
+                self.assertNotEqual(done.returncode, 0, done.stderr)
+                self.assertEqual(result['status'], 'FAIL')
+                self.assertIn('AcceptanceError', result['error'])
+                self.assertEqual([r['status'] for r in result['formats'][0]['steps']], ['FAIL'])
+                self.assertNotIn('status', result['formats'][0])  # the line after the failed step never ran
+                self.assertIn('overall FAIL', done.stdout)
+
+    def test_optimized_interpreter_really_strips_assert(self):
+        done = subprocess.run([sys.executable, '-O', '-c', 'assert False; print("stripped")'], capture_output=True, text=True)
+        self.assertEqual(done.stdout.strip(), 'stripped')
+
+
+class PreviewVerifierOptimized(unittest.TestCase):
+    def test_cfb_integrity_checks_survive_optimization(self):
+        code = ('import importlib.util,sys;s=importlib.util.spec_from_file_location("v",sys.argv[1]);m=importlib.util.module_from_spec(s);'
+                's.loader.exec_module(m)\ntry:\n m.cfb_streams(b"not a cfb container"+bytes(600))\nexcept m.VerificationError as e:\n'
+                ' print("rejected",e);sys.exit(3)\nprint("accepted")')
+        for flags in ([], ['-O']):
+            done = subprocess.run([sys.executable, *flags, '-c', code, str(TEST_DIR / 'verify-hwp-preview.py')], capture_output=True, text=True)
+            self.assertEqual((done.returncode, done.stdout.strip()), (3, 'rejected not CFB'), (flags, done.stderr))
+
+
 if __name__ == '__main__':
     unittest.main()

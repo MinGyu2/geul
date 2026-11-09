@@ -1508,3 +1508,15 @@ HWP 저장 요청은 선택적으로 `preview` 메타(`width`, `height`)와 출�
 **native 재실행.** 교정한 하네스를 같은 격리 X11/IBus launcher로 실행하는 중에 `src-tauri/target/debug/geul`이 dev-URL 바이너리(`cf9755df…`)로 바뀌어 있는 것을 발견했다. 원인은 `e6ebc04` 수용 뒤 실행한 보호 `cargo test`였다(통합 시험이 같은 경로의 bin을 `tauri/custom-protocol` 없이 다시 만든다). 그 실행들은 앱 시작 화면에서 실패했고 저장·복구 단계까지 가지 않았다. `e6ebc04`의 native 결과는 당시 기록된 `46979a30…`로 실행된 것이다. 같은 명령으로 다시 빌드한 앱은 같은 SHA-256 `46979a30706c6358c59ad13f20059b84f3bcddd1564982e7297849c6cebd5959`였고(Release 자산 재검증 통과, WASM 재생성 없음), 하네스는 이제 `--app-sha256` 불일치와 `tauri:`가 아닌 WebView 출처를 시작 전에 거부한다. 최종 실행 `target/t014-native/strengthened-final/result.json`(하네스 `16c6126c…`, 검사 모듈 `13dee69b…`, 소스 `e6ebc04` + 이 작업 트리 변경): **HWP 34/34, HWPX 32/32 PASS**, 정리 뒤 잔존 프로세스 0. 기록 본문·복원 파일 SHA-256은 앞 실행들과 같다(HWP `6d04a1c8…`, HWPX `5e8689aa…`). 실행 중 엔진: generation `342ebaad…`, JS `3e9c1687…`, WASM `03c6ecfd…`, Release — 두 형식·두 실행 모두 독립 엔진과 같음.
 
 남는 한계: generation 근거는 "그 URL의 모듈 인스턴스가 초기화됨"이며, 다른 URL의 모듈을 추가로 초기화한 경우까지 배제하지는 않는다(내장 앱에는 generation 하나만 있고 loader는 한 번만 고른다). 실제 업무·한컴 작성 문서, 저장 중 강제 종료 뒤 임시 파일 native 정리는 여전히 NOT RUN이다. T014 전체 수용은 미완료다.
+
+### 2026-11-09 수용 판정의 `assert` 의존 제거 (T014 하네스)
+
+Python은 `-O`·`PYTHONOPTIMIZE`에서 `assert` 문을 없앤다. 이전 native 하네스의 단계 기록은 `assert value, (...)`로 멈췄으므로, 최적화 인터프리터에서는 FAIL을 기록하고도 다음 단계로 진행해 전체 PASS를 쓸 수 있었다. 교정:
+
+1. `native_recovery_checks.py`에 `AcceptanceError`(형식·단계·관측값·기대 조건)와 `Steps`(PASS/FAIL 기록 뒤 FAIL이면 명시적으로 예외), `require`, `overall`을 두었다. `native-recovery-crash.py`의 단계·Release 자산 확인·실행 중 엔진 탐침·GRR1 기록 판독(magic·헤더 체크섬·본문 해시)·복원 탭 닫기(새 단계 C16)를 모두 명시적 조건과 예외로 바꿨다. `native-new-document.py`의 공유 도우미 중 이 시나리오가 쓰는 `sessions()`·`chooser()`도 명시적 `Failure`로 바꿨다(최적화에서 선택 창이 없는데 경로를 편집기에 입력하는 일을 막음).
+2. `verify-hwp-preview.py`의 CFB·레코드·PNG·GIF 무결성 검사를 `VerificationError`(AssertionError 하위 클래스: 기존 호출자 호환)를 던지는 `require`로 바꿨다. 검사 내용은 같다.
+3. 전체 결과는 더 이상 낙관적으로 `PASS`를 대입하지 않는다. `overall`은 요구 형식마다 시나리오가 끝까지 실행됐고(`status` PASS), 선언된 요구 단계(HWP 35, HWPX 33; HWP 전용 PrvText 두 단계)가 모두 기록됐고, FAIL 단계·기록된 오류·불완전한 프로세스 정리·잔존 프로세스가 하나도 없을 때만 PASS이며, 아니면 FAIL과 문제 목록을 쓰고 종료 코드 1을 돌려준다.
+
+검증: `python3 -m unittest scripts/tests/test_native_recovery_checks.py`, 같은 명령의 `python3 -O`, `PYTHONOPTIMIZE=1` 각각 22 PASS. 새 음성 시험은 실제 `native-recovery-crash.py`의 `main()`을 실행하되 `run_format`을 의도적으로 거짓인 단계 하나로 바꾼다. 일반·`-O`·`-OO`·`PYTHONOPTIMIZE=1` 모두 종료 코드가 0이 아니고, `result.json` 상태가 FAIL이며, 실패 단계 뒤의 줄이 실행되지 않았고, `overall FAIL`을 출력했다. 같은 시험에서 `-O`가 실제로 `assert`를 없앤다는 것도 확인한다. CFB 판독기가 `-O`에서도 CFB가 아닌 입력을 거부하는 것도 확인한다. native 재실행: 같은 앱(`46979a30…`)으로 하네스를 **`python3 -O`로** 실행해 `target/t014-native/assert-free-O/result.json` **HWP 35/35, HWPX 33/33 PASS**, 문제 목록 비어 있음, 정리 뒤 잔존 프로세스 0.
+
+남는 한계: 이번 작업에서 계획한 "실제 저장을 스테이징·소유 기록 뒤, 게시 전에 멈추고 강제 종료한 뒤 재실행 정리" native 수용(T014 A)은 실행하지 않았다(NOT RUN). 그 근거는 지금까지 Rust 저널 단위 시험뿐이다. T014 전체 수용은 미완료다.

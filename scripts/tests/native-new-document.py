@@ -55,7 +55,8 @@ class Acceptance:
 
     def sessions(self):
         result = self.async_js("return await window.__TAURI_INTERNALS__.invoke('document_sessions')")
-        assert result['ok'], result
+        if not result.get('ok'):  # explicit: must hold under python -O as well
+            raise smoke.Failure(f'document_sessions failed: {result!r}')
         return result['value']
 
     def status(self, fmt):
@@ -82,7 +83,8 @@ class Acceptance:
                 windows = result.stdout.split()[-1]
                 break
             time.sleep(.1)
-        assert windows, 'native GTK chooser not visible'
+        if not windows:  # explicit: never type a path into the editor under python -O
+            raise smoke.Failure(f'native GTK chooser not visible: {title}')
         self.command(self.args.xdotool, 'windowfocus', '--sync', windows)
         self.key('ctrl+l', 'ctrl+a')
         self.type(str(path))

@@ -26,7 +26,84 @@ _spec.loader.exec_module(_preview)
 
 
 class CheckError(AssertionError):
-    """A required independent check failed (never converted into a pass or an empty default)."""
+    """A required independent check failed (never converted into a pass or an empty default). Always raised
+    explicitly, never through an `assert` statement, so it survives `python -O`/PYTHONOPTIMIZE."""
+
+
+# ---------------- acceptance accounting (independent of `assert`) ----------------
+
+class AcceptanceError(Exception):
+    """A required native acceptance step failed. Carries the format, step, observed value and expected
+    condition. Raised explicitly, so optimized interpreters (`-O`, PYTHONOPTIMIZE) cannot skip it."""
+
+    def __init__(self, fmt, step, observed=None, expected='condition holds'):
+        self.format, self.step, self.observed, self.expected = fmt, step, observed, expected
+        text = repr(observed)
+        super().__init__(f'[{fmt}] {step}: expected {expected}; observed {text[:2000]}')
+
+
+def require(ok, fmt, step, observed=None, expected='condition holds'):
+    """An unrecorded required condition (setup, helper results)."""
+    if not ok:
+        raise AcceptanceError(fmt, step, observed, expected)
+    return observed
+
+
+class Steps:
+    """Records each required step as PASS or FAIL and stops the scenario at the first FAIL."""
+
+    def __init__(self, entry, fmt):
+        self.entry, self.format = entry, fmt
+        entry.setdefault('steps', [])
+
+    def __call__(self, name, ok, detail=None, expected='condition holds'):
+        passed = bool(ok)
+        row = {'step': name, 'status': 'PASS' if passed else 'FAIL'}
+        if detail is not None:
+            row['detail'] = detail
+        if not passed:
+            row['expected'] = expected
+        self.entry['steps'].append(row)
+        if not passed:
+            raise AcceptanceError(self.format, name, detail, expected)
+        return detail
+
+
+def overall(report, required):
+    """('PASS' | 'FAIL', problems). PASS only when every required format ran to its end (`status` PASS), every
+    required step of that format is recorded exactly as PASS, no step anywhere is FAIL, no error was recorded
+    and every process teardown completed without survivors. `required` maps format -> required step names."""
+    problems = []
+    if report.get('error'):
+        problems.append(f'error recorded: {report["error"]}')
+    entries = {}
+    for entry in report.get('formats', []):
+        if entry.get('format') in entries:
+            problems.append(f'format {entry.get("format")} recorded twice')
+        entries[entry.get('format')] = entry
+    for fmt, names in required.items():
+        entry = entries.get(fmt)
+        if entry is None:
+            problems.append(f'{fmt}: not run')
+            continue
+        if entry.get('status') != 'PASS':
+            problems.append(f'{fmt}: scenario did not complete (status {entry.get("status")!r})')
+        recorded = {}
+        for row in entry.get('steps', []):
+            recorded.setdefault(row.get('step'), []).append(row.get('status'))
+        for name in names:
+            if name not in recorded:
+                problems.append(f'{fmt}: required step not executed: {name}')
+        if not names:
+            problems.append(f'{fmt}: no required steps declared')
+    for entry in report.get('formats', []):
+        for row in entry.get('steps', []):
+            if row.get('status') != 'PASS':
+                problems.append(f'{entry.get("format")}: step {row.get("step")!r} is {row.get("status")!r}')
+    for at, teardown in enumerate(report.get('teardown', [])):
+        if not teardown.get('complete') or teardown.get('remainingAfterWait') or teardown.get('survivorsAfterSigterm'):
+            problems.append(f'teardown {at} incomplete or left processes')
+    return ('FAIL' if problems else 'PASS'), problems
 
 
 # ---------------- controls ----------------
