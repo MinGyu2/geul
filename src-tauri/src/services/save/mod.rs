@@ -2,6 +2,8 @@
 
 pub mod commands;
 pub mod hwp;
+#[cfg(target_os = "linux")]
+pub mod journal;
 pub mod loss;
 #[cfg(target_os = "linux")]
 mod metadata;

@@ -30,7 +30,14 @@ export type FileDialogText = Pick<FileDialogRequest, "title" | "accept" | "cance
 
 export type RecoveryCheckpointStatus =
   | { sessionId: SessionId; revision: number; kind: "waiting" | "capturing" | "protected" }
-  | { sessionId: SessionId; revision: number; kind: "failed"; error: DocumentError };
+  /** failed: retryable; unsupported: the preservation verdict/platform refuses a protected copy of this revision. */
+  | { sessionId: SessionId; revision: number; kind: "failed" | "unsupported"; error: DocumentError };
+
+/** Readiness fields both engines expose for checkpoint scheduling. */
+interface CheckpointView { loaded: boolean; composing: boolean; pending: boolean; saving: boolean; revision: number; loadGeneration: number }
+
+/** Errors meaning this revision cannot be protected safely (not a transient failure). */
+const unsupportedCheckpoint = (error: DocumentError) => error.code === "UnsafeSave" || error.code === "SaveUnsupported";
 
 const CHECKPOINT_DEBOUNCE_MS = 2000;
 
@@ -373,10 +380,10 @@ export class DocumentWorkspace {
   /** Explicit retry of a failed revision; automatic retry waits for a newer settled revision. */
   retryRecoveryCheckpoint(sessionId: SessionId): Promise<Result<SaveOutcome> | null> {
     const editor = this.editors.get(sessionId);
-    if (!editor || !(editor instanceof DocxEditorSession) || !this.recoveryPort) return Promise.resolve(null);
+    if (!editor || !this.recoveryPort) return Promise.resolve(null);
     this.cancelCheckpointTimer(sessionId);
     const info = this.sessions.get(sessionId);
-    const snapshot = editor.snapshot();
+    const snapshot = this.checkpointView(editor);
     if (!info?.dirty || !this.checkpointReady(snapshot)) return Promise.resolve(null);
     return this.captureCheckpoint(sessionId, editor, snapshot.revision);
   }
@@ -414,10 +421,11 @@ export class DocumentWorkspace {
       else return null;
       editor.setClosing(this.windowClosing);
       this.editors.set(sessionId, editor);
-      if (editor instanceof DocxEditorSession && this.recoveryPort) {
-        const docxEditor = editor;
-        this.editorUnsubscribers.set(sessionId, docxEditor.subscribe(() => this.observeCheckpoint(sessionId, docxEditor)));
-        this.observeCheckpoint(sessionId, docxEditor);
+      // DOCX and (T014 B) HWP/HWPX: automatic checkpoints of dirty file-backed sessions.
+      if (this.recoveryPort) {
+        const owned = editor;
+        this.editorUnsubscribers.set(sessionId, owned.subscribe(() => this.observeCheckpoint(sessionId, owned)));
+        this.observeCheckpoint(sessionId, owned);
       }
     }
     return editor;
@@ -456,8 +464,13 @@ export class DocumentWorkspace {
     return (this.sessions.get(sessionId)?.dirty ?? false) || (this.editors.get(sessionId)?.hasUnpreservedChanges ?? false);
   }
 
-  private checkpointReady(snapshot: ReturnType<DocxEditorSession["snapshot"]>): boolean {
+  private checkpointReady(snapshot: CheckpointView): boolean {
     return snapshot.loaded && !snapshot.composing && !snapshot.pending && !snapshot.saving;
+  }
+
+  /** RHWP uses a WASM-free view (it runs on every model change); DOCX keeps its command snapshot. */
+  private checkpointView(editor: EngineEditor): CheckpointView {
+    return editor instanceof RhwpEditorSession ? editor.checkpointState() : editor.snapshot();
   }
 
   private setCheckpointStatus(status: RecoveryCheckpointStatus | null, sessionId?: SessionId) {
@@ -482,10 +495,10 @@ export class DocumentWorkspace {
     this.checkpointTimers.delete(sessionId);
   }
 
-  private observeCheckpoint(sessionId: SessionId, editor: DocxEditorSession) {
+  private observeCheckpoint(sessionId: SessionId, editor: EngineEditor) {
     if (!this.recoveryPort || this.editors.get(sessionId) !== editor) return;
     const info = this.sessions.get(sessionId);
-    const snapshot = editor.snapshot();
+    const snapshot = this.checkpointView(editor);
     const status = this.checkpointStates.get(sessionId);
     if (!info?.dirty) {
       this.cancelCheckpointTimer(sessionId);
@@ -509,17 +522,17 @@ export class DocumentWorkspace {
   }
 
   /** Serialize background exports across tabs; queued work rechecks ownership and IME before capturing. */
-  private captureCheckpoint(sessionId: SessionId, editor: DocxEditorSession, revision: number): Promise<Result<SaveOutcome> | null> {
+  private captureCheckpoint(sessionId: SessionId, editor: EngineEditor, revision: number): Promise<Result<SaveOutcome> | null> {
     const run = () => this.captureCheckpointNow(sessionId, editor, revision);
     const job = this.checkpointLane.then(run, run);
     this.checkpointLane = job;
     return job;
   }
 
-  private async captureCheckpointNow(sessionId: SessionId, editor: DocxEditorSession, revision: number): Promise<Result<SaveOutcome> | null> {
+  private async captureCheckpointNow(sessionId: SessionId, editor: EngineEditor, revision: number): Promise<Result<SaveOutcome> | null> {
     if (!this.recoveryPort || this.editors.get(sessionId) !== editor || this.checkpointJobs.has(sessionId)) return null;
     const info = this.sessions.get(sessionId);
-    const snapshot = editor.snapshot();
+    const snapshot = this.checkpointView(editor);
     if (!info?.dirty || snapshot.revision !== revision || !this.checkpointReady(snapshot)) {
       this.observeCheckpoint(sessionId, editor);
       return null;
@@ -529,24 +542,24 @@ export class DocumentWorkspace {
     this.setCheckpointStatus({ sessionId, revision, kind: "capturing" });
     let result: Result<SaveOutcome>;
     try {
-      result = await editor.checkpoint();
+      result = await (editor instanceof RhwpEditorSession ? editor.checkpoint(revision) : editor.checkpoint());
     } catch {
       result = { ok: false, error: { code: "Protocol" } };
     }
     if (this.checkpointJobs.get(sessionId) === revision) this.checkpointJobs.delete(sessionId);
     if (this.editors.get(sessionId) !== editor) return result;
     const currentInfo = this.sessions.get(sessionId);
-    const current = editor.snapshot();
+    const current = this.checkpointView(editor);
     const protectedResult = result.ok && result.value.durable
       && result.value.session.sessionId === sessionId
       && result.value.session.loadGeneration === snapshot.loadGeneration
       && result.value.session.revision === revision;
+    const error: DocumentError = result.ok ? { code: "Protocol" } : result.error;
     if (protectedResult) this.setCheckpointStatus({ sessionId, revision, kind: "protected" });
+    // DOCX keeps its existing failed/retry presentation; RHWP distinguishes a refused (unsafe) revision.
     else this.setCheckpointStatus({
-      sessionId,
-      revision,
-      kind: "failed",
-      error: result.ok ? { code: "Protocol" } : result.error,
+      sessionId, revision, error,
+      kind: editor instanceof RhwpEditorSession && unsupportedCheckpoint(error) ? "unsupported" : "failed",
     });
     if (!currentInfo?.dirty) this.setCheckpointStatus(null, sessionId);
     else if (current.revision !== revision) this.observeCheckpoint(sessionId, editor);

@@ -31,11 +31,21 @@ pub fn run() {
                 }
             }
 
-            let root = app
-                .path()
-                .app_local_data_dir()
-                .map(|p| p.join("recovery"))
-                .unwrap_or_default();
+            let data = app.path().app_local_data_dir().ok();
+            // T014 A: staging ownership journal in the same private app-data area, then one bounded
+            // background pass that removes only staging files proven to be abandoned by an earlier
+            // geul save (services/save/journal.rs). Saving never waits for it.
+            #[cfg(target_os = "linux")]
+            if let Some(journal) = data.as_ref().map(|p| p.join("save-journal")) {
+                services::save::journal::configure(journal);
+                std::thread::Builder::new()
+                    .name("geul-save-cleanup".into())
+                    .spawn(|| {
+                        let _ = services::save::journal::cleanup();
+                    })
+                    .ok();
+            }
+            let root = data.map(|p| p.join("recovery")).unwrap_or_default();
             app.manage(std::sync::Arc::new(services::recovery::RecoveryStore::new(
                 root,
             )));
@@ -71,6 +81,7 @@ pub fn run() {
             services::save::commands::document_original,
             services::save::commands::document_preflight,
             services::save::commands::document_save,
+            services::save::commands::document_checkpoint,
         ])
         .run(tauri::generate_context!())
         .expect("Tauri 애플리케이션을 시작하지 못했습니다");

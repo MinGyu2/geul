@@ -6,6 +6,7 @@
 //! - `document_preflight`·`document_save`: 원시 요청 본문 프레임(`frame`). 백엔드가 받는 것은 세션·시도·판, 엔진 손실
 //!   보고, (저장은) 다시 열기 비교 결과, 엔진 출력 바이트뿐이다. 쓰는 곳은 세션에 기록한 원본 경로 하나다(경로를 받지
 //!   않고 원본 형식으로만 쓴다).
+//! - `document_checkpoint`(T014 B): 같은 프레임·근거로 저장과 같은 검사를 한 뒤 비공개 복구 기록만 만든다(원본·dirty 불변).
 //! - WordCraft 세션은 거부한다(`InvalidRequest`, 그 저장은 `docx_preflight`·`docx_save`).
 
 use serde_json::Value;
@@ -298,6 +299,46 @@ pub async fn document_save_as(
                 equal,
                 service::SaveOptions {
                     destination: Some(std::path::Path::new(&destination)),
+                    recovery: Some(&store),
+                    preview: preview.as_ref(),
+                },
+            )
+        })
+        .await
+}
+
+/// Recovery checkpoint of the RHWP model (T014 B). Same frame and evidence as `document_save` (engine
+/// output, loss report, reopen comparison, optional HWP preview raster), validated exactly like a save of
+/// that output, but written only as a private create-only recovery record: the original file and the
+/// session's dirty/clean state are never changed (`service::checkpoint`).
+#[tauri::command]
+pub async fn document_checkpoint(
+    state: State<'_, DocumentState>,
+    request: Request<'_>,
+    store: State<'_, std::sync::Arc<crate::services::recovery::RecoveryStore>>,
+) -> Result<SaveOutcome, DocumentError> {
+    let (frame, admission) = admitted_frame(raw(request.body())?, &state)?;
+    state.frontend_model(frame.session_id)?;
+    let meta =
+        save_meta(&frame.meta, &["contentLoss", "reopen"]).ok_or(DocumentError::InvalidRequest)?;
+    let report = meta.get("contentLoss").cloned().unwrap_or(Value::Null);
+    let equal = meta.get("reopen").is_some_and(reopen_equal);
+    let (output, preview) = split_preview(meta, frame.payload)?;
+    let registry = state.registry().clone();
+    let limits = state.limits();
+    let store = store.inner().clone();
+    state
+        .run_admitted(admission, move || {
+            let ticket = registry.begin_save(frame.session_id, frame.generation, frame.revision)?;
+            service::checkpoint(
+                &registry,
+                &ticket,
+                &limits,
+                &output,
+                Some(&report),
+                equal,
+                service::SaveOptions {
+                    destination: None,
                     recovery: Some(&store),
                     preview: preview.as_ref(),
                 },

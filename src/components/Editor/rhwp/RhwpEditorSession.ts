@@ -1399,7 +1399,7 @@ export class RhwpEditorSession implements DocumentCommandTarget {
    * 원본 형식으로 내보내고 다시 열어 비교한다(roundTrip·저장이 함께 씀). bytes·contentLoss(손실 보고 JSON 값, 읽지 못하면
    * null)는 내보내기에 성공했을 때만. reopen은 다시 열어 비교한 네 값이다.
    */
-  private exportAndCompare(format: "hwp" | "hwpx", publishing = false): {
+  private exportAndCompare(format: "hwp" | "hwpx", mode: "roundTrip" | "publish" | "checkpoint" = "roundTrip"): {
     report: RoundTripReport;
     bytes: Uint8Array | null;
     contentLoss: unknown;
@@ -1411,6 +1411,10 @@ export class RhwpEditorSession implements DocumentCommandTarget {
     const doc = this.doc;
     const module = this.module;
     if (!doc || !module) return null;
+    // publish: Save/Save As (char-shape publication lease). checkpoint (T014 B): the same strict output and
+    // HWP preview evidence, but no publication lease — a recovery record never becomes the published source.
+    const publishing = mode === "publish";
+    const strict = mode !== "roundTrip";
     let output: Uint8Array | null = null;
     let contentLoss: unknown = null;
     let charShapeCount: number | null = null;
@@ -1462,16 +1466,16 @@ export class RhwpEditorSession implements DocumentCommandTarget {
       if (publishing) releaseShapes = this.text?.protectPublishingCharShapes(charShapeCount, reopened);
       // HWP: page 1 of the reopened raw export — the same bytes the service validates — for
       // PrvImage regeneration. Failure only omits the raster (stale previews stay refused).
-      if (publishing && format === "hwp") preview = capturePreviewRaster(reopened);
+      if (strict && format === "hwp") preview = capturePreviewRaster(reopened);
       report.failure = null;
     } catch {
       // report.failure가 실패한 단계를 가리킨다.
-      if (publishing) output = null;
+      if (strict) output = null;
     } finally {
       try { reopened?.free(); } catch (error) {
         report.failure = "reopen";
         this.saveCleanupFailed(error, this.epoch);
-        if (publishing) output = null;
+        if (strict) output = null;
       }
     }
     report.passed = report.failure === null && report.lossValid && report.lossCount === 0 && report.formatEqual
@@ -1807,6 +1811,11 @@ export class RhwpEditorSession implements DocumentCommandTarget {
       return { ok: false, error };
     };
     const epoch = this.epoch;
+    // A recovery checkpoint holds the backend save slot briefly; an explicit save waits for it, then rechecks.
+    if (this.recoveryJob) {
+      await this.recoveryJob.catch(() => undefined);
+      if (!this.owns(epoch)) return { ok: false, error: { code: "StaleSession", sessionId: this.sessionId } };
+    }
     if (this.saving) return { ok: false, error: { code: "SaveInProgress", sessionId: this.sessionId } };
     const blocker = this.saveBlocker();
     if (blocker) return fail(blocker);
@@ -1830,7 +1839,7 @@ export class RhwpEditorSession implements DocumentCommandTarget {
       if (later) return fail(later);
       const revision = this.committed;
       this.setSave({ kind: "saving" });
-      const exported = this.exportAndCompare(format, true);
+      const exported = this.exportAndCompare(format, "publish");
       releaseShapes = exported?.releaseShapes;
       if (!exported?.bytes) return fail({ code: "SaveFailure", stage: "export" });
       let result: Result<SaveOutcome>;
@@ -1872,6 +1881,85 @@ export class RhwpEditorSession implements DocumentCommandTarget {
       catch (error) { this.notifyAfterSaveResult(() => this.saveCleanupFailed(error, epoch)); }
       finally { this.saving = false; }
     }
+  }
+
+  // ---- 복구 체크포인트(T014 B) ----
+
+  private recoveryJob: Promise<Result<SaveOutcome>> | null = null;
+
+  /** Cheap readiness view for checkpoint scheduling (no WASM calls; runs on every model change). */
+  checkpointState(): { loaded: boolean; composing: boolean; pending: boolean; saving: boolean; revision: number; loadGeneration: number } {
+    return {
+      loaded: this.status.kind === "ready" && this.doc !== null && !this.closing && !this.disposed && !this.uncertain,
+      composing: this.imeUnsettled,
+      // pending counts every uncommitted change until its commit response arrives. The post-commit emit runs
+      // while the commit loop is still unwinding (committingEpoch), so that flag is not used for scheduling;
+      // runCheckpoint rechecks the full saveBlocker when the job actually starts.
+      pending: this.pending > 0,
+      saving: this.saving,
+      revision: this.committed,
+      loadGeneration: this.generation,
+    };
+  }
+
+  /**
+   * Durable private recovery record of the committed revision `revision` (T014 B). Same preconditions,
+   * preflight, strict export/reopen evidence and HWP preview raster as Save, but the backend only validates
+   * and writes a create-only recovery record: no save state, dirty flag, published char-shape lease,
+   * session path or original file changes here. Rechecks ownership/IME/pending/revision after every await.
+   */
+  checkpoint(revision: number = this.committed): Promise<Result<SaveOutcome>> {
+    if (this.recoveryJob) return this.recoveryJob;
+    const job = this.runCheckpoint(revision).finally(() => {
+      if (this.recoveryJob === job) this.recoveryJob = null;
+    });
+    this.recoveryJob = job;
+    return job;
+  }
+
+  private async runCheckpoint(revision: number): Promise<Result<SaveOutcome>> {
+    const epoch = this.epoch;
+    const generation = this.generation;
+    const stale: Result<SaveOutcome> = { ok: false, error: { code: "StaleSession", sessionId: this.sessionId } };
+    const owned = () => this.owns(epoch) && this.generation === generation;
+    const blocker = (): DocumentError | null => {
+      if (this.saving) return { code: "SaveInProgress", sessionId: this.sessionId };
+      const blocked = this.saveBlocker();
+      if (blocked) return blocked;
+      if (this.committed !== revision) return { code: "RevisionMismatch", sessionId: this.sessionId, revision: this.committed };
+      return null;
+    };
+    const checkpoint = this.backend.checkpoint;
+    if (!checkpoint) return { ok: false, error: { code: "Protocol" } };
+    const format = this.sessions.get(this.sessionId)?.format;
+    if (format !== "hwp" && format !== "hwpx") return { ok: false, error: { code: "SaveNotReady", reason: "state" } };
+    const first = blocker();
+    if (first) return { ok: false, error: first };
+    let check = this.saveCheck?.generation === generation ? this.saveCheck.check : null;
+    if (!check) {
+      // Current serial: a newer user check, save, reload or close invalidates (and does not adopt) this result.
+      const checked = await this.preflight(this.checkSerial);
+      if (!owned()) return stale;
+      if (!checked.ok) return checked;
+      check = checked.value;
+    }
+    const unsafe = blockedBy(check);
+    if (unsafe) return { ok: false, error: unsafe };
+    const later = blocker();
+    if (later) return { ok: false, error: later };
+    const exported = this.exportAndCompare(format, "checkpoint");
+    if (!owned()) return stale;
+    if (!exported?.bytes) return { ok: false, error: { code: "SaveFailure", stage: "export" } };
+    let result: Result<SaveOutcome>;
+    try {
+      result = await checkpoint.call(this.backend, this.sessionId, generation, revision, exported.bytes, exported.contentLoss, exported.reopen, exported.preview);
+    } catch (error) {
+      this.saveTransportErrors.push(error);
+      result = { ok: false, error: { code: "Protocol" } };
+    }
+    // A late response never belongs to a reloaded or closed model.
+    if (!owned()) return stale;
+    return result;
   }
 
   /** 커서 위치를 짧은 문자열로(진단 표시용). 예: "0:3:5", 셀이면 "0:2:1@0/3/0". */

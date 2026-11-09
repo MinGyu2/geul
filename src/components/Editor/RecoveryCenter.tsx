@@ -19,8 +19,8 @@ function candidateLabel(candidate: RecoveryCandidate, stale: boolean, t: Transla
 }
 
 function checkpointText(status: RecoveryCheckpointStatus, t: Translate, format: (message: Message) => string, errorMessage: (error: DocumentError) => Message) {
-  if (status.kind === "failed") {
-    return `${t("recovery.checkpoint.failed", { revision: status.revision })} ${format(errorMessage(status.error))}`;
+  if (status.kind === "failed" || status.kind === "unsupported") {
+    return `${t(`recovery.checkpoint.${status.kind}`, { revision: status.revision })} ${format(errorMessage(status.error))}`;
   }
   return t(`recovery.checkpoint.${status.kind}` as MessageKey, { revision: status.revision });
 }

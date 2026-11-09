@@ -297,6 +297,92 @@ fn validate_evidence(
     Ok(())
 }
 
+/// The validated bytes a save or a recovery checkpoint may write: source identity re-read, preflight and
+/// engine evidence, HWP preview regeneration (only PrvText/PrvImage, `hwp::refresh_previews`) and the full
+/// saved-output validator. Returns the original bytes and, for HWP, the preview-refreshed output (`None`
+/// = the engine output itself is final).
+fn validated_output(
+    ticket: &SaveTicket<'_>,
+    limits: &Limits,
+    output: &[u8],
+    report: Option<&Value>,
+    reopen_equal: bool,
+    preview: Option<&super::preview::PreviewRaster>,
+) -> Result<(Vec<u8>, Option<Vec<u8>>), DocumentError> {
+    // Establish source identity and eligibility before expensive normalization.
+    // Normalize only the preview, never body/metadata, before the final validator.
+    // Preflight, source identity, loss/reopen/reference checks and publication are
+    // still mandatory. Unsupported previews leave the raw export rejected.
+    if output.len() as u64 > limits.max_file_bytes {
+        return Err(DocumentError::ResourceLimit {
+            limit: crate::document::LimitKind::FileSize,
+        });
+    }
+    let source = read_original(&ticket.source, limits)?;
+    validate_evidence(ticket, report, reopen_equal)?;
+    let refreshed = if ticket.source.load.format == Format::Hwp {
+        hwp::refresh_previews(&source, output, preview)?
+    } else {
+        hwp::RefreshedPreviews::default()
+    };
+    let original = validate_snapshot_from(
+        ticket,
+        limits,
+        refreshed.output.as_deref().unwrap_or(output),
+        report,
+        reopen_equal,
+        source,
+        refreshed.image.as_deref(),
+    )?;
+    Ok((original, refreshed.output))
+}
+
+/// Recovery checkpoint of an RHWP (HWP/HWPX) session (T014 B): the same validation as an explicit save of
+/// the same output to the original (`validated_output`, including HWP preview regeneration), then a
+/// create-only private recovery record. Never stages or publishes a document file, never calls
+/// `finish_save`: the source file, dirty state, clean revision, path and preflight stay unchanged. A
+/// record that was not durably confirmed is an error (the previous durable checkpoint is retained).
+/// `options` must name the recovery store and no destination.
+pub fn checkpoint(
+    registry: &SessionRegistry,
+    ticket: &SaveTicket<'_>,
+    limits: &Limits,
+    output: &[u8],
+    report: Option<&Value>,
+    reopen_equal: bool,
+    options: SaveOptions<'_>,
+) -> Result<SaveOutcome, DocumentError> {
+    let (Some(store), None) = (options.recovery, options.destination) else {
+        return Err(DocumentError::InvalidRequest);
+    };
+    let preview = options.preview;
+    if !matches!(ticket.source.load.format, Format::Hwp | Format::Hwpx) {
+        return Err(DocumentError::InvalidRequest);
+    }
+    // Session state as of the ticket: edits may still be committed while the checkpoint runs, but the
+    // record and this response describe the ticket's revision (the one the frontend exported).
+    let mut session = registry.get(ticket.session_id)?;
+    if session.revision != ticket.revision {
+        session.revision = ticket.revision;
+        session.dirty = true; // a newer committed revision exists, so the ticket's revision is unsaved too
+    }
+    let (original, refreshed) =
+        validated_output(ticket, limits, output, report, reopen_equal, preview)?;
+    let output = refreshed.as_deref().unwrap_or(output);
+    crate::document::resources::active()?;
+    store.snapshot(
+        ticket,
+        &original,
+        ticket.source.load.identity.path(),
+        output,
+    )?;
+    Ok(SaveOutcome {
+        session,
+        bytes: output.len(),
+        durable: true,
+    })
+}
+
 pub struct SaveOptions<'a> {
     pub destination: Option<&'a std::path::Path>,
     pub recovery: Option<&'a crate::services::recovery::RecoveryStore>,
@@ -315,32 +401,15 @@ pub fn save_with_options(
     options: SaveOptions<'_>,
 ) -> Result<SaveOutcome, DocumentError> {
     let destination = options.destination;
-    // Establish source identity and eligibility before expensive normalization.
-    // Normalize only the preview, never body/metadata, before the final validator.
-    // Preflight, source identity, loss/reopen/reference checks and publication are
-    // still mandatory. Unsupported previews leave the raw export rejected.
-    if output.len() as u64 > limits.max_file_bytes {
-        return Err(DocumentError::ResourceLimit {
-            limit: crate::document::LimitKind::FileSize,
-        });
-    }
-    let source = read_original(&ticket.source, limits)?;
-    validate_evidence(ticket, report, reopen_equal)?;
-    let refreshed = if ticket.source.load.format == Format::Hwp {
-        hwp::refresh_previews(&source, output, options.preview)?
-    } else {
-        hwp::RefreshedPreviews::default()
-    };
-    let output = refreshed.output.as_deref().unwrap_or(output);
-    let original = validate_snapshot_from(
+    let (original, refreshed) = validated_output(
         ticket,
         limits,
         output,
         report,
         reopen_equal,
-        source,
-        refreshed.image.as_deref(),
+        options.preview,
     )?;
+    let output = refreshed.as_deref().unwrap_or(output);
     let format = ticket.source.load.format;
     crate::document::resources::active()?;
     let original_target = ticket.source.load.identity.path();

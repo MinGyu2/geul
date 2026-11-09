@@ -696,6 +696,7 @@ Windows/macOS 네이티브 대화상자와 저장은 미지원/미검증이며, 
 체크포인트는 `finish_save`를 호출하지 않고 dirty/원본/revision을 바꾸지 않는다. UI는 대기/진행/보호한 판/실패를
 구분한다. 저장 중 추가 편집도 가드 해제 후 다시 예약한다. RHWP 미저장 WASM 모델 복구는 미지원이며,
 모든 형식의 중단된 저장은 정상 저장 검사가 통과해 별도 복구 기록까지 게시한 경우에만 복구할 수 있다.
+(2026-11-09: RHWP 미지원과 잔여 임시 파일 미정리 서술은 아래 [T014 A/B](#2026-11-09-t014-a-중단된-저장의-임시-파일-정리와-b-hwphwpx-자동-복구) 기록으로 대체된다. 이 단락은 당시 상태 기록으로 남긴다.)
 
 검증: 현재 보호 빌드의 서비스101PASS/12ignored(별도 child helper 포함), strict clippy(lib/bins) 통과.
 실제 자식 프로세스를 저장 AFTER_STAGE에서 SIGKILL하고 새 Store 인스턴스로 편집 DOCX 후보를 탐지·복원했다.
@@ -1424,3 +1425,33 @@ HWP 저장 요청은 선택적으로 `preview` 메타(`width`, `height`)와 출�
 가짜 빈 페이지를 허용하지 않도록 첫 문단 classifier는 “표시 text가 없다”만으로 blank를 판정하지 않는다. 특히 export가 원본의 알 수 없는 구조를 버릴 수 있으므로, uniform blank regeneration은 export 이전 원본 첫 문단이 알려진 구조임도 확인한다. 이 검사는 원본의 정상 UTF-16 텍스트(유효한 surrogate pair 포함)를 사용자가 지우는 것을 막지 않지만, lone surrogate 및 알 수 없는 직접·중첩 record의 삭제로 unknown 구조를 세탁하는 경우는 fail-closed 처리한다. `blank_paragraph_text` / `first_paragraph_visible`는 알려진 paragraph metadata, record nesting, control header/ownership, UTF-16 text 및 허용된 control 구조를 bounded하게 확인한다. 알 수 없는 직접·중첩 record, 예기치 않은 nesting, 잘못된 control header/metadata, 잘못된 UTF-16 또는 잘린 extended control, 알 수 없는 control parameter, misplaced page-definition 및 text/control ownership 불일치는 blank 증명 실패로 처리한다. 유효한 실제 빈 문단, 허용된 비도화 metadata 및 지원된 section/column control만 통과 경계다. `6afc29560f13e270668b737e359bc52cd408cf7f`의 이전 분류 probe는 27 negative/3 positive 사례를 확인했다. 최종 원본-구조 사전 검사는 `8bf22c1e8b042458a2e7087ad5cc879f479c7b22`에 커밋됐으며 permanent Rust/service regression은 export 중 사라지는 original direct/nested unknown records, valid BMP/emoji, lone high/low surrogate 및 refusal 시 원본·dirty/revision·recovery ownership을 확인한다.
 
 이 classifier는 한 색 `PrvImage`를 저장 가능한 것으로 취급하는 유일한 근거가 아니다. HWP blank save는 기존 재열기 draw-list `blankPage` 근거와 이 backend first-paragraph 근거가 모두 있어야 한다. Preview 재생성의 canonical PNG/저장 결속 검사, 두 스트림 외 CFB 동일성, `PreviewStale` 거부 및 T009 strict preflight/publication/revision/recovery 정책은 그대로 유지된다. 실제 native positive chains는 [최종 수용 기록](stage567-acceptance-2026-11-05.md#wordcraft-rust-hwp-final-20261109)에 있다. Classifier의 malformed/unknown refusal 근거는 direct Rust/backend/service 회귀다. 별도로 실제 native app에서 export 중 사라지는 unknown-record fixture 하나를 저장 거부시켰으며, 모든 malformed 변형을 GUI에서 저장 거부시킨 결과로 확대 해석하지 않는다.
+
+
+## 2026-11-09 T014 A: 중단된 저장의 임시 파일 정리와 B: HWP/HWPX 자동 복구
+
+기준 `de6093f`. T014 전체 수용(강제 실패·외부 변경·정전·다른 OS 행렬)은 이 기록으로 완료하지 않는다.
+
+### A. 소유가 증명된 잔여 `.geul-save-*.tmp`만 정리 (`services/save/journal.rs`)
+
+- 이름 규칙(`.geul-save-*.tmp`)·PID·경과 시간은 소유 근거가 아니다. 근거는 앱 로컬 데이터 `save-journal/`(복구 저장소와 같은 정책: 절대 경로, 뿌리부터 신뢰 디렉터리, 이 사용자 소유, `0700`)의 기록 하나다. 저장(`stage`·`stage_new`의 앵커 포함)은 임시 파일을 `O_CREAT|O_EXCL`로 만들기 **전에** `<id>.new`를 배타 생성·`flock(LOCK_EX)`·의도 줄(문서 디렉터리 경로·dev/ino·정확한 임시 이름, 줄마다 SHA-256)을 쓴 뒤 `renameat2(NOREPLACE)`로 `<id>.save`로 보이게 한다. 만들기에 성공한 뒤에만 그 inode(dev/ino) 줄을 덧붙이고 파일·디렉터리 `fsync`를 한 다음 문서 바이트를 쓴다. 따라서 기록은 geul이 만들지 않은 inode를 주장할 수 없다.
+- 기록의 잠금은 저장이 끝날 때까지 쥐며 프로세스가 어떻게 끝나든 커널이 푼다. 정리는 `LOCK_NB`로 잠글 수 있는 기록만 다룬다: 이 실행·다른 geul 인스턴스의 진행 중 저장은 건너뛴다(`active`).
+- 정리 조건(모두 만족할 때만 `unlinkat`): 기록 의도·inode 줄 checksum 유효, 기록된 디렉터리를 뿌리부터 심볼릭 링크 없이 다시 열어 dev/ino가 같고 신뢰 디렉터리 정책 통과, 그 핸들 기준 `fstatat(AT_SYMLINK_NOFOLLOW)`로 일반 파일·같은 dev/ino·이 사용자 소유·링크 1, 지우기 직전 같은 검사를 한 번 더. 다른 inode·심볼릭 링크·디렉터리가 그 이름에 있으면 지우지 않고 기록만 은퇴한다. 링크 2 이상·소유자 다름·의도만 있는 기록(만들기 직후 또는 inode 줄 쓰는 중 중단, 찢어진 줄 포함)·손상 기록·디렉터리 없음/이동/교체는 아무것도 지우지 않고 기록을 남긴다(`unverified`).
+- 내구성: 지운 뒤 문서 디렉터리 `fsync`가 성공해야 `removed`로 세고 기록을 은퇴한다. `unlinkat`·`fsync` 실패는 `failed`이며 기록을 남긴다(다음 정리가 이름 없음을 보고 다시 `fsync`한 뒤에만 은퇴). 정상 저장은 교체 뒤 디렉터리 `fsync` 성공 시, 실패한 저장은 Drop의 삭제·`fsync` 성공 시 기록을 은퇴하고, 그렇지 않으면 다음 정리가 확인하도록 남긴다.
+- 단계별 중단: 등록 전/중(`.new`만 — 그 이름의 임시 파일은 만들어진 적 없으므로 잠금 해제된 `.new`만 지운다), 만든 직후·inode 줄 전(의도만: 파일 보존), 쓰는 중·fsync 뒤·rename 전(완전한 기록: 정리 가능), rename 뒤(이름 없음: `fsync` 뒤 은퇴), 은퇴 중(다음 정리가 은퇴).
+- 실행: 앱 시작 때 별도 스레드에서 한 번, 기록당 기록된 이름 하나만 본다(문서 디렉터리 순회 없음, 한 번에 기록 512개 상한). 저장은 기다리지 않는다. 기록을 쓸 수 없으면(디렉터리 권한 불일치 등) 저장은 이전과 똑같이 진행하고 그 임시 파일은 정리 대상이 아니다.
+- 남은 한계: 최종 `fstatat`과 `unlinkat` 사이 창은 저장 위협 모델이 이미 믿는 쪽(이 사용자·root)만 이용할 수 있다(`publish.rs`의 교체 창과 같은 성격). 이 기능 이전 실행·다른 프로그램이 남긴 파일, 기록을 쓰지 못한 저장의 파일은 지우지 않으며 모든 과거 잔여 파일을 정리할 수 있다고 주장하지 않는다. `unverified` 기록은 자동 삭제하지 않아 반복 비정상 종료 시 쌓일 수 있다. 정리 결과는 UI에 표시하지 않는다(경로 없는 개수만 반환). Linux 외 플랫폼은 원래 저장 자체가 미지원이다.
+
+### B. HWP/HWPX 미저장 편집 자동 체크포인트
+
+- 새 IPC `document_checkpoint`(`build.rs`·`capabilities/default.json` 명시 허용)는 `document_save`와 같은 원시 프레임(엔진 출력, 손실 보고, 재열기 비교, HWP 미리보기 래스터)을 받고 같은 세션/시도/판 `begin_save` 표를 쓴다. `service::checkpoint`는 저장과 같은 `validated_output`(원본 재읽기·사전 검사 safe·손실/재열기 근거·HWP `refresh_previews`·`check_saved_with_preview` 전체)을 통과한 **최종 바이트**만 `RecoveryStore::snapshot`(create-only·검증·fsync·quota·잠금·판 기준 은퇴)에 쓴다. `stage`/`publish`/`finish_save`를 부르지 않으므로 원본·dirty·clean revision·경로·사전 검사 기록이 바뀌지 않는다. 기록이 내구 확인되지 않으면 오류이며 이전 durable 후보는 그대로다. DOCX 세션은 거부한다.
+- 형식 변환 없음: HWP는 HWP, HWPX는 HWPX로 내보낸다. 원시 WASM 내보내기 성공만으로 보호로 표시하지 않는다(HWP는 저장과 같은 미리보기 재생성·검증을 통과해야 하며, `previewStale` 등 unsafe/unknown 판정은 그대로 거부).
+- 프런트엔드: `RhwpEditorSession.checkpoint(revision)`은 저장과 같은 차단 조건(ready·문서·닫는 중 아님·uncertain 아님·IME 미정착 아님·pending 아님·저장 중 아님)과 확정 판 일치를 시작 시·사전 검사 대기 뒤·내보내기 전에 다시 보고, 응답 뒤 epoch/세대가 바뀌었으면 `StaleSession`이다. 내보내기는 저장의 엄격 모드(실패 시 바이트 폐기, HWP 미리보기 래스터)를 쓰되 글자 모양 게시 lease·`markPublishedCharShapes`·`setSave`·`modified` 변경은 하지 않는다. 진행 중 체크포인트가 있으면 명시 저장은 그것을 기다린 뒤 다시 검사한다. Undo/Redo 활성화 범위는 바꾸지 않았다.
+- `DocumentWorkspace`의 기존 2초 디바운스·탭 간 직렬 lane·시작 시 재검사를 RHWP에도 적용한다. 예약용 상태는 WASM 호출 없는 `checkpointState()`다. UI 상태는 대기/진행/보호한 판/실패(재시도 가능)에 더해 RHWP의 `unsupported`(사전 검사·출력이 unsafe/unknown이거나 플랫폼 미지원 — 자동 재시도·재시도 단추 없음)를 구분한다. DOCX 상태 표시는 그대로다. 보호 표시는 그 판의 durable 응답(세션·시도·판 일치) 뒤에만 한다.
+- 복원은 기존 복구 센터 경로 그대로다(형식별 새 목적지 선택 → `recovery_restore` create-only → 새 세션으로 열어 해당 엔진에 불러오기, 실패 시 `RestoredUnopened`, 후보는 명시적 폐기까지 유지). 원본이 바뀐 뒤에도 유효한 옛 후보는 새 파일로만 복원된다.
+- 남은 한계: 첫 기록 전/마지막 기록 뒤 입력, 미확정 IME는 보호하지 않는다. 사전 검사가 safe가 아닌 문서(알 수 없는 레코드, content-bearing 미리보기 등)는 기록되지 않는다. 내보내기는 주 스레드 WASM 작업이라 큰 문서에서 2초 유휴 뒤 짧은 지연이 생길 수 있다(성능 측정 안 함). 제목 없는/경로 없는 문서(T024)는 범위 밖이다. 실제 Tauri 앱 SIGKILL 재시작 수용은 이 작업에서 실행하지 않았다(NOT RUN).
+
+### 검증 (2026-11-09, 이 작업 트리)
+
+- `GEUL_SANDBOX=userns-root-bwrap npm run -s rust -- test`: lib 360 passed / 0 failed / 24 ignored, 통합 시험 통과(신규 journal 11, rhwp_checkpoint 4 포함). `... rust -- clippy --all-targets -- -D warnings` 0, `... rust -- fmt --check` 0.
+- `npx vitest run`: 74 files / 1279 tests PASS(신규 `src/components/Editor/rhwp/recoveryCheckpoint.test.ts` 17). `npx tsc --noEmit`, `npx eslint .` 통과.
+- NOT RUN: 실제 Tauri 앱의 RHWP 체크포인트→SIGKILL→재시작→복원, 실제 앱 저장 중 SIGKILL 뒤 잔여 임시 파일 정리, 실제 WASM 엔진 HWP/HWPX 체크포인트(백엔드 시험은 합성 HWP/HWPX 컨테이너, 프런트엔드 시험은 가짜 엔진), 정전·파일시스템 고장, Windows/macOS.

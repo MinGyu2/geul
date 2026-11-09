@@ -25,7 +25,8 @@
 //!   디렉터리인지)과 `renameat` 사이에 믿는 쪽 프로세스가 원본을 바꾸면 그 변경은 덮인다. POSIX에는 "이 inode일 때만 바꾸기"가 없어(`renameat2`의
 //!   `RENAME_EXCHANGE`로 바꾼 뒤 확인·되돌리기도 그 사이 읽는 쪽에 새 파일을 보인다) 이 창은 줄일 뿐 없앨 수 없다.
 //! - 실패하면(교체 전) 확인한 디렉터리 안의 임시 파일을 지우고(이름이 아직 그 inode일 때만) 원본은 건드리지 않는다. 프로세스가 중간에 끝나면 `.geul-save-*.tmp`가 남을 수
-//!   있다(원본은 그대로). 남은 임시 파일의 정리·복구는 T014다(다른 파일을 지우는 정리 규칙은 두지 않는다).
+//!   있다(원본은 그대로). T014 A: 임시 파일을 만들기 전에 비공개 소유 기록을 남기고(`journal.rs`), 다음 실행의 정리는 그 기록이
+//!   증명하는 파일만 지운다(이름 규칙만으로는 지우지 않는다; 기록 없는 과거·외부 파일은 그대로 둔다).
 
 use std::ffi::{CStr, CString};
 #[cfg(target_os = "linux")]
@@ -218,6 +219,9 @@ pub struct Staged {
     #[cfg(target_os = "linux")]
     verified: Option<Snapshot>,
     published: bool,
+    /// Ownership record of this staging file (T014 A, `journal.rs`); `None` when journaling is unavailable.
+    #[cfg(target_os = "linux")]
+    journal: Option<super::journal::Entry>,
 }
 
 /// 파일 상태 요약: 장치·inode, 크기, 수정 시각, 상태 변경 시각(ctime), 권한. 쓰기는 수정 시각·ctime을, chmod·chown·
@@ -249,7 +253,12 @@ fn snapshot(metadata: &fs::Metadata) -> Snapshot {
 
 /// 디렉터리 핸들 `dir` 기준으로 `name`을 연다. 마지막 이름이 심볼릭 링크여도 따라가지 않는다(`O_NOFOLLOW`).
 #[cfg(target_os = "linux")]
-fn open_at(dir: &File, name: &CStr, flags: libc::c_int, mode: libc::c_uint) -> io::Result<File> {
+pub(crate) fn open_at(
+    dir: &File,
+    name: &CStr,
+    flags: libc::c_int,
+    mode: libc::c_uint,
+) -> io::Result<File> {
     use std::os::fd::{AsRawFd, FromRawFd};
     // SAFETY: dir는 살아 있는 디렉터리 fd, name은 NUL로 끝나는 이름이다. 성공하면 새 fd 하나를 File이 맡는다.
     let fd = unsafe {
@@ -319,15 +328,100 @@ impl Staged {
 
 impl Drop for Staged {
     fn drop(&mut self) {
+        #[cfg(target_os = "linux")]
+        let journal = self.journal.take();
         if !self.published && self.owns_path() {
             #[cfg(target_os = "linux")]
             {
                 use std::os::fd::AsRawFd;
                 // SAFETY: dir는 살아 있는 디렉터리 fd, name은 NUL로 끝나는 이름이다.
-                let _ = unsafe { libc::unlinkat(self.dir.as_raw_fd(), self.name.as_ptr(), 0) };
+                let removed =
+                    unsafe { libc::unlinkat(self.dir.as_raw_fd(), self.name.as_ptr(), 0) } == 0;
+                // T014 A: forget the ownership record only once the removal is durable; otherwise keep it
+                // (unlocked) so a later cleanup pass can finish or confirm the removal.
+                if let Some(entry) = journal {
+                    if removed && self.dir.sync_all().is_ok() {
+                        entry.retire();
+                    } else {
+                        entry.release();
+                    }
+                }
+            }
+        } else {
+            // Published (the record is retired or kept by `publish`), or the name no longer holds this
+            // file (it was replaced, so nothing of this save is left to clean up under that name).
+            #[cfg(target_os = "linux")]
+            if let Some(entry) = journal {
+                if self.published {
+                    entry.release();
+                } else {
+                    entry.retire();
+                }
             }
         }
     }
+}
+
+impl Staged {
+    /// Test-only crash simulation: leave the staging file and its unlocked ownership record behind, as a
+    /// terminated process would (no cleanup, no retirement).
+    #[cfg(all(test, target_os = "linux"))]
+    pub fn abandon(mut self) {
+        self.published = true;
+        if let Some(entry) = self.journal.take() {
+            entry.release();
+        }
+    }
+}
+
+/// Create a fresh staging file in the verified directory `dir` (path `dir_path`) with `O_CREAT|O_EXCL`
+/// and a random name, registering its ownership record first (T014 A). An existing name (another
+/// save's leftover, a foreign file or link) is never touched; a new random name is tried instead.
+#[cfg(target_os = "linux")]
+fn create_staging(
+    dir: &File,
+    dir_path: &Path,
+) -> Result<(CString, String, File, Option<super::journal::Entry>), DocumentError> {
+    let mut last = io::Error::from(io::ErrorKind::AlreadyExists);
+    for _ in 0..MAX_NAME_ATTEMPTS {
+        let counter = COUNTER.fetch_add(1, Ordering::Relaxed);
+        let mut random = [0u8; NAME_RANDOM_BYTES];
+        fill_random(counter, &mut random).map_err(|error| failure(SaveStage::Write, &error))?;
+        let name = temp_name(counter, &random);
+        let c_name = CString::new(name.as_str()).map_err(|_| DocumentError::Internal)?;
+        let entry = super::journal::register(dir, dir_path, &c_name);
+        // 0600: 호출하는 쪽이 원본 권한으로(umask와 무관하게) 맞춘다.
+        match open_at(
+            dir,
+            &c_name,
+            libc::O_RDWR | libc::O_CREAT | libc::O_EXCL,
+            0o600,
+        ) {
+            Ok(file) => {
+                let entry = entry.and_then(|mut entry| match file.metadata() {
+                    Ok(meta) if entry.created(&meta) => Some(entry),
+                    // Ownership not durably recorded: keep the intent-only record (never authorizes
+                    // deletion) but stage as before.
+                    _ => {
+                        entry.release();
+                        None
+                    }
+                });
+                return Ok((c_name, name, file, entry));
+            }
+            Err(error) => {
+                if let Some(entry) = entry {
+                    entry.retire();
+                }
+                if error.kind() == io::ErrorKind::AlreadyExists {
+                    last = error;
+                    continue;
+                }
+                return Err(failure(SaveStage::Write, &error));
+            }
+        }
+    }
+    Err(failure(SaveStage::Write, &last))
 }
 
 #[cfg(target_os = "linux")]
@@ -357,7 +451,7 @@ fn not_published() -> DocumentError {
 /// 다음 항목의 소유자가 믿는 쪽이어야 한다(sticky 디렉터리에서는 항목 소유자·디렉터리 소유자·root만 그 항목을 바꾼다).
 /// 아니면(또는 ACL을 확인할 수 없으면) `shared-directory`.
 #[cfg(target_os = "linux")]
-fn trusted_directory(
+pub(crate) fn trusted_directory(
     dir: &File,
     meta: &fs::Metadata,
     owner: u32,
@@ -496,34 +590,8 @@ pub fn stage(target: &Path, bytes: &[u8]) -> Result<Staged, DocumentError> {
     }
     // 이름이 이미 있으면(중단된 저장이 남긴 파일, 남이 미리 만든 파일·심볼릭 링크) 그것을 건드리지 않고 새 무작위 이름으로
     // 한다(O_CREAT|O_EXCL: 있는 이름·링크를 따라가지 않는다). 확인한 디렉터리 핸들 기준으로 만든다. 난수를 얻지 못하면 만들지
-    // 않고 실패한다(원본 그대로).
-    let mut created = None;
-    let mut last = io::Error::from(io::ErrorKind::AlreadyExists);
-    for _ in 0..MAX_NAME_ATTEMPTS {
-        let counter = COUNTER.fetch_add(1, Ordering::Relaxed);
-        let mut random = [0u8; NAME_RANDOM_BYTES];
-        fill_random(counter, &mut random).map_err(|error| failure(SaveStage::Write, &error))?;
-        let name = temp_name(counter, &random);
-        let c_name = CString::new(name.as_str()).map_err(|_| DocumentError::Internal)?;
-        // 0600: 아래에서 원본 권한으로(umask와 무관하게) 맞춘다.
-        match open_at(
-            &dir,
-            &c_name,
-            libc::O_RDWR | libc::O_CREAT | libc::O_EXCL,
-            0o600,
-        ) {
-            Ok(file) => {
-                created = Some((c_name, name, file));
-                break;
-            }
-            Err(error) if error.kind() == io::ErrorKind::AlreadyExists => last = error,
-            Err(error) => {
-                last = error;
-                break;
-            }
-        }
-    }
-    let (name, _path_name, file) = created.ok_or_else(|| failure(SaveStage::Write, &last))?;
+    // 않고 실패한다(원본 그대로). 만들기 전에 소유 기록을 남긴다(T014 A, `journal.rs`).
+    let (name, _path_name, file, journal) = create_staging(&dir, dir_path)?;
     let mut staged = Staged {
         dir,
         name,
@@ -532,6 +600,7 @@ pub fn stage(target: &Path, bytes: &[u8]) -> Result<Staged, DocumentError> {
         file,
         verified: None,
         published: false,
+        journal,
     };
     #[cfg(test)]
     if fault() == Some(Fault::AfterCreate) {
@@ -668,6 +737,15 @@ pub fn publish(staged: &mut Staged, target: &Path) -> Result<Published, Document
         });
     }
     let synced = staged.dir.sync_all().is_ok();
+    // T014 A: the staging name is gone once the rename is durable; otherwise a later cleanup pass
+    // confirms the directory state before forgetting the record.
+    if let Some(entry) = staged.journal.take() {
+        if synced {
+            entry.retire();
+        } else {
+            entry.release();
+        }
+    }
     Ok(Published {
         identity,
         fingerprint,
@@ -698,33 +776,7 @@ pub fn stage_new(
     let dir = open_directory(parent, euid)?;
     let held = dir.metadata().map_err(|e| failure(SaveStage::Write, &e))?;
     trusted_directory(&dir, &held, euid, euid)?;
-    let mut made = None;
-    for _ in 0..MAX_NAME_ATTEMPTS {
-        let counter = COUNTER.fetch_add(1, Ordering::Relaxed);
-        let mut random = [0; NAME_RANDOM_BYTES];
-        fill_random(counter, &mut random).map_err(|e| failure(SaveStage::Write, &e))?;
-        let name =
-            CString::new(temp_name(counter, &random)).map_err(|_| DocumentError::Internal)?;
-        match open_at(
-            &dir,
-            &name,
-            libc::O_RDWR | libc::O_CREAT | libc::O_EXCL,
-            0o600,
-        ) {
-            Ok(file) => {
-                made = Some((name, file));
-                break;
-            }
-            Err(e) if e.kind() == io::ErrorKind::AlreadyExists => continue,
-            Err(e) => return Err(failure(SaveStage::Write, &e)),
-        }
-    }
-    let (name, file) = made.ok_or_else(|| {
-        failure(
-            SaveStage::Write,
-            &io::Error::from(io::ErrorKind::AlreadyExists),
-        )
-    })?;
+    let (name, _, file, journal) = create_staging(&dir, parent)?;
     let path = parent.join(name.to_str().map_err(|_| DocumentError::Internal)?);
     let anchor = Staged {
         dir,
@@ -732,6 +784,7 @@ pub fn stage_new(
         file,
         verified: None,
         published: false,
+        journal,
         #[cfg(test)]
         path: path.clone(),
     };
@@ -820,7 +873,15 @@ pub fn publish_new(staged: &mut Staged, target: &Path) -> Result<Published, Docu
     staged.published = true;
     let after = staged.file.metadata().unwrap_or(before);
     let (identity, fingerprint) = describe_published(target, &after);
-    let durable = same_inode(target, &after) && staged.dir.sync_all().is_ok();
+    let synced = staged.dir.sync_all().is_ok();
+    if let Some(entry) = staged.journal.take() {
+        if synced {
+            entry.retire();
+        } else {
+            entry.release();
+        }
+    }
+    let durable = same_inode(target, &after) && synced;
     #[cfg(test)]
     let durable = durable && fault() != Some(Fault::DirSync);
     Ok(Published {

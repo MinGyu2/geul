@@ -12130,3 +12130,419 @@ fn blank_preview_refuses_unknown_original_structure_lost_by_export() {
         assert!(result.output.is_none() && result.image.is_none());
     }
 }
+
+// ---- T014 B: RHWP (HWP/HWPX) recovery checkpoints ----
+
+mod rhwp_checkpoint {
+    use super::*;
+    use crate::services::recovery::{RecoveryFault, RecoveryStore, RECOVERY_FAULT};
+
+    /// A ready RHWP session with a safe recorded preflight and one committed edit (revision 1, dirty).
+    fn prepared(
+        state: &DocumentState,
+        dir: &TempDir,
+        name: &str,
+        original: &[u8],
+        format: Format,
+    ) -> (u64, u64) {
+        let info = rhwp_session(state, dir, name, original);
+        let registry = state.registry();
+        let (id, generation) = (info.session_id, info.load_generation);
+        let source = registry.preflight_source(id, generation).unwrap();
+        let read = service::read_original(&source, &Limits::default()).unwrap();
+        let tag = if format == Format::Hwp { "hwp" } else { "hwpx" };
+        let check = service::preflight(format, &read, original, Some(&report(tag, json!([]))));
+        assert!(check.is_safe(), "{check:?}");
+        registry
+            .record_preflight(id, generation, source.content_hash, check)
+            .unwrap();
+        registry.commit(id, generation, 0, 1).unwrap();
+        (id, generation)
+    }
+
+    fn options(store: &RecoveryStore) -> service::SaveOptions<'_> {
+        service::SaveOptions {
+            destination: None,
+            recovery: Some(store),
+            preview: None,
+        }
+    }
+
+    fn checkpoint(
+        state: &DocumentState,
+        store: &RecoveryStore,
+        (id, generation): (u64, u64),
+        revision: u64,
+        output: &[u8],
+        loss: Value,
+        reopen: bool,
+    ) -> Result<SaveOutcome, DocumentError> {
+        let registry = state.registry();
+        let ticket = registry.begin_save(id, generation, revision)?;
+        service::checkpoint(
+            registry,
+            &ticket,
+            &Limits::default(),
+            output,
+            Some(&loss),
+            reopen,
+            options(store),
+        )
+    }
+
+    fn assert_unchanged(
+        state: &DocumentState,
+        dir: &TempDir,
+        name: &str,
+        original: &[u8],
+        id: u64,
+    ) {
+        assert_eq!(std::fs::read(dir.path().join(name)).unwrap(), original);
+        let info = state.registry().get(id).unwrap();
+        assert!(info.dirty, "checkpoint never clears dirty");
+        // The save slot was released and the recorded preflight is still usable.
+        assert!(state
+            .registry()
+            .preflight_source(id, info.load_generation)
+            .unwrap()
+            .preflight
+            .is_some());
+    }
+
+    #[test]
+    fn hwp_and_hwpx_checkpoints_are_validated_private_records_that_never_touch_the_original() {
+        let extra: [(&str, &[u8]); 1] = [("/BinData/BIN0001.png", b"\x89PNG data")];
+        let hwp_original = hwp_doc(0, &docinfo(0, b"font"), &section("hello"), &extra);
+        let hwp_edited = hwp_doc(0, &docinfo(9, b"font"), &section("hello, edited"), &extra);
+        let hwpx_original = zip(
+            &ref_pkg(&ref_section("0", "0", "0", "0", "0", "0"), REF_HEADER),
+            false,
+        );
+        let hwpx_edited = zip(
+            &ref_pkg(&ref_section("0", "7", "12", "0", "0", "0"), REF_HEADER),
+            false,
+        );
+        for (name, format, original, edited) in [
+            ("a.hwp", Format::Hwp, &hwp_original, &hwp_edited),
+            ("a.hwpx", Format::Hwpx, &hwpx_original, &hwpx_edited),
+        ] {
+            let state = DocumentState::default();
+            let dir = TempDir::new();
+            let store = RecoveryStore::new(dir.path().join("records"));
+            let (id, generation) = prepared(&state, &dir, name, original, format);
+            let tag = if format == Format::Hwp { "hwp" } else { "hwpx" };
+            let outcome = checkpoint(
+                &state,
+                &store,
+                (id, generation),
+                1,
+                edited,
+                report(tag, json!([])),
+                true,
+            )
+            .unwrap();
+            assert!(outcome.durable);
+            assert_eq!(
+                (outcome.session.session_id, outcome.session.revision),
+                (id, 1)
+            );
+            assert!(outcome.session.dirty);
+            assert_unchanged(&state, &dir, name, original, id);
+            let list = store.list().unwrap();
+            assert_eq!(list.len(), 1);
+            assert!(list[0].valid);
+            assert_eq!(list[0].format.as_deref(), Some(tag));
+            assert_eq!(list[0].revision, Some(1));
+            // Restoration is create-only to a new destination of the same format.
+            let restored = dir.path().join(format!("restored.{tag}"));
+            store.restore(&list[0].id, &restored).unwrap();
+            assert_eq!(&std::fs::read(&restored).unwrap(), edited);
+            assert_eq!(
+                crate::document::detect(
+                    &mut std::io::Cursor::new(std::fs::read(&restored).unwrap()),
+                    edited.len() as u64
+                )
+                .unwrap(),
+                format
+            );
+            assert_eq!(
+                store.restore(&list[0].id, &restored).unwrap_err(),
+                DocumentError::FileConflict
+            );
+            assert_eq!(
+                store
+                    .restore(&list[0].id, &dir.path().join(name))
+                    .unwrap_err(),
+                DocumentError::FileConflict
+            );
+            assert_eq!(std::fs::read(dir.path().join(name)).unwrap(), *original);
+            // A checkpoint does not consume or weaken the explicit save that follows.
+            let ticket = state.registry().begin_save(id, generation, 1).unwrap();
+            let saved = service::save_with_options(
+                state.registry(),
+                &ticket,
+                &Limits::default(),
+                edited,
+                Some(&report(tag, json!([]))),
+                true,
+                options(&store),
+            )
+            .unwrap();
+            assert!(!saved.session.dirty);
+            assert_eq!(&std::fs::read(dir.path().join(name)).unwrap(), edited);
+            // A durable save retires the checkpoint of the saved revision.
+            assert!(store.list().unwrap().is_empty());
+        }
+    }
+
+    #[test]
+    fn unsafe_exports_are_rejected_and_the_previous_durable_checkpoint_survives() {
+        let state = DocumentState::default();
+        let dir = TempDir::new();
+        let store = RecoveryStore::new(dir.path().join("records"));
+        let original = zip(
+            &ref_pkg(&ref_section("0", "0", "0", "0", "0", "0"), REF_HEADER),
+            false,
+        );
+        let valid = zip(
+            &ref_pkg(&ref_section("0", "7", "12", "0", "0", "0"), REF_HEADER),
+            false,
+        );
+        let dangling = zip(
+            &ref_pkg(&ref_section("0", "0", "0", "9999", "0", "0"), REF_HEADER),
+            false,
+        );
+        let (id, generation) = prepared(&state, &dir, "a.hwpx", &original, Format::Hwpx);
+        let first = checkpoint(
+            &state,
+            &store,
+            (id, generation),
+            1,
+            &valid,
+            report("hwpx", json!([])),
+            true,
+        );
+        assert!(first.is_ok());
+        let kept = store.list().unwrap();
+        state.registry().commit(id, generation, 1, 1).unwrap();
+        let lost = report(
+            "hwpx",
+            json!([{"code": "binaryContentEmptied", "subject": "binaryData", "path": "BinData/x.png", "reason": "rawPassthroughUnavailable", "resourceId": 1}]),
+        );
+        let hwp_bytes = hwp_doc(0, &docinfo(0, b"font"), &section("x"), &[]);
+        for (output, loss, reopen) in [
+            (&dangling, report("hwpx", json!([])), true),
+            (&valid, lost, true),
+            (&valid, report("hwpx", json!([])), false),
+            (&valid, json!({"schemaVersion": 1}), true),
+            (&hwp_bytes, report("hwpx", json!([])), true),
+        ] {
+            let error =
+                checkpoint(&state, &store, (id, generation), 2, output, loss, reopen).unwrap_err();
+            assert!(
+                matches!(error, DocumentError::UnsafeSave { .. }),
+                "{error:?}"
+            );
+            assert_eq!(store.list().unwrap().len(), 1);
+            assert_eq!(store.list().unwrap()[0].id, kept[0].id);
+        }
+        // Stale revision/generation never captures.
+        assert!(matches!(
+            checkpoint(
+                &state,
+                &store,
+                (id, generation),
+                1,
+                &valid,
+                report("hwpx", json!([])),
+                true
+            ),
+            Err(DocumentError::RevisionMismatch { .. })
+        ));
+        assert!(checkpoint(
+            &state,
+            &store,
+            (id, generation + 1),
+            2,
+            &valid,
+            report("hwpx", json!([])),
+            true
+        )
+        .is_err());
+        // An interrupted later attempt (record name published, directory fsync unconfirmed) is a failure and
+        // keeps the earlier durable checkpoint.
+        RECOVERY_FAULT.with(|f| f.set(Some(RecoveryFault::PublishDirSync)));
+        let interrupted = checkpoint(
+            &state,
+            &store,
+            (id, generation),
+            2,
+            &valid,
+            report("hwpx", json!([])),
+            true,
+        );
+        RECOVERY_FAULT.with(|f| f.set(None));
+        assert!(interrupted.is_err());
+        assert!(store
+            .list()
+            .unwrap()
+            .iter()
+            .any(|c| c.id == kept[0].id && c.valid));
+        assert_unchanged(&state, &dir, "a.hwpx", &original, id);
+        // A missing preflight is never bypassed.
+        let other = DocumentState::default();
+        let info = rhwp_session(&other, &dir, "b.hwpx", &original);
+        other
+            .registry()
+            .commit(info.session_id, info.load_generation, 0, 1)
+            .unwrap();
+        let error = checkpoint(
+            &other,
+            &store,
+            (info.session_id, info.load_generation),
+            1,
+            &valid,
+            report("hwpx", json!([])),
+            true,
+        )
+        .unwrap_err();
+        assert!(matches!(error, DocumentError::UnsafeSave { .. }));
+    }
+
+    #[test]
+    fn hwp_checkpoint_reuses_the_save_preview_regeneration_and_refuses_stale_images() {
+        let text = utf16("hello");
+        let doc = |body: &str, prv_text: Option<&[u8]>, prv_image: Option<&[u8]>| {
+            let mut extra: Vec<(&str, &[u8])> = Vec::new();
+            if let Some(t) = prv_text {
+                extra.push(("/PrvText", t));
+            }
+            if let Some(i) = prv_image {
+                extra.push(("/PrvImage", i));
+            }
+            hwp_doc(0, &docinfo(0, b"font"), &section(body), &extra)
+        };
+        // Stale PrvText: the checkpoint stores exactly what the explicit save would publish.
+        let original = doc("hello", Some(&text), None);
+        let edited = doc("hello, edited", Some(&text), None);
+        let state = DocumentState::default();
+        let dir = TempDir::new();
+        let store = RecoveryStore::new(dir.path().join("records"));
+        let (id, generation) = prepared(&state, &dir, "a.hwp", &original, Format::Hwp);
+        checkpoint(
+            &state,
+            &store,
+            (id, generation),
+            1,
+            &edited,
+            report("hwp", json!([])),
+            true,
+        )
+        .unwrap();
+        let candidate = store.list().unwrap().pop().unwrap();
+        let restored = dir.path().join("restored.hwp");
+        store.restore(&candidate.id, &restored).unwrap();
+        let recorded = std::fs::read(&restored).unwrap();
+        assert_ne!(
+            recorded, edited,
+            "PrvText was regenerated, not the raw export"
+        );
+        assert_eq!(hwp::compare_saved(&original, &recorded), vec![]);
+        let ticket = state.registry().begin_save(id, generation, 1).unwrap();
+        service::save(
+            state.registry(),
+            &ticket,
+            &Limits::default(),
+            &edited,
+            Some(&report("hwp", json!([]))),
+            true,
+        )
+        .unwrap();
+        drop(ticket);
+        assert_eq!(std::fs::read(dir.path().join("a.hwp")).unwrap(), recorded);
+
+        // Stale PrvImage without a verified raster: refused like a save, nothing recorded.
+        let image = png(8, 4, false);
+        let original = doc("a", None, Some(&image));
+        let state = DocumentState::default();
+        let dir = TempDir::new();
+        let store = RecoveryStore::new(dir.path().join("records"));
+        let (id, generation) = prepared(&state, &dir, "a.hwp", &original, Format::Hwp);
+        let error = checkpoint(
+            &state,
+            &store,
+            (id, generation),
+            1,
+            &doc("b", None, Some(&image)),
+            report("hwp", json!([])),
+            true,
+        )
+        .unwrap_err();
+        assert!(
+            matches!(&error, DocumentError::UnsafeSave { preservation }
+                if preservation.findings.contains(&Finding::at(FindingCode::PreviewStale, "PrvImage"))),
+            "{error:?}"
+        );
+        assert!(store.list().unwrap().is_empty());
+        assert_unchanged(&state, &dir, "a.hwp", &original, id);
+    }
+
+    #[test]
+    fn checkpoint_service_refuses_docx_sessions_and_missing_store() {
+        let state = DocumentState::default();
+        let dir = TempDir::new();
+        let store = RecoveryStore::new(dir.path().join("records"));
+        let original = hwp_doc(0, &docinfo(0, b"font"), &section("hello"), &[]);
+        let (id, generation) = prepared(&state, &dir, "a.hwp", &original, Format::Hwp);
+        let ticket = state.registry().begin_save(id, generation, 1).unwrap();
+        let missing = service::checkpoint(
+            state.registry(),
+            &ticket,
+            &Limits::default(),
+            &original,
+            Some(&report("hwp", json!([]))),
+            true,
+            service::SaveOptions {
+                destination: None,
+                recovery: None,
+                preview: None,
+            },
+        );
+        assert_eq!(missing.unwrap_err(), DocumentError::InvalidRequest);
+        let destination = dir.path().join("elsewhere.hwp");
+        let redirected = service::checkpoint(
+            state.registry(),
+            &ticket,
+            &Limits::default(),
+            &original,
+            Some(&report("hwp", json!([]))),
+            true,
+            service::SaveOptions {
+                destination: Some(&destination),
+                recovery: Some(&store),
+                preview: None,
+            },
+        );
+        assert_eq!(redirected.unwrap_err(), DocumentError::InvalidRequest);
+        assert!(!destination.exists());
+        drop(ticket);
+        let docx_bytes = basic::basic_ko().unwrap();
+        let docx = open_docx(&docx_bytes);
+        let ticket = docx
+            .state
+            .registry()
+            .begin_save(docx.info.session_id, docx.info.load_generation, 0)
+            .unwrap();
+        let refused = service::checkpoint(
+            docx.state.registry(),
+            &ticket,
+            &Limits::default(),
+            &docx_bytes,
+            None,
+            true,
+            options(&store),
+        );
+        assert_eq!(refused.unwrap_err(), DocumentError::InvalidRequest);
+        assert!(store.list().unwrap().is_empty());
+    }
+}

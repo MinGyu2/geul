@@ -48,6 +48,7 @@ fn main() {
         "document_original",
         "document_preflight",
         "document_save",
+        "document_checkpoint",
     ]);
     tauri_build::try_build(tauri_build::Attributes::new().app_manifest(manifest))
         .expect("Tauri 빌드 설정을 만들지 못했습니다");

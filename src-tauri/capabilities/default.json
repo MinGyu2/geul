@@ -33,6 +33,7 @@
     "allow-recovery-restore",
     "allow-recovery-discard",
     "allow-recovery-forget-session",
-    "allow-docx-checkpoint"
+    "allow-docx-checkpoint",
+    "allow-document-checkpoint"
   ]
 }

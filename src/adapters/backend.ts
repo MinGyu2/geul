@@ -7,6 +7,7 @@
 //
 // 저장(T009, rhwp 세션): document_original은 사전 검사용 원본 바이트(원시 응답), document_preflight·document_save는 원시 요청
 // 본문 프레임(saveFrame — 백엔드 services/save/commands.rs와 같은 모양)을 보낸다. 경로는 보내지 않는다.
+// document_checkpoint(T014 B)는 같은 프레임으로 비공개 복구 기록만 만든다(원본·dirty 불변).
 import {
   parseBackendError,
   parseCloseOutcome,
@@ -52,6 +53,11 @@ export interface DocumentBackend {
   preflight(sessionId: SessionId, generation: number, unedited: Uint8Array, contentLoss: unknown): Promise<Result<SaveCheck>>;
   /** 편집한 엔진 출력을 원본 형식으로 저장(T009). revision은 그 출력이 나타내는 판, reopen은 다시 열어 비교한 결과. */
   save(sessionId: SessionId, generation: number, revision: number, output: Uint8Array, contentLoss: unknown, reopen: ReopenEvidence, destination?: string, preview?: PreviewRaster | null): Promise<Result<SaveOutcome>>;
+  /**
+   * T014 B: durable private recovery record of this exported revision, validated like a save of the same output
+   * (the backend never stages or replaces the original, never clears dirty). Same frame as save, no destination.
+   */
+  checkpoint?(sessionId: SessionId, generation: number, revision: number, output: Uint8Array, contentLoss: unknown, reopen: ReopenEvidence, preview?: PreviewRaster | null): Promise<Result<SaveOutcome>>;
 }
 
 /**
@@ -175,6 +181,16 @@ export function createTauriBackend(invoke: Invoke): DocumentBackend {
       return call(invoke, destination === undefined ? "document_save" : "document_save_as", saveFrame(sessionId, generation, revision, meta, withPreview(output, preview)), (value) => {
         const outcome = parseSaveOutcome(value);
         return outcome?.session.sessionId === sessionId ? outcome : null;
+      });
+    },
+    checkpoint: (sessionId, generation, revision, output, contentLoss, reopen, preview) => {
+      const meta: Record<string, unknown> = { contentLoss, reopen };
+      if (preview) meta.preview = preview.blankPage ? { width: preview.width, height: preview.height, blankPage: true } : { width: preview.width, height: preview.height };
+      return call(invoke, "document_checkpoint", saveFrame(sessionId, generation, revision, meta, withPreview(output, preview)), (value) => {
+        const outcome = parseSaveOutcome(value);
+        // Only a durable record of exactly this session/load/revision is a protected checkpoint.
+        return outcome?.session.sessionId === sessionId && outcome.session.loadGeneration === generation
+          && outcome.session.revision === revision && outcome.durable ? outcome : null;
       });
     },
   };
