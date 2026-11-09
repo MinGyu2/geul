@@ -1,3 +1,4 @@
+import { runClipboard, type ClipboardCommand, type PlainClipboard } from "../../../commands/clipboard";
 // WordCraft(DOCX) 편집 세션 하나(T008, W-A). 문서 모델은 백엔드(Rust)에 있고, 이 객체는 그 세션의 하나뿐인 편집 표면
 // 상태(보기·대기 연산·IME 조합·쪽 그림)를 가진다.
 //
@@ -107,7 +108,7 @@ const ACTION_IDS = [
   "references.toc", "references.updateToc",
   "review.trackChanges", "review.acceptChange", "review.rejectChange", "review.acceptAll", "review.rejectAll",
 ] as const;
-const COMMAND_OPS: ReadonlySet<DocxOp["op"]> = new Set<DocxOp["op"]>(["undo", "redo", "format", "comment", "footnote", "endnote", "toc", "updateToc",
+const COMMAND_OPS: ReadonlySet<DocxOp["op"]> = new Set<DocxOp["op"]>(["deleteSelection", "undo", "redo", "format", "comment", "footnote", "endnote", "toc", "updateToc",
   "trackChanges", "acceptChange", "rejectChange", "acceptAll", "rejectAll"]);
 
 /** 쪽 그림 실패의 원인: 백엔드 거부, PNG 디코드 실패, canvas 문맥 없음, 크기 불일치, 기대하지 않은 예외. */
@@ -207,6 +208,7 @@ export class DocxEditorSession implements ImeSession, DocumentCommandTarget {
   /** 사전 검사 요청의 소유 번호(T009 안정화, rhwp 세션과 같은 규칙): 새 검사·저장 성공·다시 불러오기·닫기마다 올린다. */
   private checkSerial = 0;
 
+  private clipboardVersion = 0;
   private generation = 0;
   private queue: DocxOp[] = [];
   private inFlight = false;
@@ -470,6 +472,7 @@ export class DocxEditorSession implements ImeSession, DocumentCommandTarget {
       settles, provisional: this.provisional !== null }));
     if (!this.editable) return false;
     if (this.view?.trackedReadOnly && ops.some(mutates)) return false;
+    this.clipboardVersion += 1;
     if (settles) this.provisional = null;
     this.inputNotice = null;
     const wasBusy = this.busy;
@@ -590,6 +593,7 @@ export class DocxEditorSession implements ImeSession, DocumentCommandTarget {
 
   setAwaitingCommit(awaiting: boolean): void {
     if (this.awaiting === awaiting) return;
+    this.clipboardVersion += 1;
     this.awaiting = awaiting;
     trace("docx:awaitingCommit", () => ({ session: this.sessionId, awaiting }));
     this.emit();
@@ -603,6 +607,7 @@ export class DocxEditorSession implements ImeSession, DocumentCommandTarget {
   beginComposition(): void {
     trace("docx:beginComposition", () => ({ session: this.sessionId, editable: this.editable, composing: this.composition !== null }));
     if (!this.editable || this.view?.trackedReadOnly || this.composition) return;
+    this.clipboardVersion += 1;
     this.provisional = null;
     this.composition = { text: "", shown: false };
     this.emit();
@@ -1009,10 +1014,31 @@ export class DocxEditorSession implements ImeSession, DocumentCommandTarget {
       sessionId: this.sessionId, engine: this.engine, loadGeneration: this.generation, revision: this.revision,
       loaded: this.status.kind === "ready" && !this.closing, editable: this.editable && !this.view?.trackedReadOnly,
       composing: this.imeUnsettled, pending: this.busy,
+      clipboard: {
+        selection: !!this.view?.clipboardTextAvailable && !!this.backend.selectionText,
+        writable: this.view?.formatAccess === "allowed" && !this.view?.trackedReadOnly,
+        key: JSON.stringify([this.epoch, this.generation, this.revision, this.clipboardVersion, this.imeSerial,
+          this.view?.anchorKey, this.view?.caretKey]),
+      },
       queuedHistory: this.queuedHistory(), saving: this.saving,
       history: this.view?.history ?? null, format: this.view?.format ?? null, formatAccess: this.view?.formatAccess ?? null,
       ...this.parameterState(),
     };
+  }
+
+  executeClipboard(command: ClipboardCommand, owns: () => boolean, clipboard?: PlainClipboard): Promise<boolean> {
+    return runClipboard(this, command, {
+      read: async () => {
+        const view = this.view;
+        if (!view || !this.backend.selectionText) return null;
+        const result = await this.backend.selectionText(this.sessionId, this.generation, this.revision, view.anchorKey, view.caretKey);
+        return result.ok ? result.value : null;
+      },
+      remove: () => !!this.view && this.push({ op: "deleteSelection", selection: {
+        anchorKey: this.view.anchorKey, caretKey: this.view.caretKey,
+      } }),
+      insert: text => this.typeText(text),
+    }, () => owns() && this.sessions.snapshot().activeId === this.sessionId, clipboard);
   }
 
   /**
@@ -1190,6 +1216,7 @@ export class DocxEditorSession implements ImeSession, DocumentCommandTarget {
     if (this.saving) return { ok: false, error: { code: "SaveInProgress", sessionId: this.sessionId } };
     const blocker = this.saveBlocker();
     if (blocker) return fail(blocker);
+    this.clipboardVersion += 1;
     this.saving = true;
     try {
       const generation = this.generation;

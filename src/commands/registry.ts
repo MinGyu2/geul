@@ -22,7 +22,7 @@ export type FileCommandId = "file.new" | "file.open" | "file.saveAs";
 
 /** 열린 문서에 대한 명령 중 이 앱이 엔진에 연결한 것. */
 export type DocumentCommandId =
-  | "edit.undo" | "edit.redo"
+  | "edit.undo" | "edit.redo" | "edit.copy" | "edit.cut" | "edit.paste"
   | "format.bold" | "format.italic" | "format.underline" | "format.strikethrough"
   | "hangul.charWidth" | "hangul.charSpacing" | "hangul.tableFormula" | "hangul.insertTableFormula"
   | "review.comment"
@@ -102,6 +102,9 @@ const RHWP_FORMAT: EngineSupport =
 const RHWP_ADVANCED: EngineSupport = SUPPORTED;
 
 const DOCUMENT_COMMANDS: Record<DocumentCommandId, Omit<CommandDefinition, "id" | "labelKey" | "kind">> = {
+  "edit.copy": { engines: { wordcraft: SUPPORTED, rhwp: SUPPORTED }, shortcuts: ["Mod+C"], scope: "document" },
+  "edit.cut": { engines: { wordcraft: SUPPORTED, rhwp: SUPPORTED }, shortcuts: ["Mod+X"], scope: "document" },
+  "edit.paste": { engines: { wordcraft: SUPPORTED, rhwp: SUPPORTED }, shortcuts: ["Mod+V"], scope: "document" },
   "edit.undo": { engines: { wordcraft: SUPPORTED, rhwp: RHWP_HISTORY }, shortcuts: ["Mod+Z"], scope: "document" },
   "edit.redo": { engines: { wordcraft: SUPPORTED, rhwp: RHWP_HISTORY }, shortcuts: ["Mod+Y", "Mod+Shift+Z"], scope: "document" },
   "format.bold": { engines: { wordcraft: SUPPORTED, rhwp: RHWP_FORMAT }, shortcuts: ["Mod+B"], scope: "document" },

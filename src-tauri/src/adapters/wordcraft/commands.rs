@@ -623,3 +623,51 @@ pub async fn docx_checkpoint(
     )
     .await
 }
+
+/// Fixed, read-only extraction endpoint. No paths or arbitrary engine commands.
+pub(crate) async fn selection_text(
+    state: &DocumentState,
+    session_id: SessionId,
+    generation: u64,
+    revision: u64,
+    anchor_key: String,
+    caret_key: String,
+) -> Result<String, DocumentError> {
+    if anchor_key.len() > 256 || caret_key.len() > 256 {
+        return Err(DocumentError::InvalidRequest);
+    }
+    with_model(
+        state,
+        session_id,
+        generation,
+        EngineStage::Edit,
+        move |model, _, info| {
+            check_revision(&info, revision)?;
+            if !model.clipboard_selection_matches(&anchor_key, &caret_key) {
+                return Err(DocumentError::InvalidRequest);
+            }
+            model.clipboard_text().ok_or(DocumentError::InvalidRequest)
+        },
+    )
+    .await
+}
+
+#[tauri::command]
+pub async fn docx_selection_text(
+    state: State<'_, DocumentState>,
+    session_id: SessionId,
+    load_generation: u64,
+    revision: u64,
+    anchor_key: String,
+    caret_key: String,
+) -> Result<String, DocumentError> {
+    selection_text(
+        &state,
+        session_id,
+        load_generation,
+        revision,
+        anchor_key,
+        caret_key,
+    )
+    .await
+}

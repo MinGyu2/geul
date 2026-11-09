@@ -17,6 +17,8 @@
     "allow-document-commit",
     "allow-docx-load",
     "allow-docx-view",
+    "allow-docx-selection-text",
+    "allow-clipboard-read-text",
     "allow-docx-edit",
     "allow-docx-render",
     "allow-docx-roundtrip",

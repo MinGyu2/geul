@@ -940,6 +940,7 @@ fn 응답_json은_계약의_모양이다() {
             "caret",
             "caretKey",
             "caretOffset",
+            "clipboardTextAvailable",
             "collapsed",
             "format",
             "formatAccess",
@@ -1596,7 +1597,7 @@ fn 붙여넣기_조각의_검사() {
         parse(json!([{"op": "pasteText", "text": "a\n", "chain": true}, {"op": "pasteText", "text": "b"},
                      {"op": "deleteSelection"}]))
         .unwrap(),
-        vec![paste("a\n", true), paste("b", false), DocxOp::DeleteSelection]
+        vec![paste("a\n", true), paste("b", false), DocxOp::DeleteSelection { selection: None }]
     );
     assert!(parse(json!([{"op": "pasteText", "text": "a", "raw": false}])).is_err());
 }
@@ -1605,7 +1606,8 @@ fn 붙여넣기_조각의_검사() {
 fn 선택_지우기는_선택이_있을_때만_문서를_바꾼다() {
     let mut m = model();
     assert_eq!(
-        m.apply(&[DocxOp::DeleteSelection]).changed,
+        m.apply(&[DocxOp::DeleteSelection { selection: None }])
+            .changed,
         0,
         "선택 없음: 문서·revision 그대로(앞 글자를 지우지 않음)"
     );
@@ -1613,7 +1615,7 @@ fn 선택_지우기는_선택이_있을_때만_문서를_바꾼다() {
     let outcome = m.apply(&[
         mv(MoveTarget::Right, true),
         mv(MoveTarget::Right, true),
-        DocxOp::DeleteSelection,
+        DocxOp::DeleteSelection { selection: None },
         insert("마"),
     ]);
     assert_eq!(outcome.changed, 2);
@@ -1626,7 +1628,7 @@ fn 선택_지우기는_선택이_있을_때만_문서를_바꾼다() {
     let outcome = m.apply(&[
         mv(MoveTarget::DocStart, false),
         mv(MoveTarget::Down, true),
-        DocxOp::DeleteSelection,
+        DocxOp::DeleteSelection { selection: None },
     ]);
     assert_eq!(outcome.changed, 1);
     assert!(m.view().collapsed);
@@ -3178,4 +3180,89 @@ fn accepting_a_whole_bookmarked_heading_refreshes_the_toc_in_one_undo_step() {
         assert!(m.apply(&[DocxOp::UpdateToc {}]).rejected.is_empty());
         assert!(m.same_as(&m.export().unwrap()));
     }
+}
+
+#[test]
+fn clipboard_full_unicode_paragraphs_are_read_only_and_not_preview() {
+    let bytes = crate::services::files::blank_docx().unwrap();
+    let mut m = DocxModel::open(&bytes).unwrap();
+    assert_eq!(m.clipboard_text(), None);
+    let expected = format!("{}\n끝\t글", "한😀글".repeat(300));
+    m.apply(&[
+        DocxOp::PasteText {
+            text: expected.clone(),
+            chain: false,
+        },
+        DocxOp::SelectAll,
+    ]);
+    let before = m.export().unwrap();
+    let view = m.view();
+    assert!(view.clipboard_text_available);
+    assert_eq!(view.selection_text, None);
+    assert_eq!(m.clipboard_text(), Some(expected));
+    assert!(m.clipboard_selection_matches(&view.anchor_key, &view.caret_key));
+    assert!(!m.clipboard_selection_matches("stale", &view.caret_key));
+    assert_eq!(m.export().unwrap(), before);
+    m.apply(&[DocxOp::DeleteSelection { selection: None }]);
+    let after = m.export().unwrap();
+    assert!(m.same_as(&after));
+    assert_eq!(m.view().paragraph_text, "");
+}
+
+#[test]
+fn clipboard_ipc_revalidates_session_revision_generation_and_selection() {
+    let state = DocumentState::default();
+    let dir = TempDir::new();
+    let loaded = loaded(&state, &dir);
+    let id = loaded.session.session_id;
+    let selected = block_on(commands::edit(&state, id, 1, 0, select_first_two())).unwrap();
+    let v = selected.view;
+    let get = |generation, revision, anchor: String| {
+        block_on(commands::selection_text(
+            &state,
+            id,
+            generation,
+            revision,
+            anchor,
+            v.caret_key.clone(),
+        ))
+    };
+    assert!(get(1, 0, v.anchor_key.clone()).is_ok());
+    assert!(get(2, 0, v.anchor_key.clone()).is_err());
+    assert!(get(1, 1, v.anchor_key.clone()).is_err());
+    assert!(get(1, 0, "stale".into()).is_err());
+    assert_eq!(state.registry().get(id).unwrap().revision, 0);
+    assert!(!state.registry().get(id).unwrap().dirty);
+}
+
+#[test]
+fn clipboard_cut_guard_rejects_selection_changed_under_backend_lock() {
+    let mut m = model();
+    m.apply(&select_first_two());
+    let v = m.view();
+    let cut = DocxOp::DeleteSelection {
+        selection: Some(super::engine::SelectionIdentity {
+            anchor_key: v.anchor_key,
+            caret_key: v.caret_key,
+        }),
+    };
+    m.apply(&[mv(MoveTarget::Right, true)]);
+    let before = m.export().unwrap();
+    let result = m.apply(std::slice::from_ref(&cut));
+    assert_eq!(result.changed, 0);
+    assert_eq!(result.rejected, vec![0]);
+    assert_eq!(m.export().unwrap(), before);
+    // An intact guard uses the original DeleteSelection path and engine history.
+    m.apply(&select_first_two());
+    assert_eq!(m.apply(&[cut]).changed, 1);
+}
+
+#[test]
+fn clipboard_table_object_cross_context_and_empty_ranges_fail_closed() {
+    let mut m = model();
+    m.apply(&[DocxOp::SelectAll]);
+    assert_eq!(m.clipboard_text(), None); // fixture includes a whole table
+    assert!(!m.view().clipboard_text_available);
+    m.apply(&[mv(MoveTarget::DocStart, false)]);
+    assert_eq!(m.clipboard_text(), None);
 }

@@ -158,7 +158,7 @@ export class FakeDocx implements DocxBackend {
       tracking: this.tracking, hasRevisions: this.revisions > 0,
       pages: Array.from({ length: this.pageCount }, () => ({ width: 612, height: 792 })),
       caret: { page: 0, x: MARGIN + this.caret.o * CHAR, y: MARGIN + this.caret.p * LINE, height: 16 },
-      selection, collapsed, inTable: false,
+      selection, collapsed, inTable: false, clipboardTextAvailable: !collapsed,
       caretKey: at(this.caret), anchorKey: at(this.anchor),
       paragraphText: this.paragraphs[this.caret.p]!, caretOffset: this.caret.o,
       history: { undo: this.undoStack.length > 0, redo: this.redoStack.length > 0 },
@@ -246,6 +246,17 @@ export class FakeDocx implements DocxBackend {
     if (generation !== this.info.loadGeneration) return { ok: false, error: { code: "StaleLoad", sessionId, loadGeneration: this.info.loadGeneration } };
     if (this.info.state !== "ready") return { ok: false, error: { code: "InvalidState", sessionId, state: this.info.state } };
     return { ok: true, value: this.state() };
+  }
+
+  async selectionText(sessionId: number, generation: number, revision: number, anchorKey: string, caretKey: string): Promise<Result<string>> {
+    const checked = this.check(sessionId, generation);
+    if (!checked.ok) return checked;
+    if (revision !== this.info.revision || anchorKey !== checked.value.view.anchorKey || caretKey !== checked.value.view.caretKey)
+      return { ok: false, error: { code: "InvalidRequest" } };
+    const [from, to] = cmp(this.anchor, this.caret) <= 0 ? [this.anchor, this.caret] : [this.caret, this.anchor];
+    const parts = this.paragraphs.slice(from.p, to.p + 1).map((text, i) =>
+      chars(text).slice(i === 0 ? from.o : 0, from.p + i === to.p ? to.o : undefined).join(""));
+    return { ok: true, value: parts.join("\n") };
   }
 
   view(sessionId: number, generation: number): Promise<Result<DocxState>> {
@@ -348,6 +359,7 @@ export class FakeDocx implements DocxBackend {
         return true;
       }
       case "deleteSelection":
+        if (op.selection && (op.selection.anchorKey !== this.snapshot().anchorKey || op.selection.caretKey !== this.snapshot().caretKey)) return false;
         this.deleteSelection();
         return true;
       case "backspace":

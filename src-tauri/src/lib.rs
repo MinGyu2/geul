@@ -7,6 +7,7 @@
 //! 임시 파일·교체, 충돌·복구의 넓은 범위는 T014).
 
 pub mod adapters;
+mod clipboard;
 pub mod document;
 mod ime;
 pub mod services;
@@ -73,6 +74,8 @@ pub fn run() {
             document::commands::document_commit,
             adapters::wordcraft::commands::docx_load,
             adapters::wordcraft::commands::docx_view,
+            adapters::wordcraft::commands::docx_selection_text,
+            clipboard::clipboard_read_text,
             adapters::wordcraft::commands::docx_edit,
             adapters::wordcraft::commands::docx_render,
             adapters::wordcraft::commands::docx_roundtrip,

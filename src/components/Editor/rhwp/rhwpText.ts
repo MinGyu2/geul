@@ -1,3 +1,4 @@
+import { MAX_CLIPBOARD_CHARS, validClipboardText } from "../../../commands/clipboard";
 // rhwp 문서 위치와 본문·표 셀 API 선택(T007).
 //
 // 위치는 (구역, 문단, 글자 오프셋)이고, 표 셀 안이면 셀 경로(부모 문단, 컨트롤, 셀, 셀 문단)를 더한다. 같은 위치를
@@ -290,6 +291,55 @@ export class RhwpText {
     return c
       ? this.doc.getTextInCell(at.section, c.parentParagraph, c.control, c.cell, c.cellParagraph, at.offset, count)
       : this.doc.getTextRange(at.section, at.paragraph, at.offset, count);
+  }
+
+  /** Full text from one coherent body/cell context; verify lengths, never preview/truncate. */
+  selectedText(a: DocPosition, b: DocPosition): string | null {
+    if (!sameContext(a, b) || compare(a, b) === 0) return null;
+    const [from, to] = compare(a, b) < 0 ? [a, b] : [b, a];
+    try {
+      const start = paragraphOf(from), end = paragraphOf(to);
+      // Text APIs omit some nontext controls. Prove the selected paragraphs contain
+      // no objects/fields before reading or permitting range deletion.
+      if (!this.doc.getControls) return null;
+      const raw = this.doc.getControls();
+      if (raw.length > 2 * 1024 * 1024) return null;
+      const controls: unknown = json(raw);
+      if (!Array.isArray(controls) || !controls.every(c => isRecord(c) && isIndex(c.list) && isIndex(c.para) && typeof c.ctrlId === "string")) return null;
+      let list = 0, base = 0;
+      if (from.cell) {
+        if (!this.doc.getCursorModel) return null;
+        const modelRaw = this.doc.getCursorModel();
+        if (modelRaw.length > 2 * 1024 * 1024) return null;
+        const model = json(modelRaw);
+        if (!isRecord(model) || !Array.isArray(model.lists)) return null;
+        const c = from.cell;
+        const matches = model.lists.filter(l => isRecord(l) && l.sectionIndex === from.section && l.hostListId === 0
+          && l.hostPara === c.parentParagraph && l.controlIndex === c.control && l.cellIndex === c.cell && l.isCell === true);
+        if (matches.length !== 1 || !isRecord(matches[0]) || !isIndex(matches[0].listId)) return null;
+        list = matches[0].listId;
+      } else {
+        for (let section = 0; section < from.section; section++) base += this.doc.getParagraphCount(section);
+      }
+      if (controls.some(c => c.list === list && c.para >= base + start && c.para <= base + end
+        && c.ctrlId !== "secd" && c.ctrlId !== "cold")) return null;
+      if (end >= this.paragraphCount(from) || end - start > MAX_CLIPBOARD_CHARS) return null;
+      const parts: string[] = [];
+      let count = 0;
+      for (let p = start; p <= end; p++) {
+        const at = withParagraph(from, p, p === start ? from.offset : 0);
+        const length = this.paragraphLength(at);
+        const until = p === end ? to.offset : length;
+        if (!Number.isSafeInteger(length) || length < 0 || until > length || at.offset > until || at.offset < 0) return null;
+        count += until - at.offset + (p > start ? 1 : 0);
+        if (count > MAX_CLIPBOARD_CHARS) return null;
+        const text = this.text(at, until - at.offset);
+        if (charCount(text) !== until - at.offset || !validClipboardText(text)) return null;
+        parts.push(text);
+      }
+      const result = parts.join("\n");
+      return result || null;
+    } catch { return null; }
   }
 
   insert(at: DocPosition, text: string): void {

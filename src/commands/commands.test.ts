@@ -109,8 +109,9 @@ describe("명령 레지스트리", () => {
     expect(commandForShortcut("Mod+KeyN")?.id).toBe("file.new");
     expect(commandForShortcut("Mod+Shift+KeyS")?.id).toBe("file.saveAs");
     expect(commandForShortcut("Mod+F1")?.id).toBe("view.ribbon");
-    // 붙여넣기·복사·전체 선택은 레지스트리 몫이 아니다(편집 표면·브라우저 기본 동작).
-    for (const key of ["Mod+KeyC", "Mod+KeyV", "Mod+KeyX", "Mod+KeyA"]) expect(commandForShortcut(key)).toBeUndefined();
+    // Clipboard shortcuts belong to the shared registry; Select All stays on the surface.
+    for (const [key, id] of [["C", "copy"], ["V", "paste"], ["X", "cut"]]) expect(commandForShortcut(`Mod+Key${key}`)?.id).toBe(`edit.${id}`);
+    expect(commandForShortcut("Mod+KeyA")).toBeUndefined();
   });
 
   it("단축키 선언 정규화: 수식 키 순서를 맞추고 틀린 형식은 거부한다", () => {
@@ -322,10 +323,10 @@ describe("단축키 처리", () => {
     expect(notices).toEqual([{ key: "command.unavailable.engineUnsupported", vars: { command: { key: "command.edit.undo" } } }]);
   });
 
-  it("레지스트리에 없는 키(Ctrl+C·글자)는 건드리지 않는다", () => {
+  it("레지스트리에 없는 키(Ctrl+Q·글자)는 건드리지 않는다", () => {
     const { target, executed } = fakeTarget(snapshot());
     const { value } = context(target);
-    for (const init of [{ code: "KeyC", key: "c", ctrlKey: true }, { code: "KeyB", key: "b" }, { code: "KeyB", key: "b", ctrlKey: true, altKey: true }]) {
+    for (const init of [{ code: "KeyQ", key: "q", ctrlKey: true }, { code: "KeyB", key: "b" }, { code: "KeyB", key: "b", ctrlKey: true, altKey: true }]) {
       const event = keydown(editorInput(), init);
       expect(handleShortcut(event, value, false)).toBe(false);
       expect(event.defaultPrevented).toBe(false);

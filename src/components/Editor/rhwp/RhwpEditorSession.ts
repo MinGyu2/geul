@@ -1,3 +1,4 @@
+import { runClipboard, validClipboardText, type ClipboardCommand, type PlainClipboard } from "../../../commands/clipboard";
 // rhwp 편집 세션 하나(T007, R-A). WebView의 WASM 문서 모델·커서·선택·IME 조합 상태를 가지고, 문서를 바꾼 결과를
 // 백엔드에 revision으로 확정한다.
 //
@@ -335,6 +336,7 @@ export class RhwpEditorSession implements DocumentCommandTarget {
     return () => this.listeners.delete(listener);
   }
 
+  private clipboardVersion = 0;
   private changeVersion = 0;
   readonly changeSnapshot = (): number => this.changeVersion;
 
@@ -386,6 +388,7 @@ export class RhwpEditorSession implements DocumentCommandTarget {
 
   setAwaitingCommit(awaiting: boolean): void {
     if (this.awaiting === awaiting) return;
+    this.clipboardVersion += 1;
     this.awaiting = awaiting;
     this.emit();
   }
@@ -1015,7 +1018,22 @@ export class RhwpEditorSession implements DocumentCommandTarget {
   }
 
   typeText(text: string): boolean {
-    if (!text || this.composition) return false;
+    if (!text || this.composition || !validClipboardText(text)) return false;
+    text = text.replace(/\r\n?|\u2029/g, "\n");
+    if (text.includes("\n")) return this.mutate(() => {
+      let at = this.hasSelection ? this.deleteSelectionRaw() : this.caret;
+      const lines = text.split("\n");
+      for (let i = 0; i < lines.length; i++) {
+        const line = lines[i]!;
+        if (line) this.text!.insert(at, line);
+        at = { ...at, offset: at.offset + charCount(line) };
+        if (i + 1 < lines.length) {
+          this.text!.split(at);
+          at = withParagraph(at, paragraphOf(at) + 1, 0);
+        }
+      }
+      return at;
+    });
     const start = this.hasSelection ? null : RhwpEditorSession.positionKey(this.caret);
     return this.mutate(() => {
       const at = this.hasSelection ? this.deleteSelectionRaw() : this.caret;
@@ -1081,6 +1099,7 @@ export class RhwpEditorSession implements DocumentCommandTarget {
    */
   beginComposition(): void {
     if (!this.editable || this.composition) return;
+    this.clipboardVersion += 1;
     this.settleProvisional();
     if (!this.editable) return;
     if (!this.hasSelection) {
@@ -1219,6 +1238,7 @@ export class RhwpEditorSession implements DocumentCommandTarget {
 
   private moveTo(position: DocPosition, extend: boolean, keepPreferredX = false) {
     if (extend && !sameContext(this.anchor, position)) return; // 선택은 한 문맥(본문 또는 한 셀) 안에서만
+    this.clipboardVersion += 1;
     this.history?.boundary(); // 이동·클릭·선택은 타자 그룹을 끊는다
     this.caret = position;
     if (!extend) this.anchor = position;
@@ -1499,6 +1519,12 @@ export class RhwpEditorSession implements DocumentCommandTarget {
       composing: this.imeUnsettled,
       pending: this.pending > 0 || this.committingEpoch === this.epoch, queuedHistory: null,
       saving: this.saving,
+      clipboard: {
+        selection: !this.uncertain && !!this.text?.selectedText(this.anchor, this.caret),
+        writable: !this.uncertain && (!this.hasSelection || !!this.text?.selectedText(this.anchor, this.caret)),
+        key: JSON.stringify([this.epoch, this.generation, this.committed, this.modelVersion, this.clipboardVersion,
+          this.imeSerial, this.anchor, this.caret]),
+      },
       // 기록은 지역·동기(queuedHistory 없음). 제품 고급 기록은 pending 확정도 명령 capability에서 거부한다.
       history: this.history ? { undo: this.history.canUndo, redo: this.history.canRedo } : null,
       ...(this.advancedHistoryOnly ? { historyScope: "advanced" as const } : {}),
@@ -1506,6 +1532,14 @@ export class RhwpEditorSession implements DocumentCommandTarget {
       format: this.formatState(), formatAccess: null,
       ...this.parameterState(),
     };
+  }
+
+  executeClipboard(command: ClipboardCommand, owns: () => boolean, clipboard?: PlainClipboard): Promise<boolean> {
+    return runClipboard(this, command, {
+      read: async () => this.text?.selectedText(this.anchor, this.caret) ?? null,
+      remove: () => this.hasSelection && this.mutate(() => this.deleteSelectionRaw()),
+      insert: text => this.typeText(text),
+    }, () => owns() && this.sessions.snapshot().activeId === this.sessionId && !this.uncertain, clipboard);
   }
 
   private parameterCache: { key: string; value: Pick<DocumentCommandSnapshot, "parameters" | "parameterReasons"> } | null = null;
@@ -1821,6 +1855,7 @@ export class RhwpEditorSession implements DocumentCommandTarget {
     if (blocker) return fail(blocker);
     const format = this.sessions.get(this.sessionId)?.format;
     if (format !== "hwp" && format !== "hwpx") return fail({ code: "SaveNotReady", reason: "state" });
+    this.clipboardVersion += 1;
     this.saving = true;
     let releaseShapes: (() => void) | undefined;
     try {

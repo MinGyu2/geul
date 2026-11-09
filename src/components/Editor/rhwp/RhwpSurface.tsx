@@ -387,6 +387,10 @@ export function RhwpSurface({ session, zoom, imeContext }: RhwpSurfaceProps) {
     };
     return attachTextInput(input, controller, {
       composing: () => session.composing,
+      pasteAllowed: () => {
+        const state = session.snapshot();
+        return state.loaded && state.editable && !state.composing && !!state.clipboard?.writable;
+      },
       handleKey,
       mark,
       detached: () => {

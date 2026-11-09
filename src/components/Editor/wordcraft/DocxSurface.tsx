@@ -198,6 +198,10 @@ export function DocxSurface({ session, zoom, imeContext }: DocxSurfaceProps) {
     };
     return attachTextInput(input, controller, {
       composing: () => session.composing,
+      pasteAllowed: () => {
+        const state = session.snapshot();
+        return state.loaded && state.editable && !state.composing && !!state.clipboard?.writable;
+      },
       handleKey,
       mark,
       paragraphBreaks: true,

@@ -1,3 +1,4 @@
+import type { ClipboardCommand, PlainClipboard } from "./clipboard";
 // 열린 문서에 대한 명령의 대상(T010). 편집 세션(RhwpEditorSession·DocxEditorSession)이 구현한다: 명령은 그 세션의 편집
 // 경로(T007·T008 대기열, T009 저장 절차)로만 실행되고, 레지스트리는 엔진 함수를 직접 부르지 않는다.
 //
@@ -41,6 +42,8 @@ export interface DocumentCommandSnapshot {
   queuedHistory: { undo: QueuedStep; redo: QueuedStep } | null;
   /** 저장 사전 검사·저장 중. */
   saving: boolean;
+  /** Complete supported selection, and monotonically invalidated ownership identity. */
+  clipboard?: { selection: boolean; key: string; writable: boolean };
   /** 엔진의 실행 취소 기록. 엔진에 기록이 없으면 null. */
   history: { undo: boolean; redo: boolean } | null;
   /** Production RHWP history contains advanced operations only; ordinary edits invalidate it. */
@@ -114,6 +117,7 @@ export interface DocumentCommandTarget {
   readonly sessionId: SessionId;
   readonly engine: EngineId;
   snapshot(): DocumentCommandSnapshot;
+  executeClipboard?(command: ClipboardCommand, owns: () => boolean, clipboard?: PlainClipboard): Promise<boolean>;
   /**
    * 명령을 이 세션에 실행한다. 레지스트리가 가용성을 확인한 뒤 부르지만, 세션은 자기 상태로 다시 확인하고 맞지 않으면
    * 아무것도 바꾸지 않고 거절한다(accepted: false).

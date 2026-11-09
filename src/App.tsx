@@ -189,12 +189,34 @@ function Workspace({ layout, dispatch, message, notice, pendingCount, notify, on
   // 값 입력 명령(T012·T013)의 입력 창. 요청은 연 순간의 세션·불러오기 번호·revision을 담는다.
   const [inputRequest, setInputRequest] = useState<CommandInputRequest | null>(null);
   const requestInput = useCallback((request: CommandInputRequest) => setInputRequest(request), []);
-  const context = useMemo<CommandContext>(
+  const clipboardOwnership = useRef(0);
+  useLayoutEffect(() => { clipboardOwnership.current += 1; }, [activeEditor, modal, formatChoice, inputRequest, fileBusy]);
+  useEffect(() => {
+    const invalidate = () => { clipboardOwnership.current += 1; };
+    window.addEventListener("blur", invalidate);
+    return () => window.removeEventListener("blur", invalidate);
+  }, []);
+  useEffect(() => {
+    if (!documents) return;
+    let active = documents.sessions.snapshot().activeId;
+    return documents.sessions.subscribe(() => {
+      const next = documents.sessions.snapshot().activeId;
+      if (next !== active) { active = next; clipboardOwnership.current += 1; }
+    });
+  }, [documents]);
+  const context: CommandContext = useMemo<CommandContext>(
     () => ({
       layout, dispatch, notify, document: activeEditor, modal: modal || formatChoice !== null || inputRequest !== null,
       files: fileActions, requestInput,
+      clipboardOwner: target => {
+        const epoch = clipboardOwnership.current;
+        return (): boolean => clipboardOwnership.current === epoch && contextRef.current.document === target
+          && !contextRef.current.modal && !contextRef.current.files?.busy
+          && (!documents || documents.sessions.snapshot().activeId === target.sessionId)
+          && document.hasFocus();
+      },
     }),
-    [layout, dispatch, notify, activeEditor, modal, formatChoice, inputRequest, fileActions, requestInput],
+    [layout, dispatch, notify, activeEditor, modal, formatChoice, inputRequest, fileActions, requestInput, documents],
   );
   // 입력 창이 열린 동안 활성 문서가 바뀌거나 닫히면 창을 버린다(다른 문서에 값을 적용하지 않음 — 그리는 중 상태 조정).
   if (inputRequest && activeEditor?.sessionId !== inputRequest.sessionId) setInputRequest(null);

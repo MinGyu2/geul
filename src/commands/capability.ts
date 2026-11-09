@@ -51,6 +51,15 @@ export function documentCommandState(id: DocumentCommandId, snapshot: DocumentCo
     // 보여 단축키·리본이 실패할 저장을 시작하지 않는다(T010 IME 경계 후속). 대기 편집·불확실 모델은 그대로 저장 절차가 판정한다.
     return snapshot.composing ? unavailable("composing") : ENABLED;
   }
+  if (id === "edit.copy" || id === "edit.cut" || id === "edit.paste") {
+    if (!snapshot.loaded || !snapshot.clipboard) return unavailable("notReady");
+    if (snapshot.composing) return unavailable("composing");
+    if (snapshot.pending) return unavailable("pendingEdits");
+    if (snapshot.saving) return unavailable("saving");
+    if (id !== "edit.copy" && (!snapshot.editable || !snapshot.clipboard.writable)) return unavailable("protected");
+    if (id !== "edit.paste" && !snapshot.clipboard.selection) return unavailable("selectionRequired");
+    return ENABLED;
+  }
   if (!snapshot.editable) return unavailable("notReady");
   if (snapshot.composing) return unavailable("composing");
   if (snapshot.historyScope === "advanced" && snapshot.pending

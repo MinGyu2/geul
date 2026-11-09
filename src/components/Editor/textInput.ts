@@ -16,6 +16,8 @@ export interface TextInputHandlers {
   mark(event: Event): void;
   /** 리스너를 떼며 조합을 정리한 직후(controller.detach 뒤). */
   detached?(): void;
+  /** Native paste must not overtake unsettled IME or read-only/lifecycle state. */
+  pasteAllowed?(): boolean;
   /**
    * data 없는 문단 나누기 input(insertParagraph·insertLineBreak)을 앞 beforeinput 없이 와도 "\n" 하나로 넣는다(T008 안정화, DOCX
    * 표면만). 실측 WebKitGTK 2.54: 줄바꿈이 있는 글자 넣기(execCommand insertText)는 beforeinput 하나 뒤에 insertText·insertParagraph
@@ -57,6 +59,10 @@ const NAVIGATION_KEYS = new Set(["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDow
 /** textarea에 키보드·IME 리스너를 붙이고, 뗄 함수를 돌려준다. */
 export function attachTextInput(input: HTMLTextAreaElement, controller: ImeInput, handlers: TextInputHandlers): () => void {
   const { handleKey, mark } = handlers;
+  const pasteAllowed = () => handlers.pasteAllowed?.() ?? !handlers.composing();
+  const onPaste = (event: ClipboardEvent) => {
+    if (!pasteAllowed()) event.preventDefault();
+  };
   let pendingNavigation: KeyboardEvent | null = null;
   /** 바로 앞 input이 \r로 끝난 insertText였고 그 뒤 키·조합·초점 변화가 없다(paragraphBreaks). */
   let afterCarriageReturn = false;
@@ -104,6 +110,11 @@ export function attachTextInput(input: HTMLTextAreaElement, controller: ImeInput
     const { inputType = "", isComposing = false } = event as InputEvent;
     trace("dom:beforeinput", () => ({ inputType, composing: isComposing, length: ((event as InputEvent).data ?? "").length }));
     const composing = handlers.composing() || isComposing;
+    if (inputType === "insertFromPaste" && (!pasteAllowed() || composing)) {
+      event.preventDefault();
+      snapshot = null;
+      return;
+    }
     if (!composing && (REPLACEMENT_INPUT_TYPES.has(inputType) || (!IME_INPUT_TYPES.has(inputType) && !inputType.startsWith("insert")))) {
       event.preventDefault();
       snapshot = null;
@@ -116,6 +127,7 @@ export function attachTextInput(input: HTMLTextAreaElement, controller: ImeInput
     trace("dom:input", () => ({ inputType, composing: isComposing, length: (data ?? "").length }));
     const before = snapshot;
     snapshot = null;
+    if (inputType === "insertFromPaste" && (!pasteAllowed() || isComposing)) return;
     const crlf = afterCarriageReturn && inputType === "insertParagraph";
     afterCarriageReturn = false;
     if (REPLACEMENT_INPUT_TYPES.has(inputType)) return; // 막지 못했어도(취소 불가) 문서는 그대로
@@ -143,6 +155,7 @@ export function attachTextInput(input: HTMLTextAreaElement, controller: ImeInput
     if (pending) handleKey(pending);
   };
   input.addEventListener("keydown", onKeyDown);
+  input.addEventListener("paste", onPaste);
   input.addEventListener("keyup", onKeyUp);
   input.addEventListener("compositionstart", onCompositionStart);
   input.addEventListener("beforeinput", onBeforeInput);
@@ -162,6 +175,7 @@ export function attachTextInput(input: HTMLTextAreaElement, controller: ImeInput
     trace("ime:detach", () => controller.phase());
     handlers.detached?.();
     input.removeEventListener("keydown", onKeyDown);
+    input.removeEventListener("paste", onPaste);
     input.removeEventListener("keyup", onKeyUp);
     input.removeEventListener("compositionstart", onCompositionStart);
     input.removeEventListener("beforeinput", onBeforeInput);

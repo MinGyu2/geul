@@ -75,7 +75,9 @@ describe("data 없는 input과 쌓인 textarea 값", () => {
     const t = await mounted();
     t.type("a");
     t.paste("줄1\n줄2😀");
-    expect(t.editor.documentText()).toBe("a줄1\n줄2😀가나다");
+    expect(t.editor.documentText()).toBe("a줄1\r\n줄2😀가나다");
+    expect(t.doc.paragraphs).toEqual(["a줄1", "줄2😀가나다"]);
+    expect(t.editor.localRevision).toBe(2);
   });
 
   it("textarea 안에서 선택한 글자를 바꾸는 붙여넣기는 새 글자만 넣는다(textarea 값은 문서가 아님)", async () => {
@@ -158,7 +160,7 @@ describe("붙여넣기와 다른 입력 경계", () => {
     expect(t.editor.documentText()).toBe("abcde가나다");
   });
 
-  it("조합 중 클릭(입력기의 끝을 기다림) 바로 뒤 붙여넣기: 앞 조합 1개를 세고 붙여넣기는 클릭한 곳에 한 번", async () => {
+  it("조합 중 클릭 뒤 붙여넣기는 막고, 실제 IME 끝 뒤에는 클릭한 곳에 한 번", async () => {
     const t = await mounted(["가나다", "abc"]);
     t.input.value = "ㅎ";
     act(() => void t.input.dispatchEvent(new CompositionEvent("compositionstart", { data: "" })));
@@ -166,6 +168,10 @@ describe("붙여넣기와 다른 입력 경계", () => {
     const page = t.view.container.querySelector<HTMLDivElement>(".rhwp-page")!;
     act(() => void page.dispatchEvent(new MouseEvent("mousedown", { bubbles: true, button: 0, clientX: 20, clientY: 25 })));
     expect(t.editor.awaitingCompositionEnd).toBe(true);
+    t.paste("XY");
+    expect(t.editor.awaitingCompositionEnd).toBe(true);
+    expect(t.doc.paragraphs).toEqual(["ㅎ가나다", "abc"]);
+    t.fire(new CompositionEvent("compositionend", { data: "ㅎ" }));
     t.paste("XY");
     expect(t.editor.awaitingCompositionEnd).toBe(false);
     expect(t.doc.paragraphs).toEqual(["ㅎ가나다", "abXYc"]);
@@ -244,7 +250,7 @@ describe("textarea 범위 바꾸기", () => {
     expect(t.editor.localRevision).toBe(1);
   });
 
-  it("조합 중 클릭(입력기의 끝을 기다림) 뒤의 바꾸기는 기다림을 끝내지 않고, 뒤의 붙여넣기가 앞 조합을 센다", async () => {
+  it("조합 중 클릭 뒤의 바꾸기와 붙여넣기는 기다림을 끝내지 않고, 실제 IME 끝 뒤에만 붙인다", async () => {
     const t = await mounted(["가나다", "abc"]);
     t.input.value = "ㅎ";
     t.fire(new CompositionEvent("compositionstart", { data: "" }));
@@ -255,6 +261,10 @@ describe("textarea 범위 바꾸기", () => {
     t.replace("ㅎX", "X");
     expect(t.editor.awaitingCompositionEnd).toBe(true);
     expect(t.doc.paragraphs).toEqual(["ㅎ가나다", "abc"]);
+    t.paste("XY");
+    expect(t.editor.awaitingCompositionEnd).toBe(true);
+    expect(t.doc.paragraphs).toEqual(["ㅎ가나다", "abc"]);
+    t.fire(new CompositionEvent("compositionend", { data: "ㅎ" }));
     t.paste("XY");
     expect(t.doc.paragraphs).toEqual(["ㅎ가나다", "abXYc"]);
     expect(t.editor.localRevision).toBe(2);
@@ -304,4 +314,17 @@ describe("textarea 범위 바꾸기", () => {
     act(() => void input.dispatchEvent(new InputEvent("input", { inputType: "insertText", data: "z" })));
     expect(t.editor.documentText()).toBe("az가나다");
   });
+  it("native paste and uncancelable insertFromPaste cannot enter an unsettled IME transaction", async () => {
+    const t = await mounted();
+    t.editor.setAwaitingCommit(true);
+    const paste = new Event("paste", { bubbles: true, cancelable: true });
+    t.fire(paste);
+    expect(paste.defaultPrevented).toBe(true);
+    const before = t.editor.localRevision;
+    t.native("insertFromPaste", "wrong", null);
+    expect(t.editor.documentText()).toBe("가나다");
+    expect(t.editor.localRevision).toBe(before);
+    expect(t.editor.snapshot().composing).toBe(true);
+  });
+
 });

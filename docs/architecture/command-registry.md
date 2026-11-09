@@ -1,3 +1,5 @@
+> **2026-11-10 클립보드:** DOCX/HWP/HWPX의 plain-text Copy/Cut/Paste를 연결했다. 현재 계약과 제한은 [Plain-text clipboard](#plain-text-clipboard-2026-11-10)를 따른다. 기존 T010 전체 수용 판정은 바꾸지 않는다.
+
 # 명령 레지스트리·가용성·실행 취소 (T010)
 
 ## 2026-11-06 T012 조건부 제품 capability
@@ -804,3 +806,114 @@ Strict 회귀 시험: `strict_reference_rebinding_*`, `strict_reference_valid_re
   각 구성의 시험 통과(다른 구성 전제를 단언하는 `history-config`·`history-enabled`의 전제 시험만 해당 구성 밖에서 실패 — 설계).
 - RHWP 네이티브: `char_shape_compact` 4 + 관련 회귀(format 72·snapshot 6·topology 3·char_format 5) 통과.
 - 남은 제품 관문: T010 D2(native IME)·D4(WebView 지연) — Stage 7에서 다시 다룬다. 통과 전 제품 장평·자간은 `unsupported`.
+
+## Plain-text clipboard (2026-11-10)
+
+`edit.copy`/`edit.cut`/`edit.paste` use Mod+C/X/V and the same registry/session
+boundary for keyboard and ribbon. Non-editor inputs and contenteditable retain
+native shortcuts, including inside dialogs. Registered shortcuts cancel browser
+clipboard defaults; they never wait for a subsequent ClipboardEvent. The original
+hidden textarea beforeinput/input path remains for native input (including paste
+from a context menu); a canceled Mod+V cannot also enter that path.
+
+Initial trusted-button `navigator.clipboard.writeText/readText` roundtrip with
+Korean/emoji passed, and canceled Ctrl+C emitted no copy event. A later native
+control test invalidated browser-only reading: text copied by native Ctrl+C pasted
+correctly in a textarea, but trusted async reads and ribbon Paste were denied.
+Same-origin async clipboard writes had masked this limitation in the first probe.
+
+The final Linux adapter uses a single bounded `clipboard_read_text` Tauri IPC for
+reading and the verified browser writeText path for writing. Both keyboard and
+ribbon use this same adapter/transaction, with no ClipboardEvent insertion fallback.
+The native reader uses the existing GTK dependency (no new crate/plugin), posts
+request_text to the UI thread, and waits off-thread with a five-second timeout.
+It exposes no paths, arbitrary formats, filesystem or engine commands. The sole
+new system-clipboard permission is `allow-clipboard-read-text` on the main window;
+`allow-docx-selection-text` separately permits the fixed document reader. Responses
+are limited to 4 MiB UTF-8 and 1,048,576 Unicode scalars, never truncated. Native
+Unavailable/TooLarge errors fail without attempting a second clipboard read.
+Other hosts return Unsupported and retain their browser API (not native-accepted).
+Write failure never deletes. Read/write permission queries are unsupported on the
+measured WebKitGTK; actual errors, rather than permission queries, decide execution.
+
+Copy requires loaded/readable, settled IME, no pending selection/edit operations,
+no save in progress, and a complete supported nonempty selection. Read-only Copy
+is permitted. Cut/Paste additionally require writable/editable state. DOCX currently
+refuses mutation for protected/region-restricted selections conservatively; the
+engine still enforces its own protection. Paste also validates the entire plain
+text before selection replacement. There is no success toast for merely accepting
+an asynchronous operation; a queue/engine rejection follows the existing input
+notice/error path.
+
+Every action captures generation/revision, selection identity and monotonic session
+operation/IME version. The live App guard also invalidates on tab switches (even a
+switch away and back), modal/file workflow changes and window blur. Checks repeat
+after extraction and clipboard I/O. A per-session in-flight guard refuses overlapping
+clipboard actions. Cut writes first, then revalidates and submits existing selection
+deletion through the session queue. DOCX DeleteSelection optionally carries the
+original anchor/focus keys, checked under the backend model lock immediately before
+deletion; ordinary IME DeleteSelection remains unchanged. RHWP uses its existing
+mutation/commit path and original history policy. General RHWP Undo/Redo stays gated.
+
+DOCX `docx_selection_text` is a fixed session/generation/revision/selection endpoint,
+with no path or arbitrary command. It validates paragraph ranges in one container
+(body or a single top-level cell), UTF-8 boundaries, objects and size before using
+WordCraft's read-only `copy_range().clipboard_text()` serializer. It never runs the
+engine's internal Copy/Cut/Paste or changes clipboard history. The view exposes only
+a support boolean; its 500-character preview is never a clipboard source.
+
+RHWP uses complete scalar-indexed text ranges from one section/body or one cell,
+including backward and multi-paragraph selections. Control inventory is required:
+paragraphs containing fields/objects/tables are conservatively refused, apart from
+section/column metadata. Missing APIs, nested/cross-context ranges and inconsistent
+lengths fail closed. Metadata is bounded at 2 MiB. Both formats limit one clipboard
+action to 1,048,576 Unicode scalars, never truncate; DOCX additionally caps source
+selection scanning at 4 MiB UTF-8 including separators. Plain text rejects control
+characters other than CR/LF/tab, object placeholders and isolated surrogates.
+
+DOCX insertion retains textOps chunking, normalized breaks, tabs and chain rejection.
+RHWP normalizes CRLF/CR/LF/U+2029, inserts each line and calls the existing body/cell
+paragraph split operation between lines within one mutation/revision. A literal LF
+passed to insertText is not used as a paragraph boundary. T009 serialization,
+preservation, publication and recovery checks are unchanged. Rich text, HTML/RTF,
+whole tables, objects and images remain outside this contract.
+
+Regression sources: `src/commands/clipboard.test.ts`,
+`src/components/Editor/clipboardSessions.test.ts`, WordCraft Rust adapter tests,
+`scripts/tests/clipboard.wasm.test.ts` and `scripts/tests/native-clipboard.py`.
+Native results must be reported separately from mocked API/session tests.
+
+Identified Mod+C/X/V chords marked composing/keyCode229 are canceled without
+execution, so they cannot fall through to browser clipboard defaults. Native
+paste/beforeinput/input also refuse unsettled IME (including provisional/final
+commit waiting), protected and unloaded targets. Native paste is synchronous input,
+so previously queued ordinary typing can retain its original order; async command
+paste requires a settled queue before reading. Blocking paste never settles an IME
+transaction on behalf of the input method. Regression cases retain the final text
+and revision assertions after an actual compositionend, plus rejection assertions
+before that end. A missing browser read/write API disables its commands; access
+failure remains an execution error.
+
+Linux acceptance: the final native harness passed 70 checks across DOCX/HWP/HWPX,
+including a separate X11 process owning the clipboard, trusted chords/ribbon, >500 Unicode scalars, paragraph/tab
+roundtrip, empty clipboard, ribbon focus, injected write denial preserving the
+actual engine model, actual delayed native reads during document switching, protected DOCX Copy, T009 Cut and
+Paste saves, and independent final saved-byte reopens. Intermediate Cut saved
+bytes also independently reopened empty in all three formats. Evidence is under
+ignored `target/clipboard/`; fault injection is not an OS permission-denial test.
+Real Korean IME interaction with clipboard during active preedit remains BLOCKED:
+the isolated installed IBus Hangul engine failed SetGlobalEngine with a timeout
+before preedit could begin. No native IME PASS is claimed. Actual OS settings denial
+and Windows/macOS acceptance are NOT RUN. An independent X11
+clipboard-owner probe additionally passed keyboard and ribbon Paste for all three
+formats (20 checks). Native external/dialog textarea shortcuts and modal blocking
+were exercised separately, including a delayed GTK read canceled by a real App
+modal. These are distinct from unit tests and injected OS-denial claims.
+
+The native lifecycle follow-up also passed an actual X11 focus switch away and
+back during a delayed clipboard read (trusted window blur recorded, no insertion).
+A previous proxy disconnect and Xvfb PointerRoot focus-query error were harness/
+environment failures, retained separately from accepted results. Final relevant
+native evidence: `target/clipboard/native-external-full` (70 checks),
+`native-x11-final` (20), `native-lifecycle-pass` (16); preedit attempt: `native-ime`.
+No T010 D2/D4 or unrelated existing acceptance is promoted by clipboard results.

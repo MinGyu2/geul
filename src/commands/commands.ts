@@ -1,3 +1,4 @@
+import { clipboardAccessAvailable, isClipboardCommand } from "./clipboard";
 // 리본·빠른 실행·단축키가 함께 쓰는 명령 실행 경계(T010 명령 레지스트리, src/commands/registry.ts).
 //
 // - 화면 배치·정보 명령(창·리본·테마·확대/축소·정보)은 여기서 실행한다.
@@ -16,6 +17,8 @@ import { trace } from "../components/Editor/imeTrace";
 export type { CommandState, UnavailableReason } from "./capability";
 
 export interface CommandContext {
+  /** Live ownership check; invalidates an async action on document/modal/focus changes. */
+  clipboardOwner?: ((target: DocumentCommandTarget) => () => boolean) | undefined;
   layout: LayoutState;
   dispatch: (action: LayoutAction) => void;
   /** 상태 표시줄 알림. 번역된 문자열이 아니라 Message를 넘겨 언어가 바뀌어도 다시 번역되게 한다. */
@@ -141,7 +144,10 @@ export function commandState(id: string, context: Pick<CommandContext, "layout" 
   if (file) return file.state(context);
   const ui = uiCommand(id);
   if (ui) return ui.state(context.layout);
-  if (isDocumentCommandId(id)) return documentCommandState(id, context.document?.snapshot() ?? null);
+  if (isDocumentCommandId(id)) {
+    const state = documentCommandState(id, context.document?.snapshot() ?? null);
+    return state.available && isClipboardCommand(id) && !clipboardAccessAvailable(id) ? unavailable("notReady") : state;
+  }
   return unavailable("notImplemented");
 }
 
@@ -184,6 +190,15 @@ export function executeCommand(
     return true;
   }
   if (!isDocumentCommandId(id) || !context.document) return reject(unavailable("notImplemented"));
+  if (isClipboardCommand(id)) {
+    const target = context.document;
+    if (!target.executeClipboard || !context.clipboardOwner) return reject(unavailable("notReady"));
+    const owns = context.clipboardOwner(target);
+    void target.executeClipboard(id, owns).then(success => {
+      if (!success) context.notify({ key: "clipboard.failed" });
+    }).catch(() => context.notify({ key: "clipboard.failed" }));
+    return true;
+  }
   if (isParameterCommandId(id) && args === undefined) {
     // 값이 필요한 명령: 입력 창을 연다(문서는 아직 바꾸지 않음). 창이 없는 문맥이면 실행할 수 없다.
     if (!context.requestInput || !label) return reject(unavailable("notImplemented"));

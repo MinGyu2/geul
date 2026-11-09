@@ -67,7 +67,10 @@ pub enum DocxOp {
         chain: bool,
     },
     /// 선택이 있으면 지운다(없으면 아무것도 하지 않음). IME 조합 글자가 처음 보일 때 선택을 바꾸기 시작한다.
-    DeleteSelection,
+    DeleteSelection {
+        #[serde(default)]
+        selection: Option<SelectionIdentity>,
+    },
     Backspace,
     DeleteForward,
     NewParagraph,
@@ -227,6 +230,14 @@ fn valid_text(text: &str) -> bool {
     valid_chars(text, &[])
 }
 
+/// Optional Cut guard, checked under the model lock immediately before deletion.
+#[derive(Clone, Debug, PartialEq, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct SelectionIdentity {
+    pub anchor_key: String,
+    pub caret_key: String,
+}
+
 /// 요청 전체를 실행 전에 검사한다. 하나라도 계약에 맞지 않으면 아무것도 실행하지 않는다.
 pub fn validate(ops: &[DocxOp]) -> bool {
     !ops.is_empty()
@@ -235,6 +246,9 @@ pub fn validate(ops: &[DocxOp]) -> bool {
             DocxOp::InsertText { text } | DocxOp::InsertAt { text, .. } => valid_text(text),
             // 줄바꿈은 프런트엔드가 `\n` 하나로 맞춘다(`\r`은 거부).
             DocxOp::PasteText { text, .. } => valid_chars(text, &['\n', '\t']),
+            DocxOp::DeleteSelection { selection: Some(s) } => {
+                s.anchor_key.len() <= 256 && s.caret_key.len() <= 256
+            }
             DocxOp::ReplaceInserted { expected, text } => valid_text(expected) && valid_text(text),
             DocxOp::Comment { text } => {
                 valid_text(text)
@@ -308,6 +322,7 @@ pub struct DocxView {
     /// Bounded single-paragraph text preview. Object/multi-paragraph selections remain unavailable.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub selection_text: Option<String>,
+    pub clipboard_text_available: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub paragraph_style: Option<String>,
     /// 커서의 문단 안 위치(문자 단위).
@@ -467,6 +482,54 @@ fn position_key(pos: &Pos) -> String {
 }
 
 impl DocxModel {
+    /// Read-only plain text, one story/container, paragraphs only, no objects.
+    /// Bound work before using the engine serializer; never run edit.copy, which
+    /// changes the engine's internal clipboard history.
+    pub fn clipboard_text(&self) -> Option<String> {
+        let (a, b) = self.session.sel.ordered();
+        if a == b
+            || a.story != b.story
+            || a.path.parent() != b.path.parent()
+            || !matches!(a.path.0.len(), 1 | 4)
+            || a.path.0.len() != b.path.0.len()
+        {
+            return None;
+        }
+        let blocks = self.session.doc.container(a.story, &a.path)?;
+        let mut bytes = 0usize;
+        for i in a.path.last()..=b.path.last() {
+            let p = blocks.get(i)?.as_para()?;
+            let start = if i == a.path.last() { a.off } else { 0 };
+            let end = if i == b.path.last() {
+                b.off
+            } else {
+                p.text.len()
+            };
+            let text = p.text.get(start..end)?;
+            if text.contains('\u{fffc}')
+                || text
+                    .chars()
+                    .any(|c| c.is_control() && c != '\t' && c != '\n' && c != '\r')
+            {
+                return None;
+            }
+            bytes = bytes.checked_add(text.len() + 1)?;
+            if bytes > 4 * 1024 * 1024 {
+                return None;
+            }
+        }
+        let text = self.session.doc.copy_range(&a, &b).clipboard_text();
+        if text.is_empty() || text.chars().count() > 1024 * 1024 || text.contains('\u{fffc}') {
+            return None;
+        }
+        Some(text)
+    }
+
+    pub fn clipboard_selection_matches(&self, anchor: &str, focus: &str) -> bool {
+        position_key(&self.session.sel.anchor) == anchor
+            && position_key(&self.session.sel.focus) == focus
+    }
+
     /// DOCX 바이트를 읽고 첫 배치를 검사한다. 읽지 못하면 `Parse`, 쪽이 없거나 크기가 이상하면 `Render`.
     pub fn open(bytes: &[u8]) -> Result<DocxModel, EngineStage> {
         let doc = io::open_bytes(DOCX_NAME, bytes).map_err(|_| EngineStage::Parse)?;
@@ -570,7 +633,14 @@ impl DocxModel {
                     json!({ "text": text.replace('\n', "\r"), "raw": true }),
                 )
             }
-            DocxOp::DeleteSelection => {
+            DocxOp::DeleteSelection { selection } => {
+                if let Some(s) = selection {
+                    if !self.clipboard_selection_matches(&s.anchor_key, &s.caret_key)
+                        || self.clipboard_text().is_none()
+                    {
+                        return Err(Rejected);
+                    }
+                }
                 if self.session.sel.is_collapsed() {
                     Ok(false)
                 } else {
@@ -1017,6 +1087,7 @@ impl DocxModel {
             caret_key: position_key(&sel.focus),
             anchor_key: position_key(&sel.anchor),
             paragraph_text: paragraph.map(|para| para.plain_text()).unwrap_or_default(),
+            clipboard_text_available: self.clipboard_text().is_some(),
             selection_text: if sel.anchor.story == sel.focus.story
                 && sel.anchor.path == sel.focus.path
                 && sel.anchor != sel.focus

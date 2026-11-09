@@ -51,6 +51,7 @@ export interface DocxView {
   paragraphText: string;
   /** Optional bounded actual text; absence means unsupported selection shape. */
   selectionText?: string;
+  clipboardTextAvailable?: boolean;
   paragraphStyle?: string;
   /** 커서의 문단 안 위치(문자 단위). */
   caretOffset: number;
@@ -131,7 +132,7 @@ export type MoveTarget = "left" | "right" | "up" | "down" | "lineStart" | "lineE
 export type DocxOp =
   | { op: "insertText"; text: string }
   | { op: "pasteText"; text: string; chain: boolean }
-  | { op: "deleteSelection" }
+  | { op: "deleteSelection"; selection?: { anchorKey: string; caretKey: string } }
   | { op: "backspace" }
   | { op: "deleteForward" }
   | { op: "newParagraph" }
@@ -177,6 +178,7 @@ export const RENDER_HEADER_LEN = 24;
 export interface DocxBackend {
   /** 엔진에 불러온다(identified·failed → ready). reloadGeneration이 있으면 그 시도의 ready 모델을 버리고 다시 불러온다. */
   load(sessionId: SessionId, reloadGeneration?: number): Promise<Result<DocxState>>;
+  selectionText?(sessionId: SessionId, generation: number, revision: number, anchorKey: string, caretKey: string): Promise<Result<string>>;
   view(sessionId: SessionId, generation: number): Promise<Result<DocxState>>;
   edit(sessionId: SessionId, generation: number, baseRevision: number, ops: DocxOp[]): Promise<Result<DocxEdited>>;
   /** 쪽 그림. scale은 pt당 픽셀, base는 이미 가진 같은 배율 그림의 판(있으면 바뀐 띠만 받는다). */
@@ -241,7 +243,8 @@ function parseFormat(value: unknown): DocxFormat | null {
 }
 
 export function parseDocxView(value: unknown): DocxView | null {
-  if (!isRecord(value) || !hasExactly(value, [...VIEW_KEYS, ...["selectionText", "paragraphStyle"].filter((key) => Object.prototype.hasOwnProperty.call(value, key))])) return null;
+  if (!isRecord(value) || !hasExactly(value, [...VIEW_KEYS, ...["selectionText", "paragraphStyle", "clipboardTextAvailable"].filter((key) => Object.prototype.hasOwnProperty.call(value, key))])) return null;
+  if (value.clipboardTextAvailable !== undefined && typeof value.clipboardTextAvailable !== "boolean") return null;
   if (Object.prototype.hasOwnProperty.call(value, "paragraphStyle") && typeof value.paragraphStyle !== "string") return null;
   if (Object.prototype.hasOwnProperty.call(value, "selectionText") && (typeof value.selectionText !== "string" || Array.from(value.selectionText).length > 500)) return null;
   const { pages, caret, selection, collapsed, inTable, caretKey, anchorKey, paragraphText, caretOffset, trackedReadOnly, hasToc, tracking, hasRevisions } = value;
@@ -262,6 +265,7 @@ export function parseDocxView(value: unknown): DocxView | null {
   if (typeof collapsed !== "boolean" || typeof inTable !== "boolean") return null;
   if (typeof caretKey !== "string" || typeof anchorKey !== "string" || typeof paragraphText !== "string" || !isCount(caretOffset)) return null;
   return {
+    ...(typeof value.clipboardTextAvailable === "boolean" ? { clipboardTextAvailable: value.clipboardTextAvailable } : {}),
     pages: parsedPages as DocxPage[],
     caret: parsedCaret,
     selection: parsedSelection as DocxRect[],
@@ -337,6 +341,9 @@ export function createDocxBackend(invoke: Invoke): DocxBackend {
   return {
     load: (sessionId, reloadGeneration) =>
       call(invoke, "docx_load", { sessionId, reloadGeneration: reloadGeneration ?? null }, (value) => parseDocxState(value, sessionId)),
+    selectionText: (sessionId, loadGeneration, revision, anchorKey, caretKey) =>
+      call(invoke, "docx_selection_text", { sessionId, loadGeneration, revision, anchorKey, caretKey }, value =>
+        typeof value === "string" && value.length <= 2 * 1024 * 1024 && [...value].length <= 1024 * 1024 ? value : null),
     view: (sessionId, loadGeneration) =>
       call(invoke, "docx_view", { sessionId, loadGeneration }, (value) => parseDocxState(value, sessionId)),
     edit: (sessionId, loadGeneration, baseRevision, ops) =>

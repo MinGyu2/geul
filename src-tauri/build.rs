@@ -40,6 +40,8 @@ fn main() {
         "document_commit",
         "docx_load",
         "docx_view",
+        "docx_selection_text",
+        "clipboard_read_text",
         "docx_edit",
         "docx_render",
         "docx_roundtrip",
