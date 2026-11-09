@@ -1,10 +1,25 @@
 # Feature Specification: HWP/HWPX + DOCX 통합 오픈소스 워드프로세서
 
 Created: 2026-10-13
-Updated: 2026-11-08
-Status: 구현 진행 중. T007–T009은 △ 조건부 범위 인정, T010은 INCOMPLETE(D2/D4 △ 조건부 보류), T011은 기록된 범위에서 완료. 신규 문서는 T021 생성 경계·T022 제품 연결·T023 X11/IBus native 수용 완료(2026-11-04). 추가 플랫폼·외부 상호운용은 NOT RUN.
+Updated: 2026-11-09
+Status: 구현 진행 중. T007–T009 △ 조건부 범위 인정, T011은 기록된 범위에서 완료. T021–T023 신규 생성·연결·X11/IBus 수용 완료(추가 플랫폼 NOT RUN). T010은 INCOMPLETE(D2 INCONCLUSIVE, D4 latency FAIL/resources INCONCLUSIVE), T012/T013은 △ 조건부 미완료. WordCraft remote reproducibility는 `dc25d8a27303b35d0ef7d61e56276f7b8f3feab5` 게시·fresh checkout PASS. Word/Hancom 외부 호환성은 NOT RUN.
 Source baseline: `4bc1ac986026ccadb2d673a66ad69e6296e3a39e` (`MinGyu2/geul`, master).
 Input: WordCraft + RHWP 독립 코어, Tauri/React 신규 UI, 6개 영역, 언어별 JSON, 공개 저장소 민감정보 사전 차단. 2026-11-04 사용자가 T007–T010의 잔여 사유 기록 및 T011 진행, DOCX/HWP/HWPX 신규 생성 계획 반영을 승인했다.
+
+
+## 현재 최종 검증 — 2026-11-09
+
+세 패키지를 요청된 순서 B→C→A로 검증했다. WordCraft UI 포커스 교정과 전체 CI PASS, 지정 개발 브랜치의 정상 fast-forward 게시와 독립 fetch, 공개 geul SHA의 얕은 submodule 초기화, geul Rust 및 실제 native HWP 저장 회귀를 완료했다. unknown 원본 record가 내보내기 중 사라져도 빈 미리보기 저장이 거부되도록 geul HWP 수정 `8bf22c1e8b042458a2e7087ad5cc879f479c7b22`를 로컬 커밋했다. geul은 push하지 않았다. 전체 실행 신원·명령·결과는 [Stage 5–7 최종 검증](../architecture/stage567-acceptance-2026-11-05.md#wordcraft-rust-hwp-final-20261109)에 있다.
+
+| 범위 | 현재 결과 | 남은 수용 조건 |
+|---|---|---|
+| WordCraft UI/CI | `dc25d8a27303b35d0ef7d61e56276f7b8f3feab5`; 원래 포커스 회귀 PASS, 전체 6단계 CI PASS | 없음 — 이 UI/CI 묶음 |
+| WordCraft 원격 재현성 | `geul/semantic-roundtrip-equivalence`에 non-force fast-forward 게시, exact fetch/fsck 및 공개 geul `a9609bb` fresh submodule PASS | 없음 — 이 gitlink의 재현성 |
+| geul Rust/HWP | Rust fmt/check/clippy, save 163 PASS·15 ignored, WordCraft adapter 80 PASS·1 ignored, 네이티브 blank/calc 실제 두 회차 저장·재열기 PASS | T012/T013의 독립 조건, 외부 Office 호환성은 별도 |
+| T010 / D2 / D4 | T010 INCOMPLETE; D2 INCONCLUSIVE; D4 latency FAIL, resources INCONCLUSIVE | 원래 기술 수용 기준 유지 |
+| T012 / T013 | △ 조건부 미완료 | T012의 한컴 GUI·독립 수용 조건; T013의 Word 외부 호환성 |
+
+이하 날짜가 붙은 절은 그 날짜에 관측한 역사 기록이며, 당시의 `BLOCKED`, `previewStale`, 실패 수치는 이 2026-11-09 판정으로 다시 쓰지 않는다.
 
 
 ## 2026-11-08 후속 2: 빈 첫 쪽 미리보기·WordCraft CI

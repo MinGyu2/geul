@@ -1,10 +1,83 @@
 # Stage 5–7 통합·수용 재검증 (2026-11-05)
 
+
+<a id="wordcraft-rust-hwp-final-20261109"></a>
+
+## CURRENT — WordCraft·geul Rust·HWP 최종 검증 (2026-11-09)
+
+실행 순서는 B→C→A다. 기준 geul은 `a9609bbcd635f874a6af8996ade58a2d10b8c951` (`master`), WordCraft gitlink/local HEAD는 `dc25d8a27303b35d0ef7d61e56276f7b8f3feab5`, RHWP gitlink는 `1a76570e833917d15817415a53c09ad61ab3203f`다. 원본 unknown record가 RHWP export 중 사라진 뒤 빈 미리보기 저장이 허용되던 결함을 수정해 geul 로컬 커밋 `8bf22c1e8b042458a2e7087ad5cc879f479c7b22`를 만들었다. WordCraft gitlink는 바뀌지 않았고 geul은 push하지 않았다. RHWP Release generation `342ebaad964f911b8dc83fe9cb7eaca5ee2625486336c3690c01ea16f0396bdc`, active patch count 15는 그대로다.
+
+### Package B — WordCraft local UI and full CI
+
+회귀의 원인은 문서 캔버스에서 리본/상태바 chrome으로 포커스가 이동한 다음, `canvas.want_focus`가 캔버스 레이아웃 시점에 처리되어 바로 뒤의 키 이벤트보다 늦게 복구되던 것이다. 수정은 현재 캔버스 위젯의 focus ID와 문서 키보드 필터를 기록하고 chrome 클릭 프레임 안에서 포커스를 복구한다. 실제 TextInput, dialog, menu/popup에 대한 기존 예외를 유지한다. 검증된 커밋의 변경 파일은 `crates/ui-egui/src/canvas.rs`, `crates/ui-egui/src/lib.rs`, `ROADMAP.md`, `docs/gaps.md`, `docs/ui-parity.md`다. 원래 `clicks_on_ribbon_and_status_bar_chrome_keep_typing_in_the_document`의 스타일 적용·탭/checkbox·빈 영역·view 버튼·언어 메뉴 취소·폰트 크기 입력 검증을 약화하거나 제거하지 않았다. 별도 새 회귀는 입력 전 같은 caret/selection 및 바로 다음 Text/Arrow 이벤트를 확인한다.
+
+| 검증 | 실행 및 결과 |
+|---|---|
+| 변경 커밋 | 기존 `dc25d8a27303b35d0ef7d61e56276f7b8f3feab5`; 중복 수정 commit 없음 |
+| focused UI | `cargo test --manifest-path external/wordcraft/Cargo.toml --locked --offline -p wordcraft-ui-egui chrome`, protected wrapper exit 0; 4 passed/0 failed. 원래 회귀와 신규 즉시 포커스 시험 모두 PASS |
+| full CI | `cargo run --manifest-path external/wordcraft/Cargo.toml --locked --offline -p xtask -- ci`, protected wrapper exit 0; fmt, clippy, workspace tests, assets, layers, WASM 6단계 모두 PASS |
+| 결과 수 | workspace 2,080 PASS / 0 FAIL / 2 ignored; engine 453 PASS; UI 388 PASS / 2 ignored; assets 54, layers 20, WASM 16 crates |
+| toolchain / integrity | WordCraft CI 환경에서 관측 `cargo/rustc 1.99.1`; `GEUL_SANDBOX=userns-root-bwrap` integrity wrapper PASS, source/status unchanged |
+
+증거는 `target/final-verification-20261109/{targeted.log,targeted-integrity.json,full-ci.log,full-ci-integrity.json}`다. CI에서 사용한 실행은 local 소스 `dc25d8a`를 검증했다.
+
+### Package C — authorized WordCraft publication and remote reproducibility
+
+사전 remote tip은 `b39a8fb49c6fefbdd960792f2a4effd0d7660e3c`였고 `dc25d8a`의 조상이었다. 검토한 outgoing 8 commits는 순서대로 다음과 같다: `af80638f65f93e9bea5091f7cf69c6075942d809`, `b74830b293a49801b385b81efae865d65c905070`, `6c994e42dee106ca03c6f11628d2fe577fe27636`, `615697c6d9b0af3a2cd05026576ddff28c7deecf`, `077be5db9be28f26ea23940a2ef71786037aa393`, `4b90d31c67643f42aac8dedc38e2de0da92c238a`, `71b912edf6ff9398940bb1026b7b1cfa2a2505d9`, `dc25d8a27303b35d0ef7d61e56276f7b8f3feab5`.
+
+첫 HTTPS 인증 시도는 자격증명을 읽을 수 없어 exit 128로 끝났다. SSH 인증 경로를 확인한 뒤 command-scoped URL rewrite를 적용했고, remote 설정은 바꾸지 않았다. 사전 보안 검사는 8 commit gitleaks exit 0/0 leaks, 29 outgoing commit version에 새 민감정보 finding 0이었다. 전체 파일 scanner의 7 finding은 공개 baseline의 기존 false positive와 일치해 결과를 유지했고 억제하지 않았다. WordCraft에 설정된 active push hook은 없었다. 정상 fast-forward push는 지정 저장소/브랜치에 한 번 실행했으며 force, `--no-verify`, tag를 사용하지 않았다. 인증을 위해 명령 단위 URL rewrite로 HTTPS remote를 기존 SSH 인증에 연결했고 Git remote/config는 바꾸지 않았다.
+
+`https://github.com/MinGyu2/wordcraft.git`의 `refs/heads/geul/semantic-roundtrip-equivalence` push exit 0, 원격 변경 `b39a8fb..dc25d8a`; 이후 `ls-remote` tip은 정확히 `dc25d8a27303b35d0ef7d61e56276f7b8f3feab5`였다. 독립 full WordCraft HTTPS clone에서 exact SHA fetch/detached checkout, branch-tip equality, `git cat-file`, `git merge-base --is-ancestor b39a8fb dc25d8a`, `git fsck --full --strict --no-reflogs`, clean worktree가 모두 exit 0이었다. reference clone/alternates/environment object borrowing은 없었다.
+
+공개 geul `a9609bbcd635f874a6af8996ade58a2d10b8c951`을 별도 clone해 지정한 그대로 `git submodule update --init --depth 1 external/wordcraft`를 실행했고 exit 0이다. 부모 gitlink·fresh WordCraft HEAD는 모두 `dc25d8a`; submodule commit object가 있고 worktree clean, alternates 없음. Fresh clone의 `cargo metadata --no-deps --format-version 1 --locked --offline`도 exit 0이며 `wordcraft-engine` path가 초기화된 submodule 안으로 해석됐다. 따라서 이 public gitlink의 원격 재현성은 VERIFIED다.
+
+### Package A — geul Rust and HWP actual save/reopen
+
+geul Rust 1.99.0을 선택해 `scripts/cargo-geul.py` protected wrapper와 기존 `src-tauri/target` cache를 사용했다. 아래 표는 `src-tauri` 디렉터리 기준이다. 모든 명령 exit 0, wrapper integrity PASS/unchanged였다:
+
+| 명령 | 결과 |
+|---|---|
+| `python3 ../scripts/cargo-geul.py fmt --check` | PASS |
+| `python3 ../scripts/cargo-geul.py check --lib --bins` | PASS |
+| `python3 ../scripts/cargo-geul.py clippy --lib --bins -- -D warnings` | PASS |
+| `python3 ../scripts/cargo-geul.py test --lib services::save` | 163 PASS / 0 FAIL / 15 ignored |
+| `python3 ../scripts/cargo-geul.py test --lib adapters::wordcraft` | 80 PASS / 0 FAIL / 1 ignored |
+
+GitHub Actions run `42562001193`의 재실행 결과: Rust job `128986325992`와 frontend job `128986327855` 모두 completed/success. 이 workflow는 공개 geul 기준 SHA `a9609bbcd635f874a6af8996ade58a2d10b8c951`을 검증했다. 새 로컬 HWP commit `8bf22c1e8b042458a2e7087ad5cc879f479c7b22`은 push하지 않았으므로 GitHub Actions 검증 대상이 아니다. Rust 단계는 pinned WordCraft shallow submodule fetch, Rust toolchain, cache/dependency preparation, fmt, check, clippy까지 PASS; frontend typecheck/lint/build도 PASS다. workflow run ID가 같아도 확인한 것은 최신 attempt의 job 결과다. 단계별 결과는 `target/final-verification-20261109/rust/remote-job.json`에 있다.
+
+#### First-paragraph fail-closed classifier
+
+기존 classifier commit `6afc29560f13e270668b737e359bc52cd408cf7f`의 `blank_paragraph_text`/`first_paragraph_visible`는 export 결과의 유한한 알려진 metadata/control/text 구조와 ownership을 확인한다. 최종 수정 `8bf22c1e8b042458a2e7087ad5cc879f479c7b22`는 export 전에 원본 첫 문단도 알려진 구조인지 요구해, 알 수 없는 직접·중첩 record가 export 중 누락되어도 안전한 blank 증거로 세탁되지 않게 한다. 원본의 정상 UTF-16 텍스트(유효한 BMP 및 surrogate pair 포함)는 삭제할 수 있고, lone high/low surrogate는 거부한다. 알 수 없는 direct/nested record, 예기치 않은 nesting, invalid control header, malformed UTF-16, truncated extended control, invalid paragraph metadata, unknown control parameters, 잘못 놓인 page-definition record 및 text/control ownership 불일치는 blank 증명에 실패해 거부된다. 유효한 빈 문단, 합법적인 비도화 문단 metadata, 지원된 section/column controls는 긍정 경계로 남는다. 이전 transient `cfg(test)` probe는 이전 classifier 경계의 27 negative/3 positive 사례를 확인(exit 0)했고 임시 instrumentation은 복구됐다. 최종 영구 회귀는 original direct/nested unknown record가 export 중 사라지는 경우, 정상 BMP/emoji, lone high/low surrogate를 포함한다. 확장된 service regression은 원본 bytes, dirty/revision, recovery ownership 및 부분 publication 부재를 확인한다. 이는 classifier/backend/service 직접 근거이며 모든 malformed 변형을 GUI에서 각각 실행했다는 뜻은 아니다. `PreviewStale` 저장 정책은 유지한다.
+
+#### Actual native positive save chains
+
+이전 일반 `cargo` launch는 개발용 localhost URL을 사용할 수 없어 실제 앱 문서 화면 진입에 실패했고 그 시도에서 저장은 실행되지 않았다. 그 뒤 verified Release assets를 사용하는 protected `cargo build --bin geul --features tauri/custom-protocol`가 exit 0으로 끝났다. 실제 X11/IBus에서 실행한 두 성공 시나리오는 모두 앱으로 열기 → 지원 편집 → 첫 durable save → disk reopen → 후속 edit → 두 번째 durable save → final reopen을 거쳤다. control/mocked backend의 응답만으로 성공 처리한 save는 없다.
+
+| 시나리오 | native app checks | 독립 저장본 checks | 실제 durable save SHA-256 |
+|---|---:|---:|---|
+| HWP genuine blank page | 8/8 PASS | `verify-hwp-blank-preview.py` 18/18 PASS | first `df2cb1079ddb06c479906d3696d0d706b9ac5714f044d152c7781abc8d4e9411`; second `ff4cd7ef0104157be0f69299eeee5177b2597c91eee9288b8043051dea306b1a` |
+| `calc-cell.hwp` formula edit | 10/10 PASS | independent verifier 21/21 PASS | first `93d265245036f6b9911cbd518865babff528c68709bf5e1c71e9c8b7d9027489`; second `cc627a3ffe0424dbe8d85875d3cff1dc77a9573e1e1b1b0fc2f5d77c4045d418` |
+
+둘 다 canonical `PrvImage`가 PAGE_DEF에서 유도한 724×1024 크기이고, 두 번째 저장 후 재열기까지 이미지·본문 결과를 검증했다. blank 케이스는 `PrvText` CRLF, 원래 GIF 미리보기 제거, 독립 렌더와 빈 페이지 일치를 확인했다. calc 케이스는 formula cell 출력과 reopen를 확인했다. 두 fixture에서 관련 없는 CFB streams는 byte-identical이고 stream set도 기존과 같다. 최종 앱 SHA-256은 `06ee1acc930a303342c77a642f4eacef8ce36148247967985421fa5ff380c75c`; 앱은 커밋 전에 빌드됐으며 당시 HEAD `a9609bb`에 적용한 두 Rust 파일의 검증 해시는 local HWP commit `8bf22c1e8b042458a2e7087ad5cc879f479c7b22`의 파일과 일치한다(`rust-final/source-identity.json`). Toolchain은 1.99.0, feature `tauri/custom-protocol`, assets는 검증된 RHWP Release였다.
+
+최초 native unknown-record control에서는 원본 fixture의 tag 1023 unknown record가 export 중 사라져 save가 성공하는 결함을 재현했다(`native/unknown-refused/result.json`; 수정 전 direct regression도 exit 101). 수정 후 같은 native 경로에서 6/6 PASS로 `UnsafeSave`와 `PreviewStale`의 PrvText/PrvImage 거부를 확인했고 원본 hash는 그대로, dirty=true, revision/localRevision=100, 부분 publication 없음(`native/unknown-fixed/result.json`). malformed UTF-16·기타 unknown 구조의 거부는 direct Rust/service 근거이며 전체 변형을 GUI로 실행하지 않았다. native PASS는 두 positive durable-save/reopen chains와 이 단일 unknown-record negative control이다.
+
+기계 판독 결과와 로그: `target/final-verification-20261109/verified-summary.json`, `classifier-probe/{run.log,integrity.json,restored.json}`, `native/{blank-final/result.json,calc-final/result.json,unknown-fixed/result.json,blank-final-verified.json,calc-final-verified.json,cleanup.json}`, `rust-final/`(최종 HWP 소스 검사·빌드), `rust/`(기준 소스·어댑터·원격 CI), `fresh-wordcraft-checkout.json`, `fresh-geul-submodule.json`, `published-remote.json`, `push-result.json`. 이전 시도/오류는 target 로그에 남고 이후 성공의 근거와 섞지 않는다.
+
+### 현재 미완료 수용
+
+- T010 **INCOMPLETE**; 일반 RHWP 입력 history와 미검증 고급 기능은 NO-GO. D2 **INCONCLUSIVE**; D4 latency **FAIL**, resources **INCONCLUSIVE**. 원래 측정·predicate를 변경하지 않았다.
+- T012 **△ 조건부 미완료**: HWP 미리보기의 이중 blank 증거, 알 수 없는 첫 문단 구조의 fail-closed 거부, 실제 blank/calc 두 회차 저장·재열기와 기존 병합 표·지원 수식/순환 감지 부분집합을 확인했다. Hancom Office GUI와 나머지 독립 acceptance는 NOT RUN/미완료다.
+- T013 **△ 조건부 미완료**: WordCraft gitlink의 remote reproducibility는 VERIFIED. DOCX의 문단 간 bookmark 경계를 보존하고 지원 대상 제거 뒤 TOC를 갱신한다. 대상을 잃는 비-TOC 내부 링크·잘못된 표식·재생성할 수 없는 TOC 대상 제거를 원자적으로 거부하며 semantic round-trip 검증을 유지한다. Microsoft Word 외부 호환성은 NOT RUN이라 전체를 완료하지 않았다.
+- Word/Hancom external compatibility **NOT RUN**. 외부 호환성 PASS를 내부 저장·재열기나 WordCraft CI로 추론하지 않는다.
+- T009 strict preflight, original-file integrity, atomic publication, durable-save/revision/dirty checks, recovery ownership and preview freshness/content preservation remain in force.
+
+
 실행 기간: 2026-11-05~11-06 KST. 문서 파일명의 날짜는 착수일이다.
 
-> **최신 후속 판정 (2026-11-06): PARTIALLY COMPLETED.** B1 저장 중 편집 race와 B2 게시 전 Undo snapshot 복구는 각각 재현·수정·검증되어 별도 로컬 커밋됐다. D2 격리 native 조사에서 E→U→F는 여전히 0회 관측되어 INCONCLUSIVE이며 기존 predicate와 제품 입력/history 코드는 바꾸지 않았다. WordCraft pin은 현 원격 ref에서 clean fetch할 수 없어 A는 BLOCKED다. Microsoft Word와 Hancom Office가 없는 환경에서 D 외부 수용은 NOT RUN; 내부 파일 검증과 stale-preview 안전 거절만 기록했다. T012/T013은 완료하지 않았고 제품 RHWP Undo/Redo·장평/자간·영속 수식은 계속 비활성이다. D4는 이번 작업에서 제외했으며 기존 gate를 변경하지 않았다. 상세·증거·남은 수용 조건은 아래 2026-11-06 후속 기록을 따른다.
+> **2026-11-06 시점 최신 후속 판정 (historical): PARTIALLY COMPLETED.** B1 저장 중 편집 race와 B2 게시 전 Undo snapshot 복구는 각각 재현·수정·검증되어 별도 로컬 커밋됐다. D2 격리 native 조사에서 E→U→F는 여전히 0회 관측되어 INCONCLUSIVE이며 기존 predicate와 제품 입력/history 코드는 바꾸지 않았다. WordCraft pin은 현 원격 ref에서 clean fetch할 수 없어 A는 BLOCKED다. Microsoft Word와 Hancom Office가 없는 환경에서 D 외부 수용은 NOT RUN; 내부 파일 검증과 stale-preview 안전 거절만 기록했다. T012/T013은 완료하지 않았고 제품 RHWP Undo/Redo·장평/자간·영속 수식은 계속 비활성이다. D4는 이번 작업에서 제외했으며 기존 gate를 변경하지 않았다. 상세·증거·남은 수용 조건은 아래 2026-11-06 후속 기록을 따른다.
 
-현재 결론: **Stage 5/6/7 PARTIALLY COMPLETED, T012/T013 미완료, 제품 RHWP history·장평/자간·영속 수식 NO-GO**. 엔진 구현·실제 WASM·저장 서비스·실제 Tauri 검증을 구분한다. D2의 필수 순서는 관측되지 않았고 D4 원래 문턱을 넘었다. 과거의 native NOT RUN은 아래 실행 범위에 대해서만 대체한다. Word/Hancom 호환성은 NOT RUN이다.
+2026-11-06 시점 결론 (historical): **Stage 5/6/7 PARTIALLY COMPLETED, T012/T013 미완료, 제품 RHWP history·장평/자간·영속 수식 NO-GO**. 엔진 구현·실제 WASM·저장 서비스·실제 Tauri 검증을 구분한다. D2의 필수 순서는 관측되지 않았고 D4 원래 문턱을 넘었다. 과거의 native NOT RUN은 아래 실행 범위에 대해서만 대체한다. Word/Hancom 호환성은 NOT RUN이다.
 
 ## 실행 신원과 재현
 

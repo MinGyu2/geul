@@ -1,9 +1,16 @@
 # Implementation Plan: HWP/HWPX + DOCX 통합 편집기
 
-Date: 2026-11-08
+Date: 2026-11-09
 Spec: [spec.md](./spec.md)
 Source baseline: `4bc1ac986026ccadb2d673a66ad69e6296e3a39e` (`MinGyu2/geul`, master).
 Status: T007–T009 △ 조건부 범위 인정, T010 INCOMPLETE(D2/D4 △ 조건부 보류), T011 완료(2026-11-04, native IME 포함 검증 — [tasks.md](./tasks.md) Verification Log). T021 생성 경계는 실제 WASM/Rust 실행 수용 완료. T022 제품 연결 완료. T023 native 신규 생성 수용 완료(X11/IBus, 2026-11-04; 추가 환경은 NOT RUN).
+
+
+## 현재 최종 상태 — 2026-11-09
+
+순서대로 WordCraft UI·전체 CI, 원격 게시·독립 재현성, geul Rust와 native HWP blank/calc 회귀를 확인했다. 원본 unknown record 손실 뒤 blank save를 막는 HWP 수정은 로컬 커밋 `8bf22c1e8b042458a2e7087ad5cc879f479c7b22`에 있으며 geul은 push하지 않았다. 현 gitlink는 `dc25d8a27303b35d0ef7d61e56276f7b8f3feab5`이며 지정 WordCraft 개발 브랜치에 게시되어 공개 geul `a9609bbcd635f874a6af8996ade58a2d10b8c951`에서 얕은 초기화된다. Rust 1.99.0 보호 명령과 native 저장 체인은 PASS다. T010 INCOMPLETE, D2 INCONCLUSIVE, D4 latency FAIL/resources INCONCLUSIVE, T012/T013 △ 조건부 미완료 및 Word/Hancom NOT RUN은 유지한다. [실행 기록](../architecture/stage567-acceptance-2026-11-05.md#wordcraft-rust-hwp-final-20261109).
+
+아래 2026-11-08 이하 단락은 그 날짜에 유효했던 역사 기록이다. 그때의 로컬 pin, CI 실패, previewStale 및 remote BLOCKED 판단을 삭제하거나 새 결과로 가장하지 않는다.
 
 
 ## 2026-11-08 후속 2: 빈 첫 쪽 미리보기·WordCraft CI
@@ -41,7 +48,7 @@ RHWP와 WordCraft의 독립 모델·렌더·기록을 Tauri/React UI로 연결�
 ## Technical Context
 
 - UI: React/TypeScript. host: Tauri 2/Rust. locale: `src/language/en.json`, `ko.json`.
-- RHWP pin: `1a76570e833917d15817415a53c09ad61ab3203f`. WordCraft current pin: `615697c6d9b0af3a2cd05026576ddff28c7deecf` (이 작업 시작 pin `6c994e42dee106ca03c6f11628d2fe577fe27636`, 2026-11-04 계획 당시 `fc41918814f62645b6746ed68e71e8c2c2e85d6f`). 새 pin은 로컬에만 있으며 원격 재현성 BLOCKED를 유지한다.
+- RHWP pin: `1a76570e833917d15817415a53c09ad61ab3203f`. WordCraft current pin: `dc25d8a27303b35d0ef7d61e56276f7b8f3feab5` (2026-11-09, remote `geul/semantic-roundtrip-equivalence`, published and fresh-fetch verified). Earlier pins `615697c6d9b0af3a2cd05026576ddff28c7deecf`, `6c994e42dee106ca03c6f11628d2fe577fe27636`, and `fc41918814f62645b6746ed68e71e8c2c2e85d6f` are historical.
 - RHWP 실행 신원은 pin뿐 아니라 `patches/rhwp/`, `scripts/rhwp-patches.py`의 순서 있는 패치, source tree, JS/WASM generation/hash를 포함한다. 2026-11-04 계획 당시 11개, 2026-11-06 이전 기록의 14개/Release generation `53b6ad7a4c6de7a8f4ada4c61b0ad1934461e656527f6e6b440f08898bebf6d6`은 역사적 신원이다. 2026-11-08 현재 활성 패치 계열은 15개이며 검증된 Release generation은 `342ebaad964f911b8dc83fe9cb7eaca5ee2625486336c3690c01ea16f0396bdc`다.
 - RHWP 모델·Canvas는 WebView WASM, WordCraft 모델·raster·hit-test는 Rust native W-A다. WordCraft egui UI 임베딩이 아니다.
 - `tests/`는 로컬 논리 경로다. 비공개 자료와 공개 스크립트를 구분하고 [보안 정책](../development/security-policy.md)을 유지한다. 이번 작업에서 로컬 geul-tests·설치 도구·훅을 실행한 것으로 간주하지 않는다.

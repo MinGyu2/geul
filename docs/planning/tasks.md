@@ -1,6 +1,8 @@
+> **현재 검증 상태 (2026-11-09):** WordCraft UI focus 회귀와 전체 CI PASS; `dc25d8a27303b35d0ef7d61e56276f7b8f3feab5`가 지정 개발 브랜치에 게시되고 exact fetch·독립 checkout·geul 얕은 submodule 초기화 PASS. geul Rust 1.99.0 fmt/check/clippy, `services::save` 163 PASS/15 ignored, WordCraft adapter 80 PASS/1 ignored; 로컬 HWP 수정 `8bf22c1e8b042458a2e7087ad5cc879f479c7b22`; 실제 HWP blank 및 `calc-cell.hwp` 두 회차 durable 저장·재열기와 독립 preview 검증 PASS. T010 INCOMPLETE, T012/T013 △ 조건부 미완료, D2 INCONCLUSIVE, D4 latency FAIL/resources INCONCLUSIVE, Microsoft Word/Hancom NOT RUN은 그대로다. 상세 [수용 기록](../architecture/stage567-acceptance-2026-11-05.md#wordcraft-rust-hwp-final-20261109). 아래의 이전 최신 상태는 각각 날짜 기준의 역사 기록으로 보존한다.
+
 > **2026-11-06 조건부 고급 기능 개발:** [새 사용자 결정](spec.md#conditional-advanced-20261106)은 D2/D4를 △ 조건부 보류하고 독립 검증한 T012 부분집합의 제품 활성화 작업을 허용한다. D2 INCONCLUSIVE, D4 FAIL/자원 INCONCLUSIVE 및 T010/T012/T013 전체 미완료는 유지한다. 지원 부분집합은 일반 Release 빌드·실제 X11/IBus로 검증해 제품 명령을 켰다([수용 기록](../architecture/stage567-acceptance-2026-11-05.md#2026-11-06-advanced-d--conditional-production-implementation)). 아래 이전 비활성 기록은 당시 상태다.
 
-> **최신 상태 (2026-11-08 후속 2):** 진짜 빈 첫 쪽 HWP 미리보기 저장 허용(실패한 한 색 렌더는 계속 거부, 실제 앱 두 회차 저장·재열기), 미리보기 대응 독립 검증 강화. WordCraft file-access 정책 위반 수정(`4b90d31c`)으로 엔진 453 PASS/0 FAIL, 그러나 전체 CI는 가려져 있던 기존 UI 시험 1건으로 FAIL. 상태 값은 아래와 같다. [상세](../architecture/stage567-acceptance-2026-11-05.md#blank-preview-wc-ci-20261108).
+> **당시 최신 상태 (2026-11-08 후속 2, 역사 기록):** 진짜 빈 첫 쪽 HWP 미리보기 저장 허용(실패한 한 색 렌더는 계속 거부, 실제 앱 두 회차 저장·재열기), 미리보기 대응 독립 검증 강화. WordCraft file-access 정책 위반 수정(`4b90d31c`)으로 엔진 453 PASS/0 FAIL, 그러나 전체 CI는 가려져 있던 기존 UI 시험 1건으로 FAIL. 상태 값은 아래와 같다. [상세](../architecture/stage567-acceptance-2026-11-05.md#blank-preview-wc-ci-20261108).
 >
 > **이전 (2026-11-08 후속):** `calc-cell.hwp` 미리보기는 검증된 재생성으로 실제 두 회차 저장·재열기 PASS(비동기 그림 1쪽은 계속 거부), 한컴 `%.Nf` 수식 캐시 편집 지원, WordCraft `077be5db`(로컬)로 문단을 넘는 책갈피 경계·TOC 대상 제거 시 재생성 지원. T010 INCOMPLETE, T012/T013 △ 조건부 미완료, D2 INCONCLUSIVE, D4 지연 FAIL/자원 INCONCLUSIVE, WordCraft 원격 재현성 BLOCKED, Word/Hancom NOT RUN. [상세](../architecture/stage567-acceptance-2026-11-05.md#preview-tables-toc-20261108).
 >
@@ -17,7 +19,7 @@
 > **이전 상태 기록 (2026-11-06):** Stage 5–7은 **PARTIALLY COMPLETED**. B1 저장 중 서식 race와 B2 publication 이전 Undo snapshot 복구는 수정·검증됐으며 각각 로컬 커밋이 있다. WordCraft gitlink clean checkout은 현 원격 ref에서 fetch되지 않아 BLOCKED이고, D2의 native E→U→F는 이번 격리 조사에서도 0회 관측되어 INCONCLUSIVE다. Microsoft Word/Hancom GUI 접근이 없어 외부 수용은 NOT RUN; 내부 DOCX/HWP/HWPX 검증은 외부 호환성 PASS가 아니다. 최신 판정·evidence·수동 외부 절차는 [2026-11-06 후속 수용 기록](../architecture/stage567-acceptance-2026-11-05.md#2026-11-06-후속-wordcraft-재현성-게시-undo-native-d2-외부-office)에 따른다. T012/T013 미완료, 제품 RHWP Undo/Redo·장평/자간·영속 수식 비활성 상태, D4 기존 gate는 유지한다.
 
 Input: [spec.md](./spec.md), [plan.md](./plan.md).
-Updated: 2026-11-04; source baseline `4bc1ac986026ccadb2d673a66ad69e6296e3a39e` (`MinGyu2/geul`, master).
+Updated: 2026-11-09; source baseline `4bc1ac986026ccadb2d673a66ad69e6296e3a39e` (`MinGyu2/geul`, master).
 
 > **2026-11-05 Stage 5–7 재검증:** Stage 5/6/7은 부분 완료이며 T012/T013 체크는 미완료로 유지한다. 실제 Release WASM과 controlled 수식 연결, 수식 HWP/HWPX 2회 저장(6게시·2안전 거부), 현 native 실행 범위는 [통합 수용 보고서](../architecture/stage567-acceptance-2026-11-05.md)에 기록했다. D2는 25 PASS/2 INCONCLUSIVE이며 필수 E→U→F는 미관측, D4는 기존 문턱 그대로 6 PASS/2 FAIL이다. 제품 RHWP history·장평/자간·영속 수식은 NO-GO이고 Word/Hancom은 NOT RUN이다. 아래 T012/T013의 긴 상태 행과 native NOT RUN 문구는 그 행에 적힌 당시의 이력이며, 현재 범위는 이 최신 기록이 대체한다. DOCX 추적 표식 교정 뒤 실제 native10개/단계별 저장10개·재개방은 통과했으나 Word 외부 수용을 완료로 세지 않는다.
 
@@ -83,8 +85,8 @@ Independent Test: 형식·선택·상태별 명령과 미지원 차단. 시험 �
 
 ## Phase 5: User Story 4 - 고급 기능 (Priority: P2)
 Independent Test: 실제 API·기록·문서 왕복을 검증한 명령만 활성화.
-- [ ] T012 [US4] △ 조건부 미완료 — 장평·자간·영속 수식과 고급 전용 Undo/Redo를 128 KiB·8쪽 이하 HWP/HWPX에서 제품 활성화·실제 UI 검증 완료. 일반 입력 history는 비활성. 한컴 외부 GUI NOT RUN, 진짜 계산식 HWPX fixture 미확보, calc-cell HWP는 stale-preview 안전 거부이므로 전체 미완료.
-- [ ] T013 [US4] △ 조건부 미완료 — DOCX TOC·메모·각주/미주·Track Changes·수락/거절 구현과 선택 혼합 문서 내부 수용·실제 native 입력·두 회차 저장/재개방 완료 (`4585c2ae14f6cc025d1681888383948c9addb75d`); TOC 표식 위험 명령 원자적 거부 (`ced0c02d84b40dd525efb24526c6c9dc2852a8c7`). 원격 WordCraft 재현성 BLOCKED, Microsoft Word NOT RUN으로 전체 미완료.
+- [ ] T012 [US4] △ 조건부 미완료 — 128 KiB·8쪽 이하 HWP/HWPX의 검증된 장평·자간·영속 수식·고급 전용 Undo/Redo 부분집합과 병합 표·순환 검사를 유지한다. HWP 미리보기는 재열기 렌더, PAGE_DEF 크기·정규 PNG, 저장 결속 검사로 재생성한다. 빈 첫 쪽은 draw-list와 첫 문단의 이중 근거가 필요하며 알 수 없는 첫 문단 record/control 구조는 fail-closed (`6afc29560f13e270668b737e359bc52cd408cf7f`, 최종 원본 구조 확인 `8bf22c1e8b042458a2e7087ad5cc879f479c7b22`). `calc-cell.hwp` 실제 앱 두 회차 저장·재열기 PASS. 일반 입력 history 비활성. 한컴 GUI와 나머지 독립 수용 조건이 NOT RUN/미완료이므로 전체 미완료.
+- [ ] T013 [US4] △ 조건부 미완료 — DOCX TOC·메모·각주/미주·Track Changes·수락/거절 및 선택 혼합 문서 내부 수용을 유지한다. 문단 사이 bookmark 경계를 보존하고 TOC 대상 제거 시 갱신하며, 대상을 잃는 비-TOC 내부 링크·잘못된 표식·재생성할 수 없는 TOC 대상 제거는 원자적으로 거부하며 semantic round-trip 검증을 유지한다. WordCraft `dc25d8a27303b35d0ef7d61e56276f7b8f3feab5` 원격 재현성 VERIFIED; Microsoft Word 외부 호환성 NOT RUN이므로 전체 미완료.
 
 ## Phase 6: User Story 5 - 저장 실패·복구 수용 (Priority: P1)
 Independent Test: 기존 저장·충돌·복구의 남은 실패 경계.
