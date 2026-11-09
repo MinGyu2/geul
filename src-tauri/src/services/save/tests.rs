@@ -11835,6 +11835,14 @@ fn blank_page_two_durable_saves_and_refusal_rollback() {
             .unwrap();
         registry.commit(id, generation, 0, 1).unwrap();
         let ticket = registry.begin_save(id, generation, 1).unwrap();
+        let recovery_dir = TempDir::new();
+        let recovery =
+            crate::services::recovery::RecoveryStore::new(recovery_dir.path().join("records"));
+        let candidate = recovery
+            .snapshot(&ticket, &original, &path, &original)
+            .unwrap();
+        let record = recovery_dir.path().join("records").join(&candidate.id);
+        let checkpoint = std::fs::read(&record).unwrap();
         let result = service::save_with_options(
             registry,
             &ticket,
@@ -11844,14 +11852,51 @@ fn blank_page_two_durable_saves_and_refusal_rollback() {
             true,
             service::SaveOptions {
                 destination: None,
-                recovery: None,
+                recovery: Some(&recovery),
                 preview: render,
             },
         );
+        if result.is_err() {
+            assert_eq!(
+                std::fs::read(&record).unwrap(),
+                checkpoint,
+                "refusal retains recovery bytes"
+            );
+            assert_eq!(recovery.list().unwrap()[0].id, candidate.id);
+            // Ownership survives the refusal: the original session can retire it.
+            recovery.forget_session(id).unwrap();
+            assert!(recovery.list().unwrap().is_empty());
+        }
         drop(ticket);
         let session = registry.get(id).unwrap();
         (result, session.dirty, session.revision)
     };
+    // Every unsupported record/text variant refuses before publication.
+    for (name, output) in unproven_blank_paragraphs() {
+        let (result, dirty, revision) = save(
+            Some(ALIGN_LEFT),
+            &output,
+            Some(&uniform(724, 1024, 255).with_blank_page(true)),
+        );
+        let DocumentError::UnsafeSave { preservation } = result.unwrap_err() else {
+            panic!("{name}")
+        };
+        assert!(
+            preservation
+                .findings
+                .iter()
+                .any(|f| f.code == FindingCode::PreviewStale),
+            "{name}"
+        );
+        assert_eq!(std::fs::read(&path).unwrap(), ALIGN_LEFT, "{name}");
+        assert!(dirty, "{name}");
+        assert_eq!(revision, 1, "{name}");
+        assert_eq!(
+            std::fs::read_dir(dir.path()).unwrap().count(),
+            1,
+            "no partial publication: {name}"
+        );
+    }
     // Refused first: no blank evidence. Nothing is published.
     let blank_out = align_left_with(ALIGN_LEFT, |r| set_first_paragraph(r, ""));
     let (result, dirty, revision) =
@@ -11912,4 +11957,119 @@ fn blank_page_two_durable_saves_and_refusal_rollback() {
     assert_eq!(std::fs::read(&path).unwrap(), second);
     assert!(dirty);
     assert_eq!(revision, 1);
+}
+
+#[test]
+fn blank_first_paragraph_unknown_record_is_refused() {
+    let output = align_left_with(ALIGN_LEFT, |r| {
+        let mut r = set_first_paragraph(r, "");
+        r.push((1023, 1, vec![1, 2, 3, 4]));
+        r
+    });
+    let result = hwp::refresh_previews(
+        ALIGN_LEFT,
+        &output,
+        Some(&uniform(724, 1024, 255).with_blank_page(true)),
+    )
+    .unwrap();
+    assert!(
+        result.output.is_none(),
+        "unknown record was accepted as invisible"
+    );
+}
+
+/// Unknown structure is not evidence of invisible content. Start with a valid
+/// CFB and stale preview, preserving DocInfo/other streams in every mutation.
+fn unproven_blank_paragraphs() -> Vec<(&'static str, Vec<u8>)> {
+    let mut cases = Vec::new();
+    for (name, tag, level, body) in [
+        ("unknown direct tag", 1023, 1, vec![0; 4]),
+        ("unknown nested tag", 1023, 2, vec![0; 4]),
+        ("nested paragraph", 66, 2, vec![0; 22]),
+        ("misplaced line segment", 69, 3, vec![0; 36]),
+        ("orphan page definition", 73, 1, vec![0; 40]),
+        ("unknown control parameters", 87, 2, vec![0; 6]),
+        ("master page list", 72, 2, vec![0; 10]),
+        ("drawing header", 71, 1, b" osg".to_vec()),
+        ("picture record", 85, 3, vec![0; 8]),
+        ("invalid control header", 71, 1, vec![0; 3]),
+        ("truncated section header", 71, 1, b"dces".to_vec()),
+        ("truncated column header", 71, 1, b"dloc".to_vec()),
+        ("malformed shape metadata", 68, 1, vec![0; 7]),
+        ("malformed line metadata", 69, 1, vec![0; 35]),
+        ("range annotation", 70, 1, vec![0; 12]),
+    ] {
+        cases.push((
+            name,
+            align_left_with(ALIGN_LEFT, |r| {
+                let mut r = set_first_paragraph(r, "");
+                r.push((tag, level, body));
+                r
+            }),
+        ));
+    }
+    for (name, body) in [
+        ("odd UTF16", vec![13]),
+        ("missing paragraph terminator", utf16("  ")),
+        ("interior paragraph terminator", utf16("\r \r")),
+        ("lone surrogate", vec![0, 0xd8]),
+        ("truncated tab", vec![9, 0]),
+        ("tab with leader parameters", utf16("\tabcdef\t")),
+        ("truncated extended control", vec![2, 0]),
+        ("unowned drawing control", utf16("\u{b}abcdef\u{b}")),
+        ("reserved inline control", utf16("\u{5}abcdef\u{5}")),
+        ("mismatched section id", utf16("\u{2}abcdef\u{2}")),
+        ("visible hyphen", utf16("\u{18}")),
+    ] {
+        cases.push((
+            name,
+            align_left_with(ALIGN_LEFT, |r| {
+                let mut r = set_first_paragraph(r, "");
+                r.iter_mut().find(|(t, _, _)| *t == 67).unwrap().2 = body;
+                r
+            }),
+        ));
+    }
+    cases.push((
+        "unknown prefix",
+        align_left_with(ALIGN_LEFT, |r| {
+            let mut r = set_first_paragraph(r, "");
+            r.insert(0, (1023, 0, vec![]));
+            r
+        }),
+    ));
+    cases
+}
+
+#[test]
+fn blank_first_paragraph_record_contract() {
+    let white = uniform(724, 1024, 255).with_blank_page(true);
+    for (name, output) in unproven_blank_paragraphs() {
+        let result = hwp::refresh_previews(ALIGN_LEFT, &output, Some(&white)).unwrap();
+        assert!(result.output.is_none() && result.image.is_none(), "{name}");
+    }
+    // Genuine fixture already includes PARA_HEADER's paragraph-shape reference,
+    // CHAR_SHAPE, LINE_SEG, secd/PAGE_DEF/FOOTNOTE_SHAPE/PAGE_BORDER_FILL and cold.
+    // An empty range list and a complete inline tab remain non-painting.
+    for (name, output) in [
+        (
+            "genuine metadata",
+            align_left_with(ALIGN_LEFT, |r| set_first_paragraph(r, "")),
+        ),
+        (
+            "empty range list",
+            align_left_with(ALIGN_LEFT, |r| {
+                let mut r = set_first_paragraph(r, "");
+                r.push((70, 1, vec![]));
+                r
+            }),
+        ),
+        (
+            "complete inline tab",
+            align_left_with(ALIGN_LEFT, |r| set_first_paragraph(r, "\t\0\0\0\0\0\0\t")),
+        ),
+    ] {
+        let result = hwp::refresh_previews(ALIGN_LEFT, &output, Some(&white)).unwrap();
+        assert!(result.output.is_some() && result.image.is_some(), "{name}");
+    }
 }

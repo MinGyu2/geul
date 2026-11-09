@@ -935,6 +935,60 @@ pub struct RefreshedPreviews {
 const CTRL_SECTION: [u8; 4] = *b"dces";
 const CTRL_COLUMN: [u8; 4] = *b"dloc";
 
+/// Decode only whitespace and understood non-painting controls. Extended
+/// control 2 must name a matching section/column header; other extended/inline
+/// controls are not blank evidence, even when their header is absent.
+fn blank_paragraph_text(body: &[u8]) -> Option<Vec<[u8; 4]>> {
+    if !body.len().is_multiple_of(2) {
+        return None;
+    }
+    let units: Vec<u16> = body
+        .as_chunks::<2>()
+        .0
+        .iter()
+        .map(|b| u16::from_le_bytes(*b))
+        .collect();
+    // PARA_TEXT includes exactly one paragraph terminator, at its end.
+    if units.last() != Some(&13) || units[..units.len() - 1].contains(&13) {
+        return None;
+    }
+    let mut controls = Vec::new();
+    let mut at = 0;
+    while at < units.len() {
+        match units[at] {
+            2 | 9 => {
+                let code = units[at];
+                if units.get(at + 7) != Some(&code) {
+                    return None;
+                }
+                if code == 2 {
+                    let id: [u8; 4] = body.get(at * 2 + 2..at * 2 + 6)?.try_into().ok()?;
+                    if id != CTRL_SECTION && id != CTRL_COLUMN {
+                        return None;
+                    }
+                    controls.push(id);
+                } else if units[at + 1..at + 7].iter().any(|unit| *unit != 0) {
+                    // A tab can carry leader/fill parameters. Only the empty
+                    // parameter form is proven non-painting here.
+                    return None;
+                }
+                at += 8;
+            }
+            10 | 13 | 30 | 31 => at += 1,
+            0..=31 => return None,
+            unit => {
+                // Surrogates, including malformed UTF-16, and all visible
+                // characters refuse. No lossy decoding/replacement characters.
+                if !char::from_u32(u32::from(unit)).is_some_and(char::is_whitespace) {
+                    return None;
+                }
+                at += 1;
+            }
+        }
+    }
+    Some(controls)
+}
+
 /// Whether Section0's first top-level paragraph — which always starts page 1 — can show
 /// anything: a visible character, or any control other than the section/column definitions
 /// (tables, drawings, pictures, headers/footers, page numbers, fields…). Undecodable or
@@ -950,55 +1004,103 @@ fn first_paragraph_visible(container: &Container) -> bool {
     let Some(records) = records(&data) else {
         return true;
     };
-    let Some(start) = records
-        .iter()
-        .position(|(tag, level, _)| *tag == TAG_PARA_HEADER && *level == 0)
-    else {
+    // HWP5 §4.3: Section starts with a level-0 PARA_HEADER, whose direct
+    // children own text/shapes/line segments and controls. Never search past an
+    // unexplained prefix or skip a child merely because RHWP preserves it raw.
+    let Some(&(TAG_PARA_HEADER, 0, header)) = records.first() else {
         return true;
     };
-    let owned = records[start + 1..]
-        .iter()
-        .take_while(|(tag, level, _)| !(*tag == TAG_PARA_HEADER && *level == 0));
-    for (tag, level, body) in owned {
-        match (*tag, *level) {
+    if !matches!(header.len(), 22 | 24) {
+        return true;
+    }
+    let mut text_controls = Vec::new();
+    let mut headers = Vec::new();
+    let mut text_seen = false;
+    let mut section_owner = false;
+    for &(tag, level, body) in records.iter().skip(1) {
+        if tag == TAG_PARA_HEADER && level == 0 {
+            break;
+        }
+        match (tag, level) {
+            (67, 1) if !text_seen => {
+                text_seen = true;
+                let Some(controls) = blank_paragraph_text(body) else {
+                    return true;
+                };
+                text_controls = controls;
+                let count =
+                    u32::from_le_bytes(header[..4].try_into().unwrap_or_default()) & 0x7fff_ffff;
+                if body.len() / 2 != count as usize {
+                    return true;
+                }
+                section_owner = false;
+            }
+            // PARA_SHAPE is in DocInfo, referenced by PARA_HEADER (not a body
+            // record). Its reference and CHAR_SHAPE references are checked by
+            // `references`. These direct children carry positions, not content.
+            (68, 1) if !body.is_empty() && body.len().is_multiple_of(8) => {
+                section_owner = false;
+            }
+            (69, 1) if body.len().is_multiple_of(36) => section_owner = false,
+            // Nonempty range tags may annotate/highlight text. Do not assume
+            // arbitrary tag parameters are invisible.
+            (70, 1) if body.is_empty() => section_owner = false,
             (71, 1) => {
-                if !matches!(body.get(..4), Some(id) if id == CTRL_SECTION || id == CTRL_COLUMN) {
+                let Some(id) = body.get(..4) else {
                     return true;
-                }
-            }
-            (67, 1) => {
-                if body.len() % 2 != 0 {
-                    return true;
-                }
-                let units: Vec<u16> = body
-                    .as_chunks::<2>()
-                    .0
-                    .iter()
-                    .map(|b| u16::from_le_bytes(*b))
-                    .collect();
-                let mut at = 0;
-                while at < units.len() {
-                    match units[at] {
-                        // Extended (with CTRL_HEADER, judged above) and inline controls: 8 units.
-                        1..=9 | 11 | 12 | 14..=23 => {
-                            if units.get(at + 7) != Some(&units[at]) {
-                                return true;
-                            }
-                            at += 8;
-                        }
-                        // Paragraph end, line break, soft hyphen, non-breaking/figure space.
-                        10 | 13 | 24 | 30 | 31 => at += 1,
-                        unit => match char::from_u32(u32::from(unit)) {
-                            Some(c) if c.is_whitespace() => at += 1,
-                            _ => return true,
-                        },
+                };
+                section_owner = id == CTRL_SECTION;
+                if section_owner {
+                    // 24-byte base, optional language, and the genuine Hancom
+                    // fixture's zero-padded extension. Refuse other extensions.
+                    if !matches!(body.len(), 28 | 30 | 38)
+                        || (body.len() == 38 && body[30..].iter().any(|b| *b != 0))
+                    {
+                        return true;
                     }
+                } else if id == CTRL_COLUMN {
+                    // RHWP's variable-width layout: attr/attr2, width+gap per
+                    // column, then separator. A column separator can paint.
+                    let Some(bytes) = body.get(4..6) else {
+                        return true;
+                    };
+                    let attr = u16::from_le_bytes([bytes[0], bytes[1]]);
+                    let count = (attr >> 2) & 0xff;
+                    let unequal = attr & 0x1000 == 0 && count > 1;
+                    let size = if unequal {
+                        14 + usize::from(count) * 4
+                    } else {
+                        16
+                    };
+                    if count == 0
+                        || attr & 3 == 3
+                        || (attr >> 10) & 3 == 3
+                        || body.len() != size
+                        || body[size - 6] != 0
+                    {
+                        return true;
+                    }
+                } else {
+                    return true; // Table, drawing, field, header/footer, etc.
                 }
+                let Ok(id) = <[u8; 4]>::try_from(id) else {
+                    return true;
+                };
+                headers.push(id);
             }
-            _ => {}
+            // Only direct children of secd, never of cold or arbitrary nested
+            // controls: PAGE_DEF, FOOTNOTE_SHAPE (28 in real HWP/RHWP, despite
+            // the older spec's 26), PAGE_BORDER_FILL. They configure layout;
+            // page-1 painting (including borders) is still frontend evidence.
+            (73, 2) if section_owner && body.len() == 40 => {}
+            (74, 2) if section_owner && body.len() == 28 => {}
+            (75, 2) if section_owner && body.len() == 14 => {}
+            // Includes CTRL_DATA/ParameterSets, LIST_HEADER/master pages,
+            // nested paragraphs, unknown future tags, and misplaced metadata.
+            _ => return true,
         }
     }
-    false
+    !text_seen || text_controls != headers
 }
 
 /// Regenerate PrvText *and* PrvImage when the only obstacles to an otherwise valid edited
