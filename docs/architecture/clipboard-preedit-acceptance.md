@@ -53,13 +53,47 @@ exact document text via normal selection + Copy (which also proves Copy works ag
 each format: genuine BackSpace cancellation, normal Cut/Paste, T009 save and an independent reopen of
 the saved bytes (WordCraft XML for DOCX, RHWP WASM for HWP/HWPX).
 
-Classification (the observed native ordering decides, not an assumed one):
+Classification (2026-11-10 hardening; `scripts/tests/preedit_classifier.py`, unit tests
+`scripts/tests/test_preedit_classifier.py`). The first version is kept in the history below. It
+treated "no OS read" as a safe block, so a lost or misdirected command could have passed.
 
-- **blocked** — no OS read/write happened.
-- **executed-after-settlement** — the command's own trusted event (chord keydown or ribbon click)
-  came after `compositionend` with no new composition between, was not composing, and the capture
-  listener (which runs before the app handler) saw the session reporting Paste available.
-- **UNSAFE** — any other execution. This fails the run.
+1. **Delivery.** The intended trusted command event must reach the app exactly once. That is a
+   Ctrl+key `keydown` (no other modifier) on `.rhwp-input`, or a `click` whose closest
+   `[data-command]` is exactly `edit.<op>`. Otherwise the case fails.
+2. **One positive outcome.** Executed means one OS read (Paste) or an ownership change (Copy/Cut).
+   Refused means the app's own refusal notice for *that* command (`command.unavailable.<reason>`)
+   appeared after the event. Before each case the status line is primed with a refusal the tested
+   command cannot produce, so the notice is always a visible change. Neither outcome (a lost
+   command), both, or two reads fail the case.
+3. **Expectation from the IME ordering.** A command that arrived before the IME transaction ended
+   (no `compositionend` before it, or `isComposing`) must be refused. After genuine settlement it
+   may execute. A refusal is accepted only with an independently validated reason:
+   `pendingEdits` within 500 ms of the IME commit, or `selectionRequired` when the settled state
+   shows no selection.
+
+The rendered button state at the event is recorded (`displayedReasonAtCommand`) but does not
+decide the outcome. A native run showed DOCX Ctrl+V executing while the last render still showed
+`pendingEdits`. The shortcut path evaluates the live session snapshot and `runClipboard` refuses
+while edits are pending, so the render was one frame behind.
+
+Expected document text follows from the positively evidenced outcome. A Paste counts as inserted
+only with exactly one read and no refusal notice, and is then checked once at the exact position.
+`ribbon-paste-after-settlement` is a separate positive case. It commits the preedit with a real
+`End` key, waits for a stable available state, then clicks Paste. It requires one read, one
+insertion and exactly one revision.
+
+Focus case: the external X11 window must actually hold X focus (`xdotool getwindowfocus`) and the
+page must record a trusted window `blur`. The app must then regain X focus with a trusted window
+`focus`, and editor focus must be restored. The syllable must appear exactly once when the IME
+committed it. WebKitGTK delivered two `compositionend("하")` events on focus loss (documented in
+`imeInput.ts`), and the app kept one. Tab switch: the trusted click must hit a document tab, the
+commit must not arrive after the switch, and the Ctrl+V in the new document needs one positive
+outcome. The text of each document is checked exactly.
+
+Launcher cleanup is proven, not just recorded. The launcher is a child subreaper, so orphans of the
+test command are reparented to it. It snapshots every descendant as (pid, start time), stops only
+those, and exits non-zero (3) if any survive (`cleanup.json`: `proven`). A probe with a
+`setsid`-detached `sleep` confirmed that leaks are found, stopped and reported.
 
 ## Observed native behaviour (WebKitGTK 2.54.1, IBus 1.5.33, ibus-hangul 1.5.5, GTK3 IM module)
 
@@ -90,6 +124,8 @@ Classification (the observed native ordering decides, not an assumed one):
 
 ## Results
 
+Initial acceptance (first classifier, app `dd49a0ce`):
+
 | Run | App SHA-256 | Formats | Checks | Result |
 |---|---|---|---|---|
 | run1/run2 | `dd49a0ce…1870` | DOCX | 7 cases | PASS, then harness cancellation expectation corrected |
@@ -109,3 +145,31 @@ Limits: only Linux X11 + IBus (GTK3 IM module, default asynchronous mode) with i
 Not covered: Wayland text-input, XIM, fcitx5, Windows TSF and macOS. Not covered: a delayed `compositionend`
 or late commit that the platform did not actually produce. Ribbon outcome timing varies by run, and both
 outcomes are accepted only under the classification above.
+
+### Hardened acceptance (app `343b1456bd63f8c6f6292956639291177bdb35c91a9e3035fe5ecdaffd1aa455`)
+
+| Run | Checks | Result | Note |
+|---|---|---|---|
+| h1 | 148/149 | FAIL | HWP text after cancel-Paste at wrong position (harness, below) |
+| h4, h6 | — | FAIL | DOCX normal Cut partial / HWP Paste position: same harness cause |
+| h7 | — | FAIL | strict rendered-state rule: DOCX Ctrl+V ran while render showed pendingEdits |
+| h9 | 230/230 | PASS | cleanup proven, 10 owned processes, 0 survivors |
+| h10 | 230/230 | PASS | repetition; cleanup proven |
+
+Harness defect found and fixed: once the document text wrapped onto a second visual line, the
+verification helper collapsed its selection with `End`, which only reaches the end of the current
+visual line. Later insertions and the normal Cut then started mid-text. No text was lost or
+duplicated; positions differed. The helper now reaches the true end with `Down`×6 + `End`, selects
+with `Shift+Up`×6 + `Shift+Home`, and sends the command only after the final selection key's keyup
+is observed and the command is available.
+
+h9 outcomes, all with exact text: Ctrl+C/X refused `selectionRequired` (one HWP Ctrl+X over a
+selection refused `pendingEdits`). Ctrl+V executed once in every format. Ribbon commands were
+refused `pendingEdits`/`selectionRequired`, except the HWPX ribbon Paste, which settled first and
+executed once. `ribbon-paste-after-settlement` executed once in all three formats. Saved bytes
+reopened independently with the exact text.
+
+Existing plain clipboard acceptance (`native-clipboard.py`) on the same app under the hardened
+launcher: 70/70 PASS (`target/clipboard-hardening/plain`). Final status: the original
+SetGlobalEngine blocker stays resolved, and the strengthened native preedit gate passes for DOCX/HWP/HWPX
+in the Linux X11 + IBus (GTK3, asynchronous) + ibus-hangul 2-beolsik scope.

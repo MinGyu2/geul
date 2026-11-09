@@ -21,6 +21,11 @@ pub async fn clipboard_read_text(app: tauri::AppHandle) -> Result<String, &'stat
         let (send, receive) = std::sync::mpsc::sync_channel(1);
         // GTK APIs belong to the UI thread. request_text is asynchronous: an
         // unresponsive external clipboard owner must never block that thread.
+        // Resource bound (P3-B): GTK3 offers no streaming or size-limited
+        // selection transfer; GDK receives the owner's whole payload (including
+        // X11 INCR transfers) and converts it to UTF-8 before this callback runs.
+        // `bounded_text` limits what the application keeps and uses, not that
+        // transient GTK allocation, which is released when the callback returns.
         app.run_on_main_thread(move || {
             gtk::Clipboard::get(&gtk::gdk::SELECTION_CLIPBOARD).request_text(move |_, text| {
                 let _ = send.try_send(bounded_text(text));
@@ -51,6 +56,26 @@ mod tests {
         assert_eq!(bounded_text(None), Ok(String::new()));
         let text = format!("{}\n끝\t", "한😀글".repeat(300));
         assert_eq!(bounded_text(Some(&text)), Ok(text));
+    }
+
+    #[test]
+    fn exact_scalar_and_byte_boundaries() {
+        // 1,048,576 scalars is accepted; one more is refused.
+        let scalars = "a".repeat(1024 * 1024);
+        assert_eq!(
+            bounded_text(Some(&scalars)).map(|t| t.len()),
+            Ok(scalars.len())
+        );
+        assert_eq!(bounded_text(Some(&format!("{scalars}a"))), Err("TooLarge"));
+        // 1,048,576 four-byte scalars is exactly 4 MiB: accepted. One more byte is
+        // refused before any scalar counting.
+        let bytes = "😀".repeat(1024 * 1024);
+        assert_eq!(bytes.len(), MAX_TEXT_BYTES);
+        assert_eq!(
+            bounded_text(Some(&bytes)).map(|t| t.len()),
+            Ok(MAX_TEXT_BYTES)
+        );
+        assert_eq!(bounded_text(Some(&format!("{bytes}a"))), Err("TooLarge"));
     }
 
     #[test]

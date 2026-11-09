@@ -13,9 +13,31 @@ export function validClipboardText(text: string): boolean {
     && !/[^\P{Cc}\n\r\t]|\uFFFC|\p{Cs}/u.test(text);
 }
 
+/** The bounded GTK text-read bridge (`clipboard_read_text`) is compiled only for
+ * Linux (`#[cfg(target_os = "linux")]`); every other target answers "Unsupported".
+ * Desktop Tauri on Linux is always WebKitGTK, whose user agent names Linux, so the
+ * user agent mirrors that cfg without an IPC round trip or a clipboard read. A
+ * runtime "Unsupported" answer overrides the guess for the rest of the process. */
+let nativeReadUnsupported = false;
+function hasNativeTextRead(): boolean {
+  if (nativeReadUnsupported || !isTauri() || typeof navigator === "undefined") return false;
+  const agent = navigator.userAgent ?? "";
+  return /\bLinux\b/.test(agent) && !/\bAndroid\b/.test(agent);
+}
+function browserClipboard(method: "readText" | "writeText"): boolean {
+  return typeof navigator !== "undefined" && typeof navigator.clipboard?.[method] === "function";
+}
+
+/** API presence only: a present path may still be refused at run time (permission),
+ * which is reported as an execution failure, never probed here. */
 export function clipboardAccessAvailable(command: ClipboardCommand): boolean {
-  if (command === "edit.paste" && isTauri()) return true;
-  return typeof navigator !== "undefined" && typeof navigator.clipboard?.[command === "edit.paste" ? "readText" : "writeText"] === "function";
+  if (command === "edit.paste") return hasNativeTextRead() || browserClipboard("readText");
+  return browserClipboard("writeText");
+}
+
+/** Test seam: forget a remembered runtime "Unsupported" answer. */
+export function resetClipboardCapabilityForTests(): void {
+  nativeReadUnsupported = false;
 }
 
 export interface PlainClipboard {
@@ -24,14 +46,17 @@ export interface PlainClipboard {
 }
 export const systemClipboard: PlainClipboard = {
   readText: async () => {
-    if (isTauri()) {
+    if (hasNativeTextRead()) {
       try { return await invoke<string>("clipboard_read_text"); }
       catch (error) {
-        // The bridge is intentionally Linux-only. Other hosts retain their
-        // browser API; a Linux read failure never starts a competing pipeline.
+        // A Linux read failure never starts a competing pipeline; only a host
+        // without the bridge falls back (and is remembered as such).
         if (error !== "Unsupported") throw error;
+        nativeReadUnsupported = true;
       }
     }
+    // Hosts without the bridge call the browser API directly, inside the
+    // invoking gesture (no IPC await in front of a permission-gated read).
     return navigator.clipboard.readText();
   },
   writeText: text => navigator.clipboard.writeText(text),

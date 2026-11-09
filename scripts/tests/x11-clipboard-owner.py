@@ -44,8 +44,15 @@ if len(sys.argv) > 3 and sys.argv[3] == 'map':
 x.XSetSelectionOwner(d, atoms['CLIPBOARD'], w, 0); x.XFlush(d)
 if x.XGetSelectionOwner(d, atoms['CLIPBOARD']) != w:
     raise RuntimeError('clipboard ownership failed')
-payload = sys.argv[1].encode()
-print(json.dumps({'pid': os.getpid(), 'owner': w, 'text': sys.argv[1]}), flush=True)
+# '@PATH' serves the UTF-8 bytes of a file (megabyte payloads exceed argv limits).
+if sys.argv[1].startswith('@'):
+    with open(sys.argv[1][1:], 'rb') as f:
+        payload = f.read()
+    shown = {'file': sys.argv[1][1:], 'bytes': len(payload)}
+else:
+    payload = sys.argv[1].encode()
+    shown = {'text': sys.argv[1]}
+print(json.dumps({'pid': os.getpid(), 'owner': w, **shown}), flush=True)
 while True:
     event = Event(); x.XNextEvent(d, C.byref(event))
     if event.type == 29:

@@ -3266,3 +3266,25 @@ fn clipboard_table_object_cross_context_and_empty_ranges_fail_closed() {
     m.apply(&[mv(MoveTarget::DocStart, false)]);
     assert_eq!(m.clipboard_text(), None);
 }
+
+/// P2-B measurement (run explicitly with --ignored --nocapture): share of the
+/// per-view availability proof in one full DOCX view generation.
+#[test]
+#[ignore]
+fn clipboard_availability_cost_relative_to_view() {
+    let bytes = crate::services::files::blank_docx().unwrap();
+    for (paragraphs, size) in [(1usize, 600usize), (200, 500), (1, 200_000)] {
+        let mut m = DocxModel::open(&bytes).unwrap();
+        let line: String = "한😀글a".chars().cycle().take(size).collect();
+        let text = vec![line; paragraphs].join("\n");
+        m.apply(&[DocxOp::PasteText { text, chain: false }, DocxOp::SelectAll]);
+        let start = std::time::Instant::now();
+        let available = m.clipboard_text().is_some();
+        let probe = start.elapsed();
+        let start = std::time::Instant::now();
+        let view = m.view();
+        let whole = start.elapsed();
+        assert!(available && view.clipboard_text_available);
+        println!("[P2-B docx] {paragraphs}x{size}: clipboard_text {probe:?}, full view {whole:?}");
+    }
+}

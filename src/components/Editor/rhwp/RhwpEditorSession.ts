@@ -1519,12 +1519,7 @@ export class RhwpEditorSession implements DocumentCommandTarget {
       composing: this.imeUnsettled,
       pending: this.pending > 0 || this.committingEpoch === this.epoch, queuedHistory: null,
       saving: this.saving,
-      clipboard: {
-        selection: !this.uncertain && !!this.text?.selectedText(this.anchor, this.caret),
-        writable: !this.uncertain && (!this.hasSelection || !!this.text?.selectedText(this.anchor, this.caret)),
-        key: JSON.stringify([this.epoch, this.generation, this.committed, this.modelVersion, this.clipboardVersion,
-          this.imeSerial, this.anchor, this.caret]),
-      },
+      clipboard: this.clipboardState(),
       // 기록은 지역·동기(queuedHistory 없음). 제품 고급 기록은 pending 확정도 명령 capability에서 거부한다.
       history: this.history ? { undo: this.history.canUndo, redo: this.history.canRedo } : null,
       ...(this.advancedHistoryOnly ? { historyScope: "advanced" as const } : {}),
@@ -1532,6 +1527,27 @@ export class RhwpEditorSession implements DocumentCommandTarget {
       format: this.formatState(), formatAccess: null,
       ...this.parameterState(),
     };
+  }
+
+  /** Every model change bumps modelVersion (the caret and parameter caches rely on the same rule); the key
+   * also covers load generation, committed revision, selection/clipboard and IME epochs and both ends of the
+   * selection. One full extraction proves availability per key; only that boolean is retained. Copy/Cut
+   * still extract and validate the complete text afresh when they execute. */
+  private clipboardProbe: { key: string; text: RhwpText; supported: boolean } | null = null;
+  private clipboardState(): NonNullable<DocumentCommandSnapshot["clipboard"]> {
+    const key = JSON.stringify([this.epoch, this.generation, this.committed, this.modelVersion, this.clipboardVersion,
+      this.imeSerial, this.anchor, this.caret]);
+    const text = this.text;
+    let supported = false;
+    if (text && !this.uncertain) {
+      const cached = this.clipboardProbe;
+      if (cached && cached.key === key && cached.text === text) supported = cached.supported;
+      else {
+        supported = !!text.selectedText(this.anchor, this.caret);
+        this.clipboardProbe = { key, text, supported };
+      }
+    }
+    return { selection: supported, writable: !this.uncertain && (!this.hasSelection || supported), key };
   }
 
   executeClipboard(command: ClipboardCommand, owns: () => boolean, clipboard?: PlainClipboard): Promise<boolean> {

@@ -921,3 +921,43 @@ native evidence: `target/clipboard/native-external-full` (70 checks),
 `native-x11-final` (20), `native-lifecycle-pass` (16); blocked preedit attempt: `native-ime`;
 native preedit acceptance: `target/clipboard-preedit/run4` (174 checks).
 No T010 D2/D4 or unrelated existing acceptance is promoted by clipboard results.
+
+Clipboard hardening (2026-11-10). P1 native preedit acceptance is recorded in
+`clipboard-preedit-acceptance.md`; P2/P3 are separate:
+
+- **Paste capability off Linux (P2-A).** `clipboardAccessAvailable("edit.paste")` used to be true in
+  any Tauri host. The GTK read bridge exists only for `target_os = "linux"`; every other target
+  answers `Unsupported`. Paste is now available when the Linux bridge applies or the browser
+  `readText` exists. "Linux bridge" means Tauri plus a desktop-Linux user agent: Tauri on Linux is
+  always WebKitGTK, and Android is excluded. A runtime `Unsupported` answer is remembered. Hosts
+  without the bridge call `navigator.clipboard.readText()` directly inside the gesture, with no IPC
+  await in front of the permission-gated read. Availability only checks that an API exists;
+  permission denial stays an execution failure. Tests: `src/commands/clipboardAccess.test.ts`.
+  Windows/macOS native acceptance: NOT RUN.
+- **Large selections (P2-B).** RHWP `snapshot()` ran the full selected-text extraction twice per
+  call, and every ribbon command button calls it on each render. On the Release WASM, 40 snapshots
+  took 377 ms (200×500 characters) and 1069 ms (200k-character paragraph). Availability is now
+  proved once per clipboard key (epoch, generation, committed revision, model version,
+  clipboard/IME epochs, anchor, caret) and text object. Only the boolean is cached. Copy/Cut still
+  extract and validate afresh when executed. After the fix: 13 ms and 28.5 ms, i.e. one extraction
+  per real change (`scripts/tests/clipboard-selection-cost.wasm.test.ts`, with invalidation and
+  fresh-execution assertions). DOCX was measured and left unchanged. Its availability proof runs
+  once per backend view, not per render, and costs 1.8–2.4 ms against a 496–687 ms view generation
+  (Release, `#[ignore]` test `clipboard_availability_cost_relative_to_view`).
+- **Native vs command Paste (P3-A).** The difference is intentional. Native Paste
+  (paste/beforeinput/input) is synchronous input on the same path as ordinary typing, so it keeps
+  queue order with pending typing and is accepted during an outstanding commit or save, exactly
+  like typing. T009 binds a save to its revision. Command Paste reads asynchronously and revalidates
+  ownership/revision afterwards, so it requires a settled, non-saving state. Both refuse unsettled
+  IME, protected/read-only targets and modals; tab/session changes cancel command Paste through
+  ownership. Tests: `src/components/Editor/nativePastePolicy.test.tsx` (both engines: pending, save
+  in progress with parity to typing, protected, IME). No product change.
+- **GTK read size (P3-B).** GTK3 has no streaming or size-limited selection transfer. GDK receives
+  the whole payload (including X11 INCR) and converts it before the callback, so the 4 MiB /
+  1,048,576-scalar limit bounds what the app keeps and uses, not GTK's transient allocation.
+  Measured natively (`scripts/tests/native-clipboard-limits.py`, app `343b1456`, 12/12 PASS): exact
+  scalar and byte boundaries accepted, one over refused `TooLarge`, and a refused 12 MiB payload
+  raised peak RSS by about 18 MiB, released afterwards. A 7 s owner times out at 5.0 s as
+  `Unavailable` without blocking the UI, a vanished owner gives `Unavailable`, and no owner reads
+  as empty. Rust exact-boundary unit test added; limits unchanged. Residual risk: a hostile local
+  clipboard owner can make GTK allocate payload-sized memory transiently.

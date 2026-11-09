@@ -18,6 +18,7 @@ Why each piece exists (diagnosed 2026-11-10, see docs/architecture/clipboard-pre
 - Unix socket paths are limited to 108 bytes, so sockets live in a short private /tmp directory.
 """
 import argparse
+import contextlib
 import glob
 import json
 import os
@@ -36,6 +37,32 @@ def store(pattern, required):
         if all(Path(candidate, r).exists() for r in required):
             return candidate
     raise SystemExit(f'BLOCKED: no installed /nix/store/{pattern} with {required}')
+
+
+def proc_identity(pid):
+    """(parent pid, start time) from /proc, or None when the pid no longer exists."""
+    try:
+        fields = Path(f'/proc/{pid}/stat').read_text().rsplit(')', 1)[1].split()
+        return int(fields[1]), int(fields[19])
+    except (OSError, IndexError, ValueError):
+        return None
+
+
+def descendants(root):
+    """Every live descendant of `root` as {pid: start time}. With this launcher as child subreaper,
+    orphans of the test command are reparented here, so nothing it started can leave the tree."""
+    children = {}
+    for entry in Path('/proc').iterdir():
+        if entry.name.isdigit():
+            ident = proc_identity(int(entry.name))
+            if ident:
+                children.setdefault(ident[0], []).append((int(entry.name), ident[1]))
+    found, stack = {}, [root]
+    while stack:
+        for pid, start in children.get(stack.pop(), []):
+            found[pid] = start
+            stack.append(pid)
+    return found
 
 
 def tool(env_name, pattern, required):
@@ -62,6 +89,9 @@ def main():
     gtk3dev = tool('GEUL_GTK3_DEV', '*-gtk+3-*-dev', 'bin/gtk-query-immodules-3.0')
     dbus_daemon = shutil.which('dbus-daemon') or store('*-dbus-1.*', ['bin/dbus-daemon']) + '/bin/dbus-daemon'
 
+    # PR_SET_CHILD_SUBREAPER: orphaned descendants of the test command reparent to this launcher.
+    import ctypes
+    subreaper = ctypes.CDLL(None, use_errno=True).prctl(36, 1, 0, 0, 0) == 0
     work = Path(tempfile.mkdtemp(prefix='geul-ibus-'))
     sock = Path(tempfile.mkdtemp(prefix='gx-', dir='/tmp'))
     env = {k: v for k, v in os.environ.items() if k not in (
@@ -143,8 +173,9 @@ def main():
         subprocess.run([ibus + '/bin/ibus', 'engine', 'xkb:us::eng'], env=env, check=True, timeout=30)
         argv = [a.replace('@XDOTOOL@', str(tools / 'xdotool')).replace('@IBUS@', str(tools / 'ibus')) for a in command]
         code = subprocess.run(argv, env=env).returncode
-        return code
     finally:
+        # Snapshot every test-owned process (pid + start time) before teardown; only these are touched.
+        owned = descendants(os.getpid())
         for name, proc in reversed(processes):
             try:
                 os.killpg(proc.pid, signal.SIGTERM)
@@ -154,12 +185,35 @@ def main():
             except subprocess.TimeoutExpired:
                 os.killpg(proc.pid, signal.SIGKILL)
                 proc.wait()
-        # Engine/config/dconf children stay in the sessions created above; none of ours may survive.
-        survivors = [line for name, proc in processes for line in subprocess.run(
-            ['pgrep', '-a', '-s', str(proc.pid)], capture_output=True, text=True).stdout.splitlines()]
-        (out / 'cleanup.json').write_text(json.dumps({'exit': code, 'survivors': survivors}) + '\n')
+        leaked = {}
+        deadline = time.monotonic() + 5
+        while True:
+            # Reap reparented orphans so they do not linger as zombies of this launcher.
+            try:
+                while os.waitpid(-1, os.WNOHANG)[0] > 0:
+                    pass
+            except ChildProcessError:
+                pass
+            alive = {pid: start for pid, start in owned.items() if (proc_identity(pid) or (None, None))[1] == start}
+            if not alive or time.monotonic() > deadline:
+                break
+            for pid in alive:
+                leaked.setdefault(pid, Path(f'/proc/{pid}/cmdline').read_bytes().replace(b'\0', b' ').decode(errors='replace')[:200]
+                                  if Path(f'/proc/{pid}').exists() else '')
+                with contextlib.suppress(ProcessLookupError):
+                    os.kill(pid, signal.SIGTERM if time.monotonic() < deadline - 2 else signal.SIGKILL)
+            time.sleep(.1)
+        survivors = sorted(set(descendants(os.getpid())) | set(alive))
+        cleanup = {'exit': code, 'subreaper': subreaper, 'ownedAtTeardown': len(owned),
+                   'leakedAfterManagedStop': leaked, 'survivors': survivors,
+                   'proven': subreaper and not survivors}
+        (out / 'cleanup.json').write_text(json.dumps(cleanup) + '\n')
+        if not cleanup['proven']:
+            print('CLEANUP NOT PROVEN', json.dumps(cleanup), file=sys.stderr)
+            code = code or 3
         shutil.rmtree(sock, ignore_errors=True)
         shutil.rmtree(work, ignore_errors=True)
+    return code
 
 
 if __name__ == '__main__':

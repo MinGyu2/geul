@@ -35,19 +35,29 @@ import zipfile
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / 'tests/e2e'))
 import tauri_smoke as smoke  # noqa: E402
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from preedit_classifier import LABELS, NOTICES, classify, command_events, notice_reason, reason_of  # noqa: E402
 
 COMPOSING = '글자 조합 중'
 OBSERVER = r"""
 if(!window.__pre){window.__pre=[];const t0=performance.now();
  const btn=id=>document.querySelector('.ribbon__toolbar [data-command="edit.'+id+'"]');
- const rec=e=>{const p=btn('paste');window.__pre.push({type:e.type,t:Math.round((performance.now()-t0)*10)/10,trusted:e.isTrusted,
-  target:(e.target&&e.target.className&&String(e.target.className).slice(0,40))||(e.target&&e.target.nodeName)||'',
-  key:e.key,code:e.code,ctrl:e.ctrlKey,composing:e.isComposing,data:e.data===undefined?undefined:e.data,inputType:e.inputType,
+ const st=id=>{const b=btn(id);return b?[b.getAttribute('aria-disabled')==='true',b.title]:null};
+ const rec=e=>{const p=btn('paste'),t=e.target,el=t&&t.nodeType===1?t:null,cmd=el&&el.closest?el.closest('[data-command]'):null;
+  window.__pre.push({type:e.type,t:Math.round((performance.now()-t0)*10)/10,trusted:e.isTrusted,
+  target:t===window?'window':(el&&el.classList&&el.classList.length?[...el.classList].join(' ').slice(0,60):(el?el.nodeName:String(t))),
+  command:cmd?cmd.dataset.command:null,
+  key:e.key,code:e.code,ctrl:e.ctrlKey,shift:e.shiftKey,alt:e.altKey,meta:e.metaKey,composing:e.isComposing,
+  data:e.data===undefined?undefined:e.data,inputType:e.inputType,
   pasteDisabled:p?p.getAttribute('aria-disabled')==='true':null,pasteComposing:p?p.title.includes(arguments_composing):null,
+  state:{copy:st('copy'),cut:st('cut'),paste:st('paste')},active:document.activeElement?.className||null,
   defaultPrevented:e.defaultPrevented})};
- for(const type of ['keydown','keyup','compositionstart','compositionupdate','compositionend','beforeinput','input','mousedown','click','focusin','focusout'])
+ for(const type of ['keydown','keyup','compositionstart','compositionupdate','compositionend','beforeinput','input','mousedown','click','focusin','focusout','focus','blur'])
   window.addEventListener(type,rec,{capture:true,passive:true});
- window.__preMove=null;window.addEventListener('mousemove',e=>window.__preMove=[e.clientX,e.clientY],{capture:true,passive:true});}
+ window.__preMove=null;window.addEventListener('mousemove',e=>window.__preMove=[e.clientX,e.clientY],{capture:true,passive:true});
+ window.__notices=[];const sm=()=>document.querySelector('.statusbar__message');
+ const note=()=>{const m=sm();window.__notices.push({t:Math.round((performance.now()-t0)*10)/10,text:m?m.textContent:null})};
+ new MutationObserver(note).observe(document.querySelector('footer.statusbar'),{subtree:true,childList:true,characterData:true});}
 return true;
 """
 
@@ -212,18 +222,32 @@ const d=m.HwpDocument.createEmpty();d.createBlankDocument();for(const f of ['hwp
             def read_os_clipboard():
                 return async_js("return await window.__TAURI_INTERNALS__.invoke('clipboard_read_text')")
 
+            def select_to_start(op):
+                """Select from the end to the document start, then wait until the final selection key has
+                actually reached the page and the command is available (input delivery is asynchronous)."""
+                mark = len(events())
+                # The text wraps onto several visual lines: reach the true end first (Down then End), then select
+                # upwards past the first line; End alone only reaches the end of the current visual line.
+                xdo('key', '--delay', '30', *(['Down'] * 6), 'End', *(['shift+Up'] * 6), 'shift+Home')
+                wait("return window.__pre.slice(arguments[0]).some(e=>e.type==='keyup'&&e.key==='Home'&&e.trusted)", mark, timeout=10)
+                wait("const b=document.querySelector('.ribbon__toolbar [data-command=\"edit.'+arguments[0]+'\"]');return b&&b.getAttribute('aria-disabled')!=='true'", op, timeout=10)
+                time.sleep(.3)
+                wait("const b=document.querySelector('.ribbon__toolbar [data-command=\"edit.'+arguments[0]+'\"]');return b&&b.getAttribute('aria-disabled')!=='true'", op, timeout=10)
+
+            def caret_to_end():
+                xdo('key', '--delay', '30', *(['Down'] * 6), 'End')
+
             def text_of(name):
                 """Normal (non-IME) selection + Copy; also proves Copy works again after composition."""
                 engine('xkb:us::eng')
                 focus_editor()
-                xdo('key', '--delay', '30', 'End', *(['shift+Up'] * 3), 'shift+Home')
-                wait("return document.querySelector('[data-command=\"edit.copy\"]')?.getAttribute('aria-disabled')!=='true'", timeout=10)
+                select_to_start('copy')
                 before = session(name)
                 xdo('key', 'ctrl+c')
                 time.sleep(.4)
                 value = read_os_clipboard()
                 after = session(name)
-                xdo('key', 'End')
+                caret_to_end()
                 if (before['revision'], before['dirty']) != (after['revision'], after['dirty']):
                     raise smoke.Failure('verification Copy mutated the document')
                 return value
@@ -252,10 +276,21 @@ const d=m.HwpDocument.createEmpty();d.createBlankDocument();for(const f of ['hwp
                 else:
                     click(f'.ribbon__toolbar [data-command="edit.{action[7:]}"]')
 
-            def run_case(fmt, name, label, action, state, select_before=False, finish='End'):
+            def run_case(fmt, name, label, action, state, select_before=False, finish='End', settle_first=False):
                 case = {'format': fmt, 'case': label, 'action': action}
                 report['cases'].append(case)
                 clip = 'CLIP-' + label.upper()
+                op = action.split(':', 1)[1].split('+')[-1]
+                op = {'c': 'copy', 'x': 'cut', 'v': 'paste'}.get(op, op)
+                # Prime the status line with a refusal the tested command cannot produce, so that its own
+                # refusal (if any) is always a visible new notice. Done before the external owner starts.
+                engine('xkb:us::eng')
+                focus_editor()
+                prime = 'cut' if op == 'copy' else 'copy'
+                xdo('key', 'ctrl+x' if prime == 'cut' else 'ctrl+c')
+                prime_text = NOTICES['selectionRequired'].replace('{command}', LABELS[prime])
+                wait("return document.querySelector('.statusbar__message')?.textContent===arguments[0]", prime_text, timeout=10)
+                notice_mark = len(d.js('return window.__notices'))
                 owner = Owner(clip)
                 try:
                     if select_before:
@@ -266,6 +301,15 @@ const d=m.HwpDocument.createEmpty();d.createBlankDocument();for(const f of ['hwp
                         case['selectionBeforeCompose'] = button('cut')
                     case['before'] = session(name)
                     mark = compose(fmt + ' ' + label)
+                    if settle_first:
+                        # Genuine settlement through real input: ibus-hangul flushes on End, the app applies the
+                        # commit, and Paste must be stably available before the trusted click.
+                        xdo('key', 'End')
+                        wait("const b=document.querySelector('.ribbon__toolbar [data-command=\"edit.paste\"]');return b&&b.getAttribute('aria-disabled')!=='true'", timeout=10)
+                        idle(name)
+                        time.sleep(.6)
+                        check(f'{fmt} {label} settled state stable before command', not button('paste')['disabled']
+                              and session(name)['state'] == 'ready', button('paste'))
                     case['atAction'] = {'paste': button('paste'), 'copy': button('copy'), 'cut': button('cut'),
                                         'revision': session(name)['revision'], 'owner': owner.poll()}
                     act_mark = len(events())
@@ -281,6 +325,8 @@ const d=m.HwpDocument.createEmpty();d.createBlankDocument();for(const f of ['hwp
                     wait("return !document.querySelector('.ribbon__toolbar [data-command=\"edit.paste\"]')?.title.includes(arguments[0])", COMPOSING, timeout=10)
                     idle(name)
                     settled = session(name)
+                    copy_state = button('copy')
+                    case['settledSelection'] = reason_of([copy_state['disabled'], copy_state['title']] if copy_state else None)
                     time.sleep(1.2)  # window for delayed commit / replayed commands
                     late = session(name)
                     case['events'] = events()[mark:]
@@ -293,45 +339,32 @@ const d=m.HwpDocument.createEmpty();d.createBlankDocument();for(const f of ['hwp
                 reads = lines.count('TEXT_REQUEST')
                 clears = lines.count('SELECTION_CLEAR')
                 ev = case['events']
-                ends = [e['t'] for e in ev if e['type'] == 'compositionend']
-                key = action[4:].split('+')[-1] if action.startswith('key:') else None
-                downs = [e for e in ev if e['type'] == 'keydown' and key and e['ctrl'] and (e['key'] or '').lower() == key]
-                case['ordering'] = [(e['type'], e.get('key'), e.get('data'), e.get('composing'), e['t']) for e in ev
-                                    if e['type'] in ('keydown', 'keyup', 'compositionstart', 'compositionupdate',
-                                                     'compositionend', 'beforeinput', 'input', 'mousedown', 'click')]
-                executed_paste = reads > 0
-                executed_write = clears > 0
-                # The command's own trusted DOM event: the chord keydown, or the ribbon click.
-                commands = downs if key else [e for e in case['afterAction']['events'] if e['type'] == 'click']
-                command = commands[0] if commands else None
-                case['commandEvent'] = command
-                unsafe = False
-                if executed_paste or executed_write:
-                    # Allowed only when the IME transaction had settled before the command event: it ended
-                    # (compositionend) before the event with no new composition in between, the event was not
-                    # composing, and the session itself reported Paste available at that moment (the capture
-                    # listener runs before the app's handler).
-                    if command is None:
-                        unsafe = True
-                    else:
-                        before = [e for e in ev if e['t'] < command['t']]
-                        last_end = max((e['t'] for e in before if e['type'] == 'compositionend'), default=None)
-                        restarted = last_end is not None and any(e['type'] == 'compositionstart' and e['t'] > last_end for e in before)
-                        unsafe = (last_end is None or restarted or bool(command.get('composing'))
-                                  or bool(command.get('pasteComposing')) or bool(command.get('pasteDisabled')))
-                case['reads'] = reads
-                case['clipboardOverwritten'] = clears
-                outcome = ('UNSAFE' if unsafe else 'executed-after-settlement') if (executed_paste or executed_write) else 'blocked'
-                case['outcome'] = outcome
-                check(f'{fmt} {label} no command executed before IME settlement', not unsafe, case)
-                check(f'{fmt} {label} OS clipboard not overwritten', clears == 0, lines)
+                case['ordering'] = [(e['type'], e.get('key'), e.get('command'), e.get('data'), e.get('composing'), e['t'])
+                                    for e in ev if e['type'] in ('keydown', 'keyup', 'compositionstart', 'compositionupdate',
+                                                                 'compositionend', 'beforeinput', 'input', 'mousedown', 'click')]
+                case['notices'] = d.js('return window.__notices')[notice_mark:]
+                verdict = classify(action, ev, case['afterAction']['events'], reads, clears, case['notices'],
+                                   case['settledSelection'])
+                case.update(expected=verdict['expected'], observed=verdict['observed'], refusalReason=verdict['reason'],
+                            displayedReasonAtCommand=verdict['displayedReason'], commandEvent=verdict['command'],
+                            reads=reads, clipboardOverwritten=clears)
+                for check_name, ok, detail in verdict['checks']:
+                    check(f'{fmt} {label} {check_name}', ok, detail)
+                executed = verdict['observed'] == 'execute'
+                case['outcome'] = 'executed-after-settlement' if executed else 'refused'
+                if op == 'paste' or not executed:
+                    check(f'{fmt} {label} OS clipboard not overwritten', clears == 0, lines)
+                if settle_first:
+                    check(f'{fmt} {label} positive path reached (settled, available, executed once)', executed and reads == 1,
+                          verdict['observed'])
+                    check(f'{fmt} {label} exactly one revision for one insertion',
+                          settled['revision'] == case['atAction']['revision'] + 1,
+                          {'atAction': case['atAction']['revision'], 'settled': settled['revision']})
                 check(f'{fmt} {label} no stale revision after settlement', late['revision'] == settled['revision'],
                       {'settled': settled['revision'], 'late': late['revision']})
-                inserted = clip if executed_paste else ''
-                check(f'{fmt} {label} paste read at most once', reads <= 1, lines)
                 if select_before:
                     state['text'] = state['text'][:-2]
-                state['text'] += '하' + inserted
+                state['text'] += '하' + (clip if (op == 'paste' and executed) else '')
                 actual = text_of(name)
                 check(f'{fmt} {label} document text exact (no loss/duplication)', actual == state['text'],
                       {'expected': state['text'], 'actual': actual})
@@ -389,6 +422,7 @@ import {readFileSync} from 'node:fs';import {pathToFileURL} from 'node:url';cons
                     ('ribbon-copy', 'ribbon:copy', {}),
                     ('ribbon-cut', 'ribbon:cut', {}),
                     ('ribbon-paste', 'ribbon:paste', {}),
+                    ('ribbon-paste-after-settlement', 'ribbon:paste', {'settle_first': True}),
                 ]:
                     run_case(fmt, name, label, action, state, **extra)
                 report['stages']['preeditObservation'] = 'PASS'
@@ -409,8 +443,12 @@ import {readFileSync} from 'node:fs';import {pathToFileURL} from 'node:url';cons
                     if awaiting:
                         # Unsettled: a trusted ribbon Paste must be refused, never read the OS clipboard, never replay.
                         rev = session(name)['revision']
+                        click_mark = len(events())
                         click('.ribbon__toolbar [data-command="edit.paste"]')
                         time.sleep(.8)
+                        hit = command_events('ribbon:paste', events()[click_mark:])
+                        check(f'{fmt} trusted Paste click delivered while awaiting', len(hit) == 1
+                              and reason_of(hit[0]['state']['paste']) == 'composing', hit)
                         cancel['pasteWhileAwaiting'] = {'status': status(), 'owner': owner.poll(), 'revision': session(name)['revision']}
                         check(f'{fmt} Paste refused while cancellation unsettled', owner.poll().count('TEXT_REQUEST') == 0
                               and session(name)['revision'] == rev, cancel['pasteWhileAwaiting'])
@@ -425,6 +463,7 @@ import {readFileSync} from 'node:fs';import {pathToFileURL} from 'node:url';cons
                     # D5: Paste is not left disabled after a canceled transaction (trusted ribbon click).
                     rev = session(name)['revision']
                     focus_editor()
+                    click_mark = len(events())
                     click('.ribbon__toolbar [data-command="edit.paste"]')
                     deadline = time.monotonic() + 10
                     while session(name)['revision'] == rev and time.monotonic() < deadline:
@@ -432,26 +471,38 @@ import {readFileSync} from 'node:fs';import {pathToFileURL} from 'node:url';cons
                     idle(name)
                     time.sleep(.8)
                     lines = owner.poll()
+                    hit = command_events('ribbon:paste', events()[click_mark:])
                 finally:
                     owner.close()
+                check(f'{fmt} trusted Paste click after release delivered with Paste available', len(hit) == 1
+                      and reason_of(hit[0]['state']['paste']) is None, hit)
                 check(f'{fmt} Paste after cancellation executes exactly once', lines.count('TEXT_REQUEST') == 1, lines)
                 state['text'] += 'CLIP-AFTER-CANCEL'
-                check(f'{fmt} Paste after cancellation text', text_of(name) == state['text'])
+                after_paste = text_of(name)
+                # Exact text also proves the cancellation removed nothing from the document.
+                check(f'{fmt} cancellation removed nothing; Paste after cancellation text exact', after_paste == state['text'],
+                      {'expected': state['text'], 'actual': after_paste})
 
                 # D5 normal Copy/Cut/Paste after all preedit cases (keyboard, no IME).
                 full = state['text']
                 engine('xkb:us::eng')
                 focus_editor()
-                xdo('key', '--delay', '30', 'End', *(['shift+Up'] * 3), 'shift+Home')
-                wait("return document.querySelector('[data-command=\"edit.cut\"]')?.getAttribute('aria-disabled')!=='true'", timeout=10)
+                select_to_start('cut')
                 rev = session(name)['revision']
+                cut_mark = len(events())
                 xdo('key', 'ctrl+x')
                 deadline = time.monotonic() + 10
                 while session(name)['revision'] == rev and time.monotonic() < deadline:
                     time.sleep(.05)
                 idle(name)
-                check(f'{fmt} normal Cut after preedit writes clipboard', read_os_clipboard() == full)
-                check(f'{fmt} normal Cut removes selection', session(name)['revision'] == rev + 1)
+                cut_clip = read_os_clipboard()
+                cut_detail = {'expected': full, 'clipboard': cut_clip, 'revisionBefore': rev,
+                              'revisionAfter': session(name)['revision'], 'status': status(),
+                              'events': [(e['type'], e.get('key'), e.get('shift'), e.get('ctrl'), e['t'], e['state']['cut'])
+                                         for e in events()[max(0, cut_mark - 12):] if e['type'] in ('keydown', 'keyup')]}
+                report.setdefault('normalCut', {})[fmt] = cut_detail
+                check(f'{fmt} normal Cut after preedit writes clipboard', cut_clip == full, cut_detail)
+                check(f'{fmt} normal Cut removes selection', session(name)['revision'] == rev + 1, cut_detail)
                 xdo('key', 'ctrl+v')
                 deadline = time.monotonic() + 10
                 while session(name)['revision'] == rev + 1 and time.monotonic() < deadline:
@@ -462,26 +513,37 @@ import {readFileSync} from 'node:fs';import {pathToFileURL} from 'node:url';cons
                 report['formats'][fmt] = {'text': full, 'revision': session(name)['revision'],
                                           'saved': save_and_reopen(fmt, name, path, full)}
 
-            # D6 window focus change during preedit (real X11 focus to another client and back).
+            # D6 window focus change during preedit: real X11 focus to another client and back, verified.
             last = args.formats.split(',')[-1]
             name = 'preedit.' + last
             mapped = Owner('CLIP-FOCUS', mapped=True)
             try:
+                other = str(mapped.identity['owner'])
                 rev0 = session(name)['revision']
                 mark = compose(last + ' focus-away')
-                other = str(mapped.identity['owner'])
-                subprocess.run(['xdotool', 'windowfocus', '--sync', other], check=False, timeout=10)
+                xdo('windowfocus', '--sync', other)          # raises on failure
                 time.sleep(.6)
                 away = {'xfocus': xdo('getwindowfocus'), 'paste': button('paste'), 'revision': session(name)['revision']}
+                away_events = events()[mark:]
                 xdo('windowfocus', '--sync', window)
                 time.sleep(.6)
-                back = {'xfocus': xdo('getwindowfocus'), 'paste': button('paste'), 'revision': session(name)['revision']}
+                back = {'xfocus': xdo('getwindowfocus'), 'paste': button('paste'), 'revision': session(name)['revision'],
+                        'active': d.js("return document.activeElement?.className||null")}
+                back_events = events()[mark + len(away_events):]
+                check(f'{last} focus change: external X11 window obtained focus', away['xfocus'] == other, away)
+                check(f'{last} focus change: app saw a trusted window blur', any(e['type'] == 'blur' and e['target'] == 'window'
+                      and e['trusted'] for e in away_events), [(e['type'], e['target']) for e in away_events])
+                check(f'{last} focus change: app regained X focus', back['xfocus'] == window, back)
+                check(f'{last} focus change: app saw a trusted window focus', any(e['type'] == 'focus' and e['target'] == 'window'
+                      and e['trusted'] for e in back_events), [(e['type'], e['target']) for e in back_events])
                 if COMPOSING in (button('paste') or {}).get('title', ''):
                     focus_editor()
                     xdo('key', 'End')
                 wait("return !document.querySelector('.ribbon__toolbar [data-command=\"edit.paste\"]')?.title.includes(arguments[0])", COMPOSING, timeout=10)
                 idle(name)
                 time.sleep(1)
+                focus_editor()  # editor focus restored for continued typing
+                check(f'{last} focus change: editor focus restored', d.js("return document.activeElement?.classList.contains('rhwp-input')"))
                 focus_events = events()[mark:]
                 lines = mapped.poll()
             finally:
@@ -489,14 +551,25 @@ import {readFileSync} from 'node:fs';import {pathToFileURL} from 'node:url';cons
             report['cases'].append({'format': last, 'case': 'focus-away-during-preedit', 'away': away, 'back': back,
                                     'events': focus_events, 'owner': lines, 'revisionBefore': rev0})
             check(f'{last} focus change: no clipboard read/write', lines.count('TEXT_REQUEST') == 0 and lines.count('SELECTION_CLEAR') == 0, lines)
+            # Expected from the observed IME result: the syllable is in the document iff the IME committed it.
+            commits = [e for e in focus_events if e['type'] == 'compositionend' and e['trusted'] and e.get('data') == '하']
+            # WebKitGTK may finalize the composition itself on focus loss and IBus then commits the same syllable
+            # again (documented in imeInput.ts); the app must consume the duplicate. The exact text below is the gate.
+            report['cases'][-1]['commitEvents'] = len(commits)
+            states[last]['text'] += '하' if commits else ''
             committed = text_of(name)
-            check(f'{last} focus change: composed text appears at most once, nothing lost',
-                  committed in (states[last]['text'], states[last]['text'] + '하'), {'expected': states[last]['text'], 'actual': committed})
-            states[last]['text'] = committed
+            check(f'{last} focus change: document text exact (commit once, nothing lost)', committed == states[last]['text'],
+                  {'expected': states[last]['text'], 'actual': committed, 'committed': bool(commits)})
 
             # D6 document/tab switch during preedit: composition must not cross into the other document.
             if len(args.formats.split(',')) > 1:
                 first = 'preedit.' + args.formats.split(',')[0]
+                engine('xkb:us::eng')
+                focus_editor()
+                xdo('key', 'ctrl+c')  # prime: a Copy refusal notice, so a Paste refusal is always a new notice
+                wait("return document.querySelector('.statusbar__message')?.textContent===arguments[0]",
+                     NOTICES['selectionRequired'].replace('{command}', LABELS['copy']), timeout=10)
+                notice_mark = len(d.js('return window.__notices'))
                 owner = Owner('CLIP-TAB')
                 try:
                     revs = {s['displayName']: s['revision'] for s in sessions()}
@@ -518,17 +591,35 @@ import {readFileSync} from 'node:fs';import {pathToFileURL} from 'node:url';cons
                 report['cases'].append({'format': last, 'case': 'tab-switch-during-preedit', 'activeAfterClick': tab,
                                         'events': tab_events, 'owner': lines, 'revisionsBefore': revs, 'revisionsAfter': after})
                 check('tab switch click activated the other document', first in (tab or ''), tab)
+                clicks = [e for e in tab_events if e['type'] == 'click' and e['trusted'] and 'document-tab' in (e['target'] or '')]
+                check('tab switch: trusted click reached a document tab', len(clicks) == 1, [(e['type'], e['target']) for e in tab_events])
+                commits = [e for e in tab_events if e['type'] == 'compositionend' and e['trusted'] and e.get('data') == '하'
+                           and e['t'] < clicks[0]['t']]
+                late_commits = [e for e in tab_events if e['type'] == 'compositionend' and e.get('data') and e['t'] > clicks[0]['t']]
+                check('tab switch: no IME commit arrives after the switch', not late_commits, late_commits)
+                downs = [e for e in tab_events if e['type'] == 'keydown' and e['trusted'] and e['ctrl'] and (e['key'] or '').lower() == 'v'
+                         and e['t'] > clicks[0]['t'] and 'rhwp-input' in (e['target'] or '')]
+                check('tab switch: trusted Ctrl+V delivered to the new document', len(downs) == 1, [(e['type'], e.get('key')) for e in tab_events])
                 first_fmt = args.formats.split(',')[0]
                 pasted = lines.count('TEXT_REQUEST')
-                check('tab switch: at most one Paste read', pasted <= 1, lines)
+                tab_notices = d.js('return window.__notices')[notice_mark:]
+                refusal = [notice_reason('paste', n['text']) for n in tab_notices if n['t'] >= downs[0]['t']]
+                refusal = [r for r in refusal if r]
+                report['cases'][-1].update(notices=tab_notices, reads=pasted, refusal=refusal[:1])
+                check('tab switch: Ctrl+V has exactly one positive outcome (one read or a refusal notice)',
+                      (pasted == 1 and not refusal) or (pasted == 0 and len(refusal) >= 1), {'reads': pasted, 'refusal': refusal})
+                if refusal:
+                    check('tab switch: Paste refusal reason is an IME/edit-ordering guard', refusal[0] in ('composing', 'pendingEdits'), refusal)
+                paste_expected = pasted == 1
+                states[first_fmt]['text'] += 'CLIP-TAB' if paste_expected else ''
                 first_text = text_of(first)
                 check('tab switch: composition never crosses into the other document; Paste lands once there',
-                      first_text == states[first_fmt]['text'] + ('CLIP-TAB' if pasted else ''),
-                      {'expected': states[first_fmt]['text'], 'actual': first_text, 'reads': pasted})
+                      first_text == states[first_fmt]['text'], {'expected': states[first_fmt]['text'], 'actual': first_text})
                 select_tab(name)
+                states[last]['text'] += '하' if commits else ''
                 origin_text = text_of(name)
-                check('tab switch: original document keeps composition at most once',
-                      origin_text in (states[last]['text'], states[last]['text'] + '하'), {'expected': states[last]['text'], 'actual': origin_text})
+                check('tab switch: original document has the IME commit exactly once (or nothing if canceled)',
+                      origin_text == states[last]['text'], {'expected': states[last]['text'], 'actual': origin_text, 'committed': bool(commits)})
             report['stages']['commandBehavior'] = 'PASS'
             report['stages']['documentVerification'] = 'PASS'
         report['stages']['cleanup'] = 'PASS'
