@@ -283,3 +283,20 @@ it("해제와 종료 알림이 함께 실패해도 원래 해제 오류를 잃�
   expect(editor.status.kind).toBe("closed");expect(editor.editable).toBe(false);
   expect(() => editor.dispose()).not.toThrow();
 });
+
+describe("HWP 구조 명령 자격(표·그림·글머리표)", () => {
+  it("상세 재열기 getter가 없는 HWP 엔진 문서에서는 API가 있어도 켜지 않는다", async () => {
+    const { editor, doc } = await readySession();
+    // The fake exposes the mutation APIs but not the detailed HWP reopen getters.
+    Object.assign(doc, { createTable: () => "{}", setTableProperties: () => "{}", insertPicture: () => "{}", setPictureProperties: () => "{}",
+      ensureDefaultBullet: () => 1, applyParaFormat: () => "{}", getParaPropertiesAt: () => "{}" });
+    const snapshot = editor.snapshot();
+    expect(snapshot.parameters?.["insert.table"]).toBeUndefined();
+    expect(snapshot.parameterReasons?.["insert.table"]).toBe("engineUnsupported");
+    expect(snapshot.actions?.["insert.image"]).toBeUndefined();
+    expect(snapshot.actions?.["paragraph.bullets"]).toBeUndefined();
+    expect(editor.execute("insert.table", { command: "insert.table", rows: 1, cols: 1 }).accepted).toBe(false);
+    expect(editor.execute("paragraph.bullets").accepted).toBe(false);
+    expect(doc.paragraphs).toEqual(["가나다", "abc"]);
+  });
+});

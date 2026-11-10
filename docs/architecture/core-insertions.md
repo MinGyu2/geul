@@ -1,5 +1,7 @@
 # 핵심 문서 삽입 기능 — 2026-11-10
 
+> **HWP 제품 명령 연결(2026-11-10, Phase 3):** 아래 A–K와 Phase 2 절의 "HWP 비활성"은 당시 기록이다. 현재 HWP의 세 명령은 T009 제한 부분집합 안에서만 활성화된다. 현재 경계와 검증은 [HWP 제품 명령 연결](#hwp-제품-명령-연결--phase-3-2026-11-10)을 따른다.
+
 ## A. 결과
 
 **부분 완료.** 세 명령의 제품 경로와 HWPX/DOCX 저장 기능을 연결했다. DOCX·HWPX 표, 그림, 글머리표는 기능별 경계에서 저장·재열기 검증을 마쳤다. HWP에서는 세 기능 모두 T009 저장 보존 계약을 통과하지 못하므로 계속 비활성이다. Linux GUI/IBus 수용은 수행하지 않았다.
@@ -174,3 +176,52 @@ BodyText 기록은 구조 위치 문맥과 LIST_HEADER 셀 참조를 함께 확�
 HWP production reopen 비교는 구조가 바뀐 경우 문단·목록 의미·표 셀 기하/내용/형식·그림 종류/inline/크기를 비교하며, optional API가 없고 구조 inventory가 바뀌었으면 필요한 근거 없이 통과하지 않는다. 자세한 예산, 비교 범위 및 trusted picture input-hash 한계는 [저장 보존 경계](save-preservation.md#hwp-t009-경계-hardening--2026-11-10)에 기록했다. 제품 명령은 계속 비활성이다.
 
 이번 실행 증거는 서비스 저장 207 PASS/22 ignored, 실제 게시/재열기 24건, 실엔진 거부 6건, 합성 거부 98건이다. Phase 2의 199/18·61·17·7 Canvas 결과는 당시 기록이지 이번 재실행 결과가 아니다. 상세 내역은 [hardening 보고서](../../target/hwp-boundary-hardening/REPORT.ko.txt) 및 [독립 감사](../../target/hwp-boundary-hardening/independent-audit.json)를 참조한다.
+
+
+## HWP 제품 명령 연결 — Phase 3 (2026-11-10)
+
+T009 저장 보존 계약(Phase 2·hardening)은 바꾸지 않았다. 기존 명령 ID(`insert.table`, `insert.image`, `paragraph.bullets`)와 리본·표 입력창·native chooser·mutation queue를 그대로 쓴다. 새 UI는 없다. 변경은 `RhwpEditorSession`의 형식 자격과 HWP 전용 정규화·삽입 직후 검증뿐이다. HWPX·DOCX 경로는 바뀌지 않았다.
+
+### 자격(엔진 API ≠ 저장 수용)
+
+HWP 구조 명령은 다음을 모두 만족할 때만 snapshot에 나타나고 `execute`/`executeImage`가 같은 판정으로 다시 확인한다.
+
+- 기존 공통 조건: 편집 가능, IME 트랜잭션 없음, 불확실 모델 아님, 대기·확정 중 편집 없음(표·그림), 저장 중 아님, 보호 문서 아님, 비동기 그림 완료 시 세션·epoch·revision·caret 소유 재확인.
+- 상세 재열기 근거 API 전부 존재: `getSectionCount`, `getParaPropertiesAt`, `getBulletList`, `getTableProperties`, `getCellInfo`, `getCellProperties`, `getPictureProperties`, `getControls`. 없으면 구조 변경을 검증할 수 없으므로 `engineUnsupported`.
+- 불러온 원본의 HWP 재열기 모델 baseline이 만들어졌을 것.
+- caret/선택이 section 0(검증된 `BodyText/Section0` 삽입 증명 범위). 다른 구역은 비활성.
+- 현재 load generation의 캐시된 사전검사가 원본을 거부(unsafe/unknown/platform)하지 않았을 것. 아직 검사하지 않은 원본은 활성이며, 저장이 실제 사전검사를 하고 거부 시 게시하지 않는다(성공 사전검사를 만들어 내지 않는다).
+- 기능별: 표·그림은 접힌 caret의 본문 문단(표 셀·선택 불가), 글머리표는 본문 문단 범위(셀 불가, 256문단 이하). 표 크기는 기존 입력 검증(1–32행, 1–16열, 256셀 이하).
+
+### 표
+
+`createTable` 뒤 HWP는 `setTableProperties({textWrap:"TopAndBottom", horzRelTo:"Column", outerLeft/Right/Top/Bottom:283})`로 정규화한다. 실제 Release WASM에서 `createTable`은 live CommonObjAttr(감싸기 비트, 가로 기준 Para, 바깥 여백 0)와 직렬화하는 CTRL_HEADER(attr `0x082a2210` = 가로 기준 Column, 여백 283)가 다르다. textWrap만 정규화하면 상세 재열기 비교가 `horzRelTo`·`outer*` 차이로 실패한다(회귀 시험으로 고정). 위 값은 T009 표 증명이 요구하는 attr를 그대로 유지하면서 live 모델을 자기 출력과 같게 만든다. 삽입 직후 `insertedBasicTable`이 행·열·셀 수, span 1, 셀당 한 문단, 직사각 배치, 정규화 속성, 컨트롤 TextWrap 비트를 확인한다. 실패하면 mutation이 실패해 편집을 멈춘다(raw TBL-001은 저장 대상이 되지 않음). caret은 첫 셀로 가고 기존 셀 입력·셀 이동을 쓴다.
+
+### 그림
+
+기존 native chooser·bounded import(PNG/JPEG 서명·완전 디코드, 16 MiB, 각 변 8192, 16M 픽셀)를 그대로 쓴다. `insertPicture` 뒤 `setPictureProperties({treatAsChar:true})`, 그리고 `insertedInlinePicture`가 treatAsChar·양수 크기·컨트롤 props 일치를 확인한다. 링크/OLE/floating 생성 경로는 없다.
+
+### 글머리표
+
+`ensureDefaultBullet("•")` + `applyParaFormat({headType:"Bullet", numberingId, paraLevel:0})`. 단일·여러 문단 적용, 해제, 재적용, 정의 재사용, Enter 이어쓰기와 빈 항목 Enter 종료(HWPX와 같은 경로)를 지원한다. 본문 텍스트에 글리프를 넣지 않는다. 번호·다단계·사용자 정의 글머리표는 없다.
+
+### 검증(이 변경 상태에서 실행)
+
+| 검사 | 결과 |
+|---|---|
+| `npx vitest run --config scripts/tests/vitest.config.ts scripts/tests/hwp-core-commands.wasm.test.ts` (generate) | 20 PASS: 자격·실행 시 재확인·API 누락·IME/pending/선택/셀·T009 범위 밖 크기·raw 표/비인라인 그림 거부·chooser 취소/소유 상실/모델 변경/잘못된 입력·거부된 사전검사; 제품 명령 7건의 실제 저장 payload + OPAQUE-001 거부 |
+| `GEUL_HWP_CONTRACT_DIR=src-tauri/target/hwp-product-commands/engine … cargo-geul.py test --lib hwp_contract_real_engine_publication -- --ignored` | PASS: 제품 payload 7건 production `save_with_options` 게시(PrvImage 재생성, durable, dirty false, 게시 bytes = 검증 bytes), OPAQUE-001 표 삽입 `recordsChanged` 거부·원본 보존 |
+| 같은 driver `repeat` + `GEUL_HWP_REPEAT=1` 게시 | PASS: 게시된 혼합 문서를 새 엔진 세션으로 열어 모델 일치 확인 후 본문 입력+JPEG 추가, 두 번째 게시 |
+| 같은 driver `verify` | PASS: 게시 8건 fresh Release WASM 재열기, 상세 모델 complete·일치, 임베디드 이미지 bytes SHA-256 = 선택 입력(PNG `8ccfdfc4…`, JPEG `f0a7fe2f…`) |
+| `services::save` Rust suite | 207 PASS / 22 ignored(합성 HWP 계약 거부 98건 포함) |
+| HWPX `core-features.wasm` 6 PASS, HWPX 실제 게시 1 PASS, hardening 상품 모델 24 PASS, preview capture 2 PASS, publication identity 15 PASS, advanced(T012) 8 PASS, `npm test` 81 files / 1427 PASS, `npm run lint`·`npm run typecheck` PASS | |
+
+제품 시험의 백엔드 응답은 controlled다. 실제 게시는 제품이 보낸 정확한 bytes·손실 보고·reopen 근거로 Rust production 서비스가 수행했다. 미리보기 raster는 jsdom에 canvas가 없어 같은 출력의 rsvg 렌더를 사용했다(제품이 reopened export 문서로 캡처를 요청함은 확인).
+
+### 남은 경계
+
+- 기존 표(재열기 뒤 포함)의 셀 텍스트 변경, 새 표 셀 안 Enter(셀당 여러 문단), 병합·중첩 표, section 0 밖 삽입은 T009 범위 밖이다. 저장 시 거부되며 원본은 보존된다.
+- 그림 입력과 게시 리소스의 바이트 동일성은 시험에서만 확인했다. production validator는 신뢰된 입력 영수증을 받지 않는다.
+- 한컴 원본처럼 비어 있지 않은 미리보기를 가진 문서는 PrvImage 재생성 조건을 따른다. 다구역·실제 한컴 작성 문서의 폭넓은 호환은 검증하지 않았다.
+- Linux native GUI/IBus 수용: NOT RUN(Xvfb·ibus-daemon 없음). 외부 한컴 수용: NOT RUN.
+- RHWP Undo/Redo 제한과 T012/T014 동작은 바꾸지 않았다.

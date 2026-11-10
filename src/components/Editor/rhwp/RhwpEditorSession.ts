@@ -41,7 +41,7 @@ import { runClipboard, validClipboardText, type ClipboardCommand, type PlainClip
 //   조정한다(문서 모델은 하나). 기록은 레지스트리가 rhwp 실행 취소를 지원으로 두는 빌드(지금은 시험 활성화 빌드)에서만 켠다: 제품
 //   빌드는 쓸 수 없는 실행 취소를 위해 그룹 시작마다 스냅숏을 찍거나 붙들지 않는다(세션 선택 `history`로 시험이 명시할 수 있음).
 //   글자 서식은 보존 검사가 저장을 막으므로 받지 않는다.
-import { hwpReopenModel, hwpReopenEqual } from "./hwpReopenModel";
+import { HWP_TABLE_NORMALIZATION, hwpReopenModel, hwpReopenEqual, insertedBasicTable, insertedInlinePicture } from "./hwpReopenModel";
 import { trace } from "../imeTrace";
 import type { DocumentBackend, PreviewRaster, ReopenEvidence } from "../../../adapters/backend";
 import { capturePreviewRaster } from "./previewRaster";
@@ -1090,7 +1090,7 @@ export class RhwpEditorSession implements DocumentCommandTarget {
   }
 
   enter(): boolean {
-    if (this.sessions.get(this.sessionId)?.format === "hwpx" && !this.hasSelection && !this.caret.cell
+    if (this.structuralFormat() && !this.hasSelection && !this.caret.cell
       && this.doc?.getParagraphLength(this.caret.section, this.caret.paragraph) === 0 && this.doc.getParaPropertiesAt) {
       try { if (JSON.parse(this.doc.getParaPropertiesAt(this.caret.section, this.caret.paragraph)).headType === "Bullet") return this.toggleBullets(true); }
       catch { return false; }
@@ -1573,6 +1573,34 @@ export class RhwpEditorSession implements DocumentCommandTarget {
     }, () => owns() && this.sessions.snapshot().activeId === this.sessionId && !this.uncertain, clipboard);
   }
 
+  /**
+   * Whether the source format admits the structural core features (table, inline picture, bullets).
+   * HWPX: always (its own preservation rules). HWP: only the restricted T009 subset can be published, so
+   * additionally require (a) every getter the detailed HWP reopen comparison needs — without them a
+   * structural change can never be verified, (b) a reopen-model baseline of the loaded original, (c) the
+   * selection/caret in section 0 (the verified BodyText/Section0 insertion proof), and (d) no cached
+   * preflight for this load generation that already refused the original. An unchecked original stays
+   * eligible: Save runs the real preflight and refuses unsafe/unknown sources without publication.
+   * Engine API presence alone (A) is not the final save verdict (D) — T009 still decides on the bytes.
+   */
+  private structuralFormat(): boolean {
+    const format = this.sessions.get(this.sessionId)?.format;
+    if (format === "hwpx") return true;
+    if (format !== "hwp") return false;
+    const doc = this.doc;
+    if (!doc?.getSectionCount || !doc.getParaPropertiesAt || !doc.getBulletList || !doc.getTableProperties
+      || !doc.getCellInfo || !doc.getCellProperties || !doc.getPictureProperties || !doc.getControls) return false;
+    if (this.hwpStructureBaseline === null || this.caret.section !== 0 || this.anchor.section !== 0) return false;
+    const check = this.saveCheck?.generation === this.generation ? this.saveCheck.check : null;
+    return !check || blockedBy(check) === null;
+  }
+  /** Cache-key part for the inputs of structuralFormat() that do not bump modelVersion. */
+  private structuralKey(): string {
+    const check = this.saveCheck?.generation === this.generation ? this.saveCheck.check : null;
+    return [this.generation, this.hwpStructureBaseline !== null, this.caret.section, this.anchor.section,
+      check ? blockedBy(check)?.code ?? "safe" : "unchecked"].join(",");
+  }
+
   private parameterCache: { key: string; value: Pick<DocumentCommandSnapshot, "parameters" | "parameterReasons"> } | null = null;
 
   /**
@@ -1583,7 +1611,7 @@ export class RhwpEditorSession implements DocumentCommandTarget {
    *   문서를 바꾸지 않는 계산). 셀 밖이면 이유 notInTable.
    */
   private bulletRange(allowPending = false): { first: number; last: number; section: number } | null {
-    if (this.sessions.get(this.sessionId)?.format !== "hwpx" || !this.editable || this.imeUnsettled || this.uncertain
+    if (!this.structuralFormat() || !this.editable || this.imeUnsettled || this.uncertain
       || (!allowPending && (this.pending > 0 || this.committingEpoch === this.epoch)) || this.caret.cell || this.anchor.cell
       || this.caret.section !== this.anchor.section || !this.doc?.getParaPropertiesAt || !this.doc.applyParaFormat || !this.doc.ensureDefaultBullet) return null;
     const [first, last] = this.caret.paragraph < this.anchor.paragraph ? [this.caret, this.anchor] : [this.anchor, this.caret];
@@ -1593,10 +1621,11 @@ export class RhwpEditorSession implements DocumentCommandTarget {
   private coreActionCache: { key: string; value: NonNullable<DocumentCommandSnapshot["actions"]> } | null = null;
   private coreActions(): NonNullable<DocumentCommandSnapshot["actions"]> {
     const key = [this.epoch, this.modelVersion, this.clipboardVersion, this.pending, this.committingEpoch === this.epoch,
-      this.editable, this.imeUnsettled, this.uncertain, this.imageSelecting, this.sessions.get(this.sessionId)?.format].join("|");
+      this.editable, this.imeUnsettled, this.uncertain, this.imageSelecting, this.sessions.get(this.sessionId)?.format,
+      this.structuralKey()].join("|");
     if (this.coreActionCache?.key === key) return this.coreActionCache.value;
     const actions: NonNullable<DocumentCommandSnapshot["actions"]> = {};
-    if (this.sessions.get(this.sessionId)?.format === "hwpx" && this.doc?.insertPicture && this.doc.setPictureProperties
+    if (this.structuralFormat() && this.doc?.insertPicture && this.doc.setPictureProperties
       && this.editable && !this.imeUnsettled && !this.uncertain && !this.hasSelection && !this.caret.cell
       && !this.pending && this.committingEpoch !== this.epoch && !this.imageSelecting) actions["insert.image"] = {};
     const range = this.bulletRange();
@@ -1646,7 +1675,7 @@ export class RhwpEditorSession implements DocumentCommandTarget {
       const ext = bytes[0] === 0x89 && bytes[1] === 0x50 ? "png" : bytes[0] === 0xff && bytes[1] === 0xd8 ? "jpeg" : null;
       if (!ext || !bytes.length || bytes.length > 16 * 1024 * 1024) return "failed";
       const scale = Math.min(75, 43200 / width, 60000 / height);
-      const at = this.caret, doc = this.doc!;
+      const at = this.caret, doc = this.doc!, hwp = this.sessions.get(this.sessionId)?.format === "hwp";
       return this.mutate(() => {
         const result = JSON.parse(doc.insertPicture!(at.section, at.paragraph, at.offset, "[]", bytes,
           Math.max(1, Math.round(width * scale)), Math.max(1, Math.round(height * scale)), width, height, ext, "")) as Record<string, unknown>;
@@ -1654,6 +1683,7 @@ export class RhwpEditorSession implements DocumentCommandTarget {
           || !Number.isSafeInteger(result.logicalOffset)) throw new Error("invalid picture result");
         const props = JSON.parse(doc.setPictureProperties!(at.section, result.paraIdx as number, result.controlIdx as number, JSON.stringify({ treatAsChar: true }))) as Record<string, unknown>;
         if (props.ok !== true) throw new Error("inline picture rejected");
+        if (hwp && !insertedInlinePicture(doc, at.section, result.paraIdx as number, result.controlIdx as number)) throw new Error("inline picture not verified");
         return { section: at.section, paragraph: result.paraIdx as number, offset: result.logicalOffset as number };
       }) ? "inserted" : "failed";
     } catch { return "failed"; }
@@ -1665,13 +1695,16 @@ export class RhwpEditorSession implements DocumentCommandTarget {
     const key = [
       this.modelVersion, RhwpEditorSession.positionKey(this.anchor), RhwpEditorSession.positionKey(this.caret), format,
       this.editable, this.imeUnsettled, this.uncertain, !!this.history, !!this.doc, this.pending, this.committingEpoch === this.epoch, this.pages.length,
+      this.structuralKey(),
     ].join("|");
     if (this.parameterCache?.key === key) return this.parameterCache.value;
     const parameters: Partial<Record<ParameterCommandId, CommandParameterContext>> = {};
     const parameterReasons: NonNullable<DocumentCommandSnapshot["parameterReasons"]> = {};
-    if (format === "hwpx" && this.editable && this.doc?.createTable && this.doc.setTableProperties && !this.imeUnsettled && !this.uncertain && !this.caret.cell && !this.hasSelection
+    const structural = this.structuralFormat();
+    if (structural && this.editable && this.doc?.createTable && this.doc.setTableProperties && !this.imeUnsettled && !this.uncertain && !this.caret.cell && !this.hasSelection
       && this.pending === 0 && this.committingEpoch !== this.epoch) parameters["insert.table"] = {};
-    else parameterReasons["insert.table"] = format !== "hwpx" ? "engineUnsupported" : this.pending > 0 ? "pendingEdits" : "caretRequired";
+    else parameterReasons["insert.table"] = !structural || (format === "hwp" && (!this.doc?.createTable || !this.doc.setTableProperties))
+      ? "engineUnsupported" : this.pending > 0 ? "pendingEdits" : "caretRequired";
     const usable = this.editable && !!this.doc && !!this.text && !this.imeUnsettled && !this.uncertain;
     // 장평·자간: HWPX, 그리고 엔진이 덧붙인 글자 모양 정리를 지원할 때 HWP(T012 Stage 5 — HWP 저장 규칙은 정리된 덧붙임만 받는다).
     const metricFormat = format === "hwpx" || (format === "hwp" && !!this.doc?.compactAppendedCharShapes);
@@ -1820,7 +1853,7 @@ export class RhwpEditorSession implements DocumentCommandTarget {
     if (command === "paragraph.bullets") return args === undefined ? { accepted: this.toggleBullets() } : { accepted: false };
     if (command === "insert.table") {
       if (args?.command !== command || !validateCommandArgs(command, args, this.snapshot().parameters?.[command]) || !this.doc?.createTable || !this.doc.setTableProperties) return { accepted: false };
-      const at = this.caret, doc = this.doc;
+      const at = this.caret, doc = this.doc, hwp = this.sessions.get(this.sessionId)?.format === "hwp";
       return { accepted: this.mutate(() => {
         const result: unknown = JSON.parse(doc.createTable!(at.section, at.paragraph, at.offset, args.rows, args.cols));
         if (!result || typeof result !== "object") throw new Error("invalid table result");
@@ -1829,8 +1862,11 @@ export class RhwpEditorSession implements DocumentCommandTarget {
           || !Number.isSafeInteger(value.controlIdx) || (value.controlIdx as number) < 0) throw new Error("invalid table result");
         // createTable leaves attr/common wrapping bits inconsistent. Reapply the
         // engine's own default through its property API so reopen is identical.
-        const props = JSON.parse(doc.setTableProperties!(at.section, value.paraIdx as number, value.controlIdx as number, JSON.stringify({ textWrap: "TopAndBottom" }))) as Record<string, unknown>;
+        const props = JSON.parse(doc.setTableProperties!(at.section, value.paraIdx as number, value.controlIdx as number,
+          JSON.stringify(hwp ? HWP_TABLE_NORMALIZATION : { textWrap: "TopAndBottom" }))) as Record<string, unknown>;
         if (props.ok !== true) throw new Error("table properties rejected");
+        if (hwp && !insertedBasicTable(doc, at.section, value.paraIdx as number, value.controlIdx as number, args.rows, args.cols))
+          throw new Error("table normalization not verified");
         return { section: at.section, paragraph: value.paraIdx as number, offset: 0,
           cell: { parentParagraph: value.paraIdx as number, control: value.controlIdx as number, cell: 0, cellParagraph: 0 } };
       }) };

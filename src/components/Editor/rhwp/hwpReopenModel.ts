@@ -102,6 +102,75 @@ export function tableLayoutConsistent(rows: number, cols: number, cells: readonl
   return covered.size === rows * cols;
 }
 
+// ---- Newly inserted HWP objects (the T009 restricted subset) ----
+
+/**
+ * Live-model normalization after `createTable` on HWP. The engine leaves the live CommonObjAttr
+ * (wrap bits, horizontal reference and outer margins) different from the CTRL_HEADER bytes it
+ * serializes (attr 0x082a2210 — horizontal reference Column — and 283 HWPUNIT margins, the form the
+ * T009 table proof accepts). Restating that serialized default makes the live model equal to its own
+ * export without changing the bytes; wrap-only normalization leaves a detectable reopen difference.
+ */
+export const HWP_TABLE_NORMALIZATION = Object.freeze({
+  textWrap: "TopAndBottom", horzRelTo: "Column", outerLeft: 283, outerRight: 283, outerTop: 283, outerBottom: 283,
+});
+export const HWP_TABLE_LIMITS = Object.freeze({ rows: 32, cols: 16, cells: 256 });
+
+function controlProps(doc: RhwpDocument, section: number, paragraph: number, control: number, kind: string): JsonObject | null {
+  let global = paragraph;
+  for (let s = 0; s < section; s++) global += doc.getParagraphCount(s);
+  const raw: unknown = JSON.parse(doc.getControls!());
+  if (!Array.isArray(raw)) return null;
+  const match = raw.find(c => isObject(c) && c.ctrlId === kind && c.list === 0 && c.para === global && c.controlIndex === control);
+  if (!isObject(match) || !isObject(match.props)) return null;
+  checkControlProps(match.props);
+  return match.props;
+}
+const readObject = (raw: unknown): JsonObject => {
+  if (typeof raw !== "string") throw new HwpEvidenceError("getter result");
+  const value: unknown = JSON.parse(raw);
+  if (!isObject(value)) throw new HwpEvidenceError("object");
+  return value;
+};
+
+/** A freshly inserted HWP table is the supported basic subset in its normalized form. Never throws. */
+export function insertedBasicTable(doc: RhwpDocument, section: number, paragraph: number, control: number, rows: number, cols: number): boolean {
+  try {
+    if (!doc.getTableProperties || !doc.getCellInfo || !doc.getControls) return false;
+    if (rows < 1 || cols < 1 || rows > HWP_TABLE_LIMITS.rows || cols > HWP_TABLE_LIMITS.cols || rows * cols > HWP_TABLE_LIMITS.cells) return false;
+    const dimensions = readObject(doc.getTableDimensions(section, paragraph, control));
+    checkTableDimensions(dimensions);
+    if (dimensions.rowCount !== rows || dimensions.colCount !== cols || dimensions.cellCount !== rows * cols) return false;
+    const cells: TableCellCoordinates[] = [];
+    for (let cell = 0; cell < rows * cols; cell++) {
+      const info = readObject(doc.getCellInfo(section, paragraph, control, cell));
+      checkCellInfo(info);
+      if (info.rowSpan !== 1 || info.colSpan !== 1) return false; // no merged cells in the insertion path
+      if (doc.getCellParagraphCount(section, paragraph, control, cell) !== 1) return false;
+      cells.push(info as unknown as TableCellCoordinates);
+    }
+    if (!tableLayoutConsistent(rows, cols, cells)) return false;
+    const properties = readObject(doc.getTableProperties(section, paragraph, control));
+    checkTableProperties(properties);
+    for (const [key, value] of Object.entries(HWP_TABLE_NORMALIZATION)) if (properties[key] !== value) return false;
+    if (properties.treatAsChar !== false) return false;
+    const props = controlProps(doc, section, paragraph, control, "tbl");
+    return !!props && CONTROL_WRAP[props.TextWrap as number] === "TopAndBottom" && props.TreatAsChar === 0;
+  } catch { return false; }
+}
+
+/** A freshly inserted HWP picture is inline (treatAsChar) with positive size agreeing with its control. Never throws. */
+export function insertedInlinePicture(doc: RhwpDocument, section: number, paragraph: number, control: number): boolean {
+  try {
+    if (!doc.getPictureProperties || !doc.getControls) return false;
+    const picture = readObject(doc.getPictureProperties(section, paragraph, control));
+    checkPictureProperties(picture);
+    if (picture.treatAsChar !== true || (picture.width as number) < 1 || (picture.height as number) < 1) return false;
+    const props = controlProps(doc, section, paragraph, control, "gso");
+    return !!props && props.TreatAsChar === 1 && props.Width === picture.width && props.Height === picture.height;
+  } catch { return false; }
+}
+
 /** Supplement the raw controls/text comparison with the supported HWP model.
  * No mutation, image hash supplied by the caller, or inferred WASM API is used.
  * Optional APIs may be absent for legacy edits; a changed structural inventory

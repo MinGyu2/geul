@@ -1579,3 +1579,8 @@ geul이 소유한 picture import는 데이터와 크기를 전달하지만 현�
 현재 보완 상태에서 `services::save`는 207 PASS / 22 ignored, 합성 publication refusal 98건, 실제 RHWP 첫 게시 23건 및 반복 게시 1건(총 24), 실엔진 거부 6건, 독립 재열기 24건이다. 독립 Phase 1 stdlib parser audit은 114개 파일을 판독하고 13개 이미지 해시 비교와 19회의 실제 SVG+librsvg 미리보기 재생성을 확인했다. 상세 명령·종료 코드·원본 로그는 [hardening 보고서](../../target/hwp-boundary-hardening/REPORT.ko.txt), [명령 인덱스](../../target/hwp-boundary-hardening/commands-final.json), [독립 감사 결과](../../target/hwp-boundary-hardening/independent-audit.json)를 참조한다.
 
 Phase 2 수치(199/18, 61 mutation, 17 publication, 7 Canvas 및 11 image hash)는 과거 실행 기록이며 이번 실행 결과로 재표시하지 않는다. 이번 실제 preview 주장은 RHWP가 생성한 정확한 출력 SVG와 librsvg 재생성 19건이다. Canvas/GUI, native Linux IBus 및 외부 Hancom 수용은 이번에 실행하지 않았다. T009 사전 검사, 엄격한 loss report, `PreviewStale`, independent RHWP reopen, atomic publication, 복구/rollback, dirty/revision refusal, OPAQUE-001 및 raw TBL-001 가드는 유지됐다. HWP 표·그림·글머리표 명령은 비활성이다. Phase 3의 연결 작업은 시작할 수 있으나 기능 활성화 readiness는 선언하지 않는다. normalized setter/eligibility, 완전한 제품 raster 경로와 trusted picture identity 및 GUI 검증은 남아 있다.
+
+
+## HWP 제품 명령 연결 — 2026-11-10
+
+T009 규칙은 바꾸지 않았다. HWP 표·인라인 그림·글머리표 명령이 제품 경로에서 이 계약을 사용한다. 상세 재열기 모델은 필수 getter 필드를 검증하며(누락·형식 오류는 실패, 검증 불가 상태는 구조 변경 시 거부), HWP 표는 직렬화 CTRL_HEADER와 같은 live 정규화를 쓴다. 제품 payload 8건의 production 게시·재열기와 OPAQUE-001 거부는 [핵심 문서 삽입 — HWP Phase 3](core-insertions.md#hwp-제품-명령-연결--phase-3-2026-11-10)에 기록했다.
