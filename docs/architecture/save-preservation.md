@@ -1523,4 +1523,28 @@ Python은 `-O`·`PYTHONOPTIMIZE`에서 `assert` 문을 없앤다. 이전 native 
 
 ## 표·그림·글머리표 삽입 — 2026-11-10
 
-DOCX/HWPX 기능을 위해 T009 비교기는 새 문서 구조를 임의 허용하지 않고 표 테두리/기본 글머리 정의, 새 PNG/JPEG 리소스와 대응 관계·manifest, 기본 목록 정의의 제한된 추가만 검사한다. HWPX 기존 header·manifest 및 WordprocessingML numbering 검증은 각각 보유 payload 4 MiB 상한을 적용한다. 원래 정의·미디어·relationship·알 수 없는 package 구성원은 기존 비교로 보존한다. HWP의 DocInfo/BinData 추가 규칙은 입증되지 않아 기능을 비활성으로 둔다. 자세한 규칙과 실엔진 7개 HWPX publication/reopen 근거는 [핵심 삽입 기능](core-insertions.md)을 참조한다.
+이 Phase 1 기록 시점에는 DOCX/HWPX 기능을 위해 T009 비교기가 새 문서 구조를 임의 허용하지 않고 표 테두리/기본 글머리 정의, 새 PNG/JPEG 리소스와 대응 관계·manifest, 기본 목록 정의의 제한된 추가만 검사했다. HWPX 기존 header·manifest 및 WordprocessingML numbering 검증은 각각 보유 payload 4 MiB 상한을 적용한다. 원래 정의·미디어·relationship·알 수 없는 package 구성원은 기존 비교로 보존한다. 당시 HWP DocInfo/BinData 추가 계약은 없었으며 HWP 명령은 비활성이었다. 현재 구현 경계는 아래 Phase 2 절을 참조한다. 자세한 DOCX/HWPX 근거는 [핵심 삽입 기능](core-insertions.md)을 참조한다.
+
+## HWP 삽입 보존 경계 — Phase 2
+
+이 T009 계약은 기본 표, 인라인 PNG/JPEG, 단일 단계 U+2022 글머리표에 한정한다. 저장 판정 경계이며 HWP 제품 명령 활성화나 한컴·LibreOffice 호환성 승인을 뜻하지 않는다. 세 HWP 명령은 계속 비활성이다.
+
+DocInfo 원래 정의는 순서, ID, payload, level 및 문맥을 그대로 보존해야 한다. 허용 추가는 BIN_DATA, BORDER_FILL, 증명된 metric CHAR_SHAPE, BULLET, PARA_SHAPE뿐이며 ID_MAPPINGS 카운트도 실제 추가와 맞아야 한다. ID_MAPPINGS 길이는 원본 길이와 같아야 한다. 따라서 64바이트 유지와 72바이트 유지가 가능하지만 64→72 확장은 거부한다. 기존 T012 metric-shape 증명을 조합한다. 원본 DocInfo 중간의 opaque 레코드 이동은 거부한다.
+
+새 표는 최대 32×16, 총 256셀의 직사각형, 병합 없는 span 1, 셀당 한 문단으로 제한한다. 새 표의 비어 있지 않은 셀은 지원한다. 기존 표 subtree는 정확히 보존해야 하며 기존 셀 텍스트 편집은 이 계약 범위 밖이다. 기본 BorderFill 재사용이 가능하다. 열 너비·행 높이 배열과 정의 수가 맞아야 하며 열 너비의 합은 표 폭과 일치해야 한다. TextWrap은 정규화되어야 한다. raw createTable에서 관찰된 TextWrap 변동은 허용하지 않는다.
+
+그림은 인라인 PNG/JPEG만 지원한다. 전체 decoder에는 입력 16 MiB, 한 변 8192픽셀, 16 megapixel, 출력 64 MiB 한도를 적용한다. BinData 저장 ID는 조밀하게 할당하고 기존 리소스 bytes는 보존한다. 링크 그림, OLE, 희소 ID, 새 ID 기반 속성이나 미지 컨트롤은 허용하지 않는다. instance ID가 0인 새 그림의 검증은 위치 기반 API 범위에 한정되며, 외부 응용에서의 ID 선택 동작을 증명하지 않는다. 구조/크기/형식 검증은 운영 계약에 있지만 입력 bytes와 출력 리소스의 동일성은 실험에서만 해시로 확인했다. 운영 검증기는 신뢰된 입력 해시 영수증을 사용하지 않는다.
+
+글머리표는 기본 24바이트 BULLET 정의와 U+2022, level 0만 지원한다. PARA_SHAPE는 기존 원본 모양을 좁게 파생한 54/58바이트 형식에 한정한다. 적용·해제·정의 재사용과 문단 참조를 검사한다.
+
+BodyText는 레코드 변경 위치 문맥을 검사한다. 기존 텍스트의 순서, 문자/서식 범위, 컨트롤 앵커, LIST_HEADER의 셀 위치 참조를 보존해야 한다. 기존 첫 문단 구역/단 컨트롤(secD/cold)만 정확히 보존된 경우 control flag 3→0의 좁은 변화를 허용한다. 역방향 변화나 page-break 표식은 거부한다. 미지 또는 미지원 BodyText 주석 변경은 fail-closed로 거부한다. 일반 문자 편집에는 기존 의미 기반 재열기 검사를 유지한다.
+
+구조 편집에는 새 PrvImage가 필요하다. 원본이 알려진 빈 미리보기여도 예외가 아니다. headless Firefox의 `capturePreviewRaster`로 7개 사례를 확인한 것은 제품 캡처 경로의 검증이며 native 앱 GUI나 한컴 수용은 아니다. 저장 게시·복구·원자 교체 흐름은 기존 것을 사용한다.
+
+이 경계는 저장 보존 계약이다. 전체 활성화는 Phase 3에서 실제 제품 저장 경로의 eligibility, 정규화된 setter, raster 갱신 및 재열기 연결을 확인한 뒤 판단한다. HWP 제품 명령은 현재 비활성이다.
+
+### Phase 2 검증 기록
+
+최종 geometry와 문맥 검사까지 포함한 전체 `services::save`는 199 PASS, 18 ignored이며 geometry focused 시험은 2 PASS, 2 ignored다. 현재 RHWP/WASM으로 16개 positive와 3개 negative publication을 실행했고, E4 반복 publication을 더해 17개 실제 positive를 게시·재개방했다. Canvas mode의 B6, C1, C2, C4-external, D1, E3 여섯 사례도 각각 게시했다. 음성 사례를 포함한 저장 mutation 검사에서 `save-final-reviewed.log`의 61개 `HWP_CONTRACT_NEGATIVE` 결과를 확인했고, 삽입 이미지 11개의 output hash를 별도로 대조했다. Headless Firefox `capturePreviewRaster` 증거는 7개 사례다. 이는 native 앱 GUI 또는 Hancom 검증이 아니다. Phase 1의 432 검사는 이 Phase 2 수치와 합산하지 않는다.
+
+모든 양성 publication은 production 서비스 경로에서 이뤄졌고 다시 열기 검증을 마쳤다. 이 증거로 제한된 Phase 3 서비스 통합을 시작할 수 있다. 전체 기능 활성화 전에는 production eligibility, normalized setters, 실제 raster 갱신 및 재열기 연결을 실제 저장 경로에 연결해야 한다. 외부 Hancom 검증은 별도의 승인 관문이 아니다. 제품 명령은 계속 비활성이다. 실행 명령·로그는 `target/hwp-record-investigation/phase2/verification-close.json`에 있다.

@@ -16,6 +16,8 @@
 //!
 //! 섹터 배치처럼 스트림 내용이 아닌 차이는 같다고 본다. 암호·DRM·배포용 문서는 비교하지 않는다(unknown).
 //! 본문을 바꾼 저장에서 `PrvText`·`PrvImage`가 원본 그대로이면 문서 내용과 무관함을 증명해야 한다(`preview`).
+//! 기본 표/inline PNG·JPEG/단일 수준 Bullet의 구조 변화는 `insertions`의 좁은 append·본문·참조 증명을 요구한다.
+//! 알 수 없는 레코드 이동/64→72 ID_MAPPINGS 확장은 허용하지 않는다. 기존 T012 증명은 유지한다.
 //! 이 비교는 HWP 레코드 수준의 동일성이며 한컴 오피스에서 같게 보인다는 증거가 아니다.
 
 use std::collections::BTreeMap;
@@ -25,6 +27,8 @@ use flate2::read::DeflateDecoder;
 
 use super::preserve::{Finding, FindingCode};
 use super::preview;
+
+mod insertions;
 
 const SIGNATURE: &[u8] = b"HWP Document File";
 const FILE_HEADER_LEN: usize = 256;
@@ -181,7 +185,10 @@ fn inflate_limit() -> u64 {
 /// CRC-32·길이, gzip 꼬리와 같은 배치, 실측)로서 푼 내용과 맞아야 한다. 그 밖의 남는 바이트는 읽는 쪽마다 다르게 다룰 수
 /// 있어 받지 않는다.
 fn inflate(data: &[u8]) -> Result<Vec<u8>, Unpack> {
-    let limit = inflate_limit();
+    inflate_bounded(data, inflate_limit())
+}
+
+fn inflate_bounded(data: &[u8], limit: u64) -> Result<Vec<u8>, Unpack> {
     let mut decoder = DeflateDecoder::new(data);
     let mut out = Vec::new();
     (&mut decoder)
@@ -520,8 +527,8 @@ fn appended_char_shapes_referenced(output: &Container, base: usize, k: usize) ->
 enum Mode {
     /// 편집 없는 왕복(사전 검사): 모든 스트림이 같아야 한다.
     Unedited,
-    /// 편집한 저장: 본문(`BodyText/*`)은 엔진 다시 열기가 따로 확인하므로 레코드로 끝까지 읽히는지만 보고, DocInfo는
-    /// 캐럿 자리만 다를 수 있다. 그 밖은 원본과 같아야 한다.
+    /// 편집한 저장: 일반 글 편집은 의미 재열기 guard, 구조 삽입은 별도의 DocInfo·본문·리소스 증명도 요구한다.
+    /// 검증하지 못하는 본문 레코드가 있는 스트림은 바꾸지 않는다. 그 밖의 원본 스트림은 기존 비교로 보존한다.
     Edited,
 }
 
@@ -541,12 +548,20 @@ fn compare_with(
         Ok(container) => container,
         Err(finding) => return vec![finding],
     };
+    let insertion = (mode == Mode::Edited)
+        .then(|| insertions::assess(&original, &output))
+        .flatten();
+    let proof = insertion.as_ref().and_then(|result| result.as_ref().ok());
     let mut findings = Vec::new();
+    if let Some(Err(finding)) = &insertion {
+        findings.push(finding.clone());
+    }
     if original.header[..FILE_HEADER_LEN] != output.header[..FILE_HEADER_LEN] {
         findings.push(Finding::at(FindingCode::PartChanged, "FileHeader"));
     }
     for name in output.streams.keys() {
-        if !original.streams.contains_key(name) {
+        if !original.streams.contains_key(name) && !proof.is_some_and(|p| p.streams.contains(name))
+        {
             findings.push(Finding::at(FindingCode::PartAdded, name));
         }
     }
@@ -626,10 +641,21 @@ fn compare_with(
         };
         if mode == Mode::Edited && section_stream(name) {
             body_changed |= before_records != after_records;
+            // Opaque body annotations/controls have no proven relocation or edit
+            // semantics. An unchanged stream is preserved; an edited one fails
+            // closed rather than inferring identity from a surviving payload.
+            let opaque = before_records
+                .iter()
+                .chain(&after_records)
+                .any(|r| !matches!(r.0, 66..=85) || (r.0 == 70 && !r.2.is_empty()));
+            if opaque && before_records != after_records {
+                findings.push(Finding::at(FindingCode::RecordsChanged, name));
+            }
             continue; // 본문 내용은 다시 열기 비교 몫
         }
         let same = if mode == Mode::Edited && name == "DocInfo" {
-            same_docinfo(&before_records, &after_records)
+            proof.is_some()
+                || same_docinfo(&before_records, &after_records)
                 || docinfo_char_shapes_appended(&before_records, &after_records)
                     .is_some_and(|(base, k)| appended_char_shapes_referenced(&output, base, k))
         } else {
@@ -652,7 +678,13 @@ fn compare_with(
         {
             findings.push(Finding::at(FindingCode::PreviewStale, "PrvText"));
         }
-        if expected_image.is_none() && stale("PrvImage", preview::known_blank_hwp_image) {
+        // New structural content needs a fresh page render even when the old preview
+        // is a known document-independent blank. A blank is not an image of a new table.
+        let structural_blank = insertion.is_some()
+            && original.streams.get("PrvImage") == output.streams.get("PrvImage");
+        if expected_image.is_none()
+            && (structural_blank || stale("PrvImage", preview::known_blank_hwp_image))
+        {
             findings.push(Finding::at(FindingCode::PreviewStale, "PrvImage"));
         }
     }
@@ -678,6 +710,7 @@ fn compare_with(
             }
         }
         findings.extend(references(&output));
+        findings.extend(insertions::reference_findings(&output));
     }
     findings
 }

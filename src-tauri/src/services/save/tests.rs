@@ -12993,3 +12993,6 @@ fn core_docx_selected_paragraph_bullets_publish_and_remove() {
     assert!(doc.save().is_ok());
     check(&doc.bytes(), false);
 }
+
+#[path = "hwp_contract_tests.rs"]
+mod hwp_contract_tests;

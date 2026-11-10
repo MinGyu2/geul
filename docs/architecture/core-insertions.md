@@ -141,3 +141,23 @@ Linux native launcher 수용은 NOT RUN/BLOCKED다. 필요한 설치 상태 `ibu
 ## K. 권고
 
 DOCX/HWPX 표·글머리표와 지원되는 본문 조건의 그림 삽입은 엔진·안전 저장 수준에서 검증된 제품 경로다. 일반 Linux 사용의 최종 수용은 GUI·IBus 검증 뒤에 판단한다. **세 명령 모두 HWP에서 비활성 유지**하고 DOCX 그림의 제한 문맥에서도 비활성 안내를 유지한다. GUI 수용이 완료되기 전 native Linux 사용을 완전히 수용했다고 표시하지 않는다. 다음 기능으로 넘어가기 전에 HWP 보존 경계와 native GUI 수용을 완료하는 것을 권한다.
+
+앞선 A–K 절은 Phase 1의 제품 삽입/기능 게이트 상태다. 아래는 현재 T009 저장 보존 경계이며 HWP 제품 명령은 계속 비활성이다.
+
+## HWP T009 보존 경계 — Phase 2
+
+지원 범위는 기본 표, 인라인 PNG/JPEG, 단일 단계 U+2022 글머리표다. 이 경계는 저장 검증이지 HWP 기능 활성화, native GUI 또는 한컴 외부 수용이 아니다.
+
+새 표는 직사각형 최대 32×16 및 256셀, 병합 없음(span 1), 셀당 한 문단이다. 새 표의 비어 있지 않은 셀은 지원하고 기존 표 subtree는 그대로 보존한다. 기존 표 셀 텍스트 변경은 현재 범위 밖이다. 기본 BorderFill을 재사용할 수 있다. 열 너비·행 높이 배열과 개수가 맞아야 하고 열 너비 합계가 표 폭과 같아야 한다. TextWrap 정규화는 필수다.
+
+그림은 인라인 PNG/JPEG와 전체 bounded decode만 허용한다(입력 16 MiB, 각 변 8192, 16 megapixel, decoder 출력 64 MiB). 신규 BinData 저장 ID는 조밀해야 하고 기존 리소스는 유지한다. 링크/OLE/희소 ID, 미지 컨트롤과 새 ID 기반 picture 속성은 거부한다. 위치 기반 API에서 instance ID 0을 다루는 좁은 범위는 외부 응용의 ID 선택 안정성 증거가 아니다. 구조적 그림 검사는 운영 검증기에 있지만 입력/삽입 bytes의 해시 동일성은 실험 전용이며 production validator는 신뢰된 입력 영수증을 받지 않는다.
+
+글머리표는 24바이트 BULLET의 U+2022, level 0, 원본 모양에서 좁게 파생한 54/58바이트 PARA_SHAPE로 제한한다. apply/remove/reuse를 확인한다. DocInfo의 원래 정의, 순서, ID, payload, level, 문맥과 opaque 레코드 위치는 보존한다. ID_MAPPINGS는 원래 길이를 유지하며 64바이트나 72바이트 동일 길이만 허용하고 64→72를 거부한다. 허용 추가 정의는 실제 count 증가와 일치해야 하며 T012 metric-shape proof와 조합한다.
+
+BodyText 기록은 구조 위치 문맥과 LIST_HEADER 셀 참조를 함께 확인한다. 기존 문자·서식·컨트롤 앵커를 보존하고, 기존 첫 문단 secD/cold control이 정확히 유지된 경우에만 control flag 3→0 변화를 허용한다. 반대 방향, page-break 표식, 미지·미지원 BodyText 주석 변화와 opaque 레코드 재배치는 거부한다. 일반 문자 편집에는 기존 의미 재열기 보호를 유지한다. 구조 변경 시 알려진 빈 원본을 포함해 새 PrvImage를 요구한다.
+
+미리보기 raster는 headless Firefox `capturePreviewRaster`에서 7개 사례를 확인한다. 이는 native app GUI 또는 Hancom 시험이 아니다. 저장/복구/원자 게시 경로는 기존 서비스 경로다. DOCX/HWPX 범위는 바뀌지 않고 세 HWP 명령은 계속 비활성이다.
+
+### 현재 구현 검증 기록
+
+최종 geometry/context helper를 포함한 전체 `services::save` 결과는 199 PASS, 18 ignored이며 geometry focused 시험은 2 PASS, 2 ignored다. 현재 core의 실제 publication은 16 positive와 3 negative였고, E4 반복 저장을 더해 17 positive 산출물을 확인했다. 6개 지정 Canvas 사례도 통과했다. `save-final-reviewed.log`의 61개 synthetic mutation rejection, 삽입 그림 11개의 output hash 대조, Headless Firefox raster 캡처 7개 사례를 확인했다. 재열기 도구가 17개 positive를 다시 열었다. Phase 1의 432 검사는 이 수치에 포함하지 않는다. 증거는 제한된 Phase 3 서비스 통합을 시작하기에 충분하다. 전체 활성화 전에는 production eligibility, normalized setters, 실제 raster refresh와 재열기를 제품 저장 경로에 연결해야 한다. 외부 Hancom 실행은 별도 승인 조건이 아니다. HWP 기능 명령은 계속 비활성이다. 상세 실행은 `target/hwp-record-investigation/phase2/verification-close.json`을 참조한다.
