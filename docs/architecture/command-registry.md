@@ -1,4 +1,4 @@
-> **2026-11-10 HWP 핵심 삽입:** `insert.table`·`insert.image`·`paragraph.bullets`가 HWP에서도 T009 제한 부분집합 안에서 활성화된다(상세 재열기 API·section 0·거부되지 않은 원본 조건). 경계와 검증은 [핵심 문서 삽입 — HWP Phase 3](core-insertions.md#hwp-제품-명령-연결--phase-3-2026-11-10)을 따른다.
+> **2026-11-10 HWP 핵심 삽입:** `insert.table`·`insert.image`·`paragraph.bullets`가 HWP에서도 T009 제한 부분집합 안에서 활성화된다(상세 재열기 API·complete baseline·section 0·현재 원본 사전검사 SAFE 조건; 이유 `originalChecking`/`originalUnverified` 추가). 경계와 검증은 [핵심 문서 삽입 — HWP Phase 3](core-insertions.md#hwp-제품-명령-연결--phase-3-2026-11-10)을 따른다.
 > **2026-11-10 클립보드:** DOCX/HWP/HWPX의 plain-text Copy/Cut/Paste를 연결했다. 현재 계약과 제한은 [Plain-text clipboard](#plain-text-clipboard-2026-11-10)를 따른다. 기존 T010 전체 수용 판정은 바꾸지 않는다.
 
 # 명령 레지스트리·가용성·실행 취소 (T010)

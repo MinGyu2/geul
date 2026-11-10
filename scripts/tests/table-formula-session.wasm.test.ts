@@ -52,7 +52,9 @@ async function openBytes(format: "hwp" | "hwpx", original: Uint8Array) {
   const opening = sessions.open(`/a.${format}`); take("open").reply(ok({ ...base, format })); await opening;
   let doc!: RhwpDocument;
   let memoryFault = false;
-  const module: RhwpModule = { openDocument: b => (doc = new engine.HwpDocument(b)), memoryBytes: () => memoryFault ? NaN : exports.memory.buffer.byteLength };
+  // `doc` is the live session model; preflight/eligibility-probe documents are separate instances.
+  let live = false;
+  const module: RhwpModule = { openDocument: b => { const d = new engine.HwpDocument(b); if (!live) { doc = d; live = true; } return d; }, memoryBytes: () => memoryFault ? NaN : exports.memory.buffer.byteLength };
   const editor = new RhwpEditorSession(1, backend, sessions, async () => module);
   const loading = editor.load(); take("load").reply(loaded(original)); await flush();
   take("session").reply(ok(info({ format, state: "loading", sequence: 1, loadGeneration: 1 })));
@@ -77,7 +79,8 @@ async function openBytes(format: "hwp" | "hwpx", original: Uint8Array) {
       try { uneditedLoss = JSON.parse(e.contentLoss()); unedited = e.takeBytes(); } finally { e.free(); }
     } finally { uneditedDoc.free(); }
     const saving = editor.save();
-    if (calls.some(c => c.method === "original")) {
+    // HWP structural-eligibility probe (load/publication) and/or Save's own preflight, oldest first.
+    while (calls.some(c => c.method === "original")) {
       take("original").reply(ok(disk)); await flush();
       take("preflight").reply(ok({ preservation: { outcome: "safe", findings: [] }, platformSupported: true })); await flush();
     }

@@ -79,7 +79,8 @@ describe("preview raster source", () => {
     }
     captured.docs.length = 0;
     const saving = editor.save();
-    if (calls.some(c => c.method === "original")) { take("original").reply(ok(original)); await flush(); take("preflight").reply(ok({ preservation: { outcome: "safe", findings: [] }, platformSupported: true })); await flush(); }
+    // The load-time eligibility probe and (if it had not finished) Save's own preflight.
+    while (calls.some(c => c.method === "original")) { take("original").reply(ok(original)); await flush(); take("preflight").reply(ok({ preservation: { outcome: "safe", findings: [] }, platformSupported: true })); await flush(); }
     const request = take("save");
     expect(captured.docs).toHaveLength(1);
     const source = captured.docs[0];

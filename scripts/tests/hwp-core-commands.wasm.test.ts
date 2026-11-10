@@ -61,7 +61,7 @@ function check(mode: "preflight" | "saved", original: Uint8Array, output: Uint8A
   return JSON.parse(execFileSync(checker, [mode, "hwp", join(dir, "a.hwp"), join(dir, "b.hwp"), join(dir, "loss.json"), ...(mode === "saved" ? [String(reopen)] : [])], { encoding: "utf8" }));
 }
 
-async function open(bytes: Uint8Array, patch?: (d: Doc) => void) {
+async function open(bytes: Uint8Array, patch?: (d: Doc) => void, answerProbe = true) {
   const { backend, take, calls } = controlledBackend(), sessions = new DocumentSessions(backend);
   const opening = sessions.open("/a.hwp"); take("open").reply(ok(base)); await opening;
   let doc: Doc | undefined;
@@ -72,7 +72,20 @@ async function open(bytes: Uint8Array, patch?: (d: Doc) => void) {
   const loading = editor.load(); take("load").reply(loaded(bytes)); await flush();
   take("session").reply(ok(info({ state: "loading", sequence: 1 })));
   take("setState").reply(ok(info({ state: "ready", sequence: 2 }))); await loading;
-  const ctx = { editor, take, calls, sequence: 2, get doc() { return doc!; },
+  // HWP structural eligibility needs the original-document preflight the session starts at load:
+  // answer it with the production checker's real verdict on the session's exact no-op export.
+  let probe: { preflight: { outcome: string; findings: { code: string }[] }; unedited: Uint8Array; noopLoss: string } | null = null;
+  const reply = async () => {
+    if (!calls.some(c => c.method === "original")) return null;
+    take("original").reply(ok(bytes)); await flush();
+    const pf = take("preflight");
+    const unedited = pf.args[2] as Uint8Array, noopLoss = JSON.stringify(pf.args[3]);
+    probe = { preflight: check("preflight", bytes, unedited, noopLoss), unedited, noopLoss };
+    pf.reply(ok({ preservation: probe.preflight, platformSupported: true })); await flush();
+    return probe;
+  };
+  if (answerProbe) await reply();
+  const ctx = { editor, take, calls, sequence: 2, get doc() { return doc!; }, get probe() { return probe; }, reply,
     async settle() { await flush(); while (calls.some(c => c.method === "commit")) {
       const call = take("commit"); call.reply(ok(info({ state: "ready", revision: Number(call.args[2]) + Number(call.args[3]), dirty: true, sequence: ++ctx.sequence }))); await flush();
     } } };
@@ -85,11 +98,18 @@ const available = (ctx: Ctx, id: "insert.table" | "insert.image" | "paragraph.bu
 async function save(ctx: Ctx, original: Uint8Array, publish = true) {
   captured.docs.length = 0;
   const saving = ctx.editor.save(); await flush();
-  ctx.take("original").reply(ok(original)); await flush();
-  const pf = ctx.take("preflight");
-  const unedited = pf.args[2] as Uint8Array, noopLoss = JSON.stringify(pf.args[3]);
-  const preflight = check("preflight", original, unedited, noopLoss);
-  pf.reply(ok({ preservation: preflight, platformSupported: true })); await flush();
+  let unedited: Uint8Array, noopLoss: string, preflight: { outcome: string; findings: { code: string }[] };
+  if (ctx.calls.some(c => c.method === "original")) {
+    ctx.take("original").reply(ok(original)); await flush();
+    const pf = ctx.take("preflight");
+    unedited = pf.args[2] as Uint8Array; noopLoss = JSON.stringify(pf.args[3]);
+    preflight = check("preflight", original, unedited, noopLoss);
+    pf.reply(ok({ preservation: preflight, platformSupported: true })); await flush();
+  } else {
+    // Save reused the SAFE eligibility preflight of this original (no second preflight).
+    if (!ctx.probe) throw new Error("save skipped preflight without an eligibility verdict");
+    ({ unedited, noopLoss, preflight } = ctx.probe);
+  }
   if (preflight.outcome !== "safe") return { result: await saving, preflight, unedited, noopLoss };
   const call = ctx.take("save");
   const [, , revision, output, contentLoss, reopen, , preview] = call.args as [number, number, number, Uint8Array, unknown, Record<string, boolean>, unknown, unknown];
@@ -235,14 +255,13 @@ describe.runIf(phase === "generate")("HWP product command availability", () => {
   it("an original the preflight refused disables the HWP structural commands", async () => {
     const opaque = join(root, "target/hwp-record-investigation/opaque-middle.hwp");
     const original = new Uint8Array(readFileSync(existsSync(opaque) ? opaque : join(root, "src-tauri/target/hwp-boundary-hardening/engine/B6/original.hwp")));
-    const ctx = await open(original);
+    const ctx = await open(original, undefined, false);
     try {
-      expect(available(ctx, "insert.table").available).toBe(true); // unchecked: Save performs the real preflight
-      const checking = ctx.editor.checkSave(); await flush();
+      expect(available(ctx, "insert.table")).toEqual({ available: false, reason: "originalChecking" }); // probe pending
       ctx.take("original").reply(ok(original)); await flush();
       const pf = ctx.take("preflight");
-      pf.reply(ok({ preservation: { outcome: "unknown", findings: [{ code: "originalMalformed", part: "DocInfo" }] }, platformSupported: true })); await checking;
-      for (const id of ["insert.table", "insert.image", "paragraph.bullets"] as const) expect(available(ctx, id), id).toEqual({ available: false, reason: "engineUnsupported" });
+      pf.reply(ok({ preservation: { outcome: "unknown", findings: [{ code: "originalMalformed", part: "DocInfo" }] }, platformSupported: true })); await flush();
+      for (const id of ["insert.table", "insert.image", "paragraph.bullets"] as const) expect(available(ctx, id), id).toEqual({ available: false, reason: "originalUnverified" });
     } finally { ctx.editor.dispose(); }
   });
 });

@@ -188,9 +188,10 @@ HWP 구조 명령은 다음을 모두 만족할 때만 snapshot에 나타나고 
 
 - 기존 공통 조건: 편집 가능, IME 트랜잭션 없음, 불확실 모델 아님, 대기·확정 중 편집 없음(표·그림), 저장 중 아님, 보호 문서 아님, 비동기 그림 완료 시 세션·epoch·revision·caret 소유 재확인.
 - 상세 재열기 근거 API 전부 존재: `getSectionCount`, `getParaPropertiesAt`, `getBulletList`, `getTableProperties`, `getCellInfo`, `getCellProperties`, `getPictureProperties`, `getControls`. 없으면 구조 변경을 검증할 수 없으므로 `engineUnsupported`.
-- 불러온 원본의 HWP 재열기 모델 baseline이 만들어졌을 것.
+- 불러온 원본의 HWP 재열기 모델 baseline이 **complete**일 것(2026-11-10 Phase 3 hardening). baseline이 있어도 `complete=false`(중첩·미지 컨트롤, 검증 불가 표, 해석되지 않는 글머리표 정의 등)이면 `engineUnsupported`. 일반 텍스트 편집·열기·읽기는 이 판정과 무관하다.
 - caret/선택이 section 0(검증된 `BodyText/Section0` 삽입 증명 범위). 다른 구역은 비활성.
-- 현재 load generation의 캐시된 사전검사가 원본을 거부(unsafe/unknown/platform)하지 않았을 것. 아직 검사하지 않은 원본은 활성이며, 저장이 실제 사전검사를 하고 거부 시 게시하지 않는다(성공 사전검사를 만들어 내지 않는다).
+- **원본 사전검사 SAFE**(Phase 3 hardening): 위 정적 조건을 만족하는 HWP를 불러오면 세션이 원본 사전검사(기존 `preflight`, 같은 T009 판정)를 한 번 시작한다. 결과는 epoch·load generation·원본 정체성(게시 횟수)에 묶인다. 확인 전/확인 중은 `originalChecking`, unsafe·unknown·platform·전송 실패는 `originalUnverified`로 세 명령 모두 비활성이다. 이 검사는 보이는 저장 상태와 `saveCheck`를 바꾸지 않으며, 다른 문서·이전 generation·이전 원본의 늦은 응답은 무시한다. 자동 재시도는 없다: 저장 검사(수동)·다시 불러오기·게시가 재확인 경로다. 수동 저장 검사의 결과도 자격을 갱신하며, 나중 검사가 실패하면 이전 SAFE를 쓰지 않는다. 게시 성공 또는 게시 결과를 알 수 없는 저장 전송 거부 뒤에는 원본 정체성이 바뀌므로 다시 확인한다. 첫 저장은 같은 원본·같은 검사 일련번호의 SAFE 판정을 재사용해 사전검사를 두 번 하지 않는다.
+- SAFE는 원본이 사전검사를 통과했다는 뜻일 뿐이다. 편집한 출력은 저장 때 T009가 다시 판정한다(예: OPAQUE-001처럼 원본은 SAFE이나 삽입 뒤 거부되는 문서).
 - 기능별: 표·그림은 접힌 caret의 본문 문단(표 셀·선택 불가), 글머리표는 본문 문단 범위(셀 불가, 256문단 이하). 표 크기는 기존 입력 검증(1–32행, 1–16열, 256셀 이하).
 
 ### 표

@@ -239,7 +239,17 @@ export class RhwpEditorSession implements DocumentCommandTarget {
   firstPaintMs: number | null = null;
   loadStartedAt = 0;
   lastRoundTrip: RoundTripReport | null = null;
-  private hwpStructureBaseline: string | null = null;
+  /** Load-time HWP reopen model of the original: structural inventory + whether its evidence was complete. */
+  private hwpBaseline: { structure: string; complete: boolean } | null = null;
+  /**
+   * Original-document T009 preflight for HWP structural eligibility, owned by `originalOwner()`
+   * (epoch, load generation, publication count). null = unchecked for the current owner.
+   */
+  private hwpOriginal: { owner: string; state: "checking" | "safe" | "blocked" | "error"; check?: SaveCheck; serial?: number } | null = null;
+  /** Bumped when a publication replaces the original on disk (a new original identity). */
+  private originalSerial = 0;
+  /** Instrumentation: eligibility probes started by this session. */
+  hwpOriginalProbes = 0;
   /** 마지막 저장 시도의 결과(T009, 화면 표시). */
   saveState: SaveState = { kind: "idle" };
   /** 이 원본에 대한 보존 사전 검사(T009). 다시 불러오거나 저장하면(원본이 바뀜) 버린다. */
@@ -571,10 +581,14 @@ export class RhwpEditorSession implements DocumentCommandTarget {
       return { ok: false, error: ready.error };
     }
     this.doc = doc;
-    this.hwpStructureBaseline = null;
+    this.hwpBaseline = null;
+    this.hwpOriginal = null;
     try {
-      if (doc.getSourceFormat() === "hwp") this.hwpStructureBaseline = hwpReopenModel(doc).structure;
-    } catch { /* export requires fresh evidence */ }
+      if (doc.getSourceFormat() === "hwp") {
+        const { structure, complete } = hwpReopenModel(doc);
+        this.hwpBaseline = { structure, complete };
+      }
+    } catch { /* no baseline: export requires fresh evidence and structural commands stay unavailable */ }
     this.text = text;
     this.startHistory(doc, loaded.value.bytes.length);
     this.generation = generation;
@@ -587,6 +601,7 @@ export class RhwpEditorSession implements DocumentCommandTarget {
     this.modelVersion += 1;
     this.sessions.applyUpdate(ready.value);
     this.setStatus({ kind: "ready" });
+    this.probeHwpOriginal();
     return LOADED;
   }
 
@@ -1495,7 +1510,7 @@ export class RhwpEditorSession implements DocumentCommandTarget {
       report.textEqual = textOf(reopened) === textOf(doc);
       report.controlsEqual = controls(reopened) === controls(doc);
       if (format === "hwp") {
-        report.controlsEqual &&= hwpReopenEqual(hwpReopenModel(doc), hwpReopenModel(reopened), this.hwpStructureBaseline);
+        report.controlsEqual &&= hwpReopenEqual(hwpReopenModel(doc), hwpReopenModel(reopened), this.hwpBaseline?.structure ?? null);
       }
       if (publishing) releaseShapes = this.text?.protectPublishingCharShapes(charShapeCount, reopened);
       // HWP: page 1 of the reopened raw export — the same bytes the service validates — for
@@ -1541,6 +1556,7 @@ export class RhwpEditorSession implements DocumentCommandTarget {
       format: this.formatState(), formatAccess: null,
       ...this.parameterState(),
       actions: this.coreActions(),
+      ...this.coreActionReasons(),
     };
   }
 
@@ -1574,31 +1590,77 @@ export class RhwpEditorSession implements DocumentCommandTarget {
   }
 
   /**
-   * Whether the source format admits the structural core features (table, inline picture, bullets).
-   * HWPX: always (its own preservation rules). HWP: only the restricted T009 subset can be published, so
-   * additionally require (a) every getter the detailed HWP reopen comparison needs — without them a
-   * structural change can never be verified, (b) a reopen-model baseline of the loaded original, (c) the
-   * selection/caret in section 0 (the verified BodyText/Section0 insertion proof), and (d) no cached
-   * preflight for this load generation that already refused the original. An unchecked original stays
-   * eligible: Save runs the real preflight and refuses unsafe/unknown sources without publication.
-   * Engine API presence alone (A) is not the final save verdict (D) — T009 still decides on the bytes.
+   * Why the source format does not (yet) admit the structural core features (table, inline picture,
+   * bullets), or null when it does. HWPX: always admitted (its own preservation rules). HWP: only the
+   * restricted T009 subset can be published, so additionally require
+   * (a) every getter the detailed HWP reopen comparison needs,
+   * (b) a load-time reopen-model baseline of this document whose evidence was complete — a baseline that
+   *     exists but is incomplete (nested/unknown controls, unverifiable tables, unresolved bullets) can
+   *     never vouch for a structural change,
+   * (c) the selection/caret in section 0 (the verified BodyText/Section0 insertion proof), and
+   * (d) a SAFE original-document preflight owned by this epoch, load generation and original identity.
+   * Unchecked/checking → "originalChecking"; unsafe/unknown/platform/transport failure → "originalUnverified".
+   * SAFE proves only that the original passed preflight: the edited output is still validated by T009 at Save.
    */
-  private structuralFormat(): boolean {
+  private structuralBlock(): "engineUnsupported" | "originalChecking" | "originalUnverified" | null {
     const format = this.sessions.get(this.sessionId)?.format;
-    if (format === "hwpx") return true;
-    if (format !== "hwp") return false;
-    const doc = this.doc;
-    if (!doc?.getSectionCount || !doc.getParaPropertiesAt || !doc.getBulletList || !doc.getTableProperties
-      || !doc.getCellInfo || !doc.getCellProperties || !doc.getPictureProperties || !doc.getControls) return false;
-    if (this.hwpStructureBaseline === null || this.caret.section !== 0 || this.anchor.section !== 0) return false;
+    if (format === "hwpx") return null;
+    if (format !== "hwp" || !this.hwpStructuralStatic()) return "engineUnsupported";
+    if (this.caret.section !== 0 || this.anchor.section !== 0) return "engineUnsupported";
     const check = this.saveCheck?.generation === this.generation ? this.saveCheck.check : null;
-    return !check || blockedBy(check) === null;
+    if (check && blockedBy(check)) return "originalUnverified";
+    const original = this.hwpOriginal?.owner === this.originalOwner() ? this.hwpOriginal : null;
+    if (!original || original.state === "checking") return "originalChecking";
+    return original.state === "safe" ? null : "originalUnverified";
   }
-  /** Cache-key part for the inputs of structuralFormat() that do not bump modelVersion. */
+  private structuralFormat(): boolean { return this.structuralBlock() === null; }
+  /** Load-time conditions independent of the original preflight: HWP, detailed APIs, complete baseline. */
+  private hwpStructuralStatic(): boolean {
+    const doc = this.doc;
+    return !!doc?.getSectionCount && !!doc.getParaPropertiesAt && !!doc.getBulletList && !!doc.getTableProperties
+      && !!doc.getCellInfo && !!doc.getCellProperties && !!doc.getPictureProperties && !!doc.getControls
+      && this.hwpBaseline?.complete === true;
+  }
+  private originalOwner(): string { return `${this.epoch}|${this.generation}|${this.originalSerial}`; }
+  /** Cache-key part for the inputs of structuralBlock() that do not bump modelVersion. */
   private structuralKey(): string {
     const check = this.saveCheck?.generation === this.generation ? this.saveCheck.check : null;
-    return [this.generation, this.hwpStructureBaseline !== null, this.caret.section, this.anchor.section,
-      check ? blockedBy(check)?.code ?? "safe" : "unchecked"].join(",");
+    const original = this.hwpOriginal?.owner === this.originalOwner() ? this.hwpOriginal.state : "unchecked";
+    return [this.originalOwner(), this.hwpBaseline?.complete, this.caret.section, this.anchor.section,
+      check ? blockedBy(check)?.code ?? "safe" : "unchecked", original].join(",");
+  }
+  /**
+   * Start the original-document preflight that HWP structural eligibility needs, once per owner (load or
+   * publication). It reuses `preflight` with a serial no Save Check uses, so the visible save state and
+   * `saveCheck` stay untouched; a stale completion (other epoch/generation/original) is ignored. There is no
+   * automatic retry: a failure stays "originalUnverified" until a manual Save Check, reload or publication.
+   */
+  private probeHwpOriginal(): void {
+    if (this.sessions.get(this.sessionId)?.format !== "hwp" || !this.hwpStructuralStatic() || this.status.kind !== "ready") return;
+    const owner = this.originalOwner();
+    if (this.hwpOriginal?.owner === owner) return;
+    // `serial`: Save may reuse the verdict only while no save-check invalidation happened since it started.
+    const serial = this.checkSerial;
+    this.hwpOriginal = { owner, state: "checking" };
+    this.hwpOriginalProbes += 1;
+    const settle = (next: NonNullable<typeof this.hwpOriginal>) => {
+      if (this.disposed || this.originalOwner() !== owner || this.hwpOriginal?.owner !== owner || this.hwpOriginal.state !== "checking") return;
+      this.hwpOriginal = next;
+      this.emit();
+    };
+    void this.preflight(-1).then(
+      checked => settle(checked.ok ? { owner, state: blockedBy(checked.value) ? "blocked" : "safe", check: checked.value, serial } : { owner, state: "error" }),
+      () => settle({ owner, state: "error" }),
+    );
+  }
+  /** A manual Save Check result for the current original also decides structural eligibility (the retry path). */
+  private recordOriginalCheck(checked: Result<SaveCheck>): void {
+    const owner = this.originalOwner();
+    if (this.sessions.get(this.sessionId)?.format !== "hwp") return;
+    // Like `saveCheck`, a later check that could not establish safety supersedes an earlier SAFE verdict.
+    this.hwpOriginal = checked.ok
+      ? { owner, state: blockedBy(checked.value) ? "blocked" : "safe", check: checked.value, serial: this.checkSerial }
+      : { owner, state: "error" };
   }
 
   private parameterCache: { key: string; value: Pick<DocumentCommandSnapshot, "parameters" | "parameterReasons"> } | null = null;
@@ -1638,6 +1700,12 @@ export class RhwpEditorSession implements DocumentCommandTarget {
     }
     this.coreActionCache = { key, value: actions };
     return actions;
+  }
+  /** Distinguish "checking the original" / "original not verified" for the HWP action commands. */
+  private coreActionReasons(): Pick<DocumentCommandSnapshot, "actionReasons"> {
+    const block = this.structuralBlock();
+    if (block !== "originalChecking" && block !== "originalUnverified") return {};
+    return { actionReasons: { "insert.image": block, "paragraph.bullets": block } };
   }
   private toggleBullets(forceOff = false): boolean {
     const range = this.bulletRange(forceOff), doc = this.doc;
@@ -1703,8 +1771,8 @@ export class RhwpEditorSession implements DocumentCommandTarget {
     const structural = this.structuralFormat();
     if (structural && this.editable && this.doc?.createTable && this.doc.setTableProperties && !this.imeUnsettled && !this.uncertain && !this.caret.cell && !this.hasSelection
       && this.pending === 0 && this.committingEpoch !== this.epoch) parameters["insert.table"] = {};
-    else parameterReasons["insert.table"] = !structural || (format === "hwp" && (!this.doc?.createTable || !this.doc.setTableProperties))
-      ? "engineUnsupported" : this.pending > 0 ? "pendingEdits" : "caretRequired";
+    else parameterReasons["insert.table"] = format === "hwp" && (!this.doc?.createTable || !this.doc.setTableProperties) ? "engineUnsupported"
+      : !structural ? this.structuralBlock()! : this.pending > 0 ? "pendingEdits" : "caretRequired";
     const usable = this.editable && !!this.doc && !!this.text && !this.imeUnsettled && !this.uncertain;
     // 장평·자간: HWPX, 그리고 엔진이 덧붙인 글자 모양 정리를 지원할 때 HWP(T012 Stage 5 — HWP 저장 규칙은 정리된 덧붙임만 받는다).
     const metricFormat = format === "hwpx" || (format === "hwp" && !!this.doc?.compactAppendedCharShapes);
@@ -1915,7 +1983,7 @@ export class RhwpEditorSession implements DocumentCommandTarget {
     const checked = await this.preflight(serial);
     if (this.owns(epoch) && serial === this.checkSerial) {
       // 안전을 다시 확인하지 못한 검사 뒤에는 이전의 safe 판정으로 저장을 시작하지 않는다.
-      if (!checked.ok) this.saveCheck = null;
+      if (!checked.ok) { this.saveCheck = null; this.recordOriginalCheck(checked); }
       this.setSave(checked.ok ? { kind: "idle" } : { kind: "failed", error: checked.error });
     }
     return checked;
@@ -1994,6 +2062,7 @@ export class RhwpEditorSession implements DocumentCommandTarget {
     if (!this.owns(epoch)) return { ok: false, error: { code: "StaleSession", sessionId: this.sessionId } };
     if (checked.ok && serial === this.checkSerial) {
       this.saveCheck = { generation, check: checked.value };
+      this.recordOriginalCheck(checked);
       this.emit();
     }
     return checked;
@@ -2027,6 +2096,9 @@ export class RhwpEditorSession implements DocumentCommandTarget {
     try {
       const generation = this.generation;
       let check = this.saveCheck?.generation === generation ? this.saveCheck.check : null;
+      // The HWP eligibility probe already ran this preflight for the current original: reuse its SAFE verdict.
+      const original = this.hwpOriginal?.owner === this.originalOwner() ? this.hwpOriginal : null;
+      if (!check && original?.state === "safe" && original.check && original.serial === this.checkSerial) check = original.check;
       if (!check) {
         this.setSave({ kind: "checking" });
         const checked = await this.preflight(++this.checkSerial);
@@ -2054,6 +2126,10 @@ export class RhwpEditorSession implements DocumentCommandTarget {
         if (this.owns(epoch)) {
           this.checkSerial += 1;
           this.saveCheck = null;
+          // The original may or may not have been replaced: HWP structural eligibility is re-established.
+          this.originalSerial += 1;
+          this.hwpOriginal = null;
+          this.probeHwpOriginal();
         }
         fail({ code: "Protocol" });
         throw error;
@@ -2075,7 +2151,10 @@ export class RhwpEditorSession implements DocumentCommandTarget {
       // 원본이 바뀌었다: 다음 저장은 새 원본으로 다시 검사한다. 그 전에 시작한 검사의 늦은 결과도 버린다.
       this.checkSerial += 1;
       this.saveCheck = null;
+      this.originalSerial += 1;
+      this.hwpOriginal = null;
       this.notifyAfterSaveResult(() => this.setSave({ kind: "saved", revision, durable: published.durable, changedSince }));
+      if (this.owns(epoch)) this.probeHwpOriginal();
       return result;
     } finally {
       try { releaseShapes?.(); }

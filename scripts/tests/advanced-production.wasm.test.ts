@@ -92,7 +92,8 @@ describe("production advanced history, actual Release WASM", () => {
         editor.endComposition("각"); await settle();
         expect(doc.getTextRange(0, 0, 0, 3)).toBe("글각한");
         expect(snapshots).toHaveBeenCalledTimes(beforeInput);
-        expect(calls).toEqual([]);
+        // Only the pending HWP structural-eligibility original preflight (unanswered here) may be outstanding.
+        expect(calls.filter(c => c.method !== "original")).toEqual([]);
       } finally { editor.dispose(); }
     });
     it(`${format}: insertion, replacement, stored expression prefill and explicit recalculation after source edit`, async () => {
