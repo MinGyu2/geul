@@ -265,6 +265,30 @@ Phase 3 hardening(complete baseline + 원본 사전검사 SAFE 자격)을 적용
 
 ### 한계(측정)
 
-`scripts/tests/hwp-sample-insertion-matrix.wasm.test.ts`(opt-in, `GEUL_HWP_SAMPLE_MATRIX=<json>`)로 RHWP 샘플 중 단일 구역·120 KB 이하 178개를 측정했다. complete baseline이면서 원본 사전검사 SAFE인 108개 중 한 번의 삽입이 T009를 통과한 문서는 글머리표·그림·표 각 6개, 일반 텍스트 20개다. 나머지는 엔진 재직렬화가 DocInfo/BodyText 기록을 바꿔(`recordsChanged`·`partAdded`·`outputMalformed`) 저장이 거부된다. 원본 사전검사는 무편집 출력만 비교하므로 이를 편집 전에 신뢰성 있게 예측할 수 없고, 제품은 이 경우 명령을 허용한 뒤 저장에서 거부한다(원본 보존). 따라서 현재 검증된 실사용 범위는 엔진(geul/RHWP)이 생성·저장한 HWP와 측정된 일부 문서다. 한컴 작성 문서 일반의 HWP 삽입 지원은 엔진 직렬화 개선 없이는 확장되지 않는다.
+(역사적 측정 v1 — 아래 v2로 대체됨) `scripts/tests/hwp-sample-insertion-matrix.wasm.test.ts`(opt-in, 당시 `GEUL_HWP_SAMPLE_MATRIX=<json>`)로 RHWP 샘플 중 단일 구역·120 KB 이하 178개를 측정했다. complete baseline이면서 원본 사전검사 SAFE인 108개 중 한 번의 삽입이 T009를 통과한 문서는 글머리표·그림·표 각 6개, 일반 텍스트 20개다. 나머지는 엔진 재직렬화가 DocInfo/BodyText 기록을 바꿔(`recordsChanged`·`partAdded`·`outputMalformed`) 저장이 거부된다. 원본 사전검사는 무편집 출력만 비교하므로 이를 편집 전에 신뢰성 있게 예측할 수 없고, 제품은 이 경우 명령을 허용한 뒤 저장에서 거부한다(원본 보존). 따라서 현재 검증된 실사용 범위는 엔진(geul/RHWP)이 생성·저장한 HWP와 측정된 일부 문서다. 한컴 작성 문서 일반의 HWP 삽입 지원은 엔진 직렬화 개선 없이는 확장되지 않는다.
 
 그 밖에: native GUI/IBus(Phase 5) NOT RUN, 외부 한컴 수용 NOT RUN, 입력 이미지 신뢰 영수증 없음(바이트 대조는 시험 소유 입력에 한함), section 0 밖·기존 표 셀 편집·병합/중첩 표·floating/링크/OLE·다단계 목록은 범위 밖이다.
+
+
+## HWP 샘플 호환성 측정 v2 (2026-11-10)
+
+Phase 4의 측정 v1(108 / 각 6 / 텍스트 20)은 연산 성공을 "예외 없음"으로, 재열기 일치를 호출자가 `reopen=true`로 단정했고 실제 게시를 하지 않았다. v2는 같은 표본 범위(`external/rhwp/samples/*.hwp`, 단일 구역, 120,000 bytes 이하, 승인 Release WASM)에서 단계별 증거를 따로 기록한다(`scripts/tests/hwpCompatibilityMatrix.ts`, `scripts/tests/hwp-sample-insertion-matrix.wasm.test.ts`; opt-in).
+
+- **변이 증명:** 연산마다 새 인스턴스. API 결과는 `ok === true`와 필요한 인덱스가 있어야 유효(아니면 FAIL, 예외는 ERROR). 텍스트는 표식 문자열이 문단 0 앞에 정확히 붙고 문단 수 불변, 표는 새 `tbl` 1개 + `HWP_TABLE_NORMALIZATION` + `insertedBasicTable`, 그림은 새 그림 1개 + `insertedInlinePicture` + 임베디드 bytes = 입력, 글머리표는 글머리표가 아닌 첫 문단에 적용하고 정의가 U+2022로 해석되어야 한다(이미 글머리표면 다른 문단, 없으면 UNSUPPORTED). `applyParaFormat`은 정의가 없는 ID에도 `ok:true`를 돌려주므로 결과 값만으로 세지 않는다.
+- **독립 재열기:** 정확한 출력 bytes를 새 인스턴스로 열어 형식·쪽 수·텍스트·raw controls·상세 HWP 모델(complete 필수, 원본 구조 baseline)을 비교한다. T009 원시 검사의 `reopen` 인자는 이 결과다.
+- **분류:** 증명된 변이 + 재열기 PASS일 때만 `RAW_T009_CANDIDATE`(발견 없음) / `RAW_T009_CANDIDATE_PREVIEW`(PreviewStale만). 그 밖의 발견은 `T009_REJECTED`. 후보는 실제 Canvas(`scripts/tests/hwp-canvas/run.py`)·production 게시(`hwp_contract_real_engine_publication`, `GEUL_HWP_CANVAS=1`)·게시 파일의 새 인스턴스 재열기를 모두 통과해야 `VERIFIED_PUBLISHED_REOPEN`이다. 카테고리별 대표 거부 출력은 production 게시 거부·원본 보존으로 확인한다.
+
+파일: 발견 288, 크기 제외 106, 가져오기 오류 1, 구역 제외 4, 측정 177, complete baseline 121, 원본 사전검사 SAFE 148, 둘 다 108.
+
+| 연산 | 시도 | 변이 PASS | 재열기 PASS | 원시 후보(발견 없음 / preview만) | T009 거부 | 실제 게시 durable | 게시 파일 재열기 PASS | 엔진 오류 / 게시 미실행 |
+|---|---|---|---|---|---|---|---|---|
+| text | 108 | 108 | 107 | 1 / 17 | 89 | 18 | 18 | 0 / 0 |
+| table | 108 | 108 | 103 | 0 / 6 | 97 | 6 | 6 | 0 / 0 |
+| picture | 108 | 108 | 108 | 0 / 6 | 102 | 6 | 6 | 0 / 0 |
+| bullets | 108 | 108 | 108 | 0 / 6 | 102 | 6 | 6 | 0 / 0 |
+
+거부 발견 인스턴스(출력 하나에 여러 개 가능): `recordsChanged` 382, `partAdded` 101, `outputMalformed` 46, `reopenMismatch` 6(독립 재열기 쪽 수 불일치 6), `previewStale` 627. `referenceInvalid`·엔진 연산 실패·변이 누락·UNSUPPORTED 입력은 이번 표본에서 0건이다.
+
+v1과의 차이: 표·그림·글머리표 후보 6개(같은 6개 문서)는 그대로이며 이제 모두 실제 게시와 재열기로 확인됐다. 텍스트는 20 → 18: `issue2808_report_physical_ladder.hwp`는 독립 재열기에서 쪽 수가 달라 후보가 아니다(v1의 단정된 `reopen=true`가 가렸다). `re-align-justify-hancom.hwp`는 삽입 문자열에 의존한다 — v1의 "가"는 PreviewStale만, v2의 표식(Latin 포함)은 `recordsChanged@DocInfo`. 표 5건·텍스트 1건의 독립 재열기 실패는 v1에서 기록되지 않았다.
+
+이 수치는 이 표본·이 엔진의 측정이다. 표본이 모두 한컴 작성 문서인 것도 아니므로 한컴 문서 일반의 호환 비율로 해석하지 않는다. 실제 게시·재열기까지 확인된 문서는 issue5800-hancom-symbol.hwp, para-unit-01.hwp, test-image.hwp, test-image2.hwp, 종이기준.hwp, 쪽기준.hwp(구조 삽입)과 텍스트 후보 18개다. 증거: `target/hwp-compatibility-matrix-v2/`(ignored).

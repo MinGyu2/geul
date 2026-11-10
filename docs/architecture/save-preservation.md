@@ -1588,3 +1588,7 @@ T009 규칙은 바꾸지 않았다. HWP 표·인라인 그림·글머리표 명�
 ### Phase 4 통합 수용 (2026-11-10)
 
 T009 규칙은 바꾸지 않았다. 제품 세션이 만든 HWP 저장 payload 10건(양성, 2차 저장 포함)을 production 서비스로 게시했고, 미리보기는 실제 Firefox Canvas의 제품 `capturePreviewRaster`로 재생성했다. 실제 제품 출력에 적용한 BinData·참조·표·글머리표 손상 7종과 미리보기 없음은 모두 거부되고 원본이 보존됐다. 원본 사전검사 SAFE는 편집 출력의 수용을 보장하지 않는다(측정: complete·SAFE 샘플 108개 중 구조 삽입 수용 6개). 상세는 [핵심 문서 삽입 — Phase 4](core-insertions.md#hwp-비gui-저장재열기-통합-수용--phase-4-2026-11-10).
+
+### 샘플 호환성 측정 v2 (2026-11-10)
+
+T009 규칙은 바꾸지 않았다. 측정 v2는 변이 증명·독립 재열기(실제 결과를 `reopen` 인자로)·원시 T009 분류·실제 Canvas 미리보기·production 게시·게시 파일 재열기를 단계별로 구분한다. 원시 후보 36건(텍스트 18, 표·그림·글머리표 각 6)은 모두 durable 게시와 재열기를 통과했고, 대표 거부 출력(`recordsChanged`·`outputMalformed`·`partAdded`)은 게시 거부·원본 보존이었다. 상세는 [측정 v2](core-insertions.md#hwp-샘플-호환성-측정-v2-2026-11-10).
