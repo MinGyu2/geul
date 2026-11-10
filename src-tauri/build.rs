@@ -42,6 +42,7 @@ fn main() {
         "docx_view",
         "docx_selection_text",
         "clipboard_read_text",
+        "picture_import",
         "docx_edit",
         "docx_render",
         "docx_roundtrip",

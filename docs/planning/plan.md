@@ -190,3 +190,7 @@ T011은 기록된 범위에서 완료했다. T021–T023은 신규 생성의 별
 ## T021–T023 실행 반영 — 2026-11-04
 
 T021 `6c0356e6ed51f52e60414717ce4439876762f63b` → T022 `3cd35663b98caa736b81c1792b6c2f5d68f16aeb` 순서로 수용/커밋했다. T023은 같은 최종 Debug 앱·WASM으로 DOCX/HWP/HWPX 실제 한글 입력·기본 편집·두 번 안전 저장·native 재열기를 통과했다. 실패/동시성 24개, frontend 1,016개, Rust 기본255개/생성 집중9개 PASS. 게시 전 취소·확인창 중첩·내구성 미확정 안내 결함을 재현 후 수정했다. [생성 계약](../architecture/new-document-creation.md)의 최종 행렬과 [신원 JSON](../architecture/new-document-native-acceptance-2026-11-04.json)을 따른다. 다른 OS/입력기·실제 정전·외부 상호운용은 NOT RUN이며 T007–T010 전체 완료 및 T024 활성화로 확대하지 않는다.
+
+## 핵심 삽입 기능 부분 완료 — 2026-11-10
+
+표·그림·글머리표의 DOCX/HWPX 명령 및 저장 경계를 구현하고 실엔진 HWPX publication/reopen 검증을 기록했다. HWP는 세 명령이 보존 규칙 미입증으로 비활성이고 Linux native 수용은 NOT RUN이다. 세부 범위·다음 작업은 [핵심 삽입 기능 보고](../architecture/core-insertions.md)를 따른다. 전체 제품 계획 완료로 확대하지 않는다.

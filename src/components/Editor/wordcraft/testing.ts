@@ -155,6 +155,8 @@ export class FakeDocx implements DocxBackend {
     return {
       trackedReadOnly: this.trackedReadOnly,
       hasToc: this.toc !== null,
+      bullets: null,
+      imageInsertionAllowed: true,
       tracking: this.tracking, hasRevisions: this.revisions > 0,
       pages: Array.from({ length: this.pageCount }, () => ({ width: 612, height: 792 })),
       caret: { page: 0, x: MARGIN + this.caret.o * CHAR, y: MARGIN + this.caret.p * LINE, height: 16 },
@@ -443,6 +445,10 @@ export class FakeDocx implements DocxBackend {
         this.moveTo({ p: this.caret.p, o: this.caret.o + 1 }, false);
         return true;
       }
+      case "bullets":
+      case "image":
+      case "table":
+        return false; // Real table semantics are verified with the native engine.
       case "format": {
         if (this.formatAccess === "protected" || this.refuseFormat) return false;
         if (cmp(this.caret, this.anchor) === 0) {

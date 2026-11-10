@@ -71,6 +71,8 @@ export interface DocxView {
   trackedReadOnly: boolean;
   /** 본문에 엔진이 갱신할 수 있는 목차가 있음(T013 `references.updateToc` 가용성, 백엔드 `DocxModel::has_toc`). */
   hasToc: boolean;
+  bullets?: boolean | null;
+  imageInsertionAllowed?: boolean;
   /** 변경 내용 추적이 켜져 있음(T013 Stage 3, 리본 단추 눌림). */
   tracking: boolean;
   /** 추적된 변경이 있음(수락·거절 가용성, 백엔드 `DocxModel::has_revisions`). */
@@ -152,6 +154,9 @@ export type DocxOp =
   | { op: "comment"; text: string }
   | { op: "footnote"; text: string }
   | { op: "endnote"; text: string }
+  | { op: "bullets" }
+  | { op: "image"; data: string }
+  | { op: "table"; rows: number; cols: number }
   | { op: "toc" }
   | { op: "updateToc" }
   | { op: "trackChanges"; value: boolean }
@@ -243,7 +248,9 @@ function parseFormat(value: unknown): DocxFormat | null {
 }
 
 export function parseDocxView(value: unknown): DocxView | null {
-  if (!isRecord(value) || !hasExactly(value, [...VIEW_KEYS, ...["selectionText", "paragraphStyle", "clipboardTextAvailable"].filter((key) => Object.prototype.hasOwnProperty.call(value, key))])) return null;
+  if (!isRecord(value) || !hasExactly(value, [...VIEW_KEYS, ...["selectionText", "paragraphStyle", "clipboardTextAvailable", "imageInsertionAllowed", "bullets"].filter((key) => Object.prototype.hasOwnProperty.call(value, key))])) return null;
+  if (Object.prototype.hasOwnProperty.call(value, "imageInsertionAllowed") && typeof value.imageInsertionAllowed !== "boolean") return null;
+  if (Object.prototype.hasOwnProperty.call(value, "bullets") && typeof value.bullets !== "boolean" && value.bullets !== null) return null;
   if (value.clipboardTextAvailable !== undefined && typeof value.clipboardTextAvailable !== "boolean") return null;
   if (Object.prototype.hasOwnProperty.call(value, "paragraphStyle") && typeof value.paragraphStyle !== "string") return null;
   if (Object.prototype.hasOwnProperty.call(value, "selectionText") && (typeof value.selectionText !== "string" || Array.from(value.selectionText).length > 500)) return null;
@@ -266,6 +273,8 @@ export function parseDocxView(value: unknown): DocxView | null {
   if (typeof caretKey !== "string" || typeof anchorKey !== "string" || typeof paragraphText !== "string" || !isCount(caretOffset)) return null;
   return {
     ...(typeof value.clipboardTextAvailable === "boolean" ? { clipboardTextAvailable: value.clipboardTextAvailable } : {}),
+    ...(typeof value.imageInsertionAllowed === "boolean" ? { imageInsertionAllowed: value.imageInsertionAllowed } : {}),
+    ...(typeof value.bullets === "boolean" || value.bullets === null ? { bullets: value.bullets } : {}),
     pages: parsedPages as DocxPage[],
     caret: parsedCaret,
     selection: parsedSelection as DocxRect[],

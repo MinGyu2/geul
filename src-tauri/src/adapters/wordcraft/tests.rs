@@ -937,6 +937,7 @@ fn 응답_json은_계약의_모양이다() {
         keys,
         [
             "anchorKey",
+            "bullets",
             "caret",
             "caretKey",
             "caretOffset",
@@ -947,6 +948,7 @@ fn 응답_json은_계약의_모양이다() {
             "hasRevisions",
             "hasToc",
             "history",
+            "imageInsertionAllowed",
             "inTable",
             "pages",
             "paragraphStyle",
@@ -3287,4 +3289,65 @@ fn clipboard_availability_cost_relative_to_view() {
         assert!(available && view.clipboard_text_available);
         println!("[P2-B docx] {paragraphs}x{size}: clipboard_text {probe:?}, full view {whole:?}");
     }
+}
+
+#[test]
+fn core_table_context_validation_and_empty_reopen() {
+    assert!(!validate(&[DocxOp::Table { rows: 0, cols: 2 }]));
+    assert!(!validate(&[DocxOp::Table { rows: 32, cols: 16 }]));
+    assert!(validate(&[DocxOp::Table { rows: 16, cols: 16 }]));
+    let bytes = wordcraft_engine::io::save_bytes(
+        "x.docx",
+        &wordcraft_engine::blank_document(&Default::default()),
+    )
+    .unwrap();
+    let mut m = DocxModel::open(&bytes).unwrap();
+    assert_eq!(m.apply(&[DocxOp::Table { rows: 2, cols: 2 }]).changed, 1);
+    assert_eq!(m.apply(&[insert("한글 셀")]).changed, 1);
+    assert!(m.round_trip().unwrap().passed);
+    let mut m = model();
+    m.apply(&[mv(MoveTarget::Right, true)]);
+    let before = m.export().unwrap();
+    assert_eq!(
+        m.apply(&[DocxOp::Table { rows: 2, cols: 2 }]).rejected,
+        vec![0]
+    );
+    assert_eq!(m.export().unwrap(), before);
+    let mut m = DocxModel::open(&basic::protected_ko("readOnly", false).unwrap()).unwrap();
+    assert_eq!(
+        m.apply(&[DocxOp::Table { rows: 2, cols: 2 }]).rejected,
+        vec![0]
+    );
+}
+
+#[test]
+fn core_insertions_use_wordcraft_history_without_losing_resources() {
+    for op in [DocxOp::Table { rows: 2, cols: 2 }, DocxOp::Bullets {}] {
+        let mut m = model();
+        let before = m.export().unwrap();
+        assert_eq!(m.apply(&[op]).changed, 1);
+        let after = m.export().unwrap();
+        assert_eq!(m.apply(&[DocxOp::Undo {}]).changed, 1);
+        assert!(m.same_as(&before));
+        assert_eq!(m.apply(&[DocxOp::Redo {}]).changed, 1);
+        assert!(m.same_as(&after));
+    }
+    let mut encoded = std::io::Cursor::new(Vec::new());
+    image::DynamicImage::new_rgb8(4, 3)
+        .write_to(&mut encoded, image::ImageFormat::Png)
+        .unwrap();
+    let mut m = model();
+    let before = m.export().unwrap();
+    assert_eq!(
+        m.apply(&[DocxOp::Image {
+            data: wordcraft_engine::cmd::insert::base64_encode(encoded.get_ref())
+        }])
+        .changed,
+        1
+    );
+    let after = m.export().unwrap();
+    assert_eq!(m.apply(&[DocxOp::Undo {}]).changed, 1);
+    assert!(m.same_as(&before));
+    assert_eq!(m.apply(&[DocxOp::Redo {}]).changed, 1);
+    assert!(m.same_as(&after));
 }

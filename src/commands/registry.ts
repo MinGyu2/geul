@@ -29,6 +29,7 @@ export type DocumentCommandId =
   | "references.footnote" | "references.endnote"
   | "references.toc" | "references.updateToc"
   | "review.trackChanges" | "review.acceptChange" | "review.rejectChange" | "review.acceptAll" | "review.rejectAll"
+  | "insert.table" | "insert.image" | "paragraph.bullets"
   | "file.save";
 
 /** 엔진 하나에서 명령의 지원. */
@@ -125,6 +126,9 @@ const DOCUMENT_COMMANDS: Record<DocumentCommandId, Omit<CommandDefinition, "id" 
   "review.rejectChange": { engines: { wordcraft: SUPPORTED, rhwp: UNSUPPORTED } },
   "review.acceptAll": { engines: { wordcraft: SUPPORTED, rhwp: UNSUPPORTED } },
   "review.rejectAll": { engines: { wordcraft: SUPPORTED, rhwp: UNSUPPORTED } },
+  "paragraph.bullets": { engines: { wordcraft: SUPPORTED, rhwp: SUPPORTED } },
+  "insert.image": { engines: { wordcraft: SUPPORTED, rhwp: SUPPORTED } },
+  "insert.table": { engines: { wordcraft: SUPPORTED, rhwp: SUPPORTED } },
   "file.save": { engines: { wordcraft: SUPPORTED, rhwp: SUPPORTED }, shortcuts: ["Mod+S"], scope: "document" },
 };
 

@@ -1520,3 +1520,7 @@ Python은 `-O`·`PYTHONOPTIMIZE`에서 `assert` 문을 없앤다. 이전 native 
 검증: `python3 -m unittest scripts/tests/test_native_recovery_checks.py`, 같은 명령의 `python3 -O`, `PYTHONOPTIMIZE=1` 각각 22 PASS. 새 음성 시험은 실제 `native-recovery-crash.py`의 `main()`을 실행하되 `run_format`을 의도적으로 거짓인 단계 하나로 바꾼다. 일반·`-O`·`-OO`·`PYTHONOPTIMIZE=1` 모두 종료 코드가 0이 아니고, `result.json` 상태가 FAIL이며, 실패 단계 뒤의 줄이 실행되지 않았고, `overall FAIL`을 출력했다. 같은 시험에서 `-O`가 실제로 `assert`를 없앤다는 것도 확인한다. CFB 판독기가 `-O`에서도 CFB가 아닌 입력을 거부하는 것도 확인한다. native 재실행: 같은 앱(`46979a30…`)으로 하네스를 **`python3 -O`로** 실행해 `target/t014-native/assert-free-O/result.json` **HWP 35/35, HWPX 33/33 PASS**, 문제 목록 비어 있음, 정리 뒤 잔존 프로세스 0.
 
 남는 한계: 이번 작업에서 계획한 "실제 저장을 스테이징·소유 기록 뒤, 게시 전에 멈추고 강제 종료한 뒤 재실행 정리" native 수용(T014 A)은 실행하지 않았다(NOT RUN). 그 근거는 지금까지 Rust 저널 단위 시험뿐이다. T014 전체 수용은 미완료다.
+
+## 표·그림·글머리표 삽입 — 2026-11-10
+
+DOCX/HWPX 기능을 위해 T009 비교기는 새 문서 구조를 임의 허용하지 않고 표 테두리/기본 글머리 정의, 새 PNG/JPEG 리소스와 대응 관계·manifest, 기본 목록 정의의 제한된 추가만 검사한다. HWPX 기존 header·manifest 및 WordprocessingML numbering 검증은 각각 보유 payload 4 MiB 상한을 적용한다. 원래 정의·미디어·relationship·알 수 없는 package 구성원은 기존 비교로 보존한다. HWP의 DocInfo/BinData 추가 규칙은 입증되지 않아 기능을 비활성으로 둔다. 자세한 규칙과 실엔진 7개 HWPX publication/reopen 근거는 [핵심 삽입 기능](core-insertions.md)을 참조한다.

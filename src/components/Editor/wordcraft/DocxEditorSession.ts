@@ -94,7 +94,7 @@ export type DocxInputNotice = "pasteUnsupported" | "pasteTooLarge" | "pasteIncom
  */
 const MUTATING_OPS: ReadonlySet<DocxOp["op"]> = new Set<DocxOp["op"]>([
   "insertText", "pasteText", "deleteSelection", "backspace", "deleteForward", "newParagraph", "tab", "insertAt", "replaceInserted",
-  "format", "comment", "footnote", "endnote", "toc", "updateToc",
+  "format", "bullets", "image", "table", "comment", "footnote", "endnote", "toc", "updateToc",
   "trackChanges", "acceptChange", "rejectChange", "acceptAll", "rejectAll",
 ]);
 /**
@@ -105,10 +105,11 @@ const NAVIGATION_OPS: ReadonlySet<DocxOp["op"]> = new Set<DocxOp["op"]>(["move",
 const mutates = (op: DocxOp) => !NAVIGATION_OPS.has(op.op);
 /** 명령(T010)이 보낸 연산. 엔진이 거부하면(문서 보호 등) 알린다. */
 const ACTION_IDS = [
+  "insert.image", "paragraph.bullets",
   "references.toc", "references.updateToc",
   "review.trackChanges", "review.acceptChange", "review.rejectChange", "review.acceptAll", "review.rejectAll",
 ] as const;
-const COMMAND_OPS: ReadonlySet<DocxOp["op"]> = new Set<DocxOp["op"]>(["deleteSelection", "undo", "redo", "format", "comment", "footnote", "endnote", "toc", "updateToc",
+const COMMAND_OPS: ReadonlySet<DocxOp["op"]> = new Set<DocxOp["op"]>(["deleteSelection", "undo", "redo", "format", "bullets", "image", "table", "comment", "footnote", "endnote", "toc", "updateToc",
   "trackChanges", "acceptChange", "rejectChange", "acceptAll", "rejectAll"]);
 
 /** 쪽 그림 실패의 원인: 백엔드 거부, PNG 디코드 실패, canvas 문맥 없음, 크기 불일치, 기대하지 않은 예외. */
@@ -1046,18 +1047,43 @@ export class DocxEditorSession implements ImeSession, DocumentCommandTarget {
    * 낸다. 보낼 편집이 있으면 그 보기가 지금 선택이 아닐 수 있어 기다린다(pendingEdits). 문서 보호는 엔진이 실행할 때 판정한다(메모만
    * 허용하는 보호에서는 받고, 읽기 전용에서는 거부 — 거부는 알림).
    */
+  private imageSelecting = false;
+  async executeImage(owns: () => boolean, pick: () => Promise<import("../../../commands/target").ImportedPicture | null>): Promise<"inserted" | "cancelled" | "stale" | "failed"> {
+    if (this.imageSelecting || !owns() || !documentCommandState("insert.image", this.snapshot()).available) return "stale";
+    const generation = this.generation, revision = this.revision, version = this.clipboardVersion;
+    this.imageSelecting = true; this.emit();
+    try {
+      const picture = await pick();
+      this.imageSelecting = false;
+      if (picture === null) return "cancelled";
+      if (!owns() || generation !== this.generation || revision !== this.revision || version !== this.clipboardVersion
+        || this.busy || this.disposed || !documentCommandState("insert.image", this.snapshot()).available) return "stale";
+      const { data } = picture;
+      if (typeof data !== "string" || data.length === 0 || data.length > Math.ceil(16 * 1024 * 1024 / 3) * 4) return "failed";
+      return this.push({ op: "image", data }) ? "inserted" : "stale";
+    } catch { return "failed"; }
+    finally { this.imageSelecting = false; if (!this.disposed) this.emit(); }
+  }
+
   private parameterState(): Pick<DocumentCommandSnapshot, "parameters" | "parameterReasons" | "actions" | "actionReasons"> {
     const view = this.view;
     if (!this.editable || !view || this.imeUnsettled || view.trackedReadOnly) return {};
     if (this.busy) {
       return {
-        parameterReasons: { "review.comment": "pendingEdits", "references.footnote": "pendingEdits", "references.endnote": "pendingEdits" },
+        parameterReasons: { "insert.table": "pendingEdits", "review.comment": "pendingEdits", "references.footnote": "pendingEdits", "references.endnote": "pendingEdits" },
         actionReasons: Object.fromEntries(ACTION_IDS.map((id) => [id, "pendingEdits"])),
       };
     }
     const actions: NonNullable<DocumentCommandSnapshot["actions"]> = {};
     const actionReasons: NonNullable<DocumentCommandSnapshot["actionReasons"]> = {};
+    if (/^body:\d+:\d+$/.test(view.caretKey) && /^body:\d+:\d+$/.test(view.anchorKey))
+      actions["paragraph.bullets"] = typeof view.bullets === "boolean" ? { pressed: view.bullets } : {};
+    else actionReasons["paragraph.bullets"] = "caretRequired";
     // 목차 넣기(T013): 각주와 같은 본문 최상위 문단 커서 조건(백엔드 `toc`가 다시 검사). 갱신: 엔진 보기에 목차가 있을 때만.
+    const bodyCaret = view.collapsed && /^body:\d+:\d+$/.test(view.caretKey);
+    if (bodyCaret && view.imageInsertionAllowed === true && !this.imageSelecting) actions["insert.image"] = {};
+    else if (this.imageSelecting) actionReasons["insert.image"] = "pendingEdits";
+    else if (!bodyCaret) actionReasons["insert.image"] = "caretRequired";
     if (view.collapsed && /^body:\d+:\d+$/.test(view.caretKey)) actions["references.toc"] = {};
     else actionReasons["references.toc"] = "caretRequired";
     if (view.hasToc) actions["references.updateToc"] = {};
@@ -1077,6 +1103,8 @@ export class DocxEditorSession implements ImeSession, DocumentCommandTarget {
     // `new_note`가 같은 조건을 다시 검사한다.
     if (view.collapsed && /^body:\d+:\d+$/.test(view.caretKey)) parameters["references.footnote"] = parameters["references.endnote"] = {};
     else parameterReasons["references.footnote"] = parameterReasons["references.endnote"] = "caretRequired";
+    if (view.collapsed && /^body:\d+:\d+$/.test(view.caretKey)) parameters["insert.table"] = {};
+    else parameterReasons["insert.table"] = "caretRequired";
     return { parameters, parameterReasons, actions, actionReasons };
   }
 
@@ -1119,6 +1147,10 @@ export class DocxEditorSession implements ImeSession, DocumentCommandTarget {
   /** 명령을 이 세션의 편집 경로에 넣는다. 지금 상태로 다시 확인해 할 수 없으면 아무것도 바꾸지 않는다. */
   execute(command: DocumentCommandId, args?: DocumentCommandArgs): CommandDispatch {
     if (!documentCommandState(command, this.snapshot()).available) return { accepted: false };
+    if (command === "insert.table") {
+      if (args?.command !== command || !validateCommandArgs(command, args, this.snapshot().parameters?.[command])) return { accepted: false };
+      return { accepted: this.push({ op: "table", rows: args.rows, cols: args.cols }) };
+    }
     if (command === "review.comment" || command === "references.footnote" || command === "references.endnote") {
       // 값은 실행 직전에 다시 검증한다(창을 거치지 않은 호출 포함). 연산 하나로 같은 세션 대기열에 넣는다.
       if (args?.command !== command || !validateCommandArgs(command, args, this.snapshot().parameters?.[command])) return { accepted: false };
@@ -1134,6 +1166,7 @@ export class DocxEditorSession implements ImeSession, DocumentCommandTarget {
     }
     const flag = FORMAT_FLAG[command];
     const op: DocxOp | null = command === "edit.undo" ? { op: "undo" } : command === "edit.redo" ? { op: "redo" }
+      : command === "paragraph.bullets" ? { op: "bullets" }
       : command === "references.toc" ? { op: "toc" } : command === "references.updateToc" ? { op: "updateToc" }
       : command === "review.trackChanges" && this.view ? { op: "trackChanges", value: !this.view.tracking }
       : command === "review.acceptChange" ? { op: "acceptChange" } : command === "review.rejectChange" ? { op: "rejectChange" }

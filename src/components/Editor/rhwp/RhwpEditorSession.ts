@@ -1084,6 +1084,11 @@ export class RhwpEditorSession implements DocumentCommandTarget {
   }
 
   enter(): boolean {
+    if (this.sessions.get(this.sessionId)?.format === "hwpx" && !this.hasSelection && !this.caret.cell
+      && this.doc?.getParagraphLength(this.caret.section, this.caret.paragraph) === 0 && this.doc.getParaPropertiesAt) {
+      try { if (JSON.parse(this.doc.getParaPropertiesAt(this.caret.section, this.caret.paragraph)).headType === "Bullet") return this.toggleBullets(true); }
+      catch { return false; }
+    }
     return this.mutate(() => {
       const at = this.hasSelection ? this.deleteSelectionRaw() : this.caret;
       this.text!.split(at);
@@ -1526,6 +1531,7 @@ export class RhwpEditorSession implements DocumentCommandTarget {
       historyLimited: this.history === null && this.historyOff === "limit",
       format: this.formatState(), formatAccess: null,
       ...this.parameterState(),
+      actions: this.coreActions(),
     };
   }
 
@@ -1567,6 +1573,84 @@ export class RhwpEditorSession implements DocumentCommandTarget {
    * - 표 계산: 편집 가능·IME 안정·불확실 아님 + 커서가 표 셀 안이고 엔진이 그 셀의 논리 좌표·표 크기를 알려 줄 때(HWP·HWPX 모두 —
    *   문서를 바꾸지 않는 계산). 셀 밖이면 이유 notInTable.
    */
+  private bulletRange(allowPending = false): { first: number; last: number; section: number } | null {
+    if (this.sessions.get(this.sessionId)?.format !== "hwpx" || !this.editable || this.imeUnsettled || this.uncertain
+      || (!allowPending && (this.pending > 0 || this.committingEpoch === this.epoch)) || this.caret.cell || this.anchor.cell
+      || this.caret.section !== this.anchor.section || !this.doc?.getParaPropertiesAt || !this.doc.applyParaFormat || !this.doc.ensureDefaultBullet) return null;
+    const [first, last] = this.caret.paragraph < this.anchor.paragraph ? [this.caret, this.anchor] : [this.anchor, this.caret];
+    const end = last.paragraph > first.paragraph && last.offset === 0 ? last.paragraph - 1 : last.paragraph;
+    return end - first.paragraph < 256 ? { section: first.section, first: first.paragraph, last: end } : null;
+  }
+  private coreActionCache: { key: string; value: NonNullable<DocumentCommandSnapshot["actions"]> } | null = null;
+  private coreActions(): NonNullable<DocumentCommandSnapshot["actions"]> {
+    const key = [this.epoch, this.modelVersion, this.clipboardVersion, this.pending, this.committingEpoch === this.epoch,
+      this.editable, this.imeUnsettled, this.uncertain, this.imageSelecting, this.sessions.get(this.sessionId)?.format].join("|");
+    if (this.coreActionCache?.key === key) return this.coreActionCache.value;
+    const actions: NonNullable<DocumentCommandSnapshot["actions"]> = {};
+    if (this.sessions.get(this.sessionId)?.format === "hwpx" && this.doc?.insertPicture && this.doc.setPictureProperties
+      && this.editable && !this.imeUnsettled && !this.uncertain && !this.hasSelection && !this.caret.cell
+      && !this.pending && this.committingEpoch !== this.epoch && !this.imageSelecting) actions["insert.image"] = {};
+    const range = this.bulletRange();
+    if (range) {
+      try {
+        let all = true;
+        for (let p = range.first; p <= range.last; p++) all &&= JSON.parse(this.doc!.getParaPropertiesAt!(range.section, p)).headType === "Bullet";
+        actions["paragraph.bullets"] = { pressed: all };
+      } catch { /* unavailable if the engine cannot report paragraph state */ }
+    }
+    this.coreActionCache = { key, value: actions };
+    return actions;
+  }
+  private toggleBullets(forceOff = false): boolean {
+    const range = this.bulletRange(forceOff), doc = this.doc;
+    if (!range || !doc) return false;
+    let off = true;
+    try { for (let p = range.first; p <= range.last; p++) off &&= JSON.parse(doc.getParaPropertiesAt!(range.section, p)).headType === "Bullet"; }
+    catch { return false; }
+    off ||= forceOff;
+    return this.mutate(() => {
+      const id = off ? 0 : doc.ensureDefaultBullet!("•");
+      if (!Number.isSafeInteger(id) || id < (off ? 0 : 1) || id > 65535) throw new Error("invalid bullet ID");
+      for (let p = range.first; p <= range.last; p++) {
+        const result = JSON.parse(doc.applyParaFormat!(range.section, p, JSON.stringify({ headType: off ? "None" : "Bullet", numberingId: id, paraLevel: 0 })));
+        if (result.ok !== true) throw new Error("bullet formatting rejected");
+      }
+      return { caret: this.caret, anchor: this.anchor };
+    });
+  }
+
+  private imageSelecting = false;
+  async executeImage(owns: () => boolean, pick: () => Promise<import("../../../commands/target").ImportedPicture | null>): Promise<"inserted" | "cancelled" | "stale" | "failed"> {
+    if (this.imageSelecting || !owns() || !documentCommandState("insert.image", this.snapshot()).available) return "stale";
+    const epoch = this.epoch, version = this.modelVersion, caret = this.clipboardVersion;
+    this.imageSelecting = true; this.emit();
+    try {
+      const picture = await pick();
+      this.imageSelecting = false;
+      if (picture === null) return "cancelled";
+      if (!owns() || !this.owns(epoch) || version !== this.modelVersion || caret !== this.clipboardVersion
+        || !documentCommandState("insert.image", this.snapshot()).available) return "stale";
+      const { data, width, height } = picture;
+      if (typeof data !== "string" || data.length > Math.ceil(16 * 1024 * 1024 / 3) * 4
+        || ![width, height].every(n => Number.isSafeInteger(n) && n > 0 && n <= 8192) || width * height > 16 * 1024 * 1024) return "failed";
+      const raw = atob(data), bytes = Uint8Array.from(raw, c => c.charCodeAt(0));
+      const ext = bytes[0] === 0x89 && bytes[1] === 0x50 ? "png" : bytes[0] === 0xff && bytes[1] === 0xd8 ? "jpeg" : null;
+      if (!ext || !bytes.length || bytes.length > 16 * 1024 * 1024) return "failed";
+      const scale = Math.min(75, 43200 / width, 60000 / height);
+      const at = this.caret, doc = this.doc!;
+      return this.mutate(() => {
+        const result = JSON.parse(doc.insertPicture!(at.section, at.paragraph, at.offset, "[]", bytes,
+          Math.max(1, Math.round(width * scale)), Math.max(1, Math.round(height * scale)), width, height, ext, "")) as Record<string, unknown>;
+        if (result.ok !== true || !Number.isSafeInteger(result.paraIdx) || !Number.isSafeInteger(result.controlIdx)
+          || !Number.isSafeInteger(result.logicalOffset)) throw new Error("invalid picture result");
+        const props = JSON.parse(doc.setPictureProperties!(at.section, result.paraIdx as number, result.controlIdx as number, JSON.stringify({ treatAsChar: true }))) as Record<string, unknown>;
+        if (props.ok !== true) throw new Error("inline picture rejected");
+        return { section: at.section, paragraph: result.paraIdx as number, offset: result.logicalOffset as number };
+      }) ? "inserted" : "failed";
+    } catch { return "failed"; }
+    finally { this.imageSelecting = false; if (this.owns(epoch)) this.emit(); }
+  }
+
   private parameterState(): Pick<DocumentCommandSnapshot, "parameters" | "parameterReasons"> {
     const format = this.sessions.get(this.sessionId)?.format;
     const key = [
@@ -1576,6 +1660,9 @@ export class RhwpEditorSession implements DocumentCommandTarget {
     if (this.parameterCache?.key === key) return this.parameterCache.value;
     const parameters: Partial<Record<ParameterCommandId, CommandParameterContext>> = {};
     const parameterReasons: NonNullable<DocumentCommandSnapshot["parameterReasons"]> = {};
+    if (format === "hwpx" && this.editable && this.doc?.createTable && this.doc.setTableProperties && !this.imeUnsettled && !this.uncertain && !this.caret.cell && !this.hasSelection
+      && this.pending === 0 && this.committingEpoch !== this.epoch) parameters["insert.table"] = {};
+    else parameterReasons["insert.table"] = format !== "hwpx" ? "engineUnsupported" : this.pending > 0 ? "pendingEdits" : "caretRequired";
     const usable = this.editable && !!this.doc && !!this.text && !this.imeUnsettled && !this.uncertain;
     // 장평·자간: HWPX, 그리고 엔진이 덧붙인 글자 모양 정리를 지원할 때 HWP(T012 Stage 5 — HWP 저장 규칙은 정리된 덧붙임만 받는다).
     const metricFormat = format === "hwpx" || (format === "hwp" && !!this.doc?.compactAppendedCharShapes);
@@ -1721,6 +1808,24 @@ export class RhwpEditorSession implements DocumentCommandTarget {
   execute(command: DocumentCommandId, args?: DocumentCommandArgs): CommandDispatch {
     // 레지스트리 가용성(엔진 지원 표 포함)을 실행 직전에 다시 확인한다. rhwp 실행 취소는 그 표가 지원으로 바뀌기 전에는 오지 않는다.
     if (!documentCommandState(command, this.snapshot()).available) return { accepted: false };
+    if (command === "paragraph.bullets") return args === undefined ? { accepted: this.toggleBullets() } : { accepted: false };
+    if (command === "insert.table") {
+      if (args?.command !== command || !validateCommandArgs(command, args, this.snapshot().parameters?.[command]) || !this.doc?.createTable || !this.doc.setTableProperties) return { accepted: false };
+      const at = this.caret, doc = this.doc;
+      return { accepted: this.mutate(() => {
+        const result: unknown = JSON.parse(doc.createTable!(at.section, at.paragraph, at.offset, args.rows, args.cols));
+        if (!result || typeof result !== "object") throw new Error("invalid table result");
+        const value = result as Record<string, unknown>;
+        if (value.ok !== true || !Number.isSafeInteger(value.paraIdx) || (value.paraIdx as number) < 0
+          || !Number.isSafeInteger(value.controlIdx) || (value.controlIdx as number) < 0) throw new Error("invalid table result");
+        // createTable leaves attr/common wrapping bits inconsistent. Reapply the
+        // engine's own default through its property API so reopen is identical.
+        const props = JSON.parse(doc.setTableProperties!(at.section, value.paraIdx as number, value.controlIdx as number, JSON.stringify({ textWrap: "TopAndBottom" }))) as Record<string, unknown>;
+        if (props.ok !== true) throw new Error("table properties rejected");
+        return { section: at.section, paragraph: value.paraIdx as number, offset: 0,
+          cell: { parentParagraph: value.paraIdx as number, control: value.controlIdx as number, cell: 0, cellParagraph: 0 } };
+      }) };
+    }
     if (command === "hangul.insertTableFormula") return args?.command === command ? this.insertFormula(args) : { accepted: false };
     if (command === "hangul.charWidth" || command === "hangul.charSpacing" || command === "hangul.tableFormula") {
       if (args?.command !== command) return { accepted: false };

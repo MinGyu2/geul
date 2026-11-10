@@ -367,6 +367,8 @@ pub fn compare_saved_docx(original: &Package, output: &Package) -> Vec<Finding> 
             .collect();
         notes.is_empty() || note_settings_added(original, output, &notes)
     });
+    let pictures = pictures_appended(original, output);
+    let numbering = numbering_appended(original, output) == Some(true);
     let notes_added = added.as_ref().is_some_and(|added| {
         added
             .iter()
@@ -386,12 +388,20 @@ pub fn compare_saved_docx(original: &Package, output: &Package) -> Vec<Finding> 
         .collect();
     let mut findings = compare(original, output, &|name| {
         name == BODY
+            || (numbering && name == NUMBERING)
             || name == APP
-            || (added.is_some() && (name == CONTENT_TYPES || name == DOCUMENT_RELS))
+            || ((added.is_some() || pictures.is_some())
+                && (name == CONTENT_TYPES || name == DOCUMENT_RELS))
             || ((notes_added || tracking_toggled) && name == SETTINGS)
             || (appended && COMMENT_PARTS.iter().any(|(part, ..)| *part == name))
             || extended.contains(&name)
     });
+    if let Some(pictures) = &pictures {
+        findings.retain(|f| {
+            !(f.code == FindingCode::PartAdded
+                && f.part.as_ref().is_some_and(|name| pictures.contains(name)))
+        });
+    }
     if let Some(added) = &added {
         findings.retain(|finding| {
             !(finding.code == FindingCode::PartAdded
@@ -647,6 +657,9 @@ fn parts_added(original: &Package, output: &Package) -> Option<Vec<&'static Adda
                 .iter()
                 .filter(|(name, ..)| !present(original, name)),
         )
+        .chain(std::iter::once(&NUMBERING_PART).filter(|_| {
+            numbering_appended(original, output) == Some(true) && !present(original, NUMBERING)
+        }))
         .filter(|(name, ..)| output.parts.contains_key(*name))
         .collect();
     if comment_added.is_empty()
@@ -663,44 +676,11 @@ fn parts_added(original: &Package, output: &Package) -> Option<Vec<&'static Adda
     let (types_before, types_after) = pair(CONTENT_TYPES)?;
     let (rels_before, rels_after) = pair(DOCUMENT_RELS)?;
     // 내용 형식 목록은 `Default`와 `Override`가 섞이므로 자식 이름까지 속성처럼 담아 비교한다.
-    let typed = |bytes: &[u8]| -> Option<FlatList> {
-        let events = xml::canonical(bytes).ok()?;
-        let mut iter = events.into_iter();
-        let first = iter.next()?;
-        if !matches!(&first, xml::Canonical::Start { namespace: Some(ns), name, .. } if *ns == OPC_CONTENT_TYPES && *name == "Types")
-        {
-            return None;
-        }
-        let mut children = Vec::new();
-        loop {
-            match iter.next()? {
-                xml::Canonical::End => break,
-                xml::Canonical::Start {
-                    namespace: Some(ns),
-                    name,
-                    attributes,
-                } if ns == OPC_CONTENT_TYPES && (name == "Default" || name == "Override") => {
-                    if iter.next()? != xml::Canonical::End {
-                        return None;
-                    }
-                    let mut attrs = vec![("".to_owned(), name.to_string())];
-                    for (ns, key, value) in attributes {
-                        if ns.is_some() {
-                            return None;
-                        }
-                        attrs.push((key.to_string(), value.to_string()));
-                    }
-                    attrs.sort();
-                    children.push(attrs);
-                }
-                _ => return None,
-            }
-        }
-        iter.next().is_none().then_some((first, children))
-    };
-    let (Some((root_a, kids_a)), Some((root_b, kids_b))) =
-        (typed(types_before), typed(types_after))
-    else {
+
+    let (Some((root_a, kids_a)), Some((root_b, kids_b))) = (
+        content_type_children(types_before),
+        content_type_children(types_after),
+    ) else {
         return None;
     };
     let overrides: Vec<Vec<(String, String)>> = comment_added
@@ -1080,9 +1060,17 @@ fn thumbnails(package: &Package) -> Vec<String> {
 /// 문서 내용과 무관함을 증명해야 한다(빈 값·고정 rhwp 빈 미리보기 상수와 바이트가 같음, `preview`). 그 밖의 미리보기 부분은
 /// 증명할 수 없어 막는다.
 pub fn compare_saved_hwpx(original: &Package, output: &Package) -> Vec<Finding> {
+    let pictures = hwpx_pictures_appended(original, output);
     let mut findings = compare(original, output, &|name| {
-        hwpx_body(name) || name == HWPX_HEADER
+        (hwpx_body(name) || (pictures.is_some() && name == "Contents/content.hpf"))
+            || name == HWPX_HEADER
     });
+    if let Some(names) = &pictures {
+        findings.retain(|f| {
+            !(f.code == FindingCode::PartAdded
+                && f.part.as_ref().is_some_and(|n| names.contains(n)))
+        });
+    }
     // header는 원본과 같거나, 글자 서식이 덧붙인 글자 모양 정의만 다를 수 있다(T010 Phase 3B, `hwpx_char_shapes_appended`).
     // 빠지거나 생긴 header는 위 `compare`가 이미 적었다.
     // Validate both complete inputs first; then compare semantic pieces and the narrow append rule without retained trees.
@@ -1102,7 +1090,10 @@ pub fn compare_saved_hwpx(original: &Package, output: &Package) -> Vec<Finding> 
                 (_, Err(_)) => findings.push(Finding::at(FindingCode::LimitExceeded, HWPX_HEADER)),
                 (Ok(()), Ok(())) => {
                     let epoch = crate::document::resources::failure_epoch();
-                    if !super::special::header_equal_or_appended(before, after, output) {
+                    if !super::special::header_equal_or_appended(before, after, output)
+                        && hwpx_table_border_appended(before, after, output) != Some(true)
+                        && hwpx_bullets_appended(before, after, output) != Some(true)
+                    {
                         findings.push(Finding::at(
                             resource_code(epoch, FindingCode::PartChanged),
                             HWPX_HEADER,
@@ -1519,4 +1510,738 @@ pub(super) mod special_legacy;
 #[cfg(test)]
 pub(super) fn legacy_statistics(before: &[u8], after: &[u8]) -> Option<bool> {
     special_legacy::same_except_statistics(before, after)
+}
+
+fn content_type_children(bytes: &[u8]) -> Option<FlatList> {
+    let events = xml::canonical(bytes).ok()?;
+    let mut iter = events.into_iter();
+    let first = iter.next()?;
+    if !matches!(&first, xml::Canonical::Start { namespace: Some(ns), name, .. } if *ns == OPC_CONTENT_TYPES && *name == "Types")
+    {
+        return None;
+    }
+    let mut children = Vec::new();
+    loop {
+        match iter.next()? {
+            xml::Canonical::End => break,
+            xml::Canonical::Start {
+                namespace: Some(ns),
+                name,
+                attributes,
+            } if ns == OPC_CONTENT_TYPES && (name == "Default" || name == "Override") => {
+                if iter.next()? != xml::Canonical::End {
+                    return None;
+                }
+                let mut attrs = vec![("".to_owned(), name.to_string())];
+                for (ns, key, value) in attributes {
+                    if ns.is_some() {
+                        return None;
+                    }
+                    attrs.push((key.to_string(), value.to_string()));
+                }
+                attrs.sort();
+                children.push(attrs);
+            }
+            _ => return None,
+        }
+    }
+    iter.next().is_none().then_some((first, children))
+}
+
+/// Picture insertion may append validated media and exactly their package metadata.
+/// Original media/parts are still compared byte-for-byte. Existing relationship
+/// bindings (including their attribute names and order) must remain unchanged.
+fn pictures_appended(original: &Package, output: &Package) -> Option<Vec<String>> {
+    const IMAGE_REL: &str =
+        "http://schemas.openxmlformats.org/officeDocument/2006/relationships/image";
+    const REL_NS: &str = "http://schemas.openxmlformats.org/officeDocument/2006/relationships";
+    let added: Vec<String> = output
+        .parts
+        .keys()
+        .filter(|name| !original.parts.contains_key(*name))
+        .cloned()
+        .collect();
+    if added.is_empty() || added.len() > 256 {
+        return None;
+    }
+    let mut defaults = Vec::new();
+    let new_numbering = added.iter().any(|n| n == NUMBERING);
+    if new_numbering && numbering_appended(original, output) != Some(true) {
+        return None;
+    }
+    for name in added.iter().filter(|n| n.as_str() != NUMBERING) {
+        let tail = name.strip_prefix("word/media/")?;
+        if tail.contains('/') || tail.contains("..") {
+            return None;
+        }
+        let ext = tail.rsplit('.').next()?;
+        let mime = match ext {
+            "png" => "image/png",
+            "jpeg" | "jpg" => "image/jpeg",
+            _ => return None,
+        };
+        let bytes = output.get(name)?;
+        if !crate::picture::valid(bytes)
+            || (ext == "png") != bytes.starts_with(b"\x89PNG\r\n\x1a\n")
+        {
+            return None;
+        }
+        let attrs = vec![
+            ("".into(), "Default".into()),
+            ("ContentType".into(), mime.into()),
+            ("Extension".into(), ext.into()),
+        ];
+        if !defaults.contains(&attrs) {
+            defaults.push(attrs);
+        }
+    }
+    let (root_a, types_a) = content_type_children(original.get(CONTENT_TYPES)?)?;
+    let (root_b, types_b) = content_type_children(output.get(CONTENT_TYPES)?)?;
+    defaults.retain(|a| !types_a.contains(a));
+    if new_numbering {
+        defaults.push(vec![
+            ("".into(), "Override".into()),
+            ("ContentType".into(), NUMBERING_PART.3.into()),
+            ("PartName".into(), format!("/{NUMBERING}")),
+        ]);
+    }
+    if root_a != root_b || !multiset_plus(&types_a, &types_b, &defaults) {
+        return None;
+    }
+    let (root_a, rels_a) = flat_children(
+        original.get(DOCUMENT_RELS)?,
+        OPC_RELATIONSHIPS,
+        "Relationships",
+        "Relationship",
+        "",
+    )?;
+    let (root_b, rels_b) = flat_children(
+        output.get(DOCUMENT_RELS)?,
+        OPC_RELATIONSHIPS,
+        "Relationships",
+        "Relationship",
+        "",
+    )?;
+    if root_a != root_b {
+        return None;
+    }
+    let attr = |a: &Attrs, key: &str| a.iter().find(|(k, _)| k == key).map(|(_, v)| v.clone());
+    let without_ids = |rels: &[Attrs]| {
+        rels.iter()
+            .map(|a| a.iter().filter(|(k, _)| k != "Id").cloned().collect())
+            .collect::<Vec<Attrs>>()
+    };
+    let expected: Vec<Attrs> = added
+        .iter()
+        .map(|name| {
+            vec![
+                (
+                    "Target".into(),
+                    name.strip_prefix("word/").unwrap_or("").into(),
+                ),
+                (
+                    "Type".into(),
+                    if name == NUMBERING {
+                        NUMBERING_PART.2.into()
+                    } else {
+                        IMAGE_REL.into()
+                    },
+                ),
+            ]
+        })
+        .collect();
+    if !multiset_plus(&without_ids(&rels_a), &without_ids(&rels_b), &expected) {
+        return None;
+    }
+    // Refuse duplicate/missing IDs before resolving any reference.
+    for rels in [&rels_a, &rels_b] {
+        let mut ids = std::collections::BTreeSet::new();
+        for a in rels {
+            let id = attr(a, "Id")?;
+            if id.is_empty() || !ids.insert(id) {
+                return None;
+            }
+        }
+    }
+    type Bindings = (
+        Vec<(String, String, String, Attrs)>,
+        std::collections::BTreeSet<String>,
+    );
+    let bindings = |pkg: &Package, rels: &[Attrs], ignore_new: bool| -> Option<Bindings> {
+        let mut bindings = Vec::new();
+        let mut used = std::collections::BTreeSet::new();
+        for event in xml::canonical(pkg.get("word/document.xml")?).ok()? {
+            if let xml::Canonical::Start {
+                namespace,
+                name,
+                attributes,
+            } = event
+            {
+                for (ns, key, id) in attributes {
+                    if ns.as_deref() != Some(REL_NS) {
+                        continue;
+                    }
+                    let rel = rels
+                        .iter()
+                        .find(|a| attr(a, "Id").as_deref() == Some(id.as_str()))?;
+                    let target = format!("word/{}", attr(rel, "Target")?);
+                    if ignore_new && added.contains(&target) {
+                        if namespace.as_deref()
+                            != Some("http://schemas.openxmlformats.org/drawingml/2006/main")
+                            || name != "blip"
+                            || key != "embed"
+                        {
+                            return None;
+                        }
+                        used.insert(target);
+                        continue;
+                    }
+                    bindings.push((
+                        namespace.as_deref().unwrap_or("").to_owned(),
+                        name.to_string(),
+                        key.to_string(),
+                        rel.iter().filter(|(k, _)| k != "Id").cloned().collect(),
+                    ));
+                }
+            }
+        }
+        Some((bindings, used))
+    };
+    let (before, _) = bindings(original, &rels_a, false)?;
+    let (after, used) = bindings(output, &rels_b, true)?;
+    (before == after
+        && added
+            .iter()
+            .all(|name| name == NUMBERING || used.contains(name)))
+    .then_some(added)
+}
+
+const NUMBERING: &str = "word/numbering.xml";
+const NUMBERING_PART: Addable = (
+    NUMBERING,
+    "numbering.xml",
+    "http://schemas.openxmlformats.org/officeDocument/2006/relationships/numbering",
+    "application/vnd.openxmlformats-officedocument.wordprocessingml.numbering+xml",
+);
+
+/// Only the pinned serializer's standard bullet definition/instance may be
+/// appended. Every original XML definition remains exactly equal, including
+/// unknown properties; the engine's parser alone cannot prove preservation.
+fn numbering_appended(original: &Package, output: &Package) -> Option<bool> {
+    if original.get(NUMBERING) == output.get(NUMBERING) {
+        return Some(false);
+    }
+    type Unit = (String, u32, Vec<xml::Canonical>);
+    fn units(bytes: &[u8]) -> Option<(xml::Canonical, Vec<Unit>)> {
+        let (events, _) = xml::canonical_with_payload_limit(bytes, Some(4 * 1024 * 1024)).ok()?;
+        let mut iter = events.into_iter();
+        let root = iter.next()?;
+        if !matches!(&root, xml::Canonical::Start { namespace: Some(ns), name, .. } if ns == WML && name == "numbering")
+        {
+            return None;
+        }
+        let mut units = Vec::new();
+        let mut ids = std::collections::BTreeSet::new();
+        loop {
+            let event = iter.next()?;
+            if event == xml::Canonical::End {
+                break;
+            }
+            let xml::Canonical::Start {
+                namespace: Some(ns),
+                name,
+                attributes,
+            } = &event
+            else {
+                return None;
+            };
+            if ns != WML || !matches!(name.as_str(), "abstractNum" | "num") || attributes.len() != 1
+            {
+                return None;
+            }
+            let key = if name == "num" {
+                "numId"
+            } else {
+                "abstractNumId"
+            };
+            let (ns, k, value) = attributes.first()?;
+            if ns.as_deref() != Some(WML) || k != key {
+                return None;
+            }
+            let id = value.parse::<u32>().ok()?;
+            if value.as_str() != id.to_string() || !ids.insert((name.to_string(), id)) {
+                return None;
+            }
+            let kind = name.to_string();
+            let mut subtree = vec![event];
+            let mut depth = 1;
+            while depth > 0 {
+                let e = iter.next()?;
+                match &e {
+                    xml::Canonical::Start { .. } => depth += 1,
+                    xml::Canonical::End => depth -= 1,
+                    _ => {}
+                }
+                subtree.push(e);
+            }
+            units.push((kind, id, subtree));
+        }
+        iter.next().is_none().then_some((root, units))
+    }
+    let (root, after) = units(output.get(NUMBERING)?)?;
+    let before = match original.get(NUMBERING) {
+        Some(bytes) => {
+            let (old_root, old) = units(bytes)?;
+            if old_root != root {
+                return None;
+            }
+            old
+        }
+        None => Vec::new(),
+    };
+    if !before.iter().all(|old| after.contains(old)) {
+        return None;
+    }
+    let extra: Vec<_> = after.iter().filter(|unit| !before.contains(unit)).collect();
+    if extra.is_empty() {
+        return Some(true);
+    }
+    if extra.len() != 2 {
+        return None;
+    }
+    let a = extra.iter().find(|u| u.0 == "abstractNum")?.1;
+    let n = extra.iter().find(|u| u.0 == "num")?.1;
+    if n == 0 {
+        return None;
+    }
+    let mut template = wordcraft_engine::blank_document(&Default::default());
+    use wordcraft_engine::doc::numbering::{levels_for, AbstractNum, ListKind, Num};
+    template.numbering.abstracts = vec![AbstractNum {
+        id: a,
+        levels: levels_for(ListKind::Bullet),
+        ..Default::default()
+    }];
+    template.numbering.nums = vec![Num {
+        id: n,
+        abstract_id: a,
+        ..Default::default()
+    }];
+    let bytes = wordcraft_engine::io::save_bytes("x.docx", &template).ok()?;
+    let pkg = open(&bytes, Side::Output).ok()?;
+    let (expected_root, expected) = units(pkg.get(NUMBERING)?)?;
+    if original.get(NUMBERING).is_none() && root != expected_root {
+        return None;
+    }
+    Some(extra.iter().all(|unit| expected.contains(unit)))
+}
+
+/// RHWP createTable appends this one solid border when none can be reused.
+/// Compare all original header events, not their lossy engine representation.
+fn hwpx_table_border_appended(before: &[u8], after: &[u8], output: &Package) -> Option<bool> {
+    fn split(bytes: &[u8]) -> Option<(Vec<xml::Canonical>, Vec<Vec<xml::Canonical>>, u32)> {
+        let (mut events, _) =
+            xml::canonical_with_payload_limit(bytes, Some(4 * 1024 * 1024)).ok()?;
+        let index = events.iter().position(|e| is_head(e, "borderFills"))?;
+        if events
+            .iter()
+            .skip(index + 1)
+            .any(|e| is_head(e, "borderFills"))
+        {
+            return None;
+        }
+        let count = plain_attribute(&events[index], "itemCnt")?
+            .parse::<u32>()
+            .ok()?;
+        if count > 65535 {
+            return None;
+        }
+        if let xml::Canonical::Start { attributes, .. } = &mut events[index] {
+            attributes.retain(|(ns, k, _)| !(ns.is_none() && k == "itemCnt"));
+        }
+        let mut end = index + 1;
+        let mut defs = Vec::new();
+        while events.get(end)? != &xml::Canonical::End {
+            let start = end;
+            if !is_head(events.get(start)?, "borderFill") {
+                return None;
+            }
+            let id = plain_attribute(events.get(start)?, "id")?
+                .parse::<u32>()
+                .ok()?;
+            if id != defs.len() as u32 + 1 {
+                return None;
+            }
+            let mut depth = 1;
+            end += 1;
+            while depth > 0 {
+                match events.get(end)? {
+                    xml::Canonical::Start { .. } => depth += 1,
+                    xml::Canonical::End => depth -= 1,
+                    _ => {}
+                }
+                end += 1;
+            }
+            defs.push(events[start..end].to_vec());
+        }
+        if defs.len() != count as usize {
+            return None;
+        }
+        events.drain(index + 1..end);
+        Some((events, defs, count))
+    }
+    let (a, old, n) = split(before)?;
+    let (b, new, total) = split(after)?;
+    if a != b || total != n.checked_add(1)? || new.get(..old.len())? != old {
+        return None;
+    }
+    if new.last()? != &default_table_border(total)? {
+        return None;
+    }
+    let mut used = false;
+    for (name, (_, bytes)) in &output.parts {
+        if !hwpx_body(name) {
+            continue;
+        }
+        for e in xml::canonical(bytes).ok()? {
+            let Some(value) = plain_attribute(&e, "borderFillIDRef") else {
+                continue;
+            };
+            let id = value.parse::<u32>().ok()?;
+            if id == 0 || id > total {
+                return None;
+            }
+            if id == total {
+                if !matches!(e, xml::Canonical::Start { namespace: Some(ref ns), ref name, .. } if ns == "http://www.hancom.co.kr/hwpml/2011/paragraph" && matches!(name.as_str(), "tbl" | "tc"))
+                {
+                    return None;
+                }
+                used = true;
+            }
+        }
+    }
+    Some(used)
+}
+
+fn hwpx_pictures_appended(original: &Package, output: &Package) -> Option<Vec<String>> {
+    const MANIFEST: &str = "Contents/content.hpf";
+    const OPF: &str = "http://www.idpf.org/2007/opf/";
+    let added: Vec<String> = output
+        .parts
+        .keys()
+        .filter(|n| !original.parts.contains_key(*n))
+        .cloned()
+        .collect();
+    if added.is_empty() || added.len() > 256 {
+        return None;
+    }
+    let (a, _) =
+        xml::canonical_with_payload_limit(original.get(MANIFEST)?, Some(4 * 1024 * 1024)).ok()?;
+    let (b, _) =
+        xml::canonical_with_payload_limit(output.get(MANIFEST)?, Some(4 * 1024 * 1024)).ok()?;
+    let mut expected = Vec::new();
+    let mut ids = std::collections::BTreeSet::new();
+    for e in &a {
+        if let xml::Canonical::Start {
+            namespace: Some(ns),
+            name,
+            ..
+        } = e
+        {
+            if ns == OPF && name == "item" {
+                ids.insert(plain_attribute(e, "id")?.to_owned());
+            }
+        }
+    }
+    for name in &added {
+        let tail = name.strip_prefix("BinData/")?;
+        let (id, ext) = tail.rsplit_once('.')?;
+        if !id
+            .strip_prefix("image")?
+            .bytes()
+            .all(|b| b.is_ascii_digit())
+            || id.len() <= 5
+            || !ids.insert(id.to_owned())
+        {
+            return None;
+        }
+        let mime = match ext {
+            "png" => "image/png",
+            "jpeg" | "jpg" => "image/jpeg",
+            _ => return None,
+        };
+        let bytes = output.get(name)?;
+        if !crate::picture::valid(bytes)
+            || (ext == "png") != bytes.starts_with(b"\x89PNG\r\n\x1a\n")
+        {
+            return None;
+        }
+        let item = format!(
+            r#"<opf:item xmlns:opf="{OPF}" id="{id}" href="{name}" media-type="{mime}" isEmbeded="1"/>"#
+        );
+        expected.push((id.to_owned(), xml::canonical(item.as_bytes()).ok()?));
+    }
+    let mut rest = Vec::new();
+    let mut iter = b.into_iter();
+    let mut seen = std::collections::BTreeSet::new();
+    let mut stack = Vec::new();
+    while let Some(e) = iter.next() {
+        let matching = expected
+            .iter()
+            .find(|(_, events)| events.first() == Some(&e));
+        if let Some((id, _)) = matching {
+            if stack.last() != Some(&true)
+                || !seen.insert(id.clone())
+                || iter.next()? != xml::Canonical::End
+            {
+                return None;
+            }
+        } else {
+            match &e {
+                xml::Canonical::Start {
+                    namespace, name, ..
+                } => stack.push(namespace.as_deref() == Some(OPF) && name == "manifest"),
+                xml::Canonical::End => {
+                    stack.pop()?;
+                }
+                _ => {}
+            }
+            rest.push(e);
+        }
+    }
+    if rest != a || seen.len() != added.len() {
+        return None;
+    }
+    let mut used = std::collections::BTreeSet::new();
+    for (name, (_, bytes)) in &output.parts {
+        if !hwpx_body(name) {
+            continue;
+        }
+        for e in xml::canonical(bytes).ok()? {
+            if let xml::Canonical::Start {
+                namespace: Some(ns),
+                name,
+                ..
+            } = &e
+            {
+                if ns == "http://www.hancom.co.kr/hwpml/2011/core" && name == "img" {
+                    let id = plain_attribute(&e, "binaryItemIDRef")?;
+                    if expected.iter().any(|(wanted, _)| id == wanted) {
+                        used.insert(id.to_owned());
+                    }
+                }
+            }
+        }
+    }
+    expected
+        .iter()
+        .all(|(id, _)| used.contains(id))
+        .then_some(added)
+}
+
+/// Standard bullets clone an existing paragraph shape, changing only its
+/// heading. All original definitions and all other header content stay equal.
+fn hwpx_bullets_appended(before: &[u8], after: &[u8], output: &Package) -> Option<bool> {
+    type Lists = BTreeMap<String, Vec<Vec<xml::Canonical>>>;
+    fn split(bytes: &[u8]) -> Option<(Vec<xml::Canonical>, Lists)> {
+        let (events, _) = xml::canonical_with_payload_limit(bytes, Some(4 * 1024 * 1024)).ok()?;
+        let mut iter = events.into_iter();
+        let mut skeleton = Vec::new();
+        let mut lists = BTreeMap::new();
+        let mut parents = Vec::new();
+        while let Some(event) = iter.next() {
+            if let xml::Canonical::Start {
+                namespace: Some(ns),
+                name,
+                attributes,
+            } = &event
+            {
+                if ns == HWPML_HEAD
+                    && matches!(name.as_str(), "paraProperties" | "bullets" | "borderFills")
+                {
+                    if parents.last() != Some(&true)
+                        || attributes.len() != 1
+                        || lists.contains_key(name.as_str())
+                    {
+                        return None;
+                    }
+                    let count = plain_attribute(&event, "itemCnt")?.parse::<usize>().ok()?;
+                    if count > 65535 {
+                        return None;
+                    }
+                    let child = match name.as_str() {
+                        "bullets" => "bullet",
+                        "borderFills" => "borderFill",
+                        _ => "paraPr",
+                    };
+                    let first_id = if name == "paraProperties" { 0 } else { 1 };
+                    let mut defs = Vec::new();
+                    loop {
+                        let e = iter.next()?;
+                        if e == xml::Canonical::End {
+                            break;
+                        }
+                        if !is_head(&e, child)
+                            || plain_attribute(&e, "id")?.parse::<usize>().ok()?
+                                != defs.len() + first_id
+                        {
+                            return None;
+                        }
+                        let mut subtree = vec![e];
+                        let mut depth = 1;
+                        while depth > 0 {
+                            let e = iter.next()?;
+                            match e {
+                                xml::Canonical::Start { .. } => depth += 1,
+                                xml::Canonical::End => depth -= 1,
+                                _ => {}
+                            }
+                            subtree.push(e);
+                        }
+                        defs.push(subtree);
+                    }
+                    if defs.len() != count {
+                        return None;
+                    }
+                    lists.insert(name.to_string(), defs);
+                    continue;
+                }
+            }
+            match &event {
+                xml::Canonical::Start { .. } => parents.push(is_head(&event, "refList")),
+                xml::Canonical::End => {
+                    parents.pop()?;
+                }
+                _ => {}
+            }
+            skeleton.push(event);
+        }
+        Some((skeleton, lists))
+    }
+    fn signature(
+        def: &[xml::Canonical],
+        appended: bool,
+        bullet_count: usize,
+    ) -> Option<Vec<xml::Canonical>> {
+        let mut result = Vec::new();
+        let mut iter = def.iter().cloned();
+        let mut root = iter.next()?;
+        if let xml::Canonical::Start { attributes, .. } = &mut root {
+            attributes.retain(|(ns, k, _)| !(ns.is_none() && k == "id"));
+        }
+        result.push(root);
+        let mut heading = false;
+        while let Some(e) = iter.next() {
+            if is_head(&e, "heading") {
+                if heading || iter.next()? != xml::Canonical::End {
+                    return None;
+                }
+                heading = true;
+                if appended {
+                    let kind = plain_attribute(&e, "type")?;
+                    let id = plain_attribute(&e, "idRef")?.parse::<usize>().ok()?;
+                    if plain_attribute(&e, "level") != Some("0")
+                        || !((kind == "BULLET" && id > 0 && id <= bullet_count)
+                            || (kind == "NONE" && id == 0))
+                    {
+                        return None;
+                    }
+                    let xml::Canonical::Start { attributes, .. } = &e else {
+                        return None;
+                    };
+                    if attributes.len() != 3 {
+                        return None;
+                    }
+                }
+            } else {
+                result.push(e);
+            }
+        }
+        heading.then_some(result)
+    }
+    let (a, old) = split(before)?;
+    let (b, new) = split(after)?;
+    if a != b {
+        return None;
+    }
+    let old_borders = old.get("borderFills")?;
+    let borders = new.get("borderFills")?;
+    if borders.len() < old_borders.len()
+        || borders.len() > old_borders.len() + 1
+        || borders.get(..old_borders.len())? != old_borders
+    {
+        return None;
+    }
+    if let Some(extra) = borders.get(old_borders.len()) {
+        if extra != &default_table_border(borders.len() as u32)? {
+            return None;
+        }
+        let mut used = false;
+        for (name, (_, bytes)) in &output.parts {
+            if !hwpx_body(name) {
+                continue;
+            }
+            for e in xml::canonical(bytes).ok()? {
+                if let Some(value) = plain_attribute(&e, "borderFillIDRef") {
+                    let id = value.parse::<usize>().ok()?;
+                    if id == 0 || id > borders.len() {
+                        return None;
+                    }
+                    if id == borders.len() {
+                        if !matches!(&e, xml::Canonical::Start { namespace: Some(ns), name, .. } if ns == "http://www.hancom.co.kr/hwpml/2011/paragraph" && matches!(name.as_str(), "tbl" | "tc"))
+                        {
+                            return None;
+                        }
+                        used = true;
+                    }
+                }
+            }
+        }
+        if !used {
+            return None;
+        }
+    }
+    let empty = Vec::new();
+    let old_bullets = old.get("bullets").unwrap_or(&empty);
+    let bullets = new.get("bullets").unwrap_or(&empty);
+    if bullets.len() < old_bullets.len()
+        || bullets.len() > old_bullets.len() + 1
+        || bullets.get(..old_bullets.len())? != old_bullets
+    {
+        return None;
+    }
+    if let Some(extra) = bullets.get(old_bullets.len()) {
+        let id = bullets.len();
+        let expected = format!(
+            r#"<hh:bullet xmlns:hh="{HWPML_HEAD}" id="{id}" char="•" useImage="0"><hh:paraHead level="0" align="LEFT" useInstWidth="0" autoIndent="1" widthAdjust="0" textOffsetType="PERCENT" textOffset="50" numFormat="DIGIT" charPrIDRef="0" checkable="0"/></hh:bullet>"#
+        );
+        if extra != &xml::canonical(expected.as_bytes()).ok()? {
+            return None;
+        }
+    }
+    let old_paras = old.get("paraProperties")?;
+    let paras = new.get("paraProperties")?;
+    if paras.len() < old_paras.len()
+        || paras.len() - old_paras.len() > 256
+        || paras.get(..old_paras.len())? != old_paras
+    {
+        return None;
+    }
+    let bases: Vec<_> = old_paras
+        .iter()
+        .map(|p| signature(p, false, bullets.len()))
+        .collect::<Option<_>>()?;
+    for p in paras.iter().skip(old_paras.len()) {
+        if !bases.contains(&signature(p, true, bullets.len())?) {
+            return None;
+        }
+    }
+    // The ordinary output reference validator checks paragraph shape references.
+    Some(true)
+}
+
+fn default_table_border(total: u32) -> Option<Vec<xml::Canonical>> {
+    let expected = format!(
+        r##"<hh:borderFill xmlns:hh="http://www.hancom.co.kr/hwpml/2011/head" id="{total}" threeD="0" shadow="0" centerLine="NONE" breakCellSeparateLine="0"><hh:slash type="NONE" Crooked="0" isCounter="0"/><hh:backSlash type="NONE" Crooked="0" isCounter="0"/><hh:leftBorder type="SOLID" width="0.12 mm" color="#000000"/><hh:rightBorder type="SOLID" width="0.12 mm" color="#000000"/><hh:topBorder type="SOLID" width="0.12 mm" color="#000000"/><hh:bottomBorder type="SOLID" width="0.12 mm" color="#000000"/><hh:diagonal type="SOLID" width="0.1 mm" color="#000000"/></hh:borderFill>"##
+    );
+    xml::canonical(expected.as_bytes()).ok()
 }

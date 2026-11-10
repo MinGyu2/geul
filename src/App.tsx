@@ -1,3 +1,4 @@
+import { invoke } from "@tauri-apps/api/core";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useReducer, useRef, useState, useSyncExternalStore, type CSSProperties } from "react";
 import { executeCommand, type CommandContext, type CommandInputRequest, type FileCommandActions } from "./commands/commands";
 import type { DocumentCommandArgs } from "./commands/target";
@@ -190,6 +191,8 @@ function Workspace({ layout, dispatch, message, notice, pendingCount, notify, on
   const [inputRequest, setInputRequest] = useState<CommandInputRequest | null>(null);
   const requestInput = useCallback((request: CommandInputRequest) => setInputRequest(request), []);
   const clipboardOwnership = useRef(0);
+  const imageOwnership = useRef(0);
+  useLayoutEffect(() => { imageOwnership.current += 1; }, [activeEditor, modal, formatChoice, inputRequest, fileBusy]);
   useLayoutEffect(() => { clipboardOwnership.current += 1; }, [activeEditor, modal, formatChoice, inputRequest, fileBusy]);
   useEffect(() => {
     const invalidate = () => { clipboardOwnership.current += 1; };
@@ -201,13 +204,20 @@ function Workspace({ layout, dispatch, message, notice, pendingCount, notify, on
     let active = documents.sessions.snapshot().activeId;
     return documents.sessions.subscribe(() => {
       const next = documents.sessions.snapshot().activeId;
-      if (next !== active) { active = next; clipboardOwnership.current += 1; }
+      if (next !== active) { active = next; clipboardOwnership.current += 1; imageOwnership.current += 1; }
     });
   }, [documents]);
   const context: CommandContext = useMemo<CommandContext>(
     () => ({
       layout, dispatch, notify, document: activeEditor, modal: modal || formatChoice !== null || inputRequest !== null,
       files: fileActions, requestInput,
+      pickImage: () => invoke<import("./commands/target").ImportedPicture | null>("picture_import", { title: t("command.insert.image"), accept: t("document.open"), cancel: t("document.cancel") }),
+      imageOwner: target => {
+        const epoch = imageOwnership.current;
+        return () => imageOwnership.current === epoch && contextRef.current.document === target
+          && !contextRef.current.modal && !contextRef.current.files?.busy
+          && (!documents || documents.sessions.snapshot().activeId === target.sessionId);
+      },
       clipboardOwner: target => {
         const epoch = clipboardOwnership.current;
         return (): boolean => clipboardOwnership.current === epoch && contextRef.current.document === target
@@ -216,7 +226,7 @@ function Workspace({ layout, dispatch, message, notice, pendingCount, notify, on
           && document.hasFocus();
       },
     }),
-    [layout, dispatch, notify, activeEditor, modal, formatChoice, inputRequest, fileActions, requestInput, documents],
+    [layout, dispatch, notify, activeEditor, modal, formatChoice, inputRequest, fileActions, requestInput, documents, t],
   );
   // 입력 창이 열린 동안 활성 문서가 바뀌거나 닫히면 창을 버린다(다른 문서에 값을 적용하지 않음 — 그리는 중 상태 조정).
   if (inputRequest && activeEditor?.sessionId !== inputRequest.sessionId) setInputRequest(null);
@@ -226,7 +236,8 @@ function Workspace({ layout, dispatch, message, notice, pendingCount, notify, on
     if (!request) return;
     // 창을 연 뒤 문서·세션이 바뀌었으면(다른 문서, 다시 불러오기, 그 사이 편집) 실행하지 않는다: 값은 연 순간의 문맥에서 고른 것이다.
     const snapshot = activeEditor?.sessionId === request.sessionId ? activeEditor.snapshot() : null;
-    if (!snapshot || snapshot.loadGeneration !== request.loadGeneration || snapshot.revision !== request.revision) {
+    if (!snapshot || snapshot.loadGeneration !== request.loadGeneration || snapshot.revision !== request.revision
+      || (request.selectionKey !== undefined && snapshot.clipboard?.key !== request.selectionKey)) {
       notify({ key: "commandInput.stale", vars: { command: { key: request.labelKey } } });
       return;
     }

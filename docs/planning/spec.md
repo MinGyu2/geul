@@ -185,3 +185,7 @@ Acceptance Scenarios:
 - 초기 버전의 HWP↔DOCX 및 HWPX↔DOCX 변환, 공동 편집, 클라우드 동기화.
 - 문서 모델 통합, 외부 원본 UI 재배포, 신규 생성이라는 이름의 임의 기존 문서 변환.
 - 이번 문서 변경에서 제품 코드·submodule·패치·WASM 변경, T011 구현, 새 생성 기능 실행, D2/D4 PASS 처리, RHWP 시험 전용 명령의 제품 활성화.
+
+## 핵심 삽입 구현 상태 — 2026-11-10
+
+`insert.table`, `insert.image`, `paragraph.bullets`의 DOCX/HWPX 구현과 HWP 비활성 경계, 검증 상태를 [핵심 삽입 기능 보고](../architecture/core-insertions.md)에 기록했다. Linux native GUI 수용은 NOT RUN이고 HWP 저장 보존은 미완료이므로 전체 성공 기준 완료로 취급하지 않는다.

@@ -961,3 +961,7 @@ Clipboard hardening (2026-11-10). P1 native preedit acceptance is recorded in
   `Unavailable` without blocking the UI, a vanished owner gives `Unavailable`, and no owner reads
   as empty. Rust exact-boundary unit test added; limits unchanged. Residual risk: a hostile local
   clipboard owner can make GTK allocate payload-sized memory transiently.
+
+## 핵심 삽입 명령 — 2026-11-10
+
+`insert.table`, `insert.image`, `paragraph.bullets`는 capability→활성 세션→기존 변경 queue로 연결했다. 실제 엔진 기능과 DOCX/HWPX 저장 계약, 선택 제한, 비활성 HWP 경계 및 최신 검증 결과는 [핵심 삽입 기능](core-insertions.md)을 따른다. T010 전체 상태나 RHWP 일반 Undo/Redo 판정은 변경하지 않는다. Linux native GUI 수용은 NOT RUN이다.

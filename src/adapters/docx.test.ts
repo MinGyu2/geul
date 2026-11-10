@@ -155,3 +155,11 @@ describe("DOCX 응답 검사", () => {
     ]);
   });
 });
+
+
+it("validates optional core insertion view flags without accepting malformed states", () => {
+  expect(parseDocxView({ ...view, bullets: true, imageInsertionAllowed: false })).toEqual({ ...view, bullets: true, imageInsertionAllowed: false });
+  expect(parseDocxView({ ...view, bullets: null })?.bullets).toBeNull();
+  expect(parseDocxView({ ...view, bullets: "yes" })).toBeNull();
+  expect(parseDocxView({ ...view, imageInsertionAllowed: null })).toBeNull();
+});

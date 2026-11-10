@@ -70,7 +70,7 @@ export interface DocumentCommandSnapshot {
 }
 
 /** 값 입력 없이 세션 문맥으로만 가용성이 정해지는 문서 명령. */
-export type ActionCommandId = "references.toc" | "references.updateToc"
+export type ActionCommandId = "insert.image" | "paragraph.bullets" | "references.toc" | "references.updateToc"
   | "review.trackChanges" | "review.acceptChange" | "review.rejectChange" | "review.acceptAll" | "review.rejectAll";
 
 /**
@@ -78,6 +78,7 @@ export type ActionCommandId = "references.toc" | "references.updateToc"
  * (`validateCommandArgs`, src/commands/parameters.ts)을 거친다. 전역 대기 인자 없이 실행 요청에 함께 넘긴다.
  */
 export type DocumentCommandArgs =
+  | { command: "insert.table"; rows: number; cols: number }
   /** 장평(%) — rhwp 글자 모양 `ratios`(7개 언어 모두 같은 값). */
   | { command: "hangul.charWidth"; percent: number }
   /** 자간(%) — rhwp 글자 모양 `spacings`(7개 언어 모두 같은 값). */
@@ -113,10 +114,13 @@ export interface CommandParameterContext {
  */
 export type CommandDispatch = { accepted: true; message?: Message } | { accepted: false; message?: Message };
 
+export interface ImportedPicture { data: string; width: number; height: number }
+
 export interface DocumentCommandTarget {
   readonly sessionId: SessionId;
   readonly engine: EngineId;
   snapshot(): DocumentCommandSnapshot;
+  executeImage?(owns: () => boolean, pick: () => Promise<ImportedPicture | null>): Promise<"inserted" | "cancelled" | "stale" | "failed">;
   executeClipboard?(command: ClipboardCommand, owns: () => boolean, clipboard?: PlainClipboard): Promise<boolean>;
   /**
    * 명령을 이 세션에 실행한다. 레지스트리가 가용성을 확인한 뒤 부르지만, 세션은 자기 상태로 다시 확인하고 맞지 않으면

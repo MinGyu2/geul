@@ -34,6 +34,8 @@ quick-xml = { version = "=0.42.0", default-features = false }
 serde = { version = "=1.0.229", features = ["derive"] }
 # T008: WordCraft 엔진 명령 인자·응답(JSON). tauri 의존성 트리에 이미 있는 판이다.
 serde_json = "=1.0.154"
+# Already locked through WordCraft; bounded PNG/JPEG decoding for picture import.
+image = { version = "=0.25.10", default-features = false, features = ["png", "jpeg"] }
 # Existing locked Tauri dependency, used for recovery record integrity.
 sha2 = "=0.10.9"
 # T008 W-A: DOCX 문서 모델·렌더를 백엔드가 가진다(editor-surface-decision.md). 업스트림 소스는 고치지 않고 고정한

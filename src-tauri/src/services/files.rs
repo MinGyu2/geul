@@ -236,6 +236,7 @@ pub async fn document_file_dialog(
         Some("hwp") => vec!["hwp"],
         Some("hwpx") => vec!["hwpx"],
         Some("docx") => vec!["docx"],
+        Some("image") if mode == "open" => vec!["png", "jpg", "jpeg"],
         None if mode == "open" => vec!["hwp", "hwpx", "docx"],
         _ => return Err(DocumentError::InvalidRequest),
     };

@@ -24,6 +24,7 @@ export function columnLetters(col: number): string {
 }
 
 function initialText(request: CommandInputRequest): string {
+  if (request.command === "insert.table") return "2";
   const shape = request.context.charShape;
   if (request.command === "hangul.charWidth") return shape ? String(shape.width) : "100";
   if (request.command === "hangul.charSpacing") return shape ? String(shape.spacing) : "0";
@@ -41,6 +42,7 @@ export function CommandInputDialog({ request, onCancel, onConfirm, suspended = f
 }) {
   const { t } = useTranslation();
   const [text, setText] = useState(() => initialText(request));
+  const [tableCols, setTableCols] = useState("2");
   const [error, setError] = useState<MessageKey | null>(null);
   const ref = useRef<HTMLDivElement>(null);
   const openerRef = useRef<HTMLElement | null>(null);
@@ -59,6 +61,7 @@ export function CommandInputDialog({ request, onCancel, onConfirm, suspended = f
   }, [suspended]);
   if (suspended) return null;
 
+  const table = request.command === "insert.table";
   const formula = request.command === "hangul.tableFormula" || request.command === "hangul.insertTableFormula";
   const comment = request.command === "review.comment";
   const note = request.command === "references.footnote" || request.command === "references.endnote";
@@ -67,7 +70,15 @@ export function CommandInputDialog({ request, onCancel, onConfirm, suspended = f
   const cell = request.context.tableCell;
   const submit = () => {
     let args: DocumentCommandArgs;
-    if (comment) {
+    if (table) {
+      const rows = /^\d{1,2}$/.test(text.trim()) ? Number(text.trim()) : NaN;
+      const cols = /^\d{1,2}$/.test(tableCols.trim()) ? Number(tableCols.trim()) : NaN;
+      if (!Number.isSafeInteger(rows) || rows < 1 || rows > 32 || !Number.isSafeInteger(cols) || cols < 1 || cols > 16) {
+        return setError("commandInput.table.dimensions");
+      }
+      if (rows * cols > 256) return setError("commandInput.table.tooManyCells");
+      args = { command: "insert.table", rows, cols };
+    } else if (comment) {
       const problem = commentProblem(text);
       if (problem) return setError(`commandInput.comment.${problem}` as MessageKey);
       args = { command: "review.comment", text: text.trim() };
@@ -114,7 +125,22 @@ export function CommandInputDialog({ request, onCancel, onConfirm, suspended = f
           }
         }}>
         <h2 id={titleId} className="discard-dialog__title">{t(request.labelKey)}</h2>
-        <label style={{ display: "block" }}>
+        {table ? <>
+          <label style={{ display: "block" }}>
+            {t("commandInput.table.rows.label")}{" "}
+            <input type="text" inputMode="numeric" pattern="[0-9]*" data-testid="command-input-rows" value={text}
+              maxLength={2} autoComplete="off" aria-invalid={error !== null || undefined}
+              aria-describedby={error ? `${hintId} ${errorId}` : hintId}
+              onChange={event => { setText(event.target.value); setError(null); }} />
+          </label>
+          <label style={{ display: "block" }}>
+            {t("commandInput.table.cols.label")}{" "}
+            <input type="text" inputMode="numeric" pattern="[0-9]*" data-testid="command-input-cols" value={tableCols}
+              maxLength={2} autoComplete="off" aria-invalid={error !== null || undefined}
+              aria-describedby={error ? `${hintId} ${errorId}` : hintId}
+              onChange={event => { setTableCols(event.target.value); setError(null); }} />
+          </label>
+        </> : <label style={{ display: "block" }}>
           {t(comment ? "commandInput.comment.label" : note ? "commandInput.note.label" : formula ? "commandInput.formula.label" : "commandInput.percent.label")}{" "}
           <input
             type="text"
@@ -129,9 +155,9 @@ export function CommandInputDialog({ request, onCancel, onConfirm, suspended = f
             onChange={event => { setText(event.target.value); setError(null); }}
           />
           {!textual && <span aria-hidden="true"> %</span>}
-        </label>
+        </label>}
         <p id={hintId} className="discard-dialog__hint">
-          {comment ? t("commandInput.comment.hint") : note ? t("commandInput.note.hint") : formula && cell
+          {table ? t("commandInput.table.hint") : comment ? t("commandInput.comment.hint") : note ? t("commandInput.note.hint") : formula && cell
             ? t((request.command === "hangul.insertTableFormula" ? "commandInput.persistentFormula.hint" : "commandInput.formula.hint"), { cell: `${columnLetters(cell.col)}${cell.row + 1}`, rows: cell.rows, cols: cell.cols })
             : t(request.command === "hangul.charWidth" ? "commandInput.charWidth.hint" : "commandInput.charSpacing.hint",
               { min: range.min, max: range.max })}
@@ -140,7 +166,7 @@ export function CommandInputDialog({ request, onCancel, onConfirm, suspended = f
         <div className="discard-dialog__actions">
           <button type="button" className="document-bar__button" onClick={onCancel}>{t("document.cancel")}</button>
           <button type="button" className="document-bar__button" data-testid="command-input-confirm" onClick={submit}>
-            {t(comment ? "commandInput.comment.confirm" : note ? "commandInput.note.confirm" : formula ? "commandInput.formula.confirm" : "commandInput.apply")}
+            {t(table ? "commandInput.table.confirm" : comment ? "commandInput.comment.confirm" : note ? "commandInput.note.confirm" : formula ? "commandInput.formula.confirm" : "commandInput.apply")}
           </button>
         </div>
       </div>

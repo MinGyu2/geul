@@ -17,6 +17,7 @@ export const MAX_FORMULA_LENGTH = 256;
 export const MAX_FORMULA_DEPTH = 16;
 
 const PARAMETER_COMMANDS: ReadonlySet<string> = new Set<ParameterCommandId>([
+  "insert.table",
   "hangul.charWidth", "hangul.charSpacing", "hangul.tableFormula", "hangul.insertTableFormula", "review.comment",
   "references.footnote", "references.endnote",
 ]);
@@ -33,6 +34,7 @@ export function commentProblem(text: string): "empty" | "tooLong" | "characters"
 }
 
 const ACTION_COMMANDS: ReadonlySet<string> = new Set<ActionCommandId>([
+  "insert.image", "paragraph.bullets",
   "references.toc", "references.updateToc",
   "review.trackChanges", "review.acceptChange", "review.rejectChange", "review.acceptAll", "review.rejectAll",
 ]);
@@ -247,6 +249,9 @@ export function validateCommandArgs(command: string, args: unknown, context: Com
   const value = args as Record<string, unknown>;
   const keys = Object.keys(value).sort().join(",");
   switch (command) {
+    case "insert.table":
+      return keys === "cols,command,rows" && integerIn(value.rows, { min: 1, max: 32 })
+        && integerIn(value.cols, { min: 1, max: 16 }) && value.rows * value.cols <= 256;
     case "hangul.charWidth":
       return keys === "command,percent" && integerIn(value.percent, CHAR_WIDTH_RANGE);
     case "hangul.charSpacing":

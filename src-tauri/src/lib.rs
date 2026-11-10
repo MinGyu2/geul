@@ -10,6 +10,7 @@ pub mod adapters;
 mod clipboard;
 pub mod document;
 mod ime;
+mod picture;
 pub mod services;
 mod window_close;
 
@@ -76,6 +77,7 @@ pub fn run() {
             adapters::wordcraft::commands::docx_view,
             adapters::wordcraft::commands::docx_selection_text,
             clipboard::clipboard_read_text,
+            picture::picture_import,
             adapters::wordcraft::commands::docx_edit,
             adapters::wordcraft::commands::docx_render,
             adapters::wordcraft::commands::docx_roundtrip,

@@ -12546,3 +12546,450 @@ mod rhwp_checkpoint {
         assert!(store.list().unwrap().is_empty());
     }
 }
+
+#[test]
+fn core_table_native_edit_publish_reopen() {
+    use wordcraft_engine::doc::Block;
+    let original = basic::basic_ko().unwrap();
+    for to in [MoveTarget::DocStart, MoveTarget::DocEnd] {
+        let mut doc = open_docx(&original);
+        let ops = vec![
+            DocxOp::Move { to, extend: false },
+            DocxOp::Table { rows: 2, cols: 3 },
+            DocxOp::InsertText {
+                text: "새 셀 한글".into(),
+            },
+            DocxOp::Tab { back: false },
+            DocxOp::InsertText {
+                text: "Second".into(),
+            },
+            DocxOp::Tab { back: true },
+            DocxOp::Move {
+                to: MoveTarget::LineEnd,
+                extend: false,
+            },
+            DocxOp::InsertText {
+                text: " 끝".into()
+            },
+        ];
+        let edited = block_on(docx::edit(
+            &doc.state,
+            doc.info.session_id,
+            doc.info.load_generation,
+            doc.info.revision,
+            ops,
+        ))
+        .unwrap();
+        assert!(edited.rejected.is_empty());
+        assert_eq!(edited.session.revision - doc.info.revision, 4);
+        doc.info = edited.session;
+        assert!(doc.preflight().unwrap().preservation.is_safe());
+        assert!(doc.save().unwrap().durable);
+        let written = doc.bytes();
+        let reopened = wordcraft_engine::io::open_bytes("x.docx", &written).unwrap();
+        let tables: Vec<_> = reopened
+            .body
+            .iter()
+            .filter_map(|b| {
+                if let Block::Table(t) = b.as_ref() {
+                    Some(t)
+                } else {
+                    None
+                }
+            })
+            .collect();
+        assert_eq!(tables.len(), 2);
+        let table = tables
+            .iter()
+            .find(|t| t.rows.len() == 2 && t.rows[0].cells.len() == 3)
+            .unwrap();
+        assert_eq!(
+            table.rows[0].cells[0].blocks[0].as_para().unwrap().text,
+            "새 셀 한글 끝"
+        );
+        assert_eq!(
+            table.rows[0].cells[1].blocks[0].as_para().unwrap().text,
+            "Second"
+        );
+        assert!(DocxModel::open(&written)
+            .unwrap()
+            .body_text()
+            .contains(basic::PARAGRAPHS[0]));
+        assert!(package::compare_saved_docx(
+            &package::open(&original, package::Side::Original).unwrap(),
+            &package::open(&written, package::Side::Output).unwrap()
+        )
+        .is_empty());
+    }
+}
+
+#[test]
+fn core_picture_native_embed_publish_reopen() {
+    for format in [image::ImageFormat::Png, image::ImageFormat::Jpeg] {
+        let mut encoded = std::io::Cursor::new(Vec::new());
+        image::DynamicImage::new_rgb8(12, 8)
+            .write_to(&mut encoded, format)
+            .unwrap();
+        let bytes = encoded.into_inner();
+        if let Some(root) = std::env::var_os("GEUL_CORE_EVIDENCE") {
+            let root = std::path::PathBuf::from(root);
+            std::fs::create_dir_all(&root).unwrap();
+            std::fs::write(
+                root.join(if format == image::ImageFormat::Png {
+                    "blue.png"
+                } else {
+                    "orange.jpg"
+                }),
+                &bytes,
+            )
+            .unwrap();
+        }
+        let mut doc = open_docx(&basic::basic_ko().unwrap());
+        doc.edit(vec![DocxOp::Image {
+            data: wordcraft_engine::cmd::insert::base64_encode(&bytes),
+        }]);
+        assert_eq!(doc.info.revision, 1);
+        assert!(doc.preflight().unwrap().preservation.is_safe());
+        let saved = doc.save();
+        assert!(saved.is_ok(), "{saved:?}");
+        let written = doc.bytes();
+        let reopened = wordcraft_engine::io::open_bytes("x.docx", &written).unwrap();
+        assert!(reopened.media.iter().any(|(_, m)| m.as_ref() == &bytes));
+        let mut model = DocxModel::open(&written).unwrap();
+        assert!(model.round_trip().unwrap().passed);
+        assert!(model.render_png(0, 1.0).is_some());
+        assert!(model.body_text().contains(basic::PARAGRAPHS[0]));
+    }
+}
+
+#[test]
+fn core_bullets_native_enter_toggle_publish_reopen() {
+    let mut doc = open_docx(&basic::basic_ko().unwrap());
+    let ops = vec![
+        DocxOp::Move {
+            to: MoveTarget::DocEnd,
+            extend: false,
+        },
+        DocxOp::NewParagraph,
+        DocxOp::Bullets {},
+        DocxOp::InsertText {
+            text: "첫 항목".into(),
+        },
+        DocxOp::NewParagraph,
+        DocxOp::InsertText {
+            text: "Second 😀".into(),
+        },
+        DocxOp::NewParagraph,
+        DocxOp::NewParagraph,
+        DocxOp::InsertText {
+            text: "일반 문단".into(),
+        },
+    ];
+    let edited = block_on(docx::edit(
+        &doc.state,
+        doc.info.session_id,
+        doc.info.load_generation,
+        doc.info.revision,
+        ops,
+    ))
+    .unwrap();
+    assert!(edited.rejected.is_empty());
+    assert_eq!(edited.view.bullets, Some(false));
+    doc.info = edited.session;
+    assert!(doc.preflight().unwrap().preservation.is_safe());
+    let saved = doc.save();
+    assert!(saved.is_ok(), "{saved:?}");
+    let bytes = doc.bytes();
+    let reopened = wordcraft_engine::io::open_bytes("x.docx", &bytes).unwrap();
+    let is_bullet = |p: &wordcraft_engine::doc::Paragraph| {
+        wordcraft_engine::cmd::para::list_buttons(
+            &reopened,
+            reopened.styles.resolve_para(&p.props).numbering,
+        )
+        .bullets
+    };
+    let paras: Vec<_> = reopened.body.iter().filter_map(|b| b.as_para()).collect();
+    for text in ["첫 항목", "Second 😀"] {
+        assert!(is_bullet(paras.iter().find(|p| p.text == text).unwrap()));
+    }
+    assert!(!is_bullet(
+        paras.iter().find(|p| p.text == "일반 문단").unwrap()
+    ));
+    // Reuse the newly saved numbering part; toggling on/off does not mutate it.
+    doc.info = saved.unwrap().session;
+    doc.edit(vec![DocxOp::Bullets {}, DocxOp::Bullets {}]);
+    assert!(doc.preflight().unwrap().preservation.is_safe());
+    assert!(doc.save().is_ok());
+    assert!(DocxModel::open(&doc.bytes())
+        .unwrap()
+        .body_text()
+        .contains(basic::PARAGRAPHS[0]));
+}
+
+#[test]
+fn core_mixed_docx_preserves_existing_media_numbering_and_parts() {
+    let mut seed = docx_diagnostics::rich_fixture(true, true, true, false, false);
+    seed.run("caret.docEnd", &json!({})).unwrap();
+    seed.run("text.newParagraph", &json!({})).unwrap();
+    seed.run("para.numbering", &json!({})).unwrap();
+    seed.run(
+        "text.insert",
+        &json!({"text":"Original numbered item", "raw":true}),
+    )
+    .unwrap();
+    let original = wordcraft_engine::io::save_bytes("x.docx", &seed.doc).unwrap();
+    let mut encoded = std::io::Cursor::new(Vec::new());
+    image::DynamicImage::new_rgb8(4, 3)
+        .write_to(&mut encoded, image::ImageFormat::Png)
+        .unwrap();
+    let mut doc = open_docx(&original);
+    let ops = vec![
+        DocxOp::Move {
+            to: MoveTarget::DocStart,
+            extend: false,
+        },
+        DocxOp::Table { rows: 2, cols: 2 },
+        DocxOp::InsertText {
+            text: "New cell".into(),
+        },
+        DocxOp::Move {
+            to: MoveTarget::DocEnd,
+            extend: false,
+        },
+        DocxOp::NewParagraph,
+        DocxOp::Bullets {},
+        DocxOp::InsertText {
+            text: "새 목록".into(),
+        },
+        DocxOp::NewParagraph,
+        DocxOp::Image {
+            data: wordcraft_engine::cmd::insert::base64_encode(encoded.get_ref()),
+        },
+    ];
+    let edited = block_on(docx::edit(
+        &doc.state,
+        doc.info.session_id,
+        doc.info.load_generation,
+        doc.info.revision,
+        ops,
+    ))
+    .unwrap();
+    assert!(edited.rejected.is_empty());
+    doc.info = edited.session;
+    assert!(doc.preflight().unwrap().preservation.is_safe());
+    let saved = doc.save();
+    assert!(saved.is_ok(), "{saved:?}");
+    let bytes = doc.bytes();
+    let before = package::open(&original, package::Side::Original).unwrap();
+    let after = package::open(&bytes, package::Side::Output).unwrap();
+    assert!(package::compare_saved_docx(&before, &after).is_empty());
+    for (name, (_, old)) in &before.parts {
+        if name.starts_with("word/media/")
+            || name.starts_with("word/header")
+            || name.starts_with("word/footer")
+        {
+            assert_eq!(after.get(name), Some(old.as_slice()));
+        }
+    }
+    for (part, from, to) in [
+        ("word/numbering.xml", "w:val=\"•\"", "w:val=\"◆\""),
+        (
+            "word/numbering.xml",
+            "w:val=\"decimal\"",
+            "w:val=\"upperRoman\"",
+        ),
+    ] {
+        let mut bad = package::open(&bytes, package::Side::Output).unwrap();
+        let text = String::from_utf8(bad.get(part).unwrap().to_vec()).unwrap();
+        assert!(text.contains(from));
+        bad.parts.get_mut(part).unwrap().1 = text.replacen(from, to, 1).into_bytes();
+        assert!(!package::compare_saved_docx(&before, &bad).is_empty());
+    }
+    let media = after
+        .parts
+        .keys()
+        .find(|n| n.starts_with("word/media/") && !before.parts.contains_key(*n))
+        .unwrap();
+    let mut bad = package::open(&bytes, package::Side::Output).unwrap();
+    bad.parts.get_mut(media).unwrap().1 = b"invalid image".to_vec();
+    assert!(!package::compare_saved_docx(&before, &bad).is_empty());
+    let mut bad = package::open(&bytes, package::Side::Output).unwrap();
+    let rels =
+        String::from_utf8(bad.get("word/_rels/document.xml.rels").unwrap().to_vec()).unwrap();
+    let target = format!("Target=\"{}\"", media.strip_prefix("word/").unwrap());
+    assert!(rels.contains(&target));
+    bad.parts.get_mut("word/_rels/document.xml.rels").unwrap().1 = rels
+        .replacen(&target, &format!("{target} TargetMode=\"External\""), 1)
+        .into_bytes();
+    assert!(!package::compare_saved_docx(&before, &bad).is_empty());
+    let mut bad = package::open(&bytes, package::Side::Output).unwrap();
+    bad.parts.insert(
+        "word/media/orphan.png".into(),
+        (0, encoded.get_ref().clone()),
+    );
+    assert!(!package::compare_saved_docx(&before, &bad).is_empty());
+    let old_media = before
+        .parts
+        .keys()
+        .find(|n| n.starts_with("word/media/"))
+        .unwrap();
+    let mut bad = package::open(&bytes, package::Side::Output).unwrap();
+    bad.parts.get_mut(old_media).unwrap().1.push(0);
+    assert!(!package::compare_saved_docx(&before, &bad).is_empty());
+}
+
+#[test]
+fn core_picture_refuses_unpreservable_drawings_in_other_stories() {
+    let seed = docx_diagnostics::rich_fixture(true, true, true, true, true);
+    let bytes = wordcraft_engine::io::save_bytes("x.docx", &seed.doc).unwrap();
+    let mut model = DocxModel::open(&bytes).unwrap();
+    assert!(!model.view().image_insertion_allowed);
+    let mut encoded = std::io::Cursor::new(Vec::new());
+    image::DynamicImage::new_rgb8(4, 3)
+        .write_to(&mut encoded, image::ImageFormat::Png)
+        .unwrap();
+    assert_eq!(
+        model
+            .apply(&[DocxOp::Image {
+                data: wordcraft_engine::cmd::insert::base64_encode(encoded.get_ref())
+            }])
+            .rejected,
+        vec![0]
+    );
+    assert!(model.same_as(&bytes));
+}
+
+/// Generate authenticated Release WASM artifacts first with core-features.wasm.test.ts.
+/// This explicit integration test never substitutes a fabricated reopen verdict.
+#[test]
+#[ignore = "requires GEUL_CORE_WASM_OUT from the actual approved WASM test"]
+fn core_hwpx_real_publication_from_verified_wasm_outputs() {
+    use sha2::{Digest, Sha256};
+    let root = std::path::PathBuf::from(
+        std::env::var_os("GEUL_CORE_WASM_OUT").expect("actual WASM evidence directory"),
+    );
+    let saved_root =
+        std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("target/core-publications");
+    std::fs::create_dir_all(&saved_root).unwrap();
+    for stem in [
+        "table",
+        "image-png",
+        "image-jpg",
+        "bullets",
+        "bullets-off",
+        "mixed",
+        "second-cycle",
+    ] {
+        let original = std::fs::read(root.join(format!("{stem}-original.hwpx"))).unwrap();
+        let output = std::fs::read(root.join(format!("{stem}.hwpx"))).unwrap();
+        let loss: Value =
+            serde_json::from_slice(&std::fs::read(root.join(format!("{stem}.loss.json"))).unwrap())
+                .unwrap();
+        let proof: Value = serde_json::from_slice(
+            &std::fs::read(root.join(format!("{stem}.proof.json"))).unwrap(),
+        )
+        .unwrap();
+        assert_eq!(
+            proof["sha256"],
+            json!(format!("{:x}", Sha256::digest(&output)))
+        );
+        let reopen = proof["reopen"].as_bool().unwrap();
+        assert!(reopen);
+        let plain = std::fs::read(root.join(format!("{stem}-preflight.hwpx"))).unwrap();
+        let plain_loss: Value = serde_json::from_slice(
+            &std::fs::read(root.join(format!("{stem}-preflight.loss.json"))).unwrap(),
+        )
+        .unwrap();
+        let state = DocumentState::default();
+        let dir = TempDir::new();
+        let info = rhwp_session(&state, &dir, "a.hwpx", &original);
+        let registry = state.registry();
+        let source = registry
+            .preflight_source(info.session_id, info.load_generation)
+            .unwrap();
+        let check = service::preflight(Format::Hwpx, &original, &plain, Some(&plain_loss));
+        assert!(check.is_safe(), "{stem} {check:?}");
+        registry
+            .record_preflight(
+                info.session_id,
+                info.load_generation,
+                source.content_hash,
+                check,
+            )
+            .unwrap();
+        registry
+            .commit(info.session_id, info.load_generation, 0, 1)
+            .unwrap();
+        let ticket = registry
+            .begin_save(info.session_id, info.load_generation, 1)
+            .unwrap();
+        let saved = service::save(
+            registry,
+            &ticket,
+            &Limits::default(),
+            &output,
+            Some(&loss),
+            reopen,
+        )
+        .unwrap();
+        assert!(saved.durable);
+        assert!(!saved.session.dirty);
+        let published = std::fs::read(dir.path().join("a.hwpx")).unwrap();
+        assert_eq!(published, output);
+        std::fs::write(saved_root.join(format!("{stem}.hwpx")), published).unwrap();
+    }
+}
+
+#[test]
+fn core_docx_selected_paragraph_bullets_publish_and_remove() {
+    let original = wordcraft_engine::io::save_bytes(
+        "x.docx",
+        &wordcraft_engine::blank_document(&Default::default()),
+    )
+    .unwrap();
+    let mut doc = open_docx(&original);
+    let ops = vec![
+        DocxOp::InsertText {
+            text: "한글 첫 문단".into(),
+        },
+        DocxOp::NewParagraph,
+        DocxOp::InsertText {
+            text: "Second 😀".into(),
+        },
+        DocxOp::SelectAll,
+        DocxOp::Bullets {},
+    ];
+    let edited = block_on(docx::edit(
+        &doc.state,
+        doc.info.session_id,
+        doc.info.load_generation,
+        doc.info.revision,
+        ops,
+    ))
+    .unwrap();
+    assert!(edited.rejected.is_empty());
+    doc.info = edited.session;
+    assert!(doc.preflight().unwrap().preservation.is_safe());
+    let saved = doc.save().unwrap();
+    let check = |bytes: &[u8], bullet: bool| {
+        let d = wordcraft_engine::io::open_bytes("x.docx", bytes).unwrap();
+        let paragraphs: Vec<_> = d.body.iter().filter_map(|b| b.as_para()).collect();
+        assert_eq!(paragraphs.len(), 2);
+        for p in paragraphs {
+            assert_eq!(
+                wordcraft_engine::cmd::para::list_buttons(
+                    &d,
+                    d.styles.resolve_para(&p.props).numbering
+                )
+                .bullets,
+                bullet
+            );
+        }
+    };
+    check(&doc.bytes(), true);
+    doc.info = saved.session;
+    doc.edit(vec![DocxOp::SelectAll, DocxOp::Bullets {}]);
+    assert!(doc.preflight().unwrap().preservation.is_safe());
+    assert!(doc.save().is_ok());
+    check(&doc.bytes(), false);
+}

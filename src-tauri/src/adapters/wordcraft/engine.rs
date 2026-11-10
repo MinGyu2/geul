@@ -135,6 +135,17 @@ pub enum DocxOp {
     Endnote {
         text: String,
     },
+    /// Real body table at a collapsed caret; dimensions are bounded by validate.
+    Table {
+        rows: u16,
+        cols: u16,
+    },
+    /// Validated encoded PNG/JPEG only. Never accepts filesystem paths.
+    Image {
+        data: String,
+    },
+    /// Standard single-level unordered list using WordprocessingML numbering.
+    Bullets {},
     /// 목차 넣기(T013, `references.toc` → WordCraft `references.toc {}`): 본문 최상위 문단의 커서(선택 없음) 자리에 엔진의 목차
     /// (`TOCHeading` 문단의 빈 `TOC` 필드 + 제목 문단에서 만든 `TOCn` 항목, 쪽 번호는 엔진 배치)를 넣는다. 문서에 이미 목차가 있으면
     /// 엔진은 두 번째 목차를 만들지 않고 그 목차를 갱신한다(엔진 계약). 선택이 있으면 거부한다(엔진은 선택을 지움).
@@ -242,6 +253,11 @@ pub struct SelectionIdentity {
 pub fn validate(ops: &[DocxOp]) -> bool {
     !ops.is_empty()
         && ops.len() <= MAX_OPS
+        && ops
+            .iter()
+            .filter(|op| matches!(op, DocxOp::Image { .. }))
+            .count()
+            <= 1
         && ops.iter().all(|op| match op {
             DocxOp::InsertText { text } | DocxOp::InsertAt { text, .. } => valid_text(text),
             // 줄바꿈은 프런트엔드가 `\n` 하나로 맞춘다(`\r`은 거부).
@@ -259,6 +275,16 @@ pub fn validate(ops: &[DocxOp]) -> bool {
                 valid_text(text)
                     && text.chars().count() <= MAX_NOTE_CHARS
                     && !text.trim().is_empty()
+            }
+            DocxOp::Image { data } => {
+                data.len() <= crate::picture::MAX_BYTES.div_ceil(3) * 4
+                    && wordcraft_engine::cmd::insert::base64_decode(data)
+                        .is_some_and(|bytes| crate::picture::valid(&bytes))
+            }
+            DocxOp::Table { rows, cols } => {
+                (1..=32).contains(rows)
+                    && (1..=16).contains(cols)
+                    && u32::from(*rows) * u32::from(*cols) <= 256
             }
             DocxOp::Pointer { x, y, .. } => {
                 x.is_finite()
@@ -302,6 +328,8 @@ pub struct DocxView {
     pub tracked_read_only: bool,
     /// 본문에 갱신할 수 있는 목차가 있음(T013 `references.updateToc` 가용성, `DocxModel::has_toc`).
     pub has_toc: bool,
+    pub bullets: Option<bool>,
+    pub image_insertion_allowed: bool,
     /// 변경 내용 추적이 켜져 있음(`settings.track_changes`, 리본 단추 눌림 상태).
     pub tracking: bool,
     /// 추적된 변경이 하나라도 있음(수락·거절 가용성, `DocxModel::has_revisions`).
@@ -684,6 +712,47 @@ impl DocxModel {
             DocxOp::Comment { text } => self.new_comment(text),
             DocxOp::Footnote { text } => self.new_note("references.footnote", text),
             DocxOp::Endnote { text } => self.new_note("references.endnote", text),
+            DocxOp::Bullets {} => {
+                let (a, b) = self.session.sel.ordered();
+                if a.story != StoryRef::Body
+                    || b.story != StoryRef::Body
+                    || a.path.0.len() != 1
+                    || b.path.0.len() != 1
+                {
+                    return Err(Rejected);
+                }
+                if !(a.path.last()..=b.path.last()).all(|i| {
+                    self.session
+                        .doc
+                        .body
+                        .get(i)
+                        .is_some_and(|b| b.as_para().is_some())
+                }) {
+                    return Err(Rejected);
+                }
+                self.run("para.bullets", json!({}))
+            }
+            DocxOp::Image { data } => {
+                let at = &self.session.sel.focus;
+                if !self.session.sel.is_collapsed()
+                    || at.story != StoryRef::Body
+                    || at.path.0.len() != 1
+                    || !self.image_insertion_allowed()
+                {
+                    return Err(Rejected);
+                }
+                self.run("insert.picture", json!({"data": data}))
+            }
+            DocxOp::Table { rows, cols } => {
+                let at = &self.session.sel.focus;
+                if !self.session.sel.is_collapsed()
+                    || at.story != StoryRef::Body
+                    || at.path.0.len() != 1
+                {
+                    return Err(Rejected);
+                }
+                self.run("insert.table", json!({"rows": rows, "cols": cols}))
+            }
             DocxOp::Toc {} => self.toc(false),
             DocxOp::UpdateToc {} => self.toc(true),
             DocxOp::TrackChanges { value } => {
@@ -1024,6 +1093,24 @@ impl DocxModel {
         Ok(changed)
     }
 
+    fn image_insertion_allowed(&self) -> bool {
+        // The pinned writer renumbers drawings in later stories when a body
+        // picture is added. T009 correctly rejects those unrelated part changes.
+        // Keep this context disabled until the engine preserves drawing IDs.
+        self.session.doc.parts.iter().all(|(id, _)| {
+            self.session
+                .doc
+                .para_paths(StoryRef::Part(*id))
+                .iter()
+                .all(|path| {
+                    self.session
+                        .doc
+                        .para(StoryRef::Part(*id), path)
+                        .is_some_and(|p| p.objects.is_empty())
+                })
+        })
+    }
+
     pub fn view(&mut self) -> DocxView {
         let layout = self.session.layout();
         let hint = self.session.page_hint;
@@ -1072,6 +1159,14 @@ impl DocxModel {
             tracking: self.session.doc.settings.track_changes,
             has_revisions: self.has_revisions(),
             has_toc: self.has_toc(),
+            image_insertion_allowed: self.image_insertion_allowed(),
+            bullets: sel.is_collapsed().then(|| {
+                self.session.doc.para_at(&sel.focus).is_some_and(|p| {
+                    let props = self.session.doc.styles.resolve_para(&p.props);
+                    wordcraft_engine::cmd::para::list_buttons(&self.session.doc, props.numbering)
+                        .bullets
+                })
+            }),
             pages: layout
                 .pages
                 .iter()

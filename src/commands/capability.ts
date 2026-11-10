@@ -60,6 +60,8 @@ export function documentCommandState(id: DocumentCommandId, snapshot: DocumentCo
     if (id !== "edit.paste" && !snapshot.clipboard.selection) return unavailable("selectionRequired");
     return ENABLED;
   }
+  if (["insert.table", "insert.image", "paragraph.bullets"].includes(id) && snapshot.saving) return unavailable("saving");
+  if (["insert.table", "insert.image", "paragraph.bullets"].includes(id) && snapshot.formatAccess === "protected") return unavailable("protected");
   if (!snapshot.editable) return unavailable("notReady");
   if (snapshot.composing) return unavailable("composing");
   if (snapshot.historyScope === "advanced" && snapshot.pending

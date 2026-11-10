@@ -19,6 +19,7 @@
     "allow-docx-view",
     "allow-docx-selection-text",
     "allow-clipboard-read-text",
+    "allow-picture-import",
     "allow-docx-edit",
     "allow-docx-render",
     "allow-docx-roundtrip",

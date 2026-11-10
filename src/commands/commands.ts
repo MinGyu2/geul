@@ -11,12 +11,14 @@ import type { LayoutAction, LayoutState, Theme } from "../hooks/layoutState";
 import { documentCommandState, ENABLED, unavailable, type CommandState } from "./capability";
 import { commandDefinition, isDocumentCommandId } from "./registry";
 import { isParameterCommandId } from "./parameters";
-import type { CommandParameterContext, DocumentCommandArgs, DocumentCommandTarget, ParameterCommandId } from "./target";
+import type { CommandParameterContext, DocumentCommandArgs, DocumentCommandTarget, ImportedPicture, ParameterCommandId } from "./target";
 import { trace } from "../components/Editor/imeTrace";
 
 export type { CommandState, UnavailableReason } from "./capability";
 
 export interface CommandContext {
+  imageOwner?: (target: DocumentCommandTarget) => () => boolean;
+  pickImage?: () => Promise<ImportedPicture | null>;
   /** Live ownership check; invalidates an async action on document/modal/focus changes. */
   clipboardOwner?: ((target: DocumentCommandTarget) => () => boolean) | undefined;
   layout: LayoutState;
@@ -46,6 +48,8 @@ export interface CommandInputRequest {
   sessionId: SessionId;
   loadGeneration: number;
   revision: number;
+  /** Captures table insertion ownership even when the caret moves without an edit. */
+  selectionKey?: string;
   context: CommandParameterContext;
 }
 
@@ -190,6 +194,15 @@ export function executeCommand(
     return true;
   }
   if (!isDocumentCommandId(id) || !context.document) return reject(unavailable("notImplemented"));
+  if (id === "insert.image") {
+    const target = context.document;
+    if (args !== undefined) return reject(unavailable("notReady"));
+    if (!target.executeImage || !context.imageOwner || !context.pickImage) return reject(unavailable("notReady"));
+    void target.executeImage(context.imageOwner(target), context.pickImage).then(result => {
+      if (result === "failed" || result === "stale") context.notify({ key: result === "stale" ? "picture.stale" : "picture.failed" });
+    }).catch(() => context.notify({ key: "picture.failed" }));
+    return true;
+  }
   if (isClipboardCommand(id)) {
     const target = context.document;
     if (!target.executeClipboard || !context.clipboardOwner) return reject(unavailable("notReady"));
@@ -208,6 +221,7 @@ export function executeCommand(
     context.requestInput({
       command: id, labelKey: label, sessionId: snapshot.sessionId, loadGeneration: snapshot.loadGeneration,
       revision: snapshot.revision, context: parameters,
+      ...(id === "insert.table" && snapshot.clipboard ? { selectionKey: snapshot.clipboard.key } : {}),
     });
     trace("command:input", () => ({ id }));
     return true;
