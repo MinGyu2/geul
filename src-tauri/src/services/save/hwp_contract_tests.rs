@@ -1608,3 +1608,134 @@ fn hwp_hardening_mutate_empty_character_context() {
     });
     std::fs::write(path, output).unwrap();
 }
+
+/// Phase 4: the contract corruptions applied to an actual product save payload (the exact bytes the
+/// RHWP session sent to Save for a table + picture + bullets edit), not to the synthetic fixture.
+#[test]
+#[ignore = "requires the product corpus of scripts/tests/hwp-core-commands.wasm.test.ts"]
+fn hwp_phase4_product_output_corruptions() {
+    let root = std::path::PathBuf::from(
+        std::env::var_os("GEUL_HWP_PRODUCT_DIR").expect("product corpus directory"),
+    );
+    let folder = root.join("P-combined");
+    let original = std::fs::read(folder.join("original.hwp")).unwrap();
+    let output = std::fs::read(folder.join("edited.hwp")).unwrap();
+    let loss = report("hwp", json!([]));
+    // Control: the unmodified product output is refused only for its stale preview and publishes with one.
+    let raw = service::check_saved(Format::Hwp, &original, &output, Some(&loss), true);
+    assert!(
+        !raw.findings.is_empty()
+            && raw
+                .findings
+                .iter()
+                .all(|f| f.code == FindingCode::PreviewStale),
+        "{raw:?}"
+    );
+    let (stale, bytes, info) = publish(&original, &output, None);
+    let Err(DocumentError::UnsafeSave { preservation }) = stale else {
+        panic!("stale preview published: {stale:?}")
+    };
+    assert!(preservation
+        .findings
+        .iter()
+        .any(|f| f.code == FindingCode::PreviewStale));
+    assert_eq!(bytes, original, "stale preview: original modified");
+    assert!(info.dirty && info.revision == 1);
+    let mut results = vec![
+        json!({"mutation":"stale preview (no regenerated raster)","actual":preservation,"publicationPrevented":true,"originalIntact":true}),
+    ];
+    let (control, published, info) = publish(&original, &output, Some(&raster()));
+    assert!(control.unwrap().durable && !info.dirty && published != original);
+
+    let body = "BodyText/Section0";
+    let new_bin = stream_map(&output)
+        .keys()
+        .find(|k| k.starts_with("/BinData/") && !stream_map(&original).contains_key(*k))
+        .cloned()
+        .expect("product output embeds a new BinData stream");
+    let mut missing = stream_map(&output);
+    missing.remove(&new_bin);
+    let table = |r: &mut Records| -> usize {
+        r.iter()
+            .position(|r| r.0 == 71 && r.2.starts_with(b" lbt"))
+            .unwrap()
+    };
+    let picture = |r: &mut Records| -> usize {
+        r.iter()
+            .position(|r| r.0 == 71 && r.2.starts_with(b" osg"))
+            .unwrap()
+    };
+    use FindingCode::{OutputMalformed as Bad, RecordsChanged as Changed, ReferenceInvalid as Ref};
+    let cases: Vec<(&str, Vec<u8>, FindingCode, &str)> = vec![
+        (
+            "missing new BinData stream",
+            from_map(&missing),
+            Ref,
+            new_bin.trim_start_matches('/'),
+        ),
+        (
+            "picture id dangling",
+            edit_records(&output, "/BodyText/Section0", |r| {
+                w(&mut nth(r, 85, 0).2, 71, 99)
+            }),
+            Ref,
+            body,
+        ),
+        (
+            "floating picture",
+            edit_records(&output, "/BodyText/Section0", |r| {
+                let at = picture(r);
+                d(&mut r[at].2, 4, 0xa0310)
+            }),
+            Changed,
+            body,
+        ),
+        (
+            "TBL001 raw table state",
+            edit_records(&output, "/BodyText/Section0", |r| {
+                let at = table(r);
+                d(&mut r[at].2, 4, 0x002a0310)
+            }),
+            Changed,
+            body,
+        ),
+        (
+            "invalid cell span",
+            edit_records(&output, "/BodyText/Section0", |r| {
+                w(&mut nth(r, 72, 0).2, 12, 2)
+            }),
+            Bad,
+            body,
+        ),
+        (
+            "dangling bullet reference",
+            edit_records(&output, "/DocInfo", |r| {
+                let bullet = r
+                    .iter_mut()
+                    .filter(|r| r.0 == 25)
+                    .find(|r| (u32::from_le_bytes(r.2[..4].try_into().unwrap()) >> 23) & 3 == 3)
+                    .unwrap();
+                w(&mut bullet.2, 30, 9)
+            }),
+            Ref,
+            "DocInfo",
+        ),
+        (
+            "existing bullet definition rewrite",
+            edit_records(&output, "/DocInfo", |r| nth(r, 24, 0).2[12] ^= 1),
+            Changed,
+            "DocInfo",
+        ),
+    ];
+    for (name, mutated, code, part) in &cases {
+        assert_ne!(mutated, &output, "{name}: mutation had no effect");
+        assert_rejected(name, &original, mutated, *code, part);
+        results.push(json!({"mutation":name,"expected":Finding::at(*code, part),"publicationPrevented":true,"originalIntact":true}));
+    }
+    std::fs::write(
+        root.join("product-corruptions.json"),
+        serde_json::to_vec_pretty(&json!({"source":"P-combined/edited.hwp","results":results}))
+            .unwrap(),
+    )
+    .unwrap();
+}

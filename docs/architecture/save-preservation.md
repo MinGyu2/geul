@@ -1584,3 +1584,7 @@ Phase 2 수치(199/18, 61 mutation, 17 publication, 7 Canvas 및 11 image hash)�
 ## HWP 제품 명령 연결 — 2026-11-10
 
 T009 규칙은 바꾸지 않았다. HWP 표·인라인 그림·글머리표 명령이 제품 경로에서 이 계약을 사용한다. 상세 재열기 모델은 필수 getter 필드를 검증하며(누락·형식 오류는 실패, 검증 불가 상태는 구조 변경 시 거부), HWP 표는 직렬화 CTRL_HEADER와 같은 live 정규화를 쓴다. 제품 payload 8건의 production 게시·재열기와 OPAQUE-001 거부는 [핵심 문서 삽입 — HWP Phase 3](core-insertions.md#hwp-제품-명령-연결--phase-3-2026-11-10)에 기록했다.
+
+### Phase 4 통합 수용 (2026-11-10)
+
+T009 규칙은 바꾸지 않았다. 제품 세션이 만든 HWP 저장 payload 10건(양성, 2차 저장 포함)을 production 서비스로 게시했고, 미리보기는 실제 Firefox Canvas의 제품 `capturePreviewRaster`로 재생성했다. 실제 제품 출력에 적용한 BinData·참조·표·글머리표 손상 7종과 미리보기 없음은 모두 거부되고 원본이 보존됐다. 원본 사전검사 SAFE는 편집 출력의 수용을 보장하지 않는다(측정: complete·SAFE 샘플 108개 중 구조 삽입 수용 6개). 상세는 [핵심 문서 삽입 — Phase 4](core-insertions.md#hwp-비gui-저장재열기-통합-수용--phase-4-2026-11-10).

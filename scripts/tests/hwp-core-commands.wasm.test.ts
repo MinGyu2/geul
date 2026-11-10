@@ -388,12 +388,120 @@ describe.runIf(phase === "generate")("HWP product insertions publish through T00
   });
 });
 
+const sample = (name: string) => new Uint8Array(readFileSync(join(root, "external/rhwp/samples", name)));
+const negatives: Record<string, unknown> = {};
+const noteNegative = (id: string, value: unknown) => { negatives[id] = value; writeFileSync(join(out, "product-negatives.json"), JSON.stringify(negatives, null, 2)); };
+
+describe.runIf(phase === "generate")("Phase 4: genuine Hancom original and further fail-closed product paths", () => {
+  // Measured on the selected engine: of 108 complete + preflight-SAFE single-section samples only 6 accept
+  // these insertions under T009 (target/hwp-phase3-phase4/sample-insertion-matrix.json). test-image.hwp is one
+  // of them and already embeds a picture; h-pen-01.hwp is SAFE as an original but its edited reserialization
+  // is refused (N7 below).
+  it("P-sample: table + bullets + inline PNG on test-image.hwp (existing embedded picture, non-empty previews)", async () => {
+    const original = sample("test-image.hwp"), ctx = await open(original);
+    try {
+      expect(ctx.probe?.preflight.outcome).toBe("safe");
+      for (const id of ["insert.table", "insert.image", "paragraph.bullets"] as const) expect(available(ctx, id).available, id).toBe(true);
+      expect(ctx.editor.execute("paragraph.bullets").accepted).toBe(true); await ctx.settle();
+      ctx.editor.moveLineEdge("end", false);
+      expect(await ctx.editor.executeImage(() => true, picture(png))).toBe("inserted"); await ctx.settle();
+      expect(ctx.editor.execute("insert.table", { command: "insert.table", rows: 2, cols: 2 }).accepted).toBe(true); await ctx.settle();
+      expect(ctx.editor.typeText("한컴 원본 셀")).toBe(true); await ctx.settle();
+      const s = await save(ctx, original);
+      expectPublishable(s, ctx);
+      record("P-sample", original, s, ctx, { inputSha256: sha(png), inputFile: "input.png", source: "external/rhwp/samples/test-image.hwp" });
+    } finally { ctx.editor.dispose(); }
+  });
+  it("N7: a preflight-SAFE Hancom original whose edited reserialization T009 refuses (h-pen-01.hwp)", async () => {
+    const original = sample("h-pen-01.hwp"), ctx = await open(original);
+    try {
+      expect(ctx.probe?.preflight.outcome).toBe("safe");
+      expect(available(ctx, "insert.table").available).toBe(true); // no reliable pre-mutation signal exists
+      expect(ctx.editor.execute("insert.table", { command: "insert.table", rows: 2, cols: 2 }).accepted).toBe(true); await ctx.settle();
+      const s = await save(ctx, original);
+      expect(s.raw.outcome).toBe("unsafe");
+      expect(s.raw.findings.map((f: { code: string }) => f.code)).toContain("recordsChanged");
+      expect(s.result).toMatchObject({ ok: false, error: { code: "UnsafeSave" } });
+      expect(ctx.editor.saveState).toMatchObject({ kind: "failed" });
+      expect(ctx.editor.snapshot().revision).toBe(1);
+      record("N7-hancom-reserialization", original, s, ctx, { source: "external/rhwp/samples/h-pen-01.hwp" }, "recordsChanged");
+    } finally { ctx.editor.dispose(); }
+  });
+  it("P-table-max: the 256-cell limit (32×8) inserts, compares within budget and publishes", async () => {
+    const original = source(text), ctx = await open(original);
+    try {
+      expect(ctx.editor.execute("insert.table", { command: "insert.table", rows: 32, cols: 8 }).accepted).toBe(true); await ctx.settle();
+      for (let i = 0; i < 255; i++) expect(ctx.editor.moveCell(1)).toBe(true);
+      expect(ctx.editor.typeText("마지막 셀 256")).toBe(true); await ctx.settle();
+      let started = performance.now();
+      const model = hwpReopenModel(ctx.doc); const modelMs = performance.now() - started;
+      expect(model.complete).toBe(true);
+      started = performance.now();
+      const s = await save(ctx, original); const saveMs = performance.now() - started;
+      expectPublishable(s, ctx);
+      expect(modelMs).toBeLessThan(2000); expect(saveMs).toBeLessThan(15000);
+      record("P-table-max", original, s, ctx, { table: { rows: 32, cols: 8 }, timing: { reopenModelMs: Math.round(modelMs), productSaveMs: Math.round(saveMs) } });
+    } finally { ctx.editor.dispose(); }
+  });
+  it("N-raw-table (engine-direct, not producible by the product): raw createTable output for the Rust corpus", async () => {
+    const original = source(text), ctx = await open(original);
+    try {
+      // The product refuses this state before mutation; this case exercises T009 on the raw bytes.
+      const t = JSON.parse(ctx.doc.createTable!(0, 0, 3, 2, 2) as string);
+      ctx.doc.insertTextInCell(0, t.paraIdx, t.controlIdx, 0, 0, 0, "raw");
+      const exported = exportHwp(ctx.doc), noop = (() => { const d = new engine.HwpDocument(original) as Doc; try { return exportHwp(d); } finally { d.free(); } })();
+      const preflight = check("preflight", original, noop.bytes, noop.loss);
+      const raw = check("saved", original, exported.bytes, exported.loss, false);
+      expect(raw.outcome).not.toBe("safe");
+      expect(raw.findings.map((f: { code: string }) => f.code)).toContain("recordsChanged");
+      record("N-raw-table", original, { result: { ok: false } as never, preflight, unedited: noop.bytes, noopLoss: noop.loss, output: exported.bytes,
+        loss: exported.loss, reopen: {}, reopenEqual: false, raw, preview: null, revision: 0 }, ctx, { source: "engine direct createTable without normalization" }, "recordsChanged");
+    } finally { ctx.editor.dispose(); }
+  });
+  it("N8: an unsafe original (real preflight) refuses even a plain-text save without publication", async () => {
+    const original = sample("hwpers_test4_complex_table.hwp"), ctx = await open(original);
+    try {
+      expect(ctx.probe?.preflight.outcome).toBe("unsafe");
+      expect(available(ctx, "insert.table")).toEqual({ available: false, reason: "originalUnverified" });
+      expect(ctx.editor.typeText("x")).toBe(true); await ctx.settle();
+      const saving = ctx.editor.save(); await flush();
+      // No reusable SAFE verdict: Save runs its own preflight, which is refused again.
+      ctx.take("original").reply(ok(original)); await flush();
+      const pf = ctx.take("preflight");
+      const preflight = check("preflight", original, pf.args[2] as Uint8Array, JSON.stringify(pf.args[3]));
+      pf.reply(ok({ preservation: preflight, platformSupported: true }));
+      const result = await saving;
+      expect(result).toMatchObject({ ok: false, error: { code: "UnsafeSave" } });
+      expect(ctx.calls.some(c => c.method === "save")).toBe(false);
+      expect(ctx.editor.saveState).toMatchObject({ kind: "failed" });
+      expect(ctx.editor.snapshot().revision).toBe(1);
+      noteNegative("N8-unsafe-original", { preflight: preflight.outcome, findings: preflight.findings, saveRequested: false, revision: 1 });
+    } finally { ctx.editor.dispose(); }
+  });
+  it("N13: an edit while the save is pending stays unsaved after publication", async () => {
+    const original = source(text), ctx = await open(original);
+    try {
+      expect(ctx.editor.execute("paragraph.bullets").accepted).toBe(true); await ctx.settle();
+      const saving = ctx.editor.save(); await flush();
+      const call = ctx.take("save"); const revision = call.args[2] as number;
+      expect(ctx.editor.typeText("늦은 ")).toBe(true); await ctx.settle(); // revision moves on during the save
+      call.reply(ok({ session: info({ state: "ready", revision: revision + 1, dirty: true, sequence: ++ctx.sequence }), durable: true }));
+      expect((await saving).ok).toBe(true);
+      expect(ctx.editor.saveState).toMatchObject({ kind: "saved", revision, changedSince: true });
+      expect(ctx.editor.snapshot().revision).toBe(revision + 1);
+      noteNegative("N13-revision-during-save", { savedRevision: revision, current: revision + 1, changedSince: true });
+    } finally { ctx.editor.dispose(); }
+  });
+});
+
 describe.runIf(phase === "repeat")("HWP second save cycle from the actual publication", () => {
   it("reopen the published combined document with a fresh engine, edit again, export", async () => {
     const published = new Uint8Array(readFileSync(join(out, "P-combined", "published.hwp")));
     const proof = JSON.parse(readFileSync(join(out, "P-combined", "proof.json"), "utf8"));
     const ctx = await open(published);
     try {
+      expect(ctx.probe?.preflight.outcome).toBe("safe"); // current load-generation eligibility re-established
+      for (const id of ["insert.table", "insert.image", "paragraph.bullets"] as const) expect(available(ctx, id).available, id).toBe(true);
       const fresh = hwpReopenModel(ctx.doc);
       expect(fresh.model).toBe(proof.hwpModel); expect(fresh.structure).toBe(proof.hwpStructure); expect(fresh.complete).toBe(true);
       // Another supported edit: plain text in the body, then an inline JPEG at the end of the last paragraph.
@@ -427,6 +535,9 @@ describe.runIf(phase === "verify")("actual HWP publications reopen independently
       const d = new engine.HwpDocument(bytes) as Doc;
       try {
         const current = state(d);
+        expect(Buffer.from(bytes.subarray(0, 8)).toString("hex"), id).toBe("d0cf11e0a1b11ae1"); // CFB signature
+        expect(current.format, id).toBe("hwp"); expect(current.pages, id).toBe(proof.live.pages);
+        expect(current.paragraphs, id).toEqual(proof.live.paragraphs);
         expect(current.text, id).toBe(proof.live.text);
         expect(current.controls, id).toEqual(proof.live.controls);
         expect(current.bullets, id).toBe(proof.live.bullets);
@@ -438,6 +549,19 @@ describe.runIf(phase === "verify")("actual HWP publications reopen independently
         if (proof.inputSha256) expect(images, id).toContain(proof.inputSha256);
         results.push({ id, publishedSha256: sha(bytes), reopenComplete: true, modelEqual: true, embeddedImageSha256: images, inputSha256: proof.inputSha256 ?? null });
       } finally { d.free(); }
+    }
+    // Second cycle keeps the first publication's table, cells and bullet definitions.
+    if (existsSync(join(out, "P-combined-2", "published.hwp"))) {
+      const first = new engine.HwpDocument(new Uint8Array(readFileSync(join(out, "P-combined", "published.hwp")))) as Doc;
+      const second = new engine.HwpDocument(new Uint8Array(readFileSync(join(out, "P-combined-2", "published.hwp")))) as Doc;
+      try {
+        const a = JSON.parse(hwpReopenModel(first).model), b = JSON.parse(hwpReopenModel(second).model);
+        expect(b.tables).toEqual(a.tables);
+        expect(b.pictures.slice(0, a.pictures.length)).toEqual(a.pictures);
+        expect(b.pictures).toHaveLength(a.pictures.length + 1);
+        expect(second.getBulletList!()).toBe(first.getBulletList!());
+        results.push({ id: "P-combined-2 vs P-combined", tablesPreserved: true, picturesPreserved: a.pictures.length, picturesAdded: 1, bulletDefinitionsPreserved: true });
+      } finally { first.free(); second.free(); }
     }
     expect(results.filter(r => !(r as { negative?: boolean }).negative).length).toBeGreaterThanOrEqual(7);
     writeFileSync(join(out, "published-reopen.json"), JSON.stringify({ result: "PASS", engineGeneration: build.generation, results }, null, 2));

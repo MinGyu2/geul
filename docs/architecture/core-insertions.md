@@ -226,3 +226,44 @@ HWP 구조 명령은 다음을 모두 만족할 때만 snapshot에 나타나고 
 - 한컴 원본처럼 비어 있지 않은 미리보기를 가진 문서는 PrvImage 재생성 조건을 따른다. 다구역·실제 한컴 작성 문서의 폭넓은 호환은 검증하지 않았다.
 - Linux native GUI/IBus 수용: NOT RUN(Xvfb·ibus-daemon 없음). 외부 한컴 수용: NOT RUN.
 - RHWP Undo/Redo 제한과 T012/T014 동작은 바꾸지 않았다.
+
+
+## HWP 비GUI 저장·재열기 통합 수용 — Phase 4 (2026-11-10)
+
+Phase 3 hardening(complete baseline + 원본 사전검사 SAFE 자격)을 적용한 제품 경로를 실제 저장 게시와 독립 재열기까지 연결해 검증했다. 위 "검증(이 변경 상태에서 실행)" 표는 Phase 3 당시 결과이며 아래가 이번 실행이다. T009 규칙·엔진·WASM은 바꾸지 않았다.
+
+### 통합 방식(하네스 매개, Tauri IPC 아님)
+
+1. `scripts/tests/hwp-core-commands.wasm.test.ts`가 승인 Release WASM으로 `RhwpEditorSession`을 열고, 로드 때 시작된 원본 사전검사에 production `save_check` 실제 판정으로 응답한 뒤 기존 명령(`execute`/`executeImage`)으로 편집한다. 제품이 `save()`에서 보낸 정확한 bytes·손실 보고·reopen 근거를 사례별 폴더(`src-tauri/target/hwp-phase4/engine`)에 기록한다. 백엔드 응답은 controlled이며 게시 증거가 아니다.
+2. `scripts/tests/hwp-canvas/run.py`가 headless Firefox에서 production `loadRhwpModule` + `capturePreviewRaster`를 각 사례의 정확한 출력 bytes에 실행한다(실제 Canvas, `GEUL_RHWP_PROFILE=release`로 승인 generation 강제·검사).
+3. `hwp_contract_real_engine_publication`(`GEUL_HWP_CANVAS=1`)이 그 bytes와 Canvas raster로 production `service::save_with_options`를 호출한다: 사전검사, 원시 판정(PreviewStale만), PrvImage 재생성, 최종 판정 safe, 원자 게시, durable·dirty false, 게시 bytes = 검증 bytes. 부정 사례는 게시 거부·원본 보존을 확인한다.
+4. `repeat` 단계가 실제 게시 파일을 새 제품 세션으로 열어(자격 재확인) 두 번째 편집을 하고 같은 경로로 다시 게시한다. `verify` 단계가 모든 게시 파일을 새 엔진 인스턴스로 열어 비교한다.
+
+### 양성 결과
+
+| 사례 | 원본 | 편집(제품 명령) | 게시 | 독립 재열기 |
+|---|---|---|---|---|
+| P-table | 엔진 생성 HWP | 2×3 표, 두 셀 입력, revision 3 | PASS | 모델·셀·속성 일치 |
+| P-table-max | 엔진 생성 HWP | 32×8(256셀), 마지막 셀 입력 | PASS(재열기 모델 17 ms, 제품 저장 경로 70 ms) | 일치 |
+| P-image-png / -jpg | 엔진 생성 HWP | native chooser payload, 인라인 | PASS | 일치, 임베디드 bytes SHA-256 = 입력 |
+| P-bullets | 엔진 생성 HWP | 한 문단→두 문단→해제→재적용, 정의 1개 재사용 | PASS | 일치 |
+| P-bullets-enter | 엔진 생성 HWP | Enter 이어쓰기, 빈 항목 Enter 종료 | PASS | 일치 |
+| P-bullets-off | 기존 글머리표 HWP | 두 문단 해제(정의 보존) | PASS | 일치 |
+| P-combined | 엔진 생성 HWP | 두 문단 글머리표 + PNG + 2×2 표 + 셀 입력 | PASS | 일치 |
+| P-sample | `test-image.hwp`(기존 임베디드 그림·비어 있지 않은 미리보기) | 글머리표 + PNG + 표 + 셀 입력 | PASS | 일치, 기존 그림 bytes 보존 |
+| P-combined-2 | P-combined의 실제 게시 파일 | 본문 입력 + JPEG | PASS | 일치, 1차 표·셀·그림·글머리표 정의 보존 |
+
+모든 양성 사례의 원시 출력 판정은 PreviewStale만이었고 Canvas raster로 재생성한 뒤 최종 판정 safe로 게시됐다.
+
+### 부정 결과
+
+- 게시 거부(production 서비스, 원본 bytes 보존, dirty 유지): OPAQUE-001 원본 표 삽입(`recordsChanged`), 엔진 직접 raw TBL-001 출력(`recordsChanged`·`reopenMismatch`), 사전검사 SAFE인 한컴 원본 `h-pen-01.hwp`의 표 삽입(`recordsChanged`, 아래 한계).
+- 실제 제품 출력(P-combined)에 적용한 손상(`hwp_phase4_product_output_corruptions`): 새 BinData stream 누락(`referenceInvalid`), 그림 BinData 참조 dangling(`referenceInvalid`), floating 그림(`recordsChanged`), TBL-001 표 상태(`recordsChanged`), 잘못된 셀 span(`outputMalformed`), dangling 글머리표 참조(`referenceInvalid`), 기존 글머리표 정의 변경(`recordsChanged`), 미리보기 없음(`previewStale`) — 모두 게시 거부·원본 보존.
+- 제품 세션: unsafe 원본은 일반 텍스트 저장도 save 요청 없이 `UnsafeSave`; 저장 대기 중 편집은 게시 뒤 `changedSince`로 미저장 유지; chooser 소유 상실·모델 변경·잘못된 입력, raw 표·비인라인 그림, getter 누락 거부(기존 시험).
+- 파일 충돌·게시 실패·복구는 기존 `services::save` Rust 시험(재실행)에 의존한다.
+
+### 한계(측정)
+
+`scripts/tests/hwp-sample-insertion-matrix.wasm.test.ts`(opt-in, `GEUL_HWP_SAMPLE_MATRIX=<json>`)로 RHWP 샘플 중 단일 구역·120 KB 이하 178개를 측정했다. complete baseline이면서 원본 사전검사 SAFE인 108개 중 한 번의 삽입이 T009를 통과한 문서는 글머리표·그림·표 각 6개, 일반 텍스트 20개다. 나머지는 엔진 재직렬화가 DocInfo/BodyText 기록을 바꿔(`recordsChanged`·`partAdded`·`outputMalformed`) 저장이 거부된다. 원본 사전검사는 무편집 출력만 비교하므로 이를 편집 전에 신뢰성 있게 예측할 수 없고, 제품은 이 경우 명령을 허용한 뒤 저장에서 거부한다(원본 보존). 따라서 현재 검증된 실사용 범위는 엔진(geul/RHWP)이 생성·저장한 HWP와 측정된 일부 문서다. 한컴 작성 문서 일반의 HWP 삽입 지원은 엔진 직렬화 개선 없이는 확장되지 않는다.
+
+그 밖에: native GUI/IBus(Phase 5) NOT RUN, 외부 한컴 수용 NOT RUN, 입력 이미지 신뢰 영수증 없음(바이트 대조는 시험 소유 입력에 한함), section 0 밖·기존 표 셀 편집·병합/중첩 표·floating/링크/OLE·다단계 목록은 범위 밖이다.

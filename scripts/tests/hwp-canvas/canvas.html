@@ -1,0 +1,24 @@
+<!doctype html><meta charset="utf-8"><title>HWP product Canvas preview capture</title>
+<script type="module">
+// Production loadRhwpModule + production capturePreviewRaster on a real browser Canvas, applied to the exact
+// edited HWP bytes of each case (the bytes the product sends to Save). Results go to the local Vite middleware.
+import {loadRhwpModule} from '/src/components/Editor/rhwp/rhwpModule.ts';
+import {capturePreviewRaster} from '/src/components/Editor/rhwp/previewRaster.ts';
+const params=new URL(location).searchParams,ids=params.get('ids').split(','),base='/'+params.get('dir').replace(/^\/+|\/+$/g,'')+'/';
+const b64=b=>{let s='';for(let i=0;i<b.length;i+=8192)s+=String.fromCharCode(...b.subarray(i,i+8192));return btoa(s);};
+const sha=async b=>[...new Uint8Array(await crypto.subtle.digest('SHA-256',b))].map(v=>v.toString(16).padStart(2,'0')).join('');
+try{
+ const mod=await loadRhwpModule();const build=await(await fetch('/rhwp/BUILD.json',{cache:'no-store'})).json();
+ for(const id of ids){
+  const bytes=new Uint8Array(await(await fetch(base+id+'/edited.hwp',{cache:'no-store'})).arrayBuffer());const doc=mod.openDocument(bytes);
+  try{
+   const raster=capturePreviewRaster(doc);if(!raster)throw Error(id+': production capture returned null');
+   const canvas=document.createElement('canvas');canvas.width=raster.width;canvas.height=raster.height;const ctx=canvas.getContext('2d');const image=ctx.createImageData(raster.width,raster.height);
+   for(let i=0,j=0;i<raster.rgb.length;i+=3,j+=4){image.data[j]=raster.rgb[i];image.data[j+1]=raster.rgb[i+1];image.data[j+2]=raster.rgb[i+2];image.data[j+3]=255;}ctx.putImageData(image,0,0);
+   const response=await fetch('/__hwp-canvas',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({dir:params.get('dir'),id,width:raster.width,height:raster.height,rgb:b64(raster.rgb),png:canvas.toDataURL('image/png').split(',')[1],editedSha256:await sha(bytes),rgbSha256:await sha(raster.rgb),generation:build.generation,blankPage:raster.blankPage??false,renderer:'production loadRhwpModule + production capturePreviewRaster (Firefox headless Canvas)',userAgent:navigator.userAgent})});
+   if(!response.ok)throw Error(await response.text());
+  }finally{doc.free();}
+ }
+ document.title='done';
+}catch(error){await fetch('/__hwp-canvas',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({dir:params.get('dir'),error:String(error),stack:error.stack})});}
+</script>
