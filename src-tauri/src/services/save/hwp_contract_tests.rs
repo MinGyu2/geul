@@ -1739,3 +1739,172 @@ fn hwp_phase4_product_output_corruptions() {
     )
     .unwrap();
 }
+
+/// Fixture variant whose paragraph 0 carries extra original objects (kept in both original and output).
+fn fixture_with(edited: bool, original_objects: &[Records], text: &str) -> Vec<u8> {
+    let mut objects = vec![section_control()];
+    objects.extend(original_objects.iter().cloned());
+    if edited {
+        objects.extend([table_control(), picture_control()]);
+    }
+    let body = pack(&paragraph_records(
+        0,
+        if edited { 2 } else { 0 },
+        text,
+        &objects,
+    ));
+    let info = pack(&docinfo_records(edited));
+    let png = encoded_image(image::ImageFormat::Png);
+    let mut extras = vec![
+        ("/PrvText", b"\r\0\n\0".as_slice()),
+        ("/PrvImage", b"".as_slice()),
+        ("/BinData/BIN0001.png", png.as_slice()),
+    ];
+    if edited {
+        extras.push(("/BinData/BIN0002.png", png.as_slice()));
+    }
+    hwp_doc(0, &info, &body, &extras)
+}
+/// An original table outside the new-insertion subset (different object attributes, own instance ID).
+fn existing_nonbasic_table() -> Records {
+    let mut t = table_control();
+    d(&mut t[0].2, 4, 0x082a2310);
+    d(&mut t[0].2, 36, 9);
+    // Refer to the original document's BorderFill #1 (the synthetic insertion uses #2, added by the edit).
+    w(&mut t[1].2, 22, 1);
+    for cell in t.iter_mut().filter(|r| r.0 == 72) {
+        w(&mut cell.2, 32, 1);
+    }
+    t
+}
+fn raw_findings(original: &[u8], output: &[u8], reopen: bool) -> Vec<Finding> {
+    service::check_saved(
+        Format::Hwp,
+        original,
+        output,
+        Some(&report("hwp", json!([]))),
+        reopen,
+    )
+    .findings
+}
+fn only_stale_preview(findings: &[Finding]) -> bool {
+    findings.iter().all(|f| f.code == FindingCode::PreviewStale)
+}
+
+#[test]
+fn hwp_preserved_original_objects_need_not_match_the_insertion_subset() {
+    let original = fixture_with(false, &[existing_nonbasic_table()], "Keep 한글");
+    let output = fixture_with(true, &[existing_nonbasic_table()], "Keep 한글");
+    let findings = raw_findings(&original, &output, true);
+    assert!(only_stale_preview(&findings), "{findings:?}");
+    let (saved, _, info) = publish(&original, &output, Some(&raster()));
+    assert!(saved.unwrap().durable && !info.dirty);
+
+    // The same original table edited (one cell's text) is not preserved: refused, original intact.
+    let mut changed = existing_nonbasic_table();
+    let text = changed.iter_mut().find(|r| r.0 == 67).unwrap();
+    text.2[0] ^= 1;
+    let edited = fixture_with(true, &[changed], "Keep 한글");
+    assert!(!only_stale_preview(&raw_findings(&original, &edited, true)));
+    let (refused, bytes, info) = publish(&original, &edited, Some(&raster()));
+    assert!(matches!(refused, Err(DocumentError::UnsafeSave { .. })));
+    assert_eq!(bytes, original);
+    assert!(info.dirty);
+
+    // Dropping the original table is refused too.
+    let dropped = fixture_with(true, &[], "Keep 한글");
+    assert!(!only_stale_preview(&raw_findings(
+        &original, &dropped, true
+    )));
+}
+
+#[test]
+fn hwp_opaque_records_survive_only_with_their_owner_subtree() {
+    let opaque_section = || {
+        let mut section = section_control();
+        section.push((87, 2, b"opaque control data".to_vec()));
+        section
+    };
+    let build = |text: &str, section: Records, range: Option<Vec<u8>>| {
+        let mut body = paragraph_records(0, 0, text, &[section]);
+        if let Some(tag) = range {
+            body.insert(2, (70, 1, tag));
+        }
+        let info = pack(&docinfo_records(false));
+        let png = encoded_image(image::ImageFormat::Png);
+        hwp_doc(
+            0,
+            &info,
+            &pack(&body),
+            &[
+                ("/PrvText", b"\r\0\n\0".as_slice()),
+                ("/PrvImage", b"".as_slice()),
+                ("/BinData/BIN0001.png", png.as_slice()),
+            ],
+        )
+    };
+    let original = build("Keep 한글", opaque_section(), None);
+    // Ordinary text edit; the CTRL_DATA's owner (the section control subtree) is unchanged.
+    let output = build("Keep 한글 more", opaque_section(), None);
+    let findings = raw_findings(&original, &output, true);
+    assert!(
+        !findings
+            .iter()
+            .any(|f| f.code == FindingCode::RecordsChanged),
+        "{findings:?}"
+    );
+    // The opaque payload itself changed: refused.
+    let mut altered = section_control();
+    altered.push((87, 2, b"opaque control DATA".to_vec()));
+    let changed = build("Keep 한글 more", altered, None);
+    assert!(raw_findings(&original, &changed, true)
+        .iter()
+        .any(|f| f.code == FindingCode::RecordsChanged));
+    // A range tag inside the edited paragraph (its offsets refer to that text): refused.
+    let tagged = build("Keep 한글", section_control(), Some(vec![0; 12]));
+    let tagged_edit = build("Keep 한글 more", section_control(), Some(vec![0; 12]));
+    assert!(raw_findings(&tagged, &tagged_edit, true)
+        .iter()
+        .any(|f| f.code == FindingCode::RecordsChanged));
+}
+
+#[test]
+fn hwp_opaque_owner_allows_only_line_position_shift() {
+    // Paragraph 1 carries a range tag (opaque owner = paragraph 1); paragraph 0's text is edited.
+    let build = |text: &str, line: [u8; 36]| {
+        let mut body = paragraph_records(0, 0, text, &[section_control()]);
+        let mut tagged = paragraph_records(0, 0, "Tagged", &[]);
+        w(&mut tagged[0].2, 14, 1);
+        tagged[3].2 = line.to_vec();
+        tagged.push((70, 1, vec![0; 12]));
+        body.extend(tagged);
+        let info = pack(&docinfo_records(false));
+        let png = encoded_image(image::ImageFormat::Png);
+        hwp_doc(
+            0,
+            &info,
+            &pack(&body),
+            &[
+                ("/PrvText", b"\r\0\n\0".as_slice()),
+                ("/PrvImage", b"".as_slice()),
+                ("/BinData/BIN0001.png", png.as_slice()),
+            ],
+        )
+    };
+    let original = build("Keep 한글", [0; 36]);
+    let mut shifted = [0u8; 36];
+    shifted[4] = 0x40; // vertical_pos only
+    let moved = build("Keep 한글 more", shifted);
+    assert!(
+        !raw_findings(&original, &moved, true)
+            .iter()
+            .any(|f| f.code == FindingCode::RecordsChanged),
+        "a pure vertical shift of the owner's line segment is a layout cache change"
+    );
+    let mut height = [0u8; 36];
+    height[8] = 0x40; // line height changed
+    let reshaped = build("Keep 한글 more", height);
+    assert!(raw_findings(&original, &reshaped, true)
+        .iter()
+        .any(|f| f.code == FindingCode::RecordsChanged));
+}

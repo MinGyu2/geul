@@ -19,19 +19,31 @@ pub(super) struct Proof {
 fn finding(code: FindingCode, part: &str) -> Finding {
     Finding::at(code, part)
 }
+#[track_caller]
 fn require(ok: bool, code: FindingCode, part: &str) -> Checked<()> {
     if ok {
         Ok(())
     } else {
+        // Diagnostic only (debug builds, explicit opt-in): which proof step refused. Never alters the verdict.
+        #[cfg(debug_assertions)]
+        if std::env::var_os("GEUL_T009_TRACE").is_some() {
+            eprintln!(
+                "T009_TRACE {code:?} {part} at {}",
+                std::panic::Location::caller()
+            );
+        }
         Err(finding(code, part))
     }
 }
+#[track_caller]
 fn valid(ok: bool, part: &str) -> Checked<()> {
     require(ok, FindingCode::OutputMalformed, part)
 }
+#[track_caller]
 fn reference(ok: bool, part: &str) -> Checked<()> {
     require(ok, FindingCode::ReferenceInvalid, part)
 }
+#[track_caller]
 fn preserved(ok: bool, part: &str) -> Checked<()> {
     require(ok, FindingCode::RecordsChanged, part)
 }
@@ -418,21 +430,22 @@ fn prove(a: &Container, b: &Container, ar: &[Record<'_>], br: &[Record<'_>]) -> 
         for object in &old.objects {
             let kind = object[0].2.get(..4).unwrap_or_default();
             preserved(matches!(kind, b"dces" | b"dloc" | b" lbt" | b" osg"), name)?;
+            // Original tables/pictures are not held to the new-insertion schema: each must reappear
+            // byte-identical (whole subtree, nested controls included) and in order below — `cursor`
+            // — and original DocInfo definitions are proven unchanged, so their references still
+            // resolve to the same objects. Any changed original object is unmatched and must then
+            // validate as a new basic table/inline picture, which an edited original cannot.
+            if kind == b" lbt" {
+                validate_existing_table(object)?;
+            }
             if kind == b" osg" {
                 valid(
-                    object.len() == 3
-                        && object[1].0 == 76
-                        && object[1].1 == 2
-                        && object[1].2.starts_with(b"cip$")
-                        && object[2].0 == 85
-                        && object[2].1 == 3,
+                    object
+                        .get(1)
+                        .is_some_and(|r| r.0 == 76 && r.1 == object[0].1 + 1),
                     name,
                 )?;
             }
-            if kind == b" lbt" {
-                validate_table(object, &ac, &mut Used::default(), &mut BTreeSet::new())?;
-            }
-            preserved(object.iter().skip(1).all(|r| r.0 != 71), name)?;
             if matches!(kind, b" lbt" | b" osg") {
                 let id = dword(object[0].2, 36)?;
                 if id != 0 {
@@ -814,9 +827,17 @@ fn paragraph<'a>(
         .filter(|r| r.0 == 69 && r.1 == level + 1)
         .map(|r| r.2.len() / 36)
         .sum();
+    // PARA_RANGE_TAG entries (12 bytes each) are counted in the header; their bytes join the
+    // paragraph's token stream below, so any change to them (or to the text they index) is refused.
+    let ranges: Vec<&[u8]> = rs
+        .iter()
+        .filter(|r| r.0 == 70 && r.1 == level + 1)
+        .map(|r| r.2)
+        .collect();
+    let range_entries: usize = ranges.iter().map(|r| r.len() / 12).sum();
     valid(
         word(header.2, 12)? == run.len() / 8
-            && word(header.2, 14)? == 0
+            && word(header.2, 14)? == range_entries
             && word(header.2, 16)? == line_count,
         BODY,
     )?;
@@ -872,12 +893,13 @@ fn paragraph<'a>(
     while i < rs.len() {
         let r = rs[i];
         match r.0 {
-            67..=69 => {
+            67..=70 => {
                 valid(!controls_started && r.0 > last_meta, BODY)?;
                 last_meta = r.0;
                 valid(
                     r.1 == level + 1
-                        && (r.0 != 69 || (!r.2.is_empty() && r.2.len().is_multiple_of(36))),
+                        && (r.0 != 69 || (!r.2.is_empty() && r.2.len().is_multiple_of(36)))
+                        && (r.0 != 70 || (!r.2.is_empty() && r.2.len().is_multiple_of(12))),
                     BODY,
                 )?;
                 i += 1;
@@ -924,6 +946,16 @@ fn paragraph<'a>(
     }
     if level != 0 {
         preserved(flags == 0, BODY)?;
+    }
+    for range in &ranges {
+        let mut bytes = vec![b'R'];
+        bytes.extend_from_slice(range);
+        out.tokens.push(Token {
+            unit: 0,
+            char_ids: vec![0].into(),
+            para: bytes.into(),
+            style: 0,
+        });
     }
     valid(text.ends_with(b"\r\0"), BODY)?;
     let mut plain_units = Vec::new();
@@ -972,8 +1004,25 @@ fn paragraph<'a>(
             unit += 1;
             continue;
         }
-        valid(ch >= 32 || ch == 10, BODY)?;
-        plain_units.push(ch);
+        if matches!(ch, 4..=9 | 19 | 20) {
+            // Inline control (e.g. TAB): 8 units, no object. Its payload is part of the token.
+            valid(
+                unit + 8 <= text.len() / 2 && word(text, (unit + 7) * 2)? == ch as usize,
+                BODY,
+            )?;
+            let mut bytes = signature.to_vec();
+            bytes.extend_from_slice(&text[unit * 2..unit * 2 + 16]);
+            out.tokens.push(Token {
+                unit: ch,
+                char_ids: shapes[shape].1.clone(),
+                para: bytes.into(),
+                style,
+            });
+            unit += 8;
+            continue;
+        }
+        valid(ch >= 32 || matches!(ch, 10 | 24 | 30 | 31), BODY)?;
+        plain_units.push(if ch < 32 { 0x20 } else { ch });
         out.tokens.push(Token {
             unit: ch,
             char_ids: shapes[shape].1.clone(),
@@ -985,13 +1034,21 @@ fn paragraph<'a>(
     valid(String::from_utf16(&plain_units).is_ok(), BODY)?;
     let actual_ids: Vec<_> = objects.iter().map(|o| o[0].2[..4].to_vec()).collect();
     valid(actual_ids == control_ids, BODY)?;
-    let mask = control_ids.iter().fold(0usize, |mask, id| {
-        mask | if id == b"dces" || id == b"dloc" {
-            1 << 2
-        } else {
-            1 << 11
+    // Control mask: bit n for every control character n present (extended, inline or single-unit),
+    // the paragraph end excluded — the same rule the controls above are parsed by.
+    let mut mask = 0usize;
+    let mut at = 0;
+    while at < text.len() / 2 {
+        let ch = word(text, at * 2)?;
+        if ch < 32 && ch != 13 {
+            mask |= 1 << ch;
         }
-    });
+        at += if matches!(ch, 1..=9 | 11 | 12 | 14..=23) {
+            8
+        } else {
+            1
+        };
+    }
     valid(dword(header.2, 4)? == mask, BODY)?;
     Ok(objects)
 }
@@ -1040,6 +1097,50 @@ fn generic_references(rs: &[Record<'_>], defs: &Defs<'_>) -> Checked<()> {
         }
     }
     Ok(())
+}
+/// Structural well-formedness of an original (preserved) table, independent of the new-insertion subset:
+/// a TABLE record among the control's direct children (after an optional caption list), bounded dimensions,
+/// and cell coordinates/spans covering the grid exactly once.
+/// Merged cells, multi-paragraph cells and any attributes are allowed; preservation itself is proven by the
+/// byte-identical subtree match.
+fn validate_existing_table(rs: &[Record<'_>]) -> Checked<()> {
+    let level = rs[0].1 + 1;
+    valid(rs[0].2.len() >= 40, BODY)?;
+    let t = rs
+        .iter()
+        .position(|r| r.0 == 77 && r.1 == level)
+        .ok_or_else(|| finding(FindingCode::OutputMalformed, BODY))?;
+    let table = rs[t].2;
+    let rows = word(table, 4)?;
+    let cols = word(table, 6)?;
+    valid(
+        (1..=1024).contains(&rows) && (1..=1024).contains(&cols) && rows * cols <= 65_536,
+        BODY,
+    )?;
+    valid(table.len() >= 18 + 2 * rows + 2, BODY)?;
+    // The per-row size array is not a cell-list count when cells are merged (observed in genuine
+    // documents), so the grid coverage below is the structural invariant.
+    let cells: Vec<&[u8]> = rs[t + 1..]
+        .iter()
+        .filter(|r| r.0 == 72 && r.1 == level)
+        .map(|r| r.2)
+        .collect();
+    valid(!cells.is_empty() && cells.len() <= rows * cols, BODY)?;
+    let mut covered = vec![false; rows * cols];
+    for b in cells {
+        let (col, row, col_span, row_span) =
+            (word(b, 8)?, word(b, 10)?, word(b, 12)?, word(b, 14)?);
+        valid(
+            col_span >= 1 && row_span >= 1 && col + col_span <= cols && row + row_span <= rows,
+            BODY,
+        )?;
+        for r in row..row + row_span {
+            for c in col..col + col_span {
+                valid(!std::mem::replace(&mut covered[r * cols + c], true), BODY)?;
+            }
+        }
+    }
+    valid(covered.iter().all(|c| *c), BODY)
 }
 fn validate_table(
     rs: &[Record<'_>],

@@ -126,6 +126,64 @@ fn open(bytes: &[u8], side: Side) -> Result<Container, Finding> {
 type Record<'a> = (u16, u16, &'a [u8]);
 
 /// 레코드 스트림을 끝까지 읽는다. 머리·크기가 스트림 끝을 넘으면 None.
+/// The owner subtree of every opaque body record (a record outside the modeled 66–85 range, or a non-empty
+/// PARA_RANGE_TAG): its nearest preceding record one level up — a control header (71) or a paragraph header
+/// (66) — together with all deeper records that follow it. `None` when an opaque record has no such owner
+/// (no proven context), e.g. a level-0 opaque record.
+fn opaque_owners<'a, 'r>(rs: &'r [Record<'a>]) -> Option<Vec<&'r [Record<'a>]>> {
+    let mut owners: Vec<(usize, usize)> = Vec::new();
+    for (j, r) in rs.iter().enumerate() {
+        if matches!(r.0, 66..=85) && !(r.0 == 70 && !r.2.is_empty()) {
+            continue;
+        }
+        let level = r.1.checked_sub(1)?;
+        let start = rs[..j].iter().rposition(|o| o.1 <= level)?;
+        if rs[start].1 != level || !matches!(rs[start].0, 66 | 71) {
+            return None;
+        }
+        let end = rs[start + 1..]
+            .iter()
+            .position(|o| o.1 <= level)
+            .map_or(rs.len(), |n| start + 1 + n);
+        if owners.last() != Some(&(start, end)) {
+            owners.push((start, end));
+        }
+    }
+    Some(owners.into_iter().map(|(a, b)| &rs[a..b]).collect())
+}
+
+/// An edited body stream may keep opaque records only when every opaque record's owner subtree (control or
+/// paragraph) is byte-identical and in the same order on both sides: the opaque bytes and everything that
+/// gives them meaning are untouched. Edits to an owner subtree (e.g. text in a paragraph carrying range tags,
+/// whose offsets refer to that text) still fail closed.
+fn opaque_owners_preserved(before: &[Record<'_>], after: &[Record<'_>]) -> bool {
+    // LINE_SEG (69) is a layout cache: an insertion above shifts only each segment's vertical position
+    // (bytes 4..8 of every 36-byte segment). Everything else in the owner subtree must be identical.
+    fn same(x: &Record<'_>, y: &Record<'_>) -> bool {
+        if x.0 != 69
+            || y.0 != 69
+            || x.1 != y.1
+            || x.2.len() != y.2.len()
+            || !x.2.len().is_multiple_of(36)
+        {
+            return x == y;
+        }
+        x.2.chunks(36)
+            .zip(y.2.chunks(36))
+            .all(|(a, b)| a[..4] == b[..4] && a[8..] == b[8..])
+    }
+    match (opaque_owners(before), opaque_owners(after)) {
+        (Some(a), Some(b)) => {
+            !a.is_empty()
+                && a.len() == b.len()
+                && a.iter()
+                    .zip(&b)
+                    .all(|(x, y)| x.len() == y.len() && x.iter().zip(*y).all(|(r, t)| same(r, t)))
+        }
+        _ => false,
+    }
+}
+
 fn records(data: &[u8]) -> Option<Vec<Record<'_>>> {
     let mut out = Vec::new();
     let mut at = 0usize;
@@ -655,7 +713,10 @@ fn compare_with(
                 .iter()
                 .chain(&after_records)
                 .any(|r| !matches!(r.0, 66..=85) || (r.0 == 70 && !r.2.is_empty()));
-            if opaque && before_records != after_records {
+            if opaque
+                && before_records != after_records
+                && !opaque_owners_preserved(&before_records, &after_records)
+            {
                 findings.push(Finding::at(FindingCode::RecordsChanged, name));
             }
             continue; // 본문 내용은 다시 열기 비교 몫
