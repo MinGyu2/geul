@@ -1105,7 +1105,10 @@ export class RhwpEditorSession implements DocumentCommandTarget {
   }
 
   enter(): boolean {
-    if (this.structuralFormat() && !this.hasSelection && !this.caret.cell
+    // Enter on an existing empty bullet exits the list. That only removes an existing structural heading, so it
+    // depends on the load-time eligibility (bulletExitBlocked), not on the asynchronous original preflight:
+    // otherwise the same keystroke would split while the preflight is CHECKING and exit once it is SAFE.
+    if (!this.bulletExitBlocked() && !this.hasSelection && !this.caret.cell
       && this.doc?.getParagraphLength(this.caret.section, this.caret.paragraph) === 0 && this.doc.getParaPropertiesAt) {
       try { if (JSON.parse(this.doc.getParaPropertiesAt(this.caret.section, this.caret.paragraph)).headType === "Bullet") return this.toggleBullets(true); }
       catch { return false; }
@@ -1672,8 +1675,16 @@ export class RhwpEditorSession implements DocumentCommandTarget {
    * - 표 계산: 편집 가능·IME 안정·불확실 아님 + 커서가 표 셀 안이고 엔진이 그 셀의 논리 좌표·표 크기를 알려 줄 때(HWP·HWPX 모두 —
    *   문서를 바꾸지 않는 계산). 셀 밖이면 이유 notInTable.
    */
-  private bulletRange(allowPending = false): { first: number; last: number; section: number } | null {
-    if (!this.structuralFormat() || !this.editable || this.imeUnsettled || this.uncertain
+  /**
+   * Whether exiting an existing bullet (Enter on an empty item) is unavailable. HWPX: never. HWP: only the
+   * static conditions of structuralBlock() (detailed APIs, complete baseline, section 0) apply — the original
+   * preflight state does not, because no new definition or object is introduced; Save still runs the original
+   * preflight and the T009 check of the edited output, which keep an unsafe original from being published.
+   */
+  private bulletExitBlocked(): boolean { return this.structuralBlock() === "engineUnsupported"; }
+
+  private bulletRange(allowPending = false, exit = false): { first: number; last: number; section: number } | null {
+    if ((exit ? this.bulletExitBlocked() : !this.structuralFormat()) || !this.editable || this.imeUnsettled || this.uncertain
       || (!allowPending && (this.pending > 0 || this.committingEpoch === this.epoch)) || this.caret.cell || this.anchor.cell
       || this.caret.section !== this.anchor.section || !this.doc?.getParaPropertiesAt || !this.doc.applyParaFormat || !this.doc.ensureDefaultBullet) return null;
     const [first, last] = this.caret.paragraph < this.anchor.paragraph ? [this.caret, this.anchor] : [this.anchor, this.caret];
@@ -1708,7 +1719,7 @@ export class RhwpEditorSession implements DocumentCommandTarget {
     return { actionReasons: { "insert.image": block, "paragraph.bullets": block } };
   }
   private toggleBullets(forceOff = false): boolean {
-    const range = this.bulletRange(forceOff), doc = this.doc;
+    const range = this.bulletRange(forceOff, forceOff), doc = this.doc;
     if (!range || !doc) return false;
     let off = true;
     try { for (let p = range.first; p <= range.last; p++) off &&= JSON.parse(doc.getParaPropertiesAt!(range.section, p)).headType === "Bullet"; }
