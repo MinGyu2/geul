@@ -41,7 +41,7 @@ try:
     browser = subprocess.Popen(["firefox", "--headless", "--no-remote", "--profile", str(profile), url],
                                stdout=server_log, stderr=subprocess.STDOUT, env=env, start_new_session=True)
     result["url"] = url
-    while time.time() - start < 120:
+    while time.time() - start < max(120, 2 * len(ids)):
         if (corpus / "canvas-error.json").exists(): raise RuntimeError((corpus / "canvas-error.json").read_text())
         if all((corpus / i / "canvas-proof.json").exists() and (corpus / i / "canvas-proof.json").stat().st_mtime >= start for i in ids):
             release = json.loads((root / "public/rhwp/BUILD.json").read_text())["generation"]

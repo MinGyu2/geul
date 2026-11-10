@@ -18,7 +18,7 @@ import { DocumentSessions } from "../../src/adapters/sessions";
 import { documentCommandState } from "../../src/commands/capability";
 import { RhwpEditorSession } from "../../src/components/Editor/rhwp/RhwpEditorSession";
 import { hwpReopenEqual, hwpReopenModel } from "../../src/components/Editor/rhwp/hwpReopenModel";
-import type { RhwpDocument } from "../../src/components/Editor/rhwp/rhwpModule";
+import { preserveSourceCaret, type RhwpDocument } from "../../src/components/Editor/rhwp/rhwpModule";
 import { base, controlledBackend, fail, flush, info, loaded, ok } from "../../src/components/Editor/rhwp/testing";
 
 const captured = vi.hoisted(() => ({ docs: [] as unknown[] }));
@@ -67,7 +67,8 @@ async function open(bytes: Uint8Array, patch?: (d: Doc) => void, answerProbe = t
   let doc: Doc | undefined;
   const editor = new RhwpEditorSession(1, backend, sessions, async () => ({ openDocument: (b: Uint8Array) => {
     // The first document is the live session model; preflight/reopen documents are separate instances.
-    const opened = new engine.HwpDocument(b) as Doc; patch?.(opened); doc ??= opened; return opened;
+    // Same open policy as the production module (rhwpModule.openDocument).
+    const opened = preserveSourceCaret(new engine.HwpDocument(b) as Doc); patch?.(opened); doc ??= opened; return opened;
   } }));
   const loading = editor.load(); take("load").reply(loaded(bytes)); await flush();
   take("session").reply(ok(info({ state: "loading", sequence: 1 })));
@@ -412,19 +413,19 @@ describe.runIf(phase === "generate")("Phase 4: genuine Hancom original and furth
       record("P-sample", original, s, ctx, { inputSha256: sha(png), inputFile: "input.png", source: "external/rhwp/samples/test-image.hwp" });
     } finally { ctx.editor.dispose(); }
   });
-  it("N7: a preflight-SAFE Hancom original whose edited reserialization T009 refuses (h-pen-01.hwp)", async () => {
+  // Previously (Phase 4 "N7") this preflight-SAFE Hancom original was refused after insertion because the engine
+  // re-serialized DocInfo (implicit caret stamp → raw DocInfo reuse lost → 72-byte ID_MAPPINGS). With the geul
+  // source-preservation engine patch the same product edit is publishable; T009 rules are unchanged.
+  it("P-hancom: table on h-pen-01.hwp (range-tag paragraphs, non-empty previews) publishes", async () => {
     const original = sample("h-pen-01.hwp"), ctx = await open(original);
     try {
       expect(ctx.probe?.preflight.outcome).toBe("safe");
-      expect(available(ctx, "insert.table").available).toBe(true); // no reliable pre-mutation signal exists
+      expect(available(ctx, "insert.table").available).toBe(true);
       expect(ctx.editor.execute("insert.table", { command: "insert.table", rows: 2, cols: 2 }).accepted).toBe(true); await ctx.settle();
+      expect(ctx.editor.typeText("한컴 원본 셀")).toBe(true); await ctx.settle();
       const s = await save(ctx, original);
-      expect(s.raw.outcome).toBe("unsafe");
-      expect(s.raw.findings.map((f: { code: string }) => f.code)).toContain("recordsChanged");
-      expect(s.result).toMatchObject({ ok: false, error: { code: "UnsafeSave" } });
-      expect(ctx.editor.saveState).toMatchObject({ kind: "failed" });
-      expect(ctx.editor.snapshot().revision).toBe(1);
-      record("N7-hancom-reserialization", original, s, ctx, { source: "external/rhwp/samples/h-pen-01.hwp" }, "recordsChanged");
+      expectPublishable(s, ctx);
+      record("P-hancom", original, s, ctx, { source: "external/rhwp/samples/h-pen-01.hwp" });
     } finally { ctx.editor.dispose(); }
   });
   it("P-table-max: the 256-cell limit (32×8) inserts, compares within budget and publishes", async () => {

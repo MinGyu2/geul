@@ -292,3 +292,44 @@ Phase 4의 측정 v1(108 / 각 6 / 텍스트 20)은 연산 성공을 "예외 없
 v1과의 차이: 표·그림·글머리표 후보 6개(같은 6개 문서)는 그대로이며 이제 모두 실제 게시와 재열기로 확인됐다. 텍스트는 20 → 18: `issue2808_report_physical_ladder.hwp`는 독립 재열기에서 쪽 수가 달라 후보가 아니다(v1의 단정된 `reopen=true`가 가렸다). `re-align-justify-hancom.hwp`는 삽입 문자열에 의존한다 — v1의 "가"는 PreviewStale만, v2의 표식(Latin 포함)은 `recordsChanged@DocInfo`. 표 5건·텍스트 1건의 독립 재열기 실패는 v1에서 기록되지 않았다.
 
 이 수치는 이 표본·이 엔진의 측정이다. 표본이 모두 한컴 작성 문서인 것도 아니므로 한컴 문서 일반의 호환 비율로 해석하지 않는다. 실제 게시·재열기까지 확인된 문서는 issue5800-hancom-symbol.hwp, para-unit-01.hwp, test-image.hwp, test-image2.hwp, 종이기준.hwp, 쪽기준.hwp(구조 삽입)과 텍스트 후보 18개다. 증거: `target/hwp-compatibility-matrix-v2/`(ignored).
+
+
+## HWP 일반 문서 호환 복구 — 고정 108 코퍼스 (2026-11-11)
+
+측정 v2(텍스트 18, 표·그림·글머리표 각 6)의 거부 원인을 원본·출력 레코드 단위로 추적해(`scripts/tests/hwp_record_diff.py`) 엔진 직렬화 결함과 T009의 과잉 제한을 각각 고쳤다. 분모는 v2의 complete baseline + 원본 사전검사 SAFE 108개 문서를 이름·SHA-256으로 고정했다(`target/hwp-compat-recovery/corpus-108.json`, 제외 180개와 사유 포함).
+
+### 엔진(`patches/rhwp/hwp-source-preservation.patch`, Release generation `907eabb2…`, `rhwp_bg.wasm` `c8957cbc…`)
+
+| 원인(관측) | 수정 |
+|---|---|
+| 편집 명령이 DocInfo DOCUMENT_PROPERTIES의 캐럿을 갱신 → DocInfo raw 재사용 봉인 깨짐 → 전체 재직렬화(텍스트 실패 87건의 원인) | 선택 기능 `setPreserveSourceCaret(true)`: 편집의 암묵적 캐럿 갱신 생략(명시적 `setCaretPosition`·기본 #4180 동작 불변). geul `rhwpModule.openDocument`가 켠다 |
+| 재직렬화 시 ID_MAPPINGS를 항상 72바이트로 기록(원본 64바이트 → T009 거부; 표·그림·글머리표 정의 추가 경로 전부) | 원본 ID_MAPPINGS 바이트를 보존해 원래 길이·뒤 필드를 유지하고 개수만 갱신 |
+| 파생 글머리표 PARA_SHAPE를 원본 54바이트 대신 58바이트로 기록 | `source_level_tail_absent`: 원본에 tail이 없던 모양과 그 파생은 54바이트 |
+| 새 표가 색·채우기가 다른 기존 실선 BorderFill도 재사용 | 기본 실선 BorderFill과 모델이 같은 항목만 재사용 |
+| 빈 텍스트 문단 첫머리 입력이 구역/단 정의(secd/cold)보다 앞에 들어감 | 앞선 구역/단 정의 뒤, 첫 개체 앞에 삽입 |
+| 편집 문단 뒤 첫 원래 문단의 vpos를 스타일 여백으로 다시 유도해 줄 밖 공간(비인라인 표 높이)이 사라짐 | 편집 전 저장 end가 있으면 저장 간격을 보존(표 생성은 호스트의 편집 전 end를 전달) |
+| 편집 세션 표식(`session_edited`)이 일부 저장 캐시 보정을 꺼, 같은 데이터라도 세션 쪽 수와 새로 연 쪽 수가 다름(독립 재열기 쪽 수 불일치 6건) | `rebuildLayout()`: 새로 연 문서와 같은 조판 규칙으로 파생 레이아웃 재구성. 제품 `exportAndCompare`(HWP)와 측정이 내보내기 전에 호출 — 모델 데이터는 바꾸지 않고, live 쪽은 다시 파싱하지 않은 live 모델 그대로다 |
+
+### T009(규칙 완화가 아니라 증명 범위 확장, 양성·음성 시험 추가)
+
+- 보존된 원본 표·그림은 새 삽입 부분집합 스키마가 아니라 구조 건전성(표 격자 정확 1회 덮기, 그림 shape component)과 바이트 동일 부분트리 일치로 증명한다. 잘못된 원본 격자(기존 음성 시험)는 계속 거부된다.
+- 불투명 본문 레코드(66–85 밖, 비어 있지 않은 range tag)는 소유 부분트리(제어 또는 문단)가 양쪽에서 같을 때만 허용한다. 소유 문단의 LINE_SEG는 `vertical_pos`만 달라질 수 있다. 편집 문단 안의 range tag·불투명 payload 변경은 거부한다.
+- 문단 모델: range tag 개수, 인라인 제어(4–9, 19, 20, payload 포함 토큰), 단일 단위 문자 24/30/31, 제어 마스크 = 존재하는 제어 문자의 OR.
+- 디버그 빌드 전용 `GEUL_T009_TRACE`로 거부 단계 위치를 출력한다(판정 불변).
+
+### 결과(측정 v3, 같은 하네스·같은 분모)
+
+파일: 발견 288, 크기 제외 106, 가져오기 오류 1, 구역 제외 4, 측정 177, complete+SAFE 108.
+
+| 연산 | 변이 PASS | 독립 재열기 | 원시 후보 | durable 게시 | 게시 파일 재열기 |
+|---|---|---|---|---|---|
+| text | 108/108 | 108/108 | 108/108 | 108/108 | 108/108 |
+| table | 108/108 | 108/108 | 108/108 | 108/108 | 108/108 |
+| picture | 108/108 | 108/108 | 108/108 | 108/108 | 108/108 |
+| bullets | 108/108 | 108/108 | 108/108 | 108/108 | 108/108 |
+
+엄격 수용 단계(`GEUL_HWP_MATRIX_PHASE=accept`, 고정 코퍼스, 미달 시 실패): **432/432 VERIFIED_PUBLISHED_REOPEN**. 미리보기: 430건은 Canvas raster로 PrvImage 재생성, 2건(텍스트)은 T009가 stale로 보지 않은 문서 무관 빈 PrvImage를 기존 정책대로 유지(PrvText는 재생성, 최종 판정 SAFE).
+
+제품 경로(`hwp-core-commands`)도 같은 엔진에서 양성 11건 게시·재열기(Phase 4 "N7"였던 `h-pen-01.hwp` 표 삽입 포함), OPAQUE-001·raw TBL-001·제품 출력 손상 7종·미리보기 없음 거부를 유지했다.
+
+이 결과는 이 고정 코퍼스와 이 엔진의 수용 기준이다. 제외된 180개(크기·다구역·가져오기 오류·incomplete baseline·사전검사 unsafe/unknown)와 그 밖의 HWP 문서 일반, 외부 한컴 호환, Linux native GUI/IBus는 검증하지 않았다.
