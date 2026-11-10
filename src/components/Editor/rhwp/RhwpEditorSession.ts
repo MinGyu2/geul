@@ -1477,6 +1477,13 @@ export class RhwpEditorSession implements DocumentCommandTarget {
     try {
       let bytes: Uint8Array;
       this.text?.prepareExport();
+      // HWP: incremental pagination after edits can differ from a fresh layout of the same model (the export
+      // reopens with a fresh layout). Rebuild the live derived layout first so page evidence compares like
+      // with like; the model itself is unchanged.
+      if (format === "hwp" && typeof doc.rebuildLayout === "function") {
+        doc.rebuildLayout();
+        try { this.pages = readPages(doc); } catch { /* the comparison below still uses the engine's page count */ }
+      }
       const exported = format === "hwp" ? doc.exportHwpWithReport() : doc.exportHwpxWithReport();
       try {
         const raw = exported.contentLoss();

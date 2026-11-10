@@ -1,0 +1,403 @@
+--- a/src/document_core/mod.rs
++++ b/src/document_core/mod.rs
+@@ -270,6 +270,9 @@
+     pub(crate) pending_cell_format_vpos: bool,
+     /// 이벤트 로그 (Command 실행 시 누적)
+     pub(crate) event_log: Vec<DocumentEvent>,
++    /// [geul] 편집 명령이 DocInfo DocumentProperties의 캐럿 메타데이터를 암묵적으로 갱신하지 않는다
++    /// (원본 보존 저장). 명시적 `setCaretPosition`은 그대로 갱신한다. 기본값 false = 기존 #4180 동작.
++    pub(crate) preserve_source_caret: bool,
+     /// 글상자 오버플로우 연결 캐시 (섹션별, 지연 계산)
+     pub(crate) overflow_links_cache:
+         RefCell<HashMap<usize, Vec<queries::doc_tree_nav::OverflowLink>>>,
+@@ -547,6 +550,7 @@
+             batch_mode: false,
+             pending_cell_format_vpos: false,
+             event_log: Vec::new(),
++            preserve_source_caret: false,
+             overflow_links_cache: RefCell::new(HashMap::new()),
+             snapshot_store: Vec::new(),
+             next_snapshot_id: 0,
+--- a/src/document_core/commands/document.rs
++++ b/src/document_core/commands/document.rs
+@@ -315,6 +315,7 @@
+             batch_mode: false,
+             pending_cell_format_vpos: false,
+             event_log: Vec::new(),
++            preserve_source_caret: false,
+             overflow_links_cache: RefCell::new(HashMap::new()),
+             snapshot_store: Vec::new(),
+             next_snapshot_id: 0,
+--- a/src/document_core/commands/text_editing.rs
++++ b/src/document_core/commands/text_editing.rs
+@@ -673,6 +673,7 @@
+     /// pagination or measurement state.
+     fn picture_band_edit_shadow(&self) -> DocumentCore {
+         let mut staged = DocumentCore::new_empty();
++        staged.preserve_source_caret = self.preserve_source_caret;
+         staged.document = self.document.clone();
+         staged.styles = self.styles.clone();
+         staged.font_environment = self.font_environment.clone();
+@@ -1341,7 +1342,7 @@
+         } else {
+             (para.controls.len() as u32) * 8
+         };
+-        self.stamp_caret(section_idx as u32, para_idx as u32, caret_utf16_pos);
++        self.stamp_edit_caret(section_idx as u32, para_idx as u32, caret_utf16_pos);
+ 
+         if deleted_count > 0 {
+             self.event_log.push(DocumentEvent::TextDeleted {
+@@ -1384,6 +1385,16 @@
+         }
+     }
+ 
++    /// [geul] 편집 명령의 암묵적 캐럿 스탬핑. `preserve_source_caret`이면 원본 DocumentProperties를
++    /// 그대로 둔다 — DocInfo 봉인 다이제스트가 DocumentProperties를 포함하므로, 바꾸면 raw 재사용이
++    /// 깨져 IR 재직렬화(ID_MAPPINGS 길이 변경 등)로 원본 레코드가 어긋난다.
++    pub(crate) fn stamp_edit_caret(&mut self, sec: u32, para: u32, caret_utf16: u32) {
++        if self.preserve_source_caret {
++            return;
++        }
++        self.stamp_caret(sec, para, caret_utf16);
++    }
++
+     /// [#4180] 문서 캐럿 메타데이터 스탬핑의 유일한 쓰기 지점 — doc_properties
+     /// (재직렬화 경로)와 raw_stream(passthrough 경로) 양쪽에 반영한다.
+     pub(crate) fn stamp_caret(&mut self, sec: u32, para: u32, caret_utf16: u32) {
+@@ -1567,7 +1578,7 @@
+             // 텍스트 없이 컨트롤만 있는 경우
+             (para.controls.len() as u32) * 8
+         };
+-        self.stamp_caret(section_idx as u32, para_idx as u32, caret_utf16_pos);
++        self.stamp_edit_caret(section_idx as u32, para_idx as u32, caret_utf16_pos);
+ 
+         self.event_log.push(DocumentEvent::TextInserted {
+             section: section_idx,
+@@ -1688,7 +1699,7 @@
+         } else {
+             (para.controls.len() as u32) * 8
+         };
+-        self.stamp_caret(section_idx as u32, para_idx as u32, caret_utf16_pos);
++        self.stamp_edit_caret(section_idx as u32, para_idx as u32, caret_utf16_pos);
+ 
+         self.event_log.push(DocumentEvent::TextDeleted {
+             section: section_idx,
+@@ -3463,9 +3474,11 @@
+             // 재페이지네이션
+             self.paginate_if_needed();
+ 
+-            // 캐럿 위치 갱신
+-            self.document.doc_properties.caret_list_id = section_idx as u32;
+-            self.document.doc_properties.caret_para_id = start_para as u32;
++            // 캐럿 위치 갱신 ([geul] 원본 캐럿 보존 모드에서는 하지 않는다)
++            if !self.preserve_source_caret {
++                self.document.doc_properties.caret_list_id = section_idx as u32;
++                self.document.doc_properties.caret_para_id = start_para as u32;
++            }
+ 
+             self.event_log.push(DocumentEvent::TextDeleted {
+                 section: section_idx,
+--- a/src/wasm_api.rs
++++ b/src/wasm_api.rs
+@@ -3287,6 +3287,14 @@
+         );
+     }
+ 
++    /// [geul] 편집 명령이 문서 캐럿 메타데이터(DocInfo DocumentProperties)를 암묵적으로 갱신하지 않게 한다.
++    /// 원본 보존 저장(T009)에서 DocInfo를 원본 그대로 재사용하기 위한 선택 기능이며, 명시적
++    /// `setCaretPosition`은 영향받지 않는다.
++    #[wasm_bindgen(js_name = setPreserveSourceCaret)]
++    pub fn set_preserve_source_caret(&mut self, enabled: bool) {
++        self.preserve_source_caret = enabled;
++    }
++
+     /// 표의 행/열/셀 수를 반환한다.
+     ///
+     /// 반환: JSON `{"rowCount":N,"colCount":N,"cellCount":N}`
+--- a/src/model/style.rs
++++ b/src/model/style.rs
+@@ -402,6 +402,10 @@
+     /// normal head_type/numbering_id/para_level fields.
+     pub hwpx_heading_case: Option<(u16, u8)>,
+     pub hwpx_heading_unsupported: bool,
++    /// [geul] 원본 HWP5 PARA_SHAPE 레코드에 말미 4바이트(개요 수준 tail)가 없었는지(54바이트 이하).
++    /// 파생 모양(`ParaShapeMods::apply_to`는 원본을 복제)도 같은 레코드 길이로 직렬화해, 원본 문서의
++    /// 정의 형식을 바꾸지 않는다. 새로 만든 모양은 false(종전 58바이트).
++    pub source_level_tail_absent: bool,
+ }
+ 
+ /// [#6875] 문단 줄바꿈 방식("한 줄로 입력") — HWP5 ParaShape `attr2` bits 0-1 ↔
+@@ -454,6 +458,7 @@
+             && self.hwpx_text_dir == other.hwpx_text_dir
+             && self.hwpx_heading_case == other.hwpx_heading_case
+             && self.hwpx_heading_unsupported == other.hwpx_heading_unsupported
++            && self.source_level_tail_absent == other.source_level_tail_absent
+     }
+ }
+ 
+--- a/src/parser/doc_info.rs
++++ b/src/parser/doc_info.rs
+@@ -78,6 +78,7 @@
+             }
+             tags::HWPTAG_ID_MAPPINGS => {
+                 id_mappings = parse_id_mappings(&record.data)?;
++                doc_info.id_mappings_raw = Some(record.data.clone());
+                 doc_info.bullet_count = id_mappings.bullet_count;
+                 doc_info.memo_shape_count = id_mappings.memo_shape_count;
+             }
+@@ -780,6 +781,7 @@
+     // [#2734] 말미 4바이트(payload offset 54~57) = 개요 수준(0~9 = 1수준~10수준).
+     // attr1 bit25~27 은 3비트라 한컴이 6 에서 포화시키므로 8~10수준은 이 필드에만 남는다.
+     // 종전엔 읽지 않아 8·9·10수준 문단이 모두 7수준(para_level=6)으로 붕괴했다.
++    let source_level_tail_absent = r.remaining() < 4;
+     let outline_level_tail = if r.remaining() >= 4 {
+         r.read_u32().unwrap_or(0)
+     } else {
+@@ -824,6 +826,7 @@
+         hwpx_text_dir: None,
+         hwpx_heading_case: None,
+         hwpx_heading_unsupported: false,
++        source_level_tail_absent,
+         // HWP5 원본에는 HWPX 표기 구분이 없다 — switch 형태로 방출한다 (#4898).
+         hwpx_plain_para_margin: false,
+         hwpx_plain_para_margin_physical: false,
+--- a/src/serializer/doc_info.rs
++++ b/src/serializer/doc_info.rs
+@@ -235,7 +235,19 @@
+     w.write_u32(0).unwrap();
+     w.write_u32(0).unwrap();
+ 
+-    w.into_bytes()
++    let full = w.into_bytes();
++    // [geul] 원본 ID_MAPPINGS가 있으면 그 길이를 지킨다: 알려진 개수(앞 16개, 64바이트)만 갱신하고
++    // 그 뒤 필드는 원본 바이트를 둔다. 원본보다 짧은 레코드에 담기지 않는 개수가 0이 아니면
++    // 정보를 잃지 않도록 종전 72바이트 형식을 쓴다.
++    if let Some(raw) = doc_info.id_mappings_raw.as_ref() {
++        let known = (raw.len().min(64) / 4) * 4;
++        if raw.len() >= 4 && full[known..64].iter().all(|b| *b == 0) {
++            let mut out = raw.clone();
++            out[..known].copy_from_slice(&full[..known]);
++            return out;
++        }
++    }
++    full
+ }
+ 
+ pub fn serialize_bin_data(bin_data: &BinData) -> Vec<u8> {
+@@ -812,7 +824,10 @@
+     // [#2734] 이 4바이트의 정체는 개요 수준(0~9 = 1수준~10수준)이다. samples 코퍼스의
+     // 58바이트 레코드 11,913건에서 tail 과 attr1 bit25~27 이 전수 정합하며(포화 138건 제외),
+     // tail != 0 인 872건이 종전 0 리터럴에 덮여 사라졌다. 길이 계약은 그대로 두고 값만 채운다.
+-    w.write_u32(ps.para_level.min(9) as u32).unwrap();
++    // [geul] 원본 레코드에 tail이 없던 모양(과 그 파생)은 원본 길이(54바이트)를 지킨다.
++    if !ps.source_level_tail_absent {
++        w.write_u32(ps.para_level.min(9) as u32).unwrap();
++    }
+     w.into_bytes()
+ }
+ 
+--- a/src/model/document.rs
++++ b/src/model/document.rs
+@@ -240,6 +240,9 @@
+     /// 라운드트립 시 refList에 재방출되지 않아, memoPr(메모 테두리/색상 모양)이
+     /// 통째로 소실되는 문제를 splice 보존으로 막는다. 원본에 없으면 None.
+     pub memo_properties_xml: Option<String>,
++    /// [geul] 원본 HWP5 ID_MAPPINGS 레코드 바이트. 재직렬화 시 원본 길이(구 문서 64바이트 등)와
++    /// 알 수 없는 뒤쪽 필드를 지키고 알려진 개수만 갱신한다. HWPX·새 문서는 None(종전 72바이트).
++    pub id_mappings_raw: Option<Vec<u8>>,
+     /// DISTRIBUTE_DOC_DATA 레코드 제거 플래그 (serializer에서 raw_stream surgical remove 수행)
+     pub distribute_doc_data_removed: bool,
+     /// raw_stream이 model 변경과 동기화되지 않음 (serializer에서 재생성 필요)
+--- a/src/model/raw_provenance.rs
++++ b/src/model/raw_provenance.rs
+@@ -132,6 +132,8 @@
+         // 여기에 넣으면 같은 정보를 두 번 세어 raw 재사용을 근거 없이 깬다.
+         print_method: _,
+         raw_stream: _,
++        // 원본 ID_MAPPINGS 바이트는 길이 보존용 raw 캐시다(개수는 모델에서 다시 계산).
++        id_mappings_raw: _,
+         bullet_count,
+         memo_shape_count,
+         memo_properties_xml,
+--- a/src/document_core/commands/object_ops/table.rs
++++ b/src/document_core/commands/object_ops/table.rs
+@@ -458,9 +458,21 @@
+         // BorderFill: 실선 테두리가 있는 기존 항목 재사용, 없으면 새로 생성
+         let cell_border_fill_id = {
+             let existing = self.document.doc_info.border_fills.iter().position(|bf| {
+-                bf.borders
+-                    .iter()
+-                    .all(|b| b.line_type == BorderLineType::Solid && b.width >= 1)
++                // [geul] 기본 실선 BorderFill과 모델이 같은 항목만 재사용한다. 색·채우기·대각선이
++                // 다른 기존 정의를 새 표가 가리키면 원본 문서의 서식 정의 의미가 새 표에 섞인다.
++                let solid = BorderLine {
++                    line_type: BorderLineType::Solid,
++                    width: 1,
++                    color: 0,
++                };
++                bf.attr == 0
++                    && bf.borders.iter().all(|b| *b == solid)
++                    && bf.diagonal.diagonal_type == 1
++                    && bf.diagonal.width == 0
++                    && bf.diagonal.color == 0
++                    && bf.center_line == CenterLine::None
++                    && bf.fill == Fill::default()
++                    && !bf.three_d
+             });
+             if let Some(idx) = existing {
+                 (idx + 1) as u16 // 1-based
+@@ -916,9 +928,21 @@
+         // BorderFill
+         let cell_border_fill_id = {
+             let existing = self.document.doc_info.border_fills.iter().position(|bf| {
+-                bf.borders
+-                    .iter()
+-                    .all(|b| b.line_type == BorderLineType::Solid && b.width >= 1)
++                // [geul] 기본 실선 BorderFill과 모델이 같은 항목만 재사용한다. 색·채우기·대각선이
++                // 다른 기존 정의를 새 표가 가리키면 원본 문서의 서식 정의 의미가 새 표에 섞인다.
++                let solid = BorderLine {
++                    line_type: BorderLineType::Solid,
++                    width: 1,
++                    color: 0,
++                };
++                bf.attr == 0
++                    && bf.borders.iter().all(|b| *b == solid)
++                    && bf.diagonal.diagonal_type == 1
++                    && bf.diagonal.width == 0
++                    && bf.diagonal.color == 0
++                    && bf.center_line == CenterLine::None
++                    && bf.fill == Fill::default()
++                    && !bf.three_d
+             });
+             if let Some(idx) = existing {
+                 (idx + 1) as u16
+--- a/src/wasm_api.rs
++++ b/src/wasm_api.rs
+@@ -3295,6 +3295,15 @@
+         self.preserve_source_caret = enabled;
+     }
+ 
++    /// [geul] 파생 레이아웃 상태(스타일 해소·문단 구성·측정 캐시·페이지 분할)를 모델에서 처음부터 다시
++    /// 만든다. 편집 뒤 증분 페이지 분할이 같은 모델을 새로 연 결과와 다를 수 있어, 저장 근거 비교 전에
++    /// 같은 기준(새로 연 문서와 같은 전체 레이아웃)으로 맞춘다. 반환값은 다시 계산한 쪽 수.
++    #[wasm_bindgen(js_name = rebuildLayout)]
++    pub fn rebuild_layout(&mut self) -> u32 {
++        self.rebuild_derived_state();
++        self.page_count()
++    }
++
+     /// 표의 행/열/셀 수를 반환한다.
+     ///
+     /// 반환: JSON `{"rowCount":N,"colCount":N,"cellCount":N}`
+--- a/src/renderer/composer/line_breaking.rs
++++ b/src/renderer/composer/line_breaking.rs
+@@ -4905,6 +4905,10 @@
+     // 직전 문단이 이번 편집의 변조 대상이었는가 + 직전 문단에 적용된 delta.
+     let mut prev_modified = false;
+     let mut prev_delta: i32 = 0;
++    // [geul] 편집 구간 뒤 첫 원래 문단은, 편집 전 저장 end(start_stored_end)가 있으면 그 문단과
++    // 편집 문단 사이의 저장 간격을 그대로 둔다. 저장 간격에는 줄 밖 공간(글자처럼 취급하지 않는
++    // 표·개체 높이 등)이 담겨 있어, 스타일 여백으로 다시 유도하면 그 높이가 사라진다.
++    let mut stored_gap_carried = false;
+ 
+     for pi in start_para..paragraphs.len() {
+         if paragraphs[pi].line_segs.is_empty() {
+@@ -4937,6 +4941,14 @@
+         let delta = if is_reset {
+             // 단/쪽 리셋 경계 — 저장 좌표 유지.
+             0
++        } else if !para_modified
++            && prev_modified
++            && !stored_gap_carried
++            && start_stored_end.is_some_and(|stored| current_start >= stored)
++        {
++            // 편집 구간 뒤 첫 원래 문단 — 저장 간격(current_start - 저장 end)을 보존한다.
++            stored_gap_carried = true;
++            next_vpos.saturating_sub(start_stored_end.unwrap_or(0))
+         } else if para_modified || prev_modified {
+             // 변조 인접 경계 — 이동 후 흐름에 스타일 여백 gap 으로 다시 잇는다.
+             let gap = prev_idx
+--- a/src/document_core/commands/object_ops/table.rs
++++ b/src/document_core/commands/object_ops/table.rs
+@@ -417,6 +417,10 @@
+         }
+ 
+         let instance_id = super::super::clone_identity::next_instance_id(&self.document)?;
++        // [geul] 편집 전 호스트 문단의 저장 흐름 end — 아래 vpos 재계산이 다음 원래 문단의 저장 간격을 보존한다.
++        let stored_host_end = crate::renderer::composer::paragraph_flow_end(
++            &self.document.sections[section_idx].paragraphs[para_idx],
++        );
+ 
+         // --- 1. 편집 영역 폭 계산 ---
+         let pd = &self.document.sections[section_idx].section_def.page_def;
+@@ -809,7 +813,7 @@
+             &mut self.document.sections[section_idx].paragraphs,
+             para_idx,
+             Some(insert_para_idx..fresh_end),
+-            None,
++            stored_host_end,
+             &self.styles,
+             self.dpi,
+             doc_hwp3_layout,
+--- a/src/model/paragraph.rs
++++ b/src/model/paragraph.rs
+@@ -1153,7 +1153,17 @@
+             last_char_end + trailing_ctrl_count * 8
+         } else if inserts_before_inline_control {
+             if effective_char_offset == 0 {
+-                0
++                // [geul] 문단 첫머리의 구역/단 정의(secd/cold)는 본문보다 앞서야 한다. 그 뒤, 첫 개체
++                // 앞에 넣는다(각 컨트롤 = 8 code units). 앞선 구역/단 정의가 없으면 종전처럼 0.
++                (self
++                    .controls
++                    .iter()
++                    .zip(control_positions.iter())
++                    .take_while(|(ctrl, &pos)| {
++                        pos == 0 && matches!(ctrl, Control::SectionDef(_) | Control::ColumnDef(_))
++                    })
++                    .count() as u32)
++                    * 8
+             } else if !self.char_offsets.is_empty() {
+                 let prev_idx = effective_char_offset - 1;
+                 self.char_offsets[prev_idx] + Self::char_stream_len(text_chars[prev_idx])
+--- a/src/wasm_api.rs
++++ b/src/wasm_api.rs
+@@ -3295,13 +3295,34 @@
+         self.preserve_source_caret = enabled;
+     }
+ 
+-    /// [geul] 파생 레이아웃 상태(스타일 해소·문단 구성·측정 캐시·페이지 분할)를 모델에서 처음부터 다시
+-    /// 만든다. 편집 뒤 증분 페이지 분할이 같은 모델을 새로 연 결과와 다를 수 있어, 저장 근거 비교 전에
+-    /// 같은 기준(새로 연 문서와 같은 전체 레이아웃)으로 맞춘다. 반환값은 다시 계산한 쪽 수.
++    /// [geul] 이 모델을 새로 연 문서와 같은 조판 규칙으로 파생 레이아웃(스타일 해소·문단 구성·측정 캐시·
++    /// 페이지 분할)을 처음부터 다시 만든다. 편집 세션 표식(`session_edited` = 봉인은 있는데 raw 가 사라진
++    /// 구역)은 일부 저장 캐시 보정을 끄므로, 같은 데이터라도 편집 세션과 새로 연 문서의 쪽 수가 갈린다.
++    /// 저장 근거 비교 전에 두 쪽을 같은 규칙으로 맞추기 위해, 재구성하는 동안만 편집 구역의 봉인을 떼어
++    /// 두었다가 그대로 되돌린다(직렬화는 그 사이 일어나지 않는다). 모델 데이터는 바꾸지 않는다.
++    /// 반환값은 다시 계산한 쪽 수.
+     #[wasm_bindgen(js_name = rebuildLayout)]
+     pub fn rebuild_layout(&mut self) -> u32 {
++        let detached: Vec<_> = self
++            .document
++            .sections
++            .iter_mut()
++            .map(|section| {
++                if section.raw_stream.is_none() {
++                    section.raw_provenance.take()
++                } else {
++                    None
++                }
++            })
++            .collect();
+         self.rebuild_derived_state();
+-        self.page_count()
++        let pages = self.page_count();
++        for (section, seal) in self.document.sections.iter_mut().zip(detached) {
++            if seal.is_some() {
++                section.raw_provenance = seal;
++            }
++        }
++        pages
+     }
+ 
+     /// 표의 행/열/셀 수를 반환한다.

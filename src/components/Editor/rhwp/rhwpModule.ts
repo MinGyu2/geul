@@ -21,6 +21,8 @@ export interface CharShapePrefix { free(): void }
 
 export interface RhwpDocument {
   getSectionCount?(): number;
+  /** geul engine patch: rebuild the derived layout (fresh pagination) from the model; returns the page count. */
+  rebuildLayout?(): number;
   getBulletList?(): string;
   getTableProperties?(section: number, paragraph: number, control: number): string;
   getCellProperties?(section: number, paragraph: number, control: number, cell: number): string;
@@ -172,6 +174,17 @@ let loading: Promise<RhwpModule> | null = null;
  * 모듈을 한 번만 불러온다. 실패하면 다음 호출에서 다시 시도한다(실패를 캐시하지 않음).
  * `importer`는 테스트 주입용이다.
  */
+/**
+ * Edits must not implicitly rewrite the stored caret in DocInfo DocumentProperties: that breaks the
+ * engine's raw DocInfo reuse and re-serializes every definition (T009 refuses the result). Engines
+ * without the option (older generations) keep their behaviour.
+ */
+export function preserveSourceCaret<T>(doc: T): T {
+  const setter = (doc as { setPreserveSourceCaret?: (enabled: boolean) => void }).setPreserveSourceCaret;
+  if (typeof setter === "function") setter.call(doc, true);
+  return doc;
+}
+
 export function loadRhwpModule(importer: (url: string) => Promise<unknown> = (url) => import(/* @vite-ignore */ url), fetcher: FetchArtifact = (url, options) => fetch(url, options)): Promise<RhwpModule> {
   loading ??= (async () => {
     const selected = await identityFrom(JSON.parse(new TextDecoder().decode(await bytesFrom(fetcher, RHWP_BUILD_URL, "no-store"))));
@@ -191,7 +204,7 @@ export function loadRhwpModule(importer: (url: string) => Promise<unknown> = (ur
     const memory = (exports as { memory?: unknown } | null)?.memory;
     const createEmpty = HwpDocument.createEmpty;
     return {
-      openDocument: (bytes: Uint8Array) => new HwpDocument(bytes),
+      openDocument: (bytes: Uint8Array) => preserveSourceCaret(new HwpDocument(bytes)),
       // Opening documents never depends on the creation factory; a missing or non-callable factory only
       // makes creation unavailable (it is never called).
       ...(typeof createEmpty === "function"
