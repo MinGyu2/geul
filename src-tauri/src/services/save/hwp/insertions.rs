@@ -121,6 +121,120 @@ pub(super) fn assess(a: &Container, b: &Container) -> Option<Checked<Proof>> {
     Some(prove(a, b, &ar, &br))
 }
 
+/// The legacy ordinary-edit path permits text deletion/replacement using the
+/// independent live/export reopen evidence. Additive text/control units must
+/// retain the original paragraph boundaries and context, including empty ones.
+/// Match borrowed units and explicit start/end markers in O(n), without per-unit allocation.
+/// The additive proof below additionally binds every character/anchor to its end.
+pub(super) fn ordinary_boundaries(
+    ar: &[Record<'_>],
+    br: &[Record<'_>],
+    context: bool,
+) -> Checked<()> {
+    fn roots<'a>(rs: &[Record<'a>]) -> Option<Vec<(&'a [u8], &'a [u8])>> {
+        let mut out: Vec<(&[u8], &[u8])> = Vec::new();
+        let mut root = false;
+        let mut text_seen = false;
+        for &(tag, level, bytes) in rs {
+            if level == 0 {
+                root = tag == 66;
+                text_seen = false;
+                if root {
+                    out.push((b"", bytes.get(8..12)?));
+                }
+            }
+            if root && tag == 67 && level == 1 {
+                if text_seen || bytes.len() % 2 != 0 || !bytes.ends_with(b"\r\0") {
+                    return None;
+                }
+                out.last_mut()?.0 = &bytes[..bytes.len() - 2];
+                text_seen = true;
+            }
+        }
+        Some(out)
+    }
+    // This supplementary ordinary-edit invariant is available only for the
+    // modeled original layout. Do not invent a malformed-original diagnosis
+    // from missing schema evidence: compare_with still owns full framing and
+    // opaque-record checks, and structural changes require the strict proof.
+    let Some(a) = roots(ar) else {
+        return Ok(());
+    };
+    let b = roots(br).ok_or_else(|| finding(FindingCode::OutputMalformed, BODY))?;
+    // With the same number of paragraphs, ordinary insertion/deletion of text
+    // cannot justify moving a control to another paragraph or transferring a
+    // paragraph's shape/style/break flags. Added splits use the additive token
+    // proof (or the unchanged-unit boundary check below).
+    fn anchors(mut bytes: &[u8]) -> impl Iterator<Item = &[u8]> {
+        std::iter::from_fn(move || {
+            while bytes.len() >= 2 {
+                if matches!(u16::from_le_bytes([bytes[0], bytes[1]]), 2 | 11) {
+                    let n = bytes.len().min(16);
+                    let (anchor, rest) = bytes.split_at(n);
+                    bytes = rest;
+                    return Some(anchor);
+                }
+                bytes = &bytes[2..];
+            }
+            None
+        })
+    }
+    crate::document::resources::charge(
+        crate::document::resources::Category::Comparison,
+        (a.len() + b.len()).saturating_mul(std::mem::size_of::<(&[u8], &[u8])>()),
+    )
+    .map_err(|_| finding(FindingCode::LimitExceeded, BODY))?;
+    if context && a.len() == b.len() {
+        for ((x, hx), (y, hy)) in a.iter().zip(&b) {
+            preserved(anchors(x).eq(anchors(y)) && hx == hy, BODY)?;
+        }
+    }
+    if !context {
+        return Ok(());
+    } // the strict additive proof owns canonical shape ancestry
+    let mut new_units = b.iter().flat_map(|p| p.0.as_chunks::<2>().0.iter());
+    let additive = a
+        .iter()
+        .flat_map(|p| p.0.as_chunks::<2>().0.iter())
+        .all(|old| new_units.by_ref().any(|new| new == old));
+    // Ordinary deletion/replacement keeps its existing independent reopen
+    // contract. Additive ordinary text, including unchanged text, must also
+    // preserve old paragraph ends: appending one character is not a bypass.
+    if !additive {
+        return Ok(());
+    }
+    preserved(
+        a.iter()
+            .map(|p| p.1[3])
+            .filter(|f| *f != 0)
+            .eq(b.iter().map(|p| p.1[3]).filter(|f| *f != 0)),
+        BODY,
+    )?;
+    fn tokens<'a>(
+        paras: &'a [(&'a [u8], &'a [u8])],
+    ) -> impl Iterator<Item = (u8, u16, &'a [u8])> + 'a {
+        paras.iter().flat_map(|(text, header)| {
+            let context = &header[..3];
+            // Start flags remain on the split prefix; the old terminator may
+            // match the suffix. Kind separates flags from characters/CR.
+            std::iter::once((1, u16::from(header[3]), &b""[..]))
+                .filter(|(_, f, _)| *f != 0)
+                .chain(
+                    text.as_chunks::<2>()
+                        .0
+                        .iter()
+                        .map(move |u| (0, u16::from_le_bytes(*u), context)),
+                )
+                .chain(std::iter::once((0, 13, context)))
+        })
+    }
+    let mut after = tokens(&b);
+    for before in tokens(&a) {
+        preserved(after.by_ref().any(|token| token == before), BODY)?;
+    }
+    Ok(())
+}
+
 fn mappings(rs: &[Record<'_>], defs: &Defs<'_>) -> Checked<Vec<usize>> {
     preserved(
         rs.first().is_some_and(|r| r.0 == 16 && r.1 == 0)
@@ -435,67 +549,143 @@ struct Resources {
     new_paths: BTreeSet<String>,
     dimensions: BTreeMap<usize, (u32, u32)>,
 }
-fn resources(a: &Container, b: &Container, ac: &Defs<'_>, bc: &Defs<'_>) -> Checked<Resources> {
-    let mut names = BTreeSet::new();
-    let mut ids = BTreeSet::new();
-    let mut new_paths = BTreeSet::new();
-    let mut dimensions = BTreeMap::new();
-    for (index, decl) in entries(bc, 18).iter().enumerate() {
-        valid(decl.len() >= 6, "DocInfo")?;
+/// Existing declarations use the T009 storage model, not the insertion schema.
+/// Resolve each definition independently of its ordinal: picture IDs refer to
+/// definition ordinals; storage IDs are allowed to be sparse. Never guess a path.
+fn resource_paths(c: &Container, defs: &Defs<'_>) -> Checked<BTreeMap<usize, String>> {
+    let mut paths = BTreeMap::new();
+    for name in c.streams.keys() {
+        if name.to_ascii_uppercase().starts_with("BINDATA/") {
+            reference(
+                paths
+                    .insert(name.to_ascii_uppercase(), name.clone())
+                    .is_none(),
+                name,
+            )?;
+        }
+    }
+    let mut resolved = BTreeMap::new();
+    let mut claimed = BTreeSet::new();
+    let mut storage_ids = BTreeSet::new();
+    for (index, decl) in entries(defs, 18).iter().enumerate() {
         let attr = word(decl, 0)?;
+        match attr & 15 {
+            0 => {
+                // Linked BIN_DATA: two counted UTF-16 paths, no embedded stream.
+                let mut at = 2;
+                for _ in 0..2 {
+                    let n = word(decl, at)?;
+                    at += 2;
+                    let bytes = decl
+                        .get(at..at + 2 * n)
+                        .ok_or_else(|| finding(FindingCode::OutputMalformed, "DocInfo"))?;
+                    let units: Vec<_> = bytes
+                        .as_chunks::<2>()
+                        .0
+                        .iter()
+                        .map(|v| u16::from_le_bytes(*v))
+                        .collect();
+                    valid(String::from_utf16(&units).is_ok(), "DocInfo")?;
+                    at += 2 * n;
+                }
+                valid(at == decl.len(), "DocInfo")?;
+                continue;
+            }
+            1 | 2 => {}
+            _ => return Err(finding(FindingCode::Unsupported, "DocInfo")),
+        }
         let id = word(decl, 2)?;
-        let n = word(decl, 4)?;
-        // Linked/OLE/sparse allocation is outside this insertion contract, not silently remapped.
-        preserved(
-            attr & 15 == 1 && id == index + 1 && ids.insert(id),
+        let ext = if attr & 15 == 2 && decl.len() == 4 {
+            "OLE".to_owned()
+        } else {
+            let n = word(decl, 4)?;
+            valid(decl.len() == 6 + 2 * n, "DocInfo")?;
+            let units: Vec<_> = decl[6..]
+                .as_chunks::<2>()
+                .0
+                .iter()
+                .map(|v| u16::from_le_bytes(*v))
+                .collect();
+            String::from_utf16(&units)
+                .map_err(|_| finding(FindingCode::OutputMalformed, "DocInfo"))?
+        };
+        valid(
+            id > 0 && !ext.is_empty() && ext.is_ascii() && !ext.contains(['/', '\\']),
             "DocInfo",
         )?;
-        valid(decl.len() == 6 + 2 * n && n > 0 && n <= 5, "DocInfo")?;
+        let path = format!("BinData/BIN{id:04X}.{ext}");
+        valid((attr >> 4) & 3 != 3, &path)?;
+        let key = path.to_ascii_uppercase();
+        reference(
+            storage_ids.insert(id) && claimed.insert(key.clone()),
+            "DocInfo",
+        )?;
+        let actual = paths
+            .get(&key)
+            .ok_or_else(|| finding(FindingCode::ReferenceInvalid, &path))?;
+        resolved.insert(index + 1, actual.clone());
+    }
+    Ok(resolved)
+}
+fn resources(a: &Container, b: &Container, ac: &Defs<'_>, bc: &Defs<'_>) -> Checked<Resources> {
+    let old = entries(ac, 18);
+    let all = entries(bc, 18);
+    preserved(all.starts_with(old), "DocInfo")?;
+    // Reject unsupported new storage before interpreting it as a legacy form.
+    for (index, decl) in all.iter().enumerate().skip(old.len()) {
+        preserved(
+            word(decl, 0)? & 15 == 1 && word(decl, 2)? == index + 1,
+            "DocInfo",
+        )?;
+    }
+    let paths = resource_paths(b, bc)?;
+    // Original stream bytes/compression equivalence are checked independently
+    // by compare_with/compare_stream. Exact definition prefixes and preserved
+    // object tokens bind the original reference meaning to those same streams.
+    let mut new_paths = BTreeSet::new();
+    let mut dimensions = BTreeMap::new();
+    for (index, decl) in all.iter().enumerate().skip(old.len()) {
+        let attr = word(decl, 0)?;
+        let id = word(decl, 2)?;
+        preserved(id == index + 1, "DocInfo")?;
+        let actual = paths
+            .get(&(index + 1))
+            .ok_or_else(|| finding(FindingCode::ReferenceInvalid, "DocInfo"))?;
         let units: Vec<_> = decl[6..]
             .as_chunks::<2>()
             .0
             .iter()
-            .map(|v| u16::from_le_bytes([v[0], v[1]]))
+            .map(|v| u16::from_le_bytes(*v))
             .collect();
         let ext = String::from_utf16(&units)
             .map_err(|_| finding(FindingCode::OutputMalformed, "DocInfo"))?;
-        valid(ext.bytes().all(|b| b.is_ascii_alphanumeric()), "DocInfo")?;
-        let path = format!("BinData/BIN{id:04X}.{ext}");
-        let key = path.to_ascii_uppercase();
-        let matches: Vec<_> = b
-            .streams
-            .iter()
-            .filter(|(n, _)| n.to_ascii_uppercase() == key)
-            .collect();
-        reference(matches.len() == 1 && names.insert(key), &path)?;
-        let (actual, raw) = matches[0];
+        preserved(
+            matches!(ext.as_str(), "png" | "jpg" | "jpeg")
+                && !a.streams.keys().any(|n| n.eq_ignore_ascii_case(actual)),
+            "DocInfo",
+        )?;
+        let raw = &b.streams[actual];
         let compression = (attr >> 4) & 3;
-        valid(compression != 3, &path)?;
-        if index >= entries(ac, 18).len() {
-            let decoded = if compression == 1 || (compression == 0 && b.compressed) {
-                inflate_bounded(raw, crate::picture::MAX_BYTES as u64)
-                    .map_err(|e| Side::Output.unpack_finding(e, &path))?
-            } else {
-                raw.to_vec()
-            };
-            preserved(
-                attr == 0x0101
-                    && matches!(ext.as_str(), "png" | "jpg" | "jpeg")
-                    && !a.streams.keys().any(|n| n.eq_ignore_ascii_case(actual)),
-                "DocInfo",
-            )?;
-            valid(decoded.len() <= crate::picture::MAX_BYTES, &path)?;
-            let signature = if ext == "png" {
+        let decoded = if compression == 1 || (compression == 0 && b.compressed) {
+            inflate_bounded(raw, crate::picture::MAX_BYTES as u64)
+                .map_err(|e| Side::Output.unpack_finding(e, actual))?
+        } else {
+            raw.to_vec()
+        };
+        preserved(attr == 0x0101, "DocInfo")?;
+        valid(decoded.len() <= crate::picture::MAX_BYTES, actual)?;
+        valid(
+            if ext == "png" {
                 decoded.starts_with(b"\x89PNG\r\n\x1a\n")
             } else {
                 decoded.starts_with(b"\xff\xd8\xff")
-            };
-            valid(signature, &path)?;
-            let size = crate::picture::dimensions(&decoded)
-                .ok_or_else(|| finding(FindingCode::OutputMalformed, &path))?;
-            dimensions.insert(index + 1, size);
-            new_paths.insert(actual.clone());
-        }
+            },
+            actual,
+        )?;
+        let size = crate::picture::dimensions(&decoded)
+            .ok_or_else(|| finding(FindingCode::OutputMalformed, actual))?;
+        dimensions.insert(index + 1, size);
+        new_paths.insert(actual.clone());
     }
     for name in b
         .streams
@@ -742,6 +932,9 @@ fn paragraph<'a>(
     let mut shape = 0;
     while unit < text.len() / 2 {
         let ch = word(text, unit * 2)? as u16;
+        while shape + 1 < shapes.len() && shapes[shape + 1].0 <= unit {
+            shape += 1;
+        }
         if matches!(ch, 2 | 11) {
             valid(
                 unit + 8 <= text.len() / 2 && word(text, (unit + 7) * 2)? == ch as usize,
@@ -770,13 +963,16 @@ fn paragraph<'a>(
         }
         if ch == 13 {
             valid(unit + 1 == text.len() / 2, BODY)?;
+            out.tokens.push(Token {
+                unit: 13,
+                char_ids: shapes[shape].1.clone(),
+                para: signature.clone(),
+                style,
+            });
             unit += 1;
             continue;
         }
         valid(ch >= 32 || ch == 10, BODY)?;
-        while shape + 1 < shapes.len() && shapes[shape + 1].0 <= unit {
-            shape += 1;
-        }
         plain_units.push(ch);
         out.tokens.push(Token {
             unit: ch,
@@ -1068,7 +1264,7 @@ pub(super) fn reference_findings(c: &Container) -> Vec<Finding> {
             pictures |= body.iter().any(|r| r.0 == 85);
         }
         if pictures {
-            resources(c, c, &defs, &defs)?;
+            resource_paths(c, &defs)?;
         }
         if !entries(&defs, 24).is_empty() {
             for ps in entries(&defs, 25) {

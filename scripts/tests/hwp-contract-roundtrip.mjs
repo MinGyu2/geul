@@ -44,6 +44,13 @@ function bullet(d,p,on=true){const id=d.ensureDefaultBullet('•');d.applyParaFo
 if(mode==='generate'){
  json(join(out,'identity.json'),{build,node:process.version,rsvg:execFileSync('rsvg-convert',['--version'],{encoding:'utf8'}).trim()});
  const empty=blank(),text=blank('앞 문장 Before | 뒤 문장 After');
+ // Real-engine boundary counterexample: rebuild paragraphs with the public
+ // merge/split operations, yielding internally consistent record metadata.
+ const boundaryDoc=new engine.HwpDocument(blank('ABCDEF'));
+ let boundarySource;
+ try{boundaryDoc.splitParagraph(0,0,3);boundarySource=exportDoc(boundaryDoc).bytes;}finally{boundaryDoc.free();}
+ run('boundary-shift',boundarySource,d=>{d.mergeParagraph(0,1);d.splitParagraph(0,0,1)},{negative:true,expectedCode:'recordsChanged'});
+ run('boundary-split',boundarySource,d=>d.splitParagraph(0,0,1));
  run('B6',empty,d=>table(d));run('B-text',text,d=>table(d,2,3));run('B-reuse',load('B6'),d=>table(d));
  for(const [id,ext,source]of [['C1','png',empty],['C2','jpg',text]])run(id,source,(d,a)=>picture(d,a,ext));
  run('C3',text,(d,a)=>{picture(d,a,'png');picture(d,a,'jpg')});run('C4',load('C1'),(d,a)=>picture(d,a,'jpg'));run('C5',text,(d,a)=>{picture(d,a,'png');picture(d,a,'jpg')});
@@ -57,6 +64,27 @@ if(mode==='generate'){
  // Zero instance IDs are not used to target objects by these APIs: mutate each by location.
  const copy=new engine.HwpDocument(load('C3'));try{const pics=parse(copy.getControls()).filter(c=>c.userDesc==='그림');assert.equal(pics.length,2);const [a,b]=pics;copy.setPictureProperties(0,a.para,a.controlIndex,JSON.stringify({width:7300}));const current=parse(copy.getControls()).filter(c=>c.userDesc==='그림');assert.equal(current[0].props.Width,7300);assert.equal(current[1].props.Width,7200);copy.setPictureProperties(0,b.para,b.controlIndex,JSON.stringify({width:7400}));const final=parse(copy.getControls()).filter(c=>c.userDesc==='그림');assert.equal(final[0].props.Width,7300);assert.equal(final[1].props.Width,7400);json(join(out,'positional-targeting.json'),{result:'PASS',twoZeroInstanceIds:true,mutatedWidths:[7300,7400],scope:'location-based get/set API only; no third-party identity guarantee'});}finally{copy.free();}
  json(join(out,'cases.json'),cases);json(join(out,'cases-first.json'),cases);
+ }else if(mode==='boundary-additive'){
+ const source=readFileSync(join(out,'boundary-shift','original.hwp'));
+ run('boundary-shift-added',source,d=>{d.mergeParagraph(0,1);d.splitParagraph(0,0,1);d.insertText(0,1,d.getParagraphLength(0,1),'!')},{negative:true,expectedCode:'recordsChanged'});
+ const manifest=JSON.parse(readFileSync(join(out,'cases-first.json'))).filter(c=>c.id!=='boundary-shift-added');manifest.push(...cases);json(join(out,'cases-first.json'),manifest);json(join(out,'cases.json'),manifest);
+ }else if(mode==='empty-character-seed'){
+ run('boundary-empty-character-shape',readFileSync(join(out,'B6','original.hwp')),d=>bullet(d,0),{negative:true,expectedCode:'recordsChanged'});
+ // This seed is not registered until the explicit valid existing-ID mutation.
+}else if(mode==='empty-character-finish'){
+ const id='boundary-empty-character-shape',folder=join(out,id),bytes=readFileSync(join(folder,'edited.hwp'));
+ const proof=JSON.parse(readFileSync(join(folder,'proof.json')));const d=new engine.HwpDocument(bytes);
+ try{
+  const current=state(d);assert.deepEqual(current,proof.live,'observable model stays equal; Rust must protect the terminator shape');
+  const original=new engine.HwpDocument(readFileSync(join(folder,'original.hwp')));
+  try{proof.emptyCharacterProperties={original:parse(original.getCharPropertiesAt(0,0,0)),edited:parse(d.getCharPropertiesAt(0,0,0))};}finally{original.free();}
+  proof.editedSha256=sha(bytes);proof.reopened=current;proof.reopenEqual=true;
+  const page=parse(d.getPageInfo(0)),w=Math.round(page.width/Math.max(page.width,page.height)*1024),h=Math.round(page.height/Math.max(page.width,page.height)*1024);
+  const svg=d.renderPageSvgWithProfile(0,'screen');assert.ok(!/(?:href|src)=["']https?:/i.test(svg));writeFileSync(join(folder,'render.svg'),svg);
+  execFileSync('rsvg-convert',['--background-color','white','--width',String(w),'--height',String(h),'--output',join(folder,'render.png'),join(folder,'render.svg')],{timeout:30000});
+  proof.renderSha256=sha(readFileSync(join(folder,'render.png')));proof.mutation='PARA_CHAR_SHAPE existing ID 0 -> 1; header counts, hierarchy, framing and all definitions unchanged';json(join(folder,'proof.json'),proof);
+ }finally{d.free();}
+ const manifest=JSON.parse(readFileSync(join(out,'cases-first.json'))).filter(c=>c.id!==id);manifest.push({id,negative:true,expectedCode:'recordsChanged'});json(join(out,'cases-first.json'),manifest);json(join(out,'cases.json'),manifest);
 }else if(mode==='repeat'){
  run('E4-published',readFileSync(join(out,'E3','published.hwp')),(d,a)=>{picture(d,a,'jpg');d.insertText(0,d.getParagraphCount(0)-1,0,'후속 Followup ')});json(join(out,'cases.json'),cases);
 }else if(mode==='verify'){
@@ -64,4 +92,4 @@ if(mode==='generate'){
  const all=[...JSON.parse(readFileSync(join(out,'cases-first.json'))),...(existsSync(join(out,'E4-published','proof.json'))?[{id:'E4-published'}]:[])];let verified=0;
  for(const item of all){if(item.negative)continue;const file=join(out,item.id,'published.hwp');const d=new engine.HwpDocument(readFileSync(file));try{const proof=JSON.parse(readFileSync(join(out,item.id,'proof.json')));assert.deepEqual(state(d),proof.live,item.id+' published reopen');verified++;}finally{d.free();}}
  json(join(out,'published-reopen.json'),{result:'PASS',verified,engineGeneration:build.generation});console.log(verified+' actually published HWP fresh reopen PASS');
-}else throw Error('mode generate|repeat|verify');
+}else throw Error('mode generate|boundary-additive|empty-character-seed|empty-character-finish|repeat|verify');

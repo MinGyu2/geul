@@ -20,6 +20,11 @@ export interface RhwpExport {
 export interface CharShapePrefix { free(): void }
 
 export interface RhwpDocument {
+  getSectionCount?(): number;
+  getBulletList?(): string;
+  getTableProperties?(section: number, paragraph: number, control: number): string;
+  getCellProperties?(section: number, paragraph: number, control: number, cell: number): string;
+  getPictureProperties?(section: number, paragraph: number, control: number): string;
   getParaPropertiesAt?(section: number, paragraph: number): string;
   ensureDefaultBullet?(character: string): number;
   applyParaFormat?(section: number, paragraph: number, properties: string): string;

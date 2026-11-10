@@ -1020,3 +1020,591 @@ fn hwp_contract_initial_section_marker_only_reduces() {
         "BodyText/Section0",
     );
 }
+
+// Valid framing/counts/runs are rebuilt by paragraph_records, rather than
+// corrupting a text record in isolation.
+fn boundary_fixture(paragraphs: &[(u16, &str)], structural: bool) -> Vec<u8> {
+    let base = fixture(false);
+    edit_records(&base, "/BodyText/Section0", |rs| {
+        rs.clear();
+        for (i, (shape, text)) in paragraphs.iter().enumerate() {
+            let mut objects = if i == 0 {
+                vec![section_control()]
+            } else {
+                vec![]
+            };
+            if structural && i == 0 {
+                objects.push(table_control());
+            }
+            rs.extend(paragraph_records(0, *shape, text, &objects));
+        }
+    })
+}
+
+#[test]
+fn hwp_boundary_shift_cannot_use_asserted_reopen() {
+    let original = boundary_fixture(&[(0, "ABC"), (0, "DEF")], false);
+    let output = boundary_fixture(&[(0, "A"), (0, "BCDEF")], false);
+    assert!(hwp::compare(&original, &original).is_empty());
+    assert!(
+        hwp::compare_saved(&original, &output).contains(&Finding::at(
+            FindingCode::RecordsChanged,
+            "BodyText/Section0"
+        ))
+    );
+    assert_rejected(
+        "boundary-shift",
+        &original,
+        &output,
+        FindingCode::RecordsChanged,
+        "BodyText/Section0",
+    );
+}
+
+fn existing_resource_fixture(kind: &str, edited: bool) -> Vec<u8> {
+    let mut original = fixture(edited);
+    original = edit_records(&original, "/BodyText/Section0", |rs| {
+        let mut picture = picture_control();
+        w(&mut picture[2].2, 71, 1);
+        let mut objects = vec![section_control(), picture];
+        if edited {
+            objects.extend([table_control(), picture_control()]);
+        }
+        *rs = paragraph_records(0, if edited { 2 } else { 0 }, "Keep 한글", &objects);
+    });
+    original = edit_records(&original, "/DocInfo", |rs| {
+        let decl = &mut nth(rs, 18, 0).2;
+        match kind {
+            "linked" => {
+                *decl = vec![0, 0];
+                for path in ["C:\\image.png", "image.png"] {
+                    decl.extend((path.encode_utf16().count() as u16).to_le_bytes());
+                    decl.extend(path.encode_utf16().flat_map(u16::to_le_bytes));
+                }
+            }
+            "ole" => {
+                *decl = vec![2, 2, 1, 0];
+            }
+            "sparse" => w(decl, 2, 7),
+            "jpg" => {
+                for (i, unit) in "jpg".encode_utf16().enumerate() {
+                    w(decl, 6 + i * 2, unit);
+                }
+            }
+            _ => {}
+        }
+    });
+    let mut map = stream_map(&original);
+    let png = map.remove("/BinData/BIN0001.png").unwrap();
+    match kind {
+        "linked" => {}
+        "ole" => {
+            map.insert("/BinData/BIN0001.OLE".into(), png);
+        }
+        "sparse" => {
+            map.insert("/BinData/BIN0007.png".into(), png);
+        }
+        "jpg" => {
+            map.insert(
+                "/BinData/BIN0001.jpg".into(),
+                encoded_image(image::ImageFormat::Jpeg),
+            );
+        }
+        _ => {
+            map.insert("/BinData/BIN0001.png".into(), png);
+        }
+    }
+    from_map(&map)
+}
+#[test]
+fn hwp_existing_resource_forms_survive_ordinary_edits() {
+    let mut failures = Vec::new();
+    for kind in ["png", "jpg", "linked", "ole", "sparse"] {
+        let original = existing_resource_fixture(kind, false);
+        let output = edit_records(&original, "/BodyText/Section0", |rs| {
+            let mut picture = picture_control();
+            w(&mut picture[2].2, 71, 1);
+            *rs = paragraph_records(0, 0, "Keep 한글 text", &[section_control(), picture]);
+        });
+        let pre = service::preflight(
+            Format::Hwp,
+            &original,
+            &original,
+            Some(&report("hwp", json!([]))),
+        );
+        assert!(pre.is_safe(), "{kind} {pre:?}");
+        let findings = hwp::compare_saved(&original, &output);
+        println!("RESOURCE_BASELINE {kind}: {findings:?}");
+        if findings.iter().any(|f| f.code != FindingCode::PreviewStale) {
+            failures.push((kind, findings));
+        }
+    }
+    assert!(failures.is_empty(), "{failures:?}");
+}
+#[test]
+fn hwp_existing_and_new_resources_remain_independently_checked() {
+    for kind in ["png", "jpg", "linked", "ole", "sparse"] {
+        let original = existing_resource_fixture(kind, false);
+        let output = existing_resource_fixture(kind, true);
+        let findings = hwp::compare_saved(&original, &output);
+        assert!(
+            findings.iter().all(|f| f.code == FindingCode::PreviewStale),
+            "{kind} {findings:?}"
+        );
+        let bad = edit_records(&output, "/BodyText/Section0", |rs| {
+            w(&mut nth(rs, 85, 0).2, 71, 99);
+        });
+        assert_rejected(
+            &format!("{kind} dangling old picture"),
+            &original,
+            &bad,
+            FindingCode::ReferenceInvalid,
+            "BodyText/Section0",
+        );
+        let replaced = edit_records(&output, "/BodyText/Section0", |rs| {
+            w(&mut nth(rs, 85, 0).2, 71, 2);
+        });
+        assert_rejected(
+            &format!("{kind} retarget old picture"),
+            &original,
+            &replaced,
+            FindingCode::RecordsChanged,
+            "BodyText/Section0",
+        );
+        let modified = edit_records(&output, "/DocInfo", |rs| {
+            nth(rs, 18, 0).2[1] ^= 1;
+        });
+        assert_rejected(
+            &format!("{kind} changed old declaration"),
+            &original,
+            &modified,
+            FindingCode::RecordsChanged,
+            "DocInfo",
+        );
+        if kind != "linked" {
+            let path = match kind {
+                "ole" => "/BinData/BIN0001.OLE",
+                "sparse" => "/BinData/BIN0007.png",
+                "jpg" => "/BinData/BIN0001.jpg",
+                _ => "/BinData/BIN0001.png",
+            };
+            let mut map = stream_map(&output);
+            map.remove(path);
+            assert_rejected(
+                &format!("{kind} missing old stream"),
+                &original,
+                &from_map(&map),
+                FindingCode::PartMissing,
+                &path[1..],
+            );
+            let mut map = stream_map(&output);
+            map.get_mut(path).unwrap()[0] ^= 1;
+            assert_rejected(
+                &format!("{kind} modified old stream"),
+                &original,
+                &from_map(&map),
+                FindingCode::PartChanged,
+                &path[1..],
+            );
+        }
+    }
+}
+
+#[test]
+fn hwp_boundary_contexts_and_legitimate_splits() {
+    for (name, old, new) in [
+        (
+            "Korean",
+            vec![(0, "가나다"), (0, "라마바")],
+            vec![(0, "가"), (0, "나다라마바")],
+        ),
+        (
+            "supplementary",
+            vec![(0, "A😀B"), (0, "C𐐀D")],
+            vec![(0, "A"), (0, "😀BC𐐀D")],
+        ),
+        (
+            "empty moved",
+            vec![(0, "A"), (0, ""), (0, "B")],
+            vec![(0, ""), (0, "A"), (0, "B")],
+        ),
+        (
+            "duplicate merged",
+            vec![(0, "AB"), (0, "AB")],
+            vec![(0, "ABAB"), (0, "")],
+        ),
+        (
+            "different shapes",
+            vec![(0, "ABC"), (1, "DEF")],
+            vec![(0, "A"), (1, "BCDEF")],
+        ),
+    ] {
+        let original = boundary_fixture(&old, false);
+        let output = boundary_fixture(&new, false);
+        assert_rejected(
+            name,
+            &original,
+            &output,
+            FindingCode::RecordsChanged,
+            "BodyText/Section0",
+        );
+    }
+    let original = boundary_fixture(&[(0, "ABC"), (1, "DEF")], false);
+    let transferred = boundary_fixture(&[(1, "ABC"), (0, "DEF")], false);
+    assert_rejected(
+        "paragraph shape transferred",
+        &original,
+        &transferred,
+        FindingCode::RecordsChanged,
+        "BodyText/Section0",
+    );
+    let original = boundary_fixture(&[(0, "ABC"), (0, "DEF")], false);
+    let page_break = edit_records(&original, "/BodyText/Section0", |rs| {
+        nth(rs, 66, 0).2[11] = 4;
+    });
+    let moved_break = edit_records(&original, "/BodyText/Section0", |rs| {
+        nth(rs, 66, 1).2[11] = 4;
+    });
+    assert_rejected(
+        "page break relocated",
+        &page_break,
+        &moved_break,
+        FindingCode::RecordsChanged,
+        "BodyText/Section0",
+    );
+    let anchored = |second: bool| {
+        edit_records(&fixture(true), "/BodyText/Section0", |rs| {
+            let mut picture = picture_control();
+            w(&mut picture[2].2, 71, 1);
+            let mut first = vec![section_control()];
+            if !second {
+                first.push(picture.clone());
+            }
+            *rs = paragraph_records(0, 0, "ABC", &first);
+            rs.extend(paragraph_records(
+                0,
+                0,
+                if second { "DEF!" } else { "DEF" },
+                &if second { vec![picture] } else { vec![] },
+            ));
+        })
+    };
+    assert_rejected(
+        "anchor transferred with text insertion",
+        &anchored(false),
+        &anchored(true),
+        FindingCode::RecordsChanged,
+        "BodyText/Section0",
+    );
+    // Force the additive proof by applying an already-defined basic bullet.
+    // Character insertion makes the equal-content legacy guard inapplicable.
+    let make = |paras: &[(u16, &str)]| {
+        edit_records(&fixture(true), "/BodyText/Section0", |rs| {
+            rs.clear();
+            for (i, (ps, text)) in paras.iter().enumerate() {
+                rs.extend(paragraph_records(
+                    0,
+                    *ps,
+                    text,
+                    &if i == 0 {
+                        vec![section_control()]
+                    } else {
+                        vec![]
+                    },
+                ));
+            }
+        })
+    };
+    let original = make(&[(2, "ABC"), (2, "DEF")]);
+    let invalid = make(&[(0, "A"), (2, "BCDEF!")]);
+    assert_rejected(
+        "bullet boundary with insertion",
+        &original,
+        &invalid,
+        FindingCode::RecordsChanged,
+        "BodyText/Section0",
+    );
+    let original = make(&[(0, "ABCDEF"), (0, "")]);
+    let split = make(&[(2, "AB"), (2, "CDEF!"), (0, "")]);
+    let findings = hwp::compare_saved(&original, &split);
+    assert!(
+        findings.iter().all(|f| f.code == FindingCode::PreviewStale),
+        "split {findings:?}"
+    );
+    let removed_empty = make(&[(2, "ABCDEF!"), (0, "")]);
+    let original_empty = make(&[(0, ""), (0, "ABCDEF")]);
+    assert_rejected(
+        "empty context with insertion",
+        &original_empty,
+        &removed_empty,
+        FindingCode::RecordsChanged,
+        "BodyText/Section0",
+    );
+}
+
+#[test]
+#[ignore = "explicit record fixture generation for approved-WASM compatibility investigation"]
+fn hwp_hardening_generate_fixtures() {
+    let root = std::path::PathBuf::from(std::env::var_os("GEUL_HWP_CONTRACT_DIR").unwrap());
+    std::fs::create_dir_all(&root).unwrap();
+    for kind in ["png", "jpg", "linked", "ole", "sparse"] {
+        std::fs::write(
+            root.join(format!("existing-{kind}.hwp")),
+            existing_resource_fixture(kind, false),
+        )
+        .unwrap();
+    }
+    for (name, paras) in [
+        ("boundary-original", vec![(0, "ABC"), (0, "DEF")]),
+        ("boundary-shifted", vec![(0, "A"), (0, "BCDEF")]),
+    ] {
+        std::fs::write(
+            root.join(format!("{name}.hwp")),
+            boundary_fixture(&paras, false),
+        )
+        .unwrap();
+    }
+}
+
+#[test]
+#[ignore = "copies fresh selected-WASM source into explicit existing-storage investigation variants"]
+fn hwp_hardening_real_resource_variants() {
+    let root = std::path::PathBuf::from(std::env::var_os("GEUL_HWP_CONTRACT_DIR").unwrap());
+    let png = std::fs::read(root.join("C1/edited.hwp")).unwrap();
+    let jpg = std::fs::read(root.join("C2/edited.hwp")).unwrap();
+    for kind in [
+        "png",
+        "jpg",
+        "linked",
+        "storage",
+        "storage-stored",
+        "sparse",
+    ] {
+        let mut bytes = if kind == "jpg" {
+            jpg.clone()
+        } else {
+            png.clone()
+        };
+        if matches!(kind, "linked" | "storage" | "storage-stored" | "sparse") {
+            bytes = edit_records(&bytes, "/DocInfo", |rs| match kind {
+                "linked" => {
+                    let decl = &mut nth(rs, 18, 0).2;
+                    *decl = vec![0, 0];
+                    for path in ["C:\\image.png", "image.png"] {
+                        decl.extend((path.encode_utf16().count() as u16).to_le_bytes());
+                        decl.extend(path.encode_utf16().flat_map(u16::to_le_bytes));
+                    }
+                }
+                "storage" | "storage-stored" => {
+                    d(&mut nth(rs, 17, 0).2, 0, 2);
+                    let at = rs.iter().rposition(|r| r.0 == 18).unwrap() + 1;
+                    rs.insert(
+                        at,
+                        (
+                            18,
+                            1,
+                            vec![if kind == "storage-stored" { 0x22 } else { 2 }, 2, 2, 0],
+                        ),
+                    );
+                }
+                "sparse" => w(&mut nth(rs, 18, 0).2, 2, 7),
+                _ => unreachable!(),
+            });
+            let mut map = stream_map(&bytes);
+            match kind {
+                "linked" => {
+                    map.remove("/BinData/BIN0001.png").unwrap();
+                }
+                "sparse" => {
+                    let data = map.remove("/BinData/BIN0001.png").unwrap();
+                    map.insert("/BinData/BIN0007.png".into(), data);
+                }
+                "storage" | "storage-stored" => {
+                    map.insert(
+                        "/BinData/BIN0002.OLE".into(),
+                        cfb(&[("/payload", b"opaque existing storage")]),
+                    );
+                }
+                _ => unreachable!(),
+            }
+            bytes = from_map(&map);
+        }
+        std::fs::write(root.join(format!("real-existing-{kind}.hwp")), bytes).unwrap();
+    }
+}
+
+#[test]
+fn hwp_boundary_plain_split_keeps_start_marker_on_prefix() {
+    let original = edit_records(
+        &boundary_fixture(&[(0, "ABC"), (0, "DEF")], false),
+        "/BodyText/Section0",
+        |rs| {
+            nth(rs, 66, 0).2[11] = 3;
+        },
+    );
+    let split = edit_records(
+        &boundary_fixture(&[(0, "A"), (0, "BC"), (0, "DEF")], false),
+        "/BodyText/Section0",
+        |rs| {
+            nth(rs, 66, 0).2[11] = 3;
+        },
+    );
+    let findings = hwp::compare_saved(&original, &split);
+    assert!(
+        findings.iter().all(|f| f.code == FindingCode::PreviewStale),
+        "{findings:?}"
+    );
+    let duplicate_break = edit_records(&split, "/BodyText/Section0", |rs| {
+        nth(rs, 66, 1).2[11] = 3;
+    });
+    assert_rejected(
+        "split duplicated break",
+        &original,
+        &duplicate_break,
+        FindingCode::RecordsChanged,
+        "BodyText/Section0",
+    );
+}
+
+#[test]
+#[ignore = "before/after publication evidence using a fresh actual-RHWP boundary mutation and real SVG render"]
+fn hwp_hardening_boundary_publication_evidence() {
+    use sha2::{Digest, Sha256};
+    let root = std::path::PathBuf::from(std::env::var_os("GEUL_HWP_CONTRACT_DIR").unwrap());
+    let label = std::env::var("GEUL_HWP_HARDENING_LABEL").unwrap();
+    assert!(matches!(label.as_str(), "phase2" | "fixed"));
+    let folder = root.join("boundary-shift");
+    let read = |n: &str| std::fs::read(folder.join(n)).unwrap();
+    let original = read("original.hwp");
+    let output = read("edited.hwp");
+    let loss: Value = serde_json::from_slice(&read("loss.json")).unwrap();
+    let loss0: Value = serde_json::from_slice(&read("noop-loss.json")).unwrap();
+    let pre = service::preflight(Format::Hwp, &original, &read("noop.hwp"), Some(&loss0));
+    assert!(pre.is_safe(), "{pre:?}");
+    let png = image::load_from_memory(&read("render.png"))
+        .unwrap()
+        .to_rgb8();
+    let render = crate::services::save::preview::PreviewRaster::new(
+        png.width(),
+        png.height(),
+        png.into_raw(),
+    )
+    .unwrap();
+    let refreshed = hwp::refresh_previews(&original, &output, Some(&render)).unwrap();
+    let validated = refreshed.output.as_deref().unwrap_or(&output);
+    let check = service::check_saved_with_preview(
+        Format::Hwp,
+        &original,
+        validated,
+        Some(&loss),
+        true,
+        refreshed.image.as_deref(),
+    );
+    let (result, bytes, info) = publish(&original, &output, Some(&render));
+    let value = json!({"label":label,"preflight":pre,"checkWithAssertedReopenTrue":check,
+        "published":result.is_ok(),"originalIntact":bytes == original,"dirty":info.dirty,"revision":info.revision,
+        "originalSha256":format!("{:x}",Sha256::digest(&original)),"outputSha256":format!("{:x}",Sha256::digest(&output)),
+        "finalFileSha256":format!("{:x}",Sha256::digest(&bytes)),"previewRegenerated":refreshed.image.is_some(),
+        "previewSource":"fresh exact-output independent RHWP SVG render rasterized by librsvg; no synthetic preview"});
+    std::fs::write(
+        root.join(format!("boundary-publication-{label}.json")),
+        serde_json::to_vec_pretty(&value).unwrap(),
+    )
+    .unwrap();
+    println!("BOUNDARY_PUBLICATION {value}");
+    if label == "phase2" {
+        assert!(result.is_ok(), "{result:?}");
+    } else {
+        assert!(result.is_err());
+        assert_eq!(bytes, original);
+        assert!(info.dirty);
+        assert!(check.findings.contains(&Finding::at(
+            FindingCode::RecordsChanged,
+            "BodyText/Section0"
+        )));
+    }
+}
+
+#[test]
+fn hwp_boundary_shift_with_added_text_cannot_use_asserted_reopen() {
+    let original = boundary_fixture(&[(0, "ABC"), (0, "DEF")], false);
+    let output = boundary_fixture(&[(0, "A"), (0, "BCDEF!")], false);
+    assert_rejected(
+        "boundary shift plus inserted text",
+        &original,
+        &output,
+        FindingCode::RecordsChanged,
+        "BodyText/Section0",
+    );
+}
+
+#[test]
+fn hwp_boundary_ordinary_insert_delete_and_split_remain_eligible() {
+    let original = boundary_fixture(&[(0, "ABC"), (0, "DEF")], false);
+    for paras in [
+        vec![(0, "A!BC"), (0, "DEF")],
+        vec![(0, "AC"), (0, "DEF")],
+        vec![(0, "A"), (0, "BC!"), (0, "DEF")],
+    ] {
+        let output = boundary_fixture(&paras, false);
+        let findings = hwp::compare_saved(&original, &output);
+        assert!(
+            findings.iter().all(|f| f.code == FindingCode::PreviewStale),
+            "{paras:?}: {findings:?}"
+        );
+    }
+}
+
+#[test]
+fn hwp_boundary_empty_paragraph_keeps_character_shape_context() {
+    let base = edit_records(&fixture(true), "/DocInfo", |rs| {
+        let mut bold = nth(rs, 21, 0).2.clone();
+        // CHAR_SHAPE attr bit 1 is bold, outside the T012 metric fields.
+        bold[46] ^= 2;
+        let at = rs.iter().rposition(|r| r.0 == 21).unwrap() + 1;
+        rs.insert(at, (21, 1, bold));
+        d(&mut nth(rs, 17, 0).2, 9 * 4, 2);
+    });
+    let original = edit_records(&base, "/BodyText/Section0", |rs| {
+        *rs = paragraph_records(0, 0, "", &[section_control()]);
+    });
+    let output = edit_records(&base, "/BodyText/Section0", |rs| {
+        *rs = paragraph_records(0, 2, "", &[section_control()]);
+        d(&mut nth(rs, 68, 0).2, 4, 1);
+    });
+    assert_rejected(
+        "empty paragraph character shape transferred",
+        &original,
+        &output,
+        FindingCode::RecordsChanged,
+        "BodyText/Section0",
+    );
+    let metric = edit_records(&output, "/DocInfo", |rs| {
+        let mut shape = nth(rs, 21, 0).2.clone();
+        shape[14..21].fill(130);
+        shape[21..28].fill(10);
+        let at = rs.iter().rposition(|r| r.0 == 21).unwrap() + 1;
+        rs.insert(at, (21, 1, shape));
+        d(&mut nth(rs, 17, 0).2, 9 * 4, 3);
+    });
+    let metric = edit_records(&metric, "/BodyText/Section0", |rs| {
+        d(&mut nth(rs, 68, 0).2, 4, 2);
+    });
+    let findings = hwp::compare_saved(&original, &metric);
+    assert!(
+        findings.iter().all(|f| f.code == FindingCode::PreviewStale),
+        "empty T012 metric ancestry: {findings:?}"
+    );
+}
+
+#[test]
+#[ignore = "valid existing-char-shape mutation of fresh actual-RHWP empty bullet output"]
+fn hwp_hardening_mutate_empty_character_context() {
+    let root = std::path::PathBuf::from(std::env::var_os("GEUL_HWP_CONTRACT_DIR").unwrap());
+    let path = root.join("boundary-empty-character-shape/edited.hwp");
+    let output = std::fs::read(&path).unwrap();
+    let output = edit_records(&output, "/BodyText/Section0", |rs| {
+        d(&mut nth(rs, 68, 0).2, 4, 1);
+    });
+    std::fs::write(path, output).unwrap();
+}

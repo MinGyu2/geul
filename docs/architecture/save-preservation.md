@@ -1533,7 +1533,7 @@ DocInfo 원래 정의는 순서, ID, payload, level 및 문맥을 그대로 보�
 
 새 표는 최대 32×16, 총 256셀의 직사각형, 병합 없는 span 1, 셀당 한 문단으로 제한한다. 새 표의 비어 있지 않은 셀은 지원한다. 기존 표 subtree는 정확히 보존해야 하며 기존 셀 텍스트 편집은 이 계약 범위 밖이다. 기본 BorderFill 재사용이 가능하다. 열 너비·행 높이 배열과 정의 수가 맞아야 하며 열 너비의 합은 표 폭과 일치해야 한다. TextWrap은 정규화되어야 한다. raw createTable에서 관찰된 TextWrap 변동은 허용하지 않는다.
 
-그림은 인라인 PNG/JPEG만 지원한다. 전체 decoder에는 입력 16 MiB, 한 변 8192픽셀, 16 megapixel, 출력 64 MiB 한도를 적용한다. BinData 저장 ID는 조밀하게 할당하고 기존 리소스 bytes는 보존한다. 링크 그림, OLE, 희소 ID, 새 ID 기반 속성이나 미지 컨트롤은 허용하지 않는다. instance ID가 0인 새 그림의 검증은 위치 기반 API 범위에 한정되며, 외부 응용에서의 ID 선택 동작을 증명하지 않는다. 구조/크기/형식 검증은 운영 계약에 있지만 입력 bytes와 출력 리소스의 동일성은 실험에서만 해시로 확인했다. 운영 검증기는 신뢰된 입력 해시 영수증을 사용하지 않는다.
+새 그림 삽입은 인라인 PNG/JPEG만 지원한다. 전체 decoder에는 입력 16 MiB, 한 변 8192픽셀, 16 megapixel, 출력 64 MiB 한도를 적용한다. 새 BinData 저장 ID는 조밀하게 할당하고 기존 리소스 bytes는 보존한다. 링크 그림, OLE, 희소 ID의 새 생성과 새 ID 기반 속성 또는 미지 컨트롤은 허용하지 않는다. 기존 문서의 리소스 정의는 아래 hardening 절의 별도 보존 규칙으로 검사한다. instance ID가 0인 새 그림의 검증은 위치 기반 API 범위에 한정되며, 외부 응용에서의 ID 선택 동작을 증명하지 않는다. 구조/크기/형식 검증은 운영 계약에 있지만 입력 bytes와 출력 리소스의 동일성은 실험에서만 해시로 확인했다. 운영 검증기는 신뢰된 입력 해시 영수증을 사용하지 않는다.
 
 글머리표는 기본 24바이트 BULLET 정의와 U+2022, level 0만 지원한다. PARA_SHAPE는 기존 원본 모양을 좁게 파생한 54/58바이트 형식에 한정한다. 적용·해제·정의 재사용과 문단 참조를 검사한다.
 
@@ -1543,8 +1543,39 @@ BodyText는 레코드 변경 위치 문맥을 검사한다. 기존 텍스트의 
 
 이 경계는 저장 보존 계약이다. 전체 활성화는 Phase 3에서 실제 제품 저장 경로의 eligibility, 정규화된 setter, raster 갱신 및 재열기 연결을 확인한 뒤 판단한다. HWP 제품 명령은 현재 비활성이다.
 
-### Phase 2 검증 기록
+### Phase 2 당시 검증 기록 (역사적 수치)
 
-최종 geometry와 문맥 검사까지 포함한 전체 `services::save`는 199 PASS, 18 ignored이며 geometry focused 시험은 2 PASS, 2 ignored다. 현재 RHWP/WASM으로 16개 positive와 3개 negative publication을 실행했고, E4 반복 publication을 더해 17개 실제 positive를 게시·재개방했다. Canvas mode의 B6, C1, C2, C4-external, D1, E3 여섯 사례도 각각 게시했다. 음성 사례를 포함한 저장 mutation 검사에서 `save-final-reviewed.log`의 61개 `HWP_CONTRACT_NEGATIVE` 결과를 확인했고, 삽입 이미지 11개의 output hash를 별도로 대조했다. Headless Firefox `capturePreviewRaster` 증거는 7개 사례다. 이는 native 앱 GUI 또는 Hancom 검증이 아니다. Phase 1의 432 검사는 이 Phase 2 수치와 합산하지 않는다.
+최종 geometry와 문맥 검사까지 포함한 당시 전체 `services::save`는 199 PASS, 18 ignored이며 geometry focused 시험은 2 PASS, 2 ignored다. 당시 RHWP/WASM으로 16개 positive와 3개 negative publication을 실행했고, E4 반복 publication을 더해 17개 실제 positive를 게시·재개방했다. Canvas mode의 B6, C1, C2, C4-external, D1, E3 여섯 사례도 각각 게시했다. 음성 사례를 포함한 저장 mutation 검사에서 `save-final-reviewed.log`의 61개 `HWP_CONTRACT_NEGATIVE` 결과를 확인했고, 삽입 이미지 11개의 output hash를 별도로 대조했다. Headless Firefox `capturePreviewRaster` 증거는 7개 사례다. 이는 native 앱 GUI 또는 Hancom 검증이 아니다. Phase 1의 432 검사는 이 Phase 2 수치와 합산하지 않는다.
 
 모든 양성 publication은 production 서비스 경로에서 이뤄졌고 다시 열기 검증을 마쳤다. 이 증거로 제한된 Phase 3 서비스 통합을 시작할 수 있다. 전체 기능 활성화 전에는 production eligibility, normalized setters, 실제 raster 갱신 및 재열기 연결을 실제 저장 경로에 연결해야 한다. 외부 Hancom 검증은 별도의 승인 관문이 아니다. 제품 명령은 계속 비활성이다. 실행 명령·로그는 `target/hwp-record-investigation/phase2/verification-close.json`에 있다.
+
+
+## HWP T009 경계 hardening — 2026-11-10
+
+이 보완은 Phase 2의 표·그림·글머리표 삽입 계약을 유지하면서 기존 BinData와 문단 경계의 과잉 거부 및 비교 누락을 고친다. 제품 명령 활성화를 뜻하지 않는다.
+
+### 기존 BinData와 새 그림의 서로 다른 증명
+
+기존 리소스는 원본 정의의 순서·ID·선언과 참조 의미를 출력과 대조한다. 스트림 경로/정체성과 바이트를 보존하며, 기존 T009가 이미 허용한 압축 동등성만 예외로 인정한다. 링크된 기존 리소스와 비연속 저장 ID, storage kind 2는 새 삽입 스키마로 재해석하지 않는다. 그렇다고 검증을 생략하지 않는다. 정의 중복/충돌, 누락 스트림, 바이트 변경, dangling reference는 거부한다.
+
+새 그림은 기존 엄격한 계약을 유지한다. 새 ID는 dense ordinal로 할당하며 kind 1 및 attr 0x0101 선언, PNG/JPEG 시그니처·디코드·크기 제한, 실제 스트림 존재와 참조 가능성을 확인한다. 새 리소스 검증은 기존 리소스 전체를 건너뛰지 않고 원본/출력 문맥을 함께 사용한다.
+
+실 RHWP 결과에서 일반 텍스트 편집은 기존 PNG/링크/희소 리소스의 보존 증명을 통과했다. JPEG 리소스 자체도 `VALID_PRESERVATION`이지만 같은 출력은 별도 `PreviewStale(PrvText)`로 게시 불가였다. Phase 2 checker는 링크와 희소 ID를 `RecordsChanged`로 잘못 거부했으나 보완 후 같은 결과가 안전 판정을 받았다. 혼합 링크/희소 리소스+새 그림은 RHWP가 DocInfo를 바꾸고 BIN0001/BIN0008을 추가해 여전히 안전하게 거부된다. storage-stored 입력은 엔진이 참조되지 않은 `.dat`를 생성해 baseline unsafe/`PartAdded`였다. 기본 압축 storage fixture는 baseline unknown (`PartAdded` + `OriginalMalformed`)이었다. 두 fixture 모두 `BASELINE_UNSUPPORTED`이며 일반 OLE 보존 증거가 아니다.
+
+### 문단 경계 불변식
+
+기존 본문이 보존되어야 하는 비교에서 문단 경계는 단순 연결 텍스트로 증명하지 않는다. 기존 UTF-16/control 단위가 출력의 순서 있는 부분열이면 선형 정렬로 각 기존 단위의 문단 문맥을 확인한다. 문단 시작의 shape/style와 start flags, CR/end token을 묶어 기존 경계가 이동·합쳐지지 않았음을 검사한다. CR terminator도 실제 char-shape run ancestry를 상속하므로 내용이 빈 문단의 char-shape가 바뀌는 경우를 감지한다. 기존 T012처럼 유효하게 덧붙인 char-shape 변경은 해당 operation proof를 통해 허용한다. 빈 문단도 별도 단위다. 시작 플래그는 분할된 접두 문단에 남고 끝 문맥은 접미 문단에서 일치해야 한다. 복제된 break나 같은 전체 텍스트를 가진 경계 이동은 허용하지 않는다.
+
+실제 `ABC`/`DEF`를 `A`/`BCDEF`로 재분할한 레코드 출력은 Phase 2 production save 경로에서 safe 판정 뒤 게시됐다. 원본 SHA-256은 `b49153549c189cf3fa4a71e70be2839b8feb5ff24e9ceaf8c27be068dda40b21`, 경계를 옮긴 원시 출력 SHA-256은 `46564f9ad5530e524f78d10f44ce25bfded65529f9ea23d9af08721935caebfe`, PrvText 갱신 후 실제 게시 SHA-256은 `1d659695ddeda3f1a41fe1f1e528643dea4f4119bcea386880ade0720f1da698`다. 재현 증거는 `src-tauri/target/hwp-boundary-hardening/engine/boundary-publication-phase2.json` 및 `target/hwp-boundary-hardening/pre-fix-real-publication.log`다. 보완 후 동일 mutation은 `RecordsChanged` 및 `PreviewStale(PrvText)`로 거부되고, 호출자가 `reopen_equal=true`를 줘도 게시되지 않으며 원본 바이트·dirty 상태·revision 1이 유지된다. refresh_previews는 actual RHWP SVG raster 입력으로 호출됐으나 RecordsChanged가 있어 guard가 preview normalization을 거부했다(`previewRegenerated=false`). 별도 additive-text 경계 우회도 재현 후 같은 정렬 규칙으로 막았다. 문자 삽입/삭제와 합법적 `splitParagraph`는 양성 검증을 통과한다. 기존 삭제/대체 편집은 기존 독립 재열기 계약을 따른다. 보조 모델이 표현하지 않는 기존 레이아웃은 새로 malformed라 추측하지 않고 원래 framing/opaque/reference 정책을 유지하며, 모델링된 구조 삽입 증명은 fail-closed다. 본문 전체 HWP 스키마를 확장한 것은 아니다.
+
+### 제품 재열기 증거와 한계
+
+HWP의 RHWP 재열기 비교는 기존 형식·페이지·전체 텍스트·컨트롤 검사에 더해 제한된 문단 텍스트/속성, 목록 의미값(문자 또는 rawCode와 level), 표의 크기·셀 순서/좌표·문단/텍스트·검증된 셀/표 속성, 그림 종류·inline 상태·크기를 확인한다. 목록 정의 ID는 직렬화에 따라 달라질 수 있어 임의 raw ID 대신 의미를 비교한다. optional API 부재만으로 변경 없는 기존 문서 편집을 차단하지 않지만 구조 inventory가 바뀌면 필요한 세부 증거가 없을 때 거부한다. 비교의 입력 문자열 charge budget은 32 MiB이며 추가 상한은 100,000 node와 4,096 section이다. section 조회는 이진 검색이다. 이는 전체 process/heap memory 보장이 아니며 성능 벤치마크도 실행하지 않았다.
+
+geul이 소유한 picture import는 데이터와 크기를 전달하지만 현재 WASM 관찰 API는 저장된 embedded payload의 신뢰 가능한 입력 영수증을 주지 않는다. 따라서 운영 경로의 입력 이미지 바이트와 최종 BinData 바이트 간 hash 동일성 증명은 아직 없다. 감사기의 13개 이미지 바이트 비교는 검사 fixture의 실험 증거이며 제품 영수증이 아니다.
+
+### 현재 검증 증거와 제품 상태
+
+현재 보완 상태에서 `services::save`는 207 PASS / 22 ignored, 합성 publication refusal 98건, 실제 RHWP 첫 게시 23건 및 반복 게시 1건(총 24), 실엔진 거부 6건, 독립 재열기 24건이다. 독립 Phase 1 stdlib parser audit은 114개 파일을 판독하고 13개 이미지 해시 비교와 19회의 실제 SVG+librsvg 미리보기 재생성을 확인했다. 상세 명령·종료 코드·원본 로그는 [hardening 보고서](../../target/hwp-boundary-hardening/REPORT.ko.txt), [명령 인덱스](../../target/hwp-boundary-hardening/commands-final.json), [독립 감사 결과](../../target/hwp-boundary-hardening/independent-audit.json)를 참조한다.
+
+Phase 2 수치(199/18, 61 mutation, 17 publication, 7 Canvas 및 11 image hash)는 과거 실행 기록이며 이번 실행 결과로 재표시하지 않는다. 이번 실제 preview 주장은 RHWP가 생성한 정확한 출력 SVG와 librsvg 재생성 19건이다. Canvas/GUI, native Linux IBus 및 외부 Hancom 수용은 이번에 실행하지 않았다. T009 사전 검사, 엄격한 loss report, `PreviewStale`, independent RHWP reopen, atomic publication, 복구/rollback, dirty/revision refusal, OPAQUE-001 및 raw TBL-001 가드는 유지됐다. HWP 표·그림·글머리표 명령은 비활성이다. Phase 3의 연결 작업은 시작할 수 있으나 기능 활성화 readiness는 선언하지 않는다. normalized setter/eligibility, 완전한 제품 raster 경로와 trusted picture identity 및 GUI 검증은 남아 있다.

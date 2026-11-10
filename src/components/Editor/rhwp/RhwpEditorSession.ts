@@ -41,6 +41,7 @@ import { runClipboard, validClipboardText, type ClipboardCommand, type PlainClip
 //   조정한다(문서 모델은 하나). 기록은 레지스트리가 rhwp 실행 취소를 지원으로 두는 빌드(지금은 시험 활성화 빌드)에서만 켠다: 제품
 //   빌드는 쓸 수 없는 실행 취소를 위해 그룹 시작마다 스냅숏을 찍거나 붙들지 않는다(세션 선택 `history`로 시험이 명시할 수 있음).
 //   글자 서식은 보존 검사가 저장을 막으므로 받지 않는다.
+import { hwpReopenModel, hwpReopenEqual } from "./hwpReopenModel";
 import { trace } from "../imeTrace";
 import type { DocumentBackend, PreviewRaster, ReopenEvidence } from "../../../adapters/backend";
 import { capturePreviewRaster } from "./previewRaster";
@@ -238,6 +239,7 @@ export class RhwpEditorSession implements DocumentCommandTarget {
   firstPaintMs: number | null = null;
   loadStartedAt = 0;
   lastRoundTrip: RoundTripReport | null = null;
+  private hwpStructureBaseline: string | null = null;
   /** 마지막 저장 시도의 결과(T009, 화면 표시). */
   saveState: SaveState = { kind: "idle" };
   /** 이 원본에 대한 보존 사전 검사(T009). 다시 불러오거나 저장하면(원본이 바뀜) 버린다. */
@@ -569,6 +571,10 @@ export class RhwpEditorSession implements DocumentCommandTarget {
       return { ok: false, error: ready.error };
     }
     this.doc = doc;
+    this.hwpStructureBaseline = null;
+    try {
+      if (doc.getSourceFormat() === "hwp") this.hwpStructureBaseline = hwpReopenModel(doc).structure;
+    } catch { /* export requires fresh evidence */ }
     this.text = text;
     this.startHistory(doc, loaded.value.bytes.length);
     this.generation = generation;
@@ -1488,6 +1494,9 @@ export class RhwpEditorSession implements DocumentCommandTarget {
       report.pagesEqual = reopened.pageCount() === doc.pageCount();
       report.textEqual = textOf(reopened) === textOf(doc);
       report.controlsEqual = controls(reopened) === controls(doc);
+      if (format === "hwp") {
+        report.controlsEqual &&= hwpReopenEqual(hwpReopenModel(doc), hwpReopenModel(reopened), this.hwpStructureBaseline);
+      }
       if (publishing) releaseShapes = this.text?.protectPublishingCharShapes(charShapeCount, reopened);
       // HWP: page 1 of the reopened raw export — the same bytes the service validates — for
       // PrvImage regeneration. Failure only omits the raster (stale previews stay refused).

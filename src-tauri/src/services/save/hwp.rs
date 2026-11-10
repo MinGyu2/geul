@@ -641,6 +641,13 @@ fn compare_with(
         };
         if mode == Mode::Edited && section_stream(name) {
             body_changed |= before_records != after_records;
+            if let Err(finding) = insertions::ordinary_boundaries(
+                &before_records,
+                &after_records,
+                insertion.is_none(),
+            ) {
+                findings.push(finding);
+            }
             // Opaque body annotations/controls have no proven relocation or edit
             // semantics. An unchanged stream is preserved; an edited one fails
             // closed rather than inferring identity from a surviving payload.
