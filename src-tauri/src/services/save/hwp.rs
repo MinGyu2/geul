@@ -153,32 +153,135 @@ fn opaque_owners<'a, 'r>(rs: &'r [Record<'a>]) -> Option<Vec<&'r [Record<'a>]>> 
 }
 
 /// An edited body stream may keep opaque records only when every opaque record's owner subtree (control or
-/// paragraph) is byte-identical and in the same order on both sides: the opaque bytes and everything that
-/// gives them meaning are untouched. Edits to an owner subtree (e.g. text in a paragraph carrying range tags,
+/// paragraph) is byte-identical (except independently derived line positions below) and in the same order
+/// on both sides: the opaque bytes and everything that gives them meaning are untouched. Edits to an owner subtree (e.g. text in a paragraph carrying range tags,
 /// whose offsets refer to that text) still fail closed.
 fn opaque_owners_preserved(before: &[Record<'_>], after: &[Record<'_>]) -> bool {
-    // LINE_SEG (69) is a layout cache: an insertion above shifts only each segment's vertical position
-    // (bytes 4..8 of every 36-byte segment). Everything else in the owner subtree must be identical.
-    fn same(x: &Record<'_>, y: &Record<'_>) -> bool {
-        if x.0 != 69
-            || y.0 != 69
-            || x.1 != y.1
-            || x.2.len() != y.2.len()
-            || !x.2.len().is_multiple_of(36)
-        {
-            return x == y;
+    // Pinned RHWP: LineSeg is u32 + i32×7 + u32, HWPUNIT (1/7200 inch).
+    // vpos is a stored flow/page/column coordinate, NOT paragraph-local. A reset may
+    // encode another frame, so neither an absolute delta limit nor translation alone proves layout.
+    fn position(segment: &[u8], at: usize) -> i32 {
+        i32::from_le_bytes(segment[at..at + 4].try_into().unwrap())
+    }
+    // A narrow independent proof of the engine's continuous top-level line ladder.
+    // Replay from the unchanged first origin, using stored line geometry, never the
+    // claimed positions as the next origin. Gaps, resets, missing caches, nested owners
+    // and unmodelled frame movement have no proof here and fail closed when changed.
+    fn ladder(rs: &[Record<'_>]) -> Option<(i32, i32)> {
+        let mut origin = None;
+        let mut next = None;
+        let mut needs_lines = false;
+        for r in rs {
+            if r.0 == 66 && r.1 == 0 {
+                if needs_lines || (origin.is_some() && *r.2.get(11)? != 0) {
+                    return None;
+                }
+                needs_lines = true;
+            }
+            if r.0 != 69 || r.1 != 1 {
+                continue;
+            }
+            if !needs_lines || r.2.is_empty() || !r.2.len().is_multiple_of(36) {
+                return None;
+            }
+            for line in r.2.chunks_exact(36) {
+                let y = position(line, 4);
+                let height = position(line, 8);
+                let text = position(line, 12);
+                let baseline = position(line, 16);
+                let spacing = position(line, 20);
+                let flags = u32::from_le_bytes(line[32..36].try_into().unwrap());
+                if y < 0
+                    || height <= 0
+                    || text <= 0
+                    || text > height
+                    || baseline < 0
+                    || baseline > text
+                    || spacing < 0
+                    || (origin.is_some() && flags & 3 != 0)
+                    || next.is_some_and(|expected| y != expected)
+                {
+                    return None;
+                }
+                origin.get_or_insert(y);
+                // Same advance as document_core/commands/document.rs. Controls
+                // with taller boxes use text height on this stored text axis.
+                next = Some(
+                    y.checked_add(if height > text { text } else { height })?
+                        .checked_add(spacing)?,
+                );
+            }
+            needs_lines = false;
         }
-        x.2.chunks(36)
-            .zip(y.2.chunks(36))
-            .all(|(a, b)| a[..4] == b[..4] && a[8..] == b[8..])
+        if needs_lines {
+            return None;
+        }
+        Some((origin?, next?))
+    }
+    fn movement_proven(
+        before: &[Record<'_>],
+        after: &[Record<'_>],
+        x: &[Record<'_>],
+        y: &[Record<'_>],
+    ) -> bool {
+        if x[0].0 != 66 || x[0].1 != 0 || y[0].0 != 66 || y[0].1 != 0 {
+            return false;
+        }
+        let i = before.iter().position(|r| std::ptr::eq(r, &x[0])).unwrap();
+        let j = after.iter().position(|r| std::ptr::eq(r, &y[0])).unwrap();
+        // A position-only corruption has no supported preceding content edit.
+        if before[..i]
+            .iter()
+            .filter(|r| r.0 != 69)
+            .eq(after[..j].iter().filter(|r| r.0 != 69))
+        {
+            return false;
+        }
+        match (
+            ladder(&before[..i]),
+            ladder(&after[..j]),
+            ladder(&before[..i + x.len()]),
+            ladder(&after[..j + y.len()]),
+        ) {
+            (Some((a, _)), Some((b, _)), Some((c, _)), Some((d, _))) => a == b && a == c && b == d,
+            _ => false,
+        }
     }
     match (opaque_owners(before), opaque_owners(after)) {
         (Some(a), Some(b)) => {
             !a.is_empty()
                 && a.len() == b.len()
-                && a.iter()
-                    .zip(&b)
-                    .all(|(x, y)| x.len() == y.len() && x.iter().zip(*y).all(|(r, t)| same(r, t)))
+                && a.iter().zip(&b).all(|(x, y)| {
+                    if x == y {
+                        return true;
+                    }
+                    let mut delta = None;
+                    let same = x.len() == y.len()
+                        && x.iter().zip(*y).all(|(r, t)| {
+                            if r == t && r.0 != 69 {
+                                return true;
+                            }
+                            if r.0 != 69
+                                || t.0 != 69
+                                || r.1 != 1
+                                || t.1 != 1
+                                || r.2.is_empty()
+                                || r.2.len() != t.2.len()
+                                || !r.2.len().is_multiple_of(36)
+                            {
+                                return false;
+                            }
+                            r.2.chunks_exact(36)
+                                .zip(t.2.chunks_exact(36))
+                                .all(|(a, b)| {
+                                    let shift =
+                                        i64::from(position(b, 4)) - i64::from(position(a, 4));
+                                    let expected = *delta.get_or_insert(shift);
+                                    a[..4] == b[..4] && a[8..] == b[8..] && shift == expected
+                                })
+                        });
+                    same && movement_proven(before, after, x, y)
+                })
         }
         _ => false,
     }

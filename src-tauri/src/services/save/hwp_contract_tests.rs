@@ -1869,14 +1869,34 @@ fn hwp_opaque_records_survive_only_with_their_owner_subtree() {
 }
 
 #[test]
-fn hwp_opaque_owner_allows_only_line_position_shift() {
-    // Paragraph 1 carries a range tag (opaque owner = paragraph 1); paragraph 0's text is edited.
-    let build = |text: &str, line: [u8; 36]| {
+fn hwp_opaque_owner_requires_derived_line_position_movement() {
+    fn line(y: i32, height: i32) -> Vec<u8> {
+        let mut line = vec![0; 36];
+        for (at, value) in [
+            (4, y),
+            (8, height),
+            (12, height),
+            (16, height * 4 / 5),
+            (20, 600),
+        ] {
+            line[at..at + 4].copy_from_slice(&value.to_le_bytes());
+        }
+        line
+    }
+    let build = |text: &str, prefix_height: i32, lines: Vec<u8>, corrupt: Option<&str>| {
         let mut body = paragraph_records(0, 0, text, &[section_control()]);
+        body[3].2 = line(0, prefix_height);
         let mut tagged = paragraph_records(0, 0, "Tagged", &[]);
         w(&mut tagged[0].2, 14, 1);
-        tagged[3].2 = line.to_vec();
+        w(&mut tagged[0].2, 16, (lines.len() / 36) as u16);
+        tagged[3].2 = lines;
         tagged.push((70, 1, vec![0; 12]));
+        if corrupt == Some("opaque") {
+            tagged.last_mut().unwrap().2[0] = 1;
+        }
+        if corrupt == Some("hierarchy") {
+            tagged.last_mut().unwrap().1 = 2;
+        }
         body.extend(tagged);
         let info = pack(&docinfo_records(false));
         let png = encoded_image(image::ImageFormat::Png);
@@ -1891,20 +1911,73 @@ fn hwp_opaque_owner_allows_only_line_position_shift() {
             ],
         )
     };
-    let original = build("Keep 한글", [0; 36]);
-    let mut shifted = [0u8; 36];
-    shifted[4] = 0x40; // vertical_pos only
-    let moved = build("Keep 한글 more", shifted);
-    assert!(
-        !raw_findings(&original, &moved, true)
-            .iter()
-            .any(|f| f.code == FindingCode::RecordsChanged),
-        "a pure vertical shift of the owner's line segment is a layout cache change"
-    );
-    let mut height = [0u8; 36];
-    height[8] = 0x40; // line height changed
-    let reshaped = build("Keep 한글 more", height);
-    assert!(raw_findings(&original, &reshaped, true)
-        .iter()
-        .any(|f| f.code == FindingCode::RecordsChanged));
+    let lines = |first| [line(first, 1000), line(first + 1600, 1000)].concat();
+    let original = build("Keep 한글", 1000, lines(1600), None);
+    // Independent prefix geometry derives both new positions, including a large displacement.
+    for height in [1000, 1200, 1_000_000] {
+        let valid = build("Keep 한글 more", height, lines(height + 600), None);
+        let findings = raw_findings(&original, &valid, true);
+        assert!(
+            !findings
+                .iter()
+                .any(|f| f.code == FindingCode::RecordsChanged),
+            "{height}: {findings:?}"
+        );
+        let (saved, _, _) = publish(&original, &valid, Some(&raster()));
+        assert!(saved.unwrap().durable);
+    }
+    let mut cases = Vec::new();
+    let mut arbitrary = lines(1800);
+    arbitrary[40..44].copy_from_slice(&3401i32.to_le_bytes());
+    cases.push((
+        "inconsistent segments",
+        build("Keep 한글 more", 1200, arbitrary, None),
+    ));
+    let mut single = lines(1600);
+    single[4..8].copy_from_slice(&1601i32.to_le_bytes());
+    cases.push((
+        "one segment corruption",
+        build("Keep 한글 more", 1000, single, None),
+    ));
+    cases.push((
+        "unsupported uniform relocation",
+        build("Keep 한글 more", 1000, lines(1800), None),
+    ));
+    cases.push((
+        "no preceding edit",
+        build("Keep 한글", 1200, lines(1800), None),
+    ));
+    let mut malformed = lines(1800);
+    malformed.pop();
+    cases.push((
+        "malformed length",
+        build("Keep 한글 more", 1200, malformed, None),
+    ));
+    for (name, offset, value) in [
+        ("negative coordinate", 4, -1i32),
+        ("height", 8, 1001),
+        ("text start", 0, 1),
+        ("overlap", 40, 1801),
+        ("overflow", 40, i32::MAX),
+    ] {
+        let mut bad = lines(1800);
+        bad[offset..offset + 4].copy_from_slice(&value.to_le_bytes());
+        cases.push((name, build("Keep 한글 more", 1200, bad, None)));
+    }
+    for kind in ["opaque", "hierarchy"] {
+        cases.push((kind, build("Keep 한글 more", 1200, lines(1800), Some(kind))));
+    }
+    for (name, output) in cases {
+        assert!(
+            !only_stale_preview(&raw_findings(&original, &output, true)),
+            "{name} raw accepted"
+        );
+        let (saved, bytes, info) = publish(&original, &output, Some(&raster()));
+        assert!(
+            matches!(saved, Err(DocumentError::UnsafeSave { .. })),
+            "{name} published"
+        );
+        assert_eq!(bytes, original, "{name} original changed");
+        assert!(info.dirty, "{name}");
+    }
 }

@@ -1596,3 +1596,34 @@ T009 규칙은 바꾸지 않았다. 측정 v2는 변이 증명·독립 재열기
 ### HWP 일반 문서 호환 복구 (2026-11-11)
 
 엔진 직렬화(DocInfo 캐럿·ID_MAPPINGS·PARA_SHAPE 길이·BorderFill 재사용·삽입 위치·vpos 간격·편집 세션 레이아웃 규칙)를 고치고, T009는 보존된 원본 표/그림·불투명 레코드 소유 부분트리·문단 모델(range tag·인라인 제어·제어 마스크)을 증명하도록 확장했다. 미증명 변경은 계속 거부한다(합성 계약 음성 98건, 제품 출력 손상 7종, OPAQUE-001, raw TBL-001). 고정 108 코퍼스 4개 연산 432/432 게시·재열기. 상세는 [핵심 문서 삽입 — 호환 복구](core-insertions.md#hwp-일반-문서-호환-복구--고정-108-코퍼스-2026-11-11).
+
+### 불투명 소유 문단 LINE_SEG 이동 증명 (2026-11-11)
+
+고정 RHWP의 `parser/body_text.rs`, `model/paragraph.rs`, `serializer/body_text.rs`에서
+LINE_SEG는 36 bytes(u32 + i32×7 + u32)이고 bytes 4..8은 signed i32 HWPUNIT
+(1/7200 inch) 흐름 y다. 문단 내부 상대좌표가 아니며 저장 원본에 따라 쪽·단 경계에서
+리셋되거나 누적 축을 쓴다. `document_core/commands/document.rs`는 앞선 줄의 advance와
+원본 frame 정보를 사용한다. 모든 정상 문서에 동일 delta를 가정할 수 없다.
+
+T009는 opaque payload·owner subtree·수준·순서 및 LINE_SEG의 비위치 바이트를 보존한다.
+변경 없는 owner는 기존 정책대로 보존한다. 위치가 바뀐 최상위 문단에만 좁은 예외를 둔다:
+소유 문단 모든 segment의 이동량이 같고, 앞선 비레이아웃 레코드에 지원 편집이 존재하며,
+원본과 출력 모두 구역 첫 원점을 보존하는 연속 줄 사다리에서 좌표가 독립 재계산되어야 한다.
+advance는 RHWP와 같이 text-height가 양수이고 line-height보다 작으면 text-height + spacing,
+그 밖에는 line-height + spacing이다. 양수 높이, baseline 범위, 음수 위치·간격 금지,
+checked i32 덧셈, 줄 연결, frame flag를 검사한다. 절대 이동량 상한은 없다.
+
+간격·리셋·쪽/단 경계 또는 중첩 owner의 **변경된** 좌표를 이 proof로 설명할 수 없으면
+fail-closed다. 변경 없는 기존 frame·불투명 기록은 계속 보존한다. 별도 pagination 엔진을
+Rust checker에 도입하지 않으므로 임의의 repagination 이동까지 인증하지 않는다.
+고정 432건의 기존 위치 변경은 S73-table의 두 문단이며 연속 사다리로 설명된다.
+
+계약 시험은 앞선 문단 편집/줄높이 변경 뒤의 정상 이동과 큰 이동, 기존 range-tag/unknown
+record 보존을 확인한다. 단일 좌표 변조, 불일치 delta, 근거 없는 균일 이동, malformed 길이,
+음수·겹침·overflow, 높이·다른 필드·opaque payload·계층 변경은 실제 저장 서비스에서 거부하고
+원본 바이트와 dirty 상태를 유지해야 한다. 승인 corpus 검증은
+[고정 코퍼스 승인 경계](core-insertions.md#고정-코퍼스-승인-경계-강화-2026-11-11)를 따른다.
+
+검증 결과: opaque 집중 시험 2 PASS(신규 계약 안의 정상 이동 3종·손상 거부 12종 포함),
+`services::save` 210 PASS / 23 ignored / 0 FAIL. 현재 Rust production 재게시 및 독립 재열기는
+432/432 PASS다. RHWP patch/WASM과 DOCX/HWPX 코드는 변경하지 않았다.
