@@ -29,7 +29,7 @@ crash = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(crash)
 checks, smoke, base, rhwp = crash.checks, crash.smoke, crash.base, crash.rhwp
 sha = crash.sha
-CASES = (('hwp', 'owned'), ('hwpx', 'owned'), ('hwpx', 'active'), ('hwpx', 'replaced'),
+CASES = (('docx', 'owned'), ('hwp', 'owned'), ('hwpx', 'owned'), ('hwpx', 'active'), ('hwpx', 'replaced'),
          ('hwpx', 'intent'), ('hwpx', 'corrupt'), ('hwpx', 'missing'), ('hwpx', 'untrusted'))
 COMMON = ('embedded origin', 'real runtime engine', 'supported edit', 'publication boundary',
           'complete real ownership', 'owner holds lock', 'original not published',
@@ -213,15 +213,18 @@ def run_case(args, fmt, variant, engine, report):
                 a.wait('return !!document.querySelector(".document-bar")')
                 step('embedded origin', d.js('return location.protocol') == 'tauri:', d.js('return location.origin'))
                 a.open(fmt, source)
-                row['runtimeIdentity'] = crash.runtime_identity(a, engine)
-                step('real runtime engine', True, row['runtimeIdentity'])
                 session = next(s for s in a.sessions() if s['displayName'] == source.name)
+                expected_engine = 'wordcraft' if fmt == 'docx' else 'rhwp'
+                row['runtimeIdentity'] = ({'engine': 'wordcraft', 'appSha256': sha(args.app),
+                                           'session': session} if fmt == 'docx' else crash.runtime_identity(a, engine))
+                step('real runtime engine', session['engine'] == expected_engine, row['runtimeIdentity'])
                 a.engine('xkb:us::eng')
-                rhwp.click_paragraph_start(d)
+                (base.wordcraft_poc if fmt == 'docx' else rhwp).click_paragraph_start(d)
                 a.type(crash.MARK)
-                a.wait('const e=document.querySelector(arguments[0]);return e?.dataset.composing==="false" && e.dataset.dirty==="true" && e.dataset.localRevision===e.dataset.revision', crash.STATUS)
+                status_selector = '[data-testid=docx-status]' if fmt == 'docx' else crash.STATUS
+                a.wait('const e=document.querySelector(arguments[0]);return e?.dataset.composing==="false" && e.dataset.dirty==="true" && (arguments[1] ? e.dataset.pending==="0" : e.dataset.localRevision===e.dataset.revision)', status_selector, fmt == 'docx')
                 edited = a.status(fmt)
-                step('supported edit', session['engine'] == 'rhwp' and session['state'] == 'ready' and session['dirty'] is False
+                step('supported edit', session['engine'] == expected_engine and session['state'] == 'ready' and session['dirty'] is False
                      and int(edited['revision']) > session['revision'], edited)
                 a.key('ctrl+s')
                 boundary = wait_file(boundary_path)
@@ -242,8 +245,23 @@ def run_case(args, fmt, variant, engine, report):
                      and staged_before['sha256'] != original['sha256'] and staged_before['size'] > 0,
                      {'intent': intent, 'created': created, 'staging': staged_before, 'record': record_before})
                 # Independent engine reopens the actual save-created staging bytes with the edit.
-                reopened = crash.wasm_open(engine, staged, fmt)
-                checks.require(reopened['format'] == fmt and reopened['paragraphs'][0].startswith(crash.MARK), key, 'real staged edit reopens', reopened)
+                if fmt == 'docx':
+                    # Preserve actual WordCraft save output for independent fresh-process reopen.
+                    # ZIP text is a second byte-level observation, not a replacement for that reopen.
+                    import zipfile
+                    import xml.etree.ElementTree as ET
+                    with zipfile.ZipFile(staged) as package:
+                        xml = ET.fromstring(package.read('word/document.xml'))
+                    ns = {'w': 'http://schemas.openxmlformats.org/wordprocessingml/2006/main'}
+                    paragraph = xml.find('.//w:body/w:p', ns)
+                    text = ''.join(paragraph.itertext())
+                    checks.require(text.startswith(crash.MARK), key, 'WordCraft staged XML contains committed edit', text)
+                    saved_payload = out / 'validated-staging.docx'
+                    shutil.copyfile(staged, saved_payload)
+                    row['stagedParagraph0'] = text
+                else:
+                    reopened = crash.wasm_open(engine, staged, fmt)
+                    checks.require(reopened['format'] == fmt and reopened['paragraphs'][0].startswith(crash.MARK), key, 'real staged edit reopens', reopened)
                 row['staging'] = {'path': str(staged), **staged_before}
                 row['record'] = {'path': str(record), **record_before}
                 shutil.copyfile(record, out / 'ownership-before.save-evidence')
@@ -302,6 +320,18 @@ def run_case(args, fmt, variant, engine, report):
                              and staged.exists() == (variant != 'owned')
                              and record.exists() == (variant in ('intent', 'corrupt', 'untrusted')),
                              {'counts': counts, 'stagingExists': staged.exists(), 'recordExists': record.exists()})
+                    if fmt == 'docx':
+                        b.open(fmt, saved_payload)
+                        reopened_session = next(s for s in b.sessions() if s['displayName'] == saved_payload.name)
+                        view = b.async_js("return await window.__TAURI_INTERNALS__.invoke('docx_view',{sessionId:arguments[0],loadGeneration:arguments[1]})",
+                                          reopened_session['sessionId'], reopened_session['loadGeneration'])
+                        checks.require(view.get('ok') and view['value']['view']['paragraphText'] == row['stagedParagraph0'],
+                                       key, 'fresh WordCraft committed paragraph', view)
+                        checks.require(reopened_session['engine'] == 'wordcraft' and reopened_session['state'] == 'ready'
+                                       and reopened_session['dirty'] is False and sha(saved_payload) == staged_before['sha256'],
+                                       key, 'fresh WordCraft reopens actual staged bytes', reopened_session)
+                        row['freshWordCraftReopen'] = {'session': reopened_session, 'sha256': sha(saved_payload),
+                                                      'paragraph0': view['value']['view']['paragraphText']}
                     step('negative candidates preserved', all(Path(p).exists() and identity(Path(p)) == before for p, before in preserved.items()), preserved)
                 if variant == 'active':
                     row['kill'] = kill_owner(process, gate)
@@ -336,7 +366,7 @@ def main():
               'sourceDirty': subprocess.check_output(['git', 'status', '--porcelain'], cwd=ROOT, text=True).splitlines(),
               'appSha256': sha(args.app), 'harnessSha256': sha(__file__), 'checksSha256': sha(checks.__file__),
               'driverSha256': sha(args.driver), 'gdbSha256': sha(args.gdb), 'formats': [], 'launches': [],
-              'engine': engine, 'scope': 'HWP/HWPX real replacement saves; GDB observer only; no product instrumentation',
+              'engine': engine, 'scope': 'DOCX WordCraft and HWP/HWPX RHWP real replacement saves; GDB observer only; no product instrumentation',
               'productSources': {str(p.relative_to(ROOT)): sha(p) for p in sorted((ROOT / 'src-tauri/src').rglob('*.rs'))},
               'submodules': subprocess.check_output(['git', 'submodule', 'status'], cwd=ROOT, text=True).splitlines()}
     smoke.TEARDOWN.clear()

@@ -1,0 +1,201 @@
+{
+  "status": "IN_PROGRESS",
+  "scope": "T014 stages 4–7 audit; a passed Linux stage is not overall T014 completion",
+  "startingHead": "4e73c365937059f2111a23798f53e32904679241",
+  "pushPerformed": false,
+  "prestage": {
+    "status": "PASS",
+    "commit": "1f275a742cc6578a680f2522980333ab7571de78",
+    "contract": "tauri-driver handles harness SIGTERM with exit(0); require exact int0 and driverKilled false; app pidfd SIGKILL is independent; no supported nonzero exception",
+    "python": {
+      "commands": {
+        "path": "target/t014-final/prestage/commands.json",
+        "sha256": "dc8abda5c670fb70fac2a44cc74c8d9e345e4fdc6297ab38039e4c2cd5f95911"
+      },
+      "passEach": 27,
+      "fail": 0,
+      "skip": 0
+    },
+    "nativeLifecycle": {
+      "path": "target/t014-final/prestage/native-recovery/result.json",
+      "sha256": "833d06f2187bea5766da039749f2e365bbd8295d77621a9f04e1c0bbfb110dd6"
+    },
+    "historicalRevalidation": {
+      "path": "target/t014-final/prestage/revalidated.json",
+      "sha256": "3ff71b45cdc5f499169cc7f12d935f70c370fcdfcf3ebb75e5913a6c1f00853b"
+    }
+  },
+  "stage4": {
+    "status": "PASS",
+    "scope": "Linux X11/Xvfb + WebKitGTK + private IBus; representative generated supported DOCX/WordCraft, HWP and HWPX/RHWP",
+    "native": {
+      "path": "target/t014-final/stage4b/acceptance/result.json",
+      "sha256": "550949e8be4466110e13eaa8c93e21b3573015531a3d38b66b1a41eda5fb50e9"
+    },
+    "command": {
+      "path": "target/t014-final/stage4b/native-command.json",
+      "sha256": "31aadd036d4f1767697c90f4586fe8eff43caf30c84249e795f6826ee9f222e7"
+    },
+    "launcherCleanup": {
+      "path": "target/t014-final/stage4b/acceptance-session/cleanup.json",
+      "sha256": "7c1a152b744872c39f0de4c7574e7e31b3619622f359e312f4fbd65ba39820ce"
+    },
+    "scenarios": 9,
+    "conditions": 116,
+    "teardown": 18,
+    "fail": 0,
+    "originalIdentityAndBytesPreserved": true,
+    "cases": [
+      {
+        "case": "docx-owned",
+        "status": "PASS",
+        "conditions": 13,
+        "cleanup": {
+          "removed": 1,
+          "retired": 0,
+          "active": 0,
+          "unverified": 0,
+          "failed": 0
+        }
+      },
+      {
+        "case": "hwp-owned",
+        "status": "PASS",
+        "conditions": 13,
+        "cleanup": {
+          "removed": 1,
+          "retired": 0,
+          "active": 0,
+          "unverified": 0,
+          "failed": 0
+        }
+      },
+      {
+        "case": "hwpx-owned",
+        "status": "PASS",
+        "conditions": 13,
+        "cleanup": {
+          "removed": 1,
+          "retired": 0,
+          "active": 0,
+          "unverified": 0,
+          "failed": 0
+        }
+      },
+      {
+        "case": "hwpx-active",
+        "status": "PASS",
+        "conditions": 12,
+        "cleanup": {
+          "removed": 0,
+          "retired": 0,
+          "active": 1,
+          "unverified": 0,
+          "failed": 0
+        }
+      },
+      {
+        "case": "hwpx-replaced",
+        "status": "PASS",
+        "conditions": 13,
+        "cleanup": {
+          "removed": 0,
+          "retired": 1,
+          "active": 0,
+          "unverified": 0,
+          "failed": 0
+        }
+      },
+      {
+        "case": "hwpx-intent",
+        "status": "PASS",
+        "conditions": 13,
+        "cleanup": {
+          "removed": 0,
+          "retired": 0,
+          "active": 0,
+          "unverified": 1,
+          "failed": 0
+        }
+      },
+      {
+        "case": "hwpx-corrupt",
+        "status": "PASS",
+        "conditions": 13,
+        "cleanup": {
+          "removed": 0,
+          "retired": 0,
+          "active": 0,
+          "unverified": 1,
+          "failed": 0
+        }
+      },
+      {
+        "case": "hwpx-missing",
+        "status": "PASS",
+        "conditions": 13,
+        "cleanup": {
+          "removed": 0,
+          "retired": 0,
+          "active": 0,
+          "unverified": 0,
+          "failed": 0
+        }
+      },
+      {
+        "case": "hwpx-untrusted",
+        "status": "PASS",
+        "conditions": 13,
+        "cleanup": {
+          "removed": 0,
+          "retired": 0,
+          "active": 0,
+          "unverified": 0,
+          "failed": 0
+        }
+      }
+    ],
+    "docx": "Actual WordCraft UI edits/save; GDB stops actual Rust publish entry after verified staging. Fresh process reopens a preserved byte-identical staging payload with WordCraft and compares production docx_view paragraph. No RHWP extension substitution.",
+    "protectedFilesystemCases": {
+      "evidence": {
+        "path": "target/t014-final/stage4b/journal-tests.log",
+        "sha256": "57f429269a086b3bc29fd2a802d7cf40ec66488c1558c0bba4716f03067dee21"
+      },
+      "command": {
+        "path": "target/t014-final/stage4b/journal-command.json",
+        "sha256": "0943ff8cd641499e0f8e1ec547d130dc907f71fda2e5d447787d40a1b995f49a"
+      },
+      "pass": 22,
+      "fail": 0,
+      "ignored": 0,
+      "scope": "Actual shared cleanup filesystem unit tests: symlink/hardlink and inode replacement, active locks, foreign/intent/corrupt/untrusted, deletion/fsync/retirement failures; repeated cleanup and reconciliation. Second cleanup is deterministic Rust evidence, not a second native startup."
+    },
+    "excludedAttempt": {
+      "evidence": {
+        "path": "target/t014-final/stage4/acceptance/result.json",
+        "sha256": "2db8c10c88c3ba137846f74904b247254bc3db195b4a192ba924947542599c01"
+      },
+      "status": "FAIL",
+      "cause": "New DOCX harness incorrectly required RHWP-only localRevision. Corrected to pending0 and production docx_view; failed evidence preserved, no product defect."
+    }
+  },
+  "runtime": {
+    "app": {
+      "path": "src-tauri/target/debug/geul",
+      "sha256": "62f22897b69f831e35166cb0d4dcccdd82db0533c93fd4921720354adcff5fa6"
+    },
+    "driverSha256": "1d1ca38626716dd2fd77e7b2c2be42ec93a40818a9aa053d06c50b4946f889c5",
+    "gdbSha256": "eb9db11d6c442521574e4c5057e5f5d0eb9d40b571a1c33f9a5b9e51cb0fba08",
+    "rhwpGeneration": "907eabb217721131eee04d01f13e0a0d54332542462c36ee95fb6ada9744a20f",
+    "rhwpWasmSha256": "c8957cbcfe72878e38ae17747a9b99675e581488056d7bce3b2d9e033e0a5978",
+    "submodules": [
+      " 1a76570e833917d15817415a53c09ad61ab3203f external/rhwp (v0.8.7)",
+      " dc25d8a27303b35d0ef7d61e56276f7b8f3feab5 external/wordcraft (geul-roundtrip-42e8a67-9-gdc25d8a)"
+    ]
+  },
+  "remaining": [
+    "Stage5 failure/conflict/publication/durability matrix",
+    "Stage6 recovery revalidation including DOCX",
+    "Stage7 controlling-document reconciliation; existing explicit T014 power-loss/filesystem-fault and Windows/macOS implementation obligations remain unfulfilled"
+  ]
+}
