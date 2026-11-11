@@ -1,6 +1,6 @@
 {
-  "status": "IN_PROGRESS",
-  "scope": "T014 stages 4–7 audit; a passed Linux stage is not overall T014 completion",
+  "status": "PARTIALLY_COMPLETED",
+  "scope": "2026-11-12 T014 stabilization stages4–7 audit. Linux supported representative DOCX/HWP/HWPX acceptance passed; original full T014 Done remains unmet and unchecked.",
   "startingHead": "4e73c365937059f2111a23798f53e32904679241",
   "pushPerformed": false,
   "prestage": {
@@ -195,8 +195,8 @@
     ]
   },
   "remaining": [
-    "Stage7 final evidence/specification reconciliation",
-    "Existing T014 power-loss/filesystem-fault and Windows/macOS save implementation/durability/recovery obligations remain unfulfilled"
+    "Real power-loss/filesystem-fault acceptance in an isolated suitable environment",
+    "Windows/macOS safe save publication/durability/recovery implementation and native acceptance"
   ],
   "stage5": {
     "status": "PASS_LINUX_DETERMINISTIC_AND_NATIVE_BOUNDARY_SCOPE",
@@ -600,6 +600,89 @@
     "identityVerification": {
       "path": "target/t014-final/stage6/summary.json",
       "sha256": "dd27be0f375b8fa01e85087b658ba0d8033726bb6e98868738137a4c2b2ed8f5"
-    }
-  }
+    },
+    "commit": "8fc1b6d772f0344cb8fe3191a79ada1ec713a14e"
+  },
+  "stage7": {
+    "status": "PASS_EVIDENCE_RECONCILIATION_WITH_INCOMPLETE_T014",
+    "reviewedAtHead": "8fc1b6d772f0344cb8fe3191a79ada1ec713a14e",
+    "documentationCommit": "commit containing this final reconciliation; exact final SHA is reported separately to avoid self-reference",
+    "provenance": {
+      "path": "target/t014-final/stage7/provenance.json",
+      "sha256": "fb3a5e0229c6301f41c1f5aa31b98337bcce16a28f36e7eaa75e7a4402b87b8f"
+    },
+    "sourceManifest": {
+      "path": "target/t014-final/stage7/source-manifest.json",
+      "sha256": "126a24ea8d4b7d143b2d9808659efc99a22857b5e7ecd321556f417f6d0f1b50"
+    },
+    "sourceCount": 214,
+    "productionSourceChanges": false,
+    "testOnlyRustChanges": [
+      "services/recovery.rs: cfg(all(test,target_os=linux)) module only",
+      "services/save/tests.rs: cfg(test) module only"
+    ],
+    "evidenceClasses": {
+      "directlyExecuted": [
+        "four Python modes27 each",
+        "stage4b9 native scenarios/116 conditions/18 teardowns",
+        "stage5 Rust/save+recovery+creation and frontend regressions",
+        "stage6 DOCX16 native conditions/2 teardowns",
+        "Release generation identity check"
+      ],
+      "verifiedReusable": [
+        "prestage fresh HWP35/HWPX33/4teardowns used at stage6: same production code and shared harness/verifier",
+        "stage5 recovery28/creation1/frontend148 after final save-test-only addition: same relevant code/config/input/environment; binary hashes kept separate"
+      ],
+      "superseded": [
+        "Historical stage1–3 startup8/103/16, checkpoint35/33/4: raw hashes verified, stricter driver gate accepts; replaced for current native acceptance by fresh reports, not rewritten",
+        "stage5 initial save212 superseded by final save212 after actual pending external-modification regression"
+      ],
+      "failedPreserved": [
+        "stage4 first DOCX harness run: absent RHWP-only localRevision led to timeout; fixed to production DOCX pending/view contract; no product safety defect",
+        "initial new Rust regression fmt --check showed formatting differences; rustfmt applied and required final fmt passed"
+      ],
+      "unavailable": [
+        "Windows/macOS native execution and target standard libraries",
+        "power-cut VM/device-fault harness and privileged block-device access"
+      ],
+      "notRun": [
+        "actual power-loss/filesystem-device failure",
+        "Windows/macOS save publication/durability/recovery implementation acceptance",
+        "external Microsoft Word/Hancom compatibility",
+        "physical desktop/Wayland and native unfinished-IME checkpoint-fault scenario"
+      ]
+    },
+    "requirementDecision": {
+      "FR-006": "Linux generated supported representatives accepted; unsafe/unsupported output preservation remains fail-closed. Cross-platform original-format save is unimplemented, so full declared project scope is not satisfied.",
+      "FR-010": "Linux revision/disk conflict, validation, atomic publication and recovery boundaries passed. Windows/macOS publication/durability/recovery still require implementation and acceptance. No CAS or power-loss guarantee inferred.",
+      "SC-004": "Linux injected failures/external modifications and process SIGKILL preserve/report filesystem outcomes correctly. Real power-loss/filesystem-device failure acceptance remains unexecuted.",
+      "T014Done": "NOT_MET; T014 stays unchecked. Passed Linux results do not waive prior explicit obligations."
+    },
+    "controllingReferences": [
+      "docs/planning/spec.md FR-006/FR-010/SC-004/SC-005",
+      "docs/planning/tasks.md T014 Done, T015 quality matrix, T016 release acceptance",
+      "docs/architecture/save-preservation.md T009/T014 boundary; cross-platform publication section; explicit power-loss assignment"
+    ],
+    "completionBlockers": [
+      {
+        "condition": "Real power-loss/filesystem-fault durability and recovery acceptance",
+        "status": "NOT RUN",
+        "reason": "Process SIGKILL and deterministic injected fsync/unlink failures are separate evidence levels. Current Linux host has no VM/device-fault harness, relevant device access or effective capabilities. No host filesystem/power disruption attempted.",
+        "required": "Isolated disposable VM/block-device fault environment; interruption around staging/publication/directory sync/journal and recovery retirement, then fresh filesystem/process observation with original/new bytes and ownership results."
+      },
+      {
+        "condition": "Windows/macOS safe save publication/durability/recovery",
+        "status": "UNIMPLEMENTED / NOT RUN",
+        "reason": "Save service PLATFORM_SUPPORTED is Linux-only; non-Linux stage/publish and RecoveryStore methods return unsupported/failure. Native OS environments and target stdlibs unavailable.",
+        "required": "Platform-specific verified ownership/conflict-safe publication, durability and recovery implementation plus real Windows/macOS execution. Unsupported refusal protects originals but is not successful supported saving."
+      }
+    ],
+    "futureTasks": {
+      "T015": "Broader existing/new business-document, format/feature/corpus regression matrix and general external Word/Hancom compatibility remain open; generated representatives do not close them.",
+      "T016": "Three-OS actual packaging/launch/save/PDF/notices/security and additional physical desktop/Wayland/IME/graphics/load acceptance remain open. T016 does not absorb explicitly assigned T014 save implementation or power-loss obligations."
+    },
+    "noRequirementsWeakened": true,
+    "noPush": true
+  },
+  "verifiedAt": "2026-11-12T01:39:52.319134+09:00"
 }

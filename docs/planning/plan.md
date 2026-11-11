@@ -1,8 +1,10 @@
 # Implementation Plan: HWP/HWPX + DOCX 통합 편집기
 
+> **2026-11-12 T014: 부분 완료, 체크하지 않음.** Linux X11/Xvfb·WebKitGTK·격리 IBus의 지원 대표 DOCX/WordCraft·HWP/HWPX/RHWP에서 중단 저장 시작 정리, 실패·충돌·게시/내구성 상태, 체크포인트·SIGKILL·재시작·복원 수용을 확인했다. 정전·실제 파일시스템 고장과 Windows/macOS 안전 저장 게시·내구성·복구의 기존 T014 의무는 미완료다. T015 품질 행렬과 T016 출시 수용도 그대로 남긴다. [증거·실행 신원·26행 결과 행렬·미완료 근거](../architecture/t014-final-acceptance-2026-11-12.json).
+
 > **2026-11-11 Linux native GUI + IBus Phase 5: COMPLETED.** 새 스키마의 실제 X11/Xvfb·IBus 인수 111개와 최종 집계가 통과했다(과거 시나리오 재사용 0). [실행 신원·검증 범위](../architecture/phase5-native-gui-ibus-closure-2026-11-11.json), [증거 재사용 계약](tasks.md#linux-native-guiibus-인수-증거-계약--2026-11-11). 이 사용자 지정 단계는 계획의 T012/T013 고급 기능 Phase 5와 구분한다. T014/T015/T016 및 기존 미완료 조건, 물리 데스크톱·Wayland·Word/Hancom NOT RUN은 유지한다.
 
-Date: 2026-11-09
+Date: 2026-11-12
 Spec: [spec.md](./spec.md)
 Source baseline: `4bc1ac986026ccadb2d673a66ad69e6296e3a39e` (`MinGyu2/geul`, master).
 Status: T007–T009 △ 조건부 범위 인정, T010 INCOMPLETE(D2/D4 △ 조건부 보류), T011 완료(2026-11-04, native IME 포함 검증 — [tasks.md](./tasks.md) Verification Log). T021 생성 경계는 실제 WASM/Rust 실행 수용 완료. T022 제품 연결 완료. T023 native 신규 생성 수용 완료(X11/IBus, 2026-11-04; 추가 환경은 NOT RUN).

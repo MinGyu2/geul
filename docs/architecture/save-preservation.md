@@ -1670,3 +1670,39 @@ reset 변조는 바이트 변경을 확인한 뒤 `RecordsChanged`와 실제 게
 S73-table(`h-pen-01.hwp`)도 게시·재열기 PASS다. 원시 checker의 `previewStale@PrvImage`는
 production의 기존 미리보기 재생성 정책으로 해소되며 geometry 거부가 아니다. 전체 명령·종료 코드는
 ignored `target/hwp-geometry-proof/final-verification-summary.json`에 둔다. RHWP WASM은 재빌드하지 않았다.
+
+
+## 2026-11-12 T014 단계 4–7 최종 재검증 — 부분 완료
+
+[최종 수용 기록](t014-final-acceptance-2026-11-12.json)은 단계별 실제 실행·재사용·실패·NOT RUN을 분리한다.
+이전 [단계 1–3 기록](t014-interrupted-save-acceptance-2026-11-12.json)의 당시 DOCX NOT RUN과 과거 실패 기록은 바꾸지 않는다.
+시작 HEAD `4e73c36`에서 제품 동작·엔진 핀·패치·WASM은 바꾸지 않았다. Rust 변경은 시험 모듈뿐이다.
+
+- 드라이버: `tauri_driver`의 `driverExit`는 앱과 별개인 tauri-driver 종료 코드다. 드라이버의 SIGTERM 처리기는 `exit(0)`을 호출한다.
+  `complete`는 수집 완료만 뜻하므로 정확한 int 0 및 `driverKilled=false`를 별도로 요구한다. 없는 값·문자·float·bool·양수·음수·강제 종료는 거부한다.
+  정상/-O/-OO/PYTHONOPTIMIZE=1 각각 27 PASS, 새 native HWP35/HWPX33·teardown4 PASS.
+- 단계 4: 실제 DOCX WordCraft와 HWP/HWPX RHWP 저장이 Rust `publish()` 진입에서 중단됐다.
+  새 앱 시작 정리 9시나리오/116조건·teardown18 PASS, 원본 바이트·inode 유지, 소유 staging 제거 및 기록 은퇴,
+  활성·교체 inode·의도만·손상·없는 저널·미신뢰 저널과 외부 유사 파일 보존을 확인했다.
+  링크 치환·삭제/fsync/은퇴 실패·반복 정리는 실제 공통 cleanup의 Rust 22 PASS이며 두 번째 native 시작을 실행했다고 주장하지 않는다.
+- 단계 5: 실제 WordCraft 저장 서비스에 복구를 켠 9개 실패 경계, 파일 fsync 실패, staging 뒤 같은 크기·mtime의 실제 외부 쓰기를 보완했다.
+  저장212 PASS/23 ignored, 복구28 PASS/1 ignored, 생성실패1 PASS, 관련 프런트엔드148 PASS.
+  ignored는 성공으로 세지 않으며 정확한 사례·명령·바이너리/소스 해시와 26행 결과 행렬은 최종 기록에 있다.
+- 단계 6: DOCX 자동 체크포인트16조건·teardown2 PASS. 판8 보호/판9 대기 상태에서 pidfd SIGKILL,
+  새 WordCraft에서 payload 사전 검증·기존 목적지 거부·새 파일 복원/재열기·바이트 일치·후보 유지를 확인했다.
+  HWP35/HWPX33·teardown4는 드라이버 교정 후 새로 실행한 결과를 제품/공통 하네스 신원 확인 후 재사용했다.
+  HWP는 실제 CFB PrvText 스트림의 정확한 보호 판을 검사하며, HWP/HWPX는 독립 Release WASM으로 재열었다.
+  IME 미확정·pending·stale 판 차단은 관련 프런트엔드 회귀 근거이고 native 미확정 IME 실패 주입 수용과 구분한다.
+
+게시 전 거절/검증/쓰기/fsync/rename 실패와 외부 충돌에서는 원본 또는 외부 수정 바이트를 보존한다.
+**rename 성공 뒤 디렉터리 fsync 실패는 이미 게시된 새 바이트를 유지하고 `durable=false`·dirty 및 복구 후보를 남긴다.**
+이를 게시 전 실패나 원본 불변으로 기록하지 않으며, 성공한 rename을 되돌리지 않는다. 확인된 재시도만 clean과 복구 은퇴를 확정한다.
+신뢰된 같은 UID의 최종 검사와 rename 사이 변경에 대한 원자적 compare-and-swap 보장은 없다.
+
+**판정: T014 전체 Done 미충족.** Linux의 생성된 지원 대표 문서 수용은 통과했지만 이 문서가 T014로 배정한
+정전·실제 파일시스템 고장, Windows/macOS 교체 구현·내구성·복구는 아직 구현/수용되지 않았다.
+현재 호스트에는 해당 native OS·대상 표준 라이브러리, 격리 VM 전원 차단/장치 고장 하네스와 권한이 없다.
+SIGKILL과 fsync 오류 주입을 그 시험의 대체 PASS로 삼지 않는다. 다른 OS의 fail-closed 저장 거절도 지원 저장 성공으로 바꾸지 않는다.
+실제 업무/외부 Word·Hancom 일반 호환성 확대는 T015의 품질 행렬 및 해당 기능 수용,
+세 OS 패키지·PDF·고지·추가 IME/그래픽 환경은 T016에 남긴다. 이 구분으로 기존 T014 의무를 이관하지 않는다.
+계획의 T014 체크는 그대로 두고, 빠진 구현과 격리 환경의 실제 수용이 끝난 뒤 다시 판정한다. push는 하지 않았다.

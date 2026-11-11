@@ -92,7 +92,7 @@ Independent Test: 실제 API·기록·문서 왕복을 검증한 명령만 활�
 
 ## Phase 6: User Story 5 - 저장 실패·복구 수용 (Priority: P1)
 Independent Test: 기존 저장·충돌·복구의 남은 실패 경계.
-- [ ] T014 [US5] △ 기능 구현 완료 / 최종 검증 미완료 — 저장 실패·충돌·복구 전체 수용 — `src-tauri/src/services/` (기존 구현 재사용, T010 직접 의존 아님). 구현: 소유 증명 기반 중단 저장 임시 파일 정리(T014 A), HWP/HWPX 자동 복구 체크포인트·RecoveryCenter 복원(T014 B). 검증된 범위: Rust 저널·체크포인트 단위 시험, 실제 RHWP WASM 체크포인트, native SIGKILL·재실행·create-only 복원(HWP/HWPX). 미완료: 저장 중 강제 종료 뒤 시작 시 임시 파일 정리 native 수용 NOT RUN, 수용 하네스 teardown 근거 누락 시 PASS 가능 결함 미교정, 실제 업무·한컴 작성 문서·정전·Windows/macOS 미검증([기록](../architecture/save-preservation.md)).
+- [ ] T014 [US5] △ Linux 수용 통과 / 전체 Done 미충족 — 2026-11-12 driver 종료 의미 교정, 실제 세 형식 중단 저장→시작 정리 9개/116조건·teardown18, WordCraft DOCX 자동 체크포인트·SIGKILL→복원 16조건·teardown2, HWP35/HWPX33·teardown4 재검증. 저장212/복구28/생성실패1·프런트엔드148 회귀 및 26행 실패·충돌·게시/내구성 행렬 PASS. 남은 필수: 정전·실제 파일시스템 고장 수용, Windows/macOS 안전 저장 게시·내구성·복구 구현 및 native 수용. 안전 거절은 해당 OS의 저장 성공이 아니다. [최종 증거·범위·미완료 판정](../architecture/t014-final-acceptance-2026-11-12.json).
 
 ## Phase 7: User Story 7 - 형식별 새 문서 (Priority: P1)
 Independent Test: 세 형식의 실제 생성·입력·저장·재저장·재열기, 취소·실패·경합.
@@ -146,6 +146,8 @@ Depends on은 ID 연결이다. 위 승인된 착수 조건과 전체 Done을 구
 기존 근거의 WASM `3f99a74b…`와 후속 Release `77d01d6c…`를 혼동하지 않는다. 최신 패치/공통 IME 변경은 영향 검토 또는 관련 집중 재검증 대상이다. Linux GPU/Wayland 등은 같은 OS여도 별도 환경이며 미검증을 통과로 바꾸지 않는다.
 
 T014의 안전 게시·충돌·DOCX 체크포인트·복구는 이미 상당 부분 구현돼 있다. 신규 생성 때문에 전부 다시 만들지 않는다. 2026-11-09 [T014 A/B](../architecture/save-preservation.md#2026-11-09-t014-a-중단된-저장의-임시-파일-정리와-b-hwphwpx-자동-복구)로 소유가 증명된 잔여 임시 파일 정리와 저장과 같은 검사를 통과한 HWP/HWPX 판의 자동 체크포인트를 구현했다(단위·서비스·프런트엔드 시험, 2026-11-09 생성 HWP/HWPX 각 1개로 실제 Release WASM 체크포인트와 native SIGKILL→재시작→복원→재열기 PASS; 저장 중 강제 종료 뒤 잔여 임시 파일의 native 정리는 NOT RUN). 보존 검사를 통과하지 못한 RHWP 문서·마지막 기록 뒤 입력까지 복구된다고 확대하지 않으며 T014 전체 수용은 미완료다.
+
+2026-11-12 후속: 위 2026-11-09 기록의 당시 NOT RUN은 역사로 보존한다. 현재 native 중단 저장 정리는 세 형식에서 PASS이고, teardown 검증기는 정확한 드라이버 정상 종료도 요구한다. 정전·실제 파일시스템 고장과 다른 OS의 T014 의무가 남아 전체 체크는 유지한다. [현재 수용 기록](../architecture/t014-final-acceptance-2026-11-12.json).
 
 ### T010 세부 판정
 

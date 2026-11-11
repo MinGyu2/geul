@@ -1,9 +1,11 @@
 # Feature Specification: HWP/HWPX + DOCX 통합 오픈소스 워드프로세서
 
+> **2026-11-12 T014: 부분 완료, 체크하지 않음.** Linux X11/Xvfb·WebKitGTK·격리 IBus의 지원 대표 DOCX/WordCraft·HWP/HWPX/RHWP에서 중단 저장 시작 정리, 실패·충돌·게시/내구성 상태, 체크포인트·SIGKILL·재시작·복원 수용을 확인했다. 정전·실제 파일시스템 고장과 Windows/macOS 안전 저장 게시·내구성·복구의 기존 T014 의무는 미완료다. T015 품질 행렬과 T016 출시 수용도 그대로 남긴다. [증거·실행 신원·26행 결과 행렬·미완료 근거](../architecture/t014-final-acceptance-2026-11-12.json).
+
 > **2026-11-11 Linux native GUI + IBus Phase 5: COMPLETED.** 새 스키마의 실제 X11/Xvfb·IBus 인수 111개와 최종 집계가 통과했다(과거 시나리오 재사용 0). [실행 신원·검증 범위](../architecture/phase5-native-gui-ibus-closure-2026-11-11.json), [증거 재사용 계약](tasks.md#linux-native-guiibus-인수-증거-계약--2026-11-11). 이 사용자 지정 단계는 계획의 T012/T013 고급 기능 Phase 5와 구분한다. T014/T015/T016 및 기존 미완료 조건, 물리 데스크톱·Wayland·Word/Hancom NOT RUN은 유지한다.
 
 Created: 2026-10-13
-Updated: 2026-11-09
+Updated: 2026-11-12
 Status: 구현 진행 중. T007–T009 △ 조건부 범위 인정, T011은 기록된 범위에서 완료. T021–T023 신규 생성·연결·X11/IBus 수용 완료(추가 플랫폼 NOT RUN). T010은 INCOMPLETE(D2 INCONCLUSIVE, D4 latency FAIL/resources INCONCLUSIVE), T012/T013은 △ 조건부 미완료. WordCraft remote reproducibility는 `dc25d8a27303b35d0ef7d61e56276f7b8f3feab5` 게시·fresh checkout PASS. Word/Hancom 외부 호환성은 NOT RUN.
 Source baseline: `4bc1ac986026ccadb2d673a66ad69e6296e3a39e` (`MinGyu2/geul`, master).
 Input: WordCraft + RHWP 독립 코어, Tauri/React 신규 UI, 6개 영역, 언어별 JSON, 공개 저장소 민감정보 사전 차단. 2026-11-04 사용자가 T007–T010의 잔여 사유 기록 및 T011 진행, DOCX/HWP/HWPX 신규 생성 계획 반영을 승인했다.
