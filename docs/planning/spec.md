@@ -1,5 +1,7 @@
 # Feature Specification: HWP/HWPX + DOCX 통합 오픈소스 워드프로세서
 
+> **2026-11-11 Linux native GUI + IBus Phase 5: COMPLETED.** 새 스키마의 실제 X11/Xvfb·IBus 인수 111개와 최종 집계가 통과했다(과거 시나리오 재사용 0). [실행 신원·검증 범위](../architecture/phase5-native-gui-ibus-closure-2026-11-11.json), [증거 재사용 계약](tasks.md#linux-native-guiibus-인수-증거-계약--2026-11-11). 이 사용자 지정 단계는 계획의 T012/T013 고급 기능 Phase 5와 구분한다. T014/T015/T016 및 기존 미완료 조건, 물리 데스크톱·Wayland·Word/Hancom NOT RUN은 유지한다.
+
 Created: 2026-10-13
 Updated: 2026-11-09
 Status: 구현 진행 중. T007–T009 △ 조건부 범위 인정, T011은 기록된 범위에서 완료. T021–T023 신규 생성·연결·X11/IBus 수용 완료(추가 플랫폼 NOT RUN). T010은 INCOMPLETE(D2 INCONCLUSIVE, D4 latency FAIL/resources INCONCLUSIVE), T012/T013은 △ 조건부 미완료. WordCraft remote reproducibility는 `dc25d8a27303b35d0ef7d61e56276f7b8f3feab5` 게시·fresh checkout PASS. Word/Hancom 외부 호환성은 NOT RUN.

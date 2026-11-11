@@ -1,0 +1,252 @@
+{
+  "phase": "Phase 5 — Linux Native GUI + IBus End-to-End Acceptance",
+  "status": "COMPLETED",
+  "verifiedAt": "2026-11-11T22:40:56.177883+09:00",
+  "startingHead": "3475b85cb0aabe1b406b3e616e98646762a84d64",
+  "environment": "NixOS 26.05; actual Tauri/WebKitGTK; private X11/Xvfb and real IBus Hangul; test-local font HOME",
+  "identity": {
+    "appSha256": "a68020194e739192b2b8a12d3d677e31d836bb43b95adb44174038670e3964b4",
+    "productTreeSha256": "1a037f5942b51a536ba00cbbf3836c306df67e320756f4d3c27ffa1ed1a2169e",
+    "rhwpGeneration": "5d1fad60335321a2de05f586fc93d5db5e35e80db0102f7ee353cc8b3d4b32a4",
+    "rhwpArtifacts": {
+      "rhwp_bg.wasm": "b162d0d65deee4642cf3cdd4f63e2f514b7dd38c4754eda08f9de6aaf5ed66fb",
+      "rhwp.js": "e0e6a80bbdea61d55d814c188e0d75f0ac496ea3fbaf45cf4e8526d6f0bd610b"
+    },
+    "rhwpSourceTree": "0f74c5d66bda00c15202b61a1a8675c46580744d9f6425150038dee2bd2abdb3",
+    "wordcraftCommit": "dc25d8a27303b35d0ef7d61e56276f7b8f3feab5",
+    "inputHarnessSha256": "6ee02a117cfafd841b3d811f56a2cccc3835d8d0687fe7975d7635073fcca703"
+  },
+  "evidenceRoot": "target/phase5-native-gui-ibus/20261111T221602+0900/fresh-final",
+  "acceptanceSha256": "3061264c75048c0c44a94265f7942174604d2541127df3990bce61f19d155a4c",
+  "runId": "documents-241ae111ec49d599",
+  "inputRunId": "input-1af380da2a5a07ba",
+  "sourceRunIds": [],
+  "stages": {
+    "5-1": {
+      "executionStatus": "PASS",
+      "evidenceMode": "CURRENT_RUN",
+      "effectiveAcceptance": "PASS",
+      "currentCount": 3,
+      "reusedCount": 0,
+      "requiredCount": 3,
+      "missing": []
+    },
+    "5-2": {
+      "executionStatus": "PASS",
+      "evidenceMode": "CURRENT_RUN",
+      "effectiveAcceptance": "PASS",
+      "currentCount": 47,
+      "reusedCount": 0,
+      "requiredCount": 47,
+      "missing": []
+    },
+    "5-3": {
+      "executionStatus": "PASS",
+      "evidenceMode": "CURRENT_RUN",
+      "effectiveAcceptance": "PASS",
+      "currentCount": 18,
+      "reusedCount": 0,
+      "requiredCount": 18,
+      "missing": []
+    },
+    "5-4": {
+      "executionStatus": "PASS",
+      "evidenceMode": "CURRENT_RUN",
+      "effectiveAcceptance": "PASS",
+      "currentCount": 30,
+      "reusedCount": 0,
+      "requiredCount": 30,
+      "missing": []
+    },
+    "5-5": {
+      "executionStatus": "PASS",
+      "evidenceMode": "CURRENT_RUN",
+      "effectiveAcceptance": "PASS",
+      "currentCount": 13,
+      "reusedCount": 0,
+      "requiredCount": 13,
+      "missing": []
+    }
+  },
+  "formatAcceptance": {
+    "docx": {
+      "5-1": "PASS",
+      "5-2": "PASS",
+      "5-3": "PASS",
+      "5-4": "PASS",
+      "5-5": "PASS"
+    },
+    "hwpx": {
+      "5-1": "PASS",
+      "5-2": "PASS",
+      "5-3": "PASS",
+      "5-4": "PASS",
+      "5-5": "PASS"
+    },
+    "hwp": {
+      "5-1": "PASS",
+      "5-2": "PASS",
+      "5-3": "PASS",
+      "5-4": "PASS",
+      "5-5": "PASS"
+    }
+  },
+  "artifactSnapshots": {
+    "docx/saved-as": {
+      "path": "verified/docx/saved-as.docx",
+      "sha256": "35492bc19f2849587bddfd457121db39242af6ac1ce4830fdee89f53d2212617",
+      "sourcePath": "sources/blue.png",
+      "sourceSha256": "5f37c063bb7a5bb13f8cfeb4e66b87f2116eff51eb1d0acd6030c938333c2a98",
+      "scenarios": [
+        "5-4.docx.rich.saveas",
+        "5-4.docx.rich.saveas-reopen"
+      ]
+    },
+    "docx/rich": {
+      "path": "verified/docx/rich.docx",
+      "sha256": "35492bc19f2849587bddfd457121db39242af6ac1ce4830fdee89f53d2212617",
+      "sourcePath": "sources/blue.png",
+      "sourceSha256": "5f37c063bb7a5bb13f8cfeb4e66b87f2116eff51eb1d0acd6030c938333c2a98",
+      "scenarios": [
+        "5-4.docx.rich.save",
+        "5-4.docx.rich.structure",
+        "5-4.docx.rich.reopen"
+      ]
+    },
+    "docx/existing": {
+      "path": "verified/docx/existing.docx",
+      "sha256": "bcc5d03087ea543b77e6d07239774d7b677d352fded91c67f55b7d98e9a9ed03",
+      "sourcePath": "sources/basic-ko.docx",
+      "sourceSha256": "7286a49b2801ea1d4069a2173a440c4ad06718ae779345626fed52b27b56ee6c",
+      "scenarios": [
+        "5-4.docx.existing.save",
+        "5-4.docx.existing.structure",
+        "5-4.docx.existing.reopen"
+      ]
+    },
+    "hwpx/saved-as": {
+      "path": "verified/hwpx/saved-as.hwpx",
+      "sha256": "513bc79bcba11ee42609479db382dfc1af7a418c5dc8f70b83c56f304e0742b8",
+      "sourcePath": "sources/blue.png",
+      "sourceSha256": "5f37c063bb7a5bb13f8cfeb4e66b87f2116eff51eb1d0acd6030c938333c2a98",
+      "scenarios": [
+        "5-4.hwpx.rich.saveas",
+        "5-4.hwpx.rich.saveas-reopen"
+      ]
+    },
+    "hwpx/rich": {
+      "path": "verified/hwpx/rich.hwpx",
+      "sha256": "513bc79bcba11ee42609479db382dfc1af7a418c5dc8f70b83c56f304e0742b8",
+      "sourcePath": "sources/blue.png",
+      "sourceSha256": "5f37c063bb7a5bb13f8cfeb4e66b87f2116eff51eb1d0acd6030c938333c2a98",
+      "scenarios": [
+        "5-4.hwpx.rich.save",
+        "5-4.hwpx.rich.structure",
+        "5-4.hwpx.rich.reopen"
+      ]
+    },
+    "hwpx/existing": {
+      "path": "verified/hwpx/existing.hwpx",
+      "sha256": "fa37dc838ef29da13ce1855e0f7b9715cccafebc013308b4ada750b9731b9449",
+      "sourcePath": "sources/basic-ko.hwpx",
+      "sourceSha256": "26d434b7b427149110751c6ef5b19e9ecb4818f3ba7eadfe201b5afd3de442a8",
+      "scenarios": [
+        "5-4.hwpx.existing.save",
+        "5-4.hwpx.existing.structure",
+        "5-4.hwpx.existing.reopen"
+      ]
+    },
+    "hwp/saved-as": {
+      "path": "verified/hwp/saved-as.hwp",
+      "sha256": "6ba444f37e81707b4d3bf0afac877f33d9f7b158946b4e6f0fccfdc383495eb8",
+      "sourcePath": "sources/blue.png",
+      "sourceSha256": "5f37c063bb7a5bb13f8cfeb4e66b87f2116eff51eb1d0acd6030c938333c2a98",
+      "scenarios": [
+        "5-4.hwp.rich.saveas",
+        "5-4.hwp.rich.saveas-reopen"
+      ]
+    },
+    "hwp/rich": {
+      "path": "verified/hwp/rich.hwp",
+      "sha256": "a1a51888e14f113ed6a75082875306564ae3a3caa2a6fb3016bc145a15eae98b",
+      "sourcePath": "sources/blue.png",
+      "sourceSha256": "5f37c063bb7a5bb13f8cfeb4e66b87f2116eff51eb1d0acd6030c938333c2a98",
+      "scenarios": [
+        "5-4.hwp.rich.save",
+        "5-4.hwp.rich.structure",
+        "5-4.hwp.rich.reopen"
+      ]
+    },
+    "hwp/existing": {
+      "path": "verified/hwp/existing.hwp",
+      "sha256": "51b7ec3dfd25657ad8ef64cb116440f42ddf7378c10ce0bc76c3b06b5f9d439b",
+      "sourcePath": "sources/basic-ko.hwp",
+      "sourceSha256": "57c901cc394abf6f58f4838315d1ea2c5ecf8a03d9934d3fc098fd8be6e6e12f",
+      "scenarios": [
+        "5-4.hwp.existing.save",
+        "5-4.hwp.existing.structure",
+        "5-4.hwp.existing.reopen"
+      ]
+    }
+  },
+  "restart": {
+    "before": {
+      "pid": 935281,
+      "startTicks": 24811593,
+      "bootId": "44c16d15-f199-434f-918d-ba7fd3bb9303",
+      "exeSha256": "a68020194e739192b2b8a12d3d677e31d836bb43b95adb44174038670e3964b4"
+    },
+    "oldProcessGone": true,
+    "after": {
+      "pid": 938547,
+      "startTicks": 24839450,
+      "bootId": "44c16d15-f199-434f-918d-ba7fd3bb9303",
+      "exeSha256": "a68020194e739192b2b8a12d3d677e31d836bb43b95adb44174038670e3964b4"
+    }
+  },
+  "checks": {
+    "validator": {
+      "command": "python3 -m unittest discover -s scripts/tests -p test_phase5_evidence.py -v",
+      "exit": 0,
+      "passed": 19,
+      "failed": 0
+    },
+    "hwpx": {
+      "command": "GEUL_SANDBOX=userns-root-bwrap python3 scripts/cargo-geul.py test --lib hwpx",
+      "exit": 0,
+      "passed": 25,
+      "failed": 0,
+      "ignored": 5
+    },
+    "creation": {
+      "command": "GEUL_SANDBOX=userns-root-bwrap python3 scripts/cargo-geul.py test --lib services::creation::tests",
+      "exit": 0,
+      "passed": 4,
+      "failed": 0,
+      "ignored": 2
+    },
+    "nativeInput": {
+      "exit": 0,
+      "passed": 50
+    },
+    "nativeDocuments": {
+      "exit": 0,
+      "passed": 61
+    },
+    "finalGate": {
+      "command": "python3 scripts/tests/phase5-final-acceptance.py --run target/phase5-native-gui-ibus/20261111T221602+0900/fresh-final",
+      "exit": 0,
+      "status": "PASS"
+    }
+  },
+  "excluded": [
+    "physical desktop",
+    "Wayland",
+    "external Word/Hancom interoperability",
+    "ordinary RHWP Undo/Redo",
+    "arbitrary cross-format conversion",
+    "historical 432-file corpus rerun"
+  ],
+  "planningBoundary": "This user-requested Linux native acceptance phase is distinct from planning Phase 5 advanced features T012/T013. T014/T015/T016 and other incomplete tasks remain unchanged.",
+  "trustBoundary": "Local SHA-256 links and independent reinspection authenticate local consistency/content/build contracts; self-contained report hashes are not an external digital signature. Old schema reports are not reusable."
+}

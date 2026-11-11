@@ -1,3 +1,5 @@
+> **Phase 5 — Linux Native GUI + IBus E2E: COMPLETED (2026-11-11).** 사용자 지정 인수 단계 5-1→5-5를 보강된 `geul.phase5.v2` 게이트로 새로 실행했다. 실제 Tauri/X11·Xvfb/IBus에서 DOCX·HWPX·HWP 각각 편집·저장·Save As·닫기·독립 재열기·프로세스 재시작을 통과했다. 필수 시나리오 111 PASS(3/47/18/30/13), 과거 시나리오 재사용 0, 검증기 19 PASS, HWPX 회귀 25 PASS/5 ignored, 생성 회귀 4 PASS/2 ignored. [실행 신원·산출물 해시·범위](../architecture/phase5-native-gui-ibus-closure-2026-11-11.json). 아래 계획의 “Phase 5: 고급 기능”(T012/T013)과 다른 사용자 지정 단계다. T010/T012/T013/T014/T015/T016의 잔여 조건은 완료로 바꾸지 않는다. 물리 데스크톱·Wayland·외부 Word/Hancom은 NOT RUN.
+
 > **현재 검증 상태 (2026-11-09):** WordCraft UI focus 회귀와 전체 CI PASS; `dc25d8a27303b35d0ef7d61e56276f7b8f3feab5`가 지정 개발 브랜치에 게시되고 exact fetch·독립 checkout·geul 얕은 submodule 초기화 PASS. geul Rust 1.99.0 fmt/check/clippy, `services::save` 163 PASS/15 ignored, WordCraft adapter 80 PASS/1 ignored; 로컬 HWP 수정 `8bf22c1e8b042458a2e7087ad5cc879f479c7b22`; 실제 HWP blank 및 `calc-cell.hwp` 두 회차 durable 저장·재열기와 독립 preview 검증 PASS. T010 INCOMPLETE, T012/T013 △ 조건부 미완료, D2 INCONCLUSIVE, D4 latency FAIL/resources INCONCLUSIVE, Microsoft Word/Hancom NOT RUN은 그대로다. 상세 [수용 기록](../architecture/stage567-acceptance-2026-11-05.md#wordcraft-rust-hwp-final-20261109). 아래의 이전 최신 상태는 각각 날짜 기준의 역사 기록으로 보존한다.
 
 > **2026-11-06 조건부 고급 기능 개발:** [새 사용자 결정](spec.md#conditional-advanced-20261106)은 D2/D4를 △ 조건부 보류하고 독립 검증한 T012 부분집합의 제품 활성화 작업을 허용한다. D2 INCONCLUSIVE, D4 FAIL/자원 INCONCLUSIVE 및 T010/T012/T013 전체 미완료는 유지한다. 지원 부분집합은 일반 Release 빌드·실제 X11/IBus로 검증해 제품 명령을 켰다([수용 기록](../architecture/stage567-acceptance-2026-11-05.md#2026-11-06-advanced-d--conditional-production-implementation)). 아래 이전 비활성 기록은 당시 상태다.
@@ -272,3 +274,13 @@ Save cleanup exception safety is implemented in local commits `4e3e9b794e9098a32
 ## 핵심 문서 삽입 기능 — 2026-11-10 부분 완료
 
 요청된 `insert.table`, `insert.image`, `paragraph.bullets` 구현은 DOCX/HWPX에서 검증됐고, HWP는 T009의 좁은 DocInfo/BinData 보존 근거가 없어 비활성이다. Linux GUI 수용은 환경 의존성 부재로 NOT RUN이다. 테스트·행렬·남은 일은 [핵심 삽입 기능 보고](../architecture/core-insertions.md)에 기록했다. 기존 task 항목의 완료 체크나 ID는 변경하지 않았다.
+
+## Linux native GUI/IBus 인수 증거 계약 — 2026-11-11
+
+`phase5_evidence.py`의 고정 시나리오 ID 집합이 완료 조건이다. 현재 실행(`executionStatus`)과 증거 출처(`CURRENT_RUN`, `REUSED_VERIFIED`, 혼합), 유효 수용(`effectiveAcceptance`)을 분리하며, 누락·중복·실패·형식 불일치·단계 보고서 모순은 거부한다. PASS 개수의 하한으로 필수 시나리오를 대체하지 않는다.
+
+재개는 새 스키마의 직접 실행 증거만 허용한다. rich/existing/saved-as × 세 형식의 검증 스냅샷 9개를 원래 시나리오·실행·앱/소스/엔진 신원·기록된 SHA-256에 연결한다. 원본 fixture 해시와 독립 구조·이미지 검사를 다시 실행하고 복사 바이트를 확인한다. 절대/상위 경로·심볼릭 링크·임의 산출물 별칭·연쇄 재사용·신원이 부족한 이전 스키마는 거부한다. 실패한 실행의 완료된 양성 시나리오는 이 계약을 만족할 때만 재사용할 수 있고, 미실행/실패 조건은 현재 실행에서 충족해야 한다.
+
+IBus 보고서는 실제 앱 바이너리, 제품 소스 내용, 입력 하네스, 제공된 RHWP generation/JS/WASM, WordCraft pin에 연결한다. 형식별 엔진 전환·trusted 조합·초점·문서 소유권과 실제 세션 환경·추적 파일·저장 파일을 검사한다. 경과 시간만으로 증거를 폐기하거나 허용하지 않는다. 재시작은 이전 프로세스 종료와 PID/시작 시각으로 증명한다. 이미지는 DOCX 관계 또는 RHWP 컨트롤을 따라 추출한 바이트를 원래 PNG와 비교한다.
+
+최종 명령은 `python3 scripts/tests/phase5-final-acceptance.py --run <증거 디렉터리>`다. 현재 파일·빌드·단계 결과·독립 구조·두 전용 세션 정리·실제로 검사한 스크린샷의 해시를 다시 검증한다. 보고서 자체 해시는 연결 수단이며 외부 전자서명으로 취급하지 않는다. 상세 명령·해시·제외 범위는 위 closure JSON을 따른다. 생성 문서·이미지·로그는 무시되는 `target/phase5-native-gui-ibus/`에 보존하고 커밋하지 않는다.
