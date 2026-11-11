@@ -16,8 +16,13 @@ import subprocess
 import sys
 import time
 import traceback
+import shutil
+
+
 
 ROOT = Path(__file__).resolve().parents[2]
+sys.path.insert(0, str(ROOT / 'scripts/tests'))
+import phase5_evidence as evidence
 TAB_NAME = "[...e.childNodes].filter(n=>n.nodeType===3).map(n=>n.textContent).join('').trim()"
 sys.path.insert(0, str(ROOT / 'tests/e2e'))
 import tauri_smoke as smoke
@@ -45,6 +50,7 @@ class Acceptance(creation.Acceptance):
         if not identity.get('ok'):
             raise smoke.Failure('unable to observe actual served RHWP identity')
         self.report['rhwpBuild'] = identity['value']
+        self.report['identity'] = evidence.identity(ROOT, smoke.APP, identity['value'])
         build = identity['value']
         patches = build.get('integration', {}).get('patches', [])
         if build.get('schemaVersion', 0) < 3 or not patches:
@@ -76,7 +82,23 @@ class Acceptance(creation.Acceptance):
             """)
             if not captured.get('ok'):
                 raise smoke.Failure('passive export observer could not attach')
-        self.d.js("window.__phase5Events=[];for(const type of ['keydown','keyup','compositionstart','compositionupdate','compositionend','beforeinput','input','focusin','focusout'])window.addEventListener(type,e=>window.__phase5Events.push({type,key:e.key,code:e.code,data:e.data,inputType:e.inputType,composing:e.isComposing,trusted:e.isTrusted,target:e.target.className}),{capture:true,passive:true})")
+        self.d.js("window.__phase5Events=[];for(const type of ['keydown','keyup','compositionstart','compositionupdate','compositionend','beforeinput','input','focusin','focusout'])window.addEventListener(type,e=>window.__phase5Events.push({type,key:e.key,code:e.code,data:e.data,inputType:e.inputType,composing:e.isComposing,trusted:e.isTrusted,target:e.target.className,format:window.__phase5Format}),{capture:true,passive:true})")
+
+    def launch(self):
+        self.fmt = 'all'
+        pid = int(self.command('xdotool', 'getwindowpid', self.window))
+        self.report['launchProcess'] = evidence.process_identity(pid)
+        self.record('native window identity', self.report['launchProcess']['exeSha256'] == self.report['identity']['appSha256'], self.report['launchProcess'])
+        visible = self.d.js("return ['.ribbon','.editor','.statusbar','.document-bar'].every(s=>{const e=document.querySelector(s);return e&&e.getBoundingClientRect().height>0})")
+        self.record('visible ribbon document surface and status', visible)
+        self.snap('launch')
+        self.click('.ribbon__collapse')
+        self.key('ctrl+n')
+        self.wait("return !!document.querySelector('[data-testid=new-document-dialog]')")
+        self.snap('new-dialog')
+        self.key('Escape')
+        self.wait("return !document.querySelector('[data-testid=new-document-dialog]')")
+        self.record('native mouse and keyboard launch interaction', True)
 
     def engine(self, name):
         # Bare Xvfb has no window manager to reactivate the parent after a GTK
@@ -85,15 +107,13 @@ class Acceptance(creation.Acceptance):
         previous = self.command('ibus', 'engine')
         super().engine(name)
         time.sleep(.2)  # allow GTK's real input context to adopt the engine
-        self.report.setdefault('engineSwitches', []).append({'previous': previous, 'requested': name, 'observed': self.command('ibus', 'engine')})
+        self.report.setdefault('engineSwitches', []).append({'format': self.fmt, 'previous': previous, 'requested': name, 'observed': self.command('ibus', 'engine')})
 
     def record(self, name, ok, detail=None):
-        row = {'stage': self.args.stage, 'format': self.fmt, 'environment': 'native Tauri / X11 Xvfb / IBus hangul',
-               'actions': name, 'expected': name, 'observed': detail,
-               'result': 'PASS' if ok else 'FAIL', 'evidence': str(self.args.out)}
+        row = evidence.row(name, self.fmt, getattr(self, 'role', None), self.report['runId'], ok, detail)
         self.report['checks'].append(row)
         self.flush()
-        print(row['result'], self.fmt, name, flush=True)
+        print(row['result'], row['id'], flush=True)
         if not ok:
             raise smoke.Failure(name + ': ' + repr(detail))
 
@@ -177,9 +197,13 @@ class Acceptance(creation.Acceptance):
         self.engine('xkb:us::eng')
 
     def ime(self):
-        previous = None
+        self.new('docx', self.args.out / 'ownership-target.docx')
+        self.ready('docx', 'ownership-target.docx')
+        self.command('xdotool', 'windowfocus', '--sync', self.window)
+        previous = 'ownership-target.docx'
         for fmt in self.args.formats:
             self.fmt = fmt
+            self.d.js('window.__phase5Format=arguments[0]', fmt)
             path = self.args.out / ('ime.' + fmt)
             self.new(fmt, path)
             self.ready(fmt, path.name)
@@ -201,11 +225,11 @@ class Acceptance(creation.Acceptance):
                 state = self.status(fmt)
                 published = sha(path) != before and result['state'] == 'saved' and state['dirty'] == 'false'
                 blocked = sha(path) == before and state['dirty'] == 'true' and result['state'] != 'saved'
-                self.record('Ctrl+S finalizes preedit and either publishes or safely leaves dirty bytes unchanged', state['paragraphText'] == 'EN 하' and (published or blocked), {'save': result, 'editor': state, 'published': published, 'safelyBlocked': blocked})
+                self.record('save composition policy', state['paragraphText'] == 'EN 하' and (published or blocked), {'save': result, 'editor': state, 'published': published, 'safelyBlocked': blocked})
                 self.key('BackSpace')
                 self.type('gksrmf dlqfur')
             else:
-                self.record('save during real preedit safely blocked', sha(path) == before and state['dirty'] == 'true', state)
+                self.record('save composition policy', sha(path) == before and state['dirty'] == 'true', state)
                 self.type('srmf dlqfur')
             self.key('End')
             self.text_is(fmt, 'EN 한글 입력')
@@ -277,7 +301,10 @@ class Acceptance(creation.Acceptance):
             previous = path.name
         events = self.d.js('return window.__phase5Events')
         (self.args.out / 'trusted-input-trace.json').write_text(json.dumps(events, ensure_ascii=False, indent=2))
-        self.record('real IBus trusted composition lifecycle observed', all(any(e['type'] == t and e['trusted'] for e in events) for t in ['compositionstart', 'compositionupdate', 'compositionend']))
+        for fmt in self.args.formats:
+            self.fmt = fmt
+            self.record('real IBus trusted composition lifecycle observed', all(any(e['type'] == t and e['trusted'] and e.get('format') == fmt for e in events) for t in ['compositionstart', 'compositionupdate', 'compositionend']))
+        self.close('ownership-target.docx')
         for fmt in self.args.formats:
             self.fmt = fmt; self.select('ime.' + fmt); self.close('ime.' + fmt)
         self.record('close committed documents without stale events', not self.sessions())
@@ -301,15 +328,16 @@ def main():
     args.out.mkdir(parents=True, exist_ok=False)
     args.xdotool, args.ibus = 'xdotool', 'ibus'
     smoke.APP = str(args.app.resolve()); smoke.DRIVER_LOG = args.out / 'driver.log'
-    report = {'status': 'RUNNING', 'head': subprocess.check_output(['git', 'rev-parse', 'HEAD'], cwd=ROOT, text=True).strip(),
-              'appSha256': sha(args.app), 'harnessSha256': sha(__file__), 'checks': [],
-              'environment': {k: os.environ.get(k) for k in ['DISPLAY', 'GTK_IM_MODULE', 'XMODIFIERS', 'IBUS_ADDRESS']}}
+    report = evidence.new_report(args.out, 'input')
+    report['environment'] = {k: os.environ.get(k) for k in ['DISPLAY', 'GTK_IM_MODULE', 'XMODIFIERS', 'IBUS_ADDRESS']}
+    shutil.copyfile(os.environ['GEUL_NATIVE_SESSION_REPORT'], args.out / 'native-session.json')
     try:
         with smoke.tauri_driver(args.driver, args.port, str(args.out / 'data')) as start:
             d = start()
             try:
                 smoke.wait_until(d, "return !!document.querySelector('.document-bar')", timeout=60)
                 a = Acceptance(args, d, report)
+                a.launch()
                 a.ime()
             except Exception:
                 report['failureDom'] = d.js("return {focus:document.activeElement?.outerHTML,status:[...document.querySelectorAll('[data-testid$=status]')].map(e=>({...e.dataset})),notice:document.querySelector('footer.statusbar')?.textContent,events:window.__phase5Events?.slice(-50)}")
@@ -317,12 +345,19 @@ def main():
                 raise
             finally:
                 smoke.end_session(d)
+        report['teardown'] = smoke.TEARDOWN
+        report['stageResults'] = evidence.stage_results(report['checks'], ('5-1','5-2'))
+        evidence.bind_files(report, args.out)
         report['status'] = 'PASS'
+        (args.out / 'result.json').write_text(json.dumps(report, ensure_ascii=False, indent=2)+'\n')
+        evidence.validate_ibus(args.out, report['identity'])
     except Exception as error:
         report.update(status='BLOCKED' if isinstance(error, EnvironmentBlocked) else 'FAIL', error=str(error), traceback=traceback.format_exc())
         traceback.print_exc()
     finally:
         report['teardown'] = smoke.TEARDOWN
+        report['stageResults'] = evidence.stage_results(report['checks'], ('5-1','5-2'))
+        evidence.bind_files(report, args.out)
         (args.out / 'result.json').write_text(json.dumps(report, ensure_ascii=False, indent=2) + '\n')
     return 0 if report['status'] == 'PASS' else 2 if report['status'] == 'BLOCKED' else 1
 

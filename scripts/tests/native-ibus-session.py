@@ -191,6 +191,7 @@ def main():
             print('BLOCKED: Hangul engine activation failed', json.dumps(identity['setGlobalEngine']), file=sys.stderr)
             return 2
         subprocess.run([ibus + '/bin/ibus', 'engine', 'xkb:us::eng'], env=env, check=True, timeout=30)
+        env['GEUL_NATIVE_SESSION_REPORT'] = str(out / 'session.json')
         argv = [a.replace('@XDOTOOL@', str(tools / 'xdotool')).replace('@IBUS@', str(tools / 'ibus')) for a in command]
         code = subprocess.run(argv, env=env).returncode
     finally:

@@ -8,6 +8,8 @@ import argparse
 import importlib.util
 import json
 import os
+import time
+import posixpath
 from pathlib import Path
 import shutil
 import struct
@@ -22,6 +24,7 @@ ROOT = Path(__file__).resolve().parents[2]
 spec = importlib.util.spec_from_file_location('phase5', ROOT / 'scripts/tests/phase5-native-acceptance.py')
 base = importlib.util.module_from_spec(spec); spec.loader.exec_module(base)
 smoke, sha = base.smoke, base.sha
+evidence = base.evidence
 
 
 def structure(path):
@@ -30,17 +33,28 @@ def structure(path):
             assert z.testzip() is None
             tree = ET.fromstring(z.read('word/document.xml'))
             ns = {'w': 'http://schemas.openxmlformats.org/wordprocessingml/2006/main'}
-            return {'format': 'docx', 'text': ''.join(e.text or '' for e in tree.findall('.//w:t', ns)),
+            rels = ET.fromstring(z.read('word/_rels/document.xml.rels'))
+            targets = {e.get('Id'): e for e in rels}
+            refs = tree.findall('.//{http://schemas.openxmlformats.org/drawingml/2006/main}blip')
+            hashes = []
+            for ref in refs:
+                rel = targets[ref.get('{http://schemas.openxmlformats.org/officeDocument/2006/relationships}embed')]
+                assert rel.get('TargetMode') != 'External' and rel.get('Type').endswith('/image')
+                target = posixpath.normpath('word/' + rel.get('Target'))
+                assert target.startswith('word/media/')
+                hashes.append(sha_bytes(z.read(target)))
+            return {'imageHashes': hashes, 'format': 'docx', 'text': ''.join(e.text or '' for e in tree.findall('.//w:t', ns)),
                     'paragraphs': len(tree.findall('.//w:p', ns)), 'tables': len(tree.findall('.//w:tbl', ns)),
                     'images': len(tree.findall('.//w:drawing', ns)), 'bullets': len(tree.findall('.//w:numPr', ns)),
                     'media': {n: sha_bytes(z.read(n)) for n in z.namelist() if n.startswith('word/media/')}}
     code = """
-import {readFileSync} from 'node:fs';import {pathToFileURL} from 'node:url';
+import {createHash} from 'node:crypto';import {readFileSync} from 'node:fs';import {pathToFileURL} from 'node:url';
 const [root,file]=process.argv.slice(2),build=JSON.parse(readFileSync(root+'/public/rhwp/RELEASE.json')),
 folder=root+'/public/rhwp/generations/'+build.generation,m=await import(pathToFileURL(folder+'/rhwp.js'));
 m.initSync({module:readFileSync(folder+'/rhwp_bg.wasm')});
 const d=new m.HwpDocument(readFileSync(file));try{const c=JSON.parse(d.getControls());
 console.log(JSON.stringify({format:d.getSourceFormat(),text:d.getTextFileText(),paragraphs:d.getParagraphCount(0),pages:d.pageCount(),
+imageHashes:c.filter(x=>x.userDesc==='그림').map(x=>createHash('sha256').update(d.getControlImageData(x.list,x.para,'[]',x.controlIndex)).digest('hex')),
 tables:c.filter(x=>x.ctrlId==='tbl').length,images:c.filter(x=>x.userDesc==='그림').length,
 bullets:Array.from({length:d.getParagraphCount(0)},(_,p)=>JSON.parse(d.getParaPropertiesAt(0,p))).filter(x=>x.headType==='Bullet').length,controls:c}));}finally{d.free()}
 """
@@ -50,6 +64,18 @@ bullets:Array.from({length:d.getParagraphCount(0)},(_,p)=>JSON.parse(d.getParaPr
 def sha_bytes(data):
     import hashlib
     return hashlib.sha256(data).hexdigest()
+
+
+def inspect_artifact(path, fmt, role, source, first_text):
+    model = structure(path)
+    assert model['format'] == fmt
+    if role == 'existing':
+        spec = importlib.util.spec_from_file_location('roundtrip', ROOT / 'scripts/tests/native-save-roundtrip.py')
+        oracle = importlib.util.module_from_spec(spec); spec.loader.exec_module(oracle)
+        model['originalPreservation'] = oracle.docx_structure(source, path) if fmt == 'docx' else oracle.rhwp_structure(source, path, first_text)
+    else:
+        assert sha(source) in model['imageHashes'], 'inserted image bytes/reference changed'
+    return model
 
 
 class Documents(base.Acceptance):
@@ -134,18 +160,37 @@ class Documents(base.Acceptance):
             self.artifacts.append({'format': fmt, 'path': str(existing), 'kind': 'existing', 'source': str(source), 'firstText': initial + ' Existing 한글'})
         self.flush()
 
+    def freeze(self, artifact, role, path):
+        fmt = artifact['format']
+        relative = 'verified/' + fmt + '/' + role + '.' + fmt
+        target = self.root / relative; target.parent.mkdir(exist_ok=True, parents=True)
+        shutil.copyfile(path, target)
+        assert sha(target) == sha(path)
+        source = Path(artifact['source']) if role == 'existing' else self.sources / 'blue.png'
+        model = inspect_artifact(target, fmt, role, source, artifact.get('firstText'))
+        value = {'path': relative, 'format': fmt, 'role': role, 'runId': self.report['runId'],
+                 'identity': self.report['identity'], 'sha256': sha(target),
+                 'sourcePath': str(source.relative_to(self.root)), 'sourceSha256': sha(source),
+                 'firstText': artifact.get('firstText'), 'structureVerified': True,
+                 'structure': model, 'structureSha256': evidence.canonical(model),
+                 'scenarios': evidence.artifact_scenarios(fmt, role)}
+        for check in self.report['checks']:
+            if check['id'] in value['scenarios']:
+                check['artifactSha256'] = value['sha256']
+        self.report['artifacts'][fmt+'/'+role] = value
+        self.flush()
+
     def persistence(self):
         self.stage('5-4-persistence')
-        self.report['artifacts'] = self.artifacts
         for artifact in self.artifacts:
-            self.fmt = artifact['format']; path = Path(artifact['path'])
+            self.fmt = artifact['format']; self.role = artifact['kind']; path = Path(artifact['path'])
             self.select(path.name)
             result = self.save(self.fmt)
             model = structure(path)
             artifact.update(savedSha256=sha(path), structure=model, save=result)
             self.record('actual GUI save / durable output / independent engine or XML reopen', result['state'] == 'saved' and result.get('synced') == 'true' and '한글' in model['text'], artifact)
             if artifact['kind'] == 'rich':
-                self.record('independent text / paragraph / table / image / list preservation', model['tables'] >= 1 and model['images'] >= 1 and model['bullets'] >= 1 and 'Cell2' in model['text'] and 'List 한글' in model['text'], model)
+                self.record('independent text / paragraph / table / image / list preservation', sha(self.sources / 'blue.png') in model['imageHashes'] and model['tables'] >= 1 and model['images'] >= 1 and model['bullets'] >= 1 and 'Cell2' in model['text'] and 'List 한글' in model['text'], model)
             else:
                 spec = importlib.util.spec_from_file_location('roundtrip', ROOT / 'scripts/tests/native-save-roundtrip.py')
                 oracle = importlib.util.module_from_spec(spec); spec.loader.exec_module(oracle)
@@ -175,6 +220,8 @@ class Documents(base.Acceptance):
                 self.close(destination.name); self.open_native(self.fmt, destination)
                 self.record('Save As native close and reopen', self.status(self.fmt)['dirty'] == 'false')
                 artifact['saveAs'] = str(destination)
+                self.freeze(artifact, 'saved-as', destination)
+            self.freeze(artifact, artifact['kind'], path)
         self.record('all immutable source fixture hashes preserved', all(sha(p) == digest for p, digest in self.originals.items()), self.originals)
         if 'hwp' not in self.args.formats:
             return
@@ -250,50 +297,50 @@ def main():
         p.error('integrated regression requires all three formats; use --stop-after for a focused diagnostic')
     if args.resume_persistence_from and (args.stop_after != '5-5' or set(args.formats) != {'docx', 'hwpx', 'hwp'}):
         p.error('resumed integrated regression requires all three formats and --stop-after 5-5')
-    ibus_result = json.loads(args.ibus_result.read_text())
-    assert ibus_result['status'] == 'PASS' and {c['format'] for c in ibus_result['checks']} >= {'docx', 'hwpx', 'hwp'}, 'Stage 5-2 must pass independently for all three formats first'
     args.out = args.out.resolve(); args.out.relative_to(ROOT / 'target'); args.out.mkdir(exist_ok=False, parents=True)
     root = args.out
     args.xdotool = 'xdotool'; args.ibus = 'ibus'; args.stage = '5-3-editing'
     smoke.APP = str(ROOT / 'src-tauri/target/debug/geul'); smoke.DRIVER_LOG = root / 'driver.log'
-    report = {'status': 'RUNNING', 'checks': [], 'head': subprocess.check_output(['git', 'rev-parse', 'HEAD'], text=True).strip(),
-              'appSha256': sha(smoke.APP), 'harnessSha256': sha(__file__), 'inputHarnessSha256': sha(ROOT / 'scripts/tests/phase5-native-acceptance.py'),
-              'sourceDiffSha256': sha_bytes(subprocess.check_output(['git', 'diff', 'HEAD', '--', 'src', 'src-tauri'])),
-              'rhwpBuild': json.loads((ROOT / 'public/rhwp/BUILD.json').read_text()),
-              'environment': {k: os.environ.get(k) for k in ['DISPLAY', 'HOME', 'GTK_IM_MODULE', 'XMODIFIERS', 'IBUS_ADDRESS']}}
-    report['scope'] = {'formats': args.formats, 'stopAfter': args.stop_after}
+    report = evidence.new_report(root, 'documents')
+    report['environment'] = {k: os.environ.get(k) for k in ['DISPLAY','GTK_IM_MODULE','XMODIFIERS','IBUS_ADDRESS']}
+    evidence_base = ROOT / 'target/phase5-native-gui-ibus'
+    report['ibusEvidence'] = {'path': str(args.ibus_result.resolve().relative_to(evidence_base)), 'sha256': sha(args.ibus_result)}
     try:
         with smoke.tauri_driver(args.driver, args.port, str(root / 'data')) as start:
             d = start()
             try:
                 smoke.wait_until(d, "return !!document.querySelector('.document-bar')", timeout=60)
                 a = Documents(args, d, report)
-                report['completedStages'] = []
+                evidence.validate_ibus(args.ibus_result.parent, report['identity'])
+                first_pid = int(a.command('xdotool','getwindowpid',a.window))
+                report['restart'] = {'before': evidence.process_identity(first_pid)}
                 if args.resume_persistence_from:
                     previous = args.resume_persistence_from.resolve()
-                    previous.relative_to(ROOT / 'target')
-                    previous_report = json.loads((previous / 'result.json').read_text())
-                    assert previous_report['appSha256'] == report['appSha256'], 'app build changed; rerun editing/save'
-                    assert previous_report['sourceDiffSha256'] == report['sourceDiffSha256'], 'product source changed; rerun editing/save'
-                    assert previous_report['rhwpBuild']['generation'] == report['rhwpBuild']['generation'], 'served engine changed; rerun editing/save'
-                    assert '5-3-editing' in previous_report['completedStages']
-                    for fmt in args.formats:
-                        required = [c for c in previous_report['checks'] if c['format'] == fmt and c['stage'] == '5-4-persistence']
-                        assert all(c['result'] == 'PASS' for c in required) and len(required) >= 9, 'positive persistence not verified for ' + fmt
-                        for stem in ('saved-as', 'existing'):
-                            source = previous / 'documents' / (stem + '.' + fmt)
-                            target = a.documents / source.name
-                            shutil.copyfile(source, target)
-                            assert sha(source) == sha(target)
-                            a.originals[str(source)] = sha(source)
-                            a.fmt = fmt; a.open_native(fmt, target)
-                    report['reusedEvidence'] = {'report': str(previous / 'result.json'), 'sha256': sha(previous / 'result.json'),
-                                              'scope': '5-3 and positive 5-4 checks only; refusal and discard cleanup retested here',
-                                              'checks': len(previous_report['checks'])}
+                    relative = str((previous / 'result.json').relative_to(evidence_base))
+                    previous_file = evidence.safe_file(evidence_base, relative)
+                    previous_report = evidence.authorize_resume(previous, report['identity'], inspect_artifact, evidence_base)
+                    source_sha = sha(previous_file)
+                    report['reuse'] = {'path': relative, 'sha256': source_sha, 'runId': previous_report['runId']}
+                    for check in previous_report['checks']:
+                        if check['id'] in evidence.positive_ids():
+                            row = dict(check, evidenceMode='REUSED_VERIFIED', sourceReportSha256=source_sha)
+                            report['checks'].append(row)
+                    for key, artifact in previous_report['artifacts'].items():
+                        source = evidence.safe_file(previous, artifact['path'])
+                        target = root / 'reuse-copies' / (key.replace('/','-')+'.'+artifact['format'])
+                        target.parent.mkdir(exist_ok=True); shutil.copyfile(source, target)
+                        assert sha(target) == artifact['sha256']
+                        if artifact['role'] in ('saved-as','existing'):
+                            working = a.documents / (artifact['role']+'.'+artifact['format'])
+                            shutil.copyfile(target, working)
+                            a.fmt = artifact['format']; a.open_native(a.fmt, working)
+                    for name in ('blue.png', *(('basic-ko.'+f) for f in evidence.FORMATS)):
+                        shutil.copyfile(evidence.safe_file(previous, 'sources/'+name), a.sources / name)
+                    a.originals = {}  # immutable originals authenticated by source contract
                 else:
-                    a.editing(); report['completedStages'].append('5-3-editing')
+                    a.editing()
                 if args.stop_after != '5-3':
-                    a.persistence(); report['completedStages'].append('5-4-persistence')
+                    a.persistence()
                 if args.stop_after == '5-5':
                     a.regression()
             except Exception:
@@ -308,14 +355,21 @@ def main():
                 raise
             finally:
                 smoke.end_session(d)
-            # New process and fresh engine objects, not an in-memory reload.
+            deadline = time.monotonic() + 15
+            while evidence.same_process_alive(report['restart']['before']) and time.monotonic() < deadline:
+                time.sleep(.1)
+            report['restart']['oldProcessGone'] = not evidence.same_process_alive(report['restart']['before'])
+            evidence.require(report['restart']['oldProcessGone'], 'old application process still alive')
             d = start() if args.stop_after == '5-5' else None
             try:
                 if d is None:
-                    report['status'] = 'PASS'
+                    report['status'] = 'PARTIAL'
                     return 0
                 smoke.wait_until(d, "return !!document.querySelector('.document-bar')", timeout=60)
                 restarted = base.Acceptance(args, d, report)
+                report['restart']['after'] = evidence.process_identity(int(restarted.command('xdotool','getwindowpid',restarted.window)))
+                evidence.validate_restart(report['restart'], report['identity'])
+                restarted.record('application process restart proven', True, report['restart'])
                 for fmt in ('docx', 'hwpx', 'hwp'):
                     restarted.fmt = fmt
                     path = root / 'documents' / ('saved-as.' + fmt)
@@ -324,25 +378,31 @@ def main():
                     restarted.key('ctrl+Home')
                     restarted.wait("return document.querySelector(arguments[0])?.dataset.paragraphText.includes('Isolation')", '[data-testid=' + ('docx' if fmt == 'docx' else 'rhwp') + '-status]')
                     independent = structure(path)
-                    restarted.record('application restart / native reopen / durable rich content', sha(path) == before and 'Isolation' in independent['text'] and independent['tables'] >= 1 and independent['images'] >= 1 and independent['bullets'] >= 1, {'sha256': before, 'structure': independent, 'status': restarted.status(fmt)})
+                    restarted.record('application restart / native reopen / durable rich content', sha(path) == before and 'Isolation' in independent['text'] and independent['tables'] >= 1 and independent['images'] >= 1 and independent['bullets'] >= 1 and sha(root / 'sources/blue.png') in independent['imageHashes'], {'sha256': before, 'structure': independent, 'status': restarted.status(fmt)})
                     restarted.snap('after-process-restart')
                     restarted.close(path.name)
                 restarted.record('all test document handles closed', not restarted.sessions())
-                report['completedStages'].append('5-5-regression')
+
             finally:
                 if d is not None:
                     smoke.end_session(d)
+        report['teardown'] = smoke.TEARDOWN
+        report['stageResults'] = evidence.stage_results(report['checks'], ('5-3','5-4','5-5'))
+        evidence.bind_files(report, root)
+        report['acceptance'] = evidence.finalize_documents(report, root, report['identity'], inspect_artifact, evidence_base)
         report['status'] = 'PASS'
     except Exception as error:
         report.update(status='BLOCKED' if isinstance(error, base.EnvironmentBlocked) else 'FAIL', error=str(error), traceback=traceback.format_exc()); traceback.print_exc()
     finally:
         report['teardown'] = smoke.TEARDOWN
         (root / 'result.json').write_text(json.dumps(report, ensure_ascii=False, indent=2) + '\n')
-        for stage in ('5-3-editing', '5-4-persistence', '5-5-regression'):
-            rows = [c for c in report['checks'] if c['stage'] == stage]
-            status = 'PASS' if stage in report.get('completedStages', []) else 'FAIL' if rows else 'NOT RUN'
-            folder = root / stage; folder.mkdir(exist_ok=True)
-            (folder / 'result.json').write_text(json.dumps({'status': status, 'checks': rows}, ensure_ascii=False, indent=2) + '\n')
+        report['stageResults'] = evidence.stage_results(report['checks'], ('5-3','5-4','5-5'))
+        evidence.bind_files(report, root)
+        (root / 'result.json').write_text(json.dumps(report, ensure_ascii=False, indent=2) + '\n')
+        for stage, state in report['stageResults'].items():
+            state = dict(state, runId=report['runId'], checks=[c for c in report['checks'] if c['stage']==stage])
+            folder = root / {'5-3':'5-3-editing','5-4':'5-4-persistence','5-5':'5-5-regression'}[stage]; folder.mkdir(exist_ok=True)
+            (folder / 'result.json').write_text(json.dumps(state, ensure_ascii=False, indent=2) + '\n')
     return 0 if report['status'] == 'PASS' else 2 if report['status'] == 'BLOCKED' else 1
 
 
