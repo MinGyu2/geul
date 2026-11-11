@@ -1,0 +1,840 @@
+{
+  "status": "COMPLETED",
+  "scope": "T014 요청 작업 1–3만 완료. T014 전체는 미완료이며 체크하지 않는다.",
+  "verifiedAt": "2026-11-12T00:27:10.006738+09:00",
+  "startingHead": "39cd1fc55b63853a8bc4327afe2e6da6319ad952",
+  "testedSourceHead": "060da31361d46c7b72bd2264f55a59c20b83cbce",
+  "sourceState": "검증 시 신규 하네스는 미추적 상태였다. 커밋되는 하네스와 실행 때의 바이트 해시가 같다. Rust/프런트엔드 제품 소스는 시작 HEAD와 동일하다.",
+  "stageCommits": {
+    "1": "37b331e28833b6298129c1f33dc7d3085159c34e",
+    "2": "060da31361d46c7b72bd2264f55a59c20b83cbce",
+    "3": "이 기록을 추가한 커밋"
+  },
+  "productChanges": false,
+  "pushPerformed": false,
+  "runtime": {
+    "app": {
+      "path": "src-tauri/target/debug/geul",
+      "sha256": "62f22897b69f831e35166cb0d4dcccdd82db0533c93fd4921720354adcff5fa6"
+    },
+    "origin": "tauri://localhost",
+    "appBuild": "python3 scripts/cargo-geul.py build --bin geul --features tauri/custom-protocol",
+    "buildIntegrity": {
+      "path": "target/rhwp-wasm/geul-build-integrity.json",
+      "sha256": "06e61c3ede60d61ed1600dd1272f9ce2464c7a56a61ca09409592a53649ac0a0"
+    },
+    "frontendBuild": "npm run build (tsc --noEmit && vite build)",
+    "frontendVerification": "python3 scripts/rhwp-artifacts.py --verify-product dist/rhwp --profile release",
+    "rhwp": {
+      "artifacts": {
+        "rhwp.js": "8ee3518f908c3ff7fba1938d8e251594cb2e4ed1afdccc85a100a2cfd69635c2",
+        "rhwp_bg.wasm": "c8957cbcfe72878e38ae17747a9b99675e581488056d7bce3b2d9e033e0a5978"
+      },
+      "commit": "1a76570e833917d15817415a53c09ad61ab3203f",
+      "engine": "rhwp",
+      "generation": "907eabb217721131eee04d01f13e0a0d54332542462c36ee95fb6ada9744a20f",
+      "integration": {
+        "kind": "patched-upstream",
+        "patches": [
+          {
+            "name": "hwpx-textdir-ltr.patch",
+            "sha256": "abab4bc23a89dfec82aa63d36d32cd7192e5b14fefd2dd56231c4bb5676c6cc0"
+          },
+          {
+            "name": "hwpx-duplicate-paragraph-ids.patch",
+            "sha256": "79fd8f41c4cabe82b6b0b66265f5a1b3feef08a4c0b07af30cf7f788e11a9787"
+          },
+          {
+            "name": "hwpx-clipboard-paragraph-ids.patch",
+            "sha256": "30ac44ee1283f55605e49d09e446f5bbb5104b948ce2e7b74b87a9652e8a5c8e"
+          },
+          {
+            "name": "hwpx-spine-linear.patch",
+            "sha256": "080070cdfdaffe9b80b61ddeb6ddec8e49080b168649f92932caaf58f08298eb"
+          },
+          {
+            "name": "hwpx-spine-validation.patch",
+            "sha256": "0aae77fae8f7eb5ab1c1c83782c0930aa3501b1fd262b1e78706ebed35eeed5d"
+          },
+          {
+            "name": "hwpx-manifest-order.patch",
+            "sha256": "469c2db1c8070e18b87b02f8e8677dda48f746d3ab2ebf27706fe239453a6dc2"
+          },
+          {
+            "name": "hwpx-charpr-child-presence.patch",
+            "sha256": "cbe9574c01e72481d617c352a13da09ba5728a502713a0338ad80c6ab0347573"
+          },
+          {
+            "name": "hwpx-strikeout-3d-placeholder.patch",
+            "sha256": "5f9ca456cadaf6b895590dcf1755f80e37534e9052ca191826b1ae0f43adc281"
+          },
+          {
+            "name": "hwpx-strike3d-derived-styles.patch",
+            "sha256": "992074268325dcc9f1bcc972455a6b90e202db6d25efaa4295b36c3a940e19c2"
+          },
+          {
+            "name": "hwpx-secpr-tabstop-presence.patch",
+            "sha256": "4a973d709e129fd4e2c22d538c6f426adfaf562cf5b70f82a5f704106b319ed1"
+          },
+          {
+            "name": "hwpx-empty-text-boundaries.patch",
+            "sha256": "fced0270450adc639d9d432b8857befbf399fa65b2da4e73e1e9e0d8cd6084e2"
+          },
+          {
+            "name": "char-shape-compaction.patch",
+            "sha256": "d164dee99f509c72c8c6411d8a08bd736001a7c5404a966398862654e181bab9"
+          },
+          {
+            "name": "table-formula-field.patch",
+            "sha256": "ba11170978c1177e77b87b347c14a1904218bdd36874e72a71dff809671722bd"
+          },
+          {
+            "name": "char-shape-publication.patch",
+            "sha256": "06e14fd46278c052e14a9fbc3c189758269cf6311e028a3c244c3d07678d5fa6"
+          },
+          {
+            "name": "table-formula-paragraphs.patch",
+            "sha256": "d71da9acaf71d1e4f23e618cfe72bf2db991689c8a9d4424b6eca15ae38ff8c3"
+          },
+          {
+            "name": "hwp-source-preservation.patch",
+            "sha256": "0d2aa95dcff59f04d13fa5652d1d8fd3105eb1b979fa9dcab36636f490c393b7"
+          }
+        ],
+        "sourceTreeSha256": "0f74c5d66bda00c15202b61a1a8675c46580744d9f6425150038dee2bd2abdb3"
+      },
+      "optimization": {
+        "flags": [],
+        "tool": "none",
+        "version": null
+      },
+      "profile": "release",
+      "schemaVersion": 3,
+      "sourceFingerprint": "f53b412bbb1fb47de7d34049bfa897cfe64984574c328e5f31555b3ab54b85c0",
+      "tools": {
+        "cargo": "1.99.1",
+        "rustc": "1.99.1",
+        "wasm-bindgen": "0.2.127"
+      }
+    },
+    "submodules": [
+      " 1a76570e833917d15817415a53c09ad61ab3203f external/rhwp (v0.8.7)",
+      " dc25d8a27303b35d0ef7d61e56276f7b8f3feab5 external/wordcraft (geul-roundtrip-42e8a67-9-gdc25d8a)"
+    ],
+    "instrumentation": "GDB 17.1 외부 관찰만 사용. 제품/엔진 훅·주입·함수 호출·레지스터 변경 없음. 실제 publish() 진입에 중단점을 걸고 전체 앱 스레드를 정지시킨다. 실제 stage()의 쓰기·fsync·재읽기 검증과 journal 등록 뒤, renameat 이전이다. Linux pidfd로 SIGKILL 전달 후에만 GDB 대기를 해제한다.",
+    "harness": {
+      "path": "scripts/tests/native-save-interruption.py",
+      "sha256": "eef27df5d6f22ce98ecd822cb93bd6163adeec8279d7edcfcd5652eaf1b4336a"
+    },
+    "driver": {
+      "path": "/tmp/geul-tauri-driver-target/debug/tauri-driver",
+      "sha256": "1d1ca38626716dd2fd77e7b2c2be42ec93a40818a9aa053d06c50b4946f889c5"
+    },
+    "gdb": {
+      "path": "/nix/store/cx4mb1h95xv8535l46zdr2naa2agk8f7-gdb-17.1/bin/gdb",
+      "sha256": "eb9db11d6c442521574e4c5057e5f5d0eb9d40b571a1c33f9a5b9e51cb0fba08"
+    },
+    "nativeSession": {
+      "path": "target/t014-interrupted-save/acceptance-session/session.json",
+      "sha256": "aeef749f34a311bf4488f298ded48c0834df605abec1df3d5107529bad4d7fa1"
+    }
+  },
+  "nativeSaveInterruption": {
+    "status": "PASS",
+    "scenarioPass": 8,
+    "stepPass": 103,
+    "fail": 0,
+    "notRunFormats": [
+      "docx"
+    ],
+    "teardownComplete": 16,
+    "survivingProcesses": 0,
+    "result": {
+      "path": "target/t014-interrupted-save/acceptance/result.json",
+      "sha256": "bf72056ebbbac52a4eca772ab2d89c04aebe931cca36976535816b3a38e68929"
+    },
+    "launcherCleanup": {
+      "path": "target/t014-interrupted-save/acceptance-session/cleanup.json",
+      "sha256": "8444b4f646677ec298216becbaefd568ce7c4023892d4afdda82b85e41edccaa"
+    },
+    "command": [
+      "python3",
+      "scripts/tests/native-ibus-session.py",
+      "--out",
+      "target/t014-interrupted-save/acceptance-session",
+      "--",
+      "python3",
+      "scripts/tests/native-save-interruption.py",
+      "--app",
+      "{repo}/src-tauri/target/debug/geul",
+      "--app-sha256",
+      "62f22897b69f831e35166cb0d4dcccdd82db0533c93fd4921720354adcff5fa6",
+      "--driver",
+      "/tmp/geul-tauri-driver-target/debug/tauri-driver",
+      "--out",
+      "target/t014-interrupted-save/acceptance",
+      "--fixtures",
+      "target/t014-native/fixtures",
+      "--gdb",
+      "/nix/store/cx4mb1h95xv8535l46zdr2naa2agk8f7-gdb-17.1/bin/gdb",
+      "--xdotool",
+      "@XDOTOOL@",
+      "--ibus",
+      "@IBUS@"
+    ],
+    "cases": [
+      {
+        "scenario": "hwp-owned",
+        "status": "PASS",
+        "steps": 13,
+        "original": {
+          "dev": 64768,
+          "ino": 6185281,
+          "size": 13312,
+          "mode": 420,
+          "uid": 1000,
+          "nlink": 1,
+          "sha256": "57c901cc394abf6f58f4838315d1ea2c5ecf8a03d9934d3fc098fd8be6e6e12f"
+        },
+        "finalOriginal": {
+          "dev": 64768,
+          "ino": 6185281,
+          "size": 13312,
+          "mode": 420,
+          "uid": 1000,
+          "nlink": 1,
+          "sha256": "57c901cc394abf6f58f4838315d1ea2c5ecf8a03d9934d3fc098fd8be6e6e12f"
+        },
+        "staging": {
+          "path": "{repo}/target/t014-interrupted-save/acceptance/hwp-owned/.geul-save-949958-0-2bbf88a36fe8932f67540cae1f7b52ac.tmp",
+          "dev": 64768,
+          "ino": 6185308,
+          "size": 13312,
+          "mode": 420,
+          "uid": 1000,
+          "nlink": 1,
+          "sha256": "08d53cf58317a6544fa24b99d748335239da513b2831ef71d9b07108d94b4b58"
+        },
+        "record": {
+          "path": "{repo}/target/t014-interrupted-save/acceptance/hwp-owned/appdata/io.github.mingyu2.geul/save-journal/edfff752d59ae55d97cb68514040510c.save",
+          "dev": 64768,
+          "ino": 6185307,
+          "size": 373,
+          "mode": 384,
+          "uid": 1000,
+          "nlink": 1,
+          "sha256": "f365a55bca839b845d208d7e02680c56aba68703a405d039e88d97f24959dcc7"
+        },
+        "kill": {
+          "pid": 949958,
+          "startTime": 25463778,
+          "method": "pidfd_open + pidfd_send_signal(SIGKILL) + pidfd poll"
+        },
+        "cleanup": {
+          "pid": 950101,
+          "counts": {
+            "removed": 1,
+            "retired": 0,
+            "active": 0,
+            "unverified": 0,
+            "failed": 0
+          },
+          "boundary": "cleanup final report after all unlink/fsync/retirement results"
+        }
+      },
+      {
+        "scenario": "hwpx-owned",
+        "status": "PASS",
+        "steps": 13,
+        "original": {
+          "dev": 64768,
+          "ino": 6185317,
+          "size": 8064,
+          "mode": 420,
+          "uid": 1000,
+          "nlink": 1,
+          "sha256": "26d434b7b427149110751c6ef5b19e9ecb4818f3ba7eadfe201b5afd3de442a8"
+        },
+        "finalOriginal": {
+          "dev": 64768,
+          "ino": 6185317,
+          "size": 8064,
+          "mode": 420,
+          "uid": 1000,
+          "nlink": 1,
+          "sha256": "26d434b7b427149110751c6ef5b19e9ecb4818f3ba7eadfe201b5afd3de442a8"
+        },
+        "staging": {
+          "path": "{repo}/target/t014-interrupted-save/acceptance/hwpx-owned/.geul-save-950221-0-b56df670309d5ed27de19cdcb07b8718.tmp",
+          "dev": 64768,
+          "ino": 6185344,
+          "size": 8072,
+          "mode": 420,
+          "uid": 1000,
+          "nlink": 1,
+          "sha256": "5e8689aa421f164016ca2b60f6964a3fd3ddba7d65d82ce6151e7d3ed7b85310"
+        },
+        "record": {
+          "path": "{repo}/target/t014-interrupted-save/acceptance/hwpx-owned/appdata/io.github.mingyu2.geul/save-journal/6def6f9a5aa922dae1c6b325a7d964e6.save",
+          "dev": 64768,
+          "ino": 6185343,
+          "size": 374,
+          "mode": 384,
+          "uid": 1000,
+          "nlink": 1,
+          "sha256": "32c6d2197e4ee12097af1207a6b461d7dd619b3a70e44b0b644fb4e6e18dfb14"
+        },
+        "kill": {
+          "pid": 950221,
+          "startTime": 25465517,
+          "method": "pidfd_open + pidfd_send_signal(SIGKILL) + pidfd poll"
+        },
+        "cleanup": {
+          "pid": 950361,
+          "counts": {
+            "removed": 1,
+            "retired": 0,
+            "active": 0,
+            "unverified": 0,
+            "failed": 0
+          },
+          "boundary": "cleanup final report after all unlink/fsync/retirement results"
+        }
+      },
+      {
+        "scenario": "hwpx-active",
+        "status": "PASS",
+        "steps": 12,
+        "original": {
+          "dev": 64768,
+          "ino": 6185350,
+          "size": 8064,
+          "mode": 420,
+          "uid": 1000,
+          "nlink": 1,
+          "sha256": "26d434b7b427149110751c6ef5b19e9ecb4818f3ba7eadfe201b5afd3de442a8"
+        },
+        "finalOriginal": {
+          "dev": 64768,
+          "ino": 6185350,
+          "size": 8064,
+          "mode": 420,
+          "uid": 1000,
+          "nlink": 1,
+          "sha256": "26d434b7b427149110751c6ef5b19e9ecb4818f3ba7eadfe201b5afd3de442a8"
+        },
+        "staging": {
+          "path": "{repo}/target/t014-interrupted-save/acceptance/hwpx-active/.geul-save-950472-0-8334852e223986be849e973b26739c4c.tmp",
+          "dev": 64768,
+          "ino": 6185376,
+          "size": 8072,
+          "mode": 420,
+          "uid": 1000,
+          "nlink": 1,
+          "sha256": "5e8689aa421f164016ca2b60f6964a3fd3ddba7d65d82ce6151e7d3ed7b85310"
+        },
+        "record": {
+          "path": "{repo}/target/t014-interrupted-save/acceptance/hwpx-active/appdata/io.github.mingyu2.geul/save-journal/c1f10f3d50a74a3a12803bf55d4bbf75.save",
+          "dev": 64768,
+          "ino": 6185375,
+          "size": 375,
+          "mode": 384,
+          "uid": 1000,
+          "nlink": 1,
+          "sha256": "170869f1b854837b6883dc2885e7cdf60b5be232493e05ed95d5eac7c1ca0b1f"
+        },
+        "kill": {
+          "pid": 950472,
+          "startTime": 25467270,
+          "method": "pidfd_open + pidfd_send_signal(SIGKILL) + pidfd poll"
+        },
+        "cleanup": {
+          "pid": 950692,
+          "counts": {
+            "removed": 0,
+            "retired": 0,
+            "active": 1,
+            "unverified": 0,
+            "failed": 0
+          },
+          "boundary": "cleanup final report after all unlink/fsync/retirement results"
+        }
+      },
+      {
+        "scenario": "hwpx-replaced",
+        "status": "PASS",
+        "steps": 13,
+        "original": {
+          "dev": 64768,
+          "ino": 6185384,
+          "size": 8064,
+          "mode": 420,
+          "uid": 1000,
+          "nlink": 1,
+          "sha256": "26d434b7b427149110751c6ef5b19e9ecb4818f3ba7eadfe201b5afd3de442a8"
+        },
+        "finalOriginal": {
+          "dev": 64768,
+          "ino": 6185384,
+          "size": 8064,
+          "mode": 420,
+          "uid": 1000,
+          "nlink": 1,
+          "sha256": "26d434b7b427149110751c6ef5b19e9ecb4818f3ba7eadfe201b5afd3de442a8"
+        },
+        "staging": {
+          "path": "{repo}/target/t014-interrupted-save/acceptance/hwpx-replaced/.geul-save-950814-0-7bdee4ee9a386828dcb77db0d0ed1d40.tmp",
+          "dev": 64768,
+          "ino": 6185410,
+          "size": 8072,
+          "mode": 420,
+          "uid": 1000,
+          "nlink": 1,
+          "sha256": "5e8689aa421f164016ca2b60f6964a3fd3ddba7d65d82ce6151e7d3ed7b85310"
+        },
+        "record": {
+          "path": "{repo}/target/t014-interrupted-save/acceptance/hwpx-replaced/appdata/io.github.mingyu2.geul/save-journal/2d10399789fe1fa9ded949fad83cb736.save",
+          "dev": 64768,
+          "ino": 6185409,
+          "size": 377,
+          "mode": 384,
+          "uid": 1000,
+          "nlink": 1,
+          "sha256": "c576dd38a3051bfd10c3d2349ad6d1a3575ab722a57872a00488717840f6ec5d"
+        },
+        "kill": {
+          "pid": 950814,
+          "startTime": 25469004,
+          "method": "pidfd_open + pidfd_send_signal(SIGKILL) + pidfd poll"
+        },
+        "cleanup": {
+          "pid": 950955,
+          "counts": {
+            "removed": 0,
+            "retired": 1,
+            "active": 0,
+            "unverified": 0,
+            "failed": 0
+          },
+          "boundary": "cleanup final report after all unlink/fsync/retirement results"
+        }
+      },
+      {
+        "scenario": "hwpx-intent",
+        "status": "PASS",
+        "steps": 13,
+        "original": {
+          "dev": 64768,
+          "ino": 6185421,
+          "size": 8064,
+          "mode": 420,
+          "uid": 1000,
+          "nlink": 1,
+          "sha256": "26d434b7b427149110751c6ef5b19e9ecb4818f3ba7eadfe201b5afd3de442a8"
+        },
+        "finalOriginal": {
+          "dev": 64768,
+          "ino": 6185421,
+          "size": 8064,
+          "mode": 420,
+          "uid": 1000,
+          "nlink": 1,
+          "sha256": "26d434b7b427149110751c6ef5b19e9ecb4818f3ba7eadfe201b5afd3de442a8"
+        },
+        "staging": {
+          "path": "{repo}/target/t014-interrupted-save/acceptance/hwpx-intent/.geul-save-951065-0-57dcb67e89906b9462bcac83078498c1.tmp",
+          "dev": 64768,
+          "ino": 6185448,
+          "size": 8072,
+          "mode": 420,
+          "uid": 1000,
+          "nlink": 1,
+          "sha256": "5e8689aa421f164016ca2b60f6964a3fd3ddba7d65d82ce6151e7d3ed7b85310"
+        },
+        "record": {
+          "path": "{repo}/target/t014-interrupted-save/acceptance/hwpx-intent/appdata/io.github.mingyu2.geul/save-journal/58ce678dbf875bd643487b52df39a0eb.save",
+          "dev": 64768,
+          "ino": 6185447,
+          "size": 375,
+          "mode": 384,
+          "uid": 1000,
+          "nlink": 1,
+          "sha256": "c5ca2c26430b1373b37cd7e74cfddf015fee0d1c934fbe1b824bf3a08b782327"
+        },
+        "kill": {
+          "pid": 951065,
+          "startTime": 25470770,
+          "method": "pidfd_open + pidfd_send_signal(SIGKILL) + pidfd poll"
+        },
+        "cleanup": {
+          "pid": 951213,
+          "counts": {
+            "removed": 0,
+            "retired": 0,
+            "active": 0,
+            "unverified": 1,
+            "failed": 0
+          },
+          "boundary": "cleanup final report after all unlink/fsync/retirement results"
+        }
+      },
+      {
+        "scenario": "hwpx-corrupt",
+        "status": "PASS",
+        "steps": 13,
+        "original": {
+          "dev": 64768,
+          "ino": 6185459,
+          "size": 8064,
+          "mode": 420,
+          "uid": 1000,
+          "nlink": 1,
+          "sha256": "26d434b7b427149110751c6ef5b19e9ecb4818f3ba7eadfe201b5afd3de442a8"
+        },
+        "finalOriginal": {
+          "dev": 64768,
+          "ino": 6185459,
+          "size": 8064,
+          "mode": 420,
+          "uid": 1000,
+          "nlink": 1,
+          "sha256": "26d434b7b427149110751c6ef5b19e9ecb4818f3ba7eadfe201b5afd3de442a8"
+        },
+        "staging": {
+          "path": "{repo}/target/t014-interrupted-save/acceptance/hwpx-corrupt/.geul-save-951321-0-76a2e2e29128b5a7619cc17d66a69508.tmp",
+          "dev": 64768,
+          "ino": 6185485,
+          "size": 8072,
+          "mode": 420,
+          "uid": 1000,
+          "nlink": 1,
+          "sha256": "5e8689aa421f164016ca2b60f6964a3fd3ddba7d65d82ce6151e7d3ed7b85310"
+        },
+        "record": {
+          "path": "{repo}/target/t014-interrupted-save/acceptance/hwpx-corrupt/appdata/io.github.mingyu2.geul/save-journal/8ccbe552ba62bc22d0719a55bbf0e3c3.save",
+          "dev": 64768,
+          "ino": 6185484,
+          "size": 376,
+          "mode": 384,
+          "uid": 1000,
+          "nlink": 1,
+          "sha256": "49e25479c40f4e31afa9d3905eed73148b6402f1eef1a14b91675686c5395c8c"
+        },
+        "kill": {
+          "pid": 951321,
+          "startTime": 25472560,
+          "method": "pidfd_open + pidfd_send_signal(SIGKILL) + pidfd poll"
+        },
+        "cleanup": {
+          "pid": 951501,
+          "counts": {
+            "removed": 0,
+            "retired": 0,
+            "active": 0,
+            "unverified": 1,
+            "failed": 0
+          },
+          "boundary": "cleanup final report after all unlink/fsync/retirement results"
+        }
+      },
+      {
+        "scenario": "hwpx-missing",
+        "status": "PASS",
+        "steps": 13,
+        "original": {
+          "dev": 64768,
+          "ino": 6185496,
+          "size": 8064,
+          "mode": 420,
+          "uid": 1000,
+          "nlink": 1,
+          "sha256": "26d434b7b427149110751c6ef5b19e9ecb4818f3ba7eadfe201b5afd3de442a8"
+        },
+        "finalOriginal": {
+          "dev": 64768,
+          "ino": 6185496,
+          "size": 8064,
+          "mode": 420,
+          "uid": 1000,
+          "nlink": 1,
+          "sha256": "26d434b7b427149110751c6ef5b19e9ecb4818f3ba7eadfe201b5afd3de442a8"
+        },
+        "staging": {
+          "path": "{repo}/target/t014-interrupted-save/acceptance/hwpx-missing/.geul-save-951618-0-d42af1e0707a647dce20572460b053fb.tmp",
+          "dev": 64768,
+          "ino": 6185522,
+          "size": 8072,
+          "mode": 420,
+          "uid": 1000,
+          "nlink": 1,
+          "sha256": "5e8689aa421f164016ca2b60f6964a3fd3ddba7d65d82ce6151e7d3ed7b85310"
+        },
+        "record": {
+          "path": "{repo}/target/t014-interrupted-save/acceptance/hwpx-missing/appdata/io.github.mingyu2.geul/save-journal/5120298127ed8bfd495a1a806c46d65b.save",
+          "dev": 64768,
+          "ino": 6185521,
+          "size": 376,
+          "mode": 384,
+          "uid": 1000,
+          "nlink": 1,
+          "sha256": "fc798edcb503525e7e62b9a0467c112a4383dd1311df4f0fdd5de067e29ad3f7"
+        },
+        "kill": {
+          "pid": 951618,
+          "startTime": 25474322,
+          "method": "pidfd_open + pidfd_send_signal(SIGKILL) + pidfd poll"
+        },
+        "cleanup": {
+          "pid": 951760,
+          "counts": {
+            "removed": 0,
+            "retired": 0,
+            "active": 0,
+            "unverified": 0,
+            "failed": 0
+          },
+          "boundary": "cleanup final report after all unlink/fsync/retirement results"
+        }
+      },
+      {
+        "scenario": "hwpx-untrusted",
+        "status": "PASS",
+        "steps": 13,
+        "original": {
+          "dev": 64768,
+          "ino": 6185533,
+          "size": 8064,
+          "mode": 420,
+          "uid": 1000,
+          "nlink": 1,
+          "sha256": "26d434b7b427149110751c6ef5b19e9ecb4818f3ba7eadfe201b5afd3de442a8"
+        },
+        "finalOriginal": {
+          "dev": 64768,
+          "ino": 6185533,
+          "size": 8064,
+          "mode": 420,
+          "uid": 1000,
+          "nlink": 1,
+          "sha256": "26d434b7b427149110751c6ef5b19e9ecb4818f3ba7eadfe201b5afd3de442a8"
+        },
+        "staging": {
+          "path": "{repo}/target/t014-interrupted-save/acceptance/hwpx-untrusted/.geul-save-951871-0-5c2b606935106aa9b1599425006de393.tmp",
+          "dev": 64768,
+          "ino": 6185559,
+          "size": 8072,
+          "mode": 420,
+          "uid": 1000,
+          "nlink": 1,
+          "sha256": "5e8689aa421f164016ca2b60f6964a3fd3ddba7d65d82ce6151e7d3ed7b85310"
+        },
+        "record": {
+          "path": "{repo}/target/t014-interrupted-save/acceptance/hwpx-untrusted/appdata/io.github.mingyu2.geul/save-journal/23c58718028727edc36fe338b85dce94.save",
+          "dev": 64768,
+          "ino": 6185558,
+          "size": 378,
+          "mode": 384,
+          "uid": 1000,
+          "nlink": 1,
+          "sha256": "ca717c9fdb5b77a56439e6a316b98ffb5a2e2e3d79db184fffca387414d325af"
+        },
+        "kill": {
+          "pid": 951871,
+          "startTime": 25476126,
+          "method": "pidfd_open + pidfd_send_signal(SIGKILL) + pidfd poll"
+        },
+        "cleanup": {
+          "pid": 952026,
+          "counts": {
+            "removed": 0,
+            "retired": 0,
+            "active": 0,
+            "unverified": 0,
+            "failed": 0
+          },
+          "boundary": "cleanup final report after all unlink/fsync/retirement results"
+        }
+      }
+    ],
+    "safetyEvidence": "8개 시나리오 모두에서 별도 미소유 .geul-save-*.tmp의 inode·바이트 보존. HWPX 추가 사례는 실제 저장에서 생성한 staging/journal에만 교체·절단·손상·분리·권한 변경을 적용했다. 양성 소유 기록은 조작하지 않았다. 활성 소유자는 별도 새 앱의 정리가 끝날 때까지 잠금을 유지했고 이후 SIGKILL했다.",
+    "durabilityEvidence": "GDB가 실제 cleanup()의 unlink·디렉터리 fsync·journal retirement 뒤 report를 읽었다. owned 사례 removed=1, failed=0이며 실제 staging·기록의 부재 및 원본 해시/inode 불변을 별도 확인했다. 다른 사례는 삭제를 주장하지 않는다."
+  },
+  "nativeCheckpointRegression": {
+    "status": "PASS",
+    "formats": [
+      {
+        "format": "hwp",
+        "status": "PASS",
+        "steps": 35
+      },
+      {
+        "format": "hwpx",
+        "status": "PASS",
+        "steps": 33
+      }
+    ],
+    "teardownComplete": 4,
+    "result": {
+      "path": "target/t014-interrupted-save/recovery-acceptance/result.json",
+      "sha256": "17fddcbb34d92bc6233baff5a999b379818921af25f46b941ab33b8e9d396fd7"
+    },
+    "launcherCleanup": {
+      "path": "target/t014-interrupted-save/recovery-session/cleanup.json",
+      "sha256": "a3637d5fec2b93fff6dea296aecc29be8005b774b2afa809eee9b19ff9393946"
+    },
+    "command": [
+      "python3",
+      "scripts/tests/native-ibus-session.py",
+      "--out",
+      "target/t014-interrupted-save/recovery-session",
+      "--",
+      "python3",
+      "scripts/tests/native-recovery-crash.py",
+      "--app",
+      "{repo}/src-tauri/target/debug/geul",
+      "--app-sha256",
+      "62f22897b69f831e35166cb0d4dcccdd82db0533c93fd4921720354adcff5fa6",
+      "--driver",
+      "/tmp/geul-tauri-driver-target/debug/tauri-driver",
+      "--out",
+      "target/t014-interrupted-save/recovery-acceptance",
+      "--fixtures",
+      "target/t014-native/fixtures",
+      "--xdotool",
+      "@XDOTOOL@",
+      "--ibus",
+      "@IBUS@"
+    ],
+    "note": "현재 실행의 실제 checkpoint→SIGKILL→재시작→복원→재열기 회귀이다. save-staging 중단 수용을 대신하지 않는다."
+  },
+  "regressions": [
+    {
+      "command": "python3 -m unittest scripts/tests/test_native_recovery_checks.py",
+      "pass": 26,
+      "fail": 0,
+      "skipped": 0
+    },
+    {
+      "command": "python3 -O -m unittest scripts/tests/test_native_recovery_checks.py",
+      "pass": 26,
+      "fail": 0,
+      "skipped": 0
+    },
+    {
+      "command": "python3 -OO -m unittest scripts/tests/test_native_recovery_checks.py",
+      "pass": 26,
+      "fail": 0,
+      "skipped": 0
+    },
+    {
+      "command": "PYTHONOPTIMIZE=1 python3 -m unittest scripts/tests/test_native_recovery_checks.py",
+      "pass": 26,
+      "fail": 0,
+      "skipped": 0
+    },
+    {
+      "command": "python3 target/t014-interrupted-save/landlock-test.py src-tauri/target/debug/deps/geul_lib-e2d36da79ac2e99c services::save",
+      "pass": 212,
+      "fail": 0,
+      "ignored": 23,
+      "log": {
+        "path": "target/t014-interrupted-save/rust-save-landlock.log",
+        "sha256": "104eeaffdd238912e43b98739f13207a0948237e7448da9f6e917f96b05c87ce"
+      }
+    },
+    {
+      "command": "python3 target/t014-interrupted-save/landlock-test.py src-tauri/target/debug/deps/geul_lib-e2d36da79ac2e99c services::recovery",
+      "pass": 27,
+      "fail": 0,
+      "ignored": 1,
+      "log": {
+        "path": "target/t014-interrupted-save/rust-recovery-landlock.log",
+        "sha256": "75fb9c1fac31f3a8f1878d6a66b8efa85a9562691fea1929e5a58111bd29abc3"
+      }
+    },
+    {
+      "command": "npm run build",
+      "status": "PASS",
+      "log": {
+        "path": "target/t014-interrupted-save/frontend-build.log",
+        "sha256": "ef882a98fde0c9521a3fcce9cb80921e65040895c9806cb786b7c181b488f6b5"
+      }
+    },
+    {
+      "command": "python3 -m py_compile scripts/tests/native-save-interruption.py",
+      "status": "PASS"
+    },
+    {
+      "command": "git diff --check",
+      "status": "PASS"
+    }
+  ],
+  "rustExecutionEnvironment": {
+    "helper": {
+      "path": "target/t014-interrupted-save/landlock-test.py",
+      "sha256": "75e5edc5192020c4496ed5612fdd75e511756cfc02a961abb16bcb7017747a49"
+    },
+    "testBinary": {
+      "path": "src-tauri/target/debug/deps/geul_lib-e2d36da79ac2e99c",
+      "sha256": "eca1bbb486b8ada6d84a09bec1ec0cc10c8f28e494e1d77e67f8b4a6e2d40b7a"
+    },
+    "explanation": "보호 cargo test가 컴파일/선택한 같은 시험 바이너리를 Landlock ABI 10 쓰기 제한으로 실행했다. 실제 UID·보조 그룹·root 소유 상위를 유지하며 /tmp 밖의 파일 내용 쓰기/생성/삭제/이름 변경을 커널에서 차단했다. 소스/Git/엔진 5곳 쓰기 열기 거부를 확인했다. 시험 코드·assert·저장 가드·의존성은 변경하지 않았다. Cargo 빌드는 기존 보호 bwrap을 사용했다.",
+    "kernelProbe": {
+      "sandbox": "Landlock write restrictions, no UID/mount remapping",
+      "abi": 10,
+      "sourceWriteProbesDenied": 5,
+      "uid": 1000,
+      "groups": [
+        1,
+        26,
+        100,
+        303
+      ],
+      "tmp": "/tmp/nix-shell.e4I7yS"
+    }
+  },
+  "excludedAttempts": [
+    {
+      "path": "target/t014-interrupted-save/rust-save.log",
+      "status": "FAIL",
+      "passed": 129,
+      "failed": 83,
+      "ignored": 23,
+      "reason": "기본 bwrap UID 매핑은 root 상위를 overflow UID로 보여 SharedDirectory 등 시험 전제를 만족하지 못함."
+    },
+    {
+      "path": "target/t014-interrupted-save/rust-save-root.log",
+      "status": "BLOCKED",
+      "reason": "기존 userns-root-bwrap은 newuidmap: Operation not permitted."
+    },
+    {
+      "path": "target/t014-interrupted-save/rust-save-private.log",
+      "status": "FAIL",
+      "passed": 210,
+      "failed": 2,
+      "ignored": 23,
+      "reason": "caller 소유 비공개 mount root는 root 상위/다른 UID 매핑을 요구하는 2개 시험 전제를 충족하지 못함."
+    },
+    {
+      "path": "target/t014-interrupted-save/diagnostic",
+      "status": "FAIL",
+      "reason": "중첩 드라이버가 같은 XDG_DATA_HOME으로 정리 검사를 간섭함. 드라이버별 데이터 디렉터리와 앱 실행별 표식으로 수정."
+    },
+    {
+      "path": "target/t014-interrupted-save/diagnostic2",
+      "status": "FAIL",
+      "reason": "HWP 단일 진단만 실행했으므로 필수 나머지 사례 미실행을 올바르게 FAIL 처리. HWP 13개 조건과 teardown 2개는 정상."
+    },
+    {
+      "path": "target/t014-interrupted-save/probe-session.log",
+      "status": "FAIL",
+      "reason": "실행 파일 해시 0을 넘긴 사전검사 거부 시험. 앱 중단 시험을 시작하지 않음."
+    },
+    {
+      "status": "BLOCKED",
+      "reason": "첫 Stage 3 커밋은 수용 기록의 개인 홈 경로에 대해 민감정보 훅이 거부했다. 저장소 기준 표기로 치환했으며 훅·예외 목록은 변경하지 않았다."
+    }
+  ],
+  "remaining": "T014 전체 실패·충돌·publication·durability·복구의 기존 더 넓은 Done 계약과 증거 통합·범위 결정은 별도다. DOCX native staging 중단, 전원 손실, 외부 Word/Hancom, 물리 데스크톱/Wayland는 이 실행의 수용 범위가 아니다.",
+  "pathNotation": "{repo}는 실행한 저장소의 절대 경로를 나타낸다. 개인 홈 경로는 공유 기록에서 치환했으며 정확한 원본 명령·경로·증거는 참조한 ignored 로컬 파일에 보존했다."
+}
