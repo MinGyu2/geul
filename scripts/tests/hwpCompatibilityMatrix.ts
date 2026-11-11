@@ -16,6 +16,7 @@ export const TEXT_MARKER = "⟦geul-matrix⟧";
 export const TABLE_SIZE = { rows: 2, cols: 2 } as const;
 export type MatrixDocument = RhwpDocument & {
   getControls(): string; getTextFileText(): string;
+  getControlImageData(section: number, paragraph: number, cellPath: string, control: number): Uint8Array;
   exportHwpWithReport(): { takeBytes(): Uint8Array; contentLoss(): string; free(): void };
 };
 const CFB = "d0cf11e0a1b11ae1";

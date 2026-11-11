@@ -20,6 +20,8 @@ import {
   type Finding, type MatrixDocument, type Operation, type Stage,
 } from "./hwpCompatibilityMatrix";
 
+import { loadApproval, validateSupplied, validateSources, validateMeasurements, regularBytes } from "./hwpApprovedCorpus";
+
 const corpus = process.env.GEUL_HWP_SAMPLE_MATRIX;
 const phase = process.env.GEUL_HWP_MATRIX_PHASE ?? "measure";
 const root = resolve(__dirname, "../..");
@@ -221,28 +223,25 @@ describe.runIf(!!corpus && phase === "verify")("HWP sample matrix v2 — publica
   }, 600_000);
 });
 
-// Strict acceptance gate over the frozen corpus (GEUL_HWP_MATRIX_CORPUS = corpus-108.json): fails unless every
-// frozen document × operation reached VERIFIED_PUBLISHED_REOPEN, and every raw candidate has exactly one
-// publication record. Descriptive measurement (measure/verify) is separate and may record FAIL results.
-describe.runIf(!!corpus && phase === "accept")("HWP fixed-corpus strict acceptance", () => {
+// Strict acceptance uses the Git-tracked approval and independently hashes actual sources/artifacts.
+// An optional GEUL_HWP_MATRIX_CORPUS must match that approval exactly. Exactly 108 × 4 distinct
+// combinations must be verified; descriptive measure/verify may still record failures.
+describe.runIf(phase === "accept")("HWP fixed-corpus strict acceptance", () => {
   it("every frozen document × operation is verified published and reopened", () => {
-    const frozen = JSON.parse(readFileSync(resolve(process.env.GEUL_HWP_MATRIX_CORPUS!), "utf8")) as { documents: { name: string; sha256: string }[] };
-    const matrix = JSON.parse(readFileSync(join(report, "mutation-matrix.json"), "utf8")) as { rows: Record<string, unknown>[] };
-    const publications = JSON.parse(readFileSync(join(report, "publication-results.json"), "utf8")) as { id: string; verified?: string }[];
-    const records = JSON.parse(readFileSync(join(resolve(corpus!), "publication-canvas.json"), "utf8")) as { id: string }[];
-    const failures: string[] = []; let verified = 0;
-    for (const doc of frozen.documents) {
-      const row = matrix.rows.find(r => r.name === doc.name);
-      if (!row || row.sha256 !== doc.sha256) { failures.push(`${doc.name}: identity`); continue; }
-      for (const op of OPERATIONS) {
-        const e = ((row.operations ?? {}) as Record<string, Record<string, unknown>>)[op];
-        const id = e?.corpusId as string | undefined;
-        const records_ = id ? records.filter(r => r.id === id).length : 0;
-        if (e?.verified === "VERIFIED_PUBLISHED_REOPEN" && records_ === 1 && publications.filter(p => p.id === id).length === 1) verified += 1;
-        else failures.push(`${doc.name}:${op}: ${e?.verified ?? "missing"} class=${e?.class ?? "-"} records=${records_}`);
-      }
-    }
-    json("acceptance.json", { target: frozen.documents.length * OPERATIONS.length, verified, failures });
-    expect(failures, `${verified}/${frozen.documents.length * OPERATIONS.length} verified`).toEqual([]);
+    json("acceptance.json", { target: 432, verified: 0, status: "NOT_VERIFIED" });
+    expect(corpus, "GEUL_HWP_SAMPLE_MATRIX publication input is required").toBeTruthy();
+    const approved = loadApproval();
+    if (process.env.GEUL_HWP_MATRIX_CORPUS) validateSupplied(JSON.parse(readFileSync(resolve(process.env.GEUL_HWP_MATRIX_CORPUS), "utf8")), approved);
+    validateSources(join(root, "external/rhwp/samples"), approved);
+    const matrix = JSON.parse(readFileSync(join(report, "mutation-matrix.json"), "utf8"));
+    const publications = JSON.parse(readFileSync(join(report, "publication-results.json"), "utf8"));
+    const records = JSON.parse(readFileSync(join(resolve(corpus!), "publication-canvas.json"), "utf8"));
+    const verified = validateMeasurements(approved, matrix, publications, records, id => {
+      const folder = join(resolve(corpus!), id);
+      return { proof: JSON.parse(regularBytes(folder, "proof.json").toString()), original: regularBytes(folder, "original.hwp"),
+        edited: regularBytes(folder, "edited.hwp"), published: regularBytes(folder, "published.hwp") };
+    });
+    json("acceptance.json", { target: 432, documents: approved.length, verified, status: "VERIFIED_PUBLISHED_REOPEN", failures: [] });
+    expect(verified).toBe(432);
   });
 });

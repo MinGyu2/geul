@@ -1,0 +1,450 @@
+{
+  "schemaVersion": 1,
+  "approvalId": "geul-hwp-original-108-233555b",
+  "canonicalization": "documents sorted by Unicode code point name; UTF-8 name TAB lowercase SHA-256 LF",
+  "selectionPolicy": "Original v2 discovery: 288 external/rhwp/samples/*.hwp; <=120000 bytes; one section; complete baseline and original preflight SAFE. Frozen selection, never reselected by measurement.",
+  "provenance": {
+    "frozenSource": "target/hwp-compatibility-matrix-v2/mutation-matrix.json (HEAD 233555b)",
+    "crossChecks": [
+      "v2 generation 342ebaad964f911b8dc83fe9cb7eaca5ee2625486336c3690c01ea16f0396bdc: 288 discovered, 108 eligible",
+      "v3 generation f96a94ff844ddf2ac901e8a137fd16740d2effce8c5d831011eb4562c1062951: identical 108 name/hash pairs",
+      "v6 generation 907eabb217721131eee04d01f13e0a0d54332542462c36ee95fb6ada9744a20f: identical 108 name/hash pairs",
+      "2026-11-11: all 108 actual source SHA-256 values match"
+    ],
+    "limitation": "Local historical evidence cross-checked; no external cryptographic approval signature."
+  },
+  "documents": [
+    {
+      "name": "21868765_별표2_보건소_분장사무.hwp",
+      "sha256": "ae694583e739ac48af97cb12ce573c2da9f4cb637721fdf84e5af4bf7ca17c13"
+    },
+    {
+      "name": "byeolpyo1.hwp",
+      "sha256": "e909ec08364a7b5e6dd790b141437c3d9f76ce04e30c95529c183016af5b7d5b"
+    },
+    {
+      "name": "byeolpyo4.hwp",
+      "sha256": "52eb010f14972702944f3257478445ee9cefcb79346f500a6b76c772d5a37ffe"
+    },
+    {
+      "name": "float-stack-defer.hwp",
+      "sha256": "e3e721923f2f29ebdc72c031d9ad8dcb9f494b885848db0d2d853117e1d82d9f"
+    },
+    {
+      "name": "h-pen-01.hwp",
+      "sha256": "6a167dd7e816cfe1337e42b5db84c989d8abdad34ab52a56232dbfa57908842c"
+    },
+    {
+      "name": "hwp3-sample13-hwp5.hwp",
+      "sha256": "4b34096a78577720065c3efd227f62eeb11758a74ce0669ec42868bf5851955e"
+    },
+    {
+      "name": "hwp_table_test-m.hwp",
+      "sha256": "3b060970d3762a981948cc408edcfb5ba7af037781419142c658318d9c6dfc8c"
+    },
+    {
+      "name": "hwp_table_test.hwp",
+      "sha256": "dc3e57d7577447ae4b47f59bdb0f499a5ac29066b62af8a650bcdd8d70eee32a"
+    },
+    {
+      "name": "hwp_table_test_saved.hwp",
+      "sha256": "12110af5fb8697c90942d001ba5306e8fcf54f6655f453cb14f8436654fbee2f"
+    },
+    {
+      "name": "issue1835_tac_stale_height.hwp",
+      "sha256": "0eb04bdb79081fa4aa4d27a32db535fea9e955c05ca311292fc95ca8fc91d6b7"
+    },
+    {
+      "name": "issue2808_report_physical_ladder.hwp",
+      "sha256": "0e6b0e67a21844aa60060287d5dc13256a3d8f1f6e7b4ed64ba745445d35d8e5"
+    },
+    {
+      "name": "issue5800-hancom-symbol.hwp",
+      "sha256": "e09951a7ac179344a9f9c3dd9625a6de757a5d5cc5cee2fcb7c76c040959476d"
+    },
+    {
+      "name": "landscape-001.hwp",
+      "sha256": "892daaf0b36815730629b0ae11568b74b90922e4c3268c6791c917867e946798"
+    },
+    {
+      "name": "lseg-01-basic.hwp",
+      "sha256": "86e607233a2218928fabe5969155116a46d4ab4400db1402fe45b0082149496c"
+    },
+    {
+      "name": "lseg-02-mixed.hwp",
+      "sha256": "2d22a57b6d1c26b5593bfeec2dc25f3339abd3ab788cf79825330951e7f46bb0"
+    },
+    {
+      "name": "lseg-03-spacing.hwp",
+      "sha256": "82fda23e81cf453c465db630bcd1d382980c807b26337056a2120a5c9f42360c"
+    },
+    {
+      "name": "lseg-04-indent.hwp",
+      "sha256": "33443ae16db02fa692ff0ad12c709ec58385634a5ddacd3c3ffc7e4e777fbe50"
+    },
+    {
+      "name": "lseg-05-tab.hwp",
+      "sha256": "0066108df04204324c0802414087563e7673e30f3d142dd014af14e318153d2c"
+    },
+    {
+      "name": "lseg-06-multisize.hwp",
+      "sha256": "f98a879a14a46b26d0f81ad0449500cdd119a54a10f9baf0bad07ba692e71f1d"
+    },
+    {
+      "name": "p122.hwp",
+      "sha256": "b4d66baa093d564ac728c84d591b3ea7d6bc4cfef160bde81ee13afc6d927e82"
+    },
+    {
+      "name": "para-001.hwp",
+      "sha256": "bab4561ceb02cdfa184a1689be9619c08e18d6021cdbc423486b848bc14d267e"
+    },
+    {
+      "name": "para-unit-01.hwp",
+      "sha256": "ed71fc1038b484631e6b0254ddc326d556dd6805f72b9ed32ef710a92f97dda8"
+    },
+    {
+      "name": "pr-149.hwp",
+      "sha256": "9bf75d4485be95189d78e2fb50401589da12b6be8fe351a04c1f997023bd5ae3"
+    },
+    {
+      "name": "re-01-hangul-only-empty-hancom.hwp",
+      "sha256": "0c28a19aecccc201877370f48f179ca74576a20f6d0178d795910e0c2b9b90ef"
+    },
+    {
+      "name": "re-01-hangul-only-hancom.hwp",
+      "sha256": "61538931d2e2cf38f35050618ce7698960823938884d0d8977812c94587e85fd"
+    },
+    {
+      "name": "re-02-space-count-empty-hancom.hwp",
+      "sha256": "15729adb13d237fd2342fc3aac064270f35e6305504ab36c21378bdc36ce177d"
+    },
+    {
+      "name": "re-02-space-count-hancom.hwp",
+      "sha256": "40bc4a9bc93cc377bbca93714dd61cff143177197cad00c9f8c51763e049354c"
+    },
+    {
+      "name": "re-03-latin-only-empty-hancom.hwp",
+      "sha256": "0062dd27aa3496b8e15a03149b802ef5feb51f2cda5839da81071803901b14fb"
+    },
+    {
+      "name": "re-03-latin-only-hancom.hwp",
+      "sha256": "52b8da3a7cd5625a5e9624aaa532be5faa29d9fc0fc96cc982109729d53cb09f"
+    },
+    {
+      "name": "re-04-digit-only-empty-hancom.hwp",
+      "sha256": "593e4fa12ecfed884bc6b37801f28afb715fcae078c892d430b9951f78d5b629"
+    },
+    {
+      "name": "re-04-digit-only-hancom.hwp",
+      "sha256": "70c3774bc93fb806281c896b9ab96b509cd737c5f3a31aefd0eb03fe69101c69"
+    },
+    {
+      "name": "re-05-mixed-koen-empty-hancom.hwp",
+      "sha256": "631b6187302ab09c69c60fab55ab1b23a57198f4b063e868c7db847a4eef24ed"
+    },
+    {
+      "name": "re-05-mixed-koen-hancom.hwp",
+      "sha256": "5d632a96f8877091db92feb43cb641ddb2df16989d5d73ff17a7e9e9e1dba678"
+    },
+    {
+      "name": "re-06-punctuation-empty-hancom.hwp",
+      "sha256": "d3873a5bbddcc1a0c1f5c3aaccd56f8ae94fc2f4e515161990035a218e737a11"
+    },
+    {
+      "name": "re-06-punctuation-hancom.hwp",
+      "sha256": "66fb00fcfb3123f2091fd1104e1eb6bda1c779e09300c3c96428139bd684526d"
+    },
+    {
+      "name": "re-align-center-empty-hancom.hwp",
+      "sha256": "6ff49b9d7d773975effa4e0e913a336b5f95be3403d9d1e32851f0271d5c5e42"
+    },
+    {
+      "name": "re-align-center-hancom.hwp",
+      "sha256": "3c2382348e74412a662ede17e12c36449206d33b3eb335d05778bcec40fa5513"
+    },
+    {
+      "name": "re-align-justify-empty-hancom.hwp",
+      "sha256": "51c496f35b3ff0caade0432a2275755931af1734b8f93360524f798d4da09846"
+    },
+    {
+      "name": "re-align-justify-hancom.hwp",
+      "sha256": "dc7e3d702e6df44ede782485e470f85aa0ab49b83a9d06645ee84a46b0e7a9ef"
+    },
+    {
+      "name": "re-align-left-empty-hancom.hwp",
+      "sha256": "8c827dbfe07e8c8e224ff7a8a92953c74dd115380cadf33ce3e9fe107b81d869"
+    },
+    {
+      "name": "re-align-left-hancom.hwp",
+      "sha256": "5af62debbab0b60bdad1a906149b745b403f484913aace3b498839e4dda62406"
+    },
+    {
+      "name": "re-align-right-empty-hancom.hwp",
+      "sha256": "4f9e41c7d9ec0f30f81485b7aa66acc3d66825d451dde0ad318539e3a818865a"
+    },
+    {
+      "name": "re-align-right-hancom.hwp",
+      "sha256": "bd427cbae70ffb6f82792e5dbe7e2b3b46fe10cfc29d69b30b773d4db2f2ae3a"
+    },
+    {
+      "name": "re-eng-mixed-batang-arial-empty-hancom.hwp",
+      "sha256": "fd3b82e588b859542ac84881268b04dc60b1fdfcaa5bf8aef89790ca8d585ddf"
+    },
+    {
+      "name": "re-eng-mixed-batang-empty-hancom.hwp",
+      "sha256": "669ea2f90a2e119efa6bd452f318640a7f29c1d5c294ffee8a62c26d8a65dc97"
+    },
+    {
+      "name": "re-eng-mixed-batangche-empty-hancom.hwp",
+      "sha256": "c6a2262bacaf43a996ef3ebf7c862563a3dbd351863ce0ebf721727eb4b7b302"
+    },
+    {
+      "name": "re-eng-mixed-dotum-empty-hancom.hwp",
+      "sha256": "13ca3a2de61601d3a4999009c0d1f7647efdfc175bca3e51df20251809cd5db3"
+    },
+    {
+      "name": "re-eng-mixed-dotum-times-empty-hancom.hwp",
+      "sha256": "b0379b87cba580bb12112261135cae5efb8128b0003b8274aece8e94bd9efb77"
+    },
+    {
+      "name": "re-eng-mixed-malgun-courier-empty-hancom.hwp",
+      "sha256": "623d19d00281340f3ec7fd056878fe0ac6c0ee809d9566e1940a99609c072a74"
+    },
+    {
+      "name": "re-eng-mixed-malgun-empty-hancom.hwp",
+      "sha256": "42068de8121c2326e4bdb90836410516eaba9767337baec823404b098fb0a5b7"
+    },
+    {
+      "name": "re-eng-mixed-malgun-times-empty-hancom.hwp",
+      "sha256": "b14475e31b2eaa5e7260c5f5cd086a80c496047ecbc6aa2a844b5bf81bcd0c15"
+    },
+    {
+      "name": "re-eng-nospace-batang-arial-empty-hancom.hwp",
+      "sha256": "4d68f73d6c04d8adc8f34405375f0cad0e3debcab561475f773704c6c4ddc78b"
+    },
+    {
+      "name": "re-eng-nospace-batang-empty-hancom.hwp",
+      "sha256": "1a0970fba3e41a9336384fe9c6c164ee3dc8623954c822620f56c0e329964648"
+    },
+    {
+      "name": "re-eng-nospace-batangche-empty-hancom.hwp",
+      "sha256": "71d536f89570ec5900f0e9c2e42cb444059546c89db2452fd3c0f3b3b094039a"
+    },
+    {
+      "name": "re-eng-nospace-dotum-empty-hancom.hwp",
+      "sha256": "1ceebcb49f8f207f287949daeb1ec92870a2f15fb2446f44bfc3a190635bcf75"
+    },
+    {
+      "name": "re-eng-nospace-dotum-times-empty-hancom.hwp",
+      "sha256": "0dc391cdece323ce52d58edc839710ee34b9e546f7d4d6026fdf0779e2f1c0b0"
+    },
+    {
+      "name": "re-eng-nospace-malgun-courier-empty-hancom.hwp",
+      "sha256": "0daeb78d3b6aab2b4359341c08cfb3f2ea4ccb3889d93419b8a7c61161104b88"
+    },
+    {
+      "name": "re-eng-nospace-malgun-empty-hancom.hwp",
+      "sha256": "24d2593f03f0d18b63498f9e929178ae1ec0aac4e73caf4117312398ca651164"
+    },
+    {
+      "name": "re-eng-nospace-malgun-times-empty-hancom.hwp",
+      "sha256": "be3d0ada8e9b8176f322e5d2a2382e93b5f8a35391d2b7611c5f490c7882218d"
+    },
+    {
+      "name": "re-eng-words-batang-arial-empty-hancom.hwp",
+      "sha256": "5e7b91d74a6a0174d638475009fe5fee475e30aacca9b14cc8007a66bd5376dd"
+    },
+    {
+      "name": "re-eng-words-batang-empty-hancom.hwp",
+      "sha256": "7f8399d19be66354f740252166d1ac2628f508f0fabcb5452f2410dc380098e3"
+    },
+    {
+      "name": "re-eng-words-batangche-empty-hancom.hwp",
+      "sha256": "3fc580d4cf9a704ac2cd44e9016f2b8f47c6b03d6ae1828c8d17b2a6f15d73b4"
+    },
+    {
+      "name": "re-eng-words-dotum-empty-hancom.hwp",
+      "sha256": "cdc3caf6a51e5a6b669a6aaa9baa472c8971619709fed5ef02ea6e0a6acba961"
+    },
+    {
+      "name": "re-eng-words-dotum-times-empty-hancom.hwp",
+      "sha256": "bbfd10245d04be4b9e9a1b0c34688571d27c28c1b6e6ed90b636a960d8c482ec"
+    },
+    {
+      "name": "re-eng-words-malgun-courier-empty-hancom.hwp",
+      "sha256": "5ade17566fad9ba9d830839381950e2a3adc011a181ca0c7c6165d3cd6aa4e70"
+    },
+    {
+      "name": "re-eng-words-malgun-empty-hancom.hwp",
+      "sha256": "aa508fd2dda26c011c0ffb3b43b2ae2c1a2e7e6d328443f6b5a517fbbb50c94e"
+    },
+    {
+      "name": "re-eng-words-malgun-times-empty-hancom.hwp",
+      "sha256": "d68ae84000c6ad13c639f530a461af914e500374312b27cca5a3c17e122e4d72"
+    },
+    {
+      "name": "re-font-batang-empty-hancom.hwp",
+      "sha256": "219a805d63cfa2419ca3216d685b1c2d55a009a3d8ef016e25a5b9e009d87085"
+    },
+    {
+      "name": "re-font-batang-hancom.hwp",
+      "sha256": "99ec0cd2f55ba45493b97c550333db6d0275831ae6150a041bdbe5e2bd174049"
+    },
+    {
+      "name": "re-font-batangche-empty-hancom.hwp",
+      "sha256": "1d68b45573c5c7a8527d6081ea06af71e751f2c384253334dfcac9ec034b8778"
+    },
+    {
+      "name": "re-font-batangche-hancom.hwp",
+      "sha256": "ea0824090bf24269f15729743f171307ec2ebe33fdadd6c0a1bdc4e4d827b71f"
+    },
+    {
+      "name": "re-font-dotum-empty-hancom.hwp",
+      "sha256": "1ee8871f37bec2e97d0928709dc411c0eacad656f35aa3d92c5cf89f61c5761b"
+    },
+    {
+      "name": "re-font-dotum-hancom.hwp",
+      "sha256": "afb55dc54dc3e5e2bb62c90775e48e4957d1a4483bdcb83ef78b80dd7049bc7f"
+    },
+    {
+      "name": "re-font-dotumche-empty-hancom.hwp",
+      "sha256": "1f306dcae4f02f3ad9c2c90b622e2dc5ebc8188d5a550e24a418332eac9107d4"
+    },
+    {
+      "name": "re-font-dotumche-hancom.hwp",
+      "sha256": "9176b23dd0d6aa5d616201379d9fceb23eb885980c7e61b71aa29e103be16e78"
+    },
+    {
+      "name": "re-font-gulim-empty-hancom.hwp",
+      "sha256": "a405de5542c91e51358e4542a4a1b7cc92c9ac67673ab6565b1a563cd8494c90"
+    },
+    {
+      "name": "re-font-gulim-hancom.hwp",
+      "sha256": "68348dcc4780b3a2a0daa6d7f3690a53302697d779e056adaac2a3bf83070e20"
+    },
+    {
+      "name": "re-font-gulimche-empty-hancom.hwp",
+      "sha256": "3f55d2be5805b4a8b1f064b75a180aace1abe608fbf301a02c049405bd36af3a"
+    },
+    {
+      "name": "re-font-gulimche-hancom.hwp",
+      "sha256": "1770b10ffc57342d60d15fb6262bd20891bb722bc83f82d11e360d56ca132954"
+    },
+    {
+      "name": "re-font-malgun-empty-hancom.hwp",
+      "sha256": "da24c72b69557e45ef4fbc1c617e1287fc8b0da655116c4cab8db492848e4ce4"
+    },
+    {
+      "name": "re-font-malgun-hancom.hwp",
+      "sha256": "9bc06c9aa65fc640bbf55d004a9c18a7bfaff7b7fe8101a541bad54e41703f4b"
+    },
+    {
+      "name": "re-mixed-0tr-empty-hancom.hwp",
+      "sha256": "bed94a36a22bb56532d05e191da9001f280748fede6a88073954e0c9f3950964"
+    },
+    {
+      "name": "re-mixed-1tr-empty-hancom.hwp",
+      "sha256": "7bbd0e7885fb2f34f3539643a690f167e5f10cbb122c8c2f26a13bf981cda7b9"
+    },
+    {
+      "name": "re-mixed-2tr-empty-hancom.hwp",
+      "sha256": "8b43929d7ec5345df2bf6ab50d1211b8991e43d3926c3dae31f885ba41a3912d"
+    },
+    {
+      "name": "re-mixed-malgun-timesnew-hancom.hwp",
+      "sha256": "e51d7daf0a8c98da7018f2213cc2fe4f79bda94b02883292a2abebf77bfa8b6c"
+    },
+    {
+      "name": "re-multisize-10-10-empty-hancom.hwp",
+      "sha256": "90686f3e203ffde54b995108df53f79794e3fadec23f313e912491ec4d828305"
+    },
+    {
+      "name": "re-multisize-10-20-empty-hancom.hwp",
+      "sha256": "9bbc929499c048522c3fb4a36347bcea733de312a062ed592cd71cb2acce73f3"
+    },
+    {
+      "name": "re-multisize-8-14-empty-hancom.hwp",
+      "sha256": "6aca438375a1122fafb33ca874ac84dc7bd0c36a1a5f93f2d73e9f112e594b1d"
+    },
+    {
+      "name": "shift-return.hwp",
+      "sha256": "78969c3bbe753373a3d5e983e7a0ea0dbbf132817bb25427f1ebdef851f8bd57"
+    },
+    {
+      "name": "table-001.hwp",
+      "sha256": "7238f63629ca1c9af1419324a2ad10c031634c5b182398742eaf67179d6b5223"
+    },
+    {
+      "name": "table-004.hwp",
+      "sha256": "451ab7c40d47c4200e98b57b7cb3806e64968c32fa9441fc171e7babf64be915"
+    },
+    {
+      "name": "tac-case-002.hwp",
+      "sha256": "97594356ab7d72eef3d88507957b9c78091a19a2da23ab4cffce343c087d549f"
+    },
+    {
+      "name": "tac-case-003.hwp",
+      "sha256": "53d37e0b1d2a18b957d68cf40bbf7523642fac1846ab824e9473edfcf31d3518"
+    },
+    {
+      "name": "tac-case-004.hwp",
+      "sha256": "77bddf1439ea6c1e77a2b8bb7f60cae77249f9192b202342de9198e61bae57c6"
+    },
+    {
+      "name": "tac-case-005.hwp",
+      "sha256": "c48e039c62bb570e0fa4047c38f48c36f329d35c2b7112dd4dae3bd3cd397274"
+    },
+    {
+      "name": "test-image.hwp",
+      "sha256": "a854b822c3150d9731b8ba0687160b2120be1078fc5c91221566a15176de3e20"
+    },
+    {
+      "name": "test-image2.hwp",
+      "sha256": "32d3681fe887ecae37f9b26ac5b44f99833d8e0abe30b3a2fa951915a0f0e701"
+    },
+    {
+      "name": "text-align-2.hwp",
+      "sha256": "19882eddd3d9cbc290b91a8b506e36242c45f00e96183caec3caa132accb4d51"
+    },
+    {
+      "name": "text-align.hwp",
+      "sha256": "98ea0e9eed58ee8ddbd555e18b523ca10e717b4d69228570d7e509c7d91d6018"
+    },
+    {
+      "name": "water-mark.hwp",
+      "sha256": "b4bc14afbba044971d11449f47b120395009d0c125a298c5ff5b431d7e8971d3"
+    },
+    {
+      "name": "대각선샘플.hwp",
+      "sha256": "0ca676c2e2fdca79cc01b01d2743197a8d6dbf078726564085d2e3f8da8a1b8a"
+    },
+    {
+      "name": "대각선샘플3.hwp",
+      "sha256": "18aca9a2b7bacc69af02dd5d46303c2aa8eb05b81b0252060c63ba0b60ee8315"
+    },
+    {
+      "name": "대각선샘플4.hwp",
+      "sha256": "3bf3dae45edb7fa106ff6303e4c4eb15ca6c654c68089cbf5738c4133e8a9a05"
+    },
+    {
+      "name": "대각선샘플5.hwp",
+      "sha256": "746f3bbd5f2398187f81ab6aa9cadc7b04d169c8ff28583dc64a96a858b5f20e"
+    },
+    {
+      "name": "셀보호.hwp",
+      "sha256": "1416f36efe30746ef9bc76e6bd80771cddce0979ebec091ed6d8c08569840fd1"
+    },
+    {
+      "name": "셀보호2.hwp",
+      "sha256": "676c27ab07c3bacbc4241540024b7327b9d2c578b88c37a36f96cda15514c2e2"
+    },
+    {
+      "name": "종이기준.hwp",
+      "sha256": "54327843218105c56bdcad44976d23bfdfa3a7780c37d556d4ad639df81b35c3"
+    },
+    {
+      "name": "쪽기준.hwp",
+      "sha256": "f9f73c4ce6e4b8052b6b8ca5077a3bbf58e5d69efc4b7843bc730a6ec445b92e"
+    }
+  ]
+}

@@ -333,3 +333,45 @@ v1과의 차이: 표·그림·글머리표 후보 6개(같은 6개 문서)는 �
 제품 경로(`hwp-core-commands`)도 같은 엔진에서 양성 11건 게시·재열기(Phase 4 "N7"였던 `h-pen-01.hwp` 표 삽입 포함), OPAQUE-001·raw TBL-001·제품 출력 손상 7종·미리보기 없음 거부를 유지했다.
 
 이 결과는 이 고정 코퍼스와 이 엔진의 수용 기준이다. 제외된 180개(크기·다구역·가져오기 오류·incomplete baseline·사전검사 unsafe/unknown)와 그 밖의 HWP 문서 일반, 외부 한컴 호환, Linux native GUI/IBus는 검증하지 않았다.
+
+### 고정 코퍼스 승인 경계 강화 (2026-11-11)
+
+승인 입력은 Git 추적 `scripts/tests/fixtures/hwp-approved-corpus-108.json`이다. 기존
+`target/hwp-compat-recovery/corpus-108.json`과 v2·v3·v6의 complete-baseline/preflight-SAFE
+집합을 대조해 108개 이름·SHA-256이 모두 같고 실제 샘플 바이트도 일치함을 확인했다.
+이는 로컬 과거 증거의 교차 확인이며 외부 서명 인증은 아니다. 승인 manifest의 전체 바이트
+SHA-256은 `scripts/tests/hwpApprovedCorpus.ts`의 별도 lock에 고정한다. 문서 목록은 이름의
+Unicode code point 순으로 정렬하며 mapping digest(name TAB hash LF, UTF-8)는
+`f1522b4432af630f9133e3c18490353ee0eb24fa41971433e0056d9dac6e55d4`이다.
+
+공통 검증기는 정확히 108개, 고유 이름·해시, NFC 단일 파일명(경로·별칭 금지), 해시 문법,
+승인 mapping의 완전 일치, 실제 regular file의 SHA-256을 검사한다. acceptance는 각 문서의
+측정 행 정확히 하나와 연산 4종, 결과·게시 ID의 고유성, source/hash/operation 연결,
+실제 original/edited/published 바이트, durable/SAFE 게시와 독립 재열기 결과를 요구한다.
+게시 바이트 해시도 432개에서 중복되면 거부한다. 발견 288개 전체 측정 행은 유지한다.
+빈 목록·복제·대체·누락·경로 공격·승인 파일 변경은 합성 fixture로 회귀 검사한다.
+
+깨끗한 checkout에서 별도로 공급한 원래 corpus의 신원만 검사하려면 Node >=22.18에서:
+
+```sh
+node scripts/tests/hwpApprovedCorpus.ts external/rhwp/samples
+```
+
+Rust/WASM/Canvas 없이 동작하고 누락·변조는 `FAIL/MISSING_INPUT`, exit 1이다.
+원본 corpus 자체와 `public/rhwp/`, `target/`, `src-tauri/target/`의 측정·게시·보고서는
+Git에 넣지 않는다. 일반 measure/verify/accept는 승인 manifest를 쓰지 않는다. 승인 변경은
+별도 유지보수 변경으로 원래 승인 근거·전체 mapping diff·코드 lock을 함께 검토해야 한다.
+측정 성공으로 자동 재선정하지 않는다.
+
+실제 432건 재현에는 승인 Release generation
+`907eabb217721131eee04d01f13e0a0d54332542462c36ee95fb6ada9744a20f`, 원본 corpus,
+현재 Rust `save_check`와 publication test binary, picture fixture, Canvas raster/proof가 필요하다.
+기존 measure → Canvas → production publication → verify → accept 순서를 사용한다.
+`GEUL_HWP_MATRIX_CORPUS`를 주면 그 목록도 승인 mapping과 대조하며, 생략하면 추적 승인을 쓴다.
+432/432는 현재 checker로 다시 게시한 결과에 대해 verify의 실제 새 인스턴스 재열기와
+strict accept가 모두 성공해야 유효하다. 과거 acceptance.json만으로 현재 코드 성공을 주장하지 않는다.
+
+이번 강화 후 현재 Rust 바이너리로 원래 432개 후보를 다시 production 게시하고, 승인 WASM으로
+게시 파일을 새로 열어 strict accept **432/432**(연산별 108/108)를 확인했다. 과거 Canvas
+증거는 변경 없는 generation/edited hash로 인증해 재사용했고, 과거 PASS 판정을 재사용하지 않았다.
+실행 기록은 ignored `target/hwp-integrity-hardening/verification-summary.json`과 `matrix/`에 둔다.
