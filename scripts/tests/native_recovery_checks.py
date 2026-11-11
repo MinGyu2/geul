@@ -69,40 +69,116 @@ class Steps:
         return detail
 
 
+LAUNCH_PHASES = ('launch1', 'launch2')  # checkpoint crash, then fresh restore
+
+
 def overall(report, required):
-    """('PASS' | 'FAIL', problems). PASS only when every required format ran to its end (`status` PASS), every
-    required step of that format is recorded exactly as PASS, no step anywhere is FAIL, no error was recorded
-    and every process teardown completed without survivors. `required` maps format -> required step names."""
+    """Fail closed on incomplete steps and one-to-one launch/teardown evidence.
+
+    Optional named steps may pass, but cannot replace mandatory steps. Each required
+    format has two real app launches; PID/start-time identity is captured by pidfd.
+    """
     problems = []
-    if report.get('error'):
+    def collection(value, label):
+        if not isinstance(value, list):
+            problems.append(f'{label}: missing or malformed collection')
+            return []
+        return value
+
+    if not isinstance(report, dict) or not isinstance(required, dict):
+        return 'FAIL', ['malformed report or required-step declaration']
+    if not required:
+        problems.append('no required formats declared')
+    if report.get('error') is not None:
         problems.append(f'error recorded: {report["error"]}')
     entries = {}
-    for entry in report.get('formats', []):
-        if entry.get('format') in entries:
-            problems.append(f'format {entry.get("format")} recorded twice')
-        entries[entry.get('format')] = entry
-    for fmt, names in required.items():
-        entry = entries.get(fmt)
-        if entry is None:
-            problems.append(f'{fmt}: not run')
+    for entry in collection(report.get('formats'), 'formats'):
+        if not isinstance(entry, dict) or not isinstance(entry.get('format'), str):
+            problems.append('malformed format evidence')
             continue
+        fmt = entry['format']
+        if fmt in entries:
+            problems.append(f'format {fmt} recorded twice')
+        if fmt not in required:
+            problems.append(f'unexpected format {fmt}')
+        entries[fmt] = entry
+        recorded = {}
+        for row in collection(entry.get('steps'), f'{fmt}: steps'):
+            if not isinstance(row, dict) or not isinstance(row.get('step'), str) or not row['step']:
+                problems.append(f'{fmt}: malformed step evidence')
+                continue
+            recorded.setdefault(row['step'], []).append(row.get('status'))
+            if row.get('status') != 'PASS':
+                problems.append(f'{fmt}: step {row["step"]!r} is {row.get("status")!r}')
+        names = required.get(fmt)
+        if not isinstance(names, (list, tuple)) or not names or any(not isinstance(n, str) or not n for n in names):
+            problems.append(f'{fmt}: no valid required steps declared')
+            continue
+        if len(set(names)) != len(names):
+            problems.append(f'{fmt}: duplicate required-step declaration')
+        for name in names:
+            count = len(recorded.get(name, []))
+            if count != 1:
+                problems.append(f'{fmt}: required step {name!r} must occur exactly once (observed {count})')
         if entry.get('status') != 'PASS':
             problems.append(f'{fmt}: scenario did not complete (status {entry.get("status")!r})')
-        recorded = {}
-        for row in entry.get('steps', []):
-            recorded.setdefault(row.get('step'), []).append(row.get('status'))
-        for name in names:
-            if name not in recorded:
-                problems.append(f'{fmt}: required step not executed: {name}')
-        if not names:
-            problems.append(f'{fmt}: no required steps declared')
-    for entry in report.get('formats', []):
-        for row in entry.get('steps', []):
-            if row.get('status') != 'PASS':
-                problems.append(f'{entry.get("format")}: step {row.get("step")!r} is {row.get("status")!r}')
-    for at, teardown in enumerate(report.get('teardown', [])):
-        if not teardown.get('complete') or teardown.get('remainingAfterWait') or teardown.get('survivorsAfterSigterm'):
+    for fmt in required:
+        if fmt not in entries:
+            problems.append(f'{fmt}: not run')
+
+    # Stable launch IDs are scoped by format and scenario phase, then bound to
+    # the observed app PID/start time and isolated directory, never list position.
+    launches = {}
+    identities = set()
+    expected = {f'{fmt}:{phase}' for fmt in required for phase in LAUNCH_PHASES}
+    for launch in collection(report.get('launches'), 'launches'):
+        if not isinstance(launch, dict):
+            problems.append('malformed launch evidence')
+            continue
+        lid = launch.get('id')
+        if not isinstance(lid, str) or lid not in expected:
+            problems.append(f'unexpected launch identity {lid!r}')
+            continue
+        if lid in launches:
+            problems.append(f'duplicate launch evidence {lid}')
+        launches[lid] = launch
+        pid, start, home = launch.get('pid'), launch.get('startTime'), launch.get('dataHome')
+        if (type(pid) is not int or pid <= 0 or type(start) is not int or start <= 0
+                or not isinstance(home, str) or not home.startswith('/')):
+            problems.append(f'{lid}: incomplete app process identity')
+        else:
+            identity = (pid, start)
+            if identity in identities:
+                problems.append(f'{lid}: duplicate app process identity')
+            identities.add(identity)
+    for lid in sorted(expected - launches.keys()):
+        problems.append(f'missing required launch {lid}')
+    seen = set()
+    teardowns = collection(report.get('teardown'), 'teardown')
+    if len(teardowns) != len(expected):
+        problems.append(f'teardown count {len(teardowns)} != required launch count {len(expected)}')
+    for at, teardown in enumerate(teardowns):
+        if not isinstance(teardown, dict):
+            problems.append(f'teardown {at}: malformed evidence')
+            continue
+        lid = teardown.get('launchId')
+        if not isinstance(lid, str) or lid not in launches:
+            problems.append(f'teardown {at}: no corresponding required launch {lid!r}')
+        else:
+            if lid in seen:
+                problems.append(f'duplicate teardown for {lid}')
+            seen.add(lid)
+            launch = launches[lid]
+            if any(teardown.get(k) != launch.get(k) for k in ('pid', 'startTime', 'dataHome')):
+                problems.append(f'teardown {at}: contradictory launch identity {lid}')
+        if (teardown.get('complete') is not True
+                or teardown.get('remainingAfterWait') != []
+                or teardown.get('survivorsAfterSigterm') != []
+                or teardown.get('sigtermErrors') != []
+                or type(teardown.get('driverExit')) is not int):
             problems.append(f'teardown {at} incomplete or left processes')
+    for lid in sorted(expected - seen):
+        problems.append(f'missing completed teardown for {lid}')
     return ('FAIL' if problems else 'PASS'), problems
 
 

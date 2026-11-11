@@ -241,6 +241,16 @@ class RuntimeIdentity(unittest.TestCase):
                 checks.compare_runtime_identity(bad, INDEPENDENT)
 
 
+def complete_report():
+    launches = [{'id': f'hwp:{phase}', 'pid': 100 + n, 'startTime': 200 + n, 'dataHome': '/isolated/hwp'}
+                for n, phase in enumerate(checks.LAUNCH_PHASES)]
+    return {'formats': [{'format': 'hwp', 'status': 'PASS', 'steps': [{'step': 'a', 'status': 'PASS'}]}],
+            'launches': launches,
+            'teardown': [{'launchId': row['id'], **{k: row[k] for k in ('pid', 'startTime', 'dataHome')},
+                          'complete': True, 'remainingAfterWait': [], 'survivorsAfterSigterm': [],
+                          'sigtermErrors': [], 'driverExit': 0} for row in launches]}
+
+
 class Accounting(unittest.TestCase):
     def test_failed_step_raises_and_is_recorded(self):
         entry = {}
@@ -253,9 +263,22 @@ class Accounting(unittest.TestCase):
         with self.assertRaises(checks.AcceptanceError):
             checks.require(False, 'hwpx', 'setup', 1, 'x')
 
+    def test_missing_teardown_duplicate_step_and_incomplete_cleanup_explain_failure(self):
+        import copy
+        for kind, message in (('missing', 'teardown'), ('duplicate', 'exactly once'), ('incomplete', 'incomplete')):
+            report = copy.deepcopy(complete_report())
+            if kind == 'missing':
+                del report['teardown']
+            elif kind == 'duplicate':
+                report['formats'][0]['steps'] *= 2
+            else:
+                report['teardown'][0]['complete'] = False
+            status, problems = checks.overall(report, {'hwp': ['a']})
+            self.assertEqual(status, 'FAIL')
+            self.assertIn(message, '; '.join(problems))
+
     def test_overall_requires_every_format_step_and_clean_teardown(self):
-        good = {'formats': [{'format': 'hwp', 'status': 'PASS', 'steps': [{'step': 'a', 'status': 'PASS'}]}],
-                'teardown': [{'complete': True, 'remainingAfterWait': [], 'survivorsAfterSigterm': []}]}
+        good = complete_report()
         self.assertEqual(checks.overall(good, {'hwp': ['a']})[0], 'PASS')
         cases = [
             {**good, 'formats': [{**good['formats'][0], 'steps': [{'step': 'a', 'status': 'PASS'}, {'step': 'b', 'status': 'FAIL'}]}]},

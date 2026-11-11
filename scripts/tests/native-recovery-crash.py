@@ -185,6 +185,28 @@ def required_steps(fmt):
     return [name for name in REQUIRED_STEPS if fmt == 'hwp' or name not in HWP_ONLY_STEPS]
 
 
+@contextlib.contextmanager
+def acceptance_launch(args, fmt, phase, data_home, report):
+    """Bind the shared driver's actual teardown to the pidfd-verified app launch.
+
+    The shared driver has no launch ID. Its live ACTIVE teardown is extended here,
+    rather than synthesizing cleanup evidence or matching by array position.
+    """
+    launch = {'id': f'{fmt}:{phase}', 'dataHome': str(data_home)}
+    report.setdefault('launches', []).append(launch)
+    with smoke.tauri_driver(str(args.driver), args.port, str(data_home)) as start:
+        teardown = smoke.ACTIVE['teardown']
+        teardown.update(launchId=launch['id'], dataHome=str(data_home))
+        def identified_start():
+            driver = start()
+            with checks.OwnedProcess(args.app, str(data_home)) as process:
+                identity = {'pid': process.pid, 'startTime': process.start}
+                launch.update(identity)
+                teardown.update(identity)
+            return driver
+        yield identified_start
+
+
 def run_format(args, fmt, engine, report):
     out = args.out / fmt
     out.mkdir()
@@ -203,7 +225,7 @@ def run_format(args, fmt, engine, report):
     # ---------------- launch 1 ----------------
     smoke.DRIVER_LOG = str(out / 'driver-1.log')
     killed = None
-    with contextlib.ExitStack() as owned_stack, smoke.tauri_driver(str(args.driver), args.port, str(data_home)) as start:
+    with contextlib.ExitStack() as owned_stack, acceptance_launch(args, fmt, 'launch1', data_home, report) as start:
         d = start()
         try:
             a = base.Acceptance(args, d, report)
@@ -308,7 +330,7 @@ def run_format(args, fmt, engine, report):
     existing.write_bytes(b'existing destination must not be overwritten')
     existing_sha = sha(existing)
     destination = out / f'restored.{fmt}'
-    with smoke.tauri_driver(str(args.driver), args.port, str(data_home)) as start:
+    with acceptance_launch(args, fmt, 'launch2', data_home, report) as start:
         d = start()
         try:
             a = base.Acceptance(args, d, report)
@@ -396,7 +418,7 @@ def main():
         report['error'] = type(error).__name__ + ': ' + str(error)
     report['teardown'] = smoke.TEARDOWN
     # The overall result is derived from the recorded evidence, never set optimistically.
-    report['status'], report['problems'] = checks.overall(report, {fmt: required_steps(fmt) for fmt in args.formats})
+    report['status'], report['problems'] = checks.overall(report, {fmt: required_steps(fmt) for fmt in ('hwp', 'hwpx')})
     (args.out / 'result.json').write_text(json.dumps(report, ensure_ascii=False, indent=2, default=str) + '\n')
     print(f"overall {report['status']}" + ''.join('\n  ' + p for p in report['problems']))
     return 0 if report['status'] == 'PASS' else 1
