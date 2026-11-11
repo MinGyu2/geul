@@ -1,4 +1,5 @@
 """Focused regressions for native_recovery_checks (T014 native recovery acceptance helpers)."""
+import copy
 import json
 import os
 from pathlib import Path
@@ -294,6 +295,82 @@ class Accounting(unittest.TestCase):
         self.assertEqual(checks.overall(good, {'hwp': []})[0], 'FAIL')
 
 
+class FalsePassMatrix(unittest.TestCase):
+    """Each mutation targets production evidence; no second verifier implementation."""
+    def test_negative_evidence_matrix(self):
+        mutations = {
+            'missing teardown': lambda r: r.pop('teardown'),
+            'empty teardown': lambda r: r.update(teardown=[]),
+            'too few teardown': lambda r: r['teardown'].pop(),
+            'too many teardown': lambda r: r['teardown'].append(copy.deepcopy(r['teardown'][0])),
+            'duplicate lifecycle': lambda r: r['launches'].append(copy.deepcopy(r['launches'][0])),
+            'duplicate teardown replacing missing launch': lambda r: r['teardown'].__setitem__(1, copy.deepcopy(r['teardown'][0])),
+            'incomplete teardown': lambda r: r['teardown'][0].update(complete=False),
+            'surviving app': lambda r: r['teardown'][0].update(remainingAfterWait=[{'pid': 100, 'comm': 'geul', 'state': 'S'}]),
+            'surviving descendant': lambda r: r['teardown'][0].update(survivorsAfterSigterm=[{'pid': 102, 'comm': 'WebKitWebProcess', 'state': 'S'}]),
+            'stale teardown': lambda r: r['teardown'][0].update(launchId='hwp:old'),
+            'contradictory teardown': lambda r: r['teardown'][0].update(startTime=999),
+            'missing mandatory step': lambda r: r['formats'][0].update(steps=[]),
+            'duplicate mandatory PASS': lambda r: r['formats'][0]['steps'].append({'step': 'a', 'status': 'PASS'}),
+            'inconsistent duplicate step': lambda r: r['formats'][0]['steps'].append({'step': 'a', 'status': 'FAIL'}),
+            'mandatory FAIL': lambda r: r['formats'][0]['steps'][0].update(status='FAIL'),
+            'missing format': lambda r: r.update(formats=[]),
+            'duplicate format': lambda r: r['formats'].append(copy.deepcopy(r['formats'][0])),
+            'missing scenario status': lambda r: r['formats'][0].pop('status'),
+            'incomplete scenario': lambda r: r['formats'][0].update(status='RUNNING'),
+            'unexpected error': lambda r: r.update(error='unexpected failure'),
+            'empty error is still recorded': lambda r: r.update(error=''),
+            'missing launches': lambda r: r.pop('launches'),
+            'empty launches': lambda r: r.update(launches=[]),
+            'reused app process': lambda r: r['launches'][1].update(pid=100, startTime=200),
+            'missing process start time': lambda r: r['launches'][0].pop('startTime'),
+            'missing survivor observation': lambda r: r['teardown'][0].pop('survivorsAfterSigterm'),
+            'truthy complete string': lambda r: r['teardown'][0].update(complete='true'),
+            'missing driver exit': lambda r: r['teardown'][0].pop('driverExit'),
+            'missing step status': lambda r: r['formats'][0]['steps'][0].pop('status'),
+            'malformed step': lambda r: r['formats'][0]['steps'].append(None),
+            'malformed step name': lambda r: r['formats'][0]['steps'][0].update(step=[]),
+            'malformed format': lambda r: r['formats'].append(None),
+            'malformed launch': lambda r: r['launches'].append(None),
+            'malformed teardown': lambda r: r['teardown'].__setitem__(0, None),
+        }
+        for name, mutate in mutations.items():
+            with self.subTest(case=name):
+                report = copy.deepcopy(complete_report())
+                mutate(report)
+                status, problems = checks.overall(report, {'hwp': ['a']})
+                self.assertEqual(status, 'FAIL')
+                self.assertTrue(problems, name)
+        for required in ({}, {'hwp': []}, {'hwp': None}, {'hwp': ['a', 'a']}, {'hwp': [None]}):
+            with self.subTest(required=required):
+                self.assertEqual(checks.overall(complete_report(), required)[0], 'FAIL')
+        for field in ('formats', 'launches', 'teardown'):
+            for malformed in (None, {}, '', True):
+                report = complete_report()
+                report[field] = malformed
+                with self.subTest(field=field, malformed=malformed):
+                    self.assertEqual(checks.overall(report, {'hwp': ['a']})[0], 'FAIL')
+
+    def test_complete_formats_and_optional_steps(self):
+        report = complete_report()
+        second = copy.deepcopy(report)
+        second['formats'][0]['format'] = 'hwpx'
+        second['formats'][0]['steps'] = [{'step': 'hwpx-only', 'status': 'PASS'}]
+        for launch, teardown in zip(second['launches'], second['teardown']):
+            launch.update(id=launch['id'].replace('hwp:', 'hwpx:'), pid=launch['pid'] + 10,
+                          dataHome='/isolated/hwpx')
+            teardown.update(launchId=launch['id'], pid=launch['pid'], dataHome=launch['dataHome'])
+        for field in ('formats', 'launches', 'teardown'):
+            report[field] += second[field]
+        report['formats'][0]['steps'].append({'step': 'optional diagnostic', 'status': 'PASS'})
+        required = {'hwp': ['a'], 'hwpx': ['hwpx-only']}
+        self.assertEqual(checks.overall(report, required), ('PASS', []))
+        report['formats'].pop()
+        status, problems = checks.overall(report, required)
+        self.assertEqual(status, 'FAIL')
+        self.assertIn('hwpx: not run', problems)
+
+
 # Runs the real native-recovery-crash.py main() with run_format replaced by one deliberately failing step.
 NEGATIVE = r'''
 import importlib.util, sys
@@ -312,9 +389,37 @@ sys.exit(crash.main())
 '''
 
 
+# Controlled evidence only: exercises the real CLI finalization and exit code;
+# it is explicitly not a native app acceptance execution.
+EVIDENCE_MAIN = r'''
+import importlib.util, sys
+spec = importlib.util.spec_from_file_location('crash', sys.argv[1]); crash = importlib.util.module_from_spec(spec); spec.loader.exec_module(crash)
+case = sys.argv[6]
+crash.smoke.TEARDOWN = []
+def run_format(args, fmt, engine, report):
+    offset = 100 if fmt == 'hwp' else 200
+    entry = {'format': fmt, 'status': 'PASS', 'steps': [{'step': n, 'status': 'PASS'} for n in crash.required_steps(fmt)]}
+    report['formats'].append(entry)
+    for n, phase in enumerate(crash.checks.LAUNCH_PHASES):
+        launch = {'id': f'{fmt}:{phase}', 'pid': offset+n, 'startTime': offset+n, 'dataHome': f'/isolated/{fmt}'}
+        report.setdefault('launches', []).append(launch)
+        crash.smoke.TEARDOWN.append({'launchId': launch['id'], **{k: launch[k] for k in ('pid', 'startTime', 'dataHome')},
+                                   'complete': True, 'remainingAfterWait': [], 'survivorsAfterSigterm': [], 'sigtermErrors': [], 'driverExit': 0})
+    if fmt == 'hwpx':
+        if case == 'empty-teardown': crash.smoke.TEARDOWN.clear()
+        elif case == 'duplicate-step': entry['steps'].append(entry['steps'][0].copy())
+        elif case == 'stale-teardown': crash.smoke.TEARDOWN[0]['launchId'] = 'stale'
+        elif case == 'missing-format': report['formats'].pop()
+crash.run_format = run_format
+sys.argv = ['crash', '--app', sys.argv[2], '--app-sha256', sys.argv[3], '--driver', sys.argv[2], '--out', sys.argv[4],
+            '--fixtures', sys.argv[5], '--xdotool', 'x', '--ibus', 'x']
+sys.exit(crash.main())
+'''
+
+
 @unittest.skipUnless((TEST_DIR.parents[1] / 'dist/rhwp/BUILD.json').exists(), 'needs the built dist/rhwp Release engine')
 class OptimizedInterpreter(unittest.TestCase):
-    def run_main(self, flags, env):
+    def run_main(self, flags, env, code=NEGATIVE, case="failed-step"):
         with tempfile.TemporaryDirectory(prefix='geul-negative-') as tmp:
             tmp = Path(tmp)
             app, fixtures = tmp / 'app', tmp / 'fixtures'
@@ -322,8 +427,8 @@ class OptimizedInterpreter(unittest.TestCase):
             fixtures.mkdir()
             import hashlib
             digest = hashlib.sha256(app.read_bytes()).hexdigest()
-            done = subprocess.run([sys.executable, *flags, '-c', NEGATIVE, str(TEST_DIR / 'native-recovery-crash.py'), str(app), digest,
-                                   str(tmp / 'out'), str(fixtures)], capture_output=True, text=True, env={**os.environ, **env}, timeout=120)
+            done = subprocess.run([sys.executable, *flags, '-c', code, str(TEST_DIR / 'native-recovery-crash.py'), str(app), digest,
+                                   str(tmp / 'out'), str(fixtures), case], capture_output=True, text=True, env={**os.environ, **env}, timeout=120)
             result = json.loads((tmp / 'out' / 'result.json').read_text())
             return done, result
 
@@ -337,6 +442,19 @@ class OptimizedInterpreter(unittest.TestCase):
                 self.assertEqual([r['status'] for r in result['formats'][0]['steps']], ['FAIL'])
                 self.assertNotIn('status', result['formats'][0])  # the line after the failed step never ran
                 self.assertIn('overall FAIL', done.stdout)
+
+    def test_real_main_finalizes_controlled_invalid_evidence(self):
+        for flags, env in (([], {'PYTHONOPTIMIZE': ''}), (['-O'], {}), (['-OO'], {}), ([], {'PYTHONOPTIMIZE': '1'})):
+            for case, message in (('empty-teardown', 'teardown count'), ('duplicate-step', 'exactly once'),
+                                  ('stale-teardown', 'corresponding required launch'), ('missing-format', 'hwpx: not run'),
+                                  ('valid', None)):
+                with self.subTest(flags=flags, env=env, case=case):
+                    done, result = self.run_main(flags, env, EVIDENCE_MAIN, case)
+                    self.assertEqual(done.returncode, 0 if case == 'valid' else 1, done.stderr)
+                    self.assertEqual(result['status'], 'PASS' if case == 'valid' else 'FAIL')
+                    if message:
+                        self.assertIn(message, '; '.join(result['problems']))
+                        self.assertIn('overall FAIL', done.stdout)
 
     def test_optimized_interpreter_really_strips_assert(self):
         done = subprocess.run([sys.executable, '-O', '-c', 'assert False; print("stripped")'], capture_output=True, text=True)
