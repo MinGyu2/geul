@@ -1606,24 +1606,67 @@ LINE_SEG는 36 bytes(u32 + i32×7 + u32)이고 bytes 4..8은 signed i32 HWPUNIT
 원본 frame 정보를 사용한다. 모든 정상 문서에 동일 delta를 가정할 수 없다.
 
 T009는 opaque payload·owner subtree·수준·순서 및 LINE_SEG의 비위치 바이트를 보존한다.
-변경 없는 owner는 기존 정책대로 보존한다. 위치가 바뀐 최상위 문단에만 좁은 예외를 둔다:
-소유 문단 모든 segment의 이동량이 같고, 앞선 비레이아웃 레코드에 지원 편집이 존재하며,
-원본과 출력 모두 구역 첫 원점을 보존하는 연속 줄 사다리에서 좌표가 독립 재계산되어야 한다.
-advance는 RHWP와 같이 text-height가 양수이고 line-height보다 작으면 text-height + spacing,
-그 밖에는 line-height + spacing이다. 양수 높이, baseline 범위, 음수 위치·간격 금지,
-checked i32 덧셈, 줄 연결, frame flag를 검사한다. 절대 이동량 상한은 없다.
+변경 없는 owner는 기존 정책대로 보존한다. 변경된 최상위 소유 문단의 segment들은 동일한
+이동량이어야 한다. 연속 배치 산술만으로는 이동의 정당성을 증명할 수 없다.
 
-간격·리셋·쪽/단 경계 또는 중첩 owner의 **변경된** 좌표를 이 proof로 설명할 수 없으면
-fail-closed다. 변경 없는 기존 frame·불투명 기록은 계속 보존한다. 별도 pagination 엔진을
-Rust checker에 도입하지 않으므로 임의의 repagination 이동까지 인증하지 않는다.
-고정 432건의 기존 위치 변경은 S73-table의 두 문단이며 연속 사다리로 설명된다.
+#### 지표의 원본 출처 검증 (2026-11-11)
 
-계약 시험은 앞선 문단 편집/줄높이 변경 뒤의 정상 이동과 큰 이동, 기존 range-tag/unknown
-record 보존을 확인한다. 단일 좌표 변조, 불일치 delta, 근거 없는 균일 이동, malformed 길이,
-음수·겹침·overflow, 높이·다른 필드·opaque payload·계층 변경은 실제 저장 서비스에서 거부하고
-원본 바이트와 dirty 상태를 유지해야 한다. 승인 corpus 검증은
-[고정 코퍼스 승인 경계](core-insertions.md#고정-코퍼스-승인-경계-강화-2026-11-11)를 따른다.
+이전 `ladder()`는 candidate의 height/text-height/baseline/spacing을 신뢰했다. 실제 재현에서
+지원 텍스트 삽입에 캐시 변조를 덧붙여도 저장됐다: `(lh, th, baseline, spacing)`을
+`(1000,1000,800,600)`에서 `(1200,1200,960,600)`으로 바꾸고 owner y를
+`1600/3200 → 1800/3400`으로 맞추면 raw는 PrvImage stale뿐이고 production 게시가 durable이었다.
+가짜 1,000,000 높이, text-height 감소, spacing 증가, baseline+spacing 변조도 같은 경계를
+통과했다. reopen=true나 같은 캐시를 다시 읽는 reopen은 지표의 독립 근거가 아니다.
 
-검증 결과: opaque 집중 시험 2 PASS(신규 계약 안의 정상 이동 3종·손상 거부 12종 포함),
-`services::save` 210 PASS / 23 ignored / 0 FAIL. 현재 Rust production 재게시 및 독립 재열기는
-432/432 PASS다. RHWP patch/WASM과 DOCX/HWPX 코드는 변경하지 않았다.
+새 예외는 **신뢰하는 원본의 줄 지표**와 원본 paragraph/style/char-shape 문맥으로 한정한다.
+이동 owner 앞의 원본·출력 문단은 같은 원본 지표(height, text-height, baseline, spacing,
+column origin, flags)를 가진 단일 줄, 동일한 단일 char-shape run, 동일한 원본 para/style ID를
+유지해야 한다. 출력 지표를 새 지표의 권위로 사용하지 않는다. 앞선 nonempty 원본 문단의
+literal text도 문단별로 유지한다(새 글자·새 wrapping은 측정하지 않는다). 빈 문단이나
+검증된 제어만 담은 문단의 삽입은
+기존 paragraph-boundary/additive proof를 통과해야 하며, 추가 advance는 실제 문단 경계 수와
+**복제된 원본 지표**로 결정된다. 고정 RHWP `model/paragraph.rs::split_at`이 원본 첫 줄의
+height/text-height/baseline/spacing을 복제하는 동작을 확인했다. 새 텍스트 reflow는
+`renderer/composer/line_breaking.rs`의 글자·스타일·폰트·폭 측정이 필요하므로 이 Rust 예외로
+추측하지 않는다. 따라서 같은 문단 수에서 높이·간격을 함께 바꾸는 공격이나
+텍스트 측정 근거 없이 LINE_SEG만 추가하는 가짜 reflow는 거부한다. 원본 정의 보존·리소스·문단
+의미 검사는 기존 `hwp.rs`/`insertions.rs` 경계에서 계속 수행한다.
+
+출력의 줄너비 0은 Rust가 전체 additive object proof를 성공시킨 경우의 기존 basic-object
+placeholder만 허용한다. 이 내부 판정은 클라이언트 flag가 아니며 높이 지표 예외도 아니다.
+그 proof가 없는 일반 편집에서는 구역·단 설정을 포함한 control 레코드도 원본과 같아야 한다.
+일반 object-driven 높이 변경을 새롭게 인증하지 않는다.
+
+이 출처 검증 뒤에만 구역 첫 원점을 보존하는 연속 줄 사다리를 검사한다. RHWP와 같은 text-axis
+advance를 checked i32 덧셈으로 계산하고 음수·부적절한 높이/baseline·frame flag·불연속을 거부한다.
+최장 변경 prefix를 스트림당 한 번 검증해 owner마다 전체 prefix를 반복 검사하지 않는다.
+절대 높이·이동량 상한은 없다. 양성 큰 이동 시험은 높이를 1,000,000으로 위조하는 대신 동일한
+원본 지표를 갖는 빈 문단 700개를 실제 삽입하여 1,120,000 HWPUNIT의 이동을 유도한다.
+이것은 원본 지표·문단 경계로 검증하는 저장 좌표축 시험이며, 외부 한컴 조판 인증은 아니다.
+
+새로운 글자 측정이 필요한 텍스트 reflow, 문단 간격·폰트/스타일 변경, 혼합 지표 prefix,
+쪽·단 리셋, 중첩 owner 또는 일반 object-driven 이동은 독립 layout authority가 없어
+변경된 좌표 예외로 인증하지 않는다. 해당 변경은 fail-closed이며, 변경 없는 원래 frame과
+opaque 구조는 계속 보존한다. 이 범위를 넓히려면 Rust 경계에서 검증 가능한 새 layout proof가 필요하다.
+고정 corpus에서 기존 S73-table의 두 owner 이동은 원본 지표를 유지한 삽입 문단으로 설명된다.
+
+계약 시험은 unchanged owner·앞선 텍스트 편집·원본 지표에 따른 작은/큰 이동을 검사한다.
+위치 단독, coordinated height/text-height/spacing/baseline, 가짜 추가 줄, 불일치 segment,
+malformed 길이, 음수·overflow, owner 높이·baseline·다른 필드·opaque payload·계층 및 page/column
+reset 변조는 바이트 변경을 확인한 뒤 `RecordsChanged`와 실제 게시 거부·원본 보존·dirty 유지를
+확인한다. 기존 range-tag/unknown-record 시험도 유지한다. 승인 corpus/lock/분모는 바꾸지 않는다.
+승인 신원 검증은 [고정 코퍼스 승인 경계](core-insertions.md#고정-코퍼스-승인-경계-강화-2026-11-11)를 따른다.
+
+회귀는 새 glyph 거부에 가려지지 않도록 원문 literal text를 그대로 유지한 coordinated 지표
+변조 5종도 포함한다. 총 30개 음성 변형은 각각 RecordsChanged·production 게시 거부·원본
+바이트 보존·dirty 유지를 확인한다. 집중 시험의 정상 3종은 owner 불변 텍스트 편집과 원본
+지표에 근거한 빈 문단 1개/700개 삽입이다. 실행 기록은 ignored `target/hwp-geometry-proof/`에 둔다.
+
+최종 현재 코드 검증: opaque 집중 시험 2 PASS(30개 실제 게시 거부·3개 정상 fixture),
+`services::save` 210 PASS / 23 ignored / 0 FAIL, fmt·Clippy(`--lib -- -D warnings`)·현재
+`save_check` 빌드 PASS. 승인 원본 신원 108/108과 identity/classification Vitest 57 PASS.
+변경 없는 승인 Release/인증된 Canvas 증거로 **현재 Rust production 게시를 새로 실행**한 뒤
+게시 파일 독립 재열기·strict accept가 432/432 PASS(text/table/picture/bullets 각108)였다.
+S73-table(`h-pen-01.hwp`)도 게시·재열기 PASS다. 원시 checker의 `previewStale@PrvImage`는
+production의 기존 미리보기 재생성 정책으로 해소되며 geometry 거부가 아니다. 전체 명령·종료 코드는
+ignored `target/hwp-geometry-proof/final-verification-summary.json`에 둔다. RHWP WASM은 재빌드하지 않았다.

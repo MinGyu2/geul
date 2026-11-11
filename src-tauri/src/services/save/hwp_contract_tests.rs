@@ -1911,27 +1911,199 @@ fn hwp_opaque_owner_requires_derived_line_position_movement() {
             ],
         )
     };
-    let lines = |first| [line(first, 1000), line(first + 1600, 1000)].concat();
+    let lines = |first: i32| {
+        let first_line = line(first, 1000);
+        let mut second = line(first + 1600, 1000);
+        second[..4].copy_from_slice(&3u32.to_le_bytes());
+        [first_line, second].concat()
+    };
     let original = build("Keep 한글", 1000, lines(1600), None);
-    // Independent prefix geometry derives both new positions, including a large displacement.
-    for height in [1000, 1200, 1_000_000] {
-        let valid = build("Keep 한글 more", height, lines(height + 600), None);
-        let findings = raw_findings(&original, &valid, true);
-        assert!(
-            !findings
+    let good = build("Keep 한글 more", 1000, lines(1600), None);
+    // Source-derived geometry witness: each added empty paragraph has the same
+    // para/style/run and unchanged original metrics. Displacement comes from actual
+    // paragraph boundaries, never a fabricated taller cache. 700 adds >1M HWPUNIT.
+    for count in [0i32, 1, 700] {
+        let text = if count == 0 {
+            "Keep 한글 more"
+        } else {
+            "Keep 한글"
+        };
+        let candidate = build(text, 1000, lines((count + 1) * 1600), None);
+        let valid = edit_records(&candidate, "/BodyText/Section0", |rs| {
+            let owner = rs
                 .iter()
-                .any(|f| f.code == FindingCode::RecordsChanged),
-            "{height}: {findings:?}"
-        );
-        let (saved, _, _) = publish(&original, &valid, Some(&raster()));
-        assert!(saved.unwrap().durable);
+                .enumerate()
+                .filter(|(_, r)| r.0 == 66 && r.1 == 0)
+                .nth(1)
+                .unwrap()
+                .0;
+            let mut added = Vec::new();
+            for n in 1..=count {
+                let mut blank = paragraph_records(0, 0, "", &[]);
+                blank[3].2 = line(n * 1600, 1000);
+                added.extend(blank);
+            }
+            rs.splice(owner..owner, added);
+        });
+        let findings = raw_findings(&original, &valid, true);
+        assert!(only_stale_preview(&findings), "{count}: {findings:?}");
+        let (saved, _, info) = publish(&original, &valid, Some(&raster()));
+        assert!(saved.unwrap().durable && !info.dirty, "{count}");
     }
+    let one_blank = |text: &str| {
+        let candidate = build(text, 1000, lines(3200), None);
+        edit_records(&candidate, "/BodyText/Section0", |rs| {
+            let owner = rs
+                .iter()
+                .enumerate()
+                .filter(|(_, r)| r.0 == 66 && r.1 == 0)
+                .nth(1)
+                .unwrap()
+                .0;
+            let mut blank = paragraph_records(0, 0, "", &[]);
+            blank[3].2 = line(1600, 1000);
+            rs.splice(owner..owner, blank);
+        })
+    };
     let mut cases = Vec::new();
-    let mut arbitrary = lines(1800);
-    arbitrary[40..44].copy_from_slice(&3401i32.to_le_bytes());
+    // Unchanged metrics alone do not prove that new glyphs fit an original line.
+    cases.push((
+        "unproven new glyphs with movement",
+        one_blank("Keep 한글 more"),
+    ));
+    let changed_page = edit_records(&one_blank("Keep 한글"), "/BodyText/Section0", |rs| {
+        rs.iter_mut().find(|r| r.0 == 73).unwrap().2[0] ^= 1;
+    });
+    cases.push(("unproven section geometry", changed_page));
+    // Old checker durably published these five coordinated mutations (reproduced before the fix).
+    // The preceding text edit is supported; reopen=true is deliberately adversarial.
+    // Only cached geometry changes; original text/style inputs do not justify them.
+    for (name, height, text_height, baseline, spacing) in [
+        ("height+text+baseline", 1200i32, 1200i32, 960i32, 600i32),
+        (
+            "fabricated large geometry",
+            1_000_000,
+            1_000_000,
+            800_000,
+            600,
+        ),
+        ("text-height", 1000, 900, 800, 600),
+        ("spacing", 1000, 1000, 800, 800),
+        ("baseline+spacing", 1000, 1000, 900, 800),
+    ] {
+        let advance = height.min(text_height) + spacing;
+        let candidate = build("Keep 한글 more", 1000, lines(advance), None);
+        let candidate = edit_records(&candidate, "/BodyText/Section0", |rs| {
+            let line = &mut rs.iter_mut().find(|r| r.0 == 69 && r.1 == 1).unwrap().2;
+            for (at, value) in [
+                (8, height),
+                (12, text_height),
+                (16, baseline),
+                (20, spacing),
+            ] {
+                line[at..at + 4].copy_from_slice(&value.to_le_bytes());
+            }
+        });
+        assert_ne!(candidate, original);
+        cases.push((name, candidate));
+    }
+    let metric_base = one_blank("Keep 한글");
+    // Directly exercise metric authority: literal paragraphs are unchanged and the
+    // empty paragraph is a supported edit, so only original metric ancestry can
+    // reject this otherwise continuous ladder. This must not rely on glyph rejection.
+    for (name, height, text_height, baseline, spacing) in [
+        (
+            "source-only height+text+baseline",
+            1200i32,
+            1200i32,
+            960i32,
+            600i32,
+        ),
+        (
+            "source-only fabricated large geometry",
+            1_000_000,
+            1_000_000,
+            800_000,
+            600,
+        ),
+        ("source-only text-height", 1000, 900, 800, 600),
+        ("source-only spacing", 1000, 1000, 800, 800),
+        ("source-only baseline+spacing", 1000, 1000, 900, 800),
+    ] {
+        let candidate = edit_records(&metric_base, "/BodyText/Section0", |rs| {
+            let advance = height.min(text_height) + spacing;
+            for (index, (_, _, bytes)) in
+                rs.iter_mut().filter(|r| r.0 == 69 && r.1 == 1).enumerate()
+            {
+                if index < 2 {
+                    for (at, value) in [
+                        (4, index as i32 * advance),
+                        (8, height),
+                        (12, text_height),
+                        (16, baseline),
+                        (20, spacing),
+                    ] {
+                        bytes[at..at + 4].copy_from_slice(&value.to_le_bytes());
+                    }
+                } else {
+                    for (segment, bytes) in bytes.as_chunks_mut::<36>().0.iter_mut().enumerate() {
+                        bytes[4..8]
+                            .copy_from_slice(&(2 * advance + segment as i32 * 1600).to_le_bytes());
+                    }
+                }
+            }
+        });
+        assert_ne!(
+            candidate, metric_base,
+            "{name}: source-metric mutation did not change bytes"
+        );
+        cases.push((name, candidate));
+    }
+    cases.push((
+        "position only, no edit",
+        build("Keep 한글", 1000, lines(1800), None),
+    ));
+    // A height-only change with th < lh does not affect RHWP's text-axis advance;
+    // combine it with altered spacing to reproduce an effective relocation.
+    let height_spacing = build("Keep 한글 more", 1200, lines(2000), None);
+    cases.push((
+        "height+spacing",
+        edit_records(&height_spacing, "/BodyText/Section0", |rs| {
+            let l = &mut rs.iter_mut().find(|r| r.0 == 69 && r.1 == 1).unwrap().2;
+            l[12..16].copy_from_slice(&1000i32.to_le_bytes());
+            l[16..20].copy_from_slice(&800i32.to_le_bytes());
+            l[20..24].copy_from_slice(&1000i32.to_le_bytes());
+        }),
+    ));
+    for flag in [1u32, 2] {
+        let reset = build("Keep 한글 more", 1000, lines(0), None);
+        cases.push((
+            "unsupported frame reset",
+            edit_records(&reset, "/BodyText/Section0", |rs| {
+                let l = &mut rs
+                    .iter_mut()
+                    .filter(|r| r.0 == 69 && r.1 == 1)
+                    .nth(1)
+                    .unwrap()
+                    .2;
+                l[32..36].copy_from_slice(&flag.to_le_bytes());
+            }),
+        ));
+    }
+    let fake_reflow = build("Keep 한글 more", 1000, lines(3200), None);
+    cases.push((
+        "unproven added line",
+        edit_records(&fake_reflow, "/BodyText/Section0", |rs| {
+            w(&mut rs[0].2, 16, 2);
+            let l = &mut rs.iter_mut().find(|r| r.0 == 69 && r.1 == 1).unwrap().2;
+            l.extend(line(1600, 1000));
+        }),
+    ));
+    let mut arbitrary = lines(1600);
+    arbitrary[40..44].copy_from_slice(&3201i32.to_le_bytes());
     cases.push((
         "inconsistent segments",
-        build("Keep 한글 more", 1200, arbitrary, None),
+        build("Keep 한글 more", 1000, arbitrary, None),
     ));
     let mut single = lines(1600);
     single[4..8].copy_from_slice(&1601i32.to_le_bytes());
@@ -1947,30 +2119,43 @@ fn hwp_opaque_owner_requires_derived_line_position_movement() {
         "no preceding edit",
         build("Keep 한글", 1200, lines(1800), None),
     ));
-    let mut malformed = lines(1800);
+    let mut malformed = lines(1600);
     malformed.pop();
     cases.push((
         "malformed length",
-        build("Keep 한글 more", 1200, malformed, None),
+        build("Keep 한글 more", 1000, malformed, None),
     ));
     for (name, offset, value) in [
         ("negative coordinate", 4, -1i32),
         ("height", 8, 1001),
+        ("owner baseline", 16, 801),
         ("text start", 0, 1),
         ("overlap", 40, 1801),
         ("overflow", 40, i32::MAX),
     ] {
-        let mut bad = lines(1800);
+        let mut bad = lines(1600);
         bad[offset..offset + 4].copy_from_slice(&value.to_le_bytes());
-        cases.push((name, build("Keep 한글 more", 1200, bad, None)));
+        cases.push((name, build("Keep 한글 more", 1000, bad, None)));
     }
     for kind in ["opaque", "hierarchy"] {
-        cases.push((kind, build("Keep 한글 more", 1200, lines(1800), Some(kind))));
+        cases.push((kind, build("Keep 한글 more", 1000, lines(1600), Some(kind))));
     }
+    eprintln!(
+        "opaque geometry: {} production rejection variants",
+        cases.len()
+    );
     for (name, output) in cases {
+        assert_ne!(output, original, "{name}: no mutation");
+        assert_ne!(
+            output, good,
+            "{name}: mutation did not change the valid export"
+        );
+        let findings = raw_findings(&original, &output, true);
         assert!(
-            !only_stale_preview(&raw_findings(&original, &output, true)),
-            "{name} raw accepted"
+            findings
+                .iter()
+                .any(|f| f.code == FindingCode::RecordsChanged),
+            "{name}: expected opaque preservation rejection, got {findings:?}"
         );
         let (saved, bytes, info) = publish(&original, &output, Some(&raster()));
         assert!(

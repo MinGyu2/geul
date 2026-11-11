@@ -156,7 +156,11 @@ fn opaque_owners<'a, 'r>(rs: &'r [Record<'a>]) -> Option<Vec<&'r [Record<'a>]>> 
 /// paragraph) is byte-identical (except independently derived line positions below) and in the same order
 /// on both sides: the opaque bytes and everything that gives them meaning are untouched. Edits to an owner subtree (e.g. text in a paragraph carrying range tags,
 /// whose offsets refer to that text) still fail closed.
-fn opaque_owners_preserved(before: &[Record<'_>], after: &[Record<'_>]) -> bool {
+fn opaque_owners_preserved(
+    before: &[Record<'_>],
+    after: &[Record<'_>],
+    structural_proof: bool,
+) -> bool {
     // Pinned RHWP: LineSeg is u32 + i32×7 + u32, HWPUNIT (1/7200 inch).
     // vpos is a stored flow/page/column coordinate, NOT paragraph-local. A reset may
     // encode another frame, so neither an absolute delta limit nor translation alone proves layout.
@@ -184,7 +188,7 @@ fn opaque_owners_preserved(before: &[Record<'_>], after: &[Record<'_>]) -> bool 
             if !needs_lines || r.2.is_empty() || !r.2.len().is_multiple_of(36) {
                 return None;
             }
-            for line in r.2.chunks_exact(36) {
+            for line in r.2.as_chunks::<36>().0.iter() {
                 let y = position(line, 4);
                 let height = position(line, 8);
                 let text = position(line, 12);
@@ -218,17 +222,166 @@ fn opaque_owners_preserved(before: &[Record<'_>], after: &[Record<'_>]) -> bool 
         }
         Some((origin?, next?))
     }
+    // Layout provenance for the narrow continuous-axis subset. Original stored metrics,
+    // not candidate caches or reopen=true, authorize each added paragraph's advance.
+    // All prefix paragraphs must retain one original line and one original char-shape
+    // run in the same para/style context. New text reflow, metric/style changes and
+    // mixed contexts require a font/layout authority this checker does not have.
+    fn original_metrics(
+        before: &[Record<'_>],
+        after: &[Record<'_>],
+        structural_proof: bool,
+    ) -> bool {
+        let Some(context) = before.first().and_then(|r| r.2.get(8..11)) else {
+            return false;
+        };
+        let Some(template) = before.iter().find(|r| r.0 == 69 && r.1 == 1) else {
+            return false;
+        };
+        let Some(run) = before.iter().find(|r| r.0 == 68 && r.1 == 1) else {
+            return false;
+        };
+        if template.2.len() != 36 || run.2.len() != 8 || run.2[..4] != [0; 4] {
+            return false;
+        }
+        let uniform = |rs: &[Record<'_>], candidate: bool| {
+            let mut active = false;
+            let mut lines = 0;
+            let mut runs = 0;
+            let mut placeholder = false;
+            let mut basic_object = false;
+            for r in rs {
+                if r.1 == 0 {
+                    if (active && (lines != 1 || runs != 1 || (placeholder && !basic_object)))
+                        || r.0 != 66
+                        || r.2.get(8..11) != Some(context)
+                    {
+                        return false;
+                    }
+                    active = true;
+                    lines = 0;
+                    runs = 0;
+                    placeholder = false;
+                    basic_object = false;
+                }
+                if !active {
+                    return false;
+                }
+                if r.1 != 1 {
+                    continue;
+                }
+                if r.0 == 71 && (r.2.starts_with(b" lbt") || r.2.starts_with(b" osg")) {
+                    // The full structural proof validates the table/picture subtree.
+                    basic_object = true;
+                }
+                if r.0 == 68 {
+                    runs += 1;
+                    if r.2 != run.2 {
+                        return false;
+                    }
+                }
+                if r.0 == 69 {
+                    lines += 1;
+                    placeholder = r.2.get(28..32) != Some(&template.2[28..32]);
+                    // Width zero is the existing proven basic-object placeholder,
+                    // not permission to invent vertical metrics for that object.
+                    if r.2.len() != 36
+                        || r.2[..4] != [0; 4]
+                        || r.2[8..28] != template.2[8..28]
+                        || r.2[32..] != template.2[32..]
+                        || (r.2[28..32] != template.2[28..32]
+                            && !(candidate && structural_proof && r.2[28..32] == [0; 4]))
+                    {
+                        return false;
+                    }
+                }
+            }
+            active && lines == 1 && runs == 1 && (!placeholder || basic_object)
+        };
+        // New glyphs or new wrapping are not measurable here. Preserve each nonempty
+        // original literal paragraph exactly; only empty/validated-control paragraphs
+        // may add advances. This also binds the number of lines to semantic boundaries.
+        fn valid_text(mut bytes: &[u8]) -> bool {
+            if !bytes.ends_with(b"\r\0") {
+                return false;
+            }
+            while !bytes.is_empty() {
+                let Some(pair) = bytes.get(..2) else {
+                    return false;
+                };
+                let code = u16::from_le_bytes([pair[0], pair[1]]);
+                let size = if matches!(code, 2 | 11) { 16 } else { 2 };
+                if code < 32 && !matches!(code, 2 | 11) && !(code == 13 && bytes.len() == 2) {
+                    return false;
+                }
+                if size == 16 && bytes.get(14..16) != Some(pair) {
+                    return false;
+                }
+                let Some(tail) = bytes.get(size..) else {
+                    return false;
+                };
+                bytes = tail;
+            }
+            true
+        }
+        fn units(mut bytes: &[u8]) -> impl Iterator<Item = u16> + '_ {
+            // Called only after valid_text; borrowed, with no per-character allocation.
+            std::iter::from_fn(move || {
+                while !bytes.is_empty() {
+                    let code = u16::from_le_bytes([bytes[0], bytes[1]]);
+                    bytes = &bytes[if matches!(code, 2 | 11) { 16 } else { 2 }..];
+                    if code >= 32 {
+                        return Some(code);
+                    }
+                }
+                None
+            })
+        }
+        let text_record = |r: &&Record<'_>| r.0 == 67 && r.1 == 1;
+        if !before
+            .iter()
+            .chain(after)
+            .filter(text_record)
+            .all(|r| valid_text(r.2))
+        {
+            return false;
+        }
+        let literal = |r: &&Record<'_>| text_record(r) && units(r.2).next().is_some();
+        let mut old = before.iter().filter(literal);
+        let mut new = after.iter().filter(literal);
+        loop {
+            match (old.next(), new.next()) {
+                (None, None) => break,
+                (Some(a), Some(b)) if units(a.2).eq(units(b.2)) => {}
+                _ => return false,
+            }
+        }
+        // Without the full additive object proof, controls/section definitions must
+        // be identical. An ordinary text edit cannot alter the page/column authority.
+        let controls = |r: &&Record<'_>| !(r.1 == 0 || (r.1 == 1 && matches!(r.0, 67..=70)));
+        uniform(before, false)
+            && uniform(after, true)
+            && (structural_proof
+                || before
+                    .iter()
+                    .filter(controls)
+                    .eq(after.iter().filter(controls)))
+    }
     fn movement_proven(
         before: &[Record<'_>],
         after: &[Record<'_>],
         x: &[Record<'_>],
         y: &[Record<'_>],
+        structural_proof: bool,
     ) -> bool {
         if x[0].0 != 66 || x[0].1 != 0 || y[0].0 != 66 || y[0].1 != 0 {
             return false;
         }
         let i = before.iter().position(|r| std::ptr::eq(r, &x[0])).unwrap();
         let j = after.iter().position(|r| std::ptr::eq(r, &y[0])).unwrap();
+        if !original_metrics(&before[..i], &after[..j], structural_proof) {
+            return false;
+        }
         // A position-only corruption has no supported preceding content edit.
         if before[..i]
             .iter()
@@ -251,6 +404,10 @@ fn opaque_owners_preserved(before: &[Record<'_>], after: &[Record<'_>]) -> bool 
         (Some(a), Some(b)) => {
             !a.is_empty()
                 && a.len() == b.len()
+                // Replay/provenance-check the longest changed prefix once per stream,
+                // rather than rescanning all prefixes for every opaque owner.
+                && a.iter().zip(&b).rfind(|(x, y)| x != y)
+                    .is_none_or(|(x, y)| movement_proven(before, after, x, y, structural_proof))
                 && a.iter().zip(&b).all(|(x, y)| {
                     if x == y {
                         return true;
@@ -271,8 +428,8 @@ fn opaque_owners_preserved(before: &[Record<'_>], after: &[Record<'_>]) -> bool 
                             {
                                 return false;
                             }
-                            r.2.chunks_exact(36)
-                                .zip(t.2.chunks_exact(36))
+                            r.2.as_chunks::<36>().0.iter()
+                                .zip(t.2.as_chunks::<36>().0.iter())
                                 .all(|(a, b)| {
                                     let shift =
                                         i64::from(position(b, 4)) - i64::from(position(a, 4));
@@ -280,7 +437,7 @@ fn opaque_owners_preserved(before: &[Record<'_>], after: &[Record<'_>]) -> bool 
                                     a[..4] == b[..4] && a[8..] == b[8..] && shift == expected
                                 })
                         });
-                    same && movement_proven(before, after, x, y)
+                    same && x[0].0 == 66 && x[0].1 == 0 && y[0].0 == 66 && y[0].1 == 0
                 })
         }
         _ => false,
@@ -818,7 +975,7 @@ fn compare_with(
                 .any(|r| !matches!(r.0, 66..=85) || (r.0 == 70 && !r.2.is_empty()));
             if opaque
                 && before_records != after_records
-                && !opaque_owners_preserved(&before_records, &after_records)
+                && !opaque_owners_preserved(&before_records, &after_records, proof.is_some())
             {
                 findings.push(Finding::at(FindingCode::RecordsChanged, name));
             }
