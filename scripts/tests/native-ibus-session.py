@@ -72,6 +72,10 @@ def tool(env_name, pattern, required):
 def main():
     p = argparse.ArgumentParser()
     p.add_argument('--out', required=True)
+    p.add_argument('--hangul-initial-mode', choices=['latin', 'hangul'],
+                   help='override only this private session schema default; never writes user settings')
+    p.add_argument('--hangul-disable-latin', action='store_true',
+                   help='private Hangul-only engine; switch English using the real xkb IBus engine')
     p.add_argument('command', nargs=argparse.REMAINDER)
     args = p.parse_args()
     command = args.command[1:] if args.command[:1] == ['--'] else args.command
@@ -129,8 +133,24 @@ def main():
     env.update(PATH=str(tools) + ':' + env['PATH'], IBUS_ADDRESS='unix:path=' + str(sock / 'ibus'),
                IBUS_COMPONENT_PATH=str(components), GSETTINGS_BACKEND='memory', GTK_IM_MODULE='ibus',
                GTK_IM_MODULE_FILE=str(cache), XMODIFIERS='@im=ibus', GDK_BACKEND='x11')
+    if args.hangul_initial_mode or args.hangul_disable_latin:
+        schemas = work / 'schemas'
+        schemas.mkdir()
+        original_schema = next(Path(hangul, 'share').glob('gsettings-schemas/*/glib-2.0/schemas/org.freedesktop.ibus.engine.hangul.gschema.xml'))
+        shutil.copy(original_schema, schemas / original_schema.name)
+        settings = '[org.freedesktop.ibus.engine.hangul]\n'
+        if args.hangul_initial_mode:
+            settings += "initial-input-mode='" + args.hangul_initial_mode + "'\n"
+        if args.hangul_disable_latin:
+            settings += 'disable-latin-mode=true\n'
+        (schemas / 'phase5.gschema.override').write_text(settings)
+        compiler = shutil.which('glib-compile-schemas') or store('*-glib-*-dev', ['bin/glib-compile-schemas']) + '/bin/glib-compile-schemas'
+        subprocess.run([compiler, '--strict', str(schemas)], env=env, check=True)
+        env['GSETTINGS_SCHEMA_DIR'] = str(schemas)
     identity = {'work': str(work), 'ibus': ibus, 'ibusHangul': hangul, 'dconf': dconf, 'xvfb': xvfb,
-                'xdotool': xdotool, 'dbusDaemon': dbus_daemon, 'imModule': ibus + '/lib/gtk-3.0/3.0.0/immodules/im-ibus.so'}
+                'xdotool': xdotool, 'dbusDaemon': dbus_daemon, 'imModule': ibus + '/lib/gtk-3.0/3.0.0/immodules/im-ibus.so',
+                'privateHangulInitialMode': args.hangul_initial_mode,
+                'privateHangulDisableLatin': args.hangul_disable_latin}
     processes = []
     code = 1
 
