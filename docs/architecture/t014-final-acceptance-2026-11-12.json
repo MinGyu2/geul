@@ -195,8 +195,8 @@
     ]
   },
   "remaining": [
-    "Stage6 recovery revalidation including DOCX",
-    "Stage7 controlling-document reconciliation; existing explicit T014 power-loss/filesystem-fault and Windows/macOS implementation obligations remain unfulfilled"
+    "Stage7 final evidence/specification reconciliation",
+    "Existing T014 power-loss/filesystem-fault and Windows/macOS save implementation/durability/recovery obligations remain unfulfilled"
   ],
   "stage5": {
     "status": "PASS_LINUX_DETERMINISTIC_AND_NATIVE_BOUNDARY_SCOPE",
@@ -518,6 +518,88 @@
         "evidence": "target/t014-final/stage4b/acceptance/result.json"
       }
     ],
-    "threatModel": "Root/owner trusted ancestor handles + content hash + fingerprint checks; no atomic filesystem compare-and-swap against a malicious trusted same-UID actor between last check and rename. Deterministic real-file race hooks are not native multiuser/power-loss acceptance."
+    "threatModel": "Root/owner trusted ancestor handles + content hash + fingerprint checks; no atomic filesystem compare-and-swap against a malicious trusted same-UID actor between last check and rename. Deterministic real-file race hooks are not native multiuser/power-loss acceptance.",
+    "commit": "d8b8915c5d068ae2222990f8a180f12e1e22da06"
+  },
+  "stage6": {
+    "status": "PASS_LINUX_SUPPORTED_REPRESENTATIVES",
+    "docx": {
+      "status": "PASS",
+      "native": {
+        "path": "target/t014-final/stage6/docx-acceptance/result.json",
+        "sha256": "2158d0feb23f68d25710a0a3b654e5558f8086e45675b364202f03772e39c20c"
+      },
+      "command": {
+        "path": "target/t014-final/stage6/native-command.json",
+        "sha256": "02f29f531fd61d47ad5cb98b01184b1f2568de7cb69614dafcf258864d62dee3"
+      },
+      "launcherCleanup": {
+        "path": "target/t014-final/stage6/docx-session/cleanup.json",
+        "sha256": "fb6f7cb5c61d52f8d64057dd3bdba662ade4ba03ce7d692e1794202276e5dd15"
+      },
+      "conditions": 16,
+      "teardown": 2,
+      "fail": 0,
+      "harness": {
+        "path": "scripts/tests/native-docx-recovery.py",
+        "sha256": "212c897f6f446c28f44fef99bdbd24c7b3b6565d5be3c3f5c662889a0b27c63d"
+      },
+      "sourceHashMatchesOriginal": true,
+      "protectedRevision": 8,
+      "unprotectedRevision": 9,
+      "originalPreserved": true,
+      "restoredPayloadSha256": "51934d62ca47c8076ffce65cd36bcfa6f167d05e455a7d93befc86bc9c7d4833",
+      "payloadHashVerified": true,
+      "engine": "Actual WordCraft automatic checkpoint, fresh-process payload reopen before restore, actual create-only RecoveryCenter restoration and fresh WordCraft model. No RHWP substituted; no production test hooks."
+    },
+    "hwpHwpx": {
+      "status": "VERIFIED_REUSABLE",
+      "native": {
+        "path": "target/t014-final/prestage/native-recovery/result.json",
+        "sha256": "833d06f2187bea5766da039749f2e365bbd8295d77621a9f04e1c0bbfb110dd6"
+      },
+      "hwpConditions": 35,
+      "hwpxConditions": 33,
+      "teardown": 4,
+      "reason": "Fresh rerun after driver correction. Subsequent changes only harness/documents and cfg(test) Rust tests; product and shared checkpoint harness/verifier unchanged. HWP actual PrvText CFB streams and both formats independent Release WASM reopen checked."
+    },
+    "backendFrontend": {
+      "status": "VERIFIED_REUSABLE",
+      "verification": {
+        "path": "target/t014-final/stage5/verification-summary.json",
+        "sha256": "207333dbb7e3740a6439d89a61c527fb415dc0cfe866aec5759dc6bc7966e6f6"
+      },
+      "rustRecoveryPass": 28,
+      "rustRecoveryIgnored": 1,
+      "frontendPass": 148,
+      "scope": "Unchanged relevant source: corrupt/unsafe candidate refusal, create-only restore, last-known durable record and ownership retention across failed publication/retirement/unlink/fsync; actual backend process SIGKILL test. Frontend guards composing/pending/uncertain/stale models and exact protected revisions. Deterministic/model tests do not claim native unfinished-IME fault or external Office compatibility."
+    },
+    "requirements": [
+      {
+        "behaviors": "committed supported revision; validated durable payload; exact revision; original and dirty state preserved; newer revision not protected",
+        "evidence": "DOCX16 + HWP35/HWPX33 native conditions; frontend checkpoint tests"
+      },
+      {
+        "behaviors": "SIGKILL, fresh startup discovery, validation before restore, existing destination refusal, create-only new file, correct engine reopen, matching bytes, candidate retained",
+        "evidence": "DOCX native16 and HWP35/HWPX33 native lifecycle; recovery28 actual Rust filesystem tests"
+      },
+      {
+        "behaviors": "corrupt/unsafe refusal; recovery publication, retirement/unlink/fsync failure keeps last durable candidate and ownership",
+        "evidence": "recovery28 + save checkpoint module in save212; frontend148 error/status tests"
+      },
+      {
+        "behaviors": "in-progress IME/pending work not represented as committed protected input",
+        "evidence": "frontend DOCX workspace and RHWP recoveryCheckpoint regressions; native captures settled committed input; native unfinished-IME fault scenario NOT RUN"
+      }
+    ],
+    "limitations": [
+      "Representatives are generated supported documents, not all business documents",
+      "No external Microsoft Word/Hancom native compatibility acceptance",
+      "Power-loss/filesystem/device failure and Windows/macOS behavior not established by Linux process SIGKILL"
+    ],
+    "identityVerification": {
+      "path": "target/t014-final/stage6/summary.json",
+      "sha256": "dd27be0f375b8fa01e85087b658ba0d8033726bb6e98868738137a4c2b2ed8f5"
+    }
   }
 }
