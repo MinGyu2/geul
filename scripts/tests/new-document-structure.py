@@ -120,9 +120,13 @@ def hwp(data):
             assert struct.unpack_from('<7H', body) == (0,) * 7
     assert Counter(tag for tag, _, _ in section)[66] == 1
     assert Counter(tag for tag, _, _ in section)[67] == 1
+    assert Counter(tag for tag, _, _ in section)[69] == 1
     for tag, _, body in section:
         if tag == 66:
             assert struct.unpack_from('<H', body, 8)[0] == 0 and body[10] == 0
+            assert struct.unpack_from('<H', body, 16)[0] == 1
+        if tag == 69:
+            assert struct.unpack('<IiiiiiiiI', body) == (0, 0, 1000, 1000, 850, 600, 0, 42520, 0x80060000)
         if tag == 68:
             assert len(body) % 8 == 0 and len(body) > 0
             for at in range(0, len(body), 8):

@@ -2163,8 +2163,12 @@ fn hwpx_bullets_appended(before: &[u8], after: &[u8], output: &Package) -> Optio
     if a != b {
         return None;
     }
-    let old_borders = old.get("borderFills")?;
-    let borders = new.get("borderFills")?;
+    // A new HWPX can omit the empty list entirely. Absence represents zero
+    // definitions; the exact append shape, unchanged prefix and body-reference
+    // checks below still apply to the first table border.
+    let empty = Vec::new();
+    let old_borders = old.get("borderFills").unwrap_or(&empty);
+    let borders = new.get("borderFills").unwrap_or(&empty);
     if borders.len() < old_borders.len()
         || borders.len() > old_borders.len() + 1
         || borders.get(..old_borders.len())? != old_borders
@@ -2183,6 +2187,15 @@ fn hwpx_bullets_appended(before: &[u8], after: &[u8], output: &Package) -> Optio
             for e in xml::canonical(bytes).ok()? {
                 if let Some(value) = plain_attribute(&e, "borderFillIDRef") {
                     let id = value.parse::<usize>().ok()?;
+                    // RHWP's blank page uses zero as the page-border "none"
+                    // sentinel. It does not refer to the newly appended table
+                    // border; zero on table/cell or foreign elements stays invalid.
+                    if id == 0
+                        && matches!(&e, xml::Canonical::Start { namespace: Some(ns), name, .. }
+                            if ns == HWPML_PARAGRAPH && name == "pageBorderFill")
+                    {
+                        continue;
+                    }
                     if id == 0 || id > borders.len() {
                         return None;
                     }
@@ -2200,7 +2213,6 @@ fn hwpx_bullets_appended(before: &[u8], after: &[u8], output: &Package) -> Optio
             return None;
         }
     }
-    let empty = Vec::new();
     let old_bullets = old.get("bullets").unwrap_or(&empty);
     let bullets = new.get("bullets").unwrap_or(&empty);
     if bullets.len() < old_bullets.len()
@@ -2244,4 +2256,101 @@ fn default_table_border(total: u32) -> Option<Vec<xml::Canonical>> {
         r##"<hh:borderFill xmlns:hh="http://www.hancom.co.kr/hwpml/2011/head" id="{total}" threeD="0" shadow="0" centerLine="NONE" breakCellSeparateLine="0"><hh:slash type="NONE" Crooked="0" isCounter="0"/><hh:backSlash type="NONE" Crooked="0" isCounter="0"/><hh:leftBorder type="SOLID" width="0.12 mm" color="#000000"/><hh:rightBorder type="SOLID" width="0.12 mm" color="#000000"/><hh:topBorder type="SOLID" width="0.12 mm" color="#000000"/><hh:bottomBorder type="SOLID" width="0.12 mm" color="#000000"/><hh:diagonal type="SOLID" width="0.1 mm" color="#000000"/></hh:borderFill>"##
     );
     xml::canonical(expected.as_bytes()).ok()
+}
+
+#[cfg(test)]
+mod omitted_hwpx_resource_lists {
+    use super::*;
+
+    fn header(extra: &str, heading: &str) -> Vec<u8> {
+        format!(r#"<hh:head xmlns:hh="{HWPML_HEAD}"><hh:refList>{extra}<hh:paraProperties itemCnt="1"><hh:paraPr id="0"><hh:heading type="{heading}" idRef="0" level="0"/></hh:paraPr></hh:paraProperties></hh:refList></hh:head>"#).into_bytes()
+    }
+
+    fn output(body: &str) -> Package {
+        Package {
+            order: vec!["Contents/section0.xml".into()],
+            parts: BTreeMap::from([(
+                "Contents/section0.xml".into(),
+                (0, body.as_bytes().to_vec()),
+            )]),
+        }
+    }
+
+    #[test]
+    fn hwpx_omitted_border_list_accepts_only_used_standard_append() {
+        let before = header("", "NONE");
+        let border = r##"<hh:borderFills itemCnt="1"><hh:borderFill id="1" threeD="0" shadow="0" centerLine="NONE" breakCellSeparateLine="0"><hh:slash type="NONE" Crooked="0" isCounter="0"/><hh:backSlash type="NONE" Crooked="0" isCounter="0"/><hh:leftBorder type="SOLID" width="0.12 mm" color="#000000"/><hh:rightBorder type="SOLID" width="0.12 mm" color="#000000"/><hh:topBorder type="SOLID" width="0.12 mm" color="#000000"/><hh:bottomBorder type="SOLID" width="0.12 mm" color="#000000"/><hh:diagonal type="SOLID" width="0.1 mm" color="#000000"/></hh:borderFill></hh:borderFills>"##;
+        let table = output(
+            r#"<hp:p xmlns:hp="http://www.hancom.co.kr/hwpml/2011/paragraph"><hp:pageBorderFill borderFillIDRef="0"/><hp:tbl borderFillIDRef="1"/></hp:p>"#,
+        );
+        assert_eq!(
+            hwpx_bullets_appended(&before, &header(border, "NONE"), &table),
+            Some(true)
+        );
+        // Existing definitions, exact border shape, counts and actual references
+        // remain mandatory when the original omitted the empty list.
+        assert_ne!(
+            hwpx_bullets_appended(&before, &header(border, "BULLET"), &table),
+            Some(true)
+        );
+        assert_ne!(
+            hwpx_bullets_appended(
+                &before,
+                &header(&border.replace("SOLID", "DASH"), "NONE"),
+                &table
+            ),
+            Some(true)
+        );
+        assert_ne!(
+            hwpx_bullets_appended(
+                &before,
+                &header(&border.replace("itemCnt=\"1\"", "itemCnt=\"2\""), "NONE"),
+                &table
+            ),
+            Some(true)
+        );
+        assert_ne!(
+            hwpx_bullets_appended(&before, &header(border, "NONE"), &output("<p/>")),
+            Some(true)
+        );
+        let bad_use = output(
+            r#"<hp:p xmlns:hp="http://www.hancom.co.kr/hwpml/2011/paragraph" borderFillIDRef="1"/>"#,
+        );
+        assert_ne!(
+            hwpx_bullets_appended(&before, &header(border, "NONE"), &bad_use),
+            Some(true)
+        );
+        let zero_cell = output(
+            r#"<hp:p xmlns:hp="http://www.hancom.co.kr/hwpml/2011/paragraph"><hp:tbl borderFillIDRef="1"/><hp:tc borderFillIDRef="0"/></hp:p>"#,
+        );
+        assert_ne!(
+            hwpx_bullets_appended(&before, &header(border, "NONE"), &zero_cell),
+            Some(true)
+        );
+        let foreign = output(
+            r#"<hp:p xmlns:hp="http://www.hancom.co.kr/hwpml/2011/paragraph"><hp:tbl borderFillIDRef="1"/><pageBorderFill xmlns="urn:foreign" borderFillIDRef="0"/></hp:p>"#,
+        );
+        assert_ne!(
+            hwpx_bullets_appended(&before, &header(border, "NONE"), &foreign),
+            Some(true)
+        );
+    }
+
+    #[test]
+    fn hwpx_omitted_border_list_allows_standard_bullet_without_table() {
+        let before = header("", "NONE");
+        let bullet = r#"<hh:bullets itemCnt="1"><hh:bullet id="1" char="•" useImage="0"><hh:paraHead level="0" align="LEFT" useInstWidth="0" autoIndent="1" widthAdjust="0" textOffsetType="PERCENT" textOffset="50" numFormat="DIGIT" charPrIDRef="0" checkable="0"/></hh:bullet></hh:bullets>"#;
+        assert_eq!(
+            hwpx_bullets_appended(&before, &header(bullet, "NONE"), &output("<p/>")),
+            Some(true)
+        );
+        assert_ne!(
+            hwpx_bullets_appended(
+                &before,
+                &header(&bullet.replace("char=\"•\"", "char=\"X\""), "NONE"),
+                &output("<p/>")
+            ),
+            Some(true)
+        );
+    }
 }
