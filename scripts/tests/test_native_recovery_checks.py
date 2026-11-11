@@ -249,7 +249,7 @@ def complete_report():
             'launches': launches,
             'teardown': [{'launchId': row['id'], **{k: row[k] for k in ('pid', 'startTime', 'dataHome')},
                           'complete': True, 'remainingAfterWait': [], 'survivorsAfterSigterm': [],
-                          'sigtermErrors': [], 'driverExit': 0} for row in launches]}
+                          'sigtermErrors': [], 'driverKilled': False, 'driverExit': 0} for row in launches]}
 
 
 class Accounting(unittest.TestCase):
@@ -263,6 +263,23 @@ class Accounting(unittest.TestCase):
         self.assertEqual([r['status'] for r in entry['steps']], ['PASS', 'FAIL'])
         with self.assertRaises(checks.AcceptanceError):
             checks.require(False, 'hwpx', 'setup', 1, 'x')
+
+    def test_driver_shutdown_outcome_is_required_even_with_complete_and_no_survivors(self):
+        for value in (None, '0', 0.0, True, False, 1, 42, -1, -9, -15):
+            report = complete_report()
+            report['teardown'][0]['driverExit'] = value
+            with self.subTest(driverExit=value):
+                self.assertEqual(checks.overall(report, {'hwp': ['a']})[0], 'FAIL')
+        for value in (None, True, 0, 'false'):
+            report = complete_report()
+            report['teardown'][0]['driverKilled'] = value
+            with self.subTest(driverKilled=value):
+                self.assertEqual(checks.overall(report, {'hwp': ['a']})[0], 'FAIL')
+        for field in ('driverExit', 'driverKilled'):
+            report = complete_report()
+            del report['teardown'][0][field]
+            self.assertEqual(checks.overall(report, {'hwp': ['a']})[0], 'FAIL')
+        self.assertEqual(checks.overall(complete_report(), {'hwp': ['a']}), ('PASS', []))
 
     def test_missing_teardown_duplicate_step_and_incomplete_cleanup_explain_failure(self):
         import copy
@@ -404,7 +421,7 @@ def run_format(args, fmt, engine, report):
         launch = {'id': f'{fmt}:{phase}', 'pid': offset+n, 'startTime': offset+n, 'dataHome': f'/isolated/{fmt}'}
         report.setdefault('launches', []).append(launch)
         crash.smoke.TEARDOWN.append({'launchId': launch['id'], **{k: launch[k] for k in ('pid', 'startTime', 'dataHome')},
-                                   'complete': True, 'remainingAfterWait': [], 'survivorsAfterSigterm': [], 'sigtermErrors': [], 'driverExit': 0})
+                                   'complete': True, 'remainingAfterWait': [], 'survivorsAfterSigterm': [], 'sigtermErrors': [], 'driverKilled': False, 'driverExit': 0})
     if fmt == 'hwpx':
         if case == 'empty-teardown': crash.smoke.TEARDOWN.clear()
         elif case == 'duplicate-step': entry['steps'].append(entry['steps'][0].copy())

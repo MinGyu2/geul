@@ -175,7 +175,11 @@ def overall(report, required):
                 or teardown.get('remainingAfterWait') != []
                 or teardown.get('survivorsAfterSigterm') != []
                 or teardown.get('sigtermErrors') != []
-                or type(teardown.get('driverExit')) is not int):
+                # tauri-driver handles our SIGTERM by exiting 0; app SIGKILL is separate.
+                # complete only means collection finished, not that driver shutdown succeeded.
+                or teardown.get('driverKilled') is not False
+                or type(teardown.get('driverExit')) is not int
+                or teardown.get('driverExit') != 0):
             problems.append(f'teardown {at} incomplete or left processes')
     for lid in sorted(expected - seen):
         problems.append(f'missing completed teardown for {lid}')
